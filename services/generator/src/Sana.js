@@ -5,10 +5,6 @@ import ImageGeneration from "./schema/ImageGeneration.js";
 import axios from 'axios';
 import { markVideoSessionLayerAsFailed } from './VideoSession.js';
 import { saveRemoteFile } from "./utils/FileUtils.js";
-import {
-  isTerminalProviderFailureStatus,
-  markImageProviderRequestFailed,
-} from './utils/ImageProviderStatus.js';
 
 import { writeFile, mkdir } from 'fs/promises';
 import path from 'path';
@@ -113,14 +109,6 @@ export async function pollSanaRequest(payload) {
   }
 
   const responseStatus = responseStatusData.status;
-  if (isTerminalProviderFailureStatus(responseStatus)) {
-    return markImageProviderRequestFailed(
-      ImageGeneration,
-      _id,
-      `FAL ${model || 'image'} request failed with status ${responseStatus}.`
-    );
-  }
-
   if (responseStatus === 'COMPLETED') {
 
     const result = await fal.queue.result(falLink, {
@@ -185,3 +173,4 @@ function getImageSizeForAspectRation(aspectRatio) {
     }
   }
 }
+

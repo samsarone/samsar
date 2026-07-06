@@ -67,8 +67,6 @@ import fs from 'fs';
 const MAX_CONCURRENT_REQUESTS = 4;
 const MAX_IMAGE_GENERATION_FAILURES = 3;
 const MAX_IMAGE_GENERATION_FILTER_RETRIES = 3;
-const IMAGE_GENERATION_RETRY_BASE_BACKOFF_MS = 2000;
-const IMAGE_GENERATION_RETRY_MAX_BACKOFF_MS = 30000;
 const IMAGE_GENERATION_PROVIDER_PENDING_TIMEOUT_MS = Math.max(
   5 * 60 * 1000,
   Number(process.env.IMAGE_GENERATION_PROVIDER_PENDING_TIMEOUT_MS) || 20 * 60 * 1000
@@ -581,14 +579,6 @@ function normalizePromptForComparison(value) {
   return typeof value === 'string' ? value.trim().replace(/\s+/g, ' ') : '';
 }
 
-function getImageGenerationRetryBackoffMs(retryCount) {
-  const normalizedRetryCount = Math.max(1, normalizeRetryCount(retryCount));
-  return Math.min(
-    IMAGE_GENERATION_RETRY_MAX_BACKOFF_MS,
-    IMAGE_GENERATION_RETRY_BASE_BACKOFF_MS * (2 ** (normalizedRetryCount - 1))
-  );
-}
-
 function isSafetyRejectionMessage(message = '') {
   return /safety system|safety_violations|content policy|policy violation|request was rejected/i.test(
     String(message || '')
@@ -702,29 +692,21 @@ async function getAlteredPromptForRetry(
     return buildThemePreservingSafetyRetryPrompt(originalPrompt, failureMessage, retryCount);
   }
 
-  try {
-    const alteredPrompt = await getAlternatePromptFromPrompt(
-      originalPrompt,
-      retryCount,
-      failureMessage,
-      rewriteMode
-    );
-    const normalizedAlteredPrompt = typeof alteredPrompt === 'string' ? alteredPrompt.trim() : '';
-    const normalizedAlteredComparison = normalizePromptForComparison(normalizedAlteredPrompt);
+  const alteredPrompt = await getAlternatePromptFromPrompt(
+    originalPrompt,
+    retryCount,
+    failureMessage,
+    rewriteMode
+  );
+  const normalizedAlteredPrompt = typeof alteredPrompt === 'string' ? alteredPrompt.trim() : '';
+  const normalizedAlteredComparison = normalizePromptForComparison(normalizedAlteredPrompt);
 
-    if (
-      normalizedAlteredPrompt &&
-      normalizedAlteredComparison !== normalizePromptForComparison(originalPrompt) &&
-      normalizedAlteredComparison !== normalizePromptForComparison(currentPrompt)
-    ) {
-      return normalizedAlteredPrompt;
-    }
-  } catch (err) {
-    console.error('[image_generation] retry prompt rewrite failed; using deterministic fallback', {
-      retryCount,
-      rewriteMode,
-      message: err?.message || String(err),
-    });
+  if (
+    normalizedAlteredPrompt &&
+    normalizedAlteredComparison !== normalizePromptForComparison(originalPrompt) &&
+    normalizedAlteredComparison !== normalizePromptForComparison(currentPrompt)
+  ) {
+    return normalizedAlteredPrompt;
   }
 
   return [
@@ -1061,9 +1043,6 @@ async function scheduleImageGenerationRetry(payload = {}, latestDoc, imageData, 
     rowLocked: false,
     generationStatus: 'INIT',
     apiGenerationStatus: 'INIT',
-    apiRequestId: null,
-    apiSubmittedAt: null,
-    nextRetryAt: new Date(Date.now() + getImageGenerationRetryBackoffMs(nextFailureCount)),
     failureRetryCount: nextFailureCount,
   };
   if (!latestDoc?.originalRetryPrompt) {
@@ -1429,27 +1408,6 @@ async function processNextTask() {
       });
     } else {
       const preserveExpressImageLayer = shouldPreserveExpressImageLayerOnFailure(error);
-      const shouldRetryUnhandledGenerationError =
-        activeTask?.operationType === 'GENERATE' &&
-        (activeTask?.isBatchGeneration || activeTask?.retryOnFailure);
-      if (shouldRetryUnhandledGenerationError) {
-        const latestDoc = await ImageGeneration.findById(_id);
-        if (latestDoc) {
-          const scheduledRetry = await scheduleImageGenerationRetry(
-            activeTask,
-            latestDoc,
-            { image: null, error: error?.message || 'Unhandled image generation error.' },
-            {
-              source: preserveExpressImageLayer
-                ? 'image_generation_non_prompt_dependency_retry'
-                : 'image_generation_unhandled_retry',
-            }
-          );
-          if (scheduledRetry) {
-            return;
-          }
-        }
-      }
       await markImageGenerationRequestFailed(
         activeTask,
         { image: null, error: error?.message || 'Unhandled image generation error.' },
@@ -1484,15 +1442,6 @@ export async function processPendingImageRequests() {
 
   const pendingRequests = await ImageGeneration.find({
     rowLocked: false,
-    $and: [
-      {
-        $or: [
-          { nextRetryAt: { $exists: false } },
-          { nextRetryAt: null },
-          { nextRetryAt: { $lte: new Date() } },
-        ],
-      },
-    ],
     $or: [
       { generationStatus: { $exists: true, $nin: TERMINAL_STATUSES } },
       { editStatus: { $exists: true, $nin: TERMINAL_STATUSES } },
@@ -1533,7 +1482,16 @@ async function processPendingGenerationRequet(pendingRequestData) {
 
   if (shouldUseSamsarExternalImageProvider(pendingRequestData)) {
     const imageData = await handleSamsarExternalTextToImageRequest(pendingRequestData);
-    await handleTextToImageProviderResult(pendingRequestData, imageData);
+    if (imageData?.image) {
+      await updateImageInSessionLayer(imageData, pendingRequestData);
+    } else if (imageData?.error) {
+      await markImageGenerationRequestFailed(pendingRequestData, imageData, {
+        message: imageData.error,
+        failureRetryCount: normalizeRetryCount(pendingRequestData?.failureRetryCount) + 1,
+        source: 'samsar_external_image_generation_failed',
+        pruneLayer: false,
+      });
+    }
     return;
   }
 
@@ -1551,92 +1509,102 @@ async function processPendingGenerationRequet(pendingRequestData) {
     model === 'FLUX1.1ULTRA'
   ) {
     const imageData = await handleFluxRequest(pendingRequestData);
-    await handleTextToImageProviderResult(pendingRequestData, imageData);
+    if (imageData) {
+      await updateImageInSessionLayer(imageData, pendingRequestData);
+    }
   } else if (model === 'RECRAFTV3' || model === 'RECRAFT20B') {
     const imageData = await handleRecraftRequest(pendingRequestData);
-    await handleTextToImageProviderResult(pendingRequestData, imageData);
+    if (imageData && imageData.image) {
+      await updateImageInSessionLayer(imageData, pendingRequestData);
+    }
   } else if (model === 'SDV3.5') {
     const imageData = await handleStableDiffusionRequest(pendingRequestData);
-    await handleTextToImageProviderResult(pendingRequestData, imageData);
+    if (imageData && imageData.image) {
+      await updateImageInSessionLayer(imageData, pendingRequestData);
+    }
   } else if (model === 'SANA' ||
     model === 'SANA4.5B' || model === 'SANASPRINT'
   ) {
     const imageData = await handleSanaRequest(pendingRequestData);
-    await handleTextToImageProviderResult(pendingRequestData, imageData);
+    if (imageData && imageData.image) {
+      await updateImageInSessionLayer(imageData, pendingRequestData);
+    }
   } else if (model === 'PHOTON' || model === 'PHOTONFLASH') {
     const imageData = await handlePhotonRequest(pendingRequestData);
-    await handleTextToImageProviderResult(pendingRequestData, imageData);
+    if (imageData && imageData.image) {
+      await updateImageInSessionLayer(imageData, pendingRequestData);
+    }
   } else if (model === 'IMAGEN3' || model === 'IMAGEN3FLASH') {
     const imageData = await handleImagenRequest(pendingRequestData);
-    await handleTextToImageProviderResult(pendingRequestData, imageData);
+    if (imageData) {
+      await updateImageInSessionLayer(imageData, pendingRequestData);
+    }
   } else if (model === 'IMAGEN4') {
     const imageData = await handleImagenFalRequest(pendingRequestData);
-    await handleTextToImageProviderResult(pendingRequestData, imageData);
+    if (imageData) {
+
+      await updateImageInSessionLayer(imageData, pendingRequestData);
+    }
   } else if (model === 'GEMMA3') {
     const imageData = await handleGemma3CreateRequest(pendingRequestData);
-    await handleTextToImageProviderResult(pendingRequestData, imageData);
+    if (imageData) {
+      await updateImageInSessionLayer(imageData, pendingRequestData);
+    }
   } else if (model === 'LUMINAV2') {
     const imageData = await handleLuminaRequest(pendingRequestData);
-    await handleTextToImageProviderResult(pendingRequestData, imageData);
+    if (imageData) {
+      await updateImageInSessionLayer(imageData, pendingRequestData);
+    }
   } else if (model === 'REVE') {
     const imageData = await handleReveRequest(pendingRequestData);
-    await handleTextToImageProviderResult(pendingRequestData, imageData);
+    if (imageData) {
+      await updateImageInSessionLayer(imageData, pendingRequestData);
+    }
   } else if (model === 'IDEOGRAMV3') {
     const imageData = await handleIdeogramRequest(pendingRequestData);
-    await handleTextToImageProviderResult(pendingRequestData, imageData);
+    if (imageData) {
+      await updateImageInSessionLayer(imageData, pendingRequestData);
+    }
   } else if (model === 'HIDREAMI1') {
     const imageData = await handleHiDreamRequest(pendingRequestData);
-    await handleTextToImageProviderResult(pendingRequestData, imageData);
+    if (imageData) {
+      await updateImageInSessionLayer(imageData, pendingRequestData);
+    }
   } else if (model === 'GPTIMAGE2' || model === 'GPTIMAGE1') {
     const imageData = await handleGPTImageTwoRequest(pendingRequestData);
-    await handleTextToImageProviderResult(pendingRequestData, imageData);
+    if (imageData) {
+      await updateImageInSessionLayer(imageData, pendingRequestData);
+    }
   } else if (model === 'FLITE') {
     const imageData = await handleFLiteRequest(pendingRequestData);
-    await handleTextToImageProviderResult(pendingRequestData, imageData);
+    if (imageData) {
+      await updateImageInSessionLayer(imageData, pendingRequestData);
+    }
   } else if (model === 'SEEDREAM') {
     const imageData = await handleSeedreamRequest(pendingRequestData);
-    await handleTextToImageProviderResult(pendingRequestData, imageData);
+    if (imageData) {
+      await updateImageInSessionLayer(imageData, pendingRequestData);
+    }
   } else if (model === 'CUSTOM_TEXT_TO_IMAGE') {
     const imageData = await handleCustomTextToImageRequest(pendingRequestData);
-    await handleTextToImageProviderResult(pendingRequestData, imageData);
+    if (imageData?.image) {
+      await updateImageInSessionLayer(imageData, pendingRequestData);
+    }
   } else if (model === 'NANOBANANA2' || model === 'NANOBANANAPRO') {
     const dockerProvider = resolveDockerImageGenerationProvider(model);
     const imageData = dockerProvider === DOCKER_ADAPTER_PROVIDER.GOOGLE_CLOUD ||
       (!dockerProvider && shouldUseGoogleNativeNanoBanana(pendingRequestData))
       ? await handleGoogleNanoBananaRequest(pendingRequestData)
       : await handleNanoBananaFalRequest(pendingRequestData);
-    await handleTextToImageProviderResult(pendingRequestData, imageData);
+    if (imageData) {
+      await updateImageInSessionLayer(imageData, pendingRequestData);
+    }
   } else if (model === 'HUNYUAN') {
     const imageData = await handleHunyuanRequest(pendingRequestData);
-    await handleTextToImageProviderResult(pendingRequestData, imageData);
+    if (imageData) {
+      await updateImageInSessionLayer(imageData, pendingRequestData);
+    }
   }
-}
-
-async function handleTextToImageProviderResult(pendingRequestData, imageData) {
-  if (imageData) {
-    await updateImageInSessionLayer(imageData, pendingRequestData);
-    return true;
-  }
-
-  const latestDoc = await ImageGeneration.findById(pendingRequestData?._id);
-  if (!latestDoc) {
-    return false;
-  }
-
-  const generationStatus = normalizeString(latestDoc.generationStatus).toUpperCase();
-  const apiGenerationStatus = normalizeString(latestDoc.apiGenerationStatus).toUpperCase();
-  if (generationStatus !== 'FAILED' && apiGenerationStatus !== 'FAILED') {
-    return false;
-  }
-
-  const latestPayload = latestDoc.toObject ? latestDoc.toObject() : latestDoc;
-  await handleNoImageRetryOrFailure(latestPayload, {
-    image: null,
-    error: latestDoc.generationError ||
-      latestDoc.lastFailureMessage ||
-      'Image provider request failed.',
-  });
-  return true;
 }
 
 async function processDalle3GenerationRequest(pendingRequestData) {
@@ -2056,9 +2024,6 @@ async function handleNoImageRetryOrFailure(payload, imageData) {
           rowLocked: false,
           generationStatus: "INIT",
           apiGenerationStatus: "INIT",
-          apiRequestId: null,
-          apiSubmittedAt: null,
-          nextRetryAt: new Date(Date.now() + getImageGenerationRetryBackoffMs(nextFailureCount)),
           failureRetryCount: nextFailureCount,
           refilterImagePassNumber: nextPassNum,
           filterRetryCount: nextFilterRetryCount,
@@ -2250,9 +2215,6 @@ async function processRefilterFailure(imageData, payload, imageScore, imageDescr
         rowLocked: false,
         generationStatus: "INIT",
         apiGenerationStatus: "INIT",
-        apiRequestId: null,
-        apiSubmittedAt: null,
-        nextRetryAt: new Date(Date.now() + getImageGenerationRetryBackoffMs(nextFilterRetryCount)),
         prompt: newPrompt,
         filterRetryCount: nextFilterRetryCount,
         ...(!latestGenerationData.originalRetryPrompt ? { originalRetryPrompt: retryPrompt } : {}),

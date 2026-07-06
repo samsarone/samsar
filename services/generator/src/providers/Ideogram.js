@@ -6,10 +6,6 @@ import axios from 'axios';
 import sharp from 'sharp';
 import { getTargetDimensions, getImageSizeForAspectRation, resizeImageToTargetDimensions } from "../utils/ImageUtils.js";
 import { saveRemoteFile } from "../utils/FileUtils.js";
-import {
-  isTerminalProviderFailureStatus,
-  markImageProviderRequestFailed,
-} from '../utils/ImageProviderStatus.js';
 
 import { writeFile, mkdir } from 'fs/promises';
 import path from 'path';
@@ -145,14 +141,6 @@ export async function pollIdeogramRequest(payload) {
 
   const responseStatus = responseStatusData.status;
 
-  if (isTerminalProviderFailureStatus(responseStatus)) {
-    return markImageProviderRequestFailed(
-      ImageGeneration,
-      _id,
-      `FAL ${model || 'image'} request failed with status ${responseStatus}.`
-    );
-  }
-
   if (responseStatus === 'COMPLETED') {
 
     const result = await fal.queue.result(falLink, {
@@ -231,3 +219,4 @@ async function checkIfBlackImage(buffer) {
     throw error;
   }
 }
+

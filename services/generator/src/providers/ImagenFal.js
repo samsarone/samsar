@@ -5,10 +5,6 @@ import ImageGeneration from "../schema/ImageGeneration.js";
 import axios from 'axios';
 import sharp from 'sharp';
 import { saveRemoteFile } from "../utils/FileUtils.js";
-import {
-  isTerminalProviderFailureStatus,
-  markImageProviderRequestFailed,
-} from '../utils/ImageProviderStatus.js';
 
 
 import { writeFile, mkdir } from 'fs/promises';
@@ -133,14 +129,6 @@ export async function pollImagenRequest(payload) {
 
   const responseStatus = responseStatusData.status;
 
-  if (isTerminalProviderFailureStatus(responseStatus)) {
-    return markImageProviderRequestFailed(
-      ImageGeneration,
-      _id,
-      `FAL ${model || 'image'} request failed with status ${responseStatus}.`
-    );
-  }
-
   if (responseStatus === 'COMPLETED') {
 
     try {
@@ -213,6 +201,7 @@ function getImageSizeForAspectRation(aspectRatio) {
     return '9:16';
   }
 }
+
 
 
 

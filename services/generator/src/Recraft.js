@@ -4,10 +4,6 @@ import ImageGeneration from "./schema/ImageGeneration.js";
 import axios from 'axios';
 import { markVideoSessionLayerAsFailed } from './VideoSession.js';
 import { getCanvasDimensionsForAspectRatio } from './utils/CanvasUtils.js';
-import {
-  isTerminalProviderFailureStatus,
-  markImageProviderRequestFailed,
-} from './utils/ImageProviderStatus.js';
 import sharp from 'sharp';
 import { resizeAndSaveRemoteFile } from "./utils/FileUtils.js";
 
@@ -104,14 +100,6 @@ export async function pollRecraftRequest(payload) {
 
   const responseStatus = responseStatusData.status;
 
-  if (isTerminalProviderFailureStatus(responseStatus)) {
-    return markImageProviderRequestFailed(
-      ImageGeneration,
-      _id,
-      `FAL ${model || 'image'} request failed with status ${responseStatus}.`
-    );
-  }
-
   if (responseStatus === 'COMPLETED') {
 
     let result;
@@ -181,6 +169,7 @@ function getImageSizeForAspectRation(aspectRatio) {
     return 'portrait_16_9';
   }
 }
+
 
 
 

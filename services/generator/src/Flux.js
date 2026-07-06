@@ -5,10 +5,6 @@ import ImageGeneration from "./schema/ImageGeneration.js";
 import axios from 'axios';
 import sharp from 'sharp';
 import { markVideoSessionLayerAsFailed } from './VideoSession.js';
-import {
-  isTerminalProviderFailureStatus,
-  markImageProviderRequestFailed,
-} from './utils/ImageProviderStatus.js';
 
 import { saveRemoteFile } from "./utils/FileUtils.js";
 import { writeFile, mkdir } from 'fs/promises';
@@ -143,14 +139,6 @@ export async function pollFluxRequest(payload) {
   }
 
   const responseStatus = responseStatusData.status;
-  if (isTerminalProviderFailureStatus(responseStatus)) {
-    return markImageProviderRequestFailed(
-      ImageGeneration,
-      _id,
-      `FAL ${model || 'image'} request failed with status ${responseStatus}.`
-    );
-  }
-
   if (responseStatus === 'COMPLETED') {
 
     const result = await fal.queue.result(falLink, {

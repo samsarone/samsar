@@ -311,7 +311,7 @@ External IP access is not enabled by default. Keep the Docker stack on localhost
 
 If you expose Studio, the processor API, media gateway, setup wizard, MinIO, or Grafana through a public IP, DNS record, reverse proxy, or tunnel, set a strong setup/admin password first and restrict access with HTTPS, firewall rules, and authentication. Public exposure can allow others to use your configured provider keys and generation credits.
 
-For custom enterprise deployments behind a VPS, private network, or managed ingress, contact `help@samsar.one`.
+For custom enterprise deployments behind a VPS, private network, or managed ingress, contact `hello@samsar.one`.
 
 ## Kubernetes
 
