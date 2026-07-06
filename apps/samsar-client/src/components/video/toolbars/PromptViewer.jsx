@@ -1,9 +1,11 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import SecondaryButton from '../../common/SecondaryButton.tsx';
 import TextareaAutosize from 'react-textarea-autosize';
 import { IMAGE_MODEL_PRICES } from '../../../constants/ModelPrices.jsx';
 import { IMAGE_GENERAITON_MODEL_TYPES } from "../../../constants/Types.ts";
 import { useColorMode } from '../../../contexts/ColorMode.jsx';
+import { useDeploymentModelAvailability } from '../../../hooks/useDeploymentModelAvailability.js';
+import { filterOptionsForDeploymentModelValues } from '../../../utils/deploymentProviders.js';
 
 export default function PromptViewer(props) {
   const {
@@ -23,25 +25,41 @@ export default function PromptViewer(props) {
   // Selected image style, if the model supports it
   const [selectedImageStyle, setSelectedImageStyle] = useState(null);
   const { colorMode } = useColorMode();
+  const {
+    isDockerInstall: isDockerModelFilteringEnabled,
+    imageModelValues,
+  } = useDeploymentModelAvailability();
+  const availableImageModels = useMemo(
+    () => (
+      isDockerModelFilteringEnabled
+        ? filterOptionsForDeploymentModelValues(IMAGE_GENERAITON_MODEL_TYPES, imageModelValues, (model) => model.key)
+        : IMAGE_GENERAITON_MODEL_TYPES
+    ),
+    [imageModelValues, isDockerModelFilteringEnabled]
+  );
 
   // ─────────────────────────────────────────────────────────
   //  On mount, try to load default model from localStorage
   // ─────────────────────────────────────────────────────────
   useEffect(() => {
     const storageModel = localStorage.getItem('defaultImageModel');
-    if (storageModel && IMAGE_GENERAITON_MODEL_TYPES.some((model) => model.key === storageModel)) {
+    if (storageModel && availableImageModels.some((model) => model.key === storageModel)) {
       setSelectedModel(storageModel);
+      return;
     }
-  }, []);
+    if (!availableImageModels.some((model) => model.key === selectedModel) && availableImageModels[0]?.key) {
+      setSelectedModel(availableImageModels[0].key);
+    }
+  }, [availableImageModels, selectedModel]);
 
   // ─────────────────────────────────────────────────────────
   //  Whenever the selected model changes, see if it has imageStyles.
   //  If it does, load from localStorage or default to the first style.
   // ─────────────────────────────────────────────────────────
   useEffect(() => {
-    const modelDef = IMAGE_GENERAITON_MODEL_TYPES.find((m) => m.key === selectedModel);
+    const modelDef = availableImageModels.find((m) => m.key === selectedModel);
     if (!modelDef) {
-      const fallbackModel = IMAGE_GENERAITON_MODEL_TYPES[0]?.key;
+      const fallbackModel = availableImageModels[0]?.key;
       if (fallbackModel) {
         setSelectedModel(fallbackModel);
         localStorage.setItem('defaultImageModel', fallbackModel);
@@ -64,7 +82,7 @@ export default function PromptViewer(props) {
       // This model doesn't have an imageStyles array
       setSelectedImageStyle(null);
     }
-  }, [selectedModel]);
+  }, [availableImageModels, selectedModel]);
 
   // ─────────────────────────────────────────────────────────
   //  Handle changes
@@ -90,6 +108,8 @@ export default function PromptViewer(props) {
   //  Submitting (Regenerate)
   // ─────────────────────────────────────────────────────────
   const handleSubmit = () => {
+    if (!availableImageModels.some((model) => model.key === selectedModel)) return;
+
     const payload = {
       prompt: promptText,
       model: selectedModel,
@@ -98,7 +118,7 @@ export default function PromptViewer(props) {
     };
 
     // If model supports imageStyles, attach the user’s chosen style
-    const modelDef = IMAGE_GENERAITON_MODEL_TYPES.find((m) => m.key === selectedModel);
+    const modelDef = availableImageModels.find((m) => m.key === selectedModel);
     if (modelDef?.imageStyles?.length && selectedImageStyle) {
       payload.imageStyle = selectedImageStyle;
     }
@@ -124,7 +144,7 @@ export default function PromptViewer(props) {
     : 'border-slate-200 bg-white text-slate-900 placeholder:text-slate-400';
 
   // Build the model dropdown
-  const modelOptionMap = IMAGE_GENERAITON_MODEL_TYPES.map((model) => (
+  const modelOptionMap = availableImageModels.map((model) => (
     <option key={model.key} value={model.key}>
       {model.name}
     </option>
@@ -164,7 +184,7 @@ export default function PromptViewer(props) {
 
       {/* ───────────── Image Style Dropdown (if model has imageStyles) ───────────── */}
       {(() => {
-        const modelDef = IMAGE_GENERAITON_MODEL_TYPES.find((m) => m.key === selectedModel);
+        const modelDef = availableImageModels.find((m) => m.key === selectedModel);
         if (modelDef?.imageStyles?.length) {
           return (
             <div className="flex w-full mt-2 mb-2">

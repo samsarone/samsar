@@ -4,6 +4,8 @@ import { useNavigate } from 'react-router-dom';
 
 import { useUser } from '../../contexts/UserContext.jsx';
 import { getHeaders } from '../../utils/web.jsx';
+import { useDeploymentModelAvailability } from '../../hooks/useDeploymentModelAvailability.js';
+import { filterOptionsForDeploymentModelValues } from '../../utils/deploymentProviders.js';
 
 const PROCESSOR_SERVER = import.meta.env.VITE_PROCESSOR_API || 'http://localhost:3002';
 
@@ -22,6 +24,16 @@ const IMAGE_MODELS = [
   { label: 'Nano Banana 2', value: 'NANOBANANA2' },
   { label: 'NanoBanana Pro', value: 'NANOBANANAPRO' },
   { label: 'Seedream', value: 'SEEDREAM' },
+];
+
+const IMAGE_LIST_VIDEO_MODELS = [
+  { label: 'Veo 3.1', value: 'VEO3.1I2V' },
+  { label: 'Veo 3.1 Fast', value: 'VEO3.1I2VFAST' },
+  { label: 'Nvidia Cosmos 3', value: 'COSMOS3SUPERI2V' },
+  { label: 'Seedance 1.5', value: 'SEEDANCEI2V' },
+  { label: 'Kling Pro', value: 'KLINGIMGTOVID3PRO' },
+  { label: 'RunwayML Gen 4.5', value: 'RUNWAYML' },
+  { label: 'Custom Image to Video', value: 'CUSTOM_IMAGE_TO_VIDEO' },
 ];
 
 const DURATION_OPTIONS = [10, 30, 60, 90, 120];
@@ -78,6 +90,74 @@ export default function ExternalStudioDashboard() {
     enable_subtitles: true,
   });
   const [imageFiles, setImageFiles] = useState([]);
+  const {
+    isDockerInstall: isDockerModelFilteringEnabled,
+    textToVideoImageModelValues,
+    textToVideoVideoModelValues,
+    imageListToVideoImageModelValues,
+    imageListToVideoVideoModelValues,
+  } = useDeploymentModelAvailability();
+  const textVideoModels = useMemo(
+    () => (
+      isDockerModelFilteringEnabled
+        ? filterOptionsForDeploymentModelValues(TEXT_MODELS, textToVideoVideoModelValues)
+        : TEXT_MODELS
+    ),
+    [isDockerModelFilteringEnabled, textToVideoVideoModelValues]
+  );
+  const textImageModels = useMemo(
+    () => (
+      isDockerModelFilteringEnabled
+        ? filterOptionsForDeploymentModelValues(IMAGE_MODELS, textToVideoImageModelValues)
+        : IMAGE_MODELS
+    ),
+    [isDockerModelFilteringEnabled, textToVideoImageModelValues]
+  );
+  const imageListVideoModels = useMemo(
+    () => (
+      isDockerModelFilteringEnabled
+        ? filterOptionsForDeploymentModelValues(IMAGE_LIST_VIDEO_MODELS, imageListToVideoVideoModelValues)
+        : IMAGE_LIST_VIDEO_MODELS
+    ),
+    [imageListToVideoVideoModelValues, isDockerModelFilteringEnabled]
+  );
+  const imageListImageModels = useMemo(
+    () => (
+      isDockerModelFilteringEnabled
+        ? filterOptionsForDeploymentModelValues(IMAGE_MODELS, imageListToVideoImageModelValues)
+        : IMAGE_MODELS
+    ),
+    [imageListToVideoImageModelValues, isDockerModelFilteringEnabled]
+  );
+
+  useEffect(() => {
+    setTextForm((current) => ({
+      ...current,
+      video_model: textVideoModels.some((model) => model.value === current.video_model)
+        ? current.video_model
+        : textVideoModels[0]?.value || '',
+      image_model: textImageModels.some((model) => model.value === current.image_model)
+        ? current.image_model
+        : textImageModels[0]?.value || '',
+    }));
+  }, [textImageModels, textVideoModels]);
+
+  useEffect(() => {
+    setImageForm((current) => ({
+      ...current,
+      video_model: imageListVideoModels.some((model) => model.value === current.video_model)
+        ? current.video_model
+        : imageListVideoModels[0]?.value || '',
+      image_model: imageListImageModels.some((model) => model.value === current.image_model)
+        ? current.image_model
+        : imageListImageModels[0]?.value || '',
+    }));
+  }, [imageListImageModels, imageListVideoModels]);
+
+  const isTextVideoModelAvailable = textVideoModels.some((model) => model.value === textForm.video_model);
+  const isTextImageModelAvailable = textImageModels.some((model) => model.value === textForm.image_model);
+  const isImageListVideoModelAvailable = imageListVideoModels.some((model) => model.value === imageForm.video_model);
+  const isImageListImageModelAvailable = imageListImageModels.some((model) => model.value === imageForm.image_model);
 
   const pendingRequests = useMemo(
     () => requests.filter((item) => !['COMPLETED', 'FAILED', 'CANCELLED', 'ARCHIVED'].includes(item.status)),
@@ -202,6 +282,10 @@ export default function ExternalStudioDashboard() {
 
   async function handleSubmitText() {
     try {
+      if (!isTextVideoModelAvailable || !isTextImageModelAvailable) {
+        throw new Error('Selected text-to-video model is not available for this configuration.');
+      }
+
       setSubmittingMode('text');
       setNotice(null);
       await callExternalApi({
@@ -234,6 +318,9 @@ export default function ExternalStudioDashboard() {
     try {
       if (!imageFiles.length) {
         throw new Error('Add at least one image.');
+      }
+      if (!isImageListVideoModelAvailable || !isImageListImageModelAvailable) {
+        throw new Error('Selected image-list-to-video model is not available for this configuration.');
       }
 
       setSubmittingMode('image');
@@ -402,7 +489,7 @@ export default function ExternalStudioDashboard() {
                     onChange={(event) => setTextForm((current) => ({ ...current, video_model: event.target.value }))}
                     className="rounded-2xl border border-white/10 bg-[#0c1528] px-4 py-3 text-sm text-white"
                   >
-                    {TEXT_MODELS.map((model) => (
+                    {textVideoModels.map((model) => (
                       <option key={model.value} value={model.value}>{model.label}</option>
                     ))}
                   </select>
@@ -411,7 +498,7 @@ export default function ExternalStudioDashboard() {
                     onChange={(event) => setTextForm((current) => ({ ...current, image_model: event.target.value }))}
                     className="rounded-2xl border border-white/10 bg-[#0c1528] px-4 py-3 text-sm text-white"
                   >
-                    {IMAGE_MODELS.map((model) => (
+                    {textImageModels.map((model) => (
                       <option key={model.value} value={model.value}>{model.label}</option>
                     ))}
                   </select>
@@ -438,7 +525,7 @@ export default function ExternalStudioDashboard() {
                 <button
                   type="button"
                   onClick={() => void handleSubmitText()}
-                  disabled={submittingMode === 'text' || !textForm.prompt.trim()}
+                  disabled={submittingMode === 'text' || !textForm.prompt.trim() || !isTextVideoModelAvailable || !isTextImageModelAvailable}
                   className="rounded-full bg-emerald-400 px-5 py-3 text-sm font-semibold text-slate-950 disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {submittingMode === 'text' ? 'Submitting…' : 'Generate text video'}
@@ -471,20 +558,16 @@ export default function ExternalStudioDashboard() {
                     onChange={(event) => setImageForm((current) => ({ ...current, video_model: event.target.value }))}
                     className="rounded-2xl border border-white/10 bg-[#0c1528] px-4 py-3 text-sm text-white"
                   >
-                    <option value="VEO3.1I2V">Veo 3.1</option>
-                    <option value="VEO3.1I2VFAST">Veo 3.1 Fast</option>
-                    <option value="COSMOS3SUPERI2V">Nvidia Cosmos 3</option>
-                    <option value="SEEDANCEI2V">Seedance 1.5</option>
-                    <option value="KLINGIMGTOVID3PRO">Kling Pro</option>
-                    <option value="RUNWAYML">RunwayML Gen 4.5</option>
-                    <option value="CUSTOM_IMAGE_TO_VIDEO">Custom Image to Video</option>
+                    {imageListVideoModels.map((model) => (
+                      <option key={model.value} value={model.value}>{model.label}</option>
+                    ))}
                   </select>
                   <select
                     value={imageForm.image_model}
                     onChange={(event) => setImageForm((current) => ({ ...current, image_model: event.target.value }))}
                     className="rounded-2xl border border-white/10 bg-[#0c1528] px-4 py-3 text-sm text-white"
                   >
-                    {IMAGE_MODELS.map((model) => (
+                    {imageListImageModels.map((model) => (
                       <option key={model.value} value={model.value}>{model.label}</option>
                     ))}
                   </select>
@@ -511,7 +594,7 @@ export default function ExternalStudioDashboard() {
                 <button
                   type="button"
                   onClick={() => void handleSubmitImageList()}
-                  disabled={submittingMode === 'image' || imageFiles.length === 0}
+                  disabled={submittingMode === 'image' || imageFiles.length === 0 || !isImageListVideoModelAvailable || !isImageListImageModelAvailable}
                   className="rounded-full bg-emerald-400 px-5 py-3 text-sm font-semibold text-slate-950 disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {submittingMode === 'image' ? 'Submitting…' : 'Generate image-list video'}

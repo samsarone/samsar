@@ -1,4 +1,4 @@
-
+import { useEffect, useMemo } from "react";
 import CommonButton from "../../common/CommonButton.tsx";
 import { IMAGE_EDIT_MODEL_TYPES } from "../../../constants/Types.ts";
 import { useColorMode } from "../../../contexts/ColorMode.jsx";
@@ -6,6 +6,8 @@ import RangeSlider from '../../editor/utils/RangeSlider.jsx';
 import AutoExpandableTextarea from "../../common/AutoExpandableTextarea.jsx";
 import ImagePayloadAspectRatioSelector from "../../image/ImagePayloadAspectRatioSelector.jsx";
 import { imageAspectRatioOptions } from "../../../constants/ImageAspectRatios.js";
+import { useDeploymentModelAvailability } from "../../../hooks/useDeploymentModelAvailability.js";
+import { filterOptionsForDeploymentModelValues } from "../../../utils/deploymentProviders.js";
 
 export default function ImageEditGenerator(props) {
   const { promptText, setPromptText, submitOutpaintRequest,
@@ -23,13 +25,29 @@ export default function ImageEditGenerator(props) {
   const isImageStudio = sizeVariant === "imageStudio";
   const isSidebarCollapsed = sizeVariant === "sidebarCollapsed";
   const isSidebarExpanded = sizeVariant === "sidebarExpanded";
+  const {
+    isDockerInstall: isDockerModelFilteringEnabled,
+    imageEditModelValues,
+  } = useDeploymentModelAvailability();
+  const availableEditModels = useMemo(
+    () => (
+      isDockerModelFilteringEnabled
+        ? filterOptionsForDeploymentModelValues(IMAGE_EDIT_MODEL_TYPES, imageEditModelValues, (model) => model.key)
+        : IMAGE_EDIT_MODEL_TYPES
+    ),
+    [imageEditModelValues, isDockerModelFilteringEnabled]
+  );
 
+  useEffect(() => {
+    if (!availableEditModels.length) return;
+    if (availableEditModels.some((model) => model.key === selectedEditModel)) return;
+    setSelectedEditModel(availableEditModels[0].key);
+  }, [availableEditModels, selectedEditModel, setSelectedEditModel]);
+  const hasAvailableSelectedEditModel = availableEditModels.some((model) => model.key === selectedEditModel);
 
-
-
-  const modelOptionMap = IMAGE_EDIT_MODEL_TYPES.map((model) => {
+  const modelOptionMap = availableEditModels.map((model) => {
     return (
-      <option key={model.key} value={model.key} selected={model.key === selectedEditModel}>
+      <option key={model.key} value={model.key}>
         {model.name}
       </option>
     )
@@ -122,7 +140,7 @@ export default function ImageEditGenerator(props) {
 
 
 
-  if (selectedEditModelValue.isPromptEnabled) {
+  if (selectedEditModelValue?.isPromptEnabled) {
     promptTextArea = (
       <AutoExpandableTextarea
         name="promptText"
@@ -175,7 +193,7 @@ export default function ImageEditGenerator(props) {
 
         {promptTextArea}
         <div className={isImageStudio ? "pt-3 text-center" : isSidebarExpanded ? "pt-4 flex justify-end" : isSidebarCollapsed ? "pt-3" : "text-center"}>
-          <CommonButton type="submit" isPending={isOutpaintPending} extraClasses={buttonExtraClass}>
+          <CommonButton type="submit" isPending={isOutpaintPending} isDisabled={!hasAvailableSelectedEditModel} extraClasses={buttonExtraClass}>
             Submit
           </CommonButton>
         </div>

@@ -66,7 +66,12 @@ import {
 import { SUPPORTED_LANGUAGES, resolveLanguageCode } from '../../constants/supportedLanguages.js';
 import { getHeaders } from '../../utils/web.jsx';
 import { getSessionType } from '../../utils/environment.jsx';
+import {
+  filterOptionsForDeploymentModelValues,
+  normalizeDeploymentModelValue,
+} from '../../utils/deploymentProviders.js';
 import useRealtimeTranscription from '../../hooks/useRealtimeTranscription.js';
+import { useDeploymentModelAvailability } from '../../hooks/useDeploymentModelAvailability.js';
 import { useInferenceModelAvailability } from '../../hooks/useInferenceModelAvailability.js';
 
 import 'ace-builds/src-noconflict/mode-json';
@@ -1100,7 +1105,7 @@ function imageModelSupportsAspectRatio(modelKey, aspectRatio) {
 }
 
 function getImageCreditsForModel(modelKey, aspectRatio) {
-  const normalizedKey = resolveJsonImageModelAlias(modelKey || 'GPTIMAGE2');
+  const normalizedKey = resolveJsonImageModelAlias(modelKey || '');
   const pricing = IMAGE_MODEL_PRICES.find((model) => model.key === normalizedKey);
   const price =
     pricing?.prices?.find((entry) => entry.aspectRatio === aspectRatio)?.price ??
@@ -1170,7 +1175,7 @@ function buildDefaultJsonModeInput({
 }) {
   const normalizedAspectRatio = aspectRatio === '9:16' ? '9:16' : '16:9';
   const normalizedLanguage = language || 'en';
-  const normalizedVideoModel = videoModel || DEFAULT_VIDEO_GENERATION_MODEL;
+  const normalizedVideoModel = videoModel || '';
 
   if (mode === 'I2V') {
     return JSON.stringify(
@@ -1223,7 +1228,7 @@ function buildDefaultJsonModeInput({
   return JSON.stringify(
     {
       prompt: 'A 30 second launch teaser for a new travel app',
-      image_model: imageModel || 'GPTIMAGE2',
+      image_model: imageModel || '',
       video_model: normalizedVideoModel,
       duration: duration || 30,
       tone: 'grounded',
@@ -1863,9 +1868,27 @@ function validateCommonJsonInput(input, inferenceModelOptions = INFERENCE_MODEL_
   return null;
 }
 
-function validateTextToVideoJsonInput(input, inferenceModelOptions = INFERENCE_MODEL_TYPES) {
+function isModelAllowedByDeployment(modelKey, modelValues = [], isDockerInstall = false) {
+  if (!isDockerInstall) return true;
+  const allowedModels = new Set(modelValues.map(normalizeDeploymentModelValue).filter(Boolean));
+  return allowedModels.has(normalizeDeploymentModelValue(modelKey));
+}
+
+function getConfiguredModelError(fieldName, modelValues = []) {
+  const allowedModels = formatAllowedJsonValues(modelValues);
+  return `JSON input.${fieldName} must be one of the configured Docker models: ${allowedModels || 'none'}.`;
+}
+
+function validateTextToVideoJsonInput(
+  input,
+  inferenceModelOptions = INFERENCE_MODEL_TYPES,
+  deploymentModelAvailability = {}
+) {
   const commonError = validateCommonJsonInput(input, inferenceModelOptions);
   if (commonError) return commonError;
+  const isDockerInstall = deploymentModelAvailability?.isDockerInstall === true;
+  const textToVideoImageModelValues = deploymentModelAvailability?.textToVideoImageModelValues || [];
+  const textToVideoVideoModelValues = deploymentModelAvailability?.textToVideoVideoModelValues || [];
 
   if (typeof input.prompt !== 'string' || input.prompt.trim().length === 0) {
     return 'JSON input.prompt is required for text_to_video.';
@@ -1884,6 +1907,9 @@ function validateTextToVideoJsonInput(input, inferenceModelOptions = INFERENCE_M
   if (!imageModel || !TEXT_TO_VIDEO_IMAGE_MODEL_KEYS.includes(resolvedImageModel)) {
     return `JSON input.image_model must be one of: ${formatAllowedJsonValues(TEXT_TO_VIDEO_IMAGE_MODEL_KEYS)}.`;
   }
+  if (!isModelAllowedByDeployment(resolvedImageModel, textToVideoImageModelValues, isDockerInstall)) {
+    return getConfiguredModelError('image_model', textToVideoImageModelValues);
+  }
   if (imageModel.isExpressModel !== true) {
     return 'JSON input.image_model must be an express model.';
   }
@@ -1899,6 +1925,9 @@ function validateTextToVideoJsonInput(input, inferenceModelOptions = INFERENCE_M
   const videoModel = getJsonModelByKey(VIDEO_GENERATION_MODEL_TYPES, videoModelKey);
   if (!videoModel || !TEXT_TO_VIDEO_VIDEO_MODEL_KEYS.includes(videoModelKey)) {
     return `JSON input.video_model must be one of: ${formatAllowedJsonValues(TEXT_TO_VIDEO_VIDEO_MODEL_KEYS)}.`;
+  }
+  if (!isModelAllowedByDeployment(videoModelKey, textToVideoVideoModelValues, isDockerInstall)) {
+    return getConfiguredModelError('video_model', textToVideoVideoModelValues);
   }
   if (videoModel.isExpressModel !== true) {
     return 'JSON input.video_model must be an express model.';
@@ -1926,9 +1955,15 @@ function validateTextToVideoJsonInput(input, inferenceModelOptions = INFERENCE_M
   return null;
 }
 
-function validateImageListToVideoJsonInput(input, inferenceModelOptions = INFERENCE_MODEL_TYPES) {
+function validateImageListToVideoJsonInput(
+  input,
+  inferenceModelOptions = INFERENCE_MODEL_TYPES,
+  deploymentModelAvailability = {}
+) {
   const commonError = validateCommonJsonInput(input, inferenceModelOptions);
   if (commonError) return commonError;
+  const isDockerInstall = deploymentModelAvailability?.isDockerInstall === true;
+  const imageListToVideoVideoModelValues = deploymentModelAvailability?.imageListToVideoVideoModelValues || [];
 
   if (!Array.isArray(input.image_urls) || input.image_urls.length === 0) {
     return 'JSON input.image_urls must be a non-empty array for image_list_to_video.';
@@ -1955,6 +1990,9 @@ function validateImageListToVideoJsonInput(input, inferenceModelOptions = INFERE
     const videoModel = getJsonModelByKey(VIDEO_GENERATION_MODEL_TYPES, videoModelKey);
     if (!videoModel || !IMAGE_LIST_TO_VIDEO_VIDEO_MODEL_KEYS.includes(videoModelKey)) {
       return `JSON input.video_model must be one of: ${formatAllowedJsonValues(IMAGE_LIST_TO_VIDEO_VIDEO_MODEL_KEYS)}.`;
+    }
+    if (!isModelAllowedByDeployment(videoModelKey, imageListToVideoVideoModelValues, isDockerInstall)) {
+      return getConfiguredModelError('video_model', imageListToVideoVideoModelValues);
     }
     if (!videoModelSupportsAspectRatio(videoModelKey, input.aspect_ratio || '16:9')) {
       return `JSON input.video_model ${videoModelKey} does not support aspect_ratio ${input.aspect_ratio || '16:9'}.`;
@@ -1990,7 +2028,8 @@ function buildJsonModeRequest(
   rawJson,
   currentSessionId,
   selectedMode = 'T2V',
-  inferenceModelOptions = INFERENCE_MODEL_TYPES
+  inferenceModelOptions = INFERENCE_MODEL_TYPES,
+  deploymentModelAvailability = {}
 ) {
   if (!hasTextValue(rawJson)) {
     return { error: 'JSON input is required.' };
@@ -2033,8 +2072,8 @@ function buildJsonModeRequest(
 
   const inputValidationError =
     endpointResult.endpoint === 'image_list_to_video'
-      ? validateImageListToVideoJsonInput(input, inferenceModelOptions)
-      : validateTextToVideoJsonInput(input, inferenceModelOptions);
+      ? validateImageListToVideoJsonInput(input, inferenceModelOptions, deploymentModelAvailability)
+      : validateTextToVideoJsonInput(input, inferenceModelOptions, deploymentModelAvailability);
   if (inputValidationError) {
     return { error: inputValidationError };
   }
@@ -3394,6 +3433,24 @@ export default function OneshotEditor() {
     inferenceModelOptions,
     hasConfiguredInferenceModels,
   } = useInferenceModelAvailability();
+  const {
+    isDockerInstall: isDockerModelFilteringEnabled,
+    isLoading: isDeploymentModelAvailabilityLoading,
+    textToVideoImageModelValues,
+    textToVideoVideoModelValues,
+    imageListToVideoVideoModelValues,
+  } = useDeploymentModelAvailability();
+  const deploymentModelAvailability = useMemo(() => ({
+    isDockerInstall: isDockerModelFilteringEnabled,
+    textToVideoImageModelValues,
+    textToVideoVideoModelValues,
+    imageListToVideoVideoModelValues,
+  }), [
+    imageListToVideoVideoModelValues,
+    isDockerModelFilteringEnabled,
+    textToVideoImageModelValues,
+    textToVideoVideoModelValues,
+  ]);
   const isDockerInferenceUnavailable =
     isDockerInferenceModelFilteringEnabled &&
     (isInferenceModelAvailabilityLoading || !hasConfiguredInferenceModels);
@@ -3496,7 +3553,7 @@ export default function OneshotEditor() {
         .map((model) => [model.key, model])
     );
 
-    return VIDGENIE_IMAGE_MODEL_ORDER
+    const orderedModels = VIDGENIE_IMAGE_MODEL_ORDER
       .map((modelKey) => {
         const model = availableModelMap.get(modelKey);
         if (!model) return null;
@@ -3507,13 +3564,36 @@ export default function OneshotEditor() {
         };
       })
       .filter(Boolean);
-  }, [selectedAspectRatioOption.value]);
+    return isDockerModelFilteringEnabled
+      ? filterOptionsForDeploymentModelValues(orderedModels, textToVideoImageModelValues)
+      : orderedModels;
+  }, [
+    isDockerModelFilteringEnabled,
+    selectedAspectRatioOption.value,
+    textToVideoImageModelValues,
+  ]);
 
   const [selectedImageModel, setSelectedImageModel] = useState(() => {
     const saved = localStorage.getItem('defaultVidGPTImageGenerationModel');
     const found = expressImageModels.find((m) => m.value === saved);
     return found || expressImageModels[0];
   });
+
+  useEffect(() => {
+    if (generationMode !== 'T2V') return;
+
+    setSelectedImageModel((prev) => {
+      if (!expressImageModels.length) return null;
+      if (prev?.value) {
+        const existing = expressImageModels.find((m) => m.value === prev.value);
+        if (existing) return existing;
+      }
+
+      const saved = localStorage.getItem('defaultVidGPTImageGenerationModel');
+      const found = expressImageModels.find((m) => m.value === saved);
+      return found || expressImageModels[0];
+    });
+  }, [expressImageModels, generationMode]);
 
   const [selectedImageStyle, setSelectedImageStyle] = useState(() => {
     const saved = localStorage.getItem('defaultVidGPTImageGenerationModel');
@@ -3556,7 +3636,7 @@ export default function OneshotEditor() {
         .map((model) => [model.key, model])
     );
 
-    return VIDGENIE_VIDEO_MODEL_ORDER
+    const orderedModels = VIDGENIE_VIDEO_MODEL_ORDER
       .map((modelKey) => {
         const model = availableModelMap.get(modelKey);
         if (!model) return null;
@@ -3567,7 +3647,14 @@ export default function OneshotEditor() {
         };
       })
       .filter(Boolean);
-  }, [selectedAspectRatioOption.value]);
+    return isDockerModelFilteringEnabled
+      ? filterOptionsForDeploymentModelValues(orderedModels, textToVideoVideoModelValues)
+      : orderedModels;
+  }, [
+    isDockerModelFilteringEnabled,
+    selectedAspectRatioOption.value,
+    textToVideoVideoModelValues,
+  ]);
 
   const imageListVideoModels = useMemo(() => {
     const availableModelMap = new Map(
@@ -3580,7 +3667,7 @@ export default function OneshotEditor() {
         .map((model) => [model.key, model])
     );
 
-    return VIDGENIE_IMAGE_LIST_VIDEO_MODEL_ORDER
+    const orderedModels = VIDGENIE_IMAGE_LIST_VIDEO_MODEL_ORDER
       .map((modelKey) => {
         const model = availableModelMap.get(modelKey);
         if (!model) return null;
@@ -3591,7 +3678,14 @@ export default function OneshotEditor() {
         };
       })
       .filter(Boolean);
-  }, [selectedAspectRatioOption.value]);
+    return isDockerModelFilteringEnabled
+      ? filterOptionsForDeploymentModelValues(orderedModels, imageListToVideoVideoModelValues)
+      : orderedModels;
+  }, [
+    imageListToVideoVideoModelValues,
+    isDockerModelFilteringEnabled,
+    selectedAspectRatioOption.value,
+  ]);
 
   const [selectedVideoModel, setSelectedVideoModel] = useState(() => {
     const saved = localStorage.getItem(VIDGENIE_TEXT_VIDEO_MODEL_STORAGE_KEY);
@@ -4223,6 +4317,10 @@ export default function OneshotEditor() {
     if (!requestId || !layerId || !prompt?.trim()) {
       return;
     }
+    if (!selectedImageModel?.value) {
+      setErrorMessage({ error: 'Please select an available image model before regenerating this scene.' });
+      return;
+    }
 
     await axios.post(
       `${PROCESSOR_API_URL}/image_sessions/request_generate`,
@@ -4230,7 +4328,7 @@ export default function OneshotEditor() {
         videoSessionId: requestId,
         layerId,
         prompt: prompt.trim(),
-        model: selectedImageModel?.value || 'GPTIMAGE2',
+        model: selectedImageModel.value,
         imageStyle: selectedImageStyle?.value,
         aspectRatio: generationStatusDetails?.session?.aspectRatio || selectedAspectRatioOption?.value || '16:9',
         skipApplyThemeToPrompt: true,
@@ -5035,7 +5133,19 @@ export default function OneshotEditor() {
     }
 
     if (isJsonMode) {
-      const jsonRequest = buildJsonModeRequest(jsonInputText, id, generationMode, inferenceModelOptions);
+      if (isDockerModelFilteringEnabled && isDeploymentModelAvailabilityLoading) {
+        setJsonValidationMessage('Docker model availability is still loading.');
+        setErrorMessage(null);
+        setShowResultDisplay(false);
+        return;
+      }
+      const jsonRequest = buildJsonModeRequest(
+        jsonInputText,
+        id,
+        generationMode,
+        inferenceModelOptions,
+        deploymentModelAvailability
+      );
       if (jsonRequest.error) {
         setJsonValidationMessage(jsonRequest.error);
         setErrorMessage(null);
@@ -5118,6 +5228,14 @@ export default function OneshotEditor() {
     }
     if (!isTextToVideo && invalidImageUrl) {
       setErrorMessage({ error: 'Image URLs must be valid http(s) URLs.' });
+      return;
+    }
+    if (isDockerModelFilteringEnabled && isDeploymentModelAvailabilityLoading) {
+      setErrorMessage({ error: 'Docker model availability is still loading.' });
+      return;
+    }
+    if (isTextToVideo && !selectedImageModel?.value) {
+      setErrorMessage({ error: 'Please select an available image model before submitting.' });
       return;
     }
     if (isTextToVideo && !selectedVideoModel?.value) {
@@ -5671,8 +5789,8 @@ export default function OneshotEditor() {
   const jsonModeDefaultInput = useMemo(() => (
     buildDefaultJsonModeInput({
       mode: generationMode,
-      imageModel: selectedImageModel?.value || 'GPTIMAGE2',
-      videoModel: selectedVideoModel?.value || 'RUNWAYML',
+      imageModel: selectedImageModel?.value || '',
+      videoModel: selectedVideoModel?.value || '',
       duration: selectedDurationOption?.value || 30,
       aspectRatio: selectedAspectRatioOption?.value || '16:9',
       language: resolveLanguageCode(jsonModeLanguageValue, 'en'),
@@ -5702,8 +5820,14 @@ export default function OneshotEditor() {
     if (!isJsonMode) {
       return { error: '' };
     }
-    return buildJsonModeRequest(jsonInputText, id, generationMode);
-  }, [generationMode, id, isJsonMode, jsonInputText]);
+    return buildJsonModeRequest(
+      jsonInputText,
+      id,
+      generationMode,
+      inferenceModelOptions,
+      deploymentModelAvailability
+    );
+  }, [deploymentModelAvailability, generationMode, id, inferenceModelOptions, isJsonMode, jsonInputText]);
 
   useEffect(() => {
     const normalizedJson = jsonModeValidation.normalizedJson;
@@ -5713,14 +5837,28 @@ export default function OneshotEditor() {
 
     const timeoutId = window.setTimeout(() => {
       setJsonInputText((current) => {
-        const currentValidation = buildJsonModeRequest(current, id, generationMode);
+        const currentValidation = buildJsonModeRequest(
+          current,
+          id,
+          generationMode,
+          inferenceModelOptions,
+          deploymentModelAvailability
+        );
         return currentValidation.normalizedJson || current;
       });
       setJsonValidationMessage('');
     }, 600);
 
     return () => window.clearTimeout(timeoutId);
-  }, [generationMode, id, isJsonMode, jsonInputText, jsonModeValidation.normalizedJson]);
+  }, [
+    deploymentModelAvailability,
+    generationMode,
+    id,
+    inferenceModelOptions,
+    isJsonMode,
+    jsonInputText,
+    jsonModeValidation.normalizedJson,
+  ]);
 
   const jsonRequestDisplayText = jsonModeValidation.normalizedJson || jsonInputText;
   const copyJsonRequestToClipboard = useCallback(async () => {
@@ -5823,7 +5961,7 @@ export default function OneshotEditor() {
     sessionDetails?.expressGenerationImageModel ||
     sessionDetails?.imageModel ||
     selectedImageModel?.value ||
-    'GPTIMAGE2';
+    '';
   const rerollEstimateVideoModel =
     rerollCandidateSourceSession?.expressGenerativeVideoModel ||
     rerollCandidateSourceSession?.videoGenerationModel ||
@@ -5832,7 +5970,7 @@ export default function OneshotEditor() {
     sessionDetails?.videoGenerationModel ||
     sessionDetails?.videoModel ||
     selectedVideoModel?.value ||
-    'RUNWAYML';
+    '';
   const rerollEstimateAspectRatio =
     rerollCandidateSourceSession?.aspectRatio ||
     rerollCandidateSourceSession?.aspect_ratio ||

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import CommonButton from "../../../common/CommonButton.tsx";
 import { IMAGE_GENERAITON_MODEL_TYPES } from "../../../../constants/Types.ts";
 import { useColorMode } from "../../../../contexts/ColorMode.jsx";
@@ -6,6 +6,8 @@ import { IMAGE_MODEL_PRICES } from "../../../../constants/ModelPrices.jsx";
 import TextareaAutosize from "react-textarea-autosize";
 import ImagePayloadAspectRatioSelector from "../../../image/ImagePayloadAspectRatioSelector.jsx";
 import { imageAspectRatioOptions } from "../../../../constants/ImageAspectRatios.js";
+import { useDeploymentModelAvailability } from "../../../../hooks/useDeploymentModelAvailability.js";
+import { filterOptionsForDeploymentModelValues } from "../../../../utils/deploymentProviders.js";
 
 import { FaCheck, FaQuestionCircle } from "react-icons/fa";
 import { Tooltip } from "react-tooltip";
@@ -32,6 +34,18 @@ export default function OverlayPromptGenerator(props) {
   const [retryOnFailure, setRetryOnFailure] = useState(false);
   const [isCharacterImage, setIsCharacterImage] = useState(false);
   const [selectedImageStyle, setSelectedImageStyle] = useState(null);
+  const {
+    isDockerInstall: isDockerModelFilteringEnabled,
+    imageModelValues,
+  } = useDeploymentModelAvailability();
+  const availableImageModels = useMemo(
+    () => (
+      isDockerModelFilteringEnabled
+        ? filterOptionsForDeploymentModelValues(IMAGE_GENERAITON_MODEL_TYPES, imageModelValues, (model) => model.key)
+        : IMAGE_GENERAITON_MODEL_TYPES
+    ),
+    [imageModelValues, isDockerModelFilteringEnabled]
+  );
 
   const isPortraitLayout = layoutMode === "portrait";
   const isImageStudioPrompt = editorVariant === "imageStudio";
@@ -104,20 +118,28 @@ export default function OverlayPromptGenerator(props) {
     const storedDefaultModel = localStorage.getItem("defaultModel");
     if (
       storedDefaultModel &&
-      IMAGE_GENERAITON_MODEL_TYPES.some((model) => model.key === storedDefaultModel)
+      availableImageModels.some((model) => model.key === storedDefaultModel)
     ) {
       setSelectedGenerationModel(storedDefaultModel);
+      return;
     }
-  }, [setSelectedGenerationModel]);
+    if (
+      selectedGenerationModel &&
+      !availableImageModels.some((model) => model.key === selectedGenerationModel) &&
+      availableImageModels[0]?.key
+    ) {
+      setSelectedGenerationModel(availableImageModels[0].key);
+    }
+  }, [availableImageModels, selectedGenerationModel, setSelectedGenerationModel]);
 
   useEffect(() => {
     if (!selectedGenerationModel) return;
 
-    const modelDef = IMAGE_GENERAITON_MODEL_TYPES.find(
+    const modelDef = availableImageModels.find(
       (model) => model.key === selectedGenerationModel
     );
     if (!modelDef) {
-      const fallbackModel = IMAGE_GENERAITON_MODEL_TYPES[0]?.key;
+      const fallbackModel = availableImageModels[0]?.key;
       if (fallbackModel) {
         setSelectedGenerationModel(fallbackModel);
         localStorage.setItem("defaultModel", fallbackModel);
@@ -138,7 +160,7 @@ export default function OverlayPromptGenerator(props) {
     } else {
       setSelectedImageStyle(null);
     }
-  }, [selectedGenerationModel, setSelectedGenerationModel]);
+  }, [availableImageModels, selectedGenerationModel, setSelectedGenerationModel]);
 
   const modelPricing = IMAGE_MODEL_PRICES.find(
     (model) => model.key === selectedGenerationModel
@@ -147,7 +169,7 @@ export default function OverlayPromptGenerator(props) {
     ? modelPricing.prices.find((price) => price.aspectRatio === aspectRatio)
     : null;
   const modelPrice = priceObj ? priceObj.price : 0;
-  const selectedModelDefinition = IMAGE_GENERAITON_MODEL_TYPES.find(
+  const selectedModelDefinition = availableImageModels.find(
     (model) => model.key === selectedGenerationModel
   );
 
@@ -165,6 +187,8 @@ export default function OverlayPromptGenerator(props) {
   };
 
   const handleSubmit = () => {
+    if (!availableImageModels.some((model) => model.key === selectedGenerationModel)) return;
+
     const payload = {
       prompt: promptText,
       model: selectedGenerationModel,
@@ -205,7 +229,7 @@ export default function OverlayPromptGenerator(props) {
             className={`${selectShell} min-w-0 flex-1 ${inputPaddingClass}`}
             value={selectedGenerationModel}
           >
-            {IMAGE_GENERAITON_MODEL_TYPES.map((model) => (
+            {availableImageModels.map((model) => (
               <option key={model.key} value={model.key}>
                 {model.name}
               </option>

@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useMemo, useState, useEffect } from "react";
 import CommonButton from "../../common/CommonButton.tsx";
 import {
   IMAGE_GENERAITON_MODEL_TYPES,
@@ -11,6 +11,8 @@ import { Tooltip } from "react-tooltip";
 import AutoExpandableTextarea from "../../common/AutoExpandableTextarea.jsx";
 import ImagePayloadAspectRatioSelector from "../../image/ImagePayloadAspectRatioSelector.jsx";
 import { imageAspectRatioOptions } from "../../../constants/ImageAspectRatios.js";
+import { useDeploymentModelAvailability } from "../../../hooks/useDeploymentModelAvailability.js";
+import { filterOptionsForDeploymentModelValues } from "../../../utils/deploymentProviders.js";
 
 export default function PromptGenerator(props) {
   const {
@@ -32,6 +34,18 @@ export default function PromptGenerator(props) {
   const isImageStudio = sizeVariant === "imageStudio";
   const isSidebarCollapsed = sizeVariant === "sidebarCollapsed";
   const isSidebarExpanded = sizeVariant === "sidebarExpanded";
+  const {
+    isDockerInstall: isDockerModelFilteringEnabled,
+    imageModelValues,
+  } = useDeploymentModelAvailability();
+  const availableImageModels = useMemo(
+    () => (
+      isDockerModelFilteringEnabled
+        ? filterOptionsForDeploymentModelValues(IMAGE_GENERAITON_MODEL_TYPES, imageModelValues, (model) => model.key)
+        : IMAGE_GENERAITON_MODEL_TYPES
+    ),
+    [imageModelValues, isDockerModelFilteringEnabled]
+  );
 
 
   // Whether to retry if generation fails:
@@ -50,11 +64,11 @@ export default function PromptGenerator(props) {
     if (!selectedGenerationModel) return;
 
     // Find the model definition from IMAGE_GENERAITON_MODEL_TYPES
-    const modelDefinition = IMAGE_GENERAITON_MODEL_TYPES.find(
+    const modelDefinition = availableImageModels.find(
       (m) => m.key === selectedGenerationModel
     );
     if (!modelDefinition) {
-      const fallbackModel = IMAGE_GENERAITON_MODEL_TYPES[0]?.key;
+      const fallbackModel = availableImageModels[0]?.key;
       if (fallbackModel) {
         setSelectedGenerationModel(fallbackModel);
         localStorage.setItem("defaultImageModel", fallbackModel);
@@ -80,7 +94,7 @@ export default function PromptGenerator(props) {
       // This model doesn’t have imageStyles
       setSelectedImageStyle(null);
     }
-  }, [selectedGenerationModel, setSelectedGenerationModel]);
+  }, [availableImageModels, selectedGenerationModel, setSelectedGenerationModel]);
 
   // ------------------------------------------------------------------
   // UI style helpers
@@ -169,6 +183,8 @@ export default function PromptGenerator(props) {
   // On “Submit” click, build the payload and call `submitGenerateNewRequest`
   // ------------------------------------------------------------------
   const handleSubmit = () => {
+    if (!availableImageModels.some((model) => model.key === selectedGenerationModel)) return;
+
     const payload = {
       prompt: promptText,
       model: selectedGenerationModel,
@@ -177,7 +193,7 @@ export default function PromptGenerator(props) {
       aspectRatio,
     };
     // If the selected model has an imageStyles array, include imageStyle
-    const modelDefinition = IMAGE_GENERAITON_MODEL_TYPES.find(
+    const modelDefinition = availableImageModels.find(
       (m) => m.key === selectedGenerationModel
     );
     if (modelDefinition?.imageStyles?.length && selectedImageStyle) {
@@ -215,7 +231,7 @@ export default function PromptGenerator(props) {
             className={selectClass}
             value={selectedGenerationModel}
           >
-            {IMAGE_GENERAITON_MODEL_TYPES.map((model) => (
+            {availableImageModels.map((model) => (
               <option key={model.key} value={model.key}>
                 {model.name}
               </option>
@@ -228,7 +244,7 @@ export default function PromptGenerator(props) {
       {showModelSelector &&
         (() => {
           // Check if currently selected model has imageStyles
-          const modelDef = IMAGE_GENERAITON_MODEL_TYPES.find(
+          const modelDef = availableImageModels.find(
             (m) => m.key === selectedGenerationModel
           );
           if (modelDef?.imageStyles?.length) {
@@ -324,9 +340,9 @@ export default function PromptGenerator(props) {
 
       {/* ------------------ Submit Button ------------------ */}
       <div className={buttonContainerClass}>
-        <CommonButton onClick={handleSubmit} isPending={isGenerationPending} extraClasses={buttonExtraClass}>
-          Submit
-        </CommonButton>
+          <CommonButton onClick={handleSubmit} isPending={isGenerationPending} extraClasses={buttonExtraClass}>
+            Submit
+          </CommonButton>
       </div>
 
       {errorDisplay}

@@ -15,6 +15,8 @@ import {
   formatVideoDurationLabel,
   getVideoModelDurationUnitsForFramesPerSecond,
 } from "../../../constants/ModelPrices.jsx";
+import { useDeploymentModelAvailability } from "../../../hooks/useDeploymentModelAvailability.js";
+import { filterOptionsForDeploymentModelValues } from "../../../utils/deploymentProviders.js";
 
 const NATIVE_AUDIO_VIDEO_MODELS = new Set([
   "KLINGIMGTOVID3PRO",
@@ -76,14 +78,29 @@ export default function VideoPromptGenerator(props) {
 
   const {
     hasImageItem,
-    availableModels,
-    availableModelKeys,
-    availableModelKeysSignature,
+    availableModels: locallyAvailableModels,
   } = getVideoGenerationModelDropdownData({
     activeItemList,
     currentLayer,
     sessionDetails,
   });
+  const {
+    isDockerInstall: isDockerModelFilteringEnabled,
+    videoModelValues,
+  } = useDeploymentModelAvailability();
+  const availableModels = useMemo(
+    () => (
+      isDockerModelFilteringEnabled
+        ? filterOptionsForDeploymentModelValues(locallyAvailableModels, videoModelValues, (model) => model.key)
+        : locallyAvailableModels
+    ),
+    [isDockerModelFilteringEnabled, locallyAvailableModels, videoModelValues]
+  );
+  const availableModelKeys = useMemo(
+    () => availableModels.map((model) => model.key),
+    [availableModels]
+  );
+  const availableModelKeysSignature = availableModelKeys.join("|");
 
   const modelOptionMap = availableModels.map((model) => (
     <option key={model.key} value={model.key}>

@@ -54,7 +54,7 @@ import {
   normalizeOutroCtaImageFromPayload,
   normalizeOutroCtaImageTextFieldsFromPayload,
 } from '../../utils/OutroCtaImagePayload.js';
-import { IMAGE_MODEL_PRICES, VIDEO_MODEL_PRICES } from '../../consts/ModelPrices.js';
+import { IMAGE_EDIT_MODEL_PRICES, IMAGE_MODEL_PRICES, VIDEO_MODEL_PRICES } from '../../consts/ModelPrices.js';
 import {
   IMAGE_LIST_TO_VIDEO_IMAGE_MODEL_KEYS,
   IMAGE_LIST_TO_VIDEO_VIDEO_MODEL_KEYS,
@@ -482,6 +482,35 @@ function getExpressModels(modelPrices = [], allowedKeys = []) {
   return Array.from(modelMap.values());
 }
 
+function getPricedModels(modelPrices = [], allowedKeys = []) {
+  const modelMap = new Map();
+
+  for (const model of modelPrices) {
+    const key = typeof model?.key === 'string' ? model.key.trim() : '';
+    if (!key || modelMap.has(key)) {
+      continue;
+    }
+    const label = typeof model?.name === 'string' && model.name.trim()
+      ? model.name.trim()
+      : typeof model?.label === 'string' && model.label.trim()
+        ? model.label.trim()
+        : key;
+    modelMap.set(key, {
+      label,
+      value: key,
+      basePrice: resolveBasePrice(model?.prices),
+    });
+  }
+
+  if (Array.isArray(allowedKeys) && allowedKeys.length > 0) {
+    return allowedKeys
+      .map((key) => modelMap.get(key))
+      .filter(Boolean);
+  }
+
+  return Array.from(modelMap.values());
+}
+
 async function validateAPIKeyAndUserId(req, res, next) {
   try {
     const authContext = await resolveRequestActorFromAuthHeaders(req.headers);
@@ -564,12 +593,18 @@ router.get('/supported_models', function (req, res) {
         deploymentAvailableModels,
       ),
     };
+    const imageEditModels = filterModelsForDeploymentAvailability(
+      getPricedModels(IMAGE_EDIT_MODEL_PRICES),
+      deploymentAvailableModels,
+    );
 
     return res.status(200).json({
       IMAGE_MODELS: textToVideoModels.image_models,
+      IMAGE_EDIT_MODELS: imageEditModels,
       VIDEO_MODELS: textToVideoModels.video_models,
       text_to_video: textToVideoModels,
       image_list_to_video: imageListToVideoModels,
+      image_edit_models: imageEditModels,
       deployment: deploymentAvailability,
       available: deploymentAvailability,
       available_providers: deploymentAvailability.providers,

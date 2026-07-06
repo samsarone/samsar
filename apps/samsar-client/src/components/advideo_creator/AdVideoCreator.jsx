@@ -21,6 +21,8 @@ import {
 import ProgressIndicator from '../oneshot_editor/ProgressIndicator.jsx';
 import AssistantHome from '../assistant/AssistantHome.jsx';
 import { IMAGE_MODEL_PRICES } from '../../constants/ModelPrices.jsx';
+import { useDeploymentModelAvailability } from '../../hooks/useDeploymentModelAvailability.js';
+import { filterOptionsForDeploymentModelValues } from '../../utils/deploymentProviders.js';
 
 const API_SERVER = import.meta.env.VITE_PROCESSOR_API;
 
@@ -117,24 +119,39 @@ export default function AdVideoCreator() {
   });
 
   // Filter out “Express” image models
-  let expressImageModels = IMAGE_GENERAITON_MODEL_TYPES
-    .filter((m) => {
-      const modelExistsInPricing = IMAGE_MODEL_PRICES.find(
-        (imp) => imp.key.toLowerCase() === m.key.toLowerCase()
-      );
-      if (!modelExistsInPricing) return false;
+  const {
+    isDockerInstall: isDockerModelFilteringEnabled,
+    textToVideoImageModelValues,
+    textToVideoVideoModelValues,
+  } = useDeploymentModelAvailability();
+  const expressImageModels = useMemo(() => {
+    const models = IMAGE_GENERAITON_MODEL_TYPES
+      .filter((m) => {
+        const modelExistsInPricing = IMAGE_MODEL_PRICES.find(
+          (imp) => imp.key.toLowerCase() === m.key.toLowerCase()
+        );
+        if (!modelExistsInPricing) return false;
 
-      const modelPricing = modelExistsInPricing?.prices || [];
-      const modelHasAspectRatio = modelPricing.find(
-        (p) => p.aspectRatio === selectedAspectRatioOption.value
-      );
-      // Keep only "express" and ensure it has pricing for the chosen aspect
-      return m.isExpressModel && modelHasAspectRatio;
-    })
-    .map((m) => ({ label: m.name, value: m.key }));
+        const modelPricing = modelExistsInPricing?.prices || [];
+        const modelHasAspectRatio = modelPricing.find(
+          (p) => p.aspectRatio === selectedAspectRatioOption.value
+        );
+        // Keep only "express" and ensure it has pricing for the chosen aspect
+        return m.isExpressModel && modelHasAspectRatio;
+      })
+      .map((m) => ({ label: m.name, value: m.key }));
+
+    return isDockerModelFilteringEnabled
+      ? filterOptionsForDeploymentModelValues(models, textToVideoImageModelValues)
+      : models;
+  }, [
+    isDockerModelFilteringEnabled,
+    selectedAspectRatioOption.value,
+    textToVideoImageModelValues,
+  ]);
 
   const expressVideoModels = useMemo(() => {
-    return VIDEO_GENERATION_MODEL_TYPES
+    const models = VIDEO_GENERATION_MODEL_TYPES
       .filter(
         (m) =>
           m.isExpressModel &&
@@ -146,7 +163,14 @@ export default function AdVideoCreator() {
         // Keep entire object so we can access modelSubTypes, etc.:
         ...m,
       }));
-  }, [selectedAspectRatioOption]);
+    return isDockerModelFilteringEnabled
+      ? filterOptionsForDeploymentModelValues(models, textToVideoVideoModelValues)
+      : models;
+  }, [
+    isDockerModelFilteringEnabled,
+    selectedAspectRatioOption,
+    textToVideoVideoModelValues,
+  ]);
 
   // Duration options
   const durationOptions = [
@@ -157,18 +181,42 @@ export default function AdVideoCreator() {
   ];
 
   // Track the selected IMAGE model
-  const [selectedImageModel] = useState(() => {
+  const [selectedImageModel, setSelectedImageModel] = useState(() => {
     const saved = localStorage.getItem('defaultVidGPTImageGenerationModel');
     const found = expressImageModels.find((m) => m.value === saved);
     return found || expressImageModels[0];
   });
+  useEffect(() => {
+    setSelectedImageModel((prev) => {
+      if (!expressImageModels.length) return null;
+      if (prev?.value) {
+        const existing = expressImageModels.find((m) => m.value === prev.value);
+        if (existing) return existing;
+      }
+      const saved = localStorage.getItem('defaultVidGPTImageGenerationModel');
+      const found = expressImageModels.find((m) => m.value === saved);
+      return found || expressImageModels[0];
+    });
+  }, [expressImageModels]);
 
   // Track the selected VIDEO model
-  const [selectedVideoModel] = useState(() => {
+  const [selectedVideoModel, setSelectedVideoModel] = useState(() => {
     const saved = localStorage.getItem('defaultVIdGPTVideoGenerationModel');
     const found = expressVideoModels.find((m) => m.value === saved);
     return found || expressVideoModels[0];
   });
+  useEffect(() => {
+    setSelectedVideoModel((prev) => {
+      if (!expressVideoModels.length) return null;
+      if (prev?.value) {
+        const existing = expressVideoModels.find((m) => m.value === prev.value);
+        if (existing) return existing;
+      }
+      const saved = localStorage.getItem('defaultVIdGPTVideoGenerationModel');
+      const found = expressVideoModels.find((m) => m.value === saved);
+      return found || expressVideoModels[0];
+    });
+  }, [expressVideoModels]);
 
   const [selectedDurationOption, setSelectedDurationOption] = useState(() => {
     const saved = localStorage.getItem('defaultVidGPTDuration');
@@ -446,6 +494,10 @@ export default function AdVideoCreator() {
       return;
     }
     if (!id) return;
+    if (!selectedImageModel?.value || !selectedVideoModel?.value) {
+      setErrorMessage({ error: 'No configured Docker model is available for ad video generation.' });
+      return;
+    }
 
     setErrorMessage(null);
     setIsSubmitting(true);
@@ -458,8 +510,8 @@ export default function AdVideoCreator() {
       prompt: promptText,
       sessionID: id,
       aspectRatio: selectedAspectRatioOption?.value,
-      imageModel: 'GPTIMAGE2',
-      videoGenerationModel: 'SEEDANCEI2V',
+      imageModel: selectedImageModel.value,
+      videoGenerationModel: selectedVideoModel.value,
       duration: selectedDurationOption?.value,
       // <-- Pass all Base64 images here
       startImages: uploadedImageDataUrls,
