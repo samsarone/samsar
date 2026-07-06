@@ -158,6 +158,10 @@ test('renders footer QR scene frames, generated outro layer, and final video wit
 
   const tileItems = outroActiveItems.filter((item) => item.isGeneratedOutroTile === true);
   assert.equal(tileItems.length, result.generatedOutro.tileCount);
+  assert.ok(
+    tileItems.every((item) => item.sourceImageUrl === undefined),
+    'generated outro tile layer items should not persist original source URLs or data URLs',
+  );
 
   const fadeItem = outroActiveItems.find((item) => item.type === 'shape');
   assert.ok(fadeItem, 'generated outro should include a fade overlay shape');
@@ -357,5 +361,33 @@ test('update generated outro tiles use text-to-video image session stills', asyn
   assert.deepEqual(
     tileInputs.imageListPayload.map((item) => item.image_url),
     [firstImage, secondImage],
+  );
+});
+
+test('update generated outro tiles preserve Docker-local asset references', async () => {
+  const assetsRoot = await fs.promises.mkdtemp('/tmp/samsar-outro-tiles-');
+  const generatedImagePath = path.join(assetsRoot, 'generations', 'scene-1.png');
+  await fs.promises.mkdir(path.dirname(generatedImagePath), { recursive: true });
+  await fs.promises.writeFile(generatedImagePath, Buffer.from('image-bytes'));
+
+  const tileInputs = await collectGeneratedOutroTileInputs({
+    assetsRoot,
+    outroLayerIndex: -1,
+    sessionData: {
+      layers: [
+        {
+          imageSession: {
+            activeItemList: [],
+            activeGeneratedImage: 'assets_v2/generations/scene-1.png',
+          },
+        },
+      ],
+    },
+  });
+
+  assert.deepEqual(tileInputs.imageUrls, ['assets_v2/generations/scene-1.png']);
+  assert.ok(
+    !tileInputs.imageUrls[0].startsWith('data:image'),
+    'Docker-local tile sources should stay as internal asset references',
   );
 });

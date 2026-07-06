@@ -27,26 +27,6 @@ function isImageDataUrl(value) {
   return typeof value === 'string' && /^data:image\/[a-zA-Z0-9.+-]+;base64,/.test(value.trim());
 }
 
-function resolveImageMimeTypeFromExtension(filePath) {
-  const extension = path.extname(filePath || '').toLowerCase();
-  if (extension === '.jpg' || extension === '.jpeg') {
-    return 'image/jpeg';
-  }
-  if (extension === '.webp') {
-    return 'image/webp';
-  }
-  if (extension === '.avif') {
-    return 'image/avif';
-  }
-  if (extension === '.gif') {
-    return 'image/gif';
-  }
-  if (extension === '.tif' || extension === '.tiff') {
-    return 'image/tiff';
-  }
-  return 'image/png';
-}
-
 function normalizeLocalAssetCandidate(value) {
   if (typeof value !== 'string' || !value.trim()) {
     return null;
@@ -62,7 +42,7 @@ function normalizeLocalAssetCandidate(value) {
   return normalized;
 }
 
-async function localAssetToDataUrl(value, assetsRoot) {
+async function localAssetToReference(value, assetsRoot) {
   const normalized = normalizeLocalAssetCandidate(value);
   if (!normalized) {
     return null;
@@ -74,9 +54,7 @@ async function localAssetToDataUrl(value, assetsRoot) {
     return null;
   }
 
-  const buffer = await fsExtra.readFile(filePath);
-  const mimeType = resolveImageMimeTypeFromExtension(filePath);
-  return `data:${mimeType};base64,${buffer.toString('base64')}`;
+  return value;
 }
 
 function shouldSkipOutroTileSource(value) {
@@ -127,9 +105,9 @@ async function resolveOutroTileSourceValue(value, assetsRoot, options = {}) {
     if (candidate.startsWith('data:image') || isHttpUrl(candidate)) {
       return candidate;
     }
-    const localDataUrl = await localAssetToDataUrl(candidate, assetsRoot);
-    if (localDataUrl) {
-      return localDataUrl;
+    const localReference = await localAssetToReference(candidate, assetsRoot);
+    if (localReference) {
+      return localReference;
     }
   }
   return null;

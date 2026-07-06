@@ -329,7 +329,6 @@ export function createGeneratedOutroTileItems({
     width: tile.width,
     height: tile.height,
     src: tile.src,
-    sourceImageUrl: tile.sourceImageUrl,
     is_base_image: false,
     isGeneratedOutroTile: true,
     animations: [],
