@@ -28,7 +28,11 @@ import path from 'path';
 import sharp from 'sharp';
 import { stripSoundEffectsFromMovieResourceList } from './SanitizeMovieResourceList.js';
 import { resolveEffectiveOutroFocusAreaForImageListToVideo } from './OutroFocusAreaResolver.js';
-import { createOutroCtaTextItems, createOutroFadeOverlayItem } from './OutroLayerItems.js';
+import {
+  createGeneratedOutroTileItems,
+  createOutroCtaTextItems,
+  createOutroFadeOverlayItem,
+} from './OutroLayerItems.js';
 import { generateOutroCompositionAssetsFromImageList } from '../../api/OutroImageGenerationAPI.js';
 import {
   buildOutroImageMetadata,
@@ -1046,6 +1050,11 @@ export async function requestImageListToVideGeneration(userId, payload) {
         is_base_image: true,
         animations: [],
       }];
+
+      outroActiveItemList.push(...createGeneratedOutroTileItems({
+        generatedOutroComposition,
+        startIndex: outroActiveItemList.length,
+      }));
 
       outroActiveItemList.push(createOutroFadeOverlayItem({
         id: `item_${outroActiveItemList.length}`,

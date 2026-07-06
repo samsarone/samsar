@@ -15,10 +15,13 @@ import VideoSession from '../../schema/VideoSession.js';
 import FrameGeneration from '../../schema/FrameGeneration.js';
 import { getCanvasDimensionsForAspectRatio } from '../../utils/CanvasUtils.js';
 import { getFramesPerSecondFromValue } from '../../utils/FpsUtils.js';
+import { readLocalMediaBufferIfAvailable } from '../../utils/LocalMediaAsset.js';
 import {
   generateOutroCompositionAssetsFromImageList,
 } from './OutroImageGenerationAPI.js';
+import { collectGeneratedOutroTileInputs } from './OutroTileInputCollector.js';
 import {
+  createGeneratedOutroTileItems,
   createOutroCtaTextItems,
   createOutroFadeOverlayItem,
 } from '../movie_session/image_list_to_video/OutroLayerItems.js';
@@ -283,214 +286,6 @@ function normalizeGeneratedOutroImageOptions(payload = {}) {
     cta_text_bottom: ctaTextBottom,
     cta_logo: ctaLogo || null,
   };
-}
-
-function resolveImageMimeTypeFromExtension(filePath) {
-  const extension = path.extname(filePath || '').toLowerCase();
-  if (extension === '.jpg' || extension === '.jpeg') {
-    return 'image/jpeg';
-  }
-  if (extension === '.webp') {
-    return 'image/webp';
-  }
-  if (extension === '.avif') {
-    return 'image/avif';
-  }
-  if (extension === '.gif') {
-    return 'image/gif';
-  }
-  if (extension === '.tif' || extension === '.tiff') {
-    return 'image/tiff';
-  }
-  return 'image/png';
-}
-
-function normalizeLocalAssetCandidate(value) {
-  if (typeof value !== 'string' || !value.trim()) {
-    return null;
-  }
-  const trimmed = value.trim();
-  if (trimmed.startsWith('data:image') || isHttpUrl(trimmed)) {
-    return null;
-  }
-  const normalized = stripLeadingSlash(trimmed);
-  if (!normalized || normalized.includes('..')) {
-    return null;
-  }
-  return normalized;
-}
-
-async function localAssetToDataUrl(value, assetsRoot) {
-  const normalized = normalizeLocalAssetCandidate(value);
-  if (!normalized) {
-    return null;
-  }
-
-  const filePath = path.join(assetsRoot, stripPublicAssetsPrefix(normalized));
-  const exists = await fsExtra.pathExists(filePath);
-  if (!exists) {
-    return null;
-  }
-
-  const buffer = await fsExtra.readFile(filePath);
-  const mimeType = resolveImageMimeTypeFromExtension(filePath);
-  return `data:${mimeType};base64,${buffer.toString('base64')}`;
-}
-
-function shouldSkipOutroTileSource(value) {
-  if (typeof value !== 'string') {
-    return true;
-  }
-  const trimmed = value.trim();
-  if (
-    !trimmed ||
-    trimmed === 'server_generated_outro_image' ||
-    trimmed === 'server_generated_outro_background' ||
-    trimmed === 'server_generated_outro_qr' ||
-    trimmed === 'server_generated_outro_cta_image' ||
-    trimmed === 'server_generated_outro_tile'
-  ) {
-    return true;
-  }
-  return trimmed.includes('outro_focus') || trimmed.includes('video/outro/');
-}
-
-function expandOutroTileSourceCandidates(value, { allowGenerationFileNameFallback = false } = {}) {
-  const trimmed = typeof value === 'string' ? value.trim() : '';
-  if (!trimmed) {
-    return [];
-  }
-
-  const candidates = [trimmed];
-  if (
-    allowGenerationFileNameFallback &&
-    !isImageDataUrl(trimmed) &&
-    !isHttpUrl(trimmed)
-  ) {
-    const normalized = stripLeadingSlash(trimmed);
-    if (normalized && !normalized.includes('/') && !normalized.includes('..')) {
-      candidates.push(`generations/${normalized}`);
-    }
-  }
-
-  return [...new Set(candidates)];
-}
-
-async function resolveOutroTileSourceValue(value, assetsRoot, options = {}) {
-  const candidates = expandOutroTileSourceCandidates(value, options);
-  for (const candidate of candidates) {
-    if (shouldSkipOutroTileSource(candidate)) {
-      continue;
-    }
-    if (candidate.startsWith('data:image') || isHttpUrl(candidate)) {
-      return candidate;
-    }
-    const localDataUrl = await localAssetToDataUrl(candidate, assetsRoot);
-    if (localDataUrl) {
-      return localDataUrl;
-    }
-  }
-  return null;
-}
-
-async function resolveOutroTileImageSource(item, assetsRoot) {
-  if (!item || typeof item !== 'object' || item.type !== 'image') {
-    return null;
-  }
-
-  const sourceCandidates = [
-    item.src,
-    item.effective_url,
-    item.effectiveUrl,
-    item.enhanced_url,
-    item.enhancedUrl,
-    item.image_url,
-    item.imageUrl,
-    item.url,
-    item.image,
-  ];
-
-  for (const candidate of sourceCandidates) {
-    const imageSource = await resolveOutroTileSourceValue(candidate, assetsRoot, {
-      allowGenerationFileNameFallback: true,
-    });
-    if (imageSource) {
-      return imageSource;
-    }
-  }
-
-  return null;
-}
-
-async function resolveTopOutroTileImageSource(activeItemList, assetsRoot, fallbackActiveItemList = null) {
-  if (!Array.isArray(activeItemList)) {
-    return null;
-  }
-
-  for (let index = activeItemList.length - 1; index >= 0; index -= 1) {
-    const imageSource = await resolveOutroTileImageSource(activeItemList[index], assetsRoot);
-    if (imageSource) {
-      return imageSource;
-    }
-    if (Array.isArray(fallbackActiveItemList)) {
-      const fallbackImageSource = await resolveOutroTileImageSource(fallbackActiveItemList[index], assetsRoot);
-      if (fallbackImageSource) {
-        return fallbackImageSource;
-      }
-    }
-  }
-
-  return null;
-}
-
-async function resolveLayerOutroTileImageSource(layer, assetsRoot) {
-  const imageSession = layer?.imageSession;
-  const activeItemList = imageSession?.activeItemList;
-  const previousActiveItemList = imageSession?.previousActiveItemList;
-
-  const activeImageSource = await resolveTopOutroTileImageSource(
-    activeItemList,
-    assetsRoot,
-    previousActiveItemList,
-  );
-  if (activeImageSource) {
-    return activeImageSource;
-  }
-
-  return await resolveTopOutroTileImageSource(previousActiveItemList, assetsRoot);
-}
-
-async function collectGeneratedOutroTileInputs({
-  sessionData,
-  assetsRoot,
-  outroLayerIndex,
-}) {
-  const imageListPayload = [];
-  const imageUrls = [];
-  const layers = Array.isArray(sessionData?.layers) ? sessionData.layers : [];
-
-  for (let layerIndex = 0; layerIndex < layers.length; layerIndex += 1) {
-    if (layerIndex === outroLayerIndex) {
-      continue;
-    }
-
-    if (imageUrls.length >= 8) {
-      break;
-    }
-
-    const imageSource = await resolveLayerOutroTileImageSource(layers[layerIndex], assetsRoot);
-    if (!imageSource || imageUrls.includes(imageSource)) {
-      continue;
-    }
-
-    imageUrls.push(imageSource);
-    imageListPayload.push({
-      image_url: imageSource,
-      title: '',
-    });
-  }
-
-  return { imageListPayload, imageUrls };
 }
 
 const FAST_LINK_COPY_ERROR_CODES = new Set(['EXDEV', 'EPERM', 'EACCES', 'ENOTSUP', 'EOPNOTSUPP', 'EMLINK', 'ENOSYS', 'EINVAL']);
@@ -842,20 +637,10 @@ function buildOutroLayerActiveItemList({
       animations: [],
     }];
 
-    generatedOutroComposition.tiles.forEach((tile, tileIndex) => {
-      activeItemList.push({
-        id: `item_${activeItemList.length}`,
-        type: 'image',
-        image: tile.title || `server_generated_outro_tile_${tileIndex + 1}`,
-        x: tile.x,
-        y: tile.y,
-        width: tile.width,
-        height: tile.height,
-        src: tile.src,
-        is_base_image: false,
-        animations: [],
-      });
-    });
+    activeItemList.push(...createGeneratedOutroTileItems({
+      generatedOutroComposition,
+      startIndex: activeItemList.length,
+    }));
 
     if (addOutroAnimation) {
       activeItemList.push(createOutroFadeOverlayItem({
@@ -1120,11 +905,16 @@ async function downloadOutroImageToSession({
     const base64Data = outroImageUrl.replace(/^data:image\/\w+;base64,/, '');
     imageBuffer = Buffer.from(base64Data, 'base64');
   } else {
-    const response = await axios.get(outroImageUrl, {
-      responseType: 'arraybuffer',
-      timeout: MEDIA_DOWNLOAD_TIMEOUT_MS,
+    imageBuffer = await readLocalMediaBufferIfAvailable(outroImageUrl, {
+      assetsV2Root: assetsRoot,
     });
-    imageBuffer = Buffer.from(response.data);
+    if (!imageBuffer) {
+      const response = await axios.get(outroImageUrl, {
+        responseType: 'arraybuffer',
+        timeout: MEDIA_DOWNLOAD_TIMEOUT_MS,
+      });
+      imageBuffer = Buffer.from(response.data);
+    }
   }
 
   await fsExtra.writeFile(outroFilePath, imageBuffer);
@@ -1988,6 +1778,11 @@ async function persistFooterLogoAsset({
   }
 
   let logoBuffer = decodeImageDataUrl(ctaLogo);
+  if (!logoBuffer) {
+    logoBuffer = await readLocalMediaBufferIfAvailable(ctaLogo, {
+      assetsV2Root: assetsRoot,
+    });
+  }
   if (!logoBuffer) {
     const response = await axios.get(ctaLogo, {
       responseType: 'arraybuffer',

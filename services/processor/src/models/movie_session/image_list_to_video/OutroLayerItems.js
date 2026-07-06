@@ -43,6 +43,27 @@ function truncateByUnits(value, maxUnits) {
   return output.length < value.length ? `${output.replace(/\s+$/g, '')}...` : output;
 }
 
+function splitTokenByUnits(value, maxUnits) {
+  const chars = Array.from(String(value || ''));
+  let total = 0;
+  let output = '';
+  let consumedCount = 0;
+  for (const char of chars) {
+    const units = char === ' ' ? 0.35 : (char.charCodeAt(0) > 127 ? 1 : 0.58);
+    if (total + units > maxUnits) {
+      break;
+    }
+    output += char;
+    total += units;
+    consumedCount += 1;
+  }
+
+  return {
+    head: output.replace(/\s+$/g, ''),
+    tail: chars.slice(consumedCount).join('').replace(/^\s+/g, ''),
+  };
+}
+
 function wrapOutroText(value, maxWidth, fontSize, maxLines) {
   const text = normalizeOutroCtaText(value);
   if (!text) {
@@ -79,6 +100,20 @@ function wrapOutroText(value, maxWidth, fontSize, maxLines) {
     if (current) {
       lines.push(current);
       continue;
+    }
+
+    const remainingLineCount = safeMaxLines - lines.length;
+    if (remainingLineCount > 1) {
+      const { head, tail } = splitTokenByUnits(words[0], maxUnits);
+      if (head) {
+        lines.push(head);
+        if (tail) {
+          words[0] = tail;
+        } else {
+          words.shift();
+        }
+        continue;
+      }
     }
 
     lines.push(truncateByUnits(words.shift(), maxUnits));
@@ -185,12 +220,19 @@ function createTextItem({
   const desiredEdgePadding = getDesiredOutroEdgePadding(canvasDimensions, placement, lines.length);
   const centerBounds = getGeneratedOutroCenterBounds(canvasDimensions);
   const centerGap = Math.round(clampNumber(referenceSide * 0.009, 8, 14));
+  const isPortrait = canvasDimensions.height > canvasDimensions.width;
+  const lowerCenterGap = Math.round(clampNumber(referenceSide * 0.04, 36, 58));
   const edgePadding = placement === 'top'
     ? Math.min(desiredEdgePadding, Math.max(0, centerBounds.top - centerGap - textBlockHeight))
     : Math.min(desiredEdgePadding, Math.max(0, canvasDimensions.height - centerBounds.bottom - centerGap - textBlockHeight));
   const y = placement === 'top'
     ? edgePadding + textBlockHeight / 2
-    : canvasDimensions.height - edgePadding - textBlockHeight / 2;
+    : isPortrait
+      ? Math.min(
+        canvasDimensions.height - edgePadding - textBlockHeight / 2,
+        centerBounds.bottom + lowerCenterGap + textBlockHeight / 2,
+      )
+      : canvasDimensions.height - edgePadding - textBlockHeight / 2;
 
   return {
     id,
@@ -268,4 +310,28 @@ export function createOutroCtaTextItems({
   }
 
   return items;
+}
+
+export function createGeneratedOutroTileItems({
+  generatedOutroComposition,
+  startIndex = 0,
+} = {}) {
+  const tiles = Array.isArray(generatedOutroComposition?.tiles)
+    ? generatedOutroComposition.tiles
+    : [];
+
+  return tiles.map((tile, tileIndex) => ({
+    id: `item_${startIndex + tileIndex}`,
+    type: 'image',
+    image: tile.title || `server_generated_outro_tile_${tileIndex + 1}`,
+    x: tile.x,
+    y: tile.y,
+    width: tile.width,
+    height: tile.height,
+    src: tile.src,
+    sourceImageUrl: tile.sourceImageUrl,
+    is_base_image: false,
+    isGeneratedOutroTile: true,
+    animations: [],
+  }));
 }

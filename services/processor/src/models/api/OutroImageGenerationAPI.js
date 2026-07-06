@@ -5,6 +5,7 @@ import QRCode from 'qrcode';
 import sharp from 'sharp';
 
 import { getCanvasDimensionsForAspectRatio } from '../../utils/CanvasUtils.js';
+import { readLocalMediaBufferIfAvailable } from '../../utils/LocalMediaAsset.js';
 import { normalizeOutroCtaImagePayload } from '../../utils/OutroCtaImagePayload.js';
 
 const MEDIA_DOWNLOAD_TIMEOUT_MS = Number.isFinite(Number(process.env.API_MEDIA_DOWNLOAD_TIMEOUT_MS))
@@ -155,7 +156,7 @@ function decodeImageDataUrl(value) {
   return Buffer.from(match[1], 'base64');
 }
 
-async function loadImageBuffer(source) {
+async function loadImageBuffer(source, options = {}) {
   const trimmed = typeof source === 'string' ? source.trim() : '';
   if (!trimmed) {
     throw new Error('Image source must be a non-empty string.');
@@ -164,6 +165,14 @@ async function loadImageBuffer(source) {
   const dataUrlBuffer = decodeImageDataUrl(trimmed);
   if (dataUrlBuffer) {
     return dataUrlBuffer;
+  }
+
+  const localMediaBuffer = await readLocalMediaBufferIfAvailable(trimmed, {
+    assetsV2Root: options.assetsV2Root || options.assetsRoot,
+    assetsRoot: options.assetsRoot,
+  });
+  if (localMediaBuffer) {
+    return localMediaBuffer;
   }
 
   if (!isHttpUrl(trimmed)) {
@@ -450,6 +459,7 @@ async function renderCenterPanelBuffer({
   outroCtaImage = null,
   size,
   inset,
+  assetsRoot,
 }) {
   const safeSize = Math.max(128, Math.round(size));
   const { qrFrameX, qrFrameY, qrFrameSize } = computeCenterQrLayout(safeSize, inset);
@@ -466,7 +476,9 @@ async function renderCenterPanelBuffer({
   let centerType = 'qr';
 
   if (normalizedOutroCtaImage) {
-    const sourceBuffer = await loadImageBuffer(normalizedOutroCtaImage.source);
+    const sourceBuffer = await loadImageBuffer(normalizedOutroCtaImage.source, {
+      assetsV2Root: assetsRoot,
+    });
     centerBuffer = await sharp(sourceBuffer, { failOn: 'none' })
       .rotate()
       .resize(qrFrameSize, qrFrameSize, {
@@ -569,7 +581,9 @@ export async function generateOutroCompositionAssetsFromImageList({
   for (let index = 0; index < tileRects.length; index += 1) {
     const tile = tiles[index];
     const rect = insetRect(tileRects[index], layout.tileInset);
-    const imageBuffer = await loadImageBuffer(tile.imageUrl);
+    const imageBuffer = await loadImageBuffer(tile.imageUrl, {
+      assetsV2Root: assetsRoot,
+    });
     const tileBuffer = await renderTileBuffer({
       imageBuffer,
       width: rect.width,
@@ -592,6 +606,7 @@ export async function generateOutroCompositionAssetsFromImageList({
     outroCtaImage: normalizedOutroCtaImage,
     size: layout.centerSize,
     inset: layout.centerInset,
+    assetsRoot,
   });
   const qrSrc = await writeAsset(
     centerPanel.centerType === 'cta_image' ? 'outro_cta_image.png' : 'outro_qr.png',

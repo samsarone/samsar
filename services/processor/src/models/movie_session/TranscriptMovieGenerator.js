@@ -26,7 +26,11 @@ import path from 'path';
 import sharp from 'sharp';
 import { generateOutroCompositionAssetsFromImageList } from "../api/OutroImageGenerationAPI.js";
 import { getLanguageStringFromLanguageCode } from "../../consts/LanguageCodes.js";
-import { createOutroCtaTextItems, createOutroFadeOverlayItem } from './image_list_to_video/OutroLayerItems.js';
+import {
+  createGeneratedOutroTileItems,
+  createOutroCtaTextItems,
+  createOutroFadeOverlayItem,
+} from './image_list_to_video/OutroLayerItems.js';
 import {
   buildOutroImageMetadata,
   normalizeFooterMetadataList,
@@ -1219,6 +1223,11 @@ export async function requestQuickMovieGeneration(userId, payload) {
         is_base_image: true,
         animations: [],
       }];
+
+      outroActiveItemList.push(...createGeneratedOutroTileItems({
+        generatedOutroComposition,
+        startIndex: outroActiveItemList.length,
+      }));
 
       if (effectiveAddOutroAnimation) {
         outroActiveItemList.push(createOutroFadeOverlayItem({

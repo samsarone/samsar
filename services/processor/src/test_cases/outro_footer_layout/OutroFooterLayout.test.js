@@ -6,9 +6,44 @@ import path from 'path';
 import sharp from 'sharp';
 
 import { getCanvasDimensionsForAspectRatio } from '../../utils/CanvasUtils.js';
+import { collectGeneratedOutroTileInputs } from '../../models/api/OutroTileInputCollector.js';
 import { resolveEffectiveOutroFocusAreaForImageListToVideo } from '../../models/movie_session/image_list_to_video/OutroFocusAreaResolver.js';
 import { createOutroCtaTextItems } from '../../models/movie_session/image_list_to_video/OutroLayerItems.js';
 import { renderOutroFooterLayoutFixture } from './OutroFooterLayoutHarness.js';
+
+function clampNumber(value, min, max) {
+  return Math.min(Math.max(value, min), max);
+}
+
+function getGeneratedOutroCenterBoundsForTest(canvasDimensions) {
+  const { width, height } = canvasDimensions;
+  const referenceSide = Math.min(width, height);
+  const padding = Math.max(20, Math.round(referenceSide * (28 / 1024)));
+  const availableWidth = Math.max(1, width - padding * 2);
+  const availableHeight = Math.max(1, height - padding * 2);
+  const maxCenterSize = Math.max(
+    220,
+    Math.min(
+      Math.round(availableWidth * 0.68),
+      Math.round(availableHeight * 0.8),
+    ),
+  );
+  const minCenterSize = Math.min(
+    maxCenterSize,
+    Math.max(320, Math.round(referenceSide * 0.52)),
+  );
+  const centerSize = clampNumber(
+    Math.round(referenceSide * 0.68),
+    minCenterSize,
+    maxCenterSize,
+  );
+  const centerY = padding + Math.round((availableHeight - centerSize) / 2);
+
+  return {
+    top: centerY,
+    bottom: centerY + centerSize,
+  };
+}
 
 function getTextBlockEdges(item) {
   const lines = String(item.text || '').split('\n').length;
@@ -121,9 +156,7 @@ test('renders footer QR scene frames, generated outro layer, and final video wit
   assert.equal(outroActiveItems[0].type, 'image');
   assert.equal(outroActiveItems[0].image, 'server_generated_outro_background');
 
-  const tileItems = outroActiveItems.filter((item) => (
-    item.type === 'image' && item.image !== 'server_generated_outro_background' && item.image !== 'server_generated_outro_qr'
-  ));
+  const tileItems = outroActiveItems.filter((item) => item.isGeneratedOutroTile === true);
   assert.equal(tileItems.length, result.generatedOutro.tileCount);
 
   const fadeItem = outroActiveItems.find((item) => item.type === 'shape');
@@ -249,12 +282,80 @@ test('generated outro CTA text offsets away from edges and truncates after two l
 
   const portraitTopEdges = getTextBlockEdges(portraitItems[0]);
   const portraitBottomEdges = getTextBlockEdges(portraitItems[1]);
+  const portraitCenterBounds = getGeneratedOutroCenterBoundsForTest(portraitDimensions);
+  const portraitFooterGap = portraitBottomEdges.top - portraitCenterBounds.bottom;
   assert.ok(
     portraitTopEdges.top >= 190,
     'two-line 9:16 header should sit proportionally lower than the landscape header',
   );
   assert.ok(
-    portraitDimensions.height - portraitBottomEdges.bottom >= 190,
-    'two-line 9:16 footer should sit proportionally higher than the landscape footer',
+    portraitFooterGap >= 36,
+    'two-line 9:16 footer should leave visible margin below the center image',
+  );
+  assert.ok(
+    portraitFooterGap <= 70,
+    'two-line 9:16 footer should stay close to the center image instead of the bottom edge',
+  );
+});
+
+test('generated outro footer URL splits across two lines before truncating', () => {
+  const portraitDimensions = getCanvasDimensionsForAspectRatio('9:16');
+  const [, footerItem] = createOutroCtaTextItems({
+    canvasDimensions: portraitDimensions,
+    ctaTextTop: 'Checkout the Github',
+    ctaTextBottom: 'https://github.com/samsarone/samsar/tree/main/services/processor/src/models/movie_session/image_list_to_video',
+  });
+
+  const footerLines = footerItem.text.split('\n');
+  assert.equal(footerLines.length, 2);
+  assert.ok(!footerLines[0].endsWith('...'), 'first footer line should continue onto the second line');
+  assert.ok(footerLines[1].endsWith('...'), 'second footer line should carry final truncation');
+});
+
+test('update generated outro tiles use text-to-video image session stills', async () => {
+  const firstImage = 'data:image/png;base64,ZmFrZS1pbWFnZS0x';
+  const secondImage = 'data:image/png;base64,ZmFrZS1pbWFnZS0y';
+  const duplicateImage = firstImage;
+
+  const tileInputs = await collectGeneratedOutroTileInputs({
+    assetsRoot: '/tmp/missing-assets-root',
+    outroLayerIndex: 3,
+    sessionData: {
+      layers: [
+        {
+          imageSession: {
+            activeItemList: [],
+            previousActiveItemList: [],
+            activeSelectedImage: firstImage,
+          },
+        },
+        {
+          imageSession: {
+            activeItemList: [],
+            previousActiveItemList: [],
+            activeGeneratedImage: secondImage,
+          },
+        },
+        {
+          imageSession: {
+            activeItemList: [],
+            previousActiveItemList: [],
+            activeSelectedImage: duplicateImage,
+          },
+        },
+        {
+          imageSession: {
+            activeItemList: [],
+            activeSelectedImage: 'data:image/png;base64,b3V0cm8=',
+          },
+        },
+      ],
+    },
+  });
+
+  assert.deepEqual(tileInputs.imageUrls, [firstImage, secondImage]);
+  assert.deepEqual(
+    tileInputs.imageListPayload.map((item) => item.image_url),
+    [firstImage, secondImage],
   );
 });

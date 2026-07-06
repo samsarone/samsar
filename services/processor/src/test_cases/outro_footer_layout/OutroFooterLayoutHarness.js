@@ -11,6 +11,7 @@ import {
   generateOutroImageFromImageList,
 } from '../../models/api/OutroImageGenerationAPI.js';
 import {
+  createGeneratedOutroTileItems,
   createOutroCtaTextItems,
   createOutroFadeOverlayItem,
 } from '../../models/movie_session/image_list_to_video/OutroLayerItems.js';
@@ -322,18 +323,10 @@ export async function renderOutroFooterLayoutFixture({
       is_base_image: true,
       animations: [],
     },
-    ...generatedOutroComposition.tiles.map((tile, index) => ({
-      id: `item_${index + 1}`,
-      type: 'image',
-      image: tile.sourceImageUrl,
-      x: tile.x,
-      y: tile.y,
-      width: tile.width,
-      height: tile.height,
-      src: tile.src,
-      is_base_image: false,
-      animations: [],
-    })),
+    ...createGeneratedOutroTileItems({
+      generatedOutroComposition,
+      startIndex: 1,
+    }),
     createOutroFadeOverlayItem({
       id: `item_${1 + generatedOutroComposition.tiles.length}`,
       canvasDimensions,
