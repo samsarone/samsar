@@ -2,6 +2,12 @@ function clampNumber(value, min, max) {
   return Math.min(Math.max(value, min), max);
 }
 
+const OUTRO_CANVAS_PADDING_RATIO = 28 / 1024;
+const OUTRO_CENTER_SIZE_RATIO = 0.68;
+const OUTRO_CENTER_MAX_WIDTH_RATIO = 0.68;
+const OUTRO_CENTER_MAX_HEIGHT_RATIO = 0.8;
+const OUTRO_CENTER_MIN_SIZE_RATIO = 0.52;
+
 function normalizeOutroCtaText(value, maxLength = 180) {
   if (typeof value !== 'string') {
     return null;
@@ -45,40 +51,87 @@ function wrapOutroText(value, maxWidth, fontSize, maxLines) {
 
   const maxUnits = Math.max(4, maxWidth / Math.max(1, fontSize));
   const words = text.split(/\s+/).filter(Boolean);
-  const lines = [];
-  let current = '';
+  const safeMaxLines = Math.max(1, Math.floor(Number(maxLines) || 1));
+  if (words.length === 0) {
+    return [];
+  }
 
-  for (const word of words) {
-    const candidate = current ? `${current} ${word}` : word;
-    if (estimateTextUnits(candidate) <= maxUnits) {
+  const lines = [];
+
+  while (words.length > 0 && lines.length < safeMaxLines) {
+    const isLastLine = lines.length === safeMaxLines - 1;
+
+    if (isLastLine) {
+      lines.push(truncateByUnits(words.join(' '), maxUnits));
+      break;
+    }
+
+    let current = '';
+    while (words.length > 0) {
+      const candidate = current ? `${current} ${words[0]}` : words[0];
+      if (estimateTextUnits(candidate) > maxUnits) {
+        break;
+      }
       current = candidate;
-      continue;
+      words.shift();
     }
 
     if (current) {
       lines.push(current);
+      continue;
     }
-    current = estimateTextUnits(word) > maxUnits ? truncateByUnits(word, maxUnits) : word;
+
+    lines.push(truncateByUnits(words.shift(), maxUnits));
   }
 
-  if (current) {
-    lines.push(current);
-  }
-
-  if (lines.length <= maxLines) {
-    return lines;
-  }
-
-  const trimmed = lines.slice(0, maxLines);
-  trimmed[maxLines - 1] = truncateByUnits(trimmed[maxLines - 1], Math.max(4, maxUnits - 1));
-  return trimmed;
+  return lines;
 }
 
-function getOutroEdgePadding(referenceSide, lineCount) {
-  if (lineCount > 1) {
-    return Math.round(clampNumber(referenceSide * 0.041, 38, 56));
-  }
-  return Math.round(clampNumber(referenceSide * 0.062, 56, 76));
+function getGeneratedOutroCenterBounds(canvasDimensions) {
+  const { width, height } = canvasDimensions;
+  const referenceSide = Math.min(width, height);
+  const padding = Math.max(20, Math.round(referenceSide * OUTRO_CANVAS_PADDING_RATIO));
+  const availableWidth = Math.max(1, width - padding * 2);
+  const availableHeight = Math.max(1, height - padding * 2);
+  const maxCenterSize = Math.max(
+    220,
+    Math.min(
+      Math.round(availableWidth * OUTRO_CENTER_MAX_WIDTH_RATIO),
+      Math.round(availableHeight * OUTRO_CENTER_MAX_HEIGHT_RATIO),
+    ),
+  );
+  const minCenterSize = Math.min(
+    maxCenterSize,
+    Math.max(320, Math.round(referenceSide * OUTRO_CENTER_MIN_SIZE_RATIO)),
+  );
+  const centerSize = clampNumber(
+    Math.round(referenceSide * OUTRO_CENTER_SIZE_RATIO),
+    minCenterSize,
+    maxCenterSize,
+  );
+  const centerY = padding + Math.round((availableHeight - centerSize) / 2);
+
+  return {
+    top: centerY,
+    bottom: centerY + centerSize,
+  };
+}
+
+function getDesiredOutroEdgePadding(canvasDimensions, placement, lineCount) {
+  const { width, height } = canvasDimensions;
+  const referenceSide = Math.min(width, height);
+  const isPortrait = height > width;
+  const baseRatio = lineCount > 1 ? 0.058 : 0.082;
+  const portraitMultiplier = isPortrait ? 3.4 : 1;
+  const maxPadding = placement === 'top'
+    ? height * (isPortrait ? 0.16 : 0.11)
+    : height * (isPortrait ? 0.16 : 0.1);
+
+  return Math.round(clampNumber(
+    referenceSide * baseRatio * portraitMultiplier,
+    lineCount > 1 ? 54 : 74,
+    maxPadding,
+  ));
 }
 
 export function createOutroFadeOverlayItem({ id, canvasDimensions }) {
@@ -129,7 +182,12 @@ function createTextItem({
 
   const lineHeight = placement === 'top' ? 1.08 : 1.12;
   const textBlockHeight = Math.round(lines.length * fontSize * lineHeight);
-  const edgePadding = getOutroEdgePadding(referenceSide, lines.length);
+  const desiredEdgePadding = getDesiredOutroEdgePadding(canvasDimensions, placement, lines.length);
+  const centerBounds = getGeneratedOutroCenterBounds(canvasDimensions);
+  const centerGap = Math.round(clampNumber(referenceSide * 0.009, 8, 14));
+  const edgePadding = placement === 'top'
+    ? Math.min(desiredEdgePadding, Math.max(0, centerBounds.top - centerGap - textBlockHeight))
+    : Math.min(desiredEdgePadding, Math.max(0, canvasDimensions.height - centerBounds.bottom - centerGap - textBlockHeight));
   const y = placement === 'top'
     ? edgePadding + textBlockHeight / 2
     : canvasDimensions.height - edgePadding - textBlockHeight / 2;
@@ -177,8 +235,8 @@ export function createOutroCtaTextItems({
   const referenceSide = Math.min(canvasDimensions.width, canvasDimensions.height);
   const isLandscape = canvasDimensions.width > canvasDimensions.height;
   const textMaxWidthRatio = isLandscape ? 0.82 : 0.78;
-  const topFontSize = Math.round(clampNumber(referenceSide * 0.053, 46, 62)) + 1;
-  const bottomFontSize = Math.round(clampNumber(referenceSide * 0.049, 42, 56));
+  const topFontSize = Math.round(clampNumber(referenceSide * 0.049, 42, 56));
+  const bottomFontSize = Math.round(clampNumber(referenceSide * 0.045, 38, 52));
   const items = [];
 
   const topItem = createTextItem({

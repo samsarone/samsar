@@ -5,9 +5,21 @@ import path from 'path';
 
 import sharp from 'sharp';
 
+import { getCanvasDimensionsForAspectRatio } from '../../utils/CanvasUtils.js';
 import { resolveEffectiveOutroFocusAreaForImageListToVideo } from '../../models/movie_session/image_list_to_video/OutroFocusAreaResolver.js';
 import { createOutroCtaTextItems } from '../../models/movie_session/image_list_to_video/OutroLayerItems.js';
 import { renderOutroFooterLayoutFixture } from './OutroFooterLayoutHarness.js';
+
+function getTextBlockEdges(item) {
+  const lines = String(item.text || '').split('\n').length;
+  const lineHeight = Number(item.config.lineHeight) || 1;
+  const fontSize = Number(item.config.fontSize) || 0;
+  const blockHeight = lines * fontSize * lineHeight;
+  return {
+    top: item.config.y - blockHeight / 2,
+    bottom: item.config.y + blockHeight / 2,
+  };
+}
 
 test('renders footer QR scene frames, generated outro layer, and final video without generative tasks', async () => {
   const result = await renderOutroFooterLayoutFixture();
@@ -128,16 +140,6 @@ test('renders footer QR scene frames, generated outro layer, and final video wit
 
   const outroTextItems = outroActiveItems.filter((item) => item.type === 'text');
   assert.equal(outroTextItems.length, 2);
-  const getTextBlockEdges = (item) => {
-    const lines = String(item.text || '').split('\n').length;
-    const lineHeight = Number(item.config.lineHeight) || 1;
-    const fontSize = Number(item.config.fontSize) || 0;
-    const blockHeight = lines * fontSize * lineHeight;
-    return {
-      top: item.config.y - blockHeight / 2,
-      bottom: item.config.y + blockHeight / 2,
-    };
-  };
   const topTextEdges = getTextBlockEdges(outroTextItems[0]);
   const bottomTextEdges = getTextBlockEdges(outroTextItems[1]);
   const fadeIndex = outroActiveItems.findIndex((item) => item === fadeItem);
@@ -206,4 +208,53 @@ test('renders footer QR scene frames, generated outro layer, and final video wit
     'wrapped bottom CTA text block should clear the QR panel in 16:9',
   );
 
+});
+
+test('generated outro CTA text offsets away from edges and truncates after two lines', () => {
+  const longHeader = 'Scan this code to reserve your custom travel package before this limited offer closes with bonus upgrades included';
+  const longFooter = 'Book today for priority access, local details, and a faster reservation path with support included before the offer closes';
+
+  const landscapeDimensions = getCanvasDimensionsForAspectRatio('16:9');
+  const landscapeItems = createOutroCtaTextItems({
+    canvasDimensions: landscapeDimensions,
+    ctaTextTop: longHeader,
+    ctaTextBottom: longFooter,
+  });
+  assert.equal(landscapeItems.length, 2);
+  assert.equal(landscapeItems[0].text.split('\n').length, 2);
+  assert.equal(landscapeItems[1].text.split('\n').length, 2);
+  assert.match(landscapeItems[0].text.split('\n')[1], /bonus upgrades\.\.\.$/);
+  assert.match(landscapeItems[1].text.split('\n')[1], /support included before/);
+
+  const landscapeTopEdges = getTextBlockEdges(landscapeItems[0]);
+  const landscapeBottomEdges = getTextBlockEdges(landscapeItems[1]);
+  assert.ok(
+    landscapeTopEdges.top >= 47,
+    'two-line 16:9 header should move lower while clearing the center panel',
+  );
+  assert.ok(
+    landscapeDimensions.height - landscapeBottomEdges.bottom >= 51,
+    'two-line 16:9 footer should move higher while clearing the center panel',
+  );
+
+  const portraitDimensions = getCanvasDimensionsForAspectRatio('9:16');
+  const portraitItems = createOutroCtaTextItems({
+    canvasDimensions: portraitDimensions,
+    ctaTextTop: longHeader,
+    ctaTextBottom: longFooter,
+  });
+  assert.equal(portraitItems.length, 2);
+  assert.equal(portraitItems[0].text.split('\n').length, 2);
+  assert.equal(portraitItems[1].text.split('\n').length, 2);
+
+  const portraitTopEdges = getTextBlockEdges(portraitItems[0]);
+  const portraitBottomEdges = getTextBlockEdges(portraitItems[1]);
+  assert.ok(
+    portraitTopEdges.top >= 190,
+    'two-line 9:16 header should sit proportionally lower than the landscape header',
+  );
+  assert.ok(
+    portraitDimensions.height - portraitBottomEdges.bottom >= 190,
+    'two-line 9:16 footer should sit proportionally higher than the landscape footer',
+  );
 });
