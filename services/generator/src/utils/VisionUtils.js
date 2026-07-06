@@ -19,7 +19,15 @@ import {
 } from '../inference/SamsarExternalInferenceAdapter.js';
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY || '' });
-const IMAGE_ACCESSIBILITY_TIMEOUT_MS = 2500;
+const LOCAL_MEDIA_HOSTNAMES = new Set([
+  'localhost',
+  '127.0.0.1',
+  '0.0.0.0',
+  '::1',
+  'media-gateway',
+  'host.docker.internal',
+]);
+const DOCKER_MEDIA_PATH_PATTERN = /^(assets_v2|assets|generations|temp_images|video|ai_video)\//;
 
 function normalizeString(value) {
   return typeof value === 'string' && value.trim() ? value.trim() : '';
@@ -27,6 +35,27 @@ function normalizeString(value) {
 
 function isHttpUrl(value) {
   return /^https?:\/\//i.test(value || '');
+}
+
+function getConfiguredUrlHostname(value = '') {
+  const normalized = normalizeString(value);
+  if (!normalized || !isHttpUrl(normalized)) {
+    return '';
+  }
+  try {
+    return new URL(normalized).hostname;
+  } catch {
+    return '';
+  }
+}
+
+function getConfiguredLocalMediaHosts() {
+  return new Set([
+    ...LOCAL_MEDIA_HOSTNAMES,
+    getConfiguredUrlHostname(process.env.STATIC_CDN_URL),
+    getConfiguredUrlHostname(process.env.PUBLIC_STATIC_CDN_URL),
+    getConfiguredUrlHostname(process.env.SAMSAR_INTERNAL_MEDIA_BASE_URL),
+  ].filter(Boolean));
 }
 
 function parsePathAndSuffix(reference = '') {
@@ -60,7 +89,9 @@ function parsePathAndSuffix(reference = '') {
 }
 
 function buildTunnelizedMediaUrl(reference = '') {
-  const mediaPublicBase = normalizeString(process.env.MEDIA_PUBLIC_URL);
+  const mediaPublicBase =
+    normalizeString(process.env.MEDIA_PUBLIC_URL) ||
+    normalizeString(process.env.SAMSAR_EXTERNAL_MEDIA_PUBLIC_BASE_URL);
   if (!mediaPublicBase) {
     return '';
   }
@@ -75,32 +106,41 @@ function buildTunnelizedMediaUrl(reference = '') {
   return `${normalizedBase}/${normalizedPath}${suffix}`;
 }
 
-async function isUrlReachable(url = '') {
-  if (!isHttpUrl(url)) {
+function getReferenceMediaPath(reference = '') {
+  const normalized = normalizeString(reference);
+  if (!normalized) {
+    return '';
+  }
+  if (isHttpUrl(normalized)) {
+    try {
+      return decodeURIComponent(new URL(normalized).pathname).replace(/^\/+/, '');
+    } catch {
+      return normalized.replace(/^https?:\/\/[^/]+/i, '').replace(/^\/+/, '');
+    }
+  }
+  return normalized.split('?')[0].split('#')[0].replace(/^\/+/, '');
+}
+
+function isDockerLocalMediaReference(reference = '') {
+  const mediaPath = getReferenceMediaPath(reference);
+  if (!DOCKER_MEDIA_PATH_PATTERN.test(mediaPath)) {
+    return false;
+  }
+  if (!isHttpUrl(reference)) {
     return true;
   }
 
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), IMAGE_ACCESSIBILITY_TIMEOUT_MS);
-  try {
-    const response = await fetch(url, {
-      method: 'GET',
-      headers: { Range: 'bytes=0-0' },
-      redirect: 'follow',
-      signal: controller.signal,
-    });
-    if (response.body && typeof response.body.cancel === 'function') {
-      await response.body.cancel();
-    }
-    return response.ok;
-  } catch (error) {
+  const publicMediaHost = getConfiguredUrlHostname(process.env.MEDIA_PUBLIC_URL) ||
+    getConfiguredUrlHostname(process.env.SAMSAR_EXTERNAL_MEDIA_PUBLIC_BASE_URL);
+  const referenceHost = getConfiguredUrlHostname(reference);
+  if (publicMediaHost && referenceHost === publicMediaHost) {
     return false;
-  } finally {
-    clearTimeout(timeout);
   }
+
+  return getConfiguredLocalMediaHosts().has(referenceHost);
 }
 
-async function resolveVisionImageUrl(remoteImageUrl = '') {
+export async function resolveVisionImageUrl(remoteImageUrl = '') {
   const imageUrl = normalizeString(remoteImageUrl);
   if (!imageUrl || imageUrl.startsWith('data:')) {
     return imageUrl;
@@ -110,29 +150,15 @@ async function resolveVisionImageUrl(remoteImageUrl = '') {
     return imageUrl;
   }
 
-  const tunnelUrlForNonHttp = buildTunnelizedMediaUrl(imageUrl);
-  if (!isHttpUrl(imageUrl) && tunnelUrlForNonHttp) {
-    if (await isUrlReachable(tunnelUrlForNonHttp)) {
-      return tunnelUrlForNonHttp;
+  if (isDockerLocalMediaReference(imageUrl)) {
+    const tunnelUrl = buildTunnelizedMediaUrl(imageUrl);
+    if (tunnelUrl && tunnelUrl !== imageUrl) {
+      console.warn('[vision_scoring] Using public tunnel URL for Docker media vision request', {
+        originalUrl: summarizeImageReferenceForLog(imageUrl),
+        tunnelUrl: summarizeImageReferenceForLog(tunnelUrl),
+      });
+      return tunnelUrl;
     }
-    return imageUrl;
-  }
-
-  if (await isUrlReachable(imageUrl)) {
-    return imageUrl;
-  }
-
-  const tunnelUrl = tunnelUrlForNonHttp;
-  if (!tunnelUrl || tunnelUrl === imageUrl) {
-    return imageUrl;
-  }
-
-  if (await isUrlReachable(tunnelUrl)) {
-    console.warn('[vision_scoring] Falling back to tunnelized image URL for visibility check', {
-      originalUrl: imageUrl,
-      tunnelUrl,
-    });
-    return tunnelUrl;
   }
 
   return imageUrl;
@@ -183,6 +209,23 @@ function summarizeImageReferenceForLog(value = '') {
   return value.length > 220 ? `${value.slice(0, 220)}...` : value;
 }
 
+function isVisionImageAccessError(error) {
+  const message = getErrorMessage(error).toLowerCase();
+  return [
+    'unable to fetch image',
+    'image not found',
+    'not found',
+    '404',
+    '403',
+    'enoent',
+    'failed to fetch',
+    'could not download',
+    'could not access',
+    'invalid image',
+    'invalid_image',
+  ].some((pattern) => message.includes(pattern));
+}
+
 export async function addVisionDescriptionsForLayerImage(
   sessionId,
   layerId,
@@ -198,19 +241,76 @@ export async function addVisionDescriptionsForLayerImage(
   // This function just returns the generated description
 
   const accessibleUrl = await getAccessibleMediaUrlForProvider(remoteImageUrl, {
-    preferDataUrl: getCurrentEnvironment() === 'docker',
-    preferInternalDockerUrl: true,
+    preferDataUrl: false,
+    preferInternalDockerUrl: false,
   });
   const remoteUrl = await resolveVisionImageUrl(accessibleUrl);
 
   // Actually retrieve the description
-  const responseData = await getDescriptionForImage(
-    remoteUrl,
-    videoMode,
-    userInferenceModel,
-    requestedAspectRatio,
-    imageThemeContext,
-  );
+  let responseData;
+  try {
+    responseData = await getDescriptionForImage(
+      remoteUrl,
+      videoMode,
+      userInferenceModel,
+      requestedAspectRatio,
+      imageThemeContext,
+    );
+  } catch (error) {
+    if (getCurrentEnvironment() !== 'docker' || !isVisionImageAccessError(error)) {
+      throw error;
+    }
+
+    let fallbackUrl = '';
+    try {
+      fallbackUrl = await getAccessibleMediaUrlForProvider(remoteImageUrl, {
+        preferDataUrl: true,
+        preferInternalDockerUrl: true,
+      });
+    } catch (fallbackResolveError) {
+      console.warn('[vision_scoring] Docker vision image fallback could not resolve local media', {
+        imageReference: summarizeImageReferenceForLog(remoteImageUrl),
+        firstAttemptUrl: summarizeImageReferenceForLog(remoteUrl),
+        error: getErrorMessage(fallbackResolveError),
+      });
+      return '';
+    }
+
+    if (!fallbackUrl || fallbackUrl === remoteUrl) {
+      console.warn('[vision_scoring] Docker vision image fallback unavailable', {
+        imageReference: summarizeImageReferenceForLog(remoteImageUrl),
+        firstAttemptUrl: summarizeImageReferenceForLog(remoteUrl),
+        error: getErrorMessage(error),
+      });
+      return '';
+    }
+
+    console.warn('[vision_scoring] Retrying Docker vision request with inline local image data', {
+      imageReference: summarizeImageReferenceForLog(remoteImageUrl),
+      firstAttemptUrl: summarizeImageReferenceForLog(remoteUrl),
+      error: getErrorMessage(error),
+    });
+
+    try {
+      responseData = await getDescriptionForImage(
+        fallbackUrl,
+        videoMode,
+        userInferenceModel,
+        requestedAspectRatio,
+        imageThemeContext,
+      );
+    } catch (fallbackError) {
+      if (!isVisionImageAccessError(fallbackError)) {
+        throw fallbackError;
+      }
+      console.warn('[vision_scoring] Docker vision image fallback failed; continuing without image description', {
+        imageReference: summarizeImageReferenceForLog(remoteImageUrl),
+        firstAttemptUrl: summarizeImageReferenceForLog(remoteUrl),
+        error: getErrorMessage(fallbackError),
+      });
+      return '';
+    }
+  }
 
   // Return it to the caller but do NOT store in DB
   return responseData;

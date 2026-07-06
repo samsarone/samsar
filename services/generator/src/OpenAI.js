@@ -221,7 +221,8 @@ export async function getAlternatePromptFromPrompt(
   prompt,
   retryCount,
   failureMessage = '',
-  rewriteMode = 'generation_failure'
+  rewriteMode = 'generation_failure',
+  userInferenceModel = getDefaultUserInferenceModel()
 ) {
   const policyHint = getPolicyHintFromFailureMessage(failureMessage);
   const isSafetyRetry = /safety system|safety_violations|content policy|policy violation|request was rejected/i.test(
@@ -254,7 +255,10 @@ export async function getAlternatePromptFromPrompt(
   ];
 
   // Call your LLM
-  const response = await sendAssistantMessageRequest(messageList);
+  const response = await sendAssistantMessageRequest(
+    messageList,
+    userInferenceModel || getDefaultUserInferenceModel()
+  );
 
   return response.content;
 }
