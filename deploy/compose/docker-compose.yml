@@ -1,0 +1,228 @@
+name: samsar
+
+x-service-env: &service-env
+  env_file:
+    - ../../runtime/secrets/root.env
+  environment:
+    CURRENT_ENV: docker
+    SAMSAR_ASSETS_ROOT: /assets
+    SAMSAR_ASSETS_V2_ROOT: /assets_v2
+    SAMSAR_INTERNAL_MEDIA_BASE_URL: ${SAMSAR_INTERNAL_MEDIA_BASE_URL:-http://media-gateway}
+  volumes:
+    - media-assets:/assets
+    - media-assets-v2:/assets_v2
+    - persistent-data:/persistent
+    - ../../runtime/config:/persistent/config
+    - ../../runtime/fonts:/usr/local/share/fonts:ro
+
+services:
+  processor:
+    <<: *service-env
+    profiles: ["core"]
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+      args:
+        NODE_VERSION: "20"
+        SERVICE_PATH: services/processor
+    ports:
+      - "3002:3002"
+    depends_on:
+      mongo:
+        condition: service_started
+        required: false
+      minio:
+        condition: service_started
+        required: false
+
+  client:
+    profiles: ["core"]
+    build:
+      context: ../../apps/samsar-client
+      args:
+        VITE_PROCESSOR_API: http://localhost:3002
+        VITE_DOCKER_INSTALL: "true"
+        VITE_SETUP_WIZARD_API: http://localhost:8089
+    ports:
+      - "3000:3000"
+
+  generator:
+    <<: *service-env
+    profiles: ["workers"]
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+      args:
+        NODE_VERSION: "20"
+        SERVICE_PATH: services/generator
+
+  audio-generator:
+    <<: *service-env
+    profiles: ["workers"]
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+      args:
+        NODE_VERSION: "20"
+        SERVICE_PATH: services/audio-generator
+
+  frames-processor:
+    <<: *service-env
+    profiles: ["workers"]
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+      args:
+        NODE_VERSION: "22"
+        SERVICE_PATH: services/frames-processor
+
+  video-generator:
+    <<: *service-env
+    profiles: ["workers"]
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+      args:
+        NODE_VERSION: "22"
+        SERVICE_PATH: services/video-generator
+
+  ai-video-layer-generator:
+    <<: *service-env
+    profiles: ["workers"]
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+      args:
+        NODE_VERSION: "20"
+        SERVICE_PATH: services/ai-video-layer-generator
+
+  express-video-listener:
+    <<: *service-env
+    profiles: ["workers"]
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+      args:
+        NODE_VERSION: "20"
+        SERVICE_PATH: services/express-video-listener
+
+  assistant-query-processor:
+    <<: *service-env
+    profiles: ["workers"]
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+      args:
+        NODE_VERSION: "20"
+        SERVICE_PATH: services/assistant-query-processor
+
+  task-processor:
+    <<: *service-env
+    profiles: ["workers"]
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+      args:
+        NODE_VERSION: "20"
+        SERVICE_PATH: services/task-processor
+
+  docker-cleanup:
+    profiles: ["workers"]
+    build:
+      context: ../../services/docker-cleanup
+    environment:
+      SAMSAR_ASSETS_V2_ROOT: /assets_v2
+      CLEANUP_MIN_AGE_HOURS: "${CLEANUP_MIN_AGE_HOURS:-24}"
+      CLEANUP_CRON_SCHEDULE: "${CLEANUP_CRON_SCHEDULE:-17 3 * * *}"
+      CLEANUP_ON_START: "${CLEANUP_ON_START:-true}"
+      CLEANUP_DRY_RUN: "${CLEANUP_DRY_RUN:-false}"
+    volumes:
+      - media-assets-v2:/assets_v2
+
+  mongo:
+    profiles: ["local-mongo"]
+    image: mongo:7
+    volumes:
+      - mongo-data:/data/db
+    ports:
+      - "27017:27017"
+
+  minio:
+    profiles: ["minio"]
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: samsar
+      MINIO_ROOT_PASSWORD: samsar-local-password
+    volumes:
+      - minio-data:/data
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+
+  media-gateway:
+    profiles: ["local-media"]
+    image: nginx:stable-alpine
+    volumes:
+      - ./media-gateway.conf:/etc/nginx/conf.d/default.conf:ro
+      - media-assets:/usr/share/nginx/html/assets:ro
+      - media-assets-v2:/usr/share/nginx/html/assets_v2:ro
+    ports:
+      - "8080:80"
+
+  loki:
+    profiles: ["logger"]
+    image: grafana/loki:2.9.8
+    command: -config.file=/etc/loki/local-config.yml
+    ports:
+      - "${LOKI_PORT:-4100}:3100"
+    volumes:
+      - ./logger/loki-config.yml:/etc/loki/local-config.yml:ro
+      - loki-data:/loki
+    restart: unless-stopped
+
+  promtail:
+    profiles: ["logger"]
+    image: grafana/promtail:2.9.8
+    command: -config.file=/etc/promtail/config.yml
+    volumes:
+      - ./logger/promtail-config.yml:/etc/promtail/config.yml:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - promtail-data:/var/lib/promtail
+    depends_on:
+      - loki
+    restart: unless-stopped
+
+  grafana:
+    profiles: ["logger"]
+    image: grafana/grafana:10.4.3
+    environment:
+      GF_SERVER_DOMAIN: ${GRAFANA_DOMAIN:-localhost}
+      GF_SERVER_ROOT_URL: ${GRAFANA_ROOT_URL:-http://localhost:4000/}
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_NAME: Main Org.
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+      GF_AUTH_BASIC_ENABLED: "false"
+      GF_AUTH_DISABLE_LOGIN_FORM: "true"
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_LOG_MODE: console
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /etc/grafana/provisioning/dashboards/docker/docker-logs-overview.json
+    ports:
+      - "${GRAFANA_PORT:-4000}:3000"
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./logger/grafana/provisioning/datasources:/etc/grafana/provisioning/datasources:ro
+      - ./logger/grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
+    depends_on:
+      - loki
+    restart: unless-stopped
+
+volumes:
+  media-assets:
+  media-assets-v2:
+  persistent-data:
+  mongo-data:
+  minio-data:
+  loki-data:
+  promtail-data:
+  grafana-data:

@@ -1,0 +1,150 @@
+/* -------------------------------------------
+   Sleek Responsive Loader
+   - Accent color via CSS var
+   - Dark mode support
+   - Reduced motion friendly
+-------------------------------------------- */
+
+:root {
+  --accent:  hsl(222 100% 60%);  /* tweak to your brand */
+  --accent-2: hsl(160 84% 39%);
+  --text:    hsl(220 9% 46%);
+  --text-dark: hsl(220 13% 69%);
+}
+
+/* Container */
+.loader-wrap {
+  min-height: 100dvh;
+  display: grid;
+  place-items: center;
+  padding: 2rem;
+  background:
+    radial-gradient(1200px 800px at 20% 10%, color-mix(in hsl, var(--accent) 8%, transparent) 0%, transparent 60%),
+    radial-gradient(1000px 600px at 80% 90%, color-mix(in hsl, var(--accent-2) 10%, transparent) 0%, transparent 60%),
+    linear-gradient(hsl(220 14% 96%), hsl(220 14% 96%));
+}
+
+@media (prefers-color-scheme: dark) {
+  .loader-wrap {
+    background:
+      radial-gradient(1200px 800px at 20% 10%, color-mix(in hsl, var(--accent) 12%, transparent) 0%, transparent 60%),
+      radial-gradient(1000px 600px at 80% 90%, color-mix(in hsl, var(--accent-2) 14%, transparent) 0%, transparent 60%),
+      linear-gradient(hsl(222 14% 10%), hsl(222 14% 12%));
+  }
+}
+
+body.theme-light .loader-wrap {
+  background:
+    radial-gradient(1200px 800px at 20% 10%, color-mix(in hsl, var(--accent) 8%, transparent) 0%, transparent 60%),
+    radial-gradient(1000px 600px at 80% 90%, color-mix(in hsl, var(--accent-2) 10%, transparent) 0%, transparent 60%),
+    linear-gradient(hsl(220 14% 96%), hsl(220 14% 96%));
+}
+
+body.theme-dark .loader-wrap {
+  background:
+    radial-gradient(1200px 800px at 20% 10%, color-mix(in hsl, var(--accent) 12%, transparent) 0%, transparent 60%),
+    radial-gradient(1000px 600px at 80% 90%, color-mix(in hsl, var(--accent-2) 14%, transparent) 0%, transparent 60%),
+    linear-gradient(hsl(222 14% 10%), hsl(222 14% 12%));
+}
+
+/* Center stack */
+.loader-center {
+  position: relative;
+  display: grid;
+  justify-items: center;
+  gap: 1.25rem;
+}
+
+/* Conic gradient ring */
+.loader-ring {
+  --size: clamp(64px, 10vmin, 112px);
+  width: var(--size);
+  height: var(--size);
+  border-radius: 9999px;
+  background:
+    conic-gradient(from 0turn,
+      color-mix(in hsl, var(--accent) 80%, white) 0%,
+      color-mix(in hsl, var(--accent-2) 80%, white) 25%,
+      color-mix(in hsl, var(--accent) 80%, white) 50%,
+      color-mix(in hsl, var(--accent-2) 80%, white) 75%,
+      color-mix(in hsl, var(--accent) 80%, white) 100%);
+  /* create a ring by masking center */
+  -webkit-mask: radial-gradient(circle at center, transparent 58%, black 59%);
+          mask: radial-gradient(circle at center, transparent 58%, black 59%);
+  animation: spin-smooth 1.15s linear infinite;
+  position: relative;
+  isolation: isolate;
+}
+
+/* Soft inner dot for depth */
+.loader-ring::after {
+  content: "";
+  position: absolute;
+  inset: 22%;
+  border-radius: 9999px;
+  background: linear-gradient(180deg, rgba(255,255,255,0.7), rgba(255,255,255,0.1));
+  mix-blend-mode: soft-light;
+}
+
+/* Subtle glow */
+.loader-shadow {
+  width: clamp(60px, 9.5vmin, 108px);
+  height: clamp(12px, 2vmin, 18px);
+  border-radius: 9999px;
+  filter: blur(6px);
+  background: radial-gradient(closest-side, color-mix(in hsl, var(--accent) 40%, transparent), transparent 70%);
+  transform: translateY(-6px);
+  opacity: 0.6;
+}
+
+/* Label shimmer */
+.loader-label {
+  font-size: clamp(0.95rem, 1vw + 0.6rem, 1.05rem);
+  letter-spacing: 0.02em;
+  color: var(--text);
+  position: relative;
+  overflow: hidden;
+  line-height: 1.1;
+}
+@media (prefers-color-scheme: dark) {
+  .loader-label { color: var(--text-dark); }
+}
+
+body.theme-light .loader-label { color: var(--text); }
+body.theme-dark .loader-label { color: var(--text-dark); }
+
+.loader-label::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(90deg,
+    transparent 0%,
+    rgba(255,255,255,0.55) 45%,
+    rgba(255,255,255,0.0) 60%,
+    transparent 100%);
+  animation: shimmer 1.8s ease-in-out infinite;
+}
+
+/* Animations */
+@keyframes spin-smooth {
+  to { transform: rotate(360deg); }
+}
+@keyframes shimmer {
+  0%   { transform: translateX(-100%); }
+  60%  { transform: translateX(100%); }
+  100% { transform: translateX(100%); }
+}
+
+/* Reduced motion: keep it elegant but calm */
+@media (prefers-reduced-motion: reduce) {
+  .loader-ring { animation: none; }
+  .loader-label::after { animation: none; }
+}
+
+/* Compact inline variant (use class on parent element) */
+.loader-inline .loader-wrap {
+  min-height: unset;
+  background: transparent;
+  padding: 0;
+}

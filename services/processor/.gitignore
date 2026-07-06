@@ -1,0 +1,14 @@
+.env
+.env.local
+.env.development
+.env.test
+assets/
+assets_v2/
+logs/
+tmp/
+node_modules/
+package-lock.json
+yarn.lock
+.env.*
+.DS_Store
+agents.md

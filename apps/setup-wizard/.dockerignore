@@ -1,0 +1,8 @@
+node_modules
+dist
+dist_build
+.vite
+.env
+.env.*
+npm-debug.log*
+yarn-error.log*

@@ -1,0 +1,25 @@
+FROM node:20 AS builder
+
+WORKDIR /app
+
+COPY package*.json ./
+RUN npm install
+
+COPY . .
+RUN npm run build
+
+FROM node:20-alpine
+
+RUN apk add --no-cache bash docker-cli docker-cli-compose git
+
+WORKDIR /app
+
+COPY package*.json ./
+RUN npm install --omit=dev --ignore-scripts
+
+COPY --from=builder /app/dist ./dist
+COPY server.mjs ./server.mjs
+
+ENV SETUP_WIZARD_STATIC_DIR=/app/dist
+EXPOSE 80
+CMD ["node", "server.mjs"]

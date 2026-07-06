@@ -1,0 +1,44 @@
+/* Hide the default checkbox */
+.custom-checkbox {
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  background-color: #292524;
+  border: 1px solid #a8a29e !important;
+  width: 20px; /* Adjust size as needed */
+  height: 20px; /* Adjust size as needed */
+  position: relative;
+  cursor: pointer;
+  outline: none;
+}
+
+.custom-checkbox::before {
+  display: none;
+}
+/* Create the check mark using a pseudo-element */
+.custom-checkbox::after {
+  content: '';
+  position: absolute;
+  left: 50%; /* Center horizontally */
+  top: 50%;  /* Center vertically */
+  width: 12px; /* Size of the check mark */
+  height: 6px; /* Thickness of the check mark */
+  border: solid #bfdbfe;
+  border-width: 0 0 2px 2px;
+  transform: translate(-50%, -60%) rotate(-45deg); /* Adjust position and rotation */
+  display: none;
+}
+
+/* Show the check mark when checked */
+.custom-checkbox:checked::after {
+  display: block;
+}
+
+/* Optional: Add hover and focus styles */
+.custom-checkbox:hover {
+  border-color: #555;
+}
+
+.custom-checkbox:focus {
+  box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.2);
+}

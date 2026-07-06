@@ -1,0 +1,71 @@
+{
+  "name": "samsar_studio",
+  "version": "0.3.0",
+  "private": true,
+  "license": "MIT",
+  "dependencies": {
+    "@headlessui/react": "2.2.0",
+    "ace-builds": "1.36.1",
+    "axios": "1.18.1",
+    "dayjs": "1.11.12",
+    "konva": "9.3.6",
+    "lodash": "4.18.1",
+    "react": "18.2.0",
+    "react-ace": "12.0.0",
+    "react-beautiful-dnd": "13.1.1",
+    "react-dom": "18.2.0",
+    "react-icons": "5.1.0",
+    "react-konva": "18.2.10",
+    "react-konva-utils": "1.0.6",
+    "react-responsive": "10.0.0",
+    "react-router-dom": "6.30.4",
+    "react-select": "5.8.0",
+    "react-slider": "2.0.6",
+    "react-textarea-autosize": "8.5.3",
+    "react-toastify": "10.0.5",
+    "react-tooltip": "5.28.0",
+    "slick-carousel": "1.8.1"
+  },
+  "scripts": {
+    "start": "vite --port 3000",
+    "build": "vite build --mode production",
+    "preview": "vite preview"
+  },
+  "browserslist": {
+    "production": [
+      ">0.2%",
+      "not dead",
+      "not op_mini all"
+    ],
+    "development": [
+      "last 1 chrome version",
+      "last 1 firefox version",
+      "last 1 safari version"
+    ]
+  },
+  "overrides": {
+    "rollup": "4.60.0",
+    "cosmiconfig": {
+      "yaml": "1.10.3"
+    }
+  },
+  "resolutions": {
+    "rollup": "4.60.0",
+    "**/cosmiconfig/yaml": "1.10.3",
+    "**/@babel/core": "7.29.7",
+    "axios/form-data": "4.0.6",
+    "**/jest-util/picomatch": "2.3.2",
+    "**/micromatch/picomatch": "2.3.2",
+    "vite/postcss": "8.5.16"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "4.0.14",
+    "@types/node": "20.12.4",
+    "@types/react": "18.2.74",
+    "@types/react-dom": "18.2.24",
+    "@vitejs/plugin-react": "4.3.4",
+    "tailwindcss": "4.0.14",
+    "typescript": "5.0.4",
+    "vite": "6.4.3"
+  }
+}

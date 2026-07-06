@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" role="img" aria-labelledby="title desc">
+  <title id="title">Samsar Logo</title>
+  <desc id="desc">Square Samsar text logo in neocardina blue and green gradient.</desc>
+
+  <defs>
+    <linearGradient id="logoGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#3b9fe6"/>
+      <stop offset="52%" stop-color="#6edaff"/>
+      <stop offset="100%" stop-color="#48e894"/>
+    </linearGradient>
+
+    <linearGradient id="bgGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#08111a"/>
+      <stop offset="58%" stop-color="#081019"/>
+      <stop offset="100%" stop-color="#091521"/>
+    </linearGradient>
+
+    <radialGradient id="auraBlue" cx="24%" cy="18%" r="58%">
+      <stop offset="0%" stop-color="#46bfff" stop-opacity="0.32"/>
+      <stop offset="100%" stop-color="#46bfff" stop-opacity="0"/>
+    </radialGradient>
+
+    <radialGradient id="auraGreen" cx="84%" cy="20%" r="52%">
+      <stop offset="0%" stop-color="#39d881" stop-opacity="0.28"/>
+      <stop offset="100%" stop-color="#39d881" stop-opacity="0"/>
+    </radialGradient>
+
+  </defs>
+
+  <rect width="1024" height="1024" rx="220" fill="url(#bgGradient)"/>
+  <rect width="1024" height="1024" rx="220" fill="url(#auraBlue)"/>
+  <rect width="1024" height="1024" rx="220" fill="url(#auraGreen)"/>
+
+  <g transform="translate(512 540)" text-anchor="middle">
+    <text
+      x="0"
+      y="0"
+      fill="url(#logoGradient)"
+      font-family="Inter, Segoe UI, Arial, sans-serif"
+      font-size="228"
+      font-weight="800"
+      letter-spacing="2"
+    >
+      samsar
+    </text>
+  </g>
+</svg>

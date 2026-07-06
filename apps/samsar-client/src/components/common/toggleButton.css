@@ -1,0 +1,46 @@
+/* Basic styles for body in light/dark mode */
+body {
+  transition: background-color 0.3s, color 0.3s;
+}
+
+body.dark-mode {
+  background-color: #333;
+  color: #fff;
+}
+
+/* Styles for the toggle container and button */
+.toggle-container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  margin-top: 8px;
+}
+
+.toggle-btn {
+  width: 50px;
+  height: 25px;
+  border-radius: 25px;
+  background-color: #ccc;
+  position: relative;
+  cursor: pointer;
+  transition: background-color 0.3s;
+}
+
+.toggle-btn-dark {
+  background-color: #666;
+}
+
+.toggle-circle {
+  width: 20px;
+  height: 20px;
+  background-color: white;
+  border-radius: 50%;
+  position: absolute;
+  top: 2.5px;
+  left: 2.5px;
+  transition: transform 0.3s;
+}
+
+.toggle-btn-dark .toggle-circle {
+  transform: translateX(25px);
+}

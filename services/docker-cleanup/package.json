@@ -1,0 +1,12 @@
+{
+  "name": "docker-cleanup",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Cron cleanup service for stale Samsar assets_v2 frame transformations.",
+  "scripts": {
+    "start": "node src/cleanup.js",
+    "cleanup": "node src/cleanup.js",
+    "test": "node --test"
+  }
+}

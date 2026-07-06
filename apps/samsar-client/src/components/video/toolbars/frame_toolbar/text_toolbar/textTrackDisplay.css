@@ -1,0 +1,94 @@
+.rail-track {
+  background-image: repeating-linear-gradient(
+    to bottom,
+    transparent 0,
+    transparent 8px,
+    rgba(148, 163, 184, 0.35) 8px,
+    rgba(148, 163, 184, 0.35) 12px,
+    transparent 12px,
+    transparent 20px
+  );
+  background-repeat: repeat-y;
+  background-size: contain;
+  overflow-y: hidden;
+}
+
+
+.user-selected-track {
+  overflow-y: hidden;
+}
+
+
+/* Corrected selectors to target .thumb and .track-0 */
+.audio-track-slider-component .thumb {
+  background-color: transparent !important;
+}
+
+.audio-track-slider-component .track-0 {
+  background-color: transparent !important;
+}
+
+
+
+
+
+.text-track-slider-component {
+  margin: 0 auto;
+  display: inline-flex;
+  height: 100%;
+  min-height: 0;
+}
+.text-track-slider-component {
+
+  /* Style for the thumbs */
+  .train-thumb {
+    background-color: #333;
+    border-radius: 50%;
+    width: 20px;
+    height: 4px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    margin-top: -2px;
+  }
+
+  /* Style for the tracks */
+  .track {
+    background-color: #0f172a;
+    width: 100%;
+  }
+
+  /* Specific styling for the range between the thumbs */
+  .track:nth-child(2) {
+    background-color: #171717;
+    cursor: pointer;
+    /* The color for the duration range */
+  }
+  
+
+  .user-selected-track:nth-child(2) {
+    background-color: rgb(30 58 138);
+    cursor: pointer;
+    /* The color for the duration range */
+  }
+
+
+
+
+}
+
+body.theme-light .text-track-slider-component .train-thumb {
+  background-color: #9aaac0;
+}
+
+body.theme-light .text-track-slider-component .track {
+  background-color: #dbe4f0;
+}
+
+body.theme-light .text-track-slider-component .track:nth-child(2) {
+  background-color: #cbd6e6;
+}
+
+body.theme-light .text-track-slider-component .user-selected-track:nth-child(2) {
+  background-color: #93c5fd;
+}

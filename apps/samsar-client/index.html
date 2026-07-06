@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#000000" />
+  <meta name="description" content="Samsar One Studio" />
+
+  <title>Samsar One Creators Studio</title>
+
+  <script>
+    (function () {
+      let colorMode = 'dark';
+
+      try {
+        colorMode = localStorage.getItem('colorMode');
+        if (!colorMode) {
+          colorMode = 'dark';
+          localStorage.setItem('colorMode', colorMode);
+        }
+      } catch (error) {
+        colorMode = 'dark';
+      }
+
+      document.documentElement.style.backgroundColor = colorMode === 'dark' ? '#050814' : '#d9e2f0';
+      if (colorMode === 'dark') {
+        document.documentElement.classList.add('dark');
+      } else {
+        document.documentElement.classList.remove('dark');
+      }
+    })();
+  </script>
+</head>
+
+<body>
+  <div id="root"></div>
+  <script type="module" src="/src/index.tsx"></script>
+</body>
+
+</html>

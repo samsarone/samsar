@@ -1,0 +1,71 @@
+{
+  "runtime": "docker",
+  "security": {
+    "tokenSecret": "samsar-local-token-secret-change-me",
+    "customAdapterSecret": "samsar-local-custom-adapter-secret-change-me",
+    "loginTokenTtlSeconds": 3600
+  },
+  "database": {
+    "provider": "local-mongo",
+    "mongoUrl": "mongodb://mongo:27017/SamsarOne"
+  },
+  "storage": {
+    "provider": "s3-compatible",
+    "mediaBucketName": "samsar-resources",
+    "staticCdnUrl": "http://localhost:8080/",
+    "secureAssetPrefix": "assets_v2",
+    "accessKeyId": "samsar",
+    "secretAccessKey": "samsar-local-password",
+    "region": "us-east-1",
+    "s3Endpoint": "http://minio:9000",
+    "s3ForcePathStyle": true,
+    "externalMediaPublishEnabled": false,
+    "cloudFront": {
+      "keyPairId": "",
+      "privateKey": "",
+      "privateKeyBase64": "",
+      "signedUrlTtlSeconds": 604800
+    }
+  },
+  "publicUrls": {
+    "clientApp": "http://localhost:3000",
+    "processorApi": "http://localhost:3002",
+    "samsarApi": "https://api.samsar.one/v1",
+    "media": "http://localhost:8080"
+  },
+  "providers": {
+    "samsar": {
+      "enabled": false,
+      "apiKey": ""
+    },
+    "openai": {
+      "enabled": false,
+      "apiKey": ""
+    },
+    "googleCloud": {
+      "enabled": false,
+      "projectId": "",
+      "credentialsJsonB64": ""
+    },
+    "fal": {
+      "enabled": false,
+      "apiKey": ""
+    },
+    "elevenlabs": {
+      "enabled": false,
+      "apiKey": ""
+    },
+    "runway": {
+      "enabled": false,
+      "apiKey": ""
+    }
+  },
+  "services": {
+    "workers": true,
+    "setupWizard": true,
+    "localMongo": true,
+    "minio": true,
+    "mediaGateway": true,
+    "logger": true
+  }
+}

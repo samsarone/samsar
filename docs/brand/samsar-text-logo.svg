@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="360" height="88" viewBox="0 0 360 88" role="img" aria-labelledby="title desc">
+  <title id="title">Samsar</title>
+  <desc id="desc">Transparent Samsar text logo matching the Studio top navigation style.</desc>
+
+  <defs>
+    <linearGradient id="samsarBlue" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#46bfff"/>
+      <stop offset="100%" stop-color="#89dcff"/>
+    </linearGradient>
+  </defs>
+
+  <text
+    x="18"
+    y="58"
+    fill="url(#samsarBlue)"
+    font-family="Inter, Segoe UI, Arial, sans-serif"
+    font-size="44"
+    font-weight="900"
+    letter-spacing="7"
+  >
+    SAMSAR
+  </text>
+</svg>

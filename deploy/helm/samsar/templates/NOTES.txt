@@ -1,0 +1,7 @@
+Samsar Helm chart scaffold created.
+
+Next steps:
+1. Render ConfigMaps/Secrets from the setup wizard output.
+2. Add Deployments for processor/client/workers.
+3. Add optional StatefulSets for MongoDB and MinIO.
+4. Add PVCs, Services, Ingress, and probes.

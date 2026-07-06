@@ -1,0 +1,28 @@
+{
+  "name": "samsar_frame_generator",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "preinstall": "node ./scripts/ensure-node-abi.mjs",
+    "postinstall": "npm run rebuild:native",
+    "prestart": "npm run check:native",
+    "start": "node index.js",
+    "check:native": "node ./scripts/check-native-modules.mjs",
+    "rebuild:native": "npm rebuild canvas && npm run check:native",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "engines": {
+    "node": "22.x",
+    "npm": ">=10"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "canvas": "^2.11.2",
+    "dotenv": "^16.4.5",
+    "mongoose": "^8.4.0",
+    "qrcode": "^1.5.4"
+  }
+}

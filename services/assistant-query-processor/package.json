@@ -1,0 +1,25 @@
+{
+  "name": "samsar_assistant_query_processor",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "test": "node --test"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@azure-rest/ai-inference": "^1.0.0-beta.6",
+    "@azure/core-auth": "^1.9.0",
+    "@azure/identity": "^4.6.0",
+    "@azure/openai": "^2.0.0",
+    "@google-cloud/vertexai": "^1.12.0",
+    "dotenv": "^16.4.5",
+    "google-auth-library": "^9.14.1",
+    "hat": "^0.0.3",
+    "mongoose": "^8.5.1",
+    "openai": "^4.86.1",
+    "samsar-js": "0.48.44"
+  }
+}

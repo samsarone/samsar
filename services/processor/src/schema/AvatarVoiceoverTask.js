@@ -1,0 +1,83 @@
+import { Schema, model } from 'mongoose';
+
+const avatarVoiceoverTaskSchema = new Schema({
+  userId: { type: String, required: true, index: true },
+  sessionId: { type: String, required: true, index: true },
+
+  status: { type: String, default: 'IMAGE_PENDING', index: true },
+  stage: { type: String, default: 'IMAGE_GENERATION' },
+  errorMessage: { type: String, default: '' },
+
+  prompt: { type: String, default: '' },
+  avatarImagePrompt: { type: String, default: '' },
+  imageRequestId: { type: String, default: '' },
+  imageStatus: { type: String, default: 'PENDING' },
+  imageError: { type: String, default: '' },
+  avatarImage: { type: String, default: '' },
+  avatarImageUrl: { type: String, default: '' },
+  avatarImageWidth: { type: Number, default: 0 },
+  avatarImageHeight: { type: Number, default: 0 },
+
+  avatarName: { type: String, default: '' },
+  personality: { type: String, default: '' },
+  voicePresetId: { type: String, default: '' },
+  voicePresetName: { type: String, default: '' },
+  runwayAvatarId: { type: String, default: '' },
+  runwayAvatarStatus: { type: String, default: '' },
+  runwayAvatarResponse: { type: Object, default: null },
+  avatarError: { type: String, default: '' },
+
+  avatarVideoTaskId: { type: String, default: '' },
+  avatarVideoStatus: { type: String, default: '' },
+  avatarVideoUrl: { type: String, default: '' },
+  avatarVideoAssetPath: { type: String, default: '' },
+  avatarVideoError: { type: String, default: '' },
+  avatarVideoResponse: { type: Object, default: null },
+  avatarVideoSpeechAudioUrl: { type: String, default: '' },
+  avatarVideoSpeechAudioAssetPath: { type: String, default: '' },
+  avatarVideoSpeechAudioDuration: { type: Number, default: 0 },
+  avatarVideoAudioSource: { type: String, default: '' },
+  avatarVideoSpeechAudioSource: { type: String, default: '' },
+
+  hints: { type: [Object], default: [] },
+  normalizedHintsText: { type: String, default: '' },
+  normalizedHintsAssetPath: { type: String, default: '' },
+  spokenScript: { type: String, default: '' },
+  avatarSpeechGenerationId: { type: String, default: '' },
+  avatarSpeechStatus: { type: String, default: '' },
+  avatarSpeechAudioAssetPath: { type: String, default: '' },
+  avatarSpeechAudioUrl: { type: String, default: '' },
+  avatarSpeechDuration: { type: Number, default: 0 },
+  avatarSpeechError: { type: String, default: '' },
+  speechProvider: { type: String, default: '' },
+  speechSpeaker: { type: String, default: '' },
+  speechSpeakerName: { type: String, default: '' },
+  speechSpeakerVoiceId: { type: String, default: '' },
+  speechSpeakerLabel: { type: String, default: '' },
+  speechSpeakerDetails: { type: Object, default: null },
+  speechLanguageCode: { type: String, default: '' },
+  speechLanguageCodes: { type: [String], default: [] },
+  speechSegments: { type: [Object], default: [] },
+  speechTimelineSegments: { type: [Object], default: [] },
+  creditsCharged: { type: Number, default: 0 },
+  creditsRemaining: { type: Number, default: null },
+  pricingBaseCredits: { type: Number, default: 0 },
+  pricingDurationSeconds: { type: Number, default: 0 },
+  pricingMultiplier: { type: Number, default: 1 },
+  pricingBillingUnitSeconds: { type: Number, default: 0 },
+  pricingUpfrontCredits: { type: Number, default: 0 },
+  pricingBaseCreditsPerUnit: { type: Number, default: 0 },
+
+  startTime: { type: Number, default: 0 },
+  duration: { type: Number, default: 0 },
+  framesPerSecond: { type: Number, default: 24 },
+  shapeOverlay: { type: String, default: 'circle' },
+
+  globalVideoId: { type: String, default: '' },
+  globalAudioLayerId: { type: String, default: '' },
+  savedLibraryItemId: { type: String, default: '' },
+}, { timestamps: true, strict: false });
+
+const AvatarVoiceoverTask = model('AvatarVoiceoverTask', avatarVoiceoverTaskSchema);
+
+export default AvatarVoiceoverTask;

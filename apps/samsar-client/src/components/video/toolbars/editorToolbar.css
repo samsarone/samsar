@@ -1,0 +1,10 @@
+/* Example CSS */
+/* Adjust the container to smoothly transition height */
+.relative {
+  transition: height 0.3s ease;
+}
+
+/* Ensure the text area transitions smoothly */
+textarea {
+  transition: height 0.3s ease;
+}

@@ -1,0 +1,35 @@
+image:
+  registry: ""
+  pullPolicy: IfNotPresent
+
+runtime:
+  environment: docker
+
+database:
+  provider: local-mongo
+  mongoUrl: mongodb://mongo:27017/SamsarOne
+
+storage:
+  provider: s3-compatible
+  mediaBucketName: samsar-resources
+  staticCdnUrl: ""
+  secureAssetPrefix: assets_v2
+  s3Endpoint: http://minio:9000
+  s3ForcePathStyle: true
+
+components:
+  processor: true
+  workers: true
+  client: true
+  setupWizard: false
+  mongo: true
+  minio: true
+  mediaGateway: true
+
+persistence:
+  media:
+    size: 100Gi
+  mongo:
+    size: 50Gi
+  minio:
+    size: 100Gi

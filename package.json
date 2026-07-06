@@ -1,0 +1,26 @@
+{
+  "name": "samsar",
+  "private": true,
+  "version": "0.1.0",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "sync": "bash ../scripts/sync-projects.sh",
+    "sync:build": "bash ../scripts/sync-projects.sh --build",
+    "sync:promote": "bash ../scripts/sync-projects.sh --build --promote",
+    "config:render": "node scripts/generate-runtime-config.mjs",
+    "docker:config": "docker compose -f deploy/compose/docker-compose.yml config",
+    "docker:setup-assets": "bash scripts/setup-docker-runtime-assets.sh",
+    "docker:setup-fonts": "bash scripts/setup-docker-runtime-assets.sh --fonts-only",
+    "docker:setup-logger": "bash scripts/setup-docker-runtime-assets.sh --logger-only",
+    "docker:up": "npm run config:render && docker compose -f deploy/compose/docker-compose.yml --profile core --profile workers --profile local-mongo --profile minio --profile local-media --profile logger up -d --build",
+    "docker:down": "docker compose -f deploy/compose/docker-compose.yml --profile core --profile workers --profile local-mongo --profile minio --profile local-media --profile logger down",
+    "setup-wizard:docker": "bash scripts/setup-wizard-docker.sh"
+  },
+  "workspaces": [
+    "apps/*",
+    "services/*",
+    "packages/*"
+  ],
+  "packageManager": "yarn@1.22.22+sha1.ac34549e6aa8e7ead463a7407e1c7390f61a6610"
+}

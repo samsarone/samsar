@@ -1,0 +1,25 @@
+/* Custom checkbox styling */
+.custom-checkbox {
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
+  width: 25px;
+  height: 25px;
+  background-color: #020617;
+  border: 1px solid #020617;
+  border-radius: 4px;
+  cursor: pointer;
+  position: relative;
+}
+
+.custom-checkbox:checked::before {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 4px;
+  width: 8px;
+  height: 16px;
+  border: solid #60a5fa;
+  border-width: 0 3px 3px 0;
+  transform: rotate(45deg);
+}

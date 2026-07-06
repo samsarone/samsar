@@ -1,0 +1,51 @@
+# Node modules - should be installed fresh inside the container
+node_modules
+npm-debug.log
+yarn-debug.log
+yarn-error.log
+
+# Environment files - don't leak secrets into the image
+.env
+.env.production
+
+
+
+# OS-generated files
+.DS_Store
+Thumbs.db
+
+# Logs
+logs
+*.log
+
+# Tests and coverage
+coverage
+*.test.js
+__tests__/
+jest.config.js
+
+# Git and version control
+.git
+.gitignore
+
+# Local editor settings
+.vscode
+.idea
+*.swp
+*.swo
+
+# Docker-related
+Dockerfile.dev
+docker-compose.yml
+docker-compose.override.yml
+
+# Build artifacts
+dist
+build
+tmp
+.cache
+*.tsbuildinfo
+
+# Optional: ignore documentation and markdown
+README.md
+*.md

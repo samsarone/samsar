@@ -1,0 +1,118 @@
+import express from 'express';
+
+import imageApiRouter from '../api/image.js';
+import videoApiRouter from '../api/video.js';
+import { resolveRequestActorFromAuthHeaders } from '../../models/external/User.js';
+import {
+  DEPLOYMENT_PROVIDER_CAPABILITIES,
+  validateDeploymentProviderCredentials,
+  validateSamsarApiKeyHeaders,
+} from '../../models/api/DeploymentProviderAPI.js';
+import {
+  createExternalChatCompletion,
+  getExternalChatTimeoutMs,
+} from '../../models/api/ExternalChatAPI.js';
+
+const router = express.Router();
+
+async function validateAPIKeyAndUserId(req, res, next) {
+  try {
+    const authContext = await resolveRequestActorFromAuthHeaders(req.headers);
+    if (!['api_key', 'auth_token', 'app_key'].includes(authContext.authType)) {
+      return res.status(403).json({
+        message: 'Use a Samsar API key, user auth token, or APP_KEY for this route.',
+      });
+    }
+
+    req.userId = authContext.internalUserId;
+    req.authType = authContext.authType;
+    next();
+  } catch (error) {
+    if (error?.code === 'API_KEY_EXPIRED' || error?.code === 'APP_KEY_EXPIRED') {
+      return res.status(401).json({
+        message: error.message,
+      });
+    }
+    return res.status(error?.status || 500).json({
+      message: error?.message || 'Internal server error while validating API key.',
+    });
+  }
+}
+
+function setCreditHeaders(res, creditsCharged, remainingCredits) {
+  if (creditsCharged !== undefined && creditsCharged !== null) {
+    res.set('x-credits-charged', creditsCharged.toString());
+  }
+  if (remainingCredits !== undefined && remainingCredits !== null) {
+    res.set('x-credits-remaining', remainingCredits.toString());
+  }
+}
+
+router.get('/providers/capabilities', (req, res) => {
+  res.status(200).json({
+    providers: DEPLOYMENT_PROVIDER_CAPABILITIES,
+  });
+});
+
+router.post('/providers/validate', async (req, res) => {
+  try {
+    const result = await validateDeploymentProviderCredentials(req.body || {});
+    res.status(200).json(result);
+  } catch (error) {
+    const statusCode = error?.statusCode || error?.status || 500;
+    res.status(statusCode).json({
+      message: error?.message || 'Internal server error while validating provider credentials.',
+    });
+  }
+});
+
+router.get('/api_key/validate', async (req, res) => {
+  try {
+    const result = await validateSamsarApiKeyHeaders(req.headers);
+    res.status(200).json(result);
+  } catch (error) {
+    const statusCode = error?.statusCode || error?.status || 401;
+    res.status(statusCode).json({
+      valid: false,
+      message: error?.message || 'Invalid Samsar API key.',
+    });
+  }
+});
+
+async function handleExternalChatCompletion(req, res) {
+  try {
+    const timeoutMs = getExternalChatTimeoutMs(req.body || {});
+    req.setTimeout(timeoutMs + 30000);
+    res.setTimeout(timeoutMs + 30000);
+    const result = await createExternalChatCompletion({
+      userId: req.userId,
+      payload: req.body || {},
+    });
+    setCreditHeaders(res, result.creditsCharged, result.remainingCredits);
+    res.status(200).json(result.response);
+  } catch (error) {
+    if (error?.code === 'INSUFFICIENT_CREDITS') {
+      return res.status(402).json({
+        message: 'Insufficient credits or no credits remaining.',
+      });
+    }
+    const statusCode = error?.statusCode || error?.status || error?.response?.status || 500;
+    res.status(statusCode).json({
+      message: error?.message || 'Internal server error while creating external chat completion.',
+    });
+  }
+}
+
+router.post('/chat', validateAPIKeyAndUserId, handleExternalChatCompletion);
+router.post('/chat/completions', validateAPIKeyAndUserId, handleExternalChatCompletion);
+
+router.use('/image', imageApiRouter);
+router.use('/video', videoApiRouter);
+
+router.all(['/audio', '/audio/*'], validateAPIKeyAndUserId, (req, res) => {
+  res.status(501).json({
+    message: 'External audio API route is reserved; audio create/edit mapping will be enabled after the audio request schema is finalized.',
+  });
+});
+
+export default router;

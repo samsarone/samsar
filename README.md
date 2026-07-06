@@ -1,0 +1,372 @@
+# Samsar
+
+Samsar is a full-stack software factory and generative video cloud for one-shot text-to-video, image-list-to-video, image editing, search, recommendations, assistant workflows, audio generation, and post-processing Studio workflows. This monorepo packages the deployable Docker runtime for Samsar Studio, the processor API, worker services, local media storage, setup wizard, and deployment scaffolding.
+
+The default operating model is local Docker first: the stack runs its own API, frontend, workers, MongoDB, MinIO-compatible object storage, media gateway, and optional Loki/Grafana logging from one repository. Kubernetes scaffolding is available for teams preparing cluster deployment.
+
+Runtime configuration, generated secrets, and local deployment resources are stored under `runtime/` in the user's sandboxed environment.
+
+## Architecture
+
+![Text to Video](assets/text-to-video-pipeline.png)
+
+![Image to Video](assets/image-to-video-pipeline.png)
+
+![Search Embeddings](assets/search-embeddings-pipeline.png)
+
+![Recommendations](assets/recommendations-embeddings-pipeline.png)
+
+## Salient Features
+
+- Zero-shot text-to-video up to 3 minutes for documentary, infotainment, ed-tech, film summary, custom themes, and original ideas.
+- Zero-shot image-list-to-video that turns product images into polished ad videos with optional narrator avatar, outro, and CTA.
+- One-click scene re-rolls after render to fix small imperfections without rebuilding the full project.
+- Full Studio workspace for detailed, granular post-processing.
+- Sandboxed local logging, with logs and traces kept on your machine.
+- Multi-provider model routing so each operation can use the best available provider and model.
+- Built-in search and recommendations for creating a generative video library and Studio knowledge base.
+
+## Documentation
+
+| Page | Use it for |
+| --- | --- |
+| [Architecture](pages/architecture.md) | Docker service topology, request flow, runtime config, storage, logging, and deployment modes. |
+| [Providers and Models](pages/providers-and-models.md) | Provider credentials, supported model families, fallback behavior, and generated model availability. |
+| [Setup Wizard](pages/setup-wizard.md) | UI-driven setup steps, validation, generated files, and Docker setup lifecycle. |
+| [Search](pages/search.md) | Embedding-backed indexing, semantic search, filters, and status endpoints. |
+| [Recommendations](pages/recommendations.md) | Similarity and recommendation workflows built on embedding templates. |
+| [Text Enhance](pages/text-enhance.md) | Copy enhancement endpoint, inputs, billing headers, and inference routing. |
+| [Image Edit](pages/image-edit.md) | Image enhancement, branding removal, text-to-image, image set expansion, title generation, and status polling. |
+| [Image List to Video](pages/image-list-to-video.md) | Image-list-to-video and ad-style CTA video generation from image URLs plus metadata. |
+| [Text to Video](pages/text-to-video.md) | One-shot prompt-to-video generation, model selection, duration limits, and status flow. |
+
+## Layout
+
+| Area | Directory | Purpose |
+| --- | --- | --- |
+| Studio app | `apps/samsar-client` | Samsar Studio and VidGenie frontend. Runs on port `3000` in Docker. |
+| Setup wizard | `apps/setup-wizard` | Browser setup flow for providers, services, data, mail, and admin configuration. Runs on port `8089` when started. |
+| Processor API | `services/processor` | Public API, Studio API, auth, billing, session orchestration, search/recommendation APIs, and status endpoints. Runs on port `3002`. |
+| Generation workers | `services/generator`, `services/ai-video-layer-generator`, `services/video-generator`, `services/audio-generator`, `services/frames-processor` | Image generation/editing, AI video layers, final rendering, speech/music/sound effects, frame processing, and media processing. |
+| Workflow workers | `services/express-video-listener`, `services/assistant-query-processor`, `services/task-processor` | Express video state machine, assistant queries, and scheduled/background tasks. |
+| Runtime config | `runtime/config`, `runtime/secrets` | Generated deployment config, model availability, env files, and local secrets. Not committed. |
+| Deployment | `deploy/compose`, `deploy/helm` | Docker Compose stack and Kubernetes Helm scaffold. |
+| Docs | `docs`, `pages` | Runtime notes, brand assets, and deeper Markdown documentation linked from this README. |
+
+## Services
+
+| Capability | Primary APIs or surfaces | Docker services involved |
+| --- | --- | --- |
+| Studio workspace | Browser app at `http://localhost:3000` | `client`, `processor`, media gateway, workers as needed |
+| Text-to-video | `POST /v1/video/text_to_video`, `POST /v2/text_to_video` | `processor`, `generator`, `audio-generator`, `ai-video-layer-generator`, `express-video-listener`, `video-generator`, `frames-processor` |
+| Image-list-to-video and ad video | `POST /v1/video/image_list_to_video`, `POST /v2/image_list_to_video` | Same express video pipeline, plus image validation and optional CTA/outro/footer generation |
+| Image generation and edit | `POST /v1/image/text_to_image`, `POST /v1/image/enhance`, `POST /v1/image/remove_branding`, `POST /v1/image/add_image_set` | `processor`, `generator`, MongoDB, media storage |
+| Search | `POST /v1/chat/create_embedding`, `POST /v1/chat/search_against_embeddings` | `processor`, MongoDB, OpenAI embedding credentials |
+| Recommendations | `POST /v1/chat/similar_to_embeddings` | `processor`, MongoDB, OpenAI embedding credentials |
+| Text enhance | `POST /v1/chat/enhance` | `processor`, configured inference provider, MongoDB for user/session state |
+| Assistant workflows | `POST /v1/assistant/*`, `POST /v2/assistant/*` aliases | `processor`, `assistant-query-processor`, configured inference provider |
+| Audio, speech, music, sound effects | Studio tools and video generation stages | `audio-generator`, configured OpenAI, Google, ElevenLabs, FAL, or Samsar provider |
+| Local media delivery | `http://localhost:8080/assets_v2/...` | `media-gateway`, `minio`, Docker volumes |
+| Observability | Grafana at `http://localhost:4000` | `loki`, `promtail`, `grafana` |
+
+## Requirements
+
+- Git
+- Node.js 20+ and npm
+- Docker Desktop or Docker Engine with Compose
+- `rsync`
+- Kubernetes and Helm, only for cluster deployment
+
+## Quick Start
+
+From the monorepo root:
+
+```bash
+cd samsar
+npm install
+```
+
+Sync source projects from the parent workspace when this monorepo is used as the deployable wrapper around sibling source projects:
+
+```bash
+npm run sync
+```
+
+Create a local runtime config:
+
+```bash
+mkdir -p runtime/config runtime/secrets
+cp samsar.config.example.json runtime/config/samsar.config.json
+```
+
+Edit `runtime/config/samsar.config.json` for provider keys, storage, database, and public URLs. The checked-in example is safe for local Docker defaults: local MongoDB, local MinIO-compatible storage, local media gateway, and no external provider enabled.
+
+Render env files:
+
+```bash
+npm run config:render
+```
+
+Install Docker-visible fonts and prepare the optional local logger stack:
+
+```bash
+npm run docker:setup-assets
+```
+
+Start the complete local Docker stack:
+
+```bash
+npm run docker:up
+```
+
+Open the local services:
+
+| Service | URL |
+| --- | --- |
+| Studio | `http://localhost:3000` |
+| Processor API | `http://localhost:3002` |
+| Local media gateway | `http://localhost:8080` |
+| MinIO console | `http://localhost:9001` |
+| Grafana logs | `http://localhost:4000` |
+
+Stop the stack:
+
+```bash
+npm run docker:down
+```
+
+## Setup Wizard
+
+```bash
+npm run setup-wizard:docker
+```
+
+Open `http://localhost:8089`.
+
+Use the setup wizard when you want a UI-driven local Docker setup flow. Use the manual `runtime/config/samsar.config.json` flow when you want direct control over credentials, provider selection, storage URLs, database settings, or mail settings.
+
+The wizard follows four configuration steps:
+
+| Step | What it configures | Runtime effect |
+| --- | --- | --- |
+| Providers | OpenAI, Google Cloud, FAL, ElevenLabs, RunwayML, and optional Samsar API key | Controls which models/actions appear in `runtime/config/available-models.json`. |
+| Services | Processor, setup wizard, image generator, assistant query processor, audio generator, AI video layer generator, video renderer, frames processor, express video listener, and logger | Determines which Docker service families are enabled for the local runtime. |
+| Mail and Data | Local or remote MongoDB, local MinIO or external S3-compatible storage, SMTP/SES/disabled mail | Writes database, storage, CDN, media, and mail settings. |
+| Admin | Organization and initial admin/login setup | Prepares Docker setup login and local access details. |
+
+During setup, the wizard saves deployment config, renders runtime env, starts containers, publishes the local media gateway, verifies the processor API and client, and prepares local login. See [Setup Wizard](pages/setup-wizard.md) for the detailed lifecycle.
+
+## Providers
+
+Provider availability is explicit. `npm run config:render` reads `runtime/config/samsar.config.json`, writes `runtime/secrets/root.env`, and generates `runtime/config/available-models.json` from enabled providers. The video API then filters supported model responses through that generated availability file.
+
+| Provider | Enables | Models and families from the setup logic |
+| --- | --- | --- |
+| Samsar API key | Universal fallback for configured Docker deployments | `gpt-5.5`, `gemini-3.1-pro`, `GPTIMAGE2`, `SEEDREAM`, `RUNWAYML`, `VEO3.1I2V`, `VEO3.1I2VFAST`, `COSMOS3SUPERI2V`, `SEEDANCEI2V`, `KLINGIMGTOVID3PRO`, `KLINGIMGTOVIDTURBO`, `HAPPYHORSEI2V`, `LYRIA3`, `ELEVENLABS_MUSIC`, `OPENAI_TTS`, `ELEVENLABS`, `GOOGLE_TTS`, lip sync, sound effects, and NanoBanana families. |
+| OpenAI | Chat, assistant, image, audio, moderation, search, recommendations | `gpt-5.5`, `GPTIMAGE2`, `OPENAI_TTS`. |
+| Google Cloud | Gemini, image, video, audio, moderation | `gemini-3.1-pro`, `VEO3.1I2V`, `VEO3.1I2VFAST`, `LYRIA3`, `GOOGLE_TTS`, `NANOBANANA2`, `NANOBANANAPRO`. |
+| FAL | Image, video, audio, lip sync, sound effects | `SEEDREAM`, `NANOBANANA2`, `NANOBANANAPRO`, VEO via FAL, `COSMOS3SUPERI2V`, `SEEDANCEI2V`, Kling image-to-video, `HAPPYHORSEI2V`, ElevenLabs via FAL, `MMAUDIOV2`, `MIRELOAI`, and lip sync model families. |
+| ElevenLabs | Speech and music | `ELEVENLABS`, `ELEVENLABS_MUSIC`. |
+| RunwayML | Video generation and image-to-video | `RUNWAYML`. |
+
+Native provider keys are used when present. In Docker, a configured Samsar API key can act as fallback for supported inference and media stages when a native provider credential is missing or the request is configured for deployed Samsar authorization. See [Providers and Models](pages/providers-and-models.md).
+
+## API
+
+All routes below are served by the processor API at `http://localhost:3002` in local Docker. Auth accepts a Samsar API key, auth token, or app key where supported by the route.
+
+| Workflow | Main endpoints | Notes |
+| --- | --- | --- |
+| Health | `GET /v1/chat/health`, `GET /v1/image/health`, `GET /v1/video/health`, `GET /v2/health` | Per-route health checks for local verification. |
+| Supported video models | `GET /v1/video/supported_models` | Returns text-to-video and image-list-to-video model lists filtered by deployment availability. |
+| Text enhance | `POST /v1/chat/enhance` | Enhances copy from `message`, optional `metadata`, `language`, and `maxwords`. |
+| Search indexing | `POST /v1/chat/create_embedding`, `POST /v1/chat/create_embedding_from_url`, `POST /v1/chat/generate_embeddings_from_plain_text` | Creates reusable embedding templates from records, URLs, or plain text. |
+| Search query | `POST /v1/chat/search_against_embeddings` | Searches a template with `search_term`, filters, and optional reranking. |
+| Recommendations | `POST /v1/chat/similar_to_embeddings` | Returns similar records from a template using text or structured search JSON. |
+| Image edit/generation | `POST /v1/image/text_to_image`, `POST /v1/image/enhance`, `POST /v1/image/remove_branding`, `POST /v1/image/add_image_set` | Queues image sessions and returns request IDs for polling. |
+| Image status | `GET /v1/image/status?request_id=...`, `GET /v1/image/list` | Polls and lists image API sessions. |
+| Text-to-video | `POST /v1/video/text_to_video`, `POST /v2/text_to_video` | Requires prompt, image model, video model, and duration from 10 to 240 seconds. |
+| Image-list-to-video | `POST /v1/video/image_list_to_video`, `POST /v2/image_list_to_video` | Uses image URLs, prompt/metadata, selected models, aspect ratio, and optional CTA/outro/footer/narrator settings. |
+| Video status | `GET /v2/status`, `GET /v2/status_detailed`, `GET /v1/external_users/status` | Status endpoints support request IDs/session IDs and detailed external request reporting. |
+
+## Docker Compose
+
+Validate the rendered Compose configuration:
+
+```bash
+npm run docker:config
+```
+
+`npm run docker:up` renders `runtime/secrets/root.env` and `runtime/config/available-models.json`, then starts all local profiles:
+
+| Profile | Services |
+| --- | --- |
+| `core` | `client`, `processor` |
+| `workers` | `generator`, `audio-generator`, `frames-processor`, `video-generator`, `ai-video-layer-generator`, `express-video-listener`, `assistant-query-processor`, `task-processor` |
+| `local-mongo` | `mongo` |
+| `minio` | `minio` |
+| `local-media` | `media-gateway` |
+| `logger` | `loki`, `promtail`, `grafana` |
+
+Run `npm run docker:setup-assets` once after choosing Docker services in the setup wizard or after editing `runtime/config/samsar.config.json`. The script installs subtitle/render fonts into `runtime/fonts`, copies them into any running Samsar service containers, and recreates Promtail/Grafana only when `services.logger` is enabled so Docker logs are available in local Grafana.
+
+Persistent Docker state is stored in named volumes:
+
+- `mongo-data`
+- `minio-data`
+- `media-assets`
+- `media-assets-v2`
+- `persistent-data`
+- `loki-data`
+- `promtail-data`
+- `grafana-data`
+
+To inspect logs:
+
+```bash
+docker compose -f deploy/compose/docker-compose.yml logs -f processor client
+```
+
+To rebuild and replace only the frontend container:
+
+```bash
+docker compose -f deploy/compose/docker-compose.yml build client
+docker compose -f deploy/compose/docker-compose.yml up -d --force-recreate --no-deps client
+```
+
+Avoid restarting generation workers while a video, audio, or sound-effect job is active unless you have confirmed the worker is stuck or the job can safely resume.
+
+## Media URLs
+
+In local Docker, completed render URLs are expected to look like:
+
+```bash
+http://localhost:8080/assets_v2/video/output/<session-id>/<file>.mp4
+```
+
+That URL is served by the local media gateway. It is not an S3 or CloudFront URL unless external media publishing is enabled in runtime config.
+
+When a remote provider must fetch local-only media from your Docker stack, Samsar needs a public media base URL. The setup wizard starts a temporary media tunnel automatically when local media publishing is required for the selected configuration. If you are using the manual config flow, or if a remote provider cannot fetch local media, start the tunnel yourself:
+
+```bash
+scripts/start-local-media-tunnel.sh
+```
+
+The script starts a short-lived public tunnel to the local media gateway, updates `runtime/secrets/root.env` and `runtime/config/samsar.config.json` with the tunnel base URL, and requires the provider-calling services to be recreated so they read the updated env. The tunnel is a public base URL for local media paths, not a separate signed URL per asset.
+
+## Runtime Config
+
+The main config file is:
+
+```bash
+runtime/config/samsar.config.json
+```
+
+The example config uses local Docker defaults:
+
+- `database.provider`: `local-mongo`
+- `storage.provider`: `s3-compatible`
+- `storage.staticCdnUrl`: `http://localhost:8080/`
+- `storage.externalMediaPublishEnabled`: `false`
+- `publicUrls.clientApp`: `http://localhost:3000`
+- `publicUrls.processorApi`: `http://localhost:3002`
+- `publicUrls.media`: `http://localhost:8080`
+
+Provider credentials are configured under `providers`. Enable only the providers you intend to use, then rerender config:
+
+```bash
+npm run config:render
+```
+
+Generated files:
+
+- `runtime/secrets/root.env`: env consumed by Docker services.
+- `runtime/config/available-models.json`: model/action availability derived from enabled providers.
+
+## API Providers
+
+All API provider keys are optional. Add only the credentials needed for the generative features you want to enable. Common minimal setups are:
+
+- `Samsar API key` only
+- `OpenAI + FAL`
+- `OpenAI + Samsar API key`
+- `Google Cloud service account + FAL`
+
+Native provider keys can provide faster and often cheaper inference directly with the model provider while still using the Samsar media generation pipeline inside your environment. Provider secrets are stored in `runtime/config/samsar.config.json`, rendered into `runtime/secrets/root.env`, and consumed by backend Docker services only. Do not commit `runtime/` or copy keys into browser/client-side code.
+
+| Provider | Runtime config | How to get the key |
+| --- | --- | --- |
+| Samsar API key | `providers.samsar.apiKey` -> `SAMSAR_API_KEY` | Go to [app.samsar.one](https://app.samsar.one), register or log in, then open [Billing](https://app.samsar.one/account/billing) to add credits or set up automatic recharge. Open [API Keys](https://app.samsar.one/account/apiKeys), create a new API key, copy it, and paste it into the setup wizard Step 1 field labeled **Samsar universal fallback**. This key can act as the universal fallback for supported model families. |
+| OpenAI | `providers.openai.apiKey` -> `OPENAI_API_KEY` | Go to [OpenAI API keys](https://platform.openai.com/api-keys), choose the correct project, create a new secret key, and paste it into the setup wizard or config. The key is shown only once. |
+| Google Cloud | `providers.googleCloud.projectId`, `providers.googleCloud.credentialsJsonB64` -> `GOOGLE_CLOUD_PROJECT`, `GOOGLE_APPLICATION_CREDENTIALS_JSON_B64` | Use a Google Cloud service account JSON key, not a standard API key. In [Google Cloud Service Accounts](https://console.cloud.google.com/iam-admin/serviceaccounts), create or select a service account, grant the production-parity roles `roles/aiplatform.user` and `roles/serviceusage.serviceUsageConsumer`, and enable the required APIs. Leave **Principals with access (optional)** blank unless you intentionally want another user or service account to manage or impersonate this service account. Then open **Keys** -> **Add key** -> **Create new key** -> **JSON**. Paste the JSON in the setup wizard, or base64 it for manual config with `base64 < service-account.json | tr -d '\n'`. |
+| FAL | `providers.fal.apiKey` -> `FAL_API_KEY` | Create a key from the [fal dashboard](https://fal.ai/dashboard/keys) or follow the [fal authentication docs](https://fal.ai/docs/documentation/setting-up/authentication). Samsar uses `FAL_API_KEY`; fal SDK examples may call the same credential `FAL_KEY`. |
+
+For Google Cloud, `scripts/setup_google_remote_production.sh` is the current production reference. It enables Vertex AI/Gemini, Generative Language, Text-to-Speech, Storage, Speech, Translate, Vision, Natural Language, IAM, IAM Credentials, STS, Service Usage, Cloud Resource Manager, Cloud Billing, and Billing Budgets APIs. It grants the runtime service account `roles/aiplatform.user` and `roles/serviceusage.serviceUsageConsumer`. Add narrower IAM roles only when a new Google service explicitly requires them.
+
+Service account keys are long-lived secrets. Prefer attached service accounts on Google Cloud production runtimes, and use JSON keys only for local Docker, VPS, or other environments that cannot use attached identities or workload identity federation.
+
+## External Access
+
+External IP access is not enabled by default. Keep the Docker stack on localhost unless you intentionally want public access to your generative server.
+
+If you expose Studio, the processor API, media gateway, setup wizard, MinIO, or Grafana through a public IP, DNS record, reverse proxy, or tunnel, set a strong setup/admin password first and restrict access with HTTPS, firewall rules, and authentication. Public exposure can allow others to use your configured provider keys and generation credits.
+
+For custom enterprise deployments behind a VPS, private network, or managed ingress, contact `help@samsar.one`.
+
+## Kubernetes
+
+Render or inspect the Kubernetes scaffold:
+
+```bash
+helm template samsar deploy/helm/samsar \
+  --namespace samsar \
+  --values deploy/helm/samsar/values.yaml
+```
+
+The Kubernetes chart lives under `deploy/helm/samsar`. Inspect the values file:
+
+```bash
+cat deploy/helm/samsar/values.yaml
+```
+
+When workload templates are added, the intended deploy flow is:
+
+```bash
+helm upgrade --install samsar deploy/helm/samsar \
+  --namespace samsar \
+  --create-namespace \
+  --values deploy/helm/samsar/values.yaml
+```
+
+Production cluster deployment should use persistent volumes for MongoDB, MinIO or external object storage, local media storage when applicable, and any other stateful services. The current chart is a scaffold; add Deployments, Services, Ingress, PVCs, probes, ConfigMaps, and Secrets before using it for a real cluster deployment.
+
+## Troubleshooting
+
+If a local Docker page fails only on first navigation with a dynamic import error, the browser is usually holding an old frontend build while the container serves a newer build. Refresh the tab. The Docker client server also returns a reload module for missing hashed JS chunks so stale tabs can recover automatically.
+
+If local downloads open in a new tab instead of downloading, confirm the media gateway is running and returning CORS headers:
+
+```bash
+curl -I http://localhost:8080/assets_v2/video/output/<session-id>/<file>.mp4
+```
+
+If remote generation providers cannot fetch local media, run `scripts/start-local-media-tunnel.sh` and recreate the workers that call those providers. If the setup wizard already published the local media gateway, a `samsar-media-tunnel` container should be running and the worker env should contain the tunnel URL.
+
+For a remote Docker host, set `GRAFANA_ROOT_URL` and optionally `GRAFANA_DOMAIN`, `GRAFANA_PORT`, or `LOKI_PORT` before starting Compose.
+
+## Links
+
+Use these public surfaces for the live product, developer reference, publishing, and demo channels.
+
+| Surface | Link | Purpose |
+| --- | --- | --- |
+| Production app | [app.samsar.one](https://app.samsar.one) | Live Samsar creation workspace for production users. |
+| Demo channel | [youtube.com/@samsar_one](https://youtube.com/@samsar_one) | Published demos, product walkthroughs, and generated media examples. |
+| Production API docs | [docs.samsar.one](https://docs.samsar.one) | Public API documentation and integration reference. |
+| Blog | [blog.samsar.one](https://blog.samsar.one) | Product writing, updates, and long-form publishing. |
+
+## Notes
+
+Do not commit runtime credentials, generated assets, local uploads, dependency folders, or build output. The sync script excludes common secret and generated paths when copying projects into this monorepo.
+
+When making changes during an active generation session, prefer restarting only the affected client or API container. Restart generation workers only after checking logs and confirming the in-flight job can resume safely.

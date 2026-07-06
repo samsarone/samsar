@@ -1,0 +1,47 @@
+/* textAnimationTrackDisplay.css */
+.vertical-slider {
+  height: 100%;
+}
+
+.animation-selected {
+  background-color: rgba(0, 150, 255, 0.3); /* Example highlight color */
+}
+
+
+body.theme-light .text-animation-track-slider .track {
+  background-color: #dbe4f0;
+}
+
+body.theme-light .text-animation-track-slider .track:nth-child(2) {
+  background-color: #cbd6e6;
+}
+
+body.theme-light .text-animation-track-slider .user-selected-track:nth-child(2) {
+  background-color: #c4b5fd;
+}
+
+.text-animation-track-slider {
+
+  width: 12px;
+  /* Style for the tracks */
+  .track {
+    background-color: #0f172a;
+    width: 100%;
+  }
+
+  /* Specific styling for the range between the thumbs */
+  .track:nth-child(2) {
+    background-color: #171717;
+    cursor: pointer;
+    /* The color for the duration range */
+  }
+  
+
+  .user-selected-track:nth-child(2) {
+    background-color: #581c87;
+    cursor: pointer;
+    /* The color for the duration range */
+  }
+
+}
+

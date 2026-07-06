@@ -1,0 +1,48 @@
+/* ModernVerticalSliderSeek.css */
+
+/*
+  These styles create a new class .modern-vertical-slider-seek
+  so it doesn't conflict with existing .vertical-slider styles.
+*/
+
+.modern-vertical-slider-seek {
+  /* Base container for the vertical slider */
+  width: 20px;
+  background-color: #18181b; /* neutral-950 */
+  border-radius: 4px;
+  position: relative;
+  overflow-y: hidden;
+}
+
+/* The .track element inside the slider */
+.modern-vertical-slider-seek .track {
+  background: #18181b; /* Use neutral-950 background on the track */
+  border-radius: 4px;
+  height: 100%;
+  width: 4px; /* Thinner track for a minimal look */
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+/* Thumb styling: square, stone-100 color */
+.modern-vertical-slider-seek .thumb {
+  width: 20px;
+  height: 16px;
+  background-color: #f5f5f4; /* Tailwind stone-100 */
+  border: 1px solid #d4d4d4;
+  border-radius: 0; /* Square corners */
+  box-shadow: none;
+  cursor: pointer;
+  position: absolute;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 2;
+}
+
+.modern-vertical-slider-seek .thumb:hover,
+.modern-vertical-slider-seek .thumb:focus {
+  background-color: #e7e5e4; /* Slightly darker stone-100 on hover */
+  border-color: #a3a3a3;
+  outline: none;
+}
