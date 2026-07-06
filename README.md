@@ -69,34 +69,93 @@ Runtime configuration, generated secrets, and local deployment resources are sto
 | Local media delivery | `http://localhost:8080/assets_v2/...` | `media-gateway`, `minio`, Docker volumes |
 | Observability | Grafana at `http://localhost:4000` | `loki`, `promtail`, `grafana` |
 
-## Requirements
+## Installation
 
-- Git
-- Node.js 20+ and npm
-- Docker Desktop or Docker Engine with Compose
-- `rsync`
-- Kubernetes and Helm, only for cluster deployment
+### **1. Prerequisites**
 
-## Quick Start
+- Git.
+- Node.js 20+ with npm.
+- Docker running with the Compose plugin.
+- `rsync`, only when syncing source projects from the parent workspace.
+- Kubernetes and Helm, only for cluster deployment.
 
-From the monorepo root:
+Install Docker from the official Docker docs for your platform:
+
+| Platform | Docker install path |
+| --- | --- |
+| macOS | [Docker Desktop for Mac](https://docs.docker.com/desktop/setup/install/mac-install/) |
+| Windows | [Docker Desktop for Windows](https://docs.docker.com/desktop/setup/install/windows-install/) |
+| Linux desktop | [Docker Desktop for Linux](https://docs.docker.com/desktop/setup/install/linux/) |
+| Linux server / Docker CE | [Docker Engine install](https://docs.docker.com/engine/install/) |
+| Linux Compose plugin only | [Docker Compose plugin install](https://docs.docker.com/compose/install/linux/) |
+
+Confirm Docker is installed and running before starting setup:
+
+```bash
+docker info
+docker compose version
+```
+
+From the parent workspace checkout, enter the Samsar deployable monorepo. If you cloned this repository directly, start from the repository root instead.
 
 ```bash
 cd samsar
-npm install
 ```
 
-Sync source projects from the parent workspace when this monorepo is used as the deployable wrapper around sibling source projects:
+Sync source projects only when this repository is being used as the deployable wrapper around sibling source projects. Skip this in a standalone clone.
 
 ```bash
 npm run sync
 ```
 
+### **2. One-Step Command to Start the Setup Wizard**
+
+```bash
+npm run setup-wizard:docker
+```
+
+Open `http://localhost:8089`. The command builds and starts the setup wizard container. After you complete the browser flow, the wizard writes deployment config, renders runtime env and model availability, builds and starts the selected Docker Compose profiles, publishes the local media gateway when required, verifies the processor API and Studio client, and prepares local login.
+
+Open the local services after setup completes:
+
+| Service | URL |
+| --- | --- |
+| Studio | `http://localhost:3000` |
+| Processor API | `http://localhost:3002` |
+| Local media gateway | `http://localhost:8080` |
+| MinIO console | `http://localhost:9001` |
+| Grafana logs | `http://localhost:4000` |
+
+Stop the stack:
+
+```bash
+npm run docker:down
+```
+
+## Setup Wizard
+
+Use the setup wizard when you want a UI-driven local Docker setup flow. Use the manual `runtime/config/samsar.config.json` flow when you want direct control over credentials, provider selection, storage URLs, database settings, or mail settings.
+
+The wizard follows four configuration steps:
+
+| Step | What it configures | Runtime effect |
+| --- | --- | --- |
+| Providers | OpenAI, Google Cloud, FAL, ElevenLabs, RunwayML, and optional Samsar API key | Controls which models/actions appear in `runtime/config/available-models.json`. |
+| Services | Processor, setup wizard, image generator, assistant query processor, audio generator, AI video layer generator, video renderer, frames processor, express video listener, and logger | Determines which Docker service families are enabled for the local runtime. |
+| Mail and Data | Local or remote MongoDB, local MinIO or external S3-compatible storage, SMTP/SES/disabled mail | Writes database, storage, CDN, media, and mail settings. |
+| Admin | Organization and initial admin/login setup | Prepares Docker setup login and local access details. |
+
+During setup, the wizard saves deployment config, renders runtime env, starts containers, publishes the local media gateway, verifies the processor API and client, and prepares local login. See [Setup Wizard](pages/setup-wizard.md) for the detailed lifecycle.
+
+## Manual Docker Setup
+
+Use this path only when you do not want the browser setup wizard to write runtime config for you.
+
 Create a local runtime config:
 
 ```bash
 mkdir -p runtime/config runtime/secrets
-cp samsar.config.example.json runtime/config/samsar.config.json
+cp -n samsar.config.example.json runtime/config/samsar.config.json
 ```
 
 Edit `runtime/config/samsar.config.json` for provider keys, storage, database, and public URLs. The checked-in example is safe for local Docker defaults: local MongoDB, local MinIO-compatible storage, local media gateway, and no external provider enabled.
@@ -119,53 +178,16 @@ Start the complete local Docker stack:
 npm run docker:up
 ```
 
-Open the local services:
-
-| Service | URL |
-| --- | --- |
-| Studio | `http://localhost:3000` |
-| Processor API | `http://localhost:3002` |
-| Local media gateway | `http://localhost:8080` |
-| MinIO console | `http://localhost:9001` |
-| Grafana logs | `http://localhost:4000` |
-
-Stop the stack:
-
-```bash
-npm run docker:down
-```
-
-## Setup Wizard
-
-```bash
-npm run setup-wizard:docker
-```
-
-Open `http://localhost:8089`.
-
-Use the setup wizard when you want a UI-driven local Docker setup flow. Use the manual `runtime/config/samsar.config.json` flow when you want direct control over credentials, provider selection, storage URLs, database settings, or mail settings.
-
-The wizard follows four configuration steps:
-
-| Step | What it configures | Runtime effect |
-| --- | --- | --- |
-| Providers | OpenAI, Google Cloud, FAL, ElevenLabs, RunwayML, and optional Samsar API key | Controls which models/actions appear in `runtime/config/available-models.json`. |
-| Services | Processor, setup wizard, image generator, assistant query processor, audio generator, AI video layer generator, video renderer, frames processor, express video listener, and logger | Determines which Docker service families are enabled for the local runtime. |
-| Mail and Data | Local or remote MongoDB, local MinIO or external S3-compatible storage, SMTP/SES/disabled mail | Writes database, storage, CDN, media, and mail settings. |
-| Admin | Organization and initial admin/login setup | Prepares Docker setup login and local access details. |
-
-During setup, the wizard saves deployment config, renders runtime env, starts containers, publishes the local media gateway, verifies the processor API and client, and prepares local login. See [Setup Wizard](pages/setup-wizard.md) for the detailed lifecycle.
-
 ## Providers
 
 Provider availability is explicit. `npm run config:render` reads `runtime/config/samsar.config.json`, writes `runtime/secrets/root.env`, and generates `runtime/config/available-models.json` from enabled providers. The video API then filters supported model responses through that generated availability file.
 
 | Provider | Enables | Models and families from the setup logic |
 | --- | --- | --- |
-| Samsar API key | Universal fallback for configured Docker deployments | `gpt-5.5`, `gemini-3.1-pro`, `GPTIMAGE2`, `SEEDREAM`, `RUNWAYML`, `VEO3.1I2V`, `VEO3.1I2VFAST`, `COSMOS3SUPERI2V`, `SEEDANCEI2V`, `KLINGIMGTOVID3PRO`, `KLINGIMGTOVIDTURBO`, `HAPPYHORSEI2V`, `LYRIA3`, `ELEVENLABS_MUSIC`, `OPENAI_TTS`, `ELEVENLABS`, `GOOGLE_TTS`, lip sync, sound effects, and NanoBanana families. |
-| OpenAI | Chat, assistant, image, audio, moderation, search, recommendations | `gpt-5.5`, `GPTIMAGE2`, `OPENAI_TTS`. |
-| Google Cloud | Gemini, image, video, audio, moderation | `gemini-3.1-pro`, `VEO3.1I2V`, `VEO3.1I2VFAST`, `LYRIA3`, `GOOGLE_TTS`, `NANOBANANA2`, `NANOBANANAPRO`. |
-| FAL | Image, video, audio, lip sync, sound effects | `SEEDREAM`, `NANOBANANA2`, `NANOBANANAPRO`, VEO via FAL, `COSMOS3SUPERI2V`, `SEEDANCEI2V`, Kling image-to-video, `HAPPYHORSEI2V`, ElevenLabs via FAL, `MMAUDIOV2`, `MIRELOAI`, and lip sync model families. |
+| Samsar API key | Universal fallback for configured Docker deployments | All configured Docker model families in the setup logic, including chat, assistant, image, image edit, video, audio, lip sync, sound effects, and NanoBanana families. |
+| OpenAI | Chat, assistant, image, image edit, audio, moderation, search, recommendations | `gpt-5.5`, `GPTIMAGE2`, `GPTIMAGE2EDIT`, `OPENAI_TTS`. |
+| Google Cloud | Gemini, image, image edit, video, audio, moderation | `gemini-3.1-pro`, `VEO3.1I2V`, `VEO3.1I2VFAST`, `LYRIA3`, `GOOGLE_TTS`, `NANOBANANA2`, `NANOBANANA2EDIT`, `NANOBANANAPRO`, `NANOBANANAPROEDIT`. |
+| FAL | Image, image edit, video, audio, lip sync, sound effects | `SEEDREAM`, `NANOBANANA2`, `NANOBANANA2EDIT`, `NANOBANANAPRO`, `NANOBANANAPROEDIT`, VEO via FAL, `COSMOS3SUPERI2V`, `SEEDANCEI2V`, Kling image-to-video, `HAPPYHORSEI2V`, ElevenLabs/PlayAI/CassetteAI/AudioCraft via FAL, `MMAUDIOV2`, `MIRELOAI`, and lip sync model families. |
 | ElevenLabs | Speech and music | `ELEVENLABS`, `ELEVENLABS_MUSIC`. |
 | RunwayML | Video generation and image-to-video | `RUNWAYML`. |
 
@@ -191,13 +213,13 @@ All routes below are served by the processor API at `http://localhost:3002` in l
 
 ## Docker Compose
 
-Validate the rendered Compose configuration:
+After the setup wizard completes, or after `npm run config:render` in the manual flow, validate the rendered Compose configuration:
 
 ```bash
 npm run docker:config
 ```
 
-`npm run docker:up` renders `runtime/secrets/root.env` and `runtime/config/available-models.json`, then starts all local profiles:
+`npm run docker:up` renders `runtime/secrets/root.env` and `runtime/config/available-models.json`, then starts every local profile:
 
 | Profile | Services |
 | --- | --- |
@@ -208,7 +230,7 @@ npm run docker:config
 | `local-media` | `media-gateway` |
 | `logger` | `loki`, `promtail`, `grafana` |
 
-Run `npm run docker:setup-assets` once after choosing Docker services in the setup wizard or after editing `runtime/config/samsar.config.json`. The script installs subtitle/render fonts into `runtime/fonts`, copies them into any running Samsar service containers, and recreates Promtail/Grafana only when `services.logger` is enabled so Docker logs are available in local Grafana.
+Run `npm run docker:setup-assets` during manual setup or whenever fonts/logger config need to be refreshed. The script installs subtitle/render fonts into `runtime/fonts`, copies them into any running Samsar service containers, and recreates Promtail/Grafana only when `services.logger` is enabled so Docker logs are available in local Grafana.
 
 Persistent Docker state is stored in named volumes:
 
@@ -230,8 +252,8 @@ docker compose -f deploy/compose/docker-compose.yml logs -f processor client
 To rebuild and replace only the frontend container:
 
 ```bash
-docker compose -f deploy/compose/docker-compose.yml build client
-docker compose -f deploy/compose/docker-compose.yml up -d --force-recreate --no-deps client
+docker compose -f deploy/compose/docker-compose.yml --profile core build client
+docker compose -f deploy/compose/docker-compose.yml --profile core up -d --force-recreate --no-deps client
 ```
 
 Avoid restarting generation workers while a video, audio, or sound-effect job is active unless you have confirmed the worker is stuck or the job can safely resume.
@@ -301,7 +323,7 @@ Native provider keys can provide faster and often cheaper inference directly wit
 | Google Cloud | `providers.googleCloud.projectId`, `providers.googleCloud.credentialsJsonB64` -> `GOOGLE_CLOUD_PROJECT`, `GOOGLE_APPLICATION_CREDENTIALS_JSON_B64` | Use a Google Cloud service account JSON key, not a standard API key. In [Google Cloud Service Accounts](https://console.cloud.google.com/iam-admin/serviceaccounts), create or select a service account, grant the production-parity roles `roles/aiplatform.user` and `roles/serviceusage.serviceUsageConsumer`, and enable the required APIs. Leave **Principals with access (optional)** blank unless you intentionally want another user or service account to manage or impersonate this service account. Then open **Keys** -> **Add key** -> **Create new key** -> **JSON**. Paste the JSON in the setup wizard, or base64 it for manual config with `base64 < service-account.json | tr -d '\n'`. |
 | FAL | `providers.fal.apiKey` -> `FAL_API_KEY` | Create a key from the [fal dashboard](https://fal.ai/dashboard/keys) or follow the [fal authentication docs](https://fal.ai/docs/documentation/setting-up/authentication). Samsar uses `FAL_API_KEY`; fal SDK examples may call the same credential `FAL_KEY`. |
 
-For Google Cloud, `scripts/setup_google_remote_production.sh` is the current production reference. It enables Vertex AI/Gemini, Generative Language, Text-to-Speech, Storage, Speech, Translate, Vision, Natural Language, IAM, IAM Credentials, STS, Service Usage, Cloud Resource Manager, Cloud Billing, and Billing Budgets APIs. It grants the runtime service account `roles/aiplatform.user` and `roles/serviceusage.serviceUsageConsumer`. Add narrower IAM roles only when a new Google service explicitly requires them.
+For Google Cloud, the parent workspace script `../scripts/setup_google_remote_production.sh` is the current production reference when this deployable monorepo sits under the source workspace. It enables Vertex AI/Gemini, Generative Language, Text-to-Speech, Storage, Speech, Translate, Vision, Natural Language, IAM, IAM Credentials, STS, Service Usage, Cloud Resource Manager, Cloud Billing, and Billing Budgets APIs. It grants the runtime service account `roles/aiplatform.user` and `roles/serviceusage.serviceUsageConsumer`. Add narrower IAM roles only when a new Google service explicitly requires them.
 
 Service account keys are long-lived secrets. Prefer attached service accounts on Google Cloud production runtimes, and use JSON keys only for local Docker, VPS, or other environments that cannot use attached identities or workload identity federation.
 
