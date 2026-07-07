@@ -22,6 +22,7 @@ const ENV_KEYS = [
   'PUBLIC_API_BASE_URL',
   'PROCESSOR_API',
   'PROCESSOR_URL',
+  'SAMSAR_VALIDATE_PUBLIC_MEDIA_URL',
 ];
 
 function snapshotEnv() {
@@ -68,6 +69,7 @@ function prepareDockerMediaFixture({ publicMediaUrl }) {
   process.env.MEDIA_PUBLIC_URL = 'http://localhost:8080/';
   process.env.PUBLIC_STATIC_CDN_URL = 'http://localhost:8080/';
   process.env.STATIC_CDN_URL = 'http://localhost:8080/';
+  process.env.SAMSAR_VALIDATE_PUBLIC_MEDIA_URL = 'false';
   process.env.SAMSAR_RUNTIME_CONFIG_FILE = configPath;
   process.env.SAMSAR_ASSETS_V2_ROOT = assetsV2Root;
   process.env.SAMSAR_ASSETS_ROOT = assetsRoot;
@@ -123,6 +125,28 @@ test('normalizes Docker local media references through a configured public IP pr
     const { normalizeProviderMediaUrl } = await importAwsModule();
     const url = await normalizeProviderMediaUrl(`http://localhost:8080/${mediaRelativePath}`);
     assert.equal(url, `http://203.0.113.10/api/${mediaRelativePath}`);
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+    restoreEnv(envSnapshot);
+  }
+});
+
+test('normalizes Docker asset references to a public URL without requiring a local file', async () => {
+  const envSnapshot = snapshotEnv();
+  const { tempRoot } = prepareDockerMediaFixture({
+    publicMediaUrl: 'http://localhost:8080/',
+  });
+  process.env.SAMSAR_DOCKER_PUBLIC_PROCESSOR_BASE_URL = 'http://203.0.113.10/api';
+
+  try {
+    const { normalizeProviderMediaUrl } = await importAwsModule();
+    const url = await normalizeProviderMediaUrl(
+      '/assets_v2/generations/64b000000000000000000001/missing-start.png'
+    );
+    assert.equal(
+      url,
+      'http://203.0.113.10/api/assets_v2/generations/64b000000000000000000001/missing-start.png'
+    );
   } finally {
     fs.rmSync(tempRoot, { recursive: true, force: true });
     restoreEnv(envSnapshot);

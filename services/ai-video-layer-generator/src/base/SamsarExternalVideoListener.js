@@ -340,6 +340,10 @@ async function getStartImageUrlForExternalVideo(client, payload = {}) {
     return normalizedStartImage;
   }
 
+  if (getCurrentEnvironment() === 'docker') {
+    throw new Error('Samsar external Docker image-to-video requires a provider-readable start image URL.');
+  }
+
   const startImageDataUrl = await readImageReferenceAsDataUrl(normalizedStartImage);
   const response = await client.requestV2ExternalVideo(
     'upload_image_data',
@@ -414,8 +418,12 @@ function normalizeExternalVideoRoute(route) {
 }
 
 export function resolveExternalVideoRoute(payload = {}) {
+  const hasStartImage = Boolean(getStartImageReference(payload));
   const configuredRoute = normalizeExternalVideoRoute(payload.samsarExternalVideoRoute);
   if (configuredRoute) {
+    if (hasStartImage && configuredRoute === 'text_to_video') {
+      return DEFAULT_EXTERNAL_VIDEO_ROUTE;
+    }
     return configuredRoute;
   }
 
@@ -427,7 +435,7 @@ export function resolveExternalVideoRoute(payload = {}) {
   if (stage === 'sound_effect_generation' || generationType === 'sound_effect') {
     return 'sound_effect';
   }
-  if (!getStartImageReference(payload)) {
+  if (!hasStartImage) {
     return 'text_to_video';
   }
   return DEFAULT_EXTERNAL_VIDEO_ROUTE;

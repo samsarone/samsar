@@ -23,6 +23,9 @@ const CLOUDFRONT_SIGNED_URL_TTL_SECONDS = Number.isFinite(configuredCloudFrontSi
   ? configuredCloudFrontSignedUrlTtlSeconds
   : DEFAULT_CLOUDFRONT_SIGNED_URL_TTL_SECONDS;
 const DEFAULT_RUNTIME_CONFIG_PATH = '/persistent/config/samsar.config.json';
+const PUBLIC_MEDIA_PROBE_TIMEOUT_MS = Number.isFinite(Number(process.env.SAMSAR_PUBLIC_MEDIA_PROBE_TIMEOUT_MS))
+  ? Math.max(250, Number(process.env.SAMSAR_PUBLIC_MEDIA_PROBE_TIMEOUT_MS))
+  : 1500;
 let cachedCloudFrontPrivateKey;
 
 function encodeObjectKeyForUrl(key) {
@@ -361,22 +364,51 @@ function readRuntimeConfigPublicMediaUrls() {
 
 function getPublicMediaBaseUrlCandidates() {
   return [
-    process.env.SAMSAR_MEDIA_TUNNEL_PUBLIC_URL,
-    process.env.SAMSAR_PUBLIC_MEDIA_BASE_URL,
-    process.env.SAMSAR_EXTERNAL_MEDIA_PUBLIC_BASE_URL,
     process.env.SAMSAR_DOCKER_PUBLIC_ASSET_BASE_URL,
     process.env.SAMSAR_DOCKER_PUBLIC_PROCESSOR_BASE_URL,
+    process.env.SAMSAR_PUBLIC_MEDIA_BASE_URL,
+    process.env.SAMSAR_EXTERNAL_MEDIA_PUBLIC_BASE_URL,
     process.env.MEDIA_PUBLIC_URL,
     process.env.PUBLIC_API_BASE_URL,
     process.env.PROCESSOR_API,
     process.env.PROCESSOR_URL,
+    ...readRuntimeConfigPublicMediaUrls(),
+    process.env.SAMSAR_MEDIA_TUNNEL_PUBLIC_URL,
     process.env.PUBLIC_STATIC_CDN_URL,
     process.env.STATIC_CDN_URL,
-    ...readRuntimeConfigPublicMediaUrls(),
   ]
     .map(normalizeBaseUrl)
     .filter(Boolean)
     .filter((value, index, list) => list.indexOf(value) === index);
+}
+
+function shouldProbePublicMediaUrl() {
+  const normalized = normalizeString(process.env.SAMSAR_VALIDATE_PUBLIC_MEDIA_URL).toLowerCase();
+  return !['0', 'false', 'no', 'off'].includes(normalized);
+}
+
+async function isReachablePublicMediaUrl(url) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), PUBLIC_MEDIA_PROBE_TIMEOUT_MS);
+  try {
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: { Range: 'bytes=0-0' },
+      signal: controller.signal,
+    });
+    if (response.body) {
+      try {
+        if (typeof response.body.cancel === 'function') {
+          await response.body.cancel();
+        }
+      } catch {}
+    }
+    return response.ok || response.status === 206;
+  } catch {
+    return false;
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 export function getDockerPublicMediaBaseUrl() {
@@ -418,6 +450,36 @@ export function buildDockerPublicMediaUrl(reference, localPath = '') {
   return `${getDockerPublicMediaBaseUrl()}/${mediaKey.replace(/^\/+/, '')}`;
 }
 
+async function buildBestDockerPublicMediaUrl(reference, localPath = '') {
+  const mediaKey = getDockerPublicMediaKey(reference, localPath);
+  if (!mediaKey) {
+    throw new Error(
+      'A public media URL is required before sending local audio/video assets to remote video providers. ' +
+      'Run scripts/start-local-media-tunnel.sh or configure publicUrls.media, then recreate the express video listener.'
+    );
+  }
+
+  const publicBases = getPublicMediaBaseUrlCandidates().filter(isProbablyPublicUrl);
+  if (!publicBases.length) {
+    return buildDockerPublicMediaUrl(reference, localPath);
+  }
+
+  const mediaPath = mediaKey.replace(/^\/+/, '');
+  const candidateUrls = publicBases
+    .map((baseUrl) => `${baseUrl}/${mediaPath}`)
+    .filter((value, index, list) => list.indexOf(value) === index);
+
+  if (shouldProbePublicMediaUrl()) {
+    for (const candidateUrl of candidateUrls) {
+      if (await isReachablePublicMediaUrl(candidateUrl)) {
+        return candidateUrl;
+      }
+    }
+  }
+
+  return candidateUrls[0];
+}
+
 export async function normalizeProviderMediaUrl(value) {
   const normalizedValue = normalizeString(value);
   if (!normalizedValue || normalizedValue.startsWith('data:')) {
@@ -434,13 +496,17 @@ export async function normalizeProviderMediaUrl(value) {
 
   const localPath = resolveLocalMediaReferencePath(normalizedValue);
   if (localPath) {
-    return buildDockerPublicMediaUrl(normalizedValue, localPath);
+    return buildBestDockerPublicMediaUrl(normalizedValue, localPath);
+  }
+
+  const referencePath = getReferencePath(normalizedValue).replace(/^[\\/]+/, '');
+  if (MEDIA_KEY_PREFIX_PATTERN.test(referencePath)) {
+    return buildBestDockerPublicMediaUrl(referencePath);
   }
 
   if (/^https?:\/\//i.test(normalizedValue) && !isProbablyPublicUrl(normalizedValue)) {
-    const referencePath = getReferencePath(normalizedValue);
     if (MEDIA_KEY_PREFIX_PATTERN.test(referencePath)) {
-      return buildDockerPublicMediaUrl(referencePath);
+      return buildBestDockerPublicMediaUrl(referencePath);
     }
   }
 
