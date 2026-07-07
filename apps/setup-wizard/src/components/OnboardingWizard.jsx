@@ -1147,6 +1147,49 @@ function formatPortList(ports = []) {
   return `ports ${normalizedPorts.slice(0, -1).join(', ')} and ${normalizedPorts.at(-1)}`;
 }
 
+async function checkUrlFromBrowser(check = {}) {
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), 8000);
+  try {
+    await fetch(check.url, {
+      cache: 'no-store',
+      mode: 'no-cors',
+      signal: controller.signal,
+    });
+    return {
+      ...check,
+      reachable: true,
+      checkedFrom: 'browser',
+      message: `${check.label || 'Endpoint'} was reachable from this browser at ${check.url}.`,
+    };
+  } catch (error) {
+    return {
+      ...check,
+      reachable: false,
+      checkedFrom: 'browser',
+      message: `${check.label || 'Endpoint'} was not reachable from this browser at ${check.url}: ${error?.message || String(error)}.`,
+    };
+  } finally {
+    window.clearTimeout(timeout);
+  }
+}
+
+async function checkExternalAccessFromBrowser(externalAccess = {}) {
+  const checks = Array.isArray(externalAccess.checks) ? externalAccess.checks : [];
+  const browserChecks = await Promise.all(checks.map(checkUrlFromBrowser));
+  const failedChecks = browserChecks.filter((check) => !check.reachable);
+  return {
+    ...externalAccess,
+    ok: failedChecks.length === 0,
+    source: 'browser',
+    checks: browserChecks,
+    checkedAt: new Date().toISOString(),
+    message: failedChecks.length
+      ? `${failedChecks.length} external endpoint${failedChecks.length === 1 ? '' : 's'} did not respond from this browser.`
+      : 'External client and API URLs responded from this browser.',
+  };
+}
+
 function SetupProgressPage({
   setupRun,
   setupError,
@@ -1156,6 +1199,8 @@ function SetupProgressPage({
   isOpeningPorts,
   openPortsResult,
   openPortsError,
+  browserExternalAccess,
+  isCheckingBrowserExternalAccess,
   mode = 'setup',
 }) {
   const isComplete = setupRun?.status === 'completed';
@@ -1164,8 +1209,10 @@ function SetupProgressPage({
   const logs = setupRun?.logs || [];
   const isMaintenance = mode === 'maintenance';
   const externalAccess = setupRun?.externalAccess;
-  const externalAccessWarning = externalAccess && externalAccess.ok === false;
-  const externalPorts = externalAccess?.ports || [];
+  const displayExternalAccess = browserExternalAccess || externalAccess;
+  const externalAccessWarning = displayExternalAccess && displayExternalAccess.ok === false && !displayExternalAccess.skipped;
+  const externalPorts = displayExternalAccess?.ports || [];
+  const remediation = displayExternalAccess?.remediation;
 
   return (
     <section className="setup-progress-panel">
@@ -1222,22 +1269,45 @@ function SetupProgressPage({
         </div>
       </div>
 
+      {isCheckingBrowserExternalAccess && (
+        <section className="data-config-card">
+          <div className="data-config-card-header">
+            <h3>External access</h3>
+            <span>Checking</span>
+          </div>
+          <p>Checking the final client and API URLs from this browser.</p>
+        </section>
+      )}
+
       {externalAccessWarning && (
         <section className="data-config-card proxy-warning-card">
           <div className="data-config-card-header">
             <h3>External access</h3>
             <span>{formatPortList(externalPorts)}</span>
           </div>
-          <p>{externalAccess.message || `External access did not respond on ${formatPortList(externalPorts)}.`}</p>
-          {!!externalAccess.checks?.length && (
+          <p>{displayExternalAccess.message || `External access did not respond on ${formatPortList(externalPorts)}.`}</p>
+          {!!displayExternalAccess.checks?.length && (
             <ul className="external-check-list">
-              {externalAccess.checks.map((check) => (
+              {displayExternalAccess.checks.map((check) => (
                 <li key={check.url}>
                   <strong>{check.label}</strong>
                   <span>{check.message}</span>
                 </li>
               ))}
             </ul>
+          )}
+          {remediation && (
+            <div className="external-remediation">
+              <strong>{remediation.title}</strong>
+              <p>{remediation.message}</p>
+              {!!remediation.commands?.length && (
+                <div className="external-command-list">
+                  {remediation.commands.map((command) => (
+                    <code key={command}>{command}</code>
+                  ))}
+                </div>
+              )}
+            </div>
           )}
           <div className="proxy-action-row">
             <button
@@ -1587,6 +1657,8 @@ export default function OnboardingWizard() {
   const [isStartingSetup, setIsStartingSetup] = useState(false);
   const [setupRun, setSetupRun] = useState(initialWizardState.setupRun);
   const [setupStartError, setSetupStartError] = useState(initialWizardState.setupStartError);
+  const [browserExternalAccess, setBrowserExternalAccess] = useState(null);
+  const [isCheckingBrowserExternalAccess, setIsCheckingBrowserExternalAccess] = useState(false);
   const [maxStep, setMaxStep] = useState(initialWizardState.maxStep);
   const [isResetConfirmOpen, setIsResetConfirmOpen] = useState(false);
   const [isResetting, setIsResetting] = useState(false);
@@ -1965,7 +2037,7 @@ export default function OnboardingWizard() {
   }, [setupAuthPassword, setupRun?.error, setupRun?.id, setupRun?.status]);
 
   useEffect(() => {
-    if (setupRun?.status !== 'completed' || !setupRun.redirectUrl) {
+    if (setupRun?.status !== 'completed' || !setupRun.redirectUrl || setupRun.externalAccess?.remoteInstall) {
       return undefined;
     }
 
@@ -1974,7 +2046,57 @@ export default function OnboardingWizard() {
     }, 1800);
 
     return () => window.clearTimeout(timeoutId);
-  }, [setupRun?.redirectUrl, setupRun?.status]);
+  }, [setupRun?.externalAccess?.remoteInstall, setupRun?.redirectUrl, setupRun?.status]);
+
+  useEffect(() => {
+    const completedRun = setupRun?.status === 'completed'
+      ? setupRun
+      : maintenanceRun?.status === 'completed'
+        ? maintenanceRun
+        : null;
+    const externalAccess = completedRun?.externalAccess;
+    if (!externalAccess || externalAccess.skipped || !externalAccess.checks?.length) {
+      setBrowserExternalAccess(null);
+      setIsCheckingBrowserExternalAccess(false);
+      return undefined;
+    }
+
+    let isCancelled = false;
+    setIsCheckingBrowserExternalAccess(true);
+    setBrowserExternalAccess(null);
+    checkExternalAccessFromBrowser(externalAccess)
+      .then((result) => {
+        if (!isCancelled) {
+          setBrowserExternalAccess(result);
+        }
+      })
+      .catch((error) => {
+        if (!isCancelled) {
+          setBrowserExternalAccess({
+            ...externalAccess,
+            ok: false,
+            source: 'browser',
+            message: error?.message || 'Unable to check external access from this browser.',
+          });
+        }
+      })
+      .finally(() => {
+        if (!isCancelled) {
+          setIsCheckingBrowserExternalAccess(false);
+        }
+      });
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [
+    maintenanceRun?.externalAccess?.checkedAt,
+    maintenanceRun?.id,
+    maintenanceRun?.status,
+    setupRun?.externalAccess?.checkedAt,
+    setupRun?.id,
+    setupRun?.status,
+  ]);
 
   const updateCredential = (field, value) => {
     setCredentials((current) => normalizeCredentialSet({ ...current, [field]: value }));
@@ -2399,6 +2521,8 @@ export default function OnboardingWizard() {
     const normalizedAdmin = normalizeAdminConfig(adminConfig);
     setIsStartingSetup(true);
     setSetupStartError('');
+    setBrowserExternalAccess(null);
+    setIsCheckingBrowserExternalAccess(false);
     setSetupAuthPassword(normalizedAdmin.password);
     setIsSetupAuthenticated(true);
     setSetupAuthError('');
@@ -2481,6 +2605,8 @@ export default function OnboardingWizard() {
   const updateContainers = async () => {
     setMaintenanceStartError('');
     setInstallActionError('');
+    setBrowserExternalAccess(null);
+    setIsCheckingBrowserExternalAccess(false);
 
     try {
       const response = await fetch('/api/setup/maintenance/update-restart', {
@@ -2540,6 +2666,8 @@ export default function OnboardingWizard() {
     setIsConfigCopied(false);
     setSetupRun(null);
     setSetupStartError('');
+    setBrowserExternalAccess(null);
+    setIsCheckingBrowserExternalAccess(false);
     setResetError('');
     setSetupAuthPassword('');
     setSetupAuthError('');
@@ -2673,6 +2801,8 @@ export default function OnboardingWizard() {
           isOpeningPorts={isOpeningFirewallPorts}
           openPortsResult={firewallResult}
           openPortsError={firewallError}
+          browserExternalAccess={browserExternalAccess}
+          isCheckingBrowserExternalAccess={isCheckingBrowserExternalAccess}
           mode="maintenance"
         />
       ) : setupRun ? (
@@ -2688,6 +2818,8 @@ export default function OnboardingWizard() {
           isOpeningPorts={isOpeningFirewallPorts}
           openPortsResult={firewallResult}
           openPortsError={firewallError}
+          browserExternalAccess={browserExternalAccess}
+          isCheckingBrowserExternalAccess={isCheckingBrowserExternalAccess}
         />
       ) : shouldShowExistingInstall ? (
         <ExistingInstallHome
