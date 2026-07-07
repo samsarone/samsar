@@ -3,7 +3,7 @@
 The setup wizard is the browser-driven local Docker setup path. Start it from the `samsar` mono-repo root:
 
 ```bash
-npm run setup-wizard:docker
+npm run setup-wizard
 ```
 
 The command prints setup wizard URLs for localhost and detected private IPs, and prints a public-IP setup URL only when TCP `8089` responds on that public address. It also waits for the wizard to respond and attempts to open `http://localhost:8089` in the default browser on hosts with desktop browser access. Set `SAMSAR_SETUP_OPEN_BROWSER=0` to skip browser auto-open.

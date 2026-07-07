@@ -111,7 +111,7 @@ npm run sync
 ### **2. One-Step Command to Start the Setup Wizard**
 
 ```bash
-npm run setup-wizard:docker
+npm run setup-wizard
 ```
 
 The command builds and starts the setup wizard container, prints localhost/private-IP setup URLs, prints a public-IP setup URL only when TCP `8089` responds on that public address, waits for the wizard to respond, and tries to open `http://localhost:8089` in the default browser on hosts with desktop browser access. Set `SAMSAR_SETUP_OPEN_BROWSER=0` to skip browser auto-open. After you complete the browser flow, the wizard writes deployment config, renders runtime env and model availability, builds and starts the selected Docker Compose profiles, publishes the local media gateway when required, verifies the processor API and Studio client, and prepares local login.
