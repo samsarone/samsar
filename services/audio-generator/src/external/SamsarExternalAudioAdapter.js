@@ -12,6 +12,7 @@ import { getProcessorAssetsV2Path, toAssetsV2RelativePath } from '../utils/Asset
 import { resolveSpeechLayerTimingUpdate } from '../speech/SpeechLayerTiming.js';
 import { finalizeRemoteAudioGeneration, markAudioGenerationAsFailed } from '../music/audioUtils.js';
 import { recordProviderUsageLog } from '../utils/ProviderUsageAudit.js';
+import { finalizeStandaloneExternalAudioGeneration } from './StandaloneExternalAudio.js';
 
 const DEFAULT_SAMSAR_API_BASE_URL = 'https://api.samsar.one/v1';
 const DEFAULT_EXTERNAL_AUDIO_TIMEOUT_MS = 15 * 60 * 1000;
@@ -387,6 +388,18 @@ async function finalizeExternalSpeechGeneration(payload, remoteAudioUrl) {
     },
   ];
 
+  if (await finalizeStandaloneExternalAudioGeneration({
+    payload,
+    resultUrl: remoteFilePath,
+    resultUrls: [remoteFilePath],
+    duration,
+    localAudioPath: audioAssetPath,
+    remoteAudioData,
+    title: 'Speech',
+  })) {
+    return;
+  }
+
   let videoSession = await VideoSession.findById(sessionId);
   if (!videoSession) {
     await AudioGeneration.deleteOne({ _id });
@@ -495,6 +508,17 @@ async function finalizeExternalSoundEffectGeneration(payload, remoteAudioUrl) {
     timeout: 60000,
   });
   await fs.promises.writeFile(audioSaveFilePath, Buffer.from(audioResponse.data));
+
+  if (await finalizeStandaloneExternalAudioGeneration({
+    payload,
+    resultUrl: remoteAudioUrl,
+    resultUrls: [remoteAudioUrl],
+    localAudioPath: audioAssetPath,
+    remoteAudioData: [{ audio_url: remoteAudioUrl, title: 'Sound Effect' }],
+    title: 'Sound Effect',
+  })) {
+    return;
+  }
 
   await VideoSession.findOneAndUpdate(
     { _id: sessionId, 'audioLayers._id': audioLayerId },

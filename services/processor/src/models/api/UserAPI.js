@@ -1,7 +1,6 @@
 import User from '../../schema/User.js';
 import { getDBConnectionString } from '../DBString.js';
 import { ensureDefaultTextModelsForUser, verifyUserToken } from '../User.js';
-import { getTeamAuthClaimsForUser } from '../Team.js';
 import {
   generateAuthToken,
   generateLoginToken,
@@ -72,7 +71,7 @@ export async function authenticateWithLoginToken(loginToken) {
   }
 
   await ensureDefaultTextModelsForUser(user);
-  const authToken = generateAuthToken(userId.toString(), getTeamAuthClaimsForUser(user));
+  const authToken = generateAuthToken(userId.toString());
 
   return {
     user,

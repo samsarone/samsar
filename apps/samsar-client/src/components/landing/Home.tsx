@@ -32,7 +32,6 @@ const MobileVideoLandingHome = lazy(() => import("../mobile/MobileVideoLandingHo
 const LoginPage = lazy(() => import("../auth/pages/LoginPage.jsx"));
 const ForgotPasswordPage = lazy(() => import("../auth/pages/ForgotPasswordPage.jsx"));
 const ResetPasswordPage = lazy(() => import("../auth/pages/ResetPasswordPage.jsx"));
-const AcceptInvitePage = lazy(() => import("../auth/pages/AcceptInvitePage.jsx"));
 const RegisterPage = lazy(() => import("../auth/pages/RegisterPage.jsx"));
 const ExtensionAuthBridge = lazy(() => import("../auth/ExtensionAuthBridge.jsx"));
 const AdVideoCreatorContainer = lazy(() => import("../advideo_creator/AdVideoCreatorContainer.jsx"));
@@ -202,7 +201,6 @@ export default function Home() {
       '/register',
       '/forgot_password',
       '/reset_password',
-      '/accept_invite',
       '/verify',
       '/verify_email',
       '/extension-auth',
@@ -432,7 +430,6 @@ export default function Home() {
           <Route path="/adcreator" element={<AdVideoCreatorContainer />} />
           <Route path="/adcreator/:id" element={<AdVideoCreatorContainer />} />
           <Route path="/reset_password" element={<ResetPasswordPage />} />
-          <Route path="/accept_invite" element={<AcceptInvitePage />} />
           <Route path="/videogpt" element={<OneshotEditorContainer />} />
           <Route path="/videogpt/:id" element={<OneshotEditorContainer />} />
           <Route path="/movie_maker" element={<MovieGeneratorContainer />} />

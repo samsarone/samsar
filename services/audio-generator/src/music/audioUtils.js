@@ -10,6 +10,10 @@ import AudioGeneration from '../schema/AudioGeneration.js';
 import GeneratedMusic from '../schema/generations/GeneratedMusic.js';
 import { generateS3UrlsFromLocalFile } from '../AWS.js';
 import { getProcessorAssetsV2Path, toAssetsV2RelativePath } from '../utils/AssetPaths.js';
+import {
+  failStandaloneExternalAudioGeneration,
+  finalizeStandaloneExternalAudioGeneration,
+} from '../external/StandaloneExternalAudio.js';
 
 const LOOP_MAX_FADE_SECONDS = 0.8;
 const LOOP_MIN_FADE_SECONDS = 0.05;
@@ -268,6 +272,25 @@ export async function attachAudioToSessionAndCleanup({
     return;
   }
 
+  const localDownloadBase = path.join('video', 'audio', sessionId.toString(), audioLayerId.toString());
+  const localFilePath = toAssetsV2RelativePath(localDownloadBase, localAudioFileName);
+  if (await finalizeStandaloneExternalAudioGeneration({
+    payload: audioGeneration,
+    resultUrl: Array.isArray(s3Urls) ? s3Urls[0] : null,
+    resultUrls: s3Urls,
+    localAudioPath: localFilePath,
+    remoteAudioData: [
+      {
+        audio_url: Array.isArray(s3Urls) ? s3Urls[0] : null,
+        title: 'Music',
+        _id: audioLayerId,
+      },
+    ],
+    title: 'Music',
+  })) {
+    return;
+  }
+
   // Now fetch the session
   let sessionData = await VideoSession.findById(sessionId);
   if (!sessionData) {
@@ -294,9 +317,6 @@ export async function attachAudioToSessionAndCleanup({
     : '';
   const lyric = generatedLyrics || (audioGeneration.isInstrumental ? '[Instrumental]' : '');
 
-  // local folder path references
-  const localDownloadBase = path.join('video', 'audio', sessionId.toString(), audioLayerId.toString());
-  const localFilePath = toAssetsV2RelativePath(localDownloadBase, localAudioFileName);
   const layerUpdateSet = {
     'audioLayers.$.generationStatus': 'COMPLETED',
     'audioLayers.$.generationError': null,
@@ -375,6 +395,10 @@ export async function markAudioGenerationAsFailed(audioGenerationId, errorMessag
   }
   audioGeneration.error = failureMessage;
   await audioGeneration.save();
+
+  if (await failStandaloneExternalAudioGeneration(audioGeneration, failureMessage)) {
+    return;
+  }
 
   // Also mark the corresponding VideoSession audioLayer as failed
   const { sessionId, audioLayerId } = audioGeneration;

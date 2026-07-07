@@ -9,10 +9,20 @@ import {
   shouldUseSamsarExternalInference,
 } from './SamsarExternalInferenceAdapter.js';
 
-const API_KEY = process.env.OPENAI_API_KEY;
+let openaiClient = null;
+let openaiClientApiKey = '';
 
-
-const openai = new OpenAI({ apiKey: API_KEY || '' });
+function getOpenAIClient() {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) {
+    throw new Error('OPENAI_API_KEY is required for native OpenAI inference.');
+  }
+  if (!openaiClient || openaiClientApiKey !== apiKey) {
+    openaiClient = new OpenAI({ apiKey });
+    openaiClientApiKey = apiKey;
+  }
+  return openaiClient;
+}
 
 
 
@@ -76,7 +86,7 @@ export async function sendAssistantMessageRequest(
       return await createGoogleGeminiChatCompletion(messageList);
     }
 
-    const response = await openai.chat.completions.create(payload);
+    const response = await getOpenAIClient().chat.completions.create(payload);
     return response.choices[0].message;
   } catch (error) {
     let errorString = 'An error occurred while sending the message. Please try again with a different message.'

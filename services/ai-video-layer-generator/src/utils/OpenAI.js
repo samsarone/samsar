@@ -5,8 +5,6 @@
 import OpenAI from "openai";
 import crypto from "crypto";
 
-const API_KEY = process.env.OPENAI_API_KEY;
-
 import { z } from "zod";
 import { zodResponseFormat } from "openai/helpers/zod";
 import {
@@ -20,7 +18,20 @@ import {
   shouldUseSamsarExternalInference,
 } from './SamsarExternalInferenceAdapter.js';
 
-const openai = new OpenAI({ apiKey: API_KEY || '' });
+let openaiClient = null;
+let openaiClientApiKey = '';
+
+function getOpenAIClient() {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) {
+    throw new Error('OPENAI_API_KEY is required for native OpenAI inference.');
+  }
+  if (!openaiClient || openaiClientApiKey !== apiKey) {
+    openaiClient = new OpenAI({ apiKey });
+    openaiClientApiKey = apiKey;
+  }
+  return openaiClient;
+}
 
 const RESPONSES_ONLY_MODELS = new Set([
   'gpt-5.5',
@@ -419,7 +430,7 @@ export async function sendAssistantMessageRequest(messageList, userInferenceMode
     }
 
     if (RESPONSES_ONLY_MODELS.has(modelName)) {
-      const response = await openai.post('/responses', {
+      const response = await getOpenAIClient().post('/responses', {
         body: {
           model: modelName,
           input: normalizeMessagesForResponses(messageList),
@@ -439,7 +450,7 @@ export async function sendAssistantMessageRequest(messageList, userInferenceMode
       };
     }
 
-    const response = await openai.chat.completions.create({
+    const response = await getOpenAIClient().chat.completions.create({
       messages: messageList,
       model: modelName,
     });
@@ -474,7 +485,7 @@ export async function sendAssistantStructuredMessageRequest(messageList) {
     };
     const response = shouldUseSamsarExternalInference(payload)
       ? await createSamsarExternalChatCompletion(payload)
-      : await openai.chat.completions.create(payload);
+      : await getOpenAIClient().chat.completions.create(payload);
     const messageContent = response.choices[0].message.content;
 
     const parsedMessage = JSON.parse(messageContent);

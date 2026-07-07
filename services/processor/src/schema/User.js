@@ -142,23 +142,6 @@ const userSchema = new Schema({
   dockerAdminBootstrappedAt: Date,
   dockerAdminOrganizationName: String,
 
-  isTeamAccount: { type: Boolean, default: false },
-  teamAccountEnabledAt: Date,
-  teamAccountEnabledBy: { type: String, default: null },
-
-  isTeamMember: { type: Boolean, default: false },
-  teamOwnerUserId: { type: Schema.Types.ObjectId, ref: 'User', default: null, index: true },
-  teamOwnerEmail: { type: String, default: null },
-  teamOrganizationName: { type: String, default: null },
-  teamMemberRole: { type: String, enum: ['member', null], default: null },
-  teamMemberStatus: { type: String, enum: ['invited', 'active', 'disabled', null], default: null, index: true },
-  teamInvitationId: { type: Schema.Types.ObjectId, ref: 'TeamInvitation', default: null },
-  teamMemberCallLimit: { type: Number, default: null },
-  teamMemberCallCount: { type: Number, default: 0 },
-  teamMemberInvitedAt: Date,
-  teamMemberAcceptedAt: Date,
-  teamMemberLastUsedAt: Date,
-
   pendingPlanType: String,
 
   userApiKeys: [UserAPIKey],
@@ -222,7 +205,6 @@ const userSchema = new Schema({
 
 userSchema.index({ authenticationKey: 1 }, { unique: true, sparse: true });
 userSchema.index({ 'oauthRefreshTokens.tokenHash': 1 }, { sparse: true });
-userSchema.index({ teamOwnerUserId: 1, teamMemberStatus: 1 });
 
 // 3. Create a Model.
 const User = model('User', userSchema);

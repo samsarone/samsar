@@ -6,7 +6,6 @@ import User from '../../schema/User.js';
 import { sendWelcomeEmail, sendForgotPasswordEmailMailer } from '../Mailer.js';
 import { generateAuthToken } from '../Auth.js';
 import { formatUserClientProfile } from '../User.js';
-import { getTeamAuthClaimsForUser } from '../Team.js';
 import bcrypt from 'bcrypt';
 import hat from 'hat';
 import dayjs from 'dayjs';
@@ -111,7 +110,7 @@ export async function loginUserByEmail(payload) {
   }
 
   // Generate auth token
-  const token = await generateAuthToken(user._id.toString(), getTeamAuthClaimsForUser(user));
+  const token = await generateAuthToken(user._id.toString());
 
   // Return user with token
   return formatUserClientProfile(user, { authToken: token });

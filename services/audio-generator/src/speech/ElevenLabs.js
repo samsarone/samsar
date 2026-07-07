@@ -9,6 +9,10 @@ import { updateSpeechPrompt } from './OpenAI.js';
 import { resolveSpeechLayerTimingUpdate } from "./SpeechLayerTiming.js";
 import { getProcessorAssetsV2Path, toAssetsV2RelativePath } from "../utils/AssetPaths.js";
 import { uploadAudioAssetToCDN } from "../AWS.js";
+import {
+  failStandaloneExternalAudioGeneration,
+  finalizeStandaloneExternalAudioGeneration,
+} from '../external/StandaloneExternalAudio.js';
 
 function normalizeString(value) {
   return typeof value === 'string' ? value.trim() : '';
@@ -110,6 +114,18 @@ export async function processElevenLabsSpeechRequest(payload) {
     // ------------------------------
     let duration = await mp3Duration(audioSaveFilePath);
     duration = Math.ceil(duration);
+
+    if (await finalizeStandaloneExternalAudioGeneration({
+      payload: audioGenerationRecord,
+      resultUrl: remoteFilePath,
+      resultUrls: [remoteFilePath],
+      duration,
+      localAudioPath: audioAssetPath,
+      remoteAudioData,
+      title: 'Speech',
+    })) {
+      return 'Speech request processed';
+    }
 
     // ------------------------------
     // 6) Update VideoSession + AudioLayer
@@ -299,6 +315,14 @@ export async function processElevenLabsSpeechRequest(payload) {
         { $set: { "audioLayers.$.generationStatus": "FAILED" } },
         { new: true }
       );
+
+      if (await failStandaloneExternalAudioGeneration(
+        audioGenerationRecord,
+        'ElevenLabs speech generation failed.',
+        { deleteAudioGeneration: true }
+      )) {
+        return;
+      }
 
       // Remove the AudioGeneration record
       await AudioGeneration.deleteOne({ _id: audioGenerationRecord._id });

@@ -16,6 +16,10 @@ import {
   createSamsarExternalChatCompletion,
   shouldUseSamsarExternalInference,
 } from "../inference/SamsarExternalInferenceAdapter.js";
+import {
+  failStandaloneExternalAudioGeneration,
+  finalizeStandaloneExternalAudioGeneration,
+} from '../external/StandaloneExternalAudio.js';
 
 ffmpeg.setFfprobePath('/usr/bin/ffprobe'); // Use system-installed ffprobe
 
@@ -197,6 +201,14 @@ export async function processOpenAITTSSpeechRequest(payload) {
           { $set: { "audioLayers.$.generationStatus": "FAILED", "audioLayers.$.errorMessage": error.message || 'Unknown error' } }
         );
 
+        if (await failStandaloneExternalAudioGeneration(
+          audioGenerationRecord,
+          error.message || 'OpenAI TTS request failed.',
+          { deleteAudioGeneration: true }
+        )) {
+          return;
+        }
+
         await AudioGeneration.deleteOne({ _id });
       }
 
@@ -217,12 +229,24 @@ export async function processOpenAITTSSpeechRequest(payload) {
       }
     ];
 
+    let duration = await getDurationSeconds(audioSaveFilePath);
+    duration = Math.ceil(duration);
+
+    if (await finalizeStandaloneExternalAudioGeneration({
+      payload,
+      resultUrl: remoteFilePath,
+      resultUrls: [remoteFilePath],
+      duration,
+      localAudioPath: audioAssetPath,
+      remoteAudioData,
+      title: 'Speech',
+    })) {
+      return 'Speech request processed';
+    }
+
     // Find the video session to get the current audio layer details
     let videoSession = await VideoSession.findById(sessionId);
     const isExpressGeneration = videoSession.isExpressGeneration;
-
-    let duration = await getDurationSeconds(audioSaveFilePath);
-    duration = Math.ceil(duration);
 
     const audioLayer = videoSession.audioLayers.find(
       (layer) => layer._id.toString() === audioLayerId
@@ -342,6 +366,14 @@ export async function processOpenAITTSSpeechRequest(payload) {
     return 'Speech request processed';
   } catch (e) {
     console.error(e);
+
+    if (await failStandaloneExternalAudioGeneration(
+      payload,
+      e?.message || 'OpenAI TTS request failed.',
+      { deleteAudioGeneration: true }
+    )) {
+      return;
+    }
 
     await VideoSession.findOneAndUpdate(
       { _id: payload.sessionId, "audioLayers._id": payload.audioLayerId },

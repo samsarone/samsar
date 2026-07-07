@@ -10,6 +10,7 @@ import { markAudioGenerationAsFailed } from '../music/audioUtils.js';
 import { resolveSpeechLayerTimingUpdate } from './SpeechLayerTiming.js';
 import { getProcessorAssetsV2Path, toAssetsV2RelativePath } from '../utils/AssetPaths.js';
 import { uploadAudioAssetToCDN } from '../AWS.js';
+import { finalizeStandaloneExternalAudioGeneration } from '../external/StandaloneExternalAudio.js';
 
 async function markCustomSpeechStageSuccess(sessionId) {
   if (!sessionId) {
@@ -141,6 +142,18 @@ async function finalizeCustomSpeechGeneration(payload, responseData) {
       title: 'Speech',
     },
   ];
+
+  if (await finalizeStandaloneExternalAudioGeneration({
+    payload,
+    resultUrl: remoteFilePath,
+    resultUrls: [remoteFilePath],
+    duration,
+    localAudioPath: audioAssetPath,
+    remoteAudioData,
+    title: 'Speech',
+  })) {
+    return;
+  }
 
   let videoSession = await VideoSession.findById(sessionId);
   if (!videoSession) {

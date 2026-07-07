@@ -178,7 +178,7 @@ function buildDockerSamsarExternalProviderStages({
       routeType,
       operation: 'image_to_video',
       model: videoModel,
-      videoRoute: 'image_to_video',
+      videoRoute: routeType === 'text_to_video' ? 'text_to_video' : 'image_to_video',
     };
   }
 

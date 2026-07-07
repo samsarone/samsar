@@ -11,6 +11,10 @@ import AudioGeneration from "../schema/AudioGeneration.js";
 import { resolveSpeechLayerTimingUpdate } from "./SpeechLayerTiming.js";
 import { getProcessorAssetsV2Path, toAssetsV2RelativePath } from "../utils/AssetPaths.js";
 import { uploadAudioAssetToCDN } from "../AWS.js";
+import {
+  failStandaloneExternalAudioGeneration,
+  finalizeStandaloneExternalAudioGeneration,
+} from '../external/StandaloneExternalAudio.js';
 
 const FAL_API_KEY = process.env.FAL_API_KEY;
 fal.config({ credentials: FAL_API_KEY });
@@ -181,6 +185,18 @@ export async function processPlayAISpeechRequest(payload) {
             title: 'Speech',
           }
         ];
+
+        if (await finalizeStandaloneExternalAudioGeneration({
+          payload,
+          resultUrl: remoteFilePath,
+          resultUrls: [remoteFilePath],
+          duration,
+          localAudioPath: audioAssetPath,
+          remoteAudioData,
+          title: 'Speech',
+        })) {
+          return 'Speech request processed';
+        }
 
         // -----------
         // Update VideoSession -> audioLayers
@@ -364,6 +380,13 @@ export async function processPlayAISpeechRequest(payload) {
         { $set: { "audioLayers.$.generationStatus": "FAILED" } },
         { new: true }
       );
+      if (await failStandaloneExternalAudioGeneration(
+        audioGenerationRecord,
+        'PlayAI speech generation failed.',
+        { deleteAudioGeneration: true }
+      )) {
+        return;
+      }
       await AudioGeneration.deleteOne({ _id: payload._id });
     }
   }

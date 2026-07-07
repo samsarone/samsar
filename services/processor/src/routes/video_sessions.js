@@ -68,7 +68,6 @@ import { requestGenerateCustomAIVideo, } from '../models/ai_video/index.js';
 import { getIntroSessionList, } from '../models/IntroSession.js';
 
 import { verifyUserAuth, verifyUserAuthAndGetUser } from '../models/Auth.js';
-import { attachTeamContextToPayload, consumeTeamMemberModelApiCall } from '../models/Team.js';
 import { createRealtimeTranscriptionSession } from '../models/Realtime.js';
 import { copyVideoSession } from '../models/api/VideoSessionCloneAPI.js';
 import {
@@ -387,13 +386,6 @@ router.post('/request_render_video', async function (req, res) {
     res.status(401).send("Unauthorized");
     return;
   }
-  attachTeamContextToPayload(payload);
-  await consumeTeamMemberModelApiCall({
-    requestType: 'render_video',
-    sessionId: id,
-    route: '/video_sessions/request_render_video',
-    payload,
-  });
   const generationResponse = await requestVideoGeneration(userId, id, payload);
   await logSharedRouteOperation(userId, getRouteSessionPayload(payload, { sessionId: id }), {
     operation: 'request_render_video',
@@ -712,13 +704,6 @@ router.post('/request_generate', async function (req, res) {
     return;
   }
   const payload = req.body;
-  attachTeamContextToPayload(payload);
-  await consumeTeamMemberModelApiCall({
-    requestType: 'text_to_image',
-    sessionId: payload.videoSessionId,
-    route: '/video_sessions/request_generate',
-    payload,
-  });
   const sessionData = await requestGenerateImage(userId, payload);
   await logSharedRouteOperation(userId, getRouteSessionPayload(payload, { sessionId: payload.videoSessionId }), {
     operation: 'request_generate_image',
@@ -828,13 +813,6 @@ router.post('/avatar_voiceover/generate_avatar_image', async function (req, res)
   }
 
   try {
-    attachTeamContextToPayload(req.body);
-    await consumeTeamMemberModelApiCall({
-      requestType: 'avatar_image',
-      sessionId: req.body?.sessionId,
-      route: '/video_sessions/avatar_voiceover/generate_avatar_image',
-      payload: req.body,
-    });
     res.json(await requestGenerateAvatarImage(userId, req.body));
   } catch (error) {
     res.status(400).json({ error: error?.message || 'Unable to generate avatar image.' });
@@ -865,13 +843,6 @@ router.post('/avatar_voiceover/generate_speech_from_hints', async function (req,
   }
 
   try {
-    attachTeamContextToPayload(req.body);
-    await consumeTeamMemberModelApiCall({
-      requestType: 'avatar_speech',
-      sessionId: req.body?.sessionId,
-      route: '/video_sessions/avatar_voiceover/generate_speech_from_hints',
-      payload: req.body,
-    });
     res.json(await requestGenerateAvatarSpeechFromHints(userId, req.body));
   } catch (error) {
     res.status(400).json({ error: error?.message || 'Unable to generate avatar speech.' });
@@ -887,13 +858,6 @@ router.post('/avatar_voiceover/generate_video_from_hints', async function (req, 
   }
 
   try {
-    attachTeamContextToPayload(req.body);
-    await consumeTeamMemberModelApiCall({
-      requestType: 'avatar_video',
-      sessionId: req.body?.sessionId,
-      route: '/video_sessions/avatar_voiceover/generate_video_from_hints',
-      payload: req.body,
-    });
     res.json(await requestGenerateAvatarVideoFromHints(userId, req.body));
   } catch (error) {
     res.status(400).json({ error: error?.message || 'Unable to generate avatar video.' });
@@ -1372,14 +1336,7 @@ router.post('/request_generate_layered_speech', async function (req, res) {
     res.status(401).send("Unauthorized");
     return;
   }
-  attachTeamContextToPayload(payload);
   await assertEditableRouteAccess(userId, payload);
-  await consumeTeamMemberModelApiCall({
-    requestType: 'text_to_speech',
-    sessionId: payload.sessionId || payload.videoSessionId,
-    route: '/video_sessions/request_generate_layered_speech',
-    payload,
-  });
   const sessionData = await requestGenerateLayeredSpeech(userId, payload);
   await logSharedRouteOperation(userId, payload, {
     operation: 'request_generate_layered_speech',
@@ -1481,14 +1438,7 @@ router.post('/request_generate_custom_video', async function (req, res) {
   }
   const payload = req.body;
 
-  attachTeamContextToPayload(payload);
   await assertEditableRouteAccess(userId, payload);
-  await consumeTeamMemberModelApiCall({
-    requestType: 'image_to_video',
-    sessionId: payload.videoSessionId || payload.sessionId,
-    route: '/video_sessions/request_generate_custom_video',
-    payload,
-  });
   const sessionData = await requestGenerateAIVideoByModel(userId, payload);
   await logSharedRouteOperation(userId, getRouteSessionPayload(payload, { sessionId: payload.videoSessionId }), {
     operation: 'request_generate_custom_video',
@@ -1804,14 +1754,7 @@ router.post('/apply_audio_track_visualizer', async function (req, res) {
   }
 
   const payload = req.body;
-  attachTeamContextToPayload(payload);
   await assertEditableRouteAccess(userId, { ...payload, sessionId: payload.id });
-  await consumeTeamMemberModelApiCall({
-    requestType: 'audio_visualizer',
-    sessionId: payload.id,
-    route: '/video_sessions/apply_audio_track_visualizer',
-    payload,
-  });
   await requestGenerateAudioVisualizer(userId, payload);
   await logSharedRouteOperation(userId, { ...payload, sessionId: payload.id }, {
     operation: 'apply_audio_track_visualizer',
@@ -2128,13 +2071,6 @@ router.post('/request_lip_sync_to_speech', async function (req, res) {
     }
 
     await assertEditableRouteAccess(userId, payload);
-    attachTeamContextToPayload(payload);
-    await consumeTeamMemberModelApiCall({
-      requestType: 'lip_sync',
-      sessionId: payload.sessionId || payload.videoSessionId,
-      route: '/video_sessions/request_lip_sync_to_speech',
-      payload,
-    });
     const updatedSession = await requestGenerateLipSync(userId, payload);
     await logSharedRouteOperation(userId, payload, {
       operation: 'request_lip_sync_to_speech',
@@ -2166,13 +2102,6 @@ router.post('/add_synced_sound_effect', async function (req, res) {
     }
 
     await assertEditableRouteAccess(userId, payload);
-    attachTeamContextToPayload(payload);
-    await consumeTeamMemberModelApiCall({
-      requestType: 'text_to_sound_effect',
-      sessionId: payload.sessionId || payload.videoSessionId,
-      route: '/video_sessions/add_synced_sound_effect',
-      payload,
-    });
     const updatedSession = await requestGenerateSyncedSoundEffectVideo(userId, payload);
     await logSharedRouteOperation(userId, payload, {
       operation: 'add_synced_sound_effect',

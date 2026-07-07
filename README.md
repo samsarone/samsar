@@ -10,7 +10,7 @@ Runtime configuration, generated secrets, and local deployment resources are sto
 
 ![Text to Video](assets/text-to-video-pipeline.png)
 
-![Image to Video](assets/image-to-video-pipeline.png)
+![Image List to Video](assets/image-to-video-pipeline.png)
 
 ![Search Embeddings](assets/search-embeddings-pipeline.png)
 
@@ -337,8 +337,6 @@ Service account keys are long-lived secrets. Prefer attached service accounts on
 External IP access is not enabled by default. Keep the Docker stack on localhost unless you intentionally want public access to your generative server.
 
 The setup wizard can optionally enable nginx for a public domain/subdomain, public IP, or private IP. For public domain access, add A records for the Studio and processor domains pointing to the machine IP in your DNS provider. For public/private IP access, the wizard can detect IP candidates and uses a single IP with the processor under `/api`. For production deployment, non-SSL access needs port `80`; Let's Encrypt SSL setup uses ports `80` and `443`, then closes port `80` if Samsar opened it. The wizard can try to manage these host firewall rules automatically on supported Linux hosts. Warning: this allows public access to your instance, so set a strong setup/admin password first and restrict access with HTTPS, firewall rules, and authentication.
-
-If you expose Studio, the processor API, media gateway, setup wizard, MinIO, or Grafana through a public IP, DNS record, reverse proxy, or tunnel, public exposure can allow others to use your configured provider keys and generation credits.
 
 For custom enterprise deployments behind a VPS, private network, or managed ingress, contact `hello@samsar.one`.
 
