@@ -9,6 +9,7 @@ import { getDBConnectionString } from '../DBString.js';
 import { getCurrentEnvironment } from '../utils/Environment.js';
 import { recordProviderUsageLog } from '../utils/ProviderUsageAudit.js';
 import {
+  DOCKER_FAL_LIP_SYNC_MODELS,
   DOCKER_VIDEO_PROVIDER,
   resolveDockerVideoProvider,
 } from '../consts/DockerProviderPriority.js';
@@ -372,6 +373,24 @@ function normalizeDuration(duration) {
   return Math.round(parsed);
 }
 
+function getExternalVideoModel(payload = {}) {
+  return (
+    normalizeString(payload.samsarExternalVideoModel) ||
+    normalizeString(payload.originalVideoModel) ||
+    normalizeString(payload.model)
+  );
+}
+
+function getPayloadMediaUrl(payload = {}, keys = []) {
+  for (const key of keys) {
+    const value = normalizeString(payload[key]);
+    if (value) {
+      return value;
+    }
+  }
+  return '';
+}
+
 export function buildExternalStepImageToVideoInput(payload = {}, uploadedStartImageUrl) {
   const videoModel =
     normalizeString(payload.samsarExternalVideoModel) ||
@@ -417,36 +436,57 @@ function normalizeExternalVideoRoute(route) {
   return normalized;
 }
 
+function inferExternalVideoToVideoRoute(payload = {}) {
+  const stage = normalizeString(payload.samsarExternalProviderStage).toLowerCase();
+  const generationType = normalizeString(payload.generationType || payload.layerAiVideoType).toLowerCase();
+  const model = getExternalVideoModel(payload).toUpperCase();
+  const hasVideoInput = Boolean(getPayloadMediaUrl(payload, ['video_url', 'videoUrl', 'videoLink', 'video']));
+  const hasAudioInput = Boolean(getPayloadMediaUrl(payload, ['audio_url', 'audioUrl', 'audioLink', 'audio']));
+
+  if (
+    stage === 'lip_sync_generation' ||
+    generationType === 'lip_sync' ||
+    DOCKER_FAL_LIP_SYNC_MODELS.includes(model) ||
+    (hasVideoInput && hasAudioInput)
+  ) {
+    return 'lip_sync';
+  }
+
+  if (
+    stage === 'sound_effect_generation' ||
+    generationType === 'sound_effect' ||
+    (hasVideoInput && !hasAudioInput)
+  ) {
+    return 'sound_effect';
+  }
+
+  return '';
+}
+
 export function resolveExternalVideoRoute(payload = {}) {
   const hasStartImage = Boolean(getStartImageReference(payload));
+  const inferredVideoToVideoRoute = inferExternalVideoToVideoRoute(payload);
   const configuredRoute = normalizeExternalVideoRoute(payload.samsarExternalVideoRoute);
   if (configuredRoute) {
+    if (
+      inferredVideoToVideoRoute &&
+      ['text_to_video', 'image_to_video', 'step/image_to_video'].includes(configuredRoute)
+    ) {
+      return inferredVideoToVideoRoute;
+    }
     if (hasStartImage && configuredRoute === 'text_to_video') {
       return DEFAULT_EXTERNAL_VIDEO_ROUTE;
     }
     return configuredRoute;
   }
 
-  const stage = normalizeString(payload.samsarExternalProviderStage).toLowerCase();
-  const generationType = normalizeString(payload.generationType || payload.layerAiVideoType).toLowerCase();
-  if (stage === 'lip_sync_generation' || generationType === 'lip_sync') {
-    return 'lip_sync';
-  }
-  if (stage === 'sound_effect_generation' || generationType === 'sound_effect') {
-    return 'sound_effect';
+  if (inferredVideoToVideoRoute) {
+    return inferredVideoToVideoRoute;
   }
   if (!hasStartImage) {
     return 'text_to_video';
   }
   return DEFAULT_EXTERNAL_VIDEO_ROUTE;
-}
-
-function getExternalVideoModel(payload = {}) {
-  return (
-    normalizeString(payload.samsarExternalVideoModel) ||
-    normalizeString(payload.originalVideoModel) ||
-    normalizeString(payload.model)
-  );
 }
 
 function buildExternalTextToVideoInput(payload = {}) {
@@ -482,16 +522,6 @@ export function buildExternalImageToVideoInput(payload = {}, uploadedStartImageU
       original_video_model: normalizeString(payload.originalVideoModel) || null,
     },
   };
-}
-
-function getPayloadMediaUrl(payload = {}, keys = []) {
-  for (const key of keys) {
-    const value = normalizeString(payload[key]);
-    if (value) {
-      return value;
-    }
-  }
-  return '';
 }
 
 function assertProviderReadableUrl(value, label) {
