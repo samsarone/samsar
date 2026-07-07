@@ -488,6 +488,21 @@ export async function generateLipSyncForLayer(sessionId, currentLayer, connected
     audioPrompt: audioPrompt,
   };
 
+  console.log('[lip_sync][request_enqueue] creating lip sync generation request', {
+    sessionId,
+    layerId: currentLayer?._id?.toString?.() || currentLayer?._id || null,
+    audioLayerId: refreshedAudioLayer?._id?.toString?.() || refreshedAudioLayer?._id || null,
+    model: lipSyncModel,
+    generationType: generationPayload.generationType,
+    route: generationPayload.samsarExternalVideoRoute,
+    stage: generationPayload.samsarExternalProviderStage,
+    retryOnFail: generationPayload.retryOnFail,
+    videoLink: videoLayerLink,
+    audioLink: paddedAudioRemotePath,
+    audioDuration: videoDuration,
+    aspectRatio,
+  });
+
 
 
   // 4) Save an AIVideoLayerGeneration record
