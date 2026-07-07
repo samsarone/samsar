@@ -1242,6 +1242,11 @@
   border-color: var(--border-strong);
 }
 
+.data-option-card.disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+
 .data-option-card input {
   accent-color: var(--action-bg);
   margin-top: 2px;
@@ -1330,6 +1335,29 @@
   padding: 9px 11px;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.proxy-dns-hint {
+  align-self: end;
+  white-space: normal;
+}
+
+.proxy-warning-card {
+  border-color: color-mix(in srgb, rgba(248, 113, 113, 0.42) 45%, var(--border) 55%);
+}
+
+.proxy-copy {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+  margin: 0;
+}
+
+.proxy-action-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: flex-start;
 }
 
 .summary-grid {

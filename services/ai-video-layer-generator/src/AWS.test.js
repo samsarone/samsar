@@ -112,6 +112,42 @@ test('rejects Docker local media references when no public tunnel URL exists', a
   }
 });
 
+test('normalizes Docker local media references through a configured public IP processor path', async () => {
+  const envSnapshot = snapshotEnv();
+  const { tempRoot, mediaRelativePath } = prepareDockerMediaFixture({
+    publicMediaUrl: 'http://localhost:8080/',
+  });
+  process.env.SAMSAR_DOCKER_PUBLIC_PROCESSOR_BASE_URL = 'http://203.0.113.10/api';
+
+  try {
+    const { normalizeProviderMediaUrl } = await importAwsModule();
+    const url = await normalizeProviderMediaUrl(`http://localhost:8080/${mediaRelativePath}`);
+    assert.equal(url, `http://203.0.113.10/api/${mediaRelativePath}`);
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+    restoreEnv(envSnapshot);
+  }
+});
+
+test('keeps private IP processor bases out of external AI provider media URLs', async () => {
+  const envSnapshot = snapshotEnv();
+  const { tempRoot, mediaRelativePath } = prepareDockerMediaFixture({
+    publicMediaUrl: 'http://localhost:8080/',
+  });
+  process.env.SAMSAR_DOCKER_PUBLIC_PROCESSOR_BASE_URL = 'http://192.168.1.25';
+
+  try {
+    const { normalizeProviderMediaUrl } = await importAwsModule();
+    await assert.rejects(
+      () => normalizeProviderMediaUrl(`/${mediaRelativePath}`),
+      /A public media URL is required/
+    );
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+    restoreEnv(envSnapshot);
+  }
+});
+
 test('returns Docker local persisted media URLs through the processor API', async () => {
   const envSnapshot = snapshotEnv();
   const { tempRoot } = prepareDockerMediaFixture({

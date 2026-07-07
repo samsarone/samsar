@@ -18,6 +18,7 @@ The default Docker deployment keeps the Studio client, processor API, workers, l
 | `minio` | `minio` | Local S3-compatible media bucket. |
 | `local-media` | `media-gateway` | Nginx gateway for `/assets` and `/assets_v2`. |
 | `logger` | `loki`, `promtail`, `grafana` | Local container log collection and dashboarding. |
+| `reverse-proxy` | `reverse-proxy` | Optional public or intranet nginx entrypoint for Studio and the processor API on ports `80` and `443`. |
 
 ## Request Flow
 
@@ -25,7 +26,7 @@ The default Docker deployment keeps the Studio client, processor API, workers, l
 2. The processor validates auth, credits, request shape, and model availability.
 3. The processor writes session/request state to MongoDB and stores media in MinIO or the configured external S3-compatible store.
 4. Workers pick up queued work through MongoDB-backed state and provider-specific task records.
-5. Media outputs are written to Docker volumes and served through `media-gateway` at `http://localhost:8080`.
+5. Media outputs are written to Docker volumes and served through `media-gateway` at `http://localhost:8080`, or through the optional reverse proxy when a public domain/public IP is configured.
 6. Clients poll status endpoints or receive webhook callbacks when provided by the request.
 
 ## Runtime Config
@@ -60,6 +61,8 @@ http://localhost:8080/assets_v2/video/output/<session-id>/<file>.mp4
 ```
 
 External S3-compatible storage can be selected in the setup wizard or configured directly in `runtime/config/samsar.config.json`. When external media publishing is enabled, provider-visible URLs come from `storage.staticCdnUrl`.
+
+The Docker reverse proxy can also provide provider-visible media URLs when it is configured with a public domain or public IP. Public/private IP installs use one machine IP: Studio is served at `http://<ip>` and the processor/media base is `http://<ip>/api`. A private IP reverse proxy is useful for intranet access, but external AI providers cannot fetch private addresses; provider calls keep using the media tunnel in that mode.
 
 ## Provider Calls
 

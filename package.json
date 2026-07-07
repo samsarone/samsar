@@ -9,12 +9,12 @@
     "sync:build": "bash ../scripts/sync-projects.sh --build",
     "sync:promote": "bash ../scripts/sync-projects.sh --build --promote",
     "config:render": "node scripts/generate-runtime-config.mjs",
-    "docker:config": "docker compose -f deploy/compose/docker-compose.yml config",
+    "docker:config": "npm run config:render && docker compose --env-file runtime/secrets/root.env -f deploy/compose/docker-compose.yml --profile core --profile workers --profile local-mongo --profile minio --profile local-media --profile logger --profile reverse-proxy config",
     "docker:setup-assets": "bash scripts/setup-docker-runtime-assets.sh",
     "docker:setup-fonts": "bash scripts/setup-docker-runtime-assets.sh --fonts-only",
     "docker:setup-logger": "bash scripts/setup-docker-runtime-assets.sh --logger-only",
-    "docker:up": "npm run config:render && docker compose -f deploy/compose/docker-compose.yml --profile core --profile workers --profile local-mongo --profile minio --profile local-media --profile logger up -d --build",
-    "docker:down": "docker compose -f deploy/compose/docker-compose.yml --profile core --profile workers --profile local-mongo --profile minio --profile local-media --profile logger down",
+    "docker:up": "npm run config:render && docker compose --env-file runtime/secrets/root.env -f deploy/compose/docker-compose.yml --profile core --profile workers --profile local-mongo --profile minio --profile local-media --profile logger up -d --build",
+    "docker:down": "mkdir -p runtime/secrets && touch runtime/secrets/root.env && docker compose --env-file runtime/secrets/root.env -f deploy/compose/docker-compose.yml --profile core --profile workers --profile local-mongo --profile minio --profile local-media --profile logger --profile reverse-proxy down",
     "setup-wizard:docker": "bash scripts/setup-wizard-docker.sh"
   },
   "workspaces": [

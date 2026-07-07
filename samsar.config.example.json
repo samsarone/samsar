@@ -33,6 +33,19 @@
     "samsarApi": "https://api.samsar.one/v1",
     "media": "http://localhost:8080"
   },
+  "reverseProxy": {
+    "enabled": false,
+    "accessType": "publicDomain",
+    "clientHost": "",
+    "processorHost": "",
+    "machineIp": "",
+    "openFirewallPorts": false,
+    "ssl": {
+      "enabled": false,
+      "email": "",
+      "certName": "samsar-reverse-proxy"
+    }
+  },
   "providers": {
     "samsar": {
       "enabled": false,

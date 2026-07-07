@@ -5,6 +5,10 @@ function normalizeString(value) {
   return typeof value === 'string' ? value.trim() : '';
 }
 
+function isTemporaryAwsAccessKeyId(value) {
+  return normalizeString(value).toUpperCase().startsWith('ASIA');
+}
+
 function normalizeProvider(value) {
   const normalized = normalizeString(value).toLowerCase();
   if (['smtp', 'ses', 'ses-api', 'none', 'disabled'].includes(normalized)) {
@@ -45,20 +49,27 @@ const SES_REGION =
   process.env.AWS_DEFAULT_REGION ||
   'us-west-2';
 
-const SES_ACCESS_KEY_ID = process.env.AWS_SES_ACCESS_KEY_ID || process.env.AWS_ACCESS_KEY_ID;
-const SES_SECRET_ACCESS_KEY = process.env.AWS_SES_SECRET_ACCESS_KEY || process.env.AWS_SECRET_ACCESS_KEY;
-const SES_SESSION_TOKEN = process.env.AWS_SES_SESSION_TOKEN || process.env.AWS_SESSION_TOKEN;
+const SES_ACCESS_KEY_ID = normalizeString(process.env.AWS_SES_ACCESS_KEY_ID) || normalizeString(process.env.AWS_ACCESS_KEY_ID);
+const SES_SECRET_ACCESS_KEY = normalizeString(process.env.AWS_SES_SECRET_ACCESS_KEY) || normalizeString(process.env.AWS_SECRET_ACCESS_KEY);
+const SES_SCOPED_SESSION_TOKEN = normalizeString(process.env.AWS_SES_SESSION_TOKEN);
+const SES_GENERIC_SESSION_TOKEN = normalizeString(process.env.AWS_SES_ACCESS_KEY_ID) ? '' : normalizeString(process.env.AWS_SESSION_TOKEN);
+const SES_SESSION_TOKEN = isTemporaryAwsAccessKeyId(SES_ACCESS_KEY_ID)
+  ? SES_SCOPED_SESSION_TOKEN || SES_GENERIC_SESSION_TOKEN
+  : '';
 
 const sesClientConfig = {
   region: SES_REGION,
 };
 
-if (SES_ACCESS_KEY_ID && SES_SECRET_ACCESS_KEY) {
+if (MAIL_PROVIDER === 'ses' && SES_ACCESS_KEY_ID && SES_SECRET_ACCESS_KEY) {
   sesClientConfig.credentials = {
     accessKeyId: SES_ACCESS_KEY_ID,
     secretAccessKey: SES_SECRET_ACCESS_KEY,
   };
 
+  if (isTemporaryAwsAccessKeyId(SES_ACCESS_KEY_ID) && !SES_SESSION_TOKEN) {
+    throw new Error('AWS_SES_SESSION_TOKEN is required when AWS_SES_ACCESS_KEY_ID uses temporary ASIA credentials.');
+  }
   if (SES_SESSION_TOKEN) {
     sesClientConfig.credentials.sessionToken = SES_SESSION_TOKEN;
   }

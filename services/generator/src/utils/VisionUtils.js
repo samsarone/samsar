@@ -49,6 +49,44 @@ function getConfiguredUrlHostname(value = '') {
   }
 }
 
+function isPrivateIpAddress(hostname = '') {
+  const parts = hostname.split('.').map((value) => Number.parseInt(value, 10));
+  if (parts.length !== 4 || parts.some((value) => !Number.isFinite(value))) {
+    return false;
+  }
+  const [first, second] = parts;
+  return first === 10 ||
+    (first === 172 && second >= 16 && second <= 31) ||
+    (first === 192 && second === 168) ||
+    (first === 127) ||
+    (first === 169 && second === 254);
+}
+
+function isProviderVisibleBaseUrl(value = '') {
+  const normalized = normalizeString(value);
+  if (!isHttpUrl(normalized)) {
+    return false;
+  }
+  try {
+    const hostname = new URL(normalized).hostname.toLowerCase();
+    return !LOCAL_MEDIA_HOSTNAMES.has(hostname) &&
+      !hostname.endsWith('.local') &&
+      !isPrivateIpAddress(hostname);
+  } catch {
+    return false;
+  }
+}
+
+function getPublicMediaBaseCandidates() {
+  return [
+    process.env.MEDIA_PUBLIC_URL,
+    process.env.SAMSAR_PUBLIC_MEDIA_BASE_URL,
+    process.env.SAMSAR_EXTERNAL_MEDIA_PUBLIC_BASE_URL,
+    process.env.SAMSAR_DOCKER_PUBLIC_ASSET_BASE_URL,
+    process.env.SAMSAR_DOCKER_PUBLIC_PROCESSOR_BASE_URL,
+  ].map(normalizeString).filter(isProviderVisibleBaseUrl);
+}
+
 function getConfiguredLocalMediaHosts() {
   return new Set([
     ...LOCAL_MEDIA_HOSTNAMES,
@@ -89,9 +127,7 @@ function parsePathAndSuffix(reference = '') {
 }
 
 function buildTunnelizedMediaUrl(reference = '') {
-  const mediaPublicBase =
-    normalizeString(process.env.MEDIA_PUBLIC_URL) ||
-    normalizeString(process.env.SAMSAR_EXTERNAL_MEDIA_PUBLIC_BASE_URL);
+  const mediaPublicBase = getPublicMediaBaseCandidates()[0] || '';
   if (!mediaPublicBase) {
     return '';
   }
@@ -130,10 +166,9 @@ function isDockerLocalMediaReference(reference = '') {
     return true;
   }
 
-  const publicMediaHost = getConfiguredUrlHostname(process.env.MEDIA_PUBLIC_URL) ||
-    getConfiguredUrlHostname(process.env.SAMSAR_EXTERNAL_MEDIA_PUBLIC_BASE_URL);
+  const publicMediaHosts = new Set(getPublicMediaBaseCandidates().map(getConfiguredUrlHostname).filter(Boolean));
   const referenceHost = getConfiguredUrlHostname(reference);
-  if (publicMediaHost && referenceHost === publicMediaHost) {
+  if (publicMediaHosts.has(referenceHost)) {
     return false;
   }
 

@@ -22,11 +22,12 @@ const STEPS = [
   { id: 1, label: 'Providers', description: 'Add credentials' },
   { id: 2, label: 'Services', description: 'Review access' },
   { id: 3, label: 'Mail & Data', description: 'Storage and email' },
-  { id: 4, label: 'Admin', description: 'Secure access' },
+  { id: 4, label: 'Domain', description: 'Proxy access' },
+  { id: 5, label: 'Admin', description: 'Secure access' },
 ];
 const SETUP_POLL_INTERVAL_MS = 1200;
 const WIZARD_STORAGE_KEY = 'samsar.setupWizard.session.v1';
-const WIZARD_STORAGE_VERSION = 4;
+const WIZARD_STORAGE_VERSION = 5;
 
 const PROVIDERS = [
   {
@@ -431,6 +432,16 @@ const DEFAULT_MAIL_CONFIG = Object.freeze({
   sesSecretAccessKey: '',
   sesSessionToken: '',
 });
+const DEFAULT_REVERSE_PROXY_CONFIG = Object.freeze({
+  enabled: false,
+  accessType: 'publicDomain',
+  clientHost: '',
+  processorHost: '',
+  machineIp: '',
+  openFirewallPorts: false,
+  sslEnabled: false,
+  sslEmail: '',
+});
 const DEFAULT_ADMIN_CONFIG = Object.freeze({
   organizationName: '',
   email: '',
@@ -512,6 +523,17 @@ function pickMailConfig(value = {}) {
   );
 }
 
+function pickReverseProxyConfig(value = {}) {
+  return Object.fromEntries(
+    Object.entries(DEFAULT_REVERSE_PROXY_CONFIG).map(([key, fallback]) => [
+      key,
+      typeof fallback === 'boolean'
+        ? typeof value?.[key] === 'boolean' ? value[key] : fallback
+        : typeof value?.[key] === 'string' ? value[key] : fallback,
+    ]),
+  );
+}
+
 function pickAdminConfig(value = {}) {
   return Object.fromEntries(
     Object.entries(DEFAULT_ADMIN_CONFIG).map(([key, fallback]) => [
@@ -525,6 +547,14 @@ function normalizeText(value) {
   return typeof value === 'string' ? value.trim() : '';
 }
 
+function normalizeSecretText(value) {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+function isTemporaryAwsAccessKeyId(value) {
+  return normalizeText(value).toUpperCase().startsWith('ASIA');
+}
+
 function normalizeMailProvider(value) {
   const normalized = normalizeText(value).toLowerCase();
   if (['none', 'smtp', 'ses'].includes(normalized)) {
@@ -533,8 +563,18 @@ function normalizeMailProvider(value) {
   return 'none';
 }
 
+function normalizeReverseProxyAccessType(value) {
+  const normalized = normalizeText(value);
+  if (['publicDomain', 'publicIp', 'privateIp'].includes(normalized)) {
+    return normalized;
+  }
+  return 'publicDomain';
+}
+
 function normalizeMailConfig(mailConfig = {}) {
   const provider = normalizeMailProvider(mailConfig.provider);
+  const sesAccessKeyId = normalizeText(mailConfig.sesAccessKeyId);
+  const sesUsesTemporaryCredentials = isTemporaryAwsAccessKeyId(sesAccessKeyId);
   return {
     provider,
     fromAddress: normalizeText(mailConfig.fromAddress),
@@ -545,9 +585,91 @@ function normalizeMailConfig(mailConfig = {}) {
     smtpUser: normalizeText(mailConfig.smtpUser),
     smtpPassword: typeof mailConfig.smtpPassword === 'string' ? mailConfig.smtpPassword : '',
     sesRegion: normalizeText(mailConfig.sesRegion) || 'us-east-1',
-    sesAccessKeyId: normalizeText(mailConfig.sesAccessKeyId),
-    sesSecretAccessKey: typeof mailConfig.sesSecretAccessKey === 'string' ? mailConfig.sesSecretAccessKey : '',
-    sesSessionToken: typeof mailConfig.sesSessionToken === 'string' ? mailConfig.sesSessionToken : '',
+    sesAccessKeyId,
+    sesSecretAccessKey: normalizeSecretText(mailConfig.sesSecretAccessKey),
+    sesSessionToken: sesUsesTemporaryCredentials ? normalizeSecretText(mailConfig.sesSessionToken) : '',
+  };
+}
+
+function normalizeHostInput(value) {
+  const normalized = normalizeText(value);
+  if (!normalized) {
+    return '';
+  }
+  try {
+    const parsedUrl = new URL(/^https?:\/\//i.test(normalized) ? normalized : `http://${normalized}`);
+    return parsedUrl.hostname.toLowerCase();
+  } catch {
+    return normalized
+      .replace(/^https?:\/\//i, '')
+      .split('/')[0]
+      .split(':')[0]
+      .toLowerCase();
+  }
+}
+
+function buildUrlForHost(host, useHttps = false) {
+  const normalizedHost = normalizeHostInput(host);
+  return normalizedHost ? `${useHttps ? 'https' : 'http'}://${normalizedHost}` : '';
+}
+
+function buildUrlForHostPath(host, pathName = '', useHttps = false) {
+  const baseUrl = buildUrlForHost(host, useHttps);
+  const normalizedPath = normalizeText(pathName).replace(/^\/+/, '');
+  return baseUrl && normalizedPath ? `${baseUrl}/${normalizedPath}` : baseUrl;
+}
+
+function normalizeReverseProxyConfig(reverseProxyConfig = {}) {
+  const accessType = normalizeReverseProxyAccessType(reverseProxyConfig.accessType);
+  const enabled = Boolean(reverseProxyConfig.enabled);
+  const sslEnabled = enabled && accessType === 'publicDomain' && Boolean(reverseProxyConfig.sslEnabled);
+  const isIpAccess = accessType === 'publicIp' || accessType === 'privateIp';
+  const machineIp = normalizeHostInput(reverseProxyConfig.machineIp || reverseProxyConfig.clientHost || reverseProxyConfig.processorHost);
+  return {
+    enabled,
+    accessType,
+    clientHost: isIpAccess ? machineIp : normalizeHostInput(reverseProxyConfig.clientHost),
+    processorHost: isIpAccess ? machineIp : normalizeHostInput(reverseProxyConfig.processorHost),
+    machineIp: isIpAccess ? machineIp : normalizeText(reverseProxyConfig.machineIp),
+    openFirewallPorts: Boolean(reverseProxyConfig.openFirewallPorts),
+    sslEnabled,
+    sslEmail: normalizeText(reverseProxyConfig.sslEmail).toLowerCase(),
+  };
+}
+
+function buildReverseProxyDeploymentConfig(reverseProxyConfig = {}, validationResult = null) {
+  const normalized = normalizeReverseProxyConfig(reverseProxyConfig);
+  if (!normalized.enabled) {
+    return {
+      enabled: false,
+      accessType: normalized.accessType,
+      openFirewallPorts: false,
+      ssl: { enabled: false },
+    };
+  }
+
+  const useHttps = normalized.sslEnabled;
+  const clientApp = buildUrlForHost(normalized.clientHost, useHttps);
+  const processorApi = normalized.accessType === 'publicIp' || normalized.accessType === 'privateIp'
+    ? buildUrlForHostPath(normalized.machineIp, 'api', useHttps)
+    : buildUrlForHost(normalized.processorHost, useHttps);
+  return {
+    enabled: true,
+    accessType: normalized.accessType,
+    clientHost: normalized.clientHost,
+    processorHost: normalized.processorHost,
+    machineIp: normalized.machineIp,
+    openFirewallPorts: normalized.openFirewallPorts,
+    ssl: {
+      enabled: normalized.sslEnabled,
+      email: normalized.sslEnabled ? normalized.sslEmail : '',
+    },
+    publicUrls: {
+      clientApp,
+      processorApi,
+      media: processorApi,
+    },
+    validation: validationResult?.config || validationResult || null,
   };
 }
 
@@ -718,6 +840,8 @@ function buildInitialWizardState() {
     mailConfig: pickMailConfig(storedState?.mailConfig),
     mailValidationResult: storedState?.mailValidationResult || null,
     dataConfig: pickDataConfig(storedState?.dataConfig),
+    reverseProxyConfig: pickReverseProxyConfig(storedState?.reverseProxyConfig),
+    reverseProxyValidationResult: storedState?.reverseProxyValidationResult || null,
     adminConfig: pickAdminConfig(storedState?.adminConfig),
     validationResult: storedState?.validationResult || null,
     setupRun: serializeSetupRun(storedState?.setupRun),
@@ -967,9 +1091,19 @@ function getInvalidEnteredProviders(credentials, validationResult) {
   });
 }
 
-function buildDeploymentPayload(credentials, services, dataConfig, validationResult, mailConfig, mailValidationResult) {
+function buildDeploymentPayload(
+  credentials,
+  services,
+  dataConfig,
+  validationResult,
+  mailConfig,
+  mailValidationResult,
+  reverseProxyConfig,
+  reverseProxyValidationResult,
+) {
   const sanitizedCredentials = normalizeCredentialSet(credentials);
   const infrastructure = buildInfrastructureConfig(dataConfig);
+  const reverseProxy = buildReverseProxyDeploymentConfig(reverseProxyConfig, reverseProxyValidationResult);
   return {
     providers: {
       samsar: { enabled: Boolean(sanitizedCredentials.samsarApiKey), validation: getProviderStatus(validationResult, 'samsar') },
@@ -982,6 +1116,8 @@ function buildDeploymentPayload(credentials, services, dataConfig, validationRes
     services: buildServicePayload(services, infrastructure),
     infrastructure,
     mail: buildMailDeploymentConfig(mailConfig, mailValidationResult),
+    reverseProxy,
+    publicUrls: reverseProxy.enabled ? reverseProxy.publicUrls : {},
     available: validationResult?.available || { providers: [], models: [], actions: [] },
   };
 }
@@ -1147,6 +1283,7 @@ function ExistingInstallHome({
           <ul>
             <li>{services.workers ? 'Workers enabled' : 'Core services only'}</li>
             <li>{services.logger ? 'Grafana logger enabled' : 'Grafana logger disabled'}</li>
+            <li>{services.reverseProxy ? 'Nginx reverse proxy enabled' : 'Reverse proxy disabled'}</li>
             <li>{installStatus?.readiness?.processor ? 'Processor ready' : 'Processor not ready'}</li>
             <li>{installStatus?.readiness?.client ? 'Client ready' : 'Client not ready'}</li>
           </ul>
@@ -1331,6 +1468,16 @@ export default function OnboardingWizard() {
   const [mailValidationError, setMailValidationError] = useState('');
   const [isValidatingMail, setIsValidatingMail] = useState(false);
   const [dataConfig, setDataConfig] = useState(initialWizardState.dataConfig);
+  const [reverseProxyConfig, setReverseProxyConfig] = useState(initialWizardState.reverseProxyConfig);
+  const [reverseProxyValidationResult, setReverseProxyValidationResult] = useState(initialWizardState.reverseProxyValidationResult);
+  const [reverseProxyValidationError, setReverseProxyValidationError] = useState('');
+  const [isValidatingReverseProxy, setIsValidatingReverseProxy] = useState(false);
+  const [ipDiscoveryResult, setIpDiscoveryResult] = useState(null);
+  const [ipDiscoveryError, setIpDiscoveryError] = useState('');
+  const [isDiscoveringIps, setIsDiscoveringIps] = useState(false);
+  const [firewallResult, setFirewallResult] = useState(null);
+  const [firewallError, setFirewallError] = useState('');
+  const [isOpeningFirewallPorts, setIsOpeningFirewallPorts] = useState(false);
   const [adminConfig, setAdminConfig] = useState(initialWizardState.adminConfig);
   const [adminConfigError, setAdminConfigError] = useState('');
   const [existingAdminBootstrapError, setExistingAdminBootstrapError] = useState('');
@@ -1358,8 +1505,17 @@ export default function OnboardingWizard() {
   });
 
   const deploymentPayload = useMemo(
-    () => buildDeploymentPayload(credentials, services, dataConfig, validationResult, mailConfig, mailValidationResult),
-    [credentials, dataConfig, mailConfig, mailValidationResult, services, validationResult],
+    () => buildDeploymentPayload(
+      credentials,
+      services,
+      dataConfig,
+      validationResult,
+      mailConfig,
+      mailValidationResult,
+      reverseProxyConfig,
+      reverseProxyValidationResult,
+    ),
+    [credentials, dataConfig, mailConfig, mailValidationResult, reverseProxyConfig, reverseProxyValidationResult, services, validationResult],
   );
   const setupServiceAvailability = useMemo(
     () => buildSetupServiceAvailability(validationResult),
@@ -1371,6 +1527,38 @@ export default function OnboardingWizard() {
   );
   const availableSetupServiceCount = setupServiceAvailability.filter((service) => service.isAvailable).length;
   const activeStep = STEPS.find((item) => item.id === step) || STEPS[0];
+  const normalizedReverseProxyConfig = normalizeReverseProxyConfig(reverseProxyConfig);
+  const reverseProxyUsesDomain = normalizedReverseProxyConfig.accessType === 'publicDomain';
+  const reverseProxyUsesPublicIp = normalizedReverseProxyConfig.accessType === 'publicIp';
+  const reverseProxyHostLabel = reverseProxyUsesDomain
+    ? 'domain / subdomain'
+    : reverseProxyUsesPublicIp
+      ? 'public IP'
+      : 'private IP';
+  const reverseProxyHostPlaceholder = reverseProxyUsesDomain
+    ? 'app.example.com'
+    : reverseProxyUsesPublicIp
+      ? '203.0.113.10'
+      : '192.168.1.25';
+  const detectedPublicIp = ipDiscoveryResult?.publicIp || '';
+  const publicIpReachability = ipDiscoveryResult?.publicIpReachability || {};
+  const publicIpReachabilityChecked = Boolean(publicIpReachability.checked);
+  const publicIpReachable = Boolean(publicIpReachability.reachable);
+  const publicIpSelectionDisabled = Boolean(detectedPublicIp && publicIpReachabilityChecked && !publicIpReachable);
+  const detectedPrivateIps = Array.isArray(ipDiscoveryResult?.privateIps) ? ipDiscoveryResult.privateIps : [];
+  const detectedPrivateIp = ipDiscoveryResult?.recommendedPrivateIp || detectedPrivateIps[0] || '';
+  const recommendedReverseProxyIp = reverseProxyUsesPublicIp
+    ? publicIpReachabilityChecked && !publicIpReachable ? '' : detectedPublicIp
+    : detectedPrivateIp;
+  const reverseProxyCanEnableSsl = Boolean(
+    normalizedReverseProxyConfig.enabled &&
+    reverseProxyUsesDomain &&
+    reverseProxyValidationResult?.ok,
+  );
+  const reverseProxyRequiredPorts = normalizedReverseProxyConfig.sslEnabled ? [80, 443] : [80];
+  const reverseProxyRequiredPortLabel = reverseProxyRequiredPorts.length === 1 ? '80' : '80 / 443';
+  const reverseProxyRequiredPortText = reverseProxyRequiredPorts.length === 1 ? 'port 80' : 'ports 80 and 443';
+  const sesAccessKeyUsesTemporaryCredentials = isTemporaryAwsAccessKeyId(mailConfig.sesAccessKeyId);
   const shouldShowExistingInstall = Boolean(installStatus?.installed && !setupRun && !maintenanceRun);
   const isInitialInstallStatusLoading = Boolean(isLoadingInstallStatus && !installStatus && !setupRun && !maintenanceRun);
   const wizardViewKey = isInitialInstallStatusLoading
@@ -1462,7 +1650,7 @@ export default function OnboardingWizard() {
   }, [wizardViewKey]);
 
   useEffect(() => {
-    if (step !== 4 || setupRun || shouldShowExistingInstall || maintenanceRun || isInitialInstallStatusLoading) {
+    if (step !== 5 || setupRun || shouldShowExistingInstall || maintenanceRun || isInitialInstallStatusLoading) {
       return undefined;
     }
 
@@ -1514,6 +1702,8 @@ export default function OnboardingWizard() {
       },
 	      mailValidationResult,
 	      dataConfig,
+        reverseProxyConfig,
+        reverseProxyValidationResult,
 	      adminConfig: {
         ...adminConfig,
         password: '',
@@ -1523,7 +1713,7 @@ export default function OnboardingWizard() {
 	      setupRun,
 	      setupStartError,
 	    });
-	  }, [adminConfig, credentials, dataConfig, mailConfig, mailValidationResult, maxStep, services, setupRun, setupStartError, step, validationResult]);
+	  }, [adminConfig, credentials, dataConfig, mailConfig, mailValidationResult, maxStep, reverseProxyConfig, reverseProxyValidationResult, services, setupRun, setupStartError, step, validationResult]);
 
   useEffect(() => {
     if (!setupRun?.id || setupRun.status === 'completed' || setupRun.status === 'failed') {
@@ -1670,7 +1860,23 @@ export default function OnboardingWizard() {
   };
 
   const updateMailConfig = (field, value) => {
-    setMailConfig((current) => pickMailConfig({ ...current, [field]: value }));
+    setMailConfig((current) => {
+      const nextValue = pickMailConfig({ ...current, [field]: value });
+      if (field === 'smtpSecure') {
+        const secure = Boolean(value);
+        const currentPort = normalizeText(current.smtpPort);
+        nextValue.smtpSecure = secure;
+        if (secure && (!currentPort || currentPort === '587')) {
+          nextValue.smtpPort = '465';
+        } else if (!secure && (!currentPort || currentPort === '465')) {
+          nextValue.smtpPort = '587';
+        }
+      }
+      if (field === 'sesAccessKeyId' && !isTemporaryAwsAccessKeyId(value)) {
+        nextValue.sesSessionToken = '';
+      }
+      return nextValue;
+    });
     setMailValidationResult(null);
     setMailValidationError('');
     if (step < 4) {
@@ -1684,6 +1890,52 @@ export default function OnboardingWizard() {
     if (step < 4) {
       setMaxStep((currentMaxStep) => Math.min(currentMaxStep, 3));
     }
+  };
+
+  const getDetectedIpForAccessType = (accessType, result = ipDiscoveryResult) => (
+    accessType === 'publicIp'
+      ? result?.publicIpReachability?.checked && !result?.publicIpReachability?.reachable ? '' : result?.publicIp || ''
+      : result?.recommendedPrivateIp || result?.privateIps?.[0] || ''
+  );
+
+  const updateReverseProxyConfig = (field, value) => {
+    setReverseProxyConfig((current) => {
+      const nextValue = pickReverseProxyConfig({ ...current, [field]: value });
+      if (field === 'accessType' && value === 'publicIp' && publicIpSelectionDisabled) {
+        return current;
+      }
+      if (field === 'accessType' && value !== 'publicDomain') {
+        nextValue.sslEnabled = false;
+        nextValue.sslEmail = '';
+        nextValue.machineIp = getDetectedIpForAccessType(value) || nextValue.machineIp;
+        nextValue.clientHost = nextValue.machineIp;
+        nextValue.processorHost = nextValue.machineIp;
+      }
+      if (field === 'machineIp' && nextValue.accessType !== 'publicDomain') {
+        nextValue.clientHost = value;
+        nextValue.processorHost = value;
+      }
+      return nextValue;
+    });
+    if (!['sslEnabled', 'sslEmail', 'openFirewallPorts'].includes(field)) {
+      setReverseProxyValidationResult(null);
+      setReverseProxyValidationError('');
+    }
+    if (field !== 'openFirewallPorts') {
+      setFirewallError('');
+      setFirewallResult(null);
+    }
+    if (step < 5) {
+      setMaxStep((currentMaxStep) => Math.min(currentMaxStep, 4));
+    }
+  };
+
+  const applyDetectedReverseProxyIp = (accessType = normalizedReverseProxyConfig.accessType, result = ipDiscoveryResult) => {
+    const detectedIp = getDetectedIpForAccessType(accessType, result);
+    if (detectedIp) {
+      updateReverseProxyConfig('machineIp', detectedIp);
+    }
+    return detectedIp;
   };
 
   const updateAdminConfig = (field, value) => {
@@ -1844,6 +2096,112 @@ export default function OnboardingWizard() {
     setStep(4);
   };
 
+  const validateReverseProxyConfiguration = async () => {
+    const normalizedProxy = normalizeReverseProxyConfig(reverseProxyConfig);
+    if (!normalizedProxy.enabled) {
+      const skippedResult = {
+        ok: true,
+        enabled: false,
+        message: 'Reverse proxy skipped.',
+        config: buildReverseProxyDeploymentConfig({ enabled: false }),
+      };
+      setReverseProxyValidationResult(skippedResult);
+      setReverseProxyValidationError('');
+      return skippedResult;
+    }
+
+    setIsValidatingReverseProxy(true);
+    setReverseProxyValidationError('');
+    try {
+      const response = await fetch('/api/setup/reverse-proxy/validate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reverseProxy: normalizedProxy }),
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(body?.message || 'Reverse proxy validation failed.');
+      }
+      setReverseProxyValidationResult(body);
+      return body;
+    } catch (error) {
+      setReverseProxyValidationError(
+        error?.message === 'Failed to fetch'
+          ? 'Unable to reach the local setup service. Rebuild and run the setup wizard Docker container.'
+          : error?.message || 'Reverse proxy validation failed.',
+      );
+      return null;
+    } finally {
+      setIsValidatingReverseProxy(false);
+    }
+  };
+
+  const discoverReverseProxyIps = async ({ autofill = true } = {}) => {
+    setIsDiscoveringIps(true);
+    setIpDiscoveryError('');
+    try {
+      const response = await fetch('/api/setup/reverse-proxy/ip-candidates', {
+        cache: 'no-store',
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok || body.ok === false) {
+        throw new Error(body?.message || 'Unable to detect system IP addresses.');
+      }
+      setIpDiscoveryResult(body);
+      if (autofill && normalizedReverseProxyConfig.accessType !== 'publicDomain') {
+        applyDetectedReverseProxyIp(normalizedReverseProxyConfig.accessType, body);
+      }
+      return body;
+    } catch (error) {
+      setIpDiscoveryError(
+        error?.message === 'Failed to fetch'
+          ? 'Unable to reach the local setup service. Rebuild and run the setup wizard Docker container.'
+          : error?.message || 'Unable to detect system IP addresses.',
+      );
+      return null;
+    } finally {
+      setIsDiscoveringIps(false);
+    }
+  };
+
+  const openFirewallPorts = async () => {
+    setIsOpeningFirewallPorts(true);
+    setFirewallError('');
+    setFirewallResult(null);
+    try {
+      const response = await fetch('/api/setup/firewall/open-web-ports', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ports: reverseProxyRequiredPorts }),
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok || body.ok === false) {
+        throw new Error(body?.message || `Unable to open ${reverseProxyRequiredPortText} automatically.`);
+      }
+      setFirewallResult(body);
+      updateReverseProxyConfig('openFirewallPorts', true);
+      return body;
+    } catch (error) {
+      setFirewallError(
+        error?.message === 'Failed to fetch'
+          ? 'Unable to reach the local setup service. Rebuild and run the setup wizard Docker container.'
+          : error?.message || `Unable to open ${reverseProxyRequiredPortText} automatically.`,
+      );
+      return null;
+    } finally {
+      setIsOpeningFirewallPorts(false);
+    }
+  };
+
+  const continueFromReverseProxy = async () => {
+    const result = await validateReverseProxyConfiguration();
+    if (!result) {
+      return;
+    }
+    setMaxStep(5);
+    setStep(5);
+  };
+
   const validateAdminConfig = () => {
     const normalizedAdmin = normalizeAdminConfig(adminConfig);
     if (!normalizedAdmin.email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedAdmin.email)) {
@@ -1985,6 +2343,11 @@ export default function OnboardingWizard() {
     setMailValidationResult(null);
     setMailValidationError('');
     setDataConfig(pickDataConfig());
+    setReverseProxyConfig(pickReverseProxyConfig());
+    setReverseProxyValidationResult(null);
+    setReverseProxyValidationError('');
+    setFirewallResult(null);
+    setFirewallError('');
     setAdminConfig(pickAdminConfig());
     setValidationResult(null);
     setValidationError('');
@@ -2153,7 +2516,8 @@ export default function OnboardingWizard() {
 		          <p>
 		            {step === 2 && 'Available services are derived from the credentials validated in Providers.'}
 		            {step === 3 && 'Choose data storage, logging, and optional SMTP or Amazon SES email.'}
-		            {step === 4 && 'Create the Docker admin user and review the deployment.'}
+                {step === 4 && 'Optionally expose Studio and the processor API through nginx.'}
+		            {step === 5 && 'Create the Docker admin user and review the deployment.'}
 		          </p>
           )}
 	        </div>
@@ -2349,16 +2713,20 @@ export default function OnboardingWizard() {
                     <label className="data-field">
                       <span>From address</span>
                       <input
+                        name="samsar-mail-from-address"
                         value={mailConfig.fromAddress}
                         placeholder="Samsar <no-reply@example.com>"
+                        autoComplete="off"
                         onChange={(event) => updateMailConfig('fromAddress', event.target.value)}
                       />
                     </label>
                     <label className="data-field">
                       <span>Reply-to address</span>
                       <input
+                        name="samsar-mail-reply-to-address"
                         value={mailConfig.replyToAddress}
                         placeholder="Optional"
+                        autoComplete="off"
                         onChange={(event) => updateMailConfig('replyToAddress', event.target.value)}
                       />
                     </label>
@@ -2376,34 +2744,43 @@ export default function OnboardingWizard() {
                     <label className="data-field">
                       <span>Host</span>
                       <input
+                        name="samsar-smtp-host"
                         value={mailConfig.smtpHost}
                         placeholder="smtp.example.com"
+                        autoComplete="off"
+                        spellCheck={false}
                         onChange={(event) => updateMailConfig('smtpHost', event.target.value)}
                       />
                     </label>
                     <label className="data-field">
                       <span>Port</span>
                       <input
+                        name="samsar-smtp-port"
                         inputMode="numeric"
                         value={mailConfig.smtpPort}
                         placeholder={mailConfig.smtpSecure ? '465' : '587'}
+                        autoComplete="off"
                         onChange={(event) => updateMailConfig('smtpPort', event.target.value)}
                       />
                     </label>
                     <label className="data-field">
                       <span>Username</span>
                       <input
+                        name="samsar-smtp-username"
                         value={mailConfig.smtpUser}
-                        autoComplete="new-password"
+                        autoComplete="off"
+                        spellCheck={false}
                         onChange={(event) => updateMailConfig('smtpUser', event.target.value)}
                       />
                     </label>
                     <label className="data-field">
                       <span>Password</span>
                       <input
+                        name="samsar-smtp-password"
                         type="password"
                         value={mailConfig.smtpPassword}
-                        autoComplete="new-password"
+                        autoComplete="off"
+                        spellCheck={false}
                         onChange={(event) => updateMailConfig('smtpPassword', event.target.value)}
                       />
                     </label>
@@ -2429,38 +2806,50 @@ export default function OnboardingWizard() {
                     <label className="data-field">
                       <span>Region</span>
                       <input
+                        name="samsar-ses-region"
                         value={mailConfig.sesRegion}
                         placeholder="us-east-1"
+                        autoComplete="off"
+                        spellCheck={false}
                         onChange={(event) => updateMailConfig('sesRegion', event.target.value)}
                       />
                     </label>
                     <label className="data-field">
                       <span>Access key ID</span>
                       <input
+                        name="samsar-ses-access-key-id"
                         value={mailConfig.sesAccessKeyId}
-                        autoComplete="new-password"
+                        autoComplete="off"
+                        autoCapitalize="off"
+                        spellCheck={false}
                         onChange={(event) => updateMailConfig('sesAccessKeyId', event.target.value)}
                       />
                     </label>
                     <label className="data-field">
                       <span>Secret access key</span>
                       <input
+                        name="samsar-ses-secret-access-key"
                         type="password"
                         value={mailConfig.sesSecretAccessKey}
-                        autoComplete="new-password"
+                        autoComplete="off"
+                        spellCheck={false}
                         onChange={(event) => updateMailConfig('sesSecretAccessKey', event.target.value)}
                       />
                     </label>
-                    <label className="data-field">
-                      <span>Session token</span>
-                      <input
-                        type="password"
-                        value={mailConfig.sesSessionToken}
-                        placeholder="Optional"
-                        autoComplete="new-password"
-                        onChange={(event) => updateMailConfig('sesSessionToken', event.target.value)}
-                      />
-                    </label>
+                    {sesAccessKeyUsesTemporaryCredentials && (
+                      <label className="data-field">
+                        <span>Session token</span>
+                        <input
+                          name="samsar-ses-session-token"
+                          type="password"
+                          value={mailConfig.sesSessionToken}
+                          placeholder="Required for temporary credentials"
+                          autoComplete="off"
+                          spellCheck={false}
+                          onChange={(event) => updateMailConfig('sesSessionToken', event.target.value)}
+                        />
+                      </label>
+                    )}
                   </div>
                 </section>
               )}
@@ -2680,6 +3069,267 @@ export default function OnboardingWizard() {
 	        )}
 
 	        {step === 4 && (
+            <>
+              <div className="data-config-layout">
+                <section className="data-config-card">
+                  <div className="data-config-card-header">
+                    <h3>Reverse proxy</h3>
+                    <span>{normalizedReverseProxyConfig.enabled ? 'Enabled' : 'Skipped'}</span>
+                  </div>
+                  <div className="data-option-grid single">
+                    <label className={`data-option-card ${normalizedReverseProxyConfig.enabled ? 'selected' : ''}`}>
+                      <input
+                        type="checkbox"
+                        checked={Boolean(reverseProxyConfig.enabled)}
+                        onChange={(event) => updateReverseProxyConfig('enabled', event.target.checked)}
+                      />
+                      <span>
+                        <strong>Enable nginx reverse proxy</strong>
+                        <small>Skip this to keep localhost and temporary tunnel URLs for public provider access.</small>
+                      </span>
+                    </label>
+                  </div>
+                </section>
+
+                {normalizedReverseProxyConfig.enabled && (
+                  <>
+                    <section className="data-config-card">
+                      <div className="data-config-card-header">
+                        <h3>Access type</h3>
+                        <span>{reverseProxyHostLabel}</span>
+                      </div>
+                      <div className="data-option-grid">
+                        <label className={`data-option-card ${normalizedReverseProxyConfig.accessType === 'publicDomain' ? 'selected' : ''}`}>
+                          <input
+                            type="radio"
+                            name="reverse-proxy-access"
+                            checked={normalizedReverseProxyConfig.accessType === 'publicDomain'}
+                            onChange={() => updateReverseProxyConfig('accessType', 'publicDomain')}
+                          />
+                          <span>
+                            <strong>Domain / subdomain</strong>
+                            <small>Use DNS records and optionally secure access with Let's Encrypt.</small>
+                          </span>
+                        </label>
+                        <label className={`data-option-card ${normalizedReverseProxyConfig.accessType === 'publicIp' ? 'selected' : ''} ${publicIpSelectionDisabled ? 'disabled' : ''}`}>
+                          <input
+                            type="radio"
+                            name="reverse-proxy-access"
+                            checked={normalizedReverseProxyConfig.accessType === 'publicIp'}
+                            disabled={publicIpSelectionDisabled}
+                            onChange={() => updateReverseProxyConfig('accessType', 'publicIp')}
+                          />
+                          <span>
+                            <strong>Public IP</strong>
+                            <small>{publicIpSelectionDisabled ? 'Detected public IP is not reachable on port 80 from this setup.' : 'Use a static public IP without DNS or automatic SSL.'}</small>
+                          </span>
+                        </label>
+                        <label className={`data-option-card ${normalizedReverseProxyConfig.accessType === 'privateIp' ? 'selected' : ''}`}>
+                          <input
+                            type="radio"
+                            name="reverse-proxy-access"
+                            checked={normalizedReverseProxyConfig.accessType === 'privateIp'}
+                            onChange={() => updateReverseProxyConfig('accessType', 'privateIp')}
+                          />
+                          <span>
+                            <strong>Private IP</strong>
+                            <small>Use an intranet IP. Public AI providers cannot fetch private-only media.</small>
+                          </span>
+                        </label>
+                      </div>
+                    </section>
+
+                    <section className="data-config-card">
+                      <div className="data-config-card-header">
+                        <h3>Domain configuration</h3>
+                        <span>{reverseProxyUsesDomain ? 'DNS required' : 'IP access'}</span>
+                      </div>
+                      {reverseProxyUsesDomain ? (
+                        <div className="data-field-grid">
+                          <label className="data-field">
+                            <span>Studio {reverseProxyHostLabel}</span>
+                            <input
+                              value={reverseProxyConfig.clientHost}
+                              placeholder={reverseProxyHostPlaceholder}
+                              onChange={(event) => updateReverseProxyConfig('clientHost', event.target.value)}
+                            />
+                          </label>
+                          <label className="data-field">
+                            <span>Processor API {reverseProxyHostLabel}</span>
+                            <input
+                              value={reverseProxyConfig.processorHost}
+                              placeholder="api.example.com"
+                              onChange={(event) => updateReverseProxyConfig('processorHost', event.target.value)}
+                            />
+                          </label>
+                          <label className="data-field">
+                            <span>Machine public IP</span>
+                            <input
+                              value={reverseProxyConfig.machineIp}
+                              placeholder="203.0.113.10"
+                              onChange={(event) => updateReverseProxyConfig('machineIp', event.target.value)}
+                            />
+                          </label>
+                          <div className="data-parse-summary proxy-dns-hint">
+                            Add A records for both domains pointing to this machine IP in your DNS provider.
+                          </div>
+                        </div>
+                      ) : (
+                        <>
+                          <div className="proxy-action-row">
+                            <button
+                              type="button"
+                              className="secondary-action"
+                              onClick={() => discoverReverseProxyIps({ autofill: true })}
+                              disabled={isDiscoveringIps}
+                            >
+                              {isDiscoveringIps ? 'Detecting IPs...' : 'Detect and autofill IP'}
+                            </button>
+                            {recommendedReverseProxyIp && (
+                              <button
+                                type="button"
+                                className="secondary-action"
+                                onClick={() => applyDetectedReverseProxyIp()}
+                              >
+                                Use {recommendedReverseProxyIp}
+                              </button>
+                            )}
+                          </div>
+                          <div className="data-field-grid single">
+                            <label className="data-field">
+                              <span>Machine {reverseProxyHostLabel}</span>
+                              <input
+                                value={reverseProxyConfig.machineIp}
+                                placeholder={reverseProxyHostPlaceholder}
+                                onChange={(event) => updateReverseProxyConfig('machineIp', event.target.value)}
+                              />
+                            </label>
+                          </div>
+                          <p className="proxy-copy">
+                            Studio will use {normalizedReverseProxyConfig.machineIp ? buildUrlForHost(normalizedReverseProxyConfig.machineIp) : `http://${reverseProxyHostPlaceholder}`}. Processor API and media will use {normalizedReverseProxyConfig.machineIp ? buildUrlForHostPath(normalizedReverseProxyConfig.machineIp, 'api') : `http://${reverseProxyHostPlaceholder}/api`}.
+                          </p>
+                          {(detectedPublicIp || detectedPrivateIps.length > 0) && (
+                            <div className="data-parse-summary">
+                              {detectedPublicIp && (
+                                <span>
+                                  Public IP: {detectedPublicIp}
+                                  {publicIpReachabilityChecked ? publicIpReachable ? ' (port 80 reachable)' : ' (port 80 not reachable)' : ''}
+                                </span>
+                              )}
+                              {detectedPrivateIps.length > 0 && <span>Private IPs: {detectedPrivateIps.join(', ')}</span>}
+                            </div>
+                          )}
+                          {reverseProxyUsesPublicIp && publicIpSelectionDisabled && (
+                            <div className="error-banner">
+                              {publicIpReachability.message || 'Public IP access is not reachable on port 80. Use Private IP for this network unless router or ISP forwarding is configured.'}
+                            </div>
+                          )}
+                          {ipDiscoveryError && <div className="error-banner">{ipDiscoveryError}</div>}
+                        </>
+                      )}
+                    </section>
+
+                    <section className="data-config-card">
+                      <div className="data-config-card-header">
+                        <h3>External ports</h3>
+                        <span>{reverseProxyRequiredPortLabel}</span>
+                      </div>
+                      <div className="data-option-grid single">
+                        <label className="data-option-card selected">
+                          <input
+                            type="checkbox"
+                            checked
+                            readOnly
+                            disabled
+                          />
+                          <span>
+                            <strong>Setup will try automatically</strong>
+                            <small>Attempts host firewall rules for {reverseProxyRequiredPortText}. Cloud firewalls and routers may still need provider settings.</small>
+                          </span>
+                        </label>
+                      </div>
+                      <div className="proxy-action-row">
+                        <button
+                          type="button"
+                          className="secondary-action"
+                          onClick={openFirewallPorts}
+                          disabled={isOpeningFirewallPorts}
+                        >
+                          {isOpeningFirewallPorts ? 'Opening ports...' : `Open ${reverseProxyRequiredPortLabel}`}
+                        </button>
+                      </div>
+                      {firewallResult?.ok && (
+                        <div className="success-banner">{firewallResult.message || 'Port rule command completed.'}</div>
+                      )}
+                      {firewallError && <div className="error-banner">{firewallError}</div>}
+                    </section>
+
+                    {reverseProxyUsesDomain && (
+                      <section className="data-config-card">
+                        <div className="data-config-card-header">
+                          <h3>SSL</h3>
+                          <span>{reverseProxyConfig.sslEnabled ? "Let's Encrypt" : 'Optional'}</span>
+                        </div>
+                        <div className="data-option-grid single">
+                          <label className={`data-option-card ${reverseProxyConfig.sslEnabled ? 'selected' : ''}`}>
+                            <input
+                              type="checkbox"
+                              checked={Boolean(reverseProxyConfig.sslEnabled)}
+                              disabled={!reverseProxyCanEnableSsl}
+                              onChange={(event) => updateReverseProxyConfig('sslEnabled', event.target.checked)}
+                            />
+                            <span>
+                              <strong>Secure domains with SSL</strong>
+                              <small>Available after DNS validation. Ports 80 and 443 are used for certificate setup, then port 80 is closed if Samsar opened it.</small>
+                            </span>
+                          </label>
+                        </div>
+                        {reverseProxyConfig.sslEnabled && (
+                          <div className="data-field-grid single">
+                            <label className="data-field">
+                              <span>Let's Encrypt email</span>
+                              <input
+                                type="email"
+                                value={reverseProxyConfig.sslEmail}
+                                placeholder="admin@example.com"
+                                onChange={(event) => updateReverseProxyConfig('sslEmail', event.target.value)}
+                              />
+                            </label>
+                          </div>
+                        )}
+                      </section>
+                    )}
+
+                    <section className="data-config-card proxy-warning-card">
+                      <div className="data-config-card-header">
+                        <h3>Production access</h3>
+                        <span>Public exposure</span>
+                      </div>
+                      <p className="proxy-copy">
+                        Your machine must allow {reverseProxyRequiredPortText}. Public access exposes this instance, so use a strong admin password.
+                      </p>
+                      <div className="proxy-action-row">
+                        <button
+                          type="button"
+                          className="secondary-action"
+                          onClick={validateReverseProxyConfiguration}
+                          disabled={isValidatingReverseProxy}
+                        >
+                          {isValidatingReverseProxy ? 'Validating...' : 'Validate access'}
+                        </button>
+                      </div>
+                    </section>
+                  </>
+                )}
+              </div>
+              {reverseProxyValidationResult?.ok && (
+                <div className="success-banner">{reverseProxyValidationResult.message || 'Reverse proxy configuration validated.'}</div>
+              )}
+              {reverseProxyValidationError && <div className="error-banner">{reverseProxyValidationError}</div>}
+            </>
+          )}
+
+	        {step === 5 && (
 	          <>
 	            <div className="data-config-layout">
 	              <section className="data-config-card admin-create-card">
@@ -2762,6 +3412,15 @@ export default function OnboardingWizard() {
 	                </ul>
 	              </section>
 	              <section>
+	                <h3>Access</h3>
+	                <ul>
+	                  <li>{deploymentPayload.reverseProxy.enabled ? 'Nginx reverse proxy enabled' : 'Localhost access'}</li>
+                    {deploymentPayload.reverseProxy.publicUrls?.clientApp && <li>{deploymentPayload.reverseProxy.publicUrls.clientApp}</li>}
+                    {deploymentPayload.reverseProxy.publicUrls?.processorApi && <li>{deploymentPayload.reverseProxy.publicUrls.processorApi}</li>}
+                    {deploymentPayload.reverseProxy.ssl?.enabled && <li>SSL via Let's Encrypt</li>}
+	                </ul>
+	              </section>
+	              <section>
 	                <h3>Admin</h3>
 	                <ul>
 	                  <li>{normalizeText(adminConfig.organizationName) || 'Organization name / username not set'}</li>
@@ -2809,6 +3468,11 @@ export default function OnboardingWizard() {
 	            </button>
 	          )}
 	          {step === 4 && (
+	            <button type="button" className="primary-action flow-primary" onClick={continueFromReverseProxy} disabled={isValidatingReverseProxy}>
+	              {isValidatingReverseProxy ? 'Validating access...' : 'Continue'}
+	            </button>
+	          )}
+	          {step === 5 && (
 	            <button type="button" className="primary-action flow-primary" onClick={submitDeployment} disabled={isStartingSetup}>
 	              {isStartingSetup ? 'Starting setup...' : 'Submit and Continue'}
 	            </button>

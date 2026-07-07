@@ -3,19 +3,14 @@ import { useEffect, useMemo, useState } from "react";
 import axios from "axios";
 import dayjs from "dayjs";
 import { toast } from "react-toastify";
-import { FaArrowRight, FaCheck, FaChevronDown, FaCrown, FaExternalLinkAlt, FaPlug, FaTicketAlt, FaWallet } from "react-icons/fa";
+import { FaArrowRight, FaCheck, FaChevronDown, FaCrown, FaExternalLinkAlt, FaTicketAlt, FaWallet } from "react-icons/fa";
 import { useLocation } from "react-router-dom";
 
 import { useColorMode } from "../../contexts/ColorMode.jsx";
 import { useUser } from "../../contexts/UserContext.jsx";
 import { getHeaders } from "../../utils/web.jsx";
 import { getSessionType } from "../../utils/environment.jsx";
-import {
-  extractDeploymentProviders,
-  fetchDeploymentProviderConfig,
-  formatDeploymentProviderLabel,
-  normalizeDeploymentProviderKey,
-} from "../../utils/deploymentProviders.js";
+import DockerProvidersPanelContent from "./DockerProvidersPanelContent.jsx";
 
 const PROCESSOR_SERVER = import.meta.env.VITE_PROCESSOR_API;
 const numberFormatter = new Intl.NumberFormat("en-US");
@@ -75,9 +70,6 @@ export default function BillingPanelContent() {
   const [isUpgrading, setIsUpgrading] = useState(false);
   const [upgradeError, setUpgradeError] = useState("");
   const [isCancelling, setIsCancelling] = useState(false);
-  const [deploymentProviders, setDeploymentProviders] = useState([]);
-  const [isLoadingDeploymentProviders, setIsLoadingDeploymentProviders] = useState(false);
-  const [deploymentProviderError, setDeploymentProviderError] = useState("");
 
   useEffect(() => {
     const params = new URLSearchParams(location.search);
@@ -85,33 +77,6 @@ export default function BillingPanelContent() {
       getUserAPI();
     }
   }, [location.search, getUserAPI]);
-
-  useEffect(() => {
-    if (!isDockerInstall) return;
-
-    let isCancelled = false;
-    setIsLoadingDeploymentProviders(true);
-    setDeploymentProviderError("");
-
-    fetchDeploymentProviderConfig(PROCESSOR_SERVER, getHeaders())
-      .then((payload) => {
-        if (isCancelled) return;
-        setDeploymentProviders(extractDeploymentProviders(payload));
-      })
-      .catch(() => {
-        if (isCancelled) return;
-        setDeploymentProviderError("Unable to load enabled providers.");
-      })
-      .finally(() => {
-        if (!isCancelled) {
-          setIsLoadingDeploymentProviders(false);
-        }
-      });
-
-    return () => {
-      isCancelled = true;
-    };
-  }, [isDockerInstall]);
 
   const purchaseAmountUsd = useMemo(
     () => normalizeWholeDollarAmount(creditPurchaseUsd),
@@ -123,13 +88,6 @@ export default function BillingPanelContent() {
   );
   const currentCredits = numberFormatter.format(user?.generationCredits || 0);
   const nextRefillLabel = user?.isPremiumUser ? formatDateString(user?.nextCreditRefill) : "";
-  const enabledProviderRows = useMemo(() => (
-    deploymentProviders.map((provider) => ({
-      key: normalizeDeploymentProviderKey(provider),
-      raw: provider,
-      label: formatDeploymentProviderLabel(provider),
-    }))
-  ), [deploymentProviders]);
 
   const allowPopupNavigation = useMemo(() => {
     if (typeof navigator === "undefined") return true;
@@ -141,71 +99,7 @@ export default function BillingPanelContent() {
   }, []);
 
   if (isDockerInstall) {
-    return (
-      <div className={`mx-auto flex w-full min-w-0 max-w-4xl flex-col gap-4 overflow-x-hidden sm:gap-5 ${textColor}`}>
-        <div className="flex w-full min-w-0 flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-          <div className="min-w-0">
-            <p className={`text-xs font-semibold uppercase tracking-[0.22em] ${mutedText}`}>Billing</p>
-            <h2 className="text-2xl font-semibold tracking-normal sm:text-3xl">Provider-side credits</h2>
-          </div>
-        </div>
-
-        <section className={`w-full min-w-0 rounded-lg border ${borderColor} ${cardBgColor} p-4 sm:p-6`}>
-          <div className="flex min-w-0 gap-3">
-            <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border ${borderColor} ${mutedBg}`}>
-              <FaWallet className={isDark ? "text-cyan-200" : "text-cyan-600"} />
-            </div>
-            <div className="min-w-0">
-              <h3 className="text-xl font-semibold">Credits are charged provider side</h3>
-              <p className={`mt-2 text-sm ${subtleText}`}>
-                Samsar does not manage a total credit balance for this Docker installation.
-                Charges are handled by the configured provider instances.
-              </p>
-            </div>
-          </div>
-        </section>
-
-        <section className={`w-full min-w-0 rounded-lg border ${borderColor} ${cardBgColor} p-4 sm:p-6`}>
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <h3 className="text-lg font-semibold">Enabled providers</h3>
-              <p className={`text-sm ${subtleText}`}>
-                Providers configured for this installation.
-              </p>
-            </div>
-            {isLoadingDeploymentProviders && (
-              <span className={`text-sm ${mutedText}`}>Loading providers...</span>
-            )}
-          </div>
-
-          {deploymentProviderError && (
-            <p className="mt-4 text-sm text-red-500">{deploymentProviderError}</p>
-          )}
-
-          {!isLoadingDeploymentProviders && enabledProviderRows.length === 0 && !deploymentProviderError ? (
-            <div className={`mt-4 rounded-lg border ${borderColor} ${mutedBg} p-4 text-sm ${subtleText}`}>
-              No providers are configured for this installation yet.
-            </div>
-          ) : (
-            <div className="mt-4 grid min-w-0 gap-3 sm:grid-cols-2">
-              {enabledProviderRows.map((provider) => (
-                <div key={provider.key} className={`rounded-lg border ${borderColor} ${mutedBg} p-4`}>
-                  <div className="flex min-w-0 items-center gap-3">
-                    <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border ${borderColor} ${cardBgColor}`}>
-                      <FaPlug className={isDark ? "text-emerald-200" : "text-emerald-600"} />
-                    </div>
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-semibold">{provider.label}</p>
-                      <p className={`truncate text-xs ${mutedText}`}>{provider.raw}</p>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </section>
-      </div>
-    );
+    return <DockerProvidersPanelContent />;
   }
 
   const openNavigationTarget = (targetWindow, url) => {
