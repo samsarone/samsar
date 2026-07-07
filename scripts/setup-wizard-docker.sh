@@ -16,6 +16,9 @@ INSTALL_YARN_ENABLED="${SAMSAR_SETUP_INSTALL_YARN:-1}"
 NODE_MAJOR="${SAMSAR_SETUP_NODE_MAJOR:-22}"
 MIN_NODE_MAJOR="${SAMSAR_SETUP_MIN_NODE_MAJOR:-20}"
 ALLOW_DOCKER_CONVENIENCE_SCRIPT="${SAMSAR_SETUP_ALLOW_DOCKER_CONVENIENCE_SCRIPT:-1}"
+RESOURCE_CHECK_ENABLED="${SAMSAR_SETUP_RESOURCE_CHECK:-1}"
+MIN_MEMORY_GB="${SAMSAR_SETUP_MIN_MEMORY_GB:-16}"
+MIN_DISK_FREE_GB="${SAMSAR_SETUP_MIN_DISK_FREE_GB:-500}"
 DOCKER_GROUP_CHANGED=0
 DOCKER_CMD=(docker)
 OS_ID=""
@@ -104,6 +107,59 @@ detect_cloud_environment() {
       CLOUD_ENVIRONMENT=""
       ;;
   esac
+}
+
+format_mib_as_gib() {
+  awk -v mib="${1:-0}" 'BEGIN { printf "%.1f GiB", mib / 1024 }'
+}
+
+format_kib_as_gib() {
+  awk -v kib="${1:-0}" 'BEGIN { printf "%.1f GiB", kib / 1048576 }'
+}
+
+detect_total_memory_mib() {
+  if [[ -r /proc/meminfo ]]; then
+    awk '/^MemTotal:/ { printf "%d\n", int(($2 + 1023) / 1024); exit }' /proc/meminfo
+    return 0
+  fi
+  if command -v free >/dev/null 2>&1; then
+    free -m | awk '/^Mem:/ { print $2; exit }'
+    return 0
+  fi
+  if command -v sysctl >/dev/null 2>&1; then
+    sysctl -n hw.memsize 2>/dev/null | awk '{ printf "%d\n", int(($1 / 1048576) + 0.999) }'
+    return 0
+  fi
+  return 1
+}
+
+detect_free_disk_kib() {
+  df -Pk "$ROOT_DIR" 2>/dev/null | awk 'NR == 2 { print $4; exit }'
+}
+
+require_system_resources() {
+  local memory_mib disk_free_kib required_memory_mib required_disk_free_kib
+  enabled "$RESOURCE_CHECK_ENABLED" || return 0
+
+  memory_mib="$(detect_total_memory_mib || true)"
+  disk_free_kib="$(detect_free_disk_kib || true)"
+  required_memory_mib=$((MIN_MEMORY_GB * 1024))
+  required_disk_free_kib=$((MIN_DISK_FREE_GB * 1024 * 1024))
+
+  if [[ -z "$memory_mib" || ! "$memory_mib" =~ ^[0-9]+$ ]]; then
+    die "Unable to determine system memory. This setup requires at least ${MIN_MEMORY_GB} GB RAM."
+  fi
+  if [[ -z "$disk_free_kib" || ! "$disk_free_kib" =~ ^[0-9]+$ ]]; then
+    die "Unable to determine free disk space for ${ROOT_DIR}. This setup requires at least ${MIN_DISK_FREE_GB} GB free disk."
+  fi
+  if (( memory_mib < required_memory_mib )); then
+    die "System check failed: detected $(format_mib_as_gib "$memory_mib") RAM, but Samsar Docker setup requires at least ${MIN_MEMORY_GB} GB RAM."
+  fi
+  if (( disk_free_kib < required_disk_free_kib )); then
+    die "System check failed: detected $(format_kib_as_gib "$disk_free_kib") free on the filesystem containing ${ROOT_DIR}, but Samsar Docker setup requires at least ${MIN_DISK_FREE_GB} GB free disk."
+  fi
+
+  log "System check passed: $(format_mib_as_gib "$memory_mib") RAM, $(format_kib_as_gib "$disk_free_kib") free disk."
 }
 
 run_as_root() {
@@ -507,6 +563,7 @@ bootstrap_host() {
   detect_package_manager
   detect_cloud_environment
   log "Detected environment: ${OS_PRETTY_NAME}${CLOUD_ENVIRONMENT:+ on $CLOUD_ENVIRONMENT}"
+  require_system_resources
 
   if enabled "$BOOTSTRAP_ENABLED" && is_linux; then
     install_nodejs
