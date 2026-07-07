@@ -49,6 +49,9 @@ export async function padBlankAudioAtBeginningAndEnd(
     ffmpeg()
       .input(inputAudioPath)
       .audioFilters([adelayFilter, apadFilter, trimFilter, 'asetpts=PTS-STARTPTS'])
+      .audioCodec('pcm_s16le')
+      .audioFrequency(48000)
+      .format('wav')
       .duration(targetDuration)
       .on('error', reject)
       .on('end', () => {
@@ -57,5 +60,3 @@ export async function padBlankAudioAtBeginningAndEnd(
       .save(outputAudioPath);
   });
 }
-
-
