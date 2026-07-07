@@ -7,7 +7,12 @@ import { markAudioGenerationAsFailed } from '../music/audioUtils.js';
 import fs from 'fs';
 import path from 'path';
 import { getProcessorAssetsV2Path, toAssetsV2RelativePath } from '../utils/AssetPaths.js';
+import { uploadAudioAssetToCDN } from '../AWS.js';
 import { recordProviderUsageLog } from '../utils/ProviderUsageAudit.js';
+import {
+  finalizeStandaloneExternalAudioGeneration,
+  isStandaloneExternalAudioRequest,
+} from '../external/StandaloneExternalAudio.js';
 import {
   DOCKER_AUDIO_PROVIDER,
   hasDockerSoundEffectProviderPriority,
@@ -180,6 +185,20 @@ async function markSoundEffectGenerationAsCompleted(payload, responseData) {
 
   const buffer = await fetchBuffer(remoteUrl);
   await fs.promises.writeFile(audioSaveFilePath, buffer);
+
+  if (isStandaloneExternalAudioRequest(payload)) {
+    const standaloneRemoteFilePath = await uploadAudioAssetToCDN(audioSaveFilePath, audioAssetPath);
+    if (await finalizeStandaloneExternalAudioGeneration({
+      payload,
+      resultUrl: standaloneRemoteFilePath,
+      resultUrls: [standaloneRemoteFilePath],
+      localAudioPath: audioAssetPath,
+      remoteAudioData: [{ audio_url: standaloneRemoteFilePath, title: 'Sound Effect' }],
+      title: 'Sound Effect',
+    })) {
+      return;
+    }
+  }
 
 
   await VideoSession.findOneAndUpdate({

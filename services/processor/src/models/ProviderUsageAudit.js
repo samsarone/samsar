@@ -1,6 +1,5 @@
 import ProviderUsageLog from '../schema/ProviderUsageLog.js';
 import { getDBConnectionString } from './DBString.js';
-import { getRequestAuthContext } from './api/RequestAuthContext.js';
 
 function normalizeString(value) {
   if (value === null || value === undefined) {
@@ -65,32 +64,6 @@ export async function recordProviderUsageLog(input = {}) {
   }
 
   const payload = input.payload || {};
-  const metadata = normalizeMetadata(input.metadata);
-  const requestAuthContext = getRequestAuthContext();
-  const teamOwnerUserId = normalizeString(
-    input.teamOwnerUserId ??
-    payload.teamOwnerUserId ??
-    metadata.teamOwnerUserId ??
-    requestAuthContext?.teamOwnerUserId
-  );
-  const teamMemberUserId = normalizeString(
-    input.teamMemberUserId ??
-    payload.teamMemberUserId ??
-    metadata.teamMemberUserId ??
-    requestAuthContext?.actorUserId
-  );
-  const teamMemberName = normalizeString(
-    input.teamMemberName ??
-    payload.teamMemberName ??
-    metadata.teamMemberName ??
-    requestAuthContext?.teamMemberUsername
-  );
-  const teamMemberEmail = normalizeString(
-    input.teamMemberEmail ??
-    payload.teamMemberEmail ??
-    metadata.teamMemberEmail ??
-    requestAuthContext?.teamMemberEmail
-  );
   const userId = normalizeString(input.userId ?? payload.userId);
   if (!userId) {
     return null;
@@ -118,10 +91,6 @@ export async function recordProviderUsageLog(input = {}) {
 
   const doc = {
     userId,
-    teamOwnerUserId,
-    teamMemberUserId: teamOwnerUserId ? teamMemberUserId : '',
-    teamMemberName: teamOwnerUserId ? teamMemberName : '',
-    teamMemberEmail: teamOwnerUserId ? teamMemberEmail : '',
     sessionId: normalizeString(input.sessionId ?? input.videoSessionId ?? payload.sessionId ?? payload.videoSessionId),
     layerId: normalizeString(input.layerId ?? payload.layerId ?? payload.currentLayerId),
     audioLayerId: normalizeString(input.audioLayerId ?? payload.audioLayerId),
@@ -137,17 +106,7 @@ export async function recordProviderUsageLog(input = {}) {
     status: normalizeString(input.status) || 'requested',
     source: normalizeString(input.source) || 'internal_generation',
     service: normalizeString(input.service || process.env.SERVICE_NAME || 'samsar_processor'),
-    metadata: {
-      ...metadata,
-      ...(teamOwnerUserId
-        ? {
-          teamOwnerUserId,
-          teamMemberUserId,
-          teamMemberName,
-          teamMemberEmail,
-        }
-        : {}),
-    },
+    metadata: normalizeMetadata(input.metadata),
   };
 
   try {

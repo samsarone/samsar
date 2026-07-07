@@ -27,45 +27,6 @@ function isHttpUrl(value) {
   return /^https?:\/\//i.test(value);
 }
 
-function getFirstConfiguredUrl(values = []) {
-  return values.map(normalizeString).find(Boolean) || '';
-}
-
-function isPrivateIpAddress(hostname = '') {
-  const parts = hostname.split('.').map((value) => Number.parseInt(value, 10));
-  if (parts.length !== 4 || parts.some((value) => !Number.isFinite(value))) {
-    return false;
-  }
-  const [first, second] = parts;
-  return first === 10 ||
-    (first === 172 && second >= 16 && second <= 31) ||
-    (first === 192 && second === 168) ||
-    (first === 127) ||
-    (first === 169 && second === 254);
-}
-
-function isProviderVisibleBaseUrl(value = '') {
-  const normalized = normalizeString(value);
-  if (!isHttpUrl(normalized)) {
-    return false;
-  }
-  try {
-    const hostname = new URL(normalized).hostname.toLowerCase();
-    return ![
-      'localhost',
-      '127.0.0.1',
-      '0.0.0.0',
-      '::1',
-      'media-gateway',
-      'host.docker.internal',
-    ].includes(hostname) &&
-      !hostname.endsWith('.local') &&
-      !isPrivateIpAddress(hostname);
-  } catch {
-    return false;
-  }
-}
-
 function getDataUrlMediaType(localPath = '') {
   return DATA_URL_MEDIA_TYPES_BY_EXTENSION[path.extname(localPath).toLowerCase()] || 'image/png';
 }
@@ -78,23 +39,9 @@ async function buildDataUrlFromFile(localPath) {
 function getDockerMediaBase(options = {}) {
   if (options.preferInternalDockerUrl === true) {
     return normalizeString(process.env.SAMSAR_INTERNAL_MEDIA_BASE_URL) ||
-      getFirstConfiguredUrl([
-        process.env.SAMSAR_PUBLIC_MEDIA_BASE_URL,
-        process.env.SAMSAR_EXTERNAL_MEDIA_PUBLIC_BASE_URL,
-        process.env.SAMSAR_DOCKER_PUBLIC_ASSET_BASE_URL,
-        process.env.SAMSAR_DOCKER_PUBLIC_PROCESSOR_BASE_URL,
-        process.env.MEDIA_PUBLIC_URL,
-        process.env.STATIC_CDN_URL,
-      ]);
+      normalizeString(process.env.MEDIA_PUBLIC_URL || process.env.STATIC_CDN_URL);
   }
-  return [
-    process.env.SAMSAR_PUBLIC_MEDIA_BASE_URL,
-    process.env.SAMSAR_EXTERNAL_MEDIA_PUBLIC_BASE_URL,
-    process.env.SAMSAR_DOCKER_PUBLIC_ASSET_BASE_URL,
-    process.env.SAMSAR_DOCKER_PUBLIC_PROCESSOR_BASE_URL,
-    process.env.MEDIA_PUBLIC_URL,
-    process.env.STATIC_CDN_URL,
-  ].map(normalizeString).find(isProviderVisibleBaseUrl) || '';
+  return normalizeString(process.env.MEDIA_PUBLIC_URL || process.env.STATIC_CDN_URL);
 }
 
 function buildDockerMediaUrl(reference, localPath = '', options = {}) {

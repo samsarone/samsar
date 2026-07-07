@@ -362,15 +362,6 @@ function summarizeTextForLog(value = '', previewLength = 220) {
   };
 }
 
-function resolveImageRetryInferenceModel(payload = {}, sessionData = null) {
-  return normalizeString(payload?.userInferenceModel) ||
-    normalizeString(payload?.selectedInferenceModel) ||
-    normalizeString(payload?.inferenceModel) ||
-    normalizeString(sessionData?.expressGenerationInferenceModel) ||
-    normalizeString(sessionData?.inferenceModel) ||
-    '';
-}
-
 function getOptionalInteger(value) {
   if (typeof value === 'number' && Number.isInteger(value) && value >= 0) {
     return value;
@@ -668,8 +659,7 @@ async function getAlteredPromptForRetry(
   retryCount,
   failureMessage = '',
   previousPrompt = '',
-  rewriteMode = 'generation_failure',
-  userInferenceModel = ''
+  rewriteMode = 'generation_failure'
 ) {
   const originalPrompt = typeof prompt === 'string' ? prompt.trim() : '';
   const currentPrompt = typeof previousPrompt === 'string' ? previousPrompt.trim() : '';
@@ -680,8 +670,7 @@ async function getAlteredPromptForRetry(
         originalPrompt,
         retryCount,
         failureMessage,
-        rewriteMode,
-        userInferenceModel
+        rewriteMode
       );
       const normalizedSafetyPrompt = typeof safetyAlteredPrompt === 'string' ? safetyAlteredPrompt.trim() : '';
       const normalizedSafetyComparison = normalizePromptForComparison(normalizedSafetyPrompt);
@@ -703,27 +692,14 @@ async function getAlteredPromptForRetry(
     return buildThemePreservingSafetyRetryPrompt(originalPrompt, failureMessage, retryCount);
   }
 
-  let normalizedAlteredPrompt = '';
-  let normalizedAlteredComparison = '';
-
-  try {
-    const alteredPrompt = await getAlternatePromptFromPrompt(
-      originalPrompt,
-      retryCount,
-      failureMessage,
-      rewriteMode,
-      userInferenceModel
-    );
-    normalizedAlteredPrompt = typeof alteredPrompt === 'string' ? alteredPrompt.trim() : '';
-    normalizedAlteredComparison = normalizePromptForComparison(normalizedAlteredPrompt);
-  } catch (err) {
-    console.error('[image_generation] retry prompt rewrite failed; using deterministic fallback prompt', {
-      retryCount,
-      rewriteMode,
-      userInferenceModel,
-      message: err?.message || String(err),
-    });
-  }
+  const alteredPrompt = await getAlternatePromptFromPrompt(
+    originalPrompt,
+    retryCount,
+    failureMessage,
+    rewriteMode
+  );
+  const normalizedAlteredPrompt = typeof alteredPrompt === 'string' ? alteredPrompt.trim() : '';
+  const normalizedAlteredComparison = normalizePromptForComparison(normalizedAlteredPrompt);
 
   if (
     normalizedAlteredPrompt &&
@@ -1027,7 +1003,6 @@ async function scheduleImageGenerationRetry(payload = {}, latestDoc, imageData, 
   source = 'image_generation_retry',
   updateLayerPrompt = true,
   terminalOnMaxFailures = true,
-  userInferenceModel = '',
 } = {}) {
   const previousFailureCount = normalizeRetryCount(latestDoc?.failureRetryCount);
   const nextFailureCount = previousFailureCount + 1;
@@ -1061,8 +1036,7 @@ async function scheduleImageGenerationRetry(payload = {}, latestDoc, imageData, 
     nextFailureCount,
     failureMessage,
     currentPrompt,
-    'generation_failure',
-    userInferenceModel || resolveImageRetryInferenceModel(payload)
+    'generation_failure'
   );
   const setFields = {
     prompt: newPrompt,
@@ -1778,32 +1752,24 @@ async function updateImageInSessionLayer(imageData, payload) {
       imageThemeContext,
     );
 
-    if (getCurrentEnvironment() === 'docker' && !normalizeString(imageDescription)) {
-      console.warn('[image_generation] Docker vision description unavailable; accepting generated image without filter score', {
-        requestId: _id?.toString?.() || _id,
-        videoSessionId: videoSessionId?.toString?.() || videoSessionId,
-        layerId: layerId?.toString?.() || layerId,
-      });
-    } else {
 
-      // 2) assign score
-      const imagePrompt = prompt;
+    // 2) assign score
+    const imagePrompt = prompt;
 
-      imageScore = await assignScoreForTheImage(
-        imagePrompt,
-        imageDescription,
-        videoTone,
-        userInferenceModel,
-        requestedAspectRatio,
-        imageThemeContext,
-        imageThemeStyle,
-      );
+    imageScore = await assignScoreForTheImage(
+      imagePrompt,
+      imageDescription,
+      videoTone,
+      userInferenceModel,
+      requestedAspectRatio,
+      imageThemeContext,
+      imageThemeStyle,
+    );
 
-      try {
-        imageScore = parseInt(imageScore, 10);
-      } catch (err) {
-        imageScore = null;
-      }
+    try {
+      imageScore = parseInt(imageScore, 10);
+    } catch (err) {
+      imageScore = null;
     }
 
   }
@@ -1967,7 +1933,6 @@ async function handleNoImageRetryOrFailure(payload, imageData) {
         source: 'express_narrator_avatar_image_retry',
         updateLayerPrompt: false,
         terminalOnMaxFailures: false,
-        userInferenceModel: resolveImageRetryInferenceModel(payload),
       });
       if (scheduledRetry) {
         return;
@@ -2045,8 +2010,7 @@ async function handleNoImageRetryOrFailure(payload, imageData) {
         nextFilterRetryCount,
         failureMessage,
         currentPrompt,
-        'generation_failure',
-        resolveImageRetryInferenceModel(payload, sessionData)
+        'generation_failure'
       );
 
       await recordImageGenerationFailure(payload, {
@@ -2086,7 +2050,6 @@ async function handleNoImageRetryOrFailure(payload, imageData) {
 
     const scheduledRetry = await scheduleImageGenerationRetry(payload, latestDoc, imageData, {
       terminalOnMaxFailures: false,
-      userInferenceModel: resolveImageRetryInferenceModel(payload, sessionData),
     });
     if (scheduledRetry) {
       return; // Return here so we don't remove the doc
@@ -2241,8 +2204,7 @@ async function processRefilterFailure(imageData, payload, imageScore, imageDescr
       nextFilterRetryCount,
       failureMessage,
       currentPrompt,
-      'score_threshold',
-      resolveImageRetryInferenceModel(payload, latestSessionData)
+      'score_threshold'
     );
 
     await recordImageGenerationFailure(payload, {
@@ -2898,13 +2860,11 @@ async function processEditRequest(pendingRequestData) {
       if (genRowValue.isBatchGeneration) {
         if (genRowValue.failureRetryCount < 5) {
           const retryPrompt = genRowValue.originalRetryPrompt || genRowValue.prompt;
-          const newPrompt = await getAlteredPromptForRetry(
+          const newPrompt = await getAlternatePromptFromPrompt(
             retryPrompt,
             genRowValue.failureRetryCount,
             editedImageData.error || '',
-            genRowValue.prompt || '',
-            'generation_failure',
-            resolveImageRetryInferenceModel(genRowValue)
+            'generation_failure'
           );
           await ImageGeneration.updateOne(
             { _id: requestId },

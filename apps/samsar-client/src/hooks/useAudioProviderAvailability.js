@@ -15,11 +15,6 @@ const availabilityCache = {
   promise: null,
 };
 
-export function clearAudioProviderAvailabilityCache() {
-  availabilityCache.audioAvailability = null;
-  availabilityCache.promise = null;
-}
-
 async function loadAudioAvailability() {
   if (!IS_DOCKER_INSTALL) {
     return DEFAULT_AUDIO_AVAILABILITY;

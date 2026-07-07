@@ -172,7 +172,7 @@ export async function sendWelcomeEmail(payload) {
       },
       Subject: {
         Charset: 'UTF-8',
-        Data: 'Welcome to SamsarOne'
+        Data: 'Confirm your Samsar email'
       }
     },
     Source: SES_FROM_ADDRESS,
@@ -293,7 +293,7 @@ export async function sendVerifiedWelcomeEmail(payload) {
       },
       Subject: {
         Charset: 'UTF-8',
-        Data: 'Welcome to SamsarOne'
+        Data: 'Welcome to Samsar. Please verify your email address.'
       }
     },
     Source: SES_FROM_ADDRESS, /* required */
@@ -504,7 +504,7 @@ export async function sendEnterpriseAdminWelcomeEmail(payload = {}) {
       },
       Subject: {
         Charset: 'UTF-8',
-        Data: 'Your Samsar account is ready',
+        Data: 'Welcome to Samsar Enterprise Suite',
       },
     },
     Source: SES_FROM_ADDRESS,
@@ -512,99 +512,5 @@ export async function sendEnterpriseAdminWelcomeEmail(payload = {}) {
   };
 
   await sendConfiguredEmail(emailParams, 'enterprise admin welcome email');
-  return { sent: true };
-}
-
-export async function sendTeamInviteEmail(payload = {}) {
-  if (!isMailExplicitlyConfigured()) {
-    return { skipped: true, reason: 'mail_not_configured' };
-  }
-
-  const {
-    memberEmail,
-    memberName = '',
-    organizationName = '',
-    ownerEmail = '',
-    inviteUrl,
-    expiresAt,
-  } = payload;
-
-  if (!memberEmail || !inviteUrl) {
-    throw new Error('Team invite email requires a member email and invite URL.');
-  }
-
-  const safeMemberName = escapeHtml(memberName || memberEmail);
-  const safeOrganizationName = escapeHtml(organizationName || 'your organization');
-  const safeOwnerEmail = escapeHtml(ownerEmail || 'the workspace owner');
-  const safeInviteUrl = escapeHtml(inviteUrl);
-  const expiryLabel = expiresAt
-    ? new Date(expiresAt).toLocaleString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric',
-      hour: 'numeric',
-      minute: '2-digit',
-      timeZoneName: 'short',
-    })
-    : 'soon';
-
-  const textBody = [
-    `${safeOrganizationName} invited you to Samsar Studio`,
-    '',
-    `${ownerEmail || 'The workspace owner'} invited ${memberName || memberEmail} to join ${organizationName || 'their organization'} on this Samsar Docker installation.`,
-    `Accept invitation: ${inviteUrl}`,
-    '',
-    `This invitation expires ${expiryLabel}.`,
-  ].join('\n');
-
-  const emailParams = {
-    Destination: {
-      ToAddresses: [memberEmail],
-    },
-    Message: {
-      Body: {
-        Html: {
-          Charset: 'UTF-8',
-          Data: `<html>
-            <head>
-              <meta charset="utf-8">
-              <title>Join ${safeOrganizationName} on Samsar Studio</title>
-              ${pageStyles}
-            </head>
-            <body>
-              <div class="container">
-                <div class="logo">
-                  <a class="logo-text" href="${BASE_APP_DOMAIN}" target="_blank" rel="noopener noreferrer">
-                    <span class="logo-text__primary">Samsar</span>
-                    <span class="logo-text__accent">Team</span>
-                  </a>
-                </div>
-                <h1>Join ${safeOrganizationName}</h1>
-                <p>Hi ${safeMemberName}, ${safeOwnerEmail} invited you to join ${safeOrganizationName}'s Samsar Studio team.</p>
-                <p><a class="button" target="_blank" href="${safeInviteUrl}">Accept invitation</a></p>
-                <p class="secondary-action">Button not working? Open this secure invitation link in your browser:<br><a href="${safeInviteUrl}" target="_blank" rel="noopener noreferrer">${safeInviteUrl}</a></p>
-                <p>This invitation expires ${escapeHtml(expiryLabel)}. If you were not expecting this invite, you can ignore this email.</p>
-                <div class="footer">
-                  <p>${safeOrganizationName} Samsar Studio</p>
-                </div>
-              </div>
-            </body>
-          </html>`,
-        },
-        Text: {
-          Charset: 'UTF-8',
-          Data: textBody,
-        },
-      },
-      Subject: {
-        Charset: 'UTF-8',
-        Data: `Join ${organizationName || 'your organization'} on Samsar Studio`,
-      },
-    },
-    Source: SES_FROM_ADDRESS,
-    ReplyToAddresses: [SES_REPLY_TO_ADDRESS],
-  };
-
-  await sendConfiguredEmail(emailParams, 'team invite email');
   return { sent: true };
 }

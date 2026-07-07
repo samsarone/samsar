@@ -1,5 +1,6 @@
 import express from 'express';
 
+import audioApiRouter from '../api/audio.js';
 import imageApiRouter from '../api/image.js';
 import videoApiRouter from '../api/video.js';
 import { resolveRequestActorFromAuthHeaders } from '../../models/external/User.js';
@@ -108,11 +109,6 @@ router.post('/chat/completions', validateAPIKeyAndUserId, handleExternalChatComp
 
 router.use('/image', imageApiRouter);
 router.use('/video', videoApiRouter);
-
-router.all(['/audio', '/audio/*'], validateAPIKeyAndUserId, (req, res) => {
-  res.status(501).json({
-    message: 'External audio API route is reserved; audio create/edit mapping will be enabled after the audio request schema is finalized.',
-  });
-});
+router.use('/audio', audioApiRouter);
 
 export default router;

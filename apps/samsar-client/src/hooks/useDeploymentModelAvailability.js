@@ -25,11 +25,6 @@ const availabilityCache = {
   promise: null,
 };
 
-export function clearDeploymentModelAvailabilityCache() {
-  availabilityCache.availability = null;
-  availabilityCache.promise = null;
-}
-
 async function loadDeploymentModelAvailability() {
   if (!IS_DOCKER_INSTALL) {
     return EMPTY_AVAILABILITY;

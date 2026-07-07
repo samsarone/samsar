@@ -11,6 +11,11 @@ import AudioGeneration from '../schema/AudioGeneration.js';
 import { resolveSpeechLayerTimingUpdate } from './SpeechLayerTiming.js';
 import { getProcessorAssetsV2Path, toAssetsV2RelativePath } from '../utils/AssetPaths.js';
 import { uploadAudioAssetToCDN } from '../AWS.js';
+import {
+  failStandaloneExternalAudioGeneration,
+  finalizeStandaloneExternalAudioGeneration,
+  isStandaloneExternalAudioRequest,
+} from '../external/StandaloneExternalAudio.js';
 
 ffmpeg.setFfprobePath('/usr/bin/ffprobe');
 
@@ -236,11 +241,12 @@ export async function processGoogleTTSSpeechRequest(payload) {
       throw new Error('Missing Google TTS speaker/voice name.');
     }
 
-    let videoSession = await VideoSession.findById(sessionId);
-    if (!videoSession) {
+    const standaloneExternalAudio = isStandaloneExternalAudioRequest(payload);
+    let videoSession = standaloneExternalAudio ? null : await VideoSession.findById(sessionId);
+    if (!standaloneExternalAudio && !videoSession) {
       throw new Error(`Video session not found for Google TTS request: ${sessionId}`);
     }
-    const isExpressGeneration = !!videoSession.isExpressGeneration;
+    const isExpressGeneration = !!videoSession?.isExpressGeneration;
 
     const audioFileBase = path.join('video', 'audio', sessionId, audioLayerId, 'speech.mp3');
     const audioAssetPath = toAssetsV2RelativePath(audioFileBase);
@@ -273,6 +279,18 @@ export async function processGoogleTTSSpeechRequest(payload) {
 
     let duration = await getDurationSeconds(audioSaveFilePath);
     duration = Math.ceil(duration);
+
+    if (await finalizeStandaloneExternalAudioGeneration({
+      payload,
+      resultUrl: remoteFilePath,
+      resultUrls: [remoteFilePath],
+      duration,
+      localAudioPath: audioAssetPath,
+      remoteAudioData,
+      title: 'Speech',
+    })) {
+      return 'Google TTS speech request processed';
+    }
 
     const audioLayer = videoSession.audioLayers.find(
       (layer) => layer._id.toString() === audioLayerId
@@ -383,6 +401,14 @@ export async function processGoogleTTSSpeechRequest(payload) {
     return 'Google TTS speech request processed';
   } catch (error) {
     console.error('Error while processing Google TTS speech:', error);
+
+    if (await failStandaloneExternalAudioGeneration(
+      payload,
+      error?.message || 'Google TTS request failed.',
+      { deleteAudioGeneration: true }
+    )) {
+      return;
+    }
 
     await VideoSession.findOneAndUpdate(
       { _id: payload.sessionId, 'audioLayers._id': payload.audioLayerId },

@@ -2,7 +2,7 @@ import { Schema, model } from 'mongoose';
 
 const globalSessionSchema = new Schema({
   sessionId: { type: String, required: true, unique: true },
-  sessionType: { type: String, enum: ['image', 'video'], required: true },
+  sessionType: { type: String, enum: ['image', 'video', 'audio'], required: true },
   requestId: { type: String },
   provider: { type: String },
   userId: { type: String },

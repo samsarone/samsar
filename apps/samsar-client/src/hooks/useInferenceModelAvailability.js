@@ -25,11 +25,6 @@ const availabilityCache = {
   promise: null,
 };
 
-export function clearInferenceModelAvailabilityCache() {
-  availabilityCache.availability = null;
-  availabilityCache.promise = null;
-}
-
 async function loadInferenceModelAvailability() {
   if (!IS_DOCKER_INSTALL) {
     return DEFAULT_AVAILABILITY;

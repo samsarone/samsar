@@ -11,6 +11,10 @@ import AudioGeneration from "../schema/AudioGeneration.js";
 import { resolveSpeechLayerTimingUpdate } from "./SpeechLayerTiming.js";
 import { getProcessorAssetsV2Path, toAssetsV2RelativePath } from "../utils/AssetPaths.js";
 import { uploadAudioAssetToCDN } from "../AWS.js";
+import {
+  failStandaloneExternalAudioGeneration,
+  finalizeStandaloneExternalAudioGeneration,
+} from '../external/StandaloneExternalAudio.js';
 
 import {SPEAKERS} from './ElevenLabsSpeakers.js';
 
@@ -207,6 +211,18 @@ export async function processElevenLabsFalSpeechRequest(payload) {
           }
         ];
 
+        if (await finalizeStandaloneExternalAudioGeneration({
+          payload,
+          resultUrl: remoteFilePath,
+          resultUrls: [remoteFilePath],
+          duration,
+          localAudioPath: audioAssetPath,
+          remoteAudioData,
+          title: 'Speech',
+        })) {
+          return 'Speech request processed';
+        }
+
         // -----------
         // Update VideoSession -> audioLayers
         // -----------
@@ -391,6 +407,13 @@ export async function processElevenLabsFalSpeechRequest(payload) {
         { $set: { "audioLayers.$.generationStatus": "FAILED" } },
         { new: true }
       );
+      if (await failStandaloneExternalAudioGeneration(
+        audioGenerationRecord,
+        'ElevenLabs Fal speech generation failed.',
+        { deleteAudioGeneration: true }
+      )) {
+        return;
+      }
       await AudioGeneration.deleteOne({ _id: payload._id });
     }
   }
