@@ -1360,6 +1360,27 @@
   justify-content: flex-start;
 }
 
+.external-check-list {
+  display: grid;
+  gap: 8px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.external-check-list li {
+  color: var(--muted);
+  display: grid;
+  font-size: 13px;
+  gap: 3px;
+  line-height: 1.4;
+}
+
+.external-check-list strong {
+  color: var(--text);
+  font-size: 13px;
+}
+
 .summary-grid {
   display: grid;
   gap: 14px;
