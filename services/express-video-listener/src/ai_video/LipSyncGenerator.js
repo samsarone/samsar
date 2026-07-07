@@ -8,6 +8,7 @@ import path from 'path';
 import { uploadSpeechAudioToCDN } from '../audio/AWS.js';
 import { padBlankAudioAtBeginningAndEnd } from '../audio/Audio.js';
 import { resolveProviderAiVideoUrl } from './utils/ProviderMediaUrl.js';
+import { normalizeProviderMediaUrl } from './utils/AWS.js';
 
 
 function normalizeStringId(value) {
@@ -42,6 +43,14 @@ function buildPaddedAudioRemoteFileName({ sessionId, layerId, speechLayerId, pad
     Date.now().toString(),
     paddedFileName,
   ].filter(Boolean).join('_');
+}
+
+async function resolveProviderAudioUrl(audioReference) {
+  const providerAudioUrl = await normalizeProviderMediaUrl(audioReference);
+  if (process.env.CURRENT_ENV === 'docker' && !/^https?:\/\//i.test(providerAudioUrl || '')) {
+    throw new Error('Lip sync generation requires a provider-readable audio URL.');
+  }
+  return providerAudioUrl;
 }
 
 function getProcessorAssetsRoot(folderName) {
@@ -309,7 +318,7 @@ export async function generateLipSyncForLayer(sessionId, currentLayer, connected
 
 
   let paddedAudioPath;
-  let paddedAudioRemotePath = remoteUrl;
+  let paddedAudioRemotePath = await resolveProviderAudioUrl(remoteUrl);
   let paddedAudioRelativePath = selectedLocalAudioLink;
   const layerDuration = typeof currentLayer?.duration === 'number' ? currentLayer.duration : null;
   const speechLayerDuration = typeof speechLayerDurationFromPayload === 'number'
@@ -354,7 +363,8 @@ export async function generateLipSyncForLayer(sessionId, currentLayer, connected
       speechLayerId,
       paddedFileName,
     });
-    paddedAudioRemotePath = await uploadSpeechAudioToCDN(paddedAudioPath, remotePaddedAudioName);
+    const uploadedPaddedAudioUrl = await uploadSpeechAudioToCDN(paddedAudioPath, remotePaddedAudioName);
+    paddedAudioRemotePath = await resolveProviderAudioUrl(uploadedPaddedAudioUrl);
 
     const previousAudioData = refreshedAudioLayer.previousAudioData || {
       audioLink: refreshedAudioLayer.audioLink || remoteUrl,
