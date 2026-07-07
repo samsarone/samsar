@@ -473,6 +473,9 @@ export async function generateLipSyncForLayer(sessionId, currentLayer, connected
     audioLink: paddedAudioRemotePath,
     audioDuration: videoDuration,
     model: lipSyncModel,
+    generationType: 'lip_sync',
+    samsarExternalProviderStage: 'lip_sync_generation',
+    samsarExternalVideoRoute: 'lip_sync',
     sessionId: sessionId,
     layerId: currentLayer._id,
     userId: userId,
@@ -481,7 +484,7 @@ export async function generateLipSyncForLayer(sessionId, currentLayer, connected
     aspectRatio: aspectRatio,
     isExpressGeneration: true,
     isVideoGPTGeneration: true,
-    retryOnFail: true,
+    retryOnFail: process.env.CURRENT_ENV !== 'docker',
     audioPrompt: audioPrompt,
   };
 

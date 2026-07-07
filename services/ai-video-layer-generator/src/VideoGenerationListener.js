@@ -2608,7 +2608,8 @@ async function processLipSyncGenerationFailed(payload) {
   let currentLayer = videoSession.layers[currentLayerIndex];
 
   // 2) If we can retry
-  if (retryOnFail && numRetries < 3 && !providerTimedOut) {
+  const shouldRetryLipSyncFailure = retryOnFail && !isSamsarExternalVideoRequest(payload);
+  if (shouldRetryLipSyncFailure && numRetries < 3 && !providerTimedOut) {
     await getTimeout(1000);
 
     let newModel = model;
