@@ -21,6 +21,9 @@ MIN_MEMORY_GB="${SAMSAR_SETUP_MIN_MEMORY_GB:-16}"
 MIN_DISK_FREE_GB="${SAMSAR_SETUP_MIN_DISK_FREE_GB:-500}"
 ASSUME_YES="${SAMSAR_SETUP_YES:-0}"
 OPEN_SETUP_PORT_MODE="${SAMSAR_SETUP_OPEN_SETUP_PORT:-ask}"
+OPEN_CLOUD_PORT_MODE="${SAMSAR_SETUP_OPEN_CLOUD_PORT:-ask}"
+INSTALL_CLOUD_CLI_ENABLED="${SAMSAR_SETUP_INSTALL_CLOUD_CLI:-1}"
+AZURE_NSG_PRIORITY="${SAMSAR_SETUP_AZURE_NSG_PRIORITY:-1000}"
 DOCKER_GROUP_CHANGED=0
 DOCKER_CMD=(docker)
 OS_ID=""
@@ -60,14 +63,17 @@ usage() {
 Usage: npm run setup-wizard -- [options]
 
 Options:
-  -y, --yes             Run non-interactively and open TCP ${HOST_PORT} in the host firewall when possible.
-      --open-setup-port Open TCP ${HOST_PORT} in the host firewall when possible.
+  -y, --yes             Run non-interactively and open TCP ${HOST_PORT} in host/cloud firewalls when possible.
+      --open-setup-port Open TCP ${HOST_PORT} in host/cloud firewalls when possible.
       --no-open-setup-port
-                        Do not change host firewall rules for TCP ${HOST_PORT}.
+                        Do not change firewall rules for TCP ${HOST_PORT}.
   -h, --help            Show this help text.
 
 Environment:
   SAMSAR_SETUP_OPEN_SETUP_PORT=ask|true|false
+  SAMSAR_SETUP_OPEN_CLOUD_PORT=ask|true|false
+  SAMSAR_SETUP_INSTALL_CLOUD_CLI=1
+  SAMSAR_SETUP_AZURE_NSG_PRIORITY=1000
   SAMSAR_SETUP_YES=1
   SAMSAR_SETUP_MIN_DISK_FREE_GB=<gb>
 EOF
@@ -79,14 +85,17 @@ parse_args() {
       -y|--yes)
         ASSUME_YES=1
         OPEN_SETUP_PORT_MODE=true
+        OPEN_CLOUD_PORT_MODE=true
         shift
         ;;
       --open-setup-port)
         OPEN_SETUP_PORT_MODE=true
+        OPEN_CLOUD_PORT_MODE=true
         shift
         ;;
       --no-open-setup-port)
         OPEN_SETUP_PORT_MODE=false
+        OPEN_CLOUD_PORT_MODE=false
         shift
         ;;
       -h|--help)
@@ -671,6 +680,135 @@ print_cloud_port_hint() {
   esac
 }
 
+azure_metadata_text() {
+  local path="$1"
+  command -v curl >/dev/null 2>&1 || return 1
+  curl -fsS -H Metadata:true --max-time 3 \
+    "http://169.254.169.254/metadata/instance/${path}?api-version=2021-02-01&format=text" 2>/dev/null
+}
+
+azure_managed_identity_available() {
+  command -v curl >/dev/null 2>&1 || return 1
+  curl -sS -H Metadata:true --max-time 3 \
+    "http://169.254.169.254/metadata/identity/oauth2/token?api-version=2018-02-01&resource=https://management.azure.com/" 2>/dev/null |
+    grep -q '"access_token"'
+}
+
+install_azure_cli_if_needed() {
+  command -v az >/dev/null 2>&1 && return 0
+  azure_managed_identity_available || return 1
+  enabled "$INSTALL_CLOUD_CLI_ENABLED" || return 1
+  enabled "$BOOTSTRAP_ENABLED" || return 1
+  is_linux || return 1
+  ensure_base_packages
+  case "$PACKAGE_MANAGER" in
+    apt)
+      log "Installing Azure CLI for Azure Network Security Group automation..."
+      curl -sL https://aka.ms/InstallAzureCLIDeb | run_as_root_preserve_env bash -
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+  command -v az >/dev/null 2>&1
+}
+
+ensure_azure_cli_authenticated() {
+  local subscription_id="$1"
+  command -v az >/dev/null 2>&1 || return 1
+  if ! az account show >/dev/null 2>&1; then
+    log "Trying Azure CLI managed identity login..."
+    az login --identity --allow-no-subscriptions >/dev/null 2>&1 || return 1
+  fi
+  if [[ -n "$subscription_id" ]]; then
+    az account set --subscription "$subscription_id" >/dev/null 2>&1 || return 1
+  fi
+}
+
+print_azure_open_port_hint() {
+  local resource_group="$1"
+  local vm_name="$2"
+  local port="$3"
+  local subscription_id="${4:-}"
+  warn "Azure NSG auto-open was not completed. Run this from an authenticated Azure CLI:"
+  if [[ -n "$subscription_id" ]]; then
+    warn "  az account set --subscription ${subscription_id}"
+  fi
+  warn "  az vm open-port --resource-group ${resource_group:-<resource-group>} --name ${vm_name:-<vm-name>} --port ${port} --priority ${AZURE_NSG_PRIORITY}"
+}
+
+open_azure_cloud_port() {
+  local port="$1"
+  local resource_group vm_name subscription_id priority
+  resource_group="$(azure_metadata_text compute/resourceGroupName || true)"
+  vm_name="$(azure_metadata_text compute/name || true)"
+  subscription_id="$(azure_metadata_text compute/subscriptionId || true)"
+
+  if [[ -z "$resource_group" || -z "$vm_name" ]]; then
+    warn "Could not detect Azure resource group and VM name from instance metadata."
+    print_azure_open_port_hint "$resource_group" "$vm_name" "$port" "$subscription_id"
+    return 1
+  fi
+
+  if ! install_azure_cli_if_needed; then
+    warn "Azure CLI is not available/authenticated on this VM, or no managed identity is available for automatic Azure login."
+    print_azure_open_port_hint "$resource_group" "$vm_name" "$port" "$subscription_id"
+    return 1
+  fi
+
+  if ! ensure_azure_cli_authenticated "$subscription_id"; then
+    warn "Azure CLI is installed but not authenticated, and managed identity login did not succeed."
+    print_azure_open_port_hint "$resource_group" "$vm_name" "$port" "$subscription_id"
+    return 1
+  fi
+
+  log "Opening Azure NSG inbound TCP ${port} for VM ${resource_group}/${vm_name}..."
+  for priority in "$AZURE_NSG_PRIORITY" 1001 1002 1010 1100 1200 1500 2000; do
+    if az vm open-port \
+      --resource-group "$resource_group" \
+      --name "$vm_name" \
+      --port "$port" \
+      --priority "$priority" \
+      --only-show-errors >/dev/null; then
+      log "Azure NSG rule is open for TCP ${port} at priority ${priority}."
+      return 0
+    fi
+  done
+
+  warn "Azure CLI could not create an inbound NSG rule for TCP ${port}."
+  print_azure_open_port_hint "$resource_group" "$vm_name" "$port" "$subscription_id"
+  return 1
+}
+
+maybe_open_cloud_setup_port() {
+  is_linux || return 0
+  case "$OPEN_CLOUD_PORT_MODE" in
+    0|false|FALSE|no|NO|off|OFF)
+      print_cloud_port_hint
+      return 0
+      ;;
+    1|true|TRUE|yes|YES|on|ON)
+      if [[ "$CLOUD_ENVIRONMENT" == "Azure" ]]; then
+        open_azure_cloud_port "$HOST_PORT" || true
+      else
+        print_cloud_port_hint
+      fi
+      return 0
+      ;;
+    ask|"")
+      if [[ "$CLOUD_ENVIRONMENT" == "Azure" ]] && confirm_action "Open TCP ${HOST_PORT} in the Azure Network Security Group if Azure CLI permissions are available?"; then
+        open_azure_cloud_port "$HOST_PORT" || true
+      else
+        print_cloud_port_hint
+      fi
+      return 0
+      ;;
+    *)
+      die "Invalid SAMSAR_SETUP_OPEN_CLOUD_PORT value: ${OPEN_CLOUD_PORT_MODE}. Use ask, true, or false."
+      ;;
+  esac
+}
+
 open_host_tcp_port() {
   local port="$1"
   is_linux || return 0
@@ -703,12 +841,12 @@ maybe_open_setup_wizard_host_port() {
   case "$OPEN_SETUP_PORT_MODE" in
     0|false|FALSE|no|NO|off|OFF)
       log "Skipping host firewall change for TCP ${HOST_PORT}."
-      print_cloud_port_hint
+      maybe_open_cloud_setup_port
       return 0
       ;;
     1|true|TRUE|yes|YES|on|ON)
       open_host_tcp_port "$HOST_PORT" || true
-      print_cloud_port_hint
+      maybe_open_cloud_setup_port
       return 0
       ;;
     ask|"")
@@ -717,7 +855,7 @@ maybe_open_setup_wizard_host_port() {
       else
         log "Host firewall change skipped for TCP ${HOST_PORT}."
       fi
-      print_cloud_port_hint
+      maybe_open_cloud_setup_port
       return 0
       ;;
     *)
