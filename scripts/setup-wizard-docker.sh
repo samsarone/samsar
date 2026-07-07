@@ -10,6 +10,513 @@ CONTAINER_PORT="${SETUP_WIZARD_CONTAINER_PORT:-80}"
 LOCAL_SETUP_WIZARD_URL="http://localhost:${HOST_PORT}"
 PUBLIC_IP_TIMEOUT_SECONDS="${SAMSAR_SETUP_PUBLIC_IP_TIMEOUT_SECONDS:-2}"
 READY_TIMEOUT_SECONDS="${SAMSAR_SETUP_READY_TIMEOUT_SECONDS:-30}"
+BOOTSTRAP_ENABLED="${SAMSAR_SETUP_BOOTSTRAP:-1}"
+INSTALL_NODE_ENABLED="${SAMSAR_SETUP_INSTALL_NODE:-1}"
+INSTALL_YARN_ENABLED="${SAMSAR_SETUP_INSTALL_YARN:-1}"
+NODE_MAJOR="${SAMSAR_SETUP_NODE_MAJOR:-22}"
+MIN_NODE_MAJOR="${SAMSAR_SETUP_MIN_NODE_MAJOR:-20}"
+ALLOW_DOCKER_CONVENIENCE_SCRIPT="${SAMSAR_SETUP_ALLOW_DOCKER_CONVENIENCE_SCRIPT:-1}"
+DOCKER_GROUP_CHANGED=0
+DOCKER_CMD=(docker)
+OS_ID=""
+OS_ID_LIKE=""
+OS_PRETTY_NAME="$(uname -s 2>/dev/null || echo unknown)"
+OS_VERSION_CODENAME=""
+OS_UBUNTU_CODENAME=""
+PACKAGE_MANAGER=""
+CLOUD_ENVIRONMENT=""
+
+log() {
+  echo "[setup-wizard] $*"
+}
+
+warn() {
+  echo "[setup-wizard] $*" >&2
+}
+
+die() {
+  warn "$*"
+  exit 1
+}
+
+enabled() {
+  case "${1:-}" in
+    0|false|FALSE|no|NO|off|OFF)
+      return 1
+      ;;
+    *)
+      return 0
+      ;;
+  esac
+}
+
+is_linux() {
+  [[ "$(uname -s 2>/dev/null || true)" == "Linux" ]]
+}
+
+load_os_release() {
+  if [[ -r /etc/os-release ]]; then
+    # shellcheck disable=SC1091
+    . /etc/os-release
+    OS_ID="${ID:-}"
+    OS_ID_LIKE="${ID_LIKE:-}"
+    OS_PRETTY_NAME="${PRETTY_NAME:-$OS_PRETTY_NAME}"
+    OS_VERSION_CODENAME="${VERSION_CODENAME:-}"
+    OS_UBUNTU_CODENAME="${UBUNTU_CODENAME:-}"
+  fi
+}
+
+detect_package_manager() {
+  if command -v apt-get >/dev/null 2>&1; then
+    PACKAGE_MANAGER="apt"
+  elif command -v dnf >/dev/null 2>&1; then
+    PACKAGE_MANAGER="dnf"
+  elif command -v yum >/dev/null 2>&1; then
+    PACKAGE_MANAGER="yum"
+  elif command -v apk >/dev/null 2>&1; then
+    PACKAGE_MANAGER="apk"
+  elif command -v pacman >/dev/null 2>&1; then
+    PACKAGE_MANAGER="pacman"
+  else
+    PACKAGE_MANAGER=""
+  fi
+}
+
+detect_cloud_environment() {
+  local vendor product version_data
+  vendor="$(cat /sys/class/dmi/id/sys_vendor 2>/dev/null || true)"
+  product="$(cat /sys/class/dmi/id/product_name 2>/dev/null || true)"
+  version_data="$(cat /sys/class/dmi/id/product_version 2>/dev/null || true)"
+  case "${vendor} ${product} ${version_data}" in
+    *Microsoft*|*Azure*)
+      CLOUD_ENVIRONMENT="Azure"
+      ;;
+    *Amazon*|*EC2*)
+      CLOUD_ENVIRONMENT="AWS EC2"
+      ;;
+    *Google*)
+      CLOUD_ENVIRONMENT="Google Cloud"
+      ;;
+    *Oracle*)
+      CLOUD_ENVIRONMENT="Oracle Cloud"
+      ;;
+    *)
+      CLOUD_ENVIRONMENT=""
+      ;;
+  esac
+}
+
+run_as_root() {
+  if [[ "${EUID:-$(id -u)}" -eq 0 ]]; then
+    "$@"
+  elif command -v sudo >/dev/null 2>&1; then
+    sudo "$@"
+  else
+    die "This setup needs root privileges for host package/service changes, but sudo is not installed."
+  fi
+}
+
+run_as_root_preserve_env() {
+  if [[ "${EUID:-$(id -u)}" -eq 0 ]]; then
+    "$@"
+  elif command -v sudo >/dev/null 2>&1; then
+    sudo -E "$@"
+  else
+    die "This setup needs root privileges for host package/service changes, but sudo is not installed."
+  fi
+}
+
+docker_install_docs_url() {
+  if is_linux; then
+    case "$OS_ID" in
+      ubuntu|pop|linuxmint|elementary|neon)
+        echo "https://docs.docker.com/engine/install/ubuntu/"
+        ;;
+      debian)
+        echo "https://docs.docker.com/engine/install/debian/"
+        ;;
+      fedora)
+        echo "https://docs.docker.com/engine/install/fedora/"
+        ;;
+      rhel)
+        echo "https://docs.docker.com/engine/install/rhel/"
+        ;;
+      centos|rocky|almalinux|ol)
+        echo "https://docs.docker.com/engine/install/centos/"
+        ;;
+      *)
+        if [[ "$OS_ID_LIKE" == *ubuntu* ]]; then
+          echo "https://docs.docker.com/engine/install/ubuntu/"
+        elif [[ "$OS_ID_LIKE" == *debian* ]]; then
+          echo "https://docs.docker.com/engine/install/debian/"
+        elif [[ "$OS_ID_LIKE" == *fedora* ]]; then
+          echo "https://docs.docker.com/engine/install/fedora/"
+        elif [[ "$OS_ID_LIKE" == *rhel* ]]; then
+          echo "https://docs.docker.com/engine/install/rhel/"
+        else
+          echo "https://docs.docker.com/engine/install/"
+        fi
+        ;;
+    esac
+    return 0
+  fi
+
+  case "$(uname -s 2>/dev/null || true)" in
+    Darwin)
+      echo "https://docs.docker.com/desktop/setup/install/mac-install/"
+      ;;
+    *)
+      echo "https://docs.docker.com/get-docker/"
+      ;;
+  esac
+}
+
+print_docker_install_hint() {
+  warn "Docker is not installed or not available on PATH."
+  warn "Detected environment: ${OS_PRETTY_NAME}${CLOUD_ENVIRONMENT:+ on $CLOUD_ENVIRONMENT}"
+  warn "Install guide: $(docker_install_docs_url)"
+}
+
+ensure_base_packages() {
+  case "$PACKAGE_MANAGER" in
+    apt)
+      run_as_root apt-get update
+      run_as_root env DEBIAN_FRONTEND=noninteractive apt-get install -y ca-certificates curl gnupg git iproute2
+      ;;
+    dnf)
+      run_as_root dnf install -y ca-certificates curl gnupg git iproute
+      ;;
+    yum)
+      run_as_root yum install -y ca-certificates curl gnupg git iproute
+      ;;
+    apk)
+      run_as_root apk add --no-cache bash ca-certificates curl git iproute2
+      ;;
+    pacman)
+      run_as_root pacman -Sy --needed --noconfirm ca-certificates curl gnupg git iproute2
+      ;;
+    *)
+      if ! command -v curl >/dev/null 2>&1; then
+        die "No supported package manager was detected and curl is missing; cannot bootstrap prerequisites."
+      fi
+      ;;
+  esac
+}
+
+installed_node_major() {
+  if ! command -v node >/dev/null 2>&1; then
+    return 1
+  fi
+  node -v 2>/dev/null | sed -E 's/^v([0-9]+).*/\1/'
+}
+
+node_prerequisites_satisfied() {
+  local major
+  major="$(installed_node_major || true)"
+  [[ -n "$major" ]] && [[ "$major" =~ ^[0-9]+$ ]] && (( major >= MIN_NODE_MAJOR )) && command -v npm >/dev/null 2>&1
+}
+
+install_nodejs() {
+  if node_prerequisites_satisfied; then
+    return 0
+  fi
+  enabled "$INSTALL_NODE_ENABLED" || die "Node.js/npm are missing or too old. Install Node.js ${NODE_MAJOR}.x, then rerun this script."
+
+  log "Installing Node.js ${NODE_MAJOR}.x and npm..."
+  ensure_base_packages
+  case "$PACKAGE_MANAGER" in
+    apt)
+      curl -fsSL "https://deb.nodesource.com/setup_${NODE_MAJOR}.x" | run_as_root_preserve_env bash -
+      run_as_root env DEBIAN_FRONTEND=noninteractive apt-get install -y nodejs
+      ;;
+    dnf)
+      curl -fsSL "https://rpm.nodesource.com/setup_${NODE_MAJOR}.x" | run_as_root_preserve_env bash -
+      run_as_root dnf install -y nodejs
+      ;;
+    yum)
+      curl -fsSL "https://rpm.nodesource.com/setup_${NODE_MAJOR}.x" | run_as_root_preserve_env bash -
+      run_as_root yum install -y nodejs
+      ;;
+    apk)
+      run_as_root apk add --no-cache nodejs npm
+      ;;
+    pacman)
+      run_as_root pacman -Sy --needed --noconfirm nodejs npm
+      ;;
+    *)
+      die "Cannot auto-install Node.js on ${OS_PRETTY_NAME}. Install Node.js ${NODE_MAJOR}.x from https://nodejs.org/en/download and rerun this script."
+      ;;
+  esac
+
+  node_prerequisites_satisfied || die "Node.js/npm installation did not complete successfully."
+}
+
+install_yarn_if_needed() {
+  local yarn_version
+  enabled "$INSTALL_YARN_ENABLED" || return 0
+  [[ -f "$ROOT_DIR/package.json" ]] || return 0
+  grep -q '"packageManager"[[:space:]]*:[[:space:]]*"yarn@' "$ROOT_DIR/package.json" || return 0
+  command -v yarn >/dev/null 2>&1 && return 0
+  command -v npm >/dev/null 2>&1 || return 0
+
+  yarn_version="$(
+    sed -n 's/.*"packageManager"[[:space:]]*:[[:space:]]*"yarn@\([^"+]*\).*/\1/p' "$ROOT_DIR/package.json" | head -n 1
+  )"
+  yarn_version="${yarn_version:-1.22.22}"
+  log "Installing Yarn ${yarn_version}..."
+  run_as_root npm install -g "yarn@${yarn_version}"
+}
+
+docker_apt_repo_id() {
+  case "$OS_ID" in
+    ubuntu|pop|linuxmint|elementary|neon)
+      echo "ubuntu"
+      ;;
+    debian)
+      echo "debian"
+      ;;
+    *)
+      if [[ "$OS_ID_LIKE" == *ubuntu* ]]; then
+        echo "ubuntu"
+      elif [[ "$OS_ID_LIKE" == *debian* ]]; then
+        echo "debian"
+      else
+        return 1
+      fi
+      ;;
+  esac
+}
+
+docker_apt_suite() {
+  local repo_id="$1"
+  if [[ "$repo_id" == "ubuntu" ]]; then
+    echo "${OS_UBUNTU_CODENAME:-$OS_VERSION_CODENAME}"
+  else
+    echo "$OS_VERSION_CODENAME"
+  fi
+}
+
+install_docker_apt() {
+  local repo_id suite arch
+  repo_id="$(docker_apt_repo_id)" || return 1
+  suite="$(docker_apt_suite "$repo_id")"
+  arch="$(dpkg --print-architecture)" || return 1
+  [[ -n "$suite" ]] || return 1
+
+  log "Configuring Docker apt repository for ${repo_id}/${suite}..."
+  run_as_root env DEBIAN_FRONTEND=noninteractive apt-get remove -y docker.io docker-doc docker-compose docker-compose-v2 podman-docker containerd runc >/dev/null 2>&1 || true
+  run_as_root install -m 0755 -d /etc/apt/keyrings || return 1
+  run_as_root curl -fsSL "https://download.docker.com/linux/${repo_id}/gpg" -o /etc/apt/keyrings/docker.asc || return 1
+  run_as_root chmod a+r /etc/apt/keyrings/docker.asc || return 1
+  printf '%s\n' \
+    "Types: deb" \
+    "URIs: https://download.docker.com/linux/${repo_id}" \
+    "Suites: ${suite}" \
+    "Components: stable" \
+    "Architectures: ${arch}" \
+    "Signed-By: /etc/apt/keyrings/docker.asc" |
+    run_as_root tee /etc/apt/sources.list.d/docker.sources >/dev/null || return 1
+  run_as_root apt-get update || return 1
+  run_as_root env DEBIAN_FRONTEND=noninteractive apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin || return 1
+}
+
+install_docker_amazon_linux() {
+  [[ "$OS_ID" == "amzn" ]] || return 1
+  log "Installing Docker from Amazon Linux packages..."
+  run_as_root "$PACKAGE_MANAGER" install -y docker || return 1
+  run_as_root "$PACKAGE_MANAGER" install -y docker-compose-plugin docker-buildx-plugin >/dev/null 2>&1 || true
+}
+
+install_docker_rpm() {
+  local repo_id
+  case "$OS_ID" in
+    fedora)
+      repo_id="fedora"
+      ;;
+    rhel)
+      repo_id="rhel"
+      ;;
+    centos|rocky|almalinux|ol)
+      repo_id="centos"
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+
+  log "Configuring Docker rpm repository for ${repo_id}..."
+  if [[ "$PACKAGE_MANAGER" == "dnf" ]]; then
+    run_as_root dnf install -y dnf-plugins-core || return 1
+    run_as_root dnf config-manager --add-repo "https://download.docker.com/linux/${repo_id}/docker-ce.repo" || return 1
+    run_as_root dnf install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin || return 1
+  else
+    run_as_root yum install -y yum-utils || return 1
+    run_as_root yum-config-manager --add-repo "https://download.docker.com/linux/${repo_id}/docker-ce.repo" || return 1
+    run_as_root yum install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin || return 1
+  fi
+}
+
+install_docker_alpine() {
+  [[ "$PACKAGE_MANAGER" == "apk" ]] || return 1
+  log "Installing Docker from Alpine packages..."
+  run_as_root apk add --no-cache docker docker-cli-compose || return 1
+}
+
+install_docker_arch() {
+  [[ "$PACKAGE_MANAGER" == "pacman" ]] || return 1
+  log "Installing Docker from Arch packages..."
+  run_as_root pacman -Sy --needed --noconfirm docker docker-compose || return 1
+}
+
+install_docker_convenience_script() {
+  enabled "$ALLOW_DOCKER_CONVENIENCE_SCRIPT" || return 1
+  command -v curl >/dev/null 2>&1 || return 1
+  log "Falling back to Docker's convenience installer..."
+  curl -fsSL https://get.docker.com -o /tmp/samsar-get-docker.sh || return 1
+  run_as_root sh /tmp/samsar-get-docker.sh || return 1
+  rm -f /tmp/samsar-get-docker.sh
+}
+
+install_docker_engine() {
+  command -v docker >/dev/null 2>&1 && return 0
+  print_docker_install_hint
+  enabled "$BOOTSTRAP_ENABLED" || exit 1
+  is_linux || die "Automatic Docker installation is only supported for Linux hosts. Install Docker manually from the guide above, then rerun this script."
+
+  log "Attempting automatic Docker installation..."
+  ensure_base_packages
+  case "$PACKAGE_MANAGER" in
+    apt)
+      install_docker_apt || install_docker_convenience_script || die "Could not install Docker automatically. Use: $(docker_install_docs_url)"
+      ;;
+    dnf|yum)
+      install_docker_amazon_linux || install_docker_rpm || install_docker_convenience_script || die "Could not install Docker automatically. Use: $(docker_install_docs_url)"
+      ;;
+    apk)
+      install_docker_alpine || die "Could not install Docker automatically. Use: $(docker_install_docs_url)"
+      ;;
+    pacman)
+      install_docker_arch || die "Could not install Docker automatically. Use: $(docker_install_docs_url)"
+      ;;
+    *)
+      install_docker_convenience_script || die "Could not install Docker automatically. Use: $(docker_install_docs_url)"
+      ;;
+  esac
+
+  command -v docker >/dev/null 2>&1 || die "Docker installation completed, but docker is still not on PATH. Use: $(docker_install_docs_url)"
+}
+
+start_docker_service() {
+  is_linux || return 0
+  log "Starting Docker service..."
+  if command -v systemctl >/dev/null 2>&1; then
+    run_as_root systemctl enable --now containerd >/dev/null 2>&1 || true
+    run_as_root systemctl enable --now docker >/dev/null 2>&1 || run_as_root systemctl start docker >/dev/null 2>&1 || true
+    run_as_root systemctl enable --now snap.docker.dockerd >/dev/null 2>&1 || true
+  elif command -v rc-service >/dev/null 2>&1; then
+    run_as_root rc-update add docker default >/dev/null 2>&1 || true
+    run_as_root rc-service docker start >/dev/null 2>&1 || true
+  elif command -v service >/dev/null 2>&1; then
+    run_as_root service docker start >/dev/null 2>&1 || true
+  fi
+}
+
+target_docker_user() {
+  if [[ -n "${SAMSAR_SETUP_TARGET_USER:-}" ]]; then
+    echo "$SAMSAR_SETUP_TARGET_USER"
+  elif [[ -n "${SUDO_USER:-}" && "${SUDO_USER:-}" != "root" ]]; then
+    echo "$SUDO_USER"
+  else
+    id -un
+  fi
+}
+
+ensure_docker_group_permissions() {
+  local target_user
+  is_linux || return 0
+  target_user="$(target_docker_user)"
+  [[ "$target_user" != "root" ]] || return 0
+  id "$target_user" >/dev/null 2>&1 || return 0
+
+  if ! getent group docker >/dev/null 2>&1; then
+    log "Creating docker group..."
+    run_as_root groupadd docker
+  fi
+
+  if ! id -nG "$target_user" | tr ' ' '\n' | grep -qx docker; then
+    log "Adding ${target_user} to docker group..."
+    run_as_root usermod -aG docker "$target_user"
+    DOCKER_GROUP_CHANGED=1
+  fi
+}
+
+try_docker_info() {
+  "$@" info 2>&1 >/dev/null
+}
+
+docker_cli() {
+  "${DOCKER_CMD[@]}" "$@"
+}
+
+select_docker_command() {
+  local docker_info_output sudo_info_output
+  if docker_info_output="$(try_docker_info docker)"; then
+    DOCKER_CMD=(docker)
+    return 0
+  fi
+
+  if printf '%s\n' "$docker_info_output" | grep -Eqi 'permission denied|connect: permission denied|Got permission denied'; then
+    ensure_docker_group_permissions
+  fi
+
+  if command -v sudo >/dev/null 2>&1 && sudo_info_output="$(try_docker_info sudo docker)"; then
+    DOCKER_CMD=(sudo docker)
+    if (( DOCKER_GROUP_CHANGED )); then
+      warn "Using sudo for Docker in this run. Start a new SSH session later to use Docker without sudo."
+    else
+      warn "Current user cannot access Docker directly; using sudo for Docker in this run."
+    fi
+    return 0
+  fi
+
+  warn "Docker is installed, but the Docker CLI cannot reach the daemon."
+  if [[ -n "$docker_info_output" ]]; then
+    warn "$docker_info_output"
+  elif [[ -n "${sudo_info_output:-}" ]]; then
+    warn "$sudo_info_output"
+  fi
+  die "Fix Docker using the install guide for this host: $(docker_install_docs_url)"
+}
+
+detect_docker_socket_path() {
+  if [[ -n "${SAMSAR_SETUP_DOCKER_SOCKET:-}" ]]; then
+    echo "$SAMSAR_SETUP_DOCKER_SOCKET"
+  elif [[ "${DOCKER_HOST:-}" == unix://* ]]; then
+    echo "${DOCKER_HOST#unix://}"
+  elif [[ -S /var/run/docker.sock ]]; then
+    echo "/var/run/docker.sock"
+  elif [[ -n "${XDG_RUNTIME_DIR:-}" && -S "${XDG_RUNTIME_DIR}/docker.sock" ]]; then
+    echo "${XDG_RUNTIME_DIR}/docker.sock"
+  else
+    echo "/var/run/docker.sock"
+  fi
+}
+
+bootstrap_host() {
+  load_os_release
+  detect_package_manager
+  detect_cloud_environment
+  log "Detected environment: ${OS_PRETTY_NAME}${CLOUD_ENVIRONMENT:+ on $CLOUD_ENVIRONMENT}"
+
+  if enabled "$BOOTSTRAP_ENABLED" && is_linux; then
+    install_nodejs
+    install_yarn_if_needed
+  fi
+
+  install_docker_engine
+  start_docker_service
+  select_docker_command
+}
 
 extract_private_ipv4_addresses() {
   printf '%s\n' "$*" | tr -cs '0-9.' '\n' | awk -F. '
@@ -207,29 +714,22 @@ print_setup_wizard_urls() {
   echo
 }
 
-if ! command -v docker >/dev/null 2>&1; then
-  echo "Docker is not installed or not available on PATH." >&2
-  exit 1
-fi
-
-if ! docker info >/dev/null 2>&1; then
-  echo "Docker is not running. Start Docker Desktop or Docker Engine first." >&2
-  exit 1
-fi
+bootstrap_host
 
 HOST_PRIVATE_IPS="$(extract_private_ipv4_addresses "${SAMSAR_SETUP_HOST_PRIVATE_IPS:-$(detect_host_private_ips)}")"
 HOST_PUBLIC_IPS="$(extract_public_ipv4_addresses "${SAMSAR_SETUP_HOST_PUBLIC_IPS:-$(detect_host_public_ips)}")"
+DOCKER_SOCKET_PATH="$(detect_docker_socket_path)"
 
 echo "Building ${IMAGE_NAME} from apps/setup-wizard..."
-docker build -t "$IMAGE_NAME" "$ROOT_DIR/apps/setup-wizard"
+docker_cli build -t "$IMAGE_NAME" "$ROOT_DIR/apps/setup-wizard"
 
 existing_container_id="$(
-  docker ps -aq --filter "name=^/${CONTAINER_NAME}$"
+  docker_cli ps -aq --filter "name=^/${CONTAINER_NAME}$"
 )"
 
 if [[ -n "$existing_container_id" ]]; then
   echo "Replacing existing container ${CONTAINER_NAME}..."
-  docker rm -f "$CONTAINER_NAME" >/dev/null
+  docker_cli rm -f "$CONTAINER_NAME" >/dev/null
 fi
 
 echo "Starting ${CONTAINER_NAME} on host port ${HOST_PORT}..."
@@ -238,11 +738,11 @@ if [[ -n "$HOST_PRIVATE_IPS" ]]; then
 fi
 echo "Public setup URL will be shown only if TCP ${HOST_PORT} responds on the detected public IP."
 container_id="$(
-docker run -d \
+docker_cli run -d \
     --name "$CONTAINER_NAME" \
     -p "0.0.0.0:${HOST_PORT}:${CONTAINER_PORT}" \
     --add-host=host.docker.internal:host-gateway \
-    -v /var/run/docker.sock:/var/run/docker.sock \
+    -v "${DOCKER_SOCKET_PATH}:/var/run/docker.sock" \
     -v "$ROOT_DIR:$ROOT_DIR" \
     -e "SAMSAR_SETUP_ROOT_DIR=$ROOT_DIR" \
     -e "SAMSAR_SETUP_CLIENT_URL=http://localhost:3000" \
