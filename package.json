@@ -16,7 +16,8 @@
     "docker:up": "npm run config:render && docker compose --env-file runtime/secrets/root.env -f deploy/compose/docker-compose.yml --profile core --profile workers --profile local-mongo --profile minio --profile local-media --profile logger up -d --build",
     "docker:down": "mkdir -p runtime/secrets && touch runtime/secrets/root.env && docker compose --env-file runtime/secrets/root.env -f deploy/compose/docker-compose.yml --profile core --profile workers --profile local-mongo --profile minio --profile local-media --profile logger --profile reverse-proxy down",
     "setup-wizard": "bash scripts/setup-wizard-docker.sh",
-    "setup-wizard:docker": "npm run setup-wizard"
+    "setup-wizard:docker": "npm run setup-wizard",
+    "setup-wizard:remote": "bash scripts/setup-wizard-remote.sh"
   },
   "workspaces": [
     "apps/*",

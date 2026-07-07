@@ -6,6 +6,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 IMAGE_NAME="${SETUP_WIZARD_IMAGE:-samsar-setup-wizard:local}"
 CONTAINER_NAME="${SETUP_WIZARD_CONTAINER_NAME:-samsar-setup-wizard-preview}"
 HOST_PORT="${SETUP_WIZARD_PORT:-8089}"
+HOST_BIND_ADDR="${SETUP_WIZARD_BIND_ADDR:-0.0.0.0}"
 CONTAINER_PORT="${SETUP_WIZARD_CONTAINER_PORT:-80}"
 LOCAL_SETUP_WIZARD_URL="http://localhost:${HOST_PORT}"
 PUBLIC_IP_TIMEOUT_SECONDS="${SAMSAR_SETUP_PUBLIC_IP_TIMEOUT_SECONDS:-2}"
@@ -1101,11 +1102,12 @@ echo "Starting ${CONTAINER_NAME} on host port ${HOST_PORT}..."
 if [[ -n "$HOST_PRIVATE_IPS" ]]; then
   echo "Detected host private IP candidates: ${HOST_PRIVATE_IPS}"
 fi
+echo "Setup wizard bind address: ${HOST_BIND_ADDR}:${HOST_PORT}"
 echo "Public setup URL will be shown only if TCP ${HOST_PORT} responds on the detected public IP."
 container_id="$(
 docker_cli run -d \
     --name "$CONTAINER_NAME" \
-    -p "0.0.0.0:${HOST_PORT}:${CONTAINER_PORT}" \
+    -p "${HOST_BIND_ADDR}:${HOST_PORT}:${CONTAINER_PORT}" \
     --add-host=host.docker.internal:host-gateway \
     -v "${DOCKER_SOCKET_PATH}:/var/run/docker.sock" \
     -v "$ROOT_DIR:$ROOT_DIR" \
