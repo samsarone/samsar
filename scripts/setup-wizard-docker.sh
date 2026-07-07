@@ -1085,6 +1085,18 @@ maybe_open_setup_wizard_host_port
 HOST_PRIVATE_IPS="$(extract_private_ipv4_addresses "${SAMSAR_SETUP_HOST_PRIVATE_IPS:-$(detect_host_private_ips)}")"
 HOST_PUBLIC_IPS="$(extract_public_ipv4_addresses "${SAMSAR_SETUP_HOST_PUBLIC_IPS:-$(detect_host_public_ips)}")"
 DOCKER_SOCKET_PATH="$(detect_docker_socket_path)"
+REMOTE_INSTALL="${SAMSAR_SETUP_REMOTE_INSTALL:-}"
+if [[ -z "$REMOTE_INSTALL" && -n "$CLOUD_ENVIRONMENT" ]]; then
+  REMOTE_INSTALL=1
+fi
+AZURE_RESOURCE_GROUP=""
+AZURE_VM_NAME=""
+AZURE_SUBSCRIPTION_ID=""
+if [[ "$CLOUD_ENVIRONMENT" == "Azure" ]]; then
+  AZURE_RESOURCE_GROUP="$(azure_metadata_text compute/resourceGroupName || true)"
+  AZURE_VM_NAME="$(azure_metadata_text compute/name || true)"
+  AZURE_SUBSCRIPTION_ID="$(azure_metadata_text compute/subscriptionId || true)"
+fi
 
 echo "Building ${IMAGE_NAME} from apps/setup-wizard..."
 docker_cli build -t "$IMAGE_NAME" "$ROOT_DIR/apps/setup-wizard"
@@ -1116,6 +1128,11 @@ docker_cli run -d \
     -e "SAMSAR_SETUP_PROCESSOR_PUBLIC_URL=http://localhost:3002" \
     -e "SAMSAR_SETUP_HOST_PRIVATE_IPS=$HOST_PRIVATE_IPS" \
     -e "SAMSAR_SETUP_HOST_PUBLIC_IPS=$HOST_PUBLIC_IPS" \
+    -e "SAMSAR_SETUP_REMOTE_INSTALL=$REMOTE_INSTALL" \
+    -e "SAMSAR_SETUP_CLOUD_ENVIRONMENT=$CLOUD_ENVIRONMENT" \
+    -e "SAMSAR_SETUP_CLOUD_RESOURCE_GROUP=$AZURE_RESOURCE_GROUP" \
+    -e "SAMSAR_SETUP_CLOUD_VM_NAME=$AZURE_VM_NAME" \
+    -e "SAMSAR_SETUP_CLOUD_SUBSCRIPTION_ID=$AZURE_SUBSCRIPTION_ID" \
     "$IMAGE_NAME"
 )"
 

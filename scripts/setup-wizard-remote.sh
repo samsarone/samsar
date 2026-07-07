@@ -200,7 +200,7 @@ build_remote_command() {
     command+=" if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then git fetch origin --prune; git pull --ff-only; fi;"
   fi
 
-  remote_env="SAMSAR_SETUP_OPEN_BROWSER=0 SETUP_WIZARD_BIND_ADDR=127.0.0.1 SETUP_WIZARD_PORT=$(quote_arg "$REMOTE_PORT") SAMSAR_SETUP_OPEN_SETUP_PORT=false SAMSAR_SETUP_OPEN_CLOUD_PORT=false"
+  remote_env="SAMSAR_SETUP_OPEN_BROWSER=0 SETUP_WIZARD_BIND_ADDR=127.0.0.1 SETUP_WIZARD_PORT=$(quote_arg "$REMOTE_PORT") SAMSAR_SETUP_REMOTE_INSTALL=1 SAMSAR_SETUP_OPEN_SETUP_PORT=false SAMSAR_SETUP_OPEN_CLOUD_PORT=false"
   if [[ -n "$MIN_DISK_FREE_GB" ]]; then
     remote_env+=" SAMSAR_SETUP_MIN_DISK_FREE_GB=$(quote_arg "$MIN_DISK_FREE_GB")"
   fi

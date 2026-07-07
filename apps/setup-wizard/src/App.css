@@ -1381,6 +1381,37 @@
   font-size: 13px;
 }
 
+.external-remediation {
+  border-top: 1px solid var(--border);
+  display: grid;
+  gap: 8px;
+  padding-top: 12px;
+}
+
+.external-remediation p {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+  margin: 0;
+}
+
+.external-command-list {
+  display: grid;
+  gap: 6px;
+}
+
+.external-command-list code {
+  background: var(--bg-soft);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  color: var(--text);
+  display: block;
+  font-size: 12px;
+  overflow-x: auto;
+  padding: 8px 10px;
+  white-space: nowrap;
+}
+
 .summary-grid {
   display: grid;
   gap: 14px;

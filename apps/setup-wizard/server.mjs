@@ -54,6 +54,11 @@ const PROCESSOR_INTERNAL_URL = process.env.SAMSAR_SETUP_PROCESSOR_INTERNAL_URL |
 const CLIENT_INTERNAL_URL = process.env.SAMSAR_SETUP_CLIENT_INTERNAL_URL || 'http://host.docker.internal:3000';
 const PROCESSOR_READY_URL = `${PROCESSOR_INTERNAL_URL}/v1/health/ready`;
 const MEDIA_TUNNEL_CONTAINER_NAME = process.env.SAMSAR_MEDIA_TUNNEL_CONTAINER || 'samsar-media-tunnel';
+const SETUP_CLOUD_ENVIRONMENT = normalizeString(process.env.SAMSAR_SETUP_CLOUD_ENVIRONMENT);
+const SETUP_REMOTE_INSTALL = normalizeBoolean(process.env.SAMSAR_SETUP_REMOTE_INSTALL) || Boolean(SETUP_CLOUD_ENVIRONMENT);
+const SETUP_CLOUD_SUBSCRIPTION_ID = normalizeString(process.env.SAMSAR_SETUP_CLOUD_SUBSCRIPTION_ID);
+const SETUP_CLOUD_RESOURCE_GROUP = normalizeString(process.env.SAMSAR_SETUP_CLOUD_RESOURCE_GROUP);
+const SETUP_CLOUD_VM_NAME = normalizeString(process.env.SAMSAR_SETUP_CLOUD_VM_NAME);
 
 const MIME_TYPES = {
   '.css': 'text/css; charset=utf-8',
@@ -1552,14 +1557,31 @@ async function buildExternalAccessChecks(reverseProxy = {}) {
 
 async function checkFinalExternalAccess(run, reverseProxy = {}) {
   const ports = getExpectedDeploymentPorts(reverseProxy);
+  const shouldCheckExternalAccess = SETUP_REMOTE_INSTALL || reverseProxy.enabled;
+  if (!shouldCheckExternalAccess) {
+    run.externalAccess = {
+      ok: true,
+      skipped: true,
+      remoteInstall: false,
+      ports: [],
+      checks: [],
+      checkedAt: new Date().toISOString(),
+      message: 'External access check skipped for local localhost setup.',
+    };
+    setStepStatus(run, 'external', 'complete', 'External access check skipped for local setup.', { log: false });
+    return run.externalAccess;
+  }
+
   setStepStatus(run, 'external', 'running', `Checking external access on ${formatFirewallPorts(ports)}.`);
   const targets = await buildExternalAccessChecks(reverseProxy);
   if (!targets.length) {
     run.externalAccess = {
       ok: false,
+      remoteInstall: SETUP_REMOTE_INSTALL,
       ports,
       checks: [],
       checkedAt: new Date().toISOString(),
+      remediation: buildExternalAccessRemediation(ports),
       message: `No public host could be detected for ${formatFirewallPorts(ports)}. Open these ports in the host firewall and cloud security rules if users need remote access.`,
     };
     setStepStatus(run, 'external', 'complete', 'External self-check skipped; no public host was detected.');
@@ -1573,9 +1595,11 @@ async function checkFinalExternalAccess(run, reverseProxy = {}) {
   const ok = failedChecks.length === 0;
   run.externalAccess = {
     ok,
+    remoteInstall: SETUP_REMOTE_INSTALL,
     ports,
     checks,
     checkedAt: new Date().toISOString(),
+    remediation: ok ? null : buildExternalAccessRemediation(ports),
     message: ok
       ? `External access responded on ${formatFirewallPorts(ports)}.`
       : `${failedChecks.length} external endpoint${failedChecks.length === 1 ? '' : 's'} did not respond on ${formatFirewallPorts(ports)}. Open these ports in the host firewall, cloud firewall, security group, or load balancer as needed.`,
@@ -1869,6 +1893,76 @@ function getReverseProxyRequiredFirewallPorts(reverseProxy = {}) {
   return reverseProxy.ssl?.enabled ? [80, 443] : [80];
 }
 
+function getRequiredExternalFirewallPorts(reverseProxy = {}) {
+  if (reverseProxy.enabled) {
+    return getReverseProxyRequiredFirewallPorts(reverseProxy);
+  }
+  return SETUP_REMOTE_INSTALL ? [3000, 3002] : [];
+}
+
+function buildExternalAccessRemediation(ports = []) {
+  const normalizedPorts = normalizeFirewallPorts(ports, []);
+  const portList = normalizedPorts.join(', ');
+  const genericMessage = normalizedPorts.length
+    ? `Allow inbound TCP ${portList} in the cloud firewall, security group, load balancer, and host firewall.`
+    : 'Allow the required inbound TCP ports in the cloud firewall, security group, load balancer, and host firewall.';
+  const cloud = SETUP_CLOUD_ENVIRONMENT || (SETUP_REMOTE_INSTALL ? 'Remote host' : '');
+
+  if (/azure/i.test(cloud)) {
+    const commands = [];
+    if (SETUP_CLOUD_SUBSCRIPTION_ID) {
+      commands.push(`az account set --subscription ${SETUP_CLOUD_SUBSCRIPTION_ID}`);
+    }
+    if (SETUP_CLOUD_RESOURCE_GROUP && SETUP_CLOUD_VM_NAME) {
+      normalizedPorts.forEach((port, index) => {
+        commands.push(`az vm open-port --resource-group ${SETUP_CLOUD_RESOURCE_GROUP} --name ${SETUP_CLOUD_VM_NAME} --port ${port} --priority ${1000 + index}`);
+      });
+    }
+    return {
+      cloud: 'Azure',
+      title: 'Open Azure Network Security Group inbound rules',
+      message: SETUP_CLOUD_RESOURCE_GROUP && SETUP_CLOUD_VM_NAME
+        ? `Open inbound TCP ${portList} for VM ${SETUP_CLOUD_RESOURCE_GROUP}/${SETUP_CLOUD_VM_NAME}.`
+        : `Open inbound TCP ${portList} in the Azure Network Security Group attached to this VM.`,
+      commands,
+    };
+  }
+
+  if (/aws|ec2/i.test(cloud)) {
+    return {
+      cloud: 'AWS EC2',
+      title: 'Open EC2 security group inbound rules',
+      message: `Add inbound TCP ${portList} to the security group attached to this EC2 instance.`,
+      commands: [],
+    };
+  }
+
+  if (/google/i.test(cloud)) {
+    return {
+      cloud: 'Google Cloud',
+      title: 'Open VPC firewall ingress rules',
+      message: `Allow inbound TCP ${portList} to this VM through the Google Cloud VPC firewall.`,
+      commands: [],
+    };
+  }
+
+  if (/oracle/i.test(cloud)) {
+    return {
+      cloud: 'Oracle Cloud',
+      title: 'Open OCI ingress rules',
+      message: `Allow inbound TCP ${portList} in the OCI security list or network security group attached to this instance.`,
+      commands: [],
+    };
+  }
+
+  return {
+    cloud,
+    title: 'Open remote firewall rules',
+    message: genericMessage,
+    commands: [],
+  };
+}
+
 function buildHostFirewallScript(action, ports = []) {
   const normalizedPorts = normalizeFirewallPorts(ports);
   const isOpenAction = action === 'open';
@@ -2012,9 +2106,9 @@ function tryCloseExternalAccessPorts(ports = [80]) {
 
 async function maybeOpenExternalAccessPorts(run, reverseProxy = {}) {
   run.openedReverseProxyPorts = [];
-  const requiredPorts = getReverseProxyRequiredFirewallPorts(reverseProxy);
+  const requiredPorts = getRequiredExternalFirewallPorts(reverseProxy);
   if (!requiredPorts.length) {
-    setStepStatus(run, 'firewall', 'complete', 'Automatic port opening skipped.', { log: false });
+    setStepStatus(run, 'firewall', 'complete', 'External port opening skipped for local setup.', { log: false });
     return;
   }
 
