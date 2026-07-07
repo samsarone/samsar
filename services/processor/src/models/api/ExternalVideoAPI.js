@@ -28,6 +28,23 @@ function normalizeString(value) {
   return typeof value === 'string' ? value.trim() : '';
 }
 
+function summarizePublicMediaUrl(value) {
+  const normalized = normalizeString(value).split('?')[0];
+  if (!normalized) {
+    return null;
+  }
+  try {
+    const parsed = new URL(normalized);
+    return {
+      protocol: parsed.protocol.replace(/:$/, ''),
+      host: parsed.host,
+      pathname: parsed.pathname,
+    };
+  } catch {
+    return { value: normalized };
+  }
+}
+
 function normalizeStatusString(value) {
   return normalizeString(value).toUpperCase();
 }
@@ -421,6 +438,18 @@ function decorateExternalStageStatus(statusPayload = {}, sessionData = {}, req =
     decorated.message = errorMessage;
     decorated.error = errorMessage;
   }
+  if (stageStatus === 'FAILED') {
+    console.error('[external_video][status_failed] external video stage failed', {
+      sessionId: sessionData?._id?.toString?.() || sessionData?._id || null,
+      stageKey,
+      routeType,
+      provider: decorated.provider || null,
+      errorMessage,
+      layerStatus: getExternalStageLayer(sessionData)?.lipSyncVideoGenerationStatus ||
+        getExternalStageLayer(sessionData)?.soundEffectVideoGenerationStatus ||
+        null,
+    });
+  }
   return decorated;
 }
 
@@ -545,6 +574,18 @@ async function requestExternalVideoMediaStage({
     throw buildExternalVideoError('audio_url is required and must be a publicly reachable URL.');
   }
 
+  console.log('[external_video][media_stage_request] creating external video media stage', {
+    stageKey,
+    routeType,
+    model,
+    duration,
+    aspectRatio,
+    promptLength: prompt.length,
+    requiresAudio,
+    videoUrl: summarizePublicMediaUrl(videoUrl),
+    audioUrl: summarizePublicMediaUrl(audioUrl),
+  });
+
   const layerId = new mongoose.Types.ObjectId();
   const audioLayerId = new mongoose.Types.ObjectId();
   const now = new Date();
@@ -557,6 +598,7 @@ async function requestExternalVideoMediaStage({
     isExternalVideoGeneration: true,
     externalVideoRoute: routeType,
     externalVideoStage: stageKey,
+    expressGenerationType: stageKey === 'lip_sync_generation' ? 'LIP_SYNC' : 'SOUND_EFFECT',
     aspectRatio,
     expressGenerativeVideoModel: model,
     layers: [{
@@ -609,6 +651,15 @@ async function requestExternalVideoMediaStage({
   });
 
   await sessionDoc.save();
+  console.log('[external_video][media_stage_request] external video session created', {
+    sessionId: sessionDoc._id.toString(),
+    layerId: layerId.toString(),
+    audioLayerId: requiresAudio ? audioLayerId.toString() : null,
+    stageKey,
+    routeType,
+    model,
+    duration,
+  });
 
   await requestGenerateCustomAIVideo(userId, {
     sessionId: sessionDoc._id.toString(),
@@ -625,6 +676,17 @@ async function requestExternalVideoMediaStage({
     ...(requiresAudio ? { audioLink: audioUrl } : {}),
     isAudioVideoGeneration: true,
     clipLayerToAiVideo: false,
+    retryOnFail: false,
+    generationType: stageKey === 'lip_sync_generation' ? 'lip_sync' : 'sound_effect',
+    samsarExternalProviderStage: stageKey,
+    samsarExternalVideoRoute: routeType,
+  });
+  console.log('[external_video][media_stage_request] queued external video provider generation', {
+    sessionId: sessionDoc._id.toString(),
+    layerId: layerId.toString(),
+    stageKey,
+    routeType,
+    model,
     retryOnFail: false,
   });
 

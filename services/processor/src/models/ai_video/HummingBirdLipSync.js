@@ -52,6 +52,9 @@ export async function requestRenderHummingBirdLipSyncVideo(payload) {
     prompt: prompt,
     model: model,
     duration: requestDuration,
+    generationType: 'lip_sync',
+    isAudioVideoGeneration: true,
+    retryOnFail: payload.retryOnFail ?? false,
   }
 
 
@@ -82,4 +85,3 @@ export async function requestRenderHummingBirdLipSyncVideo(payload) {
 
 
 }
-

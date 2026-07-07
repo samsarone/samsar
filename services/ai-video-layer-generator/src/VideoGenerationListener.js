@@ -901,6 +901,17 @@ function getErrorLogPayload(error) {
   };
 }
 
+function getProviderFailureMessage(payload = {}, fallback = 'AI video provider request failed.') {
+  return (
+    payload?.providerFailureMessage ||
+    payload?.lastProviderFailureMessage ||
+    payload?.lastTransientProviderErrorMessage ||
+    payload?.generationError ||
+    payload?.errorMessage ||
+    fallback
+  );
+}
+
 function getTransientDbLoopBackoffMs(failureCount) {
   const retryIndex = Math.max(0, failureCount - 1);
   const exponentialBackoffMs = Math.min(
@@ -1155,6 +1166,8 @@ async function generatePendingAiVideoLayerRequests() {
       await AIVideoLayerGeneration.findByIdAndUpdate(request._id, {
         status: 'FAILED',
         rowLocked: false,
+        lastProviderFailureMessage: e?.message || String(e),
+        lastProviderFailureDetail: getErrorLogPayload(e),
       });
     }
   }
@@ -1433,6 +1446,12 @@ async function pollForAIVideoCompletion(reqPayload) {
   } else if (responseStatus === 'FAILED') {
     if (await fallbackGoogleNativeVeo3Generation(payload, 'Google native Veo generation failed.')) {
       return;
+    }
+    if (responseData?.providerFailureMessage) {
+      payload.lastProviderFailureMessage = responseData.providerFailureMessage;
+    }
+    if (responseData?.providerStatus) {
+      payload.lastProviderFailureDetail = responseData.providerStatus;
     }
     await processVideoGenerationFailed(payload);
   } else if (responseStatus === 'PENDING') {
@@ -2606,6 +2625,7 @@ async function processLipSyncGenerationFailed(payload) {
     return;
   }
   let currentLayer = videoSession.layers[currentLayerIndex];
+  const failureMessage = getProviderFailureMessage(payload, `${model || 'Lip sync'} generation failed.`);
 
   // 2) If we can retry
   const shouldRetryLipSyncFailure = retryOnFail && !isSamsarExternalVideoRequest(payload);
@@ -2642,6 +2662,7 @@ async function processLipSyncGenerationFailed(payload) {
     currentLayer.hasSoundEffectVideoLayer = false;
     currentLayer.soundEffectGenerationPending = false;
     currentLayer.soundEffectVideoGenerationStatus = 'FAILED';
+    currentLayer.soundEffectVideoGenerationError = failureMessage;
     currentLayer.layerAiVideoType = 'ai_video';
     currentLayer.hasAiVideoLayer = true;
   } else if (LIPSYNC_MODELS.includes(model)) {
@@ -2649,7 +2670,20 @@ async function processLipSyncGenerationFailed(payload) {
     currentLayer.hasLipSyncVideoLayer = false;
     currentLayer.lipSyncGenerationPending = false;
     currentLayer.lipSyncVideoGenerationStatus = 'FAILED';
+    currentLayer.lipSyncVideoGenerationError = failureMessage;
   }
+
+  console.error('[lip_sync][generation_failed] marking lip/sound-effect video generation failed', {
+    sessionId,
+    layerId,
+    generationId,
+    model,
+    retryOnFail,
+    numRetries,
+    providerTimedOut,
+    failureMessage,
+    providerFailureDetail: payload?.lastProviderFailureDetail || null,
+  });
 
 
 

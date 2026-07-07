@@ -42,6 +42,9 @@ export async function requestRenderSyncLipSyncVideo(payload) {
     prompt: prompt,
     model: model,
     duration: requestDuration,
+    generationType: 'lip_sync',
+    isAudioVideoGeneration: true,
+    retryOnFail: payload.retryOnFail ?? false,
   }
 
 

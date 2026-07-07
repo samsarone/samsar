@@ -98,6 +98,18 @@ function summarizeExternalStatus(statusData = {}) {
   };
 }
 
+function getExternalStatusFailureMessage(statusData = {}) {
+  const summarized = summarizeExternalStatus(statusData);
+  return (
+    normalizeString(summarized?.message) ||
+    normalizeString(statusData?.message) ||
+    normalizeString(statusData?.error) ||
+    normalizeString(statusData?.data?.message) ||
+    normalizeString(statusData?.data?.error) ||
+    (summarized?.status ? `Samsar external video request failed with status ${summarized.status}.` : '')
+  );
+}
+
 function getAssetPathFromMediaReference(reference) {
   let normalized = normalizeString(reference).replace(/\\/g, '/').split('?')[0];
   if (!normalized) {
@@ -843,7 +855,11 @@ export async function listenToPendingSamsarExternalVideoRequest(payload = {}) {
       status: summarizeExternalStatus(statusData),
       detailedStatus: detailedStatusSummary,
     });
-    return { responseStatus: 'FAILED' };
+    return {
+      responseStatus: 'FAILED',
+      providerFailureMessage: getExternalStatusFailureMessage(detailedStatusSummary || statusData),
+      providerStatus: detailedStatusSummary || summarizeExternalStatus(statusData),
+    };
   }
 
   if (remoteUrl && !isSourceVideoUrl) {
