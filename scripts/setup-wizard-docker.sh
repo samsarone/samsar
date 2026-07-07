@@ -137,8 +137,24 @@ detect_free_disk_kib() {
   df -Pk "$ROOT_DIR" 2>/dev/null | awk 'NR == 2 { print $4; exit }'
 }
 
+detect_largest_disk_summary() {
+  df -Pk 2>/dev/null | awk '
+    NR > 1 && $4 ~ /^[0-9]+$/ && $6 !~ /^\/(dev|proc|sys|run)(\/|$)/ {
+      if ($4 > max) {
+        max = $4
+        mount = $6
+      }
+    }
+    END {
+      if (max > 0) {
+        printf "%.1f GiB free at %s", max / 1048576, mount
+      }
+    }
+  '
+}
+
 require_system_resources() {
-  local memory_mib disk_free_kib required_memory_mib required_disk_free_kib
+  local memory_mib disk_free_kib required_memory_mib required_disk_free_kib largest_disk_summary
   enabled "$RESOURCE_CHECK_ENABLED" || return 0
 
   memory_mib="$(detect_total_memory_mib || true)"
@@ -156,6 +172,12 @@ require_system_resources() {
     die "System check failed: detected $(format_mib_as_gib "$memory_mib") RAM, but Samsar Docker setup requires at least ${MIN_MEMORY_GB} GB RAM."
   fi
   if (( disk_free_kib < required_disk_free_kib )); then
+    largest_disk_summary="$(detect_largest_disk_summary || true)"
+    if [[ -n "$largest_disk_summary" ]]; then
+      warn "Largest detected non-system filesystem: ${largest_disk_summary}."
+    fi
+    warn "Attach or resize a disk so the Samsar repo and Docker data root have at least ${MIN_DISK_FREE_GB} GB free, then rerun this script."
+    warn "For a constrained test-only deployment, lower the check with SAMSAR_SETUP_MIN_DISK_FREE_GB=<gb>."
     die "System check failed: detected $(format_kib_as_gib "$disk_free_kib") free on the filesystem containing ${ROOT_DIR}, but Samsar Docker setup requires at least ${MIN_DISK_FREE_GB} GB free disk."
   fi
 
