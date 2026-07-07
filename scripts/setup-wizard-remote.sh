@@ -53,7 +53,8 @@ Options:
       --no-pull              Do not git pull before starting the remote wizard.
       --no-open-browser      Print the URL without opening a browser.
       --check-only           Verify the tunnel and exit.
-      --ssh-option <option>   Extra ssh option, for example "-o ProxyJump=bastion".
+      --ssh-option <key=value>
+                              Extra ssh -o option, for example ProxyJump=bastion.
   -h, --help                  Show this help text.
 
 Examples:
@@ -122,7 +123,7 @@ parse_args() {
         ;;
       --ssh-option)
         [[ $# -ge 2 ]] || die "$1 requires a value."
-        SSH_OPTIONS+=("$2")
+        SSH_OPTIONS+=("-o" "$2")
         shift 2
         ;;
       -h|--help)
@@ -179,10 +180,10 @@ find_local_port() {
 remote_cd_expr() {
   local suffix
   case "$REMOTE_DIR" in
-    "~")
+    ~)
       printf '$HOME'
       ;;
-    "~/"*)
+    ~/*)
       suffix="${REMOTE_DIR#~/}"
       printf '$HOME/%s' "$(quote_arg "$suffix")"
       ;;
@@ -204,7 +205,11 @@ build_remote_command() {
     remote_env+=" SAMSAR_SETUP_MIN_DISK_FREE_GB=$(quote_arg "$MIN_DISK_FREE_GB")"
   fi
 
-  extra_args="$(quote_args "${REMOTE_SETUP_ARGS[@]}")"
+  if ((${#REMOTE_SETUP_ARGS[@]})); then
+    extra_args="$(quote_args "${REMOTE_SETUP_ARGS[@]}")"
+  else
+    extra_args=""
+  fi
   command+=" ${remote_env} npm run setup-wizard -- --no-open-setup-port"
   if [[ -n "$extra_args" ]]; then
     command+=" ${extra_args}"
