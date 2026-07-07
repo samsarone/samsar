@@ -96,6 +96,39 @@ test('Samsar external route detection prefers image-to-video when a stale text r
   );
 });
 
+test('Samsar external route detection treats lip-sync model video/audio payloads as lip sync', () => {
+  assert.equal(
+    resolveExternalVideoRoute({
+      model: 'SYNCLIPSYNC',
+      videoLink: 'https://media.example.com/source.mp4',
+      audioLink: 'https://media.example.com/speech.mp3',
+    }),
+    'lip_sync',
+  );
+});
+
+test('Samsar external route detection overrides stale text route for lip-sync video/audio payloads', () => {
+  assert.equal(
+    resolveExternalVideoRoute({
+      samsarExternalVideoRoute: 'text_to_video',
+      model: 'SYNCLIPSYNC',
+      videoLink: 'https://media.example.com/source.mp4',
+      audioLink: 'https://media.example.com/speech.mp3',
+    }),
+    'lip_sync',
+  );
+});
+
+test('Samsar external route detection treats source-video-only payloads as sound effect', () => {
+  assert.equal(
+    resolveExternalVideoRoute({
+      model: 'MIRELOAI',
+      videoLink: 'https://media.example.com/source.mp4',
+    }),
+    'sound_effect',
+  );
+});
+
 test('Samsar external lip sync payload resolves Docker video and audio URLs to the public processor path', async () => {
   const envSnapshot = snapshotEnv();
   configureDockerPublicMedia();
