@@ -93,6 +93,24 @@ const formatDockerStatus = (item = {}) => {
   return item.status || metadata.status || "requested";
 };
 
+const formatTeamActor = (item = {}) => {
+  const metadata = item.metadata && typeof item.metadata === "object" ? item.metadata : {};
+  const name = item.teamMemberName || metadata.teamMemberName || "";
+  const email = item.teamMemberEmail || metadata.teamMemberEmail || "";
+
+  if (!name && !email) {
+    return {
+      label: "Owner",
+      detail: "",
+    };
+  }
+
+  return {
+    label: name || email,
+    detail: name && email && name !== email ? email : "Team member",
+  };
+};
+
 const getUsageSubRows = (item = {}) => (
   Array.isArray(item.subRows) ? item.subRows : []
 );
@@ -482,12 +500,13 @@ export default function UsagePanelContent() {
           </div>
         ) : (
           <div className="max-w-full overflow-x-auto">
-            <table className={isDockerInstall ? "min-w-[900px] text-sm" : "min-w-[920px] text-sm"}>
+            <table className={isDockerInstall ? "min-w-[1040px] text-sm" : "min-w-[920px] text-sm"}>
               <thead className={headerBg}>
                 {isDockerInstall ? (
                   <tr>
                     <th className="px-4 py-3 text-left">Request type</th>
                     <th className="px-4 py-3 text-left">Provider</th>
+                    <th className="px-4 py-3 text-left">Actor</th>
                     <th className="px-4 py-3 text-left">Model / job</th>
                     <th className="px-4 py-3 text-left">Status</th>
                     <th className="px-4 py-3 text-left">Time</th>
@@ -509,6 +528,7 @@ export default function UsagePanelContent() {
                     ? formatDeploymentProviderLabel(providerValue)
                     : "Unknown provider";
                   const requestTypeLabel = formatSourceLabel(getUsageRequestType(item));
+                  const teamActor = formatTeamActor(item);
                   const subRows = getUsageSubRows(item);
 
                   return (
@@ -522,6 +542,12 @@ export default function UsagePanelContent() {
                           <>
                             <td className="px-4 py-3 font-medium">{requestTypeLabel}</td>
                             <td className="px-4 py-3 font-medium">{providerLabel}</td>
+                            <td className="px-4 py-3">
+                              <div className="font-medium">{teamActor.label}</div>
+                              {teamActor.detail && (
+                                <div className={`break-all text-xs ${secondaryTextColor}`}>{teamActor.detail}</div>
+                              )}
+                            </td>
                             <td className={`px-4 py-3 ${secondaryTextColor}`}>
                               {formatDockerModelJob(item)}
                             </td>

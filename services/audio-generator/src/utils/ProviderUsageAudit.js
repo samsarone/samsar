@@ -35,6 +35,11 @@ export function resolveDockerJobType(payload = {}) {
 export async function recordProviderUsageLog(input = {}) {
   if (!isProviderUsageAuditEnabled()) return null;
   const payload = input.payload || {};
+  const metadata = normalizeMetadata(input.metadata);
+  const teamOwnerUserId = normalizeString(input.teamOwnerUserId ?? payload.teamOwnerUserId ?? metadata.teamOwnerUserId);
+  const teamMemberUserId = normalizeString(input.teamMemberUserId ?? payload.teamMemberUserId ?? metadata.teamMemberUserId);
+  const teamMemberName = normalizeString(input.teamMemberName ?? payload.teamMemberName ?? metadata.teamMemberName);
+  const teamMemberEmail = normalizeString(input.teamMemberEmail ?? payload.teamMemberEmail ?? metadata.teamMemberEmail);
   const userId = normalizeString(input.userId ?? payload.userId);
   if (!userId) return null;
 
@@ -55,6 +60,10 @@ export async function recordProviderUsageLog(input = {}) {
 
   const doc = {
     userId,
+    teamOwnerUserId,
+    teamMemberUserId: teamOwnerUserId ? teamMemberUserId : '',
+    teamMemberName: teamOwnerUserId ? teamMemberName : '',
+    teamMemberEmail: teamOwnerUserId ? teamMemberEmail : '',
     sessionId: normalizeString(input.sessionId ?? input.videoSessionId ?? payload.sessionId ?? payload.videoSessionId),
     layerId: normalizeString(input.layerId ?? payload.layerId ?? payload.currentLayerId),
     audioLayerId: normalizeString(input.audioLayerId ?? payload.audioLayerId),
@@ -70,7 +79,17 @@ export async function recordProviderUsageLog(input = {}) {
     status: normalizeString(input.status) || 'requested',
     source: normalizeString(input.source) || 'internal_generation',
     service,
-    metadata: normalizeMetadata(input.metadata),
+    metadata: {
+      ...metadata,
+      ...(teamOwnerUserId
+        ? {
+          teamOwnerUserId,
+          teamMemberUserId,
+          teamMemberName,
+          teamMemberEmail,
+        }
+        : {}),
+    },
   };
 
   try {

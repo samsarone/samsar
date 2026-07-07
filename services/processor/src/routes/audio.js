@@ -8,6 +8,7 @@ import {
   logSharedSessionEditOperation,
 } from '../models/VideoSession.js';
 import { verifyUserAuth } from '../models/Auth.js';
+import { attachTeamContextToPayload, consumeTeamMemberModelApiCall } from '../models/Team.js';
 import 'dotenv/config';
 
 const router = express.Router();
@@ -21,7 +22,14 @@ router.post('/request_generate_audio', async function(req, res) {
     return;
   }
   try {
+    attachTeamContextToPayload(payload);
     await assertVideoSessionEditableAccess(userId, payload);
+    await consumeTeamMemberModelApiCall({
+      requestType: payload.audioType || payload.requestType || 'audio_generation',
+      sessionId: payload.sessionId || payload.videoSessionId,
+      route: '/audio/request_generate_audio',
+      payload,
+    });
     const response = await createGenerateAudioRequest(userId, payload);
     await logSharedSessionEditOperation(userId, payload, {
       operation: 'request_generate_audio',

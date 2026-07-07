@@ -1,7 +1,7 @@
 import express from 'express';
 import {
   setUserData, getUserData, verifyUserSession,
-  verifyUserToken, verifyEmail, requestApplyCreditsCoupon,
+  verifyEmail, requestApplyCreditsCoupon,
   updateUserDetails, startFreeTrial,
   deleteUser, deleteProjects, deleteGenerations,
   getAPIKeysForUser, createAPIKeyForUser, deleteUserAPIKey, deleteAllAPIKeysForUser,
@@ -10,10 +10,20 @@ import {
   formatUserClientProfile,
   bootstrapDockerAdminUser,
 } from '../models/User.js';
+import {
+  acceptTeamInvitation,
+  enableTeamAccount,
+  getTeamStatus,
+  inviteTeamMember,
+  previewTeamInvitation,
+  revokeTeamInvitation,
+  updateTeamMember,
+} from '../models/Team.js';
 import { authenticateWithAuthToken, authenticateWithLoginToken, createLoginTokenForUser } from '../models/api/UserAPI.js';
 import { formatExternalUserClientProfile } from '../models/external/User.js';
 
 import { verifyUserAuthentication } from '../models/Auth.js';
+import { getRequestAuthContext } from '../models/api/RequestAuthContext.js';
 import {
   loginUserByEmail, registerUserByEmail, sendForgotPasswordEmail,
   resetUserPassword, updateUserPassword
@@ -105,8 +115,7 @@ router.get('/verify_token', async (req, res) => {
       return;
     }
 
-    const userData = await verifyUserToken({ authToken });
-    res.send(formatUserClientProfile(userData));
+    res.send(formatUserClientProfile(user));
   } catch (e) {
     res.status(400).send({ error: e.message });
   }
@@ -287,6 +296,111 @@ async function getUserIdOrReject(req, res) {
   return userId;
 }
 
+function isTeamMemberRequest() {
+  return Boolean(getRequestAuthContext()?.isTeamMember);
+}
+
+function rejectTeamMemberRoute(res, message = 'Team member accounts cannot access this route.') {
+  res.status(403).send({ error: message });
+  return true;
+}
+
+router.get('/team/status', async (req, res) => {
+  try {
+    const userId = await getUserIdOrReject(req, res);
+    if (!userId) return;
+
+    if (isTeamMemberRequest()) {
+      res.send({
+        canManageTeam: false,
+        available: false,
+        isTeamMember: true,
+      });
+      return;
+    }
+
+    res.send(await getTeamStatus(userId));
+  } catch (e) {
+    res.status(e.status || 500).send({ error: e.message });
+  }
+});
+
+router.post('/team/enable', async (req, res) => {
+  try {
+    const userId = await getUserIdOrReject(req, res);
+    if (!userId) return;
+    if (isTeamMemberRequest()) return rejectTeamMemberRoute(res);
+
+    res.send(await enableTeamAccount(userId));
+  } catch (e) {
+    res.status(e.status || 500).send({ error: e.message, prerequisites: e.prerequisites });
+  }
+});
+
+router.get('/team/members', async (req, res) => {
+  try {
+    const userId = await getUserIdOrReject(req, res);
+    if (!userId) return;
+    if (isTeamMemberRequest()) return rejectTeamMemberRoute(res);
+
+    res.send(await getTeamStatus(userId));
+  } catch (e) {
+    res.status(e.status || 500).send({ error: e.message });
+  }
+});
+
+router.post('/team/invite', async (req, res) => {
+  try {
+    const userId = await getUserIdOrReject(req, res);
+    if (!userId) return;
+    if (isTeamMemberRequest()) return rejectTeamMemberRoute(res);
+
+    res.send(await inviteTeamMember(userId, req.body || {}));
+  } catch (e) {
+    res.status(e.status || 500).send({ error: e.message, prerequisites: e.prerequisites });
+  }
+});
+
+router.patch('/team/members/:memberId', async (req, res) => {
+  try {
+    const userId = await getUserIdOrReject(req, res);
+    if (!userId) return;
+    if (isTeamMemberRequest()) return rejectTeamMemberRoute(res);
+
+    res.send(await updateTeamMember(userId, req.params.memberId, req.body || {}));
+  } catch (e) {
+    res.status(e.status || 500).send({ error: e.message });
+  }
+});
+
+router.delete('/team/invitations/:invitationId', async (req, res) => {
+  try {
+    const userId = await getUserIdOrReject(req, res);
+    if (!userId) return;
+    if (isTeamMemberRequest()) return rejectTeamMemberRoute(res);
+
+    res.send(await revokeTeamInvitation(userId, req.params.invitationId));
+  } catch (e) {
+    res.status(e.status || 500).send({ error: e.message });
+  }
+});
+
+router.get('/team/invite/preview', async (req, res) => {
+  try {
+    res.send(await previewTeamInvitation(req.query.token));
+  } catch (e) {
+    res.status(e.status || 500).send({ error: e.message });
+  }
+});
+
+router.post('/team/accept_invite', async (req, res) => {
+  try {
+    res.send(await acceptTeamInvitation(req.body || {}));
+  } catch (e) {
+    res.status(e.status || 500).send({ error: e.message });
+  }
+});
+
 router.post('/upgrade_plan', async (req, res) => {
   try {
     const userId = await getUserIdOrReject(req, res);
@@ -302,6 +416,7 @@ router.post('/purchase_credits', async (req, res) => {
   try {
     const userId = await getUserIdOrReject(req, res);
     if (!userId) return;
+    if (isTeamMemberRequest()) return rejectTeamMemberRoute(res, 'Team member accounts cannot purchase credits.');
     const session = await purchaseCreditsForUser(userId, req.body);
     res.send(session);
   } catch (e) {
@@ -324,6 +439,7 @@ router.post('/auto_recharge/settings', async (req, res) => {
   try {
     const userId = await getUserIdOrReject(req, res);
     if (!userId) return;
+    if (isTeamMemberRequest()) return rejectTeamMemberRoute(res, 'Team member accounts cannot manage billing settings.');
     const result = await saveAutoRechargeSettings(userId, req.body || {});
     res.send(result);
   } catch (e) {
@@ -335,6 +451,7 @@ router.post('/auto_recharge/threshold', async (req, res) => {
   try {
     const userId = await getUserIdOrReject(req, res);
     if (!userId) return;
+    if (isTeamMemberRequest()) return rejectTeamMemberRoute(res, 'Team member accounts cannot manage billing settings.');
     const result = await updateAutoRechargeThreshold(userId, req.body || {});
     res.send(result);
   } catch (e) {
@@ -351,6 +468,7 @@ router.post('/auto_recharge/start_setup', async (req, res) => {
   try {
     const userId = await getUserIdOrReject(req, res);
     if (!userId) return;
+    if (isTeamMemberRequest()) return rejectTeamMemberRoute(res, 'Team member accounts cannot manage billing settings.');
     const session = await createAutoRechargeSetupSession(userId, req.body || {});
     res.send({ url: session.url });
   } catch (e) {
@@ -362,6 +480,7 @@ router.post('/auto_recharge/trigger', async (req, res) => {
   try {
     const userId = await getUserIdOrReject(req, res);
     if (!userId) return;
+    if (isTeamMemberRequest()) return rejectTeamMemberRoute(res, 'Team member accounts cannot manage billing settings.');
     const result = await checkAndTriggerAutoRecharge(userId, req.body || {});
     res.send(result);
   } catch (e) {
@@ -373,6 +492,7 @@ router.post('/auto_recharge/cancel', async (req, res) => {
   try {
     const userId = await getUserIdOrReject(req, res);
     if (!userId) return;
+    if (isTeamMemberRequest()) return rejectTeamMemberRoute(res, 'Team member accounts cannot manage billing settings.');
     const result = await cancelAutoRecharge(userId);
     res.send(result);
   } catch (e) {
@@ -479,7 +599,11 @@ router.post('/update', async (req, res) => {
   try {
     const userId = await getUserIdOrReject(req, res);
     if (!userId) return;
-    const session = await updateUserDetails(userId, req.body);
+    const authContext = getRequestAuthContext();
+    const updateUserId = authContext?.isTeamMember && authContext?.signedUserId
+      ? authContext.signedUserId
+      : userId;
+    const session = await updateUserDetails(updateUserId, req.body);
     res.send(formatUserClientProfile(session));
   } catch (e) {
     res.status(400).send({ error: e.message });
@@ -502,6 +626,7 @@ router.post('/delete_user', async (req, res) => {
   try {
     const userId = await getUserIdOrReject(req, res);
     if (!userId) return;
+    if (isTeamMemberRequest()) return rejectTeamMemberRoute(res, 'Team member accounts cannot delete the owner account.');
     await deleteUser(userId);
     res.send({});
   } catch (e) {
@@ -513,6 +638,7 @@ router.post('/delete_projects', async (req, res) => {
   try {
     const userId = await getUserIdOrReject(req, res);
     if (!userId) return;
+    if (isTeamMemberRequest()) return rejectTeamMemberRoute(res, 'Team member accounts cannot delete owner projects.');
     await deleteProjects(userId);
     res.send({});
   } catch (e) {
@@ -524,6 +650,7 @@ router.post('/delete_generations', async (req, res) => {
   try {
     const userId = await getUserIdOrReject(req, res);
     if (!userId) return;
+    if (isTeamMemberRequest()) return rejectTeamMemberRoute(res, 'Team member accounts cannot delete owner generations.');
     await deleteGenerations(userId);
     res.send({});
   } catch (e) {
@@ -544,6 +671,7 @@ router.get('/api_keys', async (req, res) => {
   try {
     const userId = await getUserIdOrReject(req, res);
     if (!userId) return;
+    if (isTeamMemberRequest()) return rejectTeamMemberRoute(res, 'Team member accounts cannot access API keys.');
     const apiKeys = await getAPIKeysForUser(userId);
     res.send({ apiKeys });
   } catch (e) {
@@ -555,6 +683,7 @@ router.post('/api_keys', async (req, res) => {
   try {
     const userId = await getUserIdOrReject(req, res);
     if (!userId) return;
+    if (isTeamMemberRequest()) return rejectTeamMemberRoute(res, 'Team member accounts cannot create API keys.');
     const { expiresAt = null } = req.body || {};
     const apiKey = await createAPIKeyForUser(userId, expiresAt, req.body || {});
     res.send({ apiKey });
@@ -567,6 +696,7 @@ router.patch('/api_keys/:keyId/limit', async (req, res) => {
   try {
     const userId = await getUserIdOrReject(req, res);
     if (!userId) return;
+    if (isTeamMemberRequest()) return rejectTeamMemberRoute(res, 'Team member accounts cannot update API keys.');
     const apiKey = await updateUserAPIKeyLimit(userId, req.params.keyId, req.body || {});
     res.send({ apiKey });
   } catch (e) {
@@ -578,6 +708,7 @@ router.put('/api_keys/:keyId', async (req, res) => {
   try {
     const userId = await getUserIdOrReject(req, res);
     if (!userId) return;
+    if (isTeamMemberRequest()) return rejectTeamMemberRoute(res, 'Team member accounts cannot update API keys.');
     const apiKey = await updateUserAPIKeyLimit(userId, req.params.keyId, req.body || {});
     res.send({ apiKey });
   } catch (e) {
@@ -589,6 +720,7 @@ router.delete('/api_keys/:keyId', async (req, res) => {
   try {
     const userId = await getUserIdOrReject(req, res);
     if (!userId) return;
+    if (isTeamMemberRequest()) return rejectTeamMemberRoute(res, 'Team member accounts cannot delete API keys.');
     await deleteUserAPIKey(userId, req.params.keyId);
     res.send({ success: true });
   } catch (e) {
@@ -600,6 +732,7 @@ router.delete('/api_keys', async (req, res) => {
   try {
     const userId = await getUserIdOrReject(req, res);
     if (!userId) return;
+    if (isTeamMemberRequest()) return rejectTeamMemberRoute(res, 'Team member accounts cannot delete API keys.');
     await deleteAllAPIKeysForUser(userId);
     res.send({ success: true });
   } catch (e) {
@@ -648,7 +781,11 @@ router.post('/update_password', async (req, res) => {
     const { currentPassword, newPassword } = req.body;
     const userId = await getUserIdOrReject(req, res);
     if (!userId) return;
-    const result = await updateUserPassword(userId, { currentPassword, newPassword });
+    const authContext = getRequestAuthContext();
+    const passwordUserId = authContext?.isTeamMember && authContext?.signedUserId
+      ? authContext.signedUserId
+      : userId;
+    const result = await updateUserPassword(passwordUserId, { currentPassword, newPassword });
     res.send(result);
   } catch (e) {
     res.status(500).send({ error: 'Failed to update password' });

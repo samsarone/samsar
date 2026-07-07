@@ -1,5 +1,49 @@
 import axios from "axios";
 
+export const DEPLOYMENT_PROVIDER_CAPABILITY_FALLBACKS = Object.freeze({
+  samsar: {
+    label: "Samsar API Key",
+    requiredFor: ["All models", "All actions"],
+    models: [
+      "gpt-5.5",
+      "gemini-3.1-pro",
+      "GPTIMAGE2",
+      "RUNWAYML",
+      "VEO3.1I2V",
+      "LYRIA3",
+      "OPENAI_TTS",
+      "GOOGLE_TTS",
+      "MMAUDIO",
+      "LATENT_SYNC",
+    ],
+    actions: ["chat", "assistant", "image", "video", "audio", "lip_sync", "sound_effect"],
+  },
+  openai: {
+    label: "OpenAI",
+    requiredFor: ["GPT 5.5", "assistant", "vision", "moderation", "OpenAI image", "OpenAI TTS"],
+    models: ["gpt-5.5", "GPTIMAGE2", "OPENAI_TTS"],
+    actions: ["chat", "assistant", "moderation", "image", "audio"],
+  },
+  googleCloud: {
+    label: "Google Cloud",
+    requiredFor: ["Gemini 3.1 Pro", "moderation", "Veo", "Lyria", "Google TTS"],
+    models: ["gemini-3.1-pro", "VEO3.1I2V", "VEO3.1I2VFAST", "LYRIA3", "GOOGLE_TTS"],
+    actions: ["chat", "assistant", "moderation", "video", "audio"],
+  },
+  fal: {
+    label: "FAL",
+    requiredFor: ["FAL image models", "FAL audio models", "lip sync", "sound effects"],
+    models: ["NANOBANANA2", "NANOBANANAPRO", "MMAUDIO", "LATENT_SYNC"],
+    actions: ["image", "audio", "lip_sync", "sound_effect"],
+  },
+  runway: {
+    label: "RunwayML",
+    requiredFor: ["Runway video generation", "image-to-video"],
+    models: ["RUNWAYML"],
+    actions: ["video"],
+  },
+});
+
 const PROVIDER_LABELS = {
   samsar: "Samsar API Key",
   openai: "OpenAI",
@@ -266,5 +310,67 @@ export function filterOptionsForDeploymentModelValues(options = [], modelValues 
 
 export async function fetchDeploymentProviderConfig(processorServer, requestConfig) {
   const response = await axios.get(`${processorServer}/v1/video/supported_models`, requestConfig);
+  return response.data || {};
+}
+
+export async function fetchDeploymentProviderCapabilities(processorServer, requestConfig) {
+  const response = await axios.get(`${processorServer}/external/providers/capabilities`, requestConfig);
+  return response.data?.providers || DEPLOYMENT_PROVIDER_CAPABILITY_FALLBACKS;
+}
+
+export async function validateDeploymentProviderCredentials(processorServer, payload, requestConfig) {
+  const response = await axios.post(
+    `${processorServer}/external/providers/validate`,
+    payload,
+    requestConfig
+  );
+  return response.data || {};
+}
+
+function resolveProviderReconfigureEndpoint(processorServer) {
+  const configuredEndpoint = import.meta.env.VITE_DOCKER_PROVIDER_RECONFIGURE_ENDPOINT;
+  const endpoint = configuredEndpoint || "/external/providers/reconfigure";
+  if (/^https?:\/\//i.test(endpoint)) {
+    return endpoint;
+  }
+  return `${processorServer}${endpoint.startsWith("/") ? endpoint : `/${endpoint}`}`;
+}
+
+function resolveProviderStatusEndpoint(processorServer, statusUrl, operationId) {
+  if (statusUrl) {
+    return /^https?:\/\//i.test(statusUrl) ? statusUrl : `${processorServer}${statusUrl.startsWith("/") ? statusUrl : `/${statusUrl}`}`;
+  }
+
+  const configuredEndpoint = import.meta.env.VITE_DOCKER_PROVIDER_RECONFIGURE_STATUS_ENDPOINT;
+  if (!configuredEndpoint || !operationId) {
+    return "";
+  }
+
+  const endpoint = configuredEndpoint.replace(":operationId", encodeURIComponent(operationId));
+  if (/^https?:\/\//i.test(endpoint)) {
+    return endpoint;
+  }
+  return `${processorServer}${endpoint.startsWith("/") ? endpoint : `/${endpoint}`}`;
+}
+
+export async function requestDeploymentProviderReconfiguration(processorServer, payload, requestConfig) {
+  const response = await axios.post(
+    resolveProviderReconfigureEndpoint(processorServer),
+    payload,
+    requestConfig
+  );
+  return response.data || {};
+}
+
+export async function fetchDeploymentProviderReconfigurationStatus(
+  processorServer,
+  { statusUrl, operationId } = {},
+  requestConfig
+) {
+  const endpoint = resolveProviderStatusEndpoint(processorServer, statusUrl, operationId);
+  if (!endpoint) {
+    return null;
+  }
+  const response = await axios.get(endpoint, requestConfig);
   return response.data || {};
 }

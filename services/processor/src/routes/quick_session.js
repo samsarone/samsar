@@ -8,6 +8,7 @@ import {
 
 } from '../models/QuickSession.js';
 import { verifyUserAuth } from '../models/Auth.js';
+import { attachTeamContextToPayload, consumeTeamMemberModelApiCall } from '../models/Team.js';
 
 const router = express.Router();
 
@@ -25,6 +26,13 @@ router.post('/create', async function (req, res) {
 
 
   try {
+   attachTeamContextToPayload(payload);
+   await consumeTeamMemberModelApiCall({
+     requestType: 'quick_video',
+     sessionId: payload.sessionId || payload.id,
+     route: '/quick_session/create',
+     payload,
+   });
    await setSessionQuickGenerationPending(userId, payload);
 
     createQuickSession(userId, payload);

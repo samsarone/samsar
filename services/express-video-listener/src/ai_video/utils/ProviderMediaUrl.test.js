@@ -15,7 +15,12 @@ const ENV_KEYS = [
   'SAMSAR_MEDIA_TUNNEL_PUBLIC_URL',
   'SAMSAR_PUBLIC_MEDIA_BASE_URL',
   'SAMSAR_EXTERNAL_MEDIA_PUBLIC_BASE_URL',
+  'SAMSAR_DOCKER_PUBLIC_ASSET_BASE_URL',
+  'SAMSAR_DOCKER_PUBLIC_PROCESSOR_BASE_URL',
   'MEDIA_PUBLIC_URL',
+  'PUBLIC_API_BASE_URL',
+  'PROCESSOR_API',
+  'PROCESSOR_URL',
   'PUBLIC_STATIC_CDN_URL',
   'STATIC_CDN_URL',
   'SAMSAR_RUNTIME_CONFIG_FILE',
@@ -110,6 +115,52 @@ test('rejects Docker local provider AI-video URLs when no public media tunnel is
   const { tempRoot, userId, mediaRelativePath } = prepareDockerMediaFixture({
     publicMediaUrl: 'http://localhost:8080/',
   });
+
+  try {
+    const { resolveProviderAiVideoUrl } = await importProviderMediaUrlModule();
+    await assert.rejects(
+      () => resolveProviderAiVideoUrl({
+        userId,
+        layer: {
+          aiVideoRemoteLink: `http://localhost:8080/${mediaRelativePath}`,
+        },
+      }),
+      /A public media URL is required/
+    );
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+    restoreEnv(envSnapshot);
+  }
+});
+
+test('resolves Docker provider AI-video URLs through a public IP processor path', async () => {
+  const envSnapshot = snapshotEnv();
+  const { tempRoot, userId, mediaRelativePath } = prepareDockerMediaFixture({
+    publicMediaUrl: 'http://localhost:8080/',
+  });
+  process.env.SAMSAR_DOCKER_PUBLIC_PROCESSOR_BASE_URL = 'http://203.0.113.10/api';
+
+  try {
+    const { resolveProviderAiVideoUrl } = await importProviderMediaUrlModule();
+    const url = await resolveProviderAiVideoUrl({
+      userId,
+      layer: {
+        aiVideoRemoteLink: `http://localhost:8080/${mediaRelativePath}`,
+      },
+    });
+    assert.equal(url, `http://203.0.113.10/api/${mediaRelativePath}`);
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+    restoreEnv(envSnapshot);
+  }
+});
+
+test('does not use private IP processor bases for external AI-video provider URLs', async () => {
+  const envSnapshot = snapshotEnv();
+  const { tempRoot, userId, mediaRelativePath } = prepareDockerMediaFixture({
+    publicMediaUrl: 'http://localhost:8080/',
+  });
+  process.env.SAMSAR_DOCKER_PUBLIC_PROCESSOR_BASE_URL = 'http://192.168.1.25';
 
   try {
     const { resolveProviderAiVideoUrl } = await importProviderMediaUrlModule();

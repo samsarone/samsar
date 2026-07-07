@@ -18,8 +18,8 @@ Runtime configuration, generated secrets, and local deployment resources are sto
 
 ## Salient Features
 
-- Zero-shot text-to-video up to 3 minutes for documentary, infotainment, ed-tech, film summary, custom themes, and original ideas.
-- Zero-shot image-list-to-video that turns product images into polished ad videos with optional narrator avatar, outro, and CTA.
+- One-shot text-to-video up to 3 minutes for documentary, infotainment, ed-tech, film summary, custom themes, and original ideas.
+- One-shot image-list-to-video that turns product images into polished ad videos with optional narrator avatar, outro, and CTA.
 - One-click scene re-rolls after render to fix small imperfections without rebuilding the full project.
 - Full Studio workspace for detailed, granular post-processing.
 - Sandboxed local logging, with logs and traces kept on your machine.
@@ -114,7 +114,7 @@ npm run sync
 npm run setup-wizard:docker
 ```
 
-Open `http://localhost:8089`. The command builds and starts the setup wizard container. After you complete the browser flow, the wizard writes deployment config, renders runtime env and model availability, builds and starts the selected Docker Compose profiles, publishes the local media gateway when required, verifies the processor API and Studio client, and prepares local login.
+The command builds and starts the setup wizard container, prints localhost/private-IP setup URLs, prints a public-IP setup URL only when TCP `8089` responds on that public address, waits for the wizard to respond, and tries to open `http://localhost:8089` in the default browser on hosts with desktop browser access. Set `SAMSAR_SETUP_OPEN_BROWSER=0` to skip browser auto-open. After you complete the browser flow, the wizard writes deployment config, renders runtime env and model availability, builds and starts the selected Docker Compose profiles, publishes the local media gateway when required, verifies the processor API and Studio client, and prepares local login.
 
 Open the local services after setup completes:
 
@@ -136,16 +136,17 @@ npm run docker:down
 
 Use the setup wizard when you want a UI-driven local Docker setup flow. Use the manual `runtime/config/samsar.config.json` flow when you want direct control over credentials, provider selection, storage URLs, database settings, or mail settings.
 
-The wizard follows four configuration steps:
+The wizard follows five configuration steps:
 
 | Step | What it configures | Runtime effect |
 | --- | --- | --- |
 | Providers | OpenAI, Google Cloud, FAL, ElevenLabs, RunwayML, and optional Samsar API key | Controls which models/actions appear in `runtime/config/available-models.json`. |
 | Services | Processor, setup wizard, image generator, assistant query processor, audio generator, AI video layer generator, video renderer, frames processor, express video listener, and logger | Determines which Docker service families are enabled for the local runtime. |
 | Mail and Data | Local or remote MongoDB, local MinIO or external S3-compatible storage, SMTP/SES/disabled mail | Writes database, storage, CDN, media, and mail settings. |
+| Domain | Optional nginx reverse proxy for a public domain/subdomain, public IP, or private IP, with optional IP detection, port opening, and Let's Encrypt SSL for validated domains | Enables public or intranet access URLs for Studio and the processor API. |
 | Admin | Organization and initial admin/login setup | Prepares Docker setup login and local access details. |
 
-During setup, the wizard saves deployment config, renders runtime env, starts containers, publishes the local media gateway, verifies the processor API and client, and prepares local login. See [Setup Wizard](pages/setup-wizard.md) for the detailed lifecycle.
+During setup, the wizard saves deployment config, renders runtime env, starts containers, configures the optional reverse proxy, publishes the local media gateway when required, verifies the processor API and client, and prepares local login. See [Setup Wizard](pages/setup-wizard.md) for the detailed lifecycle.
 
 ## Manual Docker Setup
 
@@ -219,7 +220,7 @@ After the setup wizard completes, or after `npm run config:render` in the manual
 npm run docker:config
 ```
 
-`npm run docker:up` renders `runtime/secrets/root.env` and `runtime/config/available-models.json`, then starts every local profile:
+`npm run docker:up` renders `runtime/secrets/root.env` and `runtime/config/available-models.json`, then starts the local default profiles. The setup wizard adds the reverse-proxy profile only when nginx access is enabled.
 
 | Profile | Services |
 | --- | --- |
@@ -229,6 +230,7 @@ npm run docker:config
 | `minio` | `minio` |
 | `local-media` | `media-gateway` |
 | `logger` | `loki`, `promtail`, `grafana` |
+| `reverse-proxy` | Optional `reverse-proxy` nginx service when enabled by the setup wizard. |
 
 Run `npm run docker:setup-assets` during manual setup or whenever fonts/logger config need to be refreshed. The script installs subtitle/render fonts into `runtime/fonts`, copies them into any running Samsar service containers, and recreates Promtail/Grafana only when `services.logger` is enabled so Docker logs are available in local Grafana.
 
@@ -268,6 +270,8 @@ http://localhost:8080/assets_v2/video/output/<session-id>/<file>.mp4
 
 That URL is served by the local media gateway. It is not an S3 or CloudFront URL unless external media publishing is enabled in runtime config.
 
+If the setup wizard configures a public domain or public IP reverse proxy for the processor API, returned media URLs and external AI adapter input media use that public processor host instead of the local media gateway/tunnel. Public/private IP installs use one machine IP: Studio is served at `http://<ip>` and processor/media URLs use `http://<ip>/api`. If the reverse proxy uses a private IP, intranet users can still access the instance, but external AI providers continue to use the public media tunnel because private addresses are not provider-visible.
+
 When a remote provider must fetch local-only media from your Docker stack, Samsar needs a public media base URL. The setup wizard starts a temporary media tunnel automatically when local media publishing is required for the selected configuration. If you are using the manual config flow, or if a remote provider cannot fetch local media, start the tunnel yourself:
 
 ```bash
@@ -293,6 +297,7 @@ The example config uses local Docker defaults:
 - `publicUrls.clientApp`: `http://localhost:3000`
 - `publicUrls.processorApi`: `http://localhost:3002`
 - `publicUrls.media`: `http://localhost:8080`
+- `reverseProxy.enabled`: `false`
 
 Provider credentials are configured under `providers`. Enable only the providers you intend to use, then rerender config:
 
@@ -331,7 +336,9 @@ Service account keys are long-lived secrets. Prefer attached service accounts on
 
 External IP access is not enabled by default. Keep the Docker stack on localhost unless you intentionally want public access to your generative server.
 
-If you expose Studio, the processor API, media gateway, setup wizard, MinIO, or Grafana through a public IP, DNS record, reverse proxy, or tunnel, set a strong setup/admin password first and restrict access with HTTPS, firewall rules, and authentication. Public exposure can allow others to use your configured provider keys and generation credits.
+The setup wizard can optionally enable nginx for a public domain/subdomain, public IP, or private IP. For public domain access, add A records for the Studio and processor domains pointing to the machine IP in your DNS provider. For public/private IP access, the wizard can detect IP candidates and uses a single IP with the processor under `/api`. For production deployment, non-SSL access needs port `80`; Let's Encrypt SSL setup uses ports `80` and `443`, then closes port `80` if Samsar opened it. The wizard can try to manage these host firewall rules automatically on supported Linux hosts. Warning: this allows public access to your instance, so set a strong setup/admin password first and restrict access with HTTPS, firewall rules, and authentication.
+
+If you expose Studio, the processor API, media gateway, setup wizard, MinIO, or Grafana through a public IP, DNS record, reverse proxy, or tunnel, public exposure can allow others to use your configured provider keys and generation credits.
 
 For custom enterprise deployments behind a VPS, private network, or managed ingress, contact `hello@samsar.one`.
 

@@ -1,5 +1,6 @@
 
 import jwt from 'jsonwebtoken';
+import { setRequestAuthContext } from './api/RequestAuthContext.js';
 
 const DEFAULT_LOGIN_TOKEN_TTL_SECONDS = 10 * 60;
 const DEFAULT_OAUTH_AUTH_TOKEN_TTL_SECONDS = 10 * 24 * 60 * 60;
@@ -44,12 +45,52 @@ const resolveOAuthAuthTokenTtlSeconds = () => {
 const OAUTH_AUTH_TOKEN_TTL_SECONDS = resolveOAuthAuthTokenTtlSeconds();
 
 
-export function generateAuthToken(userId) {
+function normalizeOptionalString(value) {
+  if (value === undefined || value === null) {
+    return null;
+  }
+  const normalized = value?.toString?.().trim?.() || '';
+  return normalized || null;
+}
+
+function buildAuthContextFromDecodedToken(decoded = {}) {
+  const signedUserId = normalizeOptionalString(decoded._id);
+  const isTeamMember =
+    decoded.teamRole === 'member' &&
+    normalizeOptionalString(decoded.teamOwnerUserId) &&
+    normalizeOptionalString(decoded.teamActorUserId || decoded._id);
+  const teamOwnerUserId = isTeamMember ? normalizeOptionalString(decoded.teamOwnerUserId) : null;
+  const actorUserId = isTeamMember
+    ? normalizeOptionalString(decoded.teamActorUserId || decoded._id)
+    : signedUserId;
+  const internalUserId = isTeamMember ? teamOwnerUserId : signedUserId;
+
+  return {
+    authType: 'auth_token',
+    internalUserId,
+    signedUserId,
+    actorUserId,
+    isTeamMember: Boolean(isTeamMember),
+    teamOwnerUserId,
+    teamMemberEmail: isTeamMember ? normalizeOptionalString(decoded.teamMemberEmail) : null,
+    teamMemberUsername: isTeamMember ? normalizeOptionalString(decoded.teamMemberUsername) : null,
+    teamMemberInvitationId: isTeamMember ? normalizeOptionalString(decoded.teamMemberInvitationId) : null,
+    teamMemberCallLimit: isTeamMember ? decoded.teamMemberCallLimit ?? null : null,
+  };
+}
+
+function setDecodedAuthContext(decoded = {}) {
+  const authContext = buildAuthContextFromDecodedToken(decoded);
+  setRequestAuthContext(authContext);
+  return authContext;
+}
+
+export function generateAuthToken(userId, claims = {}) {
   const SECRET_KEY = process.env.TOKEN_SECRET;
   if (!SECRET_KEY || SECRET_KEY.trim().length === 0) {
     throw new Error('TOKEN_SECRET environment variable must be set to generate auth tokens');
   }
-  const token = jwt.sign({ _id: userId },
+  const token = jwt.sign({ _id: userId, ...claims },
     SECRET_KEY,
     { expiresIn: 60 * 60 * 24 * 30 });
   return token;
@@ -91,6 +132,7 @@ export function verifyAuthToken(authToken) {
     error.status = 401;
     throw error;
   }
+  setDecodedAuthContext(decoded);
   return decoded;
 
 }
@@ -177,7 +219,8 @@ export async function verifyUserAuthentication(reqHeaders) {
     if (decoded?.type) {
       throw new Error("Invalid or missing token");
     }
-    return decoded._id;
+    const authContext = setDecodedAuthContext(decoded);
+    return authContext.internalUserId;
   } catch (e) {
     console.error("Token verification failed:", e);
     throw new Error("Invalid or missing token");
@@ -196,7 +239,8 @@ export function verifyUserAuth(reqHeaders) {
     if (decoded?.type) {
       return;
     }
-    return decoded._id;
+    const authContext = setDecodedAuthContext(decoded);
+    return authContext.internalUserId;
   } catch (e) {
 
   }
@@ -212,7 +256,8 @@ export async function verifyUserAuthAndGetUser(reqHeaders) {
   if (decoded?.type) {
     throw new Error("Invalid or missing token");
   }
-  const userId = decoded._id;
+  const authContext = setDecodedAuthContext(decoded);
+  const userId = authContext.signedUserId;
   try {
     const UserModel = require('./User');
     const userData = await UserModel.getUserById(userId);

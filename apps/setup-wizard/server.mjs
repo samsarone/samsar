@@ -1,6 +1,9 @@
 import { createReadStream, existsSync } from 'node:fs';
 import fs from 'node:fs/promises';
 import http from 'node:http';
+import dns from 'node:dns/promises';
+import net from 'node:net';
+import os from 'node:os';
 import path from 'node:path';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { spawn } from 'node:child_process';
@@ -37,6 +40,13 @@ const CONFIG_PATH = path.join(ROOT_DIR, 'runtime', 'config', 'samsar.config.json
 const AVAILABLE_MODELS_PATH = path.join(ROOT_DIR, 'runtime', 'config', 'available-models.json');
 const ROOT_ENV_PATH = path.join(ROOT_DIR, 'runtime', 'secrets', 'root.env');
 const MAIL_SECRETS_PATH = path.join(ROOT_DIR, 'runtime', 'secrets', 'mail.credentials.json');
+const REVERSE_PROXY_DIR = path.join(ROOT_DIR, 'runtime', 'reverse-proxy');
+const REVERSE_PROXY_NGINX_CONFIG_PATH = path.join(REVERSE_PROXY_DIR, 'nginx.conf');
+const REVERSE_PROXY_CERTBOT_WEBROOT = path.join(REVERSE_PROXY_DIR, 'certbot', 'www');
+const REVERSE_PROXY_CERTBOT_CONFIG = path.join(REVERSE_PROXY_DIR, 'letsencrypt');
+const REVERSE_PROXY_CERT_NAME = 'samsar-reverse-proxy';
+const REVERSE_PROXY_CERT_DOMAINS_PATH = path.join(REVERSE_PROXY_DIR, 'cert-domains.json');
+const MANAGED_FIREWALL_PORTS_PATH = path.join(REVERSE_PROXY_DIR, 'managed-firewall-ports.json');
 const EXAMPLE_CONFIG_PATH = path.join(ROOT_DIR, 'samsar.config.example.json');
 const CLIENT_URL = process.env.SAMSAR_SETUP_CLIENT_URL || 'http://localhost:3000';
 const PROCESSOR_PUBLIC_URL = process.env.SAMSAR_SETUP_PROCESSOR_PUBLIC_URL || 'http://localhost:3002';
@@ -60,7 +70,9 @@ const SETUP_STEPS = [
   { id: 'cleanup', label: 'Clean previous containers' },
   { id: 'config', label: 'Save deployment config' },
   { id: 'runtime', label: 'Render runtime environment' },
+  { id: 'firewall', label: 'Open external ports' },
   { id: 'compose', label: 'Build and start containers' },
+  { id: 'proxy', label: 'Configure reverse proxy' },
   { id: 'media', label: 'Publish local media gateway' },
   { id: 'processor', label: 'Verify processor API' },
   { id: 'client', label: 'Verify Samsar client' },
@@ -70,7 +82,9 @@ const SETUP_STEPS = [
 const MAINTENANCE_STEPS = [
   { id: 'runtime', label: 'Render runtime environment' },
   { id: 'pull', label: 'Pull latest images' },
+  { id: 'firewall', label: 'Open external ports' },
   { id: 'compose', label: 'Update and restart containers' },
+  { id: 'proxy', label: 'Configure reverse proxy' },
   { id: 'media', label: 'Publish local media gateway' },
   { id: 'processor', label: 'Verify processor API' },
   { id: 'client', label: 'Verify Samsar client' },
@@ -78,7 +92,7 @@ const MAINTENANCE_STEPS = [
 
 const runs = new Map();
 const maintenanceRuns = new Map();
-const ALL_COMPOSE_PROFILES = ['core', 'workers', 'local-mongo', 'minio', 'local-media', 'logger'];
+const ALL_COMPOSE_PROFILES = ['core', 'workers', 'local-mongo', 'minio', 'local-media', 'logger', 'reverse-proxy'];
 const MEDIA_GATEWAY_ENV_SERVICES = [
   'processor',
   'generator',
@@ -200,6 +214,10 @@ function runCommandCapture(command, args, options = {}) {
   });
 }
 
+function getComposeArgs(...args) {
+  return ['compose', '--env-file', ROOT_ENV_PATH, '-f', COMPOSE_FILE, ...args];
+}
+
 function cancelRun(run, message = 'Setup was reset by the user.') {
   run.cancelled = true;
   run.status = 'failed';
@@ -226,6 +244,65 @@ async function readJson(filePath) {
 
 function normalizeString(value) {
   return typeof value === 'string' && value.trim() ? value.trim() : '';
+}
+
+function normalizeSecretString(value) {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+function isTemporaryAwsAccessKeyId(value) {
+  return normalizeString(value).toUpperCase().startsWith('ASIA');
+}
+
+function getSesAccessKeyId(mail = {}) {
+  return normalizeString(mail.sesAccessKeyId || mail.ses?.accessKeyId);
+}
+
+function getSesSecretAccessKey(mail = {}) {
+  return normalizeSecretString(
+    typeof mail.sesSecretAccessKey === 'string'
+      ? mail.sesSecretAccessKey
+      : mail.ses?.secretAccessKey || '',
+  );
+}
+
+function shouldUseSesSessionToken(mail = {}, accessKeyId = getSesAccessKeyId(mail)) {
+  return isTemporaryAwsAccessKeyId(accessKeyId);
+}
+
+function getSesSessionToken(mail = {}, accessKeyId = getSesAccessKeyId(mail)) {
+  if (!shouldUseSesSessionToken(mail, accessKeyId)) {
+    return '';
+  }
+  return normalizeSecretString(
+    typeof mail.sesSessionToken === 'string'
+      ? mail.sesSessionToken
+      : mail.ses?.sessionToken || '',
+  );
+}
+
+function isAwsCredentialError(error) {
+  const name = String(error?.name || error?.Code || error?.code || '');
+  const message = String(error?.message || error || '');
+  return [
+    'InvalidClientTokenId',
+    'UnrecognizedClientException',
+    'SignatureDoesNotMatch',
+    'InvalidSignatureException',
+  ].includes(name) ||
+    /security token/i.test(message) ||
+    /signature/i.test(message);
+}
+
+function formatSesCredentialError(error, accessKeyId, sessionToken) {
+  const originalMessage = normalizeString(error?.message) || 'AWS rejected the SES credentials.';
+  if (isTemporaryAwsAccessKeyId(accessKeyId) && !sessionToken) {
+    return new Error('Temporary AWS SES credentials require the AWS session token. Paste the session token that was issued with the access key and secret access key.');
+  }
+  if (!isTemporaryAwsAccessKeyId(accessKeyId) && sessionToken) {
+    return new Error(`AWS rejected the SES credentials. This access key looks like a long-lived IAM key, so disable the temporary session token field unless you are using STS credentials. AWS said: ${originalMessage}`);
+  }
+  return new Error(`AWS rejected the SES credentials. Use the IAM secret access key for Amazon SES API credentials. If you have SES SMTP credentials instead, choose SMTP and use the SES SMTP host for your region. AWS said: ${originalMessage}`);
 }
 
 function parseMongoConnectionString(value) {
@@ -319,10 +396,12 @@ function buildSanitizedMailConfig(mail = {}, validation = null) {
       usernameConfigured: Boolean(normalizeString(mail.smtpUser || mail.smtp?.username)),
     };
   } else {
+    const accessKeyId = getSesAccessKeyId(mail);
+    const sessionToken = getSesSessionToken(mail, accessKeyId);
     sanitized.ses = {
       region: normalizeString(mail.sesRegion || mail.ses?.region) || 'us-east-1',
-      accessKeyConfigured: Boolean(normalizeString(mail.sesAccessKeyId || mail.ses?.accessKeyId)),
-      sessionTokenConfigured: Boolean(normalizeString(mail.sesSessionToken || mail.ses?.sessionToken)),
+      accessKeyConfigured: Boolean(accessKeyId),
+      sessionTokenConfigured: Boolean(sessionToken),
     };
   }
 
@@ -358,11 +437,12 @@ function buildMailSecrets(mail = {}, validation = null) {
       password: typeof mail.smtpPassword === 'string' ? mail.smtpPassword : mail.smtp?.password || '',
     };
   } else {
+    const accessKeyId = getSesAccessKeyId(mail);
     secrets.ses = {
       region: normalizeString(mail.sesRegion || mail.ses?.region) || 'us-east-1',
-      accessKeyId: normalizeString(mail.sesAccessKeyId || mail.ses?.accessKeyId),
-      secretAccessKey: typeof mail.sesSecretAccessKey === 'string' ? mail.sesSecretAccessKey : mail.ses?.secretAccessKey || '',
-      sessionToken: typeof mail.sesSessionToken === 'string' ? mail.sesSessionToken : mail.ses?.sessionToken || '',
+      accessKeyId,
+      secretAccessKey: getSesSecretAccessKey(mail),
+      sessionToken: getSesSessionToken(mail, accessKeyId),
     };
   }
 
@@ -417,12 +497,15 @@ async function validateSesMailConfig(mail = {}) {
   }
 
   const region = normalizeString(mail.sesRegion || mail.ses?.region) || 'us-east-1';
-  const accessKeyId = normalizeString(mail.sesAccessKeyId || mail.ses?.accessKeyId);
-  const secretAccessKey = typeof mail.sesSecretAccessKey === 'string' ? mail.sesSecretAccessKey : mail.ses?.secretAccessKey || '';
-  const sessionToken = typeof mail.sesSessionToken === 'string' ? mail.sesSessionToken : mail.ses?.sessionToken || '';
+  const accessKeyId = getSesAccessKeyId(mail);
+  const secretAccessKey = getSesSecretAccessKey(mail);
+  const sessionToken = getSesSessionToken(mail, accessKeyId);
 
   if (!accessKeyId || !secretAccessKey) {
     throw new Error('SES access key ID and secret access key are required.');
+  }
+  if (shouldUseSesSessionToken(mail, accessKeyId) && !sessionToken) {
+    throw new Error('AWS session token is required for temporary SES credentials.');
   }
 
   const client = new SESClient({
@@ -434,7 +517,14 @@ async function validateSesMailConfig(mail = {}) {
     },
   });
 
-  await client.send(new GetSendQuotaCommand({}));
+  try {
+    await client.send(new GetSendQuotaCommand({}));
+  } catch (error) {
+    if (isAwsCredentialError(error)) {
+      throw formatSesCredentialError(error, accessKeyId, sessionToken);
+    }
+    throw error;
+  }
 
   const domain = emailAddress.split('@')[1];
   try {
@@ -448,6 +538,9 @@ async function validateSesMailConfig(mail = {}) {
       throw new Error(`SES sender identity ${emailAddress} or ${domain} is not verified in ${region}.`);
     }
   } catch (error) {
+    if (isAwsCredentialError(error)) {
+      throw formatSesCredentialError(error, accessKeyId, sessionToken);
+    }
     if (String(error?.message || '').includes('not verified')) {
       throw error;
     }
@@ -582,6 +675,381 @@ function buildStorageConfig(infrastructure = {}) {
   };
 }
 
+function normalizeHostInput(value) {
+  const normalized = normalizeString(value).toLowerCase();
+  if (!normalized) {
+    return '';
+  }
+  try {
+    const parsedUrl = new URL(/^https?:\/\//i.test(normalized) ? normalized : `http://${normalized}`);
+    return parsedUrl.hostname.toLowerCase();
+  } catch {
+    return normalized
+      .replace(/^https?:\/\//i, '')
+      .split('/')[0]
+      .split(':')[0]
+      .toLowerCase();
+  }
+}
+
+function normalizeReverseProxyAccessType(value) {
+  const normalized = normalizeString(value);
+  if (['publicDomain', 'publicIp', 'privateIp'].includes(normalized)) {
+    return normalized;
+  }
+  return 'publicDomain';
+}
+
+function isValidDomainName(host) {
+  return /^(?=.{1,253}$)(?!-)[a-z0-9-]{1,63}(?<!-)(\.(?!-)[a-z0-9-]{1,63}(?<!-))+$/i.test(host);
+}
+
+function isPrivateIpAddress(host) {
+  if (net.isIP(host) !== 4) {
+    return false;
+  }
+  const [first, second] = host.split('.').map((value) => Number.parseInt(value, 10));
+  return first === 10 ||
+    (first === 172 && second >= 16 && second <= 31) ||
+    (first === 192 && second === 168) ||
+    (first === 127) ||
+    (first === 169 && second === 254);
+}
+
+function isIntranetIpAddress(host) {
+  if (net.isIP(host) !== 4) {
+    return false;
+  }
+  const [first, second] = host.split('.').map((value) => Number.parseInt(value, 10));
+  return first === 10 ||
+    (first === 172 && second >= 16 && second <= 31) ||
+    (first === 192 && second === 168);
+}
+
+function isLocalOrPrivateHost(host) {
+  const normalizedHost = normalizeHostInput(host);
+  return !normalizedHost ||
+    ['localhost', '127.0.0.1', '0.0.0.0', '::1', 'media-gateway', 'host.docker.internal'].includes(normalizedHost) ||
+    normalizedHost.endsWith('.local') ||
+    isPrivateIpAddress(normalizedHost);
+}
+
+function isPublicHttpUrl(value) {
+  try {
+    const parsedUrl = new URL(value);
+    return ['http:', 'https:'].includes(parsedUrl.protocol) && !isLocalOrPrivateHost(parsedUrl.hostname);
+  } catch {
+    return false;
+  }
+}
+
+function buildUrlForHost(host, useHttps = false) {
+  const normalizedHost = normalizeHostInput(host);
+  if (!normalizedHost) {
+    return '';
+  }
+  return `${useHttps ? 'https' : 'http'}://${normalizedHost}`;
+}
+
+function buildUrlForHostPath(host, pathName = '', useHttps = false) {
+  const baseUrl = buildUrlForHost(host, useHttps);
+  const normalizedPath = normalizeString(pathName).replace(/^\/+/, '');
+  return baseUrl && normalizedPath ? `${baseUrl}/${normalizedPath}` : baseUrl;
+}
+
+function buildReverseProxyConfig(reverseProxy = {}) {
+  const enabled = normalizeBoolean(reverseProxy.enabled);
+  const accessType = normalizeReverseProxyAccessType(reverseProxy.accessType);
+  const sslEnabled = enabled && accessType === 'publicDomain' && normalizeBoolean(reverseProxy.sslEnabled ?? reverseProxy.ssl?.enabled);
+  const isIpAccess = accessType === 'publicIp' || accessType === 'privateIp';
+  const ipAddress = normalizeHostInput(
+    reverseProxy.machineIp ||
+    reverseProxy.ipAddress ||
+    reverseProxy.publicIp ||
+    reverseProxy.privateIp ||
+    reverseProxy.clientHost ||
+    reverseProxy.processorHost ||
+    reverseProxy.clientIp ||
+    reverseProxy.processorIp,
+  );
+  const clientHost = isIpAccess
+    ? ipAddress
+    : normalizeHostInput(reverseProxy.clientHost || reverseProxy.clientDomain || reverseProxy.clientIp);
+  const processorHost = isIpAccess
+    ? ipAddress
+    : normalizeHostInput(reverseProxy.processorHost || reverseProxy.processorDomain || reverseProxy.processorIp);
+  const clientApp = buildUrlForHost(clientHost, sslEnabled);
+  const processorApi = isIpAccess
+    ? buildUrlForHostPath(ipAddress, 'api', sslEnabled)
+    : buildUrlForHost(processorHost, sslEnabled);
+
+  if (!enabled) {
+    return {
+      enabled: false,
+      accessType,
+      openFirewallPorts: false,
+      ssl: { enabled: false },
+      publicUrls: {},
+    };
+  }
+
+  return {
+    enabled: true,
+    accessType,
+    clientHost,
+    processorHost,
+    machineIp: isIpAccess ? ipAddress : normalizeString(reverseProxy.machineIp),
+    ipAddress,
+    openFirewallPorts: normalizeBoolean(reverseProxy.openFirewallPorts),
+    ssl: {
+      enabled: sslEnabled,
+      email: sslEnabled ? normalizeString(reverseProxy.sslEmail || reverseProxy.ssl?.email).toLowerCase() : '',
+      certName: REVERSE_PROXY_CERT_NAME,
+    },
+    publicUrls: {
+      clientApp,
+      processorApi,
+      media: processorApi,
+    },
+  };
+}
+
+function getReverseProxyHostList(reverseProxy = {}) {
+  return [...new Set([
+    normalizeHostInput(reverseProxy.clientHost),
+    normalizeHostInput(reverseProxy.processorHost),
+  ].filter(Boolean))];
+}
+
+async function resolveDomainAddresses(host) {
+  const [ipv4Result, ipv6Result] = await Promise.allSettled([
+    dns.resolve4(host),
+    dns.resolve6(host),
+  ]);
+  return [
+    ...(ipv4Result.status === 'fulfilled' ? ipv4Result.value : []),
+    ...(ipv6Result.status === 'fulfilled' ? ipv6Result.value : []),
+  ];
+}
+
+function uniqueIpv4Addresses(values = []) {
+  return [...new Set(values.map(normalizeHostInput).filter((value) => net.isIP(value) === 4))];
+}
+
+function collectPrivateIpsFromNetworkInterfaces() {
+  return Object.values(os.networkInterfaces())
+    .flat()
+    .filter(Boolean)
+    .filter((entry) => entry.family === 'IPv4' && !entry.internal)
+    .map((entry) => entry.address)
+    .filter(isIntranetIpAddress);
+}
+
+function extractIpv4Addresses(value = '') {
+  return String(value).match(/\b(?:\d{1,3}\.){3}\d{1,3}\b/g) || [];
+}
+
+function collectPrivateIpsFromSetupEnvironment() {
+  return uniqueIpv4Addresses(
+    extractIpv4Addresses(process.env.SAMSAR_SETUP_HOST_PRIVATE_IPS || ''),
+  ).filter(isIntranetIpAddress);
+}
+
+async function fetchPublicIpAddress() {
+  const candidates = [
+    'https://api.ipify.org?format=json',
+    'https://ifconfig.me/ip',
+    'https://checkip.amazonaws.com',
+  ];
+  for (const url of candidates) {
+    try {
+      const response = await fetch(url, { signal: AbortSignal.timeout(5000) });
+      if (!response.ok) {
+        continue;
+      }
+      const text = await response.text();
+      const parsed = text.trim().startsWith('{')
+        ? JSON.parse(text)
+        : { ip: text.trim() };
+      const ip = normalizeHostInput(parsed.ip || parsed.origin || text);
+      if (net.isIP(ip) === 4 && !isPrivateIpAddress(ip)) {
+        return ip;
+      }
+    } catch {
+      // Try the next public IP service.
+    }
+  }
+  return '';
+}
+
+async function collectPrivateIpsFromHostNetwork() {
+  const command = "ip route get 1.1.1.1 2>/dev/null | awk '{for (i=1;i<=NF;i++) if ($i==\"src\") {print $(i+1); exit}}'; hostname -I 2>/dev/null || true";
+  const commandResults = await Promise.allSettled([
+    runCommandCapture('sh', ['-lc', command], { cwd: ROOT_DIR }),
+    runCommandCapture('docker', [
+      'run',
+      '--rm',
+      '--network',
+      'host',
+      'alpine:3.20',
+      'sh',
+      '-lc',
+      command,
+    ], { cwd: ROOT_DIR }),
+  ]);
+  return commandResults
+    .filter((result) => result.status === 'fulfilled')
+    .flatMap((result) => extractIpv4Addresses(result.value))
+    .filter(isIntranetIpAddress);
+}
+
+async function discoverReverseProxyIpCandidates() {
+  const [publicIp, hostPrivateIps, dockerDesktopRuntime] = await Promise.all([
+    fetchPublicIpAddress(),
+    collectPrivateIpsFromHostNetwork().catch(() => []),
+    isDockerDesktopRuntime(),
+  ]);
+  const publicIpReachability = publicIp
+    ? await probePublicIpReverseProxyReachability(publicIp)
+    : { checked: false, reachable: false, message: 'No public IP detected.' };
+  const setupHostPrivateIps = collectPrivateIpsFromSetupEnvironment();
+  const privateIps = uniqueIpv4Addresses([
+    ...setupHostPrivateIps,
+    ...hostPrivateIps,
+    ...collectPrivateIpsFromNetworkInterfaces(),
+  ]).filter(isIntranetIpAddress);
+  return {
+    ok: true,
+    publicIp,
+    publicIpReachability,
+    privateIps,
+    recommendedPrivateIp: setupHostPrivateIps[0] || privateIps[0] || '',
+    hostPrivateIps: setupHostPrivateIps,
+    runtime: {
+      dockerDesktop: dockerDesktopRuntime,
+    },
+  };
+}
+
+async function probePublicIpReverseProxyReachability(publicIp) {
+  const host = normalizeHostInput(publicIp);
+  if (!host || net.isIP(host) !== 4 || isPrivateIpAddress(host)) {
+    return {
+      checked: false,
+      reachable: false,
+      message: 'Enter a public IPv4 address.',
+    };
+  }
+
+  const clientUrl = `http://${host}`;
+  const processorHealthUrl = `http://${host}/api/v1/health/live`;
+  const [clientReachable, processorReachable] = await Promise.all([
+    checkHttp(clientUrl, {
+      timeoutMs: 5000,
+      isReady: isClientReadyHttpResponse,
+    }),
+    checkHttp(processorHealthUrl, {
+      timeoutMs: 5000,
+    }),
+  ]);
+  const reachable = clientReachable && processorReachable;
+  return {
+    checked: true,
+    reachable,
+    clientReachable,
+    processorReachable,
+    message: reachable
+      ? 'Public IP is reachable on port 80.'
+      : 'Public IP is not reachable on port 80. Use Private IP for intranet access unless your router/ISP/cloud firewall forwards public HTTP to this machine.',
+  };
+}
+
+async function validateReverseProxyConfig(reverseProxyInput = {}) {
+  const config = buildReverseProxyConfig(reverseProxyInput);
+  if (!config.enabled) {
+    return {
+      ok: true,
+      enabled: false,
+      message: 'Reverse proxy skipped.',
+      config,
+    };
+  }
+
+  const hosts = getReverseProxyHostList(config);
+  if (!config.clientHost || !config.processorHost) {
+    throw new Error('Enter Studio and processor API host values, or skip reverse proxy.');
+  }
+
+  if (config.accessType === 'publicDomain') {
+    const invalidDomains = hosts.filter((host) => net.isIP(host) || !isValidDomainName(host));
+    if (invalidDomains.length) {
+      throw new Error(`Enter valid domains or subdomains: ${invalidDomains.join(', ')}.`);
+    }
+    if (config.ssl.enabled && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(config.ssl.email)) {
+      throw new Error("Enter a valid email for Let's Encrypt SSL.");
+    }
+    if (config.machineIp && net.isIP(config.machineIp) !== 4) {
+      throw new Error('Enter a valid public IPv4 address for the machine IP, or leave it blank.');
+    }
+    if (config.machineIp && isPrivateIpAddress(config.machineIp)) {
+      throw new Error('Public domain access requires a public machine IP. Use Private IP for intranet deployments.');
+    }
+
+    const resolved = {};
+    for (const host of hosts) {
+      const addresses = await resolveDomainAddresses(host);
+      if (!addresses.length) {
+        throw new Error(`${host} does not resolve yet. Add an A record and wait for DNS propagation.`);
+      }
+      resolved[host] = addresses;
+    }
+
+    if (config.machineIp) {
+      const mismatchedHost = Object.entries(resolved).find(([, addresses]) => !addresses.includes(config.machineIp));
+      if (mismatchedHost) {
+        throw new Error(`${mismatchedHost[0]} does not currently resolve to ${config.machineIp}.`);
+      }
+    }
+
+    return {
+      ok: true,
+      enabled: true,
+      message: config.ssl.enabled
+        ? 'DNS validated. SSL will be requested during setup.'
+        : 'DNS validated.',
+      config: {
+        ...config,
+        resolvedAddresses: resolved,
+      },
+    };
+  }
+
+  const invalidIp = hosts.find((host) => net.isIP(host) !== 4);
+  if (invalidIp) {
+    throw new Error(`Enter IPv4 addresses for ${config.accessType === 'publicIp' ? 'public' : 'private'} IP access.`);
+  }
+  if (config.accessType === 'publicIp' && hosts.some(isPrivateIpAddress)) {
+    throw new Error('Public IP access requires public IPv4 addresses. Use Private IP for intranet deployments.');
+  }
+  if (config.accessType === 'privateIp' && hosts.some((host) => !isIntranetIpAddress(host))) {
+    throw new Error('Private IP access requires RFC1918 intranet addresses such as 10.x, 172.16-31.x, or 192.168.x.');
+  }
+
+  if (config.accessType === 'publicIp' && await isDockerDesktopRuntime()) {
+    const reachability = await probePublicIpReverseProxyReachability(config.ipAddress || hosts[0]);
+    if (!reachability.reachable) {
+      throw new Error(`Public IP access is not reachable on port 80 for ${hosts.join(', ')}. This usually means the machine is behind NAT, CGNAT, a router without port forwarding, or a firewall that blocks inbound HTTP. Use Private IP for devices on this network.`);
+    }
+  }
+
+  return {
+    ok: true,
+    enabled: true,
+    message: `${config.accessType === 'publicIp' ? 'Public' : 'Private'} IP configuration validated.`,
+    config,
+  };
+}
+
 function normalizeGoogleCredentials(rawValue) {
   const value = normalizeString(rawValue);
   if (!value) {
@@ -616,6 +1084,14 @@ function buildRuntimeConfig(payload) {
   const infrastructure = deployment.infrastructure || {};
   const database = buildDatabaseConfig(infrastructure);
   const storage = buildStorageConfig(infrastructure);
+  const reverseProxy = buildReverseProxyConfig(deployment.reverseProxy || {});
+  const publicUrls = reverseProxy.enabled
+    ? reverseProxy.publicUrls
+    : {
+      clientApp: CLIENT_URL,
+      processorApi: PROCESSOR_PUBLIC_URL,
+      media: storage.staticCdnUrl || (storage.externalMediaPublishEnabled ? '' : 'http://localhost:8080'),
+    };
   const googleCredentials = normalizeGoogleCredentials(credentials.googleCredentialsJson);
   const mail = buildSanitizedMailConfig(payload?.mail || {}, payload?.mailValidation);
   const workerKeys = [
@@ -641,12 +1117,13 @@ function buildRuntimeConfig(payload) {
       name: normalizeString(admin.organizationName),
     },
     mail,
+    reverseProxy,
     publicUrls: {
       ...(exampleConfig.publicUrls || {}),
-	      clientApp: CLIENT_URL,
-	      processorApi: PROCESSOR_PUBLIC_URL,
+	      clientApp: publicUrls.clientApp || CLIENT_URL,
+	      processorApi: publicUrls.processorApi || PROCESSOR_PUBLIC_URL,
 	      samsarApi: exampleConfig.publicUrls?.samsarApi || 'https://api.samsar.one/v1',
-	      media: storage.staticCdnUrl || (storage.externalMediaPublishEnabled ? '' : exampleConfig.publicUrls?.media || 'http://localhost:8080'),
+	      media: publicUrls.media || storage.staticCdnUrl || (storage.externalMediaPublishEnabled ? '' : exampleConfig.publicUrls?.media || 'http://localhost:8080'),
 	    },
 	    database,
 	    storage,
@@ -685,6 +1162,7 @@ function buildRuntimeConfig(payload) {
       minio: storage.externalMediaPublishEnabled !== true,
       mediaGateway: storage.externalMediaPublishEnabled !== true,
       logger: services.logger !== false,
+      reverseProxy: reverseProxy.enabled,
     },
   }));
 }
@@ -705,7 +1183,7 @@ async function writeExistingRuntimeConfig(config) {
   }
 }
 
-function getComposeProfiles(services = {}, infrastructure = {}) {
+function getComposeProfiles(services = {}, infrastructure = {}, reverseProxyInput = {}) {
   const profiles = ['core'];
   const workerKeys = [
     'generator',
@@ -719,6 +1197,7 @@ function getComposeProfiles(services = {}, infrastructure = {}) {
 
   const database = buildDatabaseConfig(infrastructure);
   const storage = buildStorageConfig(infrastructure);
+  const reverseProxy = buildReverseProxyConfig(reverseProxyInput);
   const localMongoEnabled = typeof services.localMongo === 'boolean'
     ? services.localMongo
     : database.provider === 'local-mongo';
@@ -745,6 +1224,9 @@ function getComposeProfiles(services = {}, infrastructure = {}) {
   if (loggerEnabled) {
     profiles.push('logger');
   }
+  if (reverseProxy.enabled) {
+    profiles.push('reverse-proxy');
+  }
 
   return profiles;
 }
@@ -767,6 +1249,9 @@ function getRuntimeComposeProfiles(config = {}) {
   }
   if (services.logger !== false) {
     profiles.push('logger');
+  }
+  if (services.reverseProxy === true || config.reverseProxy?.enabled === true) {
+    profiles.push('reverse-proxy');
   }
 
   return profiles;
@@ -791,12 +1276,19 @@ function shouldPublishLocalMediaGateway(payload) {
   const credentials = payload?.credentials || {};
   const infrastructure = deployment.infrastructure || {};
   const storage = buildStorageConfig(infrastructure);
+  const publicMediaUrl = deployment.reverseProxy?.publicUrls?.media || deployment.publicUrls?.media;
+  if (isPublicHttpUrl(publicMediaUrl)) {
+    return false;
+  }
   return storage.externalMediaPublishEnabled !== true && hasConfiguredRemoteMediaProvider(credentials);
 }
 
 function shouldPublishRuntimeLocalMediaGateway(config = {}) {
   const storage = config.storage || {};
   const providers = config.providers || {};
+  if (isPublicHttpUrl(config.publicUrls?.media)) {
+    return false;
+  }
   return storage.externalMediaPublishEnabled !== true && Boolean(
     normalizeString(providers.samsar?.apiKey) ||
     normalizeString(providers.fal?.apiKey) ||
@@ -826,17 +1318,14 @@ async function publishLocalMediaGateway(run, profileArgs, options = {}) {
     ? ['processor']
     : MEDIA_GATEWAY_ENV_SERVICES;
   setStepStatus(run, 'media', 'running', 'Restarting Samsar services with public media gateway URL.');
-  await runCommand('docker', [
-    'compose',
-    '-f',
-    COMPOSE_FILE,
+  await runCommand('docker', getComposeArgs(
     ...profileArgs,
     'up',
     '-d',
     '--no-deps',
     '--force-recreate',
     ...restartServices,
-  ], {
+  ), {
     cwd: ROOT_DIR,
     env: { COMPOSE_BAKE: 'false' },
     run,
@@ -855,20 +1344,38 @@ function isClientReadyHttpResponse(response) {
 
 async function waitForHttp(
   url,
-  { timeoutMs = 120000, intervalMs = 2000, isReady = isSuccessfulHttpResponse } = {},
+  {
+    timeoutMs = 120000,
+    intervalMs = 2000,
+    requestTimeoutMs = 8000,
+    isReady = isSuccessfulHttpResponse,
+    headers = {},
+  } = {},
 ) {
   const startedAt = Date.now();
   let lastError = null;
 
   while (Date.now() - startedAt < timeoutMs) {
+    const controller = requestTimeoutMs > 0 ? new AbortController() : null;
+    const timeout = controller
+      ? setTimeout(() => controller.abort(), requestTimeoutMs)
+      : null;
     try {
-      const response = await fetch(url, { cache: 'no-store' });
+      const response = await fetch(url, {
+        cache: 'no-store',
+        headers,
+        ...(controller ? { signal: controller.signal } : {}),
+      });
       if (isReady(response)) {
         return response;
       }
       lastError = new Error(`${url} returned ${response.status}`);
     } catch (error) {
       lastError = error;
+    } finally {
+      if (timeout) {
+        clearTimeout(timeout);
+      }
     }
     await new Promise((resolve) => setTimeout(resolve, intervalMs));
   }
@@ -942,10 +1449,7 @@ async function bootstrapExistingDockerAdmin(admin) {
   await runCommand('node', [path.join(ROOT_DIR, 'scripts', 'generate-runtime-config.mjs')], {
     cwd: ROOT_DIR,
   });
-  await runCommand('docker', [
-    'compose',
-    '-f',
-    COMPOSE_FILE,
+  await runCommand('docker', getComposeArgs(
     '--profile',
     'core',
     'up',
@@ -953,7 +1457,7 @@ async function bootstrapExistingDockerAdmin(admin) {
     '--no-deps',
     '--force-recreate',
     'processor',
-  ], {
+  ), {
     cwd: ROOT_DIR,
     env: { COMPOSE_BAKE: 'false' },
   });
@@ -973,12 +1477,644 @@ async function removeMediaTunnelContainer(run = null) {
   }
 }
 
+function normalizeFirewallPorts(ports = [], fallbackPorts = [80]) {
+  const values = Array.isArray(ports) ? ports : [ports];
+  const normalized = values
+    .map((port) => Number.parseInt(String(port), 10))
+    .filter((port) => port === 80 || port === 443);
+  const uniquePorts = [...new Set(normalized)].sort((left, right) => left - right);
+  return uniquePorts.length ? uniquePorts : fallbackPorts;
+}
+
+function formatFirewallPorts(ports = []) {
+  const normalizedPorts = normalizeFirewallPorts(ports);
+  if (normalizedPorts.length === 1) {
+    return `port ${normalizedPorts[0]}`;
+  }
+  return `ports ${normalizedPorts.join(' and ')}`;
+}
+
+function formatTcpFirewallPorts(ports = []) {
+  return normalizeFirewallPorts(ports).map((port) => `${port}/tcp`).join(' and ');
+}
+
+function parseChangedFirewallPorts(output = '') {
+  const match = output.match(/SAMSAR_FIREWALL_CHANGED_PORTS=([0-9 ]*)/);
+  if (!match) {
+    return [];
+  }
+  return normalizeFirewallPorts(match[1].trim().split(/\s+/).filter(Boolean), []);
+}
+
+function cleanFirewallScriptOutput(output = '') {
+  return output
+    .split('\n')
+    .filter((line) => !line.startsWith('SAMSAR_FIREWALL_CHANGED_PORTS='))
+    .join('\n')
+    .trim();
+}
+
+function shellSingleQuote(value = '') {
+  return `'${String(value).replace(/'/g, "'\\''")}'`;
+}
+
+function summarizeCommandError(error) {
+  const message = normalizeString(error?.message || error);
+  if (!message) {
+    return '';
+  }
+  const exitMatch = message.match(/failed with exit code \d+(?::\s*([\s\S]+))?$/);
+  if (exitMatch) {
+    return exitMatch[1]?.trim() || exitMatch[0];
+  }
+  return message;
+}
+
+function normalizeManagedFirewallState(value = {}) {
+  const openedByPort = value.openedByPort && typeof value.openedByPort === 'object'
+    ? value.openedByPort
+    : {};
+  const statePorts = [
+    ...(Array.isArray(value.ports) ? value.ports : []),
+    ...(Array.isArray(value.managedPorts) ? value.managedPorts : []),
+    ...Object.keys(openedByPort),
+  ];
+  const ports = normalizeFirewallPorts(statePorts, []);
+  return {
+    ports,
+    openedByPort: ports.reduce((result, port) => {
+      result[port] = openedByPort[port] && typeof openedByPort[port] === 'object'
+        ? openedByPort[port]
+        : {};
+      return result;
+    }, {}),
+    updatedAt: normalizeString(value.updatedAt),
+  };
+}
+
+async function readManagedFirewallState() {
+  const parsed = await readJson(MANAGED_FIREWALL_PORTS_PATH).catch(() => null);
+  return normalizeManagedFirewallState(parsed || {});
+}
+
+async function writeManagedFirewallState(state = {}) {
+  const normalizedState = normalizeManagedFirewallState({
+    ...state,
+    updatedAt: new Date().toISOString(),
+  });
+  await fs.mkdir(path.dirname(MANAGED_FIREWALL_PORTS_PATH), { recursive: true, mode: 0o700 });
+  if (!normalizedState.ports.length) {
+    await fs.rm(MANAGED_FIREWALL_PORTS_PATH, { force: true });
+    return normalizedState;
+  }
+
+  await fs.writeFile(
+    MANAGED_FIREWALL_PORTS_PATH,
+    `${JSON.stringify(normalizedState, null, 2)}\n`,
+    { mode: 0o600 },
+  );
+  return normalizedState;
+}
+
+async function rememberManagedFirewallPorts(ports = [], source = 'setup-wizard') {
+  const normalizedPorts = normalizeFirewallPorts(ports, []);
+  if (!normalizedPorts.length) {
+    return readManagedFirewallState();
+  }
+
+  const currentState = await readManagedFirewallState();
+  const openedByPort = { ...currentState.openedByPort };
+  const now = new Date().toISOString();
+  normalizedPorts.forEach((port) => {
+    openedByPort[port] = {
+      ...(openedByPort[port] || {}),
+      source,
+      openedAt: openedByPort[port]?.openedAt || now,
+      lastConfirmedAt: now,
+    };
+  });
+  return writeManagedFirewallState({
+    ports: [...new Set([...currentState.ports, ...normalizedPorts])],
+    openedByPort,
+  });
+}
+
+async function forgetManagedFirewallPorts(ports = []) {
+  const normalizedPorts = normalizeFirewallPorts(ports, []);
+  if (!normalizedPorts.length) {
+    return readManagedFirewallState();
+  }
+
+  const currentState = await readManagedFirewallState();
+  const removeSet = new Set(normalizedPorts);
+  const openedByPort = { ...currentState.openedByPort };
+  normalizedPorts.forEach((port) => {
+    delete openedByPort[port];
+  });
+  return writeManagedFirewallState({
+    ports: currentState.ports.filter((port) => !removeSet.has(port)),
+    openedByPort,
+  });
+}
+
+async function closeManagedExternalAccessPorts(run = null, {
+  source = 'setup-wizard',
+  message = 'Closing host firewall ports opened by Samsar setup.',
+} = {}) {
+  const state = await readManagedFirewallState();
+  if (!state.ports.length) {
+    return {
+      ok: true,
+      source,
+      ports: [],
+      closedPorts: [],
+      message: 'No Samsar-managed host firewall ports are recorded.',
+    };
+  }
+
+  if (run) {
+    appendLog(run, `${message} Ports: ${state.ports.join(', ')}.`);
+  }
+  const result = await tryCloseExternalAccessPorts(state.ports);
+  if (!result.ok) {
+    const failure = {
+      ...result,
+      source,
+      closedPorts: [],
+      message: result.message || `Unable to close ${formatFirewallPorts(state.ports)} automatically.`,
+    };
+    if (run) {
+      appendLog(run, failure.message);
+    }
+    return failure;
+  }
+
+  await forgetManagedFirewallPorts(state.ports);
+  const success = {
+    ...result,
+    source,
+    closedPorts: state.ports,
+    message: result.message || `Closed ${formatFirewallPorts(state.ports)} opened by Samsar setup.`,
+  };
+  if (run) {
+    appendLog(run, success.message);
+  }
+  return success;
+}
+
+function getReverseProxyRequiredFirewallPorts(reverseProxy = {}) {
+  if (!reverseProxy.enabled) {
+    return [];
+  }
+  return reverseProxy.ssl?.enabled ? [80, 443] : [80];
+}
+
+function buildHostFirewallScript(action, ports = []) {
+  const normalizedPorts = normalizeFirewallPorts(ports);
+  const isOpenAction = action === 'open';
+  const actionLabel = isOpenAction ? 'Opened' : 'Closed';
+  const manualActionLabel = isOpenAction ? 'Open' : 'Close';
+  const portList = normalizedPorts.join(' ');
+  const tcpPortList = formatTcpFirewallPorts(normalizedPorts);
+
+  return `
+set -eu
+PORTS="${portList}"
+CHANGED_PORTS=""
+mark_changed() {
+  if [ -z "$CHANGED_PORTS" ]; then
+    CHANGED_PORTS="$1"
+  else
+    CHANGED_PORTS="$CHANGED_PORTS $1"
+  fi
+}
+service_for_port() {
+  case "$1" in
+    80) echo "http" ;;
+    443) echo "https" ;;
+    *) echo "$1" ;;
+  esac
+}
+if command -v ufw >/dev/null 2>&1; then
+  for port in $PORTS; do
+    if [ "${isOpenAction ? 'open' : 'close'}" = "open" ]; then
+      ufw status | grep -Eq "(^|[[:space:]])$port/tcp([[:space:]]|$).*ALLOW" || mark_changed "$port"
+      ufw allow "$port/tcp"
+    else
+      ufw delete allow "$port/tcp" || true
+    fi
+  done
+  ufw reload || true
+  echo "${actionLabel} tcp ports: $PORTS with ufw."
+elif command -v firewall-cmd >/dev/null 2>&1; then
+  for port in $PORTS; do
+    service_name="$(service_for_port "$port")"
+    if [ "${isOpenAction ? 'open' : 'close'}" = "open" ]; then
+      firewall-cmd --permanent --query-service="$service_name" >/dev/null 2>&1 || mark_changed "$port"
+      firewall-cmd --permanent --add-service="$service_name"
+    else
+      firewall-cmd --permanent --remove-service="$service_name" || true
+    fi
+  done
+  firewall-cmd --reload
+  echo "${actionLabel} web service ports with firewalld."
+elif command -v iptables >/dev/null 2>&1; then
+  for port in $PORTS; do
+    if [ "${isOpenAction ? 'open' : 'close'}" = "open" ]; then
+      if iptables -C INPUT -p tcp --dport "$port" -j ACCEPT 2>/dev/null; then
+        :
+      else
+        iptables -I INPUT -p tcp --dport "$port" -j ACCEPT
+        mark_changed "$port"
+      fi
+    else
+      while iptables -C INPUT -p tcp --dport "$port" -j ACCEPT 2>/dev/null; do
+        iptables -D INPUT -p tcp --dport "$port" -j ACCEPT || break
+      done
+    fi
+  done
+  echo "${actionLabel} iptables allow rules for tcp ports: $PORTS."
+else
+  echo "No supported host firewall manager found. ${manualActionLabel} ${tcpPortList} in your host, cloud firewall, or router."
+  exit 3
+fi
+echo "SAMSAR_FIREWALL_CHANGED_PORTS=$CHANGED_PORTS"
+`;
+}
+
+async function runHostFirewallScript(script) {
+  try {
+    return await runCommandCapture('sh', ['-lc', script], { cwd: ROOT_DIR });
+  } catch (directError) {
+    try {
+      return await runCommandCapture('docker', [
+        'run',
+        '--rm',
+        '--privileged',
+        '--pid=host',
+        '--network=host',
+        'alpine:3.20',
+        'sh',
+        '-lc',
+        `apk add --no-cache util-linux >/dev/null && nsenter -t 1 -m -u -n -i sh -lc ${shellSingleQuote(script)}`,
+      ], { cwd: ROOT_DIR });
+    } catch (dockerError) {
+      const dockerMessage = summarizeCommandError(dockerError);
+      const directMessage = summarizeCommandError(directError);
+      const error = new Error(
+        dockerMessage ||
+        directMessage ||
+        'Unable to update host firewall automatically.',
+      );
+      error.cause = dockerError || directError;
+      throw error;
+    }
+  }
+}
+
+async function tryUpdateExternalAccessPorts(action, ports = []) {
+  const normalizedPorts = normalizeFirewallPorts(ports);
+  const script = buildHostFirewallScript(action, normalizedPorts);
+  try {
+    const stdout = await runHostFirewallScript(script);
+    return {
+      ok: true,
+      ports: normalizedPorts,
+      changedPorts: parseChangedFirewallPorts(stdout),
+      message: cleanFirewallScriptOutput(stdout) || `${action === 'open' ? 'Opened' : 'Closed'} ${formatFirewallPorts(normalizedPorts)}.`,
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      ports: normalizedPorts,
+      changedPorts: [],
+      message: error?.message || `Unable to ${action} ${formatFirewallPorts(normalizedPorts)} automatically.`,
+    };
+  }
+}
+
+function tryOpenExternalAccessPorts(ports = [80]) {
+  return tryUpdateExternalAccessPorts('open', ports);
+}
+
+function tryCloseExternalAccessPorts(ports = [80]) {
+  return tryUpdateExternalAccessPorts('close', ports);
+}
+
+async function maybeOpenExternalAccessPorts(run, reverseProxy = {}) {
+  run.openedReverseProxyPorts = [];
+  const requiredPorts = getReverseProxyRequiredFirewallPorts(reverseProxy);
+  if (!requiredPorts.length) {
+    setStepStatus(run, 'firewall', 'complete', 'Automatic port opening skipped.', { log: false });
+    return;
+  }
+
+  setStepStatus(run, 'firewall', 'running', `Trying to open host firewall ${formatFirewallPorts(requiredPorts)}.`);
+  const result = await tryOpenExternalAccessPorts(requiredPorts);
+  if (result.ok) {
+    run.openedReverseProxyPorts = result.changedPorts || [];
+    if (run.openedReverseProxyPorts.length) {
+      await rememberManagedFirewallPorts(run.openedReverseProxyPorts, 'setup-wizard-run');
+    }
+    setStepStatus(run, 'firewall', 'complete', result.message || `${formatFirewallPorts(requiredPorts)} opened.`);
+    return;
+  }
+  appendLog(run, result.message);
+  setStepStatus(run, 'firewall', 'complete', 'Automatic port opening did not complete; continuing setup.');
+}
+
+async function maybeCloseTemporaryHttpPortAfterSsl(run, reverseProxy = {}) {
+  if (!reverseProxy.enabled || !reverseProxy.ssl?.enabled || !run.openedReverseProxyPorts?.includes(80)) {
+    return;
+  }
+
+  appendLog(run, 'Closing temporary host firewall port 80 after SSL setup.');
+  const result = await tryCloseExternalAccessPorts([80]);
+  if (result.ok) {
+    await forgetManagedFirewallPorts([80]);
+    appendLog(run, result.message || 'Temporary host firewall port 80 closed.');
+    return;
+  }
+  appendLog(run, `Unable to close temporary host firewall port 80 automatically: ${result.message}`);
+}
+
+async function ensureReverseProxyRuntimeDirs() {
+  await Promise.all([
+    fs.mkdir(path.dirname(REVERSE_PROXY_NGINX_CONFIG_PATH), { recursive: true }),
+    fs.mkdir(REVERSE_PROXY_CERTBOT_WEBROOT, { recursive: true }),
+    fs.mkdir(REVERSE_PROXY_CERTBOT_CONFIG, { recursive: true }),
+  ]);
+}
+
+function getReverseProxyCertPath(fileName) {
+  return path.join(REVERSE_PROXY_CERTBOT_CONFIG, 'live', REVERSE_PROXY_CERT_NAME, fileName);
+}
+
+async function readReverseProxyCertificateDomains() {
+  const parsed = await readJson(REVERSE_PROXY_CERT_DOMAINS_PATH).catch(() => null);
+  return Array.isArray(parsed?.domains)
+    ? parsed.domains.map(normalizeHostInput).filter(Boolean).sort()
+    : [];
+}
+
+async function writeReverseProxyCertificateDomains(domains = []) {
+  await fs.mkdir(path.dirname(REVERSE_PROXY_CERT_DOMAINS_PATH), { recursive: true });
+  await fs.writeFile(
+    REVERSE_PROXY_CERT_DOMAINS_PATH,
+    `${JSON.stringify({ domains: [...new Set(domains)].sort() }, null, 2)}\n`,
+    { mode: 0o600 },
+  );
+}
+
+async function reverseProxyCertificateExists() {
+  try {
+    await Promise.all([
+      fs.access(getReverseProxyCertPath('fullchain.pem')),
+      fs.access(getReverseProxyCertPath('privkey.pem')),
+    ]);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function requestLetsEncryptCertificate(run, reverseProxy = {}) {
+  const domains = getReverseProxyHostList(reverseProxy)
+    .filter((host) => isValidDomainName(host) && !net.isIP(host))
+    .sort();
+  if (!reverseProxy.ssl?.enabled || !domains.length) {
+    return false;
+  }
+  const existingDomains = await readReverseProxyCertificateDomains();
+  if (await reverseProxyCertificateExists() && existingDomains.length && domains.join('\n') === existingDomains.join('\n')) {
+    appendLog(run, "Let's Encrypt certificate already exists.");
+    return false;
+  }
+
+  const email = normalizeString(reverseProxy.ssl.email);
+  if (!email) {
+    throw new Error("Let's Encrypt email is required for SSL setup.");
+  }
+
+  appendLog(run, `Requesting Let's Encrypt certificate for ${domains.join(', ')}.`);
+  await ensureReverseProxyRuntimeDirs();
+  await runCommand('docker', [
+    'run',
+    '--rm',
+    '-v',
+    `${REVERSE_PROXY_CERTBOT_CONFIG}:/etc/letsencrypt`,
+    '-v',
+    `${REVERSE_PROXY_CERTBOT_WEBROOT}:/var/www/certbot`,
+    'certbot/certbot:latest',
+    'certonly',
+    '--webroot',
+    '--webroot-path',
+    '/var/www/certbot',
+    '--non-interactive',
+    '--agree-tos',
+    '--no-eff-email',
+    '--keep-until-expiring',
+    '--expand',
+    '--cert-name',
+    REVERSE_PROXY_CERT_NAME,
+    '--email',
+    email,
+    ...domains.flatMap((domain) => ['-d', domain]),
+  ], {
+    cwd: ROOT_DIR,
+    run,
+    onOutput: (text) => appendLog(run, text.trim()),
+  });
+  await writeReverseProxyCertificateDomains(domains);
+  return true;
+}
+
+let dockerDesktopRuntimePromise = null;
+
+async function isDockerDesktopRuntime() {
+  if (!dockerDesktopRuntimePromise) {
+    dockerDesktopRuntimePromise = runCommandCapture('docker', [
+      'info',
+      '--format',
+      '{{.OperatingSystem}}|{{.Name}}',
+    ], { cwd: ROOT_DIR })
+      .then((output) => /docker desktop|docker-desktop/i.test(output))
+      .catch(() => false);
+  }
+  return dockerDesktopRuntimePromise;
+}
+
+function getUrlHostHeader(value) {
+  try {
+    return new URL(value).host;
+  } catch {
+    return '';
+  }
+}
+
+function getUrlPathWithSuffix(value, suffix = '') {
+  let basePath = '';
+  try {
+    basePath = new URL(value).pathname || '';
+  } catch {
+    basePath = '';
+  }
+  const normalizedBase = basePath.replace(/\/+$/, '');
+  const normalizedSuffix = normalizeString(suffix).replace(/^\/+/, '');
+  if (normalizedBase && normalizedSuffix) {
+    return `${normalizedBase}/${normalizedSuffix}`;
+  }
+  if (normalizedBase) {
+    return normalizedBase;
+  }
+  return normalizedSuffix ? `/${normalizedSuffix}` : '/';
+}
+
+function buildLocalReverseProxyProbeUrl(publicUrl, suffix = '') {
+  const localBaseUrl = normalizeString(process.env.SAMSAR_SETUP_REVERSE_PROXY_INTERNAL_URL) || 'http://host.docker.internal';
+  return `${localBaseUrl.replace(/\/+$/, '')}${getUrlPathWithSuffix(publicUrl, suffix)}`;
+}
+
+async function validateReverseProxyLocalRouting(clientUrl, processorApi) {
+  const clientHostHeader = getUrlHostHeader(clientUrl);
+  const processorHostHeader = getUrlHostHeader(processorApi);
+  if (!clientHostHeader || !processorHostHeader) {
+    throw new Error('Reverse proxy public URLs are incomplete.');
+  }
+
+  await waitForHttp(buildLocalReverseProxyProbeUrl(clientUrl), {
+    timeoutMs: 20000,
+    requestTimeoutMs: 5000,
+    headers: { Host: clientHostHeader },
+    isReady: isClientReadyHttpResponse,
+  });
+  await waitForHttp(buildLocalReverseProxyProbeUrl(processorApi, '/v1/health/live'), {
+    timeoutMs: 20000,
+    requestTimeoutMs: 5000,
+    headers: { Host: processorHostHeader },
+  });
+}
+
+async function validateReverseProxyExternalUrls(clientUrl, processorApi, {
+  timeoutMs = 90000,
+  requestTimeoutMs = 8000,
+  portHint = '',
+} = {}) {
+  try {
+    await waitForHttp(clientUrl, {
+      timeoutMs,
+      requestTimeoutMs,
+      isReady: isClientReadyHttpResponse,
+    });
+  } catch (error) {
+    throw new Error(`Reverse proxy client URL ${clientUrl} was not reachable: ${error?.message || error}.${portHint}`);
+  }
+
+  const processorHealthUrl = `${processorApi.replace(/\/+$/, '')}/v1/health/live`;
+  try {
+    await waitForHttp(processorHealthUrl, {
+      timeoutMs,
+      requestTimeoutMs,
+    });
+  } catch (error) {
+    throw new Error(`Reverse proxy processor URL ${processorHealthUrl} was not reachable: ${error?.message || error}.${portHint}`);
+  }
+}
+
+async function validateReverseProxyReachability(reverseProxy = {}) {
+  const clientUrl = reverseProxy.publicUrls?.clientApp;
+  const processorApi = reverseProxy.publicUrls?.processorApi;
+  if (!clientUrl || !processorApi) {
+    throw new Error('Reverse proxy public URLs are incomplete.');
+  }
+  const requiredPorts = getReverseProxyRequiredFirewallPorts(reverseProxy);
+  const portHint = requiredPorts.length
+    ? ` Confirm ${formatFirewallPorts(requiredPorts)} ${requiredPorts.length === 1 ? 'is' : 'are'} reachable in the host firewall, cloud firewall, and any router or load balancer.`
+    : '';
+
+  const dockerDesktopRuntime = await isDockerDesktopRuntime();
+  if (dockerDesktopRuntime && reverseProxy.accessType === 'privateIp' && !reverseProxy.ssl?.enabled) {
+    await validateReverseProxyLocalRouting(clientUrl, processorApi);
+    try {
+      await validateReverseProxyExternalUrls(clientUrl, processorApi, {
+        timeoutMs: 8000,
+        requestTimeoutMs: 4000,
+        portHint,
+      });
+      return { warning: '' };
+    } catch (error) {
+      return {
+        warning: `${error?.message || error} Local nginx routing is valid, so setup will continue for private IP access. Public internet providers cannot use this private address; tunneled media URLs will still be used for external AI adapter requests.`,
+      };
+    }
+  }
+
+  try {
+    await validateReverseProxyExternalUrls(clientUrl, processorApi, {
+      timeoutMs: 90000,
+      requestTimeoutMs: 8000,
+      portHint,
+    });
+    return { warning: '' };
+  } catch (error) {
+    throw error;
+  }
+}
+
+async function ensureReverseProxy(run, profileArgs, reverseProxy = {}) {
+  if (!reverseProxy.enabled) {
+    setStepStatus(run, 'proxy', 'complete', 'Reverse proxy skipped.', { log: false });
+    return;
+  }
+
+  await ensureReverseProxyRuntimeDirs();
+  setStepStatus(run, 'proxy', 'running', 'Configuring nginx reverse proxy.');
+
+  if (reverseProxy.ssl?.enabled) {
+    const issuedCertificate = await requestLetsEncryptCertificate(run, reverseProxy);
+    if (issuedCertificate) {
+      await runCommand('node', [path.join(ROOT_DIR, 'scripts', 'generate-runtime-config.mjs')], {
+        cwd: ROOT_DIR,
+        run,
+        onOutput: (text) => appendLog(run, text.trim()),
+      });
+    }
+  }
+
+  await runCommand('docker', [
+    ...getComposeArgs(...profileArgs, 'up', '-d', '--no-deps', '--force-recreate', 'reverse-proxy'),
+  ], {
+    cwd: ROOT_DIR,
+    env: { COMPOSE_BAKE: 'false' },
+    run,
+    onOutput: (text) => appendLog(run, text.trim()),
+  });
+
+  setStepStatus(run, 'proxy', 'running', 'Validating configured reverse proxy URLs.');
+  let reverseProxyValidation = { warning: '' };
+  try {
+    reverseProxyValidation = await validateReverseProxyReachability(reverseProxy);
+  } finally {
+    await maybeCloseTemporaryHttpPortAfterSsl(run, reverseProxy);
+  }
+  if (reverseProxyValidation?.warning) {
+    appendLog(run, reverseProxyValidation.warning);
+    setStepStatus(run, 'proxy', 'complete', 'Reverse proxy is reachable locally; external self-check returned a warning.');
+    return;
+  }
+  setStepStatus(run, 'proxy', 'complete', 'Reverse proxy is reachable.');
+}
+
 async function cleanupComposeStack(run) {
   const profileArgs = ALL_COMPOSE_PROFILES.flatMap((profile) => ['--profile', profile]);
   await ensureComposeEnvFile();
   setStepStatus(run, 'cleanup', 'running', 'Cleaning any previous Samsar Docker Compose containers.');
+  await closeManagedExternalAccessPorts(run, {
+    source: 'setup-wizard-cleanup',
+    message: 'Closing host firewall ports opened by previous Samsar setup before deleting or recreating containers.',
+  });
   await removeMediaTunnelContainer(run);
-  await runCommand('docker', ['compose', '-f', COMPOSE_FILE, ...profileArgs, 'down', '--remove-orphans'], {
+  await runCommand('docker', getComposeArgs(...profileArgs, 'down', '--remove-orphans'), {
     cwd: ROOT_DIR,
     env: { COMPOSE_BAKE: 'false' },
     run,
@@ -1006,7 +2142,7 @@ async function recoverSetupRun(runId, existingRun = null) {
     run.recoveryLogged = true;
   }
 
-  ['cleanup', 'config', 'runtime', 'compose', 'media'].forEach((stepId) => {
+  ['cleanup', 'config', 'runtime', 'firewall', 'compose', 'proxy', 'media'].forEach((stepId) => {
     setStepStatus(run, stepId, 'complete', 'Recovered from local Docker state.', { log: false });
   });
 
@@ -1066,16 +2202,22 @@ async function runSetup(run, payload) {
     const profiles = getComposeProfiles(
       payload?.deployment?.services || {},
       payload?.deployment?.infrastructure || {},
+      payload?.deployment?.reverseProxy || {},
     );
     const profileArgs = profiles.flatMap((profile) => ['--profile', profile]);
+    const reverseProxy = buildReverseProxyConfig(payload?.deployment?.reverseProxy || {});
+    await maybeOpenExternalAccessPorts(run, reverseProxy);
+
     setStepStatus(run, 'compose', 'running', `Starting Docker Compose profiles: ${profiles.join(', ')}`);
-    await runCommand('docker', ['compose', '-f', COMPOSE_FILE, ...profileArgs, 'up', '-d', '--build'], {
+    await runCommand('docker', getComposeArgs(...profileArgs, 'up', '-d', '--build'), {
       cwd: ROOT_DIR,
       env: { COMPOSE_BAKE: 'false' },
       run,
       onOutput: (text) => appendLog(run, text.trim()),
     });
     setStepStatus(run, 'compose', 'complete', 'Docker containers started.');
+
+    await ensureReverseProxy(run, profileArgs, reverseProxy);
 
     await publishLocalMediaGateway(run, profileArgs, {
       payload,
@@ -1123,10 +2265,16 @@ async function runDockerMaintenance(run) {
     const runtimeConfig = await readJson(CONFIG_PATH).catch(() => readJson(EXAMPLE_CONFIG_PATH));
     const profiles = getRuntimeComposeProfiles(runtimeConfig);
     const profileArgs = profiles.flatMap((profile) => ['--profile', profile]);
+    const reverseProxy = buildReverseProxyConfig(runtimeConfig.reverseProxy || {});
+
+    await closeManagedExternalAccessPorts(run, {
+      source: 'setup-wizard-maintenance',
+      message: 'Closing host firewall ports opened by previous Samsar setup before recreating containers.',
+    });
 
     setStepStatus(run, 'pull', 'running', 'Pulling available images.');
     try {
-      await runCommand('docker', ['compose', '-f', COMPOSE_FILE, ...profileArgs, 'pull', '--ignore-pull-failures'], {
+      await runCommand('docker', getComposeArgs(...profileArgs, 'pull', '--ignore-pull-failures'), {
         cwd: ROOT_DIR,
         env: composeEnv,
         run,
@@ -1138,14 +2286,18 @@ async function runDockerMaintenance(run) {
       setStepStatus(run, 'pull', 'complete', 'Image pull finished with warnings; continuing with rebuild.');
     }
 
+    await maybeOpenExternalAccessPorts(run, reverseProxy);
+
     setStepStatus(run, 'compose', 'running', 'Rebuilding and restarting Docker containers.');
-    await runCommand('docker', ['compose', '-f', COMPOSE_FILE, ...profileArgs, 'up', '-d', '--build', '--remove-orphans'], {
+    await runCommand('docker', getComposeArgs(...profileArgs, 'up', '-d', '--build', '--remove-orphans'), {
       cwd: ROOT_DIR,
       env: composeEnv,
       run,
       onOutput: (text) => appendLog(run, text.trim()),
     });
     setStepStatus(run, 'compose', 'complete', 'Docker containers updated and restarted.');
+
+    await ensureReverseProxy(run, profileArgs, reverseProxy);
 
     await publishLocalMediaGateway(run, profileArgs, {
       runtimeConfig,
@@ -1198,6 +2350,8 @@ async function removeGeneratedRuntimeFiles() {
     fs.rm(AVAILABLE_MODELS_PATH, { force: true }),
     fs.rm(ROOT_ENV_PATH, { force: true }),
     fs.rm(MAIL_SECRETS_PATH, { force: true }),
+    fs.rm(REVERSE_PROXY_NGINX_CONFIG_PATH, { force: true }),
+    fs.rm(REVERSE_PROXY_CERT_DOMAINS_PATH, { force: true }),
   ]);
 }
 
@@ -1214,8 +2368,12 @@ async function resetSetup(payload = {}) {
   const profileArgs = ALL_COMPOSE_PROFILES.flatMap((profile) => ['--profile', profile]);
 
   await ensureComposeEnvFile();
+  await closeManagedExternalAccessPorts(null, {
+    source: 'setup-wizard-reset',
+    message: 'Closing host firewall ports opened by Samsar setup before deleting containers.',
+  });
   await removeMediaTunnelContainer();
-  await runCommand('docker', ['compose', '-f', COMPOSE_FILE, ...profileArgs, 'down', '--remove-orphans'], {
+  await runCommand('docker', getComposeArgs(...profileArgs, 'down', '--remove-orphans'), {
     cwd: ROOT_DIR,
   });
   await removeGeneratedRuntimeFiles();
@@ -1231,6 +2389,7 @@ function summarizeRuntimeConfig(config = {}) {
   const database = config.database || {};
   const storage = config.storage || {};
   const publicUrls = config.publicUrls || {};
+  const reverseProxy = config.reverseProxy || {};
 
   return {
     runtime: config.runtime || 'docker',
@@ -1249,6 +2408,7 @@ function summarizeRuntimeConfig(config = {}) {
       minio: services.minio !== false,
       mediaGateway: services.mediaGateway !== false,
       logger: services.logger !== false,
+      reverseProxy: services.reverseProxy === true || reverseProxy.enabled === true,
     },
     database: {
       provider: database.provider || 'local-mongo',
@@ -1265,6 +2425,13 @@ function summarizeRuntimeConfig(config = {}) {
       clientApp: publicUrls.clientApp || CLIENT_URL,
       processorApi: publicUrls.processorApi || PROCESSOR_PUBLIC_URL,
       media: publicUrls.media || '',
+    },
+    reverseProxy: {
+      enabled: reverseProxy.enabled === true,
+      accessType: reverseProxy.accessType || '',
+      clientHost: reverseProxy.clientHost || '',
+      processorHost: reverseProxy.processorHost || '',
+      sslEnabled: reverseProxy.ssl?.enabled === true,
     },
     security: {
       dockerSetupConfigured: Boolean(config.security?.dockerSetupSecret),
@@ -1365,6 +2532,15 @@ async function handleApi(req, res, pathname) {
     return true;
   }
 
+  if (req.method === 'GET' && pathname === '/api/setup/reverse-proxy/ip-candidates') {
+    try {
+      sendJson(res, 200, await discoverReverseProxyIpCandidates());
+    } catch (error) {
+      sendJson(res, 500, { ok: false, message: error?.message || 'Unable to detect system IP addresses.' });
+    }
+    return true;
+  }
+
   if (req.method === 'POST' && pathname === '/api/setup/mail/validate') {
     const payload = await readRequestBody(req);
     try {
@@ -1373,6 +2549,37 @@ async function handleApi(req, res, pathname) {
     } catch (error) {
       sendJson(res, 400, { ok: false, message: error?.message || 'Mail validation failed.' });
     }
+    return true;
+  }
+
+  if (req.method === 'POST' && pathname === '/api/setup/reverse-proxy/validate') {
+    const payload = await readRequestBody(req);
+    try {
+      const validation = await validateReverseProxyConfig(payload.reverseProxy || payload);
+      sendJson(res, 200, validation);
+    } catch (error) {
+      sendJson(res, 400, { ok: false, message: error?.message || 'Reverse proxy validation failed.' });
+    }
+    return true;
+  }
+
+  if (req.method === 'POST' && pathname === '/api/setup/firewall/open-web-ports') {
+    const payload = await readRequestBody(req);
+    const result = await tryOpenExternalAccessPorts(payload.ports || [80]);
+    if (result.ok && result.changedPorts?.length) {
+      await rememberManagedFirewallPorts(result.changedPorts, payload.source || 'setup-wizard-manual');
+    }
+    sendJson(res, result.ok ? 200 : 400, result);
+    return true;
+  }
+
+  if (req.method === 'POST' && pathname === '/api/setup/firewall/close-managed-ports') {
+    const payload = await readRequestBody(req);
+    const result = await closeManagedExternalAccessPorts(null, {
+      source: payload.source || 'setup-wizard-api',
+      message: payload.message || 'Closing host firewall ports opened by Samsar setup.',
+    });
+    sendJson(res, result.ok ? 200 : 400, result);
     return true;
   }
 
@@ -1388,6 +2595,12 @@ async function handleApi(req, res, pathname) {
       payload.admin = buildAdminConfig(payload.admin);
       payload.setupSecret = randomBytes(32).toString('hex');
       payload.mailValidation = await validateMailConfig(payload.mail || {});
+      const reverseProxyValidation = await validateReverseProxyConfig(payload.deployment?.reverseProxy || {});
+      payload.reverseProxyValidation = reverseProxyValidation;
+      payload.deployment = {
+        ...(payload.deployment || {}),
+        reverseProxy: reverseProxyValidation.config,
+      };
     } catch (error) {
       sendJson(res, 400, { message: error?.message || 'Setup validation failed.' });
       return true;

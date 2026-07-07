@@ -19,6 +19,7 @@ import SceneLibraryHome from "../library/aivideo/SceneLibraryHome.jsx";
 import OverflowContainer from "../common/OverflowContainer.tsx";
 import APIKeysPanelContent from "./APIKeysPanelContent.jsx";
 import UsagePanelContent from "./UsagePanelContent.jsx";
+import TeamPanelContent from "./TeamPanelContent.jsx";
 import SingleSelect from "../common/SingleSelect.jsx";
 import { getSessionType } from "../../utils/environment.jsx";
 import { useInferenceModelAvailability } from "../../hooks/useInferenceModelAvailability.js";
@@ -119,7 +120,7 @@ export default function UserAccount() {
       ? "Loading configured inference models..."
       : hasConfiguredInferenceModels
         ? "Only models supported by your configured Docker providers are shown."
-        : "Configure OpenAI, Google Cloud, or a Samsar API key in setup to enable inference and assistant models."
+        : "Configure OpenAI, Google Cloud, or a Samsar API key in Providers to enable inference and assistant models."
     : "";
 
   const validPanels = [
@@ -130,6 +131,7 @@ export default function UserAccount() {
     "videos",
     "apiKeys",
     "usage",
+    "team",
     "billing",
     "settings",
   ];
@@ -142,6 +144,7 @@ export default function UserAccount() {
 
   const [displayPanel, setDisplayPanel] = useState(resolvePanelFromPath());
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [teamStatus, setTeamStatus] = useState(null);
 
   const [notifyOnCompletion, setNotifyOnCompletion] = useState(false);
   const [inferenceModel, setInferenceModel] = useState(
@@ -199,6 +202,31 @@ export default function UserAccount() {
   useEffect(() => {
     setDisplayPanel(resolvePanelFromPath());
   }, [location.pathname]);
+
+  useEffect(() => {
+    if (!user || !isDockerInstall || !user.isAdminUser || user.isTeamMember) {
+      setTeamStatus(null);
+      return;
+    }
+
+    let isCancelled = false;
+    axios
+      .get(`${PROCESSOR_SERVER}/users/team/status`, getHeaders())
+      .then((response) => {
+        if (!isCancelled) {
+          setTeamStatus(response.data);
+        }
+      })
+      .catch(() => {
+        if (!isCancelled) {
+          setTeamStatus(null);
+        }
+      });
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [isDockerInstall, user?._id, user?.isAdminUser, user?.isTeamMember]);
 
   if (!user) {
     if (displayPanel === "billing") {
@@ -324,15 +352,23 @@ export default function UserAccount() {
     </li>
   );
 
+  const showTeamPanel = Boolean(
+    isDockerInstall &&
+    !user.isTeamMember &&
+    teamStatus?.canManageTeam &&
+    teamStatus?.available
+  );
+
   const accountNavItems = [
     { panel: "account", label: "Account" },
-    { panel: "billing", label: "Billing" },
+    { panel: "billing", label: isDockerInstall ? "Providers" : "Billing" },
     { panel: "settings", label: "Settings" },
     { panel: "images", label: "Images" },
     { panel: "sounds", label: "Sounds" },
     { panel: "scenes", label: "Scenes" },
     { panel: "videos", label: "Videos" },
-    { panel: "apiKeys", label: "API Keys" },
+    ...(showTeamPanel ? [{ panel: "team", label: "Team" }] : []),
+    ...(!user.isTeamMember ? [{ panel: "apiKeys", label: "API Keys" }] : []),
     { panel: "usage", label: "Usage" },
   ];
 
@@ -344,7 +380,8 @@ export default function UserAccount() {
     videos: "Video Library",
     apiKeys: "API Keys",
     usage: "Usage Logs",
-    billing: "Billing Information",
+    team: "Team",
+    billing: isDockerInstall ? "Providers" : "Billing Information",
     settings: "Settings",
   };
 
@@ -556,15 +593,17 @@ export default function UserAccount() {
                     >
                       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                         <div>
-                          <h3 className="text-lg font-semibold">Usage & Billing</h3>
+                          <h3 className="text-lg font-semibold">
+                            {isDockerInstall ? "Providers" : "Usage & Billing"}
+                          </h3>
                           <p className={`text-sm ${secondaryTextColor}`}>
                             {isDockerInstall
-                              ? "Credits are charged provider side."
+                              ? "Manage Docker providers and model availability."
                               : "Track credits and billing status."}
                           </p>
                         </div>
                         <SecondaryButton onClick={() => goToPanel("billing")} className="w-full sm:w-auto">
-                          {isDockerInstall ? "View billing" : "Purchase credits"}
+                          {isDockerInstall ? "Manage providers" : "Purchase credits"}
                         </SecondaryButton>
                       </div>
 
@@ -572,15 +611,15 @@ export default function UserAccount() {
                         <div className="grid gap-4 sm:grid-cols-2">
                           <div className={`rounded-xl border ${borderColor} p-4 ${mutedBg}`}>
                             <p className={`text-xs uppercase tracking-wide ${secondaryTextColor}`}>
-                              Credits
+                              Billing
                             </p>
                             <p className="text-base font-semibold">Charged provider side</p>
                           </div>
                           <div className={`rounded-xl border ${borderColor} p-4 ${mutedBg}`}>
                             <p className={`text-xs uppercase tracking-wide ${secondaryTextColor}`}>
-                              Recharge
+                              Models
                             </p>
-                            <p className="text-base font-semibold">Managed by providers</p>
+                            <p className="text-base font-semibold">Configured by providers</p>
                           </div>
                         </div>
                       ) : (
@@ -631,7 +670,33 @@ export default function UserAccount() {
                   deleteAccountForUser={deleteAccountForUser}
                 />
               )}
-              {displayPanel === "apiKeys" && <APIKeysPanelContent />}
+              {displayPanel === "team" && (
+                showTeamPanel ? (
+                  <TeamPanelContent
+                    initialStatus={teamStatus}
+                    onStatusChange={setTeamStatus}
+                  />
+                ) : (
+                  <div className={`rounded-lg border ${borderColor} ${cardBgColor} p-5`}>
+                    <h2 className="text-xl font-semibold">Team</h2>
+                    <p className={`mt-2 text-sm ${secondaryTextColor}`}>
+                      Team management is only available to the Docker setup admin after mail and an installation address are configured.
+                    </p>
+                  </div>
+                )
+              )}
+              {displayPanel === "apiKeys" && (
+                user.isTeamMember ? (
+                  <div className={`rounded-lg border ${borderColor} ${cardBgColor} p-5`}>
+                    <h2 className="text-xl font-semibold">API Keys</h2>
+                    <p className={`mt-2 text-sm ${secondaryTextColor}`}>
+                      Team member accounts cannot create or manage API keys.
+                    </p>
+                  </div>
+                ) : (
+                  <APIKeysPanelContent />
+                )
+              )}
               {displayPanel === "usage" && <UsagePanelContent />}
               {displayPanel === "scenes" && <SceneLibraryHome hideSelectButton />}
               {displayPanel === "videos" && <SceneLibraryHome hideSelectButton />}

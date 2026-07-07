@@ -66,3 +66,51 @@ test('docker vision keeps already public image URLs unchanged', async () => {
     restoreEnv(previousEnv);
   }
 });
+
+test('docker vision can use a configured public IP processor path', async () => {
+  const previousEnv = {
+    CURRENT_ENV: process.env.CURRENT_ENV,
+    MEDIA_PUBLIC_URL: process.env.MEDIA_PUBLIC_URL,
+    SAMSAR_DOCKER_PUBLIC_PROCESSOR_BASE_URL: process.env.SAMSAR_DOCKER_PUBLIC_PROCESSOR_BASE_URL,
+    STATIC_CDN_URL: process.env.STATIC_CDN_URL,
+    SAMSAR_INTERNAL_MEDIA_BASE_URL: process.env.SAMSAR_INTERNAL_MEDIA_BASE_URL,
+  };
+
+  try {
+    process.env.CURRENT_ENV = 'docker';
+    process.env.MEDIA_PUBLIC_URL = 'http://localhost:8080/';
+    process.env.SAMSAR_DOCKER_PUBLIC_PROCESSOR_BASE_URL = 'http://203.0.113.10/api';
+    process.env.STATIC_CDN_URL = 'http://localhost:8080/';
+    process.env.SAMSAR_INTERNAL_MEDIA_BASE_URL = 'http://media-gateway';
+
+    assert.equal(
+      await resolveVisionImageUrl('http://localhost:8080/assets_v2/generations/session/frame.png'),
+      'http://203.0.113.10/api/assets_v2/generations/session/frame.png',
+    );
+  } finally {
+    restoreEnv(previousEnv);
+  }
+});
+
+test('docker vision does not use private IP media bases for external providers', async () => {
+  const previousEnv = {
+    CURRENT_ENV: process.env.CURRENT_ENV,
+    MEDIA_PUBLIC_URL: process.env.MEDIA_PUBLIC_URL,
+    SAMSAR_DOCKER_PUBLIC_PROCESSOR_BASE_URL: process.env.SAMSAR_DOCKER_PUBLIC_PROCESSOR_BASE_URL,
+    STATIC_CDN_URL: process.env.STATIC_CDN_URL,
+  };
+
+  try {
+    process.env.CURRENT_ENV = 'docker';
+    process.env.MEDIA_PUBLIC_URL = 'http://localhost:8080/';
+    process.env.SAMSAR_DOCKER_PUBLIC_PROCESSOR_BASE_URL = 'http://192.168.1.25';
+    process.env.STATIC_CDN_URL = 'http://localhost:8080/';
+
+    assert.equal(
+      await resolveVisionImageUrl('http://localhost:8080/assets_v2/generations/session/frame.png'),
+      'http://localhost:8080/assets_v2/generations/session/frame.png',
+    );
+  } finally {
+    restoreEnv(previousEnv);
+  }
+});

@@ -11,6 +11,7 @@ import {
 } from '../models/VideoSession.js';
 import { normalizeResponseAssetUrl } from '../models/api/StatusAPI.js';
 import { verifyUserAuth } from '../models/Auth.js';
+import { attachTeamContextToPayload, consumeTeamMemberModelApiCall } from '../models/Team.js';
 import { upsertGlobalSessionMapping } from '../models/GlobalSession.js';
 import { getCanvasDimensionsForAspectRatio } from '../utils/CanvasUtils.js';
 
@@ -458,6 +459,13 @@ router.post('/request_generate', async function (req, res) {
 
   try {
     const payload = req.body;
+    attachTeamContextToPayload(payload);
+    await consumeTeamMemberModelApiCall({
+      requestType: 'text_to_image',
+      sessionId: payload.videoSessionId || payload.sessionId,
+      route: '/image_sessions/request_generate',
+      payload,
+    });
     const sessionData = await requestGenerateImage(userId, payload);
     res.json(sessionData);
   } catch (error) {

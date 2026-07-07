@@ -9,6 +9,11 @@ const runtimeSecretsDir = path.join(root, 'runtime', 'secrets');
 const configPath = path.join(runtimeConfigDir, 'samsar.config.json');
 const exampleConfigPath = path.join(root, 'samsar.config.example.json');
 const mailSecretsPath = path.join(runtimeSecretsDir, 'mail.credentials.json');
+const reverseProxyDir = path.join(root, 'runtime', 'reverse-proxy');
+const reverseProxyNginxPath = path.join(reverseProxyDir, 'nginx.conf');
+const reverseProxyCertbotWebroot = path.join(reverseProxyDir, 'certbot', 'www');
+const reverseProxyCertbotConfig = path.join(reverseProxyDir, 'letsencrypt');
+const reverseProxyCertName = 'samsar-reverse-proxy';
 
 function readJson(filePath) {
   return JSON.parse(fs.readFileSync(filePath, 'utf8'));
@@ -48,9 +53,211 @@ const mediaPublicUrl = externalMediaPublishEnabled
 const externalMediaPublicBaseUrl = externalMediaPublishEnabled
   ? (storageConfig.staticCdnUrl || '')
   : mediaPublicUrl;
+const reverseProxyConfig = config.reverseProxy || {};
+const reverseProxyEnabled = reverseProxyConfig.enabled === true;
+const publicClientBaseUrl = config.publicUrls?.clientApp || 'http://localhost:3000';
+const publicProcessorBaseUrl = config.publicUrls?.processorApi || 'http://localhost:3002';
+const publicAssetBaseUrl = config.publicUrls?.media || publicProcessorBaseUrl;
 
 function normalizeString(value) {
   return typeof value === 'string' ? value.trim() : '';
+}
+
+function normalizeSecretString(value) {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+function isTemporaryAwsAccessKeyId(value) {
+  return normalizeString(value).toUpperCase().startsWith('ASIA');
+}
+
+function normalizeHost(value) {
+  const normalized = normalizeString(value).toLowerCase();
+  if (!normalized) {
+    return '';
+  }
+  try {
+    const parsedUrl = new URL(/^https?:\/\//i.test(normalized) ? normalized : `http://${normalized}`);
+    return parsedUrl.hostname.toLowerCase();
+  } catch {
+    return normalized
+      .replace(/^https?:\/\//i, '')
+      .split('/')[0]
+      .split(':')[0]
+      .toLowerCase();
+  }
+}
+
+function unique(values = []) {
+  return [...new Set(values.filter(Boolean))];
+}
+
+function reverseProxyCertExists() {
+  return fs.existsSync(path.join(reverseProxyCertbotConfig, 'live', reverseProxyCertName, 'fullchain.pem')) &&
+    fs.existsSync(path.join(reverseProxyCertbotConfig, 'live', reverseProxyCertName, 'privkey.pem'));
+}
+
+const proxyApiPrefixes = [
+  '/api/',
+  '/v1/',
+  '/v2/',
+  '/external/',
+  '/internal/',
+  '/users/',
+  '/admin/',
+  '/utils/',
+  '/interactions/',
+  '/video_sessions/',
+  '/video_session/',
+  '/image_sessions/',
+  '/payments/',
+  '/webhooks/',
+  '/audio/',
+  '/assistants/',
+  '/quick_session/',
+  '/accounts/',
+  '/ai_video/',
+  '/moviegen/',
+  '/content/',
+  '/newsletter/',
+  '/admaker/',
+  '/publication/',
+  '/publications/',
+  '/videos/',
+  '/assets_v2/',
+  '/assets/',
+  '/generations/',
+  '/intermediates/',
+  '/vidgenie/create_blank',
+];
+
+function buildProxyHeaders() {
+  return [
+    '    proxy_http_version 1.1;',
+    '    proxy_set_header Host $host;',
+    '    proxy_set_header X-Real-IP $remote_addr;',
+    '    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;',
+    '    proxy_set_header X-Forwarded-Proto $scheme;',
+    '    proxy_set_header Upgrade $http_upgrade;',
+    '    proxy_set_header Connection $connection_upgrade;',
+    '    proxy_read_timeout 3600;',
+    '    proxy_send_timeout 3600;',
+  ].join('\n');
+}
+
+function buildProxyLocation(prefix, upstream) {
+  return [
+    `  location ${prefix} {`,
+    `    proxy_pass ${upstream};`,
+    buildProxyHeaders(),
+    '  }',
+  ].join('\n');
+}
+
+function buildApiPrefixProxyLocations() {
+  return [
+    '  location = /api {',
+    '    return 308 /api/;',
+    '  }',
+    buildProxyLocation('/api/', 'http://processor:3002/'),
+  ];
+}
+
+function buildAcmeLocation() {
+  return [
+    '  location /.well-known/acme-challenge/ {',
+    '    root /var/www/certbot;',
+    '  }',
+  ].join('\n');
+}
+
+function buildServerBlock({ serverName, sslActive, locations, defaultUpstream }) {
+  const httpProxy = [
+    `server {`,
+    `  listen 80;`,
+    `  server_name ${serverName};`,
+    '  client_max_body_size 1024m;',
+    buildAcmeLocation(),
+    ...(sslActive
+      ? [
+        '  location / {',
+        '    return 301 https://$host$request_uri;',
+        '  }',
+      ]
+      : [
+        ...locations,
+        buildProxyLocation('/', defaultUpstream),
+      ]),
+    `}`,
+  ].join('\n');
+
+  if (!sslActive) {
+    return httpProxy;
+  }
+
+  const httpsProxy = [
+    `server {`,
+    `  listen 443 ssl http2;`,
+    `  server_name ${serverName};`,
+    '  client_max_body_size 1024m;',
+    `  ssl_certificate /etc/letsencrypt/live/${reverseProxyCertName}/fullchain.pem;`,
+    `  ssl_certificate_key /etc/letsencrypt/live/${reverseProxyCertName}/privkey.pem;`,
+    '  ssl_session_cache shared:SSL:10m;',
+    '  ssl_session_timeout 10m;',
+    buildAcmeLocation(),
+    ...locations,
+    buildProxyLocation('/', defaultUpstream),
+    `}`,
+  ].join('\n');
+
+  return `${httpProxy}\n\n${httpsProxy}`;
+}
+
+function buildReverseProxyNginxConfig() {
+  const clientHost = normalizeHost(reverseProxyConfig.clientHost);
+  const processorHost = normalizeHost(reverseProxyConfig.processorHost);
+  const sslActive = reverseProxyEnabled && reverseProxyConfig.ssl?.enabled === true && reverseProxyCertExists();
+  const usesIpApiPath = ['publicIp', 'privateIp'].includes(reverseProxyConfig.accessType);
+  const connectionMap = [
+    'map $http_upgrade $connection_upgrade {',
+    '  default upgrade;',
+    "  '' close;",
+    '}',
+  ].join('\n');
+
+  if (!reverseProxyEnabled || !clientHost || !processorHost) {
+    return `${connectionMap}\n\nserver {\n  listen 80 default_server;\n  server_name _;\n${buildAcmeLocation()}\n  location / {\n    return 404;\n  }\n}\n`;
+  }
+
+  if (clientHost === processorHost) {
+    const apiLocations = usesIpApiPath
+      ? buildApiPrefixProxyLocations()
+      : [
+        ...buildApiPrefixProxyLocations(),
+        ...proxyApiPrefixes.map((prefix) => buildProxyLocation(prefix, 'http://processor:3002')),
+      ];
+    return `${connectionMap}\n\n${buildServerBlock({
+      serverName: clientHost,
+      sslActive,
+      locations: apiLocations,
+      defaultUpstream: 'http://client:3000',
+    })}\n`;
+  }
+
+  return `${connectionMap}\n\n${[
+    buildServerBlock({
+      serverName: clientHost,
+      sslActive,
+      locations: [],
+      defaultUpstream: 'http://client:3000',
+    }),
+    buildServerBlock({
+      serverName: processorHost,
+      sslActive,
+      locations: [],
+      defaultUpstream: 'http://processor:3002',
+    }),
+  ].join('\n\n')}\n`;
 }
 
 function normalizeMailProvider(value) {
@@ -108,13 +315,21 @@ function buildMailEnv() {
   }
 
   const ses = mailSecrets.ses || {};
+  const sesAccessKeyId = normalizeString(ses.accessKeyId);
+  const sesSecretAccessKey = normalizeSecretString(ses.secretAccessKey);
+  const sesSessionToken = isTemporaryAwsAccessKeyId(sesAccessKeyId)
+    ? normalizeSecretString(ses.sessionToken)
+    : '';
+  if (isTemporaryAwsAccessKeyId(sesAccessKeyId) && !sesSessionToken) {
+    throw new Error('AWS_SES_SESSION_TOKEN is required when AWS_SES_ACCESS_KEY_ID uses temporary ASIA credentials.');
+  }
   return {
     ...baseEnv,
     SES_REGION: normalizeString(ses.region) || 'us-east-1',
     AWS_SES_REGION: normalizeString(ses.region) || 'us-east-1',
-    AWS_SES_ACCESS_KEY_ID: normalizeString(ses.accessKeyId),
-    AWS_SES_SECRET_ACCESS_KEY: typeof ses.secretAccessKey === 'string' ? ses.secretAccessKey : '',
-    AWS_SES_SESSION_TOKEN: typeof ses.sessionToken === 'string' ? ses.sessionToken : '',
+    AWS_SES_ACCESS_KEY_ID: sesAccessKeyId,
+    AWS_SES_SECRET_ACCESS_KEY: sesSecretAccessKey,
+    AWS_SES_SESSION_TOKEN: sesSessionToken,
   };
 }
 
@@ -135,6 +350,9 @@ function buildAvailableModels(providers = {}) {
 
 fs.mkdirSync(runtimeConfigDir, { recursive: true });
 fs.mkdirSync(runtimeSecretsDir, { recursive: true, mode: 0o700 });
+fs.mkdirSync(reverseProxyDir, { recursive: true });
+fs.mkdirSync(reverseProxyCertbotWebroot, { recursive: true });
+fs.mkdirSync(reverseProxyCertbotConfig, { recursive: true });
 try {
   fs.chmodSync(runtimeSecretsDir, 0o700);
 } catch (_) {
@@ -189,9 +407,15 @@ const env = {
 	  SAMSAR_EXTERNAL_MEDIA_CLOUDFRONT_PRIVATE_KEY: cloudFrontConfig.privateKey || '',
 	  SAMSAR_EXTERNAL_MEDIA_CLOUDFRONT_PRIVATE_KEY_BASE64: cloudFrontConfig.privateKeyBase64 || '',
 	  SAMSAR_EXTERNAL_MEDIA_CLOUDFRONT_SIGNED_URL_TTL_SECONDS: cloudFrontConfig.signedUrlTtlSeconds || '',
-	  CLIENT_APP: config.publicUrls?.clientApp || 'http://localhost:3000',
-  PROCESSOR_API: config.publicUrls?.processorApi || 'http://localhost:3002',
-  PROCESSOR_URL: config.publicUrls?.processorApi || 'http://localhost:3002',
+	  CLIENT_APP: publicClientBaseUrl,
+  PROCESSOR_API: publicProcessorBaseUrl,
+  PROCESSOR_URL: publicProcessorBaseUrl,
+  SAMSAR_DOCKER_PUBLIC_CLIENT_BASE_URL: publicClientBaseUrl,
+  SAMSAR_DOCKER_PUBLIC_PROCESSOR_BASE_URL: publicProcessorBaseUrl,
+  SAMSAR_DOCKER_PUBLIC_ASSET_BASE_URL: publicAssetBaseUrl,
+  SAMSAR_REVERSE_PROXY_ENABLED: String(reverseProxyEnabled),
+  SAMSAR_REVERSE_PROXY_ACCESS_TYPE: reverseProxyConfig.accessType || '',
+  SAMSAR_REVERSE_PROXY_SSL_ENABLED: String(reverseProxyConfig.ssl?.enabled === true),
   SAMSAR_JS_API_URL: config.publicUrls?.samsarApi || 'https://api.samsar.one/v1',
   LOGGER_HEALTH_REQUIRED: String(loggerEnabled),
   LOKI_HEALTH_URL: isDockerRuntime ? 'http://loki:3100/ready' : 'http://127.0.0.1:4100/ready',
@@ -233,5 +457,8 @@ fs.writeFileSync(
   { mode: 0o600 },
 );
 
+fs.writeFileSync(reverseProxyNginxPath, buildReverseProxyNginxConfig(), { mode: 0o644 });
+
 console.log(`Rendered ${path.relative(root, rootEnvPath)}`);
 console.log(`Rendered ${path.relative(root, availableModelsPath)}`);
+console.log(`Rendered ${path.relative(root, reverseProxyNginxPath)}`);

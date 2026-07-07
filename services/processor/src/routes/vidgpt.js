@@ -5,6 +5,7 @@ import express from 'express';
 import axios from 'axios';
 
 import { verifyUserAuth, } from '../models/Auth.js';
+import { attachTeamContextToPayload, consumeTeamMemberModelApiCall } from '../models/Team.js';
 
 import { createVidGPTSession, createInfoVidSession, createVidGPTSessionWithBody } from '../models/movie_session/VidGPT.js';
 
@@ -25,6 +26,13 @@ router.post('/create', async function (req, res) {
 
   try {
 
+    attachTeamContextToPayload(payload);
+    await consumeTeamMemberModelApiCall({
+      requestType: 'vidgpt',
+      sessionId: payload.sessionId,
+      route: '/vidgpt/create',
+      payload,
+    });
     createVidGPTSession(userId, payload);
     res.status(200).send({ message: "VidGPT session created" });
   } catch (error) {
@@ -44,6 +52,13 @@ router.post('/create_new_session_with_body', async function (req, res) {
   }
 
   try {
+    attachTeamContextToPayload(payload);
+    await consumeTeamMemberModelApiCall({
+      requestType: 'vidgpt',
+      sessionId: payload.sessionId,
+      route: '/vidgpt/create_new_session_with_body',
+      payload,
+    });
     const sessionData = await createVidGPTSessionWithBody(userId, payload);
     res.status(200).send(sessionData);
   } catch (error) {
@@ -63,6 +78,13 @@ router.post('/create_info_vid', async function (req, res) {
     return;
   }
 
+  attachTeamContextToPayload(payload);
+  await consumeTeamMemberModelApiCall({
+    requestType: 'info_vid',
+    sessionId: payload.sessionId,
+    route: '/vidgpt/create_info_vid',
+    payload,
+  });
   createInfoVidSession(userId, payload);
   res.status(200).send({ message: "InfoVid session created" });
 });

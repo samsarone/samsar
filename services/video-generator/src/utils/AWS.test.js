@@ -73,6 +73,11 @@ test('uploadVideoToCDN returns a Docker-local public processor URL after persist
     await uploadVideoToCDN(sourcePath, 'assets_v2/video/output/session-1/final-override.mp4'),
     'http://localhost:3999/assets_v2/video/output/session-1/final-override.mp4',
   );
+  process.env.SAMSAR_DOCKER_PUBLIC_PROCESSOR_BASE_URL = 'http://203.0.113.10/api';
+  assert.equal(
+    await uploadVideoToCDN(sourcePath, 'assets_v2/video/output/session-1/final-public.mp4'),
+    'http://203.0.113.10/api/assets_v2/video/output/session-1/final-public.mp4',
+  );
   assert.equal(
     await fs.readFile(path.join(assetsRoot, 'video/output/session-1/final.mp4'), 'utf8'),
     'rendered-video',

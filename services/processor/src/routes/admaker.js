@@ -5,6 +5,7 @@ import express from 'express';
 import axios from 'axios';
 
 import { verifyUserAuth, } from '../models/Auth.js';
+import { attachTeamContextToPayload, consumeTeamMemberModelApiCall } from '../models/Team.js';
 
 import { createAdMakerSession } from '../models/movie_session/ad_creator/AdMaker.js';
 import { createNewBlankQuickSession } from '../models/QuickSession.js';
@@ -27,6 +28,13 @@ router.post('/create', async function (req, res) {
     return;
   }
 
+  attachTeamContextToPayload(payload);
+  await consumeTeamMemberModelApiCall({
+    requestType: 'ad_video',
+    sessionId: payload.sessionId,
+    route: '/admaker/create',
+    payload,
+  });
   createAdMakerSession(userId, payload);
   res.status(200).send({ message: "VidGPT session created" });
 });
