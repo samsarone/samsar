@@ -51,6 +51,8 @@ scripts/sync-projects.sh
 **/setup_logger.sh
 services/*/Dockerfile
 services/*/.dockerignore
+!services/docker-cleanup/Dockerfile
+!services/docker-cleanup/.dockerignore
 services/processor/scripts/check_production_session_state.js
 services/processor/scripts/cleanup_s3_resources.js
 services/processor/scripts/cleanup_static_temp_assets.sh
