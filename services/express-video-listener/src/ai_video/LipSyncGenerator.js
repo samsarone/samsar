@@ -345,7 +345,7 @@ export async function generateLipSyncForLayer(sessionId, currentLayer, connected
     const startPadDuration = shouldCenterPadAudio ? durationDiff / 2 : 0;
     const localFileExtension = path.extname(localAudioFile) || '.mp3';
     const localFileBaseName = path.basename(localAudioFile, localFileExtension).replace(/_padded$/, '');
-    const paddedFileName = `${localFileBaseName}_padded.mp3`;
+    const paddedFileName = `${localFileBaseName}_padded.wav`;
     paddedAudioPath = path.join(audioDir, paddedFileName);
 
     paddedAudioPath = await padBlankAudioAtBeginningAndEnd(

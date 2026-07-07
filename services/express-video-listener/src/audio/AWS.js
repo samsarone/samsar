@@ -85,6 +85,23 @@ function shouldUseDockerLocalMedia() {
   return isDockerRuntime() && !isExternalMediaPublishEnabled();
 }
 
+function getAudioContentType(filePath) {
+  const extension = path.extname(filePath || '').toLowerCase();
+  if (extension === '.wav') {
+    return 'audio/wav';
+  }
+  if (extension === '.m4a') {
+    return 'audio/mp4';
+  }
+  if (extension === '.ogg' || extension === '.oga') {
+    return 'audio/ogg';
+  }
+  if (extension === '.webm') {
+    return 'audio/webm';
+  }
+  return 'audio/mpeg';
+}
+
 function getDockerAssetsV2Root() {
   return path.resolve(process.env.SAMSAR_ASSETS_V2_ROOT || '/assets_v2').replace(/\\/g, '/').replace(/\/+$/, '');
 }
@@ -226,7 +243,7 @@ export async function uploadSpeechAudioToCDN(absolutePath, remoteFileName) {
     Bucket: bucketName,
     Key: uploadKey,
     Body: fileStream,
-    ContentType: 'audio/mp3', // Assuming all audio files are MP3
+    ContentType: getAudioContentType(absolutePath),
     ContentLength: fileSize,
   };
 
