@@ -2075,23 +2075,238 @@ async function runHostFirewallScript(script) {
   }
 }
 
+async function fetchAzureManagedIdentityToken() {
+  const response = await fetch(
+    'http://169.254.169.254/metadata/identity/oauth2/token?api-version=2018-02-01&resource=https%3A%2F%2Fmanagement.azure.com%2F',
+    {
+      headers: { Metadata: 'true' },
+      signal: AbortSignal.timeout(5000),
+    },
+  );
+  if (!response.ok) {
+    throw new Error(`Azure managed identity token request returned ${response.status}.`);
+  }
+  const body = await response.json();
+  if (!body.access_token) {
+    throw new Error('Azure managed identity token response did not include an access token.');
+  }
+  return body.access_token;
+}
+
+async function azureArmFetch(token, url, options = {}) {
+  const response = await fetch(url, {
+    ...options,
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+      ...(options.headers || {}),
+    },
+    signal: options.signal || AbortSignal.timeout(15000),
+  });
+  const text = await response.text();
+  let body = {};
+  if (text) {
+    try {
+      body = JSON.parse(text);
+    } catch {
+      body = {};
+    }
+  }
+  if (!response.ok) {
+    throw new Error(body?.error?.message || `Azure Resource Manager returned ${response.status}.`);
+  }
+  return body;
+}
+
+function azureResourceUrl(resourceId, apiVersion) {
+  return `https://management.azure.com${resourceId}?api-version=${apiVersion}`;
+}
+
+function azureVmResourceUrl(subscriptionId, resourceGroup, vmName) {
+  return `https://management.azure.com/subscriptions/${encodeURIComponent(subscriptionId)}/resourceGroups/${encodeURIComponent(resourceGroup)}/providers/Microsoft.Compute/virtualMachines/${encodeURIComponent(vmName)}?api-version=2024-07-01`;
+}
+
+function azureRuleAllowsPort(rule = {}, port) {
+  const properties = rule.properties || {};
+  if (properties.access !== 'Allow' || properties.direction !== 'Inbound') {
+    return false;
+  }
+  if (!['Tcp', '*'].includes(properties.protocol)) {
+    return false;
+  }
+  const destinationPortRanges = [
+    properties.destinationPortRange,
+    ...(Array.isArray(properties.destinationPortRanges) ? properties.destinationPortRanges : []),
+  ].filter(Boolean);
+  return destinationPortRanges.some((range) => range === '*' || range === String(port));
+}
+
+function pickAzureRulePriority(rules = [], preferredPriority = 1000) {
+  const usedPriorities = new Set(
+    rules
+      .map((rule) => Number.parseInt(String(rule.properties?.priority), 10))
+      .filter((priority) => Number.isFinite(priority)),
+  );
+  for (let priority = preferredPriority; priority <= 4096; priority += 1) {
+    if (!usedPriorities.has(priority)) {
+      return priority;
+    }
+  }
+  throw new Error('No available Azure NSG rule priority between 1000 and 4096.');
+}
+
+async function tryOpenAzureNetworkSecurityGroupPorts(ports = []) {
+  const normalizedPorts = normalizeFirewallPorts(ports, []);
+  const remediation = buildExternalAccessRemediation(normalizedPorts);
+  if (!SETUP_CLOUD_SUBSCRIPTION_ID || !SETUP_CLOUD_RESOURCE_GROUP || !SETUP_CLOUD_VM_NAME) {
+    return {
+      ok: false,
+      provider: 'Azure',
+      ports: normalizedPorts,
+      changedPorts: [],
+      remediation,
+      message: 'Azure VM metadata is incomplete; open the Azure Network Security Group manually.',
+    };
+  }
+
+  try {
+    const token = await fetchAzureManagedIdentityToken();
+    const vm = await azureArmFetch(
+      token,
+      azureVmResourceUrl(SETUP_CLOUD_SUBSCRIPTION_ID, SETUP_CLOUD_RESOURCE_GROUP, SETUP_CLOUD_VM_NAME),
+    );
+    const nicId = vm.properties?.networkProfile?.networkInterfaces?.[0]?.id;
+    if (!nicId) {
+      throw new Error('Azure VM does not expose a network interface ID.');
+    }
+    const nic = await azureArmFetch(token, azureResourceUrl(nicId, '2024-05-01'));
+    let nsgId = nic.properties?.networkSecurityGroup?.id;
+    if (!nsgId) {
+      const subnetId = nic.properties?.ipConfigurations?.[0]?.properties?.subnet?.id;
+      if (subnetId) {
+        const subnet = await azureArmFetch(token, azureResourceUrl(subnetId, '2024-05-01'));
+        nsgId = subnet.properties?.networkSecurityGroup?.id;
+      }
+    }
+    if (!nsgId) {
+      throw new Error('No Azure Network Security Group was found on the VM NIC or subnet.');
+    }
+
+    const nsg = await azureArmFetch(token, azureResourceUrl(nsgId, '2024-05-01'));
+    const rules = Array.isArray(nsg.properties?.securityRules) ? [...nsg.properties.securityRules] : [];
+    const changedPorts = [];
+    normalizedPorts.forEach((port) => {
+      if (rules.some((rule) => azureRuleAllowsPort(rule, port))) {
+        return;
+      }
+      const ruleName = `SamsarSetupAllow${port}`;
+      const priority = pickAzureRulePriority(rules, 1000 + changedPorts.length);
+      rules.push({
+        name: ruleName,
+        properties: {
+          access: 'Allow',
+          direction: 'Inbound',
+          protocol: 'Tcp',
+          priority,
+          sourceAddressPrefix: '*',
+          sourcePortRange: '*',
+          destinationAddressPrefix: '*',
+          destinationPortRange: String(port),
+          description: `Samsar setup inbound TCP ${port}.`,
+        },
+      });
+      changedPorts.push(port);
+    });
+
+    if (changedPorts.length) {
+      nsg.properties.securityRules = rules;
+      await azureArmFetch(token, azureResourceUrl(nsgId, '2024-05-01'), {
+        method: 'PUT',
+        body: JSON.stringify(nsg),
+      });
+    }
+
+    return {
+      ok: true,
+      provider: 'Azure',
+      ports: normalizedPorts,
+      changedPorts,
+      remediation,
+      message: changedPorts.length
+        ? `Opened Azure Network Security Group inbound TCP ${changedPorts.join(', ')}.`
+        : `Azure Network Security Group already allows TCP ${normalizedPorts.join(', ')}.`,
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      provider: 'Azure',
+      ports: normalizedPorts,
+      changedPorts: [],
+      remediation,
+      message: `Azure Network Security Group could not be updated automatically: ${error?.message || String(error)}`,
+    };
+  }
+}
+
+async function tryOpenCloudExternalAccessPorts(ports = []) {
+  const normalizedPorts = normalizeFirewallPorts(ports, []);
+  if (!SETUP_REMOTE_INSTALL || !normalizedPorts.length) {
+    return {
+      ok: true,
+      skipped: true,
+      ports: normalizedPorts,
+      changedPorts: [],
+      message: '',
+    };
+  }
+  if (/azure/i.test(SETUP_CLOUD_ENVIRONMENT)) {
+    return tryOpenAzureNetworkSecurityGroupPorts(normalizedPorts);
+  }
+  return {
+    ok: false,
+    provider: SETUP_CLOUD_ENVIRONMENT || 'remote',
+    ports: normalizedPorts,
+    changedPorts: [],
+    remediation: buildExternalAccessRemediation(normalizedPorts),
+    message: `${SETUP_CLOUD_ENVIRONMENT || 'Remote cloud'} firewall could not be updated automatically; follow the platform-specific instructions.`,
+  };
+}
+
 async function tryUpdateExternalAccessPorts(action, ports = []) {
   const normalizedPorts = normalizeFirewallPorts(ports);
   const script = buildHostFirewallScript(action, normalizedPorts);
   try {
     const stdout = await runHostFirewallScript(script);
+    const cloudResult = action === 'open'
+      ? await tryOpenCloudExternalAccessPorts(normalizedPorts)
+      : { ok: true, skipped: true, changedPorts: [], message: '' };
+    const hostMessage = cleanFirewallScriptOutput(stdout) || `${action === 'open' ? 'Opened' : 'Closed'} ${formatFirewallPorts(normalizedPorts)}.`;
+    const message = [
+      hostMessage,
+      cloudResult.skipped ? '' : cloudResult.message,
+    ].filter(Boolean).join('\n');
     return {
       ok: true,
       ports: normalizedPorts,
       changedPorts: parseChangedFirewallPorts(stdout),
-      message: cleanFirewallScriptOutput(stdout) || `${action === 'open' ? 'Opened' : 'Closed'} ${formatFirewallPorts(normalizedPorts)}.`,
+      cloud: cloudResult,
+      remediation: cloudResult.remediation || null,
+      message,
     };
   } catch (error) {
+    const cloudResult = action === 'open'
+      ? await tryOpenCloudExternalAccessPorts(normalizedPorts)
+      : { ok: true, skipped: true, changedPorts: [], message: '' };
     return {
       ok: false,
       ports: normalizedPorts,
       changedPorts: [],
-      message: error?.message || `Unable to ${action} ${formatFirewallPorts(normalizedPorts)} automatically.`,
+      cloud: cloudResult,
+      remediation: cloudResult.remediation || null,
+      message: [
+        error?.message || `Unable to ${action} ${formatFirewallPorts(normalizedPorts)} automatically.`,
+        cloudResult.skipped ? '' : cloudResult.message,
+      ].filter(Boolean).join('\n'),
     };
   }
 }
