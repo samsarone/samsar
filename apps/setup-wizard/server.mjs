@@ -1331,6 +1331,33 @@ function getRuntimeComposeProfiles(config = {}) {
   return profiles;
 }
 
+function validateDockerBuildInputs(profiles = []) {
+  const profileSet = new Set(profiles);
+  const requirements = [
+    { path: COMPOSE_FILE, label: 'Docker Compose file' },
+  ];
+
+  if (profileSet.has('core') || profileSet.has('workers')) {
+    requirements.push({ path: path.join(ROOT_DIR, 'Dockerfile'), label: 'shared service Dockerfile' });
+  }
+  if (profileSet.has('core')) {
+    requirements.push({ path: path.join(ROOT_DIR, 'apps', 'samsar-client', 'Dockerfile'), label: 'client Dockerfile' });
+  }
+  if (profileSet.has('workers')) {
+    requirements.push({ path: path.join(ROOT_DIR, 'services', 'docker-cleanup', 'Dockerfile'), label: 'docker-cleanup Dockerfile' });
+  }
+
+  const missing = requirements.filter((requirement) => !existsSync(requirement.path));
+  if (!missing.length) {
+    return;
+  }
+
+  const missingPaths = missing
+    .map((requirement) => `${path.relative(ROOT_DIR, requirement.path)} (${requirement.label})`)
+    .join(', ');
+  throw new Error(`Docker build inputs are missing from ${ROOT_DIR}: ${missingPaths}. Pull the latest Samsar repository and rerun the setup wizard.`);
+}
+
 function hasConfiguredSamsarApiKey(credentials = {}) {
   return Boolean(normalizeString(credentials.samsarApiKey || credentials?.samsar?.apiKey));
 }
@@ -2728,6 +2755,8 @@ async function runSetup(run, payload) {
     const reverseProxy = buildReverseProxyConfig(payload?.deployment?.reverseProxy || {});
     await maybeOpenExternalAccessPorts(run, reverseProxy);
 
+    setStepStatus(run, 'compose', 'running', `Validating Docker build inputs for profiles: ${profiles.join(', ')}`);
+    validateDockerBuildInputs(profiles);
     setStepStatus(run, 'compose', 'running', `Starting Docker Compose profiles: ${profiles.join(', ')}`);
     await runCommand('docker', getComposeArgs(...profileArgs, 'up', '-d', '--build'), {
       cwd: ROOT_DIR,
@@ -2810,6 +2839,8 @@ async function runDockerMaintenance(run) {
 
     await maybeOpenExternalAccessPorts(run, reverseProxy);
 
+    setStepStatus(run, 'compose', 'running', `Validating Docker build inputs for profiles: ${profiles.join(', ')}`);
+    validateDockerBuildInputs(profiles);
     setStepStatus(run, 'compose', 'running', 'Rebuilding and restarting Docker containers.');
     await runCommand('docker', getComposeArgs(...profileArgs, 'up', '-d', '--build', '--remove-orphans'), {
       cwd: ROOT_DIR,
