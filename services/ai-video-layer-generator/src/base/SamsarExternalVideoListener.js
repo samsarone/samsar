@@ -23,6 +23,80 @@ function normalizeString(value) {
   return typeof value === 'string' ? value.trim() : '';
 }
 
+function stripQuery(value) {
+  return normalizeString(value).split('?')[0];
+}
+
+function summarizeMediaUrl(value) {
+  const normalized = stripQuery(value);
+  if (!normalized) {
+    return null;
+  }
+  try {
+    const parsed = new URL(normalized);
+    return {
+      url: normalized,
+      protocol: parsed.protocol.replace(/:$/, ''),
+      host: parsed.host,
+      pathname: parsed.pathname,
+    };
+  } catch {
+    return {
+      url: normalized,
+    };
+  }
+}
+
+function summarizeExternalVideoInput(input = {}) {
+  return {
+    videoUrl: summarizeMediaUrl(input.video_url),
+    audioUrl: summarizeMediaUrl(input.audio_url),
+    imageUrl: summarizeMediaUrl(input.image_url || input.start_image_url || input.startImage),
+    videoModel: normalizeString(input.video_model || input.lip_sync_model || input.sound_effect_model),
+    promptLength: normalizeString(input.prompt).length,
+    aspectRatio: normalizeString(input.aspect_ratio),
+    duration: input.duration,
+    metadata: input.metadata || null,
+  };
+}
+
+function summarizeExternalStatus(statusData = {}) {
+  const session = statusData?.session || statusData?.data?.session || null;
+  const firstLayer = Array.isArray(session?.layers) ? session.layers[0] : null;
+  const firstAudioLayer = Array.isArray(session?.audioLayers) ? session.audioLayers[0] : null;
+  return {
+    status: statusData?.status || statusData?.data?.status || null,
+    state: statusData?.state || statusData?.data?.state || null,
+    routeType: statusData?.routeType || statusData?.route_type || statusData?.externalVideoRoute || statusData?.external_video_route || session?.externalVideoRoute || null,
+    externalVideoStage: statusData?.externalVideoStage || statusData?.external_video_stage || session?.externalVideoStage || null,
+    provider: statusData?.provider || statusData?.data?.provider || session?.provider || null,
+    resultUrl: summarizeMediaUrl(getVideoUrl(statusData)),
+    message: statusData?.message || statusData?.error || statusData?.data?.message || statusData?.data?.error || null,
+    session: session ? {
+      id: session.id || session.requestId || null,
+      provider: session.provider || null,
+      currentStage: session.currentStage || null,
+      previewStage: session.previewStage || null,
+      stages: session.stages || null,
+      firstLayer: firstLayer ? {
+        id: firstLayer.id || null,
+        aiVideoStatus: firstLayer.aiVideo?.status || null,
+        aiVideoUrl: summarizeMediaUrl(firstLayer.aiVideo?.url),
+        lipSyncStatus: firstLayer.lipSyncVideo?.status || null,
+        lipSyncUrl: summarizeMediaUrl(firstLayer.lipSyncVideo?.url),
+        previewStage: firstLayer.preview?.stage || null,
+        previewUrl: summarizeMediaUrl(firstLayer.preview?.url),
+      } : null,
+      firstAudioLayer: firstAudioLayer ? {
+        id: firstAudioLayer.id || null,
+        status: firstAudioLayer.status || null,
+        url: summarizeMediaUrl(firstAudioLayer.url),
+        duration: firstAudioLayer.duration,
+      } : null,
+    } : null,
+  };
+}
+
 function getAssetPathFromMediaReference(reference) {
   let normalized = normalizeString(reference).replace(/\\/g, '/').split('?')[0];
   if (!normalized) {
@@ -609,6 +683,17 @@ export async function generateSamsarExternalVideoLayer(payload = {}) {
     resolveExternalVideoRoute(payload),
   );
   const route = routeRequest.route;
+  console.log('[samsar_external_video][submit] sending external video request', {
+    localRequestId: payload?._id?.toString?.() || payload?._id || null,
+    sessionId: payload?.sessionId || null,
+    layerId: payload?.layerId || null,
+    route,
+    model: payload?.model || null,
+    generationType: payload?.generationType || payload?.layerAiVideoType || null,
+    stage: payload?.samsarExternalProviderStage || null,
+    input: summarizeExternalVideoInput(routeRequest.body?.input || {}),
+  });
+
   const response = await client.requestV2ExternalVideo(
     route,
     routeRequest.body,
@@ -621,6 +706,15 @@ export async function generateSamsarExternalVideoLayer(payload = {}) {
   if (!requestId) {
     throw new Error('Samsar external video submit returned no request id.');
   }
+
+  console.log('[samsar_external_video][submit] external video request accepted', {
+    localRequestId: payload?._id?.toString?.() || payload?._id || null,
+    sessionId: payload?.sessionId || null,
+    layerId: payload?.layerId || null,
+    route,
+    model: payload?.model || null,
+    requestId,
+  });
 
   await recordProviderUsageLog({
     payload,
@@ -695,6 +789,30 @@ export async function listenToPendingSamsarExternalVideoRequest(payload = {}) {
   }
 
   if (responseStatus === 'FAILED') {
+    let detailedStatusSummary = null;
+    try {
+      const detailedResponse = await client.getV2ExternalVideoStatusDetailed(requestId);
+      detailedStatusSummary = summarizeExternalStatus(detailedResponse?.data || detailedResponse);
+    } catch (error) {
+      detailedStatusSummary = {
+        error: error?.message || String(error),
+        status: error?.status || error?.response?.status || null,
+        body: error?.body || error?.response?.data || null,
+      };
+    }
+    console.error('[samsar_external_video][poll_failed] external video request failed', {
+      localRequestId: payload?._id?.toString?.() || payload?._id || null,
+      sessionId: payload?.sessionId || null,
+      layerId: payload?.layerId || null,
+      requestId,
+      model: payload?.model || null,
+      generationType: payload?.generationType || payload?.layerAiVideoType || null,
+      stage,
+      videoLink: summarizeMediaUrl(payload.videoLink || payload.videoUrl || payload.video_url),
+      audioLink: summarizeMediaUrl(payload.audioLink || payload.audioUrl || payload.audio_url),
+      status: summarizeExternalStatus(statusData),
+      detailedStatus: detailedStatusSummary,
+    });
     return { responseStatus: 'FAILED' };
   }
 
