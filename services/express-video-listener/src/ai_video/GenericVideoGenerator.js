@@ -3,8 +3,19 @@
 import { getDBConnectionString } from '../DBString.js';
 import VideoSession from '../schema/VideoSession.js';
 import AIVideoLayerGeneration from '../schema/AIVideoLayerGeneration.js';
-import { getFrameImageForLayer, getBaseFrameImageForLayer } from './utils/ImageRenderUtils.js';
-import { uploadFrameLayerImageToCDN, primeCDNCache } from './utils/AWS.js';
+import { normalizeProviderMediaUrl } from './utils/AWS.js';
+
+const IMAGE_REFERENCE_KEYS = [
+  'src',
+  'image',
+  'image_url',
+  'imageUrl',
+  'url',
+  'remoteURL',
+  'remoteUrl',
+  'remote_url',
+  'rawUrl',
+];
 
 function isSamsarExternalProviderPayload(payload = {}) {
   return payload?.samsarExternalProvider === true ||
@@ -12,17 +23,53 @@ function isSamsarExternalProviderPayload(payload = {}) {
     payload?.model === 'SAMSAR_EXTERNAL_VIDEO';
 }
 
-async function prepareFrameImageForProvider(frameImage, remoteFileName, payload = {}) {
-  if (!frameImage) {
-    return frameImage;
+function normalizeString(value) {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+function getItemImageReference(item = {}) {
+  for (const key of IMAGE_REFERENCE_KEYS) {
+    const value = normalizeString(item?.[key]);
+    if (value) {
+      return value;
+    }
   }
-  if (isSamsarExternalProviderPayload(payload)) {
-    return frameImage;
+  return '';
+}
+
+function getLayerStartImageReference(currentLayer = {}, activeItemList = []) {
+  const imageSession = currentLayer.imageSession || {};
+  const candidates = [
+    imageSession.videoRenderStartFrameImage,
+    imageSession.activeEditedImage,
+    imageSession.activeSelectedImage,
+    imageSession.activeGeneratedImage,
+    imageSession.activeImageRemoteLink,
+  ];
+
+  if (Array.isArray(activeItemList)) {
+    for (const item of activeItemList) {
+      if (item?.type === 'image' && item?.isHidden !== true) {
+        candidates.push(getItemImageReference(item));
+      }
+    }
   }
 
-  const uploadedFrameImage = await uploadFrameLayerImageToCDN(frameImage, remoteFileName);
-  await primeCDNCache(uploadedFrameImage);
-  return uploadedFrameImage;
+  return candidates.map(normalizeString).find(Boolean) || '';
+}
+
+async function getImageToVideoStartImageUrl(currentLayer, activeItemList, layerId) {
+  const startImageReference = getLayerStartImageReference(currentLayer, activeItemList);
+  if (!startImageReference) {
+    throw new Error(`Image-to-video generation requires a start image for layer ${layerId}.`);
+  }
+
+  const providerStartImageUrl = await normalizeProviderMediaUrl(startImageReference);
+  if (!/^https?:\/\//i.test(providerStartImageUrl)) {
+    throw new Error(`Image-to-video generation requires a provider-readable start image URL for layer ${layerId}.`);
+  }
+
+  return providerStartImageUrl;
 }
 
 export async function requestRenderExpressCustomVideo(payload) {
@@ -47,20 +94,10 @@ export async function requestRenderExpressCustomVideo(payload) {
   if (useStartFrame) {
 
     const currentLayerId = currentLayer._id.toString();
-
-    const isBaseFrameImage = getBaseFrameImageForLayer(activeItemList, aspectRatio, videoSessionId);
-    if (isBaseFrameImage) {
-      currentLayerFrameImage = isBaseFrameImage;
-    } else {
-      currentLayerFrameImage = await getFrameImageForLayer(videoSessionId, currentLayerId, aspectRatio, activeItemList);
-    }
-
-
-    const frameBoundaryIamgeName = currentLayerFrameImage.split('/').pop();
-    currentLayerFrameImage = await prepareFrameImageForProvider(
-      currentLayerFrameImage,
-      frameBoundaryIamgeName,
-      payload,
+    currentLayerFrameImage = await getImageToVideoStartImageUrl(
+      currentLayer,
+      activeItemList,
+      currentLayerId,
     );
   }
   let hasNextLayer = currentLayerIndex + 1 < videoSession.layers.length;

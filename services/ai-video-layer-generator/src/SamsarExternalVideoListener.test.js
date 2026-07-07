@@ -46,3 +46,13 @@ test('Samsar external route detection treats start image aliases as image-to-vid
     assert.equal(resolveExternalVideoRoute({ [key]: 'https://media.example.com/start.png' }), 'image_to_video', key);
   }
 });
+
+test('Samsar external route detection prefers image-to-video when a stale text route has a start image', () => {
+  assert.equal(
+    resolveExternalVideoRoute({
+      samsarExternalVideoRoute: 'text_to_video',
+      startImage: 'https://media.example.com/start.png',
+    }),
+    'image_to_video',
+  );
+});

@@ -9,9 +9,16 @@ function isRemoteUrl(value) {
 }
 
 function getAssetRoot(folderName = 'assets_v2') {
-  return process.env.CURRENT_ENV === 'staging' || process.env.CURRENT_ENV === 'docker'
-    ? `/${folderName}`
-    : path.join(process.cwd(), '../', 'samsar_processor', folderName);
+  if (process.env.CURRENT_ENV === 'staging' || process.env.CURRENT_ENV === 'docker') {
+    if (folderName === 'assets_v2') {
+      return process.env.SAMSAR_ASSETS_V2_ROOT || '/assets_v2';
+    }
+    if (folderName === 'assets') {
+      return process.env.SAMSAR_ASSETS_ROOT || '/assets';
+    }
+    return `/${folderName}`;
+  }
+  return path.join(process.cwd(), '../', 'samsar_processor', folderName);
 }
 
 const SESSION_GATED_ASSET_FOLDERS = new Set([
@@ -205,10 +212,10 @@ export function getFrameImageForLayer(sessionId, layerId, aspectRatio, activeIte
     try {
       const pwd = process.cwd();
       const imageName = `${sessionId}_${layerId}.png`;
-      let imageBaseFolder = path.join(pwd, '../', 'samsar_processor', 'assets', 'ai_video', 'temp');
+      let imageBaseFolder = path.join(pwd, '../', 'samsar_processor', 'assets_v2', 'ai_video', 'temp');
 
       if (process.env.CURRENT_ENV === 'staging' || process.env.CURRENT_ENV === 'docker') {
-        imageBaseFolder = '/assets/ai_video/temp';  // Docker staging volume mount path
+        imageBaseFolder = path.join(process.env.SAMSAR_ASSETS_V2_ROOT || '/assets_v2', 'ai_video', 'temp');
       }
       
 
