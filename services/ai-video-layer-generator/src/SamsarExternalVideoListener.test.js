@@ -4,9 +4,48 @@ import test from 'node:test';
 import {
   buildExternalImageToVideoInput,
   buildExternalStepImageToVideoInput,
+  buildExternalVideoToVideoInput,
   getStartImageReference,
   resolveExternalVideoRoute,
 } from './base/SamsarExternalVideoListener.js';
+
+const ENV_KEYS = [
+  'CURRENT_ENV',
+  'SAMSAR_MEDIA_DELIVERY_MODE',
+  'MEDIA_DELIVERY_MODE',
+  'SAMSAR_PUBLIC_MEDIA_BASE_URL',
+  'SAMSAR_EXTERNAL_MEDIA_PUBLIC_BASE_URL',
+  'MEDIA_PUBLIC_URL',
+  'STATIC_CDN_URL',
+  'SAMSAR_DOCKER_PUBLIC_PROCESSOR_BASE_URL',
+  'SAMSAR_VALIDATE_PUBLIC_MEDIA_URL',
+];
+
+function snapshotEnv() {
+  return Object.fromEntries(ENV_KEYS.map((key) => [key, process.env[key]]));
+}
+
+function restoreEnv(snapshot) {
+  for (const key of ENV_KEYS) {
+    if (snapshot[key] === undefined) {
+      delete process.env[key];
+    } else {
+      process.env[key] = snapshot[key];
+    }
+  }
+}
+
+function configureDockerPublicMedia() {
+  process.env.CURRENT_ENV = 'docker';
+  process.env.SAMSAR_MEDIA_DELIVERY_MODE = 'docker-local';
+  process.env.MEDIA_DELIVERY_MODE = 'docker-local';
+  process.env.SAMSAR_PUBLIC_MEDIA_BASE_URL = 'http://localhost:8080/';
+  process.env.SAMSAR_EXTERNAL_MEDIA_PUBLIC_BASE_URL = 'http://localhost:8080/';
+  process.env.MEDIA_PUBLIC_URL = 'http://localhost:8080/';
+  process.env.STATIC_CDN_URL = 'http://localhost:8080/';
+  process.env.SAMSAR_DOCKER_PUBLIC_PROCESSOR_BASE_URL = 'http://203.0.113.10/api';
+  process.env.SAMSAR_VALIDATE_PUBLIC_MEDIA_URL = 'false';
+}
 
 test('Samsar external image-to-video payload includes start image URL compatibility aliases', () => {
   const startImageUrl = 'https://media.example.com/assets_v2/session/start.png';
@@ -55,4 +94,52 @@ test('Samsar external route detection prefers image-to-video when a stale text r
     }),
     'image_to_video',
   );
+});
+
+test('Samsar external lip sync payload resolves Docker video and audio URLs to the public processor path', async () => {
+  const envSnapshot = snapshotEnv();
+  configureDockerPublicMedia();
+
+  try {
+    const input = await buildExternalVideoToVideoInput({
+      videoLink: 'http://localhost:8080/assets_v2/ai_video/generations/64b000000000000000000001/64b000000000000000000002/video.mp4',
+      audioLink: 'http://localhost:8080/assets_v2/temp_audio/64b000000000000000000001_64b000000000000000000002_speech_padded.mp3',
+      model: 'SYNCLIPSYNC',
+      aspectRatio: '9:16',
+      duration: 6,
+    }, 'lip_sync');
+
+    assert.equal(
+      input.video_url,
+      'http://203.0.113.10/api/assets_v2/ai_video/generations/64b000000000000000000001/64b000000000000000000002/video.mp4'
+    );
+    assert.equal(
+      input.audio_url,
+      'http://203.0.113.10/api/assets_v2/temp_audio/64b000000000000000000001_64b000000000000000000002_speech_padded.mp3'
+    );
+    assert.equal(input.lip_sync_model, 'SYNCLIPSYNC');
+  } finally {
+    restoreEnv(envSnapshot);
+  }
+});
+
+test('Samsar external sound-effect payload resolves Docker source video URLs to the public processor path', async () => {
+  const envSnapshot = snapshotEnv();
+  configureDockerPublicMedia();
+
+  try {
+    const input = await buildExternalVideoToVideoInput({
+      videoLink: 'assets_v2/ai_video/generations/64b000000000000000000001/64b000000000000000000002/video.mp4',
+      model: 'MIRELOAI',
+    }, 'sound_effect');
+
+    assert.equal(
+      input.video_url,
+      'http://203.0.113.10/api/assets_v2/ai_video/generations/64b000000000000000000001/64b000000000000000000002/video.mp4'
+    );
+    assert.equal(input.sound_effect_model, 'MIRELOAI');
+    assert.equal(Object.hasOwn(input, 'audio_url'), false);
+  } finally {
+    restoreEnv(envSnapshot);
+  }
 });

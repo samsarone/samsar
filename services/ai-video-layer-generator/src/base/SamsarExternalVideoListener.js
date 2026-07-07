@@ -494,9 +494,23 @@ function getPayloadMediaUrl(payload = {}, keys = []) {
   return '';
 }
 
-function buildExternalVideoToVideoInput(payload = {}, route) {
-  const videoUrl = getPayloadMediaUrl(payload, ['video_url', 'videoUrl', 'videoLink', 'video']);
-  const audioUrl = getPayloadMediaUrl(payload, ['audio_url', 'audioUrl', 'audioLink', 'audio']);
+function assertProviderReadableUrl(value, label) {
+  if (!/^https?:\/\//i.test(value || '')) {
+    throw new Error(`Samsar external ${label} requires a provider-readable media URL.`);
+  }
+}
+
+export async function buildExternalVideoToVideoInput(payload = {}, route) {
+  const videoUrl = await normalizeProviderMediaUrl(
+    getPayloadMediaUrl(payload, ['video_url', 'videoUrl', 'videoLink', 'video'])
+  );
+  const audioUrl = route === 'lip_sync'
+    ? await normalizeProviderMediaUrl(getPayloadMediaUrl(payload, ['audio_url', 'audioUrl', 'audioLink', 'audio']))
+    : '';
+  assertProviderReadableUrl(videoUrl, 'video-to-video');
+  if (route === 'lip_sync') {
+    assertProviderReadableUrl(audioUrl, 'lip sync');
+  }
   const model = getExternalVideoModel(payload);
   return {
     video_url: videoUrl,
@@ -527,7 +541,7 @@ async function buildExternalVideoRouteRequest(client, payload = {}, route) {
     return {
       route,
       body: {
-        input: buildExternalVideoToVideoInput(payload, route),
+        input: await buildExternalVideoToVideoInput(payload, route),
       },
     };
   }
