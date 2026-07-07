@@ -1713,11 +1713,12 @@ export default function OnboardingWizard() {
   const publicIpReachability = ipDiscoveryResult?.publicIpReachability || {};
   const publicIpReachabilityChecked = Boolean(publicIpReachability.checked);
   const publicIpReachable = Boolean(publicIpReachability.reachable);
-  const publicIpSelectionDisabled = Boolean(detectedPublicIp && publicIpReachabilityChecked && !publicIpReachable);
+  const publicIpHardBlocked = Boolean(ipDiscoveryResult?.runtime?.dockerDesktop && publicIpReachabilityChecked && !publicIpReachable);
+  const publicIpSelectionDisabled = Boolean(detectedPublicIp && publicIpHardBlocked);
   const detectedPrivateIps = Array.isArray(ipDiscoveryResult?.privateIps) ? ipDiscoveryResult.privateIps : [];
   const detectedPrivateIp = ipDiscoveryResult?.recommendedPrivateIp || detectedPrivateIps[0] || '';
   const recommendedReverseProxyIp = reverseProxyUsesPublicIp
-    ? publicIpReachabilityChecked && !publicIpReachable ? '' : detectedPublicIp
+    ? publicIpSelectionDisabled ? '' : detectedPublicIp
     : detectedPrivateIp;
   const reverseProxyCanEnableSsl = Boolean(
     normalizedReverseProxyConfig.enabled &&
@@ -2144,7 +2145,7 @@ export default function OnboardingWizard() {
 
   const getDetectedIpForAccessType = (accessType, result = ipDiscoveryResult) => (
     accessType === 'publicIp'
-      ? result?.publicIpReachability?.checked && !result?.publicIpReachability?.reachable ? '' : result?.publicIp || ''
+      ? publicIpSelectionDisabled ? '' : result?.publicIp || ''
       : result?.recommendedPrivateIp || result?.privateIps?.[0] || ''
   );
 
@@ -3561,6 +3562,11 @@ export default function OnboardingWizard() {
                           {reverseProxyUsesPublicIp && publicIpSelectionDisabled && (
                             <div className="error-banner">
                               {publicIpReachability.message || 'Public IP access is not reachable on port 80. Use Private IP for this network unless router or ISP forwarding is configured.'}
+                            </div>
+                          )}
+                          {reverseProxyUsesPublicIp && !publicIpSelectionDisabled && publicIpReachabilityChecked && !publicIpReachable && (
+                            <div className="success-banner">
+                              Public IP is selected. Setup will try to open the required ports, then the final stage will check browser reachability and show cloud firewall steps if needed.
                             </div>
                           )}
                           {ipDiscoveryError && <div className="error-banner">{ipDiscoveryError}</div>}
