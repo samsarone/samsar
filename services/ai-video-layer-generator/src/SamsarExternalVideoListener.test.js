@@ -151,6 +151,30 @@ test('Samsar external lip sync payload resolves Docker video and audio URLs to t
       'http://203.0.113.10/api/assets_v2/temp_audio/64b000000000000000000001_64b000000000000000000002_speech_padded.mp3'
     );
     assert.equal(input.lip_sync_model, 'SYNCLIPSYNC');
+    assert.equal(input.duration, 6);
+    assert.equal(input.audio_duration, 6);
+  } finally {
+    restoreEnv(envSnapshot);
+  }
+});
+
+test('Samsar external lip sync payload preserves express audioDuration when duration is absent', async () => {
+  const envSnapshot = snapshotEnv();
+  configureDockerPublicMedia();
+
+  try {
+    const input = await buildExternalVideoToVideoInput({
+      videoLink: 'http://localhost:8080/assets_v2/ai_video/generations/64b000000000000000000001/64b000000000000000000002/video.mp4',
+      audioLink: 'http://localhost:8080/assets_v2/temp_audio/64b000000000000000000001_64b000000000000000000002_speech_padded.mp3',
+      model: 'SYNCLIPSYNC',
+      aspectRatio: '9:16',
+      audioDuration: 7.875,
+      retryOnFail: false,
+    }, 'lip_sync');
+
+    assert.equal(input.duration, 8);
+    assert.equal(input.audio_duration, 8);
+    assert.equal(input.lip_sync_model, 'SYNCLIPSYNC');
   } finally {
     restoreEnv(envSnapshot);
   }

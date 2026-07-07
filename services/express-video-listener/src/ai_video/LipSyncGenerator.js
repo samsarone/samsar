@@ -471,6 +471,7 @@ export async function generateLipSyncForLayer(sessionId, currentLayer, connected
   const generationPayload = {
     videoLink: videoLayerLink,  // The local/remote path to the AI video
     audioLink: paddedAudioRemotePath,
+    duration: videoDuration,
     audioDuration: videoDuration,
     model: lipSyncModel,
     generationType: 'lip_sync',
@@ -499,6 +500,7 @@ export async function generateLipSyncForLayer(sessionId, currentLayer, connected
     retryOnFail: generationPayload.retryOnFail,
     videoLink: videoLayerLink,
     audioLink: paddedAudioRemotePath,
+    duration: videoDuration,
     audioDuration: videoDuration,
     aspectRatio,
   });
