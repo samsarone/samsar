@@ -1133,11 +1133,29 @@ function getSetupStepClassName(status) {
   return ['setup-step', status ? `setup-step-${status}` : ''].filter(Boolean).join(' ');
 }
 
+function formatPortList(ports = []) {
+  const normalizedPorts = [...new Set((Array.isArray(ports) ? ports : [ports])
+    .map((port) => Number.parseInt(String(port), 10))
+    .filter((port) => Number.isFinite(port)))]
+    .sort((left, right) => left - right);
+  if (!normalizedPorts.length) {
+    return 'ports';
+  }
+  if (normalizedPorts.length === 1) {
+    return `port ${normalizedPorts[0]}`;
+  }
+  return `ports ${normalizedPorts.slice(0, -1).join(', ')} and ${normalizedPorts.at(-1)}`;
+}
+
 function SetupProgressPage({
   setupRun,
   setupError,
   onRetry,
   onBack,
+  onOpenPorts,
+  isOpeningPorts,
+  openPortsResult,
+  openPortsError,
   mode = 'setup',
 }) {
   const isComplete = setupRun?.status === 'completed';
@@ -1145,6 +1163,9 @@ function SetupProgressPage({
   const currentStep = setupRun?.steps?.find((item) => item.status === 'running');
   const logs = setupRun?.logs || [];
   const isMaintenance = mode === 'maintenance';
+  const externalAccess = setupRun?.externalAccess;
+  const externalAccessWarning = externalAccess && externalAccess.ok === false;
+  const externalPorts = externalAccess?.ports || [];
 
   return (
     <section className="setup-progress-panel">
@@ -1201,6 +1222,38 @@ function SetupProgressPage({
         </div>
       </div>
 
+      {externalAccessWarning && (
+        <section className="data-config-card proxy-warning-card">
+          <div className="data-config-card-header">
+            <h3>External access</h3>
+            <span>{formatPortList(externalPorts)}</span>
+          </div>
+          <p>{externalAccess.message || `External access did not respond on ${formatPortList(externalPorts)}.`}</p>
+          {!!externalAccess.checks?.length && (
+            <ul className="external-check-list">
+              {externalAccess.checks.map((check) => (
+                <li key={check.url}>
+                  <strong>{check.label}</strong>
+                  <span>{check.message}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+          <div className="proxy-action-row">
+            <button
+              type="button"
+              className="secondary-action"
+              onClick={() => onOpenPorts?.(externalPorts)}
+              disabled={isOpeningPorts}
+            >
+              {isOpeningPorts ? 'Opening ports...' : 'Open required ports'}
+            </button>
+          </div>
+          {openPortsResult?.ok && <div className="success-banner">{openPortsResult.message || 'Port rule command completed.'}</div>}
+          {openPortsError && <div className="error-banner">{openPortsError}</div>}
+        </section>
+      )}
+
       {(setupError || isFailed) && (
         <div className="setup-error-actions">
           <button type="button" className="secondary-action" onClick={onBack}>
@@ -1228,8 +1281,15 @@ function ExistingInstallHome({
   adminConfigError,
   adminBootstrapError,
   isBootstrappingAdmin,
+  setupAuthRequired,
+  isSetupAuthenticated,
+  setupAuthPassword,
+  setupAuthError,
+  isUnlockingSetup,
   onAdminChange,
   onBootstrapAdmin,
+  onSetupAuthPasswordChange,
+  onUnlockSetup,
   onRefresh,
   onUpdateContainers,
   onDeleteAndRecreate,
@@ -1242,7 +1302,8 @@ function ExistingInstallHome({
   const services = config.services || {};
   const runningCount = installStatus?.compose?.running || 0;
   const totalCount = installStatus?.compose?.total || 0;
-  const needsAdminBootstrap = config.security?.dockerSetupConfigured !== true;
+  const setupActionsLocked = Boolean(setupAuthRequired && !isSetupAuthenticated);
+  const needsAdminBootstrap = !setupActionsLocked && config.security?.dockerSetupConfigured !== true;
 
   return (
     <section className="existing-install-panel">
@@ -1261,34 +1322,36 @@ function ExistingInstallHome({
         </span>
       </div>
 
-      <div className="existing-config-grid">
-        <section className="existing-config-card">
-          <h3>Providers</h3>
-          <ul>
-            {(providers.length ? providers : ['No provider credentials configured']).map((item) => (
-              <li key={item}>{item}</li>
-            ))}
-          </ul>
-        </section>
-        <section className="existing-config-card">
-          <h3>Data</h3>
-          <ul>
-            <li>{config.database?.mode === 'remote' ? 'Remote MongoDB' : 'Local MongoDB'}</li>
-            <li>{config.storage?.mode === 'external-s3' ? 'External S3 / CloudFront' : 'Local MinIO media'}</li>
-            {config.storage?.staticCdnUrl && <li>{config.storage.staticCdnUrl}</li>}
-          </ul>
-        </section>
-        <section className="existing-config-card">
-          <h3>Services</h3>
-          <ul>
-            <li>{services.workers ? 'Workers enabled' : 'Core services only'}</li>
-            <li>{services.logger ? 'Grafana logger enabled' : 'Grafana logger disabled'}</li>
-            <li>{services.reverseProxy ? 'Nginx reverse proxy enabled' : 'Reverse proxy disabled'}</li>
-            <li>{installStatus?.readiness?.processor ? 'Processor ready' : 'Processor not ready'}</li>
-            <li>{installStatus?.readiness?.client ? 'Client ready' : 'Client not ready'}</li>
-          </ul>
-        </section>
-      </div>
+      {!setupActionsLocked && (
+        <div className="existing-config-grid">
+          <section className="existing-config-card">
+            <h3>Providers</h3>
+            <ul>
+              {(providers.length ? providers : ['No provider credentials configured']).map((item) => (
+                <li key={item}>{item}</li>
+              ))}
+            </ul>
+          </section>
+          <section className="existing-config-card">
+            <h3>Data</h3>
+            <ul>
+              <li>{config.database?.mode === 'remote' ? 'Remote MongoDB' : 'Local MongoDB'}</li>
+              <li>{config.storage?.mode === 'external-s3' ? 'External S3 / CloudFront' : 'Local MinIO media'}</li>
+              {config.storage?.staticCdnUrl && <li>{config.storage.staticCdnUrl}</li>}
+            </ul>
+          </section>
+          <section className="existing-config-card">
+            <h3>Services</h3>
+            <ul>
+              <li>{services.workers ? 'Workers enabled' : 'Core services only'}</li>
+              <li>{services.logger ? 'Grafana logger enabled' : 'Grafana logger disabled'}</li>
+              <li>{services.reverseProxy ? 'Nginx reverse proxy enabled' : 'Reverse proxy disabled'}</li>
+              <li>{installStatus?.readiness?.processor ? 'Processor ready' : 'Processor not ready'}</li>
+              <li>{installStatus?.readiness?.client ? 'Client ready' : 'Client not ready'}</li>
+            </ul>
+          </section>
+        </div>
+      )}
 
       {needsAdminBootstrap && (
         <section className="data-config-card admin-create-card">
@@ -1338,7 +1401,7 @@ function ExistingInstallHome({
               type="button"
               className="primary-action flow-primary"
               onClick={onBootstrapAdmin}
-              disabled={isBootstrappingAdmin}
+              disabled={isBootstrappingAdmin || setupActionsLocked}
             >
               {isBootstrappingAdmin ? 'Preparing admin...' : 'Submit and Continue'}
             </button>
@@ -1348,16 +1411,46 @@ function ExistingInstallHome({
         </section>
       )}
 
+      {setupActionsLocked && (
+        <section className="data-config-card admin-create-card">
+          <div className="data-config-card-header">
+            <h3>Unlock setup actions</h3>
+          </div>
+          <div className="data-field-grid single">
+            <label className="data-field">
+              <span>Admin password</span>
+              <input
+                type="password"
+                value={setupAuthPassword}
+                autoComplete="current-password"
+                onChange={(event) => onSetupAuthPasswordChange(event.target.value)}
+              />
+            </label>
+          </div>
+          <div className="existing-install-actions">
+            <button
+              type="button"
+              className="primary-action flow-primary"
+              onClick={onUnlockSetup}
+              disabled={isUnlockingSetup}
+            >
+              {isUnlockingSetup ? 'Unlocking...' : 'Unlock'}
+            </button>
+          </div>
+          {setupAuthError && <div className="error-banner">{setupAuthError}</div>}
+        </section>
+      )}
+
       {actionError && <div className="error-banner">{actionError}</div>}
 
       <div className="existing-install-actions">
         <button type="button" className="secondary-action" onClick={onRefresh} disabled={isRefreshing || isResetting}>
           {isRefreshing ? 'Refreshing...' : 'Refresh status'}
         </button>
-        <button type="button" className="primary-action flow-primary" onClick={onUpdateContainers} disabled={isResetting}>
+        <button type="button" className="primary-action flow-primary" onClick={onUpdateContainers} disabled={isResetting || setupActionsLocked}>
           Update containers
         </button>
-        <button type="button" className="reset-confirm-action" onClick={onDeleteAndRecreate} disabled={isResetting}>
+        <button type="button" className="reset-confirm-action" onClick={onDeleteAndRecreate} disabled={isResetting || setupActionsLocked}>
           {isResetting ? 'Deleting...' : 'Delete and recreate'}
         </button>
       </div>
@@ -1482,6 +1575,10 @@ export default function OnboardingWizard() {
   const [adminConfigError, setAdminConfigError] = useState('');
   const [existingAdminBootstrapError, setExistingAdminBootstrapError] = useState('');
   const [isBootstrappingExistingAdmin, setIsBootstrappingExistingAdmin] = useState(false);
+  const [setupAuthPassword, setSetupAuthPassword] = useState('');
+  const [setupAuthError, setSetupAuthError] = useState('');
+  const [isSetupAuthenticated, setIsSetupAuthenticated] = useState(false);
+  const [isUnlockingSetup, setIsUnlockingSetup] = useState(false);
   const [validationResult, setValidationResult] = useState(initialWizardState.validationResult);
   const [validationError, setValidationError] = useState('');
   const [dataConfigError, setDataConfigError] = useState('');
@@ -1559,6 +1656,7 @@ export default function OnboardingWizard() {
   const reverseProxyRequiredPortLabel = reverseProxyRequiredPorts.length === 1 ? '80' : '80 / 443';
   const reverseProxyRequiredPortText = reverseProxyRequiredPorts.length === 1 ? 'port 80' : 'ports 80 and 443';
   const sesAccessKeyUsesTemporaryCredentials = isTemporaryAwsAccessKeyId(mailConfig.sesAccessKeyId);
+  const setupAuthRequired = Boolean(installStatus?.setupAuthRequired || installStatus?.config?.security?.setupWizardPasswordConfigured);
   const shouldShowExistingInstall = Boolean(installStatus?.installed && !setupRun && !maintenanceRun);
   const isInitialInstallStatusLoading = Boolean(isLoadingInstallStatus && !installStatus && !setupRun && !maintenanceRun);
   const wizardViewKey = isInitialInstallStatusLoading
@@ -1576,6 +1674,16 @@ export default function OnboardingWizard() {
       ...currentValue,
       [drawerKey]: !currentValue[drawerKey],
     }));
+  };
+
+  const buildSetupHeaders = (headers = {}) => ({
+    ...headers,
+    ...(setupAuthPassword ? { 'x-samsar-setup-admin-password': setupAuthPassword } : {}),
+  });
+
+  const handleSetupAuthFailure = (body = {}) => {
+    setIsSetupAuthenticated(false);
+    setSetupAuthError(body?.message || 'Enter the Docker admin password to manage this setup wizard.');
   };
 
   const renderProviderRow = (provider) => {
@@ -1664,13 +1772,20 @@ export default function OnboardingWizard() {
   const refreshInstallStatus = async () => {
     setIsLoadingInstallStatus(true);
     try {
-      const response = await fetch('/api/setup/install-status', { cache: 'no-store' });
+      const response = await fetch('/api/setup/install-status', {
+        cache: 'no-store',
+        headers: buildSetupHeaders(),
+      });
       const body = await response.json().catch(() => ({}));
       if (!response.ok) {
         throw new Error(body?.message || 'Unable to read local installation status.');
       }
       setInstallStatus(body);
       setInstallActionError('');
+      if (!body?.setupAuthRequired) {
+        setIsSetupAuthenticated(false);
+        setSetupAuthError('');
+      }
       if (body?.installed && setupRun?.status !== 'running') {
         setSetupRun(null);
         setSetupStartError('');
@@ -1726,12 +1841,17 @@ export default function OnboardingWizard() {
       try {
         const response = await fetch(`/api/setup/status?id=${encodeURIComponent(setupRun.id)}`, {
           cache: 'no-store',
+          headers: buildSetupHeaders(),
         });
         const body = await response.json().catch(() => ({}));
         if (!response.ok) {
+          if (response.status === 401) {
+            handleSetupAuthFailure(body);
+          }
           if (response.status === 404) {
             const recoveryResponse = await fetch(`/api/setup/recover?id=${encodeURIComponent(setupRun.id)}`, {
               cache: 'no-store',
+              headers: buildSetupHeaders(),
             });
             const recoveryBody = await recoveryResponse.json().catch(() => ({}));
             if (recoveryResponse.ok) {
@@ -1759,7 +1879,7 @@ export default function OnboardingWizard() {
       isCancelled = true;
       window.clearInterval(intervalId);
     };
-  }, [setupRun?.id, setupRun?.status]);
+  }, [setupAuthPassword, setupRun?.id, setupRun?.status]);
 
   useEffect(() => {
     if (!maintenanceRun?.id || maintenanceRun.status === 'completed' || maintenanceRun.status === 'failed') {
@@ -1772,9 +1892,13 @@ export default function OnboardingWizard() {
       try {
         const response = await fetch(`/api/setup/maintenance/status?id=${encodeURIComponent(maintenanceRun.id)}`, {
           cache: 'no-store',
+          headers: buildSetupHeaders(),
         });
         const body = await response.json().catch(() => ({}));
         if (!response.ok) {
+          if (response.status === 401) {
+            handleSetupAuthFailure(body);
+          }
           throw new Error(body?.message || 'Unable to read update status.');
         }
         if (!isCancelled) {
@@ -1797,7 +1921,7 @@ export default function OnboardingWizard() {
       isCancelled = true;
       window.clearInterval(intervalId);
     };
-  }, [maintenanceRun?.id, maintenanceRun?.status]);
+  }, [maintenanceRun?.id, maintenanceRun?.status, setupAuthPassword]);
 
   useEffect(() => {
     if (
@@ -1813,9 +1937,13 @@ export default function OnboardingWizard() {
       try {
         const response = await fetch(`/api/setup/recover?id=${encodeURIComponent(setupRun.id)}`, {
           cache: 'no-store',
+          headers: buildSetupHeaders(),
         });
         const body = await response.json().catch(() => ({}));
         if (!response.ok) {
+          if (response.status === 401) {
+            handleSetupAuthFailure(body);
+          }
           throw new Error(body?.message || 'Unable to recover setup status.');
         }
         if (!isCancelled) {
@@ -1834,7 +1962,7 @@ export default function OnboardingWizard() {
     return () => {
       isCancelled = true;
     };
-  }, [setupRun?.error, setupRun?.id, setupRun?.status]);
+  }, [setupAuthPassword, setupRun?.error, setupRun?.id, setupRun?.status]);
 
   useEffect(() => {
     if (setupRun?.status !== 'completed' || !setupRun.redirectUrl) {
@@ -2164,28 +2292,65 @@ export default function OnboardingWizard() {
     }
   };
 
-  const openFirewallPorts = async () => {
+  const unlockSetupActions = async () => {
+    setIsUnlockingSetup(true);
+    setSetupAuthError('');
+    try {
+      const response = await fetch('/api/setup/auth/check', {
+        method: 'POST',
+        headers: buildSetupHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({}),
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok || body.ok === false) {
+        throw new Error(body?.message || 'Unable to unlock setup actions.');
+      }
+      setIsSetupAuthenticated(true);
+      setSetupAuthError('');
+      await refreshInstallStatus();
+      return body;
+    } catch (error) {
+      setIsSetupAuthenticated(false);
+      setSetupAuthError(
+        error?.message === 'Failed to fetch'
+          ? 'Unable to reach the local setup service. Rebuild and run the setup wizard Docker container.'
+          : error?.message || 'Unable to unlock setup actions.',
+      );
+      return null;
+    } finally {
+      setIsUnlockingSetup(false);
+    }
+  };
+
+  const openFirewallPorts = async (ports = reverseProxyRequiredPorts) => {
+    const targetPorts = Array.isArray(ports) && ports.length ? ports : reverseProxyRequiredPorts;
+    const targetPortText = formatPortList(targetPorts);
     setIsOpeningFirewallPorts(true);
     setFirewallError('');
     setFirewallResult(null);
     try {
       const response = await fetch('/api/setup/firewall/open-web-ports', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ports: reverseProxyRequiredPorts }),
+        headers: buildSetupHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ ports: targetPorts, source: 'setup-wizard-user-action' }),
       });
       const body = await response.json().catch(() => ({}));
       if (!response.ok || body.ok === false) {
-        throw new Error(body?.message || `Unable to open ${reverseProxyRequiredPortText} automatically.`);
+        if (response.status === 401) {
+          handleSetupAuthFailure(body);
+        }
+        throw new Error(body?.message || `Unable to open ${targetPortText} automatically.`);
       }
       setFirewallResult(body);
-      updateReverseProxyConfig('openFirewallPorts', true);
+      if (targetPorts.includes(80) || targetPorts.includes(443)) {
+        updateReverseProxyConfig('openFirewallPorts', true);
+      }
       return body;
     } catch (error) {
       setFirewallError(
         error?.message === 'Failed to fetch'
           ? 'Unable to reach the local setup service. Rebuild and run the setup wizard Docker container.'
-          : error?.message || `Unable to open ${reverseProxyRequiredPortText} automatically.`,
+          : error?.message || `Unable to open ${targetPortText} automatically.`,
       );
       return null;
     } finally {
@@ -2231,8 +2396,12 @@ export default function OnboardingWizard() {
       return;
     }
 
+    const normalizedAdmin = normalizeAdminConfig(adminConfig);
     setIsStartingSetup(true);
     setSetupStartError('');
+    setSetupAuthPassword(normalizedAdmin.password);
+    setIsSetupAuthenticated(true);
+    setSetupAuthError('');
 
     try {
       const mailValidation = mailValidationResult || await validateMailConfiguration();
@@ -2246,11 +2415,14 @@ export default function OnboardingWizard() {
           deployment: deploymentPayload,
           credentials: normalizeCredentialSet(credentials),
           mail: normalizeMailConfig(mailConfig),
-          admin: normalizeAdminConfig(adminConfig),
+          admin: normalizedAdmin,
         }),
       });
       const body = await response.json();
       if (!response.ok) {
+        if (response.status === 401) {
+          handleSetupAuthFailure(body);
+        }
         throw new Error(body?.message || 'Unable to start Docker setup.');
       }
       setSetupRun(body);
@@ -2271,19 +2443,26 @@ export default function OnboardingWizard() {
       return;
     }
 
+    const normalizedAdmin = normalizeAdminConfig(adminConfig);
     setIsBootstrappingExistingAdmin(true);
     setExistingAdminBootstrapError('');
 
     try {
       const response = await fetch('/api/setup/admin/bootstrap-existing', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ admin: normalizeAdminConfig(adminConfig) }),
+        headers: buildSetupHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ admin: normalizedAdmin }),
       });
       const body = await response.json().catch(() => ({}));
       if (!response.ok) {
+        if (response.status === 401) {
+          handleSetupAuthFailure(body);
+        }
         throw new Error(body?.message || 'Unable to prepare admin access.');
       }
+      setSetupAuthPassword(normalizedAdmin.password);
+      setIsSetupAuthenticated(true);
+      setSetupAuthError('');
       await refreshInstallStatus();
       if (body.redirectUrl) {
         window.location.assign(body.redirectUrl);
@@ -2306,9 +2485,13 @@ export default function OnboardingWizard() {
     try {
       const response = await fetch('/api/setup/maintenance/update-restart', {
         method: 'POST',
+        headers: buildSetupHeaders(),
       });
       const body = await response.json().catch(() => ({}));
       if (!response.ok) {
+        if (response.status === 401) {
+          handleSetupAuthFailure(body);
+        }
         throw new Error(body?.message || 'Unable to update local containers.');
       }
       setMaintenanceRun(body);
@@ -2358,6 +2541,9 @@ export default function OnboardingWizard() {
     setSetupRun(null);
     setSetupStartError('');
     setResetError('');
+    setSetupAuthPassword('');
+    setSetupAuthError('');
+    setIsSetupAuthenticated(false);
   };
 
   const openResetConfirm = () => {
@@ -2379,11 +2565,14 @@ export default function OnboardingWizard() {
     try {
       const response = await fetch('/api/setup/reset', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: buildSetupHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({ runId: setupRun?.id || '' }),
       });
       const body = await response.json().catch(() => ({}));
       if (!response.ok) {
+        if (response.status === 401) {
+          handleSetupAuthFailure(body);
+        }
         throw new Error(body?.message || 'Unable to reset local setup.');
       }
       resetLocalWizardState();
@@ -2480,6 +2669,10 @@ export default function OnboardingWizard() {
             setMaintenanceStartError('');
             void refreshInstallStatus();
           }}
+          onOpenPorts={openFirewallPorts}
+          isOpeningPorts={isOpeningFirewallPorts}
+          openPortsResult={firewallResult}
+          openPortsError={firewallError}
           mode="maintenance"
         />
       ) : setupRun ? (
@@ -2491,6 +2684,10 @@ export default function OnboardingWizard() {
             setSetupRun(null);
             setSetupStartError('');
           }}
+          onOpenPorts={openFirewallPorts}
+          isOpeningPorts={isOpeningFirewallPorts}
+          openPortsResult={firewallResult}
+          openPortsError={firewallError}
         />
       ) : shouldShowExistingInstall ? (
         <ExistingInstallHome
@@ -2501,8 +2698,18 @@ export default function OnboardingWizard() {
           adminConfigError={adminConfigError}
           adminBootstrapError={existingAdminBootstrapError}
           isBootstrappingAdmin={isBootstrappingExistingAdmin}
+          setupAuthRequired={setupAuthRequired}
+          isSetupAuthenticated={isSetupAuthenticated}
+          setupAuthPassword={setupAuthPassword}
+          setupAuthError={setupAuthError}
+          isUnlockingSetup={isUnlockingSetup}
           onAdminChange={updateAdminConfig}
           onBootstrapAdmin={bootstrapExistingAdmin}
+          onSetupAuthPasswordChange={(value) => {
+            setSetupAuthPassword(value);
+            setSetupAuthError('');
+          }}
+          onUnlockSetup={unlockSetupActions}
           onRefresh={refreshInstallStatus}
           onUpdateContainers={updateContainers}
           onDeleteAndRecreate={openResetConfirm}

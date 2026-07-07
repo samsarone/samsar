@@ -5,7 +5,7 @@ import dns from 'node:dns/promises';
 import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
-import { randomBytes, randomUUID } from 'node:crypto';
+import { randomBytes, randomUUID, scryptSync, timingSafeEqual } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import nodemailer from 'nodemailer';
 import {
@@ -76,6 +76,7 @@ const SETUP_STEPS = [
   { id: 'media', label: 'Publish local media gateway' },
   { id: 'processor', label: 'Verify processor API' },
   { id: 'client', label: 'Verify Samsar client' },
+  { id: 'external', label: 'Check external ports' },
   { id: 'login', label: 'Prepare local login' },
 ];
 
@@ -88,11 +89,14 @@ const MAINTENANCE_STEPS = [
   { id: 'media', label: 'Publish local media gateway' },
   { id: 'processor', label: 'Verify processor API' },
   { id: 'client', label: 'Verify Samsar client' },
+  { id: 'external', label: 'Check external ports' },
 ];
 
 const runs = new Map();
 const maintenanceRuns = new Map();
 const ALL_COMPOSE_PROFILES = ['core', 'workers', 'local-mongo', 'minio', 'local-media', 'logger', 'reverse-proxy'];
+const ALLOWED_FIREWALL_PORTS = [80, 443, 3000, 3002, 8089];
+const SETUP_PASSWORD_HASH_VERSION = 'scrypt-v1';
 const MEDIA_GATEWAY_ENV_SERVICES = [
   'processor',
   'generator',
@@ -112,6 +116,7 @@ function cloneRun(run) {
     logs: run.logs.slice(-160),
     error: run.error,
     redirectUrl: run.redirectUrl,
+    externalAccess: run.externalAccess || null,
     startedAt: run.startedAt,
     completedAt: run.completedAt,
   };
@@ -613,6 +618,63 @@ function buildAdminConfig(admin = {}) {
   };
 }
 
+function createSetupWizardPasswordHash(password = '') {
+  const salt = randomBytes(16).toString('hex');
+  const derivedKey = scryptSync(String(password), salt, 64).toString('hex');
+  return `${SETUP_PASSWORD_HASH_VERSION}:${salt}:${derivedKey}`;
+}
+
+function verifySetupWizardPassword(password = '', storedHash = '') {
+  const [version, salt, expectedHex] = String(storedHash).split(':');
+  if (version !== SETUP_PASSWORD_HASH_VERSION || !salt || !expectedHex) {
+    return false;
+  }
+
+  let expected;
+  let actual;
+  try {
+    expected = Buffer.from(expectedHex, 'hex');
+    actual = scryptSync(String(password), salt, expected.length);
+  } catch {
+    return false;
+  }
+  return expected.length === actual.length && timingSafeEqual(expected, actual);
+}
+
+async function getSetupAuthState() {
+  const config = await readJson(CONFIG_PATH).catch(() => null);
+  const passwordHash = normalizeString(config?.security?.setupWizardPasswordHash);
+  return {
+    required: Boolean(passwordHash),
+    configured: Boolean(passwordHash),
+    passwordHash,
+  };
+}
+
+function getSetupPasswordFromRequest(req) {
+  const headerValue = req.headers['x-samsar-setup-admin-password'];
+  if (Array.isArray(headerValue)) {
+    return headerValue[0] || '';
+  }
+  return typeof headerValue === 'string' ? headerValue : '';
+}
+
+async function requireSetupAuth(req, res) {
+  const authState = await getSetupAuthState();
+  if (!authState.required) {
+    return true;
+  }
+  if (verifySetupWizardPassword(getSetupPasswordFromRequest(req), authState.passwordHash)) {
+    return true;
+  }
+  sendJson(res, 401, {
+    ok: false,
+    authRequired: true,
+    message: 'Enter the Docker admin password to manage this setup wizard.',
+  });
+  return false;
+}
+
 function ensureTrailingSlash(value) {
   const normalized = normalizeString(value);
   if (!normalized) {
@@ -853,6 +915,12 @@ function collectPrivateIpsFromSetupEnvironment() {
   return uniqueIpv4Addresses(
     extractIpv4Addresses(process.env.SAMSAR_SETUP_HOST_PRIVATE_IPS || ''),
   ).filter(isIntranetIpAddress);
+}
+
+function collectPublicIpsFromSetupEnvironment() {
+  return uniqueIpv4Addresses(
+    extractIpv4Addresses(process.env.SAMSAR_SETUP_HOST_PUBLIC_IPS || ''),
+  ).filter((value) => !isPrivateIpAddress(value));
 }
 
 async function fetchPublicIpAddress() {
@@ -1111,6 +1179,7 @@ function buildRuntimeConfig(payload) {
     security: {
       ...(exampleConfig.security || {}),
       dockerSetupSecret: normalizeString(payload?.setupSecret),
+      setupWizardPasswordHash: admin.password ? createSetupWizardPasswordHash(admin.password) : '',
     },
     organization: {
       ...(exampleConfig.organization || {}),
@@ -1399,6 +1468,129 @@ async function checkHttp(url, { timeoutMs = 2500, isReady = isSuccessfulHttpResp
   }
 }
 
+async function checkHttpDetailed(url, {
+  label = url,
+  port = null,
+  timeoutMs = 5000,
+  isReady = isSuccessfulHttpResponse,
+} = {}) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(url, {
+      cache: 'no-store',
+      signal: controller.signal,
+    });
+    const reachable = isReady(response);
+    return {
+      label,
+      url,
+      port,
+      reachable,
+      status: response.status,
+      message: reachable ? `${label} responded on ${url}.` : `${label} returned HTTP ${response.status} from ${url}.`,
+    };
+  } catch (error) {
+    return {
+      label,
+      url,
+      port,
+      reachable: false,
+      status: 0,
+      message: `${label} was not reachable at ${url}: ${error?.message || String(error)}.`,
+    };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function getDetectedPublicAccessHost() {
+  const configuredPublicIps = collectPublicIpsFromSetupEnvironment();
+  if (configuredPublicIps.length) {
+    return configuredPublicIps[0];
+  }
+  return fetchPublicIpAddress().catch(() => '');
+}
+
+async function buildExternalAccessChecks(reverseProxy = {}) {
+  if (reverseProxy.enabled) {
+    const clientUrl = reverseProxy.publicUrls?.clientApp || '';
+    const processorApi = reverseProxy.publicUrls?.processorApi || '';
+    return [
+      clientUrl ? {
+        label: 'Samsar client',
+        url: clientUrl,
+        port: getExpectedDeploymentPorts(reverseProxy)[0],
+        isReady: isClientReadyHttpResponse,
+      } : null,
+      processorApi ? {
+        label: 'Processor API',
+        url: `${processorApi.replace(/\/+$/, '')}/v1/health/live`,
+        port: getExpectedDeploymentPorts(reverseProxy)[0],
+      } : null,
+    ].filter(Boolean);
+  }
+
+  const publicHost = await getDetectedPublicAccessHost();
+  if (!publicHost) {
+    return [];
+  }
+  return [
+    {
+      label: 'Samsar client',
+      url: `http://${publicHost}:3000`,
+      port: 3000,
+      isReady: isClientReadyHttpResponse,
+    },
+    {
+      label: 'Processor API',
+      url: `http://${publicHost}:3002/v1/health/live`,
+      port: 3002,
+    },
+  ];
+}
+
+async function checkFinalExternalAccess(run, reverseProxy = {}) {
+  const ports = getExpectedDeploymentPorts(reverseProxy);
+  setStepStatus(run, 'external', 'running', `Checking external access on ${formatFirewallPorts(ports)}.`);
+  const targets = await buildExternalAccessChecks(reverseProxy);
+  if (!targets.length) {
+    run.externalAccess = {
+      ok: false,
+      ports,
+      checks: [],
+      checkedAt: new Date().toISOString(),
+      message: `No public host could be detected for ${formatFirewallPorts(ports)}. Open these ports in the host firewall and cloud security rules if users need remote access.`,
+    };
+    setStepStatus(run, 'external', 'complete', 'External self-check skipped; no public host was detected.');
+    return run.externalAccess;
+  }
+
+  const checks = await Promise.all(
+    targets.map((target) => checkHttpDetailed(target.url, target)),
+  );
+  const failedChecks = checks.filter((check) => !check.reachable);
+  const ok = failedChecks.length === 0;
+  run.externalAccess = {
+    ok,
+    ports,
+    checks,
+    checkedAt: new Date().toISOString(),
+    message: ok
+      ? `External access responded on ${formatFirewallPorts(ports)}.`
+      : `${failedChecks.length} external endpoint${failedChecks.length === 1 ? '' : 's'} did not respond on ${formatFirewallPorts(ports)}. Open these ports in the host firewall, cloud firewall, security group, or load balancer as needed.`,
+  };
+
+  checks.forEach((check) => appendLog(run, check.message));
+  setStepStatus(
+    run,
+    'external',
+    'complete',
+    ok ? 'External access is reachable.' : 'External self-check returned a warning; setup will continue.',
+  );
+  return run.externalAccess;
+}
+
 async function requestLocalLoginUrl(admin = {}, setupSecret = '') {
   const url = new URL('/users/docker_setup_admin', PROCESSOR_INTERNAL_URL);
   const response = await fetch(url, {
@@ -1438,6 +1630,7 @@ async function bootstrapExistingDockerAdmin(admin) {
     security: {
       ...(config.security || {}),
       dockerSetupSecret: setupSecret,
+      setupWizardPasswordHash: createSetupWizardPasswordHash(admin.password),
     },
     organization: {
       ...(config.organization || {}),
@@ -1481,7 +1674,7 @@ function normalizeFirewallPorts(ports = [], fallbackPorts = [80]) {
   const values = Array.isArray(ports) ? ports : [ports];
   const normalized = values
     .map((port) => Number.parseInt(String(port), 10))
-    .filter((port) => port === 80 || port === 443);
+    .filter((port) => ALLOWED_FIREWALL_PORTS.includes(port));
   const uniquePorts = [...new Set(normalized)].sort((left, right) => left - right);
   return uniquePorts.length ? uniquePorts : fallbackPorts;
 }
@@ -1496,6 +1689,13 @@ function formatFirewallPorts(ports = []) {
 
 function formatTcpFirewallPorts(ports = []) {
   return normalizeFirewallPorts(ports).map((port) => `${port}/tcp`).join(' and ');
+}
+
+function getExpectedDeploymentPorts(reverseProxy = {}) {
+  if (reverseProxy.enabled) {
+    return reverseProxy.ssl?.enabled ? [443] : [80];
+  }
+  return [3000, 3002];
 }
 
 function parseChangedFirewallPorts(output = '') {
@@ -1710,14 +1910,23 @@ elif command -v firewall-cmd >/dev/null 2>&1; then
   for port in $PORTS; do
     service_name="$(service_for_port "$port")"
     if [ "${isOpenAction ? 'open' : 'close'}" = "open" ]; then
-      firewall-cmd --permanent --query-service="$service_name" >/dev/null 2>&1 || mark_changed "$port"
-      firewall-cmd --permanent --add-service="$service_name"
+      if [ "$service_name" = "$port" ]; then
+        firewall-cmd --permanent --query-port="$port/tcp" >/dev/null 2>&1 || mark_changed "$port"
+        firewall-cmd --permanent --add-port="$port/tcp"
+      else
+        firewall-cmd --permanent --query-service="$service_name" >/dev/null 2>&1 || mark_changed "$port"
+        firewall-cmd --permanent --add-service="$service_name"
+      fi
     else
-      firewall-cmd --permanent --remove-service="$service_name" || true
+      if [ "$service_name" = "$port" ]; then
+        firewall-cmd --permanent --remove-port="$port/tcp" || true
+      else
+        firewall-cmd --permanent --remove-service="$service_name" || true
+      fi
     fi
   done
   firewall-cmd --reload
-  echo "${actionLabel} web service ports with firewalld."
+  echo "${actionLabel} tcp ports: $PORTS with firewalld."
 elif command -v iptables >/dev/null 2>&1; then
   for port in $PORTS; do
     if [ "${isOpenAction ? 'open' : 'close'}" = "open" ]; then
@@ -2057,7 +2266,7 @@ async function validateReverseProxyReachability(reverseProxy = {}) {
     });
     return { warning: '' };
   } catch (error) {
-    throw error;
+    return { warning: error?.message || String(error) };
   }
 }
 
@@ -2099,7 +2308,7 @@ async function ensureReverseProxy(run, profileArgs, reverseProxy = {}) {
   }
   if (reverseProxyValidation?.warning) {
     appendLog(run, reverseProxyValidation.warning);
-    setStepStatus(run, 'proxy', 'complete', 'Reverse proxy is reachable locally; external self-check returned a warning.');
+    setStepStatus(run, 'proxy', 'complete', 'Reverse proxy external self-check returned a warning.');
     return;
   }
   setStepStatus(run, 'proxy', 'complete', 'Reverse proxy is reachable.');
@@ -2167,6 +2376,8 @@ async function recoverSetupRun(runId, existingRun = null) {
   setStepStatus(run, 'client', 'complete', 'samsar-client is ready.', { log: false });
 
   try {
+    const runtimeConfig = await readJson(CONFIG_PATH).catch(() => ({}));
+    await checkFinalExternalAccess(run, buildReverseProxyConfig(runtimeConfig.reverseProxy || {}));
     setStepStatus(run, 'login', 'running', 'Preparing local authenticated session.', { log: false });
     run.redirectUrl = `${CLIENT_URL.replace(/\/+$/, '')}/login?redirect=%2Fvidgenie`;
     setStepStatus(run, 'login', 'complete', 'Open the client and sign in with the configured admin credentials.', { log: false });
@@ -2234,6 +2445,8 @@ async function runSetup(run, payload) {
       isReady: isClientReadyHttpResponse,
     });
     setStepStatus(run, 'client', 'complete', 'samsar-client is ready.');
+
+    await checkFinalExternalAccess(run, reverseProxy);
 
     setStepStatus(run, 'login', 'running', 'Preparing local authenticated session.');
     run.redirectUrl = await requestLocalLoginUrl(payload.admin, payload.setupSecret);
@@ -2314,6 +2527,8 @@ async function runDockerMaintenance(run) {
       isReady: isClientReadyHttpResponse,
     });
     setStepStatus(run, 'client', 'complete', 'samsar-client is ready.');
+
+    await checkFinalExternalAccess(run, reverseProxy);
 
     run.redirectUrl = CLIENT_URL;
     run.status = 'completed';
@@ -2435,6 +2650,7 @@ function summarizeRuntimeConfig(config = {}) {
     },
     security: {
       dockerSetupConfigured: Boolean(config.security?.dockerSetupSecret),
+      setupWizardPasswordConfigured: Boolean(config.security?.setupWizardPasswordHash),
     },
     mail: {
       configured: config.mail?.configured === true,
@@ -2480,6 +2696,7 @@ async function getComposeContainerSummary() {
 
 async function getInstallStatus() {
   const config = await readJson(CONFIG_PATH).catch(() => null);
+  const setupAuthState = await getSetupAuthState();
   const compose = await getComposeContainerSummary();
   const processorReady = compose.total > 0
     ? await checkHttp(PROCESSOR_READY_URL, { timeoutMs: 1200 })
@@ -2491,6 +2708,8 @@ async function getInstallStatus() {
   return {
     installed: Boolean(config && compose.total > 0),
     hasRuntimeConfig: Boolean(config),
+    setupAuthRequired: setupAuthState.required,
+    setupAuthConfigured: setupAuthState.configured,
     compose,
     readiness: {
       processor: processorReady,
@@ -2528,7 +2747,12 @@ async function handleApi(req, res, pathname) {
   }
 
   if (req.method === 'GET' && pathname === '/api/setup/install-status') {
-    sendJson(res, 200, await getInstallStatus());
+    const status = await getInstallStatus();
+    const authState = await getSetupAuthState();
+    if (authState.required && !verifySetupWizardPassword(getSetupPasswordFromRequest(req), authState.passwordHash)) {
+      status.config = null;
+    }
+    sendJson(res, 200, status);
     return true;
   }
 
@@ -2560,6 +2784,28 @@ async function handleApi(req, res, pathname) {
     } catch (error) {
       sendJson(res, 400, { ok: false, message: error?.message || 'Reverse proxy validation failed.' });
     }
+    return true;
+  }
+
+  if (req.method === 'POST' && pathname === '/api/setup/auth/check') {
+    const authState = await getSetupAuthState();
+    if (!authState.required) {
+      sendJson(res, 200, { ok: true, authRequired: false });
+      return true;
+    }
+    if (verifySetupWizardPassword(getSetupPasswordFromRequest(req), authState.passwordHash)) {
+      sendJson(res, 200, { ok: true, authRequired: true });
+      return true;
+    }
+    sendJson(res, 401, {
+      ok: false,
+      authRequired: true,
+      message: 'Enter the Docker admin password to manage this setup wizard.',
+    });
+    return true;
+  }
+
+  if (!await requireSetupAuth(req, res)) {
     return true;
   }
 
@@ -2723,7 +2969,7 @@ function applyCorsHeaders(req, res) {
   }
   res.setHeader('Access-Control-Allow-Origin', origin);
   res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-Samsar-Setup-Admin-Password');
   res.setHeader('Vary', 'Origin');
 }
 

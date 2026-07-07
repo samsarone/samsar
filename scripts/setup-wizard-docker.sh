@@ -19,6 +19,8 @@ ALLOW_DOCKER_CONVENIENCE_SCRIPT="${SAMSAR_SETUP_ALLOW_DOCKER_CONVENIENCE_SCRIPT:
 RESOURCE_CHECK_ENABLED="${SAMSAR_SETUP_RESOURCE_CHECK:-1}"
 MIN_MEMORY_GB="${SAMSAR_SETUP_MIN_MEMORY_GB:-16}"
 MIN_DISK_FREE_GB="${SAMSAR_SETUP_MIN_DISK_FREE_GB:-500}"
+ASSUME_YES="${SAMSAR_SETUP_YES:-0}"
+OPEN_SETUP_PORT_MODE="${SAMSAR_SETUP_OPEN_SETUP_PORT:-ask}"
 DOCKER_GROUP_CHANGED=0
 DOCKER_CMD=(docker)
 OS_ID=""
@@ -51,6 +53,51 @@ enabled() {
       return 0
       ;;
   esac
+}
+
+usage() {
+  cat <<EOF
+Usage: npm run setup-wizard -- [options]
+
+Options:
+  -y, --yes             Run non-interactively and open TCP ${HOST_PORT} in the host firewall when possible.
+      --open-setup-port Open TCP ${HOST_PORT} in the host firewall when possible.
+      --no-open-setup-port
+                        Do not change host firewall rules for TCP ${HOST_PORT}.
+  -h, --help            Show this help text.
+
+Environment:
+  SAMSAR_SETUP_OPEN_SETUP_PORT=ask|true|false
+  SAMSAR_SETUP_YES=1
+  SAMSAR_SETUP_MIN_DISK_FREE_GB=<gb>
+EOF
+}
+
+parse_args() {
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      -y|--yes)
+        ASSUME_YES=1
+        OPEN_SETUP_PORT_MODE=true
+        shift
+        ;;
+      --open-setup-port)
+        OPEN_SETUP_PORT_MODE=true
+        shift
+        ;;
+      --no-open-setup-port)
+        OPEN_SETUP_PORT_MODE=false
+        shift
+        ;;
+      -h|--help)
+        usage
+        exit 0
+        ;;
+      *)
+        die "Unknown option: $1"
+        ;;
+    esac
+  done
 }
 
 is_linux() {
@@ -580,6 +627,105 @@ detect_docker_socket_path() {
   fi
 }
 
+is_interactive_terminal() {
+  [[ -t 0 && -t 1 ]]
+}
+
+confirm_action() {
+  local prompt="$1"
+  local answer
+  if enabled "$ASSUME_YES"; then
+    return 0
+  fi
+  if ! is_interactive_terminal; then
+    return 1
+  fi
+  read -r -p "${prompt} [y/N] " answer
+  case "$answer" in
+    y|Y|yes|YES|Yes)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+print_cloud_port_hint() {
+  case "$CLOUD_ENVIRONMENT" in
+    Azure)
+      warn "Azure still requires an inbound Network Security Group rule for TCP ${HOST_PORT} if public access is needed."
+      ;;
+    "AWS EC2")
+      warn "AWS EC2 still requires an inbound Security Group rule for TCP ${HOST_PORT} if public access is needed."
+      ;;
+    "Google Cloud")
+      warn "Google Cloud still requires a VPC firewall ingress rule for TCP ${HOST_PORT} if public access is needed."
+      ;;
+    "Oracle Cloud")
+      warn "Oracle Cloud still requires a security list or network security group ingress rule for TCP ${HOST_PORT} if public access is needed."
+      ;;
+    *)
+      warn "If this is a cloud VM, also allow inbound TCP ${HOST_PORT} in the provider firewall or security group."
+      ;;
+  esac
+}
+
+open_host_tcp_port() {
+  local port="$1"
+  is_linux || return 0
+  if command -v ufw >/dev/null 2>&1; then
+    log "Opening TCP ${port} with ufw..."
+    run_as_root ufw allow "${port}/tcp"
+    run_as_root ufw reload >/dev/null 2>&1 || true
+    return 0
+  fi
+  if command -v firewall-cmd >/dev/null 2>&1; then
+    log "Opening TCP ${port} with firewalld..."
+    run_as_root firewall-cmd --permanent --add-port="${port}/tcp"
+    run_as_root firewall-cmd --reload
+    return 0
+  fi
+  if command -v iptables >/dev/null 2>&1; then
+    log "Opening TCP ${port} with iptables..."
+    if ! run_as_root iptables -C INPUT -p tcp --dport "$port" -j ACCEPT >/dev/null 2>&1; then
+      run_as_root iptables -I INPUT -p tcp --dport "$port" -j ACCEPT
+    fi
+    warn "iptables rule added for this boot. Make it persistent with your distribution firewall tooling if needed."
+    return 0
+  fi
+  warn "No supported host firewall manager found. Open TCP ${port} manually on this host if remote access is needed."
+  return 1
+}
+
+maybe_open_setup_wizard_host_port() {
+  is_linux || return 0
+  case "$OPEN_SETUP_PORT_MODE" in
+    0|false|FALSE|no|NO|off|OFF)
+      log "Skipping host firewall change for TCP ${HOST_PORT}."
+      print_cloud_port_hint
+      return 0
+      ;;
+    1|true|TRUE|yes|YES|on|ON)
+      open_host_tcp_port "$HOST_PORT" || true
+      print_cloud_port_hint
+      return 0
+      ;;
+    ask|"")
+      if confirm_action "Open TCP ${HOST_PORT} in the host firewall for remote setup access?"; then
+        open_host_tcp_port "$HOST_PORT" || true
+      else
+        log "Host firewall change skipped for TCP ${HOST_PORT}."
+      fi
+      print_cloud_port_hint
+      return 0
+      ;;
+    *)
+      die "Invalid SAMSAR_SETUP_OPEN_SETUP_PORT value: ${OPEN_SETUP_PORT_MODE}. Use ask, true, or false."
+      ;;
+  esac
+}
+
 bootstrap_host() {
   load_os_release
   detect_package_manager
@@ -793,7 +939,9 @@ print_setup_wizard_urls() {
   echo
 }
 
+parse_args "$@"
 bootstrap_host
+maybe_open_setup_wizard_host_port
 
 HOST_PRIVATE_IPS="$(extract_private_ipv4_addresses "${SAMSAR_SETUP_HOST_PRIVATE_IPS:-$(detect_host_private_ips)}")"
 HOST_PUBLIC_IPS="$(extract_public_ipv4_addresses "${SAMSAR_SETUP_HOST_PUBLIC_IPS:-$(detect_host_public_ips)}")"
@@ -827,6 +975,7 @@ docker_cli run -d \
     -e "SAMSAR_SETUP_CLIENT_URL=http://localhost:3000" \
     -e "SAMSAR_SETUP_PROCESSOR_PUBLIC_URL=http://localhost:3002" \
     -e "SAMSAR_SETUP_HOST_PRIVATE_IPS=$HOST_PRIVATE_IPS" \
+    -e "SAMSAR_SETUP_HOST_PUBLIC_IPS=$HOST_PUBLIC_IPS" \
     "$IMAGE_NAME"
 )"
 
