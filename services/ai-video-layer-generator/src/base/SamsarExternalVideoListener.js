@@ -56,6 +56,7 @@ function summarizeExternalVideoInput(input = {}) {
     promptLength: normalizeString(input.prompt).length,
     aspectRatio: normalizeString(input.aspect_ratio),
     duration: input.duration,
+    audioDuration: input.audioDuration || input.audio_duration,
     metadata: input.metadata || null,
   };
 }
@@ -447,6 +448,27 @@ function normalizeDuration(duration) {
   return Math.round(parsed);
 }
 
+function normalizeFirstDuration(values = []) {
+  for (const value of values) {
+    const duration = normalizeDuration(value);
+    if (duration !== undefined) {
+      return duration;
+    }
+  }
+  return undefined;
+}
+
+function resolveExternalVideoDuration(payload = {}, route = '') {
+  if (route === 'lip_sync') {
+    return normalizeFirstDuration([
+      payload.duration,
+      payload.audioDuration,
+      payload.audio_duration,
+    ]);
+  }
+  return normalizeDuration(payload.duration);
+}
+
 function getExternalVideoModel(payload = {}) {
   return (
     normalizeString(payload.samsarExternalVideoModel) ||
@@ -616,12 +638,15 @@ export async function buildExternalVideoToVideoInput(payload = {}, route) {
     assertProviderReadableUrl(audioUrl, 'lip sync');
   }
   const model = getExternalVideoModel(payload);
+  const duration = resolveExternalVideoDuration(payload, route);
   return {
     video_url: videoUrl,
-    ...(route === 'lip_sync' ? { audio_url: audioUrl, lip_sync_model: model } : { sound_effect_model: model }),
+    ...(route === 'lip_sync'
+      ? { audio_url: audioUrl, lip_sync_model: model, audio_duration: duration }
+      : { sound_effect_model: model }),
     prompt: normalizeString(payload.prompt || payload.audioPrompt || payload.audio_prompt),
     aspect_ratio: normalizeString(payload.aspectRatio) || '16:9',
-    duration: normalizeDuration(payload.duration),
+    duration,
     metadata: {
       source: 'local_docker_ai_video_generator',
       local_request_id: payload?._id?.toString?.() || payload?._id || null,
@@ -691,6 +716,9 @@ export async function generateSamsarExternalVideoLayer(payload = {}) {
     model: payload?.model || null,
     generationType: payload?.generationType || payload?.layerAiVideoType || null,
     stage: payload?.samsarExternalProviderStage || null,
+    retryOnFail: payload?.retryOnFail,
+    payloadDuration: payload?.duration,
+    payloadAudioDuration: payload?.audioDuration || payload?.audio_duration,
     input: summarizeExternalVideoInput(routeRequest.body?.input || {}),
   });
 
@@ -733,7 +761,9 @@ export async function generateSamsarExternalVideoLayer(payload = {}) {
     metadata: {
       route,
       aspectRatio: payload?.aspectRatio,
-      duration: payload?.duration,
+      duration: resolveExternalVideoDuration(payload, route),
+      payloadDuration: payload?.duration,
+      payloadAudioDuration: payload?.audioDuration || payload?.audio_duration,
       originalVideoModel: payload?.originalVideoModel,
     },
   });
