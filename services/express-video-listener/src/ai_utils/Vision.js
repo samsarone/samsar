@@ -8,6 +8,7 @@ import OpenAI from "openai";
 import path from "path";
 
 import { uploadImageToCDN } from './AWS.js';
+import { normalizeProviderMediaUrl } from '../ai_video/utils/AWS.js';
 import {
   createGoogleGeminiChatCompletion,
   getDefaultInferenceModel,
@@ -86,7 +87,8 @@ export async function addVisionDescriptionsForImages(sessionId) {
 
     
 
-    const remoteUrl = await uploadImageToCDN(activeImagePath, remoteFileName);
+    const uploadedRemoteUrl = await uploadImageToCDN(activeImagePath, remoteFileName);
+    const remoteUrl = await normalizeProviderMediaUrl(uploadedRemoteUrl);
 
     const responseData = await getDescriptionForImage(remoteUrl, userInferenceModel, {
       userId: sessionData.userId,

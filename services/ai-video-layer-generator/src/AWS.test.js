@@ -10,6 +10,7 @@ const ENV_KEYS = [
   'MEDIA_DELIVERY_MODE',
   'SAMSAR_PUBLIC_MEDIA_BASE_URL',
   'SAMSAR_EXTERNAL_MEDIA_PUBLIC_BASE_URL',
+  'SAMSAR_MEDIA_TUNNEL_PUBLIC_URL',
   'MEDIA_PUBLIC_URL',
   'PUBLIC_STATIC_CDN_URL',
   'STATIC_CDN_URL',
@@ -23,6 +24,7 @@ const ENV_KEYS = [
   'PROCESSOR_API',
   'PROCESSOR_URL',
   'SAMSAR_VALIDATE_PUBLIC_MEDIA_URL',
+  'SAMSAR_EXTERNAL_MEDIA_PUBLISH_ENABLED',
 ];
 
 function snapshotEnv() {
@@ -106,7 +108,7 @@ test('rejects Docker local media references when no public tunnel URL exists', a
     const { normalizeProviderMediaUrl } = await importAwsModule();
     await assert.rejects(
       () => normalizeProviderMediaUrl(`/${mediaRelativePath}`),
-      /A public media URL is required/
+      /A tunneled media URL is required/
     );
   } finally {
     fs.rmSync(tempRoot, { recursive: true, force: true });
@@ -114,29 +116,31 @@ test('rejects Docker local media references when no public tunnel URL exists', a
   }
 });
 
-test('normalizes Docker local media references through a configured public IP processor path', async () => {
+test('normalizes Docker local media references through the tunnel instead of a configured public IP processor path', async () => {
   const envSnapshot = snapshotEnv();
   const { tempRoot, mediaRelativePath } = prepareDockerMediaFixture({
     publicMediaUrl: 'http://localhost:8080/',
   });
   process.env.SAMSAR_DOCKER_PUBLIC_PROCESSOR_BASE_URL = 'http://203.0.113.10/api';
+  process.env.SAMSAR_MEDIA_TUNNEL_PUBLIC_URL = 'https://media-tunnel.trycloudflare.com';
 
   try {
     const { normalizeProviderMediaUrl } = await importAwsModule();
     const url = await normalizeProviderMediaUrl(`http://localhost:8080/${mediaRelativePath}`);
-    assert.equal(url, `http://203.0.113.10/api/${mediaRelativePath}`);
+    assert.equal(url, `https://media-tunnel.trycloudflare.com/${mediaRelativePath}`);
   } finally {
     fs.rmSync(tempRoot, { recursive: true, force: true });
     restoreEnv(envSnapshot);
   }
 });
 
-test('normalizes Docker asset references to a public URL without requiring a local file', async () => {
+test('normalizes Docker asset references to a tunnel URL without requiring a local file', async () => {
   const envSnapshot = snapshotEnv();
   const { tempRoot } = prepareDockerMediaFixture({
     publicMediaUrl: 'http://localhost:8080/',
   });
   process.env.SAMSAR_DOCKER_PUBLIC_PROCESSOR_BASE_URL = 'http://203.0.113.10/api';
+  process.env.SAMSAR_MEDIA_TUNNEL_PUBLIC_URL = 'https://media-tunnel.trycloudflare.com';
 
   try {
     const { normalizeProviderMediaUrl } = await importAwsModule();
@@ -145,7 +149,7 @@ test('normalizes Docker asset references to a public URL without requiring a loc
     );
     assert.equal(
       url,
-      'http://203.0.113.10/api/assets_v2/generations/64b000000000000000000001/missing-start.png'
+      'https://media-tunnel.trycloudflare.com/assets_v2/generations/64b000000000000000000001/missing-start.png'
     );
   } finally {
     fs.rmSync(tempRoot, { recursive: true, force: true });
@@ -164,8 +168,30 @@ test('keeps private IP processor bases out of external AI provider media URLs', 
     const { normalizeProviderMediaUrl } = await importAwsModule();
     await assert.rejects(
       () => normalizeProviderMediaUrl(`/${mediaRelativePath}`),
-      /A public media URL is required/
+      /A tunneled media URL is required/
     );
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+    restoreEnv(envSnapshot);
+  }
+});
+
+test('normalizes Docker media references to CloudFront URLs when external media publishing is enabled', async () => {
+  const envSnapshot = snapshotEnv();
+  const { tempRoot, mediaRelativePath } = prepareDockerMediaFixture({
+    publicMediaUrl: 'http://localhost:8080/',
+  });
+  process.env.SAMSAR_MEDIA_DELIVERY_MODE = 's3-cloudfront';
+  process.env.MEDIA_DELIVERY_MODE = 's3-cloudfront';
+  process.env.SAMSAR_EXTERNAL_MEDIA_PUBLISH_ENABLED = 'true';
+  process.env.STATIC_CDN_URL = 'https://static.example.com/';
+
+  try {
+    const { normalizeProviderMediaUrl } = await importAwsModule();
+    const url = await normalizeProviderMediaUrl(`http://203.0.113.10/api/${mediaRelativePath}`, {
+      prime: false,
+    });
+    assert.equal(url, `https://static.example.com/${mediaRelativePath}`);
   } finally {
     fs.rmSync(tempRoot, { recursive: true, force: true });
     restoreEnv(envSnapshot);

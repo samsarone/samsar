@@ -15,6 +15,7 @@ const ENV_KEYS = [
   'MEDIA_DELIVERY_MODE',
   'SAMSAR_PUBLIC_MEDIA_BASE_URL',
   'SAMSAR_EXTERNAL_MEDIA_PUBLIC_BASE_URL',
+  'SAMSAR_MEDIA_TUNNEL_PUBLIC_URL',
   'MEDIA_PUBLIC_URL',
   'STATIC_CDN_URL',
   'SAMSAR_DOCKER_PUBLIC_PROCESSOR_BASE_URL',
@@ -41,6 +42,7 @@ function configureDockerPublicMedia() {
   process.env.MEDIA_DELIVERY_MODE = 'docker-local';
   process.env.SAMSAR_PUBLIC_MEDIA_BASE_URL = 'http://localhost:8080/';
   process.env.SAMSAR_EXTERNAL_MEDIA_PUBLIC_BASE_URL = 'http://localhost:8080/';
+  process.env.SAMSAR_MEDIA_TUNNEL_PUBLIC_URL = 'https://media-tunnel.trycloudflare.com';
   process.env.MEDIA_PUBLIC_URL = 'http://localhost:8080/';
   process.env.STATIC_CDN_URL = 'http://localhost:8080/';
   process.env.SAMSAR_DOCKER_PUBLIC_PROCESSOR_BASE_URL = 'http://203.0.113.10/api';
@@ -129,7 +131,7 @@ test('Samsar external route detection treats source-video-only payloads as sound
   );
 });
 
-test('Samsar external lip sync payload resolves Docker video and audio URLs to the public processor path', async () => {
+test('Samsar external lip sync payload resolves Docker video and audio URLs to the media tunnel', async () => {
   const envSnapshot = snapshotEnv();
   configureDockerPublicMedia();
 
@@ -144,11 +146,11 @@ test('Samsar external lip sync payload resolves Docker video and audio URLs to t
 
     assert.equal(
       input.video_url,
-      'http://203.0.113.10/api/assets_v2/ai_video/generations/64b000000000000000000001/64b000000000000000000002/video.mp4'
+      'https://media-tunnel.trycloudflare.com/assets_v2/ai_video/generations/64b000000000000000000001/64b000000000000000000002/video.mp4'
     );
     assert.equal(
       input.audio_url,
-      'http://203.0.113.10/api/assets_v2/temp_audio/64b000000000000000000001_64b000000000000000000002_speech_padded.mp3'
+      'https://media-tunnel.trycloudflare.com/assets_v2/temp_audio/64b000000000000000000001_64b000000000000000000002_speech_padded.mp3'
     );
     assert.equal(input.lip_sync_model, 'SYNCLIPSYNC');
     assert.equal(input.duration, 6);
@@ -180,7 +182,7 @@ test('Samsar external lip sync payload preserves express audioDuration when dura
   }
 });
 
-test('Samsar external sound-effect payload resolves Docker source video URLs to the public processor path', async () => {
+test('Samsar external sound-effect payload resolves Docker source video URLs to the media tunnel', async () => {
   const envSnapshot = snapshotEnv();
   configureDockerPublicMedia();
 
@@ -192,7 +194,7 @@ test('Samsar external sound-effect payload resolves Docker source video URLs to 
 
     assert.equal(
       input.video_url,
-      'http://203.0.113.10/api/assets_v2/ai_video/generations/64b000000000000000000001/64b000000000000000000002/video.mp4'
+      'https://media-tunnel.trycloudflare.com/assets_v2/ai_video/generations/64b000000000000000000001/64b000000000000000000002/video.mp4'
     );
     assert.equal(input.sound_effect_model, 'MIRELOAI');
     assert.equal(Object.hasOwn(input, 'audio_url'), false);
