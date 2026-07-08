@@ -127,7 +127,7 @@ test('rejects Docker local provider AI-video URLs when no public media tunnel is
           aiVideoRemoteLink: `http://localhost:8080/${mediaRelativePath}`,
         },
       }),
-      /A public media URL is required/
+      /A tunneled media URL is required/
     );
   } finally {
     fs.rmSync(tempRoot, { recursive: true, force: true });
@@ -135,12 +135,13 @@ test('rejects Docker local provider AI-video URLs when no public media tunnel is
   }
 });
 
-test('resolves Docker provider AI-video URLs through a public IP processor path', async () => {
+test('resolves Docker provider AI-video URLs through the media tunnel instead of a public IP processor path', async () => {
   const envSnapshot = snapshotEnv();
   const { tempRoot, userId, mediaRelativePath } = prepareDockerMediaFixture({
     publicMediaUrl: 'http://localhost:8080/',
   });
   process.env.SAMSAR_DOCKER_PUBLIC_PROCESSOR_BASE_URL = 'http://203.0.113.10/api';
+  process.env.SAMSAR_MEDIA_TUNNEL_PUBLIC_URL = 'https://media-tunnel.trycloudflare.com';
 
   try {
     const { resolveProviderAiVideoUrl } = await importProviderMediaUrlModule();
@@ -150,7 +151,7 @@ test('resolves Docker provider AI-video URLs through a public IP processor path'
         aiVideoRemoteLink: `http://localhost:8080/${mediaRelativePath}`,
       },
     });
-    assert.equal(url, `http://203.0.113.10/api/${mediaRelativePath}`);
+    assert.equal(url, `https://media-tunnel.trycloudflare.com/${mediaRelativePath}`);
   } finally {
     fs.rmSync(tempRoot, { recursive: true, force: true });
     restoreEnv(envSnapshot);
@@ -173,7 +174,7 @@ test('does not use private IP processor bases for external AI-video provider URL
           aiVideoRemoteLink: `http://localhost:8080/${mediaRelativePath}`,
         },
       }),
-      /A public media URL is required/
+      /A tunneled media URL is required/
     );
   } finally {
     fs.rmSync(tempRoot, { recursive: true, force: true });

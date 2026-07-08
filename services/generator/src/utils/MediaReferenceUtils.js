@@ -27,6 +27,67 @@ function isHttpUrl(value) {
   return /^https?:\/\//i.test(value);
 }
 
+function isTruthyEnv(value) {
+  return ['1', 'true', 'yes', 'on'].includes(String(value || '').trim().toLowerCase());
+}
+
+function shouldUseDockerLocalMedia() {
+  const configuredMode = normalizeString(process.env.SAMSAR_MEDIA_DELIVERY_MODE || process.env.MEDIA_DELIVERY_MODE)
+    .toLowerCase();
+  if (configuredMode === 'docker-local' || configuredMode === 'local-filesystem') {
+    return true;
+  }
+  if (configuredMode === 's3-cloudfront' || configuredMode === 'external-s3') {
+    return false;
+  }
+  return getCurrentEnvironment() === 'docker' &&
+    !isTruthyEnv(process.env.SAMSAR_EXTERNAL_MEDIA_PUBLISH_ENABLED || process.env.EXTERNAL_MEDIA_PUBLISH_ENABLED);
+}
+
+function isProbablyPublicUrl(value) {
+  if (!isHttpUrl(value)) {
+    return false;
+  }
+
+  try {
+    const hostname = new URL(value).hostname.toLowerCase();
+    if (
+      hostname === 'localhost' ||
+      hostname === 'media-gateway' ||
+      hostname === '127.0.0.1' ||
+      hostname === '0.0.0.0' ||
+      hostname.endsWith('.local')
+    ) {
+      return false;
+    }
+    if (/^10\./.test(hostname) || /^192\.168\./.test(hostname) || /^172\.(1[6-9]|2\d|3[01])\./.test(hostname)) {
+      return false;
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function isTunnelMediaBaseUrl(value) {
+  const normalized = normalizeString(value).replace(/\/+$/, '');
+  if (!normalized) {
+    return false;
+  }
+  const explicitTunnelUrl = normalizeString(process.env.SAMSAR_MEDIA_TUNNEL_PUBLIC_URL).replace(/\/+$/, '');
+  if (explicitTunnelUrl && normalized === explicitTunnelUrl) {
+    return true;
+  }
+  try {
+    const hostname = new URL(normalized).hostname.toLowerCase();
+    return hostname.endsWith('.trycloudflare.com') ||
+      hostname.endsWith('.loca.lt') ||
+      hostname.endsWith('.share.zrok.io');
+  } catch {
+    return false;
+  }
+}
+
 function getDataUrlMediaType(localPath = '') {
   return DATA_URL_MEDIA_TYPES_BY_EXTENSION[path.extname(localPath).toLowerCase()] || 'image/png';
 }
@@ -41,7 +102,16 @@ function getDockerMediaBase(options = {}) {
     return normalizeString(process.env.SAMSAR_INTERNAL_MEDIA_BASE_URL) ||
       normalizeString(process.env.MEDIA_PUBLIC_URL || process.env.STATIC_CDN_URL);
   }
-  return normalizeString(process.env.MEDIA_PUBLIC_URL || process.env.STATIC_CDN_URL);
+  return [
+    process.env.SAMSAR_MEDIA_TUNNEL_PUBLIC_URL,
+    process.env.SAMSAR_PUBLIC_MEDIA_BASE_URL,
+    process.env.SAMSAR_EXTERNAL_MEDIA_PUBLIC_BASE_URL,
+    process.env.MEDIA_PUBLIC_URL,
+  ]
+    .map((value) => normalizeString(value).replace(/\/+$/, ''))
+    .filter(Boolean)
+    .filter(isProbablyPublicUrl)
+    .filter(isTunnelMediaBaseUrl)[0] || '';
 }
 
 function buildDockerMediaUrl(reference, localPath = '', options = {}) {
@@ -64,7 +134,10 @@ function buildDockerMediaUrl(reference, localPath = '', options = {}) {
 
   const mediaBase = getDockerMediaBase(options);
   if (!mediaBase) {
-    return `/${mediaKey.replace(/^\/+/, '')}`;
+    throw new Error(
+      'A tunneled media URL is required before sending local Docker media to remote vision providers. ' +
+      'Run scripts/start-local-media-tunnel.sh or configure s3-cloudfront media delivery.'
+    );
   }
 
   return `${mediaBase.replace(/\/+$/, '')}/${mediaKey.replace(/^\/+/, '')}`;
@@ -117,6 +190,31 @@ function getReferencePath(value) {
 function getMediaKeyReference(value) {
   const referencePath = getReferencePath(value).replace(/^[\\/]+/, '');
   return MEDIA_KEY_PREFIX_PATTERN.test(referencePath) ? referencePath : value;
+}
+
+function getDockerProviderMediaKeyReference(value) {
+  const referencePath = getReferencePath(value).replace(/^[\\/]+/, '');
+  if (!referencePath) {
+    return '';
+  }
+
+  if (MEDIA_KEY_PREFIX_PATTERN.test(referencePath)) {
+    return referencePath;
+  }
+
+  if (!isHttpUrl(normalizeString(value))) {
+    return '';
+  }
+
+  const pathParts = referencePath.split('/').filter(Boolean);
+  for (let index = 1; index < pathParts.length; index += 1) {
+    const candidate = pathParts.slice(index).join('/');
+    if (MEDIA_KEY_PREFIX_PATTERN.test(candidate)) {
+      return candidate;
+    }
+  }
+
+  return '';
 }
 
 function getExistingFilePath(candidates) {
@@ -191,20 +289,49 @@ export async function getAccessibleMediaUrlForProvider(reference, options = {}) 
     return normalized;
   }
 
+  const isDocker = getCurrentEnvironment() === 'docker';
+  const dockerMediaKeyReference = isDocker ? getDockerProviderMediaKeyReference(normalized) : '';
   const localPath = resolveLocalMediaReferencePath(normalized);
   if (localPath) {
     if (options.preferDataUrl === true) {
       return await buildDataUrlFromFile(localPath);
     }
-    if (getCurrentEnvironment() === 'docker') {
-      return buildDockerMediaUrl(normalized, localPath, options);
+    if (isDocker) {
+      if (!shouldUseDockerLocalMedia()) {
+        const signedUrl = buildSecureMediaDeliveryUrl(dockerMediaKeyReference || getMediaKeyReference(normalized));
+        if (signedUrl) {
+          return signedUrl;
+        }
+      }
+      return buildDockerMediaUrl(dockerMediaKeyReference || normalized, localPath, options);
     }
     return await uploadImageToCDN(localPath, getUploadRemoteName(normalized, localPath));
   }
 
-  const signedUrl = buildSecureMediaDeliveryUrl(getMediaKeyReference(normalized));
+  const mediaKeyReference = getMediaKeyReference(normalized);
+  if (isDocker && dockerMediaKeyReference) {
+    if (shouldUseDockerLocalMedia()) {
+      return buildDockerMediaUrl(dockerMediaKeyReference, '', options);
+    }
+    const signedDockerUrl = buildSecureMediaDeliveryUrl(dockerMediaKeyReference);
+    if (signedDockerUrl) {
+      return signedDockerUrl;
+    }
+  }
+
+  if (isDocker && mediaKeyReference !== normalized) {
+    if (shouldUseDockerLocalMedia()) {
+      return buildDockerMediaUrl(mediaKeyReference, '', options);
+    }
+    const signedDockerUrl = buildSecureMediaDeliveryUrl(mediaKeyReference);
+    if (signedDockerUrl) {
+      return signedDockerUrl;
+    }
+  }
+
+  const signedUrl = buildSecureMediaDeliveryUrl(mediaKeyReference);
   if (signedUrl) {
-    if (getCurrentEnvironment() === 'docker') {
+    if (isDocker) {
       return signedUrl;
     }
     if (options.prime !== false) {
