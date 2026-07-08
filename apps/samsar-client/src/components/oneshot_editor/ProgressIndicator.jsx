@@ -32,6 +32,9 @@ const MOBILE_PREVIEW_MEDIA_QUERY = '(hover: none), (pointer: coarse), (max-width
 const USER_RESOURCES_PREFIX = 'user_resources/';
 const LAYER_ID_FIELDS = ['id', '_id', 'layerId', 'layer_id'];
 const MOBILE_SINGLE_VIDEO_LOAD_STAGES = new Set(['ai_video_generation', 'lip_sync_generation']);
+const TIMELINE_STRIP_MIN_WIDTH_PX = 420;
+const TIMELINE_SEGMENT_MIN_WIDTH_PX = 88;
+const TIMELINE_SECONDS_WIDTH_PX = 24;
 const previewVisualReadyCache = new Set();
 const previewVisualPreloadPromises = new Map();
 const previewVisualObjectUrlCache = new Map();
@@ -532,6 +535,31 @@ function isSegmentActiveAtTime(segment, previewTime) {
   return previewTime >= segment.startTime && previewTime < segment.endTime;
 }
 
+function getTimelineStripWidth(segments = [], timelineDuration) {
+  const segmentCountWidth = Math.max(1, segments.length) * TIMELINE_SEGMENT_MIN_WIDTH_PX;
+  const durationWidth = Math.max(0, timelineDuration) * TIMELINE_SECONDS_WIDTH_PX;
+  return Math.ceil(Math.max(TIMELINE_STRIP_MIN_WIDTH_PX, segmentCountWidth, durationWidth));
+}
+
+function getTimelineSegmentStyle(segment, timelineDuration, constrainToTimeline = false) {
+  if (!segment || timelineDuration <= 0) {
+    return { left: '0%', width: '100%' };
+  }
+
+  const rawLeft = (segment.startTime / timelineDuration) * 100;
+  const rawWidth = (segment.duration / timelineDuration) * 100;
+
+  if (!constrainToTimeline) {
+    return { left: `${rawLeft}%`, width: `${Math.max(rawWidth, 2)}%` };
+  }
+
+  const left = Math.max(0, Math.min(rawLeft, 99.5));
+  const right = Math.min(100, left + Math.max(rawWidth, 2));
+  const width = Math.max(0.5, right - left);
+
+  return { left: `${left}%`, width: `${width}%` };
+}
+
 function resolveAudioVolume(segment, audioSegments, previewTime, masterVolume = 1, muted = false) {
   if (muted) return 0;
   const baseVolume = clampAudioValue((segment.volume ?? 1) * masterVolume);
@@ -880,6 +908,7 @@ export default function ProgressIndicator(props) {
     onProcessNextStep,
     onSelectStepImage,
     onRegenerateStepImage,
+    enableScrollableLayerTimeline = false,
   } = props;
 
   const [hasCalledGetSessionImageLayers, setHasCalledGetSessionImageLayers] = useState(false);
@@ -898,6 +927,7 @@ export default function ProgressIndicator(props) {
   });
   const audioRefs = useRef(new Map());
   const activeVideoRef = useRef(null);
+  const timelineSegmentRefs = useRef(new Map());
   const previousSessionPreviewIdentityRef = useRef(null);
   const { colorMode } = useColorMode();
   const { t } = useLocalization();
@@ -959,6 +989,22 @@ export default function ProgressIndicator(props) {
   const activeVisualSegment = useMemo(
     () => findActiveVisualSegment(visualSegments, previewTime),
     [previewTime, visualSegments],
+  );
+  const activeAudioSegment = useMemo(
+    () => audioSegments.find((segment) => isSegmentActiveAtTime(segment, previewTime)) || null,
+    [audioSegments, previewTime],
+  );
+  const visualTimelineStripStyle = useMemo(
+    () => (enableScrollableLayerTimeline
+      ? { minWidth: `${getTimelineStripWidth(visualSegments, timelineDuration)}px` }
+      : undefined),
+    [enableScrollableLayerTimeline, timelineDuration, visualSegments],
+  );
+  const audioTimelineStripStyle = useMemo(
+    () => (enableScrollableLayerTimeline
+      ? { minWidth: `${getTimelineStripWidth(audioSegments, timelineDuration)}px` }
+      : undefined),
+    [audioSegments, enableScrollableLayerTimeline, timelineDuration],
   );
   const visualSegmentsToPreload = useMemo(() => {
     if (!shouldLimitMobileVideoPreload) {
@@ -1278,6 +1324,35 @@ export default function ProgressIndicator(props) {
     }
   }, []);
 
+  const registerTimelineSegmentRef = useCallback((trackKey, segmentKey, element) => {
+    const refKey = `${trackKey}:${segmentKey}`;
+    if (element) {
+      timelineSegmentRefs.current.set(refKey, element);
+    } else {
+      timelineSegmentRefs.current.delete(refKey);
+    }
+  }, []);
+
+  const scrollTimelineSegmentIntoView = useCallback((trackKey, segmentKey) => {
+    if (!segmentKey || typeof window === 'undefined') return;
+    const element = timelineSegmentRefs.current.get(`${trackKey}:${segmentKey}`);
+    element?.scrollIntoView?.({
+      behavior: 'smooth',
+      block: 'nearest',
+      inline: 'center',
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!enableScrollableLayerTimeline) return;
+    scrollTimelineSegmentIntoView('visual', activeVisualSegment?.key);
+  }, [activeVisualSegment?.key, enableScrollableLayerTimeline, scrollTimelineSegmentIntoView]);
+
+  useEffect(() => {
+    if (!enableScrollableLayerTimeline) return;
+    scrollTimelineSegmentIntoView('audio', activeAudioSegment?.key);
+  }, [activeAudioSegment?.key, enableScrollableLayerTimeline, scrollTimelineSegmentIntoView]);
+
 
 
   const videoActualLink = normalizeAssetUrl(videoLink);
@@ -1497,15 +1572,24 @@ export default function ProgressIndicator(props) {
               <div>
                 <div className={`mb-1 text-[11px] font-semibold uppercase tracking-wide ${mutedText}`}>Visuals</div>
                 <div className="vidgenie-timeline-scroller overflow-x-auto pb-1">
-                  <div className={`vidgenie-timeline-strip relative h-9 overflow-hidden rounded-lg ${timelineTrack}`}>
+                  <div
+                    className={`vidgenie-timeline-strip relative h-9 w-full overflow-hidden rounded-lg ${timelineTrack}`}
+                    style={visualTimelineStripStyle}
+                  >
                     {visualSegments.map((segment) => {
-                      const left = timelineDuration > 0 ? (segment.startTime / timelineDuration) * 100 : 0;
-                      const width = timelineDuration > 0 ? (segment.duration / timelineDuration) * 100 : 100;
+                      const isActive = enableScrollableLayerTimeline && activeVisualSegment?.key === segment.key;
                       return (
                         <div
                           key={segment.key}
-                          className="absolute top-1 h-7 rounded-md bg-indigo-500/80 px-2 text-[11px] font-semibold leading-7 text-white"
-                          style={{ left: `${left}%`, width: `${Math.max(width, 2)}%` }}
+                          ref={enableScrollableLayerTimeline
+                            ? (element) => registerTimelineSegmentRef('visual', segment.key, element)
+                            : null}
+                          className={`absolute top-1 h-7 rounded-md px-2 text-[11px] font-semibold leading-7 text-white transition-shadow ${
+                            isActive
+                              ? 'bg-indigo-400 ring-2 ring-white/80 shadow-sm'
+                              : 'bg-indigo-500/80'
+                          }`}
+                          style={getTimelineSegmentStyle(segment, timelineDuration, enableScrollableLayerTimeline)}
                           title={segment.title}
                         >
                           <span className="block truncate">{segment.type === 'video' ? 'Video' : 'Image'}</span>
@@ -1520,17 +1604,24 @@ export default function ProgressIndicator(props) {
               <div>
                 <div className={`mb-1 text-[11px] font-semibold uppercase tracking-wide ${mutedText}`}>Audio</div>
                 <div className="vidgenie-timeline-scroller overflow-x-auto pb-1">
-                  <div className={`vidgenie-timeline-strip relative h-9 overflow-hidden rounded-lg ${timelineTrack}`}>
+                  <div
+                    className={`vidgenie-timeline-strip relative h-9 w-full overflow-hidden rounded-lg ${timelineTrack}`}
+                    style={audioTimelineStripStyle}
+                  >
                     {audioSegments.map((segment) => {
-                      const left = timelineDuration > 0 ? (segment.startTime / timelineDuration) * 100 : 0;
-                      const width = timelineDuration > 0 ? (segment.duration / timelineDuration) * 100 : 100;
+                      const isActive = enableScrollableLayerTimeline && activeAudioSegment?.key === segment.key;
                       return (
                         <div
                           key={segment.key}
-                          className={`absolute top-1 h-7 rounded-md px-2 text-[11px] font-semibold leading-7 text-white ${
+                          ref={enableScrollableLayerTimeline
+                            ? (element) => registerTimelineSegmentRef('audio', segment.key, element)
+                            : null}
+                          className={`absolute top-1 h-7 rounded-md px-2 text-[11px] font-semibold leading-7 text-white transition-shadow ${
                             isSpeechAudio(segment) ? 'bg-emerald-500/80' : 'bg-cyan-500/80'
+                          } ${
+                            isActive ? 'ring-2 ring-white/80 shadow-sm' : ''
                           }`}
-                          style={{ left: `${left}%`, width: `${Math.max(width, 2)}%` }}
+                          style={getTimelineSegmentStyle(segment, timelineDuration, enableScrollableLayerTimeline)}
                           title={segment.title}
                         >
                           <span className="block truncate">{isSpeechAudio(segment) ? 'Speech' : 'Audio'}</span>

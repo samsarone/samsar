@@ -1,6 +1,7 @@
 // uploadImageToCDN.js
 
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
+import { Upload } from '@aws-sdk/lib-storage';
 import fs from 'fs';
 import crypto from 'crypto';
 import path from 'path';
@@ -26,7 +27,9 @@ const DEFAULT_RUNTIME_CONFIG_PATH = '/persistent/config/samsar.config.json';
 const PUBLIC_MEDIA_PROBE_TIMEOUT_MS = Number.isFinite(Number(process.env.SAMSAR_PUBLIC_MEDIA_PROBE_TIMEOUT_MS))
   ? Math.max(250, Number(process.env.SAMSAR_PUBLIC_MEDIA_PROBE_TIMEOUT_MS))
   : 1500;
+const MULTIPART_UPLOAD_THRESHOLD_BYTES = 5 * 1024 * 1024;
 let cachedCloudFrontPrivateKey;
+let s3Client;
 
 function encodeObjectKeyForUrl(key) {
   return String(key)
@@ -239,7 +242,7 @@ function getReferencePath(value) {
   return stripQueryAndHash(normalized);
 }
 
-function getDockerProviderMediaKeyReference(value) {
+function getProviderMediaKeyReference(value) {
   const referencePath = getReferencePath(value).replace(/^[\\/]+/, '');
   if (!referencePath) {
     return '';
@@ -264,13 +267,21 @@ function getDockerProviderMediaKeyReference(value) {
   return '';
 }
 
+const getDockerProviderMediaKeyReference = getProviderMediaKeyReference;
+
 function getProcessorAssetsRoot(folderName = 'assets') {
+  if (folderName === 'assets_v2' && process.env.SAMSAR_ASSETS_V2_ROOT) {
+    return process.env.SAMSAR_ASSETS_V2_ROOT;
+  }
+  if (folderName === 'assets' && process.env.SAMSAR_ASSETS_ROOT) {
+    return process.env.SAMSAR_ASSETS_ROOT;
+  }
   if (isDockerRuntime()) {
     if (folderName === 'assets_v2') {
-      return process.env.SAMSAR_ASSETS_V2_ROOT || '/assets_v2';
+      return '/assets_v2';
     }
     if (folderName === 'assets') {
-      return process.env.SAMSAR_ASSETS_ROOT || '/assets';
+      return '/assets';
     }
     return `/${folderName}`;
   }
@@ -441,6 +452,32 @@ function getPublicMediaBaseUrlCandidates() {
     .filter((value, index, list) => list.indexOf(value) === index);
 }
 
+function getLocalPublicMediaBaseUrlCandidates() {
+  const staticBaseUrls = new Set([
+    process.env.PUBLIC_STATIC_CDN_URL,
+    process.env.STATIC_CDN_URL,
+    STATIC_CDN_URL,
+  ].map(normalizeBaseUrl).filter(Boolean));
+
+  return [
+    process.env.SAMSAR_PUBLIC_MEDIA_BASE_URL,
+    process.env.SAMSAR_EXTERNAL_MEDIA_PUBLIC_BASE_URL,
+    process.env.MEDIA_PUBLIC_URL,
+    process.env.PUBLIC_API_BASE_URL,
+    process.env.PROCESSOR_API,
+    process.env.PROCESSOR_URL,
+    ...readRuntimeConfigPublicMediaUrls(),
+    process.env.SAMSAR_MEDIA_TUNNEL_PUBLIC_URL,
+    process.env.SAMSAR_DOCKER_PUBLIC_ASSET_BASE_URL,
+    process.env.SAMSAR_DOCKER_PUBLIC_PROCESSOR_BASE_URL,
+  ]
+    .map(normalizeBaseUrl)
+    .filter(Boolean)
+    .filter(isProbablyPublicUrl)
+    .filter((value) => !staticBaseUrls.has(value))
+    .filter((value, index, list) => list.indexOf(value) === index);
+}
+
 function shouldProbePublicMediaUrl() {
   const normalized = normalizeString(process.env.SAMSAR_VALIDATE_PUBLIC_MEDIA_URL).toLowerCase();
   return !['0', 'false', 'no', 'off'].includes(normalized);
@@ -539,6 +576,120 @@ async function buildBestDockerPublicMediaUrl(reference, localPath = '') {
   return candidateUrls[0];
 }
 
+async function buildBestLocalPublicMediaUrl(reference, localPath = '') {
+  const mediaKey = getDockerPublicMediaKey(reference, localPath);
+  if (!mediaKey) {
+    throw new Error('A public media URL is required before sending local audio/video assets to remote video providers.');
+  }
+
+  const publicBases = getLocalPublicMediaBaseUrlCandidates();
+  if (!publicBases.length) {
+    throw new Error('A public media URL is required before sending local audio/video assets to remote video providers.');
+  }
+
+  const mediaPath = mediaKey.replace(/^\/+/, '');
+  const candidateUrls = publicBases
+    .map((baseUrl) => `${baseUrl}/${mediaPath}`)
+    .filter((value, index, list) => list.indexOf(value) === index);
+
+  if (shouldProbePublicMediaUrl()) {
+    for (const candidateUrl of candidateUrls) {
+      if (await isReachablePublicMediaUrl(candidateUrl)) {
+        return candidateUrl;
+      }
+    }
+  }
+
+  return candidateUrls[0];
+}
+
+function hasAWSEnvVariables() {
+  return Boolean(
+    normalizeString(process.env.AWS_ACCESS_KEY_ID || AWS_ACCESS_KEY_ID) &&
+    normalizeString(process.env.AWS_SECRET_ACCESS_KEY || AWS_SECRET_ACCESS_KEY) &&
+    normalizeString(process.env.AWS_CDN_REGION || AWS_REGION)
+  );
+}
+
+function getMediaContentType(filePath) {
+  const extension = path.extname(filePath || '').toLowerCase();
+  if (extension === '.mp4') return 'video/mp4';
+  if (extension === '.mov') return 'video/quicktime';
+  if (extension === '.webm') return 'video/webm';
+  if (extension === '.mp3') return 'audio/mpeg';
+  if (extension === '.wav') return 'audio/wav';
+  if (extension === '.m4a') return 'audio/mp4';
+  if (extension === '.ogg' || extension === '.oga') return 'audio/ogg';
+  if (extension === '.png') return 'image/png';
+  if (extension === '.jpg' || extension === '.jpeg') return 'image/jpeg';
+  if (extension === '.webp') return 'image/webp';
+  return 'application/octet-stream';
+}
+
+function getS3Client() {
+  validateAWSEnvVariables();
+  if (!s3Client) {
+    s3Client = initializeS3Client();
+  }
+  return s3Client;
+}
+
+async function uploadLocalMediaFileToCDN(localPath, mediaKey) {
+  if (!hasAWSEnvVariables()) {
+    throw new Error('Missing AWS credentials for local media CDN publish.');
+  }
+
+  const uploadKey = toSecureAssetKey(mediaKey);
+  const fileSize = fs.statSync(localPath).size;
+  const uploadParams = {
+    Bucket: MEDIA_BUCKET_NAME,
+    Key: uploadKey,
+    Body: fs.createReadStream(localPath),
+    ContentType: getMediaContentType(localPath),
+    ContentLength: fileSize,
+  };
+
+  if (fileSize >= MULTIPART_UPLOAD_THRESHOLD_BYTES) {
+    const upload = new Upload({
+      client: getS3Client(),
+      params: uploadParams,
+      leavePartsOnError: false,
+    });
+    await upload.done();
+  } else {
+    await getS3Client().send(new PutObjectCommand(uploadParams));
+  }
+
+  const cdnUrl = buildMediaDeliveryUrl(uploadKey);
+  await primeCDNCache(cdnUrl, { requireSuccess: true });
+  return cdnUrl;
+}
+
+async function resolveLocalProviderMediaUrl(normalizedValue, localPath, mediaKeyReference) {
+  const secureReference = mediaKeyReference || normalizedValue;
+  const signedUrl = buildSecureMediaDeliveryUrl(secureReference);
+  if (signedUrl && /^https?:\/\//i.test(signedUrl)) {
+    if (await primeCDNCache(signedUrl, { requireSuccess: false, attempts: 1 })) {
+      return signedUrl;
+    }
+  }
+
+  if (hasAWSEnvVariables()) {
+    try {
+      return await uploadLocalMediaFileToCDN(localPath, secureReference);
+    } catch (error) {
+      console.error('[AWS] Falling back to public local media URL after CDN publish failure', {
+        url: String(normalizedValue).split('?')[0],
+        signedUrl: signedUrl ? signedUrl.split('?')[0] : null,
+        localPath,
+        error: error?.message || error,
+      });
+    }
+  }
+
+  return buildBestLocalPublicMediaUrl(secureReference, localPath);
+}
+
 export async function normalizeProviderMediaUrl(value) {
   const normalizedValue = normalizeString(value);
   if (!normalizedValue || normalizedValue.startsWith('data:')) {
@@ -579,18 +730,22 @@ export async function normalizeProviderMediaUrl(value) {
     }
   }
 
+  const localPath = resolveLocalMediaReferencePath(normalizedValue);
+  const referencePath = getReferencePath(normalizedValue).replace(/^[\\/]+/, '');
+  const mediaKeyReference = getProviderMediaKeyReference(normalizedValue) ||
+    (MEDIA_KEY_PREFIX_PATTERN.test(referencePath) ? referencePath : '');
+
   if (!shouldUseDockerLocalMedia()) {
+    if (localPath && mediaKeyReference) {
+      return resolveLocalProviderMediaUrl(normalizedValue, localPath, mediaKeyReference);
+    }
     return normalizedValue;
   }
 
-  const localPath = resolveLocalMediaReferencePath(normalizedValue);
   if (localPath) {
     return buildBestDockerPublicMediaUrl(normalizedValue, localPath);
   }
 
-  const referencePath = getReferencePath(normalizedValue).replace(/^[\\/]+/, '');
-  const mediaKeyReference = getDockerProviderMediaKeyReference(normalizedValue) ||
-    (MEDIA_KEY_PREFIX_PATTERN.test(referencePath) ? referencePath : '');
   if (mediaKeyReference) {
     return buildBestDockerPublicMediaUrl(mediaKeyReference);
   }
@@ -625,19 +780,16 @@ async function persistDockerMediaFile(absolutePath, key) {
  * Validates that all required AWS environment variables are set.
  */
 function validateAWSEnvVariables() {
-  if (!AWS_ACCESS_KEY_ID) {
+  if (!normalizeString(process.env.AWS_ACCESS_KEY_ID || AWS_ACCESS_KEY_ID)) {
     throw new Error('Missing AWS_ACCESS_KEY_ID environment variable.');
   }
-  if (!AWS_SECRET_ACCESS_KEY) {
+  if (!normalizeString(process.env.AWS_SECRET_ACCESS_KEY || AWS_SECRET_ACCESS_KEY)) {
     throw new Error('Missing AWS_SECRET_ACCESS_KEY environment variable.');
   }
-  if (!AWS_REGION) {
+  if (!normalizeString(process.env.AWS_CDN_REGION || AWS_REGION)) {
     throw new Error('Missing AWS_REGION environment variable.');
   }
 }
-
-// Call the validation function at module load time
-validateAWSEnvVariables();
 
 function isTruthyEnv(value) {
   return ['1', 'true', 'yes', 'on'].includes(String(value || '').trim().toLowerCase());
@@ -662,17 +814,14 @@ function getS3EndpointOptions() {
  */
 function initializeS3Client() {
   return new S3Client({
-    region: AWS_REGION,
+    region: process.env.AWS_CDN_REGION || AWS_REGION,
     credentials: {
-      accessKeyId: AWS_ACCESS_KEY_ID,
-      secretAccessKey: AWS_SECRET_ACCESS_KEY,
+      accessKeyId: process.env.AWS_ACCESS_KEY_ID || AWS_ACCESS_KEY_ID,
+      secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || AWS_SECRET_ACCESS_KEY,
     },
     ...getS3EndpointOptions(),
   });
 }
-
-// Initialize the S3 client with credentials and region
-const s3 = initializeS3Client();
 
 /**
  * Creates and returns a read stream for the specified file path.
@@ -724,7 +873,7 @@ export async function uploadFrameLayerImageToCDN(absolutePath, remoteFileName) {
     try {
 
       
-      await s3.send(new PutObjectCommand(uploadParams));
+      await getS3Client().send(new PutObjectCommand(uploadParams));
 
       const cdnUrl = buildMediaDeliveryUrl(uploadParams.Key);
       await primeCDNCache(cdnUrl, { requireSuccess: true });

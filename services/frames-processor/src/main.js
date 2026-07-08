@@ -46,6 +46,68 @@ class ObsoleteFrameGenerationError extends Error {
   }
 }
 
+class FatalFrameGenerationError extends Error {
+  constructor(message, { sessionId = null, layerId = null, sourceType = null, videoPath = null } = {}) {
+    super(message);
+    this.name = 'FatalFrameGenerationError';
+    this.sessionId = sessionId;
+    this.layerId = layerId;
+    this.sourceType = sourceType;
+    this.videoPath = videoPath;
+  }
+}
+
+function buildFrameGenerationFailureSet({ layerIndex = -1, message }) {
+  const failureMessage = message || 'Frame generation failed.';
+  const setPayload = {
+    frameGenerationPending: false,
+    videoGenerationPending: false,
+    expressGenerationPending: false,
+    expressGenerationFailed: true,
+    expressGenerationError: failureMessage,
+    generationError: failureMessage,
+    'expressGenerationStatus.frame_generation': 'FAILED',
+    'expressGenerationStatus.video_generation': 'FAILED',
+    'expressGenerationStatus.status': 'FAILED',
+  };
+
+  if (Number.isInteger(layerIndex) && layerIndex >= 0) {
+    setPayload[`layers.${layerIndex}.frameGenerationPending`] = false;
+    setPayload[`layers.${layerIndex}.frameGenerationError`] = failureMessage;
+  }
+
+  return setPayload;
+}
+
+async function markFrameGenerationFailed(sessionId, layerId, error) {
+  const normalizedSessionId = sessionId?.toString?.() || sessionId;
+  if (!normalizedSessionId) {
+    return;
+  }
+
+  const normalizedLayerId = layerId?.toString?.() || layerId;
+  const message = error?.message || 'Frame generation failed.';
+  const session = await VideoSession.findById(normalizedSessionId)
+    .select('layers._id')
+    .lean();
+  const layerIndex = Array.isArray(session?.layers) && normalizedLayerId
+    ? session.layers.findIndex((layer) => layer?._id?.toString?.() === normalizedLayerId)
+    : -1;
+
+  await VideoSession.updateOne(
+    { _id: normalizedSessionId },
+    {
+      $set: buildFrameGenerationFailureSet({
+        layerIndex,
+        message,
+      }),
+    },
+  );
+
+  await FrameGeneration.deleteMany({ sessionId: normalizedSessionId });
+  taskQueue = taskQueue.filter((task) => task?.sessionId?.toString?.() !== normalizedSessionId);
+}
+
 async function deleteFrameGenerationAndSyncSession(generationId, sessionId) {
   const normalizedGenerationId = generationId?.toString?.();
   if (normalizedGenerationId) {
@@ -798,12 +860,10 @@ async function ensureAiVideoFramesAvailable({
 
   const normalizedVideoPath = normalizeAssetPath(aiVideoLink);
   if (!normalizedVideoPath) {
-    console.warn('[frames_processor] Missing layer video path; cannot extract layer frames', {
-      sessionId,
-      layerId,
-      sourceType,
-    });
-    return;
+    throw new FatalFrameGenerationError(
+      `Missing ${sourceType} video path for layer ${layerId} in session ${sessionId}; cannot generate frames.`,
+      { sessionId, layerId, sourceType }
+    );
   }
 
   const videoPath = resolveAssetAbsolutePath(aiVideoLink);
@@ -859,13 +919,10 @@ async function ensureAiVideoFramesAvailable({
   }
 
   if (!videoPath || !fs.existsSync(videoPath)) {
-    console.warn('[frames_processor] Layer video file missing; cannot extract layer frames', {
-      sessionId,
-      layerId,
-      sourceType,
-      videoPath,
-    });
-    return;
+    throw new FatalFrameGenerationError(
+      `Missing ${sourceType} video file for layer ${layerId} in session ${sessionId}: ${videoPath || normalizedVideoPath}`,
+      { sessionId, layerId, sourceType, videoPath }
+    );
   }
 
   try {
@@ -892,24 +949,21 @@ async function ensureAiVideoFramesAvailable({
       preserveAspectRatio: preserveUserVideoAspectRatio,
     });
   } catch (error) {
-    console.error('[frames_processor] Failed to extract layer video frames; continuing', {
+    console.error('[frames_processor] Failed to extract layer video frames', {
       sessionId,
       layerId,
       sourceType,
       error: error?.message || error,
     });
-    return;
+    throw error;
   }
 
   const maxIndexAfter = getMaxNumericPngFrameIndex(aiFramesDir);
   if (maxIndexAfter < 0) {
-    console.error('[frames_processor] No layer video frames extracted; continuing', {
-      sessionId,
-      layerId,
-      sourceType,
-      framesDir: aiFramesDir,
-    });
-    return;
+    throw new FatalFrameGenerationError(
+      `No ${sourceType} frames extracted for layer ${layerId} in session ${sessionId}.`,
+      { sessionId, layerId, sourceType, videoPath }
+    );
   }
 
   if (maxIndexAfter < effectiveRequiredFrameCount - 1) {
@@ -1293,11 +1347,12 @@ async function processNextTask() {
     const newRetryCount = (numRetries || 0) + 1;
 
     // Decide how many retries you allow
-    if (newRetryCount >= 3) {
+    const isFatalFrameGenerationError = error instanceof FatalFrameGenerationError;
+    if (isFatalFrameGenerationError || newRetryCount >= 3) {
       console.error(
-        `Task for session ${sessionId} and layer ${layerId} exceeded max retries. Deleting task.`
+        `Task for session ${sessionId} and layer ${layerId} ${isFatalFrameGenerationError ? 'failed fatally' : 'exceeded max retries'}. Marking frame generation failed.`
       );
-      await deleteFrameGenerationAndSyncSession(_id, sessionId);
+      await markFrameGenerationFailed(sessionId, layerId, error);
       childProcessesMap.delete(childCombinationKey);
     } else {
       // Otherwise, unlock for re-pickup
@@ -1742,3 +1797,8 @@ export async function removeAndRecreateDirectory(dirPath, maxRetries = 2, retryD
     attemptRemoval(maxRetries);
   });
 }
+
+export const __testOnly__ = {
+  FatalFrameGenerationError,
+  buildFrameGenerationFailureSet,
+};

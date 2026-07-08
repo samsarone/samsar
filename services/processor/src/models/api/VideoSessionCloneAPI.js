@@ -1267,6 +1267,14 @@ export async function copyVideoSession(userId, payload = {}) {
   };
 }
 
+export {
+  resolveAssetsRoot,
+  resolveAssetsRoots,
+  copySessionAssetDirectories,
+  copyReferencedSessionAssets,
+  rewriteSessionAssetReferences,
+};
+
 export const __testOnly__ = {
   resolveNarratorAvatarImageGenerationInput,
   resolveAssetsRoot,

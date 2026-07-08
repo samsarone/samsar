@@ -22,6 +22,12 @@ import {
   normalizeFooterMetadataItem,
   normalizeOutroImageMetadata,
 } from '../../utils/VideoOverlayMetadata.js';
+import {
+  copySessionAssetDirectories as copyV2SessionAssetDirectories,
+  copyReferencedSessionAssets,
+  resolveAssetsRoots as resolveV2AssetsRoots,
+  rewriteSessionAssetReferences as rewriteV2SessionAssetReferences,
+} from './VideoSessionCloneAPI.js';
 
 const TRANSLATE_VIDEO_CREDITS_PER_SECOND = 3;
 const DEFAULT_FRAMES_PER_SECOND = 24;
@@ -558,6 +564,32 @@ function resetNarratorAvatarVoiceoverForRetranslate(sessionData = {}) {
   return true;
 }
 
+function disableInheritedStepGenerationForRetranslate(clonedSession = {}) {
+  clonedSession.isStepVideoGeneration = false;
+
+  const stepGeneration = clonedSession.expressStepGeneration;
+  if (!stepGeneration || typeof stepGeneration !== 'object') {
+    clonedSession.expressStepGeneration = {};
+    return;
+  }
+
+  clonedSession.expressStepGeneration = {
+    ...stepGeneration,
+    enabled: false,
+    status: 'COMPLETED',
+    nextStep: null,
+    next_step: null,
+    waitingForProcessNext: false,
+    waiting_for_process_next: false,
+    requiresUserAction: false,
+    requires_user_action: false,
+    canProcessNext: false,
+    can_process_next: false,
+    updatedAt: new Date(),
+    updated_at: new Date(),
+  };
+}
+
 function isSpeechAudioLayer(audioLayer = {}) {
   const rawType = audioLayer?.generationType;
   if (typeof rawType !== 'string') return false;
@@ -1086,6 +1118,30 @@ function stripTextItemsFromActiveItemLists(sessionData = {}) {
   sessionData.layers = layers;
 }
 
+async function copyTranslateSessionAssets({
+  originalSessionData,
+  oldSessionId,
+  newSessionId,
+  assetsRoots = null,
+}) {
+  const resolvedAssetsRoots = Array.isArray(assetsRoots) && assetsRoots.length
+    ? assetsRoots
+    : resolveV2AssetsRoots();
+
+  await copyV2SessionAssetDirectories({
+    assetsRoots: resolvedAssetsRoots,
+    oldSessionId,
+    newSessionId,
+  });
+
+  return copyReferencedSessionAssets({
+    sessionData: originalSessionData,
+    assetsRoots: resolvedAssetsRoots,
+    oldSessionId,
+    newSessionId,
+  });
+}
+
 async function applyOutroImageOverrideToSession({ clonedSession, outroImageUrl, newSessionId, assetsRoot }) {
   const normalizedOutroUrl = typeof outroImageUrl === 'string' ? outroImageUrl.trim() : '';
   if (!normalizedOutroUrl) {
@@ -1187,6 +1243,7 @@ function prepareSessionForTranslate({
   clonedSession.expressGenerationError = null;
   clonedSession.provisionalCredits = 0;
   clonedSession.isExpressGeneration = true;
+  disableInheritedStepGenerationForRetranslate(clonedSession);
   clonedSession.expressGenerativeVideoRequired = false;
   // Duration normalization should happen via the usual lip sync flow (not via speech generation).
   clonedSession.setAutoDurationPerScene = false;
@@ -1223,6 +1280,9 @@ function prepareSessionForTranslate({
     }
 
     layer.frameGenerationPending = true;
+    layer.frames = [];
+    layer.aiLayerStartFrame = null;
+    layer.aiLayerEndFrame = null;
     layer.aiVideoGenerationPending = false;
     layer.soundEffectGenerationPending = false;
     layer.aiVideoFrameGenerationPending = false;
@@ -1605,9 +1665,6 @@ async function processTranslateVideoSessionJob({
     });
   }
 
-  const assetsRoot = resolveAssetsRoot();
-  await copySessionAssetDirectories({ assetsRoot, oldSessionId, newSessionId });
-
   // NOTE: Do not use structuredClone here - it can serialize BSON ObjectIds into
   // `{ buffer: Uint8Array(...) }` shapes which Mongoose cannot cast back when saving.
   // JSON serialization converts ObjectIds to hex strings which Mongoose can cast.
@@ -1618,7 +1675,13 @@ async function processTranslateVideoSessionJob({
   delete clonedSession.createdAt;
   delete clonedSession.updatedAt;
 
-  rewriteSessionAssetReferences(clonedSession, oldSessionId, newSessionId);
+  await copyTranslateSessionAssets({
+    originalSessionData,
+    oldSessionId,
+    newSessionId,
+  });
+
+  rewriteV2SessionAssetReferences(clonedSession, oldSessionId, newSessionId);
   regenerateLayerAndAudioLayerIds(clonedSession);
   resetTimelineDurationsFromMovieResourceList(clonedSession);
 
@@ -1696,6 +1759,11 @@ async function processTranslateVideoSessionJob({
 
   await Promise.all(speechGenerationRequests);
 }
+
+export const __testOnly__ = {
+  copyTranslateSessionAssets,
+  prepareSessionForTranslate,
+};
 
 export async function translateVideoSessionAndQueueGeneration(userId, payload = {}) {
   const {

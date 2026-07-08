@@ -363,6 +363,12 @@ function hasGeneratedAiVideoOutput(layer = {}) {
   return layer?.hasAiVideoLayer !== false && Boolean(layer?.aiVideoLayer || layer?.aiVideoRemoteLink);
 }
 
+function applyTranscriptGenerationResultToStatus(currentGenerationStatus = {}, succeeded = false) {
+  const transcriptStatus = succeeded ? 'COMPLETED' : 'FAILED';
+  currentGenerationStatus.transcript_generation = transcriptStatus;
+  return transcriptStatus;
+}
+
 function hasNonEmptyString(value) {
   return typeof value === 'string' && value.trim().length > 0;
 }
@@ -1217,7 +1223,7 @@ async function checkVideoRenderStatus(session) {
       for (let i = 0; i < latestSessionLayers.length; i++) {
         const currentLayer = latestSessionLayers[i];
         if (currentLayer.layerAiVideoType === 'character'
-          && currentLayer.lipSyncGenerationPending && currentLayer.aiVideoLayer) {
+          && currentLayer.lipSyncGenerationPending && hasGeneratedAiVideoOutput(currentLayer)) {
           isLipSyncGenerationPending = true;
           break;
         }
@@ -1442,9 +1448,14 @@ async function checkVideoRenderStatus(session) {
     }
     
 
+    const finalTranscriptStatus = applyTranscriptGenerationResultToStatus(
+      currentGenerationStatus,
+      transcriptGenerationSucceeded,
+    );
+
     await VideoSession.updateOne({ _id: sessionId }, {
       $set: {
-        'expressGenerationStatus.transcript_generation': transcriptGenerationSucceeded ? 'COMPLETED' : 'FAILED',
+        'expressGenerationStatus.transcript_generation': finalTranscriptStatus,
         transcriptGenerationPending: false,
       }
     }, { new: true });
@@ -1792,4 +1803,6 @@ async function getTimeout(ms = 1000) {
 
 export const __testOnly__ = {
   hasLayerStillVisuals,
+  hasGeneratedAiVideoOutput,
+  applyTranscriptGenerationResultToStatus,
 };

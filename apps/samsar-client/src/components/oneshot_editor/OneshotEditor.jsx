@@ -7372,6 +7372,7 @@ export default function OneshotEditor() {
                 canReviewStepImages={false}
                 purchaseCreditsForUser={purchaseCreditsForUser}
                 viewInStudio={viewInStudio}
+                enableScrollableLayerTimeline
                 onProcessNextStep={handleProcessNextStep}
                 onSelectStepImage={handleSelectStepImage}
                 onRegenerateStepImage={handleRegenerateStepImage}
@@ -7400,6 +7401,7 @@ export default function OneshotEditor() {
                 }
                 purchaseCreditsForUser={purchaseCreditsForUser}
                 viewInStudio={viewInStudio}
+                enableScrollableLayerTimeline
                 onProcessNextStep={handleProcessNextStep}
                 onSelectStepImage={handleSelectStepImage}
                 onRegenerateStepImage={handleRegenerateStepImage}

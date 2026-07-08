@@ -10,6 +10,8 @@ import { padBlankAudioAtBeginningAndEnd } from '../audio/Audio.js';
 import { resolveProviderAiVideoUrl } from './utils/ProviderMediaUrl.js';
 import { normalizeProviderMediaUrl } from './utils/AWS.js';
 
+const ACTIVE_LIP_SYNC_REQUEST_STATUSES = ['INIT', 'PENDING'];
+
 
 function normalizeStringId(value) {
   if (value === null || value === undefined) {
@@ -148,6 +150,33 @@ function findConnectedAudioLayer(sessionAudioLayers = [], currentLayer = {}, lay
   ) || null;
 }
 
+function hasReusableBaseAiVideo(layer = {}) {
+  return Boolean(
+    layer?.hasAiVideoLayer ||
+    layer?.aiVideoLayer ||
+    layer?.aiVideoRemoteLink
+  );
+}
+
+function buildActiveLipSyncRequestQuery({ sessionId, layerId }) {
+  return {
+    sessionId: sessionId?.toString?.() || sessionId,
+    layerId: layerId?.toString?.() || layerId,
+    generationType: 'lip_sync',
+    status: { $in: ACTIVE_LIP_SYNC_REQUEST_STATUSES },
+  };
+}
+
+async function findActiveLipSyncGenerationRequest({ sessionId, layerId }) {
+  if (!sessionId || !layerId) {
+    return null;
+  }
+
+  return AIVideoLayerGeneration.findOne(
+    buildActiveLipSyncRequestQuery({ sessionId, layerId })
+  ).sort({ createdAt: -1 });
+}
+
 
 export async function generateLipSyncForSession(sessionId) {
 
@@ -166,7 +195,7 @@ export async function generateLipSyncForSession(sessionId) {
     for (let i = 0; i < sessionLayers.length; i++) {
       const currentLayer = sessionLayers[i];
 
-      const hasBaseAiVideo = Boolean(currentLayer?.hasAiVideoLayer || currentLayer?.aiVideoLayer);
+      const hasBaseAiVideo = hasReusableBaseAiVideo(currentLayer);
 
       if (
         currentLayer.layerAiVideoType === "character" &&
@@ -417,9 +446,9 @@ export async function generateLipSyncForLayer(sessionId, currentLayer, connected
 
   const aspectRatio = sessionData.aspectRatio;
 
-  const aiVideoRelativePath = currentLayer.aiVideoLayer;
+  const hasAiVideoReference = hasReusableBaseAiVideo(currentLayer);
 
-  if (!aiVideoRelativePath) {
+  if (!hasAiVideoReference) {
     await VideoSession.findOneAndUpdate({
       _id: sessionId,
       'layers._id': currentLayer._id,
@@ -488,6 +517,21 @@ export async function generateLipSyncForLayer(sessionId, currentLayer, connected
     retryOnFail: process.env.CURRENT_ENV !== 'docker',
     audioPrompt: audioPrompt,
   };
+
+  const existingLipSyncRequest = await findActiveLipSyncGenerationRequest({
+    sessionId,
+    layerId: currentLayer._id,
+  });
+
+  if (existingLipSyncRequest) {
+    console.log('[lip_sync][request_enqueue] reusing active lip sync generation request', {
+      sessionId,
+      layerId: currentLayer?._id?.toString?.() || currentLayer?._id || null,
+      generationRequestId: existingLipSyncRequest?._id?.toString?.() || existingLipSyncRequest?._id || null,
+      status: existingLipSyncRequest?.status || null,
+    });
+    return existingLipSyncRequest;
+  }
 
   console.log('[lip_sync][request_enqueue] creating lip sync generation request', {
     sessionId,
@@ -567,3 +611,9 @@ export async function sessionLayerDurationToMatchSpeechLayer(sessionId, currentL
     throw error;
   }
 }
+
+export const __testOnly__ = {
+  ACTIVE_LIP_SYNC_REQUEST_STATUSES,
+  buildActiveLipSyncRequestQuery,
+  hasReusableBaseAiVideo,
+};
