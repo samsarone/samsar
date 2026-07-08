@@ -13,6 +13,7 @@ import { resolveSpeechLayerTimingUpdate } from '../speech/SpeechLayerTiming.js';
 import { finalizeRemoteAudioGeneration, markAudioGenerationAsFailed } from '../music/audioUtils.js';
 import { recordProviderUsageLog } from '../utils/ProviderUsageAudit.js';
 import { finalizeStandaloneExternalAudioGeneration } from './StandaloneExternalAudio.js';
+import { buildMusicInputPayload } from './SamsarExternalAudioPayloads.js';
 
 const DEFAULT_SAMSAR_API_BASE_URL = 'https://api.samsar.one/v1';
 const DEFAULT_EXTERNAL_AUDIO_TIMEOUT_MS = 15 * 60 * 1000;
@@ -229,35 +230,6 @@ function buildSpeechInputPayload(payload = {}) {
     instructions: payload.instructions,
     generation_meta: payload.generationMeta,
     generationMeta: payload.generationMeta,
-    end_user_id: payload.userId,
-  });
-}
-
-function buildMusicInputPayload(payload = {}) {
-  const model = normalizeString(payload.model || payload.musicProvider) || 'ELEVENLABS_MUSIC';
-  const duration = normalizeDurationSeconds(payload);
-  const isInstrumental = payload.isInstrumental !== false;
-
-  return removeEmptyValues({
-    prompt: normalizeString(payload.prompt) || 'Create an original cinematic background music track.',
-    model,
-    music_model: model,
-    musicModel: model,
-    music_provider: model,
-    musicProvider: model,
-    duration,
-    duration_seconds: duration,
-    durationSeconds: duration,
-    seconds_total: duration,
-    secondsTotal: duration,
-    is_instrumental: isInstrumental,
-    isInstrumental,
-    make_instrumental: isInstrumental,
-    force_instrumental: Boolean(isInstrumental || payload?.generationMeta?.forceInstrumental),
-    lyrics: normalizeString(payload?.generationMeta?.lyrics) || undefined,
-    generation_meta: payload.generationMeta,
-    generationMeta: payload.generationMeta,
-    metadata: payload.generationMeta,
     end_user_id: payload.userId,
   });
 }

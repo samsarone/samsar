@@ -15,11 +15,11 @@ import {
   DOCKER_AUDIO_PROVIDER,
   hasDockerMusicProviderPriority,
   isInitialDockerAudioRoutingRequest,
-  resolveDockerMusicProvider,
 } from '../consts/DockerProviderPriority.js';
 import {
   dispatchAndProcessSamsarExternalMusicRequest,
 } from '../external/SamsarExternalAudioAdapter.js';
+import { resolveMusicProvider as resolveMusicProviderBase } from './MusicProviderResolver.js';
 
 function normalizeString(value) {
   return typeof value === 'string' ? value.trim() : '';
@@ -29,34 +29,11 @@ function toPlainPayload(payload = {}) {
   return typeof payload?.toObject === 'function' ? payload.toObject() : payload;
 }
 
-function resolveMusicProvider(payload = {}) {
-  const model = normalizeString(payload.model);
-  if (model === 'CUSTOM_TEXT_TO_MUSIC') {
-    return '';
-  }
-
-  const dockerProvider = resolveDockerMusicProvider(model, payload);
-  if (dockerProvider) {
-    return dockerProvider;
-  }
-
-  if (model === 'ELEVENLABS_MUSIC') {
-    return shouldUseNativeElevenLabsMusic(payload)
-      ? DOCKER_AUDIO_PROVIDER.ELEVENLABS
-      : DOCKER_AUDIO_PROVIDER.FAL;
-  }
-  if (model === 'LYRIA3' || model === 'LYRIA2') {
-    return shouldUseLyriaNative(payload)
-      ? DOCKER_AUDIO_PROVIDER.GOOGLE_CLOUD
-      : DOCKER_AUDIO_PROVIDER.FAL;
-  }
-  if (model === 'AUDIOCRAFT') {
-    return DOCKER_AUDIO_PROVIDER.REPLICATE;
-  }
-  if (model === 'CASSETTEAI') {
-    return DOCKER_AUDIO_PROVIDER.FAL;
-  }
-  return '';
+export function resolveMusicProvider(payload = {}) {
+  return resolveMusicProviderBase(payload, {
+    shouldUseNativeElevenLabsMusic,
+    shouldUseLyriaNative,
+  });
 }
 
 async function recordMusicProviderUsage(payload = {}) {

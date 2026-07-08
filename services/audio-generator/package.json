@@ -5,7 +5,7 @@
   "main": "index.js",
   "type": "module",
   "scripts": {
-    "test": "node --test src/music/GoogleLyriaNativeGenerator.test.js src/music/audioUtils.test.js src/speech/GoogleTTS.test.js"
+    "test": "node --test src/music/GoogleLyriaNativeGenerator.test.js src/music/audioUtils.test.js src/speech/GoogleTTS.test.js src/music/ElevenLabsMusicGenerator.test.js src/music/MusicDispatcher.test.js src/external/SamsarExternalAudioAdapter.test.js"
   },
   "author": "",
   "license": "ISC",

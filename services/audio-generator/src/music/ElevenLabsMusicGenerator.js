@@ -3,33 +3,28 @@ import { fal } from "@fal-ai/client";
 
 import AudioGeneration from "../schema/AudioGeneration.js";
 import { finalizeAudioBufferGeneration, finalizeRemoteAudioGeneration, markAudioGenerationAsFailed } from "./audioUtils.js";
+import {
+  buildElevenLabsMusicInput,
+  ELEVENLABS_MUSIC_DEFAULT_OUTPUT_FORMAT,
+} from "./ElevenLabsMusicPayload.js";
+
+export {
+  buildElevenLabsMusicInput,
+  buildElevenLabsMusicPrompt,
+  resolveElevenLabsMusicLengthMs,
+} from "./ElevenLabsMusicPayload.js";
 
 const FAL_API_KEY = process.env.FAL_API_KEY;
 const FA_AUDIO_LINK = "fal-ai/elevenlabs/music";
 const ELEVENLABS_MUSIC_STREAM_URL = "https://api.elevenlabs.io/v1/music/stream";
-const ELEVENLABS_MUSIC_MIN_DURATION_MS = 3000;
-const ELEVENLABS_MUSIC_MAX_DURATION_MS = 600000;
-const ELEVENLABS_MUSIC_DEFAULT_DURATION_MS = 10000;
-const ELEVENLABS_MUSIC_DEFAULT_OUTPUT_FORMAT = "mp3_44100_128";
-const ELEVENLABS_BACKING_TRACK_LOOP_INTERVAL_MS = 60000;
 const ELEVENLABS_MUSIC_DEFAULT_TIMEOUT_MS = 10 * 60 * 1000;
 
 fal.config({
   credentials: FAL_API_KEY
 });
 
-function clampNumber(value, min, max) {
-  return Math.min(max, Math.max(min, value));
-}
-
 function normalizeString(value) {
   return typeof value === 'string' ? value.trim() : '';
-}
-
-function removeEmptyValues(payload) {
-  return Object.fromEntries(
-    Object.entries(payload).filter(([, value]) => value !== undefined && value !== null && value !== '')
-  );
 }
 
 function getElevenLabsApiKey() {
@@ -91,57 +86,6 @@ export function shouldUseNativeElevenLabsMusic(payload = {}) {
   }
 
   return isDockerRuntime() && !normalizeString(FAL_API_KEY);
-}
-
-function isBackingTrack(payload) {
-  return Boolean(payload?.isBackingTrack || payload?.generationMeta?.isBackingTrack);
-}
-
-function resolveMusicLengthMs(payload) {
-  const requestedMusicLengthMs = Number(payload?.generationMeta?.musicLengthMs);
-  const requestedDurationSeconds = Number(payload?.duration);
-
-  const fallbackMusicLengthMs = Number.isFinite(requestedDurationSeconds) && requestedDurationSeconds > 0
-    ? Math.round(requestedDurationSeconds * 1000)
-    : ELEVENLABS_MUSIC_DEFAULT_DURATION_MS;
-
-  const normalizedMusicLengthMs = clampNumber(
-    Number.isFinite(requestedMusicLengthMs) && requestedMusicLengthMs > 0
-      ? Math.round(requestedMusicLengthMs)
-      : fallbackMusicLengthMs,
-    ELEVENLABS_MUSIC_MIN_DURATION_MS,
-    ELEVENLABS_MUSIC_MAX_DURATION_MS
-  );
-
-  if (isBackingTrack(payload)) {
-    return Math.min(normalizedMusicLengthMs, ELEVENLABS_BACKING_TRACK_LOOP_INTERVAL_MS);
-  }
-
-  return normalizedMusicLengthMs;
-}
-
-function buildPrompt(payload) {
-  const basePrompt = normalizeString(payload?.prompt)
-    || 'Create an original cinematic background music track for a video scene.';
-  const instrumentalOnly = isBackingTrack(payload) || Boolean(payload?.isInstrumental);
-
-  const lyrics = normalizeString(payload?.generationMeta?.lyrics);
-  if (!lyrics || instrumentalOnly) {
-    return basePrompt;
-  }
-
-  return `${basePrompt}\n\nUse these lyrics for the vocal performance:\n${lyrics}`;
-}
-
-function buildElevenLabsMusicInput(payload) {
-  const instrumentalOnly = isBackingTrack(payload) || Boolean(payload?.isInstrumental);
-  return removeEmptyValues({
-    prompt: buildPrompt(payload),
-    music_length_ms: resolveMusicLengthMs(payload),
-    force_instrumental: instrumentalOnly,
-    output_format: normalizeString(payload?.generationMeta?.outputFormat) || ELEVENLABS_MUSIC_DEFAULT_OUTPUT_FORMAT,
-    model_id: normalizeString(payload?.generationMeta?.modelId || payload?.generationMeta?.model_id) || undefined,
-  });
 }
 
 function buildNativeElevenLabsMusicRequest(payload) {

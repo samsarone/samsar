@@ -26,6 +26,11 @@ import {
   buildBackingTrackGenerationMeta,
   resolveBackingTrackTargetDurationSeconds,
 } from './BackingTrackDuration.js';
+import {
+  ELEVENLABS_MUSIC_MODEL,
+  normalizeElevenLabsMusicPayload,
+  syncElevenLabsBackingTrackMusicLengthMeta,
+} from './ElevenLabsMusicPayload.js';
 
 import { getCurrentEnvironment } from '../../utils/EnvironmentUtils.js';
 
@@ -49,12 +54,6 @@ import {
 
 
 
-const ELEVENLABS_MUSIC_MODEL = 'ELEVENLABS_MUSIC';
-const ELEVENLABS_MUSIC_MIN_DURATION_MS = 3000;
-const ELEVENLABS_MUSIC_MAX_DURATION_MS = 600000;
-const ELEVENLABS_MUSIC_DEFAULT_OUTPUT_FORMAT = 'mp3_44100_128';
-const ELEVENLABS_BACKING_TRACK_LOOP_INTERVAL_SECONDS = 60;
-const ELEVENLABS_BACKING_TRACK_LOOP_INTERVAL_MS = ELEVENLABS_BACKING_TRACK_LOOP_INTERVAL_SECONDS * 1000;
 const AUDIO_LIBRARY_TYPE_MUSIC = 'music';
 const AUDIO_LIBRARY_TYPE_SPEECH = 'speech';
 const AUDIO_LIBRARY_TYPE_SOUND_EFFECT = 'sound_effect';
@@ -110,10 +109,6 @@ function normalizeTTSProvider(provider, speakerValue = '') {
   }
 
   return TTS_PROVIDER_OPENAI;
-}
-
-function clampNumber(value, min, max) {
-  return Math.min(max, Math.max(min, value));
 }
 
 function normalizeAudioLibraryType(generationType) {
@@ -451,80 +446,6 @@ function groupAudioLibraryItemsByProject(items = []) {
     .map(({ latestCreatedAt, ...group }) => group);
 }
 
-function normalizeElevenLabsMusicPayload(payload = {}) {
-  if (payload.model !== ELEVENLABS_MUSIC_MODEL) {
-    return payload;
-  }
-
-  const currentGenerationMeta = payload.generationMeta && typeof payload.generationMeta === 'object'
-    ? payload.generationMeta
-    : {};
-
-  const requestedDurationSeconds = Number(payload.duration);
-  const requestedMusicLengthMs = Number(currentGenerationMeta.musicLengthMs);
-  const isBackingTrack = Boolean(payload.isBackingTrack || currentGenerationMeta.isBackingTrack);
-  const fallbackMusicLengthMs = Number.isFinite(requestedDurationSeconds) && requestedDurationSeconds > 0
-    ? Math.round(requestedDurationSeconds * 1000)
-    : 10000;
-
-  const musicLengthMs = clampNumber(
-    isBackingTrack
-      ? Math.min(
-          Number.isFinite(requestedMusicLengthMs) && requestedMusicLengthMs > 0
-            ? Math.round(requestedMusicLengthMs)
-            : fallbackMusicLengthMs,
-          ELEVENLABS_BACKING_TRACK_LOOP_INTERVAL_MS
-        )
-      : (
-          Number.isFinite(requestedMusicLengthMs) && requestedMusicLengthMs > 0
-            ? Math.round(requestedMusicLengthMs)
-            : fallbackMusicLengthMs
-        ),
-    ELEVENLABS_MUSIC_MIN_DURATION_MS,
-    ELEVENLABS_MUSIC_MAX_DURATION_MS
-  );
-
-  const normalizedLyrics = typeof payload.lyrics === 'string'
-    ? payload.lyrics.trim()
-    : typeof currentGenerationMeta.lyrics === 'string'
-      ? currentGenerationMeta.lyrics.trim()
-      : '';
-  const normalizedIsInstrumental = isBackingTrack || Boolean(payload.isInstrumental);
-  const normalizedDuration = isBackingTrack
-    ? (
-        Number.isFinite(requestedDurationSeconds) && requestedDurationSeconds > 0
-          ? requestedDurationSeconds
-          : musicLengthMs / 1000
-      )
-    : musicLengthMs / 1000;
-
-  return {
-    ...payload,
-    duration: normalizedDuration,
-    isInstrumental: normalizedIsInstrumental,
-    isBackingTrack,
-    generationMeta: {
-      ...currentGenerationMeta,
-      providerKey: ELEVENLABS_MUSIC_MODEL,
-      musicLengthMs,
-      forceInstrumental: normalizedIsInstrumental,
-      outputFormat: currentGenerationMeta.outputFormat || ELEVENLABS_MUSIC_DEFAULT_OUTPUT_FORMAT,
-      ...(isBackingTrack
-        ? {
-            isBackingTrack: true,
-            targetDurationSeconds: normalizedDuration,
-            backingTrackLoopIntervalSeconds: ELEVENLABS_BACKING_TRACK_LOOP_INTERVAL_SECONDS,
-          }
-        : {}),
-      ...(normalizedLyrics ? { lyrics: normalizedLyrics } : {}),
-    },
-  };
-}
-
-
-
-
-
 export async function createGenerateAudioRequest(userId, payload, updateCredits = true) {
 
   await getDBConnectionString();
@@ -782,6 +703,9 @@ export async function createGenerateMusicRequest(payload) {
       duration = targetDurationSeconds;
     }
     generationMeta = buildBackingTrackGenerationMeta(generationMeta, duration);
+    if (model === ELEVENLABS_MUSIC_MODEL) {
+      generationMeta = syncElevenLabsBackingTrackMusicLengthMeta(generationMeta, duration);
+    }
   }
 
   if (useSamsarExternalMusic) {
