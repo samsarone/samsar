@@ -13,7 +13,7 @@
     "docker:setup-assets": "bash scripts/setup-docker-runtime-assets.sh",
     "docker:setup-fonts": "bash scripts/setup-docker-runtime-assets.sh --fonts-only",
     "docker:setup-logger": "bash scripts/setup-docker-runtime-assets.sh --logger-only",
-    "docker:up": "npm run config:render && docker compose --env-file runtime/secrets/root.env -f deploy/compose/docker-compose.yml --profile core --profile workers --profile local-mongo --profile minio --profile local-media --profile logger up -d --build",
+    "docker:up": "npm run config:render && docker compose --env-file runtime/secrets/root.env -f deploy/compose/docker-compose.yml --profile core --profile workers --profile local-mongo --profile minio --profile local-media --profile logger --profile reverse-proxy up -d --build && docker compose --env-file runtime/secrets/root.env -f deploy/compose/docker-compose.yml --profile core --profile reverse-proxy up -d --no-deps --force-recreate reverse-proxy",
     "docker:down": "mkdir -p runtime/secrets && touch runtime/secrets/root.env && docker compose --env-file runtime/secrets/root.env -f deploy/compose/docker-compose.yml --profile core --profile workers --profile local-mongo --profile minio --profile local-media --profile logger --profile reverse-proxy down",
     "setup-wizard": "bash scripts/setup-wizard-docker.sh",
     "setup-wizard:docker": "npm run setup-wizard",
