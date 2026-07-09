@@ -203,8 +203,9 @@ test('renders footer QR scene frames, generated outro layer, and final video wit
     'top CTA text should stay slightly larger than the bottom footer text',
   );
   assert.ok(
-    outroTextItems[0].config.fontSize - outroTextItems[1].config.fontSize <= 5,
-    'bottom footer text should be close to the top CTA text size',
+    outroTextItems[0].config.fontSize - outroTextItems[1].config.fontSize >= 5 &&
+      outroTextItems[0].config.fontSize - outroTextItems[1].config.fontSize <= 8,
+    'top CTA text should be noticeably but not excessively larger than the bottom footer text',
   );
   assert.ok(
     outroTextItems[0].config.fontSize <= 58,
@@ -266,12 +267,13 @@ test('generated outro CTA text offsets away from edges and truncates after two l
   const landscapeTopEdges = getTextBlockEdges(landscapeItems[0]);
   const landscapeBottomEdges = getTextBlockEdges(landscapeItems[1]);
   assert.ok(
-    landscapeTopEdges.top >= 47,
-    'two-line 16:9 header should move lower while clearing the center panel',
+    landscapeTopEdges.top >= 41 && landscapeTopEdges.top <= 48,
+    'two-line 16:9 header should sit between the old high placement and the lowered layout',
   );
   assert.ok(
-    landscapeDimensions.height - landscapeBottomEdges.bottom >= 51,
-    'two-line 16:9 footer should move higher while clearing the center panel',
+    landscapeDimensions.height - landscapeBottomEdges.bottom >= 46 &&
+      landscapeDimensions.height - landscapeBottomEdges.bottom <= 53,
+    'two-line 16:9 footer should sit between the old low placement and the raised layout',
   );
 
   const portraitDimensions = getCanvasDimensionsForAspectRatio('9:16');
@@ -289,12 +291,12 @@ test('generated outro CTA text offsets away from edges and truncates after two l
   const portraitCenterBounds = getGeneratedOutroCenterBoundsForTest(portraitDimensions);
   const portraitFooterGap = portraitBottomEdges.top - portraitCenterBounds.bottom;
   assert.ok(
-    portraitTopEdges.top >= 190,
-    'two-line 9:16 header should sit proportionally lower than the landscape header',
+    portraitTopEdges.top >= 160 && portraitTopEdges.top <= 190,
+    'two-line 9:16 header should stay lower than the old layout without matching the lowered placement',
   );
   assert.ok(
-    portraitFooterGap >= 36,
-    'two-line 9:16 footer should leave visible margin below the center image',
+    portraitFooterGap >= 48,
+    'two-line 9:16 footer should move slightly lower below the center image',
   );
   assert.ok(
     portraitFooterGap <= 70,

@@ -181,7 +181,7 @@ export const VIDEO_GENERATION_MODEL_TYPES = [
     ]
   },
   {
-    name: 'Happy Horse 1.0 I2V',
+    name: 'Happy Horse 1.1 I2V',
     key: 'HAPPYHORSEI2V',
     isExpressModel: true,
     isImageToVideoModel: true,

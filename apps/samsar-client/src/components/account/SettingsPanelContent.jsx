@@ -77,7 +77,7 @@ const CUSTOM_ENDPOINT_OPERATION_KEYS = new Set(
   CUSTOM_ENDPOINT_OPERATION_OPTIONS.map((option) => option.key)
 );
 const DEFAULT_CUSTOM_ENDPOINT_BASE_URL = "https://queue.fal.run";
-const DEFAULT_HAPPY_HORSE_ENDPOINT = "alibaba/happy-horse/image-to-video";
+const DEFAULT_HAPPY_HORSE_ENDPOINT = "alibaba/happy-horse/v1.1/image-to-video";
 
 function resolveSettingsTabFromPath(pathname) {
   const segments = pathname.split("/").filter(Boolean);
@@ -764,7 +764,7 @@ export default function SettingsPanelContent(props) {
                       <input
                         type="text"
                         value={endpoint.name}
-                        placeholder="Happy Horse 1.0"
+                        placeholder="Happy Horse 1.1"
                         onChange={(e) =>
                           handleCustomEndpointFieldChange(index, "name", e.target.value)
                         }

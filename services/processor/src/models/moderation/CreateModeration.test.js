@@ -2,7 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 process.env.OPENAI_API_KEY = process.env.OPENAI_API_KEY || "test";
-process.env.OPENAI_MODERATION_REJECT_SCORE_THRESHOLD = "0.5";
+process.env.OPENAI_MODERATION_REJECT_SCORE_THRESHOLD = "0.65";
+process.env.GOOGLE_MODERATION_REJECT_SCORE_THRESHOLD = "0.7";
 
 const {
   MODERATION_PROVIDERS,
@@ -35,13 +36,58 @@ test("getModerationDecision rejects high category scores before the API flag thr
       violence: false,
     },
     category_scores: {
-      violence: 0.51,
+      violence: 0.66,
     },
   }), {
     safe: false,
     reason: "category_score",
     categories: ["violence"],
-    threshold: 0.5,
+    threshold: 0.65,
+  });
+});
+
+test("getModerationDecision allows category scores below the adjusted threshold", () => {
+  assert.deepEqual(getModerationDecision({
+    flagged: false,
+    categories: {
+      violence: false,
+    },
+    category_scores: {
+      violence: 0.64,
+    },
+  }), {
+    safe: true,
+    reason: "passed",
+  });
+});
+
+test("getModerationDecision uses the Google moderation score threshold", () => {
+  assert.deepEqual(getModerationDecision({
+    flagged: false,
+    categories: {
+      violence: false,
+    },
+    category_scores: {
+      violence: 0.66,
+    },
+  }, { provider: MODERATION_PROVIDERS.GOOGLE }), {
+    safe: true,
+    reason: "passed",
+  });
+
+  assert.deepEqual(getModerationDecision({
+    flagged: false,
+    categories: {
+      violence: false,
+    },
+    category_scores: {
+      violence: 0.71,
+    },
+  }, { provider: MODERATION_PROVIDERS.GOOGLE }), {
+    safe: false,
+    reason: "category_score",
+    categories: ["violence"],
+    threshold: 0.7,
   });
 });
 

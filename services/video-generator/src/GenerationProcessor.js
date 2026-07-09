@@ -43,7 +43,7 @@ const VALID_FRAMES_PER_SECOND = new Set([16, 24, 30]);
 const MUSIC_DUCK_ATTACK_DURATION_SECONDS = 0.8;
 const MUSIC_DUCK_RELEASE_DURATION_SECONDS = 1.2;
 const MUSIC_DUCKED_VOLUME_RATIO = 0.225;
-const EXPRESS_SPEECH_AWARE_MUSIC_DUCKED_VOLUME_RATIO = 0.18;
+const EXPRESS_SPEECH_AWARE_MUSIC_DUCKED_VOLUME_RATIO = 0.32;
 const EXPRESS_SPEECH_AWARE_DUCK_ATTACK_DURATION_SECONDS = 0.45;
 const EXPRESS_SPEECH_AWARE_DUCK_RELEASE_DURATION_SECONDS = 1.2;
 const STUDIO_ANALYZED_MUSIC_DUCKED_VOLUME_RATIO = 0.03;
@@ -2110,9 +2110,11 @@ function renderAndSaveVideoOnce(payload) {
           if (localDuckingWindows.length > 0) {
             const duckedVolumeRatio = hasExpressSpeechAwareDuckingWindows
               ? EXPRESS_SPEECH_AWARE_MUSIC_DUCKED_VOLUME_RATIO
-              : !isExpressGeneration && applyAudioDucking
-                ? STUDIO_TIMELINE_MUSIC_DUCKED_VOLUME_RATIO
-                : MUSIC_DUCKED_VOLUME_RATIO;
+              : isExpressGeneration
+                ? EXPRESS_SPEECH_AWARE_MUSIC_DUCKED_VOLUME_RATIO
+                : applyAudioDucking
+                  ? STUDIO_TIMELINE_MUSIC_DUCKED_VOLUME_RATIO
+                  : MUSIC_DUCKED_VOLUME_RATIO;
             const duckingWindowSource = hasExpressSpeechAwareDuckingWindows
               ? 'speech_activity_analysis'
               : 'speech_track_timeline';

@@ -7,6 +7,9 @@ const OUTRO_CENTER_SIZE_RATIO = 0.68;
 const OUTRO_CENTER_MAX_WIDTH_RATIO = 0.68;
 const OUTRO_CENTER_MAX_HEIGHT_RATIO = 0.8;
 const OUTRO_CENTER_MIN_SIZE_RATIO = 0.52;
+const OUTRO_TEXT_EDGE_PADDING_MULTILINE_RATIO = 0.047;
+const OUTRO_TEXT_EDGE_PADDING_SINGLELINE_RATIO = 0.073;
+const OUTRO_TEXT_EDGE_PADDING_PORTRAIT_MULTIPLIER = 3.5;
 
 function normalizeOutroCtaText(value, maxLength = 180) {
   if (typeof value !== 'string') {
@@ -156,15 +159,17 @@ function getDesiredOutroEdgePadding(canvasDimensions, placement, lineCount) {
   const { width, height } = canvasDimensions;
   const referenceSide = Math.min(width, height);
   const isPortrait = height > width;
-  const baseRatio = lineCount > 1 ? 0.058 : 0.082;
-  const portraitMultiplier = isPortrait ? 3.4 : 1;
+  const baseRatio = lineCount > 1
+    ? OUTRO_TEXT_EDGE_PADDING_MULTILINE_RATIO
+    : OUTRO_TEXT_EDGE_PADDING_SINGLELINE_RATIO;
+  const portraitMultiplier = isPortrait ? OUTRO_TEXT_EDGE_PADDING_PORTRAIT_MULTIPLIER : 1;
   const maxPadding = placement === 'top'
     ? height * (isPortrait ? 0.16 : 0.11)
     : height * (isPortrait ? 0.16 : 0.1);
 
   return Math.round(clampNumber(
     referenceSide * baseRatio * portraitMultiplier,
-    lineCount > 1 ? 54 : 74,
+    lineCount > 1 ? 48 : 66,
     maxPadding,
   ));
 }
@@ -221,7 +226,7 @@ function createTextItem({
   const centerBounds = getGeneratedOutroCenterBounds(canvasDimensions);
   const centerGap = Math.round(clampNumber(referenceSide * 0.009, 8, 14));
   const isPortrait = canvasDimensions.height > canvasDimensions.width;
-  const lowerCenterGap = Math.round(clampNumber(referenceSide * 0.04, 36, 58));
+  const lowerCenterGap = Math.round(clampNumber(referenceSide * 0.052, 44, 70));
   const edgePadding = placement === 'top'
     ? Math.min(desiredEdgePadding, Math.max(0, centerBounds.top - centerGap - textBlockHeight))
     : Math.min(desiredEdgePadding, Math.max(0, canvasDimensions.height - centerBounds.bottom - centerGap - textBlockHeight));
@@ -277,7 +282,7 @@ export function createOutroCtaTextItems({
   const referenceSide = Math.min(canvasDimensions.width, canvasDimensions.height);
   const isLandscape = canvasDimensions.width > canvasDimensions.height;
   const textMaxWidthRatio = isLandscape ? 0.82 : 0.78;
-  const topFontSize = Math.round(clampNumber(referenceSide * 0.049, 42, 56));
+  const topFontSize = Math.round(clampNumber(referenceSide * 0.05, 44, 57));
   const bottomFontSize = Math.round(clampNumber(referenceSide * 0.045, 38, 52));
   const items = [];
 

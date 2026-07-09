@@ -11,10 +11,16 @@ export const MODERATION_PROVIDERS = Object.freeze({
 
 const OPENAI_API_KEY = typeof process.env.OPENAI_API_KEY === "string" ? process.env.OPENAI_API_KEY.trim() : "";
 const OPENAI_MODERATION_MODEL = process.env.OPENAI_MODERATION_MODEL || "omni-moderation-latest";
-const MODERATION_REJECT_SCORE_THRESHOLD = parseModerationScoreThreshold(
-  process.env.MODERATION_REJECT_SCORE_THRESHOLD ||
-  process.env.OPENAI_MODERATION_REJECT_SCORE_THRESHOLD,
-  0.5,
+const DEFAULT_MODERATION_REJECT_SCORE_THRESHOLD = 0.65;
+const OPENAI_MODERATION_REJECT_SCORE_THRESHOLD = parseModerationScoreThreshold(
+  process.env.OPENAI_MODERATION_REJECT_SCORE_THRESHOLD ||
+  process.env.MODERATION_REJECT_SCORE_THRESHOLD,
+  DEFAULT_MODERATION_REJECT_SCORE_THRESHOLD,
+);
+const GOOGLE_MODERATION_REJECT_SCORE_THRESHOLD = parseModerationScoreThreshold(
+  process.env.GOOGLE_MODERATION_REJECT_SCORE_THRESHOLD ||
+  process.env.MODERATION_REJECT_SCORE_THRESHOLD,
+  DEFAULT_MODERATION_REJECT_SCORE_THRESHOLD,
 );
 
 
@@ -58,6 +64,14 @@ function normalizeProviderName(value) {
   }
 
   return "";
+}
+
+function getModerationRejectScoreThreshold(provider) {
+  const normalizedProvider = normalizeProviderName(provider);
+  if (normalizedProvider === MODERATION_PROVIDERS.GOOGLE) {
+    return GOOGLE_MODERATION_REJECT_SCORE_THRESHOLD;
+  }
+  return OPENAI_MODERATION_REJECT_SCORE_THRESHOLD;
 }
 
 function normalizeDeploymentProviderName(value) {
@@ -176,10 +190,11 @@ function warnMissingProviderOnce(provider, message) {
   missingProviderWarningLogged.add(provider);
 }
 
-export function getModerationDecision(moderationResult) {
+export function getModerationDecision(moderationResult, options = {}) {
   if (!moderationResult) {
     return { safe: false, reason: "missing_result" };
   }
+  const rejectScoreThreshold = getModerationRejectScoreThreshold(options.provider);
 
   const categories = moderationResult.categories || {};
   const flaggedCategories = Object
@@ -198,7 +213,13 @@ export function getModerationDecision(moderationResult) {
   const categoryScores = moderationResult.category_scores || {};
   const highScoreCategories = Object
     .entries(categoryScores)
-    .filter(([, score]) => Number.isFinite(score) && score >= MODERATION_REJECT_SCORE_THRESHOLD)
+    .filter(([, score]) => {
+      const normalizedScore = Number(score);
+      return (
+        Number.isFinite(normalizedScore) &&
+        normalizedScore >= rejectScoreThreshold
+      );
+    })
     .map(([category]) => category);
 
   if (highScoreCategories.length > 0) {
@@ -206,7 +227,7 @@ export function getModerationDecision(moderationResult) {
       safe: false,
       reason: "category_score",
       categories: highScoreCategories,
-      threshold: MODERATION_REJECT_SCORE_THRESHOLD,
+      threshold: rejectScoreThreshold,
     };
   }
 
@@ -268,7 +289,7 @@ export async function getModerationForNarrative(requestData, options = {}) {
     if (!moderationResult) {
       return isContentSafe;
     }
-    const moderationDecision = getModerationDecision(moderationResult);
+    const moderationDecision = getModerationDecision(moderationResult, { provider });
 
 
     if (!moderationDecision.safe) {

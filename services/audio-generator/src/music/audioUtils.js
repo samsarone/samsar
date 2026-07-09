@@ -175,6 +175,13 @@ export async function upsertGeneratedMusicArtifact({
   const description = normalizeString(currentAudioLayer?.description);
   const durationValue = Number(currentAudioLayer?.duration);
   const duration = Number.isFinite(durationValue) && durationValue > 0 ? durationValue : undefined;
+  const layerVolumeValue = Number(currentAudioLayer?.volume);
+  const generationVolumeValue = Number(audioGeneration?.volume);
+  const volume = Number.isFinite(layerVolumeValue) && layerVolumeValue >= 0
+    ? layerVolumeValue
+    : Number.isFinite(generationVolumeValue) && generationVolumeValue >= 0
+      ? generationVolumeValue
+      : undefined;
 
   await GeneratedMusic.findOneAndUpdate(
     {
@@ -193,6 +200,7 @@ export async function upsertGeneratedMusicArtifact({
         tags,
         lyric,
         ...(duration ? { duration } : {}),
+        ...(volume !== undefined ? { volume } : {}),
       },
     },
     {

@@ -144,7 +144,7 @@ const VIDGENIE_VIDEO_MODEL_LABELS = {
   COSMOS3SUPERI2V: 'Nvidia Cosmos 3',
   SEEDANCEI2V: 'Seedance 1.5',
   KLINGIMGTOVID3PRO: 'Kling 3 Pro',
-  HAPPYHORSEI2V: 'Happy Horse 1.0 I2V',
+  HAPPYHORSEI2V: 'Happy Horse 1.1 I2V',
 };
 const VIDGENIE_TEXT_VIDEO_MODEL_STORAGE_KEY = 'defaultVIdGPTVideoGenerationModel';
 const VIDGENIE_IMAGE_LIST_VIDEO_MODEL_STORAGE_KEY = 'defaultVidgenieImageListVideoGenerationModel';

@@ -163,7 +163,7 @@ export const VIDEO_MODEL_PRICES = [
   },
   {
     key: 'HAPPYHORSEI2V',
-    name: 'Happy Horse 1.0 I2V',
+    name: 'Happy Horse 1.1 I2V',
     isExpressModel: true,
     isImageToVideoModel: true,
     isTextToVideoModel: false,

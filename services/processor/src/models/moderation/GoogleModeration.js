@@ -47,6 +47,7 @@ const GEMINI_MODERATION_SYSTEM_PROMPT = [
   'Classify only the submitted generation prompt. Do not rewrite it and do not provide policy advice.',
   'Block prompts that request disallowed sexual content, sexual exploitation or child-safety harm, non-consensual intimate imagery, graphic violence, self-harm, extremist or terrorist support, hate or harassment toward protected classes, instructions for wrongdoing, illegal goods or services, privacy abuse, or evasion of safety systems.',
   'Allow ordinary cinematic, product, educational, fantasy, fictional, medical, historical, or newsworthy prompts when they do not instruct unsafe generation.',
+  'Do not block non-graphic fictional battles, stylized action violence, grimdark fantasy, gothic sci-fi, or creature combat unless the prompt asks for graphic gore, explicit injury detail, real-world extremist praise, or instructions to harm real people.',
   'Return only JSON with flagged, reason, and categories. Categories must use short snake_case names, flagged must reflect whether that category caused the block, and score must be between 0 and 1.',
 ].join('\n');
 

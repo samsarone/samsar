@@ -52,6 +52,7 @@ export async function submitSeedreamRequest(payload) {
   let reqPayload = {
     prompt: prompt,
     "image_size": imageSize,
+    output_format: "png",
   };
 
 
@@ -140,12 +141,16 @@ export async function pollSeedreamRequest(payload) {
 
 
       const fileImages = result.images || result.data?.images;
-      const imageRemoteUrl = fileImages[0].url;
+      const imageRemoteUrl = fileImages?.[0]?.url;
+      if (!imageRemoteUrl) {
+        throw new Error("Seedream result did not include an image URL.");
+      }
 
       const imageName = await saveRemoteFile(imageRemoteUrl);
 
       return { image: imageName };
     } catch (error) {
+      console.error("Error retrieving Seedream image from FAL: ", error);
       await ImageGeneration.findOneAndUpdate({
         _id: _id
       }, {
@@ -154,7 +159,7 @@ export async function pollSeedreamRequest(payload) {
         rowLocked: false
       });
 
-      return { image: null, error: "Image retrieval failed" };
+      return { image: null, error: `Seedream image retrieval failed: ${error?.message || "Unknown error"}` };
 
     }
 
@@ -173,7 +178,7 @@ export async function pollSeedreamRequest(payload) {
 
 
 function getFalLinkForModel(model) {
-  return 'fal-ai/bytedance/seedream/v4.5/text-to-image';
+  return 'bytedance/seedream/v5/pro/text-to-image';
 
 }
 

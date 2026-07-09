@@ -11,6 +11,7 @@ const generatedMusicSchema = new Schema({
   tags: [String],
   lyric: String,
   duration: Number,
+  volume: Number,
 
 }, { timestamps: true });
 

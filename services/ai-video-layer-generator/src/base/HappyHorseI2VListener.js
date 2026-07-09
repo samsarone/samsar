@@ -1,7 +1,7 @@
 import { fal } from "@fal-ai/client";
 
 const FAL_API_KEY = process.env.FAL_API_KEY;
-const HAPPY_HORSE_IMAGE_TO_VIDEO_LINK = "alibaba/happy-horse/image-to-video";
+const HAPPY_HORSE_IMAGE_TO_VIDEO_LINK = "alibaba/happy-horse/v1.1/image-to-video";
 const HAPPY_HORSE_DURATION_OPTIONS = [5, 10, 15];
 
 fal.config({

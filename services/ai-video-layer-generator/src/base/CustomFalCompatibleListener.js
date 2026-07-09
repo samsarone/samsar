@@ -273,7 +273,9 @@ function removeUndefinedValues(payload) {
 }
 
 function isHappyHorseImageToVideoEndpoint(endpointPath) {
-  return normalizeString(endpointPath).toLowerCase() === 'alibaba/happy-horse/image-to-video';
+  return /^alibaba\/happy-horse\/(?:v1\.1\/)?image-to-video$/.test(
+    normalizeString(endpointPath).toLowerCase()
+  );
 }
 
 function buildHappyHorseImageToVideoInputPayload(payload) {

@@ -20,6 +20,7 @@ const audioGenerationSchema = new Schema({
   model: String,
   generationId: String,
   duration: Number,
+  volume: Number,
   status: { type: String, default: 'INIT' },
   generationId: String,
   secondsTotal: Number,
