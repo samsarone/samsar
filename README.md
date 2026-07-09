@@ -1,10 +1,6 @@
 # Samsar
 
-Samsar is a full-stack software factory and generative video cloud for one-shot text-to-video, image-list-to-video, image editing, search, recommendations, assistant workflows, audio generation, and post-processing Studio workflows. This monorepo packages the deployable Docker runtime for Samsar Studio, the processor API, worker services, local media storage, setup wizard, and deployment scaffolding.
-
-The default operating model is local Docker first: the stack runs its own API, frontend, workers, MongoDB, MinIO-compatible object storage, media gateway, and optional Loki/Grafana logging from one repository. Kubernetes scaffolding is available for teams preparing cluster deployment.
-
-Runtime configuration, generated secrets, and local deployment resources are stored under `runtime/` in the user's sandboxed environment.
+Samsar is a generative video and media automation platform for turning prompts, product images, structured content, and creative ideas into finished videos and reusable studio assets. It brings together one-shot text-to-video, image-list-to-video, image editing, audio generation, semantic search, recommendations, assistant workflows, multi-provider model routing, and detailed post-production controls across one integrated Studio and API surface.
 
 ## Architecture
 
@@ -18,7 +14,7 @@ Runtime configuration, generated secrets, and local deployment resources are sto
 
 ![Recommendations](https://static.samsar.one/unauthenticated/readme/readme-recommendations-pipeline-v2.png)
 
-## Salient Features
+## Features
 
 - One-shot text-to-video up to 3 minutes for documentary, infotainment, ed-tech, film summary, custom themes, and original ideas.
 - One-shot image-list-to-video that turns product images into polished ad videos with optional narrator avatar, outro, and CTA.
@@ -142,11 +138,13 @@ The wizard follows five configuration steps:
 
 | Step | What it configures | Runtime effect |
 | --- | --- | --- |
-| Providers | OpenAI, Google Cloud, FAL, ElevenLabs, RunwayML, and optional Samsar API key | Controls which models/actions appear in `runtime/config/available-models.json`. |
+| Providers | OpenAI, Google Cloud, FAL, ElevenLabs, RunwayML, Samsar | Controls which models/actions appear in `runtime/config/available-models.json`. |
 | Services | Processor, setup wizard, image generator, assistant query processor, audio generator, AI video layer generator, video renderer, frames processor, express video listener, and logger | Determines which Docker service families are enabled for the local runtime. |
 | Mail and Data | Local or remote MongoDB, local MinIO or external S3-compatible storage, SMTP/SES/disabled mail | Writes database, storage, CDN, media, and mail settings. |
 | Domain | Optional nginx reverse proxy for a public domain/subdomain, public IP, or private IP, with optional IP detection, port opening, and Let's Encrypt SSL for validated domains | Enables public or intranet access URLs for Studio and the processor API. |
 | Admin | Organization and initial admin/login setup | Prepares Docker setup login and local access details. |
+
+All provider keys are optional and enable different capabilities. A Samsar API key enables all capabilities and can also be used as a universal fallback with other provider keys.
 
 During setup, the wizard saves deployment config, renders runtime env, starts containers, configures the optional reverse proxy, publishes the local media gateway when required, verifies the processor API and client, and prepares local login. See [Setup Wizard](pages/setup-wizard.md) for the detailed lifecycle.
 
@@ -327,12 +325,8 @@ Native provider keys can provide faster and often cheaper inference directly wit
 | --- | --- | --- |
 | Samsar API key | `providers.samsar.apiKey` -> `SAMSAR_API_KEY` | Go to [app.samsar.one](https://app.samsar.one), register or log in, then open [Billing](https://app.samsar.one/account/billing) to add credits or set up automatic recharge. Open [API Keys](https://app.samsar.one/account/apiKeys), create a new API key, copy it, and paste it into the setup wizard Step 1 field labeled **Samsar universal fallback**. This key can act as the universal fallback for supported model families. |
 | OpenAI | `providers.openai.apiKey` -> `OPENAI_API_KEY` | Go to [OpenAI API keys](https://platform.openai.com/api-keys), choose the correct project, create a new secret key, and paste it into the setup wizard or config. The key is shown only once. |
-| Google Cloud | `providers.googleCloud.projectId`, `providers.googleCloud.credentialsJsonB64` -> `GOOGLE_CLOUD_PROJECT`, `GOOGLE_APPLICATION_CREDENTIALS_JSON_B64` | Use a Google Cloud service account JSON key, not a standard API key. In [Google Cloud Service Accounts](https://console.cloud.google.com/iam-admin/serviceaccounts), create or select a service account, grant the production-parity roles `roles/aiplatform.user` and `roles/serviceusage.serviceUsageConsumer`, and enable the required APIs. Leave **Principals with access (optional)** blank unless you intentionally want another user or service account to manage or impersonate this service account. Then open **Keys** -> **Add key** -> **Create new key** -> **JSON**. Paste the JSON in the setup wizard, or base64 it for manual config with `base64 < service-account.json | tr -d '\n'`. |
+| Google Cloud | `providers.googleCloud.projectId`, `providers.googleCloud.credentialsJsonB64` -> `GOOGLE_CLOUD_PROJECT`, `GOOGLE_APPLICATION_CREDENTIALS_JSON_B64` | Use a Google Cloud service account JSON key, not a standard API key. In [Google Cloud Service Accounts](https://console.cloud.google.com/iam-admin/serviceaccounts), create or select a service account with the minimum required permissions for your installation. Leave **Principals with access** blank. Then open **Keys** -> **Add key** -> **Create new key** -> **JSON**. Paste the JSON in the setup wizard, or base64 it for manual config with `base64 < service-account.json | tr -d '\n'`. |
 | FAL | `providers.fal.apiKey` -> `FAL_API_KEY` | Create a key from the [fal dashboard](https://fal.ai/dashboard/keys) or follow the [fal authentication docs](https://fal.ai/docs/documentation/setting-up/authentication). Samsar uses `FAL_API_KEY`; fal SDK examples may call the same credential `FAL_KEY`. |
-
-For Google Cloud, the parent workspace script `../scripts/setup_google_remote_production.sh` is the current production reference when this deployable monorepo sits under the source workspace. It enables Vertex AI/Gemini, Generative Language, Text-to-Speech, Storage, Speech, Translate, Vision, Natural Language, IAM, IAM Credentials, STS, Service Usage, Cloud Resource Manager, Cloud Billing, and Billing Budgets APIs. It grants the runtime service account `roles/aiplatform.user` and `roles/serviceusage.serviceUsageConsumer`. Add narrower IAM roles only when a new Google service explicitly requires them.
-
-Service account keys are long-lived secrets. Prefer attached service accounts on Google Cloud production runtimes, and use JSON keys only for local Docker, VPS, or other environments that cannot use attached identities or workload identity federation.
 
 ## External Access
 
