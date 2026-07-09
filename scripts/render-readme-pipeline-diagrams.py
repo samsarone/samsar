@@ -592,10 +592,10 @@ def render_recommendations() -> Image.Image:
 def main() -> None:
     ASSETS.mkdir(exist_ok=True)
     outputs = {
-        "text-to-video-pipeline.png": render_text_to_video(),
-        "image-to-video-pipeline.png": render_image_list_to_video(),
-        "search-embeddings-pipeline.png": render_search_embeddings(),
-        "recommendations-embeddings-pipeline.png": render_recommendations(),
+        "readme-text-to-video-pipeline-v2.png": render_text_to_video(),
+        "readme-image-list-to-video-pipeline-v2.png": render_image_list_to_video(),
+        "readme-search-embeddings-pipeline-v2.png": render_search_embeddings(),
+        "readme-recommendations-pipeline-v2.png": render_recommendations(),
     }
     for filename, image in outputs.items():
         output = ASSETS / filename

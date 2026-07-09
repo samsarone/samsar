@@ -10,13 +10,13 @@ Runtime configuration, generated secrets, and local deployment resources are sto
 
 <!-- README image cache refresh: 2026-07-09 -->
 
-![Text to Video](assets/text-to-video-pipeline.png)
+![Text to Video](assets/readme-text-to-video-pipeline-v2.png)
 
-![Image List to Video](assets/image-to-video-pipeline.png)
+![Image List to Video](assets/readme-image-list-to-video-pipeline-v2.png)
 
-![Search Embeddings](assets/search-embeddings-pipeline.png)
+![Search Embeddings](assets/readme-search-embeddings-pipeline-v2.png)
 
-![Recommendations](assets/recommendations-embeddings-pipeline.png)
+![Recommendations](assets/readme-recommendations-pipeline-v2.png)
 
 ## Salient Features
 
