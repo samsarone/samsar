@@ -73,6 +73,8 @@ const MEDIA_DOWNLOAD_TIMEOUT_MS = Number.isFinite(Number(process.env.API_MEDIA_D
   : 180000;
 const NARRATOR_SPEECH_VOLUME = 100;
 const CHARACTER_SPEECH_VOLUME = 85;
+const EXPRESS_BACKING_TRACK_VOLUME = 35;
+const EXPRESS_LYRIA_BACKING_TRACK_VOLUME = 45;
 const DEFAULT_FRAMES_PER_SECOND = 24;
 const OUTRO_LAYER_DURATION_SECONDS = 8;
 const IMAGE_LIST_TO_VIDEO_DEFAULT_IMAGE_EDIT_MODEL = 'NANOBANANAPROEDIT';
@@ -93,6 +95,12 @@ const wait = (milliseconds) => new Promise((resolve) => setTimeout(resolve, mill
 
 function normalizeBackingTrackProvider(value) {
   return value === 'LYRIA2' ? 'LYRIA3' : value;
+}
+
+function resolveExpressBackingTrackVolume(musicProvider) {
+  return musicProvider === 'LYRIA3' || musicProvider === 'LYRIA2'
+    ? EXPRESS_LYRIA_BACKING_TRACK_VOLUME
+    : EXPRESS_BACKING_TRACK_VOLUME;
 }
 
 function resolveImageExtensionFromMimeType(mimeType) {
@@ -784,11 +792,7 @@ export async function requestImageListToVideGeneration(userId, payload) {
 
     const musicTheme = await getMusicForTextTheme(themeJsonString, userInferenceModel, musicProvider);
 
-    let musicVolume = 55;
-    if (musicProvider === 'LYRIA3' || musicProvider === 'LYRIA2') {
-
-      musicVolume = 100;
-    }
+    const musicVolume = resolveExpressBackingTrackVolume(musicProvider);
 
     const musicGenerationPayload = {
       videoSessionId: sessionId,
@@ -1498,7 +1502,7 @@ export async function requestImageListToVideGeneration(userId, payload) {
       userId: userId,
       audioLayerId: layer._id.toString(),
       defaultSelected: true,
-      volume: 55,
+      volume: resolveExpressBackingTrackVolume(musicProvider),
 
     };
 
@@ -1556,7 +1560,9 @@ export async function requestImageListToVideGeneration(userId, payload) {
     } else if (layer.generationType === 'music') {
 
       pushPayload.musicProvider = musicProvider;
-      pushPayload.volume = 60;
+      pushPayload.volume = Number.isFinite(Number(layer.volume))
+        ? Number(layer.volume)
+        : resolveExpressBackingTrackVolume(musicProvider);
       if (customAdapterFallbacks?.text_to_music) {
         pushPayload.customFallbackModel = customAdapterFallbacks.text_to_music;
       }
@@ -1706,6 +1712,9 @@ export async function requestGenerateMusicLayersWithTiming(userId, sessionId, pa
       audioLayerId: currentPayload.audioLayerId.toString(),
       model: currentPayload.musicProvider,
       defaultSelected: true,
+      volume: Number.isFinite(Number(currentPayload.volume))
+        ? Number(currentPayload.volume)
+        : resolveExpressBackingTrackVolume(currentPayload.musicProvider),
       generationMeta: buildBackingTrackGenerationMeta(
         currentPayload.generationMeta,
         targetDurationSeconds || currentPayload.duration

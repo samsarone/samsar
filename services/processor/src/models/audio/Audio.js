@@ -674,6 +674,7 @@ export async function createGenerateMusicRequest(payload) {
     defaultSelected,
     isBackingTrack,
     generationMeta,
+    volume,
   } = normalizedPayload;
 
   if (!model) {
@@ -686,6 +687,16 @@ export async function createGenerateMusicRequest(payload) {
       .lean()
     : null;
   const externalMusicStage = sessionData?.samsarExternalProviderStages?.music_generation || null;
+  const currentAudioLayer = Array.isArray(sessionData?.audioLayers)
+    ? sessionData.audioLayers.find((audioLayer) => (
+        audioLayer?._id?.toString?.() === audioLayerId?.toString?.()
+      ))
+    : null;
+  const resolvedVolume = Number.isFinite(Number(volume))
+    ? Number(volume)
+    : Number.isFinite(Number(currentAudioLayer?.volume))
+      ? Number(currentAudioLayer.volume)
+      : undefined;
   const useSamsarExternalMusic =
     externalMusicStage?.provider === 'samsar' ||
     externalMusicStage?.authorization === 'deployed' ||
@@ -731,6 +742,7 @@ export async function createGenerateMusicRequest(payload) {
     duration: duration,
     defaultSelected: defaultSelected,
     isBackingTrack: Boolean(isBackingTrack),
+    ...(resolvedVolume !== undefined ? { volume: resolvedVolume } : {}),
     generationMeta,
     ...(useSamsarExternalMusic
       ? {
