@@ -10,13 +10,13 @@ Runtime configuration, generated secrets, and local deployment resources are sto
 
 <!-- README image cache refresh: 2026-07-09 -->
 
-![Text to Video](assets/readme-text-to-video-pipeline-v2.png)
+![Text to Video](https://static.samsar.one/unauthenticated/readme/readme-text-to-video-pipeline-v2.png)
 
-![Image List to Video](assets/readme-image-list-to-video-pipeline-v2.png)
+![Image List to Video](https://static.samsar.one/unauthenticated/readme/readme-image-list-to-video-pipeline-v2.png)
 
-![Search Embeddings](assets/readme-search-embeddings-pipeline-v2.png)
+![Search Embeddings](https://static.samsar.one/unauthenticated/readme/readme-search-embeddings-pipeline-v2.png)
 
-![Recommendations](assets/readme-recommendations-pipeline-v2.png)
+![Recommendations](https://static.samsar.one/unauthenticated/readme/readme-recommendations-pipeline-v2.png)
 
 ## Salient Features
 

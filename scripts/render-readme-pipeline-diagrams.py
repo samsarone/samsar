@@ -14,7 +14,7 @@ from PIL import Image, ImageDraw, ImageFont
 
 
 ROOT = Path(__file__).resolve().parents[1]
-ASSETS = ROOT / "assets"
+OUTPUT_DIR = ROOT / "tmp" / "readme-diagrams"
 
 WIDTH = 2000
 VIDEO_HEIGHT = 940
@@ -590,7 +590,7 @@ def render_recommendations() -> Image.Image:
 
 
 def main() -> None:
-    ASSETS.mkdir(exist_ok=True)
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     outputs = {
         "readme-text-to-video-pipeline-v2.png": render_text_to_video(),
         "readme-image-list-to-video-pipeline-v2.png": render_image_list_to_video(),
@@ -598,7 +598,7 @@ def main() -> None:
         "readme-recommendations-pipeline-v2.png": render_recommendations(),
     }
     for filename, image in outputs.items():
-        output = ASSETS / filename
+        output = OUTPUT_DIR / filename
         image.save(output, optimize=True)
         print(f"rendered {output}")
 

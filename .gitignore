@@ -119,7 +119,6 @@ services/generator/image_*.png
 
 # README architecture diagrams
 !assets/
-!assets/*pipeline.png
 !assets/*architecture.png
 !docs/
 !docs/brand/
