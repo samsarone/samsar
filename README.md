@@ -8,6 +8,8 @@ Runtime configuration, generated secrets, and local deployment resources are sto
 
 ## Architecture
 
+<!-- README image cache refresh: 2026-07-09 -->
+
 ![Text to Video](assets/text-to-video-pipeline.png)
 
 ![Image List to Video](assets/image-to-video-pipeline.png)
