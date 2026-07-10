@@ -345,7 +345,7 @@ The client-side model inventory lives primarily in `src/constants/Types.ts` and 
 | Model | Key | Express |
 | --- | --- | --- |
 | GPT Image 2 | `GPTIMAGE2` | Yes |
-| Seedream | `SEEDREAM` | Yes |
+| Seedream 5 Pro | `SEEDREAM` | Yes |
 | NanoBanana 2 | `NANOBANANA2` | Yes |
 | NanoBanana Pro | `NANOBANANAPRO` | Yes |
 
@@ -365,6 +365,7 @@ The client-side model inventory lives primarily in `src/constants/Types.ts` and 
 | Sora 2 Pro | `SORA2PRO` | No | Yes | Yes | `16:9`, `9:16` |
 | Custom Image to Video | `CUSTOM_IMAGE_TO_VIDEO` | Yes | No | Yes | `1:1`, `16:9`, `9:16` |
 | Kling 3 Pro Img2Vid | `KLINGIMGTOVID3PRO` | Yes | No | Yes | `1:1`, `16:9`, `9:16` |
+| Happy Horse 1.1 I2V | `HAPPYHORSEI2V` | Yes | No | Yes | `1:1`, `16:9`, `9:16` |
 | Kling 3 Pro Text2Vid | `KLINGTXTTOVID3PRO` | No | Yes | No | `1:1`, `16:9`, `9:16` |
 | Hailuo O2 Standard | `HAILUO` | No | Yes | Yes | `16:9` |
 | Hailuo O2 Pro | `HAILUOPRO` | No | Yes | Yes | `16:9` |
@@ -381,8 +382,8 @@ The client-side model inventory lives primarily in `src/constants/Types.ts` and 
 
 VidGenie intentionally exposes a smaller express-first subset:
 
-- Image models: `GPTIMAGE2`, `NANOBANANA2`, `NANOBANANAPRO`, `SEEDREAM`.
-- Text/video and image/video models: `RUNWAYML`, `VEO3.1I2V`, `VEO3.1I2VFAST`, `SEEDANCEI2V`, `KLINGIMGTOVID3PRO`.
+- Image models: `GPTIMAGE2`, `NANOBANANA2`, `NANOBANANAPRO`, `SEEDREAM` (Seedream 5 Pro).
+- Text/video and image/video models: `RUNWAYML`, `VEO3.1I2V`, `VEO3.1I2VFAST`, `SEEDANCEI2V`, `KLINGIMGTOVID3PRO`, `HAPPYHORSEI2V` (Happy Horse 1.1 I2V).
 - JSON mode validates the supported image/video model keys for the selected workflow.
 - Aspect ratios: `16:9` and `9:16`.
 - Wizard durations: `10`, `30`, `60`, `90`, `120`, and `180` seconds.
@@ -409,6 +410,7 @@ Express video pricing is calculated per second:
 | `RUNWAYML` | 30 |
 | `SEEDANCEI2V` | 30 |
 | `KLINGIMGTOVID3PRO` | 36 |
+| `HAPPYHORSEI2V` | 36 |
 | `VEO3.1I2VFAST` | 36 |
 | `VEO3.1I2V` | 60 |
 

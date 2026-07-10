@@ -188,7 +188,7 @@ Provider availability is explicit. `npm run config:render` reads `runtime/config
 | Samsar API key | Universal fallback for configured Docker deployments | All configured Docker model families in the setup logic, including chat, assistant, image, image edit, video, audio, lip sync, sound effects, and NanoBanana families. |
 | OpenAI | Chat, assistant, image, image edit, audio, moderation, search, recommendations | `gpt-5.5`, `GPTIMAGE2`, `GPTIMAGE2EDIT`, `OPENAI_TTS`. |
 | Google Cloud | Gemini, image, image edit, video, audio, moderation | `gemini-3.1-pro`, `VEO3.1I2V`, `VEO3.1I2VFAST`, `LYRIA3`, `GOOGLE_TTS`, `NANOBANANA2`, `NANOBANANA2EDIT`, `NANOBANANAPRO`, `NANOBANANAPROEDIT`. |
-| FAL | Image, image edit, video, audio, lip sync, sound effects | `SEEDREAM`, `NANOBANANA2`, `NANOBANANA2EDIT`, `NANOBANANAPRO`, `NANOBANANAPROEDIT`, VEO via FAL, `COSMOS3SUPERI2V`, `SEEDANCEI2V`, Kling image-to-video, `HAPPYHORSEI2V`, ElevenLabs/PlayAI/CassetteAI/AudioCraft via FAL, `MMAUDIOV2`, `MIRELOAI`, and lip sync model families. |
+| FAL | Image, image edit, video, audio, lip sync, sound effects | `SEEDREAM` (Seedream 5 Pro), `NANOBANANA2`, `NANOBANANA2EDIT`, `NANOBANANAPRO`, `NANOBANANAPROEDIT`, VEO via FAL, `COSMOS3SUPERI2V`, `SEEDANCEI2V`, Kling image-to-video, `HAPPYHORSEI2V` (Happy Horse 1.1 I2V), ElevenLabs/PlayAI/CassetteAI/AudioCraft via FAL, `MMAUDIOV2`, `MIRELOAI`, and lip sync model families. |
 | ElevenLabs | Speech and music | `ELEVENLABS`, `ELEVENLABS_MUSIC`. |
 | RunwayML | Video generation and image-to-video | `RUNWAYML`. |
 

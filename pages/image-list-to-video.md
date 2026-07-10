@@ -65,7 +65,7 @@ Image-list-to-video uses the same express video model keys as text-to-video:
 | `SEEDANCEI2V` | 30 |
 | `KLINGIMGTOVID3PRO` | 36 |
 | `KLINGIMGTOVIDTURBO` | 36 |
-| `HAPPYHORSEI2V` | 36 |
+| `HAPPYHORSEI2V` (Happy Horse 1.1 I2V) | 36 |
 
 Deployment availability still depends on enabled providers. Check:
 

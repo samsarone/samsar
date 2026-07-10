@@ -55,7 +55,7 @@ Express image models:
 | `GPTIMAGE2` |
 | `NANOBANANA2` |
 | `NANOBANANAPRO` |
-| `SEEDREAM` |
+| `SEEDREAM` (Seedream 5 Pro) |
 | `CUSTOM_TEXT_TO_IMAGE` |
 
 Express video models:
@@ -69,7 +69,7 @@ Express video models:
 | `SEEDANCEI2V` | 30 |
 | `KLINGIMGTOVID3PRO` | 36 |
 | `KLINGIMGTOVIDTURBO` | 36 |
-| `HAPPYHORSEI2V` | 36 |
+| `HAPPYHORSEI2V` (Happy Horse 1.1 I2V) | 36 |
 
 Use the runtime endpoint for the current filtered deployment view:
 
