@@ -2,7 +2,10 @@
 
 import { sendNarrativePromptMessageRequest } from "../../../agent/MovieCreatorAgent.js";
 import { getSpeechDurationStringForModel } from "../../utils/ModelUtils.js";
-import { normalizeInferenceModel } from "../../../../consts/InferenceModels.js";
+import {
+  GPT_56_SOL_REASONING_EFFORT,
+  normalizeInferenceModel,
+} from "../../../../consts/InferenceModels.js";
 
 
 export async function extractNarrativeFromInputPayload(
@@ -53,11 +56,11 @@ export async function extractNarrativeFromInputPayload(
     },
   ];
 
-  // Keep image-list narrative extraction bounded; high reasoning can sit for minutes with no processor progress.
+  // GPT-5.6 Sol uses the shared quality-first reasoning setting for narrative extraction.
   const effectiveInferenceModel = normalizeInferenceModel(inferenceModel);
-  const shouldUseHighReasoning = effectiveInferenceModel === 'gpt-5.5';
-  const reasoningEffort = shouldUseHighReasoning
-    ? normalizeReasoningEffort(process.env.IMAGE_LIST_TO_VIDEO_NARRATIVE_REASONING_EFFORT, 'medium')
+  const shouldUseGPT56SolReasoning = effectiveInferenceModel === 'gpt-5.6-sol';
+  const reasoningEffort = shouldUseGPT56SolReasoning
+    ? GPT_56_SOL_REASONING_EFFORT
     : undefined;
 
   const resData = await sendNarrativePromptMessageRequest(
@@ -74,16 +77,6 @@ export async function extractNarrativeFromInputPayload(
 
 
 }
-
-function normalizeReasoningEffort(value, fallback) {
-  const normalizedValue = typeof value === 'string' ? value.trim().toLowerCase() : '';
-  return ['minimal', 'low', 'medium', 'high'].includes(normalizedValue)
-    ? normalizedValue
-    : fallback;
-}
-
-
-
 
 export function getVideoNarrativeExtractorSystemPrompt(
   duration = 30,

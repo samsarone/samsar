@@ -63,6 +63,7 @@ router.get('/status', async function (req, res) {
 
   const sessionId = req.query.sessionId;
   const headers = req.headers;
+  res.setHeader('Cache-Control', 'private, no-store');
 
   const generationStatusData = await getQuickSessionGenerationStatus(sessionId);
 
@@ -93,6 +94,7 @@ router.get('/details', async function (req, res) {
     return;
   }
 
+  res.setHeader('Cache-Control', 'private, no-store');
   const sessionData = await getQuickSessionDetails(sessionId);
   res.json(sessionData);
 

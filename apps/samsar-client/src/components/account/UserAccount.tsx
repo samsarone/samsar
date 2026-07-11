@@ -26,7 +26,7 @@ import { useInferenceModelAvailability } from "../../hooks/useInferenceModelAvai
 import { INFERENCE_MODEL_TYPES, ASSISTANT_MODEL_TYPES } from "../../constants/Types.ts";
 
 const PROCESSOR_SERVER = import.meta.env.VITE_PROCESSOR_API;
-const DEFAULT_TEXT_MODEL = "gpt-5.5";
+const DEFAULT_TEXT_MODEL = "gpt-5.6-sol";
 const VIDEO_FPS_OPTIONS = [
   { value: 24, label: "24 FPS" },
   { value: 16, label: "16 FPS" },
@@ -61,8 +61,10 @@ function normalizeInferenceModelValue(value) {
   if (
     normalized === DEFAULT_TEXT_MODEL ||
     normalized.startsWith(`${DEFAULT_TEXT_MODEL}-`) ||
-    normalized === "gpt 5.5" ||
-    normalized === "gpt55"
+    normalized === "gpt-5.6" ||
+    normalized === "gpt 5.6 sol" ||
+    normalized === "gpt56" ||
+    normalized === "gpt56sol"
   ) {
     return DEFAULT_TEXT_MODEL;
   }

@@ -65,7 +65,7 @@ export async function getAlternateVideoPrompt(prompt) {
 
 export async function sendAssistantMessageRequest(
   messageList,
-  userInferenceModel = process.env.USER_INFERENCE_MODEL || process.env.DEFAULT_USER_INFERENCE_MODEL || 'gpt-5.5',
+  userInferenceModel = process.env.USER_INFERENCE_MODEL || process.env.DEFAULT_USER_INFERENCE_MODEL || 'gpt-5.6-sol',
 ) {
 
   try {

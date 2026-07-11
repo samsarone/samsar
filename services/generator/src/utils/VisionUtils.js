@@ -9,6 +9,7 @@ import { getCurrentEnvironment } from './Environment.js';
 import {
   DEFAULT_INFERENCE_MODEL,
   GEMINI_31_PRO_INFERENCE_MODEL,
+  GPT_56_SOL_REASONING_EFFORT,
   getDefaultUserInferenceModel,
   isGeminiInferenceModel,
 } from '../inference/InferenceModels.js';
@@ -274,6 +275,9 @@ Provide an information-dense, condensed and thorough description in 3000 charact
 
   const activePayload = {
     model: inferenceModel,
+    ...(!isGeminiInferenceModel(inferenceModel)
+      ? { reasoning_effort: GPT_56_SOL_REASONING_EFFORT }
+      : {}),
     messages: [
       {
         role: "developer",
@@ -418,6 +422,9 @@ Return only a single integer between 0 and 100.`;
   const inferenceModel = resolveVisionInferenceModel(userInferenceModel);
   const inferencePayload = {
     model: inferenceModel,
+    ...(!isGeminiInferenceModel(inferenceModel)
+      ? { reasoning_effort: GPT_56_SOL_REASONING_EFFORT }
+      : {}),
     messages,
   };
   let response;

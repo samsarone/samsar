@@ -6,6 +6,7 @@ import GeneratedImage from '../schema/generations/GeneratedImage.js';
 import GeneratedAIVideo from '../schema/generations/GeneratedAIVideo.js';
 import GeneratedMusic from '../schema/generations/GeneratedMusic.js';
 import VideoSession from '../schema/VideoSession.js';
+import { Publication } from '../schema/Publication.js';
 import { buildSecureMediaDeliveryUrl } from './AWS.js';
 
 export async function getUserImages(userId) {
@@ -469,7 +470,7 @@ function mapGeneratedVideoToGalleryItem(item = {}, sessionMetadata = {}) {
   };
 }
 
-function mapFinalRenderToGalleryItem(sessionData = {}) {
+function mapFinalRenderToGalleryItem(sessionData = {}, publicationsBySessionId = {}) {
   const sessionId = sessionData?._id?.toString?.() || sessionData?._id;
   const videoPath = normalizeVideoAssetPath(sessionData?.remoteURL) || normalizeVideoAssetPath(sessionData?.videoLink);
   if (!sessionId || !videoPath) {
@@ -482,6 +483,7 @@ function mapFinalRenderToGalleryItem(sessionData = {}) {
   const normalizedSplashImage = normalizeVideoAssetPath(sessionData?.splashImage);
   const thumbnailPath = normalizedSplashImage || `/video/splash/${sessionId}/splash.png`;
   const duration = Number(sessionData?.totalDuration);
+  const publication = publicationsBySessionId[sessionId] || null;
 
   return {
     _id: `final_render:${sessionId}`,
@@ -506,6 +508,8 @@ function mapFinalRenderToGalleryItem(sessionData = {}) {
     aspectRatio: typeof sessionData?.aspectRatio === 'string' && sessionData.aspectRatio.trim()
       ? sessionData.aspectRatio.trim()
       : null,
+    isPublished: Boolean(publication),
+    publicationId: publication?._id?.toString?.() || publication?._id || null,
     userId: sessionData?.userId || null,
     createdAt: sessionData?.createdAt || null,
     updatedAt: sessionData?.updatedAt || sessionData?.createdAt || null,
@@ -574,6 +578,28 @@ export async function requestUserGenerationsGallery(userId, options = {}) {
       .lean(),
   ]);
 
+  const completedRenderSessionIds = completedRenders
+    .map((item) => item?._id?.toString?.() || item?._id)
+    .filter((value) => typeof value === 'string' && value.length > 0);
+  const activePublications = completedRenderSessionIds.length > 0
+    ? await Publication.find({
+        sessionId: { $in: completedRenderSessionIds },
+        $and: [
+          { $or: [{ isDeleted: { $exists: false } }, { isDeleted: false }] },
+          { $or: [{ isHidden: { $exists: false } }, { isHidden: false }] },
+        ],
+      })
+        .select('_id sessionId')
+        .lean()
+    : [];
+  const publicationsBySessionId = activePublications.reduce((publicationMap, publication) => {
+    const sessionId = publication?.sessionId?.toString?.() || publication?.sessionId;
+    if (sessionId) {
+      publicationMap[sessionId] = publication;
+    }
+    return publicationMap;
+  }, {});
+
   const relatedSessionIds = [
     ...images.map((item) => item?.sessionId),
     ...videos.map((item) => item?.sessionId),
@@ -594,7 +620,7 @@ export async function requestUserGenerationsGallery(userId, options = {}) {
   const items = [
     ...images.map((item) => mapGeneratedImageToGalleryItem(item, sessionMetadataMap[item?.sessionId] || {})),
     ...videos.map((item) => mapGeneratedVideoToGalleryItem(item, sessionMetadataMap[item?.sessionId] || {})),
-    ...completedRenders.map((item) => mapFinalRenderToGalleryItem(item)),
+    ...completedRenders.map((item) => mapFinalRenderToGalleryItem(item, publicationsBySessionId)),
   ]
     .filter(Boolean)
     .filter((item) => matchGallerySearch(item))

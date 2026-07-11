@@ -10,13 +10,21 @@ import User from '../schema/User.js';
 import ImageGeneration from '../schema/ImageGeneration.js';
 
 import VideoSession from '../schema/VideoSession.js';
+import { deletePublicPublicationMediaForSession } from './PublicationMedia.js';
 
 
 export async function deleteAllRows() {
   // Implement the deleteAllRows function here
- await getDBConnectionString();
+  await getDBConnectionString();
 
   const sessionData = await Session.deleteMany({});
+  const publicationSessions = await Publication.find({}, { sessionId: 1 }).lean();
+  const sessionIds = [...new Set(
+    publicationSessions
+      .map(({ sessionId }) => sessionId?.toString?.() || sessionId)
+      .filter(Boolean)
+  )];
+  await Promise.all(sessionIds.map((sessionId) => deletePublicPublicationMediaForSession(sessionId)));
   const publicationData = await Publication.deleteMany({});
   const userData = await User.deleteMany({});
   const generationData = await ImageGeneration.deleteMany({});

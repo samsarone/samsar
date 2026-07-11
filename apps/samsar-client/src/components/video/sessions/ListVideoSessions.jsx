@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import axios from 'axios';
 import { getHeaders } from '../../../utils/web';
 import { useNavigate } from 'react-router-dom';
@@ -7,6 +7,10 @@ import OverflowContainer from '../../common/OverflowContainer.tsx';
 import ShowNewUserIntroDisplay from './ShowNewUserIntroDisplay';
 import { useColorMode } from '../../../contexts/ColorMode.jsx';
 import { useAlertDialog } from '../../../contexts/AlertDialogContext.jsx';
+import {
+  getSessionIdentifier,
+  normalizeSessionListData,
+} from './sessionListUtils.js';
 
 import SingleSelect from '../../common/SingleSelect'; // adjust path as needed
 
@@ -19,12 +23,34 @@ const renderTypeOptions = [
   { value: 'Pending', label: 'Pending' },
 ];
 
+const publishedStatusOptions = [
+  { value: 'All', label: 'All' },
+  { value: 'Published', label: 'Published' },
+  { value: 'Unpublished', label: 'Unpublished' },
+];
+
+const completionStatusOptions = [
+  { value: 'All', label: 'All' },
+  { value: 'Completed', label: 'Completed' },
+  { value: 'NotCompleted', label: 'Not completed' },
+];
+
 const aspectRatioOptions = [
   { value: 'All', label: 'All' },
   { value: '16:9', label: '16:9' },
+  { value: '19:6', label: '19:6' },
   { value: '9:16', label: '9:16' },
   { value: '1:1', label: '1:1' },
 ];
+
+const getStoredFilterValue = (storageKey, options) => {
+  if (typeof window === 'undefined') {
+    return 'All';
+  }
+
+  const storedValue = window.localStorage.getItem(storageKey);
+  return options.some((option) => option.value === storedValue) ? storedValue : 'All';
+};
 
 const normalizeSessionText = (value) => (
   typeof value === 'string' ? value.trim() : ''
@@ -38,59 +64,82 @@ const truncateSessionDescription = (value, maxLength = 110) => {
   return `${normalized.slice(0, maxLength).trimEnd()}...`;
 };
 
-const firstNonEmptyString = (values = []) => (
-  values.find((value) => typeof value === 'string' && value.trim()) || ''
-);
-
-const isAbsolutePreviewUrl = (value) => (
-  typeof value === 'string' && /^(https?:|data:|blob:)/i.test(value.trim())
-);
-
-const getRawSessionPreviewImage = (session = {}) => (
-  firstNonEmptyString([
+const getRawSessionPreviewImages = (session = {}) => (
+  [
+    ...(Array.isArray(session.thumbnailUrls) ? session.thumbnailUrls : []),
     session.thumbnailUrl,
     session.thumbnailURL,
     session.previewImageUrl,
     session.previewImageURL,
     session.previewImage,
     session.thumbnail,
-  ])
+  ]
+    .filter((value) => typeof value === 'string' && value.trim())
+    .map((value) => value.trim())
+    .filter((value, index, values) => values.indexOf(value) === index)
 );
 
-const resolveSessionPreviewImage = (session = {}, colorMode = 'dark', forcePlaceholder = false) => {
-  const previewImage = getRawSessionPreviewImage(session);
+const resolveSessionPreviewSource = (previewImage) => {
+  const normalizedPreviewImage = typeof previewImage === 'string'
+    ? previewImage.trim()
+    : '';
 
-  if (forcePlaceholder || !previewImage) {
+  if (!normalizedPreviewImage) {
+    return '';
+  }
+
+  if (/^(https?:|data:|blob:)/i.test(normalizedPreviewImage)) {
+    return normalizedPreviewImage;
+  }
+
+  if (normalizedPreviewImage.startsWith('//')) {
+    return `https:${normalizedPreviewImage}`;
+  }
+
+  const normalizedPath = normalizedPreviewImage.startsWith('/')
+    ? normalizedPreviewImage
+    : `/${normalizedPreviewImage}`;
+  const processorBaseUrl = typeof PROCESSOR_API === 'string'
+    ? PROCESSOR_API.trim().replace(/\/+$/, '')
+    : '';
+
+  return processorBaseUrl ? `${processorBaseUrl}${normalizedPath}` : normalizedPath;
+};
+
+const resolveSessionPreviewImage = (session = {}, failedPreviewSources = new Set()) => {
+  const sessionIdentifier = getSessionIdentifier(session);
+  const providedPreviewImages = getRawSessionPreviewImages(session)
+    .map(resolveSessionPreviewSource)
+    .filter(Boolean);
+  const availablePreviewImage = providedPreviewImages.find(
+    (previewImage) => !failedPreviewSources.has(previewImage)
+  );
+
+  if (availablePreviewImage) {
+    return {
+      src: availablePreviewImage,
+      isPlaceholder: false,
+    };
+  }
+
+  if (!sessionIdentifier) {
     return {
       src: '',
       isPlaceholder: true,
     };
   }
 
-  const trimmedPreviewImage = previewImage.trim();
-  if (isAbsolutePreviewUrl(trimmedPreviewImage)) {
+  const sessionSplashPath = `/video/splash/${encodeURIComponent(sessionIdentifier)}/splash.png`;
+  const sessionSplashUrl = resolveSessionPreviewSource(sessionSplashPath);
+  if (failedPreviewSources.has(sessionSplashUrl)) {
     return {
-      src: trimmedPreviewImage,
-      isPlaceholder: false,
+      src: '',
+      isPlaceholder: true,
     };
   }
-
-  if (trimmedPreviewImage.startsWith('//')) {
-    return {
-      src: `https:${trimmedPreviewImage}`,
-      isPlaceholder: false,
-    };
-  }
-
-  const normalizedPath = trimmedPreviewImage.startsWith('/')
-    ? trimmedPreviewImage
-    : `/${trimmedPreviewImage}`;
-  const processorBaseUrl = typeof PROCESSOR_API === 'string'
-    ? PROCESSOR_API.trim().replace(/\/+$/, '')
-    : '';
 
   return {
-    src: processorBaseUrl ? `${processorBaseUrl}${normalizedPath}` : normalizedPath,
+    src: sessionSplashUrl,
     isPlaceholder: false,
   };
 };
@@ -196,11 +245,23 @@ export default function ListVideoSessions() {
   const [page, setPage] = useState(1);
   const [limit] = useState(30); // Show 30 items per page by default
   const [totalPages, setTotalPages] = useState(1);
+  const [totalSessions, setTotalSessions] = useState(0);
   const [refreshCounter, setRefreshCounter] = useState(0);
-  const [failedPreviewKeys, setFailedPreviewKeys] = useState(() => new Set());
+  const [failedPreviewSources, setFailedPreviewSources] = useState(() => new Set());
+  const listRequestIdRef = useRef(0);
 
-  const [renderType, setRenderType] = useState('All');
-  const [aspectRatio, setAspectRatio] = useState('All');
+  const [renderType, setRenderType] = useState(() => (
+    getStoredFilterValue('defaultSessionSelectRenderType', renderTypeOptions)
+  ));
+  const [aspectRatio, setAspectRatio] = useState(() => (
+    getStoredFilterValue('defaultSessionSelectAspectRatio', aspectRatioOptions)
+  ));
+  const [publishedStatus, setPublishedStatus] = useState(() => (
+    getStoredFilterValue('defaultSessionSelectPublishedStatus', publishedStatusOptions)
+  ));
+  const [completionStatus, setCompletionStatus] = useState(() => (
+    getStoredFilterValue('defaultSessionSelectCompletionStatus', completionStatusOptions)
+  ));
 
   const [, setShowIntroDisplay] = useState(false);
 
@@ -224,55 +285,65 @@ export default function ListVideoSessions() {
       ? 'bg-[#111a2f] hover:bg-[#16213a] text-slate-100 border border-[#1f2a3d]'
       : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 shadow-sm';
 
-  // On mount, load defaults from localStorage if present
+  // Fetch sessions whenever pagination or a filter changes. Filters are read
+  // during initial state creation so the first request is the same request
+  // the user expects after returning from the editor.
   useEffect(() => {
-    const storedRenderType = localStorage.getItem('defaultSessionSelectRenderType');
-    const storedAspectRatio = localStorage.getItem('defaultSessionSelectAspectRatio');
-    const storedPage = localStorage.getItem('currentSessionsPage');
-
-    if (storedRenderType) {
-      setRenderType(storedRenderType);
-    }
-    if (storedAspectRatio) {
-      setAspectRatio(storedAspectRatio);
-    }
-    if (storedPage) {
-      setPage(parseInt(storedPage, 10));
-    }
-  }, []);
-
-  // Fetch sessions whenever page, limit, renderType, aspectRatio change
-  useEffect(() => {
-    // Save current page to localStorage
     localStorage.setItem('currentSessionsPage', page.toString());
 
     const headers = getHeaders();
+    const requestId = listRequestIdRef.current + 1;
+    listRequestIdRef.current = requestId;
     let isCancelled = false;
+    const queryParams = new URLSearchParams({
+      page: page.toString(),
+      limit: limit.toString(),
+      renderType,
+      aspectRatio,
+      publishedStatus,
+      completionStatus,
+    });
 
     axios
-      .get(
-        `${PROCESSOR_API}/video_sessions/list?page=${page}&limit=${limit}&renderType=${renderType}&aspectRatio=${aspectRatio}`,
-        headers
-      )
+      .get(`${PROCESSOR_API}/video_sessions/list?${queryParams.toString()}`, headers)
       .then(function (response) {
-        if (isCancelled) {
+        if (isCancelled || requestId !== listRequestIdRef.current) {
           return;
         }
 
         // Expecting { data, total, totalPages, currentPage, pageSize } from the server
-        const { data, totalPages } = response.data;
-        setSessionList(data);
-        setTotalPages(totalPages);
+        const responsePayload = response.data || {};
+        const total = Number(responsePayload.total) || 0;
+        const normalizedTotalPages = total > 0
+          ? Math.max(1, Math.ceil(total / limit))
+          : 1;
+
+        // A page persisted before a filter change can be outside the new
+        // result set. Re-request the first valid page instead of leaving the
+        // projects grid empty.
+        const validPage = total > 0
+          ? Math.min(Math.max(1, page), normalizedTotalPages)
+          : 1;
+        if (validPage !== page) {
+          setPage(validPage);
+          return;
+        }
+
+        const normalizedData = normalizeSessionListData(responsePayload.data);
+        setSessionList(normalizedData);
+        setFailedPreviewSources(new Set());
+        setTotalSessions(total);
+        setTotalPages(normalizedTotalPages);
 
         // If no sessions, show your intro display
-        if (!data || data.length === 0) {
+        if (normalizedData.length === 0) {
           setShowIntroDisplay(true);
         } else {
           setShowIntroDisplay(false);
         }
       })
       .catch(() => {
-        if (!isCancelled) {
+        if (!isCancelled && requestId === listRequestIdRef.current) {
           
         }
       });
@@ -280,7 +351,7 @@ export default function ListVideoSessions() {
     return () => {
       isCancelled = true;
     };
-  }, [page, limit, renderType, aspectRatio, refreshCounter]);
+  }, [page, limit, renderType, aspectRatio, publishedStatus, completionStatus, refreshCounter]);
 
   // Handle filter changes
   const handleChangeRenderType = (selectedOption) => {
@@ -299,15 +370,33 @@ export default function ListVideoSessions() {
     setPage(1);
   };
 
+  const handleChangePublishedStatus = (selectedOption) => {
+    const val = selectedOption.value;
+    setPublishedStatus(val);
+    localStorage.setItem('defaultSessionSelectPublishedStatus', val);
+    setPage(1);
+  };
+
+  const handleChangeCompletionStatus = (selectedOption) => {
+    const val = selectedOption.value;
+    setCompletionStatus(val);
+    localStorage.setItem('defaultSessionSelectCompletionStatus', val);
+    setPage(1);
+  };
+
   // Reset everything
   const handleResetFilters = () => {
     setPage(1);
     setRenderType('All');
     setAspectRatio('All');
+    setPublishedStatus('All');
+    setCompletionStatus('All');
 
     localStorage.setItem('currentSessionsPage', '1');
     localStorage.setItem('defaultSessionSelectRenderType', 'All');
     localStorage.setItem('defaultSessionSelectAspectRatio', 'All');
+    localStorage.setItem('defaultSessionSelectPublishedStatus', 'All');
+    localStorage.setItem('defaultSessionSelectCompletionStatus', 'All');
   };
 
   // Navigation
@@ -436,21 +525,21 @@ export default function ListVideoSessions() {
   };
 
   const getSessionKey = (session, index) => (
-    (session?.id ?? session?._id ?? `session-${index}`).toString()
+    (getSessionIdentifier(session) ?? `session-${index}`).toString()
   );
 
-  const handleSessionPreviewImageError = (sessionKey) => {
-    if (!sessionKey) {
+  const handleSessionPreviewImageError = (previewSource) => {
+    if (!previewSource) {
       return;
     }
 
-    setFailedPreviewKeys((currentKeys) => {
-      if (currentKeys.has(sessionKey)) {
-        return currentKeys;
+    setFailedPreviewSources((currentSources) => {
+      if (currentSources.has(previewSource)) {
+        return currentSources;
       }
-      const nextKeys = new Set(currentKeys);
-      nextKeys.add(sessionKey);
-      return nextKeys;
+      const nextSources = new Set(currentSources);
+      nextSources.add(previewSource);
+      return nextSources;
     });
   };
 
@@ -477,27 +566,65 @@ export default function ListVideoSessions() {
     <OverflowContainer>
       <div className={`min-h-screen w-full px-4 pb-12 pt-20 sm:px-6 lg:px-8 ${containerSurface}`}>
         {/* Top Section: Filters + Reset + Pagination controls */}
-        <div className="mx-auto mb-6 flex w-full max-w-[1600px] flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+        <div className="mx-auto mb-6 flex w-full max-w-[1600px] flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           {/* Filters */}
-          <div className="grid w-full grid-cols-1 gap-3 sm:grid-cols-[minmax(0,220px)_minmax(0,220px)_auto] lg:w-auto">
+          <div className="grid w-full grid-cols-1 gap-3 sm:grid-cols-2 lg:w-auto lg:grid-cols-[repeat(4,minmax(0,180px))_auto]">
             {/* Render Type Filter */}
             <div className="min-w-0">
+              <label className="mb-1 block text-xs font-medium text-slate-500" htmlFor="project-render-filter">
+                Render status
+              </label>
               <SingleSelect
                 options={renderTypeOptions}
                 value={renderTypeOptions.find((o) => o.value === renderType)}
                 onChange={handleChangeRenderType}
                 classNamePrefix="renderTypeSelect"
+                name="project-render-filter"
                 isSearchable={false}
               />
             </div>
 
             {/* Aspect Ratio Filter */}
             <div className="min-w-0">
+              <label className="mb-1 block text-xs font-medium text-slate-500" htmlFor="project-aspect-ratio-filter">
+                Aspect ratio
+              </label>
               <SingleSelect
                 options={aspectRatioOptions}
                 value={aspectRatioOptions.find((o) => o.value === aspectRatio)}
                 onChange={handleChangeAspectRatio}
                 classNamePrefix="aspectRatioSelect"
+                name="project-aspect-ratio-filter"
+                isSearchable={false}
+              />
+            </div>
+
+            {/* Published Status Filter */}
+            <div className="min-w-0">
+              <label className="mb-1 block text-xs font-medium text-slate-500" htmlFor="project-published-filter">
+                Publication
+              </label>
+              <SingleSelect
+                options={publishedStatusOptions}
+                value={publishedStatusOptions.find((o) => o.value === publishedStatus)}
+                onChange={handleChangePublishedStatus}
+                classNamePrefix="publishedStatusSelect"
+                name="project-published-filter"
+                isSearchable={false}
+              />
+            </div>
+
+            {/* Completion Status Filter */}
+            <div className="min-w-0">
+              <label className="mb-1 block text-xs font-medium text-slate-500" htmlFor="project-completion-filter">
+                Completion
+              </label>
+              <SingleSelect
+                options={completionStatusOptions}
+                value={completionStatusOptions.find((o) => o.value === completionStatus)}
+                onChange={handleChangeCompletionStatus}
+                classNamePrefix="completionStatusSelect"
+                name="project-completion-filter"
                 isSearchable={false}
               />
             </div>
@@ -513,6 +640,9 @@ export default function ListVideoSessions() {
 
           {/* Pagination controls */}
           <div className="flex flex-wrap items-center justify-center gap-3 text-sm">
+            <span className="text-xs text-slate-500">
+              Showing {sessionList.length} of {totalSessions} projects
+            </span>
             <button
               onClick={handlePrevPage}
               disabled={page <= 1}
@@ -541,19 +671,20 @@ export default function ListVideoSessions() {
           {sessionList.map((session, index) => {
             if (!session) return null;
             const sessionKey = getSessionKey(session, index);
-            const rawPreviewImage = getRawSessionPreviewImage(session);
-            const sessionPreviewKey = `${sessionKey}:${rawPreviewImage || 'missing'}`;
             const sessionName = normalizeSessionText(session.sessionName);
             const sessionDescription = normalizeSessionText(session.sessionDescription);
             const sessionDisplayName = sessionName || session.name;
             const sessionDisplayDescription = truncateSessionDescription(sessionDescription);
             const sessionPreview = resolveSessionPreviewImage(
               session,
-              colorMode,
-              failedPreviewKeys.has(sessionPreviewKey)
+              failedPreviewSources
             );
+            const sessionAspectRatio = normalizeSessionText(
+              session.aspectRatio ?? session.aspect_ratio
+            ) || '1:1';
             const isExpressSession = Boolean(session.isExpressGeneration);
             const isImportedSession = Boolean(session.isImportedSession);
+            const isPublishedSession = Boolean(session.isPublished || session.ispublishedVideo);
 
             return (
               <div
@@ -590,10 +721,20 @@ export default function ListVideoSessions() {
                       </div>
                     )}
                   </div>
-                  <div className="flex shrink-0 flex-col items-end gap-1">
+                  <div className="flex shrink-0 flex-row flex-nowrap items-center gap-1">
+                    <span
+                      title={`Aspect ratio ${sessionAspectRatio}`}
+                      className={`whitespace-nowrap rounded-full px-2 py-0.5 text-[10px] font-semibold tabular-nums tracking-wide ${
+                        colorMode === 'dark'
+                          ? 'bg-slate-700/70 text-slate-200 ring-1 ring-slate-500/40'
+                          : 'bg-slate-100 text-slate-700 ring-1 ring-slate-200'
+                      }`}
+                    >
+                      {sessionAspectRatio}
+                    </span>
                     {isImportedSession && (
                       <span
-                        className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
+                        className={`whitespace-nowrap rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
                           colorMode === 'dark'
                             ? 'bg-emerald-400/12 text-emerald-200 ring-1 ring-emerald-300/25'
                             : 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200'
@@ -604,7 +745,7 @@ export default function ListVideoSessions() {
                     )}
                     {isExpressSession && (
                       <span
-                        className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
+                        className={`whitespace-nowrap rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
                           colorMode === 'dark'
                             ? 'bg-cyan-400/12 text-cyan-200 ring-1 ring-cyan-300/25'
                             : 'bg-cyan-50 text-cyan-700 ring-1 ring-cyan-200'
@@ -613,13 +754,25 @@ export default function ListVideoSessions() {
                         Express
                       </span>
                     )}
+                    {isPublishedSession && (
+                      <span
+                        title="Published to gallery"
+                        className={`whitespace-nowrap rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
+                          colorMode === 'dark'
+                            ? 'bg-violet-400/12 text-violet-200 ring-1 ring-violet-300/25'
+                            : 'bg-violet-50 text-violet-700 ring-1 ring-violet-200'
+                        }`}
+                      >
+                        Published
+                      </span>
+                    )}
                   </div>
                 </div>
                 <div className="relative aspect-[16/10] w-full overflow-hidden bg-slate-100 dark:bg-slate-900">
                   {!sessionPreview.isPlaceholder && sessionPreview.src && (
                     <img
                       src={sessionPreview.src}
-                      onError={() => handleSessionPreviewImageError(sessionPreviewKey)}
+                      onError={() => handleSessionPreviewImageError(sessionPreview.src)}
                       className="h-full w-full object-cover"
                       alt={`Session ${index + 1}`}
                     />

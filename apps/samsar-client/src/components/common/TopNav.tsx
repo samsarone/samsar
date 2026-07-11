@@ -59,6 +59,9 @@ export default function TopNav(props) {
     isUpdateLayerPending,
     isCanvasDirty,
     isSessionPublished,
+    publishedTitle,
+    publishedDescription,
+    publishedTags,
     publishVideoSession,
     unpublishVideoSession,
     renderCompletedThisSession,
@@ -789,6 +792,9 @@ export default function TopNav(props) {
         isUpdateLayerPending={isUpdateLayerPending}
         isCanvasDirty={isCanvasDirty}
         isSessionPublished={isSessionPublished}
+        publishedTitle={publishedTitle}
+        publishedDescription={publishedDescription}
+        publishedTags={publishedTags}
         publishVideoSession={publishVideoSession}
         unpublishVideoSession={unpublishVideoSession}
         renderCompletedThisSession={renderCompletedThisSession}
@@ -868,12 +874,12 @@ export default function TopNav(props) {
 
   return (
     <div className={`${navShell} fixed top-0 inset-x-0 z-[1200] h-[56px]`}>
-      <div className="grid h-full w-full grid-cols-[minmax(132px,14%)_1fr_auto] items-center gap-2 px-[2px] pr-3 lg:gap-4 lg:pr-6">
+      <div className="grid h-full w-full grid-cols-[minmax(132px,14%)_minmax(0,1fr)_auto] items-center gap-2 px-[2px] pr-3 lg:gap-5 lg:pr-8">
         <div className="flex h-full items-center justify-center px-2">
           <BrandLogo onClick={gotoHome} className="w-full max-w-[220px] px-2 lg:max-w-[260px] lg:px-4" />
         </div>
-        <div className="flex items-center justify-center min-w-0 h-full py-[2px]">
-          <div className="flex h-full w-full items-center justify-center translate-y-[4px]">
+        <div className="flex min-w-0 items-center justify-center h-full py-[2px] lg:justify-end lg:pr-1">
+          <div className="flex h-full w-full min-w-0 items-center justify-center translate-y-[4px] lg:justify-end">
             {controlbarView}
           </div>
         </div>

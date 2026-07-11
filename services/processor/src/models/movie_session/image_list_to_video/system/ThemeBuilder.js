@@ -12,7 +12,7 @@ import { normalizeInferenceModel } from "../../../../consts/InferenceModels.js";
 const API_KEY = process.env.OPENAI_API_KEY;
 const openai = new OpenAI({ apiKey: API_KEY || '' });
 
-export async function extractThemeFromInputPayload(payload, inferenceModel = 'gpt-5.5') {
+export async function extractThemeFromInputPayload(payload, inferenceModel = 'gpt-5.6-sol') {
 
   const { prompt, metadata, imageDescriptionList } = payload;
 

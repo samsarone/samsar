@@ -4,10 +4,15 @@ import test from 'node:test';
 import {
   DEFAULT_GEMINI_31_PRO_VERTEX_MODEL,
   GEMINI_31_PRO_INFERENCE_MODEL,
+  GPT_56_SOL_REASONING_EFFORT,
   getProviderModelForInferenceModel,
   normalizeGeminiProviderModel,
   normalizeInferenceModel,
 } from './InferenceModels.js';
+
+test('uses xhigh reasoning for GPT 5.6 Sol inference', () => {
+  assert.equal(GPT_56_SOL_REASONING_EFFORT, 'xhigh');
+});
 
 test('normalizes Gemini 3.1 Pro inference aliases to the canonical key', () => {
   assert.equal(normalizeInferenceModel('gemini-3.1-pro'), GEMINI_31_PRO_INFERENCE_MODEL);

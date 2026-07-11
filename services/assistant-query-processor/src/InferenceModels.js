@@ -1,4 +1,6 @@
-export const DEFAULT_INFERENCE_MODEL = 'gpt-5.5';
+export const GPT_56_SOL_INFERENCE_MODEL = 'gpt-5.6-sol';
+export const DEFAULT_INFERENCE_MODEL = GPT_56_SOL_INFERENCE_MODEL;
+export const GPT_56_SOL_REASONING_EFFORT = 'xhigh';
 export const GEMINI_31_PRO_INFERENCE_MODEL = 'gemini-3.1-pro';
 export const DEFAULT_GEMINI_31_PRO_VERTEX_MODEL = 'gemini-3.1-pro-preview';
 

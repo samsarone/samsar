@@ -8,12 +8,13 @@ import { getDBConnectionString } from '../DBString.js';
 import { deductGenerationCredits } from '../GenerationCredits.js';
 import { getModelForUserInferenceModel } from '../agent/ModelUtils.js';
 import { deductExternalUserCredits } from '../external/User.js';
+import { GPT_56_SOL_REASONING_EFFORT } from '../../consts/InferenceModels.js';
 import {
   calculateAssistantCreditsFromUsage,
   calculateLegacyAssistantCredits,
 } from './AssistantBilling.js';
 
-const DEFAULT_ASSISTANT_MODEL = 'gpt-5.5';
+const DEFAULT_ASSISTANT_MODEL = 'gpt-5.6-sol';
 const DEFAULT_ASSISTANT_SYSTEM_PROMPT =
   'You are a helpful assistant for Samsar. Respond clearly, accurately, and preserve any multimodal context provided by the user.';
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY || '' });
@@ -312,7 +313,7 @@ function buildResponsesInputMessages({
   ];
 }
 
-function buildResponsesRequest({ model, inputMessages, payload = {}, previousResponseId = null }) {
+export function buildResponsesRequest({ model, inputMessages, payload = {}, previousResponseId = null }) {
   const body = {
     model,
     input: inputMessages,
@@ -353,12 +354,7 @@ function buildResponsesRequest({ model, inputMessages, payload = {}, previousRes
     body.parallel_tool_calls = payload.parallel_tool_calls;
   }
 
-  const reasoningEffort =
-    (payload.reasoning && typeof payload.reasoning === 'object' ? payload.reasoning.effort : undefined) ??
-    payload.reasoning_effort;
-  if (typeof reasoningEffort === 'string' && reasoningEffort) {
-    body.reasoning = { effort: reasoningEffort };
-  }
+  body.reasoning = { effort: GPT_56_SOL_REASONING_EFFORT };
 
   return body;
 }

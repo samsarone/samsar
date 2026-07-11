@@ -9,12 +9,12 @@ const PROVIDER_LABELS = {
 };
 
 const DEPLOYMENT_INFERENCE_MODEL_VALUES = Object.freeze([
-  "gpt-5.5",
+  "gpt-5.6-sol",
   "gemini-3.1-pro",
 ]);
 
 const DEPLOYMENT_INFERENCE_MODELS_BY_PROVIDER = Object.freeze({
-  openai: ["gpt-5.5"],
+  openai: ["gpt-5.6-sol"],
   googleCloud: ["gemini-3.1-pro"],
   samsar: DEPLOYMENT_INFERENCE_MODEL_VALUES,
 });
@@ -100,12 +100,14 @@ export function normalizeDeploymentInferenceModelValue(value) {
     return "gemini-3.1-pro";
   }
   if (
-    normalized === "gpt-5.5" ||
-    normalized.startsWith("gpt-5.5-") ||
-    normalized === "gpt 5.5" ||
-    normalized === "gpt55"
+    normalized === "gpt-5.6-sol" ||
+    normalized.startsWith("gpt-5.6-sol-") ||
+    normalized === "gpt-5.6" ||
+    normalized === "gpt 5.6 sol" ||
+    normalized === "gpt56" ||
+    normalized === "gpt56sol"
   ) {
-    return "gpt-5.5";
+    return "gpt-5.6-sol";
   }
   return "";
 }

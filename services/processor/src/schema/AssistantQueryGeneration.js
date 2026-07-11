@@ -16,7 +16,7 @@ const assistantQueryGenerationSchema = new Schema({
     default: Date.now,
     expires: 3600 // 3600 seconds = 1 hour
   },
-  inferenceModel: { type: String, default: 'gpt-5.5'}
+  inferenceModel: { type: String, default: 'gpt-5.6-sol'}
 }, { timestamps: true });
 
 // 3. Create a Model.

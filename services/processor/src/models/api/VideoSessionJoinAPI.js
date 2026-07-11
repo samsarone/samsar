@@ -5,6 +5,7 @@ import { getDBConnectionString } from '../DBString.js';
 import { deductGenerationCredits } from '../GenerationCredits.js';
 import { upsertGlobalSessionMapping } from '../GlobalSession.js';
 import { createCompatibleChatCompletion } from '../ai_utils/OpenAICompat.js';
+import { GPT_56_SOL_REASONING_EFFORT } from '../../consts/InferenceModels.js';
 
 import User from '../../schema/User.js';
 import VideoSession from '../../schema/VideoSession.js';
@@ -111,7 +112,7 @@ async function generateJoinedVideoTitle(sessionDataList = []) {
         },
       ],
       max_tokens: 48,
-      reasoning: { effort: 'low' },
+      reasoning: { effort: GPT_56_SOL_REASONING_EFFORT },
     });
     const generatedTitle = normalizeJoinedTitle(response?.choices?.[0]?.message?.content);
     return { title: generatedTitle || fallbackTitle, sourceTitles };

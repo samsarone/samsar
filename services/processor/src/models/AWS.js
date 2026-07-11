@@ -3,6 +3,7 @@
 import {
   S3Client,
   PutObjectCommand,
+  CopyObjectCommand,
   DeleteObjectCommand,
   ListObjectsV2Command,
   DeleteObjectsCommand,
@@ -17,6 +18,7 @@ import sharp from 'sharp';
 const DEFAULT_AWS_REGION = 'us-west-2';
 const MEDIA_BUCKET_NAME = process.env.MEDIA_BUCKET_NAME || process.env.STATIC_CDN_BUCKET || 'samsar-resources';
 const STATIC_CDN_URL = process.env.STATIC_CDN_URL || 'https://static.samsar.one/';
+const PUBLICATION_MEDIA_KEY_PREFIX = 'published';
 const CDN_PRIME_RETRY_DELAY_MS = 500;
 const SECURE_ASSET_PREFIX = (process.env.SECURE_ASSET_PREFIX || 'assets_v2').replace(/^\/+|\/+$/g, '');
 const DEFAULT_CLOUDFRONT_SIGNED_URL_TTL_SECONDS = 7 * 24 * 60 * 60;
@@ -134,6 +136,89 @@ function encodeObjectKeyForUrl(key) {
 function buildStaticCdnUrl(key) {
   const cdnBase = STATIC_CDN_URL.endsWith('/') ? STATIC_CDN_URL.slice(0, -1) : STATIC_CDN_URL;
   return `${cdnBase}/${encodeObjectKeyForUrl(key)}`;
+}
+
+function buildPublicationMediaUrl(key) {
+  const normalizedKey = normalizeObjectKey(key);
+  return shouldUseDockerLocalMedia()
+    ? buildMediaDeliveryUrl(`${SECURE_ASSET_PREFIX}/${normalizedKey}`)
+    : buildStaticCdnUrl(normalizedKey);
+}
+
+export function getPublicationsMediaConfig() {
+  return {
+    bucketName: MEDIA_BUCKET_NAME,
+    cdnUrl: STATIC_CDN_URL.trim().replace(/\/+$/, ''),
+    region: resolveBucketRegion(),
+    keyPrefix: PUBLICATION_MEDIA_KEY_PREFIX,
+    configured: Boolean(MEDIA_BUCKET_NAME && STATIC_CDN_URL.trim()),
+  };
+}
+
+export function isPublicPublicationMediaConfigured() {
+  return getPublicationsMediaConfig().configured;
+}
+
+export function isPublicPublicationMediaUrl(value) {
+  const config = getPublicationsMediaConfig();
+  if (!config.configured || typeof value !== 'string' || !value.trim()) {
+    return false;
+  }
+
+  try {
+    const candidate = new URL(value.trim());
+    const configuredCdn = new URL(config.cdnUrl);
+    const pathname = decodeURIComponent(candidate.pathname).replace(/^\/+/, '');
+    const prefix = config.keyPrefix ? `${config.keyPrefix}/` : '';
+    const configuredBasePath = configuredCdn.pathname.replace(/^\/+|\/+$/g, '');
+    const expectedPathPrefixes = [
+      [configuredBasePath, prefix].filter(Boolean).join('/'),
+      [configuredBasePath, SECURE_ASSET_PREFIX, prefix].filter(Boolean).join('/'),
+    ].filter(Boolean);
+    return (
+      candidate.protocol === configuredCdn.protocol &&
+      candidate.hostname === configuredCdn.hostname &&
+      (!configuredCdn.port || candidate.port === configuredCdn.port) &&
+      expectedPathPrefixes.some((expectedPathPrefix) => pathname.startsWith(expectedPathPrefix))
+    );
+  } catch {
+    return false;
+  }
+}
+
+export async function isPublicPublicationMediaUrlAccessible(value) {
+  if (!isPublicPublicationMediaUrl(value)) {
+    return false;
+  }
+
+  try {
+    const response = await fetch(value, {
+      method: 'GET',
+      headers: { Range: 'bytes=0-0' },
+    });
+    if (response.body) {
+      try {
+        if (typeof response.body.cancel === 'function') {
+          await response.body.cancel();
+        } else if (typeof response.body.destroy === 'function') {
+          response.body.destroy();
+        }
+      } catch {
+        // The range request already established accessibility.
+      }
+    }
+    return response.ok;
+  } catch {
+    return false;
+  }
+}
+
+function assertPublicationsMediaConfigured() {
+  if (!isPublicPublicationMediaConfigured()) {
+    throw new Error(
+      'Publication media is not configured. Set MEDIA_BUCKET_NAME and STATIC_CDN_URL.'
+    );
+  }
 }
 
 function toCloudFrontSafeBase64(value) {
@@ -721,6 +806,131 @@ export async function uploadBufferToS3WithRegion({ bucketName, key, buffer, cont
   const uploadedUrl = buildUploadedObjectUrl({ bucketName, key, region: urlRegion });
   await primeMediaBucketUrl({ bucketName, url: uploadedUrl });
   return uploadedUrl;
+}
+
+export async function uploadBufferToPublicationsMedia({ key, buffer, contentType }) {
+  assertPublicationsMediaConfigured();
+  if (!key) {
+    throw new Error('Missing key for uploadBufferToPublicationsMedia');
+  }
+  if (!buffer) {
+    throw new Error('Missing buffer for uploadBufferToPublicationsMedia');
+  }
+
+  const config = getPublicationsMediaConfig();
+  if (shouldUseDockerLocalMedia() && config.bucketName === MEDIA_BUCKET_NAME) {
+    return persistDockerMediaBuffer(
+      buffer,
+      `${SECURE_ASSET_PREFIX}/${normalizeObjectKey(key)}`,
+    );
+  }
+  const region = await getBucketRegion(config.bucketName);
+  const s3 = getS3ClientForRegion(region);
+
+  await s3.send(new PutObjectCommand({
+    Bucket: config.bucketName,
+    Key: normalizeObjectKey(key),
+    Body: buffer,
+    ContentType: contentType || 'application/octet-stream',
+    CacheControl: 'public, max-age=60, must-revalidate',
+  }));
+
+  return buildPublicationMediaUrl(key);
+}
+
+export async function uploadFileToPublicationsMedia({ key, filePath, contentType }) {
+  assertPublicationsMediaConfigured();
+  if (!key) {
+    throw new Error('Missing key for uploadFileToPublicationsMedia');
+  }
+  if (!filePath) {
+    throw new Error('Missing filePath for uploadFileToPublicationsMedia');
+  }
+
+  const config = getPublicationsMediaConfig();
+  if (shouldUseDockerLocalMedia() && config.bucketName === MEDIA_BUCKET_NAME) {
+    return persistDockerMediaFile(
+      filePath,
+      `${SECURE_ASSET_PREFIX}/${normalizeObjectKey(key)}`,
+    );
+  }
+  const region = await getBucketRegion(config.bucketName);
+  const s3 = getS3ClientForRegion(region);
+  const stats = await fs.promises.stat(filePath);
+
+  await s3.send(new PutObjectCommand({
+    Bucket: config.bucketName,
+    Key: normalizeObjectKey(key),
+    Body: fs.createReadStream(filePath),
+    ContentLength: stats.size,
+    ContentType: contentType || 'application/octet-stream',
+    CacheControl: 'public, max-age=60, must-revalidate',
+  }));
+
+  return buildPublicationMediaUrl(key);
+}
+
+export async function copyObjectToPublicationsMedia({
+  sourceBucketName = MEDIA_BUCKET_NAME,
+  sourceKey,
+  key,
+  contentType,
+}) {
+  assertPublicationsMediaConfigured();
+  if (!sourceKey) {
+    throw new Error('Missing sourceKey for copyObjectToPublicationsMedia');
+  }
+  if (!key) {
+    throw new Error('Missing key for copyObjectToPublicationsMedia');
+  }
+
+  const config = getPublicationsMediaConfig();
+  const region = await getBucketRegion(config.bucketName);
+  const s3 = getS3ClientForRegion(region);
+  const copySource = encodeURIComponent(
+    `${sourceBucketName}/${normalizeObjectKey(sourceKey)}`
+  );
+
+  await s3.send(new CopyObjectCommand({
+    Bucket: config.bucketName,
+    Key: normalizeObjectKey(key),
+    CopySource: copySource,
+    ...(contentType
+      ? {
+        ContentType: contentType,
+        MetadataDirective: 'REPLACE',
+      }
+      : {}),
+    CacheControl: 'public, max-age=60, must-revalidate',
+  }));
+
+  return buildPublicationMediaUrl(key);
+}
+
+export async function deleteObjectFromPublicationsMedia({ key }) {
+  assertPublicationsMediaConfigured();
+  if (!key) {
+    throw new Error('Missing key for deleteObjectFromPublicationsMedia');
+  }
+
+  const config = getPublicationsMediaConfig();
+  if (shouldUseDockerLocalMedia() && config.bucketName === MEDIA_BUCKET_NAME) {
+    try {
+      await fs.promises.unlink(getDockerMediaFilePath(`${SECURE_ASSET_PREFIX}/${normalizeObjectKey(key)}`));
+    } catch (error) {
+      if (error?.code !== 'ENOENT') {
+        throw error;
+      }
+    }
+    return;
+  }
+  const region = await getBucketRegion(config.bucketName);
+  const s3 = getS3ClientForRegion(region);
+
+  await s3.send(new DeleteObjectCommand({
+    Bucket: config.bucketName,
+    Key: normalizeObjectKey(key),
+  }));
 }
 
 export async function getObjectFromS3({ bucketName, key, range = null }) {

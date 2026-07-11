@@ -2,6 +2,7 @@ import { getDBConnectionString } from "./DBString.js";
 import VideoSession from "../schema/VideoSession.js";
 import VideoSessionEditLog from "../schema/VideoSessionEditLog.js";
 import Session from '../schema/Session.js';
+import { Comment, Publication } from '../schema/Publication.js';
 import GeneratedMusic from '../schema/generations/GeneratedMusic.js';
 import GeneratedAIVideo from '../schema/generations/GeneratedAIVideo.js';
 import GeneratedImage from '../schema/generations/GeneratedImage.js';
@@ -40,6 +41,7 @@ import { requestGenerateCustomAIVideo } from './ai_video/index.js';
 import { getModelType } from '../utils/video_utils/VideoTypeUtils.js';
 import sharp from "sharp";
 import ffmpeg from 'fluent-ffmpeg';
+import { deletePublicPublicationMediaForSession } from './PublicationMedia.js';
 
 
 
@@ -749,24 +751,26 @@ function collectSessionListThumbnailCandidates(session = {}) {
   const orderedLayers = getOrderedShareOgLayers(session);
   for (const { layer } of orderedLayers) {
     const imageSession = layer?.imageSession || {};
+    const activeItems = Array.isArray(imageSession?.activeItemList) ? imageSession.activeItemList : [];
+    const baseImageItem = activeItems.find((item) => item?.is_base_image === true) ||
+      activeItems.find((item) => item?.type === 'image') ||
+      null;
+    // Prefer the durable image selected for the scene. Boundary frames and
+    // generated video thumbnails are transient artifacts and were cleaned up
+    // for some older sessions even though their source image still exists.
+    pushSessionListThumbnailCandidate(candidates, getShareOgImageItemAssetUrl(baseImageItem));
+    pushSessionListThumbnailCandidate(candidates, imageSession?.activeImageRemoteLink);
+    pushSessionListThumbnailCandidate(candidates, imageSession?.activeSelectedImage);
+    pushSessionListThumbnailCandidate(candidates, imageSession?.activeEditedImage);
+    pushSessionListThumbnailCandidate(candidates, imageSession?.activeGeneratedImage);
+    pushSessionListThumbnailCandidate(candidates, imageSession?.videoRenderStartFrameImage);
     pushSessionListThumbnailCandidate(candidates, layer?.aiLayerStartFrame);
     pushSessionListThumbnailCandidate(candidates, layer?.baseLayerStartFrame);
-    pushSessionListThumbnailCandidate(candidates, imageSession?.videoRenderStartFrameImage);
     pushSessionListThumbnailCandidate(candidates, layer?.aiVideoThumbnailPath);
     pushSessionListThumbnailCandidate(candidates, layer?.lipSyncThumbnailPath);
     pushSessionListThumbnailCandidate(candidates, layer?.soundEffectThumbnailPath);
     pushSessionListThumbnailCandidate(candidates, layer?.userVideoThumbnailPath);
     pushSessionListThumbnailCandidate(candidates, layer?.thumbnailPath);
-
-    const activeItems = Array.isArray(imageSession?.activeItemList) ? imageSession.activeItemList : [];
-    const baseImageItem = activeItems.find((item) => item?.is_base_image === true) ||
-      activeItems.find((item) => item?.type === 'image') ||
-      null;
-    pushSessionListThumbnailCandidate(candidates, getShareOgImageItemAssetUrl(baseImageItem));
-    pushSessionListThumbnailCandidate(candidates, imageSession?.activeImageRemoteLink);
-    pushSessionListThumbnailCandidate(candidates, imageSession?.activeGeneratedImage);
-    pushSessionListThumbnailCandidate(candidates, imageSession?.activeEditedImage);
-    pushSessionListThumbnailCandidate(candidates, imageSession?.activeSelectedImage);
   }
 
   return candidates;
@@ -790,20 +794,30 @@ function buildProcessorStaticAssetUrlForLocalAsset(assetPath) {
 function buildSessionListThumbnailPayload(session = {}, sessionId) {
   const fallbackThumbnail = `/video/splash/${sessionId}/splash.png`;
   const candidates = collectSessionListThumbnailCandidates(session);
-
+  const resolvedCandidates = [];
   for (const thumbnail of candidates) {
     const thumbnailUrl = buildSessionListThumbnailUrl(thumbnail);
-    if (thumbnailUrl) {
-      return {
-        thumbnail,
-        thumbnailUrl,
-      };
+    if (!thumbnailUrl || resolvedCandidates.some((candidate) => candidate.thumbnailUrl === thumbnailUrl)) {
+      continue;
+    }
+    resolvedCandidates.push({ thumbnail, thumbnailUrl });
+    if (resolvedCandidates.length >= 4) {
+      break;
     }
   }
 
+  if (resolvedCandidates.length > 0) {
+    return {
+      ...resolvedCandidates[0],
+      thumbnailUrls: resolvedCandidates.map((candidate) => candidate.thumbnailUrl),
+    };
+  }
+
+  const fallbackThumbnailUrl = buildSessionListThumbnailUrl(fallbackThumbnail) || fallbackThumbnail;
   return {
     thumbnail: fallbackThumbnail,
-    thumbnailUrl: buildSessionListThumbnailUrl(fallbackThumbnail) || fallbackThumbnail,
+    thumbnailUrl: fallbackThumbnailUrl,
+    thumbnailUrls: [fallbackThumbnailUrl],
   };
 }
 
@@ -1769,6 +1783,21 @@ function isSecureAssetReference(rawSource) {
   return mediaPath.startsWith(`${SECURE_ASSET_PREFIX}/`) || mediaPath.startsWith(USER_RESOURCES_PREFIX);
 }
 
+function isKnownStudioMediaHostname(hostname) {
+  if (typeof hostname !== 'string' || !hostname.trim()) {
+    return false;
+  }
+
+  const normalizedHostname = hostname.trim().toLowerCase();
+  const knownHostnames = new Set([
+    new URL(DEFAULT_STATIC_ASSET_BASE_URL).hostname.toLowerCase(),
+    new URL(getStaticAssetBaseUrl()).hostname.toLowerCase(),
+    `${MEDIA_BUCKET_NAME}.s3.amazonaws.com`.toLowerCase(),
+  ]);
+  return knownHostnames.has(normalizedHostname) ||
+    normalizedHostname.startsWith(`${MEDIA_BUCKET_NAME.toLowerCase()}.s3.`);
+}
+
 function buildStudioVideoRemoteUrl(rawSource) {
   if (typeof rawSource !== 'string' || !rawSource.trim()) {
     return '';
@@ -1779,7 +1808,70 @@ function buildStudioVideoRemoteUrl(rawSource) {
     return trimmedSource;
   }
 
-  return buildSecureMediaDeliveryUrl(trimmedSource) || trimmedSource;
+  const mediaReferencePath = getMediaReferencePath(trimmedSource);
+  if (!mediaReferencePath) {
+    return trimmedSource;
+  }
+
+  if (/^https?:\/\//i.test(trimmedSource)) {
+    // Rebuild media URLs served by our CDN/S3 origin so stale CloudFront
+    // signatures are removed (and secure assets receive a fresh signature).
+    // Unknown third-party URLs must remain untouched.
+    try {
+      const parsedUrl = new URL(trimmedSource);
+      if (
+        isKnownStudioMediaHostname(parsedUrl.hostname) ||
+        mediaReferencePath.startsWith(`${SECURE_ASSET_PREFIX}/`) ||
+        mediaReferencePath.startsWith(USER_RESOURCES_PREFIX)
+      ) {
+        return buildSecureMediaDeliveryUrl(mediaReferencePath) || trimmedSource;
+      }
+    } catch {
+      return trimmedSource;
+    }
+    return trimmedSource;
+  }
+
+  // Legacy uploads were stored directly under user_resources/. New uploads
+  // carry the assets_v2/ prefix already, so preserving the persisted key is
+  // required to address both generations correctly.
+  return buildSecureMediaDeliveryUrl(mediaReferencePath) || trimmedSource;
+}
+
+function buildStudioMediaDeliveryUrl(rawSource) {
+  return buildStudioVideoRemoteUrl(rawSource);
+}
+
+function buildStudioImageDeliveryUrl(rawSource) {
+  const normalizedSource = normalizeGenerationImageAssetSource(rawSource);
+  if (!normalizedSource) {
+    return buildStudioMediaDeliveryUrl(rawSource);
+  }
+
+  if (/^(data:|blob:)/i.test(normalizedSource)) {
+    return normalizedSource;
+  }
+
+  if (/^https?:\/\//i.test(normalizedSource)) {
+    return buildStudioMediaDeliveryUrl(normalizedSource) || normalizedSource;
+  }
+
+  if (isSecureAssetReference(normalizedSource)) {
+    return buildStudioMediaDeliveryUrl(normalizedSource) || normalizedSource;
+  }
+
+  // Before assets_v2, generated images were persisted locally as
+  // /generations/<name> while the durable copy was uploaded to the public
+  // temp_images/<name> key. The local container copy no longer exists for
+  // older sessions, but the CDN object is still available.
+  const legacyGenerationMatch = normalizedSource
+    .replace(/^\/+/, '')
+    .match(/^generations\/([^/]+)$/i);
+  if (legacyGenerationMatch) {
+    return `${getStaticAssetBaseUrl()}/temp_images/${encodeURIComponent(legacyGenerationMatch[1])}`;
+  }
+
+  return buildGenerationImagePreviewUrl(normalizedSource) || normalizedSource;
 }
 
 function stripMediaReferenceQueryAndHash(rawSource) {
@@ -2091,6 +2183,335 @@ function hydrateGuestFooterMetadataForResponse(footerMetadata = [], sessionPaylo
     : footerMetadata;
 }
 
+function hydrateStudioAudioLayerForResponse(audioLayer = {}) {
+  if (!audioLayer || typeof audioLayer !== 'object') {
+    return audioLayer;
+  }
+
+  const hydratedLayer = hydrateGuestMediaStringFields(audioLayer, [
+    'selectedLocalAudioLink',
+    'selectedRemoteAudioLink',
+    'audioUrl',
+    'audio_url',
+    'url',
+    'src',
+  ], buildStudioMediaDeliveryUrl);
+
+  hydratedLayer.localAudioLinks = hydrateGuestMediaStringList(
+    hydratedLayer.localAudioLinks,
+    buildStudioMediaDeliveryUrl
+  );
+  hydratedLayer.remoteAudioLinks = hydrateGuestMediaStringList(
+    hydratedLayer.remoteAudioLinks,
+    buildStudioMediaDeliveryUrl
+  );
+  hydratedLayer.remoteAudioData = Array.isArray(hydratedLayer.remoteAudioData)
+    ? hydratedLayer.remoteAudioData.map((audioData) => (
+      audioData && typeof audioData === 'object'
+        ? hydrateGuestMediaStringFields(audioData, [
+          'audio_url',
+          'audioUrl',
+          'audioLink',
+          'audio',
+          'url',
+          'src',
+        ], buildStudioMediaDeliveryUrl)
+        : audioData
+    ))
+    : hydratedLayer.remoteAudioData;
+
+  return hydratedLayer;
+}
+
+function hydrateStudioImageSessionForResponse(imageSession = {}, sessionPayload = null) {
+  if (!imageSession || typeof imageSession !== 'object') {
+    return imageSession;
+  }
+
+  const hydratedImageSession = hydrateGuestMediaStringFields(imageSession, [
+    'activeSelectedImage',
+    'activeGeneratedImage',
+    'activeEditedImage',
+    'videoRenderStartFrameImage',
+    'videoRenderEndFrameImage',
+    'activeImageRemoteLink',
+  ], buildStudioImageDeliveryUrl);
+
+  hydratedImageSession.generations = hydrateGuestMediaStringList(
+    hydratedImageSession.generations,
+    buildStudioImageDeliveryUrl
+  );
+  hydratedImageSession.witnesses = hydrateGuestMediaStringList(
+    hydratedImageSession.witnesses,
+    buildStudioImageDeliveryUrl
+  );
+  hydratedImageSession.intermediates = hydrateGuestMediaStringList(
+    hydratedImageSession.intermediates,
+    buildStudioImageDeliveryUrl
+  );
+
+  return hydratedImageSession;
+}
+
+function hydrateStudioLayerMediaForResponse(layer = {}, sessionPayload = {}, options = {}) {
+  if (!layer || typeof layer !== 'object') {
+    return layer;
+  }
+
+  const hydratedLayer = hydrateGuestMediaStringFields({ ...layer }, [
+    'aiLayerStartFrame',
+    'aiLayerEndFrame',
+    'baseLayerStartFrame',
+    'baseLayerEndFrame',
+    'aiVideoThumbnailPath',
+    'lipSyncThumbnailPath',
+    'soundEffectThumbnailPath',
+    'userVideoThumbnailPath',
+    'aiVideoEndThumbnailPath',
+    'lipSyncEndThumbnailPath',
+    'soundEffectEndThumbnailPath',
+    'userVideoEndThumbnailPath',
+    'thumbnailPath',
+    'aiVideoFrameImage',
+    'videoFrameImage',
+  ], buildStudioImageDeliveryUrl);
+
+  const videoSourceFields = [
+    ['aiVideoLayer', 'aiVideoRemoteLink'],
+    ['lipSyncVideoLayer', 'lipSyncRemoteLink'],
+    ['soundEffectVideoLayer', 'soundEffectRemoteLink'],
+    ['userVideoLayer', 'userVideoRemoteLink'],
+  ];
+  const layerId = layer?._id?.toString?.() || layer?._id;
+  const generatedAiVideo = layerId
+    ? options.generatedAiVideoByLayerId?.get(layerId)
+    : null;
+
+  videoSourceFields.forEach(([assetField, remoteField]) => {
+    const rawAssetSource = hydratedLayer[assetField];
+    const rawRemoteSource = hydratedLayer[remoteField];
+    const generatedRemoteSource = assetField === 'aiVideoLayer'
+      ? getFirstNonEmptyString(
+        generatedAiVideo?.remoteUrl,
+        generatedAiVideo?.remoteURL,
+        generatedAiVideo?.remote_url,
+      )
+      : '';
+    const hydratedUrl = buildStudioMediaDeliveryUrl(
+      rawRemoteSource || generatedRemoteSource || rawAssetSource
+    );
+    if (!hydratedUrl) {
+      return;
+    }
+
+    if (rawAssetSource) {
+      hydratedLayer[`raw${assetField[0].toUpperCase()}${assetField.slice(1)}`] = rawAssetSource;
+    }
+    if (rawRemoteSource) {
+      hydratedLayer[`raw${remoteField[0].toUpperCase()}${remoteField.slice(1)}`] = rawRemoteSource;
+    } else if (generatedRemoteSource) {
+      hydratedLayer[`raw${remoteField[0].toUpperCase()}${remoteField.slice(1)}`] = generatedRemoteSource;
+    }
+    hydratedLayer[assetField] = hydratedUrl;
+    hydratedLayer[remoteField] = hydratedUrl;
+  });
+
+  if (hydratedLayer.frameImages && typeof hydratedLayer.frameImages === 'object') {
+    hydratedLayer.frameImages = hydrateGuestMediaStringFields(hydratedLayer.frameImages, [
+      'startFrameUrl',
+      'startFrame',
+      'endFrameUrl',
+      'endFrame',
+      'aiLayerStartFrame',
+      'aiLayerEndFrame',
+      'baseLayerStartFrame',
+      'baseLayerEndFrame',
+      'aiVideoThumbnailPath',
+      'thumbnailPath',
+    ], buildStudioImageDeliveryUrl);
+  }
+
+  if (hydratedLayer.imageSession && typeof hydratedLayer.imageSession === 'object') {
+    hydratedLayer.imageSession = hydrateStudioImageSessionForResponse(
+      hydratedLayer.imageSession,
+      sessionPayload
+    );
+    hydratedLayer.imageSession.activeItemList = hydrateStudioActiveItemListForResponse(
+      hydratedLayer,
+      sessionPayload
+    );
+  }
+
+  if (Array.isArray(hydratedLayer.filterPasses)) {
+    hydratedLayer.filterPasses = hydratedLayer.filterPasses.map((filterPass) => (
+      filterPass && typeof filterPass === 'object'
+        ? hydrateGuestMediaStringFields(filterPass, ['src'], buildStudioImageDeliveryUrl)
+        : filterPass
+    ));
+  }
+
+  delete hydratedLayer.frames;
+  return hydratedLayer;
+}
+
+function hydrateStudioGlobalVideoForResponse(globalVideo = {}) {
+  if (!globalVideo || typeof globalVideo !== 'object') {
+    return globalVideo;
+  }
+
+  const hydratedGlobalVideo = hydrateGuestMediaStringFields(globalVideo, [
+    'url',
+    'remoteURL',
+    'remoteUrl',
+    'remote_url',
+    'assetPath',
+  ], buildStudioMediaDeliveryUrl);
+  hydratedGlobalVideo.frames = hydrateGuestMediaStringList(
+    hydratedGlobalVideo.frames,
+    buildStudioImageDeliveryUrl
+  );
+  return hydratedGlobalVideo;
+}
+
+function hydrateStudioFooterMetadataForResponse(footerMetadata = []) {
+  return Array.isArray(footerMetadata)
+    ? footerMetadata.map((footerItem) => (
+      footerItem && typeof footerItem === 'object'
+        ? hydrateGuestMediaStringFields(footerItem, [
+          'url',
+          'cta_logo',
+          'ctaLogo',
+          'logoUrl',
+          'logoImagePath',
+          'footerLogoImagePath',
+        ], buildStudioImageDeliveryUrl)
+        : footerItem
+    ))
+    : footerMetadata;
+}
+
+function serializeStudioGenerationImageAsset(asset) {
+  const plainAsset = asset && typeof asset.toObject === 'function' ? asset.toObject() : asset;
+  const rawSource = normalizeGenerationImageAssetSource(plainAsset);
+  if (!rawSource) {
+    return plainAsset;
+  }
+
+  const previewUrl = buildStudioImageDeliveryUrl(rawSource);
+  if (plainAsset && typeof plainAsset === 'object' && !Array.isArray(plainAsset)) {
+    return {
+      ...plainAsset,
+      src: rawSource,
+      rawSrc: rawSource,
+      rawUrl: rawSource,
+      url: previewUrl || plainAsset.url,
+      previewUrl: previewUrl || plainAsset.previewUrl,
+      imageUrl: previewUrl || plainAsset.imageUrl,
+      image_url: previewUrl || plainAsset.image_url,
+      signedUrl: previewUrl || plainAsset.signedUrl,
+      signed_url: previewUrl || plainAsset.signed_url,
+      displayUrl: previewUrl || plainAsset.displayUrl,
+      display_url: previewUrl || plainAsset.display_url,
+    };
+  }
+
+  return {
+    src: rawSource,
+    rawSrc: rawSource,
+    rawUrl: rawSource,
+    url: previewUrl,
+    previewUrl,
+    imageUrl: previewUrl,
+    image_url: previewUrl,
+    signedUrl: previewUrl,
+    signed_url: previewUrl,
+    displayUrl: previewUrl,
+    display_url: previewUrl,
+  };
+}
+
+function hydrateStudioSessionMediaForResponse(sessionPayload = {}, options = {}) {
+  const hydratedPayload = hydrateGuestMediaStringFields(sessionPayload, [
+    'videoLink',
+    'video_link',
+    'renderedVideoURL',
+    'renderedVideoUrl',
+    'rendered_video_url',
+    'remoteURL',
+    'remoteUrl',
+    'remote_url',
+    'publishedVideoURL',
+    'publishedVideoUrl',
+    'published_video_url',
+    'finalVideoURL',
+    'finalVideoUrl',
+    'final_video_url',
+    'result_url',
+    'videoURL',
+    'videoUrl',
+    'audio',
+  ], buildStudioMediaDeliveryUrl);
+
+  [
+    'splashImage',
+    'publishedSplashImage',
+    'outroImageURL',
+    'outroImageUrl',
+    'outro_image_url',
+    'shareOgImageUrl',
+    'shareOgImagePath',
+    'shareOgImageSource',
+    'thumbnail',
+    'thumbnailUrl',
+    'thumbnailURL',
+    'previewImageUrl',
+    'ogImageUrl',
+    'og_image_url',
+  ].forEach((field) => {
+    const hydratedImageUrl = buildStudioImageDeliveryUrl(hydratedPayload[field]);
+    if (hydratedImageUrl) {
+      hydratedPayload[field] = hydratedImageUrl;
+    }
+  });
+
+  hydratedPayload.layers = Array.isArray(hydratedPayload.layers)
+    ? hydratedPayload.layers.map((layer) => hydrateStudioLayerMediaForResponse(
+      layer,
+      hydratedPayload,
+      options
+    ))
+    : [];
+  hydratedPayload.audioLayers = Array.isArray(hydratedPayload.audioLayers)
+    ? hydratedPayload.audioLayers.map(hydrateStudioAudioLayerForResponse)
+    : hydratedPayload.audioLayers;
+
+  const globalAudioLayers = Array.isArray(hydratedPayload.global_audio_layers)
+    ? hydratedPayload.global_audio_layers
+    : hydratedPayload.globalAudioLayers;
+  if (Array.isArray(globalAudioLayers)) {
+    const hydratedGlobalAudioLayers = globalAudioLayers.map(hydrateStudioAudioLayerForResponse);
+    hydratedPayload.global_audio_layers = hydratedGlobalAudioLayers;
+    hydratedPayload.globalAudioLayers = hydratedGlobalAudioLayers;
+  }
+
+  const globalVideos = Array.isArray(hydratedPayload.global_videos)
+    ? hydratedPayload.global_videos
+    : hydratedPayload.globalVideos;
+  if (Array.isArray(globalVideos)) {
+    const hydratedGlobalVideos = globalVideos.map(hydrateStudioGlobalVideoForResponse);
+    hydratedPayload.global_videos = hydratedGlobalVideos;
+    hydratedPayload.globalVideos = hydratedGlobalVideos;
+  }
+
+  hydratedPayload.generations = serializeGenerationImageAssets(
+    hydratedPayload.generations,
+    serializeStudioGenerationImageAsset
+  );
+  hydratedPayload.footerMetadata = hydrateStudioFooterMetadataForResponse(hydratedPayload.footerMetadata);
+
+  return hydratedPayload;
+}
+
 async function sanitizeGuestSessionPayload(session) {
   const sessionPayload = await sanitizeStudioSessionPayload(session);
   if (!sessionPayload || typeof sessionPayload !== 'object') {
@@ -2270,14 +2691,21 @@ function serializeActiveImageItemForResponse(item) {
     return plainItem;
   }
 
-  const previewUrl = buildGenerationImagePreviewUrl(rawSource);
+  const previewUrl = buildStudioImageDeliveryUrl(rawSource);
   return {
     ...plainItem,
     src: rawSource,
     rawSrc: rawSource,
+    rawUrl: rawSource,
+    image: previewUrl || plainItem.image,
     url: previewUrl || plainItem.url,
     previewUrl: previewUrl || plainItem.previewUrl,
     imageUrl: previewUrl || plainItem.imageUrl,
+    image_url: previewUrl || plainItem.image_url,
+    signedUrl: previewUrl || plainItem.signedUrl,
+    signed_url: previewUrl || plainItem.signed_url,
+    displayUrl: previewUrl || plainItem.displayUrl,
+    display_url: previewUrl || plainItem.display_url,
   };
 }
 
@@ -2306,11 +2734,11 @@ function getActiveImageItemSource(item = {}) {
 function getLayerStudioBaseImageSource(layer = {}) {
   const imageSession = layer?.imageSession || {};
   return getFirstNonEmptyString(
-    imageSession.activeGeneratedImage,
+    imageSession.activeImageRemoteLink,
     imageSession.activeSelectedImage,
     imageSession.activeEditedImage,
+    imageSession.activeGeneratedImage,
     imageSession.videoRenderStartFrameImage,
-    imageSession.activeImageRemoteLink,
   );
 }
 
@@ -5755,20 +6183,34 @@ async function sanitizeStudioSessionPayload(session, options = {}) {
     return sessionPayload;
   }
 
-  const pendingFrameGenerations = await FrameGeneration.find({ sessionId })
-    .select('layerId')
-    .lean();
+  const shouldRecoverGeneratedAiVideoUrls = Array.isArray(sessionPayload.layers) &&
+    sessionPayload.layers.some((layer) => (
+      Boolean(layer?.aiVideoLayer) &&
+      !getFirstNonEmptyString(layer?.aiVideoRemoteLink)
+    ));
+
+  const [pendingFrameGenerations, activeUserVideoUploadTasks, generatedAiVideos] = await Promise.all([
+    FrameGeneration.find({ sessionId })
+      .select('layerId')
+      .lean(),
+    UserVideoUploadTask.find({
+      sessionId,
+      status: { $in: Array.from(ACTIVE_USER_VIDEO_UPLOAD_TASK_STATUSES) },
+    })
+      .sort({ updatedAt: -1 })
+      .lean(),
+    shouldRecoverGeneratedAiVideoUrls
+      ? GeneratedAIVideo.find({ sessionId })
+        .select('layerId remoteUrl remoteURL remote_url createdAt')
+        .sort({ createdAt: -1 })
+        .lean()
+      : Promise.resolve([]),
+  ]);
   const pendingLayerIds = new Set(
     pendingFrameGenerations
       .map((generation) => generation?.layerId?.toString?.())
       .filter(Boolean)
   );
-  const activeUserVideoUploadTasks = await UserVideoUploadTask.find({
-    sessionId,
-    status: { $in: Array.from(ACTIVE_USER_VIDEO_UPLOAD_TASK_STATUSES) },
-  })
-    .sort({ updatedAt: -1 })
-    .lean();
   const activeUserVideoUploadTaskMap = new Map();
   for (const task of activeUserVideoUploadTasks) {
     const taskLayerId = task?.layerId?.toString?.();
@@ -5776,6 +6218,14 @@ async function sanitizeStudioSessionPayload(session, options = {}) {
       continue;
     }
     activeUserVideoUploadTaskMap.set(taskLayerId, serializeUserVideoUploadTask(task));
+  }
+  const generatedAiVideoByLayerId = new Map();
+  for (const generatedAiVideo of generatedAiVideos) {
+    const generatedLayerId = generatedAiVideo?.layerId?.toString?.() || generatedAiVideo?.layerId;
+    if (!generatedLayerId || generatedAiVideoByLayerId.has(generatedLayerId)) {
+      continue;
+    }
+    generatedAiVideoByLayerId.set(generatedLayerId, generatedAiVideo);
   }
 
   const sanitizedLayers = Array.isArray(sessionPayload.layers)
@@ -5815,21 +6265,25 @@ async function sanitizeStudioSessionPayload(session, options = {}) {
     isImportedSession: isImportedSessionForViewer,
   };
 
-  delete sanitizedPayload.editableShareCollaborators;
-  delete sanitizedPayload.editableShareImportedUserIds;
+  const responsePayload = isSessionOwnerForViewer
+    ? hydrateStudioSessionMediaForResponse(sanitizedPayload, { generatedAiVideoByLayerId })
+    : sanitizedPayload;
+
+  delete responsePayload.editableShareCollaborators;
+  delete responsePayload.editableShareImportedUserIds;
   if (!isSessionOwnerForViewer) {
-    delete sanitizedPayload.shareEnabled;
-    delete sanitizedPayload.shareToken;
-    delete sanitizedPayload.shareCreatedAt;
-    delete sanitizedPayload.shareLastViewedAt;
-    delete sanitizedPayload.editableShareEnabled;
-    delete sanitizedPayload.editableShareToken;
-    delete sanitizedPayload.editableShareCreatedAt;
-    delete sanitizedPayload.editableShareLastViewedAt;
-    delete sanitizedPayload.editableShareLastEditedAt;
+    delete responsePayload.shareEnabled;
+    delete responsePayload.shareToken;
+    delete responsePayload.shareCreatedAt;
+    delete responsePayload.shareLastViewedAt;
+    delete responsePayload.editableShareEnabled;
+    delete responsePayload.editableShareToken;
+    delete responsePayload.editableShareCreatedAt;
+    delete responsePayload.editableShareLastViewedAt;
+    delete responsePayload.editableShareLastEditedAt;
   }
 
-  return sanitizedPayload;
+  return responsePayload;
 }
 
 async function sanitizePublicStudioSessionPayload(session) {
@@ -8288,32 +8742,92 @@ export async function getUserSessionList(
   page,
   limit,
   renderType = 'All',
-  aspectRatio = 'All'
+  aspectRatio = 'All',
+  publishedStatus = 'All',
+  completionStatus = 'All'
 ) {
   await getDBConnectionString();
 
   try {
+    page = Number.isFinite(page) && page > 0 ? page : 1;
+    limit = Number.isFinite(limit) && limit > 0 ? limit : 10;
+
     // Build our filter query
     const normalizedUserId = toUserIdString(userId);
     const query = {
-      $or: [
-        { userId },
-        { editableShareImportedUserIds: normalizedUserId },
+      $and: [
+        {
+          $or: [
+            { userId },
+            { editableShareImportedUserIds: normalizedUserId },
+          ],
+        },
+        // View Projects is for composed projects, not transient one-layer
+        // requests created by external or per-scene generation flows. Keep
+        // this rule in the database query so pagination totals stay aligned.
+        { 'layers.1': { $exists: true } },
+        // Only explicit video projects belong on View Projects. Legacy
+        // records with a missing/null sessionType can represent image/scene
+        // documents and must never be promoted to project tiles.
+        { sessionType: 'video' },
       ],
-      sessionType: { $in: ['video', null] },
+    };
+
+    const completedVideoQuery = {
+      $or: [
+        { videoLink: { $exists: true, $nin: [null, ''] } },
+        { remoteURL: { $exists: true, $nin: [null, ''] } },
+        { publishedVideoURL: { $exists: true, $nin: [null, ''] } },
+      ],
+    };
+    const incompleteVideoQuery = {
+      $and: [
+        { videoLink: { $in: [null, ''] } },
+        { remoteURL: { $in: [null, ''] } },
+        { publishedVideoURL: { $in: [null, ''] } },
+      ],
     };
 
     // Handle renderType filtering
-    // Example: "Rendered" means videoLink exists, "Pending" means it doesn't
+    // Keep the legacy filter, but include remote render URLs as completed too.
     if (renderType === 'Rendered') {
-      query.videoLink = { $exists: true, $ne: null };
+      query.$and.push(completedVideoQuery);
     } else if (renderType === 'Pending') {
-      query.videoLink = { $in: [null, ''] };
+      query.$and.push(incompleteVideoQuery);
     }
 
-    // Handle aspectRatio filtering
-    if (aspectRatio !== 'All') {
-      query.aspectRatio = aspectRatio;
+    // Handle aspectRatio filtering at the project/session level. A small
+    // number of legacy projects used aspect_ratio, so support that field too;
+    // do not filter on layers because layers are not top-level projects.
+    const normalizedAspectRatio = normalizeOptionalString(aspectRatio);
+    if (normalizedAspectRatio && normalizedAspectRatio !== 'All') {
+      query.$and.push({
+        $or: [
+          { aspectRatio: normalizedAspectRatio },
+          { aspect_ratio: normalizedAspectRatio },
+        ],
+      });
+    }
+
+    // Handle published/unpublished filtering. Missing legacy values are
+    // treated as unpublished, matching the schema default.
+    if (publishedStatus === 'Published') {
+      query.$and.push({ ispublishedVideo: true });
+    } else if (publishedStatus === 'Unpublished') {
+      query.$and.push({
+        $or: [
+          { ispublishedVideo: false },
+          { ispublishedVideo: { $exists: false } },
+        ],
+      });
+    }
+
+    // Handle explicit completion filtering. A completed project has a usable
+    // rendered URL, while unpublished/idle/failed projects are not completed.
+    if (completionStatus === 'Completed') {
+      query.$and.push(completedVideoQuery);
+    } else if (completionStatus === 'NotCompleted') {
+      query.$and.push(incompleteVideoQuery);
     }
 
     // Pagination
@@ -8321,7 +8835,7 @@ export async function getUserSessionList(
 
     // Count total for pagination info
     const total = await VideoSession.countDocuments(query);
-    const totalPages = Math.ceil(total / limit);
+    const totalPages = Math.max(1, Math.ceil(total / limit));
 
     // Fetch the sessions
     const sessionList = await VideoSession.find(query)
@@ -8350,17 +8864,29 @@ export async function getUserSessionList(
         );
 
         const thumbnailPayload = buildSessionListThumbnailPayload(session, sessionId);
+        const isCompleted = Boolean(
+          [session.videoLink, session.remoteURL, session.publishedVideoURL]
+            .some((value) => typeof value === 'string' && value.trim())
+        );
 
         return {
+          recordType: 'session',
+          sessionType: 'video',
+          layerCount: session.layers.length,
           name: sessionName || `Session ${idx}`,
           sessionName,
           sessionDescription,
           id: session._id,
           thumbnail: thumbnailPayload.thumbnail,
           thumbnailUrl: thumbnailPayload.thumbnailUrl,
+          thumbnailUrls: thumbnailPayload.thumbnailUrls,
           previewImageUrl: thumbnailPayload.thumbnailUrl,
           isExpressGeneration: Boolean(session.isExpressGeneration),
           expressGenerationType: session.expressGenerationType || null,
+          aspectRatio: getFirstNonEmptyString(session.aspectRatio, session.aspect_ratio) || '1:1',
+          isPublished: Boolean(session.ispublishedVideo),
+          ispublishedVideo: Boolean(session.ispublishedVideo),
+          isCompleted,
           sessionOwnerId,
           isSessionOwner: isSessionOwnerForViewer,
           isImportedSession: isImportedSessionForViewer,
@@ -12253,6 +12779,20 @@ export async function requestVideoLayerEdit(userId, payload) {
 
 export async function deleteVideoSessionsForUser(userId) {
   await getDBConnectionString();
+
+  const sessions = await VideoSession.find({ userId }).select('_id').lean();
+  const sessionIds = sessions.map(({ _id }) => _id.toString());
+  if (sessionIds.length > 0) {
+    const publications = await Publication.find({ sessionId: { $in: sessionIds } })
+      .select('_id sessionId')
+      .lean();
+    const publicationIds = publications.map(({ _id }) => _id);
+    if (publicationIds.length > 0) {
+      await Comment.deleteMany({ publicationId: { $in: publicationIds } });
+    }
+    await Promise.all(sessionIds.map((sessionId) => deletePublicPublicationMediaForSession(sessionId)));
+    await Publication.deleteMany({ sessionId: { $in: sessionIds } });
+  }
   await VideoSession.deleteMany({ userId });
 }
 
@@ -12496,6 +13036,13 @@ export async function deleteVideoSessionForUser(userId, payload = {}) {
   if (!isSessionOwner(videoSession, normalizedUserId)) {
     throw createSessionDeleteError(403, 'Only the session owner can delete this session.');
   }
+
+  const publication = await Publication.findOne({ sessionId }).select('_id').lean();
+  if (publication?._id) {
+    await Comment.deleteMany({ publicationId: publication._id });
+    await Publication.deleteOne({ _id: publication._id });
+  }
+  await deletePublicPublicationMediaForSession(sessionId);
 
   const generatedImageRows = await GeneratedImage.find({ sessionId })
     .select('url')
@@ -13194,3 +13741,11 @@ export async function updateSessionMovieGenSpeakers(userId, payload) {
   }
 
 }
+
+export const __testOnly__ = {
+  buildStudioVideoRemoteUrl,
+  buildStudioImageDeliveryUrl,
+  hydrateStudioSessionMediaForResponse,
+  collectSessionListThumbnailCandidates,
+  buildSessionListThumbnailPayload,
+};

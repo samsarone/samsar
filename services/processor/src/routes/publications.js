@@ -11,6 +11,12 @@ import VideoSession from '../schema/VideoSession.js';
 import { verifyUserAuthentication } from '../models/Auth.js';
 import User from '../schema/User.js';
 import { resolveRequestActorFromAuthHeaders } from '../models/external/User.js';
+import { isPublicPublicationMediaUrl } from '../models/AWS.js';
+import { normalizePublicationTranscript } from '../models/publication/Transcript.js';
+import {
+  scheduleGalleryPublicationReady,
+  scheduleGalleryPublicationsReady,
+} from '../models/gallery/GalleryPublicationPipeline.js';
 
 const router = express.Router();
 
@@ -112,8 +118,8 @@ const getPayloadValue = (payload = {}, keys = []) => {
 };
 
 const resolveSessionAspectRatio = (session) =>
-  normalizePublicationAspectRatio(session?.publishedAspectRatio) ||
-  normalizePublicationAspectRatio(session?.aspectRatio);
+  normalizePublicationAspectRatio(session?.aspectRatio) ||
+  normalizePublicationAspectRatio(session?.publishedAspectRatio);
 
 const resolvePublicationHasSubtitles = (publication) => {
   if (typeof publication?.hasSubtitles === 'boolean') {
@@ -196,14 +202,15 @@ const mapPublicationResponse = (
   publication,
   viewerId,
   botUserMap = new Map(),
-  sessionAspectRatioMap = new Map()
+  sessionAspectRatioMap = new Map(),
+  requirePublicVideo = false,
 ) => {
   if (!publication) {
     return null;
   }
 
   const videoUrl = typeof publication.videoURL === 'string' ? publication.videoURL : '';
-  if (!videoUrl) {
+  if (!videoUrl || (requirePublicVideo && !isPublicPublicationMediaUrl(videoUrl))) {
     return null;
   }
 
@@ -217,10 +224,14 @@ const mapPublicationResponse = (
   const sharesCount = typeof publication.shares === 'number' ? publication.shares : 0;
   const createdById = publication.createdBy?.toString?.() ?? null;
   const isBotUser = createdById ? botUserMap.get(createdById) ?? false : false;
-  const splashImage =
+  const rawSplashImage =
     typeof publication.splashImage === 'string' && publication.splashImage.trim().length > 0
       ? publication.splashImage.trim()
       : null;
+  const splashImage = rawSplashImage &&
+    (!requirePublicVideo || isPublicPublicationMediaUrl(rawSplashImage))
+    ? rawSplashImage
+    : null;
   const imageModel =
     typeof publication.imageModel === 'string' && publication.imageModel.trim().length > 0
       ? publication.imageModel.trim()
@@ -255,8 +266,12 @@ const mapPublicationResponse = (
     description:
       typeof publication.description === 'string' ? publication.description.trim() : '',
     tags: normalizeTags(publication.tags),
+    categories: normalizeTags(publication.categories),
+    topics: normalizeTags(publication.topics),
+    classification: publication.classification || {},
     originalPrompt:
       typeof publication.originalPrompt === 'string' ? publication.originalPrompt.trim() : '',
+    sessionTranscript: normalizePublicationTranscript(publication.sessionTranscript),
     creatorHandle:
       typeof publication.creatorHandle === 'string' ? publication.creatorHandle : '',
     createdBy: publication.createdBy?.toString?.() ?? null,
@@ -275,6 +290,7 @@ const mapPublicationResponse = (
       likes: likesCount,
       comments: commentCount,
       shares: sharesCount,
+      views: Math.max(0, Number(publication.views?.total) || 0),
     },
     viewerHasLiked: viewerId ? likedByStrings.includes(viewerId) : false,
     isBotUser,
@@ -390,7 +406,12 @@ async function getAuthorizedPublicationSession(req, sessionId) {
 
   const sessionOwnerId = session.userId?.toString?.() || session.userId;
   const requestUserId = req.userId?.toString?.() || req.userId;
-  if (!sessionOwnerId || sessionOwnerId !== requestUserId) {
+  const requestingUser = mongoose.Types.ObjectId.isValid(requestUserId)
+    ? await User.findById(requestUserId).select({ isAdminUser: 1 }).lean()
+    : null;
+  const canManageAnyPublication = Boolean(requestingUser?.isAdminUser);
+
+  if ((!sessionOwnerId || sessionOwnerId !== requestUserId) && !canManageAnyPublication) {
     const error = new Error('Forbidden: You are not allowed to manage this session publication.');
     error.status = 403;
     throw error;
@@ -406,7 +427,7 @@ const formatPublicationManagementResponse = ({ publication, session, created = f
   const sessionId = normalizeSessionId(publicationData.sessionId) ||
     normalizeSessionId(sessionData._id) ||
     normalizeSessionId(sessionData.id);
-  const summary = mapPublicationResponse(publicationData, null) || {};
+  const summary = mapPublicationResponse(publicationData, null, new Map(), new Map(), true) || {};
 
   return {
     created,
@@ -421,6 +442,9 @@ const formatPublicationManagementResponse = ({ publication, session, created = f
       title: publicationData.title || summary.title || null,
       description: publicationData.description || summary.description || '',
       tags: normalizeTags(publicationData.tags),
+      categories: normalizeTags(publicationData.categories),
+      topics: normalizeTags(publicationData.topics),
+      classification: publicationData.classification || {},
       creatorHandle: publicationData.creatorHandle || '',
       creator_handle: publicationData.creatorHandle || '',
       slug: publicationData.slug || null,
@@ -434,6 +458,8 @@ const formatPublicationManagementResponse = ({ publication, session, created = f
       video_model: publicationData.videoModel || null,
       originalPrompt: publicationData.originalPrompt || '',
       original_prompt: publicationData.originalPrompt || '',
+      sessionTranscript: normalizePublicationTranscript(publicationData.sessionTranscript),
+      session_transcript: normalizePublicationTranscript(publicationData.sessionTranscript),
       sessionLanguage: publicationData.sessionLanguage || null,
       session_language: publicationData.sessionLanguage || null,
       language: publicationData.language || publicationData.sessionLanguage || null,
@@ -695,9 +721,11 @@ router.get('/', async (req, res) => {
 
     const payload = items
       .map((publication) =>
-        mapPublicationResponse(publication, viewerId, botUserMap, sessionAspectRatioMap)
+        mapPublicationResponse(publication, viewerId, botUserMap, sessionAspectRatioMap, true)
       )
       .filter(Boolean);
+
+    scheduleGalleryPublicationsReady(payload);
 
     res.json({
       items: payload,
@@ -770,12 +798,14 @@ router.get('/:publicationId', async (req, res) => {
       publication,
       viewerId,
       botUserMap,
-      sessionAspectRatioMap
+      sessionAspectRatioMap,
+      true,
     );
     if (!normalized) {
       return res.status(404).json({ error: 'Publication not available.' });
     }
 
+    scheduleGalleryPublicationReady(publicationId);
     res.json({ publication: normalized });
   } catch (error) {
     console.error('Error fetching publication:', error);

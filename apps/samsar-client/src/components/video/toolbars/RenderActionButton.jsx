@@ -1,5 +1,6 @@
 
 import { FaTimes } from 'react-icons/fa';
+import { useState } from 'react';
 import CommonButton from '../../common/CommonButton.tsx';
 import CommonDropdownButton from '../../common/CommonDropdownButton.tsx';
 import PublicPrimaryButton from '../../common/buttons/PrimaryPublicButton.tsx';
@@ -20,6 +21,8 @@ export default function RenderActionButton(props) {
     isUpdateLayerPending,
     isCanvasDirty,
     isSessionPublished,
+    publishedTitle,
+    publishedDescription,
     publishVideoSession,
     unpublishVideoSession,
     renderCompletedThisSession,
@@ -30,6 +33,7 @@ export default function RenderActionButton(props) {
   const { user } = useUser();
   const { colorMode } = useColorMode();
   const { openAlertDialog, closeAlertDialog } = useAlertDialog();
+  const [publishDraft, setPublishDraft] = useState(null);
 
   const isAnonymousGuest = !user?._id;
   const resolvedDownloadLink = renderedVideoPath || downloadLink;
@@ -70,24 +74,43 @@ export default function RenderActionButton(props) {
     anchor.click();
   };
 
+  const publishDraftForSession = publishDraft?.sessionId === sessionId
+    ? publishDraft
+    : null;
+
+  const updatePublishDraft = (updates) => {
+    setPublishDraft((currentDraft) => ({
+      sessionId,
+      title: currentDraft?.sessionId === sessionId
+        ? currentDraft.title
+        : publishedTitle || '',
+      description: currentDraft?.sessionId === sessionId
+        ? currentDraft.description
+        : publishedDescription || '',
+      ...updates,
+    }));
+  };
+
   const showPublishOptionsDialog = () => {
     openAlertDialog(
-      <div>
-        <div>
-          <FaTimes
-            className='absolute right-2 top-2 cursor-pointer'
-            onClick={closeAlertDialog}
-          />
-        </div>
-        <PublishOptionsDialog
-          onClose={closeAlertDialog}
-          onSubmit={(payload) => {
-            closeAlertDialog();
-            publishVideoSession?.(payload);
-          }}
-          extraProps={{ sessionId }}
-        />
-      </div>
+      <PublishOptionsDialog
+        isRepublish={Boolean(isSessionPublished)}
+        onClose={closeAlertDialog}
+        onDraftChange={updatePublishDraft}
+        onSubmit={(payload) => {
+          closeAlertDialog();
+          publishVideoSession?.(payload);
+        }}
+        publishDraft={publishDraftForSession}
+        extraProps={{
+          sessionId,
+          publishedTitle,
+          publishedDescription,
+        }}
+      />,
+      undefined,
+      false,
+      { containerClassName: 'w-[calc(100vw-1.5rem)] max-w-xl' }
     );
   };
 
@@ -106,8 +129,13 @@ export default function RenderActionButton(props) {
 
   if (isSessionPublished) {
     dropdownItems.push({
+      label: 'Republish',
+      onClick: showPublishOptionsDialog,
+    });
+    dropdownItems.push({
       label: 'Unpublish',
       onClick: () => {
+        setPublishDraft(null);
         if (typeof unpublishVideoSession === 'function') {
           unpublishVideoSession();
         }

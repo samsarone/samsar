@@ -10,6 +10,7 @@ import path from "path";
 import { uploadImageToCDN } from './AWS.js';
 import { normalizeProviderMediaUrl } from '../ai_video/utils/AWS.js';
 import {
+  GPT_56_SOL_REASONING_EFFORT,
   createGoogleGeminiChatCompletion,
   getDefaultInferenceModel,
   isGeminiInferenceModel,
@@ -161,7 +162,9 @@ async function getDescriptionForImage(activeImageRemoteLink, userInferenceModel 
   const inferencePayload = {
     model,
     messages,
-    reasoning_effort: 'high',
+    reasoning_effort: isGeminiInferenceModel(model)
+      ? 'high'
+      : GPT_56_SOL_REASONING_EFFORT,
   };
   let response;
   let provider;

@@ -10,6 +10,7 @@ const API_KEY = process.env.OPENAI_API_KEY;
 import { z } from "zod";
 import { zodResponseFormat } from "openai/helpers/zod";
 import {
+  GPT_56_SOL_REASONING_EFFORT,
   createGoogleGeminiChatCompletion,
   getDefaultInferenceModel,
   isGeminiInferenceModel,
@@ -25,7 +26,7 @@ import { recordProviderUsageLog } from '../../utils/ProviderUsageAudit.js';
 const openai = new OpenAI({ apiKey: API_KEY || '' });
 
 const RESPONSES_ONLY_MODELS = new Set([
-  'gpt-5.5',
+  'gpt-5.6-sol',
 ]);
 const DEFAULT_GEMINI_REASONING_EFFORT = 'high';
 
@@ -425,7 +426,11 @@ export async function sendAssistantMessageRequest(messageList, userInferenceMode
     const basePayload = {
       model: modelName,
       messages: messageList,
-      ...(reasoningEffort ? { reasoning_effort: reasoningEffort } : {}),
+      ...(!isGeminiInferenceModel(modelName)
+        ? { reasoning_effort: GPT_56_SOL_REASONING_EFFORT }
+        : reasoningEffort
+          ? { reasoning_effort: reasoningEffort }
+          : {}),
     };
     if (shouldUseSamsarExternalInference(basePayload)) {
       const response = await createSamsarExternalChatCompletion(basePayload);
@@ -462,7 +467,7 @@ export async function sendAssistantMessageRequest(messageList, userInferenceMode
         input: normalizeMessagesForResponses(messageList),
       };
 
-      body.reasoning = { effort: reasoningEffort || 'medium' };
+      body.reasoning = { effort: GPT_56_SOL_REASONING_EFFORT };
 
       const responsesResponse = await openai.post('/responses', {
         body,
@@ -472,7 +477,7 @@ export async function sendAssistantMessageRequest(messageList, userInferenceMode
         provider: 'openai',
         response: responsesResponse,
         auditContext,
-        reasoningEffort: reasoningEffort || 'medium',
+        reasoningEffort: GPT_56_SOL_REASONING_EFFORT,
       });
       const outputText = extractResponsesOutputText(responsesResponse);
       return { role: 'assistant', content: outputText ?? '' };

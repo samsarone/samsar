@@ -733,6 +733,16 @@ export default function GenerationsGalleryPanel({
                             )}
                           </div>
 
+                          {isVideo && item?.isPublished && (
+                            <span
+                              title="Published to gallery"
+                              aria-label="Published to gallery"
+                              className="pointer-events-none absolute right-3 top-3 inline-flex h-7 w-7 items-center justify-center rounded-full border border-emerald-200/70 bg-emerald-400 text-slate-950 shadow-lg"
+                            >
+                              <FaCheck className="text-[11px]" />
+                            </span>
+                          )}
+
                           {isVideo && (
                             <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
                               <span className="inline-flex h-11 w-11 items-center justify-center rounded-full bg-black/55 text-white backdrop-blur">

@@ -607,8 +607,8 @@ export const SPEECH_SELECT_TYPES = {
 
 export const ASSISTANT_MODEL_TYPES = [
   {
-    label: 'GPT 5.5',
-    value: 'gpt-5.5',
+    label: 'GPT 5.6 Sol',
+    value: 'gpt-5.6-sol',
   },
   {
     label: 'Gemini 3.1 Pro',
@@ -619,8 +619,8 @@ export const ASSISTANT_MODEL_TYPES = [
 
 export const INFERENCE_MODEL_TYPES = [
   {
-    label: 'GPT 5.5',
-    value: 'gpt-5.5',
+    label: 'GPT 5.6 Sol',
+    value: 'gpt-5.6-sol',
   },
   {
     label: 'Gemini 3.1 Pro',

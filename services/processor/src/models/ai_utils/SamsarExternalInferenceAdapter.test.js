@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import SamsarClient from 'samsar-js';
 
 const ENV_KEYS = [
   'CURRENT_ENV',
@@ -26,6 +27,7 @@ const originalEnv = Object.fromEntries(
 );
 
 const {
+  createSamsarExternalChatCompletion,
   shouldUseSamsarExternalInference,
   unwrapSamsarExternalChatCompletionResponse,
 } = await import('./SamsarExternalInferenceAdapter.js');
@@ -116,7 +118,7 @@ test('shouldUseSamsarExternalInference falls back for OpenAI models in docker wi
   process.env.SAMSAR_API_KEY = 'test-samsar-key';
 
   assert.equal(shouldUseSamsarExternalInference({
-    model: 'gpt-5.5',
+    model: 'gpt-5.6-sol',
     messages: [{ role: 'user', content: 'hello' }],
   }), true);
 });
@@ -128,7 +130,40 @@ test('shouldUseSamsarExternalInference keeps OpenAI native when OpenAI auth is c
   process.env.OPENAI_API_KEY = 'test-openai-key';
 
   assert.equal(shouldUseSamsarExternalInference({
-    model: 'gpt-5.5',
+    model: 'gpt-5.6-sol',
     messages: [{ role: 'user', content: 'hello' }],
   }), false);
+});
+
+test('external inference preserves GPT 5.6 models with xhigh without changing Gemini reasoning', async (t) => {
+  clearProviderEnv();
+  process.env.SAMSAR_API_KEY = 'test-samsar-key';
+  const payloads = [];
+  t.mock.method(SamsarClient.prototype, 'createV2ExternalChatCompletion', async (payload) => {
+    payloads.push(payload);
+    return {
+      choices: [{ message: { role: 'assistant', content: 'ok' } }],
+    };
+  });
+
+  await createSamsarExternalChatCompletion({
+    model: 'gpt-5.6-sol',
+    messages: [{ role: 'user', content: 'hello' }],
+    reasoning_effort: 'low',
+  });
+  await createSamsarExternalChatCompletion({
+    model: 'gpt-5.6-luna',
+    messages: [{ role: 'user', content: 'generate metadata' }],
+    reasoning_effort: 'low',
+  });
+  await createSamsarExternalChatCompletion({
+    model: 'gemini-3.1-pro',
+    messages: [{ role: 'user', content: 'hello' }],
+    reasoning_effort: 'high',
+  });
+
+  assert.equal(payloads[0].reasoning_effort, 'xhigh');
+  assert.equal(payloads[1].model, 'gpt-5.6-luna');
+  assert.equal(payloads[1].reasoning_effort, 'xhigh');
+  assert.equal(payloads[2].reasoning_effort, 'high');
 });

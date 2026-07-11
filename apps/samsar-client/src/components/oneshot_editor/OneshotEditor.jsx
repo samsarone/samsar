@@ -36,6 +36,7 @@ import {
   FaClone,
 } from 'react-icons/fa';
 import axios from 'axios';
+import { ToastContainer, toast } from 'react-toastify';
 
 import { useUser } from '../../contexts/UserContext.jsx';
 import { useColorMode } from '../../contexts/ColorMode.jsx';
@@ -78,6 +79,7 @@ import 'ace-builds/src-noconflict/mode-json';
 import 'ace-builds/src-noconflict/theme-monokai';
 import 'ace-builds/src-noconflict/ext-language_tools';
 import 'react-tooltip/dist/react-tooltip.css';
+import 'react-toastify/dist/ReactToastify.css';
 import './mobileStyles.css';
 
 ace.config.set('useWorker', false);
@@ -183,7 +185,7 @@ const IMAGE_LIST_TO_VIDEO_VIDEO_MODEL_KEYS = [
   'HAPPYHORSEI2V',
   'CUSTOM_IMAGE_TO_VIDEO',
 ];
-const DEFAULT_INFERENCE_MODEL = 'gpt-5.5';
+const DEFAULT_INFERENCE_MODEL = 'gpt-5.6-sol';
 const INFERENCE_MODEL_LABEL_BY_VALUE = INFERENCE_MODEL_TYPES.reduce((result, option) => {
   result[option.value] = option.label;
   return result;
@@ -358,7 +360,12 @@ function coerceSupportedInferenceModelKey(value) {
   if (normalized === DEFAULT_INFERENCE_MODEL || normalized.startsWith(`${DEFAULT_INFERENCE_MODEL}-`)) {
     return DEFAULT_INFERENCE_MODEL;
   }
-  if (normalized === 'gpt 5.5' || normalized === 'gpt55') {
+  if (
+    normalized === 'gpt-5.6' ||
+    normalized === 'gpt 5.6 sol' ||
+    normalized === 'gpt56' ||
+    normalized === 'gpt56sol'
+  ) {
     return DEFAULT_INFERENCE_MODEL;
   }
   return '';
@@ -3992,16 +3999,80 @@ export default function OneshotEditor() {
       if (latestVideoUrl) {
         publishPayload.renderedVideoURL = latestVideoUrl;
       }
+      const latestThumbnailUrl = [
+        formPayload.splashImage,
+        latestSessionDetails?.splashImage,
+        latestSessionDetails?.publishedSplashImage,
+      ].find((value) => typeof value === 'string' && value.trim());
+      if (latestThumbnailUrl) {
+        publishPayload.splashImage = latestThumbnailUrl;
+      }
 
-      await axios.post(
+      const publishResponse = await axios.post(
         `${PROCESSOR_API_URL}/video_sessions/publish_session`,
         publishPayload,
         headers
       );
 
-      await getSessionDetails();
-    } catch  {
+      const responseData = publishResponse.data || {};
+      const publishedSession = responseData.session;
+      const publishedPublication = responseData.publication || responseData;
+      setSessionDetails((currentSessionDetails) => ({
+        ...(currentSessionDetails || latestSessionDetails || {}),
+        ...(publishedSession && typeof publishedSession === 'object' ? publishedSession : {}),
+        ispublishedVideo: true,
+        publishedTitle:
+          publishedSession?.publishedTitle ||
+          publishedPublication?.title ||
+          publishPayload.title ||
+          currentSessionDetails?.publishedTitle ||
+          null,
+        publishedDescription:
+          typeof publishedSession?.publishedDescription === 'string'
+            ? publishedSession.publishedDescription
+            : typeof publishedPublication?.description === 'string'
+              ? publishedPublication.description
+              : publishPayload.description || '',
+        publishedTags:
+          publishedSession?.publishedTags ||
+          publishedPublication?.tags ||
+          normalizedTags,
+        publishedAspectRatio:
+          publishedSession?.publishedAspectRatio ||
+          publishPayload.aspectRatio ||
+          null,
+        publishedVideoURL:
+          publishedSession?.publishedVideoURL ||
+          publishedPublication?.videoURL ||
+          latestVideoUrl ||
+          currentSessionDetails?.publishedVideoURL ||
+          null,
+        publishedAt:
+          publishedSession?.publishedAt ||
+          publishedPublication?.updatedAt ||
+          currentSessionDetails?.publishedAt ||
+          new Date().toISOString(),
+        publishedPublicationId:
+          publishedSession?.publishedPublicationId ||
+          publishedPublication?._id ||
+          publishedPublication?.id ||
+          currentSessionDetails?.publishedPublicationId ||
+          null,
+      }));
 
+      toast.success('Video published successfully.', {
+        position: 'bottom-center',
+        autoClose: 3000,
+        hideProgressBar: true,
+        className: 'custom-toast',
+      });
+    } catch (error) {
+      toast.error(error?.response?.data?.error || 'Unable to publish video.', {
+        position: 'bottom-center',
+        autoClose: 5000,
+        hideProgressBar: true,
+        className: 'custom-toast',
+      });
     } finally {
       setIsPublishing(false);
     }
@@ -4725,7 +4796,7 @@ export default function OneshotEditor() {
         let sessionResponse;
         try {
           sessionResponse = await axios.get(
-            `${API_SERVER}/quick_session/details?sessionId=${id}`,
+            `${API_SERVER}/video_sessions/session_details?id=${encodeURIComponent(id)}&cacheBust=${Date.now()}`,
             headers
           );
         } catch (error) {
@@ -4740,7 +4811,7 @@ export default function OneshotEditor() {
           }
 
           sessionResponse = await axios.get(
-            `${API_SERVER}/quick_session/details?sessionId=${id}`,
+            `${API_SERVER}/video_sessions/session_details?id=${encodeURIComponent(id)}&cacheBust=${Date.now()}`,
             headers
           );
         }
@@ -7886,6 +7957,15 @@ export default function OneshotEditor() {
         />
       </div>
       )}
+      <ToastContainer
+        position="bottom-center"
+        autoClose={5000}
+        hideProgressBar
+        newestOnTop={false}
+        closeOnClick
+        pauseOnFocusLoss
+        draggable
+      />
     </div>
   );
 }
