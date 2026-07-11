@@ -3,6 +3,7 @@ import VideoSession from '../schema/VideoSession.js';
 import VideoGeneration from "../schema/VideoGeneration.js";
 import AudioGeneration from "../schema/AudioGeneration.js";
 import FrameGeneration from "../schema/FrameGeneration.js";
+import { buildSecureMediaDeliveryUrl } from './AWS.js';
 
 
 import { requestGenerateLayeredSpeech, deleteAllFrameGenerations, requestGenerateTranscriptSpeech } from './VideoSession.js';
@@ -43,6 +44,13 @@ let InitExpressGenerationStatus = {
   'music_generation': 'INIT',
   'delete_reflow': 'INIT',
 
+}
+
+function resolveQuickSessionMediaUrl(value) {
+  if (typeof value !== 'string' || !value.trim()) {
+    return value;
+  }
+  return buildSecureMediaDeliveryUrl(value.trim()) || value.trim();
 }
 
 
@@ -938,6 +946,8 @@ export async function getQuickSessionGenerationStatus(sessionId) {
   const videoGenerationPending = sessionData.videoGenerationPending;
   const videoCompleted = Boolean(sessionData.remoteURL || sessionData.videoLink);
   const sessionInferenceModel = sessionData.expressGenerationInferenceModel || sessionData.inferenceModel || null;
+  const resolvedVideoLink = resolveQuickSessionMediaUrl(sessionData.videoLink);
+  const resolvedRemoteUrl = resolveQuickSessionMediaUrl(sessionData.remoteURL);
 
   // create timestamped list of images by layer duration
 
@@ -981,8 +991,8 @@ export async function getQuickSessionGenerationStatus(sessionId) {
       inferenceModel: sessionInferenceModel,
       expressGenerationInferenceModel: sessionInferenceModel,
       expressGenerationStatus: expressGenerationStatus,
-      videoLink: sessionData.videoLink,
-      remoteURL: sessionData.remoteURL,
+      videoLink: resolvedVideoLink,
+      remoteURL: resolvedRemoteUrl,
     }
   }
 
@@ -1001,8 +1011,8 @@ export async function getQuickSessionGenerationStatus(sessionId) {
       inferenceModel: sessionInferenceModel,
       expressGenerationInferenceModel: sessionInferenceModel,
       expressGenerationStatus: expressGenerationStatus,
-      videoLink: sessionData.videoLink,
-      remoteURL: sessionData.remoteURL,
+      videoLink: resolvedVideoLink,
+      remoteURL: resolvedRemoteUrl,
     }
   }
 }
@@ -1016,10 +1026,8 @@ export async function getQuickSessionDetails(sessionId) {
     throw new Error('Session not found');
   }
   
-  let remoteUrl = sessionData.remoteURL;
-  if (remoteUrl && remoteUrl.startsWith('https://')) {
-    remoteUrl = remoteUrl.replace("https://samsar-resources.s3.us-west-2.amazonaws.com", "https://static.samsar.one");
-  }
+  const videoLink = resolveQuickSessionMediaUrl(sessionData.videoLink);
+  const remoteUrl = resolveQuickSessionMediaUrl(sessionData.remoteURL);
 
   const publishedTags = Array.isArray(sessionData.publishedTags)
     ? sessionData.publishedTags
@@ -1033,10 +1041,10 @@ export async function getQuickSessionDetails(sessionId) {
     publishedDescription: sessionData.publishedDescription || null,
     publishedTags,
     publishedAspectRatio: sessionData.publishedAspectRatio || null,
-    publishedVideoURL: sessionData.publishedVideoURL || remoteUrl || null,
+    publishedVideoURL: resolveQuickSessionMediaUrl(sessionData.publishedVideoURL) || remoteUrl || null,
     publishedAt: sessionData.publishedAt || null,
     publishedOriginalPrompt: sessionData.publishedOriginalPrompt || null,
-    publishedSplashImage: sessionData.publishedSplashImage || null,
+    publishedSplashImage: resolveQuickSessionMediaUrl(sessionData.publishedSplashImage) || null,
     publishedImageModel: sessionData.publishedImageModel || null,
     publishedVideoModel: sessionData.publishedVideoModel || null,
     publishedHasSubtitles: typeof sessionData.publishedHasSubtitles === 'boolean'
@@ -1068,7 +1076,7 @@ export async function getQuickSessionDetails(sessionId) {
 
   return {
     _id: sessionData._id,
-    videoLink: sessionData.videoLink,
+    videoLink,
     remoteURL: remoteUrl,
     textList: sessionData.textList,
     parentJsonTheme: sessionData.parentJsonTheme,
@@ -1215,3 +1223,7 @@ export async function updateDerivedJsonTheme(userId, payload) {
 
 
 }
+
+export const __testOnly__ = {
+  resolveQuickSessionMediaUrl,
+};

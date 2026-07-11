@@ -1,6 +1,8 @@
 import { GoogleAuth } from 'google-auth-library';
 
-const DEFAULT_INFERENCE_MODEL = 'gpt-5.5';
+export const GPT_56_SOL_INFERENCE_MODEL = 'gpt-5.6-sol';
+export const GPT_56_SOL_REASONING_EFFORT = 'xhigh';
+const DEFAULT_INFERENCE_MODEL = GPT_56_SOL_INFERENCE_MODEL;
 const GEMINI_31_PRO_INFERENCE_MODEL = 'gemini-3.1-pro';
 const DEFAULT_GEMINI_MODEL = 'gemini-3.1-pro-preview';
 const DEFAULT_GEMINI_LOCATION = 'global';

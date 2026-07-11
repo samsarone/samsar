@@ -70,8 +70,9 @@ test('normalizes request TTS model aliases', () => {
 });
 
 test('normalizes request inference model aliases', () => {
-  assert.equal(normalizeInferenceModelFromPayload({ inference_model: 'GPT 5.5' }), 'gpt-5.5');
-  assert.equal(normalizeInferenceModelFromPayload({ inferenceModel: 'gpt-5.5' }), 'gpt-5.5');
+  assert.equal(normalizeInferenceModelFromPayload({ inference_model: 'GPT 5.6 Sol' }), 'gpt-5.6-sol');
+  assert.equal(normalizeInferenceModelFromPayload({ inferenceModel: 'gpt-5.6-sol' }), 'gpt-5.6-sol');
+  assert.equal(normalizeInferenceModelFromPayload({ inferenceModel: 'gpt-5.6' }), 'gpt-5.6-sol');
   assert.equal(normalizeInferenceModelFromPayload({ inference_model: 'Gemini 3.1 Pro' }), 'gemini-3.1-pro');
   assert.equal(normalizeInferenceModelFromPayload({ inferenceModel: 'gemini-3-pro-preview' }), 'gemini-3.1-pro');
   assert.equal(normalizeInferenceModelFromPayload({}), null);
@@ -80,24 +81,24 @@ test('normalizes request inference model aliases', () => {
 test('rejects unsupported request inference model aliases', () => {
   assert.throws(
     () => normalizeInferenceModelFromPayload({ inference_model: 'gpt-5' }),
-    /inference_model must be one of: gpt-5\.5, gemini-3\.1-pro/,
+    /inference_model must be one of: gpt-5\.6-sol, gemini-3\.1-pro/,
   );
   assert.throws(
     () => normalizeInferenceModelFromPayload({ inference_model: 'claude' }),
-    /inference_model must be one of: gpt-5\.5, gemini-3\.1-pro/,
+    /inference_model must be one of: gpt-5\.6-sol, gemini-3\.1-pro/,
   );
 });
 
 test('resolves effective inference model from request override or account setting', () => {
   assert.equal(
-    resolveEffectiveInferenceModel({ inference_model: 'GPT 5.5' }, 'gemini-3.1-pro'),
-    'gpt-5.5',
+    resolveEffectiveInferenceModel({ inference_model: 'GPT 5.6 Sol' }, 'gemini-3.1-pro'),
+    'gpt-5.6-sol',
   );
   assert.equal(
     resolveEffectiveInferenceModel({}, 'gemini-3.1-pro'),
     'gemini-3.1-pro',
   );
-  assert.equal(resolveEffectiveInferenceModel({}, null), 'gpt-5.5');
+  assert.equal(resolveEffectiveInferenceModel({}, null), 'gpt-5.6-sol');
 });
 
 test('reads request speaker options aliases', () => {

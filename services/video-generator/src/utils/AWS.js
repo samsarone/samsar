@@ -14,6 +14,7 @@ const AWS_REGION = process.env.AWS_CDN_REGION || process.env.AWS_REGION || 'us-w
 const MEDIA_BUCKET_NAME = process.env.MEDIA_BUCKET_NAME || process.env.STATIC_CDN_BUCKET || 'samsar-resources';
 
 const STATIC_CDN_URL = process.env.STATIC_CDN_URL || 'https://static.samsar.one/';
+const PUBLICATION_MEDIA_PREFIX = 'published';
 const CDN_PRIME_RETRY_DELAY_MS = 500;
 const SECURE_ASSET_PREFIX = (process.env.SECURE_ASSET_PREFIX || 'assets_v2').replace(/^\/+|\/+$/g, '');
 const DEFAULT_CLOUDFRONT_SIGNED_URL_TTL_SECONDS = 7 * 24 * 60 * 60;
@@ -306,6 +307,41 @@ export async function uploadVideoToCDN(absolutePath, remoteFileName) {
 
   await primeCDNCache(cdnUrl, { requireSuccess: true });
   return cdnUrl;
+}
+
+export async function uploadPublicationThumbnailToCDN(absolutePath, sessionId) {
+  const normalizedSessionId = sessionId?.toString?.().trim?.() || '';
+  if (!normalizedSessionId) {
+    throw new Error('Missing sessionId for publication thumbnail upload.');
+  }
+  if (!fs.existsSync(absolutePath)) {
+    throw new Error(`File not found at path: ${absolutePath}`);
+  }
+
+  const publicationKey = `${PUBLICATION_MEDIA_PREFIX}/${normalizedSessionId}/thumbnail.png`;
+  if (shouldUseDockerLocalMedia()) {
+    // The Docker processor serves /assets_v2, while S3/CloudFront serves the
+    // same object without the secure assets_v2 prefix.
+    return persistDockerMediaFile(absolutePath, `${SECURE_ASSET_PREFIX}/${publicationKey}`);
+  }
+
+  const s3 = getS3Client();
+  const upload = new Upload({
+    client: s3,
+    params: {
+      Bucket: MEDIA_BUCKET_NAME,
+      Key: publicationKey,
+      Body: fs.createReadStream(absolutePath),
+      ContentType: 'image/png',
+      CacheControl: 'public, max-age=60, must-revalidate',
+    },
+    leavePartsOnError: false,
+  });
+  await upload.done();
+
+  const publicUrl = buildStaticCdnUrl(publicationKey);
+  await primeCDNCache(publicUrl, { requireSuccess: false });
+  return publicUrl;
 }
 
 /**

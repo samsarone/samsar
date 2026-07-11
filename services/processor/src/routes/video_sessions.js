@@ -62,6 +62,7 @@ import {
 
 
 import { createPublicationForSessionVideo, createMetaForSession, unpublishSessionVideo } from '../models/Publication.js';
+import VideoSessionDocument from '../schema/VideoSession.js';
 
 import { requestGenerateCustomAIVideo, } from '../models/ai_video/index.js';
 
@@ -244,6 +245,7 @@ router.get('/session_details', async function (req, res) {
   const headers = req.headers;
   const { id, isGuest } = req.query;
   const userId = verifyUserAuth(headers);
+  res.setHeader('Cache-Control', 'private, no-store');
   if (!userId) {
     const payload = {
       id,
@@ -1253,6 +1255,7 @@ router.get('/list', async function (req, res) {
   if (!userId) {
     return res.status(401).send('Unauthorized');
   }
+  res.setHeader('Cache-Control', 'private, no-store');
 
   try {
     // Extract query params with defaults
@@ -1261,6 +1264,8 @@ router.get('/list', async function (req, res) {
       limit = '10',
       renderType = 'All',
       aspectRatio = 'All',
+      publishedStatus = 'All',
+      completionStatus = 'All',
     } = req.query;
 
     // Convert to integers
@@ -1273,7 +1278,9 @@ router.get('/list', async function (req, res) {
       page,
       limit,
       renderType,
-      aspectRatio
+      aspectRatio,
+      publishedStatus,
+      completionStatus,
     );
 
     return res.json(result);
@@ -2118,23 +2125,76 @@ router.post('/add_synced_sound_effect', async function (req, res) {
 
 
 router.post('/publish_session', async function (req, res) {
+  let userId = null;
   try {
 
     const payload = req.body;
 
-    const userId = verifyUserAuth(req.headers);
+    userId = verifyUserAuth(req.headers);
 
     if (!userId) {
       res.status(401).send("Unauthorized");
       return;
     }
 
-    const pubResponse = await createPublicationForSessionVideo(userId, payload);
-    res.json(pubResponse);
+    const publication = await createPublicationForSessionVideo(userId, payload);
+    const session = await VideoSessionDocument.findById(payload.id || payload.sessionId)
+      .select({
+        ispublishedVideo: 1,
+        publishedTitle: 1,
+        publishedDescription: 1,
+        publishedTags: 1,
+        publishedAspectRatio: 1,
+        publishedVideoURL: 1,
+        publishedAt: 1,
+        publishedOriginalPrompt: 1,
+        publishedSplashImage: 1,
+        publishedImageModel: 1,
+        publishedVideoModel: 1,
+        publishedHasSubtitles: 1,
+        publishedSessionLanguage: 1,
+        publishedLanguageString: 1,
+        publishedPublicationId: 1,
+      })
+      .lean();
+
+    if (!session || session.ispublishedVideo !== true) {
+      const error = new Error('Publication succeeded, but the session is not marked as published.');
+      error.statusCode = 500;
+      throw error;
+    }
+
+    const publicationResponse = publication?.toObject?.() || publication || {};
+    res.json({
+      ...publicationResponse,
+      publication: publicationResponse,
+      session: {
+        ...session,
+        isPublished: true,
+        ispublishedVideo: true,
+      },
+      isPublished: true,
+      ispublishedVideo: true,
+    });
 
   } catch (error) {
-    console.error('Error publishing video session:', error);
-    res.status(500).json({ error: 'Failed to publish video session' });
+    const statusCode = Number.isInteger(error?.statusCode)
+      ? error.statusCode
+      : Number.isInteger(error?.status)
+        ? error.status
+        : 500;
+    const message = error?.message || 'Failed to publish video session';
+    console.error('Error publishing video session:', {
+      sessionId: req.body?.id || req.body?.sessionId || null,
+      userId,
+      statusCode,
+      message,
+      stack: error?.stack,
+    });
+    res.status(statusCode).json({
+      error: message,
+      code: 'PUBLISH_SESSION_FAILED',
+    });
   }
 });
 

@@ -71,7 +71,8 @@ const TTS_MODEL_ALIASES = Object.freeze({
 });
 
 const INFERENCE_MODEL_ALIASES = Object.freeze({
-  GPT55: DEFAULT_INFERENCE_MODEL,
+  GPT56: DEFAULT_INFERENCE_MODEL,
+  GPT56SOL: DEFAULT_INFERENCE_MODEL,
   GEMINI31PRO: GEMINI_31_PRO_INFERENCE_MODEL,
   GEMINI31PROPREVIEW: GEMINI_31_PRO_INFERENCE_MODEL,
   GEMINI3PRO: GEMINI_31_PRO_INFERENCE_MODEL,
@@ -195,7 +196,7 @@ export function normalizeInferenceModelFromPayload(payload = {}) {
 
   const normalizedModel = INFERENCE_MODEL_ALIASES[token];
   if (!normalizedModel) {
-    throw makeValidationError('inference_model must be one of: gpt-5.5, gemini-3.1-pro.');
+    throw makeValidationError('inference_model must be one of: gpt-5.6-sol, gemini-3.1-pro.');
   }
 
   return normalizedModel;

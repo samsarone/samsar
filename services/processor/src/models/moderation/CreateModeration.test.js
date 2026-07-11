@@ -154,7 +154,7 @@ test("resolveModerationProvider uses Google for docker google-only Gemini text-t
   }), MODERATION_PROVIDERS.GOOGLE);
 });
 
-test("resolveModerationProvider keeps OpenAI for GPT 5.5 text-to-video prompts", () => {
+test("resolveModerationProvider keeps OpenAI for GPT 5.6 Sol text-to-video prompts", () => {
   assert.equal(resolveModerationProvider({
     env: {
       CURRENT_ENV: "production",
@@ -162,7 +162,7 @@ test("resolveModerationProvider keeps OpenAI for GPT 5.5 text-to-video prompts",
     availableModelConfig: {
       providers: ["googleCloud"],
     },
-    inferenceModel: "gpt-5.5",
+    inferenceModel: "gpt-5.6-sol",
     routeType: "text_to_video",
   }), MODERATION_PROVIDERS.OPENAI);
 
@@ -173,7 +173,7 @@ test("resolveModerationProvider keeps OpenAI for GPT 5.5 text-to-video prompts",
     availableModelConfig: {
       providers: ["googleCloud"],
     },
-    inferenceModel: "gpt-5.5",
+    inferenceModel: "gpt-5.6-sol",
     routeType: "text_to_video",
   }), MODERATION_PROVIDERS.OPENAI);
 });
@@ -222,7 +222,7 @@ test("resolveModerationProvider does not let explicit Google provider force GPT 
       CURRENT_ENV: "production",
       SAMSAR_MODERATION_PROVIDER: "google_cloud",
     },
-    inferenceModel: "gpt-5.5",
+    inferenceModel: "gpt-5.6-sol",
     routeType: "text_to_video",
   }), MODERATION_PROVIDERS.OPENAI);
 });

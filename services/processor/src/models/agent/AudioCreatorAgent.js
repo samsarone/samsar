@@ -22,7 +22,7 @@ export async function createAudioEffectInstructionsForMovieTranscript(
   inputPrompt,
   movieTranscript,
   videoTone,
-  userInferenceModel = 'gpt-5.5',
+  userInferenceModel = 'gpt-5.6-sol',
 ) {
   // Check if the input is a valid string
   if (typeof inputPrompt !== 'string' || inputPrompt.trim() === '') {

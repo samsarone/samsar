@@ -4,7 +4,11 @@ import path from "path";
 import { mkdir, writeFile } from "fs/promises";
 
 import OpenAI from "openai";
-import { isGeminiInferenceModel } from './InferenceModels.js';
+import {
+  GPT_56_SOL_REASONING_EFFORT,
+  isGPT56SolInferenceModel,
+  isGeminiInferenceModel,
+} from './InferenceModels.js';
 import { createGoogleGeminiChatCompletion } from './GoogleGemini.js';
 import {
   createSamsarExternalChatCompletion,
@@ -52,6 +56,9 @@ export async function sendAssistantMessageRequest(messageList, model = "gpt-4o-m
     const payload = {
       messages: messageList,
       model,
+      ...(isGPT56SolInferenceModel(model)
+        ? { reasoning_effort: GPT_56_SOL_REASONING_EFFORT }
+        : {}),
     };
 
     if (shouldUseSamsarExternalInference(payload)) {

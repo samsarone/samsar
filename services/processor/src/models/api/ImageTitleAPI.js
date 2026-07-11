@@ -1,9 +1,10 @@
 import OpenAI from 'openai';
+import { GPT_56_SOL_REASONING_EFFORT } from '../../consts/InferenceModels.js';
 import { deductGenerationCredits } from '../GenerationCredits.js';
 import { calculateAssistantCreditsFromUsage } from './AssistantBilling.js';
 
-const ASSIGN_TITLE_MODEL = process.env.IMAGE_ASSIGN_TITLE_MODEL || 'gpt-5.5';
-const ASSIGN_TITLE_REASONING_EFFORT = 'low';
+const ASSIGN_TITLE_MODEL = process.env.IMAGE_ASSIGN_TITLE_MODEL || 'gpt-5.6-sol';
+const ASSIGN_TITLE_REASONING_EFFORT = GPT_56_SOL_REASONING_EFFORT;
 const ASSIGN_TITLE_IMAGE_DETAIL = 'low';
 const ASSIGN_TITLE_PRICING_MULTIPLIER = 1.5;
 const ASSIGN_TITLE_MAX_OUTPUT_TOKENS_DESCRIPTION = 220;

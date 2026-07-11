@@ -229,7 +229,7 @@ export const VIDEO_MODEL_PRICES = [
 
 export const ASSISTANT_MODEL_PRICES = [
   {
-    key: "gpt-5.5",
+    key: "gpt-5.6-sol",
     prices: [
       {
         operationType: "words",

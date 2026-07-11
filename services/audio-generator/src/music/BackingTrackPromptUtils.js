@@ -1,8 +1,8 @@
 import { sendAssistantMessageRequest } from "../inference/OpenAI.js";
+import { getDefaultUserInferenceModel } from "../inference/InferenceModels.js";
 
 const DEFAULT_SIMPLIFIED_BACKING_TRACK_PROMPT =
   "Create a clean instrumental cinematic backing track for a short social video ad. Use upbeat travel energy, clear rhythm, warm synths, light percussion, and no vocals.";
-const DEFAULT_USER_INFERENCE_MODEL = process.env.USER_INFERENCE_MODEL || process.env.DEFAULT_USER_INFERENCE_MODEL || 'gpt-5.5';
 
 function normalizeString(value) {
   return typeof value === 'string' ? value.trim() : '';
@@ -46,7 +46,7 @@ export async function getSimplifiedBackingTrackPromptForRetry(originalPrompt, er
   ];
 
   try {
-    const response = await sendAssistantMessageRequest(messages, DEFAULT_USER_INFERENCE_MODEL);
+    const response = await sendAssistantMessageRequest(messages, getDefaultUserInferenceModel());
     const simplifiedPrompt = parsePromptRewriteContent(response?.content);
     return simplifiedPrompt || DEFAULT_SIMPLIFIED_BACKING_TRACK_PROMPT;
   } catch (error) {

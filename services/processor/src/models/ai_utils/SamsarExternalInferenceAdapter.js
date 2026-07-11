@@ -1,6 +1,13 @@
 import SamsarClient from 'samsar-js';
 
-import { isGeminiInferenceModel, normalizeInferenceModel } from '../../consts/InferenceModels.js';
+import {
+  INFERENCE_MODELS,
+  getReasoningEffortForInferenceModel,
+  isGeminiInferenceModel,
+  isOpenAIInferenceModel,
+  normalizeInferenceModel,
+  normalizeOpenAIInferenceModel,
+} from '../../consts/InferenceModels.js';
 import { getCurrentEnvironment } from '../../utils/EnvironmentUtils.js';
 
 const DEFAULT_SAMSAR_API_BASE_URL = 'https://api.samsar.one/v1';
@@ -26,7 +33,7 @@ export const DOCKER_INFERENCE_PROVIDER_PRIORITY_BY_MODEL = Object.freeze({
     DOCKER_INFERENCE_PROVIDER.GOOGLE_CLOUD,
     DOCKER_INFERENCE_PROVIDER.SAMSAR,
   ]),
-  'gpt-5.5': Object.freeze([
+  [INFERENCE_MODELS.Inference]: Object.freeze([
     DOCKER_INFERENCE_PROVIDER.OPENAI,
     DOCKER_INFERENCE_PROVIDER.SAMSAR,
   ]),
@@ -130,7 +137,7 @@ function getInferenceProviderPriority(model) {
     return DOCKER_INFERENCE_PROVIDER_PRIORITY_BY_MODEL['gemini-3.1-pro'];
   }
   return DOCKER_INFERENCE_PROVIDER_PRIORITY_BY_MODEL[normalizeInferenceModel(model)] ||
-    DOCKER_INFERENCE_PROVIDER_PRIORITY_BY_MODEL['gpt-5.5'];
+    DOCKER_INFERENCE_PROVIDER_PRIORITY_BY_MODEL[INFERENCE_MODELS.Inference];
 }
 
 function resolveConfiguredInferenceProvider(model) {
@@ -149,7 +156,7 @@ function hasNativeCredentialForInferenceModel(model) {
 }
 
 function getRequestedInferenceModel(chatRequest = {}) {
-  return normalizeInferenceModel(
+  return normalizeOpenAIInferenceModel(
     chatRequest.model ||
     chatRequest.provider_options?.model ||
     chatRequest.providerOptions?.model ||
@@ -217,9 +224,13 @@ export async function createSamsarExternalChatCompletion(chatRequest = {}) {
     ...payload
   } = chatRequest || {};
 
+  const model = getRequestedInferenceModel(payload);
   const response = await client.createV2ExternalChatCompletion({
     ...payload,
-    model: getRequestedInferenceModel(payload),
+    model,
+    ...(isOpenAIInferenceModel(model)
+      ? { reasoning_effort: getReasoningEffortForInferenceModel(model) }
+      : {}),
   });
 
   return unwrapSamsarExternalChatCompletionResponse(response);

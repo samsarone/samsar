@@ -1,20 +1,9 @@
 import express from 'express';
 import { getDBConnectionString } from '../models/DBString.js';
 import VideoSession from '../schema/VideoSession.js';
+import { isPublicPublicationMediaUrl } from '../models/AWS.js';
 
 const router = express.Router();
-
-const API_SERVER = process.env.API_SERVER || '';
-
-const convertRemoteVideoUrl = (remoteURL = '') => {
-  if (!remoteURL) {
-    return '';
-  }
-
-  const remoteBase = 'https://samsar-resources.s3.us-west-2.amazonaws.com';
-  const cdnBase = 'https://static.samsar.one';
-  return remoteURL.replace(remoteBase, cdnBase);
-};
 
 router.get('/published_videos', async (req, res) => {
   try {
@@ -30,24 +19,18 @@ router.get('/published_videos', async (req, res) => {
     const payload = publishedSessions
       .map((session) => {
         const {
-          remoteURL,
-          videoLink,
           publishedVideoURL,
           publishedTitle,
           publishedDescription,
           publishedTags
         } = session;
 
-        let videoUrl = publishedVideoURL || '';
+        const videoUrl = typeof publishedVideoURL === 'string' ? publishedVideoURL.trim() : '';
 
-        if (!videoUrl && remoteURL) {
-          videoUrl = convertRemoteVideoUrl(remoteURL);
-        } else if (!videoUrl && videoLink && API_SERVER) {
-          const base = API_SERVER.endsWith('/') ? API_SERVER.slice(0, -1) : API_SERVER;
-          videoUrl = `${base}/${videoLink}`;
-        }
-
-        if (!videoUrl) {
+        // Never expose processor/API or secure-media URLs through a public
+        // publication feed. Published sessions are expected to have a URL
+        // copied into the dedicated public-media CloudFront origin.
+        if (!isPublicPublicationMediaUrl(videoUrl)) {
           return null;
         }
 

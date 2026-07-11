@@ -12,13 +12,13 @@ export const DEPLOYMENT_PROVIDER_CAPABILITIES = Object.freeze({
   samsar: {
     label: 'Samsar API Key',
     requiredFor: ['All models', 'All actions'],
-    models: ['gpt-5.5', 'gemini-3.1-pro', 'GPTIMAGE2', 'RUNWAYML', 'VEO3.1I2V', 'LYRIA3', 'OPENAI_TTS', 'GOOGLE_TTS', 'MMAUDIO', 'LATENT_SYNC'],
+    models: ['gpt-5.6-sol', 'gemini-3.1-pro', 'GPTIMAGE2', 'RUNWAYML', 'VEO3.1I2V', 'LYRIA3', 'OPENAI_TTS', 'GOOGLE_TTS', 'MMAUDIO', 'LATENT_SYNC'],
     actions: ['chat', 'assistant', 'image', 'video', 'audio', 'lip_sync', 'sound_effect'],
   },
   openai: {
     label: 'OpenAI',
-    requiredFor: ['GPT 5.5', 'assistant', 'vision', 'moderation', 'OpenAI image', 'OpenAI TTS'],
-    models: ['gpt-5.5', 'GPTIMAGE2', 'OPENAI_TTS'],
+    requiredFor: ['GPT 5.6 Sol', 'assistant', 'vision', 'moderation', 'OpenAI image', 'OpenAI TTS'],
+    models: ['gpt-5.6-sol', 'GPTIMAGE2', 'OPENAI_TTS'],
     actions: ['chat', 'assistant', 'moderation', 'image', 'audio'],
   },
   googleCloud: {

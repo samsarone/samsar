@@ -5,64 +5,23 @@ import { getDBConnectionString } from './DBString.js';
 import { extractMetaForMovieResourceList } from '../models/agent/MetaCreatorAgent.js';
 import { getLanguageStringFromLanguageCode } from '../consts/LanguageCodes.js';
 import TagCloud from '../schema/content/TagCloud.js';
+import User from '../schema/User.js';
+import {
+  deletePublicPublicationMediaForSession,
+  preparePublicPublicationMedia,
+} from './PublicationMedia.js';
+import {
+  normalizePublicationAspectRatio,
+  resolvePublicationAspectRatio,
+} from './publication/AspectRatio.js';
+import {
+  normalizePublicationTranscript,
+  resolvePublicationOriginalPrompt,
+} from './publication/Transcript.js';
 
 import { updateTagCloudForPublication } from './Content.js';
 
-
-const API_SERVER = process.env.API_SERVER;
-
-const formatAspectRatioComponent = (value) => {
-  if (!Number.isFinite(value) || value <= 0) {
-    return null;
-  }
-
-  const rounded = Math.round(value * 10000) / 10000;
-  return Number.isInteger(rounded)
-    ? `${rounded}`
-    : `${rounded}`.replace(/\.?0+$/, '');
-};
-
-export function normalizePublicationAspectRatio(aspectRatio) {
-  if (typeof aspectRatio !== 'string') {
-    return null;
-  }
-
-  const trimmed = aspectRatio.trim().toLowerCase();
-  if (!trimmed) {
-    return null;
-  }
-
-  switch (trimmed) {
-    case 'square':
-      return '1:1';
-    case 'landscape':
-    case 'horizontal':
-    case 'wide':
-      return '16:9';
-    case 'portrait':
-    case 'vertical':
-      return '9:16';
-    default:
-      break;
-  }
-
-  const normalized = trimmed.replace(/[x/×]/g, ':').replace(/\s+/g, '');
-  const match = normalized.match(/^(\d+(?:\.\d+)?):(\d+(?:\.\d+)?)$/);
-  if (!match) {
-    return null;
-  }
-
-  const left = Number.parseFloat(match[1]);
-  const right = Number.parseFloat(match[2]);
-  const formattedLeft = formatAspectRatioComponent(left);
-  const formattedRight = formatAspectRatioComponent(right);
-
-  if (!formattedLeft || !formattedRight) {
-    return null;
-  }
-
-  return `${formattedLeft}:${formattedRight}`;
-}
+export { normalizePublicationAspectRatio } from './publication/AspectRatio.js';
 
 const normalizeOptionalString = (value) => {
   if (typeof value !== 'string') {
@@ -75,6 +34,13 @@ const normalizeOptionalString = (value) => {
 
 const normalizeOptionalBoolean = (value) =>
   typeof value === 'boolean' ? value : null;
+
+const canManageAnotherUsersPublication = async (userId) => {
+  const normalizedUserId = userId?.toString?.() || userId;
+  if (!normalizedUserId) return false;
+  const user = await User.findById(normalizedUserId).select({ isAdminUser: 1 }).lean();
+  return Boolean(user?.isAdminUser);
+};
 
 const resolveSessionHasSubtitles = (sessionData = {}, payload = {}) => {
   const payloadValue =
@@ -118,7 +84,12 @@ export async function createPublicationForSessionVideo(userId, payload) {
 
   const sessionOwnerId = videoSessionData.userId?.toString?.() || videoSessionData.userId;
   const requestUserId = userId?.toString?.() || userId;
-  if (sessionOwnerId && requestUserId && sessionOwnerId !== requestUserId) {
+  if (
+    sessionOwnerId &&
+    requestUserId &&
+    sessionOwnerId !== requestUserId &&
+    !(await canManageAnotherUsersPublication(requestUserId))
+  ) {
     const err = new Error('Forbidden: You are not allowed to publish this session.');
     err.statusCode = 403;
     throw err;
@@ -138,11 +109,27 @@ export async function createPublicationForSessionVideo(userId, payload) {
     ? description.trim()
     : '';
 
-  const normalizedAspectRatio =
-    normalizePublicationAspectRatio(aspectRatio) ||
-    normalizePublicationAspectRatio(videoSessionData?.publishedAspectRatio) ||
-    normalizePublicationAspectRatio(videoSessionData?.aspectRatio) ||
-    '1:1';
+  const normalizedSessionAspectRatio = normalizePublicationAspectRatio(
+    videoSessionData?.aspectRatio,
+  );
+  const normalizedRequestedAspectRatio = normalizePublicationAspectRatio(aspectRatio);
+  const normalizedAspectRatio = resolvePublicationAspectRatio({
+    sessionAspectRatio: videoSessionData?.aspectRatio,
+    requestedAspectRatio: aspectRatio,
+    publishedAspectRatio: videoSessionData?.publishedAspectRatio,
+  });
+
+  if (
+    normalizedSessionAspectRatio &&
+    normalizedRequestedAspectRatio &&
+    normalizedSessionAspectRatio !== normalizedRequestedAspectRatio
+  ) {
+    console.warn('Ignoring publication aspect ratio that conflicts with its video session.', {
+      sessionId: videoSessionData._id?.toString?.() ?? id,
+      requestedAspectRatio: normalizedRequestedAspectRatio,
+      sessionAspectRatio: normalizedSessionAspectRatio,
+    });
+  }
 
   const payloadSplashImage = normalizeOptionalString(payload.splashImage);
   const splashImageCandidate = payloadSplashImage ||
@@ -166,16 +153,8 @@ export async function createPublicationForSessionVideo(userId, payload) {
   ].find((value) => typeof value === 'string' && value.trim().length > 0);
   const sessionVideoModel = videoModelCandidate ? videoModelCandidate.trim() : null;
 
-  const payloadOriginalPrompt = normalizeOptionalString(payload.originalPrompt);
-  const possiblePrompts = [
-    payloadOriginalPrompt,
-    videoSessionData?.inputPrompt,
-    videoSessionData?.expressInputPrompt,
-    Array.isArray(videoSessionData?.promptList) ? videoSessionData.promptList.join('\n') : null,
-    Array.isArray(videoSessionData?.promptlist) ? videoSessionData.promptlist.join('\n') : null
-  ];
-
-  const originalPrompt = possiblePrompts.find((prompt) => typeof prompt === 'string' && prompt.trim().length > 0) || '';
+  const originalPrompt = resolvePublicationOriginalPrompt(payload, videoSessionData);
+  const sessionTranscript = normalizePublicationTranscript(videoSessionData.movieResourceList);
 
   payload.tags = normalizedTags;
   payload.title = normalizedTitle;
@@ -205,61 +184,58 @@ export async function createPublicationForSessionVideo(userId, payload) {
   }
   const hasSubtitles = resolveSessionHasSubtitles(videoSessionData, payload);
 
+  const payloadVideoReference = [
+    payload.renderedVideoURL,
+    payload.renderedVideoUrl,
+    payload.rendered_video_url,
+    payload.remoteURL,
+    payload.remoteUrl,
+    payload.remote_url,
+    payload.videoLink,
+    payload.video_link,
+  ].find((value) => typeof value === 'string' && value.trim()) || null;
+  const payloadThumbnailReference = normalizeOptionalString(payload.splashImage);
 
-  const {
-    remoteURL,
-    videoLink,
-    publishedVideoURL,
-  } = videoSessionData;
-
-  if (!remoteURL && !videoLink && !publishedVideoURL) {
+  if (
+    !videoSessionData.remoteURL &&
+    !videoSessionData.videoLink &&
+    !videoSessionData.publishedVideoURL &&
+    !payloadVideoReference
+  ) {
     const err = new Error('Video is not ready to publish yet.');
     err.statusCode = 409;
     throw err;
   }
 
-  let videoURL;
+  const mediaSession = payloadVideoReference || payloadThumbnailReference
+    ? {
+        ...videoSessionData.toObject({ depopulate: true }),
+        ...(payloadVideoReference
+          ? {
+              remoteURL: payloadVideoReference,
+              videoLink: payloadVideoReference,
+            }
+          : {}),
+        ...(payloadThumbnailReference
+          ? { splashImage: payloadThumbnailReference }
+          : {}),
+      }
+    : videoSessionData;
 
-  if (videoLink) {
-    const trimmedVideoLink = `${videoLink}`.trim();
-    videoURL = /^https?:\/\//i.test(trimmedVideoLink)
-      ? trimmedVideoLink
-      : `${API_SERVER}/${trimmedVideoLink.replace(/^\/+/, '')}`;
-  } else if (remoteURL) {
-
-
-    const remoteBase = `https://samsar-resources.s3.us-west-2.amazonaws.com`;
-    const cdnBase = `https://static.samsar.one`;
-
-    const remoteURLStatic = remoteURL.replace(remoteBase, cdnBase);
-
-    videoURL = remoteURLStatic;
-  } else {
-    videoURL = publishedVideoURL;
-  };
+  const publicMedia = await preparePublicPublicationMedia(mediaSession, {
+    thumbnailReference: payloadThumbnailReference || sessionSplashImage,
+  });
+  const videoURL = publicMedia.videoUrl;
+  const publicThumbnailUrl = publicMedia.thumbnailUrl;
+  const resolvedSessionSplashImage = publicThumbnailUrl || sessionSplashImage;
+  const thumbnailGeneratedFromVideo = publicMedia.thumbnailSource === 'ffmpeg-video-frame';
 
   const normalizedCreatorHandle = normalizeOptionalString(payload.creatorHandle);
   const normalizedSlug = normalizeOptionalString(payload.slug);
   const normalizedImageHash = normalizeOptionalString(payload.imageHash);
 
-  videoSessionData.ispublishedVideo = true;
-  videoSessionData.publishedTitle = normalizedTitle;
-  videoSessionData.publishedDescription = normalizedDescription;
-  videoSessionData.publishedTags = normalizedTags;
-  videoSessionData.publishedAspectRatio = normalizedAspectRatio;
-  videoSessionData.publishedVideoURL = videoURL;
-  videoSessionData.publishedAt = new Date();
-  videoSessionData.publishedOriginalPrompt = originalPrompt;
-  videoSessionData.publishedSplashImage = sessionSplashImage;
-  videoSessionData.publishedImageModel = sessionImageModel;
-  videoSessionData.publishedVideoModel = sessionVideoModel;
-  videoSessionData.publishedHasSubtitles = hasSubtitles;
-  videoSessionData.publishedSessionLanguage = sessionLanguage;
-  videoSessionData.publishedLanguageString = languageString;
-
-  await videoSessionData.save();
-
   let publicationExists = await Publication.findOne({ sessionId: id });
+  let publicationData;
 
   if (publicationExists) {
 
@@ -270,7 +246,8 @@ export async function createPublicationForSessionVideo(userId, payload) {
     publicationExists.tags = normalizedTags;
     publicationExists.aspectRatio = normalizedAspectRatio;
     publicationExists.originalPrompt = originalPrompt;
-    publicationExists.splashImage = sessionSplashImage;
+    publicationExists.sessionTranscript = sessionTranscript;
+    publicationExists.splashImage = resolvedSessionSplashImage;
     publicationExists.imageModel = sessionImageModel;
     publicationExists.videoModel = sessionVideoModel;
     publicationExists.sessionLanguage = sessionLanguage;
@@ -289,17 +266,10 @@ export async function createPublicationForSessionVideo(userId, payload) {
     }
 
     await publicationExists.save({});
-
-    videoSessionData.publishedPublicationId = publicationExists._id.toString();
-    await videoSessionData.save();
-
-    payload.publicationId = publicationExists._id.toString();
-    updateTagCloudForPublication(payload);
-
-    return publicationExists;
+    publicationData = publicationExists;
   } else {
 
-    const publicationData = new Publication({
+    publicationData = new Publication({
       sessionId: id,
       videoURL: videoURL,
       createdBy: userId,
@@ -307,10 +277,11 @@ export async function createPublicationForSessionVideo(userId, payload) {
       description: normalizedDescription,
       tags: normalizedTags,
       aspectRatio: normalizedAspectRatio,
-      splashImage: sessionSplashImage,
+      splashImage: resolvedSessionSplashImage,
       imageModel: sessionImageModel,
       videoModel: sessionVideoModel,
       originalPrompt: originalPrompt,
+      sessionTranscript,
       sessionLanguage: sessionLanguage,
       language: sessionLanguage,
       languageString: languageString,
@@ -321,18 +292,50 @@ export async function createPublicationForSessionVideo(userId, payload) {
       ...(normalizedImageHash ? { imageHash: normalizedImageHash } : {}),
     });
 
-    const publicationId = publicationData._id.toString();
-    payload.publicationId = publicationId;
-
     await publicationData.save();
-
-    videoSessionData.publishedPublicationId = publicationId;
-    await videoSessionData.save();
-
-    updateTagCloudForPublication(payload);
-
-    return publicationData;
   }
+
+  const publicationId = publicationData._id.toString();
+  const publishedAt = new Date();
+  const publishedSessionUpdate = {
+    ispublishedVideo: true,
+    publishedTitle: normalizedTitle,
+    publishedDescription: normalizedDescription,
+    publishedTags: normalizedTags,
+    publishedAspectRatio: normalizedAspectRatio,
+    publishedVideoURL: videoURL,
+    publishedAt,
+    publishedOriginalPrompt: originalPrompt,
+    publishedSplashImage: resolvedSessionSplashImage,
+    publishedImageModel: sessionImageModel,
+    publishedVideoModel: sessionVideoModel,
+    publishedHasSubtitles: hasSubtitles,
+    publishedSessionLanguage: sessionLanguage,
+    publishedLanguageString: languageString,
+    publishedPublicationId: publicationId,
+    ...(thumbnailGeneratedFromVideo
+      ? { splashImage: resolvedSessionSplashImage }
+      : {}),
+  };
+
+  // Treat the session marker as part of publish success. This final atomic
+  // update prevents a successful response from being returned while the
+  // session still carries stale unpublished metadata.
+  const publishedSession = await VideoSession.findByIdAndUpdate(
+    id,
+    { $set: publishedSessionUpdate },
+    { new: true, runValidators: true },
+  );
+  if (!publishedSession || publishedSession.ispublishedVideo !== true) {
+    const err = new Error('Publication was created, but the session could not be marked as published.');
+    err.statusCode = 500;
+    throw err;
+  }
+
+  payload.publicationId = publicationId;
+  updateTagCloudForPublication(payload);
+
+  return publicationData;
 
 }
 
@@ -352,7 +355,12 @@ export async function unpublishSessionVideo(userId, payload) {
   }
 
   const sessionOwnerId = videoSessionData.userId?.toString();
-  if (sessionOwnerId && userId?.toString && sessionOwnerId !== userId.toString()) {
+  if (
+    sessionOwnerId &&
+    userId?.toString &&
+    sessionOwnerId !== userId.toString() &&
+    !(await canManageAnotherUsersPublication(userId))
+  ) {
     const err = new Error('Forbidden: You are not allowed to unpublish this session.');
     err.statusCode = 403;
     throw err;
@@ -364,6 +372,8 @@ export async function unpublishSessionVideo(userId, payload) {
     await Comment.deleteMany({ publicationId: publication._id });
     await publication.deleteOne();
   }
+
+  await deletePublicPublicationMediaForSession(sessionId);
 
   videoSessionData.ispublishedVideo = false;
   videoSessionData.publishedTitle = null;
@@ -401,10 +411,16 @@ export async function createMetaForSession(userId, payload) {
 
 
   const movieResourceList = sessionData.movieResourceList;
+  const originalPrompt = resolvePublicationOriginalPrompt(payload, sessionData);
 
-  const metaData = await extractMetaForMovieResourceList(movieResourceList);
+  const metaData = await extractMetaForMovieResourceList(movieResourceList, {
+    originalPrompt,
+  });
 
-  return metaData;
+  return {
+    title: metaData.title,
+    description: metaData.description,
+  };
 
 
 }

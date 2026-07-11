@@ -33,14 +33,19 @@ const normalizeHexColor = (value, fallback = '#ffffff') => {
   return fallback;
 };
 
-const resolveImageThumbnail = (session) => {
+const resolveImageThumbnail = (session, req = null) => {
   const layer = session?.layers?.[0];
   const imageSession = layer?.imageSession;
   if (!imageSession) return null;
 
+  const resolveThumbnailUrl = (value) => {
+    const normalizedValue = normalizeThumbnail(value);
+    return normalizeResponseAssetUrl(normalizedValue, req) || normalizedValue;
+  };
+
   if (imageSession.activeGeneratedImage) {
     const activeGeneratedImage = imageSession.activeGeneratedImage;
-    return normalizeThumbnail(
+    return resolveThumbnailUrl(
       activeGeneratedImage.startsWith('assets_v2/') || activeGeneratedImage.startsWith('/assets_v2/')
         || activeGeneratedImage.startsWith('generations/') || activeGeneratedImage.startsWith('/generations/')
         ? activeGeneratedImage
@@ -48,10 +53,10 @@ const resolveImageThumbnail = (session) => {
     );
   }
   if (imageSession.activeEditedImage) {
-    return normalizeThumbnail(imageSession.activeEditedImage);
+    return resolveThumbnailUrl(imageSession.activeEditedImage);
   }
   if (imageSession.activeSelectedImage) {
-    return normalizeThumbnail(imageSession.activeSelectedImage);
+    return resolveThumbnailUrl(imageSession.activeSelectedImage);
   }
 
   const activeItems = Array.isArray(imageSession.activeItemList)
@@ -59,7 +64,7 @@ const resolveImageThumbnail = (session) => {
     : [];
   const imageItem = activeItems.find((item) => item && item.type === 'image' && item.src);
   if (imageItem?.src) {
-    return normalizeThumbnail(imageItem.src);
+    return resolveThumbnailUrl(imageItem.src);
   }
 
   return null;
@@ -228,7 +233,7 @@ router.get('/list', async function (req, res) {
         return {
           name: session.sessionName ? session.sessionName : `Image Session ${idx + 1}`,
           id: session._id,
-          thumbnail: resolveImageThumbnail(session),
+          thumbnail: resolveImageThumbnail(session, req),
         };
       })
       .filter(Boolean);

@@ -103,10 +103,10 @@ const userSchema = new Schema({
 
   userApiKeys: [UserAPIKey],
 
-  selectedInferenceModel: { type: String, default: 'gpt-5.5' },
+  selectedInferenceModel: { type: String, default: 'gpt-5.6-sol' },
   selectedInferenceModelAuthorization: { type: String, enum: ['native', 'deployed'], default: 'native' },
 
-  selectedAssistantModel: { type: String, default: 'gpt-5.5' },
+  selectedAssistantModel: { type: String, default: 'gpt-5.6-sol' },
   selectedAssistantModelAuthorization: { type: String, enum: ['native', 'deployed'], default: 'native' },
 
   selectedNotifyOnCompletion: { type: Boolean, default: false },

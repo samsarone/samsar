@@ -46,6 +46,7 @@ import contentPublicationRouter from './src/routes/content/publication.js';
 
 import adMakerRouter from './src/routes/admaker.js';
 import publicationRouter from './src/routes/publications.js';
+import galleryRouter from './src/routes/gallery.js';
 import automationRouter from './src/routes/automation.js';
 import apiIndexRouter from './src/routes/api/index.js';
 import { installStructuredLogger } from './src/utils/StructuredLogger.js';
@@ -284,6 +285,7 @@ app.use('/v1/support', supportApiRouter);
 app.use('/v1/external_users', externalUsersApiRouter);
 app.use('/v1/customer_sub_accounts', customerSubAccountsApiRouter);
 app.use('/v1/publications', publicationRouter);
+app.use('/v1/gallery', galleryRouter);
 app.use('/v1', receiptTemplateCompatApiRouter);
 app.use('/v1', apiIndexRouter);
 
@@ -291,6 +293,7 @@ app.use('/api/v1/assistant', assistantApiRouter);
 app.use('/api/v1/external_users', externalUsersApiRouter);
 app.use('/api/v1/customer_sub_accounts', customerSubAccountsApiRouter);
 
+app.use('/v2/gallery', galleryRouter);
 app.use('/v2', v2ApiRouter);
 app.use('/api/v2', v2ApiRouter);
 app.use('/external', externalApiRouter);
@@ -298,6 +301,7 @@ app.use('/external', externalApiRouter);
 app.use('/videos', publicVideosRouter);
 app.use('/publication', publicationRouter);
 app.use('/publications', publicationRouter);
+app.use('/gallery', galleryRouter);
 app.use('/', automationRouter);
 
 const setCustomHeaders = (res, filePath) => {

@@ -13,6 +13,7 @@ import {
   createExternalChatCompletion,
   getExternalChatTimeoutMs,
 } from '../../models/api/ExternalChatAPI.js';
+import { createExternalEmbeddingVectors } from '../../models/api/ExternalEmbeddingAPI.js';
 
 const router = express.Router();
 
@@ -106,6 +107,29 @@ async function handleExternalChatCompletion(req, res) {
 
 router.post('/chat', validateAPIKeyAndUserId, handleExternalChatCompletion);
 router.post('/chat/completions', validateAPIKeyAndUserId, handleExternalChatCompletion);
+
+async function handleExternalEmbeddings(req, res) {
+  try {
+    const result = await createExternalEmbeddingVectors({
+      userId: req.userId,
+      payload: req.body || {},
+    });
+    setCreditHeaders(res, result.creditsCharged, result.remainingCredits);
+    return res.status(200).json(result.response);
+  } catch (error) {
+    if (error?.code === 'INSUFFICIENT_CREDITS') {
+      return res.status(402).json({
+        message: 'Insufficient credits or no credits remaining.',
+      });
+    }
+    const statusCode = error?.statusCode || error?.status || error?.response?.status || 500;
+    return res.status(statusCode).json({
+      message: error?.message || 'Internal server error while creating external embeddings.',
+    });
+  }
+}
+
+router.post('/embeddings', validateAPIKeyAndUserId, handleExternalEmbeddings);
 
 router.use('/image', imageApiRouter);
 router.use('/video', videoApiRouter);

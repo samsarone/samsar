@@ -7,10 +7,10 @@ import fs from 'fs';
 import path from 'path';
 import ffmpeg from 'fluent-ffmpeg';
 import sharp from 'sharp';
-import { getDBConnectionString } from "./DBString.js";
+import { getDatabase, getDBConnectionString } from "./DBString.js";
 import { deleteFramesForGeneration } from './utils/FrameUtils.js';
 import { updateSendCompletionNotificationToUser } from './utils/NotificationUtils.js';
-import { uploadVideoToCDN } from './utils/AWS.js';
+import { uploadPublicationThumbnailToCDN, uploadVideoToCDN } from './utils/AWS.js';
 import { installStructuredLogger } from './utils/StructuredLogger.js';
 import {
   buildDockerFinalVideoQueueRepairSessionPatch,
@@ -1834,23 +1834,61 @@ export async function generatePendingVideoRequests() {
 
         // Upload to CDN
         const vidRemoteLink = await uploadVideoToCDN(outputPath, outputBase);
+        let publicThumbnailUrl = null;
+        const splashImagePath = resolveProcessorAssetWritePath(
+          pwd,
+          'video',
+          'splash',
+          videoSessionId,
+          'splash.png',
+        );
+        try {
+          if (fs.existsSync(splashImagePath)) {
+            publicThumbnailUrl = await uploadPublicationThumbnailToCDN(
+              splashImagePath,
+              videoSessionId,
+            );
+          } else {
+            console.warn(`Rendered splash image not found for session ${videoSessionId}: ${splashImagePath}`);
+          }
+        } catch (thumbnailError) {
+          console.error(`Failed to publish rendered thumbnail for session ${videoSessionId}:`, thumbnailError);
+        }
 
         // Update session
+        const sessionUpdate = {
+          videoLink: outputBase,
+          remoteURL: vidRemoteLink,
+          videoGenerationPending: false,
+          generationError: null,
+          expressGenerationFailed: false,
+          expressGenerationCancelled: false,
+          expressGenerationError: null,
+          'expressGenerationStatus.frame_generation': 'COMPLETED',
+          'expressGenerationStatus.video_generation': 'COMPLETED',
+          'expressGenerationStatus.status': 'COMPLETED',
+        };
+        if (publicThumbnailUrl) {
+          sessionUpdate.splashImage = publicThumbnailUrl;
+          if (videoSession.ispublishedVideo) {
+            sessionUpdate.publishedSplashImage = publicThumbnailUrl;
+          }
+        }
         await VideoSession.updateOne(
           { _id: videoSessionId },
-          {
-            videoLink: outputBase,
-            remoteURL: vidRemoteLink,
-            videoGenerationPending: false,
-            generationError: null,
-            expressGenerationFailed: false,
-            expressGenerationCancelled: false,
-            expressGenerationError: null,
-            'expressGenerationStatus.frame_generation': 'COMPLETED',
-            'expressGenerationStatus.video_generation': 'COMPLETED',
-            'expressGenerationStatus.status': 'COMPLETED',
-          }
+          sessionUpdate,
         );
+        if (publicThumbnailUrl && videoSession.ispublishedVideo) {
+          try {
+            const database = await getDatabase();
+            await database.collection('publications').updateOne(
+              { sessionId: videoSessionId },
+              { $set: { splashImage: publicThumbnailUrl } },
+            );
+          } catch (publicationThumbnailError) {
+            console.error(`Failed to refresh published thumbnail reference for session ${videoSessionId}:`, publicationThumbnailError);
+          }
+        }
         // Remove the VideoGeneration doc
         await VideoGeneration.deleteOne({ _id: videoRequest._id });
 

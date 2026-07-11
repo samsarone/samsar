@@ -21,6 +21,7 @@ import {
 import { getFunctionCallParamsForModel, getModelForUserInferenceModel } from './ModelUtils.js';
 import { createCompatibleChatCompletion } from "../ai_utils/OpenAICompat.js";
 import {
+  GPT_56_SOL_REASONING_EFFORT,
   getDefaultUserInferenceModel,
   isGeminiInferenceModel,
   normalizeInferenceModel,
@@ -222,7 +223,7 @@ export async function updateCharacterPromptWithTheme(prompt, speakerActor, theme
 
 export async function sendSessionThemeMessageRequest(messageList, userInferenceModel = getDefaultUserInferenceModel(), reasoningEffort) {
   const modelName = getModelForUserInferenceModel(userInferenceModel);
-  const effectiveReasoningEffort = getThemeNarrativeReasoningEffort(modelName, reasoningEffort);
+  const effectiveReasoningEffort = getThemeNarrativeReasoningEffort(modelName);
 
   const ThemeKeywordsExtraction = z.object({
     subject: z.array(z.string()),
@@ -529,7 +530,7 @@ export async function sendNarrativePromptMessageRequest(
   options = {},
 ) {
   const modelName = getModelForUserInferenceModel(inferenceModel);
-  const effectiveReasoningEffort = getThemeNarrativeReasoningEffort(modelName, reasoningEffort);
+  const effectiveReasoningEffort = getThemeNarrativeReasoningEffort(modelName);
 
   const ScreenplayStorylineExtraction = z.object({
     scenes: z.array(z.object({
@@ -622,10 +623,10 @@ export async function sendNarrativePromptMessageRequest(
   }
 }
 
-function getThemeNarrativeReasoningEffort(modelName, reasoningEffort) {
+function getThemeNarrativeReasoningEffort(modelName) {
   return isGeminiInferenceModel(modelName)
     ? GEMINI_THEME_NARRATIVE_REASONING_EFFORT
-    : reasoningEffort;
+    : GPT_56_SOL_REASONING_EFFORT;
 }
 
 function buildReasoningRequestOptions(reasoningEffort) {

@@ -3,7 +3,7 @@ const CREDITS_PER_DOLLAR = 100;
 const DEFAULT_ASSISTANT_PRICING_MULTIPLIER = 2.5;
 
 const TOKEN_PRICING_USD_PER_MILLION = Object.freeze({
-  'gpt-5.5': { input: 2.5, cachedInput: 0.25, output: 15 },
+  'gpt-5.6-sol': { input: 5, cachedInput: 0.5, output: 30 },
   'gemini-3.1-pro': { input: 2.5, cachedInput: 0.25, output: 15 },
 });
 
@@ -104,8 +104,8 @@ function resolvePricingModel(model) {
     return null;
   }
 
-  if (normalized.startsWith('gpt-5.5')) {
-    return 'gpt-5.5';
+  if (normalized.startsWith('gpt-5.6-sol')) {
+    return 'gpt-5.6-sol';
   }
 
   if (normalized.startsWith('gemini-')) {

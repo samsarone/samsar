@@ -1,7 +1,8 @@
 import {
+  getReasoningEffortForInferenceModel,
   getDefaultUserInferenceModel,
   isGeminiInferenceModel,
-  normalizeInferenceModel,
+  normalizeOpenAIInferenceModel,
 } from '../../consts/InferenceModels.js';
 import { createGoogleGeminiChatCompletion } from '../../inference/GoogleGemini.js';
 import {
@@ -10,7 +11,7 @@ import {
 } from './SamsarExternalInferenceAdapter.js';
 
 export function isResponsesOnlyModel(model) {
-  const inferenceModel = normalizeInferenceModel(model || getDefaultUserInferenceModel());
+  const inferenceModel = normalizeOpenAIInferenceModel(model || getDefaultUserInferenceModel());
   return !isGeminiInferenceModel(inferenceModel);
 }
 
@@ -70,17 +71,17 @@ function buildResponsesRequest(chatRequest) {
   } = chatRequest || {};
 
   const body = {
-    model: normalizeInferenceModel(model || getDefaultUserInferenceModel()),
+    model: normalizeOpenAIInferenceModel(model || getDefaultUserInferenceModel()),
     input: normalizeMessagesForResponses(messages),
   };
 
   const reasoningEffort =
     (reasoning && typeof reasoning === 'object' ? reasoning.effort : undefined) ??
     reasoning_effort;
-  if (typeof reasoningEffort === 'string' && reasoningEffort) {
+  if (!isGeminiInferenceModel(body.model)) {
+    body.reasoning = { effort: getReasoningEffortForInferenceModel(body.model) };
+  } else if (typeof reasoningEffort === 'string' && reasoningEffort) {
     body.reasoning = { effort: reasoningEffort };
-  } else if (!isGeminiInferenceModel(body.model)) {
-    body.reasoning = { effort: 'medium' };
   }
 
   if (temperature !== undefined) {

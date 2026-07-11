@@ -8,6 +8,7 @@ import crypto from "crypto";
 import { z } from "zod";
 import { zodResponseFormat } from "openai/helpers/zod";
 import {
+  GPT_56_SOL_REASONING_EFFORT,
   createGoogleGeminiChatCompletion,
   isGeminiInferenceModel,
   normalizeInferenceModel,
@@ -34,7 +35,7 @@ function getOpenAIClient() {
 }
 
 const RESPONSES_ONLY_MODELS = new Set([
-  'gpt-5.5',
+  'gpt-5.6-sol',
 ]);
 
 function getAuditHash(value) {
@@ -104,7 +105,7 @@ const textWordCustomAnimations = [
 
 
 export async function createTextToVideoPromptFromLayerPrompt(startingPrompt, startingImageDescription,
-  endingImageDescription, userInferenceModel = 'gpt-5.5', useShortFormPrompt = true, indexData, videoTone = 'grounded') {
+  endingImageDescription, userInferenceModel = 'gpt-5.6-sol', useShortFormPrompt = true, indexData, videoTone = 'grounded') {
 
   const { isStartScene, isEndScene } = indexData;
 
@@ -248,7 +249,7 @@ Add instructions in the result prompt to ensure the following-
 export async function createTextToVideoPromptFromStartingLayerPrompt(
   startingPrompt,
   startingImageDescription,
-  userInferenceModel = 'gpt-5.5',
+  userInferenceModel = 'gpt-5.6-sol',
   useShortFormPrompt = true,
   isSpeakerTransition = false,
   indexData,
@@ -326,7 +327,7 @@ export async function createTextToVideoPromptFromStartingLayerPrompt(
 
 
 
-export async function getTransitionListForLayerSceneDescriptions(layerSceneDescriptions, userInferenceModel = 'gpt-5.5', auditContext = {}) {
+export async function getTransitionListForLayerSceneDescriptions(layerSceneDescriptions, userInferenceModel = 'gpt-5.6-sol', auditContext = {}) {
 
   const layerSceneDescriptionsString = layerSceneDescriptions.join('\n\n');
 
@@ -385,7 +386,7 @@ export async function getAccentForText(text) {
   ];
 
   try {
-    const inferenceModel = process.env.USER_INFERENCE_MODEL || process.env.DEFAULT_USER_INFERENCE_MODEL || 'gpt-5.5';
+    const inferenceModel = process.env.USER_INFERENCE_MODEL || process.env.DEFAULT_USER_INFERENCE_MODEL || 'gpt-5.6-sol';
     const responseData = await sendAssistantMessageRequest(messageList, inferenceModel);
 
     return responseData.content;
@@ -394,7 +395,7 @@ export async function getAccentForText(text) {
   }
 }
 
-export async function sendAssistantMessageRequest(messageList, userInferenceModel = 'gpt-5.5', auditContext = {}) {
+export async function sendAssistantMessageRequest(messageList, userInferenceModel = 'gpt-5.6-sol', auditContext = {}) {
 
 
   const modelName = getModelNameForInferenceModel(userInferenceModel);
@@ -434,7 +435,7 @@ export async function sendAssistantMessageRequest(messageList, userInferenceMode
         body: {
           model: modelName,
           input: normalizeMessagesForResponses(messageList),
-          reasoning: { effort: 'medium' },
+          reasoning: { effort: GPT_56_SOL_REASONING_EFFORT },
         },
       });
       await recordInferenceProviderUsage({

@@ -4,7 +4,7 @@ const DEFAULT_ASSISTANT_PRICING_MULTIPLIER = 2.5;
 export const EXTERNAL_CHAT_PRICING_MULTIPLIER = 1.25;
 
 const TOKEN_PRICING_USD_PER_MILLION = Object.freeze({
-  'gpt-5.5': {
+  'gpt-5.6-sol': {
     input: 5,
     cachedInput: 0.5,
     output: 30,
@@ -122,8 +122,8 @@ function resolvePricingModel(model) {
     return null;
   }
 
-  if (normalized.startsWith('gpt-5.5')) {
-    return 'gpt-5.5';
+  if (normalized.startsWith('gpt-5.6-sol')) {
+    return 'gpt-5.6-sol';
   }
 
   if (normalized.startsWith('gemini-')) {

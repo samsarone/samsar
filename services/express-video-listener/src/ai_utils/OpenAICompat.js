@@ -1,4 +1,5 @@
 import {
+  GPT_56_SOL_REASONING_EFFORT,
   createGoogleGeminiChatCompletion,
   getDefaultInferenceModel,
   isGeminiInferenceModel,
@@ -77,10 +78,10 @@ function buildResponsesRequest(chatRequest) {
   const reasoningEffort =
     (reasoning && typeof reasoning === 'object' ? reasoning.effort : undefined) ??
     reasoning_effort;
-  if (typeof reasoningEffort === 'string' && reasoningEffort) {
+  if (!isGeminiInferenceModel(body.model)) {
+    body.reasoning = { effort: GPT_56_SOL_REASONING_EFFORT };
+  } else if (typeof reasoningEffort === 'string' && reasoningEffort) {
     body.reasoning = { effort: reasoningEffort };
-  } else if (!isGeminiInferenceModel(body.model)) {
-    body.reasoning = { effort: 'medium' };
   }
 
   if (temperature !== undefined) {

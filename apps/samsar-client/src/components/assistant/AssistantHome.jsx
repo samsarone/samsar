@@ -21,7 +21,7 @@ import { getHeaders } from "../../utils/web.jsx";
 import { useInferenceModelAvailability } from "../../hooks/useInferenceModelAvailability.js";
 
 const PROCESSOR_SERVER = import.meta.env.VITE_PROCESSOR_API;
-const DEFAULT_TEXT_MODEL = 'gpt-5.5';
+const DEFAULT_TEXT_MODEL = 'gpt-5.6-sol';
 const ASSISTANT_SIDEBAR_SAFE_GAP_PX = 24;
 
 function normalizeMessageText(content) {

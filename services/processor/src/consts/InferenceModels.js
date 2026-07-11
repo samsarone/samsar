@@ -1,14 +1,31 @@
+export const INFERENCE_MODELS = Object.freeze({
+  Inference: 'gpt-5.6-sol',
+  PublicationMetadata: 'gpt-5.6-luna',
+});
+
+export const INFERENCE_REASONING_EFFORTS = Object.freeze({
+  Inference: 'xhigh',
+  PublicationMetadata: 'xhigh',
+});
+
 export const INFERENCE_MODEL_KEYS = Object.freeze({
-  GPT_55: 'gpt-5.5',
+  GPT_56_SOL: INFERENCE_MODELS.Inference,
   GEMINI_31_PRO: 'gemini-3.1-pro',
 });
 
 export const INFERENCE_PROVIDER_MODEL_KEYS = Object.freeze({
-  [INFERENCE_MODEL_KEYS.GPT_55]: 'gpt-5.5',
+  [INFERENCE_MODEL_KEYS.GPT_56_SOL]: INFERENCE_MODELS.Inference,
   [INFERENCE_MODEL_KEYS.GEMINI_31_PRO]: 'gemini-3.1-pro-preview',
 });
 
-export const DEFAULT_INFERENCE_MODEL = INFERENCE_MODEL_KEYS.GPT_55;
+export const DEFAULT_INFERENCE_MODEL = INFERENCE_MODEL_KEYS.GPT_56_SOL;
+export const GPT_56_SOL_REASONING_EFFORT = INFERENCE_REASONING_EFFORTS.Inference;
+export const PUBLICATION_METADATA_INFERENCE_SETTINGS = Object.freeze({
+  model: INFERENCE_MODELS.PublicationMetadata,
+  reasoning: Object.freeze({
+    effort: INFERENCE_REASONING_EFFORTS.PublicationMetadata,
+  }),
+});
 export const GEMINI_31_PRO_INFERENCE_MODEL = INFERENCE_MODEL_KEYS.GEMINI_31_PRO;
 export const DEFAULT_GEMINI_31_PRO_VERTEX_MODEL =
   INFERENCE_PROVIDER_MODEL_KEYS[GEMINI_31_PRO_INFERENCE_MODEL];
@@ -17,6 +34,8 @@ export const SUPPORTED_INFERENCE_MODEL_VALUES = Object.freeze([
   DEFAULT_INFERENCE_MODEL,
   GEMINI_31_PRO_INFERENCE_MODEL,
 ]);
+
+const CONFIGURED_OPENAI_INFERENCE_MODELS = new Set(Object.values(INFERENCE_MODELS));
 
 const GEMINI_31_PRO_ALIASES = new Set([
   GEMINI_31_PRO_INFERENCE_MODEL,
@@ -67,6 +86,24 @@ export function normalizeInferenceModel(value) {
   }
 
   return DEFAULT_INFERENCE_MODEL;
+}
+
+export function isOpenAIInferenceModel(value) {
+  return CONFIGURED_OPENAI_INFERENCE_MODELS.has(normalizeString(value).toLowerCase());
+}
+
+export function normalizeOpenAIInferenceModel(value) {
+  const normalized = normalizeString(value).toLowerCase();
+  return isOpenAIInferenceModel(normalized)
+    ? normalized
+    : normalizeInferenceModel(value);
+}
+
+export function getReasoningEffortForInferenceModel(value) {
+  const model = normalizeOpenAIInferenceModel(value);
+  return model === INFERENCE_MODELS.PublicationMetadata
+    ? INFERENCE_REASONING_EFFORTS.PublicationMetadata
+    : INFERENCE_REASONING_EFFORTS.Inference;
 }
 
 export function getDefaultUserInferenceModel() {
