@@ -73,6 +73,8 @@ const IMAGE_GENERATION_PROVIDER_PENDING_TIMEOUT_MS = Math.max(
 );
 const IMAGE_FILTER_SCORE_CUTOFF = 50;
 const GROUNDED_IMAGE_FILTER_SCORE_CUTOFF = 61;
+const SCORE_ONLY_FILTER_FAILURES_BEFORE_RELAXATION = 2;
+const SCORE_ONLY_FILTER_RELAXED_CUTOFF = 50;
 const IMAGE_FILTER_SCORE_RELAXATION_PER_GENERATION_FAILURE = 10;
 const MIN_IMAGE_FILTER_SCORE_CUTOFF = 35;
 const MIN_GROUNDED_IMAGE_FILTER_SCORE_CUTOFF = 41;
@@ -284,6 +286,11 @@ function getImageGenerationFailureMessage(imageData, fallback = 'Image generatio
   return fallback;
 }
 
+function hasReachedScoreOnlyFilterRelaxation(payload = {}) {
+  return normalizeRetryCount(payload?.failureRetryCount) === 0 &&
+    normalizeRetryCount(payload?.filterRetryCount) >= SCORE_ONLY_FILTER_FAILURES_BEFORE_RELAXATION;
+}
+
 function getImageFilterScoreCutoff(videoTone, payload = {}) {
   const baseCutoff = videoTone === 'grounded'
     ? GROUNDED_IMAGE_FILTER_SCORE_CUTOFF
@@ -301,6 +308,22 @@ function getImageFilterScoreCutoff(videoTone, payload = {}) {
     minCutoff,
     baseCutoff - (generationFailureCount * IMAGE_FILTER_SCORE_RELAXATION_PER_GENERATION_FAILURE)
   );
+}
+
+function getScoreThresholdCutoff(videoTone, payload = {}) {
+  const standardCutoff = getImageFilterScoreCutoff(videoTone, payload);
+  if (!hasReachedScoreOnlyFilterRelaxation(payload)) {
+    return standardCutoff;
+  }
+  return Math.min(standardCutoff, SCORE_ONLY_FILTER_RELAXED_CUTOFF);
+}
+
+function getTerminalFilterFailurePolicy(videoTone, payload = {}) {
+  const scoreThresholdFailuresOnly = hasReachedScoreOnlyFilterRelaxation(payload);
+  return {
+    fallbackScoreCutoff: getScoreThresholdCutoff(videoTone, payload),
+    allowExpressLayerPrune: scoreThresholdFailuresOnly,
+  };
 }
 
 function parseMaybeJson(value) {
@@ -1208,6 +1231,29 @@ function getAudioLayerDuration(audioLayer = {}) {
   return 0;
 }
 
+function clampAudioLayersToTimeline(audioLayers = [], totalDuration = 0) {
+  const safeTimelineEnd = Math.max(0, Number(totalDuration) || 0);
+
+  for (const audioLayer of audioLayers) {
+    const startTimeValue = Number(audioLayer?.startTime);
+    const startTime = Number.isFinite(startTimeValue) ? Math.max(0, startTimeValue) : 0;
+    const endTimeValue = Number(audioLayer?.endTime);
+    const audioDuration = getAudioLayerDuration(audioLayer);
+    const endTime = Number.isFinite(endTimeValue) && endTimeValue >= startTime
+      ? endTimeValue
+      : startTime + audioDuration;
+
+    if (startTime > safeTimelineEnd) {
+      audioLayer.startTime = safeTimelineEnd;
+      audioLayer.endTime = safeTimelineEnd;
+    } else if (endTime > safeTimelineEnd) {
+      audioLayer.endTime = safeTimelineEnd;
+    }
+  }
+
+  return audioLayers;
+}
+
 function reflowLayersAndConnectedAudio(layers = [], audioLayers = []) {
   const originalLayersById = new Map(
     layers
@@ -1245,6 +1291,7 @@ function reflowLayersAndConnectedAudio(layers = [], audioLayers = []) {
     durationOffset += duration;
   }
 
+  clampAudioLayersToTimeline(audioLayers, durationOffset);
   return durationOffset;
 }
 
@@ -1258,6 +1305,47 @@ function isPrunableExpressImageLayer(layer = {}) {
   return baseType !== 'none' && aiType !== 'none';
 }
 
+function buildExpressLayerPrunePlan(sessionData = {}, layerId) {
+  if (!sessionData?.isExpressGeneration || !layerId) {
+    return { pruned: false };
+  }
+
+  const normalizedLayerId = layerId.toString();
+  const layers = Array.isArray(sessionData.layers) ? [...sessionData.layers] : [];
+  const layerIndex = layers.findIndex((layer) => layer?._id?.toString?.() === normalizedLayerId);
+  if (layerIndex < 0) {
+    return { pruned: true, reason: 'missing_layer' };
+  }
+
+  const remainingPrunableLayerCount = layers.filter((layer) => (
+    layer?._id?.toString?.() !== normalizedLayerId &&
+    isPrunableExpressImageLayer(layer)
+  )).length;
+  if (remainingPrunableLayerCount <= 0) {
+    return { pruned: false, reason: 'last_prunable_layer' };
+  }
+
+  const [removedLayer] = layers.splice(layerIndex, 1);
+  const audioLayers = Array.isArray(sessionData.audioLayers)
+    ? sessionData.audioLayers.filter((audioLayer) => (
+      String(audioLayer?.connectedLayerId || '') !== normalizedLayerId
+    ))
+    : [];
+  const totalDuration = reflowLayersAndConnectedAudio(layers, audioLayers);
+  for (let index = layerIndex; index < layers.length; index += 1) {
+    layers[index].frameGenerationPending = true;
+  }
+
+  return {
+    pruned: true,
+    layerIndex,
+    removedLayer,
+    layers,
+    audioLayers,
+    totalDuration,
+  };
+}
+
 async function pruneExpressImageLayerAfterFailure({
   sessionData,
   videoSessionId,
@@ -1269,34 +1357,16 @@ async function pruneExpressImageLayerAfterFailure({
     return { pruned: false };
   }
 
-  const layers = Array.isArray(sessionData.layers) ? sessionData.layers : [];
-  const layerIndex = layers.findIndex((layer) => layer?._id?.toString?.() === layerId.toString());
-  if (layerIndex < 0) {
+  const prunePlan = buildExpressLayerPrunePlan(sessionData, layerId);
+  if (!prunePlan.pruned) {
+    return prunePlan;
+  }
+  if (prunePlan.reason === 'missing_layer') {
     await ImageGeneration.deleteMany({ videoSessionId, layerId });
-    return { pruned: true, reason: 'missing_layer' };
+    return prunePlan;
   }
 
-  const remainingPrunableLayerCount = layers.filter((layer) => (
-    layer?._id?.toString?.() !== layerId.toString() &&
-    isPrunableExpressImageLayer(layer)
-  )).length;
-
-  if (remainingPrunableLayerCount <= 0) {
-    return { pruned: false, reason: 'last_prunable_layer' };
-  }
-
-  const removedLayer = layers[layerIndex];
-  layers.splice(layerIndex, 1);
-
-  const audioLayers = Array.isArray(sessionData.audioLayers)
-    ? sessionData.audioLayers.filter((audioLayer) => (
-      String(audioLayer?.connectedLayerId || '') !== layerId.toString()
-    ))
-    : [];
-  const totalDuration = reflowLayersAndConnectedAudio(layers, audioLayers);
-  for (let index = layerIndex; index < layers.length; index += 1) {
-    layers[index].frameGenerationPending = true;
-  }
+  const { layers, audioLayers, totalDuration } = prunePlan;
 
   const now = new Date();
   const nextStatus = {
@@ -1776,7 +1846,7 @@ async function updateImageInSessionLayer(imageData, payload) {
 
 
 
-  const filterScoreCutoff = getImageFilterScoreCutoff(videoTone, payload);
+  const filterScoreCutoff = getScoreThresholdCutoff(videoTone, payload);
 
   // If the image fails the score threshold:
   if (imageFilterScoreRequired && imageScore !== null && imageScore < filterScoreCutoff) {
@@ -2228,8 +2298,15 @@ async function processRefilterFailure(imageData, payload, imageScore, imageDescr
     return { retry: true };
   } else {
 
-    const fallbackScoreCutoff = getImageFilterScoreCutoff(latestSessionData?.videoTone || 'default', latestGenerationData || payload);
-    if (await processBestFilterPassIfAvailable(payload, filterPasses, fallbackScoreCutoff)) {
+    const terminalFilterPolicy = getTerminalFilterFailurePolicy(
+      latestSessionData?.videoTone || 'default',
+      latestGenerationData || payload
+    );
+    if (await processBestFilterPassIfAvailable(
+      payload,
+      filterPasses,
+      terminalFilterPolicy.fallbackScoreCutoff
+    )) {
       return { retry: false };
     }
 
@@ -2237,7 +2314,8 @@ async function processRefilterFailure(imageData, payload, imageScore, imageDescr
       failureRetryCount: normalizeRetryCount(latestGenerationData.failureRetryCount) + 1,
       message: 'No usable image passed filter scoring and no previous filter pass could be finalized.',
       source: 'image_generation_filter_terminal_failure',
-      pruneLayer: false,
+      pruneLayer: terminalFilterPolicy.allowExpressLayerPrune,
+      allowExpressImageLayerPrune: terminalFilterPolicy.allowExpressLayerPrune,
     });
     return { retry: false };
   }
@@ -3264,4 +3342,12 @@ export const __testOnly__ = {
   buildImageThemeScoringContextDetails,
   buildImageThemeScoringContextForPayload,
   buildImageThemeScoringContextDetailsForPayload,
+  getBestFilterPass,
+  getImageFilterScoreCutoff,
+  getScoreThresholdCutoff,
+  getTerminalFilterFailurePolicy,
+  hasReachedScoreOnlyFilterRelaxation,
+  buildExpressLayerPrunePlan,
+  clampAudioLayersToTimeline,
+  reflowLayersAndConnectedAudio,
 };
