@@ -903,7 +903,11 @@ function prepareMappedSubtitleItem(item, session, translationContext, audioLayer
     subtitleTimingMapped: true,
     subtitleAlignmentMapped: true,
     subtitleTimingBase:
-      item.subtitleTimingBase || item.subtitle_timing_base || 'session',
+      item.subtitleTimingBase ||
+      item.subtitle_timing_base ||
+      item.wordTimingBase ||
+      item.word_timing_base ||
+      'session',
     isStaticSubtitle: false,
   };
 }
@@ -1001,40 +1005,58 @@ function getMappedCueIdentity(wordInfo = {}) {
 }
 
 function collapseMappedWordsToUniqueCues(mappedItems, subtitleLanguage) {
-  const cueGroups = [];
-  const cueGroupsByIdentity = new Map();
+  const wordsByIdentity = new Map();
   let sequenceIndex = 0;
 
   mappedItems.forEach((item) => {
     normalizeTimedWords(item.words).forEach((wordInfo) => {
       const identity = getMappedCueIdentity(wordInfo);
-      const startFrame = wordInfo.frameOffset;
-      const endFrame = wordInfo.frameOffset + wordInfo.frameDuration;
-      const identityGroups = cueGroupsByIdentity.get(identity) || [];
-      const existing = identityGroups.find((group) => (
-        startFrame < group.endFrame && endFrame > group.startFrame
-      ));
+      const identityWords = wordsByIdentity.get(identity) || [];
+      identityWords.push({
+        wordInfo,
+        sequenceIndex,
+        startFrame: wordInfo.frameOffset,
+        endFrame: wordInfo.frameOffset + wordInfo.frameDuration,
+      });
+      wordsByIdentity.set(identity, identityWords);
+      sequenceIndex += 1;
+    });
+  });
 
-      if (!existing) {
-        const group = {
-          identity,
-          occurrenceIndex: identityGroups.length,
-          sequenceIndex,
-          words: [wordInfo],
-          startFrame,
-          endFrame,
-        };
-        identityGroups.push(group);
-        cueGroupsByIdentity.set(identity, identityGroups);
-        cueGroups.push(group);
-        sequenceIndex += 1;
+  const cueGroups = [];
+  wordsByIdentity.forEach((identityWords, identity) => {
+    const orderedWords = [...identityWords].sort((first, second) => (
+      first.startFrame - second.startFrame ||
+      first.endFrame - second.endFrame ||
+      first.sequenceIndex - second.sequenceIndex
+    ));
+    const identityGroups = [];
+
+    orderedWords.forEach((entry) => {
+      const existing = identityGroups.at(-1);
+      if (
+        existing &&
+        entry.startFrame <= existing.endFrame &&
+        entry.endFrame >= existing.startFrame
+      ) {
+        existing.words.push(entry.wordInfo);
+        existing.sequenceIndex = Math.min(existing.sequenceIndex, entry.sequenceIndex);
+        existing.startFrame = Math.min(existing.startFrame, entry.startFrame);
+        existing.endFrame = Math.max(existing.endFrame, entry.endFrame);
         return;
       }
 
-      existing.words.push(wordInfo);
-      existing.startFrame = Math.min(existing.startFrame, startFrame);
-      existing.endFrame = Math.max(existing.endFrame, endFrame);
+      identityGroups.push({
+        identity,
+        occurrenceIndex: identityGroups.length,
+        sequenceIndex: entry.sequenceIndex,
+        words: [entry.wordInfo],
+        startFrame: entry.startFrame,
+        endFrame: entry.endFrame,
+      });
     });
+
+    cueGroups.push(...identityGroups);
   });
 
   const defaultJoiner = getTargetWordJoiner(subtitleLanguage);
@@ -1106,7 +1128,9 @@ function prepareTranslatedSubtitleGroup(groupItems, session) {
     // A partially mapped group would silently lose the unmatched source cue.
     // Prefer one complete, non-repeating static translation for the group.
     return applyCombinedSubtitleItemFrameRange(
-      prepareStaticSubtitleItem(owner, session, translationContext),
+      prepareStaticSubtitleItem(owner, session, translationContext, {
+        fullTextFallback: true,
+      }),
       combinedRange,
     );
   }
@@ -1119,7 +1143,9 @@ function prepareTranslatedSubtitleGroup(groupItems, session) {
   const words = collapseMappedWordsToUniqueCues(mappedItems, targetLanguage);
   if (words.length === 0) {
     return applyCombinedSubtitleItemFrameRange(
-      prepareStaticSubtitleItem(owner, session, translationContext),
+      prepareStaticSubtitleItem(owner, session, translationContext, {
+        fullTextFallback: true,
+      }),
       combinedRange,
     );
   }
@@ -1136,7 +1162,12 @@ function prepareTranslatedSubtitleGroup(groupItems, session) {
   }, combinedRange);
 }
 
-function prepareStaticSubtitleItem(item, session, translationContext = getSubtitleTranslationContext(session, item)) {
+function prepareStaticSubtitleItem(
+  item,
+  session,
+  translationContext = getSubtitleTranslationContext(session, item),
+  { fullTextFallback = false } = {},
+) {
   const audioLayer = findItemAudioLayer(session, item) || {};
   const alignmentMap = getSubtitleAlignmentMap(item, audioLayer);
   const targetLanguage = firstConcreteLanguage(
@@ -1178,7 +1209,243 @@ function prepareStaticSubtitleItem(item, session, translationContext = getSubtit
     audioLanguage: translationContext.audioLanguage || item.audioLanguage || null,
     subtitleRenderMode: 'static',
     isStaticSubtitle: true,
+    ...(fullTextFallback ? { subtitleStaticScope: 'audio' } : {}),
   };
+}
+
+function normalizeSubtitleTimingBase(value) {
+  if (typeof value !== 'string') {
+    return '';
+  }
+
+  const normalized = value.trim().toLowerCase();
+  if (normalized === 'session' || normalized === 'global') {
+    return 'session';
+  }
+  if (normalized === 'layer' || normalized === 'local') {
+    return 'layer';
+  }
+  if (normalized === 'item' || normalized === 'relative') {
+    return 'item';
+  }
+  return '';
+}
+
+function getSessionFramesPerSecond(session = {}) {
+  const configuredFramesPerSecond = Number(session.framesPerSecond);
+  return Number.isFinite(configuredFramesPerSecond) && configuredFramesPerSecond > 0
+    ? configuredFramesPerSecond
+    : DEFAULT_FRAMES_PER_SECOND;
+}
+
+function getLayerStartFrameSession(layer = {}, session = {}) {
+  const durationOffset = Number(layer.durationOffset);
+  return (Number.isFinite(durationOffset) ? durationOffset : 0) *
+    getSessionFramesPerSecond(session);
+}
+
+function getExistingSessionCueRange(item = {}) {
+  const startFrame = Number(
+    item.subtitleCueStartFrameSession ?? item.subtitle_cue_start_frame_session,
+  );
+  const endFrame = Number(
+    item.subtitleCueEndFrameSession ?? item.subtitle_cue_end_frame_session,
+  );
+  if (
+    !Number.isFinite(startFrame) ||
+    !Number.isFinite(endFrame) ||
+    endFrame <= startFrame
+  ) {
+    return null;
+  }
+  return { startFrame, endFrame };
+}
+
+function getSessionCueRangeFromWords(item, layer, session, timingBase) {
+  const wordSpan = getTimedWordFrameSpan(item.words);
+  if (!wordSpan) {
+    return null;
+  }
+
+  const layerStartFrame = getLayerStartFrameSession(layer, session);
+  if (timingBase === 'session') {
+    return { startFrame: wordSpan.start, endFrame: wordSpan.end };
+  }
+  if (timingBase === 'layer') {
+    return {
+      startFrame: layerStartFrame + wordSpan.start,
+      endFrame: layerStartFrame + wordSpan.end,
+    };
+  }
+  if (timingBase === 'item') {
+    const itemStartFrame = Number(item?.config?.frameOffset);
+    const itemOffset = Number.isFinite(itemStartFrame) ? itemStartFrame : 0;
+    return {
+      startFrame: layerStartFrame + itemOffset + wordSpan.start,
+      endFrame: layerStartFrame + itemOffset + wordSpan.end,
+    };
+  }
+  return null;
+}
+
+function resolveConnectedSceneLayer(session = {}, audioLayer = {}) {
+  const layers = Array.isArray(session.layers) ? session.layers : [];
+  const connectedLayerId = audioLayer.connectedLayerId?.toString?.() || '';
+  if (connectedLayerId) {
+    const connectedLayer = layers.find(
+      (candidate) => candidate?._id?.toString?.() === connectedLayerId,
+    );
+    if (connectedLayer) {
+      return connectedLayer;
+    }
+  }
+
+  const connectedLayerIndex = Number(audioLayer.connectedLayerIndex);
+  return Number.isInteger(connectedLayerIndex) && connectedLayerIndex >= 0
+    ? layers[connectedLayerIndex] || null
+    : null;
+}
+
+function getFullStaticSubtitleSessionRange(session, audioLayer) {
+  const framesPerSecond = getSessionFramesPerSecond(session);
+  const audioStart = Number(audioLayer.startTime);
+  const audioEnd = Number(audioLayer.endTime);
+  const audioDuration = Number(audioLayer.duration);
+  if (Number.isFinite(audioStart)) {
+    const endSeconds = Number.isFinite(audioEnd) && audioEnd > audioStart
+      ? audioEnd
+      : Number.isFinite(audioDuration) && audioDuration > 0
+        ? audioStart + audioDuration
+        : null;
+    if (Number.isFinite(endSeconds) && endSeconds > audioStart) {
+      return {
+        startFrame: audioStart * framesPerSecond,
+        endFrame: endSeconds * framesPerSecond,
+      };
+    }
+  }
+
+  const connectedSceneLayer = resolveConnectedSceneLayer(session, audioLayer);
+  if (!connectedSceneLayer) {
+    return null;
+  }
+  const sceneStart = Number(connectedSceneLayer.durationOffset);
+  const sceneDuration = Number(connectedSceneLayer.duration);
+  if (!Number.isFinite(sceneDuration) || sceneDuration <= 0) {
+    return null;
+  }
+  const startSeconds = Number.isFinite(sceneStart) ? sceneStart : 0;
+  return {
+    startFrame: startSeconds * framesPerSecond,
+    endFrame: (startSeconds + sceneDuration) * framesPerSecond,
+  };
+}
+
+function isFullStaticSubtitleFallback(item, session, audioLayer) {
+  if (
+    item.subtitleStaticScope === 'audio' ||
+    item.subtitleFullTextFallback === true
+  ) {
+    return true;
+  }
+  if (!isExplicitStaticSubtitleItem(item)) {
+    return false;
+  }
+
+  const translationContext = getSubtitleTranslationContext(session, item);
+  if (!translationContext.isTranslated) {
+    return false;
+  }
+
+  const itemText = normalizeAlignmentText(item.text);
+  const fullSubtitleText = normalizeAlignmentText(firstNonEmptyString(
+    audioLayer.subtitleText,
+    audioLayer.subtitle_text,
+  ));
+  return Boolean(itemText && fullSubtitleText && itemText === fullSubtitleText);
+}
+
+function enrichSubtitleTimingMetadata(item, layer, session) {
+  if (!item || item.type !== 'text' || item.subType !== 'subtitle') {
+    return item;
+  }
+
+  const audioLayer = findItemAudioLayer(session, item);
+  const timedWords = normalizeTimedWords(item.words);
+  const explicitTimingBase = normalizeSubtitleTimingBase(firstNonEmptyString(
+    item.subtitleTimingBase,
+    item.subtitle_timing_base,
+    item.wordTimingBase,
+    item.word_timing_base,
+  ));
+  // Transcript/listener word offsets are session-global whenever the subtitle
+  // is linked to a real audio layer. Record that producer fact once instead of
+  // asking the renderer to guess again at every scene boundary.
+  const timingBase = explicitTimingBase || (
+    audioLayer && timedWords.length > 0 ? 'session' : ''
+  );
+  let cueRange = getExistingSessionCueRange(item);
+  if (!cueRange && timingBase && timedWords.length > 0) {
+    cueRange = getSessionCueRangeFromWords(item, layer, session, timingBase);
+  }
+  if (
+    !cueRange &&
+    audioLayer &&
+    isFullStaticSubtitleFallback(item, session, audioLayer)
+  ) {
+    cueRange = getFullStaticSubtitleSessionRange(session, audioLayer);
+  }
+
+  const timingMetadata = {
+    ...(timingBase ? { subtitleTimingBase: timingBase } : {}),
+    ...(cueRange ? {
+      subtitleCueStartFrameSession: cueRange.startFrame,
+      subtitleCueEndFrameSession: cueRange.endFrame,
+    } : {}),
+  };
+  let nextConfig = item.config;
+  if (
+    cueRange &&
+    timingBase === 'session' &&
+    isMappedTranslatedSubtitleItem(item)
+  ) {
+    // Listener items are clipped to the visual layer, while a mapped phrase
+    // can legitimately finish a frame or two later. Keep the configured range
+    // and mapped cue span as a union so the final translated text is not cut.
+    const configuredStartFrame = Number(item?.config?.frameOffset);
+    const configuredFrameDuration = Number(item?.config?.frameDuration);
+    if (
+      Number.isFinite(configuredStartFrame) &&
+      Number.isFinite(configuredFrameDuration) &&
+      configuredFrameDuration >= 0
+    ) {
+      const configuredEndFrame = configuredStartFrame + configuredFrameDuration;
+      const layerStartFrame = getLayerStartFrameSession(layer, session);
+      const cueStartFrameLocal = cueRange.startFrame - layerStartFrame;
+      const cueEndFrameLocal = cueRange.endFrame - layerStartFrame;
+      const expandedStartFrame = Math.min(configuredStartFrame, cueStartFrameLocal);
+      const expandedEndFrame = Math.max(configuredEndFrame, cueEndFrameLocal);
+      if (
+        expandedStartFrame !== configuredStartFrame ||
+        expandedEndFrame !== configuredEndFrame
+      ) {
+        nextConfig = {
+          ...item.config,
+          frameOffset: expandedStartFrame,
+          frameDuration: Math.max(1, expandedEndFrame - expandedStartFrame),
+        };
+      }
+    }
+  }
+
+  const changed = nextConfig !== item.config || Object.entries(timingMetadata).some(
+    ([key, value]) => item[key] !== value,
+  );
+  return changed ? {
+    ...item,
+    ...timingMetadata,
+    ...(nextConfig !== item.config ? { config: nextConfig } : {}),
+  } : item;
 }
 
 export function prepareLayerSubtitlesForRendering(layer = {}, session = {}) {
@@ -1215,7 +1482,11 @@ export function prepareLayerSubtitlesForRendering(layer = {}, session = {}) {
       groupKey,
       {
         firstIndex: Math.min(...groupItems.map((entry) => entry.index)),
-        item: prepareTranslatedSubtitleGroup(groupItems, session),
+        item: enrichSubtitleTimingMetadata(
+          prepareTranslatedSubtitleGroup(groupItems, session),
+          layer,
+          session,
+        ),
       },
     ]),
   );
@@ -1236,11 +1507,17 @@ export function prepareLayerSubtitlesForRendering(layer = {}, session = {}) {
 
     const translationContext = getSubtitleTranslationContext(session, item);
     if (!isStaticSubtitleItem(item, session)) {
-      return [item];
+      const enrichedItem = enrichSubtitleTimingMetadata(item, layer, session);
+      changed ||= enrichedItem !== item;
+      return [enrichedItem];
     }
 
     changed = true;
-    return [prepareStaticSubtitleItem(item, session, translationContext)];
+    return [enrichSubtitleTimingMetadata(
+      prepareStaticSubtitleItem(item, session, translationContext),
+      layer,
+      session,
+    )];
   });
 
   if (!changed) {

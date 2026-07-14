@@ -1,5 +1,4 @@
 import path from 'path';
-import fs from 'fs';
 import fsExtra from 'fs-extra';
 import axios from 'axios';
 import sharp from 'sharp';
@@ -14,7 +13,15 @@ import AudioGeneration from '../../schema/AudioGeneration.js';
 import User from '../../schema/User.js';
 import { normalizeSupportedLanguage, SUPPORTED_LANGUAGES } from '../../consts/SupportedLanguages.js';
 import { getLanguageStringFromLanguageCode } from '../../consts/LanguageCodes.js';
+import { normalizeInferenceModel } from '../../consts/InferenceModels.js';
 import { translateTextContent } from '../OpenAI.js';
+import { translateSpeech } from '../agent/AudioCreatorAgent.js';
+import {
+  applySubtitleLanguageSelectionForRerun,
+  backfillTranslatedSubtitleMetadataForRerun,
+  refreshSessionSubtitleTranslationRequired,
+  resolveSubtitleLanguageSelectionForRerun,
+} from '../movie_session/SubtitleLanguage.js';
 import { getCanvasDimensionsForAspectRatio } from '../../utils/CanvasUtils.js';
 import { createOutroCtaTextItems } from '../movie_session/image_list_to_video/OutroLayerItems.js';
 import {
@@ -54,141 +61,6 @@ async function createNewBlankVideoSession(userId, sessionOverrides = {}) {
   const overrides = sessionOverrides && typeof sessionOverrides === 'object' ? sessionOverrides : {};
   const newSession = await VideoSession.create({ userId, framesPerSecond, ...overrides });
   return newSession._id.toString();
-}
-
-function isWritableDirectory(dirPath) {
-  try {
-    fs.accessSync(dirPath, fs.constants.W_OK);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-function resolveAssetsRoot() {
-  const localAssetsRoot = path.resolve(__dirname, '../../..', 'assets');
-  const dockerAssetsRoot = '/assets';
-  const currentEnv = process.env.CURRENT_ENV;
-
-  if (currentEnv === 'staging' || currentEnv === 'docker' || currentEnv === 'production') {
-    if (fsExtra.existsSync(dockerAssetsRoot) && isWritableDirectory(dockerAssetsRoot)) {
-      return dockerAssetsRoot;
-    }
-  }
-
-  if (!fsExtra.existsSync(localAssetsRoot)) {
-    fsExtra.ensureDirSync(localAssetsRoot);
-  }
-
-  return localAssetsRoot;
-}
-
-async function copyDirIfExists(sourceDir, targetDir) {
-  if (!sourceDir || !targetDir) {
-    return;
-  }
-  const exists = await fsExtra.pathExists(sourceDir);
-  if (!exists) {
-    return;
-  }
-  await fsExtra.ensureDir(path.dirname(targetDir));
-  await fsExtra.copy(sourceDir, targetDir, {
-    overwrite: true,
-    errorOnExist: false,
-    recursive: true,
-  });
-}
-
-async function copySessionAssetDirectories({ assetsRoot, oldSessionId, newSessionId }) {
-  await Promise.all([
-    copyDirIfExists(path.join(assetsRoot, 'video', oldSessionId), path.join(assetsRoot, 'video', newSessionId)),
-    copyDirIfExists(path.join(assetsRoot, 'video', 'frames', oldSessionId), path.join(assetsRoot, 'video', 'frames', newSessionId)),
-    copyDirIfExists(path.join(assetsRoot, 'video', 'audio', oldSessionId), path.join(assetsRoot, 'video', 'audio', newSessionId)),
-    copyDirIfExists(path.join(assetsRoot, 'video', 'outro', oldSessionId), path.join(assetsRoot, 'video', 'outro', newSessionId)),
-    copyDirIfExists(path.join(assetsRoot, 'video', 'splash', oldSessionId), path.join(assetsRoot, 'video', 'splash', newSessionId)),
-    copyDirIfExists(path.join(assetsRoot, 'video', 'lip_sync', oldSessionId), path.join(assetsRoot, 'video', 'lip_sync', newSessionId)),
-    copyDirIfExists(
-      path.join(assetsRoot, 'video', 'narrator_avatar', 'audio', oldSessionId),
-      path.join(assetsRoot, 'video', 'narrator_avatar', 'audio', newSessionId),
-    ),
-    copyDirIfExists(
-      path.join(assetsRoot, 'video', 'narrator_avatar', 'video', oldSessionId),
-      path.join(assetsRoot, 'video', 'narrator_avatar', 'video', newSessionId),
-    ),
-    copyDirIfExists(
-      path.join(assetsRoot, 'video', 'narrator_avatar', 'frames', oldSessionId),
-      path.join(assetsRoot, 'video', 'narrator_avatar', 'frames', newSessionId),
-    ),
-    copyDirIfExists(path.join(assetsRoot, 'video', 'generations', oldSessionId), path.join(assetsRoot, 'video', 'generations', newSessionId)),
-    copyDirIfExists(path.join(assetsRoot, 'ai_video', 'frames', oldSessionId), path.join(assetsRoot, 'ai_video', 'frames', newSessionId)),
-    copyDirIfExists(path.join(assetsRoot, 'ai_video', 'audio', oldSessionId), path.join(assetsRoot, 'ai_video', 'audio', newSessionId)),
-    copyDirIfExists(path.join(assetsRoot, 'ai_video', 'generations', oldSessionId), path.join(assetsRoot, 'ai_video', 'generations', newSessionId)),
-  ]);
-}
-
-function rewriteSessionAssetReferences(sessionData, oldSessionId, newSessionId) {
-  if (!sessionData || typeof sessionData !== 'object') {
-    return;
-  }
-
-  const escapedOldSessionId = oldSessionId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const replaceSessionPathSegment = (value) => {
-    if (typeof value !== 'string' || !value.includes(oldSessionId)) {
-      return value;
-    }
-
-    const hashIndex = value.indexOf('#');
-    const pathAndQuery = hashIndex >= 0 ? value.slice(0, hashIndex) : value;
-    const hashSuffix = hashIndex >= 0 ? value.slice(hashIndex) : '';
-
-    const queryIndex = pathAndQuery.indexOf('?');
-    const rawPath = queryIndex >= 0 ? pathAndQuery.slice(0, queryIndex) : pathAndQuery;
-    const querySuffix = queryIndex >= 0 ? pathAndQuery.slice(queryIndex) : '';
-
-    // Rewrite only path segments (`/.../<sessionId>/...`) and keep filename tokens intact.
-    // Some assets (e.g. outro_focus_*_<sessionId>.png) include session id in filename.
-    const segmentPattern = new RegExp(`(^|[\\\\/])${escapedOldSessionId}(?=([\\\\/]|$))`, 'g');
-    const rewrittenPath = rawPath.replace(segmentPattern, `$1${newSessionId}`);
-    return `${rewrittenPath}${querySuffix}${hashSuffix}`;
-  };
-
-  const visit = (value) => {
-    if (Array.isArray(value)) {
-      value.forEach(visit);
-      return;
-    }
-    if (!value || typeof value !== 'object') {
-      return;
-    }
-
-    for (const key of Object.keys(value)) {
-      const current = value[key];
-      if (typeof current === 'string') {
-        if (!current.includes(oldSessionId)) {
-          continue;
-        }
-        const looksLikeLocalAsset =
-          current.startsWith('/') ||
-          current.startsWith('video/') ||
-          current.startsWith('ai_video/') ||
-          current.includes('/video/') ||
-          current.includes('/ai_video/') ||
-          current.includes('video/') ||
-          current.includes('ai_video/');
-        if (!looksLikeLocalAsset) {
-          continue;
-        }
-        const rewritten = replaceSessionPathSegment(current);
-        if (rewritten !== current) {
-          value[key] = rewritten;
-        }
-      } else if (Array.isArray(current) || (current && typeof current === 'object')) {
-        visit(current);
-      }
-    }
-  };
-
-  visit(sessionData);
 }
 
 function withNormalizedAssetPath(assetRelativePath, shouldHaveLeadingSlash) {
@@ -1142,6 +1014,28 @@ async function copyTranslateSessionAssets({
   });
 }
 
+async function clonePostProcessingSessionAssets({
+  originalSessionData,
+  clonedSession,
+  oldSessionId,
+  newSessionId,
+  assetsRoots = null,
+}) {
+  const copyResult = await copyTranslateSessionAssets({
+    originalSessionData,
+    oldSessionId,
+    newSessionId,
+    assetsRoots,
+  });
+  const rewriteResult = rewriteV2SessionAssetReferences(
+    clonedSession,
+    oldSessionId,
+    newSessionId,
+  );
+
+  return { copyResult, rewriteResult };
+}
+
 async function applyOutroImageOverrideToSession({ clonedSession, outroImageUrl, newSessionId, assetsRoot }) {
   const normalizedOutroUrl = typeof outroImageUrl === 'string' ? outroImageUrl.trim() : '';
   if (!normalizedOutroUrl) {
@@ -1621,6 +1515,45 @@ function prepareSessionForSubtitleAddition({
   );
 }
 
+async function prepareSubtitleLanguageMetadataForAddition({
+  clonedSession,
+  subtitleLanguage,
+  inferenceModel,
+  translateSpeechImpl = translateSpeech,
+}) {
+  const languageSelection = applySubtitleLanguageSelectionForRerun(
+    clonedSession,
+    subtitleLanguage === undefined || subtitleLanguage === null
+      ? {}
+      : { subtitleLanguage },
+  );
+
+  if (!languageSelection.selectionProvided) {
+    return {
+      ...languageSelection,
+      metadataUpdatedCount: 0,
+    };
+  }
+
+  const metadataBackfill = await backfillTranslatedSubtitleMetadataForRerun(
+    clonedSession.audioLayers,
+    {
+      sessionSpeechLanguage: clonedSession.sessionLanguage,
+      sessionSubtitleLanguage: clonedSession.subtitleLanguage,
+      sessionSubtitleLanguageString: clonedSession.subtitleLanguageString,
+      sessionTranslationRequired: clonedSession.subtitleTranslationRequired === true,
+      inferenceModel,
+      translateSpeech: translateSpeechImpl,
+    },
+  );
+  refreshSessionSubtitleTranslationRequired(clonedSession);
+
+  return {
+    ...languageSelection,
+    metadataUpdatedCount: metadataBackfill.updatedCount,
+  };
+}
+
 async function processTranslateVideoSessionJob({
   userId,
   oldSessionId,
@@ -1761,7 +1694,10 @@ async function processTranslateVideoSessionJob({
 }
 
 export const __testOnly__ = {
+  clonePostProcessingSessionAssets,
   copyTranslateSessionAssets,
+  prepareSessionForSubtitleAddition,
+  prepareSubtitleLanguageMetadataForAddition,
   prepareSessionForTranslate,
 };
 
@@ -2097,19 +2033,33 @@ export async function addSubtitlesAndQueueGeneration(userId, payload = {}) {
   }
 
   const sessionLanguage = resolveSessionLanguageForStorage(originalSessionMeta);
+  const subtitleLanguageSelection = resolveSubtitleLanguageSelectionForRerun(
+    payload,
+    sessionLanguage,
+  );
   const newSessionId = await createNewBlankVideoSession(userId, {
     aspectRatio: originalSessionMeta?.aspectRatio || '16:9',
     expressGenerationPending: false,
     frameGenerationPending: false,
     videoGenerationPending: false,
     audioGenerationPending: false,
-    transcriptGenerationPending: true,
+    // The cloned speech layers and translated alignment metadata are prepared
+    // by the scheduled job before transcript generation is exposed as pending.
+    transcriptGenerationPending: false,
     enableSubtitles: true,
     hasSubtitles: true,
     has_subtitles: true,
     language: getFirstNonEmptyString(originalSessionMeta?.language) || sessionLanguage || 'auto',
     sessionLanguage,
     languageString: getSessionLanguageString(originalSessionMeta, sessionLanguage),
+    ...(subtitleLanguageSelection.selectionProvided
+      ? {
+        subtitleLanguage: subtitleLanguageSelection.subtitleLanguage,
+        subtitleLanguageString: subtitleLanguageSelection.subtitleLanguageString,
+        subtitleLanguageExplicit: true,
+        subtitleTranslationRequired: subtitleLanguageSelection.translationRequired,
+      }
+      : {}),
     expressGenerationStatus: buildAddSubtitlesExpressGenerationStatus(),
   });
 
@@ -2129,6 +2079,9 @@ export async function addSubtitlesAndQueueGeneration(userId, payload = {}) {
     sessionSubType: 'add_subtitles',
     metadata: {
       originalSessionId: oldSessionId,
+      ...(subtitleLanguageSelection.selectionProvided
+        ? { subtitleLanguage: subtitleLanguageSelection.subtitleLanguage }
+        : {}),
     },
   });
 
@@ -2137,17 +2090,35 @@ export async function addSubtitlesAndQueueGeneration(userId, payload = {}) {
     oldSessionId,
     newSessionId,
     webhookUrl,
+    subtitleLanguage: subtitleLanguageSelection.selectionProvided
+      ? subtitleLanguageSelection.subtitleLanguage
+      : undefined,
   });
 
   return {
     request_id: newSessionId,
     session_id: newSessionId,
+    ...(subtitleLanguageSelection.selectionProvided
+      ? { subtitle_language: subtitleLanguageSelection.subtitleLanguage }
+      : {}),
   };
 }
 
-function scheduleAddSubtitlesSessionJob({ userId, oldSessionId, newSessionId, webhookUrl }) {
+function scheduleAddSubtitlesSessionJob({
+  userId,
+  oldSessionId,
+  newSessionId,
+  webhookUrl,
+  subtitleLanguage,
+}) {
   const start = () => {
-    void processAddSubtitlesSessionJob({ userId, oldSessionId, newSessionId, webhookUrl }).catch(async (error) => {
+    void processAddSubtitlesSessionJob({
+      userId,
+      oldSessionId,
+      newSessionId,
+      webhookUrl,
+      subtitleLanguage,
+    }).catch(async (error) => {
       const message = error?.message || 'Failed to add subtitles to video session.';
       console.error('[api][video][add_subtitles] async job failed', {
         newSessionId,
@@ -2230,9 +2201,6 @@ async function processRemoveSubtitlesSessionJob({ userId, oldSessionId, newSessi
   }
 
   const originalSessionData = originalSessionDoc.toObject({ depopulate: true });
-  const assetsRoot = resolveAssetsRoot();
-
-  await copySessionAssetDirectories({ assetsRoot, oldSessionId, newSessionId });
 
   // NOTE: Do not use structuredClone here - it can serialize BSON ObjectIds into
   // `{ buffer: Uint8Array(...) }` shapes which Mongoose cannot cast back when saving.
@@ -2244,7 +2212,12 @@ async function processRemoveSubtitlesSessionJob({ userId, oldSessionId, newSessi
   delete clonedSession.createdAt;
   delete clonedSession.updatedAt;
 
-  rewriteSessionAssetReferences(clonedSession, oldSessionId, newSessionId);
+  await clonePostProcessingSessionAssets({
+    originalSessionData,
+    clonedSession,
+    oldSessionId,
+    newSessionId,
+  });
   stripTextItemsFromActiveItemLists(clonedSession);
   prepareSessionForSubtitleRemoval({
     clonedSession,
@@ -2266,7 +2239,13 @@ async function processRemoveSubtitlesSessionJob({ userId, oldSessionId, newSessi
   );
 }
 
-async function processAddSubtitlesSessionJob({ userId, oldSessionId, newSessionId, webhookUrl }) {
+async function processAddSubtitlesSessionJob({
+  userId,
+  oldSessionId,
+  newSessionId,
+  webhookUrl,
+  subtitleLanguage,
+}) {
   await getDBConnectionString();
   const originalSessionDoc = await VideoSession.findOne({ _id: oldSessionId, userId: userId.toString() });
 
@@ -2275,9 +2254,6 @@ async function processAddSubtitlesSessionJob({ userId, oldSessionId, newSessionI
   }
 
   const originalSessionData = originalSessionDoc.toObject({ depopulate: true });
-  const assetsRoot = resolveAssetsRoot();
-
-  await copySessionAssetDirectories({ assetsRoot, oldSessionId, newSessionId });
 
   const clonedSession = JSON.parse(JSON.stringify(originalSessionData));
 
@@ -2286,12 +2262,33 @@ async function processAddSubtitlesSessionJob({ userId, oldSessionId, newSessionI
   delete clonedSession.createdAt;
   delete clonedSession.updatedAt;
 
-  rewriteSessionAssetReferences(clonedSession, oldSessionId, newSessionId);
+  await clonePostProcessingSessionAssets({
+    originalSessionData,
+    clonedSession,
+    oldSessionId,
+    newSessionId,
+  });
   stripTextItemsFromActiveItemLists(clonedSession);
   prepareSessionForSubtitleAddition({
     clonedSession,
     webhookUrl,
   });
+
+  if (subtitleLanguage !== undefined && subtitleLanguage !== null) {
+    const inferenceModelUser = await User.findById(clonedSession.userId || userId)
+      .select('selectedInferenceModel')
+      .lean();
+    const rerunInferenceModel = normalizeInferenceModel(
+      clonedSession.expressGenerationInferenceModel ||
+      clonedSession.inferenceModel ||
+      inferenceModelUser?.selectedInferenceModel,
+    );
+    await prepareSubtitleLanguageMetadataForAddition({
+      clonedSession,
+      subtitleLanguage,
+      inferenceModel: rerunInferenceModel,
+    });
+  }
 
   await VideoSession.updateOne({ _id: newSessionId }, { $set: clonedSession });
   await VideoSession.updateOne(

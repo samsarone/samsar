@@ -37,6 +37,10 @@ import { drawCanvasTextItem } from '../../utils/canvasText.js';
 import { captureAssistantStageImageData } from '../../utils/assistantFrameCapture.js';
 import { getRenderableImageUrl } from '../../utils/image.jsx';
 import { resolveStudioLayerVideo } from './util/studioVideoLayers.mjs';
+import {
+  buildSubtitleRegenerationLanguageFields,
+  resolveSessionAudioLanguage,
+} from '../../utils/subtitleRegenerationLanguage.mjs';
 
 
 
@@ -2132,7 +2136,7 @@ export default function VideoEditorContainer(props) {
   };
 
   // Sync / realign helpers
-  const requestRegenerateSubtitles = async () => {
+  const requestRegenerateSubtitles = async (selectedSubtitleLanguage = '') => {
     toast.success(
       <div>
         <FaCheck className='inline-flex mr-2' /> {t("studio.notifications.regenerateSubtitlesRequested")}
@@ -2147,7 +2151,14 @@ export default function VideoEditorContainer(props) {
       showLoginDialog();
       return;
     }
-    const payload = { sessionId: id, realignAudio: true };
+    const payload = {
+      sessionId: id,
+      realignAudio: true,
+      ...buildSubtitleRegenerationLanguageFields({
+        selectedLanguage: selectedSubtitleLanguage,
+        audioLanguage: resolveSessionAudioLanguage(videoSessionDetails),
+      }),
+    };
     axios.post(`${PROCESSOR_API_URL}/video_sessions/request_regenerate_subtitles`, payload, headers).then(() => {
       setIsCanvasDirty(true);
     });

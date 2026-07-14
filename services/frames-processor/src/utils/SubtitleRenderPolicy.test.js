@@ -779,6 +779,104 @@ test('temporally disjoint repeated phrases remain separate translated cues', () 
   );
 });
 
+test('bridging mapped fragments merge transitively regardless of item order', () => {
+  const createMappedItem = (frameOffset, frameDuration) => ({
+    type: 'text',
+    subType: 'subtitle',
+    text: 'TARGET',
+    audioLayerId: 'audio-1',
+    subtitleRenderMode: 'mapped',
+    subtitleAlignmentMapped: true,
+    subtitleLanguage: 'en',
+    audioLanguage: 'zh',
+    config: { frameOffset: 0, frameDuration: 30 },
+    words: [{
+      word: 'TARGET',
+      translatedText: 'TARGET',
+      sourceText: '源',
+      mappingIndex: 0,
+      frameOffset,
+      frameDuration,
+    }],
+  });
+  const layer = {
+    imageSession: {
+      activeItemList: [
+        createMappedItem(0, 10),
+        createMappedItem(20, 10),
+        createMappedItem(9, 12),
+      ],
+    },
+  };
+  const session = {
+    enableSubtitles: true,
+    audioLayers: [{
+      _id: 'audio-1',
+      speechLanguage: 'zh',
+      subtitleLanguage: 'en',
+    }],
+  };
+
+  const [item] = prepareLayerSubtitlesForRendering(layer, session)
+    .imageSession.activeItemList;
+
+  assert.deepEqual(
+    item.words.map(({ word, frameOffset, frameDuration }) => ({
+      word,
+      frameOffset,
+      frameDuration,
+    })),
+    [{ word: 'TARGET', frameOffset: 0, frameDuration: 30 }],
+  );
+});
+
+test('touching fragments of the same mapped phrase form one cue epoch', () => {
+  const createMappedItem = (frameOffset) => ({
+    type: 'text',
+    subType: 'subtitle',
+    text: 'TARGET',
+    audioLayerId: 'audio-1',
+    subtitleRenderMode: 'mapped',
+    subtitleAlignmentMapped: true,
+    subtitleLanguage: 'en',
+    audioLanguage: 'zh',
+    config: { frameOffset, frameDuration: 10 },
+    words: [{
+      word: 'TARGET',
+      translatedText: 'TARGET',
+      sourceText: '源',
+      mappingIndex: 0,
+      frameOffset,
+      frameDuration: 10,
+    }],
+  });
+  const layer = {
+    imageSession: {
+      activeItemList: [createMappedItem(0), createMappedItem(10)],
+    },
+  };
+  const session = {
+    enableSubtitles: true,
+    audioLayers: [{
+      _id: 'audio-1',
+      speechLanguage: 'zh',
+      subtitleLanguage: 'en',
+    }],
+  };
+
+  const [item] = prepareLayerSubtitlesForRendering(layer, session)
+    .imageSession.activeItemList;
+
+  assert.deepEqual(
+    item.words.map(({ word, frameOffset, frameDuration }) => ({
+      word,
+      frameOffset,
+      frameDuration,
+    })),
+    [{ word: 'TARGET', frameOffset: 0, frameDuration: 20 }],
+  );
+});
+
 test('listener-provided mapped segment text and timings remain segment-scoped', () => {
   const layer = {
     imageSession: {
@@ -1011,4 +1109,239 @@ test('prepared translated cues retain one phrase timing while speaker family fol
   assert.equal(item.config.fontFamily, 'Poppins');
   assert.equal(item.config.speakerFontFamily, 'Poppins');
   assert.equal(item.speakerFontFamily, 'Poppins');
+});
+
+test('linked same-language subtitles use session word timing and true cue boundaries', () => {
+  const subtitleItem = {
+    type: 'text',
+    subType: 'subtitle',
+    text: 'CONTINUOUS',
+    audioLayerId: 'audio-1',
+    config: { frameOffset: 0, frameDuration: 5 },
+    words: [{ word: 'CONTINUOUS', frameOffset: 5, frameDuration: 10 }],
+    wordAnimation: 'highlight',
+  };
+  const layer = {
+    durationOffset: 10 / 24,
+    imageSession: { activeItemList: [subtitleItem] },
+  };
+  const session = {
+    enableSubtitles: true,
+    framesPerSecond: 24,
+    audioLayers: [{
+      _id: 'audio-1',
+      speechLanguage: 'en',
+      subtitleLanguage: 'en',
+    }],
+  };
+
+  const item = prepareLayerSubtitlesForRendering(layer, session)
+    .imageSession.activeItemList[0];
+
+  assert.equal(item.subtitleTimingBase, 'session');
+  assert.equal(item.subtitleCueStartFrameSession, 5);
+  assert.equal(item.subtitleCueEndFrameSession, 15);
+});
+
+test('explicit local subtitle timing is converted to session cue boundaries', () => {
+  const layer = {
+    durationOffset: 0.5,
+    imageSession: {
+      activeItemList: [{
+        type: 'text',
+        subType: 'subtitle',
+        text: 'LOCAL',
+        audioLayerId: 'audio-1',
+        subtitleTimingBase: 'layer',
+        config: { frameOffset: 0, frameDuration: 8 },
+        words: [{ word: 'LOCAL', frameOffset: 1, frameDuration: 5 }],
+      }],
+    },
+  };
+  const session = {
+    enableSubtitles: true,
+    framesPerSecond: 30,
+    audioLayers: [{
+      _id: 'audio-1',
+      speechLanguage: 'en',
+      subtitleLanguage: 'en',
+    }],
+  };
+
+  const item = prepareLayerSubtitlesForRendering(layer, session)
+    .imageSession.activeItemList[0];
+
+  assert.equal(item.subtitleTimingBase, 'layer');
+  assert.equal(item.subtitleCueStartFrameSession, 16);
+  assert.equal(item.subtitleCueEndFrameSession, 21);
+});
+
+test('translated mapped subtitles preserve an explicit local word timing base', () => {
+  const layer = {
+    durationOffset: 0.5,
+    imageSession: {
+      activeItemList: [{
+        type: 'text',
+        subType: 'subtitle',
+        text: 'TARGET',
+        audioLayerId: 'audio-1',
+        subtitleRenderMode: 'mapped',
+        subtitleAlignmentMapped: true,
+        subtitleLanguage: 'en',
+        audioLanguage: 'zh',
+        wordTimingBase: 'layer',
+        config: { frameOffset: 0, frameDuration: 8 },
+        words: [{
+          word: 'TARGET',
+          sourceText: '源',
+          translatedText: 'TARGET',
+          mappingIndex: 0,
+          frameOffset: 1,
+          frameDuration: 5,
+        }],
+      }],
+    },
+  };
+  const session = {
+    enableSubtitles: true,
+    framesPerSecond: 30,
+    audioLayers: [{
+      _id: 'audio-1',
+      speechLanguage: 'zh',
+      subtitleLanguage: 'en',
+    }],
+  };
+
+  const item = prepareLayerSubtitlesForRendering(layer, session)
+    .imageSession.activeItemList[0];
+
+  assert.equal(item.subtitleTimingBase, 'layer');
+  assert.equal(item.subtitleCueStartFrameSession, 16);
+  assert.equal(item.subtitleCueEndFrameSession, 21);
+  assert.equal(item.config.frameOffset, 0);
+  assert.equal(item.config.frameDuration, 8);
+});
+
+test('full static translated fallback carries one audio-wide fade epoch', () => {
+  const layer = {
+    durationOffset: 0,
+    duration: 1,
+    imageSession: {
+      activeItemList: [{
+        type: 'text',
+        subType: 'subtitle',
+        text: 'English subtitle',
+        audioLayerId: 'audio-1',
+        subtitleRenderMode: 'static',
+        isStaticSubtitle: true,
+        subtitleLanguage: 'en',
+        audioLanguage: 'zh',
+        config: { frameOffset: 0, frameDuration: 24, staticSubtitle: true },
+        words: [],
+      }],
+    },
+  };
+  const session = {
+    enableSubtitles: true,
+    framesPerSecond: 24,
+    audioLayers: [{
+      _id: 'audio-1',
+      speechLanguage: 'zh',
+      subtitleLanguage: 'en',
+      subtitleText: 'English subtitle',
+      startTime: 0,
+      endTime: 2,
+    }],
+  };
+
+  const item = prepareLayerSubtitlesForRendering(layer, session)
+    .imageSession.activeItemList[0];
+
+  assert.equal(item.subtitleCueStartFrameSession, 0);
+  assert.equal(item.subtitleCueEndFrameSession, 48);
+});
+
+test('static fallback fade epoch prefers speech bounds over a longer connected scene', () => {
+  const layer = {
+    _id: 'scene-1',
+    durationOffset: 0,
+    duration: 10,
+    imageSession: {
+      activeItemList: [{
+        type: 'text',
+        subType: 'subtitle',
+        text: 'English subtitle',
+        audioLayerId: 'audio-1',
+        subtitleRenderMode: 'static',
+        isStaticSubtitle: true,
+        subtitleLanguage: 'en',
+        audioLanguage: 'zh',
+        config: { frameOffset: 48, frameDuration: 48, staticSubtitle: true },
+        words: [],
+      }],
+    },
+  };
+  const session = {
+    enableSubtitles: true,
+    framesPerSecond: 24,
+    layers: [layer],
+    audioLayers: [{
+      _id: 'audio-1',
+      speechLanguage: 'zh',
+      subtitleLanguage: 'en',
+      subtitleText: 'English subtitle',
+      connectedLayerId: 'scene-1',
+      startTime: 2,
+      endTime: 4,
+    }],
+  };
+
+  const item = prepareLayerSubtitlesForRendering(layer, session)
+    .imageSession.activeItemList[0];
+
+  assert.equal(item.subtitleCueStartFrameSession, 48);
+  assert.equal(item.subtitleCueEndFrameSession, 96);
+});
+
+test('mapped cue visibility expands to include its complete session-timed tail', () => {
+  const layer = {
+    durationOffset: 4,
+    imageSession: {
+      activeItemList: [{
+        type: 'text',
+        subType: 'subtitle',
+        text: 'TRANSLATED',
+        audioLayerId: 'audio-1',
+        subtitleRenderMode: 'mapped',
+        subtitleAlignmentMapped: true,
+        subtitleLanguage: 'en',
+        audioLanguage: 'zh',
+        config: { frameOffset: 0, frameDuration: 24 },
+        words: [{
+          word: 'TRANSLATED',
+          sourceText: '翻译',
+          translatedText: 'TRANSLATED',
+          mappingIndex: 0,
+          frameOffset: 96,
+          frameDuration: 26,
+        }],
+      }],
+    },
+  };
+  const session = {
+    enableSubtitles: true,
+    framesPerSecond: 24,
+    audioLayers: [{
+      _id: 'audio-1',
+      speechLanguage: 'zh',
+      subtitleLanguage: 'en',
+    }],
+  };
+
+  const item = prepareLayerSubtitlesForRendering(layer, session)
+    .imageSession.activeItemList[0];
+
+  assert.equal(item.config.frameOffset, 0);
+  assert.equal(item.config.frameDuration, 26);
+  assert.equal(item.subtitleCueEndFrameSession, 122);
 });

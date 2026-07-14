@@ -899,6 +899,7 @@ export default function ProgressIndicator(props) {
     expressGenerationStatus,
     generationStatusDetails,
     videoLink,
+    pendingPreviewVideoLink,
     errorMessage,
     rawSessionDetails,
     canProcessNextStep = false,
@@ -1356,6 +1357,7 @@ export default function ProgressIndicator(props) {
 
 
   const videoActualLink = normalizeAssetUrl(videoLink);
+  const pendingPreviewActualLink = normalizeAssetUrl(pendingPreviewVideoLink);
 
   const panelShell =
     colorMode === 'dark'
@@ -1402,7 +1404,7 @@ export default function ProgressIndicator(props) {
             {Math.round(progressPercentage)}% - {isGenerationPaused ? `Paused - ${currentStep || 'Preparing generation'}` : (currentStep || 'Preparing generation')}
           </div>
         </div>
-      ) : expressGenerationStatus === null && !videoLink && !hasTimelinePreview ? (
+      ) : expressGenerationStatus === null && !videoLink && !hasTimelinePreview && !pendingPreviewActualLink ? (
         <div className="flex justify-center items-center h-48">
           <FaSpinner className="animate-spin text-4xl" />
         </div>
@@ -1439,7 +1441,33 @@ export default function ProgressIndicator(props) {
         />
       )}
 
-      {hasTimelinePreview && !videoLink && (
+      {pendingPreviewActualLink && isGenerationPending && !videoLink && (
+        <div className="vidgenie-preview-section mt-5">
+          <div className="vidgenie-preview-header mb-3 text-left">
+            <div className="text-sm font-semibold">Current render preview</div>
+            <div className={`mt-0.5 break-words text-xs ${mutedText}`}>
+              Your post-processing changes are still rendering. This preview remains on the previous version until the new video is ready.
+            </div>
+          </div>
+          <div
+            className={`vidgenie-preview-frame ${isPortraitPreview ? 'vidgenie-preview-frame-portrait' : 'vidgenie-preview-frame-landscape'} mx-auto overflow-hidden rounded-xl ${timelineTrack} ring-1 ${colorMode === 'dark' ? 'ring-white/10' : 'ring-slate-200'}`}
+            style={previewFrameStyle}
+          >
+            <video
+              key={pendingPreviewActualLink}
+              controls
+              playsInline
+              preload="metadata"
+              src={pendingPreviewActualLink}
+              className="h-full w-full object-contain"
+            >
+              {t("progress.videoUnsupported")}
+            </video>
+          </div>
+        </div>
+      )}
+
+      {hasTimelinePreview && !videoLink && !pendingPreviewActualLink && (
         <div className="vidgenie-preview-section mt-5">
           <div className="vidgenie-preview-header mb-3 flex flex-wrap items-center justify-between gap-2 text-left">
             <div className="min-w-0">

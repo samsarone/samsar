@@ -26,6 +26,10 @@ import {
   getLayerDisplayFrameRanges,
   resolveTimelineDuration,
 } from './util/studioPreviewTimeline.mjs';
+import {
+  buildSubtitleRegenerationLanguageFields,
+  resolveSessionAudioLanguage,
+} from '../../utils/subtitleRegenerationLanguage.mjs';
 
 
 import FrameToolbarHorizontal from './toolbars/frame_toolbar/FrameToolbarHorizontal.jsx';
@@ -4233,7 +4237,7 @@ export default function VideoHome() {
 
 
 
-  const regenerateVideoSessionSubtitles = () => {
+  const regenerateVideoSessionSubtitles = (selectedSubtitleLanguage = '') => {
     if (isSharedSessionView && !requestEditableSharedSession()) {
       return;
     }
@@ -4241,7 +4245,16 @@ export default function VideoHome() {
     const headers = getHeaders();
     setCanvasProcessLoading(true);
 
-    axios.post(`${PROCESSOR_API_URL}/video_sessions/request_regenerate_subtitles`, { sessionId: id, realignAudio: true }, headers).then((response) => {
+    const subtitleLanguageFields = buildSubtitleRegenerationLanguageFields({
+      selectedLanguage: selectedSubtitleLanguage,
+      audioLanguage: resolveSessionAudioLanguage(videoSessionDetails),
+    });
+
+    axios.post(`${PROCESSOR_API_URL}/video_sessions/request_regenerate_subtitles`, {
+      sessionId: id,
+      realignAudio: true,
+      ...subtitleLanguageFields,
+    }, headers).then((response) => {
       const videoSessionData = response.data;
       const responseLayers = Array.isArray(videoSessionData?.layers) ? videoSessionData.layers : null;
       const responseAudioLayers = Array.isArray(videoSessionData?.audioLayers) ? videoSessionData.audioLayers : null;

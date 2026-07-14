@@ -1842,6 +1842,11 @@ router.post('/add_subtitles', validateAPIKeyAndUserId, async function (req, res)
       requestPayload.videoSessionID;
 
     const sessionId = typeof rawSessionId === 'string' ? rawSessionId.trim() : '';
+    const subtitleLanguage =
+      requestPayload.subtitle_language ??
+      requestPayload.subtitleLanguage ??
+      req.body?.subtitle_language ??
+      req.body?.subtitleLanguage;
     const resolvedWebhookUrl = typeof webhookUrl === 'string' && webhookUrl.trim()
       ? webhookUrl.trim()
       : typeof requestPayload.webhookUrl === 'string' && requestPayload.webhookUrl.trim()
@@ -1858,6 +1863,7 @@ router.post('/add_subtitles', validateAPIKeyAndUserId, async function (req, res)
     const response = await addSubtitlesAndQueueGeneration(req.userId, {
       videoSessionId: sessionId,
       webhookUrl: resolvedWebhookUrl,
+      ...(subtitleLanguage !== undefined ? { subtitle_language: subtitleLanguage } : {}),
     });
 
 

@@ -158,7 +158,19 @@ function getTranslatedSubtitleContext(session = {}, audioLayer = {}) {
     session.session_language,
     session.language,
   );
+  const explicitSessionSubtitleLanguage = (
+    session.subtitleLanguageExplicit === true ||
+    session.subtitle_language_explicit === true ||
+    session.subtitleTranslationRequired === true ||
+    session.subtitle_translation_required === true
+  )
+    ? firstConcreteLanguageString(
+      session.subtitleLanguage,
+      session.subtitle_language,
+    )
+    : '';
   const subtitleLanguage = firstConcreteLanguageString(
+    explicitSessionSubtitleLanguage,
     audioLayer.subtitleLanguage,
     audioLayer.subtitle_language,
     session.subtitleLanguage,
@@ -185,7 +197,23 @@ function getTranslatedSubtitleContext(session = {}, audioLayer = {}) {
   };
 }
 
-function getTranslatedSubtitleText(audioLayer = {}) {
+function audioLayerSubtitlePayloadMatchesLanguage(audioLayer = {}, subtitleLanguage = '') {
+  const normalizedRequestedLanguage = normalizeComparableLanguageCode(subtitleLanguage);
+  const normalizedPayloadLanguage = normalizeComparableLanguageCode(firstConcreteLanguageString(
+    audioLayer.subtitleLanguage,
+    audioLayer.subtitle_language,
+  ));
+
+  return !normalizedRequestedLanguage || Boolean(
+    normalizedPayloadLanguage &&
+    normalizedRequestedLanguage === normalizedPayloadLanguage
+  );
+}
+
+function getTranslatedSubtitleText(audioLayer = {}, subtitleLanguage = '') {
+  if (!audioLayerSubtitlePayloadMatchesLanguage(audioLayer, subtitleLanguage)) {
+    return '';
+  }
   return firstNonEmptyString(audioLayer.subtitleText, audioLayer.subtitle_text);
 }
 
@@ -218,7 +246,11 @@ function normalizeSubtitleAlignmentMapEntry(entry = {}) {
   return { sourceText, translatedText };
 }
 
-function getSubtitleAlignmentMap(audioLayer = {}) {
+function getSubtitleAlignmentMap(audioLayer = {}, subtitleLanguage = '') {
+  if (!audioLayerSubtitlePayloadMatchesLanguage(audioLayer, subtitleLanguage)) {
+    return [];
+  }
+
   const rawMapping =
     audioLayer.subtitleAlignmentMap ??
     audioLayer.subtitle_alignment_map ??
@@ -234,7 +266,46 @@ function getSubtitleAlignmentMap(audioLayer = {}) {
     .filter(Boolean);
 }
 
-function getTranslatedSubtitleSpeakerName(audioLayer = {}) {
+function resolveSubtitleGenerationPlan(session = {}, audioLayer = {}) {
+  const translatedSubtitleContext = getTranslatedSubtitleContext(session, audioLayer);
+  const sourceTranscriptText = firstNonEmptyString(getTranscriptSource(audioLayer));
+  const translatedSubtitleText = getTranslatedSubtitleText(
+    audioLayer,
+    translatedSubtitleContext.subtitleLanguage,
+  );
+  const subtitleAlignmentMap = getSubtitleAlignmentMap(
+    audioLayer,
+    translatedSubtitleContext.subtitleLanguage,
+  );
+  const usesMappedTranslatedSubtitles =
+    translatedSubtitleContext.isTranslated &&
+    Boolean(sourceTranscriptText.trim()) &&
+    Boolean(translatedSubtitleText.trim()) &&
+    subtitleAlignmentMap.length > 0;
+  const usesStaticTranslatedSubtitles =
+    translatedSubtitleContext.isTranslated && !usesMappedTranslatedSubtitles;
+  const transcriptText = translatedSubtitleContext.isTranslated
+    ? translatedSubtitleText
+    : sourceTranscriptText;
+
+  return {
+    translatedSubtitleContext,
+    sourceTranscriptText,
+    translatedSubtitleText,
+    subtitleAlignmentMap,
+    usesMappedTranslatedSubtitles,
+    usesStaticTranslatedSubtitles,
+    transcriptText,
+    alignmentTranscriptText: usesMappedTranslatedSubtitles
+      ? sourceTranscriptText
+      : transcriptText,
+  };
+}
+
+function getTranslatedSubtitleSpeakerName(audioLayer = {}, subtitleLanguage = '') {
+  if (!audioLayerSubtitlePayloadMatchesLanguage(audioLayer, subtitleLanguage)) {
+    return '';
+  }
   return firstNonEmptyString(
     audioLayer.subtitleSpeakerCharacterName,
     audioLayer.subtitle_speaker_character_name,
@@ -611,16 +682,16 @@ export async function generateTranscriptsForSessionAudioLayers(sessionId) {
       const audioLayerId = audioLayer?._id?.toString?.() || null;
 
       try {
-        const translatedSubtitleContext = getTranslatedSubtitleContext(sessionData, audioLayer);
-        const sourceTranscriptText = firstNonEmptyString(getTranscriptSource(audioLayer));
-        const translatedSubtitleText = getTranslatedSubtitleText(audioLayer);
-        const subtitleAlignmentMap = getSubtitleAlignmentMap(audioLayer);
-        const usesMappedTranslatedSubtitles =
-          translatedSubtitleContext.isTranslated &&
-          Boolean(sourceTranscriptText.trim()) &&
-          subtitleAlignmentMap.length > 0;
-        const usesStaticTranslatedSubtitles =
-          translatedSubtitleContext.isTranslated && !usesMappedTranslatedSubtitles;
+        const {
+          translatedSubtitleContext,
+          sourceTranscriptText,
+          translatedSubtitleText,
+          subtitleAlignmentMap,
+          usesMappedTranslatedSubtitles,
+          usesStaticTranslatedSubtitles,
+          transcriptText,
+          alignmentTranscriptText,
+        } = resolveSubtitleGenerationPlan(sessionData, audioLayer);
         const transcriptionLanguageCode = getTranscriptionLanguageCode(
           translatedSubtitleContext.audioLanguage || sessionData.sessionLanguage || 'EN',
         );
@@ -644,12 +715,6 @@ export async function generateTranscriptsForSessionAudioLayers(sessionId) {
             ? 'highlight'
             : (configuredSubtitleWordAnimation || 'highlight');
         const audioFilePath = audioLayer.selectedLocalAudioLink;
-        const transcriptText = translatedSubtitleContext.isTranslated
-          ? translatedSubtitleText
-          : sourceTranscriptText;
-        const alignmentTranscriptText = usesMappedTranslatedSubtitles
-          ? sourceTranscriptText
-          : transcriptText;
 
         if (!transcriptText || !transcriptText.trim()) {
           skippedEmptyTranscript++;
@@ -687,7 +752,10 @@ export async function generateTranscriptsForSessionAudioLayers(sessionId) {
         if (isMovieGen) {
           showSpeaker = true;
           const localizedSubtitleSpeaker = translatedSubtitleContext.isTranslated
-            ? getTranslatedSubtitleSpeakerName(audioLayer)
+            ? getTranslatedSubtitleSpeakerName(
+              audioLayer,
+              translatedSubtitleContext.subtitleLanguage,
+            )
             : '';
           if (localizedSubtitleSpeaker || audioLayer.speakerCharacterName) {
             speaker = localizedSubtitleSpeaker || audioLayer.speakerCharacterName;
@@ -2054,8 +2122,10 @@ export const __testOnly__ = {
   normalizeComparableLanguageCode,
   getTranscriptionLanguageCode,
   getTranslatedSubtitleContext,
+  audioLayerSubtitlePayloadMatchesLanguage,
   getTranslatedSubtitleText,
   getSubtitleAlignmentMap,
+  resolveSubtitleGenerationPlan,
   getTranslatedSubtitleSpeakerName,
   buildMappedSubtitleAlignment,
   mapTranslatedPhrasesToTranscriptPositions,

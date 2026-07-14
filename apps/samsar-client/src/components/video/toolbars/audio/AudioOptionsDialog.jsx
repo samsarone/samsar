@@ -1,10 +1,17 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import SecondaryButton from "../../../common/SecondaryButton.tsx";
+import { SUPPORTED_LANGUAGES } from '../../../../constants/supportedLanguages.js';
+import {
+  isTranslatedSubtitleRegeneration,
+  resolveSessionAudioLanguage,
+  resolveSubtitleRegenerationDefault,
+} from '../../../../utils/subtitleRegenerationLanguage.mjs';
 
 const AudioOptionsDialog = ({
   regenerateVideoSessionSubtitles,
   requestRealignLayers,
   removeAllSubtitles,
+  sessionDetails = null,
   sessionSubtitlesEnabled = true,
   applyAudioDucking = true,
   onApplyAudioDuckingChange,
@@ -21,6 +28,15 @@ const AudioOptionsDialog = ({
     Boolean(regenerateFramesBeforeRender)
   );
   const [isDialogRenderPending, setIsDialogRenderPending] = useState(false);
+  const audioLanguage = resolveSessionAudioLanguage(sessionDetails);
+  const [subtitleLanguage, setSubtitleLanguage] = useState(
+    () => resolveSubtitleRegenerationDefault(sessionDetails)
+  );
+  const hasSelectedSubtitleLanguageRef = useRef(false);
+  const useTranslatedSubtitleRegeneration = isTranslatedSubtitleRegeneration({
+    selectedLanguage: subtitleLanguage,
+    audioLanguage,
+  });
 
   useEffect(() => {
     setLocalApplyAudioDucking(Boolean(applyAudioDucking));
@@ -30,8 +46,14 @@ const AudioOptionsDialog = ({
     setLocalRegenerateFramesBeforeRender(Boolean(regenerateFramesBeforeRender));
   }, [regenerateFramesBeforeRender]);
 
+  useEffect(() => {
+    if (!hasSelectedSubtitleLanguageRef.current) {
+      setSubtitleLanguage(resolveSubtitleRegenerationDefault(sessionDetails));
+    }
+  }, [sessionDetails]);
+
   const handleRegenerateSubs = () => {
-    regenerateVideoSessionSubtitles();
+    regenerateVideoSessionSubtitles(subtitleLanguage);
     if (closeDialog) {
       closeDialog();
     }
@@ -122,8 +144,36 @@ const AudioOptionsDialog = ({
         </label>
       </div>
       <div className="mb-4 mt-4">
+        <label className="block text-left">
+          <span className="mb-1 block text-xs font-medium opacity-75">
+            Subtitle language <span className="font-normal">(optional)</span>
+          </span>
+          <select
+            value={subtitleLanguage}
+            onChange={(event) => {
+              hasSelectedSubtitleLanguageRef.current = true;
+              setSubtitleLanguage(event.target.value);
+            }}
+            className="w-full rounded-md border border-slate-500/30 bg-transparent px-2.5 py-1.5 text-sm outline-none"
+            aria-label="Subtitle regeneration language"
+          >
+            <option value="">Same as audio</option>
+            {SUPPORTED_LANGUAGES.map((language) => (
+              <option key={language.code} value={language.code}>
+                {language.name}
+              </option>
+            ))}
+          </select>
+          {useTranslatedSubtitleRegeneration ? (
+            <span className="mt-1 block text-xs opacity-70">
+              Subtitle text will be translated while the original audio stays unchanged.
+            </span>
+          ) : null}
+        </label>
+      </div>
+      <div className="mb-4 mt-4">
         <SecondaryButton onClick={handleRegenerateSubs}>
-          Regenerate Subs
+          Generate / regenerate subtitles
         </SecondaryButton>
       </div>
       {typeof removeAllSubtitles === 'function' && (

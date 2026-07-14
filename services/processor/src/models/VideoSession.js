@@ -36,7 +36,11 @@ import { getAnimationPresetForType } from '../utils/AnimationUtils.js';
 import { getModerationForNarrative } from './moderation/CreateModeration.js';
 import { normalizeInferenceModel } from '../consts/InferenceModels.js';
 import { translateSpeech } from './agent/AudioCreatorAgent.js';
-import { backfillTranslatedSubtitleMetadataForRerun } from './movie_session/SubtitleLanguage.js';
+import {
+  applySubtitleLanguageSelectionForRerun,
+  backfillTranslatedSubtitleMetadataForRerun,
+  refreshSessionSubtitleTranslationRequired,
+} from './movie_session/SubtitleLanguage.js';
 
 import { requestGenerateCustomAIVideo } from './ai_video/index.js';
 
@@ -9798,6 +9802,11 @@ export async function requestRegenerateSubtitles(userId, payload) {
     throw new Error("VideoSession not found");
   }
 
+  const subtitleLanguageSelection = applySubtitleLanguageSelectionForRerun(
+    sessionDataValue,
+    payload,
+  );
+
   const inferenceModelUser = await User.findById(sessionDataValue.userId || userId)
     .select('selectedInferenceModel')
     .lean();
@@ -9817,7 +9826,13 @@ export async function requestRegenerateSubtitles(userId, payload) {
       translateSpeech,
     },
   );
-  if (subtitleMetadataBackfill.updatedCount > 0) {
+  if (subtitleLanguageSelection.selectionProvided) {
+    refreshSessionSubtitleTranslationRequired(sessionDataValue);
+  }
+  if (
+    subtitleLanguageSelection.selectionProvided ||
+    subtitleMetadataBackfill.updatedCount > 0
+  ) {
     sessionDataValue.markModified('audioLayers');
     await sessionDataValue.save();
   }

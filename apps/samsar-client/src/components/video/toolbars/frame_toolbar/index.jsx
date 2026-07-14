@@ -6732,6 +6732,7 @@ export default function FrameToolbar(props) {
           regenerateVideoSessionSubtitles={regenerateVideoSessionSubtitles}
           requestRealignLayers={requestRealignLayers}
           removeAllSubtitles={removeAllSubtitles}
+          sessionDetails={sessionDetails}
           sessionSubtitlesEnabled={sessionSubtitlesEnabled}
           applyAudioDucking={applyAudioDucking}
           onApplyAudioDuckingChange={onApplyAudioDuckingChange}

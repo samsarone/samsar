@@ -28,8 +28,7 @@ const SUBTITLE_EDGE_FADE_FRAMES = 3;
 const HIGHLIGHT_EDGE_FADE_FRAMES = 2;
 const TRANSLATED_CUE_EDGE_FADE_FRAMES = 3;
 const TRANSLATED_CUE_HOLD_FRAMES = 4;
-const TRANSLATED_CUE_MAX_GAP_SECONDS = 0.35;
-const TRANSLATED_CUE_MAX_SPAN_SECONDS = 4;
+const TRANSLATED_PAGE_HANDOFF_FRAMES = 2;
 
 function toFontListString(fonts) {
   return fonts.map((font) => (font.includes(' ') ? `"${font}"` : font)).join(', ');
@@ -143,6 +142,32 @@ function multiplyContextAlpha(ctx, factor) {
 
 function getSubtitleItemEdgeAlpha(item, elapsedTime, durationOffset, framesPerSecond) {
   const config = item?.config || {};
+  const cueStartFrameSession = Number(
+    item?.subtitleCueStartFrameSession ?? item?.subtitle_cue_start_frame_session,
+  );
+  const cueEndFrameSession = Number(
+    item?.subtitleCueEndFrameSession ?? item?.subtitle_cue_end_frame_session,
+  );
+  if (
+    Number.isFinite(cueStartFrameSession) &&
+    Number.isFinite(cueEndFrameSession) &&
+    cueEndFrameSession > cueStartFrameSession
+  ) {
+    const currentFrameSession = (Number(elapsedTime) * framesPerSecond) / 1000;
+    const cueDuration = cueEndFrameSession - cueStartFrameSession;
+    const fadeFrames = Math.max(
+      1,
+      Math.min(SUBTITLE_EDGE_FADE_FRAMES, Math.floor(cueDuration / 2) || 1),
+    );
+    const fadeIn = smoothstep(
+      (currentFrameSession - cueStartFrameSession + 1) / fadeFrames,
+    );
+    const fadeOut = smoothstep(
+      (cueEndFrameSession - currentFrameSession) / fadeFrames,
+    );
+    return Math.min(fadeIn, fadeOut);
+  }
+
   const startFrame = Number(config.frameOffset);
   const frameDuration = Number(config.frameDuration);
   if (
@@ -650,7 +675,7 @@ function wrapWords(ctx, wordsArray, maxWidth, config, speakerPrefixWidth = 0) {
   return lines;
 }
 
-function getTranslatedPhraseKey(wordInfo, fallbackIndex) {
+function getTranslatedPhraseKey(wordInfo) {
   if (
     typeof wordInfo?.translatedCueIdentity === 'string' &&
     wordInfo.translatedCueIdentity.trim()
@@ -666,7 +691,11 @@ function getTranslatedPhraseKey(wordInfo, fallbackIndex) {
   if (wordInfo?.sourceWordStartIndex != null || wordInfo?.sourceWordEndIndex != null) {
     return `source:${wordInfo.sourceWordStartIndex ?? ''}:${wordInfo.sourceWordEndIndex ?? ''}`;
   }
-  return `word:${fallbackIndex}`;
+  // Older mapped items do not carry phrase metadata. Keep their words in one
+  // legacy cue, matching the historical whole-caption presentation. Current
+  // translated items always carry a mapping/cue identity and are isolated by
+  // the branches above.
+  return 'legacy-caption';
 }
 
 function dedupeTranslatedCueWords(wordsArray) {
@@ -680,7 +709,7 @@ function dedupeTranslatedCueWords(wordsArray) {
     ))
     .filter(({ wordInfo, originalIndex }) => {
       const identity = [
-        getTranslatedPhraseKey(wordInfo, originalIndex),
+        getTranslatedPhraseKey(wordInfo),
         wordInfo.translatedPhraseTokenIndex ?? wordInfo.visualChunkIndex ?? '',
         wordInfo.word,
         Number(wordInfo.frameOffset) || 0,
@@ -697,8 +726,8 @@ function dedupeTranslatedCueWords(wordsArray) {
 
 function groupTranslatedCueWords(wordsArray) {
   const groups = [];
-  wordsArray.forEach((wordInfo, index) => {
-    const key = getTranslatedPhraseKey(wordInfo, index);
+  wordsArray.forEach((wordInfo) => {
+    const key = getTranslatedPhraseKey(wordInfo);
     const previous = groups.at(-1);
     if (previous?.key === key) {
       previous.words.push(wordInfo);
@@ -709,109 +738,31 @@ function groupTranslatedCueWords(wordsArray) {
   return groups;
 }
 
-function getTimedWordsFrameSpan(words) {
-  const timedWords = words.map((wordInfo) => {
-    const startFrame = Number(wordInfo?.frameOffset);
-    const frameDuration = Number(wordInfo?.frameDuration);
-    if (!Number.isFinite(startFrame) || !Number.isFinite(frameDuration)) {
-      return null;
-    }
-    return {
-      startFrame,
-      endFrame: startFrame + Math.max(1, frameDuration),
-    };
-  }).filter(Boolean);
-  if (timedWords.length === 0) {
-    return null;
-  }
-  return {
-    startFrame: Math.min(...timedWords.map((word) => word.startFrame)),
-    endFrame: Math.max(...timedWords.map((word) => word.endFrame)),
-  };
-}
-
 function buildTranslatedCuePages(
   ctx,
   wordsArray,
   maxWidth,
   config,
   speakerPrefixWidth,
-  framesPerSecond,
 ) {
   const pages = [];
   const groups = groupTranslatedCueWords(dedupeTranslatedCueWords(wordsArray));
-  let pendingWords = [];
-  const maxGapFrames = Math.max(
-    1,
-    Math.round(framesPerSecond * TRANSLATED_CUE_MAX_GAP_SECONDS),
-  );
-  const maxCueSpanFrames = Math.max(
-    maxGapFrames + 1,
-    Math.round(framesPerSecond * TRANSLATED_CUE_MAX_SPAN_SECONDS),
-  );
-
-  const appendWrappedPages = (pageWords) => {
-    if (pageWords.length === 0) {
-      return;
-    }
-    const lines = wrapWords(ctx, pageWords, maxWidth, config, speakerPrefixWidth);
-    for (let index = 0; index < lines.length; index += MAX_SUBTITLE_LINES_PER_PAGE) {
-      pages.push({ lines: lines.slice(index, index + MAX_SUBTITLE_LINES_PER_PAGE) });
-    }
-  };
-
-  groups.forEach((group) => {
-    const candidateWords = [...pendingWords, ...group.words];
-    const pendingSpan = getTimedWordsFrameSpan(pendingWords);
-    const groupSpan = getTimedWordsFrameSpan(group.words);
-    const candidateSpan = getTimedWordsFrameSpan(candidateWords);
-    const candidateLines = wrapWords(
+  groups.forEach((group, semanticCueIndex) => {
+    const lines = wrapWords(
       ctx,
-      candidateWords,
+      group.words,
       maxWidth,
       config,
       speakerPrefixWidth,
     );
-    const hasMeaningfulTimingBreak = Boolean(
-      pendingSpan &&
-      groupSpan &&
-      (
-        groupSpan.startFrame - pendingSpan.endFrame > maxGapFrames ||
-        (
-          candidateSpan &&
-          candidateSpan.endFrame - candidateSpan.startFrame > maxCueSpanFrames
-        )
-      )
-    );
-
-    if (
-      pendingWords.length > 0 &&
-      (
-        hasMeaningfulTimingBreak ||
-        candidateLines.length > MAX_SUBTITLE_LINES_PER_PAGE
-      )
-    ) {
-      appendWrappedPages(pendingWords);
-      pendingWords = [...group.words];
-
-      const groupLines = wrapWords(
-        ctx,
-        pendingWords,
-        maxWidth,
-        config,
-        speakerPrefixWidth,
-      );
-      if (groupLines.length > MAX_SUBTITLE_LINES_PER_PAGE) {
-        appendWrappedPages(pendingWords);
-        pendingWords = [];
-      }
-      return;
+    for (let index = 0; index < lines.length; index += MAX_SUBTITLE_LINES_PER_PAGE) {
+      pages.push({
+        cueKey: group.key,
+        semanticCueIndex,
+        lines: lines.slice(index, index + MAX_SUBTITLE_LINES_PER_PAGE),
+      });
     }
-
-    pendingWords = candidateWords;
   });
-
-  appendWrappedPages(pendingWords);
   return pages;
 }
 
@@ -874,16 +825,51 @@ function resolveTranslatedCueFrameState(pages, frameContext) {
     return null;
   }
 
-  const duration = Math.max(1, activePage.endFrame - activePage.startFrame);
+  const semanticCuePages = timedPages.filter(
+    (page) => page.semanticCueIndex === activePage.semanticCueIndex,
+  );
+  const semanticCueStartFrame = Math.min(
+    ...semanticCuePages.map((page) => page.startFrame),
+  );
+  const semanticCueEndFrame = Math.max(
+    ...semanticCuePages.map((page) => page.endFrame),
+  );
+  const duration = Math.max(1, semanticCueEndFrame - semanticCueStartFrame);
   const fadeFrames = Math.max(
     1,
     Math.min(TRANSLATED_CUE_EDGE_FADE_FRAMES, Math.floor(duration / 2) || 1),
   );
-  const fadeIn = smoothstep((currentFrame - activePage.startFrame + 1) / fadeFrames);
-  const fadeOut = smoothstep((activePage.endFrame - currentFrame) / fadeFrames);
+  const fadeIn = smoothstep(
+    (currentFrame - semanticCueStartFrame + 1) / fadeFrames,
+  );
+  const fadeOut = smoothstep(
+    (semanticCueEndFrame - currentFrame) / fadeFrames,
+  );
+  const activePageIndex = timedPages.indexOf(activePage);
+  const previousPage = timedPages[activePageIndex - 1];
+  const nextPage = timedPages[activePageIndex + 1];
+  const hasPreviousSemanticPage = (
+    previousPage?.semanticCueIndex === activePage.semanticCueIndex
+  );
+  const hasNextSemanticPage = (
+    nextPage?.semanticCueIndex === activePage.semanticCueIndex
+  );
+  const pageFadeIn = hasPreviousSemanticPage
+    ? smoothstep(
+      (currentFrame - activePage.startFrame + 1) / TRANSLATED_PAGE_HANDOFF_FRAMES,
+    )
+    : 1;
+  const pageFadeOut = hasNextSemanticPage
+    ? smoothstep(
+      (activePage.endFrame - currentFrame) / TRANSLATED_PAGE_HANDOFF_FRAMES,
+    )
+    : 1;
   return {
     lines: activePage.lines,
-    alpha: Math.min(fadeIn, fadeOut),
+    // Long phrases can change two-line layout pages without replaying the cue
+    // entrance animation. A one-frame symmetric dip makes that text swap soft
+    // while preserving one semantic fade epoch and never double-painting pages.
+    alpha: Math.min(fadeIn, fadeOut, pageFadeIn, pageFadeOut),
   };
 }
 
@@ -980,6 +966,7 @@ function renderText(ctx, item, elapsedTime, durationOffset = 0, framesPerSecond)
         item.subtitleTimingBase ||
         item.subtitle_timing_base ||
         item.wordTimingBase ||
+        item.word_timing_base ||
         null,
     },
   );
@@ -1066,7 +1053,6 @@ function renderExactText(
         breakTextWidth,
         { ...config, breakLongWords: true },
         speakerPrefixWidth,
-        effectiveFramesPerSecond,
       );
       const cueState = resolveTranslatedCueFrameState(cuePages, frameContext);
       renderTranslatedCuePage(

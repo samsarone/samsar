@@ -1,32 +1,10 @@
 import { isItemActiveAtFrame } from './FrameTimingUtils.js';
-import {
-  isMappedTranslatedSubtitleItem,
-  normalizeComparableSubtitleLanguage,
-} from './SubtitleRenderPolicy.js';
 
-function isTranslatedSubtitleItem(item = {}) {
-  if (isMappedTranslatedSubtitleItem(item)) {
-    return true;
-  }
-
-  if (item?.type !== 'text' || item?.subType !== 'subtitle') {
-    return false;
-  }
-
-  const audioLanguage = normalizeComparableSubtitleLanguage(
-    item.audioLanguage || item.audio_language,
-  );
-  const subtitleLanguage = normalizeComparableSubtitleLanguage(
-    item.subtitleLanguage || item.subtitle_language,
-  );
-  return Boolean(
-    audioLanguage &&
-    subtitleLanguage &&
-    audioLanguage !== subtitleLanguage
-  );
+function isSubtitleItem(item = {}) {
+  return item?.type === 'text' && item?.subType === 'subtitle';
 }
 
-function getTranslatedSubtitleSlot(item = {}) {
+function getSubtitleSlot(item = {}) {
   const audioLayerId = item.audioLayerId?.toString?.() || '';
   if (audioLayerId) {
     return `audio:${audioLayerId}`;
@@ -37,15 +15,57 @@ function getTranslatedSubtitleSlot(item = {}) {
   return `position:${Number.isFinite(x) ? x : ''}:${Number.isFinite(y) ? y : ''}`;
 }
 
-function getItemStartFrame(item = {}) {
+function getSessionCueStartFrame(item = {}) {
+  const candidates = [
+    item.subtitleCueStartFrameSession,
+    item.subtitle_cue_start_frame_session,
+    item.subtitleSessionStartFrame,
+    item.subtitle_session_start_frame,
+  ];
+  for (const value of candidates) {
+    if (value == null || value === '') {
+      continue;
+    }
+    const startFrame = Number(value);
+    if (Number.isFinite(startFrame)) {
+      return startFrame;
+    }
+  }
+  return null;
+}
+
+function getItemStartFrame(item = {}, { durationOffsetFrames } = {}) {
+  const sessionCueStartFrame = getSessionCueStartFrame(item);
+  if (sessionCueStartFrame != null) {
+    return sessionCueStartFrame;
+  }
+
   const startFrame = Number(item?.config?.frameOffset);
-  return Number.isFinite(startFrame) ? startFrame : Number.NEGATIVE_INFINITY;
+  if (!Number.isFinite(startFrame)) {
+    return Number.NEGATIVE_INFINITY;
+  }
+
+  const layerOffsetFrames = Number(durationOffsetFrames);
+  return Number.isFinite(layerOffsetFrames)
+    ? layerOffsetFrames + startFrame
+    : startFrame;
+}
+
+function getCurrentSessionFrame(frame, { durationOffsetFrames } = {}) {
+  const currentFrame = Number(frame);
+  const layerOffsetFrames = Number(durationOffsetFrames);
+  if (!Number.isFinite(currentFrame)) {
+    return Number.NEGATIVE_INFINITY;
+  }
+  return Number.isFinite(layerOffsetFrames)
+    ? layerOffsetFrames + currentFrame
+    : currentFrame;
 }
 
 /**
- * Resolve visibility once per frame and arbitrate translated subtitles by
- * audio layer. Bad or overlapping upstream cue ranges must never paint two
- * captions into the same visual slot.
+ * Resolve visibility once per frame and arbitrate subtitles by audio layer or
+ * visual position. Bad or overlapping upstream cue ranges must never paint
+ * two captions into the same visual slot.
  */
 export function selectActiveItemsForFrame(items, frame, options = {}) {
   if (!Array.isArray(items)) {
@@ -64,32 +84,47 @@ export function selectActiveItemsForFrame(items, frame, options = {}) {
     return !hasFrameRange || isItemActiveAtFrame(item, frame, options);
   });
 
-  const translatedWinners = new Map();
+  const subtitleWinners = new Map();
+  const currentSessionFrame = getCurrentSessionFrame(frame, options);
   activeEntries.forEach((entry) => {
-    if (!isTranslatedSubtitleItem(entry.item)) {
+    if (!isSubtitleItem(entry.item)) {
       return;
     }
-    const slot = getTranslatedSubtitleSlot(entry.item);
-    const currentWinner = translatedWinners.get(slot);
+    const slot = getSubtitleSlot(entry.item);
+    const currentWinner = subtitleWinners.get(slot);
+    const entryStartFrame = getItemStartFrame(entry.item, options);
+    const winnerStartFrame = currentWinner
+      ? getItemStartFrame(currentWinner.item, options)
+      : Number.NEGATIVE_INFINITY;
+    const entryHasStarted = entryStartFrame <= currentSessionFrame;
+    const winnerHasStarted = currentWinner
+      ? winnerStartFrame <= currentSessionFrame
+      : false;
     if (
       !currentWinner ||
-      getItemStartFrame(entry.item) > getItemStartFrame(currentWinner.item) ||
+      (entryHasStarted && !winnerHasStarted) ||
       (
-        getItemStartFrame(entry.item) === getItemStartFrame(currentWinner.item) &&
-        entry.index > currentWinner.index
+        entryHasStarted === winnerHasStarted &&
+        (
+          (entryHasStarted && entryStartFrame > winnerStartFrame) ||
+          (!entryHasStarted && entryStartFrame < winnerStartFrame) ||
+          (
+            entryStartFrame === winnerStartFrame &&
+            entry.index > currentWinner.index
+          )
+        )
       )
     ) {
-      translatedWinners.set(slot, entry);
+      subtitleWinners.set(slot, entry);
     }
   });
 
   return activeEntries
     .filter((entry) => {
-      if (!isTranslatedSubtitleItem(entry.item)) {
+      if (!isSubtitleItem(entry.item)) {
         return true;
       }
-      return translatedWinners.get(getTranslatedSubtitleSlot(entry.item)) === entry;
+      return subtitleWinners.get(getSubtitleSlot(entry.item)) === entry;
     })
     .map(({ item }) => item);
 }
-
