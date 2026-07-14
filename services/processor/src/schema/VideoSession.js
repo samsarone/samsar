@@ -200,6 +200,8 @@ const audioLayerSchema = new Schema({
   subtitleLanguage: { type: String, default: null },
   speechLanguage: { type: String, default: null },
   subtitleTranslationRequired: { type: Boolean, default: false },
+  subtitleAlignmentMap: { type: [Object], default: [] },
+  subtitleSpeakerCharacterName: { type: String, default: null },
   subtitleFont: { type: String, default: 'Noto Sans' },
   subtitleWordAnimation: String,
   transcriptAlignment: Object,

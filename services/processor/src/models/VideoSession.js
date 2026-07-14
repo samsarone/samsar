@@ -35,6 +35,8 @@ import { createCanvas, loadImage } from 'canvas';
 import { getAnimationPresetForType } from '../utils/AnimationUtils.js';
 import { getModerationForNarrative } from './moderation/CreateModeration.js';
 import { normalizeInferenceModel } from '../consts/InferenceModels.js';
+import { translateSpeech } from './agent/AudioCreatorAgent.js';
+import { backfillTranslatedSubtitleMetadataForRerun } from './movie_session/SubtitleLanguage.js';
 
 import { requestGenerateCustomAIVideo } from './ai_video/index.js';
 
@@ -9796,6 +9798,30 @@ export async function requestRegenerateSubtitles(userId, payload) {
     throw new Error("VideoSession not found");
   }
 
+  const inferenceModelUser = await User.findById(sessionDataValue.userId || userId)
+    .select('selectedInferenceModel')
+    .lean();
+  const rerunInferenceModel = normalizeInferenceModel(
+    sessionDataValue.expressGenerationInferenceModel ||
+    sessionDataValue.inferenceModel ||
+    inferenceModelUser?.selectedInferenceModel,
+  );
+  const subtitleMetadataBackfill = await backfillTranslatedSubtitleMetadataForRerun(
+    sessionDataValue.audioLayers,
+    {
+      sessionSpeechLanguage: sessionDataValue.sessionLanguage,
+      sessionSubtitleLanguage: sessionDataValue.subtitleLanguage,
+      sessionSubtitleLanguageString: sessionDataValue.subtitleLanguageString,
+      sessionTranslationRequired: sessionDataValue.subtitleTranslationRequired === true,
+      inferenceModel: rerunInferenceModel,
+      translateSpeech,
+    },
+  );
+  if (subtitleMetadataBackfill.updatedCount > 0) {
+    sessionDataValue.markModified('audioLayers');
+    await sessionDataValue.save();
+  }
+
   // 2) Mark transcript generation as pending
   await VideoSession.updateOne(
     { _id: sessionId },
@@ -9881,7 +9907,11 @@ export async function requestRegenerateSubtitles(userId, payload) {
   const audioSpeechLayersForSubs = updatedSessionData.audioLayers.filter(
     (layer) => layer.generationType === "speech"
   );
-  await generateTranscriptsForSessionAudioLayers(sessionId, audioSpeechLayersForSubs);
+  await generateTranscriptsForSessionAudioLayers(
+    sessionId,
+    audioSpeechLayersForSubs,
+    { requireNonEmptySubtitles: true },
+  );
 
   // 7) Mark all layers to regenerate frames (since on-screen text changed)
   await VideoSession.updateOne(

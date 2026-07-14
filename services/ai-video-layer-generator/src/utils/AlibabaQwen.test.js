@@ -29,15 +29,15 @@ test('accepts all supported Alibaba Cloud API key aliases', () => {
 test('builds the workspace-compatible endpoint from ALIBABA_API_HOST', () => {
   assert.equal(
     getAlibabaQwenBaseURL({
-      ALIBABA_API_HOST: 'ws-example.ap-southeast-1.maas.aliyuncs.com',
+      ALIBABA_API_HOST: 'ws-sj16tbvm14xuk9x1.ap-southeast-1.maas.aliyuncs.com',
     }),
-    'https://ws-example.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1',
+    'https://ws-sj16tbvm14xuk9x1.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1',
   );
   assert.equal(
     getAlibabaQwenBaseURL({
-      ALIBABA_API_HOST: 'https://ws-example.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1/',
+      ALIBABA_API_HOST: 'https://ws-sj16tbvm14xuk9x1.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1/',
     }),
-    'https://ws-example.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1',
+    'https://ws-sj16tbvm14xuk9x1.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1',
   );
   assert.equal(
     getAlibabaQwenBaseURL({ ALIBABA_API_HOST: 'workspace.example.com/compatible-mode' }),

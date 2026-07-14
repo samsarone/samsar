@@ -14,7 +14,8 @@ import { applyTextSubtitleAnimations } from './animations/SubtitleAnimations.js'
 import { ensureFontsRegistered } from './utils/fontRegistry.js';
 import { getFramesPerSecondFromValue } from './utils/FpsUtils.js';
 import { installStructuredLogger } from './utils/StructuredLogger.js';
-import { isStaticSubtitleItem } from './utils/SubtitleRenderPolicy.js';
+import { isMotionlessSubtitleItem } from './utils/SubtitleRenderPolicy.js';
+import { selectActiveItemsForFrame } from './utils/ActiveSubtitleItems.js';
 
 installStructuredLogger({
   serviceName: process.env.SERVICE_NAME || 'samsar_frames_processor',
@@ -1088,19 +1089,11 @@ async function processFrameAtIndex(
 
     // Now render the layer's items (images, shapes, text, etc.) on top
     const { clipStart: _, clipStartFrames: __, clipEnd: ___, clipEndFrames: ____, ...rest } = layer;
-    activeItemList.forEach(item => {
-      // Check frame boundaries if needed
-      if (item.config && item.config.frameDuration !== undefined && item.config.frameOffset !== undefined) {
-        const startBoundary = item.config.frameOffset;
-        const endBoundary = item.config.frameOffset + item.config.frameDuration;
-        if (frame >= startBoundary && frame <= endBoundary) {
-          renderActiveItem(ctx, item, images, elapsedTime, duration, durationOffset, canvasDimensions);
-        }
-      } else {
-        if (item) {
-          renderActiveItem(ctx, item, images, elapsedTime, duration, durationOffset, canvasDimensions);
-        }
-      }
+    const activeItemsForFrame = selectActiveItemsForFrame(activeItemList, frame, {
+      durationOffsetFrames: durationOffset * framesPerSecond,
+    });
+    activeItemsForFrame.forEach(item => {
+      renderActiveItem(ctx, item, images, elapsedTime, duration, durationOffset, canvasDimensions);
     });
 
     // Restore to pre-canvas-transformation state
@@ -1669,14 +1662,14 @@ function renderActiveItem(ctx, item, images, elapsedTime, duration, durationOffs
 
 
 
-  const renderAsStaticSubtitle = isStaticSubtitleItem(item);
+  const renderWithoutItemMotion = isMotionlessSubtitleItem(item);
 
   // Initialize currentTransform if not present
   if (!item.currentTransform) {
     item.currentTransform = {
       scale: 1, // Starting scale (1 means 100%)
-      translateX: renderAsStaticSubtitle ? 0 : x,
-      translateY: renderAsStaticSubtitle ? 0 : y,
+      translateX: renderWithoutItemMotion ? 0 : x,
+      translateY: renderWithoutItemMotion ? 0 : y,
       rotateAngle: 0, // In degrees
     };
   }
@@ -1684,7 +1677,7 @@ function renderActiveItem(ctx, item, images, elapsedTime, duration, durationOffs
   ctx.save();
 
   // Translated subtitles intentionally render without item-level motion.
-  if (!renderAsStaticSubtitle) {
+  if (!renderWithoutItemMotion) {
     applyZoomAnimation(ctx, elapsedTime, item, duration, durationOffset);
     applySlideAnimations(ctx, elapsedTime, item, duration, durationOffset);
     applyRotateAnimation(ctx, item, images, elapsedTime, duration, durationOffset);
@@ -1693,7 +1686,7 @@ function renderActiveItem(ctx, item, images, elapsedTime, duration, durationOffs
   }
 
 
-  const fadeAlpha = renderAsStaticSubtitle
+  const fadeAlpha = renderWithoutItemMotion
     ? 1
     : getFadeAlpha(item, elapsedTime, duration, durationOffset);
   // (You'd write something like the code in applyFadeAnimations, but return the alpha)
@@ -1701,7 +1694,7 @@ function renderActiveItem(ctx, item, images, elapsedTime, duration, durationOffs
 
 
   // Apply transformations from currentTransform if no animations updated them
-  const currentTransform = renderAsStaticSubtitle
+  const currentTransform = renderWithoutItemMotion
     ? { scale: 1, translateX: 0, translateY: 0, rotateAngle: 0 }
     : item.currentTransform;
 
@@ -1742,7 +1735,7 @@ function renderActiveItem(ctx, item, images, elapsedTime, duration, durationOffs
 
   // Apply any other animations that modify the item after rendering
   // applyFadeAnimations(ctx, item, images, elapsedTime, duration, durationOffset);
-  if (!renderAsStaticSubtitle) {
+  if (!renderWithoutItemMotion) {
     applyCustomAnimations(ctx, item, images, elapsedTime, duration, durationOffset);
   }
 

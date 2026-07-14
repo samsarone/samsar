@@ -158,7 +158,9 @@ test('buildNormalizedVideoSessionPreview returns minimal preview assets with nor
         subtitleLanguage: 'th',
         speechLanguage: 'en',
         subtitleTranslationRequired: true,
-        addTranscriptionsRequired: false,
+        subtitleAlignmentMap: [{ sourceText: 'Narration line', translatedText: 'ข้อความบรรยาย' }],
+        subtitleSpeakerCharacterName: 'ผู้บรรยาย',
+        addTranscriptionsRequired: true,
         selectedRemoteAudioLink: 'https://cdn.example.com/speech-1.mp3',
       },
     ],
@@ -181,7 +183,11 @@ test('buildNormalizedVideoSessionPreview returns minimal preview assets with nor
   assert.equal(preview.audioLayers[0].subtitleText, 'ข้อความบรรยาย');
   assert.equal(preview.audioLayers[0].speechLanguage, 'en');
   assert.equal(preview.audioLayers[0].subtitleTranslationRequired, true);
-  assert.equal(preview.audioLayers[0].addTranscriptionsRequired, false);
+  assert.deepEqual(preview.audioLayers[0].subtitleAlignmentMap, [
+    { sourceText: 'Narration line', translatedText: 'ข้อความบรรยาย' },
+  ]);
+  assert.equal(preview.audioLayers[0].subtitleSpeakerCharacterName, 'ผู้บรรยาย');
+  assert.equal(preview.audioLayers[0].addTranscriptionsRequired, true);
   assert.equal(Object.prototype.hasOwnProperty.call(preview.layers[0], 'durationOffset'), false);
 });
 

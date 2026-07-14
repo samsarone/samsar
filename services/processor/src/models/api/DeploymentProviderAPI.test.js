@@ -7,15 +7,6 @@ import {
   validateDeploymentProviderCredentials,
 } from './DeploymentProviderAPI.js';
 
-const ALIBABA_VALIDATION_OPTIONS = {
-  dnsLookup: async () => [{ address: '8.8.8.8', family: 4 }],
-  fetchImpl: async () => ({
-    ok: true,
-    status: 200,
-    body: { cancel: async () => {} },
-  }),
-};
-
 test('Alibaba Cloud credentials expose Qwen 3.7 for chat and assistant tasks', () => {
   const available = buildAvailableDeploymentModels({
     alibabaCloud: { ok: true, status: 'valid' },
@@ -36,16 +27,13 @@ test('Samsar fallback availability includes Qwen 3.7', () => {
 });
 
 test('accepts deployment-friendly Alibaba credential and base URL aliases', async () => {
-  const result = await validateDeploymentProviderCredentials(
-    {
-      alibaba_cloud_api_key: 'test-key',
-      dashscope_base_url: 'https://workspace.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1/',
-    },
-    ALIBABA_VALIDATION_OPTIONS,
-  );
+  const result = await validateDeploymentProviderCredentials({
+    alibaba_cloud_api_key: 'test-key',
+    dashscope_base_url: 'https://workspace.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1/',
+  });
 
-  assert.equal(result.providers.alibabaCloud.status, 'valid');
-  assert.equal(result.providers.alibabaCloud.validationMode, 'remote_models');
+  assert.equal(result.providers.alibabaCloud.status, 'format_valid');
+  assert.equal(result.providers.alibabaCloud.validationMode, 'format_only');
   assert.equal(
     result.providers.alibabaCloud.baseUrl,
     'https://workspace.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1',
@@ -54,17 +42,14 @@ test('accepts deployment-friendly Alibaba credential and base URL aliases', asyn
 });
 
 test('accepts ALIBABA_API_HOST and expands it to the compatible endpoint', async () => {
-  const result = await validateDeploymentProviderCredentials(
-    {
-      alibaba_api_key: 'test-key',
-      alibaba_api_host: 'ws-example.ap-southeast-1.maas.aliyuncs.com',
-    },
-    ALIBABA_VALIDATION_OPTIONS,
-  );
+  const result = await validateDeploymentProviderCredentials({
+    alibaba_api_key: 'test-key',
+    alibaba_api_host: 'ws-sj16tbvm14xuk9x1.ap-southeast-1.maas.aliyuncs.com',
+  });
 
-  assert.equal(result.providers.alibabaCloud.status, 'valid');
+  assert.equal(result.providers.alibabaCloud.status, 'format_valid');
   assert.equal(
     result.providers.alibabaCloud.baseUrl,
-    'https://ws-example.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1',
+    'https://ws-sj16tbvm14xuk9x1.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1',
   );
 });

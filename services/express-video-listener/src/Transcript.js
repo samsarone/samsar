@@ -1,5 +1,4 @@
 import fs from 'fs';
-import path from 'path';
 import { createCanvas } from 'canvas';
 import OpenAI from 'openai';
 import ffmpeg from 'fluent-ffmpeg';
@@ -18,9 +17,13 @@ import {
 } from './ai_utils/RequestInferenceModel.js';
 import { getFramesPerSecondFromValue, resolveFramesPerSecond } from './utils/FpsUtils.js';
 import { recordProviderUsageLog } from './utils/ProviderUsageAudit.js';
+import { resolveLocalAssetPath } from './utils/LocalAssetPath.js';
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY || '' });
 const TRANSCRIPTION_MODEL = process.env.OPENAI_TRANSCRIPTION_MODEL || 'whisper-1';
+const WORD_TIMESTAMP_TRANSCRIPTION_MODEL =
+  process.env.OPENAI_WORD_TIMESTAMP_TRANSCRIPTION_MODEL || 'whisper-1';
+const CJK_CHARACTER_REGEX = /[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\uac00-\ud7af]/u;
 // Constants
 const SEGMENT_BOUNDARY_REGEX = /[.!?,;:]/;
 const SEGMENT_CLOSER_REGEX = /["'’”)\]\}]/;
@@ -186,13 +189,70 @@ function getTranslatedSubtitleText(audioLayer = {}) {
   return firstNonEmptyString(audioLayer.subtitleText, audioLayer.subtitle_text);
 }
 
+function normalizeSubtitleAlignmentMapEntry(entry = {}) {
+  if (!entry || typeof entry !== 'object') {
+    return null;
+  }
+
+  const sourceText = firstNonEmptyString(
+    entry.sourceText,
+    entry.source_text,
+    entry.originalText,
+    entry.original_text,
+    entry.source,
+    entry.original,
+  );
+  const translatedText = firstNonEmptyString(
+    entry.translatedText,
+    entry.translated_text,
+    entry.targetText,
+    entry.target_text,
+    entry.translation,
+    entry.target,
+  );
+
+  if (!sourceText || !translatedText) {
+    return null;
+  }
+
+  return { sourceText, translatedText };
+}
+
+function getSubtitleAlignmentMap(audioLayer = {}) {
+  const rawMapping =
+    audioLayer.subtitleAlignmentMap ??
+    audioLayer.subtitle_alignment_map ??
+    audioLayer.subtitleWordMapping ??
+    audioLayer.subtitle_word_mapping;
+
+  if (!Array.isArray(rawMapping)) {
+    return [];
+  }
+
+  return rawMapping
+    .map(normalizeSubtitleAlignmentMapEntry)
+    .filter(Boolean);
+}
+
+function getTranslatedSubtitleSpeakerName(audioLayer = {}) {
+  return firstNonEmptyString(
+    audioLayer.subtitleSpeakerCharacterName,
+    audioLayer.subtitle_speaker_character_name,
+    audioLayer.translatedSpeakerCharacterName,
+    audioLayer.translated_speaker_character_name,
+  );
+}
+
 function getTranscriptionLanguageCode(languageCode = '') {
   const normalized = normalizeLanguageCode(languageCode);
   if (!normalized || normalized === 'en') {
     return null;
   }
   const baseCode = normalized.replace(/_/g, '-').split('-')[0];
-  return baseCode === 'en' ? null : baseCode;
+  if (baseCode === 'en') {
+    return null;
+  }
+  return baseCode === 'cn' ? 'zh' : baseCode;
 }
 
 function findBoundaryEnd(wordPos, transcriptText) {
@@ -552,7 +612,15 @@ export async function generateTranscriptsForSessionAudioLayers(sessionId) {
 
       try {
         const translatedSubtitleContext = getTranslatedSubtitleContext(sessionData, audioLayer);
-        const usesStaticTranslatedSubtitles = translatedSubtitleContext.isTranslated;
+        const sourceTranscriptText = firstNonEmptyString(getTranscriptSource(audioLayer));
+        const translatedSubtitleText = getTranslatedSubtitleText(audioLayer);
+        const subtitleAlignmentMap = getSubtitleAlignmentMap(audioLayer);
+        const usesMappedTranslatedSubtitles =
+          translatedSubtitleContext.isTranslated &&
+          Boolean(sourceTranscriptText.trim()) &&
+          subtitleAlignmentMap.length > 0;
+        const usesStaticTranslatedSubtitles =
+          translatedSubtitleContext.isTranslated && !usesMappedTranslatedSubtitles;
         const transcriptionLanguageCode = getTranscriptionLanguageCode(
           translatedSubtitleContext.audioLanguage || sessionData.sessionLanguage || 'EN',
         );
@@ -570,15 +638,22 @@ export async function generateTranscriptsForSessionAudioLayers(sessionId) {
         });
         const subtitleFont = layerFonts.subtitleFont;
         const speakerFont = layerFonts.speakerFont;
-        const subtitleWordAnimation = audioLayer.subtitleWordAnimation || 'highlight';
+        const configuredSubtitleWordAnimation = audioLayer.subtitleWordAnimation;
+        const subtitleWordAnimation =
+          usesMappedTranslatedSubtitles && configuredSubtitleWordAnimation === 'none'
+            ? 'highlight'
+            : (configuredSubtitleWordAnimation || 'highlight');
         const audioFilePath = audioLayer.selectedLocalAudioLink;
-        const transcriptText = usesStaticTranslatedSubtitles
-          ? getTranslatedSubtitleText(audioLayer)
-          : getTranscriptSource(audioLayer);
+        const transcriptText = translatedSubtitleContext.isTranslated
+          ? translatedSubtitleText
+          : sourceTranscriptText;
+        const alignmentTranscriptText = usesMappedTranslatedSubtitles
+          ? sourceTranscriptText
+          : transcriptText;
 
         if (!transcriptText || !transcriptText.trim()) {
           skippedEmptyTranscript++;
-          if (usesStaticTranslatedSubtitles) {
+          if (translatedSubtitleContext.isTranslated) {
             console.warn('Translated subtitle text is missing; clearing subtitles for speech layer', {
               sessionId,
               audioLayerId,
@@ -590,20 +665,16 @@ export async function generateTranscriptsForSessionAudioLayers(sessionId) {
           continue;
         }
 
-        if (!usesStaticTranslatedSubtitles && (!audioFilePath || typeof audioFilePath !== 'string')) {
+        if (
+          !translatedSubtitleContext.isTranslated &&
+          (!audioFilePath || typeof audioFilePath !== 'string')
+        ) {
           skippedMissingAudioLink++;
           continue;
         }
 
-        const pwd = process.cwd();
-        let audioFileBase = path.join(pwd, '../', 'samsar_processor', 'assets');
-
-        if (process.env.CURRENT_ENV === 'staging' || process.env.CURRENT_ENV === 'docker') {
-          audioFileBase = '/assets';  // Docker staging volume mount path
-        }
-
         const audioLocalFilePath = typeof audioFilePath === 'string'
-          ? `${audioFileBase}/${audioFilePath}`
+          ? resolveLocalAssetPath(audioFilePath)
           : null;
 
         const aspectRatio = sessionData.aspectRatio;
@@ -615,8 +686,11 @@ export async function generateTranscriptsForSessionAudioLayers(sessionId) {
 
         if (isMovieGen) {
           showSpeaker = true;
-          if (audioLayer.speakerCharacterName) {
-            speaker = audioLayer.speakerCharacterName;
+          const localizedSubtitleSpeaker = translatedSubtitleContext.isTranslated
+            ? getTranslatedSubtitleSpeakerName(audioLayer)
+            : '';
+          if (localizedSubtitleSpeaker || audioLayer.speakerCharacterName) {
+            speaker = localizedSubtitleSpeaker || audioLayer.speakerCharacterName;
           }
         }
 
@@ -626,9 +700,7 @@ export async function generateTranscriptsForSessionAudioLayers(sessionId) {
           speakerFont,
         };
 
-        let newRawLayers = [];
-        let alignmentToCache = null;
-        if (usesStaticTranslatedSubtitles) {
+        const buildStaticTranslatedFallback = () => {
           const staticSubtitleTiming = getStaticSubtitleTiming(sessionData, audioLayer);
           const staticSubtitleItem = buildStaticTranslatedSubtitleItem({
             subtitleText: transcriptText,
@@ -643,12 +715,18 @@ export async function generateTranscriptsForSessionAudioLayers(sessionId) {
             frameOffsetSeconds: staticSubtitleTiming.frameOffsetSeconds,
             framesPerSecond,
           });
-          newRawLayers = staticSubtitleItem ? [staticSubtitleItem] : [];
+          return staticSubtitleItem ? [staticSubtitleItem] : [];
+        };
+
+        let newRawLayers = [];
+        let alignmentToCache = null;
+        if (usesStaticTranslatedSubtitles) {
+          newRawLayers = buildStaticTranslatedFallback();
         } else {
           try {
             const cachedAlignment = getCachedTranscriptAlignment(
               audioLayer,
-              transcriptText,
+              alignmentTranscriptText,
               transcriptionLanguageCode,
               audioFilePath
             );
@@ -664,9 +742,18 @@ export async function generateTranscriptsForSessionAudioLayers(sessionId) {
               source: 'express_video_transcription',
               localRequestId: `${sessionId}:${audioLayerId}:transcription`,
             };
+            const mappedSubtitleOptions = usesMappedTranslatedSubtitles
+              ? {
+                subtitleAlignmentMap,
+                subtitleTranscriptText: transcriptText,
+                subtitleLanguage: translatedSubtitleContext.subtitleLanguage,
+                audioLanguage: translatedSubtitleContext.audioLanguage,
+                sourceTranscriptText: alignmentTranscriptText,
+              }
+              : {};
             const alignmentResult = await alignWithGentle(
               audioLocalFilePath,
-              transcriptText,
+              alignmentTranscriptText,
               canvasDimensions,
               subtitleFont,
               subtitleWordAnimation,
@@ -680,14 +767,16 @@ export async function generateTranscriptsForSessionAudioLayers(sessionId) {
               cachedAlignment
                 ? {
                   alignmentWords: cachedAlignment.words,
-                  alignmentTranscriptText: cachedAlignment.transcriptText || transcriptText,
+                  alignmentTranscriptText: cachedAlignment.transcriptText || alignmentTranscriptText,
                   auditContext: transcriptAuditContext,
+                  ...mappedSubtitleOptions,
                 }
                 : {
                   returnAlignment: true,
-                  sourceText: transcriptText,
+                  sourceText: alignmentTranscriptText,
                   audioSource: audioFilePath,
                   auditContext: transcriptAuditContext,
+                  ...mappedSubtitleOptions,
                 }
             );
             if (cachedAlignment) {
@@ -706,6 +795,17 @@ export async function generateTranscriptsForSessionAudioLayers(sessionId) {
               stack: err?.stack,
             });
             newRawLayers = [];
+          }
+
+          if (usesMappedTranslatedSubtitles && newRawLayers.length === 0) {
+            console.warn('Mapped translated subtitle alignment unavailable; using static fallback', {
+              sessionId,
+              audioLayerId,
+              audioLanguage: translatedSubtitleContext.audioLanguage,
+              subtitleLanguage: translatedSubtitleContext.subtitleLanguage,
+              mappingEntries: subtitleAlignmentMap.length,
+            });
+            newRawLayers = buildStaticTranslatedFallback();
           }
         }
 
@@ -865,9 +965,76 @@ function sanitizeTranscriptForAlignment(rawText) {
     return '';
   }
   return rawText
-    .replace(/[^\p{L}\p{N}_\s']/gu, ' ')
+    .normalize('NFKC')
+    .replace(/[^\p{L}\p{M}\p{N}_\s']/gu, ' ')
     .replace(/\s+/g, ' ')
     .trim();
+}
+
+function normalizeSegmenterLocale(languageCode) {
+  const normalizedLanguage = typeof languageCode === 'string'
+    ? languageCode.trim().toLowerCase().replace(/_/g, '-')
+    : '';
+  const locale = normalizedLanguage === 'cn' ? 'zh' : normalizedLanguage;
+
+  if (
+    !locale ||
+    typeof Intl === 'undefined' ||
+    typeof Intl.getCanonicalLocales !== 'function'
+  ) {
+    return undefined;
+  }
+
+  try {
+    return Intl.getCanonicalLocales(locale)[0];
+  } catch {
+    return undefined;
+  }
+}
+
+function normalizeTranscriptionLanguageCode(languageCode) {
+  if (typeof languageCode !== 'string') {
+    return undefined;
+  }
+  const baseLanguage = languageCode.trim().toLowerCase().replace(/_/g, '-').split('-')[0];
+  if (!baseLanguage || baseLanguage === 'auto') {
+    return undefined;
+  }
+  return baseLanguage === 'cn' ? 'zh' : baseLanguage;
+}
+
+function tokenizeTranscriptForAlignment(rawText, languageCode) {
+  const cleanedTranscript = sanitizeTranscriptForAlignment(rawText);
+  if (!cleanedTranscript) {
+    return [];
+  }
+
+  if (typeof Intl !== 'undefined' && typeof Intl.Segmenter === 'function') {
+    try {
+      const segmenter = new Intl.Segmenter(normalizeSegmenterLocale(languageCode), {
+        granularity: 'word',
+      });
+      const segmentedWords = Array.from(segmenter.segment(cleanedTranscript))
+        .filter((entry) => entry?.isWordLike)
+        .map((entry) => entry.segment.trim())
+        .filter(Boolean);
+      if (segmentedWords.length > 0) {
+        return segmentedWords;
+      }
+    } catch {
+      // Continue to deterministic whitespace/grapheme tokenization below.
+    }
+  }
+
+  const whitespaceTokens = cleanedTranscript.split(/\s+/).filter(Boolean);
+  if (
+    whitespaceTokens.length === 1 &&
+    CJK_CHARACTER_REGEX.test(whitespaceTokens[0])
+  ) {
+    return Array.from(whitespaceTokens[0]).filter((character) =>
+      /[\p{L}\p{M}\p{N}_']/u.test(character));
+  }
+  return whitespaceTokens;
 }
 
 function buildTimedWordAlignment(wordsList, audioDurationSeconds, caseLabel) {
@@ -988,6 +1155,169 @@ function normalizeAlignedWords(rawWords, maxDurationSeconds = null) {
     .sort((a, b) => a.start - b.start);
 }
 
+function normalizeMappingMatchText(value = '') {
+  if (typeof value !== 'string') {
+    return '';
+  }
+
+  return value
+    .normalize('NFKC')
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, '');
+}
+
+function findSourceAlignmentSpan(alignedWords, sourceText, startIndex = 0) {
+  const target = normalizeMappingMatchText(sourceText);
+  if (!target || !Array.isArray(alignedWords) || alignedWords.length === 0) {
+    return null;
+  }
+
+  for (let start = Math.max(0, startIndex); start < alignedWords.length; start += 1) {
+    let accumulated = '';
+    for (let end = start; end < alignedWords.length; end += 1) {
+      accumulated += normalizeMappingMatchText(alignedWords[end]?.word || '');
+      if (!accumulated) {
+        continue;
+      }
+      if (accumulated === target) {
+        return { start, end };
+      }
+      if (!target.startsWith(accumulated)) {
+        break;
+      }
+    }
+  }
+
+  return null;
+}
+
+function joinMappedTranslatedText(mapping = []) {
+  return mapping
+    .map((entry) => entry.translatedText)
+    .filter(Boolean)
+    .join(' ')
+    .replace(/\s+([,.;:!?、。，！？])/gu, '$1')
+    .trim();
+}
+
+function buildMappedSubtitleAlignment(alignedWords = [], rawMapping = [], subtitleText = '') {
+  const sourceWords = normalizeAlignedWords(alignedWords);
+  const mapping = Array.isArray(rawMapping)
+    ? rawMapping.map(normalizeSubtitleAlignmentMapEntry).filter(Boolean)
+    : [];
+
+  if (sourceWords.length === 0 || mapping.length === 0 || sourceWords.length < mapping.length) {
+    return null;
+  }
+
+  const mappedWords = [];
+  let sourceCursor = 0;
+  let exactMatchCount = 0;
+
+  for (let mappingIndex = 0; mappingIndex < mapping.length; mappingIndex += 1) {
+    const entry = mapping[mappingIndex];
+    if (sourceCursor >= sourceWords.length) {
+      return null;
+    }
+
+    const exactSpan = findSourceAlignmentSpan(sourceWords, entry.sourceText, sourceCursor);
+    let spanStart = sourceCursor;
+    let spanEnd;
+    let matchType;
+
+    if (exactSpan) {
+      // Include any unmatched transcription token before the ordered match so
+      // the target timeline remains continuous rather than silently dropping time.
+      spanEnd = exactSpan.end;
+      matchType = exactSpan.start === sourceCursor ? 'exact' : 'ordered_exact';
+      exactMatchCount += 1;
+    } else {
+      const remainingMappings = mapping.length - mappingIndex - 1;
+      const availableWords = sourceWords.length - sourceCursor;
+      const maxWordsForEntry = Math.max(1, availableWords - remainingMappings);
+      const estimatedSourceWordCount = Math.max(1, tokenizeTranscript(entry.sourceText).length);
+      spanEnd = sourceCursor + Math.min(estimatedSourceWordCount, maxWordsForEntry) - 1;
+      matchType = 'ordered_fallback';
+    }
+
+    if (mappingIndex === mapping.length - 1) {
+      spanEnd = sourceWords.length - 1;
+    }
+
+    const firstSourceWord = sourceWords[spanStart];
+    const lastSourceWord = sourceWords[spanEnd];
+    if (!firstSourceWord || !lastSourceWord) {
+      return null;
+    }
+
+    mappedWords.push({
+      word: entry.translatedText,
+      alignedWord: entry.translatedText,
+      start: firstSourceWord.start,
+      end: lastSourceWord.end,
+      case: 'translated_mapping',
+      sourceText: entry.sourceText,
+      translatedText: entry.translatedText,
+      sourceWordStartIndex: spanStart,
+      sourceWordEndIndex: spanEnd,
+      mappingIndex,
+      matchType,
+    });
+    sourceCursor = spanEnd + 1;
+  }
+
+  return {
+    words: mappedWords,
+    sourceWords,
+    mapping,
+    transcriptText: firstNonEmptyString(subtitleText, joinMappedTranslatedText(mapping)),
+    exactMatchCount,
+    usedFallback: exactMatchCount !== mapping.length,
+  };
+}
+
+function mapTranslatedPhrasesToTranscriptPositions(transcriptText, words = []) {
+  const positions = {};
+  if (typeof transcriptText !== 'string' || !transcriptText.trim() || !Array.isArray(words)) {
+    return positions;
+  }
+
+  const comparableTranscript = transcriptText.toLocaleLowerCase();
+  let cursor = 0;
+  words.forEach((wordInfo, index) => {
+    const phrase = typeof wordInfo?.word === 'string' ? wordInfo.word.trim() : '';
+    if (!phrase) {
+      return;
+    }
+    const phraseIndex = comparableTranscript.indexOf(phrase.toLocaleLowerCase(), cursor);
+    if (phraseIndex < 0) {
+      return;
+    }
+    positions[index] = { start: phraseIndex, end: phraseIndex + phrase.length };
+    cursor = phraseIndex + phrase.length;
+  });
+
+  return positions;
+}
+
+function getMappedSubtitleItemMetadata(options = {}, mappedAlignment = null) {
+  if (!mappedAlignment) {
+    return {};
+  }
+
+  return {
+    subtitleTranslationRequired: true,
+    subtitleRenderMode: 'mapped',
+    isStaticSubtitle: false,
+    subtitleAlignmentMapped: true,
+    subtitleAlignmentMap: mappedAlignment.mapping,
+    subtitleLanguage: options.subtitleLanguage || null,
+    audioLanguage: options.audioLanguage || null,
+    sourceTranscriptText: options.sourceTranscriptText || null,
+    subtitleText: mappedAlignment.transcriptText || null,
+  };
+}
+
 function normalizeAlignmentCacheText(value) {
   return typeof value === 'string' ? value.replace(/\s+/g, ' ').trim() : '';
 }
@@ -1007,7 +1337,7 @@ function getCachedTranscriptAlignment(audioLayer = {}, transcriptText = '', lang
   }
 
   const cachedWords = normalizeAlignedWords(alignment.words, alignment.durationSeconds || audioLayer?.duration);
-  if (cachedWords.length === 0) {
+  if (!hasAuthoritativeWordTimings(cachedWords)) {
     return null;
   }
 
@@ -1044,6 +1374,9 @@ function buildTranscriptAlignmentCache({
   audioSource = null,
   durationSeconds = null,
 } = {}) {
+  if (!hasAuthoritativeWordTimings(words)) {
+    return null;
+  }
   const normalizedWords = normalizeAlignedWords(words, durationSeconds);
   if (normalizedWords.length === 0) {
     return null;
@@ -1074,27 +1407,65 @@ function normalizeRawWordEntry(wordInfo = {}) {
   const rawWord = typeof wordInfo?.word === 'string'
     ? wordInfo.word
     : (typeof wordInfo?.text === 'string' ? wordInfo.text : '');
+  const rawStart = wordInfo?.start;
+  const rawEnd = wordInfo?.end;
+  const hasAuthoritativeTiming = (
+    Number.isFinite(rawStart) &&
+    Number.isFinite(rawEnd) &&
+    rawStart >= 0 &&
+    rawEnd > rawStart
+  );
   return {
     word: rawWord,
-    start: Number(wordInfo?.start),
-    end: Number(wordInfo?.end),
-    case: wordInfo?.case,
+    start: Number(rawStart),
+    end: Number(rawEnd),
+    case: wordInfo?.case || (hasAuthoritativeTiming ? 'success' : 'invalid_timestamp_fallback'),
   };
+}
+
+function getRawWordText(wordInfo = {}) {
+  return typeof wordInfo?.word === 'string'
+    ? wordInfo.word
+    : (typeof wordInfo?.text === 'string' ? wordInfo.text : '');
+}
+
+function hasAuthoritativeWordTimings(rawWords) {
+  if (!Array.isArray(rawWords)) {
+    return false;
+  }
+
+  const nonemptyWords = rawWords.filter((wordInfo) => getRawWordText(wordInfo).trim());
+  return nonemptyWords.length > 0 && nonemptyWords.every((wordInfo) => {
+    const start = wordInfo?.start;
+    const end = wordInfo?.end;
+    const timingCase = typeof wordInfo?.case === 'string' ? wordInfo.case : 'success';
+    return (
+      Number.isFinite(start) &&
+      Number.isFinite(end) &&
+      start >= 0 &&
+      end > start &&
+      timingCase === 'success'
+    );
+  });
 }
 
 function hasExplicitWordTimings(response = {}) {
   if (Array.isArray(response?.words) && response.words.length > 0) {
-    return true;
+    return hasAuthoritativeWordTimings(response.words);
   }
   if (Array.isArray(response?.segments)) {
-    return response.segments.some(
-      (segment) => Array.isArray(segment?.words) && segment.words.length > 0,
-    );
+    const transcriptSegments = response.segments.filter((segment) => {
+      const hasText = typeof segment?.text === 'string' && Boolean(segment.text.trim());
+      const hasWords = Array.isArray(segment?.words) && segment.words.length > 0;
+      return hasText || hasWords;
+    });
+    return transcriptSegments.length > 0 && transcriptSegments.every((segment) =>
+      Array.isArray(segment?.words) && hasAuthoritativeWordTimings(segment.words));
   }
   return false;
 }
 
-function collectRawWordsFromResponse(response = {}) {
+function collectRawWordsFromResponse(response = {}, languageCode) {
   const rawWords = Array.isArray(response?.words)
     ? response.words.map(normalizeRawWordEntry)
     : [];
@@ -1114,7 +1485,7 @@ function collectRawWordsFromResponse(response = {}) {
         return;
       }
 
-      const segmentWords = segmentText.split(/\s+/).filter(Boolean);
+      const segmentWords = tokenizeTranscriptForAlignment(segmentText, languageCode);
       if (!segmentWords.length) {
         return;
       }
@@ -1126,6 +1497,7 @@ function collectRawWordsFromResponse(response = {}) {
           word,
           start: segmentStart + idx * step,
           end: segmentStart + (idx + 1) * step,
+          case: 'segment_fallback',
         });
       });
     });
@@ -1134,64 +1506,120 @@ function collectRawWordsFromResponse(response = {}) {
   return rawWords;
 }
 
-async function transcribeWithOpenAI(audioFilePath, transcriptText, languageCode, audioDurationSeconds = null, auditContext = {}) {
+function normalizeModelName(model) {
+  return typeof model === 'string' ? model.trim().toLowerCase() : '';
+}
+
+function getWordTimestampCapability(model) {
+  const normalizedModel = normalizeModelName(model);
+  if (!normalizedModel) {
+    return false;
+  }
+  if (normalizedModel === 'whisper-1' || normalizedModel.startsWith('whisper-1-')) {
+    return true;
+  }
+  if (
+    normalizedModel.includes('gpt-4o-transcribe') ||
+    normalizedModel.includes('gpt-4o-mini-transcribe')
+  ) {
+    return false;
+  }
+  return null;
+}
+
+function buildTranscriptionAttempts(
+  transcriptionModel = TRANSCRIPTION_MODEL,
+  wordTimestampModel = WORD_TIMESTAMP_TRANSCRIPTION_MODEL,
+) {
+  const configuredModel = typeof transcriptionModel === 'string'
+    ? transcriptionModel.trim()
+    : '';
+  const alignmentModel = typeof wordTimestampModel === 'string'
+    ? wordTimestampModel.trim()
+    : '';
+  const attempts = [];
+
+  const addTimestampAttempt = (model) => {
+    if (!model || getWordTimestampCapability(model) === false) {
+      return;
+    }
+    if (attempts.some((attempt) =>
+      normalizeModelName(attempt.model) === normalizeModelName(model) &&
+      attempt.response_format === 'verbose_json')) {
+      return;
+    }
+    attempts.push({
+      model,
+      response_format: 'verbose_json',
+      timestamp_granularities: ['word'],
+      requiresExplicitWordTimings: true,
+    });
+  };
+
+  addTimestampAttempt(configuredModel);
+  addTimestampAttempt(alignmentModel);
+
+  if (configuredModel) {
+    attempts.push({
+      model: configuredModel,
+      response_format: 'json',
+      requiresExplicitWordTimings: false,
+    });
+  }
+
+  return attempts;
+}
+
+async function transcribeWithOpenAI(
+  audioFilePath,
+  transcriptText,
+  languageCode,
+  audioDurationSeconds = null,
+  auditContext = {},
+  options = {},
+) {
   try {
-    const normalizedModel = TRANSCRIPTION_MODEL.toLowerCase();
-    const isGpt4oTranscribe = normalizedModel.includes('gpt-4o') && normalizedModel.includes('transcribe');
+    const transcriptionModel = options.transcriptionModel || TRANSCRIPTION_MODEL;
+    const wordTimestampModel = options.wordTimestampModel || WORD_TIMESTAMP_TRANSCRIPTION_MODEL;
+    const transcriptionClient = options.openaiClient || openai;
+    const createReadStream = options.createReadStream || fs.createReadStream;
+    const recordUsageLog = options.recordUsageLog || recordProviderUsageLog;
 
     const requestPayloadBase = {
-      model: TRANSCRIPTION_MODEL,
-      language: languageCode || undefined,
+      language: normalizeTranscriptionLanguageCode(languageCode),
       prompt: transcriptText && transcriptText.trim() ? transcriptText : undefined,
     };
 
-    const attemptPayloads = isGpt4oTranscribe
-      ? [
-          {
-            response_format: 'verbose_json',
-            timestamp_granularities: ['word'],
-          },
-          {
-            response_format: 'json',
-          },
-        ]
-      : [
-          {
-            response_format: 'verbose_json',
-            timestamp_granularities: ['word'],
-          },
-          {
-            response_format: 'json',
-          },
-        ];
+    const attempts = buildTranscriptionAttempts(transcriptionModel, wordTimestampModel);
 
     let response = null;
     let lastError = null;
 
-    for (const attempt of attemptPayloads) {
-      const fileStream = fs.createReadStream(audioFilePath);
-      const payload = { ...requestPayloadBase, ...attempt, file: fileStream };
+    for (const attempt of attempts) {
+      const fileStream = createReadStream(audioFilePath);
+      const { requiresExplicitWordTimings, ...requestAttempt } = attempt;
+      const payload = { ...requestPayloadBase, ...requestAttempt, file: fileStream };
       try {
-        response = await openai.audio.transcriptions.create(payload);
-        await recordProviderUsageLog({
+        const candidateResponse = await transcriptionClient.audio.transcriptions.create(payload);
+        await recordUsageLog({
           payload: auditContext,
           userId: auditContext.userId,
           sessionId: auditContext.sessionId,
           audioLayerId: auditContext.audioLayerId,
           localRequestId: auditContext.localRequestId,
-          providerRequestId: response?.id,
+          providerRequestId: candidateResponse?.id,
           idempotencyKey: [
             'samsar_express_video_listener',
             auditContext.localRequestId,
             'transcription',
-            TRANSCRIPTION_MODEL,
+            attempt.model,
             attempt.response_format,
-            response?.id || Date.now(),
+            candidateResponse?.id || Date.now(),
           ].filter(Boolean).join(':'),
           requestType: 'transcription',
           callType: 'transcription',
           provider: 'openai',
-          model: TRANSCRIPTION_MODEL,
+          model: attempt.model,
           source: auditContext.source || 'express_video_transcription',
           service: 'samsar_express_video_listener',
           status: 'requested',
@@ -1201,41 +1629,45 @@ async function transcribeWithOpenAI(audioFilePath, transcriptText, languageCode,
             audioDurationSeconds,
           },
         });
-        if (attempt.response_format === 'verbose_json') {
+        if (requiresExplicitWordTimings) {
           try {
-            if (hasExplicitWordTimings(response)) {
+            if (hasExplicitWordTimings(candidateResponse)) {
               console.info('OpenAI transcription returned word timestamps', {
-                model: TRANSCRIPTION_MODEL,
+                model: attempt.model,
                 responseFormat: attempt.response_format,
               });
             } else {
-              console.warn('OpenAI transcription missing word timestamps; falling back to json response', {
-                model: TRANSCRIPTION_MODEL,
+              lastError = new Error(
+                `OpenAI transcription model ${attempt.model} returned no explicit word timestamps`,
+              );
+              console.warn('OpenAI transcription missing word timestamps; trying the next alignment model', {
+                model: attempt.model,
                 responseFormat: attempt.response_format,
               });
-              response = null;
               continue;
             }
           } catch (parseErr) {
-            console.error('Failed to parse verbose_json transcription; falling back to json response', {
-              model: TRANSCRIPTION_MODEL,
+            lastError = parseErr;
+            console.warn('Failed to parse timestamped transcription; trying the next alignment model', {
+              model: attempt.model,
               responseFormat: attempt.response_format,
               error: parseErr?.message || parseErr,
             });
-            response = null;
             continue;
           }
         }
+        response = candidateResponse;
         break;
       } catch (err) {
         lastError = err;
-        if (attempt.response_format === 'verbose_json') {
-          console.error('OpenAI transcription verbose_json failed; falling back to json response', {
-            model: TRANSCRIPTION_MODEL,
+        if (requiresExplicitWordTimings) {
+          console.warn('OpenAI timestamped transcription failed; trying the next alignment model', {
+            model: attempt.model,
             responseFormat: attempt.response_format,
             error: err?.response?.data || err?.message || err,
           });
         }
+      } finally {
         if (fileStream && typeof fileStream.destroy === 'function') {
           fileStream.destroy();
         }
@@ -1267,7 +1699,7 @@ async function transcribeWithOpenAI(audioFilePath, transcriptText, languageCode,
       : audioDurationSeconds;
 
     const openAiTranscript = (typeof response === 'string') ? response : (response?.text || '');
-    const rawWords = collectRawWordsFromResponse(response);
+    const rawWords = collectRawWordsFromResponse(response, languageCode);
 
     let words = rawWords
       .map((w) => {
@@ -1281,7 +1713,7 @@ async function transcribeWithOpenAI(audioFilePath, transcriptText, languageCode,
           word: rawWord,
           start: safeStart,
           end: safeEnd,
-          case: 'success',
+          case: w.case || 'success',
         };
       })
       .filter((w) => w.word.trim() !== '');
@@ -1289,9 +1721,8 @@ async function transcribeWithOpenAI(audioFilePath, transcriptText, languageCode,
     if (!words.length) {
       const fallbackTranscript = transcriptText?.trim() ? transcriptText : openAiTranscript;
       if (fallbackTranscript) {
-        const cleanedTranscript = sanitizeTranscriptForAlignment(fallbackTranscript);
         words = buildTimedWordAlignment(
-          cleanedTranscript ? cleanedTranscript.split(' ') : [],
+          tokenizeTranscriptForAlignment(fallbackTranscript, languageCode),
           effectiveDurationSeconds,
           'fallback',
         );
@@ -1306,9 +1737,8 @@ async function transcribeWithOpenAI(audioFilePath, transcriptText, languageCode,
     console.error('OpenAI transcription failed', err?.response?.data || err?.message || err);
 
     const fallbackTranscript = transcriptText?.trim() ? transcriptText : '';
-    const cleanedTranscript = sanitizeTranscriptForAlignment(fallbackTranscript);
     const words = buildTimedWordAlignment(
-      cleanedTranscript ? cleanedTranscript.split(' ') : [],
+      tokenizeTranscriptForAlignment(fallbackTranscript, languageCode),
       audioDurationSeconds,
       'fallback_error',
     );
@@ -1363,15 +1793,41 @@ async function alignWithGentle(
       resolvedTranscript = openAiResult?.transcriptText || transcriptText;
     }
 
-    const validWords = (alignedWords || []).filter(wordInfo => wordInfo.word.trim() !== '');
+    const sourceValidWords = (alignedWords || []).filter(wordInfo => wordInfo.word.trim() !== '');
 
-    if (validWords.length === 0) {
+    if (sourceValidWords.length === 0) {
       return options.returnAlignment ? { rawLayers: [], alignment: null } : [];
     }
 
-    const transcriptForMapping = resolvedTranscript || transcriptText || '';
+    const requestsMappedSubtitle = Array.isArray(options.subtitleAlignmentMap);
+    const mappedSubtitleAlignment = requestsMappedSubtitle
+      ? buildMappedSubtitleAlignment(
+        sourceValidWords,
+        options.subtitleAlignmentMap,
+        options.subtitleTranscriptText,
+      )
+      : null;
+
+    if (requestsMappedSubtitle && !mappedSubtitleAlignment) {
+      const alignment = cachedWords ? null : buildTranscriptAlignmentCache({
+        words: alignedWords,
+        transcriptText: resolvedTranscript || transcriptText || '',
+        sourceText: options.sourceText || transcriptText || '',
+        languageCode: transcriptionLanguageCode,
+        audioSource: options.audioSource || audioFilePath,
+        durationSeconds: effectiveDurationSeconds,
+      });
+      return options.returnAlignment ? { rawLayers: [], alignment } : [];
+    }
+
+    const validWords = mappedSubtitleAlignment?.words || sourceValidWords;
+    const transcriptForMapping = mappedSubtitleAlignment?.transcriptText || resolvedTranscript || transcriptText || '';
     const wordPositions = transcriptForMapping
-      ? mapWordsToTranscriptPositions(transcriptForMapping, validWords)
+      ? (
+        mappedSubtitleAlignment
+          ? mapTranslatedPhrasesToTranscriptPositions(transcriptForMapping, validWords)
+          : mapWordsToTranscriptPositions(transcriptForMapping, validWords)
+      )
       : {};
     let segments = buildSubtitleSegments(validWords, wordPositions, transcriptForMapping);
     if (!segments || segments.length === 0) {
@@ -1433,7 +1889,7 @@ async function alignWithGentle(
       const textX = canvasDimensions.width / 2;
       const textY = subtitleY;
 
-      const autoWrap = false;
+      const autoWrap = Boolean(mappedSubtitleAlignment);
 
       const breakTextWidth = canvasDimensions.width - 200;
 
@@ -1444,12 +1900,38 @@ async function alignWithGentle(
 
         const wordFrameOffset = secondsToFrame(wordStartTime, effectiveFramesPerSecond) + audioLayerStartFrame;
         const wordFrameDuration = Math.max(1, secondsToFrame(wordDuration, effectiveFramesPerSecond));
-        return {
+        const item = {
           word: w.word.trim().toUpperCase(),
           frameOffset: wordFrameOffset,
           frameDuration: wordFrameDuration
         };
+        if (mappedSubtitleAlignment) {
+          item.sourceText = w.sourceText;
+          item.translatedText = w.translatedText;
+          item.sourceWordStartIndex = w.sourceWordStartIndex;
+          item.sourceWordEndIndex = w.sourceWordEndIndex;
+          item.mappingIndex = w.mappingIndex;
+          item.mappingMatchType = w.matchType;
+        }
+        return item;
       });
+
+      const subtitleSourceWords = mappedSubtitleAlignment
+        ? mappedSubtitleAlignment.sourceWords
+          .slice(firstWord.sourceWordStartIndex, lastWord.sourceWordEndIndex + 1)
+          .map((sourceWord) => {
+            const sourceWordStart = parseFloat(sourceWord.start) || 0;
+            const sourceWordEnd = parseFloat(sourceWord.end);
+            return {
+              word: sourceWord.word,
+              frameOffset: secondsToFrame(sourceWordStart, effectiveFramesPerSecond) + audioLayerStartFrame,
+              frameDuration: Math.max(
+                1,
+                secondsToFrame(sourceWordEnd - sourceWordStart, effectiveFramesPerSecond),
+              ),
+            };
+          })
+        : undefined;
 
 
       let textAccent;
@@ -1540,7 +2022,8 @@ async function alignWithGentle(
         speaker: speakerDetails.speaker,
         showSpeaker: Boolean(speakerDetails.showSpeaker),
         speakerFontFamily: speakerDetails.speakerFont,
-
+        ...(subtitleSourceWords ? { subtitleSourceWords } : {}),
+        ...getMappedSubtitleItemMetadata(options, mappedSubtitleAlignment),
       };
 
       return textItem;
@@ -1569,10 +2052,24 @@ async function alignWithGentle(
 
 export const __testOnly__ = {
   normalizeComparableLanguageCode,
+  getTranscriptionLanguageCode,
   getTranslatedSubtitleContext,
   getTranslatedSubtitleText,
+  getSubtitleAlignmentMap,
+  getTranslatedSubtitleSpeakerName,
+  buildMappedSubtitleAlignment,
+  mapTranslatedPhrasesToTranscriptPositions,
+  getMappedSubtitleItemMetadata,
   resolveLanguageFontCandidates,
   resolveConnectedSceneLayer,
   getStaticSubtitleTiming,
   buildStaticTranslatedSubtitleItem,
+  tokenizeTranscriptForAlignment,
+  getWordTimestampCapability,
+  buildTranscriptionAttempts,
+  transcribeWithOpenAI,
+  hasExplicitWordTimings,
+  hasAuthoritativeWordTimings,
+  buildTranscriptAlignmentCache,
+  getCachedTranscriptAlignment,
 };

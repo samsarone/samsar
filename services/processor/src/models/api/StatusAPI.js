@@ -146,6 +146,8 @@ export const VIDEO_STATUS_DETAILED_SESSION_PROJECTION = [
   'audioLayers.subtitleLanguage',
   'audioLayers.speechLanguage',
   'audioLayers.subtitleTranslationRequired',
+  'audioLayers.subtitleAlignmentMap',
+  'audioLayers.subtitleSpeakerCharacterName',
   'audioLayers.generationType',
   'audioLayers.generationStatus',
   'audioLayers.generationError',
@@ -1180,6 +1182,10 @@ function serializeDetailedAudioLayer(layer = {}, index = 0, req = null) {
     subtitleLanguage: normalizeNonEmptyString(layer.subtitleLanguage),
     speechLanguage: normalizeNonEmptyString(layer.speechLanguage),
     subtitleTranslationRequired: normalizeBoolean(layer.subtitleTranslationRequired),
+    subtitleAlignmentMap: Array.isArray(layer.subtitleAlignmentMap)
+      ? layer.subtitleAlignmentMap
+      : undefined,
+    subtitleSpeakerCharacterName: normalizeNonEmptyString(layer.subtitleSpeakerCharacterName),
     url,
     remoteAudioLinks: normalizeResponseAssetUrlList(layer.remoteAudioLinks, req),
     volume: normalizeNumber(layer.volume),

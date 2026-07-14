@@ -145,6 +145,8 @@ const audioLayerSchema = new Schema({
     subtitleText: String,
     subtitleLanguage: String,
     subtitleTranslationRequired: { type: Boolean, default: false },
+    subtitleAlignmentMap: [Object],
+    subtitleSpeakerCharacterName: String,
     localAudioLinks: [String],
     remoteAudioLinks: [String],
     remoteAudioData: [Object],

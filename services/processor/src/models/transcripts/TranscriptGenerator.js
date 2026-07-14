@@ -1,5 +1,3 @@
-import fs from 'fs';
-import path from 'path';
 import { createCanvas } from 'canvas';
 import { getDBConnectionString } from '../DBString.js';
 import VideoSession from '../../schema/VideoSession.js';
@@ -13,6 +11,9 @@ import {
   buildSubtitleLayersFromAlignment,
   getCachedTranscriptAlignment,
 } from './Aligner.js';
+import { resolveGeneratedSubtitleLayers } from './SubtitleRerunFallback.js';
+import { resolveSubtitleAudioSource } from './SubtitleAudioSource.js';
+import { resolveAudioLinkToLocalPath } from '../audio/AudioUtils.js';
 
 function getAlignerLanguageCode(languageCode = '') {
   if (typeof languageCode !== 'string') {
@@ -44,7 +45,6 @@ async function getSubtitleLayersForAudioLayer({
   sessionId,
   audioLayer,
   audioLayerId,
-  audioLocalFilePath,
   audioSource,
   transcriptText,
   canvasDimensions,
@@ -86,24 +86,46 @@ async function getSubtitleLayersForAudioLayer({
     }
   }
 
-  const alignmentResult = await alignSpeechLayerWithGentle(
-    audioLocalFilePath,
-    transcriptText,
-    canvasDimensions,
-    subtitleFont,
-    subtitleWordAnimation,
-    audioLayerStartFrame,
-    audioLayerId,
-    alignerLanguageCode,
-    audioLayer.duration,
-    framesPerSecond,
-    {
-      returnAlignment: true,
-      sourceText: transcriptText,
-      audioSource,
-      inferenceModel,
+  const resolvedAudioSource = await resolveSubtitleAudioSource({
+    audioLayer,
+    // AudioUtils is the canonical assets_v2-versus-legacy resolver. In
+    // particular, it avoids turning assets_v2/foo into assets/assets_v2/foo.
+    preferredLocalFilePath: resolveAudioLinkToLocalPath(
+      audioLayer.selectedLocalAudioLink || audioLayer.localAudioLinks?.[0],
+    ),
+  });
+  let alignmentResult;
+  try {
+    if (resolvedAudioSource.isTemporary) {
+      console.warn('Recovered subtitle-alignment audio from durable media storage', {
+        sessionId,
+        audioLayerId,
+        objectKey: resolvedAudioSource.objectKey,
+      });
     }
-  );
+    alignmentResult = await alignSpeechLayerWithGentle(
+      resolvedAudioSource.filePath,
+      transcriptText,
+      canvasDimensions,
+      subtitleFont,
+      subtitleWordAnimation,
+      audioLayerStartFrame,
+      audioLayerId,
+      alignerLanguageCode,
+      audioLayer.duration,
+      framesPerSecond,
+      {
+        returnAlignment: true,
+        sourceText: transcriptText,
+        // Keep the logical source stable so the new cache remains reusable
+        // even when alignment temporarily materialized a remote object.
+        audioSource,
+        inferenceModel,
+      }
+    );
+  } finally {
+    await resolvedAudioSource.cleanup();
+  }
 
   if (alignmentResult?.alignment) {
     await VideoSession.updateOne(
@@ -117,7 +139,17 @@ async function getSubtitleLayersForAudioLayer({
 
 
 
-export async function generateTranscriptsForSessionAudioLayers(sessionId, audioLayers) {
+export async function generateTranscriptsForSessionAudioLayers(
+  sessionId,
+  audioLayers,
+  { requireNonEmptySubtitles = false } = {},
+) {
+  if (
+    requireNonEmptySubtitles &&
+    (!Array.isArray(audioLayers) || audioLayers.length === 0)
+  ) {
+    throw new Error('Subtitle regeneration requires at least one speech audio layer.');
+  }
   await getDBConnectionString();
   let sessionData = await VideoSession.findById(sessionId);
   const framesPerSecond = getSessionFramesPerSecond(
@@ -159,16 +191,14 @@ export async function generateTranscriptsForSessionAudioLayers(sessionId, audioL
     const subtitleWordAnimation = audioLayer.subtitleWordAnimation || 'highlight';
 
 
-    const audioFilePath = audioLayer.selectedLocalAudioLink;
+    const audioSource =
+      audioLayer.selectedLocalAudioLink ||
+      audioLayer.localAudioLinks?.[0] ||
+      audioLayer.selectedRemoteAudioLink ||
+      audioLayer.remoteAudioLinks?.[0] ||
+      audioLayer.remoteAudioData?.[0]?.audio_url ||
+      null;
     const transcriptText = audioLayer.prompt;
-
-    const pwd = process.cwd();
-    let audioFileBase = path.join(pwd, '../', 'samsar_processor', 'assets');
-    if (process.env.CURRENT_ENV === 'staging' || process.env.CURRENT_ENV === 'docker') {
-      audioFileBase = '/assets'; // Docker staging volume mount path
-    }
-    
-    const audioLocalFilePath = `${audioFileBase}/${audioFilePath}`;
 
     const aspectRatio = sessionData.aspectRatio;
     const canvasDimensions = getCanvasDimensionsForAspectRatio(aspectRatio);
@@ -177,12 +207,11 @@ export async function generateTranscriptsForSessionAudioLayers(sessionId, audioL
     const audioLayerStartFrame = secondsToFrame(audioLayer.startTime, framesPerSecond);
 
 
-    const newRawLayers = await getSubtitleLayersForAudioLayer({
+    const generatedRawLayers = await getSubtitleLayersForAudioLayer({
       sessionId,
       audioLayer,
       audioLayerId,
-      audioLocalFilePath,
-      audioSource: audioFilePath,
+      audioSource,
       transcriptText,
       canvasDimensions,
       subtitleFont,
@@ -193,11 +222,21 @@ export async function generateTranscriptsForSessionAudioLayers(sessionId, audioL
       inferenceModel,
     });
 
+    const newRawLayers = resolveGeneratedSubtitleLayers(generatedRawLayers, {
+      requireNonEmpty: requireNonEmptySubtitles,
+      audioLayer,
+      session: sessionData,
+      canvasDimensions,
+      framesPerSecond,
+    });
+
 
     let speaker = 'Narrator';
 
-    if (audioLayer.speakerCharacterName) {
-      speaker = audioLayer.speakerCharacterName;
+    const subtitleSpeakerCharacterName =
+      audioLayer.subtitleSpeakerCharacterName || audioLayer.speakerCharacterName;
+    if (subtitleSpeakerCharacterName) {
+      speaker = subtitleSpeakerCharacterName;
       newRawLayers.forEach(layer => {
         layer.speaker = speaker;
         layer.showSpeaker = true;
@@ -260,15 +299,14 @@ export async function generateTranscriptsForSessionAudioLayersAfterLayer(session
       const subtitleWordAnimation = audioLayer.subtitleWordAnimation || 'highlight';
   
   
-      const audioFilePath = audioLayer.selectedLocalAudioLink;
+      const audioSource =
+        audioLayer.selectedLocalAudioLink ||
+        audioLayer.localAudioLinks?.[0] ||
+        audioLayer.selectedRemoteAudioLink ||
+        audioLayer.remoteAudioLinks?.[0] ||
+        audioLayer.remoteAudioData?.[0]?.audio_url ||
+        null;
       const transcriptText = audioLayer.prompt;
-  
-      const pwd = process.cwd();
-      let audioFileBase = path.join(pwd, '../', 'samsar_processor', 'assets');
-      if (process.env.CURRENT_ENV === 'staging' || process.env.CURRENT_ENV === 'docker') {
-        audioFileBase = '/assets'; // Docker staging volume mount path
-      }
-      const audioLocalFilePath = `${audioFileBase}/${audioFilePath}`;
   
       const aspectRatio = sessionData.aspectRatio;
       const canvasDimensions = getCanvasDimensionsForAspectRatio(aspectRatio);
@@ -277,12 +315,11 @@ export async function generateTranscriptsForSessionAudioLayersAfterLayer(session
       const audioLayerStartFrame = secondsToFrame(audioLayer.startTime, framesPerSecond);
   
   
-      const newRawLayers = await getSubtitleLayersForAudioLayer({
+      const generatedRawLayers = await getSubtitleLayersForAudioLayer({
         sessionId,
         audioLayer,
         audioLayerId,
-        audioLocalFilePath,
-        audioSource: audioFilePath,
+        audioSource,
         transcriptText,
         canvasDimensions,
         subtitleFont,
@@ -292,10 +329,18 @@ export async function generateTranscriptsForSessionAudioLayersAfterLayer(session
         framesPerSecond,
         inferenceModel,
       });
+      const newRawLayers = resolveGeneratedSubtitleLayers(generatedRawLayers, {
+        audioLayer,
+        session: sessionData,
+        canvasDimensions,
+        framesPerSecond,
+      });
       let speaker = 'Narrator';
   
-      if (audioLayer.speakerCharacterName) {
-        speaker = audioLayer.speakerCharacterName;
+      const subtitleSpeakerCharacterName =
+        audioLayer.subtitleSpeakerCharacterName || audioLayer.speakerCharacterName;
+      if (subtitleSpeakerCharacterName) {
+        speaker = subtitleSpeakerCharacterName;
         newRawLayers.forEach(layer => {
           layer.speaker = speaker;
           layer.showSpeaker = true;

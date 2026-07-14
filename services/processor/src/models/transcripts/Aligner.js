@@ -7,7 +7,10 @@ import { getCanvasDimensionsForAspectRatio } from '../../utils/CanvasUtils.js';
 import { addSubtitlesForSessionForAudio } from './TransscriptUtils.js';
 import { getAccentForText } from './AccentUtils.js';
 import { resolveSubtitleFont } from '../../consts/SubtitleFonts.js';
-import { transcribeWithOpenAI } from './SpeechAlignment.js';
+import {
+  hasAuthoritativeWordTimings,
+  transcribeWithOpenAI,
+} from './SpeechAlignment.js';
 import { getFramesPerSecondFromValue } from '../../utils/FpsUtils.js';
 
 
@@ -139,10 +142,10 @@ export function getCachedTranscriptAlignment(audioLayer = {}, transcriptText = '
     return null;
   }
 
-  const cachedWords = normalizeAlignmentWordsForCache(alignment.words);
-  if (cachedWords.length === 0) {
+  if (!hasAuthoritativeWordTimings(alignment.words)) {
     return null;
   }
+  const cachedWords = normalizeAlignmentWordsForCache(alignment.words);
 
   const cachedSourceText = normalizeAlignmentCacheText(alignment.sourceText);
   const nextSourceText = normalizeAlignmentCacheText(transcriptText);
@@ -177,6 +180,9 @@ export function buildTranscriptAlignmentCache({
   audioSource = null,
   durationSeconds = null,
 } = {}) {
+  if (!hasAuthoritativeWordTimings(words)) {
+    return null;
+  }
   const normalizedWords = normalizeAlignmentWordsForCache(words);
   if (normalizedWords.length === 0) {
     return null;

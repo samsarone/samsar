@@ -57,6 +57,7 @@ VidGenie is the fast creator. It supports two creation modes:
 Key VidGenie features:
 
 - **Wizard mode** for non-technical users.
+- **Audio-language selection for both T2V and I2V**, with an independent optional subtitle language when subtitles are enabled.
 - **JSON mode** for exact API-shaped requests, validation, inline syntax errors, automatic repair of common JSON-like input mistakes, and copyable request bodies.
 - **Voice prompt capture** with browser speech recognition or realtime transcription fallback.
 - **One-step generation** for fully automatic rendering.

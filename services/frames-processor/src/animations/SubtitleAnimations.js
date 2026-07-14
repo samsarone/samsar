@@ -2,7 +2,11 @@
 
 import { wrapText } from '../utils/TextUtils.js';
 import { getFramesPerSecondFromValue } from '../utils/FpsUtils.js';
-import { isStaticSubtitleItem } from '../utils/SubtitleRenderPolicy.js';
+import { getSubtitleEndFrameExclusive } from '../utils/FrameTimingUtils.js';
+import {
+  isMappedTranslatedSubtitleItem,
+  isStaticSubtitleItem,
+} from '../utils/SubtitleRenderPolicy.js';
 
 const textWordCustomAnimations = [
   'bleeding',
@@ -19,6 +23,13 @@ const GENERIC_LATIN_FONTS = ['poppins', 'montserrat', 'arial', 'sans-serif'];
 const fontStackLog = new Set();
 const thaiFontWarnings = new Set();
 const THAI_RANGE_REGEX = /[\u0E00-\u0E7F]/;
+const MAX_SUBTITLE_LINES_PER_PAGE = 2;
+const SUBTITLE_EDGE_FADE_FRAMES = 3;
+const HIGHLIGHT_EDGE_FADE_FRAMES = 2;
+const TRANSLATED_CUE_EDGE_FADE_FRAMES = 3;
+const TRANSLATED_CUE_HOLD_FRAMES = 4;
+const TRANSLATED_CUE_MAX_GAP_SECONDS = 0.35;
+const TRANSLATED_CUE_MAX_SPAN_SECONDS = 4;
 
 function toFontListString(fonts) {
   return fonts.map((font) => (font.includes(' ') ? `"${font}"` : font)).join(', ');
@@ -87,28 +98,133 @@ function getEffectiveConfig(item) {
   return config;
 }
 
-function getSpeakerStyles(config = {}) {
-  const baseFontSize = config.fontSize || 40;
-  const speakerFontSize = config.speakerFontSize || Math.round(baseFontSize * 0.8);
-  const speakerFontFamily = config.speakerFontFamily || config.fontFamily || DEFAULT_FONT_FALLBACKS[0];
-  const speakerFontEmphasis = config.speakerFontEmphasis || config.fontEmphasis || 'bold';
-  const speakerFillColor = config.speakerFillColor || config.fillColor || '#FFFFFF';
-  const speakerStrokeColor = config.speakerStrokeColor ?? config.strokeColor;
-  const speakerStrokeWidth = config.speakerStrokeWidth ?? (config.strokeWidth ? config.strokeWidth + 1 : 3);
-
-  const resolvedFamily = buildFontStack(speakerFontFamily, 'speaker');
+function getSpeakerStyles(config = {}, bodyFontString = '') {
+  const speakerFontFamily = config.fontFamily || DEFAULT_FONT_FALLBACKS[0];
+  const speakerFillColor = config.fillColor || '#BFDBFE';
+  const speakerStrokeColor = config.strokeColor;
+  const speakerStrokeWidth = config.strokeWidth;
+  const resolvedBodyFont = typeof bodyFontString === 'string' && bodyFontString.trim()
+    ? bodyFontString
+    : buildFontString(
+      config.fontSize || 40,
+      config.fontEmphasis,
+      buildFontStack(speakerFontFamily, 'subtitle'),
+    );
+  const bodyFontSize = Number(config.fontSize);
+  const speakerFontSize = (Number.isFinite(bodyFontSize) ? bodyFontSize : 40) + 1;
+  const speakerFontString = resolvedBodyFont.replace(
+    /(?:\d+(?:\.\d+)?)px/u,
+    `${speakerFontSize}px`,
+  );
 
   return {
-    fontString: buildFontString(speakerFontSize, speakerFontEmphasis, resolvedFamily),
+    // The label is part of the caption. Preserve the exact resolved weight,
+    // family, and glyph fallbacks, with only the requested one-pixel lift.
+    fontString: speakerFontString,
     fillColor: speakerFillColor,
     strokeColor: speakerStrokeColor,
     strokeWidth: speakerStrokeWidth,
   };
 }
 
+function clamp01(value) {
+  return Math.min(1, Math.max(0, Number(value) || 0));
+}
+
+function smoothstep(value) {
+  const t = clamp01(value);
+  return t * t * (3 - 2 * t);
+}
+
+function multiplyContextAlpha(ctx, factor) {
+  const currentAlpha = Number(ctx.globalAlpha);
+  ctx.globalAlpha = (Number.isFinite(currentAlpha) ? currentAlpha : 1) * clamp01(factor);
+}
+
+function getSubtitleItemEdgeAlpha(item, elapsedTime, durationOffset, framesPerSecond) {
+  const config = item?.config || {};
+  const startFrame = Number(config.frameOffset);
+  const frameDuration = Number(config.frameDuration);
+  if (
+    !Number.isFinite(startFrame) ||
+    !Number.isFinite(frameDuration) ||
+    frameDuration <= 0
+  ) {
+    return 1;
+  }
+
+  const durationOffsetSeconds = Number(durationOffset) || 0;
+  const durationOffsetFrames = durationOffsetSeconds * framesPerSecond;
+  const currentFrameLocal = (
+    (Number(elapsedTime) - durationOffsetSeconds * 1000) * framesPerSecond
+  ) / 1000;
+  const endFrame = getSubtitleEndFrameExclusive(item, {
+    durationOffsetFrames,
+  }) ?? (startFrame + frameDuration);
+  const effectiveDuration = Math.max(1, endFrame - startFrame);
+  const fadeFrames = Math.max(
+    1,
+    Math.min(SUBTITLE_EDGE_FADE_FRAMES, Math.floor(effectiveDuration / 2) || 1),
+  );
+  const fadeIn = smoothstep((currentFrameLocal - startFrame + 1) / fadeFrames);
+  const fadeOut = smoothstep((endFrame - currentFrameLocal) / fadeFrames);
+  return Math.min(fadeIn, fadeOut);
+}
+
+const ENTRANCE_ANIMATIONS = new Set(['fade-in', 'slide-in', 'typewriter']);
+const EXIT_ANIMATIONS = new Set(['fade-out', 'slide-out']);
+
+function getAnimationPriority(type) {
+  if (EXIT_ANIMATIONS.has(type)) {
+    return 3;
+  }
+  if (type === 'typewriter') {
+    return 2;
+  }
+  return ENTRANCE_ANIMATIONS.has(type) ? 1 : 0;
+}
+
+function renderAnimationState(
+  ctx,
+  item,
+  state,
+  elapsedTime,
+  durationOffset,
+  framesPerSecond,
+) {
+  const linearProgress = state.totalDuration > 0
+    ? clamp01((elapsedTime - state.startTime) / state.totalDuration)
+    : 1;
+  const progress = smoothstep(linearProgress);
+
+  switch (state.type) {
+    case 'typewriter':
+      applyTypewriterEffect(ctx, item, progress, elapsedTime, durationOffset, framesPerSecond);
+      break;
+    case 'fade-in':
+      applyFadeInEffect(ctx, item, progress, elapsedTime, durationOffset, framesPerSecond);
+      break;
+    case 'fade-out':
+      applyFadeOutEffect(ctx, item, progress, elapsedTime, durationOffset, framesPerSecond);
+      break;
+    case 'slide-in':
+      applySlideInEffect(ctx, item, progress, elapsedTime, durationOffset, framesPerSecond);
+      break;
+    case 'slide-out':
+      applySlideOutEffect(ctx, item, progress, elapsedTime, durationOffset, framesPerSecond);
+      break;
+    default:
+      renderText(ctx, item, elapsedTime, durationOffset, framesPerSecond);
+  }
+}
+
 function getSpeakerLabel(item) {
   if (item && item.showSpeaker && item.speaker) {
-    return `${item.speaker}`.toUpperCase() + ':';
+    const label = `${item.speaker}`.trim();
+    if (!label) {
+      return null;
+    }
+    return /[:：]$/u.test(label) ? label : `${label}:`;
   }
   return null;
 }
@@ -178,114 +294,126 @@ export function applyTextSubtitleAnimations(ctx, item, elapsedTime, durationOffs
   const { animations } = item;
   const effectiveFramesPerSecond = getFramesPerSecondFromValue(framesPerSecond);
   const renderAsStaticSubtitle = isStaticSubtitleItem(item);
+  const renderAsMappedSubtitle = isMappedTranslatedSubtitleItem(item);
 
-
-  const hasAnimations = !renderAsStaticSubtitle && Array.isArray(animations) && animations.length > 0;
+  const hasAnimations =
+    !renderAsStaticSubtitle &&
+    !renderAsMappedSubtitle &&
+    Array.isArray(animations) &&
+    animations.length > 0;
 
   if (item.subType === 'subtitle') {
     const existingConfig = item.config || {};
     item.config = {
       ...existingConfig,
-      autoWrap: renderAsStaticSubtitle ? existingConfig.autoWrap !== false : false,
+      autoWrap: renderAsMappedSubtitle
+        ? true
+        : renderAsStaticSubtitle
+          ? existingConfig.autoWrap !== false
+          : existingConfig.autoWrap === true,
       linePaddingPx: existingConfig.linePaddingPx != null ? existingConfig.linePaddingPx : 0,
       ...(renderAsStaticSubtitle ? { staticSubtitle: true } : {}),
     };
   }
 
-  // Keep track of original text for after our animations
   const originalText = item.text;
+  ctx.save();
+  multiplyContextAlpha(
+    ctx,
+    renderAsMappedSubtitle
+      ? 1
+      : getSubtitleItemEdgeAlpha(
+        item,
+        elapsedTime,
+        durationOffset,
+        effectiveFramesPerSecond,
+      ),
+  );
 
-  if (renderAsStaticSubtitle) {
-    renderText(
-      ctx,
-      {
-        ...item,
-        animations: [],
-        words: [],
-        wordAnimation: null,
-        textAccent: null,
-      },
-      elapsedTime,
-      durationOffset,
-      effectiveFramesPerSecond,
-    );
-    item.text = originalText;
-    return;
-  }
-
-  if (!hasAnimations) {
-
-
-    renderText(ctx, item, elapsedTime, durationOffset, effectiveFramesPerSecond);
-    // Revert the text to original after rendering
-    item.text = originalText;
-    return;
-  }
-
-  animations.sort((a, b) => a.startFrame - b.startFrame);
-
-  let animationApplied = false;
-
-  animations.forEach(animation => {
-    const { type, startFrame, endFrame } = animation;
-    const startTime = startFrame * (1000 / effectiveFramesPerSecond);
-    const endTime = endFrame * (1000 / effectiveFramesPerSecond);
-    const totalDuration = endTime - startTime;
-    const animationElapsed = elapsedTime - startTime;
-
-    if (animationElapsed >= 0 && animationElapsed <= totalDuration) {
-      const t = animationElapsed / totalDuration; // Progress [0,1]
-
-      switch (type) {
-        case 'typewriter':
-          applyTypewriterEffect(ctx, item, t, elapsedTime, durationOffset, effectiveFramesPerSecond);
-          animationApplied = true;
-          break;
-        case 'fade-in':
-          applyFadeInEffect(ctx, item, t, elapsedTime, durationOffset, effectiveFramesPerSecond);
-          animationApplied = true;
-          break;
-        case 'fade-out':
-          applyFadeOutEffect(ctx, item, t, elapsedTime, durationOffset, effectiveFramesPerSecond);
-          animationApplied = true;
-          break;
-        case 'slide-in':
-          applySlideInEffect(ctx, item, t, elapsedTime, durationOffset, effectiveFramesPerSecond);
-          animationApplied = true;
-          break;
-        case 'slide-out':
-          applySlideOutEffect(ctx, item, t, elapsedTime, durationOffset, effectiveFramesPerSecond);
-          animationApplied = true;
-          break;
-        default:
-          renderText(ctx, item, elapsedTime, durationOffset, effectiveFramesPerSecond);
-          animationApplied = true;
-      }
-    } else if (animationElapsed > totalDuration) {
-      // After animation ends
-      if (type === 'fade-in' || type === 'slide-in' || type === 'typewriter') {
-        // Render normally after these animations complete
-        renderText(ctx, item, elapsedTime, durationOffset, effectiveFramesPerSecond);
-        animationApplied = true;
-      }
-      // For fade-out and slide-out, do not render after animation ends
+  try {
+    if (renderAsStaticSubtitle) {
+      renderText(
+        ctx,
+        {
+          ...item,
+          animations: [],
+          words: [],
+          wordAnimation: null,
+          textAccent: null,
+        },
+        elapsedTime,
+        durationOffset,
+        effectiveFramesPerSecond,
+      );
+      return;
     }
-  });
 
-  if (!animationApplied) {
-    const lastAnimation = animations[animations.length - 1];
-    if (
-      lastAnimation &&
-      (lastAnimation.type === 'fade-in' ||
-        lastAnimation.type === 'slide-in' ||
-        lastAnimation.type === 'typewriter')
-    ) {
+    if (!hasAnimations) {
+      renderText(ctx, item, elapsedTime, durationOffset, effectiveFramesPerSecond);
+      return;
+    }
+
+    const millisecondsPerFrame = 1000 / effectiveFramesPerSecond;
+    const animationStates = animations.map((animation, originalIndex) => {
+      const startFrame = Number(animation?.startFrame);
+      const endFrame = Number(animation?.endFrame);
+      if (!Number.isFinite(startFrame) || !Number.isFinite(endFrame)) {
+        return null;
+      }
+
+      const startTime = startFrame * millisecondsPerFrame;
+      const endTime = Math.max(startTime, endFrame * millisecondsPerFrame);
+      return {
+        ...animation,
+        originalIndex,
+        startTime,
+        endTime,
+        totalDuration: endTime - startTime,
+      };
+    }).filter(Boolean).sort((first, second) => (
+      first.startTime - second.startTime ||
+      getAnimationPriority(first.type) - getAnimationPriority(second.type) ||
+      first.originalIndex - second.originalIndex
+    ));
+
+    if (animationStates.length === 0) {
+      renderText(ctx, item, elapsedTime, durationOffset, effectiveFramesPerSecond);
+      return;
+    }
+
+    const activeState = animationStates.filter((state) => (
+      elapsedTime >= state.startTime && elapsedTime < state.endTime
+    )).at(-1);
+
+    if (activeState) {
+      renderAnimationState(
+        ctx,
+        item,
+        activeState,
+        elapsedTime,
+        durationOffset,
+        effectiveFramesPerSecond,
+      );
+      return;
+    }
+
+    const lastStartedState = animationStates.filter(
+      (state) => elapsedTime >= state.startTime,
+    ).at(-1);
+    if (lastStartedState) {
+      if (!EXIT_ANIMATIONS.has(lastStartedState.type)) {
+        renderText(ctx, item, elapsedTime, durationOffset, effectiveFramesPerSecond);
+      }
+      return;
+    }
+
+    if (EXIT_ANIMATIONS.has(animationStates[0].type)) {
       renderText(ctx, item, elapsedTime, durationOffset, effectiveFramesPerSecond);
     }
+  } finally {
+    item.text = originalText;
+    ctx.restore();
   }
-
-  // Revert text back to original
-  item.text = originalText;
 }
 
 function applyTypewriterEffect(ctx, item, t, elapsedTime, durationOffset = 0, framesPerSecond) {
@@ -305,8 +433,8 @@ function applyTypewriterEffect(ctx, item, t, elapsedTime, durationOffset = 0, fr
     displayText,
     config,
     elapsedTime,
-    item.words,
-    item.wordAnimation,
+    [],
+    null,
     item.textAccent,
     speakerLabel,
     durationOffset,
@@ -316,14 +444,14 @@ function applyTypewriterEffect(ctx, item, t, elapsedTime, durationOffset = 0, fr
 
 function applyFadeInEffect(ctx, item, t, elapsedTime, durationOffset = 0, framesPerSecond) {
   ctx.save();
-  ctx.globalAlpha = t;
+  multiplyContextAlpha(ctx, t);
   renderText(ctx, item, elapsedTime, durationOffset, framesPerSecond);
   ctx.restore();
 }
 
 function applyFadeOutEffect(ctx, item, t, elapsedTime, durationOffset = 0, framesPerSecond) {
   ctx.save();
-  ctx.globalAlpha = 1 - t;
+  multiplyContextAlpha(ctx, 1 - t);
   renderText(ctx, item, elapsedTime, durationOffset, framesPerSecond);
   ctx.restore();
 }
@@ -331,7 +459,7 @@ function applyFadeOutEffect(ctx, item, t, elapsedTime, durationOffset = 0, frame
 function applySlideInEffect(ctx, item, t, elapsedTime, durationOffset = 0, framesPerSecond) {
   // Just fade in for simplicity
   ctx.save();
-  ctx.globalAlpha = t;
+  multiplyContextAlpha(ctx, t);
   renderText(ctx, item, elapsedTime, durationOffset, framesPerSecond);
   ctx.restore();
 }
@@ -339,7 +467,7 @@ function applySlideInEffect(ctx, item, t, elapsedTime, durationOffset = 0, frame
 function applySlideOutEffect(ctx, item, t, elapsedTime, durationOffset = 0, framesPerSecond) {
   // Just fade out for simplicity
   ctx.save();
-  ctx.globalAlpha = 1 - t;
+  multiplyContextAlpha(ctx, 1 - t);
   renderText(ctx, item, elapsedTime, durationOffset, framesPerSecond);
   ctx.restore();
 }
@@ -362,7 +490,10 @@ function setupTextContext(ctx, config, item) {
     fontFamily = normalizedFontFamily;
   }
 
-  const resolvedFontFamily = buildFontStack(fontFamily, item?.subType || 'text', item?.text || item?.speaker);
+  const fontSample = [item?.text, item?.speaker]
+    .filter((value) => typeof value === 'string' && value.trim())
+    .join(' ');
+  const resolvedFontFamily = buildFontStack(fontFamily, item?.subType || 'text', fontSample);
 
   ctx.textBaseline = 'middle';
   ctx.font = buildFontString(fontSize, fontEmphasis, resolvedFontFamily);
@@ -389,19 +520,118 @@ function setupTextContext(ctx, config, item) {
   }
 }
 
-function wrapWords(ctx, wordsArray, maxWidth, config) {
+function getWordJoinerWidth(ctx, wordInfo, config = {}) {
+  const {
+    wordSpacing = 1.0,
+    wordPaddingPx = 0,
+  } = config;
+  const joiner = typeof wordInfo?.joinerBefore === 'string'
+    ? wordInfo.joinerBefore
+    : ' ';
+
+  if (!joiner) {
+    return 0;
+  }
+
+  return ctx.measureText(joiner).width * wordSpacing + wordPaddingPx;
+}
+
+function groupDisplayChunksToAvailableFrames(chunks, frameDuration, joiner) {
+  const availableFrames = Math.max(1, Math.floor(frameDuration));
+  if (chunks.length <= availableFrames) {
+    return chunks;
+  }
+
+  return Array.from({ length: availableFrames }, (_, groupIndex) => {
+    const startIndex = Math.floor((groupIndex * chunks.length) / availableFrames);
+    const endIndex = Math.floor(((groupIndex + 1) * chunks.length) / availableFrames);
+    return chunks.slice(startIndex, Math.max(startIndex + 1, endIndex)).join(joiner);
+  });
+}
+
+function splitTimedWordAcrossChunks(ctx, wordInfo, rawChunks, internalJoiner) {
+  const frameDuration = Math.max(1, Math.round(Number(wordInfo.frameDuration) || 0));
+  const chunks = groupDisplayChunksToAvailableFrames(
+    rawChunks,
+    frameDuration,
+    internalJoiner,
+  );
+  if (chunks.length <= 1) {
+    return [wordInfo];
+  }
+
+  const widths = chunks.map((chunk) => Math.max(1, ctx.measureText(chunk).width));
+  const totalWidth = widths.reduce((total, width) => total + width, 0);
+  const boundaries = [0];
+  let cumulativeWidth = 0;
+
+  for (let index = 0; index < chunks.length - 1; index += 1) {
+    cumulativeWidth += widths[index];
+    const proportionalBoundary = Math.round(
+      (frameDuration * cumulativeWidth) / totalWidth,
+    );
+    const minimumBoundary = boundaries[index] + 1;
+    const maximumBoundary = frameDuration - (chunks.length - index - 1);
+    boundaries.push(Math.min(
+      maximumBoundary,
+      Math.max(minimumBoundary, proportionalBoundary),
+    ));
+  }
+  boundaries.push(frameDuration);
+
+  return chunks.map((chunk, chunkIndex) => ({
+    ...wordInfo,
+    word: chunk,
+    frameOffset: (Number(wordInfo.frameOffset) || 0) + boundaries[chunkIndex],
+    frameDuration: boundaries[chunkIndex + 1] - boundaries[chunkIndex],
+    joinerBefore: chunkIndex === 0 ? wordInfo.joinerBefore : internalJoiner,
+    visualChunkIndex: chunkIndex,
+    visualChunkCount: chunks.length,
+  }));
+}
+
+function expandLongTimedWords(ctx, wordsArray, maxWidth, config = {}) {
+  if (!config.breakLongWords) {
+    return wordsArray;
+  }
+
+  return wordsArray.flatMap((wordInfo) => {
+    if (ctx.measureText(wordInfo.word).width <= maxWidth) {
+      return [wordInfo];
+    }
+
+    const chunks = wrapText(ctx, wordInfo.word, maxWidth, { breakLongWords: true })
+      .filter((chunk) => typeof chunk === 'string' && chunk.length > 0);
+    if (chunks.length <= 1) {
+      return [wordInfo];
+    }
+
+    const internalJoiner = /\s/u.test(wordInfo.word) ? ' ' : '';
+    return splitTimedWordAcrossChunks(ctx, wordInfo, chunks, internalJoiner);
+  });
+}
+
+function wrapWords(ctx, wordsArray, maxWidth, config, speakerPrefixWidth = 0) {
   const lines = [];
   let currentLine = [];
   let currentLineWidth = 0;
 
-  const spaceWidth = ctx.measureText(' ').width;
+  const narrowestLineWidth = Math.max(1, maxWidth - speakerPrefixWidth);
+  const renderWords = expandLongTimedWords(ctx, wordsArray, narrowestLineWidth, config);
 
-  for (let i = 0; i < wordsArray.length; i++) {
-    const w = wordsArray[i];
+  for (let i = 0; i < renderWords.length; i++) {
+    const w = renderWords[i];
     const wordWidth = ctx.measureText(w.word).width;
-    const spaceNeeded = currentLine.length > 0 ? spaceWidth : 0;
+    const joinerWidth = currentLine.length > 0
+      ? getWordJoinerWidth(ctx, w, config)
+      : 0;
+    const isPageFirstLine = lines.length % MAX_SUBTITLE_LINES_PER_PAGE === 0;
+    const availableLineWidth = Math.max(
+      1,
+      maxWidth - (isPageFirstLine ? speakerPrefixWidth : 0),
+    );
     if (
-      currentLineWidth + wordWidth + spaceNeeded > maxWidth &&
+      currentLineWidth + wordWidth + joinerWidth > availableLineWidth &&
       currentLine.length > 0
     ) {
       lines.push(currentLine);
@@ -409,7 +639,7 @@ function wrapWords(ctx, wordsArray, maxWidth, config) {
       currentLineWidth = wordWidth;
     } else {
       currentLine.push(w);
-      currentLineWidth += wordWidth + spaceNeeded;
+      currentLineWidth += wordWidth + joinerWidth;
     }
   }
 
@@ -418,6 +648,312 @@ function wrapWords(ctx, wordsArray, maxWidth, config) {
   }
 
   return lines;
+}
+
+function getTranslatedPhraseKey(wordInfo, fallbackIndex) {
+  if (
+    typeof wordInfo?.translatedCueIdentity === 'string' &&
+    wordInfo.translatedCueIdentity.trim()
+  ) {
+    return `cue:${wordInfo.translatedCueIdentity.trim()}`;
+  }
+  if (wordInfo?.mappingIndex != null) {
+    return `mapping:${wordInfo.mappingIndex}`;
+  }
+  if (wordInfo?.translatedPhraseIndex != null) {
+    return `phrase:${wordInfo.translatedPhraseIndex}`;
+  }
+  if (wordInfo?.sourceWordStartIndex != null || wordInfo?.sourceWordEndIndex != null) {
+    return `source:${wordInfo.sourceWordStartIndex ?? ''}:${wordInfo.sourceWordEndIndex ?? ''}`;
+  }
+  return `word:${fallbackIndex}`;
+}
+
+function dedupeTranslatedCueWords(wordsArray) {
+  const seen = new Set();
+  return wordsArray
+    .map((wordInfo, originalIndex) => ({ wordInfo, originalIndex }))
+    .filter(({ wordInfo }) => wordInfo && typeof wordInfo.word === 'string' && wordInfo.word.trim())
+    .sort((first, second) => (
+      (Number(first.wordInfo.frameOffset) || 0) - (Number(second.wordInfo.frameOffset) || 0) ||
+      first.originalIndex - second.originalIndex
+    ))
+    .filter(({ wordInfo, originalIndex }) => {
+      const identity = [
+        getTranslatedPhraseKey(wordInfo, originalIndex),
+        wordInfo.translatedPhraseTokenIndex ?? wordInfo.visualChunkIndex ?? '',
+        wordInfo.word,
+        Number(wordInfo.frameOffset) || 0,
+        Number(wordInfo.frameDuration) || 0,
+      ].join('|');
+      if (seen.has(identity)) {
+        return false;
+      }
+      seen.add(identity);
+      return true;
+    })
+    .map(({ wordInfo }) => wordInfo);
+}
+
+function groupTranslatedCueWords(wordsArray) {
+  const groups = [];
+  wordsArray.forEach((wordInfo, index) => {
+    const key = getTranslatedPhraseKey(wordInfo, index);
+    const previous = groups.at(-1);
+    if (previous?.key === key) {
+      previous.words.push(wordInfo);
+    } else {
+      groups.push({ key, words: [wordInfo] });
+    }
+  });
+  return groups;
+}
+
+function getTimedWordsFrameSpan(words) {
+  const timedWords = words.map((wordInfo) => {
+    const startFrame = Number(wordInfo?.frameOffset);
+    const frameDuration = Number(wordInfo?.frameDuration);
+    if (!Number.isFinite(startFrame) || !Number.isFinite(frameDuration)) {
+      return null;
+    }
+    return {
+      startFrame,
+      endFrame: startFrame + Math.max(1, frameDuration),
+    };
+  }).filter(Boolean);
+  if (timedWords.length === 0) {
+    return null;
+  }
+  return {
+    startFrame: Math.min(...timedWords.map((word) => word.startFrame)),
+    endFrame: Math.max(...timedWords.map((word) => word.endFrame)),
+  };
+}
+
+function buildTranslatedCuePages(
+  ctx,
+  wordsArray,
+  maxWidth,
+  config,
+  speakerPrefixWidth,
+  framesPerSecond,
+) {
+  const pages = [];
+  const groups = groupTranslatedCueWords(dedupeTranslatedCueWords(wordsArray));
+  let pendingWords = [];
+  const maxGapFrames = Math.max(
+    1,
+    Math.round(framesPerSecond * TRANSLATED_CUE_MAX_GAP_SECONDS),
+  );
+  const maxCueSpanFrames = Math.max(
+    maxGapFrames + 1,
+    Math.round(framesPerSecond * TRANSLATED_CUE_MAX_SPAN_SECONDS),
+  );
+
+  const appendWrappedPages = (pageWords) => {
+    if (pageWords.length === 0) {
+      return;
+    }
+    const lines = wrapWords(ctx, pageWords, maxWidth, config, speakerPrefixWidth);
+    for (let index = 0; index < lines.length; index += MAX_SUBTITLE_LINES_PER_PAGE) {
+      pages.push({ lines: lines.slice(index, index + MAX_SUBTITLE_LINES_PER_PAGE) });
+    }
+  };
+
+  groups.forEach((group) => {
+    const candidateWords = [...pendingWords, ...group.words];
+    const pendingSpan = getTimedWordsFrameSpan(pendingWords);
+    const groupSpan = getTimedWordsFrameSpan(group.words);
+    const candidateSpan = getTimedWordsFrameSpan(candidateWords);
+    const candidateLines = wrapWords(
+      ctx,
+      candidateWords,
+      maxWidth,
+      config,
+      speakerPrefixWidth,
+    );
+    const hasMeaningfulTimingBreak = Boolean(
+      pendingSpan &&
+      groupSpan &&
+      (
+        groupSpan.startFrame - pendingSpan.endFrame > maxGapFrames ||
+        (
+          candidateSpan &&
+          candidateSpan.endFrame - candidateSpan.startFrame > maxCueSpanFrames
+        )
+      )
+    );
+
+    if (
+      pendingWords.length > 0 &&
+      (
+        hasMeaningfulTimingBreak ||
+        candidateLines.length > MAX_SUBTITLE_LINES_PER_PAGE
+      )
+    ) {
+      appendWrappedPages(pendingWords);
+      pendingWords = [...group.words];
+
+      const groupLines = wrapWords(
+        ctx,
+        pendingWords,
+        maxWidth,
+        config,
+        speakerPrefixWidth,
+      );
+      if (groupLines.length > MAX_SUBTITLE_LINES_PER_PAGE) {
+        appendWrappedPages(pendingWords);
+        pendingWords = [];
+      }
+      return;
+    }
+
+    pendingWords = candidateWords;
+  });
+
+  appendWrappedPages(pendingWords);
+  return pages;
+}
+
+function resolveTranslatedCueFrameState(pages, frameContext) {
+  const allWords = pages.flatMap((page) => page.lines.flat());
+  if (allWords.length === 0) {
+    return null;
+  }
+
+  const wordOffsets = allWords
+    .map((wordInfo) => Number(wordInfo.frameOffset))
+    .filter(Number.isFinite);
+  const timingMode = resolveWordTimingMode(wordOffsets, frameContext);
+  let currentFrame = frameContext?.currentFrameGlobal ?? 0;
+  let wordOffsetBase = 0;
+
+  if (timingMode === 'layer') {
+    currentFrame = frameContext?.currentFrameLocal ?? currentFrame;
+  } else if (timingMode === 'item') {
+    currentFrame = frameContext?.currentFrameLocal ?? currentFrame;
+    wordOffsetBase = Number(frameContext?.itemStartFrameLocal) || 0;
+  }
+
+  const rawPages = pages.map((page) => {
+    const entries = page.lines.flat().map((wordInfo) => {
+      const startFrame = (Number(wordInfo.frameOffset) || 0) + wordOffsetBase;
+      const duration = Math.max(1, Number(wordInfo.frameDuration) || 0);
+      return { startFrame, endFrame: startFrame + duration };
+    });
+    return {
+      ...page,
+      rawStartFrame: Math.min(...entries.map((entry) => entry.startFrame)),
+      rawEndFrame: Math.max(...entries.map((entry) => entry.endFrame)),
+    };
+  });
+
+  const cueStarts = [];
+  rawPages.forEach((page, index) => {
+    const previousStart = cueStarts[index - 1];
+    cueStarts.push(index === 0
+      ? page.rawStartFrame
+      : Math.max(page.rawStartFrame, previousStart + 1));
+  });
+
+  const timedPages = rawPages.map((page, index) => {
+    const startFrame = cueStarts[index];
+    const nextStartFrame = cueStarts[index + 1];
+    const naturalEndFrame = Math.max(startFrame + 1, page.rawEndFrame);
+    const heldEndFrame = naturalEndFrame + TRANSLATED_CUE_HOLD_FRAMES;
+    const endFrame = Number.isFinite(nextStartFrame)
+      ? Math.max(startFrame + 1, Math.min(nextStartFrame, heldEndFrame))
+      : naturalEndFrame;
+    return { ...page, startFrame, endFrame };
+  });
+
+  const activePage = timedPages
+    .filter((page) => currentFrame >= page.startFrame && currentFrame < page.endFrame)
+    .at(-1);
+  if (!activePage) {
+    return null;
+  }
+
+  const duration = Math.max(1, activePage.endFrame - activePage.startFrame);
+  const fadeFrames = Math.max(
+    1,
+    Math.min(TRANSLATED_CUE_EDGE_FADE_FRAMES, Math.floor(duration / 2) || 1),
+  );
+  const fadeIn = smoothstep((currentFrame - activePage.startFrame + 1) / fadeFrames);
+  const fadeOut = smoothstep((activePage.endFrame - currentFrame) / fadeFrames);
+  return {
+    lines: activePage.lines,
+    alpha: Math.min(fadeIn, fadeOut),
+  };
+}
+
+function renderTranslatedCuePage(
+  ctx,
+  cueState,
+  config,
+  centerX,
+  centerY,
+  speakerLabel,
+) {
+  if (!cueState || cueState.lines.length === 0) {
+    return;
+  }
+
+  const {
+    fontSize = 40,
+    strokeColor,
+    strokeWidth,
+    lineHeight = 1.2,
+    linePaddingPx = 0,
+  } = config;
+  const speakerGapPx = config.speakerGapPx != null ? config.speakerGapPx : fontSize * 0.35;
+  const speakerStyles = speakerLabel ? getSpeakerStyles(config, ctx.font) : null;
+  const lineHeightPx = fontSize * lineHeight;
+  const totalHeight = cueState.lines.length * lineHeightPx +
+    (cueState.lines.length - 1) * linePaddingPx;
+  const startY = centerY - totalHeight / 2 + lineHeightPx / 2;
+  const originalTextAlign = ctx.textAlign;
+
+  ctx.save();
+  ctx.textAlign = 'left';
+  multiplyContextAlpha(ctx, cueState.alpha);
+
+  cueState.lines.forEach((words, lineIndex) => {
+    const prefixWidth = speakerLabel && lineIndex === 0
+      ? measureSpeakerLabelWidth(ctx, speakerLabel, speakerStyles, speakerGapPx)
+      : 0;
+    const wordsWidth = words.reduce((total, wordInfo, wordIndex) => (
+      total +
+      (wordIndex > 0 ? getWordJoinerWidth(ctx, wordInfo, config) : 0) +
+      ctx.measureText(wordInfo.word).width
+    ), 0);
+    const lineY = startY + lineIndex * (lineHeightPx + linePaddingPx);
+    let currentX = centerX - (prefixWidth + wordsWidth) / 2;
+
+    if (speakerLabel && lineIndex === 0) {
+      drawSpeakerLabel(ctx, speakerLabel, speakerStyles, currentX, lineY, config.textShadow);
+      currentX += prefixWidth;
+    }
+
+    if (strokeColor && strokeWidth) {
+      ctx.strokeStyle = strokeColor;
+      ctx.lineWidth = strokeWidth;
+    }
+
+    words.forEach((wordInfo, wordIndex) => {
+      if (wordIndex > 0) {
+        currentX += getWordJoinerWidth(ctx, wordInfo, config);
+      }
+      if (strokeColor && strokeWidth) {
+        ctx.strokeText(wordInfo.word, currentX, lineY);
+      }
+      ctx.fillText(wordInfo.word, currentX, lineY);
+      currentX += ctx.measureText(wordInfo.word).width;
+    });
+  });
+
+  ctx.restore();
+  ctx.textAlign = originalTextAlign;
 }
 
 function renderText(ctx, item, elapsedTime, durationOffset = 0, framesPerSecond) {
@@ -437,7 +973,15 @@ function renderText(ctx, item, elapsedTime, durationOffset = 0, framesPerSecond)
     textAccent,
     speakerLabel,
     durationOffset,
-    framesPerSecond
+    framesPerSecond,
+    {
+      translatedCueMode: isMappedTranslatedSubtitleItem(item),
+      wordTimingMode:
+        item.subtitleTimingBase ||
+        item.subtitle_timing_base ||
+        item.wordTimingBase ||
+        null,
+    },
   );
 }
 
@@ -456,7 +1000,8 @@ function renderExactText(
   textAccent,
   speakerLabel = null,
   durationOffset = 0,
-  framesPerSecond
+  framesPerSecond,
+  { translatedCueMode = false, wordTimingMode = null } = {},
 ) {
   const {
     fontSize = 40,
@@ -484,9 +1029,11 @@ function renderExactText(
   const effectiveFramesPerSecond = getFramesPerSecondFromValue(framesPerSecond);
   if (Array.isArray(wordsArray) && wordsArray.length > 0) {
     const durationOffsetSeconds = Number(durationOffset) || 0;
-    const durationOffsetFrames = Math.round(durationOffsetSeconds * effectiveFramesPerSecond);
-    const currentFrameGlobal = Math.round((elapsedTime * effectiveFramesPerSecond) / 1000);
-    const currentFrameLocal = currentFrameGlobal - durationOffsetFrames;
+    const durationOffsetFrames = durationOffsetSeconds * effectiveFramesPerSecond;
+    const currentFrameLocal = (
+      (elapsedTime - durationOffsetSeconds * 1000) * effectiveFramesPerSecond
+    ) / 1000;
+    const currentFrameGlobal = currentFrameLocal + durationOffsetFrames;
     const itemStartFrameLocal = Number(config.frameOffset) || 0;
     const itemFrameDurationLocal = Number(config.frameDuration) || 0;
     const itemEndFrameLocal = itemStartFrameLocal + itemFrameDurationLocal;
@@ -502,12 +1049,54 @@ function renderExactText(
       itemStartFrameGlobal,
       itemEndFrameGlobal,
       itemFrameDurationLocal,
+      wordTimingMode,
     };
+
+    if (translatedCueMode) {
+      const speakerGapPx = config.speakerGapPx != null
+        ? config.speakerGapPx
+        : fontSize * 0.35;
+      const speakerStyles = speakerLabel ? getSpeakerStyles(config, ctx.font) : null;
+      const speakerPrefixWidth = speakerStyles
+        ? measureSpeakerLabelWidth(ctx, speakerLabel, speakerStyles, speakerGapPx)
+        : 0;
+      const cuePages = buildTranslatedCuePages(
+        ctx,
+        wordsArray,
+        breakTextWidth,
+        { ...config, breakLongWords: true },
+        speakerPrefixWidth,
+        effectiveFramesPerSecond,
+      );
+      const cueState = resolveTranslatedCueFrameState(cuePages, frameContext);
+      renderTranslatedCuePage(
+        ctx,
+        cueState,
+        config,
+        canvasCenterX,
+        canvasCenterY,
+        speakerLabel,
+      );
+      return;
+    }
 
     let linesOfWords = [wordsArray];
     if (autoWrap) {
       const maxWidth = breakTextWidth;
-      linesOfWords = wrapWords(ctx, wordsArray, maxWidth, config);
+      const speakerGapPx = config.speakerGapPx != null
+        ? config.speakerGapPx
+        : fontSize * 0.35;
+      const speakerStyles = speakerLabel ? getSpeakerStyles(config, ctx.font) : null;
+      const speakerPrefixWidth = speakerStyles
+        ? measureSpeakerLabelWidth(ctx, speakerLabel, speakerStyles, speakerGapPx)
+        : 0;
+      linesOfWords = wrapWords(
+        ctx,
+        wordsArray,
+        maxWidth,
+        config,
+        speakerPrefixWidth,
+      );
     }
 
     renderWordsWithHighlight(
@@ -531,12 +1120,12 @@ function renderExactText(
   if (autoWrap) {
     const maxWidth = breakTextWidth;
     lines = lines.flatMap(line => wrapText(ctx, line, maxWidth, {
-      breakLongWords: staticSubtitle,
+      breakLongWords: staticSubtitle || config.breakLongWords === true,
     }));
   }
 
   const speakerGapPx = config.speakerGapPx != null ? config.speakerGapPx : fontSize * 0.35;
-  const speakerStyles = speakerLabel ? getSpeakerStyles(config) : null;
+  const speakerStyles = speakerLabel ? getSpeakerStyles(config, ctx.font) : null;
 
   // Calculate line spacing
   const lineCount = lines.length;
@@ -605,6 +1194,19 @@ function renderExactText(
 function resolveWordTimingMode(wordOffsets, frameContext) {
   if (!frameContext || typeof frameContext !== 'object' || !Array.isArray(wordOffsets)) {
     return 'global';
+  }
+
+  const explicitMode = typeof frameContext.wordTimingMode === 'string'
+    ? frameContext.wordTimingMode.trim().toLowerCase()
+    : '';
+  if (explicitMode === 'session' || explicitMode === 'global') {
+    return 'global';
+  }
+  if (explicitMode === 'layer' || explicitMode === 'local') {
+    return 'layer';
+  }
+  if (explicitMode === 'item' || explicitMode === 'relative') {
+    return 'item';
   }
 
   const offsets = wordOffsets.filter((value) => Number.isFinite(value));
@@ -688,6 +1290,90 @@ function resolveWordTimingMode(wordOffsets, frameContext) {
   return 'global';
 }
 
+function getTimedWordEntries(linesOfWords, wordOffsetBase) {
+  const entries = [];
+  linesOfWords.forEach((wordsArray, lineIndex) => {
+    wordsArray.forEach((wordInfo, wordIndex) => {
+      const startFrame = (Number(wordInfo.frameOffset) || 0) + wordOffsetBase;
+      const frameDuration = Math.max(1, Number(wordInfo.frameDuration) || 0);
+      entries.push({
+        wordInfo,
+        lineIndex,
+        wordIndex,
+        sequenceIndex: entries.length,
+        startFrame,
+        endFrame: startFrame + frameDuration,
+      });
+    });
+  });
+  return entries;
+}
+
+function selectLatestTimedEntry(entries) {
+  return entries.reduce((selected, entry) => {
+    if (!selected || entry.startFrame > selected.startFrame) {
+      return entry;
+    }
+    if (
+      entry.startFrame === selected.startFrame &&
+      entry.sequenceIndex > selected.sequenceIndex
+    ) {
+      return entry;
+    }
+    return selected;
+  }, null);
+}
+
+function selectSubtitlePage(linesOfWords, entries, activeEntry, currentFrame) {
+  const pageCount = Math.ceil(linesOfWords.length / MAX_SUBTITLE_LINES_PER_PAGE);
+  if (pageCount <= 1 || entries.length === 0) {
+    return { lines: linesOfWords, alpha: 1 };
+  }
+
+  const latestStartedEntry = selectLatestTimedEntry(
+    entries.filter((entry) => currentFrame >= entry.startFrame),
+  );
+  const referenceEntry = activeEntry || latestStartedEntry || entries[0];
+  const pageIndex = Math.floor(referenceEntry.lineIndex / MAX_SUBTITLE_LINES_PER_PAGE);
+  const firstLineIndex = pageIndex * MAX_SUBTITLE_LINES_PER_PAGE;
+  const lastLineIndex = Math.min(
+    linesOfWords.length,
+    firstLineIndex + MAX_SUBTITLE_LINES_PER_PAGE,
+  );
+  const pageEntries = entries.filter((entry) => (
+    entry.lineIndex >= firstLineIndex && entry.lineIndex < lastLineIndex
+  ));
+  const pageStartFrame = Math.min(...pageEntries.map((entry) => entry.startFrame));
+  const pageEndFrame = Math.max(...pageEntries.map((entry) => entry.endFrame));
+  const pageDuration = Math.max(1, pageEndFrame - pageStartFrame);
+  const fadeFrames = Math.max(
+    1,
+    Math.min(SUBTITLE_EDGE_FADE_FRAMES, Math.floor(pageDuration / 2) || 1),
+  );
+  const fadeIn = smoothstep((currentFrame - pageStartFrame + 1) / fadeFrames);
+  const fadeOut = smoothstep((pageEndFrame - currentFrame) / fadeFrames);
+
+  return {
+    lines: linesOfWords.slice(firstLineIndex, lastLineIndex),
+    alpha: Math.min(fadeIn, fadeOut),
+  };
+}
+
+function getHighlightEdgeAlpha(activeEntry, currentFrame) {
+  if (!activeEntry) {
+    return 0;
+  }
+
+  const duration = Math.max(1, activeEntry.endFrame - activeEntry.startFrame);
+  const fadeFrames = Math.max(
+    1,
+    Math.min(HIGHLIGHT_EDGE_FADE_FRAMES, Math.floor(duration / 2) || 1),
+  );
+  const fadeIn = smoothstep((currentFrame - activeEntry.startFrame + 1) / fadeFrames);
+  const fadeOut = smoothstep((activeEntry.endFrame - currentFrame) / fadeFrames);
+  return Math.min(fadeIn, fadeOut);
+}
+
 function renderWordsWithHighlight(
   ctx,
   linesOfWords,
@@ -707,26 +1393,13 @@ function renderWordsWithHighlight(
     strokeWidth = 2,
     lineHeight = 1.2,
     fillColor = '#BFDBFE',
-    wordSpacing = 1.0,
-    wordPaddingPx = 0,
     linePaddingPx = 0
   } = config;
 
   const speakerGapPx = config.speakerGapPx != null ? config.speakerGapPx : fontSize * 0.35;
-  const speakerStyles = speakerLabel ? getSpeakerStyles(config) : null;
-
-  ctx.textAlign = 'left';
-
-
-
-
-  const naturalSpaceWidth = ctx.measureText(' ').width;
-  const effectiveSpaceWidth = naturalSpaceWidth * wordSpacing + wordPaddingPx;
-
-  const lineHeightPx = fontSize * lineHeight;
-  const lineCount = linesOfWords.length;
-  const totalHeight = lineCount * lineHeightPx + (lineCount - 1) * linePaddingPx;
-  const startY = centerY - totalHeight / 2 + lineHeightPx / 2;
+  const speakerStyles = speakerLabel
+    ? getSpeakerStyles(config, ctx.font)
+    : null;
 
   // Resolve which time-base word timings are using (global vs layer-local vs item-relative).
   const wordOffsets = [];
@@ -742,7 +1415,7 @@ function renderWordsWithHighlight(
 
   const timingMode = resolveWordTimingMode(wordOffsets, frameContext);
 
-  let currentFrame = Math.round((elapsedTime * framesPerSecond) / 1000);
+  let currentFrame = (elapsedTime * framesPerSecond) / 1000;
   let wordOffsetBase = 0;
 
   if (frameContext && typeof frameContext === 'object') {
@@ -756,7 +1429,30 @@ function renderWordsWithHighlight(
     }
   }
 
-  linesOfWords.forEach((wordsArray, lineIndex) => {
+  const timedEntries = getTimedWordEntries(linesOfWords, wordOffsetBase);
+  const activeEntry = selectLatestTimedEntry(timedEntries.filter((entry) => (
+    currentFrame >= entry.startFrame && currentFrame < entry.endFrame
+  )));
+  const selectedPage = selectSubtitlePage(
+    linesOfWords,
+    timedEntries,
+    activeEntry,
+    currentFrame,
+  );
+  const visibleLines = selectedPage.lines;
+  const highlightEdgeAlpha = getHighlightEdgeAlpha(activeEntry, currentFrame);
+
+  const originalTextAlign = ctx.textAlign;
+  ctx.textAlign = 'left';
+  ctx.save();
+  multiplyContextAlpha(ctx, selectedPage.alpha);
+
+  const lineHeightPx = fontSize * lineHeight;
+  const lineCount = visibleLines.length;
+  const totalHeight = lineCount * lineHeightPx + (lineCount - 1) * linePaddingPx;
+  const startY = centerY - totalHeight / 2 + lineHeightPx / 2;
+
+  visibleLines.forEach((wordsArray, lineIndex) => {
     const prefixWidth = speakerLabel && lineIndex === 0
       ? measureSpeakerLabelWidth(ctx, speakerLabel, speakerStyles, speakerGapPx)
       : 0;
@@ -767,8 +1463,8 @@ function renderWordsWithHighlight(
       const w = wordsArray[i];
       const wordWidth = ctx.measureText(w.word).width;
       totalWidth += wordWidth;
-      if (i < wordsArray.length - 1) {
-        totalWidth += effectiveSpaceWidth;
+      if (i > 0) {
+        totalWidth += getWordJoinerWidth(ctx, w, config);
       }
     }
 
@@ -794,18 +1490,22 @@ function renderWordsWithHighlight(
 
     for (let i = 0; i < wordsArray.length; i++) {
       const w = wordsArray[i];
-      const wordStartFrame = (Number(w.frameOffset) || 0) + wordOffsetBase;
-      const wordFrameDuration = Math.max(1, Number(w.frameDuration) || 0);
-      const wordEndFrame = wordStartFrame + wordFrameDuration; // end is exclusive
-      const isActive = currentFrame >= wordStartFrame && currentFrame < wordEndFrame;
+      if (i > 0) {
+        currentX += getWordJoinerWidth(ctx, w, config);
+      }
+      const isActive = activeEntry?.wordInfo === w;
 
 
 
 
 
       if (wordAnimation === 'system_preset' && isActive && textAccent) {
-
-
+        if (strokeColor && strokeWidth) {
+          ctx.strokeText(w.word, currentX, lineY);
+        }
+        ctx.fillText(w.word, currentX, lineY);
+        ctx.save();
+        multiplyContextAlpha(ctx, highlightEdgeAlpha);
         renderWordWithAccent(
           ctx,
           w.word,
@@ -817,6 +1517,7 @@ function renderWordsWithHighlight(
           strokeWidth,
           fillColor
         );
+        ctx.restore();
       } else if (wordAnimation === 'highlight' && isActive) {
         // Draw highlight rectangle behind word
         const wordWidth = ctx.measureText(w.word).width;
@@ -827,7 +1528,8 @@ function renderWordsWithHighlight(
         const originalFillStyle = ctx.fillStyle;
         const originalStrokeStyle = ctx.strokeStyle;
 
-        ctx.fillStyle = 'rgba(255, 255, 255, 0.2)';
+        const highlightAlpha = 0.08 + 0.14 * highlightEdgeAlpha;
+        ctx.fillStyle = `rgba(255, 255, 255, ${highlightAlpha.toFixed(3)})`;
         ctx.fillRect(rectX, rectY, wordWidth, rectHeight);
 
         ctx.fillStyle = originalFillStyle;
@@ -843,10 +1545,12 @@ function renderWordsWithHighlight(
         }
         ctx.fillText(w.word, currentX, lineY);
       }
-
-      currentX += ctx.measureText(w.word).width + effectiveSpaceWidth;
+      currentX += ctx.measureText(w.word).width;
     }
   });
+
+  ctx.restore();
+  ctx.textAlign = originalTextAlign;
 }
 
 function renderWordWithAccent(

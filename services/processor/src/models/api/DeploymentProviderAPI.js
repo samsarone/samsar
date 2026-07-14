@@ -4,7 +4,7 @@ import { GoogleAuth } from 'google-auth-library';
 import User from '../../schema/User.js';
 import { getDBConnectionString } from '../DBString.js';
 import { resolveRequestActorFromAuthHeaders } from '../external/User.js';
-import { validateAlibabaCloudCredential } from '../../inference/AlibabaEndpointValidator.js';
+import { getAlibabaQwenBaseURL } from '../../inference/AlibabaQwen.js';
 
 const GOOGLE_CLOUD_SCOPE = 'https://www.googleapis.com/auth/cloud-platform';
 const RUNWAY_ORGANIZATION_URL = 'https://api.dev.runwayml.com/v1/organization';
@@ -116,7 +116,7 @@ export async function validateSamsarApiKeyHeaders(headers = {}) {
   };
 }
 
-export async function validateDeploymentProviderCredentials(payload = {}, options = {}) {
+export async function validateDeploymentProviderCredentials(payload = {}) {
   const providerResults = {};
 
   if (normalizeString(payload.samsarApiKey || payload.samsar_api_key)) {
@@ -143,26 +143,19 @@ export async function validateDeploymentProviderCredentials(payload = {}, option
     payload.qwen_api_key,
   );
   if (alibabaApiKey) {
-    providerResults.alibabaCloud = await validateAlibabaCloudCredential(
-      {
-        apiKey: alibabaApiKey,
-        baseUrl:
-          payload.dashscopeBaseUrl ||
-          payload.dashscope_base_url ||
-          payload.alibabaCloudBaseUrl ||
-          payload.alibaba_cloud_base_url ||
-          payload.qwenBaseUrl ||
-          payload.qwen_base_url,
-        apiHost:
-          payload.alibabaApiHost ||
-          payload.alibaba_api_host,
-      },
-      {
-        fetchImpl: options.fetchImpl || fetch,
-        ...(options.dnsLookup ? { dnsLookup: options.dnsLookup } : {}),
-        ...(options.timeoutMs ? { timeoutMs: options.timeoutMs } : {}),
-      },
-    );
+    providerResults.alibabaCloud = await validateAlibabaCloudKey({
+      apiKey: alibabaApiKey,
+      baseUrl:
+        payload.dashscopeBaseUrl ||
+        payload.dashscope_base_url ||
+        payload.alibabaCloudBaseUrl ||
+        payload.alibaba_cloud_base_url ||
+        payload.qwenBaseUrl ||
+        payload.qwen_base_url,
+      apiHost:
+        payload.alibabaApiHost ||
+        payload.alibaba_api_host,
+    });
   }
 
   if (normalizeString(payload.runwayApiKey || payload.runway_api_key)) {
@@ -217,6 +210,19 @@ async function validateOpenAIKey(apiKey) {
       message: error?.message || 'Unable to validate OpenAI API key.',
     });
   }
+}
+
+async function validateAlibabaCloudKey({ apiKey, baseUrl, apiHost }) {
+  const normalizedBaseUrl = getAlibabaQwenBaseURL({
+    DASHSCOPE_BASE_URL: baseUrl,
+    ALIBABA_API_HOST: apiHost,
+  });
+  return providerResult('alibabaCloud', 'format_valid', {
+    validationMode: 'format_only',
+    baseUrl: normalizedBaseUrl,
+    message:
+      'Alibaba Cloud Model Studio does not expose a zero-cost key introspection endpoint; the key will be verified on first inference request.',
+  });
 }
 
 async function validateRunwayKey(apiKey) {

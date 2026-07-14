@@ -61,6 +61,115 @@ test('same-language regional and ISO aliases retain the aligned subtitle path', 
   assert.equal(context.isTranslated, false);
 });
 
+test('translated alignment map accepts the canonical contract and rollout aliases', () => {
+  assert.deepEqual(
+    __testOnly__.getSubtitleAlignmentMap({
+      subtitleAlignmentMap: [
+        { sourceText: 'Hello', translatedText: 'Hola' },
+        { source_text: 'brave world', targetText: 'mundo valiente' },
+        { sourceText: '', translatedText: 'ignored' },
+      ],
+    }),
+    [
+      { sourceText: 'Hello', translatedText: 'Hola' },
+      { sourceText: 'brave world', translatedText: 'mundo valiente' },
+    ],
+  );
+
+  assert.deepEqual(
+    __testOnly__.getSubtitleAlignmentMap({
+      subtitleWordMapping: [{ originalText: 'Legacy', target: 'Anterior' }],
+    }),
+    [{ sourceText: 'Legacy', translatedText: 'Anterior' }],
+  );
+});
+
+test('translated words inherit the corresponding original word and phrase timing', () => {
+  const mapped = __testOnly__.buildMappedSubtitleAlignment(
+    [
+      { word: 'Hello,', start: 0, end: 0.35 },
+      { word: 'brave', start: 0.35, end: 0.7 },
+      { word: 'world.', start: 0.7, end: 1.2 },
+    ],
+    [
+      { sourceText: 'Hello', translatedText: 'Hola' },
+      { sourceText: 'brave world', translatedText: 'mundo valiente.' },
+    ],
+    'Hola mundo valiente.',
+  );
+
+  assert.ok(mapped);
+  assert.equal(mapped.usedFallback, false);
+  assert.equal(mapped.transcriptText, 'Hola mundo valiente.');
+  assert.deepEqual(
+    mapped.words.map((word) => ({
+      word: word.word,
+      start: word.start,
+      end: word.end,
+      sourceWordStartIndex: word.sourceWordStartIndex,
+      sourceWordEndIndex: word.sourceWordEndIndex,
+    })),
+    [
+      {
+        word: 'Hola',
+        start: 0,
+        end: 0.35,
+        sourceWordStartIndex: 0,
+        sourceWordEndIndex: 0,
+      },
+      {
+        word: 'mundo valiente.',
+        start: 0.35,
+        end: 1.2,
+        sourceWordStartIndex: 1,
+        sourceWordEndIndex: 2,
+      },
+    ],
+  );
+});
+
+test('mapped subtitle metadata keeps translated subtitles on the animated render path', () => {
+  const mapped = __testOnly__.buildMappedSubtitleAlignment(
+    [{ word: 'Welcome', start: 0, end: 0.8 }],
+    [{ sourceText: 'Welcome', translatedText: 'ยินดีต้อนรับ' }],
+    'ยินดีต้อนรับ',
+  );
+  const metadata = __testOnly__.getMappedSubtitleItemMetadata(
+    {
+      subtitleLanguage: 'th',
+      audioLanguage: 'en',
+      sourceTranscriptText: 'Welcome',
+    },
+    mapped,
+  );
+
+  assert.equal(metadata.subtitleRenderMode, 'mapped');
+  assert.equal(metadata.isStaticSubtitle, false);
+  assert.equal(metadata.subtitleTranslationRequired, true);
+  assert.equal(metadata.subtitleAlignmentMapped, true);
+  assert.equal(metadata.subtitleLanguage, 'th');
+  assert.equal(metadata.audioLanguage, 'en');
+  assert.deepEqual(metadata.subtitleAlignmentMap, [
+    { sourceText: 'Welcome', translatedText: 'ยินดีต้อนรับ' },
+  ]);
+});
+
+test('translated subtitle speaker uses its localized display name', () => {
+  assert.equal(
+    __testOnly__.getTranslatedSubtitleSpeakerName({
+      speakerCharacterName: 'Narrator',
+      subtitleSpeakerCharacterName: 'ผู้บรรยาย',
+    }),
+    'ผู้บรรยาย',
+  );
+  assert.equal(
+    __testOnly__.getTranslatedSubtitleSpeakerName({
+      translated_speaker_character_name: 'Narrador',
+    }),
+    'Narrador',
+  );
+});
+
 test('static translated subtitle timing spans the connected scene', () => {
   const session = {
     layers: [
@@ -128,4 +237,257 @@ test('translated font preferences resolve against the subtitle language', () => 
 
   assert.equal(fonts.subtitleFont, 'Noto Sans Bengali');
   assert.equal(fonts.speakerFont, 'Noto Sans Bengali');
+});
+
+function createTranscriptionClient(handler) {
+  return {
+    audio: {
+      transcriptions: {
+        create: handler,
+      },
+    },
+  };
+}
+
+function createStreamTracker() {
+  const streams = [];
+  return {
+    streams,
+    createReadStream() {
+      const stream = {
+        destroyed: false,
+        destroy() {
+          this.destroyed = true;
+        },
+      };
+      streams.push(stream);
+      return stream;
+    },
+  };
+}
+
+test('GPT-4o transcription skips unsupported verbose JSON and uses Whisper for word timing', async (t) => {
+  t.mock.method(console, 'info', () => {});
+  assert.deepEqual(
+    __testOnly__.buildTranscriptionAttempts('gpt-4o-transcribe', 'whisper-1'),
+    [
+      {
+        model: 'whisper-1',
+        response_format: 'verbose_json',
+        timestamp_granularities: ['word'],
+        requiresExplicitWordTimings: true,
+      },
+      {
+        model: 'gpt-4o-transcribe',
+        response_format: 'json',
+        requiresExplicitWordTimings: false,
+      },
+    ],
+  );
+
+  const requests = [];
+  const streamTracker = createStreamTracker();
+  const result = await __testOnly__.transcribeWithOpenAI(
+    '/unused/audio.mp3',
+    '你好世界',
+    'cn',
+    2,
+    {},
+    {
+      transcriptionModel: 'gpt-4o-transcribe',
+      wordTimestampModel: 'whisper-1',
+      createReadStream: streamTracker.createReadStream,
+      recordUsageLog: async () => {},
+      openaiClient: createTranscriptionClient(async (payload) => {
+        requests.push(payload);
+        return {
+          text: '你好世界',
+          duration: 2,
+          words: [
+            { word: '你好', start: 0.08, end: 0.82 },
+            { word: '世界', start: 0.94, end: 1.86 },
+          ],
+        };
+      }),
+    },
+  );
+
+  assert.equal(requests.length, 1);
+  assert.equal(requests[0].model, 'whisper-1');
+  assert.equal(requests[0].language, 'zh');
+  assert.equal(requests[0].response_format, 'verbose_json');
+  assert.deepEqual(result.words.map(({ word, start, end }) => ({ word, start, end })), [
+    { word: '你好', start: 0.08, end: 0.82 },
+    { word: '世界', start: 0.94, end: 1.86 },
+  ]);
+  assert.ok(streamTracker.streams.every((stream) => stream.destroyed));
+});
+
+test('Chinese fallback creates multiple timed units after timestamp service failure', async (t) => {
+  t.mock.method(console, 'warn', () => {});
+  const transcript = '这是一个测试。';
+  const tokens = __testOnly__.tokenizeTranscriptForAlignment(transcript, 'cn');
+  assert.ok(tokens.length > 1);
+  assert.equal(tokens.join(''), '这是一个测试');
+
+  const requests = [];
+  const streamTracker = createStreamTracker();
+  const result = await __testOnly__.transcribeWithOpenAI(
+    '/unused/audio.mp3',
+    transcript,
+    'cn',
+    4,
+    {},
+    {
+      transcriptionModel: 'gpt-4o-transcribe',
+      wordTimestampModel: 'whisper-1',
+      createReadStream: streamTracker.createReadStream,
+      recordUsageLog: async () => {},
+      openaiClient: createTranscriptionClient(async (payload) => {
+        requests.push(payload);
+        if (payload.model === 'whisper-1') {
+          throw new Error('timestamp service unavailable');
+        }
+        return { text: transcript, duration: 4 };
+      }),
+    },
+  );
+
+  assert.deepEqual(requests.map(({ model, response_format: responseFormat }) => [model, responseFormat]), [
+    ['whisper-1', 'verbose_json'],
+    ['gpt-4o-transcribe', 'json'],
+  ]);
+  assert.equal(result.words.length, tokens.length);
+  assert.equal(result.words.map((word) => word.word).join(''), '这是一个测试');
+  assert.ok(result.words.every((word) => word.case === 'fallback'));
+  assert.equal(result.words[0].start, 0);
+  assert.equal(result.words.at(-1).end, 4);
+  assert.ok(streamTracker.streams.every((stream) => stream.destroyed));
+  assert.equal(__testOnly__.buildTranscriptAlignmentCache({
+    words: result.words,
+    transcriptText: transcript,
+    sourceText: transcript,
+    languageCode: 'zh',
+    durationSeconds: 4,
+  }), null);
+});
+
+test('mixed explicit and segment-only timings are not accepted or cached as authoritative', async (t) => {
+  t.mock.method(console, 'warn', () => {});
+  const mixedResponse = {
+    text: '第一句 第二句',
+    duration: 2,
+    segments: [
+      {
+        text: '第一句',
+        start: 0,
+        end: 0.9,
+        words: [{ word: '第一句', start: 0.05, end: 0.82 }],
+      },
+      {
+        text: '第二句',
+        start: 1,
+        end: 1.9,
+      },
+    ],
+  };
+  assert.equal(__testOnly__.hasExplicitWordTimings(mixedResponse), false);
+
+  const requests = [];
+  const streamTracker = createStreamTracker();
+  const result = await __testOnly__.transcribeWithOpenAI(
+    '/unused/audio.mp3',
+    mixedResponse.text,
+    'cn',
+    2,
+    {},
+    {
+      transcriptionModel: 'whisper-1',
+      wordTimestampModel: 'whisper-1',
+      createReadStream: streamTracker.createReadStream,
+      recordUsageLog: async () => {},
+      openaiClient: createTranscriptionClient(async (payload) => {
+        requests.push(payload);
+        return mixedResponse;
+      }),
+    },
+  );
+
+  assert.deepEqual(requests.map(({ response_format: responseFormat }) => responseFormat), [
+    'verbose_json',
+    'json',
+  ]);
+  assert.ok(result.words.some((word) => word.case === 'segment_fallback'));
+  assert.equal(__testOnly__.hasAuthoritativeWordTimings(result.words), false);
+  assert.equal(__testOnly__.buildTranscriptAlignmentCache({
+    words: result.words,
+    transcriptText: mixedResponse.text,
+    sourceText: mixedResponse.text,
+    languageCode: 'zh',
+    durationSeconds: 2,
+  }), null);
+  assert.ok(streamTracker.streams.every((stream) => stream.destroyed));
+});
+
+test('cached synthetic fallback timings are ignored', () => {
+  const cached = __testOnly__.getCachedTranscriptAlignment(
+    {
+      duration: 2,
+      transcriptAlignment: {
+        sourceText: '你好世界',
+        transcriptText: '你好世界',
+        languageCode: 'zh',
+        audioSource: 'assets_v2/audio.mp3',
+        durationSeconds: 2,
+        words: [
+          { word: '你好', start: 0, end: 1, case: 'fallback' },
+          { word: '世界', start: 1, end: 2, case: 'fallback' },
+        ],
+      },
+    },
+    '你好世界',
+    'zh',
+    'assets_v2/audio.mp3',
+  );
+
+  assert.equal(cached, null);
+});
+
+test('invalid provider word timestamps cannot become a reusable synthetic cache', async (t) => {
+  t.mock.method(console, 'warn', () => {});
+  const streamTracker = createStreamTracker();
+  const result = await __testOnly__.transcribeWithOpenAI(
+    '/unused/audio.mp3',
+    '你好',
+    'cn',
+    1,
+    {},
+    {
+      transcriptionModel: 'gpt-4o-transcribe',
+      wordTimestampModel: 'whisper-1',
+      createReadStream: streamTracker.createReadStream,
+      recordUsageLog: async () => {},
+      openaiClient: createTranscriptionClient(async (payload) => {
+        if (payload.model === 'whisper-1') {
+          throw new Error('timestamp service unavailable');
+        }
+        return {
+          text: '你好',
+          duration: 1,
+          words: [{ word: '你好', start: null, end: null }],
+        };
+      }),
+    },
+  );
+
+  assert.equal(result.words[0].case, 'invalid_timestamp_fallback');
+  assert.equal(__testOnly__.hasAuthoritativeWordTimings(result.words), false);
+  assert.equal(__testOnly__.buildTranscriptAlignmentCache({
+    words: result.words,
+    transcriptText: '你好',
+    sourceText: '你好',
+    languageCode: 'zh',
+    durationSeconds: 1,
+  }), null);
+  assert.ok(streamTracker.streams.every((stream) => stream.destroyed));
 });

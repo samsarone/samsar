@@ -3,15 +3,93 @@ import OpenAI from 'openai';
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY || '' });
 const TRANSCRIPTION_MODEL = process.env.OPENAI_TRANSCRIPTION_MODEL || 'gpt-4o-transcribe';
+const WORD_TIMESTAMP_TRANSCRIPTION_MODEL =
+  process.env.OPENAI_WORD_TIMESTAMP_TRANSCRIPTION_MODEL || 'whisper-1';
+
+const CJK_CHARACTER_REGEX = /[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\uac00-\ud7af]/u;
 
 function sanitizeTranscriptForAlignment(rawText) {
   if (!rawText || typeof rawText !== 'string') {
     return '';
   }
   return rawText
-    .replace(/[^\p{L}\p{N}_\s']/gu, ' ')
+    .replace(/[^\p{L}\p{M}\p{N}_\s']/gu, ' ')
     .replace(/\s+/g, ' ')
     .trim();
+}
+
+function normalizeSegmenterLocale(languageCode) {
+  const normalizedLanguage = typeof languageCode === 'string'
+    ? languageCode.trim().toLowerCase().replace(/_/g, '-')
+    : '';
+  const locale = normalizedLanguage === 'cn' ? 'zh' : normalizedLanguage;
+
+  if (
+    !locale ||
+    typeof Intl === 'undefined' ||
+    typeof Intl.getCanonicalLocales !== 'function'
+  ) {
+    return undefined;
+  }
+
+  try {
+    return Intl.getCanonicalLocales(locale)[0];
+  } catch {
+    return undefined;
+  }
+}
+
+function normalizeTranscriptionLanguageCode(languageCode) {
+  if (typeof languageCode !== 'string') {
+    return undefined;
+  }
+  const baseLanguage = languageCode.trim().toLowerCase().replace(/_/g, '-').split('-')[0];
+  if (!baseLanguage || baseLanguage === 'auto') {
+    return undefined;
+  }
+  // `cn` appears in legacy Samsar sessions as the Chinese language code, while
+  // OpenAI transcription expects ISO-639-1 `zh`.
+  return baseLanguage === 'cn' ? 'zh' : baseLanguage;
+}
+
+/**
+ * Produces alignment-sized text units without assuming that words are separated
+ * by spaces. Intl.Segmenter gives Chinese (and other unspaced scripts) useful
+ * lexical units; the grapheme fallback prevents an entire CJK sentence from
+ * becoming one synthetic timing entry on runtimes without segmentation data.
+ */
+export function tokenizeTranscriptForAlignment(rawText, languageCode) {
+  const cleanedTranscript = sanitizeTranscriptForAlignment(rawText);
+  if (!cleanedTranscript) {
+    return [];
+  }
+
+  if (typeof Intl !== 'undefined' && typeof Intl.Segmenter === 'function') {
+    try {
+      const segmenter = new Intl.Segmenter(normalizeSegmenterLocale(languageCode), {
+        granularity: 'word',
+      });
+      const segmentedWords = Array.from(segmenter.segment(cleanedTranscript))
+        .filter((entry) => entry?.isWordLike)
+        .map((entry) => entry.segment.trim())
+        .filter(Boolean);
+      if (segmentedWords.length > 0) {
+        return segmentedWords;
+      }
+    } catch {
+      // Continue to deterministic whitespace/grapheme tokenization below.
+    }
+  }
+
+  const whitespaceTokens = cleanedTranscript.split(/\s+/).filter(Boolean);
+  if (
+    whitespaceTokens.length === 1 &&
+    CJK_CHARACTER_REGEX.test(whitespaceTokens[0])
+  ) {
+    return Array.from(whitespaceTokens[0]).filter((character) =>
+      /[\p{L}\p{M}\p{N}_']/u.test(character));
+  }
+  return whitespaceTokens;
 }
 
 function buildTimedWordAlignment(wordsList, audioDurationSeconds, caseLabel) {
@@ -98,19 +176,53 @@ function normalizeRawWordEntry(wordInfo = {}) {
   };
 }
 
+function getRawWordText(wordInfo = {}) {
+  return typeof wordInfo?.word === 'string'
+    ? wordInfo.word
+    : (typeof wordInfo?.text === 'string' ? wordInfo.text : '');
+}
+
+/**
+ * Synthetic timing remains useful for rendering, but must not be treated as a
+ * reusable audio alignment. A reusable alignment requires every nonempty entry
+ * to carry finite, increasing provider timestamps and no fallback marker.
+ */
+export function hasAuthoritativeWordTimings(rawWords) {
+  if (!Array.isArray(rawWords)) {
+    return false;
+  }
+
+  const nonemptyWords = rawWords.filter((wordInfo) => getRawWordText(wordInfo).trim());
+  return nonemptyWords.length > 0 && nonemptyWords.every((wordInfo) => {
+    const start = wordInfo?.start;
+    const end = wordInfo?.end;
+    const timingCase = typeof wordInfo?.case === 'string' ? wordInfo.case : 'success';
+    return (
+      Number.isFinite(start) &&
+      Number.isFinite(end) &&
+      start >= 0 &&
+      end > start &&
+      timingCase === 'success'
+    );
+  });
+}
+
 function hasExplicitWordTimings(response = {}) {
   if (Array.isArray(response?.words) && response.words.length > 0) {
-    return true;
+    return hasAuthoritativeWordTimings(response.words);
   }
   if (Array.isArray(response?.segments)) {
-    return response.segments.some(
-      (segment) => Array.isArray(segment?.words) && segment.words.length > 0,
-    );
+    const contentSegments = response.segments.filter((segment) => {
+      const segmentText = typeof segment?.text === 'string' ? segment.text.trim() : '';
+      return segmentText || (Array.isArray(segment?.words) && segment.words.length > 0);
+    });
+    return contentSegments.length > 0 && contentSegments.every((segment) =>
+      hasAuthoritativeWordTimings(segment.words));
   }
   return false;
 }
 
-function collectRawWordsFromResponse(response = {}) {
+function collectRawWordsFromResponse(response = {}, languageCode) {
   const rawWords = Array.isArray(response?.words)
     ? response.words.map(normalizeRawWordEntry)
     : [];
@@ -130,7 +242,7 @@ function collectRawWordsFromResponse(response = {}) {
         return;
       }
 
-      const segmentWords = segmentText.split(/\s+/).filter(Boolean);
+      const segmentWords = tokenizeTranscriptForAlignment(segmentText, languageCode);
       if (!segmentWords.length) {
         return;
       }
@@ -150,71 +262,143 @@ function collectRawWordsFromResponse(response = {}) {
   return rawWords;
 }
 
-export async function transcribeWithOpenAI(audioFilePath, transcriptText, languageCode, audioDurationSeconds = null) {
+function normalizeModelName(model) {
+  return typeof model === 'string' ? model.trim().toLowerCase() : '';
+}
+
+/**
+ * `true`/`false` means the model is known to support/not support the OpenAI
+ * verbose word timestamp contract. `null` leaves room for configured custom or
+ * future models, which are tried once before the known timestamp fallback.
+ */
+export function getWordTimestampCapability(model) {
+  const normalizedModel = normalizeModelName(model);
+  if (!normalizedModel) {
+    return false;
+  }
+  if (normalizedModel === 'whisper-1' || normalizedModel.startsWith('whisper-1-')) {
+    return true;
+  }
+  if (
+    normalizedModel.includes('gpt-4o-transcribe') ||
+    normalizedModel.includes('gpt-4o-mini-transcribe')
+  ) {
+    return false;
+  }
+  return null;
+}
+
+export function buildTranscriptionAttempts(
+  transcriptionModel = TRANSCRIPTION_MODEL,
+  wordTimestampModel = WORD_TIMESTAMP_TRANSCRIPTION_MODEL,
+) {
+  const configuredModel = typeof transcriptionModel === 'string'
+    ? transcriptionModel.trim()
+    : '';
+  const alignmentModel = typeof wordTimestampModel === 'string'
+    ? wordTimestampModel.trim()
+    : '';
+  const attempts = [];
+
+  const addTimestampAttempt = (model) => {
+    if (!model || getWordTimestampCapability(model) === false) {
+      return;
+    }
+    if (attempts.some((attempt) =>
+      normalizeModelName(attempt.model) === normalizeModelName(model) &&
+      attempt.response_format === 'verbose_json')) {
+      return;
+    }
+    attempts.push({
+      model,
+      response_format: 'verbose_json',
+      timestamp_granularities: ['word'],
+      requiresExplicitWordTimings: true,
+    });
+  };
+
+  // Prefer the configured model when it is timestamp-capable (or is a custom
+  // model whose capability is not yet known), then fall through to whisper-1.
+  // Known incompatible GPT-4o transcription models skip the rejected verbose
+  // request entirely.
+  addTimestampAttempt(configuredModel);
+  addTimestampAttempt(alignmentModel);
+
+  if (configuredModel) {
+    attempts.push({
+      model: configuredModel,
+      response_format: 'json',
+      requiresExplicitWordTimings: false,
+    });
+  }
+
+  return attempts;
+}
+
+export async function transcribeWithOpenAI(
+  audioFilePath,
+  transcriptText,
+  languageCode,
+  audioDurationSeconds = null,
+  options = {},
+) {
   try {
-    const normalizedModel = TRANSCRIPTION_MODEL.toLowerCase();
-    const isGpt4oTranscribe = normalizedModel.includes('gpt-4o') && normalizedModel.includes('transcribe');
+    const transcriptionModel = options.transcriptionModel || TRANSCRIPTION_MODEL;
+    const wordTimestampModel = options.wordTimestampModel || WORD_TIMESTAMP_TRANSCRIPTION_MODEL;
+    const transcriptionClient = options.openaiClient || openai;
+    const createReadStream = options.createReadStream || fs.createReadStream;
 
     const requestPayloadBase = {
-      model: TRANSCRIPTION_MODEL,
-      language: languageCode || undefined,
+      language: normalizeTranscriptionLanguageCode(languageCode),
       prompt: transcriptText && transcriptText.trim() ? transcriptText : undefined,
     };
 
-    const attemptPayloads = isGpt4oTranscribe
-      ? [
-          {
-            response_format: 'verbose_json',
-            timestamp_granularities: ['word'],
-          },
-          {
-            response_format: 'json',
-          },
-        ]
-      : [
-          {
-            response_format: 'verbose_json',
-            timestamp_granularities: ['word'],
-          },
-          {
-            response_format: 'json',
-          },
-        ];
+    const attempts = buildTranscriptionAttempts(transcriptionModel, wordTimestampModel);
 
     let response = null;
+    let responseHasAuthoritativeTimings = false;
     let lastError = null;
 
-    for (const attempt of attemptPayloads) {
-      const fileStream = fs.createReadStream(audioFilePath);
-      const payload = { ...requestPayloadBase, ...attempt, file: fileStream };
+    for (const attempt of attempts) {
+      const fileStream = createReadStream(audioFilePath);
+      const {
+        requiresExplicitWordTimings,
+        ...requestAttempt
+      } = attempt;
+      const payload = { ...requestPayloadBase, ...requestAttempt, file: fileStream };
       try {
-        response = await openai.audio.transcriptions.create(payload);
-        if (attempt.response_format === 'verbose_json') {
+        const candidateResponse = await transcriptionClient.audio.transcriptions.create(payload);
+        if (requiresExplicitWordTimings) {
           try {
-            if (!hasExplicitWordTimings(response)) {
-              response = null;
+            if (!hasExplicitWordTimings(candidateResponse)) {
+              lastError = new Error(
+                `OpenAI transcription model ${attempt.model} returned no explicit word timestamps`,
+              );
               continue;
             }
           } catch (parseErr) {
-            console.error('Failed to parse verbose_json transcription; falling back to json response', {
-              model: TRANSCRIPTION_MODEL,
+            lastError = parseErr;
+            console.warn('Failed to parse timestamped transcription; trying the next alignment model', {
+              model: attempt.model,
               responseFormat: attempt.response_format,
               error: parseErr?.message || parseErr,
             });
-            response = null;
             continue;
           }
         }
+        response = candidateResponse;
+        responseHasAuthoritativeTimings = requiresExplicitWordTimings;
         break;
       } catch (err) {
         lastError = err;
-        if (attempt.response_format === 'verbose_json') {
-          console.error('OpenAI transcription verbose_json failed; falling back to json response', {
-            model: TRANSCRIPTION_MODEL,
+        if (requiresExplicitWordTimings) {
+          console.warn('OpenAI timestamped transcription failed; trying the next alignment model', {
+            model: attempt.model,
             responseFormat: attempt.response_format,
             error: err?.response?.data || err?.message || err,
           });
         }
+      } finally {
         if (fileStream && typeof fileStream.destroy === 'function') {
           fileStream.destroy();
         }
@@ -246,7 +430,7 @@ export async function transcribeWithOpenAI(audioFilePath, transcriptText, langua
       : audioDurationSeconds;
 
     const openAiTranscript = (typeof response === 'string') ? response : (response?.text || '');
-    const rawWords = collectRawWordsFromResponse(response);
+    const rawWords = collectRawWordsFromResponse(response, languageCode);
 
     let words = rawWords
       .map((w) => {
@@ -260,7 +444,7 @@ export async function transcribeWithOpenAI(audioFilePath, transcriptText, langua
           word: rawWord,
           start: safeStart,
           end: safeEnd,
-          case: 'success',
+          case: responseHasAuthoritativeTimings ? 'success' : 'fallback',
         };
       })
       .filter((w) => w.word.trim() !== '');
@@ -268,9 +452,8 @@ export async function transcribeWithOpenAI(audioFilePath, transcriptText, langua
     if (!words.length) {
       const fallbackTranscript = transcriptText?.trim() ? transcriptText : openAiTranscript;
       if (fallbackTranscript) {
-        const cleanedTranscript = sanitizeTranscriptForAlignment(fallbackTranscript);
         words = buildTimedWordAlignment(
-          cleanedTranscript ? cleanedTranscript.split(' ') : [],
+          tokenizeTranscriptForAlignment(fallbackTranscript, languageCode),
           effectiveDurationSeconds,
           'fallback',
         );
@@ -285,9 +468,8 @@ export async function transcribeWithOpenAI(audioFilePath, transcriptText, langua
     console.error('OpenAI transcription failed', err?.response?.data || err?.message || err);
 
     const fallbackTranscript = transcriptText?.trim() ? transcriptText : '';
-    const cleanedTranscript = sanitizeTranscriptForAlignment(fallbackTranscript);
     const words = buildTimedWordAlignment(
-      cleanedTranscript ? cleanedTranscript.split(' ') : [],
+      tokenizeTranscriptForAlignment(fallbackTranscript, languageCode),
       audioDurationSeconds,
       'fallback_error',
     );

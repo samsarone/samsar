@@ -2,12 +2,252 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
+  backfillTranslatedSubtitleMetadataForRerun,
   buildSpeechSubtitleLayerFields,
   buildSpeechSubtitleTextMap,
   normalizeDetectedSpeechLanguage,
   resolveSpeechLanguageCode,
   resolveSubtitleLanguageOption,
 } from './SubtitleLanguage.js';
+
+test('subtitle rerun backfills known-language translation metadata and preserves speaker identity', async () => {
+  const speechLayer = {
+    generationType: 'speech',
+    prompt: 'Welcome home.',
+    speechLanguage: 'en',
+    subtitleLanguage: 'th',
+    subtitleTranslationRequired: true,
+    subtitleText: 'คำแปลเก่า',
+    subtitleAlignmentMap: [],
+    speakerCharacterName: 'Guide',
+    subtitleSpeakerCharacterName: null,
+    addTranscriptionsRequired: false,
+    subtitleWordAnimation: 'none',
+  };
+  const calls = [];
+
+  const result = await backfillTranslatedSubtitleMetadataForRerun([speechLayer], {
+    sessionSpeechLanguage: 'en',
+    sessionSubtitleLanguage: 'th',
+    sessionSubtitleLanguageString: 'Thai',
+    sessionTranslationRequired: true,
+    inferenceModel: 'QWEN3.7',
+    translateSpeech: async (text, targetLanguage, inferenceModel, options) => {
+      calls.push({ text, targetLanguage, inferenceModel, options });
+      return {
+        text: 'ยินดีต้อนรับกลับบ้าน',
+        subtitleAlignmentMap: [
+          { sourceText: 'Welcome', translatedText: 'ยินดีต้อนรับ' },
+          { sourceText: 'home.', translatedText: 'กลับบ้าน' },
+        ],
+        subtitleSpeakerCharacterName: 'ผู้นำทาง',
+      };
+    },
+  });
+
+  assert.equal(result.updatedCount, 1);
+  assert.equal(speechLayer.subtitleText, 'ยินดีต้อนรับกลับบ้าน');
+  assert.deepEqual(speechLayer.subtitleAlignmentMap, [
+    { sourceText: 'Welcome', translatedText: 'ยินดีต้อนรับ' },
+    { sourceText: 'home.', translatedText: 'กลับบ้าน' },
+  ]);
+  assert.equal(speechLayer.speakerCharacterName, 'Guide');
+  assert.equal(speechLayer.subtitleSpeakerCharacterName, 'ผู้นำทาง');
+  assert.equal(speechLayer.addTranscriptionsRequired, true);
+  assert.equal(speechLayer.subtitleWordAnimation, 'highlight');
+  assert.deepEqual(calls, [{
+    text: 'Welcome home.',
+    targetLanguage: 'Thai',
+    inferenceModel: 'QWEN3.7',
+    options: {
+      targetLanguageCode: 'th',
+      includeSubtitleAlignment: true,
+      speakerCharacterName: 'Guide',
+    },
+  }]);
+});
+
+test('subtitle rerun skips complete translated metadata', async () => {
+  const speechLayer = {
+    generationType: 'speech',
+    prompt: 'Hello.',
+    speechLanguage: 'en',
+    subtitleLanguage: 'fr',
+    subtitleTranslationRequired: true,
+    subtitleText: 'Bonjour.',
+    subtitleAlignmentMap: [{ sourceText: 'Hello.', translatedText: 'Bonjour.' }],
+    speakerCharacterName: 'Host',
+    subtitleSpeakerCharacterName: 'Hôte',
+    addTranscriptionsRequired: true,
+    subtitleWordAnimation: 'highlight',
+  };
+
+  const result = await backfillTranslatedSubtitleMetadataForRerun([speechLayer], {
+    sessionSubtitleLanguage: 'fr',
+    sessionTranslationRequired: true,
+    translateSpeech: () => {
+      throw new Error('should not be called');
+    },
+  });
+
+  assert.equal(result.updatedCount, 0);
+  assert.equal(speechLayer.subtitleText, 'Bonjour.');
+});
+
+test('subtitle rerun regenerates a nonempty legacy map that does not cover its text', async () => {
+  const speechLayer = {
+    generationType: 'speech',
+    prompt: 'Hello world.',
+    speechLanguage: 'en',
+    subtitleLanguage: 'fr',
+    subtitleTranslationRequired: true,
+    subtitleText: 'Bonjour le monde.',
+    subtitleAlignmentMap: [{ sourceText: 'Hello', translatedText: 'Bonjour' }],
+    addTranscriptionsRequired: true,
+    subtitleWordAnimation: 'highlight',
+  };
+  let inferenceCalled = false;
+
+  const result = await backfillTranslatedSubtitleMetadataForRerun([speechLayer], {
+    sessionSubtitleLanguage: 'fr',
+    translateSpeech: async () => {
+      inferenceCalled = true;
+      return {
+        text: 'Salut tout le monde.',
+        subtitleAlignmentMap: [
+          { sourceText: 'Hello', translatedText: 'Salut' },
+          { sourceText: 'world.', translatedText: 'tout le monde.' },
+        ],
+        subtitleSpeakerCharacterName: null,
+      };
+    },
+  });
+
+  assert.equal(inferenceCalled, true);
+  assert.equal(result.updatedCount, 1);
+  assert.equal(speechLayer.subtitleText, 'Salut tout le monde.');
+  assert.deepEqual(speechLayer.subtitleAlignmentMap, [
+    { sourceText: 'Hello', translatedText: 'Salut' },
+    { sourceText: 'world.', translatedText: 'tout le monde.' },
+  ]);
+});
+
+test('subtitle rerun backfills translated speech without a speaker label', async () => {
+  const speechLayer = {
+    generationType: 'speech',
+    prompt: 'We begin.',
+    speechLanguage: 'en',
+    subtitleLanguage: 'fr',
+    subtitleTranslationRequired: true,
+    subtitleText: 'Nous commençons.',
+    subtitleAlignmentMap: [],
+  };
+
+  const result = await backfillTranslatedSubtitleMetadataForRerun([speechLayer], {
+    sessionSubtitleLanguage: 'fr',
+    inferenceModel: 'gemini-3.1-pro',
+    translateSpeech: async (_text, _targetLanguage, _inferenceModel, options) => {
+      assert.equal(options.speakerCharacterName, '');
+      return {
+        text: 'Nous commençons.',
+        subtitleAlignmentMap: [{
+          sourceText: 'We begin.',
+          translatedText: 'Nous commençons.',
+        }],
+        subtitleSpeakerCharacterName: null,
+      };
+    },
+  });
+
+  assert.equal(result.updatedCount, 1);
+  assert.equal(speechLayer.subtitleSpeakerCharacterName, null);
+  assert.equal(speechLayer.speakerCharacterName, undefined);
+  assert.equal(speechLayer.subtitleWordAnimation, 'highlight');
+});
+
+test('subtitle rerun detects an unknown source language while backfilling metadata', async () => {
+  const speechLayer = {
+    generationType: 'speech',
+    prompt: '夜が明ける。',
+    speechLanguage: null,
+    languageCode: 'auto',
+    subtitleLanguage: 'en',
+    subtitleTranslationRequired: true,
+    subtitleText: 'Dawn breaks.',
+    subtitleAlignmentMap: [],
+  };
+
+  await backfillTranslatedSubtitleMetadataForRerun([speechLayer], {
+    sessionSpeechLanguage: 'auto',
+    sessionSubtitleLanguage: 'en',
+    sessionTranslationRequired: true,
+    inferenceModel: 'gemini-3.1-pro',
+    translateSpeech: async (_text, targetLanguage, _inferenceModel, options) => {
+      assert.equal(targetLanguage, 'English');
+      assert.equal(options.detectSourceLanguage, true);
+      assert.equal(options.returnMetadata, true);
+      return {
+        text: 'Dawn breaks.',
+        sourceLanguage: 'jpn',
+        translationRequired: true,
+        subtitleAlignmentMap: [{ sourceText: '夜が明ける。', translatedText: 'Dawn breaks.' }],
+        subtitleSpeakerCharacterName: null,
+      };
+    },
+  });
+
+  assert.equal(speechLayer.speechLanguage, 'ja');
+  assert.equal(speechLayer.subtitleLanguage, 'en');
+  assert.equal(speechLayer.subtitleTranslationRequired, true);
+  assert.deepEqual(speechLayer.subtitleAlignmentMap, [
+    { sourceText: '夜が明ける。', translatedText: 'Dawn breaks.' },
+  ]);
+});
+
+test('subtitle rerun applies no partial metadata when a later backfill fails', async () => {
+  const audioLayers = [
+    {
+      generationType: 'speech',
+      prompt: 'First.',
+      speechLanguage: 'en',
+      subtitleLanguage: 'fr',
+      subtitleTranslationRequired: true,
+      subtitleText: 'Old first.',
+      subtitleAlignmentMap: [],
+    },
+    {
+      generationType: 'speech',
+      prompt: 'Second.',
+      speechLanguage: 'en',
+      subtitleLanguage: 'fr',
+      subtitleTranslationRequired: true,
+      subtitleText: 'Old second.',
+      subtitleAlignmentMap: [],
+    },
+  ];
+  const before = structuredClone(audioLayers);
+  let callCount = 0;
+
+  await assert.rejects(
+    backfillTranslatedSubtitleMetadataForRerun(audioLayers, {
+      sessionSubtitleLanguage: 'fr',
+      translateSpeech: async (text) => {
+        callCount += 1;
+        if (callCount === 2) {
+          throw new Error('inference failed');
+        }
+        return {
+          text: 'Premier.',
+          subtitleAlignmentMap: [{ sourceText: text, translatedText: 'Premier.' }],
+          subtitleSpeakerCharacterName: null,
+        };
+      },
+    }),
+    /inference failed/,
+  );
+
+  assert.deepEqual(audioLayers, before);
+});
 
 test('detected ISO-639-2 language aliases normalize to canonical source codes', () => {
   assert.deepEqual(
@@ -79,10 +319,35 @@ test('subtitle language accepts aliases, preserves the propagated explicit bit, 
 });
 
 test('explicit-language translation covers narrator and character speech only', async () => {
-  const narrator = { type: 'speech', subType: 'narration', audio: 'Welcome.' };
-  const character = { type: 'speech', subType: 'character', audio: 'Let us go.' };
+  const narrator = {
+    type: 'speech',
+    subType: 'narration',
+    audio: 'Welcome.',
+    speakerCharacterName: 'Narrator',
+  };
+  const character = {
+    type: 'speech',
+    subType: 'character',
+    audio: 'Let us go.',
+    speakerCharacterName: 'Guide',
+  };
   const soundEffect = { type: 'sound_effect', audio: 'Thunder cracks.' };
   const calls = [];
+  const resultByText = new Map([
+    [narrator.audio, {
+      text: 'ยินดีต้อนรับ',
+      subtitleAlignmentMap: [{ sourceText: 'Welcome.', translatedText: 'ยินดีต้อนรับ' }],
+      subtitleSpeakerCharacterName: 'ผู้บรรยาย',
+    }],
+    [character.audio, {
+      text: 'ไปกันเถอะ',
+      subtitleAlignmentMap: [
+        { sourceText: 'Let us', translatedText: 'ไปกัน' },
+        { sourceText: 'go.', translatedText: 'เถอะ' },
+      ],
+      subtitleSpeakerCharacterName: 'ผู้นำทาง',
+    }],
+  ]);
 
   const translated = await buildSpeechSubtitleTextMap(
     [narrator, soundEffect, character],
@@ -92,30 +357,55 @@ test('explicit-language translation covers narrator and character speech only', 
       subtitleLanguageString: 'Thai',
       subtitleLanguageExplicit: true,
       inferenceModel: 'gemini-3.1-pro',
-      translateSpeech: async (text, targetLanguage, inferenceModel) => {
-        calls.push({ text, targetLanguage, inferenceModel });
-        return `translated:${text}`;
+      translateSpeech: async (text, targetLanguage, inferenceModel, options) => {
+        calls.push({ text, targetLanguage, inferenceModel, options });
+        return resultByText.get(text);
       },
     },
   );
 
   assert.deepEqual(translated.get(narrator), {
-    subtitleText: 'translated:Welcome.',
+    subtitleText: 'ยินดีต้อนรับ',
     subtitleLanguage: 'th',
     speechLanguage: 'en',
     subtitleTranslationRequired: true,
+    subtitleAlignmentMap: [{ sourceText: 'Welcome.', translatedText: 'ยินดีต้อนรับ' }],
+    subtitleSpeakerCharacterName: 'ผู้บรรยาย',
   });
   assert.deepEqual(translated.get(character), {
-    subtitleText: 'translated:Let us go.',
+    subtitleText: 'ไปกันเถอะ',
     subtitleLanguage: 'th',
     speechLanguage: 'en',
     subtitleTranslationRequired: true,
+    subtitleAlignmentMap: [
+      { sourceText: 'Let us', translatedText: 'ไปกัน' },
+      { sourceText: 'go.', translatedText: 'เถอะ' },
+    ],
+    subtitleSpeakerCharacterName: 'ผู้นำทาง',
   });
   assert.equal(translated.has(soundEffect), false);
-  assert.deepEqual(calls, [
+  assert.equal(calls.length, 2);
+  assert.deepEqual(calls.map(({ text, targetLanguage, inferenceModel }) => ({
+    text,
+    targetLanguage,
+    inferenceModel,
+  })), [
     { text: 'Welcome.', targetLanguage: 'Thai', inferenceModel: 'gemini-3.1-pro' },
     { text: 'Let us go.', targetLanguage: 'Thai', inferenceModel: 'gemini-3.1-pro' },
   ]);
+  assert.ok(calls.every((call) => call.options.includeSubtitleAlignment === true));
+  assert.deepEqual(
+    calls.map((call) => call.options.speakerCharacterName),
+    ['Narrator', 'Guide'],
+  );
+  const characterFields = buildSpeechSubtitleLayerFields(translated.get(character));
+  assert.deepEqual(characterFields.subtitleAlignmentMap, [
+    { sourceText: 'Let us', translatedText: 'ไปกัน' },
+    { sourceText: 'go.', translatedText: 'เถอะ' },
+  ]);
+  assert.equal(characterFields.subtitleSpeakerCharacterName, 'ผู้นำทาง');
+  assert.equal(characterFields.addTranscriptionsRequired, true);
+  assert.equal(characterFields.subtitleWordAnimation, 'highlight');
 });
 
 test('same explicit speech and subtitle language preserves alignment without inference', async () => {
@@ -134,11 +424,13 @@ test('same explicit speech and subtitle language preserves alignment without inf
   assert.equal(fields.subtitleText, 'Original speech.');
   assert.equal(fields.speechLanguage, 'en');
   assert.equal(fields.subtitleTranslationRequired, false);
+  assert.deepEqual(fields.subtitleAlignmentMap, []);
+  assert.equal(fields.subtitleSpeakerCharacterName, null);
   assert.equal(fields.addTranscriptionsRequired, true);
   assert.equal(fields.subtitleWordAnimation, 'highlight');
 });
 
-test('auto Japanese speech with explicit English subtitles translates narrator and character into static subtitles', async () => {
+test('auto Japanese speech with explicit English subtitles keeps mapped word animation enabled', async () => {
   const narrator = { type: 'speech', subType: 'narration', audio: '夜が明ける。' };
   const character = { type: 'speech', subType: 'character', audio: '行きましょう。' };
   const translations = new Map([
@@ -159,6 +451,8 @@ test('auto Japanese speech with explicit English subtitles translates narrator a
         text: translations.get(text),
         sourceLanguage: 'ja',
         translationRequired: true,
+        subtitleAlignmentMap: [{ sourceText: text, translatedText: translations.get(text) }],
+        subtitleSpeakerCharacterName: null,
       };
     },
   });
@@ -169,13 +463,55 @@ test('auto Japanese speech with explicit English subtitles translates narrator a
     assert.equal(fields.speechLanguage, 'ja');
     assert.equal(fields.subtitleLanguage, 'en');
     assert.equal(fields.subtitleTranslationRequired, true);
-    assert.equal(fields.addTranscriptionsRequired, false);
-    assert.equal(fields.subtitleWordAnimation, 'none');
+    assert.deepEqual(fields.subtitleAlignmentMap, [{
+      sourceText: speech.audio,
+      translatedText: translations.get(speech.audio),
+    }]);
+    assert.equal(fields.addTranscriptionsRequired, true);
+    assert.equal(fields.subtitleWordAnimation, 'highlight');
   }
   assert.equal(calls.length, 2);
   assert.ok(calls.every((call) => call.inferenceModel === 'QWEN3.7'));
   assert.ok(calls.every((call) => call.options.detectSourceLanguage === true));
   assert.ok(calls.every((call) => call.options.targetLanguageCode === 'en'));
+  assert.ok(calls.every((call) => call.options.includeSubtitleAlignment === true));
+});
+
+test('translated subtitles reject missing mappings and missing localized speaker names', async () => {
+  const speech = {
+    type: 'speech',
+    subType: 'character',
+    audio: 'We begin.',
+    speakerCharacterName: 'Host',
+  };
+  const baseOptions = {
+    speechLanguageCode: 'en',
+    subtitleLanguage: 'fr',
+    subtitleLanguageString: 'French',
+    subtitleLanguageExplicit: true,
+  };
+
+  await assert.rejects(
+    buildSpeechSubtitleTextMap([speech], {
+      ...baseOptions,
+      translateSpeech: async () => ({ text: 'Nous commençons.' }),
+    }),
+    /empty alignment map/,
+  );
+
+  await assert.rejects(
+    buildSpeechSubtitleTextMap([speech], {
+      ...baseOptions,
+      translateSpeech: async () => ({
+        text: 'Nous commençons.',
+        subtitleAlignmentMap: [{
+          sourceText: 'We begin.',
+          translatedText: 'Nous commençons.',
+        }],
+      }),
+    }),
+    /empty localized speaker name/,
+  );
 });
 
 test('auto Japanese speech with explicit Japanese subtitles keeps exact narrator and character text animated', async () => {

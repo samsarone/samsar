@@ -9,6 +9,10 @@ import { uploadSpeechAudioToCDN } from '../audio/AWS.js';
 import { padBlankAudioAtBeginningAndEnd } from '../audio/Audio.js';
 import { resolveProviderAiVideoUrl } from './utils/ProviderMediaUrl.js';
 import { normalizeProviderMediaUrl } from './utils/AWS.js';
+import {
+  resolveLocalAssetPath,
+  toLocalAssetReference,
+} from '../utils/LocalAssetPath.js';
 
 const ACTIVE_LIP_SYNC_REQUEST_STATUSES = ['INIT', 'PENDING'];
 
@@ -53,79 +57,6 @@ async function resolveProviderAudioUrl(audioReference) {
     throw new Error('Lip sync generation requires a provider-readable audio URL.');
   }
   return providerAudioUrl;
-}
-
-function getProcessorAssetsRoot(folderName) {
-  if (process.env.CURRENT_ENV === 'staging' || process.env.CURRENT_ENV === 'docker') {
-    return `/${folderName}`;
-  }
-  return path.join(process.cwd(), '../', 'samsar_processor', folderName);
-}
-
-function normalizeLocalAssetReference(value) {
-  return typeof value === 'string'
-    ? value.trim().replace(/\\/g, '/').replace(/^\/+/, '')
-    : '';
-}
-
-function resolveLocalAssetPath(localAssetRef) {
-  const rawRef = typeof localAssetRef === 'string' ? localAssetRef.trim() : '';
-  if (!rawRef) {
-    return null;
-  }
-
-  if (path.isAbsolute(rawRef) && fs.existsSync(rawRef)) {
-    return rawRef;
-  }
-
-  const normalizedRef = normalizeLocalAssetReference(rawRef)
-    .replace(/^samsar_processor\/assets_v2\/+/, 'assets_v2/')
-    .replace(/^samsar_processor\/assets\/+/, 'assets/');
-
-  const assetsV2Root = getProcessorAssetsRoot('assets_v2');
-  const legacyAssetsRoot = getProcessorAssetsRoot('assets');
-
-  let candidates;
-  if (normalizedRef.startsWith('assets_v2/')) {
-    candidates = [path.join(assetsV2Root, normalizedRef.replace(/^assets_v2\/+/, ''))];
-  } else if (normalizedRef.startsWith('assets/')) {
-    candidates = [path.join(legacyAssetsRoot, normalizedRef.replace(/^assets\/+/, ''))];
-  } else {
-    candidates = [
-      path.join(assetsV2Root, normalizedRef),
-      path.join(legacyAssetsRoot, normalizedRef),
-    ];
-  }
-
-  return candidates.find((candidatePath) => fs.existsSync(candidatePath)) || candidates[0] || null;
-}
-
-function toLocalAssetReference(absolutePath) {
-  if (typeof absolutePath !== 'string' || !absolutePath.trim()) {
-    return absolutePath;
-  }
-
-  const normalizedPath = absolutePath.replace(/\\/g, '/');
-  const isStagingOrDocker = process.env.CURRENT_ENV === 'staging' || process.env.CURRENT_ENV === 'docker';
-  const roots = [
-    { root: getProcessorAssetsRoot('assets_v2'), prefix: 'assets_v2' },
-    { root: getProcessorAssetsRoot('assets'), prefix: '' },
-  ];
-
-  for (const { root, prefix } of roots) {
-    const normalizedRoot = root.replace(/\\/g, '/').replace(/\/+$/, '');
-    if (normalizedPath === normalizedRoot || normalizedPath.startsWith(`${normalizedRoot}/`)) {
-      const relativePath = normalizedPath.slice(normalizedRoot.length).replace(/^\/+/, '');
-      if (!prefix) {
-        return isStagingOrDocker ? normalizedPath : relativePath;
-      }
-      return isStagingOrDocker
-        ? path.posix.join('/', prefix, relativePath)
-        : path.posix.join(prefix, relativePath);
-    }
-  }
-
-  return absolutePath;
 }
 
 function findConnectedAudioLayer(sessionAudioLayers = [], currentLayer = {}, layerIndex = -1) {

@@ -67,7 +67,9 @@ import {
 import { SUPPORTED_LANGUAGES, resolveLanguageCode } from '../../constants/supportedLanguages.js';
 import { getHeaders } from '../../utils/web.jsx';
 import { getSessionType } from '../../utils/environment.jsx';
-import { resolveSubtitleLanguageOverride } from './vidgenieSubtitleLanguage.mjs';
+import {
+  buildVidgenieLanguageFields,
+} from './vidgenieSubtitleLanguage.mjs';
 import {
   filterOptionsForDeploymentModelValues,
   normalizeDeploymentModelValue,
@@ -1200,9 +1202,9 @@ function buildDefaultJsonModeInput({
   const normalizedAspectRatio = aspectRatio === '9:16' ? '9:16' : '16:9';
   const normalizedLanguage = language || 'en';
   const normalizedVideoModel = videoModel || '';
-  const subtitleLanguageOverride = resolveSubtitleLanguageOverride({
-    enableSubtitles,
+  const languageFields = buildVidgenieLanguageFields({
     audioLanguage: normalizedLanguage,
+    enableSubtitles,
     subtitleLanguage,
   });
 
@@ -1227,12 +1229,8 @@ function buildDefaultJsonModeInput({
         prompt: 'Create a polished short video from these images.',
         video_model: normalizedVideoModel,
         aspect_ratio: normalizedAspectRatio,
-        language: normalizedLanguage,
+        ...languageFields,
         font_key: 'Poppins',
-        enable_subtitles: enableSubtitles,
-        ...(subtitleLanguageOverride
-          ? { subtitle_language: subtitleLanguageOverride }
-          : {}),
         inference_model: normalizeInferenceModelKey(inferenceModel),
         limit_single_narrator: false,
         add_narrator_avatar: false,
@@ -1265,12 +1263,8 @@ function buildDefaultJsonModeInput({
       duration: duration || 30,
       tone: 'grounded',
       aspect_ratio: normalizedAspectRatio,
-      language: normalizedLanguage,
+      ...languageFields,
       font_key: 'Poppins',
-      enable_subtitles: enableSubtitles,
-      ...(subtitleLanguageOverride
-        ? { subtitle_language: subtitleLanguageOverride }
-        : {}),
       inference_model: normalizeInferenceModelKey(inferenceModel),
     },
     null,
@@ -1768,6 +1762,7 @@ function validateCommonJsonInput(input, inferenceModelOptions = INFERENCE_MODEL_
       const languageValues = ['auto', ...SUPPORTED_LANGUAGES.map((lang) => lang.code)];
       return `JSON input.language must be one of: ${formatAllowedJsonValues(languageValues)}.`;
     }
+    input.language = normalizedLanguage;
   }
 
   if (input.font_key !== undefined && typeof input.font_key !== 'string') {
@@ -5423,21 +5418,16 @@ export default function OneshotEditor() {
         ? selectedLanguageOption
         : selectedLanguageOption?.value ?? selectedLanguageOption?.label;
     const resolvedAudioLanguage = resolveLanguageCode(selectedLanguageValue);
-    requestInput.language = resolvedAudioLanguage;
-    requestInput.enable_subtitles = enableSubtitles;
     const selectedSubtitleLanguageValue =
       typeof selectedSubtitleLanguageOption === 'string'
         ? selectedSubtitleLanguageOption
         : selectedSubtitleLanguageOption?.value ?? selectedSubtitleLanguageOption?.label;
     const resolvedSubtitleLanguage = resolveLanguageCode(selectedSubtitleLanguageValue, '');
-    const subtitleLanguageOverride = resolveSubtitleLanguageOverride({
-      enableSubtitles,
+    Object.assign(requestInput, buildVidgenieLanguageFields({
       audioLanguage: resolvedAudioLanguage,
+      enableSubtitles,
       subtitleLanguage: resolvedSubtitleLanguage,
-    });
-    if (subtitleLanguageOverride) {
-      requestInput.subtitle_language = subtitleLanguageOverride;
-    }
+    }));
     Object.assign(requestInput, advancedRequestConfiguration.input);
     const stepGenerationInput = buildStepGenerationInput(submittedGenerationStepMode);
     Object.assign(requestInput, stepGenerationInput);
@@ -6690,6 +6680,13 @@ export default function OneshotEditor() {
       : 'bg-white text-slate-900 ring-slate-200 focus:ring-indigo-500/50 placeholder:text-slate-400'
     }
   `;
+  const advancedCompactSelectClasses = `
+    h-8 w-36 shrink-0 rounded-lg px-2 text-xs outline-none ring-1 transition sm:w-48
+    ${colorMode === 'dark'
+      ? 'bg-[#0b1224] text-slate-100 ring-white/10 focus:ring-indigo-400/60'
+      : 'bg-white text-slate-900 ring-slate-200 focus:ring-indigo-500/50'
+    }
+  `;
   const advancedLabelClasses = `block text-[11px] font-medium mb-1 ${mutedText}`;
   const advancedSectionBorder = colorMode === 'dark' ? 'border-white/10' : 'border-slate-200';
   const advancedRowBg = colorMode === 'dark' ? 'bg-white/[0.03]' : 'bg-slate-50';
@@ -7161,17 +7158,20 @@ export default function OneshotEditor() {
               </div>
             )}
 
-            {/* Language */}
+            {/* Audio language */}
             <div className="group w-full">
               <div className={`w-full md:w-full ${controlShell} rounded-xl p-2 transition-transform duration-200 group-hover:translate-y-[-1px] relative z-10 focus-within:z-50 group-hover:z-50`}>
                 <SingleSelect
                   value={selectedLanguageOption}
                   onChange={setSelectedLanguageOption}
                   options={languageOptions}
+                  isDisabled={isFormDisabled}
                   className="w-full"
                 />
               </div>
-              <p className={`text-[11px] mt-1 ${mutedText}`}>{t("vidgenie.languageLabel", {}, "Language")}</p>
+              <p className={`text-[11px] mt-1 ${mutedText}`}>
+                {t("vidgenie.audioLanguage", {}, "Audio language")}
+              </p>
             </div>
 
             <div className="group w-full">
@@ -7196,30 +7196,6 @@ export default function OneshotEditor() {
               </label>
             </div>
 
-            {enableSubtitles && (
-              <div className="group w-full">
-                <div className={`w-full md:w-full ${controlShell} rounded-xl p-2 transition-transform duration-200 group-hover:translate-y-[-1px] relative z-10 focus-within:z-50 group-hover:z-50`}>
-                  <SingleSelect
-                    value={selectedSubtitleLanguageOption}
-                    onChange={setSelectedSubtitleLanguageOption}
-                    options={subtitleLanguageOptions}
-                    isDisabled={isFormDisabled}
-                    className="w-full"
-                  />
-                </div>
-                <p className={`text-[11px] mt-1 ${mutedText}`}>
-                  {t("vidgenie.subtitleLanguage", {}, "Subtitle language")}
-                </p>
-                <p className={`text-[11px] mt-0.5 ${mutedText}`}>
-                  {t(
-                    "vidgenie.subtitleLanguageHelp",
-                    {},
-                    "Choose a different language to translate subtitle text."
-                  )}
-                </p>
-              </div>
-            )}
-
           </div>
         </div>
 
@@ -7228,6 +7204,44 @@ export default function OneshotEditor() {
 
           {isAdvancedOpen && (
             <div className="mt-3 space-y-5">
+              {enableSubtitles && (
+                <div className={`flex items-center justify-between gap-3 rounded-lg px-2.5 py-2 ${advancedRowBg}`}>
+                  <label
+                    htmlFor="vidgenie-subtitle-language"
+                    className={`min-w-0 text-xs font-medium ${mutedText}`}
+                  >
+                    {t("vidgenie.subtitleLanguage", {}, "Subtitle language")}
+                  </label>
+                  <select
+                    id="vidgenie-subtitle-language"
+                    value={
+                      typeof selectedSubtitleLanguageOption === 'string'
+                        ? selectedSubtitleLanguageOption
+                        : selectedSubtitleLanguageOption?.value || ''
+                    }
+                    onChange={(event) => {
+                      const nextOption = subtitleLanguageOptions.find(
+                        (option) => option.value === event.target.value
+                      );
+                      setSelectedSubtitleLanguageOption(nextOption || subtitleLanguageOptions[0]);
+                    }}
+                    disabled={isFormDisabled}
+                    title={t(
+                      "vidgenie.subtitleLanguageHelp",
+                      {},
+                      "Choose a different language to translate subtitle text."
+                    )}
+                    className={advancedCompactSelectClasses}
+                  >
+                    {subtitleLanguageOptions.map((option) => (
+                      <option key={option.value || 'same-as-audio'} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
               <div>
                 <label className={advancedLabelClasses}>Inference model</label>
                 <select

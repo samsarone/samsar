@@ -24,3 +24,24 @@ export function resolveSubtitleLanguageOverride({
 
   return normalizedSubtitleLanguage;
 }
+
+export function buildVidgenieLanguageFields({
+  audioLanguage,
+  enableSubtitles,
+  subtitleLanguage,
+}) {
+  const language = normalizeLanguageValue(audioLanguage) || 'auto';
+  const subtitleLanguageOverride = resolveSubtitleLanguageOverride({
+    enableSubtitles,
+    audioLanguage: language,
+    subtitleLanguage,
+  });
+
+  return {
+    language,
+    enable_subtitles: enableSubtitles === true,
+    ...(subtitleLanguageOverride
+      ? { subtitle_language: subtitleLanguageOverride }
+      : {}),
+  };
+}
