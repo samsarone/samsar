@@ -2,13 +2,209 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
+  applySubtitleLanguageSelectionForRerun,
   backfillTranslatedSubtitleMetadataForRerun,
   buildSpeechSubtitleLayerFields,
   buildSpeechSubtitleTextMap,
   normalizeDetectedSpeechLanguage,
+  refreshSessionSubtitleTranslationRequired,
   resolveSpeechLanguageCode,
+  resolveSubtitleEnablement,
   resolveSubtitleLanguageOption,
 } from './SubtitleLanguage.js';
+
+test('subtitle enablement preserves explicit choices and recognizes language intent', () => {
+  assert.equal(resolveSubtitleEnablement({ enable_subtitles: true }), true);
+  assert.equal(resolveSubtitleEnablement({ enableSubtitles: false }), false);
+  assert.equal(resolveSubtitleEnablement({}), false);
+  assert.equal(resolveSubtitleEnablement({}, { defaultEnabled: true }), true);
+  assert.equal(resolveSubtitleEnablement({ subtitle_language: 'en' }), true);
+  assert.equal(resolveSubtitleEnablement({ subtitleLanguage: 'TH' }), true);
+});
+
+test('subtitle enablement rejects contradictory disabled language requests', () => {
+  assert.throws(
+    () => resolveSubtitleEnablement({
+      enable_subtitles: false,
+      subtitle_language: 'en',
+    }),
+    /subtitle_language requires enable_subtitles to be true/,
+  );
+  assert.throws(
+    () => resolveSubtitleEnablement({ enable_subtitles: 'true' }),
+    /enable_subtitles\/add_subtitles must be a boolean/,
+  );
+});
+
+test('subtitle rerun language selection invalidates stale translated metadata', () => {
+  const musicLayer = {
+    generationType: 'music',
+    subtitleText: 'leave me alone',
+  };
+  const session = {
+    sessionLanguage: 'zh',
+    subtitleLanguage: 'fr',
+    subtitleLanguageString: 'French',
+    subtitleLanguageExplicit: true,
+    subtitleTranslationRequired: true,
+    audioLayers: [
+      {
+        generationType: 'speech',
+        prompt: '今天我们出发。',
+        speechLanguage: 'zh-CN',
+        subtitleLanguage: 'fr',
+        subtitleTranslationRequired: true,
+        subtitleText: 'Nous partons aujourd\u2019hui.',
+        subtitleAlignmentMap: [{ sourceText: '今天', translatedText: "aujourd'hui" }],
+        speakerCharacterName: '导游',
+        subtitleSpeakerCharacterName: 'Guide',
+        addSubtitles: false,
+        addTranscriptionsRequired: false,
+        subtitleWordAnimation: 'none',
+      },
+      musicLayer,
+    ],
+  };
+
+  const result = applySubtitleLanguageSelectionForRerun(session, {
+    subtitle_language: 'EN-us',
+  });
+
+  assert.equal(result.selectionProvided, true);
+  assert.equal(result.updatedAudioLayerCount, 1);
+  assert.equal(result.subtitleLanguage, 'en');
+  assert.equal(result.translationRequired, true);
+  assert.equal(session.subtitleLanguage, 'en');
+  assert.equal(session.subtitleLanguageString, 'English');
+  assert.equal(session.subtitleLanguageExplicit, true);
+  assert.equal(session.subtitleTranslationRequired, true);
+  assert.deepEqual(session.audioLayers[0], {
+    generationType: 'speech',
+    prompt: '今天我们出发。',
+    speechLanguage: 'zh',
+    subtitleLanguage: 'en',
+    subtitleTranslationRequired: true,
+    subtitleText: null,
+    subtitleAlignmentMap: [],
+    speakerCharacterName: '导游',
+    subtitleSpeakerCharacterName: null,
+    addSubtitles: true,
+    addTranscriptionsRequired: true,
+    subtitleWordAnimation: 'highlight',
+  });
+  assert.deepEqual(musicLayer, {
+    generationType: 'music',
+    subtitleText: 'leave me alone',
+  });
+});
+
+test('subtitle rerun language selection clears translation metadata when it matches speech', () => {
+  const session = {
+    sessionLanguage: 'ja',
+    subtitleLanguage: 'en',
+    subtitleTranslationRequired: true,
+    audioLayers: [{
+      generationType: 'speech',
+      prompt: 'おはようございます。',
+      speechLanguage: 'jpn',
+      subtitleLanguage: 'en',
+      subtitleTranslationRequired: true,
+      subtitleText: 'Good morning.',
+      subtitleAlignmentMap: [{ sourceText: 'おはよう', translatedText: 'Good morning' }],
+      subtitleSpeakerCharacterName: 'Narrator',
+    }],
+  };
+
+  const result = applySubtitleLanguageSelectionForRerun(session, {
+    subtitleLanguage: 'JA',
+  });
+
+  assert.equal(result.translationRequired, false);
+  assert.equal(session.subtitleLanguage, 'ja');
+  assert.equal(session.subtitleLanguageString, 'Japanese');
+  assert.equal(session.subtitleTranslationRequired, false);
+  assert.equal(session.audioLayers[0].speechLanguage, 'ja');
+  assert.equal(session.audioLayers[0].subtitleLanguage, 'ja');
+  assert.equal(session.audioLayers[0].subtitleText, 'おはようございます。');
+  assert.equal(session.audioLayers[0].subtitleTranslationRequired, false);
+  assert.deepEqual(session.audioLayers[0].subtitleAlignmentMap, []);
+  assert.equal(session.audioLayers[0].subtitleSpeakerCharacterName, null);
+});
+
+test('subtitle rerun language selection is backward compatible when omitted or blank', () => {
+  const session = {
+    sessionLanguage: 'en',
+    subtitleLanguage: 'fr',
+    subtitleTranslationRequired: true,
+    audioLayers: [{
+      generationType: 'speech',
+      prompt: 'Hello.',
+      subtitleLanguage: 'fr',
+      subtitleText: 'Bonjour.',
+      subtitleTranslationRequired: true,
+    }],
+  };
+  const original = structuredClone(session);
+
+  assert.equal(
+    applySubtitleLanguageSelectionForRerun(session, {}).selectionProvided,
+    false,
+  );
+  assert.equal(
+    applySubtitleLanguageSelectionForRerun(session, { subtitle_language: '  ' })
+      .selectionProvided,
+    false,
+  );
+  assert.deepEqual(session, original);
+});
+
+test('subtitle rerun language validation is atomic', () => {
+  const session = {
+    sessionLanguage: 'en',
+    subtitleLanguage: 'en',
+    audioLayers: [{
+      generationType: 'speech',
+      prompt: 'Hello.',
+      subtitleLanguage: 'en',
+    }],
+  };
+  const original = structuredClone(session);
+
+  assert.throws(
+    () => applySubtitleLanguageSelectionForRerun(session, {
+      subtitle_language: 'not-a-language',
+    }),
+    (error) => error.status === 400 && /subtitle_language must be one of/.test(error.message),
+  );
+  assert.throws(
+    () => applySubtitleLanguageSelectionForRerun(session, { subtitleLanguage: 42 }),
+    (error) => error.status === 400,
+  );
+  assert.deepEqual(session, original);
+});
+
+test('subtitle rerun language selection respects each speech layer language', () => {
+  const session = {
+    sessionLanguage: 'en',
+    audioLayers: [
+      { generationType: 'speech', prompt: 'Hello.', speechLanguage: 'en' },
+      { generationType: 'speech', prompt: 'Bonjour.', speechLanguage: 'fr' },
+      { generationType: 'speech', prompt: '言語不明。', speechLanguage: 'auto' },
+    ],
+  };
+
+  applySubtitleLanguageSelectionForRerun(session, { subtitleLanguage: 'en' });
+
+  assert.deepEqual(
+    session.audioLayers.map((layer) => layer.subtitleTranslationRequired),
+    [false, true, true],
+  );
+  assert.equal(refreshSessionSubtitleTranslationRequired(session), true);
+  session.audioLayers[1].subtitleTranslationRequired = false;
+  session.audioLayers[2].subtitleTranslationRequired = false;
+  assert.equal(refreshSessionSubtitleTranslationRequired(session), false);
+  assert.equal(session.subtitleTranslationRequired, false);
+});
 
 test('subtitle rerun backfills known-language translation metadata and preserves speaker identity', async () => {
   const speechLayer = {

@@ -263,10 +263,14 @@ test('long mapped phrases advance through unique two-line cue pages', () => {
   });
   const firstChunkRender = createTextContext();
   const secondChunkRender = createTextContext();
+  const endOfFirstPage = createTextContext();
+  const startOfSecondPage = createTextContext();
   const nextPageRender = createTextContext();
 
   applyTextSubtitleAnimations(firstChunkRender.context, createItem(), (1 / 24) * 1000, 0, 24);
   applyTextSubtitleAnimations(secondChunkRender.context, createItem(), (5 / 24) * 1000, 0, 24);
+  applyTextSubtitleAnimations(endOfFirstPage.context, createItem(), (7 / 24) * 1000, 0, 24);
+  applyTextSubtitleAnimations(startOfSecondPage.context, createItem(), (8 / 24) * 1000, 0, 24);
   applyTextSubtitleAnimations(nextPageRender.context, createItem(), (9 / 24) * 1000, 0, 24);
 
   assert.deepEqual(
@@ -281,6 +285,19 @@ test('long mapped phrases advance through unique two-line cue pages', () => {
     nextPageRender.calls.fillText.map((call) => call.text),
     ['IJKL'],
   );
+  assert.deepEqual(
+    endOfFirstPage.calls.fillText.map((call) => call.text),
+    ['ABCD', 'EFGH'],
+  );
+  assert.deepEqual(
+    startOfSecondPage.calls.fillText.map((call) => call.text),
+    ['IJKL'],
+  );
+  assert.equal(
+    endOfFirstPage.calls.fillText[0].globalAlpha,
+    startOfSecondPage.calls.fillText[0].globalAlpha,
+  );
+  assert.equal(endOfFirstPage.calls.fillText[0].globalAlpha, 0.5);
   assert.equal(firstChunkRender.calls.fillRect.length, 0);
   assert.equal(secondChunkRender.calls.fillRect.length, 0);
   assert.equal(nextPageRender.calls.fillRect.length, 0);
@@ -399,6 +416,81 @@ test('translated phrases separated by a meaningful timing gap never reveal futur
   assert.deepEqual(secondCue.calls.fillText.map((call) => call.text), ['SECOND']);
 });
 
+test('contiguous translated phrases never retain expired text across scene layers', () => {
+  const createClone = () => ({
+    type: 'text',
+    subType: 'subtitle',
+    text: 'FIRST SECOND THIRD',
+    subtitleRenderMode: 'translated_cue',
+    subtitleAlignmentMapped: true,
+    subtitleTimingBase: 'session',
+    config: {
+      fontSize: 48,
+      fontFamily: 'Poppins',
+      frameOffset: 0,
+      frameDuration: 24,
+      autoWrap: true,
+      breakTextWidth: 800,
+    },
+    words: [
+      { word: 'FIRST', frameOffset: 0, frameDuration: 24, mappingIndex: 0 },
+      { word: 'SECOND', frameOffset: 24, frameDuration: 24, mappingIndex: 1 },
+      { word: 'THIRD', frameOffset: 48, frameDuration: 24, mappingIndex: 2 },
+    ],
+  });
+  const firstLayer = createTextContext();
+  const endOfFirstLayer = createTextContext();
+  const startOfSecondLayer = createTextContext();
+  const secondLayer = createTextContext();
+  const thirdLayer = createTextContext();
+
+  applyTextSubtitleAnimations(
+    firstLayer.context,
+    createClone(),
+    (6 / 24) * 1000,
+    0,
+    24,
+  );
+  applyTextSubtitleAnimations(
+    endOfFirstLayer.context,
+    createClone(),
+    (23 / 24) * 1000,
+    0,
+    24,
+  );
+  applyTextSubtitleAnimations(
+    startOfSecondLayer.context,
+    createClone(),
+    (24 / 24) * 1000,
+    1,
+    24,
+  );
+  applyTextSubtitleAnimations(
+    secondLayer.context,
+    createClone(),
+    (30 / 24) * 1000,
+    1,
+    24,
+  );
+  applyTextSubtitleAnimations(
+    thirdLayer.context,
+    createClone(),
+    (54 / 24) * 1000,
+    2,
+    24,
+  );
+
+  assert.deepEqual(firstLayer.calls.fillText.map((call) => call.text), ['FIRST']);
+  assert.deepEqual(endOfFirstLayer.calls.fillText.map((call) => call.text), ['FIRST']);
+  assert.deepEqual(startOfSecondLayer.calls.fillText.map((call) => call.text), ['SECOND']);
+  assert.deepEqual(secondLayer.calls.fillText.map((call) => call.text), ['SECOND']);
+  assert.deepEqual(thirdLayer.calls.fillText.map((call) => call.text), ['THIRD']);
+  assert.equal(
+    endOfFirstLayer.calls.fillText[0].globalAlpha,
+    startOfSecondLayer.calls.fillText[0].globalAlpha,
+  );
+});
+
 test('translated cue identity separates segment-local mapping indexes in the renderer', () => {
   const { context, calls } = createTextContext();
   const item = {
@@ -456,6 +548,88 @@ test('one translated cue keeps a continuous animation epoch across scene-layer c
       breakTextWidth: 800,
     },
     words: [{ word: 'CONTINUOUS', frameOffset: 0, frameDuration: 24, mappingIndex: 0 }],
+  });
+  const endOfFirstLayer = createTextContext();
+  const startOfSecondLayer = createTextContext();
+
+  applyTextSubtitleAnimations(
+    endOfFirstLayer.context,
+    createClone(),
+    (11 / 24) * 1000,
+    0,
+    24,
+  );
+  applyTextSubtitleAnimations(
+    startOfSecondLayer.context,
+    createClone(),
+    (12 / 24) * 1000,
+    0.5,
+    24,
+  );
+
+  assert.equal(endOfFirstLayer.calls.fillText[0].globalAlpha, 1);
+  assert.equal(startOfSecondLayer.calls.fillText[0].globalAlpha, 1);
+});
+
+test('same-language session-timed subtitles keep highlight and opacity across scene layers', () => {
+  const createClone = (frameOffset) => ({
+    type: 'text',
+    subType: 'subtitle',
+    text: 'CONTINUOUS',
+    subtitleTimingBase: 'session',
+    subtitleCueStartFrameSession: 5,
+    subtitleCueEndFrameSession: 15,
+    config: {
+      fontSize: 48,
+      fontFamily: 'Poppins',
+      frameOffset,
+      frameDuration: 5,
+    },
+    words: [{ word: 'CONTINUOUS', frameOffset: 5, frameDuration: 10 }],
+    wordAnimation: 'highlight',
+  });
+  const endOfFirstLayer = createTextContext();
+  const startOfSecondLayer = createTextContext();
+
+  applyTextSubtitleAnimations(
+    endOfFirstLayer.context,
+    createClone(5),
+    (9 / 24) * 1000,
+    0,
+    24,
+  );
+  applyTextSubtitleAnimations(
+    startOfSecondLayer.context,
+    createClone(0),
+    (10 / 24) * 1000,
+    10 / 24,
+    24,
+  );
+
+  assert.equal(endOfFirstLayer.calls.fillText[0].globalAlpha, 1);
+  assert.equal(startOfSecondLayer.calls.fillText[0].globalAlpha, 1);
+  assert.equal(endOfFirstLayer.calls.fillRect.length, 1);
+  assert.equal(startOfSecondLayer.calls.fillRect.length, 1);
+});
+
+test('static translated clones do not replay their edge fade at a scene boundary', () => {
+  const createClone = () => ({
+    type: 'text',
+    subType: 'subtitle',
+    text: 'CONTINUOUS STATIC CAPTION',
+    subtitleRenderMode: 'static',
+    isStaticSubtitle: true,
+    subtitleCueStartFrameSession: 0,
+    subtitleCueEndFrameSession: 24,
+    config: {
+      fontSize: 48,
+      fontFamily: 'Poppins',
+      frameOffset: 0,
+      frameDuration: 12,
+      autoWrap: true,
+      breakTextWidth: 800,
+    },
+    words: [],
   });
   const endOfFirstLayer = createTextContext();
   const startOfSecondLayer = createTextContext();

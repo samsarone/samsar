@@ -59,6 +59,7 @@ import {
 import { resolveCustomAdaptersForTTSLanguagePolicy } from '../movie_session/TTSLanguagePolicy.js';
 import {
   resolveSpeechLanguageCode,
+  resolveSubtitleEnablement,
   resolveSubtitleLanguageOption,
 } from '../movie_session/SubtitleLanguage.js';
 import { getMaxDurationForModelForScenes } from '../movie_session/utils/ModelUtils.js';
@@ -446,7 +447,7 @@ export async function requestCreateVideo(userId, payload = {}, webhookUrl) {
   const resolvedManualStepStages = Object.prototype.hasOwnProperty.call(payload, 'manual_step_stages')
     ? payload.manual_step_stages
     : payload.manualStepStages;
-  let enableSubtitles = resolveEnableSubtitles(payload);
+  let enableSubtitles = resolveSubtitleEnablement(payload);
   const languageInput = typeof language === 'string' ? language.trim() : '';
   let normalizedLanguage = 'auto';
 
@@ -917,7 +918,7 @@ export async function requestCreateVideoFromImageListAndMetadata(userId, payload
   const manualStepStages = Object.prototype.hasOwnProperty.call(payload, 'manual_step_stages')
     ? payload.manual_step_stages
     : payload.manualStepStages;
-  let enableSubtitles = resolveEnableSubtitles(payload);
+  let enableSubtitles = resolveSubtitleEnablement(payload);
   const normalizedAspectRatio = resolveImageListToVideoAspectRatio(aspect_ratio);
 
   if (!Array.isArray(image_urls) || image_urls.length === 0) {
@@ -2195,27 +2196,6 @@ function safeNormalizeTextToVideoFooterAnimationOptions(payload, context = {}, w
     });
     return { add_footer_animation: false, footer_metadata: [] };
   }
-}
-
-function resolveEnableSubtitles(payload) {
-  if (!payload || typeof payload !== 'object') {
-    return false;
-  }
-
-  const rawValue =
-    payload.enable_subtitles ??
-    payload.enableSubtitles ??
-    payload.add_subtitles ??
-    payload.addSubtitles;
-  if (rawValue === undefined) {
-    return false;
-  }
-  if (typeof rawValue !== 'boolean') {
-    const error = new Error('enable_subtitles/add_subtitles must be a boolean.');
-    error.status = 400;
-    throw error;
-  }
-  return rawValue;
 }
 
 function resolveSessionLanguageForStorage(language) {

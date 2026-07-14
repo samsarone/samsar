@@ -85,6 +85,155 @@ function getTranslatedSubtitleWordAnimation(audioLayer = {}) {
   return currentAnimation && currentAnimation !== 'none' ? currentAnimation : 'highlight';
 }
 
+function getRequestedSubtitleLanguage(payload = {}) {
+  return payload?.subtitle_language ?? payload?.subtitleLanguage;
+}
+
+function hasRequestedSubtitleLanguage(payload = {}) {
+  const requestedLanguage = getRequestedSubtitleLanguage(payload);
+  return requestedLanguage !== undefined && requestedLanguage !== null &&
+    (typeof requestedLanguage !== 'string' || Boolean(requestedLanguage.trim()));
+}
+
+export function resolveSubtitleEnablement(payload = {}, { defaultEnabled = false } = {}) {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+    return defaultEnabled === true;
+  }
+
+  const rawValue =
+    payload.enable_subtitles ??
+    payload.enableSubtitles ??
+    payload.add_subtitles ??
+    payload.addSubtitles;
+  const subtitleLanguageRequested = hasRequestedSubtitleLanguage(payload);
+
+  if (rawValue === undefined) {
+    // A concrete subtitle language is itself unambiguous subtitle intent.
+    return subtitleLanguageRequested || defaultEnabled === true;
+  }
+  if (typeof rawValue !== 'boolean') {
+    const error = new Error('enable_subtitles/add_subtitles must be a boolean.');
+    error.status = 400;
+    throw error;
+  }
+  if (rawValue === false && subtitleLanguageRequested) {
+    const error = new Error('subtitle_language requires enable_subtitles to be true.');
+    error.status = 400;
+    throw error;
+  }
+
+  return rawValue;
+}
+
+export function resolveSubtitleLanguageSelectionForRerun(
+  payload = {},
+  speechLanguage = AUTO_LANGUAGE,
+) {
+  if (!hasRequestedSubtitleLanguage(payload)) {
+    return { selectionProvided: false };
+  }
+
+  return {
+    ...resolveSubtitleLanguageOption(payload, speechLanguage),
+    selectionProvided: true,
+  };
+}
+
+function getSpeechText(audioLayer = {}) {
+  return typeof audioLayer.prompt === 'string' ? audioLayer.prompt : '';
+}
+
+/**
+ * Applies an explicitly requested subtitle language before a subtitle rerun.
+ *
+ * A translated target deliberately clears the old translated payload so the
+ * existing backfill path generates fresh text, alignment mappings and a
+ * localized speaker label. Selecting the speech language restores the source
+ * text and removes translation-only metadata. An omitted/blank option is a
+ * no-op so older rerun clients retain their current behavior.
+ */
+export function applySubtitleLanguageSelectionForRerun(
+  sessionData = {},
+  payload = {},
+) {
+  const sessionSpeechLanguage = resolveSpeechLanguageCode(
+    sessionData?.sessionLanguage || sessionData?.language || AUTO_LANGUAGE,
+  );
+  const languageSelection = resolveSubtitleLanguageSelectionForRerun(
+    payload,
+    sessionSpeechLanguage,
+  );
+  if (!languageSelection.selectionProvided) {
+    return {
+      selectionProvided: false,
+      updatedAudioLayerCount: 0,
+      translationRequired: sessionData?.subtitleTranslationRequired === true,
+    };
+  }
+
+  const languageOption = languageSelection;
+  const audioLayers = Array.isArray(sessionData?.audioLayers)
+    ? sessionData.audioLayers
+    : [];
+  let updatedAudioLayerCount = 0;
+  let translationRequired = false;
+
+  for (const audioLayer of audioLayers) {
+    if (!isSpeechAudioLayer(audioLayer)) {
+      continue;
+    }
+
+    const speechLanguage = resolveLayerSpeechLanguage(
+      audioLayer,
+      sessionSpeechLanguage,
+    );
+    // Unknown/auto speech must go through detection so the rerun can decide
+    // whether translation is necessary for this particular speech layer.
+    const layerTranslationRequired = !speechLanguage ||
+      speechLanguage !== languageOption.subtitleLanguage;
+    const speechText = getSpeechText(audioLayer);
+
+    audioLayer.subtitleLanguage = languageOption.subtitleLanguage;
+    audioLayer.subtitleTranslationRequired = layerTranslationRequired;
+    audioLayer.subtitleText = layerTranslationRequired ? null : speechText;
+    audioLayer.subtitleAlignmentMap = [];
+    audioLayer.subtitleSpeakerCharacterName = null;
+    audioLayer.addSubtitles = true;
+    audioLayer.addTranscriptionsRequired = true;
+    audioLayer.subtitleWordAnimation = getTranslatedSubtitleWordAnimation(audioLayer);
+    if (speechLanguage) {
+      audioLayer.speechLanguage = speechLanguage;
+    }
+
+    updatedAudioLayerCount += 1;
+    translationRequired ||= layerTranslationRequired;
+  }
+
+  sessionData.subtitleLanguage = languageOption.subtitleLanguage;
+  sessionData.subtitleLanguageString = languageOption.subtitleLanguageString;
+  sessionData.subtitleLanguageExplicit = true;
+  sessionData.subtitleTranslationRequired = translationRequired;
+
+  return {
+    ...languageOption,
+    selectionProvided: true,
+    updatedAudioLayerCount,
+    translationRequired,
+  };
+}
+
+export function refreshSessionSubtitleTranslationRequired(sessionData = {}) {
+  const audioLayers = Array.isArray(sessionData?.audioLayers)
+    ? sessionData.audioLayers
+    : [];
+  const translationRequired = audioLayers.some(
+    (audioLayer) => isSpeechAudioLayer(audioLayer) &&
+      audioLayer.subtitleTranslationRequired === true,
+  );
+  sessionData.subtitleTranslationRequired = translationRequired;
+  return translationRequired;
+}
+
 function applyPlannedAudioLayerUpdates(plannedUpdates = []) {
   plannedUpdates.forEach(({ audioLayer, fields }) => {
     Object.entries(fields).forEach(([key, value]) => {

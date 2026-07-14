@@ -70,6 +70,57 @@ test('translate video deep-clones referenced assets_v2 render resources', async 
   await fs.promises.rm(tmpDir, { recursive: true, force: true });
 });
 
+test('subtitle post-processing copies and rewrites a reusable assets_v2 lip-sync video', async () => {
+  const tmpDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'samsar-subtitle-assets-'));
+  const oldSessionId = 'source-session';
+  const newSessionId = 'subtitle-session';
+  const layerId = 'layer-1';
+  const v2Root = path.join(tmpDir, 'assets_v2');
+  const sourceRelativePath =
+    `assets_v2/ai_video/generations/${oldSessionId}/${layerId}/lip-sync.mp4`;
+  const targetRelativePath =
+    `assets_v2/ai_video/generations/${newSessionId}/${layerId}/lip-sync.mp4`;
+
+  await fs.promises.mkdir(
+    path.join(v2Root, 'ai_video', 'generations', oldSessionId, layerId),
+    { recursive: true },
+  );
+  await fs.promises.writeFile(
+    path.join(v2Root, 'ai_video', 'generations', oldSessionId, layerId, 'lip-sync.mp4'),
+    'lip-sync-video',
+  );
+
+  const originalSessionData = {
+    layers: [{
+      _id: layerId,
+      hasLipSyncVideoLayer: true,
+      lipSyncVideoLayer: sourceRelativePath,
+      lipSyncVideoGenerationStatus: 'COMPLETED',
+    }],
+  };
+  const clonedSession = structuredClone(originalSessionData);
+
+  const result = await __testOnly__.clonePostProcessingSessionAssets({
+    originalSessionData,
+    clonedSession,
+    oldSessionId,
+    newSessionId,
+    assetsRoots: [v2Root],
+  });
+
+  assert.equal(result.copyResult.missingCritical.length, 0);
+  assert.equal(clonedSession.layers[0].lipSyncVideoLayer, targetRelativePath);
+  assert.equal(
+    await fs.promises.readFile(
+      path.join(v2Root, 'ai_video', 'generations', newSessionId, layerId, 'lip-sync.mp4'),
+      'utf8',
+    ),
+    'lip-sync-video',
+  );
+
+  await fs.promises.rm(tmpDir, { recursive: true, force: true });
+});
+
 test('translate video prep requeues speech and lip sync for reusable AI video layers only', () => {
   const clonedSession = {
     languageString: 'Thai',
@@ -179,4 +230,183 @@ test('translate video prep requeues speech and lip sync for reusable AI video la
   assert.equal(clonedSession.audioLayers[0].defaultSelected, true);
   assert.equal(clonedSession.audioLayers[1].generationStatus, 'COMPLETED');
   assert.equal(clonedSession.audioLayers[1].streamDownloadPending, false);
+});
+
+test('add subtitles prep reuses completed lip sync without scheduling lip sync generation', () => {
+  const lipSyncVideoLayer =
+    'assets_v2/ai_video/generations/source-session/layer-1/video.mp4';
+  const clonedSession = {
+    expressGenerationStatus: {
+      lip_sync_generation: 'PENDING',
+      transcript_generation: 'COMPLETED',
+      frame_generation: 'COMPLETED',
+      video_generation: 'COMPLETED',
+    },
+    lipSyncGenerationPending: true,
+    layers: [{
+      lipSyncVideoLayer,
+      hasLipSyncVideoLayer: true,
+      lipSyncGenerationPending: true,
+      lipSyncVideoGenerationStatus: 'PENDING',
+      frameGenerationPending: false,
+      frames: ['assets_v2/video/frames/source-session/layer-1/0.png'],
+    }],
+    audioLayers: [],
+  };
+
+  __testOnly__.prepareSessionForSubtitleAddition({ clonedSession });
+
+  assert.equal(clonedSession.lipSyncGenerationPending, false);
+  assert.equal(clonedSession.layers[0].lipSyncGenerationPending, false);
+  assert.equal(clonedSession.layers[0].lipSyncVideoGenerationStatus, 'COMPLETED');
+  assert.equal(clonedSession.layers[0].lipSyncVideoLayer, lipSyncVideoLayer);
+  assert.equal(clonedSession.layers[0].hasLipSyncVideoLayer, true);
+  assert.equal(clonedSession.expressGenerationStatus.lip_sync_generation, 'COMPLETED');
+  assert.equal(clonedSession.expressGenerationStatus.transcript_generation, 'INIT');
+  assert.equal(clonedSession.expressGenerationStatus.frame_generation, 'INIT');
+  assert.equal(clonedSession.expressGenerationStatus.video_generation, 'INIT');
+});
+
+test('add subtitles prep regenerates translated text, alignment, and localized speakers', async () => {
+  const clonedSession = {
+    sessionLanguage: 'en',
+    subtitleLanguage: 'en',
+    subtitleTranslationRequired: false,
+    audioLayers: [
+      {
+        generationType: 'speech',
+        prompt: 'Hello world.',
+        speechLanguage: 'en',
+        subtitleText: 'stale text',
+        subtitleAlignmentMap: [{ sourceText: 'stale', translatedText: 'stale' }],
+        speakerCharacterName: 'Guide',
+        subtitleSpeakerCharacterName: 'Old guide',
+      },
+      {
+        generationType: 'speech',
+        prompt: 'Welcome.',
+        speechLanguage: 'en',
+      },
+      {
+        generationType: 'music',
+        prompt: 'instrumental',
+      },
+    ],
+  };
+  const calls = [];
+
+  const result = await __testOnly__.prepareSubtitleLanguageMetadataForAddition({
+    clonedSession,
+    subtitleLanguage: 'FR-fr',
+    inferenceModel: 'QWEN3.7',
+    translateSpeechImpl: async (text, targetLanguage, inferenceModel, options) => {
+      calls.push({ text, targetLanguage, inferenceModel, options });
+      if (text === 'Hello world.') {
+        return {
+          text: 'Bonjour monde.',
+          subtitleAlignmentMap: [
+            { sourceText: 'Hello', translatedText: 'Bonjour' },
+            { sourceText: 'world.', translatedText: 'monde.' },
+          ],
+          subtitleSpeakerCharacterName: 'Guide français',
+        };
+      }
+      return {
+        text: 'Bienvenue.',
+        subtitleAlignmentMap: [
+          { sourceText: 'Welcome.', translatedText: 'Bienvenue.' },
+        ],
+        subtitleSpeakerCharacterName: null,
+      };
+    },
+  });
+
+  assert.equal(result.selectionProvided, true);
+  assert.equal(result.subtitleLanguage, 'fr');
+  assert.equal(result.metadataUpdatedCount, 2);
+  assert.equal(clonedSession.subtitleLanguage, 'fr');
+  assert.equal(clonedSession.subtitleLanguageString, 'French');
+  assert.equal(clonedSession.subtitleLanguageExplicit, true);
+  assert.equal(clonedSession.subtitleTranslationRequired, true);
+  assert.equal(clonedSession.audioLayers[0].subtitleText, 'Bonjour monde.');
+  assert.equal(clonedSession.audioLayers[0].subtitleSpeakerCharacterName, 'Guide français');
+  assert.equal(clonedSession.audioLayers[0].subtitleTranslationRequired, true);
+  assert.deepEqual(clonedSession.audioLayers[0].subtitleAlignmentMap, [
+    { sourceText: 'Hello', translatedText: 'Bonjour' },
+    { sourceText: 'world.', translatedText: 'monde.' },
+  ]);
+  assert.equal(clonedSession.audioLayers[1].subtitleText, 'Bienvenue.');
+  assert.equal(clonedSession.audioLayers[2].subtitleLanguage, undefined);
+  assert.equal(calls.length, 2);
+  assert.equal(calls[0].targetLanguage, 'French');
+  assert.equal(calls[0].inferenceModel, 'QWEN3.7');
+  assert.equal(calls[0].options.includeSubtitleAlignment, true);
+  assert.equal(calls[0].options.targetLanguageCode, 'fr');
+  assert.equal(calls[0].options.speakerCharacterName, 'Guide');
+});
+
+test('add subtitles prep clears translation-only metadata for the audio language', async () => {
+  const clonedSession = {
+    sessionLanguage: 'ja',
+    subtitleLanguage: 'en',
+    subtitleTranslationRequired: true,
+    audioLayers: [{
+      generationType: 'speech',
+      prompt: 'こんにちは。',
+      speechLanguage: 'jpn',
+      subtitleLanguage: 'en',
+      subtitleTranslationRequired: true,
+      subtitleText: 'Hello.',
+      subtitleAlignmentMap: [{ sourceText: 'こんにちは', translatedText: 'Hello' }],
+      speakerCharacterName: '案内人',
+      subtitleSpeakerCharacterName: 'Guide',
+    }],
+  };
+
+  const result = await __testOnly__.prepareSubtitleLanguageMetadataForAddition({
+    clonedSession,
+    subtitleLanguage: 'ja-JP',
+    inferenceModel: 'gemini-3.1-pro',
+    translateSpeechImpl: () => {
+      throw new Error('same-language subtitles must not invoke translation');
+    },
+  });
+
+  assert.equal(result.metadataUpdatedCount, 0);
+  assert.equal(clonedSession.subtitleLanguage, 'ja');
+  assert.equal(clonedSession.subtitleTranslationRequired, false);
+  assert.equal(clonedSession.audioLayers[0].subtitleLanguage, 'ja');
+  assert.equal(clonedSession.audioLayers[0].subtitleText, 'こんにちは。');
+  assert.equal(clonedSession.audioLayers[0].subtitleTranslationRequired, false);
+  assert.deepEqual(clonedSession.audioLayers[0].subtitleAlignmentMap, []);
+  assert.equal(clonedSession.audioLayers[0].subtitleSpeakerCharacterName, null);
+});
+
+test('add subtitles prep preserves legacy metadata when target language is omitted', async () => {
+  const clonedSession = {
+    sessionLanguage: 'en',
+    subtitleLanguage: 'fr',
+    subtitleTranslationRequired: true,
+    audioLayers: [{
+      generationType: 'speech',
+      prompt: 'Hello.',
+      subtitleLanguage: 'fr',
+      subtitleText: 'Bonjour.',
+      subtitleTranslationRequired: true,
+    }],
+  };
+  const before = structuredClone(clonedSession);
+
+  const result = await __testOnly__.prepareSubtitleLanguageMetadataForAddition({
+    clonedSession,
+    subtitleLanguage: undefined,
+    inferenceModel: 'QWEN3.7',
+    translateSpeechImpl: () => {
+      throw new Error('omitted target must not invoke translation');
+    },
+  });
+
+  assert.equal(result.selectionProvided, false);
+  assert.equal(result.metadataUpdatedCount, 0);
+  assert.deepEqual(clonedSession, before);
 });

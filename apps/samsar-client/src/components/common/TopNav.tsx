@@ -1,4 +1,4 @@
-import React, { Suspense, lazy, useEffect, useContext, useCallback } from 'react';
+import React, { Suspense, lazy, useEffect, useContext, useCallback, useState } from 'react';
 import axios from 'axios';
 import { useUser } from '../../contexts/UserContext';
 import CommonButton from './CommonButton.tsx';
@@ -22,6 +22,8 @@ import { FaCog, FaTimes } from 'react-icons/fa';
 import BrandLogo from './BrandLogo.tsx';
 import { imageAspectRatioOptions } from '../../constants/ImageAspectRatios.js';
 import { getCanvasDimensionsForAspectRatio } from '../../utils/canvas.jsx';
+import { SUPPORTED_LANGUAGES } from '../../constants/supportedLanguages.js';
+import { buildSubtitleRegenerationLanguageFields } from '../../utils/subtitleRegenerationLanguage.mjs';
 
 
 const PROCESSOR_SERVER = import.meta.env.VITE_PROCESSOR_API;
@@ -44,6 +46,43 @@ const creditsNumberFormatter = new Intl.NumberFormat('en-US', {
 function formatCredits(value) {
   const numericValue = Number(value);
   return Number.isFinite(numericValue) ? creditsNumberFormatter.format(numericValue) : '-';
+}
+
+function RegenerateSubtitlesDialog({ onClose, onRegenerate, t }) {
+  const [subtitleLanguage, setSubtitleLanguage] = useState('');
+
+  return (
+    <div className="relative min-w-[280px] pr-5">
+      <div className="absolute right-0 top-0">
+        <FaTimes className="cursor-pointer" onClick={onClose} />
+      </div>
+      <div className="text-center">
+        <div className="text-lg font-bold">{t("studio.actions.regenerateSubtitlesTitle")}</div>
+        <div className="text-sm">{t("studio.actions.realignLayers")}</div>
+        <label className="mx-auto mt-3 block max-w-xs text-left">
+          <span className="mb-1 block text-xs font-medium opacity-75">
+            Subtitle language <span className="font-normal">(optional)</span>
+          </span>
+          <select
+            value={subtitleLanguage}
+            onChange={(event) => setSubtitleLanguage(event.target.value)}
+            aria-label="Subtitle regeneration language"
+            className="w-full rounded-md border border-slate-500/30 bg-transparent px-2.5 py-1.5 text-sm outline-none"
+          >
+            <option value="">Same as current audio</option>
+            {SUPPORTED_LANGUAGES.map((language) => (
+              <option key={language.code} value={language.code}>
+                {language.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <CommonButton onClick={() => onRegenerate(subtitleLanguage)}>
+          {t("studio.actions.regenerateSubtitle")}
+        </CommonButton>
+      </div>
+    </div>
+  );
 }
 
 export default function TopNav(props) {
@@ -738,27 +777,30 @@ export default function TopNav(props) {
   const showRegenerateSubtitles = () => {
 
     openAlertDialog(
-      <div className='relative'>
-        <div className="absolute top-2 right-2">
-          <FaTimes className="cursor-pointer" onClick={closeAlertDialog} />
-        </div>
-        <div className="text-center">
-          <div className="text-lg font-bold">{t("studio.actions.regenerateSubtitlesTitle")}</div>
-          <div className="text-sm">{t("studio.actions.realignLayers")}</div>
-          <CommonButton onClick={requestRegenerateSubtitles}>{t("studio.actions.regenerateSubtitle")}</CommonButton>
-        </div>
-      </div>
+      <RegenerateSubtitlesDialog
+        t={t}
+        onClose={closeAlertDialog}
+        onRegenerate={(subtitleLanguage) => {
+          requestRegenerateSubtitles(subtitleLanguage);
+          closeAlertDialog();
+        }}
+      />
     );
 
   }
 
 
-  const regenerateVideoSessionSubtitles = () => {
+  const regenerateVideoSessionSubtitles = (selectedSubtitleLanguage = '') => {
 
     const headers = getHeaders();
 
 
-    axios.post(`${PROCESSOR_SERVER}/video_sessions/request_regenerate_subtitles`, { sessionId: resolvedSessionId }, headers).then(function () {
+    axios.post(`${PROCESSOR_SERVER}/video_sessions/request_regenerate_subtitles`, {
+      sessionId: resolvedSessionId,
+      ...buildSubtitleRegenerationLanguageFields({
+        selectedLanguage: selectedSubtitleLanguage,
+      }),
+    }, headers).then(function () {
 
 
     });

@@ -1,9 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  DEFAULT_VIDGENIE_SUBTITLES_ENABLED,
   buildVidgenieLanguageFields,
   resolveSubtitleLanguageOverride,
 } from './vidgenieSubtitleLanguage.mjs';
+
+test('enables subtitles by default for a new Vidgenie render', () => {
+  assert.equal(DEFAULT_VIDGENIE_SUBTITLES_ENABLED, true);
+});
 
 test('omits subtitle language when subtitles are disabled', () => {
   assert.equal(resolveSubtitleLanguageOverride({

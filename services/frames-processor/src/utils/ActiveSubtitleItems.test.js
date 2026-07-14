@@ -25,7 +25,7 @@ test('overlapping translated cues from one audio layer render only the latest cu
   assert.deepEqual(selectActiveItemsForFrame([first, second], 12), [second]);
 });
 
-test('translated cues from separate audio layers remain independently renderable', () => {
+test('subtitles from separate audio layers remain independently renderable', () => {
   const first = translatedItem({ text: 'FIRST', start: 0, duration: 20 });
   const second = translatedItem({
     text: 'SECOND',
@@ -37,21 +37,50 @@ test('translated cues from separate audio layers remain independently renderable
   assert.deepEqual(selectActiveItemsForFrame([first, second], 5), [first, second]);
 });
 
-test('same-language subtitles retain the existing independent render behavior', () => {
+test('same-language one-frame timing overlap selects only the later cue', () => {
   const first = {
-    ...translatedItem({ text: 'FIRST', start: 0, duration: 20 }),
+    ...translatedItem({ text: 'FIRST', start: 0, duration: 11 }),
     audioLanguage: 'en',
     subtitleLanguage: 'en',
     subtitleRenderMode: undefined,
     subtitleAlignmentMapped: false,
+    words: [{ word: 'FIRST', frameOffset: 0, frameDuration: 12 }],
   };
   const second = {
     ...first,
     text: 'SECOND',
-    words: [{ word: 'SECOND', frameOffset: 0, frameDuration: 20 }],
+    config: { frameOffset: 11, frameDuration: 11 },
+    words: [{ word: 'SECOND', frameOffset: 11, frameDuration: 11 }],
   };
 
-  assert.deepEqual(selectActiveItemsForFrame([first, second], 5), [first, second]);
+  assert.deepEqual(selectActiveItemsForFrame([first, second], 11), [second]);
+});
+
+test('session cue arbitration never suppresses the current caption for a future cue', () => {
+  const first = {
+    ...translatedItem({ text: 'FIRST', start: 10, duration: 20 }),
+    audioLanguage: 'en',
+    subtitleLanguage: 'en',
+    subtitleRenderMode: undefined,
+    subtitleAlignmentMapped: false,
+    subtitleCueStartFrameSession: 100,
+  };
+  const second = {
+    ...first,
+    text: 'SECOND',
+    config: { frameOffset: 0, frameDuration: 30 },
+    words: [{ word: 'SECOND', frameOffset: 120, frameDuration: 20 }],
+    subtitleCueStartFrameSession: 120,
+  };
+
+  assert.deepEqual(
+    selectActiveItemsForFrame([first, second], 12, { durationOffsetFrames: 100 }),
+    [first],
+  );
+  assert.deepEqual(
+    selectActiveItemsForFrame([first, second], 22, { durationOffsetFrames: 100 }),
+    [second],
+  );
 });
 
 test('translated cue boundaries are half-open before overlap arbitration', () => {
@@ -60,4 +89,3 @@ test('translated cue boundaries are half-open before overlap arbitration', () =>
 
   assert.deepEqual(selectActiveItemsForFrame([first, second], 10), [second]);
 });
-

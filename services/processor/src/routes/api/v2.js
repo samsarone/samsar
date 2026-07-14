@@ -1811,6 +1811,12 @@ router.post('/update_footer_image', (req, res, next) => {
   normalizeV2UpdateFooterImagePayload(req);
   return delegateToVideo(req, res, next, '/update_footer_image');
 });
+router.post(['/video/add_subtitles', '/add_subtitles'], (req, res, next) => (
+  delegateToVideo(req, res, next, '/add_subtitles')
+));
+router.post(['/video/remove_subtitles', '/remove_subtitles'], (req, res, next) => (
+  delegateToVideo(req, res, next, '/remove_subtitles')
+));
 router.post('/join_videos', (req, res, next) => delegateToVideo(req, res, next, '/join_videos'));
 router.post('/video/clone', (req, res, next) => delegateToVideo(req, res, next, '/clone'));
 router.post('/video/regenerate_avatar', (req, res, next) => delegateToVideo(req, res, next, '/regenerate_avatar'));

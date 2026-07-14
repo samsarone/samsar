@@ -68,8 +68,19 @@ import { SUPPORTED_LANGUAGES, resolveLanguageCode } from '../../constants/suppor
 import { getHeaders } from '../../utils/web.jsx';
 import { getSessionType } from '../../utils/environment.jsx';
 import {
+  DEFAULT_VIDGENIE_SUBTITLES_ENABLED,
   buildVidgenieLanguageFields,
 } from './vidgenieSubtitleLanguage.mjs';
+import {
+  buildSubtitleRegenerationLanguageFields,
+  isTranslatedSubtitleRegeneration,
+  resolveSessionAudioLanguage,
+  resolveSubtitleRegenerationDefault,
+} from '../../utils/subtitleRegenerationLanguage.mjs';
+import {
+  getVideoPostProcessingRequestUrls,
+  isMissingVideoPostProcessingRoute,
+} from '../../utils/videoPostProcessingApi.mjs';
 import {
   filterOptionsForDeploymentModelValues,
   normalizeDeploymentModelValue,
@@ -233,6 +244,7 @@ const DEFAULT_POST_PROCESSING_FORM = Object.freeze({
   translationEnableSubtitles: true,
   translationTranslateOutro: true,
   translationTranslateFooter: true,
+  subtitleLanguage: '',
   rerollLayerIndexes: [],
 });
 const POST_PROCESSING_ACTIONS = Object.freeze([
@@ -2901,6 +2913,30 @@ export default function OneshotEditor() {
   const [isCompletedRequestExpanded, setIsCompletedRequestExpanded] = useState(false);
   const completedRequestCollapseKeyRef = useRef('');
 
+  const postProcessingAudioLanguage = useMemo(
+    () => resolveSessionAudioLanguage(sessionDetails),
+    [sessionDetails]
+  );
+  const postProcessingDefaultSubtitleLanguage = useMemo(
+    () => resolveSubtitleRegenerationDefault(sessionDetails),
+    [sessionDetails]
+  );
+
+  useEffect(() => {
+    if (!postProcessingDefaultSubtitleLanguage) {
+      return;
+    }
+
+    setPostProcessingForm((current) => (
+      current.subtitleLanguage
+        ? current
+        : {
+            ...current,
+            subtitleLanguage: postProcessingDefaultSubtitleLanguage,
+          }
+    ));
+  }, [postProcessingDefaultSubtitleLanguage]);
+
   useEffect(() => {
     activeRequestIdRef.current = activeRequestId;
   }, [activeRequestId]);
@@ -2959,6 +2995,7 @@ export default function OneshotEditor() {
   const [expressGenerationStatus, setExpressGenerationStatus] = useState(null);
   const [generationStatusDetails, setGenerationStatusDetails] = useState(null);
   const [videoLink, setVideoLink] = useState(null);
+  const [postProcessingPreviewVideoLink, setPostProcessingPreviewVideoLink] = useState(null);
   const [errorMessage, setErrorMessage] = useState(null);
   const [showResultDisplay, setShowResultDisplay] = useState(false);
   const currentRenderHasOutro = useMemo(() => (
@@ -3034,12 +3071,31 @@ export default function OneshotEditor() {
     );
   };
 
-  const setPostProcessingPendingSession = (nextSessionId) => {
+  const setPostProcessingPendingSession = (nextSessionId, previewVideoUrl = null) => {
     if (!nextSessionId || typeof window === 'undefined') return;
     sessionStorage.setItem(
       POST_PROCESSING_PENDING_SESSION_KEY,
-      JSON.stringify({ sessionId: nextSessionId, startedAt: Date.now() })
+      JSON.stringify({
+        sessionId: nextSessionId,
+        startedAt: Date.now(),
+        ...(previewVideoUrl ? { previewVideoUrl } : {}),
+      })
     );
+  };
+
+  const getPostProcessingPreviewVideoLink = (candidateSessionId) => {
+    if (!candidateSessionId || typeof window === 'undefined') return null;
+    try {
+      const rawValue = sessionStorage.getItem(POST_PROCESSING_PENDING_SESSION_KEY);
+      if (!rawValue) return null;
+      const parsedValue = JSON.parse(rawValue);
+      if (parsedValue?.sessionId !== candidateSessionId) return null;
+      return typeof parsedValue?.previewVideoUrl === 'string' && parsedValue.previewVideoUrl.trim()
+        ? parsedValue.previewVideoUrl.trim()
+        : null;
+    } catch {
+      return null;
+    }
   };
 
   const shouldForceAdvancedVideoEditPolling = (candidateSessionId) => {
@@ -3092,9 +3148,11 @@ export default function OneshotEditor() {
       const parsedValue = JSON.parse(rawValue);
       if (parsedValue?.sessionId === candidateSessionId) {
         sessionStorage.removeItem(POST_PROCESSING_PENDING_SESSION_KEY);
+        setPostProcessingPreviewVideoLink(null);
       }
     } catch {
       sessionStorage.removeItem(POST_PROCESSING_PENDING_SESSION_KEY);
+      setPostProcessingPreviewVideoLink(null);
     }
   };
 
@@ -3472,7 +3530,7 @@ export default function OneshotEditor() {
   const [selectedLanguageOption, setSelectedLanguageOption] = useState(
     () => defaultLanguageOption
   );
-  const [enableSubtitles, setEnableSubtitles] = useState(false);
+  const [enableSubtitles, setEnableSubtitles] = useState(DEFAULT_VIDGENIE_SUBTITLES_ENABLED);
   const [selectedSubtitleLanguageOption, setSelectedSubtitleLanguageOption] = useState(
     () => subtitleLanguageOptions[0]
   );
@@ -3909,6 +3967,7 @@ export default function OneshotEditor() {
     assistantDelayRef.current = DEFAULT_POLL;
 
     resetForm();
+    setPostProcessingPreviewVideoLink(getPostProcessingPreviewVideoLink(id));
 
     if (currentPollRequestIdRef.current === id) return;
 
@@ -5512,7 +5571,7 @@ export default function OneshotEditor() {
     setImageUploadError('');
     setUploadingOutroCtaImage(false);
     setOutroCtaImageUploadError('');
-    setEnableSubtitles(false);
+    setEnableSubtitles(DEFAULT_VIDGENIE_SUBTITLES_ENABLED);
     setSelectedSubtitleLanguageOption(subtitleLanguageOptions[0]);
     setGenerationStepMode(GENERATION_STEP_MODE_ONE_STEP);
     setSelectedImageStyle(null);
@@ -5563,6 +5622,9 @@ export default function OneshotEditor() {
     const nextSessionId = requestInfo?.sessionId || requestInfo?.requestId;
     const nextRequestId = requestInfo?.requestId || nextSessionId;
     const useBasicStatusPoll = requestInfo?.pollMode === 'status';
+    const currentPreviewVideoUrl = useBasicStatusPoll
+      ? (normalizeVideoUrl(videoLink) || getNormalizedLatestVideoUrl(sessionDetails))
+      : null;
     closeAlertDialog();
 
     if (!nextRequestId) {
@@ -5581,7 +5643,8 @@ export default function OneshotEditor() {
 
     if (nextSessionId && nextSessionId !== id) {
       if (useBasicStatusPoll) {
-        setPostProcessingPendingSession(nextSessionId);
+        setPostProcessingPreviewVideoLink(currentPreviewVideoUrl);
+        setPostProcessingPendingSession(nextSessionId, currentPreviewVideoUrl);
       } else {
         setAdvancedVideoEditPendingSession(nextSessionId);
       }
@@ -5590,12 +5653,13 @@ export default function OneshotEditor() {
     }
 
     if (useBasicStatusPoll) {
-      setPostProcessingPendingSession(nextRequestId);
+      setPostProcessingPreviewVideoLink(currentPreviewVideoUrl);
+      setPostProcessingPendingSession(nextRequestId, currentPreviewVideoUrl);
       pollPostProcessingStatus(nextRequestId, true);
     } else {
       pollGenerationStatus(nextRequestId, true);
     }
-  }, [closeAlertDialog, id, navigate]);
+  }, [closeAlertDialog, id, navigate, sessionDetails, videoLink]);
 
   const openAdvancedVideoEditDialog = useCallback(() => {
     openAlertDialog(
@@ -5705,8 +5769,15 @@ export default function OneshotEditor() {
         endpoint = 'retranslate_video';
         successLabel = 'Retranslation';
       } else if (actionKey === 'add_subtitles') {
+        payload = {
+          ...payload,
+          ...buildSubtitleRegenerationLanguageFields({
+            selectedLanguage: postProcessingForm.subtitleLanguage,
+            audioLanguage: postProcessingAudioLanguage,
+          }),
+        };
         endpoint = 'add_subtitles';
-        successLabel = 'Subtitle add';
+        successLabel = 'Subtitle regeneration';
       } else if (actionKey === 'remove_subtitles') {
         const shouldRemove = window.confirm('Remove subtitles and render a new version?');
         if (!shouldRemove) {
@@ -5821,11 +5892,26 @@ export default function OneshotEditor() {
       setErrorMessage(null);
       setPlayingRerollLayerId(null);
 
-      const { data } = await axios.post(
-        `${VIDEO_API_BASE}/${endpoint}`,
-        { input: payload },
-        headers
+      const requestBody = { input: payload };
+      const { primaryUrl, legacyUrl } = getVideoPostProcessingRequestUrls(
+        API_SERVER,
+        endpoint
       );
+      let response;
+      try {
+        response = await axios.post(primaryUrl, requestBody, headers);
+      } catch (requestError) {
+        const supportsLegacyVideoRoute =
+          endpoint === 'add_subtitles' || endpoint === 'remove_subtitles';
+        if (
+          !supportsLegacyVideoRoute ||
+          !isMissingVideoPostProcessingRoute(requestError, primaryUrl)
+        ) {
+          throw requestError;
+        }
+        response = await axios.post(legacyUrl, requestBody, headers);
+      }
+      const { data } = response;
 
       const nextSessionId = data?.sessionID || data?.session_id || data?.sessionId || data?.request_id;
       const nextRequestId = data?.request_id || data?.session_id || data?.sessionID || nextSessionId;
@@ -5855,6 +5941,7 @@ export default function OneshotEditor() {
     getUserAPI,
     handleAdvancedVideoEditAccepted,
     id,
+    postProcessingAudioLanguage,
     postProcessingForm,
     postProcessingPendingAction,
     rerollLayerIndexes,
@@ -6232,6 +6319,10 @@ export default function OneshotEditor() {
       isAnyPostProcessingPending ||
       isRerollPreviewRefreshing ||
       !rerollLayerIndexes.length;
+    const useTranslatedSubtitleRegeneration = isTranslatedSubtitleRegeneration({
+      selectedLanguage: postProcessingForm.subtitleLanguage,
+      audioLanguage: postProcessingAudioLanguage,
+    });
 
     const panelWidthClass =
       postProcessingAction === 'reroll_layers' || postProcessingAction === 'retranslate'
@@ -6355,25 +6446,53 @@ export default function OneshotEditor() {
           )}
 
           {postProcessingAction === 'subtitles' && (
-            <div className="flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                onClick={() => submitPostProcessingOperation('add_subtitles')}
-                disabled={isAnyPostProcessingPending}
-                className={primarySubmitClass}
-              >
-                {isAddSubtitlesPending ? <FaSpinner className="h-3.5 w-3.5 animate-spin" aria-hidden="true" /> : <FaClosedCaptioning className="h-3.5 w-3.5" aria-hidden="true" />}
-                Add subtitles
-              </button>
-              <button
-                type="button"
-                onClick={() => submitPostProcessingOperation('remove_subtitles')}
-                disabled={isAnyPostProcessingPending}
-                className={dangerSubmitClass}
-              >
-                {isRemoveSubtitlesPending ? <FaSpinner className="h-3.5 w-3.5 animate-spin" aria-hidden="true" /> : <FaTrash className="h-3.5 w-3.5" aria-hidden="true" />}
-                Remove subtitles
-              </button>
+            <div className="space-y-2">
+              <div className="flex flex-wrap items-end gap-2">
+                <label className="min-w-[190px] flex-1 sm:max-w-xs">
+                  <span className={`mb-1 block text-[11px] font-medium ${mutedText}`}>
+                    Subtitle language <span className="font-normal opacity-75">(optional)</span>
+                  </span>
+                  <select
+                    value={postProcessingForm.subtitleLanguage}
+                    onChange={(event) =>
+                      updatePostProcessingFormField('subtitleLanguage', event.target.value)
+                    }
+                    disabled={isAnyPostProcessingPending}
+                    aria-label="Subtitle regeneration language"
+                    className={`${fieldClass} !min-h-[36px] !py-1.5`}
+                  >
+                    <option value="">Same as audio</option>
+                    {SUPPORTED_LANGUAGES.map((languageOption) => (
+                      <option key={languageOption.code} value={languageOption.code}>
+                        {languageOption.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <button
+                  type="button"
+                  onClick={() => submitPostProcessingOperation('add_subtitles')}
+                  disabled={isAnyPostProcessingPending}
+                  className={primarySubmitClass}
+                >
+                  {isAddSubtitlesPending ? <FaSpinner className="h-3.5 w-3.5 animate-spin" aria-hidden="true" /> : <FaClosedCaptioning className="h-3.5 w-3.5" aria-hidden="true" />}
+                  Generate / regenerate subtitles
+                </button>
+                <button
+                  type="button"
+                  onClick={() => submitPostProcessingOperation('remove_subtitles')}
+                  disabled={isAnyPostProcessingPending}
+                  className={dangerSubmitClass}
+                >
+                  {isRemoveSubtitlesPending ? <FaSpinner className="h-3.5 w-3.5 animate-spin" aria-hidden="true" /> : <FaTrash className="h-3.5 w-3.5" aria-hidden="true" />}
+                  Remove subtitles
+                </button>
+              </div>
+              {useTranslatedSubtitleRegeneration ? (
+                <p className={`text-xs ${mutedText}`}>
+                  Audio stays unchanged; subtitle text will be translated and aligned to the original speech.
+                </p>
+              ) : null}
             </div>
           )}
 
@@ -7579,6 +7698,7 @@ export default function OneshotEditor() {
                 expressGenerationStatus={expressGenerationStatus}
                 generationStatusDetails={generationStatusDetails}
                 videoLink={videoLink}
+                pendingPreviewVideoLink={postProcessingPreviewVideoLink}
                 errorMessage={errorMessage}
                 rawSessionDetails={sessionDetails}
                 canProcessNextStep={activeRequestStepModeRef.current === GENERATION_STEP_MODE_TWO_STEP}

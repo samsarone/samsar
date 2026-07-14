@@ -2,6 +2,8 @@ function normalizeLanguageValue(value) {
   return typeof value === 'string' ? value.trim().toLowerCase() : '';
 }
 
+export const DEFAULT_VIDGENIE_SUBTITLES_ENABLED = true;
+
 export function resolveSubtitleLanguageOverride({
   enableSubtitles,
   audioLanguage,

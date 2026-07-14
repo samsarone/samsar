@@ -44,6 +44,65 @@ test('per-layer detected speech language overrides TTS and session language fall
   assert.equal(context.isTranslated, true);
 });
 
+test('explicit session subtitle language overrides stale per-layer subtitle metadata', () => {
+  const context = __testOnly__.getTranslatedSubtitleContext(
+    {
+      enableSubtitles: true,
+      sessionLanguage: 'zh',
+      subtitleLanguage: 'en',
+      subtitleLanguageExplicit: true,
+      subtitleTranslationRequired: true,
+    },
+    {
+      speechLanguage: 'zh',
+      subtitleLanguage: 'th',
+      subtitleTranslationRequired: true,
+    },
+  );
+
+  assert.equal(context.audioLanguage, 'zh');
+  assert.equal(context.subtitleLanguage, 'en');
+  assert.equal(context.isTranslated, true);
+});
+
+test('non-explicit session language preserves matching per-layer translated metadata', () => {
+  const context = __testOnly__.getTranslatedSubtitleContext(
+    {
+      enableSubtitles: true,
+      sessionLanguage: 'zh',
+      subtitleLanguage: 'en',
+      subtitleLanguageExplicit: false,
+    },
+    {
+      speechLanguage: 'zh',
+      subtitleLanguage: 'th',
+      subtitleTranslationRequired: true,
+    },
+  );
+
+  assert.equal(context.subtitleLanguage, 'th');
+  assert.equal(context.isTranslated, true);
+});
+
+test('persisted session translation requirement makes its target language authoritative', () => {
+  const context = __testOnly__.getTranslatedSubtitleContext(
+    {
+      enableSubtitles: true,
+      sessionLanguage: 'zh',
+      subtitleLanguage: 'en',
+      subtitleTranslationRequired: true,
+    },
+    {
+      speechLanguage: 'zh',
+      subtitleLanguage: 'th',
+      subtitleTranslationRequired: true,
+    },
+  );
+
+  assert.equal(context.subtitleLanguage, 'en');
+  assert.equal(context.isTranslated, true);
+});
+
 test('same-language regional and ISO aliases retain the aligned subtitle path', () => {
   assert.equal(__testOnly__.normalizeComparableLanguageCode('eng'), 'en');
   assert.equal(__testOnly__.normalizeComparableLanguageCode('en-US'), 'en');
@@ -82,6 +141,122 @@ test('translated alignment map accepts the canonical contract and rollout aliase
     }),
     [{ sourceText: 'Legacy', translatedText: 'Anterior' }],
   );
+});
+
+test('translated subtitle payload is only consumed for its persisted language', () => {
+  const audioLayer = {
+    subtitleLanguage: 'th',
+    subtitleText: 'ข้อความภาษาไทย',
+    subtitleAlignmentMap: [
+      { sourceText: 'Hello', translatedText: 'สวัสดี' },
+    ],
+  };
+
+  assert.equal(__testOnly__.audioLayerSubtitlePayloadMatchesLanguage(audioLayer, 'th-TH'), true);
+  assert.equal(
+    __testOnly__.audioLayerSubtitlePayloadMatchesLanguage(
+      { subtitleText: 'ข้อความที่ไม่มีภาษากำกับ' },
+      'th',
+    ),
+    false,
+  );
+  assert.equal(__testOnly__.getTranslatedSubtitleText(audioLayer, 'en'), '');
+  assert.deepEqual(__testOnly__.getSubtitleAlignmentMap(audioLayer, 'en'), []);
+  assert.equal(
+    __testOnly__.getTranslatedSubtitleText(audioLayer, 'th-TH'),
+    'ข้อความภาษาไทย',
+  );
+});
+
+test('regeneration plan uses translated text with source-language alignment', () => {
+  const plan = __testOnly__.resolveSubtitleGenerationPlan(
+    {
+      enableSubtitles: true,
+      sessionLanguage: 'zh',
+      subtitleLanguage: 'en',
+      subtitleLanguageExplicit: true,
+      subtitleTranslationRequired: true,
+    },
+    {
+      generationType: 'speech',
+      speechLanguage: 'zh',
+      subtitleLanguage: 'en',
+      subtitleTranslationRequired: true,
+      prompt: '你好世界',
+      subtitleText: 'Hello world',
+      subtitleAlignmentMap: [
+        { sourceText: '你好', translatedText: 'Hello' },
+        { sourceText: '世界', translatedText: 'world' },
+      ],
+    },
+  );
+
+  assert.equal(plan.usesMappedTranslatedSubtitles, true);
+  assert.equal(plan.usesStaticTranslatedSubtitles, false);
+  assert.equal(plan.transcriptText, 'Hello world');
+  assert.equal(plan.alignmentTranscriptText, '你好世界');
+  assert.deepEqual(plan.subtitleAlignmentMap, [
+    { sourceText: '你好', translatedText: 'Hello' },
+    { sourceText: '世界', translatedText: 'world' },
+  ]);
+});
+
+test('same-language regeneration keeps the normal speech alignment path', () => {
+  const plan = __testOnly__.resolveSubtitleGenerationPlan(
+    {
+      enableSubtitles: true,
+      sessionLanguage: 'en-US',
+      subtitleLanguage: 'eng',
+      subtitleLanguageExplicit: true,
+      subtitleTranslationRequired: false,
+    },
+    {
+      generationType: 'speech',
+      speechLanguage: 'en',
+      subtitleLanguage: 'en',
+      prompt: 'Original speech text',
+      subtitleText: 'Stale translated text',
+      subtitleAlignmentMap: [
+        { sourceText: 'Original', translatedText: 'Stale' },
+      ],
+    },
+  );
+
+  assert.equal(plan.translatedSubtitleContext.isTranslated, false);
+  assert.equal(plan.usesMappedTranslatedSubtitles, false);
+  assert.equal(plan.usesStaticTranslatedSubtitles, false);
+  assert.equal(plan.transcriptText, 'Original speech text');
+  assert.equal(plan.alignmentTranscriptText, 'Original speech text');
+});
+
+test('stale translated metadata cannot route a new language request through the mapped path', () => {
+  const plan = __testOnly__.resolveSubtitleGenerationPlan(
+    {
+      enableSubtitles: true,
+      sessionLanguage: 'zh',
+      subtitleLanguage: 'en',
+      subtitleLanguageExplicit: true,
+      subtitleTranslationRequired: true,
+    },
+    {
+      generationType: 'speech',
+      speechLanguage: 'zh',
+      subtitleLanguage: 'th',
+      subtitleTranslationRequired: true,
+      prompt: '你好世界',
+      subtitleText: 'สวัสดีชาวโลก',
+      subtitleAlignmentMap: [
+        { sourceText: '你好世界', translatedText: 'สวัสดีชาวโลก' },
+      ],
+    },
+  );
+
+  assert.equal(plan.translatedSubtitleContext.subtitleLanguage, 'en');
+  assert.equal(plan.translatedSubtitleText, '');
+  assert.deepEqual(plan.subtitleAlignmentMap, []);
+  assert.equal(plan.usesMappedTranslatedSubtitles, false);
+  assert.equal(plan.usesStaticTranslatedSubtitles, true);
+  assert.equal(plan.transcriptText, '');
 });
 
 test('translated words inherit the corresponding original word and phrase timing', () => {
@@ -167,6 +342,13 @@ test('translated subtitle speaker uses its localized display name', () => {
       translated_speaker_character_name: 'Narrador',
     }),
     'Narrador',
+  );
+  assert.equal(
+    __testOnly__.getTranslatedSubtitleSpeakerName({
+      subtitleLanguage: 'th',
+      subtitleSpeakerCharacterName: 'ผู้บรรยาย',
+    }, 'en'),
+    '',
   );
 });
 
