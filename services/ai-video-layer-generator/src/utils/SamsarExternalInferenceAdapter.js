@@ -3,9 +3,12 @@ import SamsarClient from 'samsar-js';
 import {
   GPT_56_SOL_INFERENCE_MODEL,
   GPT_56_SOL_REASONING_EFFORT,
+  QWEN_37_INFERENCE_MODEL,
   isGeminiInferenceModel,
+  isQwenInferenceModel,
   normalizeInferenceModel,
 } from './GoogleGemini.js';
+import { hasAlibabaQwenNativeCredential } from './AlibabaQwen.js';
 
 const DEFAULT_SAMSAR_API_BASE_URL = 'https://api.samsar.one/v1';
 const DEFAULT_EXTERNAL_INFERENCE_TIMEOUT_MS = 10 * 60 * 1000;
@@ -21,11 +24,16 @@ const GOOGLE_ATTACHED_SERVICE_ACCOUNT_KEYS = Object.freeze([
   'GCE_METADATA_HOST',
 ]);
 export const DOCKER_INFERENCE_PROVIDER = Object.freeze({
+  ALIBABA_CLOUD: 'alibabaCloud',
   GOOGLE_CLOUD: 'googleCloud',
   OPENAI: 'openai',
   SAMSAR: 'samsar',
 });
 export const DOCKER_INFERENCE_PROVIDER_PRIORITY_BY_MODEL = Object.freeze({
+  [QWEN_37_INFERENCE_MODEL]: Object.freeze([
+    DOCKER_INFERENCE_PROVIDER.ALIBABA_CLOUD,
+    DOCKER_INFERENCE_PROVIDER.SAMSAR,
+  ]),
   'gemini-3.1-pro': Object.freeze([
     DOCKER_INFERENCE_PROVIDER.GOOGLE_CLOUD,
     DOCKER_INFERENCE_PROVIDER.SAMSAR,
@@ -129,6 +137,9 @@ function getExternalClient() {
 }
 
 function hasConfiguredInferenceProvider(provider) {
+  if (provider === DOCKER_INFERENCE_PROVIDER.ALIBABA_CLOUD) {
+    return hasAlibabaQwenNativeCredential();
+  }
   if (provider === DOCKER_INFERENCE_PROVIDER.GOOGLE_CLOUD) {
     return hasGoogleNativeCredential();
   }
@@ -142,6 +153,9 @@ function hasConfiguredInferenceProvider(provider) {
 }
 
 function getInferenceProviderPriority(model) {
+  if (isQwenInferenceModel(model)) {
+    return DOCKER_INFERENCE_PROVIDER_PRIORITY_BY_MODEL[QWEN_37_INFERENCE_MODEL];
+  }
   if (isGeminiInferenceModel(model)) {
     return DOCKER_INFERENCE_PROVIDER_PRIORITY_BY_MODEL['gemini-3.1-pro'];
   }
@@ -192,7 +206,8 @@ function getRequestedInferenceModel(chatRequest = {}) {
 
 function hasNativeCredentialForInferenceModel(model) {
   const provider = resolveConfiguredInferenceProvider(model);
-  return provider === DOCKER_INFERENCE_PROVIDER.GOOGLE_CLOUD ||
+  return provider === DOCKER_INFERENCE_PROVIDER.ALIBABA_CLOUD ||
+    provider === DOCKER_INFERENCE_PROVIDER.GOOGLE_CLOUD ||
     provider === DOCKER_INFERENCE_PROVIDER.OPENAI;
 }
 
@@ -236,11 +251,12 @@ export function shouldUseSamsarExternalInference(chatRequest = {}) {
   if (chatRequest.samsarExternalInference === true || isDeployedAuthorization(chatRequest.authorization)) {
     return true;
   }
+  const inferenceModel = getRequestedInferenceModel(chatRequest);
   if (isNativeAuthorization(chatRequest.authorization)) {
-    return false;
+    return !hasNativeCredentialForInferenceModel(inferenceModel);
   }
 
-  return !hasNativeCredentialForInferenceModel(getRequestedInferenceModel(chatRequest));
+  return !hasNativeCredentialForInferenceModel(inferenceModel);
 }
 
 export async function createSamsarExternalChatCompletion(chatRequest = {}) {

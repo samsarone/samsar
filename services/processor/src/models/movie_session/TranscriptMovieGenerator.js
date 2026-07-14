@@ -64,6 +64,12 @@ import {
   resolveDockerBackingTrackModel,
   resolveDockerTTSProvider,
 } from "../../consts/DockerAudioAvailability.js";
+import { translateSpeech } from '../agent/AudioCreatorAgent.js';
+import {
+  buildSpeechSubtitleLayerFields,
+  buildSpeechSubtitleTextMap,
+  resolveSubtitleLanguageOption,
+} from './SubtitleLanguage.js';
 
 const MEDIA_DOWNLOAD_TIMEOUT_MS = Number.isFinite(Number(process.env.API_MEDIA_DOWNLOAD_TIMEOUT_MS))
   ? Math.max(1000, Math.floor(Number(process.env.API_MEDIA_DOWNLOAD_TIMEOUT_MS)))
@@ -574,6 +580,10 @@ export async function requestQuickMovieGeneration(userId, payload) {
     subtitleFont: requestedSubtitleFont,
     speakerFont: requestedSpeakerFont,
     enableSubtitles = true,
+    subtitle_language = undefined,
+    subtitleLanguage = undefined,
+    subtitle_language_explicit = undefined,
+    subtitleLanguageExplicit = undefined,
     isExternalUserRequest = false,
     externalRequestUserId = null,
     externalRequestId = null,
@@ -625,6 +635,16 @@ export async function requestQuickMovieGeneration(userId, payload) {
     : 'auto';
   const sessionLanguage = normalizedLanguage.toLowerCase() === 'auto' ? 'EN' : normalizedLanguage;
   const languageString = payload.languageString || getLanguageStringFromLanguageCode(sessionLanguage);
+  const subtitleLanguageOption = resolveSubtitleLanguageOption(
+    {
+      subtitle_language,
+      subtitleLanguage,
+      subtitle_language_explicit,
+      subtitleLanguageExplicit,
+    },
+    normalizedLanguage,
+    { allowPropagatedSameAsAudio: true },
+  );
   const forceOpenAITTS = isOpenAITTSForcedLanguage(normalizedLanguage) &&
     isDockerTTSProviderAvailable('OPENAI');
 
@@ -948,6 +968,18 @@ export async function requestQuickMovieGeneration(userId, payload) {
 
   const soundEffectAudioLayers = sounds.filter((sound) => sound.type === 'sound_effect');
 
+  const subtitleTextBySound = await buildSpeechSubtitleTextMap(soundAudioLayers, {
+    subtitlesEnabled: shouldEnableSubtitles,
+    speechLanguageCode: subtitleLanguageOption.speechLanguageCode,
+    subtitleLanguage: subtitleLanguageOption.subtitleLanguage,
+    subtitleLanguageString: subtitleLanguageOption.subtitleLanguageString,
+    subtitleLanguageExplicit: subtitleLanguageOption.subtitleLanguageExplicit,
+    inferenceModel: userInferenceModel,
+    translateSpeech,
+  });
+  const subtitleTranslationRequired = Array.from(subtitleTextBySound.values())
+    .some((metadata) => metadata.subtitleTranslationRequired === true);
+
   const audioLayers = soundAudioLayers.map(function (sound, index) {
     const sceneIndex = normalizeSceneIndex(sound.sceneIndex);
     const isOpenAISpeaker = typeof sound.provider === 'string' && sound.provider.trim().toUpperCase() === 'OPENAI';
@@ -963,8 +995,18 @@ export async function requestQuickMovieGeneration(userId, payload) {
       : null;
 
 
+    const subtitleLayerFields = buildSpeechSubtitleLayerFields(
+      subtitleTextBySound.get(sound) || {
+        subtitleText: sound.audio,
+        subtitleLanguage: subtitleLanguageOption.subtitleLanguage,
+        speechLanguage: subtitleLanguageOption.speechLanguageCode,
+        subtitleTranslationRequired: false,
+      },
+      shouldEnableSubtitles,
+    );
     let returnPayload = {
       prompt: sound.audio,
+      ...subtitleLayerFields,
       generationType: "speech",
       isHuman: sound.isHuman ? true : false,
       duration: sound.duration,
@@ -980,9 +1022,7 @@ export async function requestQuickMovieGeneration(userId, payload) {
       languageCode: sound.languageCode,
       languageCodes: sound.languageCodes,
       speakerCharacterName: sound.speakerCharacterName,
-      addTranscriptionsRequired: shouldEnableSubtitles,
       ...(hasFontOverride ? { subtitleFont } : {}),
-      subtitleWordAnimation: 'highlight',
       isEnabled: true,
       addSubtitles: shouldEnableSubtitles,
       instructions: isOpenAISpeaker ? sound.instructions : undefined,
@@ -1399,6 +1439,10 @@ export async function requestQuickMovieGeneration(userId, payload) {
       enableSubtitles: shouldEnableSubtitles,
       hasSubtitles: shouldEnableSubtitles,
       has_subtitles: shouldEnableSubtitles,
+      subtitleLanguage: subtitleLanguageOption.subtitleLanguage,
+      subtitleLanguageString: subtitleLanguageOption.subtitleLanguageString,
+      subtitleLanguageExplicit: subtitleLanguageOption.subtitleLanguageExplicit,
+      subtitleTranslationRequired,
       requestType: resolvedRequestType,
       creditSource: payload.creditSource || 'text_to_video',
       builderRouteType: 'text_to_video',

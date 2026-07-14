@@ -12,6 +12,10 @@ import { DEFAULT_LATIN_SUBTITLE_FONT, resolveSubtitleFont } from './consts/Subti
 import { getCanvasDimensionsForAspectRatio } from './utils/CanvasUtils.js';
 import { addSubtitlesForSessionForAudio } from './utils/TranscriptUtils.js';
 import { getAccentForText } from './ai_video/assistant/OpenAi.js';
+import {
+  resolveRequestInferenceAuthorization,
+  resolveRequestInferenceModel,
+} from './ai_utils/RequestInferenceModel.js';
 import { getFramesPerSecondFromValue, resolveFramesPerSecond } from './utils/FpsUtils.js';
 import { recordProviderUsageLog } from './utils/ProviderUsageAudit.js';
 
@@ -85,6 +89,101 @@ function normalizeLanguageCode(languageCode = '') {
     return '';
   }
   return languageCode.trim().toLowerCase();
+}
+
+const SUBTITLE_LANGUAGE_ALIASES = Object.freeze({
+  eng: 'en',
+  spa: 'es',
+  fre: 'fr',
+  fra: 'fr',
+  jpn: 'ja',
+  jp: 'ja',
+  tha: 'th',
+  zho: 'zh',
+  chi: 'zh',
+  cn: 'zh',
+  ben: 'bn',
+  hin: 'hi',
+  san: 'sa',
+  lat: 'la',
+});
+
+function normalizeComparableLanguageCode(languageCode = '') {
+  const normalized = normalizeLanguageCode(languageCode).replace(/_/g, '-');
+  if (!normalized || normalized === 'auto') {
+    return '';
+  }
+
+  const exactAlias = SUBTITLE_LANGUAGE_ALIASES[normalized];
+  if (exactAlias) {
+    return exactAlias;
+  }
+
+  const baseCode = normalized.split('-')[0];
+  return SUBTITLE_LANGUAGE_ALIASES[baseCode] || baseCode;
+}
+
+function firstNonEmptyString(...values) {
+  for (const value of values) {
+    if (typeof value === 'string' && value.trim()) {
+      return value.trim();
+    }
+  }
+  return '';
+}
+
+function firstConcreteLanguageString(...values) {
+  for (const value of values) {
+    if (typeof value !== 'string') {
+      continue;
+    }
+    const trimmed = value.trim();
+    if (trimmed && normalizeComparableLanguageCode(trimmed)) {
+      return trimmed;
+    }
+  }
+  return '';
+}
+
+function getTranslatedSubtitleContext(session = {}, audioLayer = {}) {
+  const audioLanguage = firstConcreteLanguageString(
+    audioLayer.speechLanguage,
+    audioLayer.speech_language,
+    audioLayer.languageCode,
+    audioLayer.language_code,
+    session.sessionLanguage,
+    session.session_language,
+    session.language,
+  );
+  const subtitleLanguage = firstConcreteLanguageString(
+    audioLayer.subtitleLanguage,
+    audioLayer.subtitle_language,
+    session.subtitleLanguage,
+    session.subtitle_language,
+    audioLanguage,
+  );
+  const normalizedAudioLanguage = normalizeComparableLanguageCode(audioLanguage);
+  const normalizedSubtitleLanguage = normalizeComparableLanguageCode(subtitleLanguage);
+  const translationRequired =
+    audioLayer.subtitleTranslationRequired === true ||
+    audioLayer.subtitle_translation_required === true ||
+    session.subtitleTranslationRequired === true ||
+    session.subtitle_translation_required === true;
+
+  return {
+    audioLanguage,
+    subtitleLanguage,
+    translationRequired,
+    isTranslated:
+      session.enableSubtitles !== false &&
+      Boolean(normalizedAudioLanguage) &&
+      Boolean(normalizedSubtitleLanguage) &&
+      normalizedAudioLanguage !== normalizedSubtitleLanguage,
+  };
+}
+
+function getTranslatedSubtitleText(audioLayer = {}) {
+  return firstNonEmptyString(audioLayer.subtitleText, audioLayer.subtitle_text);
 }
 
 function getTranscriptionLanguageCode(languageCode = '') {
@@ -200,6 +299,175 @@ function getSubtitleYPosition(aspectRatio, canvasDimensions) {
   return Math.round(height * 0.9);
 }
 
+function resolveLanguageFontCandidates({
+  languageCode,
+  fontPreferencesByLanguage,
+  hasFontPreferences,
+  defaultTextFont,
+  defaultSpeakerFont,
+}) {
+  const normalizedLanguage = normalizeLanguageCode(languageCode).replace(/_/g, '-');
+  const baseLanguage = normalizedLanguage.split('-')[0];
+  const languagePreferences =
+    fontPreferencesByLanguage[normalizedLanguage] ||
+    fontPreferencesByLanguage[baseLanguage] ||
+    {};
+  const textFontCandidate =
+    languagePreferences.expressGenerationTextFont ||
+    (!hasFontPreferences ? defaultTextFont : null);
+  const speakerFontCandidate =
+    languagePreferences.expressGenerationSpeakerFont ||
+    (!hasFontPreferences ? defaultSpeakerFont : null);
+
+  return {
+    subtitleFont: resolveSubtitleFont(normalizedLanguage || 'en', textFontCandidate),
+    speakerFont: resolveSubtitleFont(normalizedLanguage || 'en', speakerFontCandidate),
+  };
+}
+
+function resolveConnectedSceneLayer(session = {}, audioLayer = {}) {
+  const layers = Array.isArray(session.layers) ? session.layers : [];
+  const connectedLayerId = audioLayer.connectedLayerId?.toString?.() || '';
+  if (connectedLayerId) {
+    const connectedLayer = layers.find(
+      (layer) => layer?._id?.toString?.() === connectedLayerId,
+    );
+    if (connectedLayer) {
+      return connectedLayer;
+    }
+  }
+
+  const connectedLayerIndex = Number(audioLayer.connectedLayerIndex);
+  if (Number.isInteger(connectedLayerIndex) && connectedLayerIndex >= 0) {
+    return layers[connectedLayerIndex] || null;
+  }
+
+  return null;
+}
+
+function getStaticSubtitleTiming(session = {}, audioLayer = {}) {
+  const connectedSceneLayer = resolveConnectedSceneLayer(session, audioLayer);
+  const audioStartTime = Number(audioLayer.startTime);
+
+  if (connectedSceneLayer) {
+    const sceneStartTime = Number(connectedSceneLayer.durationOffset);
+    const sceneDuration = Number(connectedSceneLayer.duration);
+    if (Number.isFinite(sceneDuration) && sceneDuration > 0) {
+      return {
+        frameOffsetSeconds:
+          Number.isFinite(sceneStartTime) && Number.isFinite(audioStartTime)
+            ? sceneStartTime - audioStartTime
+            : 0,
+        durationSeconds: sceneDuration,
+        source: 'connected_scene',
+      };
+    }
+  }
+
+  const audioDuration = Number(audioLayer.duration);
+  return {
+    frameOffsetSeconds: 0,
+    durationSeconds: Number.isFinite(audioDuration) && audioDuration > 0 ? audioDuration : null,
+    source: 'audio_layer',
+  };
+}
+
+function buildStaticTranslatedSubtitleItem({
+  subtitleText,
+  canvasDimensions,
+  subtitleFont,
+  audioLayerId,
+  aspectRatio,
+  speakerDetails = {},
+  subtitleLanguage,
+  audioLanguage,
+  audioDurationSeconds,
+  frameOffsetSeconds = 0,
+  framesPerSecond,
+}) {
+  const text = typeof subtitleText === 'string' ? subtitleText.trim() : '';
+  if (!text) {
+    return null;
+  }
+
+  const effectiveFramesPerSecond = getFramesPerSecondFromValue(framesPerSecond);
+  const parsedDurationSeconds = Number(audioDurationSeconds);
+  const durationSeconds = Number.isFinite(parsedDurationSeconds) && parsedDurationSeconds > 0
+    ? parsedDurationSeconds
+    : 1 / effectiveFramesPerSecond;
+  const frameDuration = Math.max(1, Math.floor(durationSeconds * effectiveFramesPerSecond));
+  const parsedFrameOffsetSeconds = Number(frameOffsetSeconds);
+  const frameOffset = Number.isFinite(parsedFrameOffsetSeconds)
+    ? Math.floor(parsedFrameOffsetSeconds * effectiveFramesPerSecond)
+    : 0;
+  const fontSize = canvasDimensions.width < 1024 ? 42 : 48;
+  const textHeight = 90;
+  const targetLanguage = subtitleLanguage || audioLanguage || 'en';
+  const fontFamily = resolveSubtitleFont(targetLanguage, subtitleFont);
+  const speakerFontFamily = resolveSubtitleFont(
+    targetLanguage,
+    speakerDetails.speakerFont || fontFamily,
+  );
+  const textWidth = calculateTextWidth(text, fontSize, fontFamily, canvasDimensions);
+  const subtitleY = getSubtitleYPosition(aspectRatio, canvasDimensions);
+  const breakTextWidth = Math.max(1, canvasDimensions.width - 200);
+  const speakerFontSize = Math.round(fontSize * 0.78);
+
+  return {
+    type: 'text',
+    text,
+    config: {
+      width: textWidth,
+      height: textHeight,
+      fontSize,
+      fontFamily,
+      fillColor: '#FFFFFF',
+      autoWrap: true,
+      breakTextWidth,
+      strokeColor: '#000000',
+      strokeWidth: 3,
+      textAlign: 'center',
+      capitalizeLetters: false,
+      fontEmphasis: 'bold',
+      textShadow: {
+        color: 'rgba(0, 0, 0, 0.35)',
+        blur: 6,
+        offsetX: 2,
+        offsetY: 2,
+      },
+      linePaddingPx: 2,
+      lineHeight: 1.12,
+      speakerGapPx: 18,
+      x: canvasDimensions.width / 2,
+      y: subtitleY,
+      frameDuration,
+      frameOffset,
+      rotationAngle: 0,
+      speakerFontFamily,
+      speakerFontSize,
+      speakerFillColor: '#FFD166',
+      speakerStrokeColor: '#000000',
+      speakerStrokeWidth: 3,
+      speakerFontEmphasis: 'bold',
+      staticSubtitle: true,
+    },
+    subType: 'subtitle',
+    animations: [],
+    words: [],
+    wordAnimation: null,
+    textAccent: null,
+    breakTextWidth,
+    audioLayerId,
+    speaker: speakerDetails.speaker,
+    showSpeaker: Boolean(speakerDetails.showSpeaker),
+    speakerFontFamily,
+    subtitleLanguage: targetLanguage,
+    audioLanguage: audioLanguage || null,
+    subtitleRenderMode: 'static',
+    isStaticSubtitle: true,
+  };
+}
+
 
 export async function generateTranscriptsForSessionAudioLayers(sessionId) {
 
@@ -249,23 +517,17 @@ export async function generateTranscriptsForSessionAudioLayers(sessionId) {
 
     const isMovieGen = sessionData.isMovieGen;
     const framesPerSecond = resolveFramesPerSecond(sessionData, userData);
+    const inferenceModel = resolveRequestInferenceModel({
+      session: sessionData,
+      user: userData,
+    });
+    const selectedInferenceModelAuthorization = resolveRequestInferenceAuthorization({
+      session: sessionData,
+      user: userData,
+    });
 
     const sessionLanguageCode = normalizeLanguageCode(sessionData.sessionLanguage || 'EN');
-    const transcriptionLanguageCode = getTranscriptionLanguageCode(sessionData.sessionLanguage || 'EN');
     const languageForFonts = sessionLanguageCode || 'en';
-    const baseLanguage = languageForFonts.split('-')[0];
-    const languagePreferences =
-      fontPreferencesByLanguage[languageForFonts] ||
-      fontPreferencesByLanguage[baseLanguage] ||
-      {};
-    const textFontCandidate =
-      languagePreferences.expressGenerationTextFont ||
-      (!hasFontPreferences ? expressGenerationTextFont : null);
-    const speakerFontCandidate =
-      languagePreferences.expressGenerationSpeakerFont ||
-      (!hasFontPreferences ? expressGenerationSpeakerFont : null);
-    const subtitleFontForLanguage = resolveSubtitleFont(languageForFonts, textFontCandidate);
-    const speakerFontForLanguage = resolveSubtitleFont(languageForFonts, speakerFontCandidate);
 
 
     const allAudioLayers = Array.isArray(sessionData.audioLayers) ? sessionData.audioLayers : [];
@@ -289,23 +551,49 @@ export async function generateTranscriptsForSessionAudioLayers(sessionId) {
       const audioLayerId = audioLayer?._id?.toString?.() || null;
 
       try {
-        const subtitleFont = subtitleFontForLanguage;
+        const translatedSubtitleContext = getTranslatedSubtitleContext(sessionData, audioLayer);
+        const usesStaticTranslatedSubtitles = translatedSubtitleContext.isTranslated;
+        const transcriptionLanguageCode = getTranscriptionLanguageCode(
+          translatedSubtitleContext.audioLanguage || sessionData.sessionLanguage || 'EN',
+        );
+        const layerFontLanguage = firstConcreteLanguageString(
+          translatedSubtitleContext.subtitleLanguage,
+          translatedSubtitleContext.audioLanguage,
+          languageForFonts,
+        );
+        const layerFonts = resolveLanguageFontCandidates({
+          languageCode: layerFontLanguage,
+          fontPreferencesByLanguage,
+          hasFontPreferences,
+          defaultTextFont: expressGenerationTextFont,
+          defaultSpeakerFont: expressGenerationSpeakerFont,
+        });
+        const subtitleFont = layerFonts.subtitleFont;
+        const speakerFont = layerFonts.speakerFont;
+        const subtitleWordAnimation = audioLayer.subtitleWordAnimation || 'highlight';
+        const audioFilePath = audioLayer.selectedLocalAudioLink;
+        const transcriptText = usesStaticTranslatedSubtitles
+          ? getTranslatedSubtitleText(audioLayer)
+          : getTranscriptSource(audioLayer);
 
-	        const subtitleWordAnimation = audioLayer.subtitleWordAnimation || 'highlight';
+        if (!transcriptText || !transcriptText.trim()) {
+          skippedEmptyTranscript++;
+          if (usesStaticTranslatedSubtitles) {
+            console.warn('Translated subtitle text is missing; clearing subtitles for speech layer', {
+              sessionId,
+              audioLayerId,
+              audioLanguage: translatedSubtitleContext.audioLanguage,
+              subtitleLanguage: translatedSubtitleContext.subtitleLanguage,
+            });
+            await addSubtitlesForSessionForAudio(sessionId, audioLayerId, []);
+          }
+          continue;
+        }
 
-
-	        const audioFilePath = audioLayer.selectedLocalAudioLink;
-	        const transcriptText = getTranscriptSource(audioLayer);
-
-	        if (!transcriptText || !transcriptText.trim()) {
-	          skippedEmptyTranscript++;
-	          continue;
-	        }
-
-	        if (!audioFilePath || typeof audioFilePath !== 'string') {
-	          skippedMissingAudioLink++;
-	          continue;
-	        }
+        if (!usesStaticTranslatedSubtitles && (!audioFilePath || typeof audioFilePath !== 'string')) {
+          skippedMissingAudioLink++;
+          continue;
+        }
 
         const pwd = process.cwd();
         let audioFileBase = path.join(pwd, '../', 'samsar_processor', 'assets');
@@ -314,7 +602,9 @@ export async function generateTranscriptsForSessionAudioLayers(sessionId) {
           audioFileBase = '/assets';  // Docker staging volume mount path
         }
 
-        const audioLocalFilePath = `${audioFileBase}/${audioFilePath}`;
+        const audioLocalFilePath = typeof audioFilePath === 'string'
+          ? `${audioFileBase}/${audioFilePath}`
+          : null;
 
         const aspectRatio = sessionData.aspectRatio;
         const canvasDimensions = getCanvasDimensionsForAspectRatio(aspectRatio);
@@ -333,114 +623,136 @@ export async function generateTranscriptsForSessionAudioLayers(sessionId) {
         const speakerDetails = {
           showSpeaker,
           speaker,
-          speakerFont: speakerFontForLanguage,
+          speakerFont,
         };
 
         let newRawLayers = [];
         let alignmentToCache = null;
-	        try {
+        if (usesStaticTranslatedSubtitles) {
+          const staticSubtitleTiming = getStaticSubtitleTiming(sessionData, audioLayer);
+          const staticSubtitleItem = buildStaticTranslatedSubtitleItem({
+            subtitleText: transcriptText,
+            canvasDimensions,
+            subtitleFont,
+            audioLayerId,
+            aspectRatio,
+            speakerDetails,
+            subtitleLanguage: translatedSubtitleContext.subtitleLanguage,
+            audioLanguage: translatedSubtitleContext.audioLanguage,
+            audioDurationSeconds: staticSubtitleTiming.durationSeconds,
+            frameOffsetSeconds: staticSubtitleTiming.frameOffsetSeconds,
+            framesPerSecond,
+          });
+          newRawLayers = staticSubtitleItem ? [staticSubtitleItem] : [];
+        } else {
+          try {
             const cachedAlignment = getCachedTranscriptAlignment(
               audioLayer,
               transcriptText,
               transcriptionLanguageCode,
               audioFilePath
             );
+            const transcriptAuditContext = {
+              userId,
+              sessionId,
+              audioLayerId,
+              inferenceModel,
+              selectedInferenceModelAuthorization,
+              jobType: 'Express video',
+              isExpressGeneration: sessionData.isExpressGeneration || sessionData.isMovieGen,
+              requestType: 'transcription',
+              source: 'express_video_transcription',
+              localRequestId: `${sessionId}:${audioLayerId}:transcription`,
+            };
             const alignmentResult = await alignWithGentle(
-	            audioLocalFilePath,
-	            transcriptText,
-	            canvasDimensions,
-	            subtitleFont,
-	            subtitleWordAnimation,
-	            audiotLayerStartFrame,
-	            audioLayerId,
-	            aspectRatio,
-	            speakerDetails,
-	            transcriptionLanguageCode,
-	            audioLayer.duration,
+              audioLocalFilePath,
+              transcriptText,
+              canvasDimensions,
+              subtitleFont,
+              subtitleWordAnimation,
+              audiotLayerStartFrame,
+              audioLayerId,
+              aspectRatio,
+              speakerDetails,
+              transcriptionLanguageCode,
+              audioLayer.duration,
               framesPerSecond,
               cachedAlignment
                 ? {
                   alignmentWords: cachedAlignment.words,
                   alignmentTranscriptText: cachedAlignment.transcriptText || transcriptText,
+                  auditContext: transcriptAuditContext,
                 }
                 : {
                   returnAlignment: true,
                   sourceText: transcriptText,
                   audioSource: audioFilePath,
-                  auditContext: {
-                    userId,
-                    sessionId,
-                    audioLayerId,
-                    jobType: 'Express video',
-                    isExpressGeneration: sessionData.isExpressGeneration || sessionData.isMovieGen,
-                    requestType: 'transcription',
-                    source: 'express_video_transcription',
-                    localRequestId: `${sessionId}:${audioLayerId}:transcription`,
-                  },
+                  auditContext: transcriptAuditContext,
                 }
-	          );
+            );
             if (cachedAlignment) {
               newRawLayers = alignmentResult;
             } else {
               newRawLayers = Array.isArray(alignmentResult?.rawLayers) ? alignmentResult.rawLayers : [];
               alignmentToCache = alignmentResult?.alignment || null;
             }
-		        } catch (err) {
-              layersWithErrors++;
-	          console.error('Alignment generation failed; continuing', {
-	            sessionId,
-	            audioLayerId,
-	            audioFilePath: audioLocalFilePath,
-	            error: err?.response?.data || err?.message || err,
-                stack: err?.stack,
-	          });
-	          newRawLayers = [];
-	        }
+          } catch (err) {
+            layersWithErrors++;
+            console.error('Alignment generation failed; continuing', {
+              sessionId,
+              audioLayerId,
+              audioFilePath: audioLocalFilePath,
+              error: err?.response?.data || err?.message || err,
+              stack: err?.stack,
+            });
+            newRawLayers = [];
+          }
+        }
 
-	        if (!Array.isArray(newRawLayers) || newRawLayers.length === 0) {
-	          alignmentEmpty++;
-	        } else {
-	          subtitleItemsAttempted += newRawLayers.length;
-	        }
+        if (!Array.isArray(newRawLayers) || newRawLayers.length === 0) {
+          alignmentEmpty++;
+        } else {
+          subtitleItemsAttempted += newRawLayers.length;
+        }
 
-	        try {
-	          await addSubtitlesForSessionForAudio(sessionId, audioLayerId, newRawLayers);
-            if (alignmentToCache) {
-              await VideoSession.updateOne(
-                { _id: sessionId, 'audioLayers._id': audioLayerId },
-                { $set: { 'audioLayers.$.transcriptAlignment': alignmentToCache } }
-              );
-            }
-	        } catch (err) {
-	          layersWithErrors++;
-	          console.error('Failed to persist subtitles for audio layer; continuing', {
-	            sessionId,
-	            audioLayerId,
-	            error: err?.response?.data || err?.message || err,
-	            stack: err?.stack,
-	          });
-	        }
-	        processedSpeechLayers++;
-	      } catch (err) {
-	        layersWithErrors++;
-	        console.error('Transcript generation failed for audio layer; continuing', {
-	          sessionId,
-	          audioLayerId,
-	          error: err?.response?.data || err?.message || err,
-	          stack: err?.stack,
-	        });
-	      }
+        try {
+          await addSubtitlesForSessionForAudio(sessionId, audioLayerId, newRawLayers);
+          if (alignmentToCache) {
+            await VideoSession.updateOne(
+              { _id: sessionId, 'audioLayers._id': audioLayerId },
+              { $set: { 'audioLayers.$.transcriptAlignment': alignmentToCache } }
+            );
+          }
+        } catch (err) {
+          layersWithErrors++;
+          console.error('Failed to persist subtitles for audio layer; continuing', {
+            sessionId,
+            audioLayerId,
+            error: err?.response?.data || err?.message || err,
+            stack: err?.stack,
+          });
+        }
+        processedSpeechLayers++;
+      } catch (err) {
+        layersWithErrors++;
+        console.error('Transcript generation failed for audio layer; continuing', {
+          sessionId,
+          audioLayerId,
+          error: err?.response?.data || err?.message || err,
+          stack: err?.stack,
+        });
+      }
     }
 
-	    await sessionData.save();
-	  } catch (err) {
-	    console.error('Transcript generation failed (generateTranscriptsForSessionAudioLayers)', {
-	      sessionId,
-	      error: err?.response?.data || err?.message || err,
-	      stack: err?.stack,
-	    });
-	    throw err;
-	  }
+    await sessionData.save();
+  } catch (err) {
+    console.error('Transcript generation failed (generateTranscriptsForSessionAudioLayers)', {
+      sessionId,
+      error: err?.response?.data || err?.message || err,
+      stack: err?.stack,
+    });
+    throw err;
+  }
 }
 
 
@@ -1255,4 +1567,12 @@ async function alignWithGentle(
   }
 }
 
-// ... (no changes in the rendering code)
+export const __testOnly__ = {
+  normalizeComparableLanguageCode,
+  getTranslatedSubtitleContext,
+  getTranslatedSubtitleText,
+  resolveLanguageFontCandidates,
+  resolveConnectedSceneLayer,
+  getStaticSubtitleTiming,
+  buildStaticTranslatedSubtitleItem,
+};

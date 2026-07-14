@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { canPreloadNextStudioVideo } from './studioVideoLayers.mjs';
 
 const VIDEO_SYNC_SEEK_TOLERANCE_SECONDS = 0.2;
 const VIDEO_END_EPSILON_SECONDS = 0.05;
@@ -29,6 +30,7 @@ export default function VideoUnderlay(props) {
     aiVideoLayerType,
     nextAiVideoLayer,
     isVideoPreviewPlaying = false,
+    onVideoReadyChange,
   } = props;
 
   const primaryVideoRef = useRef(null);
@@ -39,8 +41,9 @@ export default function VideoUnderlay(props) {
 
   const [activeSlotIndex, setActiveSlotIndex] = useState(0);
   const [slotSources, setSlotSources] = useState(['', '']);
-  const [isVideoReady, setIsVideoReady] = useState(false);
+  const [readyVideoSrc, setReadyVideoSrc] = useState('');
   const [videoLayout, setVideoLayout] = useState(getDefaultVideoLayout(aiVideoLayerType));
+  const isVideoReady = Boolean(currentVideoSrc && readyVideoSrc === currentVideoSrc);
 
   const resolveVideoLayout = (videoElement) => {
     if (aiVideoLayerType !== 'user_video') {
@@ -73,10 +76,12 @@ export default function VideoUnderlay(props) {
 
   useEffect(() => {
     if (!currentVideoSrc) {
-      setSlotSources((previousSources) => (
-        previousSources[0] || previousSources[1] ? ['', ''] : previousSources
-      ));
-      setIsVideoReady(false);
+      if (!nextVideoSrc) {
+        setSlotSources((previousSources) => (
+          previousSources[0] || previousSources[1] ? ['', ''] : previousSources
+        ));
+      }
+      setReadyVideoSrc('');
       setVideoLayout(getDefaultVideoLayout(aiVideoLayerType));
       return;
     }
@@ -86,7 +91,7 @@ export default function VideoUnderlay(props) {
       if (existingSlotIndex !== activeSlotIndex) {
         const promotedVideo = videoRefs[existingSlotIndex].current;
         setActiveSlotIndex(existingSlotIndex);
-        setIsVideoReady(Boolean(promotedVideo && promotedVideo.readyState >= 2));
+        setReadyVideoSrc(promotedVideo && promotedVideo.readyState >= 2 ? currentVideoSrc : '');
         setVideoLayout(getDefaultVideoLayout(aiVideoLayerType));
       }
       return;
@@ -99,12 +104,17 @@ export default function VideoUnderlay(props) {
       return nextSources;
     });
     setActiveSlotIndex(targetSlotIndex);
-    setIsVideoReady(false);
+    setReadyVideoSrc('');
     setVideoLayout(getDefaultVideoLayout(aiVideoLayerType));
-  }, [activeSlotIndex, aiVideoLayerType, currentVideoSrc, slotSources]);
+  }, [activeSlotIndex, aiVideoLayerType, currentVideoSrc, nextVideoSrc, slotSources]);
 
   useEffect(() => {
-    if (!currentVideoSrc || !nextVideoSrc || nextVideoSrc === currentVideoSrc || slotSources.includes(nextVideoSrc)) {
+    if (
+      !canPreloadNextStudioVideo(currentVideoSrc, readyVideoSrc)
+      || !nextVideoSrc
+      || nextVideoSrc === currentVideoSrc
+      || slotSources.includes(nextVideoSrc)
+    ) {
       return;
     }
 
@@ -119,7 +129,7 @@ export default function VideoUnderlay(props) {
       nextSources[targetSlotIndex] = nextVideoSrc;
       return nextSources;
     });
-  }, [activeSlotIndex, currentVideoSrc, nextVideoSrc, slotSources]);
+  }, [activeSlotIndex, currentVideoSrc, nextVideoSrc, readyVideoSrc, slotSources]);
 
   useEffect(() => {
     const activeVideo = videoRefs[activeSlotIndex].current;
@@ -135,7 +145,7 @@ export default function VideoUnderlay(props) {
         return;
       }
       setVideoLayout(resolveVideoLayout(activeVideo));
-      setIsVideoReady(true);
+      setReadyVideoSrc(currentVideoSrc);
     };
 
     const handleLoadedMetadata = () => {
@@ -146,13 +156,12 @@ export default function VideoUnderlay(props) {
 
     const handleError = () => {
       if (!isCancelled) {
-        setIsVideoReady(false);
+        setReadyVideoSrc((readySource) => (
+          readySource === currentVideoSrc ? '' : readySource
+        ));
       }
     };
 
-    activeVideo.preload = 'auto';
-    activeVideo.muted = true;
-    activeVideo.playsInline = true;
     activeVideo.addEventListener('loadedmetadata', handleLoadedMetadata);
     activeVideo.addEventListener('loadeddata', markReady);
     activeVideo.addEventListener('canplay', markReady);
@@ -161,12 +170,6 @@ export default function VideoUnderlay(props) {
 
     if (activeVideo.readyState >= 2) {
       markReady();
-    } else {
-      try {
-        activeVideo.load();
-      } catch  {
-        // Ignore best-effort preload failures; the element will emit an error if needed.
-      }
     }
 
     return () => {
@@ -180,24 +183,8 @@ export default function VideoUnderlay(props) {
   }, [activeSlotIndex, aiVideoLayerType, canvasDimensions, currentVideoSrc, slotSources]);
 
   useEffect(() => {
-    const inactiveSlotIndex = getInactiveSlotIndex(activeSlotIndex);
-    const inactiveVideo = videoRefs[inactiveSlotIndex].current;
-    const inactiveSource = slotSources[inactiveSlotIndex];
-    if (!inactiveVideo || !inactiveSource || inactiveSource === currentVideoSrc) {
-      return;
-    }
-
-    inactiveVideo.preload = 'auto';
-    inactiveVideo.muted = true;
-    inactiveVideo.playsInline = true;
-    if (inactiveVideo.readyState < 2) {
-      try {
-        inactiveVideo.load();
-      } catch  {
-        // Ignore best-effort preloading failures; playback still falls back to normal loading.
-      }
-    }
-  }, [activeSlotIndex, currentVideoSrc, slotSources]);
+    onVideoReadyChange?.(currentVideoSrc, isVideoReady);
+  }, [currentVideoSrc, isVideoReady, onVideoReadyChange]);
 
   useEffect(() => {
     videoRefs.forEach((videoRef, slotIndex) => {
@@ -303,13 +290,19 @@ export default function VideoUnderlay(props) {
           const isActiveSlot = slotIndex === activeSlotIndex;
           const source = slotSources[slotIndex];
           const shouldShowSlot = Boolean(currentVideoSrc) && isActiveSlot && source === currentVideoSrc;
+          const shouldLoadSlot = shouldShowSlot || (
+            readyVideoSrc === currentVideoSrc
+            && !isActiveSlot
+            && Boolean(nextVideoSrc)
+            && source === nextVideoSrc
+          );
           return (
             <video
               key={slotIndex}
               ref={videoRefs[slotIndex]}
               src={source || undefined}
               muted
-              preload="auto"
+              preload={shouldLoadSlot ? 'auto' : 'none'}
               playsInline
               aria-hidden={!shouldShowSlot}
               style={shouldShowSlot ? {

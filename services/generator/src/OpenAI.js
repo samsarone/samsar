@@ -7,12 +7,16 @@ import OpenAI from "openai";
 import {
   getDefaultUserInferenceModel,
   isGeminiInferenceModel,
+  isQwenInferenceModel,
+  normalizeInferenceModel,
 } from './inference/InferenceModels.js';
 import { createGoogleGeminiChatCompletion } from './inference/GoogleGemini.js';
+import { createQwenChatCompletion } from './inference/Qwen.js';
 import {
   createSamsarExternalChatCompletion,
   shouldUseSamsarExternalInference,
 } from './inference/SamsarExternalInferenceAdapter.js';
+import { withInferenceAuthorization } from './inference/RequestInferenceModel.js';
 
 const API_KEY = process.env.OPENAI_API_KEY;
 
@@ -221,7 +225,9 @@ export async function getAlternatePromptFromPrompt(
   prompt,
   retryCount,
   failureMessage = '',
-  rewriteMode = 'generation_failure'
+  rewriteMode = 'generation_failure',
+  userInferenceModel = getDefaultUserInferenceModel(),
+  userInferenceAuthorization,
 ) {
   const policyHint = getPolicyHintFromFailureMessage(failureMessage);
   const isSafetyRetry = /safety system|safety_violations|content policy|policy violation|request was rejected/i.test(
@@ -254,7 +260,11 @@ export async function getAlternatePromptFromPrompt(
   ];
 
   // Call your LLM
-  const response = await sendAssistantMessageRequest(messageList);
+  const response = await sendAssistantMessageRequest(
+    messageList,
+    userInferenceModel,
+    userInferenceAuthorization,
+  );
 
   return response.content;
 }
@@ -262,21 +272,34 @@ export async function getAlternatePromptFromPrompt(
 
 
 
-export async function sendAssistantMessageRequest(messageList, userInferenceModel = getDefaultUserInferenceModel()) {
+export async function sendAssistantMessageRequest(
+  messageList,
+  userInferenceModel = getDefaultUserInferenceModel(),
+  userInferenceAuthorization,
+) {
 
   try {
+    const inferenceModel = normalizeInferenceModel(userInferenceModel);
     const payload = {
       messages: messageList,
-      model: isGeminiInferenceModel(userInferenceModel) ? userInferenceModel : "gpt-4o-mini",
+      model: isGeminiInferenceModel(inferenceModel) || isQwenInferenceModel(inferenceModel)
+        ? inferenceModel
+        : "gpt-4o-mini",
     };
+    const routingPayload = withInferenceAuthorization(payload, userInferenceAuthorization);
 
-    if (shouldUseSamsarExternalInference(payload)) {
-      const response = await createSamsarExternalChatCompletion(payload);
+    if (shouldUseSamsarExternalInference(routingPayload)) {
+      const response = await createSamsarExternalChatCompletion(routingPayload);
       return response.choices[0].message;
     }
 
-    if (isGeminiInferenceModel(userInferenceModel)) {
-      const response = await createGoogleGeminiChatCompletion(messageList, userInferenceModel);
+    if (isQwenInferenceModel(inferenceModel)) {
+      const response = await createQwenChatCompletion(routingPayload);
+      return response.choices[0].message;
+    }
+
+    if (isGeminiInferenceModel(inferenceModel)) {
+      const response = await createGoogleGeminiChatCompletion(messageList, inferenceModel);
       return response.choices[0].message;
     }
 

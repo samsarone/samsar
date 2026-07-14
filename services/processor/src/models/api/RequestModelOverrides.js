@@ -1,6 +1,7 @@
 import {
   DEFAULT_INFERENCE_MODEL,
   GEMINI_31_PRO_INFERENCE_MODEL,
+  QWEN_37_INFERENCE_MODEL,
   normalizeInferenceModel,
 } from '../../consts/InferenceModels.js';
 import {
@@ -79,6 +80,12 @@ const INFERENCE_MODEL_ALIASES = Object.freeze({
   GEMINI3PROPREVIEW: GEMINI_31_PRO_INFERENCE_MODEL,
   GOOGLEGEMINI31PRO: GEMINI_31_PRO_INFERENCE_MODEL,
   GOOGLEGEMINI3PRO: GEMINI_31_PRO_INFERENCE_MODEL,
+  QWEN37: QWEN_37_INFERENCE_MODEL,
+  QWEN37MAX: QWEN_37_INFERENCE_MODEL,
+  QWEN37PLUS: QWEN_37_INFERENCE_MODEL,
+  ALIBABAQWEN37: QWEN_37_INFERENCE_MODEL,
+  ALIBABACLOUDQWEN37: QWEN_37_INFERENCE_MODEL,
+  DASHSCOPEQWEN37: QWEN_37_INFERENCE_MODEL,
 });
 
 const CUSTOM_ADAPTER_OPERATION_KEYS_WITHOUT_TTS = Object.freeze([
@@ -196,7 +203,7 @@ export function normalizeInferenceModelFromPayload(payload = {}) {
 
   const normalizedModel = INFERENCE_MODEL_ALIASES[token];
   if (!normalizedModel) {
-    throw makeValidationError('inference_model must be one of: gpt-5.6-sol, gemini-3.1-pro.');
+    throw makeValidationError('inference_model must be one of: gpt-5.6-sol, gemini-3.1-pro, QWEN3.7.');
   }
 
   return normalizedModel;

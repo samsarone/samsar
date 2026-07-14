@@ -1,0 +1,64 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+
+import {
+  resolveRequestInferenceAuthorization,
+  resolveRequestInferenceModel,
+  resolveRequestInferenceSettings,
+  withInferenceAuthorization,
+} from './RequestInferenceModel.js';
+
+test('request model wins over session and saved user settings', () => {
+  assert.equal(resolveRequestInferenceModel({
+    request: { inferenceModel: 'QWEN3.7' },
+    session: { expressGenerationInferenceModel: 'gemini-3.1-pro' },
+    user: { selectedInferenceModel: 'gpt-5.6-sol' },
+  }), 'QWEN3.7');
+});
+
+test('session generation override wins over saved user setting', () => {
+  assert.equal(resolveRequestInferenceModel({
+    session: {
+      expressGenerationInferenceModel: 'QWEN3.7',
+      inferenceModel: 'gemini-3.1-pro',
+    },
+    user: { selectedInferenceModel: 'gpt-5.6-sol' },
+  }), 'QWEN3.7');
+});
+
+test('saved user setting is used when no request or session model exists', () => {
+  assert.equal(resolveRequestInferenceModel({
+    user: { selectedInferenceModel: 'Qwen 3.7' },
+  }), 'QWEN3.7');
+});
+
+test('inference authorization follows request, session, then user precedence', () => {
+  assert.equal(resolveRequestInferenceAuthorization({
+    request: { selectedInferenceModelAuthorization: 'native' },
+    session: { selectedInferenceModelAuthorization: 'deployed' },
+    user: { selectedInferenceModelAuthorization: 'deployed' },
+  }), 'native');
+  assert.equal(resolveRequestInferenceAuthorization({
+    session: { expressGenerationInferenceModelAuthorization: 'deployed' },
+    user: { selectedInferenceModelAuthorization: 'native' },
+  }), 'deployed');
+  assert.equal(resolveRequestInferenceAuthorization({
+    user: { selectedInferenceModelAuthorization: 'Samsar API Key' },
+  }), 'deployed');
+});
+
+test('inference settings preserve absent authorization for automatic fallback', () => {
+  assert.deepEqual(resolveRequestInferenceSettings({
+    request: { inferenceModel: 'QWEN3.7' },
+  }), {
+    model: 'QWEN3.7',
+    authorization: undefined,
+  });
+
+  const payload = { model: 'QWEN3.7', messages: [] };
+  assert.equal(withInferenceAuthorization(payload), payload);
+  assert.deepEqual(withInferenceAuthorization(payload, 'deployed'), {
+    ...payload,
+    authorization: 'deployed',
+  });
+});

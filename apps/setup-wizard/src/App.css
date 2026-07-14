@@ -731,6 +731,11 @@
   min-width: 0;
 }
 
+.provider-endpoint-help {
+  color: var(--muted);
+  grid-column: 2;
+}
+
 .provider-heading {
   align-items: center;
   display: flex;
@@ -1749,6 +1754,10 @@ button:disabled {
 		  .data-field-grid {
 		    grid-template-columns: 1fr;
 		  }
+
+  .provider-endpoint-help {
+    grid-column: 1;
+  }
 
   .service-capability-auth {
     justify-self: start;

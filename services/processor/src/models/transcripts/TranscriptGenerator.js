@@ -53,6 +53,7 @@ async function getSubtitleLayersForAudioLayer({
   audioLayerStartFrame,
   alignerLanguageCode,
   framesPerSecond,
+  inferenceModel,
 }) {
   const cachedAlignment = getCachedTranscriptAlignment(
     audioLayer,
@@ -72,7 +73,8 @@ async function getSubtitleLayersForAudioLayer({
         audioLayerStartFrame,
         audioLayerId,
         alignerLanguageCode,
-        framesPerSecond
+        framesPerSecond,
+        inferenceModel,
       );
     } catch (error) {
       console.error('Failed to build subtitles from cached transcript alignment', {
@@ -99,6 +101,7 @@ async function getSubtitleLayersForAudioLayer({
       returnAlignment: true,
       sourceText: transcriptText,
       audioSource,
+      inferenceModel,
     }
   );
 
@@ -125,6 +128,10 @@ export async function generateTranscriptsForSessionAudioLayers(sessionId, audioL
 
   const userId = sessionData.userId;
   const userData = await User.findById(userId);
+  const inferenceModel =
+    sessionData.expressGenerationInferenceModel ||
+    sessionData.inferenceModel ||
+    userData?.selectedInferenceModel;
 
   const sessionSpeakerFont = sessionData.expressGenerationSpeakerFont;
   const sessionTextFont = sessionData.expressGenerationTextFont;
@@ -183,6 +190,7 @@ export async function generateTranscriptsForSessionAudioLayers(sessionId, audioL
       audioLayerStartFrame,
       alignerLanguageCode,
       framesPerSecond,
+      inferenceModel,
     });
 
 
@@ -218,6 +226,10 @@ export async function generateTranscriptsForSessionAudioLayersAfterLayer(session
 
   const userId = sessionData.userId;
   const userData = await User.findById(userId);
+  const inferenceModel =
+    sessionData.expressGenerationInferenceModel ||
+    sessionData.inferenceModel ||
+    userData?.selectedInferenceModel;
 
   const sessionSpeakerFont = sessionData.expressGenerationSpeakerFont;
   const sessionTextFont = sessionData.expressGenerationTextFont;
@@ -278,6 +290,7 @@ export async function generateTranscriptsForSessionAudioLayersAfterLayer(session
         audioLayerStartFrame,
         alignerLanguageCode,
         framesPerSecond,
+        inferenceModel,
       });
       let speaker = 'Narrator';
   

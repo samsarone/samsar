@@ -14,9 +14,11 @@ import {
   createGoogleGeminiChatCompletion,
   getDefaultInferenceModel,
   isGeminiInferenceModel,
+  isQwenInferenceModel,
   normalizeInferenceModel,
 } from '../../ai_utils/GoogleGemini.js';
 import { createCompatibleChatCompletion } from '../../ai_utils/OpenAICompat.js';
+import { createQwenChatCompletion } from '../../ai_utils/Qwen.js';
 import {
   createSamsarExternalChatCompletion,
   shouldUseSamsarExternalInference,
@@ -405,7 +407,9 @@ export async function getAccentForText(text, auditContext = {}) {
   ];
 
   try {
-    const inferenceModel = getDefaultInferenceModel();
+    const inferenceModel = normalizeInferenceModel(
+      auditContext.inferenceModel || getDefaultInferenceModel()
+    );
     const responseData = await sendAssistantMessageRequest(messageList, inferenceModel, undefined, {
       ...auditContext,
       requestType: auditContext.requestType || 'subtitle_accent_inference',
@@ -423,13 +427,20 @@ export async function sendAssistantMessageRequest(messageList, userInferenceMode
   const modelName = getModelNameForInferenceModel(userInferenceModel);
 
   try {
+    const selectedInferenceModelAuthorization =
+      auditContext.selectedInferenceModelAuthorization ||
+      auditContext.inferenceModelAuthorization ||
+      auditContext.authorization;
     const basePayload = {
       model: modelName,
       messages: messageList,
-      ...(!isGeminiInferenceModel(modelName)
+      ...(selectedInferenceModelAuthorization
+        ? { authorization: selectedInferenceModelAuthorization }
+        : {}),
+      ...(!isGeminiInferenceModel(modelName) && !isQwenInferenceModel(modelName)
         ? { reasoning_effort: GPT_56_SOL_REASONING_EFFORT }
         : reasoningEffort
-          ? { reasoning_effort: reasoningEffort }
+          ? (!isQwenInferenceModel(modelName) ? { reasoning_effort: reasoningEffort } : {})
           : {}),
     };
     if (shouldUseSamsarExternalInference(basePayload)) {
@@ -457,6 +468,18 @@ export async function sendAssistantMessageRequest(messageList, userInferenceMode
         response,
         auditContext,
         reasoningEffort: reasoningEffort || DEFAULT_GEMINI_REASONING_EFFORT,
+      });
+      return response.choices[0].message;
+    }
+
+    if (isQwenInferenceModel(modelName)) {
+      const response = await createQwenChatCompletion(basePayload);
+      await recordInferenceProviderUsage({
+        basePayload,
+        provider: 'alibabaCloud',
+        response,
+        auditContext,
+        reasoningEffort,
       });
       return response.choices[0].message;
     }
@@ -499,8 +522,9 @@ export async function sendAssistantMessageRequest(messageList, userInferenceMode
     return resData;
   } catch (error) {
     const isGeminiModel = isGeminiInferenceModel(modelName);
+    const isQwenModel = isQwenInferenceModel(modelName);
     console.error('[Inference][sendAssistantMessageRequest] request failed', {
-      provider: isGeminiModel ? 'google_gemini' : 'openai',
+      provider: isQwenModel ? 'alibaba_qwen' : isGeminiModel ? 'google_gemini' : 'openai',
       inferenceModel: userInferenceModel,
       model: modelName,
       messageCount: Array.isArray(messageList) ? messageList.length : 0,
@@ -518,7 +542,11 @@ export async function sendAssistantMessageRequest(messageList, userInferenceMode
 }
 
 
-export async function sendAssistantStructuredMessageRequest(messageList, userInferenceModel = getDefaultInferenceModel()) {
+export async function sendAssistantStructuredMessageRequest(
+  messageList,
+  userInferenceModel = getDefaultInferenceModel(),
+  auditContext = {},
+) {
 
 
   const ScreenplayTransitionExtraction = z.object({
@@ -527,10 +555,17 @@ export async function sendAssistantStructuredMessageRequest(messageList, userInf
 
   try {
     const modelName = getModelNameForInferenceModel(userInferenceModel || getDefaultInferenceModel());
+    const selectedInferenceModelAuthorization =
+      auditContext.selectedInferenceModelAuthorization ||
+      auditContext.inferenceModelAuthorization ||
+      auditContext.authorization;
     const payload = {
       messages: messageList,
       model: modelName,
       response_format: zodResponseFormat(ScreenplayTransitionExtraction, "screenplay_transition_extraction"),
+      ...(selectedInferenceModelAuthorization
+        ? { authorization: selectedInferenceModelAuthorization }
+        : {}),
     };
     const response = await createCompatibleChatCompletion(openai, payload);
     const messageContent = response.choices[0].message.content;

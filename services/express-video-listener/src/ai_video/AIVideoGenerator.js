@@ -32,7 +32,10 @@ import {
   getTransitionListForLayerSceneDescriptions,
 
 } from "./assistant/OpenAi.js";
-import { normalizeInferenceModel } from '../ai_utils/GoogleGemini.js';
+import {
+  resolveRequestInferenceAuthorization,
+  resolveRequestInferenceModel,
+} from '../ai_utils/RequestInferenceModel.js';
 
 import { updateLayerAiVideoGenerationPrompt } from './utils/SessionUtils.js';
 
@@ -190,7 +193,14 @@ export async function createGenerativeVideoAnimationsForFrames(sessionId) {
 
   const userData = await User.findById(userId);
 
-  const userInferenceModel = normalizeInferenceModel(userData?.selectedInferenceModel);
+  const userInferenceModel = resolveRequestInferenceModel({
+    session: sessionData,
+    user: userData,
+  });
+  const selectedInferenceModelAuthorization = resolveRequestInferenceAuthorization({
+    session: sessionData,
+    user: userData,
+  });
 
 
 
@@ -218,6 +228,7 @@ export async function createGenerativeVideoAnimationsForFrames(sessionId) {
     isExpressGeneration: sessionData.isExpressGeneration || sessionData.isMovieGen,
     requestType: 'narrative_inference',
     source: 'express_video_inference',
+    selectedInferenceModelAuthorization,
   };
 
   const cameraTransitionListString = await getTransitionListForLayerSceneDescriptions(

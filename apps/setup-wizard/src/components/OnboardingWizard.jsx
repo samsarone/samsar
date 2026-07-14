@@ -27,7 +27,7 @@ const STEPS = [
 ];
 const SETUP_POLL_INTERVAL_MS = 1200;
 const WIZARD_STORAGE_KEY = 'samsar.setupWizard.session.v1';
-const WIZARD_STORAGE_VERSION = 5;
+const WIZARD_STORAGE_VERSION = 6;
 
 const PROVIDERS = [
   {
@@ -37,7 +37,7 @@ const PROVIDERS = [
     field: 'openaiApiKey',
     inputType: 'password',
     placeholder: 'OpenAI API key',
-    requiredFor: 'Required for GPT 5.5, assistant, vision, OpenAI image, OpenAI TTS',
+    requiredFor: 'Required for GPT 5.6 Sol, assistant, vision, OpenAI image, OpenAI TTS',
     pricingUrl: 'https://developers.openai.com/api/docs/pricing',
     keysUrl: 'https://platform.openai.com/api-keys',
     credentialLabel: 'API key',
@@ -53,6 +53,22 @@ const PROVIDERS = [
     pricingUrl: 'https://cloud.google.com/gemini-enterprise-agent-platform/generative-ai/pricing',
     keysUrl: 'https://console.cloud.google.com/iam-admin/serviceaccounts',
     credentialLabel: 'Service account JSON',
+  },
+  {
+    key: 'alibabaCloud',
+    title: 'Alibaba Cloud',
+    type: 'native',
+    field: 'alibabaApiKey',
+    inputType: 'password',
+    placeholder: 'Alibaba Cloud Model Studio API key',
+    requiredFor: 'Required for Qwen 3.7 inference and assistant tasks',
+    pricingUrl: 'https://www.alibabacloud.com/help/en/model-studio/model-pricing',
+    keysUrl: 'https://modelstudio.console.alibabacloud.com/',
+    credentialLabel: 'API key',
+    endpointField: 'alibabaApiHost',
+    endpointLabel: 'API host or OpenAI-compatible endpoint (optional)',
+    endpointPlaceholder: 'workspace-id.ap-southeast-1.maas.aliyuncs.com',
+    endpointHelp: 'Leave blank to use the international Model Studio endpoint.',
   },
   {
     key: 'fal',
@@ -105,6 +121,7 @@ const PROVIDERS = [
   },
 ];
 const NATIVE_PROVIDERS = PROVIDERS.filter((provider) => provider.type === 'native');
+const STANDARD_NATIVE_PROVIDERS = NATIVE_PROVIDERS.filter((provider) => provider.key !== 'alibabaCloud');
 const UNIVERSAL_FALLBACK_PROVIDERS = PROVIDERS.filter((provider) => provider.type === 'samsar');
 
 const SERVICES = [
@@ -120,11 +137,11 @@ const SERVICES = [
 ];
 const LOGGER_SERVICE_KEY = 'logger';
 const CAPABILITY_FAMILIES = {
-  gpt55: {
-    key: 'gpt55',
-    label: 'GPT 5.5',
+  gpt56: {
+    key: 'gpt56',
+    label: 'GPT 5.6 Sol',
     providerKeys: ['openai', 'samsar'],
-    modelKeys: ['gpt-5.5'],
+    modelKeys: ['gpt-5.6-sol'],
   },
   gemini: {
     key: 'gemini',
@@ -132,17 +149,29 @@ const CAPABILITY_FAMILIES = {
     providerKeys: ['googleCloud', 'samsar'],
     modelKeys: ['gemini-3.1-pro'],
   },
+  qwen: {
+    key: 'qwen',
+    label: 'Qwen 3.7',
+    providerKeys: ['alibabaCloud', 'samsar'],
+    modelKeys: ['QWEN3.7'],
+  },
   gptAssistant: {
     key: 'gptAssistant',
     label: 'GPT Assistant',
     providerKeys: ['openai', 'samsar'],
-    modelKeys: ['gpt-5.5'],
+    modelKeys: ['gpt-5.6-sol'],
   },
   geminiAssistant: {
     key: 'geminiAssistant',
     label: 'Gemini Assistant',
     providerKeys: ['googleCloud', 'samsar'],
     modelKeys: ['gemini-3.1-pro'],
+  },
+  qwenAssistant: {
+    key: 'qwenAssistant',
+    label: 'Qwen Assistant',
+    providerKeys: ['alibabaCloud', 'samsar'],
+    modelKeys: ['QWEN3.7'],
   },
   openaiImage: {
     key: 'openaiImage',
@@ -317,14 +346,14 @@ const SETUP_SERVICE_CATALOG = [
     label: 'Inference',
     category: 'Inference',
     description: 'Chat, reasoning, and vision inference families available for provider-backed model calls.',
-    modelFamilies: [CAPABILITY_FAMILIES.gpt55, CAPABILITY_FAMILIES.gemini],
+    modelFamilies: [CAPABILITY_FAMILIES.gpt56, CAPABILITY_FAMILIES.gemini, CAPABILITY_FAMILIES.qwen],
   },
   {
     key: 'assistant',
     label: 'Assistant',
     category: 'Inference',
-    description: 'Assistant workflows backed by the configured GPT or Gemini provider families.',
-    modelFamilies: [CAPABILITY_FAMILIES.gptAssistant, CAPABILITY_FAMILIES.geminiAssistant],
+    description: 'Assistant workflows backed by the configured GPT, Gemini, or Qwen provider families.',
+    modelFamilies: [CAPABILITY_FAMILIES.gptAssistant, CAPABILITY_FAMILIES.geminiAssistant, CAPABILITY_FAMILIES.qwenAssistant],
   },
   {
     key: 'imageGeneration',
@@ -393,6 +422,8 @@ const DEFAULT_CREDENTIALS = Object.freeze({
   samsarApiKey: '',
   openaiApiKey: '',
   googleCredentialsJson: '',
+  alibabaApiKey: '',
+  alibabaApiHost: '',
   falApiKey: '',
   elevenLabsApiKey: '',
   runwayApiKey: '',
@@ -891,17 +922,20 @@ function hasAnyCredentialValue(credentials) {
   return PROVIDERS.some((provider) => hasCredentialValue(credentials, provider));
 }
 
-function hasNativeCredentialValue(credentials) {
-  return PROVIDERS.some((provider) => provider.type === 'native' && hasCredentialValue(credentials, provider));
+function hasStandardNativeCredentialValue(credentials) {
+  return STANDARD_NATIVE_PROVIDERS.some((provider) => hasCredentialValue(credentials, provider));
 }
 
 function buildNativeCredentialPayload(credentials) {
   const sanitizedCredentials = normalizeCredentialSet(credentials);
-  return Object.fromEntries(
-    PROVIDERS
-      .filter((provider) => provider.type === 'native')
-      .map((provider) => [provider.field, sanitizedCredentials[provider.field]]),
-  );
+  return STANDARD_NATIVE_PROVIDERS
+    .reduce((payload, provider) => {
+      payload[provider.field] = sanitizedCredentials[provider.field];
+      if (provider.endpointField) {
+        payload[provider.endpointField] = sanitizedCredentials[provider.endpointField];
+      }
+      return payload;
+    }, {});
 }
 
 function providerResult(provider, status, extra = {}) {
@@ -932,8 +966,8 @@ function buildAvailableFromProviderResults(providerResults = {}) {
 
 function buildLocalNativeCredentialResult(credentials) {
   const providerResults = {};
-  PROVIDERS
-    .filter((provider) => provider.type === 'native' && hasCredentialValue(credentials, provider))
+  STANDARD_NATIVE_PROVIDERS
+    .filter((provider) => hasCredentialValue(credentials, provider))
     .forEach((provider) => {
       if (provider.key === 'googleCloud') {
         try {
@@ -1109,6 +1143,7 @@ function buildDeploymentPayload(
       samsar: { enabled: Boolean(sanitizedCredentials.samsarApiKey), validation: getProviderStatus(validationResult, 'samsar') },
       openai: { enabled: Boolean(sanitizedCredentials.openaiApiKey), validation: getProviderStatus(validationResult, 'openai') },
       googleCloud: { enabled: Boolean(sanitizedCredentials.googleCredentialsJson), validation: getProviderStatus(validationResult, 'googleCloud') },
+      alibabaCloud: { enabled: Boolean(sanitizedCredentials.alibabaApiKey), validation: getProviderStatus(validationResult, 'alibabaCloud') },
       fal: { enabled: Boolean(sanitizedCredentials.falApiKey), validation: getProviderStatus(validationResult, 'fal') },
       elevenlabs: { enabled: Boolean(sanitizedCredentials.elevenLabsApiKey), validation: getProviderStatus(validationResult, 'elevenlabs') },
       runway: { enabled: Boolean(sanitizedCredentials.runwayApiKey), validation: getProviderStatus(validationResult, 'runway') },
@@ -1588,7 +1623,7 @@ async function validateSamsarCredential(credentials) {
 }
 
 async function validateNativeCredentials(credentials) {
-  if (!hasNativeCredentialValue(credentials)) {
+  if (!hasStandardNativeCredentialValue(credentials)) {
     return null;
   }
 
@@ -1609,6 +1644,27 @@ async function validateNativeCredentials(credentials) {
     }
     throw error;
   }
+}
+
+async function validateAlibabaCredential(credentials, headers = {}) {
+  const apiKey = credentials.alibabaApiKey.trim();
+  if (!apiKey) {
+    return null;
+  }
+
+  const response = await fetch('/api/setup/providers/alibaba/validate', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...headers },
+    body: JSON.stringify({
+      alibabaApiKey: apiKey,
+      alibabaApiHost: credentials.alibabaApiHost.trim(),
+    }),
+  });
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(body?.message || 'Alibaba Cloud credential validation failed.');
+  }
+  return body;
 }
 
 function getInitialColorMode() {
@@ -1810,6 +1866,24 @@ export default function OnboardingWizard() {
               onChange={(event) => updateCredential(provider.field, event.target.value)}
             />
           )}
+          {provider.endpointField && (
+            <>
+              <label className="credential-label" htmlFor={`${provider.key}-endpoint`}>
+                {provider.endpointLabel}
+              </label>
+              <input
+                id={`${provider.key}-endpoint`}
+                type="text"
+                value={credentials[provider.endpointField]}
+                placeholder={provider.endpointPlaceholder}
+                autoComplete="off"
+                data-lpignore="true"
+                onChange={(event) => updateCredential(provider.endpointField, event.target.value)}
+                spellCheck="false"
+              />
+              {provider.endpointHelp && <small className="provider-endpoint-help">{provider.endpointHelp}</small>}
+            </>
+          )}
         </div>
       </section>
     );
@@ -1880,7 +1954,10 @@ export default function OnboardingWizard() {
     writeStoredWizardState({
       step,
       maxStep,
-	      credentials,
+	      credentials: {
+          ...credentials,
+          alibabaApiKey: '',
+        },
 	      services,
 	      mailConfig: {
         ...mailConfig,
@@ -2215,6 +2292,7 @@ export default function OnboardingWizard() {
     try {
       const body = mergeValidationResults([
         await validateSamsarCredential(credentials),
+        await validateAlibabaCredential(credentials, buildSetupHeaders()),
         await validateNativeCredentials(credentials),
       ]);
       setValidationResult(body);

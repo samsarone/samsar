@@ -2,8 +2,10 @@ import {
   getReasoningEffortForInferenceModel,
   getDefaultUserInferenceModel,
   isGeminiInferenceModel,
+  isQwenInferenceModel,
   normalizeOpenAIInferenceModel,
 } from '../../consts/InferenceModels.js';
+import { createAlibabaQwenChatCompletion } from '../../inference/AlibabaQwen.js';
 import { createGoogleGeminiChatCompletion } from '../../inference/GoogleGemini.js';
 import {
   createSamsarExternalChatCompletion,
@@ -12,17 +14,21 @@ import {
 
 export function isResponsesOnlyModel(model) {
   const inferenceModel = normalizeOpenAIInferenceModel(model || getDefaultUserInferenceModel());
-  return !isGeminiInferenceModel(inferenceModel);
+  return !isGeminiInferenceModel(inferenceModel) && !isQwenInferenceModel(inferenceModel);
 }
 
 export async function createCompatibleChatCompletion(openaiClient, chatRequest = {}) {
   const { timeout, maxRetries, ...request } = chatRequest || {};
-  const model = request?.model;
+  const model = request?.model || getDefaultUserInferenceModel();
   if (shouldUseSamsarExternalInference(chatRequest)) {
     return await createSamsarExternalChatCompletion(chatRequest);
   }
 
   const requestOptions = buildRequestOptions({ timeout, maxRetries });
+  if (isQwenInferenceModel(model)) {
+    return await createAlibabaQwenChatCompletion({ ...request, timeout, maxRetries });
+  }
+
   if (isGeminiInferenceModel(model)) {
     return await createGoogleGeminiChatCompletion(request);
   }

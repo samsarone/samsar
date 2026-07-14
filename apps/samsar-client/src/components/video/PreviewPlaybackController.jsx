@@ -54,6 +54,7 @@ export default function PreviewPlaybackController(props) {
     currentLayerSeek,
     framesPerSecond,
     isVideoPreviewPlaying,
+    onPlaybackActiveChange,
     setCurrentLayerSeek,
     setIsVideoPreviewPlaying,
     suspendAudioPreview = false,
@@ -62,19 +63,37 @@ export default function PreviewPlaybackController(props) {
 
   const audioRefs = useRef([]);
   const audioContextRef = useRef(null);
-  const playbackIntervalRef = useRef(null);
+  const playbackAnimationFrameRef = useRef(null);
   const currentLayerSeekRef = useRef(0);
+  const emittedSeekValuesRef = useRef([]);
+  const pendingExternalSeekRef = useRef(null);
+  const isPlaybackClockActiveRef = useRef(false);
   const failedAudioSourceRef = useRef(new Set());
 
   useEffect(() => {
     const resolvedSeek = Number(currentLayerSeek);
-    currentLayerSeekRef.current = Number.isFinite(resolvedSeek) ? resolvedSeek : 0;
+    const nextSeek = Number.isFinite(resolvedSeek) ? resolvedSeek : 0;
+    currentLayerSeekRef.current = nextSeek;
+
+    if (!isPlaybackClockActiveRef.current) {
+      return;
+    }
+
+    const emittedSeekIndex = emittedSeekValuesRef.current.findIndex(
+      (emittedSeek) => Math.abs(emittedSeek - nextSeek) < 0.001
+    );
+    if (emittedSeekIndex >= 0) {
+      emittedSeekValuesRef.current.splice(0, emittedSeekIndex + 1);
+      return;
+    }
+
+    pendingExternalSeekRef.current = nextSeek;
   }, [currentLayerSeek]);
 
-  const clearPlaybackInterval = useCallback(() => {
-    if (playbackIntervalRef.current) {
-      clearInterval(playbackIntervalRef.current);
-      playbackIntervalRef.current = null;
+  const clearPlaybackAnimationFrame = useCallback(() => {
+    if (playbackAnimationFrameRef.current !== null) {
+      cancelAnimationFrame(playbackAnimationFrameRef.current);
+      playbackAnimationFrameRef.current = null;
     }
   }, []);
 
@@ -180,6 +199,10 @@ export default function PreviewPlaybackController(props) {
         && !audioEntry.hasRequestedLoad
       ) {
         try {
+          if (!audioEntry.hasAssignedSource) {
+            audioEntry.audio.src = audioEntry.url;
+            audioEntry.hasAssignedSource = true;
+          }
           audioEntry.hasRequestedLoad = true;
           audioEntry.audio.load();
         } catch  {
@@ -314,7 +337,7 @@ export default function PreviewPlaybackController(props) {
         const endTime = Number.isFinite(explicitEndTime) && explicitEndTime > startTime
           ? explicitEndTime
           : startTime + duration;
-        const audioEl = new Audio(resolvedAudioUrl);
+        const audioEl = new Audio();
         audioEl.preload = 'none';
         audioEl.crossOrigin = 'anonymous';
         audioEl.volume = mediaElementVolume;
@@ -340,6 +363,7 @@ export default function PreviewPlaybackController(props) {
           manualVolumeAdjustmentEnabled,
           manualVolumeAutomationPoints,
           hasPlaybackError: failedAudioSourceRef.current.has(resolvedAudioUrl),
+          hasAssignedSource: false,
           hasRequestedLoad: false,
           failedSourceSet: failedAudioSourceRef.current,
           url: resolvedAudioUrl,
@@ -405,7 +429,8 @@ export default function PreviewPlaybackController(props) {
     return () => {
       createdAudioRefs.forEach((audioEntry) => {
         audioEntry.audio.pause();
-        audioEntry.audio.src = '';
+        audioEntry.audio.removeAttribute('src');
+        audioEntry.audio.load();
 
         [
           audioEntry.duckGainNode,
@@ -440,7 +465,11 @@ export default function PreviewPlaybackController(props) {
 
   useEffect(() => {
     if (!isVideoPreviewPlaying) {
-      clearPlaybackInterval();
+      isPlaybackClockActiveRef.current = false;
+      pendingExternalSeekRef.current = null;
+      emittedSeekValuesRef.current = [];
+      clearPlaybackAnimationFrame();
+      onPlaybackActiveChange?.(false);
       audioRefs.current.forEach(({ audio }) => {
         audio.pause();
       });
@@ -452,24 +481,33 @@ export default function PreviewPlaybackController(props) {
 
     const startPlayback = async () => {
       if (audioContextRef.current?.state === 'suspended') {
-        await audioContextRef.current.resume().catch(() => {});
+        // AudioContext.resume() can stay pending when the browser blocks audio
+        // autoplay. Video and the project clock must still begin immediately.
+        audioContextRef.current.resume().catch(() => {});
       }
 
       const previewFramesPerSecond = resolvePreviewFramesPerSecond(framesPerSecond);
       const displayFrameStep = DISPLAY_FRAMES_PER_SECOND / previewFramesPerSecond;
       const totalFrames = Math.floor((Number(totalDuration) || 0) * DISPLAY_FRAMES_PER_SECOND);
       if (totalFrames <= 0) {
+        onPlaybackActiveChange?.(false);
         setIsVideoPreviewPlaying(false);
         return;
       }
 
-      const initialFrame = Math.max(
+      const requestedInitialFrame = Math.max(
         0,
         Math.min(totalFrames - 1, Math.floor(currentLayerSeekRef.current))
       );
+      const replayEndThreshold = Math.max(0, totalFrames - displayFrameStep);
+      const initialFrame = requestedInitialFrame >= replayEndThreshold ? 0 : requestedInitialFrame;
       const initialPreviewTime = initialFrame / DISPLAY_FRAMES_PER_SECOND;
 
       currentLayerSeekRef.current = initialFrame;
+      if (initialFrame !== requestedInitialFrame) {
+        emittedSeekValuesRef.current.push(initialFrame);
+        setCurrentLayerSeek(initialFrame);
+      }
       syncPreviewAudioPlayback(initialPreviewTime, false);
       await waitForPreviewAudioWindow(initialPreviewTime);
 
@@ -478,32 +516,84 @@ export default function PreviewPlaybackController(props) {
       }
 
       syncPreviewAudioPlayback(initialPreviewTime, true);
-      clearPlaybackInterval();
+      clearPlaybackAnimationFrame();
+      isPlaybackClockActiveRef.current = true;
+      onPlaybackActiveChange?.(true);
 
-      playbackIntervalRef.current = setInterval(() => {
-        const nextFrame = currentLayerSeekRef.current + displayFrameStep;
+      let clockOriginFrame = initialFrame;
+      let clockOriginTime = performance.now();
+      let lastRenderedFrame = initialFrame;
 
-        if (nextFrame >= totalFrames) {
-          clearPlaybackInterval();
-          setIsVideoPreviewPlaying(false);
+      const emitSeek = (nextFrame) => {
+        currentLayerSeekRef.current = nextFrame;
+        emittedSeekValuesRef.current.push(nextFrame);
+        if (emittedSeekValuesRef.current.length > 12) {
+          emittedSeekValuesRef.current.shift();
+        }
+        setCurrentLayerSeek(nextFrame);
+      };
+
+      const updatePlayback = (now) => {
+        if (isCancelled) {
           return;
         }
 
-        currentLayerSeekRef.current = nextFrame;
-        setCurrentLayerSeek(nextFrame);
-        syncPreviewAudioPlayback(nextFrame / DISPLAY_FRAMES_PER_SECOND, true);
-      }, 1000 / previewFramesPerSecond);
+        if (pendingExternalSeekRef.current !== null) {
+          clockOriginFrame = Math.max(
+            0,
+            Math.min(totalFrames - 1, Number(pendingExternalSeekRef.current) || 0)
+          );
+          clockOriginTime = now;
+          lastRenderedFrame = clockOriginFrame;
+          currentLayerSeekRef.current = clockOriginFrame;
+          pendingExternalSeekRef.current = null;
+          syncPreviewAudioPlayback(clockOriginFrame / DISPLAY_FRAMES_PER_SECOND, true);
+        }
+
+        const elapsedProjectFrames = Math.floor(
+          ((now - clockOriginTime) / 1000) * previewFramesPerSecond
+        );
+        const nextFrame = clockOriginFrame + (elapsedProjectFrames * displayFrameStep);
+
+        if (nextFrame >= totalFrames) {
+          const finalFrame = Math.max(0, totalFrames - 1);
+          if (Math.abs(lastRenderedFrame - finalFrame) > 0.001) {
+            emitSeek(finalFrame);
+          }
+          isPlaybackClockActiveRef.current = false;
+          onPlaybackActiveChange?.(false);
+          audioRefs.current.forEach(({ audio }) => audio.pause());
+          setIsVideoPreviewPlaying(false);
+          playbackAnimationFrameRef.current = null;
+          return;
+        }
+
+        if (Math.abs(nextFrame - lastRenderedFrame) > 0.001) {
+          lastRenderedFrame = nextFrame;
+          emitSeek(nextFrame);
+          syncPreviewAudioPlayback(nextFrame / DISPLAY_FRAMES_PER_SECOND, true);
+        }
+
+        playbackAnimationFrameRef.current = requestAnimationFrame(updatePlayback);
+      };
+
+      playbackAnimationFrameRef.current = requestAnimationFrame(updatePlayback);
     };
 
     startPlayback();
 
     return () => {
       isCancelled = true;
-      clearPlaybackInterval();
+      isPlaybackClockActiveRef.current = false;
+      pendingExternalSeekRef.current = null;
+      emittedSeekValuesRef.current = [];
+      clearPlaybackAnimationFrame();
+      onPlaybackActiveChange?.(false);
     };
   }, [
-    clearPlaybackInterval,
+    clearPlaybackAnimationFrame,
     isVideoPreviewPlaying,
+    onPlaybackActiveChange,
     resetPreviewAudioLevels,
     setCurrentLayerSeek,
     setIsVideoPreviewPlaying,
@@ -514,8 +604,8 @@ export default function PreviewPlaybackController(props) {
   ]);
 
   useEffect(() => () => {
-    clearPlaybackInterval();
-  }, [clearPlaybackInterval]);
+    clearPlaybackAnimationFrame();
+  }, [clearPlaybackAnimationFrame]);
 
   return null;
 }

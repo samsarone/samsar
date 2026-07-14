@@ -10,14 +10,18 @@ import {
   DEFAULT_INFERENCE_MODEL,
   GEMINI_31_PRO_INFERENCE_MODEL,
   GPT_56_SOL_REASONING_EFFORT,
+  QWEN_37_INFERENCE_MODEL,
   getDefaultUserInferenceModel,
   isGeminiInferenceModel,
+  isQwenInferenceModel,
 } from '../inference/InferenceModels.js';
 import { createGoogleGeminiChatCompletion } from '../inference/GoogleGemini.js';
+import { createQwenChatCompletion } from '../inference/Qwen.js';
 import {
   createSamsarExternalChatCompletion,
   shouldUseSamsarExternalInference,
 } from '../inference/SamsarExternalInferenceAdapter.js';
+import { withInferenceAuthorization } from '../inference/RequestInferenceModel.js';
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY || '' });
 const IMAGE_ACCESSIBILITY_TIMEOUT_MS = 2500;
@@ -140,6 +144,9 @@ async function resolveVisionImageUrl(remoteImageUrl = '') {
 }
 
 function resolveVisionInferenceModel(userInferenceModel = getDefaultUserInferenceModel()) {
+  if (isQwenInferenceModel(userInferenceModel)) {
+    return QWEN_37_INFERENCE_MODEL;
+  }
   return isGeminiInferenceModel(userInferenceModel)
     ? GEMINI_31_PRO_INFERENCE_MODEL
     : DEFAULT_INFERENCE_MODEL;
@@ -192,6 +199,7 @@ export async function addVisionDescriptionsForLayerImage(
   userInferenceModel = getDefaultUserInferenceModel(),
   requestedAspectRatio = '',
   imageThemeContext = '',
+  inferenceAuthorization,
 ) {
   await getDBConnectionString();
 
@@ -211,6 +219,7 @@ export async function addVisionDescriptionsForLayerImage(
     userInferenceModel,
     requestedAspectRatio,
     imageThemeContext,
+    inferenceAuthorization,
   );
 
   // Return it to the caller but do NOT store in DB
@@ -223,6 +232,7 @@ async function getDescriptionForImage(
   userInferenceModel = getDefaultUserInferenceModel(),
   requestedAspectRatio = '',
   imageThemeContext = '',
+  inferenceAuthorization,
 ) {
   let attempts = 0;
   const maxRetries = 2;
@@ -275,7 +285,7 @@ Provide an information-dense, condensed and thorough description in 3000 charact
 
   const activePayload = {
     model: inferenceModel,
-    ...(!isGeminiInferenceModel(inferenceModel)
+    ...(!isGeminiInferenceModel(inferenceModel) && !isQwenInferenceModel(inferenceModel)
       ? { reasoning_effort: GPT_56_SOL_REASONING_EFFORT }
       : {}),
     messages: [
@@ -297,15 +307,18 @@ Provide an information-dense, condensed and thorough description in 3000 charact
       },
     ],
   };
+  const routingPayload = withInferenceAuthorization(activePayload, inferenceAuthorization);
 
   while (attempts <= maxRetries) {
     try {
 
-      const response = shouldUseSamsarExternalInference(activePayload)
-        ? await createSamsarExternalChatCompletion(activePayload)
-        : isGeminiInferenceModel(inferenceModel)
-          ? await createGoogleGeminiChatCompletion(activePayload.messages, inferenceModel)
-          : await openai.chat.completions.create(activePayload);
+      const response = shouldUseSamsarExternalInference(routingPayload)
+        ? await createSamsarExternalChatCompletion(routingPayload)
+        : isQwenInferenceModel(inferenceModel)
+          ? await createQwenChatCompletion(routingPayload)
+          : isGeminiInferenceModel(inferenceModel)
+            ? await createGoogleGeminiChatCompletion(activePayload.messages, inferenceModel)
+            : await openai.chat.completions.create(activePayload);
       const responsePayload = response.choices[0].message.content;
 
       return responsePayload;
@@ -348,6 +361,7 @@ export async function assignScoreForTheImage(
   requestedAspectRatio = '',
   imageThemeContext = '',
   imageThemeStyle = '',
+  inferenceAuthorization,
 ) {
 
   const aspectRatioText = requestedAspectRatio || '';
@@ -422,18 +436,21 @@ Return only a single integer between 0 and 100.`;
   const inferenceModel = resolveVisionInferenceModel(userInferenceModel);
   const inferencePayload = {
     model: inferenceModel,
-    ...(!isGeminiInferenceModel(inferenceModel)
+    ...(!isGeminiInferenceModel(inferenceModel) && !isQwenInferenceModel(inferenceModel)
       ? { reasoning_effort: GPT_56_SOL_REASONING_EFFORT }
       : {}),
     messages,
   };
+  const routingPayload = withInferenceAuthorization(inferencePayload, inferenceAuthorization);
   let response;
   try {
-    response = shouldUseSamsarExternalInference(inferencePayload)
-      ? await createSamsarExternalChatCompletion(inferencePayload)
-      : isGeminiInferenceModel(inferenceModel)
-        ? await createGoogleGeminiChatCompletion(messages, inferenceModel)
-        : await openai.chat.completions.create(inferencePayload);
+    response = shouldUseSamsarExternalInference(routingPayload)
+      ? await createSamsarExternalChatCompletion(routingPayload)
+      : isQwenInferenceModel(inferenceModel)
+        ? await createQwenChatCompletion(routingPayload)
+        : isGeminiInferenceModel(inferenceModel)
+          ? await createGoogleGeminiChatCompletion(messages, inferenceModel)
+          : await openai.chat.completions.create(inferencePayload);
   } catch (error) {
     console.error('[vision_scoring] image score request failed', {
       model: inferencePayload.model,

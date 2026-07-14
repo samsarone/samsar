@@ -67,6 +67,7 @@ import {
 import { SUPPORTED_LANGUAGES, resolveLanguageCode } from '../../constants/supportedLanguages.js';
 import { getHeaders } from '../../utils/web.jsx';
 import { getSessionType } from '../../utils/environment.jsx';
+import { resolveSubtitleLanguageOverride } from './vidgenieSubtitleLanguage.mjs';
 import {
   filterOptionsForDeploymentModelValues,
   normalizeDeploymentModelValue,
@@ -341,6 +342,20 @@ function coerceSupportedInferenceModelKey(value) {
     return '';
   }
   const normalized = value.trim().toLowerCase();
+  if (
+    normalized === 'qwen3.7' ||
+    normalized === 'qwen3.7-max' ||
+    normalized === 'qwen3.7-plus' ||
+    normalized === 'qwen-3.7' ||
+    normalized === 'qwen 3.7' ||
+    normalized === 'qwen37' ||
+    normalized === 'qwen37max' ||
+    normalized === 'qwen37plus' ||
+    normalized === 'alibaba qwen 3.7' ||
+    normalized === 'alibaba cloud qwen 3.7'
+  ) {
+    return 'QWEN3.7';
+  }
   if (
     normalized === 'gemini-3.1-pro' ||
     normalized === 'gemini-3.1-pro-preview' ||
@@ -1142,6 +1157,7 @@ function normalizeJsonInputAliases(input) {
     ['video_model', ['videoModel']],
     ['video_model_sub_type', ['videoModelSubType']],
     ['enable_subtitles', ['enableSubtitles']],
+    ['subtitle_language', ['subtitleLanguage']],
     ['font_key', ['fontKey']],
     ['generate_outro_image', ['generateOutroImage']],
     ['add_outro_animation', ['addOutroAnimation']],
@@ -1178,11 +1194,17 @@ function buildDefaultJsonModeInput({
   aspectRatio,
   language,
   enableSubtitles,
+  subtitleLanguage,
   inferenceModel,
 }) {
   const normalizedAspectRatio = aspectRatio === '9:16' ? '9:16' : '16:9';
   const normalizedLanguage = language || 'en';
   const normalizedVideoModel = videoModel || '';
+  const subtitleLanguageOverride = resolveSubtitleLanguageOverride({
+    enableSubtitles,
+    audioLanguage: normalizedLanguage,
+    subtitleLanguage,
+  });
 
   if (mode === 'I2V') {
     return JSON.stringify(
@@ -1208,6 +1230,9 @@ function buildDefaultJsonModeInput({
         language: normalizedLanguage,
         font_key: 'Poppins',
         enable_subtitles: enableSubtitles,
+        ...(subtitleLanguageOverride
+          ? { subtitle_language: subtitleLanguageOverride }
+          : {}),
         inference_model: normalizeInferenceModelKey(inferenceModel),
         limit_single_narrator: false,
         add_narrator_avatar: false,
@@ -1243,6 +1268,9 @@ function buildDefaultJsonModeInput({
       language: normalizedLanguage,
       font_key: 'Poppins',
       enable_subtitles: enableSubtitles,
+      ...(subtitleLanguageOverride
+        ? { subtitle_language: subtitleLanguageOverride }
+        : {}),
       inference_model: normalizeInferenceModelKey(inferenceModel),
     },
     null,
@@ -1751,6 +1779,18 @@ function validateCommonJsonInput(input, inferenceModelOptions = INFERENCE_MODEL_
     typeof input.enable_subtitles !== 'boolean'
   ) {
     return 'JSON input.enable_subtitles must be a boolean when provided.';
+  }
+
+  if (input.subtitle_language !== undefined) {
+    if (typeof input.subtitle_language !== 'string') {
+      return 'JSON input.subtitle_language must be a string when provided.';
+    }
+    const normalizedSubtitleLanguage = resolveLanguageCode(input.subtitle_language, '');
+    if (!normalizedSubtitleLanguage || normalizedSubtitleLanguage === 'auto') {
+      const subtitleLanguageValues = SUPPORTED_LANGUAGES.map((lang) => lang.code);
+      return `JSON input.subtitle_language must be one of: ${formatAllowedJsonValues(subtitleLanguageValues)}.`;
+    }
+    input.subtitle_language = normalizedSubtitleLanguage;
   }
 
   if (
@@ -3418,6 +3458,17 @@ export default function OneshotEditor() {
     ];
   }, [t]);
 
+  const subtitleLanguageOptions = useMemo(() => [
+    {
+      label: t("vidgenie.subtitleLanguageSameAsAudio", {}, "Same as audio"),
+      value: '',
+    },
+    ...SUPPORTED_LANGUAGES.map((lang) => ({
+      label: lang.name,
+      value: lang.code,
+    })),
+  ], [t]);
+
   const defaultLanguageOption = useMemo(() => {
     const match = languageOptions.find((opt) => opt.value === language);
     return match || languageOptions[0];
@@ -3427,6 +3478,9 @@ export default function OneshotEditor() {
     () => defaultLanguageOption
   );
   const [enableSubtitles, setEnableSubtitles] = useState(false);
+  const [selectedSubtitleLanguageOption, setSelectedSubtitleLanguageOption] = useState(
+    () => subtitleLanguageOptions[0]
+  );
   const [isAdvancedOpen, setIsAdvancedOpen] = useState(false);
   const [advancedOptions, setAdvancedOptions] = useState(() => ({
     ...DEFAULT_ADVANCED_OPTIONS,
@@ -3517,6 +3571,13 @@ export default function OneshotEditor() {
       return match || defaultLanguageOption;
     });
   }, [languageOptions, defaultLanguageOption]);
+
+  useEffect(() => {
+    setSelectedSubtitleLanguageOption((prev) => {
+      const match = subtitleLanguageOptions.find((opt) => opt.value === prev?.value);
+      return match || subtitleLanguageOptions[0];
+    });
+  }, [subtitleLanguageOptions]);
 
   // ─────────────────────────────────────────────────────────
   //  Aspect-ratio select
@@ -5361,9 +5422,21 @@ export default function OneshotEditor() {
       typeof selectedLanguageOption === 'string'
         ? selectedLanguageOption
         : selectedLanguageOption?.value ?? selectedLanguageOption?.label;
-    requestInput.language = resolveLanguageCode(selectedLanguageValue);
-    if (!enableSubtitles) {
-      requestInput.enable_subtitles = false;
+    const resolvedAudioLanguage = resolveLanguageCode(selectedLanguageValue);
+    requestInput.language = resolvedAudioLanguage;
+    requestInput.enable_subtitles = enableSubtitles;
+    const selectedSubtitleLanguageValue =
+      typeof selectedSubtitleLanguageOption === 'string'
+        ? selectedSubtitleLanguageOption
+        : selectedSubtitleLanguageOption?.value ?? selectedSubtitleLanguageOption?.label;
+    const resolvedSubtitleLanguage = resolveLanguageCode(selectedSubtitleLanguageValue, '');
+    const subtitleLanguageOverride = resolveSubtitleLanguageOverride({
+      enableSubtitles,
+      audioLanguage: resolvedAudioLanguage,
+      subtitleLanguage: resolvedSubtitleLanguage,
+    });
+    if (subtitleLanguageOverride) {
+      requestInput.subtitle_language = subtitleLanguageOverride;
     }
     Object.assign(requestInput, advancedRequestConfiguration.input);
     const stepGenerationInput = buildStepGenerationInput(submittedGenerationStepMode);
@@ -5450,6 +5523,7 @@ export default function OneshotEditor() {
     setUploadingOutroCtaImage(false);
     setOutroCtaImageUploadError('');
     setEnableSubtitles(false);
+    setSelectedSubtitleLanguageOption(subtitleLanguageOptions[0]);
     setGenerationStepMode(GENERATION_STEP_MODE_ONE_STEP);
     setSelectedImageStyle(null);
     setIsAdvancedOpen(false);
@@ -5857,6 +5931,10 @@ export default function OneshotEditor() {
     typeof selectedLanguageOption === 'string'
       ? selectedLanguageOption
       : selectedLanguageOption?.value ?? selectedLanguageOption?.label;
+  const jsonModeSubtitleLanguageValue =
+    typeof selectedSubtitleLanguageOption === 'string'
+      ? selectedSubtitleLanguageOption
+      : selectedSubtitleLanguageOption?.value ?? selectedSubtitleLanguageOption?.label;
   const jsonModeDefaultInput = useMemo(() => (
     buildDefaultJsonModeInput({
       mode: generationMode,
@@ -5866,12 +5944,14 @@ export default function OneshotEditor() {
       aspectRatio: selectedAspectRatioOption?.value || '16:9',
       language: resolveLanguageCode(jsonModeLanguageValue, 'en'),
       enableSubtitles,
+      subtitleLanguage: resolveLanguageCode(jsonModeSubtitleLanguageValue, ''),
       inferenceModel: selectedInferenceModel?.value || inferenceModelOptions[0]?.value || user?.selectedInferenceModel || DEFAULT_INFERENCE_MODEL,
     })
   ), [
     enableSubtitles,
     generationMode,
     jsonModeLanguageValue,
+    jsonModeSubtitleLanguageValue,
     selectedAspectRatioOption?.value,
     selectedDurationOption?.value,
     selectedImageModel?.value,
@@ -6918,9 +6998,10 @@ export default function OneshotEditor() {
               </div>
             )}
 
-            {renderCompletedVideoActions('w-full sm:w-auto')}
           </div>
         </div>
+
+        {renderCompletedVideoActions('mt-3 w-full sm:w-auto sm:self-end')}
 
         {shouldCollapseOriginalRequest && (
           <div className={`mt-4 rounded-xl p-3 ring-1 ${
@@ -7114,6 +7195,30 @@ export default function OneshotEditor() {
                 </div>
               </label>
             </div>
+
+            {enableSubtitles && (
+              <div className="group w-full">
+                <div className={`w-full md:w-full ${controlShell} rounded-xl p-2 transition-transform duration-200 group-hover:translate-y-[-1px] relative z-10 focus-within:z-50 group-hover:z-50`}>
+                  <SingleSelect
+                    value={selectedSubtitleLanguageOption}
+                    onChange={setSelectedSubtitleLanguageOption}
+                    options={subtitleLanguageOptions}
+                    isDisabled={isFormDisabled}
+                    className="w-full"
+                  />
+                </div>
+                <p className={`text-[11px] mt-1 ${mutedText}`}>
+                  {t("vidgenie.subtitleLanguage", {}, "Subtitle language")}
+                </p>
+                <p className={`text-[11px] mt-0.5 ${mutedText}`}>
+                  {t(
+                    "vidgenie.subtitleLanguageHelp",
+                    {},
+                    "Choose a different language to translate subtitle text."
+                  )}
+                </p>
+              </div>
+            )}
 
           </div>
         </div>

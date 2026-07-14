@@ -14,6 +14,43 @@ function normalizeStringList(value) {
     : [];
 }
 
+function hasEnvCredential(...keys) {
+  return keys.some((key) => typeof process.env[key] === 'string' && process.env[key].trim());
+}
+
+function appendUnique(target, values) {
+  const seen = new Set(target);
+  values.forEach((value) => {
+    if (!seen.has(value)) {
+      seen.add(value);
+      target.push(value);
+    }
+  });
+}
+
+export function mergeRuntimeInferenceDeploymentAvailability(value = {}) {
+  const merged = {
+    providers: normalizeStringList(value?.providers),
+    models: normalizeStringList(value?.models),
+    actions: normalizeStringList(value?.actions),
+    audio: value?.audio || null,
+  };
+
+  if (hasEnvCredential('ALIBABA_API_KEY', 'DASHSCOPE_API_KEY', 'ALIBABA_CLOUD_API_KEY', 'QWEN_API_KEY')) {
+    appendUnique(merged.providers, ['alibabaCloud']);
+    appendUnique(merged.models, ['QWEN3.7']);
+    appendUnique(merged.actions, ['chat', 'assistant']);
+  }
+
+  if (hasEnvCredential('SAMSAR_API_KEY')) {
+    appendUnique(merged.providers, ['samsar']);
+    appendUnique(merged.models, ['gpt-5.6-sol', 'gemini-3.1-pro', 'QWEN3.7']);
+    appendUnique(merged.actions, ['chat', 'assistant']);
+  }
+
+  return merged;
+}
+
 function normalizeDeploymentAudioAvailability(value = {}) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     return {

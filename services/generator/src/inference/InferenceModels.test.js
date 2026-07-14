@@ -5,6 +5,8 @@ import {
   DEFAULT_GEMINI_31_PRO_VERTEX_MODEL,
   GEMINI_31_PRO_INFERENCE_MODEL,
   GPT_56_SOL_REASONING_EFFORT,
+  QWEN_37_INFERENCE_MODEL,
+  isQwenInferenceModel,
   getProviderModelForInferenceModel,
   normalizeGeminiProviderModel,
   normalizeInferenceModel,
@@ -12,6 +14,19 @@ import {
 
 test('uses xhigh reasoning for GPT 5.6 Sol inference', () => {
   assert.equal(GPT_56_SOL_REASONING_EFFORT, 'xhigh');
+});
+
+test('normalizes Qwen 3.7 aliases to the logical provider choice', () => {
+  for (const alias of [
+    'QWEN3.7',
+    'qwen3.7-max',
+    'qwen3.7-plus',
+    'Qwen 3.7',
+    'Alibaba Cloud Qwen 3.7',
+  ]) {
+    assert.equal(normalizeInferenceModel(alias), QWEN_37_INFERENCE_MODEL);
+    assert.equal(isQwenInferenceModel(alias), true);
+  }
 });
 
 test('normalizes Gemini 3.1 Pro inference aliases to the canonical key', () => {

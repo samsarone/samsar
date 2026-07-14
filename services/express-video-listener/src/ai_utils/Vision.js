@@ -14,9 +14,14 @@ import {
   createGoogleGeminiChatCompletion,
   getDefaultInferenceModel,
   isGeminiInferenceModel,
+  isQwenInferenceModel,
   normalizeInferenceModel,
 } from './GoogleGemini.js';
 import { createCompatibleChatCompletion } from './OpenAICompat.js';
+import {
+  resolveRequestInferenceAuthorization,
+  resolveRequestInferenceModel,
+} from './RequestInferenceModel.js';
 import {
   createSamsarExternalChatCompletion,
   shouldUseSamsarExternalInference,
@@ -36,14 +41,18 @@ export async function addVisionDescriptionsForImages(sessionId) {
 
   let sessionData = await VideoSession.findById(sessionId);
   const userData = sessionData?.userId
-    ? await User.findById(sessionData.userId).select('selectedInferenceModel').lean()
+    ? await User.findById(sessionData.userId)
+      .select('selectedInferenceModel selectedInferenceModelAuthorization')
+      .lean()
     : null;
-  const sessionInferenceModel = sessionData?.expressGenerationInferenceModel || sessionData?.inferenceModel;
-  const userInferenceModel = normalizeInferenceModel(
-    sessionInferenceModel ||
-    userData?.selectedInferenceModel ||
-    getDefaultInferenceModel()
-  );
+  const userInferenceModel = resolveRequestInferenceModel({
+    session: sessionData,
+    user: userData,
+  });
+  const selectedInferenceModelAuthorization = resolveRequestInferenceAuthorization({
+    session: sessionData,
+    user: userData,
+  });
 
 
   let sessionLayers = sessionData.layers;
@@ -100,6 +109,7 @@ export async function addVisionDescriptionsForImages(sessionId) {
       requestType: 'vision_inference',
       source: 'express_video_vision',
       localRequestId: `${sessionId}:${layer?._id?.toString?.() || i}:vision_description`,
+      selectedInferenceModelAuthorization,
     });
 
     layer.activeImageDescription = responseData;
@@ -162,9 +172,16 @@ async function getDescriptionForImage(activeImageRemoteLink, userInferenceModel 
   const inferencePayload = {
     model,
     messages,
-    reasoning_effort: isGeminiInferenceModel(model)
-      ? 'high'
-      : GPT_56_SOL_REASONING_EFFORT,
+    ...(auditContext.selectedInferenceModelAuthorization
+      ? { authorization: auditContext.selectedInferenceModelAuthorization }
+      : {}),
+    ...(!isQwenInferenceModel(model)
+      ? {
+        reasoning_effort: isGeminiInferenceModel(model)
+          ? 'high'
+          : GPT_56_SOL_REASONING_EFFORT,
+      }
+      : {}),
   };
   let response;
   let provider;
@@ -175,7 +192,7 @@ async function getDescriptionForImage(activeImageRemoteLink, userInferenceModel 
     provider = 'googleCloud';
     response = await createGoogleGeminiChatCompletion(inferencePayload);
   } else {
-    provider = 'openai';
+    provider = isQwenInferenceModel(model) ? 'alibabaCloud' : 'openai';
     response = await createCompatibleChatCompletion(openai, inferencePayload);
   }
 

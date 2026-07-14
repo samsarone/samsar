@@ -141,6 +141,10 @@ const layerSchema = new Schema({
 
 const audioLayerSchema = new Schema({
     prompt: String,
+    speechLanguage: String,
+    subtitleText: String,
+    subtitleLanguage: String,
+    subtitleTranslationRequired: { type: Boolean, default: false },
     localAudioLinks: [String],
     remoteAudioLinks: [String],
     remoteAudioData: [Object],
@@ -232,6 +236,10 @@ const videoSessionSchema = new Schema({
     audioGenerationPending: { type: Boolean, default: false },
     transcriptGenerationPending: { type: Boolean, default: false },
     enableSubtitles: { type: Boolean, default: true },
+    subtitleLanguage: { type: String, default: null },
+    subtitleLanguageString: { type: String, default: null },
+    subtitleLanguageExplicit: { type: Boolean, default: false },
+    subtitleTranslationRequired: { type: Boolean, default: false },
     hasSubtitles: { type: Boolean, default: null },
     has_subtitles: { type: Boolean, default: null },
 

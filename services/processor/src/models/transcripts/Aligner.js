@@ -212,7 +212,8 @@ export async function buildSubtitleLayersFromAlignment(
   audioLayerStartFrame,
   audioLayerId,
   alignerLanguageCode = null,
-  framesPerSecond
+  framesPerSecond,
+  userInferenceModel,
 ) {
   const effectiveFramesPerSecond = getFramesPerSecondFromValue(framesPerSecond);
 
@@ -352,7 +353,7 @@ export async function buildSubtitleLayersFromAlignment(
       let textAccent;
 
       if (subtitleWordAnimation === 'system_preset') {
-        textAccent = await getAccentForText(substring);
+        textAccent = await getAccentForText(substring, userInferenceModel);
       }
 
       // Determine fontColor based on textAccent
@@ -458,7 +459,8 @@ export async function alignSpeechLayerWithGentle(
       audioLayerStartFrame,
       audioLayerId,
       alignerLanguageCode,
-      framesPerSecond
+      framesPerSecond,
+      options.inferenceModel,
     );
 
     const alignment = buildTranscriptAlignmentCache({

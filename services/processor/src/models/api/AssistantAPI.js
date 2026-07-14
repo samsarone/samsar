@@ -7,11 +7,18 @@ import User from '../../schema/User.js';
 import { getDBConnectionString } from '../DBString.js';
 import { deductGenerationCredits } from '../GenerationCredits.js';
 import { getModelForUserInferenceModel } from '../agent/ModelUtils.js';
+import { createCompatibleChatCompletion } from '../ai_utils/OpenAICompat.js';
 import { deductExternalUserCredits } from '../external/User.js';
-import { GPT_56_SOL_REASONING_EFFORT } from '../../consts/InferenceModels.js';
+import {
+  GPT_56_SOL_REASONING_EFFORT,
+  isGeminiInferenceModel,
+  isQwenInferenceModel,
+  normalizeInferenceModel,
+} from '../../consts/InferenceModels.js';
 import {
   calculateAssistantCreditsFromUsage,
   calculateLegacyAssistantCredits,
+  DEFAULT_ASSISTANT_PRICING_MULTIPLIER,
 } from './AssistantBilling.js';
 
 const DEFAULT_ASSISTANT_MODEL = 'gpt-5.6-sol';
@@ -58,7 +65,7 @@ export async function setAssistantSystemPromptForUser(userId, payload = {}, { ex
     return {
       system_prompt: null,
       model: resolveAssistantModelName(user),
-      selected_assistant_model: DEFAULT_ASSISTANT_MODEL,
+      selected_assistant_model: normalizeInferenceModel(user.selectedAssistantModel),
     };
   }
 
@@ -78,15 +85,11 @@ export async function setAssistantSystemPromptForUser(userId, payload = {}, { ex
   return {
     system_prompt: normalizedPrompt,
     model: resolveAssistantModelName(user),
-    selected_assistant_model: DEFAULT_ASSISTANT_MODEL,
+    selected_assistant_model: normalizeInferenceModel(user.selectedAssistantModel),
   };
 }
 
 export async function createAssistantCompletion(userId, payload = {}, { externalUser = null } = {}) {
-  if (!process.env.OPENAI_API_KEY) {
-    throw buildError('OPENAI_API_KEY is not set.', 500);
-  }
-
   const sessionId = getSessionIdFromPayload(payload);
   if (!sessionId) {
     throw buildError('session_id is required.', 400);
@@ -140,17 +143,21 @@ export async function createAssistantCompletion(userId, payload = {}, { external
     throw buildError('Session has no messages to complete.', 400);
   }
 
-  const selectedAssistantModel = DEFAULT_ASSISTANT_MODEL;
+  const selectedAssistantModel = normalizeInferenceModel(user.selectedAssistantModel);
+  const selectedAssistantModelAuthorization = normalizeModelAuthorization(
+    user.selectedAssistantModelAuthorization,
+  );
   const model = resolveAssistantModelName(user);
   const systemPrompt = getAssistantSystemPromptForContext({
     user,
     externalUser: scopedExternalUser,
   });
-  const previousResponseId = resolvePreviousResponseId({
-    payload,
-    sessionMessages,
-    inputMessages,
-  });
+  const usesOpenAIResponses =
+    !isGeminiInferenceModel(selectedAssistantModel) &&
+    !isQwenInferenceModel(selectedAssistantModel);
+  const previousResponseId = usesOpenAIResponses
+    ? resolvePreviousResponseId({ payload, sessionMessages, inputMessages })
+    : null;
   const responseRequest = buildResponsesRequest({
     model,
     inputMessages: buildResponsesInputMessages({
@@ -165,13 +172,18 @@ export async function createAssistantCompletion(userId, payload = {}, { external
 
   let response;
   try {
-    response = await createAssistantResponse(responseRequest);
+    response = await createAssistantResponse(
+      responseRequest,
+      selectedAssistantModel,
+      selectedAssistantModelAuthorization,
+    );
   } catch (error) {
     console.error('[api][assistant][completion] OpenAI request failed', {
       userId,
       sessionId,
       model,
       selectedAssistantModel,
+      selectedAssistantModelAuthorization,
       openaiError: summarizeOpenAIError(error),
     });
     throw error;
@@ -206,8 +218,10 @@ export async function createAssistantCompletion(userId, payload = {}, { external
           category: 'assistant',
           sessionId,
           selectedAssistantModel,
+          selectedAssistantModelAuthorization,
           model: response?.model || model,
-          pricingMultiplier: billing.pricingMultiplier ?? 2.5,
+          pricingMultiplier:
+            billing.pricingMultiplier ?? DEFAULT_ASSISTANT_PRICING_MULTIPLIER,
           costUsd: billing.costUsd ?? null,
           usage: billing.usage ?? null,
           creditsCharged,
@@ -250,8 +264,13 @@ function getAssistantSystemPromptForContext({ user, externalUser } = {}) {
   return userPrompt || DEFAULT_ASSISTANT_SYSTEM_PROMPT;
 }
 
-function resolveAssistantModelName() {
-  return getModelForUserInferenceModel(DEFAULT_ASSISTANT_MODEL);
+function resolveAssistantModelName(user) {
+  return getModelForUserInferenceModel(user?.selectedAssistantModel || DEFAULT_ASSISTANT_MODEL);
+}
+
+function normalizeModelAuthorization(value) {
+  const normalized = normalizeString(value).toLowerCase().replace(/[_\s]+/g, '-');
+  return ['native', 'deployed'].includes(normalized) ? normalized : '';
 }
 
 function assertExternalUserSessionAccess(sessionData, externalUser) {
@@ -359,7 +378,37 @@ export function buildResponsesRequest({ model, inputMessages, payload = {}, prev
   return body;
 }
 
-async function createAssistantResponse(responseRequest) {
+async function createAssistantResponse(
+  responseRequest,
+  selectedAssistantModel = DEFAULT_ASSISTANT_MODEL,
+  selectedAssistantModelAuthorization = '',
+) {
+  if (
+    isGeminiInferenceModel(selectedAssistantModel) ||
+    isQwenInferenceModel(selectedAssistantModel) ||
+    selectedAssistantModelAuthorization === 'deployed'
+  ) {
+    const chatResponse = await createCompatibleChatCompletion(openai, {
+      model: selectedAssistantModel,
+      messages: responseRequest.input,
+      ...(selectedAssistantModelAuthorization
+        ? { authorization: selectedAssistantModelAuthorization }
+        : {}),
+      ...(responseRequest.temperature !== undefined ? { temperature: responseRequest.temperature } : {}),
+      ...(responseRequest.top_p !== undefined ? { top_p: responseRequest.top_p } : {}),
+      ...(responseRequest.max_output_tokens !== undefined
+        ? { max_tokens: responseRequest.max_output_tokens }
+        : {}),
+      ...(responseRequest.user !== undefined ? { user: responseRequest.user } : {}),
+      ...(responseRequest.tools !== undefined ? { tools: responseRequest.tools } : {}),
+      ...(responseRequest.tool_choice !== undefined ? { tool_choice: responseRequest.tool_choice } : {}),
+      ...(responseRequest.parallel_tool_calls !== undefined
+        ? { parallel_tool_calls: responseRequest.parallel_tool_calls }
+        : {}),
+    });
+    return normalizeChatCompletionToResponses(chatResponse);
+  }
+
   try {
     return await openai.post('/responses', { body: responseRequest });
   } catch (error) {

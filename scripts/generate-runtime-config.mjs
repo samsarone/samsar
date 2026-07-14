@@ -9,6 +9,7 @@ const runtimeSecretsDir = path.join(root, 'runtime', 'secrets');
 const configPath = path.join(runtimeConfigDir, 'samsar.config.json');
 const exampleConfigPath = path.join(root, 'samsar.config.example.json');
 const mailSecretsPath = path.join(runtimeSecretsDir, 'mail.credentials.json');
+const providerSecretsPath = path.join(runtimeSecretsDir, 'provider.credentials.json');
 const reverseProxyDir = path.join(root, 'runtime', 'reverse-proxy');
 const reverseProxyNginxPath = path.join(reverseProxyDir, 'nginx.conf');
 const reverseProxyCertbotWebroot = path.join(reverseProxyDir, 'certbot', 'www');
@@ -27,6 +28,7 @@ const config = fs.existsSync(configPath)
   ? readJson(configPath)
   : readJson(exampleConfigPath);
 const mailSecrets = readJsonIfExists(mailSecretsPath) || {};
+const providerSecrets = readJsonIfExists(providerSecretsPath) || {};
 const storageConfig = config.storage || {};
 const databaseConfig = config.database || {};
 const cloudFrontConfig = storageConfig.cloudFront || {};
@@ -58,6 +60,8 @@ const reverseProxyEnabled = reverseProxyConfig.enabled === true;
 const publicClientBaseUrl = config.publicUrls?.clientApp || 'http://localhost:3000';
 const publicProcessorBaseUrl = config.publicUrls?.processorApi || 'http://localhost:3002';
 const publicAssetBaseUrl = config.publicUrls?.media || publicProcessorBaseUrl;
+const alibabaCloudConfig = config.providers?.alibabaCloud || {};
+const alibabaCloudSecrets = providerSecrets.alibabaCloud || {};
 
 function normalizeString(value) {
   return typeof value === 'string' ? value.trim() : '';
@@ -426,6 +430,12 @@ const env = {
   SAMSAR_AVAILABLE_MODELS_PATH: '/persistent/config/available-models.json',
   SAMSAR_API_KEY: config.providers?.samsar?.apiKey || '',
 	  OPENAI_API_KEY: config.providers?.openai?.apiKey || '',
+	  ALIBABA_API_KEY: alibabaCloudSecrets.apiKey || alibabaCloudConfig.apiKey || '',
+	  ALIBABA_API_HOST:
+    alibabaCloudSecrets.apiHost ||
+    alibabaCloudConfig.apiHost ||
+    alibabaCloudConfig.baseUrl ||
+    '',
 	  FAL_API_KEY: config.providers?.fal?.apiKey || '',
 	  ELEVENLABS_API_TOKEN: config.providers?.elevenlabs?.apiKey || '',
 	  ELEVENLABS_API_KEY: config.providers?.elevenlabs?.apiKey || '',

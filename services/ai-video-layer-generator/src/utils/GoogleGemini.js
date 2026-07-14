@@ -4,6 +4,9 @@ export const GPT_56_SOL_INFERENCE_MODEL = 'gpt-5.6-sol';
 export const GPT_56_SOL_REASONING_EFFORT = 'xhigh';
 const DEFAULT_INFERENCE_MODEL = GPT_56_SOL_INFERENCE_MODEL;
 const GEMINI_31_PRO_INFERENCE_MODEL = 'gemini-3.1-pro';
+export const QWEN_37_INFERENCE_MODEL = 'QWEN3.7';
+export const QWEN_37_MAX_MODEL = 'qwen3.7-max';
+export const QWEN_37_PLUS_MODEL = 'qwen3.7-plus';
 const DEFAULT_GEMINI_MODEL = 'gemini-3.1-pro-preview';
 const DEFAULT_GEMINI_LOCATION = 'global';
 const DEFAULT_SCOPES = ['https://www.googleapis.com/auth/cloud-platform'];
@@ -20,6 +23,14 @@ const GEMINI_31_PRO_PROVIDER_ALIASES = new Set([
   'gemini-3-pro',
   'gemini-3-pro-preview',
 ]);
+const QWEN_37_ALIAS_TOKENS = new Set([
+  'QWEN37',
+  'QWEN37MAX',
+  'QWEN37PLUS',
+  'ALIBABAQWEN37',
+  'ALIBABACLOUDQWEN37',
+  'DASHSCOPEQWEN37',
+]);
 const DEFAULT_GEMINI_3_THINKING_LEVEL = 'MEDIUM';
 const GEMINI_3_THINKING_LEVELS = new Set(['LOW', 'MEDIUM', 'HIGH']);
 
@@ -27,6 +38,18 @@ const authCache = new Map();
 
 function normalizeString(value) {
   return typeof value === 'string' && value.trim() ? value.trim() : '';
+}
+
+function normalizeAliasToken(value) {
+  return normalizeString(value).replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+}
+
+export function isQwenInferenceModel(value) {
+  const normalized = normalizeString(value).toLowerCase();
+  return normalized === QWEN_37_INFERENCE_MODEL.toLowerCase() ||
+    normalized === QWEN_37_MAX_MODEL ||
+    normalized === QWEN_37_PLUS_MODEL ||
+    QWEN_37_ALIAS_TOKENS.has(normalizeAliasToken(value));
 }
 
 function getConfiguredProjectId() {
@@ -90,6 +113,9 @@ export function normalizeInferenceModel(value) {
     GEMINI_31_PRO_PROVIDER_ALIASES.has(normalized)
   ) {
     return GEMINI_31_PRO_INFERENCE_MODEL;
+  }
+  if (isQwenInferenceModel(value)) {
+    return QWEN_37_INFERENCE_MODEL;
   }
   return DEFAULT_INFERENCE_MODEL;
 }

@@ -274,7 +274,9 @@ export async function processElevenLabsSpeechRequest(payload) {
       // await delay(1000);
 
       // Grab an updated (slightly different) prompt
-      const updatedSpeechPrompt = await updateSpeechPrompt(audioGenerationRecord.prompt);
+      const updatedSpeechPrompt = await updateSpeechPrompt(audioGenerationRecord.prompt, {
+        request: audioGenerationRecord,
+      });
 
       // Set the record to retry
       audioGenerationRecord.numRetries += 1;

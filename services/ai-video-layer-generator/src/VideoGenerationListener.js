@@ -566,6 +566,8 @@ function getLayerDescriptionForRetryPrompt(currentLayer, selectedFilterPass) {
 
 async function regenerateBaseGenerationPromptForRetry({
   videoSession,
+  request,
+  fallbackRequest,
   currentLayer,
   currentLayerIndex,
   selectedFilterPass,
@@ -587,20 +589,24 @@ async function regenerateBaseGenerationPromptForRetry({
     }
     return layer?.imageSession?.activeImageDescription || '';
   });
-  const userInferenceModel = await getInferenceModelForSession(videoSession);
+  const {
+    model: userInferenceModel,
+    authorization: selectedInferenceModelAuthorization,
+  } = await getInferenceSettingsForSession(videoSession, request, fallbackRequest);
+  const baseInferenceAuditContext = {
+    userId: videoSession?.userId,
+    sessionId: videoSession?._id?.toString?.() || videoSession?._id,
+    layerId: currentLayer?._id?.toString?.() || currentLayer?._id,
+    localRequestId: `${videoSession?._id?.toString?.() || videoSession?._id || 'session'}:${currentLayer?._id?.toString?.() || currentLayer?._id || 'layer'}:base_retry_prompt`,
+    jobType: 'Express video',
+    isExpressGeneration: videoSession?.isExpressGeneration || videoSession?.isMovieGen,
+    requestType: 'narrative_inference',
+    source: 'ai_video_retry_inference',
+    selectedInferenceModelAuthorization,
+  };
 
   let cameraTransitionLayer = null;
   try {
-    const baseInferenceAuditContext = {
-      userId: videoSession?.userId,
-      sessionId: videoSession?._id?.toString?.() || videoSession?._id,
-      layerId: currentLayer?._id?.toString?.() || currentLayer?._id,
-      localRequestId: `${videoSession?._id?.toString?.() || videoSession?._id || 'session'}:${currentLayer?._id?.toString?.() || currentLayer?._id || 'layer'}:base_retry_prompt`,
-      jobType: 'Express video',
-      isExpressGeneration: videoSession?.isExpressGeneration || videoSession?.isMovieGen,
-      requestType: 'narrative_inference',
-      source: 'ai_video_retry_inference',
-    };
     const cameraTransitionListString = await getTransitionListForLayerSceneDescriptions(promptList, userInferenceModel, {
       ...baseInferenceAuditContext,
       sourceTask: 'camera_transition_prompt',
@@ -643,17 +649,92 @@ async function regenerateBaseGenerationPromptForRetry({
   );
 }
 
-async function getInferenceModelForSession(videoSession) {
-  try {
-    const userId = videoSession?.userId;
-    if (!userId) {
-      return normalizeInferenceModel();
-    }
-    const userData = await User.findById(userId).select('selectedInferenceModel').lean();
-    return normalizeInferenceModel(userData?.selectedInferenceModel);
-  } catch {
-    return normalizeInferenceModel();
+function firstNonEmptyString(...values) {
+  return values.find((value) => typeof value === 'string' && value.trim()) || '';
+}
+
+function getRequestInferenceModel(request = {}) {
+  return firstNonEmptyString(
+    request.userInferenceModel,
+    request.selectedInferenceModel,
+    request.inferenceModel,
+    request.inference_model,
+    request.expressGenerationInferenceModel,
+  );
+}
+
+function normalizeInferenceAuthorization(value) {
+  const normalized = typeof value === 'string'
+    ? value.trim().toLowerCase().replace(/[_\s]+/g, '-')
+    : '';
+  if (normalized === 'native') {
+    return 'native';
   }
+  if (['deployed', 'samsar', 'samsar-api-key', 'samsar-key'].includes(normalized)) {
+    return 'deployed';
+  }
+  return '';
+}
+
+function getRequestInferenceAuthorization(request = {}) {
+  return firstNonEmptyString(
+    request.selectedInferenceModelAuthorization,
+    request.inferenceModelAuthorization,
+    request.inference_model_authorization,
+    request.expressGenerationInferenceModelAuthorization,
+  );
+}
+
+export async function getInferenceSettingsForSession(
+  videoSession = {},
+  request = {},
+  fallbackRequest = {},
+) {
+  const requestedModel = getRequestInferenceModel(request) ||
+    getRequestInferenceModel(fallbackRequest);
+  const sessionModel = firstNonEmptyString(
+    videoSession?.expressGenerationInferenceModel,
+    videoSession?.inferenceModel,
+    videoSession?.inference_model,
+  );
+  const requestedAuthorization = normalizeInferenceAuthorization(
+    getRequestInferenceAuthorization(request) ||
+    getRequestInferenceAuthorization(fallbackRequest),
+  );
+  const sessionAuthorization = normalizeInferenceAuthorization(firstNonEmptyString(
+    videoSession?.expressGenerationInferenceModelAuthorization,
+    videoSession?.inferenceModelAuthorization,
+    videoSession?.inference_model_authorization,
+    videoSession?.selectedInferenceModelAuthorization,
+  ));
+
+  let userData = null;
+  if ((!requestedModel && !sessionModel) || (!requestedAuthorization && !sessionAuthorization)) {
+    const userId = videoSession?.userId;
+    if (userId) {
+      try {
+        userData = await User.findById(userId)
+          .select('selectedInferenceModel selectedInferenceModelAuthorization')
+          .lean();
+      } catch {
+        userData = null;
+      }
+    }
+  }
+
+  return {
+    model: normalizeInferenceModel(
+      requestedModel || sessionModel || userData?.selectedInferenceModel,
+    ),
+    authorization: requestedAuthorization ||
+      sessionAuthorization ||
+      normalizeInferenceAuthorization(userData?.selectedInferenceModelAuthorization),
+  };
+}
+
+export async function getInferenceModelForSession(videoSession, request = {}, fallbackRequest = {}) {
+  const settings = await getInferenceSettingsForSession(videoSession, request, fallbackRequest);
+  return settings.model;
 }
 
 export function buildBaseGenerationTerminalFailureUpdate(currentLayer = {}, failureMessage) {
@@ -2779,6 +2860,8 @@ async function processBaseGenerationFailed(payload) {
 
           const regeneratedPrompt = await regenerateBaseGenerationPromptForRetry({
             videoSession,
+            request: genDoc,
+            fallbackRequest: payload,
             currentLayer,
             currentLayerIndex,
             selectedFilterPass: chosen,
@@ -2810,7 +2893,16 @@ async function processBaseGenerationFailed(payload) {
     }
 
     if (tries === MAX_BASE_GENERATION_RETRIES - 1 && newPrompt === prompt) {
-      const alternatePrompt = await getAlternateVideoPrompt(prompt);
+      const retryInferenceSettings = await getInferenceSettingsForSession(
+        videoSession,
+        genDoc,
+        payload,
+      );
+      const alternatePrompt = await getAlternateVideoPrompt(
+        prompt,
+        retryInferenceSettings.model,
+        retryInferenceSettings.authorization,
+      );
       if (alternatePrompt) {
         newPrompt = alternatePrompt;
       }

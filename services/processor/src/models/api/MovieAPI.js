@@ -57,6 +57,10 @@ import {
   assertImageListToVideoUrlsAreFetchable,
 } from './ImageListToVideoUrlValidation.js';
 import { resolveCustomAdaptersForTTSLanguagePolicy } from '../movie_session/TTSLanguagePolicy.js';
+import {
+  resolveSpeechLanguageCode,
+  resolveSubtitleLanguageOption,
+} from '../movie_session/SubtitleLanguage.js';
 import { getMaxDurationForModelForScenes } from '../movie_session/utils/ModelUtils.js';
 import { estimateExpressVideoCreditsForPreflight } from '../ExpressVideoStageBilling.js';
 import { resolveFramesPerSecond } from '../../utils/FpsUtils.js';
@@ -467,8 +471,12 @@ export async function requestCreateVideo(userId, payload = {}, webhookUrl) {
     throw error;
   }
 
+  const subtitleLanguageOption = resolveSubtitleLanguageOption(payload, normalizedLanguage);
   const requestedFontKey = getFontKeyFromPayload(payload);
-  const resolvedFontKey = resolveFontKeyForLanguage(normalizedLanguage, requestedFontKey);
+  const resolvedFontKey = resolveFontKeyForLanguage(
+    subtitleLanguageOption.subtitleLanguage,
+    requestedFontKey,
+  );
   const optionalComponentWarnings = [];
   const optionalComponentContext = { routeType: 'text_to_video', userId };
   const generatedOutroOptions = safeNormalizeTextToVideoGeneratedOutroOptions(
@@ -554,6 +562,10 @@ export async function requestCreateVideo(userId, payload = {}, webhookUrl) {
     requestType: 'API',
     creditSource: 'text_to_video',
     enableSubtitles,
+    subtitleLanguage: subtitleLanguageOption.subtitleLanguage,
+    subtitleLanguageString: subtitleLanguageOption.subtitleLanguageString,
+    subtitleLanguageExplicit: subtitleLanguageOption.subtitleLanguageExplicit,
+    subtitleTranslationRequired: enableSubtitles && subtitleLanguageOption.translationRequired,
     optionalComponentWarnings,
     isStepVideoGeneration,
     stepVideoRoute,
@@ -583,6 +595,10 @@ export async function requestCreateVideo(userId, payload = {}, webhookUrl) {
     requestedDuration: normalizedPayload.duration,
     videoTone: normalizedPayload.tone || normalizedPayload.videoTone,
     enableSubtitles,
+    subtitleLanguage: subtitleLanguageOption.subtitleLanguage,
+    subtitleLanguageString: subtitleLanguageOption.subtitleLanguageString,
+    subtitleLanguageExplicit: subtitleLanguageOption.subtitleLanguageExplicit,
+    subtitleTranslationRequired: enableSubtitles && subtitleLanguageOption.translationRequired,
     outroImageMetadata: buildOutroImageMetadata({
       generated: generatedOutroOptions.generate_outro_image === true,
       sourceUrl: outroOptions.outro_image_url || null,
@@ -653,6 +669,10 @@ async function createUnifiedSessionAndUpdateWebhook(userId, payload, webhookUrl)
     subtitleFont,
     speakerFont,
     enableSubtitles,
+    subtitleLanguage,
+    subtitleLanguageString,
+    subtitleLanguageExplicit = false,
+    subtitleTranslationRequired = false,
     isExternalUserRequest = false,
     externalRequestUserId = null,
     externalRequestId = null,
@@ -738,6 +758,10 @@ async function createUnifiedSessionAndUpdateWebhook(userId, payload, webhookUrl)
     enableSubtitles,
     hasSubtitles: enableSubtitles !== false,
     has_subtitles: enableSubtitles !== false,
+    subtitleLanguage,
+    subtitleLanguageString,
+    subtitleLanguageExplicit: subtitleLanguageExplicit === true,
+    subtitleTranslationRequired: enableSubtitles !== false && subtitleTranslationRequired === true,
     isExternalUserRequest,
     externalRequestUserId,
     externalRequestId,
@@ -946,8 +970,12 @@ export async function requestCreateVideoFromImageListAndMetadata(userId, payload
     throw error;
   }
 
+  const subtitleLanguageOption = resolveSubtitleLanguageOption(payload, normalizedLanguage);
   const requestedFontKey = getFontKeyFromPayload(payload);
-  const resolvedFontKey = resolveFontKeyForLanguage(normalizedLanguage, requestedFontKey);
+  const resolvedFontKey = resolveFontKeyForLanguage(
+    subtitleLanguageOption.subtitleLanguage,
+    requestedFontKey,
+  );
   const expressCtaGenerationOptions = normalizeImageListExpressCtaGenerationOptions(payload);
   const generatedOutroOptions = normalizeGeneratedOutroImageOptions(payload);
   const footerAnimationOptions = normalizeImageListFooterAnimationOptions(
@@ -1062,6 +1090,10 @@ export async function requestCreateVideoFromImageListAndMetadata(userId, payload
     image_model: customModelOverrides.payload.image_model || payload.image_model || payload.imageModel || IMAGE_LIST_TO_VIDEO_DEFAULT_IMAGE_EDIT_MODEL,
     requestType: 'API',
     enableSubtitles,
+    subtitleLanguage: subtitleLanguageOption.subtitleLanguage,
+    subtitleLanguageString: subtitleLanguageOption.subtitleLanguageString,
+    subtitleLanguageExplicit: subtitleLanguageOption.subtitleLanguageExplicit,
+    subtitleTranslationRequired: enableSubtitles && subtitleLanguageOption.translationRequired,
     ...(requestedBackingTrackModel ? { musicProvider: requestedBackingTrackModel, backingTrackModel: requestedBackingTrackModel } : {}),
     ...(requestedTTSModel ? { tts_model: requestedTTSModel, ttsModel: requestedTTSModel } : {}),
     inference_model: effectiveInferenceModel,
@@ -1086,6 +1118,10 @@ export async function requestCreateVideoFromImageListAndMetadata(userId, payload
     requestedDuration: normalizedPayload.duration,
     videoTone: normalizedPayload.videoTone,
     enableSubtitles,
+    subtitleLanguage: subtitleLanguageOption.subtitleLanguage,
+    subtitleLanguageString: subtitleLanguageOption.subtitleLanguageString,
+    subtitleLanguageExplicit: subtitleLanguageOption.subtitleLanguageExplicit,
+    subtitleTranslationRequired: enableSubtitles && subtitleLanguageOption.translationRequired,
     outroImageMetadata: buildOutroImageMetadata({
       generated: generatedOutroOptions.generate_outro_image === true,
       sourceUrl: normalizedPayload.outro_image_url || normalizedPayload.outroImageUrl || null,
@@ -1247,6 +1283,11 @@ export async function processImageListToVideoBuilderSession(sessionId, userId, p
     throw error;
   }
 
+  const subtitleLanguageOption = resolveSubtitleLanguageOption(
+    payload,
+    normalizedLanguage,
+    { allowPropagatedSameAsAudio: true },
+  );
   const builderUserData = await User.findById(userId).select('selectedInferenceModel').lean();
   const effectiveInferenceModel = resolveEffectiveInferenceModel(
     { inference_model, inferenceModel },
@@ -1329,6 +1370,10 @@ export async function processImageListToVideoBuilderSession(sessionId, userId, p
     enableSubtitles,
     hasSubtitles: enableSubtitles !== false,
     has_subtitles: enableSubtitles !== false,
+    subtitleLanguage: subtitleLanguageOption.subtitleLanguage,
+    subtitleLanguageString: subtitleLanguageOption.subtitleLanguageString,
+    subtitleLanguageExplicit: subtitleLanguageOption.subtitleLanguageExplicit,
+    subtitleTranslationRequired: enableSubtitles !== false && subtitleLanguageOption.translationRequired,
     musicProvider: builderMusicProvider,
     backingTrackModel: builderMusicProvider,
     ...(tts_model || ttsModel ? { tts_model: tts_model || ttsModel, ttsModel: tts_model || ttsModel } : {}),
@@ -2194,6 +2239,10 @@ async function saveVideoSessionRequestMetadata(sessionId, {
   requestedDuration,
   videoTone,
   enableSubtitles,
+  subtitleLanguage,
+  subtitleLanguageString,
+  subtitleLanguageExplicit,
+  subtitleTranslationRequired,
   outroImageMetadata,
   footerMetadata,
   addFooterAnimation,
@@ -2238,6 +2287,14 @@ async function saveVideoSessionRequestMetadata(sessionId, {
     enableSubtitles: hasSubtitles,
     hasSubtitles,
     has_subtitles: hasSubtitles,
+    subtitleLanguage: typeof subtitleLanguage === 'string' && subtitleLanguage.trim()
+      ? subtitleLanguage.trim()
+      : resolveSpeechLanguageCode(sessionLanguage),
+    subtitleLanguageString: typeof subtitleLanguageString === 'string' && subtitleLanguageString.trim()
+      ? subtitleLanguageString.trim()
+      : null,
+    subtitleLanguageExplicit: subtitleLanguageExplicit === true,
+    subtitleTranslationRequired: hasSubtitles && subtitleTranslationRequired === true,
     language: normalizedLanguage,
     sessionLanguage,
     languageString: typeof languageString === 'string' && languageString.trim()

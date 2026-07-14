@@ -614,6 +614,10 @@ export const ASSISTANT_MODEL_TYPES = [
     label: 'Gemini 3.1 Pro',
     value: 'gemini-3.1-pro',
   },
+  {
+    label: 'Qwen 3.7',
+    value: 'QWEN3.7',
+  },
 ];
 
 
@@ -625,6 +629,10 @@ export const INFERENCE_MODEL_TYPES = [
   {
     label: 'Gemini 3.1 Pro',
     value: 'gemini-3.1-pro',
+  },
+  {
+    label: 'Qwen 3.7',
+    value: 'QWEN3.7',
   },
 
 ]

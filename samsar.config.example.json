@@ -60,6 +60,9 @@
       "projectId": "",
       "credentialsJsonB64": ""
     },
+    "alibabaCloud": {
+      "enabled": false
+    },
     "fal": {
       "enabled": false,
       "apiKey": ""

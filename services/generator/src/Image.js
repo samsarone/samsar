@@ -4,11 +4,18 @@ import { getDBConnectionString } from './DBString.js';
 import ImageGeneration from './schema/ImageGeneration.js';
 import Session from './schema/Session.js';
 import VideoSession from './schema/VideoSession.js';
+import { User } from './schema/User.js';
 import AvatarVoiceoverTask from './schema/AvatarVoiceoverTask.js';
 import FrameGeneration from './schema/FrameGeneration.js';
 import GlobalSession from './schema/GlobalSession.js';
 import { updateBatchGenerationRequest } from './BatchImage.js';
 import { getAlternatePromptFromPrompt } from './OpenAI.js';
+import {
+  hasRequestInferenceAuthorization,
+  hasRequestInferenceModel,
+  resolveRequestInferenceAuthorization,
+  resolveRequestInferenceSettings,
+} from './inference/RequestInferenceModel.js';
 import GeneratedImage from './schema/generations/GeneratedImage.js';
 import { handleFluxRequest } from './Flux.js';
 import { handleRecraftRequest } from './Recraft.js';
@@ -682,7 +689,9 @@ async function getAlteredPromptForRetry(
   retryCount,
   failureMessage = '',
   previousPrompt = '',
-  rewriteMode = 'generation_failure'
+  rewriteMode = 'generation_failure',
+  userInferenceModel,
+  userInferenceAuthorization,
 ) {
   const originalPrompt = typeof prompt === 'string' ? prompt.trim() : '';
   const currentPrompt = typeof previousPrompt === 'string' ? previousPrompt.trim() : '';
@@ -693,7 +702,9 @@ async function getAlteredPromptForRetry(
         originalPrompt,
         retryCount,
         failureMessage,
-        rewriteMode
+        rewriteMode,
+        userInferenceModel,
+        userInferenceAuthorization,
       );
       const normalizedSafetyPrompt = typeof safetyAlteredPrompt === 'string' ? safetyAlteredPrompt.trim() : '';
       const normalizedSafetyComparison = normalizePromptForComparison(normalizedSafetyPrompt);
@@ -719,7 +730,9 @@ async function getAlteredPromptForRetry(
     originalPrompt,
     retryCount,
     failureMessage,
-    rewriteMode
+    rewriteMode,
+    userInferenceModel,
+    userInferenceAuthorization,
   );
   const normalizedAlteredPrompt = typeof alteredPrompt === 'string' ? alteredPrompt.trim() : '';
   const normalizedAlteredComparison = normalizePromptForComparison(normalizedAlteredPrompt);
@@ -737,6 +750,94 @@ async function getAlteredPromptForRetry(
     'Preserve the original subject, setting, mood, composition, lighting, visual medium, genre, and visual style.',
     'Use fictional non-identifying characters and brand-free details where needed.',
   ].join(' ');
+}
+
+function hasSessionInferenceModel(session = {}) {
+  return Boolean(
+    (typeof session.expressGenerationInferenceModel === 'string' && session.expressGenerationInferenceModel.trim()) ||
+    (typeof session.inferenceModel === 'string' && session.inferenceModel.trim()) ||
+    (typeof session.inference_model === 'string' && session.inference_model.trim()),
+  );
+}
+
+function hasSessionInferenceAuthorization(session = {}) {
+  return Boolean(resolveRequestInferenceAuthorization({ session }));
+}
+
+function hasUserInferenceModel(user = {}) {
+  return Boolean(
+    (typeof user.selectedInferenceModel === 'string' && user.selectedInferenceModel.trim()) ||
+    (typeof user.inferenceModel === 'string' && user.inferenceModel.trim()),
+  );
+}
+
+function hasUserInferenceAuthorization(user = {}) {
+  return Boolean(resolveRequestInferenceAuthorization({ user }));
+}
+
+function toPlainContextValue(value = {}) {
+  return typeof value?.toObject === 'function' ? value.toObject() : value || {};
+}
+
+async function resolveImageInferenceSettings({
+  request = {},
+  fallbackRequest = {},
+  session = {},
+  user = {},
+} = {}) {
+  let resolvedSession = toPlainContextValue(session);
+  let resolvedUser = toPlainContextValue(user);
+  const hasRequestedModel = hasRequestInferenceModel(request) || hasRequestInferenceModel(fallbackRequest);
+  const hasRequestedAuthorization =
+    hasRequestInferenceAuthorization(request) ||
+    hasRequestInferenceAuthorization(fallbackRequest);
+
+  if (
+    (!hasRequestedModel && !hasSessionInferenceModel(resolvedSession)) ||
+    (!hasRequestedAuthorization && !hasSessionInferenceAuthorization(resolvedSession))
+  ) {
+    const sessionId =
+      request.videoSessionId || request.sessionId ||
+      fallbackRequest.videoSessionId || fallbackRequest.sessionId;
+    if (sessionId) {
+      const fetchedSession = await VideoSession.findById(sessionId)
+        .select([
+          'expressGenerationInferenceModel',
+          'inferenceModel',
+          'expressGenerationInferenceModelAuthorization',
+          'selectedInferenceModelAuthorization',
+          'inferenceModelAuthorization',
+          'userId',
+        ].join(' '))
+        .lean() || {};
+      resolvedSession = { ...fetchedSession, ...resolvedSession };
+    }
+  }
+
+  const userId = request.userId || fallbackRequest.userId || resolvedSession.userId;
+  if (
+    (
+      (!hasRequestedModel && !hasSessionInferenceModel(resolvedSession) && !hasUserInferenceModel(resolvedUser)) ||
+      (
+        !hasRequestedAuthorization &&
+        !hasSessionInferenceAuthorization(resolvedSession) &&
+        !hasUserInferenceAuthorization(resolvedUser)
+      )
+    ) &&
+    userId
+  ) {
+    const fetchedUser = await User.findById(userId)
+      .select('selectedInferenceModel selectedInferenceModelAuthorization')
+      .lean() || {};
+    resolvedUser = { ...fetchedUser, ...resolvedUser };
+  }
+
+  return resolveRequestInferenceSettings({
+    request,
+    fallbackRequest,
+    session: resolvedSession,
+    user: resolvedUser,
+  });
 }
 
 function getBestFilterPass(filterPasses = [], minScore = null) {
@@ -1026,6 +1127,7 @@ async function scheduleImageGenerationRetry(payload = {}, latestDoc, imageData, 
   source = 'image_generation_retry',
   updateLayerPrompt = true,
   terminalOnMaxFailures = true,
+  sessionData = {},
 } = {}) {
   const previousFailureCount = normalizeRetryCount(latestDoc?.failureRetryCount);
   const nextFailureCount = previousFailureCount + 1;
@@ -1054,12 +1156,19 @@ async function scheduleImageGenerationRetry(payload = {}, latestDoc, imageData, 
   }
 
   const currentPrompt = latestDoc?.prompt || payload?.prompt || '';
+  const retryInferenceSettings = await resolveImageInferenceSettings({
+    request: latestDoc,
+    fallbackRequest: payload,
+    session: sessionData,
+  });
   const newPrompt = await getAlteredPromptForRetry(
     retryPrompt,
     nextFailureCount,
     failureMessage,
     currentPrompt,
-    'generation_failure'
+    'generation_failure',
+    retryInferenceSettings.model,
+    retryInferenceSettings.authorization,
   );
   const setFields = {
     prompt: newPrompt,
@@ -1769,12 +1878,12 @@ async function updateImageInSessionLayer(imageData, payload) {
 
 
   const videoTone = sessionDataValue.videoTone || 'default';
-  const userInferenceModel =
-    payload.userInferenceModel ||
-    payload.selectedInferenceModel ||
-    payload.inferenceModel ||
-    sessionDataValue.expressGenerationInferenceModel ||
-    sessionDataValue.inferenceModel;
+  const inferenceSettings = await resolveImageInferenceSettings({
+    request: payload,
+    session: sessionDataValue,
+  });
+  const userInferenceModel = inferenceSettings.model;
+  const userInferenceAuthorization = inferenceSettings.authorization;
 
   let layerDataIndex = sessionDataValue.layers.findIndex(
     (layer) => layer._id.toString() === layerId
@@ -1820,6 +1929,7 @@ async function updateImageInSessionLayer(imageData, payload) {
       userInferenceModel,
       requestedAspectRatio,
       imageThemeContext,
+      userInferenceAuthorization,
     );
 
 
@@ -1834,6 +1944,7 @@ async function updateImageInSessionLayer(imageData, payload) {
       requestedAspectRatio,
       imageThemeContext,
       imageThemeStyle,
+      userInferenceAuthorization,
     );
 
     try {
@@ -2075,12 +2186,19 @@ async function handleNoImageRetryOrFailure(payload, imageData) {
       }
 
       const currentPrompt = latestDoc.prompt || payload.prompt || '';
+      const retryInferenceSettings = await resolveImageInferenceSettings({
+        request: latestDoc,
+        fallbackRequest: payload,
+        session: sessionData,
+      });
       const newPrompt = await getAlteredPromptForRetry(
         retryPrompt,
         nextFilterRetryCount,
         failureMessage,
         currentPrompt,
-        'generation_failure'
+        'generation_failure',
+        retryInferenceSettings.model,
+        retryInferenceSettings.authorization,
       );
 
       await recordImageGenerationFailure(payload, {
@@ -2120,6 +2238,7 @@ async function handleNoImageRetryOrFailure(payload, imageData) {
 
     const scheduledRetry = await scheduleImageGenerationRetry(payload, latestDoc, imageData, {
       terminalOnMaxFailures: false,
+      sessionData,
     });
     if (scheduledRetry) {
       return; // Return here so we don't remove the doc
@@ -2269,12 +2388,19 @@ async function processRefilterFailure(imageData, payload, imageScore, imageDescr
     const failureMessage = options.failureMessage || `Generated image score ${imageScore} was below the acceptance threshold.`;
     const retryPrompt = latestGenerationData.originalRetryPrompt || payload.originalRetryPrompt || latestGenerationData.prompt || payload.prompt;
     const currentPrompt = latestGenerationData.prompt || payload.prompt || '';
+    const retryInferenceSettings = await resolveImageInferenceSettings({
+      request: latestGenerationData,
+      fallbackRequest: payload,
+      session: latestSessionData,
+    });
     const newPrompt = await getAlteredPromptForRetry(
       retryPrompt,
       nextFilterRetryCount,
       failureMessage,
       currentPrompt,
-      'score_threshold'
+      'score_threshold',
+      retryInferenceSettings.model,
+      retryInferenceSettings.authorization,
     );
 
     await recordImageGenerationFailure(payload, {
@@ -2938,11 +3064,17 @@ async function processEditRequest(pendingRequestData) {
       if (genRowValue.isBatchGeneration) {
         if (genRowValue.failureRetryCount < 5) {
           const retryPrompt = genRowValue.originalRetryPrompt || genRowValue.prompt;
+          const retryInferenceSettings = await resolveImageInferenceSettings({
+            request: genRowValue,
+            fallbackRequest: pendingRequestData,
+          });
           const newPrompt = await getAlternatePromptFromPrompt(
             retryPrompt,
             genRowValue.failureRetryCount,
             editedImageData.error || '',
-            'generation_failure'
+            'generation_failure',
+            retryInferenceSettings.model,
+            retryInferenceSettings.authorization,
           );
           await ImageGeneration.updateOne(
             { _id: requestId },

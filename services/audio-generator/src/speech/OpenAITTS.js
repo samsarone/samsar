@@ -12,10 +12,8 @@ import { promisify } from 'util';
 import { resolveSpeechLayerTimingUpdate } from "./SpeechLayerTiming.js";
 import { getProcessorAssetsV2Path, toAssetsV2RelativePath } from "../utils/AssetPaths.js";
 import { uploadAudioAssetToCDN } from "../AWS.js";
-import {
-  createSamsarExternalChatCompletion,
-  shouldUseSamsarExternalInference,
-} from "../inference/SamsarExternalInferenceAdapter.js";
+import { sendAssistantMessageRequest as sendInferenceMessageRequest } from '../inference/OpenAI.js';
+import { resolveInferenceSettingsFromContext } from '../inference/RequestInferenceContext.js';
 import {
   failStandaloneExternalAudioGeneration,
   finalizeStandaloneExternalAudioGeneration,
@@ -163,7 +161,9 @@ export async function processOpenAITTSSpeechRequest(payload) {
 
             console.error("Attempting to fix prompt for retry:", updatedPrompt);
             
-            updatedPrompt = await updateSpeechPrompt(updatedPrompt);
+            updatedPrompt = await updateSpeechPrompt(updatedPrompt, {
+              request: audioGenerationRecord,
+            });
           } catch (e) {
             console.error('Prompt fixer failed, retrying with original prompt');
           }
@@ -389,7 +389,7 @@ export async function processOpenAITTSSpeechRequest(payload) {
 }
 
 
-export async function updateMusicPrompt(originalPrompt, errorMessage) {
+export async function updateMusicPrompt(originalPrompt, errorMessage, inferenceContext = {}) {
 
   const systemPrompt = `
     You are a creative assistant for a generative AI tool that generates music from text prompts.
@@ -405,13 +405,18 @@ export async function updateMusicPrompt(originalPrompt, errorMessage) {
     { role: 'user', content: userPrompt }
   ];
 
-  const response = await sendAssistantMessageRequest(messageList);
+  const inferenceSettings = await resolveInferenceSettingsFromContext(inferenceContext);
+  const response = await sendAssistantMessageRequest(
+    messageList,
+    inferenceSettings.model,
+    inferenceSettings.authorization,
+  );
   const resData = response.content;
   return resData;
 
 }
 
-export async function updateSpeechPrompt(originalPrompt) {
+export async function updateSpeechPrompt(originalPrompt, inferenceContext = {}) {
 
   const systemPrompt = `
 You are a creative assistant for a generative AI tool that produces speech from text prompts. Your task is to revise the provided prompt so that it keeps its original message and length as closely as possible, but remove or replace any words or themes that:
@@ -427,27 +432,22 @@ Use simpler synonyms or phrasing to preserve the prompt’s intent and style. En
     { role: 'user', content: userPrompt }
   ];
 
-  const response = await sendAssistantMessageRequest(messageList);
+  const inferenceSettings = await resolveInferenceSettingsFromContext(inferenceContext);
+  const response = await sendAssistantMessageRequest(
+    messageList,
+    inferenceSettings.model,
+    inferenceSettings.authorization,
+  );
   const resData = response.content;
   return resData;
 }
 
 
 
-export async function sendAssistantMessageRequest(messageList) {
-
-  try {
-    const payload = {
-      messages: messageList,
-      model: "gpt-4o-mini",
-    };
-    const response = shouldUseSamsarExternalInference(payload)
-      ? await createSamsarExternalChatCompletion(payload)
-      : await openai.chat.completions.create(payload);
-    return response.choices[0].message;
-  } catch (error) {
-    let errorString = 'An error occurred while sending the message. Please try again with a different message.'
-    throw new Error(errorString);
-  }
-
+export async function sendAssistantMessageRequest(
+  messageList,
+  inferenceModel = 'gpt-4o-mini',
+  inferenceAuthorization,
+) {
+  return sendInferenceMessageRequest(messageList, inferenceModel, inferenceAuthorization);
 }

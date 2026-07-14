@@ -351,7 +351,9 @@ export async function processPlayAISpeechRequest(payload) {
     // If we haven't exhausted our retries
     if (audioGenerationRecord.numRetries < 3) {
       // Optionally: update the prompt to add variety / fallback text
-      const updatedSpeechPrompt = await updateSpeechPrompt(audioGenerationRecord.prompt);
+      const updatedSpeechPrompt = await updateSpeechPrompt(audioGenerationRecord.prompt, {
+        request: audioGenerationRecord,
+      });
 
       audioGenerationRecord.numRetries += 1;
       audioGenerationRecord.rowLocked = false;

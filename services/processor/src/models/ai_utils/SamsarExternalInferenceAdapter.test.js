@@ -8,6 +8,10 @@ const ENV_KEYS = [
   'SAMSAR_EXTERNAL_INFERENCE_ENABLED',
   'SAMSAR_FORCE_EXTERNAL_INFERENCE',
   'OPENAI_API_KEY',
+  'ALIBABA_API_KEY',
+  'DASHSCOPE_API_KEY',
+  'ALIBABA_CLOUD_API_KEY',
+  'QWEN_API_KEY',
   'GOOGLE_APPLICATION_CREDENTIALS',
   'GOOGLE_APPLICATION_CREDENTIALS_JSON',
   'GOOGLE_APPLICATION_CREDENTIALS_JSON_B64',
@@ -133,6 +137,74 @@ test('shouldUseSamsarExternalInference keeps OpenAI native when OpenAI auth is c
     model: 'gpt-5.6-sol',
     messages: [{ role: 'user', content: 'hello' }],
   }), false);
+});
+
+test('shouldUseSamsarExternalInference falls back for Qwen in docker without Alibaba auth', () => {
+  clearProviderEnv();
+  process.env.CURRENT_ENV = 'docker';
+  process.env.SAMSAR_API_KEY = 'test-samsar-key';
+
+  assert.equal(shouldUseSamsarExternalInference({
+    model: 'QWEN3.7',
+    messages: [{ role: 'user', content: 'hello' }],
+  }), true);
+});
+
+test('shouldUseSamsarExternalInference keeps Qwen native when DashScope auth is configured', () => {
+  clearProviderEnv();
+  process.env.CURRENT_ENV = 'docker';
+  process.env.SAMSAR_API_KEY = 'test-samsar-key';
+  process.env.DASHSCOPE_API_KEY = 'test-dashscope-key';
+
+  assert.equal(shouldUseSamsarExternalInference({
+    model: 'qwen3.7-max',
+    messages: [{ role: 'user', content: 'hello' }],
+  }), false);
+});
+
+test('deployed authorization routes Qwen through Samsar even when native Alibaba auth exists', () => {
+  clearProviderEnv();
+  process.env.CURRENT_ENV = 'docker';
+  process.env.SAMSAR_API_KEY = 'test-samsar-key';
+  process.env.DASHSCOPE_API_KEY = 'test-dashscope-key';
+
+  assert.equal(shouldUseSamsarExternalInference({
+    model: 'QWEN3.7',
+    authorization: 'deployed',
+    messages: [{ role: 'user', content: 'hello' }],
+  }), true);
+});
+
+test('native authorization keeps Qwen on Alibaba when both credentials exist', () => {
+  clearProviderEnv();
+  process.env.CURRENT_ENV = 'docker';
+  process.env.SAMSAR_API_KEY = 'test-samsar-key';
+  process.env.DASHSCOPE_API_KEY = 'test-dashscope-key';
+
+  assert.equal(shouldUseSamsarExternalInference({
+    model: 'QWEN3.7',
+    authorization: 'native',
+    messages: [{ role: 'user', content: 'hello' }],
+  }), false);
+});
+
+test('native authorization preserves Samsar fallback until provider credentials are configured', () => {
+  clearProviderEnv();
+  process.env.CURRENT_ENV = 'docker';
+  process.env.SAMSAR_API_KEY = 'test-samsar-key';
+
+  assert.equal(shouldUseSamsarExternalInference({
+    model: 'QWEN3.7',
+    authorization: 'native',
+  }), true);
+  assert.equal(shouldUseSamsarExternalInference({
+    model: 'gemini-3.1-pro',
+    authorization: 'native',
+  }), true);
+  assert.equal(shouldUseSamsarExternalInference({
+    model: 'gpt-5.6-sol',
+    authorization: 'native',
+  }), true);
 });
 
 test('external inference preserves GPT 5.6 models with xhigh without changing Gemini reasoning', async (t) => {

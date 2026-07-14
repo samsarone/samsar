@@ -4,6 +4,7 @@ import { GoogleAuth } from 'google-auth-library';
 import User from '../../schema/User.js';
 import { getDBConnectionString } from '../DBString.js';
 import { resolveRequestActorFromAuthHeaders } from '../external/User.js';
+import { validateAlibabaCloudCredential } from '../../inference/AlibabaEndpointValidator.js';
 
 const GOOGLE_CLOUD_SCOPE = 'https://www.googleapis.com/auth/cloud-platform';
 const RUNWAY_ORGANIZATION_URL = 'https://api.dev.runwayml.com/v1/organization';
@@ -12,7 +13,7 @@ export const DEPLOYMENT_PROVIDER_CAPABILITIES = Object.freeze({
   samsar: {
     label: 'Samsar API Key',
     requiredFor: ['All models', 'All actions'],
-    models: ['gpt-5.6-sol', 'gemini-3.1-pro', 'GPTIMAGE2', 'RUNWAYML', 'VEO3.1I2V', 'LYRIA3', 'OPENAI_TTS', 'GOOGLE_TTS', 'MMAUDIO', 'LATENT_SYNC'],
+    models: ['gpt-5.6-sol', 'gemini-3.1-pro', 'QWEN3.7', 'GPTIMAGE2', 'RUNWAYML', 'VEO3.1I2V', 'LYRIA3', 'OPENAI_TTS', 'GOOGLE_TTS', 'MMAUDIO', 'LATENT_SYNC'],
     actions: ['chat', 'assistant', 'image', 'video', 'audio', 'lip_sync', 'sound_effect'],
   },
   openai: {
@@ -26,6 +27,12 @@ export const DEPLOYMENT_PROVIDER_CAPABILITIES = Object.freeze({
     requiredFor: ['Gemini 3.1 Pro', 'moderation', 'Veo', 'Lyria', 'Google TTS'],
     models: ['gemini-3.1-pro', 'VEO3.1I2V', 'VEO3.1I2VFAST', 'LYRIA3', 'GOOGLE_TTS'],
     actions: ['chat', 'assistant', 'moderation', 'video', 'audio'],
+  },
+  alibabaCloud: {
+    label: 'Alibaba Cloud',
+    requiredFor: ['Qwen 3.7 text inference', 'Qwen 3.7 vision'],
+    models: ['QWEN3.7'],
+    actions: ['chat', 'assistant'],
   },
   fal: {
     label: 'FAL',
@@ -109,7 +116,7 @@ export async function validateSamsarApiKeyHeaders(headers = {}) {
   };
 }
 
-export async function validateDeploymentProviderCredentials(payload = {}) {
+export async function validateDeploymentProviderCredentials(payload = {}, options = {}) {
   const providerResults = {};
 
   if (normalizeString(payload.samsarApiKey || payload.samsar_api_key)) {
@@ -123,6 +130,39 @@ export async function validateDeploymentProviderCredentials(payload = {}) {
 
   if (normalizeString(payload.openaiApiKey || payload.openai_api_key)) {
     providerResults.openai = await validateOpenAIKey(normalizeString(payload.openaiApiKey || payload.openai_api_key));
+  }
+
+  const alibabaApiKey = normalizeString(
+    payload.dashscopeApiKey ||
+    payload.dashscope_api_key ||
+    payload.alibabaCloudApiKey ||
+    payload.alibaba_cloud_api_key ||
+    payload.alibabaApiKey ||
+    payload.alibaba_api_key ||
+    payload.qwenApiKey ||
+    payload.qwen_api_key,
+  );
+  if (alibabaApiKey) {
+    providerResults.alibabaCloud = await validateAlibabaCloudCredential(
+      {
+        apiKey: alibabaApiKey,
+        baseUrl:
+          payload.dashscopeBaseUrl ||
+          payload.dashscope_base_url ||
+          payload.alibabaCloudBaseUrl ||
+          payload.alibaba_cloud_base_url ||
+          payload.qwenBaseUrl ||
+          payload.qwen_base_url,
+        apiHost:
+          payload.alibabaApiHost ||
+          payload.alibaba_api_host,
+      },
+      {
+        fetchImpl: options.fetchImpl || fetch,
+        ...(options.dnsLookup ? { dnsLookup: options.dnsLookup } : {}),
+        ...(options.timeoutMs ? { timeoutMs: options.timeoutMs } : {}),
+      },
+    );
   }
 
   if (normalizeString(payload.runwayApiKey || payload.runway_api_key)) {

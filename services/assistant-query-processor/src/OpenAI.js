@@ -3,8 +3,10 @@ import {
   DEFAULT_INFERENCE_MODEL,
   GPT_56_SOL_REASONING_EFFORT,
   isGeminiInferenceModel,
+  isQwenInferenceModel,
   normalizeInferenceModel,
 } from './InferenceModels.js';
+import { createQwenChatCompletion } from './Qwen.js';
 import { sendAssistantGeminiCompletionRequest } from './GoogleGemini.js';
 import {
   createSamsarExternalChatCompletion,
@@ -54,6 +56,9 @@ function getReasoningEffort(options = {}) {
 }
 
 export function getAssistantReasoningEffort(inferenceModel, options = {}) {
+  if (isQwenInferenceModel(inferenceModel)) {
+    return null;
+  }
   return isGeminiInferenceModel(inferenceModel)
     ? getReasoningEffort(options)
     : GPT_56_SOL_REASONING_EFFORT;
@@ -74,6 +79,7 @@ export async function sendAssistantCompletionRequest(messageList, inferenceModel
   const completionOptions = normalizeCompletionOptions(options);
   const model = getModelNameForInferenceModel(inferenceModel);
   const isGeminiModel = isGeminiInferenceModel(inferenceModel);
+  const isQwenModel = isQwenInferenceModel(inferenceModel) || isQwenInferenceModel(model);
   const reasoningEffort = getAssistantReasoningEffort(inferenceModel, completionOptions);
   const externalPayload = {
     model,
@@ -90,12 +96,35 @@ export async function sendAssistantCompletionRequest(messageList, inferenceModel
     return await sendAssistantGeminiCompletionRequest(messageList, inferenceModel, completionOptions);
   }
 
+  if (isQwenModel) {
+    return await sendAssistantQwenCompletionRequest(messageList, model, completionOptions);
+  }
+
   return await sendAssistantOpenAICompletionRequest(
     messageList,
     inferenceModel,
     reasoningEffort,
     completionOptions,
   );
+}
+
+export async function sendAssistantQwenCompletionRequest(messageList, inferenceModel, options = {}) {
+  const model = getModelNameForInferenceModel(inferenceModel);
+  const response = await createQwenChatCompletion({
+    ...options,
+    model,
+    messages: messageList,
+    timeout: getRequestTimeoutMs(options),
+  });
+  const outputText = response?.choices?.[0]?.message?.content || '';
+
+  return {
+    model: response?.model || model,
+    response: normalizeChatCompletionToResponses(response),
+    outputText,
+    outputContent: buildFallbackAssistantContent(outputText),
+    externalProvider: 'alibabaCloud',
+  };
 }
 
 export async function sendAssistantSamsarExternalCompletionRequest(messageList, inferenceModel, options = {}) {

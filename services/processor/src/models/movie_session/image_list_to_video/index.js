@@ -34,6 +34,7 @@ import {
   resolveEffectiveInferenceModel,
   normalizeTTSModelFromPayload,
 } from "../../api/RequestModelOverrides.js";
+import { resolveSubtitleLanguageOption } from '../SubtitleLanguage.js';
 
 function normalizeBackingTrackProvider(value) {
   return value === 'LYRIA2' ? 'LYRIA3' : value;
@@ -78,6 +79,10 @@ export async function createNewImageListToVideoSession(userId, payload) {
     subtitleFont,
     speakerFont,
     enableSubtitles = true,
+    subtitle_language = undefined,
+    subtitleLanguage = undefined,
+    subtitle_language_explicit = undefined,
+    subtitleLanguageExplicit = undefined,
     limitSingleNarrator = false,
     limit_single_narrator = false,
     addNarratorAvatar = false,
@@ -102,6 +107,16 @@ export async function createNewImageListToVideoSession(userId, payload) {
 
 
   const resolvedLanguageString = languageString || getLanguageStringFromLanguageCode(language);
+  const subtitleLanguageOption = resolveSubtitleLanguageOption(
+    {
+      subtitle_language,
+      subtitleLanguage,
+      subtitle_language_explicit,
+      subtitleLanguageExplicit,
+    },
+    language,
+    { allowPropagatedSameAsAudio: true },
+  );
 
   let { prompt, metadata, imageDescriptionList } = transcriptBuilderPayload;
 
@@ -327,6 +342,10 @@ export async function createNewImageListToVideoSession(userId, payload) {
     enableSubtitles,
     hasSubtitles: enableSubtitles !== false,
     has_subtitles: enableSubtitles !== false,
+    subtitleLanguage: subtitleLanguageOption.subtitleLanguage,
+    subtitleLanguageString: subtitleLanguageOption.subtitleLanguageString,
+    subtitleLanguageExplicit: subtitleLanguageOption.subtitleLanguageExplicit,
+    subtitleTranslationRequired: enableSubtitles !== false && subtitleLanguageOption.translationRequired,
     limitSingleNarrator: shouldLimitSingleNarrator,
     limit_single_narrator: shouldLimitSingleNarrator,
     addNarratorAvatar: shouldAddNarratorAvatar,

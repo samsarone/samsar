@@ -30,14 +30,30 @@ const LANGUAGE_FONT_ALIASES = {
   jpn: 'ja',
   cn: 'zh-cn',
   kr: 'ko',
+  kor: 'ko',
   'zh-hans': 'zh-cn',
   'zh-hant': 'zh-tw',
   'pt-br': 'pt',
   'pt-pt': 'pt',
   'es-mx': 'es',
+  eng: 'en',
+  fre: 'fr',
+  fra: 'fr',
+  deu: 'de',
+  ger: 'de',
+  rus: 'ru',
+  ita: 'it',
+  por: 'pt',
+  spa: 'es',
+  zho: 'zh',
+  chi: 'zh',
+  ara: 'ar',
   ben: 'bn',
+  hin: 'hi',
+  heb: 'he',
   lat: 'la',
   san: 'sa',
+  tha: 'th',
 };
 
 export const LANGUAGE_SUBTITLE_FONT_MAP = {
@@ -111,6 +127,8 @@ export function resolveSubtitleFont(languageCode, requestedFont) {
     if (
       lowerRequested === DEFAULT_LATIN_SUBTITLE_FONT.toLowerCase() ||
       lowerRequested === 'montserrat' ||
+      lowerRequested === 'poppins' ||
+      lowerRequested === 'arial' ||
       lowerRequested === 'inter' ||
       lowerRequested === 'sans-serif'
     ) {

@@ -10,6 +10,7 @@ import { createCanvas, loadImage } from 'canvas';
 import QRCode from 'qrcode';
 import { getFramesPerSecondFromValue } from './utils/FpsUtils.js';
 import { installStructuredLogger } from './utils/StructuredLogger.js';
+import { prepareLayerSubtitlesForRendering } from './utils/SubtitleRenderPolicy.js';
 
 installStructuredLogger({
   serviceName: process.env.SERVICE_NAME || 'samsar_frames_processor',
@@ -1402,6 +1403,8 @@ async function generateFramesForSession(generationId, sessionId, layerId) {
     layer.imageSession.activeItemList = layer.imageSession.activeItemList.filter(
       (item) => !(item?.type === 'text' && item?.subType === 'subtitle'),
     );
+  } else if (enableSubtitles) {
+    layer = prepareLayerSubtitlesForRendering(layer, session);
   }
 
   // If AI video is still pending, bail

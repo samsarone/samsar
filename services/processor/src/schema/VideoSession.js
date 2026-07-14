@@ -195,6 +195,11 @@ const audioLayerSchema = new Schema({
   lyrics: { type: String, default: null },
   fadeOnEdges: { type: Boolean, default: true },
   addSubtitles: { type: Boolean, default: false },
+  addTranscriptionsRequired: { type: Boolean, default: false },
+  subtitleText: { type: String, default: null },
+  subtitleLanguage: { type: String, default: null },
+  speechLanguage: { type: String, default: null },
+  subtitleTranslationRequired: { type: Boolean, default: false },
   subtitleFont: { type: String, default: 'Noto Sans' },
   subtitleWordAnimation: String,
   transcriptAlignment: Object,
@@ -274,6 +279,10 @@ const videoSessionSchema = new Schema({
   enableSubtitles: { type: Boolean, default: false },
   hasSubtitles: { type: Boolean, default: null },
   has_subtitles: { type: Boolean, default: null },
+  subtitleLanguage: { type: String, default: null },
+  subtitleLanguageString: { type: String, default: null },
+  subtitleLanguageExplicit: { type: Boolean, default: false },
+  subtitleTranslationRequired: { type: Boolean, default: false },
 
   videoLink: String,
 

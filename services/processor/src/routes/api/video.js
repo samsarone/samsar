@@ -69,6 +69,7 @@ import {
 import { getBillingPortalUrl } from '../../models/BillingPortal.js';
 import {
   filterModelsForDeploymentAvailability,
+  mergeRuntimeInferenceDeploymentAvailability,
   readDeploymentAvailableModels,
 } from '../../models/api/DeploymentModelConfig.js';
 
@@ -567,12 +568,12 @@ router.post('/create', validateAPIKeyAndUserId, async function (req, res) {
 router.get('/supported_models', function (req, res) {
   try {
     const deploymentAvailableModels = readDeploymentAvailableModels();
-    const deploymentAvailability = {
+    const deploymentAvailability = mergeRuntimeInferenceDeploymentAvailability({
       providers: Array.isArray(deploymentAvailableModels?.providers) ? deploymentAvailableModels.providers : [],
       models: Array.isArray(deploymentAvailableModels?.models) ? deploymentAvailableModels.models : [],
       actions: Array.isArray(deploymentAvailableModels?.actions) ? deploymentAvailableModels.actions : [],
       audio: deploymentAvailableModels?.audio || null,
-    };
+    });
     const textToVideoModels = {
       image_models: filterModelsForDeploymentAvailability(
         getExpressModels(IMAGE_MODEL_PRICES, TEXT_TO_VIDEO_IMAGE_MODEL_KEYS),
@@ -725,6 +726,8 @@ router.post('/image_list_to_video', validateAPIKeyAndUserId, async function (req
       metadata,
       prompt,
       language,
+      subtitle_language,
+      subtitleLanguage,
       video_model,
       image_model,
       imageModel,
@@ -961,6 +964,9 @@ router.post('/image_list_to_video', validateAPIKeyAndUserId, async function (req
       metadata,
       prompt: typeof prompt === 'string' ? prompt.trim() : prompt,
       language: typeof language === 'string' ? language.trim() : language,
+      ...((subtitle_language ?? subtitleLanguage) !== undefined
+        ? { subtitle_language: subtitle_language ?? subtitleLanguage }
+        : {}),
       video_model: normalizedVideoModel,
       ...(normalizedImageModel ? { image_model: normalizedImageModel } : {}),
       aspect_ratio: normalizedAspectRatio,

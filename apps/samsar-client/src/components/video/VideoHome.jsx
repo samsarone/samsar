@@ -1,4 +1,4 @@
-import { useCallback, useContext, useEffect, useState, useRef } from 'react';
+import { useCallback, useContext, useEffect, useMemo, useState, useRef } from 'react';
 import CommonContainer from '../common/CommonContainer.tsx';
 import FrameToolbar from './toolbars/frame_toolbar/index.jsx';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
@@ -19,9 +19,13 @@ import { useLocalization } from '../../contexts/LocalizationContext.jsx';
 import { useColorMode } from '../../contexts/ColorMode.jsx';
 import { NavCanvasControlContext } from '../../contexts/NavCanvasControlContext.jsx';
 import { getCanvasDimensionsForAspectRatio } from '../../utils/canvas.jsx';
-import { getRenderableImageUrl } from '../../utils/image.jsx';
 import { normalizeActiveTextItemListForCanvas } from '../../constants/TextConfig.jsx';
 import useUndoRedoState from '../../hooks/useUndoRedoState.js';
+import {
+  findLayerIndexAtDisplayFrame,
+  getLayerDisplayFrameRanges,
+  resolveTimelineDuration,
+} from './util/studioPreviewTimeline.mjs';
 
 
 import FrameToolbarHorizontal from './toolbars/frame_toolbar/FrameToolbarHorizontal.jsx';
@@ -36,7 +40,6 @@ import 'react-toastify/dist/ReactToastify.css';
 const PROCESSOR_API_URL = import.meta.env.VITE_PROCESSOR_API;
 const DEFAULT_SCENE_TRANSITION_PRESET = 'none';
 const VALID_SCENE_TRANSITION_PRESETS = new Set(['none', 'fade', 'dissolve']);
-const DISPLAY_FRAMES_PER_SECOND = 30;
 const VIDEO_CANVAS_ZOOM_MODE_STORAGE_KEY = 'videoCanvasZoomMode';
 const VIDEO_CANVAS_ZOOM_SCALE_STORAGE_KEY = 'videoCanvasZoomScale';
 const CANVAS_ZOOM_STEP_RATIO = 0.25;
@@ -49,6 +52,7 @@ const GUEST_SAMPLE_COPY_AFTER_AUTH_KEY = 'studioGuestSampleCopyAfterAuth';
 const PENDING_COPY_MAX_AGE_MS = 10 * 60 * 1000;
 const RENDER_STATUS_POLL_MS = 3000;
 const MAX_RENDER_STATUS_FAILURES = 5;
+const SCENE_PRELOAD_LOOKAHEAD = 2;
 
 function isSessionRenderPending(sessionDetails) {
   return Boolean(
@@ -484,6 +488,14 @@ function normalizeGuestLayerForStudio(layer, sessionDetails) {
     ['soundEffectVideoLayer', 'soundEffectRemoteLink'],
     ['userVideoLayer', 'userVideoRemoteLink'],
   ].forEach(([assetField, remoteField]) => {
+    const rawRemoteField = `raw${remoteField.charAt(0).toUpperCase()}${remoteField.slice(1)}`;
+    if (
+      !nextLayer[rawRemoteField]
+      && typeof nextLayer[remoteField] === 'string'
+      && nextLayer[remoteField].trim()
+    ) {
+      nextLayer[rawRemoteField] = nextLayer[remoteField];
+    }
     const source = nextLayer[assetField] || nextLayer[remoteField];
     const displayUrl = buildGuestSessionMediaUrl(sessionDetails, source);
     if (displayUrl && displayUrl !== source) {
@@ -606,21 +618,20 @@ function isActiveUserVideoUploadTask(task) {
   return task?.status === 'UPLOADING' || task?.status === 'PROCESSING';
 }
 
-function secondsToDisplayFrames(value) {
-  return Math.max(
-    0,
-    Math.round((Number(value) || 0) * DISPLAY_FRAMES_PER_SECOND),
-  );
-}
+function getLayerActiveItemListForCanvas(layer, sessionDetails, previousActiveItemList = [], options = {}) {
+  const layerActiveItemList = Array.isArray(layer?.imageSession?.activeItemList)
+    ? layer.imageSession.activeItemList
+    : [];
+  const visibleActiveItemList = resolveSessionSubtitlesEnabled(sessionDetails)
+    ? layerActiveItemList
+    : layerActiveItemList.filter((item) => !isSubtitleTranscriptItem(item));
 
-function getLayerDisplayFrameRange(layer) {
-  const startFrame = secondsToDisplayFrames(layer?.durationOffset);
-  const durationFrames = Math.max(1, secondsToDisplayFrames(layer?.duration));
-
-  return {
-    startFrame,
-    endFrame: startFrame + durationFrames,
-  };
+  return normalizeActiveTextItemListForCanvas(
+    visibleActiveItemList,
+    getCanvasDimensionsForAspectRatio(sessionDetails?.aspectRatio),
+    previousActiveItemList,
+    options
+  ).map((item) => ({ ...item, isHidden: false }));
 }
 
 function shouldIgnoreCanvasHistoryShortcut(target) {
@@ -828,7 +839,11 @@ export default function VideoHome() {
   const [currentLayerToBeUpdated, setCurrentLayerToBeUpdated] = useState(-1);
 
   const [isVideoPreviewPlaying, setIsVideoPreviewPlaying] = useState(false);
-  useState(false);
+  const [isPreviewPlaybackActive, setIsPreviewPlaybackActive] = useState(false);
+  const previewAudioLayers = useMemo(
+    () => mergePreviewAudioLayers(videoSessionDetails?.audioLayers, audioLayers),
+    [audioLayers, videoSessionDetails?.audioLayers]
+  );
 
   const [downloadLink, setDownloadLink] = useState(null);
 
@@ -845,6 +860,8 @@ export default function VideoHome() {
   const latestActiveItemListSaveRequestRef = useRef(0);
   const debouncedUpdateSessionLayerActiveItemListRef = useRef(null);
   const assistantFrameCaptureRef = useRef(null);
+  const scenePreloadRequestRef = useRef(0);
+  const showLoginDialogRef = useRef(null);
 
   const { id: routeSessionId, shareToken, editableShareToken } = useParams();
   const [sharedSessionId, setSharedSessionId] = useState(null);
@@ -1003,6 +1020,8 @@ export default function VideoHome() {
     setLayers([]);
     setFrames([]);
     setCurrentLayerSeek(0);
+    setIsVideoPreviewPlaying(false);
+    setIsPreviewPlaybackActive(false);
     setTotalDuration(0);
     setIsLayerGenerationPending(false);
     setAudioFileTrack(null);
@@ -1028,6 +1047,10 @@ export default function VideoHome() {
     setToggleUpdateCurrentLayer(false);
     setCurrentLayerToBeUpdated(-1);
     setRenderCompletedThisSession(false);
+    layersRef.current = [];
+    currentLayerRef.current = {};
+    activeItemListRef.current = [];
+    previousSyncedLayerIdRef.current = null;
 
     // Now, load any default values from localStorage into state
     const defaultModel = localStorage.getItem("defaultModel") || 'DALLE3';
@@ -1163,6 +1186,7 @@ export default function VideoHome() {
     );
     openAlertDialog(loginComponent, undefined, false, AUTH_DIALOG_OPTIONS);
   }, [getCurrentShareRedirectPath, isGuestSampleView, openAlertDialog, routeSessionId]);
+  showLoginDialogRef.current = showLoginDialog;
 
   const copySharedSessionForEditing = useCallback(async () => {
     if (!shareToken) {
@@ -1368,25 +1392,6 @@ export default function VideoHome() {
   }, [isSharedSessionView, videoSessionDetails]);
 
   useEffect(() => {
-
-    if (layers && layers.length > 0) {
-      layers.forEach(layer => {
-
-
-        if (layer.imageSession && layer.imageSession.activeItemList) {
-          const imageItems = layer.imageSession.activeItemList.filter(i => i.type === 'image');
-          imageItems.forEach(item => {
-            const img = new Image();
-            img.src = getRenderableImageUrl(item, PROCESSOR_API_URL);
-            img.style.display = 'none'; // Hide the image
-            //   hiddenContainer.appendChild(img);
-          });
-        }
-      });
-    }
-  }, [layers]);
-
-  useEffect(() => {
     if (layerListRequestAdded) {
       if (videoSessionDetails && !videoSessionDetails.isExpressGeneration) {
         //  pollForLayersUpdate();
@@ -1519,14 +1524,23 @@ export default function VideoHome() {
   ]);
 
   const setSelectedLayer = (layer) => {
-    if (!layer || !layer._id) {
+    const selectedLayerId = getSessionLayerId(layer);
+    if (!selectedLayerId) {
       return;
     }
-    const index = layers.findIndex(l => l._id === layer._id);
+    const index = layers.findIndex(
+      (candidateLayer) => getSessionLayerId(candidateLayer) === selectedLayerId
+    );
+    if (index < 0) {
+      return;
+    }
     setSelectedLayerIndex(index);
+    currentLayerRef.current = layer;
     setCurrentLayer(layer);
-    getLayerDisplayFrameRange(layer);
-    // setCurrentLayerSeek(newLayerSeek);
+    const { startFrame: newLayerSeek } = getLayerDisplayFrameRanges(layers)[index];
+    if (!isLayerSeeking && !isVideoPreviewPlaying) {
+      setCurrentLayerSeek(newLayerSeek);
+    }
   }
 
   useEffect(() => {
@@ -1534,10 +1548,16 @@ export default function VideoHome() {
       return;
     }
 
+    const currentLayerIndex = layers.findIndex(
+      (layer) => getSessionLayerId(layer) === getSessionLayerId(currentLayer)
+    );
+    if (currentLayerIndex < 0) {
+      return;
+    }
     const {
       startFrame: newLayerSeek,
       endFrame: currentLayerEndFrame,
-    } = getLayerDisplayFrameRange(currentLayer);
+    } = getLayerDisplayFrameRanges(layers)[currentLayerIndex];
     const resolvedCurrentLayerSeek = Number(currentLayerSeek);
     const isSeekWithinCurrentLayer = Number.isFinite(resolvedCurrentLayerSeek)
       && resolvedCurrentLayerSeek >= newLayerSeek
@@ -1546,7 +1566,7 @@ export default function VideoHome() {
     if (!isSeekWithinCurrentLayer) {
       setCurrentLayerSeek(newLayerSeek);
     }
-  }, [currentLayer, currentLayerSeek, isLayerSeeking, isVideoPreviewPlaying]);
+  }, [currentLayer, currentLayerSeek, isLayerSeeking, isVideoPreviewPlaying, layers]);
 
 
 
@@ -1646,6 +1666,7 @@ export default function VideoHome() {
   };
 
   useEffect(() => {
+    let isCancelled = false;
     const headers = getHeaders();
 
     const sessionDetailsRequest = isReadOnlyShareView
@@ -1661,6 +1682,9 @@ export default function VideoHome() {
         );
 
     sessionDetailsRequest.then((dataRes) => {
+      if (isCancelled) {
+        return;
+      }
       const sessionDetails = normalizeGuestSessionForStudio(dataRes.data);
       const resolvedSessionId = sessionDetails?._id?.toString?.() || sessionDetails?._id || routeSessionId;
       const forceAdvancedEditPoll = shouldForceAdvancedVideoEditPolling(resolvedSessionId);
@@ -1676,17 +1700,17 @@ export default function VideoHome() {
       setVideoSessionDetails(sessionDetails);
       setIsGuestSession(Boolean(sessionDetails.isGuestSession || isReadOnlyShareView));
       const layers = Array.isArray(sessionDetails.layers) ? sessionDetails.layers : [];
-      const initialLayerIndex = Math.max(
-        0,
-        layers.findIndex((layer) => (
-          isActiveUserVideoUploadTask(layer?.userVideoUploadTask)
-          || layer?.userVideoGenerationPending
-          || layer?.videoEditPending
-        ))
-      );
+      const initialLayerIndex = 0;
+      const initialLayer = layers[initialLayerIndex] || null;
+      const initialActiveItemList = getLayerActiveItemListForCanvas(initialLayer, sessionDetails);
+      layersRef.current = layers;
+      currentLayerRef.current = initialLayer || {};
+      activeItemListRef.current = initialActiveItemList;
+      previousSyncedLayerIdRef.current = getSessionLayerId(initialLayer);
       setLayers(layers);
-      setCurrentLayer(layers[initialLayerIndex] || layers[0]);
+      setCurrentLayer(initialLayer);
       setSelectedLayerIndex(initialLayerIndex);
+      syncActiveItemList(initialActiveItemList, { resetHistory: true });
       setAspectRatio(sessionDetails.aspectRatio);
       applyInitialCanvasZoomForAspectRatio(sessionDetails.aspectRatio);
       setAudioLayers(sessionDetails.audioLayers || []);
@@ -1706,15 +1730,14 @@ export default function VideoHome() {
         clearAdvancedVideoEditPendingSession(resolvedSessionId);
       }
 
-      let totalDuration = 0;
-      layers.forEach(layer => {
-        totalDuration += layer.duration;
-      });
-      setTotalDuration(totalDuration);
+      setTotalDuration(resolveTimelineDuration(layers, sessionDetails));
       setIsLayerGenerationPending(hasPendingFrameOrLayerGeneration(sessionDetails));
       setGenerationImages(sessionDetails.generations);
       setSessionMessages(sessionDetails.sessionMessages);
     }).catch(function (err) {
+      if (isCancelled) {
+        return;
+      }
       if (isReadOnlyShareView) {
         toast.error('This shared session link is unavailable.', {
           position: 'bottom-center',
@@ -1724,7 +1747,7 @@ export default function VideoHome() {
       }
       if (isEditableShareView) {
         if (err?.response?.status === 401) {
-          showLoginDialog({ redirectTo: getCurrentShareRedirectPath() });
+          showLoginDialogRef.current?.({ redirectTo: getCurrentShareRedirectPath() });
           return;
         }
         toast.error(err?.response?.data?.error || 'This editable shared session link is unavailable.', {
@@ -1734,7 +1757,7 @@ export default function VideoHome() {
         return;
       }
       if (err?.response?.status === 401) {
-        showLoginDialog({ redirectTo: getCurrentShareRedirectPath() });
+        showLoginDialogRef.current?.({ redirectTo: getCurrentShareRedirectPath() });
         return;
       }
       if (routeSessionId && (err?.response?.status === 400 || err?.response?.status === 404)) {
@@ -1753,7 +1776,11 @@ export default function VideoHome() {
         position: 'bottom-center',
         className: 'custom-toast',
       });
-    })
+    });
+
+    return () => {
+      isCancelled = true;
+    };
   }, [
     editableShareToken,
     getCurrentShareRedirectPath,
@@ -1763,50 +1790,24 @@ export default function VideoHome() {
     navigate,
     routeSessionId,
     shareToken,
-    showLoginDialog,
   ]);
 
-  const prevCurrentLayerSeekRef = useRef(currentLayerSeek);
-
-
   useEffect(() => {
-    if (!currentLayer) {
-      return;
-    }
-    const {
-      startFrame: currentLayerStartFrame,
-      endFrame: currentLayerEndFrame,
-    } = getLayerDisplayFrameRange(currentLayer);
-
-    if (currentLayerStartFrame > currentLayerEndFrame) {
+    if (!Array.isArray(layers) || layers.length === 0) {
       return;
     }
 
-    const prevCurrentLayerSeek = prevCurrentLayerSeekRef.current;
-
-    if (currentLayerSeek > prevCurrentLayerSeek) {
-      // Moving forward
-      if (currentLayerSeek >= currentLayerEndFrame) {
-        const nextLayerIndex = layers.findIndex(layer => layer._id === currentLayer._id) + 1;
-        if (nextLayerIndex < layers.length) {
-          setCurrentLayer(layers[nextLayerIndex]);
-          setSelectedLayerIndex(nextLayerIndex);
-        }
-      }
-    } else if (currentLayerSeek < prevCurrentLayerSeek) {
-      // Moving backward
-      if (currentLayerSeek < currentLayerStartFrame) {
-        const prevLayerIndex = layers.findIndex(layer => layer._id === currentLayer._id) - 1;
-        if (prevLayerIndex >= 0) {
-          setCurrentLayer(layers[prevLayerIndex]);
-          setSelectedLayerIndex(prevLayerIndex);
-        }
-      }
+    const activeLayerIndex = findLayerIndexAtDisplayFrame(layers, currentLayerSeek);
+    const activeLayer = layers[activeLayerIndex];
+    const activeLayerId = getSessionLayerId(activeLayer);
+    const currentLayerId = getSessionLayerId(currentLayer);
+    if (!activeLayer || activeLayerId === currentLayerId) {
+      return;
     }
 
-    // Update the ref with the current value
-    prevCurrentLayerSeekRef.current = currentLayerSeek;
-
+    currentLayerRef.current = activeLayer;
+    setCurrentLayer(activeLayer);
+    setSelectedLayerIndex(activeLayerIndex);
   }, [currentLayer, currentLayerSeek, layers]);
 
 
@@ -1819,17 +1820,12 @@ export default function VideoHome() {
       currentLayerId && previousSyncedLayerIdRef.current === currentLayerId;
 
     if (currentLayer && currentLayer.imageSession && currentLayer.imageSession.activeItemList) {
-      const layerActiveItemList = resolveSessionSubtitlesEnabled(videoSessionDetails)
-        ? currentLayer.imageSession.activeItemList
-        : currentLayer.imageSession.activeItemList.filter((item) => !isSubtitleTranscriptItem(item));
-      const activeList = normalizeActiveTextItemListForCanvas(
-        layerActiveItemList,
-        getCanvasDimensionsForAspectRatio(videoSessionDetails?.aspectRatio),
+      const activeList = getLayerActiveItemListForCanvas(
+        currentLayer,
+        videoSessionDetails,
         shouldReuseLocalTextConfig ? activeItemListRef.current : [],
         { preferFallbackTextConfig: shouldReuseLocalTextConfig }
-      ).map(function (item) {
-        return { ...item, isHidden: false };
-      });
+      );
       activeItemListRef.current = activeList;
       syncActiveItemList(activeList, { resetHistory: !shouldReuseLocalTextConfig });
       // const newLayerSeek = Math.floor(currentLayer.durationOffset * 30);
@@ -1848,22 +1844,35 @@ export default function VideoHome() {
     videoSessionDetails?.has_subtitles,
   ]);
 
-  // Image Preloading Worker Setup
+  // Warm only the active scene and a small lookahead window. Preloading every
+  // scene at once competes with the initial canvas media and makes long,
+  // already-rendered sessions substantially slower to open.
   useEffect(() => {
-    if (layers && layers.length > 0) {
-      const imagePreloaderWorker = getImagePreloaderWorker();
-
-      imagePreloaderWorker.onmessage = function () {
-        //
-      };
-
-      imagePreloaderWorker.postMessage({ layers });
-
-      return () => {
-        imagePreloaderWorker.terminate();
-      };
+    if (!Array.isArray(layers) || layers.length === 0) {
+      return undefined;
     }
-  }, [layers]);
+
+    const currentLayerId = getSessionLayerId(currentLayer);
+    const currentLayerIndex = Math.max(
+      0,
+      layers.findIndex((layer) => getSessionLayerId(layer) === currentLayerId)
+    );
+    const preloadLayers = layers.slice(
+      currentLayerIndex,
+      currentLayerIndex + SCENE_PRELOAD_LOOKAHEAD + 1
+    );
+    const imagePreloaderWorker = getImagePreloaderWorker();
+    const requestId = ++scenePreloadRequestRef.current;
+    imagePreloaderWorker.postMessage({
+      type: 'PRELOAD_LAYERS',
+      requestId,
+      layers: preloadLayers,
+    });
+
+    return () => {
+      imagePreloaderWorker.postMessage({ type: 'CANCEL_PRELOAD', requestId });
+    };
+  }, [currentLayer, layers]);
 
   const toggleHideItemInLayer = (itemId) => {
     const updatedActiveItemList = activeItemList.map(item => {
@@ -2081,7 +2090,7 @@ export default function VideoHome() {
 
         try {
           const dataRes = await axios.get(`${PROCESSOR_API_URL}/video_sessions/share/${encodeURIComponent(shareToken)}`);
-          const sessionData = dataRes.data;
+          const sessionData = normalizeGuestSessionForStudio(dataRes.data);
           if (!sessionData) {
             stopRenderPollAfterFailureLimit(
               timer,
@@ -2096,8 +2105,20 @@ export default function VideoHome() {
             setSharedSessionId(resolvedSessionId);
           }
 
+          const sessionLayers = Array.isArray(sessionData.layers) ? sessionData.layers : [];
+          const currentLayerId = getSessionLayerId(currentLayerRef.current);
+          const refreshedLayerIndex = Math.max(
+            0,
+            sessionLayers.findIndex((layer) => getSessionLayerId(layer) === currentLayerId)
+          );
+          const refreshedCurrentLayer = sessionLayers[refreshedLayerIndex] || null;
+
+          layersRef.current = sessionLayers;
+          currentLayerRef.current = refreshedCurrentLayer || {};
           setVideoSessionDetails(sessionData);
-          setLayers(Array.isArray(sessionData.layers) ? sessionData.layers : []);
+          setLayers(sessionLayers);
+          setCurrentLayer(refreshedCurrentLayer);
+          setSelectedLayerIndex(refreshedLayerIndex);
           setAudioLayers(sessionData.audioLayers || []);
           setIsLayerGenerationPending(hasPendingFrameOrLayerGeneration(sessionData));
 
@@ -2644,15 +2665,8 @@ export default function VideoHome() {
   };
 
   useEffect(() => {
-    let totalDuration = 0;
-    if (!layers) {
-      return;
-    }
-    layers.forEach(layer => {
-      totalDuration += layer.duration;
-    });
-    setTotalDuration(totalDuration);
-  }, [layers]);
+    setTotalDuration(resolveTimelineDuration(layers, videoSessionDetails));
+  }, [layers, videoSessionDetails?.duration, videoSessionDetails?.totalDuration]);
 
   useEffect(() => {
     return () => {
@@ -4293,8 +4307,6 @@ export default function VideoHome() {
   const studioTopInsetPx = 56;
   const reservedLeftRailWidth = `calc(${collapsedFrameToolbarWidth} + ${studioInsetPx * 2}px)`;
   const reservedRightRailWidth = `calc(${collapsedRightPanelWidth} + ${studioInsetPx}px)`;
-  const previewAudioLayers = mergePreviewAudioLayers(videoSessionDetails?.audioLayers, audioLayers);
-
   const editorContainerDisplay = (
     <div className='h-full min-h-0'>
       <VideoEditorContainer
@@ -4341,6 +4353,7 @@ export default function VideoHome() {
         totalDuration={totalDuration}
         isUpdateLayerPending={isUpdateLayerPending}
         isVideoPreviewPlaying={isVideoPreviewPlaying}
+        isPreviewPlaybackActive={isPreviewPlaybackActive}
         applyAudioDucking={applyAudioDucking}
         audioLayers={audioLayers}
         setIsVideoPreviewPlaying={setIsVideoPreviewPlaying}
@@ -4411,6 +4424,7 @@ export default function VideoHome() {
         currentLayerSeek={currentLayerSeek}
         framesPerSecond={videoSessionDetails?.framesPerSecond ?? 24}
         isVideoPreviewPlaying={isVideoPreviewPlaying}
+        onPlaybackActiveChange={setIsPreviewPlaybackActive}
         setCurrentLayerSeek={setCurrentLayerSeek}
         setIsVideoPreviewPlaying={setIsVideoPreviewPlaying}
         suspendAudioPreview={isRecordSpeechRecording}

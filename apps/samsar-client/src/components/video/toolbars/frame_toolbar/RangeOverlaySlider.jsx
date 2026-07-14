@@ -2,6 +2,16 @@
 import { useCallback, useEffect, useState, useRef } from 'react';
 import ReactSlider from 'react-slider';
 
+function areSliderValuesEqual(left, right) {
+  if (left === right) {
+    return true;
+  }
+  if (!Array.isArray(left) || !Array.isArray(right) || left.length !== right.length) {
+    return false;
+  }
+  return left.every((entry, index) => Number(entry) === Number(right[index]));
+}
+
 export default function RangeOverlaySlider({
   min,
   max,
@@ -78,9 +88,11 @@ export default function RangeOverlaySlider({
   useEffect(() => {
     latestSliderValuesRef.current = value;
     if (initialValue === null) {
-      setSliderValues(value);
+      setSliderValues((previousValues) => (
+        areSliderValuesEqual(previousValues, value) ? previousValues : value
+      ));
     }
-  }, [value]);
+  }, [initialValue, value]);
 
   useEffect(() => {
     const handleWindowBlur = () => {

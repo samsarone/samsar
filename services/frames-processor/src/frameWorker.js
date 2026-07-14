@@ -14,6 +14,7 @@ import { applyTextSubtitleAnimations } from './animations/SubtitleAnimations.js'
 import { ensureFontsRegistered } from './utils/fontRegistry.js';
 import { getFramesPerSecondFromValue } from './utils/FpsUtils.js';
 import { installStructuredLogger } from './utils/StructuredLogger.js';
+import { isStaticSubtitleItem } from './utils/SubtitleRenderPolicy.js';
 
 installStructuredLogger({
   serviceName: process.env.SERVICE_NAME || 'samsar_frames_processor',
@@ -1668,33 +1669,41 @@ function renderActiveItem(ctx, item, images, elapsedTime, duration, durationOffs
 
 
 
+  const renderAsStaticSubtitle = isStaticSubtitleItem(item);
+
   // Initialize currentTransform if not present
   if (!item.currentTransform) {
     item.currentTransform = {
       scale: 1, // Starting scale (1 means 100%)
-      translateX: x,
-      translateY: y,
+      translateX: renderAsStaticSubtitle ? 0 : x,
+      translateY: renderAsStaticSubtitle ? 0 : y,
       rotateAngle: 0, // In degrees
     };
   }
 
   ctx.save();
 
-  // Update transformations based on animations
-  applyZoomAnimation(ctx, elapsedTime, item, duration, durationOffset);
-  applySlideAnimations(ctx, elapsedTime, item, duration, durationOffset);
-  applyRotateAnimation(ctx, item, images, elapsedTime, duration, durationOffset);
-  applyOrbitAnimation(ctx, item, images, elapsedTime, duration, durationOffset);
-  applySwayAnimation(ctx, item, elapsedTime, duration, durationOffset);
+  // Translated subtitles intentionally render without item-level motion.
+  if (!renderAsStaticSubtitle) {
+    applyZoomAnimation(ctx, elapsedTime, item, duration, durationOffset);
+    applySlideAnimations(ctx, elapsedTime, item, duration, durationOffset);
+    applyRotateAnimation(ctx, item, images, elapsedTime, duration, durationOffset);
+    applyOrbitAnimation(ctx, item, images, elapsedTime, duration, durationOffset);
+    applySwayAnimation(ctx, item, elapsedTime, duration, durationOffset);
+  }
 
 
-  const fadeAlpha = getFadeAlpha(item, elapsedTime, duration, durationOffset);
+  const fadeAlpha = renderAsStaticSubtitle
+    ? 1
+    : getFadeAlpha(item, elapsedTime, duration, durationOffset);
   // (You'd write something like the code in applyFadeAnimations, but return the alpha)
   ctx.globalAlpha = fadeAlpha;
 
 
   // Apply transformations from currentTransform if no animations updated them
-  const { currentTransform } = item;
+  const currentTransform = renderAsStaticSubtitle
+    ? { scale: 1, translateX: 0, translateY: 0, rotateAngle: 0 }
+    : item.currentTransform;
 
   // Save the context before applying transformations
   ctx.save();
@@ -1733,7 +1742,9 @@ function renderActiveItem(ctx, item, images, elapsedTime, duration, durationOffs
 
   // Apply any other animations that modify the item after rendering
   // applyFadeAnimations(ctx, item, images, elapsedTime, duration, durationOffset);
-  applyCustomAnimations(ctx, item, images, elapsedTime, duration, durationOffset);
+  if (!renderAsStaticSubtitle) {
+    applyCustomAnimations(ctx, item, images, elapsedTime, duration, durationOffset);
+  }
 
   ctx.restore();
 }

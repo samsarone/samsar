@@ -4,6 +4,8 @@ import assert from 'node:assert/strict';
 import {
   buildTransientProviderErrorUpdate,
   buildBaseGenerationTerminalFailureUpdate,
+  getInferenceModelForSession,
+  getInferenceSettingsForSession,
   isTransientProviderError,
   resolveCompletedLayerDuration,
   resolveConnectedAudioLayerDuration,
@@ -34,6 +36,41 @@ test('base generation retry reuses the last available filter pass only after cho
   assert.equal(selected.pass.src, 'second.png');
   assert.equal(selected.rank, 1);
   assert.equal(selected.reusedLastAvailablePass, true);
+});
+
+test('session inference override wins for express generation retries', async () => {
+  assert.equal(await getInferenceModelForSession({
+    expressGenerationInferenceModel: 'Qwen 3.7',
+    inferenceModel: 'gemini-3.1-pro',
+  }), 'QWEN3.7');
+  assert.equal(await getInferenceModelForSession({
+    inferenceModel: 'gemini-3.1-pro',
+  }), 'gemini-3.1-pro');
+});
+
+test('request inference settings win over express session and account fallbacks', async () => {
+  assert.deepEqual(await getInferenceSettingsForSession({
+    expressGenerationInferenceModel: 'gemini-3.1-pro',
+    expressGenerationInferenceModelAuthorization: 'deployed',
+  }, {
+    inferenceModel: 'Qwen 3.7',
+    selectedInferenceModelAuthorization: 'native',
+  }), {
+    model: 'QWEN3.7',
+    authorization: 'native',
+  });
+});
+
+test('express session authorization wins over generic session authorization', async () => {
+  assert.deepEqual(await getInferenceSettingsForSession({
+    expressGenerationInferenceModel: 'Qwen 3.7',
+    inferenceModel: 'gemini-3.1-pro',
+    expressGenerationInferenceModelAuthorization: 'deployed',
+    inferenceModelAuthorization: 'native',
+  }), {
+    model: 'QWEN3.7',
+    authorization: 'deployed',
+  });
 });
 
 test('connected audio duration is clamped to the connected scene duration', () => {

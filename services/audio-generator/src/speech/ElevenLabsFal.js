@@ -378,7 +378,9 @@ export async function processElevenLabsFalSpeechRequest(payload) {
       // Optionally: update the prompt to add variety / fallback text
 
       
-      const updatedSpeechPrompt = await updateSpeechPrompt(audioGenerationRecord.prompt);
+      const updatedSpeechPrompt = await updateSpeechPrompt(audioGenerationRecord.prompt, {
+        request: audioGenerationRecord,
+      });
 
       audioGenerationRecord.numRetries += 1;
       audioGenerationRecord.rowLocked = false;

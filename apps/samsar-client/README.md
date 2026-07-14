@@ -136,14 +136,17 @@ That means image generation can complete first, the preview can be inspected, an
     "aspect_ratio": "16:9",
     "language": "en",
     "font_key": "Poppins",
-    "enable_subtitles": true
+    "enable_subtitles": true,
+    "subtitle_language": "es"
   },
   "auto_render_full_video": true,
   "manual_step_stages": []
 }
 ```
 
-Accepted `T2V` JSON fields include `prompt`, `image_model`, `video_model`, `duration`, `video_model_sub_type`, `image_style`, `tone`, `aspect_ratio`, `language`, `font_key`, `enable_subtitles`, CTA fields, footer metadata, and custom adapter configuration.
+Accepted `T2V` JSON fields include `prompt`, `image_model`, `video_model`, `duration`, `video_model_sub_type`, `image_style`, `tone`, `aspect_ratio`, `language`, `font_key`, `enable_subtitles`, `subtitle_language`, CTA fields, footer metadata, and custom adapter configuration.
+
+`subtitle_language` is optional and only applies when `enable_subtitles` is `true`. When omitted, subtitles follow the concrete speech language (including when `language` is `auto`). Set it to a different supported two-letter language code to translate only the subtitle text while keeping the original audio unchanged; if the detected speech already uses that language, the normal aligned subtitle path is retained.
 
 #### Image-List-to-Video JSON Example
 
@@ -169,6 +172,7 @@ Accepted `T2V` JSON fields include `prompt`, `image_model`, `video_model`, `dura
     "language": "en",
     "font_key": "Poppins",
     "enable_subtitles": true,
+    "subtitle_language": "es",
     "limit_single_narrator": false,
     "add_narrator_avatar": false,
     "metadata": {

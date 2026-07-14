@@ -3,6 +3,7 @@ import { deductGenerationCredits } from '../GenerationCredits.js';
 import ImageGeneration from '../../schema/ImageGeneration.js';
 import GlobalSession from '../../schema/GlobalSession.js';
 import RollupBannerEnhanceTask from '../../schema/RollupBannerEnhanceTask.js';
+import User from '../../schema/User.js';
 import { upsertGlobalSessionMapping } from '../GlobalSession.js';
 import { getDescriptionForImageToCreateImageList } from '../ai_utils/VisionUtils.js';
 import {
@@ -19,6 +20,12 @@ import { randomUUID } from 'crypto';
 import { uploadBufferToS3, uploadBufferToS3WithRegion } from '../AWS.js';
 import mongoose from 'mongoose';
 import { SUPPORTED_SUBTITLE_FONTS_BY_LANGUAGE } from '../../consts/SubtitleFonts.js';
+import {
+  isGeminiInferenceModel,
+  isQwenInferenceModel,
+  normalizeInferenceModel,
+} from '../../consts/InferenceModels.js';
+import { createCompatibleChatCompletion } from '../ai_utils/OpenAICompat.js';
 
 const OPENAI_MODEL = process.env.IMAGE_SET_PROMPT_MODEL || 'gpt-4o-mini';
 const openaiClient = process.env.OPENAI_API_KEY ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY }) : null;
@@ -229,13 +236,20 @@ export async function updateImageSet(payload = {}) {
 
   await getDBConnectionString();
 
+  const userData = await User.findById(userId).select('selectedInferenceModel').lean();
+  const selectedInferenceModel = normalizeInferenceModel(userData?.selectedInferenceModel);
+
   const trimmedImageUrls = image_urls.map((url) => url.trim());
-  const imageDescriptions = await getDescriptionsForImageList(trimmedImageUrls);
+  const imageDescriptions = await getDescriptionsForImageList(
+    trimmedImageUrls,
+    selectedInferenceModel,
+  );
   const generatedPrompt = await generatePromptForImageSet({
     metadata: normalizedMetadata,
     userPrompt,
     numImages: numImagesRequested,
     imageDescriptions,
+    inferenceModel: selectedInferenceModel,
   });
 
 
@@ -1626,7 +1640,7 @@ async function waitForRollupEnhancements(tasks, opts = {}) {
   return results;
 }
 
-async function getDescriptionsForImageList(imageUrls = []) {
+async function getDescriptionsForImageList(imageUrls = [], inferenceModel) {
   if (!Array.isArray(imageUrls) || imageUrls.length === 0) {
     return [];
   }
@@ -1635,7 +1649,10 @@ async function getDescriptionsForImageList(imageUrls = []) {
     imageUrls.map(async (url) => {
       try {
 
-        const descriptionResult = await getDescriptionForImageToCreateImageList(url);
+        const descriptionResult = await getDescriptionForImageToCreateImageList(
+          url,
+          inferenceModel,
+        );
 
         return descriptionResult;
       } catch {
@@ -1647,7 +1664,13 @@ async function getDescriptionsForImageList(imageUrls = []) {
   return results.filter(Boolean);
 }
 
-async function generatePromptForImageSet({ metadata = {}, userPrompt = '', numImages, imageDescriptions = [] }) {
+async function generatePromptForImageSet({
+  metadata = {},
+  userPrompt = '',
+  numImages,
+  imageDescriptions = [],
+  inferenceModel,
+}) {
   const numImagesToGenerate = Number(numImages);
   if (!Number.isFinite(numImagesToGenerate) || numImagesToGenerate <= 0) {
     throw new Error('numImages must be a positive number for prompt generation.');
@@ -1695,21 +1718,29 @@ async function generatePromptForImageSet({ metadata = {}, userPrompt = '', numIm
     ? `${fallbackPrompt}${descriptionsAppendix}`
     : fallbackPrompt;
 
-  if (!openaiClient) {
+  const normalizedInferenceModel = normalizeInferenceModel(inferenceModel);
+  const usesSelectedNonOpenAIProvider =
+    isGeminiInferenceModel(normalizedInferenceModel) ||
+    isQwenInferenceModel(normalizedInferenceModel);
+
+  if (!openaiClient && !usesSelectedNonOpenAIProvider) {
     return fallbackPromptWithDescriptions;
   }
 
 
 
   try {
-    const completion = await openaiClient.chat.completions.create({
-      model: OPENAI_MODEL,
+    const completionPayload = {
+      model: usesSelectedNonOpenAIProvider ? normalizedInferenceModel : OPENAI_MODEL,
       messages: [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: parts.join('\n') },
       ],
       temperature: 0.8,
-    });
+    };
+    const completion = usesSelectedNonOpenAIProvider
+      ? await createCompatibleChatCompletion(openaiClient, completionPayload)
+      : await openaiClient.chat.completions.create(completionPayload);
 
     const generated = completion?.choices?.[0]?.message?.content?.trim();
     return generated || fallbackPromptWithDescriptions;

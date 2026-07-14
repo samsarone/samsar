@@ -1,10 +1,36 @@
 const TOKENS_PER_MILLION = 1_000_000;
 const CREDITS_PER_DOLLAR = 100;
-const DEFAULT_ASSISTANT_PRICING_MULTIPLIER = 2.5;
+export const DEFAULT_ASSISTANT_PRICING_MULTIPLIER = 1.5;
 
 const TOKEN_PRICING_USD_PER_MILLION = Object.freeze({
-  'gpt-5.6-sol': { input: 5, cachedInput: 0.5, output: 30 },
-  'gemini-3.1-pro': { input: 2.5, cachedInput: 0.25, output: 15 },
+  'gpt-5.6-sol': {
+    input: 5,
+    cachedInput: 0.5,
+    output: 30,
+    longContextInput: 10,
+    longContextCachedInput: 1,
+    longContextOutput: 45,
+    longContextInputThreshold: 272_000,
+  },
+  'gemini-3.1-pro': {
+    input: 2,
+    cachedInput: 0.2,
+    output: 12,
+    longContextInput: 4,
+    longContextCachedInput: 0.4,
+    longContextOutput: 18,
+    longContextInputThreshold: 200_000,
+  },
+  'qwen3.7-max': { input: 2.5, cachedInput: 2.5, output: 7.5 },
+  'qwen3.7-plus': {
+    input: 0.4,
+    cachedInput: 0.4,
+    output: 1.6,
+    longContextInput: 1.2,
+    longContextCachedInput: 1.2,
+    longContextOutput: 4.8,
+    longContextInputThreshold: 256_000,
+  },
 });
 
 export function calculateAssistantCreditsFromUsage({
@@ -31,12 +57,13 @@ export function calculateAssistantCreditsFromUsage({
     Math.min(normalizedUsage.inputTokens, normalizedUsage.cachedInputTokens),
   );
   const uncachedInputTokens = Math.max(0, normalizedUsage.inputTokens - cachedInputTokens);
-  const cachedInputRate = pricing.cachedInput ?? pricing.input;
+  const effectivePricing = getEffectiveTokenPricing(pricing, normalizedUsage.inputTokens);
+  const cachedInputRate = effectivePricing.cachedInput ?? effectivePricing.input;
 
   const costUsd = (
-    (uncachedInputTokens / TOKENS_PER_MILLION) * pricing.input +
+    (uncachedInputTokens / TOKENS_PER_MILLION) * effectivePricing.input +
     (cachedInputTokens / TOKENS_PER_MILLION) * cachedInputRate +
-    (normalizedUsage.outputTokens / TOKENS_PER_MILLION) * pricing.output
+    (normalizedUsage.outputTokens / TOKENS_PER_MILLION) * effectivePricing.output
   );
   const credits = roundTo(costUsd * CREDITS_PER_DOLLAR * pricingMultiplier, 4);
 
@@ -47,7 +74,7 @@ export function calculateAssistantCreditsFromUsage({
     pricingModel,
     pricingMultiplier,
     creditsPerDollar: CREDITS_PER_DOLLAR,
-    tokenPricingUsdPerMillion: pricing,
+    tokenPricingUsdPerMillion: effectivePricing,
   };
 }
 
@@ -112,7 +139,38 @@ function resolvePricingModel(model) {
     return 'gemini-3.1-pro';
   }
 
+  if (normalized.startsWith('qwen3.7-plus') || normalized.startsWith('qwen-3.7-plus')) {
+    return 'qwen3.7-plus';
+  }
+
+  if (
+    normalized === 'qwen3.7' ||
+    normalized.startsWith('qwen3.7-max') ||
+    normalized.startsWith('qwen-3.7')
+  ) {
+    return 'qwen3.7-max';
+  }
+
   return null;
+}
+
+function getEffectiveTokenPricing(pricing, inputTokens) {
+  const threshold = Number(pricing.longContextInputThreshold);
+  if (!Number.isFinite(threshold) || threshold <= 0 || inputTokens <= threshold) {
+    return {
+      input: pricing.input,
+      cachedInput: pricing.cachedInput,
+      output: pricing.output,
+    };
+  }
+
+  return {
+    input: pricing.longContextInput ?? pricing.input,
+    cachedInput: pricing.longContextCachedInput ?? pricing.cachedInput,
+    output: pricing.longContextOutput ?? pricing.output,
+    longContext: true,
+    longContextInputThreshold: threshold,
+  };
 }
 
 function getTextFromMessageContent(content) {

@@ -1,5 +1,8 @@
 import { sendAssistantMessageRequest } from "../inference/OpenAI.js";
-import { getDefaultUserInferenceModel } from "../inference/InferenceModels.js";
+import {
+  resolveInferenceModelFromContext,
+  resolveInferenceSettingsFromContext,
+} from '../inference/RequestInferenceContext.js';
 
 const DEFAULT_SIMPLIFIED_BACKING_TRACK_PROMPT =
   "Create a clean instrumental cinematic backing track for a short social video ad. Use upbeat travel energy, clear rhythm, warm synths, light percussion, and no vocals.";
@@ -24,7 +27,11 @@ function parsePromptRewriteContent(rawContent) {
   }
 }
 
-export async function getSimplifiedBackingTrackPromptForRetry(originalPrompt, errorMessage) {
+export async function getSimplifiedBackingTrackPromptForRetry(
+  originalPrompt,
+  errorMessage,
+  inferenceContext = {},
+) {
   const sourcePrompt = normalizeString(originalPrompt) || DEFAULT_SIMPLIFIED_BACKING_TRACK_PROMPT;
   const failureReason = normalizeString(errorMessage) || 'The audio provider rejected or could not process this prompt.';
 
@@ -46,7 +53,12 @@ export async function getSimplifiedBackingTrackPromptForRetry(originalPrompt, er
   ];
 
   try {
-    const response = await sendAssistantMessageRequest(messages, getDefaultUserInferenceModel());
+    const inferenceSettings = await resolveBackingTrackRetryInferenceSettings(inferenceContext);
+    const response = await sendAssistantMessageRequest(
+      messages,
+      inferenceSettings.model,
+      inferenceSettings.authorization,
+    );
     const simplifiedPrompt = parsePromptRewriteContent(response?.content);
     return simplifiedPrompt || DEFAULT_SIMPLIFIED_BACKING_TRACK_PROMPT;
   } catch (error) {
@@ -55,4 +67,12 @@ export async function getSimplifiedBackingTrackPromptForRetry(originalPrompt, er
     });
     return DEFAULT_SIMPLIFIED_BACKING_TRACK_PROMPT;
   }
+}
+
+export async function resolveBackingTrackRetryInferenceModel(inferenceContext = {}) {
+  return resolveInferenceModelFromContext(inferenceContext);
+}
+
+export async function resolveBackingTrackRetryInferenceSettings(inferenceContext = {}) {
+  return resolveInferenceSettingsFromContext(inferenceContext);
 }

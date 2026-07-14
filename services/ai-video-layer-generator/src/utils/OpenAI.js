@@ -11,8 +11,10 @@ import {
   GPT_56_SOL_REASONING_EFFORT,
   createGoogleGeminiChatCompletion,
   isGeminiInferenceModel,
+  isQwenInferenceModel,
   normalizeInferenceModel,
 } from './GoogleGemini.js';
+import { createAlibabaQwenChatCompletion } from './AlibabaQwen.js';
 import { recordProviderUsageLog } from './ProviderUsageAudit.js';
 import {
   createSamsarExternalChatCompletion,
@@ -105,7 +107,7 @@ const textWordCustomAnimations = [
 
 
 export async function createTextToVideoPromptFromLayerPrompt(startingPrompt, startingImageDescription,
-  endingImageDescription, userInferenceModel = 'gpt-5.6-sol', useShortFormPrompt = true, indexData, videoTone = 'grounded') {
+  endingImageDescription, userInferenceModel = 'gpt-5.6-sol', useShortFormPrompt = true, indexData, videoTone = 'grounded', auditContext = {}) {
 
   const { isStartScene, isEndScene } = indexData;
 
@@ -185,7 +187,7 @@ Emphasize how the camera enters or focuses on the setting to start the scene.`;
   ];
 
   try {
-    const responseData = await sendAssistantMessageRequest(messageList, userInferenceModel);
+    const responseData = await sendAssistantMessageRequest(messageList, userInferenceModel, auditContext);
 
 
     return responseData.content;
@@ -365,7 +367,7 @@ export async function getTransitionListForLayerSceneDescriptions(layerSceneDescr
 
 }
 
-export async function getAccentForText(text) {
+export async function getAccentForText(text, auditContext = {}) {
 
   const textAnimationOptions = textWordCustomAnimations.join(', ');
   const systemPrompt = `You are a subtitle and transctiption assistant for a video production tool.
@@ -386,8 +388,11 @@ export async function getAccentForText(text) {
   ];
 
   try {
-    const inferenceModel = process.env.USER_INFERENCE_MODEL || process.env.DEFAULT_USER_INFERENCE_MODEL || 'gpt-5.6-sol';
-    const responseData = await sendAssistantMessageRequest(messageList, inferenceModel);
+    const inferenceModel = auditContext.inferenceModel ||
+      process.env.USER_INFERENCE_MODEL ||
+      process.env.DEFAULT_USER_INFERENCE_MODEL ||
+      'gpt-5.6-sol';
+    const responseData = await sendAssistantMessageRequest(messageList, inferenceModel, auditContext);
 
     return responseData.content;
   } catch (err) {
@@ -401,9 +406,16 @@ export async function sendAssistantMessageRequest(messageList, userInferenceMode
   const modelName = getModelNameForInferenceModel(userInferenceModel);
 
   try {
+    const selectedInferenceModelAuthorization =
+      auditContext.selectedInferenceModelAuthorization ||
+      auditContext.inferenceModelAuthorization ||
+      auditContext.authorization;
     const basePayload = {
       model: modelName,
       messages: messageList,
+      ...(selectedInferenceModelAuthorization
+        ? { authorization: selectedInferenceModelAuthorization }
+        : {}),
     };
 
     if (shouldUseSamsarExternalInference(basePayload)) {
@@ -428,6 +440,18 @@ export async function sendAssistantMessageRequest(messageList, userInferenceMode
         auditContext,
       });
       return response;
+    }
+
+    if (isQwenInferenceModel(modelName)) {
+      const response = await createAlibabaQwenChatCompletion(basePayload);
+      await recordInferenceProviderUsage({
+        messageList,
+        modelName: response?.model || modelName,
+        provider: 'alibabaCloud',
+        response,
+        auditContext,
+      });
+      return response.choices[0].message;
     }
 
     if (RESPONSES_ONLY_MODELS.has(modelName)) {
@@ -471,7 +495,11 @@ export async function sendAssistantMessageRequest(messageList, userInferenceMode
 }
 
 
-export async function sendAssistantStructuredMessageRequest(messageList) {
+export async function sendAssistantStructuredMessageRequest(
+  messageList,
+  userInferenceModel = 'gpt-5.6-sol',
+  auditContext = {},
+) {
 
 
   const ScreenplayTransitionExtraction = z.object({
@@ -479,14 +507,30 @@ export async function sendAssistantStructuredMessageRequest(messageList) {
   });
 
   try {
+    const selectedInferenceModel = normalizeInferenceModel(userInferenceModel);
+    const selectedInferenceModelAuthorization =
+      auditContext.selectedInferenceModelAuthorization ||
+      auditContext.inferenceModelAuthorization ||
+      auditContext.authorization;
     const payload = {
       messages: messageList,
-      model: "gpt-4o-2024-11-20",
+      model: isQwenInferenceModel(selectedInferenceModel)
+        ? selectedInferenceModel
+        : "gpt-4o-2024-11-20",
       response_format: zodResponseFormat(ScreenplayTransitionExtraction, "screenplay_transition_extraction"),
+      ...(selectedInferenceModelAuthorization
+        ? { authorization: selectedInferenceModelAuthorization }
+        : {}),
     };
-    const response = shouldUseSamsarExternalInference(payload)
-      ? await createSamsarExternalChatCompletion(payload)
-      : await getOpenAIClient().chat.completions.create(payload);
+    const { authorization: _authorization, ...nativePayload } = payload;
+    let response;
+    if (shouldUseSamsarExternalInference(payload)) {
+      response = await createSamsarExternalChatCompletion(payload);
+    } else if (isQwenInferenceModel(payload.model)) {
+      response = await createAlibabaQwenChatCompletion(payload);
+    } else {
+      response = await getOpenAIClient().chat.completions.create(nativePayload);
+    }
     const messageContent = response.choices[0].message.content;
 
     const parsedMessage = JSON.parse(messageContent);

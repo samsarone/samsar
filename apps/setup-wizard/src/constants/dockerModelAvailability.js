@@ -1,6 +1,7 @@
 export const DOCKER_PROVIDER = Object.freeze({
   OPENAI: 'openai',
   GOOGLE_CLOUD: 'googleCloud',
+  ALIBABA_CLOUD: 'alibabaCloud',
   FAL: 'fal',
   ELEVENLABS: 'elevenlabs',
   RUNWAY: 'runway',
@@ -10,6 +11,7 @@ export const DOCKER_PROVIDER = Object.freeze({
 export const DOCKER_PROVIDER_DISPLAY_ORDER = Object.freeze([
   DOCKER_PROVIDER.OPENAI,
   DOCKER_PROVIDER.GOOGLE_CLOUD,
+  DOCKER_PROVIDER.ALIBABA_CLOUD,
   DOCKER_PROVIDER.FAL,
   DOCKER_PROVIDER.ELEVENLABS,
   DOCKER_PROVIDER.RUNWAY,
@@ -36,6 +38,7 @@ export const DOCKER_SOUND_EFFECT_MODELS = Object.freeze(['MMAUDIOV2', 'MIRELOAI'
 
 const OPENAI_OR_SAMSAR = Object.freeze([DOCKER_PROVIDER.OPENAI, DOCKER_PROVIDER.SAMSAR]);
 const GOOGLE_OR_SAMSAR = Object.freeze([DOCKER_PROVIDER.GOOGLE_CLOUD, DOCKER_PROVIDER.SAMSAR]);
+const ALIBABA_OR_SAMSAR = Object.freeze([DOCKER_PROVIDER.ALIBABA_CLOUD, DOCKER_PROVIDER.SAMSAR]);
 const FAL_OR_SAMSAR = Object.freeze([DOCKER_PROVIDER.FAL, DOCKER_PROVIDER.SAMSAR]);
 const ELEVENLABS_FAL_OR_SAMSAR = Object.freeze([
   DOCKER_PROVIDER.ELEVENLABS,
@@ -49,8 +52,9 @@ const GOOGLE_FAL_OR_SAMSAR = Object.freeze([
 ]);
 
 export const DOCKER_MODEL_PROVIDER_PRIORITY_BY_MODEL = Object.freeze({
-  'gpt-5.5': OPENAI_OR_SAMSAR,
+  'gpt-5.6-sol': OPENAI_OR_SAMSAR,
   'gemini-3.1-pro': GOOGLE_OR_SAMSAR,
+  'QWEN3.7': ALIBABA_OR_SAMSAR,
   GPTIMAGE2: OPENAI_OR_SAMSAR,
   GPTIMAGE2EDIT: OPENAI_OR_SAMSAR,
   SEEDREAM: FAL_OR_SAMSAR,
@@ -81,8 +85,9 @@ export const DOCKER_MODEL_PROVIDER_PRIORITY_BY_MODEL = Object.freeze({
 });
 
 export const DOCKER_MODEL_ACTIONS_BY_MODEL = Object.freeze({
-  'gpt-5.5': ['chat', 'assistant', 'moderation', 'recommendations', 'search'],
+  'gpt-5.6-sol': ['chat', 'assistant', 'moderation', 'recommendations', 'search'],
   'gemini-3.1-pro': ['chat', 'assistant', 'moderation'],
+  'QWEN3.7': ['chat', 'assistant'],
   GPTIMAGE2: ['image'],
   GPTIMAGE2EDIT: ['image_edit'],
   SEEDREAM: ['image'],
@@ -133,6 +138,15 @@ export function normalizeDockerProviderKey(value) {
   const compact = value.trim().toLowerCase().replace(/[\s_-]+/g, '');
   if (compact === 'google' || compact === 'googlecloud' || compact === 'gcp') {
     return DOCKER_PROVIDER.GOOGLE_CLOUD;
+  }
+  if (
+    compact === 'alibaba' ||
+    compact === 'alibabacloud' ||
+    compact === 'aliyun' ||
+    compact === 'dashscope' ||
+    compact === 'qwen'
+  ) {
+    return DOCKER_PROVIDER.ALIBABA_CLOUD;
   }
   if (compact === 'runway' || compact === 'runwayml') {
     return DOCKER_PROVIDER.RUNWAY;

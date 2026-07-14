@@ -21,6 +21,12 @@ import { updateAdVideoCharacterPromptWithTheme, updateAdVideoPromptWithTheme } f
 
 import { getMusicForTextTheme } from '../../OpenAI.js';
 import { assignCharactersAndInstructionsToScenes } from '../MovieGeneratorUtils.js';
+import { translateSpeech } from '../../agent/AudioCreatorAgent.js';
+import {
+  buildSpeechSubtitleLayerFields,
+  buildSpeechSubtitleTextMap,
+  resolveSubtitleLanguageOption,
+} from '../SubtitleLanguage.js';
 import User from "../../../schema/User.js";
 import axios from 'axios';
 import fs from 'fs';
@@ -515,6 +521,10 @@ export async function requestImageListToVideGeneration(userId, payload) {
     subtitleFont: requestedSubtitleFont,
     speakerFont: requestedSpeakerFont,
     enableSubtitles = true,
+    subtitle_language = undefined,
+    subtitleLanguage = undefined,
+    subtitle_language_explicit = undefined,
+    subtitleLanguageExplicit = undefined,
     limitSingleNarrator = false,
     limit_single_narrator = false,
     addNarratorAvatar = false,
@@ -561,6 +571,16 @@ export async function requestImageListToVideGeneration(userId, payload) {
   const speakerFont = normalizedSpeakerFont || subtitleFont;
   const hasFontOverride = Boolean(normalizedSubtitleFont || normalizedSpeakerFont);
   const shouldEnableSubtitles = enableSubtitles !== false;
+  const subtitleLanguageOption = resolveSubtitleLanguageOption(
+    {
+      subtitle_language,
+      subtitleLanguage,
+      subtitle_language_explicit,
+      subtitleLanguageExplicit,
+    },
+    language,
+    { allowPropagatedSameAsAudio: true },
+  );
   const shouldAddNarratorAvatar = addNarratorAvatar === true || add_narrator_avatar === true;
   const shouldLimitSingleNarrator =
     shouldAddNarratorAvatar || limitSingleNarrator === true || limit_single_narrator === true;
@@ -605,6 +625,18 @@ export async function requestImageListToVideGeneration(userId, payload) {
 
 
   const soundAudioLayers = sounds.filter((sound) => sound.type !== 'sound_effect');
+
+  const subtitleTextBySound = await buildSpeechSubtitleTextMap(soundAudioLayers, {
+    subtitlesEnabled: shouldEnableSubtitles,
+    speechLanguageCode: subtitleLanguageOption.speechLanguageCode,
+    subtitleLanguage: subtitleLanguageOption.subtitleLanguage,
+    subtitleLanguageString: subtitleLanguageOption.subtitleLanguageString,
+    subtitleLanguageExplicit: subtitleLanguageOption.subtitleLanguageExplicit,
+    inferenceModel: userInferenceModel,
+    translateSpeech,
+  });
+  const subtitleTranslationRequired = Array.from(subtitleTextBySound.values())
+    .some((metadata) => metadata.subtitleTranslationRequired === true);
 
   const canvasDimensions = getCanvasDimensionsForAspectRatio(aspectRatio);
   const assetsRoot = (process.env.CURRENT_ENV === 'staging' || process.env.CURRENT_ENV === 'docker')
@@ -733,38 +765,45 @@ export async function requestImageListToVideGeneration(userId, payload) {
     };
     const isOpenAISpeaker = typeof sound.provider === 'string' && sound.provider.trim().toUpperCase() === 'OPENAI';
 
-		  const soundGender = normalizeSpeechGender(sound.gender) || sound.gender || '';
-      const resolvedSoundSubType = resolveSpeechSubType(sound, scenes);
+    const soundGender = normalizeSpeechGender(sound.gender) || sound.gender || '';
+    const resolvedSoundSubType = resolveSpeechSubType(sound, scenes);
+    const subtitleLayerFields = buildSpeechSubtitleLayerFields(
+      subtitleTextBySound.get(sound) || {
+        subtitleText: sound.audio,
+        subtitleLanguage: subtitleLanguageOption.subtitleLanguage,
+        speechLanguage: subtitleLanguageOption.speechLanguageCode,
+        subtitleTranslationRequired: false,
+      },
+      shouldEnableSubtitles,
+    );
 
-		  let returnPayload = {
-		      prompt: sound.audio,
-		      generationType: "speech",
-	      isHuman: sound.isHuman ? true : false,
-	      generationStatus: 'PENDING',
-		      duration: sound.duration,
-		      startTime: sound.startTime,
-		      endTime: sound.endTime,
-		      defaultSelected: true,
-		      volume: resolveSpeechVolumeFromSubType(resolvedSoundSubType),
-		      speaker: sound.speaker,
-		      provider: sound.provider,
-		      speakerVoiceId: sound.speakerVoiceId,
-		      speakerLabel: sound.speakerLabel,
-		      speakerDetails: sound.speakerDetails,
-		      languageCode: sound.languageCode,
-		      languageCodes: sound.languageCodes,
-		      speakerCharacterName: sound.speakerCharacterName,
-		      actor: sound.actor,
-		      gender: soundGender,
-		      subType: resolvedSoundSubType || sound.subType,
-		      Identity: sound.Identity,
-		      addTranscriptionsRequired: shouldEnableSubtitles,
-		      ...(hasFontOverride ? { subtitleFont } : {}),
-	      subtitleWordAnimation: 'highlight',
-	      isEnabled: true,
-	      addSubtitles: shouldEnableSubtitles,
-	      instructions: isOpenAISpeaker ? sound.instructions : undefined,
-
+    let returnPayload = {
+      prompt: sound.audio,
+      ...subtitleLayerFields,
+      generationType: "speech",
+      isHuman: sound.isHuman ? true : false,
+      generationStatus: 'PENDING',
+      duration: sound.duration,
+      startTime: sound.startTime,
+      endTime: sound.endTime,
+      defaultSelected: true,
+      volume: resolveSpeechVolumeFromSubType(resolvedSoundSubType),
+      speaker: sound.speaker,
+      provider: sound.provider,
+      speakerVoiceId: sound.speakerVoiceId,
+      speakerLabel: sound.speakerLabel,
+      speakerDetails: sound.speakerDetails,
+      languageCode: sound.languageCode,
+      languageCodes: sound.languageCodes,
+      speakerCharacterName: sound.speakerCharacterName,
+      actor: sound.actor,
+      gender: soundGender,
+      subType: resolvedSoundSubType || sound.subType,
+      Identity: sound.Identity,
+      ...(hasFontOverride ? { subtitleFont } : {}),
+      isEnabled: true,
+      addSubtitles: shouldEnableSubtitles,
+      instructions: isOpenAISpeaker ? sound.instructions : undefined,
     }
 
     if (isOpenAISpeaker) {
@@ -1275,6 +1314,10 @@ export async function requestImageListToVideGeneration(userId, payload) {
       enableSubtitles: shouldEnableSubtitles,
       hasSubtitles: shouldEnableSubtitles,
       has_subtitles: shouldEnableSubtitles,
+      subtitleLanguage: subtitleLanguageOption.subtitleLanguage,
+      subtitleLanguageString: subtitleLanguageOption.subtitleLanguageString,
+      subtitleLanguageExplicit: subtitleLanguageOption.subtitleLanguageExplicit,
+      subtitleTranslationRequired,
       isVidGPTGen: true,
       parentJsonTheme: themeJsonString,
       movieGenSpeakers: movieGenSpeakerList,

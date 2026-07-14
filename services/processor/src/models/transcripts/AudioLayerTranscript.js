@@ -41,6 +41,7 @@ async function getSubtitleLayersForAudioLayer({
   audioLayerStartFrame,
   alignerLanguageCode,
   framesPerSecond,
+  inferenceModel,
 }) {
   const cachedAlignment = getCachedTranscriptAlignment(
     audioLayer,
@@ -60,7 +61,8 @@ async function getSubtitleLayersForAudioLayer({
         audioLayerStartFrame,
         audioLayerId,
         alignerLanguageCode,
-        framesPerSecond
+        framesPerSecond,
+        inferenceModel,
       );
     } catch (error) {
       console.error('Failed to build subtitles from cached transcript alignment', {
@@ -87,6 +89,7 @@ async function getSubtitleLayersForAudioLayer({
       returnAlignment: true,
       sourceText: transcriptText,
       audioSource,
+      inferenceModel,
     }
   );
 
@@ -173,6 +176,11 @@ export async function regenerateTranscriptsForSessionAudioLayer(sessionId, audio
   }
 
   const alignerLanguageCode = getAlignerLanguageCode(sessionData.sessionLanguage || 'en');
+  const userData = await User.findById(sessionData.userId).select('selectedInferenceModel').lean();
+  const inferenceModel =
+    sessionData.expressGenerationInferenceModel ||
+    sessionData.inferenceModel ||
+    userData?.selectedInferenceModel;
   const audioLayerId = audioLayer._id.toString();
 
 
@@ -208,6 +216,7 @@ export async function regenerateTranscriptsForSessionAudioLayer(sessionId, audio
     audioLayerStartFrame: startFrame,
     alignerLanguageCode,
     framesPerSecond,
+    inferenceModel,
   });
 
 
@@ -241,6 +250,10 @@ export async function generateTranscriptsForSessionAudioLayer(sessionId, audioLa
   const alignerLanguageCode = getAlignerLanguageCode(sessionData.sessionLanguage || 'en');
   const userId = sessionData.userId;
   const userData = await User.findById(userId);
+  const inferenceModel =
+    sessionData.expressGenerationInferenceModel ||
+    sessionData.inferenceModel ||
+    userData?.selectedInferenceModel;
 
   const sessionSpeakerFont = sessionData.expressGenerationSpeakerFont;
   const sessionTextFont = sessionData.expressGenerationTextFont;
@@ -284,6 +297,7 @@ export async function generateTranscriptsForSessionAudioLayer(sessionId, audioLa
     audioLayerStartFrame,
     alignerLanguageCode,
     framesPerSecond,
+    inferenceModel,
   });
   
 

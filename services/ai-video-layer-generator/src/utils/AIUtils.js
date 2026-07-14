@@ -2,8 +2,10 @@ import OpenAI from "openai";
 import {
   createGoogleGeminiChatCompletion,
   isGeminiInferenceModel,
+  isQwenInferenceModel,
   normalizeInferenceModel,
 } from './GoogleGemini.js';
+import { createAlibabaQwenChatCompletion } from './AlibabaQwen.js';
 import {
   createSamsarExternalChatCompletion,
   shouldUseSamsarExternalInference,
@@ -27,7 +29,11 @@ function getOpenAIClient() {
 
 
 
-export async function getAlternateVideoPrompt(prompt) {
+export async function getAlternateVideoPrompt(
+  prompt,
+  userInferenceModel = process.env.USER_INFERENCE_MODEL || process.env.DEFAULT_USER_INFERENCE_MODEL || 'gpt-5.6-sol',
+  selectedInferenceModelAuthorization = '',
+) {
 
 
   const systemPrompt = `You are an assistant for an image-to-video creation tool.
@@ -53,7 +59,11 @@ export async function getAlternateVideoPrompt(prompt) {
   try {
 
 
-    const responseData = await sendAssistantMessageRequest(messageList);
+    const responseData = await sendAssistantMessageRequest(
+      messageList,
+      userInferenceModel,
+      selectedInferenceModelAuthorization,
+    );
     
     return responseData.content;
   } catch (err) {
@@ -66,15 +76,27 @@ export async function getAlternateVideoPrompt(prompt) {
 export async function sendAssistantMessageRequest(
   messageList,
   userInferenceModel = process.env.USER_INFERENCE_MODEL || process.env.DEFAULT_USER_INFERENCE_MODEL || 'gpt-5.6-sol',
+  selectedInferenceModelAuthorization = '',
 ) {
 
   try {
     const normalizedInferenceModel = normalizeInferenceModel(userInferenceModel);
     const isGeminiModel = isGeminiInferenceModel(userInferenceModel) ||
       isGeminiInferenceModel(normalizedInferenceModel);
+    const isQwenModel = isQwenInferenceModel(userInferenceModel) ||
+      isQwenInferenceModel(normalizedInferenceModel);
     const payload = {
       messages: messageList,
-      model: isGeminiModel ? userInferenceModel : "gpt-4.1-2025-04-14",
+      model: isGeminiModel || isQwenModel
+        ? normalizedInferenceModel
+        : "gpt-4.1-2025-04-14",
+      ...(selectedInferenceModelAuthorization
+        ? { authorization: selectedInferenceModelAuthorization }
+        : {}),
+    };
+    const nativePayload = {
+      messages: payload.messages,
+      model: payload.model,
     };
 
     if (shouldUseSamsarExternalInference(payload)) {
@@ -86,7 +108,12 @@ export async function sendAssistantMessageRequest(
       return await createGoogleGeminiChatCompletion(messageList);
     }
 
-    const response = await getOpenAIClient().chat.completions.create(payload);
+    if (isQwenModel) {
+      const response = await createAlibabaQwenChatCompletion(nativePayload);
+      return response.choices[0].message;
+    }
+
+    const response = await getOpenAIClient().chat.completions.create(nativePayload);
     return response.choices[0].message;
   } catch (error) {
     let errorString = 'An error occurred while sending the message. Please try again with a different message.'

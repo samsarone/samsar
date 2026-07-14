@@ -4,6 +4,7 @@ const PROVIDER_LABELS = {
   samsar: "Samsar API Key",
   openai: "OpenAI",
   googleCloud: "Google Cloud",
+  alibabaCloud: "Alibaba Cloud",
   fal: "FAL",
   runway: "RunwayML",
 };
@@ -11,11 +12,13 @@ const PROVIDER_LABELS = {
 const DEPLOYMENT_INFERENCE_MODEL_VALUES = Object.freeze([
   "gpt-5.6-sol",
   "gemini-3.1-pro",
+  "QWEN3.7",
 ]);
 
 const DEPLOYMENT_INFERENCE_MODELS_BY_PROVIDER = Object.freeze({
   openai: ["gpt-5.6-sol"],
   googleCloud: ["gemini-3.1-pro"],
+  alibabaCloud: ["QWEN3.7"],
   samsar: DEPLOYMENT_INFERENCE_MODEL_VALUES,
 });
 
@@ -28,6 +31,15 @@ export function normalizeDeploymentProviderKey(value) {
   const compact = trimmed.toLowerCase().replace(/[\s_-]+/g, "");
   if (compact === "google" || compact === "googlecloud" || compact === "gcp") {
     return "googleCloud";
+  }
+  if (
+    compact === "alibaba" ||
+    compact === "alibabacloud" ||
+    compact === "aliyun" ||
+    compact === "dashscope" ||
+    compact === "qwen"
+  ) {
+    return "alibabaCloud";
   }
   if (compact === "runway" || compact === "runwayml") {
     return "runway";
@@ -84,6 +96,20 @@ export function normalizeDeploymentInferenceModelValue(value) {
 
   const normalized = value.trim().toLowerCase();
   if (
+    normalized === "qwen3.7" ||
+    normalized === "qwen3.7-max" ||
+    normalized === "qwen3.7-plus" ||
+    normalized === "qwen-3.7" ||
+    normalized === "qwen 3.7" ||
+    normalized === "qwen37" ||
+    normalized === "qwen37max" ||
+    normalized === "qwen37plus" ||
+    normalized === "alibaba qwen 3.7" ||
+    normalized === "alibaba cloud qwen 3.7"
+  ) {
+    return "QWEN3.7";
+  }
+  if (
     normalized === "gemini-3.1-pro" ||
     normalized === "gemini-3.1-pro-preview" ||
     normalized === "gemini-3-pro" ||
@@ -130,21 +156,20 @@ export function extractDeploymentInferenceModelValues(payload = {}) {
       return true;
     });
 
-  if (modelValues.length > 0) {
-    return modelValues;
-  }
-
   const providerModels = extractDeploymentProviders(payload).flatMap((provider) => {
     const providerKey = normalizeDeploymentProviderKey(provider);
     return DEPLOYMENT_INFERENCE_MODELS_BY_PROVIDER[providerKey] || [];
   });
-  const providerSeen = new Set();
+  const providerSeen = new Set(modelValues);
 
-  return providerModels.filter((modelValue) => {
-    if (providerSeen.has(modelValue)) return false;
-    providerSeen.add(modelValue);
-    return true;
-  });
+  return [
+    ...modelValues,
+    ...providerModels.filter((modelValue) => {
+      if (providerSeen.has(modelValue)) return false;
+      providerSeen.add(modelValue);
+      return true;
+    }),
+  ];
 }
 
 export function filterOptionsForDeploymentInferenceModels(options = [], modelValues = []) {

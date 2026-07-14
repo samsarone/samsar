@@ -431,7 +431,8 @@ async function retryOrDeleteFailedUpdate(payload, errorMessage) {
         : payload.prompt;
     const alternatePrompt = await getSimplifiedBackingTrackPromptForRetry(
       originalBackingTrackPrompt,
-      errorMessage
+      errorMessage,
+      { request: payload },
     );
 
     await AudioGeneration.findByIdAndUpdate(payload._id, {

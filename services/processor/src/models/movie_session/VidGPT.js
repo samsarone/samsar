@@ -30,6 +30,7 @@ import {
 } from "../custom/VideoCustomModelConfig.js";
 import { isGeminiInferenceModel, normalizeInferenceModel } from "../../consts/InferenceModels.js";
 import { normalizeInferenceModelFromPayload } from "../api/RequestModelOverrides.js";
+import { resolveSubtitleLanguageOption } from './SubtitleLanguage.js';
 
 function resolveAgentImageModel(modelKey) {
   if (modelKey === 'GPTIMAGE1') {
@@ -61,6 +62,10 @@ export async function createVidGPTSession(userId, payload) {
     subtitleFont,
     speakerFont,
     enableSubtitles = true,
+    subtitle_language = undefined,
+    subtitleLanguage = undefined,
+    subtitle_language_explicit = undefined,
+    subtitleLanguageExplicit = undefined,
     outroImageUrl,
     addOutroAnimation = false,
     addOutroFocusArea = false,
@@ -93,6 +98,16 @@ export async function createVidGPTSession(userId, payload) {
 
   const normalizedLanguage = typeof language === 'string' ? language.trim() : language;
   const effectiveLanguageString = languageString || getLanguageStringFromLanguageCode(normalizedLanguage);
+  const subtitleLanguageOption = resolveSubtitleLanguageOption(
+    {
+      subtitle_language,
+      subtitleLanguage,
+      subtitle_language_explicit,
+      subtitleLanguageExplicit,
+    },
+    normalizedLanguage,
+    { allowPropagatedSameAsAudio: true },
+  );
   const resolvedOutroCtaImage = outroCtaImage || outroCtaImageAlias || null;
 
   if (!sessionID) {
@@ -269,6 +284,10 @@ export async function createVidGPTSession(userId, payload) {
     enableSubtitles,
     hasSubtitles: enableSubtitles !== false,
     has_subtitles: enableSubtitles !== false,
+    subtitleLanguage: subtitleLanguageOption.subtitleLanguage,
+    subtitleLanguageString: subtitleLanguageOption.subtitleLanguageString,
+    subtitleLanguageExplicit: subtitleLanguageOption.subtitleLanguageExplicit,
+    subtitleTranslationRequired: enableSubtitles !== false && subtitleLanguageOption.translationRequired,
     outroImageUrl,
     addOutroAnimation,
     addOutroFocusArea,

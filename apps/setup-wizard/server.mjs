@@ -5,7 +5,7 @@ import dns from 'node:dns/promises';
 import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
-import { randomBytes, randomUUID, scryptSync, timingSafeEqual } from 'node:crypto';
+import { createHash, randomBytes, randomUUID, scryptSync, timingSafeEqual } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import nodemailer from 'nodemailer';
 import {
@@ -39,7 +39,15 @@ const COMPOSE_FILE = path.join(ROOT_DIR, 'deploy', 'compose', 'docker-compose.ym
 const CONFIG_PATH = path.join(ROOT_DIR, 'runtime', 'config', 'samsar.config.json');
 const AVAILABLE_MODELS_PATH = path.join(ROOT_DIR, 'runtime', 'config', 'available-models.json');
 const ROOT_ENV_PATH = path.join(ROOT_DIR, 'runtime', 'secrets', 'root.env');
+const PROVIDER_SECRETS_PATH = path.join(ROOT_DIR, 'runtime', 'secrets', 'provider.credentials.json');
 const MAIL_SECRETS_PATH = path.join(ROOT_DIR, 'runtime', 'secrets', 'mail.credentials.json');
+const ALIBABA_VALIDATION_SCRIPT_PATH = path.join(
+  ROOT_DIR,
+  'services',
+  'processor',
+  'scripts',
+  'validate-alibaba-endpoint.mjs',
+);
 const REVERSE_PROXY_DIR = path.join(ROOT_DIR, 'runtime', 'reverse-proxy');
 const REVERSE_PROXY_NGINX_CONFIG_PATH = path.join(REVERSE_PROXY_DIR, 'nginx.conf');
 const REVERSE_PROXY_CERTBOT_WEBROOT = path.join(REVERSE_PROXY_DIR, 'certbot', 'www');
@@ -99,6 +107,8 @@ const MAINTENANCE_STEPS = [
 
 const runs = new Map();
 const maintenanceRuns = new Map();
+const alibabaProviderValidations = new Map();
+const ALIBABA_PROVIDER_VALIDATION_TTL_MS = 60 * 60 * 1000;
 const ALL_COMPOSE_PROFILES = ['core', 'workers', 'local-mongo', 'minio', 'local-media', 'logger', 'reverse-proxy'];
 const ALLOWED_FIREWALL_PORTS = [80, 443, 3000, 3002, 8089];
 const SETUP_PASSWORD_HASH_VERSION = 'scrypt-v1';
@@ -165,7 +175,7 @@ function runCommand(command, args, options = {}) {
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, {
       cwd: options.cwd || ROOT_DIR,
-      env: { ...process.env, ...(options.env || {}) },
+      env: options.replaceEnv ? { ...(options.env || {}) } : { ...process.env, ...(options.env || {}) },
       shell: false,
     });
     let stderr = '';
@@ -258,6 +268,93 @@ function normalizeString(value) {
 
 function normalizeSecretString(value) {
   return typeof value === 'string' ? value.trim() : '';
+}
+
+function buildAlibabaValidationFingerprint(apiKey, baseUrl) {
+  return createHash('sha256')
+    .update(normalizeSecretString(apiKey))
+    .update('\0')
+    .update(normalizeString(baseUrl))
+    .digest('hex');
+}
+
+function pruneExpiredAlibabaProviderValidations(now = Date.now()) {
+  for (const [token, validation] of alibabaProviderValidations.entries()) {
+    if (validation.expiresAt <= now) {
+      alibabaProviderValidations.delete(token);
+    }
+  }
+}
+
+function registerAlibabaProviderValidation(apiKey, baseUrl) {
+  pruneExpiredAlibabaProviderValidations();
+  const token = randomBytes(32).toString('hex');
+  alibabaProviderValidations.set(token, {
+    fingerprint: buildAlibabaValidationFingerprint(apiKey, baseUrl),
+    expiresAt: Date.now() + ALIBABA_PROVIDER_VALIDATION_TTL_MS,
+  });
+  return token;
+}
+
+function consumeAlibabaProviderValidation(token, apiKey, baseUrl) {
+  pruneExpiredAlibabaProviderValidations();
+  const normalizedToken = normalizeString(token);
+  const validation = alibabaProviderValidations.get(normalizedToken);
+  if (!validation) {
+    return false;
+  }
+
+  alibabaProviderValidations.delete(normalizedToken);
+  const expectedFingerprint = Buffer.from(validation.fingerprint, 'hex');
+  const actualFingerprint = Buffer.from(buildAlibabaValidationFingerprint(apiKey, baseUrl), 'hex');
+  return (
+    expectedFingerprint.length === actualFingerprint.length &&
+    timingSafeEqual(expectedFingerprint, actualFingerprint)
+  );
+}
+
+async function validateAlibabaProviderCredential(credentials = {}) {
+  const apiKey = normalizeSecretString(
+    credentials.alibabaApiKey ||
+    credentials.alibabaCloudApiKey ||
+    credentials.dashscopeApiKey,
+  );
+  if (!apiKey) {
+    return { providers: {} };
+  }
+
+  const apiHost = normalizeString(
+    credentials.alibabaApiHost ||
+    credentials.alibabaCloudBaseUrl ||
+    credentials.dashscopeBaseUrl,
+  );
+  const stdout = await runCommandCapture(process.execPath, [ALIBABA_VALIDATION_SCRIPT_PATH], {
+    cwd: ROOT_DIR,
+    replaceEnv: true,
+    env: {
+      SAMSAR_VALIDATION_ALIBABA_API_KEY: apiKey,
+      SAMSAR_VALIDATION_ALIBABA_API_HOST: apiHost,
+    },
+  });
+
+  let validation;
+  try {
+    validation = JSON.parse(stdout);
+  } catch {
+    throw new Error('Alibaba Cloud credential sandbox returned an invalid response.');
+  }
+  if (validation?.provider !== 'alibabaCloud' || typeof validation?.ok !== 'boolean') {
+    throw new Error('Alibaba Cloud credential sandbox did not return a provider result.');
+  }
+  if (validation.ok === true) {
+    validation.validationToken = registerAlibabaProviderValidation(apiKey, validation.baseUrl);
+  }
+
+  return {
+    providers: {
+      alibabaCloud: validation,
+    },
+  };
 }
 
 function isTemporaryAwsAccessKeyId(value) {
@@ -1149,6 +1246,70 @@ function normalizeGoogleCredentials(rawValue) {
   }
 }
 
+function consumeValidatedAlibabaProviderSecret(payload = {}) {
+  const credentials = payload?.credentials || {};
+  const apiKey = normalizeSecretString(
+    credentials.alibabaApiKey ||
+    credentials.alibabaCloudApiKey ||
+    credentials.dashscopeApiKey,
+  );
+  if (!apiKey) {
+    return null;
+  }
+
+  const validation = payload?.deployment?.providers?.alibabaCloud?.validation;
+  if (
+    validation?.provider !== 'alibabaCloud' ||
+    validation?.ok !== true ||
+    validation?.validationMode !== 'remote_models' ||
+    !normalizeString(validation?.baseUrl)
+  ) {
+    throw new Error('Validate the Alibaba Cloud API key and endpoint before starting setup.');
+  }
+
+  const baseUrl = normalizeString(validation.baseUrl);
+  if (!consumeAlibabaProviderValidation(validation.validationToken, apiKey, baseUrl)) {
+    throw new Error('Alibaba Cloud validation expired or does not match these credentials. Validate it again.');
+  }
+
+  return {
+    apiKey,
+    apiHost: baseUrl,
+  };
+}
+
+async function writeProviderSecrets(payload = {}) {
+  const alibabaCloud = payload.validatedAlibabaProviderSecret ?? consumeValidatedAlibabaProviderSecret(payload);
+  const existingSecrets = await readJson(PROVIDER_SECRETS_PATH).catch(() => ({}));
+  const providerSecrets = {
+    ...existingSecrets,
+    version: 1,
+  };
+
+  if (alibabaCloud) {
+    providerSecrets.alibabaCloud = alibabaCloud;
+  } else {
+    delete providerSecrets.alibabaCloud;
+  }
+
+  await fs.mkdir(path.dirname(PROVIDER_SECRETS_PATH), { recursive: true, mode: 0o700 });
+  try {
+    await fs.chmod(path.dirname(PROVIDER_SECRETS_PATH), 0o700);
+  } catch (_) {
+    // Best effort; Docker Desktop bind mounts may ignore chmod on some hosts.
+  }
+  await fs.writeFile(
+    PROVIDER_SECRETS_PATH,
+    `${JSON.stringify(providerSecrets, null, 2)}\n`,
+    { mode: 0o600 },
+  );
+  try {
+    await fs.chmod(PROVIDER_SECRETS_PATH, 0o600);
+  } catch (_) {
+    // Best effort; Docker Desktop bind mounts may ignore chmod on some hosts.
+  }
+}
+
 function buildRuntimeConfig(payload) {
   const deployment = payload?.deployment || {};
   const credentials = payload?.credentials || {};
@@ -1214,6 +1375,9 @@ function buildRuntimeConfig(payload) {
         enabled: Boolean(googleCredentials.credentialsJsonB64),
         projectId: googleCredentials.projectId,
         credentialsJsonB64: googleCredentials.credentialsJsonB64,
+      },
+      alibabaCloud: {
+        enabled: Boolean(normalizeSecretString(credentials.alibabaApiKey)),
       },
       fal: {
         enabled: Boolean(normalizeString(credentials.falApiKey)),
@@ -1365,6 +1529,7 @@ function hasConfiguredSamsarApiKey(credentials = {}) {
 function hasConfiguredRemoteMediaProvider(credentials = {}) {
   return Boolean(
     hasConfiguredSamsarApiKey(credentials) ||
+    normalizeString(credentials.alibabaApiKey || credentials?.alibabaCloud?.apiKey) ||
     normalizeString(credentials.falApiKey || credentials?.fal?.apiKey) ||
     normalizeString(credentials.runwayApiKey || credentials?.runway?.apiKey) ||
     normalizeString(credentials.googleCredentialsJson) ||
@@ -1392,6 +1557,7 @@ function shouldPublishRuntimeLocalMediaGateway(config = {}) {
   }
   return storage.externalMediaPublishEnabled !== true && Boolean(
     normalizeString(providers.samsar?.apiKey) ||
+    providers.alibabaCloud?.enabled === true ||
     normalizeString(providers.fal?.apiKey) ||
     normalizeString(providers.runway?.apiKey) ||
     normalizeString(providers.googleCloud?.credentialsJsonB64)
@@ -2734,6 +2900,7 @@ async function runSetup(run, payload) {
     await cleanupComposeStack(run);
 
     setStepStatus(run, 'config', 'running', 'Writing runtime/config/samsar.config.json');
+    await writeProviderSecrets(payload);
     await writeRuntimeConfig(payload);
     await writeMailSecrets(payload?.mail || {}, payload?.mailValidation);
     setStepStatus(run, 'config', 'complete', 'Runtime config saved.');
@@ -2904,6 +3071,7 @@ async function removeGeneratedRuntimeFiles() {
     fs.rm(CONFIG_PATH, { force: true }),
     fs.rm(AVAILABLE_MODELS_PATH, { force: true }),
     fs.rm(ROOT_ENV_PATH, { force: true }),
+    fs.rm(PROVIDER_SECRETS_PATH, { force: true }),
     fs.rm(MAIL_SECRETS_PATH, { force: true }),
     fs.rm(REVERSE_PROXY_NGINX_CONFIG_PATH, { force: true }),
     fs.rm(REVERSE_PROXY_CERT_DOMAINS_PATH, { force: true }),
@@ -2953,7 +3121,9 @@ function summarizeRuntimeConfig(config = {}) {
         key,
         {
           enabled: provider?.enabled === true,
-          configured: redactConfiguredValue(provider?.apiKey || provider?.credentialsJsonB64 || provider?.projectId),
+          configured: key === 'alibabaCloud'
+            ? provider?.enabled === true
+            : redactConfiguredValue(provider?.apiKey || provider?.credentialsJsonB64 || provider?.projectId),
         },
       ]),
     ),
@@ -3105,6 +3275,20 @@ async function handleApi(req, res, pathname) {
     return true;
   }
 
+  if (req.method === 'POST' && pathname === '/api/setup/providers/alibaba/validate') {
+    if (!await requireSetupAuth(req, res)) {
+      return true;
+    }
+    try {
+      const payload = await readRequestBody(req);
+      const validation = await validateAlibabaProviderCredential(payload.credentials || payload);
+      sendJson(res, 200, validation);
+    } catch (error) {
+      sendJson(res, 400, { message: error?.message || 'Unable to validate Alibaba Cloud credentials.' });
+    }
+    return true;
+  }
+
   if (req.method === 'POST' && pathname === '/api/setup/mail/validate') {
     const payload = await readRequestBody(req);
     try {
@@ -3187,6 +3371,7 @@ async function handleApi(req, res, pathname) {
         ...(payload.deployment || {}),
         reverseProxy: reverseProxyValidation.config,
       };
+      payload.validatedAlibabaProviderSecret = consumeValidatedAlibabaProviderSecret(payload);
     } catch (error) {
       sendJson(res, 400, { message: error?.message || 'Setup validation failed.' });
       return true;

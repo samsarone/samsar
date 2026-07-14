@@ -1,6 +1,6 @@
 const TOKENS_PER_MILLION = 1_000_000;
 const CREDITS_PER_DOLLAR = 100;
-const DEFAULT_ASSISTANT_PRICING_MULTIPLIER = 2.5;
+export const DEFAULT_ASSISTANT_PRICING_MULTIPLIER = 1.5;
 export const EXTERNAL_CHAT_PRICING_MULTIPLIER = 1.25;
 
 const TOKEN_PRICING_USD_PER_MILLION = Object.freeze({
@@ -21,6 +21,20 @@ const TOKEN_PRICING_USD_PER_MILLION = Object.freeze({
     longContextCachedInput: 0.4,
     longContextOutput: 18,
     longContextInputThreshold: 200_000,
+  },
+  'qwen3.7-max': {
+    input: 2.5,
+    cachedInput: 2.5,
+    output: 7.5,
+  },
+  'qwen3.7-plus': {
+    input: 0.4,
+    cachedInput: 0.4,
+    output: 1.6,
+    longContextInput: 1.2,
+    longContextCachedInput: 1.2,
+    longContextOutput: 4.8,
+    longContextInputThreshold: 256_000,
   },
 });
 
@@ -128,6 +142,18 @@ function resolvePricingModel(model) {
 
   if (normalized.startsWith('gemini-')) {
     return 'gemini-3.1-pro';
+  }
+
+  if (normalized.startsWith('qwen3.7-plus') || normalized.startsWith('qwen-3.7-plus')) {
+    return 'qwen3.7-plus';
+  }
+
+  if (
+    normalized === 'qwen3.7' ||
+    normalized.startsWith('qwen3.7-max') ||
+    normalized.startsWith('qwen-3.7')
+  ) {
+    return 'qwen3.7-max';
   }
 
   return null;

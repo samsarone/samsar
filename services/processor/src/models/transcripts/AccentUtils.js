@@ -3,6 +3,9 @@
 
 
 import OpenAI from "openai";
+import { getDefaultUserInferenceModel } from '../../consts/InferenceModels.js';
+import { getModelForUserInferenceModel } from '../agent/ModelUtils.js';
+import { createCompatibleChatCompletion } from '../ai_utils/OpenAICompat.js';
 
 const API_KEY = process.env.OPENAI_API_KEY;
 
@@ -25,7 +28,10 @@ const textWordCustomAnimations = [
 
 
 
-export async function getAccentForText(text) {
+export async function getAccentForText(
+  text,
+  userInferenceModel = getDefaultUserInferenceModel(),
+) {
 
   const textAnimationOptions = textWordCustomAnimations.join(', ');
   const systemPrompt = `You are a subtitle and transctiption assistant for a video production tool.
@@ -46,7 +52,7 @@ export async function getAccentForText(text) {
   ];
 
   try {
-    const responseData = await sendAssistantMessageRequest(messageList);
+    const responseData = await sendAssistantMessageRequest(messageList, userInferenceModel);
 
     return responseData.content;
   } catch (err) {
@@ -54,12 +60,15 @@ export async function getAccentForText(text) {
   }
 }
 
-export async function sendAssistantMessageRequest(messageList) {
+export async function sendAssistantMessageRequest(
+  messageList,
+  userInferenceModel = getDefaultUserInferenceModel(),
+) {
 
   try {
-    const response = await openai.chat.completions.create({
+    const response = await createCompatibleChatCompletion(openai, {
       messages: messageList,
-      model: "gpt-4o-2024-11-20",
+      model: getModelForUserInferenceModel(userInferenceModel),
     });
     return response.choices[0].message;
   } catch (error) {
@@ -68,4 +77,3 @@ export async function sendAssistantMessageRequest(messageList) {
   }
 
 }
-

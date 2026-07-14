@@ -2,6 +2,7 @@
 
 import { wrapText } from '../utils/TextUtils.js';
 import { getFramesPerSecondFromValue } from '../utils/FpsUtils.js';
+import { isStaticSubtitleItem } from '../utils/SubtitleRenderPolicy.js';
 
 const textWordCustomAnimations = [
   'bleeding',
@@ -176,21 +177,41 @@ function drawSpeakerLabel(ctx, speakerLabel, speakerStyles, x, y, shadowConfig) 
 export function applyTextSubtitleAnimations(ctx, item, elapsedTime, durationOffset = 0, framesPerSecond) {
   const { animations } = item;
   const effectiveFramesPerSecond = getFramesPerSecondFromValue(framesPerSecond);
+  const renderAsStaticSubtitle = isStaticSubtitleItem(item);
 
 
-  const hasAnimations = Array.isArray(animations) && animations.length > 0;
+  const hasAnimations = !renderAsStaticSubtitle && Array.isArray(animations) && animations.length > 0;
 
   if (item.subType === 'subtitle') {
     const existingConfig = item.config || {};
     item.config = {
       ...existingConfig,
-      autoWrap: false,
+      autoWrap: renderAsStaticSubtitle ? existingConfig.autoWrap !== false : false,
       linePaddingPx: existingConfig.linePaddingPx != null ? existingConfig.linePaddingPx : 0,
+      ...(renderAsStaticSubtitle ? { staticSubtitle: true } : {}),
     };
   }
 
   // Keep track of original text for after our animations
   const originalText = item.text;
+
+  if (renderAsStaticSubtitle) {
+    renderText(
+      ctx,
+      {
+        ...item,
+        animations: [],
+        words: [],
+        wordAnimation: null,
+        textAccent: null,
+      },
+      elapsedTime,
+      durationOffset,
+      effectiveFramesPerSecond,
+    );
+    item.text = originalText;
+    return;
+  }
 
   if (!hasAnimations) {
 
@@ -449,6 +470,7 @@ function renderExactText(
     wordSpacing = 1.0,
     wordPaddingPx = 0,
     breakTextWidth = 800,
+    staticSubtitle = false,
   } = config;
 
 
@@ -508,7 +530,9 @@ function renderExactText(
   let lines = text.split('\n');
   if (autoWrap) {
     const maxWidth = breakTextWidth;
-    lines = lines.flatMap(line => wrapText(ctx, line, maxWidth));
+    lines = lines.flatMap(line => wrapText(ctx, line, maxWidth, {
+      breakLongWords: staticSubtitle,
+    }));
   }
 
   const speakerGapPx = config.speakerGapPx != null ? config.speakerGapPx : fontSize * 0.35;

@@ -38,6 +38,7 @@ const LANGUAGE_FONT_ALIASES = {
   'es-mx': 'es',
   eng: 'en',
   fre: 'fr',
+  fra: 'fr',
   deu: 'de',
   ger: 'de',
   rus: 'ru',
@@ -125,6 +126,8 @@ export function resolveSubtitleFont(languageCode, requestedFont) {
     if (
       lowerRequested === DEFAULT_LATIN_SUBTITLE_FONT.toLowerCase() ||
       lowerRequested === 'montserrat' ||
+      lowerRequested === 'poppins' ||
+      lowerRequested === 'arial' ||
       lowerRequested === 'inter' ||
       lowerRequested === 'sans-serif'
     ) {

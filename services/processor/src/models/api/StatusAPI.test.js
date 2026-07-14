@@ -109,6 +109,10 @@ test('buildNormalizedVideoSessionPreview returns minimal preview assets with nor
     _id: 'session_123',
     aspectRatio: '16:9',
     framesPerSecond: 24,
+    subtitleLanguage: 'th',
+    subtitleLanguageString: 'Thai',
+    subtitleLanguageExplicit: true,
+    subtitleTranslationRequired: true,
     expressGenerationStatus: {
       prompt_generation: 'COMPLETED',
       image_generation: 'COMPLETED',
@@ -150,6 +154,11 @@ test('buildNormalizedVideoSessionPreview returns minimal preview assets with nor
         endTime: 10,
         duration: 6,
         prompt: 'Narration line',
+        subtitleText: 'ข้อความบรรยาย',
+        subtitleLanguage: 'th',
+        speechLanguage: 'en',
+        subtitleTranslationRequired: true,
+        addTranscriptionsRequired: false,
         selectedRemoteAudioLink: 'https://cdn.example.com/speech-1.mp3',
       },
     ],
@@ -166,6 +175,13 @@ test('buildNormalizedVideoSessionPreview returns minimal preview assets with nor
   assert.equal(preview.layers[0].aiVideo.url, 'https://cdn.example.com/scene-1.mp4');
   assert.equal(preview.layers[0].preview.type, 'video');
   assert.equal(preview.audioLayers[0].url, 'https://cdn.example.com/speech-1.mp3');
+  assert.equal(preview.subtitleLanguage, 'th');
+  assert.equal(preview.subtitleLanguageExplicit, true);
+  assert.equal(preview.subtitleTranslationRequired, true);
+  assert.equal(preview.audioLayers[0].subtitleText, 'ข้อความบรรยาย');
+  assert.equal(preview.audioLayers[0].speechLanguage, 'en');
+  assert.equal(preview.audioLayers[0].subtitleTranslationRequired, true);
+  assert.equal(preview.audioLayers[0].addTranscriptionsRequired, false);
   assert.equal(Object.prototype.hasOwnProperty.call(preview.layers[0], 'durationOffset'), false);
 });
 

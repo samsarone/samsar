@@ -10,12 +10,16 @@ import OpenAI, { toFile } from "openai";
 import {
   getDefaultUserInferenceModel,
   isGeminiInferenceModel,
+  isQwenInferenceModel,
+  normalizeInferenceModel,
 } from '../inference/InferenceModels.js';
 import { createGoogleGeminiChatCompletion } from '../inference/GoogleGemini.js';
+import { createQwenChatCompletion } from '../inference/Qwen.js';
 import {
   createSamsarExternalChatCompletion,
   shouldUseSamsarExternalInference,
 } from '../inference/SamsarExternalInferenceAdapter.js';
+import { withInferenceAuthorization } from '../inference/RequestInferenceModel.js';
 import {
   getAccessibleMediaUrlForProvider,
   resolveLocalMediaReferencePath,
@@ -211,7 +215,12 @@ export async function getImage1OutpaintImageFromApi(payload) {
   return getImage2OutpaintImageFromApi(payload);
 }
 
-export async function getAlternatePromptFromPrompt(prompt, retryCount) {
+export async function getAlternatePromptFromPrompt(
+  prompt,
+  retryCount,
+  userInferenceModel = getDefaultUserInferenceModel(),
+  userInferenceAuthorization,
+) {
   const systemPrompt = `
     You rewrite prompts for a generative text-to-image retry. Return one clean prompt that can be sent directly to an image model.
     Keep the scene relevant, visually specific, and concise.
@@ -231,28 +240,45 @@ export async function getAlternatePromptFromPrompt(prompt, retryCount) {
   ];
 
   // Send the request to your assistant LLM (implementation-dependent)
-  const response = await sendAssistantMessageRequest(messageList);
+  const response = await sendAssistantMessageRequest(
+    messageList,
+    userInferenceModel,
+    userInferenceAuthorization,
+  );
 
   return response.content;
 }
 
 
 
-export async function sendAssistantMessageRequest(messageList, userInferenceModel = getDefaultUserInferenceModel()) {
+export async function sendAssistantMessageRequest(
+  messageList,
+  userInferenceModel = getDefaultUserInferenceModel(),
+  userInferenceAuthorization,
+) {
 
   try {
+    const inferenceModel = normalizeInferenceModel(userInferenceModel);
     const payload = {
       messages: messageList,
-      model: isGeminiInferenceModel(userInferenceModel) ? userInferenceModel : "gpt-4o-mini",
+      model: isGeminiInferenceModel(inferenceModel) || isQwenInferenceModel(inferenceModel)
+        ? inferenceModel
+        : "gpt-4o-mini",
     };
+    const routingPayload = withInferenceAuthorization(payload, userInferenceAuthorization);
 
-    if (shouldUseSamsarExternalInference(payload)) {
-      const response = await createSamsarExternalChatCompletion(payload);
+    if (shouldUseSamsarExternalInference(routingPayload)) {
+      const response = await createSamsarExternalChatCompletion(routingPayload);
       return response.choices[0].message;
     }
 
-    if (isGeminiInferenceModel(userInferenceModel)) {
-      const response = await createGoogleGeminiChatCompletion(messageList, userInferenceModel);
+    if (isQwenInferenceModel(inferenceModel)) {
+      const response = await createQwenChatCompletion(routingPayload);
+      return response.choices[0].message;
+    }
+
+    if (isGeminiInferenceModel(inferenceModel)) {
+      const response = await createGoogleGeminiChatCompletion(messageList, inferenceModel);
       return response.choices[0].message;
     }
 
