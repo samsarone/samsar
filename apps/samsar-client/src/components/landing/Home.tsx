@@ -26,7 +26,8 @@ const VideoEditorLandingHome = lazy(() => import("../video/VideoEditorLandingHom
 const ListVideoSessions = lazy(() => import("../video/sessions/ListVideoSessions.jsx"));
 const QuickEditorContainer = lazy(() => import("../quick_editor/QuickEditorContainer.jsx"));
 const EmailVerificationHome = lazy(() => import("../verification/EmailVerificationHome.jsx"));
-const OneshotEditorContainer = lazy(() => import('../oneshot_editor/OneshotEditorContainer.jsx'));
+const loadOneshotEditorContainer = () => import('../oneshot_editor/OneshotEditorContainer.jsx');
+const OneshotEditorContainer = lazy(loadOneshotEditorContainer);
 const QuickEditorLandingHome = lazy(() => import("../quick_editor/QuickEditorLandingHome.jsx"));
 const MobileVideoLandingHome = lazy(() => import("../mobile/MobileVideoLandingHome.jsx"));
 const LoginPage = lazy(() => import("../auth/pages/LoginPage.jsx"));
@@ -46,6 +47,18 @@ const ExternalStudioDashboard = lazy(() => import("../external/ExternalStudioDas
 const GenerationsHome = lazy(() => import("../generations/GenerationsHome.jsx"));
 
 const PROCESSOR_SERVER = import.meta.env.VITE_PROCESSOR_API;
+const IS_DOCKER_INSTALL = import.meta.env.VITE_DOCKER_INSTALL === 'true';
+const DOCKER_PUBLIC_AUTH_PATHS = new Set([
+  '/login',
+  '/forgot_password',
+  '/reset_password',
+  '/verify',
+  '/verify_email',
+]);
+
+function preloadVidgenieEditor() {
+  return loadOneshotEditorContainer().then(({ preloadOneshotEditor }) => preloadOneshotEditor());
+}
 
 function RouteLoadingScreen({ label = 'Loading...' }) {
   const { colorMode } = useColorMode();
@@ -106,6 +119,10 @@ function DefaultAuthenticatedRoute({ user, isMobile, search }) {
     }
 
     resolutionStartedRef.current = true;
+    const shouldOpenVidgenie = !user.isExternalUser && (!IS_DOCKER_INSTALL || isMobile);
+    if (shouldOpenVidgenie) {
+      void preloadVidgenieEditor().catch(() => undefined);
+    }
 
     const resolveRoute = async () => {
       const resolvedPath = await resolvePostAuthDestination({
@@ -115,7 +132,8 @@ function DefaultAuthenticatedRoute({ user, isMobile, search }) {
         search,
         createIfMissing: true,
       });
-      setTargetPath(resolvedPath || appendRouteSearch('/vidgenie', search));
+      const fallbackPath = IS_DOCKER_INSTALL && !isMobile ? '/video' : '/vidgenie';
+      setTargetPath(resolvedPath || appendRouteSearch(fallbackPath, search));
     };
 
     void resolveRoute();
@@ -125,7 +143,11 @@ function DefaultAuthenticatedRoute({ user, isMobile, search }) {
     return <Navigate to={targetPath} replace />;
   }
 
-  return <RouteLoadingScreen label="Opening VidGenie..." />;
+  return (
+    <RouteLoadingScreen
+      label={IS_DOCKER_INSTALL && !isMobile ? 'Opening Studio...' : 'Opening VidGenie...'}
+    />
+  );
 }
 
 export default function Home() {
@@ -225,6 +247,12 @@ export default function Home() {
       return;
     }
     if (user?._id) return;
+    if (IS_DOCKER_INSTALL) {
+      if (!DOCKER_PUBLIC_AUTH_PATHS.has(location.pathname)) {
+        navigate('/login', { replace: true });
+      }
+      return;
+    }
     if (isAccessAllowedPath) return;
 
     if (location.pathname !== '/login') {
@@ -249,6 +277,9 @@ export default function Home() {
   const sanitizedRouteSearch = extraProps.toString() ? `?${extraProps.toString()}` : '';
 
   const navigateToDefaultAuthenticatedView = useCallback(async (resolvedUser = user) => {
+    if (resolvedUser?._id && !resolvedUser.isExternalUser && (!IS_DOCKER_INSTALL || isMobile)) {
+      void preloadVidgenieEditor().catch(() => undefined);
+    }
     const targetPath = await resolvePostAuthDestination({
       user: resolvedUser,
       isMobile,
@@ -256,7 +287,8 @@ export default function Home() {
       search: sanitizedRouteSearch,
       createIfMissing: true,
     });
-    navigate(targetPath || appendQueryParams('/vidgenie'), { replace: true });
+    const fallbackPath = IS_DOCKER_INSTALL && !isMobile ? '/video' : '/vidgenie';
+    navigate(targetPath || appendQueryParams(fallbackPath), { replace: true });
   }, [appendQueryParams, isMobile, navigate, sanitizedRouteSearch, user]);
 
   useEffect(() => {
@@ -283,6 +315,10 @@ export default function Home() {
           return;
         }
 
+        if (!IS_DOCKER_INSTALL || isMobile) {
+          void preloadVidgenieEditor().catch(() => undefined);
+        }
+
         const targetPath = await resolvePostAuthDestination({
           user: resolvedUser,
           isMobile,
@@ -292,7 +328,8 @@ export default function Home() {
         });
         if (isCancelled) return;
 
-        navigate(targetPath || '/vidgenie', { replace: true });
+        const fallbackPath = IS_DOCKER_INSTALL && !isMobile ? '/video' : '/vidgenie';
+        navigate(targetPath || fallbackPath, { replace: true });
       } finally {
         if (!isCancelled) {
           setInitialAuthenticatedRootStatus('done');
@@ -327,7 +364,7 @@ export default function Home() {
       if (event.data === 'oauth_complete') {
         const resolvedUser = await getUserAPI();
         const redirectTarget = consumeResolvedAuthRedirect();
-        if (redirectTarget) {
+        if (redirectTarget && !IS_DOCKER_INSTALL) {
           navigate(redirectTarget, { replace: true });
           return;
         }
@@ -359,7 +396,7 @@ export default function Home() {
           const resolvedUser = await getUserAPI();
 
           const redirectTarget = consumeResolvedAuthRedirect(getRedirectParam(location));
-          if (redirectTarget) {
+          if (redirectTarget && !IS_DOCKER_INSTALL) {
             navigate(redirectTarget, { replace: true });
             return;
           }
@@ -383,13 +420,25 @@ export default function Home() {
     bodyBGColor = "bg-[#f7f9fc] text-slate-900";
   }
   const rootAuthenticatedSearch = sanitizedRouteSearch;
+  const shouldRequireDockerLogin =
+    IS_DOCKER_INSTALL &&
+    userInitiated &&
+    !userFetching &&
+    !user?._id &&
+    !DOCKER_PUBLIC_AUTH_PATHS.has(location.pathname);
 
   if (initialAuthenticatedRootStatus === 'pending') {
     return (
       <div className={bodyBGColor}>
-        <RouteLoadingScreen label="Opening VidGenie..." />
+        <RouteLoadingScreen
+          label={IS_DOCKER_INSTALL && !isMobile ? 'Opening Studio...' : 'Opening VidGenie...'}
+        />
       </div>
     );
+  }
+
+  if (shouldRequireDockerLogin) {
+    return <Navigate to="/login" replace />;
   }
 
   return (
@@ -403,7 +452,9 @@ export default function Home() {
                 ? <RouteLoadingScreen />
                 : user && user._id
                   ? <DefaultAuthenticatedRoute user={user} isMobile={isMobile} search={rootAuthenticatedSearch} />
-                  : <VideoEditorLandingHome />
+                  : isMobile
+                    ? <MobileVideoLandingHome />
+                    : <VideoEditorLandingHome />
             }
           />
           <Route path="/generations" element={<GenerationsHome />} />

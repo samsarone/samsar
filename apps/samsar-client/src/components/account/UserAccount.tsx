@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ToastContainer, toast } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 import { FaBars, FaChevronCircleLeft } from "react-icons/fa";
@@ -22,6 +22,10 @@ import UsagePanelContent from "./UsagePanelContent.jsx";
 import SingleSelect from "../common/SingleSelect.jsx";
 import { getSessionType } from "../../utils/environment.jsx";
 import { useInferenceModelAvailability } from "../../hooks/useInferenceModelAvailability.js";
+import {
+  normalizeDeploymentInferenceModelValue,
+  resolveAllowedInferenceModelOption,
+} from "../../utils/deploymentProviders.js";
 
 import { INFERENCE_MODEL_TYPES, ASSISTANT_MODEL_TYPES } from "../../constants/Types.ts";
 
@@ -38,73 +42,17 @@ function getVideoFpsOption(value) {
 }
 
 function normalizeInferenceModelValue(value) {
-  if (typeof value !== "string") {
-    return DEFAULT_TEXT_MODEL;
-  }
-  const normalized = value.trim().toLowerCase();
-  if (
-    normalized === "qwen3.7" ||
-    normalized === "qwen3.7-max" ||
-    normalized === "qwen3.7-plus" ||
-    normalized === "qwen-3.7" ||
-    normalized === "qwen 3.7" ||
-    normalized === "qwen37" ||
-    normalized === "qwen37max" ||
-    normalized === "qwen37plus" ||
-    normalized === "alibaba qwen 3.7" ||
-    normalized === "alibaba cloud qwen 3.7"
-  ) {
-    return "QWEN3.7";
-  }
-  if (
-    normalized === "gemini-3.1-pro" ||
-    normalized === "gemini-3.1-pro-preview" ||
-    normalized === "gemini-3-pro" ||
-    normalized === "gemini-3-pro-preview" ||
-    normalized === "gemini 3.1 pro" ||
-    normalized === "gemini 3.1 pro preview" ||
-    normalized === "gemini 3 pro" ||
-    normalized === "gemini 3 pro preview" ||
-    normalized === "gemini31pro" ||
-    normalized === "gemini31propreview" ||
-    normalized === "gemini3pro" ||
-    normalized === "gemini3propreview"
-  ) {
-    return "gemini-3.1-pro";
-  }
-  if (
-    normalized === DEFAULT_TEXT_MODEL ||
-    normalized.startsWith(`${DEFAULT_TEXT_MODEL}-`) ||
-    normalized === "gpt-5.6" ||
-    normalized === "gpt 5.6 sol" ||
-    normalized === "gpt56" ||
-    normalized === "gpt56sol"
-  ) {
-    return DEFAULT_TEXT_MODEL;
-  }
-  return DEFAULT_TEXT_MODEL;
+  return normalizeDeploymentInferenceModelValue(value) || DEFAULT_TEXT_MODEL;
 }
 
 function getInferenceModelOption(value, options = INFERENCE_MODEL_TYPES) {
   const modelOptions = Array.isArray(options) ? options : INFERENCE_MODEL_TYPES;
-  if (modelOptions.length === 0) return null;
-  const normalizedValue = normalizeInferenceModelValue(value);
-  return (
-    modelOptions.find((m) => m.value === normalizedValue) ||
-    modelOptions.find((m) => m.value === DEFAULT_TEXT_MODEL) ||
-    modelOptions[0]
-  );
+  return resolveAllowedInferenceModelOption(value, modelOptions, DEFAULT_TEXT_MODEL);
 }
 
 function getAssistantModelOption(value, options = ASSISTANT_MODEL_TYPES) {
   const modelOptions = Array.isArray(options) ? options : ASSISTANT_MODEL_TYPES;
-  if (modelOptions.length === 0) return null;
-  const normalizedValue = normalizeInferenceModelValue(value);
-  return (
-    modelOptions.find((m) => m.value === normalizedValue) ||
-    modelOptions.find((m) => m.value === DEFAULT_TEXT_MODEL) ||
-    modelOptions[0]
-  );
+  return resolveAllowedInferenceModelOption(value, modelOptions, DEFAULT_TEXT_MODEL);
 }
 
 export default function UserAccount() {
@@ -167,6 +115,7 @@ export default function UserAccount() {
     getAssistantModelOption(DEFAULT_TEXT_MODEL)
   );
   const [videoFps, setVideoFps] = useState(VIDEO_FPS_OPTIONS[0]);
+  const pendingModelPreferenceSyncKeyRef = useRef("");
 
   const syncUserDetailsSilently = (payload) => {
     if (!payload || Object.keys(payload).length === 0) return;
@@ -190,11 +139,10 @@ export default function UserAccount() {
     setAssistantModel(nextAssistantModel);
     setNotifyOnCompletion(!!user.selectedNotifyOnCompletion);
     setVideoFps(getVideoFpsOption(user.videoFramesPerSecond));
-    if (
-      isDockerModelFilteringEnabled &&
-      !isInferenceModelAvailabilityLoading &&
-      hasConfiguredInferenceModels
-    ) {
+    const canReconcileModelPreferences =
+      !isDockerModelFilteringEnabled ||
+      (!isInferenceModelAvailabilityLoading && hasConfiguredInferenceModels);
+    if (canReconcileModelPreferences) {
       const modelPreferencePayload: Record<string, string> = {};
       if (
         nextInferenceModel?.value &&
@@ -208,9 +156,23 @@ export default function UserAccount() {
       ) {
         modelPreferencePayload.selectedAssistantModel = nextAssistantModel.value;
       }
-      syncUserDetailsSilently(modelPreferencePayload);
+
+      const modelPreferenceSyncKey = JSON.stringify(modelPreferencePayload);
+      if (Object.keys(modelPreferencePayload).length === 0) {
+        pendingModelPreferenceSyncKeyRef.current = "";
+      } else if (pendingModelPreferenceSyncKeyRef.current !== modelPreferenceSyncKey) {
+        pendingModelPreferenceSyncKeyRef.current = modelPreferenceSyncKey;
+        syncUserDetailsSilently(modelPreferencePayload);
+      }
     }
-  }, [assistantModelOptions, inferenceModelOptions, user]);
+  }, [
+    assistantModelOptions,
+    hasConfiguredInferenceModels,
+    inferenceModelOptions,
+    isDockerModelFilteringEnabled,
+    isInferenceModelAvailabilityLoading,
+    user,
+  ]);
 
   useEffect(() => {
     setDisplayPanel(resolvePanelFromPath());

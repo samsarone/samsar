@@ -18,34 +18,34 @@ export default function VidgenieSkeletonLoader() {
 
   return (
     <div
-      className={`${shellBg} fixed inset-0 z-40 w-full overflow-y-auto min-h-screen ${
+      className={`${shellBg} fixed inset-0 z-40 min-h-screen w-full overflow-x-hidden overflow-y-auto ${
         isDark ? 'text-slate-100' : 'text-slate-900'
       }`}
     >
-      <div className="max-w-screen-xl mx-auto px-4 sm:px-6 py-6 animate-pulse space-y-5">
-        <div className={`${surface} rounded-2xl px-5 py-4 flex items-center justify-between`}>
-          <div className="flex items-center gap-3">
+      <div className="mx-auto max-w-screen-xl min-w-0 space-y-5 px-4 py-6 sm:px-6">
+        <div className={`${surface} flex min-w-0 animate-pulse flex-col gap-3 rounded-2xl px-5 py-4 sm:flex-row sm:items-center sm:justify-between`}>
+          <div className="flex min-w-0 items-center gap-3">
             <div className={`${subtleSurface} h-10 w-10 rounded-xl`} />
-            <div className="space-y-2">
-              <div className={`${mutedSurface} h-3 w-28 rounded-full`} />
-              <div className={`${mutedSurface} h-3 w-16 rounded-full`} />
+            <div className="min-w-0 flex-1 space-y-2">
+              <div className={`${mutedSurface} h-3 w-full max-w-28 rounded-full`} />
+              <div className={`${mutedSurface} h-3 w-full max-w-16 rounded-full`} />
             </div>
           </div>
-          <div className="flex items-center gap-3">
-            <div className={`${mutedSurface} h-10 w-28 rounded-full`} />
+          <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_2.5rem_2.5rem] items-center gap-3 sm:flex sm:w-auto">
+            <div className={`${mutedSurface} h-10 w-full max-w-28 rounded-full`} />
             <div className={`${mutedSurface} h-10 w-10 rounded-full`} />
             <div className={`${mutedSurface} h-10 w-10 rounded-full`} />
           </div>
         </div>
 
-        <div className={`${surface} rounded-2xl p-5 space-y-5`}>
+        <div className={`${surface} min-w-0 animate-pulse space-y-5 rounded-2xl p-5`}>
           <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
-            <div className="space-y-3">
-              <div className={`${mutedSurface} h-4 w-44 rounded-full`} />
-              <div className={`${mutedSurface} h-3 w-72 rounded-full`} />
+            <div className="min-w-0 flex-1 space-y-3">
+              <div className={`${mutedSurface} h-4 w-full max-w-44 rounded-full`} />
+              <div className={`${mutedSurface} h-3 w-full max-w-72 rounded-full`} />
             </div>
-            <div className="flex items-center gap-2">
-              <div className={`${mutedSurface} h-10 w-28 rounded-full`} />
+            <div className="flex min-w-0 items-center gap-2">
+              <div className={`${mutedSurface} h-10 min-w-0 flex-1 rounded-full sm:w-28 sm:flex-none`} />
               <div className={`${mutedSurface} h-10 w-10 rounded-full`} />
             </div>
           </div>
@@ -84,7 +84,7 @@ export default function VidgenieSkeletonLoader() {
           </div>
 
           <div className="space-y-3">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-wrap items-center justify-between gap-2">
               <div className={`${mutedSurface} h-4 w-28 rounded-full`} />
               <div className="flex gap-2">
                 <div className={`${mutedSurface} h-10 w-10 rounded-full`} />
@@ -92,7 +92,7 @@ export default function VidgenieSkeletonLoader() {
               </div>
             </div>
             <div className={`${mutedSurface} h-32 rounded-2xl`} />
-            <div className="flex items-center justify-between">
+            <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="flex gap-2">
                 <div className={`${mutedSurface} h-10 w-28 rounded-full`} />
                 <div className={`${mutedSurface} h-10 w-10 rounded-full`} />

@@ -4,6 +4,20 @@ import { getHeaders, getAuthToken, clearAuthData } from '../utils/web'; // Adjus
 
 const PROCESSOR_SERVER = import.meta.env.VITE_PROCESSOR_API || 'http://localhost:3002';
 
+function getInitialAuthState() {
+  const authToken = getAuthToken();
+  const hasAuthToken = Boolean(authToken && authToken !== 'undefined');
+  const hasLoginToken =
+    typeof window !== 'undefined' &&
+    new URLSearchParams(window.location.search).has('loginToken');
+  const needsAuthBootstrap = hasAuthToken || hasLoginToken;
+
+  return {
+    userFetching: needsAuthBootstrap,
+    userInitiated: !needsAuthBootstrap,
+  };
+}
+
 const UserContext = createContext({
   user: null,
   setUser: () => {},
@@ -16,9 +30,10 @@ const UserContext = createContext({
 });
 
 export const UserProvider = ({ children }) => {
+  const [initialAuthState] = useState(getInitialAuthState);
   const [user, setUserState] = useState(null);
-  const [userFetching, setUserFetching] = useState(true);
-  const [userInitiated, setUserInitiated] = useState(false);
+  const [userFetching, setUserFetching] = useState(initialAuthState.userFetching);
+  const [userInitiated, setUserInitiated] = useState(initialAuthState.userInitiated);
 
   const setUserApi = () => {
     // Placeholder for future use

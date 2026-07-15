@@ -2,6 +2,7 @@ import { useMemo, useState, useEffect } from "react";
 import CommonButton from "../../common/CommonButton.tsx";
 import {
   IMAGE_GENERAITON_MODEL_TYPES,
+  imageGenerationModelSupportsAspectRatio,
 } from "../../../constants/Types.ts";
 import { IMAGE_MODEL_PRICES } from "../../../constants/ModelPrices.jsx";
 import { useColorMode } from "../../../contexts/ColorMode.jsx";
@@ -39,12 +40,15 @@ export default function PromptGenerator(props) {
     imageModelValues,
   } = useDeploymentModelAvailability();
   const availableImageModels = useMemo(
-    () => (
-      isDockerModelFilteringEnabled
+    () => {
+      const deploymentModels = isDockerModelFilteringEnabled
         ? filterOptionsForDeploymentModelValues(IMAGE_GENERAITON_MODEL_TYPES, imageModelValues, (model) => model.key)
-        : IMAGE_GENERAITON_MODEL_TYPES
-    ),
-    [imageModelValues, isDockerModelFilteringEnabled]
+        : IMAGE_GENERAITON_MODEL_TYPES;
+      return deploymentModels.filter((model) =>
+        imageGenerationModelSupportsAspectRatio(model, aspectRatio)
+      );
+    },
+    [aspectRatio, imageModelValues, isDockerModelFilteringEnabled]
   );
 
 

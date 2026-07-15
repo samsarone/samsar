@@ -1,4 +1,5 @@
 export const DOCKER_ADAPTER_PROVIDER = Object.freeze({
+  ALIBABA_CLOUD: 'alibabaCloud',
   GOOGLE_CLOUD: 'googleCloud',
   FAL: 'fal',
   OPENAI: 'openai',
@@ -6,6 +7,11 @@ export const DOCKER_ADAPTER_PROVIDER = Object.freeze({
 });
 
 export const DOCKER_IMAGE_GENERATION_PROVIDER_PRIORITY = Object.freeze({
+  'WAN2.7PRO': [
+    DOCKER_ADAPTER_PROVIDER.ALIBABA_CLOUD,
+    DOCKER_ADAPTER_PROVIDER.FAL,
+    DOCKER_ADAPTER_PROVIDER.SAMSAR,
+  ],
   NANOBANANA2: [
     DOCKER_ADAPTER_PROVIDER.GOOGLE_CLOUD,
     DOCKER_ADAPTER_PROVIDER.FAL,
@@ -160,6 +166,15 @@ export function hasFalAdapterCredential() {
   return hasEnvCredential('FAL_API_KEY');
 }
 
+export function hasAlibabaCloudAdapterCredential() {
+  return hasEnvCredential(
+    'ALIBABA_API_KEY',
+    'DASHSCOPE_API_KEY',
+    'ALIBABA_CLOUD_API_KEY',
+    'QWEN_API_KEY',
+  );
+}
+
 export function hasSamsarAdapterCredential() {
   return hasEnvCredential('SAMSAR_API_KEY');
 }
@@ -174,6 +189,9 @@ export function hasGoogleCloudAdapterCredential() {
 }
 
 export function isAdapterProviderConfigured(provider) {
+  if (provider === DOCKER_ADAPTER_PROVIDER.ALIBABA_CLOUD) {
+    return hasAlibabaCloudAdapterCredential();
+  }
   if (provider === DOCKER_ADAPTER_PROVIDER.GOOGLE_CLOUD) {
     return hasGoogleCloudAdapterCredential();
   }
@@ -220,6 +238,24 @@ export function resolveDockerImageGenerationProvider(model) {
     return '';
   }
   return resolveConfiguredProvider(getDockerImageGenerationProviderPriority(model));
+}
+
+export function resolveWan27ImageGenerationProvider(persistedProvider = '') {
+  const normalizedPersistedProvider = normalizeString(persistedProvider);
+  if (normalizedPersistedProvider === DOCKER_ADAPTER_PROVIDER.FAL ||
+    normalizedPersistedProvider === DOCKER_ADAPTER_PROVIDER.ALIBABA_CLOUD) {
+    return normalizedPersistedProvider;
+  }
+
+  // Hosted generation uses FAL. Docker keeps its configured native-first
+  // provider priority through resolveDockerImageGenerationProvider().
+  const currentEnv = normalizeString(process.env.CURRENT_ENV).toLowerCase();
+  if (currentEnv !== 'docker' && currentEnv !== 'staging') {
+    return DOCKER_ADAPTER_PROVIDER.FAL;
+  }
+
+  return resolveDockerImageGenerationProvider('WAN2.7PRO') ||
+    DOCKER_ADAPTER_PROVIDER.FAL;
 }
 
 export function resolveDockerImageEditProvider(model) {

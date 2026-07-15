@@ -132,11 +132,15 @@ const DEFAULT_ROLLUP_IMAGE_TILING_POSITION = Object.freeze({
 });
 
 const DEFAULT_TEXT_TO_IMAGE_MODEL = 'NANOBANANA2';
+const WAN_27_PRO_TEXT_TO_IMAGE_MODEL = 'WAN2.7PRO';
+const WAN_27_PRO_TEXT_TO_IMAGE_RESOLUTION = '1K';
+const WAN_27_PRO_TEXT_TO_IMAGE_ASPECT_RATIOS = Object.freeze(['1:1', '16:9', '9:16']);
 const SUPPORTED_TEXT_TO_IMAGE_MODELS = Object.freeze([
   'GPTIMAGE2',
   'NANOBANANA2',
   'NANOBANANAPRO',
   'SEEDREAM',
+  WAN_27_PRO_TEXT_TO_IMAGE_MODEL,
 ]);
 const ROLLUP_FETCH_RETRIES = Number.isFinite(Number(process.env.ROLLUP_FETCH_RETRIES))
   ? Math.max(0, Math.floor(Number(process.env.ROLLUP_FETCH_RETRIES)))
@@ -179,8 +183,56 @@ const ensureSvgOverlaySupport = () => {
 
 function createBadRequestError(message) {
   const error = new Error(message);
+  error.status = 400;
   error.statusCode = 400;
   return error;
+}
+
+export function normalizeTextToImageRequestOptions(payload = {}) {
+  const modelValue = payload.model || payload.mode;
+  const model = typeof modelValue === 'string' && modelValue.trim()
+    ? modelValue.trim().toUpperCase()
+    : DEFAULT_TEXT_TO_IMAGE_MODEL;
+  if (!SUPPORTED_TEXT_TO_IMAGE_MODELS.includes(model)) {
+    throw createBadRequestError(`model must be one of: ${SUPPORTED_TEXT_TO_IMAGE_MODELS.join(', ')}.`);
+  }
+
+  const requestedAspectRatio = payload.aspect_ratio || payload.aspectRatio;
+  const hasRequestedAspectRatio = requestedAspectRatio !== undefined &&
+    requestedAspectRatio !== null &&
+    !(typeof requestedAspectRatio === 'string' && requestedAspectRatio.trim() === '');
+  const normalizedRequestedAspectRatio = normalizeAspectRatio(requestedAspectRatio);
+  const aspectRatio = normalizedRequestedAspectRatio || '1:1';
+
+  if (model !== WAN_27_PRO_TEXT_TO_IMAGE_MODEL) {
+    return { model, aspectRatio, resolution: null };
+  }
+
+  if (hasRequestedAspectRatio && (
+    !normalizedRequestedAspectRatio ||
+    !WAN_27_PRO_TEXT_TO_IMAGE_ASPECT_RATIOS.includes(normalizedRequestedAspectRatio)
+  )) {
+    throw createBadRequestError(
+      `Wan2.7 Pro aspect_ratio must be one of: ${WAN_27_PRO_TEXT_TO_IMAGE_ASPECT_RATIOS.join(', ')}.`,
+    );
+  }
+
+  const requestedResolution = payload.resolution;
+  const hasRequestedResolution = requestedResolution !== undefined &&
+    requestedResolution !== null &&
+    !(typeof requestedResolution === 'string' && requestedResolution.trim() === '');
+  if (hasRequestedResolution && (
+    typeof requestedResolution !== 'string' ||
+    requestedResolution.trim().toUpperCase() !== WAN_27_PRO_TEXT_TO_IMAGE_RESOLUTION
+  )) {
+    throw createBadRequestError('Wan2.7 Pro resolution must be 1K.');
+  }
+
+  return {
+    model,
+    aspectRatio,
+    resolution: WAN_27_PRO_TEXT_TO_IMAGE_RESOLUTION,
+  };
 }
 
 /**
@@ -309,6 +361,7 @@ export async function generateTextToImage(payload = {}) {
     aspectRatio,
     model,
     mode,
+    resolution,
     num_images,
     numImages,
     metadata = {},
@@ -330,14 +383,20 @@ export async function generateTextToImage(payload = {}) {
   }
 
   const normalizedMetadata = isPlainObject(metadata) ? metadata : {};
-  const normalizedAspectRatio = normalizeAspectRatio(aspect_ratio || aspectRatio) || '1:1';
-  const normalizedModel =
-    typeof (model || mode) === 'string' && (model || mode).trim()
-      ? (model || mode).trim().toUpperCase()
-      : DEFAULT_TEXT_TO_IMAGE_MODEL;
-  if (!SUPPORTED_TEXT_TO_IMAGE_MODELS.includes(normalizedModel)) {
-    throw createBadRequestError(`model must be one of: ${SUPPORTED_TEXT_TO_IMAGE_MODELS.join(', ')}.`);
-  }
+  const {
+    model: normalizedModel,
+    aspectRatio: normalizedAspectRatio,
+    resolution: normalizedResolution,
+  } = normalizeTextToImageRequestOptions({
+    model,
+    mode,
+    aspect_ratio,
+    aspectRatio,
+    resolution,
+  });
+  const normalizedRequestMetadata = normalizedResolution
+    ? { ...normalizedMetadata, resolution: normalizedResolution }
+    : normalizedMetadata;
   const outputImages = Math.max(1, Math.floor(requestedImages));
   const pricing = getTextToImagePricing(outputImages);
 
@@ -346,6 +405,7 @@ export async function generateTextToImage(payload = {}) {
     metadata: {
       model: normalizedModel,
       aspectRatio: normalizedAspectRatio,
+      ...(normalizedResolution ? { resolution: normalizedResolution } : {}),
       requestedImages: outputImages,
       pricing,
       requestType: 'API',
@@ -367,9 +427,10 @@ export async function generateTextToImage(payload = {}) {
     originalImageGenerationPrompt: normalizedPrompt,
     originalImageGenerationPromptSource: 'api_text_to_image',
     aspectRatio: normalizedAspectRatio,
+    ...(normalizedResolution ? { resolution: normalizedResolution } : {}),
     case_type: 'text_to_image',
     numImages: outputImages,
-    metadata: normalizedMetadata,
+    metadata: normalizedRequestMetadata,
     userId,
   });
 
@@ -383,7 +444,7 @@ export async function generateTextToImage(payload = {}) {
     userId,
     status: 'PENDING',
     metadata: {
-      ...normalizedMetadata,
+      ...normalizedRequestMetadata,
       prompt: normalizedPrompt,
       aspectRatio: normalizedAspectRatio,
       requestedImages: outputImages,
@@ -402,6 +463,7 @@ export async function generateTextToImage(payload = {}) {
     model: normalizedModel,
     prompt: normalizedPrompt,
     aspect_ratio: normalizedAspectRatio,
+    ...(normalizedResolution ? { resolution: normalizedResolution } : {}),
     num_images: outputImages,
     userId,
     creditsCharged: pricing.credits,

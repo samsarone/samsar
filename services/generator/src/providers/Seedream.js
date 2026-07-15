@@ -15,13 +15,15 @@ fal.config({
 });
 
 
-export async function handleSeedreamRequest(payload) {
+export async function handleSeedreamRequest(payload, dependencies = {}) {
   const { apiGenerationStatus, apiRequestId, model } = payload;
+  const submitRequest = dependencies.submitRequest || submitSeedreamRequest;
+  const pollRequest = dependencies.pollRequest || pollSeedreamRequest;
 
   if (apiGenerationStatus === 'INIT') {
-    await submitSeedreamRequest(payload);
+    return submitRequest(payload);
   } else if (apiGenerationStatus === 'PENDING') {
-    const imageData = await pollSeedreamRequest(payload);
+    const imageData = await pollRequest(payload);
 
     return imageData;
   } else if (apiGenerationStatus === 'FAILED') {
@@ -36,12 +38,17 @@ export async function handleSeedreamRequest(payload) {
 
 }
 
-export async function submitSeedreamRequest(payload) {
+export async function submitSeedreamRequest(payload, dependencies = {}) {
 
 
   const { _id, model, prompt, aspectRatio } = payload;
-  await getDBConnectionString();
-  await ImageGeneration.findByIdAndUpdate(_id, { rowLocked: true });
+  const connect = dependencies.connect || getDBConnectionString;
+  const imageGenerationModel = dependencies.imageGenerationModel || ImageGeneration;
+  const queueSubmit = dependencies.queueSubmit || ((...args) => fal.queue.submit(...args));
+  const logger = dependencies.logger || console;
+
+  await connect();
+  await imageGenerationModel.findByIdAndUpdate(_id, { rowLocked: true });
 
 
   const falLink = getFalLinkForModel(model);
@@ -58,7 +65,7 @@ export async function submitSeedreamRequest(payload) {
 
   try {
 
-    let response = await fal.queue.submit(falLink, {
+    let response = await queueSubmit(falLink, {
       input: reqPayload,
     });
 
@@ -66,7 +73,7 @@ export async function submitSeedreamRequest(payload) {
     const requestId = response.request_id;
 
 
-    await ImageGeneration.findOneAndUpdate({
+    await imageGenerationModel.findOneAndUpdate({
       _id: _id
     }, {
       apiRequestId: requestId,
@@ -76,28 +83,31 @@ export async function submitSeedreamRequest(payload) {
     });
 
   } catch (error) {
-    console.error("Error submitting request to FAL: ", error);
+    logger.error("Error submitting request to FAL: ", error);
 
-    await ImageGeneration.findOneAndUpdate({
-      _id: _id
-    }, {
-      generationStatus: "FAILED",
-      apiGenerationStatus: "FAILED",
-      rowLocked: false
-    });
-
+    // Keep retry and terminal state transitions in Image.js. The caller forwards
+    // this structured failure to handleNoImageRetryOrFailure, which also unlocks
+    // the request after it has safely scheduled or exhausted the retry.
     return {
       image: null,
+      error: `Seedream submission failed: ${error?.message || "Unknown provider error"}`,
     };
 
   }
 
 }
 
-export async function pollSeedreamRequest(payload) {
+export async function pollSeedreamRequest(payload, dependencies = {}) {
   const { _id, apiRequestId, model } = payload;
-  await getDBConnectionString();
-  await ImageGeneration.findOneAndUpdate(
+  const connect = dependencies.connect || getDBConnectionString;
+  const imageGenerationModel = dependencies.imageGenerationModel || ImageGeneration;
+  const queueStatus = dependencies.queueStatus || ((...args) => fal.queue.status(...args));
+  const queueResult = dependencies.queueResult || ((...args) => fal.queue.result(...args));
+  const saveFile = dependencies.saveFile || saveRemoteFile;
+  const logger = dependencies.logger || console;
+
+  await connect();
+  await imageGenerationModel.findOneAndUpdate(
     { _id: _id },
     { rowLocked: true }
   );
@@ -107,20 +117,21 @@ export async function pollSeedreamRequest(payload) {
   
   let responseStatusData;
   try {
-    responseStatusData = await fal.queue.status(falLink, {
+    responseStatusData = await queueStatus(falLink, {
       requestId: apiRequestId,
       logs: true,
     });
   } catch (error) {
-    await ImageGeneration.findOneAndUpdate({
+    await imageGenerationModel.findOneAndUpdate({
       _id: _id
     }, {
-      generationStatus: "FAILED",
-      apiGenerationStatus: "FAILED",
       rowLocked: false
     });
 
-    return { image: null };
+    return {
+      image: null,
+      error: `Seedream status check failed: ${error?.message || "Unknown provider error"}`,
+    };
   }
 
   const responseStatus = responseStatusData.status;
@@ -128,11 +139,11 @@ export async function pollSeedreamRequest(payload) {
   if (responseStatus === "COMPLETED") {
 
     try {
-      const result = await fal.queue.result(falLink, {
+      const result = await queueResult(falLink, {
         requestId: apiRequestId,
       });
 
-      await ImageGeneration.findOneAndUpdate(
+      await imageGenerationModel.findOneAndUpdate(
         { _id: _id },
         { rowLocked: true }
       );
@@ -146,16 +157,14 @@ export async function pollSeedreamRequest(payload) {
         throw new Error("Seedream result did not include an image URL.");
       }
 
-      const imageName = await saveRemoteFile(imageRemoteUrl);
+      const imageName = await saveFile(imageRemoteUrl);
 
       return { image: imageName };
     } catch (error) {
-      console.error("Error retrieving Seedream image from FAL: ", error);
-      await ImageGeneration.findOneAndUpdate({
+      logger.error("Error retrieving Seedream image from FAL: ", error);
+      await imageGenerationModel.findOneAndUpdate({
         _id: _id
       }, {
-        generationStatus: "FAILED",
-        apiGenerationStatus: "FAILED",
         rowLocked: false
       });
 
@@ -163,9 +172,18 @@ export async function pollSeedreamRequest(payload) {
 
     }
 
-
+  } else if (responseStatus === "FAILED") {
+    const providerMessage = responseStatusData?.error?.message ||
+      responseStatusData?.error ||
+      responseStatusData?.logs?.findLast?.((entry) => entry?.message)?.message ||
+      'Seedream provider request failed.';
+    await imageGenerationModel.findOneAndUpdate(
+      { _id: _id },
+      { rowLocked: false },
+    );
+    return { image: null, error: String(providerMessage) };
   } else {
-    await ImageGeneration.findOneAndUpdate(
+    await imageGenerationModel.findOneAndUpdate(
       { _id: _id },
       { rowLocked: false }
     );

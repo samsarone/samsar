@@ -59,6 +59,12 @@ const ImageSessionSchema = new Schema({
     activeImageRemoteLink: { type: String, default: '' },
     
     activeImageDescription: { type: String, default: '' },
+    activeImageCandidate: {
+      src: { type: String, default: '' },
+      remoteSrc: { type: String, default: '' },
+      description: { type: String, default: '' },
+      score: { type: Number, default: null },
+    },
   }, { _id: false , strict: false });
   
 
@@ -106,6 +112,12 @@ const layerSchema = new Schema({
     aiVideoFrameGenerationPending: { type: Boolean, default: false },
 
     activeImageDescription: { type: String, default: '' },
+    activeImageCandidate: {
+      src: { type: String, default: '' },
+      remoteSrc: { type: String, default: '' },
+      description: { type: String, default: '' },
+      score: { type: Number, default: null },
+    },
 
     layerAiVideoType:  String, // character or scene 
 

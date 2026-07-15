@@ -1,16 +1,17 @@
 
 import {
+  Suspense,
+  lazy,
   useState,
   useEffect,
   useRef,
   useMemo,
   useCallback,
 } from 'react';
-import ace from 'ace-builds';
-import AceEditor from 'react-ace';
 import TextareaAutosize from 'react-textarea-autosize';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { Tooltip } from 'react-tooltip';
+import { resolveVidgenieLoadedProjectView } from './vidgenieProjectViewState.mjs';
 import {
   FaChevronCircleDown,
   FaChevronDown,
@@ -89,14 +90,42 @@ import useRealtimeTranscription from '../../hooks/useRealtimeTranscription.js';
 import { useDeploymentModelAvailability } from '../../hooks/useDeploymentModelAvailability.js';
 import { useInferenceModelAvailability } from '../../hooks/useInferenceModelAvailability.js';
 
-import 'ace-builds/src-noconflict/mode-json';
-import 'ace-builds/src-noconflict/theme-monokai';
-import 'ace-builds/src-noconflict/ext-language_tools';
 import 'react-tooltip/dist/react-tooltip.css';
 import 'react-toastify/dist/ReactToastify.css';
 import './mobileStyles.css';
 
-ace.config.set('useWorker', false);
+const LazyAceEditor = lazy(async () => {
+  const [aceModule, reactAceModule] = await Promise.all([
+    import('ace-builds'),
+    import('react-ace'),
+    import('ace-builds/src-noconflict/mode-json'),
+    import('ace-builds/src-noconflict/theme-monokai'),
+    import('ace-builds/src-noconflict/ext-language_tools'),
+  ]);
+
+  const ace = aceModule.default || aceModule;
+  ace.config.set('useWorker', false);
+
+  return { default: reactAceModule.default || reactAceModule };
+});
+
+function JsonAceEditor({ height = '520px', ...props }) {
+  return (
+    <Suspense
+      fallback={(
+        <div
+          className="flex items-center justify-center bg-[#272822] text-sm text-slate-300"
+          style={{ height }}
+          role="status"
+        >
+          Loading JSON editor...
+        </div>
+      )}
+    >
+      <LazyAceEditor {...props} height={height} />
+    </Suspense>
+  );
+}
 
 // ───────────────────────────────────────────────────────────
 //  Environment constants
@@ -136,12 +165,19 @@ const TIMELINE_PREVIEW_SESSION_REFRESH_MS = 10_000;
 const VOICE_SESSION_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
 const VOICE_TRANSCRIPTION_WORD_LIMIT = 2000;
 const VIDGENIE_PROMPT_MAX_LENGTH = 4000;
-const VIDGENIE_IMAGE_MODEL_ORDER = ['GPTIMAGE2', 'NANOBANANA2', 'NANOBANANAPRO', 'SEEDREAM'];
+const VIDGENIE_IMAGE_MODEL_ORDER = [
+  'GPTIMAGE2',
+  'NANOBANANA2',
+  'NANOBANANAPRO',
+  'SEEDREAM',
+  'WAN2.7PRO',
+];
 const VIDGENIE_IMAGE_MODEL_LABELS = {
   GPTIMAGE2: 'GPT Image 2',
   NANOBANANA2: 'Nano Banana 2',
   NANOBANANAPRO: 'NanoBanana Pro',
   SEEDREAM: 'Seedream',
+  'WAN2.7PRO': 'Wan2.7 Pro',
 };
 const DEFAULT_VIDEO_GENERATION_MODEL = 'RUNWAYML';
 const VIDGENIE_VIDEO_MODEL_ORDER = [
@@ -173,12 +209,8 @@ const VIDGENIE_IMAGE_LIST_VIDEO_MODEL_ORDER = [
   'KLINGIMGTOVID3PRO',
   'HAPPYHORSEI2V',
 ];
-const TEXT_TO_VIDEO_IMAGE_MODEL_KEYS = [
-  'GPTIMAGE2',
-  'NANOBANANA2',
-  'NANOBANANAPRO',
-  'SEEDREAM',
-];
+const TEXT_TO_VIDEO_IMAGE_MODEL_KEYS = VIDGENIE_IMAGE_MODEL_ORDER;
+const IMAGE_LIST_TO_VIDEO_IMAGE_MODEL_KEYS = VIDGENIE_IMAGE_MODEL_ORDER;
 const TEXT_TO_VIDEO_VIDEO_MODEL_KEYS = [
   'RUNWAYML',
   'VEO3.1I2V',
@@ -1239,6 +1271,7 @@ function buildDefaultJsonModeInput({
           project: 'launch_trailer',
         },
         prompt: 'Create a polished short video from these images.',
+        image_model: imageModel || '',
         video_model: normalizedVideoModel,
         aspect_ratio: normalizedAspectRatio,
         ...languageFields,
@@ -1933,6 +1966,38 @@ function getConfiguredModelError(fieldName, modelValues = []) {
   return `JSON input.${fieldName} must be one of the configured Docker models: ${allowedModels || 'none'}.`;
 }
 
+function validateStageImageModel(
+  input,
+  {
+    stageName,
+    allowedModelKeys,
+    deploymentModelValues,
+    isDockerInstall,
+    required = true,
+  }
+) {
+  if (typeof input.image_model !== 'string' || input.image_model.trim().length === 0) {
+    return required ? `JSON input.image_model is required for ${stageName}.` : null;
+  }
+
+  const resolvedImageModel = resolveJsonImageModelAlias(input.image_model.trim());
+  const imageModel = getJsonModelByKey(IMAGE_GENERAITON_MODEL_TYPES, resolvedImageModel);
+  if (!imageModel || !allowedModelKeys.includes(resolvedImageModel)) {
+    return `JSON input.image_model must be one of: ${formatAllowedJsonValues(allowedModelKeys)}.`;
+  }
+  if (!isModelAllowedByDeployment(resolvedImageModel, deploymentModelValues, isDockerInstall)) {
+    return getConfiguredModelError('image_model', deploymentModelValues);
+  }
+  if (imageModel.isExpressModel !== true) {
+    return 'JSON input.image_model must be an express model.';
+  }
+  if (!imageModelSupportsAspectRatio(resolvedImageModel, input.aspect_ratio || '16:9')) {
+    return `JSON input.image_model ${resolvedImageModel} does not support aspect_ratio ${input.aspect_ratio || '16:9'}.`;
+  }
+
+  return null;
+}
+
 function validateTextToVideoJsonInput(
   input,
   inferenceModelOptions = INFERENCE_MODEL_TYPES,
@@ -1952,24 +2017,13 @@ function validateTextToVideoJsonInput(
     return `JSON input.prompt must be ${VIDGENIE_PROMPT_MAX_LENGTH} characters or fewer.`;
   }
 
-  if (typeof input.image_model !== 'string' || input.image_model.trim().length === 0) {
-    return 'JSON input.image_model is required for text_to_video.';
-  }
-
-  const resolvedImageModel = resolveJsonImageModelAlias(input.image_model.trim());
-  const imageModel = getJsonModelByKey(IMAGE_GENERAITON_MODEL_TYPES, resolvedImageModel);
-  if (!imageModel || !TEXT_TO_VIDEO_IMAGE_MODEL_KEYS.includes(resolvedImageModel)) {
-    return `JSON input.image_model must be one of: ${formatAllowedJsonValues(TEXT_TO_VIDEO_IMAGE_MODEL_KEYS)}.`;
-  }
-  if (!isModelAllowedByDeployment(resolvedImageModel, textToVideoImageModelValues, isDockerInstall)) {
-    return getConfiguredModelError('image_model', textToVideoImageModelValues);
-  }
-  if (imageModel.isExpressModel !== true) {
-    return 'JSON input.image_model must be an express model.';
-  }
-  if (!imageModelSupportsAspectRatio(resolvedImageModel, input.aspect_ratio || '16:9')) {
-    return `JSON input.image_model ${resolvedImageModel} does not support aspect_ratio ${input.aspect_ratio || '16:9'}.`;
-  }
+  const imageModelError = validateStageImageModel(input, {
+    stageName: 'text_to_video',
+    allowedModelKeys: TEXT_TO_VIDEO_IMAGE_MODEL_KEYS,
+    deploymentModelValues: textToVideoImageModelValues,
+    isDockerInstall,
+  });
+  if (imageModelError) return imageModelError;
 
   if (typeof input.video_model !== 'string' || input.video_model.trim().length === 0) {
     return 'JSON input.video_model is required for text_to_video.';
@@ -2017,7 +2071,17 @@ function validateImageListToVideoJsonInput(
   const commonError = validateCommonJsonInput(input, inferenceModelOptions);
   if (commonError) return commonError;
   const isDockerInstall = deploymentModelAvailability?.isDockerInstall === true;
+  const imageListToVideoImageModelValues = deploymentModelAvailability?.imageListToVideoImageModelValues || [];
   const imageListToVideoVideoModelValues = deploymentModelAvailability?.imageListToVideoVideoModelValues || [];
+
+  const imageModelError = validateStageImageModel(input, {
+    stageName: 'image_list_to_video',
+    allowedModelKeys: IMAGE_LIST_TO_VIDEO_IMAGE_MODEL_KEYS,
+    deploymentModelValues: imageListToVideoImageModelValues,
+    isDockerInstall,
+    required: false,
+  });
+  if (imageModelError) return imageModelError;
 
   if (!Array.isArray(input.image_urls) || input.image_urls.length === 0) {
     return 'JSON input.image_urls must be a non-empty array for image_list_to_video.';
@@ -2792,9 +2856,11 @@ export default function OneshotEditor() {
   const location = useLocation();
   const { openAlertDialog, closeAlertDialog } = useAlertDialog();
   const showLoginDialog = useCallback(() => {
-    const redirectTo = `${location.pathname}${location.search || ''}`;
+    const redirectTo = user?._id
+      ? `${location.pathname}${location.search || ''}`
+      : '/vidgenie';
     openAlertDialog(<AuthContainer redirectTo={redirectTo} />, undefined, false, AUTH_DIALOG_OPTIONS);
-  }, [location.pathname, location.search, openAlertDialog]);
+  }, [location.pathname, location.search, openAlertDialog, user]);
 
   const goToPurchaseCredits = useCallback(() => {
     closeAlertDialog();
@@ -2802,6 +2868,15 @@ export default function OneshotEditor() {
   }, [closeAlertDialog, navigate]);
 
   const activeSessionIdRef = useRef(id);
+  const initialGuestSessionRef = useRef(undefined);
+  if (initialGuestSessionRef.current === undefined) {
+    const candidate = location.state?.guestSession;
+    const candidateId = candidate?._id?.$oid || candidate?._id || candidate?.id;
+    initialGuestSessionRef.current =
+      candidate?.isGuestSession === true && String(candidateId || '') === String(id || '')
+        ? candidate
+        : null;
+  }
   const currentPollRequestIdRef = useRef(null);
   const activeRequestIdRef = useRef(null);
   const postProcessingPollActionRef = useRef('');
@@ -2865,7 +2940,11 @@ export default function OneshotEditor() {
   // ─────────────────────────────────────────────────────────
   //  Basic session & form state
   // ─────────────────────────────────────────────────────────
+  // Keep the stable skeleton visible until the handed-off sample has hydrated all
+  // dependent editor state; otherwise mobile briefly paints a blank/default form.
   const [sessionDetails, setSessionDetails] = useState(null);
+  const [sessionLoadFailed, setSessionLoadFailed] = useState(false);
+  const [sessionLoadError, setSessionLoadError] = useState('');
   const [promptText, setPromptText] = useState('');
   const clampPromptText = useCallback((value) => {
     if (typeof value !== 'string') return '';
@@ -3552,14 +3631,17 @@ export default function OneshotEditor() {
     isLoading: isDeploymentModelAvailabilityLoading,
     textToVideoImageModelValues,
     textToVideoVideoModelValues,
+    imageListToVideoImageModelValues,
     imageListToVideoVideoModelValues,
   } = useDeploymentModelAvailability();
   const deploymentModelAvailability = useMemo(() => ({
     isDockerInstall: isDockerModelFilteringEnabled,
     textToVideoImageModelValues,
     textToVideoVideoModelValues,
+    imageListToVideoImageModelValues,
     imageListToVideoVideoModelValues,
   }), [
+    imageListToVideoImageModelValues,
     imageListToVideoVideoModelValues,
     isDockerModelFilteringEnabled,
     textToVideoImageModelValues,
@@ -3659,7 +3741,10 @@ export default function OneshotEditor() {
   // ─────────────────────────────────────────────────────────
   //  Image-model select & styles
   // ─────────────────────────────────────────────────────────
-  const expressImageModels = useMemo(() => {
+  const stageDeploymentImageModelValues = generationMode === 'I2V'
+    ? imageListToVideoImageModelValues
+    : textToVideoImageModelValues;
+  const stageImageModels = useMemo(() => {
     const availableModelMap = new Map(
       IMAGE_GENERAITON_MODEL_TYPES
         .filter((m) => {
@@ -3686,39 +3771,37 @@ export default function OneshotEditor() {
       })
       .filter(Boolean);
     return isDockerModelFilteringEnabled
-      ? filterOptionsForDeploymentModelValues(orderedModels, textToVideoImageModelValues)
+      ? filterOptionsForDeploymentModelValues(orderedModels, stageDeploymentImageModelValues)
       : orderedModels;
   }, [
     isDockerModelFilteringEnabled,
     selectedAspectRatioOption.value,
-    textToVideoImageModelValues,
+    stageDeploymentImageModelValues,
   ]);
 
   const [selectedImageModel, setSelectedImageModel] = useState(() => {
     const saved = localStorage.getItem('defaultVidGPTImageGenerationModel');
-    const found = expressImageModels.find((m) => m.value === saved);
-    return found || expressImageModels[0];
+    const found = stageImageModels.find((m) => m.value === saved);
+    return found || stageImageModels[0];
   });
 
   useEffect(() => {
-    if (generationMode !== 'T2V') return;
-
     setSelectedImageModel((prev) => {
-      if (!expressImageModels.length) return null;
+      if (!stageImageModels.length) return null;
       if (prev?.value) {
-        const existing = expressImageModels.find((m) => m.value === prev.value);
+        const existing = stageImageModels.find((m) => m.value === prev.value);
         if (existing) return existing;
       }
 
       const saved = localStorage.getItem('defaultVidGPTImageGenerationModel');
-      const found = expressImageModels.find((m) => m.value === saved);
-      return found || expressImageModels[0];
+      const found = stageImageModels.find((m) => m.value === saved);
+      return found || stageImageModels[0];
     });
-  }, [expressImageModels, generationMode]);
+  }, [stageImageModels]);
 
   const [selectedImageStyle, setSelectedImageStyle] = useState(() => {
     const saved = localStorage.getItem('defaultVidGPTImageGenerationModel');
-    const foundModel = expressImageModels.find((m) => m.value === saved) || expressImageModels[0];
+    const foundModel = stageImageModels.find((m) => m.value === saved) || stageImageModels[0];
     if (foundModel?.imageStyles?.length) {
       const firstStyle = foundModel.imageStyles[0];
       return { label: firstStyle, value: firstStyle };
@@ -3924,14 +4007,8 @@ export default function OneshotEditor() {
   // ─────────────────────────────────────────────────────────
   //  Credits / disable form
   // ─────────────────────────────────────────────────────────
-  const [isDisabled, setIsDisabled] = useState(false);
-  useEffect(() => {
-    if (!user || (user.generationCredits < 300 && currentEnv !== 'docker')) {
-      setIsDisabled(true);
-    } else {
-      setIsDisabled(false);
-    }
-  }, [user]);
+  const isGuestPreview = !user?._id;
+  const isDisabled = isGuestPreview || (user.generationCredits < 300 && currentEnv !== 'docker');
 
   // ─────────────────────────────────────────────────────────
   //  CLEAN-UP ALL POLLS WHEN COMPONENT UNMOUNTS
@@ -3976,6 +4053,8 @@ export default function OneshotEditor() {
       getSessionDetails().then((data) => {
         const usePostProcessingPoll = shouldUsePostProcessingStatusPolling(id);
         if (
+          user?._id &&
+          getHeaders() &&
           isSessionGenerationPending(data, shouldForceAdvancedVideoEditPolling(id) || usePostProcessingPoll) &&
           !activeRequestIdRef.current
         ) {
@@ -4898,48 +4977,80 @@ export default function OneshotEditor() {
   const getSessionDetails = async () => {
 
     try {
+      setSessionLoadFailed(false);
+      setSessionLoadError('');
       const canUseAnonymousDockerStatus = currentEnv === 'docker';
-      let headers = getHeaders();
-      if (!headers && !canUseAnonymousDockerStatus) {
+      let headers = user?._id ? getHeaders() : null;
+      if (!headers && !canUseAnonymousDockerStatus && user?._id) {
         await getUserAPI();
         headers = getHeaders();
       }
-      if (!headers && !canUseAnonymousDockerStatus) return null;
 
       let data;
-      if (headers) {
+      if (!headers && initialGuestSessionRef.current) {
+        data = initialGuestSessionRef.current;
+        initialGuestSessionRef.current = null;
+      } else if (headers) {
         let sessionResponse;
         try {
           sessionResponse = await axios.get(
             `${API_SERVER}/video_sessions/session_details?id=${encodeURIComponent(id)}&cacheBust=${Date.now()}`,
             headers
           );
-        } catch (error) {
-          if (error?.response?.status !== 401) {
-            throw error;
+        } catch (sessionDetailsError) {
+          if (sessionDetailsError?.response?.status === 401) {
+            await getUserAPI();
+            headers = getHeaders();
+            if (headers) {
+              try {
+                sessionResponse = await axios.get(
+                  `${API_SERVER}/video_sessions/session_details?id=${encodeURIComponent(id)}&cacheBust=${Date.now()}`,
+                  headers
+                );
+              } catch {
+                sessionResponse = null;
+              }
+            }
           }
 
-          await getUserAPI();
-          headers = getHeaders();
-          if (!headers) {
-            throw error;
+          if (!sessionResponse) {
+            try {
+              const statusData = await fetchDetailedGenerationStatus(id, headers);
+              const fallbackSession = buildDockerAnonymousSessionDetailsFromStatus(statusData);
+              if (isPlainObject(fallbackSession) && (
+                isPlainObject(fallbackSession.session) ||
+                Array.isArray(fallbackSession.layers) ||
+                isPlainObject(fallbackSession.expressGenerationStatus)
+              )) {
+                setGenerationStatusDetails(statusData);
+                data = fallbackSession;
+              } else {
+                throw sessionDetailsError;
+              }
+            } catch {
+              throw sessionDetailsError;
+            }
           }
-
-          sessionResponse = await axios.get(
-            `${API_SERVER}/video_sessions/session_details?id=${encodeURIComponent(id)}&cacheBust=${Date.now()}`,
-            headers
-          );
         }
-        data = sessionResponse.data;
-      } else {
+        data = data || sessionResponse?.data;
+      } else if (canUseAnonymousDockerStatus) {
         const statusData = await fetchDetailedGenerationStatus(id);
         if (statusData?.expressGenerationStatus) {
           setExpressGenerationStatus(statusData.expressGenerationStatus);
         }
         setGenerationStatusDetails(statusData);
         data = buildDockerAnonymousSessionDetailsFromStatus(statusData);
+      } else {
+        const sessionResponse = await axios.get(
+          `${API_SERVER}/video_sessions/session_details?id=${encodeURIComponent(id)}&cacheBust=${Date.now()}`
+        );
+        data = sessionResponse.data;
       }
 
+      if (!data) {
+        setSessionLoadFailed(true);
+        return null;
+      }
       setSessionDetails(data);
       const forceAdvancedEditPoll = shouldForceAdvancedVideoEditPolling(id);
       const usePostProcessingPoll = shouldUsePostProcessingStatusPolling(id);
@@ -4949,6 +5060,14 @@ export default function OneshotEditor() {
         data,
         forceAdvancedEditPoll || usePostProcessingPoll
       );
+      const failureStatus = getDetailedGenerationFailureStatus(data);
+      const loadedProjectView = resolveVidgenieLoadedProjectView({
+        hasPausedGeneration,
+        hasPendingGeneration,
+        hasStartedGeneration: hasStartedGenerationSession(data),
+        latestVideoUrl,
+        failureStatus,
+      });
       const isCurrentSessionRequest =
         !activeRequestIdRef.current ||
         activeRequestIdRef.current === id;
@@ -4969,7 +5088,7 @@ export default function OneshotEditor() {
           setIsGenerationWaitingForApproval(false);
           setShowResultDisplay(true);
           setExpressGenerationStatus(data.expressGenerationStatus);
-          if (!usePostProcessingPoll) {
+          if (headers && !usePostProcessingPoll) {
             refreshDetailedGenerationStatus(id, headers).catch(() => undefined);
           }
         } else if (hasPendingGeneration) {
@@ -4978,12 +5097,14 @@ export default function OneshotEditor() {
           setShowResultDisplay(true);
           setExpressGenerationStatus(data.expressGenerationStatus);
           if (usePostProcessingPoll) {
-            if (isCurrentSessionRequest) {
+            if (headers && isCurrentSessionRequest) {
               pollPostProcessingStatus(id);
             }
           } else {
-            refreshDetailedGenerationStatus(id, headers).catch(() => undefined);
-            if (isCurrentSessionRequest) {
+            if (headers) {
+              refreshDetailedGenerationStatus(id, headers).catch(() => undefined);
+            }
+            if (headers && isCurrentSessionRequest) {
               pollGenerationStatus(id);
             }
           }
@@ -4993,11 +5114,34 @@ export default function OneshotEditor() {
           setIsGenerationPending(false);
           setShowResultDisplay(true);
           setExpressGenerationStatus(data.expressGenerationStatus);
-          if (!usePostProcessingPoll) {
+          if (headers && !usePostProcessingPoll) {
             refreshDetailedGenerationStatus(id, headers).catch(() => undefined);
           }
           clearAdvancedVideoEditPendingSession(id);
           clearPostProcessingPendingSession(id);
+        } else if (loadedProjectView.showResultDisplay) {
+          setIsPaused(false);
+          setIsGenerationPending(false);
+          setIsGenerationWaitingForApproval(false);
+          setShowResultDisplay(true);
+          setExpressGenerationStatus(data.expressGenerationStatus);
+          if (failureStatus) {
+            setErrorMessage({
+              error: getDetailedGenerationErrorMessage(data, failureStatus),
+            });
+          }
+          if (headers && !usePostProcessingPoll) {
+            refreshDetailedGenerationStatus(id, headers)
+              .then((statusData) => {
+                const detailedFailureStatus = getDetailedGenerationFailureStatus(statusData);
+                if (detailedFailureStatus) {
+                  setErrorMessage({
+                    error: getDetailedGenerationErrorMessage(statusData, detailedFailureStatus),
+                  });
+                }
+              })
+              .catch(() => undefined);
+          }
         }
       } else if (hasPendingGeneration && activeRequestIdRef.current === id) {
         setIsPaused(false);
@@ -5016,7 +5160,7 @@ export default function OneshotEditor() {
         setIsGenerationWaitingForApproval(false);
         setShowResultDisplay(true);
         setExpressGenerationStatus(data.expressGenerationStatus);
-        if (!usePostProcessingPoll) {
+        if (headers && !usePostProcessingPoll) {
           refreshDetailedGenerationStatus(id, headers).catch(() => undefined);
         }
       } else if (!hasPendingGeneration && latestVideoUrl) {
@@ -5025,16 +5169,42 @@ export default function OneshotEditor() {
         setIsGenerationPending(false);
         setShowResultDisplay(true);
         setExpressGenerationStatus(data.expressGenerationStatus);
-        if (!usePostProcessingPoll) {
+        if (headers && !usePostProcessingPoll) {
           refreshDetailedGenerationStatus(id, headers).catch(() => undefined);
         }
         clearAdvancedVideoEditPendingSession(id);
         clearPostProcessingPendingSession(id);
+      } else if (loadedProjectView.showResultDisplay) {
+        setIsPaused(false);
+        setIsGenerationPending(false);
+        setIsGenerationWaitingForApproval(false);
+        setShowResultDisplay(true);
+        setExpressGenerationStatus(data.expressGenerationStatus);
+        if (failureStatus) {
+          setErrorMessage({
+            error: getDetailedGenerationErrorMessage(data, failureStatus),
+          });
+        }
+        if (headers && !usePostProcessingPoll) {
+          refreshDetailedGenerationStatus(id, headers)
+            .then((statusData) => {
+              const detailedFailureStatus = getDetailedGenerationFailureStatus(statusData);
+              if (detailedFailureStatus) {
+                setErrorMessage({
+                  error: getDetailedGenerationErrorMessage(statusData, detailedFailureStatus),
+                });
+              }
+            })
+            .catch(() => undefined);
+        }
       }
 
       if (data.sessionMessages) setSessionMessages(data.sessionMessages);
       return data;
-    } catch  {
+    } catch (error) {
+      const apiMessage = error?.response?.data?.error || error?.response?.data?.message;
+      setSessionLoadError(apiMessage || 'The project could not be loaded. Please try again.');
+      setSessionLoadFailed(true);
       return null;
     }
   };
@@ -5420,7 +5590,10 @@ export default function OneshotEditor() {
       setErrorMessage({ error: 'Docker model availability is still loading.' });
       return;
     }
-    if (isTextToVideo && !selectedImageModel?.value) {
+    if (
+      !selectedImageModel?.value ||
+      !stageImageModels.some((model) => model.value === selectedImageModel.value)
+    ) {
       setErrorMessage({ error: 'Please select an available image model before submitting.' });
       return;
     }
@@ -5454,22 +5627,21 @@ export default function OneshotEditor() {
     activeRequestIdRef.current = null;
     activeRequestStepModeRef.current = submittedGenerationStepMode;
 
-    const requestInput = {};
+    const requestInput = {
+      image_model: selectedImageModel.value,
+      aspect_ratio: selectedAspectRatioOption.value,
+    };
     if (isTextToVideo) {
       requestInput.prompt = trimmedPromptText;
-      requestInput.image_model = selectedImageModel.value;
       requestInput.video_model = selectedVideoModel.value;
       requestInput.duration = selectedDurationOption.value;
       requestInput.tone = advancedRequestConfiguration.input.tone || 'grounded';
-      requestInput.aspect_ratio = selectedAspectRatioOption.value;
       if (selectedVideoModelSubType?.value) {
         requestInput.video_model_sub_type = selectedVideoModelSubType.value;
       }
       if (selectedImageStyle?.value) {
         requestInput.image_style = selectedImageStyle.value;
       }
-    } else {
-      requestInput.aspect_ratio = selectedAspectRatioOption.value;
     }
 
     const selectedLanguageValue =
@@ -6169,7 +6341,7 @@ export default function OneshotEditor() {
     );
 
   const isFormDisabled = renderState !== 'idle' || isDisabled;
-  const isModeToggleDisabled = renderState === 'pending' || renderState === 'paused' || isSubmitting;
+  const isModeToggleDisabled = isDisabled || renderState === 'pending' || renderState === 'paused' || isSubmitting;
   const isGenerationActionDisabled =
     isFormDisabled ||
     isSubmitting ||
@@ -6228,6 +6400,7 @@ export default function OneshotEditor() {
         <PrimaryPublicButton
           extraClasses="w-full sm:w-auto px-4 py-2 rounded-xl shadow-sm hover:shadow-md transition active:scale-[0.98]"
           onClick={viewInStudio}
+          isDisabled={isGuestPreview}
         >
           View&nbsp;in&nbsp;Studio
         </PrimaryPublicButton>
@@ -6241,7 +6414,7 @@ export default function OneshotEditor() {
           isPending={
             isCompletedSessionPublished ? isUnpublishing : isPublishing
           }
-          isDisabled={isPublishing || isUnpublishing}
+          isDisabled={isGuestPreview || isPublishing || isUnpublishing}
         >
           {isCompletedSessionPublished
             ? isUnpublishing
@@ -6255,7 +6428,7 @@ export default function OneshotEditor() {
           extraClasses="w-full sm:w-auto px-4 py-2 rounded-xl shadow-sm hover:shadow-md transition active:scale-[0.98]"
           onClick={handleDownloadVideo}
           isPending={isDownloadingVideo}
-          isDisabled={!videoLink}
+          isDisabled={isGuestPreview || !videoLink}
         >
           {isDownloadingVideo ? 'Downloading' : t("common.download")}
         </PrimaryPublicButton>
@@ -6263,7 +6436,7 @@ export default function OneshotEditor() {
     );
   };
   const renderCompletedPostProcessingControls = (extraClasses = '') => {
-    if (renderState !== 'complete' || !videoLink) {
+    if (isGuestPreview || renderState !== 'complete' || !videoLink) {
       return null;
     }
 
@@ -6899,10 +7072,12 @@ export default function OneshotEditor() {
           <button
             type="button"
             onClick={() => setIsAdvancedOpen((open) => !open)}
+            disabled={isFormDisabled}
             aria-expanded={isAdvancedOpen}
             className={`
               inline-flex min-h-9 w-full items-center justify-center gap-1.5 rounded-xl px-3 py-1.5 text-sm font-medium ring-1 transition sm:w-auto
               ${secondaryActionClasses}
+              ${isFormDisabled ? 'cursor-not-allowed opacity-60' : ''}
             `}
           >
             <span>Advanced</span>
@@ -6917,6 +7092,29 @@ export default function OneshotEditor() {
     </div>
   );
   if (!sessionDetails) {
+    if (sessionLoadFailed) {
+      return (
+        <div className={`mx-auto mt-6 w-full max-w-lg rounded-2xl border p-6 text-center ${
+          colorMode === 'dark'
+            ? 'border-white/10 bg-[#0f1629] text-slate-100'
+            : 'border-slate-200 bg-white text-slate-900'
+        }`}>
+          <h1 className="text-xl font-semibold">Unable to open this VidGenie project</h1>
+          <p className={`mt-2 text-sm ${mutedText}`}>
+            {isGuestPreview
+              ? 'This sample is no longer available. Log in to create in your own workspace.'
+              : sessionLoadError || 'The project could not be loaded. Please try again.'}
+          </p>
+          <button
+            type="button"
+            onClick={isGuestPreview ? showLoginDialog : () => void getSessionDetails()}
+            className="mt-5 inline-flex min-h-10 items-center justify-center rounded-xl bg-blue-600 px-5 py-2 text-sm font-semibold text-white transition hover:bg-blue-700"
+          >
+            {isGuestPreview ? 'Log in to create' : 'Try again'}
+          </button>
+        </div>
+      );
+    }
     return <VidgenieSkeletonLoader />;
   }
 
@@ -6925,6 +7123,34 @@ export default function OneshotEditor() {
   // ─────────────────────────────────────────────────────────
   return (
     <div className="vidgenie-editor-shell relative mx-auto mt-2 w-full max-w-6xl overflow-x-hidden px-2 sm:mt-5 sm:px-6">
+      {isGuestPreview && (
+        <div
+          className={`mt-2 flex flex-col gap-3 rounded-2xl border px-4 py-3 sm:mt-6 sm:flex-row sm:items-center sm:justify-between ${
+            colorMode === 'dark'
+              ? 'border-cyan-300/20 bg-cyan-300/10 text-cyan-50'
+              : 'border-blue-200 bg-blue-50 text-blue-950'
+          }`}
+          role="status"
+        >
+          <div className="min-w-0">
+            <div className="text-sm font-semibold">Sample VidGenie project</div>
+            <p className={`mt-0.5 text-xs ${colorMode === 'dark' ? 'text-cyan-100/75' : 'text-blue-800'}`}>
+              You can preview this project. Log in to create videos in your own workspace.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={showLoginDialog}
+            className={`inline-flex min-h-10 w-full shrink-0 items-center justify-center rounded-xl px-4 py-2 text-sm font-semibold transition sm:w-auto ${
+              colorMode === 'dark'
+                ? 'bg-cyan-200 text-slate-950 hover:bg-cyan-100'
+                : 'bg-blue-600 text-white hover:bg-blue-700'
+            }`}
+          >
+            Log in to create
+          </button>
+        </div>
+      )}
       {/* ───────── HEADER ───────── */}
       <div
         className={`
@@ -7026,6 +7252,7 @@ export default function OneshotEditor() {
                 <button
                   type="button"
                   onClick={openAdvancedVideoEditDialog}
+                  disabled={isGuestPreview}
                   title="Advanced video edits"
                   aria-label="Advanced video edits"
                   className={`
@@ -7034,6 +7261,7 @@ export default function OneshotEditor() {
                       ? 'border border-white/10 text-slate-100 hover:border-white/20 hover:bg-white/5'
                       : 'border border-slate-200 text-slate-700 hover:border-slate-300 hover:bg-slate-50'
                     }
+                    ${isGuestPreview ? 'cursor-not-allowed opacity-50' : ''}
                   `}
                 >
                   <FaCog />
@@ -7158,50 +7386,53 @@ export default function OneshotEditor() {
                   value={selectedAspectRatioOption}
                   onChange={setSelectedAspectRatioOption}
                   options={aspectRatioOptions}
+                  isDisabled={isFormDisabled}
                   className="w-full"
                 />
               </div>
               <p className={`text-[11px] mt-1 ${mutedText}`}>{t("vidgenie.aspectRatio")}</p>
             </div>
 
+            {/* Image Model */}
+            <div className="group w-full">
+              <div className={`w-full md:w-full ${controlShell} rounded-xl p-2 transition-transform duration-200 group-hover:translate-y-[-1px] relative z-10 focus-within:z-50 group-hover:z-50`}>
+                <SingleSelect
+                  value={selectedImageModel}
+                  onChange={setSelectedImageModel}
+                  options={stageImageModels}
+                  isDisabled={isFormDisabled}
+                  className="w-full"
+                />
+              </div>
+              <p className={`text-[11px] mt-1 ${mutedText}`}>{t("vidgenie.imageModel")}</p>
+            </div>
+
+            {/* Image Style (conditional) */}
+            {(() => {
+              const modelCfg = IMAGE_GENERAITON_MODEL_TYPES.find(
+                (m) => m.key === selectedImageModel?.value
+              );
+              if (modelCfg?.imageStyles) {
+                return (
+                  <div className="group w-full">
+                    <div className={`w-full md:w-full ${controlShell} rounded-xl p-2 transition-transform duration-200 group-hover:translate-y-[-1px] relative z-10 focus-within:z-50 group-hover:z-50`}>
+                      <SingleSelect
+                        value={selectedImageStyle}
+                        onChange={setSelectedImageStyle}
+                        options={modelCfg.imageStyles.map((s) => ({ label: s, value: s }))}
+                        isDisabled={isFormDisabled}
+                        className="w-full"
+                      />
+                    </div>
+                    <p className={`text-[11px] mt-1 ${mutedText}`}>{t("vidgenie.imageStyle")}</p>
+                  </div>
+                );
+              }
+              return null;
+            })()}
+
             {generationMode === 'T2V' && (
               <>
-                {/* Image Model */}
-                <div className="group w-full">
-                  <div className={`w-full md:w-full ${controlShell} rounded-xl p-2 transition-transform duration-200 group-hover:translate-y-[-1px] relative z-10 focus-within:z-50 group-hover:z-50`}>
-                    <SingleSelect
-                      value={selectedImageModel}
-                      onChange={setSelectedImageModel}
-                      options={expressImageModels}
-                      className="w-full"
-                    />
-                  </div>
-                  <p className={`text-[11px] mt-1 ${mutedText}`}>{t("vidgenie.imageModel")}</p>
-                </div>
-
-                {/* Image Style (conditional) */}
-                {(() => {
-                  const modelCfg = IMAGE_GENERAITON_MODEL_TYPES.find(
-                    (m) => m.key === selectedImageModel?.value
-                  );
-                  if (modelCfg?.imageStyles) {
-                    return (
-                      <div className="group w-full">
-                        <div className={`w-full md:w-full ${controlShell} rounded-xl p-2 transition-transform duration-200 group-hover:translate-y-[-1px] relative z-10 focus-within:z-50 group-hover:z-50`}>
-                          <SingleSelect
-                            value={selectedImageStyle}
-                            onChange={setSelectedImageStyle}
-                            options={modelCfg.imageStyles.map((s) => ({ label: s, value: s }))}
-                            className="w-full"
-                          />
-                        </div>
-                        <p className={`text-[11px] mt-1 ${mutedText}`}>{t("vidgenie.imageStyle")}</p>
-                      </div>
-                    );
-                  }
-                  return null;
-                })()}
-
                 {/* Video Model */}
                 <div className="group w-full">
                   <div className={`w-full md:w-full ${controlShell} rounded-xl p-2 transition-transform duration-200 group-hover:translate-y-[-1px] relative z-10 focus-within:z-50 group-hover:z-50`}>
@@ -7209,6 +7440,7 @@ export default function OneshotEditor() {
                       value={selectedVideoModel}
                       onChange={setSelectedVideoModel}
                       options={expressVideoModels}
+                      isDisabled={isFormDisabled}
                       className="w-full"
                     />
                   </div>
@@ -7222,9 +7454,10 @@ export default function OneshotEditor() {
                       <SingleSelect
                         value={selectedVideoModelSubType}
                         onChange={setSelectedVideoModelSubType}
-                      options={PIXVERRSE_VIDEO_STYLES.map((s) => ({ label: s, value: s }))}
-                      className="w-full"
-                    />
+                        options={PIXVERRSE_VIDEO_STYLES.map((s) => ({ label: s, value: s }))}
+                        isDisabled={isFormDisabled}
+                        className="w-full"
+                      />
                   </div>
                     <p className={`text-[11px] mt-1 ${mutedText}`}>{t("vidgenie.pixverseStyle")}</p>
                   </div>
@@ -7237,9 +7470,10 @@ export default function OneshotEditor() {
                       <SingleSelect
                         value={selectedVideoModelSubType}
                         onChange={setSelectedVideoModelSubType}
-                      options={selectedVideoModel.modelSubTypes.map((s) => ({ label: s, value: s }))}
-                      className="w-full"
-                    />
+                        options={selectedVideoModel.modelSubTypes.map((s) => ({ label: s, value: s }))}
+                        isDisabled={isFormDisabled}
+                        className="w-full"
+                      />
                   </div>
                     <p className={`text-[11px] mt-1 ${mutedText}`}>{t("vidgenie.videoSubType")}</p>
                   </div>
@@ -7254,6 +7488,7 @@ export default function OneshotEditor() {
                     value={selectedVideoModel}
                     onChange={setSelectedVideoModel}
                     options={imageListVideoModels}
+                    isDisabled={isFormDisabled}
                     truncateLabels
                     className="w-full"
                   />
@@ -7270,6 +7505,7 @@ export default function OneshotEditor() {
                     value={selectedDurationOption}
                     onChange={setSelectedDurationOption}
                     options={durationOptions}
+                    isDisabled={isFormDisabled}
                     className="w-full"
                   />
                 </div>
@@ -7766,7 +8002,7 @@ export default function OneshotEditor() {
 
             {isJsonRequestExpanded && (
               <div className="mt-4 max-w-full overflow-hidden rounded-xl ring-1 ring-white/10">
-                <AceEditor
+                <JsonAceEditor
                   mode="json"
                   theme="monokai"
                   name="vidgenieJsonSubmittedInput"
@@ -7802,7 +8038,7 @@ export default function OneshotEditor() {
                   ? 'ring-white/10'
                   : 'ring-slate-200'
             }`}>
-              <AceEditor
+              <JsonAceEditor
                 mode="json"
                 theme="monokai"
                 name="vidgenieJsonInput"
@@ -7886,7 +8122,7 @@ export default function OneshotEditor() {
               <button
                 type="button"
                 onClick={handleToggleVoiceRecording}
-                disabled={!isVoiceSupported && !isBrowserSpeechSupported}
+                disabled={isFormDisabled || (!isVoiceSupported && !isBrowserSpeechSupported)}
                 aria-pressed={isVoiceBusy}
                 className={`
                   absolute bottom-3 right-3 h-11 w-11 rounded-full flex items-center justify-center

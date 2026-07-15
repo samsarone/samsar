@@ -24,6 +24,7 @@ const IMAGE_MODELS = [
   { label: 'Nano Banana 2', value: 'NANOBANANA2' },
   { label: 'NanoBanana Pro', value: 'NANOBANANAPRO' },
   { label: 'Seedream', value: 'SEEDREAM' },
+  { label: 'Wan2.7 Pro', value: 'WAN2.7PRO' },
 ];
 
 const IMAGE_LIST_VIDEO_MODELS = [

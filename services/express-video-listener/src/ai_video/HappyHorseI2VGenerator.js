@@ -3,18 +3,14 @@ import VideoSession from '../schema/VideoSession.js';
 import AIVideoLayerGeneration from '../schema/AIVideoLayerGeneration.js';
 import { getFrameImageForLayer, getBaseFrameImageForLayer } from './utils/ImageRenderUtils.js';
 import { uploadFrameLayerImageToCDN, primeCDNCache } from './utils/AWS.js';
+import { buildRetryableImageToVideoQueuePayload } from './utils/AIVideoQueuePayload.js';
 
 export async function requestRenderHappyHorseI2VVideo(payload) {
   const {
     videoSessionId,
     layerId,
-    prompt,
-    combineLayers,
     useStartFrame,
     aspectRatio,
-    model,
-    clipLayerToAiVideo,
-    userId,
     duration,
   } = payload;
 
@@ -36,24 +32,11 @@ export async function requestRenderHappyHorseI2VVideo(payload) {
     await primeCDNCache(currentLayerFrameImage);
   }
 
-  const aiVideoRenderPayload = {
-    prompt,
-    model,
-    sessionId: videoSessionId,
-    layerId,
+  const aiVideoRenderPayload = buildRetryableImageToVideoQueuePayload(payload, {
     useEndFrame: false,
-    useStartFrame,
-    combineLayers,
-    aspectRatio,
-    clipLayerToAiVideo,
-    userId,
-    retryOnFail: true,
     duration: duration || 5,
-  };
-
-  if (currentLayerFrameImage) {
-    aiVideoRenderPayload.startImage = currentLayerFrameImage;
-  }
+    ...(currentLayerFrameImage ? { startImage: currentLayerFrameImage } : {}),
+  });
 
   const aiRenderPayload = new AIVideoLayerGeneration(aiVideoRenderPayload);
   await aiRenderPayload.save();

@@ -19,6 +19,10 @@ import SingleSelect from "../common/SingleSelect.jsx";
 import { ASSISTANT_MODEL_TYPES } from "../../constants/Types.ts";
 import { getHeaders } from "../../utils/web.jsx";
 import { useInferenceModelAvailability } from "../../hooks/useInferenceModelAvailability.js";
+import {
+  normalizeDeploymentInferenceModelValue,
+  resolveAllowedInferenceModelOption,
+} from "../../utils/deploymentProviders.js";
 
 const PROCESSOR_SERVER = import.meta.env.VITE_PROCESSOR_API;
 const DEFAULT_TEXT_MODEL = 'gpt-5.6-sol';
@@ -158,6 +162,7 @@ export default function AssistantHome(props) {
   const [assistantModel, setAssistantModel] = useState(
     ASSISTANT_MODEL_TYPES.find((model) => model.value === DEFAULT_TEXT_MODEL) || ASSISTANT_MODEL_TYPES[0]
   );
+  const pendingAssistantModelSyncRef = useRef('');
   const [deletingMessageId, setDeletingMessageId] = useState(null);
   const [isResetting, setIsResetting] = useState(false);
   const [isResetConfirmVisible, setIsResetConfirmVisible] = useState(false);
@@ -181,18 +186,32 @@ export default function AssistantHome(props) {
   useEffect(() => {
     if (!user) return;
     const userAssistantModel = user.selectedAssistantModel || DEFAULT_TEXT_MODEL;
-    const userAssistantModelOption = assistantModelOptions.find(
-      (model) => model.value === userAssistantModel
-    ) || assistantModelOptions.find((model) => model.value === DEFAULT_TEXT_MODEL) || assistantModelOptions[0] || null;
+    const userAssistantModelOption = resolveAllowedInferenceModelOption(
+      userAssistantModel,
+      assistantModelOptions,
+      DEFAULT_TEXT_MODEL,
+    );
     setAssistantModel(userAssistantModelOption);
-    if (
-      isDockerInstall &&
-      userAssistantModelOption?.value &&
-      userAssistantModelOption.value !== userAssistantModel
-    ) {
-      updateUserAssistantModel(userAssistantModelOption.value);
+
+    const canReconcileAssistantModel =
+      !isDockerInstall ||
+      (!isInferenceModelAvailabilityLoading && hasConfiguredInferenceModels);
+    const normalizedUserAssistantModel = normalizeDeploymentInferenceModelValue(userAssistantModel);
+    if (canReconcileAssistantModel && userAssistantModelOption?.value) {
+      if (userAssistantModelOption.value === normalizedUserAssistantModel) {
+        pendingAssistantModelSyncRef.current = '';
+      } else if (pendingAssistantModelSyncRef.current !== userAssistantModelOption.value) {
+        pendingAssistantModelSyncRef.current = userAssistantModelOption.value;
+        updateUserAssistantModel(userAssistantModelOption.value);
+      }
     }
-  }, [assistantModelOptions, user]);
+  }, [
+    assistantModelOptions,
+    hasConfiguredInferenceModels,
+    isDockerInstall,
+    isInferenceModelAvailabilityLoading,
+    user,
+  ]);
 
   useEffect(() => {
     if (!isOpen) return;

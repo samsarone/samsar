@@ -2,14 +2,18 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
+  buildBaseGenerationFailureMessage,
   buildTransientProviderErrorUpdate,
   buildBaseGenerationTerminalFailureUpdate,
   getInferenceModelForSession,
   getInferenceSettingsForSession,
+  getRetryPromptSeedAction,
   isTransientProviderError,
   resolveCompletedLayerDuration,
   resolveConnectedAudioLayerDuration,
   selectFilterPassForBaseGenerationRetry,
+  shouldRetryBaseGeneration,
+  shouldUseAlibabaNativeHappyHorse,
 } from './VideoGenerationListener.js';
 import { isTransientMongoError } from './DBString.js';
 
@@ -25,7 +29,7 @@ test('base generation retry picks the next highest scored filter pass for each r
   assert.equal(selectFilterPassForBaseGenerationRetry(passes, 2).pass.src, 'low.png');
 });
 
-test('base generation retry reuses the last available filter pass only after choices are exhausted', () => {
+test('base generation retry stops after unique filter passes are exhausted', () => {
   const passes = [
     { score: 10, src: 'best.png' },
     { score: 5, src: 'second.png' },
@@ -33,9 +37,65 @@ test('base generation retry reuses the last available filter pass only after cho
 
   const selected = selectFilterPassForBaseGenerationRetry(passes, 4);
 
-  assert.equal(selected.pass.src, 'second.png');
-  assert.equal(selected.rank, 1);
-  assert.equal(selected.reusedLastAvailablePass, true);
+  assert.equal(selected, null);
+});
+
+test('base generation retry excludes the active image before ranking fallbacks', () => {
+  const passes = [
+    { score: 10, src: 'generations/current.png', description: 'current' },
+    { score: 8, src: 'assets/generations/fallback.png', description: 'fallback' },
+  ];
+
+  const selected = selectFilterPassForBaseGenerationRetry(passes, 0, {
+    excludeSources: ['/generations/current.png'],
+  });
+
+  assert.equal(selected.pass.src, 'assets/generations/fallback.png');
+  assert.equal(selected.pass.description, 'fallback');
+});
+
+test('legacy express Cosmos jobs retry even when the old queue row omitted the flag', () => {
+  assert.equal(shouldRetryBaseGeneration({
+    generation: { retryOnFail: false },
+    videoSession: { isExpressGeneration: true },
+    model: 'COSMOS3SUPERI2V',
+  }), true);
+  assert.equal(shouldRetryBaseGeneration({
+    generation: { retryOnFail: false },
+    videoSession: { isExpressGeneration: false },
+    model: 'COSMOS3SUPERI2V',
+  }), false);
+});
+
+test('terminal AI-video errors retain the provider moderation reason', () => {
+  const message = buildBaseGenerationFailureMessage({
+    tries: 2,
+    providerFailureMessage: '400 Input text data may contain inappropriate content.',
+  });
+
+  assert.match(message, /failed after 3 attempts/);
+  assert.match(message, /inappropriate content/);
+});
+
+test('Infinitezoom retries retain the resolved swirl and zoom strategy', () => {
+  assert.equal(getRetryPromptSeedAction({
+    promptSeedContext: {
+      sceneAction: 'Original narrative action',
+      resolvedPrompt: 'Camera swirls clockwise and zooms in',
+      promptStrategy: 'infinitezoom',
+    },
+    currentLayer: { prompt: 'Current layer prompt' },
+    fallbackPrompt: 'Previously generated prompt',
+  }), 'Camera swirls clockwise and zooms in');
+
+  assert.equal(getRetryPromptSeedAction({
+    promptSeedContext: {
+      sceneAction: 'Original narrative action',
+      resolvedPrompt: 'Previously generated meta prompt',
+      promptStrategy: 'image_to_video_meta_prompt',
+    },
+    currentLayer: { prompt: 'Current layer prompt' },
+  }), 'Original narrative action');
 });
 
 test('session inference override wins for express generation retries', async () => {
@@ -240,6 +300,63 @@ test('stale base provider polling transient errors are promoted to FAILED', () =
 
   assert.equal(update.set.status, 'FAILED');
   assert.equal(update.set.transientProviderErrorExhausted, true);
+});
+
+test('hosted Happy Horse uses FAL even when native Alibaba routing is configured', () => {
+  const originalCurrentEnv = process.env.CURRENT_ENV;
+  const originalDockerRouting = process.env.SAMSAR_DOCKER_ADAPTER_ROUTING_ENABLED;
+  const originalAlibabaApiKey = process.env.ALIBABA_API_KEY;
+  const originalFalApiKey = process.env.FAL_API_KEY;
+  try {
+    process.env.CURRENT_ENV = 'production';
+    process.env.SAMSAR_DOCKER_ADAPTER_ROUTING_ENABLED = 'true';
+    process.env.ALIBABA_API_KEY = 'alibaba-key';
+    process.env.FAL_API_KEY = 'fal-key';
+
+    assert.equal(shouldUseAlibabaNativeHappyHorse({ model: 'HAPPYHORSEI2V' }), false);
+  } finally {
+    if (originalCurrentEnv === undefined) delete process.env.CURRENT_ENV;
+    else process.env.CURRENT_ENV = originalCurrentEnv;
+    if (originalDockerRouting === undefined) delete process.env.SAMSAR_DOCKER_ADAPTER_ROUTING_ENABLED;
+    else process.env.SAMSAR_DOCKER_ADAPTER_ROUTING_ENABLED = originalDockerRouting;
+    if (originalAlibabaApiKey === undefined) delete process.env.ALIBABA_API_KEY;
+    else process.env.ALIBABA_API_KEY = originalAlibabaApiKey;
+    if (originalFalApiKey === undefined) delete process.env.FAL_API_KEY;
+    else process.env.FAL_API_KEY = originalFalApiKey;
+  }
+});
+
+test('Docker Happy Horse uses native Alibaba only when it wins provider priority', () => {
+  const originalCurrentEnv = process.env.CURRENT_ENV;
+  const originalAlibabaApiKey = process.env.ALIBABA_API_KEY;
+  const originalFalApiKey = process.env.FAL_API_KEY;
+  try {
+    process.env.CURRENT_ENV = 'docker';
+    process.env.ALIBABA_API_KEY = 'alibaba-key';
+    process.env.FAL_API_KEY = 'fal-key';
+    assert.equal(shouldUseAlibabaNativeHappyHorse({ model: 'HAPPYHORSEI2V' }), true);
+
+    delete process.env.ALIBABA_API_KEY;
+    assert.equal(shouldUseAlibabaNativeHappyHorse({ model: 'HAPPYHORSEI2V' }), false);
+  } finally {
+    if (originalCurrentEnv === undefined) delete process.env.CURRENT_ENV;
+    else process.env.CURRENT_ENV = originalCurrentEnv;
+    if (originalAlibabaApiKey === undefined) delete process.env.ALIBABA_API_KEY;
+    else process.env.ALIBABA_API_KEY = originalAlibabaApiKey;
+    if (originalFalApiKey === undefined) delete process.env.FAL_API_KEY;
+    else process.env.FAL_API_KEY = originalFalApiKey;
+  }
+});
+
+test('Happy Horse polling keeps persisted native and legacy FAL task routing stable', () => {
+  assert.equal(shouldUseAlibabaNativeHappyHorse({
+    model: 'HAPPYHORSEI2V',
+    generationId: 'alibaba-happyhorse:task-123',
+  }), true);
+  assert.equal(shouldUseAlibabaNativeHappyHorse({
+    model: 'HAPPYHORSEI2V',
+    generationId: 'legacy-fal-request-id',
+  }), false);
 });
 
 test('Mongo server selection timeouts are treated as transient DB errors', () => {

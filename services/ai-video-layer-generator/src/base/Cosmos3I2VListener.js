@@ -119,8 +119,20 @@ export async function listenToPendingCosmos3ImgToVidRequests(payload) {
     }
 
     if (responseStatus === "FAILED") {
+      const providerFailureMessage = responseStatusData?.error?.message ||
+        responseStatusData?.error ||
+        responseStatusData?.logs?.findLast?.((entry) => entry?.message)?.message ||
+        "Cosmos 3 provider request failed.";
       return {
         responseStatus: "FAILED",
+        providerFailureMessage,
+        providerStatus: {
+          status: responseStatus,
+          error: responseStatusData?.error || null,
+          logs: Array.isArray(responseStatusData?.logs)
+            ? responseStatusData.logs.slice(-5)
+            : [],
+        },
       };
     }
 
@@ -129,8 +141,6 @@ export async function listenToPendingCosmos3ImgToVidRequests(payload) {
     };
   } catch (error) {
     console.error("Error in listenToPendingCosmos3ImgToVidRequests:", summarizeFalError(error));
-    return {
-      responseStatus: "FAILED",
-    };
+    throw error;
   }
 }

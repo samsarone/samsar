@@ -7,23 +7,36 @@ import {
   validateDeploymentProviderCredentials,
 } from './DeploymentProviderAPI.js';
 
-test('Alibaba Cloud credentials expose Qwen 3.7 for chat and assistant tasks', () => {
+test('Alibaba Cloud credentials expose Qwen, Wan2.7 Pro, and native Happy Horse', () => {
   const available = buildAvailableDeploymentModels({
     alibabaCloud: { ok: true, status: 'valid' },
   });
 
   assert.deepEqual(available.providers, ['alibabaCloud']);
-  assert.deepEqual(available.models, ['QWEN3.7']);
-  assert.deepEqual(available.actions, ['assistant', 'chat']);
+  assert.deepEqual(available.models, ['HAPPYHORSEI2V', 'QWEN3.7', 'WAN2.7PRO']);
+  assert.deepEqual(available.actions, ['assistant', 'chat', 'image', 'video']);
 });
 
-test('Samsar fallback availability includes Qwen 3.7', () => {
+test('Samsar fallback availability omits Qwen 3.7 while keeping media models', () => {
   const available = buildAvailableDeploymentModels({
     samsar: { ok: true, status: 'valid' },
   });
 
-  assert.equal(DEPLOYMENT_PROVIDER_CAPABILITIES.samsar.models.includes('QWEN3.7'), true);
-  assert.equal(available.models.includes('QWEN3.7'), true);
+  assert.equal(DEPLOYMENT_PROVIDER_CAPABILITIES.samsar.models.includes('QWEN3.7'), false);
+  assert.equal(available.models.includes('QWEN3.7'), false);
+  assert.equal(available.models.includes('HAPPYHORSEI2V'), true);
+  assert.equal(available.models.includes('WAN2.7PRO'), true);
+});
+
+test('FAL fallback availability keeps Happy Horse and Wan2.7 Pro enabled', () => {
+  const available = buildAvailableDeploymentModels({
+    fal: { ok: true, status: 'valid' },
+  });
+
+  assert.equal(available.models.includes('HAPPYHORSEI2V'), true);
+  assert.equal(available.models.includes('WAN2.7PRO'), true);
+  assert.equal(available.actions.includes('image'), true);
+  assert.equal(available.actions.includes('video'), true);
 });
 
 test('accepts deployment-friendly Alibaba credential and base URL aliases', async () => {
@@ -39,6 +52,8 @@ test('accepts deployment-friendly Alibaba credential and base URL aliases', asyn
     'https://workspace.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1',
   );
   assert.equal(result.available.models.includes('QWEN3.7'), true);
+  assert.equal(result.available.models.includes('HAPPYHORSEI2V'), true);
+  assert.equal(result.available.models.includes('WAN2.7PRO'), true);
 });
 
 test('accepts ALIBABA_API_HOST and expands it to the compatible endpoint', async () => {

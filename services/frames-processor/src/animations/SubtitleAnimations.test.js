@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 
 import { applyTextSubtitleAnimations } from './SubtitleAnimations.js';
 
-function createTextContext() {
+function createTextContext(canvas = { width: 1024, height: 1024 }) {
   const calls = {
     fillText: [],
     strokeText: [],
@@ -11,7 +11,7 @@ function createTextContext() {
   };
   const stateStack = [];
   const context = {
-    canvas: { width: 1024, height: 1024 },
+    canvas,
     font: '',
     fillStyle: '#FFFFFF',
     strokeStyle: '#000000',
@@ -880,4 +880,74 @@ test('wrapped page-first lines reserve width for the localized speaker label', (
     firstWordCall.y,
     calls.fillText.find((call) => call.text === 'TWO').y,
   );
+});
+
+test('portrait subtitles override stale no-wrap settings and stay inside safe margins', () => {
+  const { context, calls } = createTextContext({ width: 1024, height: 1792 });
+  const words = [
+    'PORTRAIT', 'SUBTITLES', 'SHOULD', 'WRAP', 'SMOOTHLY', 'ACROSS',
+    'TWO', 'BALANCED', 'LINES', 'WITHOUT', 'CLIPPING', 'AT', 'THE', 'EDGES',
+  ];
+  const item = {
+    type: 'text',
+    subType: 'subtitle',
+    text: words.join(' '),
+    config: {
+      fontSize: 48,
+      fontFamily: 'Poppins',
+      fillColor: '#FFFFFF',
+      autoWrap: false,
+      breakTextWidth: 1600,
+      frameOffset: 0,
+      frameDuration: 90,
+    },
+    words: words.map((word, index) => ({
+      word,
+      frameOffset: index * 10,
+      frameDuration: 10,
+    })),
+    wordAnimation: 'highlight',
+  };
+
+  applyTextSubtitleAnimations(context, item, (5 / 24) * 1000, 0, 24);
+
+  const renderedWords = calls.fillText.filter((call) => words.includes(call.text));
+  const renderedLinePositions = new Set(renderedWords.map((call) => call.y));
+  const safeSidePadding = 102.4;
+  assert.equal(item.config.autoWrap, true);
+  assert.equal(item.config.breakTextWidth, 819.2);
+  assert.equal(renderedLinePositions.size, 2);
+  renderedWords.forEach((call) => {
+    assert.ok(call.x >= safeSidePadding);
+    assert.ok(call.x + context.measureText(call.text).width <= context.canvas.width - safeSidePadding);
+  });
+});
+
+test('portrait static subtitles wrap long text using the current canvas width', () => {
+  const { context, calls } = createTextContext({ width: 720, height: 1280 });
+  const item = {
+    type: 'text',
+    subType: 'subtitle',
+    text: 'A LONG STATIC SUBTITLE MUST WRAP IN PORTRAIT VIDEO INSTEAD OF CLIPPING OFF SCREEN',
+    subtitleRenderMode: 'static',
+    isStaticSubtitle: true,
+    config: {
+      fontSize: 42,
+      fontFamily: 'Poppins',
+      fillColor: '#FFFFFF',
+      autoWrap: false,
+      breakTextWidth: 1200,
+      frameOffset: 0,
+      frameDuration: 24,
+    },
+  };
+
+  applyTextSubtitleAnimations(context, item, (5 / 24) * 1000, 0, 24);
+
+  const renderedLines = calls.fillText.filter((call) => call.text.includes(' '));
+  assert.ok(renderedLines.length >= 2);
+  assert.equal(item.config.breakTextWidth, 576);
+  renderedLines.forEach((call) => {
+    assert.ok(context.measureText(call.text).width <= item.config.breakTextWidth);
+  });
 });

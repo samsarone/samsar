@@ -122,7 +122,23 @@ export const IMAGE_GENERAITON_MODEL_TYPES = [
     key: 'NANOBANANAPRO',
     isExpressModel: true,
   },
+  {
+    name: 'Wan2.7 Pro',
+    key: 'WAN2.7PRO',
+    isExpressModel: true,
+    supportedAspectRatios: ['1:1', '16:9', '9:16'],
+  },
 ];
+
+export function imageGenerationModelSupportsAspectRatio(model, aspectRatio) {
+  if (!Array.isArray(model?.supportedAspectRatios) || !model.supportedAspectRatios.length) {
+    return true;
+  }
+  if (typeof aspectRatio !== 'string' || !aspectRatio.trim()) {
+    return true;
+  }
+  return model.supportedAspectRatios.includes(aspectRatio.trim());
+}
 
 
 export const VIDEO_GENERATION_MODEL_TYPES = [

@@ -210,6 +210,78 @@ test('terminal score-only fallback accepts the best candidate at or above 50', (
   );
 });
 
+test('selected image candidate keeps its source, score, and description aligned', () => {
+  assert.deepEqual(__testOnly__.buildActiveImageCandidate({
+    src: 'generations/selected.png',
+    remoteSrc: '/generations/selected.png',
+    description: 'A presenter points to the quarterly chart.',
+    score: '82',
+  }), {
+    src: 'generations/selected.png',
+    remoteSrc: '/generations/selected.png',
+    description: 'A presenter points to the quarterly chart.',
+    score: 82,
+  });
+});
+
+test('selected image candidate explicitly clears a missing description', () => {
+  assert.deepEqual(__testOnly__.buildActiveImageCandidate({
+    src: 'generations/replacement.png',
+    description: null,
+    score: null,
+  }), {
+    src: 'generations/replacement.png',
+    remoteSrc: '',
+    description: '',
+    score: null,
+  });
+});
+
+test('optional image scores preserve missing values and numeric zero', () => {
+  assert.equal(__testOnly__.normalizeOptionalScore(null), null);
+  assert.equal(__testOnly__.normalizeOptionalScore(''), null);
+  assert.equal(__testOnly__.normalizeOptionalScore('not-a-score'), null);
+  assert.equal(__testOnly__.normalizeOptionalScore(0), 0);
+  assert.equal(__testOnly__.normalizeOptionalScore('0'), 0);
+});
+
+test('provider inappropriate-content responses use the safety retry path', () => {
+  assert.equal(
+    __testOnly__.isSafetyRejectionMessage('400 Input text data may contain inappropriate content.'),
+    true,
+  );
+});
+
+test('image generation retries use bounded exponential backoff', () => {
+  const firstDelay = __testOnly__.getImageGenerationRetryDelayMs(1);
+  const secondDelay = __testOnly__.getImageGenerationRetryDelayMs(2);
+  const thirdDelay = __testOnly__.getImageGenerationRetryDelayMs(3);
+
+  assert.ok(firstDelay >= 250);
+  assert.equal(secondDelay, Math.min(firstDelay * 2, thirdDelay));
+  assert.ok(thirdDelay >= secondDelay);
+  assert.ok(thirdDelay <= 30000);
+  assert.equal(
+    __testOnly__.getImageGenerationNextAttemptAfter(1, 1000).getTime(),
+    1000 + firstDelay,
+  );
+});
+
+test('retryable vision failures return to the normal express image retry path', () => {
+  assert.equal(__testOnly__.shouldRetryUnhandledGenerationTask({
+    operationType: 'GENERATE',
+    isBatchGeneration: true,
+  }, {
+    nonPromptProviderFailure: true,
+    preserveExpressImageLayer: true,
+  }), true);
+
+  assert.equal(__testOnly__.shouldRetryUnhandledGenerationTask({
+    operationType: 'GENERATE',
+    isBatchGeneration: true,
+  }, new Error('Unexpected coding error')), false);
+});
+
 test('timeline reflow shifts only later layers and their connected audio', () => {
   const layers = [
     { _id: 'layer-1', durationOffset: 0, duration: 5 },

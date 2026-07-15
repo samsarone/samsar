@@ -1,10 +1,9 @@
-
-import LumaAI from 'lumaai';
 import { getDBConnectionString } from '../DBString.js';
 import VideoSession from '../schema/VideoSession.js';
 import AIVideoLayerGeneration from '../schema/AIVideoLayerGeneration.js';
 import { getFrameImageForLayer, getBaseFrameImageForLayer } from './utils/ImageRenderUtils.js';
 import { uploadFrameLayerImageToCDN, primeCDNCache } from './utils/AWS.js';
+import { buildRetryableImageToVideoQueuePayload } from './utils/AIVideoQueuePayload.js';
 
 export async function requestRenderExpressHailuoVideo(payload) {
 
@@ -71,7 +70,9 @@ export async function requestRenderExpressHailuoVideo(payload) {
   aiVideoRenderPayload.retryOnFail = true;
   aiVideoRenderPayload.duration = duration;
 
-  const aiRenderPayload = new AIVideoLayerGeneration(aiVideoRenderPayload);
+  const aiRenderPayload = new AIVideoLayerGeneration(
+    buildRetryableImageToVideoQueuePayload(payload, aiVideoRenderPayload),
+  );
   const renderSaveRes = await aiRenderPayload.save();
 
 

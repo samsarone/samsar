@@ -61,7 +61,7 @@ const PROVIDERS = [
     field: 'alibabaApiKey',
     inputType: 'password',
     placeholder: 'Alibaba Cloud Model Studio API key',
-    requiredFor: 'Required for Qwen 3.7 inference and assistant tasks',
+    requiredFor: 'Required for Qwen 3.7, Wan2.7 Pro image generation, and native Happy Horse 1.1 video',
     pricingUrl: 'https://www.alibabacloud.com/help/en/model-studio/model-pricing',
     keysUrl: 'https://modelstudio.console.alibabacloud.com/',
     credentialLabel: 'API key',
@@ -197,6 +197,12 @@ const CAPABILITY_FAMILIES = {
     providerKeys: ['googleCloud', 'fal', 'samsar'],
     modelKeys: ['NANOBANANAPRO'],
   },
+  wan27Pro: {
+    key: 'wan27Pro',
+    label: 'Wan2.7 Pro',
+    providerKeys: ['alibabaCloud', 'fal', 'samsar'],
+    modelKeys: ['WAN2.7PRO'],
+  },
   veo: {
     key: 'veoI2V',
     label: 'VEO 3.1 I2V',
@@ -230,7 +236,7 @@ const CAPABILITY_FAMILIES = {
   happyHorse: {
     key: 'happyHorse',
     label: 'Happy Horse',
-    providerKeys: ['fal', 'samsar'],
+    providerKeys: ['alibabaCloud', 'fal', 'samsar'],
     modelKeys: ['HAPPYHORSEI2V'],
   },
   runway: {
@@ -365,6 +371,7 @@ const SETUP_SERVICE_CATALOG = [
       CAPABILITY_FAMILIES.seedream,
       CAPABILITY_FAMILIES.nanoBanana2,
       CAPABILITY_FAMILIES.nanoBananaPro,
+      CAPABILITY_FAMILIES.wan27Pro,
     ],
   },
   {

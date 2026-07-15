@@ -1,4 +1,5 @@
 export const DOCKER_PROVIDER = Object.freeze({
+  ALIBABA_CLOUD: 'alibabaCloud',
   GOOGLE_CLOUD: 'googleCloud',
   FAL: 'fal',
   OPENAI: 'openai',
@@ -7,6 +8,7 @@ export const DOCKER_PROVIDER = Object.freeze({
 });
 
 export const DOCKER_IMAGE_PROVIDER_PRIORITY_BY_MODEL = Object.freeze({
+  'WAN2.7PRO': [DOCKER_PROVIDER.ALIBABA_CLOUD, DOCKER_PROVIDER.FAL, DOCKER_PROVIDER.SAMSAR],
   GPTIMAGE2: [DOCKER_PROVIDER.OPENAI, DOCKER_PROVIDER.SAMSAR],
   GPTIMAGE1: [DOCKER_PROVIDER.OPENAI, DOCKER_PROVIDER.SAMSAR],
   DALLE3: [DOCKER_PROVIDER.OPENAI, DOCKER_PROVIDER.SAMSAR],
@@ -46,6 +48,7 @@ export const DOCKER_VIDEO_PROVIDER_PRIORITY_BY_MODEL = Object.freeze({
   'VEO3.1I2V': [DOCKER_PROVIDER.GOOGLE_CLOUD, DOCKER_PROVIDER.FAL, DOCKER_PROVIDER.SAMSAR],
   'VEO3.1I2VFAST': [DOCKER_PROVIDER.GOOGLE_CLOUD, DOCKER_PROVIDER.FAL, DOCKER_PROVIDER.SAMSAR],
   RUNWAYML: [DOCKER_PROVIDER.RUNWAY, DOCKER_PROVIDER.SAMSAR],
+  HAPPYHORSEI2V: [DOCKER_PROVIDER.ALIBABA_CLOUD, DOCKER_PROVIDER.FAL, DOCKER_PROVIDER.SAMSAR],
 });
 
 export const DOCKER_FAL_VIDEO_MODELS = Object.freeze([
@@ -139,6 +142,15 @@ export function hasFalCredential() {
   return hasEnvCredential('FAL_API_KEY');
 }
 
+export function hasAlibabaCloudCredential() {
+  return hasEnvCredential(
+    'ALIBABA_API_KEY',
+    'DASHSCOPE_API_KEY',
+    'ALIBABA_CLOUD_API_KEY',
+    'QWEN_API_KEY',
+  );
+}
+
 export function hasOpenAICredential() {
   return hasEnvCredential('OPENAI_API_KEY');
 }
@@ -152,6 +164,7 @@ export function hasSamsarCredential() {
 }
 
 export function isDockerProviderConfigured(provider) {
+  if (provider === DOCKER_PROVIDER.ALIBABA_CLOUD) return hasAlibabaCloudCredential();
   if (provider === DOCKER_PROVIDER.GOOGLE_CLOUD) return hasGoogleCloudCredential();
   if (provider === DOCKER_PROVIDER.FAL) return hasFalCredential();
   if (provider === DOCKER_PROVIDER.OPENAI) return hasOpenAICredential();

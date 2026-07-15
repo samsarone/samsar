@@ -52,18 +52,39 @@ const hasSessionMetadata = (record = {}) => [
   'isImportedSession',
 ].some((field) => record[field] !== undefined);
 
-const hasMultipleLayers = (record = {}) => {
+const getLayerCount = (record = {}) => {
   if (Array.isArray(record.layers)) {
-    return record.layers.length > 1;
+    return record.layers.length;
   }
 
   const layerCount = Number(record.layerCount);
-  return Number.isInteger(layerCount) && layerCount > 1;
+  return Number.isInteger(layerCount) ? layerCount : 0;
+};
+
+const isExplicitVideoSessionRecord = (record = {}) => (
+  record.recordType === 'session' && record.sessionType === 'video'
+);
+
+const hasDisplayableProjectLayers = (record = {}) => {
+  const layerCount = getLayerCount(record);
+  if (layerCount > 1) {
+    return true;
+  }
+
+  return layerCount > 0 && Boolean(
+    record.isExpressGeneration ||
+    record.isStepVideoGeneration ||
+    record.expressGenerationCreated ||
+    record.expressGenerationPending ||
+    record.expressGenerationFailed ||
+    record.expressGenerationCancelled
+  );
 };
 
 export const isLayerListRecord = (record = {}) => (
   Boolean(
-    record.recordType === 'scene' ||
+    !isExplicitVideoSessionRecord(record) && (
+      record.recordType === 'scene' ||
     record.recordType === 'layer' ||
     getParentSessionIdentifier(record) ||
     record.layerId ||
@@ -81,6 +102,7 @@ export const isLayerListRecord = (record = {}) => (
     record.layerAiVideoType ||
     record.layerBaseAiImageType ||
     record.connectedLayerId
+    )
   )
 );
 
@@ -89,10 +111,9 @@ export const isSessionListRecord = (record = {}) => (
     record &&
     typeof record === 'object' &&
     getIdentifierString(getRecordIdentifier(record)) &&
-    record.recordType === 'session' &&
-    record.sessionType === 'video' &&
+    isExplicitVideoSessionRecord(record) &&
     !isLayerListRecord(record) &&
-    hasMultipleLayers(record) &&
+    hasDisplayableProjectLayers(record) &&
     hasSessionMetadata(record)
   )
 );
@@ -109,8 +130,9 @@ export const normalizeSessionListData = (records) => {
       return;
     }
 
-    // A scene/layer row is never promoted into a project tile. Only a
-    // tagged top-level session with at least two layers may reach the grid.
+    // A scene/layer row is never promoted into a project tile. Explicitly
+    // tagged video sessions remain projects even when status/progress fields
+    // overlap with fields also used by layer records.
     if (!isSessionListRecord(record)) {
       return;
     }

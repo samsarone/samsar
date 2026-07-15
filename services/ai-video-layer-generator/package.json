@@ -24,11 +24,9 @@
     "form-data": "^4.0.0",
     "fs-extra": "^11.2.0",
     "google-auth-library": "^9.14.1",
-    "lumaai": "^1.2.0",
     "mongoose": "^8.6.3",
     "openai": "^6.2.0",
     "samsar-js": "0.48.44",
-    "sharp": "^0.34.4",
     "zod": "^3.25.63"
   }
 }

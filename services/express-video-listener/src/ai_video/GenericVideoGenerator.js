@@ -4,6 +4,7 @@ import { getDBConnectionString } from '../DBString.js';
 import VideoSession from '../schema/VideoSession.js';
 import AIVideoLayerGeneration from '../schema/AIVideoLayerGeneration.js';
 import { normalizeProviderMediaUrl } from './utils/AWS.js';
+import { buildRetryableImageToVideoQueuePayload } from './utils/AIVideoQueuePayload.js';
 
 const IMAGE_REFERENCE_KEYS = [
   'src',
@@ -147,7 +148,14 @@ export async function requestRenderExpressCustomVideo(payload) {
   
 
 
-   const aiRenderPayload = new AIVideoLayerGeneration(aiVideoRenderPayload);
+   const aiRenderPayload = new AIVideoLayerGeneration(
+    buildRetryableImageToVideoQueuePayload(payload, {
+      ...aiVideoRenderPayload,
+      duration: Object.hasOwn(aiVideoRenderPayload, 'duration')
+        ? aiVideoRenderPayload.duration
+        : undefined,
+    }),
+  );
   const renderSaveRes = await aiRenderPayload.save();
 
 

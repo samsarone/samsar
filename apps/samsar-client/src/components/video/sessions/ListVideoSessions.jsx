@@ -29,12 +29,6 @@ const publishedStatusOptions = [
   { value: 'Unpublished', label: 'Unpublished' },
 ];
 
-const completionStatusOptions = [
-  { value: 'All', label: 'All' },
-  { value: 'Completed', label: 'Completed' },
-  { value: 'NotCompleted', label: 'Not completed' },
-];
-
 const aspectRatioOptions = [
   { value: 'All', label: 'All' },
   { value: '16:9', label: '16:9' },
@@ -250,19 +244,16 @@ export default function ListVideoSessions() {
   const [failedPreviewSources, setFailedPreviewSources] = useState(() => new Set());
   const listRequestIdRef = useRef(0);
 
-  const [renderType, setRenderType] = useState(() => (
-    getStoredFilterValue('defaultSessionSelectRenderType', renderTypeOptions)
-  ));
+  // Rendered/Pending and Completed/Not completed were two names for the same
+  // final-video filter. Do not revive a stale status filter when returning to
+  // My Sessions: the default view must include in-progress projects.
+  const [renderType, setRenderType] = useState('All');
   const [aspectRatio, setAspectRatio] = useState(() => (
     getStoredFilterValue('defaultSessionSelectAspectRatio', aspectRatioOptions)
   ));
   const [publishedStatus, setPublishedStatus] = useState(() => (
     getStoredFilterValue('defaultSessionSelectPublishedStatus', publishedStatusOptions)
   ));
-  const [completionStatus, setCompletionStatus] = useState(() => (
-    getStoredFilterValue('defaultSessionSelectCompletionStatus', completionStatusOptions)
-  ));
-
   const [, setShowIntroDisplay] = useState(false);
 
   const navigate = useNavigate();
@@ -301,7 +292,6 @@ export default function ListVideoSessions() {
       renderType,
       aspectRatio,
       publishedStatus,
-      completionStatus,
     });
 
     axios
@@ -351,13 +341,12 @@ export default function ListVideoSessions() {
     return () => {
       isCancelled = true;
     };
-  }, [page, limit, renderType, aspectRatio, publishedStatus, completionStatus, refreshCounter]);
+  }, [page, limit, renderType, aspectRatio, publishedStatus, refreshCounter]);
 
   // Handle filter changes
   const handleChangeRenderType = (selectedOption) => {
     const val = selectedOption.value;
     setRenderType(val);
-    localStorage.setItem('defaultSessionSelectRenderType', val);
     // Reset page to 1 when filter changes
     setPage(1);
   };
@@ -377,26 +366,18 @@ export default function ListVideoSessions() {
     setPage(1);
   };
 
-  const handleChangeCompletionStatus = (selectedOption) => {
-    const val = selectedOption.value;
-    setCompletionStatus(val);
-    localStorage.setItem('defaultSessionSelectCompletionStatus', val);
-    setPage(1);
-  };
-
   // Reset everything
   const handleResetFilters = () => {
     setPage(1);
     setRenderType('All');
     setAspectRatio('All');
     setPublishedStatus('All');
-    setCompletionStatus('All');
 
     localStorage.setItem('currentSessionsPage', '1');
-    localStorage.setItem('defaultSessionSelectRenderType', 'All');
+    localStorage.removeItem('defaultSessionSelectRenderType');
     localStorage.setItem('defaultSessionSelectAspectRatio', 'All');
     localStorage.setItem('defaultSessionSelectPublishedStatus', 'All');
-    localStorage.setItem('defaultSessionSelectCompletionStatus', 'All');
+    localStorage.removeItem('defaultSessionSelectCompletionStatus');
   };
 
   // Navigation
@@ -568,7 +549,7 @@ export default function ListVideoSessions() {
         {/* Top Section: Filters + Reset + Pagination controls */}
         <div className="mx-auto mb-6 flex w-full max-w-[1600px] flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           {/* Filters */}
-          <div className="grid w-full grid-cols-1 gap-3 sm:grid-cols-2 lg:w-auto lg:grid-cols-[repeat(4,minmax(0,180px))_auto]">
+          <div className="grid w-full grid-cols-1 gap-3 sm:grid-cols-2 lg:w-auto lg:grid-cols-[repeat(3,minmax(0,180px))_auto]">
             {/* Render Type Filter */}
             <div className="min-w-0">
               <label className="mb-1 block text-xs font-medium text-slate-500" htmlFor="project-render-filter">
@@ -610,21 +591,6 @@ export default function ListVideoSessions() {
                 onChange={handleChangePublishedStatus}
                 classNamePrefix="publishedStatusSelect"
                 name="project-published-filter"
-                isSearchable={false}
-              />
-            </div>
-
-            {/* Completion Status Filter */}
-            <div className="min-w-0">
-              <label className="mb-1 block text-xs font-medium text-slate-500" htmlFor="project-completion-filter">
-                Completion
-              </label>
-              <SingleSelect
-                options={completionStatusOptions}
-                value={completionStatusOptions.find((o) => o.value === completionStatus)}
-                onChange={handleChangeCompletionStatus}
-                classNamePrefix="completionStatusSelect"
-                name="project-completion-filter"
                 isSearchable={false}
               />
             </div>

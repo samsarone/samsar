@@ -29,6 +29,36 @@ const HIGHLIGHT_EDGE_FADE_FRAMES = 2;
 const TRANSLATED_CUE_EDGE_FADE_FRAMES = 3;
 const TRANSLATED_CUE_HOLD_FRAMES = 4;
 const TRANSLATED_PAGE_HANDOFF_FRAMES = 2;
+const PORTRAIT_SUBTITLE_SIDE_PADDING_RATIO = 0.1;
+const LANDSCAPE_SUBTITLE_SIDE_PADDING_RATIO = 0.06;
+const MIN_SUBTITLE_SIDE_PADDING_PX = 48;
+const MAX_SUBTITLE_SIDE_PADDING_PX = 144;
+
+function getDimensionAwareSubtitleWidth(ctx, item, config = {}) {
+  const canvasWidth = Number(ctx?.canvas?.width);
+  const canvasHeight = Number(ctx?.canvas?.height);
+  if (!Number.isFinite(canvasWidth) || canvasWidth <= 0) {
+    const configuredWidth = Number(config.breakTextWidth ?? item?.breakTextWidth);
+    return Number.isFinite(configuredWidth) && configuredWidth > 0
+      ? configuredWidth
+      : 800;
+  }
+
+  const isPortrait = Number.isFinite(canvasHeight) && canvasHeight > canvasWidth;
+  const paddingRatio = isPortrait
+    ? PORTRAIT_SUBTITLE_SIDE_PADDING_RATIO
+    : LANDSCAPE_SUBTITLE_SIDE_PADDING_RATIO;
+  const sidePadding = Math.min(
+    MAX_SUBTITLE_SIDE_PADDING_PX,
+    Math.max(MIN_SUBTITLE_SIDE_PADDING_PX, canvasWidth * paddingRatio),
+  );
+  const safeWidth = Math.max(1, canvasWidth - sidePadding * 2);
+  const configuredWidth = Number(config.breakTextWidth ?? item?.breakTextWidth);
+
+  return Number.isFinite(configuredWidth) && configuredWidth > 0
+    ? Math.min(configuredWidth, safeWidth)
+    : safeWidth;
+}
 
 function toFontListString(fonts) {
   return fonts.map((font) => (font.includes(' ') ? `"${font}"` : font)).join(', ');
@@ -329,13 +359,15 @@ export function applyTextSubtitleAnimations(ctx, item, elapsedTime, durationOffs
 
   if (item.subType === 'subtitle') {
     const existingConfig = item.config || {};
+    const breakTextWidth = getDimensionAwareSubtitleWidth(ctx, item, existingConfig);
     item.config = {
       ...existingConfig,
-      autoWrap: renderAsMappedSubtitle
-        ? true
-        : renderAsStaticSubtitle
-          ? existingConfig.autoWrap !== false
-          : existingConfig.autoWrap === true,
+      // Persisted subtitle items can predate responsive wrapping or carry a
+      // width from a different render aspect ratio. Always constrain captions
+      // to the current canvas so portrait renders cannot clip at either edge.
+      autoWrap: true,
+      breakTextWidth,
+      breakLongWords: true,
       linePaddingPx: existingConfig.linePaddingPx != null ? existingConfig.linePaddingPx : 0,
       ...(renderAsStaticSubtitle ? { staticSubtitle: true } : {}),
     };

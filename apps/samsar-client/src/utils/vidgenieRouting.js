@@ -2,6 +2,7 @@ import axios from 'axios';
 import { getDefaultAuthenticatedPath } from './defaultRoutes.js';
 
 const VIDEO_SESSION_STORAGE_KEY = 'videoSessionId';
+const IS_DOCKER_INSTALL = import.meta.env.VITE_DOCKER_INSTALL === 'true';
 
 function normalizeSessionId(value) {
   if (!value) return null;
@@ -172,12 +173,49 @@ async function createBlankVidgenieSession(apiServer, headers) {
   return sessionId;
 }
 
+export async function fetchGuestVidgenieSession(apiServer) {
+  if (IS_DOCKER_INSTALL || !apiServer) return null;
+
+  try {
+    const { data } = await axios.get(`${apiServer}/video_sessions/fetch_guest_session`);
+    return data || null;
+  } catch {
+    return null;
+  }
+}
+
+export async function resolveGuestVidgenieEntryPath({
+  apiServer,
+  search = '',
+  onGuestSessionResolved,
+} = {}) {
+  const guestSession = await fetchGuestVidgenieSession(apiServer);
+  const guestSessionId = guestSession?.isGuestSession === true
+    ? getVidgenieSessionId(guestSession)
+    : null;
+  if (guestSessionId && typeof onGuestSessionResolved === 'function') {
+    onGuestSessionResolved(guestSession);
+  }
+  return guestSessionId
+    ? appendRouteSearch(`/vidgenie/${guestSessionId}`, search)
+    : null;
+}
+
 export async function resolveVidgenieEntryPath({
   apiServer,
   headers,
   search = '',
   createIfMissing = true,
+  onGuestSessionResolved,
 } = {}) {
+  if (!headers) {
+    return resolveGuestVidgenieEntryPath({
+      apiServer,
+      search,
+      onGuestSessionResolved,
+    });
+  }
+
   const pendingSession = await findPendingVidgenieSession(apiServer, headers);
   const pendingSessionId = getVidgenieSessionId(pendingSession);
   if (pendingSessionId) {

@@ -38,6 +38,7 @@ const imageGenerationSchema = new Schema({
   lastFailureAt: { type: Date, default: null },
   lastFailureMessage: { type: String, default: null },
   lastFailureSource: { type: String, default: null },
+  nextAttemptAfter: { type: Date, default: null },
   failureHistory: { type: [Object], default: [] },
 
   aspectRatio: { type: String, default: "1:1" },

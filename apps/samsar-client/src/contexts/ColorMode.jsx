@@ -7,30 +7,39 @@ const ColorModeContext = createContext({
   toggleColorMode: () => { }
 });
 
+function getInitialColorMode() {
+  if (typeof window === 'undefined') return 'dark';
+
+  try {
+    return localStorage.getItem('colorMode') === 'light' ? 'light' : 'dark';
+  } catch {
+    return 'dark';
+  }
+}
+
 // Step 3: Create the Context Provider
 export const ColorModeProvider = ({ children }) => {
-  const [colorMode, setColorMode] = useState('dark'); // Default to dark
+  const [colorMode, setColorMode] = useState(getInitialColorMode);
 
   useEffect(() => {
-
     const handleStorageChange = () => {
       // Check the value from localStorage and update colorMode accordingly
-      const storedMode = localStorage.getItem('colorMode')  || 'dark';
-      setColorMode(storedMode);
+      setColorMode(getInitialColorMode());
     };
 
     // Add event listener to storage change
     window.addEventListener('storage', handleStorageChange);
 
-    if (!localStorage.getItem('colorMode')) {
-      localStorage.setItem('colorMode', 'dark');
-      setColorMode('dark');
-    } else {
-      handleStorageChange();
+    try {
+      if (!localStorage.getItem('colorMode')) {
+        localStorage.setItem('colorMode', 'dark');
+      }
+    } catch {
+      // Storage can be unavailable in private browsing; dark remains the fallback.
     }
 
     // Cleanup the event listener when the component unmounts
-   // return () => window.removeEventListener('storage', handleStorageChange);
+    return () => window.removeEventListener('storage', handleStorageChange);
   }, []);
 
   const toggleColorMode = () => {

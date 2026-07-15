@@ -28,6 +28,17 @@ export const PUBLICATION_METADATA_INFERENCE_SETTINGS = Object.freeze({
     effort: INFERENCE_REASONING_EFFORTS.PublicationMetadata,
   }),
 });
+
+export function getPublicationMetadataInferenceSettings(value) {
+  const inferenceModel = normalizeInferenceModel(value);
+
+  if (!isOpenAIInferenceModel(inferenceModel)) {
+    return { model: inferenceModel };
+  }
+
+  return PUBLICATION_METADATA_INFERENCE_SETTINGS;
+}
+
 export const GEMINI_31_PRO_INFERENCE_MODEL = INFERENCE_MODEL_KEYS.GEMINI_31_PRO;
 export const DEFAULT_GEMINI_31_PRO_VERTEX_MODEL =
   INFERENCE_PROVIDER_MODEL_KEYS[GEMINI_31_PRO_INFERENCE_MODEL];
