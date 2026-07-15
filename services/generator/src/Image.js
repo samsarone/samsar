@@ -1180,6 +1180,86 @@ function shouldRetryUnhandledGenerationTask(payload = {}, error) {
     shouldPreserveExpressImageLayerOnFailure(error);
 }
 
+async function rescheduleGenerationAfterRecoveryFailure(payload = {}, recoveryError) {
+  const requestId = payload?._id;
+  if (!requestId) {
+    return;
+  }
+
+  const latestDoc = await ImageGeneration.findById(requestId);
+  if (!latestDoc || isTerminalImageRequestStatus(latestDoc.generationStatus)) {
+    return;
+  }
+
+  const nextFailureCount = normalizeRetryCount(latestDoc.failureRetryCount) + 1;
+  const message = recoveryError?.message || 'Image generation recovery handler failed.';
+  if (nextFailureCount >= MAX_IMAGE_GENERATION_FAILURES) {
+    await markImageGenerationRequestFailed(latestDoc, { image: null, error: message }, {
+      failureRetryCount: nextFailureCount,
+      message: `${message} Max image generation failures reached (${MAX_IMAGE_GENERATION_FAILURES}).`,
+      source: 'image_generation_recovery_max_failures',
+      pruneLayer: false,
+    });
+    return;
+  }
+
+  await recordImageGenerationFailure(latestDoc, {
+    imageData: { image: null, error: message },
+    message,
+    failureRetryCount: nextFailureCount,
+    source: 'image_generation_recovery_backoff',
+    setFields: {
+      rowLocked: false,
+      failureRetryCount: nextFailureCount,
+      nextAttemptAfter: getImageGenerationNextAttemptAfter(nextFailureCount),
+      // Preserve the submitted provider request so the retry polls the existing
+      // FAL result instead of charging for a duplicate image generation.
+      generationStatus: latestDoc.generationStatus || 'PENDING',
+      apiGenerationStatus: latestDoc.apiGenerationStatus || 'PENDING',
+    },
+  });
+}
+
+async function recoverUnhandledGenerationTask(activeTask, error) {
+  if (isAvatarVoiceoverImageRequest(activeTask)) {
+    await updateAvatarVoiceoverImageGeneration(
+      { image: null, error: error?.message || 'Unable to generate avatar image.' },
+      activeTask
+    );
+    return;
+  }
+
+  if (isExpressNarratorAvatarImageRequest(activeTask)) {
+    await updateExpressNarratorAvatarImageGeneration(
+      { image: null, error: error?.message || 'Unable to generate narrator avatar image.' },
+      activeTask
+    );
+    return;
+  }
+
+  const preserveExpressImageLayer = shouldPreserveExpressImageLayerOnFailure(error);
+  const failureData = {
+    image: null,
+    error: error?.message || 'Unhandled image generation error.',
+  };
+  if (shouldRetryUnhandledGenerationTask(activeTask, error)) {
+    await handleNoImageRetryOrFailure(activeTask, failureData);
+    return;
+  }
+
+  await markImageGenerationRequestFailed(
+    activeTask,
+    failureData,
+    {
+      failureRetryCount: normalizeRetryCount(activeTask?.failureRetryCount) + 1,
+      source: preserveExpressImageLayer
+        ? 'image_generation_provider_configuration_error'
+        : 'image_generation_unhandled_error',
+      pruneLayer: !preserveExpressImageLayer,
+    }
+  );
+}
+
 async function scheduleImageGenerationRetry(payload = {}, latestDoc, imageData, {
   source = 'image_generation_retry',
   updateLayerPrompt = true,
@@ -1629,40 +1709,40 @@ async function processNextTask() {
       model: activeTask?.model || null,
       message: error?.message || String(error),
     });
-    if (isAvatarVoiceoverImageRequest(activeTask)) {
-      await updateAvatarVoiceoverImageGeneration(
-        { image: null, error: error?.message || 'Unable to generate avatar image.' },
-        activeTask
-      ).catch((avatarError) => {
-        console.error('[avatar_voiceover] failed to mark avatar image generation failed', avatarError);
+    try {
+      await recoverUnhandledGenerationTask(activeTask, error);
+    } catch (recoveryError) {
+      console.error('[image_generation] recovery handler failed; scheduling bounded retry', {
+        requestId: _id?.toString?.() || _id,
+        videoSessionId: activeTask?.videoSessionId || null,
+        layerId: activeTask?.layerId || null,
+        model: activeTask?.model || null,
+        status: recoveryError?.status || recoveryError?.response?.status || null,
+        message: recoveryError?.message || String(recoveryError),
       });
-    } else if (isExpressNarratorAvatarImageRequest(activeTask)) {
-      await updateExpressNarratorAvatarImageGeneration(
-        { image: null, error: error?.message || 'Unable to generate narrator avatar image.' },
-        activeTask
-      ).catch((avatarError) => {
-        console.error('[express_narrator_avatar] failed to mark image generation failed', avatarError);
-      });
-    } else {
-      const preserveExpressImageLayer = shouldPreserveExpressImageLayerOnFailure(error);
-      const failureData = {
-        image: null,
-        error: error?.message || 'Unhandled image generation error.',
-      };
-      if (shouldRetryUnhandledGenerationTask(activeTask, error)) {
-        await handleNoImageRetryOrFailure(activeTask, failureData);
-      } else {
-        await markImageGenerationRequestFailed(
-          activeTask,
-          failureData,
+      try {
+        await rescheduleGenerationAfterRecoveryFailure(activeTask, recoveryError);
+      } catch (rescheduleError) {
+        console.error('[image_generation] failed to persist recovery backoff; releasing row lock', {
+          requestId: _id?.toString?.() || _id,
+          message: rescheduleError?.message || String(rescheduleError),
+        });
+        await ImageGeneration.updateOne(
+          { _id },
           {
-            failureRetryCount: normalizeRetryCount(activeTask?.failureRetryCount) + 1,
-            source: preserveExpressImageLayer
-              ? 'image_generation_provider_configuration_error'
-              : 'image_generation_unhandled_error',
-            pruneLayer: !preserveExpressImageLayer,
-          }
-        );
+            $set: {
+              rowLocked: false,
+              nextAttemptAfter: getImageGenerationNextAttemptAfter(
+                normalizeRetryCount(activeTask?.failureRetryCount) + 1,
+              ),
+            },
+          },
+        ).catch((unlockError) => {
+          console.error('[image_generation] emergency row unlock failed', {
+            requestId: _id?.toString?.() || _id,
+            message: unlockError?.message || String(unlockError),
+          });
+        });
       }
     }
   } finally {

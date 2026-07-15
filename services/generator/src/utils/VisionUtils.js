@@ -25,6 +25,28 @@ import { withInferenceAuthorization } from '../inference/RequestInferenceModel.j
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY || '' });
 const IMAGE_ACCESSIBILITY_TIMEOUT_MS = 2500;
+const VISION_INFERENCE_MAX_RETRIES = normalizeNonNegativeInteger(
+  process.env.VISION_INFERENCE_MAX_RETRIES,
+  3,
+);
+const VISION_INFERENCE_RETRY_BASE_DELAY_MS = normalizePositiveInteger(
+  process.env.VISION_INFERENCE_RETRY_BASE_DELAY_MS,
+  1000,
+);
+const VISION_INFERENCE_RETRY_MAX_DELAY_MS = Math.max(
+  VISION_INFERENCE_RETRY_BASE_DELAY_MS,
+  normalizePositiveInteger(process.env.VISION_INFERENCE_RETRY_MAX_DELAY_MS, 30000),
+);
+
+function normalizeNonNegativeInteger(value, fallback) {
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed >= 0 ? parsed : fallback;
+}
+
+function normalizePositiveInteger(value, fallback) {
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
+}
 
 function normalizeString(value) {
   return typeof value === 'string' && value.trim() ? value.trim() : '';
@@ -166,6 +188,96 @@ function getErrorMessage(error) {
   }
 }
 
+function getVisionInferenceErrorStatus(error) {
+  const visited = new Set();
+  let current = error;
+  while (current && typeof current === 'object' && !visited.has(current)) {
+    visited.add(current);
+    const status = Number(
+      current.status ??
+      current.statusCode ??
+      current.response?.status ??
+      current.error?.status,
+    );
+    if (Number.isInteger(status) && status > 0) {
+      return status;
+    }
+    current = current.cause;
+  }
+  return null;
+}
+
+function isRetryableVisionInferenceError(error) {
+  const status = getVisionInferenceErrorStatus(error);
+  if (status !== null) {
+    return status === 408 || status === 409 || status === 425 || status === 429 || status >= 500;
+  }
+
+  const code = normalizeString(error?.code || error?.cause?.code).toUpperCase();
+  if (['ECONNABORTED', 'ECONNRESET', 'ETIMEDOUT', 'EAI_AGAIN', 'ENETUNREACH'].includes(code)) {
+    return true;
+  }
+
+  // Provider adapters do not always preserve a status/code. These calls contain
+  // only the provider request, so an unknown adapter error is safe to retry.
+  return true;
+}
+
+function getVisionInferenceRetryDelayMs(retryNumber) {
+  const retryIndex = Math.max(0, normalizeNonNegativeInteger(retryNumber, 1) - 1);
+  return Math.min(
+    VISION_INFERENCE_RETRY_MAX_DELAY_MS,
+    VISION_INFERENCE_RETRY_BASE_DELAY_MS * (2 ** retryIndex),
+  );
+}
+
+export async function runVisionInferenceWithRetry(operation, {
+  operationName = 'vision inference',
+  model = null,
+  imageReference = '',
+  maxRetries = VISION_INFERENCE_MAX_RETRIES,
+  sleep = (delayMs) => new Promise((resolve) => setTimeout(resolve, delayMs)),
+  logger = console,
+  finalErrorFactory = (error) => markVisionProviderError(error),
+} = {}) {
+  const retryLimit = normalizeNonNegativeInteger(maxRetries, VISION_INFERENCE_MAX_RETRIES);
+  const maxAttempts = retryLimit + 1;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      return await operation({ attempt, maxAttempts });
+    } catch (error) {
+      const retryable = isRetryableVisionInferenceError(error);
+      const willRetry = retryable && attempt < maxAttempts;
+      const logContext = {
+        attempt,
+        maxAttempts,
+        model,
+        status: getVisionInferenceErrorStatus(error),
+        imageReference: summarizeImageReferenceForLog(imageReference),
+        error: getErrorMessage(error),
+        willRetry,
+      };
+      logger.error(`[vision_scoring] ${operationName} request failed`, logContext);
+
+      if (!willRetry) {
+        throw finalErrorFactory(error, attempt, maxAttempts);
+      }
+
+      const retryNumber = attempt;
+      const delayMs = getVisionInferenceRetryDelayMs(retryNumber);
+      logger.warn(`[vision_scoring] ${operationName} retry scheduled`, {
+        ...logContext,
+        retryNumber,
+        delayMs,
+      });
+      await sleep(delayMs);
+    }
+  }
+
+  throw buildVisionProviderError(`${operationName} failed without a response.`);
+}
+
 function markVisionProviderError(error) {
   if (error && typeof error === 'object') {
     error.nonPromptProviderFailure = true;
@@ -234,9 +346,6 @@ async function getDescriptionForImage(
   imageThemeContext = '',
   inferenceAuthorization,
 ) {
-  let attempts = 0;
-  const maxRetries = 2;
-  let backoff = 1000;
   const inferenceModel = resolveVisionInferenceModel(userInferenceModel);
 
   const aspectRatioText = requestedAspectRatio
@@ -309,40 +418,26 @@ Provide an information-dense, condensed and thorough description in 3000 charact
   };
   const routingPayload = withInferenceAuthorization(activePayload, inferenceAuthorization);
 
-  while (attempts <= maxRetries) {
-    try {
-
-      const response = shouldUseSamsarExternalInference(routingPayload)
-        ? await createSamsarExternalChatCompletion(routingPayload)
+  const response = await runVisionInferenceWithRetry(
+    () => shouldUseSamsarExternalInference(routingPayload)
+        ? createSamsarExternalChatCompletion(routingPayload)
         : isQwenInferenceModel(inferenceModel)
-          ? await createQwenChatCompletion(routingPayload)
+          ? createQwenChatCompletion(routingPayload)
           : isGeminiInferenceModel(inferenceModel)
-            ? await createGoogleGeminiChatCompletion(activePayload.messages, inferenceModel)
-            : await openai.chat.completions.create(activePayload);
-      const responsePayload = response.choices[0].message.content;
+            ? createGoogleGeminiChatCompletion(activePayload.messages, inferenceModel)
+            : openai.chat.completions.create(activePayload),
+    {
+      operationName: 'image description',
+      model: activePayload.model,
+      imageReference: activeImageRemoteLink,
+      finalErrorFactory: (error, attempt) => buildVisionProviderError(
+        `Vision image description failed after ${attempt} attempts: ${getErrorMessage(error)}`,
+        error,
+      ),
+    },
+  );
 
-      return responsePayload;
-    } catch (error) {
-      attempts++;
-      const errorMessage = getErrorMessage(error);
-      console.error('[vision_scoring] image description request failed', {
-        attempt: attempts,
-        maxAttempts: maxRetries + 1,
-        model: activePayload.model,
-        imageReference: summarizeImageReferenceForLog(activeImageRemoteLink),
-        error: errorMessage,
-      });
-      if (attempts > maxRetries) {
-        throw buildVisionProviderError(
-          `Vision image description failed after ${attempts} attempts: ${errorMessage}`,
-          error,
-        );
-      }
-      await new Promise(resolve => setTimeout(resolve, backoff));
-      backoff *= 2; // Exponential backoff
-    }
-  }
-  throw buildVisionProviderError('Vision image description failed without a response.');
+  return response.choices[0].message.content;
 }
 
 
@@ -442,22 +537,19 @@ Return only a single integer between 0 and 100.`;
     messages,
   };
   const routingPayload = withInferenceAuthorization(inferencePayload, inferenceAuthorization);
-  let response;
-  try {
-    response = shouldUseSamsarExternalInference(routingPayload)
-      ? await createSamsarExternalChatCompletion(routingPayload)
+  const response = await runVisionInferenceWithRetry(
+    () => shouldUseSamsarExternalInference(routingPayload)
+      ? createSamsarExternalChatCompletion(routingPayload)
       : isQwenInferenceModel(inferenceModel)
-        ? await createQwenChatCompletion(routingPayload)
+        ? createQwenChatCompletion(routingPayload)
         : isGeminiInferenceModel(inferenceModel)
-          ? await createGoogleGeminiChatCompletion(messages, inferenceModel)
-          : await openai.chat.completions.create(inferencePayload);
-  } catch (error) {
-    console.error('[vision_scoring] image score request failed', {
+          ? createGoogleGeminiChatCompletion(messages, inferenceModel)
+          : openai.chat.completions.create(inferencePayload),
+    {
+      operationName: 'image score',
       model: inferencePayload.model,
-      error: getErrorMessage(error),
-    });
-    throw markVisionProviderError(error);
-  }
+    },
+  );
 
 
 
@@ -465,3 +557,9 @@ Return only a single integer between 0 and 100.`;
 
   return responsePayload;
 }
+
+export const __testOnly__ = {
+  getVisionInferenceErrorStatus,
+  getVisionInferenceRetryDelayMs,
+  isRetryableVisionInferenceError,
+};
