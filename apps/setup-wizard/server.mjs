@@ -13,6 +13,10 @@ import {
   GetIdentityVerificationAttributesCommand,
   GetSendQuotaCommand,
 } from '@aws-sdk/client-ses';
+import {
+  createOpenRouterValidationRegistry,
+  validateOpenRouterProviderCredential,
+} from './openrouterValidation.mjs';
 
 const PORT = Number.parseInt(process.env.PORT || '80', 10);
 const STATIC_DIR = process.env.SETUP_WIZARD_STATIC_DIR || path.resolve('dist');
@@ -108,6 +112,7 @@ const MAINTENANCE_STEPS = [
 const runs = new Map();
 const maintenanceRuns = new Map();
 const alibabaProviderValidations = new Map();
+const openrouterProviderValidations = createOpenRouterValidationRegistry();
 const ALIBABA_PROVIDER_VALIDATION_TTL_MS = 60 * 60 * 1000;
 const ALL_COMPOSE_PROFILES = ['core', 'workers', 'local-mongo', 'minio', 'local-media', 'logger', 'reverse-proxy'];
 const ALLOWED_FIREWALL_PORTS = [80, 443, 3000, 3002, 8089];
@@ -1280,8 +1285,30 @@ function consumeValidatedAlibabaProviderSecret(payload = {}) {
   };
 }
 
+function consumeValidatedOpenRouterProviderSecret(payload = {}) {
+  const apiKey = normalizeSecretString(payload?.credentials?.openrouterApiKey);
+  if (!apiKey) {
+    return null;
+  }
+
+  const validation = payload?.deployment?.providers?.openrouter?.validation;
+  if (
+    validation?.provider !== 'openrouter' ||
+    validation?.ok !== true ||
+    validation?.validationMode !== 'remote_key'
+  ) {
+    throw new Error('Validate the OpenRouter API key before starting setup.');
+  }
+  if (!openrouterProviderValidations.consume(validation.validationToken, apiKey)) {
+    throw new Error('OpenRouter validation expired or does not match this credential. Validate it again.');
+  }
+
+  return { apiKey };
+}
+
 async function writeProviderSecrets(payload = {}) {
   const alibabaCloud = payload.validatedAlibabaProviderSecret ?? consumeValidatedAlibabaProviderSecret(payload);
+  const openrouter = payload.validatedOpenRouterProviderSecret ?? consumeValidatedOpenRouterProviderSecret(payload);
   const existingSecrets = await readJson(PROVIDER_SECRETS_PATH).catch(() => ({}));
   const providerSecrets = {
     ...existingSecrets,
@@ -1292,6 +1319,12 @@ async function writeProviderSecrets(payload = {}) {
     providerSecrets.alibabaCloud = alibabaCloud;
   } else {
     delete providerSecrets.alibabaCloud;
+  }
+
+  if (openrouter) {
+    providerSecrets.openrouter = openrouter;
+  } else {
+    delete providerSecrets.openrouter;
   }
 
   await fs.mkdir(path.dirname(PROVIDER_SECRETS_PATH), { recursive: true, mode: 0o700 });
@@ -1375,7 +1408,6 @@ function buildRuntimeConfig(payload) {
       },
       openrouter: {
         enabled: Boolean(normalizeString(credentials.openrouterApiKey)),
-        apiKey: normalizeString(credentials.openrouterApiKey),
       },
       googleCloud: {
         enabled: Boolean(googleCredentials.credentialsJsonB64),
@@ -1535,6 +1567,7 @@ function hasConfiguredSamsarApiKey(credentials = {}) {
 function hasConfiguredRemoteMediaProvider(credentials = {}) {
   return Boolean(
     hasConfiguredSamsarApiKey(credentials) ||
+    normalizeString(credentials.openrouterApiKey || credentials?.openrouter?.apiKey) ||
     normalizeString(credentials.alibabaApiKey || credentials?.alibabaCloud?.apiKey) ||
     normalizeString(credentials.falApiKey || credentials?.fal?.apiKey) ||
     normalizeString(credentials.runwayApiKey || credentials?.runway?.apiKey) ||
@@ -1563,6 +1596,7 @@ function shouldPublishRuntimeLocalMediaGateway(config = {}) {
   }
   return storage.externalMediaPublishEnabled !== true && Boolean(
     normalizeString(providers.samsar?.apiKey) ||
+    providers.openrouter?.enabled === true ||
     providers.alibabaCloud?.enabled === true ||
     normalizeString(providers.fal?.apiKey) ||
     normalizeString(providers.runway?.apiKey) ||
@@ -3112,7 +3146,7 @@ function redactConfiguredValue(value) {
   return Boolean(normalizeString(value));
 }
 
-function summarizeRuntimeConfig(config = {}) {
+function summarizeRuntimeConfig(config = {}, providerSecrets = {}) {
   const providers = config.providers || {};
   const services = config.services || {};
   const database = config.database || {};
@@ -3123,15 +3157,22 @@ function summarizeRuntimeConfig(config = {}) {
   return {
     runtime: config.runtime || 'docker',
     providers: Object.fromEntries(
-      Object.entries(providers).map(([key, provider]) => [
-        key,
-        {
-          enabled: provider?.enabled === true,
-          configured: key === 'alibabaCloud'
-            ? provider?.enabled === true
-            : redactConfiguredValue(provider?.apiKey || provider?.credentialsJsonB64 || provider?.projectId),
-        },
-      ]),
+      Object.entries(providers).map(([key, provider]) => {
+        const secretBackedProvider = key === 'alibabaCloud' || key === 'openrouter';
+        const configured = secretBackedProvider
+          ? Boolean(
+            provider?.enabled === true &&
+            normalizeSecretString(providerSecrets?.[key]?.apiKey || provider?.apiKey),
+          )
+          : redactConfiguredValue(provider?.apiKey || provider?.credentialsJsonB64 || provider?.projectId);
+        return [
+          key,
+          {
+            enabled: secretBackedProvider ? configured : provider?.enabled === true,
+            configured,
+          },
+        ];
+      }),
     ),
     services: {
       workers: services.workers !== false,
@@ -3212,6 +3253,7 @@ async function getComposeContainerSummary() {
 
 async function getInstallStatus() {
   const config = await readJson(CONFIG_PATH).catch(() => null);
+  const providerSecrets = await readJson(PROVIDER_SECRETS_PATH).catch(() => ({}));
   const setupAuthState = await getSetupAuthState();
   const compose = await getComposeContainerSummary();
   const processorReady = compose.total > 0
@@ -3231,7 +3273,7 @@ async function getInstallStatus() {
       processor: processorReady,
       client: clientReady,
     },
-    config: config ? summarizeRuntimeConfig(config) : null,
+    config: config ? summarizeRuntimeConfig(config, providerSecrets) : null,
   };
 }
 
@@ -3291,6 +3333,30 @@ async function handleApi(req, res, pathname) {
       sendJson(res, 200, validation);
     } catch (error) {
       sendJson(res, 400, { message: error?.message || 'Unable to validate Alibaba Cloud credentials.' });
+    }
+    return true;
+  }
+
+  if (req.method === 'POST' && pathname === '/api/setup/providers/openrouter/validate') {
+    if (!await requireSetupAuth(req, res)) {
+      return true;
+    }
+    try {
+      const payload = await readRequestBody(req);
+      const result = await validateOpenRouterProviderCredential(payload.credentials || payload);
+      const validation = result?.providers?.openrouter;
+      if (validation?.ok === true) {
+        const apiKey = normalizeSecretString(
+          payload?.credentials?.openrouterApiKey ||
+          payload?.openrouterApiKey ||
+          payload?.openrouter_api_key ||
+          payload?.apiKey,
+        );
+        validation.validationToken = openrouterProviderValidations.register(apiKey);
+      }
+      sendJson(res, 200, result);
+    } catch (error) {
+      sendJson(res, 400, { message: error?.message || 'Unable to validate OpenRouter credentials.' });
     }
     return true;
   }
@@ -3378,6 +3444,7 @@ async function handleApi(req, res, pathname) {
         reverseProxy: reverseProxyValidation.config,
       };
       payload.validatedAlibabaProviderSecret = consumeValidatedAlibabaProviderSecret(payload);
+      payload.validatedOpenRouterProviderSecret = consumeValidatedOpenRouterProviderSecret(payload);
     } catch (error) {
       sendJson(res, 400, { message: error?.message || 'Setup validation failed.' });
       return true;

@@ -60,6 +60,10 @@
       "projectId": "",
       "credentialsJsonB64": ""
     },
+    "openrouter": {
+      "enabled": false,
+      "gemini31ProModel": "google/gemini-3.1-pro-preview"
+    },
     "alibabaCloud": {
       "enabled": false
     },

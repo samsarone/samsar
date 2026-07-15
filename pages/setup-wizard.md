@@ -12,7 +12,7 @@ The command prints setup wizard URLs for localhost and detected private IPs, and
 
 | Step | Screen | What it gathers | Output |
 | --- | --- | --- | --- |
-| 1 | Providers | OpenAI API key, Google Cloud service account JSON/base64 JSON, FAL key, ElevenLabs key, Runway key, optional Samsar API key | Provider config and model/action availability. |
+| 1 | Providers | Optional OpenRouter key, OpenAI API key, Google Cloud service account JSON/base64 JSON, Alibaba Cloud key/endpoint, FAL key, ElevenLabs key, Runway key, optional Samsar API key | Provider config and model/action availability. |
 | 2 | Services | Processor, setup wizard, image generator, assistant query processor, audio generator, AI video layer generator, video renderer, frames processor, express video listener, logger | Docker service selection and local infrastructure flags. |
 | 3 | Mail and Data | Local vs remote MongoDB, local MinIO vs external S3-compatible storage, static CDN URL, CloudFront signing fields, disabled/SMTP/SES mail | Database, storage, media, and mail config. |
 | 4 | Domain | Optional nginx reverse proxy, public domain/subdomain, public IP, private IP, optional IP detection, optional firewall port opening, and optional Let's Encrypt SSL for validated public domains | Public or intranet access URLs for Studio and the processor API. |
@@ -20,14 +20,15 @@ The command prints setup wizard URLs for localhost and detected private IPs, and
 
 ## Provider Logic
 
-The wizard has two provider modes:
+The wizard presents three provider groups:
 
 | Mode | Providers | Behavior |
 | --- | --- | --- |
-| Native | OpenAI, Google Cloud, FAL, ElevenLabs, RunwayML | Use direct provider credentials for the model families they support. |
+| Inference Router | OpenRouter | One optional key enables the supported GPT 5.6 Sol, Gemini 3.1 Pro, and Qwen 3.7 text and vision inference paths. |
+| Native | OpenAI, Google Cloud, Alibaba Cloud, FAL, ElevenLabs, RunwayML | Use direct provider credentials for the model families they support. |
 | Universal fallback | Samsar API key | Enables all configured Samsar model/action families and can cover stages where native credentials are not provided. |
 
-The provider list mirrors the runtime renderer and writes values that become `OPENAI_API_KEY`, `GOOGLE_APPLICATION_CREDENTIALS_JSON_B64`, `FAL_API_KEY`, `ELEVENLABS_API_KEY`, `RUNWAY_API_KEY`, and `SAMSAR_API_KEY` in `runtime/secrets/root.env`.
+The provider list mirrors the runtime renderer and writes values that become `OPENROUTER_API_KEY`, `OPENAI_API_KEY`, `GOOGLE_APPLICATION_CREDENTIALS_JSON_B64`, `ALIBABA_API_KEY`, `FAL_API_KEY`, `ELEVENLABS_API_KEY`, `RUNWAY_API_KEY`, and `SAMSAR_API_KEY` in `runtime/secrets/root.env`. OpenRouter validation checks authenticated key metadata, rejects management-only keys, and binds setup to a one-hour, single-use credential token. OpenRouter and Alibaba values are stored in mode-`0600` `runtime/secrets/provider.credentials.json`, not in browser storage or the general runtime config. Validation tokens are also excluded from persisted browser state and the copyable config preview. All backend Compose services consume the same `root.env`, so a single OpenRouter secret covers every inference worker.
 
 ## Services Catalog
 
@@ -93,6 +94,7 @@ Maintenance runs skip the initial cleanup/config flow and execute runtime render
 | `runtime/config/samsar.config.json` | Main deployment configuration. |
 | `runtime/config/available-models.json` | Enabled providers, models, actions, and derived audio availability. |
 | `runtime/secrets/root.env` | Docker env file consumed by services. |
+| `runtime/secrets/provider.credentials.json` | Mode-`0600` OpenRouter and validated Alibaba provider secrets. |
 | `runtime/secrets/mail.credentials.json` | Sanitized and secret mail configuration when SMTP or SES is configured. |
 | `runtime/reverse-proxy/nginx.conf` | Generated nginx config when the reverse proxy feature is enabled or safely disabled. |
 

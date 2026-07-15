@@ -2848,7 +2848,7 @@ export default function OneshotEditor() {
   // ─────────────────────────────────────────────────────────
   //  Context / Router hooks
   // ─────────────────────────────────────────────────────────
-  const { user, getUserAPI } = useUser();
+  const { user, getUserAPI, userFetching, userInitiated } = useUser();
   const { colorMode } = useColorMode();
   const { t, language } = useLocalization();
   const { id } = useParams();
@@ -4048,7 +4048,7 @@ export default function OneshotEditor() {
 
     if (currentPollRequestIdRef.current === id) return;
 
-    if (id) {
+    if (id && userInitiated && !userFetching) {
       // Fetch session, and ONLY trigger polling if still pending
       getSessionDetails().then((data) => {
         const usePostProcessingPoll = shouldUsePostProcessingStatusPolling(id);
@@ -4070,7 +4070,7 @@ export default function OneshotEditor() {
         }
       });
     }
-  }, [id]);
+  }, [id, user?._id, userFetching, userInitiated]);
 
   // ─────────────────────────────────────────────────────────
   //  Handle download

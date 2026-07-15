@@ -5,6 +5,7 @@ import { useColorMode } from '../../contexts/ColorMode.jsx';
 import { getHeaders } from '../../utils/web';
 import { useUser } from '../../contexts/UserContext.jsx';
 import { resolveVidgenieEntryPath } from '../../utils/vidgenieRouting.js';
+import { shouldDeferVidgenieProjectLoad } from './vidgenieProjectViewState.mjs';
 import VidgenieSkeletonLoader from './VidgenieSkeletonLoader.jsx';
 
 const API_SERVER = import.meta.env.VITE_PROCESSOR_API;
@@ -25,6 +26,11 @@ export default function OneshotEditorContainer() {
   const { user, userFetching, userInitiated } = useUser();
   const [routeError, setRouteError] = useState('');
   const routeResolutionStartedRef = useRef(false);
+  const shouldWaitForProjectAuth = shouldDeferVidgenieProjectLoad({
+    sessionId: id,
+    userInitiated,
+    userFetching,
+  });
 
   useEffect(() => {
     if (id || routeResolutionStartedRef.current) {
@@ -110,6 +116,10 @@ export default function OneshotEditorContainer() {
     colorMode === 'dark'
       ? 'bg-gradient-to-b from-[#080f21] via-[#0d1830] to-[#0b1226]'
       : 'bg-gradient-to-b from-[#eef3fb] via-[#e4ebf8] to-[#f7fbff]';
+
+  if (shouldWaitForProjectAuth) {
+    return <VidgenieSkeletonLoader />;
+  }
 
   if (!id) {
     if (routeError) {

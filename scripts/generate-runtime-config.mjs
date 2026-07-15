@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { buildDockerAvailableModelsFromEnabledProviders } from '../apps/setup-wizard/src/constants/dockerModelAvailability.js';
 import { buildDockerAudioAvailability } from './docker-audio-provider-config.mjs';
+import { applyEffectiveOpenRouterProviderConfig } from './openrouter-runtime-config.mjs';
 
 const root = path.resolve(new URL('..', import.meta.url).pathname);
 const runtimeConfigDir = path.join(root, 'runtime', 'config');
@@ -62,6 +63,11 @@ const publicProcessorBaseUrl = config.publicUrls?.processorApi || 'http://localh
 const publicAssetBaseUrl = config.publicUrls?.media || publicProcessorBaseUrl;
 const alibabaCloudConfig = config.providers?.alibabaCloud || {};
 const alibabaCloudSecrets = providerSecrets.alibabaCloud || {};
+const openrouterSecrets = providerSecrets.openrouter || {};
+const effectiveProviderConfig = applyEffectiveOpenRouterProviderConfig(
+  config.providers || {},
+  openrouterSecrets,
+);
 
 function normalizeString(value) {
   return typeof value === 'string' ? value.trim() : '';
@@ -430,7 +436,8 @@ const env = {
   SAMSAR_AVAILABLE_MODELS_PATH: '/persistent/config/available-models.json',
   SAMSAR_API_KEY: config.providers?.samsar?.apiKey || '',
 	  OPENAI_API_KEY: config.providers?.openai?.apiKey || '',
-	  OPENROUTER_API_KEY: config.providers?.openrouter?.apiKey || '',
+	  OPENROUTER_API_KEY: effectiveProviderConfig.openrouter.apiKey,
+	  OPENROUTER_GEMINI_31_PRO_MODEL: effectiveProviderConfig.openrouter.gemini31ProModel,
 	  ALIBABA_API_KEY: alibabaCloudSecrets.apiKey || alibabaCloudConfig.apiKey || '',
 	  ALIBABA_API_HOST:
     alibabaCloudSecrets.apiHost ||
@@ -464,7 +471,7 @@ try {
 const availableModelsPath = path.join(runtimeConfigDir, 'available-models.json');
 fs.writeFileSync(
   availableModelsPath,
-  JSON.stringify(buildAvailableModels(config.providers || {}), null, 2) + '\n',
+  JSON.stringify(buildAvailableModels(effectiveProviderConfig.providers), null, 2) + '\n',
   { mode: 0o600 },
 );
 

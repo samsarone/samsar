@@ -27,7 +27,7 @@ const STEPS = [
 ];
 const SETUP_POLL_INTERVAL_MS = 1200;
 const WIZARD_STORAGE_KEY = 'samsar.setupWizard.session.v1';
-const WIZARD_STORAGE_VERSION = 6;
+const WIZARD_STORAGE_VERSION = 7;
 
 const PROVIDERS = [
   {
@@ -133,7 +133,11 @@ const PROVIDERS = [
   },
 ];
 const NATIVE_PROVIDERS = PROVIDERS.filter((provider) => provider.type === 'native');
-const STANDARD_NATIVE_PROVIDERS = NATIVE_PROVIDERS.filter((provider) => provider.key !== 'alibabaCloud');
+const STANDARD_NATIVE_PROVIDERS = NATIVE_PROVIDERS.filter(
+  (provider) => provider.key !== 'alibabaCloud' && provider.key !== 'openrouter',
+);
+const OPENROUTER_PROVIDERS = NATIVE_PROVIDERS.filter((provider) => provider.key === 'openrouter');
+const DIRECT_NATIVE_PROVIDERS = NATIVE_PROVIDERS.filter((provider) => provider.key !== 'openrouter');
 const UNIVERSAL_FALLBACK_PROVIDERS = PROVIDERS.filter((provider) => provider.type === 'samsar');
 
 const SERVICES = [
@@ -880,13 +884,21 @@ function readStoredWizardState() {
 
 function buildInitialWizardState() {
   const storedState = readStoredWizardState();
-  const restoredStep = clampStep(storedState?.step, 1);
-  const restoredMaxStep = Math.max(restoredStep, clampStep(storedState?.maxStep, restoredStep));
+  const restoredCredentials = pickCredentials(storedState?.credentials);
+  const restoredValidationResult = sanitizeValidationResultForStorage(
+    storedState?.validationResult,
+    restoredCredentials,
+  );
+  const requiresProviderCredentialReentry = getProviderCredentialReentryKeys(restoredValidationResult).length > 0;
+  const restoredStep = requiresProviderCredentialReentry ? 1 : clampStep(storedState?.step, 1);
+  const restoredMaxStep = requiresProviderCredentialReentry
+    ? 1
+    : Math.max(restoredStep, clampStep(storedState?.maxStep, restoredStep));
 
   return {
     step: restoredStep,
     maxStep: restoredMaxStep,
-    credentials: pickCredentials(storedState?.credentials),
+    credentials: restoredCredentials,
     services: pickServices(storedState?.services),
     mailConfig: pickMailConfig(storedState?.mailConfig),
     mailValidationResult: storedState?.mailValidationResult || null,
@@ -894,7 +906,7 @@ function buildInitialWizardState() {
     reverseProxyConfig: pickReverseProxyConfig(storedState?.reverseProxyConfig),
     reverseProxyValidationResult: storedState?.reverseProxyValidationResult || null,
     adminConfig: pickAdminConfig(storedState?.adminConfig),
-    validationResult: storedState?.validationResult || null,
+    validationResult: restoredValidationResult,
     setupRun: serializeSetupRun(storedState?.setupRun),
     setupStartError: typeof storedState?.setupStartError === 'string' ? storedState.setupStartError : '',
   };
@@ -911,6 +923,7 @@ function writeStoredWizardState(state) {
       JSON.stringify({
         version: WIZARD_STORAGE_VERSION,
         ...state,
+        validationResult: sanitizeValidationResultForStorage(state.validationResult, state.credentials),
         setupRun: serializeSetupRun(state.setupRun),
         savedAt: new Date().toISOString(),
       }),
@@ -932,6 +945,68 @@ function clearStoredWizardState() {
 
 function getProviderStatus(results, providerKey) {
   return results?.providers?.[providerKey] || null;
+}
+
+function stripValidationToken(validation) {
+  if (!validation || typeof validation !== 'object' || Array.isArray(validation)) {
+    return validation;
+  }
+  const { validationToken: _validationToken, ...sanitizedValidation } = validation;
+  return sanitizedValidation;
+}
+
+function sanitizeValidationResultForStorage(validationResult, credentials = {}) {
+  if (!validationResult) {
+    return null;
+  }
+
+  const providers = Object.fromEntries(
+    Object.entries(validationResult.providers || {}).map(([providerKey, providerValidation]) => {
+      const sanitizedValidation = stripValidationToken(providerValidation);
+      const provider = PROVIDERS.find((candidate) => candidate.key === providerKey);
+      const requiresCredentialReentry = (
+        (providerKey === 'openrouter' || providerKey === 'alibabaCloud') &&
+        providerValidation?.ok === true &&
+        provider &&
+        !hasCredentialValue(credentials, provider)
+      );
+      if (!requiresCredentialReentry) {
+        return [providerKey, sanitizedValidation];
+      }
+      return [providerKey, {
+        ...sanitizedValidation,
+        ok: false,
+        status: 'credential_required',
+        message: `Re-enter the ${provider.title} credential before continuing setup.`,
+      }];
+    }),
+  );
+
+  return {
+    providers,
+    available: buildAvailableFromProviderResults(providers),
+  };
+}
+
+function getProviderCredentialReentryKeys(validationResult = {}) {
+  return Object.entries(validationResult?.providers || {})
+    .filter(([, providerValidation]) => providerValidation?.status === 'credential_required')
+    .map(([providerKey]) => providerKey);
+}
+
+function sanitizeDeploymentPayloadForDisplay(payload = {}) {
+  return {
+    ...payload,
+    providers: Object.fromEntries(
+      Object.entries(payload.providers || {}).map(([providerKey, providerConfig]) => [
+        providerKey,
+        {
+          ...providerConfig,
+          validation: stripValidationToken(providerConfig?.validation),
+        },
+      ]),
+    ),
+  };
 }
 
 function hasCredentialValue(credentials, provider) {
@@ -1399,6 +1474,51 @@ function formatConfiguredProviderName(key) {
   return provider?.title || key;
 }
 
+function SetupAuthGate({
+  password,
+  error,
+  isUnlocking,
+  onPasswordChange,
+  onUnlock,
+}) {
+  return (
+    <section className="existing-install-panel">
+      <div className="existing-install-header">
+        <div>
+          <div className="eyebrow">Protected setup</div>
+          <h2>Unlock setup actions</h2>
+          <p>Enter the Docker admin password to continue this setup or recovery run.</p>
+        </div>
+        <span className="setup-status-pill setup-status-starting">Locked</span>
+      </div>
+      <section className="data-config-card admin-create-card">
+        <div className="data-field-grid single">
+          <label className="data-field">
+            <span>Admin password</span>
+            <input
+              type="password"
+              value={password}
+              autoComplete="current-password"
+              onChange={(event) => onPasswordChange(event.target.value)}
+            />
+          </label>
+        </div>
+        <div className="existing-install-actions">
+          <button
+            type="button"
+            className="primary-action flow-primary"
+            onClick={onUnlock}
+            disabled={isUnlocking || !password}
+          >
+            {isUnlocking ? 'Unlocking...' : 'Unlock'}
+          </button>
+        </div>
+        {error && <div className="error-banner">{error}</div>}
+      </section>
+    </section>
+  );
+}
+
 function ExistingInstallHome({
   installStatus,
   isRefreshing,
@@ -1688,6 +1808,24 @@ async function validateAlibabaCredential(credentials, headers = {}) {
   return body;
 }
 
+async function validateOpenRouterCredential(credentials, headers = {}) {
+  const apiKey = credentials.openrouterApiKey.trim();
+  if (!apiKey) {
+    return null;
+  }
+
+  const response = await fetch('/api/setup/providers/openrouter/validate', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...headers },
+    body: JSON.stringify({ openrouterApiKey: apiKey }),
+  });
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(body?.message || 'OpenRouter credential validation failed.');
+  }
+  return body;
+}
+
 function getInitialColorMode() {
   if (typeof window === 'undefined') {
     return 'dark';
@@ -1746,6 +1884,7 @@ export default function OnboardingWizard() {
   const [maintenanceRun, setMaintenanceRun] = useState(null);
   const [maintenanceStartError, setMaintenanceStartError] = useState('');
   const [providerDrawersOpen, setProviderDrawersOpen] = useState({
+    inferenceRouter: true,
     providerConfig: true,
     universalFallback: true,
   });
@@ -1762,6 +1901,10 @@ export default function OnboardingWizard() {
       reverseProxyValidationResult,
     ),
     [credentials, dataConfig, mailConfig, mailValidationResult, reverseProxyConfig, reverseProxyValidationResult, services, validationResult],
+  );
+  const displayDeploymentPayload = useMemo(
+    () => sanitizeDeploymentPayloadForDisplay(deploymentPayload),
+    [deploymentPayload],
   );
   const setupServiceAvailability = useMemo(
     () => buildSetupServiceAvailability(validationResult),
@@ -1826,9 +1969,9 @@ export default function OnboardingWizard() {
     }));
   };
 
-  const buildSetupHeaders = (headers = {}) => ({
+  const buildSetupHeaders = (headers = {}, password = setupAuthPassword) => ({
     ...headers,
-    ...(setupAuthPassword ? { 'x-samsar-setup-admin-password': setupAuthPassword } : {}),
+    ...(password ? { 'x-samsar-setup-admin-password': password } : {}),
   });
 
   const handleSetupAuthFailure = (body = {}) => {
@@ -2298,7 +2441,7 @@ export default function OnboardingWizard() {
     setStep(Math.min(maxStep, Math.max(1, targetStep)));
   };
 
-  const validateCredentials = async () => {
+  const validateCredentials = async (setupPassword = setupAuthPassword) => {
     if (!hasAnyCredentialValue(credentials)) {
       const emptyResult = {
         providers: {},
@@ -2314,7 +2457,8 @@ export default function OnboardingWizard() {
     try {
       const body = mergeValidationResults([
         await validateSamsarCredential(credentials),
-        await validateAlibabaCredential(credentials, buildSetupHeaders()),
+        await validateAlibabaCredential(credentials, buildSetupHeaders({}, setupPassword)),
+        await validateOpenRouterCredential(credentials, buildSetupHeaders({}, setupPassword)),
         await validateNativeCredentials(credentials),
       ]);
       setValidationResult(body);
@@ -2609,17 +2753,29 @@ export default function OnboardingWizard() {
   };
 
   const copyConfig = async () => {
-    await navigator.clipboard?.writeText(JSON.stringify(deploymentPayload, null, 2));
+    await navigator.clipboard?.writeText(JSON.stringify(displayDeploymentPayload, null, 2));
     setIsConfigCopied(true);
     window.setTimeout(() => setIsConfigCopied(false), 1600);
   };
 
   const submitDeployment = async () => {
+    const credentialReentryKeys = getProviderCredentialReentryKeys(validationResult);
+    if (credentialReentryKeys.length) {
+      const providerNames = credentialReentryKeys
+        .map((providerKey) => PROVIDERS.find((provider) => provider.key === providerKey)?.title || providerKey)
+        .join(', ');
+      setSetupRun(null);
+      setStep(1);
+      setMaxStep(1);
+      setValidationError(`Re-enter and validate the redacted provider credentials: ${providerNames}.`);
+      return;
+    }
     if (!validateAdminConfig()) {
       return;
     }
 
     const normalizedAdmin = normalizeAdminConfig(adminConfig);
+    const requestAuthPassword = setupAuthPassword || normalizedAdmin.password;
     setIsStartingSetup(true);
     setSetupStartError('');
     setBrowserExternalAccess(null);
@@ -2629,15 +2785,29 @@ export default function OnboardingWizard() {
     setSetupAuthError('');
 
     try {
+      const freshValidationResult = await validateCredentials(requestAuthPassword);
+      if (!freshValidationResult) {
+        return;
+      }
       const mailValidation = mailValidationResult || await validateMailConfiguration();
       if (!mailValidation) {
         return;
       }
+      const freshDeploymentPayload = buildDeploymentPayload(
+        credentials,
+        services,
+        dataConfig,
+        freshValidationResult,
+        mailConfig,
+        mailValidation,
+        reverseProxyConfig,
+        reverseProxyValidationResult,
+      );
       const response = await fetch('/api/setup/start', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: buildSetupHeaders({ 'Content-Type': 'application/json' }, requestAuthPassword),
         body: JSON.stringify({
-          deployment: deploymentPayload,
+          deployment: freshDeploymentPayload,
           credentials: normalizeCredentialSet(credentials),
           mail: normalizeMailConfig(mailConfig),
           admin: normalizedAdmin,
@@ -2888,6 +3058,17 @@ export default function OnboardingWizard() {
             <p>Reading the current runtime configuration and Docker container state.</p>
           </div>
         </section>
+      ) : setupAuthRequired && !isSetupAuthenticated ? (
+        <SetupAuthGate
+          password={setupAuthPassword}
+          error={setupAuthError}
+          isUnlocking={isUnlockingSetup}
+          onPasswordChange={(value) => {
+            setSetupAuthPassword(value);
+            setSetupAuthError('');
+          }}
+          onUnlock={unlockSetupActions}
+        />
       ) : maintenanceRun ? (
         <SetupProgressPage
           setupRun={maintenanceRun}
@@ -2965,6 +3146,28 @@ export default function OnboardingWizard() {
         {step === 1 && (
           <>
             <div className="provider-list">
+              <section className="provider-drawer provider-drawer-featured">
+                <button
+                  type="button"
+                  className="provider-drawer-header"
+                  aria-expanded={providerDrawersOpen.inferenceRouter}
+                  onClick={() => toggleProviderDrawer('inferenceRouter')}
+                >
+                  <span>
+                    <strong>Inference Router</strong>
+                    <small>One optional OpenRouter key enables the supported GPT, Gemini, and Qwen text and vision models.</small>
+                  </span>
+                  <span className="provider-drawer-toggle" aria-hidden="true">
+                    {providerDrawersOpen.inferenceRouter ? '-' : '+'}
+                  </span>
+                </button>
+                {providerDrawersOpen.inferenceRouter && (
+                  <div className="provider-drawer-body">
+                    {OPENROUTER_PROVIDERS.map(renderProviderRow)}
+                  </div>
+                )}
+              </section>
+
               <section className="provider-drawer">
                 <button
                   type="button"
@@ -2982,7 +3185,7 @@ export default function OnboardingWizard() {
                 </button>
                 {providerDrawersOpen.providerConfig && (
                   <div className="provider-drawer-body">
-                    {NATIVE_PROVIDERS.map(renderProviderRow)}
+                    {DIRECT_NATIVE_PROVIDERS.map(renderProviderRow)}
                   </div>
                 )}
               </section>
@@ -3886,7 +4089,7 @@ export default function OnboardingWizard() {
                   <span aria-hidden="true">{isConfigCopied ? '✓' : '⧉'}</span>
                 </button>
               </div>
-              <textarea className="config-preview" readOnly value={JSON.stringify(deploymentPayload, null, 2)} />
+              <textarea className="config-preview" readOnly value={JSON.stringify(displayDeploymentPayload, null, 2)} />
             </section>
             {adminConfigError && <div className="error-banner">{adminConfigError}</div>}
             {setupStartError && <div className="error-banner">{setupStartError}</div>}

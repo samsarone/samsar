@@ -5,6 +5,7 @@ import {
   DEPLOYMENT_PROVIDER_CAPABILITIES,
   buildAvailableDeploymentModels,
   validateDeploymentProviderCredentials,
+  validateOpenRouterKey,
 } from './DeploymentProviderAPI.js';
 
 test('Alibaba Cloud credentials expose Qwen, Wan2.7 Pro, and native Happy Horse', () => {
@@ -33,6 +34,72 @@ test('OpenRouter availability exposes all inference models and no media-generati
   assert.deepEqual(available.providers, ['openrouter']);
   assert.deepEqual(available.models, ['QWEN3.7', 'gemini-3.1-pro', 'gpt-5.6-sol']);
   assert.deepEqual(available.actions, ['assistant', 'chat']);
+});
+
+test('OpenRouter validation uses the authenticated current-key endpoint', async () => {
+  let observedUrl = '';
+  let observedAuthorization = '';
+  const result = await validateOpenRouterKey('openrouter-test-key', {
+    fetchImpl: async (url, options) => {
+      observedUrl = url;
+      observedAuthorization = options?.headers?.Authorization;
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ data: { label: 'test-key' } }),
+      };
+    },
+  });
+
+  assert.equal(observedUrl, 'https://openrouter.ai/api/v1/key');
+  assert.equal(observedAuthorization, 'Bearer openrouter-test-key');
+  assert.equal(result.status, 'valid');
+  assert.equal(result.ok, true);
+});
+
+test('OpenRouter validation rejects unauthorized and non-key responses', async () => {
+  const unauthorized = await validateOpenRouterKey('invalid-key', {
+    fetchImpl: async () => ({
+      ok: false,
+      status: 401,
+      json: async () => ({ error: { message: 'Unauthorized' } }),
+    }),
+  });
+  assert.equal(unauthorized.status, 'invalid');
+  assert.equal(unauthorized.statusCode, 401);
+
+  const publicCatalogShape = await validateOpenRouterKey('invalid-key', {
+    fetchImpl: async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ data: [] }),
+    }),
+  });
+  assert.equal(publicCatalogShape.status, 'invalid');
+  assert.match(publicCatalogShape.message, /key-validation response/i);
+});
+
+test('OpenRouter validation rejects management keys and reports upstream failures as errors', async () => {
+  const managementKey = await validateOpenRouterKey('management-key', {
+    fetchImpl: async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ data: { is_management_key: true } }),
+    }),
+  });
+  assert.equal(managementKey.status, 'invalid');
+  assert.match(managementKey.message, /management keys cannot be used for inference/i);
+
+  const upstreamFailure = await validateOpenRouterKey('possibly-valid-key', {
+    fetchImpl: async () => ({
+      ok: false,
+      status: 500,
+      json: async () => ({ error: { message: 'Internal server error' } }),
+    }),
+  });
+  assert.equal(upstreamFailure.status, 'error');
+  assert.equal(upstreamFailure.ok, false);
+  assert.match(upstreamFailure.message, /status 500/i);
 });
 
 test('FAL fallback availability keeps Happy Horse and Wan2.7 Pro enabled', () => {

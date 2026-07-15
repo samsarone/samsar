@@ -18,6 +18,7 @@ import { createAlibabaQwenChatCompletion } from './AlibabaQwen.js';
 import { recordProviderUsageLog } from './ProviderUsageAudit.js';
 import {
   createSamsarExternalChatCompletion,
+  resolveConfiguredInferenceProvider,
   shouldUseSamsarExternalInference,
 } from './SamsarExternalInferenceAdapter.js';
 
@@ -412,7 +413,7 @@ export async function sendAssistantMessageRequest(messageList, userInferenceMode
       await recordInferenceProviderUsage({
         messageList,
         modelName,
-        provider: 'samsar',
+        provider: resolveConfiguredInferenceProvider(modelName) || 'samsar',
         response,
         auditContext,
       });

@@ -23,3 +23,11 @@ export function resolveVidgenieLoadedProjectView({
     ),
   };
 }
+
+export function shouldDeferVidgenieProjectLoad({
+  sessionId = '',
+  userInitiated = false,
+  userFetching = false,
+} = {}) {
+  return Boolean(sessionId && (!userInitiated || userFetching));
+}

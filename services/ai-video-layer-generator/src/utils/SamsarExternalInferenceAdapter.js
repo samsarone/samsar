@@ -1,4 +1,5 @@
 import SamsarClient from 'samsar-js';
+import OpenAI from 'openai';
 
 import {
   GPT_56_SOL_INFERENCE_MODEL,
@@ -12,6 +13,7 @@ import { hasAlibabaQwenNativeCredential } from './AlibabaQwen.js';
 
 const DEFAULT_SAMSAR_API_BASE_URL = 'https://api.samsar.one/v1';
 const DEFAULT_EXTERNAL_INFERENCE_TIMEOUT_MS = 10 * 60 * 1000;
+const DEFAULT_OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1';
 const GOOGLE_NATIVE_CREDENTIAL_KEYS = Object.freeze([
   'GOOGLE_APPLICATION_CREDENTIALS_JSON_B64',
   'GOOGLE_APPLICATION_CREDENTIALS_JSON',
@@ -27,19 +29,23 @@ export const DOCKER_INFERENCE_PROVIDER = Object.freeze({
   ALIBABA_CLOUD: 'alibabaCloud',
   GOOGLE_CLOUD: 'googleCloud',
   OPENAI: 'openai',
+  OPENROUTER: 'openrouter',
   SAMSAR: 'samsar',
 });
 export const DOCKER_INFERENCE_PROVIDER_PRIORITY_BY_MODEL = Object.freeze({
   [QWEN_37_INFERENCE_MODEL]: Object.freeze([
     DOCKER_INFERENCE_PROVIDER.ALIBABA_CLOUD,
+    DOCKER_INFERENCE_PROVIDER.OPENROUTER,
     DOCKER_INFERENCE_PROVIDER.SAMSAR,
   ]),
   'gemini-3.1-pro': Object.freeze([
     DOCKER_INFERENCE_PROVIDER.GOOGLE_CLOUD,
+    DOCKER_INFERENCE_PROVIDER.OPENROUTER,
     DOCKER_INFERENCE_PROVIDER.SAMSAR,
   ]),
   'gpt-5.6-sol': Object.freeze([
     DOCKER_INFERENCE_PROVIDER.OPENAI,
+    DOCKER_INFERENCE_PROVIDER.OPENROUTER,
     DOCKER_INFERENCE_PROVIDER.SAMSAR,
   ]),
 });
@@ -47,14 +53,21 @@ export const DOCKER_INFERENCE_PROVIDER_PRIORITY_BY_MODEL = Object.freeze({
 let cachedClient = null;
 let cachedClientKey = '';
 let cachedBaseUrl = '';
+let cachedOpenRouterClient = null;
+let cachedOpenRouterClientKey = '';
+let cachedOpenRouterBaseUrl = '';
 
 function normalizeString(value) {
   return typeof value === 'string' ? value.trim() : '';
 }
 
-function normalizeBaseUrl(value) {
-  const normalized = normalizeString(value || DEFAULT_SAMSAR_API_BASE_URL).replace(/\/+$/, '');
-  return normalized || DEFAULT_SAMSAR_API_BASE_URL;
+function normalizeBaseUrl(value, defaultBaseUrl = DEFAULT_SAMSAR_API_BASE_URL) {
+  const normalized = normalizeString(value || defaultBaseUrl).replace(/\/+$/, '');
+  return normalized || defaultBaseUrl;
+}
+
+export function normalizeOpenRouterBaseUrl(value) {
+  return normalizeBaseUrl(value, DEFAULT_OPENROUTER_BASE_URL);
 }
 
 function normalizeAuthorization(value) {
@@ -65,8 +78,8 @@ function isDeployedAuthorization(value) {
   return ['deployed', 'samsar', 'samsar-api-key', 'samsar-key'].includes(normalizeAuthorization(value));
 }
 
-function isNativeAuthorization(value) {
-  return normalizeAuthorization(value) === 'native';
+function isOpenRouterAuthorization(value) {
+  return normalizeAuthorization(value) === 'openrouter';
 }
 
 function isTruthyEnv(value) {
@@ -85,6 +98,10 @@ function hasEnvCredential(...keys) {
 
 function hasOpenAINativeCredential() {
   return hasEnvCredential('OPENAI_API_KEY');
+}
+
+export function hasOpenRouterCredential(env = process.env) {
+  return Boolean(normalizeString(env?.OPENROUTER_API_KEY));
 }
 
 function hasGoogleNativeCredential() {
@@ -136,6 +153,39 @@ function getExternalClient() {
   return cachedClient;
 }
 
+function getOpenRouterClient() {
+  const apiKey = normalizeString(process.env.OPENROUTER_API_KEY);
+  if (!apiKey) {
+    return null;
+  }
+
+  const baseURL = normalizeOpenRouterBaseUrl(
+    process.env.OPENROUTER_BASE_URL ||
+    process.env.OPENROUTER_API_BASE_URL ||
+    DEFAULT_OPENROUTER_BASE_URL,
+  );
+  if (
+    !cachedOpenRouterClient ||
+    cachedOpenRouterClientKey !== apiKey ||
+    cachedOpenRouterBaseUrl !== baseURL
+  ) {
+    const defaultHeaders = {};
+    const appUrl = normalizeString(process.env.OPENROUTER_APP_URL || process.env.SAMSAR_APP_URL);
+    const appName = normalizeString(process.env.OPENROUTER_APP_NAME) || 'Samsar';
+    if (appUrl) {
+      defaultHeaders['HTTP-Referer'] = appUrl;
+    }
+    if (appName) {
+      defaultHeaders['X-Title'] = appName;
+    }
+    cachedOpenRouterClient = new OpenAI({ apiKey, baseURL, defaultHeaders });
+    cachedOpenRouterClientKey = apiKey;
+    cachedOpenRouterBaseUrl = baseURL;
+  }
+
+  return cachedOpenRouterClient;
+}
+
 function hasConfiguredInferenceProvider(provider) {
   if (provider === DOCKER_INFERENCE_PROVIDER.ALIBABA_CLOUD) {
     return hasAlibabaQwenNativeCredential();
@@ -145,6 +195,9 @@ function hasConfiguredInferenceProvider(provider) {
   }
   if (provider === DOCKER_INFERENCE_PROVIDER.OPENAI) {
     return hasOpenAINativeCredential();
+  }
+  if (provider === DOCKER_INFERENCE_PROVIDER.OPENROUTER) {
+    return hasOpenRouterCredential();
   }
   if (provider === DOCKER_INFERENCE_PROVIDER.SAMSAR) {
     return Boolean(getExternalClient());
@@ -163,8 +216,20 @@ function getInferenceProviderPriority(model) {
     DOCKER_INFERENCE_PROVIDER_PRIORITY_BY_MODEL['gpt-5.6-sol'];
 }
 
-function resolveConfiguredInferenceProvider(model) {
-  for (const provider of getInferenceProviderPriority(model)) {
+function isDockerInferenceRuntime() {
+  const environment = normalizeString(process.env.CURRENT_ENV).toLowerCase();
+  return environment === 'docker' || environment === 'staging';
+}
+
+function getRuntimeInferenceProviderPriority(model) {
+  if (!isDockerInferenceRuntime() && isQwenInferenceModel(model)) {
+    return [DOCKER_INFERENCE_PROVIDER.OPENROUTER];
+  }
+  return getInferenceProviderPriority(model);
+}
+
+export function resolveConfiguredInferenceProvider(model) {
+  for (const provider of getRuntimeInferenceProviderPriority(model)) {
     if (hasConfiguredInferenceProvider(provider)) {
       return provider;
     }
@@ -204,11 +269,78 @@ function getRequestedInferenceModel(chatRequest = {}) {
   );
 }
 
-function hasNativeCredentialForInferenceModel(model) {
-  const provider = resolveConfiguredInferenceProvider(model);
-  return provider === DOCKER_INFERENCE_PROVIDER.ALIBABA_CLOUD ||
-    provider === DOCKER_INFERENCE_PROVIDER.GOOGLE_CLOUD ||
-    provider === DOCKER_INFERENCE_PROVIDER.OPENAI;
+function hasVisionInput(chatRequest = {}) {
+  return (Array.isArray(chatRequest.messages) ? chatRequest.messages : []).some((message) => (
+    Array.isArray(message?.content) && message.content.some((part) => [
+      'image', 'image_url', 'input_image', 'video', 'video_url', 'input_video',
+    ].includes(normalizeString(part?.type).toLowerCase()))
+  ));
+}
+
+export function getOpenRouterModelForInferenceRequest(chatRequest = {}, env = process.env) {
+  const model = getRequestedInferenceModel(chatRequest);
+  if (isQwenInferenceModel(model)) {
+    const vision = hasVisionInput(chatRequest);
+    return normalizeString(
+      vision ? env?.OPENROUTER_QWEN_37_PLUS_MODEL : env?.OPENROUTER_QWEN_37_MAX_MODEL,
+    ) || (vision ? 'qwen/qwen3.7-plus' : 'qwen/qwen3.7-max');
+  }
+  if (isGeminiInferenceModel(model)) {
+    return normalizeString(env?.OPENROUTER_GEMINI_31_PRO_MODEL) || 'google/gemini-3.1-pro';
+  }
+  return normalizeString(env?.OPENROUTER_GPT_56_SOL_MODEL) || 'openai/gpt-5.6-sol';
+}
+
+export function shouldUseOpenRouterInference(chatRequest = {}) {
+  if (!chatRequest || typeof chatRequest !== 'object') {
+    return false;
+  }
+  if (isOpenRouterAuthorization(chatRequest.authorization)) {
+    return true;
+  }
+  if (isDeployedAuthorization(chatRequest.authorization)) {
+    return false;
+  }
+  return resolveConfiguredInferenceProvider(getRequestedInferenceModel(chatRequest)) ===
+    DOCKER_INFERENCE_PROVIDER.OPENROUTER;
+}
+
+export async function createOpenRouterChatCompletion(chatRequest = {}) {
+  const client = getOpenRouterClient();
+  if (!client) {
+    throw new Error('OPENROUTER_API_KEY is required for OpenRouter inference.');
+  }
+
+  const {
+    authorization,
+    bypassSamsarExternalInference,
+    samsarExternalInference,
+    timeout,
+    timeoutMs,
+    maxRetries,
+    reasoning_effort,
+    reasoning,
+    ...request
+  } = chatRequest || {};
+  const effort = reasoning?.effort || reasoning_effort || (
+    getRequestedInferenceModel(chatRequest) === GPT_56_SOL_INFERENCE_MODEL
+      ? GPT_56_SOL_REASONING_EFFORT
+      : undefined
+  );
+  const options = {
+    timeout: Number(timeout ?? timeoutMs ?? process.env.OPENROUTER_INFERENCE_TIMEOUT_MS) ||
+      DEFAULT_EXTERNAL_INFERENCE_TIMEOUT_MS,
+  };
+  const retries = Number(maxRetries);
+  if (Number.isInteger(retries) && retries >= 0) {
+    options.maxRetries = retries;
+  }
+
+  return client.chat.completions.create({
+    ...request,
+    model: getOpenRouterModelForInferenceRequest(chatRequest),
+    ...(effort ? { reasoning: { effort } } : {}),
+  }, options);
 }
 
 function isOpenAICompatibleChatCompletion(value) {
@@ -239,27 +371,32 @@ export function shouldUseSamsarExternalInference(chatRequest = {}) {
   if (!chatRequest || typeof chatRequest !== 'object') {
     return false;
   }
+  const inferenceModel = getRequestedInferenceModel(chatRequest);
+  if (!isDockerInferenceRuntime() && isQwenInferenceModel(inferenceModel)) {
+    return true;
+  }
   if (chatRequest.bypassSamsarExternalInference || chatRequest.samsarExternalInference === false) {
     return false;
   }
-  if (!shouldEnableExternalInference()) {
-    return false;
-  }
-  if (!getExternalClient()) {
-    return false;
-  }
-  if (chatRequest.samsarExternalInference === true || isDeployedAuthorization(chatRequest.authorization)) {
+  if (isOpenRouterAuthorization(chatRequest.authorization)) {
     return true;
   }
-  const inferenceModel = getRequestedInferenceModel(chatRequest);
-  if (isNativeAuthorization(chatRequest.authorization)) {
-    return !hasNativeCredentialForInferenceModel(inferenceModel);
+  if (chatRequest.samsarExternalInference === true || isDeployedAuthorization(chatRequest.authorization)) {
+    return shouldEnableExternalInference() && Boolean(getExternalClient());
   }
-
-  return !hasNativeCredentialForInferenceModel(inferenceModel);
+  const provider = resolveConfiguredInferenceProvider(inferenceModel);
+  if (provider === DOCKER_INFERENCE_PROVIDER.OPENROUTER) {
+    return true;
+  }
+  return shouldEnableExternalInference() && provider === DOCKER_INFERENCE_PROVIDER.SAMSAR;
 }
 
 export async function createSamsarExternalChatCompletion(chatRequest = {}) {
+  if (shouldUseOpenRouterInference(chatRequest) || (
+    !isDockerInferenceRuntime() && isQwenInferenceModel(getRequestedInferenceModel(chatRequest))
+  )) {
+    return createOpenRouterChatCompletion(chatRequest);
+  }
   const client = getExternalClient();
   if (!client) {
     throw new Error('SAMSAR_API_KEY is required for Samsar external inference.');

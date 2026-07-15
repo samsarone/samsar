@@ -345,6 +345,8 @@ The client also includes supporting surfaces:
 
 The client-side model inventory lives primarily in `src/constants/Types.ts` and `src/constants/ModelPrices.jsx`.
 
+In Docker deployments, the processor-provided availability response filters the inference selectors. One configured `OPENROUTER_API_KEY` exposes `gpt-5.6-sol`, `gemini-3.1-pro`, and `QWEN3.7` for chat, assistant, and their corresponding vision-input workflows. Provider priority is the model's direct native credential, then OpenRouter, then the Samsar deployed fallback; the client preserves the selected provider provenance when deciding whether a saved model remains authorized.
+
 ### Image Generation
 
 | Model | Key | Express |

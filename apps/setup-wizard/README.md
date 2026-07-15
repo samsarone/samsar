@@ -1,12 +1,37 @@
-# React + Vite
+# Samsar Setup Wizard
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+The setup wizard is the browser UI and local server used to configure a Samsar Docker deployment. Start it from the monorepo root with:
 
-Currently, two official plugins are available:
+```bash
+npm run setup-wizard
+```
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+The wizard collects provider credentials, selects services, configures mail and data storage, optionally enables a reverse proxy, and prepares the initial admin login. It writes the deployment files under `runtime/` and starts the selected Compose profiles.
 
-## Expanding the ESLint configuration
+## Inference Providers
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+Step 1 places **Inference Router** above the direct-provider and Samsar fallback sections. Its optional OpenRouter key enables the supported inference selections through one credential:
+
+| Stable model | OpenRouter coverage |
+| --- | --- |
+| `gpt-5.6-sol` | Text, assistant, and corresponding vision-input calls. |
+| `gemini-3.1-pro` | Text, assistant, and corresponding vision-input calls; defaults to OpenRouter model `google/gemini-3.1-pro-preview`. |
+| `QWEN3.7` | Text, assistant, image, and video-input analysis using the configured text/vision model mapping. |
+
+Provider priority is direct native credential, OpenRouter, then the Samsar universal fallback. Other provider keys continue to enable their media, audio, and direct inference families independently.
+
+## Secret Handling
+
+The browser does not persist OpenRouter or Alibaba keys or their one-time validation tokens in local storage. OpenRouter validation uses authenticated key metadata and rejects management-only keys that cannot run inference. After validation, the setup server writes accepted credentials to mode-`0600` `runtime/secrets/provider.credentials.json`. Runtime rendering creates mode-`0600` `runtime/secrets/root.env`, where the single OpenRouter key appears as `OPENROUTER_API_KEY`.
+
+Every backend service in `deploy/compose/docker-compose.yml` inherits that shared env file. The key is therefore available to the processor, generator, audio generator, assistant query processor, express video listener, and other inference workers without duplicating it per container. Do not commit `runtime/` or expose provider keys through `VITE_*` client variables.
+
+## Development
+
+```bash
+npm install
+npm run build
+npm run lint
+```
+
+The Vite application lives in `src/`; `server.mjs` serves the built UI and performs the local deployment operations. Full setup behavior and runtime files are documented in [Setup Wizard](../../pages/setup-wizard.md) and [Providers and Models](../../pages/providers-and-models.md).

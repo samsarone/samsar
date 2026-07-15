@@ -7,6 +7,7 @@ import { resolveRequestActorFromAuthHeaders } from '../external/User.js';
 import { getAlibabaQwenBaseURL } from '../../inference/AlibabaQwen.js';
 
 const GOOGLE_CLOUD_SCOPE = 'https://www.googleapis.com/auth/cloud-platform';
+const OPENROUTER_KEY_URL = 'https://openrouter.ai/api/v1/key';
 const RUNWAY_ORGANIZATION_URL = 'https://api.dev.runwayml.com/v1/organization';
 
 export const DEPLOYMENT_PROVIDER_CAPABILITIES = Object.freeze({
@@ -224,18 +225,39 @@ async function validateOpenAIKey(apiKey) {
   }
 }
 
-async function validateOpenRouterKey(apiKey) {
+export async function validateOpenRouterKey(apiKey, { fetchImpl = fetch } = {}) {
   try {
-    const response = await fetch('https://openrouter.ai/api/v1/models', {
+    const response = await fetchImpl(OPENROUTER_KEY_URL, {
       method: 'GET',
-      headers: { Authorization: `Bearer ${apiKey}` },
+      headers: {
+        Accept: 'application/json',
+        Authorization: `Bearer ${apiKey}`,
+      },
     });
     if (!response.ok) {
-      return providerResult('openrouter', 'invalid', {
+      const authenticationFailure = response.status === 401 || response.status === 403;
+      return providerResult('openrouter', authenticationFailure ? 'invalid' : 'error', {
         statusCode: response.status,
-        message: 'OpenRouter rejected the API key.',
+        message: authenticationFailure
+          ? 'OpenRouter rejected the API key.'
+          : `OpenRouter key validation failed with status ${response.status}.`,
       });
     }
+
+    const body = await response.json().catch(() => null);
+    if (!body?.data || typeof body.data !== 'object' || Array.isArray(body.data)) {
+      return providerResult('openrouter', 'invalid', {
+        statusCode: response.status,
+        message: 'OpenRouter returned an invalid key-validation response.',
+      });
+    }
+    if (body.data.is_management_key === true) {
+      return providerResult('openrouter', 'invalid', {
+        statusCode: response.status,
+        message: 'OpenRouter management keys cannot be used for inference.',
+      });
+    }
+
     return providerResult('openrouter', 'valid');
   } catch (error) {
     return providerResult('openrouter', 'error', {
