@@ -27,6 +27,7 @@ export {
 const PROVIDER_LABELS = {
   samsar: "Samsar API Key",
   openai: "OpenAI",
+  openrouter: "OpenRouter",
   googleCloud: "Google Cloud",
   alibabaCloud: "Alibaba Cloud",
   fal: "FAL",

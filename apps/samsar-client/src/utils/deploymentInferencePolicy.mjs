@@ -4,12 +4,11 @@ export const QWEN_INFERENCE_MODEL_VALUE = "QWEN3.7";
 const DEPLOYMENT_INFERENCE_MODELS_BY_PROVIDER = Object.freeze({
   openai: ["gpt-5.6-sol"],
   googleCloud: ["gemini-3.1-pro"],
+  openrouter: ["gpt-5.6-sol", "gemini-3.1-pro", "QWEN3.7"],
   // Alibaba/Qwen requires explicit, validated model provenance below. A
   // provider name by itself is not enough to make Qwen selectable.
   alibabaCloud: [],
-  // Samsar remains a fallback for hosted GPT/Gemini inference, but must not
-  // implicitly opt a Docker installation into native Alibaba/Qwen inference.
-  samsar: ["gpt-5.6-sol", "gemini-3.1-pro"],
+  samsar: ["gpt-5.6-sol", "gemini-3.1-pro", "QWEN3.7"],
 });
 
 export function normalizeDeploymentProviderKey(value) {
@@ -36,6 +35,9 @@ export function normalizeDeploymentProviderKey(value) {
   }
   if (compact === "openai") {
     return "openai";
+  }
+  if (compact === "openrouter" || compact === "openrouterai") {
+    return "openrouter";
   }
   if (compact === "fal") {
     return "fal";
@@ -174,12 +176,12 @@ export function hasValidatedAlibabaQwenInference(payload = {}) {
   const availableProviders = new Set(
     extractDeploymentProviders(payload).map(normalizeDeploymentProviderKey),
   );
-  if (!availableProviders.has("alibabaCloud")) {
+  const qwenProviders = new Set(["alibabaCloud", "openrouter", "samsar"]);
+  const selectedProvider = extractDeploymentInferenceModelProviders(payload)[QWEN_INFERENCE_MODEL_VALUE];
+  if (!qwenProviders.has(selectedProvider) || !availableProviders.has(selectedProvider)) {
     return false;
   }
-
-  const modelProviders = extractDeploymentInferenceModelProviders(payload);
-  return modelProviders[QWEN_INFERENCE_MODEL_VALUE] === "alibabaCloud";
+  return true;
 }
 
 export function extractDeploymentInferenceModelValues(payload = {}) {
@@ -210,9 +212,7 @@ export function filterOptionsForDeploymentInferenceModels(options = [], modelVal
 }
 
 export function filterHostedInferenceModelOptions(options = []) {
-  return options.filter(
-    (option) => normalizeDeploymentInferenceModelValue(option?.value) !== QWEN_INFERENCE_MODEL_VALUE,
-  );
+  return [...options];
 }
 
 export function resolveAllowedInferenceModelOption(

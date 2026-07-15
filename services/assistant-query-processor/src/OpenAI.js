@@ -10,6 +10,7 @@ import { createQwenChatCompletion } from './Qwen.js';
 import { sendAssistantGeminiCompletionRequest } from './GoogleGemini.js';
 import {
   createSamsarExternalChatCompletion,
+  resolveConfiguredInferenceProvider,
   shouldUseSamsarExternalInference,
 } from './SamsarExternalInferenceAdapter.js';
 
@@ -144,7 +145,7 @@ export async function sendAssistantSamsarExternalCompletionRequest(messageList, 
     response: normalizeChatCompletionToResponses(response),
     outputText,
     outputContent: buildFallbackAssistantContent(outputText),
-    externalProvider: 'samsar',
+    externalProvider: resolveConfiguredInferenceProvider(model) || 'samsar',
   };
 }
 

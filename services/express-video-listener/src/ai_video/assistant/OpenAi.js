@@ -21,6 +21,7 @@ import { createCompatibleChatCompletion } from '../../ai_utils/OpenAICompat.js';
 import { createQwenChatCompletion } from '../../ai_utils/Qwen.js';
 import {
   createSamsarExternalChatCompletion,
+  resolveConfiguredInferenceProvider,
   shouldUseSamsarExternalInference,
 } from '../../ai_utils/SamsarExternalInferenceAdapter.js';
 import { recordProviderUsageLog } from '../../utils/ProviderUsageAudit.js';
@@ -447,7 +448,7 @@ export async function sendAssistantMessageRequest(messageList, userInferenceMode
       const response = await createSamsarExternalChatCompletion(basePayload);
       await recordInferenceProviderUsage({
         basePayload,
-        provider: 'samsar',
+        provider: resolveConfiguredInferenceProvider(modelName) || 'samsar',
         response,
         auditContext,
         reasoningEffort,

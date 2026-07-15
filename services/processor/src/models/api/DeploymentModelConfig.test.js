@@ -18,6 +18,9 @@ const ENV_KEYS = [
   'QWEN_API_KEY',
   'FAL_API_KEY',
   'SAMSAR_API_KEY',
+  'OPENROUTER_API_KEY',
+  'OPENAI_API_KEY',
+  'GOOGLE_APPLICATION_CREDENTIALS_JSON',
   'SAMSAR_AVAILABLE_MODELS_PATH',
 ];
 const originalEnv = Object.fromEntries(ENV_KEYS.map((key) => [key, process.env[key]]));
@@ -35,7 +38,7 @@ function restoreEnv() {
 
 test.afterEach(restoreEnv);
 
-test('a raw Alibaba key enriches native media models without synthesizing Qwen', () => {
+test('a raw Alibaba key enables native Qwen and Alibaba media models', () => {
   clearEnv();
   process.env.CURRENT_ENV = 'docker';
   process.env.ALIBABA_API_KEY = 'test-key';
@@ -47,8 +50,9 @@ test('a raw Alibaba key enriches native media models without synthesizing Qwen',
   });
 
   assert.deepEqual(result.providers, ['openai', 'alibabaCloud']);
-  assert.deepEqual(result.models, ['gpt-5.6-sol', 'HAPPYHORSEI2V', 'WAN2.7PRO']);
-  assert.deepEqual(result.actions, ['chat', 'image', 'video']);
+  assert.deepEqual(result.models, ['gpt-5.6-sol', 'QWEN3.7', 'HAPPYHORSEI2V', 'WAN2.7PRO']);
+  assert.deepEqual(result.actions, ['chat', 'assistant', 'image', 'video']);
+  assert.equal(result.modelProviders['QWEN3.7'], 'alibabaCloud');
 });
 
 test('hosted runtime omits Qwen even when saved configuration selected Alibaba', () => {
@@ -131,7 +135,7 @@ test('Docker drops Qwen when any saved Alibaba authorization field is missing or
   );
 });
 
-test('Samsar fallback does not advertise Qwen without validated Alibaba selection', () => {
+test('Samsar fallback advertises every inference model', () => {
   clearEnv();
   process.env.SAMSAR_API_KEY = 'test-key';
 
@@ -144,10 +148,39 @@ test('Samsar fallback does not advertise Qwen without validated Alibaba selectio
   assert.deepEqual(result.models, [
     'gpt-5.6-sol',
     'gemini-3.1-pro',
+    'QWEN3.7',
     'HAPPYHORSEI2V',
     'WAN2.7PRO',
   ]);
   assert.deepEqual(result.actions, ['chat', 'assistant', 'image', 'video']);
+});
+
+test('OpenRouter runtime credentials advertise all inference models without media models', () => {
+  clearEnv();
+  process.env.CURRENT_ENV = 'docker';
+  process.env.OPENROUTER_API_KEY = 'test-openrouter-key';
+
+  const result = mergeRuntimeInferenceDeploymentAvailability({});
+  assert.deepEqual(result.providers, ['openrouter']);
+  assert.deepEqual(result.models, ['gpt-5.6-sol', 'gemini-3.1-pro', 'QWEN3.7']);
+  assert.deepEqual(result.actions, ['chat', 'assistant']);
+  assert.deepEqual(result.modelProviders, {
+    'gpt-5.6-sol': 'openrouter',
+    'gemini-3.1-pro': 'openrouter',
+    'QWEN3.7': 'openrouter',
+  });
+});
+
+test('Docker retains Qwen with validated OpenRouter provenance', () => {
+  clearEnv();
+  process.env.CURRENT_ENV = 'docker';
+  const result = mergeRuntimeInferenceDeploymentAvailability({
+    providers: ['openrouter'],
+    models: ['QWEN3.7'],
+    modelProviders: { 'QWEN3.7': 'openrouter' },
+    modelProviderPriority: { 'QWEN3.7': ['alibabaCloud', 'openrouter', 'samsar'] },
+  });
+  assert.deepEqual(result.models, ['QWEN3.7']);
 });
 
 test('FAL runtime enrichment exposes Wan2.7 Pro and Happy Horse media actions', () => {

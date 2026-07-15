@@ -17,15 +17,22 @@ test('Alibaba Cloud credentials expose Qwen, Wan2.7 Pro, and native Happy Horse'
   assert.deepEqual(available.actions, ['assistant', 'chat', 'image', 'video']);
 });
 
-test('Samsar fallback availability omits Qwen 3.7 while keeping media models', () => {
+test('Samsar fallback availability includes Qwen 3.7 and media models', () => {
   const available = buildAvailableDeploymentModels({
     samsar: { ok: true, status: 'valid' },
   });
 
-  assert.equal(DEPLOYMENT_PROVIDER_CAPABILITIES.samsar.models.includes('QWEN3.7'), false);
-  assert.equal(available.models.includes('QWEN3.7'), false);
+  assert.equal(DEPLOYMENT_PROVIDER_CAPABILITIES.samsar.models.includes('QWEN3.7'), true);
+  assert.equal(available.models.includes('QWEN3.7'), true);
   assert.equal(available.models.includes('HAPPYHORSEI2V'), true);
   assert.equal(available.models.includes('WAN2.7PRO'), true);
+});
+
+test('OpenRouter availability exposes all inference models and no media-generation models', () => {
+  const available = buildAvailableDeploymentModels({ openrouter: { ok: true, status: 'valid' } });
+  assert.deepEqual(available.providers, ['openrouter']);
+  assert.deepEqual(available.models, ['QWEN3.7', 'gemini-3.1-pro', 'gpt-5.6-sol']);
+  assert.deepEqual(available.actions, ['assistant', 'chat']);
 });
 
 test('FAL fallback availability keeps Happy Horse and Wan2.7 Pro enabled', () => {

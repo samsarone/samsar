@@ -430,6 +430,7 @@ const env = {
   SAMSAR_AVAILABLE_MODELS_PATH: '/persistent/config/available-models.json',
   SAMSAR_API_KEY: config.providers?.samsar?.apiKey || '',
 	  OPENAI_API_KEY: config.providers?.openai?.apiKey || '',
+	  OPENROUTER_API_KEY: config.providers?.openrouter?.apiKey || '',
 	  ALIBABA_API_KEY: alibabaCloudSecrets.apiKey || alibabaCloudConfig.apiKey || '',
 	  ALIBABA_API_HOST:
     alibabaCloudSecrets.apiHost ||

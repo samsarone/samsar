@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import SamsarClient from 'samsar-js';
+import OpenAI from 'openai';
 
 const ENV_KEYS = [
   'CURRENT_ENV',
@@ -8,6 +9,7 @@ const ENV_KEYS = [
   'SAMSAR_EXTERNAL_INFERENCE_ENABLED',
   'SAMSAR_FORCE_EXTERNAL_INFERENCE',
   'OPENAI_API_KEY',
+  'OPENROUTER_API_KEY',
   'ALIBABA_API_KEY',
   'DASHSCOPE_API_KEY',
   'ALIBABA_CLOUD_API_KEY',
@@ -31,7 +33,12 @@ const originalEnv = Object.fromEntries(
 );
 
 const {
+  DOCKER_INFERENCE_PROVIDER,
+  DOCKER_INFERENCE_PROVIDER_PRIORITY_BY_MODEL,
+  createOpenRouterChatCompletion,
   createSamsarExternalChatCompletion,
+  getOpenRouterModelForInferenceRequest,
+  resolveConfiguredInferenceProvider,
   shouldUseSamsarExternalInference,
   unwrapSamsarExternalChatCompletionResponse,
 } = await import('./SamsarExternalInferenceAdapter.js');
@@ -160,6 +167,78 @@ test('shouldUseSamsarExternalInference keeps Qwen native when DashScope auth is 
     model: 'qwen3.7-max',
     messages: [{ role: 'user', content: 'hello' }],
   }), false);
+});
+
+test('Docker inference uses native then OpenRouter then Samsar for every model', () => {
+  clearProviderEnv();
+  process.env.CURRENT_ENV = 'docker';
+  process.env.OPENROUTER_API_KEY = 'test-openrouter-key';
+  process.env.SAMSAR_API_KEY = 'test-samsar-key';
+
+  for (const model of ['gpt-5.6-sol', 'gemini-3.1-pro', 'QWEN3.7']) {
+    assert.equal(resolveConfiguredInferenceProvider(model), DOCKER_INFERENCE_PROVIDER.OPENROUTER);
+    assert.equal(shouldUseSamsarExternalInference({ model }), true);
+  }
+
+  assert.deepEqual(DOCKER_INFERENCE_PROVIDER_PRIORITY_BY_MODEL['QWEN3.7'], [
+    DOCKER_INFERENCE_PROVIDER.ALIBABA_CLOUD,
+    DOCKER_INFERENCE_PROVIDER.OPENROUTER,
+    DOCKER_INFERENCE_PROVIDER.SAMSAR,
+  ]);
+
+  process.env.ALIBABA_API_KEY = 'test-alibaba-key';
+  assert.equal(resolveConfiguredInferenceProvider('QWEN3.7'), DOCKER_INFERENCE_PROVIDER.ALIBABA_CLOUD);
+  assert.equal(shouldUseSamsarExternalInference({ model: 'QWEN3.7' }), false);
+});
+
+test('OpenRouter maps Qwen Max for text and Plus for vision', () => {
+  assert.equal(getOpenRouterModelForInferenceRequest({
+    model: 'QWEN3.7',
+    messages: [{ role: 'user', content: 'hello' }],
+  }), 'qwen/qwen3.7-max');
+  assert.equal(getOpenRouterModelForInferenceRequest({
+    model: 'QWEN3.7',
+    messages: [{
+      role: 'user',
+      content: [{ type: 'image_url', image_url: { url: 'https://example.com/frame.png' } }],
+    }],
+  }), 'qwen/qwen3.7-plus');
+});
+
+test('production Qwen is constrained to OpenRouter even when Alibaba is configured', () => {
+  clearProviderEnv();
+  process.env.CURRENT_ENV = 'production';
+  process.env.ALIBABA_API_KEY = 'test-alibaba-key';
+  process.env.OPENROUTER_API_KEY = 'test-openrouter-key';
+
+  assert.equal(resolveConfiguredInferenceProvider('QWEN3.7'), DOCKER_INFERENCE_PROVIDER.OPENROUTER);
+  assert.equal(shouldUseSamsarExternalInference({ model: 'QWEN3.7' }), true);
+});
+
+test('OpenRouter adapter sends OpenAI-compatible vision requests with the Plus deployment', async (t) => {
+  clearProviderEnv();
+  process.env.CURRENT_ENV = 'production';
+  process.env.OPENROUTER_API_KEY = 'test-openrouter-key';
+  let capturedPayload;
+  let capturedOptions;
+  t.mock.method(OpenAI.Chat.Completions.prototype, 'create', async (payload, options) => {
+    capturedPayload = payload;
+    capturedOptions = options;
+    return { choices: [{ message: { role: 'assistant', content: 'ok' } }] };
+  });
+
+  await createOpenRouterChatCompletion({
+    model: 'QWEN3.7',
+    messages: [{
+      role: 'user',
+      content: [{ type: 'image_url', image_url: { url: 'https://example.com/frame.png' } }],
+    }],
+    timeout: 12345,
+  });
+
+  assert.equal(capturedPayload.model, 'qwen/qwen3.7-plus');
+  assert.equal(capturedPayload.messages[0].content[0].type, 'image_url');
+  assert.equal(capturedOptions.timeout, 12345);
 });
 
 test('deployed authorization routes Qwen through Samsar even when native Alibaba auth exists', () => {

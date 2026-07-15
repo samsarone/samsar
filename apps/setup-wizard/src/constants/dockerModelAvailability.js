@@ -2,6 +2,7 @@ export const DOCKER_PROVIDER = Object.freeze({
   OPENAI: 'openai',
   GOOGLE_CLOUD: 'googleCloud',
   ALIBABA_CLOUD: 'alibabaCloud',
+  OPENROUTER: 'openrouter',
   FAL: 'fal',
   ELEVENLABS: 'elevenlabs',
   RUNWAY: 'runway',
@@ -12,6 +13,7 @@ export const DOCKER_PROVIDER_DISPLAY_ORDER = Object.freeze([
   DOCKER_PROVIDER.OPENAI,
   DOCKER_PROVIDER.GOOGLE_CLOUD,
   DOCKER_PROVIDER.ALIBABA_CLOUD,
+  DOCKER_PROVIDER.OPENROUTER,
   DOCKER_PROVIDER.FAL,
   DOCKER_PROVIDER.ELEVENLABS,
   DOCKER_PROVIDER.RUNWAY,
@@ -38,7 +40,21 @@ export const DOCKER_SOUND_EFFECT_MODELS = Object.freeze(['MMAUDIOV2', 'MIRELOAI'
 
 const OPENAI_OR_SAMSAR = Object.freeze([DOCKER_PROVIDER.OPENAI, DOCKER_PROVIDER.SAMSAR]);
 const GOOGLE_OR_SAMSAR = Object.freeze([DOCKER_PROVIDER.GOOGLE_CLOUD, DOCKER_PROVIDER.SAMSAR]);
-const ALIBABA_OR_SAMSAR = Object.freeze([DOCKER_PROVIDER.ALIBABA_CLOUD, DOCKER_PROVIDER.SAMSAR]);
+const OPENAI_INFERENCE_OR_SAMSAR = Object.freeze([
+  DOCKER_PROVIDER.OPENAI,
+  DOCKER_PROVIDER.OPENROUTER,
+  DOCKER_PROVIDER.SAMSAR,
+]);
+const GOOGLE_INFERENCE_OR_SAMSAR = Object.freeze([
+  DOCKER_PROVIDER.GOOGLE_CLOUD,
+  DOCKER_PROVIDER.OPENROUTER,
+  DOCKER_PROVIDER.SAMSAR,
+]);
+const ALIBABA_OR_SAMSAR = Object.freeze([
+  DOCKER_PROVIDER.ALIBABA_CLOUD,
+  DOCKER_PROVIDER.OPENROUTER,
+  DOCKER_PROVIDER.SAMSAR,
+]);
 const ALIBABA_FAL_OR_SAMSAR = Object.freeze([
   DOCKER_PROVIDER.ALIBABA_CLOUD,
   DOCKER_PROVIDER.FAL,
@@ -57,8 +73,8 @@ const GOOGLE_FAL_OR_SAMSAR = Object.freeze([
 ]);
 
 export const DOCKER_MODEL_PROVIDER_PRIORITY_BY_MODEL = Object.freeze({
-  'gpt-5.6-sol': OPENAI_OR_SAMSAR,
-  'gemini-3.1-pro': GOOGLE_OR_SAMSAR,
+  'gpt-5.6-sol': OPENAI_INFERENCE_OR_SAMSAR,
+  'gemini-3.1-pro': GOOGLE_INFERENCE_OR_SAMSAR,
   'QWEN3.7': ALIBABA_OR_SAMSAR,
   GPTIMAGE2: OPENAI_OR_SAMSAR,
   GPTIMAGE2EDIT: OPENAI_OR_SAMSAR,
@@ -161,6 +177,9 @@ export function normalizeDockerProviderKey(value) {
   if (compact === 'openai') {
     return DOCKER_PROVIDER.OPENAI;
   }
+  if (compact === 'openrouter' || compact === 'openrouterai') {
+    return DOCKER_PROVIDER.OPENROUTER;
+  }
   if (compact === 'fal') {
     return DOCKER_PROVIDER.FAL;
   }
@@ -222,7 +241,11 @@ export function buildDockerAvailableModelsFromEnabledProviders(enabledProviderKe
     models.push(modelKey);
     modelProviders[modelKey] = provider;
     modelProviderPriority[modelKey] = [...providerPriority];
-    (DOCKER_MODEL_ACTIONS_BY_MODEL[modelKey] || []).forEach((action) => actions.add(action));
+    const modelActions = DOCKER_MODEL_ACTIONS_BY_MODEL[modelKey] || [];
+    const providerActions = provider === DOCKER_PROVIDER.OPENROUTER
+      ? modelActions.filter((action) => action === 'chat' || action === 'assistant')
+      : modelActions;
+    providerActions.forEach((action) => actions.add(action));
   }
 
   return {

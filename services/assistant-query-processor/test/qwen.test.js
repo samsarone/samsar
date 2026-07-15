@@ -6,7 +6,11 @@ import {
   getAlibabaQwenApiKey,
   getAlibabaQwenBaseURL,
 } from '../src/Qwen.js';
-import { shouldUseSamsarExternalInference } from '../src/SamsarExternalInferenceAdapter.js';
+import {
+  DOCKER_INFERENCE_PROVIDER,
+  resolveConfiguredInferenceProvider,
+  shouldUseSamsarExternalInference,
+} from '../src/SamsarExternalInferenceAdapter.js';
 
 const ENV_KEYS = [
   'CURRENT_ENV',
@@ -15,6 +19,7 @@ const ENV_KEYS = [
   'DASHSCOPE_API_KEY',
   'ALIBABA_CLOUD_API_KEY',
   'QWEN_API_KEY',
+  'OPENROUTER_API_KEY',
 ];
 const originalEnv = Object.fromEntries(ENV_KEYS.map((key) => [key, process.env[key]]));
 
@@ -143,4 +148,15 @@ test('uses native Alibaba credentials first and Samsar fallback when they are ab
     model: 'QWEN3.7',
     authorization: 'native',
   }), false);
+});
+
+test('uses OpenRouter between native Alibaba and Samsar in Docker', () => {
+  clearEnv();
+  process.env.CURRENT_ENV = 'docker';
+  process.env.OPENROUTER_API_KEY = 'openrouter-test-key';
+  process.env.SAMSAR_API_KEY = 'samsar-test-key';
+  assert.equal(resolveConfiguredInferenceProvider('QWEN3.7'), DOCKER_INFERENCE_PROVIDER.OPENROUTER);
+
+  process.env.ALIBABA_API_KEY = 'alibaba-test-key';
+  assert.equal(resolveConfiguredInferenceProvider('QWEN3.7'), DOCKER_INFERENCE_PROVIDER.ALIBABA_CLOUD);
 });

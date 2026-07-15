@@ -1,7 +1,12 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { shouldUseSamsarExternalInference } from './SamsarExternalInferenceAdapter.js';
+import {
+  DOCKER_INFERENCE_PROVIDER,
+  getOpenRouterModelForInferenceRequest,
+  resolveConfiguredInferenceProvider,
+  shouldUseSamsarExternalInference,
+} from './SamsarExternalInferenceAdapter.js';
 
 const ENV_KEYS = [
   'ALIBABA_CLOUD_API_KEY',
@@ -10,6 +15,7 @@ const ENV_KEYS = [
   'DASHSCOPE_API_KEY',
   'GOOGLE_APPLICATION_CREDENTIALS_JSON',
   'OPENAI_API_KEY',
+  'OPENROUTER_API_KEY',
   'QWEN_API_KEY',
   'SAMSAR_API_KEY',
   'SAMSAR_EXTERNAL_INFERENCE_ENABLED',
@@ -55,6 +61,25 @@ test('ALIBABA_API_KEY is detected as native Qwen credentials', () => {
 test('Qwen routing falls back to Samsar in Docker without native credentials', () => {
   withEnvironment({ CURRENT_ENV: 'docker', SAMSAR_API_KEY: 'samsar-key' }, () => {
     assert.equal(shouldUseSamsarExternalInference({ model: 'QWEN3.7' }), true);
+  });
+});
+
+test('OpenRouter is preferred after native credentials and before Samsar for text and vision', () => {
+  withEnvironment({
+    CURRENT_ENV: 'docker',
+    OPENROUTER_API_KEY: 'openrouter-key',
+    SAMSAR_API_KEY: 'samsar-key',
+  }, () => {
+    for (const model of ['QWEN3.7', 'gemini-3.1-pro', 'gpt-5.6-sol']) {
+      assert.equal(resolveConfiguredInferenceProvider(model), DOCKER_INFERENCE_PROVIDER.OPENROUTER);
+    }
+    assert.equal(getOpenRouterModelForInferenceRequest({
+      model: 'QWEN3.7',
+      messages: [{ role: 'user', content: [{ type: 'image_url', image_url: 'frame' }] }],
+    }), 'qwen/qwen3.7-plus');
+
+    process.env.ALIBABA_API_KEY = 'alibaba-key';
+    assert.equal(resolveConfiguredInferenceProvider('QWEN3.7'), DOCKER_INFERENCE_PROVIDER.ALIBABA_CLOUD);
   });
 });
 

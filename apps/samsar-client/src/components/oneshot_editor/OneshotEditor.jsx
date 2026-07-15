@@ -6352,7 +6352,7 @@ export default function OneshotEditor() {
       ? 'Loading configured inference models...'
       : hasConfiguredInferenceModels
         ? ''
-        : 'Configure OpenAI, Google Cloud, or a Samsar API key in setup to enable VidGenie inference.'
+        : 'Configure OpenAI, Google Cloud, Alibaba Cloud, OpenRouter, or a Samsar API key in setup to enable VidGenie inference.'
     : '';
   const isCompletedSessionPublished = Boolean(sessionDetails?.ispublishedVideo);
   const rerollEstimateImageModel =

@@ -1373,6 +1373,10 @@ function buildRuntimeConfig(payload) {
         enabled: Boolean(normalizeString(credentials.openaiApiKey)),
         apiKey: normalizeString(credentials.openaiApiKey),
       },
+      openrouter: {
+        enabled: Boolean(normalizeString(credentials.openrouterApiKey)),
+        apiKey: normalizeString(credentials.openrouterApiKey),
+      },
       googleCloud: {
         enabled: Boolean(googleCredentials.credentialsJsonB64),
         projectId: googleCredentials.projectId,

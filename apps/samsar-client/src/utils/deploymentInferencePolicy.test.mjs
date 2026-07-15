@@ -14,10 +14,10 @@ const MODEL_OPTIONS = [
   { label: 'Qwen 3.7', value: 'QWEN3.7' },
 ];
 
-test('hosted inference and assistant option filtering excludes Qwen', () => {
+test('hosted inference exposes Qwen through the production OpenRouter route', () => {
   assert.deepEqual(
     filterHostedInferenceModelOptions(MODEL_OPTIONS).map((option) => option.value),
-    ['gpt-5.6-sol', 'gemini-3.1-pro'],
+    ['gpt-5.6-sol', 'gemini-3.1-pro', 'QWEN3.7'],
   );
 });
 
@@ -37,13 +37,6 @@ test('Docker exposes Qwen only with an explicit model and validated Alibaba prov
     { deployment: { providers: ['alibabaCloud'], modelProviders: { 'QWEN3.7': 'alibabaCloud' } } },
     { deployment: { models: ['QWEN3.7'], modelProviders: { 'QWEN3.7': 'alibabaCloud' } } },
     { deployment: { providers: ['alibabaCloud'], models: ['QWEN3.7'] } },
-    {
-      deployment: {
-        providers: ['samsar'],
-        models: ['QWEN3.7'],
-        modelProviders: { 'QWEN3.7': 'samsar' },
-      },
-    },
   ];
 
   incompletePayloads.forEach((payload) => {
@@ -52,10 +45,10 @@ test('Docker exposes Qwen only with an explicit model and validated Alibaba prov
   });
 });
 
-test('provider fallbacks preserve GPT and Gemini without synthesizing Qwen', () => {
+test('provider fallbacks expose their configured inference models', () => {
   assert.deepEqual(
     extractDeploymentInferenceModelValues({ deployment: { providers: ['samsar'] } }),
-    ['gpt-5.6-sol', 'gemini-3.1-pro'],
+    ['gpt-5.6-sol', 'gemini-3.1-pro', 'QWEN3.7'],
   );
   assert.deepEqual(
     extractDeploymentInferenceModelValues({ deployment: { providers: ['openai', 'googleCloud'] } }),
@@ -67,11 +60,31 @@ test('provider fallbacks preserve GPT and Gemini without synthesizing Qwen', () 
   );
 });
 
-test('a stale Qwen preference resolves to an allowed default without mutating canonical options', () => {
+test('OpenRouter alone exposes every inference model with validated Qwen provenance', () => {
+  const payload = {
+    deployment: {
+      providers: ['openrouter'],
+      models: ['gpt-5.6-sol', 'gemini-3.1-pro', 'QWEN3.7'],
+      modelProviders: {
+        'gpt-5.6-sol': 'openrouter',
+        'gemini-3.1-pro': 'openrouter',
+        'QWEN3.7': 'openrouter',
+      },
+    },
+  };
+  assert.equal(hasValidatedAlibabaQwenInference(payload), true);
+  assert.deepEqual(extractDeploymentInferenceModelValues(payload), [
+    'gpt-5.6-sol',
+    'gemini-3.1-pro',
+    'QWEN3.7',
+  ]);
+});
+
+test('model preferences resolve against the allowed options without mutating canonical options', () => {
   const hostedOptions = filterHostedInferenceModelOptions(MODEL_OPTIONS);
   assert.equal(
     resolveAllowedInferenceModelOption('QWEN3.7', hostedOptions)?.value,
-    'gpt-5.6-sol',
+    'QWEN3.7',
   );
   assert.equal(
     resolveAllowedInferenceModelOption('QWEN3.7', [{ label: 'Gemini', value: 'gemini-3.1-pro' }])?.value,

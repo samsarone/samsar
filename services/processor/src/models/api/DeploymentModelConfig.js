@@ -60,6 +60,10 @@ function normalizeDeploymentProvider(value) {
     return 'alibabaCloud';
   }
 
+  if (['openrouter', 'openrouterai'].includes(normalized)) {
+    return 'openrouter';
+  }
+
   return normalized;
 }
 
@@ -77,14 +81,13 @@ function isSavedQwenSelectionAuthorized({ providers, models, modelProviders }) {
   }
 
   const hasQwenModel = models.some((model) => model.toUpperCase() === 'QWEN3.7');
-  const hasAlibabaProvider = providers.some(
-    (provider) => normalizeDeploymentProvider(provider) === 'alibabaCloud',
-  );
+  const qwenProviders = new Set(['alibabaCloud', 'openrouter', 'samsar']);
+  const availableProviders = new Set(providers.map(normalizeDeploymentProvider));
   const selectedProvider = normalizeDeploymentProvider(
     findModelProvider(modelProviders, 'QWEN3.7'),
   );
 
-  return hasQwenModel && hasAlibabaProvider && selectedProvider === 'alibabaCloud';
+  return hasQwenModel && availableProviders.has(selectedProvider) && qwenProviders.has(selectedProvider);
 }
 
 function filterWan27WithoutConfiguredProvider(models = []) {
@@ -113,6 +116,52 @@ function appendUnique(target, values) {
   });
 }
 
+function hasGoogleInferenceCredential() {
+  if (hasEnvCredential(
+    'GOOGLE_APPLICATION_CREDENTIALS_JSON_B64',
+    'GOOGLE_APPLICATION_CREDENTIALS_JSON',
+    'GOOGLE_APPLICATION_CREDENTIALS',
+  )) {
+    return true;
+  }
+  return hasEnvCredential(
+    'GOOGLE_CLOUD_PROJECT',
+    'GOOGLE_PROJECT_ID',
+    'GCP_PROJECT',
+    'GCLOUD_PROJECT',
+    'PROJECT_ID',
+  ) && hasEnvCredential('K_SERVICE', 'GAE_SERVICE', 'FUNCTION_TARGET', 'GCE_METADATA_HOST');
+}
+
+function mergeRuntimeInferenceProviderSelections(availability) {
+  const hasOpenRouter = hasEnvCredential('OPENROUTER_API_KEY');
+  const hasSamsar = hasEnvCredential('SAMSAR_API_KEY');
+  const priorities = {
+    'gpt-5.6-sol': ['openai', 'openrouter', 'samsar'],
+    'gemini-3.1-pro': ['googleCloud', 'openrouter', 'samsar'],
+    'QWEN3.7': ['alibabaCloud', 'openrouter', 'samsar'],
+  };
+  const configured = {
+    openai: hasEnvCredential('OPENAI_API_KEY'),
+    googleCloud: hasGoogleInferenceCredential(),
+    alibabaCloud: hasEnvCredential(
+      'ALIBABA_API_KEY',
+      'DASHSCOPE_API_KEY',
+      'ALIBABA_CLOUD_API_KEY',
+      'QWEN_API_KEY',
+    ),
+    openrouter: hasOpenRouter,
+    samsar: hasSamsar,
+  };
+
+  for (const [model, providerPriority] of Object.entries(priorities)) {
+    const provider = providerPriority.find((candidate) => configured[candidate]);
+    if (!provider) continue;
+    availability.modelProviders[model] = provider;
+    availability.modelProviderPriority[model] = [...providerPriority];
+  }
+}
+
 export function mergeRuntimeInferenceDeploymentAvailability(value = {}) {
   const configuredProviders = normalizeStringList(value?.providers);
   const configuredModels = normalizeStringList(value?.models);
@@ -136,8 +185,20 @@ export function mergeRuntimeInferenceDeploymentAvailability(value = {}) {
 
   if (hasEnvCredential('ALIBABA_API_KEY', 'DASHSCOPE_API_KEY', 'ALIBABA_CLOUD_API_KEY', 'QWEN_API_KEY')) {
     appendUnique(merged.providers, ['alibabaCloud']);
-    appendUnique(merged.models, ['HAPPYHORSEI2V', 'WAN2.7PRO']);
-    appendUnique(merged.actions, ['image', 'video']);
+    appendUnique(merged.models, ['QWEN3.7', 'HAPPYHORSEI2V', 'WAN2.7PRO']);
+    appendUnique(merged.actions, ['chat', 'assistant', 'image', 'video']);
+  }
+
+  if (hasEnvCredential('OPENAI_API_KEY')) {
+    appendUnique(merged.providers, ['openai']);
+    appendUnique(merged.models, ['gpt-5.6-sol']);
+    appendUnique(merged.actions, ['chat', 'assistant']);
+  }
+
+  if (hasGoogleInferenceCredential()) {
+    appendUnique(merged.providers, ['googleCloud']);
+    appendUnique(merged.models, ['gemini-3.1-pro']);
+    appendUnique(merged.actions, ['chat', 'assistant']);
   }
 
   if (hasEnvCredential('FAL_API_KEY')) {
@@ -148,9 +209,17 @@ export function mergeRuntimeInferenceDeploymentAvailability(value = {}) {
 
   if (hasEnvCredential('SAMSAR_API_KEY')) {
     appendUnique(merged.providers, ['samsar']);
-    appendUnique(merged.models, ['gpt-5.6-sol', 'gemini-3.1-pro', 'HAPPYHORSEI2V', 'WAN2.7PRO']);
+    appendUnique(merged.models, ['gpt-5.6-sol', 'gemini-3.1-pro', 'QWEN3.7', 'HAPPYHORSEI2V', 'WAN2.7PRO']);
     appendUnique(merged.actions, ['chat', 'assistant', 'image', 'video']);
   }
+
+  if (hasEnvCredential('OPENROUTER_API_KEY')) {
+    appendUnique(merged.providers, ['openrouter']);
+    appendUnique(merged.models, ['gpt-5.6-sol', 'gemini-3.1-pro', 'QWEN3.7']);
+    appendUnique(merged.actions, ['chat', 'assistant']);
+  }
+
+  mergeRuntimeInferenceProviderSelections(merged);
 
   return merged;
 }

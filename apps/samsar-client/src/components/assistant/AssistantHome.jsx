@@ -817,7 +817,7 @@ export default function AssistantHome(props) {
               ) : null}
               {isDockerInstall && !isInferenceModelAvailabilityLoading && !hasConfiguredInferenceModels ? (
                 <div className="mb-3 rounded-2xl border border-amber-400/30 bg-amber-400/10 px-3 py-2 text-xs font-medium text-amber-600 dark:text-amber-200">
-                  Configure OpenAI, Google Cloud, or a Samsar API key in setup to use the assistant.
+                  Configure OpenAI, Google Cloud, Alibaba Cloud, OpenRouter, or a Samsar API key in setup to use the assistant.
                 </div>
               ) : null}
               <TextareaAutosize

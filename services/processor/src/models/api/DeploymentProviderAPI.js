@@ -13,7 +13,7 @@ export const DEPLOYMENT_PROVIDER_CAPABILITIES = Object.freeze({
   samsar: {
     label: 'Samsar API Key',
     requiredFor: ['All models', 'All actions'],
-    models: ['gpt-5.6-sol', 'gemini-3.1-pro', 'GPTIMAGE2', 'WAN2.7PRO', 'RUNWAYML', 'VEO3.1I2V', 'HAPPYHORSEI2V', 'LYRIA3', 'OPENAI_TTS', 'GOOGLE_TTS', 'MMAUDIO', 'LATENT_SYNC'],
+    models: ['gpt-5.6-sol', 'gemini-3.1-pro', 'QWEN3.7', 'GPTIMAGE2', 'WAN2.7PRO', 'RUNWAYML', 'VEO3.1I2V', 'HAPPYHORSEI2V', 'LYRIA3', 'OPENAI_TTS', 'GOOGLE_TTS', 'MMAUDIO', 'LATENT_SYNC'],
     actions: ['chat', 'assistant', 'image', 'video', 'audio', 'lip_sync', 'sound_effect'],
   },
   openai: {
@@ -21,6 +21,12 @@ export const DEPLOYMENT_PROVIDER_CAPABILITIES = Object.freeze({
     requiredFor: ['GPT 5.6 Sol', 'assistant', 'vision', 'moderation', 'OpenAI image', 'OpenAI TTS'],
     models: ['gpt-5.6-sol', 'GPTIMAGE2', 'OPENAI_TTS'],
     actions: ['chat', 'assistant', 'moderation', 'image', 'audio'],
+  },
+  openrouter: {
+    label: 'OpenRouter',
+    requiredFor: ['GPT 5.6 Sol', 'Gemini 3.1 Pro', 'Qwen 3.7 text and vision'],
+    models: ['gpt-5.6-sol', 'gemini-3.1-pro', 'QWEN3.7'],
+    actions: ['chat', 'assistant'],
   },
   googleCloud: {
     label: 'Google Cloud',
@@ -132,6 +138,12 @@ export async function validateDeploymentProviderCredentials(payload = {}) {
     providerResults.openai = await validateOpenAIKey(normalizeString(payload.openaiApiKey || payload.openai_api_key));
   }
 
+  if (normalizeString(payload.openrouterApiKey || payload.openrouter_api_key)) {
+    providerResults.openrouter = await validateOpenRouterKey(
+      normalizeString(payload.openrouterApiKey || payload.openrouter_api_key),
+    );
+  }
+
   const alibabaApiKey = normalizeString(
     payload.dashscopeApiKey ||
     payload.dashscope_api_key ||
@@ -208,6 +220,26 @@ async function validateOpenAIKey(apiKey) {
   } catch (error) {
     return providerResult('openai', 'error', {
       message: error?.message || 'Unable to validate OpenAI API key.',
+    });
+  }
+}
+
+async function validateOpenRouterKey(apiKey) {
+  try {
+    const response = await fetch('https://openrouter.ai/api/v1/models', {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${apiKey}` },
+    });
+    if (!response.ok) {
+      return providerResult('openrouter', 'invalid', {
+        statusCode: response.status,
+        message: 'OpenRouter rejected the API key.',
+      });
+    }
+    return providerResult('openrouter', 'valid');
+  } catch (error) {
+    return providerResult('openrouter', 'error', {
+      message: error?.message || 'Unable to validate OpenRouter API key.',
     });
   }
 }

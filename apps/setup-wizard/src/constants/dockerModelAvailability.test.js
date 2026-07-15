@@ -46,6 +46,20 @@ test('Samsar exposes GPT 5.6 Sol, Gemini 3.1 Pro, and Qwen 3.7', () => {
   }
 });
 
+test('OpenRouter alone exposes GPT, Gemini, and Qwen inference', () => {
+  const available = buildDockerAvailableModelsFromEnabledProviders([
+    DOCKER_PROVIDER.OPENROUTER,
+  ]);
+  assert.deepEqual(
+    getAvailableInferenceModels(available),
+    ['QWEN3.7', 'gemini-3.1-pro', 'gpt-5.6-sol'],
+  );
+  assert.deepEqual(available.actions, ['assistant', 'chat']);
+  for (const model of INFERENCE_MODEL_KEYS) {
+    assert.equal(available.modelProviders[model], DOCKER_PROVIDER.OPENROUTER);
+  }
+});
+
 test('no enabled provider exposes no Qwen model', () => {
   const available = buildDockerAvailableModelsFromEnabledProviders([]);
 
@@ -53,8 +67,12 @@ test('no enabled provider exposes no Qwen model', () => {
   assert.equal(available.modelProviders['QWEN3.7'], undefined);
 });
 
-test('Alibaba Cloud takes priority over Samsar for Qwen 3.7', () => {
-  const enabledProviders = [DOCKER_PROVIDER.SAMSAR, DOCKER_PROVIDER.ALIBABA_CLOUD];
+test('Qwen priority is Alibaba Cloud, OpenRouter, then Samsar', () => {
+  const enabledProviders = [
+    DOCKER_PROVIDER.SAMSAR,
+    DOCKER_PROVIDER.OPENROUTER,
+    DOCKER_PROVIDER.ALIBABA_CLOUD,
+  ];
   const available = buildDockerAvailableModelsFromEnabledProviders(enabledProviders);
 
   assert.equal(
@@ -64,8 +82,14 @@ test('Alibaba Cloud takes priority over Samsar for Qwen 3.7', () => {
   assert.equal(available.modelProviders['QWEN3.7'], DOCKER_PROVIDER.ALIBABA_CLOUD);
   assert.deepEqual(available.modelProviderPriority['QWEN3.7'], [
     DOCKER_PROVIDER.ALIBABA_CLOUD,
+    DOCKER_PROVIDER.OPENROUTER,
     DOCKER_PROVIDER.SAMSAR,
   ]);
+
+  assert.equal(
+    resolveDockerModelProvider('QWEN3.7', [DOCKER_PROVIDER.SAMSAR, DOCKER_PROVIDER.OPENROUTER]),
+    DOCKER_PROVIDER.OPENROUTER,
+  );
 });
 
 test('Happy Horse resolves Alibaba then FAL then Samsar', () => {

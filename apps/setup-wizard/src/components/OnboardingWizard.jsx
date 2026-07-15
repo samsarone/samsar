@@ -55,6 +55,18 @@ const PROVIDERS = [
     credentialLabel: 'Service account JSON',
   },
   {
+    key: 'openrouter',
+    title: 'OpenRouter',
+    type: 'native',
+    field: 'openrouterApiKey',
+    inputType: 'password',
+    placeholder: 'OpenRouter API key',
+    requiredFor: 'Alternative inference adapter for GPT 5.6 Sol, Gemini 3.1 Pro, and Qwen 3.7 text and vision',
+    pricingUrl: 'https://openrouter.ai/pricing',
+    keysUrl: 'https://openrouter.ai/settings/keys',
+    credentialLabel: 'API key',
+  },
+  {
     key: 'alibabaCloud',
     title: 'Alibaba Cloud',
     type: 'native',
@@ -140,37 +152,37 @@ const CAPABILITY_FAMILIES = {
   gpt56: {
     key: 'gpt56',
     label: 'GPT 5.6 Sol',
-    providerKeys: ['openai', 'samsar'],
+    providerKeys: ['openai', 'openrouter', 'samsar'],
     modelKeys: ['gpt-5.6-sol'],
   },
   gemini: {
     key: 'gemini',
     label: 'Gemini',
-    providerKeys: ['googleCloud', 'samsar'],
+    providerKeys: ['googleCloud', 'openrouter', 'samsar'],
     modelKeys: ['gemini-3.1-pro'],
   },
   qwen: {
     key: 'qwen',
     label: 'Qwen 3.7',
-    providerKeys: ['alibabaCloud', 'samsar'],
+    providerKeys: ['alibabaCloud', 'openrouter', 'samsar'],
     modelKeys: ['QWEN3.7'],
   },
   gptAssistant: {
     key: 'gptAssistant',
     label: 'GPT Assistant',
-    providerKeys: ['openai', 'samsar'],
+    providerKeys: ['openai', 'openrouter', 'samsar'],
     modelKeys: ['gpt-5.6-sol'],
   },
   geminiAssistant: {
     key: 'geminiAssistant',
     label: 'Gemini Assistant',
-    providerKeys: ['googleCloud', 'samsar'],
+    providerKeys: ['googleCloud', 'openrouter', 'samsar'],
     modelKeys: ['gemini-3.1-pro'],
   },
   qwenAssistant: {
     key: 'qwenAssistant',
     label: 'Qwen Assistant',
-    providerKeys: ['alibabaCloud', 'samsar'],
+    providerKeys: ['alibabaCloud', 'openrouter', 'samsar'],
     modelKeys: ['QWEN3.7'],
   },
   openaiImage: {
@@ -428,6 +440,7 @@ const SETUP_SERVICE_CATALOG = [
 const DEFAULT_CREDENTIALS = Object.freeze({
   samsarApiKey: '',
   openaiApiKey: '',
+  openrouterApiKey: '',
   googleCredentialsJson: '',
   alibabaApiKey: '',
   alibabaApiHost: '',
@@ -1149,6 +1162,7 @@ function buildDeploymentPayload(
     providers: {
       samsar: { enabled: Boolean(sanitizedCredentials.samsarApiKey), validation: getProviderStatus(validationResult, 'samsar') },
       openai: { enabled: Boolean(sanitizedCredentials.openaiApiKey), validation: getProviderStatus(validationResult, 'openai') },
+      openrouter: { enabled: Boolean(sanitizedCredentials.openrouterApiKey), validation: getProviderStatus(validationResult, 'openrouter') },
       googleCloud: { enabled: Boolean(sanitizedCredentials.googleCredentialsJson), validation: getProviderStatus(validationResult, 'googleCloud') },
       alibabaCloud: { enabled: Boolean(sanitizedCredentials.alibabaApiKey), validation: getProviderStatus(validationResult, 'alibabaCloud') },
       fal: { enabled: Boolean(sanitizedCredentials.falApiKey), validation: getProviderStatus(validationResult, 'fal') },
@@ -1964,6 +1978,7 @@ export default function OnboardingWizard() {
 	      credentials: {
           ...credentials,
           alibabaApiKey: '',
+          openrouterApiKey: '',
         },
 	      services,
 	      mailConfig: {

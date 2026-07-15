@@ -24,6 +24,7 @@ import {
 } from './RequestInferenceModel.js';
 import {
   createSamsarExternalChatCompletion,
+  resolveConfiguredInferenceProvider,
   shouldUseSamsarExternalInference,
 } from './SamsarExternalInferenceAdapter.js';
 import { recordProviderUsageLog } from '../utils/ProviderUsageAudit.js';
@@ -186,7 +187,7 @@ async function getDescriptionForImage(activeImageRemoteLink, userInferenceModel 
   let response;
   let provider;
   if (shouldUseSamsarExternalInference(inferencePayload)) {
-    provider = 'samsar';
+    provider = resolveConfiguredInferenceProvider(model) || 'samsar';
     response = await createSamsarExternalChatCompletion(inferencePayload);
   } else if (isGeminiInferenceModel(model)) {
     provider = 'googleCloud';
