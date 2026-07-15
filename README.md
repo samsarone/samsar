@@ -22,7 +22,7 @@ Samsar is a generative video and media automation platform for turning prompts, 
 - Full Studio workspace for detailed, granular post-processing.
 - Sandboxed local logging, with logs and traces kept on your machine.
 - Multi-provider model routing so each operation can use the best available provider and model.
-- Native Qwen 3.7 orchestration through Alibaba Cloud, using Qwen 3.7 Max for text inference and Qwen 3.7 Plus for vision inputs.
+- OpenRouter-backed Qwen 3.7 orchestration in hosted deployments, with native Alibaba Qwen available only in Docker deployments.
 - Built-in search and recommendations for creating a generative video library and Studio knowledge base.
 
 ## Documentation
@@ -194,12 +194,33 @@ Provider availability is explicit. `npm run config:render` reads `runtime/config
 | OpenAI | Chat, assistant, image, image edit, audio, moderation, search, recommendations | `gpt-5.6-sol`, `GPTIMAGE2`, `GPTIMAGE2EDIT`, `OPENAI_TTS`. |
 | Google Cloud | Gemini, image, image edit, video, audio, moderation | `gemini-3.1-pro`, `VEO3.1I2V`, `VEO3.1I2VFAST`, `LYRIA3`, `GOOGLE_TTS`, `NANOBANANA2`, `NANOBANANA2EDIT`, `NANOBANANAPRO`, `NANOBANANAPROEDIT`. |
 | OpenRouter | Text/vision inference and assistant workflows through one routed credential | `gpt-5.6-sol`, `gemini-3.1-pro`, and `QWEN3.7`; text-only and image/video-input calls use the corresponding OpenRouter model mapping. |
-| Alibaba Cloud | Qwen text inference, vision analysis, and assistant workflows | Public model key `QWEN3.7`; Qwen 3.7 Max handles text-only tasks and Qwen 3.7 Plus handles requests containing image or video inputs. |
+| Alibaba Cloud | Native Qwen inference in Docker, plus Alibaba media models | Public model key `QWEN3.7` is available through the native adapter only when `CURRENT_ENV=docker`; Alibaba media-model routing is independent of the hosted Qwen inference rule. |
 | FAL | Image, image edit, video, audio, lip sync, sound effects | `SEEDREAM` (Seedream 5 Pro), `NANOBANANA2`, `NANOBANANA2EDIT`, `NANOBANANAPRO`, `NANOBANANAPROEDIT`, VEO via FAL, `COSMOS3SUPERI2V`, `SEEDANCEI2V`, Kling image-to-video, `HAPPYHORSEI2V` (Happy Horse 1.1 I2V), ElevenLabs/PlayAI/CassetteAI/AudioCraft via FAL, `MMAUDIOV2`, `MIRELOAI`, and lip sync model families. |
 | ElevenLabs | Speech and music | `ELEVENLABS`, `ELEVENLABS_MUSIC`. |
 | RunwayML | Video generation and image-to-video | `RUNWAYML`. |
 
-Direct native provider keys are used first when present, followed by OpenRouter and then the Samsar fallback. In Docker, one `OPENROUTER_API_KEY` makes all three supported inference selections available: GPT 5.6 Sol, Gemini 3.1 Pro, and Qwen 3.7, including their vision-input handling. A Samsar API key can act as fallback for supported inference and media stages when a direct credential and OpenRouter are missing or the request is configured for deployed Samsar authorization. The `QWEN3.7` model can be selected from user settings or supplied as the inference model for an express generation request. See [Providers and Models](pages/providers-and-models.md).
+In Docker, direct native provider keys are used first, followed by OpenRouter and then the Samsar fallback. Hosted Qwen routing is stricter: production, external-production, staging, and other non-Docker runtimes always send `QWEN3.7` inference through OpenRouter. A saved native or deployed authorization does not override that server-side policy. See [Providers and Models](pages/providers-and-models.md).
+
+## Inference Adapters
+
+The built-in inference adapters normalize stable model selections, text and vision payloads, structured output, timeouts, retries, and provider authorization across the processor and inference workers. They are separate from `configuration.custom_adapters`, which are user-supplied media-operation endpoints for workflows such as text-to-image, image-to-video, speech, music, and sound effects.
+
+| Deployment mode | Qwen inference route |
+| --- | --- |
+| Hosted `production`, `external-production`, `staging`, or any other non-Docker runtime | OpenRouter only. Native Alibaba and deployed Samsar authorization are ignored for Qwen inference. |
+| Docker (`CURRENT_ENV=docker`) | Native Alibaba first, then OpenRouter, then the Samsar deployed fallback. |
+| Docker with `SAMSAR_QWEN_OPENROUTER_ONLY=true` | OpenRouter only, matching hosted behavior. |
+
+The stable `QWEN3.7` selection maps text-only requests to `qwen/qwen3.7-max` and requests containing image or video input to `qwen/qwen3.7-plus`. These defaults can be changed with `OPENROUTER_QWEN_37_MAX_MODEL` and `OPENROUTER_QWEN_37_PLUS_MODEL`.
+
+| Runtime variable | Purpose |
+| --- | --- |
+| `OPENROUTER_API_KEY` | Required for hosted Qwen inference. One backend-only key is shared through `runtime/secrets/root.env`. |
+| `SAMSAR_QWEN_OPENROUTER_ONLY` | Forces Qwen through OpenRouter even if the runtime is identified as Docker. |
+| `OPENROUTER_QWEN_INFERENCE_TIMEOUT_MS` | Qwen-specific OpenRouter inference timeout; hosted production currently uses `120000`. |
+| `OPENROUTER_QWEN_MAX_RETRIES` | Qwen-specific OpenRouter retry count; hosted production currently uses `0` so a timed-out request is not duplicated. |
+
+The same adapter contract is used by `processor`, `generator`, `audio-generator`, `ai-video-layer-generator`, `express-video-listener`, and `assistant-query-processor`. This keeps provider selection consistent across chat, assistant, prompt generation, vision analysis, and express-video stages.
 
 ## API
 
@@ -341,8 +362,8 @@ All API provider keys are optional. Add only the credentials needed for the gene
 
 - `Samsar API key` only
 - `OpenRouter` only for GPT, Gemini, and Qwen text/vision inference and assistant workflows
-- `Alibaba Cloud` only for native Qwen 3.7 inference and assistant workflows
-- `Alibaba Cloud + Samsar API key` for native Qwen with Samsar fallback
+- `Alibaba Cloud` only for native Qwen 3.7 inference and assistant workflows in Docker
+- `Alibaba Cloud + Samsar API key` for native Qwen with Samsar fallback in Docker
 - `OpenAI + FAL`
 - `OpenAI + Samsar API key`
 - `Google Cloud service account + FAL`
@@ -405,7 +426,7 @@ curl -I http://localhost:8080/assets_v2/video/output/<session-id>/<file>.mp4
 
 If remote generation providers cannot fetch local media, run `scripts/start-local-media-tunnel.sh` and recreate the workers that call those providers. If the setup wizard already published the local media gateway, a `samsar-media-tunnel` container should be running and the worker env should contain the tunnel URL.
 
-If an OpenRouter-backed inference model is missing from a Docker deployment, confirm `providers.openrouter.enabled` is `true`, confirm `runtime/secrets/provider.credentials.json` contains the OpenRouter key, rerun `npm run config:render`, and recreate the processor and inference workers. If Qwen 3.7 alone is missing, validate Alibaba Cloud again or configure OpenRouter or a Samsar API key. Qwen is intentionally hidden when none of those providers is enabled.
+If an OpenRouter-backed inference model is missing from a Docker deployment, confirm `providers.openrouter.enabled` is `true`, confirm `runtime/secrets/provider.credentials.json` contains the OpenRouter key, rerun `npm run config:render`, and recreate the processor and inference workers. For hosted production and external-production, Qwen requires `OPENROUTER_API_KEY`; Alibaba credentials do not satisfy hosted Qwen inference. In Docker, Qwen can instead use validated Alibaba credentials or the configured Samsar fallback unless `SAMSAR_QWEN_OPENROUTER_ONLY=true`.
 
 For a remote Docker host, set `GRAFANA_ROOT_URL` and optionally `GRAFANA_DOMAIN`, `GRAFANA_PORT`, or `LOKI_PORT` before starting Compose.
 

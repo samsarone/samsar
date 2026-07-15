@@ -55,8 +55,8 @@ Response:
 | Step | Behavior |
 | --- | --- |
 | Credit charge | The processor charges the configured chat enhance credit cost before generation. |
-| Inference model | The user's selected inference model is normalized to `gpt-5.6` or `gemini-3.1-pro`; default is `gpt-5.6`. |
-| Provider routing | Native OpenAI or Google Gemini can be used. In Docker, Samsar external inference can be used when `SAMSAR_API_KEY` is configured and the matching native credential is absent. |
+| Inference model | The user's selected inference model is normalized to `gpt-5.6-sol`, `gemini-3.1-pro`, or `QWEN3.7`; default is `gpt-5.6-sol`. |
+| Provider routing | Docker uses the selected model's native provider, then OpenRouter, then the Samsar fallback. Hosted `QWEN3.7` always uses OpenRouter; native Alibaba Qwen is Docker-only. |
 | Persistence | Successful and failed API chat sessions are saved with metadata, input, output/error, model, and credit information. |
 | Refunds | If generation fails after credit charge, the route attempts to refund the charged credits. |
 
@@ -73,4 +73,4 @@ Credit headers:
 | --- | --- |
 | `processor` | Route, auth, credits, prompt construction, provider call, session persistence. |
 | `mongo` | User, credit, and API chat state. |
-| Provider | OpenAI, Google Cloud, or Samsar fallback depending on selected inference model and credentials. |
+| Provider | OpenAI, Google Cloud, OpenRouter, Docker-only native Alibaba Qwen, or the Samsar fallback depending on model, deployment mode, and credentials. |

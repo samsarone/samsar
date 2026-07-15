@@ -10,7 +10,7 @@ Provider configuration is driven by `runtime/config/samsar.config.json` or the s
 | OpenAI | `providers.openai.apiKey` -> `OPENAI_API_KEY` | Chat, assistant, image, audio, moderation, recommendations, search | `gpt-5.6-sol`, `GPTIMAGE2`, `OPENAI_TTS`. |
 | Google Cloud | `providers.googleCloud.credentialsJsonB64`, `projectId` | Chat, assistant, image, video, audio, moderation | `gemini-3.1-pro`, `VEO3.1I2V`, `VEO3.1I2VFAST`, `LYRIA3`, `GOOGLE_TTS`, `NANOBANANA2`, `NANOBANANAPRO`. |
 | OpenRouter | `runtime/secrets/provider.credentials.json` -> `OPENROUTER_API_KEY` | Chat, vision inference, assistant | `gpt-5.6-sol`, `gemini-3.1-pro`, `QWEN3.7`; each stable selection routes text and media-bearing requests to its corresponding OpenRouter model. The Gemini selection defaults to `google/gemini-3.1-pro-preview` and can be overridden with `providers.openrouter.gemini31ProModel`. |
-| Alibaba Cloud | `runtime/secrets/provider.credentials.json` -> `ALIBABA_API_KEY`, `ALIBABA_API_HOST` | Chat, vision inference, assistant, image, video | `QWEN3.7`, `WAN2.7PRO`, `HAPPYHORSEI2V`. |
+| Alibaba Cloud | `runtime/secrets/provider.credentials.json` -> `ALIBABA_API_KEY`, `ALIBABA_API_HOST` | Native Qwen chat, vision inference, and assistant in Docker; image and video routing where supported | `QWEN3.7`, `WAN2.7PRO`, `HAPPYHORSEI2V`. Hosted Qwen inference does not use the native Alibaba adapter. |
 | FAL | `providers.fal.apiKey` -> `FAL_API_KEY` | Image, video, audio, lip sync, sound effects | `SEEDREAM` (Seedream 5 Pro), `NANOBANANA2`, `NANOBANANAPRO`, `VEO3.1I2V`, `VEO3.1I2VFAST`, `COSMOS3SUPERI2V`, `SEEDANCEI2V`, `KLINGIMGTOVID3PRO`, `KLINGIMGTOVIDTURBO`, `HAPPYHORSEI2V` (Happy Horse 1.1 I2V), `ELEVENLABS_MUSIC`, `ELEVENLABS`, `MMAUDIOV2`, `MIRELOAI`, `SYNCLIPSYNC`, `LATENTSYNC`, `KLINGLIPSYNC`, `HUMMINGBIRDLIPSYNC`, `CREATIFYLIPSYNC`. |
 | ElevenLabs | `providers.elevenlabs.apiKey` -> `ELEVENLABS_API_KEY`, `ELEVENLABS_API_TOKEN` | Audio | `ELEVENLABS`, `ELEVENLABS_MUSIC`. |
 | RunwayML | `providers.runway.apiKey` -> `RUNWAY_API_KEY`, `RUNWAYML_API_KEY` | Video | `RUNWAYML`. |
@@ -37,16 +37,30 @@ The video API reads this file through `DeploymentModelConfig` and filters `GET /
 
 ## Fallback Rules
 
-Direct provider credentials are preferred when they exist. OpenRouter is the next inference route, and Docker deployments can use `SAMSAR_API_KEY` as the final deployed provider fallback.
+Inference routing depends on the deployment mode. Docker keeps the configurable native-first fallback chain. Hosted Qwen inference is OpenRouter-only.
 
 The code uses this fallback in two places:
 
 | Area | Fallback behavior |
 | --- | --- |
-| Chat/inference compatibility | In Docker, GPT, Gemini, and Qwen use their direct provider first, then `OPENROUTER_API_KEY`, then `SAMSAR_API_KEY`. OpenRouter and Samsar adapters handle both text-only and supported image/video-input requests. |
+| Hosted Qwen inference | In `production`, `external-production`, `staging`, and any other non-Docker runtime, `QWEN3.7` always uses `OPENROUTER_API_KEY`. Saved native or deployed authorization and Alibaba credentials do not override this rule. |
+| Docker chat/inference compatibility | GPT, Gemini, and Qwen use their direct provider first, then `OPENROUTER_API_KEY`, then `SAMSAR_API_KEY`. Set `SAMSAR_QWEN_OPENROUTER_ONLY=true` to force Qwen through OpenRouter in Docker as well. |
 | Express video stages | Text-to-image and image-to-video stages can be marked as deployed Samsar provider stages when the Samsar key is present and no native/custom adapter credential is available for the requested model. |
 
 Current embedding/search implementation note: although the setup availability matrix includes `search` and `recommendations` for Samsar, `EmbeddingService` calls OpenAI embeddings directly with `text-embedding-3-large` and checks `OPENAI_API_KEY`. URL crawling also requires `FIRECRAWL_API_KEY`.
+
+## OpenRouter Qwen Adapter
+
+`QWEN3.7` is the stable public model key. The OpenRouter adapter selects the provider model from the request contents:
+
+| Request | Default OpenRouter model |
+| --- | --- |
+| Text only | `qwen/qwen3.7-max` |
+| Contains image or video input | `qwen/qwen3.7-plus` |
+
+`OPENROUTER_QWEN_37_MAX_MODEL` and `OPENROUTER_QWEN_37_PLUS_MODEL` override those mappings. `OPENROUTER_QWEN_INFERENCE_TIMEOUT_MS` and `OPENROUTER_QWEN_MAX_RETRIES` control Qwen-specific timeout and retry behavior; hosted production currently uses `120000` milliseconds and `0` retries.
+
+The adapter policy is shared by the processor, generator, audio generator, AI video layer generator, express video listener, and assistant query processor. `configuration.custom_adapters` is a separate media-operation feature and cannot override the hosted Qwen inference route.
 
 ## Model Groups Used by Video APIs
 
