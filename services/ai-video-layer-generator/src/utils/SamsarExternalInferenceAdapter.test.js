@@ -39,6 +39,7 @@ const ENV_KEYS = [
   'OPENROUTER_GPT_56_SOL_MODEL',
   'SAMSAR_EXTERNAL_INFERENCE_ENABLED',
   'SAMSAR_FORCE_EXTERNAL_INFERENCE',
+  'SAMSAR_QWEN_OPENROUTER_ONLY',
 ];
 const originalEnv = Object.fromEntries(ENV_KEYS.map((key) => [key, process.env[key]]));
 
@@ -99,6 +100,20 @@ test('hosted Qwen retry prompts use OpenRouter even when Alibaba is configured',
   );
   assert.equal(shouldUseOpenRouterInference(request), true);
   assert.equal(shouldUseSamsarExternalInference(request), true);
+});
+
+test('external production and staging Qwen use OpenRouter instead of native adapters', () => {
+  for (const environment of ['external-production', 'staging']) {
+    ENV_KEYS.forEach((key) => delete process.env[key]);
+    process.env.CURRENT_ENV = environment;
+    process.env.OPENROUTER_API_KEY = 'openrouter-test-key';
+    process.env.ALIBABA_API_KEY = 'alibaba-test-key';
+
+    const request = { model: 'QWEN3.7', authorization: 'deployed' };
+    assert.equal(resolveConfiguredInferenceProvider('QWEN3.7'), DOCKER_INFERENCE_PROVIDER.OPENROUTER);
+    assert.equal(shouldUseOpenRouterInference(request), true);
+    assert.equal(shouldUseSamsarExternalInference(request), true);
+  }
 });
 
 test('OpenRouter maps Qwen text and vision requests to the matching deployment', () => {

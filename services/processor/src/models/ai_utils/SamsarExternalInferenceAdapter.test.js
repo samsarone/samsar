@@ -10,6 +10,8 @@ const ENV_KEYS = [
   'SAMSAR_FORCE_EXTERNAL_INFERENCE',
   'OPENAI_API_KEY',
   'OPENROUTER_API_KEY',
+  'OPENROUTER_QWEN_INFERENCE_TIMEOUT_MS',
+  'OPENROUTER_QWEN_MAX_RETRIES',
   'ALIBABA_API_KEY',
   'DASHSCOPE_API_KEY',
   'ALIBABA_CLOUD_API_KEY',
@@ -26,6 +28,7 @@ const ENV_KEYS = [
   'GAE_SERVICE',
   'FUNCTION_TARGET',
   'GCE_METADATA_HOST',
+  'SAMSAR_QWEN_OPENROUTER_ONLY',
 ];
 
 const originalEnv = Object.fromEntries(
@@ -215,6 +218,21 @@ test('production Qwen is constrained to OpenRouter even when Alibaba is configur
   assert.equal(shouldUseSamsarExternalInference({ model: 'QWEN3.7' }), true);
 });
 
+test('hosted and external Qwen never use native Alibaba routing', () => {
+  for (const environment of ['production', 'external-production', 'staging']) {
+    clearProviderEnv();
+    process.env.CURRENT_ENV = environment;
+    process.env.ALIBABA_API_KEY = 'test-alibaba-key';
+    process.env.OPENROUTER_API_KEY = 'test-openrouter-key';
+
+    assert.equal(resolveConfiguredInferenceProvider('QWEN3.7'), DOCKER_INFERENCE_PROVIDER.OPENROUTER);
+    assert.equal(shouldUseSamsarExternalInference({
+      model: 'QWEN3.7',
+      authorization: 'deployed',
+    }), true);
+  }
+});
+
 test('OpenRouter adapter sends OpenAI-compatible vision requests with the Plus deployment', async (t) => {
   clearProviderEnv();
   process.env.CURRENT_ENV = 'production';
@@ -239,6 +257,30 @@ test('OpenRouter adapter sends OpenAI-compatible vision requests with the Plus d
   assert.equal(capturedPayload.model, 'qwen/qwen3.7-plus');
   assert.equal(capturedPayload.messages[0].content[0].type, 'image_url');
   assert.equal(capturedOptions.timeout, 12345);
+});
+
+test('production Qwen OpenRouter controls cap timeout and disable SDK retries', async (t) => {
+  clearProviderEnv();
+  process.env.CURRENT_ENV = 'production';
+  process.env.OPENROUTER_API_KEY = 'test-openrouter-key';
+  process.env.SAMSAR_QWEN_OPENROUTER_ONLY = 'true';
+  process.env.OPENROUTER_QWEN_INFERENCE_TIMEOUT_MS = '120000';
+  process.env.OPENROUTER_QWEN_MAX_RETRIES = '0';
+  let capturedOptions;
+  t.mock.method(OpenAI.Chat.Completions.prototype, 'create', async (_payload, options) => {
+    capturedOptions = options;
+    return { choices: [{ message: { role: 'assistant', content: 'ok' } }] };
+  });
+
+  await createOpenRouterChatCompletion({
+    model: 'QWEN3.7',
+    messages: [{ role: 'user', content: 'hello' }],
+    timeout: 180000,
+    maxRetries: 2,
+  });
+
+  assert.equal(capturedOptions.timeout, 120000);
+  assert.equal(capturedOptions.maxRetries, 0);
 });
 
 test('deployed authorization routes Qwen through Samsar even when native Alibaba auth exists', () => {

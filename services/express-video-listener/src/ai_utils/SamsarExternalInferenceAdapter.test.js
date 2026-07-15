@@ -5,6 +5,7 @@ import {
   DOCKER_INFERENCE_PROVIDER,
   getOpenRouterModelForInferenceRequest,
   resolveConfiguredInferenceProvider,
+  shouldUseOpenRouterInference,
   shouldUseSamsarExternalInference,
 } from './SamsarExternalInferenceAdapter.js';
 
@@ -19,6 +20,7 @@ const ENV_KEYS = [
   'SAMSAR_API_KEY',
   'SAMSAR_EXTERNAL_INFERENCE_ENABLED',
   'SAMSAR_FORCE_EXTERNAL_INFERENCE',
+  'SAMSAR_QWEN_OPENROUTER_ONLY',
 ];
 
 function withEnvironment(overrides, callback) {
@@ -71,6 +73,21 @@ test('OpenRouter is the Docker fallback for all inference and Qwen vision models
       messages: [{ role: 'user', content: [{ type: 'input_image', image_url: 'frame' }] }],
     }), 'qwen/qwen3.7-plus');
   });
+});
+
+test('hosted and external Qwen always use OpenRouter even with Alibaba credentials', () => {
+  for (const environment of ['production', 'external-production', 'staging']) {
+    withEnvironment({
+      CURRENT_ENV: environment,
+      OPENROUTER_API_KEY: 'openrouter-key',
+      ALIBABA_API_KEY: 'alibaba-key',
+    }, () => {
+      const request = { model: 'QWEN3.7', authorization: 'deployed' };
+      assert.equal(resolveConfiguredInferenceProvider('QWEN3.7'), DOCKER_INFERENCE_PROVIDER.OPENROUTER);
+      assert.equal(shouldUseOpenRouterInference(request), true);
+      assert.equal(shouldUseSamsarExternalInference(request), true);
+    });
+  }
 });
 
 test('the existing GPT and Gemini native-credential decisions are unchanged', () => {

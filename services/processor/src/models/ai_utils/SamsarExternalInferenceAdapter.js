@@ -213,12 +213,18 @@ function getInferenceProviderPriority(model) {
 }
 
 function isDockerInferenceRuntime() {
-  const environment = getCurrentEnvironment();
-  return environment === 'docker' || environment === 'staging';
+  return normalizeString(process.env.CURRENT_ENV).toLowerCase() === 'docker';
+}
+
+function isQwenOpenRouterOnly(model) {
+  return isQwenInferenceModel(model) && (
+    isTruthyEnv(process.env.SAMSAR_QWEN_OPENROUTER_ONLY) ||
+    !isDockerInferenceRuntime()
+  );
 }
 
 function getRuntimeInferenceProviderPriority(model) {
-  if (!isDockerInferenceRuntime() && isQwenInferenceModel(model)) {
+  if (isQwenOpenRouterOnly(model)) {
     return [DOCKER_INFERENCE_PROVIDER.OPENROUTER];
   }
   return getInferenceProviderPriority(model);
@@ -259,9 +265,10 @@ export function getOpenRouterModelForInferenceRequest(chatRequest = {}, env = pr
 
 export function shouldUseOpenRouterInference(chatRequest = {}) {
   if (!chatRequest || typeof chatRequest !== 'object') return false;
+  const model = getRequestedInferenceModel(chatRequest);
+  if (isQwenOpenRouterOnly(model)) return true;
   if (isOpenRouterAuthorization(chatRequest.authorization)) return true;
   if (isDeployedAuthorization(chatRequest.authorization)) return false;
-  const model = getRequestedInferenceModel(chatRequest);
   return resolveConfiguredInferenceProvider(model) === DOCKER_INFERENCE_PROVIDER.OPENROUTER;
 }
 
@@ -283,17 +290,29 @@ export async function createOpenRouterChatCompletion(chatRequest = {}) {
     ...request
   } = chatRequest || {};
   const requestedModel = getRequestedInferenceModel(chatRequest);
+  const qwenOpenRouterOnly = isQwenOpenRouterOnly(requestedModel);
   const effort = reasoning?.effort || reasoning_effort || (
     isOpenAIInferenceModel(requestedModel)
       ? getReasoningEffortForInferenceModel(requestedModel)
       : undefined
   );
+  let requestTimeout = Number(
+    timeout ?? timeoutMs ?? process.env.OPENROUTER_INFERENCE_TIMEOUT_MS,
+  ) || DEFAULT_EXTERNAL_INFERENCE_TIMEOUT_MS;
+  const qwenTimeout = Number(process.env.OPENROUTER_QWEN_INFERENCE_TIMEOUT_MS);
+  if (qwenOpenRouterOnly && Number.isFinite(qwenTimeout) && qwenTimeout > 0) {
+    requestTimeout = Math.min(requestTimeout, Math.floor(qwenTimeout));
+  }
   const options = {
-    timeout: Number(timeout ?? timeoutMs ?? process.env.OPENROUTER_INFERENCE_TIMEOUT_MS) ||
-      DEFAULT_EXTERNAL_INFERENCE_TIMEOUT_MS,
+    timeout: requestTimeout,
   };
   const retries = Number(maxRetries);
-  if (Number.isInteger(retries) && retries >= 0) options.maxRetries = retries;
+  const qwenRetries = Number(process.env.OPENROUTER_QWEN_MAX_RETRIES);
+  if (qwenOpenRouterOnly && Number.isInteger(qwenRetries) && qwenRetries >= 0) {
+    options.maxRetries = qwenRetries;
+  } else if (Number.isInteger(retries) && retries >= 0) {
+    options.maxRetries = retries;
+  }
 
   return client.chat.completions.create({
     ...request,
@@ -341,9 +360,7 @@ export function shouldUseSamsarExternalInference(chatRequest = {}) {
     return false;
   }
   const inferenceModel = getRequestedInferenceModel(chatRequest);
-  if (!isDockerInferenceRuntime() && isQwenInferenceModel(inferenceModel)) {
-    return true;
-  }
+  if (isQwenOpenRouterOnly(inferenceModel)) return true;
   if (chatRequest.bypassSamsarExternalInference || chatRequest.samsarExternalInference === false) {
     return false;
   }
@@ -359,9 +376,7 @@ export function shouldUseSamsarExternalInference(chatRequest = {}) {
 }
 
 export async function createSamsarExternalChatCompletion(chatRequest = {}) {
-  if (shouldUseOpenRouterInference(chatRequest) || (
-    !isDockerInferenceRuntime() && isQwenInferenceModel(getRequestedInferenceModel(chatRequest))
-  )) {
+  if (shouldUseOpenRouterInference(chatRequest)) {
     return createOpenRouterChatCompletion(chatRequest);
   }
   const client = getExternalClient();

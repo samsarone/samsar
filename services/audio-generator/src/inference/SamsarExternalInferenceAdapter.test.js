@@ -5,6 +5,7 @@ import {
   DOCKER_INFERENCE_PROVIDER,
   getOpenRouterModelForInferenceRequest,
   resolveConfiguredInferenceProvider,
+  shouldUseOpenRouterInference,
   shouldUseSamsarExternalInference,
 } from './SamsarExternalInferenceAdapter.js';
 
@@ -19,6 +20,7 @@ const ENV_KEYS = [
   'QWEN_API_KEY',
   'SAMSAR_API_KEY',
   'SAMSAR_EXTERNAL_INFERENCE_ENABLED',
+  'SAMSAR_QWEN_OPENROUTER_ONLY',
 ];
 
 function withEnvironment(overrides, callback) {
@@ -81,6 +83,21 @@ test('OpenRouter is preferred after native credentials and before Samsar for tex
     process.env.ALIBABA_API_KEY = 'alibaba-key';
     assert.equal(resolveConfiguredInferenceProvider('QWEN3.7'), DOCKER_INFERENCE_PROVIDER.ALIBABA_CLOUD);
   });
+});
+
+test('hosted and external Qwen always use OpenRouter instead of native adapters', () => {
+  for (const environment of ['production', 'external-production', 'staging']) {
+    withEnvironment({
+      CURRENT_ENV: environment,
+      OPENROUTER_API_KEY: 'openrouter-key',
+      ALIBABA_API_KEY: 'alibaba-key',
+    }, () => {
+      const request = { model: 'QWEN3.7', authorization: 'deployed' };
+      assert.equal(resolveConfiguredInferenceProvider('QWEN3.7'), DOCKER_INFERENCE_PROVIDER.OPENROUTER);
+      assert.equal(shouldUseOpenRouterInference(request), true);
+      assert.equal(shouldUseSamsarExternalInference(request), true);
+    });
+  }
 });
 
 test('explicit deployed authorization overrides native credentials for every inference provider', () => {
