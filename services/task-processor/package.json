@@ -12,7 +12,6 @@
   "dependencies": {
     "axios": "^1.7.7",
     "dotenv": "^16.4.5",
-    "mongoose": "^8.5.3",
-    "node-cron": "^3.0.3"
+    "mongoose": "^8.5.3"
   }
 }

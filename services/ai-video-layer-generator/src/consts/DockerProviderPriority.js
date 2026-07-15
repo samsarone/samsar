@@ -1,4 +1,5 @@
 export const DOCKER_VIDEO_PROVIDER = Object.freeze({
+  ALIBABA_CLOUD: 'alibabaCloud',
   GOOGLE_CLOUD: 'googleCloud',
   FAL: 'fal',
   RUNWAY: 'runway',
@@ -28,6 +29,11 @@ export const DOCKER_VIDEO_PROVIDER_PRIORITY_BY_MODEL = Object.freeze({
   ],
   RUNWAYML: [
     DOCKER_VIDEO_PROVIDER.RUNWAY,
+    DOCKER_VIDEO_PROVIDER.SAMSAR,
+  ],
+  HAPPYHORSEI2V: [
+    DOCKER_VIDEO_PROVIDER.ALIBABA_CLOUD,
+    DOCKER_VIDEO_PROVIDER.FAL,
     DOCKER_VIDEO_PROVIDER.SAMSAR,
   ],
 });
@@ -142,6 +148,15 @@ export function hasFalVideoCredential() {
   return hasEnvCredential('FAL_API_KEY');
 }
 
+export function hasAlibabaCloudVideoCredential() {
+  return hasEnvCredential(
+    'ALIBABA_API_KEY',
+    'DASHSCOPE_API_KEY',
+    'ALIBABA_CLOUD_API_KEY',
+    'QWEN_API_KEY',
+  );
+}
+
 export function hasRunwayVideoCredential() {
   return hasEnvCredential('RUNWAY_API_KEY', 'RUNWAYML_API_KEY');
 }
@@ -151,6 +166,9 @@ export function hasSamsarVideoCredential() {
 }
 
 export function isVideoProviderConfigured(provider) {
+  if (provider === DOCKER_VIDEO_PROVIDER.ALIBABA_CLOUD) {
+    return hasAlibabaCloudVideoCredential();
+  }
   if (provider === DOCKER_VIDEO_PROVIDER.GOOGLE_CLOUD) {
     return hasGoogleCloudVideoCredential();
   }

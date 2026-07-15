@@ -5,18 +5,27 @@ import { getHeaders } from "../utils/web.jsx";
 import {
   extractDeploymentInferenceModelValues,
   fetchDeploymentProviderConfig,
+  filterHostedInferenceModelOptions,
   filterOptionsForDeploymentInferenceModels,
 } from "../utils/deploymentProviders.js";
 
 const PROCESSOR_API_URL = import.meta.env.VITE_PROCESSOR_API || "";
 const IS_DOCKER_INSTALL = import.meta.env.VITE_DOCKER_INSTALL === "true";
-const ALL_INFERENCE_MODEL_VALUES = Object.freeze(INFERENCE_MODEL_TYPES.map((option) => option.value));
+const HOSTED_INFERENCE_MODEL_OPTIONS = Object.freeze(
+  filterHostedInferenceModelOptions(INFERENCE_MODEL_TYPES),
+);
+const HOSTED_ASSISTANT_MODEL_OPTIONS = Object.freeze(
+  filterHostedInferenceModelOptions(ASSISTANT_MODEL_TYPES),
+);
+const HOSTED_INFERENCE_MODEL_VALUES = Object.freeze(
+  HOSTED_INFERENCE_MODEL_OPTIONS.map((option) => option.value),
+);
 const EMPTY_DOCKER_AVAILABILITY = Object.freeze({
   modelValues: [],
   error: null,
 });
 const DEFAULT_AVAILABILITY = Object.freeze({
-  modelValues: ALL_INFERENCE_MODEL_VALUES,
+  modelValues: HOSTED_INFERENCE_MODEL_VALUES,
   error: null,
 });
 
@@ -89,12 +98,14 @@ export function useInferenceModelAvailability() {
     };
   }, []);
 
-  const modelValues = IS_DOCKER_INSTALL ? availability.modelValues || [] : ALL_INFERENCE_MODEL_VALUES;
+  const modelValues = IS_DOCKER_INSTALL
+    ? availability.modelValues || []
+    : HOSTED_INFERENCE_MODEL_VALUES;
   const inferenceModelOptions = useMemo(
     () => (
       IS_DOCKER_INSTALL
         ? filterOptionsForDeploymentInferenceModels(INFERENCE_MODEL_TYPES, modelValues)
-        : INFERENCE_MODEL_TYPES
+        : HOSTED_INFERENCE_MODEL_OPTIONS
     ),
     [modelValues]
   );
@@ -102,7 +113,7 @@ export function useInferenceModelAvailability() {
     () => (
       IS_DOCKER_INSTALL
         ? filterOptionsForDeploymentInferenceModels(ASSISTANT_MODEL_TYPES, modelValues)
-        : ASSISTANT_MODEL_TYPES
+        : HOSTED_ASSISTANT_MODEL_OPTIONS
     ),
     [modelValues]
   );

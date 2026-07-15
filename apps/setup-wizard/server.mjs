@@ -211,7 +211,9 @@ function runCommandCapture(command, args, options = {}) {
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, {
       cwd: options.cwd || ROOT_DIR,
-      env: { ...process.env, ...(options.env || {}) },
+      env: options.replaceEnv
+        ? { ...(options.env || {}) }
+        : { ...process.env, ...(options.env || {}) },
       shell: false,
     });
     let stdout = '';

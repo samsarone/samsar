@@ -3,7 +3,7 @@
 import OpenAI from "openai";
 import { z } from "zod";
 import { zodResponseFormat } from "openai/helpers/zod";
-import { PUBLICATION_METADATA_INFERENCE_SETTINGS } from "../../consts/InferenceModels.js";
+import { getPublicationMetadataInferenceSettings } from "../../consts/InferenceModels.js";
 import { createCompatibleChatCompletion } from "../ai_utils/OpenAICompat.js";
 import { buildPublicationMetadataInput } from "../publication/Transcript.js";
 
@@ -11,9 +11,12 @@ const API_KEY = process.env.OPENAI_API_KEY;
 const openai = new OpenAI({ apiKey: API_KEY || '' });
 
 
-export async function extractMetaForMovieResourceList(resourceList, { originalPrompt = '' } = {}) {
+export async function extractMetaForMovieResourceList(
+  resourceList,
+  { originalPrompt = '', inferenceModel = null } = {},
+) {
   const metadataInput = buildPublicationMetadataInput(resourceList, originalPrompt);
-  const titleAndDescription = await getTitleAndDescription(metadataInput);
+  const titleAndDescription = await getTitleAndDescription(metadataInput, inferenceModel);
 
   return {
     title: titleAndDescription.title,
@@ -22,7 +25,7 @@ export async function extractMetaForMovieResourceList(resourceList, { originalPr
 }
 
 
-async function getTitleAndDescription(resourceList) {
+async function getTitleAndDescription(resourceList, inferenceModel) {
 
   const systemPrompt = 'You generate publication metadata for a movie from its transcript and original prompt. Return only a concise title and a clear description.';
   const userPrompt = `Generate the title and description for this movie:\n${JSON.stringify(resourceList)}`;
@@ -45,7 +48,7 @@ async function getTitleAndDescription(resourceList) {
 
   const response = await createCompatibleChatCompletion(openai, {
     messages: messageList,
-    ...PUBLICATION_METADATA_INFERENCE_SETTINGS,
+    ...getPublicationMetadataInferenceSettings(inferenceModel),
     response_format: zodResponseFormat(TitleAndDescription, "title_and_description"),
   });
 

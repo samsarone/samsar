@@ -43,12 +43,15 @@ import {
   handleGoogleNanoBananaRequest,
   shouldUseGoogleNativeNanoBanana,
 } from './providers/GoogleNanoBananaNative.js';
+import { handleAlibabaWan27Request } from './providers/AlibabaWan27.js';
+import { handleFalWan27Request } from './providers/FalWan27.js';
 
 import { getCurrentEnvironment } from './utils/Environment.js';
 import { recordProviderUsageLog } from './utils/ProviderUsageAudit.js';
 import {
   DOCKER_ADAPTER_PROVIDER,
   resolveDockerImageGenerationProvider,
+  resolveWan27ImageGenerationProvider,
 } from './consts/DockerProviderPriority.js';
 
 import { handleHiDreamRequest } from './providers/HiDream.js';
@@ -74,6 +77,14 @@ import fs from 'fs';
 const MAX_CONCURRENT_REQUESTS = 4;
 const MAX_IMAGE_GENERATION_FAILURES = 3;
 const MAX_IMAGE_GENERATION_FILTER_RETRIES = 3;
+const IMAGE_GENERATION_RETRY_BASE_DELAY_MS = Math.max(
+  250,
+  Number(process.env.IMAGE_GENERATION_RETRY_BASE_DELAY_MS) || 2000,
+);
+const IMAGE_GENERATION_RETRY_MAX_DELAY_MS = Math.max(
+  IMAGE_GENERATION_RETRY_BASE_DELAY_MS,
+  Number(process.env.IMAGE_GENERATION_RETRY_MAX_DELAY_MS) || 30000,
+);
 const IMAGE_GENERATION_PROVIDER_PENDING_TIMEOUT_MS = Math.max(
   5 * 60 * 1000,
   Number(process.env.IMAGE_GENERATION_PROVIDER_PENDING_TIMEOUT_MS) || 20 * 60 * 1000
@@ -109,20 +120,36 @@ function normalizeRetryCount(value) {
   return Math.floor(count);
 }
 
+function getImageGenerationRetryDelayMs(nextFailureCount = 1) {
+  const retryIndex = Math.max(0, normalizeRetryCount(nextFailureCount) - 1);
+  return Math.min(
+    IMAGE_GENERATION_RETRY_MAX_DELAY_MS,
+    IMAGE_GENERATION_RETRY_BASE_DELAY_MS * (2 ** retryIndex),
+  );
+}
+
+function getImageGenerationNextAttemptAfter(nextFailureCount = 1, now = Date.now()) {
+  return new Date(Number(now) + getImageGenerationRetryDelayMs(nextFailureCount));
+}
+
 function normalizeString(value) {
   return typeof value === 'string' ? value.trim() : '';
 }
 
 function resolveImageProviderForModel(model, payload = {}) {
-  const dockerProvider = resolveDockerImageGenerationProvider(model);
-  if (dockerProvider) {
-    return dockerProvider;
-  }
-
   const normalizedModel = normalizeString(model).toUpperCase();
   if (!normalizedModel) {
     return '';
   }
+  if (normalizedModel === 'WAN2.7PRO') {
+    return resolveWan27ImageGenerationProvider(payload?.externalProvider);
+  }
+
+  const dockerProvider = resolveDockerImageGenerationProvider(normalizedModel);
+  if (dockerProvider) {
+    return dockerProvider;
+  }
+
   if (normalizedModel === 'DALLE3' || normalizedModel === 'GPTIMAGE2' || normalizedModel === 'GPTIMAGE1') {
     return 'openai';
   }
@@ -610,7 +637,7 @@ function normalizePromptForComparison(value) {
 }
 
 function isSafetyRejectionMessage(message = '') {
-  return /safety system|safety_violations|content policy|policy violation|request was rejected/i.test(
+  return /safety system|safety_violations|content policy|policy violation|request was rejected|inappropriate content/i.test(
     String(message || '')
   );
 }
@@ -862,6 +889,30 @@ function getBestFilterPass(filterPasses = [], minScore = null) {
   }
 
   return bestPass ? { pass: bestPass, score: bestScore } : null;
+}
+
+function buildActiveImageCandidate({
+  src,
+  remoteSrc,
+  description,
+  score,
+} = {}) {
+  const hasScore = score !== null && score !== undefined && score !== '';
+  const normalizedScore = hasScore ? Number(score) : Number.NaN;
+  return {
+    src: typeof src === 'string' ? src : '',
+    remoteSrc: typeof remoteSrc === 'string' ? remoteSrc : '',
+    description: typeof description === 'string' ? description : '',
+    score: Number.isFinite(normalizedScore) ? normalizedScore : null,
+  };
+}
+
+function normalizeOptionalScore(score) {
+  if (score === null || score === undefined || score === '') {
+    return null;
+  }
+  const normalizedScore = Number(score);
+  return Number.isFinite(normalizedScore) ? normalizedScore : null;
 }
 
 async function processBestFilterPassIfAvailable(payload, filterPasses = [], minScore = null) {
@@ -1123,6 +1174,12 @@ function shouldPreserveExpressImageLayerOnFailure(error) {
   return Boolean(error?.preserveExpressImageLayer || error?.nonPromptProviderFailure);
 }
 
+function shouldRetryUnhandledGenerationTask(payload = {}, error) {
+  return payload?.operationType === 'GENERATE' &&
+    Boolean(payload?.isBatchGeneration || payload?.retryOnFailure) &&
+    shouldPreserveExpressImageLayerOnFailure(error);
+}
+
 async function scheduleImageGenerationRetry(payload = {}, latestDoc, imageData, {
   source = 'image_generation_retry',
   updateLayerPrompt = true,
@@ -1176,6 +1233,7 @@ async function scheduleImageGenerationRetry(payload = {}, latestDoc, imageData, 
     generationStatus: 'INIT',
     apiGenerationStatus: 'INIT',
     failureRetryCount: nextFailureCount,
+    nextAttemptAfter: getImageGenerationNextAttemptAfter(nextFailureCount),
   };
   if (!latestDoc?.originalRetryPrompt) {
     setFields.originalRetryPrompt = retryPrompt;
@@ -1587,17 +1645,25 @@ async function processNextTask() {
       });
     } else {
       const preserveExpressImageLayer = shouldPreserveExpressImageLayerOnFailure(error);
-      await markImageGenerationRequestFailed(
-        activeTask,
-        { image: null, error: error?.message || 'Unhandled image generation error.' },
-        {
-          failureRetryCount: normalizeRetryCount(activeTask?.failureRetryCount) + 1,
-          source: preserveExpressImageLayer
-            ? 'image_generation_provider_configuration_error'
-            : 'image_generation_unhandled_error',
-          pruneLayer: !preserveExpressImageLayer,
-        }
-      );
+      const failureData = {
+        image: null,
+        error: error?.message || 'Unhandled image generation error.',
+      };
+      if (shouldRetryUnhandledGenerationTask(activeTask, error)) {
+        await handleNoImageRetryOrFailure(activeTask, failureData);
+      } else {
+        await markImageGenerationRequestFailed(
+          activeTask,
+          failureData,
+          {
+            failureRetryCount: normalizeRetryCount(activeTask?.failureRetryCount) + 1,
+            source: preserveExpressImageLayer
+              ? 'image_generation_provider_configuration_error'
+              : 'image_generation_unhandled_error',
+            pruneLayer: !preserveExpressImageLayer,
+          }
+        );
+      }
     }
   } finally {
     ongoingRequests--;
@@ -1621,11 +1687,22 @@ export async function processPendingImageRequests() {
 
   const pendingRequests = await ImageGeneration.find({
     rowLocked: false,
-    $or: [
-      { generationStatus: { $exists: true, $nin: TERMINAL_STATUSES } },
-      { editStatus: { $exists: true, $nin: TERMINAL_STATUSES } },
-      { $and: [{ generationStatus: { $exists: false } }, { editStatus: { $exists: false } }] }
-    ]
+    $and: [
+      {
+        $or: [
+          { generationStatus: { $exists: true, $nin: TERMINAL_STATUSES } },
+          { editStatus: { $exists: true, $nin: TERMINAL_STATUSES } },
+          { $and: [{ generationStatus: { $exists: false } }, { editStatus: { $exists: false } }] }
+        ],
+      },
+      {
+        $or: [
+          { nextAttemptAfter: { $exists: false } },
+          { nextAttemptAfter: null },
+          { nextAttemptAfter: { $lte: new Date() } },
+        ],
+      },
+    ],
   })
     .sort({ createdAt: 1 })
     .limit(MAX_CONCURRENT_REQUESTS);
@@ -1775,6 +1852,16 @@ async function processPendingGenerationRequet(pendingRequestData) {
       (!dockerProvider && shouldUseGoogleNativeNanoBanana(pendingRequestData))
       ? await handleGoogleNanoBananaRequest(pendingRequestData)
       : await handleNanoBananaFalRequest(pendingRequestData);
+    if (imageData) {
+      await updateImageInSessionLayer(imageData, pendingRequestData);
+    }
+  } else if (model === 'WAN2.7PRO') {
+    const wanProvider = resolveWan27ImageGenerationProvider(
+      pendingRequestData?.externalProvider,
+    );
+    const imageData = wanProvider === DOCKER_ADAPTER_PROVIDER.FAL
+      ? await handleFalWan27Request(pendingRequestData)
+      : await handleAlibabaWan27Request(pendingRequestData);
     if (imageData) {
       await updateImageInSessionLayer(imageData, pendingRequestData);
     }
@@ -2216,6 +2303,7 @@ async function handleNoImageRetryOrFailure(payload, imageData) {
           refilterImagePassNumber: nextPassNum,
           filterRetryCount: nextFilterRetryCount,
           prompt: newPrompt,
+          nextAttemptAfter: getImageGenerationNextAttemptAfter(nextFailureCount),
           ...(!latestDoc.originalRetryPrompt ? { originalRetryPrompt: retryPrompt } : {}),
         },
       });
@@ -2510,15 +2598,25 @@ async function processImageGenerationSuccess(imageData, payload, imageScore) {
 
   let updateFields = {};
   // If we did filter check and passed, store the score
-  if (imageFilterScoreRequired && imageScore) {
-    updateFields[`layers.${layerDataIndex}.refilterImageScore`] = imageScore;
+  const normalizedImageScore = normalizeOptionalScore(imageScore);
+  if (imageFilterScoreRequired && normalizedImageScore !== null) {
+    updateFields[`layers.${layerDataIndex}.refilterImageScore`] = normalizedImageScore;
   }
 
-  // Store final activeImageDescription now that it’s a success:
-  if (imageData.description && !preserveActiveSelectedImage) {
-
+  // Keep the selected image and its description aligned, including the empty
+  // description case so a newly selected image never inherits stale metadata.
+  if (!preserveActiveSelectedImage) {
+    const activeImageCandidate = buildActiveImageCandidate({
+      src: imageURL,
+      remoteSrc: remoteImageUrl,
+      description: imageData.description,
+      score: imageScore,
+    });
     updateFields[`layers.${layerDataIndex}.imageSession.activeImageDescription`] =
-      imageData.description;
+      activeImageCandidate.description;
+    updateFields[`layers.${layerDataIndex}.activeImageDescription`] =
+      activeImageCandidate.description;
+    updateFields[`layers.${layerDataIndex}.activeImageCandidate`] = activeImageCandidate;
   }
 
   // Clear filterPasses on final success
@@ -2538,6 +2636,9 @@ async function processImageGenerationSuccess(imageData, payload, imageScore) {
       src: imageURL,
       width: imageWidth,
       height: imageHeight,
+      description: imageData.description || '',
+      score: normalizedImageScore,
+      layerId,
     });
   }
   updateFields[`generations`] = sessionGenerations;
@@ -3475,6 +3576,12 @@ export const __testOnly__ = {
   buildImageThemeScoringContextForPayload,
   buildImageThemeScoringContextDetailsForPayload,
   getBestFilterPass,
+  buildActiveImageCandidate,
+  normalizeOptionalScore,
+  isSafetyRejectionMessage,
+  getImageGenerationRetryDelayMs,
+  getImageGenerationNextAttemptAfter,
+  shouldRetryUnhandledGenerationTask,
   getImageFilterScoreCutoff,
   getScoreThresholdCutoff,
   getTerminalFilterFailurePolicy,

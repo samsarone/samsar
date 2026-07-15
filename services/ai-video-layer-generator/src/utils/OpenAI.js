@@ -198,53 +198,44 @@ Emphasize how the camera enters or focuses on the setting to start the scene.`;
 
 
 function getTextToVideoSystemPromptForStartingLayerPrompt(videoTone, promptLength) {
-
-    let systemPrompt;
-
-
-  systemPrompt = `You are a filmmaking assistant for a generative video tool that creates cinematic animations.
-Given the scene prompt and the descriptions for the starting frame, create a concise image-to-video prompt in ${promptLength},
-that effectively transitions the starting frame using the desired camera transition.
-Ensure to add instructions, not to introduce any new or out-of-place objects, people, items, or anachronistic elements; maintain strict period and contextual accuracy based on the scene prompt and image descriptions.
-Ensure that the transition is in accordance with the contextual details provided in the scene prompt.
-Use the provided Starting frame description to guide character movements with reference to the camera and ensure the transition is smooth and coherent.
-Use the starting image and scene prompt to determine the transition and action, including any relevant keywords to reinforce the theme if needed.
-Refer to characters using general descriptors; avoid specific names, descriptions, locations, proper nouns, copyrighted material, or trademarks.
-Use simple language and avoid complicated terminology.
-Provide the prompt directly without any prefixes like 'Prompt:'.
+  let systemPrompt = `You are a filmmaking assistant for an image-to-video generation tool.
+Create a concise prompt in ${promptLength} that animates the starting frame according to the scene action and camera transition.
+Use the starting frame description to guide subject motion, camera movement, and scene continuity.
+Do not introduce new characters, props, text, or out-of-context elements.
+Use generic descriptors and plain language.
+Output only the finished prompt text, with no prefix or commentary.
 `;
 
   if (videoTone === 'grounded') {
     systemPrompt = `
-You are a filmmaking assistant for a generative video tool that creates realistic, physics and world aware animations from starting frame and instructions.
-Add instructions to ensure the animations are realistic, the surroundings do not move and the camera movement is minimal and grounded.
-Add instructions to ensure that objects do not move unnaturally and any movement of objects is realistic and world and physics aware.
-Write a text-to-video prompt of no more than ${promptLength}, that effectively transitions from the starting frame to perform the action described in the scene prompt.
-Add instructions in the result prompt to ensure the following-
-  Do not introduce any additional text or visualizations that are not present in the starting frame.
-  Do not add or remove any text during the animation or manipulate the text in the starting frame image.
-  Ensure the animations follow the laws of physics, are coherent with the world and realistic.
-  Do not modify any characters beyond the objects already present in the starting frame.
-  Do not to add extra elements that are not present in the starting frame.
-  Ensure that physics, world awareness and prompt coherence are maintained in any character or object movement.
-  Any action being performed is shown in the correct context and object interaction.
-  Ensure not to manipulate or modify any text or illustrations in the starting frame image during the animation.
-  Emphasize realism and coherence in the animation, ensuring that the actions performed by characters or objects seem natural and realistic.
-  Ensure no unnatural movements of animation of any characters or objects.
+You are a filmmaking assistant for a grounded image-to-video generation tool.
+Create a concise prompt in ${promptLength} that animates the starting frame according to the scene action.
+Use minimal camera movement and realistic, physics-aware subject/object motion.
+Preserve existing characters, objects, text, diagrams, and context; do not add, remove, duplicate, or distort elements.
+Show the requested action in the correct scene context with coherent world interaction.
 `;
+  }
 
-  } 
-
-
-  systemPrompt += 
-`Add instructions to ensure the following:
-  Refer to people with generic terms (“teacher,” “engineer”); avoid names, places, brands, and IP.  
-  Use clear, everyday language—no jargon.  
-  Output only the finished prompt text, without any prefix or commentary.
-  Use the provided camera transition as a guide for overall camera movement and scene transition.`;
+  systemPrompt += `Use generic terms for people and avoid names, places, brands, or IP.
+Use clear, everyday language.
+Do not add extra text or infographics beyond what is already present in the starting image.
+Output only the finished prompt text, without any prefix or commentary.`;
 
   return systemPrompt;
+}
 
+function getMotionContinuityInstruction(indexData = {}) {
+  const { isStartScene = false, isEndScene = false } = indexData;
+  if (isStartScene && isEndScene) {
+    return `\nTreat this as a self-contained shot: let motion begin naturally from the starting frame and resolve cleanly within the scene.`;
+  }
+  if (isStartScene) {
+    return `\nTreat this as the opening shot: let motion emerge naturally from the starting frame and ease into the action.`;
+  }
+  if (isEndScene) {
+    return `\nTreat this as the closing shot: let motion resolve naturally and finish cleanly without introducing a new action beat.`;
+  }
+  return `\nTreat this as a continuation shot: preserve motion continuity across camera, subjects, and layered elements, and avoid opening on a static hold unless the scene prompt explicitly calls for stillness.`;
 }
 
 
@@ -259,11 +250,7 @@ export async function createTextToVideoPromptFromStartingLayerPrompt(
   cameraTransitionLayer = null,
   auditContext = {}
 ) {
-  const { isStartScene, isEndScene } = indexData;
-
-  const promptLength = useShortFormPrompt
-    ? '2-3 lines maximum 150-200 characters,'
-    : '4-5 lines maximum 500-600 characters';
+  const promptLength = '4-5 lines maximum 500-600 characters';
 
   let userPrompt = `Scene action: ${startingPrompt}`;
   if (startingImageDescription) {
@@ -274,6 +261,7 @@ export async function createTextToVideoPromptFromStartingLayerPrompt(
     videoTone,
     promptLength
   );
+  systemPrompt += getMotionContinuityInstruction(indexData);
 
   if (cameraTransitionLayer) {
     systemPrompt += `\nUse the provided camera transition as a guide for the camera movement.`;
@@ -286,7 +274,7 @@ export async function createTextToVideoPromptFromStartingLayerPrompt(
     { role: 'user', content: userPrompt }
   ];
 
-  const MAX_CHARS = 600;
+  const MAX_CHARS = 900;
   const MAX_RETRIES = 3;
 
   try {
@@ -338,6 +326,7 @@ export async function getTransitionListForLayerSceneDescriptions(layerSceneDescr
   const systemPrompt = `You are a camera transition assistant tool for a generative video production tool.
   Provided a list of scenes as their starting frame description , give a short 1 line camera transition movement for each scene.
   The transitions should follow smoothly as a professional camera man would do to create a professional cinematic video.
+  Prefer natural, stable camera movement unless the scene explicitly requests stylized motion.
   Give one transition for each scene, the output should be a list of transitions, each in a newline, each transition should be a single line description of the camera movement without any line numbers or formatting strings.`;
 
 

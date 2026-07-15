@@ -91,6 +91,16 @@ export const IMAGE_MODEL_PRICES = [
       { aspectRatio: '9:16', price: 15 },
     ],
   },
+  {
+    key: 'WAN2.7PRO',
+    name: 'Wan2.7 Pro',
+    isExpressModel: true,
+    prices: [
+      { aspectRatio: '1:1', price: 15 },
+      { aspectRatio: '16:9', price: 15 },
+      { aspectRatio: '9:16', price: 15 },
+    ],
+  },
 ]
 
 

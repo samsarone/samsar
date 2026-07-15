@@ -7,6 +7,8 @@ import {
   setPostAuthRedirect,
 } from './web.jsx';
 
+const IS_DOCKER_INSTALL = import.meta.env.VITE_DOCKER_INSTALL === 'true';
+
 const AUTH_ROUTE_PATHS = new Set([
   '/login',
   '/register',
@@ -126,13 +128,14 @@ export async function resolvePostAuthDestination({
   redirect = null,
   createIfMissing = true,
 } = {}) {
-  const normalizedRedirect = sanitizeAuthRedirect(redirect);
+  const normalizedRedirect = IS_DOCKER_INSTALL ? null : sanitizeAuthRedirect(redirect);
   if (normalizedRedirect) return normalizedRedirect;
 
   const defaultPath = getDefaultAuthenticatedPath(user, { isMobile }) || '/vidgenie';
+  const destinationSearch = IS_DOCKER_INSTALL ? '' : search;
   const headers = getHeaders();
   if (!headers) {
-    return appendRouteSearch(defaultPath, search);
+    return appendRouteSearch(defaultPath, destinationSearch);
   }
 
   try {
@@ -141,11 +144,11 @@ export async function resolvePostAuthDestination({
       isMobile,
       apiServer,
       headers,
-      search,
+      search: destinationSearch,
       createIfMissing,
     });
-    return targetPath || appendRouteSearch(defaultPath, search);
+    return targetPath || appendRouteSearch(defaultPath, destinationSearch);
   } catch {
-    return appendRouteSearch(defaultPath, search);
+    return appendRouteSearch(defaultPath, destinationSearch);
   }
 }

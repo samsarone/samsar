@@ -1,0 +1,89 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+
+import {
+  extractDeploymentInferenceModelValues,
+  filterHostedInferenceModelOptions,
+  hasValidatedAlibabaQwenInference,
+  resolveAllowedInferenceModelOption,
+} from './deploymentInferencePolicy.mjs';
+
+const MODEL_OPTIONS = [
+  { label: 'GPT 5.6 Sol', value: 'gpt-5.6-sol' },
+  { label: 'Gemini 3.1 Pro', value: 'gemini-3.1-pro' },
+  { label: 'Qwen 3.7', value: 'QWEN3.7' },
+];
+
+test('hosted inference and assistant option filtering excludes Qwen', () => {
+  assert.deepEqual(
+    filterHostedInferenceModelOptions(MODEL_OPTIONS).map((option) => option.value),
+    ['gpt-5.6-sol', 'gemini-3.1-pro'],
+  );
+});
+
+test('Docker exposes Qwen only with an explicit model and validated Alibaba provenance', () => {
+  const validatedPayload = {
+    deployment: {
+      providers: ['alibabaCloud'],
+      models: ['QWEN3.7'],
+      modelProviders: { 'QWEN3.7': 'alibabaCloud' },
+    },
+  };
+
+  assert.equal(hasValidatedAlibabaQwenInference(validatedPayload), true);
+  assert.deepEqual(extractDeploymentInferenceModelValues(validatedPayload), ['QWEN3.7']);
+
+  const incompletePayloads = [
+    { deployment: { providers: ['alibabaCloud'], modelProviders: { 'QWEN3.7': 'alibabaCloud' } } },
+    { deployment: { models: ['QWEN3.7'], modelProviders: { 'QWEN3.7': 'alibabaCloud' } } },
+    { deployment: { providers: ['alibabaCloud'], models: ['QWEN3.7'] } },
+    {
+      deployment: {
+        providers: ['samsar'],
+        models: ['QWEN3.7'],
+        modelProviders: { 'QWEN3.7': 'samsar' },
+      },
+    },
+  ];
+
+  incompletePayloads.forEach((payload) => {
+    assert.equal(hasValidatedAlibabaQwenInference(payload), false);
+    assert.equal(extractDeploymentInferenceModelValues(payload).includes('QWEN3.7'), false);
+  });
+});
+
+test('provider fallbacks preserve GPT and Gemini without synthesizing Qwen', () => {
+  assert.deepEqual(
+    extractDeploymentInferenceModelValues({ deployment: { providers: ['samsar'] } }),
+    ['gpt-5.6-sol', 'gemini-3.1-pro'],
+  );
+  assert.deepEqual(
+    extractDeploymentInferenceModelValues({ deployment: { providers: ['openai', 'googleCloud'] } }),
+    ['gpt-5.6-sol', 'gemini-3.1-pro'],
+  );
+  assert.deepEqual(
+    extractDeploymentInferenceModelValues({ deployment: { providers: ['alibabaCloud'] } }),
+    [],
+  );
+});
+
+test('a stale Qwen preference resolves to an allowed default without mutating canonical options', () => {
+  const hostedOptions = filterHostedInferenceModelOptions(MODEL_OPTIONS);
+  assert.equal(
+    resolveAllowedInferenceModelOption('QWEN3.7', hostedOptions)?.value,
+    'gpt-5.6-sol',
+  );
+  assert.equal(
+    resolveAllowedInferenceModelOption('QWEN3.7', [{ label: 'Gemini', value: 'gemini-3.1-pro' }])?.value,
+    'gemini-3.1-pro',
+  );
+  assert.equal(
+    resolveAllowedInferenceModelOption('qwen-3.7', MODEL_OPTIONS)?.value,
+    'QWEN3.7',
+  );
+  assert.deepEqual(MODEL_OPTIONS.map((option) => option.value), [
+    'gpt-5.6-sol',
+    'gemini-3.1-pro',
+    'QWEN3.7',
+  ]);
+});

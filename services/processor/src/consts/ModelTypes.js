@@ -217,6 +217,12 @@ export const IMAGE_GENERAITON_MODEL_TYPES = [
     name: 'NanoBanana Pro',
     key: 'NANOBANANAPRO',
     isExpressModel: true,
+  },
+  {
+    name: 'Wan2.7 Pro',
+    key: 'WAN2.7PRO',
+    isExpressModel: true,
+    supportedAspectRatios: ['1:1', '16:9', '9:16'],
   }
 
 

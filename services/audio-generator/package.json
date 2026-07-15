@@ -26,8 +26,6 @@
     "openai": "^5.23.2",
     "replicate": "^1.0.1",
     "samsar-js": "0.48.44",
-    "stream-buffers": "^3.0.2",
-    "streamifier": "^0.1.1",
     "uuid": "^9.0.1"
   }
 }

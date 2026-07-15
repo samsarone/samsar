@@ -90,9 +90,12 @@ export default function MobileTopNav(props) {
   };
 
   const showLoginDialog = () => {
+    const redirectTo = !user?._id && location.pathname.startsWith('/vidgenie')
+      ? '/vidgenie'
+      : undefined;
     const loginComponent = (
       <Suspense fallback={dialogFallback}>
-        <AuthContainer />
+        <AuthContainer redirectTo={redirectTo} />
       </Suspense>
     );
     openAlertDialog(loginComponent, undefined, false, AUTH_DIALOG_OPTIONS);
@@ -319,6 +322,11 @@ export default function MobileTopNav(props) {
   }
 
   const gotoHome = () => {
+    if (!user?._id) {
+      navigate('/');
+      return;
+    }
+
     if (user && user._id && !isImageEditor && !isVideoEditor) {
       navigate('/generations');
       return;

@@ -7,6 +7,7 @@ import StudioSkeletonLoader from '../video/util/StudioSkeletonLoader.jsx';
 
 
 const API_SERVER = import.meta.env.VITE_PROCESSOR_API;
+const IS_DOCKER_INSTALL = import.meta.env.VITE_DOCKER_INSTALL === 'true';
 
 export default function QuickEditorLandingHome() {
 
@@ -26,6 +27,11 @@ export default function QuickEditorLandingHome() {
       const isGuest = !userToken || !user || !user._id;
 
       if (isGuest) {
+        if (IS_DOCKER_INSTALL) {
+          navigate('/login', { replace: true });
+          return;
+        }
+
         try {
           const res = await axios.get(`${API_SERVER}/video_sessions/fetch_guest_session`);
           const sessionData = res.data;

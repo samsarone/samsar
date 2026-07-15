@@ -10,6 +10,17 @@ const aiVideoLayerGenerationSchema = new Schema({
   status: { type: String, default: 'INIT' },
   startImage: String,
   endImage: String,
+  startImageDescription: String,
+  initialStartImageSources: [String],
+  fallbackStartImages: [{
+    src: String,
+    description: String,
+    score: Number,
+    rank: Number,
+  }],
+  promptSeedContext: { type: Object, default: null },
+  userInferenceModel: String,
+  selectedInferenceModelAuthorization: String,
 
   useStartFrame: { type: Boolean, default: true },
   useEndFrame: { type: Boolean, default: true },

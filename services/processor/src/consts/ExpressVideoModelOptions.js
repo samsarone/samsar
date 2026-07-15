@@ -5,6 +5,7 @@ export const EXPRESS_VIDEO_IMAGE_MODEL_KEYS = Object.freeze([
   'NANOBANANA2',
   'NANOBANANAPRO',
   'SEEDREAM',
+  'WAN2.7PRO',
 ]);
 
 export const EXPRESS_VIDEO_VIDEO_MODEL_KEYS = Object.freeze(

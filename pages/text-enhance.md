@@ -55,7 +55,7 @@ Response:
 | Step | Behavior |
 | --- | --- |
 | Credit charge | The processor charges the configured chat enhance credit cost before generation. |
-| Inference model | The user's selected inference model is normalized to `gpt-5.5` or `gemini-3.1-pro`; default is `gpt-5.5`. |
+| Inference model | The user's selected inference model is normalized to `gpt-5.6` or `gemini-3.1-pro`; default is `gpt-5.6`. |
 | Provider routing | Native OpenAI or Google Gemini can be used. In Docker, Samsar external inference can be used when `SAMSAR_API_KEY` is configured and the matching native credential is absent. |
 | Persistence | Successful and failed API chat sessions are saved with metadata, input, output/error, model, and credit information. |
 | Refunds | If generation fails after credit charge, the route attempts to refund the charged credits. |

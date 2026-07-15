@@ -5,12 +5,17 @@ import VideoSession from '../schema/VideoSession.js';
 import AIVideoLayerGeneration from '../schema/AIVideoLayerGeneration.js';
 import { getFrameImageForLayer, getBaseFrameImageForLayer } from './utils/ImageRenderUtils.js';
 import { uploadFrameLayerImageToCDN, primeCDNCache } from './utils/AWS.js';
+import { buildRetryableImageToVideoQueuePayload } from './utils/AIVideoQueuePayload.js';
 
 export async function requestRenderVeo3I2VVideo(payload) {
 
-  const { videoSessionId, layerId, prompt, combineLayers, useStartFrame,
-    useEndFrame, aspectRatio, model, clipLayerToAiVideo, userId,
-    duration = 8 } = payload;
+  const {
+    videoSessionId,
+    layerId,
+    useStartFrame,
+    aspectRatio,
+    duration = 8,
+  } = payload;
   const generateAudio = payload.generateAudio === true || payload.generate_audio === true;
 
 
@@ -63,31 +68,16 @@ export async function requestRenderVeo3I2VVideo(payload) {
 
 
 
-  let aiVideoRenderPayload = {
-    prompt: prompt,
-    model: model
-  }
-  if (currentLayerFrameImage) {
-    aiVideoRenderPayload.startImage = currentLayerFrameImage;
-  }
-  if (nextLayerFrameImage) {
-    aiVideoRenderPayload.endImage = nextLayerFrameImage;
-  }
-  aiVideoRenderPayload.sessionId = videoSessionId;
-  aiVideoRenderPayload.layerId = layerId;
-
-  aiVideoRenderPayload.useEndFrame = false;
-  aiVideoRenderPayload.useStartFrame = useStartFrame;
-  aiVideoRenderPayload.combineLayers = combineLayers;
-  aiVideoRenderPayload.aspectRatio = aspectRatio;
-  aiVideoRenderPayload.clipLayerToAiVideo = clipLayerToAiVideo;
-  aiVideoRenderPayload.userId = userId;
-  aiVideoRenderPayload.retryOnFail = true;
-  aiVideoRenderPayload.duration = duration;
-  aiVideoRenderPayload.generateAudio = generateAudio;
-  aiVideoRenderPayload.isAudioVideoGeneration = isAudioVideoGeneration;
-  aiVideoRenderPayload.isAudioVideoLayer = payload.isAudioVideoLayer;
-  aiVideoRenderPayload.audioPrompt = currentLayer.layerAISoundEffectPrompt;
+  const aiVideoRenderPayload = buildRetryableImageToVideoQueuePayload(payload, {
+    useEndFrame: false,
+    duration,
+    generateAudio,
+    isAudioVideoGeneration,
+    isAudioVideoLayer: payload.isAudioVideoLayer,
+    audioPrompt: currentLayer.layerAISoundEffectPrompt,
+    ...(currentLayerFrameImage ? { startImage: currentLayerFrameImage } : {}),
+    ...(nextLayerFrameImage ? { endImage: nextLayerFrameImage } : {}),
+  });
   
 
   const aiRenderPayload = new AIVideoLayerGeneration(aiVideoRenderPayload);

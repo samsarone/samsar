@@ -44,6 +44,7 @@ const EXTERNAL_IMAGE_MODELS = new Set([
   'SEEDREAM',
   'NANOBANANA2',
   'NANOBANANAPRO',
+  'WAN2.7PRO',
   'HUNYUAN',
 ]);
 const EXTERNAL_IMAGE_EDIT_MODELS = new Set([
@@ -396,6 +397,7 @@ async function submitSamsarExternalTextToImageRequest(payload = {}) {
           prompt,
           model,
           aspect_ratio: aspectRatio || '1:1',
+          ...(normalizeString(model).toUpperCase() === 'WAN2.7PRO' ? { resolution: '1K' } : {}),
           num_images: Number.isFinite(Number(numImages)) ? Number(numImages) : 1,
           metadata: {
             local_request_id: _id?.toString?.() || _id,

@@ -38,6 +38,12 @@ import {
 } from '../ai_utils/RequestInferenceModel.js';
 
 import { updateLayerAiVideoGenerationPrompt } from './utils/SessionUtils.js';
+import {
+  buildAiVideoPromptSeedContext,
+  buildRankedFallbackStartImages,
+  getLayerActiveImageSources,
+  getLayerImageDescription,
+} from './utils/AIVideoPromptContext.js';
 
 // Import other requestRender functions as needed
 const AI_VIDEO_ALLOWED_BASE_TYPES = new Set(['character', 'narration', 'base', 'sound_effect']);
@@ -214,8 +220,7 @@ export async function createGenerativeVideoAnimationsForFrames(sessionId) {
 
 
   for (let i = 0; i < layers.length; i++) {
-
-    promptList.push(layers[i].imageSession.activeImageDescription);
+    promptList.push(getLayerImageDescription(layers[i]));
   }
 
 
@@ -271,7 +276,7 @@ export async function createGenerativeVideoAnimationsForFrames(sessionId) {
 
     const startingPrompt = currentLayer.prompt;
 
-    const startingImageDescription = currentLayer.imageSession.activeImageDescription;
+    const startingImageDescription = getLayerImageDescription(currentLayer);
 
     let endingImageDescription;
 
@@ -279,7 +284,7 @@ export async function createGenerativeVideoAnimationsForFrames(sessionId) {
 
 
     if (i < layers.length - 1) {
-      endingImageDescription = layers[i + 1].activeImageDescription;
+      endingImageDescription = getLayerImageDescription(layers[i + 1]);
       useEndFrame = false;
     }
 
@@ -295,7 +300,10 @@ export async function createGenerativeVideoAnimationsForFrames(sessionId) {
     if (sceneType === 'character') {
       isSpeakerTransition = true;
     }
-    if (sessionData.isExpressGeneration && sessionData.expressGenerationType === 'Infinitezoom') {
+    const cameraTranstionFromLayer = cameraTransitionList[i];
+    const isInfinitezoom = sessionData.isExpressGeneration &&
+      sessionData.expressGenerationType === 'Infinitezoom';
+    if (isInfinitezoom) {
       if (i === layers.length - 1) {
         useEndFrame = false;
       } else {
@@ -321,8 +329,6 @@ export async function createGenerativeVideoAnimationsForFrames(sessionId) {
         indexData.isEndScene = true;
       }
 
-
-      let cameraTranstionFromLayer = cameraTransitionList[i];
       const layerInferenceAuditContext = {
         ...baseInferenceAuditContext,
         layerId: currentLayerId,
@@ -351,6 +357,21 @@ export async function createGenerativeVideoAnimationsForFrames(sessionId) {
         textToVideoPrompt += `Maintain text and visual accuracy. Do not distort any text or add non-english text.`;
       }
     }
+
+    const promptSeedContext = buildAiVideoPromptSeedContext({
+      layer: currentLayer,
+      sceneAction: startingPrompt,
+      resolvedPrompt: textToVideoPrompt,
+      promptStrategy: isInfinitezoom ? 'infinitezoom' : 'image_to_video_meta_prompt',
+      layerIndex: i,
+      layerCount: layers.length,
+      sceneDescriptions: promptList,
+      cameraTransition: cameraTranstionFromLayer,
+      videoTone,
+      userInferenceModel,
+      selectedInferenceModelAuthorization,
+      useShortFormPrompt: useShortForm,
+    });
 
     await updateLayerAiVideoGenerationPrompt(sessionId, currentLayerId, textToVideoPrompt);
 
@@ -398,6 +419,12 @@ export async function createGenerativeVideoAnimationsForFrames(sessionId) {
       duration: aiVideoLayerDuration,
       expressGenerativeVideoModelSubType: sessionData.expressGenerativeVideoModelSubType,
       videoTone: sessionData.videoTone,
+      startImageDescription: startingImageDescription,
+      initialStartImageSources: getLayerActiveImageSources(currentLayer),
+      fallbackStartImages: buildRankedFallbackStartImages(currentLayer),
+      promptSeedContext,
+      userInferenceModel,
+      selectedInferenceModelAuthorization,
       isAudioVideoLayer,
       isAudioVideoGeneration: isAudioVideoLayer,
       ...(sessionData.customAdapterFallbacks?.image_to_video

@@ -15,6 +15,7 @@ import {
   QWEN_37_MAX_MODEL,
   QWEN_37_PLUS_MODEL,
   getReasoningEffortForInferenceModel,
+  getPublicationMetadataInferenceSettings,
   getProviderModelForInferenceModel,
   isOpenAIInferenceModel,
   isQwenInferenceModel,
@@ -47,6 +48,19 @@ test('configures GPT 5.6 Luna with xhigh reasoning only for publication metadata
 
   // Luna is purpose-specific and is not exposed as a general user inference option.
   assert.equal(normalizeInferenceModel('gpt-5.6-luna'), DEFAULT_INFERENCE_MODEL);
+});
+
+test('uses the session inference provider for publication metadata', () => {
+  assert.deepEqual(getPublicationMetadataInferenceSettings('gpt-5.6-sol'), {
+    model: 'gpt-5.6-luna',
+    reasoning: { effort: 'xhigh' },
+  });
+  assert.deepEqual(getPublicationMetadataInferenceSettings('gemini-3.1-pro'), {
+    model: 'gemini-3.1-pro',
+  });
+  assert.deepEqual(getPublicationMetadataInferenceSettings('QWEN3.7'), {
+    model: 'QWEN3.7',
+  });
 });
 
 test('normalizes Gemini 3.1 Pro assistant model aliases to the current Vertex model', () => {

@@ -6,8 +6,8 @@ Provider configuration is driven by `runtime/config/samsar.config.json` or the s
 
 | Provider | Credential field | Actions | Model families from setup/config logic |
 | --- | --- | --- | --- |
-| Samsar | `providers.samsar.apiKey` -> `SAMSAR_API_KEY` | Chat, assistant, image, video, audio, lip sync, sound effects, moderation, recommendations, search in the setup availability matrix | Universal fallback across `gpt-5.5`, `gemini-3.1-pro`, `GPTIMAGE2`, `SEEDREAM` (Seedream 5 Pro), `RUNWAYML`, VEO 3.1 I2V, FAL video models including `HAPPYHORSEI2V` (Happy Horse 1.1 I2V), Lyria, ElevenLabs, OpenAI TTS, Google TTS, sound effects, lip sync, NanoBanana. |
-| OpenAI | `providers.openai.apiKey` -> `OPENAI_API_KEY` | Chat, assistant, image, audio, moderation, recommendations, search | `gpt-5.5`, `GPTIMAGE2`, `OPENAI_TTS`. |
+| Samsar | `providers.samsar.apiKey` -> `SAMSAR_API_KEY` | Chat, assistant, image, video, audio, lip sync, sound effects, moderation, recommendations, search in the setup availability matrix | Universal fallback across `gpt-5.6`, `gemini-3.1-pro`, `GPTIMAGE2`, `SEEDREAM` (Seedream 5 Pro), `RUNWAYML`, VEO 3.1 I2V, FAL video models including `HAPPYHORSEI2V` (Happy Horse 1.1 I2V), Lyria, ElevenLabs, OpenAI TTS, Google TTS, sound effects, lip sync, NanoBanana. |
+| OpenAI | `providers.openai.apiKey` -> `OPENAI_API_KEY` | Chat, assistant, image, audio, moderation, recommendations, search | `gpt-5.6`, `GPTIMAGE2`, `OPENAI_TTS`. |
 | Google Cloud | `providers.googleCloud.credentialsJsonB64`, `projectId` | Chat, assistant, image, video, audio, moderation | `gemini-3.1-pro`, `VEO3.1I2V`, `VEO3.1I2VFAST`, `LYRIA3`, `GOOGLE_TTS`, `NANOBANANA2`, `NANOBANANAPRO`. |
 | FAL | `providers.fal.apiKey` -> `FAL_API_KEY` | Image, video, audio, lip sync, sound effects | `SEEDREAM` (Seedream 5 Pro), `NANOBANANA2`, `NANOBANANAPRO`, `VEO3.1I2V`, `VEO3.1I2VFAST`, `COSMOS3SUPERI2V`, `SEEDANCEI2V`, `KLINGIMGTOVID3PRO`, `KLINGIMGTOVIDTURBO`, `HAPPYHORSEI2V` (Happy Horse 1.1 I2V), `ELEVENLABS_MUSIC`, `ELEVENLABS`, `MMAUDIOV2`, `MIRELOAI`, `SYNCLIPSYNC`, `LATENTSYNC`, `KLINGLIPSYNC`, `HUMMINGBIRDLIPSYNC`, `CREATIFYLIPSYNC`. |
 | ElevenLabs | `providers.elevenlabs.apiKey` -> `ELEVENLABS_API_KEY`, `ELEVENLABS_API_TOKEN` | Audio | `ELEVENLABS`, `ELEVENLABS_MUSIC`. |
@@ -59,7 +59,7 @@ Public API keys remain stable when their backing provider model is upgraded. The
 | --- | --- |
 | Express image models | `GPTIMAGE2`, `NANOBANANA2`, `NANOBANANAPRO`, `SEEDREAM`, `CUSTOM_TEXT_TO_IMAGE`. |
 | Express video models | `RUNWAYML`, `VEO3.1I2V`, `VEO3.1I2VFAST`, `COSMOS3SUPERI2V`, `SEEDANCEI2V`, `KLINGIMGTOVID3PRO`, `KLINGIMGTOVIDTURBO`, `HAPPYHORSEI2V`. |
-| Inference models | `gpt-5.5`, `gemini-3.1-pro`. |
+| Inference models | `gpt-5.6`, `gemini-3.1-pro`. |
 | Lip sync models | `SYNCLIPSYNC`, `LATENTSYNC`, `KLINGLIPSYNC`, `HUMMINGBIRDLIPSYNC`, `CREATIFYLIPSYNC`. |
 | Sound effects | `MMAUDIOV2`, `MIRELOAI`. |
 

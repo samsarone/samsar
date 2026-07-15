@@ -4,6 +4,7 @@ import VideoSession from '../schema/VideoSession.js';
 import AIVideoLayerGeneration from '../schema/AIVideoLayerGeneration.js';
 import { getFrameImageForLayer, getBaseFrameImageForLayer } from './utils/ImageRenderUtils.js';
 import { uploadFrameLayerImageToCDN, primeCDNCache } from './utils/AWS.js';
+import { buildRetryableImageToVideoQueuePayload } from './utils/AIVideoQueuePayload.js';
 
 export async function requestRenderViduI2VVideo(payload) {
 
@@ -73,7 +74,12 @@ export async function requestRenderViduI2VVideo(payload) {
   aiVideoRenderPayload.animationType = payload.animationType;
 
 
-   const aiRenderPayload = new AIVideoLayerGeneration(aiVideoRenderPayload);
+   const aiRenderPayload = new AIVideoLayerGeneration(
+    buildRetryableImageToVideoQueuePayload(payload, {
+      ...aiVideoRenderPayload,
+      duration: undefined,
+    }),
+  );
   const renderSaveRes = await aiRenderPayload.save();
 
 
@@ -81,4 +87,3 @@ export async function requestRenderViduI2VVideo(payload) {
 
   // Render video
 }
-

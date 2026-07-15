@@ -10,6 +10,18 @@ const aiVideoLayerGenerationSchema = new Schema({
   status: { type: String, default: 'INIT' },
   startImage: String,
   endImage: String,
+  startImageDescription: String,
+  initialStartImageSources: [String],
+  fallbackStartImages: [{
+    src: String,
+    description: String,
+    score: Number,
+    rank: Number,
+  }],
+  attemptedFallbackStartImageSources: [String],
+  promptSeedContext: { type: Object, default: null },
+  userInferenceModel: String,
+  selectedInferenceModelAuthorization: String,
 
   useStartFrame: { type: Boolean, default: true },
   useEndFrame: { type: Boolean, default: true },
@@ -65,6 +77,8 @@ const aiVideoLayerGenerationSchema = new Schema({
   lastTransientProviderErrorMessage: String,
   transientProviderErrorPhase: String,
   lastProviderPendingPollAt: Date,
+  lastProviderFailureMessage: String,
+  lastProviderFailureDetail: { type: Object, default: null },
 
   
 

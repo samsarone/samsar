@@ -30,6 +30,11 @@ import {
   buildSubtitleRegenerationLanguageFields,
   resolveSessionAudioLanguage,
 } from '../../utils/subtitleRegenerationLanguage.mjs';
+import {
+  buildStudioSessionDetailsFromStatus,
+  fetchDetailedVideoGenerationStatus,
+} from '../../utils/videoGenerationStatus.mjs';
+import { resolveStudioSessionRefresh } from './util/studioSessionRefresh.mjs';
 
 
 import FrameToolbarHorizontal from './toolbars/frame_toolbar/FrameToolbarHorizontal.jsx';
@@ -546,44 +551,6 @@ function normalizeGuestSessionForStudio(sessionDetails) {
   });
 
   return normalizedSessionDetails;
-}
-
-function hasHydratedStudioLayers(sessionDetails) {
-  const sessionLayers = Array.isArray(sessionDetails?.layers) ? sessionDetails.layers : [];
-  if (sessionLayers.length === 0) {
-    return false;
-  }
-
-  return sessionLayers.every((layer) => {
-    const activeItemList = layer?.imageSession?.activeItemList;
-    if (!Array.isArray(activeItemList)) {
-      return false;
-    }
-
-    return activeItemList.every((item) => (
-      item?.type !== 'image' || hasRenderableImageItemUrl(item)
-    ));
-  });
-}
-
-function mergeRenderStatusSessionDetails(previousSessionDetails, renderSessionDetails) {
-  if (!previousSessionDetails || !renderSessionDetails) {
-    return renderSessionDetails || previousSessionDetails;
-  }
-
-  const previousLayers = Array.isArray(previousSessionDetails.layers)
-    ? previousSessionDetails.layers
-    : [];
-
-  if (previousLayers.length > 0 && !hasHydratedStudioLayers(renderSessionDetails)) {
-    return {
-      ...previousSessionDetails,
-      ...renderSessionDetails,
-      layers: previousLayers,
-    };
-  }
-
-  return renderSessionDetails;
 }
 
 function clampCanvasZoomScale(nextScale, fitZoomScale = 1) {
@@ -1685,7 +1652,23 @@ export default function VideoHome() {
           headers
         );
 
-    sessionDetailsRequest.then((dataRes) => {
+    const previewableSessionDetailsRequest = isSharedSessionView
+      ? sessionDetailsRequest
+      : sessionDetailsRequest.catch(async (sessionDetailsError) => {
+        const statusData = await fetchDetailedVideoGenerationStatus({
+          axiosClient: axios,
+          apiServer: PROCESSOR_API_URL,
+          requestId: routeSessionId,
+          headers,
+        });
+        const fallbackSession = buildStudioSessionDetailsFromStatus(statusData);
+        if (!fallbackSession) {
+          throw sessionDetailsError;
+        }
+        return { data: fallbackSession };
+      });
+
+    previewableSessionDetailsRequest.then((dataRes) => {
       if (isCancelled) {
         return;
       }
@@ -2175,9 +2158,27 @@ export default function VideoHome() {
         const sessionData = renderData.session;
 
         if (sessionData) {
-          setVideoSessionDetails((prevDetails) => (
-            mergeRenderStatusSessionDetails(prevDetails, sessionData)
+          const refreshedSession = resolveStudioSessionRefresh({
+            previousSessionDetails: videoSessionDetailsRef.current,
+            incomingSessionDetails: sessionData,
+            currentLayerId: getSessionLayerId(currentLayerRef.current),
+            selectedLayerIndex,
+          });
+          videoSessionDetailsRef.current = refreshedSession.sessionDetails;
+          layersRef.current = refreshedSession.layers;
+          currentLayerRef.current = refreshedSession.currentLayer || {};
+          setVideoSessionDetails(refreshedSession.sessionDetails);
+          setLayers(refreshedSession.layers);
+          setCurrentLayer(refreshedSession.currentLayer);
+          setSelectedLayerIndex(refreshedSession.currentLayerIndex);
+          setAudioLayers(refreshedSession.sessionDetails?.audioLayers || []);
+          setTotalDuration(resolveTimelineDuration(
+            refreshedSession.layers,
+            refreshedSession.sessionDetails
           ));
+          setIsLayerGenerationPending(
+            hasPendingFrameOrLayerGeneration(refreshedSession.sessionDetails)
+          );
         }
 
         if (renderStatus === 'PENDING') {

@@ -11,6 +11,7 @@ import {
   COSMOS3_SUPER_MODEL_KEY,
   getVideoModelDurationUnitsForFramesPerSecond,
 } from '../consts/ModelPrices.js';
+import { buildRetryableImageToVideoQueuePayload } from './utils/AIVideoQueuePayload.js';
 
 const DEFAULT_COSMOS3_FRAMES_PER_SECOND = 24;
 
@@ -30,13 +31,8 @@ export async function requestRenderCosmos3I2VVideo(payload) {
   const {
     videoSessionId,
     layerId,
-    prompt,
-    combineLayers,
     useStartFrame,
     aspectRatio,
-    model,
-    clipLayerToAiVideo,
-    userId,
     duration = 5,
   } = payload;
 
@@ -93,28 +89,15 @@ export async function requestRenderCosmos3I2VVideo(payload) {
     });
   }
 
-  const aiVideoRenderPayload = {
-    prompt,
-    model,
-    sessionId: videoSessionId,
-    layerId,
+  const aiVideoRenderPayload = buildRetryableImageToVideoQueuePayload(payload, {
     useEndFrame: false,
-    useStartFrame,
-    combineLayers,
-    aspectRatio,
-    clipLayerToAiVideo,
-    userId,
-    retryOnFail: true,
     duration: normalizedDuration,
     framesPerSecond,
     generateAudio: false,
     isAudioVideoGeneration: false,
     isAudioVideoLayer: false,
-  };
-
-  if (currentLayerFrameImage) {
-    aiVideoRenderPayload.startImage = currentLayerFrameImage;
-  }
+    ...(currentLayerFrameImage ? { startImage: currentLayerFrameImage } : {}),
+  });
 
   const aiRenderPayload = new AIVideoLayerGeneration(aiVideoRenderPayload);
   await aiRenderPayload.save();

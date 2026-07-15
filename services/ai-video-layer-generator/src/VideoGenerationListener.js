@@ -1,4 +1,3 @@
-import LumaAI from 'lumaai';
 import {
   getDBConnectionString,
   isTransientMongoError,
@@ -127,11 +126,23 @@ import {
   generateHappyHorseImgToVideoLayer,
   listenToPendingHappyHorseImgToVidRequests,
 } from './base/HappyHorseI2VListener.js';
+import {
+  generateAlibabaHappyHorseImgToVideoLayer,
+  isAlibabaHappyHorseGenerationId,
+  listenToPendingAlibabaHappyHorseImgToVidRequests,
+} from './base/AlibabaHappyHorseI2VListener.js';
 import { normalizeFramesPerSecond, resolveFramesPerSecond } from './utils/FpsUtils.js';
 import {
   isStaleSoundEffectGenerationForLayer as isStaleSoundEffectGenerationForLayerWithModels,
 } from './utils/SoundEffectGenerationState.js';
 import { recordProviderUsageLog } from './utils/ProviderUsageAudit.js';
+import {
+  buildDeterministicRetryVideoPrompt,
+  getLayerActiveImageSources,
+  getRetryStartImageDescription,
+  prepareRankedFallbackImage,
+  selectRankedFallbackImage,
+} from './utils/AIVideoRetryCandidates.js';
 
 const LIPSYNC_MODELS = ['SYNCLIPSYNC', 'LATENTSYNC', 'KLINGLIPSYNC', 'HUMMINGBIRDLIPSYNC', 'CREATIFYLIPSYNC'];
 const MAX_LIPSYNC_WAIT_MS = 5 * 60 * 1000; // fail when base never becomes ready
@@ -184,6 +195,7 @@ const MAX_BASE_PROVIDER_PENDING_MS = Math.max(
   Number(process.env.AI_VIDEO_MAX_BASE_PROVIDER_PENDING_MS) || 30 * 60 * 1000
 );
 const RUNWAY_PENDING_POLL_INTERVAL_MS = 15 * 1000;
+const ALIBABA_HAPPY_HORSE_PENDING_POLL_INTERVAL_MS = 15 * 1000;
 const PROVIDER_POLL_JITTER_MS = 5 * 1000;
 const MIN_DB_TRANSIENT_BACKOFF_MS = Math.max(
   1000,
@@ -267,6 +279,9 @@ function resolveAIVideoProvider(model, payload = {}) {
   if (shouldUseSamsarExternalVideoProvider(payload)) {
     return 'samsar';
   }
+  if (shouldUseAlibabaNativeHappyHorse(payload)) {
+    return DOCKER_VIDEO_PROVIDER.ALIBABA_CLOUD;
+  }
   const dockerProvider = resolveDockerVideoProvider(normalizedModel, {
     generationType: payload.generationType || payload.layerAiVideoType,
   });
@@ -288,6 +303,34 @@ function resolveAIVideoProvider(model, payload = {}) {
   return 'fal';
 }
 
+export function shouldUseAlibabaNativeHappyHorse(payload = {}) {
+  if (normalizeString(payload?.model).toUpperCase() !== 'HAPPYHORSEI2V') {
+    return false;
+  }
+
+  if (isAlibabaHappyHorseGenerationId(payload?.generationId)) {
+    return true;
+  }
+
+  // Existing unprefixed Happy Horse ids belong to the unchanged FAL adapter.
+  if (normalizeString(payload?.generationId)) {
+    return false;
+  }
+
+  // The hosted service always uses the FAL adapter for new Happy Horse jobs.
+  // Docker deployments may opt into native Alibaba with their validated BYOK
+  // configuration. Provider-specific ids above stay sticky so in-flight jobs
+  // continue polling the adapter that created them.
+  if (getCurrentEnvironment() !== 'docker') {
+    return false;
+  }
+
+  const dockerProvider = resolveDockerVideoProvider(payload.model, {
+    generationType: payload.generationType || payload.layerAiVideoType,
+  });
+  return dockerProvider === DOCKER_VIDEO_PROVIDER.ALIBABA_CLOUD;
+}
+
 function shouldUseGoogleVeo3ForPayload(model, payload = {}) {
   const dockerProvider = resolveDockerVideoProvider(model, {
     generationType: payload.generationType || payload.layerAiVideoType,
@@ -307,7 +350,7 @@ async function recordAIVideoProviderUsage(payload = {}, generationId) {
     payload,
     requestType,
     callType: requestType,
-    provider: resolveAIVideoProvider(payload.model, payload),
+    provider: resolveAIVideoProvider(payload.model, { ...payload, generationId }),
     model: payload.model,
     providerRequestId: generationId,
     source: 'ai_video_layer_generator',
@@ -493,26 +536,44 @@ function recalculateLayerOffsetsAndConnectedAudio(layers = [], audioLayers = [])
   return durationOffset;
 }
 
-export function selectFilterPassForBaseGenerationRetry(filterPasses = [], retryCount = 0) {
-  if (!Array.isArray(filterPasses) || filterPasses.length === 0) {
-    return null;
+export function selectFilterPassForBaseGenerationRetry(
+  filterPasses = [],
+  retryCount = 0,
+  options = {},
+) {
+  return selectRankedFallbackImage(filterPasses, retryCount, options);
+}
+
+export function shouldRetryBaseGeneration({
+  generation = {},
+  payload = {},
+  videoSession = {},
+  model,
+} = {}) {
+  if (generation.retryOnFail === true || payload.retryOnFail === true) {
+    return true;
   }
 
-  const sortedPasses = filterPasses
-    .filter((pass) => pass?.src)
-    .sort((a, b) => (Number(b.score) || 0) - (Number(a.score) || 0));
+  const normalizedModel = firstNonEmptyString(model, generation.model, payload.model).toUpperCase();
+  return Boolean(
+    (videoSession.isExpressGeneration || videoSession.isMovieGen) &&
+    ['COSMOS3SUPERI2V', 'HAPPYHORSEI2V'].includes(normalizedModel)
+  );
+}
 
-  if (sortedPasses.length === 0) {
-    return null;
-  }
-
-  const desiredRank = Math.max(0, Number(retryCount) || 0);
-  const rank = Math.min(desiredRank, sortedPasses.length - 1);
-  return {
-    pass: sortedPasses[rank],
-    rank,
-    reusedLastAvailablePass: desiredRank >= sortedPasses.length,
-  };
+export function buildBaseGenerationFailureMessage({
+  tries = 0,
+  providerFailureMessage = '',
+  retryPreparationFailureMessage = '',
+} = {}) {
+  const attemptCount = Math.max(1, Number(tries || 0) + 1);
+  return [
+    `AI video generation failed after ${attemptCount} attempt${attemptCount === 1 ? '' : 's'}.`,
+    firstNonEmptyString(providerFailureMessage)
+      ? `Provider error: ${firstNonEmptyString(providerFailureMessage)}`
+      : '',
+    firstNonEmptyString(retryPreparationFailureMessage),
+  ].filter(Boolean).join(' ');
 }
 
 function getFilterPassGenerationAssetPath(filterPassSrc) {
@@ -531,6 +592,13 @@ function getFilterPassGenerationAssetPath(filterPassSrc) {
   const relativeGenerationSrc = markerIndex >= 0
     ? withoutAssetsPrefix.slice(markerIndex + generationsMarker.length)
     : withoutAssetsPrefix;
+
+  const configuredAssetsRoot = isAssetsV2Path
+    ? process.env.SAMSAR_ASSETS_V2_ROOT
+    : process.env.SAMSAR_ASSETS_ROOT;
+  if (configuredAssetsRoot) {
+    return path.join(configuredAssetsRoot, 'generations', relativeGenerationSrc);
+  }
 
   const preferredPath = path.join(
     process.cwd(),
@@ -553,15 +621,26 @@ function getFilterPassGenerationAssetPath(filterPassSrc) {
 }
 
 function getLayerDescriptionForRetryPrompt(currentLayer, selectedFilterPass) {
-  const selectedDescription = typeof selectedFilterPass?.description === 'string'
-    ? selectedFilterPass.description.trim()
-    : '';
-  if (selectedDescription) {
-    return selectedDescription;
-  }
-  return typeof currentLayer?.imageSession?.activeImageDescription === 'string'
-    ? currentLayer.imageSession.activeImageDescription
-    : '';
+  return getRetryStartImageDescription(selectedFilterPass, currentLayer);
+}
+
+export function getRetryPromptSeedAction({
+  promptSeedContext = {},
+  currentLayer = {},
+  fallbackPrompt = '',
+} = {}) {
+  return promptSeedContext.promptStrategy === 'infinitezoom'
+    ? firstNonEmptyString(
+      promptSeedContext.resolvedPrompt,
+      fallbackPrompt,
+      promptSeedContext.sceneAction,
+      currentLayer?.prompt,
+    )
+    : firstNonEmptyString(
+      promptSeedContext.sceneAction,
+      currentLayer?.prompt,
+      fallbackPrompt,
+    );
 }
 
 async function regenerateBaseGenerationPromptForRetry({
@@ -573,9 +652,16 @@ async function regenerateBaseGenerationPromptForRetry({
   selectedFilterPass,
   fallbackPrompt,
 }) {
-  const startingPrompt = typeof currentLayer?.prompt === 'string' && currentLayer.prompt.trim()
-    ? currentLayer.prompt
-    : fallbackPrompt;
+  const promptSeedContext = request?.promptSeedContext && typeof request.promptSeedContext === 'object'
+    ? request.promptSeedContext
+    : fallbackRequest?.promptSeedContext && typeof fallbackRequest.promptSeedContext === 'object'
+      ? fallbackRequest.promptSeedContext
+      : {};
+  const startingPrompt = getRetryPromptSeedAction({
+    promptSeedContext,
+    currentLayer,
+    fallbackPrompt,
+  });
   const startingImageDescription = getLayerDescriptionForRetryPrompt(currentLayer, selectedFilterPass);
 
   if (!startingPrompt && !startingImageDescription) {
@@ -583,11 +669,15 @@ async function regenerateBaseGenerationPromptForRetry({
   }
 
   const layers = Array.isArray(videoSession?.layers) ? videoSession.layers : [];
+  const savedSceneDescriptions = Array.isArray(promptSeedContext.sceneDescriptions)
+    ? promptSeedContext.sceneDescriptions
+    : [];
+  const hasSelectedImageContext = selectedFilterPass && typeof selectedFilterPass === 'object';
   const promptList = layers.map((layer, index) => {
-    if (index === currentLayerIndex && startingImageDescription) {
+    if (index === currentLayerIndex && hasSelectedImageContext) {
       return startingImageDescription;
     }
-    return layer?.imageSession?.activeImageDescription || '';
+    return savedSceneDescriptions[index] || getLayerDescriptionForRetryPrompt(layer, null);
   });
   const {
     model: userInferenceModel,
@@ -623,21 +713,29 @@ async function regenerateBaseGenerationPromptForRetry({
     });
   }
 
-  const indexData = {
-    isStartScene: currentLayerIndex === 0,
-    isEndScene: currentLayerIndex === layers.length - 1,
-  };
+  const indexData = promptSeedContext.indexData && typeof promptSeedContext.indexData === 'object'
+    ? {
+      isStartScene: promptSeedContext.indexData.isStartScene === true,
+      isEndScene: promptSeedContext.indexData.isEndScene === true,
+    }
+    : {
+      isStartScene: currentLayerIndex === 0,
+      isEndScene: currentLayerIndex === layers.length - 1,
+    };
   const sceneType = typeof currentLayer?.layerAiVideoType === 'string'
     ? currentLayer.layerAiVideoType
     : '';
-  const isSpeakerTransition = sceneType === 'character';
-  const videoTone = videoSession?.videoTone || 'grounded';
+  const isSpeakerTransition = typeof promptSeedContext.isSpeakerTransition === 'boolean'
+    ? promptSeedContext.isSpeakerTransition
+    : sceneType === 'character';
+  const videoTone = firstNonEmptyString(promptSeedContext.videoTone, videoSession?.videoTone) || 'grounded';
+  const useShortFormPrompt = promptSeedContext.useShortFormPrompt === true;
 
-  return createTextToVideoPromptFromStartingLayerPrompt(
+  const regeneratedPrompt = await createTextToVideoPromptFromStartingLayerPrompt(
     startingPrompt,
     startingImageDescription,
     userInferenceModel,
-    true,
+    useShortFormPrompt,
     isSpeakerTransition,
     indexData,
     videoTone,
@@ -647,6 +745,12 @@ async function regenerateBaseGenerationPromptForRetry({
       sourceTask: 'text_to_video_prompt',
     }
   );
+
+  return regeneratedPrompt || buildDeterministicRetryVideoPrompt({
+    sceneAction: startingPrompt,
+    startImageDescription: startingImageDescription,
+    cameraTransition: cameraTransitionLayer || promptSeedContext.cameraTransition,
+  });
 }
 
 function firstNonEmptyString(...values) {
@@ -859,9 +963,12 @@ async function deferTransientProviderError(request, error, phase) {
   });
 }
 
-function getPendingPollIntervalMs(model) {
+function getPendingPollIntervalMs(model, payload = {}) {
   if (model === 'RUNWAYML') {
     return RUNWAY_PENDING_POLL_INTERVAL_MS;
+  }
+  if (model === 'HAPPYHORSEI2V' && isAlibabaHappyHorseGenerationId(payload?.generationId)) {
+    return ALIBABA_HAPPY_HORSE_PENDING_POLL_INTERVAL_MS;
   }
   return null;
 }
@@ -871,7 +978,7 @@ async function scheduleNextPendingProviderPoll(payload) {
     return;
   }
 
-  const pollIntervalMs = getPendingPollIntervalMs(payload?.model);
+  const pollIntervalMs = getPendingPollIntervalMs(payload?.model, payload);
   const update = {
     expireAt: new Date(),
     lastProviderPendingPollAt: new Date(),
@@ -1366,7 +1473,9 @@ async function generateAIVideoLayer(payload) {
   } else if (model === 'SEEDANCEI2V' || model === 'SEEDANCE2.0I2V') {
     generationId = await generateSeeDanceImgToVideoLayer(payload);
   } else if (model === 'HAPPYHORSEI2V') {
-    generationId = await generateHappyHorseImgToVideoLayer(payload);
+    generationId = shouldUseAlibabaNativeHappyHorse(payload)
+      ? await generateAlibabaHappyHorseImgToVideoLayer(payload)
+      : await generateHappyHorseImgToVideoLayer(payload);
   } else if (model === 'SEEDANCE2.0T2V' || model === 'SEEDANCET2V') {
     generationId = await generateSeeDanceTextToVideoLayer(payload);
   } else if (model === 'MIRELOAI') {
@@ -1405,7 +1514,7 @@ async function generateAIVideoLayer(payload) {
     transientProviderErrorCount: 0,
     expireAt: new Date(),
   };
-  const pendingPollIntervalMs = getPendingPollIntervalMs(model);
+  const pendingPollIntervalMs = getPendingPollIntervalMs(model, { ...payload, generationId });
   if (pendingPollIntervalMs) {
     generationUpdate.nextAttemptAfter = new Date(Date.now() + pendingPollIntervalMs);
   }
@@ -1483,7 +1592,9 @@ async function pollForAIVideoCompletion(reqPayload) {
   } else if (model === 'SEEDANCEI2V' || model === 'SEEDANCE2.0I2V') {
     responseData = await listenToPendingSeeDanceImgToVidRequests(payload);
   } else if (model === 'HAPPYHORSEI2V') {
-    responseData = await listenToPendingHappyHorseImgToVidRequests(payload);
+    responseData = shouldUseAlibabaNativeHappyHorse(payload)
+      ? await listenToPendingAlibabaHappyHorseImgToVidRequests(payload)
+      : await listenToPendingHappyHorseImgToVidRequests(payload);
   } else if (model === 'SEEDANCE2.0T2V' || model === 'SEEDANCET2V') {
     responseData = await listenToPendingSeeDanceTxtToVidRequests(payload);
   } else if (model === 'MIRELOAI') {
@@ -2793,7 +2904,6 @@ async function processBaseGenerationFailed(payload) {
   }
 
   const tries = Number.isFinite(Number(genDoc.numRetries)) ? Number(genDoc.numRetries) : Number(payload.numRetries || 0);
-  const willRetry = genDoc.retryOnFail ?? payload.retryOnFail ?? false;
 
   // Fetch session + layer once
   const videoSession = await VideoSession.findById(sessionId);
@@ -2812,6 +2922,12 @@ async function processBaseGenerationFailed(payload) {
   }
 
   const currentLayer = videoSession.layers[currentLayerIndex];
+  const willRetry = shouldRetryBaseGeneration({
+    generation: genDoc,
+    payload,
+    videoSession,
+    model,
+  });
 
   if (await fallbackGoogleNativeVeo3Generation(payload, 'Google native Veo generation failed.')) {
     return;
@@ -2821,6 +2937,8 @@ async function processBaseGenerationFailed(payload) {
     return;
   }
 
+  let retryPreparationFailureMessage = '';
+
   // ---------------------------
   // RETRY PATH (tries 0,1,2) if allowed
   // ---------------------------
@@ -2829,6 +2947,7 @@ async function processBaseGenerationFailed(payload) {
 
     let newModel = model;
     let newPrompt = prompt;
+    let retryPreparationSucceeded = true;
     const retryUpdate = {
       status: 'INIT',
       numRetries: tries + 1,
@@ -2842,57 +2961,94 @@ async function processBaseGenerationFailed(payload) {
       if (newModel === 'VEO3.1I2V') newModel = 'VEO3.1I2VFAST';
     }
 
-    const selectedFilterPass = selectFilterPassForBaseGenerationRetry(currentLayer?.filterPasses, tries);
-    if (selectedFilterPass?.pass) {
-      try {
-        const chosen = selectedFilterPass.pass;
+    const hasQueuedFallbackCandidates = Array.isArray(genDoc.fallbackStartImages) &&
+      genDoc.fallbackStartImages.length > 0;
+    const fallbackCandidates = hasQueuedFallbackCandidates
+      ? genDoc.fallbackStartImages
+      : currentLayer?.filterPasses;
+    const previouslyAttemptedFallbackSources = Array.isArray(genDoc.attemptedFallbackStartImageSources)
+      ? genDoc.attemptedFallbackStartImageSources
+      : [];
+    const excludeSources = [
+      ...(Array.isArray(genDoc.initialStartImageSources) ? genDoc.initialStartImageSources : []),
+      ...getLayerActiveImageSources(currentLayer),
+      ...previouslyAttemptedFallbackSources,
+    ];
+    const fallbackPreparation = await prepareRankedFallbackImage({
+      candidates: fallbackCandidates,
+      excludeSources,
+      prepareImage: async (chosen) => {
         const absolutePath = getFilterPassGenerationAssetPath(chosen.src);
         if (!absolutePath) {
           throw new Error('Selected filter pass did not include a usable src');
         }
+        return uploadFrameLayerImageToCDN(absolutePath, chosen.src);
+      },
+    });
+    const attemptedFallbackStartImageSources = [
+      ...previouslyAttemptedFallbackSources,
+      ...fallbackPreparation.attemptedSources,
+    ].filter((src, index, all) => src && all.indexOf(src) === index);
+    retryUpdate.attemptedFallbackStartImageSources = attemptedFallbackStartImageSources;
 
-        const newStartFrameImage = await uploadFrameLayerImageToCDN(absolutePath, chosen.src);
-        if (newStartFrameImage && newStartFrameImage.length > 0) {
-          retryUpdate.startImage = newStartFrameImage;
-          retryUpdate.aiVideoRetryFilterPassRank = selectedFilterPass.rank;
-          retryUpdate.aiVideoRetryFilterPassScore = Number(chosen.score) || 0;
-          retryUpdate.aiVideoRetryFilterPassSrc = chosen.src;
-
-          const regeneratedPrompt = await regenerateBaseGenerationPromptForRetry({
-            videoSession,
-            request: genDoc,
-            fallbackRequest: payload,
-            currentLayer,
-            currentLayerIndex,
-            selectedFilterPass: chosen,
-            fallbackPrompt: prompt,
-          });
-          if (regeneratedPrompt) {
-            newPrompt = regeneratedPrompt;
-            retryUpdate.aiVideoRetryPromptRegenerated = true;
-            await VideoSession.updateOne(
-              { _id: sessionId, "layers._id": layerId },
-              {
-                $set: {
-                  "layers.$.videoGenerationPrompt": regeneratedPrompt,
-                  "layers.$.aiVideoRetryFilterPassRank": selectedFilterPass.rank,
-                  "layers.$.aiVideoRetryFilterPassScore": Number(chosen.score) || 0,
-                  "layers.$.aiVideoRetryFilterPassSrc": chosen.src,
-                }
-              }
-            );
-          }
-
-          const retryOrdinal = selectedFilterPass.rank === 0
-            ? 'highest'
-            : `rank ${selectedFilterPass.rank + 1}`;
-        }
-      } catch (err) {
-        console.error('Error uploading selected filter pass:', err);
+    const selectedFilterPass = fallbackPreparation.selection;
+    let retryPromptCandidate = selectedFilterPass?.pass || null;
+    if (selectedFilterPass?.pass) {
+      const chosen = selectedFilterPass.pass;
+      retryUpdate.startImage = fallbackPreparation.startImage;
+      retryUpdate.aiVideoRetryFilterPassRank = chosen.rank;
+      retryUpdate.aiVideoRetryFilterPassScore = chosen.score;
+      retryUpdate.aiVideoRetryFilterPassSrc = chosen.src;
+      retryUpdate.startImageDescription = chosen.description || '';
+    } else if (
+      tries === 0 &&
+      previouslyAttemptedFallbackSources.length === 0 &&
+      fallbackPreparation.attemptedSources.length === 0
+    ) {
+      // A session with no alternate image still gets one explicit prompt-only
+      // retry. It is separate from fallback progression and never repeats.
+      retryPromptCandidate = {
+        description: getRetryStartImageDescription(null, currentLayer) ||
+          firstNonEmptyString(
+            genDoc.startImageDescription,
+            genDoc.promptSeedContext?.startImageDescription,
+          ),
+      };
+      retryUpdate.aiVideoPromptOnlySameImageRetry = true;
+    } else {
+      retryPreparationSucceeded = false;
+      retryPreparationFailureMessage = fallbackPreparation.preparationErrors.length > 0
+        ? 'No usable fallback start image remained after local fallback preparation failed.'
+        : 'No unused fallback start image remained after AI video generation failed.';
+      for (const preparationError of fallbackPreparation.preparationErrors) {
+        console.error('Error preparing AI-video fallback image:', preparationError);
       }
     }
 
-    if (tries === MAX_BASE_GENERATION_RETRIES - 1 && newPrompt === prompt) {
+    if (payload.lastProviderFailureMessage) {
+      retryUpdate.lastProviderFailureMessage = payload.lastProviderFailureMessage;
+    }
+    if (payload.lastProviderFailureDetail) {
+      retryUpdate.lastProviderFailureDetail = payload.lastProviderFailureDetail;
+    }
+
+    if (retryPreparationSucceeded) {
+      const regeneratedPrompt = await regenerateBaseGenerationPromptForRetry({
+        videoSession,
+        request: genDoc,
+        fallbackRequest: payload,
+        currentLayer,
+        currentLayerIndex,
+        selectedFilterPass: retryPromptCandidate,
+        fallbackPrompt: prompt,
+      });
+      if (regeneratedPrompt) {
+        newPrompt = regeneratedPrompt;
+        retryUpdate.aiVideoRetryPromptRegenerated = true;
+      }
+    }
+
+    if (retryPreparationSucceeded && tries === MAX_BASE_GENERATION_RETRIES - 1 && newPrompt === prompt) {
       const retryInferenceSettings = await getInferenceSettingsForSession(
         videoSession,
         genDoc,
@@ -2908,31 +3064,52 @@ async function processBaseGenerationFailed(payload) {
       }
     }
 
-    // Re-queue this generation for another attempt
-    await AIVideoLayerGeneration.findByIdAndUpdate(_id, {
-      $set: {
-        ...retryUpdate,
-        prompt: newPrompt,
-        model: newModel,
-      },
-      $unset: {
-        nextAttemptAfter: '',
-        lastTransientProviderErrorAt: '',
-        lastTransientProviderErrorStatus: '',
-        lastTransientProviderErrorMessage: '',
-        transientProviderErrorPhase: '',
-      },
-    });
+    if (retryPreparationSucceeded) {
+      const layerRetryMetadata = {
+        "layers.$.videoGenerationPrompt": newPrompt,
+        "layers.$.aiVideoRetryFilterPassRank": selectedFilterPass?.pass?.rank ?? null,
+        "layers.$.aiVideoRetryFilterPassScore": selectedFilterPass?.pass?.score ?? null,
+        "layers.$.aiVideoRetryFilterPassSrc": selectedFilterPass?.pass?.src ?? null,
+        "layers.$.aiVideoRetryStartImageDescription": retryPromptCandidate?.description || '',
+      };
+      await VideoSession.updateOne(
+        { _id: sessionId, "layers._id": layerId },
+        { $set: layerRetryMetadata },
+      );
 
-    return;
+      // Re-queue the image and its regenerated prompt atomically.
+      await AIVideoLayerGeneration.findByIdAndUpdate(_id, {
+        $set: {
+          ...retryUpdate,
+          prompt: newPrompt,
+          model: newModel,
+        },
+        $unset: {
+          nextAttemptAfter: '',
+          lastTransientProviderErrorAt: '',
+          lastTransientProviderErrorStatus: '',
+          lastTransientProviderErrorMessage: '',
+          transientProviderErrorPhase: '',
+        },
+      });
+
+      return;
+    }
   }
 
   // ---------------------------
   // HARD-FAIL PATH (tries exceeded) OR retry not allowed
   // ---------------------------
   try {
-    const attemptCount = tries + 1;
-    const failureMessage = `AI video generation failed after ${attemptCount} attempt${attemptCount === 1 ? '' : 's'}.`;
+    const providerFailureMessage = firstNonEmptyString(
+      payload.lastProviderFailureMessage,
+      genDoc.lastProviderFailureMessage,
+    );
+    const failureMessage = buildBaseGenerationFailureMessage({
+      tries,
+      providerFailureMessage,
+      retryPreparationFailureMessage,
+    });
 
     const layerUpdate = buildBaseGenerationTerminalFailureUpdate(currentLayer, failureMessage);
 

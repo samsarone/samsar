@@ -42,10 +42,12 @@ import {
   useGoogleTTSSpeakers,
 } from '../../hooks/useGoogleTTSSpeakers.js';
 import { useAudioProviderAvailability } from '../../hooks/useAudioProviderAvailability.js';
+import { useDeploymentModelAvailability } from '../../hooks/useDeploymentModelAvailability.js';
 import {
   filterMusicProvidersForAudioAvailability,
   filterSpeakersForAudioAvailability,
 } from '../../constants/audioProviderAvailability.js';
+import { filterOptionsForDeploymentModelValues } from '../../utils/deploymentProviders.js';
 
 import {
   COSMOS3_SUPER_MODEL_KEY,
@@ -121,6 +123,10 @@ export default function QuickEditor() {
     [googleSpeakers]
   );
   const { audioAvailability } = useAudioProviderAvailability();
+  const {
+    isDockerInstall: isDockerModelFilteringEnabled,
+    textToVideoImageModelValues,
+  } = useDeploymentModelAvailability();
   const deploymentSpeakerTypes = useMemo(
     () => filterSpeakersForAudioAvailability(combinedSpeakerTypes, audioAvailability),
     [audioAvailability, combinedSpeakerTypes]
@@ -323,8 +329,15 @@ export default function QuickEditor() {
 
   // For infinite-zoom we only want certain models in the Image dropdown:
   const imageModelOptions = useMemo(() => {
+    const deploymentModels = isDockerModelFilteringEnabled
+      ? filterOptionsForDeploymentModelValues(
+          IMAGE_GENERAITON_MODEL_TYPES,
+          textToVideoImageModelValues,
+          (model) => model.key
+        )
+      : IMAGE_GENERAITON_MODEL_TYPES;
     if (videoType.value === 'Infinitezoom') {
-      return IMAGE_GENERAITON_MODEL_TYPES.filter(
+      return deploymentModels.filter(
         (model) =>
           model.key === 'FLUX1PRO'
       ).map((model) => ({
@@ -332,22 +345,26 @@ export default function QuickEditor() {
         label: model.name,
       }));
     } else {
-      return IMAGE_GENERAITON_MODEL_TYPES.map((model) => ({
+      return deploymentModels.map((model) => ({
         value: model.key,
         label: model.name,
       }));
     }
-  }, [videoType]);
+  }, [isDockerModelFilteringEnabled, textToVideoImageModelValues, videoType]);
 
   const [selectedImageModel, setSelectedImageModel] = useState(() => {
     const defaultModel = localStorage.getItem('defaultModel');
-    if (defaultModel) {
-      // This might run before we define `imageModelOptions`
-      // so we safely handle that:
-      return { value: defaultModel, label: defaultModel };
-    }
-    return imageModelOptions[0];
+    return imageModelOptions.find((model) => model.value === defaultModel) || imageModelOptions[0] || null;
   });
+
+  useEffect(() => {
+    setSelectedImageModel((current) => {
+      const selectedOption = imageModelOptions.find((model) => model.value === current?.value);
+      if (selectedOption) return selectedOption;
+      const defaultModel = localStorage.getItem('defaultModel');
+      return imageModelOptions.find((model) => model.value === defaultModel) || imageModelOptions[0] || null;
+    });
+  }, [imageModelOptions]);
 
   const [subtitleFont, setSubtitleFont] = useState(() => {
     const defaultFont = localStorage.getItem('defaultSubtitleFont');

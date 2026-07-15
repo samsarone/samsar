@@ -1,5 +1,3 @@
-
-import LumaAI from 'lumaai';
 import { getDBConnectionString } from '../DBString.js';
 import VideoSession from '../../schema/VideoSession.js';
 import AIVideoLayerGeneration from '../../schema/AIVideoLayerGeneration.js';
@@ -80,4 +78,3 @@ export async function requestRenderLumaVideo(payload) {
 
   // Render video
 }
-

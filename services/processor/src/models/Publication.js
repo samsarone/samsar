@@ -18,6 +18,10 @@ import {
   normalizePublicationTranscript,
   resolvePublicationOriginalPrompt,
 } from './publication/Transcript.js';
+import {
+  getStoredSessionInferenceModel,
+  resolvePublicationMetadataInferenceModel,
+} from './publication/InferenceModel.js';
 
 import { updateTagCloudForPublication } from './Content.js';
 
@@ -409,12 +413,30 @@ export async function createMetaForSession(userId, payload) {
 
   const sessionData = await VideoSession.findById(sessionId);
 
+  if (!sessionData) {
+    throw new Error(`Video session ${sessionId} not found`);
+  }
+
 
   const movieResourceList = sessionData.movieResourceList;
   const originalPrompt = resolvePublicationOriginalPrompt(payload, sessionData);
+  let fallbackInferenceModel = '';
+
+  if (!getStoredSessionInferenceModel(sessionData)) {
+    const inferenceModelUser = await User.findById(sessionData.userId || userId)
+      .select('selectedInferenceModel')
+      .lean();
+    fallbackInferenceModel = inferenceModelUser?.selectedInferenceModel || '';
+  }
+
+  const inferenceModel = resolvePublicationMetadataInferenceModel(
+    sessionData,
+    fallbackInferenceModel,
+  );
 
   const metaData = await extractMetaForMovieResourceList(movieResourceList, {
     originalPrompt,
+    inferenceModel,
   });
 
   return {

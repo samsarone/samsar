@@ -13,7 +13,7 @@ export const DEPLOYMENT_PROVIDER_CAPABILITIES = Object.freeze({
   samsar: {
     label: 'Samsar API Key',
     requiredFor: ['All models', 'All actions'],
-    models: ['gpt-5.6-sol', 'gemini-3.1-pro', 'QWEN3.7', 'GPTIMAGE2', 'RUNWAYML', 'VEO3.1I2V', 'LYRIA3', 'OPENAI_TTS', 'GOOGLE_TTS', 'MMAUDIO', 'LATENT_SYNC'],
+    models: ['gpt-5.6-sol', 'gemini-3.1-pro', 'GPTIMAGE2', 'WAN2.7PRO', 'RUNWAYML', 'VEO3.1I2V', 'HAPPYHORSEI2V', 'LYRIA3', 'OPENAI_TTS', 'GOOGLE_TTS', 'MMAUDIO', 'LATENT_SYNC'],
     actions: ['chat', 'assistant', 'image', 'video', 'audio', 'lip_sync', 'sound_effect'],
   },
   openai: {
@@ -30,15 +30,15 @@ export const DEPLOYMENT_PROVIDER_CAPABILITIES = Object.freeze({
   },
   alibabaCloud: {
     label: 'Alibaba Cloud',
-    requiredFor: ['Qwen 3.7 text inference', 'Qwen 3.7 vision'],
-    models: ['QWEN3.7'],
-    actions: ['chat', 'assistant'],
+    requiredFor: ['Qwen 3.7 text inference', 'Qwen 3.7 vision', 'Wan2.7 Pro image', 'Happy Horse 1.1 video'],
+    models: ['QWEN3.7', 'WAN2.7PRO', 'HAPPYHORSEI2V'],
+    actions: ['chat', 'assistant', 'image', 'video'],
   },
   fal: {
     label: 'FAL',
-    requiredFor: ['FAL image models', 'FAL audio models', 'lip sync', 'sound effects'],
-    models: ['NANOBANANA2', 'NANOBANANAPRO', 'MMAUDIO', 'LATENT_SYNC'],
-    actions: ['image', 'audio', 'lip_sync', 'sound_effect'],
+    requiredFor: ['FAL image models', 'Wan2.7 Pro image', 'FAL audio models', 'Happy Horse 1.1 video', 'lip sync', 'sound effects'],
+    models: ['NANOBANANA2', 'NANOBANANAPRO', 'WAN2.7PRO', 'HAPPYHORSEI2V', 'MMAUDIO', 'LATENT_SYNC'],
+    actions: ['image', 'video', 'audio', 'lip_sync', 'sound_effect'],
   },
   runway: {
     label: 'RunwayML',
