@@ -109,6 +109,52 @@ test("Docker uses native OpenAI moderation when an OpenAI key is present", () =>
   }), MODERATION_PROVIDERS.OPENAI);
 });
 
+test("Docker Qwen skips moderation when only OpenRouter or Alibaba inference credentials are present", () => {
+  assert.equal(resolveModerationProvider({
+    env: {
+      CURRENT_ENV: "docker",
+      OPENROUTER_API_KEY: "openrouter-test-key",
+      ALIBABA_CLOUD_API_KEY: "alibaba-test-key",
+    },
+    inferenceModel: "QWEN3.7",
+    routeType: "text_to_video",
+  }), MODERATION_PROVIDERS.DISABLED);
+});
+
+test("Docker Qwen uses OpenAI first and Samsar-js second", () => {
+  assert.equal(resolveModerationProvider({
+    env: {
+      CURRENT_ENV: "docker",
+      OPENAI_API_KEY: "openai-test-key",
+      SAMSAR_API_KEY: "samsar-test-key",
+    },
+    inferenceModel: "qwen3.7-plus",
+    routeType: "text_to_video",
+  }), MODERATION_PROVIDERS.OPENAI);
+
+  assert.equal(resolveModerationProvider({
+    env: {
+      CURRENT_ENV: "docker",
+      OPENROUTER_API_KEY: "openrouter-test-key",
+      SAMSAR_API_KEY: "samsar-test-key",
+    },
+    inferenceModel: "QWEN3.7",
+    routeType: "text_to_video",
+  }), MODERATION_PROVIDERS.SAMSAR);
+});
+
+test("Docker Qwen does not treat Google credentials as its moderation endpoint", () => {
+  assert.equal(resolveModerationProvider({
+    env: {
+      CURRENT_ENV: "docker",
+      GOOGLE_APPLICATION_CREDENTIALS_JSON_B64: GOOGLE_CREDENTIALS_B64,
+      GOOGLE_CLOUD_PROJECT: "docker-project",
+    },
+    inferenceModel: "QWEN3.7",
+    routeType: "text_to_video",
+  }), MODERATION_PROVIDERS.DISABLED);
+});
+
 test("Docker uses Google moderation when Google Cloud credentials are the only endpoint", () => {
   assert.equal(resolveModerationProvider({
     env: {
@@ -202,6 +248,19 @@ test("production Gemini text-to-video prompts retain Google moderation routing",
     inferenceModel: "gemini-3.1-pro",
     routeType: "text_to_video",
   }), MODERATION_PROVIDERS.GOOGLE);
+});
+
+test("production Qwen always uses native OpenAI moderation", () => {
+  assert.equal(resolveModerationProvider({
+    env: {
+      CURRENT_ENV: "production",
+      SAMSAR_MODERATION_PROVIDER: "samsar-js",
+      SAMSAR_API_KEY: "samsar-test-key",
+      OPENAI_API_KEY: "openai-test-key",
+    },
+    inferenceModel: "QWEN3.7",
+    routeType: "text_to_video",
+  }), MODERATION_PROVIDERS.OPENAI);
 });
 
 test("explicit disabled provider skips moderation in every environment", () => {
@@ -457,6 +516,22 @@ test("getModerationForNarrative fails closed after a configured provider error",
     },
   });
   assert.equal(safe, false);
+});
+
+test("getModerationForNarrative has a caller-level deadline for a provider that never settles", async (t) => {
+  t.mock.method(console, "error", () => {});
+  const startedAt = Date.now();
+  const safe = await getModerationForNarrative("prompt", {
+    env: {
+      CURRENT_ENV: "production",
+      OPENAI_API_KEY: "openai-test-key",
+    },
+    totalTimeoutMs: 20,
+    moderationCall: async () => new Promise(() => {}),
+  });
+
+  assert.equal(safe, false);
+  assert.ok(Date.now() - startedAt < 500);
 });
 
 test("Docker Samsar moderation relies on one bounded hosted request", async (t) => {

@@ -153,9 +153,18 @@ export async function createNewImageListToVideoSession(userId, payload) {
 
 
   const moderationPassed = await getModerationForNarrative(prompt, {
+    sessionId: sessionID,
     inferenceModel: userInferenceModel,
     routeType: stepVideoRoute || 'image_list_to_video',
   });
+
+  const sessionAfterModeration = await VideoSession.findById(sessionID)
+    .select('expressGenerationCancelled')
+    .lean();
+  if (!sessionAfterModeration || sessionAfterModeration.expressGenerationCancelled) {
+    console.info('[moderation] cancelled_session_ignored', { sessionId: sessionID });
+    return;
+  }
 
   if (!moderationPassed) {
     await markNarrativeModerationFailure(sessionID);

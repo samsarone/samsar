@@ -136,9 +136,18 @@ export async function createVidGPTSession(userId, payload) {
   });
 
   const moderationPassed = await getModerationForNarrative(prompt, {
+    sessionId: sessionID,
     inferenceModel: userInferenceModel,
     routeType: stepVideoRoute || 'text_to_video',
   });
+
+  const sessionAfterModeration = await VideoSession.findById(sessionID)
+    .select('expressGenerationCancelled')
+    .lean();
+  if (!sessionAfterModeration || sessionAfterModeration.expressGenerationCancelled) {
+    console.info('[moderation] cancelled_session_ignored', { sessionId: sessionID });
+    return;
+  }
 
   if (!moderationPassed) {
     await markNarrativeModerationFailure(sessionID);
@@ -388,7 +397,17 @@ export async function createInfoVidSession(userId, payload) {
   }
 
 
-  const moderationPassed = await getModerationForNarrative(prompt);
+  const moderationPassed = await getModerationForNarrative(prompt, {
+    sessionId: sessionID,
+  });
+
+  const sessionAfterModeration = await VideoSession.findById(sessionID)
+    .select('expressGenerationCancelled')
+    .lean();
+  if (!sessionAfterModeration || sessionAfterModeration.expressGenerationCancelled) {
+    console.info('[moderation] cancelled_session_ignored', { sessionId: sessionID });
+    return;
+  }
 
   if (!moderationPassed) {
     await markNarrativeModerationFailure(sessionID);

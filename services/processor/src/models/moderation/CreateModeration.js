@@ -2,7 +2,10 @@ import { accessSync, constants as fsConstants } from "node:fs";
 
 import OpenAI from "openai";
 
-import { isGeminiInferenceModel } from "../../consts/InferenceModels.js";
+import {
+  isGeminiInferenceModel,
+  isQwenInferenceModel,
+} from "../../consts/InferenceModels.js";
 import { createDeployedSamsarClient } from "../api/DeployedSamsarClient.js";
 import { createGoogleModerationForNarrative } from "./GoogleModeration.js";
 
@@ -36,8 +39,6 @@ const GOOGLE_MODERATION_REJECT_SCORE_THRESHOLD = parseModerationScoreThreshold(
 );
 
 const missingProviderWarningLogged = new Set();
-let cachedOpenAIClient = null;
-let cachedOpenAIClientKey = "";
 
 function parseModerationScoreThreshold(value, fallback) {
   const parsed = Number.parseFloat(value);
@@ -300,6 +301,7 @@ export function resolveModerationProvider({
     inferenceModel,
     routeType,
   });
+  const useQwenInference = isQwenInferenceModel(inferenceModel);
 
   if (explicitProvider === MODERATION_PROVIDERS.DISABLED) {
     return MODERATION_PROVIDERS.DISABLED;
@@ -307,6 +309,20 @@ export function resolveModerationProvider({
 
   if (isDockerRuntime(env)) {
     const availableProviders = getAvailableDockerModerationProviders(env);
+
+    // OpenRouter and Alibaba credentials provide Qwen inference, not a compatible
+    // moderation endpoint. A hosted Docker Qwen render therefore uses a separately
+    // configured OpenAI or Samsar-js moderation credential, or skips moderation.
+    if (useQwenInference) {
+      if (availableProviders.has(MODERATION_PROVIDERS.OPENAI)) {
+        return MODERATION_PROVIDERS.OPENAI;
+      }
+      if (availableProviders.has(MODERATION_PROVIDERS.SAMSAR)) {
+        return MODERATION_PROVIDERS.SAMSAR;
+      }
+      return MODERATION_PROVIDERS.DISABLED;
+    }
+
     if (explicitProvider && availableProviders.has(explicitProvider)) {
       return explicitProvider;
     }
@@ -318,6 +334,12 @@ export function resolveModerationProvider({
       MODERATION_PROVIDERS.GOOGLE,
       MODERATION_PROVIDERS.SAMSAR,
     ].find((provider) => availableProviders.has(provider)) || MODERATION_PROVIDERS.DISABLED;
+  }
+
+  // The Samsar production deployment always owns an OpenAI moderation credential.
+  // Qwen/OpenRouter is only the inference route and must not alter moderation.
+  if (useQwenInference) {
+    return MODERATION_PROVIDERS.OPENAI;
   }
 
   if (explicitProvider === MODERATION_PROVIDERS.GOOGLE) {
@@ -712,22 +734,20 @@ function requireModerationResponse(moderation) {
   return moderation;
 }
 
-function getOpenAIClient(apiKey) {
-  if (!cachedOpenAIClient || cachedOpenAIClientKey !== apiKey) {
-    cachedOpenAIClient = new OpenAI({
-      apiKey,
-      maxRetries: 0,
-      timeout: DEFAULT_MODERATION_TIMEOUT_MS,
-    });
-    cachedOpenAIClientKey = apiKey;
-  }
-  return cachedOpenAIClient;
+function createOpenAIClient(apiKey) {
+  return new OpenAI({
+    apiKey,
+    maxRetries: 0,
+    timeout: DEFAULT_MODERATION_TIMEOUT_MS,
+  });
 }
 
 export async function createNativeOpenAIModeration(requestData, options = {}) {
   const env = options.env && typeof options.env === "object" ? options.env : process.env;
   const apiKey = normalizeString(options.apiKey) || normalizeString(env.OPENAI_API_KEY);
-  const openAIClient = options.openaiClient || (apiKey ? getOpenAIClient(apiKey) : null);
+  // Do not retain a shared SDK transport across unrelated renders. A poisoned or
+  // stale transport must be isolated to one bounded moderation operation.
+  const openAIClient = options.openaiClient || (apiKey ? createOpenAIClient(apiKey) : null);
   if (!openAIClient) {
     throw createModerationError("Native OpenAI moderation is not configured.", {
       code: "MODERATION_PROVIDER_UNAVAILABLE",
@@ -920,6 +940,7 @@ export async function createModerationForVideo() {
 
 export async function getModerationForNarrative(requestData, options = {}) {
   const provider = resolveModerationProvider(options);
+  const sessionId = normalizeString(options.sessionId);
 
   if (provider === MODERATION_PROVIDERS.DISABLED) {
     warnMissingProviderOnce(
@@ -929,18 +950,55 @@ export async function getModerationForNarrative(requestData, options = {}) {
     return true;
   }
 
+  const startedAt = Date.now();
+  const totalTimeoutMs = parsePositiveInteger(
+    firstDefined(
+      options.totalTimeoutMs,
+      options.env?.MODERATION_TOTAL_TIMEOUT_MS,
+      process.env.MODERATION_TOTAL_TIMEOUT_MS,
+    ),
+    getModerationTotalTimeoutMs({ ...options, provider }),
+  );
+
+  if (sessionId) {
+    console.info("[moderation] request_start", {
+      sessionId,
+      provider,
+      inferenceModel: normalizeString(options.inferenceModel) || null,
+      timeoutMs: totalTimeoutMs,
+    });
+  }
+
   try {
-    const moderation = typeof options.moderationCall === "function"
-      ? await options.moderationCall(provider, requestData, options)
-      : await createModerationWithProvider(provider, requestData, options);
-    return getModerationResponseDecision(moderation, { provider }).safe;
+    const moderation = await runSingleModerationRequest(
+      ({ signal }) => typeof options.moderationCall === "function"
+        ? options.moderationCall(provider, requestData, { ...options, signal })
+        : createModerationWithProvider(provider, requestData, { ...options, signal }),
+      {
+        timeoutMs: totalTimeoutMs,
+        signal: options.signal,
+      },
+    );
+    const decision = getModerationResponseDecision(moderation, { provider });
+    if (sessionId) {
+      console.info("[moderation] request_complete", {
+        sessionId,
+        provider,
+        safe: decision.safe,
+        reason: decision.reason,
+        durationMs: Date.now() - startedAt,
+      });
+    }
+    return decision.safe;
   } catch (error) {
     console.error("ERROR IN MODERATION", {
+      sessionId: sessionId || null,
       provider,
       message: error?.message || error,
       status: getErrorStatus(error),
       code: error?.code || null,
       attempts: error?.moderationAttempts || null,
+      durationMs: Date.now() - startedAt,
     });
     return false;
   }
