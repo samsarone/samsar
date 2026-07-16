@@ -45,7 +45,7 @@
     "nodemailer": "^9.0.3",
     "openai": "^4.77.0",
     "qrcode": "^1.5.4",
-    "samsar-js": "0.48.44",
+    "samsar-js": "0.48.45",
     "sharp": "^0.33.3",
     "stripe": "^15.8.0",
     "tiktoken": "^1.0.12",

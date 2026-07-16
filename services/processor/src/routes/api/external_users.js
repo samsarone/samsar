@@ -23,6 +23,7 @@ import {
 } from '../../models/api/MovieAPI.js';
 import {
   createAssistantCompletion,
+  getAssistantCompletionTimeoutMs,
   setAssistantSystemPromptForUser,
 } from '../../models/api/AssistantAPI.js';
 import { createLoginTokenForUser } from '../../models/api/UserAPI.js';
@@ -926,6 +927,9 @@ router.post('/assistant/set_system_prompt', authenticateExternalRequest, async (
 
 router.post('/assistant/completion', authenticateExternalRequest, async (req, res) => {
   try {
+    const timeoutMs = getAssistantCompletionTimeoutMs(req.body || {});
+    req.setTimeout(timeoutMs + 30000);
+    res.setTimeout(timeoutMs + 30000);
     const externalUser = await resolveExternalUserContext(req);
     const requestPayload = { ...(req.body || {}) };
     const requestedSessionId =

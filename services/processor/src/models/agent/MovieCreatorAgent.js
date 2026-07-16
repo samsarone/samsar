@@ -268,6 +268,9 @@ export async function sendSessionThemeMessageRequest(messageList, userInferenceM
         ...(isQwenInferenceModel(modelName) ? { max_tokens: 65536 } : {}),
         timeout: timeoutMs,
         maxRetries: 1,
+        externalPolling: true,
+        externalPollTimeoutMs: timeoutMs,
+        externalPollIntervalMs: process.env.SAMSAR_EXTERNAL_ASSISTANT_POLL_INTERVAL_MS,
         // This call already owns its bounded retry loop; the shared adapter
         // still enforces a hard timeout but must not multiply attempts.
         externalMaxRetries: 0,
@@ -590,6 +593,9 @@ export async function sendNarrativePromptMessageRequest(
         ...(isQwenInferenceModel(modelName) ? { max_tokens: 65536 } : {}),
         timeout: timeoutMs,
         maxRetries: 1,
+        externalPolling: true,
+        externalPollTimeoutMs: timeoutMs,
+        externalPollIntervalMs: process.env.SAMSAR_EXTERNAL_ASSISTANT_POLL_INTERVAL_MS,
         // Narrative generation has its own bounded retry/backoff loop.
         externalMaxRetries: 0,
       });

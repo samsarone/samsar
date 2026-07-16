@@ -2,6 +2,7 @@ import express from 'express';
 import { resolveRequestActorFromAuthHeaders } from '../../models/external/User.js';
 import {
   createAssistantCompletion,
+  getAssistantCompletionTimeoutMs,
   setAssistantSystemPromptForUser,
 } from '../../models/api/AssistantAPI.js';
 import { getBillingPortalUrl } from '../../models/BillingPortal.js';
@@ -70,6 +71,9 @@ router.post('/set_system_prompt', validateAPIKeyAndUserId, async (req, res) => {
 
 router.post('/completion', validateAPIKeyAndUserId, async (req, res) => {
   try {
+    const timeoutMs = getAssistantCompletionTimeoutMs(req.body || {});
+    req.setTimeout(timeoutMs + 30000);
+    res.setTimeout(timeoutMs + 30000);
     const result = await createAssistantCompletion(req.userId, req.body || {});
     setCreditHeaders(res, result.creditsCharged, result.remainingCredits);
     res.status(200).json(result.openaiResponse);

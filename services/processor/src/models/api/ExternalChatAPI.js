@@ -1,7 +1,10 @@
 import OpenAI from 'openai';
+import mongoose from 'mongoose';
 
 import { DEFAULT_INFERENCE_MODEL, normalizeInferenceModel } from '../../consts/InferenceModels.js';
+import ExternalAssistantRequest from '../../schema/ExternalAssistantRequest.js';
 import { createCompatibleChatCompletion } from '../ai_utils/OpenAICompat.js';
+import { getDBConnectionString } from '../DBString.js';
 import { deductGenerationCredits } from '../GenerationCredits.js';
 import {
   calculateAssistantCreditsFromUsage,
@@ -11,6 +14,16 @@ import {
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY || '' });
 const DEFAULT_EXTERNAL_CHAT_TIMEOUT_MS = 10 * 60 * 1000;
+const EXTERNAL_CHAT_POLL_PATH = '/v2/external/chat/status';
+const ASYNC_CONTROL_FIELDS = new Set([
+  'async',
+  'async_mode',
+  'asyncMode',
+  'poll',
+  'polling',
+  'response_mode',
+  'responseMode',
+]);
 
 export function getExternalChatTimeoutMs(payload = {}) {
   const parsed = Number(
@@ -40,6 +53,30 @@ function normalizeMessages(messages) {
   return messages;
 }
 
+function normalizeString(value) {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+export function isExternalChatPollingRequested(payload = {}) {
+  const responseMode = normalizeString(
+    payload.response_mode ?? payload.responseMode,
+  ).toLowerCase();
+  return payload.async === true ||
+    payload.async_mode === true ||
+    payload.asyncMode === true ||
+    payload.poll === true ||
+    payload.polling === true ||
+    responseMode === 'poll' ||
+    responseMode === 'polling' ||
+    responseMode === 'async';
+}
+
+export function stripExternalChatAsyncControlFields(payload = {}) {
+  return Object.fromEntries(
+    Object.entries(payload || {}).filter(([key]) => !ASYNC_CONTROL_FIELDS.has(key)),
+  );
+}
+
 function getRequestedModel(payload = {}) {
   return normalizeInferenceModel(
     payload.model ||
@@ -55,15 +92,16 @@ export async function createExternalChatCompletion({ userId, payload = {} } = {}
   if (!userId) {
     throw buildError('User ID is required.', 401);
   }
-  if (payload.stream === true) {
+  const completionPayload = stripExternalChatAsyncControlFields(payload);
+  if (completionPayload.stream === true) {
     throw buildError('stream=true is not supported for this endpoint yet.', 400);
   }
 
-  const messages = normalizeMessages(payload.messages);
-  const model = getRequestedModel(payload);
-  const timeout = getExternalChatTimeoutMs(payload);
+  const messages = normalizeMessages(completionPayload.messages);
+  const model = getRequestedModel(completionPayload);
+  const timeout = getExternalChatTimeoutMs(completionPayload);
   const response = await createCompatibleChatCompletion(openai, {
-    ...payload,
+    ...completionPayload,
     model,
     messages,
     timeout,
@@ -102,4 +140,170 @@ export async function createExternalChatCompletion({ userId, payload = {} } = {}
     creditsCharged,
     remainingCredits: chargeResult?.remainingCredits ?? null,
   };
+}
+
+function getRequestErrorStatus(error) {
+  const status = Number(
+    error?.statusCode ?? error?.status ?? error?.response?.status,
+  );
+  return Number.isInteger(status) && status > 0 ? status : 500;
+}
+
+function buildExternalChatRequestPayload(request) {
+  const requestId = request._id.toString();
+  const payload = {
+    request_id: requestId,
+    requestId,
+    status: request.status,
+    poll_url: `${EXTERNAL_CHAT_POLL_PATH}?request_id=${encodeURIComponent(requestId)}`,
+    created_at: request.createdAt,
+    updated_at: request.updatedAt,
+  };
+
+  if (request.status === 'COMPLETED') {
+    payload.response = request.response;
+    payload.creditsCharged = request.creditsCharged;
+    payload.remainingCredits = request.remainingCredits;
+  } else if (request.status === 'FAILED') {
+    payload.error = {
+      message: request.errorMessage || 'External assistant request failed.',
+      code: request.errorCode || null,
+      status: request.errorStatus || 500,
+    };
+  }
+
+  return payload;
+}
+
+export async function processExternalChatCompletionRequest(requestId) {
+  await getDBConnectionString();
+  const request = await ExternalAssistantRequest.findOneAndUpdate(
+    { _id: requestId, status: 'PENDING' },
+    { $set: { status: 'PROCESSING', startedAt: new Date() } },
+    { new: true },
+  ).lean();
+
+  if (!request) {
+    return null;
+  }
+
+  try {
+    const result = await createExternalChatCompletion({
+      userId: request.userId,
+      payload: request.payload || {},
+    });
+    const completed = await ExternalAssistantRequest.findByIdAndUpdate(
+      requestId,
+      {
+        $set: {
+          status: 'COMPLETED',
+          response: result.response,
+          creditsCharged: result.creditsCharged,
+          remainingCredits: result.remainingCredits,
+          completedAt: new Date(),
+          payload: null,
+          errorMessage: null,
+          errorCode: null,
+          errorStatus: null,
+        },
+      },
+      { new: true },
+    ).lean();
+    return completed ? buildExternalChatRequestPayload(completed) : null;
+  } catch (error) {
+    const failed = await ExternalAssistantRequest.findByIdAndUpdate(
+      requestId,
+      {
+        $set: {
+          status: 'FAILED',
+          errorMessage: error?.message || 'External assistant request failed.',
+          errorCode: normalizeString(error?.code) || null,
+          errorStatus: getRequestErrorStatus(error),
+          completedAt: new Date(),
+          payload: null,
+        },
+      },
+      { new: true },
+    ).lean();
+    return failed ? buildExternalChatRequestPayload(failed) : null;
+  }
+}
+
+function queueExternalChatCompletionRequest(requestId) {
+  setImmediate(() => {
+    void processExternalChatCompletionRequest(requestId).catch((error) => {
+      console.error('[external_chat] async request worker failed', {
+        requestId,
+        message: error?.message || String(error),
+      });
+    });
+  });
+}
+
+export async function createExternalChatCompletionRequest({ userId, payload = {} } = {}) {
+  if (!userId) {
+    throw buildError('User ID is required.', 401);
+  }
+  if (payload.stream === true) {
+    throw buildError('stream=true is not supported for polling requests.', 400);
+  }
+
+  const requestPayload = stripExternalChatAsyncControlFields(payload);
+  normalizeMessages(requestPayload.messages);
+  getRequestedModel(requestPayload);
+
+  await getDBConnectionString();
+  const request = await ExternalAssistantRequest.create({
+    userId,
+    requestType: 'external_chat',
+    status: 'PENDING',
+    payload: requestPayload,
+  });
+  const requestId = request._id.toString();
+  queueExternalChatCompletionRequest(requestId);
+  return buildExternalChatRequestPayload(request.toObject());
+}
+
+export async function getExternalChatCompletionRequest({ userId, requestId } = {}) {
+  if (!userId) {
+    throw buildError('User ID is required.', 401);
+  }
+  if (!mongoose.Types.ObjectId.isValid(requestId)) {
+    throw buildError('A valid request_id is required.', 400);
+  }
+
+  await getDBConnectionString();
+  let request = await ExternalAssistantRequest.findOne({
+    _id: requestId,
+    userId,
+    requestType: 'external_chat',
+  }).lean();
+  if (!request) {
+    throw buildError('External assistant request not found.', 404);
+  }
+
+  if (request.status === 'PENDING') {
+    // Polling also repairs a job that was persisted immediately before a
+    // process restart and therefore never reached the in-process worker.
+    queueExternalChatCompletionRequest(requestId);
+  } else if (request.status === 'PROCESSING' && request.startedAt) {
+    const staleAfterMs = getExternalChatTimeoutMs(request.payload || {}) + 30000;
+    if (Date.now() - new Date(request.startedAt).getTime() > staleAfterMs) {
+      request = await ExternalAssistantRequest.findOneAndUpdate(
+        { _id: requestId, userId, status: 'PROCESSING' },
+        {
+          $set: {
+            status: 'FAILED',
+            errorMessage: 'External assistant request exceeded its execution deadline.',
+            errorCode: 'EXTERNAL_ASSISTANT_TIMEOUT',
+            errorStatus: 504,
+            completedAt: new Date(),
+            payload: null,
+          },
+        },
+        { new: true },
+      ).lean() || request;
+    }
+  }
+  return buildExternalChatRequestPayload(request);
 }

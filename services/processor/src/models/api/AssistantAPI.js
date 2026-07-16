@@ -22,9 +22,21 @@ import {
 } from './AssistantBilling.js';
 
 const DEFAULT_ASSISTANT_MODEL = 'gpt-5.6-sol';
+const DEFAULT_ASSISTANT_COMPLETION_TIMEOUT_MS = 10 * 60 * 1000;
 const DEFAULT_ASSISTANT_SYSTEM_PROMPT =
   'You are a helpful assistant for Samsar. Respond clearly, accurately, and preserve any multimodal context provided by the user.';
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY || '' });
+
+export function getAssistantCompletionTimeoutMs(payload = {}) {
+  const parsed = Number(
+    payload.timeout ??
+    payload.timeoutMs ??
+    process.env.SAMSAR_ASSISTANT_TIMEOUT_MS,
+  );
+  return Number.isFinite(parsed) && parsed > 0
+    ? Math.floor(parsed)
+    : DEFAULT_ASSISTANT_COMPLETION_TIMEOUT_MS;
+}
 
 export async function setAssistantSystemPromptForUser(userId, payload = {}, { externalUser = null } = {}) {
   if (!userId) {
@@ -171,11 +183,13 @@ export async function createAssistantCompletion(userId, payload = {}, { external
   });
 
   let response;
+  const timeoutMs = getAssistantCompletionTimeoutMs(payload);
   try {
     response = await createAssistantResponse(
       responseRequest,
       selectedAssistantModel,
       selectedAssistantModelAuthorization,
+      timeoutMs,
     );
   } catch (error) {
     console.error('[api][assistant][completion] OpenAI request failed', {
@@ -382,6 +396,7 @@ async function createAssistantResponse(
   responseRequest,
   selectedAssistantModel = DEFAULT_ASSISTANT_MODEL,
   selectedAssistantModelAuthorization = '',
+  timeoutMs = DEFAULT_ASSISTANT_COMPLETION_TIMEOUT_MS,
 ) {
   if (
     isGeminiInferenceModel(selectedAssistantModel) ||
@@ -394,6 +409,11 @@ async function createAssistantResponse(
       ...(selectedAssistantModelAuthorization
         ? { authorization: selectedAssistantModelAuthorization }
         : {}),
+      timeout: timeoutMs,
+      maxRetries: 0,
+      externalPolling: selectedAssistantModelAuthorization === 'deployed',
+      externalPollTimeoutMs: timeoutMs,
+      externalPollIntervalMs: process.env.SAMSAR_EXTERNAL_ASSISTANT_POLL_INTERVAL_MS,
       ...(responseRequest.temperature !== undefined ? { temperature: responseRequest.temperature } : {}),
       ...(responseRequest.top_p !== undefined ? { top_p: responseRequest.top_p } : {}),
       ...(responseRequest.max_output_tokens !== undefined
@@ -410,7 +430,11 @@ async function createAssistantResponse(
   }
 
   try {
-    return await openai.post('/responses', { body: responseRequest });
+    return await openai.post('/responses', {
+      body: responseRequest,
+      timeout: timeoutMs,
+      maxRetries: 0,
+    });
   } catch (error) {
     if (!shouldFallbackToChatCompletions(error, responseRequest?.model)) {
       throw error;
@@ -427,7 +451,10 @@ async function createAssistantResponse(
       ...(responseRequest.user !== undefined ? { user: responseRequest.user } : {}),
     };
 
-    const chatResponse = await openai.chat.completions.create(chatPayload);
+    const chatResponse = await openai.chat.completions.create(chatPayload, {
+      timeout: timeoutMs,
+      maxRetries: 0,
+    });
     return normalizeChatCompletionToResponses(chatResponse);
   }
 }

@@ -587,3 +587,48 @@ test('external inference preserves GPT 5.6 models with xhigh without changing Ge
   assert.equal(payloads[1].reasoning_effort, 'xhigh');
   assert.equal(payloads[2].reasoning_effort, 'high');
 });
+
+test('deployed external inference can queue and poll a long-running assistant request', async (t) => {
+  clearProviderEnv();
+  process.env.SAMSAR_API_KEY = 'polling-test-samsar-key';
+  let queuedPayload;
+  let statusQuery;
+
+  t.mock.method(SamsarClient.prototype, 'postV2', async (path, payload) => {
+    assert.equal(path, 'external/chat/completions');
+    queuedPayload = payload;
+    return {
+      data: { request_id: 'request-123', status: 'PENDING' },
+      status: 202,
+    };
+  });
+  t.mock.method(SamsarClient.prototype, 'getV2', async (path, options) => {
+    assert.equal(path, 'external/chat/status');
+    statusQuery = options.query;
+    return {
+      data: {
+        request_id: 'request-123',
+        status: 'COMPLETED',
+        response: {
+          choices: [{ message: { role: 'assistant', content: '{"ok":true}' } }],
+        },
+      },
+      status: 200,
+    };
+  });
+
+  const response = await createSamsarExternalChatCompletion({
+    model: 'gpt-5.6-sol',
+    messages: [{ role: 'user', content: 'return JSON' }],
+    externalPolling: true,
+    externalPollIntervalMs: 1,
+    externalPollTimeoutMs: 1000,
+    externalMaxRetries: 0,
+  });
+
+  assert.equal(queuedPayload.async, true);
+  assert.equal(queuedPayload.response_mode, 'polling');
+  assert.equal(queuedPayload.reasoning_effort, 'xhigh');
+  assert.deepEqual(statusQuery, { request_id: 'request-123' });
+  assert.equal(response.choices[0].message.content, '{"ok":true}');
+});

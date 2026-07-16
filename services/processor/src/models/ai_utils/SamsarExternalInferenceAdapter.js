@@ -19,6 +19,7 @@ const DEFAULT_EXTERNAL_INFERENCE_TIMEOUT_MS = 10 * 60 * 1000;
 const DEFAULT_EXTERNAL_INFERENCE_MAX_RETRIES = 3;
 const DEFAULT_EXTERNAL_INFERENCE_RETRY_BASE_DELAY_MS = 5000;
 const DEFAULT_EXTERNAL_INFERENCE_RETRY_MAX_DELAY_MS = 60000;
+const DEFAULT_EXTERNAL_INFERENCE_POLL_INTERVAL_MS = 2000;
 const DEFAULT_OPENROUTER_QWEN_MAX_TOKENS = 65536;
 const DEFAULT_OPENROUTER_GEMINI_MAX_TOKENS = 65536;
 const DEFAULT_OPENROUTER_GPT_MAX_COMPLETION_TOKENS = 65536;
@@ -276,6 +277,90 @@ function createExternalInferenceTimeoutError(timeoutMs) {
   error.code = 'ETIMEDOUT';
   error.status = 504;
   return error;
+}
+
+function waitForExternalInferencePoll(delayMs, signal) {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(signal.reason || new Error('External inference polling was aborted.'));
+      return;
+    }
+    const onAbort = () => {
+      clearTimeout(timeoutId);
+      signal?.removeEventListener('abort', onAbort);
+      reject(signal.reason || new Error('External inference polling was aborted.'));
+    };
+    const timeoutId = setTimeout(() => {
+      signal?.removeEventListener('abort', onAbort);
+      resolve();
+    }, delayMs);
+    signal?.addEventListener('abort', onAbort, { once: true });
+  });
+}
+
+async function createAndPollSamsarExternalChatCompletion(client, payload, {
+  signal,
+  timeoutMs,
+  pollIntervalMs,
+} = {}) {
+  const queued = typeof client.createV2ExternalChatCompletionAsync === 'function'
+    ? await client.createV2ExternalChatCompletionAsync(payload, { signal })
+    : await client.postV2(
+      'external/chat/completions',
+      { ...payload, async: true, response_mode: 'polling' },
+      { signal },
+    );
+  const requestId = normalizeString(
+    queued?.data?.request_id || queued?.data?.requestId,
+  );
+  if (!requestId) {
+    throw new Error('External assistant polling response did not include request_id.');
+  }
+
+  if (typeof client.pollV2ExternalChatCompletion === 'function') {
+    return client.pollV2ExternalChatCompletion(requestId, {
+      signal,
+      pollIntervalMs,
+      pollTimeoutMs: timeoutMs,
+    });
+  }
+
+  const effectiveIntervalMs = normalizePositiveInteger(
+    pollIntervalMs,
+    DEFAULT_EXTERNAL_INFERENCE_POLL_INTERVAL_MS,
+  );
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < timeoutMs) {
+    let statusResult;
+    try {
+      statusResult = await client.getV2('external/chat/status', {
+        signal,
+        query: { request_id: requestId },
+      });
+    } catch (error) {
+      const status = getExternalInferenceErrorStatus(error);
+      if (status !== null && status < 500 && status !== 408 && status !== 429) {
+        throw error;
+      }
+      await waitForExternalInferencePoll(effectiveIntervalMs, signal);
+      continue;
+    }
+    const status = normalizeString(statusResult?.data?.status).toUpperCase();
+    if (status === 'COMPLETED') {
+      return statusResult;
+    }
+    if (status === 'FAILED') {
+      const error = new Error(
+        statusResult?.data?.error?.message || 'External assistant request failed.',
+      );
+      error.status = Number(statusResult?.data?.error?.status) || 500;
+      error.code = normalizeString(statusResult?.data?.error?.code) || null;
+      throw error;
+    }
+    await waitForExternalInferencePoll(effectiveIntervalMs, signal);
+  }
+
+  throw createExternalInferenceTimeoutError(timeoutMs);
 }
 
 async function runExternalInferenceAttempt(operation, timeoutMs, attempt, maxAttempts) {
@@ -572,6 +657,9 @@ export async function createOpenRouterChatCompletion(chatRequest = {}) {
     timeoutMs,
     maxRetries,
     externalMaxRetries,
+    externalPolling,
+    externalPollIntervalMs,
+    externalPollTimeoutMs,
     reasoning_effort,
     reasoning,
     ...request
@@ -692,6 +780,9 @@ export async function createSamsarExternalChatCompletion(chatRequest = {}) {
     timeoutMs,
     maxRetries,
     externalMaxRetries,
+    externalPolling,
+    externalPollIntervalMs,
+    externalPollTimeoutMs,
     ...payload
   } = chatRequest || {};
 
@@ -700,21 +791,35 @@ export async function createSamsarExternalChatCompletion(chatRequest = {}) {
     timeout ?? timeoutMs ?? process.env.SAMSAR_EXTERNAL_INFERENCE_TIMEOUT_MS,
     DEFAULT_EXTERNAL_INFERENCE_TIMEOUT_MS,
   );
+  const requestPayload = {
+    ...payload,
+    model,
+    ...(isOpenAIInferenceModel(model)
+      ? { reasoning_effort: getReasoningEffortForInferenceModel(model) }
+      : {}),
+  };
+  const usePolling = externalPolling === true;
+  const pollingTimeoutMs = normalizePositiveInteger(
+    externalPollTimeoutMs,
+    requestTimeout,
+  );
   const response = await runExternalInferenceWithRetry(
-    () => client.createV2ExternalChatCompletion({
-      ...payload,
-      model,
-      ...(isOpenAIInferenceModel(model)
-        ? { reasoning_effort: getReasoningEffortForInferenceModel(model) }
-        : {}),
-    }),
+    ({ signal }) => usePolling
+      ? createAndPollSamsarExternalChatCompletion(client, requestPayload, {
+        signal,
+        timeoutMs: pollingTimeoutMs,
+        pollIntervalMs: externalPollIntervalMs,
+      })
+      : client.createV2ExternalChatCompletion(requestPayload, { signal }),
     {
       provider: 'samsar',
       model,
-      timeoutMs: requestTimeout,
+      timeoutMs: usePolling ? pollingTimeoutMs : requestTimeout,
       maxRetries: externalMaxRetries,
     },
   );
 
-  return unwrapSamsarExternalChatCompletionResponse(response);
+  return unwrapSamsarExternalChatCompletionResponse(
+    usePolling ? response?.data?.response : response,
+  );
 }

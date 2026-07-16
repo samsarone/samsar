@@ -11,7 +11,10 @@ import {
 } from '../../models/api/DeploymentProviderAPI.js';
 import {
   createExternalChatCompletion,
+  createExternalChatCompletionRequest,
+  getExternalChatCompletionRequest,
   getExternalChatTimeoutMs,
+  isExternalChatPollingRequested,
 } from '../../models/api/ExternalChatAPI.js';
 import { createExternalEmbeddingVectors } from '../../models/api/ExternalEmbeddingAPI.js';
 import {
@@ -88,6 +91,14 @@ router.get('/api_key/validate', async (req, res) => {
 
 async function handleExternalChatCompletion(req, res) {
   try {
+    if (isExternalChatPollingRequested(req.body || {})) {
+      const request = await createExternalChatCompletionRequest({
+        userId: req.userId,
+        payload: req.body || {},
+      });
+      return res.status(202).json(request);
+    }
+
     const timeoutMs = getExternalChatTimeoutMs(req.body || {});
     req.setTimeout(timeoutMs + 30000);
     res.setTimeout(timeoutMs + 30000);
@@ -112,6 +123,34 @@ async function handleExternalChatCompletion(req, res) {
 
 router.post('/chat', validateAPIKeyAndUserId, handleExternalChatCompletion);
 router.post('/chat/completions', validateAPIKeyAndUserId, handleExternalChatCompletion);
+router.post('/assistant', validateAPIKeyAndUserId, handleExternalChatCompletion);
+router.post('/assistant/completions', validateAPIKeyAndUserId, handleExternalChatCompletion);
+
+async function handleExternalChatCompletionStatus(req, res) {
+  try {
+    const requestId =
+      req.query.request_id ||
+      req.query.requestId ||
+      req.query.id;
+    const result = await getExternalChatCompletionRequest({
+      userId: req.userId,
+      requestId,
+    });
+    setCreditHeaders(res, result.creditsCharged, result.remainingCredits);
+    return res.status(200).json(result);
+  } catch (error) {
+    const statusCode = error?.statusCode || error?.status || 500;
+    return res.status(statusCode).json({
+      message: error?.message || 'Internal server error while reading external assistant status.',
+    });
+  }
+}
+
+router.get(
+  ['/chat/status', '/chat/completions/status', '/assistant/status'],
+  validateAPIKeyAndUserId,
+  handleExternalChatCompletionStatus,
+);
 
 async function handleExternalEmbeddings(req, res) {
   try {
