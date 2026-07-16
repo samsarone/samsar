@@ -26,7 +26,9 @@ router.post('/create', async function (req, res) {
     return;
   }
 
-  createAdMakerSession(userId, payload);
+  void createAdMakerSession(userId, payload).catch((error) => {
+    console.error(`AdMaker generation failed for session ${payload?.sessionID || 'unknown'}`, error);
+  });
   res.status(200).send({ message: "VidGPT session created" });
 });
 

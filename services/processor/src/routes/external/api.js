@@ -14,6 +14,11 @@ import {
   getExternalChatTimeoutMs,
 } from '../../models/api/ExternalChatAPI.js';
 import { createExternalEmbeddingVectors } from '../../models/api/ExternalEmbeddingAPI.js';
+import {
+  createExternalModeration,
+  getExternalModerationTimeoutMs,
+  mapExternalModerationError,
+} from '../../models/api/ExternalModerationAPI.js';
 
 const router = express.Router();
 
@@ -130,6 +135,27 @@ async function handleExternalEmbeddings(req, res) {
 }
 
 router.post('/embeddings', validateAPIKeyAndUserId, handleExternalEmbeddings);
+
+async function handleExternalModeration(req, res) {
+  try {
+    const timeoutMs = getExternalModerationTimeoutMs();
+    req.setTimeout(timeoutMs + 5000);
+    res.setTimeout(timeoutMs + 5000);
+    const result = await createExternalModeration({
+      userId: req.userId,
+      payload: req.body || {},
+      timeoutMs,
+    });
+    return res.status(200).json(result.response);
+  } catch (error) {
+    const mappedError = mapExternalModerationError(error);
+    return res.status(mappedError.statusCode).json({
+      message: mappedError.message,
+    });
+  }
+}
+
+router.post(['/moderation', '/moderations'], validateAPIKeyAndUserId, handleExternalModeration);
 
 router.use('/image', imageApiRouter);
 router.use('/video', videoApiRouter);

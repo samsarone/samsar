@@ -71,6 +71,11 @@ const GOOGLE_FAL_OR_SAMSAR = Object.freeze([
   DOCKER_PROVIDER.FAL,
   DOCKER_PROVIDER.SAMSAR,
 ]);
+const MODERATION_CAPABLE_PROVIDERS = Object.freeze([
+  DOCKER_PROVIDER.OPENAI,
+  DOCKER_PROVIDER.GOOGLE_CLOUD,
+  DOCKER_PROVIDER.SAMSAR,
+]);
 
 export const DOCKER_MODEL_PROVIDER_PRIORITY_BY_MODEL = Object.freeze({
   'gpt-5.6-sol': OPENAI_INFERENCE_OR_SAMSAR,
@@ -246,6 +251,10 @@ export function buildDockerAvailableModelsFromEnabledProviders(enabledProviderKe
       ? modelActions.filter((action) => action === 'chat' || action === 'assistant')
       : modelActions;
     providerActions.forEach((action) => actions.add(action));
+  }
+
+  if (providers.some((provider) => MODERATION_CAPABLE_PROVIDERS.includes(provider))) {
+    actions.add('moderation');
   }
 
   return {

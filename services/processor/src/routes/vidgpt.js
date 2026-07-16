@@ -24,7 +24,9 @@ router.post('/create', async function (req, res) {
 
   try {
 
-    createVidGPTSession(userId, payload);
+    void createVidGPTSession(userId, payload).catch((error) => {
+      console.error(`VidGPT generation failed for session ${payload?.sessionID || 'unknown'}`, error);
+    });
     res.status(200).send({ message: "VidGPT session created" });
   } catch (error) {
     console.error("Error creating VidGPT session:", error);
@@ -62,7 +64,9 @@ router.post('/create_info_vid', async function (req, res) {
     return;
   }
 
-  createInfoVidSession(userId, payload);
+  void createInfoVidSession(userId, payload).catch((error) => {
+    console.error(`InfoVid generation failed for session ${payload?.sessionID || 'unknown'}`, error);
+  });
   res.status(200).send({ message: "InfoVid session created" });
 });
 

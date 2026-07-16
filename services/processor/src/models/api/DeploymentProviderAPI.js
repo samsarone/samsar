@@ -13,9 +13,9 @@ const RUNWAY_ORGANIZATION_URL = 'https://api.dev.runwayml.com/v1/organization';
 export const DEPLOYMENT_PROVIDER_CAPABILITIES = Object.freeze({
   samsar: {
     label: 'Samsar API Key',
-    requiredFor: ['All models', 'All actions'],
+    requiredFor: ['All models', 'All actions', 'moderation'],
     models: ['gpt-5.6-sol', 'gemini-3.1-pro', 'QWEN3.7', 'GPTIMAGE2', 'WAN2.7PRO', 'RUNWAYML', 'VEO3.1I2V', 'HAPPYHORSEI2V', 'LYRIA3', 'OPENAI_TTS', 'GOOGLE_TTS', 'MMAUDIO', 'LATENT_SYNC'],
-    actions: ['chat', 'assistant', 'image', 'video', 'audio', 'lip_sync', 'sound_effect'],
+    actions: ['chat', 'assistant', 'moderation', 'image', 'video', 'audio', 'lip_sync', 'sound_effect'],
   },
   openai: {
     label: 'OpenAI',

@@ -11,6 +11,10 @@ import { getLanguageStringFromLanguageCode } from "../../../consts/LanguageCodes
 
 import { validateImageToVideoNarrative } from "../utils/TranscriptUtils.js";
 import { getModerationForNarrative } from "../../moderation/CreateModeration.js";
+import {
+  NARRATIVE_MODERATION_FAILURE_MESSAGE,
+  markNarrativeModerationFailure,
+} from '../../moderation/ModerationFailureState.js';
 import VideoSession from "../../../schema/VideoSession.js";
 
 import { extractThemeFromInputPayload } from './system/ThemeBuilder.js';
@@ -154,17 +158,8 @@ export async function createNewImageListToVideoSession(userId, payload) {
   });
 
   if (!moderationPassed) {
-    const errorMessage = "Narrative failed moderation";
-    await VideoSession
-      .findByIdAndUpdate(sessionID, {
-        expressGenerationStatus: {
-          prompt_generation: "FAILED",
-        },
-        expressGenerationPending: false,
-        expressGenerationFailed: true,
-        expressGenerationError: errorMessage,
-      });
-    throw new Error("Narrative failed moderation");
+    await markNarrativeModerationFailure(sessionID);
+    throw new Error(NARRATIVE_MODERATION_FAILURE_MESSAGE);
   }
 
 

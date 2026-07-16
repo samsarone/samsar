@@ -12,6 +12,10 @@ import User from "../../schema/User.js";
 import { requestQuickMovieGeneration } from "./TranscriptMovieGenerator.js";
 import { validateTextToVideoNarrative } from "./utils/TranscriptUtils.js";
 import { getModerationForNarrative } from "../moderation/CreateModeration.js";
+import {
+  NARRATIVE_MODERATION_FAILURE_MESSAGE,
+  markNarrativeModerationFailure,
+} from '../moderation/ModerationFailureState.js';
 import VideoSession from "../../schema/VideoSession.js";
 import { processImgToVidGPT } from './Img2VidGPT.js';
 import { getLanguageStringFromLanguageCode } from "../../consts/LanguageCodes.js";
@@ -137,17 +141,8 @@ export async function createVidGPTSession(userId, payload) {
   });
 
   if (!moderationPassed) {
-    const errorMessage = "Narrative failed moderation";
-    await VideoSession
-      .findByIdAndUpdate(sessionID, {
-        expressGenerationStatus: {
-          prompt_generation: "FAILED",
-        },
-        expressGenerationPending: false,
-        expressGenerationFailed: true,
-        expressGenerationError: errorMessage,
-      });
-    throw new Error("Narrative failed moderation");
+    await markNarrativeModerationFailure(sessionID);
+    throw new Error(NARRATIVE_MODERATION_FAILURE_MESSAGE);
   }
 
 
@@ -353,7 +348,9 @@ export async function createVidGPTSessionWithBody(userId, payload) {
   payload.duration = defaultDuration;
 
 
-  createVidGPTSession(userId, payload);
+  void createVidGPTSession(userId, payload).catch((error) => {
+    console.error(`VidGPT generation failed for session ${newSessionId}`, error);
+  });
 
   return newSessionId; // Return the session ID of the newly created session
 
@@ -394,17 +391,8 @@ export async function createInfoVidSession(userId, payload) {
   const moderationPassed = await getModerationForNarrative(prompt);
 
   if (!moderationPassed) {
-    const errorMessage = "Narrative failed moderation";
-    await VideoSession
-      .findByIdAndUpdate(sessionID, {
-        expressGenerationStatus: {
-          prompt_generation: "FAILED",
-        },
-        expressGenerationPending: false,
-        expressGenerationFailed: true,
-        expressGenerationError: errorMessage,
-      });
-    throw new Error("Narrative failed moderation");
+    await markNarrativeModerationFailure(sessionID);
+    throw new Error(NARRATIVE_MODERATION_FAILURE_MESSAGE);
   }
 
 

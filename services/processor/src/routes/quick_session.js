@@ -8,6 +8,7 @@ import {
 
 } from '../models/QuickSession.js';
 import { verifyUserAuth } from '../models/Auth.js';
+import { markNarrativeModerationFailure } from '../models/moderation/ModerationFailureState.js';
 
 const router = express.Router();
 
@@ -27,7 +28,18 @@ router.post('/create', async function (req, res) {
   try {
    await setSessionQuickGenerationPending(userId, payload);
 
-    createQuickSession(userId, payload);
+    void createQuickSession(userId, payload).catch(async (error) => {
+      console.error(`Quick session generation failed for session ${payload?.sessionId || 'unknown'}`, error);
+      if (error?.message === 'Content moderation failed') {
+        try {
+          await markNarrativeModerationFailure(payload?.sessionId, {
+            message: error.message,
+          });
+        } catch (markError) {
+          console.error(`Failed to mark quick session ${payload?.sessionId || 'unknown'} as failed`, markError);
+        }
+      }
+    });
     res.json({});
   } catch (error) {
     res.status(500).json({ error: error.message });

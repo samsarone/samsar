@@ -60,6 +60,16 @@ test('OpenRouter alone exposes GPT, Gemini, and Qwen inference', () => {
   }
 });
 
+test('Samsar keeps moderation available when OpenRouter owns inference routing', () => {
+  const available = buildDockerAvailableModelsFromEnabledProviders([
+    DOCKER_PROVIDER.OPENROUTER,
+    DOCKER_PROVIDER.SAMSAR,
+  ]);
+
+  assert.equal(available.modelProviders['gpt-5.6-sol'], DOCKER_PROVIDER.OPENROUTER);
+  assert.equal(available.actions.includes('moderation'), true);
+});
+
 test('no enabled provider exposes no Qwen model', () => {
   const available = buildDockerAvailableModelsFromEnabledProviders([]);
 

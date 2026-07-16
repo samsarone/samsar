@@ -10,6 +10,10 @@ import User from "../../schema/User.js";
 import { requestQuickMovieGeneration } from "./TranscriptMovieGenerator.js";
 import { validateTextToVideoNarrative } from "./utils/TranscriptUtils.js";
 import { getModerationForNarrative } from "../moderation/CreateModeration.js";
+import {
+  NARRATIVE_MODERATION_FAILURE_MESSAGE,
+  markNarrativeModerationFailure,
+} from '../moderation/ModerationFailureState.js';
 import VideoSession from "../../schema/VideoSession.js";
 import { isGeminiInferenceModel, normalizeInferenceModel } from "../../consts/InferenceModels.js";
 
@@ -54,17 +58,8 @@ export async function processImgToVidGPT(userId, payload) {
     const imgModerationPassed = await getModerationForNarrative(imgDescription);
   
     if (!moderationPassed || !imgModerationPassed) {
-      const errorMessage = "Narrative failed moderation";
-      await VideoSession
-        .findByIdAndUpdate(sessionID, {
-          expressGenerationStatus: {
-            prompt_generation: "FAILED",
-          },
-          expressGenerationPending: false,
-          expressGenerationFailed: true,
-          expressGenerationError: errorMessage,
-        });
-      throw new Error("Narrative failed moderation");
+      await markNarrativeModerationFailure(sessionID);
+      throw new Error(NARRATIVE_MODERATION_FAILURE_MESSAGE);
     }
   
   

@@ -20,6 +20,8 @@ const HARM_CATEGORIES = Object.freeze([
   'HARM_CATEGORY_SEXUALLY_EXPLICIT',
   'HARM_CATEGORY_DANGEROUS_CONTENT',
 ]);
+let pendingGoogleAccessTokenRequest = null;
+let pendingGoogleAccessTokenRequestKey = '';
 
 const GEMINI_MODERATION_RESPONSE_SCHEMA = Object.freeze({
   type: 'OBJECT',
@@ -176,6 +178,28 @@ async function resolveGoogleProjectId(config) {
   } catch {
     return '';
   }
+}
+
+async function getGoogleModerationAccessToken(config) {
+  const requestKey = JSON.stringify({
+    projectId: config.projectId || '',
+    scopes: Array.isArray(config.scopes) ? config.scopes : [],
+  });
+  if (
+    !pendingGoogleAccessTokenRequest ||
+    pendingGoogleAccessTokenRequestKey !== requestKey
+  ) {
+    const request = Promise.resolve().then(() => getGoogleAccessToken(config));
+    const trackedRequest = request.finally(() => {
+      if (pendingGoogleAccessTokenRequest === trackedRequest) {
+        pendingGoogleAccessTokenRequest = null;
+        pendingGoogleAccessTokenRequestKey = '';
+      }
+    });
+    pendingGoogleAccessTokenRequest = trackedRequest;
+    pendingGoogleAccessTokenRequestKey = requestKey;
+  }
+  return pendingGoogleAccessTokenRequest;
 }
 
 async function parseModerationError(response) {
@@ -434,20 +458,33 @@ export async function createGoogleModerationForNarrative(requestData, options = 
   const location = getGoogleModerationLocation(credentialOptions);
   const model = getGoogleModerationModel(credentialOptions);
   const config = getGoogleCloudConfig({ ...credentialOptions, location });
-  const projectId = await resolveGoogleProjectId(config);
-
-  if (!projectId) {
-    throw new Error('Google Gemini moderation requires GOOGLE_CLOUD_PROJECT, GOOGLE_PROJECT_ID, or an ADC default project.');
-  }
-
-  const token = await getGoogleAccessToken({
-    ...config,
-    projectId,
-  });
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), getGoogleModerationTimeoutMs(credentialOptions));
+  const onOuterAbort = () => controller.abort(options.signal?.reason);
+  if (options.signal?.aborted) {
+    controller.abort(options.signal.reason);
+  } else {
+    options.signal?.addEventListener('abort', onOuterAbort, { once: true });
+  }
+  const timeout = setTimeout(
+    () => controller.abort(new Error('Google Gemini moderation timed out.')),
+    getGoogleModerationTimeoutMs(credentialOptions),
+  );
 
   try {
+    controller.signal.throwIfAborted();
+    const projectId = await resolveGoogleProjectId(config);
+    controller.signal.throwIfAborted();
+
+    if (!projectId) {
+      throw new Error('Google Gemini moderation requires GOOGLE_CLOUD_PROJECT, GOOGLE_PROJECT_ID, or an ADC default project.');
+    }
+
+    const token = await getGoogleModerationAccessToken({
+      ...config,
+      projectId,
+    });
+    controller.signal.throwIfAborted();
+
     const response = await fetch(buildVertexGenerateContentUrl({ projectId, location, model }), {
       method: 'POST',
       headers: {
@@ -465,5 +502,6 @@ export async function createGoogleModerationForNarrative(requestData, options = 
     return normalizeGoogleModerationResponse(await response.json(), { model });
   } finally {
     clearTimeout(timeout);
+    options.signal?.removeEventListener('abort', onOuterAbort);
   }
 }

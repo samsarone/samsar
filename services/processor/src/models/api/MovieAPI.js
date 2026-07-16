@@ -389,9 +389,7 @@ export async function requestCreateMovie(userId, payload, webhookUrl) {
 
   payload.sessionID = sessionId;
 
-  scheduleTextToVideoBuilderSession(sessionId, userId, payload, webhookUrl, 'movie_create');
-
-  await upsertGlobalSessionMapping({
+  await upsertGlobalSessionBeforeScheduling({
     sessionId,
     sessionType: 'video',
     requestId: sessionId,
@@ -400,7 +398,9 @@ export async function requestCreateMovie(userId, payload, webhookUrl) {
     status: 'PENDING',
     requestType: 'API',
     sessionSubType: 'movie_create',
-  });
+  }, { routeType: 'text_to_video', sessionSubType: 'movie_create' });
+
+  scheduleTextToVideoBuilderSession(sessionId, userId, payload, webhookUrl, 'movie_create');
 
   return {
     request_id: sessionId,
@@ -416,10 +416,8 @@ export async function requestCreateNarrative(userId, payload, webhookUrl) {
   const sessionId = await createNewBlankQuickSession(userId);
 
   payload.sessionID = sessionId;
-  
-  createQuickSessionAndUpdateWebhook(userId, payload, webhookUrl);
 
-  await upsertGlobalSessionMapping({
+  await upsertGlobalSessionBeforeScheduling({
     sessionId,
     sessionType: 'video',
     requestId: sessionId,
@@ -428,6 +426,12 @@ export async function requestCreateNarrative(userId, payload, webhookUrl) {
     status: 'PENDING',
     requestType: 'API',
     sessionSubType: 'narrative_create',
+  }, { routeType: 'text_to_video', sessionSubType: 'narrative_create' });
+
+  void createQuickSessionAndUpdateWebhook(userId, payload, webhookUrl).catch(async (error) => {
+    console.error(`createQuickSessionAndUpdateWebhook failed for session ${sessionId}`, error);
+    await markTextToVideoBuilderSessionFailed(sessionId, error);
+    await markGlobalBuilderSessionFailed(sessionId, extractTextToVideoErrorMessage(error));
   });
 
   return {
@@ -634,17 +638,6 @@ export async function requestCreateVideo(userId, payload = {}, webhookUrl) {
 
   await createUnifiedSessionAndUpdateWebhook(userId, normalizedPayload, webhookUrl);
 
-  await upsertGlobalSessionMapping({
-    sessionId,
-    sessionType: 'video',
-    requestId: sessionId,
-    provider: normalizedPayload.video_model || 'UNKNOWN',
-    userId,
-    status: 'PENDING',
-    requestType: 'API',
-    sessionSubType: 'video_create',
-  });
-
 
   return {
     request_id: sessionId,
@@ -803,6 +796,16 @@ async function createUnifiedSessionAndUpdateWebhook(userId, payload, webhookUrl)
     finalPayload.speakerFont = speakerFont;
   }
 
+  await upsertGlobalSessionBeforeScheduling({
+    sessionId: payload.sessionID,
+    sessionType: 'video',
+    requestId: payload.sessionID,
+    provider: video_model || 'UNKNOWN',
+    userId,
+    status: 'PENDING',
+    requestType: 'API',
+    sessionSubType: 'video_create',
+  }, { routeType: 'text_to_video', sessionSubType: 'video_create' });
 
   scheduleTextToVideoBuilderSession(payload.sessionID, userId, finalPayload, webhookUrl, 'video_create');
 
@@ -1512,6 +1515,29 @@ function extractTextToVideoErrorMessage(error) {
   return 'Text to video prompt generation failed.';
 }
 
+async function upsertGlobalSessionBeforeScheduling(mapping, {
+  routeType,
+  sessionSubType,
+} = {}) {
+  try {
+    return await upsertGlobalSessionMapping(mapping);
+  } catch (error) {
+    const sessionId = mapping?.sessionId;
+    await markExpressGenerationBuilderState(sessionId, {
+      routeType,
+      status: 'FAILED',
+      sessionSubType,
+      error,
+    });
+    if (routeType === 'image_list_to_video') {
+      await markImageListToVideoBuilderSessionFailed(sessionId, error);
+    } else {
+      await markTextToVideoBuilderSessionFailed(sessionId, error);
+    }
+    throw error;
+  }
+}
+
 async function markGlobalBuilderSessionFailed(sessionId, errorMessage) {
   if (!sessionId) {
     return;
@@ -1600,10 +1626,6 @@ async function markTextToVideoBuilderSessionFailed(sessionId, error) {
       return;
     }
 
-    if (session.expressGenerationFailed && session.expressGenerationError) {
-      return;
-    }
-
     const message = session.expressGenerationError || extractTextToVideoErrorMessage(error);
     const nextStatus = { ...(session.expressGenerationStatus || {}) };
     const promptStage = typeof nextStatus.prompt_generation === 'string'
@@ -1668,10 +1690,6 @@ async function markImageListToVideoBuilderSessionFailed(sessionId, error) {
       .lean();
 
     if (!session) {
-      return;
-    }
-
-    if (session.expressGenerationFailed && session.expressGenerationError) {
       return;
     }
 

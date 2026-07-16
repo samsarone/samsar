@@ -27,6 +27,7 @@ test('Samsar fallback availability includes Qwen 3.7 and media models', () => {
   assert.equal(available.models.includes('QWEN3.7'), true);
   assert.equal(available.models.includes('HAPPYHORSEI2V'), true);
   assert.equal(available.models.includes('WAN2.7PRO'), true);
+  assert.equal(available.actions.includes('moderation'), true);
 });
 
 test('OpenRouter availability exposes all inference models and no media-generation models', () => {

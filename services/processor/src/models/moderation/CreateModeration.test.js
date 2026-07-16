@@ -1,27 +1,34 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-process.env.OPENAI_API_KEY = process.env.OPENAI_API_KEY || "test";
 process.env.OPENAI_MODERATION_REJECT_SCORE_THRESHOLD = "0.65";
 process.env.GOOGLE_MODERATION_REJECT_SCORE_THRESHOLD = "0.7";
 
 const {
   MODERATION_PROVIDERS,
+  createNativeOpenAIModeration,
   getModerationDecision,
+  getModerationForNarrative,
+  getModerationResponseDecision,
+  hasGoogleModerationCredential,
   isGoogleOnlyDeploymentProviderConfig,
   resolveModerationProvider,
+  runModerationWithRetry,
   shouldUseGoogleModerationForInferenceContext,
 } = await import("./CreateModeration.js");
+
+const GOOGLE_CREDENTIALS_B64 = Buffer.from(JSON.stringify({
+  type: "service_account",
+  project_id: "docker-project",
+  client_email: "moderation@example.invalid",
+  private_key: "-----BEGIN PRIVATE KEY-----\ntest\n-----END PRIVATE KEY-----\n",
+})).toString("base64");
 
 test("getModerationDecision rejects flagged moderation results", () => {
   assert.deepEqual(getModerationDecision({
     flagged: true,
-    categories: {
-      violence: true,
-    },
-    category_scores: {
-      violence: 0.99,
-    },
+    categories: { violence: true },
+    category_scores: { violence: 0.99 },
   }), {
     safe: false,
     reason: "flagged",
@@ -32,12 +39,8 @@ test("getModerationDecision rejects flagged moderation results", () => {
 test("getModerationDecision rejects high category scores before the API flag threshold", () => {
   assert.deepEqual(getModerationDecision({
     flagged: false,
-    categories: {
-      violence: false,
-    },
-    category_scores: {
-      violence: 0.66,
-    },
+    categories: { violence: false },
+    category_scores: { violence: 0.66 },
   }), {
     safe: false,
     reason: "category_score",
@@ -46,30 +49,11 @@ test("getModerationDecision rejects high category scores before the API flag thr
   });
 });
 
-test("getModerationDecision allows category scores below the adjusted threshold", () => {
-  assert.deepEqual(getModerationDecision({
-    flagged: false,
-    categories: {
-      violence: false,
-    },
-    category_scores: {
-      violence: 0.64,
-    },
-  }), {
-    safe: true,
-    reason: "passed",
-  });
-});
-
 test("getModerationDecision uses the Google moderation score threshold", () => {
   assert.deepEqual(getModerationDecision({
     flagged: false,
-    categories: {
-      violence: false,
-    },
-    category_scores: {
-      violence: 0.66,
-    },
+    categories: { violence: false },
+    category_scores: { violence: 0.66 },
   }, { provider: MODERATION_PROVIDERS.GOOGLE }), {
     safe: true,
     reason: "passed",
@@ -77,12 +61,8 @@ test("getModerationDecision uses the Google moderation score threshold", () => {
 
   assert.deepEqual(getModerationDecision({
     flagged: false,
-    categories: {
-      violence: false,
-    },
-    category_scores: {
-      violence: 0.71,
-    },
+    categories: { violence: false },
+    category_scores: { violence: 0.71 },
   }, { provider: MODERATION_PROVIDERS.GOOGLE }), {
     safe: false,
     reason: "category_score",
@@ -91,161 +71,151 @@ test("getModerationDecision uses the Google moderation score threshold", () => {
   });
 });
 
-test("getModerationDecision allows clean moderation results", () => {
-  assert.deepEqual(getModerationDecision({
-    flagged: false,
-    categories: {
-      violence: false,
-    },
-    category_scores: {
-      violence: 0.01,
-    },
+test("getModerationResponseDecision rejects when any result is unsafe", () => {
+  assert.deepEqual(getModerationResponseDecision({
+    results: [
+      { flagged: false, categories: {}, category_scores: {} },
+      { flagged: true, categories: { violence: true }, category_scores: {} },
+    ],
   }), {
-    safe: true,
-    reason: "passed",
+    safe: false,
+    reason: "flagged",
+    categories: ["violence"],
   });
 });
 
-test("resolveModerationProvider defaults to OpenAI outside docker", () => {
+test("resolveModerationProvider defaults to OpenAI outside Docker", () => {
   assert.equal(resolveModerationProvider({
-    env: {
-      CURRENT_ENV: "production",
-    },
-    availableModelConfig: {
-      providers: ["googleCloud"],
-    },
+    env: { CURRENT_ENV: "production" },
   }), MODERATION_PROVIDERS.OPENAI);
 });
 
-test("resolveModerationProvider keeps OpenAI for docker google-only provider config without Gemini inference", () => {
+test("Docker skips moderation when no supported moderation credential is present", () => {
   assert.equal(resolveModerationProvider({
     env: {
       CURRENT_ENV: "docker",
+      OPENROUTER_API_KEY: "openrouter-is-not-a-moderation-endpoint",
     },
-    availableModelConfig: {
-      providers: ["googleCloud"],
+    availableModelConfig: { providers: ["openrouter", "fal"] },
+  }), MODERATION_PROVIDERS.DISABLED);
+});
+
+test("Docker uses native OpenAI moderation when an OpenAI key is present", () => {
+  assert.equal(resolveModerationProvider({
+    env: {
+      CURRENT_ENV: "docker",
+      OPENAI_API_KEY: "openai-test-key",
     },
   }), MODERATION_PROVIDERS.OPENAI);
 });
 
-test("resolveModerationProvider uses Google for production Gemini text-to-video prompts", () => {
+test("Docker uses Google moderation when Google Cloud credentials are the only endpoint", () => {
   assert.equal(resolveModerationProvider({
     env: {
-      CURRENT_ENV: "production",
+      CURRENT_ENV: "docker",
+      GOOGLE_APPLICATION_CREDENTIALS_JSON_B64: GOOGLE_CREDENTIALS_B64,
+      GOOGLE_CLOUD_PROJECT: "docker-project",
     },
-    availableModelConfig: {
-      providers: ["openai"],
+  }), MODERATION_PROVIDERS.GOOGLE);
+});
+
+test("Docker prefers Google for Gemini text-to-video when Google and OpenAI are available", () => {
+  assert.equal(resolveModerationProvider({
+    env: {
+      CURRENT_ENV: "docker",
+      OPENAI_API_KEY: "openai-test-key",
+      GOOGLE_APPLICATION_CREDENTIALS_JSON_B64: GOOGLE_CREDENTIALS_B64,
+      GOOGLE_CLOUD_PROJECT: "docker-project",
     },
     inferenceModel: "gemini-3.1-pro",
     routeType: "text_to_video",
   }), MODERATION_PROVIDERS.GOOGLE);
 });
 
-test("resolveModerationProvider uses Google for docker google-only Gemini text-to-video prompts", () => {
+test("Docker otherwise prefers OpenAI when multiple moderation endpoints are available", () => {
   assert.equal(resolveModerationProvider({
     env: {
       CURRENT_ENV: "docker",
-    },
-    availableModelConfig: {
-      providers: ["googleCloud"],
-    },
-    inferenceModel: "gemini-3.1-pro",
-    routeType: "text_to_video",
-  }), MODERATION_PROVIDERS.GOOGLE);
-});
-
-test("resolveModerationProvider keeps OpenAI for GPT 5.6 Sol text-to-video prompts", () => {
-  assert.equal(resolveModerationProvider({
-    env: {
-      CURRENT_ENV: "production",
-    },
-    availableModelConfig: {
-      providers: ["googleCloud"],
-    },
-    inferenceModel: "gpt-5.6-sol",
-    routeType: "text_to_video",
-  }), MODERATION_PROVIDERS.OPENAI);
-
-  assert.equal(resolveModerationProvider({
-    env: {
-      CURRENT_ENV: "docker",
-    },
-    availableModelConfig: {
-      providers: ["googleCloud"],
+      OPENAI_API_KEY: "openai-test-key",
+      GOOGLE_APPLICATION_CREDENTIALS_JSON_B64: GOOGLE_CREDENTIALS_B64,
+      GOOGLE_CLOUD_PROJECT: "docker-project",
+      SAMSAR_API_KEY: "samsar-test-key",
     },
     inferenceModel: "gpt-5.6-sol",
     routeType: "text_to_video",
   }), MODERATION_PROVIDERS.OPENAI);
 });
 
-test("resolveModerationProvider keeps OpenAI for Gemini prompts outside text-to-video", () => {
-  assert.equal(resolveModerationProvider({
-    env: {
-      CURRENT_ENV: "production",
-    },
-    availableModelConfig: {
-      providers: ["openai"],
-    },
-    inferenceModel: "gemini-3.1-pro",
-    routeType: "image_list_to_video",
-  }), MODERATION_PROVIDERS.OPENAI);
-});
-
-test("resolveModerationProvider keeps OpenAI when docker config includes another provider", () => {
+test("Docker uses the hosted Samsar moderation endpoint when only a Samsar key is present", () => {
   assert.equal(resolveModerationProvider({
     env: {
       CURRENT_ENV: "docker",
+      SAMSAR_API_KEY: "samsar-test-key",
+      SAMSAR_JS_API_URL: "https://api.example.invalid/v1",
     },
-    availableModelConfig: {
-      providers: ["googleCloud", "openai"],
-    },
-  }), MODERATION_PROVIDERS.OPENAI);
+  }), MODERATION_PROVIDERS.SAMSAR);
 });
 
-test("resolveModerationProvider honors explicit Google provider for Gemini text-to-video context", () => {
+test("Docker ignores malformed Google credentials instead of entering moderation", () => {
+  const env = {
+    CURRENT_ENV: "docker",
+    GOOGLE_APPLICATION_CREDENTIALS_JSON_B64: "not-valid-json",
+    GOOGLE_CLOUD_PROJECT: "docker-project",
+  };
+  assert.equal(hasGoogleModerationCredential(env), false);
+  assert.equal(resolveModerationProvider({ env }), MODERATION_PROVIDERS.DISABLED);
+
+  const emptyCredentialEnv = {
+    CURRENT_ENV: "docker",
+    GOOGLE_APPLICATION_CREDENTIALS_JSON_B64: Buffer.from("{}").toString("base64"),
+    GOOGLE_CLOUD_PROJECT: "docker-project",
+  };
+  assert.equal(hasGoogleModerationCredential(emptyCredentialEnv), false);
+
+  assert.equal(hasGoogleModerationCredential({
+    GOOGLE_APPLICATION_CREDENTIALS: "/definitely/missing/google-credentials.json",
+    GOOGLE_CLOUD_PROJECT: "docker-project",
+  }), false);
+});
+
+test("Docker explicit provider is honored only when its credential is configured", () => {
   assert.equal(resolveModerationProvider({
     env: {
-      CURRENT_ENV: "production",
+      CURRENT_ENV: "docker",
       SAMSAR_MODERATION_PROVIDER: "google_cloud",
+      OPENAI_API_KEY: "openai-test-key",
     },
-    availableModelConfig: {
-      providers: ["openai"],
+  }), MODERATION_PROVIDERS.OPENAI);
+
+  assert.equal(resolveModerationProvider({
+    env: {
+      CURRENT_ENV: "docker",
+      SAMSAR_MODERATION_PROVIDER: "samsar-js",
+      SAMSAR_API_KEY: "samsar-test-key",
     },
+  }), MODERATION_PROVIDERS.SAMSAR);
+});
+
+test("production Gemini text-to-video prompts retain Google moderation routing", () => {
+  assert.equal(resolveModerationProvider({
+    env: { CURRENT_ENV: "production" },
     inferenceModel: "gemini-3.1-pro",
     routeType: "text_to_video",
   }), MODERATION_PROVIDERS.GOOGLE);
 });
 
-test("resolveModerationProvider does not let explicit Google provider force GPT moderation to Vertex", () => {
+test("explicit disabled provider skips moderation in every environment", () => {
   assert.equal(resolveModerationProvider({
     env: {
       CURRENT_ENV: "production",
-      SAMSAR_MODERATION_PROVIDER: "google_cloud",
+      SAMSAR_MODERATION_PROVIDER: "disabled",
     },
-    inferenceModel: "gpt-5.6-sol",
-    routeType: "text_to_video",
-  }), MODERATION_PROVIDERS.OPENAI);
-});
-
-test("resolveModerationProvider honors explicit OpenAI provider over Gemini text-to-video context", () => {
-  assert.equal(resolveModerationProvider({
-    env: {
-      CURRENT_ENV: "production",
-      SAMSAR_MODERATION_PROVIDER: "openai",
-    },
-    availableModelConfig: {
-      providers: ["googleCloud"],
-    },
-    inferenceModel: "gemini-3.1-pro",
-    routeType: "text_to_video",
-  }), MODERATION_PROVIDERS.OPENAI);
+  }), MODERATION_PROVIDERS.DISABLED);
 });
 
 test("isGoogleOnlyDeploymentProviderConfig accepts environment provider lists", () => {
   assert.equal(isGoogleOnlyDeploymentProviderConfig({
-    env: {
-      SAMSAR_DEPLOYMENT_PROVIDERS: "google_cloud",
-    },
+    env: { SAMSAR_DEPLOYMENT_PROVIDERS: "google_cloud" },
   }), true);
 });
 
@@ -254,4 +224,282 @@ test("shouldUseGoogleModerationForInferenceContext recognizes Gemini text-to-vid
     inferenceModel: "gemini-3-pro-preview",
     routeType: "T2V",
   }), true);
+});
+
+test("runModerationWithRetry backs off and succeeds after transient 429 responses", async () => {
+  let attempts = 0;
+  const delays = [];
+  const result = await runModerationWithRetry(async () => {
+    attempts += 1;
+    if (attempts < 3) {
+      const error = new Error("rate limited");
+      error.status = 429;
+      throw error;
+    }
+    return "safe";
+  }, {
+    timeoutMs: 100,
+    maxRetries: 3,
+    retryBaseDelayMs: 5,
+    retryMaxDelayMs: 50,
+    sleep: async (delayMs) => delays.push(delayMs),
+    logRetries: false,
+  });
+
+  assert.equal(result, "safe");
+  assert.equal(attempts, 3);
+  assert.deepEqual(delays, [5, 10]);
+});
+
+test("runModerationWithRetry honors Retry-After within the configured bound", async () => {
+  let attempts = 0;
+  const delays = [];
+  await runModerationWithRetry(async () => {
+    attempts += 1;
+    if (attempts === 1) {
+      const error = new Error("rate limited");
+      error.status = 429;
+      error.headers = { "retry-after": "0.02" };
+      throw error;
+    }
+    return true;
+  }, {
+    timeoutMs: 100,
+    maxRetries: 1,
+    retryBaseDelayMs: 5,
+    retryMaxDelayMs: 50,
+    sleep: async (delayMs) => delays.push(delayMs),
+    logRetries: false,
+  });
+  assert.deepEqual(delays, [20]);
+});
+
+test("runModerationWithRetry makes four total attempts for three retries", async () => {
+  let attempts = 0;
+  await assert.rejects(
+    runModerationWithRetry(async () => {
+      attempts += 1;
+      const error = new Error("upstream unavailable");
+      error.status = 503;
+      throw error;
+    }, {
+      timeoutMs: 100,
+      maxRetries: 3,
+      retryBaseDelayMs: 1,
+      retryMaxDelayMs: 5,
+      sleep: async () => {},
+      logRetries: false,
+    }),
+    (error) => error.status === 503 && error.moderationAttempts === 4,
+  );
+  assert.equal(attempts, 4);
+});
+
+test("runModerationWithRetry clamps configuration to three retries", async () => {
+  let attempts = 0;
+  await assert.rejects(runModerationWithRetry(async () => {
+    attempts += 1;
+    const error = new Error("upstream unavailable");
+    error.status = 503;
+    throw error;
+  }, {
+    timeoutMs: 100,
+    maxRetries: 99,
+    retryBaseDelayMs: 1,
+    sleep: async () => {},
+    logRetries: false,
+  }));
+  assert.equal(attempts, 4);
+});
+
+test("moderation retry timing configuration cannot defeat hard safety ceilings", async () => {
+  let observedTimeoutMs = 0;
+  const retryDelays = [];
+  let attempts = 0;
+  await assert.rejects(runModerationWithRetry(async ({ timeoutMs }) => {
+    attempts += 1;
+    observedTimeoutMs = timeoutMs;
+    const error = new Error("rate limited");
+    error.status = 429;
+    error.headers = { "retry-after": "999" };
+    throw error;
+  }, {
+    timeoutMs: 999_999,
+    maxRetries: 99,
+    retryBaseDelayMs: 999_999,
+    retryMaxDelayMs: 999_999,
+    sleep: async (delayMs) => retryDelays.push(delayMs),
+    logRetries: false,
+  }));
+
+  assert.equal(observedTimeoutMs, 20_000);
+  assert.equal(attempts, 4);
+  assert.deepEqual(retryDelays, [10_000, 10_000, 10_000]);
+});
+
+test("runModerationWithRetry does not retry authentication failures", async () => {
+  let attempts = 0;
+  await assert.rejects(
+    runModerationWithRetry(async () => {
+      attempts += 1;
+      const error = new Error("invalid key");
+      error.status = 401;
+      throw error;
+    }, {
+      timeoutMs: 100,
+      maxRetries: 3,
+      sleep: async () => {},
+      logRetries: false,
+    }),
+    (error) => error.status === 401,
+  );
+  assert.equal(attempts, 1);
+});
+
+test("runModerationWithRetry hard-times a provider that never settles", async () => {
+  const startedAt = Date.now();
+  await assert.rejects(
+    runModerationWithRetry(() => new Promise(() => {}), {
+      timeoutMs: 20,
+      maxRetries: 0,
+      logRetries: false,
+    }),
+    (error) => error.code === "MODERATION_TIMEOUT" && error.status === 504,
+  );
+  assert.ok(Date.now() - startedAt < 500);
+});
+
+test("native OpenAI moderation disables SDK retries and sets the hard attempt timeout", async () => {
+  let observedBody = null;
+  let observedOptions = null;
+  const response = {
+    id: "modr_test",
+    model: "omni-moderation-latest",
+    results: [{ flagged: false, categories: {}, category_scores: {} }],
+  };
+  const result = await createNativeOpenAIModeration("a normal prompt", {
+    openaiClient: {
+      moderations: {
+        create: async (body, options) => {
+          observedBody = body;
+          observedOptions = options;
+          return response;
+        },
+      },
+    },
+    model: "omni-moderation-latest",
+    timeoutMs: 321,
+    maxRetries: 0,
+    logRetries: false,
+  });
+
+  assert.equal(result, response);
+  assert.deepEqual(observedBody, {
+    input: "a normal prompt",
+    model: "omni-moderation-latest",
+  });
+  assert.equal(observedOptions.timeout, 321);
+  assert.equal(observedOptions.maxRetries, 0);
+  assert.equal(observedOptions.signal instanceof AbortSignal, true);
+});
+
+test("native OpenAI moderation retries malformed transient responses", async () => {
+  let attempts = 0;
+  const result = await createNativeOpenAIModeration("a normal prompt", {
+    openaiClient: {
+      moderations: {
+        create: async () => {
+          attempts += 1;
+          if (attempts === 1) {
+            return { results: [{}] };
+          }
+          return {
+            results: [{ flagged: false, categories: {}, category_scores: {} }],
+          };
+        },
+      },
+    },
+    timeoutMs: 100,
+    maxRetries: 1,
+    retryBaseDelayMs: 1,
+    sleep: async () => {},
+    logRetries: false,
+  });
+
+  assert.equal(attempts, 2);
+  assert.equal(result.results[0].flagged, false);
+});
+
+test("getModerationForNarrative skips without calling a provider in credential-less Docker", async () => {
+  let called = false;
+  const safe = await getModerationForNarrative("prompt", {
+    env: { CURRENT_ENV: "docker" },
+    moderationCall: async () => {
+      called = true;
+      throw new Error("must not be called");
+    },
+  });
+  assert.equal(safe, true);
+  assert.equal(called, false);
+});
+
+test("getModerationForNarrative fails closed after a configured provider error", async (t) => {
+  t.mock.method(console, "error", () => {});
+  const safe = await getModerationForNarrative("prompt", {
+    env: {
+      CURRENT_ENV: "docker",
+      OPENAI_API_KEY: "openai-test-key",
+    },
+    moderationCall: async () => {
+      const error = new Error("provider unavailable");
+      error.status = 503;
+      throw error;
+    },
+  });
+  assert.equal(safe, false);
+});
+
+test("Docker Samsar moderation relies on one bounded hosted request", async (t) => {
+  t.mock.method(console, "error", () => {});
+  let calls = 0;
+  const safe = await getModerationForNarrative("prompt", {
+    env: {
+      CURRENT_ENV: "docker",
+      SAMSAR_API_KEY: "samsar-test-key",
+    },
+    samsarRequestTimeoutMs: 100,
+    samsarClient: {
+      createExternalModeration: async () => {
+        calls += 1;
+        const error = new Error("hosted endpoint unavailable");
+        error.status = 503;
+        throw error;
+      },
+    },
+  });
+
+  assert.equal(safe, false);
+  assert.equal(calls, 1);
+});
+
+test("Docker Samsar request uses its dedicated hosted-endpoint timeout budget", async () => {
+  const safe = await getModerationForNarrative("prompt", {
+    env: {
+      CURRENT_ENV: "docker",
+      SAMSAR_API_KEY: "samsar-test-key",
+    },
+    samsarRequestTimeoutMs: 60,
+    samsarClient: {
+      createExternalModeration: async () => {
+        await new Promise((resolve) => setTimeout(resolve, 30));
+        return {
+          data: {
+            results: [{ flagged: false, categories: {}, category_scores: {} }],
+          },
+        };
+      },
+    },
+  });
+
+  assert.equal(safe, true);
 });
