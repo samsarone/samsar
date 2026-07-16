@@ -454,6 +454,9 @@ export async function alignSpeechLayerWithGentle(
       transcriptText,
       alignerLanguageCode,
       audioDurationSeconds,
+      {
+        speechTimingWindow: options.speechTimingWindow,
+      },
     );
 
     const rawLayers = await buildSubtitleLayersFromAlignment(

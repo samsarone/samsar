@@ -14,6 +14,7 @@ import {
 import { resolveGeneratedSubtitleLayers } from './SubtitleRerunFallback.js';
 import { resolveSubtitleAudioSource } from './SubtitleAudioSource.js';
 import { resolveAudioLinkToLocalPath } from '../audio/AudioUtils.js';
+import { resolvePaddedSpeechTimingWindow } from './SpeechAlignment.js';
 
 function getAlignerLanguageCode(languageCode = '') {
   if (typeof languageCode !== 'string') {
@@ -61,6 +62,7 @@ async function getSubtitleLayersForAudioLayer({
     alignerLanguageCode,
     audioSource
   );
+  const speechTimingWindow = resolvePaddedSpeechTimingWindow(audioLayer);
 
   if (cachedAlignment) {
     try {
@@ -121,6 +123,7 @@ async function getSubtitleLayersForAudioLayer({
         // even when alignment temporarily materialized a remote object.
         audioSource,
         inferenceModel,
+        speechTimingWindow,
       }
     );
   } finally {

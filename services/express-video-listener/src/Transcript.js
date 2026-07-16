@@ -715,6 +715,7 @@ export async function generateTranscriptsForSessionAudioLayers(sessionId) {
             ? 'highlight'
             : (configuredSubtitleWordAnimation || 'highlight');
         const audioFilePath = audioLayer.selectedLocalAudioLink;
+        const syntheticAlignmentWindow = resolvePaddedSpeechTimingWindow(audioLayer);
 
         if (!transcriptText || !transcriptText.trim()) {
           skippedEmptyTranscript++;
@@ -837,6 +838,7 @@ export async function generateTranscriptsForSessionAudioLayers(sessionId) {
                   alignmentWords: cachedAlignment.words,
                   alignmentTranscriptText: cachedAlignment.transcriptText || alignmentTranscriptText,
                   auditContext: transcriptAuditContext,
+                  syntheticAlignmentWindow,
                   ...mappedSubtitleOptions,
                 }
                 : {
@@ -844,6 +846,7 @@ export async function generateTranscriptsForSessionAudioLayers(sessionId) {
                   sourceText: alignmentTranscriptText,
                   audioSource: audioFilePath,
                   auditContext: transcriptAuditContext,
+                  syntheticAlignmentWindow,
                   ...mappedSubtitleOptions,
                 }
             );
@@ -1105,7 +1108,58 @@ function tokenizeTranscriptForAlignment(rawText, languageCode) {
   return whitespaceTokens;
 }
 
-function buildTimedWordAlignment(wordsList, audioDurationSeconds, caseLabel) {
+function resolvePaddedSpeechTimingWindow(audioLayer = {}) {
+  const previousAudioData = audioLayer?.previousAudioData;
+  if (!previousAudioData || typeof previousAudioData !== 'object') {
+    return null;
+  }
+
+  const audioDurationSeconds = Number(audioLayer?.duration);
+  const previousDurationSeconds = Number(previousAudioData.duration);
+  const originalDurationSeconds = Number(audioLayer?.originalDuration);
+  const speechDurationSeconds = Number.isFinite(previousDurationSeconds) && previousDurationSeconds > 0
+    ? previousDurationSeconds
+    : originalDurationSeconds;
+
+  if (
+    !Number.isFinite(audioDurationSeconds) ||
+    audioDurationSeconds <= 0 ||
+    !Number.isFinite(speechDurationSeconds) ||
+    speechDurationSeconds <= 0
+  ) {
+    return null;
+  }
+
+  const totalPaddingSeconds = audioDurationSeconds - speechDurationSeconds;
+  if (totalPaddingSeconds <= 0.01) {
+    return null;
+  }
+
+  const previousStartTime = Number(previousAudioData.startTime);
+  const audioStartTime = Number(audioLayer?.startTime);
+  const storedStartOffset = previousStartTime - audioStartTime;
+  const hasValidStoredOffset = (
+    Number.isFinite(previousStartTime) &&
+    Number.isFinite(audioStartTime) &&
+    storedStartOffset >= -0.01 &&
+    storedStartOffset <= totalPaddingSeconds + 0.01
+  );
+  const startSeconds = hasValidStoredOffset
+    ? Math.min(Math.max(storedStartOffset, 0), totalPaddingSeconds)
+    : totalPaddingSeconds / 2;
+
+  return {
+    startSeconds,
+    durationSeconds: speechDurationSeconds,
+  };
+}
+
+function buildTimedWordAlignment(
+  wordsList,
+  audioDurationSeconds,
+  caseLabel,
+  timingWindow = null,
+) {
   const tokens = Array.isArray(wordsList)
     ? wordsList.map((word) => (typeof word === 'string' ? word.trim() : '')).filter(Boolean)
     : [];
@@ -1114,15 +1168,37 @@ function buildTimedWordAlignment(wordsList, audioDurationSeconds, caseLabel) {
     return [];
   }
 
-  let durationSeconds = Number(audioDurationSeconds);
+  const maximumDurationSeconds = Number(audioDurationSeconds);
+  const hasMaximumDuration = Number.isFinite(maximumDurationSeconds) && maximumDurationSeconds > 0;
+  const requestedStartSeconds = Number(timingWindow?.startSeconds);
+  const requestedDurationSeconds = Number(timingWindow?.durationSeconds);
+  const hasTimingWindow = (
+    Number.isFinite(requestedStartSeconds) &&
+    requestedStartSeconds >= 0 &&
+    Number.isFinite(requestedDurationSeconds) &&
+    requestedDurationSeconds > 0
+  );
+
+  let startSeconds = hasTimingWindow ? requestedStartSeconds : 0;
+  let durationSeconds = hasTimingWindow ? requestedDurationSeconds : maximumDurationSeconds;
+  if (hasTimingWindow && hasMaximumDuration) {
+    startSeconds = Math.min(startSeconds, maximumDurationSeconds);
+    durationSeconds = Math.min(
+      durationSeconds,
+      Math.max(maximumDurationSeconds - startSeconds, 0),
+    );
+  }
   if (!Number.isFinite(durationSeconds) || durationSeconds <= 0) {
+    startSeconds = 0;
     durationSeconds = (0.5 * tokens.length) || 0.5;
   }
 
   const step = durationSeconds / Math.max(tokens.length, 1);
   return tokens.map((word, idx) => {
-    const start = Math.round(idx * step * 1000) / 1000;
-    const end = Math.round(Math.min(durationSeconds, (idx + 1) * step) * 1000) / 1000;
+    const start = Math.round((startSeconds + (idx * step)) * 1000) / 1000;
+    const end = Math.round(
+      (startSeconds + Math.min(durationSeconds, (idx + 1) * step)) * 1000,
+    ) / 1000;
     return {
       alignedWord: word,
       word,
@@ -1652,6 +1728,7 @@ async function transcribeWithOpenAI(
     const transcriptionClient = options.openaiClient || openai;
     const createReadStream = options.createReadStream || fs.createReadStream;
     const recordUsageLog = options.recordUsageLog || recordProviderUsageLog;
+    const syntheticAlignmentWindow = options.syntheticAlignmentWindow || null;
 
     const requestPayloadBase = {
       language: normalizeTranscriptionLanguageCode(languageCode),
@@ -1786,13 +1863,17 @@ async function transcribeWithOpenAI(
       })
       .filter((w) => w.word.trim() !== '');
 
-    if (!words.length) {
+    const hasInvalidTimestampFallback = words.some(
+      (wordInfo) => wordInfo.case === 'invalid_timestamp_fallback',
+    );
+    if (!words.length || hasInvalidTimestampFallback) {
       const fallbackTranscript = transcriptText?.trim() ? transcriptText : openAiTranscript;
       if (fallbackTranscript) {
         words = buildTimedWordAlignment(
           tokenizeTranscriptForAlignment(fallbackTranscript, languageCode),
           effectiveDurationSeconds,
-          'fallback',
+          hasInvalidTimestampFallback ? 'invalid_timestamp_fallback' : 'fallback',
+          syntheticAlignmentWindow,
         );
       }
     }
@@ -1809,6 +1890,7 @@ async function transcribeWithOpenAI(
       tokenizeTranscriptForAlignment(fallbackTranscript, languageCode),
       audioDurationSeconds,
       'fallback_error',
+      options.syntheticAlignmentWindow,
     );
 
     return { words: normalizeAlignedWords(words, audioDurationSeconds), transcriptText: fallbackTranscript };
@@ -1856,6 +1938,9 @@ async function alignWithGentle(
         transcriptionLanguageCode,
         effectiveDurationSeconds,
         options.auditContext,
+        {
+          syntheticAlignmentWindow: options.syntheticAlignmentWindow,
+        },
       );
       alignedWords = normalizeAlignedWords(openAiResult?.words, effectiveDurationSeconds);
       resolvedTranscript = openAiResult?.transcriptText || transcriptText;
@@ -2135,6 +2220,7 @@ export const __testOnly__ = {
   getStaticSubtitleTiming,
   buildStaticTranslatedSubtitleItem,
   tokenizeTranscriptForAlignment,
+  resolvePaddedSpeechTimingWindow,
   getWordTimestampCapability,
   buildTranscriptionAttempts,
   transcribeWithOpenAI,

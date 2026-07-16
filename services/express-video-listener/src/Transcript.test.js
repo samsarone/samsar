@@ -554,6 +554,126 @@ test('Chinese fallback creates multiple timed units after timestamp service fail
   }), null);
 });
 
+test('padded character speech resolves its original speech timing window', () => {
+  assert.deepEqual(
+    __testOnly__.resolvePaddedSpeechTimingWindow({
+      startTime: 31.5,
+      duration: 7.875,
+      originalDuration: 4,
+      previousAudioData: {
+        startTime: 33.4375,
+        duration: 4,
+      },
+    }),
+    {
+      startSeconds: 1.9375,
+      durationSeconds: 4,
+    },
+  );
+
+  assert.deepEqual(
+    __testOnly__.resolvePaddedSpeechTimingWindow({
+      startTime: 10,
+      duration: 8,
+      originalDuration: 4,
+      previousAudioData: { duration: 4 },
+    }),
+    {
+      startSeconds: 2,
+      durationSeconds: 4,
+    },
+  );
+
+  assert.equal(__testOnly__.resolvePaddedSpeechTimingWindow({
+    startTime: 10,
+    duration: 4,
+    originalDuration: 4,
+    previousAudioData: {
+      startTime: 10,
+      duration: 4,
+    },
+  }), null);
+});
+
+test('synthetic fallback stays inside the padded character speech window', async (t) => {
+  t.mock.method(console, 'warn', () => {});
+  const transcript = 'Threshold matched. The lattice is forming well.';
+  const audioLayer = {
+    startTime: 31.5,
+    duration: 7.875,
+    originalDuration: 4,
+    previousAudioData: {
+      startTime: 33.4375,
+      duration: 4,
+    },
+  };
+  const requests = [];
+  const streamTracker = createStreamTracker();
+  const result = await __testOnly__.transcribeWithOpenAI(
+    '/unused/speech_padded.wav',
+    transcript,
+    'en',
+    audioLayer.duration,
+    {},
+    {
+      transcriptionModel: 'gpt-4o-transcribe',
+      wordTimestampModel: 'whisper-1',
+      syntheticAlignmentWindow: __testOnly__.resolvePaddedSpeechTimingWindow(audioLayer),
+      createReadStream: streamTracker.createReadStream,
+      recordUsageLog: async () => {},
+      openaiClient: createTranscriptionClient(async (payload) => {
+        requests.push(payload);
+        return { text: transcript, duration: audioLayer.duration };
+      }),
+    },
+  );
+
+  assert.deepEqual(requests.map(({ model, response_format: responseFormat }) => [model, responseFormat]), [
+    ['whisper-1', 'verbose_json'],
+    ['gpt-4o-transcribe', 'json'],
+  ]);
+  assert.ok(result.words.every((word) => word.case === 'fallback'));
+  assert.equal(result.words[0].start, 1.938);
+  assert.equal(result.words.at(-1).end, 5.938);
+  assert.ok(streamTracker.streams.every((stream) => stream.destroyed));
+});
+
+test('authoritative padded-audio timestamps are not shifted a second time', async (t) => {
+  t.mock.method(console, 'info', () => {});
+  const streamTracker = createStreamTracker();
+  const result = await __testOnly__.transcribeWithOpenAI(
+    '/unused/speech_padded.wav',
+    'Threshold matched.',
+    'en',
+    7.875,
+    {},
+    {
+      transcriptionModel: 'gpt-4o-transcribe',
+      wordTimestampModel: 'whisper-1',
+      syntheticAlignmentWindow: {
+        startSeconds: 1.9375,
+        durationSeconds: 4,
+      },
+      createReadStream: streamTracker.createReadStream,
+      recordUsageLog: async () => {},
+      openaiClient: createTranscriptionClient(async () => ({
+        text: 'Threshold matched.',
+        duration: 7.875,
+        words: [
+          { word: 'Threshold', start: 2.365, end: 2.9 },
+          { word: 'matched', start: 2.9, end: 3.45 },
+        ],
+      })),
+    },
+  );
+
+  assert.deepEqual(result.words.map(({ word, start, end }) => ({ word, start, end })), [
+    { word: 'Threshold', start: 2.365, end: 2.9 },
+    { word: 'matched', start: 2.9, end: 3.45 },
+  ]);
+  assert.ok(streamTracker.streams.every((stream) => stream.destroyed));
+});
+
 test('mixed explicit and segment-only timings are not accepted or cached as authoritative', async (t) => {
   t.mock.method(console, 'warn', () => {});
   const mixedResponse = {

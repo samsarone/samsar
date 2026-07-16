@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import {
   buildTranscriptionAttempts,
   hasAuthoritativeWordTimings,
+  resolvePaddedSpeechTimingWindow,
   tokenizeTranscriptForAlignment,
   transcribeWithOpenAI,
 } from './SpeechAlignment.js';
@@ -38,6 +39,73 @@ function createStreamTracker() {
     },
   };
 }
+
+function createProductionPaddedAudioLayer() {
+  return {
+    duration: 7.875,
+    startTime: 20,
+    previousAudioData: {
+      duration: 4,
+      startTime: 21.9375,
+    },
+  };
+}
+
+test('padded speech timing window uses the preserved speech start offset', () => {
+  assert.deepEqual(
+    resolvePaddedSpeechTimingWindow(createProductionPaddedAudioLayer()),
+    {
+      startSeconds: 1.9375,
+      endSeconds: 5.9375,
+    },
+  );
+});
+
+test('padded speech timing window centers speech when preserved start metadata is unusable', () => {
+  assert.deepEqual(
+    resolvePaddedSpeechTimingWindow({
+      duration: 10,
+      startTime: 20,
+      previousAudioData: {
+        duration: 4,
+        startTime: 30,
+      },
+    }),
+    {
+      startSeconds: 3,
+      endSeconds: 7,
+    },
+  );
+});
+
+test('padded speech timing window clamps a stored offset within media timing tolerance', () => {
+  assert.deepEqual(
+    resolvePaddedSpeechTimingWindow({
+      duration: 10,
+      startTime: 20,
+      previousAudioData: {
+        duration: 4,
+        startTime: 19.995,
+      },
+    }),
+    {
+      startSeconds: 0,
+      endSeconds: 4,
+    },
+  );
+});
+
+test('padded speech timing window is absent for unpadded audio', () => {
+  assert.equal(resolvePaddedSpeechTimingWindow({ duration: 4 }), null);
+  assert.equal(resolvePaddedSpeechTimingWindow({
+    duration: 4,
+    startTime: 20,
+    previousAudioData: {
+      duration: 4,
+      startTime: 20,
+    },
+  }), null);
+});
 
 test('gpt-4o transcription configuration routes word alignment to whisper without a rejected verbose request', async () => {
   assert.deepEqual(
@@ -249,6 +317,133 @@ test('mixed explicit and segment-only timing is not promoted to authoritative al
   ]);
 });
 
+test('JSON fallback timing stays inside the production padded speech window', async (t) => {
+  t.mock.method(console, 'warn', () => {});
+  const transcript = 'Padded character speech';
+  const audioLayer = createProductionPaddedAudioLayer();
+
+  const result = await transcribeWithOpenAI(
+    '/unused/audio.mp3',
+    transcript,
+    'en',
+    audioLayer.duration,
+    {
+      transcriptionModel: 'gpt-4o-transcribe',
+      wordTimestampModel: 'whisper-1',
+      createReadStream: createDisposableStream,
+      speechTimingWindow: resolvePaddedSpeechTimingWindow(audioLayer),
+      openaiClient: createTranscriptionClient(async (payload) => {
+        if (payload.model === 'whisper-1') {
+          throw new Error('word timestamps unavailable');
+        }
+        return { text: transcript, duration: audioLayer.duration };
+      }),
+    },
+  );
+
+  assert.ok(result.words.every((word) => word.case === 'fallback'));
+  assert.equal(result.words[0].start, 1.9375);
+  assert.equal(result.words.at(-1).end, 5.9375);
+});
+
+test('complete transcription failure uses the padded speech window for error fallback', async (t) => {
+  t.mock.method(console, 'warn', () => {});
+  t.mock.method(console, 'error', () => {});
+  const transcript = 'Padded fallback error';
+  const audioLayer = createProductionPaddedAudioLayer();
+
+  const result = await transcribeWithOpenAI(
+    '/unused/audio.mp3',
+    transcript,
+    'en',
+    audioLayer.duration,
+    {
+      transcriptionModel: 'gpt-4o-transcribe',
+      wordTimestampModel: 'whisper-1',
+      createReadStream: createDisposableStream,
+      speechTimingWindow: resolvePaddedSpeechTimingWindow(audioLayer),
+      openaiClient: createTranscriptionClient(async () => {
+        throw new Error('transcription unavailable');
+      }),
+    },
+  );
+
+  assert.ok(result.words.every((word) => word.case === 'fallback_error'));
+  assert.equal(result.words[0].start, 1.9375);
+  assert.equal(result.words.at(-1).end, 5.9375);
+});
+
+test('invalid JSON word timestamps use the padded speech window', async (t) => {
+  t.mock.method(console, 'warn', () => {});
+  const transcript = 'Invalid word timing';
+  const audioLayer = createProductionPaddedAudioLayer();
+
+  const result = await transcribeWithOpenAI(
+    '/unused/audio.mp3',
+    transcript,
+    'en',
+    audioLayer.duration,
+    {
+      transcriptionModel: 'gpt-4o-transcribe',
+      wordTimestampModel: 'whisper-1',
+      createReadStream: createDisposableStream,
+      speechTimingWindow: resolvePaddedSpeechTimingWindow(audioLayer),
+      openaiClient: createTranscriptionClient(async (payload) => {
+        if (payload.model === 'whisper-1') {
+          throw new Error('word timestamps unavailable');
+        }
+        return {
+          text: transcript,
+          duration: audioLayer.duration,
+          words: [
+            { word: 'Invalid' },
+            { word: 'word', start: null, end: null },
+            { word: 'timing' },
+          ],
+        };
+      }),
+    },
+  );
+
+  assert.ok(result.words.every((word) => word.case === 'fallback'));
+  assert.equal(result.words[0].start, 1.9375);
+  assert.equal(result.words.at(-1).end, 5.9375);
+});
+
+test('valid segment timing is not replaced by the padded speech window', async (t) => {
+  t.mock.method(console, 'warn', () => {});
+  const transcript = 'Segment timing';
+  const audioLayer = createProductionPaddedAudioLayer();
+
+  const result = await transcribeWithOpenAI(
+    '/unused/audio.mp3',
+    transcript,
+    'en',
+    audioLayer.duration,
+    {
+      transcriptionModel: 'custom-segment-model',
+      wordTimestampModel: 'whisper-1',
+      createReadStream: createDisposableStream,
+      speechTimingWindow: resolvePaddedSpeechTimingWindow(audioLayer),
+      openaiClient: createTranscriptionClient(async (payload) => {
+        if (payload.response_format === 'verbose_json') {
+          throw new Error('word timestamps unavailable');
+        }
+        return {
+          text: transcript,
+          duration: audioLayer.duration,
+          segments: [
+            { text: transcript, start: 2.2, end: 4.8 },
+          ],
+        };
+      }),
+    },
+  );
+
+  assert.equal(result.words[0].start, 2.2);
+  assert.equal(result.words.at(-1).end, 4.8);
+});
+
 test('Chinese fallback tokenization creates multiple timed units when explicit timestamps are unavailable', async (t) => {
   t.mock.method(console, 'warn', () => {});
   const transcript = '这是一个测试。';
@@ -345,6 +540,7 @@ test('whisper explicit word timestamps remain unchanged for the existing happy p
       transcriptionModel: 'whisper-1',
       wordTimestampModel: 'whisper-1',
       createReadStream: createDisposableStream,
+      speechTimingWindow: { startSeconds: 1, endSeconds: 2 },
       openaiClient: createTranscriptionClient(async (payload) => {
         requests.push(payload);
         return {

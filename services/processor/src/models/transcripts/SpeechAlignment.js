@@ -92,7 +92,62 @@ export function tokenizeTranscriptForAlignment(rawText, languageCode) {
   return whitespaceTokens;
 }
 
-function buildTimedWordAlignment(wordsList, audioDurationSeconds, caseLabel) {
+/**
+ * Resolves the portion of a layer-length character audio file that contains
+ * the original speech. Character generation preserves the unpadded audio
+ * metadata in `previousAudioData`; a shorter previous duration is what proves
+ * that the current file has been padded.
+ */
+export function resolvePaddedSpeechTimingWindow(audioLayer = {}) {
+  const previousAudioData = audioLayer?.previousAudioData;
+  if (!previousAudioData || typeof previousAudioData !== 'object') {
+    return null;
+  }
+
+  const audioDurationSeconds = Number(audioLayer?.duration);
+  const speechDurationSeconds = Number(previousAudioData?.duration);
+  if (
+    !Number.isFinite(audioDurationSeconds) ||
+    audioDurationSeconds <= 0 ||
+    !Number.isFinite(speechDurationSeconds) ||
+    speechDurationSeconds <= 0
+  ) {
+    return null;
+  }
+
+  const totalPaddingSeconds = audioDurationSeconds - speechDurationSeconds;
+  if (totalPaddingSeconds <= 0.01) {
+    return null;
+  }
+
+  const currentStartTimeValue = audioLayer?.startTime;
+  const previousStartTimeValue = previousAudioData?.startTime;
+  const currentStartTime = Number(currentStartTimeValue);
+  const previousStartTime = Number(previousStartTimeValue);
+  const derivedStartSeconds = previousStartTime - currentStartTime;
+  const hasValidDerivedStart =
+    currentStartTimeValue != null &&
+    previousStartTimeValue != null &&
+    Number.isFinite(currentStartTime) &&
+    Number.isFinite(previousStartTime) &&
+    derivedStartSeconds >= -0.01 &&
+    derivedStartSeconds <= totalPaddingSeconds + 0.01;
+  const startSeconds = hasValidDerivedStart
+    ? Math.min(totalPaddingSeconds, Math.max(0, derivedStartSeconds))
+    : totalPaddingSeconds / 2;
+
+  return {
+    startSeconds,
+    endSeconds: startSeconds + speechDurationSeconds,
+  };
+}
+
+function buildTimedWordAlignment(
+  wordsList,
+  audioDurationSeconds,
+  caseLabel,
+  speechTimingWindow = null,
+) {
   const tokens = Array.isArray(wordsList)
     ? wordsList.map((word) => (typeof word === 'string' ? word.trim() : '')).filter(Boolean)
     : [];
@@ -106,10 +161,25 @@ function buildTimedWordAlignment(wordsList, audioDurationSeconds, caseLabel) {
     durationSeconds = (0.5 * tokens.length) || 0.5;
   }
 
-  const step = durationSeconds / Math.max(tokens.length, 1);
+  const requestedStartSeconds = Number(speechTimingWindow?.startSeconds);
+  const requestedEndSeconds = Number(speechTimingWindow?.endSeconds);
+  const hasValidSpeechTimingWindow =
+    Number.isFinite(requestedStartSeconds) &&
+    Number.isFinite(requestedEndSeconds) &&
+    requestedStartSeconds >= 0 &&
+    requestedEndSeconds > requestedStartSeconds &&
+    requestedEndSeconds <= durationSeconds;
+  const startSeconds = hasValidSpeechTimingWindow ? requestedStartSeconds : 0;
+  const endSeconds = hasValidSpeechTimingWindow ? requestedEndSeconds : durationSeconds;
+  const step = (endSeconds - startSeconds) / Math.max(tokens.length, 1);
+
   return tokens.map((word, idx) => {
-    const start = Math.round(idx * step * 1000) / 1000;
-    const end = Math.round(Math.min(durationSeconds, (idx + 1) * step) * 1000) / 1000;
+    const start = idx === 0
+      ? startSeconds
+      : Math.round((startSeconds + idx * step) * 1000) / 1000;
+    const end = idx === tokens.length - 1
+      ? endSeconds
+      : Math.round(Math.min(endSeconds, startSeconds + (idx + 1) * step) * 1000) / 1000;
     return {
       alignedWord: word,
       word,
@@ -170,8 +240,8 @@ function normalizeRawWordEntry(wordInfo = {}) {
     : (typeof wordInfo?.text === 'string' ? wordInfo.text : '');
   return {
     word: rawWord,
-    start: Number(wordInfo?.start),
-    end: Number(wordInfo?.end),
+    start: wordInfo?.start == null ? NaN : Number(wordInfo.start),
+    end: wordInfo?.end == null ? NaN : Number(wordInfo.end),
     case: wordInfo?.case,
   };
 }
@@ -432,30 +502,38 @@ export async function transcribeWithOpenAI(
     const openAiTranscript = (typeof response === 'string') ? response : (response?.text || '');
     const rawWords = collectRawWordsFromResponse(response, languageCode);
 
-    let words = rawWords
-      .map((w) => {
-        const rawWord = typeof w.word === 'string' ? w.word : (typeof w.text === 'string' ? w.text : '');
-        const start = Number(w.start);
-        const end = Number(w.end);
-        const safeStart = Number.isFinite(start) ? start : 0;
-        const safeEnd = Number.isFinite(end) ? end : safeStart + 0.5;
-        return {
-          alignedWord: rawWord,
-          word: rawWord,
-          start: safeStart,
-          end: safeEnd,
-          case: responseHasAuthoritativeTimings ? 'success' : 'fallback',
-        };
-      })
-      .filter((w) => w.word.trim() !== '');
+    const contentWords = rawWords.filter((wordInfo) =>
+      typeof wordInfo?.word === 'string' && wordInfo.word.trim() !== '');
+    const rawWordsHaveUsableTimings = contentWords.length > 0 && contentWords.every((wordInfo) =>
+      Number.isFinite(wordInfo.start) &&
+      Number.isFinite(wordInfo.end) &&
+      wordInfo.start >= 0 &&
+      wordInfo.end > wordInfo.start);
+
+    // Provider word and segment timestamps keep their original positions. The
+    // padded speech window is only for deterministic timing when timestamps
+    // are missing or invalid.
+    let words = rawWordsHaveUsableTimings
+      ? contentWords.map((wordInfo) => ({
+        alignedWord: wordInfo.word,
+        word: wordInfo.word,
+        start: wordInfo.start,
+        end: wordInfo.end,
+        case: responseHasAuthoritativeTimings ? 'success' : 'fallback',
+      }))
+      : [];
 
     if (!words.length) {
-      const fallbackTranscript = transcriptText?.trim() ? transcriptText : openAiTranscript;
+      const rawWordTranscript = contentWords.map((wordInfo) => wordInfo.word).join(' ');
+      const fallbackTranscript = transcriptText?.trim()
+        ? transcriptText
+        : (openAiTranscript || rawWordTranscript);
       if (fallbackTranscript) {
         words = buildTimedWordAlignment(
           tokenizeTranscriptForAlignment(fallbackTranscript, languageCode),
           effectiveDurationSeconds,
           'fallback',
+          options.speechTimingWindow,
         );
       }
     }
@@ -472,6 +550,7 @@ export async function transcribeWithOpenAI(
       tokenizeTranscriptForAlignment(fallbackTranscript, languageCode),
       audioDurationSeconds,
       'fallback_error',
+      options.speechTimingWindow,
     );
 
     return { words: normalizeAlignedWords(words, audioDurationSeconds), transcriptText: fallbackTranscript };
