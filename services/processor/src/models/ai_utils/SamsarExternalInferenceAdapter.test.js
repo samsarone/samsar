@@ -632,3 +632,184 @@ test('deployed external inference can queue and poll a long-running assistant re
   assert.deepEqual(statusQuery, { request_id: 'request-123' });
   assert.equal(response.choices[0].message.content, '{"ok":true}');
 });
+
+test('Docker external polling persists correlation before polling the hosted request', async (t) => {
+  clearProviderEnv();
+  process.env.SAMSAR_API_KEY = 'persistent-polling-test-key';
+  const storeEvents = [];
+  let queuedPayload;
+  const requestStore = {
+    async prepare(context, details) {
+      storeEvents.push(['prepare', context, details]);
+      return {
+        clientRequestId: 'samsar:video-session-1:text_to_video:theme:attempt-1',
+        sessionId: 'video-session-1',
+        requestKey: 'text_to_video:theme:attempt-1',
+        providerRequestId: null,
+        status: 'PENDING',
+      };
+    },
+    async markSubmitted(clientRequestId, providerRequestId) {
+      storeEvents.push(['submitted', clientRequestId, providerRequestId]);
+    },
+    async markPolling(clientRequestId) {
+      storeEvents.push(['polling', clientRequestId]);
+    },
+    async markCompleted(clientRequestId, response) {
+      storeEvents.push(['completed', clientRequestId, response]);
+    },
+    async markFailed(clientRequestId, error) {
+      storeEvents.push(['failed', clientRequestId, error.message]);
+    },
+  };
+
+  t.mock.method(SamsarClient.prototype, 'postV2', async (path, payload) => {
+    assert.equal(path, 'external/chat/completions');
+    queuedPayload = payload;
+    return { data: { request_id: 'hosted-request-1', status: 'PENDING' } };
+  });
+  t.mock.method(SamsarClient.prototype, 'getV2', async () => ({
+    data: {
+      request_id: 'hosted-request-1',
+      status: 'COMPLETED',
+      response: { choices: [{ message: { content: 'persisted' } }] },
+    },
+  }));
+
+  const response = await createSamsarExternalChatCompletion({
+    model: 'gpt-5.6-sol',
+    messages: [{ role: 'user', content: 'hello' }],
+    externalPolling: true,
+    externalPollIntervalMs: 1,
+    externalPollTimeoutMs: 1000,
+    externalMaxRetries: 0,
+    externalRequestContext: {
+      sessionId: 'video-session-1',
+      requestKey: 'text_to_video:theme:attempt-1',
+    },
+    externalRequestStore: requestStore,
+  });
+
+  assert.equal(queuedPayload.client_request_id, 'samsar:video-session-1:text_to_video:theme:attempt-1');
+  assert.equal(queuedPayload.client_session_id, 'video-session-1');
+  assert.equal(queuedPayload.client_request_key, 'text_to_video:theme:attempt-1');
+  assert.deepEqual(storeEvents.map(([event]) => event), [
+    'prepare',
+    'submitted',
+    'polling',
+    'completed',
+  ]);
+  assert.equal(response.choices[0].message.content, 'persisted');
+});
+
+test('Docker external polling resumes a persisted hosted request without resubmitting', async (t) => {
+  clearProviderEnv();
+  process.env.SAMSAR_API_KEY = 'resume-polling-test-key';
+  let submitCalls = 0;
+  const requestStore = {
+    async prepare() {
+      return {
+        clientRequestId: 'local-request-2',
+        sessionId: 'video-session-2',
+        requestKey: 'text_to_video:narrative-1:attempt-1',
+        providerRequestId: 'hosted-request-2',
+        status: 'POLLING',
+      };
+    },
+    async markSubmitted() {},
+    async markPolling() {},
+    async markCompleted() {},
+    async markFailed() {},
+  };
+  t.mock.method(SamsarClient.prototype, 'postV2', async () => {
+    submitCalls += 1;
+    throw new Error('submit must not be called for a persisted provider request');
+  });
+  t.mock.method(SamsarClient.prototype, 'getV2', async (path, options) => {
+    assert.equal(path, 'external/chat/status');
+    assert.deepEqual(options.query, { request_id: 'hosted-request-2' });
+    return {
+      data: {
+        request_id: 'hosted-request-2',
+        status: 'COMPLETED',
+        response: { choices: [{ message: { content: 'resumed' } }] },
+      },
+    };
+  });
+
+  const response = await createSamsarExternalChatCompletion({
+    model: 'gpt-5.6-sol',
+    messages: [{ role: 'user', content: 'resume' }],
+    externalPolling: true,
+    externalPollTimeoutMs: 1000,
+    externalMaxRetries: 0,
+    externalRequestContext: {
+      sessionId: 'video-session-2',
+      requestKey: 'text_to_video:narrative-1:attempt-1',
+    },
+    externalRequestStore: requestStore,
+  });
+
+  assert.equal(submitCalls, 0);
+  assert.equal(response.choices[0].message.content, 'resumed');
+});
+
+test('Docker retries a reset submit with the same hosted idempotency key', async (t) => {
+  clearProviderEnv();
+  process.env.SAMSAR_API_KEY = 'reset-submit-test-key';
+  const submittedClientIds = [];
+  let submitAttempt = 0;
+  const requestStore = {
+    async prepare() {
+      return {
+        clientRequestId: 'stable-client-request-3',
+        sessionId: 'video-session-3',
+        requestKey: 'text_to_video:theme:attempt-1',
+        providerRequestId: null,
+        status: 'PENDING',
+      };
+    },
+    async markSubmitted() {},
+    async markPolling() {},
+    async markCompleted() {},
+    async markFailed() {},
+  };
+  t.mock.method(SamsarClient.prototype, 'postV2', async (path, payload) => {
+    assert.equal(path, 'external/chat/completions');
+    submittedClientIds.push(payload.client_request_id);
+    submitAttempt += 1;
+    if (submitAttempt === 1) {
+      const error = new Error('socket reset after hosted request acceptance');
+      error.code = 'ECONNRESET';
+      throw error;
+    }
+    return { data: { request_id: 'hosted-request-3', status: 'PENDING' } };
+  });
+  t.mock.method(SamsarClient.prototype, 'getV2', async () => ({
+    data: {
+      request_id: 'hosted-request-3',
+      status: 'COMPLETED',
+      response: { choices: [{ message: { content: 'recovered reset' } }] },
+    },
+  }));
+
+  const response = await createSamsarExternalChatCompletion({
+    model: 'gpt-5.6-sol',
+    messages: [{ role: 'user', content: 'recover reset' }],
+    externalPolling: true,
+    externalPollIntervalMs: 1,
+    externalPollTimeoutMs: 1000,
+    externalMaxRetries: 0,
+    externalRequestContext: {
+      sessionId: 'video-session-3',
+      requestKey: 'text_to_video:theme:attempt-1',
+    },
+    externalRequestStore: requestStore,
+  });
+
+  assert.deepEqual(submittedClientIds, [
+    'stable-client-request-3',
+    'stable-client-request-3',
+  ]);
+  assert.equal(response.choices[0].message.content, 'recovered reset');
+});

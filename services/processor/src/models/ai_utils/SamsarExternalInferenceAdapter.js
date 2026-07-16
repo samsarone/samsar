@@ -13,6 +13,7 @@ import {
 } from '../../consts/InferenceModels.js';
 import { hasAlibabaQwenNativeCredential } from '../../inference/AlibabaQwen.js';
 import { getCurrentEnvironment } from '../../utils/EnvironmentUtils.js';
+import { externalAssistantClientRequestStore } from './ExternalAssistantClientRequestStore.js';
 
 const DEFAULT_SAMSAR_API_BASE_URL = 'https://api.samsar.one/v1';
 const DEFAULT_EXTERNAL_INFERENCE_TIMEOUT_MS = 10 * 60 * 1000;
@@ -302,27 +303,20 @@ async function createAndPollSamsarExternalChatCompletion(client, payload, {
   signal,
   timeoutMs,
   pollIntervalMs,
+  requestContext,
+  requestStore = externalAssistantClientRequestStore,
 } = {}) {
-  const queued = typeof client.createV2ExternalChatCompletionAsync === 'function'
-    ? await client.createV2ExternalChatCompletionAsync(payload, { signal })
-    : await client.postV2(
-      'external/chat/completions',
-      { ...payload, async: true, response_mode: 'polling' },
-      { signal },
-    );
-  const requestId = normalizeString(
-    queued?.data?.request_id || queued?.data?.requestId,
-  );
-  if (!requestId) {
-    throw new Error('External assistant polling response did not include request_id.');
-  }
-
-  if (typeof client.pollV2ExternalChatCompletion === 'function') {
-    return client.pollV2ExternalChatCompletion(requestId, {
-      signal,
-      pollIntervalMs,
-      pollTimeoutMs: timeoutMs,
-    });
+  const localRequest = requestContext
+    ? await requestStore.prepare(requestContext, { model: payload.model })
+    : null;
+  if (localRequest?.status === 'COMPLETED' && localRequest.response) {
+    return {
+      data: {
+        request_id: localRequest.providerRequestId,
+        status: 'COMPLETED',
+        response: localRequest.response,
+      },
+    };
   }
 
   const effectiveIntervalMs = normalizePositiveInteger(
@@ -330,13 +324,75 @@ async function createAndPollSamsarExternalChatCompletion(client, payload, {
     DEFAULT_EXTERNAL_INFERENCE_POLL_INTERVAL_MS,
   );
   const startedAt = Date.now();
+  let requestId = normalizeString(localRequest?.providerRequestId);
+  if (!requestId) {
+    const correlationPayload = localRequest
+      ? {
+        client_request_id: localRequest.clientRequestId,
+        client_session_id: localRequest.sessionId,
+        client_request_key: localRequest.requestKey,
+      }
+      : {};
+    while (!requestId && Date.now() - startedAt < timeoutMs) {
+      let queued;
+      try {
+        queued = typeof client.createV2ExternalChatCompletionAsync === 'function'
+          ? await client.createV2ExternalChatCompletionAsync(
+            { ...payload, ...correlationPayload },
+            { signal },
+          )
+          : await client.postV2(
+            'external/chat/completions',
+            {
+              ...payload,
+              ...correlationPayload,
+              async: true,
+              response_mode: 'polling',
+            },
+            { signal },
+          );
+      } catch (error) {
+        if (!localRequest || !isRetryableExternalInferenceError(error)) {
+          throw error;
+        }
+        // The hosted endpoint uses client_request_id as an idempotency key,
+        // so retrying after a reset recovers the accepted request instead of
+        // starting and billing a duplicate completion.
+        await waitForExternalInferencePoll(effectiveIntervalMs, signal);
+        continue;
+      }
+      requestId = normalizeString(
+        queued?.data?.request_id || queued?.data?.requestId,
+      );
+      if (localRequest && requestId) {
+        await requestStore.markSubmitted(localRequest.clientRequestId, requestId);
+      }
+      if (normalizeString(queued?.data?.status).toUpperCase() === 'COMPLETED') {
+        const queuedResponse = queued?.data?.response;
+        if (localRequest) {
+          await requestStore.markCompleted(localRequest.clientRequestId, queuedResponse);
+        }
+        return queued;
+      }
+    }
+  }
+  if (!requestId) {
+    throw new Error('External assistant polling response did not include request_id.');
+  }
+
+  if (localRequest) {
+    await requestStore.markPolling(localRequest.clientRequestId);
+  }
+
   while (Date.now() - startedAt < timeoutMs) {
     let statusResult;
     try {
-      statusResult = await client.getV2('external/chat/status', {
-        signal,
-        query: { request_id: requestId },
-      });
+      statusResult = typeof client.getV2ExternalChatCompletionStatus === 'function'
+        ? await client.getV2ExternalChatCompletionStatus(requestId, { signal })
+        : await client.getV2('external/chat/status', {
+          signal,
+          query: { request_id: requestId },
+        });
     } catch (error) {
       const status = getExternalInferenceErrorStatus(error);
       if (status !== null && status < 500 && status !== 408 && status !== 429) {
@@ -347,6 +403,12 @@ async function createAndPollSamsarExternalChatCompletion(client, payload, {
     }
     const status = normalizeString(statusResult?.data?.status).toUpperCase();
     if (status === 'COMPLETED') {
+      if (localRequest) {
+        await requestStore.markCompleted(
+          localRequest.clientRequestId,
+          statusResult?.data?.response,
+        );
+      }
       return statusResult;
     }
     if (status === 'FAILED') {
@@ -355,6 +417,9 @@ async function createAndPollSamsarExternalChatCompletion(client, payload, {
       );
       error.status = Number(statusResult?.data?.error?.status) || 500;
       error.code = normalizeString(statusResult?.data?.error?.code) || null;
+      if (localRequest) {
+        await requestStore.markFailed(localRequest.clientRequestId, error);
+      }
       throw error;
     }
     await waitForExternalInferencePoll(effectiveIntervalMs, signal);
@@ -783,6 +848,8 @@ export async function createSamsarExternalChatCompletion(chatRequest = {}) {
     externalPolling,
     externalPollIntervalMs,
     externalPollTimeoutMs,
+    externalRequestContext,
+    externalRequestStore,
     ...payload
   } = chatRequest || {};
 
@@ -809,6 +876,8 @@ export async function createSamsarExternalChatCompletion(chatRequest = {}) {
         signal,
         timeoutMs: pollingTimeoutMs,
         pollIntervalMs: externalPollIntervalMs,
+        requestContext: externalRequestContext,
+        requestStore: externalRequestStore || externalAssistantClientRequestStore,
       })
       : client.createV2ExternalChatCompletion(requestPayload, { signal }),
     {

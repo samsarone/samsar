@@ -132,9 +132,13 @@ async function handleExternalChatCompletionStatus(req, res) {
       req.query.request_id ||
       req.query.requestId ||
       req.query.id;
+    const clientRequestId =
+      req.query.client_request_id ||
+      req.query.clientRequestId;
     const result = await getExternalChatCompletionRequest({
       userId: req.userId,
       requestId,
+      clientRequestId,
     });
     setCreditHeaders(res, result.creditsCharged, result.remainingCredits);
     return res.status(200).json(result);

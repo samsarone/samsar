@@ -12,7 +12,11 @@ import { normalizeInferenceModel } from "../../../../consts/InferenceModels.js";
 const API_KEY = process.env.OPENAI_API_KEY;
 const openai = new OpenAI({ apiKey: API_KEY || '' });
 
-export async function extractThemeFromInputPayload(payload, inferenceModel = 'gpt-5.6-sol') {
+export async function extractThemeFromInputPayload(
+  payload,
+  inferenceModel = 'gpt-5.6-sol',
+  options = {},
+) {
 
   const { prompt, metadata, imageDescriptionList } = payload;
 
@@ -41,7 +45,12 @@ export async function extractThemeFromInputPayload(payload, inferenceModel = 'gp
 
   // This function call should send 'messageList' to your AI service and
   // return the structured JSON with extracted theme data.
-  const themeData = await sendSessionThemeMessageRequest(messageList, inferenceModel);
+  const themeData = await sendSessionThemeMessageRequest(
+    messageList,
+    inferenceModel,
+    undefined,
+    options,
+  );
   return themeData;
 }
 

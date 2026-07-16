@@ -1,4 +1,6 @@
 import VideoSession from "../../schema/VideoSession.js";
+import ExpressGenerationBuilderRequest from '../../schema/ExpressGenerationBuilderRequest.js';
+import { randomUUID } from 'crypto';
 import { getDBConnectionString } from "../DBString.js";
 import { assertAPIKeyUsageLimitForDebit } from "../GenerationCredits.js";
 import { createVidGPTSession } from "../movie_session/VidGPT.js";
@@ -106,6 +108,10 @@ const IMAGE_LIST_EXPRESS_CTA_GENERATION_ALIASES = Object.freeze([
   'generate_cta_texts',
   'generateCtaTexts',
 ]);
+const TEXT_TO_VIDEO_BUILDER_LEASE_MS = 2 * 60 * 1000;
+const TEXT_TO_VIDEO_BUILDER_RECOVERY_INTERVAL_MS = 30 * 1000;
+const TEXT_TO_VIDEO_BUILDER_WORKER_ID = `${process.pid}:${randomUUID()}`;
+let textToVideoBuilderRecoveryInterval = null;
 
 function normalizeString(value) {
   return typeof value === 'string' ? value.trim() : '';
@@ -400,7 +406,7 @@ export async function requestCreateMovie(userId, payload, webhookUrl) {
     sessionSubType: 'movie_create',
   }, { routeType: 'text_to_video', sessionSubType: 'movie_create' });
 
-  scheduleTextToVideoBuilderSession(sessionId, userId, payload, webhookUrl, 'movie_create');
+  await scheduleTextToVideoBuilderSession(sessionId, userId, payload, webhookUrl, 'movie_create');
 
   return {
     request_id: sessionId,
@@ -807,7 +813,7 @@ async function createUnifiedSessionAndUpdateWebhook(userId, payload, webhookUrl)
     sessionSubType: 'video_create',
   }, { routeType: 'text_to_video', sessionSubType: 'video_create' });
 
-  scheduleTextToVideoBuilderSession(payload.sessionID, userId, finalPayload, webhookUrl, 'video_create');
+  await scheduleTextToVideoBuilderSession(payload.sessionID, userId, finalPayload, webhookUrl, 'video_create');
 
   return {
     request_id: payload.sessionID,
@@ -1449,40 +1455,203 @@ function scheduleImageListToVideoBuilderSession(sessionId, userId, payload, webh
   setTimeout(start, 0);
 }
 
-function scheduleTextToVideoBuilderSession(sessionId, userId, payload, webhookUrl, sessionSubType = 'video_create') {
+function deferTextToVideoBuilderRun(sessionId) {
   const start = () => {
-
-    void (async () => {
-      await markExpressGenerationBuilderState(sessionId, {
-        routeType: 'text_to_video',
-        status: 'RUNNING',
-        sessionSubType,
-      });
-      await createVidGPTSessionAndUpdateWebhook(userId, payload, webhookUrl);
-      await markExpressGenerationBuilderState(sessionId, {
-        routeType: 'text_to_video',
-        status: 'COMPLETED',
-        sessionSubType,
-      });
-    })().catch(async (error) => {
-      console.error(`createVidGPTSessionAndUpdateWebhook failed for session ${sessionId}`, error);
-      await markExpressGenerationBuilderState(sessionId, {
-        routeType: 'text_to_video',
-        status: 'FAILED',
-        sessionSubType,
-        error,
-      });
-      await markTextToVideoBuilderSessionFailed(sessionId, error);
-      await markGlobalBuilderSessionFailed(sessionId, extractTextToVideoErrorMessage(error));
-    });
+    void runPersistedTextToVideoBuilderSession(sessionId);
   };
-
   if (typeof setImmediate === 'function') {
     setImmediate(start);
-    return;
+  } else {
+    setTimeout(start, 0);
   }
+}
 
-  setTimeout(start, 0);
+async function scheduleTextToVideoBuilderSession(
+  sessionId,
+  userId,
+  payload,
+  webhookUrl,
+  sessionSubType = 'video_create',
+) {
+  await getDBConnectionString();
+  const normalizedSessionId = sessionId?.toString?.() || String(sessionId);
+  await ExpressGenerationBuilderRequest.findOneAndUpdate(
+    { sessionId: normalizedSessionId },
+    {
+      $set: {
+        userId: userId?.toString?.() || String(userId),
+        routeType: 'text_to_video',
+        sessionSubType,
+        status: 'QUEUED',
+        payload,
+        webhookUrl: webhookUrl || null,
+        leaseOwner: null,
+        leaseExpiresAt: null,
+        lastHeartbeatAt: null,
+        completedAt: null,
+        failedAt: null,
+        error: null,
+      },
+      $setOnInsert: { attempts: 0 },
+    },
+    { upsert: true, new: true, setDefaultsOnInsert: true },
+  );
+  deferTextToVideoBuilderRun(normalizedSessionId);
+}
+
+async function runPersistedTextToVideoBuilderSession(sessionId) {
+  await getDBConnectionString();
+  const now = new Date();
+  const leaseExpiresAt = new Date(now.getTime() + TEXT_TO_VIDEO_BUILDER_LEASE_MS);
+  const job = await ExpressGenerationBuilderRequest.findOneAndUpdate(
+    {
+      sessionId,
+      $or: [
+        { status: 'QUEUED' },
+        {
+          status: 'RUNNING',
+          $or: [
+            { leaseExpiresAt: null },
+            { leaseExpiresAt: { $lte: now } },
+          ],
+        },
+      ],
+    },
+    {
+      $set: {
+        status: 'RUNNING',
+        leaseOwner: TEXT_TO_VIDEO_BUILDER_WORKER_ID,
+        leaseExpiresAt,
+        lastHeartbeatAt: now,
+        startedAt: now,
+        error: null,
+      },
+      $inc: { attempts: 1 },
+    },
+    { new: true },
+  ).lean();
+  if (!job) return false;
+
+  const heartbeat = setInterval(() => {
+    const heartbeatAt = new Date();
+    void ExpressGenerationBuilderRequest.updateOne(
+      {
+        _id: job._id,
+        status: 'RUNNING',
+        leaseOwner: TEXT_TO_VIDEO_BUILDER_WORKER_ID,
+      },
+      {
+        $set: {
+          lastHeartbeatAt: heartbeatAt,
+          leaseExpiresAt: new Date(heartbeatAt.getTime() + TEXT_TO_VIDEO_BUILDER_LEASE_MS),
+        },
+      },
+    ).catch((error) => {
+      console.error('[text_to_video_builder] heartbeat failed', {
+        sessionId,
+        message: error?.message || String(error),
+      });
+    });
+  }, Math.floor(TEXT_TO_VIDEO_BUILDER_LEASE_MS / 3));
+  heartbeat.unref?.();
+
+  try {
+    await markExpressGenerationBuilderState(sessionId, {
+      routeType: 'text_to_video',
+      status: 'RUNNING',
+      sessionSubType: job.sessionSubType,
+    });
+    await createVidGPTSessionAndUpdateWebhook(job.userId, job.payload, job.webhookUrl);
+    await markExpressGenerationBuilderState(sessionId, {
+      routeType: 'text_to_video',
+      status: 'COMPLETED',
+      sessionSubType: job.sessionSubType,
+    });
+    await ExpressGenerationBuilderRequest.updateOne(
+      { _id: job._id, leaseOwner: TEXT_TO_VIDEO_BUILDER_WORKER_ID },
+      {
+        $set: {
+          status: 'COMPLETED',
+          completedAt: new Date(),
+          leaseOwner: null,
+          leaseExpiresAt: null,
+          error: null,
+        },
+        $unset: { payload: '' },
+      },
+    );
+    return true;
+  } catch (error) {
+    console.error(`createVidGPTSessionAndUpdateWebhook failed for session ${sessionId}`, error);
+    await ExpressGenerationBuilderRequest.updateOne(
+      { _id: job._id, leaseOwner: TEXT_TO_VIDEO_BUILDER_WORKER_ID },
+      {
+        $set: {
+          status: 'FAILED',
+          failedAt: new Date(),
+          leaseOwner: null,
+          leaseExpiresAt: null,
+          error: summarizeBuilderError(error),
+        },
+      },
+    );
+    await markExpressGenerationBuilderState(sessionId, {
+      routeType: 'text_to_video',
+      status: 'FAILED',
+      sessionSubType: job.sessionSubType,
+      error,
+    });
+    await markTextToVideoBuilderSessionFailed(sessionId, error);
+    await markGlobalBuilderSessionFailed(sessionId, extractTextToVideoErrorMessage(error));
+    return false;
+  } finally {
+    clearInterval(heartbeat);
+  }
+}
+
+export async function recoverPersistedTextToVideoBuilderSessions({ limit = 20 } = {}) {
+  await getDBConnectionString();
+  const now = new Date();
+  const jobs = await ExpressGenerationBuilderRequest.find({
+    $or: [
+      { status: 'QUEUED' },
+      {
+        status: 'RUNNING',
+        $or: [
+          { leaseExpiresAt: null },
+          { leaseExpiresAt: { $lte: now } },
+        ],
+      },
+    ],
+  }).select('sessionId').sort({ createdAt: 1 }).limit(limit).lean();
+
+  for (const job of jobs) {
+    deferTextToVideoBuilderRun(job.sessionId);
+  }
+  return jobs.length;
+}
+
+export function startPersistedTextToVideoBuilderRecovery() {
+  if (textToVideoBuilderRecoveryInterval) {
+    return () => {};
+  }
+  const recover = () => {
+    void recoverPersistedTextToVideoBuilderSessions().catch((error) => {
+      console.error('[text_to_video_builder] recovery scan failed', {
+        message: error?.message || String(error),
+      });
+    });
+  };
+  recover();
+  textToVideoBuilderRecoveryInterval = setInterval(
+    recover,
+    TEXT_TO_VIDEO_BUILDER_RECOVERY_INTERVAL_MS,
+  );
+  textToVideoBuilderRecoveryInterval.unref?.();
+  return () => {
+    clearInterval(textToVideoBuilderRecoveryInterval);
+    textToVideoBuilderRecoveryInterval = null;
+  };
 }
 
 function extractImageListToVideoErrorMessage(error) {

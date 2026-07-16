@@ -218,7 +218,18 @@ export async function createNewImageListToVideoSession(userId, payload) {
 
 
 
-  const themeJson = await extractThemeFromInputPayload(transcriptBuilderPayload, userInferenceModel);
+  const externalAssistantContext = (requestKey) => ({
+    externalRequestContext: {
+      sessionId: sessionID,
+      userId: userId?.toString?.() || userId,
+      requestKey,
+    },
+  });
+  const themeJson = await extractThemeFromInputPayload(
+    transcriptBuilderPayload,
+    userInferenceModel,
+    externalAssistantContext('image_list_to_video:theme'),
+  );
 
 
 
@@ -247,6 +258,7 @@ export async function createNewImageListToVideoSession(userId, payload) {
       resolvedLanguageString,
       shouldLimitSingleNarrator,
       framesPerSecond,
+      externalAssistantContext(`image_list_to_video:narrative-${attempts}`),
     );
 
     

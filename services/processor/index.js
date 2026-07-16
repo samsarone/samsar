@@ -1,6 +1,7 @@
 import cluster from 'cluster';
 import app from './app.js';
 import { installStructuredLogger } from './src/utils/StructuredLogger.js';
+import { startPersistedTextToVideoBuilderRecovery } from './src/models/api/MovieAPI.js';
 
 const PORT = 3002;
 const DEFAULT_HTTP_SERVER_TIMEOUT_MS = 11 * 60 * 1000;
@@ -35,6 +36,7 @@ if (cluster.isPrimary) {
   });
 } else {
   const server = app.listen(PORT, '0.0.0.0');
+  const stopBuilderRecovery = startPersistedTextToVideoBuilderRecovery();
   const timeoutMs = getHttpServerTimeoutMs();
   server.timeout = timeoutMs;
   server.requestTimeout = timeoutMs;
@@ -42,4 +44,5 @@ if (cluster.isPrimary) {
   server.on('error', (error) => {
     console.error('samsar_processor HTTP server failed', error);
   });
+  server.on('close', stopBuilderRecovery);
 }

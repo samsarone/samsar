@@ -78,7 +78,18 @@ export async function processImgToVidGPT(userId, payload) {
     });
   
   
-    const themeJson = await extractThemeFromUserPromptAndImageTheme(imgTheme, prompt, userInferenceModel);
+    const themeJson = await extractThemeFromUserPromptAndImageTheme(
+      imgTheme,
+      prompt,
+      userInferenceModel,
+      {
+        externalRequestContext: {
+          sessionId: sessionID,
+          userId: userId?.toString?.() || userId,
+          requestKey: 'image_to_video:theme',
+        },
+      },
+    );
  
 
     // --- We'll retry extracting and validating the narrative up to 3 times. ---
@@ -94,7 +105,13 @@ export async function processImgToVidGPT(userId, payload) {
       narrativeJson = await extractMovieNarrativeFromThemeUserPromptAndStartImage(
         imgDescription,
         themeJson, prompt, duration,
-         videoGenerationModel, userInferenceModel);
+        videoGenerationModel, userInferenceModel, {
+          externalRequestContext: {
+            sessionId: sessionID,
+            userId: userId?.toString?.() || userId,
+            requestKey: `image_to_video:narrative-${attempts}`,
+          },
+        });
   
 
       

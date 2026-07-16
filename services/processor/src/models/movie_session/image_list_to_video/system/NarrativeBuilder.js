@@ -18,6 +18,7 @@ export async function extractNarrativeFromInputPayload(
   languageString,
   limitSingleNarrator = false,
   framesPerSecond = undefined,
+  options = {},
 ) {
 
 
@@ -70,6 +71,7 @@ export async function extractNarrativeFromInputPayload(
     {
       timeoutMs: process.env.IMAGE_LIST_TO_VIDEO_NARRATIVE_TIMEOUT_MS,
       maxAttempts: process.env.IMAGE_LIST_TO_VIDEO_NARRATIVE_MAX_ATTEMPTS,
+      externalRequestContext: options.externalRequestContext,
     },
   );
 

@@ -47,6 +47,16 @@ function normalizeBackingTrackProvider(value) {
   return value === 'LYRIA2' ? 'LYRIA3' : value;
 }
 
+function buildExternalAssistantOptions(sessionId, userId, requestKey) {
+  return {
+    externalRequestContext: {
+      sessionId: sessionId?.toString?.() || sessionId,
+      userId: userId?.toString?.() || userId,
+      requestKey,
+    },
+  };
+}
+
 export async function createVidGPTSession(userId, payload) {
   await getDBConnectionString();
   let { prompt, sessionID,
@@ -199,10 +209,18 @@ export async function createVidGPTSession(userId, payload) {
 
 
   if (videoTone === 'grounded') {
-    themeJson = await extractGroundedThemeFromUserPrompt(prompt, userInferenceModel);
+    themeJson = await extractGroundedThemeFromUserPrompt(
+      prompt,
+      userInferenceModel,
+      buildExternalAssistantOptions(sessionID, userId, 'text_to_video:theme'),
+    );
   } else {
     // 1) Extract the theme from the user prompt
-    themeJson = await extractThemeFromUserPrompt(prompt, userInferenceModel);
+    themeJson = await extractThemeFromUserPrompt(
+      prompt,
+      userInferenceModel,
+      buildExternalAssistantOptions(sessionID, userId, 'text_to_video:theme'),
+    );
   }
 
   // --- We'll retry extracting and validating the narrative up to 3 times. ---
@@ -218,11 +236,13 @@ export async function createVidGPTSession(userId, payload) {
 
     if (videoTone === 'grounded') {
       narrativeJson = await extractGroundedMovieNarrativeFromThemeAndUserPrompt(themeJson, prompt, duration,
-        videoGenerationModel, userInferenceModel, effectiveLanguageString);
+        videoGenerationModel, userInferenceModel, effectiveLanguageString,
+        buildExternalAssistantOptions(sessionID, userId, `text_to_video:narrative-${attempts}`));
     } else {
       // 1) Extract the narrative
       narrativeJson = await extractMovieNarrativeFromThemeAndUserPrompt(themeJson, prompt, duration,
-        videoGenerationModel, userInferenceModel, effectiveLanguageString);
+        videoGenerationModel, userInferenceModel, effectiveLanguageString,
+        buildExternalAssistantOptions(sessionID, userId, `text_to_video:narrative-${attempts}`));
     }
 
 
@@ -443,10 +463,18 @@ export async function createInfoVidSession(userId, payload) {
 
   let themeJson;
   if (videoTone === 'grounded') {
-    themeJson = await extractGroundedThemeFromUserPrompt(prompt, userInferenceModel);
+    themeJson = await extractGroundedThemeFromUserPrompt(
+      prompt,
+      userInferenceModel,
+      buildExternalAssistantOptions(sessionID, userId, 'info_video:theme'),
+    );
   } else {
     // 1) Extract the theme from the user prompt
-    themeJson = await extractThemeFromUserPrompt(prompt, userInferenceModel);
+    themeJson = await extractThemeFromUserPrompt(
+      prompt,
+      userInferenceModel,
+      buildExternalAssistantOptions(sessionID, userId, 'info_video:theme'),
+    );
   }
 
 
@@ -461,11 +489,13 @@ export async function createInfoVidSession(userId, payload) {
 
     if (videoTone === 'grounded') {
       narrativeJson = await extractGroundedMovieNarrativeFromThemeAndUserPrompt(themeJson, prompt, duration,
-        videoGenerationModel, userInferenceModel);
+        videoGenerationModel, userInferenceModel, undefined,
+        buildExternalAssistantOptions(sessionID, userId, `info_video:narrative-${attempts}`));
     } else {
       // 1) Extract the narrative
       narrativeJson = await extractMovieNarrativeFromThemeAndUserPrompt(themeJson, prompt, duration,
-        videoGenerationModel, userInferenceModel);
+        videoGenerationModel, userInferenceModel, undefined,
+        buildExternalAssistantOptions(sessionID, userId, `info_video:narrative-${attempts}`));
     }
     // 2) Validate it
     isValidNarrative = validateTextToVideoNarrative(narrativeJson, videoGenerationModel, undefined, {

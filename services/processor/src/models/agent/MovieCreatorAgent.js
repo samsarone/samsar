@@ -36,6 +36,18 @@ const NarrativeGenderField = z.enum(['M', 'F', '']).describe(
   'For speech sounds, use exactly "M" or "F" uppercase; never use an empty string for speech. Use an empty string only for sound_effect items.'
 );
 
+function buildExternalRequestAttemptContext(context, attempt) {
+  if (!context || typeof context !== 'object') return undefined;
+  const requestKey = typeof context.requestKey === 'string'
+    ? context.requestKey.trim()
+    : '';
+  if (!requestKey) return undefined;
+  return {
+    ...context,
+    requestKey: `${requestKey}:attempt-${attempt}`,
+  };
+}
+
 export async function getResourceListForScreenplay(screenplay, inferenceModel = getDefaultUserInferenceModel(), videoModel) {
 
   const systemPrompt = getResourceListPrompt(videoModel);
@@ -82,7 +94,12 @@ export async function createThemeForResourceJson(resourceJson, inferenceModel = 
 
 
 
-export async function extractThemeFromUserPromptAndImageTheme(prompt, imageTheme, inferenceModel = getDefaultUserInferenceModel()) {
+export async function extractThemeFromUserPromptAndImageTheme(
+  prompt,
+  imageTheme,
+  inferenceModel = getDefaultUserInferenceModel(),
+  options = {},
+) {
 
   const systemPrompt = getThemeForResourceJsonSystemPromptAndImage(true);
 
@@ -105,7 +122,12 @@ export async function extractThemeFromUserPromptAndImageTheme(prompt, imageTheme
 
   const effectiveInferenceModel = normalizeInferenceModel(inferenceModel);
 
-  const responseData = await sendSessionThemeMessageRequest(messageList, effectiveInferenceModel, 'high');
+  const responseData = await sendSessionThemeMessageRequest(
+    messageList,
+    effectiveInferenceModel,
+    'high',
+    options,
+  );
 
   return responseData;
 
@@ -223,7 +245,12 @@ export async function updateCharacterPromptWithTheme(prompt, speakerActor, theme
 
 
 
-export async function sendSessionThemeMessageRequest(messageList, userInferenceModel = getDefaultUserInferenceModel(), reasoningEffort) {
+export async function sendSessionThemeMessageRequest(
+  messageList,
+  userInferenceModel = getDefaultUserInferenceModel(),
+  reasoningEffort,
+  options = {},
+) {
   const modelName = getModelForUserInferenceModel(userInferenceModel);
   const effectiveReasoningEffort = getThemeNarrativeReasoningEffort(modelName);
 
@@ -271,6 +298,10 @@ export async function sendSessionThemeMessageRequest(messageList, userInferenceM
         externalPolling: true,
         externalPollTimeoutMs: timeoutMs,
         externalPollIntervalMs: process.env.SAMSAR_EXTERNAL_ASSISTANT_POLL_INTERVAL_MS,
+        externalRequestContext: buildExternalRequestAttemptContext(
+          options.externalRequestContext,
+          attempt + 1,
+        ),
         // This call already owns its bounded retry loop; the shared adapter
         // still enforces a hard timeout but must not multiply attempts.
         externalMaxRetries: 0,
@@ -335,7 +366,11 @@ export async function sendAssistantMessageRequest(messageList, userInferenceMode
 
 
 
-export async function extractThemeFromUserPrompt(prompt, inferenceModel = getDefaultUserInferenceModel()) {
+export async function extractThemeFromUserPrompt(
+  prompt,
+  inferenceModel = getDefaultUserInferenceModel(),
+  options = {},
+) {
   const systemPrompt = getThemeForResourceJsonSystemPrompt(false);
 
   const messageList = [
@@ -353,12 +388,21 @@ export async function extractThemeFromUserPrompt(prompt, inferenceModel = getDef
 
   // This function call should send 'messageList' to your AI service and
   // return the structured JSON with extracted theme data.
-  const themeData = await sendSessionThemeMessageRequest(messageList, inferenceModel);
+  const themeData = await sendSessionThemeMessageRequest(
+    messageList,
+    inferenceModel,
+    undefined,
+    options,
+  );
   return themeData;
 }
 
 
-export async function extractGroundedThemeFromUserPrompt(prompt, inferenceModel = getDefaultUserInferenceModel()) {
+export async function extractGroundedThemeFromUserPrompt(
+  prompt,
+  inferenceModel = getDefaultUserInferenceModel(),
+  options = {},
+) {
   const systemPrompt = getGroundedThemeForResourceJsonSystemPrompt(false);
 
   const messageList = [
@@ -376,7 +420,12 @@ export async function extractGroundedThemeFromUserPrompt(prompt, inferenceModel 
 
   // This function call should send 'messageList' to your AI service and
   // return the structured JSON with extracted theme data.
-  const themeData = await sendSessionThemeMessageRequest(messageList, inferenceModel, 'high');
+  const themeData = await sendSessionThemeMessageRequest(
+    messageList,
+    inferenceModel,
+    'high',
+    options,
+  );
   return themeData;
 }
 
@@ -389,6 +438,7 @@ export async function extractGroundedMovieNarrativeFromThemeAndUserPrompt(
   videoModel,
   inferenceModel,
   languageString,
+  options = {},
 ) {
 
 
@@ -414,7 +464,12 @@ export async function extractGroundedMovieNarrativeFromThemeAndUserPrompt(
 
 
 
-  const resData = await sendNarrativePromptMessageRequest(messageList, inferenceModel);
+  const resData = await sendNarrativePromptMessageRequest(
+    messageList,
+    inferenceModel,
+    undefined,
+    options,
+  );
 
   return resData;
 
@@ -427,7 +482,7 @@ export async function extractGroundedMovieNarrativeFromThemeAndUserPrompt(
 
 export async function extractMovieNarrativeFromThemeUserPromptAndStartImage(imgDescription,
   themeJson, prompt,
-  duration = 10, videoModel, inferenceModel) {
+  duration = 10, videoModel, inferenceModel, options = {}) {
 
   const narrativePrompt = getMovieNarrativeExtractorSystemPromptForStartImage(duration, videoModel, true);
 
@@ -453,7 +508,12 @@ export async function extractMovieNarrativeFromThemeUserPromptAndStartImage(imgD
   ];
 
 
-  const resData = await sendNarrativePromptMessageRequest(messageList, inferenceModel);
+  const resData = await sendNarrativePromptMessageRequest(
+    messageList,
+    inferenceModel,
+    undefined,
+    options,
+  );
 
 
   return resData;
@@ -469,6 +529,7 @@ export async function extractMovieNarrativeFromThemeAndUserPrompt(
   videoModel,
   inferenceModel,
   languageString,
+  options = {},
 ) {
 
 
@@ -491,7 +552,12 @@ export async function extractMovieNarrativeFromThemeAndUserPrompt(
   ];
 
 
-  const resData = await sendNarrativePromptMessageRequest(messageList, inferenceModel);
+  const resData = await sendNarrativePromptMessageRequest(
+    messageList,
+    inferenceModel,
+    undefined,
+    options,
+  );
 
   return resData;
 }
@@ -596,6 +662,10 @@ export async function sendNarrativePromptMessageRequest(
         externalPolling: true,
         externalPollTimeoutMs: timeoutMs,
         externalPollIntervalMs: process.env.SAMSAR_EXTERNAL_ASSISTANT_POLL_INTERVAL_MS,
+        externalRequestContext: buildExternalRequestAttemptContext(
+          options.externalRequestContext,
+          attempt,
+        ),
         // Narrative generation has its own bounded retry/backoff loop.
         externalMaxRetries: 0,
       });
