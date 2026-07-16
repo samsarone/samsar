@@ -9,9 +9,13 @@ import {
   normalizeInferenceModel,
 } from './GoogleGemini.js';
 import { getAlibabaCloudApiKey } from './Qwen.js';
+import { runExternalInferenceWithRetry } from './ExternalInferenceRetry.js';
 
 const DEFAULT_SAMSAR_API_BASE_URL = 'https://api.samsar.one/v1';
 const DEFAULT_EXTERNAL_INFERENCE_TIMEOUT_MS = 10 * 60 * 1000;
+const DEFAULT_OPENROUTER_QWEN_MAX_TOKENS = 65536;
+const DEFAULT_OPENROUTER_GEMINI_MAX_TOKENS = 65536;
+const DEFAULT_OPENROUTER_GPT_MAX_COMPLETION_TOKENS = 65536;
 const DEFAULT_OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1';
 const GOOGLE_NATIVE_CREDENTIAL_KEYS = Object.freeze([
   'GOOGLE_APPLICATION_CREDENTIALS_JSON_B64',
@@ -58,6 +62,83 @@ let cachedOpenRouterBaseUrl = '';
 
 function normalizeString(value) {
   return typeof value === 'string' ? value.trim() : '';
+}
+
+function normalizePositiveInteger(value, fallback) {
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function isOpenRouterStructuredOutputRequest(request = {}) {
+  const responseFormatType = normalizeString(request?.response_format?.type).toLowerCase();
+  return responseFormatType === 'json_schema' || responseFormatType === 'json_object';
+}
+
+function addOpenRouterResponseHealingPlugin(plugins) {
+  const normalizedPlugins = Array.isArray(plugins) ? [...plugins] : [];
+  if (!normalizedPlugins.some((plugin) => normalizeString(plugin?.id).toLowerCase() === 'response-healing')) {
+    normalizedPlugins.push({ id: 'response-healing' });
+  }
+  return normalizedPlugins;
+}
+
+function getOpenRouterCompletionLimit(requestedModel, request = {}) {
+  const configuredLimit = isQwenInferenceModel(requestedModel)
+    ? normalizePositiveInteger(process.env.OPENROUTER_QWEN_MAX_TOKENS, DEFAULT_OPENROUTER_QWEN_MAX_TOKENS)
+    : isGeminiInferenceModel(requestedModel)
+      ? normalizePositiveInteger(process.env.OPENROUTER_GEMINI_MAX_TOKENS, DEFAULT_OPENROUTER_GEMINI_MAX_TOKENS)
+      : normalizePositiveInteger(
+        process.env.OPENROUTER_GPT_MAX_COMPLETION_TOKENS,
+        DEFAULT_OPENROUTER_GPT_MAX_COMPLETION_TOKENS,
+      );
+  const requestedLimit = normalizePositiveInteger(
+    request.max_completion_tokens ?? request.max_tokens,
+    configuredLimit,
+  );
+  return Math.min(requestedLimit, configuredLimit);
+}
+
+function getOpenRouterReasoningEffort(requestedModel, effort, request = {}) {
+  if ((isQwenInferenceModel(requestedModel) || isGeminiInferenceModel(requestedModel)) &&
+      isOpenRouterStructuredOutputRequest(request)) return 'high';
+  const configuredEffort = normalizeString(
+    isQwenInferenceModel(requestedModel)
+      ? process.env.OPENROUTER_QWEN_REASONING_EFFORT
+      : isGeminiInferenceModel(requestedModel)
+        ? process.env.OPENROUTER_GEMINI_REASONING_EFFORT
+        : process.env.OPENROUTER_GPT_REASONING_EFFORT,
+  ).toLowerCase();
+  if (['low', 'medium', 'high'].includes(configuredEffort)) return configuredEffort;
+  if (!isQwenInferenceModel(requestedModel) && !isGeminiInferenceModel(requestedModel) &&
+      ['xhigh', 'max'].includes(configuredEffort)) return configuredEffort;
+  const normalizedEffort = normalizeString(effort).toLowerCase();
+  if ((isQwenInferenceModel(requestedModel) || isGeminiInferenceModel(requestedModel)) &&
+      ['xhigh', 'max'].includes(normalizedEffort)) return 'high';
+  return ['low', 'medium', 'high', 'xhigh', 'max'].includes(normalizedEffort)
+    ? normalizedEffort
+    : 'high';
+}
+
+function buildOpenRouterRequestPayload(request, requestedModel, openRouterModel, effort) {
+  const payload = { ...request, model: openRouterModel };
+  const effectiveEffort = getOpenRouterReasoningEffort(requestedModel, effort, request);
+  const completionLimit = getOpenRouterCompletionLimit(requestedModel, request);
+  if (isQwenInferenceModel(requestedModel) || isGeminiInferenceModel(requestedModel)) {
+    delete payload.max_completion_tokens;
+    payload.max_tokens = completionLimit;
+  } else {
+    delete payload.max_tokens;
+    payload.max_completion_tokens = completionLimit;
+  }
+  if (isOpenRouterStructuredOutputRequest(request)) {
+    const provider = payload.provider && typeof payload.provider === 'object' && !Array.isArray(payload.provider)
+      ? payload.provider
+      : {};
+    payload.provider = { ...provider, require_parameters: true };
+    payload.plugins = addOpenRouterResponseHealingPlugin(payload.plugins);
+  }
+  if (effectiveEffort) payload.reasoning = { effort: effectiveEffort };
+  return payload;
 }
 
 function normalizeBaseUrl(value) {
@@ -238,23 +319,13 @@ function getRequestedInferenceModel(chatRequest = {}) {
   );
 }
 
-function hasVisionInput(chatRequest = {}) {
-  return (Array.isArray(chatRequest.messages) ? chatRequest.messages : []).some((message) => (
-    Array.isArray(message?.content) && message.content.some((part) => [
-      'image', 'image_url', 'input_image', 'video', 'video_url', 'input_video',
-    ].includes(normalizeString(part?.type).toLowerCase()))
-  ));
-}
-
 export function getOpenRouterModelForInferenceRequest(chatRequest = {}, env = process.env) {
   const model = getRequestedInferenceModel(chatRequest);
   if (isQwenInferenceModel(model)) {
-    const vision = hasVisionInput(chatRequest);
-    return normalizeString(vision ? env?.OPENROUTER_QWEN_37_PLUS_MODEL : env?.OPENROUTER_QWEN_37_MAX_MODEL) ||
-      (vision ? 'qwen/qwen3.7-plus' : 'qwen/qwen3.7-max');
+    return normalizeString(env?.OPENROUTER_QWEN_37_PLUS_MODEL) || 'qwen/qwen3.7-plus';
   }
   if (isGeminiInferenceModel(model)) {
-    return normalizeString(env?.OPENROUTER_GEMINI_31_PRO_MODEL) || 'google/gemini-3.1-pro';
+    return normalizeString(env?.OPENROUTER_GEMINI_31_PRO_MODEL) || 'google/gemini-3.1-pro-preview';
   }
   return normalizeString(env?.OPENROUTER_GPT_56_SOL_MODEL) || 'openai/gpt-5.6-sol';
 }
@@ -274,7 +345,7 @@ export async function createOpenRouterChatCompletion(chatRequest = {}) {
   if (!client) throw new Error('OPENROUTER_API_KEY is required for OpenRouter inference.');
   const {
     authorization, bypassSamsarExternalInference, samsarExternalInference,
-    timeout, timeoutMs, maxRetries, reasoning_effort, reasoning, ...request
+    timeout, timeoutMs, maxRetries, externalMaxRetries, reasoning_effort, reasoning, ...request
   } = chatRequest || {};
   const effort = reasoning?.effort || reasoning_effort || (
     getRequestedInferenceModel(chatRequest) === GPT_56_SOL_INFERENCE_MODEL
@@ -282,29 +353,34 @@ export async function createOpenRouterChatCompletion(chatRequest = {}) {
       : undefined
   );
   const requestedModel = getRequestedInferenceModel(chatRequest);
-  const qwenOpenRouterOnly = isQwenOpenRouterOnly(requestedModel);
-  let requestTimeout = Number(
-    timeout ?? timeoutMs ?? process.env.OPENROUTER_INFERENCE_TIMEOUT_MS,
-  ) || DEFAULT_EXTERNAL_INFERENCE_TIMEOUT_MS;
-  const qwenTimeout = Number(process.env.OPENROUTER_QWEN_INFERENCE_TIMEOUT_MS);
-  if (qwenOpenRouterOnly && Number.isFinite(qwenTimeout) && qwenTimeout > 0) {
-    requestTimeout = Math.min(requestTimeout, Math.floor(qwenTimeout));
-  }
-  const options = {
-    timeout: requestTimeout,
-  };
-  const retries = Number(maxRetries);
-  const qwenRetries = Number(process.env.OPENROUTER_QWEN_MAX_RETRIES);
-  if (qwenOpenRouterOnly && Number.isInteger(qwenRetries) && qwenRetries >= 0) {
-    options.maxRetries = qwenRetries;
-  } else if (Number.isInteger(retries) && retries >= 0) {
-    options.maxRetries = retries;
-  }
-  return client.chat.completions.create({
-    ...request,
-    model: getOpenRouterModelForInferenceRequest(chatRequest),
-    ...(effort ? { reasoning: { effort } } : {}),
-  }, options);
+  const configuredTimeout = Number(
+    isQwenInferenceModel(requestedModel)
+      ? process.env.OPENROUTER_QWEN_INFERENCE_TIMEOUT_MS
+      : process.env.OPENROUTER_INFERENCE_TIMEOUT_MS,
+  );
+  const minimumTimeout = Number.isFinite(configuredTimeout) && configuredTimeout > 0
+    ? Math.floor(configuredTimeout)
+    : DEFAULT_EXTERNAL_INFERENCE_TIMEOUT_MS;
+  const requestedTimeout = Number(timeout ?? timeoutMs);
+  const requestTimeout = Math.max(
+    Number.isFinite(requestedTimeout) && requestedTimeout > 0 ? Math.floor(requestedTimeout) : minimumTimeout,
+    minimumTimeout,
+  );
+  const openRouterModel = getOpenRouterModelForInferenceRequest(chatRequest);
+  const payload = buildOpenRouterRequestPayload(request, requestedModel, openRouterModel, effort);
+  return runExternalInferenceWithRetry(
+    ({ signal }) => client.chat.completions.create(payload, {
+      timeout: requestTimeout,
+      maxRetries: 0,
+      signal,
+    }),
+    {
+      provider: 'openrouter',
+      model: openRouterModel,
+      timeoutMs: requestTimeout,
+      maxRetries: externalMaxRetries,
+    },
+  );
 }
 
 function normalizeRequestedInferenceModel(value) {

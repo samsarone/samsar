@@ -1434,6 +1434,7 @@ function scheduleImageListToVideoBuilderSession(sessionId, userId, payload, webh
         error,
       });
       await markImageListToVideoBuilderSessionFailed(sessionId, error);
+      await markGlobalBuilderSessionFailed(sessionId, extractImageListToVideoErrorMessage(error));
     });
   };
 
@@ -1469,6 +1470,7 @@ function scheduleTextToVideoBuilderSession(sessionId, userId, payload, webhookUr
         error,
       });
       await markTextToVideoBuilderSessionFailed(sessionId, error);
+      await markGlobalBuilderSessionFailed(sessionId, extractTextToVideoErrorMessage(error));
     });
   };
 
@@ -1508,6 +1510,23 @@ function extractTextToVideoErrorMessage(error) {
   }
 
   return 'Text to video prompt generation failed.';
+}
+
+async function markGlobalBuilderSessionFailed(sessionId, errorMessage) {
+  if (!sessionId) {
+    return;
+  }
+
+  try {
+    await upsertGlobalSessionMapping({
+      sessionId,
+      sessionType: 'video',
+      status: 'FAILED',
+      errorMessage: errorMessage || 'Video generation failed.',
+    });
+  } catch (error) {
+    console.error(`Failed to mark GlobalSession ${sessionId} as FAILED`, error);
+  }
 }
 
 function summarizeBuilderError(error) {

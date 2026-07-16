@@ -211,14 +211,18 @@ The built-in inference adapters normalize stable model selections, text and visi
 | Docker (`CURRENT_ENV=docker`) | Native Alibaba first, then OpenRouter, then the Samsar deployed fallback. |
 | Docker with `SAMSAR_QWEN_OPENROUTER_ONLY=true` | OpenRouter only, matching hosted behavior. |
 
-The stable `QWEN3.7` selection maps text-only requests to `qwen/qwen3.7-max` and requests containing image or video input to `qwen/qwen3.7-plus`. These defaults can be changed with `OPENROUTER_QWEN_37_MAX_MODEL` and `OPENROUTER_QWEN_37_PLUS_MODEL`.
+The stable `QWEN3.7` selection maps text and vision requests to `qwen/qwen3.7-plus`; `OPENROUTER_QWEN_37_PLUS_MODEL` can override that mapping. OpenRouter requests explicitly use high reasoning for Qwen and Gemini and the native-equivalent `xhigh` setting for GPT, with a 65,536-token completion allowance. Structured requests also require compatible provider parameters and enable response healing.
 
 | Runtime variable | Purpose |
 | --- | --- |
 | `OPENROUTER_API_KEY` | Required for hosted Qwen inference. One backend-only key is shared through `runtime/secrets/root.env`. |
 | `SAMSAR_QWEN_OPENROUTER_ONLY` | Forces Qwen through OpenRouter even if the runtime is identified as Docker. |
-| `OPENROUTER_QWEN_INFERENCE_TIMEOUT_MS` | Qwen-specific OpenRouter inference timeout; hosted production currently uses `120000`. |
-| `OPENROUTER_QWEN_MAX_RETRIES` | Qwen-specific OpenRouter retry count; hosted production currently uses `0` so a timed-out request is not duplicated. |
+| `OPENROUTER_INFERENCE_TIMEOUT_MS` / `OPENROUTER_QWEN_INFERENCE_TIMEOUT_MS` | Minimum OpenRouter request timeout; hosted production uses `600000` milliseconds. |
+| `OPENROUTER_QWEN_MAX_TOKENS` / `OPENROUTER_GEMINI_MAX_TOKENS` | Qwen and Gemini completion ceilings; the default is `65536`. |
+| `OPENROUTER_GPT_MAX_COMPLETION_TOKENS` | GPT completion ceiling; the default is `65536`. |
+| `OPENROUTER_QWEN_REASONING_EFFORT` / `OPENROUTER_GEMINI_REASONING_EFFORT` | OpenRouter reasoning effort; hosted production uses `high`. |
+| `OPENROUTER_GPT_REASONING_EFFORT` | GPT reasoning effort; hosted production preserves the native adapter's `xhigh` default. |
+| `SAMSAR_EXTERNAL_INFERENCE_MAX_RETRIES` | Transient external-inference retries after the initial attempt; defaults to `3` with exponential backoff and provider `Retry-After` support. |
 
 The same adapter contract is used by `processor`, `generator`, `audio-generator`, `ai-video-layer-generator`, `express-video-listener`, and `assistant-query-processor`. This keeps provider selection consistent across chat, assistant, prompt generation, vision analysis, and express-video stages.
 

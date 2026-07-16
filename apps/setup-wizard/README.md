@@ -20,6 +20,8 @@ Step 1 places **Inference Router** above the direct-provider and Samsar fallback
 
 For the local Docker runtime configured by this wizard, provider priority is direct native credential, OpenRouter, then the Samsar universal fallback. Set `SAMSAR_QWEN_OPENROUTER_ONLY=true` to force Docker Qwen requests through OpenRouter. Hosted production and external-production always apply that OpenRouter-only Qwen policy; a saved native or deployed authorization cannot override it. Other provider keys continue to enable their media, audio, and direct inference families independently.
 
+OpenRouter inference defaults to high reasoning for Qwen and Gemini and `xhigh` for GPT, with a 65,536-token completion allowance and a 10-minute minimum request timeout. Transient provider errors, including HTTP 429 responses, receive up to three backoff retries and honor `Retry-After` when supplied.
+
 ## Secret Handling
 
 The browser does not persist OpenRouter or Alibaba keys or their one-time validation tokens in local storage. OpenRouter validation uses authenticated key metadata and rejects management-only keys that cannot run inference. After validation, the setup server writes accepted credentials to mode-`0600` `runtime/secrets/provider.credentials.json`. Runtime rendering creates mode-`0600` `runtime/secrets/root.env`, where the single OpenRouter key appears as `OPENROUTER_API_KEY`.

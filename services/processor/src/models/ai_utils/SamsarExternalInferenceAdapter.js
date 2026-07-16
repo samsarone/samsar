@@ -16,6 +16,12 @@ import { getCurrentEnvironment } from '../../utils/EnvironmentUtils.js';
 
 const DEFAULT_SAMSAR_API_BASE_URL = 'https://api.samsar.one/v1';
 const DEFAULT_EXTERNAL_INFERENCE_TIMEOUT_MS = 10 * 60 * 1000;
+const DEFAULT_EXTERNAL_INFERENCE_MAX_RETRIES = 3;
+const DEFAULT_EXTERNAL_INFERENCE_RETRY_BASE_DELAY_MS = 5000;
+const DEFAULT_EXTERNAL_INFERENCE_RETRY_MAX_DELAY_MS = 60000;
+const DEFAULT_OPENROUTER_QWEN_MAX_TOKENS = 65536;
+const DEFAULT_OPENROUTER_GEMINI_MAX_TOKENS = 65536;
+const DEFAULT_OPENROUTER_GPT_MAX_COMPLETION_TOKENS = 65536;
 const DEFAULT_OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1';
 const GOOGLE_NATIVE_CREDENTIAL_KEYS = Object.freeze([
   'GOOGLE_APPLICATION_CREDENTIALS_JSON_B64',
@@ -62,6 +68,299 @@ let cachedOpenRouterBaseUrl = '';
 
 function normalizeString(value) {
   return typeof value === 'string' ? value.trim() : '';
+}
+
+function normalizeNonNegativeInteger(value, fallback) {
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed >= 0 ? parsed : fallback;
+}
+
+function normalizePositiveInteger(value, fallback) {
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function getExternalInferenceErrorStatus(error) {
+  const visited = new Set();
+  let current = error;
+  while (current && typeof current === 'object' && !visited.has(current)) {
+    visited.add(current);
+    const status = Number(
+      current.status ??
+      current.statusCode ??
+      current.code ??
+      current.response?.status ??
+      current.error?.status ??
+      current.error?.code,
+    );
+    if (Number.isInteger(status) && status > 0) {
+      return status;
+    }
+    current = current.cause;
+  }
+  return null;
+}
+
+function getExternalInferenceErrorCode(error) {
+  return normalizeString(error?.code || error?.cause?.code).toUpperCase();
+}
+
+function isRetryableExternalInferenceError(error) {
+  const status = getExternalInferenceErrorStatus(error);
+  if (status !== null) {
+    return status === 408 || status === 409 || status === 425 || status === 429 || status >= 500;
+  }
+
+  const code = getExternalInferenceErrorCode(error);
+  if ([
+    'ECONNABORTED',
+    'ECONNRESET',
+    'ETIMEDOUT',
+    'EAI_AGAIN',
+    'ENETUNREACH',
+  ].includes(code)) {
+    return true;
+  }
+
+  return ['APICONNECTIONERROR', 'APICONNECTIONTIMEOUTERROR'].includes(
+    normalizeString(error?.name || error?.cause?.name).toUpperCase(),
+  );
+}
+
+function getExternalInferenceRetryAfterMs(error) {
+  const visited = new Set();
+  let current = error;
+  while (current && typeof current === 'object' && !visited.has(current)) {
+    visited.add(current);
+    const headers = current.headers ?? current.response?.headers;
+    const getHeader = (name) => normalizeString(
+      typeof headers?.get === 'function'
+        ? headers.get(name)
+        : headers?.[name] ?? headers?.[name.toLowerCase()],
+    );
+    const retryAfterMs = Number(getHeader('retry-after-ms'));
+    if (Number.isFinite(retryAfterMs) && retryAfterMs > 0) return Math.ceil(retryAfterMs);
+    const retryAfter = getHeader('retry-after');
+    if (retryAfter) {
+      const seconds = Number(retryAfter);
+      if (Number.isFinite(seconds) && seconds >= 0) return Math.ceil(seconds * 1000);
+      const retryAt = Date.parse(retryAfter);
+      if (Number.isFinite(retryAt)) return Math.max(0, retryAt - Date.now());
+    }
+    current = current.cause;
+  }
+  return null;
+}
+
+function getExternalInferenceRetryDelayMs(retryNumber, error) {
+  const baseDelayMs = normalizePositiveInteger(
+    process.env.SAMSAR_EXTERNAL_INFERENCE_RETRY_BASE_DELAY_MS,
+    DEFAULT_EXTERNAL_INFERENCE_RETRY_BASE_DELAY_MS,
+  );
+  const maxDelayMs = Math.max(
+    baseDelayMs,
+    normalizePositiveInteger(
+      process.env.SAMSAR_EXTERNAL_INFERENCE_RETRY_MAX_DELAY_MS,
+      DEFAULT_EXTERNAL_INFERENCE_RETRY_MAX_DELAY_MS,
+    ),
+  );
+  const retryIndex = Math.max(0, normalizeNonNegativeInteger(retryNumber, 1) - 1);
+  const exponentialDelayMs = Math.min(maxDelayMs, baseDelayMs * (2 ** retryIndex));
+  return Math.max(exponentialDelayMs, getExternalInferenceRetryAfterMs(error) ?? 0);
+}
+
+function getOpenRouterCompletionLimit(requestedModel, request = {}) {
+  let configuredLimit;
+  if (isQwenInferenceModel(requestedModel)) {
+    configuredLimit = normalizePositiveInteger(
+      process.env.OPENROUTER_QWEN_MAX_TOKENS,
+      DEFAULT_OPENROUTER_QWEN_MAX_TOKENS,
+    );
+  } else if (isGeminiInferenceModel(requestedModel)) {
+    configuredLimit = normalizePositiveInteger(
+      process.env.OPENROUTER_GEMINI_MAX_TOKENS,
+      DEFAULT_OPENROUTER_GEMINI_MAX_TOKENS,
+    );
+  } else {
+    configuredLimit = normalizePositiveInteger(
+      process.env.OPENROUTER_GPT_MAX_COMPLETION_TOKENS,
+      DEFAULT_OPENROUTER_GPT_MAX_COMPLETION_TOKENS,
+    );
+  }
+  const requestedLimit = normalizePositiveInteger(
+    request.max_completion_tokens ?? request.max_tokens,
+    configuredLimit,
+  );
+  return Math.min(requestedLimit, configuredLimit);
+}
+
+function isOpenRouterStructuredOutputRequest(request = {}) {
+  const responseFormatType = normalizeString(request?.response_format?.type).toLowerCase();
+  return responseFormatType === 'json_schema' || responseFormatType === 'json_object';
+}
+
+function addOpenRouterResponseHealingPlugin(plugins) {
+  const normalizedPlugins = Array.isArray(plugins) ? [...plugins] : [];
+  const hasResponseHealing = normalizedPlugins.some((plugin) => (
+    normalizeString(plugin?.id).toLowerCase() === 'response-healing'
+  ));
+  if (!hasResponseHealing) {
+    normalizedPlugins.push({ id: 'response-healing' });
+  }
+  return normalizedPlugins;
+}
+
+function getOpenRouterReasoningEffort(requestedModel, effort, request = {}) {
+  if (!isOpenAIInferenceModel(requestedModel) && isOpenRouterStructuredOutputRequest(request)) {
+    return 'high';
+  }
+  const configuredEffort = normalizeString(
+    isQwenInferenceModel(requestedModel)
+      ? process.env.OPENROUTER_QWEN_REASONING_EFFORT
+      : isGeminiInferenceModel(requestedModel)
+        ? process.env.OPENROUTER_GEMINI_REASONING_EFFORT
+        : process.env.OPENROUTER_GPT_REASONING_EFFORT,
+  ).toLowerCase();
+  if (['low', 'medium', 'high'].includes(configuredEffort)) {
+    return configuredEffort;
+  }
+  if (isOpenAIInferenceModel(requestedModel) && ['xhigh', 'max'].includes(configuredEffort)) {
+    return configuredEffort;
+  }
+
+  const normalizedEffort = normalizeString(effort).toLowerCase();
+  if (!isOpenAIInferenceModel(requestedModel) && ['xhigh', 'max'].includes(normalizedEffort)) {
+    return 'high';
+  }
+  if (['low', 'medium', 'high', 'xhigh', 'max'].includes(normalizedEffort)) {
+    return normalizedEffort;
+  }
+
+  // OpenRouter providers otherwise choose their own (often medium) reasoning
+  // default. Keep Samsar's quality-first policy explicit on every model call.
+  return 'high';
+}
+
+function buildOpenRouterRequestPayload(request, requestedModel, openRouterModel, effort) {
+  const payload = {
+    ...request,
+    model: openRouterModel,
+  };
+  const effectiveEffort = getOpenRouterReasoningEffort(requestedModel, effort, request);
+  if (effectiveEffort) {
+    payload.reasoning = { effort: effectiveEffort };
+  }
+
+  const completionLimit = getOpenRouterCompletionLimit(requestedModel, request);
+  if (isOpenAIInferenceModel(requestedModel)) {
+    delete payload.max_tokens;
+    payload.max_completion_tokens = completionLimit;
+  } else {
+    delete payload.max_completion_tokens;
+    payload.max_tokens = completionLimit;
+  }
+  if (isOpenRouterStructuredOutputRequest(request)) {
+    const provider = payload.provider && typeof payload.provider === 'object' && !Array.isArray(payload.provider)
+      ? payload.provider
+      : {};
+    payload.provider = { ...provider, require_parameters: true };
+    payload.plugins = addOpenRouterResponseHealingPlugin(payload.plugins);
+  }
+
+  return payload;
+}
+
+function createExternalInferenceTimeoutError(timeoutMs) {
+  const error = new Error(`External inference timed out after ${timeoutMs}ms.`);
+  error.name = 'ExternalInferenceTimeoutError';
+  error.code = 'ETIMEDOUT';
+  error.status = 504;
+  return error;
+}
+
+async function runExternalInferenceAttempt(operation, timeoutMs, attempt, maxAttempts) {
+  const effectiveTimeoutMs = normalizePositiveInteger(
+    timeoutMs,
+    DEFAULT_EXTERNAL_INFERENCE_TIMEOUT_MS,
+  );
+  const controller = new AbortController();
+  let timeoutId;
+  const timeoutPromise = new Promise((_, reject) => {
+    timeoutId = setTimeout(() => {
+      const timeoutError = createExternalInferenceTimeoutError(effectiveTimeoutMs);
+      controller.abort(timeoutError);
+      reject(timeoutError);
+    }, effectiveTimeoutMs);
+  });
+
+  try {
+    return await Promise.race([
+      Promise.resolve().then(() => operation({
+        signal: controller.signal,
+        attempt,
+        maxAttempts,
+      })),
+      timeoutPromise,
+    ]);
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+export async function runExternalInferenceWithRetry(operation, {
+  provider = 'external',
+  model = null,
+  timeoutMs = DEFAULT_EXTERNAL_INFERENCE_TIMEOUT_MS,
+  maxRetries,
+  sleep = (delayMs) => new Promise((resolve) => setTimeout(resolve, delayMs)),
+  logger = console,
+} = {}) {
+  if (typeof operation !== 'function') {
+    throw new TypeError('External inference operation must be a function.');
+  }
+
+  const retryLimit = normalizeNonNegativeInteger(
+    maxRetries,
+    normalizeNonNegativeInteger(
+      process.env.SAMSAR_EXTERNAL_INFERENCE_MAX_RETRIES,
+      DEFAULT_EXTERNAL_INFERENCE_MAX_RETRIES,
+    ),
+  );
+  const maxAttempts = retryLimit + 1;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      return await runExternalInferenceAttempt(operation, timeoutMs, attempt, maxAttempts);
+    } catch (error) {
+      const retryable = isRetryableExternalInferenceError(error);
+      const willRetry = retryable && attempt < maxAttempts;
+      const context = {
+        provider,
+        model,
+        attempt,
+        maxAttempts,
+        status: getExternalInferenceErrorStatus(error),
+        code: getExternalInferenceErrorCode(error) || null,
+        message: error?.message || String(error),
+        willRetry,
+      };
+      logger.error?.('[external_inference] request failed', context);
+
+      if (!willRetry) {
+        throw error;
+      }
+
+      const delayMs = getExternalInferenceRetryDelayMs(attempt, error);
+      logger.warn?.('[external_inference] retry scheduled', {
+        ...context,
+        retryNumber: attempt,
+        delayMs,
+      });
+      await sleep(delayMs);
+    }
+  }
+
+  throw new Error('External inference failed without a response.');
 }
 
 function normalizeBaseUrl(value) {
@@ -239,26 +538,13 @@ export function resolveConfiguredInferenceProvider(model) {
   return '';
 }
 
-function hasVisionInput(chatRequest = {}) {
-  return (Array.isArray(chatRequest.messages) ? chatRequest.messages : []).some((message) => (
-    Array.isArray(message?.content) && message.content.some((part) => {
-      const type = normalizeString(part?.type).toLowerCase();
-      return ['image', 'image_url', 'input_image', 'video', 'video_url', 'input_video'].includes(type);
-    })
-  ));
-}
-
 export function getOpenRouterModelForInferenceRequest(chatRequest = {}, env = process.env) {
   const model = getRequestedInferenceModel(chatRequest);
   if (isQwenInferenceModel(model)) {
-    return normalizeString(
-      hasVisionInput(chatRequest)
-        ? env?.OPENROUTER_QWEN_37_PLUS_MODEL
-        : env?.OPENROUTER_QWEN_37_MAX_MODEL,
-    ) || (hasVisionInput(chatRequest) ? 'qwen/qwen3.7-plus' : 'qwen/qwen3.7-max');
+    return normalizeString(env?.OPENROUTER_QWEN_37_PLUS_MODEL) || 'qwen/qwen3.7-plus';
   }
   if (isGeminiInferenceModel(model)) {
-    return normalizeString(env?.OPENROUTER_GEMINI_31_PRO_MODEL) || 'google/gemini-3.1-pro';
+    return normalizeString(env?.OPENROUTER_GEMINI_31_PRO_MODEL) || 'google/gemini-3.1-pro-preview';
   }
   return normalizeString(env?.OPENROUTER_GPT_56_SOL_MODEL) || 'openai/gpt-5.6-sol';
 }
@@ -285,40 +571,54 @@ export async function createOpenRouterChatCompletion(chatRequest = {}) {
     timeout,
     timeoutMs,
     maxRetries,
+    externalMaxRetries,
     reasoning_effort,
     reasoning,
     ...request
   } = chatRequest || {};
   const requestedModel = getRequestedInferenceModel(chatRequest);
-  const qwenOpenRouterOnly = isQwenOpenRouterOnly(requestedModel);
   const effort = reasoning?.effort || reasoning_effort || (
     isOpenAIInferenceModel(requestedModel)
       ? getReasoningEffortForInferenceModel(requestedModel)
       : undefined
   );
-  let requestTimeout = Number(
-    timeout ?? timeoutMs ?? process.env.OPENROUTER_INFERENCE_TIMEOUT_MS,
-  ) || DEFAULT_EXTERNAL_INFERENCE_TIMEOUT_MS;
-  const qwenTimeout = Number(process.env.OPENROUTER_QWEN_INFERENCE_TIMEOUT_MS);
-  if (qwenOpenRouterOnly && Number.isFinite(qwenTimeout) && qwenTimeout > 0) {
-    requestTimeout = Math.min(requestTimeout, Math.floor(qwenTimeout));
-  }
-  const options = {
-    timeout: requestTimeout,
-  };
-  const retries = Number(maxRetries);
-  const qwenRetries = Number(process.env.OPENROUTER_QWEN_MAX_RETRIES);
-  if (qwenOpenRouterOnly && Number.isInteger(qwenRetries) && qwenRetries >= 0) {
-    options.maxRetries = qwenRetries;
-  } else if (Number.isInteger(retries) && retries >= 0) {
-    options.maxRetries = retries;
-  }
+  const configuredTimeout = Number(
+    isQwenInferenceModel(requestedModel)
+      ? process.env.OPENROUTER_QWEN_INFERENCE_TIMEOUT_MS
+      : process.env.OPENROUTER_INFERENCE_TIMEOUT_MS,
+  );
+  const minimumTimeout = Number.isFinite(configuredTimeout) && configuredTimeout > 0
+    ? Math.floor(configuredTimeout)
+    : DEFAULT_EXTERNAL_INFERENCE_TIMEOUT_MS;
+  const requestedTimeout = Number(timeout ?? timeoutMs);
+  const requestTimeout = Math.max(
+    Number.isFinite(requestedTimeout) && requestedTimeout > 0
+      ? Math.floor(requestedTimeout)
+      : minimumTimeout,
+    minimumTimeout,
+  );
+  const openRouterModel = getOpenRouterModelForInferenceRequest(chatRequest);
+  const payload = buildOpenRouterRequestPayload(
+    request,
+    requestedModel,
+    openRouterModel,
+    effort,
+  );
 
-  return client.chat.completions.create({
-    ...request,
-    model: getOpenRouterModelForInferenceRequest(chatRequest),
-    ...(effort ? { reasoning: { effort } } : {}),
-  }, options);
+  return runExternalInferenceWithRetry(
+    ({ signal }) => client.chat.completions.create(payload, {
+      timeout: requestTimeout,
+      // The adapter owns retry timing so the SDK cannot multiply attempts.
+      maxRetries: 0,
+      signal,
+    }),
+    {
+      provider: 'openrouter',
+      model: openRouterModel,
+      timeoutMs: requestTimeout,
+      maxRetries: externalMaxRetries,
+    },
+  );
 }
 
 function getRequestedInferenceModel(chatRequest = {}) {
@@ -389,18 +689,32 @@ export async function createSamsarExternalChatCompletion(chatRequest = {}) {
     bypassSamsarExternalInference,
     samsarExternalInference,
     timeout,
+    timeoutMs,
     maxRetries,
+    externalMaxRetries,
     ...payload
   } = chatRequest || {};
 
   const model = getRequestedInferenceModel(payload);
-  const response = await client.createV2ExternalChatCompletion({
-    ...payload,
-    model,
-    ...(isOpenAIInferenceModel(model)
-      ? { reasoning_effort: getReasoningEffortForInferenceModel(model) }
-      : {}),
-  });
+  const requestTimeout = normalizePositiveInteger(
+    timeout ?? timeoutMs ?? process.env.SAMSAR_EXTERNAL_INFERENCE_TIMEOUT_MS,
+    DEFAULT_EXTERNAL_INFERENCE_TIMEOUT_MS,
+  );
+  const response = await runExternalInferenceWithRetry(
+    () => client.createV2ExternalChatCompletion({
+      ...payload,
+      model,
+      ...(isOpenAIInferenceModel(model)
+        ? { reasoning_effort: getReasoningEffortForInferenceModel(model) }
+        : {}),
+    }),
+    {
+      provider: 'samsar',
+      model,
+      timeoutMs: requestTimeout,
+      maxRetries: externalMaxRetries,
+    },
+  );
 
   return unwrapSamsarExternalChatCompletionResponse(response);
 }

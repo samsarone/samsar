@@ -10,8 +10,17 @@ const ENV_KEYS = [
   'SAMSAR_FORCE_EXTERNAL_INFERENCE',
   'OPENAI_API_KEY',
   'OPENROUTER_API_KEY',
+  'OPENROUTER_GEMINI_MAX_TOKENS',
+  'OPENROUTER_GEMINI_REASONING_EFFORT',
+  'OPENROUTER_GPT_MAX_COMPLETION_TOKENS',
+  'OPENROUTER_GPT_REASONING_EFFORT',
   'OPENROUTER_QWEN_INFERENCE_TIMEOUT_MS',
   'OPENROUTER_QWEN_MAX_RETRIES',
+  'OPENROUTER_QWEN_MAX_TOKENS',
+  'OPENROUTER_QWEN_REASONING_EFFORT',
+  'SAMSAR_EXTERNAL_INFERENCE_MAX_RETRIES',
+  'SAMSAR_EXTERNAL_INFERENCE_RETRY_BASE_DELAY_MS',
+  'SAMSAR_EXTERNAL_INFERENCE_RETRY_MAX_DELAY_MS',
   'ALIBABA_API_KEY',
   'DASHSCOPE_API_KEY',
   'ALIBABA_CLOUD_API_KEY',
@@ -41,6 +50,7 @@ const {
   createOpenRouterChatCompletion,
   createSamsarExternalChatCompletion,
   getOpenRouterModelForInferenceRequest,
+  runExternalInferenceWithRetry,
   resolveConfiguredInferenceProvider,
   shouldUseSamsarExternalInference,
   unwrapSamsarExternalChatCompletionResponse,
@@ -194,11 +204,13 @@ test('Docker inference uses native then OpenRouter then Samsar for every model',
   assert.equal(shouldUseSamsarExternalInference({ model: 'QWEN3.7' }), false);
 });
 
-test('OpenRouter maps Qwen Max for text and Plus for vision', () => {
+test('OpenRouter maps Qwen text and vision requests to Plus', () => {
   assert.equal(getOpenRouterModelForInferenceRequest({
     model: 'QWEN3.7',
     messages: [{ role: 'user', content: 'hello' }],
-  }), 'qwen/qwen3.7-max');
+  }, {
+    OPENROUTER_QWEN_37_MAX_MODEL: 'qwen/qwen3.7-max',
+  }), 'qwen/qwen3.7-plus');
   assert.equal(getOpenRouterModelForInferenceRequest({
     model: 'QWEN3.7',
     messages: [{
@@ -256,10 +268,116 @@ test('OpenRouter adapter sends OpenAI-compatible vision requests with the Plus d
 
   assert.equal(capturedPayload.model, 'qwen/qwen3.7-plus');
   assert.equal(capturedPayload.messages[0].content[0].type, 'image_url');
-  assert.equal(capturedOptions.timeout, 12345);
+  assert.equal(capturedPayload.max_tokens, 65536);
+  assert.equal(capturedOptions.timeout, 600000);
 });
 
-test('production Qwen OpenRouter controls cap timeout and disable SDK retries', async (t) => {
+test('OpenRouter applies Qwen-specific token and reasoning limits to Plus text inference', async (t) => {
+  clearProviderEnv();
+  process.env.CURRENT_ENV = 'production';
+  process.env.OPENROUTER_API_KEY = 'test-openrouter-key';
+  let capturedPayload;
+  t.mock.method(OpenAI.Chat.Completions.prototype, 'create', async (payload) => {
+    capturedPayload = payload;
+    return { choices: [{ message: { role: 'assistant', content: 'ok' } }] };
+  });
+
+  await createOpenRouterChatCompletion({
+    model: 'QWEN3.7',
+    messages: [{ role: 'user', content: 'hello' }],
+    reasoning: { effort: 'xhigh' },
+    max_completion_tokens: 20000,
+  });
+
+  assert.equal(capturedPayload.model, 'qwen/qwen3.7-plus');
+  assert.equal(capturedPayload.reasoning.effort, 'high');
+  assert.equal(capturedPayload.max_tokens, 20000);
+  assert.equal(Object.hasOwn(capturedPayload, 'max_completion_tokens'), false);
+});
+
+test('OpenRouter reserves Qwen output tokens and enforces schema support for structured JSON', async (t) => {
+  clearProviderEnv();
+  process.env.CURRENT_ENV = 'production';
+  process.env.OPENROUTER_API_KEY = 'test-openrouter-key';
+  process.env.OPENROUTER_QWEN_REASONING_EFFORT = 'high';
+  let capturedPayload;
+  t.mock.method(OpenAI.Chat.Completions.prototype, 'create', async (payload) => {
+    capturedPayload = payload;
+    return { choices: [{ message: { role: 'assistant', content: '{"value":"ok"}' } }] };
+  });
+
+  await createOpenRouterChatCompletion({
+    model: 'QWEN3.7',
+    messages: [{ role: 'user', content: 'return JSON' }],
+    reasoning: { effort: 'high' },
+    max_tokens: 4096,
+    response_format: {
+      type: 'json_schema',
+      json_schema: {
+        name: 'result',
+        strict: true,
+        schema: {
+          type: 'object',
+          properties: { value: { type: 'string' } },
+          required: ['value'],
+          additionalProperties: false,
+        },
+      },
+    },
+    provider: { data_collection: 'deny' },
+    plugins: [{ id: 'existing-plugin' }],
+  });
+
+  assert.equal(capturedPayload.model, 'qwen/qwen3.7-plus');
+  assert.equal(capturedPayload.reasoning.effort, 'high');
+  assert.equal(capturedPayload.max_tokens, 4096);
+  assert.deepEqual(capturedPayload.provider, {
+    data_collection: 'deny',
+    require_parameters: true,
+  });
+  assert.deepEqual(capturedPayload.plugins, [
+    { id: 'existing-plugin' },
+    { id: 'response-healing' },
+  ]);
+});
+
+test('OpenRouter explicitly budgets high-reasoning Gemini and GPT completions', async (t) => {
+  clearProviderEnv();
+  process.env.CURRENT_ENV = 'production';
+  process.env.OPENROUTER_API_KEY = 'test-openrouter-key';
+  const payloads = [];
+  t.mock.method(OpenAI.Chat.Completions.prototype, 'create', async (payload) => {
+    payloads.push(payload);
+    return { choices: [{ message: { role: 'assistant', content: '{"value":"ok"}' } }] };
+  });
+
+  const responseFormat = { type: 'json_object' };
+  await createOpenRouterChatCompletion({
+    model: 'gemini-3.1-pro',
+    messages: [{ role: 'user', content: 'return JSON' }],
+    response_format: responseFormat,
+  });
+  await createOpenRouterChatCompletion({
+    model: 'gpt-5.6-sol',
+    messages: [{ role: 'user', content: 'return JSON' }],
+    response_format: responseFormat,
+  });
+
+  assert.equal(payloads[0].model, 'google/gemini-3.1-pro-preview');
+  assert.equal(payloads[0].reasoning.effort, 'high');
+  assert.equal(payloads[0].max_tokens, 65536);
+  assert.equal(Object.hasOwn(payloads[0], 'max_completion_tokens'), false);
+  assert.equal(payloads[1].model, 'openai/gpt-5.6-sol');
+  assert.equal(payloads[1].reasoning.effort, 'xhigh');
+  assert.equal(payloads[1].max_completion_tokens, 65536);
+  assert.equal(Object.hasOwn(payloads[1], 'max_tokens'), false);
+  for (const payload of payloads) {
+    assert.equal(payload.provider.require_parameters, true);
+    assert.deepEqual(payload.plugins, [{ id: 'response-healing' }]);
+  }
+});
+
+test('production Qwen OpenRouter controls enforce minimum timeout and disable SDK retries', async (t) => {
   clearProviderEnv();
   process.env.CURRENT_ENV = 'production';
   process.env.OPENROUTER_API_KEY = 'test-openrouter-key';
@@ -279,8 +397,117 @@ test('production Qwen OpenRouter controls cap timeout and disable SDK retries', 
     maxRetries: 2,
   });
 
-  assert.equal(capturedOptions.timeout, 120000);
+  assert.equal(capturedOptions.timeout, 180000);
   assert.equal(capturedOptions.maxRetries, 0);
+  assert.equal(capturedOptions.signal instanceof AbortSignal, true);
+});
+
+test('external inference retries transient 429 responses three times with backoff', async () => {
+  let calls = 0;
+  const delays = [];
+
+  const response = await runExternalInferenceWithRetry(async () => {
+    calls += 1;
+    if (calls <= 3) {
+      const error = new Error('Provider returned error');
+      error.status = 429;
+      throw error;
+    }
+    return 'ok';
+  }, {
+    maxRetries: 3,
+    timeoutMs: 1000,
+    sleep: async (delayMs) => delays.push(delayMs),
+    logger: { error() {}, warn() {} },
+  });
+
+  assert.equal(response, 'ok');
+  assert.equal(calls, 4);
+  assert.deepEqual(delays, [5000, 10000, 20000]);
+});
+
+test('external inference recognizes provider status exposed only as a numeric code', async () => {
+  let calls = 0;
+
+  const response = await runExternalInferenceWithRetry(async () => {
+    calls += 1;
+    if (calls === 1) {
+      const error = new Error('Rate limited');
+      error.code = 429;
+      throw error;
+    }
+    return 'ok';
+  }, {
+    maxRetries: 1,
+    timeoutMs: 1000,
+    sleep: async () => {},
+    logger: { error() {}, warn() {} },
+  });
+
+  assert.equal(response, 'ok');
+  assert.equal(calls, 2);
+});
+
+test('external inference honors provider Retry-After on 429 responses', async () => {
+  const delays = [];
+  let calls = 0;
+  const response = await runExternalInferenceWithRetry(async () => {
+    calls += 1;
+    if (calls === 1) {
+      const error = new Error('Rate limited');
+      error.status = 429;
+      error.headers = new Headers({ 'retry-after': '12' });
+      throw error;
+    }
+    return 'ok';
+  }, {
+    maxRetries: 1,
+    timeoutMs: 1000,
+    sleep: async (delayMs) => delays.push(delayMs),
+    logger: { error() {}, warn() {} },
+  });
+
+  assert.equal(response, 'ok');
+  assert.deepEqual(delays, [12000]);
+});
+
+test('external inference hard timeout aborts an unresolved provider request', async () => {
+  let observedSignal;
+
+  await assert.rejects(
+    runExternalInferenceWithRetry(({ signal }) => {
+      observedSignal = signal;
+      return new Promise(() => {});
+    }, {
+      maxRetries: 0,
+      timeoutMs: 5,
+      logger: { error() {}, warn() {} },
+    }),
+    (error) => error.code === 'ETIMEDOUT' && error.status === 504,
+  );
+
+  assert.equal(observedSignal.aborted, true);
+});
+
+test('external inference does not retry non-transient authorization failures', async () => {
+  let calls = 0;
+
+  await assert.rejects(
+    runExternalInferenceWithRetry(async () => {
+      calls += 1;
+      const error = new Error('Unauthorized');
+      error.status = 401;
+      throw error;
+    }, {
+      maxRetries: 3,
+      timeoutMs: 1000,
+      sleep: async () => assert.fail('401 should not schedule a retry'),
+      logger: { error() {}, warn() {} },
+    }),
+    (error) => error.status === 401,
+  );
+
+  assert.equal(calls, 1);
 });
 
 test('deployed authorization routes Qwen through Samsar even when native Alibaba auth exists', () => {

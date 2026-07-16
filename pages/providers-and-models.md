@@ -51,14 +51,14 @@ Current embedding/search implementation note: although the setup availability ma
 
 ## OpenRouter Qwen Adapter
 
-`QWEN3.7` is the stable public model key. The OpenRouter adapter selects the provider model from the request contents:
+`QWEN3.7` is the stable public model key. The OpenRouter adapter uses the same provider model for text and vision requests:
 
 | Request | Default OpenRouter model |
 | --- | --- |
-| Text only | `qwen/qwen3.7-max` |
+| Text only | `qwen/qwen3.7-plus` |
 | Contains image or video input | `qwen/qwen3.7-plus` |
 
-`OPENROUTER_QWEN_37_MAX_MODEL` and `OPENROUTER_QWEN_37_PLUS_MODEL` override those mappings. `OPENROUTER_QWEN_INFERENCE_TIMEOUT_MS` and `OPENROUTER_QWEN_MAX_RETRIES` control Qwen-specific timeout and retry behavior; hosted production currently uses `120000` milliseconds and `0` retries.
+`OPENROUTER_QWEN_37_PLUS_MODEL` overrides that mapping. OpenRouter requests explicitly use high reasoning for Qwen and Gemini and `xhigh` for GPT, with a 65,536-token completion allowance and a 10-minute minimum timeout. Transient errors receive up to three exponential-backoff retries and honor provider `Retry-After` guidance.
 
 The adapter policy is shared by the processor, generator, audio generator, AI video layer generator, express video listener, and assistant query processor. `configuration.custom_adapters` is a separate media-operation feature and cannot override the hosted Qwen inference route.
 

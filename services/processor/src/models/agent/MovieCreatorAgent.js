@@ -24,6 +24,7 @@ import {
   GPT_56_SOL_REASONING_EFFORT,
   getDefaultUserInferenceModel,
   isGeminiInferenceModel,
+  isQwenInferenceModel,
   normalizeInferenceModel,
 } from "../../consts/InferenceModels.js";
 
@@ -148,9 +149,10 @@ export async function sendSessionResourcesMessageRequest(messageList, inferenceM
       model: modelName,
       response_format: zodResponseFormat(ScreenplayStorylineExtraction, "screenplay_storyline_extraction"),
     });
-    const messageContent = response.choices[0].message.content;
-
-    const parsedMessage = JSON.parse(messageContent);
+    const parsedMessage = parseStructuredCompletion(
+      response,
+      'screenplay_storyline_extraction',
+    );
 
     return parsedMessage;
   } catch (error) {
@@ -253,7 +255,7 @@ export async function sendSessionThemeMessageRequest(messageList, userInferenceM
   const maxRetries = 3;
   const timeoutMs = normalizePositiveInteger(
     process.env.OPENAI_THEME_TIMEOUT_MS,
-    180000,
+    600000,
   );
 
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
@@ -263,12 +265,18 @@ export async function sendSessionThemeMessageRequest(messageList, userInferenceM
         model: modelName,
         response_format: zodResponseFormat(ThemeKeywordsExtraction, "theme_keywords_extraction"),
         ...buildReasoningRequestOptions(effectiveReasoningEffort),
+        ...(isQwenInferenceModel(modelName) ? { max_tokens: 65536 } : {}),
         timeout: timeoutMs,
         maxRetries: 1,
+        // This call already owns its bounded retry loop; the shared adapter
+        // still enforces a hard timeout but must not multiply attempts.
+        externalMaxRetries: 0,
       });
 
-      const messageContent = response.choices[0].message.content;
-      const parsedMessage = JSON.parse(messageContent);
+      const parsedMessage = parseStructuredCompletion(
+        response,
+        'theme_keywords_extraction',
+      );
       return parsedMessage;
     } catch (error) {
       const isFinalAttempt = attempt >= maxRetries;
@@ -287,7 +295,7 @@ export async function sendSessionThemeMessageRequest(messageList, userInferenceM
         console.error('[MovieCreatorAgent][sendSessionThemeMessageRequest] OpenAI request failed (will retry)', logPayload);
       }
       if (attempt < maxRetries) {
-        const delay = Math.pow(2, attempt) * 500; // exponential backoff: 500ms, 1000ms, 2000ms
+        const delay = Math.pow(2, attempt) * 5000; // exponential backoff: 5s, 10s, 20s
         await new Promise((resolve) => setTimeout(resolve, delay));
       } else {
         throw new Error('An error occurred while sending the message after multiple retries. Please try again later.');
@@ -509,9 +517,7 @@ export async function sendSessionPromptMessageRequest(messageList, themeObject, 
       response_format: zodResponseFormat(PromptGeneration, "prompt_generation"),
     });
 
-    const messageContent = response.choices[0].message.content;
-
-    const parsedMessage = JSON.parse(messageContent);
+    const parsedMessage = parseStructuredCompletion(response, 'prompt_generation');
 
 
 
@@ -558,11 +564,11 @@ export async function sendNarrativePromptMessageRequest(
 
   const maxAttempts = normalizePositiveInteger(
     options.maxAttempts ?? process.env.OPENAI_NARRATIVE_MAX_ATTEMPTS,
-    2,
+    4,
   );
   const timeoutMs = normalizePositiveInteger(
     options.timeoutMs ?? process.env.OPENAI_NARRATIVE_TIMEOUT_MS,
-    180000,
+    600000,
   );
 
   // Helper function for waiting
@@ -581,14 +587,19 @@ export async function sendNarrativePromptMessageRequest(
         model: modelName,
         response_format: responseFormat,
         ...buildReasoningRequestOptions(effectiveReasoningEffort),
+        ...(isQwenInferenceModel(modelName) ? { max_tokens: 65536 } : {}),
         timeout: timeoutMs,
         maxRetries: 1,
+        // Narrative generation has its own bounded retry/backoff loop.
+        externalMaxRetries: 0,
       });
 
 
 
-      const messageContent = response.choices[0].message.content;
-      const parsedMessage = JSON.parse(messageContent);
+      const parsedMessage = parseStructuredCompletion(
+        response,
+        'screenplay_storyline_extraction',
+      );
 
       return parsedMessage;  // If successful, return here
     } catch (error) {
@@ -615,8 +626,8 @@ export async function sendNarrativePromptMessageRequest(
           'An error occurred while sending the message. Please try again.'
         );
       } else {
-        // Exponential backoff: 1s, 2s, 4s...
-        const backoffTime = 1000 * 2 ** (attempt - 1);
+        // Exponential backoff: 5s, 10s, 20s.
+        const backoffTime = 5000 * 2 ** (attempt - 1);
         await delay(backoffTime);
       }
     }
@@ -624,9 +635,10 @@ export async function sendNarrativePromptMessageRequest(
 }
 
 function getThemeNarrativeReasoningEffort(modelName) {
-  return isGeminiInferenceModel(modelName)
-    ? GEMINI_THEME_NARRATIVE_REASONING_EFFORT
-    : GPT_56_SOL_REASONING_EFFORT;
+  if (isGeminiInferenceModel(modelName) || isQwenInferenceModel(modelName)) {
+    return GEMINI_THEME_NARRATIVE_REASONING_EFFORT;
+  }
+  return GPT_56_SOL_REASONING_EFFORT;
 }
 
 function buildReasoningRequestOptions(reasoningEffort) {
@@ -636,6 +648,28 @@ function buildReasoningRequestOptions(reasoningEffort) {
       reasoning_effort: reasoningEffort,
     }
     : {};
+}
+
+function parseStructuredCompletion(response, operation) {
+  const choice = response?.choices?.[0];
+  const messageContent = choice?.message?.content;
+  try {
+    return JSON.parse(messageContent);
+  } catch (cause) {
+    const contentLength = typeof messageContent === 'string' ? messageContent.length : 0;
+    const finishReason = choice?.finish_reason ?? null;
+    const nativeFinishReason = choice?.native_finish_reason ?? null;
+    const completionTokens = response?.usage?.completion_tokens ?? null;
+    const reasoningTokens = response?.usage?.completion_tokens_details?.reasoning_tokens ?? null;
+    const error = new SyntaxError(
+      `${operation} returned invalid JSON ` +
+      `(finishReason=${finishReason}, nativeFinishReason=${nativeFinishReason}, ` +
+      `contentLength=${contentLength}, completionTokens=${completionTokens}, ` +
+      `reasoningTokens=${reasoningTokens}): ${cause?.message || 'JSON parsing failed'}`,
+    );
+    error.cause = cause;
+    throw error;
+  }
 }
 
 function summarizeMessageList(messageList) {

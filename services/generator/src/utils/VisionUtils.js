@@ -31,11 +31,11 @@ const VISION_INFERENCE_MAX_RETRIES = normalizeNonNegativeInteger(
 );
 const VISION_INFERENCE_RETRY_BASE_DELAY_MS = normalizePositiveInteger(
   process.env.VISION_INFERENCE_RETRY_BASE_DELAY_MS,
-  1000,
+  5000,
 );
 const VISION_INFERENCE_RETRY_MAX_DELAY_MS = Math.max(
   VISION_INFERENCE_RETRY_BASE_DELAY_MS,
-  normalizePositiveInteger(process.env.VISION_INFERENCE_RETRY_MAX_DELAY_MS, 30000),
+  normalizePositiveInteger(process.env.VISION_INFERENCE_RETRY_MAX_DELAY_MS, 60000),
 );
 
 function normalizeNonNegativeInteger(value, fallback) {
@@ -420,7 +420,7 @@ Provide an information-dense, condensed and thorough description in 3000 charact
 
   const response = await runVisionInferenceWithRetry(
     () => shouldUseSamsarExternalInference(routingPayload)
-        ? createSamsarExternalChatCompletion(routingPayload)
+        ? createSamsarExternalChatCompletion({ ...routingPayload, externalMaxRetries: 0 })
         : isQwenInferenceModel(inferenceModel)
           ? createQwenChatCompletion(routingPayload)
           : isGeminiInferenceModel(inferenceModel)
@@ -539,7 +539,7 @@ Return only a single integer between 0 and 100.`;
   const routingPayload = withInferenceAuthorization(inferencePayload, inferenceAuthorization);
   const response = await runVisionInferenceWithRetry(
     () => shouldUseSamsarExternalInference(routingPayload)
-      ? createSamsarExternalChatCompletion(routingPayload)
+      ? createSamsarExternalChatCompletion({ ...routingPayload, externalMaxRetries: 0 })
       : isQwenInferenceModel(inferenceModel)
         ? createQwenChatCompletion(routingPayload)
         : isGeminiInferenceModel(inferenceModel)
