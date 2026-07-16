@@ -145,6 +145,78 @@ export const DOCKER_MODEL_ACTIONS_BY_MODEL = Object.freeze({
   CREATIFYLIPSYNC: ['lip_sync'],
 });
 
+export const DOCKER_MODEL_DISPLAY_NAME_BY_MODEL = Object.freeze({
+  'gpt-5.6-sol': 'GPT 5.6 Sol',
+  'gemini-3.1-pro': 'Gemini 3.1 Pro',
+  'QWEN3.7': 'Qwen 3.7',
+  GPTIMAGE2: 'GPT Image 2',
+  GPTIMAGE2EDIT: 'GPT Image 2 Edit',
+  SEEDREAM: 'Seedream',
+  NANOBANANA2: 'Nano Banana 2',
+  NANOBANANA2EDIT: 'Nano Banana 2 Edit',
+  NANOBANANAPRO: 'Nano Banana Pro',
+  NANOBANANAPROEDIT: 'Nano Banana Pro Edit',
+  'WAN2.7PRO': 'Wan 2.7 Pro',
+  RUNWAYML: 'RunwayML',
+  'VEO3.1I2V': 'Veo 3.1 Image to Video',
+  'VEO3.1I2VFAST': 'Veo 3.1 Fast Image to Video',
+  COSMOS3SUPERI2V: 'Cosmos 3 Super Image to Video',
+  SEEDANCEI2V: 'Seedance Image to Video',
+  KLINGIMGTOVID3PRO: 'Kling 3 Pro Image to Video',
+  KLINGIMGTOVIDTURBO: 'Kling Turbo Image to Video',
+  HAPPYHORSEI2V: 'Happy Horse Image to Video',
+  LYRIA3: 'Lyria 3',
+  OPENAI_TTS: 'OpenAI Text to Speech',
+  GOOGLE_TTS: 'Google Text to Speech',
+  ELEVENLABS: 'ElevenLabs Speech',
+  ELEVENLABS_MUSIC: 'ElevenLabs Music',
+  MMAUDIOV2: 'MMAudio V2',
+  MIRELOAI: 'Mirelo AI',
+  SYNCLIPSYNC: 'Sync Lip Sync',
+  LATENTSYNC: 'LatentSync',
+  KLINGLIPSYNC: 'Kling Lip Sync',
+  HUMMINGBIRDLIPSYNC: 'Hummingbird Lip Sync',
+  CREATIFYLIPSYNC: 'Creatify Lip Sync',
+});
+
+export const EXPRESS_PIPELINE_REQUIREMENTS = Object.freeze([
+  Object.freeze({
+    key: 'inference',
+    label: 'Inference',
+    modelKeys: Object.freeze(['gpt-5.6-sol', 'gemini-3.1-pro', 'QWEN3.7']),
+  }),
+  Object.freeze({
+    key: 'imageGeneration',
+    label: 'Image generation',
+    actions: Object.freeze(['image']),
+  }),
+  Object.freeze({
+    key: 'video',
+    label: 'Video',
+    actions: Object.freeze(['video']),
+  }),
+  Object.freeze({
+    key: 'speech',
+    label: 'Speech',
+    modelKeys: Object.freeze(['OPENAI_TTS', 'GOOGLE_TTS', 'ELEVENLABS']),
+  }),
+  Object.freeze({
+    key: 'backingTrack',
+    label: 'Backing track',
+    modelKeys: Object.freeze(['LYRIA3', 'ELEVENLABS_MUSIC']),
+  }),
+  Object.freeze({
+    key: 'lipSync',
+    label: 'Lip sync',
+    actions: Object.freeze(['lip_sync']),
+  }),
+  Object.freeze({
+    key: 'soundEffect',
+    label: 'Sound effect',
+    actions: Object.freeze(['sound_effect']),
+  }),
+]);
+
 const NORMALIZED_MODEL_KEY_TO_CANONICAL = Object.freeze(
   Object.fromEntries(
     Object.keys(DOCKER_MODEL_PROVIDER_PRIORITY_BY_MODEL).map((modelKey) => [
@@ -211,6 +283,11 @@ export function orderDockerProviderKeys(providerKeys = []) {
 export function getCanonicalDockerModelKey(modelKey) {
   const normalizedModelKey = normalizeDockerModelKey(modelKey);
   return NORMALIZED_MODEL_KEY_TO_CANONICAL[normalizedModelKey] || '';
+}
+
+export function getDockerModelDisplayName(modelKey) {
+  const canonicalModelKey = getCanonicalDockerModelKey(modelKey);
+  return DOCKER_MODEL_DISPLAY_NAME_BY_MODEL[canonicalModelKey] || canonicalModelKey || modelKey;
 }
 
 export function getDockerModelProviderPriority(modelKey) {
@@ -290,5 +367,27 @@ export function buildDockerCapabilityFamilyAvailability(family = {}, enabledProv
     modelProviders,
     availableModelKeys: Object.keys(modelProviders),
     isAvailable: enabledProviderKeysForFamily.length > 0,
+  };
+}
+
+export function buildExpressPipelineAvailability(available = {}) {
+  const availableModelSet = new Set(available.models || []);
+  const availableActionSet = new Set(available.actions || []);
+  const requirements = EXPRESS_PIPELINE_REQUIREMENTS.map((requirement) => {
+    const matchingModelKeys = (requirement.modelKeys || []).filter((modelKey) => availableModelSet.has(modelKey));
+    const matchingActions = (requirement.actions || []).filter((action) => availableActionSet.has(action));
+    return {
+      ...requirement,
+      matchingModelKeys,
+      matchingActions,
+      isAvailable: matchingModelKeys.length > 0 || matchingActions.length > 0,
+    };
+  });
+
+  return {
+    requirements,
+    availableRequirements: requirements.filter((requirement) => requirement.isAvailable),
+    missingRequirements: requirements.filter((requirement) => !requirement.isAvailable),
+    isReady: requirements.every((requirement) => requirement.isAvailable),
   };
 }

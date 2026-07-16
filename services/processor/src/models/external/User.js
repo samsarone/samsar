@@ -7,7 +7,7 @@ import ExternalUserPayment from '../../schema/ExternalUserPayment.js';
 import ExternalUserRequest from '../../schema/ExternalUserRequest.js';
 import UserPayment from '../../schema/UserPayment.js';
 import VideoSession from '../../schema/VideoSession.js';
-import { generateAPIKey } from '../../utils/ApiKeyUtils.js';
+import { generateAPIKeySecret } from '../../utils/ApiKeyUtils.js';
 import { getDBConnectionString } from '../DBString.js';
 import {
   creditGenerationCredits,
@@ -221,7 +221,7 @@ function getExternalUserApiKeyFromHeaders(headers = {}) {
 }
 
 function buildExternalUserApiKey() {
-  return `sxu_${generateAPIKey()}`;
+  return `sxu_${generateAPIKeySecret()}`;
 }
 
 function isInternalBillingExternalUser(externalUser) {

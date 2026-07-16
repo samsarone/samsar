@@ -830,6 +830,44 @@
   text-align: left;
 }
 
+.provider-model-access {
+  display: grid;
+  gap: 7px;
+  grid-column: 1 / -1;
+  margin-top: 2px;
+  min-width: 0;
+}
+
+.provider-model-access-label {
+  color: var(--subtle);
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.provider-model-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.provider-model-chip {
+  background: color-mix(in srgb, var(--accent-soft) 72%, transparent);
+  border: 1px solid color-mix(in srgb, var(--border) 84%, transparent);
+  border-radius: 999px;
+  color: var(--text);
+  font-size: 10.5px;
+  font-weight: 700;
+  line-height: 1.15;
+  padding: 5px 8px;
+}
+
+.provider-row-featured .provider-model-chip {
+  background: rgba(57, 216, 129, 0.09);
+  border-color: rgba(57, 216, 129, 0.28);
+}
+
 .provider-row-featured .provider-subtext {
   color: var(--text);
   font-weight: 700;
@@ -1572,6 +1610,58 @@
   justify-content: flex-end;
 }
 
+.express-warning-dialog {
+  max-width: 560px;
+  width: min(100%, 560px);
+}
+
+.express-warning-dialog-icon {
+  align-items: center;
+  background: rgba(245, 158, 11, 0.13);
+  border: 1px solid rgba(245, 158, 11, 0.36);
+  border-radius: 8px;
+  color: #b45309;
+  display: inline-flex;
+  font-size: 18px;
+  font-weight: 900;
+  height: 36px;
+  justify-content: center;
+  width: 36px;
+}
+
+.theme-dark .express-warning-dialog-icon {
+  color: #fcd34d;
+}
+
+.express-warning-dialog a {
+  color: var(--accent-text);
+  font-weight: 800;
+}
+
+.express-missing-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  list-style: none;
+  margin: 2px 0;
+  padding: 0;
+}
+
+.express-missing-list li {
+  background: rgba(245, 158, 11, 0.1);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  border-radius: 999px;
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 800;
+  padding: 5px 9px;
+}
+
+.express-warning-actions .primary-action,
+.express-warning-actions .secondary-action {
+  min-height: 40px;
+}
+
 .reset-confirm-action {
   background: #dc2626;
   border: 1px solid #dc2626;
@@ -1651,6 +1741,17 @@
   border-radius: 8px;
   color: #166534;
   padding: 12px 14px;
+}
+
+.express-readiness-banner {
+  align-items: baseline;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px 9px;
+}
+
+.express-readiness-banner span {
+  font-size: 13px;
 }
 
 .theme-dark .error-banner {
@@ -1762,6 +1863,15 @@ button:disabled {
   .service-capability-auth {
     justify-self: start;
     text-align: left;
+  }
+
+  .provider-meta-actions {
+    justify-self: start;
+  }
+
+  .express-warning-actions {
+    align-items: stretch;
+    flex-direction: column-reverse;
   }
 
   .panel-header {

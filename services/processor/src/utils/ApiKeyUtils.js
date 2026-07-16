@@ -1,8 +1,12 @@
 
 import crypto from 'crypto';
 
-export function generateAPIKey() {
-  // Generates a random 40-character hexadecimal string
+export const API_KEY_PREFIX = 'sk_live_';
+
+export function generateAPIKeySecret() {
   return crypto.randomBytes(20).toString('hex');
 }
 
+export function generateAPIKey() {
+  return `${API_KEY_PREFIX}${generateAPIKeySecret()}`;
+}

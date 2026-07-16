@@ -2,7 +2,7 @@ import { randomUUID } from 'crypto';
 
 import CustomerSubAccount from '../../schema/CustomerSubAccount.js';
 import User from '../../schema/User.js';
-import { generateAPIKey } from '../../utils/ApiKeyUtils.js';
+import { generateAPIKeySecret } from '../../utils/ApiKeyUtils.js';
 import { getDBConnectionString } from '../DBString.js';
 
 const DEFAULT_ROTATION_DAYS = 30;
@@ -128,7 +128,7 @@ function buildCustomerSubAccountId() {
 }
 
 function buildCustomerSubAccountInternalApiKey() {
-  return `${CUSTOMER_SUB_ACCOUNT_API_KEY_PREFIX}${generateAPIKey()}`;
+  return `${CUSTOMER_SUB_ACCOUNT_API_KEY_PREFIX}${generateAPIKeySecret()}`;
 }
 
 function getHeaderValue(headers = {}, headerName) {

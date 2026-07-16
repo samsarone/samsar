@@ -1,8 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import SamsarClient from 'samsar-js';
 import {
+  buildDockerAvailableModelsFromEnabledProviders,
   buildDockerAvailableModelsFromProviderResults,
   buildDockerCapabilityFamilyAvailability,
+  buildExpressPipelineAvailability,
+  getDockerModelDisplayName,
   orderDockerProviderKeys,
 } from '../constants/dockerModelAvailability.js';
 
@@ -37,19 +40,19 @@ const PROVIDERS = [
     field: 'openaiApiKey',
     inputType: 'password',
     placeholder: 'OpenAI API key',
-    requiredFor: 'Required for GPT 5.6 Sol, assistant, vision, OpenAI image, OpenAI TTS',
+    requiredFor: 'GPT inference and assistants, GPT Image generation and editing, and OpenAI text-to-speech.',
     pricingUrl: 'https://developers.openai.com/api/docs/pricing',
     keysUrl: 'https://platform.openai.com/api-keys',
     credentialLabel: 'API key',
   },
   {
     key: 'googleCloud',
-    title: 'Google Cloud',
+    title: 'Gemini 3.1',
     type: 'native',
     field: 'googleCredentialsJson',
     inputType: 'textarea',
     placeholder: 'Paste service account JSON or base64 JSON',
-    requiredFor: 'Required for Gemini 3.1 Pro, NanoBanana, Veo, Lyria, Google TTS',
+    requiredFor: 'Gemini inference plus Google image, video, speech, and music models.',
     pricingUrl: 'https://cloud.google.com/gemini-enterprise-agent-platform/generative-ai/pricing',
     keysUrl: 'https://console.cloud.google.com/iam-admin/serviceaccounts',
     credentialLabel: 'Service account JSON',
@@ -61,7 +64,7 @@ const PROVIDERS = [
     field: 'openrouterApiKey',
     inputType: 'password',
     placeholder: 'OpenRouter API key',
-    requiredFor: 'Alternative inference adapter for GPT 5.6 Sol, Gemini 3.1 Pro, and Qwen 3.7 text and vision',
+    requiredFor: 'Fallback inference for supported GPT, Gemini, and Qwen text and vision models.',
     pricingUrl: 'https://openrouter.ai/pricing',
     keysUrl: 'https://openrouter.ai/settings/keys',
     credentialLabel: 'API key',
@@ -73,7 +76,7 @@ const PROVIDERS = [
     field: 'alibabaApiKey',
     inputType: 'password',
     placeholder: 'Alibaba Cloud Model Studio API key',
-    requiredFor: 'Required for Qwen 3.7, Wan2.7 Pro image generation, and native Happy Horse 1.1 video',
+    requiredFor: 'Qwen inference, Wan image generation, and Happy Horse video.',
     pricingUrl: 'https://www.alibabacloud.com/help/en/model-studio/model-pricing',
     keysUrl: 'https://modelstudio.console.alibabacloud.com/',
     credentialLabel: 'API key',
@@ -84,12 +87,12 @@ const PROVIDERS = [
   },
   {
     key: 'fal',
-    title: 'FAL',
+    title: 'Fal',
     type: 'native',
     field: 'falApiKey',
     inputType: 'password',
     placeholder: 'FAL API key',
-    requiredFor: 'Required for Seedream, NanoBanana, VEO via FAL, FAL video models, ElevenLabs via FAL, lip sync, sound effects',
+    requiredFor: 'Broad media access for image, video, speech, music, lip sync, and sound effects.',
     pricingUrl: 'https://fal.ai/pricing',
     keysUrl: 'https://fal.ai/dashboard/keys',
     credentialLabel: 'API key',
@@ -101,7 +104,7 @@ const PROVIDERS = [
     field: 'elevenLabsApiKey',
     inputType: 'password',
     placeholder: 'ElevenLabs API key',
-    requiredFor: 'ElevenLabs speech and backing-track music',
+    requiredFor: 'Direct speech and backing-track music generation.',
     pricingUrl: 'https://elevenlabs.io/pricing',
     keysUrl: 'https://elevenlabs.io/app/settings/api-keys',
     credentialLabel: 'API key',
@@ -113,32 +116,59 @@ const PROVIDERS = [
     field: 'runwayApiKey',
     inputType: 'password',
     placeholder: 'Runway API key',
-    requiredFor: 'Required for Runway video generation and image-to-video',
+    requiredFor: 'Runway video generation and image-to-video.',
     pricingUrl: 'https://docs.dev.runwayml.com/guides/pricing/',
     keysUrl: 'https://docs.dev.runwayml.com/guides/setup/',
     credentialLabel: 'API key',
   },
   {
     key: 'samsar',
-    title: 'Samsar API Key',
+    title: 'Samsar-js',
     type: 'samsar',
     field: 'samsarApiKey',
     inputType: 'password',
     placeholder: 'sk_live_...',
-    requiredFor: 'All models and actions available, billed via Samsar credits. Native provider keys if provided over-ride specific settings.',
+    requiredFor: 'Universal access to every model using Samsar credits. Direct provider keys take priority when both are configured.',
     pricingUrl: 'https://docs.samsar.one/pricing',
     keysUrl: 'https://app.samsar.one/account/apiKeys',
     credentialLabel: 'API key',
-    badge: 'Universal fallback',
+    badge: 'All model access',
   },
 ];
 const NATIVE_PROVIDERS = PROVIDERS.filter((provider) => provider.type === 'native');
 const STANDARD_NATIVE_PROVIDERS = NATIVE_PROVIDERS.filter(
   (provider) => provider.key !== 'alibabaCloud' && provider.key !== 'openrouter',
 );
-const OPENROUTER_PROVIDERS = NATIVE_PROVIDERS.filter((provider) => provider.key === 'openrouter');
-const DIRECT_NATIVE_PROVIDERS = NATIVE_PROVIDERS.filter((provider) => provider.key !== 'openrouter');
-const UNIVERSAL_FALLBACK_PROVIDERS = PROVIDERS.filter((provider) => provider.type === 'samsar');
+const PROVIDER_GROUPS = [
+  {
+    key: 'inference',
+    title: 'Inference',
+    description: 'Choose a primary provider for agent reasoning, text, and vision.',
+    providerKeys: ['openai', 'googleCloud', 'alibabaCloud'],
+  },
+  {
+    key: 'fallbacks',
+    title: 'Fallbacks',
+    description: 'Fill model gaps with universal access or route supported inference through OpenRouter.',
+    providerKeys: ['samsar', 'openrouter'],
+    featured: true,
+  },
+  {
+    key: 'media',
+    title: 'Media',
+    description: 'Enable dedicated image, video, speech, music, lip-sync, and sound-effect models.',
+    providerKeys: ['fal', 'elevenlabs', 'runway'],
+  },
+].map((group) => ({
+  ...group,
+  providers: group.providerKeys.map((providerKey) => PROVIDERS.find((provider) => provider.key === providerKey)),
+}));
+const PROVIDER_MODELS_BY_KEY = Object.fromEntries(PROVIDERS.map((provider) => [
+  provider.key,
+  buildDockerAvailableModelsFromEnabledProviders([provider.key]).models
+    .map((modelKey) => ({ modelKey, label: getDockerModelDisplayName(modelKey) }))
+    .sort((leftModel, rightModel) => leftModel.label.localeCompare(rightModel.label)),
+]));
 
 const SERVICES = [
   { key: 'processor', label: 'Processor API', required: true },
@@ -1733,6 +1763,47 @@ function ResetConfirmDialog({ isOpen, isResetting, resetError, onCancel, onConfi
   );
 }
 
+function ExpressPipelineWarningDialog({ missingRequirements, onReviewProviders, onContinue }) {
+  if (!missingRequirements?.length) {
+    return null;
+  }
+
+  return (
+    <div className="reset-dialog-backdrop">
+      <section
+        className="reset-dialog express-warning-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="express-warning-dialog-title"
+      >
+        <div className="express-warning-dialog-icon" aria-hidden="true">!</div>
+        <div className="reset-dialog-copy">
+          <h2 id="express-warning-dialog-title">Express model access is incomplete</h2>
+          <p>
+            Express generation and the agent will not be available until at least one model is enabled for each missing type:
+          </p>
+          <ul className="express-missing-list" aria-label="Missing model types">
+            {missingRequirements.map((requirement) => <li key={requirement.key}>{requirement.label}</li>)}
+          </ul>
+          <p>
+            Optionally add a Samsar-js key by getting credits and enabling an API key{' '}
+            <a href="https://app.samsar.one" target="_blank" rel="noreferrer">here</a>
+            {' '}to enable access to all models.
+          </p>
+        </div>
+        <div className="reset-dialog-actions express-warning-actions">
+          <button type="button" className="secondary-action" onClick={onContinue}>
+            Continue without Express
+          </button>
+          <button type="button" className="primary-action" onClick={onReviewProviders} autoFocus>
+            Review providers
+          </button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
 async function validateSamsarCredential(credentials) {
   const samsarApiKey = credentials.samsarApiKey.trim();
   if (!samsarApiKey) {
@@ -1883,10 +1954,11 @@ export default function OnboardingWizard() {
   const [installActionError, setInstallActionError] = useState('');
   const [maintenanceRun, setMaintenanceRun] = useState(null);
   const [maintenanceStartError, setMaintenanceStartError] = useState('');
+  const [expressWarningMissingRequirements, setExpressWarningMissingRequirements] = useState([]);
   const [providerDrawersOpen, setProviderDrawersOpen] = useState({
-    inferenceRouter: true,
-    providerConfig: true,
-    universalFallback: true,
+    inference: true,
+    fallbacks: true,
+    media: true,
   });
 
   const deploymentPayload = useMemo(
@@ -1913,6 +1985,18 @@ export default function OnboardingWizard() {
   const configuredProviderKeys = useMemo(
     () => getEnabledProviderKeys(validationResult),
     [validationResult],
+  );
+  const enteredProviderKeys = useMemo(
+    () => PROVIDERS.filter((provider) => hasCredentialValue(credentials, provider)).map((provider) => provider.key),
+    [credentials],
+  );
+  const enteredProviderAvailability = useMemo(
+    () => buildDockerAvailableModelsFromEnabledProviders(enteredProviderKeys),
+    [enteredProviderKeys],
+  );
+  const expressPipelineAvailability = useMemo(
+    () => buildExpressPipelineAvailability(validationResult?.available || enteredProviderAvailability),
+    [enteredProviderAvailability, validationResult],
   );
   const availableSetupServiceCount = setupServiceAvailability.filter((service) => service.isAvailable).length;
   const activeStep = STEPS.find((item) => item.id === step) || STEPS[0];
@@ -1981,6 +2065,7 @@ export default function OnboardingWizard() {
 
   const renderProviderRow = (provider) => {
     const isSamsarProvider = provider.type === 'samsar';
+    const providerModels = PROVIDER_MODELS_BY_KEY[provider.key] || [];
     const rowClassName = [
       'provider-row',
       isSamsarProvider ? 'provider-row-featured' : 'provider-row-native',
@@ -2003,6 +2088,16 @@ export default function OnboardingWizard() {
             <a className="provider-pricing-link" href={provider.pricingUrl} target="_blank" rel="noreferrer">
               Pricing
             </a>
+          </div>
+          <div className="provider-model-access">
+            <span className="provider-model-access-label">
+              Enables {providerModels.length} {providerModels.length === 1 ? 'model' : 'models'}
+            </span>
+            <div className="provider-model-list" aria-label={`${provider.title} enabled models`}>
+              {providerModels.map((model) => (
+                <span className="provider-model-chip" key={model.modelKey}>{model.label}</span>
+              ))}
+            </div>
           </div>
         </div>
         <div className="provider-control">
@@ -2345,6 +2440,7 @@ export default function OnboardingWizard() {
     setCredentials((current) => normalizeCredentialSet({ ...current, [field]: value }));
     setValidationResult(null);
     setValidationError('');
+    setExpressWarningMissingRequirements([]);
     setMaxStep(1);
   };
 
@@ -2484,6 +2580,17 @@ export default function OnboardingWizard() {
     if (!result) {
       return;
     }
+    const expressAvailability = buildExpressPipelineAvailability(result.available);
+    if (!expressAvailability.isReady) {
+      setExpressWarningMissingRequirements(expressAvailability.missingRequirements);
+      return;
+    }
+    setMaxStep(2);
+    setStep(2);
+  };
+
+  const continueWithoutExpressPipeline = () => {
+    setExpressWarningMissingRequirements([]);
     setMaxStep(2);
     setStep(2);
   };
@@ -2931,6 +3038,7 @@ export default function OnboardingWizard() {
     setAdminConfig(pickAdminConfig());
     setValidationResult(null);
     setValidationError('');
+    setExpressWarningMissingRequirements([]);
     setDataConfigError('');
     setAdminConfigError('');
     setExistingAdminBootstrapError('');
@@ -3132,86 +3240,52 @@ export default function OnboardingWizard() {
       ) : (
       <section className="wizard-panel">
         <div className="panel-header">
-          <h2>{step === 1 ? 'Add providers to enable model settings.' : activeStep.label}</h2>
-	          {step !== 1 && (
-		          <p>
-		            {step === 2 && 'Available services are derived from the credentials validated in Providers.'}
-		            {step === 3 && 'Choose data storage, logging, and optional SMTP or Amazon SES email.'}
+          <h2>{step === 1 ? 'Add optional provider configurations to enable specific models.' : activeStep.label}</h2>
+	          <p>
+                {step === 1 && 'Choose only the adapters you need. Each provider shows every model its credential enables.'}
+	            {step === 2 && 'Available services are derived from the credentials validated in Providers.'}
+	            {step === 3 && 'Choose data storage, logging, and optional SMTP or Amazon SES email.'}
                 {step === 4 && 'Optionally expose Studio and the processor API through nginx.'}
-		            {step === 5 && 'Create the Docker admin user and review the deployment.'}
-		          </p>
-          )}
+	            {step === 5 && 'Create the Docker admin user and review the deployment.'}
+	          </p>
 	        </div>
 
         {step === 1 && (
           <>
             <div className="provider-list">
-              <section className="provider-drawer provider-drawer-featured">
-                <button
-                  type="button"
-                  className="provider-drawer-header"
-                  aria-expanded={providerDrawersOpen.inferenceRouter}
-                  onClick={() => toggleProviderDrawer('inferenceRouter')}
+              {PROVIDER_GROUPS.map((group) => (
+                <section
+                  className={`provider-drawer ${group.featured ? 'provider-drawer-featured' : ''}`}
+                  key={group.key}
                 >
-                  <span>
-                    <strong>Inference Router</strong>
-                    <small>One optional OpenRouter key enables the supported GPT, Gemini, and Qwen text and vision models.</small>
-                  </span>
-                  <span className="provider-drawer-toggle" aria-hidden="true">
-                    {providerDrawersOpen.inferenceRouter ? '-' : '+'}
-                  </span>
-                </button>
-                {providerDrawersOpen.inferenceRouter && (
-                  <div className="provider-drawer-body">
-                    {OPENROUTER_PROVIDERS.map(renderProviderRow)}
-                  </div>
-                )}
-              </section>
-
-              <section className="provider-drawer">
-                <button
-                  type="button"
-                  className="provider-drawer-header"
-                  aria-expanded={providerDrawersOpen.providerConfig}
-                  onClick={() => toggleProviderDrawer('providerConfig')}
-                >
-                  <span>
-                    <strong>Provider Config</strong>
-                    <small>Native provider credentials used when configured.</small>
-                  </span>
-                  <span className="provider-drawer-toggle" aria-hidden="true">
-                    {providerDrawersOpen.providerConfig ? '-' : '+'}
-                  </span>
-                </button>
-                {providerDrawersOpen.providerConfig && (
-                  <div className="provider-drawer-body">
-                    {DIRECT_NATIVE_PROVIDERS.map(renderProviderRow)}
-                  </div>
-                )}
-              </section>
-
-              <section className="provider-drawer provider-drawer-featured">
-                <button
-                  type="button"
-                  className="provider-drawer-header"
-                  aria-expanded={providerDrawersOpen.universalFallback}
-                  onClick={() => toggleProviderDrawer('universalFallback')}
-                >
-                  <span>
-                    <strong>Universal Fallback</strong>
-                    <small>Use Samsar credits for any model that does not have a native provider key.</small>
-                  </span>
-                  <span className="provider-drawer-toggle" aria-hidden="true">
-                    {providerDrawersOpen.universalFallback ? '-' : '+'}
-                  </span>
-                </button>
-                {providerDrawersOpen.universalFallback && (
-                  <div className="provider-drawer-body">
-                    {UNIVERSAL_FALLBACK_PROVIDERS.map(renderProviderRow)}
-                  </div>
-                )}
-              </section>
+                  <button
+                    type="button"
+                    className="provider-drawer-header"
+                    aria-expanded={providerDrawersOpen[group.key]}
+                    onClick={() => toggleProviderDrawer(group.key)}
+                  >
+                    <span>
+                      <strong>{group.title}</strong>
+                      <small>{group.description}</small>
+                    </span>
+                    <span className="provider-drawer-toggle" aria-hidden="true">
+                      {providerDrawersOpen[group.key] ? '-' : '+'}
+                    </span>
+                  </button>
+                  {providerDrawersOpen[group.key] && (
+                    <div className="provider-drawer-body">
+                      {group.providers.map(renderProviderRow)}
+                    </div>
+                  )}
+                </section>
+              ))}
             </div>
+            {enteredProviderKeys.length > 0 && expressPipelineAvailability.isReady && (
+              <div className="success-banner express-readiness-banner" role="status">
+                <strong>Express pipeline ready.</strong>
+                <span>You have enabled the minimum model set for Express generation and the agent.</span>
+              </div>
+            )}
             {validationError && <div className="error-banner">{validationError}</div>}
           </>
 	        )}
@@ -4134,6 +4208,11 @@ export default function OnboardingWizard() {
         resetError={resetError}
         onCancel={closeResetConfirm}
         onConfirm={confirmReset}
+      />
+      <ExpressPipelineWarningDialog
+        missingRequirements={expressWarningMissingRequirements}
+        onReviewProviders={() => setExpressWarningMissingRequirements([])}
+        onContinue={continueWithoutExpressPipeline}
       />
     </main>
   );

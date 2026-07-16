@@ -4,6 +4,8 @@ import test from 'node:test';
 import {
   DOCKER_PROVIDER,
   buildDockerAvailableModelsFromEnabledProviders,
+  buildExpressPipelineAvailability,
+  getDockerModelDisplayName,
   resolveDockerModelProvider,
 } from './dockerModelAvailability.js';
 
@@ -140,5 +142,56 @@ test('Wan2.7 Pro resolves Alibaba then FAL then Samsar', () => {
   assert.equal(
     resolveDockerModelProvider('WAN2.7PRO', [DOCKER_PROVIDER.SAMSAR]),
     DOCKER_PROVIDER.SAMSAR,
+  );
+});
+
+test('provider model display names are clean and stable', () => {
+  assert.equal(getDockerModelDisplayName('GPTIMAGE2EDIT'), 'GPT Image 2 Edit');
+  assert.equal(getDockerModelDisplayName('elevenlabs_music'), 'ElevenLabs Music');
+});
+
+test('Samsar alone enables the complete Express pipeline model set', () => {
+  const available = buildDockerAvailableModelsFromEnabledProviders([DOCKER_PROVIDER.SAMSAR]);
+  const expressAvailability = buildExpressPipelineAvailability(available);
+
+  assert.equal(expressAvailability.isReady, true);
+  assert.deepEqual(expressAvailability.missingRequirements, []);
+});
+
+test('Fal needs an inference provider for the complete Express pipeline model set', () => {
+  const falOnly = buildDockerAvailableModelsFromEnabledProviders([DOCKER_PROVIDER.FAL]);
+  const falOnlyExpressAvailability = buildExpressPipelineAvailability(falOnly);
+
+  assert.equal(falOnlyExpressAvailability.isReady, false);
+  assert.deepEqual(
+    falOnlyExpressAvailability.missingRequirements.map((requirement) => requirement.key),
+    ['inference'],
+  );
+
+  for (const inferenceProvider of [
+    DOCKER_PROVIDER.OPENAI,
+    DOCKER_PROVIDER.GOOGLE_CLOUD,
+    DOCKER_PROVIDER.ALIBABA_CLOUD,
+    DOCKER_PROVIDER.OPENROUTER,
+  ]) {
+    const inferenceAndFal = buildDockerAvailableModelsFromEnabledProviders([
+      inferenceProvider,
+      DOCKER_PROVIDER.FAL,
+    ]);
+    assert.equal(
+      buildExpressPipelineAvailability(inferenceAndFal).isReady,
+      true,
+      `${inferenceProvider} plus Fal should enable the complete Express pipeline model set`,
+    );
+  }
+});
+
+test('an inference-only config reports every missing Express media type', () => {
+  const available = buildDockerAvailableModelsFromEnabledProviders([DOCKER_PROVIDER.OPENROUTER]);
+  const expressAvailability = buildExpressPipelineAvailability(available);
+
+  assert.deepEqual(
+    expressAvailability.missingRequirements.map((requirement) => requirement.label),
+    ['Image generation', 'Video', 'Speech', 'Backing track', 'Lip sync', 'Sound effect'],
   );
 });

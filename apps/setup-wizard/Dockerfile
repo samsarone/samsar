@@ -19,6 +19,7 @@ RUN npm install --omit=dev --ignore-scripts
 
 COPY --from=builder /app/dist ./dist
 COPY server.mjs ./server.mjs
+COPY openrouterValidation.mjs ./openrouterValidation.mjs
 
 ENV SETUP_WIZARD_STATIC_DIR=/app/dist
 EXPOSE 80

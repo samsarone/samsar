@@ -1391,6 +1391,8 @@ export async function getAPIKeyAuthContextFromAPIKey(API_KEY) {
     return null;
   }
 
+  // API keys are opaque credentials. Do not require the current prefix here so
+  // legacy 40-character keys continue to authenticate after format changes.
   const userData = await User.findOne(
     { 'userApiKeys.apiKey': API_KEY },
     '_id userApiKeys'
@@ -1747,4 +1749,3 @@ export async function bootstrapDockerAdminUser(payload = {}) {
   await ensureDefaultTextModelsForUser(user);
   return user;
 }
-
