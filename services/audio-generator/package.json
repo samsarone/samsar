@@ -25,7 +25,7 @@
     "node-fetch": "^2.7.0",
     "openai": "^5.23.2",
     "replicate": "^1.0.1",
-    "samsar-js": "0.48.45",
+    "samsar-js": "0.48.46",
     "uuid": "^9.0.1"
   }
 }
