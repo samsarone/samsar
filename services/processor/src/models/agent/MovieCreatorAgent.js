@@ -32,6 +32,8 @@ import {
 const API_KEY = process.env.OPENAI_API_KEY;
 const openai = new OpenAI({ apiKey: API_KEY || '' });
 const GEMINI_THEME_NARRATIVE_REASONING_EFFORT = 'high';
+const DEFAULT_THEME_NARRATIVE_TIMEOUT_MS = 10 * 60 * 1000;
+const DEFAULT_QWEN_THEME_NARRATIVE_TIMEOUT_MS = 20 * 60 * 1000;
 const NarrativeGenderField = z.enum(['M', 'F', '']).describe(
   'For speech sounds, use exactly "M" or "F" uppercase; never use an empty string for speech. Use an empty string only for sound_effect items.'
 );
@@ -280,10 +282,15 @@ export async function sendSessionThemeMessageRequest(
   });
 
   const maxRetries = 3;
-  const timeoutMs = normalizePositiveInteger(
+  const configuredTimeoutMs = normalizePositiveInteger(
     process.env.OPENAI_THEME_TIMEOUT_MS,
-    600000,
+    isQwenInferenceModel(modelName)
+      ? DEFAULT_QWEN_THEME_NARRATIVE_TIMEOUT_MS
+      : DEFAULT_THEME_NARRATIVE_TIMEOUT_MS,
   );
+  const timeoutMs = isQwenInferenceModel(modelName)
+    ? Math.max(configuredTimeoutMs, DEFAULT_QWEN_THEME_NARRATIVE_TIMEOUT_MS)
+    : configuredTimeoutMs;
 
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
@@ -635,10 +642,15 @@ export async function sendNarrativePromptMessageRequest(
     options.maxAttempts ?? process.env.OPENAI_NARRATIVE_MAX_ATTEMPTS,
     4,
   );
-  const timeoutMs = normalizePositiveInteger(
+  const configuredTimeoutMs = normalizePositiveInteger(
     options.timeoutMs ?? process.env.OPENAI_NARRATIVE_TIMEOUT_MS,
-    600000,
+    isQwenInferenceModel(modelName)
+      ? DEFAULT_QWEN_THEME_NARRATIVE_TIMEOUT_MS
+      : DEFAULT_THEME_NARRATIVE_TIMEOUT_MS,
   );
+  const timeoutMs = isQwenInferenceModel(modelName)
+    ? Math.max(configuredTimeoutMs, DEFAULT_QWEN_THEME_NARRATIVE_TIMEOUT_MS)
+    : configuredTimeoutMs;
 
   // Helper function for waiting
   function delay(ms) {

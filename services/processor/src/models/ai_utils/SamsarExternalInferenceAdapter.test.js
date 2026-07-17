@@ -269,7 +269,7 @@ test('OpenRouter adapter sends OpenAI-compatible vision requests with the Plus d
   assert.equal(capturedPayload.model, 'qwen/qwen3.7-plus');
   assert.equal(capturedPayload.messages[0].content[0].type, 'image_url');
   assert.equal(capturedPayload.max_tokens, 65536);
-  assert.equal(capturedOptions.timeout, 600000);
+  assert.equal(capturedOptions.timeout, 1200000);
 });
 
 test('OpenRouter applies Qwen-specific token and reasoning limits to Plus text inference', async (t) => {
@@ -397,7 +397,7 @@ test('production Qwen OpenRouter controls enforce minimum timeout and disable SD
     maxRetries: 2,
   });
 
-  assert.equal(capturedOptions.timeout, 180000);
+  assert.equal(capturedOptions.timeout, 1200000);
   assert.equal(capturedOptions.maxRetries, 0);
   assert.equal(capturedOptions.signal instanceof AbortSignal, true);
 });

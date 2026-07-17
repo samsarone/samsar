@@ -249,6 +249,7 @@ export async function createVidGPTSession(userId, payload) {
     // 2) Validate it
     isValidNarrative = validateTextToVideoNarrative(narrativeJson, videoGenerationModel, undefined, {
       repairAdjacentSceneIndex: isGeminiInferenceModel(userInferenceModel),
+      requestedDuration: duration,
     });
 
 
@@ -500,6 +501,7 @@ export async function createInfoVidSession(userId, payload) {
     // 2) Validate it
     isValidNarrative = validateTextToVideoNarrative(narrativeJson, videoGenerationModel, undefined, {
       repairAdjacentSceneIndex: isGeminiInferenceModel(userInferenceModel),
+      requestedDuration: duration,
     });
 
 

@@ -3,6 +3,23 @@ import assert from 'node:assert/strict';
 
 import { validateTextToVideoNarrative } from './TranscriptUtils.js';
 
+function createNarrativeWithSceneDurations(sceneDurations) {
+  let startTime = 0;
+  const scenes = sceneDurations.map((duration, sceneIndex) => {
+    const scene = {
+      visual: `Scene ${sceneIndex}`,
+      type: 'base',
+      duration,
+      startTime,
+      endTime: startTime + duration,
+    };
+    startTime = scene.endTime;
+    return scene;
+  });
+
+  return { scenes, sounds: [] };
+}
+
 test('validateTextToVideoNarrative normalizes legacy none scenes to base', () => {
   const narrative = {
     scenes: [
@@ -388,4 +405,63 @@ test('validateTextToVideoNarrative still rejects ambiguous missing character gen
   const result = validateTextToVideoNarrative(narrative, 'RUNWAYML');
   assert.equal(result.valid, false);
   assert.match(result.errors[0], /scene 0 must include gender "M" or "F"/);
+});
+
+test('validateTextToVideoNarrative allows exactly 30 seconds of duration deviation', () => {
+  const cases = [
+    { sceneDurations: Array(10).fill(15), actualDuration: 150, deviation: -30 },
+    { sceneDurations: Array(14).fill(15), actualDuration: 210, deviation: 30 },
+  ];
+
+  for (const { sceneDurations, actualDuration, deviation } of cases) {
+    const result = validateTextToVideoNarrative(
+      createNarrativeWithSceneDurations(sceneDurations),
+      'HAPPYHORSEI2V',
+      undefined,
+      { requestedDuration: 180 },
+    );
+
+    assert.equal(result.valid, true, result.errors.join(', '));
+    assert.deepEqual(result.duration, {
+      requested: 180,
+      actual: actualDuration,
+      deviation,
+      allowedDeviation: 30,
+    });
+  }
+});
+
+test('validateTextToVideoNarrative rejects duration deviation greater than 30 seconds', () => {
+  const cases = [
+    { sceneDurations: [...Array(9).fill(15), 10], actualDuration: 145 },
+    { sceneDurations: [...Array(14).fill(15), 5], actualDuration: 215 },
+  ];
+
+  for (const { sceneDurations, actualDuration } of cases) {
+    const result = validateTextToVideoNarrative(
+      createNarrativeWithSceneDurations(sceneDurations),
+      'HAPPYHORSEI2V',
+      undefined,
+      { requestedDuration: 180 },
+    );
+
+    assert.equal(result.valid, false);
+    assert.match(
+      result.errors.join(' '),
+      new RegExp(`Narrative duration is ${actualDuration} seconds but 180 seconds were requested.*35-second deviation.*allowed 30 seconds`),
+    );
+  }
+});
+
+test('validateTextToVideoNarrative compares requested duration with the normalized render timeline', () => {
+  const result = validateTextToVideoNarrative(
+    createNarrativeWithSceneDurations([11, 11, 11, 11]),
+    'HAPPYHORSEI2V',
+    undefined,
+    { requestedDuration: 90 },
+  );
+
+  assert.equal(result.valid, true, result.errors.join(', '));
+  assert.equal(result.duration.actual, 60);
+  assert.equal(result.duration.deviation, -30);
 });

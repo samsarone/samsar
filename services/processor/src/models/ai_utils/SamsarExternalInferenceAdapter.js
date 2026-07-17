@@ -17,6 +17,7 @@ import { externalAssistantClientRequestStore } from './ExternalAssistantClientRe
 
 const DEFAULT_SAMSAR_API_BASE_URL = 'https://api.samsar.one/v1';
 const DEFAULT_EXTERNAL_INFERENCE_TIMEOUT_MS = 10 * 60 * 1000;
+const DEFAULT_OPENROUTER_QWEN_INFERENCE_TIMEOUT_MS = 20 * 60 * 1000;
 const DEFAULT_EXTERNAL_INFERENCE_MAX_RETRIES = 3;
 const DEFAULT_EXTERNAL_INFERENCE_RETRY_BASE_DELAY_MS = 5000;
 const DEFAULT_EXTERNAL_INFERENCE_RETRY_MAX_DELAY_MS = 60000;
@@ -735,14 +736,21 @@ export async function createOpenRouterChatCompletion(chatRequest = {}) {
       ? getReasoningEffortForInferenceModel(requestedModel)
       : undefined
   );
+  const qwenRequest = isQwenInferenceModel(requestedModel);
   const configuredTimeout = Number(
-    isQwenInferenceModel(requestedModel)
+    qwenRequest
       ? process.env.OPENROUTER_QWEN_INFERENCE_TIMEOUT_MS
       : process.env.OPENROUTER_INFERENCE_TIMEOUT_MS,
   );
-  const minimumTimeout = Number.isFinite(configuredTimeout) && configuredTimeout > 0
-    ? Math.floor(configuredTimeout)
+  const defaultTimeout = qwenRequest
+    ? DEFAULT_OPENROUTER_QWEN_INFERENCE_TIMEOUT_MS
     : DEFAULT_EXTERNAL_INFERENCE_TIMEOUT_MS;
+  const configuredMinimumTimeout = Number.isFinite(configuredTimeout) && configuredTimeout > 0
+    ? Math.floor(configuredTimeout)
+    : defaultTimeout;
+  const minimumTimeout = qwenRequest
+    ? Math.max(configuredMinimumTimeout, DEFAULT_OPENROUTER_QWEN_INFERENCE_TIMEOUT_MS)
+    : configuredMinimumTimeout;
   const requestedTimeout = Number(timeout ?? timeoutMs);
   const requestTimeout = Math.max(
     Number.isFinite(requestedTimeout) && requestedTimeout > 0

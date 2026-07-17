@@ -217,7 +217,7 @@ The stable `QWEN3.7` selection maps text and vision requests to `qwen/qwen3.7-pl
 | --- | --- |
 | `OPENROUTER_API_KEY` | Required for hosted Qwen inference. One backend-only key is shared through `runtime/secrets/root.env`. |
 | `SAMSAR_QWEN_OPENROUTER_ONLY` | Forces Qwen through OpenRouter even if the runtime is identified as Docker. |
-| `OPENROUTER_INFERENCE_TIMEOUT_MS` / `OPENROUTER_QWEN_INFERENCE_TIMEOUT_MS` | Minimum OpenRouter request timeout; hosted production uses `600000` milliseconds. |
+| `OPENROUTER_INFERENCE_TIMEOUT_MS` / `OPENROUTER_QWEN_INFERENCE_TIMEOUT_MS` | Minimum OpenRouter request timeout. Hosted production uses `600000` milliseconds generally and `1200000` milliseconds for Qwen. |
 | `OPENROUTER_QWEN_MAX_TOKENS` / `OPENROUTER_GEMINI_MAX_TOKENS` | Qwen and Gemini completion ceilings; the default is `65536`. |
 | `OPENROUTER_GPT_MAX_COMPLETION_TOKENS` | GPT completion ceiling; the default is `65536`. |
 | `OPENROUTER_QWEN_REASONING_EFFORT` / `OPENROUTER_GEMINI_REASONING_EFFORT` | OpenRouter reasoning effort; hosted production uses `high`. |

@@ -119,6 +119,7 @@ export async function processImgToVidGPT(userId, payload) {
       // 2) Validate it
       isValidNarrative = validateTextToVideoNarrative(narrativeJson, videoGenerationModel, undefined, {
         repairAdjacentSceneIndex: isGeminiInferenceModel(userInferenceModel),
+        requestedDuration: duration,
       });
   
   

@@ -100,7 +100,9 @@ export async function createAdMakerSession(userId, payload) {
       videoGenerationModel, userInferenceModel);
 
     // 2) Validate it
-    isValidNarrative = validateTextToVideoNarrative(narrativeJson, videoGenerationModel);
+    isValidNarrative = validateTextToVideoNarrative(narrativeJson, videoGenerationModel, undefined, {
+      requestedDuration: duration,
+    });
 
 
     if (isValidNarrative.valid) {

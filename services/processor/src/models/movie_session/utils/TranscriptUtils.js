@@ -4,6 +4,8 @@ import {
 } from '../../../consts/ModelPrices.js';
 import { normalizeTTSSpeakerGender } from '../../../consts/TTSSpeakers.js';
 
+const TEXT_TO_VIDEO_NARRATIVE_DURATION_TOLERANCE_SECONDS = 30;
+
 function getDurationUnitsForVideoGenerationModel(modelKey, framesPerSecond = undefined) {
   if (!modelKey) {
     return [5];
@@ -450,6 +452,31 @@ function normalizeNarrativeAudio({ scenes, sounds, model, framesPerSecond = unde
   };
 }
 
+function getNarrativeTotalDuration(scenes) {
+  return scenes.reduce((totalDuration, scene) => totalDuration + Number(scene.duration), 0);
+}
+
+function validateNarrativeDuration(requestedDuration, actualDuration) {
+  if (requestedDuration === undefined || requestedDuration === null) {
+    return [];
+  }
+
+  const numericRequestedDuration = Number(requestedDuration);
+  if (!Number.isFinite(numericRequestedDuration) || numericRequestedDuration <= 0) {
+    return ['Requested narrative duration must be a positive number.'];
+  }
+
+  const deviation = Math.abs(actualDuration - numericRequestedDuration);
+  if (deviation <= TEXT_TO_VIDEO_NARRATIVE_DURATION_TOLERANCE_SECONDS) {
+    return [];
+  }
+
+  return [
+    `Narrative duration is ${actualDuration} seconds but ${numericRequestedDuration} seconds were requested. ` +
+    `The ${deviation}-second deviation exceeds the allowed ${TEXT_TO_VIDEO_NARRATIVE_DURATION_TOLERANCE_SECONDS} seconds.`,
+  ];
+}
+
 export function validateImageToVideoNarrative(narrativeJson, numScenes, model, framesPerSecond = undefined) {
   if (!Array.isArray(narrativeJson?.scenes)) {
     return { valid: false, errors: ['Missing or invalid `scenes` array.'], narrativeJson: { scenes: [], sounds: [] } };
@@ -505,10 +532,23 @@ export function validateTextToVideoNarrative(narrativeJson, model, framesPerSeco
     ...validateNoSpeechSoundEffectSceneConflicts(sounds),
   ];
 
+  const normalizedNarrativeJson = normalizeNarrativeAudio({ scenes, sounds, model, framesPerSecond });
+  const actualDuration = getNarrativeTotalDuration(normalizedNarrativeJson.scenes);
+  const requestedDuration = options.requestedDuration === undefined || options.requestedDuration === null
+    ? null
+    : Number(options.requestedDuration);
+  errors.push(...validateNarrativeDuration(requestedDuration, actualDuration));
+
   return {
     valid: errors.length === 0,
     errors,
-    narrativeJson: normalizeNarrativeAudio({ scenes, sounds, model, framesPerSecond }),
+    narrativeJson: normalizedNarrativeJson,
+    duration: {
+      requested: requestedDuration,
+      actual: actualDuration,
+      deviation: Number.isFinite(requestedDuration) ? actualDuration - requestedDuration : null,
+      allowedDeviation: TEXT_TO_VIDEO_NARRATIVE_DURATION_TOLERANCE_SECONDS,
+    },
     repairs: {
       adjacentSceneIndex: adjacentRepair.repairCount,
     },

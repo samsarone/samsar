@@ -1,4 +1,6 @@
-import { VIDEO_MODEL_PRICES } from '../../consts/ModelPrices.js';
+import { getSpeechDurationStringForModel } from '../movie_session/utils/ModelUtils.js';
+
+export { getSpeechDurationStringForModel };
 
 
 
@@ -842,48 +844,5 @@ Final Response Format:
   ]
 }`
   )
-
-}
-
-
-
-
-export function getSpeechDurationStringForModel(model, languageString) {
-
-  const modelType = VIDEO_MODEL_PRICES.find((modelType) => modelType.key === model);
-
-  const modelUnits = modelType?.units ? modelType.units : [5];
-
-  let durationStr;
-  let maxCharacters = 20;
-
-  if (modelUnits.length === 1) {
-    maxCharacters = Math.ceil(modelUnits[0] * 5);
-    if (languageString && languageString.toLowerCase() !== 'english') {
-      maxCharacters = Math.ceil(modelUnits[0] * 4);
-    }
-
-
-    durationStr =
-      `-Each scene can be ${modelUnits[0]} seconds long.
--Ensure that speech is never more than ${maxCharacters} characters.`;
-  } else {
-    let maxCharactersSmall = Math.ceil(modelUnits[0] * 5);
-    let maxCharactersLarge = Math.ceil(modelUnits[1] * 5);
-    if (languageString && languageString.toLowerCase() !== 'english') {
-      maxCharactersSmall = Math.ceil(modelUnits[0] * 4);
-      maxCharactersLarge = Math.ceil(modelUnits[1] * 4);
-    }
-
-    durationStr =
-      `-Each scene can be ${modelUnits[0]} or ${modelUnits[1]} seconds long, based on content or speech length.
--Ensure that speech is never more than ${maxCharactersSmall} characters for ${modelUnits[0]} second scenes and ${maxCharactersLarge} characters for ${modelUnits[1]} second scenes.
-`;
-
-  }
-
-
-  return durationStr;
-
 
 }
