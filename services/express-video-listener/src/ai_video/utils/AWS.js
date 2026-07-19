@@ -5,6 +5,7 @@ import { Upload } from '@aws-sdk/lib-storage';
 import fs from 'fs';
 import crypto from 'crypto';
 import path from 'path';
+import { resolveFreshManagedProviderMediaUrl } from './ProviderMediaTunnel.js';
 
 /**
  * Reads AWS credentials and region from environment variables.
@@ -382,7 +383,11 @@ function readRuntimeConfigPublicMediaUrls() {
         continue;
       }
       const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+      const localTunnel = config?.localMediaTunnel || {};
+      const legacyTunnel = config?.mediaTunnel || {};
       urls.push(
+        ...(localTunnel.enabled === false ? [] : [localTunnel.publicUrl, localTunnel.url]),
+        ...(legacyTunnel.enabled === false ? [] : [legacyTunnel.publicUrl, legacyTunnel.url]),
         config?.publicUrls?.media,
         config?.storage?.publicMediaBaseUrl,
         config?.storage?.externalMediaPublicBaseUrl,
@@ -555,25 +560,12 @@ async function buildBestDockerPublicMediaUrl(reference, localPath = '') {
     );
   }
 
-  const publicBases = getDockerTunnelMediaBaseUrlCandidates();
-  if (!publicBases.length) {
-    return buildDockerPublicMediaUrl(reference, localPath);
-  }
-
   const mediaPath = mediaKey.replace(/^\/+/, '');
-  const candidateUrls = publicBases
-    .map((baseUrl) => `${baseUrl}/${mediaPath}`)
-    .filter((value, index, list) => list.indexOf(value) === index);
-
-  if (shouldProbePublicMediaUrl()) {
-    for (const candidateUrl of candidateUrls) {
-      if (await isReachablePublicMediaUrl(candidateUrl)) {
-        return candidateUrl;
-      }
-    }
-  }
-
-  return candidateUrls[0];
+  return resolveFreshManagedProviderMediaUrl({
+    mediaPath,
+    getBaseUrlCandidates: getDockerTunnelMediaBaseUrlCandidates,
+    serviceName: 'samsar_express_video_listener',
+  });
 }
 
 async function buildBestLocalPublicMediaUrl(reference, localPath = '') {

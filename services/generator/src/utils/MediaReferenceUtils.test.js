@@ -6,6 +6,36 @@ import test from 'node:test';
 
 import { getAccessibleMediaUrlForProvider } from './MediaReferenceUtils.js';
 
+const originalFetch = globalThis.fetch;
+const originalTunnelTestEnv = {
+  SAMSAR_MEDIA_TUNNEL_REFRESH_WAIT_MS: process.env.SAMSAR_MEDIA_TUNNEL_REFRESH_WAIT_MS,
+  SAMSAR_MEDIA_TUNNEL_REFRESH_POLL_MS: process.env.SAMSAR_MEDIA_TUNNEL_REFRESH_POLL_MS,
+  SAMSAR_MEDIA_TUNNEL_REFRESH_REQUEST_PATH: process.env.SAMSAR_MEDIA_TUNNEL_REFRESH_REQUEST_PATH,
+};
+
+test.beforeEach(() => {
+  globalThis.fetch = async () => ({
+    ok: true,
+    status: 206,
+    headers: { get: () => 'image/png' },
+    body: { cancel: async () => {} },
+  });
+  process.env.SAMSAR_MEDIA_TUNNEL_REFRESH_WAIT_MS = '1';
+  process.env.SAMSAR_MEDIA_TUNNEL_REFRESH_POLL_MS = '10';
+  process.env.SAMSAR_MEDIA_TUNNEL_REFRESH_REQUEST_PATH = path.join(
+    os.tmpdir(),
+    `samsar-generator-media-refresh-${Date.now()}-${Math.random()}.json`,
+  );
+});
+
+test.afterEach(() => {
+  globalThis.fetch = originalFetch;
+  for (const [key, value] of Object.entries(originalTunnelTestEnv)) {
+    if (value === undefined) delete process.env[key];
+    else process.env[key] = value;
+  }
+});
+
 test('docker media URLs can prefer the internal media gateway for local provider fetches', async () => {
   const previousEnv = {
     CURRENT_ENV: process.env.CURRENT_ENV,
@@ -23,7 +53,7 @@ test('docker media URLs can prefer the internal media gateway for local provider
   try {
     process.env.CURRENT_ENV = 'docker';
     process.env.SAMSAR_ASSETS_V2_ROOT = tempRoot;
-    process.env.MEDIA_PUBLIC_URL = 'http://localhost:8080/';
+    process.env.MEDIA_PUBLIC_URL = 'http://localhost:3002/';
     process.env.SAMSAR_INTERNAL_MEDIA_BASE_URL = 'http://media-gateway';
     process.env.SAMSAR_MEDIA_DELIVERY_MODE = 'docker-local';
     process.env.MEDIA_DELIVERY_MODE = 'docker-local';
@@ -33,7 +63,7 @@ test('docker media URLs can prefer the internal media gateway for local provider
     await fs.writeFile(mediaPath, Buffer.from([0]));
 
     const resolved = await getAccessibleMediaUrlForProvider(
-      'http://localhost:8080/assets_v2/generations/session-id/frame.png',
+      'http://localhost:3002/assets_v2/generations/session-id/frame.png',
       { preferInternalDockerUrl: true },
     );
 
@@ -67,7 +97,7 @@ test('docker media URLs can prefer inline data URLs for vision requests', async 
   try {
     process.env.CURRENT_ENV = 'docker';
     process.env.SAMSAR_ASSETS_V2_ROOT = tempRoot;
-    process.env.MEDIA_PUBLIC_URL = 'http://localhost:8080/';
+    process.env.MEDIA_PUBLIC_URL = 'http://localhost:3002/';
     process.env.SAMSAR_INTERNAL_MEDIA_BASE_URL = 'http://media-gateway';
     process.env.SAMSAR_MEDIA_DELIVERY_MODE = 'docker-local';
     process.env.MEDIA_DELIVERY_MODE = 'docker-local';
@@ -77,7 +107,7 @@ test('docker media URLs can prefer inline data URLs for vision requests', async 
     await fs.writeFile(mediaPath, Buffer.from([1, 2, 3]));
 
     const resolved = await getAccessibleMediaUrlForProvider(
-      'http://localhost:8080/assets_v2/generations/session-id/frame.png',
+      'http://localhost:3002/assets_v2/generations/session-id/frame.png',
       { preferDataUrl: true, preferInternalDockerUrl: true },
     );
 
@@ -169,7 +199,7 @@ test('docker media URLs require a media tunnel for remote provider requests', as
       () => getAccessibleMediaUrlForProvider(
         'http://20.24.15.143/api/assets_v2/generations/session-id/frame.png',
       ),
-      /A tunneled media URL is required/,
+      (error) => error?.code === 'SAMSAR_MEDIA_TUNNEL_UNREACHABLE' && error?.retryable === true,
     );
   } finally {
     await fs.rm(tempRoot, { recursive: true, force: true });

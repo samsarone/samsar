@@ -106,17 +106,29 @@ test('database-page pagination serializes limit records and retains exact metada
   assert.equal(secondPage.hasMore, false);
 });
 
+test('public pagination never advertises records rejected by the detail renderability check', () => {
+  const valid = buildPublication('000000000000000000000003');
+  const invalid = {
+    ...buildPublication('000000000000000000000004'),
+    thumbnailUrl: 'private://thumbnail',
+  };
+
+  const page = paginatePublicInteractivePublications(
+    [invalid, valid],
+    { limit: 1, totalCount: 1 },
+  );
+  assert.deepEqual(page.items.map((item) => item.id), [valid._id]);
+  assert.equal(page.hasMore, false);
+  assert.equal(page.totalCount, 1);
+});
+
 test('public list applies cursor and limit in the database', async () => {
-  const observed = { countQuery: null, findQuery: null, sort: null, limit: null };
+  const observed = { findQuery: null, sort: null, limit: null };
   const publications = [
     buildPublication('000000000000000000000003'),
     buildPublication('000000000000000000000002'),
   ];
   const publicationModel = {
-    countDocuments(query) {
-      observed.countQuery = query;
-      return { exec: async () => 7 };
-    },
     find(query) {
       observed.findQuery = query;
       return {
@@ -144,11 +156,43 @@ test('public list applies cursor and limit in the database', async () => {
 
   assert.equal(observed.limit, 2);
   assert.deepEqual(observed.sort, { _id: -1 });
-  assert.equal(observed.countQuery.$and.some((clause) => clause._id), false);
   assert.deepEqual(observed.findQuery.$and.at(-1), {
     _id: { $lt: '000000000000000000000004' },
   });
-  assert.equal(result.totalCount, 7);
+  assert.equal('totalCount' in result, false);
   assert.equal(result.hasMore, true);
   assert.deepEqual(result.items.map((item) => item.id), [publications[0]._id]);
+});
+
+test('public list over-fetches past invalid records to preserve valid page boundaries', async () => {
+  const invalid = {
+    ...buildPublication('000000000000000000000004'),
+    thumbnailUrl: 'private://thumbnail',
+  };
+  const newestValid = buildPublication('000000000000000000000003');
+  const olderValid = buildPublication('000000000000000000000002');
+  const batches = [[invalid, newestValid], [olderValid]];
+  let findCalls = 0;
+  const publicationModel = {
+    find() {
+      const batch = batches[findCalls] || [];
+      findCalls += 1;
+      return {
+        sort() { return this; },
+        limit() { return this; },
+        lean() { return this; },
+        exec: async () => batch,
+      };
+    },
+  };
+
+  const result = await listPublicInteractivePublications({
+    limit: 1,
+    publicationModel,
+  });
+  assert.equal(findCalls, 2);
+  assert.deepEqual(result.items.map((item) => item.id), [newestValid._id]);
+  assert.equal(result.hasMore, true);
+  assert.equal(result.nextCursor, newestValid._id);
+  assert.equal('totalCount' in result, false);
 });

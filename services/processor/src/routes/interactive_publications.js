@@ -45,9 +45,10 @@ export const buildPublicInteractivePublicationQuery = (cursorId = null) => {
 
 export const paginatePublicInteractivePublications = (
   publications,
-  { limit = 50, totalCount = 0 } = {},
+  { limit = 50, totalCount = null } = {},
 ) => {
-  const candidates = Array.isArray(publications) ? publications : [];
+  const candidates = (Array.isArray(publications) ? publications : [])
+    .filter((publication) => isInteractivePublicationPubliclyRenderable(publication));
   const page = candidates.slice(0, limit);
   const hasMore = candidates.length > limit;
 
@@ -57,7 +58,7 @@ export const paginatePublicInteractivePublications = (
       ? page[page.length - 1]._id?.toString?.() || null
       : null,
     hasMore,
-    totalCount,
+    ...(Number.isInteger(totalCount) && totalCount >= 0 ? { totalCount } : {}),
   };
 };
 
@@ -66,16 +67,29 @@ export async function listPublicInteractivePublications({
   limit = 50,
   publicationModel = InteractivePublication,
 } = {}) {
-  const [totalCount, publications] = await Promise.all([
-    publicationModel.countDocuments(buildPublicInteractivePublicationQuery()).exec(),
-    publicationModel.find(buildPublicInteractivePublicationQuery(cursorId))
-      .sort({ _id: -1 })
-      .limit(limit + 1)
-      .lean()
-      .exec(),
-  ]);
+  const batchSize = limit + 1;
+  const publications = [];
+  let scanCursor = cursorId;
 
-  return paginatePublicInteractivePublications(publications, { limit, totalCount });
+  while (publications.length < batchSize) {
+    const batch = await publicationModel.find(buildPublicInteractivePublicationQuery(scanCursor))
+      .sort({ _id: -1 })
+      .limit(batchSize)
+      .lean()
+      .exec();
+    if (!Array.isArray(batch) || batch.length === 0) break;
+
+    publications.push(
+      ...batch.filter((publication) => isInteractivePublicationPubliclyRenderable(publication)),
+    );
+    if (batch.length < batchSize || publications.length >= batchSize) break;
+
+    const nextScanCursor = batch.at(-1)?._id?.toString?.() || null;
+    if (!nextScanCursor || nextScanCursor === scanCursor?.toString?.()) break;
+    scanCursor = nextScanCursor;
+  }
+
+  return paginatePublicInteractivePublications(publications, { limit });
 }
 
 router.get('/', async (req, res) => {

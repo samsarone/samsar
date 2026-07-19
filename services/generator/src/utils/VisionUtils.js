@@ -56,52 +56,6 @@ function isHttpUrl(value) {
   return /^https?:\/\//i.test(value || '');
 }
 
-function parsePathAndSuffix(reference = '') {
-  const normalized = normalizeString(reference);
-  if (!normalized) {
-    return { path: '', suffix: '' };
-  }
-
-  try {
-    const parsedUrl = new URL(normalized);
-    return {
-      path: parsedUrl.pathname || '',
-      suffix: `${parsedUrl.search || ''}${parsedUrl.hash || ''}`,
-    };
-  } catch {
-    const hashIndex = normalized.indexOf('#');
-    const queryIndex = normalized.indexOf('?');
-    const splitIndex = Math.min(
-      hashIndex >= 0 ? hashIndex : Infinity,
-      queryIndex >= 0 ? queryIndex : Infinity,
-    );
-
-    if (splitIndex === Infinity) {
-      return { path: normalized, suffix: '' };
-    }
-    return {
-      path: normalized.slice(0, splitIndex),
-      suffix: normalized.slice(splitIndex),
-    };
-  }
-}
-
-function buildTunnelizedMediaUrl(reference = '') {
-  const mediaPublicBase = normalizeString(process.env.MEDIA_PUBLIC_URL);
-  if (!mediaPublicBase) {
-    return '';
-  }
-
-  const { path, suffix } = parsePathAndSuffix(reference);
-  if (!path) {
-    return mediaPublicBase;
-  }
-
-  const normalizedBase = mediaPublicBase.replace(/\/+$/, '');
-  const normalizedPath = path.startsWith('/') ? path.slice(1) : path;
-  return `${normalizedBase}/${normalizedPath}${suffix}`;
-}
-
 async function isUrlReachable(url = '') {
   if (!isHttpUrl(url)) {
     return true;
@@ -137,32 +91,18 @@ async function resolveVisionImageUrl(remoteImageUrl = '') {
     return imageUrl;
   }
 
-  const tunnelUrlForNonHttp = buildTunnelizedMediaUrl(imageUrl);
-  if (!isHttpUrl(imageUrl) && tunnelUrlForNonHttp) {
-    if (await isUrlReachable(tunnelUrlForNonHttp)) {
-      return tunnelUrlForNonHttp;
-    }
-    return imageUrl;
-  }
-
   if (await isUrlReachable(imageUrl)) {
     return imageUrl;
   }
 
-  const tunnelUrl = tunnelUrlForNonHttp;
-  if (!tunnelUrl || tunnelUrl === imageUrl) {
-    return imageUrl;
-  }
-
-  if (await isUrlReachable(tunnelUrl)) {
-    console.warn('[vision_scoring] Falling back to tunnelized image URL for visibility check', {
-      originalUrl: imageUrl,
-      tunnelUrl,
-    });
-    return tunnelUrl;
-  }
-
-  return imageUrl;
+  const error = new Error(
+    'The Docker vision image URL became unreachable before provider dispatch; the request will be retried.',
+  );
+  error.name = 'SamsarMediaTunnelError';
+  error.code = 'SAMSAR_MEDIA_TUNNEL_UNREACHABLE';
+  error.retryable = true;
+  error.imageUrl = imageUrl;
+  throw error;
 }
 
 function resolveVisionInferenceModel(userInferenceModel = getDefaultUserInferenceModel()) {
@@ -319,8 +259,8 @@ export async function addVisionDescriptionsForLayerImage(
   // This function just returns the generated description
 
   const accessibleUrl = await getAccessibleMediaUrlForProvider(remoteImageUrl, {
-    preferDataUrl: getCurrentEnvironment() === 'docker',
-    preferInternalDockerUrl: true,
+    preferDataUrl: false,
+    preferInternalDockerUrl: false,
   });
   const remoteUrl = await resolveVisionImageUrl(accessibleUrl);
 

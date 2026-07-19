@@ -2066,6 +2066,7 @@ async function generateFramesForSession(generationId, sessionId, layerId, branch
         sourceFramePath: firstFramePath,
       });
       branchUpdateSet[`${branchPathPrefix}.thumbnailUrl`] = null;
+      branchUpdateSet[`${branchPathPrefix}.thumbnailUploadError`] = null;
       branchUpdateSet[`${branchPathPrefix}.thumbnailSource`] = {
         ...branchThumbnailSource,
         framePath: firstFrame,

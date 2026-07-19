@@ -24,8 +24,26 @@ const ENV_KEYS = [
   'PROCESSOR_API',
   'PROCESSOR_URL',
   'SAMSAR_VALIDATE_PUBLIC_MEDIA_URL',
+  'SAMSAR_MEDIA_TUNNEL_REFRESH_WAIT_MS',
+  'SAMSAR_MEDIA_TUNNEL_REFRESH_POLL_MS',
+  'SAMSAR_MEDIA_TUNNEL_REFRESH_REQUEST_PATH',
   'SAMSAR_EXTERNAL_MEDIA_PUBLISH_ENABLED',
 ];
+
+const originalFetch = globalThis.fetch;
+
+test.beforeEach(() => {
+  globalThis.fetch = async () => ({
+    ok: true,
+    status: 206,
+    headers: { get: () => 'image/png' },
+    body: { cancel: async () => {} },
+  });
+});
+
+test.afterEach(() => {
+  globalThis.fetch = originalFetch;
+});
 
 function snapshotEnv() {
   return Object.fromEntries(ENV_KEYS.map((key) => [key, process.env[key]]));
@@ -66,12 +84,14 @@ function prepareDockerMediaFixture({ publicMediaUrl }) {
   process.env.CURRENT_ENV = 'docker';
   process.env.SAMSAR_MEDIA_DELIVERY_MODE = 'docker-local';
   process.env.MEDIA_DELIVERY_MODE = 'docker-local';
-  process.env.SAMSAR_PUBLIC_MEDIA_BASE_URL = 'http://localhost:8080/';
-  process.env.SAMSAR_EXTERNAL_MEDIA_PUBLIC_BASE_URL = 'http://localhost:8080/';
-  process.env.MEDIA_PUBLIC_URL = 'http://localhost:8080/';
-  process.env.PUBLIC_STATIC_CDN_URL = 'http://localhost:8080/';
-  process.env.STATIC_CDN_URL = 'http://localhost:8080/';
-  process.env.SAMSAR_VALIDATE_PUBLIC_MEDIA_URL = 'false';
+  process.env.SAMSAR_PUBLIC_MEDIA_BASE_URL = 'http://localhost:3002/';
+  process.env.SAMSAR_EXTERNAL_MEDIA_PUBLIC_BASE_URL = 'http://localhost:3002/';
+  process.env.MEDIA_PUBLIC_URL = 'http://localhost:3002/';
+  process.env.PUBLIC_STATIC_CDN_URL = 'http://localhost:3002/';
+  process.env.STATIC_CDN_URL = 'http://localhost:3002/';
+  process.env.SAMSAR_MEDIA_TUNNEL_REFRESH_WAIT_MS = '1';
+  process.env.SAMSAR_MEDIA_TUNNEL_REFRESH_POLL_MS = '10';
+  process.env.SAMSAR_MEDIA_TUNNEL_REFRESH_REQUEST_PATH = path.join(tempRoot, 'media-tunnel-refresh.request.json');
   process.env.SAMSAR_RUNTIME_CONFIG_FILE = configPath;
   process.env.SAMSAR_ASSETS_V2_ROOT = assetsV2Root;
   process.env.SAMSAR_ASSETS_ROOT = assetsRoot;
@@ -90,7 +110,7 @@ test('normalizes Docker local media references to runtime public tunnel URLs', a
 
   try {
     const { normalizeProviderMediaUrl } = await importAwsModule();
-    const url = await normalizeProviderMediaUrl(`http://localhost:8080/${mediaRelativePath}`);
+    const url = await normalizeProviderMediaUrl(`http://localhost:3002/${mediaRelativePath}`);
     assert.equal(url, `https://media-example.trycloudflare.com/${mediaRelativePath}`);
   } finally {
     fs.rmSync(tempRoot, { recursive: true, force: true });
@@ -101,14 +121,14 @@ test('normalizes Docker local media references to runtime public tunnel URLs', a
 test('rejects Docker local media references when no public tunnel URL exists', async () => {
   const envSnapshot = snapshotEnv();
   const { tempRoot, mediaRelativePath } = prepareDockerMediaFixture({
-    publicMediaUrl: 'http://localhost:8080/',
+    publicMediaUrl: 'http://localhost:3002/',
   });
 
   try {
     const { normalizeProviderMediaUrl } = await importAwsModule();
     await assert.rejects(
       () => normalizeProviderMediaUrl(`/${mediaRelativePath}`),
-      /A tunneled media URL is required/
+      (error) => error?.code === 'SAMSAR_MEDIA_TUNNEL_UNREACHABLE' && error?.retryable === true,
     );
   } finally {
     fs.rmSync(tempRoot, { recursive: true, force: true });
@@ -119,14 +139,14 @@ test('rejects Docker local media references when no public tunnel URL exists', a
 test('normalizes Docker local media references through the tunnel instead of a configured public IP processor path', async () => {
   const envSnapshot = snapshotEnv();
   const { tempRoot, mediaRelativePath } = prepareDockerMediaFixture({
-    publicMediaUrl: 'http://localhost:8080/',
+    publicMediaUrl: 'http://localhost:3002/',
   });
   process.env.SAMSAR_DOCKER_PUBLIC_PROCESSOR_BASE_URL = 'http://203.0.113.10/api';
   process.env.SAMSAR_MEDIA_TUNNEL_PUBLIC_URL = 'https://media-tunnel.trycloudflare.com';
 
   try {
     const { normalizeProviderMediaUrl } = await importAwsModule();
-    const url = await normalizeProviderMediaUrl(`http://localhost:8080/${mediaRelativePath}`);
+    const url = await normalizeProviderMediaUrl(`http://localhost:3002/${mediaRelativePath}`);
     assert.equal(url, `https://media-tunnel.trycloudflare.com/${mediaRelativePath}`);
   } finally {
     fs.rmSync(tempRoot, { recursive: true, force: true });
@@ -137,7 +157,7 @@ test('normalizes Docker local media references through the tunnel instead of a c
 test('normalizes Docker asset references to a tunnel URL without requiring a local file', async () => {
   const envSnapshot = snapshotEnv();
   const { tempRoot } = prepareDockerMediaFixture({
-    publicMediaUrl: 'http://localhost:8080/',
+    publicMediaUrl: 'http://localhost:3002/',
   });
   process.env.SAMSAR_DOCKER_PUBLIC_PROCESSOR_BASE_URL = 'http://203.0.113.10/api';
   process.env.SAMSAR_MEDIA_TUNNEL_PUBLIC_URL = 'https://media-tunnel.trycloudflare.com';
@@ -160,7 +180,7 @@ test('normalizes Docker asset references to a tunnel URL without requiring a loc
 test('keeps private IP processor bases out of external AI provider media URLs', async () => {
   const envSnapshot = snapshotEnv();
   const { tempRoot, mediaRelativePath } = prepareDockerMediaFixture({
-    publicMediaUrl: 'http://localhost:8080/',
+    publicMediaUrl: 'http://localhost:3002/',
   });
   process.env.SAMSAR_DOCKER_PUBLIC_PROCESSOR_BASE_URL = 'http://192.168.1.25';
 
@@ -168,7 +188,7 @@ test('keeps private IP processor bases out of external AI provider media URLs', 
     const { normalizeProviderMediaUrl } = await importAwsModule();
     await assert.rejects(
       () => normalizeProviderMediaUrl(`/${mediaRelativePath}`),
-      /A tunneled media URL is required/
+      (error) => error?.code === 'SAMSAR_MEDIA_TUNNEL_UNREACHABLE' && error?.retryable === true,
     );
   } finally {
     fs.rmSync(tempRoot, { recursive: true, force: true });
@@ -179,7 +199,7 @@ test('keeps private IP processor bases out of external AI provider media URLs', 
 test('normalizes Docker media references to CloudFront URLs when external media publishing is enabled', async () => {
   const envSnapshot = snapshotEnv();
   const { tempRoot, mediaRelativePath } = prepareDockerMediaFixture({
-    publicMediaUrl: 'http://localhost:8080/',
+    publicMediaUrl: 'http://localhost:3002/',
   });
   process.env.SAMSAR_MEDIA_DELIVERY_MODE = 's3-cloudfront';
   process.env.MEDIA_DELIVERY_MODE = 's3-cloudfront';

@@ -9,6 +9,21 @@ import {
   resolveExternalVideoRoute,
 } from './base/SamsarExternalVideoListener.js';
 
+const originalFetch = globalThis.fetch;
+
+test.beforeEach(() => {
+  globalThis.fetch = async () => ({
+    ok: true,
+    status: 206,
+    headers: { get: () => 'application/octet-stream' },
+    body: { cancel: async () => {} },
+  });
+});
+
+test.afterEach(() => {
+  globalThis.fetch = originalFetch;
+});
+
 const ENV_KEYS = [
   'CURRENT_ENV',
   'SAMSAR_MEDIA_DELIVERY_MODE',
@@ -20,6 +35,9 @@ const ENV_KEYS = [
   'STATIC_CDN_URL',
   'SAMSAR_DOCKER_PUBLIC_PROCESSOR_BASE_URL',
   'SAMSAR_VALIDATE_PUBLIC_MEDIA_URL',
+  'SAMSAR_MEDIA_TUNNEL_REFRESH_WAIT_MS',
+  'SAMSAR_MEDIA_TUNNEL_REFRESH_POLL_MS',
+  'SAMSAR_MEDIA_TUNNEL_REFRESH_REQUEST_PATH',
 ];
 
 function snapshotEnv() {
@@ -40,13 +58,14 @@ function configureDockerPublicMedia() {
   process.env.CURRENT_ENV = 'docker';
   process.env.SAMSAR_MEDIA_DELIVERY_MODE = 'docker-local';
   process.env.MEDIA_DELIVERY_MODE = 'docker-local';
-  process.env.SAMSAR_PUBLIC_MEDIA_BASE_URL = 'http://localhost:8080/';
-  process.env.SAMSAR_EXTERNAL_MEDIA_PUBLIC_BASE_URL = 'http://localhost:8080/';
+  process.env.SAMSAR_PUBLIC_MEDIA_BASE_URL = 'http://localhost:3002/';
+  process.env.SAMSAR_EXTERNAL_MEDIA_PUBLIC_BASE_URL = 'http://localhost:3002/';
   process.env.SAMSAR_MEDIA_TUNNEL_PUBLIC_URL = 'https://media-tunnel.trycloudflare.com';
-  process.env.MEDIA_PUBLIC_URL = 'http://localhost:8080/';
-  process.env.STATIC_CDN_URL = 'http://localhost:8080/';
+  process.env.MEDIA_PUBLIC_URL = 'http://localhost:3002/';
+  process.env.STATIC_CDN_URL = 'http://localhost:3002/';
   process.env.SAMSAR_DOCKER_PUBLIC_PROCESSOR_BASE_URL = 'http://203.0.113.10/api';
-  process.env.SAMSAR_VALIDATE_PUBLIC_MEDIA_URL = 'false';
+  process.env.SAMSAR_MEDIA_TUNNEL_REFRESH_WAIT_MS = '1';
+  process.env.SAMSAR_MEDIA_TUNNEL_REFRESH_POLL_MS = '10';
 }
 
 test('Samsar external image-to-video payload includes start image URL compatibility aliases', () => {
@@ -137,8 +156,8 @@ test('Samsar external lip sync payload resolves Docker video and audio URLs to t
 
   try {
     const input = await buildExternalVideoToVideoInput({
-      videoLink: 'http://localhost:8080/assets_v2/ai_video/generations/64b000000000000000000001/64b000000000000000000002/video.mp4',
-      audioLink: 'http://localhost:8080/assets_v2/temp_audio/64b000000000000000000001_64b000000000000000000002_speech_padded.mp3',
+      videoLink: 'http://localhost:3002/assets_v2/ai_video/generations/64b000000000000000000001/64b000000000000000000002/video.mp4',
+      audioLink: 'http://localhost:3002/assets_v2/temp_audio/64b000000000000000000001_64b000000000000000000002_speech_padded.mp3',
       model: 'SYNCLIPSYNC',
       aspectRatio: '9:16',
       duration: 6,
@@ -166,8 +185,8 @@ test('Samsar external lip sync payload preserves express audioDuration when dura
 
   try {
     const input = await buildExternalVideoToVideoInput({
-      videoLink: 'http://localhost:8080/assets_v2/ai_video/generations/64b000000000000000000001/64b000000000000000000002/video.mp4',
-      audioLink: 'http://localhost:8080/assets_v2/temp_audio/64b000000000000000000001_64b000000000000000000002_speech_padded.mp3',
+      videoLink: 'http://localhost:3002/assets_v2/ai_video/generations/64b000000000000000000001/64b000000000000000000002/video.mp4',
+      audioLink: 'http://localhost:3002/assets_v2/temp_audio/64b000000000000000000001_64b000000000000000000002_speech_padded.mp3',
       model: 'SYNCLIPSYNC',
       aspectRatio: '9:16',
       audioDuration: 7.875,

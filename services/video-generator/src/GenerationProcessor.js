@@ -16,6 +16,7 @@ import {
   uploadVideoToCDN,
 } from './utils/AWS.js';
 import { installStructuredLogger } from './utils/StructuredLogger.js';
+import { uploadBranchThumbnailBestEffort } from './utils/BranchThumbnail.js';
 import {
   buildDockerFinalVideoQueueRepairBranchPathPatch,
   buildDockerFinalVideoQueueRepairSessionPatch,
@@ -210,12 +211,47 @@ function ensureBranchThumbnailArtifact({
     sessionId,
     branchRenderContext.renderPathId,
   );
-  const absoluteThumbnailPath = resolveProcessorAssetWritePath(
-    pwd,
-    ...stripAssetPrefix(thumbnailPath).split('/').filter(Boolean),
-  );
-  fs.mkdirSync(path.dirname(absoluteThumbnailPath), { recursive: true });
-  fs.copyFileSync(sourceFramePath, absoluteThumbnailPath);
+  const relativeThumbnailPath = stripAssetPrefix(thumbnailPath);
+  const thumbnailTargets = [
+    {
+      version: 'v2',
+      reference: `assets_v2/${relativeThumbnailPath}`,
+      absolutePath: path.join(resolveProcessorAssetsRoot(pwd, 'v2'), relativeThumbnailPath),
+    },
+    {
+      version: 'legacy',
+      reference: thumbnailPath,
+      absolutePath: path.join(resolveProcessorAssetsRoot(pwd, 'legacy'), relativeThumbnailPath),
+    },
+  ];
+  const persistedTargets = [];
+  const persistenceErrors = [];
+  for (const target of thumbnailTargets) {
+    try {
+      fs.mkdirSync(path.dirname(target.absolutePath), { recursive: true });
+      fs.copyFileSync(sourceFramePath, target.absolutePath);
+      persistedTargets.push(target);
+    } catch (error) {
+      persistenceErrors.push(`${target.absolutePath}: ${error?.message || error}`);
+    }
+  }
+  if (!persistedTargets.length) {
+    throw new Error(
+      `Failed to persist branch thumbnail for ${branchRenderContext.renderPathId}: ` +
+      persistenceErrors.join('; '),
+    );
+  }
+  if (persistenceErrors.length) {
+    console.warn(
+      `Branch thumbnail ${branchRenderContext.renderPathId} was not mirrored to every asset root: ` +
+      persistenceErrors.join('; '),
+    );
+  }
+
+  const legacyTarget = persistedTargets.find((target) => target.version === 'legacy');
+  const v2Target = persistedTargets.find((target) => target.version === 'v2');
+  const persistedThumbnailPath = legacyTarget?.reference || v2Target.reference;
+  const absoluteThumbnailPath = v2Target?.absolutePath || legacyTarget.absolutePath;
 
   const selectionTrail = Array.isArray(branchRenderContext.renderPath?.selectionTrail)
     ? branchRenderContext.renderPath.selectionTrail
@@ -227,7 +263,7 @@ function ensureBranchThumbnailArtifact({
     immediateSelection?.divergence_scene_index ??
     branchRenderContext.renderPath?.divergenceSceneIndex;
   return {
-    thumbnailPath,
+    thumbnailPath: persistedThumbnailPath,
     absoluteThumbnailPath,
     thumbnailSource: {
       timelineIndex,
@@ -239,7 +275,7 @@ function ensureBranchThumbnailArtifact({
         Number.isInteger(Number(sceneIndexValue))
         ? Number(sceneIndexValue)
         : null,
-      framePath: thumbnailPath,
+      framePath: persistedThumbnailPath,
       divergenceSceneIndex: divergenceSceneIndexValue !== null &&
         divergenceSceneIndexValue !== undefined &&
         Number.isInteger(Number(divergenceSceneIndexValue))
@@ -2206,19 +2242,16 @@ export async function generatePendingVideoRequests() {
           const existingThumbnailUrl = typeof branchRenderContext.renderPath?.thumbnailUrl === 'string'
             ? branchRenderContext.renderPath.thumbnailUrl.trim()
             : '';
-          try {
-            if (branchThumbnailArtifact?.absoluteThumbnailPath) {
-              branchThumbnailUrl = await uploadBranchPublicationThumbnailToCDN(
-                branchThumbnailArtifact.absoluteThumbnailPath,
-                videoSessionId,
-                branchRenderContext.renderPathId,
-              );
-            } else if (existingThumbnailUrl) {
-              branchThumbnailUrl = existingThumbnailUrl;
-            }
-          } catch (thumbnailUploadError) {
-            branchThumbnailUploadError = thumbnailUploadError?.message || String(thumbnailUploadError);
-            branchThumbnailUrl = existingThumbnailUrl || null;
+          const thumbnailUpload = await uploadBranchThumbnailBestEffort({
+            artifact: branchThumbnailArtifact,
+            existingThumbnailUrl,
+            sessionId: videoSessionId,
+            renderPathId: branchRenderContext.renderPathId,
+            uploadThumbnail: uploadBranchPublicationThumbnailToCDN,
+          });
+          branchThumbnailUrl = thumbnailUpload.thumbnailUrl;
+          branchThumbnailUploadError = thumbnailUpload.error;
+          if (branchThumbnailUploadError) {
             console.error(
               `Branch video completed but its render-time thumbnail upload failed for ` +
               `${branchRenderContext.renderPathId}: ${branchThumbnailUploadError}`,

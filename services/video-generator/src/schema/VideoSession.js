@@ -243,6 +243,7 @@ const branchRenderPathSchema = new Schema({
   remoteURL: { type: String, default: null },
   thumbnailPath: { type: String, default: null },
   thumbnailUrl: { type: String, default: null },
+  thumbnailUploadError: { type: String, default: null },
   thumbnailSource: { type: branchThumbnailSourceSchema, default: null },
 }, { _id: false, strict: false });
 

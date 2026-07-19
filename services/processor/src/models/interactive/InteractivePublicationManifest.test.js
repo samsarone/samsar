@@ -181,6 +181,13 @@ test('interactive publication manifest persists canonical hints and optimized pa
   assert.equal(manifest.outputs.paths[0].description, 'Follow the lanterns beneath the trees.');
   assert.equal(manifest.outputs.paths[0].switch_at_seconds, 8);
   assert.equal('selection_trail' in manifest.outputs.paths[0], false);
+
+  const stalePathTiming = structuredClone(manifest);
+  stalePathTiming.outputs.paths[0].switch_at_seconds = 9;
+  assert.throws(
+    () => assertInteractivePublicationManifestRenderable(stalePathTiming),
+    /inconsistent branch timing/i,
+  );
 });
 
 test('interactive publication manifest refuses partial public media', () => {
@@ -310,6 +317,13 @@ test('interactive publication refuses a persisted timeline that omits a nested c
       }],
     }],
   };
+
+  const completeManifest = buildInteractivePublicationManifest({
+    completedBranching: nestedCompleted,
+    publicMedia: nestedPublicMedia,
+    pathMetadata,
+  });
+  assert.equal(completeManifest.tree.choice_points.length, 2);
 
   assert.throws(
     () => buildInteractivePublicationManifest({

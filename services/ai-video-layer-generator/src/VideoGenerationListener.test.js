@@ -262,6 +262,23 @@ test('provider submit 503 is held in INIT for retry without consuming generation
   assert.equal(Object.hasOwn(update.set, 'numRetries'), false);
 });
 
+test('an unreachable managed media tunnel defers provider submission for retry', () => {
+  const error = Object.assign(new Error('fresh provider media URL unavailable'), {
+    code: 'SAMSAR_MEDIA_TUNNEL_UNREACHABLE',
+    retryable: true,
+  });
+
+  assert.equal(isTransientProviderError(error), true);
+  const update = buildTransientProviderErrorUpdate(
+    { status: 'INIT', transientProviderErrorCount: 0 },
+    error,
+    'submit',
+  );
+  assert.equal(update.set.status, 'INIT');
+  assert.equal(update.set.rowLocked, false);
+  assert.equal(update.set.transientProviderErrorPhase, 'submit');
+});
+
 test('repeated transient provider errors are promoted to FAILED for normal retry handling', () => {
   const error = {
     message: 'Internal Server Error',

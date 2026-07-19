@@ -4,6 +4,21 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 
+const originalFetch = globalThis.fetch;
+
+test.beforeEach(() => {
+  globalThis.fetch = async () => ({
+    ok: true,
+    status: 206,
+    headers: { get: () => 'video/mp4' },
+    body: { cancel: async () => {} },
+  });
+});
+
+test.afterEach(() => {
+  globalThis.fetch = originalFetch;
+});
+
 const ENV_KEYS = [
   'AWS_ACCESS_KEY_ID',
   'AWS_SECRET_ACCESS_KEY',
@@ -27,6 +42,9 @@ const ENV_KEYS = [
   'SAMSAR_RUNTIME_CONFIG_FILE',
   'SAMSAR_ASSETS_V2_ROOT',
   'SAMSAR_ASSETS_ROOT',
+  'SAMSAR_MEDIA_TUNNEL_REFRESH_WAIT_MS',
+  'SAMSAR_MEDIA_TUNNEL_REFRESH_POLL_MS',
+  'SAMSAR_MEDIA_TUNNEL_REFRESH_REQUEST_PATH',
 ];
 
 function snapshotEnv() {
@@ -74,12 +92,14 @@ function prepareDockerMediaFixture({ publicMediaUrl }) {
   process.env.SAMSAR_MEDIA_DELIVERY_MODE = 'docker-local';
   process.env.MEDIA_DELIVERY_MODE = 'docker-local';
   delete process.env.SAMSAR_MEDIA_TUNNEL_PUBLIC_URL;
-  process.env.SAMSAR_PUBLIC_MEDIA_BASE_URL = 'http://localhost:8080/';
-  process.env.SAMSAR_EXTERNAL_MEDIA_PUBLIC_BASE_URL = 'http://localhost:8080/';
-  process.env.MEDIA_PUBLIC_URL = 'http://localhost:8080/';
-  process.env.PUBLIC_STATIC_CDN_URL = 'http://localhost:8080/';
-  process.env.STATIC_CDN_URL = 'http://localhost:8080/';
-  process.env.SAMSAR_VALIDATE_PUBLIC_MEDIA_URL = 'false';
+  process.env.SAMSAR_PUBLIC_MEDIA_BASE_URL = 'http://localhost:3002/';
+  process.env.SAMSAR_EXTERNAL_MEDIA_PUBLIC_BASE_URL = 'http://localhost:3002/';
+  process.env.MEDIA_PUBLIC_URL = 'http://localhost:3002/';
+  process.env.PUBLIC_STATIC_CDN_URL = 'http://localhost:3002/';
+  process.env.STATIC_CDN_URL = 'http://localhost:3002/';
+  process.env.SAMSAR_MEDIA_TUNNEL_REFRESH_WAIT_MS = '1';
+  process.env.SAMSAR_MEDIA_TUNNEL_REFRESH_POLL_MS = '10';
+  process.env.SAMSAR_MEDIA_TUNNEL_REFRESH_REQUEST_PATH = path.join(tempRoot, 'media-tunnel-refresh.request.json');
   process.env.SAMSAR_RUNTIME_CONFIG_FILE = configPath;
   process.env.SAMSAR_ASSETS_V2_ROOT = assetsV2Root;
   process.env.SAMSAR_ASSETS_ROOT = assetsRoot;
@@ -102,7 +122,7 @@ test('resolves Docker provider AI-video URLs through the configured public media
     const url = await resolveProviderAiVideoUrl({
       userId,
       layer: {
-        aiVideoRemoteLink: `http://localhost:8080/${mediaRelativePath}`,
+        aiVideoRemoteLink: `http://localhost:3002/${mediaRelativePath}`,
       },
     });
     assert.equal(url, `https://media-example.trycloudflare.com/${mediaRelativePath}`);
@@ -115,7 +135,7 @@ test('resolves Docker provider AI-video URLs through the configured public media
 test('rejects Docker local provider AI-video URLs when no public media tunnel is configured', async () => {
   const envSnapshot = snapshotEnv();
   const { tempRoot, userId, mediaRelativePath } = prepareDockerMediaFixture({
-    publicMediaUrl: 'http://localhost:8080/',
+    publicMediaUrl: 'http://localhost:3002/',
   });
 
   try {
@@ -124,10 +144,10 @@ test('rejects Docker local provider AI-video URLs when no public media tunnel is
       () => resolveProviderAiVideoUrl({
         userId,
         layer: {
-          aiVideoRemoteLink: `http://localhost:8080/${mediaRelativePath}`,
+          aiVideoRemoteLink: `http://localhost:3002/${mediaRelativePath}`,
         },
       }),
-      /A tunneled media URL is required/
+      (error) => error?.code === 'SAMSAR_MEDIA_TUNNEL_UNREACHABLE' && error?.retryable === true,
     );
   } finally {
     fs.rmSync(tempRoot, { recursive: true, force: true });
@@ -138,7 +158,7 @@ test('rejects Docker local provider AI-video URLs when no public media tunnel is
 test('resolves Docker provider AI-video URLs through the media tunnel instead of a public IP processor path', async () => {
   const envSnapshot = snapshotEnv();
   const { tempRoot, userId, mediaRelativePath } = prepareDockerMediaFixture({
-    publicMediaUrl: 'http://localhost:8080/',
+    publicMediaUrl: 'http://localhost:3002/',
   });
   process.env.SAMSAR_DOCKER_PUBLIC_PROCESSOR_BASE_URL = 'http://203.0.113.10/api';
   process.env.SAMSAR_MEDIA_TUNNEL_PUBLIC_URL = 'https://media-tunnel.trycloudflare.com';
@@ -148,7 +168,7 @@ test('resolves Docker provider AI-video URLs through the media tunnel instead of
     const url = await resolveProviderAiVideoUrl({
       userId,
       layer: {
-        aiVideoRemoteLink: `http://localhost:8080/${mediaRelativePath}`,
+        aiVideoRemoteLink: `http://localhost:3002/${mediaRelativePath}`,
       },
     });
     assert.equal(url, `https://media-tunnel.trycloudflare.com/${mediaRelativePath}`);
@@ -161,7 +181,7 @@ test('resolves Docker provider AI-video URLs through the media tunnel instead of
 test('does not use private IP processor bases for external AI-video provider URLs', async () => {
   const envSnapshot = snapshotEnv();
   const { tempRoot, userId, mediaRelativePath } = prepareDockerMediaFixture({
-    publicMediaUrl: 'http://localhost:8080/',
+    publicMediaUrl: 'http://localhost:3002/',
   });
   process.env.SAMSAR_DOCKER_PUBLIC_PROCESSOR_BASE_URL = 'http://192.168.1.25';
 
@@ -171,10 +191,10 @@ test('does not use private IP processor bases for external AI-video provider URL
       () => resolveProviderAiVideoUrl({
         userId,
         layer: {
-          aiVideoRemoteLink: `http://localhost:8080/${mediaRelativePath}`,
+          aiVideoRemoteLink: `http://localhost:3002/${mediaRelativePath}`,
         },
       }),
-      /A tunneled media URL is required/
+      (error) => error?.code === 'SAMSAR_MEDIA_TUNNEL_UNREACHABLE' && error?.retryable === true,
     );
   } finally {
     fs.rmSync(tempRoot, { recursive: true, force: true });

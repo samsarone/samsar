@@ -28,7 +28,26 @@ const ENV_KEYS = [
   'SAMSAR_VALIDATE_PUBLIC_MEDIA_URL',
   'SAMSAR_ASSETS_V2_ROOT',
   'SAMSAR_ASSETS_ROOT',
+  'SAMSAR_RUNTIME_CONFIG_FILE',
+  'SAMSAR_MEDIA_TUNNEL_REFRESH_WAIT_MS',
+  'SAMSAR_MEDIA_TUNNEL_REFRESH_POLL_MS',
+  'SAMSAR_MEDIA_TUNNEL_REFRESH_REQUEST_PATH',
 ];
+
+const originalGlobalFetch = globalThis.fetch;
+
+test.beforeEach(() => {
+  globalThis.fetch = async () => ({
+    ok: true,
+    status: 206,
+    headers: { get: () => 'application/octet-stream' },
+    body: { cancel: async () => {} },
+  });
+});
+
+test.afterEach(() => {
+  globalThis.fetch = originalGlobalFetch;
+});
 
 function snapshotEnv() {
   return Object.fromEntries(ENV_KEYS.map((key) => [key, process.env[key]]));
@@ -66,6 +85,9 @@ test('normalizes Docker assets_v2 image references to the media tunnel without l
   process.env.SAMSAR_DOCKER_PUBLIC_PROCESSOR_BASE_URL = 'http://203.0.113.10/api';
   process.env.SAMSAR_MEDIA_TUNNEL_PUBLIC_URL = 'https://media-tunnel.trycloudflare.com';
   process.env.SAMSAR_VALIDATE_PUBLIC_MEDIA_URL = 'false';
+  process.env.SAMSAR_MEDIA_TUNNEL_REFRESH_WAIT_MS = '1';
+  process.env.SAMSAR_MEDIA_TUNNEL_REFRESH_POLL_MS = '10';
+  process.env.SAMSAR_MEDIA_TUNNEL_REFRESH_REQUEST_PATH = path.join(tempRoot, 'media-tunnel-refresh.request.json');
   process.env.SAMSAR_ASSETS_V2_ROOT = assetsV2Root;
   process.env.SAMSAR_ASSETS_ROOT = assetsRoot;
 
@@ -101,13 +123,16 @@ test('normalizes Docker padded audio references to the media tunnel for lip sync
   process.env.SAMSAR_DOCKER_PUBLIC_PROCESSOR_BASE_URL = 'http://203.0.113.10/api';
   process.env.SAMSAR_MEDIA_TUNNEL_PUBLIC_URL = 'https://media-tunnel.trycloudflare.com';
   process.env.SAMSAR_VALIDATE_PUBLIC_MEDIA_URL = 'false';
+  process.env.SAMSAR_MEDIA_TUNNEL_REFRESH_WAIT_MS = '1';
+  process.env.SAMSAR_MEDIA_TUNNEL_REFRESH_POLL_MS = '10';
+  process.env.SAMSAR_MEDIA_TUNNEL_REFRESH_REQUEST_PATH = path.join(tempRoot, 'media-tunnel-refresh.request.json');
   process.env.SAMSAR_ASSETS_V2_ROOT = assetsV2Root;
   process.env.SAMSAR_ASSETS_ROOT = assetsRoot;
 
   try {
     const { normalizeProviderMediaUrl } = await importAwsModule();
     const url = await normalizeProviderMediaUrl(
-      'http://localhost:8080/assets_v2/temp_audio/64b000000000000000000001_64b000000000000000000002_speech_padded.mp3'
+      'http://localhost:3002/assets_v2/temp_audio/64b000000000000000000001_64b000000000000000000002_speech_padded.mp3'
     );
     assert.equal(
       url,
@@ -131,6 +156,9 @@ test('normalizes Docker local media references to the tunnel without AWS credent
   process.env.MEDIA_DELIVERY_MODE = 'docker-local';
   process.env.SAMSAR_MEDIA_TUNNEL_PUBLIC_URL = 'https://media-tunnel.trycloudflare.com';
   process.env.SAMSAR_VALIDATE_PUBLIC_MEDIA_URL = 'false';
+  process.env.SAMSAR_MEDIA_TUNNEL_REFRESH_WAIT_MS = '1';
+  process.env.SAMSAR_MEDIA_TUNNEL_REFRESH_POLL_MS = '10';
+  process.env.SAMSAR_MEDIA_TUNNEL_REFRESH_REQUEST_PATH = path.join(os.tmpdir(), `samsar-refresh-${Date.now()}-${Math.random()}.json`);
 
   try {
     const { normalizeProviderMediaUrl } = await importAwsModule();

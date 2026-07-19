@@ -7,6 +7,7 @@ import {
   uploadImageToCDN,
 } from './AWS.js';
 import { getCurrentEnvironment } from './Environment.js';
+import { resolveFreshManagedProviderMediaUrl } from './ProviderMediaTunnel.js';
 
 const SECURE_ASSET_PREFIX = (process.env.SECURE_ASSET_PREFIX || 'assets_v2').replace(/^\/+|\/+$/g, '');
 const SECURE_ASSET_PREFIX_PATTERN = SECURE_ASSET_PREFIX.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -18,6 +19,7 @@ const DATA_URL_MEDIA_TYPES_BY_EXTENSION = Object.freeze({
   '.png': 'image/png',
   '.webp': 'image/webp',
 });
+const DEFAULT_RUNTIME_CONFIG_PATH = '/persistent/config/samsar.config.json';
 
 function normalizeString(value) {
   return typeof value === 'string' && value.trim() ? value.trim() : '';
@@ -97,12 +99,41 @@ async function buildDataUrlFromFile(localPath) {
   return `data:${getDataUrlMediaType(localPath)};base64,${buffer.toString('base64')}`;
 }
 
-function getDockerMediaBase(options = {}) {
+function readRuntimeManagedTunnelUrls() {
+  const urls = [];
+  const configPaths = [
+    process.env.SAMSAR_RUNTIME_CONFIG_FILE,
+    process.env.SAMSAR_CONFIG_FILE,
+    DEFAULT_RUNTIME_CONFIG_PATH,
+  ].map(normalizeString).filter(Boolean).filter((value, index, list) => list.indexOf(value) === index);
+  for (const configPath of configPaths) {
+    try {
+      if (!fs.existsSync(configPath)) continue;
+      const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+      const localTunnel = config?.localMediaTunnel || {};
+      const legacyTunnel = config?.mediaTunnel || {};
+      urls.push(
+        ...(localTunnel.enabled === false ? [] : [localTunnel.publicUrl, localTunnel.url]),
+        ...(legacyTunnel.enabled === false ? [] : [legacyTunnel.publicUrl, legacyTunnel.url]),
+        config?.publicUrls?.media,
+      );
+    } catch (error) {
+      console.warn('[MediaReferenceUtils] Unable to read runtime tunnel config', {
+        configPath,
+        error: error?.message || error,
+      });
+    }
+  }
+  return urls;
+}
+
+function getDockerMediaBaseCandidates(options = {}) {
   if (options.preferInternalDockerUrl === true) {
-    return normalizeString(process.env.SAMSAR_INTERNAL_MEDIA_BASE_URL) ||
-      normalizeString(process.env.MEDIA_PUBLIC_URL || process.env.STATIC_CDN_URL);
+    return [normalizeString(process.env.SAMSAR_INTERNAL_MEDIA_BASE_URL) ||
+      normalizeString(process.env.MEDIA_PUBLIC_URL || process.env.STATIC_CDN_URL)].filter(Boolean);
   }
   return [
+    ...readRuntimeManagedTunnelUrls(),
     process.env.SAMSAR_MEDIA_TUNNEL_PUBLIC_URL,
     process.env.SAMSAR_PUBLIC_MEDIA_BASE_URL,
     process.env.SAMSAR_EXTERNAL_MEDIA_PUBLIC_BASE_URL,
@@ -111,10 +142,11 @@ function getDockerMediaBase(options = {}) {
     .map((value) => normalizeString(value).replace(/\/+$/, ''))
     .filter(Boolean)
     .filter(isProbablyPublicUrl)
-    .filter(isTunnelMediaBaseUrl)[0] || '';
+    .filter(isTunnelMediaBaseUrl)
+    .filter((value, index, list) => list.indexOf(value) === index);
 }
 
-function buildDockerMediaUrl(reference, localPath = '', options = {}) {
+async function buildDockerMediaUrl(reference, localPath = '', options = {}) {
   const referencePath = getReferencePath(reference).replace(/^[\\/]+/, '');
   const assetsV2Root = getProcessorAssetsRoot(SECURE_ASSET_PREFIX).replace(/\\/g, '/').replace(/\/+$/, '');
   const assetsRoot = getProcessorAssetsRoot('assets').replace(/\\/g, '/').replace(/\/+$/, '');
@@ -132,15 +164,19 @@ function buildDockerMediaUrl(reference, localPath = '', options = {}) {
     return normalizeString(reference);
   }
 
-  const mediaBase = getDockerMediaBase(options);
-  if (!mediaBase) {
-    throw new Error(
-      'A tunneled media URL is required before sending local Docker media to remote vision providers. ' +
-      'Run scripts/start-local-media-tunnel.sh or configure s3-cloudfront media delivery.'
-    );
+  if (options.preferInternalDockerUrl === true) {
+    const internalBase = getDockerMediaBaseCandidates(options)[0];
+    if (!internalBase) {
+      throw new Error('An internal Docker media URL is required for this operation.');
+    }
+    return `${internalBase.replace(/\/+$/, '')}/${mediaKey.replace(/^\/+/, '')}`;
   }
 
-  return `${mediaBase.replace(/\/+$/, '')}/${mediaKey.replace(/^\/+/, '')}`;
+  return resolveFreshManagedProviderMediaUrl({
+    mediaPath: mediaKey,
+    getBaseUrlCandidates: () => getDockerMediaBaseCandidates(options),
+    serviceName: 'samsar_generator_vision',
+  });
 }
 
 function withoutQuery(value) {

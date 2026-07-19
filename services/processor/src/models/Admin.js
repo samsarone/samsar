@@ -25,17 +25,32 @@ export async function deleteAllRows() {
     {},
     { sessionId: 1 },
   ).lean();
+  const videoSessions = await VideoSession.find({}, { _id: 1 }).lean();
   const sessionIds = [...new Set(
     publicationSessions
       .map(({ sessionId }) => sessionId?.toString?.() || sessionId)
       .filter(Boolean)
   )];
-  await Promise.all(sessionIds.map((sessionId) => deletePublicPublicationMediaForSession(sessionId)));
   const interactiveSessionIds = [...new Set(
     interactivePublicationSessions
       .map(({ sessionId }) => sessionId?.toString?.() || sessionId)
       .filter(Boolean)
   )];
+  const videoSessionIds = [...new Set(
+    videoSessions
+      .map(({ _id }) => _id?.toString?.() || _id)
+      .filter(Boolean)
+  )];
+  const publicationMediaSessionIds = [...new Set([
+    ...sessionIds,
+    ...interactiveSessionIds,
+    ...videoSessionIds,
+  ])];
+  await Promise.all(
+    publicationMediaSessionIds.map((sessionId) => (
+      deletePublicPublicationMediaForSession(sessionId)
+    )),
+  );
   const interactiveDeleteResults = await Promise.all(
     interactiveSessionIds.map((sessionId) => deleteInteractivePublicationForSession(sessionId))
   );

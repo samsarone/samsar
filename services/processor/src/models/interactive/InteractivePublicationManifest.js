@@ -532,6 +532,68 @@ export function assertInteractivePublicationManifestRenderable(manifest = {}) {
   }
   validateChoiceGraph(choicePoints, pathDurations, rootNodeId);
 
+  const choicePointById = new Map(choicePoints.map((choicePoint) => [
+    normalizeString(choicePoint?.branch_point_id),
+    choicePoint,
+  ]));
+  paths.forEach((path) => {
+    const branchPointId = normalizeString(path?.branch_point_id);
+    if (!branchPointId) return;
+
+    const choicePoint = choicePointById.get(branchPointId);
+    const matchingOptions = (Array.isArray(choicePoint?.options) ? choicePoint.options : [])
+      .filter((option) => (
+        Array.isArray(option?.leaf_path_ids) &&
+        option.leaf_path_ids.map(normalizeString).includes(normalizeString(path?.path_id))
+      ));
+    if (!choicePoint || matchingOptions.length !== 1) {
+      throw buildManifestError(
+        `Interactive video path ${path.path_id} does not match its immediate branch point.`,
+      );
+    }
+
+    const pathSwitchAtSeconds = normalizeOptionalNumber(path?.switch_at_seconds);
+    const choiceSwitchAtSeconds = normalizeOptionalNumber(choicePoint?.switch_at_seconds);
+    if (
+      pathSwitchAtSeconds !== null &&
+      pathSwitchAtSeconds !== choiceSwitchAtSeconds
+    ) {
+      throw buildManifestError(
+        `Interactive video path ${path.path_id} has inconsistent branch timing.`,
+      );
+    }
+
+    const pathDivergenceSceneIndex = normalizeOptionalNumber(path?.divergence_scene_index);
+    const choiceDivergenceSceneIndex = normalizeOptionalNumber(
+      choicePoint?.divergence_scene_index,
+    );
+    if (
+      pathDivergenceSceneIndex !== null &&
+      choiceDivergenceSceneIndex !== null &&
+      pathDivergenceSceneIndex !== choiceDivergenceSceneIndex
+    ) {
+      throw buildManifestError(
+        `Interactive video path ${path.path_id} has inconsistent divergence timing.`,
+      );
+    }
+
+    const matchingOption = matchingOptions[0];
+    const pathHint = normalizeString(path?.branching_hint);
+    const optionHint = normalizeString(
+      matchingOption?.branching_hint || matchingOption?.path_name,
+    );
+    const pathDescription = normalizeString(path?.description);
+    const optionDescription = normalizeString(
+      matchingOption?.description || matchingOption?.path_description,
+    );
+    if ((pathHint && optionHint && pathHint !== optionHint) ||
+        (pathDescription && optionDescription && pathDescription !== optionDescription)) {
+      throw buildManifestError(
+        `Interactive video path ${path.path_id} has inconsistent branch copy.`,
+      );
+    }
+  });
+
   return source;
 }
 
