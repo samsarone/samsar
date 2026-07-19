@@ -3,6 +3,8 @@ import { Schema, model } from 'mongoose';
 // 2. Create a Schema corresponding to the document interface.
 const videoGenerationSchema = new Schema({
   videoSessionId: String,
+  renderPathId: { type: String, default: null },
+  renderPlanVersion: { type: Number, default: null },
   isPremium: { type: Boolean, default: false },
   rowLocked: { type: Boolean, default: false },
   expireAt: {
@@ -13,6 +15,12 @@ const videoGenerationSchema = new Schema({
   numRetries: { type: Number, default: 0 },
   
 }, { timestamps: true });
+
+videoGenerationSchema.index({
+  videoSessionId: 1,
+  renderPathId: 1,
+  renderPlanVersion: 1,
+});
 
 // 3. Create a Model.
 const VideoGeneration = model('VideoGeneration', videoGenerationSchema);

@@ -4,7 +4,10 @@ import User from './schema/User.js';
 import ExternalUser from './schema/ExternalUser.js';
 import ExternalUserRequest from './schema/ExternalUserRequest.js';
 import GenerationCreditTransaction from './schema/GenerationCreditTransaction.js';
-import { getExpressVideoStageCreditsPerSecond } from './consts/ExpressVideoPricingDistribution.js';
+import {
+  EXPRESS_VIDEO_FIXED_PRICING_COMPONENTS_PER_SECOND,
+  getExpressVideoStageCreditsPerSecond,
+} from './consts/ExpressVideoPricingDistribution.js';
 
 export const EXPRESS_VIDEO_BILLING_STAGES = Object.freeze({
   NARRATIVE_INFERENCE: 'narrative_inference',
@@ -138,7 +141,58 @@ function getLayerEndTime(layer) {
   return Math.max(0, durationOffset + duration);
 }
 
-function resolveExpressVideoBillingDurationSeconds(sessionData = {}) {
+function isBranchedVideoSession(sessionData = {}) {
+  return typeof sessionData?.narrativeType === 'string' &&
+    sessionData.narrativeType.trim().toLowerCase() === 'branched';
+}
+
+export function resolveCumulativeLayerDurationSeconds(sessionData = {}) {
+  const layers = Array.isArray(sessionData?.layers) ? sessionData.layers : [];
+  const seenLayerIds = new Set();
+
+  return layers.reduce((total, layer, index) => {
+    const duration = Number(layer?.duration);
+    if (!Number.isFinite(duration) || duration <= 0) {
+      return total;
+    }
+
+    const rawIdentity = layer?._id ?? layer?.id ?? layer?.branchAssetKey;
+    const normalizedIdentity = rawIdentity === null || rawIdentity === undefined
+      ? `index:${index}`
+      : rawIdentity?.toString?.() || String(rawIdentity);
+    if (seenLayerIds.has(normalizedIdentity)) {
+      return total;
+    }
+    seenLayerIds.add(normalizedIdentity);
+    return total + duration;
+  }, 0);
+}
+
+export function resolveExpressVideoBillingDurationSeconds(sessionData = {}, stageKey = null) {
+  const normalizedStageKey = normalizeStageKey(stageKey);
+  if (isBranchedVideoSession(sessionData)) {
+    // Freeze branch billing to the cumulative duration persisted when the
+    // canonical layer catalog was materialized. Later speech/AI retiming only
+    // changes playback timing and must not make different stages use different
+    // billing durations.
+    const configuredDuration = Number(sessionData.expressGenerationBillingDurationSeconds);
+    if (Number.isFinite(configuredDuration) && configuredDuration > 0) {
+      return configuredDuration;
+    }
+
+    const cumulativeLayerDuration = resolveCumulativeLayerDurationSeconds(sessionData);
+    if (cumulativeLayerDuration > 0) {
+      return cumulativeLayerDuration;
+    }
+  }
+
+  const stageDuration = Number(
+    sessionData?.expressGenerationBillingStageDurations?.[normalizedStageKey],
+  );
+  if (normalizedStageKey && Number.isFinite(stageDuration) && stageDuration > 0) {
+    return stageDuration;
+  }
+
   const configuredDuration = Number(sessionData.expressGenerationBillingDurationSeconds);
   if (Number.isFinite(configuredDuration) && configuredDuration > 0) {
     return configuredDuration;
@@ -152,6 +206,18 @@ function resolveExpressVideoBillingDurationSeconds(sessionData = {}) {
   const layers = Array.isArray(sessionData.layers) ? sessionData.layers : [];
   const layerDuration = layers.reduce((maxDuration, layer) => Math.max(maxDuration, getLayerEndTime(layer)), 0);
   return Number.isFinite(layerDuration) && layerDuration > 0 ? layerDuration : 0;
+}
+
+export function resolveExpressVideoStageCreditsPerSecond(sessionData = {}, stageKey = null) {
+  const normalizedStageKey = normalizeStageKey(stageKey);
+  const videoModel = normalizeModelKey(sessionData.expressGenerativeVideoModel);
+  const reusedNarrativeRenderAllocation =
+    normalizedStageKey === EXPRESS_VIDEO_BILLING_STAGES.PIPELINE &&
+    sessionData.expressGenerationNarrativeReused === true
+      ? EXPRESS_VIDEO_FIXED_PRICING_COMPONENTS_PER_SECOND.inference
+      : 0;
+  return getExpressVideoStageCreditsPerSecond(normalizedStageKey, videoModel) +
+    reusedNarrativeRenderAllocation;
 }
 
 function buildStageMetadata({
@@ -350,9 +416,14 @@ export async function chargeExpressVideoStageCredits({ sessionId, stageKey }) {
     return { ok: true, stageKey: normalizedStageKey, alreadyCharged: true, stage: existingStage };
   }
 
-  const durationSeconds = resolveExpressVideoBillingDurationSeconds(sessionData);
-  const videoModel = normalizeModelKey(sessionData.expressGenerativeVideoModel);
-  const creditsPerSecond = getExpressVideoStageCreditsPerSecond(normalizedStageKey, videoModel);
+  const durationSeconds = resolveExpressVideoBillingDurationSeconds(
+    sessionData,
+    normalizedStageKey,
+  );
+  const creditsPerSecond = resolveExpressVideoStageCreditsPerSecond(
+    sessionData,
+    normalizedStageKey,
+  );
   const creditsCharged = Number.isFinite(durationSeconds) && durationSeconds > 0
     ? Math.ceil(durationSeconds * creditsPerSecond)
     : 0;

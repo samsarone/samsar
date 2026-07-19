@@ -468,7 +468,8 @@ function getPublicApiBaseUrl() {
   return (
     normalizeShareOgString(API_SERVER) ||
     normalizeShareOgString(process.env.PUBLIC_API_BASE_URL) ||
-    normalizeShareOgString(process.env.PUBLIC_BASE_URL)
+    normalizeShareOgString(process.env.PUBLIC_BASE_URL) ||
+    normalizeShareOgString(process.env.PROCESSOR_API)
   ).replace(/\/+$/, '');
 }
 
@@ -1817,6 +1818,17 @@ function buildStudioVideoRemoteUrl(rawSource) {
   const mediaReferencePath = getMediaReferencePath(trimmedSource);
   if (!mediaReferencePath) {
     return trimmedSource;
+  }
+
+  // Studio uploads are finalized into the processor's assets_v2 volume. They
+  // are not necessarily copied to the media bucket (notably in docker-local
+  // delivery mode), so signing the corresponding static CDN key produces a
+  // valid-looking CloudFront URL for an object that does not exist in S3.
+  // Prefer the processor static route whenever the referenced file is present
+  // locally; cloud-only assets continue through the signed CDN path below.
+  const localAssetUrl = buildProcessorStaticAssetUrlForLocalAsset(mediaReferencePath);
+  if (localAssetUrl) {
+    return localAssetUrl;
   }
 
   if (/^https?:\/\//i.test(trimmedSource)) {

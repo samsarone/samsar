@@ -54,8 +54,12 @@ const collectEditImageDataUrls = (payload = {}) => {
 };
 
 const getAssetsV2Root = () => {
+  const configuredRoot = String(process.env.SAMSAR_ASSETS_V2_ROOT || '').trim();
+  if (configuredRoot) {
+    return configuredRoot;
+  }
   if (process.env.CURRENT_ENV === 'staging' || process.env.CURRENT_ENV === 'docker') {
-    return process.env.SAMSAR_ASSETS_V2_ROOT || '/assets_v2';
+    return '/assets_v2';
   }
 
   return './assets_v2';

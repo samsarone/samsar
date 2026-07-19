@@ -1,3 +1,9 @@
+import {
+  areAllBranchPathVideosComplete,
+  getRepairableBranchRenderPaths,
+  isBranchedVideoSession,
+} from './BranchRenderPlan.js';
+
 const DOCKER_LOCAL_MEDIA_MODES = new Set(['docker-local', 'local-filesystem']);
 const EXTERNAL_MEDIA_MODES = new Set(['s3-cloudfront', 'external-s3']);
 const PENDING_STATUS = 'PENDING';
@@ -37,6 +43,9 @@ export function isDockerLocalFinalVideoQueueRepairEnabled(env = process.env) {
 }
 
 export function hasFinalVideoResult(videoSession = {}) {
+  if (isBranchedVideoSession(videoSession)) {
+    return areAllBranchPathVideosComplete(videoSession);
+  }
   return isTruthyAssetUrl(videoSession?.remoteURL) || isTruthyAssetUrl(videoSession?.videoLink);
 }
 
@@ -65,7 +74,10 @@ export function hasBlockingPendingGeneration(videoSession = {}) {
     return true;
   }
 
-  const layers = Array.isArray(videoSession?.layers) ? videoSession.layers : [];
+  const layers = [
+    ...(Array.isArray(videoSession?.layers) ? videoSession.layers : []),
+    ...(Array.isArray(videoSession?.branchedLayers) ? videoSession.branchedLayers : []),
+  ];
   if (layers.some((layer) => (
     layer?.frameGenerationPending === true ||
     layer?.aiVideoFrameGenerationPending === true ||
@@ -75,8 +87,24 @@ export function hasBlockingPendingGeneration(videoSession = {}) {
     return true;
   }
 
+  if (isBranchedVideoSession(videoSession)) {
+    const branchRenderPaths = Array.isArray(videoSession?.branchRenderPaths)
+      ? videoSession.branchRenderPaths
+      : [];
+    if (branchRenderPaths.some((renderPath) => (
+      renderPath?.frameGenerationPending === true
+      || normalizeStatus(renderPath?.frameGenerationStatus) === PENDING_STATUS
+      || (Array.isArray(renderPath?.timeline) && renderPath.timeline.some((entry) => (
+        entry?.frameGenerationPending === true
+      )))
+    ))) {
+      return true;
+    }
+  }
+
   const audioLayers = [
     ...(Array.isArray(videoSession?.audioLayers) ? videoSession.audioLayers : []),
+    ...(Array.isArray(videoSession?.branchedAudioLayers) ? videoSession.branchedAudioLayers : []),
     ...(Array.isArray(videoSession?.global_audio_layers) ? videoSession.global_audio_layers : []),
   ];
   return audioLayers.some((layer) => (
@@ -85,6 +113,9 @@ export function hasBlockingPendingGeneration(videoSession = {}) {
 }
 
 export function hasRenderableFramesReady(videoSession = {}) {
+  if (isBranchedVideoSession(videoSession)) {
+    return getRepairableBranchRenderPaths(videoSession).length > 0;
+  }
   const layers = Array.isArray(videoSession?.layers) ? videoSession.layers : [];
   const renderableLayers = layers.filter(isRenderableLayer);
   if (!renderableLayers.length) {
@@ -126,5 +157,14 @@ export function buildDockerFinalVideoQueueRepairSessionPatch() {
     expressGenerationError: null,
     'expressGenerationStatus.frame_generation': COMPLETED_STATUS,
     'expressGenerationStatus.video_generation': PENDING_STATUS,
+  };
+}
+
+export function buildDockerFinalVideoQueueRepairBranchPathPatch() {
+  return {
+    videoGenerationPending: true,
+    videoGenerationStatus: 'PENDING',
+    videoGenerationError: null,
+    videoGenerationCompletedAt: null,
   };
 }

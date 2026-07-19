@@ -315,9 +315,15 @@ const setCustomHeaders = (res, filePath) => {
 
 let assetsPath = 'assets';
 let assetsV2Path = 'assets_v2';
-if (process.env.CURRENT_ENV === 'staging' || process.env.CURRENT_ENV === 'docker') {
-  assetsPath = process.env.SAMSAR_ASSETS_ROOT || '/assets';
-  assetsV2Path = process.env.SAMSAR_ASSETS_V2_ROOT || '/assets_v2';
+if (process.env.SAMSAR_ASSETS_ROOT) {
+  assetsPath = process.env.SAMSAR_ASSETS_ROOT;
+} else if (process.env.CURRENT_ENV === 'staging' || process.env.CURRENT_ENV === 'docker') {
+  assetsPath = '/assets';
+}
+if (process.env.SAMSAR_ASSETS_V2_ROOT) {
+  assetsV2Path = process.env.SAMSAR_ASSETS_V2_ROOT;
+} else if (process.env.CURRENT_ENV === 'staging' || process.env.CURRENT_ENV === 'docker') {
+  assetsV2Path = '/assets_v2';
 }
 
 app.use('/assets_v2', express.static(assetsV2Path, { setHeaders: setCustomHeaders }));

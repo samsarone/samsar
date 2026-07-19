@@ -314,6 +314,35 @@ const videoSessionSchema = new Schema({
   parentTextTheme: String,
   derivedTextTheme: String,
   parentJsonTheme: String,
+  // A narrative-to-video session keeps the reusable stage-one artifacts as
+  // structured data in addition to the legacy serialized parentJsonTheme.
+  sourceNarrativeRequestId: {
+    type: Schema.Types.ObjectId,
+    ref: 'NarrativeRequest',
+    default: null,
+    index: true,
+  },
+  sourceNarrativeType: {
+    type: String,
+    enum: ['singular', 'branched'],
+    default: null,
+  },
+  narrativeType: {
+    type: String,
+    enum: ['singular', 'branched'],
+    default: 'singular',
+  },
+  themeJson: { type: Schema.Types.Mixed, default: null },
+  narrativeJson: { type: Schema.Types.Mixed, default: null },
+  movieResourceList: { type: Schema.Types.Mixed, default: null },
+  branchingMeta: { type: Schema.Types.Mixed, default: null },
+  renderPlanVersion: { type: Number, default: null },
+  defaultBranchPathId: { type: String, default: null },
+  branchRenderPaths: { type: [Schema.Types.Mixed], default: [] },
+  // Aggregate branch completion is finalized once, after every leaf render has
+  // reached COMPLETED and exposes a usable video URL.
+  branchRenderCompletionFinalized: { type: Boolean, default: false },
+  branchRenderCompletedAt: { type: Date, default: null },
   derivedJsonTheme: String,
   defaultSceneDuration: { type: Number, default: 2 },
   isGuestSession: { type: Boolean, default: false },
@@ -396,6 +425,7 @@ const videoSessionSchema = new Schema({
 
   provisionalCredits: { type: Number, default: 0 },
   expressGenerationBillingDurationSeconds: { type: Number, default: 0 },
+  expressGenerationBillingStageDurations: { type: Object, default: {} },
   expressGenerationCreditCharges: { type: Object, default: {} },
   isStepVideoGeneration: { type: Boolean, default: false },
   expressStepGeneration: { type: Object, default: {} },

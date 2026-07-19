@@ -3,6 +3,7 @@ import express from 'express';
 import audioApiRouter from '../api/audio.js';
 import imageApiRouter from '../api/image.js';
 import videoApiRouter from '../api/video.js';
+import narrativeApiRouter from './narrative.js';
 import { resolveRequestActorFromAuthHeaders } from '../../models/external/User.js';
 import {
   DEPLOYMENT_PROVIDER_CAPABILITIES,
@@ -203,5 +204,6 @@ router.post(['/moderation', '/moderations'], validateAPIKeyAndUserId, handleExte
 router.use('/image', imageApiRouter);
 router.use('/video', videoApiRouter);
 router.use('/audio', audioApiRouter);
+router.use('/narrative', narrativeApiRouter);
 
 export default router;

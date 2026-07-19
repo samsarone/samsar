@@ -193,12 +193,55 @@ const audioLayerSchema = new Schema({
 
 }, { strict: false });
 
+const branchTimelineItemSchema = new Schema({
+  sequenceIndex: Number,
+  layerId: String,
+  duration: Number,
+  durationOffset: Number,
+  frames: [String],
+  frameGenerationPending: { type: Boolean, default: false },
+}, { _id: false, strict: false });
+
+const branchAudioTimelineItemSchema = new Schema({
+  audioLayerId: String,
+  connectedLayerId: String,
+  sceneIndex: Number,
+  duration: Number,
+  startTime: Number,
+  endTime: Number,
+}, { _id: false, strict: false });
+
+const branchRenderPathSchema = new Schema({
+  pathId: { type: String, required: true },
+  duration: { type: Number, default: 0 },
+  timeline: [branchTimelineItemSchema],
+  audioTimeline: [branchAudioTimelineItemSchema],
+  frameGenerationPending: { type: Boolean, default: false },
+  frameGenerationStatus: { type: String, default: 'INIT' },
+  frameGenerationError: { type: String, default: null },
+  videoGenerationPending: { type: Boolean, default: false },
+  videoGenerationStatus: { type: String, default: 'INIT' },
+  videoGenerationError: { type: String, default: null },
+  videoGenerationCompletedAt: { type: Date, default: null },
+  videoLink: { type: String, default: null },
+  remoteURL: { type: String, default: null },
+}, { _id: false, strict: false });
+
 // Create the main schema corresponding to the document interface
 const videoSessionSchema = new Schema({
   userId: String,
   promptlist: [String],
   layers: [layerSchema],
   audioLayers: [audioLayerSchema],
+  branchedLayers: [layerSchema],
+  branchedAudioLayers: [audioLayerSchema],
+  narrativeType: { type: String, enum: ['singular', 'branched'], default: 'singular' },
+  sourceNarrativeType: { type: String, enum: ['singular', 'branched'], default: 'singular' },
+  renderPlanVersion: { type: Number, default: null },
+  defaultBranchPathId: { type: String, default: null },
+  branchRenderPaths: [branchRenderPathSchema],
+  branchRenderCompletionFinalized: { type: Boolean, default: false },
+  branchRenderCompletedAt: { type: Date, default: null },
   global_audio_layers: [audioLayerSchema],
   generations: [Object],
   audio: String,

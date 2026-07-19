@@ -110,3 +110,40 @@ test('bills Qwen cached tokens at regular input rates across Max and Plus tiers'
   assert.equal(plusLongContext.tokenPricingUsdPerMillion.cachedInput, 1.2);
   assert.equal(plusLongContext.tokenPricingUsdPerMillion.longContext, true);
 });
+
+test('prices provider-qualified OpenRouter model identifiers', () => {
+  const gpt = calculateAssistantCreditsFromUsage({
+    model: 'openai/gpt-5.6-sol',
+    usage: { input_tokens: 1_000, output_tokens: 100 },
+    pricingMultiplier: 1,
+  });
+  const gemini = calculateAssistantCreditsFromUsage({
+    model: 'google/gemini-3.1-pro-preview',
+    usage: { input_tokens: 1_000, output_tokens: 100 },
+    pricingMultiplier: 1,
+  });
+  const qwen = calculateAssistantCreditsFromUsage({
+    model: 'qwen/qwen3.7-plus',
+    usage: { input_tokens: 1_000, output_tokens: 100 },
+    pricingMultiplier: 1,
+  });
+
+  assert.equal(gpt.pricingModel, 'gpt-5.6-sol');
+  assert.equal(gemini.pricingModel, 'gemini-3.1-pro');
+  assert.equal(qwen.pricingModel, 'qwen3.7-plus');
+  assert.ok(gpt.credits > 0);
+  assert.ok(gemini.credits > 0);
+  assert.ok(qwen.credits > 0);
+});
+
+test('does not silently price an unknown Gemini deployment as Gemini 3.1 Pro', () => {
+  const result = calculateAssistantCreditsFromUsage({
+    model: 'google/gemini-2.5-flash',
+    usage: { input_tokens: 1000, output_tokens: 100 },
+    pricingMultiplier: 1,
+  });
+
+  assert.equal(result.pricingModel, null);
+  assert.equal(result.costUsd, 0);
+  assert.equal(result.credits, 0);
+});

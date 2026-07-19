@@ -25,6 +25,7 @@ import {
   shouldUseSamsarExternalInference,
 } from '../../ai_utils/SamsarExternalInferenceAdapter.js';
 import { recordProviderUsageLog } from '../../utils/ProviderUsageAudit.js';
+import { formatBranchedCameraTransitionContext } from '../utils/BranchedCameraTransitions.js';
 
 const openai = new OpenAI({ apiKey: API_KEY || '' });
 
@@ -385,6 +386,58 @@ export async function getTransitionListForLayerSceneDescriptions(layerSceneDescr
 
 
 
+}
+
+export async function getCameraTransitionForBranchedScene(
+  previousScenes,
+  currentSceneDescription,
+  userInferenceModel = getDefaultInferenceModel(),
+  auditContext = {},
+) {
+  const systemPrompt = `You are a camera transition assistant tool for a generative video production tool.
+  Provided the starting frame descriptions and camera transitions for the previous scenes in the current branch path, plus the current scene starting frame description, give a short 1 line camera transition movement for the current scene.
+  The transition should follow smoothly as a professional camera man would do to create a professional cinematic video.
+  Prefer natural, stable camera movement unless the scene explicitly requests stylized motion.
+  Give one transition for the current scene. The output should be a single line description of the camera movement without any line numbers or formatting strings.`;
+
+  const messageList = [
+    {
+      role: 'system',
+      content: systemPrompt,
+    },
+    {
+      role: 'user',
+      content: formatBranchedCameraTransitionContext({
+        previousScenes,
+        currentSceneDescription,
+      }),
+    },
+  ];
+
+  try {
+    const responseData = await sendAssistantMessageRequest(
+      messageList,
+      userInferenceModel,
+      undefined,
+      {
+        ...auditContext,
+        sourceTask: auditContext.sourceTask || 'camera_transition_prompt',
+      },
+    );
+    const transitionLines = normalizeAssistantText(responseData)
+      .split('\n')
+      .map((item) => item.trim())
+      .filter(Boolean);
+    return transitionLines.length === 1 ? transitionLines[0] : '';
+  } catch (err) {
+    console.warn('[AIVideoPrompt][branched_transition] Falling back without a camera transition', {
+      inferenceModel: normalizeInferenceModel(userInferenceModel),
+      layerId: auditContext.layerId,
+      branchPathId: auditContext.branchPathId,
+      error: err?.message,
+    });
+    return '';
+  }
 }
 
 export async function getAccentForText(text, auditContext = {}) {

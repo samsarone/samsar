@@ -110,6 +110,14 @@ const userSchema = new Schema({
   premiumUserAdded: Date,
   premiumUserCreditsLastUpdated: Date,
   generationCredits: {type: Number, default: 0},
+  // Durable, per-request debit markers make opt-in metered debits recoverable
+  // and prevent stale workers from reopening a completed charge without
+  // requiring cross-collection Mongo transactions.
+  generationCreditDebitReservations: {
+    type: Schema.Types.Mixed,
+    default: undefined,
+    select: false,
+  },
 
   autoRechargeEnabled: { type: Boolean, default: false },
   autoRechargeThreshold: { type: Number, default: 0 }, // credits threshold

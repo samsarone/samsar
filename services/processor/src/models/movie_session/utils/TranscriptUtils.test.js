@@ -407,6 +407,146 @@ test('validateTextToVideoNarrative still rejects ambiguous missing character gen
   assert.match(result.errors[0], /scene 0 must include gender "M" or "F"/);
 });
 
+test('validateTextToVideoNarrative rejects blank visuals for every rendered scene type', () => {
+  const cases = [
+    { type: 'base', sounds: [] },
+    {
+      type: 'narration',
+      sounds: [{
+        audio: 'The city begins to stir.',
+        startTime: 0,
+        duration: 4,
+        endTime: 4,
+        type: 'speech',
+        sceneIndex: 0,
+        subType: 'narration',
+        actor: 'Narrator',
+        gender: 'F',
+      }],
+    },
+    {
+      type: 'character',
+      speaker: 'Mali',
+      sounds: [{
+        audio: 'Morning comes early here.',
+        startTime: 0,
+        duration: 4,
+        endTime: 4,
+        type: 'speech',
+        sceneIndex: 0,
+        subType: 'character',
+        actor: 'Mali',
+        gender: 'F',
+      }],
+    },
+    {
+      type: 'sound_effect',
+      sounds: [{
+        audio: 'A metal market shutter rattles open.',
+        startTime: 0,
+        duration: 5,
+        endTime: 5,
+        type: 'sound_effect',
+        sceneIndex: 0,
+        subType: '',
+        actor: '',
+        gender: '',
+      }],
+    },
+  ];
+
+  for (const { type, speaker = '', sounds } of cases) {
+    const result = validateTextToVideoNarrative({
+      scenes: [{
+        visual: '   ',
+        type,
+        speaker,
+        duration: 5,
+        startTime: 0,
+        endTime: 5,
+      }],
+      sounds,
+    }, 'RUNWAYML');
+
+    assert.equal(result.valid, false, `${type} scenes must have a renderable visual`);
+    assert.match(result.errors.join(' '), /scene 0.*visual/i);
+  }
+});
+
+test('validateTextToVideoNarrative keeps a silent base scene valid when it has a visual', () => {
+  const result = validateTextToVideoNarrative({
+    scenes: [{
+      visual: 'Blue-hour light spreads across a quiet riverside market.',
+      type: 'base',
+      speaker: '',
+      duration: 5,
+      startTime: 0,
+      endTime: 5,
+    }],
+    sounds: [],
+  }, 'RUNWAYML');
+
+  assert.equal(result.valid, true, result.errors.join(', '));
+  assert.equal(result.narrativeJson.sounds.length, 0);
+});
+
+test('validateTextToVideoNarrative rejects blank speech and sound-effect audio', () => {
+  const cases = [
+    {
+      scene: {
+        visual: 'First light reflects in the windows of a riverside apartment.',
+        type: 'narration',
+        speaker: 'Narrator',
+        duration: 5,
+        startTime: 0,
+        endTime: 5,
+      },
+      sound: {
+        audio: '   ',
+        startTime: 0,
+        duration: 4,
+        endTime: 4,
+        type: 'speech',
+        sceneIndex: 0,
+        subType: 'narration',
+        actor: 'Narrator',
+        gender: 'F',
+      },
+    },
+    {
+      scene: {
+        visual: 'A vendor lifts the corrugated shutter of a narrow market stall.',
+        type: 'sound_effect',
+        speaker: '',
+        duration: 5,
+        startTime: 0,
+        endTime: 5,
+      },
+      sound: {
+        audio: '',
+        startTime: 0,
+        duration: 5,
+        endTime: 5,
+        type: 'sound_effect',
+        sceneIndex: 0,
+        subType: '',
+        actor: '',
+        gender: '',
+      },
+    },
+  ];
+
+  for (const { scene, sound } of cases) {
+    const result = validateTextToVideoNarrative({
+      scenes: [scene],
+      sounds: [sound],
+    }, 'RUNWAYML');
+
+    assert.equal(result.valid, false, `${sound.type} items must include renderable audio text`);
+    assert.match(result.errors.join(' '), /sound.*scene 0.*audio|audio.*scene 0/i);
+  }
+});
+
 test('validateTextToVideoNarrative allows exactly 30 seconds of duration deviation', () => {
   const cases = [
     { sceneDurations: Array(10).fill(15), actualDuration: 150, deviation: -30 },

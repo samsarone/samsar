@@ -4,8 +4,12 @@ import { Schema, model } from 'mongoose';
 const frameGenerationSchema = new Schema({
   sessionId: String,
   layerId: String,
+  renderPathId: { type: String, default: null },
+  renderPlanVersion: { type: Number, default: null },
+  pathSequenceIndex: { type: Number, default: null },
   rowLocked: { type: Boolean, default: false },
   isVideoGenerationRequest: { type: Boolean, default: false },
+  isExpressFrameGenerationRequest: { type: Boolean, default: false },
   expireAt: {
     type: Date,
     default: Date.now,

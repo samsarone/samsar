@@ -262,6 +262,38 @@ const DEFAULT_ADVANCED_OPTIONS = Object.freeze({
   limit_single_narrator: false,
   add_narrator_avatar: false,
 });
+const VIDGENIE_PREFERENCES_STORAGE_KEY = 'vidgeniePreferencesV1';
+
+function readVidgeniePreferences() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(VIDGENIE_PREFERENCES_STORAGE_KEY) || '{}');
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function persistVidgeniePreferences(updates) {
+  try {
+    localStorage.setItem(
+      VIDGENIE_PREFERENCES_STORAGE_KEY,
+      JSON.stringify({ ...readVidgeniePreferences(), ...updates })
+    );
+  } catch {
+    // Settings persistence should never prevent generation (for example in private mode).
+  }
+}
+
+function readPersistedAdvancedOptions() {
+  const saved = readVidgeniePreferences().advancedOptions;
+  if (!saved || typeof saved !== 'object' || Array.isArray(saved)) {
+    return { ...DEFAULT_ADVANCED_OPTIONS };
+  }
+  return Object.keys(DEFAULT_ADVANCED_OPTIONS).reduce((options, key) => {
+    if (Object.prototype.hasOwnProperty.call(saved, key)) options[key] = saved[key];
+    return options;
+  }, { ...DEFAULT_ADVANCED_OPTIONS });
+}
 const DEFAULT_POST_PROCESSING_FORM = Object.freeze({
   outroCtaType: OUTRO_CTA_TYPE_QR,
   ctaUrl: '',
@@ -2966,8 +2998,14 @@ export default function OneshotEditor() {
   );
   const promptCounterClass =
     promptCharacterCount >= VIDGENIE_PROMPT_MAX_LENGTH ? 'text-amber-500' : mutedText;
-  const [generationMode, setGenerationMode] = useState('T2V');
-  const [generationStepMode, setGenerationStepMode] = useState(GENERATION_STEP_MODE_ONE_STEP);
+  const [generationMode, setGenerationMode] = useState(() =>
+    readVidgeniePreferences().generationMode === 'I2V' ? 'I2V' : 'T2V'
+  );
+  const [generationStepMode, setGenerationStepMode] = useState(() =>
+    readVidgeniePreferences().generationStepMode === GENERATION_STEP_MODE_TWO_STEP
+      ? GENERATION_STEP_MODE_TWO_STEP
+      : GENERATION_STEP_MODE_ONE_STEP
+  );
   const [isJsonMode, setIsJsonMode] = useState(false);
   const [jsonInputText, setJsonInputText] = useState('');
   const [isJsonInputDirty, setIsJsonInputDirty] = useState(false);
@@ -3606,19 +3644,29 @@ export default function OneshotEditor() {
     return match || languageOptions[0];
   }, [languageOptions, language]);
 
-  const [selectedLanguageOption, setSelectedLanguageOption] = useState(
-    () => defaultLanguageOption
-  );
-  const [enableSubtitles, setEnableSubtitles] = useState(DEFAULT_VIDGENIE_SUBTITLES_ENABLED);
+  const [selectedLanguageOption, setSelectedLanguageOption] = useState(() => {
+    const saved = readVidgeniePreferences().audioLanguage;
+    return languageOptions.find((option) => option.value === saved) || defaultLanguageOption;
+  });
+  const [enableSubtitles, setEnableSubtitles] = useState(() => {
+    const saved = readVidgeniePreferences().enableSubtitles;
+    return typeof saved === 'boolean' ? saved : DEFAULT_VIDGENIE_SUBTITLES_ENABLED;
+  });
   const [selectedSubtitleLanguageOption, setSelectedSubtitleLanguageOption] = useState(
-    () => subtitleLanguageOptions[0]
+    () => {
+      const saved = readVidgeniePreferences().subtitleLanguage;
+      return subtitleLanguageOptions.find((option) => option.value === saved)
+        || subtitleLanguageOptions[0];
+    }
   );
-  const [isAdvancedOpen, setIsAdvancedOpen] = useState(false);
-  const [advancedOptions, setAdvancedOptions] = useState(() => ({
-    ...DEFAULT_ADVANCED_OPTIONS,
-  }));
+  const [isAdvancedOpen, setIsAdvancedOpen] = useState(
+    () => readVidgeniePreferences().isAdvancedOpen === true
+  );
+  const [advancedOptions, setAdvancedOptions] = useState(readPersistedAdvancedOptions);
   const [selectedInferenceModel, setSelectedInferenceModel] = useState(() =>
-    getInferenceModelOption(user?.selectedInferenceModel)
+    getInferenceModelOption(
+      readVidgeniePreferences().inferenceModel || user?.selectedInferenceModel
+    )
   );
   const {
     isDockerInstall: isDockerInferenceModelFilteringEnabled,
@@ -3650,7 +3698,9 @@ export default function OneshotEditor() {
   const isDockerInferenceUnavailable =
     isDockerInferenceModelFilteringEnabled &&
     (isInferenceModelAvailabilityLoading || !hasConfiguredInferenceModels);
-  const [selectedCustomAdapterEndpointId, setSelectedCustomAdapterEndpointId] = useState('');
+  const [selectedCustomAdapterEndpointId, setSelectedCustomAdapterEndpointId] = useState(
+    () => readVidgeniePreferences().customAdapterEndpointId || ''
+  );
 
   const updateAdvancedOption = useCallback((key, value) => {
     setAdvancedOptions((prev) => {
@@ -3676,6 +3726,7 @@ export default function OneshotEditor() {
     setSelectedInferenceModel((current) => {
       const targetModel =
         sessionInferenceModel ||
+        readVidgeniePreferences().inferenceModel ||
         user?.selectedInferenceModel ||
         current?.value ||
         DEFAULT_INFERENCE_MODEL;
@@ -3803,8 +3854,11 @@ export default function OneshotEditor() {
     const saved = localStorage.getItem('defaultVidGPTImageGenerationModel');
     const foundModel = stageImageModels.find((m) => m.value === saved) || stageImageModels[0];
     if (foundModel?.imageStyles?.length) {
-      const firstStyle = foundModel.imageStyles[0];
-      return { label: firstStyle, value: firstStyle };
+      const savedStyle = readVidgeniePreferences().imageStyle;
+      const style = foundModel.imageStyles.includes(savedStyle)
+        ? savedStyle
+        : foundModel.imageStyles[0];
+      return { label: style, value: style };
     }
     return null;
   });
@@ -3925,7 +3979,10 @@ export default function OneshotEditor() {
   }, [generationMode, imageListVideoModels]);
 
   // Video-model subtype (Pixverse or otherwise)
-  const [selectedVideoModelSubType, setSelectedVideoModelSubType] = useState(null);
+  const [selectedVideoModelSubType, setSelectedVideoModelSubType] = useState(() => {
+    const saved = readVidgeniePreferences().videoModelSubType;
+    return saved ? { label: saved, value: saved } : null;
+  });
   useEffect(() => {
     if (selectedVideoModel?.value?.startsWith('PIXVERSE')) {
       if (!selectedVideoModelSubType) {
@@ -4003,6 +4060,34 @@ export default function OneshotEditor() {
       localStorage.setItem('defaultVidGPTDuration', selectedDurationOption.value.toString());
     }
   }, [selectedDurationOption]);
+
+  useEffect(() => {
+    persistVidgeniePreferences({
+      generationMode,
+      generationStepMode,
+      audioLanguage: selectedLanguageOption?.value || 'auto',
+      enableSubtitles,
+      subtitleLanguage: selectedSubtitleLanguageOption?.value || '',
+      isAdvancedOpen,
+      advancedOptions,
+      inferenceModel: selectedInferenceModel?.value || '',
+      customAdapterEndpointId: selectedCustomAdapterEndpointId,
+      imageStyle: selectedImageStyle?.value || '',
+      videoModelSubType: selectedVideoModelSubType?.value || '',
+    });
+  }, [
+    advancedOptions,
+    enableSubtitles,
+    generationMode,
+    generationStepMode,
+    isAdvancedOpen,
+    selectedCustomAdapterEndpointId,
+    selectedImageStyle,
+    selectedInferenceModel,
+    selectedLanguageOption,
+    selectedSubtitleLanguageOption,
+    selectedVideoModelSubType,
+  ]);
 
   // ─────────────────────────────────────────────────────────
   //  Credits / disable form

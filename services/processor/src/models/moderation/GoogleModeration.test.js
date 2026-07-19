@@ -2,11 +2,32 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 const {
+  buildGoogleModerationInferenceReceipt,
   extractGeminiModerationPayload,
   getGoogleModerationCredentialOptions,
   normalizeGeminiModerationPayload,
   normalizeGoogleModerationResponse,
 } = await import('./GoogleModeration.js');
+
+test('buildGoogleModerationInferenceReceipt exposes every paid Vertex token counter', () => {
+  const usageMetadata = {
+    promptTokenCount: 120,
+    candidatesTokenCount: 18,
+    thoughtsTokenCount: 7,
+    cachedContentTokenCount: 20,
+  };
+
+  assert.deepEqual(buildGoogleModerationInferenceReceipt({
+    modelVersion: 'gemini-3.1-pro-preview-20260701',
+    usageMetadata,
+  }, { model: 'gemini-3.1-pro-preview', attempt: 3 }), {
+    stage: 'moderation',
+    attempt: 3,
+    model: 'gemini-3.1-pro-preview-20260701',
+    provider: 'google',
+    usageMetadata,
+  });
+});
 
 test('extractGeminiModerationPayload parses Gemini JSON output', () => {
   assert.deepEqual(extractGeminiModerationPayload({

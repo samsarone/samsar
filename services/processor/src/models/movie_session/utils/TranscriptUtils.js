@@ -477,6 +477,34 @@ function validateNarrativeDuration(requestedDuration, actualDuration) {
   ];
 }
 
+function validateTextToVideoNarrativeContent(scenes, sounds) {
+  const errors = [];
+
+  scenes.forEach((scene, sceneIndex) => {
+    if (typeof scene?.visual !== 'string' || !scene.visual.trim()) {
+      errors.push(`Scene ${sceneIndex} must include a non-empty visual.`);
+    }
+  });
+
+  sounds.forEach((sound, soundIndex) => {
+    if (sound?.type !== 'speech' && sound?.type !== 'sound_effect') {
+      return;
+    }
+    if (typeof sound?.audio === 'string' && sound.audio.trim()) {
+      return;
+    }
+
+    const sceneIndex = Number.isInteger(Number(sound?.sceneIndex))
+      ? Number(sound.sceneIndex)
+      : 'unknown';
+    errors.push(
+      `Sound ${soundIndex} for scene ${sceneIndex} must include non-empty audio.`,
+    );
+  });
+
+  return errors;
+}
+
 export function validateImageToVideoNarrative(narrativeJson, numScenes, model, framesPerSecond = undefined) {
   if (!Array.isArray(narrativeJson?.scenes)) {
     return { valid: false, errors: ['Missing or invalid `scenes` array.'], narrativeJson: { scenes: [], sounds: [] } };
@@ -528,6 +556,7 @@ export function validateTextToVideoNarrative(narrativeJson, model, framesPerSeco
   sounds = backfillMissingSpeechGenders(scenes, sounds);
 
   const errors = [
+    ...validateTextToVideoNarrativeContent(scenes, sounds),
     ...validateSpeechGenders(scenes, sounds),
     ...validateNoSpeechSoundEffectSceneConflicts(sounds),
   ];

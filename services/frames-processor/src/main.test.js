@@ -31,3 +31,40 @@ test('frame generation failure payload works without a resolved layer index', ()
   assert.equal(setPayload['layers.-1.frameGenerationPending'], undefined);
   assert.equal(setPayload['expressGenerationStatus.frame_generation'], 'FAILED');
 });
+
+test('branched frame failure is scoped to one render path and preserves overall pending state', () => {
+  const setPayload = __testOnly__.buildBranchFrameGenerationFailureSet({
+    pathIndex: 1,
+    pathSequenceIndex: 2,
+    message: 'Branch frame failed',
+    hasRemainingFrameGenerations: true,
+    timeline: [
+      {
+        sequenceIndex: 0,
+        frameGenerationPending: false,
+        frameGenerationStatus: 'COMPLETED',
+        frames: ['/frame-0.png'],
+      },
+      {
+        sequenceIndex: 1,
+        frameGenerationPending: true,
+        frameGenerationStatus: 'GENERATING',
+      },
+      {
+        sequenceIndex: 2,
+        frameGenerationPending: true,
+        frameGenerationStatus: 'GENERATING',
+      },
+    ],
+  });
+
+  assert.equal(setPayload.frameGenerationPending, true);
+  assert.equal(setPayload['branchRenderPaths.1.frameGenerationStatus'], 'FAILED');
+  assert.equal(setPayload['branchRenderPaths.1.frameGenerationPending'], false);
+  assert.equal(setPayload['branchRenderPaths.1.timeline'][0].frameGenerationStatus, 'COMPLETED');
+  assert.equal(setPayload['branchRenderPaths.1.timeline'][1].frameGenerationStatus, 'CANCELLED');
+  assert.equal(setPayload['branchRenderPaths.1.timeline'][2].frameGenerationStatus, 'FAILED');
+  assert.equal(setPayload['branchRenderPaths.1.timeline'][2].frameGenerationError, 'Branch frame failed');
+  assert.equal(setPayload['branchRenderPaths.1.timeline'][2].error, 'Branch frame failed');
+  assert.equal(setPayload['expressGenerationStatus.status'], 'FAILED');
+});

@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
+  buildDockerFinalVideoQueueRepairBranchPathPatch,
   buildDockerFinalVideoQueueRepairSessionPatch,
   isDockerLocalFinalVideoQueueRepairEnabled,
   shouldRepairMissingFinalVideoRequest,
@@ -75,5 +76,35 @@ test('session patch marks frames done and final render pending', () => {
     expressGenerationError: null,
     'expressGenerationStatus.frame_generation': 'COMPLETED',
     'expressGenerationStatus.video_generation': 'PENDING',
+  });
+});
+
+test('repairs unfinished branched render paths even after another path has a result', () => {
+  const branchSession = readySession({
+    narrativeType: 'branched',
+    branchRenderPaths: [
+      {
+        pathId: 'root.1',
+        frameGenerationStatus: 'COMPLETED',
+        videoGenerationStatus: 'COMPLETED',
+        videoLink: 'assets_v2/video/root.1.mp4',
+        timeline: [{ duration: 4.8, frames: ['0.png'] }],
+      },
+      {
+        pathId: 'root.2',
+        frameGenerationStatus: 'COMPLETED',
+        videoGenerationStatus: 'PENDING',
+        timeline: [{ duration: 4.8, frames: ['0.png'] }],
+      },
+    ],
+    videoLink: 'assets_v2/video/root.1.mp4',
+  });
+
+  assert.equal(shouldRepairMissingFinalVideoRequest(branchSession, { CURRENT_ENV: 'docker' }), true);
+  assert.deepEqual(buildDockerFinalVideoQueueRepairBranchPathPatch(), {
+    videoGenerationPending: true,
+    videoGenerationStatus: 'PENDING',
+    videoGenerationError: null,
+    videoGenerationCompletedAt: null,
   });
 });

@@ -3,6 +3,12 @@ import axios from 'axios';
 import ExternalUser from "./schema/ExternalUser.js";
 import ExternalUserRequest from "./schema/ExternalUserRequest.js";
 import VideoSession from "./schema/VideoSession.js";
+import {
+  buildBranchDeliveryFields,
+  getDefaultBranchResult,
+  isCompleteBranchDelivery,
+  isBranchedVideoSession,
+} from './utils/BranchRenderPaths.js';
 
 const API_SERVER = process.env.API_SERVER;
 
@@ -15,7 +21,86 @@ function normalizeExternalString(value) {
   return trimmed || null;
 }
 
+export function buildExternalRequestIdentityFields(sessionData = {}, sessionId = null) {
+  const upstreamSessionId = normalizeExternalString(
+    typeof sessionId === 'string' ? sessionId : sessionId?.toString?.(),
+  );
+  const externalRequestId = normalizeExternalString(sessionData?.externalRequestId);
+  const publicRequestId = externalRequestId || upstreamSessionId;
+  if (!publicRequestId) {
+    return {};
+  }
+
+  return {
+    request_id: publicRequestId,
+    session_id: publicRequestId,
+    ...(externalRequestId
+      ? {
+        external_request_id: externalRequestId,
+        external_session_id: externalRequestId,
+        ...(upstreamSessionId ? { upstream_session_id: upstreamSessionId } : {}),
+      }
+      : {}),
+  };
+}
+
+export function normalizeBranchDeliveryFieldsForTerminalStatus(
+  branchDeliveryFields,
+  status,
+) {
+  if (!branchDeliveryFields) {
+    return null;
+  }
+
+  const normalizedFields = { ...branchDeliveryFields };
+  if (status !== 'COMPLETED') {
+    delete normalizedFields.result_urls;
+  }
+  return normalizedFields;
+}
+
+export function buildExternalSettlementResponsePayload({
+  previousResponsePayload = {},
+  status,
+  resolvedResultUrl = null,
+  resolvedErrorMessage = null,
+  branchDeliveryFields = null,
+  branchedSession = false,
+}) {
+  const normalizedBranchDeliveryFields = normalizeBranchDeliveryFieldsForTerminalStatus(
+    branchDeliveryFields,
+    status,
+  );
+  const responsePayload = {
+    ...(previousResponsePayload || {}),
+    status,
+    ...(resolvedResultUrl ? { result_url: resolvedResultUrl } : {}),
+    ...(normalizedBranchDeliveryFields || {}),
+    ...(resolvedErrorMessage ? { message: resolvedErrorMessage } : {}),
+  };
+
+  if (branchedSession) {
+    if (status === 'COMPLETED') {
+      delete responsePayload.message;
+      delete responsePayload.error;
+    } else {
+      delete responsePayload.result_url;
+      delete responsePayload.result_urls;
+      delete responsePayload.videoLink;
+      delete responsePayload.video_link;
+      delete responsePayload.remoteURL;
+      delete responsePayload.remote_url;
+    }
+  }
+
+  return responsePayload;
+}
+
 function resolveSessionResultUrl(sessionData) {
+  if (isBranchedVideoSession(sessionData)) {
+    return getDefaultBranchResult(sessionData, { apiServer: API_SERVER })?.result_url || null;
+  }
+
   if (sessionData?.remoteURL) {
     return sessionData.remoteURL;
   }
@@ -37,6 +122,7 @@ async function syncExternalRequestSettlement({
   status,
   creditsRefunded = 0,
   errorMessage = null,
+  branchDeliveryFields: suppliedBranchDeliveryFields = null,
 }) {
   if (!sessionData?.isExternalUserRequest || !sessionData?.externalRequestUserId) {
     return null;
@@ -95,12 +181,27 @@ async function syncExternalRequestSettlement({
     );
   }
 
+  const branchedSession = isBranchedVideoSession(sessionData);
   const resolvedResultUrl = status === 'COMPLETED'
     ? normalizeExternalString(resolveSessionResultUrl(sessionData)) || requestRecord.resultUrl || null
-    : requestRecord.resultUrl || null;
+    : branchedSession
+      ? null
+      : requestRecord.resultUrl || null;
   const resolvedErrorMessage = status === 'FAILED' || status === 'CANCELLED'
     ? normalizeExternalString(errorMessage) || requestRecord.errorMessage || 'Video generation failed'
     : null;
+  const branchDeliveryFields = suppliedBranchDeliveryFields || buildBranchDeliveryFields(
+    sessionData,
+    { apiServer: API_SERVER },
+  );
+  const responsePayload = buildExternalSettlementResponsePayload({
+    previousResponsePayload: requestRecord.responsePayload,
+    status,
+    resolvedResultUrl,
+    resolvedErrorMessage,
+    branchDeliveryFields,
+    branchedSession,
+  });
 
   return ExternalUserRequest.findByIdAndUpdate(
     requestRecord._id,
@@ -114,12 +215,7 @@ async function syncExternalRequestSettlement({
             ? requestRecord.remainingCreditsSnapshot ?? null
             : Number(externalUser.generationCredits),
         errorMessage: resolvedErrorMessage,
-        responsePayload: {
-          ...(requestRecord.responsePayload || {}),
-          status,
-          ...(resolvedResultUrl ? { result_url: resolvedResultUrl } : {}),
-          ...(resolvedErrorMessage ? { message: resolvedErrorMessage } : {}),
-        },
+        responsePayload,
       },
     },
     { new: true },
@@ -133,7 +229,14 @@ export async function processSessionCompletionSuccess(sessionId) {
 
   const sessionData = await VideoSession.findOne({ _id: sessionId });
   if (!sessionData) {
-    return;
+    return { ok: false, reason: 'SESSION_NOT_FOUND' };
+  }
+  const branchDeliveryFields = buildBranchDeliveryFields(
+    sessionData,
+    { apiServer: API_SERVER },
+  );
+  if (isBranchedVideoSession(sessionData) && !isCompleteBranchDelivery(branchDeliveryFields)) {
+    return { ok: false, deferred: true, reason: 'BRANCH_OUTPUTS_NOT_READY' };
   }
 
   const existingReceipt = sessionData.sessionReceipt || {};
@@ -162,6 +265,7 @@ export async function processSessionCompletionSuccess(sessionId) {
     sessionId,
     status: 'COMPLETED',
     creditsRefunded: 0,
+    branchDeliveryFields,
   });
 
   if (sessionData.externalWebhook) {
@@ -169,16 +273,16 @@ export async function processSessionCompletionSuccess(sessionId) {
 
     const externalWebhookUrl = sessionData.externalWebhook;
     const videoURL = resolveSessionResultUrl(sessionData);
+    const requestIdentity = buildExternalRequestIdentityFields(sessionData, sessionId);
 
     const webhookPayload = {
-      request_id: sessionId,
-      session_id: sessionId,
+      ...requestIdentity,
       status: 'COMPLETED',
       result_url: videoURL,
+      ...(branchDeliveryFields || {}),
       video: {
         url: videoURL,
-        request_id: sessionId,
-        session_id: sessionId,
+        ...requestIdentity,
       }
     }
 
@@ -187,6 +291,8 @@ export async function processSessionCompletionSuccess(sessionId) {
 
 
   }
+
+  return { ok: true };
 
 }
 
@@ -234,14 +340,22 @@ export async function processSessionCompletionFailure(sessionId) {
 
     const externalWebhookUrl = sessionData.externalWebhook;
     const errorMessage = sessionData.expressGenerationError || 'Video generation failed';
+    const branchDeliveryFields = buildBranchDeliveryFields(
+      sessionData,
+      { apiServer: API_SERVER },
+    );
+    const failureBranchDeliveryFields = normalizeBranchDeliveryFieldsForTerminalStatus(
+      branchDeliveryFields,
+      'FAILED',
+    );
+    const requestIdentity = buildExternalRequestIdentityFields(sessionData, sessionId);
     const webhookPayload = {
-      request_id: sessionId,
-      session_id: sessionId,
+      ...requestIdentity,
       status: 'FAILED',
+      ...(failureBranchDeliveryFields || {}),
       video: {
         url: null,
-        request_id: sessionId,
-        session_id: sessionId,
+        ...requestIdentity,
       },
       error: {
         message: errorMessage,

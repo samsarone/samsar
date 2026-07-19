@@ -3,7 +3,10 @@ import ExpressGenerationBuilderRequest from '../../schema/ExpressGenerationBuild
 import { randomUUID } from 'crypto';
 import { getDBConnectionString } from "../DBString.js";
 import { assertAPIKeyUsageLimitForDebit } from "../GenerationCredits.js";
-import { createVidGPTSession } from "../movie_session/VidGPT.js";
+import {
+  createVidGPTSession,
+  createVidGPTSessionFromNarrativeArtifacts,
+} from "../movie_session/VidGPT.js";
 import User from "../../schema/User.js";
 import ExternalUser from "../../schema/ExternalUser.js";
 import axios from "axios";
@@ -65,7 +68,12 @@ import {
   resolveSubtitleLanguageOption,
 } from '../movie_session/SubtitleLanguage.js';
 import { getMaxDurationForModelForScenes } from '../movie_session/utils/ModelUtils.js';
-import { estimateExpressVideoCreditsForPreflight } from '../ExpressVideoStageBilling.js';
+import {
+  EXPRESS_VIDEO_BILLING_STAGES,
+  buildInitialReusedNarrativeExpressVideoCreditCharges,
+  estimateExpressVideoCreditsForPreflight,
+} from '../ExpressVideoStageBilling.js';
+import { buildBranchedVideoSessionPlan } from '../movie_session/branching/BranchedVideoSessionPlan.js';
 import { resolveFramesPerSecond } from '../../utils/FpsUtils.js';
 import {
   getCurrentAPIKeyUsageContext,
@@ -309,6 +317,8 @@ async function assertSufficientExpressVideoCreditsForPreflight({
   customAdapters = null,
   customAdapterOperationUsage = null,
   samsarExternalProviderStages = null,
+  expressGenerationNarrativeReused = false,
+  excludedStageKeys = [],
 }) {
   const estimate = estimateExpressVideoCreditsForPreflight({
     durationSeconds,
@@ -321,6 +331,8 @@ async function assertSufficientExpressVideoCreditsForPreflight({
     customAdapters,
     customAdapterOperationUsage,
     samsarExternalProviderStages,
+    expressGenerationNarrativeReused,
+    excludedStageKeys,
   });
   const requiredCredits = Math.ceil(Number(estimate.totalCredits) || 0);
   const availableCredits = await resolveExpressPreflightCreditBalance(userId, payload);
@@ -446,9 +458,82 @@ export async function requestCreateNarrative(userId, payload, webhookUrl) {
   };
 }
 
+export function resolveTextToVideoPreflightBillingDuration({
+  requestedDuration,
+  estimatedOutroDuration = 0,
+  preparedNarrativeArtifacts = null,
+  videoGenerationModel = 'RUNWAYML',
+  framesPerSecond = 24,
+} = {}) {
+  const normalizedRequestedDuration = Number(requestedDuration);
+  const sourceDuration = Number.isFinite(normalizedRequestedDuration) &&
+    normalizedRequestedDuration > 0
+    ? normalizedRequestedDuration
+    : 0;
+  const normalizedOutroDuration = Number(estimatedOutroDuration);
+  const outroDuration = Number.isFinite(normalizedOutroDuration) &&
+    normalizedOutroDuration > 0
+    ? normalizedOutroDuration
+    : 0;
+  const narrativeType = typeof preparedNarrativeArtifacts?.narrativeType === 'string'
+    ? preparedNarrativeArtifacts.narrativeType.trim().toLowerCase()
+    : '';
+
+  if (narrativeType !== 'branched') {
+    return sourceDuration + outroDuration;
+  }
+
+  const preflightBranchPlan = buildBranchedVideoSessionPlan(
+    preparedNarrativeArtifacts.movieResourceList,
+    {
+      branchingMeta: preparedNarrativeArtifacts.branchingMeta,
+      videoGenerationModel,
+      framesPerSecond,
+      requestedDuration: sourceDuration,
+    },
+  );
+  return preflightBranchPlan.cumulativeLayerDuration + outroDuration;
+}
+
 export async function requestCreateVideo(userId, payload = {}, webhookUrl) {
+  return requestCreateVideoInternal(userId, payload, webhookUrl);
+}
+
+export async function requestCreateVideoFromNarrativeArtifacts(
+  userId,
+  preparedPayload = {},
+  webhookUrl,
+) {
+  const {
+    sourceNarrativeRequestId,
+    sourceNarrativeType = 'singular',
+    narrativeType = sourceNarrativeType,
+    themeJson,
+    narrativeJson,
+    movieResourceList,
+    branchingMeta = null,
+    ...videoPayload
+  } = preparedPayload || {};
+
+  return requestCreateVideoInternal(userId, videoPayload, webhookUrl, {
+    preparedNarrativeArtifacts: {
+      sourceNarrativeRequestId,
+      narrativeType,
+      themeJson,
+      narrativeJson,
+      movieResourceList,
+      branchingMeta,
+    },
+  });
+}
+
+async function requestCreateVideoInternal(userId, payload = {}, webhookUrl, {
+  preparedNarrativeArtifacts = null,
+} = {}) {
 
   await getDBConnectionString();
+
+  const reusesNarrativeArtifacts = Boolean(preparedNarrativeArtifacts);
 
   const { language = 'auto', languageString: providedLanguageString } = payload || {};
   const isStepVideoGeneration = payload.isStepVideoGeneration === true;
@@ -537,19 +622,31 @@ export async function requestCreateVideo(userId, payload = {}, webhookUrl) {
     imageModel: customModelOverrides.payload.image_model || customModelOverrides.payload.imageModel || 'GPTIMAGEONE',
     videoModel: customModelOverrides.payload.video_model || customModelOverrides.payload.videoModel || 'RUNWAYML',
   });
-  const estimatedTextDuration = normalizeTextToVideoDurationSeconds(payload.duration) +
-    (
-      generatedOutroOptions.generate_outro_image === true ||
-      typeof outroOptions.outro_image_url === 'string'
-        ? OUTRO_LAYER_DURATION_SECONDS
-        : 0
-    );
+  const requestedTextDuration = normalizeTextToVideoDurationSeconds(payload.duration);
+  const estimatedOutroDuration = generatedOutroOptions.generate_outro_image === true ||
+    typeof outroOptions.outro_image_url === 'string'
+    ? OUTRO_LAYER_DURATION_SECONDS
+    : 0;
+  const selectedVideoModel =
+    customModelOverrides.payload.video_model ||
+    customModelOverrides.payload.videoModel ||
+    'RUNWAYML';
+  const estimatedTextDuration = resolveTextToVideoPreflightBillingDuration({
+    requestedDuration: requestedTextDuration,
+    estimatedOutroDuration,
+    preparedNarrativeArtifacts,
+    videoGenerationModel: selectedVideoModel,
+    framesPerSecond: Number(
+      customModelOverrides.payload.framesPerSecond ||
+      customModelOverrides.payload.frames_per_second,
+    ) || 24,
+  });
   await assertSufficientExpressVideoCreditsForPreflight({
     userId,
     payload,
     routeType: 'text_to_video',
     durationSeconds: estimatedTextDuration,
-    videoModel: customModelOverrides.payload.video_model || customModelOverrides.payload.videoModel || 'RUNWAYML',
+    videoModel: selectedVideoModel,
     imageModel: customModelOverrides.payload.image_model || customModelOverrides.payload.imageModel || 'GPTIMAGEONE',
     backingTrackModel: requestedBackingTrackModel,
     expressGenerationType: 'TEXT_TO_VIDEO',
@@ -557,6 +654,10 @@ export async function requestCreateVideo(userId, payload = {}, webhookUrl) {
     customAdapters,
     customAdapterOperationUsage: customModelOverrides.operationUsage,
     samsarExternalProviderStages,
+    expressGenerationNarrativeReused: reusesNarrativeArtifacts,
+    excludedStageKeys: reusesNarrativeArtifacts
+      ? [EXPRESS_VIDEO_BILLING_STAGES.NARRATIVE_INFERENCE]
+      : [],
   });
 
   const sessionId = await getOrCreateSessionId(userId, payload);
@@ -571,7 +672,7 @@ export async function requestCreateVideo(userId, payload = {}, webhookUrl) {
     language: normalizedLanguage,
     languageString,
     requestType: 'API',
-    creditSource: 'text_to_video',
+    creditSource: reusesNarrativeArtifacts ? 'narrative_to_video' : 'text_to_video',
     enableSubtitles,
     subtitleLanguage: subtitleLanguageOption.subtitleLanguage,
     subtitleLanguageString: subtitleLanguageOption.subtitleLanguageString,
@@ -604,6 +705,7 @@ export async function requestCreateVideo(userId, payload = {}, webhookUrl) {
     languageString,
     prompt: normalizedPayload.prompt,
     requestedDuration: normalizedPayload.duration,
+    billingDurationSeconds: estimatedTextDuration,
     videoTone: normalizedPayload.tone || normalizedPayload.videoTone,
     enableSubtitles,
     subtitleLanguage: subtitleLanguageOption.subtitleLanguage,
@@ -638,11 +740,16 @@ export async function requestCreateVideo(userId, payload = {}, webhookUrl) {
     apiKeyUsage: apiKeyUsageContext,
     builderRouteType: 'text_to_video',
     builderStatus: 'QUEUED',
-    builderSessionSubType: 'video_create',
+    builderSessionSubType: reusesNarrativeArtifacts
+      ? 'narrative_video_create'
+      : 'video_create',
     optionalComponentWarnings,
+    preparedNarrativeArtifacts,
   });
 
-  await createUnifiedSessionAndUpdateWebhook(userId, normalizedPayload, webhookUrl);
+  await createUnifiedSessionAndUpdateWebhook(userId, normalizedPayload, webhookUrl, {
+    preparedNarrativeArtifacts,
+  });
 
 
   return {
@@ -652,7 +759,9 @@ export async function requestCreateVideo(userId, payload = {}, webhookUrl) {
 }
 
 
-async function createUnifiedSessionAndUpdateWebhook(userId, payload, webhookUrl) {
+async function createUnifiedSessionAndUpdateWebhook(userId, payload, webhookUrl, {
+  preparedNarrativeArtifacts = null,
+} = {}) {
   await getDBConnectionString();
 
   const {
@@ -793,6 +902,7 @@ async function createUnifiedSessionAndUpdateWebhook(userId, payload, webhookUrl)
     ...(customAdapterFallbacks ? { customAdapterFallbacks } : {}),
     ...(customAdapterOperationUsage ? { customAdapterOperationUsage } : {}),
     ...(samsarExternalProviderStages ? { samsarExternalProviderStages } : {}),
+    ...(preparedNarrativeArtifacts ? { preparedNarrativeArtifacts } : {}),
 
   }
   if (subtitleFont) {
@@ -802,6 +912,10 @@ async function createUnifiedSessionAndUpdateWebhook(userId, payload, webhookUrl)
     finalPayload.speakerFont = speakerFont;
   }
 
+  const builderSessionSubType = preparedNarrativeArtifacts
+    ? 'narrative_video_create'
+    : 'video_create';
+
   await upsertGlobalSessionBeforeScheduling({
     sessionId: payload.sessionID,
     sessionType: 'video',
@@ -810,10 +924,16 @@ async function createUnifiedSessionAndUpdateWebhook(userId, payload, webhookUrl)
     userId,
     status: 'PENDING',
     requestType: 'API',
-    sessionSubType: 'video_create',
-  }, { routeType: 'text_to_video', sessionSubType: 'video_create' });
+    sessionSubType: builderSessionSubType,
+  }, { routeType: 'text_to_video', sessionSubType: builderSessionSubType });
 
-  await scheduleTextToVideoBuilderSession(payload.sessionID, userId, finalPayload, webhookUrl, 'video_create');
+  await scheduleTextToVideoBuilderSession(
+    payload.sessionID,
+    userId,
+    finalPayload,
+    webhookUrl,
+    builderSessionSubType,
+  );
 
   return {
     request_id: payload.sessionID,
@@ -822,11 +942,20 @@ async function createUnifiedSessionAndUpdateWebhook(userId, payload, webhookUrl)
 }
 
 
-async function createVidGPTSessionAndUpdateWebhook(userId, payload, webhookUrl) {
+async function createVidGPTSessionAndUpdateWebhook(
+  userId,
+  payload,
+  webhookUrl,
+  sessionSubType = 'video_create',
+) {
 
   const sessionId = payload.sessionID;
   if (webhookUrl) {
     await VideoSession.findByIdAndUpdate(sessionId, { externalWebhook: webhookUrl });
+  }
+  if (sessionSubType === 'narrative_video_create') {
+    await createVidGPTSessionFromNarrativeArtifacts(userId, payload);
+    return;
   }
   await createVidGPTSession(userId, payload);
 
@@ -1561,7 +1690,12 @@ async function runPersistedTextToVideoBuilderSession(sessionId) {
       status: 'RUNNING',
       sessionSubType: job.sessionSubType,
     });
-    await createVidGPTSessionAndUpdateWebhook(job.userId, job.payload, job.webhookUrl);
+    await createVidGPTSessionAndUpdateWebhook(
+      job.userId,
+      job.payload,
+      job.webhookUrl,
+      job.sessionSubType,
+    );
     await markExpressGenerationBuilderState(sessionId, {
       routeType: 'text_to_video',
       status: 'COMPLETED',
@@ -2423,6 +2557,7 @@ async function saveVideoSessionRequestMetadata(sessionId, {
   languageString,
   prompt,
   requestedDuration,
+  billingDurationSeconds,
   videoTone,
   enableSubtitles,
   subtitleLanguage,
@@ -2454,6 +2589,7 @@ async function saveVideoSessionRequestMetadata(sessionId, {
   builderStatus,
   builderSessionSubType,
   optionalComponentWarnings,
+  preparedNarrativeArtifacts,
 } = {}) {
   if (!sessionId) {
     return;
@@ -2493,6 +2629,54 @@ async function saveVideoSessionRequestMetadata(sessionId, {
     expressCtaGeneration: expressCtaGeneration === true,
   };
   const normalizedAPIKeyUsage = normalizeAPIKeyUsageContext(apiKeyUsage);
+
+  if (preparedNarrativeArtifacts && typeof preparedNarrativeArtifacts === 'object') {
+    const {
+      sourceNarrativeRequestId,
+      narrativeType,
+      themeJson,
+      narrativeJson,
+      movieResourceList,
+      branchingMeta,
+    } = preparedNarrativeArtifacts;
+    setPayload.sourceNarrativeRequestId = sourceNarrativeRequestId;
+    setPayload.sourceNarrativeType = narrativeType || 'singular';
+    setPayload.narrativeType = narrativeType || 'singular';
+    setPayload.themeJson = themeJson;
+    setPayload.narrativeJson = narrativeJson;
+    setPayload.movieResourceList = movieResourceList;
+    setPayload.branchingMeta = branchingMeta || null;
+    setPayload.parentJsonTheme = JSON.stringify(themeJson);
+    setPayload['expressGenerationStatus.prompt_generation'] = 'COMPLETED';
+    setPayload['expressGenerationStatus.image_generation'] = 'PENDING';
+    setPayload['expressGenerationStatus.audio_generation'] = 'PENDING';
+    setPayload.expressGenerationNarrativeReused = true;
+    const normalizedBillingDuration = Number(billingDurationSeconds);
+    const initialBillingDuration = Number.isFinite(normalizedBillingDuration) &&
+      normalizedBillingDuration > 0
+      ? normalizedBillingDuration
+      : requestedDuration;
+    setPayload.expressGenerationBillingDurationSeconds = initialBillingDuration;
+    if (narrativeType === 'branched') {
+      setPayload.expressGenerationBillingStageDurations = Object.fromEntries(
+        [
+          EXPRESS_VIDEO_BILLING_STAGES.IMAGE_GENERATION,
+          EXPRESS_VIDEO_BILLING_STAGES.SPEECH_GENERATION,
+          EXPRESS_VIDEO_BILLING_STAGES.MUSIC_GENERATION,
+          EXPRESS_VIDEO_BILLING_STAGES.SOUND_EFFECT_GENERATION,
+          EXPRESS_VIDEO_BILLING_STAGES.LIP_SYNC_GENERATION,
+          EXPRESS_VIDEO_BILLING_STAGES.NARRATOR_AVATAR_GENERATION,
+          EXPRESS_VIDEO_BILLING_STAGES.AI_VIDEO_GENERATION,
+          EXPRESS_VIDEO_BILLING_STAGES.PIPELINE,
+        ].map((stageKey) => [stageKey, initialBillingDuration]),
+      );
+    }
+    setPayload.expressGenerationCreditCharges =
+      buildInitialReusedNarrativeExpressVideoCreditCharges(
+        initialBillingDuration,
+        sourceNarrativeRequestId,
+      );
+  }
 
   if (normalizedAPIKeyUsage) {
     setPayload.apiKeyId = normalizedAPIKeyUsage.apiKeyId;

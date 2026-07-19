@@ -32,6 +32,7 @@ import {
   requestExternalSoundEffectVideo,
   requestExternalTextToVideo,
 } from '../../models/api/ExternalVideoAPI.js';
+import { createVideoFromNarrativeRequest } from '../../models/api/NarrativeToVideoAPI.js';
 import {
   buildStepVideoDetailedStatus,
   buildStepVideoStatus,
@@ -641,6 +642,22 @@ function assertCreateExternalUserCredential(authContext) {
   throw error;
 }
 
+function assertNarrativeToVideoCredential(authContext) {
+  if (
+    authContext?.authType === 'api_key' ||
+    authContext?.authType === 'auth_token' ||
+    authContext?.authType === 'app_key'
+  ) {
+    return;
+  }
+
+  const error = new Error(
+    'Use a Samsar API key, user auth token, or APP_KEY for narrative-to-video requests.',
+  );
+  error.status = 403;
+  throw error;
+}
+
 async function assertExternalUserIdentityBelongsToInternalUser({
   internalUserId,
   externalUserPayload,
@@ -1105,6 +1122,31 @@ async function handleExternalTextToVideo(req, res) {
     }
     return res.status(error?.status || error?.response?.status || 500).json({
       message: error?.message || 'Internal server error while creating external text-to-video request.',
+    });
+  }
+}
+
+async function handleExternalNarrativeToVideo(req, res) {
+  try {
+    const authContext = await resolveV2AuthContext(req);
+    assertNarrativeToVideoCredential(authContext);
+    const normalizedPayload = normalizeInputPayload(req);
+    const response = await createVideoFromNarrativeRequest({
+      userId: authContext.internalUserId,
+      // Keep the original envelope so prompt/duration overrides outside a
+      // nested input object cannot be silently discarded.
+      payload: req.body || {},
+      webhookUrl: getWebhookUrlFromStepRequest(req, normalizedPayload),
+      req,
+    });
+    return res.status(200).json(response);
+  } catch (error) {
+    if (error?.code === 'INSUFFICIENT_CREDITS') {
+      return res.status(402).json({ message: 'Insufficient credits.' });
+    }
+    return res.status(error?.status || error?.response?.status || 500).json({
+      message: error?.message ||
+        'Internal server error while creating narrative-to-video request.',
     });
   }
 }
@@ -1626,6 +1668,7 @@ router.get('/health', (req, res) => {
 });
 
 router.post('/external/video/text_to_video', handleExternalTextToVideo);
+router.post('/external/video/narrative_to_video', handleExternalNarrativeToVideo);
 router.post('/external/video/image_to_video', handleExternalImageToVideo);
 router.post('/external/video/lip_sync', handleExternalLipSyncVideo);
 router.post('/external/video/sound_effect', handleExternalSoundEffectVideo);

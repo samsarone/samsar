@@ -518,6 +518,29 @@ test("getModerationForNarrative fails closed after a configured provider error",
   assert.equal(safe, false);
 });
 
+test("getModerationForNarrative propagates receipt observer failures without retrying", async (t) => {
+  t.mock.method(console, "error", () => {});
+  let calls = 0;
+  const observerError = new Error("receipt persistence unavailable");
+  observerError.code = "INFERENCE_USAGE_OBSERVER_FAILED";
+  observerError.inferenceUsageObserverFailed = true;
+
+  await assert.rejects(
+    getModerationForNarrative("prompt", {
+      env: {
+        CURRENT_ENV: "docker",
+        OPENAI_API_KEY: "openai-test-key",
+      },
+      moderationCall: async () => {
+        calls += 1;
+        throw observerError;
+      },
+    }),
+    (error) => error === observerError,
+  );
+  assert.equal(calls, 1);
+});
+
 test("getModerationForNarrative has a caller-level deadline for a provider that never settles", async (t) => {
   t.mock.method(console, "error", () => {});
   const startedAt = Date.now();

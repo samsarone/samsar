@@ -13,10 +13,20 @@ import { updateSendCompletionNotificationToUser } from './utils/NotificationUtil
 import { uploadPublicationThumbnailToCDN, uploadVideoToCDN } from './utils/AWS.js';
 import { installStructuredLogger } from './utils/StructuredLogger.js';
 import {
+  buildDockerFinalVideoQueueRepairBranchPathPatch,
   buildDockerFinalVideoQueueRepairSessionPatch,
   isDockerLocalFinalVideoQueueRepairEnabled,
   shouldRepairMissingFinalVideoRequest,
 } from './utils/DockerFinalVideoQueueRepair.js';
+import {
+  areAllBranchPathVideosComplete,
+  findBranchRenderPath,
+  getDefaultBranchRenderPath,
+  getRepairableBranchRenderPaths,
+  isBranchedVideoSession,
+  normalizeBranchRenderId,
+  resolveBranchRenderContext,
+} from './utils/BranchRenderPlan.js';
 import {
   buildLayerEdgeDuckingAutomationPoints,
   buildAudioVolumeExpression,
@@ -451,14 +461,17 @@ function shouldWaitForTranscriptGeneration(videoSession = {}) {
     return false;
   }
 
-  const speechAudioLayerCount = (videoSession.audioLayers || []).filter(
+  const speechAudioLayerCount = [
+    ...(Array.isArray(videoSession.audioLayers) ? videoSession.audioLayers : []),
+    ...(Array.isArray(videoSession.branchedAudioLayers) ? videoSession.branchedAudioLayers : []),
+  ].filter(
     (layer) => normalizeAudioLayerType(layer?.generationType) === 'speech'
   ).length;
 
   return speechAudioLayerCount > 0;
 }
 
-async function cleanupStaleFrameGenerationsForSession(videoSession = null) {
+async function cleanupStaleFrameGenerationsForSession(videoSession = null, renderPathId = null) {
   const sessionId = videoSession?._id?.toString?.();
   if (!sessionId) {
     return {
@@ -467,8 +480,12 @@ async function cleanupStaleFrameGenerationsForSession(videoSession = null) {
     };
   }
 
-  const pendingFrameGenerations = await FrameGeneration.find({ sessionId })
-    .select('_id layerId')
+  const frameGenerationQuery = { sessionId };
+  if (isBranchedVideoSession(videoSession) && normalizeBranchRenderId(renderPathId)) {
+    frameGenerationQuery.renderPathId = normalizeBranchRenderId(renderPathId);
+  }
+  const pendingFrameGenerations = await FrameGeneration.find(frameGenerationQuery)
+    .select('_id layerId renderPathId pathSequenceIndex')
     .lean();
 
   if (!pendingFrameGenerations.length) {
@@ -485,11 +502,58 @@ async function cleanupStaleFrameGenerationsForSession(videoSession = null) {
       .filter(Boolean)
   );
 
+  const branchTimelineStates = new Map();
+  if (isBranchedVideoSession(videoSession)) {
+    const branchRenderPaths = Array.isArray(videoSession?.branchRenderPaths)
+      ? videoSession.branchRenderPaths
+      : [];
+    for (const branchRenderPath of branchRenderPaths) {
+      const branchPathId = normalizeBranchRenderId(branchRenderPath?.pathId);
+      const branchTimeline = Array.isArray(branchRenderPath?.timeline)
+        ? branchRenderPath.timeline
+        : [];
+      for (let timelineIndex = 0; timelineIndex < branchTimeline.length; timelineIndex += 1) {
+        const timelineEntry = branchTimeline[timelineIndex];
+        const branchLayerId = normalizeBranchRenderId(timelineEntry?.layerId ?? timelineEntry?._id);
+        if (branchPathId && branchLayerId) {
+          const sequenceIndex = Number.isInteger(Number(timelineEntry?.sequenceIndex))
+            ? Number(timelineEntry.sequenceIndex)
+            : timelineIndex;
+          branchTimelineStates.set(`${branchPathId}:${sequenceIndex}:${branchLayerId}`, {
+            pending: timelineEntry?.frameGenerationPending === true,
+            status: String(timelineEntry?.frameGenerationStatus || '').trim().toUpperCase(),
+          });
+        }
+      }
+    }
+  }
+
   const staleFrameGenerationIds = [];
   let blockingFrameGenerationCount = 0;
 
   for (const frameGeneration of pendingFrameGenerations) {
     const layerId = frameGeneration?.layerId?.toString?.();
+    const frameRenderPathId = normalizeBranchRenderId(frameGeneration?.renderPathId);
+    const pathSequenceIndex = Number.isInteger(Number(frameGeneration?.pathSequenceIndex))
+      ? Number(frameGeneration.pathSequenceIndex)
+      : null;
+    const branchTimelineState = pathSequenceIndex === null
+      ? null
+      : branchTimelineStates.get(`${frameRenderPathId}:${pathSequenceIndex}:${layerId}`);
+    if (
+      frameRenderPathId
+      && layerId
+      && branchTimelineState
+    ) {
+      const isTerminalFrameState = ['COMPLETED', 'FAILED', 'CANCELLED']
+        .includes(branchTimelineState.status);
+      if (branchTimelineState.pending || !isTerminalFrameState) {
+        blockingFrameGenerationCount += 1;
+      } else if (frameGeneration?._id) {
+        staleFrameGenerationIds.push(frameGeneration._id);
+      }
+      continue;
+    }
     if (layerId && pendingLayerIdSet.has(layerId)) {
       blockingFrameGenerationCount += 1;
       continue;
@@ -521,7 +585,12 @@ function shouldHaveRenderableLayerFrames(layer = {}) {
   return Number.isFinite(duration) && duration > 0;
 }
 
-async function requeueMissingLayerFrameGeneration(videoSessionId, missingLayers = []) {
+async function requeueMissingLayerFrameGeneration(
+  videoSessionId,
+  missingLayers = [],
+  branchRenderContext = null,
+  renderPlanVersion = null,
+) {
   const uniqueMissingLayers = [];
   const seenLayerIds = new Set();
   for (const missingLayer of missingLayers) {
@@ -544,20 +613,43 @@ async function requeueMissingLayerFrameGeneration(videoSessionId, missingLayers 
     'expressGenerationStatus.frame_generation': 'PENDING',
     'expressGenerationStatus.video_generation': 'PENDING',
   };
-  for (const { layerIndex } of uniqueMissingLayers) {
-    if (!Number.isInteger(layerIndex) || layerIndex < 0) {
-      continue;
+  if (branchRenderContext) {
+    const branchPathPrefix = `branchRenderPaths.${branchRenderContext.pathIndex}`;
+    setPayload[`${branchPathPrefix}.frameGenerationPending`] = true;
+    setPayload[`${branchPathPrefix}.frameGenerationStatus`] = 'PENDING';
+    setPayload[`${branchPathPrefix}.frameGenerationError`] = null;
+    setPayload[`${branchPathPrefix}.videoGenerationPending`] = true;
+    setPayload[`${branchPathPrefix}.videoGenerationStatus`] = 'PENDING';
+    setPayload[`${branchPathPrefix}.videoGenerationError`] = null;
+    for (const { layerIndex, timelineIndex = layerIndex } of uniqueMissingLayers) {
+      if (!Number.isInteger(timelineIndex) || timelineIndex < 0) {
+        continue;
+      }
+      setPayload[`${branchPathPrefix}.timeline.${timelineIndex}.frameGenerationPending`] = true;
+      setPayload[`${branchPathPrefix}.timeline.${timelineIndex}.frames`] = [];
     }
-    setPayload[`layers.${layerIndex}.frameGenerationPending`] = true;
-    setPayload[`layers.${layerIndex}.aiVideoFrameGenerationPending`] = false;
-    setPayload[`layers.${layerIndex}.initFramesGenerated`] = false;
-    setPayload[`layers.${layerIndex}.frames`] = [];
+  } else {
+    for (const { layerIndex } of uniqueMissingLayers) {
+      if (!Number.isInteger(layerIndex) || layerIndex < 0) {
+        continue;
+      }
+      setPayload[`layers.${layerIndex}.frameGenerationPending`] = true;
+      setPayload[`layers.${layerIndex}.aiVideoFrameGenerationPending`] = false;
+      setPayload[`layers.${layerIndex}.initFramesGenerated`] = false;
+      setPayload[`layers.${layerIndex}.frames`] = [];
+    }
   }
 
   await VideoSession.updateOne({ _id: videoSessionId }, { $set: setPayload });
-  await Promise.all(uniqueMissingLayers.map(({ layerId }) =>
+  await Promise.all(uniqueMissingLayers.map(({ layerId, layerIndex, pathSequenceIndex = layerIndex }) =>
     FrameGeneration.updateOne(
-      { sessionId: videoSessionId, layerId },
+      {
+        sessionId: videoSessionId,
+        layerId,
+        ...(branchRenderContext
+          ? { renderPathId: branchRenderContext.renderPathId }
+          : { renderPathId: { $in: [null, ''] } }),
+      },
       {
         $setOnInsert: {
           sessionId: videoSessionId,
@@ -565,6 +657,11 @@ async function requeueMissingLayerFrameGeneration(videoSessionId, missingLayers 
           rowLocked: false,
           isVideoGenerationRequest: true,
           isExpressFrameGenerationRequest: true,
+          ...(branchRenderContext ? {
+            renderPathId: branchRenderContext.renderPathId,
+            renderPlanVersion,
+            pathSequenceIndex,
+          } : {}),
         },
       },
       { upsert: true },
@@ -1363,19 +1460,25 @@ async function repairMissingDockerFinalVideoRequests() {
     frameGenerationPending: { $ne: true },
     expressGenerationFailed: { $ne: true },
     expressGenerationCancelled: { $ne: true },
-    $and: [
+    $or: [
+      { narrativeType: 'branched' },
+      { sourceNarrativeType: 'branched' },
       {
-        $or: [
-          { remoteURL: { $exists: false } },
-          { remoteURL: null },
-          { remoteURL: '' },
-        ],
-      },
-      {
-        $or: [
-          { videoLink: { $exists: false } },
-          { videoLink: null },
-          { videoLink: '' },
+        $and: [
+          {
+            $or: [
+              { remoteURL: { $exists: false } },
+              { remoteURL: null },
+              { remoteURL: '' },
+            ],
+          },
+          {
+            $or: [
+              { videoLink: { $exists: false } },
+              { videoLink: null },
+              { videoLink: '' },
+            ],
+          },
         ],
       },
     ],
@@ -1391,6 +1494,68 @@ async function repairMissingDockerFinalVideoRequests() {
 
     const videoSessionId = videoSession?._id?.toString?.();
     if (!videoSessionId) {
+      continue;
+    }
+
+    if (isBranchedVideoSession(videoSession)) {
+      const isPremium = await resolvePremiumFlagForSession(videoSession);
+      const renderPlanVersion = Number(videoSession?.renderPlanVersion) || 1;
+      const repairablePaths = getRepairableBranchRenderPaths(videoSession);
+      for (const repairPath of repairablePaths) {
+        const renderPathId = normalizeBranchRenderId(repairPath?.pathId);
+        if (!renderPathId) {
+          continue;
+        }
+
+        const existingVideoRequest = await VideoGeneration.findOne({
+          videoSessionId,
+          renderPathId,
+        }).select('_id').lean();
+        if (existingVideoRequest) {
+          continue;
+        }
+
+        const pendingFrameRequest = await FrameGeneration.findOne({
+          sessionId: videoSessionId,
+          renderPathId,
+        }).select('_id').lean();
+        if (pendingFrameRequest) {
+          continue;
+        }
+
+        const repairResult = await VideoGeneration.updateOne(
+          { videoSessionId, renderPathId },
+          {
+            $setOnInsert: {
+              videoSessionId,
+              renderPathId,
+              renderPlanVersion,
+              isPremium,
+              rowLocked: false,
+              expireAt: new Date(),
+            },
+          },
+          { upsert: true },
+        );
+        if (repairResult.upsertedCount > 0) {
+          const pathMatch = findBranchRenderPath(videoSession, renderPathId);
+          if (pathMatch) {
+            const branchPathPatch = buildDockerFinalVideoQueueRepairBranchPathPatch();
+            const setPayload = buildDockerFinalVideoQueueRepairSessionPatch();
+            for (const [key, value] of Object.entries(branchPathPatch)) {
+              setPayload[`branchRenderPaths.${pathMatch.pathIndex}.${key}`] = value;
+            }
+            await VideoSession.updateOne(
+              { _id: videoSession._id },
+              { $set: setPayload },
+            );
+          }
+          console.warn('[video_generator] Requeued missing branched Docker-local final video request', {
+            sessionId: videoSessionId,
+            renderPathId,
+          });
+        }
+      }
       continue;
     }
 
@@ -1466,6 +1631,39 @@ export async function generatePendingVideoRequests() {
         continue;
       }
 
+      const branchedSession = isBranchedVideoSession(videoSession);
+      const requestedRenderPathId = normalizeBranchRenderId(videoRequest?.renderPathId);
+      if (branchedSession && !requestedRenderPathId) {
+        const renderPlanVersion = Number(videoSession?.renderPlanVersion) || 1;
+        const repairablePaths = getRepairableBranchRenderPaths(videoSession);
+        for (const renderPath of repairablePaths) {
+          const renderPathId = normalizeBranchRenderId(renderPath?.pathId);
+          if (!renderPathId) {
+            continue;
+          }
+          await VideoGeneration.updateOne(
+            { videoSessionId, renderPathId },
+            {
+              $setOnInsert: {
+                videoSessionId,
+                renderPathId,
+                renderPlanVersion,
+                isPremium,
+                rowLocked: false,
+                expireAt: new Date(),
+              },
+            },
+            { upsert: true },
+          );
+        }
+        await VideoGeneration.findByIdAndDelete(videoRequest._id);
+        console.warn('[video_generator] Replaced unsafe session-level branched render request with path requests', {
+          sessionId: videoSessionId,
+          renderPathCount: repairablePaths.length,
+        });
+        continue;
+      }
+
       if (shouldWaitForTranscriptGeneration(videoSession)) {
         await VideoGeneration.findByIdAndUpdate(videoRequest._id, { rowLocked: false });
         continue;
@@ -1478,14 +1676,17 @@ export async function generatePendingVideoRequests() {
       const {
         blockingFrameGenerationCount,
         deletedFrameGenerationCount,
-      } = await cleanupStaleFrameGenerationsForSession(videoSession);
+      } = await cleanupStaleFrameGenerationsForSession(
+        videoSession,
+        branchedSession ? requestedRenderPathId : null,
+      );
       if (deletedFrameGenerationCount > 0) {
       }
       if (blockingFrameGenerationCount > 0) {
         await VideoGeneration.findByIdAndUpdate(videoRequest._id, { rowLocked: false });
         continue;
       }
-      if (videoSession.frameGenerationPending) {
+      if (!branchedSession && videoSession.frameGenerationPending) {
         await VideoSession.updateOne({ _id: videoSessionId }, { frameGenerationPending: false });
       }
 
@@ -1500,19 +1701,43 @@ export async function generatePendingVideoRequests() {
       }
 
       let numRetries = videoRequest.numRetries || 0;
-      const sessionAudioLayers = videoSession.audioLayers || [];
 
       // skip audio pending check (legacy behaviour kept)
 
       try {
         // Prepare output frames folder
         const pwd = process.cwd();
-        const sessionLayers = videoSession.layers || [];
+        let branchRenderContext = null;
+        if (branchedSession) {
+          const sessionRenderPlanVersion = Number(videoSession?.renderPlanVersion) || 1;
+          const requestRenderPlanVersion = Number(videoRequest?.renderPlanVersion);
+          if (sessionRenderPlanVersion !== 1) {
+            throw new Error(
+              `Unsupported render plan version ${sessionRenderPlanVersion} for path ${requestedRenderPathId}.`,
+            );
+          }
+          if (
+            Number.isFinite(requestRenderPlanVersion)
+            && requestRenderPlanVersion > 0
+            && requestRenderPlanVersion !== sessionRenderPlanVersion
+          ) {
+            throw new Error(
+              `Render plan version mismatch for path ${requestedRenderPathId}: request ${requestRenderPlanVersion}, session ${sessionRenderPlanVersion}.`,
+            );
+          }
+          branchRenderContext = resolveBranchRenderContext(videoSession, requestedRenderPathId);
+        }
+        const sessionLayers = branchRenderContext?.layers ?? (videoSession.layers || []);
+        const sessionAudioLayers = branchRenderContext?.audioLayers ?? (videoSession.audioLayers || []);
+        const branchFramePathSegments = branchRenderContext
+          ? ['paths', branchRenderContext.safeRenderPathId]
+          : [];
         const frameOutputPath = resolveProcessorAssetWritePath(
           pwd,
           'video',
           'frames',
           videoSessionId,
+          ...branchFramePathSegments,
           'output_files'
         );
 
@@ -1560,7 +1785,13 @@ export async function generatePendingVideoRequests() {
           let currentFolderCandidates = [];
           try {
             currentFolderCandidates = getProcessorAssetCandidates(
-              path.join('video', 'frames', videoSessionId, currentLayerId),
+              path.join(
+                'video',
+                'frames',
+                videoSessionId,
+                ...branchFramePathSegments,
+                currentLayerId,
+              ),
               pwd
             );
             for (const candidateFolderPath of currentFolderCandidates) {
@@ -1583,6 +1814,8 @@ export async function generatePendingVideoRequests() {
             if (shouldHaveRenderableLayerFrames(currentLayer)) {
               missingLayerFrameSources.push({
                 layerIndex: counter,
+                timelineIndex: currentLayer?.timelineIndex ?? counter,
+                pathSequenceIndex: currentLayer?.sequenceIndex ?? counter,
                 layerId: currentLayerId,
                 candidateFolders: currentFolderCandidates,
                 reason: 'missing_frame_folder',
@@ -1605,6 +1838,8 @@ export async function generatePendingVideoRequests() {
             } else {
               missingLayerFrameSources.push({
                 layerIndex: counter,
+                timelineIndex: currentLayer?.timelineIndex ?? counter,
+                pathSequenceIndex: currentLayer?.sequenceIndex ?? counter,
                 layerId: currentLayerId,
                 candidateFolders: [currentFolderPath],
                 reason: 'missing_numbered_frame',
@@ -1627,7 +1862,12 @@ export async function generatePendingVideoRequests() {
         }
 
         if (missingLayerFrameSources.length > 0) {
-          await requeueMissingLayerFrameGeneration(videoSessionId, missingLayerFrameSources);
+          await requeueMissingLayerFrameGeneration(
+            videoSessionId,
+            missingLayerFrameSources,
+            branchRenderContext,
+            Number(videoSession?.renderPlanVersion) || null,
+          );
           const missingSummary = missingLayerFrameSources
             .map((layer) => `${layer.layerIndex + 1}:${layer.layerId}:${layer.reason}`)
             .join(', ');
@@ -1660,7 +1900,13 @@ export async function generatePendingVideoRequests() {
           ...(Array.isArray(sessionAudioLayers) ? sessionAudioLayers : []),
           ...(Array.isArray(videoSession.global_audio_layers) ? videoSession.global_audio_layers : []),
         ];
-        const totalDuration = resolveRenderTimelineDuration(sessionLayers, renderTimelineAudioLayers);
+        const resolvedTimelineDuration = resolveRenderTimelineDuration(
+          sessionLayers,
+          renderTimelineAudioLayers,
+        );
+        const totalDuration = branchRenderContext?.duration > 0
+          ? branchRenderContext.duration
+          : resolvedTimelineDuration;
 
         const totalDurationInFrames = Math.floor(totalDuration * frameRate);
 
@@ -1707,7 +1953,7 @@ export async function generatePendingVideoRequests() {
 
         // Prepare audio
         const audioLayers = [
-          ...(Array.isArray(videoSession.audioLayers) ? videoSession.audioLayers : []),
+          ...(Array.isArray(sessionAudioLayers) ? sessionAudioLayers : []),
           ...(Array.isArray(videoSession.global_audio_layers) ? videoSession.global_audio_layers : []),
         ];
         const sessionLayerMap = new Map(
@@ -1802,13 +2048,26 @@ export async function generatePendingVideoRequests() {
 
         // Output path
         const randomString = Math.random().toString(36).substring(2, 6);
-        const videoFileName = `video-${videoSessionId}_${randomString}.mp4`;
-        const outputBase = path.join('assets_v2', 'video', 'output', videoSessionId, videoFileName);
+        const videoFileName = branchRenderContext
+          ? `video-${videoSessionId}-${branchRenderContext.safeRenderPathId}_${randomString}.mp4`
+          : `video-${videoSessionId}_${randomString}.mp4`;
+        const branchOutputPathSegments = branchRenderContext
+          ? ['paths', branchRenderContext.safeRenderPathId]
+          : [];
+        const outputBase = path.join(
+          'assets_v2',
+          'video',
+          'output',
+          videoSessionId,
+          ...branchOutputPathSegments,
+          videoFileName,
+        );
         const outputPath = resolveProcessorAssetWritePath(
           pwd,
           'video',
           'output',
           videoSessionId,
+          ...branchOutputPathSegments,
           videoFileName
         );
 
@@ -1834,6 +2093,52 @@ export async function generatePendingVideoRequests() {
 
         // Upload to CDN
         const vidRemoteLink = await uploadVideoToCDN(outputPath, outputBase);
+        let aggregateVideoLink = outputBase;
+        let aggregateRemoteURL = vidRemoteLink;
+        let aggregateSession = videoSession;
+        let aggregateUpdateFilter = { _id: videoSessionId };
+
+        if (branchRenderContext) {
+          const branchPathPrefix = `branchRenderPaths.${branchRenderContext.pathIndex}`;
+          await VideoSession.updateOne(
+            {
+              _id: videoSessionId,
+              [`${branchPathPrefix}.pathId`]: branchRenderContext.renderPathId,
+            },
+            {
+              $set: {
+                [`${branchPathPrefix}.videoGenerationPending`]: false,
+                [`${branchPathPrefix}.videoGenerationStatus`]: 'COMPLETED',
+                [`${branchPathPrefix}.videoGenerationError`]: null,
+                [`${branchPathPrefix}.videoGenerationCompletedAt`]: new Date(),
+                [`${branchPathPrefix}.videoLink`]: outputBase,
+                [`${branchPathPrefix}.remoteURL`]: vidRemoteLink,
+              },
+            },
+          );
+          await VideoGeneration.deleteOne({ _id: videoRequest._id });
+
+          aggregateSession = await VideoSession.findById(videoSessionId).lean();
+          if (!aggregateSession || !areAllBranchPathVideosComplete(aggregateSession)) {
+            continue;
+          }
+
+          const defaultRenderPath = getDefaultBranchRenderPath(aggregateSession);
+          aggregateVideoLink = defaultRenderPath?.videoLink || outputBase;
+          aggregateRemoteURL = defaultRenderPath?.remoteURL || vidRemoteLink;
+          aggregateUpdateFilter = {
+            _id: videoSessionId,
+            branchRenderCompletionFinalized: { $ne: true },
+            branchRenderPaths: {
+              $not: {
+                $elemMatch: {
+                  videoGenerationStatus: { $ne: 'COMPLETED' },
+                },
+              },
+            },
+          };
+        }
+
         let publicThumbnailUrl = null;
         const splashImagePath = resolveProcessorAssetWritePath(
           pwd,
@@ -1857,8 +2162,8 @@ export async function generatePendingVideoRequests() {
 
         // Update session
         const sessionUpdate = {
-          videoLink: outputBase,
-          remoteURL: vidRemoteLink,
+          videoLink: aggregateVideoLink,
+          remoteURL: aggregateRemoteURL,
           videoGenerationPending: false,
           generationError: null,
           expressGenerationFailed: false,
@@ -1868,17 +2173,26 @@ export async function generatePendingVideoRequests() {
           'expressGenerationStatus.video_generation': 'COMPLETED',
           'expressGenerationStatus.status': 'COMPLETED',
         };
+        if (branchRenderContext) {
+          sessionUpdate.branchRenderCompletionFinalized = true;
+          sessionUpdate.branchRenderCompletedAt = new Date();
+        }
         if (publicThumbnailUrl) {
           sessionUpdate.splashImage = publicThumbnailUrl;
-          if (videoSession.ispublishedVideo) {
+          if (aggregateSession.ispublishedVideo) {
             sessionUpdate.publishedSplashImage = publicThumbnailUrl;
           }
         }
-        await VideoSession.updateOne(
-          { _id: videoSessionId },
-          sessionUpdate,
+        const aggregateUpdateResult = await VideoSession.updateOne(
+          aggregateUpdateFilter,
+          { $set: sessionUpdate },
         );
-        if (publicThumbnailUrl && videoSession.ispublishedVideo) {
+        const aggregateCompletionTransitioned = !branchRenderContext
+          || aggregateUpdateResult.modifiedCount > 0;
+        if (!aggregateCompletionTransitioned) {
+          continue;
+        }
+        if (publicThumbnailUrl && aggregateSession.ispublishedVideo) {
           try {
             const database = await getDatabase();
             await database.collection('publications').updateOne(
@@ -1889,19 +2203,22 @@ export async function generatePendingVideoRequests() {
             console.error(`Failed to refresh published thumbnail reference for session ${videoSessionId}:`, publicationThumbnailError);
           }
         }
-        // Remove the VideoGeneration doc
-        await VideoGeneration.deleteOne({ _id: videoRequest._id });
+        // Branched requests are deleted when their path result is saved so sibling
+        // jobs remain independent. Singular requests retain the original lifecycle.
+        if (!branchRenderContext) {
+          await VideoGeneration.deleteOne({ _id: videoRequest._id });
+        }
 
         // Notify user
-        if (videoSession.notifyOnCompletion && !videoSession.notificationSent) {
-          const userId = videoSession.userId;
+        if (aggregateSession.notifyOnCompletion && !aggregateSession.notificationSent) {
+          const userId = aggregateSession.userId;
           const userRecord = userData ?? await User.findById(userId).lean();
           const userName = userRecord?.displayName || userRecord?.username || userRecord?.email;
-          const userEmail = videoSession.notificationEmail || userRecord?.email;
+          const userEmail = aggregateSession.notificationEmail || userRecord?.email;
           const notificationPayload = {
             sessionId: videoSessionId,
             recipientEmail: userEmail,
-            downloadLink: outputBase,
+            downloadLink: aggregateVideoLink,
             userName,
           };
           try {
@@ -1915,7 +2232,7 @@ export async function generatePendingVideoRequests() {
         }
 
         // Cleanup frames if express
-        if (videoSession.isExpressGeneration) {
+        if (aggregateSession.isExpressGeneration) {
           await deleteFramesForGeneration(videoSessionId);
         }
 
@@ -1926,15 +2243,27 @@ export async function generatePendingVideoRequests() {
         if (numRetries > 1) {
           console.error(`Exceeded maximum retries for video request ${videoRequest._id}. Deleting generation request. Error: ${errorMessage}`);
           await VideoGeneration.deleteOne({ _id: videoRequest._id });
+          const failureUpdate = {
+            videoGenerationPending: false,
+            generationError: errorMessage,
+            expressGenerationFailed: true,
+            expressGenerationError: errorMessage,
+            'expressGenerationStatus.video_generation': 'FAILED',
+            'expressGenerationStatus.status': 'FAILED',
+          };
+          if (branchedSession) {
+            const branchPathMatch = findBranchRenderPath(videoSession, requestedRenderPathId);
+            if (branchPathMatch) {
+              const branchPathPrefix = `branchRenderPaths.${branchPathMatch.pathIndex}`;
+              failureUpdate[`${branchPathPrefix}.videoGenerationPending`] = false;
+              failureUpdate[`${branchPathPrefix}.videoGenerationStatus`] = 'FAILED';
+              failureUpdate[`${branchPathPrefix}.videoGenerationError`] = errorMessage;
+              failureUpdate[`${branchPathPrefix}.videoGenerationCompletedAt`] = null;
+            }
+          }
           await VideoSession.updateOne(
             { _id: videoSessionId },
-            {
-              videoGenerationPending: false,
-              generationError: errorMessage,
-              expressGenerationError: errorMessage,
-              'expressGenerationStatus.video_generation': 'FAILED',
-              'expressGenerationStatus.status': 'FAILED',
-            }
+            { $set: failureUpdate },
           );
         } else {
           await VideoGeneration.findByIdAndUpdate(videoRequest._id, { numRetries, rowLocked: false });

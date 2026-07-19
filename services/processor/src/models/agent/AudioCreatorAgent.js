@@ -383,6 +383,7 @@ export async function createAudioEffectInstructionsForMovieTranscript(
   movieTranscript,
   videoTone,
   userInferenceModel = 'gpt-5.6-sol',
+  options = {},
 ) {
   // Check if the input is a valid string
   if (typeof inputPrompt !== 'string' || inputPrompt.trim() === '') {
@@ -436,6 +437,16 @@ export async function createAudioEffectInstructionsForMovieTranscript(
     model: modelName,
     response_format: zodResponseFormat(SoundsWithEmotions, "sounds_with_emotions"),
   });
+
+  if (typeof options?.onInferenceResponse === 'function') {
+    await options.onInferenceResponse({
+      stage: 'movie_resource_list_enrichment',
+      attempt: 1,
+      model: response?.model || modelName,
+      usage: response?.usage || null,
+      response,
+    });
+  }
 
 
   const resData = response.choices[0].message;

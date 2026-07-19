@@ -135,23 +135,26 @@ function resolvePricingModel(model) {
   if (!normalized) {
     return null;
   }
+  const providerModel = normalized.includes('/')
+    ? normalized.slice(normalized.lastIndexOf('/') + 1)
+    : normalized;
 
-  if (normalized.startsWith('gpt-5.6-sol')) {
+  if (providerModel.startsWith('gpt-5.6-sol')) {
     return 'gpt-5.6-sol';
   }
 
-  if (normalized.startsWith('gemini-')) {
+  if (providerModel.startsWith('gemini-3.1')) {
     return 'gemini-3.1-pro';
   }
 
-  if (normalized.startsWith('qwen3.7-plus') || normalized.startsWith('qwen-3.7-plus')) {
+  if (providerModel.startsWith('qwen3.7-plus') || providerModel.startsWith('qwen-3.7-plus')) {
     return 'qwen3.7-plus';
   }
 
   if (
-    normalized === 'qwen3.7' ||
-    normalized.startsWith('qwen3.7-max') ||
-    normalized.startsWith('qwen-3.7')
+    providerModel === 'qwen3.7' ||
+    providerModel.startsWith('qwen3.7-max') ||
+    providerModel.startsWith('qwen-3.7')
   ) {
     return 'qwen3.7-max';
   }

@@ -50,6 +50,32 @@ function buildExternalRequestAttemptContext(context, attempt) {
   };
 }
 
+async function notifyInferenceResponse(options, response, metadata = {}) {
+  if (typeof options?.onInferenceResponse !== 'function') {
+    return;
+  }
+
+  try {
+    await options.onInferenceResponse({
+      ...metadata,
+      model: response?.model || metadata.model || null,
+      usage: response?.usage || null,
+      response,
+    });
+  } catch (error) {
+    // Receipt persistence is part of metered request correctness. Do not let a
+    // storage failure masquerade as a provider failure and trigger a duplicate
+    // inference call in the surrounding retry loop.
+    try {
+      error.code ||= 'INFERENCE_USAGE_OBSERVER_FAILED';
+      error.inferenceUsageObserverFailed = true;
+    } catch {
+      // Preserve non-extensible errors; the caller will still receive them.
+    }
+    throw error;
+  }
+}
+
 export async function getResourceListForScreenplay(screenplay, inferenceModel = getDefaultUserInferenceModel(), videoModel) {
 
   const systemPrompt = getResourceListPrompt(videoModel);
@@ -196,7 +222,8 @@ export async function sendSessionResourcesMessageRequest(messageList, inferenceM
 export async function updatePromptWithTheme(prompt, themeJson, aspectRatio = '1:1',
   userInferenceModel = getDefaultUserInferenceModel(),
   shortForm = false,
-  videoTone = 'cinematic') {
+  videoTone = 'cinematic',
+  options = {}) {
 
 
   let systemPrompt;
@@ -216,7 +243,7 @@ export async function updatePromptWithTheme(prompt, themeJson, aspectRatio = '1:
     { role: 'user', content: `The user input prompt is: ${prompt}` },
   ];
 
-  const response = await sendAssistantMessageRequest(messageList, userInferenceModel);
+  const response = await sendAssistantMessageRequest(messageList, userInferenceModel, options);
 
   return response.content.trim();
 }
@@ -225,7 +252,7 @@ export async function updatePromptWithTheme(prompt, themeJson, aspectRatio = '1:
 
 export async function updateCharacterPromptWithTheme(prompt, speakerActor, themeJson, aspectRatio = '1:1',
   userInferenceModel = getDefaultUserInferenceModel(),
-  shortForm = false, videoTone = 'cinematic') {
+  shortForm = false, videoTone = 'cinematic', options = {}) {
 
   let systemPrompt = getCharacterPromptWithSystemTheme(shortForm, speakerActor, aspectRatio);
 
@@ -240,7 +267,7 @@ export async function updateCharacterPromptWithTheme(prompt, speakerActor, theme
     { role: 'user', content: `The user input prompt is: ${prompt}` },
   ];
 
-  const response = await sendAssistantMessageRequest(messageList, userInferenceModel);
+  const response = await sendAssistantMessageRequest(messageList, userInferenceModel, options);
 
   return response.content.trim();
 }
@@ -314,12 +341,22 @@ export async function sendSessionThemeMessageRequest(
         externalMaxRetries: 0,
       });
 
+      await notifyInferenceResponse(options, response, {
+        stage: 'theme_generation',
+        attempt: attempt + 1,
+        model: modelName,
+      });
+
       const parsedMessage = parseStructuredCompletion(
         response,
         'theme_keywords_extraction',
       );
       return parsedMessage;
     } catch (error) {
+      if (error?.inferenceUsageObserverFailed === true ||
+        error?.code === 'INFERENCE_USAGE_OBSERVER_FAILED') {
+        throw error;
+      }
       const isFinalAttempt = attempt >= maxRetries;
       const logPayload = {
         inferenceModel: userInferenceModel,
@@ -346,18 +383,45 @@ export async function sendSessionThemeMessageRequest(
 }
 
 
-export async function sendAssistantMessageRequest(messageList, userInferenceModel = getDefaultUserInferenceModel()) {
+export async function sendAssistantMessageRequest(
+  messageList,
+  userInferenceModel = getDefaultUserInferenceModel(),
+  options = {},
+) {
 
   // const modelName = getModelForUserInferenceModel(userInferenceModel);
 
   const callArgs = getFunctionCallParamsForModel(userInferenceModel, messageList);
+  const externalRequestContext = buildExternalRequestAttemptContext(
+    options.externalRequestContext,
+    1,
+  );
 
 
   try {
-    const response = await createCompatibleChatCompletion(openai, callArgs);
+    const response = await createCompatibleChatCompletion(openai, {
+      ...callArgs,
+      ...(externalRequestContext
+        ? {
+          externalPolling: true,
+          externalRequestContext,
+          externalMaxRetries: 0,
+        }
+        : {}),
+    });
+
+    await notifyInferenceResponse(options, response, {
+      stage: 'visual_prompt_generation',
+      attempt: 1,
+      model: callArgs.model,
+    });
 
     return response.choices[0].message;
   } catch (error) {
+    if (error?.inferenceUsageObserverFailed === true ||
+      error?.code === 'INFERENCE_USAGE_OBSERVER_FAILED') {
+      throw error;
+    }
     console.error('[MovieCreatorAgent][sendAssistantMessageRequest] OpenAI request failed', {
       inferenceModel: userInferenceModel,
       model: callArgs?.model ?? null,
@@ -616,7 +680,7 @@ export async function sendNarrativePromptMessageRequest(
 
   const ScreenplayStorylineExtraction = z.object({
     scenes: z.array(z.object({
-      visual: z.string(),
+      visual: z.string().min(1),
       type: z.string(),
       duration: z.number(),
       startTime: z.number(),
@@ -624,7 +688,7 @@ export async function sendNarrativePromptMessageRequest(
       speaker: z.string(),
     })),
     sounds: z.array(z.object({
-      audio: z.string(),
+      audio: z.string().min(1),
       startTime: z.number(),
       duration: z.number(),
       endTime: z.number(),
@@ -682,6 +746,12 @@ export async function sendNarrativePromptMessageRequest(
         externalMaxRetries: 0,
       });
 
+      await notifyInferenceResponse(options, response, {
+        stage: 'narrative_generation',
+        attempt,
+        model: modelName,
+      });
+
 
 
       const parsedMessage = parseStructuredCompletion(
@@ -691,6 +761,10 @@ export async function sendNarrativePromptMessageRequest(
 
       return parsedMessage;  // If successful, return here
     } catch (error) {
+      if (error?.inferenceUsageObserverFailed === true ||
+        error?.code === 'INFERENCE_USAGE_OBSERVER_FAILED') {
+        throw error;
+      }
       const isFinalAttempt = attempt >= maxAttempts;
       const logPayload = {
         inferenceModel,

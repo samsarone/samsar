@@ -29,6 +29,7 @@ const AUDIO_VIDEO_SOUND_EFFECT_MODELS = ['SORA2', 'SORA2PRO', 'VEO3.1I2V', 'VEO3
 import {
   createTextToVideoPromptFromLayerPrompt,
   createTextToVideoPromptFromStartingLayerPrompt,
+  getCameraTransitionForBranchedScene,
   getTransitionListForLayerSceneDescriptions,
 
 } from "./assistant/OpenAi.js";
@@ -44,6 +45,12 @@ import {
   getLayerActiveImageSources,
   getLayerImageDescription,
 } from './utils/AIVideoPromptContext.js';
+import { createBranchedCameraTransitions } from './utils/BranchedCameraTransitions.js';
+import { isBranchedVideoSession } from '../utils/BranchRenderPaths.js';
+import {
+  buildBranchDurationSessionMetadata,
+  retimeBranchRenderPathsForSharedLayer,
+} from '../utils/BranchRenderTiming.js';
 
 // Import other requestRender functions as needed
 const AI_VIDEO_ALLOWED_BASE_TYPES = new Set(['character', 'narration', 'base', 'sound_effect']);
@@ -144,6 +151,37 @@ function getNormalizedAiVideoGenerationStatus(layer = {}) {
   return rawStatus || 'INIT';
 }
 
+async function persistLayerCameraTransitions(sessionId, results = []) {
+  if (!Array.isArray(results) || results.length === 0) return;
+
+  const generatedAt = new Date();
+  const writeResult = await VideoSession.bulkWrite(results.map((result) => ({
+    updateOne: {
+      filter: {
+        _id: sessionId,
+        'layers._id': result.layerId,
+      },
+      update: {
+        $set: {
+          'layers.$.cameraTransition': result.transition,
+          'layers.$.cameraTransitionGenerationStatus': result.status,
+          'layers.$.cameraTransitionGenerationError': result.error,
+          'layers.$.cameraTransitionGeneratedAt': generatedAt,
+          'layers.$.cameraTransitionGenerationSource': result.source,
+          'layers.$.cameraTransitionBranchPathId': result.pathId,
+          'layers.$.cameraTransitionSequenceIndex': result.sequenceIndex,
+        },
+      },
+    },
+  })));
+  const matchedCount = Number(writeResult?.matchedCount);
+  if (Number.isFinite(matchedCount) && matchedCount !== results.length) {
+    throw new Error(
+      `Persisted camera transitions for ${matchedCount} of ${results.length} layers.`,
+    );
+  }
+}
+
 async function markSessionLayerAiVideoGenerationFailed({
   videoSessionId,
   layerId,
@@ -151,7 +189,7 @@ async function markSessionLayerAiVideoGenerationFailed({
   stage = 'request_enqueue',
 }) {
   const message = error?.message || String(error || 'AI video generation request failed');
-  console.error('[ai_video][request_enqueue] failed to create AI video generation request', {
+  console.error(`[ai_video][${stage}] failed to create AI video generation request`, {
     videoSessionId,
     layerId,
     stage,
@@ -236,18 +274,77 @@ export async function createGenerativeVideoAnimationsForFrames(sessionId) {
     selectedInferenceModelAuthorization,
   };
 
-  const cameraTransitionListString = await getTransitionListForLayerSceneDescriptions(
-    promptList,
-    userInferenceModel,
-    {
-      ...baseInferenceAuditContext,
-      localRequestId: `${sessionId}:camera_transitions`,
-      sourceTask: 'camera_transition_prompt',
+  let cameraTransitionList = [];
+  let branchedCameraTransitionByLayerId = null;
+  if (isBranchedVideoSession(sessionData)) {
+    try {
+      branchedCameraTransitionByLayerId = await createBranchedCameraTransitions({
+        layers,
+        branchRenderPaths: sessionData.branchRenderPaths,
+        branchingMeta: sessionData.branchingMeta,
+        getLayerDescription: getLayerImageDescription,
+        requestRootTransitions: async ({ sceneDescriptions }) => (
+          getTransitionListForLayerSceneDescriptions(
+            sceneDescriptions,
+            userInferenceModel,
+            {
+              ...baseInferenceAuditContext,
+              localRequestId: `${sessionId}:camera_transitions:root`,
+              sourceTask: 'camera_transition_prompt',
+            },
+          )
+        ),
+        requestSceneTransition: async ({
+          layerId,
+          pathId,
+          sequenceIndex,
+          previousScenes,
+          currentSceneDescription,
+        }) => getCameraTransitionForBranchedScene(
+          previousScenes,
+          currentSceneDescription,
+          userInferenceModel,
+          {
+            ...baseInferenceAuditContext,
+            layerId,
+            branchPathId: pathId,
+            branchSequenceIndex: sequenceIndex,
+            localRequestId: `${sessionId}:${layerId}:camera_transition`,
+            sourceTask: 'camera_transition_prompt',
+          },
+        ),
+        persistTransitions: (results) => persistLayerCameraTransitions(sessionId, results),
+      });
+    } catch (error) {
+      const failedLayer = layers.find((layer) => (
+        isAiVideoCandidateLayer(layer) &&
+        getNormalizedAiVideoGenerationStatus(layer) !== 'COMPLETED'
+      ));
+      if (!failedLayer?._id) {
+        throw error;
+      }
+      await markSessionLayerAiVideoGenerationFailed({
+        videoSessionId: sessionId,
+        layerId: failedLayer._id.toString(),
+        error,
+        stage: 'camera_transition_prompt',
+      });
+      return;
     }
-  );
-  const cameraTransitionList = typeof cameraTransitionListString === 'string'
-    ? cameraTransitionListString.split('\n').map(item => item.trim()).filter(item => item !== '')
-    : [];
+  } else {
+    const cameraTransitionListString = await getTransitionListForLayerSceneDescriptions(
+      promptList,
+      userInferenceModel,
+      {
+        ...baseInferenceAuditContext,
+        localRequestId: `${sessionId}:camera_transitions`,
+        sourceTask: 'camera_transition_prompt',
+      }
+    );
+    cameraTransitionList = typeof cameraTransitionListString === 'string'
+      ? cameraTransitionListString.split('\n').map(item => item.trim()).filter(item => item !== '')
+      : [];
+  }
 
   for (let i = 0; i < layers.length; i++) {
     const currentLayer = layers[i];
@@ -300,7 +397,9 @@ export async function createGenerativeVideoAnimationsForFrames(sessionId) {
     if (sceneType === 'character') {
       isSpeakerTransition = true;
     }
-    const cameraTranstionFromLayer = cameraTransitionList[i];
+    const cameraTransitionFromLayer = branchedCameraTransitionByLayerId
+      ? branchedCameraTransitionByLayerId.get(currentLayerId)
+      : cameraTransitionList[i];
     const isInfinitezoom = sessionData.isExpressGeneration &&
       sessionData.expressGenerationType === 'Infinitezoom';
     if (isInfinitezoom) {
@@ -345,7 +444,7 @@ export async function createGenerativeVideoAnimationsForFrames(sessionId) {
         const promptInferenceModel = userInferenceModel;
         const promptReasoningEffort = 'high';
         textToVideoPrompt = await createTextToVideoPromptFromStartingLayerPrompt(startingPrompt, startingImageDescription,
-          promptInferenceModel, useShortForm, isSpeakerTransition, indexData, videoTone, cameraTranstionFromLayer, promptReasoningEffort, layerInferenceAuditContext);
+          promptInferenceModel, useShortForm, isSpeakerTransition, indexData, videoTone, cameraTransitionFromLayer, promptReasoningEffort, layerInferenceAuditContext);
       }
 
 
@@ -366,7 +465,7 @@ export async function createGenerativeVideoAnimationsForFrames(sessionId) {
       layerIndex: i,
       layerCount: layers.length,
       sceneDescriptions: promptList,
-      cameraTransition: cameraTranstionFromLayer,
+      cameraTransition: cameraTransitionFromLayer,
       videoTone,
       userInferenceModel,
       selectedInferenceModelAuthorization,
@@ -610,6 +709,48 @@ export async function setSessionLayerAiVideoGenerationPending(payload) {
 
 
 
+    }
+
+    if (isBranchedVideoSession(sessionDataValue)) {
+      const branchRenderPaths = retimeBranchRenderPathsForSharedLayer({
+        branchRenderPaths: sessionDataValue.branchRenderPaths,
+        layers: updatedLayers,
+        audioLayers,
+        layerId: targetLayerId,
+        duration: targetDuration,
+      });
+      const durationMetadata = buildBranchDurationSessionMetadata({
+        branchRenderPaths,
+        layers: updatedLayers,
+        expressGenerationBillingDurationSeconds:
+          sessionDataValue.expressGenerationBillingDurationSeconds,
+        expressGenerationBillingStageDurations:
+          sessionDataValue.expressGenerationBillingStageDurations,
+        expressGenerationCreditCharges: sessionDataValue.expressGenerationCreditCharges,
+      });
+
+      await VideoSession.updateOne(
+        { _id: videoSessionId },
+        {
+          $set: {
+            layers: updatedLayers,
+            audioLayers,
+            branchRenderPaths,
+            ...durationMetadata,
+          },
+        },
+      );
+
+      sessionDataValue.layers = updatedLayers;
+      sessionDataValue.audioLayers = audioLayers;
+      sessionDataValue.branchRenderPaths = branchRenderPaths;
+      sessionDataValue.totalDuration = durationMetadata.totalDuration;
+      sessionDataValue.expressGenerationBillingDurationSeconds =
+        durationMetadata.expressGenerationBillingDurationSeconds;
+      sessionDataValue.expressGenerationBillingStageDurations =
+        durationMetadata.expressGenerationBillingStageDurations;
+
+      return sessionDataValue;
     }
 
 

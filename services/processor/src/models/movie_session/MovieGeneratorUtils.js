@@ -519,6 +519,7 @@ export async function assignCharactersAndInstructionsToScenes(
       movieResourceListWithSpeakers,
       videoTone,
       options.inferenceModel,
+      { onInferenceResponse: options.onInferenceResponse },
     );
 
     if (generatedInstructions?.sounds && Array.isArray(generatedInstructions.sounds)) {

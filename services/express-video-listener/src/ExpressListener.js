@@ -34,6 +34,19 @@ import {
 
 import User from "./schema/User.js";
 import { installStructuredLogger } from './utils/StructuredLogger.js';
+import {
+  allBranchFramesCompleted,
+  allBranchVideosCompleted,
+  getBranchFrameFailure,
+  getBranchRenderFailure,
+  getBranchRenderPaths,
+  getBranchTimeline,
+  isBranchedVideoSession,
+} from './utils/BranchRenderPaths.js';
+import {
+  buildBranchDurationSessionMetadata,
+  normalizeBranchRenderPathTimings,
+} from './utils/BranchRenderTiming.js';
 
 installStructuredLogger({
   serviceName: process.env.SERVICE_NAME || 'samsar_express_video_listener',
@@ -147,6 +160,10 @@ function normalizeOptionalString(value) {
 }
 
 function hasRenderedVideoOutput(sessionData = {}) {
+  if (isBranchedVideoSession(sessionData)) {
+    return allBranchVideosCompleted(sessionData);
+  }
+
   return Boolean(
     normalizeOptionalString(sessionData?.remoteURL)
     || normalizeOptionalString(sessionData?.videoLink)
@@ -155,6 +172,13 @@ function hasRenderedVideoOutput(sessionData = {}) {
 }
 
 function resolveFinalVideoGenerationFailureMessage(sessionData = {}) {
+  if (isBranchedVideoSession(sessionData)) {
+    const branchFailure = getBranchRenderFailure(sessionData);
+    if (branchFailure) {
+      return branchFailure.message;
+    }
+  }
+
   const generationError = normalizeOptionalString(sessionData?.generationError);
   if (generationError) {
     return generationError;
@@ -1495,6 +1519,31 @@ async function checkVideoRenderStatus(session) {
     return;
   }
 
+  if (isBranchedVideoSession(latestSessionData)) {
+    const branchFrameSession = await VideoSession.findById(sessionId).lean();
+    const branchFrameFailure = getBranchFrameFailure(branchFrameSession);
+    if (branchFrameFailure || !allBranchFramesCompleted(branchFrameSession)) {
+      const failureMessage = branchFrameFailure?.message
+        || 'Branch frame generation finished without complete frame manifests.';
+      currentGenerationStatus.frame_generation = 'FAILED';
+      currentGenerationStatus.video_generation = 'FAILED';
+      currentGenerationStatus.status = 'FAILED';
+      await VideoSession.updateOne({ _id: sessionId }, {
+        $set: {
+          expressGenerationStatus: currentGenerationStatus,
+          frameGenerationPending: false,
+          videoGenerationPending: false,
+          expressGenerationPending: false,
+          expressGenerationFailed: true,
+          expressGenerationError: failureMessage,
+          generationError: failureMessage,
+        },
+      });
+      await processSessionCompletionFailure(sessionId);
+      return;
+    }
+  }
+
 
 
   if (currentGenerationStatus.video_generation === 'INIT') {
@@ -1550,7 +1599,10 @@ async function checkVideoRenderStatus(session) {
       return;
     }
 
-    await processSessionCompletionSuccess(sessionId);
+    const completionDelivery = await processSessionCompletionSuccess(sessionId);
+    if (completionDelivery?.ok !== true) {
+      return;
+    }
     await VideoSession.updateOne({ _id: sessionId }, {
       $set: {
         expressGenerationPending: false,
@@ -1569,6 +1621,87 @@ async function generateFramesForSession(sessionId) {
 
 
   const session = await VideoSession.findOne({ _id: sessionId }).populate('layers.imageSession');
+
+  if (isBranchedVideoSession(session)) {
+    const renderPlanVersion = Number(session.renderPlanVersion) || 1;
+    session.branchRenderPaths = normalizeBranchRenderPathTimings({
+      branchRenderPaths: session.branchRenderPaths,
+      layers: session.layers,
+      audioLayers: session.audioLayers,
+    });
+    const durationMetadata = buildBranchDurationSessionMetadata({
+      branchRenderPaths: session.branchRenderPaths,
+      layers: session.layers,
+      expressGenerationBillingDurationSeconds:
+        session.expressGenerationBillingDurationSeconds,
+      expressGenerationBillingStageDurations: session.expressGenerationBillingStageDurations,
+      expressGenerationCreditCharges: session.expressGenerationCreditCharges,
+    });
+    session.totalDuration = durationMetadata.totalDuration;
+    session.expressGenerationBillingDurationSeconds =
+      durationMetadata.expressGenerationBillingDurationSeconds;
+    session.expressGenerationBillingStageDurations =
+      durationMetadata.expressGenerationBillingStageDurations;
+    const branchPaths = getBranchRenderPaths(session);
+    if (branchPaths.length === 0) {
+      throw new Error(`Branched session ${sessionId} does not contain any render paths.`);
+    }
+
+    for (const path of branchPaths) {
+      const timeline = getBranchTimeline(path);
+      if (timeline.length === 0) {
+        throw new Error(`Branch path ${path.pathId} does not contain a render timeline.`);
+      }
+
+      path.frameGenerationStatus = 'PENDING';
+      path.frameGenerationPending = true;
+      path.frameGenerationError = null;
+      for (let pathSequenceIndex = 0; pathSequenceIndex < timeline.length; pathSequenceIndex += 1) {
+        const timelineEntry = timeline[pathSequenceIndex];
+        timelineEntry.pathSequenceIndex = Number.isInteger(timelineEntry.pathSequenceIndex)
+          ? timelineEntry.pathSequenceIndex
+          : pathSequenceIndex;
+        timelineEntry.frameGenerationStatus = 'PENDING';
+        timelineEntry.frameGenerationPending = true;
+        timelineEntry.frameGenerationError = null;
+        timelineEntry.frames = [];
+      }
+    }
+    session.markModified('branchRenderPaths');
+    session.markModified('expressGenerationBillingStageDurations');
+    await session.save();
+
+    for (const path of branchPaths) {
+      const timeline = getBranchTimeline(path);
+      for (let pathSequenceIndex = 0; pathSequenceIndex < timeline.length; pathSequenceIndex += 1) {
+        const timelineEntry = timeline[pathSequenceIndex];
+        const layerId = timelineEntry.layerId.toString();
+        await FrameGeneration.updateOne(
+          {
+            sessionId: sessionId.toString(),
+            layerId,
+            renderPathId: path.pathId,
+            renderPlanVersion,
+            pathSequenceIndex,
+          },
+          {
+            $setOnInsert: {
+              sessionId: sessionId.toString(),
+              layerId,
+              renderPathId: path.pathId,
+              renderPlanVersion,
+              pathSequenceIndex,
+              isVideoGenerationRequest: true,
+              isExpressFrameGenerationRequest: true,
+              rowLocked: false,
+            },
+          },
+          { upsert: true },
+        );
+      }
+    }
+    return;
+  }
 
   for (const layer of session.layers) {
 
@@ -1592,6 +1725,13 @@ async function deleteEmptyLayersAndReflowTimeLine(sessionId) {
   const session = await VideoSession.findById(sessionId);
 
   if (!session) {
+    return;
+  }
+
+  // A branched session's `layers` array is a shared media-asset catalog, not a
+  // single timeline. Reflowing that catalog would corrupt every saved leaf
+  // path. Failed required branch assets are handled by the path render jobs.
+  if (isBranchedVideoSession(session)) {
     return;
   }
 
@@ -1783,6 +1923,50 @@ export async function removeLayerInSession(userId, payload) {
 
 
 async function generateVideoForSession(sessionId, isPremium) {
+
+  const session = await VideoSession.findById(sessionId);
+  if (isBranchedVideoSession(session)) {
+    const renderPlanVersion = Number(session.renderPlanVersion) || 1;
+    const branchPaths = getBranchRenderPaths(session);
+    if (branchPaths.length === 0) {
+      throw new Error(`Branched session ${sessionId} does not contain any render paths.`);
+    }
+
+    for (const path of branchPaths) {
+      path.videoGenerationStatus = 'PENDING';
+      path.videoGenerationPending = true;
+      path.videoGenerationError = null;
+    }
+    session.markModified('branchRenderPaths');
+    await session.save();
+
+    await VideoGeneration.deleteMany({
+      videoSessionId: sessionId.toString(),
+      rowLocked: false,
+      renderPathId: { $ne: null },
+    });
+
+    for (const path of branchPaths) {
+      await VideoGeneration.updateOne(
+        {
+          videoSessionId: sessionId.toString(),
+          renderPathId: path.pathId,
+          renderPlanVersion,
+        },
+        {
+          $setOnInsert: {
+            videoSessionId: sessionId.toString(),
+            renderPathId: path.pathId,
+            renderPlanVersion,
+            isPremium,
+            rowLocked: false,
+          },
+        },
+        { upsert: true },
+      );
+    }
+    return;
+  }
 
 
   // Delete all video generation requests rowLocked with sessionId

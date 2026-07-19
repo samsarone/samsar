@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import {
   buildStudioSessionDetailsFromStatus,
   fetchDetailedVideoGenerationStatus,
+  materializeBranchPathPreview,
 } from './videoGenerationStatus.mjs';
 
 test('detailed status falls back from the step route to the generic route', async () => {
@@ -60,4 +61,180 @@ test('status preview is converted into Studio layers with partial image and vide
   assert.equal(session.layers[0].durationOffset, 3);
   assert.equal(session.layers[0].imageSession.activeItemList[0].src, 'https://static.example/image.png');
   assert.equal(session.layers[0].aiVideoRemoteLink, 'https://static.example/video.mp4');
+  assert.equal(Object.prototype.hasOwnProperty.call(session, 'canonicalLayers'), false);
+  assert.equal(Object.prototype.hasOwnProperty.call(session, 'canonicalAudioLayers'), false);
+  assert.equal(Object.prototype.hasOwnProperty.call(session, 'branching'), false);
+});
+
+test('branched status preserves canonical pools and materializes the default path timing', () => {
+  const branching = {
+    schema: 'branched_video_status.v1',
+    default_path_id: 'root.2',
+    paths: [
+      {
+        path_id: 'root.1',
+        is_default: false,
+        timeline: [
+          {
+            sequence_index: 0,
+            scene_index: 0,
+            layer_id: 'layer-shared',
+            start_time: 0,
+            end_time: 5,
+            duration: 5,
+          },
+          {
+            sequence_index: 1,
+            scene_index: 1,
+            layer_id: 'layer-root-1',
+            start_time: 5,
+            end_time: 11,
+            duration: 6,
+          },
+        ],
+        audio_timeline: [
+          {
+            sequence_index: 0,
+            scene_index: 0,
+            audio_layer_id: 'audio-shared',
+            connected_layer_id: 'layer-shared',
+            start_time: 0,
+            end_time: 5,
+            duration: 5,
+          },
+          {
+            sequence_index: 1,
+            scene_index: 1,
+            audio_layer_id: 'audio-root-1',
+            connected_layer_id: 'layer-root-1',
+            start_time: 5,
+            end_time: 11,
+            duration: 6,
+          },
+        ],
+      },
+      {
+        path_id: 'root.2',
+        is_default: true,
+        // Deliberately out of order to verify sequence_index controls playback order.
+        timeline: [
+          {
+            sequence_index: 1,
+            scene_index: 1,
+            layer_id: 'layer-root-2',
+            start_time: 5,
+            end_time: 12,
+            duration: 7,
+          },
+          {
+            sequence_index: 0,
+            scene_index: 0,
+            layer_id: 'layer-shared',
+            start_time: 0,
+            end_time: 5,
+            duration: 5,
+          },
+        ],
+        audio_timeline: [
+          {
+            sequence_index: 1,
+            scene_index: 1,
+            audio_layer_id: 'audio-root-2',
+            connected_layer_id: 'layer-root-2',
+            start_time: 5,
+            end_time: 12,
+            duration: 7,
+          },
+          {
+            sequence_index: 0,
+            scene_index: 0,
+            audio_layer_id: 'audio-shared',
+            connected_layer_id: 'layer-shared',
+            start_time: 0,
+            end_time: 5,
+            duration: 5,
+          },
+        ],
+      },
+    ],
+  };
+  const session = buildStudioSessionDetailsFromStatus({
+    session_id: 'branched-session',
+    status: 'PENDING',
+    // A less detailed top-level manifest must not replace session.branching.
+    branching: { schema: 'branched_video_status.v1', paths: [] },
+    session: {
+      narrativeType: 'branched',
+      branching,
+      layers: [
+        { id: 'layer-shared', startTime: 30, duration: 5, prompt: 'Shared scene' },
+        { id: 'layer-root-1', startTime: 35, duration: 6, prompt: 'First ending' },
+        { id: 'layer-root-2', startTime: 41, duration: 7, prompt: 'Second ending' },
+      ],
+      audioLayers: [
+        {
+          id: 'audio-shared',
+          type: 'speech',
+          startTime: 30,
+          duration: 5,
+          connectedLayerId: 'layer-shared',
+        },
+        {
+          id: 'audio-root-1',
+          type: 'speech',
+          startTime: 35,
+          duration: 6,
+          connectedLayerId: 'layer-root-1',
+        },
+        {
+          id: 'audio-root-2',
+          type: 'speech',
+          startTime: 41,
+          duration: 7,
+          connectedLayerId: 'layer-root-2',
+        },
+      ],
+    },
+  });
+
+  assert.equal(session.branching, branching);
+  assert.equal(session.defaultBranchPathId, 'root.2');
+  assert.deepEqual(session.canonicalLayers.map((layer) => layer.id), [
+    'layer-shared',
+    'layer-root-1',
+    'layer-root-2',
+  ]);
+  assert.deepEqual(session.layers.map((layer) => layer.id), ['layer-shared', 'layer-root-2']);
+  assert.deepEqual(session.layers.map((layer) => layer.durationOffset), [0, 5]);
+  assert.deepEqual(session.layers.map((layer) => layer.endTime), [5, 12]);
+  assert.deepEqual(session.layers.map((layer) => layer.branchPathId), ['root.2', 'root.2']);
+  assert.equal(session.canonicalLayers[0].durationOffset, 30);
+
+  assert.deepEqual(session.canonicalAudioLayers.map((layer) => layer.id), [
+    'audio-shared',
+    'audio-root-1',
+    'audio-root-2',
+  ]);
+  assert.deepEqual(session.audioLayers.map((layer) => layer.id), ['audio-shared', 'audio-root-2']);
+  assert.deepEqual(session.audioLayers.map((layer) => layer.startTime), [0, 5]);
+  assert.deepEqual(session.audioLayers.map((layer) => layer.connectedLayerIndex), [0, 1]);
+  assert.equal(session.canonicalAudioLayers[0].startTime, 30);
+
+  const alternatePath = materializeBranchPathPreview({
+    branching: session.branching,
+    canonicalLayers: session.canonicalLayers,
+    canonicalAudioLayers: session.canonicalAudioLayers,
+    pathId: 'root.1',
+  });
+  assert.equal(alternatePath.pathId, 'root.1');
+  assert.deepEqual(alternatePath.layers.map((layer) => layer.id), [
+    'layer-shared',
+    'layer-root-1',
+  ]);
+  assert.deepEqual(alternatePath.layers.map((layer) => layer.durationOffset), [0, 5]);
+  assert.deepEqual(alternatePath.audioLayers.map((layer) => layer.id), [
+    'audio-shared',
+    'audio-root-1',
+  ]);
+  assert.deepEqual(alternatePath.audioLayers.map((layer) => layer.connectedLayerIndex), [0, 1]);
 });

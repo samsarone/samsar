@@ -319,7 +319,7 @@ function getRequestedInferenceModel(chatRequest = {}) {
 export function getOpenRouterModelForInferenceRequest(chatRequest = {}, env = process.env) {
   const model = getRequestedInferenceModel(chatRequest);
   if (isQwenInferenceModel(model)) {
-    return normalizeString(env?.OPENROUTER_QWEN_37_PLUS_MODEL) || 'qwen/qwen3.7-plus';
+    return normalizeString(env?.OPENROUTER_QWEN_37_MAX_MODEL) || 'qwen/qwen3.7-max';
   }
   if (isGeminiInferenceModel(model)) {
     return normalizeString(env?.OPENROUTER_GEMINI_31_PRO_MODEL) || 'google/gemini-3.1-pro-preview';
@@ -382,7 +382,9 @@ export async function createOpenRouterChatCompletion(chatRequest = {}) {
       provider: 'openrouter',
       model: openRouterModel,
       timeoutMs: requestTimeout,
-      maxRetries: externalMaxRetries,
+      maxRetries: externalMaxRetries ?? maxRetries ?? (
+        qwenRequest ? process.env.OPENROUTER_QWEN_MAX_RETRIES : undefined
+      ),
     },
   );
 }
@@ -467,19 +469,31 @@ export async function createSamsarExternalChatCompletion(chatRequest = {}) {
     timeout,
     timeoutMs,
     maxRetries,
+    externalMaxRetries,
     ...payload
   } = chatRequest || {};
 
   const model = getRequestedInferenceModel(payload);
-  const response = await client.createV2ExternalChatCompletion({
+  const requestTimeout = Number(
+    timeout ?? timeoutMs ?? process.env.SAMSAR_EXTERNAL_INFERENCE_TIMEOUT_MS
+  ) || DEFAULT_EXTERNAL_INFERENCE_TIMEOUT_MS;
+  const requestPayload = {
     ...payload,
     model,
     ...(model === GPT_56_SOL_INFERENCE_MODEL
       ? { reasoning_effort: GPT_56_SOL_REASONING_EFFORT }
       : {}),
-    timeout: Number(timeout ?? timeoutMs ?? process.env.SAMSAR_EXTERNAL_INFERENCE_TIMEOUT_MS) ||
-      DEFAULT_EXTERNAL_INFERENCE_TIMEOUT_MS,
-  });
+    timeout: requestTimeout,
+  };
+  const response = await runExternalInferenceWithRetry(
+    ({ signal }) => client.createV2ExternalChatCompletion(requestPayload, { signal }),
+    {
+      provider: 'samsar',
+      model,
+      timeoutMs: requestTimeout,
+      maxRetries: externalMaxRetries ?? maxRetries,
+    },
+  );
 
   return unwrapSamsarExternalChatCompletionResponse(response);
 }

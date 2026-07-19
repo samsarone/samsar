@@ -204,20 +204,20 @@ test('Docker inference uses native then OpenRouter then Samsar for every model',
   assert.equal(shouldUseSamsarExternalInference({ model: 'QWEN3.7' }), false);
 });
 
-test('OpenRouter maps Qwen text and vision requests to Plus', () => {
+test('OpenRouter maps Qwen text and vision requests to Max', () => {
   assert.equal(getOpenRouterModelForInferenceRequest({
     model: 'QWEN3.7',
     messages: [{ role: 'user', content: 'hello' }],
   }, {
     OPENROUTER_QWEN_37_MAX_MODEL: 'qwen/qwen3.7-max',
-  }), 'qwen/qwen3.7-plus');
+  }), 'qwen/qwen3.7-max');
   assert.equal(getOpenRouterModelForInferenceRequest({
     model: 'QWEN3.7',
     messages: [{
       role: 'user',
       content: [{ type: 'image_url', image_url: { url: 'https://example.com/frame.png' } }],
     }],
-  }), 'qwen/qwen3.7-plus');
+  }), 'qwen/qwen3.7-max');
 });
 
 test('production Qwen is constrained to OpenRouter even when Alibaba is configured', () => {
@@ -266,7 +266,7 @@ test('OpenRouter adapter sends OpenAI-compatible vision requests with the Plus d
     timeout: 12345,
   });
 
-  assert.equal(capturedPayload.model, 'qwen/qwen3.7-plus');
+  assert.equal(capturedPayload.model, 'qwen/qwen3.7-max');
   assert.equal(capturedPayload.messages[0].content[0].type, 'image_url');
   assert.equal(capturedPayload.max_tokens, 65536);
   assert.equal(capturedOptions.timeout, 1200000);
@@ -289,7 +289,7 @@ test('OpenRouter applies Qwen-specific token and reasoning limits to Plus text i
     max_completion_tokens: 20000,
   });
 
-  assert.equal(capturedPayload.model, 'qwen/qwen3.7-plus');
+  assert.equal(capturedPayload.model, 'qwen/qwen3.7-max');
   assert.equal(capturedPayload.reasoning.effort, 'high');
   assert.equal(capturedPayload.max_tokens, 20000);
   assert.equal(Object.hasOwn(capturedPayload, 'max_completion_tokens'), false);
@@ -328,7 +328,7 @@ test('OpenRouter reserves Qwen output tokens and enforces schema support for str
     plugins: [{ id: 'existing-plugin' }],
   });
 
-  assert.equal(capturedPayload.model, 'qwen/qwen3.7-plus');
+  assert.equal(capturedPayload.model, 'qwen/qwen3.7-max');
   assert.equal(capturedPayload.reasoning.effort, 'high');
   assert.equal(capturedPayload.max_tokens, 4096);
   assert.deepEqual(capturedPayload.provider, {
@@ -426,6 +426,30 @@ test('external inference retries transient 429 responses three times with backof
   assert.deepEqual(delays, [5000, 10000, 20000]);
 });
 
+test('external inference retries truncated OpenRouter JSON responses with backoff', async () => {
+  let calls = 0;
+  const delays = [];
+
+  const response = await runExternalInferenceWithRetry(async () => {
+    calls += 1;
+    if (calls <= 3) {
+      throw new Error(
+        'invalid json response body at https://openrouter.ai/api/v1/chat/completions reason: Unexpected end of JSON input',
+      );
+    }
+    return 'ok';
+  }, {
+    maxRetries: 3,
+    timeoutMs: 1000,
+    sleep: async (delayMs) => delays.push(delayMs),
+    logger: { error() {}, warn() {} },
+  });
+
+  assert.equal(response, 'ok');
+  assert.equal(calls, 4);
+  assert.deepEqual(delays, [5000, 10000, 20000]);
+});
+
 test('external inference recognizes provider status exposed only as a numeric code', async () => {
   let calls = 0;
 
@@ -508,6 +532,28 @@ test('external inference does not retry non-transient authorization failures', a
   );
 
   assert.equal(calls, 1);
+});
+
+test('external inference never retries insufficient-credit failures', async () => {
+  for (const error of [
+    Object.assign(new Error('Payment required'), { status: 402 }),
+    new Error('OpenRouter account has insufficient credits'),
+  ]) {
+    let calls = 0;
+    await assert.rejects(
+      runExternalInferenceWithRetry(async () => {
+        calls += 1;
+        throw error;
+      }, {
+        maxRetries: 3,
+        timeoutMs: 1000,
+        sleep: async () => assert.fail('credit failures must not schedule a retry'),
+        logger: { error() {}, warn() {} },
+      }),
+      error,
+    );
+    assert.equal(calls, 1);
+  }
 });
 
 test('deployed authorization routes Qwen through Samsar even when native Alibaba auth exists', () => {
@@ -752,6 +798,49 @@ test('Docker external polling resumes a persisted hosted request without resubmi
 
   assert.equal(submitCalls, 0);
   assert.equal(response.choices[0].message.content, 'resumed');
+});
+
+test('Docker external polling marks a completed persisted response as reused without serializing the marker', async (t) => {
+  clearProviderEnv();
+  process.env.SAMSAR_API_KEY = 'completed-polling-test-key';
+  const persistedResponse = {
+    model: 'gpt-5.6-sol',
+    usage: { input_tokens: 10, output_tokens: 2 },
+    choices: [{ message: { content: 'already completed' } }],
+  };
+  const requestStore = {
+    async prepare() {
+      return {
+        clientRequestId: 'local-request-completed',
+        providerRequestId: 'hosted-request-completed',
+        status: 'COMPLETED',
+        response: persistedResponse,
+      };
+    },
+  };
+  const postMock = t.mock.method(SamsarClient.prototype, 'postV2', async () => {
+    throw new Error('a completed request must not be submitted again');
+  });
+  const getMock = t.mock.method(SamsarClient.prototype, 'getV2', async () => {
+    throw new Error('a completed request must not be polled again');
+  });
+
+  const response = await createSamsarExternalChatCompletion({
+    model: 'gpt-5.6-sol',
+    messages: [{ role: 'user', content: 'reuse' }],
+    externalPolling: true,
+    externalRequestContext: {
+      sessionId: 'video-session-completed',
+      requestKey: 'text_to_video:theme:attempt-1',
+    },
+    externalRequestStore: requestStore,
+  });
+
+  assert.equal(response, persistedResponse);
+  assert.equal(response[Symbol.for('samsar.externalInferenceReused')], true);
+  assert.equal(JSON.stringify(response).includes('externalInferenceReused'), false);
+  assert.equal(postMock.mock.callCount(), 0);
+  assert.equal(getMock.mock.callCount(), 0);
 });
 
 test('Docker retries a reset submit with the same hosted idempotency key', async (t) => {

@@ -110,6 +110,16 @@ function getExternalInferenceErrorCode(error) {
 
 function isRetryableExternalInferenceError(error) {
   const status = getExternalInferenceErrorStatus(error);
+  const message = normalizeString(error?.message || error?.cause?.message).toLowerCase();
+  if (
+    status === 402 ||
+    message.includes('insufficient credit') ||
+    message.includes('insufficient quota') ||
+    message.includes('payment required') ||
+    message.includes('out of credits')
+  ) {
+    return false;
+  }
   if (status !== null) {
     return status === 408 || status === 409 || status === 425 || status === 429 || status >= 500;
   }
@@ -122,6 +132,14 @@ function isRetryableExternalInferenceError(error) {
     'EAI_AGAIN',
     'ENETUNREACH',
   ].includes(code)) {
+    return true;
+  }
+
+  if (
+    message.includes('invalid json response body') ||
+    message.includes('unexpected end of json input') ||
+    message.includes('unterminated json')
+  ) {
     return true;
   }
 
@@ -311,6 +329,13 @@ async function createAndPollSamsarExternalChatCompletion(client, payload, {
     ? await requestStore.prepare(requestContext, { model: payload.model })
     : null;
   if (localRequest?.status === 'COMPLETED' && localRequest.response) {
+    if (localRequest.response && typeof localRequest.response === 'object') {
+      Object.defineProperty(
+        localRequest.response,
+        Symbol.for('samsar.externalInferenceReused'),
+        { value: true, enumerable: false, configurable: true },
+      );
+    }
     return {
       data: {
         request_id: localRequest.providerRequestId,
@@ -692,7 +717,7 @@ export function resolveConfiguredInferenceProvider(model) {
 export function getOpenRouterModelForInferenceRequest(chatRequest = {}, env = process.env) {
   const model = getRequestedInferenceModel(chatRequest);
   if (isQwenInferenceModel(model)) {
-    return normalizeString(env?.OPENROUTER_QWEN_37_PLUS_MODEL) || 'qwen/qwen3.7-plus';
+    return normalizeString(env?.OPENROUTER_QWEN_37_MAX_MODEL) || 'qwen/qwen3.7-max';
   }
   if (isGeminiInferenceModel(model)) {
     return normalizeString(env?.OPENROUTER_GEMINI_31_PRO_MODEL) || 'google/gemini-3.1-pro-preview';
@@ -777,7 +802,9 @@ export async function createOpenRouterChatCompletion(chatRequest = {}) {
       provider: 'openrouter',
       model: openRouterModel,
       timeoutMs: requestTimeout,
-      maxRetries: externalMaxRetries,
+      maxRetries: externalMaxRetries ?? maxRetries ?? (
+        qwenRequest ? process.env.OPENROUTER_QWEN_MAX_RETRIES : undefined
+      ),
     },
   );
 }
@@ -892,7 +919,7 @@ export async function createSamsarExternalChatCompletion(chatRequest = {}) {
       provider: 'samsar',
       model,
       timeoutMs: usePolling ? pollingTimeoutMs : requestTimeout,
-      maxRetries: externalMaxRetries,
+      maxRetries: externalMaxRetries ?? maxRetries,
     },
   );
 

@@ -419,16 +419,18 @@ function normalizeGeminiFinishReason(finishReason) {
   return normalized.toLowerCase();
 }
 
-function normalizeGeminiUsage(usageMetadata) {
+export function normalizeGeminiUsage(usageMetadata) {
   if (!usageMetadata || typeof usageMetadata !== 'object') {
     return null;
   }
 
   const promptTokens = Number(usageMetadata.promptTokenCount) || 0;
-  const completionTokens = Number(usageMetadata.candidatesTokenCount) || 0;
+  const reasoningTokens = Number(usageMetadata.thoughtsTokenCount) || 0;
+  // Vertex reports visible candidate tokens and thinking tokens separately,
+  // but both are billed at the model's output-token rate.
+  const completionTokens = (Number(usageMetadata.candidatesTokenCount) || 0) + reasoningTokens;
   const totalTokens = Number(usageMetadata.totalTokenCount) || promptTokens + completionTokens;
   const cachedTokens = Number(usageMetadata.cachedContentTokenCount) || 0;
-  const reasoningTokens = Number(usageMetadata.thoughtsTokenCount) || 0;
 
   return {
     prompt_tokens: promptTokens,

@@ -26,12 +26,15 @@ function isWritableDirectory(dirPath) {
 }
 
 function resolveAssetRoot() {
-  const dockerAssetsRoot = process.env.SAMSAR_ASSETS_V2_ROOT || '/assets_v2';
+  const configuredAssetsRoot = String(process.env.SAMSAR_ASSETS_V2_ROOT || '').trim();
+  const dockerAssetsRoot = configuredAssetsRoot || '/assets_v2';
   const localAssetsRoot = path.resolve(__dirname, '../../..', 'assets_v2');
   const currentEnv = process.env.CURRENT_ENV;
 
-  // Only docker/staging should write to the mounted assets volume.
-  if ((currentEnv === 'staging' || currentEnv === 'docker')
+  // An explicit root is authoritative in deployed containers, including when
+  // CURRENT_ENV is "production". Docker Compose mounts the persistent volume
+  // at this path.
+  if ((configuredAssetsRoot || currentEnv === 'staging' || currentEnv === 'docker')
     && fs.existsSync(dockerAssetsRoot)
     && isWritableDirectory(dockerAssetsRoot)) {
     return dockerAssetsRoot;

@@ -73,7 +73,7 @@ test('OpenRouter is the Docker fallback for all inference and Qwen vision models
     assert.equal(getOpenRouterModelForInferenceRequest({
       model: 'QWEN3.7',
       messages: [{ role: 'user', content: [{ type: 'input_image', image_url: 'frame' }] }],
-    }), 'qwen/qwen3.7-plus');
+    }), 'qwen/qwen3.7-max');
   });
 });
 
@@ -149,7 +149,7 @@ test('the ALIBABA_API_KEY alias authorizes explicit native Qwen routing', () => 
   });
 });
 
-test('Qwen OpenRouter applies Plus routing and bounded settings', async (t) => {
+test('Qwen OpenRouter applies Max routing and bounded settings', async (t) => {
   const keys = ['CURRENT_ENV', 'OPENROUTER_API_KEY', 'OPENROUTER_QWEN_MAX_TOKENS'];
   const previous = Object.fromEntries(keys.map((key) => [key, process.env[key]]));
   t.after(() => {
@@ -189,10 +189,10 @@ test('Qwen OpenRouter applies Plus routing and bounded settings', async (t) => {
     plugins: [{ id: 'existing-plugin' }],
   });
 
-  assert.equal(payloads[0].model, 'qwen/qwen3.7-plus');
+  assert.equal(payloads[0].model, 'qwen/qwen3.7-max');
   assert.equal(payloads[0].reasoning.effort, 'high');
   assert.equal(payloads[0].max_tokens, 20000);
-  assert.equal(payloads[1].model, 'qwen/qwen3.7-plus');
+  assert.equal(payloads[1].model, 'qwen/qwen3.7-max');
   assert.equal(payloads[1].max_tokens, 65536);
   assert.equal(payloads[2].reasoning.effort, 'high');
   assert.equal(payloads[2].max_tokens, 16384);

@@ -782,18 +782,21 @@ export async function createNativeOpenAIModeration(requestData, options = {}) {
 async function createGoogleModerationWithRetry(requestData, options = {}) {
   const retryConfig = getProviderRetryConfig(MODERATION_PROVIDERS.GOOGLE, options);
   return runModerationWithRetry(
-    async ({ signal, timeoutMs }) => {
+    async ({ attempt, signal, timeoutMs }) => {
       try {
         return requireModerationResponse(
           await createGoogleModerationForNarrative(requestData, {
             ...options,
             signal,
             timeoutMs,
+            moderationAttempt: attempt,
           }),
         );
       } catch (error) {
         const message = normalizeString(error?.message);
         if (
+          error?.inferenceUsageObserverFailed !== true &&
+          error?.code !== 'INFERENCE_USAGE_OBSERVER_FAILED' &&
           getErrorStatus(error) === null &&
           !message.includes("requires GOOGLE_CLOUD_PROJECT")
         ) {
@@ -1000,6 +1003,10 @@ export async function getModerationForNarrative(requestData, options = {}) {
       attempts: error?.moderationAttempts || null,
       durationMs: Date.now() - startedAt,
     });
+    if (error?.inferenceUsageObserverFailed === true ||
+      error?.code === 'INFERENCE_USAGE_OBSERVER_FAILED') {
+      throw error;
+    }
     return false;
   }
 }

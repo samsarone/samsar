@@ -453,6 +453,19 @@ export function normalizeGoogleModerationResponse(responsePayload, { model = nul
   return normalized;
 }
 
+export function buildGoogleModerationInferenceReceipt(
+  responsePayload,
+  { model, attempt = 1 } = {},
+) {
+  return {
+    stage: 'moderation',
+    attempt,
+    model: responsePayload?.modelVersion || model || null,
+    provider: 'google',
+    usageMetadata: responsePayload?.usageMetadata || null,
+  };
+}
+
 export async function createGoogleModerationForNarrative(requestData, options = {}) {
   const credentialOptions = getGoogleModerationCredentialOptions(options);
   const location = getGoogleModerationLocation(credentialOptions);
@@ -499,7 +512,26 @@ export async function createGoogleModerationForNarrative(requestData, options = 
       throw await parseModerationError(response);
     }
 
-    return normalizeGoogleModerationResponse(await response.json(), { model });
+    const responsePayload = await response.json();
+    if (typeof options.onInferenceResponse === 'function') {
+      try {
+        await options.onInferenceResponse(buildGoogleModerationInferenceReceipt(
+          responsePayload,
+          { model, attempt: options.moderationAttempt ?? 1 },
+        ));
+      } catch (error) {
+        try {
+          error.code ||= 'INFERENCE_USAGE_OBSERVER_FAILED';
+          error.inferenceUsageObserverFailed = true;
+          error.retryable = false;
+        } catch {
+          // Preserve non-extensible observer errors.
+        }
+        throw error;
+      }
+    }
+
+    return normalizeGoogleModerationResponse(responsePayload, { model });
   } finally {
     clearTimeout(timeout);
     options.signal?.removeEventListener('abort', onOuterAbort);

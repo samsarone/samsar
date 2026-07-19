@@ -1,5 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
 
 import { __testOnly__ } from './VideoSession.js';
 
@@ -75,6 +77,43 @@ test('studio media hydration preserves unrelated external URLs', () => {
   assert.equal(hydrated.videoLink, 'https://cdn.example.com/final.mp4');
   assert.equal(hydrated.layers[0].aiVideoRemoteLink, 'https://cdn.example.com/scene.mp4');
   assert.equal(hydrated.layers[0].imageSession.activeGeneratedImage, 'https://cdn.example.com/scene.png');
+});
+
+test('studio media hydration serves locally finalized user videos from assets_v2', (t) => {
+  const relativePath = path.join(
+    'assets_v2',
+    'ai_video',
+    'generations',
+    `media_delivery_${process.pid}_${Date.now()}`,
+    'layer_123',
+    'user_video_test.mp4',
+  );
+  const absolutePath = path.resolve(relativePath);
+  fs.mkdirSync(path.dirname(absolutePath), { recursive: true });
+  fs.writeFileSync(absolutePath, 'test-video');
+  t.after(() => fs.rmSync(path.join(process.cwd(), 'assets_v2', 'ai_video', 'generations', path.basename(path.dirname(path.dirname(absolutePath)))), {
+    recursive: true,
+    force: true,
+  }));
+
+  const staleSignedUrl = `https://static.samsar.one/${relativePath.replaceAll(path.sep, '/')}?Expires=1&Signature=old&Key-Pair-Id=old`;
+  const hydrated = __testOnly__.hydrateStudioSessionMediaForResponse({
+    layers: [{
+      userVideoLayer: `/${relativePath.replaceAll(path.sep, '/')}`,
+      userVideoRemoteLink: staleSignedUrl,
+    }],
+  });
+
+  const expectedPathname = `/${relativePath.replaceAll(path.sep, '/')}`;
+  for (const value of [
+    hydrated.layers[0].userVideoLayer,
+    hydrated.layers[0].userVideoRemoteLink,
+  ]) {
+    const resolvedUrl = new URL(value, 'https://processor.example.com');
+    assert.equal(resolvedUrl.pathname, expectedPathname);
+    assert.equal(resolvedUrl.search, '');
+    assert.notEqual(resolvedUrl.hostname, 'static.samsar.one');
+  }
 });
 
 test('studio media hydration resolves legacy generated images from durable temp_images keys', () => {

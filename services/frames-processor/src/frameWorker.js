@@ -16,6 +16,7 @@ import { getFramesPerSecondFromValue } from './utils/FpsUtils.js';
 import { installStructuredLogger } from './utils/StructuredLogger.js';
 import { isMotionlessSubtitleItem } from './utils/SubtitleRenderPolicy.js';
 import { selectActiveItemsForFrame } from './utils/ActiveSubtitleItems.js';
+import { validateFrameOutputNamespace } from './utils/BranchRenderPath.js';
 
 installStructuredLogger({
   serviceName: process.env.SERVICE_NAME || 'samsar_frames_processor',
@@ -642,7 +643,13 @@ process.on('message', async (data) => {
         framesPerSecond: payloadFramesPerSecond,
         globalVideos = [],
         narratorAvatarOverlay = null,
+        frameOutputNamespace,
       } = data;
+
+      const trustedFrameOutputNamespace = validateFrameOutputNamespace(
+        frameOutputNamespace,
+        { sessionId, layerId: layer?._id },
+      );
 
       framesPerSecond = getFramesPerSecondFromValue(payloadFramesPerSecond);
       frameDuration = 1000 / framesPerSecond;
@@ -659,6 +666,7 @@ process.on('message', async (data) => {
         totalVideoDuration,
         globalVideos,
         narratorAvatarOverlay,
+        trustedFrameOutputNamespace,
       );
 
       safeSend({ status: 'COMPLETED', framesList });
@@ -722,7 +730,8 @@ function getAudioFrameIndex(elapsedTime, totalVideoDuration, totalAudioFrames) {
 }
 
 async function generateFrames(generationId, layer, sessionId, startFrame, endFrame,
-  canvasDimensions, applyAudioVisualizer = false, visualizerData, totalVideoDuration, globalVideos = [], narratorAvatarOverlay = null) {
+  canvasDimensions, applyAudioVisualizer = false, visualizerData, totalVideoDuration, globalVideos = [], narratorAvatarOverlay = null,
+  frameOutputNamespace) {
 
   const { imageSession, duration, durationOffset, _id, hasAiVideoLayer, aiVideoLayer,
     hasLipSyncVideoLayer,
@@ -762,8 +771,8 @@ async function generateFrames(generationId, layer, sessionId, startFrame, endFra
       console.error(`No active items in image session for layer ${layer._id} in session ${sessionId}`);
 
       const layerId = _id.toString();
-      const frameNameSpace = path.join('video', 'frames', sessionId, layerId);
-      const frameFileBasePath = resolveAssetWritePath('video', 'frames', sessionId, layerId);
+      const frameNameSpace = frameOutputNamespace;
+      const frameFileBasePath = resolveAssetWritePath(...frameOutputNamespace.split('/'));
 
 
       if (!fs.existsSync(frameFileBasePath)) {
@@ -816,8 +825,8 @@ async function generateFrames(generationId, layer, sessionId, startFrame, endFra
 
   }
 
-  const frameNameSpace = path.join('video', 'frames', sessionId, layerId);
-  const frameFileBasePath = resolveAssetWritePath('video', 'frames', sessionId, layerId);
+  const frameNameSpace = frameOutputNamespace;
+  const frameFileBasePath = resolveAssetWritePath(...frameOutputNamespace.split('/'));
 
   if (!fs.existsSync(frameFileBasePath)) {
     fs.mkdirSync(frameFileBasePath, { recursive: true });
@@ -1048,11 +1057,6 @@ async function processFrameAtIndex(
           if (activeItemListImage) {
 
 
-              const frameNameSpace = path.join('video', 'frames', sessionId, layerId);
-              const frameFileBasePath = resolveAssetWritePath('video', 'frames', sessionId, layerId);
-
-
-
               const buffer = canvas.toBuffer('image/png');
               const imgName = `/${frameNameSpace}/${frame}.png`;
               framesList.push(imgName);
@@ -1072,9 +1076,6 @@ async function processFrameAtIndex(
         // check if we have active item list image
         const activeItemListImage = activeItemList.find(item => item.type === 'image');
         if (activeItemListImage) {
-
-          const frameNameSpace = path.join('video', 'frames', sessionId, layerId);
-          const frameFileBasePath = resolveAssetWritePath('video', 'frames', sessionId, layerId);
 
           const buffer = canvas.toBuffer('image/png');
           const imgName = `/${frameNameSpace}/${frame}.png`;

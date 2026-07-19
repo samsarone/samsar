@@ -123,6 +123,18 @@ const layerSchema = new Schema({
 
   activeImageDescription: { type: String, default: '' },
 
+  cameraTransition: { type: String, default: '' },
+  cameraTransitionGenerationStatus: {
+    type: String,
+    enum: ['INIT', 'PENDING', 'COMPLETED', 'FAILED'],
+    default: 'INIT',
+  },
+  cameraTransitionGenerationError: { type: String, default: null },
+  cameraTransitionGeneratedAt: { type: Date, default: null },
+  cameraTransitionGenerationSource: { type: String, default: null },
+  cameraTransitionBranchPathId: { type: String, default: null },
+  cameraTransitionSequenceIndex: { type: Number, default: null },
+
   layerAiVideoType: String, // character or scene 
 
   layerBaseAiImageType: String, // character or scene
@@ -216,6 +228,23 @@ const audioLayerSchema = new Schema({
 // Create the main schema corresponding to the document interface
 const videoSessionSchema = new Schema({
   userId: String,
+  narrativeType: {
+    type: String,
+    enum: ['singular', 'branched'],
+    default: 'singular',
+  },
+  sourceNarrativeType: {
+    type: String,
+    enum: ['singular', 'branched'],
+    default: null,
+  },
+  branchingMeta: { type: Schema.Types.Mixed, default: null },
+  renderPlanVersion: { type: Number, default: null },
+  defaultBranchPathId: { type: String, default: null },
+  branchRenderPaths: { type: [Schema.Types.Mixed], default: [] },
+  branchRenderCompletionFinalized: { type: Boolean, default: false },
+  branchRenderCompletedAt: { type: Date, default: null },
+  expressGenerationBillingStageDurations: { type: Object, default: {} },
   promptlist: [String],
   layers: [layerSchema],
   audioLayers: [audioLayerSchema],

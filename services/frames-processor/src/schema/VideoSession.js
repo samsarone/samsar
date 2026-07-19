@@ -220,9 +220,54 @@ const globalVideoSchema = new Schema({
     title: { type: String, default: 'Facecam' },
 }, { strict: false });
 
+const branchTimelineEntrySchema = new Schema({
+    sequenceIndex: { type: Number, required: true },
+    pathSequenceIndex: { type: Number, default: null },
+    sceneIndex: { type: Number, default: null },
+    layerId: { type: String, required: true },
+    duration: { type: Number, required: true },
+    durationOffset: { type: Number, required: true },
+    frames: [String],
+    frameGenerationStatus: { type: String, default: 'INIT' },
+    frameGenerationPending: { type: Boolean, default: false },
+    frameGenerationError: { type: String, default: null },
+    error: { type: String, default: null },
+}, { _id: false, strict: false });
+
+const branchAudioTimelineEntrySchema = new Schema({
+    sequenceIndex: { type: Number, default: null },
+    audioLayerId: { type: String, required: true },
+    pathSequenceIndex: { type: Number, default: null },
+    duration: { type: Number, default: null },
+    startTime: { type: Number, default: null },
+    endTime: { type: Number, default: null },
+    connectedLayerStartTimeOffset: { type: Number, default: null },
+    connectedLayerId: { type: String, default: null },
+    connectedLayerIndex: { type: Number, default: null },
+}, { _id: false, strict: false });
+
+const branchRenderPathSchema = new Schema({
+    pathId: { type: String, required: true },
+    duration: { type: Number, required: true },
+    timeline: [branchTimelineEntrySchema],
+    audioTimeline: [branchAudioTimelineEntrySchema],
+    frameGenerationStatus: { type: String, default: 'INIT' },
+    frameGenerationPending: { type: Boolean, default: false },
+    frameGenerationError: { type: String, default: null },
+    videoGenerationStatus: { type: String, default: 'INIT' },
+    videoGenerationPending: { type: Boolean, default: false },
+    videoGenerationError: { type: String, default: null },
+    videoLink: { type: String, default: null },
+    remoteURL: { type: String, default: null },
+}, { _id: false, strict: false });
+
 // Create the main schema corresponding to the document interface
 const videoSessionSchema = new Schema({
     userId: String,
+    narrativeType: { type: String, enum: ['singular', 'branched'], default: 'singular' },
+    renderPlanVersion: { type: Number, default: null },
+    defaultBranchPathId: { type: String, default: null },
+    branchRenderPaths: [branchRenderPathSchema],
     promptlist: [String],
     layers: [layerSchema],
     audioLayers: [audioLayerSchema],

@@ -31,3 +31,11 @@ test('external assistant polling status aliases are GET-only and authenticated',
   assert.equal(statusLayer.route.stack[0].name, 'validateAPIKeyAndUserId');
   assert.equal(statusLayer.route.stack[1].name, 'handleExternalChatCompletionStatus');
 });
+
+test('external narrative API is mounted under the narrative path', () => {
+  const narrativeLayer = router.stack.find((layer) => (
+    layer.name === 'router' && String(layer.regexp).includes('narrative')
+  ));
+
+  assert.ok(narrativeLayer, 'external narrative router must be registered');
+});

@@ -42,10 +42,27 @@ function getCode(error) {
 
 function isRetryable(error) {
   const status = getStatus(error);
+  const message = normalizeString(error?.message || error?.cause?.message).toLowerCase();
+  if (
+    status === 402 ||
+    message.includes('insufficient credit') ||
+    message.includes('insufficient quota') ||
+    message.includes('payment required') ||
+    message.includes('out of credits')
+  ) {
+    return false;
+  }
   if (status !== null) {
     return status === 408 || status === 409 || status === 425 || status === 429 || status >= 500;
   }
   if (['ECONNABORTED', 'ECONNRESET', 'ETIMEDOUT', 'EAI_AGAIN', 'ENETUNREACH'].includes(getCode(error))) {
+    return true;
+  }
+  if (
+    message.includes('invalid json response body') ||
+    message.includes('unexpected end of json input') ||
+    message.includes('unterminated json')
+  ) {
     return true;
   }
   return ['APICONNECTIONERROR', 'APICONNECTIONTIMEOUTERROR'].includes(

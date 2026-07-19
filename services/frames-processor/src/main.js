@@ -11,6 +11,12 @@ import QRCode from 'qrcode';
 import { getFramesPerSecondFromValue } from './utils/FpsUtils.js';
 import { installStructuredLogger } from './utils/StructuredLogger.js';
 import { prepareLayerSubtitlesForRendering } from './utils/SubtitleRenderPolicy.js';
+import {
+  buildEffectiveBranchSession,
+  buildFrameOutputNamespace,
+  isBranchPathFrameComplete,
+  resolveBranchRenderContext,
+} from './utils/BranchRenderPath.js';
 
 installStructuredLogger({
   serviceName: process.env.SERVICE_NAME || 'samsar_frames_processor',
@@ -36,26 +42,63 @@ const AI_VIDEO_FRAME_SOURCE_MANIFEST = '.source.json';
 let ongoingTasks = 0;
 let taskQueue = [];
 const childProcessesMap = new Map();
+const sharedAiVideoFramePreparation = new Map();
 
 class ObsoleteFrameGenerationError extends Error {
-  constructor(message, { generationId = null, sessionId = null, layerId = null } = {}) {
+  constructor(message, {
+    generationId = null,
+    sessionId = null,
+    layerId = null,
+    renderPathId = null,
+    pathSequenceIndex = null,
+  } = {}) {
     super(message);
     this.name = 'ObsoleteFrameGenerationError';
     this.generationId = generationId;
     this.sessionId = sessionId;
     this.layerId = layerId;
+    this.renderPathId = renderPathId;
+    this.pathSequenceIndex = pathSequenceIndex;
   }
 }
 
 class FatalFrameGenerationError extends Error {
-  constructor(message, { sessionId = null, layerId = null, sourceType = null, videoPath = null } = {}) {
+  constructor(message, {
+    sessionId = null,
+    layerId = null,
+    sourceType = null,
+    videoPath = null,
+    renderPathId = null,
+    pathSequenceIndex = null,
+  } = {}) {
     super(message);
     this.name = 'FatalFrameGenerationError';
     this.sessionId = sessionId;
     this.layerId = layerId;
     this.sourceType = sourceType;
     this.videoPath = videoPath;
+    this.renderPathId = renderPathId;
+    this.pathSequenceIndex = pathSequenceIndex;
   }
+}
+
+function normalizeId(value) {
+  return value?.toString?.() || '';
+}
+
+function isBranchedFrameGeneration(generation = {}) {
+  return Boolean(normalizeId(generation?.renderPathId));
+}
+
+function getCanvasDimensions(session = {}) {
+  const sessionAspectRatio = session.aspectRatio || '1:1';
+  if (sessionAspectRatio === '16:9') {
+    return { width: 1792, height: 1024 };
+  }
+  if (sessionAspectRatio === '9:16') {
+    return { width: 1024, height: 1792 };
+  }
+  return { width: 1024, height: 1024 };
 }
 
 function buildFrameGenerationFailureSet({ layerIndex = -1, message }) {
@@ -80,7 +123,60 @@ function buildFrameGenerationFailureSet({ layerIndex = -1, message }) {
   return setPayload;
 }
 
-async function markFrameGenerationFailed(sessionId, layerId, error) {
+function buildBranchFrameGenerationFailureSet({
+  pathIndex,
+  timeline,
+  pathSequenceIndex,
+  message,
+  hasRemainingFrameGenerations = false,
+}) {
+  const failureMessage = message || 'Frame generation failed.';
+  const failedTimeline = Array.isArray(timeline)
+    ? timeline.map((entry, arrayIndex) => {
+      const entrySequenceIndex = Number.isInteger(Number(entry?.sequenceIndex))
+        ? Number(entry.sequenceIndex)
+        : arrayIndex;
+      const isFailedEntry = entrySequenceIndex === Number(pathSequenceIndex);
+      const wasPending = entry?.frameGenerationPending === true;
+
+      return {
+        ...(entry?.toObject?.() || entry),
+        frameGenerationPending: false,
+        ...(isFailedEntry
+          ? {
+            frameGenerationStatus: 'FAILED',
+            frameGenerationError: failureMessage,
+            error: failureMessage,
+          }
+          : wasPending
+            ? {
+              frameGenerationStatus: 'CANCELLED',
+              frameGenerationError: `Cancelled because another frame task in this render path failed: ${failureMessage}`,
+              error: `Cancelled because another frame task in this render path failed: ${failureMessage}`,
+            }
+            : {}),
+      };
+    })
+    : [];
+
+  return {
+    frameGenerationPending: Boolean(hasRemainingFrameGenerations),
+    videoGenerationPending: false,
+    expressGenerationPending: false,
+    expressGenerationFailed: true,
+    expressGenerationError: failureMessage,
+    generationError: failureMessage,
+    'expressGenerationStatus.frame_generation': 'FAILED',
+    'expressGenerationStatus.video_generation': 'FAILED',
+    'expressGenerationStatus.status': 'FAILED',
+    [`branchRenderPaths.${pathIndex}.timeline`]: failedTimeline,
+    [`branchRenderPaths.${pathIndex}.frameGenerationPending`]: false,
+    [`branchRenderPaths.${pathIndex}.frameGenerationStatus`]: 'FAILED',
+    [`branchRenderPaths.${pathIndex}.frameGenerationError`]: failureMessage,
+  };
+}
+
+async function markFrameGenerationFailed(sessionId, layerId, error, options = {}) {
   const normalizedSessionId = sessionId?.toString?.() || sessionId;
   if (!normalizedSessionId) {
     return;
@@ -88,6 +184,74 @@ async function markFrameGenerationFailed(sessionId, layerId, error) {
 
   const normalizedLayerId = layerId?.toString?.() || layerId;
   const message = error?.message || 'Frame generation failed.';
+
+  if (normalizeId(options.renderPathId)) {
+    const renderPathId = normalizeId(options.renderPathId);
+    const branchScope = { sessionId: normalizedSessionId, renderPathId };
+    await FrameGeneration.deleteMany(branchScope);
+    taskQueue = taskQueue.filter((task) => (
+      normalizeId(task?.sessionId) !== normalizedSessionId ||
+      normalizeId(task?.renderPathId) !== renderPathId
+    ));
+
+    const [session, remainingFrameGeneration] = await Promise.all([
+      VideoSession.findById(normalizedSessionId).lean(),
+      FrameGeneration.findOne({ sessionId: normalizedSessionId }).select('_id').lean(),
+    ]);
+
+    if (!session) {
+      return;
+    }
+
+    try {
+      const context = resolveBranchRenderContext(session, {
+        layerId: normalizedLayerId,
+        renderPathId,
+        renderPlanVersion: options.renderPlanVersion,
+        pathSequenceIndex: options.pathSequenceIndex,
+      });
+      await VideoSession.updateOne(
+        { _id: normalizedSessionId },
+        {
+          $set: buildBranchFrameGenerationFailureSet({
+            pathIndex: context.pathIndex,
+            timeline: context.renderPath.timeline,
+            pathSequenceIndex: context.pathSequenceIndex,
+            message,
+            hasRemainingFrameGenerations: Boolean(remainingFrameGeneration),
+          }),
+        },
+      );
+      return;
+    } catch (contextError) {
+      console.error('[frames_processor] Failed to resolve branched task while recording failure', {
+        sessionId: normalizedSessionId,
+        layerId: normalizedLayerId,
+        renderPathId,
+        pathSequenceIndex: options.pathSequenceIndex,
+        error: contextError?.message || contextError,
+      });
+    }
+
+    await VideoSession.updateOne(
+      { _id: normalizedSessionId },
+      {
+        $set: {
+          frameGenerationPending: Boolean(remainingFrameGeneration),
+          videoGenerationPending: false,
+          expressGenerationPending: false,
+          expressGenerationFailed: true,
+          expressGenerationError: message,
+          generationError: message,
+          'expressGenerationStatus.frame_generation': 'FAILED',
+          'expressGenerationStatus.video_generation': 'FAILED',
+          'expressGenerationStatus.status': 'FAILED',
+        },
+      },
+    );
+    return;
+  }
+
   const session = await VideoSession.findById(normalizedSessionId)
     .select('layers._id')
     .lean();
@@ -139,7 +303,14 @@ function getChildCombinationKey(generation = {}) {
   if (!generationId || !sessionId || !layerId) {
     return null;
   }
-  return `${generationId}_${sessionId}_${layerId}`;
+  const renderPathId = normalizeId(generation?.renderPathId);
+  const pathSequenceIndex = Number.isInteger(Number(generation?.pathSequenceIndex))
+    ? Number(generation.pathSequenceIndex)
+    : '';
+  const branchScope = renderPathId
+    ? `_${Buffer.from(renderPathId, 'utf8').toString('base64url')}_${pathSequenceIndex}`
+    : '';
+  return `${generationId}_${sessionId}_${layerId}${branchScope}`;
 }
 
 async function recoverStaleLockedFrameGenerations() {
@@ -148,7 +319,7 @@ async function recoverStaleLockedFrameGenerations() {
     rowLocked: true,
     updatedAt: { $lte: staleThreshold },
   })
-    .select('_id sessionId layerId updatedAt')
+    .select('_id sessionId layerId renderPathId renderPlanVersion pathSequenceIndex updatedAt')
     .lean();
 
   for (const generation of lockedGenerations) {
@@ -164,9 +335,66 @@ async function recoverStaleLockedFrameGenerations() {
       continue;
     }
 
-    const session = await VideoSession.findById(sessionId)
-      .select('layers._id layers.frameGenerationPending')
-      .lean();
+    const session = await VideoSession.findById(sessionId).lean();
+
+    if (isBranchedFrameGeneration(generation)) {
+      try {
+        const context = resolveBranchRenderContext(session, generation);
+        const entryIsPending = context.timelineEntry?.frameGenerationPending === true;
+
+        if (!entryIsPending) {
+          if (
+            context.renderPath?.frameGenerationStatus === 'APPLYING_TRANSITIONS' &&
+            isBranchPathFrameComplete(context.renderPath)
+          ) {
+            await VideoSession.updateOne(
+              { _id: sessionId },
+              {
+                $set: {
+                  [`branchRenderPaths.${context.pathIndex}.frameGenerationStatus`]: 'PENDING',
+                  [`branchRenderPaths.${context.pathIndex}.frameGenerationPending`]: true,
+                },
+              },
+            );
+          }
+
+          if (isBranchPathFrameComplete(context.renderPath)) {
+            await finalizeBranchPathFrames(sessionId, context.renderPathId, {
+              canvasDimensions: getCanvasDimensions(session),
+              framesPerSecond: getFramesPerSecondFromValue(session?.framesPerSecond),
+            });
+          }
+
+          console.warn(
+            `Deleting stale locked FrameGeneration ${generation._id} for completed/non-pending path entry ${context.renderPathId}:${context.pathSequenceIndex} in session ${sessionId}.`
+          );
+          await deleteFrameGenerationAndSyncSession(generation._id, sessionId);
+          continue;
+        }
+
+        console.warn(
+          `Recovering stale locked FrameGeneration ${generation._id} for path ${context.renderPathId}, sequence ${context.pathSequenceIndex}, layer ${layerId} in session ${sessionId}.`
+        );
+        await FrameGeneration.findByIdAndUpdate(
+          generation._id,
+          { rowLocked: false },
+          { new: true }
+        );
+        continue;
+      } catch (error) {
+        console.error('[frames_processor] Stale branched FrameGeneration is invalid', {
+          generationId: generation?._id?.toString?.(),
+          sessionId,
+          layerId,
+          renderPathId: generation?.renderPathId,
+          pathSequenceIndex: generation?.pathSequenceIndex,
+          error: error?.message || error,
+        });
+        await markFrameGenerationFailed(sessionId, layerId, error, generation);
+        continue;
+      }
+    }
+
     const layer = Array.isArray(session?.layers)
       ? session.layers.find((currentLayer) => currentLayer?._id?.toString?.() === layerId)
       : null;
@@ -609,17 +837,17 @@ async function overwriteTransitionFrame({
   fs.writeFileSync(destinationFrameAbsolutePath, buffer);
 }
 
-async function applySceneTransitionsToSession(session, { canvasDimensions, framesPerSecond }) {
+async function applySceneTransitionsToLayers(session, layers, { canvasDimensions, framesPerSecond }) {
   const normalizedPreset = normalizeSceneTransitionPreset(session?.sceneTransitionPreset);
-  const layers = Array.isArray(session?.layers) ? session.layers : [];
+  const orderedLayers = Array.isArray(layers) ? layers : [];
 
-  if (normalizedPreset === DEFAULT_SCENE_TRANSITION_PRESET || layers.length < 2) {
+  if (normalizedPreset === DEFAULT_SCENE_TRANSITION_PRESET || orderedLayers.length < 2) {
     return normalizedPreset;
   }
 
-  for (let layerIndex = 0; layerIndex < layers.length - 1; layerIndex += 1) {
-    const outgoingLayer = layers[layerIndex];
-    const incomingLayer = layers[layerIndex + 1];
+  for (let layerIndex = 0; layerIndex < orderedLayers.length - 1; layerIndex += 1) {
+    const outgoingLayer = orderedLayers[layerIndex];
+    const incomingLayer = orderedLayers[layerIndex + 1];
 
     if (!hasLayerTransitionContent(incomingLayer)) {
       continue;
@@ -678,6 +906,100 @@ async function applySceneTransitionsToSession(session, { canvasDimensions, frame
   }
 
   return normalizedPreset;
+}
+
+async function applySceneTransitionsToSession(session, options) {
+  return applySceneTransitionsToLayers(session, session?.layers, options);
+}
+
+async function finalizeBranchPathFrames(
+  sessionId,
+  renderPathId,
+  { canvasDimensions, framesPerSecond },
+) {
+  const session = await VideoSession.findById(sessionId).lean();
+  if (!session) {
+    return false;
+  }
+
+  const pathIndex = Array.isArray(session.branchRenderPaths)
+    ? session.branchRenderPaths.findIndex(
+      (candidate) => normalizeId(candidate?.pathId) === normalizeId(renderPathId),
+    )
+    : -1;
+  if (pathIndex < 0) {
+    throw new Error(`Render path ${renderPathId} was not found while finalizing frames.`);
+  }
+
+  const renderPath = session.branchRenderPaths[pathIndex];
+  if (renderPath?.frameGenerationStatus === 'COMPLETED') {
+    return true;
+  }
+  if (!isBranchPathFrameComplete(renderPath)) {
+    return false;
+  }
+
+  const claimResult = await VideoSession.updateOne(
+    {
+      _id: sessionId,
+      [`branchRenderPaths.${pathIndex}.pathId`]: normalizeId(renderPathId),
+      [`branchRenderPaths.${pathIndex}.frameGenerationStatus`]: {
+        $nin: ['APPLYING_TRANSITIONS', 'COMPLETED', 'FAILED'],
+      },
+    },
+    {
+      $set: {
+        [`branchRenderPaths.${pathIndex}.frameGenerationStatus`]: 'APPLYING_TRANSITIONS',
+        [`branchRenderPaths.${pathIndex}.frameGenerationPending`]: true,
+        [`branchRenderPaths.${pathIndex}.frameGenerationError`]: null,
+      },
+    },
+  );
+
+  if (claimResult.modifiedCount !== 1) {
+    const latestSession = await VideoSession.findById(sessionId)
+      .select(`branchRenderPaths.${pathIndex}.frameGenerationStatus`)
+      .lean();
+    return latestSession?.branchRenderPaths?.[pathIndex]?.frameGenerationStatus === 'COMPLETED';
+  }
+
+  try {
+    const effectiveSession = buildEffectiveBranchSession(session, renderPath);
+    const appliedSceneTransitionPreset = await applySceneTransitionsToLayers(
+      effectiveSession,
+      effectiveSession.layers,
+      { canvasDimensions, framesPerSecond },
+    );
+
+    await VideoSession.updateOne(
+      {
+        _id: sessionId,
+        [`branchRenderPaths.${pathIndex}.pathId`]: normalizeId(renderPathId),
+      },
+      {
+        $set: {
+          [`branchRenderPaths.${pathIndex}.frameGenerationStatus`]: 'COMPLETED',
+          [`branchRenderPaths.${pathIndex}.frameGenerationPending`]: false,
+          [`branchRenderPaths.${pathIndex}.frameGenerationError`]: null,
+          [`branchRenderPaths.${pathIndex}.appliedSceneTransitionPreset`]: appliedSceneTransitionPreset,
+          appliedSceneTransitionPreset,
+        },
+      },
+    );
+    return true;
+  } catch (error) {
+    await VideoSession.updateOne(
+      { _id: sessionId },
+      {
+        $set: {
+          [`branchRenderPaths.${pathIndex}.frameGenerationStatus`]: 'PENDING',
+          [`branchRenderPaths.${pathIndex}.frameGenerationPending`]: true,
+          [`branchRenderPaths.${pathIndex}.frameGenerationError`]: error?.message || String(error),
+        },
+      },
+    );
+    throw error;
+  }
 }
 
 function getMaxNumericPngFrameIndex(dirPath) {
@@ -973,6 +1295,29 @@ async function ensureAiVideoFramesAvailable({
     });
   }
   writeFrameSourceManifest(aiFramesDir, sourceIdentity);
+}
+
+async function ensureSharedAiVideoFramesAvailable(options = {}) {
+  const sessionId = normalizeId(options.sessionId);
+  const layerId = normalizeId(options.layerId);
+  const preparationKey = `${sessionId}_${layerId}`;
+  const existingPreparation = sharedAiVideoFramePreparation.get(preparationKey);
+  if (existingPreparation) {
+    await existingPreparation;
+    // A shorter path may have prepared the shared source first. Re-run the
+    // inexpensive completeness check so a longer path can pad if necessary.
+    return ensureAiVideoFramesAvailable(options);
+  }
+
+  const preparation = ensureAiVideoFramesAvailable(options);
+  sharedAiVideoFramePreparation.set(preparationKey, preparation);
+  try {
+    return await preparation;
+  } finally {
+    if (sharedAiVideoFramePreparation.get(preparationKey) === preparation) {
+      sharedAiVideoFramePreparation.delete(preparationKey);
+    }
+  }
 }
 
 function getNarratorAvatarOverlayDimensions(canvasDimensions = {}) {
@@ -1304,7 +1649,20 @@ async function processNextTask() {
     return;
   }
 
-  const { sessionId, layerId, _id, numRetries = 0 } = lockedFrameGeneration;
+  const {
+    sessionId,
+    layerId,
+    renderPathId = null,
+    renderPlanVersion = null,
+    pathSequenceIndex = null,
+    _id,
+    numRetries = 0,
+  } = lockedFrameGeneration;
+  const branchOptions = {
+    renderPathId,
+    renderPlanVersion,
+    pathSequenceIndex,
+  };
 
   ongoingTasks++;
   childProcessesMap.set(childCombinationKey, null); // Just to track the child
@@ -1318,15 +1676,28 @@ async function processNextTask() {
       );
     }
 
-    const layerExists = session.layers.some(layer => layer._id.toString() === layerId);
-    if (!layerExists) {
-      throw new ObsoleteFrameGenerationError(
-        `Layer with ID ${layerId} not found in session ${sessionId}`,
-        { generationId: _id, sessionId, layerId }
-      );
+    if (isBranchedFrameGeneration(lockedFrameGeneration)) {
+      try {
+        resolveBranchRenderContext(session, lockedFrameGeneration);
+      } catch (error) {
+        throw new FatalFrameGenerationError(error.message, {
+          sessionId,
+          layerId,
+          renderPathId,
+          pathSequenceIndex,
+        });
+      }
+    } else {
+      const layerExists = session.layers.some(layer => layer._id.toString() === layerId);
+      if (!layerExists) {
+        throw new ObsoleteFrameGenerationError(
+          `Layer with ID ${layerId} not found in session ${sessionId}`,
+          { generationId: _id, sessionId, layerId }
+        );
+      }
     }
 
-    await generateFramesForSession(_id.toString(), sessionId, layerId);
+    await generateFramesForSession(_id.toString(), sessionId, layerId, branchOptions);
     childProcessesMap.delete(childCombinationKey);
 
   } catch (error) {
@@ -1353,7 +1724,7 @@ async function processNextTask() {
       console.error(
         `Task for session ${sessionId} and layer ${layerId} ${isFatalFrameGenerationError ? 'failed fatally' : 'exceeded max retries'}. Marking frame generation failed.`
       );
-      await markFrameGenerationFailed(sessionId, layerId, error);
+      await markFrameGenerationFailed(sessionId, layerId, error, branchOptions);
       childProcessesMap.delete(childCombinationKey);
     } else {
       // Otherwise, unlock for re-pickup
@@ -1371,12 +1742,12 @@ async function processNextTask() {
   processNextTask();
 }
 
-async function generateFramesForSession(generationId, sessionId, layerId) {
+async function generateFramesForSession(generationId, sessionId, layerId, branchOptions = {}) {
   const session = await VideoSession.findById(sessionId).lean();
   if (!session) {
     throw new ObsoleteFrameGenerationError(
       `Session with ID ${sessionId} not found`,
-      { generationId, sessionId, layerId }
+      { generationId, sessionId, layerId, ...branchOptions }
     );
   }
 
@@ -1388,23 +1759,47 @@ async function generateFramesForSession(generationId, sessionId, layerId) {
     `${sessionId}.json`
   );
 
+  const isBranchJob = Boolean(normalizeId(branchOptions.renderPathId));
+  let branchContext = null;
+  let renderingSession = session;
+  let layerIndex = -1;
+  let layer = null;
 
-  const layerIndex = session.layers.findIndex(layer => layer._id.toString() === layerId);
-  if (layerIndex === -1) {
-    throw new ObsoleteFrameGenerationError(
-      `Layer with ID ${layerId} not found in session ${sessionId}`,
-      { generationId, sessionId, layerId }
-    );
+  if (isBranchJob) {
+    try {
+      branchContext = resolveBranchRenderContext(session, {
+        layerId,
+        ...branchOptions,
+      });
+      renderingSession = buildEffectiveBranchSession(session, branchContext.renderPath);
+      layerIndex = branchContext.layerIndex;
+      layer = renderingSession.layers[branchContext.timelineIndex];
+    } catch (error) {
+      throw new FatalFrameGenerationError(error.message, {
+        sessionId,
+        layerId,
+        renderPathId: branchOptions.renderPathId,
+        pathSequenceIndex: branchOptions.pathSequenceIndex,
+      });
+    }
+  } else {
+    layerIndex = session.layers.findIndex(layer => layer._id.toString() === layerId);
+    if (layerIndex === -1) {
+      throw new ObsoleteFrameGenerationError(
+        `Layer with ID ${layerId} not found in session ${sessionId}`,
+        { generationId, sessionId, layerId }
+      );
+    }
+    layer = session.layers[layerIndex];
   }
 
-  let layer = session.layers[layerIndex];
   const enableSubtitles = session.enableSubtitles !== false;
   if (!enableSubtitles && layer?.imageSession?.activeItemList?.length) {
     layer.imageSession.activeItemList = layer.imageSession.activeItemList.filter(
       (item) => !(item?.type === 'text' && item?.subType === 'subtitle'),
     );
   } else if (enableSubtitles) {
-    layer = prepareLayerSubtitlesForRendering(layer, session);
+    layer = prepareLayerSubtitlesForRendering(layer, renderingSession);
   }
 
   // If AI video is still pending, bail
@@ -1418,23 +1813,58 @@ async function generateFramesForSession(generationId, sessionId, layerId) {
   }
 
   // If frames are not needed, return
-  if (!layer.frameGenerationPending) {
+  const frameGenerationIsPending = isBranchJob
+    ? branchContext.timelineEntry?.frameGenerationPending === true
+    : layer.frameGenerationPending;
+  if (!frameGenerationIsPending) {
+    if (
+      isBranchJob &&
+      isBranchPathFrameComplete(branchContext.renderPath) &&
+      branchContext.renderPath?.frameGenerationStatus !== 'COMPLETED'
+    ) {
+      await finalizeBranchPathFrames(sessionId, branchContext.renderPathId, {
+        canvasDimensions: getCanvasDimensions(session),
+        framesPerSecond: getFramesPerSecondFromValue(session?.framesPerSecond),
+      });
+    }
     await deleteFrameGenerationAndSyncSession(generationId, sessionId);
     return;
   }
 
-  // Figure out canvas dimensions
-  let sessionAspectRatio = session.aspectRatio || '1:1';
-  let canvasDimensions = { width: 1024, height: 1024 };
-  if (sessionAspectRatio === '16:9') {
-    canvasDimensions = { width: 1792, height: 1024 };
-  } else if (sessionAspectRatio === '9:16') {
-    canvasDimensions = { width: 1024, height: 1792 };
+  if (isBranchJob) {
+    const startResult = await VideoSession.updateOne(
+      {
+        _id: sessionId,
+        [`branchRenderPaths.${branchContext.pathIndex}.pathId`]: branchContext.renderPathId,
+        [`branchRenderPaths.${branchContext.pathIndex}.frameGenerationStatus`]: { $ne: 'FAILED' },
+        [`branchRenderPaths.${branchContext.pathIndex}.timeline.${branchContext.timelineIndex}.frameGenerationPending`]: true,
+      },
+      {
+        $set: {
+          [`branchRenderPaths.${branchContext.pathIndex}.timeline.${branchContext.timelineIndex}.frameGenerationStatus`]: 'GENERATING',
+          [`branchRenderPaths.${branchContext.pathIndex}.timeline.${branchContext.timelineIndex}.frameGenerationPending`]: true,
+          [`branchRenderPaths.${branchContext.pathIndex}.timeline.${branchContext.timelineIndex}.frameGenerationError`]: null,
+          [`branchRenderPaths.${branchContext.pathIndex}.timeline.${branchContext.timelineIndex}.error`]: null,
+          [`branchRenderPaths.${branchContext.pathIndex}.frameGenerationStatus`]: 'GENERATING',
+          [`branchRenderPaths.${branchContext.pathIndex}.frameGenerationPending`]: true,
+          [`branchRenderPaths.${branchContext.pathIndex}.frameGenerationError`]: null,
+        },
+      },
+    );
+    if (startResult.matchedCount !== 1) {
+      throw new ObsoleteFrameGenerationError(
+        `Render path ${branchContext.renderPathId}, sequence ${branchContext.pathSequenceIndex}, is no longer pending.`,
+        { generationId, sessionId, layerId, ...branchOptions },
+      );
+    }
   }
 
+  const canvasDimensions = getCanvasDimensions(session);
   const framesPerSecond = getFramesPerSecondFromValue(session?.framesPerSecond);
   const frameCount = Math.floor(layer.duration * framesPerSecond);
-  const totalVideoDuration = session.layers.reduce((sum, layer) => sum + layer.duration, 0) * 1000;
+  const totalVideoDuration = isBranchJob
+    ? branchContext.pathDuration * 1000
+    : session.layers.reduce((sum, layer) => sum + layer.duration, 0) * 1000;
   const totalFrameCount = Math.max(1, Math.ceil((totalVideoDuration / 1000) * framesPerSecond));
   layer = await ensureFooterQrCodeForLayer({ layer, sessionId, layerId });
 
@@ -1451,7 +1881,7 @@ async function generateFramesForSession(generationId, sessionId, layerId) {
     );
   }
 
-  await ensureAiVideoFramesAvailable({
+  await ensureSharedAiVideoFramesAvailable({
     layer,
     sessionId,
     layerId,
@@ -1464,14 +1894,14 @@ async function generateFramesForSession(generationId, sessionId, layerId) {
     ? null
     : (
       await ensureJoinedNarratorAvatarFramesAvailable({
-        session,
+        session: renderingSession,
         sessionId,
         layerId,
         canvasDimensions,
         framesPerSecond,
       }) ||
       await ensureNarratorAvatarFramesAvailable({
-        session,
+        session: renderingSession,
         sessionId,
         layerId,
         canvasDimensions,
@@ -1492,19 +1922,19 @@ async function generateFramesForSession(generationId, sessionId, layerId) {
   }
 
   // Cleanup frame directory if it exists and has extra files
+  const frameOutputNamespace = isBranchJob
+    ? branchContext.frameOutputNamespace
+    : buildFrameOutputNamespace({ sessionId, layerId });
   const frameDirectory = path.join(
     resolveSamsarProcessorAssetsRoot('v2'),
-    'video',
-    'frames',
-    sessionId,
-    layerId
+    ...frameOutputNamespace.split('/'),
   );
 
   fs.rmSync(frameDirectory, { recursive: true, force: true });
   fs.mkdirSync(frameDirectory, { recursive: true });
 
   // Spawn children in chunks
-  const globalVideosForLayer = getGlobalVideosForLayer(session, layer);
+  const globalVideosForLayer = getGlobalVideosForLayer(renderingSession, layer);
   const chunkSize = Math.ceil(frameCount / numChunks);
   const workerPromises = [];
 
@@ -1525,7 +1955,8 @@ async function generateFramesForSession(generationId, sessionId, layerId) {
         totalVideoDuration,
         framesPerSecond,
         globalVideosForLayer,
-        narratorAvatarOverlay
+        narratorAvatarOverlay,
+        frameOutputNamespace,
       )
     );
   }
@@ -1543,9 +1974,93 @@ async function generateFramesForSession(generationId, sessionId, layerId) {
   if (!latestSession) {
     throw new ObsoleteFrameGenerationError(
       `Session with ID ${sessionId} not found`,
-      { generationId, sessionId, layerId }
+      { generationId, sessionId, layerId, ...branchOptions }
     );
   }
+
+  if (isBranchJob) {
+    let latestBranchContext;
+    try {
+      latestBranchContext = resolveBranchRenderContext(latestSession, {
+        layerId,
+        ...branchOptions,
+      });
+    } catch (error) {
+      throw new FatalFrameGenerationError(error.message, {
+        sessionId,
+        layerId,
+        renderPathId: branchOptions.renderPathId,
+        pathSequenceIndex: branchOptions.pathSequenceIndex,
+      });
+    }
+
+    const branchUpdateResult = await VideoSession.updateOne(
+      {
+        _id: sessionId,
+        [`branchRenderPaths.${latestBranchContext.pathIndex}.pathId`]: latestBranchContext.renderPathId,
+        [`branchRenderPaths.${latestBranchContext.pathIndex}.frameGenerationStatus`]: { $ne: 'FAILED' },
+        [`branchRenderPaths.${latestBranchContext.pathIndex}.timeline.${latestBranchContext.timelineIndex}.frameGenerationStatus`]: { $ne: 'FAILED' },
+      },
+      {
+        $set: {
+          [`branchRenderPaths.${latestBranchContext.pathIndex}.timeline.${latestBranchContext.timelineIndex}.frames`]: framesList,
+          [`branchRenderPaths.${latestBranchContext.pathIndex}.timeline.${latestBranchContext.timelineIndex}.frameGenerationPending`]: false,
+          [`branchRenderPaths.${latestBranchContext.pathIndex}.timeline.${latestBranchContext.timelineIndex}.frameGenerationStatus`]: 'COMPLETED',
+          [`branchRenderPaths.${latestBranchContext.pathIndex}.timeline.${latestBranchContext.timelineIndex}.frameGenerationError`]: null,
+          [`branchRenderPaths.${latestBranchContext.pathIndex}.timeline.${latestBranchContext.timelineIndex}.error`]: null,
+          [`branchRenderPaths.${latestBranchContext.pathIndex}.frameGenerationPending`]: true,
+          [`branchRenderPaths.${latestBranchContext.pathIndex}.frameGenerationStatus`]: 'GENERATING',
+          [`branchRenderPaths.${latestBranchContext.pathIndex}.frameGenerationError`]: null,
+          frameGenerationPending: true,
+        },
+      },
+    );
+    if (branchUpdateResult.matchedCount !== 1) {
+      throw new ObsoleteFrameGenerationError(
+        `Render path ${latestBranchContext.renderPathId}, sequence ${latestBranchContext.pathSequenceIndex}, stopped accepting frames.`,
+        { generationId, sessionId, layerId, ...branchOptions },
+      );
+    }
+
+    await finalizeBranchPathFrames(sessionId, latestBranchContext.renderPathId, {
+      canvasDimensions,
+      framesPerSecond,
+    });
+
+    const defaultBranchPathId = normalizeId(latestSession.defaultBranchPathId) ||
+      normalizeId(latestSession.branchRenderPaths?.[0]?.pathId);
+    if (
+      latestBranchContext.pathSequenceIndex === 0 &&
+      latestBranchContext.renderPathId === defaultBranchPathId
+    ) {
+      const firstFrame = framesList[0];
+      if (firstFrame) {
+        const firstFramePath = resolveAssetAbsolutePath(firstFrame);
+        const frameNameSpace = path.join('video', 'splash', sessionId);
+        const splashTargets = [
+          path.join(resolveSamsarProcessorAssetsRoot('v2'), frameNameSpace, 'splash.png'),
+          path.join(resolveSamsarProcessorAssetsRoot('legacy'), frameNameSpace, 'splash.png'),
+        ];
+        for (const filePath of splashTargets) {
+          try {
+            fs.mkdirSync(path.dirname(filePath), { recursive: true });
+            fs.copyFileSync(firstFramePath, filePath);
+          } catch (error) {
+            console.error(`Error copying splash frame to ${filePath}: ${error.message}`);
+          }
+        }
+      }
+    }
+
+    await handleFrameGenerationCompletion(
+      generationId,
+      sessionId,
+      layerId,
+      branchOptions,
+    );
+    return;
+  }
+
   const latestLayerIndex = latestSession.layers.findIndex(
     layer => layer._id.toString() === layerId
   );
@@ -1645,11 +2160,65 @@ function getGlobalVideosForLayer(session = {}, layer = {}) {
   });
 }
 
-async function handleFrameGenerationCompletion(generationId, sessionId, layerId) {
+async function handleFrameGenerationCompletion(
+  generationId,
+  sessionId,
+  layerId,
+  branchOptions = {},
+) {
   try {
     const latestSession = await VideoSession.findById(sessionId);
     if (!latestSession) {
       await deleteFrameGenerationAndSyncSession(generationId, sessionId);
+      return;
+    }
+
+    if (normalizeId(branchOptions.renderPathId)) {
+      let branchContext;
+      try {
+        branchContext = resolveBranchRenderContext(latestSession, {
+          layerId,
+          ...branchOptions,
+        });
+      } catch (error) {
+        console.error('[frames_processor] Could not verify branched frame completion', {
+          generationId,
+          sessionId,
+          layerId,
+          renderPathId: branchOptions.renderPathId,
+          pathSequenceIndex: branchOptions.pathSequenceIndex,
+          error: error?.message || error,
+        });
+        await FrameGeneration.findByIdAndUpdate(
+          generationId,
+          { rowLocked: false, $inc: { numRetries: 1 } },
+          { new: true },
+        );
+        return;
+      }
+
+      const latestEntry = branchContext.timelineEntry;
+      if (
+        Array.isArray(latestEntry?.frames) &&
+        latestEntry.frames.length > 0 &&
+        latestEntry.frameGenerationPending !== true &&
+        latestEntry.frameGenerationStatus === 'COMPLETED'
+      ) {
+        await FrameGeneration.findByIdAndDelete(generationId);
+      } else {
+        await FrameGeneration.findByIdAndUpdate(
+          generationId,
+          { rowLocked: false, $inc: { numRetries: 1 } },
+          { new: true },
+        );
+      }
+
+      const remainingFrameGeneration = await FrameGeneration.findOne({ sessionId })
+        .select('_id')
+        .lean();
+      await VideoSession.findByIdAndUpdate(sessionId, {
+        frameGenerationPending: Boolean(remainingFrameGeneration),
+      });
       return;
     }
 
@@ -1756,6 +2325,7 @@ function createFramesInChildProcess(...args) {
       framesPerSecond: args[9],
       globalVideos: args[10],
       narratorAvatarOverlay: args[11] || null,
+      frameOutputNamespace: args[12],
     });
   });
 }
@@ -1804,4 +2374,5 @@ export async function removeAndRecreateDirectory(dirPath, maxRetries = 2, retryD
 export const __testOnly__ = {
   FatalFrameGenerationError,
   buildFrameGenerationFailureSet,
+  buildBranchFrameGenerationFailureSet,
 };

@@ -38,6 +38,7 @@ import {
 import {
   EXPRESS_VIDEO_BILLING_STAGES,
   buildInitialExpressVideoCreditCharges,
+  buildInitialReusedNarrativeExpressVideoCreditCharges,
   chargeExpressVideoStageCredits,
 } from "../ExpressVideoStageBilling.js";
 import {
@@ -70,6 +71,10 @@ import {
   buildSpeechSubtitleTextMap,
   resolveSubtitleLanguageOption,
 } from './SubtitleLanguage.js';
+import {
+  buildBranchedVideoSessionPlan,
+  materializeBranchedVideoSessionPaths,
+} from './branching/BranchedVideoSessionPlan.js';
 
 const MEDIA_DOWNLOAD_TIMEOUT_MS = Number.isFinite(Number(process.env.API_MEDIA_DOWNLOAD_TIMEOUT_MS))
   ? Math.max(1000, Math.floor(Number(process.env.API_MEDIA_DOWNLOAD_TIMEOUT_MS)))
@@ -484,7 +489,7 @@ export function ensureNarrativeSpeechGenders(movieResourceList, themeJson) {
   };
 }
 
-function alignSpeechSpeakerNamesToScenes(movieResourceList = {}) {
+export function alignSpeechSpeakerNamesToScenes(movieResourceList = {}) {
   if (!movieResourceList || typeof movieResourceList !== 'object') {
     return movieResourceList;
   }
@@ -523,6 +528,179 @@ function alignSpeechSpeakerNamesToScenes(movieResourceList = {}) {
   };
 }
 
+export async function buildVideoSessionMovieResourceList({
+  inputPrompt,
+  narrativeJson,
+  themeJson,
+  videoTone = 'cinematic',
+  language = 'auto',
+  speakerOptions = null,
+  inferenceModel,
+  onInferenceResponse,
+} = {}) {
+  const movieResourceListWithGenders = ensureNarrativeSpeechGenders(
+    narrativeJson,
+    themeJson,
+  );
+  const resolvedSpeakerOptions = filterDockerSpeakerOptions(speakerOptions);
+  const movieResourceListWithCharacters = await assignCharactersAndInstructionsToScenes(
+    inputPrompt,
+    movieResourceListWithGenders,
+    videoTone,
+    {
+      language,
+      speakerOptions: resolvedSpeakerOptions,
+      inferenceModel,
+      onInferenceResponse,
+    },
+  );
+
+  return alignSpeechSpeakerNamesToScenes(movieResourceListWithCharacters);
+}
+
+function buildVisualPromptInferenceOptions({
+  externalRequestContext,
+  onInferenceResponse,
+  requestKey,
+  sceneIndex,
+}) {
+  const normalizedContext = externalRequestContext && typeof externalRequestContext === 'object'
+    ? externalRequestContext
+    : null;
+
+  return {
+    ...(normalizedContext
+      ? {
+        externalRequestContext: {
+          ...normalizedContext,
+          requestKey,
+        },
+      }
+      : {}),
+    ...(typeof onInferenceResponse === 'function'
+      ? {
+        onInferenceResponse: (receipt) => onInferenceResponse({
+          ...receipt,
+          requestKey,
+          sceneIndex,
+        }),
+      }
+      : {}),
+  };
+}
+
+export async function buildMovieResourceListVisualPrompts({
+  movieResourceList,
+  themeJson,
+  aspectRatio = '1:1',
+  inferenceModel,
+  videoTone = 'cinematic',
+  isAdVideo = false,
+  startImageDescriptions = [],
+  externalRequestContext = null,
+  requestKeyPrefix = 'text_to_video:visual',
+  onInferenceResponse,
+  dependencies = {},
+} = {}) {
+  const scenes = Array.isArray(movieResourceList?.scenes)
+    ? movieResourceList.scenes
+    : [];
+  const themeJsonString = typeof themeJson === 'string'
+    ? themeJson
+    : JSON.stringify(themeJson ?? {});
+  const updateGenericPrompt = dependencies.updatePromptWithTheme || updatePromptWithTheme;
+  const updateCharacterPrompt = dependencies.updateCharacterPromptWithTheme ||
+    updateCharacterPromptWithTheme;
+  const updateAdGenericPrompt = dependencies.updateAdVideoPromptWithTheme ||
+    updateAdVideoPromptWithTheme;
+  const updateAdCharacterPrompt = dependencies.updateAdVideoCharacterPromptWithTheme ||
+    updateAdVideoCharacterPromptWithTheme;
+  const promptList = [];
+
+  for (let sceneIndex = 0; sceneIndex < scenes.length; sceneIndex += 1) {
+    const scene = scenes[sceneIndex] || {};
+    const sceneType = normalizeLayerSceneType(scene.type);
+    const requestKey = `${requestKeyPrefix}:scene-${sceneIndex}`;
+    const inferenceOptions = buildVisualPromptInferenceOptions({
+      externalRequestContext,
+      onInferenceResponse,
+      requestKey,
+      sceneIndex,
+    });
+    let prompt;
+
+    if (isAdVideo && startImageDescriptions.length > 0) {
+      prompt = sceneType === 'character'
+        ? await updateAdCharacterPrompt(
+          scene.visual,
+          startImageDescriptions,
+          scene.speaker,
+          themeJsonString,
+          aspectRatio,
+          inferenceModel,
+          false,
+          videoTone,
+        )
+        : await updateAdGenericPrompt(
+          scene.visual,
+          startImageDescriptions,
+          themeJsonString,
+          aspectRatio,
+          inferenceModel,
+          false,
+          videoTone,
+        );
+    } else {
+      prompt = sceneType === 'character'
+        ? await updateCharacterPrompt(
+          scene.visual,
+          scene.speaker,
+          themeJsonString,
+          aspectRatio,
+          inferenceModel,
+          false,
+          videoTone,
+          inferenceOptions,
+        )
+        : await updateGenericPrompt(
+          scene.visual,
+          themeJsonString,
+          aspectRatio,
+          inferenceModel,
+          false,
+          videoTone,
+          inferenceOptions,
+        );
+    }
+
+    const normalizedPrompt = typeof prompt === 'string' ? prompt.trim() : '';
+    if (!normalizedPrompt) {
+      const error = new Error(`Visual prompt generation returned an empty result for scene ${sceneIndex}.`);
+      error.code = 'VISUAL_PROMPT_GENERATION_FAILED';
+      error.status = 502;
+      error.statusCode = 502;
+      throw error;
+    }
+
+    promptList.push({
+      prompt: normalizedPrompt,
+      duration: scene.duration,
+      sceneType,
+    });
+  }
+
+  return {
+    promptList,
+    movieResourceList: {
+      ...(movieResourceList || {}),
+      scenes: scenes.map((scene, sceneIndex) => ({
+        ...(scene || {}),
+        visual: promptList[sceneIndex].prompt,
+      })),
+    },
+  };
+}
+
 export async function extractElementsFromTranscriptAndRequestQuickMovieGeneration(userId, payload) {
 
   const { aspectRatio, sessionId,
@@ -557,7 +735,65 @@ export async function extractElementsFromTranscriptAndRequestQuickMovieGeneratio
 
 
 
+function clonePreparedNarrativeArtifact(value) {
+  if (value === undefined) return undefined;
+  return JSON.parse(JSON.stringify(value));
+}
+
+export function buildPreparedNarrativeVisualPromptList(movieResourceList = {}) {
+  const scenes = Array.isArray(movieResourceList?.scenes)
+    ? movieResourceList.scenes
+    : [];
+
+  if (scenes.length === 0) {
+    const error = new Error('Prepared movieResourceList must include at least one scene.');
+    error.code = 'INVALID_PREPARED_NARRATIVE';
+    error.status = 422;
+    throw error;
+  }
+
+  return scenes.map((scene, sceneIndex) => {
+    const prompt = typeof scene?.visual === 'string' ? scene.visual.trim() : '';
+    const duration = Number(scene?.duration);
+    if (!prompt) {
+      const error = new Error(`Prepared scene ${sceneIndex} must include a non-empty visual.`);
+      error.code = 'INVALID_PREPARED_NARRATIVE';
+      error.status = 422;
+      throw error;
+    }
+    if (!Number.isFinite(duration) || duration <= 0) {
+      const error = new Error(`Prepared scene ${sceneIndex} must include a positive duration.`);
+      error.code = 'INVALID_PREPARED_NARRATIVE';
+      error.status = 422;
+      throw error;
+    }
+    return {
+      prompt,
+      duration,
+      sceneType: normalizeLayerSceneType(scene?.type),
+      ...(scene?.branchAssetKey ? { branchAssetKey: scene.branchAssetKey } : {}),
+      ...(Number.isInteger(scene?.branchSourceSceneIndex)
+        ? { branchSourceSceneIndex: scene.branchSourceSceneIndex }
+        : {}),
+    };
+  });
+}
+
 export async function requestQuickMovieGeneration(userId, payload) {
+  return requestQuickMovieGenerationInternal(userId, payload, {
+    usePreparedNarrativeArtifacts: false,
+  });
+}
+
+export async function requestQuickMovieGenerationFromNarrativeArtifacts(userId, payload) {
+  return requestQuickMovieGenerationInternal(userId, payload, {
+    usePreparedNarrativeArtifacts: true,
+  });
+}
+
+async function requestQuickMovieGenerationInternal(userId, payload, {
+  usePreparedNarrativeArtifacts = false,
+} = {}) {
 
   await getDBConnectionString();
 
@@ -611,6 +847,10 @@ export async function requestQuickMovieGeneration(userId, payload) {
     manualStepStages = undefined,
     manual_step_stages = undefined,
     optionalComponentWarnings: upstreamOptionalComponentWarnings = [],
+    sourceNarrativeRequestId = null,
+    sourceNarrativeType = null,
+    narrativeJson: sourceNarrativeJson = null,
+    branchingMeta: sourceBranchingMeta = null,
   } = payload;
   const resolvedManualStepStages = manualStepStages !== undefined
     ? manualStepStages
@@ -650,26 +890,35 @@ export async function requestQuickMovieGeneration(userId, payload) {
 
 
 
-  const movieResourceListWithGenders = ensureNarrativeSpeechGenders(movieResourceList, themeJson);
   const userData = await User.findOne({ _id: userId });
   const userInferenceModel = normalizeInferenceModel(
     inference_model || inferenceModel || userData?.selectedInferenceModel
   );
-  const resolvedSpeakerOptions = filterDockerSpeakerOptions(
-    requestSpeakerOptions || userData?.speakerOptions || null
-  );
-  const movieResourceListWithCharacters = alignSpeechSpeakerNamesToScenes(
-    await assignCharactersAndInstructionsToScenes(
-      inputPrompt,
-      movieResourceListWithGenders,
-      videoTone,
-      {
-        language,
-        speakerOptions: resolvedSpeakerOptions,
-        inferenceModel: userInferenceModel,
-      },
+  const sourcePreparedMovieResourceList = usePreparedNarrativeArtifacts
+    ? clonePreparedNarrativeArtifact(movieResourceList)
+    : null;
+  const branchedVideoSessionPlan = usePreparedNarrativeArtifacts &&
+    sourceNarrativeType === 'branched'
+    ? buildBranchedVideoSessionPlan(sourcePreparedMovieResourceList, {
+      branchingMeta: sourceBranchingMeta,
+      videoGenerationModel,
+      framesPerSecond: Number(payload.framesPerSecond || payload.frames_per_second) || 24,
+      requestedDuration: Number(payload.duration) || null,
+    })
+    : null;
+  const movieResourceListWithCharacters = usePreparedNarrativeArtifacts
+    ? clonePreparedNarrativeArtifact(
+      branchedVideoSessionPlan?.canonicalMovieResourceList || sourcePreparedMovieResourceList,
     )
-  );
+    : await buildVideoSessionMovieResourceList({
+      inputPrompt,
+      narrativeJson: movieResourceList,
+      themeJson,
+      videoTone,
+      language,
+      speakerOptions: requestSpeakerOptions || userData?.speakerOptions || null,
+      inferenceModel: userInferenceModel,
+    });
   const { scenes = [], sounds: rawSounds = [] } = movieResourceListWithCharacters;
 
 
@@ -1026,6 +1275,13 @@ export async function requestQuickMovieGeneration(userId, payload) {
       isEnabled: true,
       addSubtitles: shouldEnableSubtitles,
       instructions: isOpenAISpeaker ? sound.instructions : undefined,
+      ...(sound.branchAssetKey ? { branchAssetKey: sound.branchAssetKey } : {}),
+      ...(sound.branchAudioAssetKey
+        ? { branchAudioAssetKey: sound.branchAudioAssetKey }
+        : {}),
+      ...(Number.isInteger(sound.branchSourceSceneIndex)
+        ? { branchSourceSceneIndex: sound.branchSourceSceneIndex }
+        : {}),
 
     }
 
@@ -1073,63 +1329,21 @@ export async function requestQuickMovieGeneration(userId, payload) {
     audioLayers.push(musicGenerationPayload);
   }
 
-  for (let i = 0; i < scenes.length; i += 1) {
-
-    let scene = scenes[i];
-
-
-    const visual = scene.visual;
-
-    const sceneType = normalizeLayerSceneType(scene.type);
-
-
-    let promptForChunk;
-
-    if (isAdVideo && startImageDescriptions.length > 0) {
-
-      if (sceneType === 'character') {
-        const speakerActor = scene.speaker;
-        promptForChunk = await updateAdVideoCharacterPromptWithTheme(
-          visual,
-          startImageDescriptions,
-          speakerActor,
-          themeJsonString,
-          aspectRatio,
-          userInferenceModel,
-          false, videoTone);
-      } else {
-        promptForChunk = await updateAdVideoPromptWithTheme(visual,
-          startImageDescriptions,
-          themeJsonString, aspectRatio, userInferenceModel,
-          false, videoTone);
-      }
-
-
-
-
-    } else {
-      if (sceneType === 'character') {
-        const speakerActor = scene.speaker;
-        promptForChunk = await updateCharacterPromptWithTheme(
-          visual,
-          speakerActor,
-          themeJsonString,
-          aspectRatio,
-          userInferenceModel,
-          false,
-          videoTone);
-      } else {
-        promptForChunk = await updatePromptWithTheme(visual, themeJsonString, aspectRatio, userInferenceModel,
-          false,
-          videoTone);
-      }
-    }
-
-    promptList.push({
-      'prompt': promptForChunk,
-      duration: scene.duration,
-      sceneType: sceneType
+  if (usePreparedNarrativeArtifacts) {
+    // The NarrativeRequest already completed the character and visual-prompt
+    // enrichment steps. Its visuals are the image-generation prompts.
+    promptList.push(...buildPreparedNarrativeVisualPromptList(movieResourceListWithCharacters));
+  } else {
+    const visualPromptResult = await buildMovieResourceListVisualPrompts({
+      movieResourceList: movieResourceListWithCharacters,
+      themeJson,
+      aspectRatio,
+      inferenceModel: userInferenceModel,
+      videoTone,
+      isAdVideo,
+      startImageDescriptions,
     });
+    promptList.push(...visualPromptResult.promptList);
   }
 
   let durationOffset = 0;
@@ -1220,6 +1434,10 @@ export async function requestQuickMovieGeneration(userId, payload) {
       lipSyncGenerationPending: isLipSyncRequired,
       soundEffectGenerationPending: isSoundEffectRequired,
       layerBaseAiImageType: layerBaseAiImageType,
+      ...(promptItem.branchAssetKey ? { branchAssetKey: promptItem.branchAssetKey } : {}),
+      ...(Number.isInteger(promptItem.branchSourceSceneIndex)
+        ? { branchSourceSceneIndex: promptItem.branchSourceSceneIndex }
+        : {}),
       ...(getFooterMetadataForScene(pIdx)
         ? {
           addFooterAnimation: true,
@@ -1382,7 +1600,28 @@ export async function requestQuickMovieGeneration(userId, payload) {
     durationOffset += OUTRO_LAYER_DURATION_SECONDS;
   }
 
-  const totalTimelineDuration = durationOffset;
+  const totalTimelineDuration = branchedVideoSessionPlan
+    ? Math.max(...branchedVideoSessionPlan.branchRenderPaths.map((path) => path.duration), 0) +
+      (outroAssetRelativePath ? OUTRO_LAYER_DURATION_SECONDS : 0)
+    : durationOffset;
+  const branchedBillableLayerDuration = branchedVideoSessionPlan
+    ? newSessionLayers.reduce((total, layer) => {
+      const layerDuration = Number(layer?.duration);
+      return total + (Number.isFinite(layerDuration) && layerDuration > 0 ? layerDuration : 0);
+    }, 0)
+    : null;
+  const branchedBillingStageDurations = branchedVideoSessionPlan
+    ? {
+      [EXPRESS_VIDEO_BILLING_STAGES.IMAGE_GENERATION]: branchedBillableLayerDuration,
+      [EXPRESS_VIDEO_BILLING_STAGES.SPEECH_GENERATION]: branchedBillableLayerDuration,
+      [EXPRESS_VIDEO_BILLING_STAGES.MUSIC_GENERATION]: branchedBillableLayerDuration,
+      [EXPRESS_VIDEO_BILLING_STAGES.SOUND_EFFECT_GENERATION]: branchedBillableLayerDuration,
+      [EXPRESS_VIDEO_BILLING_STAGES.LIP_SYNC_GENERATION]: branchedBillableLayerDuration,
+      [EXPRESS_VIDEO_BILLING_STAGES.NARRATOR_AVATAR_GENERATION]: branchedBillableLayerDuration,
+      [EXPRESS_VIDEO_BILLING_STAGES.AI_VIDEO_GENERATION]: branchedBillableLayerDuration,
+      [EXPRESS_VIDEO_BILLING_STAGES.PIPELINE]: branchedBillableLayerDuration,
+    }
+    : null;
   if (requestMusicGeneration && Number.isFinite(totalTimelineDuration) && totalTimelineDuration > 0) {
     audioLayers.forEach((audioLayer) => {
       if (audioLayer?.generationType !== 'music') {
@@ -1411,6 +1650,13 @@ export async function requestQuickMovieGeneration(userId, payload) {
 
 
   const movieGenSpeakerList = getUniqueSpeakersByActor(soundAudioLayers)
+
+  const initialCreditCharges = usePreparedNarrativeArtifacts
+    ? buildInitialReusedNarrativeExpressVideoCreditCharges(
+      branchedBillableLayerDuration || totalTimelineDuration,
+      sourceNarrativeRequestId,
+    )
+    : buildInitialExpressVideoCreditCharges(totalTimelineDuration);
 
 
   await VideoSession.updateOne({ _id: sessionId }, {
@@ -1450,7 +1696,30 @@ export async function requestQuickMovieGeneration(userId, payload) {
       isVidGPTGen: true,
       parentJsonTheme: themeJsonString,
       movieGenSpeakers: movieGenSpeakerList,
-      movieResourceList: movieResourceListWithCharacters,
+      movieResourceList: branchedVideoSessionPlan
+        ? clonePreparedNarrativeArtifact(sourcePreparedMovieResourceList)
+        : movieResourceListWithCharacters,
+      ...(usePreparedNarrativeArtifacts
+        ? {
+          sourceNarrativeRequestId,
+          sourceNarrativeType: sourceNarrativeType || 'singular',
+          narrativeType: sourceNarrativeType || 'singular',
+          themeJson: clonePreparedNarrativeArtifact(themeJson),
+          narrativeJson: clonePreparedNarrativeArtifact(sourceNarrativeJson),
+          branchingMeta: clonePreparedNarrativeArtifact(
+            branchedVideoSessionPlan?.branchingMeta || sourceBranchingMeta,
+          ),
+          ...(branchedVideoSessionPlan
+            ? {
+              renderPlanVersion: branchedVideoSessionPlan.renderPlanVersion,
+              defaultBranchPathId: branchedVideoSessionPlan.defaultBranchPathId,
+              branchRenderPaths: clonePreparedNarrativeArtifact(
+                branchedVideoSessionPlan.branchRenderPaths,
+              ),
+            }
+            : {}),
+        }
+        : {}),
       hasOutroImage: !!outroAssetRelativePath,
       outroImageURL: outroAssetRelativePath,
       ...(outroImageMetadata ? { outroImageMetadata } : {}),
@@ -1468,8 +1737,12 @@ export async function requestQuickMovieGeneration(userId, payload) {
         : {}),
 
       provisionalCredits: 0,
-      expressGenerationBillingDurationSeconds: totalTimelineDuration,
-      expressGenerationCreditCharges: buildInitialExpressVideoCreditCharges(totalTimelineDuration),
+      expressGenerationBillingDurationSeconds:
+        branchedBillableLayerDuration || totalTimelineDuration,
+      ...(branchedBillingStageDurations
+        ? { expressGenerationBillingStageDurations: branchedBillingStageDurations }
+        : {}),
+      expressGenerationCreditCharges: initialCreditCharges,
       ...(isStepVideoGeneration
         ? {
           isStepVideoGeneration: true,
@@ -1514,13 +1787,15 @@ export async function requestQuickMovieGeneration(userId, payload) {
     },
   });
 
-  const inferenceChargeResult = await chargeExpressVideoStageCredits({
-    sessionId,
-    stageKey: EXPRESS_VIDEO_BILLING_STAGES.NARRATIVE_INFERENCE,
-    requestType: resolvedRequestType,
-  });
-  if (!inferenceChargeResult?.ok) {
-    throw new Error(inferenceChargeResult?.error || 'Unable to charge narrative inference credits.');
+  if (!usePreparedNarrativeArtifacts) {
+    const inferenceChargeResult = await chargeExpressVideoStageCredits({
+      sessionId,
+      stageKey: EXPRESS_VIDEO_BILLING_STAGES.NARRATIVE_INFERENCE,
+      requestType: resolvedRequestType,
+    });
+    if (!inferenceChargeResult?.ok) {
+      throw new Error(inferenceChargeResult?.error || 'Unable to charge narrative inference credits.');
+    }
   }
 
 
@@ -1560,9 +1835,23 @@ export async function requestQuickMovieGeneration(userId, payload) {
   }
 
 
+  const materializedBranchRenderPaths = branchedVideoSessionPlan
+    ? materializeBranchedVideoSessionPaths(branchedVideoSessionPlan, {
+      layers: updatedLayers,
+      audioLayers: updatedAudioLayers,
+    })
+    : null;
+
   await VideoSession.updateOne({ _id: sessionId }, {
     $set: {
       audioLayers: updatedAudioLayers,
+      ...(materializedBranchRenderPaths
+        ? {
+          branchRenderPaths: materializedBranchRenderPaths,
+          renderPlanVersion: branchedVideoSessionPlan.renderPlanVersion,
+          defaultBranchPathId: branchedVideoSessionPlan.defaultBranchPathId,
+        }
+        : {}),
     },
   });
 
