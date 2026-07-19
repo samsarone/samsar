@@ -1,6 +1,7 @@
 import { createReadStream, existsSync } from 'node:fs';
 import fs from 'node:fs/promises';
 import http from 'node:http';
+import https from 'node:https';
 import dns from 'node:dns/promises';
 import net from 'node:net';
 import os from 'node:os';
@@ -1630,7 +1631,53 @@ async function isReachableManagedMediaTunnel(value) {
     });
     return response.ok && (await response.text()).trim() === 'samsar-media-gateway';
   } catch {
-    return false;
+    try {
+      const healthUrlObject = new URL(healthUrl);
+      if (healthUrlObject.protocol !== 'https:') {
+        return false;
+      }
+      const queryUrl = new URL('https://cloudflare-dns.com/dns-query');
+      queryUrl.searchParams.set('name', healthUrlObject.hostname);
+      queryUrl.searchParams.set('type', 'A');
+      const dnsResponse = await fetch(queryUrl, {
+        headers: { Accept: 'application/dns-json' },
+        signal: AbortSignal.timeout(5000),
+      });
+      if (!dnsResponse.ok) {
+        return false;
+      }
+      const dnsPayload = await dnsResponse.json();
+      const address = dnsPayload.Answer?.find(
+        (answer) => answer?.type === 1 && typeof answer?.data === 'string',
+      )?.data;
+      if (!address) {
+        return false;
+      }
+
+      const responseBody = await new Promise((resolve) => {
+        const request = https.get(healthUrlObject, {
+          headers: { 'Cache-Control': 'no-store' },
+          lookup: (_hostname, options, callback) => {
+            if (options?.all) callback(null, [{ address, family: 4 }]);
+            else callback(null, address, 4);
+          },
+          timeout: 5000,
+        }, (response) => {
+          let body = '';
+          response.setEncoding('utf8');
+          response.on('data', (chunk) => { body += chunk; });
+          response.on('end', () => resolve(
+            response.statusCode >= 200 && response.statusCode < 300 ? body.trim() : '',
+          ));
+          response.on('error', () => resolve(''));
+        });
+        request.on('timeout', () => request.destroy());
+        request.on('error', () => resolve(''));
+      });
+      return responseBody === 'samsar-media-gateway';
+    } catch {
+      return false;
+    }
   } finally {
     clearTimeout(timeout);
   }

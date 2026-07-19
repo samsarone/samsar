@@ -174,15 +174,67 @@ tunnel_health_deadline=$((SECONDS + TUNNEL_HEALTH_TIMEOUT_SECONDS))
 tunnel_health_response=""
 while [ "$SECONDS" -lt "$tunnel_health_deadline" ]; do
   tunnel_health_response="$(node - "$tunnel_health_url" <<'NODE' 2>/dev/null || true
+import https from 'node:https';
+
 const healthUrl = process.argv[2];
-try {
-  const response = await fetch(healthUrl, {
-    cache: 'no-store',
-    signal: AbortSignal.timeout(5000),
-  });
-  if (response.ok) {
-    process.stdout.write((await response.text()).trim());
+const readSuccessfulResponse = (response) => new Promise((resolve) => {
+  let body = '';
+  response.setEncoding('utf8');
+  response.on('data', (chunk) => { body += chunk; });
+  response.on('end', () => resolve(response.statusCode >= 200 && response.statusCode < 300 ? body.trim() : ''));
+  response.on('error', () => resolve(''));
+});
+
+async function fetchWithSystemDns() {
+  try {
+    const response = await fetch(healthUrl, {
+      cache: 'no-store',
+      signal: AbortSignal.timeout(5000),
+    });
+    return response.ok ? (await response.text()).trim() : '';
+  } catch {
+    return '';
   }
+}
+
+async function resolvePublicIpv4(hostname) {
+  try {
+    const queryUrl = new URL('https://cloudflare-dns.com/dns-query');
+    queryUrl.searchParams.set('name', hostname);
+    queryUrl.searchParams.set('type', 'A');
+    const response = await fetch(queryUrl, {
+      headers: { Accept: 'application/dns-json' },
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!response.ok) return '';
+    const payload = await response.json();
+    return payload.Answer?.find((answer) => answer?.type === 1 && typeof answer?.data === 'string')?.data || '';
+  } catch {
+    return '';
+  }
+}
+
+async function fetchWithPinnedPublicDns() {
+  const parsedHealthUrl = new URL(healthUrl);
+  const address = await resolvePublicIpv4(parsedHealthUrl.hostname);
+  if (!address) return '';
+
+  return new Promise((resolve) => {
+    const request = https.get(parsedHealthUrl, {
+      headers: { 'Cache-Control': 'no-store' },
+      lookup: (_hostname, options, callback) => {
+        if (options?.all) callback(null, [{ address, family: 4 }]);
+        else callback(null, address, 4);
+      },
+      timeout: 5000,
+    }, async (response) => resolve(await readSuccessfulResponse(response)));
+    request.on('timeout', () => request.destroy());
+    request.on('error', () => resolve(''));
+  });
+}
+
+try {
+  process.stdout.write((await fetchWithSystemDns()) || (await fetchWithPinnedPublicDns()));
 } catch {}
 NODE
 )"

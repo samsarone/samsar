@@ -98,6 +98,7 @@ export default function TopNav(props) {
     isUpdateLayerPending,
     isCanvasDirty,
     isSessionPublished,
+    isInteractiveVideo,
     publishedTitle,
     publishedDescription,
     publishedTags,
@@ -834,6 +835,7 @@ export default function TopNav(props) {
         isUpdateLayerPending={isUpdateLayerPending}
         isCanvasDirty={isCanvasDirty}
         isSessionPublished={isSessionPublished}
+        isInteractiveVideo={isInteractiveVideo}
         publishedTitle={publishedTitle}
         publishedDescription={publishedDescription}
         publishedTags={publishedTags}

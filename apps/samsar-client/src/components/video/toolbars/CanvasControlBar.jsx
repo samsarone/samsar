@@ -29,6 +29,7 @@ export default function CanvasControlBar(props) {
     isUpdateLayerPending,
     isCanvasDirty,
     isSessionPublished,
+    isInteractiveVideo = false,
     publishedTitle,
     publishedDescription,
     publishVideoSession,
@@ -100,6 +101,9 @@ export default function CanvasControlBar(props) {
   const expressBadgeClassName = colorMode === 'dark'
     ? 'inline-flex items-center rounded-xl bg-cyan-400/12 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-cyan-200 ring-1 ring-cyan-300/25'
     : 'inline-flex items-center rounded-xl bg-cyan-50 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-cyan-700 ring-1 ring-cyan-200';
+  const interactiveVideoBadgeClassName = colorMode === 'dark'
+    ? 'inline-flex items-center rounded-xl bg-sky-400/12 px-2.5 py-1 text-[11px] font-semibold text-sky-200 ring-1 ring-sky-300/25'
+    : 'inline-flex items-center rounded-xl bg-sky-50 px-2.5 py-1 text-[11px] font-semibold text-sky-700 ring-1 ring-sky-200';
   const readOnlyBadgeClassName = colorMode === 'dark'
     ? 'inline-flex items-center gap-1 rounded-xl bg-amber-300/12 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-amber-100 ring-1 ring-amber-200/25'
     : 'inline-flex items-center gap-1 rounded-xl bg-amber-50 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-amber-700 ring-1 ring-amber-200';
@@ -178,10 +182,14 @@ export default function CanvasControlBar(props) {
       </div>
     );
   }
-  if (!isImageStudio && (isExpressGeneration || typeof openAdvancedVideoEditDialog === 'function')) {
+  if (!isImageStudio && (isExpressGeneration || isInteractiveVideo || typeof openAdvancedVideoEditDialog === 'function')) {
     expressGenerationLink = (
       <div className={sectionSurfaceClassName}>
-        {isExpressGeneration && <span className={expressBadgeClassName}>Express</span>}
+        {isInteractiveVideo ? (
+          <span className={interactiveVideoBadgeClassName}>Interactive video</span>
+        ) : (
+          isExpressGeneration && <span className={expressBadgeClassName}>Express</span>
+        )}
         {typeof openAdvancedVideoEditDialog === 'function' && (
           <IconActionButton title="Advanced options" onClick={openAdvancedVideoEditDialog}>
             <FaCog className="text-[13px]" />

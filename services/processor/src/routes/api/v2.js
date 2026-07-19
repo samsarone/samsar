@@ -10,7 +10,11 @@ import videoApiRouter from './video.js';
 import externalApiRouter from '../external/api.js';
 import { getDBConnectionString } from '../../models/DBString.js';
 import { deductGenerationCredits } from '../../models/GenerationCredits.js';
-import { createPublicationForSessionVideo, unpublishSessionVideo } from '../../models/Publication.js';
+import {
+  createPublicationForSessionVideo,
+  serializePublicationForResponse,
+  unpublishSessionVideo,
+} from '../../models/Publication.js';
 import { createNewBlankQuickSession } from '../../models/QuickSession.js';
 import { calculateExternalUserUtilityCharge } from '../../models/api/ExternalUserUtilityAPI.js';
 import {
@@ -1524,7 +1528,7 @@ async function handleInternalPublish(req, res) {
     });
 
     return res.status(200).json({
-      publication: publication?.toObject?.() || publication || null,
+      publication: serializePublicationForResponse(publication),
     });
   } catch (error) {
     return res.status(error?.statusCode || error?.status || 500).json({

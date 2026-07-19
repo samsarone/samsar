@@ -34,6 +34,11 @@ import {
   buildStudioSessionDetailsFromStatus,
   fetchDetailedVideoGenerationStatus,
 } from '../../utils/videoGenerationStatus.mjs';
+import {
+  isInteractiveVideoSession,
+  isVideoSessionPublished,
+  mergePublishedVideoSessionState,
+} from '../../utils/videoSessionPresentation.mjs';
 import { resolveStudioSessionRefresh } from './util/studioSessionRefresh.mjs';
 
 
@@ -3525,8 +3530,17 @@ export default function VideoHome() {
           ? videoSessionDetails.languageString.trim()
           : null;
 
+    const resolvedPublishSessionId = (
+      videoSessionDetails?._id ||
+      videoSessionDetails?.id ||
+      payload?.sessionId ||
+      payload?.id ||
+      id
+    )?.toString?.() || id;
     const publishPayload = {
       ...payload,
+      id: resolvedPublishSessionId,
+      sessionId: resolvedPublishSessionId,
       aspectRatio: aspectRatio,
       ispublishedVideo: true,
     };
@@ -3553,56 +3567,17 @@ export default function VideoHome() {
       .post(`${PROCESSOR_API_URL}/video_sessions/publish_session`, publishPayload, headers)
       .then((response) => {
         const publicationData = response.data;
-        const updatedPublication = publicationData?.publication || publicationData || {};
-        const updatedSession = publicationData?.session || {};
         setVideoSessionDetails((prevDetails) => {
           if (!prevDetails) {
             return prevDetails;
           }
 
-          return {
-            ...prevDetails,
-            ...updatedSession,
-            ispublishedVideo: true,
-            publishedTitle:
-              updatedSession.publishedTitle ||
-              updatedPublication.title ||
-              publishPayload.title ||
-              prevDetails.publishedTitle,
-            publishedDescription:
-              typeof updatedSession.publishedDescription === 'string'
-                ? updatedSession.publishedDescription
-                : typeof updatedPublication.description === 'string'
-                ? updatedPublication.description
-                : publishPayload.description,
-            publishedAspectRatio:
-              updatedSession.publishedAspectRatio || publishPayload.aspectRatio,
-            publishedVideoURL:
-              updatedSession.publishedVideoURL ||
-              publicationData?.videoURL ||
-              publicationData?.video_url ||
-              publicationData?.publication?.videoURL ||
-              publicationData?.publication?.video_url ||
-              resolveLatestSessionVideoUrl(prevDetails) ||
-              prevDetails.publishedVideoURL ||
-              prevDetails.remoteURL,
-            publishedAt:
-              updatedSession.publishedAt ||
-              publicationData?.updatedAt ||
-              publicationData?.publication?.updatedAt ||
-              prevDetails.publishedAt ||
-              new Date().toISOString(),
-            publishedPublicationId:
-              updatedSession.publishedPublicationId ||
-              publicationData?.publicationId ||
-              publicationData?.publication_id ||
-              publicationData?._id ||
-              publicationData?.id ||
-              publicationData?.publication?.publication_id ||
-              publicationData?.publication?.id ||
-              prevDetails.publishedPublicationId ||
-              null,
-          };
+          return mergePublishedVideoSessionState({
+            currentSession: prevDetails,
+            responseData: publicationData,
+            publishPayload,
+            fallbackVideoUrl: resolveLatestSessionVideoUrl(prevDetails),
+          });
         });
         toast.success('Video published successfully.', {
           position: 'bottom-center',
@@ -3787,6 +3762,7 @@ export default function VideoHome() {
           return {
             ...prevDetails,
             ispublishedVideo: false,
+            isPublished: false,
             publishedTitle: null,
             publishedDescription: null,
             publishedTags: [],
@@ -3798,6 +3774,7 @@ export default function VideoHome() {
             publishedImageModel: null,
             publishedVideoModel: null,
             publishedPublicationId: null,
+            publishedInteractivePublicationId: null,
           };
         });
       })
@@ -4315,6 +4292,8 @@ export default function VideoHome() {
     isVideoGenerating ||
     isSessionRenderPending(videoSessionDetails)
   );
+  const isInteractiveVideo = isInteractiveVideoSession(videoSessionDetails);
+  const isPublishedVideoSession = isVideoSessionPublished(videoSessionDetails);
   const collapsedFrameToolbarWidth = 'min(10vw, 128px)';
   const collapsedRightPanelWidth = 'clamp(148px, 11vw, 168px)';
   const studioInsetPx = 16;
@@ -4418,7 +4397,8 @@ export default function VideoHome() {
       isVideoGenerating={isVideoGenerating}
       isUpdateLayerPending={isUpdateLayerPending}
       isCanvasDirty={isCanvasDirty}
-      isSessionPublished={Boolean(videoSessionDetails?.ispublishedVideo)}
+      isSessionPublished={isPublishedVideoSession}
+      isInteractiveVideo={isInteractiveVideo}
       publishedTitle={videoSessionDetails?.publishedTitle}
       publishedDescription={videoSessionDetails?.publishedDescription}
       publishVideoSession={publishVideoSession}
@@ -4513,7 +4493,7 @@ export default function VideoHome() {
                 duplicateAudioLayer={duplicateAudioLayer}
                 publishVideoSession={publishVideoSession}
                 unpublishVideoSession={unpublishVideoSession}
-                isSessionPublished={Boolean(videoSessionDetails?.ispublishedVideo)}
+                isSessionPublished={isPublishedVideoSession}
                 generateMeta={generateMeta}
                 sessionMetadata={sessionMetadata}
                 isGuestSession={isGuestSession}

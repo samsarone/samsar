@@ -61,7 +61,12 @@ import {
 } from '../models/VideoSession.js';
 
 
-import { createPublicationForSessionVideo, createMetaForSession, unpublishSessionVideo } from '../models/Publication.js';
+import {
+  createPublicationForSessionVideo,
+  createMetaForSession,
+  serializePublicationForResponse,
+  unpublishSessionVideo,
+} from '../models/Publication.js';
 import VideoSessionDocument from '../schema/VideoSession.js';
 
 import { requestGenerateCustomAIVideo, } from '../models/ai_video/index.js';
@@ -2171,7 +2176,7 @@ router.post('/publish_session', async function (req, res) {
       throw error;
     }
 
-    const publicationResponse = publication?.toObject?.() || publication || {};
+    const publicationResponse = serializePublicationForResponse(publication) || {};
     const response = {
       publication: publicationResponse,
       session: {

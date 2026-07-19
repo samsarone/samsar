@@ -20,6 +20,7 @@ export default function CommonContainer(props) {
     isUpdateLayerPending,
     isCanvasDirty,
     isSessionPublished,
+    isInteractiveVideo,
     publishedTitle,
     publishedDescription,
     publishedTags,
@@ -105,6 +106,7 @@ export default function CommonContainer(props) {
         isUpdateLayerPending={isUpdateLayerPending}
         isCanvasDirty={isCanvasDirty}
         isSessionPublished={isSessionPublished}
+        isInteractiveVideo={isInteractiveVideo}
         publishedTitle={publishedTitle}
         publishedDescription={publishedDescription}
         publishedTags={publishedTags}

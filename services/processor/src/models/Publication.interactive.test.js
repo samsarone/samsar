@@ -3,6 +3,7 @@ import test from 'node:test';
 
 import {
   createPublicationForSessionVideo,
+  serializePublicationForResponse,
   unpublishSessionVideo,
 } from './Publication.js';
 
@@ -55,6 +56,17 @@ const interactiveResult = {
   },
 };
 
+test('publication response serialization leaves the linear contract unchanged', () => {
+  const linearPublication = {
+    _id: '507f1f77bcf86cd799439013',
+    videoURL: 'https://static.samsar.one/published/linear.mp4',
+    title: 'Linear',
+  };
+  const document = { toObject: () => linearPublication };
+
+  assert.equal(serializePublicationForResponse(document), linearPublication);
+});
+
 test('central publish dispatches branched sessions before the linear Publication path', async () => {
   const session = {
     _id: sessionId,
@@ -94,10 +106,62 @@ test('central publish dispatches branched sessions before the linear Publication
     },
   );
 
-  assert.equal(result, interactiveResult);
+  assert.equal(result.type, 'InteractiveVideo');
+  assert.equal(result.mainVideoUrl,
+    interactiveResult.manifest.outputs.paths[0].contentUrl);
+  assert.equal(result.mainThumbnailUrl,
+    interactiveResult.manifest.outputs.paths[0].thumbnailUrl);
+  assert.equal(result.duration, 10);
+  assert.deepEqual(result.manifest, interactiveResult.manifest);
   assert.equal(createCalls, 1);
   assert.equal(markedPublicationId, interactiveResult.id);
   assert.equal(persistedUpdate.publishedPublicationId, interactiveResult.id);
+});
+
+test('central publish accepts session_id and dispatches source-branched sessions interactively', async () => {
+  const session = {
+    _id: sessionId,
+    userId,
+    narrativeType: 'singular',
+    sourceNarrativeType: 'branched',
+  };
+  let requestedSessionId = null;
+  let createCalls = 0;
+
+  const result = await createPublicationForSessionVideo(
+    userId,
+    { session_id: sessionId },
+    {
+      connectToDatabase: async () => {},
+      videoSessionModel: {
+        findById: async (value) => {
+          requestedSessionId = value;
+          return session;
+        },
+        findOneAndUpdate: async (filter, update) => (
+          updatePublishedSessionWithCas(session, filter, update)
+        ),
+      },
+      createInteractivePublication: async () => {
+        createCalls += 1;
+        return interactiveResult;
+      },
+      buildInteractiveSessionUpdate: () => ({
+        ispublishedVideo: true,
+        publishedVideoURL: interactiveResult.manifest.outputs.paths[0].contentUrl,
+        publishedPublicationId: interactiveResult.id,
+      }),
+      markInteractivePublication: async () => interactiveResult,
+    },
+  );
+
+  assert.equal(requestedSessionId, sessionId);
+  assert.equal(createCalls, 1);
+  assert.equal(result.type, 'InteractiveVideo');
+  assert.equal(result.mainVideoUrl,
+    interactiveResult.manifest.outputs.paths[0].contentUrl);
+  assert.equal(result.mainThumbnailUrl,
+    interactiveResult.manifest.outputs.paths[0].thumbnailUrl);
 });
 
 test('central publish restores prior session markers and aborts a draft when finalization fails', async () => {

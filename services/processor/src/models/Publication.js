@@ -30,6 +30,7 @@ import {
   getInteractivePublicationPublishRevision,
   markInteractivePublicationPublished,
   restoreInteractivePublicationUnpublish,
+  serializeInteractivePublication,
   stageInteractivePublicationUnpublish,
 } from './InteractivePublication.js';
 import { isBranchedVideoSession } from './interactive/InteractivePublicationManifest.js';
@@ -49,6 +50,21 @@ const normalizeOptionalString = (value) => {
 
 const normalizeOptionalBoolean = (value) =>
   typeof value === 'boolean' ? value : null;
+
+const resolvePublicationSessionId = (payload = {}) => {
+  for (const value of [payload.id, payload.sessionId, payload.session_id]) {
+    const normalized = normalizeOptionalString(value?.toString?.() ?? value);
+    if (normalized) return normalized;
+  }
+  return null;
+};
+
+export function serializePublicationForResponse(publication) {
+  const source = publication?.toObject?.() || publication || null;
+  return source?.type === 'InteractiveVideo'
+    ? serializeInteractivePublication(source)
+    : source;
+}
 
 const canManageAnotherUsersPublication = async (userId) => {
   const normalizedUserId = userId?.toString?.() || userId;
@@ -116,7 +132,7 @@ const buildInteractiveUnpublishedSessionUpdate = () => ({
 
 export async function createPublicationForSessionVideo(
   userId,
-  payload,
+  payload = {},
   {
     connectToDatabase = getDBConnectionString,
     videoSessionModel = VideoSession,
@@ -131,8 +147,14 @@ export async function createPublicationForSessionVideo(
 
   await connectToDatabase();
 
+  const id = resolvePublicationSessionId(payload);
+  if (!id) {
+    const error = new Error('Video session id is required.');
+    error.statusCode = 400;
+    throw error;
+  }
+
   const {
-    id,
     tags,
     title,
     description,
@@ -222,7 +244,11 @@ export async function createPublicationForSessionVideo(
       throw err;
     }
     try {
-      return await markInteractivePublication(interactivePublication.id, { expectedRevision });
+      const finalizedPublication = await markInteractivePublication(
+        interactivePublication.id,
+        { expectedRevision },
+      );
+      return serializePublicationForResponse(finalizedPublication);
     } catch (error) {
       await rollbackAndAbortCandidate('publication finalization failure');
       throw error;

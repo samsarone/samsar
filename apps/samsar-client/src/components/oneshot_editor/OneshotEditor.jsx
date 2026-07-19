@@ -85,6 +85,11 @@ import {
   isMissingVideoPostProcessingRoute,
 } from '../../utils/videoPostProcessingApi.mjs';
 import {
+  isInteractiveVideoSession,
+  isVideoSessionPublished,
+  mergePublishedVideoSessionState,
+} from '../../utils/videoSessionPresentation.mjs';
+import {
   filterOptionsForDeploymentModelValues,
   normalizeDeploymentModelValue,
 } from '../../utils/deploymentProviders.js';
@@ -4238,7 +4243,7 @@ export default function OneshotEditor() {
             ? formPayload.tags.map((tag) => tag.trim()).filter(Boolean)
             : [];
 
-      const sessionId = formPayload?.id || id;
+      const sessionId = (formPayload?.sessionId || formPayload?.id || id)?.toString?.() || id;
       const latestSessionDetails = (await getSessionDetails()) || sessionDetails;
       const latestRawVideoLink = extractVideoResultUrl(latestSessionDetails);
       const latestVideoUrl = normalizeVideoUrl(latestRawVideoLink) || videoLink || null;
@@ -4284,6 +4289,7 @@ export default function OneshotEditor() {
       const publishPayload = {
         ...formPayload,
         id: sessionId,
+        sessionId,
         tags: normalizedTags,
         aspectRatio: aspectRatioForPublish,
         ispublishedVideo: true,
@@ -4316,49 +4322,11 @@ export default function OneshotEditor() {
       );
 
       const responseData = publishResponse.data || {};
-      const publishedSession = responseData.session;
-      const publishedPublication = responseData.publication || responseData;
-      setSessionDetails((currentSessionDetails) => ({
-        ...(currentSessionDetails || latestSessionDetails || {}),
-        ...(publishedSession && typeof publishedSession === 'object' ? publishedSession : {}),
-        ispublishedVideo: true,
-        publishedTitle:
-          publishedSession?.publishedTitle ||
-          publishedPublication?.title ||
-          publishPayload.title ||
-          currentSessionDetails?.publishedTitle ||
-          null,
-        publishedDescription:
-          typeof publishedSession?.publishedDescription === 'string'
-            ? publishedSession.publishedDescription
-            : typeof publishedPublication?.description === 'string'
-              ? publishedPublication.description
-              : publishPayload.description || '',
-        publishedTags:
-          publishedSession?.publishedTags ||
-          publishedPublication?.tags ||
-          normalizedTags,
-        publishedAspectRatio:
-          publishedSession?.publishedAspectRatio ||
-          publishPayload.aspectRatio ||
-          null,
-        publishedVideoURL:
-          publishedSession?.publishedVideoURL ||
-          publishedPublication?.videoURL ||
-          latestVideoUrl ||
-          currentSessionDetails?.publishedVideoURL ||
-          null,
-        publishedAt:
-          publishedSession?.publishedAt ||
-          publishedPublication?.updatedAt ||
-          currentSessionDetails?.publishedAt ||
-          new Date().toISOString(),
-        publishedPublicationId:
-          publishedSession?.publishedPublicationId ||
-          publishedPublication?._id ||
-          publishedPublication?.id ||
-          currentSessionDetails?.publishedPublicationId ||
-          null,
+      setSessionDetails((currentSessionDetails) => mergePublishedVideoSessionState({
+        currentSession: currentSessionDetails || latestSessionDetails || {},
+        responseData,
+        publishPayload,
+        fallbackVideoUrl: latestVideoUrl,
       }));
 
       toast.success('Video published successfully.', {
@@ -6466,7 +6434,9 @@ export default function OneshotEditor() {
         ? ''
         : 'Configure OpenAI, Google Cloud, Alibaba Cloud, OpenRouter, or a Samsar API key in setup to enable VidGenie inference.'
     : '';
-  const isCompletedSessionPublished = Boolean(sessionDetails?.ispublishedVideo);
+  const isInteractiveVideo = isInteractiveVideoSession(sessionDetails) ||
+    isInteractiveVideoSession(generationStatusDetails);
+  const isCompletedSessionPublished = isVideoSessionPublished(sessionDetails);
   const rerollEstimateImageModel =
     rerollCandidateSourceSession?.expressGenerationImageModel ||
     rerollCandidateSourceSession?.imageModel ||
@@ -7340,19 +7310,33 @@ export default function OneshotEditor() {
               {pricingInfoDisplay}
             </div>
 
+            {isInteractiveVideo && (
+              <span
+                className={`inline-flex items-center rounded-full px-3 py-1.5 text-xs font-semibold ${
+                  colorMode === 'dark'
+                    ? 'bg-sky-400/12 text-sky-200 ring-1 ring-sky-300/25'
+                    : 'bg-sky-50 text-sky-700 ring-1 ring-sky-200'
+                }`}
+              >
+                Interactive video
+              </span>
+            )}
+
             {sessionDetails?.isExpressGeneration && (
               <>
-                <span
-                  className={`
-                    inline-flex items-center rounded-full px-3 py-1.5 text-xs font-semibold
-                    ${colorMode === 'dark'
-                      ? 'bg-cyan-400/12 text-cyan-200 ring-1 ring-cyan-300/25'
-                      : 'bg-cyan-50 text-cyan-700 ring-1 ring-cyan-200'
-                    }
-                  `}
-                >
-                  Express
-                </span>
+                {!isInteractiveVideo && (
+                  <span
+                    className={`
+                      inline-flex items-center rounded-full px-3 py-1.5 text-xs font-semibold
+                      ${colorMode === 'dark'
+                        ? 'bg-cyan-400/12 text-cyan-200 ring-1 ring-cyan-300/25'
+                        : 'bg-cyan-50 text-cyan-700 ring-1 ring-cyan-200'
+                      }
+                    `}
+                  >
+                    Express
+                  </span>
+                )}
                 {sessionInferenceModelLabel && (
                   <span
                     className={`

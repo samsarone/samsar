@@ -2347,13 +2347,16 @@ export async function publishExternalUserRequest({
                 : undefined,
   };
 
-  const { createPublicationForSessionVideo } = await import('../Publication.js');
+  const {
+    createPublicationForSessionVideo,
+    serializePublicationForResponse,
+  } = await import('../Publication.js');
   const publication = await createPublicationForSessionVideo(internalUserId, publishPayload);
   const refreshedSession = await VideoSession.findById(upstreamSessionId).lean();
 
   return {
     request: formatExternalRequestSummary(requestRecord, refreshedSession),
-    publication: publication?.toObject?.() || publication || null,
+    publication: serializePublicationForResponse(publication),
     external_user: formatExternalUser(externalUser),
   };
 }

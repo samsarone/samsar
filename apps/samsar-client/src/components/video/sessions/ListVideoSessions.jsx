@@ -11,6 +11,10 @@ import {
   getSessionIdentifier,
   normalizeSessionListData,
 } from './sessionListUtils.js';
+import {
+  isInteractiveVideoSession,
+  isVideoSessionPublished,
+} from '../../../utils/videoSessionPresentation.mjs';
 
 import SingleSelect from '../../common/SingleSelect'; // adjust path as needed
 
@@ -650,7 +654,8 @@ export default function ListVideoSessions() {
             ) || '1:1';
             const isExpressSession = Boolean(session.isExpressGeneration);
             const isImportedSession = Boolean(session.isImportedSession);
-            const isPublishedSession = Boolean(session.isPublished || session.ispublishedVideo);
+            const isInteractiveVideo = isInteractiveVideoSession(session);
+            const isPublishedSession = isVideoSessionPublished(session);
 
             return (
               <div
@@ -709,7 +714,18 @@ export default function ListVideoSessions() {
                         Imported
                       </span>
                     )}
-                    {isExpressSession && (
+                    {isInteractiveVideo && (
+                      <span
+                        className={`whitespace-nowrap rounded-full px-2 py-0.5 text-[10px] font-semibold tracking-wide ${
+                          colorMode === 'dark'
+                            ? 'bg-sky-400/12 text-sky-200 ring-1 ring-sky-300/25'
+                            : 'bg-sky-50 text-sky-700 ring-1 ring-sky-200'
+                        }`}
+                      >
+                        Interactive video
+                      </span>
+                    )}
+                    {isExpressSession && !isInteractiveVideo && (
                       <span
                         className={`whitespace-nowrap rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
                           colorMode === 'dark'
