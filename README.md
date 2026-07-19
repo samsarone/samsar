@@ -1,6 +1,6 @@
 # Samsar
 
-[![CI](https://github.com/samsarone/samsar/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/samsarone/samsar/actions/workflows/ci.yml)
+[![Tests](https://github.com/samsarone/samsar/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/samsarone/samsar/actions/workflows/ci.yml)
 
 Samsar is a generative video and media automation platform for turning prompts, product images, structured content, and creative ideas into finished videos and reusable studio assets. It brings together one-shot text-to-video, image-list-to-video, image editing, audio generation, semantic search, recommendations, assistant workflows, multi-provider model routing, and detailed post-production controls across one integrated Studio and API surface.
 
@@ -51,7 +51,7 @@ Samsar is a generative video and media automation platform for turning prompts, 
 | Generation workers | `services/generator`, `services/ai-video-layer-generator`, `services/video-generator`, `services/audio-generator`, `services/frames-processor` | Image generation/editing, AI video layers, final rendering, speech/music/sound effects, frame processing, and media processing. |
 | Workflow workers | `services/express-video-listener`, `services/assistant-query-processor`, `services/task-processor` | Express video state machine, assistant queries, and scheduled/background tasks. |
 | Runtime config | `runtime/config`, `runtime/secrets` | Generated deployment config, model availability, env files, and local secrets. Not committed. |
-| Deployment | `deploy/compose`, `deploy/helm` | Docker Compose stack and Kubernetes Helm scaffold. |
+| Deployment | `deploy/compose` | Docker Compose stack and local deployment configuration. |
 | Docs | `docs`, `pages` | Runtime notes, brand assets, and deeper Markdown documentation linked from this README. |
 
 ## Tests
@@ -94,7 +94,6 @@ GitHub Actions runs both checks for pull requests into `main` and pushes to `mai
 - Node.js 20+ with npm.
 - Docker running with the Compose plugin.
 - `rsync`, only when syncing source projects from the parent workspace.
-- Kubernetes and Helm, only for cluster deployment.
 
 Install Docker from the official Docker docs for your platform:
 
@@ -423,33 +422,6 @@ External IP access is not enabled by default. Keep the Docker stack on localhost
 The setup wizard can optionally enable nginx for a public domain/subdomain, public IP, or private IP. For public domain access, add A records for the Studio and processor domains pointing to the machine IP in your DNS provider. For public/private IP access, the wizard can detect IP candidates and uses a single IP with the processor under `/api`. For production deployment, non-SSL access needs port `80`; Let's Encrypt SSL setup uses ports `80` and `443`, then closes port `80` if Samsar opened it. The wizard can try to manage these host firewall rules automatically on supported Linux hosts. Warning: this allows public access to your instance, so set a strong setup/admin password first and restrict access with HTTPS, firewall rules, and authentication.
 
 For custom enterprise deployments behind a VPS, private network, or managed ingress, contact `hello@samsar.one`.
-
-## Kubernetes
-
-Render or inspect the Kubernetes scaffold:
-
-```bash
-helm template samsar deploy/helm/samsar \
-  --namespace samsar \
-  --values deploy/helm/samsar/values.yaml
-```
-
-The Kubernetes chart lives under `deploy/helm/samsar`. Inspect the values file:
-
-```bash
-cat deploy/helm/samsar/values.yaml
-```
-
-When workload templates are added, the intended deploy flow is:
-
-```bash
-helm upgrade --install samsar deploy/helm/samsar \
-  --namespace samsar \
-  --create-namespace \
-  --values deploy/helm/samsar/values.yaml
-```
-
-Production cluster deployment should use persistent volumes for MongoDB, MinIO or external object storage, local media storage when applicable, and any other stateful services. The current chart is a scaffold; add Deployments, Services, Ingress, PVCs, probes, ConfigMaps, and Secrets before using it for a real cluster deployment.
 
 ## Troubleshooting
 
