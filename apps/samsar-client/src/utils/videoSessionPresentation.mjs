@@ -60,6 +60,8 @@ export function isInteractiveVideoSession(value) {
   const narrativeType = normalizeType(
     value.narrativeType ||
     value.narrative_type ||
+    value.sourceNarrativeType ||
+    value.source_narrative_type ||
     value.narrativeGenerationType ||
     value.narrative_generation_type
   );
@@ -104,10 +106,14 @@ export function isVideoSessionPublished(session) {
     return false;
   }
 
-  for (const field of ['ispublishedVideo', 'isPublished', 'is_published']) {
-    if (typeof session[field] === 'boolean') {
-      return session[field];
-    }
+  const explicitPublishedValues = ['ispublishedVideo', 'isPublished', 'is_published']
+    .map((field) => session[field])
+    .filter((value) => typeof value === 'boolean');
+  if (explicitPublishedValues.includes(true)) {
+    return true;
+  }
+  if (explicitPublishedValues.includes(false)) {
+    return false;
   }
 
   return Boolean(firstText([
@@ -159,6 +165,43 @@ function resolvePublicationId(record, { includeRecordId = true } = {}) {
   ]);
 }
 
+function resolveManifestDefaultVideoUrl(publication) {
+  if (!isRecord(publication)) {
+    return null;
+  }
+
+  const manifest = isRecord(publication.manifest) ? publication.manifest : {};
+  const outputs = isRecord(manifest.outputs) ? manifest.outputs : {};
+  const paths = Array.isArray(outputs.paths)
+    ? outputs.paths
+    : Array.isArray(manifest.paths)
+      ? manifest.paths
+      : [];
+  const defaultPathId = firstText([
+    outputs.defaultPathId,
+    outputs.default_path_id,
+    manifest.defaultPathId,
+    manifest.default_path_id,
+  ]);
+  const defaultPath = (
+    (defaultPathId
+      ? paths.find((path) => firstText([path?.pathId, path?.path_id, path?.id]) === defaultPathId)
+      : null) ||
+    paths.find((path) => path?.isDefault === true || path?.is_default === true) ||
+    paths[0]
+  );
+
+  return firstText([
+    outputs.defaultUrl,
+    outputs.default_url,
+    manifest.defaultUrl,
+    manifest.default_url,
+    defaultPath?.url,
+    defaultPath?.videoUrl,
+    defaultPath?.video_url,
+  ]);
+}
+
 /**
  * Normalizes both legacy Publication and InteractivePublication responses into
  * the VideoSession fields consumed by Studio and VidGenie.
@@ -181,14 +224,19 @@ export function mergePublishedVideoSessionState({
     responseSession.published_video_url,
     publication.videoURL,
     publication.video_url,
+    publication.mainVideoUrl,
+    publication.main_video_url,
     publication.defaultUrl,
     publication.default_url,
     publication.outputs?.defaultUrl,
     publication.outputs?.default_url,
     publication.branching?.outputs?.defaultUrl,
     publication.branching?.outputs?.default_url,
+    resolveManifestDefaultVideoUrl(publication),
     responseData?.videoURL,
     responseData?.video_url,
+    responseData?.mainVideoUrl,
+    responseData?.main_video_url,
     fallbackVideoUrl,
     current.publishedVideoURL,
     current.remoteURL,
@@ -204,6 +252,21 @@ export function mergePublishedVideoSessionState({
     publication.created_at,
     current.publishedAt,
   ]) || new Date().toISOString();
+  const publishedSplashImage = firstText([
+    responseSession.publishedSplashImage,
+    responseSession.published_splash_image,
+    publication.mainThumbnailUrl,
+    publication.main_thumbnail_url,
+    publication.thumbnailUrl,
+    publication.thumbnail_url,
+    publication.splashImage,
+    publication.splash_image,
+    responseData?.mainThumbnailUrl,
+    responseData?.main_thumbnail_url,
+    payload.splashImage,
+    current.publishedSplashImage,
+    current.splashImage,
+  ]);
 
   const nextSession = {
     ...current,
@@ -243,6 +306,7 @@ export function mergePublishedVideoSessionState({
       current.publishedAspectRatio,
     ]),
     publishedVideoURL,
+    publishedSplashImage,
     publishedAt,
     publishedPublicationId: publicationId || current.publishedPublicationId || null,
   };
