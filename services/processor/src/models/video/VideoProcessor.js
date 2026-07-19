@@ -374,6 +374,7 @@ export async function extractAudioFromVideoIfPresent(
     prefix = 'audio',
     namespace = 'ai_video',
     trimUploadedAudioEdgeSilence = false,
+    preserveVideoTimeline = false,
   } = {}
 ) {
   const metadata = await getVideoMetadata(videoPath);
@@ -392,12 +393,17 @@ export async function extractAudioFromVideoIfPresent(
   await fs.ensureDir(outputFolder);
 
   const outputPath = path.join(outputFolder, `${prefix}_${Date.now()}.mp3`);
-  await extractAudio(videoPath, outputPath);
+  await extractAudio(videoPath, outputPath, {
+    preserveVideoTimeline,
+    durationSeconds: Number(metadata?.format?.duration),
+  });
 
   let leadingSilenceTrimSeconds = 0;
   let trailingSilenceTrimSeconds = 0;
 
-  if (trimUploadedAudioEdgeSilence) {
+  // A timeline-preserving extraction must retain edge silence; returning it as
+  // a source trim would seek the audible content back to the layer start.
+  if (trimUploadedAudioEdgeSilence && !preserveVideoTimeline) {
     try {
       const silenceInfo = await detectAudioEdgeSilence(outputPath);
       const remainingDurationSeconds = silenceInfo.durationSeconds
@@ -748,12 +754,35 @@ function extractSingleFrame(
   });
 }
 
-function extractAudio(videoPath, outputPath) {
+function extractAudio(
+  videoPath,
+  outputPath,
+  {
+    preserveVideoTimeline = false,
+    durationSeconds = 0,
+  } = {}
+) {
   return new Promise((resolve, reject) => {
-    ffmpeg(videoPath)
+    const command = ffmpeg(videoPath)
       .noVideo()
       .audioCodec('libmp3lame')  // re-encode the audio to MP3
-      .audioBitrate('192k')      // optional: adjust as needed
+      .audioBitrate('192k');      // optional: adjust as needed
+
+    if (preserveVideoTimeline) {
+      // Audio-only outputs normally rebase the first audio packet to zero.
+      // Materialize any timestamp gap as silence, then pad to the video length.
+      const audioFilters = ['aresample=async=1:first_pts=0'];
+      const targetDurationSeconds = Number(durationSeconds);
+
+      if (Number.isFinite(targetDurationSeconds) && targetDurationSeconds > 0) {
+        audioFilters.push('apad');
+        command.duration(targetDurationSeconds);
+      }
+
+      command.audioFilters(audioFilters);
+    }
+
+    command
       .on('end', resolve)
       .on('error', reject)
       .save(outputPath);

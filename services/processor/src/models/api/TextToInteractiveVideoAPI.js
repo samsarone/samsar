@@ -324,6 +324,7 @@ async function initializeVideoSession(
 
 export async function createTextToInteractiveVideoDraftSession({
   userId,
+  forceNew = false,
   dependencies = {},
 } = {}) {
   if (!userId) throw buildError('User ID is required.', 401, 'UNAUTHORIZED');
@@ -334,6 +335,39 @@ export async function createTextToInteractiveVideoDraftSession({
   const videoSessionModel = dependencies.videoSessionModel || VideoSession;
   const upsertSessionMapping = dependencies.upsertGlobalSessionMapping ||
     upsertGlobalSessionMapping;
+
+  if (!forceNew && typeof videoSessionModel.findOne === 'function') {
+    const pendingQuery = videoSessionModel.findOne({
+      userId,
+      narrativeType: 'branched',
+      builderRouteType: 'text_to_interactive_video',
+      builderSessionSubType: 'interactive_video_create',
+      interactiveVideoDraftConfig: { $exists: true },
+      expressGenerationPending: true,
+      expressGenerationFailed: { $ne: true },
+      expressGenerationCancelled: { $ne: true },
+    });
+    const sortableQuery = typeof pendingQuery?.sort === 'function'
+      ? pendingQuery.sort({ updatedAt: -1 })
+      : pendingQuery;
+    const selectableQuery = typeof sortableQuery?.select === 'function'
+      ? sortableQuery.select('_id')
+      : sortableQuery;
+    const pendingSession = typeof selectableQuery?.lean === 'function'
+      ? await selectableQuery.lean()
+      : await selectableQuery;
+    const pendingSessionId = pendingSession?._id?.toString?.() || pendingSession?._id;
+    if (pendingSessionId) {
+      return {
+        request_id: pendingSessionId,
+        session_id: pendingSessionId,
+        status: 'PENDING',
+        narrative_type: 'branched',
+        resumed: true,
+      };
+    }
+  }
+
   const sessionId = await createBlankSession(userId);
   const defaults = {
     duration: 30,
@@ -382,6 +416,7 @@ export async function createTextToInteractiveVideoDraftSession({
     session_id: sessionId,
     status: 'DRAFT',
     narrative_type: 'branched',
+    resumed: false,
     defaults,
   };
 }

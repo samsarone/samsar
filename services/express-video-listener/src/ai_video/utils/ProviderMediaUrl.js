@@ -27,6 +27,20 @@ function isSecureAssetReference(value) {
   return normalizeObjectKey(value).startsWith(`${SECURE_ASSET_PREFIX}/`);
 }
 
+function isTemporaryTunnelUrl(value) {
+  if (!/^https?:\/\//i.test(value || '')) {
+    return false;
+  }
+  try {
+    const hostname = new URL(value).hostname.toLowerCase();
+    return hostname.endsWith('.trycloudflare.com')
+      || hostname.endsWith('.loca.lt')
+      || hostname.endsWith('.share.zrok.io');
+  } catch {
+    return false;
+  }
+}
+
 function buildCanonicalSecureAssetReference(value) {
   const normalizedKey = normalizeObjectKey(value);
   if (!normalizedKey) {
@@ -47,6 +61,23 @@ function buildCanonicalSecureAssetReference(value) {
  * freshly validated public URL while queue and session state remain durable.
  */
 export function getCanonicalAiVideoReference({ layer, userId }) {
+  const existingRemoteLink = typeof layer?.aiVideoRemoteLink === 'string'
+    ? layer.aiVideoRemoteLink.trim()
+    : '';
+
+  // A non-temporary secure remote reference identifies the object that was
+  // actually uploaded. Prefer it when it differs from the conventional local
+  // path mapping (legacy/custom producers may use another valid object key).
+  if (
+    existingRemoteLink
+    && isSecureAssetReference(existingRemoteLink)
+    && !isTemporaryTunnelUrl(existingRemoteLink)
+  ) {
+    return /^https?:\/\//i.test(existingRemoteLink)
+      ? existingRemoteLink
+      : buildCanonicalSecureAssetReference(existingRemoteLink);
+  }
+
   const aiVideoRelativePath = getAiVideoUploadRelativePath(layer?.aiVideoLayer);
   if (aiVideoRelativePath && userId) {
     return buildCanonicalSecureAssetReference(
@@ -54,9 +85,6 @@ export function getCanonicalAiVideoReference({ layer, userId }) {
     );
   }
 
-  const existingRemoteLink = typeof layer?.aiVideoRemoteLink === 'string'
-    ? layer.aiVideoRemoteLink.trim()
-    : '';
   if (!existingRemoteLink) {
     return null;
   }

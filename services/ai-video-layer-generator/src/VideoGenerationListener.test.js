@@ -7,6 +7,7 @@ import {
   buildBaseGenerationTerminalFailureUpdate,
   getInferenceModelForSession,
   getInferenceSettingsForSession,
+  getRetryLipSyncModel,
   getRetryPromptSeedAction,
   isTransientProviderError,
   resolveCompletedLayerDuration,
@@ -178,6 +179,12 @@ test('lip-sync completion keeps the existing duration for frame-rounding differe
     }),
     4.87,
   );
+});
+
+test('lip-sync retries alternate between the two fallback models', () => {
+  assert.equal(getRetryLipSyncModel('SYNCLIPSYNC'), 'HUMMINGBIRDLIPSYNC');
+  assert.equal(getRetryLipSyncModel('HUMMINGBIRDLIPSYNC'), 'SYNCLIPSYNC');
+  assert.equal(getRetryLipSyncModel('KLINGLIPSYNC'), 'KLINGLIPSYNC');
 });
 
 test('non-lip-sync completion follows generated duration', () => {

@@ -83,6 +83,9 @@ export const VIDEO_STATUS_SESSION_PROJECTION = [
   'expressGenerationPaused',
   'expressGenerationCancelled',
   'videoGenerationPending',
+  'builderStatus',
+  'builderRouteType',
+  'builderSessionSubType',
   'expressGenerativeVideoModel',
   'expressGenerativeVideoModelSubType',
   'videoGenerationModelSubType',
@@ -133,6 +136,9 @@ export const VIDEO_STATUS_DETAILED_SESSION_PROJECTION = [
   'expressGenerationResumedAt',
   'expressGenerationCancelled',
   'videoGenerationPending',
+  'builderStatus',
+  'builderRouteType',
+  'builderSessionSubType',
   'expressGenerativeVideoModel',
   'expressGenerativeVideoModelSubType',
   'videoGenerationModelSubType',
@@ -2351,26 +2357,33 @@ export async function buildVideoStatusResponse({
         local: normalizedVideoLink,
         remote: [sessionSnapshot?.remoteURL, defaultResultUrl, normalizedDefaultUrls[0]],
       }), req);
-    let normalizedStatus = completionUrl ? 'COMPLETED' : 'PENDING';
-    if (expressGenerationCancelled || stageVideoCanceled) {
+    const isInteractiveDraft =
+      sessionSnapshot?.builderStatus === 'DRAFT' &&
+      sessionSnapshot?.builderSessionSubType === 'interactive_video_draft' &&
+      !sessionSnapshot?.expressGenerationPending &&
+      !sessionSnapshot?.videoGenerationPending;
+    let normalizedStatus = isInteractiveDraft
+      ? 'INIT'
+      : completionUrl ? 'COMPLETED' : 'PENDING';
+    if (!isInteractiveDraft && (expressGenerationCancelled || stageVideoCanceled)) {
       normalizedStatus = 'CANCELLED';
-    } else if (sessionSnapshot.expressGenerationFailed || stageVideoFailed) {
+    } else if (!isInteractiveDraft && (sessionSnapshot.expressGenerationFailed || stageVideoFailed)) {
       normalizedStatus = 'FAILED';
-    } else if (expressGenerationPaused) {
+    } else if (!isInteractiveDraft && expressGenerationPaused) {
       normalizedStatus = 'PAUSED';
-    } else if (completionUrl && stageVideoCompleted) {
+    } else if (!isInteractiveDraft && completionUrl && stageVideoCompleted) {
       normalizedStatus = 'COMPLETED';
-    } else if (statusRaw) {
+    } else if (!isInteractiveDraft && statusRaw) {
       normalizedStatus = statusRaw;
-    } else if (
+    } else if (!isInteractiveDraft && (
       sessionSnapshot.expressGenerationPending ||
       sessionSnapshot.videoGenerationPending ||
       stageVideoStatusRaw === 'PENDING' ||
       stageVideoStatusRaw === 'INIT' ||
       stageVideoStatusRaw === 'IN_PROGRESS'
-    ) {
+    )) {
       normalizedStatus = 'PENDING';
-    } else if (completionUrl) {
+    } else if (!isInteractiveDraft && completionUrl) {
       normalizedStatus = 'COMPLETED';
     }
     if (branching?.status === 'FAILED') {

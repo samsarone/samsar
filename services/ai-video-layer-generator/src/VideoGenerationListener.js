@@ -2753,6 +2753,16 @@ async function processVideoGenerationFailed(payload) {
   }
 }
 
+export function getRetryLipSyncModel(model) {
+  if (model === 'HUMMINGBIRDLIPSYNC') {
+    return 'SYNCLIPSYNC';
+  }
+  if (model === 'SYNCLIPSYNC') {
+    return 'HUMMINGBIRDLIPSYNC';
+  }
+  return model;
+}
+
 async function processLipSyncGenerationFailed(payload) {
   await getDBConnectionString();
 
@@ -2788,16 +2798,8 @@ async function processLipSyncGenerationFailed(payload) {
   if (shouldRetryLipSyncFailure && numRetries < 3 && !providerTimedOut) {
     await getTimeout(1000);
 
-    let newModel = model;
-    let newPrompt = prompt;
-
-    // Possibly alter the model
-    if (newModel === 'HUMMINGBIRDLIPSYNC') {
-      newModel = 'SYNCLIPSYNC';
-    }
-    if (newModel === 'SYNCLIPSYNC') {
-      newModel = 'HUMMINGBIRDLIPSYNC';
-    }
+    const newModel = getRetryLipSyncModel(model);
+    const newPrompt = prompt;
 
     await AIVideoLayerGeneration.findByIdAndUpdate(generationId, {
       status: 'INIT',

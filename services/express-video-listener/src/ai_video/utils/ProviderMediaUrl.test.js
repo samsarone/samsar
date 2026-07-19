@@ -252,3 +252,19 @@ test('preserves independently hosted remote-only AI-video references in queue st
     providerUrl,
   );
 });
+
+test('prefers the secure object that was actually uploaded when local and remote keys differ', async () => {
+  const { getCanonicalAiVideoReference } = await importProviderMediaUrlModule();
+  const uploadedUrl = 'https://static.samsar.one/assets_v2/custom_video/session/layer/output.mp4';
+
+  assert.equal(
+    getCanonicalAiVideoReference({
+      userId: 'user-1',
+      layer: {
+        aiVideoLayer: 'ai_video/generations/session/layer/output.mp4',
+        aiVideoRemoteLink: uploadedUrl,
+      },
+    }),
+    uploadedUrl,
+  );
+});

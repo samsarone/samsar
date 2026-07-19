@@ -70,3 +70,23 @@ test('normalizes video/audio for lip sync, video only for sound effects, and non
     ['/assets_v2/video/source-2.mp4', 'video'],
   ]);
 });
+
+test('media normalization errors identify the exact provider field that failed', async () => {
+  await assert.rejects(
+    () => normalizeSelectedVideoGenerationMediaPayload({
+      model: 'SYNCLIPSYNC',
+      videoLink: '/assets_v2/video/source.mp4',
+      audioLink: '/assets_v2/audio/missing.wav',
+    }, async (value, { mediaKind }) => {
+      if (mediaKind === 'audio') {
+        throw new Error('CDN cache prime returned status 403');
+      }
+      return value;
+    }),
+    (error) => (
+      error?.mediaKind === 'audio'
+      && error?.mediaField === 'audioLink'
+      && /provider audio field audioLink/.test(error.message)
+    ),
+  );
+});

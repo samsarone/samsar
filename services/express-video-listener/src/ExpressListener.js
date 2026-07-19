@@ -15,6 +15,14 @@ import { generateTranscriptsForSessionAudioLayers } from './Transcript.js';
 import { applyDefaultAnimationPresets } from './AnimationPresets.js';
 import { createGenerativeVideoAnimationsForFrames } from './ai_video/AIVideoGenerator.js';
 import { generateLipSyncForSession } from './ai_video/LipSyncGenerator.js';
+import {
+  assessLipSyncStage,
+  getLipSyncFailureMessage,
+} from './ai_video/LipSyncStage.js';
+import {
+  assessSoundEffectStage,
+  getSoundEffectFailureMessage,
+} from './ai_video/SoundEffectStage.js';
 
 
 
@@ -662,6 +670,111 @@ async function markAiVideoGenerationStageFailed(sessionId, currentGenerationStat
   await processSessionCompletionFailure(sessionId);
 }
 
+async function markLipSyncGenerationStageFailed(
+  sessionId,
+  currentGenerationStatus = {},
+  failedAssessment = {},
+) {
+  const failureMessage = getLipSyncFailureMessage(failedAssessment);
+  const now = new Date();
+  const failedStatus = {
+    ...(currentGenerationStatus || {}),
+    lip_sync_generation: 'FAILED',
+    status: 'FAILED',
+  };
+
+  console.error('[lip_sync][stage_failed] required character layer has no completed lip sync output', {
+    sessionId,
+    layerId: failedAssessment?.layerId || null,
+    audioLayerId: failedAssessment?.audioLayerId || null,
+    layerStatus: failedAssessment?.status || null,
+    error: failureMessage,
+  });
+
+  await VideoSession.updateOne(
+    { _id: sessionId },
+    {
+      $set: {
+        expressGenerationStatus: failedStatus,
+        lipSyncGenerationPending: false,
+        expressGenerationPending: false,
+        expressGenerationFailed: true,
+        expressGenerationError: failureMessage,
+        lastLipSyncGenerationError: failureMessage,
+        'expressStepGeneration.status': 'FAILED',
+        'expressStepGeneration.currentStep': 'lip_sync_generation',
+        'expressStepGeneration.current_step': 'lip_sync_generation',
+        'expressStepGeneration.currentStepLabel': 'Lip sync',
+        'expressStepGeneration.current_step_label': 'Lip sync',
+        'expressStepGeneration.error': failureMessage,
+        'expressStepGeneration.waiting': false,
+        'expressStepGeneration.waitingForProcessNext': false,
+        'expressStepGeneration.waiting_for_process_next': false,
+        'expressStepGeneration.requiresUserAction': false,
+        'expressStepGeneration.requires_user_action': false,
+        'expressStepGeneration.canProcessNext': false,
+        'expressStepGeneration.can_process_next': false,
+        'expressStepGeneration.updatedAt': now,
+        'expressStepGeneration.updated_at': now,
+      },
+    },
+  );
+
+  await processSessionCompletionFailure(sessionId);
+}
+
+async function markSoundEffectGenerationStageFailed(
+  sessionId,
+  currentGenerationStatus = {},
+  failedAssessment = {},
+) {
+  const failureMessage = getSoundEffectFailureMessage(failedAssessment);
+  const now = new Date();
+  const failedStatus = {
+    ...(currentGenerationStatus || {}),
+    sound_effect_generation: 'FAILED',
+    status: 'FAILED',
+  };
+
+  console.error('[sound_effect][stage_failed] required layer has no completed sound-effect output', {
+    sessionId,
+    layerId: failedAssessment?.layerId || null,
+    layerStatus: failedAssessment?.status || null,
+    error: failureMessage,
+  });
+
+  await VideoSession.updateOne(
+    { _id: sessionId },
+    {
+      $set: {
+        expressGenerationStatus: failedStatus,
+        soundEffectGenerationPending: false,
+        expressGenerationPending: false,
+        expressGenerationFailed: true,
+        expressGenerationError: failureMessage,
+        lastSoundEffectGenerationError: failureMessage,
+        'expressStepGeneration.status': 'FAILED',
+        'expressStepGeneration.currentStep': 'sound_effect_generation',
+        'expressStepGeneration.current_step': 'sound_effect_generation',
+        'expressStepGeneration.currentStepLabel': 'Sound effect',
+        'expressStepGeneration.current_step_label': 'Sound effect',
+        'expressStepGeneration.error': failureMessage,
+        'expressStepGeneration.waiting': false,
+        'expressStepGeneration.waitingForProcessNext': false,
+        'expressStepGeneration.waiting_for_process_next': false,
+        'expressStepGeneration.requiresUserAction': false,
+        'expressStepGeneration.requires_user_action': false,
+        'expressStepGeneration.canProcessNext': false,
+        'expressStepGeneration.can_process_next': false,
+        'expressStepGeneration.updatedAt': now,
+        'expressStepGeneration.updated_at': now,
+      },
+    },
+  );
+
+  await processSessionCompletionFailure(sessionId);
+}
+
 function buildCancelledExpressGenerationStatus(rawStatus) {
   const currentStatus = rawStatus && typeof rawStatus === 'object' && !Array.isArray(rawStatus)
     ? { ...rawStatus }
@@ -1213,63 +1326,105 @@ async function checkVideoRenderStatus(session) {
       return;
     }
 
-    const soundEffectLayers = latestSessionLayers.filter((layer) => layer.layerAiVideoType === 'sound_effect');
-    const requiresSoundEffectGeneration = soundEffectLayers.some((layer) =>
-      !layer.isAudioVideoLayer && layer.soundEffectGenerationPending
+    const lipSyncSessionData = await VideoSession.findById(sessionId)
+      .select('layers audioLayers expressGenerationStatus')
+      .lean();
+    if (!lipSyncSessionData) {
+      return;
+    }
+    currentGenerationStatus = lipSyncSessionData.expressGenerationStatus || currentGenerationStatus;
+    const lipSyncAssessment = assessLipSyncStage(
+      lipSyncSessionData.layers,
+      lipSyncSessionData.audioLayers,
+    );
+    let lipSyncStageStatus = normalizeStatusValue(
+      currentGenerationStatus.lip_sync_generation,
     );
 
-    if (!normalizeStatusValue(currentGenerationStatus.lip_sync_generation)) {
-      const requiresLipSyncGeneration = latestSessionLayers.some((layer) =>
-        layer.layerAiVideoType === 'character' &&
-        layer.lipSyncGenerationPending &&
-        hasGeneratedAiVideoOutput(layer)
+    const failedLipSyncAssessment = lipSyncAssessment.failed[0];
+    if (failedLipSyncAssessment) {
+      await markLipSyncGenerationStageFailed(
+        sessionId,
+        currentGenerationStatus,
+        failedLipSyncAssessment,
       );
+      return;
+    }
 
-      currentGenerationStatus.lip_sync_generation = requiresLipSyncGeneration ? 'INIT' : 'COMPLETED';
+    if (!lipSyncStageStatus) {
+      lipSyncStageStatus = ['NOT_REQUIRED', 'COMPLETED'].includes(lipSyncAssessment.state)
+        ? 'COMPLETED'
+        : 'INIT';
+      currentGenerationStatus.lip_sync_generation = lipSyncStageStatus;
       await VideoSession.updateOne({ _id: sessionId }, {
         $set: {
-          'expressGenerationStatus.lip_sync_generation': currentGenerationStatus.lip_sync_generation,
-        }
+          'expressGenerationStatus.lip_sync_generation': lipSyncStageStatus,
+        },
       }, { new: true });
     }
 
-    if (currentGenerationStatus.lip_sync_generation === 'INIT') {
-
-      currentGenerationStatus.lip_sync_generation = 'PENDING';
-      await VideoSession.updateOne({ _id: sessionId }, {
-        expressGenerationStatus: currentGenerationStatus,
-        lipSyncGenerationPending: true
-      }, { new: true });
-
-      await generateLipSyncForSession(latestSessionId);
-      return;
-    } else if (currentGenerationStatus.lip_sync_generation === 'PENDING') {
-      let isLipSyncGenerationPending = false;
-      for (let i = 0; i < latestSessionLayers.length; i++) {
-        const currentLayer = latestSessionLayers[i];
-        if (currentLayer.layerAiVideoType === 'character'
-          && currentLayer.lipSyncGenerationPending && hasGeneratedAiVideoOutput(currentLayer)) {
-          isLipSyncGenerationPending = true;
-          break;
-        }
-      }
-
-
-      if (!isLipSyncGenerationPending) {
-
-        currentGenerationStatus.lip_sync_generation = 'COMPLETED';
+    if (lipSyncStageStatus === 'INIT') {
+      if (['NOT_REQUIRED', 'COMPLETED'].includes(lipSyncAssessment.state)) {
+        lipSyncStageStatus = 'COMPLETED';
+        currentGenerationStatus.lip_sync_generation = lipSyncStageStatus;
+        await VideoSession.updateOne({ _id: sessionId }, {
+          $set: {
+            'expressGenerationStatus.lip_sync_generation': lipSyncStageStatus,
+            lipSyncGenerationPending: false,
+          },
+        }, { new: true });
+      } else {
+        currentGenerationStatus.lip_sync_generation = 'PENDING';
         await VideoSession.updateOne({ _id: sessionId }, {
           expressGenerationStatus: currentGenerationStatus,
+          lipSyncGenerationPending: true,
         }, { new: true });
 
-
+        await generateLipSyncForSession(latestSessionId);
+        return;
+      }
+    } else if (lipSyncStageStatus === 'PENDING') {
+      if (lipSyncAssessment.state === 'COMPLETED') {
+        lipSyncStageStatus = 'COMPLETED';
+        currentGenerationStatus.lip_sync_generation = lipSyncStageStatus;
+        await VideoSession.updateOne({ _id: sessionId }, {
+          $set: {
+            'expressGenerationStatus.lip_sync_generation': lipSyncStageStatus,
+            lipSyncGenerationPending: false,
+          },
+        }, { new: true });
+      } else if (lipSyncAssessment.state === 'NOT_REQUIRED') {
+        lipSyncStageStatus = 'COMPLETED';
+        currentGenerationStatus.lip_sync_generation = lipSyncStageStatus;
+        await VideoSession.updateOne({ _id: sessionId }, {
+          $set: {
+            'expressGenerationStatus.lip_sync_generation': lipSyncStageStatus,
+            lipSyncGenerationPending: false,
+          },
+        }, { new: true });
+      } else if (lipSyncAssessment.state === 'INCOMPLETE') {
+        await markLipSyncGenerationStageFailed(
+          sessionId,
+          currentGenerationStatus,
+          lipSyncAssessment.incomplete[0],
+        );
+        return;
       } else {
         return;
       }
-
+    } else if (
+      lipSyncStageStatus === 'COMPLETED'
+      && !['NOT_REQUIRED', 'COMPLETED'].includes(lipSyncAssessment.state)
+    ) {
+      await markLipSyncGenerationStageFailed(
+        sessionId,
+        currentGenerationStatus,
+        lipSyncAssessment.incomplete[0] || lipSyncAssessment.pending[0],
+      );
+      return;
     }
 
-    if (currentGenerationStatus.lip_sync_generation === 'COMPLETED') {
+    if (lipSyncStageStatus === 'COMPLETED') {
       const lipSyncStageResult = await completeExpressStageForBillingAndStep(
         sessionId,
         EXPRESS_VIDEO_BILLING_STAGES.LIP_SYNC_GENERATION,
@@ -1279,54 +1434,80 @@ async function checkVideoRenderStatus(session) {
       }
     }
 
-    const soundEffectGenerationStatus = currentGenerationStatus.sound_effect_generation || 'INIT';
+    const soundEffectSessionData = await VideoSession.findById(sessionId)
+      .select('layers expressGenerationStatus')
+      .lean();
+    if (!soundEffectSessionData) {
+      return;
+    }
+    currentGenerationStatus = soundEffectSessionData.expressGenerationStatus || currentGenerationStatus;
+    const soundEffectAssessment = assessSoundEffectStage(soundEffectSessionData.layers);
+    let soundEffectGenerationStatus = normalizeStatusValue(
+      currentGenerationStatus.sound_effect_generation,
+    ) || 'INIT';
+
+    if (soundEffectAssessment.failed[0]) {
+      await markSoundEffectGenerationStageFailed(
+        sessionId,
+        currentGenerationStatus,
+        soundEffectAssessment.failed[0],
+      );
+      return;
+    }
 
     if (soundEffectGenerationStatus === 'INIT') {
-
-      if (!requiresSoundEffectGeneration) {
-        currentGenerationStatus.sound_effect_generation = 'COMPLETED';
+      if (['NOT_REQUIRED', 'COMPLETED'].includes(soundEffectAssessment.state)) {
+        soundEffectGenerationStatus = 'COMPLETED';
+        currentGenerationStatus.sound_effect_generation = soundEffectGenerationStatus;
         await VideoSession.updateOne({ _id: sessionId }, {
-          expressGenerationStatus: currentGenerationStatus,
+          $set: {
+            'expressGenerationStatus.sound_effect_generation': soundEffectGenerationStatus,
+            soundEffectGenerationPending: false,
+          },
         }, { new: true });
       } else {
-
         currentGenerationStatus.sound_effect_generation = 'PENDING';
         await VideoSession.updateOne({ _id: sessionId }, {
           expressGenerationStatus: currentGenerationStatus,
-          sound_effect_generation: true
+          soundEffectGenerationPending: true,
         }, { new: true });
 
         await generateSoundEffectsForSession(latestSessionId);
-
         return;
       }
-
-
-    } else if (currentGenerationStatus.sound_effect_generation === 'PENDING') {
-
-      let isSoundEffectGenerationPending = false;
-      for (let i = 0; i < latestSessionLayers.length; i++) {
-        const currentLayer = latestSessionLayers[i];
-        if (currentLayer.layerAiVideoType === 'sound_effect' &&
-          !currentLayer.isAudioVideoLayer &&
-          currentLayer.soundEffectGenerationPending && currentLayer.aiVideoLayer) {
-          isSoundEffectGenerationPending = true;
-          break;
-        }
-      }
-
-
-      if (!requiresSoundEffectGeneration || !isSoundEffectGenerationPending) {
-        currentGenerationStatus.sound_effect_generation = 'COMPLETED';
+    } else if (soundEffectGenerationStatus === 'PENDING') {
+      if (['NOT_REQUIRED', 'COMPLETED'].includes(soundEffectAssessment.state)) {
+        soundEffectGenerationStatus = 'COMPLETED';
+        currentGenerationStatus.sound_effect_generation = soundEffectGenerationStatus;
         await VideoSession.updateOne({ _id: sessionId }, {
-          expressGenerationStatus: currentGenerationStatus,
+          $set: {
+            'expressGenerationStatus.sound_effect_generation': soundEffectGenerationStatus,
+            soundEffectGenerationPending: false,
+          },
         }, { new: true });
+      } else if (soundEffectAssessment.state === 'INCOMPLETE') {
+        await markSoundEffectGenerationStageFailed(
+          sessionId,
+          currentGenerationStatus,
+          soundEffectAssessment.incomplete[0],
+        );
+        return;
       } else {
         return;
       }
+    } else if (
+      soundEffectGenerationStatus === 'COMPLETED'
+      && !['NOT_REQUIRED', 'COMPLETED'].includes(soundEffectAssessment.state)
+    ) {
+      await markSoundEffectGenerationStageFailed(
+        sessionId,
+        currentGenerationStatus,
+        soundEffectAssessment.incomplete[0] || soundEffectAssessment.pending[0],
+      );
+      return;
     }
 
-    if (currentGenerationStatus.sound_effect_generation === 'COMPLETED') {
+    if (soundEffectGenerationStatus === 'COMPLETED') {
       const soundEffectStageResult = await completeExpressStageForBillingAndStep(
         sessionId,
         EXPRESS_VIDEO_BILLING_STAGES.SOUND_EFFECT_GENERATION,

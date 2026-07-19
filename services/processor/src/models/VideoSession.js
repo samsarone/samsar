@@ -4493,7 +4493,7 @@ async function finalizeUserVideoLayerUpload({
     sessionId,
     layerId,
     prefix: 'user_video',
-    trimUploadedAudioEdgeSilence: true,
+    preserveVideoTimeline: true,
   });
 
   const canvasDimensions = getCanvasDimensionsForAspectRatio(sessionDataValue.aspectRatio);

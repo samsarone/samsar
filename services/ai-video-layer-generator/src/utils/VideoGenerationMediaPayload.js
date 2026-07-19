@@ -52,7 +52,19 @@ function normalizeString(value) {
 async function normalizePresentFields(payload, keys, mediaKind, normalizeMediaUrl) {
   for (const key of keys) {
     if (typeof payload[key] === 'string' && payload[key].trim()) {
-      payload[key] = await normalizeMediaUrl(payload[key], { mediaKind });
+      try {
+        payload[key] = await normalizeMediaUrl(payload[key], { mediaKind });
+      } catch (error) {
+        const wrappedError = new Error(
+          `Failed to normalize provider ${mediaKind} field ${key}: ${error?.message || error}`,
+          { cause: error },
+        );
+        wrappedError.code = error?.code;
+        wrappedError.retryable = error?.retryable;
+        wrappedError.mediaKind = mediaKind;
+        wrappedError.mediaField = key;
+        throw wrappedError;
+      }
     }
   }
 }

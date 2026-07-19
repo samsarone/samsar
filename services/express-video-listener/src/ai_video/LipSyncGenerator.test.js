@@ -47,3 +47,45 @@ test('lip sync preserves an independently hosted audio reference when no local a
     'https://provider.example/audio/speech.wav?token=provider-owned',
   );
 });
+
+test('lip sync queues the uploaded padded object instead of an unpublished local padded path', () => {
+  assert.equal(
+    __testOnly__.getUploadedAudioReference(
+      'https://static.samsar.one/assets_v2/temp_audio/session_layer_audio_speech_padded.wav',
+      '/assets_v2/video/audio/session/audio/speech_padded.wav',
+      'https://static.samsar.one/assets_v2/video/audio/session/audio/speech.mp3',
+    ),
+    'https://static.samsar.one/assets_v2/temp_audio/session_layer_audio_speech_padded.wav',
+  );
+});
+
+test('Docker-local lip sync keeps the uploaded stable processor URL for dispatch-time tunneling', () => {
+  assert.equal(
+    __testOnly__.getUploadedAudioReference(
+      'http://localhost:3002/assets_v2/temp_audio/session_layer_speech_padded.wav',
+      '/assets_v2/video/audio/session/audio/speech_padded.wav',
+      '',
+    ),
+    'http://localhost:3002/assets_v2/temp_audio/session_layer_speech_padded.wav',
+  );
+});
+
+test('lip sync connected-audio lookup ignores non-speech layers', () => {
+  const currentLayer = { _id: 'layer-1' };
+  const connectedAudio = __testOnly__.findConnectedAudioLayer([
+    {
+      _id: 'music-1',
+      generationType: 'music',
+      connectedLayerId: 'layer-1',
+      connectedLayerIndex: 0,
+    },
+    {
+      _id: 'speech-1',
+      generationType: 'speech',
+      connectedLayerId: 'layer-1',
+      connectedLayerIndex: 0,
+    },
+  ], currentLayer, 0);
+
+  assert.equal(connectedAudio?._id, 'speech-1');
+});

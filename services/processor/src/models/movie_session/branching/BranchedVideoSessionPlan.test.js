@@ -234,6 +234,46 @@ test('materialization installs persisted media IDs, shares prefix IDs, and adds 
   assert.equal(paths[0].timeline.every((item) => item.frameGenerationStatus === 'INIT'), true);
 });
 
+test('character branches retain one canonical speech binding per unique media layer', async () => {
+  const generated = await createTree(4, 1);
+  generated.movieResourceList.nodes.forEach((node) => {
+    node.scenes.forEach((scene) => {
+      scene.type = 'character';
+    });
+  });
+  const plan = buildBranchedVideoSessionPlan(generated.movieResourceList, {
+    validateMovieResourceList: passingValidator,
+  });
+  const layers = plan.canonicalMovieResourceList.scenes.map((scene, index) => ({
+    _id: `character-layer-${index}`,
+    branchAssetKey: scene.branchAssetKey,
+    layerAiVideoType: 'character',
+    layerBaseAiImageType: 'character',
+    lipSyncGenerationPending: true,
+    duration: scene.duration,
+  }));
+  const audioLayers = plan.canonicalMovieResourceList.sounds.map((sound, index) => ({
+    _id: `speech-layer-${index}`,
+    branchAssetKey: sound.branchAssetKey,
+    branchAudioAssetKey: sound.branchAudioAssetKey,
+    generationType: 'speech',
+    connectedLayerIndex: sound.sceneIndex,
+    connectedLayerId: layers[sound.sceneIndex]._id,
+  }));
+
+  const paths = materializeBranchedVideoSessionPaths(plan, { layers, audioLayers });
+  assert.equal(layers.length, 6, 'shared prefix layers are canonicalized once');
+  assert.equal(audioLayers.length, layers.length);
+  assert.equal(new Set(audioLayers.map((audio) => audio.connectedLayerId)).size, layers.length);
+  for (const path of paths) {
+    assert.equal(path.timeline.length, 4);
+    assert.equal(path.audioTimeline.length, 4);
+    path.audioTimeline.forEach((audioEntry, index) => {
+      assert.equal(audioEntry.connectedLayerId, path.timeline[index].layerId);
+    });
+  }
+});
+
 test('compact branching timeline can be rebuilt after final path timing is retimed', async () => {
   const generated = await createTree(4, 1);
   const plan = buildBranchedVideoSessionPlan(generated.movieResourceList, {

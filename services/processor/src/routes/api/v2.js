@@ -1218,8 +1218,11 @@ async function handleTextToInteractiveVideoDraftSession(req, res) {
   try {
     const authContext = await resolveV2AuthContext(req);
     assertNarrativeToVideoCredential(authContext);
+    const payload = normalizeInputPayload(req);
+    const forceNewValue = payload.force_new ?? payload.forceNew;
     const response = await createTextToInteractiveVideoDraftSession({
       userId: authContext.internalUserId,
+      forceNew: forceNewValue === true || forceNewValue === 1 || forceNewValue === 'true',
     });
     return res.status(201).json(response);
   } catch (error) {

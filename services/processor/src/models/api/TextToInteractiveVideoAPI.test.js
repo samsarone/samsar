@@ -180,6 +180,66 @@ test('creates a dedicated branched draft with interactive-video defaults', async
   assert.equal(mappings[0].status, 'DRAFT');
 });
 
+test('resumes the newest pending interactive creator session instead of creating another draft', async (t) => {
+  setConnectionReadyForTest(t);
+  let createdBlankSession = false;
+  let pendingFilter;
+  const result = await createTextToInteractiveVideoDraftSession({
+    userId: USER_ID,
+    dependencies: {
+      createNewBlankQuickSession: async () => {
+        createdBlankSession = true;
+        return SESSION_ID;
+      },
+      videoSessionModel: {
+        findOne: (filter) => {
+          pendingFilter = filter;
+          return {
+            sort: () => ({
+              select: () => ({
+                lean: async () => ({ _id: SESSION_ID }),
+              }),
+            }),
+          };
+        },
+      },
+    },
+  });
+
+  assert.equal(result.session_id, SESSION_ID);
+  assert.equal(result.status, 'PENDING');
+  assert.equal(result.resumed, true);
+  assert.equal(createdBlankSession, false);
+  assert.equal(pendingFilter.expressGenerationPending, true);
+  assert.equal(pendingFilter.builderSessionSubType, 'interactive_video_create');
+  assert.deepEqual(pendingFilter.interactiveVideoDraftConfig, { $exists: true });
+});
+
+test('forceNew bypasses a pending interactive creator session', async (t) => {
+  setConnectionReadyForTest(t);
+  let pendingLookupAttempted = false;
+  const result = await createTextToInteractiveVideoDraftSession({
+    userId: USER_ID,
+    forceNew: true,
+    dependencies: {
+      createNewBlankQuickSession: async () => SESSION_ID,
+      videoSessionModel: {
+        findOne: () => {
+          pendingLookupAttempted = true;
+          return null;
+        },
+        findByIdAndUpdate: async () => undefined,
+      },
+      upsertGlobalSessionMapping: async () => undefined,
+    },
+  });
+
+  assert.equal(result.session_id, SESSION_ID);
+  assert.equal(result.status, 'DRAFT');
+  assert.equal(result.resumed, false);
+  assert.equal(pendingLookupAttempted, false);
+});
+
 test('validates user input against an owned draft and fills omitted values from session defaults', async () => {
   const result = await validateTextToInteractiveVideoSessionInput({
     userId: USER_ID,

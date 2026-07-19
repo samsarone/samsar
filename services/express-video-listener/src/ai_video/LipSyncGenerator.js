@@ -1,6 +1,7 @@
 import { getDBConnectionString } from "../DBString.js";
 import AIVideoLayerGeneration from "../schema/AIVideoLayerGeneration.js";
 import VideoSession from "../schema/VideoSession.js";
+import { processSessionCompletionFailure } from '../ExpressSessionStateUpdater.js';
 
 import fs from 'fs';
 import path from 'path';
@@ -8,6 +9,12 @@ import path from 'path';
 import { uploadSpeechAudioToCDN } from '../audio/AWS.js';
 import { padBlankAudioAtBeginningAndEnd } from '../audio/Audio.js';
 import { getCanonicalAiVideoReference } from './utils/ProviderMediaUrl.js';
+import {
+  findConnectedSpeechAudioLayer,
+  hasLipSyncOutput,
+  hasReusableBaseAiVideo,
+  isCharacterLipSyncLayer,
+} from './LipSyncStage.js';
 import {
   resolveLocalAssetPath,
   toLocalAssetReference,
@@ -22,17 +29,6 @@ function normalizeStringId(value) {
   }
   const normalized = value.toString().trim();
   return normalized || null;
-}
-
-function normalizeOptionalInteger(value) {
-  if (typeof value === 'number' && Number.isFinite(value)) {
-    return value;
-  }
-  if (typeof value === 'string' && value.trim()) {
-    const parsed = Number.parseInt(value.trim(), 10);
-    return Number.isFinite(parsed) ? parsed : null;
-  }
-  return null;
 }
 
 function sanitizeRemoteFileNamePart(value) {
@@ -60,36 +56,6 @@ function getCanonicalAudioReference(localReference, remoteReference) {
   return typeof remoteReference === 'string' ? remoteReference.trim() : '';
 }
 
-function findConnectedAudioLayer(sessionAudioLayers = [], currentLayer = {}, layerIndex = -1) {
-  const currentLayerId = normalizeStringId(currentLayer?._id);
-  if (!currentLayerId) {
-    return null;
-  }
-
-  const connectedById = sessionAudioLayers.find((audioLayer) =>
-    normalizeStringId(audioLayer?.connectedLayerId) === currentLayerId
-  );
-  if (connectedById) {
-    return connectedById;
-  }
-
-  if (!Number.isInteger(layerIndex) || layerIndex < 0) {
-    return null;
-  }
-
-  return sessionAudioLayers.find((audioLayer) =>
-    normalizeOptionalInteger(audioLayer?.connectedLayerIndex) === layerIndex
-  ) || null;
-}
-
-function hasReusableBaseAiVideo(layer = {}) {
-  return Boolean(
-    layer?.hasAiVideoLayer ||
-    layer?.aiVideoLayer ||
-    layer?.aiVideoRemoteLink
-  );
-}
-
 function buildActiveLipSyncRequestQuery({ sessionId, layerId }) {
   return {
     sessionId: sessionId?.toString?.() || sessionId,
@@ -109,17 +75,48 @@ async function findActiveLipSyncGenerationRequest({ sessionId, layerId }) {
   ).sort({ createdAt: -1 });
 }
 
+function getUploadedAudioReference(uploadedReference, localReference, remoteReference) {
+  const normalizedUploadedReference = typeof uploadedReference === 'string'
+    ? uploadedReference.trim()
+    : '';
+  if (normalizedUploadedReference) {
+    return normalizedUploadedReference;
+  }
+  return getCanonicalAudioReference(localReference, remoteReference);
+}
+
+async function markLipSyncLayerFailed(sessionId, layerId, error) {
+  if (!sessionId || !layerId) {
+    return;
+  }
+  const message = error?.message || String(error || 'Lip sync generation failed.');
+  await VideoSession.updateOne(
+    { _id: sessionId, 'layers._id': layerId },
+    {
+      $set: {
+        'layers.$.lipSyncGenerationPending': false,
+        'layers.$.hasLipSyncVideoLayer': false,
+        'layers.$.lipSyncVideoGenerationStatus': 'FAILED',
+        'layers.$.lipSyncVideoGenerationError': message,
+        lastLipSyncGenerationError: message,
+      },
+    },
+  );
+}
+
 
 export async function generateLipSyncForSession(sessionId) {
 
   await getDBConnectionString();
 
 
-  let sessionData = await VideoSession.findOne({ _id: sessionId });
+  const sessionData = await VideoSession.findOne({ _id: sessionId });
+  if (!sessionData) {
+    throw new Error(`VideoSession with ID ${sessionId} not found`);
+  }
 
-  const sessionLayers = sessionData.layers;
-
-  const sessionAudioLayers = sessionData.audioLayers;
+  const sessionLayers = Array.isArray(sessionData.layers) ? sessionData.layers : [];
+  const sessionAudioLayers = Array.isArray(sessionData.audioLayers) ? sessionData.audioLayers : [];
 
 
 
@@ -129,39 +126,40 @@ export async function generateLipSyncForSession(sessionId) {
 
       const hasBaseAiVideo = hasReusableBaseAiVideo(currentLayer);
 
-      if (
-        currentLayer.layerAiVideoType === "character" &&
-        currentLayer.lipSyncGenerationPending &&
-        hasBaseAiVideo
-      ) { //&& currentLayer.aiVideoGenerationStatus !== "COMPLETED") {
+      if (!isCharacterLipSyncLayer(currentLayer) || !hasBaseAiVideo || hasLipSyncOutput(currentLayer)) {
+        continue;
+      }
 
+      const connectedAudioLayer = findConnectedSpeechAudioLayer(
+        sessionAudioLayers,
+        currentLayer,
+        i,
+      );
 
-        const connectedAudioLayer = findConnectedAudioLayer(sessionAudioLayers, currentLayer, i);
-
-
-        if (!connectedAudioLayer) {
-
-          await VideoSession.findOneAndUpdate({
-            _id: sessionId,
-            'layers._id': currentLayer._id,
-          }, {
-            $set: {
-              'layers.$.lipSyncGenerationPending': false,
-              'layers.$.aiVideoGenerationStatus': 'COMPLETED',
-              'layers.$.layerAiVideoType': 'ai_video',
-            }
-          });
-
+      // Character scenes without speech do not need lip sync. A layer that was
+      // explicitly marked pending but lost its speech binding is an error.
+      if (!connectedAudioLayer) {
+        if (!currentLayer.lipSyncGenerationPending) {
           continue;
         }
+        const error = new Error(
+          `Lip sync input is missing a connected speech audio layer for character layer ${normalizeStringId(currentLayer?._id) || i}.`,
+        );
+        await markLipSyncLayerFailed(sessionId, currentLayer._id, error);
+        throw error;
+      }
 
-
+      try {
         await generateLipSyncForLayer(sessionId, currentLayer, connectedAudioLayer);
+      } catch (error) {
+        await markLipSyncLayerFailed(sessionId, currentLayer._id, error);
+        throw error;
       }
     }
 
   } catch (error) {
     const message = error?.message || 'Lip sync generation request failed.';
+    const now = new Date();
     console.error('[lip_sync][request_enqueue] failed to create lip sync generation request', {
       sessionId,
       error: message,
@@ -177,9 +175,25 @@ export async function generateLipSyncForSession(sessionId) {
           expressGenerationFailed: true,
           expressGenerationError: message,
           lastLipSyncGenerationError: message,
+          'expressStepGeneration.status': 'FAILED',
+          'expressStepGeneration.currentStep': 'lip_sync_generation',
+          'expressStepGeneration.current_step': 'lip_sync_generation',
+          'expressStepGeneration.currentStepLabel': 'Lip sync',
+          'expressStepGeneration.current_step_label': 'Lip sync',
+          'expressStepGeneration.error': message,
+          'expressStepGeneration.waiting': false,
+          'expressStepGeneration.waitingForProcessNext': false,
+          'expressStepGeneration.waiting_for_process_next': false,
+          'expressStepGeneration.requiresUserAction': false,
+          'expressStepGeneration.requires_user_action': false,
+          'expressStepGeneration.canProcessNext': false,
+          'expressStepGeneration.can_process_next': false,
+          'expressStepGeneration.updatedAt': now,
+          'expressStepGeneration.updated_at': now,
         },
       }
     );
+    await processSessionCompletionFailure(sessionId);
   }
 
 }
@@ -209,19 +223,9 @@ export async function generateLipSyncForLayer(sessionId, currentLayer, connected
 
 
   if (audioLayerIndex === -1) {
-    await VideoSession.findOneAndUpdate({
-      _id: sessionId,
-      'layers._id': currentLayer._id,
-    }, {
-      $set: {
-        'layers.$.layerAiVideoType': 'ai_video',
-        'layers.$.aiVideoGenerationStatus': 'COMPLETED',
-        'layers.$.lipSyncGenerationPending': false,
-
-      }
-    });
-    return;
-    // throw new Error("Connected audio layer not found in session data");
+    throw new Error(
+      `Connected speech audio layer ${normalizeStringId(connectedAudioLayer?._id) || 'unknown'} is missing from session ${sessionId}.`,
+    );
   }
 
   const refreshedAudioLayer = sessionData.audioLayers[audioLayerIndex];
@@ -250,36 +254,37 @@ export async function generateLipSyncForLayer(sessionId, currentLayer, connected
 
 
 
-  if (!remoteUrl || !selectedLocalAudioLink) {
-    // could not find remote audio link set layer ai video type to base
-
-    await VideoSession.findOneAndUpdate({
-      _id: sessionId,
-      'layers._id': currentLayer._id,
-    }, {
-      $set: {
-        'layers.$.layerAiVideoType': 'ai_video',
-        'layers.$.aiVideoGenerationStatus': 'COMPLETED',
-        'layers.$.lipSyncGenerationPending': false,
-
-      }
-    });
-
-    return;
+  if (!remoteUrl && !selectedLocalAudioLink) {
+    throw new Error(
+      `Connected speech audio layer ${speechLayerId} has no selected local or remote media reference.`,
+    );
   }
 
-  let localAudioFile = resolveLocalAssetPath(selectedLocalAudioLink);
-  let audioDir = path.dirname(localAudioFile);
+  const resolvedLocalAudioFile = selectedLocalAudioLink
+    ? resolveLocalAssetPath(selectedLocalAudioLink)
+    : null;
+  const hasLocalAudioFile = Boolean(
+    resolvedLocalAudioFile && fs.existsSync(resolvedLocalAudioFile),
+  );
+  const localAudioFile = hasLocalAudioFile ? resolvedLocalAudioFile : null;
+  const audioDir = localAudioFile ? path.dirname(localAudioFile) : null;
 
-
-  if (!fs.existsSync(audioDir)) {
+  if (audioDir && !fs.existsSync(audioDir)) {
     fs.mkdirSync(audioDir, { recursive: true });
   }
 
 
 
   let paddedAudioPath;
-  let paddedAudioReference = getCanonicalAudioReference(selectedLocalAudioLink, remoteUrl);
+  let paddedAudioReference = getCanonicalAudioReference(
+    hasLocalAudioFile ? selectedLocalAudioLink : '',
+    remoteUrl,
+  );
+  if (!paddedAudioReference) {
+    throw new Error(
+      `Connected speech audio layer ${speechLayerId} has no readable local file or remote media reference.`,
+    );
+  }
   let paddedAudioRelativePath = selectedLocalAudioLink;
   const layerDuration = typeof currentLayer?.duration === 'number' ? currentLayer.duration : null;
   const speechLayerDuration = typeof speechLayerDurationFromPayload === 'number'
@@ -299,7 +304,7 @@ export async function generateLipSyncForLayer(sessionId, currentLayer, connected
     (layerDuration - speechLayerDuration) > 0.01;
   const shouldPrepareLayerLengthAudio = Number.isFinite(layerDuration) &&
     layerDuration > 0 &&
-    fs.existsSync(localAudioFile);
+    hasLocalAudioFile;
 
   if (shouldPrepareLayerLengthAudio) {
     const durationDiff = layerDuration - speechLayerDuration;
@@ -325,9 +330,14 @@ export async function generateLipSyncForLayer(sessionId, currentLayer, connected
       paddedFileName,
     });
     const uploadedPaddedAudioUrl = await uploadSpeechAudioToCDN(paddedAudioPath, remotePaddedAudioName);
-    paddedAudioReference = getCanonicalAudioReference(
-      paddedAudioRelativePath,
+    // The upload key intentionally differs from the local padded path. Queue
+    // the URL returned by the upload so CloudFront signs the object that
+    // actually exists, instead of deriving a nonexistent S3 key from the local
+    // filesystem reference.
+    paddedAudioReference = getUploadedAudioReference(
       uploadedPaddedAudioUrl,
+      paddedAudioRelativePath,
+      remoteUrl,
     );
 
     const previousAudioData = refreshedAudioLayer.previousAudioData || {
@@ -384,18 +394,9 @@ export async function generateLipSyncForLayer(sessionId, currentLayer, connected
   const hasAiVideoReference = hasReusableBaseAiVideo(currentLayer);
 
   if (!hasAiVideoReference) {
-    await VideoSession.findOneAndUpdate({
-      _id: sessionId,
-      'layers._id': currentLayer._id,
-    }, {
-      $set: {
-        'layers.$.layerAiVideoType': 'ai_video',
-        'layers.$.aiVideoGenerationStatus': 'COMPLETED',
-        'layers.$.lipSyncGenerationPending': false,
-
-      }
-    });
-    return;
+    throw new Error(
+      `Character layer ${normalizeStringId(currentLayer?._id) || 'unknown'} has no reusable base AI video for lip sync.`,
+    );
   }
 
   const videoLayerLink = getCanonicalAiVideoReference({
@@ -404,17 +405,9 @@ export async function generateLipSyncForLayer(sessionId, currentLayer, connected
   });
 
   if (!videoLayerLink) {
-    await VideoSession.findOneAndUpdate({
-      _id: sessionId,
-      'layers._id': currentLayer._id,
-    }, {
-      $set: {
-        'layers.$.layerAiVideoType': 'ai_video',
-        'layers.$.aiVideoGenerationStatus': 'COMPLETED',
-        'layers.$.lipSyncGenerationPending': false,
-      }
-    });
-    return;
+    throw new Error(
+      `Character layer ${normalizeStringId(currentLayer?._id) || 'unknown'} has no canonical provider video reference for lip sync.`,
+    );
   }
 
 
@@ -459,6 +452,16 @@ export async function generateLipSyncForLayer(sessionId, currentLayer, connected
   });
 
   if (existingLipSyncRequest) {
+    await VideoSession.updateOne(
+      { _id: sessionId, 'layers._id': currentLayer._id },
+      {
+        $set: {
+          'layers.$.lipSyncGenerationPending': true,
+          'layers.$.lipSyncVideoGenerationStatus': 'PENDING',
+          'layers.$.lipSyncVideoGenerationError': null,
+        },
+      },
+    );
     console.log('[lip_sync][request_enqueue] reusing active lip sync generation request', {
       sessionId,
       layerId: currentLayer?._id?.toString?.() || currentLayer?._id || null,
@@ -487,6 +490,16 @@ export async function generateLipSyncForLayer(sessionId, currentLayer, connected
 
 
   // 4) Save an AIVideoLayerGeneration record
+  await VideoSession.updateOne(
+    { _id: sessionId, 'layers._id': currentLayer._id },
+    {
+      $set: {
+        'layers.$.lipSyncGenerationPending': true,
+        'layers.$.lipSyncVideoGenerationStatus': 'PENDING',
+        'layers.$.lipSyncVideoGenerationError': null,
+      },
+    },
+  );
   const aiVideoPayload = new AIVideoLayerGeneration(generationPayload);
   await aiVideoPayload.save();
 }
@@ -550,6 +563,8 @@ export async function sessionLayerDurationToMatchSpeechLayer(sessionId, currentL
 export const __testOnly__ = {
   ACTIVE_LIP_SYNC_REQUEST_STATUSES,
   buildActiveLipSyncRequestQuery,
+  findConnectedAudioLayer: findConnectedSpeechAudioLayer,
   getCanonicalAudioReference,
+  getUploadedAudioReference,
   hasReusableBaseAiVideo,
 };
