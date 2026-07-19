@@ -345,7 +345,7 @@ function getRequestedInferenceModel(chatRequest = {}) {
 export function getOpenRouterModelForInferenceRequest(chatRequest = {}, env = process.env) {
   const model = getRequestedInferenceModel(chatRequest);
   if (isQwenInferenceModel(model)) {
-    return normalizeString(env?.OPENROUTER_QWEN_37_MAX_MODEL) || 'qwen/qwen3.7-max';
+    return normalizeString(env?.OPENROUTER_QWEN_37_PLUS_MODEL) || 'qwen/qwen3.7-plus';
   }
   if (isGeminiInferenceModel(model)) {
     return normalizeString(env?.OPENROUTER_GEMINI_31_PRO_MODEL) || 'google/gemini-3.1-pro-preview';

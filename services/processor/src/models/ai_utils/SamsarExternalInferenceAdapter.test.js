@@ -204,20 +204,20 @@ test('Docker inference uses native then OpenRouter then Samsar for every model',
   assert.equal(shouldUseSamsarExternalInference({ model: 'QWEN3.7' }), false);
 });
 
-test('OpenRouter maps Qwen text and vision requests to Max', () => {
+test('OpenRouter maps Qwen text and vision requests to Plus', () => {
   assert.equal(getOpenRouterModelForInferenceRequest({
     model: 'QWEN3.7',
     messages: [{ role: 'user', content: 'hello' }],
   }, {
-    OPENROUTER_QWEN_37_MAX_MODEL: 'qwen/qwen3.7-max',
-  }), 'qwen/qwen3.7-max');
+    OPENROUTER_QWEN_37_PLUS_MODEL: 'qwen/qwen3.7-plus',
+  }), 'qwen/qwen3.7-plus');
   assert.equal(getOpenRouterModelForInferenceRequest({
     model: 'QWEN3.7',
     messages: [{
       role: 'user',
       content: [{ type: 'image_url', image_url: { url: 'https://example.com/frame.png' } }],
     }],
-  }), 'qwen/qwen3.7-max');
+  }), 'qwen/qwen3.7-plus');
 });
 
 test('production Qwen is constrained to OpenRouter even when Alibaba is configured', () => {
@@ -266,7 +266,7 @@ test('OpenRouter adapter sends OpenAI-compatible vision requests with the Plus d
     timeout: 12345,
   });
 
-  assert.equal(capturedPayload.model, 'qwen/qwen3.7-max');
+  assert.equal(capturedPayload.model, 'qwen/qwen3.7-plus');
   assert.equal(capturedPayload.messages[0].content[0].type, 'image_url');
   assert.equal(capturedPayload.max_tokens, 65536);
   assert.equal(capturedOptions.timeout, 1200000);
@@ -289,7 +289,7 @@ test('OpenRouter applies Qwen-specific token and reasoning limits to Plus text i
     max_completion_tokens: 20000,
   });
 
-  assert.equal(capturedPayload.model, 'qwen/qwen3.7-max');
+  assert.equal(capturedPayload.model, 'qwen/qwen3.7-plus');
   assert.equal(capturedPayload.reasoning.effort, 'high');
   assert.equal(capturedPayload.max_tokens, 20000);
   assert.equal(Object.hasOwn(capturedPayload, 'max_completion_tokens'), false);
@@ -328,7 +328,7 @@ test('OpenRouter reserves Qwen output tokens and enforces schema support for str
     plugins: [{ id: 'existing-plugin' }],
   });
 
-  assert.equal(capturedPayload.model, 'qwen/qwen3.7-max');
+  assert.equal(capturedPayload.model, 'qwen/qwen3.7-plus');
   assert.equal(capturedPayload.reasoning.effort, 'high');
   assert.equal(capturedPayload.max_tokens, 4096);
   assert.deepEqual(capturedPayload.provider, {

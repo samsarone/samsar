@@ -4,7 +4,7 @@ import OpenAI from 'openai';
 
 import { createOpenRouterChatCompletion } from './SamsarExternalInferenceAdapter.js';
 
-test('Qwen OpenRouter applies Max routing, bounded settings, and abort support', async (t) => {
+test('Qwen OpenRouter applies Plus routing, bounded settings, and abort support', async (t) => {
   const keys = ['CURRENT_ENV', 'OPENROUTER_API_KEY', 'OPENROUTER_QWEN_MAX_TOKENS'];
   const previous = Object.fromEntries(keys.map((key) => [key, process.env[key]]));
   t.after(() => {
@@ -44,10 +44,10 @@ test('Qwen OpenRouter applies Max routing, bounded settings, and abort support',
     plugins: [{ id: 'existing-plugin' }],
   });
 
-  assert.equal(payloads[0].model, 'qwen/qwen3.7-max');
+  assert.equal(payloads[0].model, 'qwen/qwen3.7-plus');
   assert.equal(payloads[0].reasoning.effort, 'high');
   assert.equal(payloads[0].max_tokens, 20000);
-  assert.equal(payloads[1].model, 'qwen/qwen3.7-max');
+  assert.equal(payloads[1].model, 'qwen/qwen3.7-plus');
   assert.equal(payloads[1].max_tokens, 65536);
   assert.equal(payloads[2].reasoning.effort, 'high');
   assert.equal(payloads[2].max_tokens, 16384);

@@ -36,7 +36,7 @@ const ENV_KEYS = [
   'OPENROUTER_BASE_URL',
   'OPENROUTER_API_BASE_URL',
   'OPENROUTER_QWEN_37_MAX_MODEL',
-  'OPENROUTER_QWEN_37_MAX_MODEL',
+  'OPENROUTER_QWEN_37_PLUS_MODEL',
   'OPENROUTER_GEMINI_31_PRO_MODEL',
   'OPENROUTER_GPT_56_SOL_MODEL',
   'SAMSAR_EXTERNAL_INFERENCE_ENABLED',
@@ -118,10 +118,10 @@ test('external production and staging Qwen use OpenRouter instead of native adap
   }
 });
 
-test('OpenRouter maps Qwen text and vision requests to Max', () => {
+test('OpenRouter maps Qwen text and vision requests to Plus', () => {
   assert.equal(
     getOpenRouterModelForInferenceRequest({ model: 'QWEN3.7', messages: [] }),
-    'qwen/qwen3.7-max',
+    'qwen/qwen3.7-plus',
   );
   assert.equal(
     getOpenRouterModelForInferenceRequest({
@@ -131,7 +131,7 @@ test('OpenRouter maps Qwen text and vision requests to Max', () => {
         content: [{ type: 'input_image', image_url: 'frame' }],
       }],
     }),
-    'qwen/qwen3.7-max',
+    'qwen/qwen3.7-plus',
   );
 });
 
@@ -183,7 +183,7 @@ test('the ALIBABA_API_KEY alias authorizes native Qwen routing', () => {
   }), false);
 });
 
-test('Qwen OpenRouter applies Max routing and bounded settings', async (t) => {
+test('Qwen OpenRouter applies Plus routing and bounded settings', async (t) => {
   ENV_KEYS.forEach((key) => delete process.env[key]);
   process.env.CURRENT_ENV = 'production';
   process.env.OPENROUTER_API_KEY = 'openrouter-test-key';
@@ -215,10 +215,10 @@ test('Qwen OpenRouter applies Max routing and bounded settings', async (t) => {
     plugins: [{ id: 'existing-plugin' }],
   });
 
-  assert.equal(payloads[0].model, 'qwen/qwen3.7-max');
+  assert.equal(payloads[0].model, 'qwen/qwen3.7-plus');
   assert.equal(payloads[0].reasoning.effort, 'high');
   assert.equal(payloads[0].max_tokens, 20000);
-  assert.equal(payloads[1].model, 'qwen/qwen3.7-max');
+  assert.equal(payloads[1].model, 'qwen/qwen3.7-plus');
   assert.equal(payloads[1].max_tokens, 65536);
   assert.equal(payloads[2].reasoning.effort, 'high');
   assert.equal(payloads[2].max_tokens, 16384);

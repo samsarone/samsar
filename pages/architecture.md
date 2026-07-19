@@ -68,7 +68,7 @@ The Docker reverse proxy can also provide provider-visible media URLs when it is
 
 Provider credentials are loaded from `root.env`. In Docker, inference uses the model's native credential first, then OpenRouter, then the configured Samsar deployed fallback. Qwen is the exception in hosted deployments: `production`, `external-production`, `staging`, and other non-Docker runtimes always route `QWEN3.7` through `OPENROUTER_API_KEY`, regardless of saved provider provenance or an available Alibaba credential. Native Alibaba Qwen is allowed only when `CURRENT_ENV=docker`; `SAMSAR_QWEN_OPENROUTER_ONLY=true` can force the hosted rule in Docker.
 
-The processor, generator, audio generator, AI video layer generator, express video listener, and assistant query processor use the same inference-adapter policy. OpenRouter Qwen text and vision requests map to `qwen/qwen3.7-max`.
+The processor, generator, audio generator, AI video layer generator, express video listener, and assistant query processor use the same inference-adapter policy. OpenRouter Qwen text and vision requests map to `qwen/qwen3.7-plus`. Native Alibaba routing uses `qwen3.7-max` for text-only inference and `qwen3.7-plus` for image or video input.
 
 ## Observability
 

@@ -55,10 +55,10 @@ Current embedding/search implementation note: although the setup availability ma
 
 | Request | Default OpenRouter model |
 | --- | --- |
-| Text only | `qwen/qwen3.7-max` |
-| Contains image or video input | `qwen/qwen3.7-max` |
+| Text only | `qwen/qwen3.7-plus` |
+| Contains image or video input | `qwen/qwen3.7-plus` |
 
-`OPENROUTER_QWEN_37_MAX_MODEL` overrides that mapping. OpenRouter requests explicitly use high reasoning for Qwen and Gemini and `xhigh` for GPT, with a 65,536-token completion allowance and a 10-minute minimum timeout. All external-assistant providers apply up to three exponential-backoff retries for transient, rate-limit, and malformed-response errors and honor provider `Retry-After` guidance. Payment-required and insufficient-credit failures are never retried.
+`OPENROUTER_QWEN_37_PLUS_MODEL` overrides that mapping. Native Alibaba routing uses `qwen3.7-max` for text-only inference and `qwen3.7-plus` when the request contains image or video input. OpenRouter requests explicitly use high reasoning for Qwen and Gemini and `xhigh` for GPT, with a 65,536-token completion allowance and a 10-minute minimum timeout. All external-assistant providers apply up to three exponential-backoff retries for transient, rate-limit, and malformed-response errors and honor provider `Retry-After` guidance. Payment-required and insufficient-credit failures are never retried.
 
 The adapter policy is shared by the processor, generator, audio generator, AI video layer generator, express video listener, and assistant query processor. `configuration.custom_adapters` is a separate media-operation feature and cannot override the hosted Qwen inference route.
 

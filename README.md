@@ -211,7 +211,7 @@ The built-in inference adapters normalize stable model selections, text and visi
 | Docker (`CURRENT_ENV=docker`) | Native Alibaba first, then OpenRouter, then the Samsar deployed fallback. |
 | Docker with `SAMSAR_QWEN_OPENROUTER_ONLY=true` | OpenRouter only, matching hosted behavior. |
 
-The stable `QWEN3.7` selection maps OpenRouter text and vision requests to `qwen/qwen3.7-max`; `OPENROUTER_QWEN_37_MAX_MODEL` can override that mapping. OpenRouter requests explicitly use high reasoning for Qwen and Gemini and the native-equivalent `xhigh` setting for GPT, with a 65,536-token completion allowance. Structured requests also require compatible provider parameters and enable response healing.
+The stable `QWEN3.7` selection maps OpenRouter text and vision requests to `qwen/qwen3.7-plus`; `OPENROUTER_QWEN_37_PLUS_MODEL` can override that mapping. Native Alibaba routing uses `qwen3.7-max` for text-only inference and `qwen3.7-plus` for image or video input. OpenRouter requests explicitly use high reasoning for Qwen and Gemini and the native-equivalent `xhigh` setting for GPT, with a 65,536-token completion allowance. Structured requests also require compatible provider parameters and enable response healing.
 
 | Runtime variable | Purpose |
 | --- | --- |
