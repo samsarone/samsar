@@ -15,6 +15,7 @@ test('VideoSession declares reusable NarrativeRequest source artifacts', () => {
   assert.equal(paths.narrativeJson.instance, 'Mixed');
   assert.equal(paths.movieResourceList.instance, 'Mixed');
   assert.equal(paths.branchingMeta.instance, 'Mixed');
+  assert.equal(paths.branchingTimeline.instance, 'Mixed');
   assert.equal(paths.renderPlanVersion.instance, 'Number');
   assert.equal(paths.defaultBranchPathId.instance, 'String');
   assert.equal(paths.branchRenderPaths.instance, 'Array');
@@ -31,6 +32,10 @@ test('VideoSession preserves branched render metadata and canonical asset keys',
     renderPlanVersion: 1,
     defaultBranchPathId: 'root.1',
     branchingMeta: { numLevels: 1, leafNodeIds: ['root.1', 'root.2'] },
+    branchingTimeline: {
+      schemaVersion: 'branching_timeline.v1',
+      choicePoints: [{ branchPointId: 'branch-point:root', switchAtSeconds: 5 }],
+    },
     layers: [{ branchAssetKey: 'scene:0:key', duration: 5 }],
     audioLayers: [{
       branchAssetKey: 'scene:0:key',
@@ -39,6 +44,11 @@ test('VideoSession preserves branched render metadata and canonical asset keys',
     }],
     branchRenderPaths: [{
       pathId: 'root.1',
+      branchingHint: 'Take the light',
+      branchingDescription: 'Follow the bright path.',
+      branchPointId: 'branch-point:root',
+      divergenceSceneIndex: 0,
+      switchAtSeconds: 5,
       timeline: [{ layerId: 'layer-1', durationOffset: 0, duration: 5 }],
       audioTimeline: [{ audioLayerId: 'audio-1', startTime: 0, endTime: 5 }],
     }],
@@ -48,4 +58,8 @@ test('VideoSession preserves branched render metadata and canonical asset keys',
   assert.equal(session.layers[0].branchAssetKey, 'scene:0:key');
   assert.equal(session.audioLayers[0].branchAudioAssetKey, 'audio:key');
   assert.equal(session.branchRenderPaths[0].pathId, 'root.1');
+  assert.equal(session.branchRenderPaths[0].branchingHint, 'Take the light');
+  assert.equal(session.branchRenderPaths[0].branchingDescription, 'Follow the bright path.');
+  assert.equal(session.branchRenderPaths[0].switchAtSeconds, 5);
+  assert.equal(session.branchingTimeline.choicePoints[0].branchPointId, 'branch-point:root');
 });

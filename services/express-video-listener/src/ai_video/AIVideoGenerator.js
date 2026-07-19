@@ -49,6 +49,7 @@ import { createBranchedCameraTransitions } from './utils/BranchedCameraTransitio
 import { isBranchedVideoSession } from '../utils/BranchRenderPaths.js';
 import {
   buildBranchDurationSessionMetadata,
+  buildBranchingTimeline,
   retimeBranchRenderPathsForSharedLayer,
 } from '../utils/BranchRenderTiming.js';
 
@@ -728,6 +729,11 @@ export async function setSessionLayerAiVideoGenerationPending(payload) {
           sessionDataValue.expressGenerationBillingStageDurations,
         expressGenerationCreditCharges: sessionDataValue.expressGenerationCreditCharges,
       });
+      const branchingTimeline = buildBranchingTimeline({
+        branchRenderPaths,
+        branchingMeta: sessionDataValue.branchingMeta,
+        defaultBranchPathId: sessionDataValue.defaultBranchPathId,
+      });
 
       await VideoSession.updateOne(
         { _id: videoSessionId },
@@ -736,6 +742,7 @@ export async function setSessionLayerAiVideoGenerationPending(payload) {
             layers: updatedLayers,
             audioLayers,
             branchRenderPaths,
+            branchingTimeline,
             ...durationMetadata,
           },
         },
@@ -744,6 +751,7 @@ export async function setSessionLayerAiVideoGenerationPending(payload) {
       sessionDataValue.layers = updatedLayers;
       sessionDataValue.audioLayers = audioLayers;
       sessionDataValue.branchRenderPaths = branchRenderPaths;
+      sessionDataValue.branchingTimeline = branchingTimeline;
       sessionDataValue.totalDuration = durationMetadata.totalDuration;
       sessionDataValue.expressGenerationBillingDurationSeconds =
         durationMetadata.expressGenerationBillingDurationSeconds;

@@ -3,8 +3,10 @@ import test from 'node:test';
 
 import { generateBranchingNarrativeTree } from './BranchingNarrativeTree.js';
 import {
+  BRANCHED_VIDEO_BRANCHING_TIMELINE_SCHEMA,
   BRANCHED_VIDEO_RENDER_PLAN_VERSION,
   buildBranchedVideoSessionPlan,
+  buildBranchingTimelineFromRenderPaths,
   materializeBranchedVideoSessionPaths,
 } from './BranchedVideoSessionPlan.js';
 
@@ -163,6 +165,30 @@ test('level-two plan creates four deterministic leaf traversals and fourteen uni
     plan.branchRenderPaths[0].selectionTrail.map((choice) => choice.switchAtSeconds),
     [10, 20],
   );
+  assert.equal(plan.branchRenderPaths[0].branchingHint.startsWith('Left'), true);
+  assert.equal(plan.branchRenderPaths[0].branchingDescription, 'Take the left path.');
+  assert.equal(plan.branchRenderPaths[0].branchPointId, 'branch-point:root.1');
+  assert.equal(plan.branchRenderPaths[0].divergenceSceneIndex, 3);
+  assert.equal(plan.branchRenderPaths[0].switchAtSeconds, 20);
+
+  assert.equal(
+    plan.branchingTimeline.schemaVersion,
+    BRANCHED_VIDEO_BRANCHING_TIMELINE_SCHEMA,
+  );
+  assert.deepEqual(plan.branchingTimeline.timing, { origin: 'media', unit: 'seconds' });
+  assert.equal(plan.branchingTimeline.rootNodeId, 'root');
+  assert.equal(plan.branchingTimeline.defaultPathId, 'root.1.1');
+  assert.deepEqual(
+    plan.branchingTimeline.choicePoints.map((choicePoint) => choicePoint.parentNodeId),
+    ['root', 'root.1', 'root.2'],
+  );
+  assert.deepEqual(plan.branchingTimeline.choicePoints[0].options[0], {
+    childNodeId: 'root.1',
+    branchOrdinal: 1,
+    branchingHint: plan.branchRenderPaths[0].selectionTrail[0].pathName,
+    description: 'Take the left path.',
+    leafPathIds: ['root.1.1', 'root.1.2'],
+  });
 
   const sharedPrefixKeys = plan.branchRenderPaths.map((path) => (
     path.timeline.slice(0, 2).map((item) => item.assetKey)
@@ -206,6 +232,29 @@ test('materialization installs persisted media IDs, shares prefix IDs, and adds 
   assert.equal(paths[0].audioTimeline.at(-1).audioLayerId, 'music-layer');
   assert.equal(paths[0].audioTimeline.at(-1).endTime, 28);
   assert.equal(paths[0].timeline.every((item) => item.frameGenerationStatus === 'INIT'), true);
+});
+
+test('compact branching timeline can be rebuilt after final path timing is retimed', async () => {
+  const generated = await createTree(4, 1);
+  const plan = buildBranchedVideoSessionPlan(generated.movieResourceList, {
+    validateMovieResourceList: passingValidator,
+  });
+  const retimedPaths = structuredClone(plan.branchRenderPaths);
+  retimedPaths.forEach((path) => {
+    path.selectionTrail[0].switchAtSeconds = 12;
+  });
+
+  const timeline = buildBranchingTimelineFromRenderPaths({
+    branchingMeta: plan.branchingMeta,
+    branchRenderPaths: retimedPaths,
+    defaultBranchPathId: plan.defaultBranchPathId,
+  });
+
+  assert.equal(timeline.choicePoints[0].switchAtSeconds, 12);
+  assert.deepEqual(timeline.choicePoints[0].options.map((option) => option.leafPathIds), [
+    ['root.1'],
+    ['root.2'],
+  ]);
 });
 
 test('invalid tree fails closed before creating a media plan', async () => {

@@ -129,11 +129,16 @@ function createMemoryModel() {
   };
 }
 
-const preparePathMedia = async (_session, path, { revisionId } = {}) => ({
+const preparePathMedia = async (_session, path, { revisionId, isDefault } = {}) => ({
   pathId: path.pathId,
   revisionId,
   videoUrl: `https://static.samsar.one/published/${session._id}/interactive/revisions/${revisionId}/paths/${path.pathId}/video.mp4`,
   thumbnailUrl: `https://static.samsar.one/published/${session._id}/interactive/revisions/${revisionId}/paths/${path.pathId}/thumbnail.png`,
+  ...(isDefault
+    ? {
+      mainThumbnailUrl: `https://static.samsar.one/published/${session._id}/interactive/revisions/${revisionId}/main/thumbnail.png`,
+    }
+    : {}),
 });
 
 test('branched publish upserts and returns only the optimized InteractivePublication JSON', async () => {
@@ -158,6 +163,11 @@ test('branched publish upserts and returns only the optimized InteractivePublica
   assert.equal(result.manifest.outputs.paths.length, 2);
   assert.equal(result.manifest.outputs.paths[0].contentUrl.includes('/root.1/video.mp4'), true);
   assert.equal(result.manifest.outputs.paths[0].thumbnailUrl.includes('/root.1/thumbnail.png'), true);
+  assert.equal(result.mainVideoUrl, result.manifest.outputs.paths[0].contentUrl);
+  assert.match(result.mainThumbnailUrl, /\/main\/thumbnail\.png$/);
+  assert.equal(result.thumbnailUrl, result.mainThumbnailUrl);
+  assert.notEqual(result.mainThumbnailUrl, result.manifest.outputs.paths[0].thumbnailUrl);
+  assert.equal(result.duration, result.manifest.outputs.paths[0].duration);
   assert.equal('sessionId' in result, false);
   assert.equal('createdBy' in result, false);
   assert.equal('branchRenderPaths' in result, false);

@@ -2,10 +2,12 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
+  buildBranchThumbnailAssetPath,
   buildEffectiveBranchSession,
   buildFrameOutputNamespace,
   getSafeRenderPathDirectoryName,
   isBranchPathFrameComplete,
+  resolveBranchThumbnailSource,
   resolveBranchRenderContext,
   validateFrameOutputNamespace,
 } from './BranchRenderPath.js';
@@ -77,6 +79,77 @@ test('branch path ids produce deterministic filesystem-safe frame namespaces', (
   assert.equal(
     validateFrameOutputNamespace(namespace, { sessionId: 'session123', layerId: 'layerB' }),
     namespace,
+  );
+  assert.equal(
+    buildBranchThumbnailAssetPath({
+      sessionId: 'session123',
+      renderPathId: 'root.1/alternate',
+    }),
+    `/video/splash/session123/paths/${safePath}/thumbnail.png`,
+  );
+});
+
+test('branch thumbnail source uses the first scene after the leaf immediate-parent divergence', () => {
+  const renderPath = {
+    pathId: 'root.1.2',
+    selectionTrail: [
+      { divergenceSceneIndex: 0, nodeId: 'root.1' },
+      { divergenceSceneIndex: 2, nodeId: 'root.1.2' },
+    ],
+    timeline: [
+      { sequenceIndex: 0, sceneIndex: 0, layerId: 'shared-root' },
+      { sequenceIndex: 1, sceneIndex: 1, layerId: 'root-1-a' },
+      { sequenceIndex: 2, sceneIndex: 2, layerId: 'root-1-b' },
+      { sequenceIndex: 3, sceneIndex: 3, layerId: 'leaf-first' },
+      { sequenceIndex: 4, sceneIndex: 4, layerId: 'leaf-second' },
+    ],
+  };
+
+  assert.deepEqual(
+    resolveBranchThumbnailSource(renderPath, [renderPath]),
+    {
+      timelineIndex: 3,
+      layerId: 'leaf-first',
+      pathSequenceIndex: 3,
+      sceneIndex: 3,
+      framePath: null,
+      divergenceSceneIndex: 2,
+      selectionTrailIndex: 1,
+      reason: 'selection_trail',
+    },
+  );
+});
+
+test('branch thumbnail source falls back to the deepest shared layer prefix for legacy plans', () => {
+  const left = {
+    pathId: 'root.1',
+    timeline: [
+      { layerId: 'shared-root', sceneIndex: 0 },
+      { layerId: 'shared-parent', sceneIndex: 1 },
+      { layerId: 'left-first', sceneIndex: 2 },
+    ],
+  };
+  const right = {
+    pathId: 'root.2',
+    timeline: [
+      { layerId: 'shared-root', sceneIndex: 0 },
+      { layerId: 'shared-parent', sceneIndex: 1 },
+      { layerId: 'right-first', sceneIndex: 2 },
+    ],
+  };
+
+  assert.deepEqual(
+    resolveBranchThumbnailSource(left, [left, right]),
+    {
+      timelineIndex: 2,
+      layerId: 'left-first',
+      pathSequenceIndex: 2,
+      sceneIndex: 2,
+      framePath: null,
+      divergenceSceneIndex: null,
+      selectionTrailIndex: null,
+      reason: 'common_prefix',
+    },
   );
 });
 

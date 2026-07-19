@@ -37,7 +37,9 @@ test('uploadVideoToCDN returns a Docker-local public processor URL after persist
   const assetsRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'samsar-assets-v2-'));
   const renderRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'samsar-render-'));
   const sourcePath = path.join(renderRoot, 'final.mp4');
+  const thumbnailSourcePath = path.join(renderRoot, 'thumbnail.png');
   await fs.writeFile(sourcePath, 'rendered-video');
+  await fs.writeFile(thumbnailSourcePath, 'rendered-thumbnail');
 
   process.env.CURRENT_ENV = 'docker';
   process.env.SAMSAR_MEDIA_DELIVERY_MODE = 'docker-local';
@@ -61,13 +63,33 @@ test('uploadVideoToCDN returns a Docker-local public processor URL after persist
     await fs.rm(renderRoot, { recursive: true, force: true });
   });
 
-  const { uploadVideoToCDN } = await import(`./AWS.js?docker-local-${Date.now()}`);
+  const {
+    buildBranchPublicationThumbnailKey,
+    uploadBranchPublicationThumbnailToCDN,
+    uploadVideoToCDN,
+  } = await import(`./AWS.js?docker-local-${Date.now()}`);
   const remoteUrl = await uploadVideoToCDN(
     sourcePath,
     'assets_v2/video/output/session-1/final.mp4',
   );
 
   assert.equal(remoteUrl, 'http://localhost:3002/assets_v2/video/output/session-1/final.mp4');
+  assert.equal(
+    buildBranchPublicationThumbnailKey('session-1', 'root.1/alternate'),
+    'published/session-1/branches/path-cm9vdC4xL2FsdGVybmF0ZQ/thumbnail.png',
+  );
+  assert.throws(
+    () => buildBranchPublicationThumbnailKey('../session', 'root.1'),
+    /storage-safe sessionId/,
+  );
+  assert.equal(
+    await uploadBranchPublicationThumbnailToCDN(
+      thumbnailSourcePath,
+      'session-1',
+      'root.1/alternate',
+    ),
+    'http://localhost:3002/assets_v2/published/session-1/branches/path-cm9vdC4xL2FsdGVybmF0ZQ/thumbnail.png',
+  );
   process.env.PROCESSOR_API = 'http://localhost:3999/';
   assert.equal(
     await uploadVideoToCDN(sourcePath, 'assets_v2/video/output/session-1/final-override.mp4'),
@@ -76,5 +98,15 @@ test('uploadVideoToCDN returns a Docker-local public processor URL after persist
   assert.equal(
     await fs.readFile(path.join(assetsRoot, 'video/output/session-1/final.mp4'), 'utf8'),
     'rendered-video',
+  );
+  assert.equal(
+    await fs.readFile(
+      path.join(
+        assetsRoot,
+        'published/session-1/branches/path-cm9vdC4xL2FsdGVybmF0ZQ/thumbnail.png',
+      ),
+      'utf8',
+    ),
+    'rendered-thumbnail',
   );
 });

@@ -24,8 +24,11 @@ const timingSchema = new Schema(
 const branchOptionSchema = new Schema(
   {
     child_node_id: { type: String, required: true },
+    branch_ordinal: { type: Number, min: 1, default: null },
     path_name: { type: String, default: null },
     path_description: { type: String, default: null },
+    branching_hint: { type: String, default: null },
+    description: { type: String, default: null },
     leaf_path_ids: { type: [String], default: [] },
   },
   { _id: false },
@@ -35,6 +38,8 @@ const choicePointSchema = new Schema(
   {
     branch_point_id: { type: String, required: true },
     parent_node_id: { type: String, default: null },
+    level: { type: Number, min: 1, default: null },
+    divergence_scene_index: { type: Number, min: 0, default: null },
     switch_at_seconds: { type: Number, min: 0, required: true },
     options: { type: [branchOptionSchema], default: [] },
   },
@@ -52,6 +57,13 @@ const treeSchema = new Schema(
 const interactiveVideoPathSchema = new Schema(
   {
     path_id: { type: String, required: true },
+    leaf_node_id: { type: String, default: null },
+    ordinal: { type: Number, min: 0, default: null },
+    branch_point_id: { type: String, default: null },
+    divergence_scene_index: { type: Number, min: 0, default: null },
+    switch_at_seconds: { type: Number, min: 0, default: null },
+    branching_hint: { type: String, default: null },
+    description: { type: String, default: null },
     contentUrl: { type: String, required: true },
     thumbnailUrl: { type: String, required: true },
     encodingFormat: { type: String, default: 'video/mp4', required: true },
@@ -134,6 +146,9 @@ const interactivePublicationSchema = new Schema(
     description: { type: String, default: '' },
     tags: { type: [String], default: [] },
     datePublished: { type: Date, required: true, default: Date.now },
+    mainVideoUrl: { type: String, default: null },
+    mainThumbnailUrl: { type: String, default: null },
+    duration: { type: Number, min: 0, default: null },
     thumbnailUrl: { type: String, required: true },
     aspectRatio: { type: String, default: null },
     inLanguage: { type: String, default: null },

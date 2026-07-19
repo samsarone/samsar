@@ -8,6 +8,7 @@ import fetch from 'node-fetch';
 import {
   copyObjectToPublicationsMedia,
   deleteObjectFromPublicationsMedia,
+  deleteObjectsFromPublicationsMediaWithPrefix,
   getObjectFromS3,
   getPublicationsMediaConfig,
   isPublicPublicationMediaConfigured,
@@ -27,6 +28,7 @@ const MEDIA_HOSTS = new Set([
   `${MEDIA_BUCKET_NAME}.s3.amazonaws.com`,
 ]);
 const INTERACTIVE_PUBLICATION_MEDIA_NAMES = new Set(['video.mp4', 'thumbnail.png']);
+const INTERACTIVE_PUBLICATION_MAIN_MEDIA_NAMES = new Set(['thumbnail.png']);
 const INTERACTIVE_PATH_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]*$/;
 const MAX_INTERACTIVE_PATH_ID_LENGTH = 256;
 const SAFE_PUBLICATION_SESSION_ID_PATTERN = /^[A-Za-z0-9_-]+$/;
@@ -385,6 +387,23 @@ export function buildInteractivePublicationMediaKey(
   );
 }
 
+export function buildInteractivePublicationMainMediaKey(
+  sessionId,
+  mediaName,
+  { revisionId = null } = {},
+) {
+  const normalizedSessionId = normalizeInteractivePublicationSessionId(sessionId);
+  if (!INTERACTIVE_PUBLICATION_MAIN_MEDIA_NAMES.has(mediaName)) {
+    throw new Error(
+      `Unsupported interactive publication main media name: ${mediaName || '<empty>'}`
+    );
+  }
+  const mediaPath = revisionId
+    ? `interactive/revisions/${normalizeInteractivePublicationMediaRevision(revisionId)}/main/${mediaName}`
+    : `interactive/main/${mediaName}`;
+  return buildPublicationMediaKey(normalizedSessionId, mediaPath);
+}
+
 const resolveVideoSource = (session = {}) => firstNonEmptyString([
   session.remoteURL,
   session.videoLink,
@@ -402,6 +421,43 @@ const resolveInteractivePathVideoSource = (branchPath = {}) => firstNonEmptyStri
   branchPath.video_url,
   branchPath.url,
 ]);
+
+const resolveInteractivePathThumbnailReferences = (branchPath = {}) => {
+  const references = [];
+  const addReference = (value) => {
+    const normalized = normalizeString(value);
+    if (normalized && !references.includes(normalized)) {
+      references.push(normalized);
+    }
+  };
+
+  // `thumbnailUrl` is the render-time CDN reference and `thumbnailPath` is the
+  // durable asset reference written by the frames processor. Keep aliases for
+  // sessions rendered during rollout, while publishing only to the canonical
+  // revision-scoped destination below.
+  addReference(branchPath.thumbnailUrl);
+  addReference(branchPath.thumbnailPath);
+  addReference(branchPath.thumbnail_url);
+  addReference(branchPath.thumbnail_path);
+  addReference(branchPath.branchThumbnailUrl);
+  addReference(branchPath.branchThumbnailPath);
+  return references;
+};
+
+const resolveInteractivePathDivergenceTime = (branchPath = {}) => {
+  const trail = Array.isArray(branchPath.selectionTrail)
+    ? branchPath.selectionTrail
+    : Array.isArray(branchPath.selection_trail)
+      ? branchPath.selection_trail
+      : [];
+  const immediateChoice = trail.at(-1) || {};
+  const value = immediateChoice.switchAtSeconds ??
+    immediateChoice.switch_at_seconds ??
+    branchPath.switchAtSeconds ??
+    branchPath.switch_at_seconds;
+  const seconds = Number(value);
+  return Number.isFinite(seconds) && seconds >= 0 ? seconds : 0;
+};
 
 const resolveInteractivePathId = (branchPath) => {
   if (typeof branchPath === 'string') {
@@ -577,14 +633,19 @@ const createTemporaryVideoInput = async (videoSource, tempDir) => {
   throw new Error('Unable to resolve the rendered video for thumbnail fallback.');
 };
 
-const extractThumbnailFromVideo = async (videoSource) => {
+const extractThumbnailFromVideo = async (videoSource, { seekSeconds = 0 } = {}) => {
   const tempDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'samsar-publication-thumbnail-'));
   const outputPath = path.join(tempDir, 'thumbnail.png');
 
   try {
     const inputPath = await createTemporaryVideoInput(videoSource, tempDir);
     await new Promise((resolve, reject) => {
-      ffmpeg(inputPath)
+      const command = ffmpeg(inputPath);
+      const normalizedSeekSeconds = Number(seekSeconds);
+      if (Number.isFinite(normalizedSeekSeconds) && normalizedSeekSeconds > 0) {
+        command.seekInput(normalizedSeekSeconds);
+      }
+      command
         .outputOptions(['-frames:v', '1'])
         .noAudio()
         .output(outputPath)
@@ -597,6 +658,72 @@ const extractThumbnailFromVideo = async (videoSource) => {
   } finally {
     await fs.promises.rm(tempDir, { recursive: true, force: true }).catch(() => {});
   }
+};
+
+const materializeInteractiveMainThumbnailUrl = async (
+  session,
+  { revisionId = null } = {},
+) => {
+  const sessionId = normalizeInteractivePublicationSessionId(normalizeSessionId(session));
+  const candidates = [];
+  const addCandidate = (value) => {
+    const normalized = normalizeString(value);
+    if (normalized && !candidates.includes(normalized)) candidates.push(normalized);
+  };
+
+  // The main poster retains the existing VideoSession splash semantics. It is
+  // intentionally distinct from every path's divergence thumbnail.
+  addCandidate(session.splashImage);
+  addCandidate(`${SECURE_ASSET_PREFIX}/video/splash/${sessionId}/splash.png`);
+  addCandidate(`assets/video/splash/${sessionId}/splash.png`);
+  addCandidate(session.publishedSplashImage);
+  resolveFirstFrameReferences(session).forEach(addCandidate);
+
+  for (const candidate of candidates) {
+    const buffer = await readMediaReference(candidate).catch(() => null);
+    if (!buffer?.length) continue;
+    const key = buildInteractivePublicationMainMediaKey(
+      sessionId,
+      'thumbnail.png',
+      { revisionId },
+    );
+    return {
+      key,
+      url: await uploadBufferToPublicationsMedia({
+        key,
+        buffer,
+        contentType: 'image/png',
+      }),
+      source: candidate,
+    };
+  }
+
+  const videoSource = resolveVideoSource(session) || resolveInteractivePathVideoSource(
+    (Array.isArray(session.branchRenderPaths) ? session.branchRenderPaths : [])
+      .find((entry) => entry?.pathId === session.defaultBranchPathId) ||
+    (Array.isArray(session.branchRenderPaths) ? session.branchRenderPaths[0] : {}),
+  );
+  if (videoSource) {
+    const buffer = await extractThumbnailFromVideo(videoSource);
+    if (buffer?.length) {
+      const key = buildInteractivePublicationMainMediaKey(
+        sessionId,
+        'thumbnail.png',
+        { revisionId },
+      );
+      return {
+        key,
+        url: await uploadBufferToPublicationsMedia({
+          key,
+          buffer,
+          contentType: 'image/png',
+        }),
+        source: 'ffmpeg-session-first-video-frame',
+      };
+    }
+  }
+
+  throw new Error(`Unable to resolve the main thumbnail for interactive session ${sessionId}.`);
 };
 
 const materializeThumbnailUrl = async (
@@ -702,14 +829,14 @@ export async function preparePublicPublicationThumbnail(
 }
 
 /**
- * Publishes one completed branch render without consulting any session-level
- * splash or frame candidates. Its thumbnail is always decoded from frame zero
- * of this path's own rendered video.
+ * Publishes one completed branch render and its divergence thumbnail. The
+ * persisted frames-processor thumbnail is preferred; older sessions fall back
+ * to decoding the path video at its immediate-parent switch time.
  */
 export async function preparePublicInteractivePublicationPathMedia(
   session,
   branchPath,
-  { revisionId = null } = {},
+  { revisionId = null, isDefault = false } = {},
 ) {
   if (!isPublicPublicationMediaConfigured()) {
     throw new Error(
@@ -725,9 +852,25 @@ export async function preparePublicInteractivePublicationPathMedia(
     branchPath,
     { revisionId },
   );
-  const thumbnailBuffer = await extractThumbnailFromVideo(video.source);
+  const thumbnailReferences = resolveInteractivePathThumbnailReferences(branchPath);
+  let thumbnailBuffer = null;
+  let thumbnailSource = null;
+  for (const reference of thumbnailReferences) {
+    thumbnailBuffer = await readMediaReference(reference).catch(() => null);
+    if (thumbnailBuffer?.length) {
+      thumbnailSource = reference;
+      break;
+    }
+  }
+  if (!thumbnailBuffer?.length) {
+    const seekSeconds = resolveInteractivePathDivergenceTime(branchPath);
+    thumbnailBuffer = await extractThumbnailFromVideo(video.source, { seekSeconds });
+    thumbnailSource = seekSeconds > 0
+      ? 'ffmpeg-divergence-video-frame'
+      : 'ffmpeg-first-video-frame';
+  }
   if (!thumbnailBuffer || thumbnailBuffer.length === 0) {
-    throw new Error(`Unable to extract a first-frame thumbnail for interactive path ${pathId}.`);
+    throw new Error(`Unable to resolve a divergence thumbnail for interactive path ${pathId}.`);
   }
 
   const thumbnailKey = buildInteractivePublicationMediaKey(
@@ -742,25 +885,32 @@ export async function preparePublicInteractivePublicationPathMedia(
     contentType: 'image/png',
   });
 
+  const mainThumbnail = isDefault
+    ? await materializeInteractiveMainThumbnailUrl(session, { revisionId })
+    : null;
+
   return {
     pathId,
     safePathId,
     revisionId,
     videoUrl: video.url,
     thumbnailUrl,
+    ...(mainThumbnail ? { mainThumbnailUrl: mainThumbnail.url } : {}),
     storageKeys: {
       video: video.key,
       thumbnail: thumbnailKey,
+      ...(mainThumbnail ? { mainThumbnail: mainThumbnail.key } : {}),
     },
     videoSource: video.source,
-    thumbnailSource: 'ffmpeg-first-video-frame',
+    thumbnailSource,
+    ...(mainThumbnail ? { mainThumbnailSource: mainThumbnail.source } : {}),
   };
 }
 
 /**
- * Removes only the two exact objects owned by each supplied interactive path.
- * The session's existing linear `video.mp4` and `thumbnail.png` are deliberately
- * outside this key set and are never touched here.
+ * Removes the two exact objects owned by each supplied interactive path plus
+ * this revision's main poster. The session's existing linear `video.mp4` and
+ * `thumbnail.png` are deliberately outside this key set and are never touched.
  */
 export async function deletePublicInteractivePublicationMediaForSession(
   sessionId,
@@ -786,20 +936,27 @@ export async function deletePublicInteractivePublicationMediaForSession(
   });
 
   const pathIds = [...pathsBySafeId.values()];
-  const keys = pathIds.flatMap((pathId) => [
-    buildInteractivePublicationMediaKey(
+  const keys = [
+    ...pathIds.flatMap((pathId) => [
+      buildInteractivePublicationMediaKey(
+        normalizedSessionId,
+        pathId,
+        'video.mp4',
+        { revisionId },
+      ),
+      buildInteractivePublicationMediaKey(
+        normalizedSessionId,
+        pathId,
+        'thumbnail.png',
+        { revisionId },
+      ),
+    ]),
+    buildInteractivePublicationMainMediaKey(
       normalizedSessionId,
-      pathId,
-      'video.mp4',
-      { revisionId },
-    ),
-    buildInteractivePublicationMediaKey(
-      normalizedSessionId,
-      pathId,
       'thumbnail.png',
       { revisionId },
     ),
-  ]);
+  ];
   const results = await Promise.allSettled(
     keys.map((key) => deleteObjectFromPublicationsMedia({ key }))
   );
@@ -829,16 +986,38 @@ export async function deletePublicPublicationMediaForSession(sessionId) {
   if (!normalizedSessionId) {
     return { sessionId: null, deleted: [], failed: [] };
   }
+  if (
+    normalizedSessionId.length > 128 ||
+    !SAFE_PUBLICATION_SESSION_ID_PATTERN.test(normalizedSessionId)
+  ) {
+    throw new Error('Public publication media deletion requires a safe session ID.');
+  }
 
   const keys = [
     buildPublicationMediaKey(normalizedSessionId, 'video.mp4'),
     buildPublicationMediaKey(normalizedSessionId, 'thumbnail.png'),
   ];
+  const branchThumbnailPrefix = buildPublicationMediaKey(
+    normalizedSessionId,
+    'branches',
+  );
+  const operations = [
+    ...keys.map((key) => ({
+      key,
+      delete: () => deleteObjectFromPublicationsMedia({ key }),
+    })),
+    {
+      key: `${branchThumbnailPrefix}/`,
+      delete: () => deleteObjectsFromPublicationsMediaWithPrefix({
+        prefix: branchThumbnailPrefix,
+      }),
+    },
+  ];
   const results = await Promise.allSettled(
-    keys.map((key) => deleteObjectFromPublicationsMedia({ key }))
+    operations.map((operation) => operation.delete())
   );
   const failed = results
-    .map((result, index) => ({ result, key: keys[index] }))
+    .map((result, index) => ({ result, key: operations[index].key }))
     .filter(({ result }) => result.status === 'rejected')
     .map(({ result, key }) => ({
       key,
@@ -851,7 +1030,9 @@ export async function deletePublicPublicationMediaForSession(sessionId) {
 
   return {
     sessionId: normalizedSessionId,
-    deleted: keys.filter((_, index) => results[index].status === 'fulfilled'),
+    deleted: operations
+      .filter((_, index) => results[index].status === 'fulfilled')
+      .map(({ key }) => key),
     failed,
   };
 }

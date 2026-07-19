@@ -171,6 +171,52 @@ test('compact branching manifest exposes normalized tree, path, and output state
   });
 });
 
+test('branch delivery exposes divergence thumbnails and prefers persisted optimized timing', () => {
+  const session = buildSession();
+  session.branchRenderPaths[0].thumbnailPath =
+    '/video/splash/session/paths/path-cm9vdC4x/thumbnail.png';
+  session.branchRenderPaths[0].branchingHint = 'Enter the forest';
+  session.branchRenderPaths[0].branchingDescription = 'The traveler follows the forest path.';
+  session.branchRenderPaths[0].branchPointId = 'choice-root';
+  session.branchRenderPaths[0].divergenceSceneIndex = 3;
+  session.branchRenderPaths[0].switchAtSeconds = 12.5;
+  session.branchingTimeline = {
+    schemaVersion: 'branching_timeline.v1',
+    timing: { origin: 'media', unit: 'seconds' },
+    rootNodeId: 'root',
+    defaultPathId: 'root.2',
+    choicePoints: [{
+      branchPointId: 'choice-root',
+      parentNodeId: 'root',
+      level: 1,
+      divergenceSceneIndex: 3,
+      switchAtSeconds: 12.5,
+      options: [{
+        childNodeId: 'root.1',
+        branchOrdinal: 1,
+        branchingHint: 'Enter the forest',
+        description: 'The traveler follows the forest path.',
+        leafPathIds: ['root.1'],
+      }],
+    }],
+  };
+
+  const manifest = buildBranchingStatusManifest(session, {
+    apiServer: 'https://api.example/',
+  });
+  assert.equal(
+    manifest.paths[0].thumbnail_url,
+    'https://api.example/video/splash/session/paths/path-cm9vdC4x/thumbnail.png',
+  );
+  assert.equal(manifest.outputs.paths[0].branching_hint, 'Enter the forest');
+  assert.equal(manifest.outputs.paths[0].branching_description,
+    'The traveler follows the forest path.');
+  assert.equal(manifest.outputs.paths[0].branch_point_id, 'choice-root');
+  assert.equal(manifest.outputs.paths[0].switch_at_seconds, 12.5);
+  assert.equal(manifest.tree.choice_points[0].switch_at_seconds, 12.5);
+  assert.equal(manifest.tree.choice_points[0].options[0].path_name, 'Enter the forest');
+});
+
 test('compact branching manifest reports active paths as pending before any path completes', () => {
   const session = buildSession();
   delete session.expressGenerationStatus;

@@ -246,8 +246,24 @@ const branchAudioTimelineEntrySchema = new Schema({
     connectedLayerIndex: { type: Number, default: null },
 }, { _id: false, strict: false });
 
+const branchThumbnailSourceSchema = new Schema({
+    timelineIndex: { type: Number, default: null },
+    layerId: { type: String, default: null },
+    pathSequenceIndex: { type: Number, default: null },
+    sceneIndex: { type: Number, default: null },
+    framePath: { type: String, default: null },
+    divergenceSceneIndex: { type: Number, default: null },
+    selectionTrailIndex: { type: Number, default: null },
+    reason: { type: String, default: null },
+}, { _id: false, strict: false });
+
 const branchRenderPathSchema = new Schema({
     pathId: { type: String, required: true },
+    branchingHint: { type: String, default: null },
+    branchingDescription: { type: String, default: null },
+    branchPointId: { type: String, default: null },
+    divergenceSceneIndex: { type: Number, default: null },
+    switchAtSeconds: { type: Number, default: null },
     duration: { type: Number, required: true },
     timeline: [branchTimelineEntrySchema],
     audioTimeline: [branchAudioTimelineEntrySchema],
@@ -259,12 +275,17 @@ const branchRenderPathSchema = new Schema({
     videoGenerationError: { type: String, default: null },
     videoLink: { type: String, default: null },
     remoteURL: { type: String, default: null },
+    thumbnailPath: { type: String, default: null },
+    thumbnailUrl: { type: String, default: null },
+    thumbnailSource: { type: branchThumbnailSourceSchema, default: null },
 }, { _id: false, strict: false });
 
 // Create the main schema corresponding to the document interface
 const videoSessionSchema = new Schema({
     userId: String,
     narrativeType: { type: String, enum: ['singular', 'branched'], default: 'singular' },
+    branchingMeta: { type: Schema.Types.Mixed, default: null },
+    branchingTimeline: { type: Schema.Types.Mixed, default: null },
     renderPlanVersion: { type: Number, default: null },
     defaultBranchPathId: { type: String, default: null },
     branchRenderPaths: [branchRenderPathSchema],

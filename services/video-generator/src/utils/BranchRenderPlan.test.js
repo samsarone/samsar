@@ -3,8 +3,10 @@ import assert from 'node:assert/strict';
 
 import {
   areAllBranchPathVideosComplete,
+  buildBranchThumbnailAssetPath,
   getDefaultBranchRenderPath,
   getRepairableBranchRenderPaths,
+  resolveBranchThumbnailTimelineIndex,
   resolveBranchRenderContext,
   sanitizeBranchRenderPathSegment,
 } from './BranchRenderPlan.js';
@@ -69,6 +71,36 @@ test('rejects unknown paths and makes path ids filesystem-safe', () => {
   assert.throws(() => resolveBranchRenderContext(buildSession(), 'root.3'), /Unknown branch render path/);
   assert.equal(sanitizeBranchRenderPathSegment('root.1'), 'path-cm9vdC4x');
   assert.equal(sanitizeBranchRenderPathSegment('../root/1'), 'path-Li4vcm9vdC8x');
+});
+
+test('branch thumbnails use the first timeline item after the immediate-parent divergence', () => {
+  const renderPath = {
+    pathId: 'root.1.2',
+    selectionTrail: [
+      { divergenceSceneIndex: 0 },
+      { divergenceSceneIndex: 2 },
+    ],
+    timeline: [
+      { sceneIndex: 0 },
+      { sceneIndex: 1 },
+      { sceneIndex: 2 },
+      { sceneIndex: 3 },
+      { sceneIndex: 4 },
+    ],
+  };
+
+  assert.equal(resolveBranchThumbnailTimelineIndex(renderPath), 3);
+  assert.equal(
+    buildBranchThumbnailAssetPath('session_1', renderPath.pathId),
+    '/video/splash/session_1/paths/path-cm9vdC4xLjI/thumbnail.png',
+  );
+});
+
+test('branch thumbnail paths reject unsafe session identifiers', () => {
+  assert.throws(
+    () => buildBranchThumbnailAssetPath('../session', 'root.1'),
+    /filesystem-safe sessionId/,
+  );
 });
 
 test('repairs every ready unfinished path without treating one result as aggregate completion', () => {

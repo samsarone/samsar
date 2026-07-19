@@ -8,9 +8,11 @@ import test from 'node:test';
 import ffmpegPath from 'ffmpeg-static';
 import sharp from 'sharp';
 import {
+  buildInteractivePublicationMainMediaKey,
   buildInteractivePublicationMediaKey,
   buildInteractivePublicationSafePathId,
   deletePublicInteractivePublicationMediaForSession,
+  deletePublicPublicationMediaForSession,
   preparePublicInteractivePublicationPathMedia,
   validateInteractivePublicationPathId,
 } from './PublicationMedia.js';
@@ -26,6 +28,32 @@ const createSolidVideo = async (filePath, color) => {
     'lavfi',
     '-i',
     `color=c=${color}:s=32x32:d=0.3`,
+    '-c:v',
+    'libx264',
+    '-pix_fmt',
+    'yuv420p',
+    '-y',
+    filePath,
+  ]);
+};
+
+const createSplitVideo = async (filePath, firstColor, secondColor) => {
+  await execFileAsync(ffmpegPath, [
+    '-hide_banner',
+    '-loglevel',
+    'error',
+    '-f',
+    'lavfi',
+    '-i',
+    `color=c=${firstColor}:s=32x32:d=0.5`,
+    '-f',
+    'lavfi',
+    '-i',
+    `color=c=${secondColor}:s=32x32:d=0.5`,
+    '-filter_complex',
+    '[0:v][1:v]concat=n=2:v=1:a=0[outv]',
+    '-map',
+    '[outv]',
     '-c:v',
     'libx264',
     '-pix_fmt',
@@ -66,6 +94,14 @@ test('interactive publication keys are deterministic, collision-safe, and traver
     buildInteractivePublicationSafePathId('root.1'),
     buildInteractivePublicationSafePathId('root-1')
   );
+  assert.equal(
+    buildInteractivePublicationMainMediaKey(
+      '507f1f77bcf86cd799439011',
+      'thumbnail.png',
+      { revisionId: 'revision-1' },
+    ),
+    'published/507f1f77bcf86cd799439011/interactive/revisions/revision-1/main/thumbnail.png',
+  );
 
   for (const unsafeId of ['', '.', '..', '../root', 'root/1', 'root\\1', ' root.1', 'root.1 ']) {
     assert.throws(
@@ -88,7 +124,7 @@ test('interactive publication keys are deterministic, collision-safe, and traver
   );
 });
 
-test('each interactive path is published with its own video first-frame thumbnail', async (t) => {
+test('interactive publication separates the main splash from path divergence thumbnails', async (t) => {
   const tempRoot = await fs.promises.mkdtemp(
     path.join(os.tmpdir(), 'samsar-interactive-publication-media-test-')
   );
@@ -111,27 +147,36 @@ test('each interactive path is published with its own video first-frame thumbnai
 
   const redVideoPath = path.join(tempRoot, 'red.mp4');
   const blueVideoPath = path.join(tempRoot, 'blue.mp4');
+  const divergenceThumbnailPath = path.join(tempRoot, 'divergence.png');
+  const mainThumbnailPath = path.join(tempRoot, 'main.png');
   await Promise.all([
     createSolidVideo(redVideoPath, 'red'),
-    createSolidVideo(blueVideoPath, 'blue'),
+    createSplitVideo(blueVideoPath, 'red', 'blue'),
+    sharp({
+      create: { width: 32, height: 32, channels: 3, background: 'green' },
+    }).png().toFile(divergenceThumbnailPath),
+    sharp({
+      create: { width: 32, height: 32, channels: 3, background: 'yellow' },
+    }).png().toFile(mainThumbnailPath),
   ]);
 
   const sessionId = '507f1f77bcf86cd799439011';
   const session = {
     _id: sessionId,
-    // A path publication must never use this session-level candidate.
-    publishedSplashImage: '/does/not/exist/session-splash.png',
+    splashImage: mainThumbnailPath,
   };
   const revisionId = 'revision-1';
   const redMedia = await preparePublicInteractivePublicationPathMedia(session, {
     pathId: 'root.1',
     videoGenerationStatus: 'COMPLETED',
     videoLink: redVideoPath,
-  }, { revisionId });
+    thumbnailPath: divergenceThumbnailPath,
+  }, { revisionId, isDefault: true });
   const blueMedia = await preparePublicInteractivePublicationPathMedia(session, {
     pathId: 'root.2',
     videoGenerationStatus: 'COMPLETED',
     videoLink: blueVideoPath,
+    selectionTrail: [{ switchAtSeconds: 0.5 }],
   }, { revisionId });
 
   assert.match(
@@ -146,8 +191,9 @@ test('each interactive path is published with its own video first-frame thumbnai
     blueMedia.videoUrl,
     /\/interactive\/revisions\/revision-1\/paths\/cm9vdC4y\/video\.mp4$/,
   );
-  assert.equal(redMedia.thumbnailSource, 'ffmpeg-first-video-frame');
-  assert.equal(blueMedia.thumbnailSource, 'ffmpeg-first-video-frame');
+  assert.equal(redMedia.thumbnailSource, divergenceThumbnailPath);
+  assert.equal(redMedia.mainThumbnailSource, mainThumbnailPath);
+  assert.equal(blueMedia.thumbnailSource, 'ffmpeg-divergence-video-frame');
 
   const redThumbnailPath = path.join(
     assetsRoot,
@@ -171,12 +217,27 @@ test('each interactive path is published with its own video first-frame thumbnai
     blueMedia.safePathId,
     'thumbnail.png'
   );
-  const [redAverage, blueAverage] = await Promise.all([
+  const publishedMainThumbnailPath = path.join(
+    assetsRoot,
+    'published',
+    sessionId,
+    'interactive',
+    'revisions',
+    revisionId,
+    'main',
+    'thumbnail.png',
+  );
+  const [redAverage, blueAverage, mainAverage] = await Promise.all([
     readAverageRgb(redThumbnailPath),
     readAverageRgb(blueThumbnailPath),
+    readAverageRgb(publishedMainThumbnailPath),
   ]);
-  assert.ok(redAverage[0] > redAverage[2] + 100, 'red path thumbnail should be red');
+  assert.ok(redAverage[1] > redAverage[0] + 50, 'saved divergence thumbnail should be green');
   assert.ok(blueAverage[2] > blueAverage[0] + 100, 'blue path thumbnail should be blue');
+  assert.ok(
+    mainAverage[0] > mainAverage[2] + 100 && mainAverage[1] > mainAverage[2] + 100,
+    'main publication thumbnail should preserve the yellow session splash',
+  );
 
   const linearDirectory = path.join(assetsRoot, 'published', sessionId);
   await fs.promises.mkdir(linearDirectory, { recursive: true });
@@ -191,10 +252,27 @@ test('each interactive path is published with its own video first-frame thumbnai
     { pathId: 'root.1' },
     { path_id: 'root.2' },
   ], { revisionId });
-  assert.equal(cleanup.deleted.length, 4);
+  assert.equal(cleanup.deleted.length, 5);
   assert.equal(cleanup.failed.length, 0);
   assert.equal(fs.existsSync(redThumbnailPath), false);
   assert.equal(fs.existsSync(blueThumbnailPath), false);
+  assert.equal(fs.existsSync(publishedMainThumbnailPath), false);
   assert.equal(fs.existsSync(linearVideoPath), true);
   assert.equal(fs.existsSync(linearThumbnailPath), true);
+
+  const rawBranchThumbnailPath = path.join(
+    linearDirectory,
+    'branches',
+    'path-cm9vdC4x',
+    'thumbnail.png',
+  );
+  await fs.promises.mkdir(path.dirname(rawBranchThumbnailPath), { recursive: true });
+  await fs.promises.writeFile(rawBranchThumbnailPath, 'raw-branch-thumbnail');
+
+  const sessionCleanup = await deletePublicPublicationMediaForSession(sessionId);
+  assert.equal(sessionCleanup.failed.length, 0);
+  assert.equal(sessionCleanup.deleted.includes(`published/${sessionId}/branches/`), true);
+  assert.equal(fs.existsSync(rawBranchThumbnailPath), false);
+  assert.equal(fs.existsSync(linearVideoPath), false);
+  assert.equal(fs.existsSync(linearThumbnailPath), false);
 });

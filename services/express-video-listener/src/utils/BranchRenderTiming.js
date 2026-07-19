@@ -16,6 +16,8 @@ const DURATION_BILLING_STAGES = Object.freeze({
   PIPELINE: 'pipeline',
 });
 
+export const BRANCHING_TIMELINE_SCHEMA = 'branching_timeline.v1';
+
 function normalizeId(value) {
   if (value === null || value === undefined) return '';
   return value?.toString?.().trim?.() || '';
@@ -49,6 +51,174 @@ function toPlainObject(value) {
 function cloneObject(value) {
   const plainValue = toPlainObject(value);
   return plainValue && typeof plainValue === 'object' ? { ...plainValue } : {};
+}
+
+function normalizeOptionalString(value) {
+  return typeof value === 'string' && value.trim() ? value.trim() : null;
+}
+
+function getSelectionTrail(path = {}) {
+  return Array.isArray(path?.selectionTrail) ? path.selectionTrail : [];
+}
+
+/**
+ * Builds the compact, render-facing choice graph persisted on branched video
+ * sessions. Path-local frame and audio timelines remain on branchRenderPaths;
+ * this document contains only the metadata a player needs to switch media.
+ */
+export function buildBranchingTimeline({
+  branchRenderPaths = [],
+  branchingMeta = {},
+  defaultBranchPathId = null,
+} = {}) {
+  const paths = (Array.isArray(branchRenderPaths) ? branchRenderPaths : [])
+    .map((rawPath) => toPlainObject(rawPath) || {})
+    .filter((path) => normalizeId(path.pathId));
+  const configuredBranchPoints = Array.isArray(branchingMeta?.branchPoints)
+    ? [...branchingMeta.branchPoints].sort((left, right) => {
+      const levelDifference = (Number(left?.level) || 0) - (Number(right?.level) || 0);
+      if (levelDifference !== 0) return levelDifference;
+      return normalizeId(left?.parentNodeId).localeCompare(
+        normalizeId(right?.parentNodeId),
+        undefined,
+        { numeric: true },
+      );
+    })
+    : [];
+  const trailEntries = paths.flatMap((path) => getSelectionTrail(path).map((rawChoice) => ({
+    ...cloneObject(rawChoice),
+    leafPathId: normalizeId(path.pathId),
+  })));
+
+  const matchingEntriesForPoint = (branchPoint = {}) => {
+    const branchPointId = normalizeId(
+      branchPoint.branchPointId ?? branchPoint.branch_point_id,
+    );
+    const parentNodeId = normalizeId(
+      branchPoint.parentNodeId ?? branchPoint.parent_node_id,
+    );
+    return trailEntries.filter((entry) => {
+      const entryBranchPointId = normalizeId(
+        entry.branchPointId ?? entry.branch_point_id,
+      );
+      const entryParentNodeId = normalizeId(
+        entry.parentNodeId ?? entry.parent_node_id,
+      );
+      return (branchPointId && entryBranchPointId === branchPointId) ||
+        (!branchPointId && parentNodeId && entryParentNodeId === parentNodeId);
+    });
+  };
+
+  const buildOptions = (branchPoint = {}, matchingEntries = []) => {
+    const configuredOptions = Array.isArray(branchPoint?.divergencePaths)
+      ? branchPoint.divergencePaths
+      : [];
+    const sourceOptions = configuredOptions.length > 0
+      ? configuredOptions
+      : [...new Map(matchingEntries.map((entry) => [
+        normalizeId(entry.nodeId ?? entry.node_id ?? entry.childNodeId),
+        entry,
+      ])).values()];
+
+    return sourceOptions.map((rawOption, optionIndex) => {
+      const option = toPlainObject(rawOption) || {};
+      const childNodeId = normalizeId(
+        option.childNodeId ?? option.child_node_id ?? option.nodeId ?? option.node_id,
+      );
+      const matchingChoice = matchingEntries.find((entry) => (
+        normalizeId(entry.nodeId ?? entry.node_id ?? entry.childNodeId) === childNodeId
+      )) || {};
+      return {
+        childNodeId,
+        branchOrdinal: getNonNegativeInteger(
+          option.branchOrdinal ?? option.branch_ordinal ?? matchingChoice.branchOrdinal,
+        ) ?? optionIndex + 1,
+        branchingHint: normalizeOptionalString(
+          option.branchingHint ?? option.path_name ?? option.pathName ??
+          matchingChoice.branchingHint ?? matchingChoice.pathName ?? matchingChoice.path_name,
+        ),
+        description: normalizeOptionalString(
+          option.description ?? option.path_description ?? option.pathDescription ??
+          matchingChoice.description ?? matchingChoice.pathDescription ??
+          matchingChoice.path_description,
+        ),
+        leafPathIds: paths
+          .filter((path) => getSelectionTrail(path).some((choice) => (
+            normalizeId(choice.nodeId ?? choice.node_id ?? choice.childNodeId) === childNodeId
+          )))
+          .map((path) => normalizeId(path.pathId)),
+      };
+    }).filter((option) => option.childNodeId && option.leafPathIds.length > 0);
+  };
+
+  let sourceBranchPoints = configuredBranchPoints;
+  if (sourceBranchPoints.length === 0) {
+    const groupedEntries = new Map();
+    trailEntries.forEach((entry) => {
+      const branchPointId = normalizeId(entry.branchPointId ?? entry.branch_point_id);
+      const parentNodeId = normalizeId(entry.parentNodeId ?? entry.parent_node_id);
+      const level = getNonNegativeInteger(entry.level) ?? 0;
+      const key = branchPointId || `${parentNodeId || 'root'}:${level}`;
+      const group = groupedEntries.get(key) || [];
+      group.push(entry);
+      groupedEntries.set(key, group);
+    });
+    sourceBranchPoints = [...groupedEntries.entries()].map(([branchPointId, entries]) => ({
+      branchPointId,
+      parentNodeId: entries[0]?.parentNodeId ?? entries[0]?.parent_node_id,
+      level: entries[0]?.level,
+      divergenceSceneIndex:
+        entries[0]?.divergenceSceneIndex ?? entries[0]?.divergence_scene_index,
+      __matchingEntries: entries,
+    }));
+  }
+
+  const choicePoints = sourceBranchPoints.map((rawBranchPoint) => {
+    const branchPoint = toPlainObject(rawBranchPoint) || {};
+    const matchingEntries = branchPoint.__matchingEntries ||
+      matchingEntriesForPoint(branchPoint);
+    const timingChoice = matchingEntries[0] || {};
+    return {
+      branchPointId: normalizeId(
+        branchPoint.branchPointId ?? branchPoint.branch_point_id,
+      ),
+      parentNodeId: normalizeId(
+        branchPoint.parentNodeId ?? branchPoint.parent_node_id ??
+        timingChoice.parentNodeId ?? timingChoice.parent_node_id,
+      ) || null,
+      level: getNonNegativeInteger(branchPoint.level ?? timingChoice.level),
+      divergenceSceneIndex: getNonNegativeInteger(
+        branchPoint.divergenceSceneIndex ?? branchPoint.divergence_scene_index ??
+        timingChoice.divergenceSceneIndex ?? timingChoice.divergence_scene_index,
+      ),
+      switchAtSeconds: Number.isFinite(Number(
+        timingChoice.switchAtSeconds ?? timingChoice.switch_at_seconds,
+      ))
+        ? Number(timingChoice.switchAtSeconds ?? timingChoice.switch_at_seconds)
+        : null,
+      options: buildOptions(branchPoint, matchingEntries),
+    };
+  }).filter((choicePoint) => (
+    choicePoint.branchPointId &&
+    choicePoint.switchAtSeconds !== null &&
+    choicePoint.options.length > 0
+  ));
+
+  const configuredDefaultPathId = normalizeId(defaultBranchPathId);
+  const effectiveDefaultPathId = paths.some((path) => (
+    normalizeId(path.pathId) === configuredDefaultPathId
+  ))
+    ? configuredDefaultPathId
+    : normalizeId(paths[0]?.pathId) || null;
+
+  return {
+    schemaVersion: BRANCHING_TIMELINE_SCHEMA,
+    timing: { origin: 'media', unit: 'seconds' },
+    rootNodeId: normalizeId(branchingMeta?.rootNodeId) ||
+      normalizeId(paths[0]?.nodeIds?.[0]) || null,
+    defaultPathId: effectiveDefaultPathId,
+    choicePoints,
+  };
 }
 
 function getAudioLayerId(audioLayer = {}) {
@@ -226,12 +396,36 @@ function retimePath({
     durationOffset += duration;
     return retimedEntry;
   });
+  const selectionTrail = retimeSelectionTrail(path.selectionTrail, timeline);
+  const immediateChoice = selectionTrail.at(-1) || {};
 
   return {
     ...path,
     duration: durationOffset,
     timeline,
-    selectionTrail: retimeSelectionTrail(path.selectionTrail, timeline),
+    selectionTrail,
+    ...(selectionTrail.length > 0
+      ? {
+        branchingHint: normalizeOptionalString(
+          immediateChoice.branchingHint ?? immediateChoice.pathName ?? immediateChoice.path_name,
+        ),
+        branchingDescription: normalizeOptionalString(
+          immediateChoice.branchingDescription ?? immediateChoice.pathDescription ??
+          immediateChoice.path_description,
+        ),
+        branchPointId: normalizeId(
+          immediateChoice.branchPointId ?? immediateChoice.branch_point_id,
+        ) || null,
+        divergenceSceneIndex: getNonNegativeInteger(
+          immediateChoice.divergenceSceneIndex ?? immediateChoice.divergence_scene_index,
+        ),
+        switchAtSeconds: Number.isFinite(Number(
+          immediateChoice.switchAtSeconds ?? immediateChoice.switch_at_seconds,
+        ))
+          ? Number(immediateChoice.switchAtSeconds ?? immediateChoice.switch_at_seconds)
+          : null,
+      }
+      : {}),
     audioTimeline: retimeAudioTimeline(
       path.audioTimeline,
       timeline,

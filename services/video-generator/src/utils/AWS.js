@@ -344,6 +344,53 @@ export async function uploadPublicationThumbnailToCDN(absolutePath, sessionId) {
   return publicUrl;
 }
 
+export function buildBranchPublicationThumbnailKey(sessionId, renderPathId) {
+  const normalizedSessionId = sessionId?.toString?.().trim?.() || '';
+  const normalizedRenderPathId = renderPathId?.toString?.().trim?.() || '';
+  if (!/^[A-Za-z0-9_-]+$/.test(normalizedSessionId)) {
+    throw new Error('A storage-safe sessionId is required for branch publication thumbnail upload.');
+  }
+  if (!normalizedRenderPathId) {
+    throw new Error('Missing renderPathId for branch publication thumbnail upload.');
+  }
+
+  const safeRenderPathId = `path-${Buffer.from(normalizedRenderPathId, 'utf8').toString('base64url')}`;
+  return `${PUBLICATION_MEDIA_PREFIX}/${normalizedSessionId}/branches/${safeRenderPathId}/thumbnail.png`;
+}
+
+export async function uploadBranchPublicationThumbnailToCDN(
+  absolutePath,
+  sessionId,
+  renderPathId,
+) {
+  if (!fs.existsSync(absolutePath)) {
+    throw new Error(`File not found at path: ${absolutePath}`);
+  }
+
+  const publicationKey = buildBranchPublicationThumbnailKey(sessionId, renderPathId);
+  if (shouldUseDockerLocalMedia()) {
+    return persistDockerMediaFile(absolutePath, `${SECURE_ASSET_PREFIX}/${publicationKey}`);
+  }
+
+  const s3 = getS3Client();
+  const upload = new Upload({
+    client: s3,
+    params: {
+      Bucket: MEDIA_BUCKET_NAME,
+      Key: publicationKey,
+      Body: fs.createReadStream(absolutePath),
+      ContentType: 'image/png',
+      CacheControl: 'public, max-age=60, must-revalidate',
+    },
+    leavePartsOnError: false,
+  });
+  await upload.done();
+
+  const publicUrl = buildStaticCdnUrl(publicationKey);
+  await primeCDNCache(publicUrl, { requireSuccess: false });
+  return publicUrl;
+}
+
 /**
  * Helper function to access a URL to prime the CDN cache.
  *

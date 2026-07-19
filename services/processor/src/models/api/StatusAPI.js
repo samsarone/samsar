@@ -18,6 +18,13 @@ const VIDEO_STATUS_BRANCH_PROJECTION = [
   'branchRenderPaths.duration',
   'branchRenderPaths.nodeIds',
   'branchRenderPaths.selectionTrail',
+  'branchRenderPaths.branchingHint',
+  'branchRenderPaths.branchingDescription',
+  'branchRenderPaths.branchPointId',
+  'branchRenderPaths.divergenceSceneIndex',
+  'branchRenderPaths.switchAtSeconds',
+  'branchRenderPaths.thumbnailUrl',
+  'branchRenderPaths.thumbnailPath',
   'branchRenderPaths.frameGenerationStatus',
   'branchRenderPaths.frameGenerationPending',
   'branchRenderPaths.frameGenerationError',
@@ -62,6 +69,7 @@ export const VIDEO_STATUS_SESSION_PROJECTION = [
   'sourceNarrativeRequestId',
   'sourceNarrativeType',
   'branchingMeta',
+  'branchingTimeline',
   'renderPlanVersion',
   'defaultBranchPathId',
   'branchRenderCompletionFinalized',
@@ -109,6 +117,7 @@ export const VIDEO_STATUS_DETAILED_SESSION_PROJECTION = [
   'sourceNarrativeRequestId',
   'sourceNarrativeType',
   'branchingMeta',
+  'branchingTimeline',
   'renderPlanVersion',
   'defaultBranchPathId',
   'branchRenderCompletionFinalized',
@@ -409,6 +418,10 @@ function buildNormalizedBranchPath(path = {}, sourceOrdinal = 0, defaultPathId =
   const videoLink = normalizeResponseAssetUrl(path?.videoLink, req);
   const remoteURL = normalizeResponseAssetUrl(path?.remoteURL, req);
   const resultUrl = remoteURL || videoLink || null;
+  const thumbnailUrl = normalizeResponseAssetUrl(
+    path?.thumbnailUrl || path?.thumbnailPath,
+    req,
+  );
   const frameStatus = normalizeBranchStageStatus(path?.frameGenerationStatus);
   const videoStatus = normalizeBranchStageStatus(path?.videoGenerationStatus);
   const videoComplete = videoStatus === 'COMPLETED' && Boolean(resultUrl);
@@ -416,6 +429,8 @@ function buildNormalizedBranchPath(path = {}, sourceOrdinal = 0, defaultPathId =
   const cancelled = frameStatus === 'CANCELLED' || videoStatus === 'CANCELLED';
   const timeline = detailed ? buildNormalizedBranchTimeline(path?.timeline) : [];
   const audioTimeline = detailed ? buildNormalizedBranchAudioTimeline(path?.audioTimeline) : [];
+  const selectionTrail = normalizeBranchSelectionTrail(path?.selectionTrail);
+  const immediateSelection = selectionTrail.at(-1) || {};
   const completedTimelineItems = timeline.filter((entry) => (
     entry?.frame_generation?.status === 'COMPLETED'
   )).length;
@@ -436,6 +451,20 @@ function buildNormalizedBranchPath(path = {}, sourceOrdinal = 0, defaultPathId =
     is_default: Boolean(pathId && pathId === defaultPathId),
     node_ids: normalizeStringList(path?.nodeIds),
     duration: normalizeNumber(path?.duration),
+    branching_hint: normalizeNonEmptyString(path?.branchingHint || immediateSelection.path_name),
+    branching_description: normalizeNonEmptyString(
+      path?.branchingDescription || immediateSelection.path_description,
+    ),
+    branch_point_id: normalizeNonEmptyString(
+      path?.branchPointId || immediateSelection.branch_point_id,
+    ),
+    divergence_scene_index: normalizeNumber(
+      path?.divergenceSceneIndex ?? immediateSelection.divergence_scene_index,
+    ),
+    switch_at_seconds: normalizeNumber(
+      path?.switchAtSeconds ?? immediateSelection.switch_at_seconds,
+    ),
+    thumbnail_url: thumbnailUrl,
     status: pathStatus,
     current_stage: pathStatus === 'COMPLETED' || pathStatus === 'FAILED' || pathStatus === 'CANCELLED'
       ? null
@@ -468,7 +497,7 @@ function buildNormalizedBranchPath(path = {}, sourceOrdinal = 0, defaultPathId =
     result_url: videoComplete ? resultUrl : null,
     video_link: videoComplete ? videoLink : null,
     remote_url: videoComplete ? remoteURL : null,
-    selection_trail: normalizeBranchSelectionTrail(path?.selectionTrail),
+    selection_trail: selectionTrail,
     error: normalizeNonEmptyString(path?.videoGenerationError || path?.frameGenerationError),
     ...(detailed
       ? {
@@ -490,18 +519,27 @@ function buildNormalizedBranchChoicePoints(sessionData = {}, paths = []) {
   const branchingMeta = sessionData?.branchingMeta && typeof sessionData.branchingMeta === 'object'
     ? sessionData.branchingMeta
     : {};
-  const configuredBranchPoints = Array.isArray(branchingMeta.branchPoints)
-    ? branchingMeta.branchPoints
-    : [];
+  const branchingTimeline = sessionData?.branchingTimeline &&
+    typeof sessionData.branchingTimeline === 'object'
+    ? sessionData.branchingTimeline
+    : {};
+  const configuredBranchPoints = Array.isArray(branchingTimeline.choicePoints) &&
+    branchingTimeline.choicePoints.length > 0
+    ? branchingTimeline.choicePoints
+    : Array.isArray(branchingMeta.branchPoints)
+      ? branchingMeta.branchPoints
+      : [];
   const allTrailEntries = paths.flatMap((path) => (
     (Array.isArray(path.selection_trail) ? path.selection_trail : [])
       .map((choice) => ({ ...choice, leaf_path_id: path.path_id }))
   ));
 
   const buildOptions = (branchPoint = {}, matchingTrailEntries = []) => {
-    const configuredOptions = Array.isArray(branchPoint.divergencePaths)
-      ? branchPoint.divergencePaths
-      : [];
+    const configuredOptions = Array.isArray(branchPoint.options)
+      ? branchPoint.options
+      : Array.isArray(branchPoint.divergencePaths)
+        ? branchPoint.divergencePaths
+        : [];
     const sourceOptions = configuredOptions.length
       ? configuredOptions
       : Array.from(new Map(matchingTrailEntries.map((choice) => [choice.node_id, choice])).values());
@@ -511,21 +549,32 @@ function buildNormalizedBranchChoicePoints(sessionData = {}, paths = []) {
         option?.childNodeId || option?.child_node_id || option?.node_id,
       );
       const matchingChoice = matchingTrailEntries.find((choice) => choice.node_id === childNodeId) || {};
+      const configuredLeafPathIds = normalizeStringList(
+        option?.leafPathIds || option?.leaf_path_ids,
+      );
       return compactObject({
         child_node_id: childNodeId,
         branch_ordinal: normalizeNumber(
           option?.branchOrdinal ?? option?.branch_ordinal ?? matchingChoice.branch_ordinal,
         ) ?? optionIndex + 1,
         path_name: normalizeNonEmptyString(
-          option?.path_name || option?.pathName || matchingChoice.path_name,
+          option?.branchingHint ||
+          option?.path_name ||
+          option?.pathName ||
+          matchingChoice.path_name,
         ),
         path_description: normalizeNonEmptyString(
-          option?.path_description || option?.pathDescription || matchingChoice.path_description,
+          option?.description ||
+          option?.path_description ||
+          option?.pathDescription ||
+          matchingChoice.path_description,
         ),
-        leaf_path_ids: paths
-          .filter((path) => path.selection_trail?.some((choice) => choice.node_id === childNodeId))
-          .map((path) => path.path_id)
-          .filter(Boolean),
+        leaf_path_ids: configuredLeafPathIds.length > 0
+          ? configuredLeafPathIds
+          : paths
+            .filter((path) => path.selection_trail?.some((choice) => choice.node_id === childNodeId))
+            .map((path) => path.path_id)
+            .filter(Boolean),
       });
     });
   };
@@ -552,7 +601,11 @@ function buildNormalizedBranchChoicePoints(sessionData = {}, paths = []) {
           branchPoint?.divergence_scene_index ??
           timingChoice.divergence_scene_index,
         ),
-        switch_at_seconds: normalizeNumber(timingChoice.switch_at_seconds),
+        switch_at_seconds: normalizeNumber(
+          branchPoint?.switchAtSeconds ??
+          branchPoint?.switch_at_seconds ??
+          timingChoice.switch_at_seconds,
+        ),
         options: buildOptions(branchPoint, matchingTrailEntries),
       });
     });
@@ -583,7 +636,13 @@ export function buildNormalizedBranchingStatus(sessionData = {}, req = null, { d
     return null;
   }
 
-  const defaultPathId = normalizeNonEmptyString(sessionData?.defaultBranchPathId);
+  const branchingTimeline = sessionData?.branchingTimeline &&
+    typeof sessionData.branchingTimeline === 'object'
+    ? sessionData.branchingTimeline
+    : {};
+  const defaultPathId = normalizeNonEmptyString(
+    sessionData?.defaultBranchPathId || branchingTimeline.defaultPathId,
+  );
   const paths = sessionData.branchRenderPaths
     .map((path, ordinal) => buildNormalizedBranchPath(path, ordinal, defaultPathId, req, { detailed }))
     .sort(compareNormalizedBranchPaths);
@@ -641,6 +700,7 @@ export function buildNormalizedBranchingStatus(sessionData = {}, req = null, { d
       ordinal: path.ordinal,
       is_default: path.is_default,
       url: path.result_url,
+      thumbnail_url: path.thumbnail_url,
       duration: path.duration,
       selection_trail: path.selection_trail,
     }))
@@ -669,7 +729,9 @@ export function buildNormalizedBranchingStatus(sessionData = {}, req = null, { d
       progress_percent: progressPercent,
     },
     tree: {
-      root_node_id: normalizeNonEmptyString(branchingMeta.rootNodeId),
+      root_node_id: normalizeNonEmptyString(
+        branchingTimeline.rootNodeId || branchingMeta.rootNodeId,
+      ),
       num_levels: normalizeNumber(branchingMeta.numLevels),
       branching_factor: normalizeNumber(branchingMeta.branchingFactor),
       node_count: normalizeNumber(branchingMeta.nodeCount),
@@ -759,6 +821,7 @@ function buildCompletedBranchOutputPath(path = {}) {
   return compactObject({
     path_id: pathId,
     url,
+    thumbnail_url: normalizeNonEmptyString(path?.thumbnail_url),
     duration: normalizeNumber(path?.duration),
     is_default: path?.is_default === true,
   });
@@ -936,6 +999,7 @@ function buildLegacyBranchResultsFromPaths(paths = []) {
       result_url: path.result_url,
       video_link: path.video_link,
       remote_url: path.remote_url,
+      thumbnail_url: path.thumbnail_url,
       duration: path.duration,
       selection_trail: path.selection_trail,
       error: path.error,

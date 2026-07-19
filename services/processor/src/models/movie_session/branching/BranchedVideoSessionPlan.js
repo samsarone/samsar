@@ -6,6 +6,7 @@ import {
 } from './BranchingNarrativeTree.js';
 
 export const BRANCHED_VIDEO_RENDER_PLAN_VERSION = 1;
+export const BRANCHED_VIDEO_BRANCHING_TIMELINE_SCHEMA = 'branching_timeline.v1';
 
 function buildPlanError(message, details = {}) {
   const error = new Error(message);
@@ -103,6 +104,80 @@ function buildSelectionTrail(ancestry, branchPointByParentId, scenes = []) {
       pathDescription: node.divergence?.path_description || null,
     };
   });
+}
+
+export function buildBranchingTimelineFromRenderPaths({
+  branchingMeta = {},
+  branchRenderPaths = [],
+  defaultBranchPathId = null,
+} = {}) {
+  const paths = Array.isArray(branchRenderPaths) ? branchRenderPaths : [];
+  const branchPoints = [...(
+    Array.isArray(branchingMeta?.branchPoints) ? branchingMeta.branchPoints : []
+  )]
+    .sort((left, right) => {
+      const levelDifference = (Number(left?.level) || 0) - (Number(right?.level) || 0);
+      if (levelDifference !== 0) return levelDifference;
+      return comparePathIds(left?.parentNodeId || '', right?.parentNodeId || '');
+    });
+
+  return {
+    schemaVersion: BRANCHED_VIDEO_BRANCHING_TIMELINE_SCHEMA,
+    timing: {
+      origin: 'media',
+      unit: 'seconds',
+    },
+    rootNodeId: branchingMeta?.rootNodeId || null,
+    defaultPathId: defaultBranchPathId || null,
+    choicePoints: branchPoints.map((branchPoint) => {
+      const matchingChoices = paths.flatMap((path) => (
+        (Array.isArray(path?.selectionTrail) ? path.selectionTrail : [])
+          .filter((choice) => (
+            choice.branchPointId === branchPoint.branchPointId ||
+            (!branchPoint.branchPointId && choice.parentNodeId === branchPoint.parentNodeId)
+          ))
+          .map((choice) => ({ ...choice, leafPathId: path.pathId }))
+      ));
+      const timingChoice = matchingChoices[0] || null;
+      const divergencePaths = Array.isArray(branchPoint?.divergencePaths)
+        ? branchPoint.divergencePaths
+        : [];
+
+      return {
+        branchPointId: branchPoint?.branchPointId || timingChoice?.branchPointId || null,
+        parentNodeId: branchPoint?.parentNodeId || timingChoice?.parentNodeId || null,
+        level: Number(branchPoint?.level ?? timingChoice?.level) || null,
+        divergenceSceneIndex:
+          branchPoint?.divergenceSceneIndex ?? timingChoice?.divergenceSceneIndex ?? null,
+        switchAtSeconds: timingChoice?.switchAtSeconds ?? null,
+        options: divergencePaths.map((option, optionIndex) => {
+          const childNodeId = option?.childNodeId || null;
+          const matchingChoice = matchingChoices.find((choice) => (
+            choice.nodeId === childNodeId
+          ));
+          return {
+            childNodeId,
+            branchOrdinal: Number(
+              option?.branchOrdinal ?? matchingChoice?.branchOrdinal ?? optionIndex + 1,
+            ),
+            branchingHint:
+              option?.path_name || option?.pathName || matchingChoice?.pathName || null,
+            description:
+              option?.path_description ||
+              option?.pathDescription ||
+              matchingChoice?.pathDescription ||
+              null,
+            leafPathIds: paths
+              .filter((path) => (
+                Array.isArray(path?.selectionTrail) &&
+                path.selectionTrail.some((choice) => choice.nodeId === childNodeId)
+              ))
+              .map((path) => path.pathId),
+          };
+        }),
+      };
+    }),
+  };
 }
 
 function buildTimelineItem({ unit, sceneIndex, sequenceIndex, durationOffset }) {
@@ -253,12 +328,19 @@ export function buildBranchedVideoSessionPlan(movieResourceList, {
       durationOffset += Number(scene.duration);
     }
 
+    const selectionTrail = buildSelectionTrail(ancestry, branchPointByParentId, leafScenes);
+    const immediateSelection = selectionTrail.at(-1) || null;
     paths.push({
       pathId: leafNodeId,
       leafNodeId,
       ordinal,
       nodeIds: ancestry.map((node) => node.nodeId),
-      selectionTrail: buildSelectionTrail(ancestry, branchPointByParentId, leafScenes),
+      branchingHint: immediateSelection?.pathName || null,
+      branchingDescription: immediateSelection?.pathDescription || null,
+      branchPointId: immediateSelection?.branchPointId || null,
+      divergenceSceneIndex: immediateSelection?.divergenceSceneIndex ?? null,
+      switchAtSeconds: immediateSelection?.switchAtSeconds ?? null,
+      selectionTrail,
       duration: durationOffset,
       timeline,
       audioTimeline,
@@ -304,12 +386,22 @@ export function buildBranchedVideoSessionPlan(movieResourceList, {
     canonicalDurationOffset += duration;
   }
 
+  const defaultBranchPathId = paths[0]?.pathId || null;
+  const effectiveBranchingMeta = deepCloneJson(branchingMeta || calculatedBranchingMeta);
   return {
     narrativeType: 'branched',
     renderPlanVersion: BRANCHED_VIDEO_RENDER_PLAN_VERSION,
     cumulativeLayerDuration: canonicalDurationOffset,
-    defaultBranchPathId: paths[0]?.pathId || null,
-    branchingMeta: deepCloneJson(branchingMeta || calculatedBranchingMeta),
+    defaultBranchPathId,
+    branchingMeta: effectiveBranchingMeta,
+    branchingTimeline: buildBranchingTimelineFromRenderPaths({
+      // Build the render graph from the validated tree metadata. A supplied
+      // metadata snapshot is retained above for provenance, but may come from
+      // an older request that did not persist the branch-point catalog.
+      branchingMeta: calculatedBranchingMeta,
+      branchRenderPaths: paths,
+      defaultBranchPathId,
+    }),
     canonicalMovieResourceList: {
       scenes: canonicalScenes,
       sounds: canonicalSounds,

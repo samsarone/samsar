@@ -3,6 +3,7 @@ import test from 'node:test';
 
 import {
   buildBranchDurationSessionMetadata,
+  buildBranchingTimeline,
   normalizeBranchRenderPathTimings,
   retimeBranchRenderPathsForSharedLayer,
 } from './BranchRenderTiming.js';
@@ -169,6 +170,8 @@ test('shared layer duration changes reflow every referencing path and its audio'
   assert.equal(result[1].timeline[1].durationOffset, 7);
   assert.equal(result[0].selectionTrail[0].switchAtSeconds, 7);
   assert.equal(result[1].selectionTrail[0].switchAtSeconds, 7);
+  assert.equal(result[0].switchAtSeconds, 7);
+  assert.equal(result[1].switchAtSeconds, 7);
 
   const [speech, effect, music, global] = result[0].audioTimeline;
   assert.deepEqual(
@@ -289,4 +292,67 @@ test('shared duration retiming rejects invalid identity or duration inputs', () 
     () => retimeBranchRenderPathsForSharedLayer({ layerId: 'layer-1', duration: 0 }),
     /shared layer id and positive duration/i,
   );
+});
+
+test('compact branching timeline follows final retimed selection timings', () => {
+  const branchRenderPaths = [
+    {
+      pathId: 'root.1',
+      nodeIds: ['root', 'root.1'],
+      selectionTrail: [{
+        branchPointId: 'branch:root',
+        parentNodeId: 'root',
+        nodeId: 'root.1',
+        level: 1,
+        branchOrdinal: 1,
+        divergenceSceneIndex: 0,
+        switchAtSeconds: 7,
+        pathName: 'Follow the light',
+        pathDescription: 'The traveler follows the light into the valley.',
+      }],
+    },
+    {
+      pathId: 'root.2',
+      nodeIds: ['root', 'root.2'],
+      selectionTrail: [{
+        branchPointId: 'branch:root',
+        parentNodeId: 'root',
+        nodeId: 'root.2',
+        level: 1,
+        branchOrdinal: 2,
+        divergenceSceneIndex: 0,
+        switchAtSeconds: 7,
+        pathName: 'Wait in the dark',
+        pathDescription: 'The traveler waits for the storm to pass.',
+      }],
+    },
+  ];
+  const result = buildBranchingTimeline({
+    branchRenderPaths,
+    branchingMeta: {
+      rootNodeId: 'root',
+      branchPoints: [{
+        branchPointId: 'branch:root',
+        parentNodeId: 'root',
+        level: 1,
+        divergenceSceneIndex: 0,
+        divergencePaths: [
+          { childNodeId: 'root.1', path_name: 'Follow the light', path_description: 'The traveler follows the light into the valley.' },
+          { childNodeId: 'root.2', path_name: 'Wait in the dark', path_description: 'The traveler waits for the storm to pass.' },
+        ],
+      }],
+    },
+    defaultBranchPathId: 'root.1',
+  });
+
+  assert.equal(result.schemaVersion, 'branching_timeline.v1');
+  assert.equal(result.defaultPathId, 'root.1');
+  assert.equal(result.choicePoints[0].switchAtSeconds, 7);
+  assert.deepEqual(result.choicePoints[0].options[0], {
+    childNodeId: 'root.1',
+    branchOrdinal: 1,
+    branchingHint: 'Follow the light',
+    description: 'The traveler follows the light into the valley.',
+    leafPathIds: ['root.1'],
+  });
 });

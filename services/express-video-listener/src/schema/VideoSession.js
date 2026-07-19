@@ -239,6 +239,7 @@ const videoSessionSchema = new Schema({
     default: null,
   },
   branchingMeta: { type: Schema.Types.Mixed, default: null },
+  branchingTimeline: { type: Schema.Types.Mixed, default: null },
   renderPlanVersion: { type: Number, default: null },
   defaultBranchPathId: { type: String, default: null },
   branchRenderPaths: { type: [Schema.Types.Mixed], default: [] },

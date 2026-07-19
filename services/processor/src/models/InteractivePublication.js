@@ -115,6 +115,16 @@ export function serializeInteractivePublication(publication) {
   if (!publication) return null;
   const source = toPlainObject(publication);
   const publicationId = source._id?.toString?.() || source.id || null;
+  const manifest = serializeInteractivePublicationManifest(source.manifest);
+  const defaultPath = manifest?.outputs?.paths?.find((path) => (
+    path?.path_id === manifest.default_path_id && path?.is_default === true
+  ));
+  const mainVideoUrl = normalizeOptionalString(source.mainVideoUrl) ||
+    normalizeOptionalString(defaultPath?.contentUrl);
+  const mainThumbnailUrl = normalizeOptionalString(source.mainThumbnailUrl) ||
+    normalizeOptionalString(source.thumbnailUrl) ||
+    normalizeOptionalString(defaultPath?.thumbnailUrl);
+  const duration = Number(source.duration ?? defaultPath?.duration);
 
   return {
     id: publicationId,
@@ -126,11 +136,15 @@ export function serializeInteractivePublication(publication) {
     creatorHandle: source.creatorHandle || '',
     ...(source.slug ? { slug: source.slug } : {}),
     datePublished: source.datePublished || source.createdAt || null,
-    thumbnailUrl: source.thumbnailUrl || null,
+    mainVideoUrl,
+    mainThumbnailUrl,
+    duration: Number.isFinite(duration) && duration >= 0 ? duration : null,
+    // Keep the standard public poster field while exposing its role explicitly.
+    thumbnailUrl: mainThumbnailUrl,
     aspectRatio: source.aspectRatio || null,
     inLanguage: source.inLanguage || null,
     hasSubtitles: typeof source.hasSubtitles === 'boolean' ? source.hasSubtitles : null,
-    manifest: serializeInteractivePublicationManifest(source.manifest),
+    manifest,
   };
 }
 
@@ -145,6 +159,8 @@ export function isInteractivePublicationPubliclyRenderable(publication) {
     source?.isPublished !== true ||
     source?.isRenderable !== true ||
     !serialized?.id ||
+    !isPublicPublicationMediaUrl(serialized.mainVideoUrl) ||
+    !isPublicPublicationMediaUrl(serialized.mainThumbnailUrl) ||
     !isPublicPublicationMediaUrl(serialized.thumbnailUrl) ||
     !Array.isArray(paths) ||
     paths.length === 0
@@ -155,6 +171,18 @@ export function isInteractivePublicationPubliclyRenderable(publication) {
   try {
     assertInteractivePublicationManifestRenderable(serialized.manifest);
   } catch {
+    return false;
+  }
+
+  const defaultPath = paths.find((path) => (
+    path?.path_id === serialized.manifest.default_path_id && path?.is_default === true
+  ));
+  if (
+    !defaultPath ||
+    defaultPath.contentUrl !== serialized.mainVideoUrl ||
+    !Number.isFinite(Number(serialized.duration)) ||
+    Number(serialized.duration) < 0
+  ) {
     return false;
   }
 
@@ -178,7 +206,12 @@ export function buildInteractivePublishedSessionUpdate(
   const defaultPath = serialized?.manifest?.outputs?.paths?.find((path) => (
     path.path_id === serialized.manifest.default_path_id && path.is_default === true
   ));
-  if (!serialized?.id || !defaultPath?.contentUrl || !defaultPath?.thumbnailUrl) {
+  if (
+    !serialized?.id ||
+    !defaultPath?.contentUrl ||
+    !serialized.mainVideoUrl ||
+    !serialized.mainThumbnailUrl
+  ) {
     throw new Error('InteractivePublication is missing its default public video path.');
   }
 
@@ -200,10 +233,10 @@ export function buildInteractivePublishedSessionUpdate(
     publishedDescription: serialized.description,
     publishedTags: serialized.tags,
     publishedAspectRatio: serialized.aspectRatio,
-    publishedVideoURL: defaultPath.contentUrl,
+    publishedVideoURL: serialized.mainVideoUrl,
     publishedAt,
     publishedOriginalPrompt: resolvePublicationOriginalPrompt(payload, session),
-    publishedSplashImage: defaultPath.thumbnailUrl,
+    publishedSplashImage: serialized.mainThumbnailUrl,
     publishedImageModel: imageModel,
     publishedVideoModel: videoModel,
     publishedHasSubtitles: serialized.hasSubtitles,
@@ -296,7 +329,10 @@ export async function createInteractivePublicationForSessionVideo(
           error.statusCode = 409;
           throw error;
         }
-        const media = await preparePathMedia(session, rawPath, { revisionId: mediaRevision });
+        const media = await preparePathMedia(session, rawPath, {
+          revisionId: mediaRevision,
+          isDefault: path.path_id === completedBranching.default_path_id,
+        });
         if (!isPublicPublicationMediaUrl(media.videoUrl) || !isPublicPublicationMediaUrl(media.thumbnailUrl)) {
           const error = new Error(`Interactive path ${path.path_id} did not produce public media URLs.`);
           error.statusCode = 500;
@@ -308,8 +344,15 @@ export async function createInteractivePublicationForSessionVideo(
     const manifest = buildInteractivePublicationManifest({
       completedBranching,
       publicMedia,
+      pathMetadata: [...rawPathsById.values()],
+      branchingTimeline: session.branchingTimeline,
     });
     const defaultPath = manifest.outputs.paths.find((path) => path.is_default);
+    const defaultPublicMedia = publicMedia.find((entry) => (
+      normalizeOptionalString(entry?.pathId || entry?.path_id) === defaultPath?.path_id
+    ));
+    const mainThumbnailUrl = normalizeOptionalString(defaultPublicMedia?.mainThumbnailUrl) ||
+      defaultPath?.thumbnailUrl;
     const inLanguage = resolveInLanguage(session, payload);
     const title = normalizeOptionalString(payload.title) ||
       normalizeOptionalString(session.sessionName) ||
@@ -333,7 +376,10 @@ export async function createInteractivePublicationForSessionVideo(
       title,
       description,
       tags: normalizeTags(payload.tags),
-      thumbnailUrl: defaultPath.thumbnailUrl,
+      mainVideoUrl: defaultPath.contentUrl,
+      mainThumbnailUrl,
+      duration: defaultPath.duration,
+      thumbnailUrl: mainThumbnailUrl,
       aspectRatio,
       inLanguage,
       hasSubtitles: resolveHasSubtitles(session, payload),

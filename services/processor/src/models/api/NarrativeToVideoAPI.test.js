@@ -316,6 +316,16 @@ test('branched submission preserves the tree and forwards branching metadata', a
   assert.equal(preparedPayload.sourceNarrativeType, 'branched');
   assert.equal(preparedPayload.movieResourceList.structureType, 'branched');
   assert.equal(preparedPayload.branchingMeta.numLevels, 1);
+  assert.deepEqual(
+    preparedPayload.branchingMeta.branchPoints[0].divergencePaths.map((path) => ({
+      path_name: path.path_name,
+      path_description: path.path_description,
+    })),
+    [
+      { path_name: 'City route', path_description: 'Continue toward the waking city.' },
+      { path_name: 'Forest route', path_description: 'Turn toward the quiet forest.' },
+    ],
+  );
   assert.deepEqual(source, sourceSnapshot);
 });
 

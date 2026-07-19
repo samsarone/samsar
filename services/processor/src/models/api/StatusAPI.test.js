@@ -200,6 +200,68 @@ test('normalized branching status provides stable aggregate progress and a clien
   });
 });
 
+test('normalized branching status prefers the persisted compact timing graph and leaf metadata', () => {
+  const fixture = buildLevelTwoBranchStatusFixture();
+  fixture.branchingTimeline = {
+    schemaVersion: 'branching_timeline.v1',
+    timing: { origin: 'media', unit: 'seconds' },
+    rootNodeId: 'root',
+    defaultPathId: 'root.1.1',
+    choicePoints: fixture.branchingMeta.branchPoints.map((branchPoint) => {
+      const matchingPath = fixture.branchRenderPaths.find((path) => (
+        path.selectionTrail.some((choice) => choice.branchPointId === branchPoint.branchPointId)
+      ));
+      const matchingChoice = matchingPath.selectionTrail.find((choice) => (
+        choice.branchPointId === branchPoint.branchPointId
+      ));
+      return {
+        branchPointId: branchPoint.branchPointId,
+        parentNodeId: branchPoint.parentNodeId,
+        level: branchPoint.level,
+        divergenceSceneIndex: branchPoint.divergenceSceneIndex,
+        switchAtSeconds: matchingChoice.switchAtSeconds,
+        options: branchPoint.divergencePaths.map((option) => ({
+          childNodeId: option.childNodeId,
+          branchOrdinal: option.branchOrdinal,
+          branchingHint: option.path_name,
+          description: option.path_description,
+          leafPathIds: fixture.branchRenderPaths
+            .filter((path) => path.selectionTrail.some((choice) => (
+              choice.nodeId === option.childNodeId
+            )))
+            .map((path) => path.pathId),
+        })),
+      };
+    }),
+  };
+  fixture.branchingTimeline.choicePoints[0].options[0].branchingHint = 'Persisted light hint';
+  fixture.branchingTimeline.choicePoints[0].options[0].description =
+    'Persisted compact branch description.';
+  const defaultLeafPath = fixture.branchRenderPaths.find((path) => path.pathId === 'root.1.1');
+  defaultLeafPath.branchingHint = 'Immediate leaf hint';
+  defaultLeafPath.branchingDescription = 'Immediate leaf description.';
+  defaultLeafPath.branchPointId = 'choice-root.1';
+  defaultLeafPath.divergenceSceneIndex = 3;
+  defaultLeafPath.switchAtSeconds = 20;
+
+  const status = buildNormalizedBranchingStatus(fixture);
+
+  assert.equal(status.paths[0].branching_hint, 'Immediate leaf hint');
+  assert.equal(status.paths[0].branching_description, 'Immediate leaf description.');
+  assert.equal(status.paths[0].branch_point_id, 'choice-root.1');
+  assert.equal(status.paths[0].divergence_scene_index, 3);
+  assert.equal(status.paths[0].switch_at_seconds, 20);
+  assert.equal(status.tree.choice_points[0].options[0].path_name, 'Persisted light hint');
+  assert.equal(
+    status.tree.choice_points[0].options[0].path_description,
+    'Persisted compact branch description.',
+  );
+  assert.deepEqual(status.tree.choice_points[0].options[0].leaf_path_ids, [
+    'root.1.1',
+    'root.1.2',
+  ]);
+});
+
 test('normalized branching status publishes all final URLs atomically after every path completes', () => {
   const fixture = completeBranchStatusFixture();
 
@@ -251,6 +313,36 @@ test('completed branch manifest contains one path-aware video list and normalize
   assert.equal(JSON.stringify(manifest).includes('stage_details'), false);
   assert.equal(JSON.stringify(manifest).includes('selection_trail'), false);
   assert.equal(JSON.stringify(manifest).includes('audio_timeline'), false);
+});
+
+test('branch status resolves thumbnail sources to one public thumbnail_url field', () => {
+  const fixture = completeBranchStatusFixture();
+  const defaultPath = fixture.branchRenderPaths.find((path) => path.pathId === 'root.1.1');
+  defaultPath.thumbnailPath = 'assets_v2/video/thumbnails/root.1.1.png';
+  const otherPath = fixture.branchRenderPaths.find((path) => path.pathId === 'root.1.2');
+  otherPath.thumbnailUrl = 'https://cdn.example.com/root.1.2.png';
+
+  const branching = buildNormalizedBranchingStatus(fixture);
+  const legacyResults = buildBranchVideoResults(fixture);
+  const defaultStatusPath = branching.paths.find((path) => path.path_id === 'root.1.1');
+  const defaultOutputPath = branching.outputs.paths.find((path) => path.path_id === 'root.1.1');
+  const manifest = buildCompletedBranchingManifest(branching);
+  const manifestPath = manifest.outputs.paths.find((path) => path.path_id === 'root.1.1');
+
+  assert.equal(
+    defaultStatusPath.thumbnail_url,
+    'https://static.samsar.one/assets_v2/video/thumbnails/root.1.1.png',
+  );
+  assert.equal(defaultOutputPath.thumbnail_url, defaultStatusPath.thumbnail_url);
+  assert.equal(
+    legacyResults.find((path) => path.path_id === 'root.1.1').thumbnail_url,
+    defaultStatusPath.thumbnail_url,
+  );
+  assert.equal(manifestPath.thumbnail_url, defaultStatusPath.thumbnail_url);
+  assert.equal(branching.paths.find((path) => path.path_id === 'root.1.2').thumbnail_url,
+    'https://cdn.example.com/root.1.2.png');
+  assert.equal(JSON.stringify(branching).includes('thumbnailPath'), false);
+  assert.equal(JSON.stringify(branching).includes('thumbnailUrl'), false);
 });
 
 test('public completed branched status removes billing and duplicate output aliases', () => {
@@ -514,6 +606,12 @@ test('status projections exclude branch frame lists while detailed status includ
   const detailedFields = VIDEO_STATUS_DETAILED_SESSION_PROJECTION.split(' ');
 
   assert.equal(baseFields.includes('branchRenderPaths'), false);
+  assert.equal(baseFields.includes('branchingTimeline'), true);
+  assert.equal(baseFields.includes('branchRenderPaths.branchingHint'), true);
+  assert.equal(baseFields.includes('branchRenderPaths.branchingDescription'), true);
+  assert.equal(baseFields.includes('branchRenderPaths.switchAtSeconds'), true);
+  assert.equal(baseFields.includes('branchRenderPaths.thumbnailUrl'), true);
+  assert.equal(baseFields.includes('branchRenderPaths.thumbnailPath'), true);
   assert.equal(baseFields.some((field) => field.includes('timeline.frames')), false);
   assert.equal(detailedFields.some((field) => field.includes('timeline.frames')), false);
   assert.equal(detailedFields.includes('branchRenderPaths.timeline.layerId'), true);

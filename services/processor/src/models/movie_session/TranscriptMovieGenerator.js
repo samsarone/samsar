@@ -1713,6 +1713,9 @@ async function requestQuickMovieGenerationInternal(userId, payload, {
             ? {
               renderPlanVersion: branchedVideoSessionPlan.renderPlanVersion,
               defaultBranchPathId: branchedVideoSessionPlan.defaultBranchPathId,
+              branchingTimeline: clonePreparedNarrativeArtifact(
+                branchedVideoSessionPlan.branchingTimeline,
+              ),
               branchRenderPaths: clonePreparedNarrativeArtifact(
                 branchedVideoSessionPlan.branchRenderPaths,
               ),
@@ -1850,6 +1853,9 @@ async function requestQuickMovieGenerationInternal(userId, payload, {
           branchRenderPaths: materializedBranchRenderPaths,
           renderPlanVersion: branchedVideoSessionPlan.renderPlanVersion,
           defaultBranchPathId: branchedVideoSessionPlan.defaultBranchPathId,
+          branchingTimeline: clonePreparedNarrativeArtifact(
+            branchedVideoSessionPlan.branchingTimeline,
+          ),
         }
         : {}),
     },

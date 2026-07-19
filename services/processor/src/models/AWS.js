@@ -933,6 +933,34 @@ export async function deleteObjectFromPublicationsMedia({ key }) {
   }));
 }
 
+export async function deleteObjectsFromPublicationsMediaWithPrefix({ prefix }) {
+  assertPublicationsMediaConfigured();
+  const normalizedPrefix = normalizeObjectKey(prefix).replace(/\/+$/g, '');
+  if (!normalizedPrefix || normalizedPrefix.split('/').includes('..')) {
+    throw new Error('A safe prefix is required for publication media deletion.');
+  }
+
+  const config = getPublicationsMediaConfig();
+  if (shouldUseDockerLocalMedia() && config.bucketName === MEDIA_BUCKET_NAME) {
+    const targetPath = getDockerMediaFilePath(
+      `${SECURE_ASSET_PREFIX}/${normalizedPrefix}`,
+    );
+    const assetsRoot = path.resolve(process.env.SAMSAR_ASSETS_V2_ROOT || '/assets_v2');
+    const resolvedTargetPath = path.resolve(targetPath);
+    if (!resolvedTargetPath.startsWith(`${assetsRoot}${path.sep}`)) {
+      throw new Error('Refusing to delete publication media outside the assets root.');
+    }
+    await fs.promises.rm(resolvedTargetPath, { recursive: true, force: true });
+    return normalizedPrefix;
+  }
+
+  await deleteObjectsWithPrefix({
+    bucketName: config.bucketName,
+    prefix: `${normalizedPrefix}/`,
+  });
+  return normalizedPrefix;
+}
+
 export async function getObjectFromS3({ bucketName, key, range = null }) {
   if (!bucketName) {
     throw new Error('Missing bucketName for getObjectFromS3');

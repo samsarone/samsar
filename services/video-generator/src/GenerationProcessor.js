@@ -10,7 +10,11 @@ import sharp from 'sharp';
 import { getDatabase, getDBConnectionString } from "./DBString.js";
 import { deleteFramesForGeneration } from './utils/FrameUtils.js';
 import { updateSendCompletionNotificationToUser } from './utils/NotificationUtils.js';
-import { uploadPublicationThumbnailToCDN, uploadVideoToCDN } from './utils/AWS.js';
+import {
+  uploadBranchPublicationThumbnailToCDN,
+  uploadPublicationThumbnailToCDN,
+  uploadVideoToCDN,
+} from './utils/AWS.js';
 import { installStructuredLogger } from './utils/StructuredLogger.js';
 import {
   buildDockerFinalVideoQueueRepairBranchPathPatch,
@@ -20,11 +24,13 @@ import {
 } from './utils/DockerFinalVideoQueueRepair.js';
 import {
   areAllBranchPathVideosComplete,
+  buildBranchThumbnailAssetPath,
   findBranchRenderPath,
   getDefaultBranchRenderPath,
   getRepairableBranchRenderPaths,
   isBranchedVideoSession,
   normalizeBranchRenderId,
+  resolveBranchThumbnailTimelineIndex,
   resolveBranchRenderContext,
 } from './utils/BranchRenderPlan.js';
 import {
@@ -153,6 +159,96 @@ function resolveExistingProcessorAssetPath(assetPath, pwd) {
 
 function resolveProcessorAssetWritePath(pwd, ...segments) {
   return path.join(resolveProcessorAssetsRoot(pwd, 'v2'), ...segments);
+}
+
+function ensureBranchThumbnailArtifact({
+  branchRenderContext,
+  copiedLayerFrameRanges,
+  pwd,
+  sessionId,
+}) {
+  if (!branchRenderContext) return null;
+
+  const configuredThumbnailPath = typeof branchRenderContext.renderPath?.thumbnailPath === 'string'
+    ? branchRenderContext.renderPath.thumbnailPath.trim()
+    : '';
+  const existingThumbnailPath = configuredThumbnailPath
+    ? resolveExistingProcessorAssetPath(configuredThumbnailPath, pwd)
+    : null;
+  if (existingThumbnailPath) {
+    return {
+      thumbnailPath: configuredThumbnailPath,
+      absoluteThumbnailPath: existingThumbnailPath,
+      thumbnailSource: branchRenderContext.renderPath?.thumbnailSource || null,
+    };
+  }
+
+  const timelineIndex = resolveBranchThumbnailTimelineIndex(branchRenderContext.renderPath);
+  const timeline = Array.isArray(branchRenderContext.renderPath?.timeline)
+    ? branchRenderContext.renderPath.timeline
+    : [];
+  const timelineEntry = timelineIndex === null ? null : timeline[timelineIndex];
+  const sourceRange = (Array.isArray(copiedLayerFrameRanges) ? copiedLayerFrameRanges : [])
+    .find((range) => (
+      Number(range?.layer?.timelineIndex) === Number(timelineIndex) ||
+      (
+        timelineEntry?.layerId &&
+        normalizeBranchRenderId(range?.layerId) === normalizeBranchRenderId(timelineEntry.layerId)
+      )
+    ));
+  const sourceFramePath = sourceRange?.sourceFolderPath
+    ? path.join(sourceRange.sourceFolderPath, '0.png')
+    : null;
+  if (!sourceFramePath || !fs.existsSync(sourceFramePath)) {
+    throw new Error(
+      `Cannot create branch thumbnail for ${branchRenderContext.renderPathId}: ` +
+      'the first divergence-layer frame is missing.',
+    );
+  }
+
+  const thumbnailPath = buildBranchThumbnailAssetPath(
+    sessionId,
+    branchRenderContext.renderPathId,
+  );
+  const absoluteThumbnailPath = resolveProcessorAssetWritePath(
+    pwd,
+    ...stripAssetPrefix(thumbnailPath).split('/').filter(Boolean),
+  );
+  fs.mkdirSync(path.dirname(absoluteThumbnailPath), { recursive: true });
+  fs.copyFileSync(sourceFramePath, absoluteThumbnailPath);
+
+  const selectionTrail = Array.isArray(branchRenderContext.renderPath?.selectionTrail)
+    ? branchRenderContext.renderPath.selectionTrail
+    : [];
+  const immediateSelection = selectionTrail.at(-1) || {};
+  const sceneIndexValue = timelineEntry?.sceneIndex ?? timelineEntry?.scene_index;
+  const divergenceSceneIndexValue =
+    immediateSelection?.divergenceSceneIndex ??
+    immediateSelection?.divergence_scene_index ??
+    branchRenderContext.renderPath?.divergenceSceneIndex;
+  return {
+    thumbnailPath,
+    absoluteThumbnailPath,
+    thumbnailSource: {
+      timelineIndex,
+      layerId: normalizeBranchRenderId(timelineEntry?.layerId) || null,
+      pathSequenceIndex: Number.isInteger(Number(timelineEntry?.sequenceIndex))
+        ? Number(timelineEntry.sequenceIndex)
+        : timelineIndex,
+      sceneIndex: sceneIndexValue !== null && sceneIndexValue !== undefined &&
+        Number.isInteger(Number(sceneIndexValue))
+        ? Number(sceneIndexValue)
+        : null,
+      framePath: thumbnailPath,
+      divergenceSceneIndex: divergenceSceneIndexValue !== null &&
+        divergenceSceneIndexValue !== undefined &&
+        Number.isInteger(Number(divergenceSceneIndexValue))
+        ? Number(divergenceSceneIndexValue)
+        : null,
+      selectionTrailIndex: selectionTrail.length ? selectionTrail.length - 1 : null,
+      reason: 'final_render_fallback',
+    },
+  };
 }
 
 function normalizeAudioLayerType(value) {
@@ -1774,6 +1870,7 @@ export async function generatePendingVideoRequests() {
          */
         const copiedLayerFrameRanges = [];
         const missingLayerFrameSources = [];
+        let branchThumbnailArtifact = null;
         for (let counter = 0; counter < sessionLayers.length; counter++) {
           const currentLayer = sessionLayers[counter];
           const currentLayerId = getLayerObjectId(currentLayer);
@@ -1855,6 +1952,7 @@ export async function generatePendingVideoRequests() {
               layerIndex: counter,
               layerId: currentLayerId,
               layer: currentLayer,
+              sourceFolderPath: currentFolderPath,
               startIndex: layerOutputStartIndex,
               endIndex: layerOutputEndIndex,
             });
@@ -1948,6 +2046,15 @@ export async function generatePendingVideoRequests() {
             previousRange: effectivePreviousRange,
             nextRange: effectiveNextRange,
             framesPerSecond: frameRate,
+          });
+        }
+
+        if (branchRenderContext) {
+          branchThumbnailArtifact = ensureBranchThumbnailArtifact({
+            branchRenderContext,
+            copiedLayerFrameRanges,
+            pwd,
+            sessionId: videoSessionId,
           });
         }
 
@@ -2093,6 +2200,31 @@ export async function generatePendingVideoRequests() {
 
         // Upload to CDN
         const vidRemoteLink = await uploadVideoToCDN(outputPath, outputBase);
+        let branchThumbnailUrl = null;
+        let branchThumbnailUploadError = null;
+        if (branchRenderContext) {
+          const existingThumbnailUrl = typeof branchRenderContext.renderPath?.thumbnailUrl === 'string'
+            ? branchRenderContext.renderPath.thumbnailUrl.trim()
+            : '';
+          try {
+            if (branchThumbnailArtifact?.absoluteThumbnailPath) {
+              branchThumbnailUrl = await uploadBranchPublicationThumbnailToCDN(
+                branchThumbnailArtifact.absoluteThumbnailPath,
+                videoSessionId,
+                branchRenderContext.renderPathId,
+              );
+            } else if (existingThumbnailUrl) {
+              branchThumbnailUrl = existingThumbnailUrl;
+            }
+          } catch (thumbnailUploadError) {
+            branchThumbnailUploadError = thumbnailUploadError?.message || String(thumbnailUploadError);
+            branchThumbnailUrl = existingThumbnailUrl || null;
+            console.error(
+              `Branch video completed but its render-time thumbnail upload failed for ` +
+              `${branchRenderContext.renderPathId}: ${branchThumbnailUploadError}`,
+            );
+          }
+        }
         let aggregateVideoLink = outputBase;
         let aggregateRemoteURL = vidRemoteLink;
         let aggregateSession = videoSession;
@@ -2100,7 +2232,7 @@ export async function generatePendingVideoRequests() {
 
         if (branchRenderContext) {
           const branchPathPrefix = `branchRenderPaths.${branchRenderContext.pathIndex}`;
-          await VideoSession.updateOne(
+          const branchCompletionResult = await VideoSession.updateOne(
             {
               _id: videoSessionId,
               [`${branchPathPrefix}.pathId`]: branchRenderContext.renderPathId,
@@ -2113,9 +2245,24 @@ export async function generatePendingVideoRequests() {
                 [`${branchPathPrefix}.videoGenerationCompletedAt`]: new Date(),
                 [`${branchPathPrefix}.videoLink`]: outputBase,
                 [`${branchPathPrefix}.remoteURL`]: vidRemoteLink,
+                ...(branchThumbnailArtifact?.thumbnailPath
+                  ? { [`${branchPathPrefix}.thumbnailPath`]: branchThumbnailArtifact.thumbnailPath }
+                  : {}),
+                ...(branchThumbnailArtifact?.thumbnailSource
+                  ? { [`${branchPathPrefix}.thumbnailSource`]: branchThumbnailArtifact.thumbnailSource }
+                  : {}),
+                ...(branchThumbnailUrl
+                  ? { [`${branchPathPrefix}.thumbnailUrl`]: branchThumbnailUrl }
+                  : {}),
+                [`${branchPathPrefix}.thumbnailUploadError`]: branchThumbnailUploadError,
               },
             },
           );
+          if (branchCompletionResult.matchedCount !== 1) {
+            throw new Error(
+              `Branch render path ${branchRenderContext.renderPathId} stopped accepting its video and thumbnail result.`,
+            );
+          }
           await VideoGeneration.deleteOne({ _id: videoRequest._id });
 
           aggregateSession = await VideoSession.findById(videoSessionId).lean();

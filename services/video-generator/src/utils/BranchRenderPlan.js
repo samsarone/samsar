@@ -118,6 +118,62 @@ export function sanitizeBranchRenderPathSegment(renderPathId) {
   return `path-${Buffer.from(normalizedRenderPathId).toString('base64url')}`;
 }
 
+function normalizeNonNegativeInteger(value) {
+  const normalized = Number(value);
+  return Number.isInteger(normalized) && normalized >= 0 ? normalized : null;
+}
+
+/**
+ * Returns the render-path timeline item whose first frame is the thumbnail for
+ * this leaf. The last selection-trail entry is the immediate-parent branch,
+ * which is the correct boundary for nested paths.
+ */
+export function resolveBranchThumbnailTimelineIndex(renderPath = {}) {
+  const timeline = Array.isArray(renderPath?.timeline) ? renderPath.timeline : [];
+  if (!timeline.length) return null;
+
+  const persistedTimelineIndex = normalizeNonNegativeInteger(
+    renderPath?.thumbnailSource?.timelineIndex,
+  );
+  if (persistedTimelineIndex !== null && persistedTimelineIndex < timeline.length) {
+    return persistedTimelineIndex;
+  }
+
+  const selectionTrail = Array.isArray(renderPath?.selectionTrail)
+    ? renderPath.selectionTrail
+    : [];
+  const immediateSelection = selectionTrail.at(-1) || {};
+  const divergenceSceneIndex = normalizeNonNegativeInteger(
+    immediateSelection?.divergenceSceneIndex ??
+    immediateSelection?.divergence_scene_index ??
+    renderPath?.divergenceSceneIndex ??
+    renderPath?.divergence_scene_index,
+  );
+  if (divergenceSceneIndex !== null) {
+    const exactIndex = timeline.findIndex((entry) => (
+      normalizeNonNegativeInteger(entry?.sceneIndex ?? entry?.scene_index) ===
+      divergenceSceneIndex + 1
+    ));
+    if (exactIndex >= 0) return exactIndex;
+
+    const nextIndex = timeline.findIndex((entry) => {
+      const sceneIndex = normalizeNonNegativeInteger(entry?.sceneIndex ?? entry?.scene_index);
+      return sceneIndex !== null && sceneIndex > divergenceSceneIndex;
+    });
+    if (nextIndex >= 0) return nextIndex;
+  }
+
+  return 0;
+}
+
+export function buildBranchThumbnailAssetPath(sessionId, renderPathId) {
+  const normalizedSessionId = normalizeBranchRenderId(sessionId);
+  if (!/^[A-Za-z0-9_-]+$/.test(normalizedSessionId)) {
+    throw new Error('A filesystem-safe sessionId is required for a branch thumbnail.');
+  }
+  return `/video/splash/${normalizedSessionId}/paths/${sanitizeBranchRenderPathSegment(renderPathId)}/thumbnail.png`;
+}
+
 function buildEffectiveLayer(sourceLayer, timelineEntry, sequenceIndex) {
   const source = toPlainObject(sourceLayer);
   const timeline = toPlainObject(timelineEntry);

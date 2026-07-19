@@ -91,6 +91,11 @@ test('database-page pagination serializes limit records and retains exact metada
   assert.equal(firstPage.totalCount, 3);
   assert.equal(firstPage.hasMore, true);
   assert.equal(firstPage.nextCursor, newest._id);
+  assert.equal(
+    firstPage.items[0].mainVideoUrl,
+    newest.manifest.outputs.paths[0].contentUrl,
+  );
+  assert.equal(firstPage.items[0].mainThumbnailUrl, newest.thumbnailUrl);
 
   const secondPage = paginatePublicInteractivePublications(
     [oldest],

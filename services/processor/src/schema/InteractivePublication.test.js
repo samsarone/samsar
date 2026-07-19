@@ -15,6 +15,8 @@ test('InteractivePublication uses explicit render-focused manifest fields', () =
   assert.equal(paths.mediaRevision.isRequired, true);
   assert.equal(paths.publicationId, undefined);
   assert.equal(paths.thumbnailUrl.isRequired, true);
+  assert.equal(paths.mainVideoUrl.defaultValue, null);
+  assert.equal(paths.mainThumbnailUrl.defaultValue, null);
   assert.equal(paths.publicRenderableVersion.defaultValue, null);
   assert.equal(paths.isPublished.defaultValue, false);
   assert.equal(paths.isRenderable.defaultValue, false);
@@ -51,7 +53,10 @@ test('InteractivePublication preserves status-compatible graph keys and standard
     mediaRevision: 'revision-1',
     createdBy: '507f191e810c19729de860ea',
     title: 'Choose a path',
-    thumbnailUrl: 'https://static.samsar.one/published/session-1/interactive/paths/root.1/thumbnail.png',
+    mainVideoUrl: 'https://static.samsar.one/published/session-1/interactive/paths/root.1/video.mp4',
+    mainThumbnailUrl: 'https://static.samsar.one/published/session-1/interactive/main/thumbnail.png',
+    duration: 20,
+    thumbnailUrl: 'https://static.samsar.one/published/session-1/interactive/main/thumbnail.png',
     manifest: {
       default_path_id: 'root.1',
       tree: {

@@ -12,9 +12,11 @@ import { getFramesPerSecondFromValue } from './utils/FpsUtils.js';
 import { installStructuredLogger } from './utils/StructuredLogger.js';
 import { prepareLayerSubtitlesForRendering } from './utils/SubtitleRenderPolicy.js';
 import {
+  buildBranchThumbnailAssetPath,
   buildEffectiveBranchSession,
   buildFrameOutputNamespace,
   isBranchPathFrameComplete,
+  resolveBranchThumbnailSource,
   resolveBranchRenderContext,
 } from './utils/BranchRenderPath.js';
 
@@ -556,6 +558,48 @@ function resolveAssetAbsolutePath(assetPath) {
     ];
 
   return candidates.find((candidate) => fs.existsSync(candidate)) || candidates[0];
+}
+
+function persistBranchThumbnailFrame({ sessionId, renderPathId, sourceFramePath }) {
+  if (!sourceFramePath || !fs.existsSync(sourceFramePath)) {
+    throw new Error(
+      `Cannot create branch thumbnail for ${renderPathId}: source frame is missing.`,
+    );
+  }
+
+  const thumbnailPath = buildBranchThumbnailAssetPath({ sessionId, renderPathId });
+  const relativeThumbnailPath = stripAssetPrefix(thumbnailPath);
+  const thumbnailTargets = [
+    path.join(resolveSamsarProcessorAssetsRoot('v2'), relativeThumbnailPath),
+    path.join(resolveSamsarProcessorAssetsRoot('legacy'), relativeThumbnailPath),
+  ];
+  const errors = [];
+  let persisted = false;
+
+  for (const targetPath of thumbnailTargets) {
+    try {
+      fs.mkdirSync(path.dirname(targetPath), { recursive: true });
+      fs.copyFileSync(sourceFramePath, targetPath);
+      persisted = true;
+    } catch (error) {
+      errors.push(`${targetPath}: ${error?.message || error}`);
+    }
+  }
+
+  if (!persisted) {
+    throw new Error(
+      `Failed to persist branch thumbnail for ${renderPathId}: ${errors.join('; ')}`,
+    );
+  }
+  if (errors.length > 0) {
+    console.warn('[frames_processor] Branch thumbnail was not mirrored to every asset root', {
+      sessionId,
+      renderPathId,
+      errors,
+    });
+  }
+
+  return thumbnailPath;
 }
 
 function getFrameSourceIdentity({ sourceType, normalizedVideoPath, videoPath }) {
@@ -1994,25 +2038,49 @@ async function generateFramesForSession(generationId, sessionId, layerId, branch
       });
     }
 
+    const branchPathPrefix = `branchRenderPaths.${latestBranchContext.pathIndex}`;
+    const branchUpdateSet = {
+      [`${branchPathPrefix}.timeline.${latestBranchContext.timelineIndex}.frames`]: framesList,
+      [`${branchPathPrefix}.timeline.${latestBranchContext.timelineIndex}.frameGenerationPending`]: false,
+      [`${branchPathPrefix}.timeline.${latestBranchContext.timelineIndex}.frameGenerationStatus`]: 'COMPLETED',
+      [`${branchPathPrefix}.timeline.${latestBranchContext.timelineIndex}.frameGenerationError`]: null,
+      [`${branchPathPrefix}.timeline.${latestBranchContext.timelineIndex}.error`]: null,
+      [`${branchPathPrefix}.frameGenerationPending`]: true,
+      [`${branchPathPrefix}.frameGenerationStatus`]: 'GENERATING',
+      [`${branchPathPrefix}.frameGenerationError`]: null,
+      frameGenerationPending: true,
+    };
+    const branchThumbnailSource = resolveBranchThumbnailSource(
+      latestSession.branchRenderPaths?.[latestBranchContext.pathIndex],
+      latestSession.branchRenderPaths,
+    );
+    if (
+      branchThumbnailSource &&
+      branchThumbnailSource.pathSequenceIndex === latestBranchContext.pathSequenceIndex
+    ) {
+      const firstFrame = framesList[0];
+      const firstFramePath = resolveAssetAbsolutePath(firstFrame);
+      branchUpdateSet[`${branchPathPrefix}.thumbnailPath`] = persistBranchThumbnailFrame({
+        sessionId,
+        renderPathId: latestBranchContext.renderPathId,
+        sourceFramePath: firstFramePath,
+      });
+      branchUpdateSet[`${branchPathPrefix}.thumbnailUrl`] = null;
+      branchUpdateSet[`${branchPathPrefix}.thumbnailSource`] = {
+        ...branchThumbnailSource,
+        framePath: firstFrame,
+      };
+    }
+
     const branchUpdateResult = await VideoSession.updateOne(
       {
         _id: sessionId,
-        [`branchRenderPaths.${latestBranchContext.pathIndex}.pathId`]: latestBranchContext.renderPathId,
-        [`branchRenderPaths.${latestBranchContext.pathIndex}.frameGenerationStatus`]: { $ne: 'FAILED' },
-        [`branchRenderPaths.${latestBranchContext.pathIndex}.timeline.${latestBranchContext.timelineIndex}.frameGenerationStatus`]: { $ne: 'FAILED' },
+        [`${branchPathPrefix}.pathId`]: latestBranchContext.renderPathId,
+        [`${branchPathPrefix}.frameGenerationStatus`]: { $ne: 'FAILED' },
+        [`${branchPathPrefix}.timeline.${latestBranchContext.timelineIndex}.frameGenerationStatus`]: { $ne: 'FAILED' },
       },
       {
-        $set: {
-          [`branchRenderPaths.${latestBranchContext.pathIndex}.timeline.${latestBranchContext.timelineIndex}.frames`]: framesList,
-          [`branchRenderPaths.${latestBranchContext.pathIndex}.timeline.${latestBranchContext.timelineIndex}.frameGenerationPending`]: false,
-          [`branchRenderPaths.${latestBranchContext.pathIndex}.timeline.${latestBranchContext.timelineIndex}.frameGenerationStatus`]: 'COMPLETED',
-          [`branchRenderPaths.${latestBranchContext.pathIndex}.timeline.${latestBranchContext.timelineIndex}.frameGenerationError`]: null,
-          [`branchRenderPaths.${latestBranchContext.pathIndex}.timeline.${latestBranchContext.timelineIndex}.error`]: null,
-          [`branchRenderPaths.${latestBranchContext.pathIndex}.frameGenerationPending`]: true,
-          [`branchRenderPaths.${latestBranchContext.pathIndex}.frameGenerationStatus`]: 'GENERATING',
-          [`branchRenderPaths.${latestBranchContext.pathIndex}.frameGenerationError`]: null,
-          frameGenerationPending: true,
-        },
+        $set: branchUpdateSet,
       },
     );
     if (branchUpdateResult.matchedCount !== 1) {

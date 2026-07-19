@@ -65,6 +65,22 @@ function getTimelineLayerId(entry = {}) {
   return normalizeId(entry.layerId ?? entry.layer_id);
 }
 
+function getTimelineSceneIndex(entry = {}) {
+  return normalizeSequenceIndex(entry.sceneIndex ?? entry.scene_index);
+}
+
+function getTimelineSequenceIndex(entry = {}, arrayIndex = 0) {
+  return normalizeSequenceIndex(
+    entry.sequenceIndex ?? entry.pathSequenceIndex ?? entry.path_sequence_index,
+  ) ?? arrayIndex;
+}
+
+function getSelectionDivergenceSceneIndex(selection = {}) {
+  return normalizeSequenceIndex(
+    selection.divergenceSceneIndex ?? selection.divergence_scene_index,
+  );
+}
+
 function getPathDuration(path = {}, timeline = []) {
   const configuredDuration = Number(path.duration);
   if (Number.isFinite(configuredDuration) && configuredDuration > 0) {
@@ -198,6 +214,117 @@ export function buildFrameOutputNamespace({ sessionId, layerId, renderPathId = n
     getSafeRenderPathDirectoryName(renderPathId),
     safeLayerId,
   ].join('/');
+}
+
+export function buildBranchThumbnailAssetPath({ sessionId, renderPathId } = {}) {
+  const safeSessionId = requireSafeOpaqueSegment(sessionId, 'sessionId');
+  return [
+    '',
+    'video',
+    'splash',
+    safeSessionId,
+    'paths',
+    getSafeRenderPathDirectoryName(renderPathId),
+    'thumbnail.png',
+  ].join('/');
+}
+
+function buildBranchThumbnailSource(renderPath, timelineIndex, {
+  divergenceSceneIndex = null,
+  selectionTrailIndex = null,
+  reason,
+} = {}) {
+  const timeline = Array.isArray(renderPath?.timeline) ? renderPath.timeline : [];
+  const entry = toPlainObject(timeline[timelineIndex]);
+  if (!entry) {
+    return null;
+  }
+
+  return {
+    timelineIndex,
+    layerId: getTimelineLayerId(entry),
+    pathSequenceIndex: getTimelineSequenceIndex(entry, timelineIndex),
+    sceneIndex: getTimelineSceneIndex(entry),
+    framePath: null,
+    divergenceSceneIndex,
+    selectionTrailIndex,
+    reason,
+  };
+}
+
+function getCommonLayerPrefixLength(leftPath = {}, rightPath = {}) {
+  const leftTimeline = Array.isArray(leftPath?.timeline) ? leftPath.timeline : [];
+  const rightTimeline = Array.isArray(rightPath?.timeline) ? rightPath.timeline : [];
+  const comparableLength = Math.min(leftTimeline.length, rightTimeline.length);
+  let prefixLength = 0;
+
+  while (
+    prefixLength < comparableLength &&
+    getTimelineLayerId(leftTimeline[prefixLength]) &&
+    getTimelineLayerId(leftTimeline[prefixLength]) === getTimelineLayerId(rightTimeline[prefixLength])
+  ) {
+    prefixLength += 1;
+  }
+
+  return prefixLength;
+}
+
+/**
+ * Resolves the first scene owned by a leaf branch after its immediate parent.
+ * Canonical render plans carry that boundary in the final selectionTrail entry.
+ * The common-prefix fallback keeps older render plans deterministic.
+ */
+export function resolveBranchThumbnailSource(renderPath = {}, branchRenderPaths = []) {
+  const timeline = Array.isArray(renderPath?.timeline) ? renderPath.timeline : [];
+  if (timeline.length === 0) {
+    return null;
+  }
+
+  const selectionTrail = Array.isArray(renderPath?.selectionTrail)
+    ? renderPath.selectionTrail
+    : [];
+  const selectionTrailIndex = selectionTrail.length - 1;
+  if (selectionTrailIndex >= 0) {
+    const divergenceSceneIndex = getSelectionDivergenceSceneIndex(
+      selectionTrail[selectionTrailIndex],
+    );
+    if (divergenceSceneIndex !== null) {
+      let timelineIndex = timeline.findIndex(
+        (entry) => getTimelineSceneIndex(entry) === divergenceSceneIndex + 1,
+      );
+      if (timelineIndex < 0) {
+        timelineIndex = timeline.findIndex((entry) => {
+          const sceneIndex = getTimelineSceneIndex(entry);
+          return sceneIndex !== null && sceneIndex > divergenceSceneIndex;
+        });
+      }
+      if (timelineIndex >= 0) {
+        return buildBranchThumbnailSource(renderPath, timelineIndex, {
+          divergenceSceneIndex,
+          selectionTrailIndex,
+          reason: 'selection_trail',
+        });
+      }
+    }
+  }
+
+  const renderPathId = normalizeId(renderPath?.pathId);
+  const siblingPaths = (Array.isArray(branchRenderPaths) ? branchRenderPaths : [])
+    .filter((candidate) => normalizeId(candidate?.pathId) !== renderPathId);
+  const commonPrefixLength = siblingPaths.reduce(
+    (deepestPrefix, siblingPath) => Math.max(
+      deepestPrefix,
+      getCommonLayerPrefixLength(renderPath, siblingPath),
+    ),
+    0,
+  );
+  if (commonPrefixLength < timeline.length) {
+    return buildBranchThumbnailSource(renderPath, commonPrefixLength, {
+      reason: siblingPaths.length > 0 ? 'common_prefix' : 'timeline_start',
+    });
+  }
+
+  return buildBranchThumbnailSource(renderPath, 0, { reason: 'timeline_start' });
 }
 
 export function validateFrameOutputNamespace(frameOutputNamespace, { sessionId, layerId } = {}) {

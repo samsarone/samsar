@@ -45,6 +45,7 @@ import {
 } from './utils/BranchRenderPaths.js';
 import {
   buildBranchDurationSessionMetadata,
+  buildBranchingTimeline,
   normalizeBranchRenderPathTimings,
 } from './utils/BranchRenderTiming.js';
 
@@ -1629,6 +1630,11 @@ async function generateFramesForSession(sessionId) {
       layers: session.layers,
       audioLayers: session.audioLayers,
     });
+    session.branchingTimeline = buildBranchingTimeline({
+      branchRenderPaths: session.branchRenderPaths,
+      branchingMeta: session.branchingMeta,
+      defaultBranchPathId: session.defaultBranchPathId,
+    });
     const durationMetadata = buildBranchDurationSessionMetadata({
       branchRenderPaths: session.branchRenderPaths,
       layers: session.layers,
@@ -1668,6 +1674,7 @@ async function generateFramesForSession(sessionId) {
       }
     }
     session.markModified('branchRenderPaths');
+    session.markModified('branchingTimeline');
     session.markModified('expressGenerationBillingStageDurations');
     await session.save();
 
