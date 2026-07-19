@@ -13,10 +13,18 @@ const openai = new OpenAI({ apiKey: API_KEY || '' });
 
 export async function extractMetaForMovieResourceList(
   resourceList,
-  { originalPrompt = '', inferenceModel = null } = {},
+  {
+    originalPrompt = '',
+    inferenceModel = null,
+    onInferenceResponse = null,
+    createChatCompletion = createCompatibleChatCompletion,
+  } = {},
 ) {
   const metadataInput = buildPublicationMetadataInput(resourceList, originalPrompt);
-  const titleAndDescription = await getTitleAndDescription(metadataInput, inferenceModel);
+  const titleAndDescription = await getTitleAndDescription(metadataInput, inferenceModel, {
+    onInferenceResponse,
+    createChatCompletion,
+  });
 
   return {
     title: titleAndDescription.title,
@@ -25,7 +33,11 @@ export async function extractMetaForMovieResourceList(
 }
 
 
-async function getTitleAndDescription(resourceList, inferenceModel) {
+async function getTitleAndDescription(
+  resourceList,
+  inferenceModel,
+  { onInferenceResponse = null, createChatCompletion = createCompatibleChatCompletion } = {},
+) {
 
   const systemPrompt = 'You generate publication metadata for a movie from its transcript and original prompt. Return only a concise title and a clear description.';
   const userPrompt = `Generate the title and description for this movie:\n${JSON.stringify(resourceList)}`;
@@ -42,18 +54,28 @@ async function getTitleAndDescription(resourceList, inferenceModel) {
   ];
 
   const TitleAndDescription = z.object({
-    title: z.string(),
-    description: z.string(),
+    title: z.string().trim().min(1).max(160),
+    description: z.string().trim().min(1).max(2000),
   });
 
-  const response = await createCompatibleChatCompletion(openai, {
+  const inferenceSettings = getPublicationMetadataInferenceSettings(inferenceModel);
+  const response = await createChatCompletion(openai, {
     messages: messageList,
-    ...getPublicationMetadataInferenceSettings(inferenceModel),
+    ...inferenceSettings,
     response_format: zodResponseFormat(TitleAndDescription, "title_and_description"),
   });
 
+  if (typeof onInferenceResponse === 'function') {
+    await onInferenceResponse({
+      stage: 'publication_metadata_generation',
+      attempt: 1,
+      model: response?.model || inferenceSettings.model,
+      usage: response?.usage || null,
+    });
+  }
+
   const resData = response.choices[0].message;
-  const responseContent = JSON.parse(resData.content);
-  return responseContent;
+  const responseContent = resData?.parsed || JSON.parse(resData?.content || '');
+  return TitleAndDescription.parse(responseContent);
 
 }

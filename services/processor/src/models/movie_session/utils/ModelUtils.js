@@ -18,22 +18,55 @@ function formatDurationList(units) {
   return `${labels.slice(0, -1).join(', ')}, or ${labels[labels.length - 1]}`;
 }
 
-export function getSpeechDurationStringForModel(model, languageString, framesPerSecond = undefined) {
-
+export function getSpeechCharacterLimitsForModel(
+  model,
+  languageString,
+  framesPerSecond = undefined,
+) {
   const modelUnits = getVideoModelDurationUnitsForFramesPerSecond(model, framesPerSecond);
+  const normalizedLanguage = typeof languageString === 'string'
+    ? languageString.trim().toLowerCase()
+    : '';
+  const charactersPerSecond = normalizedLanguage && normalizedLanguage !== 'english'
+    ? 4
+    : 5;
 
+  return modelUnits.map((durationSeconds) => ({
+    durationSeconds,
+    maxCharacters: Math.ceil(durationSeconds * charactersPerSecond),
+  }));
+}
+
+export function getMaxSpeechCharacterLimitForModel(
+  model,
+  languageString,
+  framesPerSecond = undefined,
+) {
+  const limits = getSpeechCharacterLimitsForModel(model, languageString, framesPerSecond);
+  return limits.reduce((maximum, current) => (
+    !maximum || current.durationSeconds > maximum.durationSeconds ? current : maximum
+  ), null);
+}
+
+export function getSpeechDurationStringForModel(model, languageString, framesPerSecond = undefined) {
+  const speechCharacterLimits = getSpeechCharacterLimitsForModel(
+    model,
+    languageString,
+    framesPerSecond,
+  );
+  const modelUnits = speechCharacterLimits.map(({ durationSeconds }) => durationSeconds);
   let durationStr;
-  const charsPerSecond = languageString && languageString.toLowerCase() !== 'english' ? 4 : 5;
 
-  if (modelUnits.length === 1) {
-    const maxCharacters = Math.ceil(modelUnits[0] * charsPerSecond);
-
-
+  if (speechCharacterLimits.length === 1) {
+    const [{ durationSeconds, maxCharacters }] = speechCharacterLimits;
     durationStr =
-      `-Each scene can be ${formatVideoDurationSeconds(modelUnits[0])} seconds long.\n-Ensure that speech item is never more than ${maxCharacters} characters.`;
+      `-Each scene can be ${formatVideoDurationSeconds(durationSeconds)} seconds long.\n-Ensure that speech item is never more than ${maxCharacters} characters.`;
   } else {
-    const speechLimits = modelUnits
-      .map((unit) => `${Math.ceil(unit * charsPerSecond)} characters for ${formatVideoDurationSeconds(unit)} second scenes`)
+    const speechLimits = speechCharacterLimits
+      .map(({ durationSeconds, maxCharacters }) => (
+        `${maxCharacters} characters for ` +
+        `${formatVideoDurationSeconds(durationSeconds)} second scenes`
+      ))
       .join(', ');
 
     durationStr =
@@ -46,18 +79,10 @@ export function getSpeechDurationStringForModel(model, languageString, framesPer
 
 
 export function getMaxDurationForModelForScenes(model, numScenes, framesPerSecond = undefined) {
-
-
   const modelUnits = getVideoModelDurationUnitsForFramesPerSecond(model, framesPerSecond);
-
   const maxUnit = Math.max(...modelUnits);
-
-
-
   const maxAllowedDuration = maxUnit * numScenes;
-
   return maxAllowedDuration;
-
 }
 
 

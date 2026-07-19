@@ -41,6 +41,7 @@ import {
   createTextToInteractiveVideoDraftSession,
   createTextToInteractiveVideoRequest,
 } from '../../models/api/TextToInteractiveVideoAPI.js';
+import { generateInteractivePublicationMetadata } from '../../models/api/InteractivePublicationMetadataAPI.js';
 import {
   buildStepVideoDetailedStatus,
   buildStepVideoStatus,
@@ -675,6 +676,19 @@ function assertNarrativeToVideoCredential(authContext) {
   throw error;
 }
 
+function assertUserAuthTokenCredential(authContext) {
+  if (authContext?.authType === 'auth_token') {
+    return;
+  }
+
+  const error = new Error(
+    'Use a signed-in Samsar user auth token to generate publication metadata.',
+  );
+  error.status = 403;
+  error.code = 'USER_AUTH_TOKEN_REQUIRED';
+  throw error;
+}
+
 async function assertExternalUserIdentityBelongsToInternalUser({
   internalUserId,
   externalUserPayload,
@@ -1217,6 +1231,65 @@ async function handleTextToInteractiveVideoDraftSession(req, res) {
   }
 }
 
+async function handleInteractivePublicationMetadata(req, res) {
+  try {
+    const authContext = await resolveV2AuthContext(req);
+    assertUserAuthTokenCredential(authContext);
+    const payload = normalizeInputPayload(req);
+    const idempotencyKey =
+      req.get?.('Idempotency-Key') ||
+      req.headers?.['idempotency-key'] ||
+      payload.client_request_id ||
+      payload.clientRequestId ||
+      null;
+    const metadata = await generateInteractivePublicationMetadata(
+      authContext.internalUserId,
+      payload,
+      { authContext, idempotencyKey },
+    );
+
+    if (Number.isFinite(Number(metadata.creditsCharged))) {
+      res.set('x-credits-charged', String(metadata.creditsCharged));
+    }
+    if (Number.isFinite(Number(metadata.remainingCredits))) {
+      res.set('x-credits-remaining', String(metadata.remainingCredits));
+    }
+    return res.status(200).json({
+      title: metadata.title,
+      description: metadata.description,
+      default_path_id: metadata.defaultPathId,
+      credits_charged: metadata.creditsCharged,
+      credits_remaining: metadata.remainingCredits,
+      creditsCharged: metadata.creditsCharged,
+      creditsRemaining: metadata.remainingCredits,
+      reused: metadata.reused === true,
+    });
+  } catch (error) {
+    if (Number.isFinite(Number(error?.creditsCharged))) {
+      res.set('x-credits-charged', String(error.creditsCharged));
+    }
+    if (Number.isFinite(Number(error?.remainingCredits))) {
+      res.set('x-credits-remaining', String(error.remainingCredits));
+    }
+    return res.status(error?.status || error?.statusCode || 500).json({
+      message: error?.message || 'Unable to generate interactive publication metadata.',
+      ...(error?.code ? { code: error.code } : {}),
+      ...(Number.isFinite(Number(error?.creditsCharged))
+        ? {
+          credits_charged: Number(error.creditsCharged),
+          creditsCharged: Number(error.creditsCharged),
+        }
+        : {}),
+      ...(Number.isFinite(Number(error?.remainingCredits))
+        ? {
+          credits_remaining: Number(error.remainingCredits),
+          creditsRemaining: Number(error.remainingCredits),
+        }
+        : {}),
+    });
+  }
+}
+
 async function handleExternalImageToVideo(req, res) {
   try {
     const authContext = await resolveV2AuthContext(req);
@@ -1740,6 +1813,7 @@ router.post(
   handleTextToInteractiveVideo,
 );
 router.post('/text_to_interactive_video/session', handleTextToInteractiveVideoDraftSession);
+router.post('/interactive_publication/generate_meta', handleInteractivePublicationMetadata);
 router.post('/external/video/image_to_video', handleExternalImageToVideo);
 router.post('/external/video/lip_sync', handleExternalLipSyncVideo);
 router.post('/external/video/sound_effect', handleExternalSoundEffectVideo);
@@ -1955,5 +2029,9 @@ router.get('/status', async (req, res, next) => {
 });
 router.get('/status_detailed', handleVideoDetailedStatus);
 router.post('/status_detailed', handleVideoDetailedStatus);
+
+export const __testOnly__ = {
+  assertUserAuthTokenCredential,
+};
 
 export default router;

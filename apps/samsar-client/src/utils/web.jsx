@@ -1,14 +1,21 @@
-const AUTH_COOKIE_NAME = 'authToken';
+import { getAuthCookiePolicy } from './authCookiePolicy.mjs';
+
 const AUTH_TOKEN_KEY = 'authToken';
 const COOKIE_CONSENT_KEY = 'samsar_cookie_consent';
 const AUTH_COOKIE_MAX_AGE_SECONDS = 30 * 24 * 60 * 60;
 const POST_AUTH_REDIRECT_KEY = 'postAuthRedirect';
 let inMemoryAuthToken = null;
 
+const getCurrentAuthCookiePolicy = () =>
+  getAuthCookiePolicy(
+    import.meta.env.VITE_CURRENT_ENV,
+    typeof window !== 'undefined' ? window.location.hostname : '',
+  );
+
 const getAuthCookie = () => {
   if (typeof document === 'undefined') return null;
   const cookies = document.cookie ? document.cookie.split(';') : [];
-  const prefix = `${AUTH_COOKIE_NAME}=`;
+  const prefix = `${getCurrentAuthCookiePolicy().cookieName}=`;
 
   for (const cookie of cookies) {
     const trimmed = cookie.trim();
@@ -23,38 +30,31 @@ const getAuthCookie = () => {
 
 const setAuthCookie = (token) => {
   if (!token || typeof document === 'undefined') return;
-  const hostname = typeof window !== 'undefined' ? window.location.hostname : '';
-  const domainAttr = hostname.endsWith('samsar.one') ? ' domain=.samsar.one;' : '';
+  const policy = getCurrentAuthCookiePolicy();
+  const domainAttr = policy.domain ? ` Domain=${policy.domain};` : '';
   const secureAttr =
     typeof window !== 'undefined' && window.location.protocol === 'https:' ? ' Secure;' : '';
   const encodedToken = encodeURIComponent(token);
 
-  document.cookie = `${AUTH_COOKIE_NAME}=${encodedToken}; Path=/; Max-Age=${AUTH_COOKIE_MAX_AGE_SECONDS}; SameSite=Lax;${secureAttr}${domainAttr}`;
+  document.cookie = `${policy.cookieName}=${encodedToken}; Path=/; Max-Age=${AUTH_COOKIE_MAX_AGE_SECONDS}; SameSite=Lax;${secureAttr}${domainAttr}`;
 };
 
-const expireAuthCookie = (domain) => {
+const expireAuthCookie = (cookieName, domain) => {
   if (typeof document === 'undefined') return;
-  const domainAttr = domain ? ` domain=${domain};` : '';
-  document.cookie = `${AUTH_COOKIE_NAME}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;${domainAttr}`;
+  const domainAttr = domain ? ` Domain=${domain};` : '';
+  document.cookie = `${cookieName}=; Expires=Thu, 01 Jan 1970 00:00:00 GMT; Path=/;${domainAttr}`;
 };
 
 function clearAuthCookies() {
-  // Clear any legacy auth cookies that may still be present.
   if (typeof document === 'undefined') return;
-  const hostname = typeof window !== 'undefined' ? window.location.hostname : '';
-  const domainParts = hostname ? hostname.split('.').filter(Boolean) : [];
+  const policy = getCurrentAuthCookiePolicy();
 
-  const domainOptions = new Set(['']);
-  if (hostname) domainOptions.add(hostname);
-  if (hostname && hostname.includes('samsar.one')) domainOptions.add('.samsar.one');
-
-  for (let i = 0; i < domainParts.length - 1; i += 1) {
-    const domain = domainParts.slice(i).join('.');
-    domainOptions.add(domain);
-    domainOptions.add(`.${domain}`);
+  // Docker and development expire only their host-scoped cookie. Production
+  // also expires the shared Samsar cookie used for cross-subdomain login.
+  expireAuthCookie(policy.cookieName, null);
+  if (policy.isSharedAcrossSubdomains) {
+    expireAuthCookie(policy.cookieName, policy.domain);
   }
-
-  domainOptions.forEach(expireAuthCookie);
 }
 
 function getCookieConsentStatus() {

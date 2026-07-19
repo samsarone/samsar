@@ -605,3 +605,81 @@ test('validateTextToVideoNarrative compares requested duration with the normaliz
   assert.equal(result.duration.actual, 60);
   assert.equal(result.duration.deviation, -30);
 });
+
+function createCosmosNarrativeWithSpeech(audio, duration = 7.875) {
+  return {
+    scenes: [{
+      visual: 'A narrator describes a photograph under a desk lamp.',
+      type: 'narration',
+      speaker: '',
+      duration,
+      startTime: 0,
+      endTime: duration,
+    }],
+    sounds: [{
+      type: 'speech',
+      subType: 'narration',
+      actor: 'Narrator',
+      gender: 'F',
+      sceneIndex: 0,
+      audio,
+      duration,
+      startTime: 0,
+      endTime: duration,
+    }],
+  };
+}
+
+test('validateTextToVideoNarrative allows the model maximum speech limit plus 20 percent', () => {
+  const result = validateTextToVideoNarrative(
+    createCosmosNarrativeWithSpeech('a'.repeat(48), 5),
+    'COSMOS3SUPERI2V',
+    24,
+  );
+
+  assert.equal(result.valid, true);
+});
+
+test('validateTextToVideoNarrative rejects speech beyond the model maximum plus 20 percent', () => {
+  const result = validateTextToVideoNarrative(
+    createCosmosNarrativeWithSpeech('a'.repeat(49), 5),
+    'COSMOS3SUPERI2V',
+    24,
+  );
+
+  assert.equal(result.valid, false);
+  assert.ok(result.errors.some((error) => (
+    error.includes('scene 0 has 49 characters') &&
+    error.includes('allows 40 characters') &&
+    error.includes('48 characters with 20% tolerance')
+  )));
+});
+
+test('validateTextToVideoNarrative derives the speech limit from the supplied frame rate', () => {
+  const result = validateTextToVideoNarrative(
+    createCosmosNarrativeWithSpeech('a'.repeat(39), 6.3),
+    'COSMOS3SUPERI2V',
+    30,
+  );
+
+  assert.equal(result.valid, false);
+  assert.ok(result.errors.some((error) => (
+    error.includes('allows 32 characters') &&
+    error.includes('38 characters with 20% tolerance')
+  )));
+});
+
+test('validateTextToVideoNarrative uses the prompt language character rate', () => {
+  const result = validateTextToVideoNarrative(
+    createCosmosNarrativeWithSpeech('ก'.repeat(39)),
+    'COSMOS3SUPERI2V',
+    24,
+    { languageString: 'Thai' },
+  );
+
+  assert.equal(result.valid, false);
+  assert.ok(result.errors.some((error) => (
+    error.includes('allows 32 characters') &&
+    error.includes('38 characters with 20% tolerance')
+  )));
+});

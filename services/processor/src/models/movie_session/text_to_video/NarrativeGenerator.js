@@ -123,6 +123,7 @@ export async function generateValidatedTextToVideoNarrative({
       {
         repairAdjacentSceneIndex: isGeminiInferenceModel(inferenceModel),
         requestedDuration: duration,
+        languageString,
       },
     );
 

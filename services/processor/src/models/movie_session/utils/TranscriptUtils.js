@@ -3,8 +3,10 @@ import {
   VIDEO_MODEL_PRICES,
 } from '../../../consts/ModelPrices.js';
 import { normalizeTTSSpeakerGender } from '../../../consts/TTSSpeakers.js';
+import { getMaxSpeechCharacterLimitForModel } from './ModelUtils.js';
 
 const TEXT_TO_VIDEO_NARRATIVE_DURATION_TOLERANCE_SECONDS = 30;
+const TEXT_TO_VIDEO_SPEECH_CHARACTER_TOLERANCE_RATIO = 0.2;
 
 function getDurationUnitsForVideoGenerationModel(modelKey, framesPerSecond = undefined) {
   if (!modelKey) {
@@ -505,6 +507,45 @@ function validateTextToVideoNarrativeContent(scenes, sounds) {
   return errors;
 }
 
+function validateSpeechCharacterLimits(
+  sounds,
+  model,
+  framesPerSecond,
+  { languageString } = {},
+) {
+  const maximum = getMaxSpeechCharacterLimitForModel(
+    model,
+    languageString,
+    framesPerSecond,
+  );
+  if (!maximum) return [];
+
+  const toleratedMaxCharacters = Math.floor(
+    maximum.maxCharacters * (1 + TEXT_TO_VIDEO_SPEECH_CHARACTER_TOLERANCE_RATIO),
+  );
+  const modelLabel = typeof model === 'string' && model.trim()
+    ? model.trim()
+    : 'the selected video model';
+
+  return sounds.flatMap((sound) => {
+    if (normalizeComparableString(sound?.type) !== 'speech' ||
+      typeof sound?.audio !== 'string') {
+      return [];
+    }
+
+    const characterCount = Array.from(sound.audio.trim()).length;
+    if (characterCount <= toleratedMaxCharacters) return [];
+
+    const sceneIndex = parseSceneIndex(sound.sceneIndex);
+    return [
+      `Speech item at scene ${sceneIndex ?? 'unknown'} has ${characterCount} characters; ` +
+      `${modelLabel} allows ${maximum.maxCharacters} characters at its maximum ` +
+      `${maximum.durationSeconds}-second duration (${toleratedMaxCharacters} characters with ` +
+      `${TEXT_TO_VIDEO_SPEECH_CHARACTER_TOLERANCE_RATIO * 100}% tolerance).`,
+    ];
+  });
+}
+
 export function validateImageToVideoNarrative(narrativeJson, numScenes, model, framesPerSecond = undefined) {
   if (!Array.isArray(narrativeJson?.scenes)) {
     return { valid: false, errors: ['Missing or invalid `scenes` array.'], narrativeJson: { scenes: [], sounds: [] } };
@@ -557,6 +598,7 @@ export function validateTextToVideoNarrative(narrativeJson, model, framesPerSeco
 
   const errors = [
     ...validateTextToVideoNarrativeContent(scenes, sounds),
+    ...validateSpeechCharacterLimits(sounds, model, framesPerSecond, options),
     ...validateSpeechGenders(scenes, sounds),
     ...validateNoSpeechSoundEffectSceneConflicts(sounds),
   ];

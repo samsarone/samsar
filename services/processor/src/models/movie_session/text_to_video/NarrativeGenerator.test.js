@@ -15,6 +15,7 @@ test('retries semantic narrative validation and reports usage for every inferenc
     videoGenerationModel: 'RUNWAYML',
     inferenceModel: 'gemini-3.1-pro',
     videoTone: 'grounded',
+    languageString: 'Thai',
     externalRequestContext: { sessionId: 'request-1', userId: 'user-1' },
     requestKeyPrefix: 'narrative:create_single',
     onInferenceResponse: (receipt) => inferenceReceipts.push(receipt),
@@ -56,6 +57,7 @@ test('retries semantic narrative validation and reports usage for every inferenc
         assert.equal(model, 'RUNWAYML');
         assert.equal(options.repairAdjacentSceneIndex, true);
         assert.equal(options.requestedDuration, 20);
+        assert.equal(options.languageString, 'Thai');
         return validationCalls === 1
           ? { valid: false, errors: ['retry me'], narrativeJson: narrative }
           : {
@@ -112,4 +114,49 @@ test('returns a typed failure after the configured semantic validation attempts'
       return true;
     },
   );
+});
+
+test('singular narrative generation retries speech beyond the model-aware tolerance', async () => {
+  let narrativeCalls = 0;
+
+  const result = await generateValidatedTextToVideoNarrative({
+    prompt: 'Create a concise narrated mystery.',
+    duration: 10,
+    videoGenerationModel: 'COSMOS3SUPERI2V',
+    inferenceModel: 'QWEN3.7',
+    videoTone: 'grounded',
+    maxValidationAttempts: 2,
+    dependencies: {
+      extractGroundedThemeFromUserPrompt: async () => ({ style: ['mystery'] }),
+      extractGroundedMovieNarrativeFromThemeAndUserPrompt: async () => {
+        narrativeCalls += 1;
+        const audio = narrativeCalls === 1 ? 'a'.repeat(49) : 'a'.repeat(48);
+        return {
+          scenes: [{
+            visual: 'A photograph rests beneath a detective’s desk lamp.',
+            type: 'narration',
+            speaker: '',
+            duration: 7.875,
+            startTime: 0,
+            endTime: 7.875,
+          }],
+          sounds: [{
+            type: 'speech',
+            subType: 'narration',
+            actor: 'Narrator',
+            gender: 'F',
+            sceneIndex: 0,
+            audio,
+            duration: 7.875,
+            startTime: 0,
+            endTime: 7.875,
+          }],
+        };
+      },
+    },
+  });
+
+  assert.equal(narrativeCalls, 2);
+  assert.equal(result.attempts, 2);
+  assert.equal(result.narrativeJson.sounds[0].audio.length, 48);
 });

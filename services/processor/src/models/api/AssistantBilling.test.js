@@ -23,6 +23,27 @@ test('bills GPT 5.6 Sol assistant usage at standard context rates', () => {
   });
 });
 
+test('bills GPT 5.6 Luna metadata usage with the standard 50 percent markup', () => {
+  const result = calculateAssistantCreditsFromUsage({
+    model: 'gpt-5.6-luna',
+    usage: {
+      input_tokens: 100_000,
+      input_tokens_details: { cached_tokens: 20_000 },
+      output_tokens: 10_000,
+    },
+  });
+
+  assert.equal(result.pricingModel, 'gpt-5.6-luna');
+  assert.equal(result.costUsd, 0.142);
+  assert.equal(result.credits, 21.3);
+  assert.equal(result.pricingMultiplier, 1.5);
+  assert.deepEqual(result.tokenPricingUsdPerMillion, {
+    input: 1,
+    cachedInput: 0.1,
+    output: 6,
+  });
+});
+
 test('bills GPT 5.6 Sol assistant usage at long-context rates above 272K input tokens', () => {
   const result = calculateAssistantCreditsFromUsage({
     model: 'gpt-5.6-sol',

@@ -4,6 +4,15 @@ export const DEFAULT_ASSISTANT_PRICING_MULTIPLIER = 1.5;
 export const EXTERNAL_CHAT_PRICING_MULTIPLIER = 1.25;
 
 const TOKEN_PRICING_USD_PER_MILLION = Object.freeze({
+  'gpt-5.6-luna': {
+    input: 1,
+    cachedInput: 0.1,
+    output: 6,
+    longContextInput: 2,
+    longContextCachedInput: 0.2,
+    longContextOutput: 9,
+    longContextInputThreshold: 272_000,
+  },
   'gpt-5.6-sol': {
     input: 5,
     cachedInput: 0.5,
@@ -138,6 +147,10 @@ function resolvePricingModel(model) {
   const providerModel = normalized.includes('/')
     ? normalized.slice(normalized.lastIndexOf('/') + 1)
     : normalized;
+
+  if (providerModel.startsWith('gpt-5.6-luna')) {
+    return 'gpt-5.6-luna';
+  }
 
   if (providerModel.startsWith('gpt-5.6-sol')) {
     return 'gpt-5.6-sol';

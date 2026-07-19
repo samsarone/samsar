@@ -1,5 +1,7 @@
 # Samsar
 
+[![CI](https://github.com/samsarone/samsar/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/samsarone/samsar/actions/workflows/ci.yml)
+
 Samsar is a generative video and media automation platform for turning prompts, product images, structured content, and creative ideas into finished videos and reusable studio assets. It brings together one-shot text-to-video, image-list-to-video, image editing, audio generation, semantic search, recommendations, assistant workflows, multi-provider model routing, and detailed post-production controls across one integrated Studio and API surface.
 
 ## Architecture
@@ -51,6 +53,22 @@ Samsar is a generative video and media automation platform for turning prompts, 
 | Runtime config | `runtime/config`, `runtime/secrets` | Generated deployment config, model availability, env files, and local secrets. Not committed. |
 | Deployment | `deploy/compose`, `deploy/helm` | Docker Compose stack and Kubernetes Helm scaffold. |
 | Docs | `docs`, `pages` | Runtime notes, brand assets, and deeper Markdown documentation linked from this README. |
+
+## Tests
+
+Run the fast, dependency-free test suite:
+
+```bash
+npm test
+```
+
+Validate the generated runtime files and full Docker Compose deployment configuration:
+
+```bash
+npm run test:deployment
+```
+
+GitHub Actions runs both checks for pull requests into `main` and pushes to `main`.
 
 ## Services
 

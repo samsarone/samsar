@@ -357,6 +357,41 @@ test('generates a full child movieResourceList with an exact cloned prefix and i
   assert.deepEqual(parentMovieResourceList, originalParent);
 });
 
+test('retries a branch suffix whose speech exceeds the model-aware tolerance', async () => {
+  const invalidSuffix = buildValidSuffix();
+  invalidSuffix.sounds[0].audio = 'a'.repeat(49);
+  const validSuffix = buildValidSuffix();
+  validSuffix.sounds[0].audio = 'a'.repeat(48);
+  const responses = [
+    completion(JSON.stringify(invalidSuffix), 'QWEN3.7'),
+    completion(JSON.stringify(validSuffix), 'QWEN3.7'),
+  ];
+  const receipts = [];
+
+  const result = await generateBranchMovieResourceList({
+    themeJson: { actors: [{ name: 'Ada', keywords: [] }] },
+    parentMovieResourceList: buildParentMovieResourceList(),
+    divergenceSceneIndex: 1,
+    divergence: {
+      path_name: 'Take the river',
+      path_description: 'Ada boards the ferry and races downstream.',
+    },
+    inferenceModel: 'QWEN3.7',
+    videoGenerationModel: 'COSMOS3SUPERI2V',
+    maxAttempts: 2,
+    retryDelayMs: 1,
+    onInferenceResponse: (receipt) => receipts.push(receipt),
+    dependencies: {
+      createCompatibleChatCompletion: async () => responses.shift(),
+      sleep: async () => {},
+    },
+  });
+
+  assert.equal(result.sounds.find((sound) => sound.sceneIndex === 2).audio.length, 48);
+  assert.equal(receipts.length, 2);
+  assert.deepEqual(receipts.map((receipt) => receipt.attempt), [1, 2]);
+});
+
 test('retries a branch suffix that introduces a new actor and meters both responses', async () => {
   const parentMovieResourceList = buildParentMovieResourceList();
   const invalidSuffix = buildValidSuffix();

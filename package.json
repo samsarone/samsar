@@ -5,6 +5,9 @@
   "license": "MIT",
   "type": "module",
   "scripts": {
+    "test": "node --test scripts/*.test.mjs apps/setup-wizard/*.test.mjs apps/setup-wizard/src/constants/*.test.js apps/samsar-client/src/utils/*.test.mjs deploy/compose/media-tunnel-controller/*.test.mjs services/docker-cleanup/test/*.test.js",
+    "test:deployment": "npm run config:render && docker compose --env-file runtime/secrets/root.env -f deploy/compose/docker-compose.yml --profile core --profile workers --profile local-mongo --profile minio --profile local-media --profile logger --profile reverse-proxy config --quiet",
+    "test:ci": "npm test && npm run test:deployment",
     "sync": "bash ../scripts/sync-projects.sh",
     "sync:build": "bash ../scripts/sync-projects.sh --build",
     "sync:promote": "bash ../scripts/sync-projects.sh --build --promote",
