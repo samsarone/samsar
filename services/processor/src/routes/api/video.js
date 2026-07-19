@@ -1751,11 +1751,12 @@ router.post('/translate_video', validateAPIKeyAndUserId, async function (req, re
       error,
     });
     const statusCode = error?.status || error?.response?.status || 500;
-    const message =
-      statusCode >= 400 && statusCode < 500 && error?.message
+    const message = error?.code === 'SUBTITLE_PROVIDER_NOT_CONFIGURED'
+      ? error.message
+      : statusCode >= 400 && statusCode < 500 && error?.message
         ? error.message
         : 'Internal server error while translating video.';
-    res.status(statusCode).json({ message });
+    res.status(statusCode).json({ code: error?.code, message });
   }
 });
 
@@ -1877,11 +1878,12 @@ router.post('/add_subtitles', validateAPIKeyAndUserId, async function (req, res)
       error,
     });
     const statusCode = error?.status || error?.response?.status || 500;
-    const message =
-      statusCode >= 400 && statusCode < 500 && error?.message
+    const message = error?.code === 'SUBTITLE_PROVIDER_NOT_CONFIGURED'
+      ? error.message
+      : statusCode >= 400 && statusCode < 500 && error?.message
         ? error.message
         : 'Internal server error while adding subtitles.';
-    res.status(statusCode).json({ message });
+    res.status(statusCode).json({ code: error?.code, message });
   }
 });
 

@@ -24,6 +24,12 @@ const narrativeRequestSchema = new Schema({
     default: null,
     index: true,
   },
+  interactiveVideoRequestId: {
+    type: Schema.Types.ObjectId,
+    ref: 'InteractiveVideoRequest',
+    default: null,
+    index: true,
+  },
   sourceNarrativeSnapshot: { type: Schema.Types.Mixed, default: null },
   numLevels: {
     type: Number,
@@ -86,6 +92,12 @@ const narrativeRequestSchema = new Schema({
     enum: ['PENDING', 'CHARGING', 'CHARGED', 'WAIVED', 'FAILED'],
     default: 'PENDING',
   },
+  billingPolicy: {
+    type: String,
+    enum: ['standalone', 'included_in_interactive_video_rate'],
+    default: 'standalone',
+  },
+  billingReason: { type: String, default: null },
   billingTransactionId: { type: Schema.Types.ObjectId, default: null },
 
   apiKeyId: { type: String, default: null, index: true },
@@ -109,6 +121,16 @@ const narrativeRequestSchema = new Schema({
 
 narrativeRequestSchema.index({ userId: 1, _id: 1 });
 narrativeRequestSchema.index({ status: 1, workerLeaseExpiresAt: 1 });
+narrativeRequestSchema.index(
+  { interactiveVideoRequestId: 1, requestType: 1 },
+  {
+    name: 'unique_interactive_video_narrative_stage',
+    unique: true,
+    partialFilterExpression: {
+      interactiveVideoRequestId: { $type: 'objectId' },
+    },
+  },
+);
 narrativeRequestSchema.index(
   { userId: 1, meteringSlotActive: 1 },
   {

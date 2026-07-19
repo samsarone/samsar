@@ -34,6 +34,9 @@ import {
 } from '../../models/api/ExternalVideoAPI.js';
 import { createVideoFromNarrativeRequest } from '../../models/api/NarrativeToVideoAPI.js';
 import {
+  createTextToInteractiveVideoRequest,
+} from '../../models/api/TextToInteractiveVideoAPI.js';
+import {
   buildStepVideoDetailedStatus,
   buildStepVideoStatus,
   getStepVideoSessionIdFromRequest,
@@ -43,7 +46,11 @@ import {
   requestStepSoundEffectVideo,
   requestStepTextToVideo,
 } from '../../models/api/StepVideoAPI.js';
-import { buildVideoStatusDetailedResponse } from '../../models/api/StatusAPI.js';
+import {
+  buildVideoStatusDetailedResponse,
+  buildVideoStatusUsageHeaders,
+  serializePublicVideoStatusResponse,
+} from '../../models/api/StatusAPI.js';
 import {
   createV2UserRechargeCheckoutSession,
   refreshProgrammaticAuthToken,
@@ -65,6 +72,11 @@ import VideoSession from '../../schema/VideoSession.js';
 
 const router = express.Router();
 const DEFAULT_V2_EXTERNAL_USER_PROVIDER = 'samsar_v2';
+
+function sendPublicVideoStatus(res, response) {
+  res.set(buildVideoStatusUsageHeaders(response));
+  return res.status(200).json(serializePublicVideoStatusResponse(response));
+}
 
 function normalizeOptionalString(value) {
   if (typeof value !== 'string') {
@@ -1067,7 +1079,7 @@ async function handleStepVideoStatus(req, res) {
     if (!response) {
       return res.status(404).json({ message: 'Step video request not found.' });
     }
-    return res.status(200).json(response);
+    return sendPublicVideoStatus(res, response);
   } catch (error) {
     return res.status(error?.status || error?.response?.status || 500).json({
       message: error?.message || 'Internal server error while fetching step video status.',
@@ -1091,7 +1103,7 @@ async function handleStepVideoDetailedStatus(req, res) {
     if (!response) {
       return res.status(404).json({ message: 'Step video request not found.' });
     }
-    return res.status(200).json(response);
+    return sendPublicVideoStatus(res, response);
   } catch (error) {
     return res.status(error?.status || error?.response?.status || 500).json({
       message: error?.message || 'Internal server error while fetching detailed step video status.',
@@ -1147,6 +1159,38 @@ async function handleExternalNarrativeToVideo(req, res) {
     return res.status(error?.status || error?.response?.status || 500).json({
       message: error?.message ||
         'Internal server error while creating narrative-to-video request.',
+    });
+  }
+}
+
+async function handleTextToInteractiveVideo(req, res) {
+  try {
+    const authContext = await resolveV2AuthContext(req);
+    assertNarrativeToVideoCredential(authContext);
+    const normalizedPayload = normalizeInputPayload(req);
+    const idempotencyKey =
+      req.get?.('Idempotency-Key') ||
+      req.headers?.['idempotency-key'] ||
+      normalizedPayload.client_request_id ||
+      normalizedPayload.clientRequestId ||
+      null;
+    const response = await createTextToInteractiveVideoRequest({
+      userId: authContext.internalUserId,
+      payload: req.body || {},
+      authContext,
+      webhookUrl: getWebhookUrlFromStepRequest(req, normalizedPayload),
+      idempotencyKey,
+    });
+    return res.status(202).json(response);
+  } catch (error) {
+    if (error?.code === 'INSUFFICIENT_CREDITS' ||
+      error?.code === 'API_KEY_USAGE_LIMIT_EXCEEDED') {
+      return res.status(402).json({ message: error.message || 'Insufficient credits.' });
+    }
+    return res.status(error?.status || error?.response?.status || 500).json({
+      message: error?.message ||
+        'Internal server error while creating text-to-interactive-video request.',
+      ...(error?.code ? { code: error.code } : {}),
     });
   }
 }
@@ -1228,7 +1272,7 @@ async function handleExternalVideoStatus(req, res) {
     if (!response) {
       return res.status(404).json({ message: 'External video request not found.' });
     }
-    return res.status(200).json(response);
+    return sendPublicVideoStatus(res, response);
   } catch (error) {
     return res.status(error?.status || error?.response?.status || 500).json({
       message: error?.message || 'Internal server error while fetching external video status.',
@@ -1252,7 +1296,7 @@ async function handleExternalVideoDetailedStatus(req, res) {
     if (!response) {
       return res.status(404).json({ message: 'External video request not found.' });
     }
-    return res.status(200).json(response);
+    return sendPublicVideoStatus(res, response);
   } catch (error) {
     return res.status(error?.status || error?.response?.status || 500).json({
       message: error?.message || 'Internal server error while fetching detailed external video status.',
@@ -1307,7 +1351,7 @@ async function handleVideoDetailedStatus(req, res, next) {
       return res.status(404).json({ message: 'Request not found.' });
     }
 
-    return res.status(200).json(response);
+    return sendPublicVideoStatus(res, response);
   } catch (error) {
     return sendAuthError(res, error);
   }
@@ -1669,6 +1713,10 @@ router.get('/health', (req, res) => {
 
 router.post('/external/video/text_to_video', handleExternalTextToVideo);
 router.post('/external/video/narrative_to_video', handleExternalNarrativeToVideo);
+router.post(
+  ['/text_to_interactive_video', '/external/video/text_to_interactive_video'],
+  handleTextToInteractiveVideo,
+);
 router.post('/external/video/image_to_video', handleExternalImageToVideo);
 router.post('/external/video/lip_sync', handleExternalLipSyncVideo);
 router.post('/external/video/sound_effect', handleExternalSoundEffectVideo);

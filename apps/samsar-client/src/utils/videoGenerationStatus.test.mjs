@@ -66,6 +66,100 @@ test('status preview is converted into Studio layers with partial image and vide
   assert.equal(Object.prototype.hasOwnProperty.call(session, 'branching'), false);
 });
 
+test('completed compact branched status uses the top-level output manifest without detailed assets', () => {
+  const status = {
+    session_id: 'branched-session',
+    request_id: 'branched-request',
+    status: 'COMPLETED',
+    type: 'video',
+    narrative_type: 'branched',
+    default_path_id: 'root.2',
+    result_url: 'https://static.example/root.2.mp4',
+    status_detail_schema: 'interactive_video_manifest.v1',
+    session: {
+      id: 'branched-session',
+      requestId: 'branched-request',
+      type: 'video',
+      aspectRatio: '16:9',
+      framesPerSecond: 24,
+      duration: 12,
+      narrativeType: 'branched',
+      defaultBranchPathId: 'root.2',
+      result: { url: 'https://static.example/root.2.mp4' },
+    },
+    branching: {
+      schema: 'branched_video_status.v1',
+      status: 'COMPLETED',
+      default_path_id: 'root.2',
+      timing: { origin: 'media', unit: 'seconds' },
+      tree: {
+        root_node_id: 'root',
+        choice_points: [{
+          branch_point_id: 'choice-1',
+          parent_node_id: 'root',
+          switch_at_seconds: 5,
+          options: [
+            { child_node_id: 'root.1', leaf_path_ids: ['root.1'] },
+            { child_node_id: 'root.2', leaf_path_ids: ['root.2'] },
+          ],
+        }],
+      },
+      outputs: {
+        ready: true,
+        default_path_id: 'root.2',
+        default_url: 'https://static.example/root.2.mp4',
+        paths: [
+          {
+            path_id: 'root.1',
+            url: 'https://static.example/root.1.mp4',
+            duration: 11,
+            is_default: false,
+          },
+          {
+            path_id: 'root.2',
+            url: 'https://static.example/root.2.mp4',
+            duration: 12,
+            is_default: true,
+          },
+        ],
+      },
+    },
+  };
+
+  const session = buildStudioSessionDetailsFromStatus(status);
+
+  assert.equal(session._id, 'branched-session');
+  assert.equal(session.videoLink, 'https://static.example/root.2.mp4');
+  assert.equal(session.defaultBranchPathId, 'root.2');
+  assert.deepEqual(session.layers, []);
+  assert.deepEqual(session.audioLayers, []);
+  assert.deepEqual(session.canonicalLayers, []);
+  assert.deepEqual(session.canonicalAudioLayers, []);
+  assert.equal(session.branching, status.branching);
+  assert.deepEqual(session.branching.timing, { origin: 'media', unit: 'seconds' });
+  assert.deepEqual(
+    session.branching.outputs.paths.map(({ path_id, url, duration }) => ({
+      path_id,
+      url,
+      duration,
+    })),
+    [
+      {
+        path_id: 'root.1',
+        url: 'https://static.example/root.1.mp4',
+        duration: 11,
+      },
+      {
+        path_id: 'root.2',
+        url: 'https://static.example/root.2.mp4',
+        duration: 12,
+      },
+    ]
+  );
+  assert.equal(Object.prototype.hasOwnProperty.call(status.session, 'branching'), false);
+  assert.equal(Object.prototype.hasOwnProperty.call(status.session, 'layers'), false);
+});
+
 test('branched status preserves canonical pools and materializes the default path timing', () => {
   const branching = {
     schema: 'branched_video_status.v1',

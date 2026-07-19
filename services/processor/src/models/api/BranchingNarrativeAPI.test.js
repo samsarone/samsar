@@ -79,7 +79,25 @@ test('normalizes branching request id aliases and enforces the bounded integer l
     {
       sourceRequestId: '507f1f77bcf86cd799439011',
       numLevels: 2,
+      videoModel: null,
     },
+  );
+
+  assert.equal(
+    normalizeCreateBranchingNarrativePayload({
+      narrative_request_id: '507f1f77bcf86cd799439011',
+      num_levels: 2,
+      video_model: 'COSMOS3SUPERI2V',
+    }).videoModel,
+    'COSMOS3SUPERI2V',
+  );
+  assert.throws(
+    () => normalizeCreateBranchingNarrativePayload({
+      narrative_request_id: '507f1f77bcf86cd799439011',
+      num_levels: 1,
+      numLevels: 2,
+    }),
+    (error) => error.code === 'CONFLICTING_NUM_LEVELS' && error.status === 400,
   );
 
   assert.throws(
@@ -179,7 +197,11 @@ test('submission scopes the source to its owner and creates an isolated branched
 
   const result = await createBranchingNarrativeRequest({
     userId,
-    payload: { request_id: sourceRequestId, num_levels: 2 },
+    payload: {
+      request_id: sourceRequestId,
+      num_levels: 2,
+      video_model: 'RUNWAYML',
+    },
     dependencies: {
       queueCreateBranchingNarrativeRequest: (requestId) => queued.push(requestId),
     },
@@ -189,6 +211,8 @@ test('submission scopes the source to its owner and creates an isolated branched
   assert.equal(createDocument.requestType, 'create_branching');
   assert.equal(createDocument.narrativeType, 'branched');
   assert.equal(createDocument.numLevels, 2);
+  assert.equal(createDocument.videoGenerationModel, 'RUNWAYML');
+  assert.equal(createDocument.sourceNarrativeSnapshot.videoGenerationModel, 'RUNWAYML');
   assert.equal(createDocument.sourceNarrativeRequestId, source._id);
   assert.deepEqual(createDocument.sourceNarrativeSnapshot.movieResourceList, source.movieResourceList);
   assert.notEqual(createDocument.sourceNarrativeSnapshot.movieResourceList, source.movieResourceList);
@@ -198,6 +222,31 @@ test('submission scopes the source to its owner and creates an isolated branched
   assert.equal(result.narrative_type, 'branched');
   assert.equal(result.source_narrative_request_id, sourceRequestId);
   assert.equal(result.num_levels, 2);
+  assert.equal(result.video_model, 'RUNWAYML');
+});
+
+test('branching submission rejects missing sources before checking model consistency', async (t) => {
+  setConnectionReadyForTest(t);
+  const userId = '507f191e810c19729de860ea';
+
+  t.mock.method(GenerationCreditTransaction, 'createIndexes', async () => []);
+  t.mock.method(NarrativeRequest, 'createIndexes', async () => []);
+  t.mock.method(User, 'findById', () => ({
+    select: () => ({ lean: async () => ({ _id: userId, generationCredits: 100 }) }),
+  }));
+  t.mock.method(NarrativeRequest, 'findOne', () => asLeanQuery(null));
+
+  await assert.rejects(
+    createBranchingNarrativeRequest({
+      userId,
+      payload: {
+        narrative_request_id: '507f1f77bcf86cd799439011',
+        num_levels: 1,
+        video_model: 'COSMOS3SUPERI2V',
+      },
+    }),
+    (error) => error.code === 'NOT_FOUND' && error.status === 404,
+  );
 });
 
 test('branching worker can only claim a branched create_branching request', async (t) => {
@@ -297,6 +346,62 @@ test('recovered branching artifacts use an isolated debit namespace and 1.5x bil
       'metadata.narrativeRequestId': requestId,
     },
   ]);
+});
+
+test('an interactive-video branching stage records usage but never debits narrative credits', async (t) => {
+  setConnectionReadyForTest(t);
+  const requestId = '507f1f77bcf86cd799439022';
+  let storedRequest = {
+    _id: { toString: () => requestId },
+    userId: '507f191e810c19729de860ea',
+    requestType: 'create_branching',
+    narrativeType: 'branched',
+    sourceNarrativeRequestId: '507f1f77bcf86cd799439011',
+    numLevels: 1,
+    status: 'PROCESSING',
+    generationOutcome: 'SUCCEEDED',
+    prompt: 'Make a film',
+    duration: 30,
+    inferenceModel: 'gpt-5.6-sol',
+    videoGenerationModel: 'RUNWAYML',
+    themeJson: { visualStyle: 'cinematic' },
+    narrativeJson: { scenes: [{ visual: 'root' }], sounds: [] },
+    movieResourceList: {
+      structureType: 'branched',
+      nodes: [{ nodeId: 'root', scenes: [], sounds: [] }],
+    },
+    branchingMeta: { rootNodeId: 'root', numLevels: 1 },
+    inferenceReceipts: [{
+      stage: 'branch_divergence_generation',
+      requestKey: 'narrative:create_branching:level-1:root:divergence',
+      model: 'gpt-5.6-sol',
+      provider: 'openai',
+      usage: { inputTokens: 1_000, outputTokens: 100 },
+    }],
+    billingStatus: 'PENDING',
+    billingPolicy: 'included_in_interactive_video_rate',
+  };
+
+  t.mock.method(NarrativeRequest, 'findOneAndUpdate', (_filter, update) => {
+    storedRequest = { ...storedRequest, ...(update.$set || {}) };
+    return asLeanQuery(storedRequest);
+  });
+  t.mock.method(NarrativeRequest, 'updateOne', async (_filter, update) => {
+    storedRequest = { ...storedRequest, ...(update.$set || {}) };
+    return { matchedCount: 1, modifiedCount: 1 };
+  });
+  const transactionLookup = t.mock.method(GenerationCreditTransaction, 'findOne', () => {
+    throw new Error('interactive narrative stages must not inspect or create debit transactions');
+  });
+
+  const result = await processCreateBranchingNarrativeRequest(requestId);
+
+  assert.equal(result.status, 'COMPLETED');
+  assert.equal(result.billing.credits_charged, 0);
+  assert.equal(result.billing.policy, 'included_in_interactive_video_rate');
+  assert.equal(result.billing.reason, 'included_in_interactive_video_rate');
+  assert.equal(storedRequest.billingStatus, 'WAIVED');
+  assert.equal(transactionLookup.mock.callCount(), 0);
 });
 
 test('fresh worker checkpoints the tree, meters every branching call, and forwards source settings', async (t) => {

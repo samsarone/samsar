@@ -23,6 +23,10 @@ import {
 import { resolveAppKeyFromAuthHeaders } from '../api/AppKeyAPI.js';
 import { setRequestAuthContext } from '../api/RequestAuthContext.js';
 import {
+  isBranchedVideoSession,
+  isInteractiveSessionReadyForPublication,
+} from '../interactive/InteractivePublicationManifest.js';
+import {
   creditCustomerSubAccountCredits,
   deductCustomerSubAccountCredits,
   getCustomerSubAccountCreditSnapshot,
@@ -2303,7 +2307,10 @@ export async function publishExternalUserRequest({
     throw error;
   }
 
-  if (!sessionData.remoteURL && !sessionData.videoLink && !sessionData.publishedVideoURL) {
+  const isReadyForPublication = isBranchedVideoSession(sessionData)
+    ? isInteractiveSessionReadyForPublication(sessionData)
+    : Boolean(sessionData.remoteURL || sessionData.videoLink || sessionData.publishedVideoURL);
+  if (!isReadyForPublication) {
     const error = new Error('Video is not ready to publish yet.');
     error.status = 409;
     throw error;

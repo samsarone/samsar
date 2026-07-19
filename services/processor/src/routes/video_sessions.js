@@ -682,18 +682,20 @@ router.get('/edit_status', async function (req, res) {
 });
 
 router.post('/regenerate_subtitles_for_video_session', async function (req, res) {
+  try {
+    const userId = verifyUserAuth(req.headers);
+    if (!userId) {
+      return res.status(401).json({ message: 'Unauthorized' });
+    }
 
-  const headers = req.headers;
-  const userId = verifyUserAuth(headers);
-  if (!userId) {
-    res.status(401).send("Unauthorized");
-    return;
+    const sessionData = await requestRegenerateSubtitles(userId, req.body);
+    return res.json(sessionData);
+  } catch (error) {
+    return res.status(error?.statusCode || error?.status || 500).json({
+      code: error?.code || 'SUBTITLE_REGENERATION_FAILED',
+      message: error?.message || 'Unable to regenerate subtitles.',
+    });
   }
-
-  const payload = req.body;
-
-  const sessionData = await requestRegenerateSubtitles(userId, payload);
-  res.json(sessionData);
 
 });
 
@@ -1482,20 +1484,25 @@ router.post('/remove_ai_video_layer', async function (req, res) {
 });
 
 router.post('/request_regenerate_subtitles', async function (req, res) {
-  const headers = req.headers;
-  const userId = verifyUserAuth(headers);
-  if (!userId) {
-    res.status(401).send("Unauthorized");
-    return;
+  try {
+    const userId = verifyUserAuth(req.headers);
+    if (!userId) {
+      return res.status(401).json({ message: 'Unauthorized' });
+    }
+    await assertEditableRouteAccess(userId, req.body);
+    const sessionData = await requestRegenerateSubtitles(userId, req.body);
+    await logSharedRouteOperation(userId, req.body, {
+      operation: 'request_regenerate_subtitles',
+      category: 'generation',
+      route: '/video_sessions/request_regenerate_subtitles',
+    });
+    return res.json(sessionData);
+  } catch (error) {
+    return res.status(error?.statusCode || error?.status || 500).json({
+      code: error?.code || 'SUBTITLE_REGENERATION_FAILED',
+      message: error?.message || 'Unable to regenerate subtitles.',
+    });
   }
-  await assertEditableRouteAccess(userId, req.body);
-  const sessionData = await requestRegenerateSubtitles(userId, req.body);
-  await logSharedRouteOperation(userId, req.body, {
-    operation: 'request_regenerate_subtitles',
-    category: 'generation',
-    route: '/video_sessions/request_regenerate_subtitles',
-  });
-  res.json(sessionData);
 });
 
 
@@ -2165,8 +2172,7 @@ router.post('/publish_session', async function (req, res) {
     }
 
     const publicationResponse = publication?.toObject?.() || publication || {};
-    res.json({
-      ...publicationResponse,
+    const response = {
       publication: publicationResponse,
       session: {
         ...session,
@@ -2175,7 +2181,12 @@ router.post('/publish_session', async function (req, res) {
       },
       isPublished: true,
       ispublishedVideo: true,
-    });
+    };
+    res.json(
+      publicationResponse.type === 'InteractiveVideo'
+        ? response
+        : { ...publicationResponse, ...response },
+    );
 
   } catch (error) {
     const statusCode = Number.isInteger(error?.statusCode)

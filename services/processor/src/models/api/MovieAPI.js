@@ -87,6 +87,7 @@ import {
   resolveDockerVideoProvider,
 } from '../../consts/DockerProviderPriority.js';
 import {
+  applyDockerSubtitleAvailability,
   assertDockerBackingTrackModelAvailable,
   assertDockerTTSProviderAvailable,
   filterDockerSpeakerOptions,
@@ -346,7 +347,12 @@ async function assertSufficientExpressVideoCreditsForPreflight({
     });
   }
 
-  await assertAPIKeyUsageLimitForDebit(userId, requiredCredits);
+  const apiKeyUsage = normalizeAPIKeyUsageContext(payload?.apiKeyUsage);
+  await assertAPIKeyUsageLimitForDebit(
+    userId,
+    requiredCredits,
+    apiKeyUsage?.apiKeyId ? { apiKeyId: apiKeyUsage.apiKeyId } : {},
+  );
 
   return {
     ...estimate,
@@ -531,6 +537,8 @@ async function requestCreateVideoInternal(userId, payload = {}, webhookUrl, {
   preparedNarrativeArtifacts = null,
 } = {}) {
 
+  payload = applyDockerSubtitleAvailability(payload);
+
   await getDBConnectionString();
 
   const reusesNarrativeArtifacts = Boolean(preparedNarrativeArtifacts);
@@ -661,7 +669,8 @@ async function requestCreateVideoInternal(userId, payload = {}, webhookUrl, {
   });
 
   const sessionId = await getOrCreateSessionId(userId, payload);
-  const apiKeyUsageContext = getCurrentAPIKeyUsageContext();
+  const apiKeyUsageContext = normalizeAPIKeyUsageContext(payload?.apiKeyUsage) ||
+    getCurrentAPIKeyUsageContext();
 
   const normalizedPayload = {
     ...customModelOverrides.payload,
@@ -1039,6 +1048,8 @@ export async function requestCreateVideoFromImageListAndMetadata(userId, payload
   if (!userId) {
     throw new Error('userId is required.');
   }
+
+  payload = applyDockerSubtitleAvailability(payload);
 
   logImageListToVideoPayload(payload);
 

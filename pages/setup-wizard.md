@@ -49,7 +49,7 @@ The wizard labels the available software factory services as:
 | --- | --- | --- |
 | Database | `mongodb://mongo:27017/SamsarOne` | A `mongodb://` or `mongodb+srv://` connection string. |
 | Storage | MinIO with bucket `samsar-resources` | S3-compatible bucket, endpoint, region, keys, force-path-style flag, and optional CloudFront signing. |
-| Public media | `http://localhost:8080/` | `storage.staticCdnUrl` when external media publishing is enabled. |
+| Browser media | Configured processor API (`http://localhost:3002/` by default) | Public CloudFront/CDN URL when external media publishing is enabled. |
 | Mail | Disabled | SMTP or AWS SES. |
 
 ## Domain and Reverse Proxy
@@ -60,9 +60,9 @@ When enabled, the wizard can configure nginx for:
 
 | Access type | Use when | Provider media behavior |
 | --- | --- | --- |
-| Public domain/subdomain | You have DNS names for Studio and the processor API. Add A records for both names pointing to the machine IP in your DNS provider. | Public URLs are used for returned media and external AI adapter input media. |
-| Public IP | The server has a static public IPv4 address and DNS is not required. The wizard can detect and autofill the machine public IP. Studio uses `http://<public-ip>` and the processor API/media base uses `http://<public-ip>/api`. | Public URLs are used for returned media and external AI adapter input media. |
-| Private IP | The server is reachable only inside an intranet/VPC. The wizard can detect and autofill RFC1918 private IP candidates. Studio uses `http://<private-ip>` and the processor API/media base uses `http://<private-ip>/api`. | Internal users can access the instance, but external AI providers still use the media tunnel. |
+| Public domain/subdomain | You have DNS names for Studio and the processor API. Add A records for both names pointing to the machine IP in your DNS provider. | Browser media uses the processor URL; external adapters use the managed tunnel unless external S3/CloudFront is enabled. |
+| Public IP | The server has a static public IPv4 address and DNS is not required. The wizard can detect and autofill the machine public IP. Studio uses `http://<public-ip>` and the processor API/media base uses `http://<public-ip>/api`. | Browser media uses the processor URL; external adapters use the managed tunnel unless external S3/CloudFront is enabled. |
+| Private IP | The server is reachable only inside an intranet/VPC. The wizard can detect and autofill RFC1918 private IP candidates. Studio uses `http://<private-ip>` and the processor API/media base uses `http://<private-ip>/api`. | Internal users access the processor URL; external adapters use the managed tunnel. |
 
 For production deployment without SSL, the machine must allow inbound access to port `80`. A detected public IP may be only the router or ISP address; Public IP mode is available only when that address can actually reach this machine on port `80`. If the public IP is not reachable, use Private IP for intranet access. SSL setup uses ports `80` and `443`; after certificate setup, the wizard closes port `80` if it opened that firewall rule itself. Any port opened by Samsar setup is recorded under `runtime/reverse-proxy/managed-firewall-ports.json` and closed before setup reset, delete, maintenance recreation, or Docker admin container recreation. Enabling public access exposes your instance, so set a strong admin password before opening it.
 

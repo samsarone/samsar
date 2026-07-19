@@ -2,12 +2,26 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   DEFAULT_VIDGENIE_SUBTITLES_ENABLED,
+  VIDGENIE_SUBTITLE_PREFERENCE_VERSION,
   buildVidgenieLanguageFields,
+  resolveInitialVidgenieSubtitlesEnabled,
   resolveSubtitleLanguageOverride,
 } from './vidgenieSubtitleLanguage.mjs';
 
-test('enables subtitles by default for a new Vidgenie render', () => {
-  assert.equal(DEFAULT_VIDGENIE_SUBTITLES_ENABLED, true);
+test('keeps subtitles off by default for a new Vidgenie render', () => {
+  assert.equal(DEFAULT_VIDGENIE_SUBTITLES_ENABLED, false);
+});
+
+test('resets the legacy auto-enabled preference until the user opts in again', () => {
+  assert.equal(resolveInitialVidgenieSubtitlesEnabled({ enableSubtitles: true }), false);
+  assert.equal(resolveInitialVidgenieSubtitlesEnabled({
+    enableSubtitles: true,
+    subtitlePreferenceVersion: VIDGENIE_SUBTITLE_PREFERENCE_VERSION,
+  }), true);
+  assert.equal(resolveInitialVidgenieSubtitlesEnabled({
+    enableSubtitles: false,
+    subtitlePreferenceVersion: VIDGENIE_SUBTITLE_PREFERENCE_VERSION,
+  }), false);
 });
 
 test('omits subtitle language when subtitles are disabled', () => {

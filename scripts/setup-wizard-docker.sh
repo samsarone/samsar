@@ -1119,7 +1119,13 @@ echo "Public setup URL will be shown only if TCP ${HOST_PORT} responds on the de
 container_id="$(
 docker_cli run -d \
     --name "$CONTAINER_NAME" \
+    --restart unless-stopped \
     -p "${HOST_BIND_ADDR}:${HOST_PORT}:${CONTAINER_PORT}" \
+    --health-cmd "node -e \"fetch('http://127.0.0.1:${CONTAINER_PORT}/api/setup/health').then((response)=>process.exit(response.ok?0:1)).catch(()=>process.exit(1))\"" \
+    --health-interval 15s \
+    --health-timeout 5s \
+    --health-retries 4 \
+    --health-start-period 10s \
     --add-host=host.docker.internal:host-gateway \
     -v "${DOCKER_SOCKET_PATH}:/var/run/docker.sock" \
     -v "$ROOT_DIR:$ROOT_DIR" \
@@ -1133,6 +1139,9 @@ docker_cli run -d \
     -e "SAMSAR_SETUP_CLOUD_RESOURCE_GROUP=$AZURE_RESOURCE_GROUP" \
     -e "SAMSAR_SETUP_CLOUD_VM_NAME=$AZURE_VM_NAME" \
     -e "SAMSAR_SETUP_CLOUD_SUBSCRIPTION_ID=$AZURE_SUBSCRIPTION_ID" \
+    -e "SAMSAR_MEDIA_TUNNEL_PROVIDER=${SAMSAR_MEDIA_TUNNEL_PROVIDER:-}" \
+    -e "SAMSAR_CLOUDFLARED_PROTOCOL=${SAMSAR_CLOUDFLARED_PROTOCOL:-}" \
+    -e "ZROK_ENABLE_TOKEN=${ZROK_ENABLE_TOKEN:-}" \
     "$IMAGE_NAME"
 )"
 

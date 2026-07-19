@@ -22,6 +22,17 @@ import {
   getStoredSessionInferenceModel,
   resolvePublicationMetadataInferenceModel,
 } from './publication/InferenceModel.js';
+import {
+  abortInteractivePublicationPublish,
+  buildInteractivePublishedSessionUpdate,
+  createInteractivePublicationForSessionVideo,
+  finalizeInteractivePublicationUnpublish,
+  getInteractivePublicationPublishRevision,
+  markInteractivePublicationPublished,
+  restoreInteractivePublicationUnpublish,
+  stageInteractivePublicationUnpublish,
+} from './InteractivePublication.js';
+import { isBranchedVideoSession } from './interactive/InteractivePublicationManifest.js';
 
 import { updateTagCloudForPublication } from './Content.js';
 
@@ -67,11 +78,58 @@ const resolveSessionHasSubtitles = (sessionData = {}, payload = {}) => {
   return true;
 };
 
-export async function createPublicationForSessionVideo(userId, payload) {
+const buildInteractivePublishedSessionSnapshot = (session = {}) => ({
+  ispublishedVideo: session.ispublishedVideo === true,
+  publishedTitle: session.publishedTitle ?? null,
+  publishedDescription: session.publishedDescription ?? null,
+  publishedTags: Array.isArray(session.publishedTags) ? [...session.publishedTags] : [],
+  publishedAspectRatio: session.publishedAspectRatio ?? null,
+  publishedVideoURL: session.publishedVideoURL ?? null,
+  publishedAt: session.publishedAt ?? null,
+  publishedOriginalPrompt: session.publishedOriginalPrompt ?? null,
+  publishedSplashImage: session.publishedSplashImage ?? null,
+  publishedImageModel: session.publishedImageModel ?? null,
+  publishedVideoModel: session.publishedVideoModel ?? null,
+  publishedHasSubtitles: session.publishedHasSubtitles ?? null,
+  publishedSessionLanguage: session.publishedSessionLanguage ?? null,
+  publishedLanguageString: session.publishedLanguageString ?? null,
+  publishedPublicationId: session.publishedPublicationId ?? null,
+});
+
+const buildInteractiveUnpublishedSessionUpdate = () => ({
+  ispublishedVideo: false,
+  publishedTitle: null,
+  publishedDescription: null,
+  publishedTags: [],
+  publishedAspectRatio: null,
+  publishedVideoURL: null,
+  publishedAt: null,
+  publishedOriginalPrompt: null,
+  publishedSplashImage: null,
+  publishedImageModel: null,
+  publishedVideoModel: null,
+  publishedHasSubtitles: null,
+  publishedSessionLanguage: null,
+  publishedLanguageString: null,
+  publishedPublicationId: null,
+});
+
+export async function createPublicationForSessionVideo(
+  userId,
+  payload,
+  {
+    connectToDatabase = getDBConnectionString,
+    videoSessionModel = VideoSession,
+    createInteractivePublication = createInteractivePublicationForSessionVideo,
+    buildInteractiveSessionUpdate = buildInteractivePublishedSessionUpdate,
+    markInteractivePublication = markInteractivePublicationPublished,
+    abortInteractivePublication = abortInteractivePublicationPublish,
+  } = {},
+) {
 
 
 
-  await getDBConnectionString();
+  await connectToDatabase();
 
   const {
     id,
@@ -80,7 +138,7 @@ export async function createPublicationForSessionVideo(userId, payload) {
     description,
     aspectRatio,
   } = payload;
-  const videoSessionData = await VideoSession.findById(id);
+  const videoSessionData = await videoSessionModel.findById(id);
 
   if (!videoSessionData) {
     throw new Error(`Video session ${id} not found`);
@@ -97,6 +155,78 @@ export async function createPublicationForSessionVideo(userId, payload) {
     const err = new Error('Forbidden: You are not allowed to publish this session.');
     err.statusCode = 403;
     throw err;
+  }
+
+  // Interactive sessions publish through their own compact multi-path model.
+  // Keep the existing singular Publication path below unchanged.
+  if (isBranchedVideoSession(videoSessionData)) {
+    const previousPublishedSessionState = buildInteractivePublishedSessionSnapshot(videoSessionData);
+    const interactivePublication = await createInteractivePublication(
+      userId,
+      payload,
+      { sessionData: videoSessionData },
+    );
+    const publishedSessionUpdate = buildInteractiveSessionUpdate(
+      interactivePublication,
+      videoSessionData,
+      payload,
+    );
+    const expectedRevision = getInteractivePublicationPublishRevision(interactivePublication);
+    const rollbackAndAbortCandidate = async (context) => {
+      let restoredSession = null;
+      let rollbackCheckCompleted = false;
+      try {
+        restoredSession = await videoSessionModel.findOneAndUpdate(
+          {
+            _id: id,
+            publishedPublicationId: publishedSessionUpdate.publishedPublicationId,
+            publishedVideoURL: publishedSessionUpdate.publishedVideoURL,
+          },
+          { $set: previousPublishedSessionState },
+          { new: true, runValidators: true },
+        );
+        rollbackCheckCompleted = true;
+      } catch (rollbackError) {
+        console.error(`Failed to restore session after ${context}:`, rollbackError);
+      }
+      if (!rollbackCheckCompleted) return false;
+
+      await abortInteractivePublication(interactivePublication.id, { expectedRevision })
+        .catch((abortError) => {
+          console.error(`Failed to abort interactive publication after ${context}:`, abortError);
+        });
+      return Boolean(restoredSession);
+    };
+    let publishedSession;
+    try {
+      publishedSession = await videoSessionModel.findOneAndUpdate(
+        {
+          _id: id,
+          ispublishedVideo: videoSessionData.ispublishedVideo === true,
+          publishedPublicationId: videoSessionData.publishedPublicationId ?? null,
+          publishedVideoURL: videoSessionData.publishedVideoURL ?? null,
+        },
+        { $set: publishedSessionUpdate },
+        { new: true, runValidators: true },
+      );
+    } catch (error) {
+      await rollbackAndAbortCandidate('session update failure');
+      throw error;
+    }
+    if (!publishedSession || publishedSession.ispublishedVideo !== true) {
+      await rollbackAndAbortCandidate('incomplete session update');
+      const err = new Error(
+        'InteractivePublication was created, but the session could not be marked as published.',
+      );
+      err.statusCode = 500;
+      throw err;
+    }
+    try {
+      return await markInteractivePublication(interactivePublication.id, { expectedRevision });
+    } catch (error) {
+      await rollbackAndAbortCandidate('publication finalization failure');
+      throw error;
+    }
   }
 
   const normalizedTags = Array.isArray(tags)
@@ -325,7 +455,7 @@ export async function createPublicationForSessionVideo(userId, payload) {
   // Treat the session marker as part of publish success. This final atomic
   // update prevents a successful response from being returned while the
   // session still carries stale unpublished metadata.
-  const publishedSession = await VideoSession.findByIdAndUpdate(
+  const publishedSession = await videoSessionModel.findByIdAndUpdate(
     id,
     { $set: publishedSessionUpdate },
     { new: true, runValidators: true },
@@ -343,8 +473,18 @@ export async function createPublicationForSessionVideo(userId, payload) {
 
 }
 
-export async function unpublishSessionVideo(userId, payload) {
-  await getDBConnectionString();
+export async function unpublishSessionVideo(
+  userId,
+  payload,
+  {
+    connectToDatabase = getDBConnectionString,
+    videoSessionModel = VideoSession,
+    stageInteractiveUnpublish = stageInteractivePublicationUnpublish,
+    finalizeInteractiveUnpublish = finalizeInteractivePublicationUnpublish,
+    restoreInteractiveUnpublish = restoreInteractivePublicationUnpublish,
+  } = {},
+) {
+  await connectToDatabase();
 
   const { sessionId } = payload;
 
@@ -352,7 +492,7 @@ export async function unpublishSessionVideo(userId, payload) {
     throw new Error('Missing sessionId');
   }
 
-  const videoSessionData = await VideoSession.findById(sessionId);
+  const videoSessionData = await videoSessionModel.findById(sessionId);
 
   if (!videoSessionData) {
     throw new Error(`Video session ${sessionId} not found`);
@@ -368,6 +508,62 @@ export async function unpublishSessionVideo(userId, payload) {
     const err = new Error('Forbidden: You are not allowed to unpublish this session.');
     err.statusCode = 403;
     throw err;
+  }
+
+  if (isBranchedVideoSession(videoSessionData)) {
+    const unpublishStage = await stageInteractiveUnpublish(sessionId);
+    const unpublishedSessionUpdate = buildInteractiveUnpublishedSessionUpdate();
+    const sessionHasPublishedMarkers = Boolean(
+      videoSessionData.ispublishedVideo ||
+      videoSessionData.publishedPublicationId ||
+      videoSessionData.publishedVideoURL
+    );
+    let sessionCleared = !sessionHasPublishedMarkers;
+
+    if (sessionHasPublishedMarkers) {
+      try {
+        const clearedSession = await videoSessionModel.findOneAndUpdate(
+          {
+            _id: sessionId,
+            ispublishedVideo: videoSessionData.ispublishedVideo === true,
+            publishedPublicationId: videoSessionData.publishedPublicationId ?? null,
+            publishedVideoURL: videoSessionData.publishedVideoURL ?? null,
+          },
+          { $set: unpublishedSessionUpdate },
+          { new: true, runValidators: true },
+        );
+        sessionCleared = Boolean(clearedSession);
+        if (!sessionCleared) {
+          const currentSession = await videoSessionModel.findById(sessionId);
+          sessionCleared = Boolean(
+            currentSession &&
+            currentSession.ispublishedVideo !== true &&
+            !currentSession.publishedPublicationId &&
+            !currentSession.publishedVideoURL
+          );
+        }
+      } catch (error) {
+        await restoreInteractiveUnpublish(unpublishStage).catch((restoreError) => {
+          console.error('Failed to restore InteractivePublication after session clear failure:', restoreError);
+        });
+        throw error;
+      }
+    }
+
+    if (!sessionCleared) {
+      await restoreInteractiveUnpublish(unpublishStage).catch((restoreError) => {
+        console.error('Failed to restore InteractivePublication after concurrent session change:', restoreError);
+      });
+      const error = new Error('Video session changed while InteractivePublication was being unpublished.');
+      error.statusCode = 409;
+      throw error;
+    }
+
+    await finalizeInteractiveUnpublish(unpublishStage);
+    return {
+      sessionId,
+      ispublishedVideo: false,
+    };
   }
 
   const publication = await Publication.findOne({ sessionId });

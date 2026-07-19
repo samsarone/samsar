@@ -12,7 +12,7 @@
   "storage": {
     "provider": "s3-compatible",
     "mediaBucketName": "samsar-resources",
-    "staticCdnUrl": "http://localhost:8080/",
+    "staticCdnUrl": "http://localhost:3002/",
     "secureAssetPrefix": "assets_v2",
     "accessKeyId": "samsar",
     "secretAccessKey": "samsar-local-password",
@@ -31,7 +31,14 @@
     "clientApp": "http://localhost:3000",
     "processorApi": "http://localhost:3002",
     "samsarApi": "https://api.samsar.one/v1",
-    "media": "http://localhost:8080"
+    "media": "http://localhost:3002"
+  },
+  "localMediaTunnel": {
+    "enabled": false,
+    "provider": "cloudflared",
+    "publicUrl": "",
+    "refreshWaitMs": 120000,
+    "refreshPollMs": 500
   },
   "reverseProxy": {
     "enabled": false,

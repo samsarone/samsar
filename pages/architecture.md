@@ -26,7 +26,7 @@ The default Docker deployment keeps the Studio client, processor API, workers, l
 2. The processor validates auth, credits, request shape, and model availability.
 3. The processor writes session/request state to MongoDB and stores media in MinIO or the configured external S3-compatible store.
 4. Workers pick up queued work through MongoDB-backed state and provider-specific task records.
-5. Media outputs are written to Docker volumes and served through `media-gateway` at `http://localhost:8080`, or through the optional reverse proxy when a public domain/public IP is configured.
+5. Media outputs are written to Docker volumes and served to browsers through the configured processor API (`http://localhost:3002` by default), or through its optional reverse proxy URL. The internal `media-gateway` is used only as the origin for provider tunnels.
 6. Clients poll status endpoints or receive webhook callbacks when provided by the request.
 
 ## Runtime Config
@@ -51,18 +51,18 @@ Local Docker defaults to:
 | Database | `mongodb://mongo:27017/SamsarOne` |
 | Object storage | MinIO at `http://minio:9000` |
 | Bucket | `samsar-resources` |
-| Public media base | `http://localhost:8080/` |
+| Browser media base | `http://localhost:3002/` |
 | Secure asset prefix | `assets_v2` |
 
 Completed local render URLs normally look like:
 
 ```text
-http://localhost:8080/assets_v2/video/output/<session-id>/<file>.mp4
+http://localhost:3002/assets_v2/video/output/<session-id>/<file>.mp4
 ```
 
 External S3-compatible storage can be selected in the setup wizard or configured directly in `runtime/config/samsar.config.json`. When external media publishing is enabled, provider-visible URLs come from `storage.staticCdnUrl`.
 
-The Docker reverse proxy can also provide provider-visible media URLs when it is configured with a public domain or public IP. Public/private IP installs use one machine IP: Studio is served at `http://<ip>` and the processor/media base is `http://<ip>/api`. A private IP reverse proxy is useful for intranet access, but external AI providers cannot fetch private addresses; provider calls keep using the media tunnel in that mode.
+The Docker reverse proxy controls browser-facing Studio and processor/media URLs. Public/private IP installs use one machine IP: Studio is served at `http://<ip>` and the processor/media base is `http://<ip>/api`. External adapter requests use the separately managed media tunnel whenever external S3/CloudFront publishing is disabled.
 
 ## Provider Calls
 

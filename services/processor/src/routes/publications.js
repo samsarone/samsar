@@ -7,12 +7,18 @@ import {
   unpublishSessionVideo,
 } from '../models/Publication.js';
 import { Comment, Publication } from '../schema/Publication.js';
+import InteractivePublication from '../schema/InteractivePublication.js';
 import VideoSession from '../schema/VideoSession.js';
 import { verifyUserAuthentication } from '../models/Auth.js';
 import User from '../schema/User.js';
 import { resolveRequestActorFromAuthHeaders } from '../models/external/User.js';
 import { isPublicPublicationMediaUrl } from '../models/AWS.js';
 import { normalizePublicationTranscript } from '../models/publication/Transcript.js';
+import { serializeInteractivePublication } from '../models/InteractivePublication.js';
+import {
+  isBranchedVideoSession,
+  isInteractiveSessionReadyForPublication,
+} from '../models/interactive/InteractivePublicationManifest.js';
 import {
   scheduleGalleryPublicationReady,
   scheduleGalleryPublicationsReady,
@@ -348,12 +354,15 @@ const buildPublicationSessionPayload = (sessionId, payload = {}, existingPublica
   };
 };
 
-const isVideoSessionReadyForPublication = (session) =>
-  Boolean(
+const isVideoSessionReadyForPublication = (session) => (
+  isBranchedVideoSession(session)
+    ? isInteractiveSessionReadyForPublication(session)
+    : Boolean(
     normalizeOptionalString(session?.remoteURL) ||
     normalizeOptionalString(session?.videoLink) ||
     normalizeOptionalString(session?.publishedVideoURL)
-  );
+    )
+);
 
 async function authenticatePublicationManagementRequest(req, res, next) {
   try {
@@ -427,6 +436,20 @@ const formatPublicationManagementResponse = ({ publication, session, created = f
   const sessionId = normalizeSessionId(publicationData.sessionId) ||
     normalizeSessionId(sessionData._id) ||
     normalizeSessionId(sessionData.id);
+  if (publicationData.type === 'InteractiveVideo' && publicationData.manifest) {
+    return {
+      created,
+      publication: serializeInteractivePublication(publicationData),
+      session: {
+        id: normalizeSessionId(sessionData._id) || sessionId,
+        session_id: normalizeSessionId(sessionData._id) || sessionId,
+        is_published: Boolean(sessionData.ispublishedVideo),
+        published_publication_id: normalizeOptionalString(sessionData.publishedPublicationId),
+        published_video_url: normalizeOptionalString(sessionData.publishedVideoURL),
+        published_at: sessionData.publishedAt || null,
+      },
+    };
+  }
   const summary = mapPublicationResponse(publicationData, null, new Map(), new Map(), true) || {};
 
   return {
@@ -509,7 +532,10 @@ async function handlePublishSessionPublication(req, res) {
       });
     }
 
-    const existingPublication = await Publication.findOne({ sessionId }).lean();
+    const publicationModel = isBranchedVideoSession(session)
+      ? InteractivePublication
+      : Publication;
+    const existingPublication = await publicationModel.findOne({ sessionId }).lean();
     const publicationPayload = buildPublicationSessionPayload(
       sessionId,
       payload,
@@ -540,7 +566,10 @@ async function handleEditSessionPublication(req, res) {
     const payload = normalizeInputPayload(req);
     const sessionId = resolvePublicationSessionId(req, payload);
     const session = await getAuthorizedPublicationSession(req, sessionId);
-    const existingPublication = await Publication.findOne({ sessionId }).lean();
+    const publicationModel = isBranchedVideoSession(session)
+      ? InteractivePublication
+      : Publication;
+    const existingPublication = await publicationModel.findOne({ sessionId }).lean();
 
     if (!existingPublication) {
       return res.status(404).json({
@@ -584,7 +613,10 @@ async function handleRevokeSessionPublication(req, res) {
     const payload = normalizeInputPayload(req);
     const sessionId = resolvePublicationSessionId(req, payload);
     const session = await getAuthorizedPublicationSession(req, sessionId);
-    const existingPublication = await Publication.findOne({ sessionId }).lean();
+    const publicationModel = isBranchedVideoSession(session)
+      ? InteractivePublication
+      : Publication;
+    const existingPublication = await publicationModel.findOne({ sessionId }).lean();
     const wasPublished = Boolean(
       existingPublication ||
       session.ispublishedVideo ||

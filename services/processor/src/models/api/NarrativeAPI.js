@@ -21,7 +21,10 @@ import {
   generateValidatedTextToVideoNarrative,
 } from '../movie_session/text_to_video/NarrativeGenerator.js';
 import { validateTextToVideoNarrative } from '../movie_session/utils/TranscriptUtils.js';
-import { MAX_MOVIE_PROMPT_LENGTH } from './PromptUtils.js';
+import {
+  MAX_MOVIE_PROMPT_LENGTH,
+  validateExpressVideoModelKey,
+} from './PromptUtils.js';
 import { resolveEffectiveInferenceModel } from './RequestModelOverrides.js';
 import { normalizeAPIKeyUsageContext } from './RequestAuthContext.js';
 import {
@@ -40,6 +43,10 @@ const DEFAULT_NARRATIVE_RECOVERY_INTERVAL_MS = 60 * 1000;
 const NARRATIVE_BILLING_SOURCE = 'external_narrative_create_single';
 const NARRATIVE_ADMISSION_CREDIT_FLOOR = 0.0001;
 const NARRATIVE_LEASE_LOST_CODE = 'NARRATIVE_WORKER_LEASE_LOST';
+export const NARRATIVE_BILLING_POLICIES = Object.freeze({
+  STANDALONE: 'standalone',
+  INCLUDED_IN_INTERACTIVE_VIDEO_RATE: 'included_in_interactive_video_rate',
+});
 let narrativeRequestRecoveryInterval = null;
 let narrativeBillingIndexesPromise = null;
 
@@ -53,6 +60,53 @@ function buildError(message, statusCode = 400, code = null) {
 
 function normalizeString(value) {
   return typeof value === 'string' ? value.trim() : '';
+}
+
+function hasOwn(source, key) {
+  return Object.prototype.hasOwnProperty.call(source || {}, key);
+}
+
+export function normalizeNarrativeVideoModel(
+  source = {},
+  { required = false, fallback = NARRATIVE_VIDEO_MODEL } = {},
+) {
+  const hasSnakeCase = hasOwn(source, 'video_model');
+  const hasCamelCase = hasOwn(source, 'videoModel');
+  const snakeCaseValue = hasSnakeCase ? normalizeString(source.video_model) : '';
+  const camelCaseValue = hasCamelCase ? normalizeString(source.videoModel) : '';
+
+  if ((hasSnakeCase && !snakeCaseValue) || (hasCamelCase && !camelCaseValue)) {
+    throw buildError(
+      'video_model must be a non-empty string when provided.',
+      400,
+      'INVALID_VIDEO_MODEL',
+    );
+  }
+  if (snakeCaseValue && camelCaseValue && snakeCaseValue !== camelCaseValue) {
+    throw buildError(
+      'video_model and videoModel must match when both are provided.',
+      400,
+      'CONFLICTING_VIDEO_MODEL',
+    );
+  }
+
+  const requestedModel = snakeCaseValue || camelCaseValue;
+  const validation = validateExpressVideoModelKey(requestedModel, { required });
+  if (!validation.status) {
+    if (!requestedModel && !required) return fallback;
+    throw buildError(
+      validation.message || 'Invalid video model.',
+      400,
+      'INVALID_VIDEO_MODEL',
+    );
+  }
+  return validation.videoModel || fallback;
+}
+
+function normalizeNarrativeBillingPolicy(value) {
+  return value === NARRATIVE_BILLING_POLICIES.INCLUDED_IN_INTERACTIVE_VIDEO_RATE
+    ? value
+    : NARRATIVE_BILLING_POLICIES.STANDALONE;
 }
 
 function getRequestErrorStatus(error) {
@@ -196,11 +250,14 @@ export function normalizeCreateSingleNarrativePayload(payload = {}) {
     );
   }
 
+  const videoGenerationModel = normalizeNarrativeVideoModel(source);
   return {
     prompt,
     duration,
     inference_model: source?.inference_model ?? source?.inferenceModel,
     inferenceModel: source?.inference_model ?? source?.inferenceModel,
+    video_model: videoGenerationModel,
+    videoGenerationModel,
   };
 }
 
@@ -209,7 +266,7 @@ export function resolveNarrativeInferenceModel(payload, selectedInferenceModel) 
 }
 
 function buildBillingPayload(request) {
-  return {
+  const billing = {
     pricing_multiplier: Number(request.pricingMultiplier) || NARRATIVE_PRICING_MULTIPLIER,
     underlying_cost_usd: Number(request.underlyingCostUsd) || 0,
     underlying_credits: Number(request.underlyingCredits) || 0,
@@ -217,6 +274,12 @@ function buildBillingPayload(request) {
     remaining_credits: request.remainingCredits ?? null,
     usage: request.inferenceUsage || null,
   };
+  if (request.billingPolicy ===
+    NARRATIVE_BILLING_POLICIES.INCLUDED_IN_INTERACTIVE_VIDEO_RATE) {
+    billing.policy = request.billingPolicy;
+    billing.reason = request.billingReason || request.billingPolicy;
+  }
+  return billing;
 }
 
 export function buildNarrativeRequestPayload(request) {
@@ -233,6 +296,7 @@ export function buildNarrativeRequestPayload(request) {
     prompt: request.prompt,
     duration: request.duration,
     inference_model: request.inferenceModel,
+    video_model: request.videoGenerationModel || NARRATIVE_VIDEO_MODEL,
     created_at: request.createdAt,
     updated_at: request.updatedAt,
   };
@@ -334,10 +398,34 @@ async function findExistingNarrativeCharge(request) {
 }
 
 async function chargeNarrativeUsage(request, billing, workerLeaseId) {
+  if (request.billingPolicy ===
+    NARRATIVE_BILLING_POLICIES.INCLUDED_IN_INTERACTIVE_VIDEO_RATE) {
+    const updateResult = await NarrativeRequest.updateOne(
+      buildOwnedNarrativeFilter(request._id, workerLeaseId),
+      {
+        $set: {
+          billingStatus: 'WAIVED',
+          billingReason: NARRATIVE_BILLING_POLICIES.INCLUDED_IN_INTERACTIVE_VIDEO_RATE,
+          creditsCharged: 0,
+          remainingCredits: null,
+          billingTransactionId: null,
+        },
+      },
+    );
+    assertWorkerUpdateMatched(updateResult);
+    return { creditsCharged: 0, remainingCredits: null, transactionId: null };
+  }
+
   if (!(billing.credits > 0)) {
     const updateResult = await NarrativeRequest.updateOne(
       buildOwnedNarrativeFilter(request._id, workerLeaseId),
-      { $set: { billingStatus: 'WAIVED', creditsCharged: 0 } },
+      {
+        $set: {
+          billingStatus: 'WAIVED',
+          billingReason: 'no_billable_inference_usage',
+          creditsCharged: 0,
+        },
+      },
     );
     assertWorkerUpdateMatched(updateResult);
     return { creditsCharged: 0, remainingCredits: null, transactionId: null };
@@ -908,6 +996,9 @@ export async function createSingleNarrativeRequest({
   userId,
   payload = {},
   authContext = null,
+  billingPolicy = NARRATIVE_BILLING_POLICIES.STANDALONE,
+  interactiveVideoRequestId = null,
+  dependencies = {},
 } = {}) {
   if (!userId) throw buildError('User ID is required.', 401, 'UNAUTHORIZED');
   const normalizedPayload = normalizeCreateSingleNarrativePayload(payload);
@@ -944,16 +1035,20 @@ export async function createSingleNarrativeRequest({
     duration: normalizedPayload.duration,
     totalDuration: normalizedPayload.duration,
     inferenceModel,
-    videoGenerationModel: NARRATIVE_VIDEO_MODEL,
+    videoGenerationModel: normalizedPayload.videoGenerationModel,
     videoTone: NARRATIVE_VIDEO_TONE,
     speakerOptions: user.speakerOptions || null,
     pricingMultiplier: NARRATIVE_PRICING_MULTIPLIER,
     apiKeyId: apiKeyUsage?.apiKeyId || null,
     apiKeyUsage,
+    billingPolicy: normalizeNarrativeBillingPolicy(billingPolicy),
+    interactiveVideoRequestId: interactiveVideoRequestId || null,
     meteringSlotActive: false,
   });
   const request = created.toObject();
-  queueCreateSingleNarrativeRequest(request._id.toString());
+  const queueRequest = dependencies.queueCreateSingleNarrativeRequest ||
+    queueCreateSingleNarrativeRequest;
+  queueRequest(request._id.toString());
   return buildNarrativeRequestPayload(request);
 }
 

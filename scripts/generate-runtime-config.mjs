@@ -31,6 +31,7 @@ const config = fs.existsSync(configPath)
 const mailSecrets = readJsonIfExists(mailSecretsPath) || {};
 const providerSecrets = readJsonIfExists(providerSecretsPath) || {};
 const storageConfig = config.storage || {};
+const localMediaTunnelConfig = config.localMediaTunnel || config.mediaTunnel || {};
 const databaseConfig = config.database || {};
 const cloudFrontConfig = storageConfig.cloudFront || {};
 const mailConfig = config.mail || {};
@@ -50,17 +51,28 @@ const mediaDeliveryMode = isDockerRuntime && !externalMediaPublishEnabled
   ? 'docker-local'
   : 's3-cloudfront';
 const loggerEnabled = config.services?.logger !== false;
-const mediaPublicUrl = externalMediaPublishEnabled
-  ? (storageConfig.staticCdnUrl || config.publicUrls?.media || '')
-  : (config.publicUrls?.media || 'http://localhost:8080');
-const externalMediaPublicBaseUrl = externalMediaPublishEnabled
-  ? (storageConfig.staticCdnUrl || '')
-  : mediaPublicUrl;
 const reverseProxyConfig = config.reverseProxy || {};
 const reverseProxyEnabled = reverseProxyConfig.enabled === true;
 const publicClientBaseUrl = config.publicUrls?.clientApp || 'http://localhost:3000';
 const publicProcessorBaseUrl = config.publicUrls?.processorApi || 'http://localhost:3002';
-const publicAssetBaseUrl = config.publicUrls?.media || publicProcessorBaseUrl;
+const configuredPublicMediaUrl = config.publicUrls?.media || '';
+const configuredTunnelPublicUrl = localMediaTunnelConfig.enabled === false
+  ? ''
+  : (localMediaTunnelConfig.publicUrl ||
+    localMediaTunnelConfig.url ||
+    (isTemporaryMediaTunnelUrl(configuredPublicMediaUrl) ? configuredPublicMediaUrl : ''));
+const stableBrowserMediaUrl = isTemporaryMediaTunnelUrl(configuredPublicMediaUrl)
+  ? ''
+  : configuredPublicMediaUrl;
+const publicAssetBaseUrl = externalMediaPublishEnabled
+  ? (storageConfig.staticCdnUrl || stableBrowserMediaUrl || publicProcessorBaseUrl)
+  : publicProcessorBaseUrl;
+const mediaPublicUrl = externalMediaPublishEnabled
+  ? (storageConfig.staticCdnUrl || stableBrowserMediaUrl || '')
+  : (configuredTunnelPublicUrl || stableBrowserMediaUrl || publicProcessorBaseUrl);
+const externalMediaPublicBaseUrl = externalMediaPublishEnabled
+  ? (storageConfig.staticCdnUrl || '')
+  : mediaPublicUrl;
 const alibabaCloudConfig = config.providers?.alibabaCloud || {};
 const alibabaCloudSecrets = providerSecrets.alibabaCloud || {};
 const openrouterSecrets = providerSecrets.openrouter || {};
@@ -71,6 +83,21 @@ const effectiveProviderConfig = applyEffectiveOpenRouterProviderConfig(
 
 function normalizeString(value) {
   return typeof value === 'string' ? value.trim() : '';
+}
+
+function isTemporaryMediaTunnelUrl(value) {
+  const normalized = normalizeString(value);
+  if (!normalized) {
+    return false;
+  }
+  try {
+    const hostname = new URL(normalized).hostname.toLowerCase();
+    return hostname.endsWith('.trycloudflare.com') ||
+      hostname.endsWith('.loca.lt') ||
+      hostname.endsWith('.share.zrok.io');
+  } catch {
+    return false;
+  }
 }
 
 function normalizeSecretString(value) {
@@ -387,7 +414,7 @@ const env = {
 	  MEDIA_BUCKET_NAME: storageBucketName,
 	  STATIC_CDN_BUCKET: storageBucketName,
 	  STATIC_CDN_URL: storageConfig.staticCdnUrl || '',
-	  PUBLIC_STATIC_CDN_URL: storageConfig.staticCdnUrl || '',
+	  PUBLIC_STATIC_CDN_URL: publicAssetBaseUrl,
 	  SECURE_ASSET_PREFIX: storageConfig.secureAssetPrefix || 'assets_v2',
 	  S3_ENDPOINT: s3Endpoint,
 	  S3_FORCE_PATH_STYLE: s3ForcePathStyle,
@@ -413,6 +440,10 @@ const env = {
 	  SAMSAR_EXTERNAL_MEDIA_SECRET_ACCESS_KEY: storageSecretAccessKey,
 	  SAMSAR_PUBLIC_MEDIA_BASE_URL: externalMediaPublicBaseUrl,
 	  SAMSAR_EXTERNAL_MEDIA_PUBLIC_BASE_URL: externalMediaPublicBaseUrl,
+	  SAMSAR_MEDIA_TUNNEL_PUBLIC_URL: externalMediaPublishEnabled ? '' : configuredTunnelPublicUrl,
+	  SAMSAR_MEDIA_TUNNEL_PROVIDER: localMediaTunnelConfig.provider || 'cloudflared',
+	  SAMSAR_MEDIA_TUNNEL_REFRESH_WAIT_MS: localMediaTunnelConfig.refreshWaitMs || 120000,
+	  SAMSAR_MEDIA_TUNNEL_REFRESH_POLL_MS: localMediaTunnelConfig.refreshPollMs || 500,
 	  SAMSAR_EXTERNAL_MEDIA_CLOUDFRONT_KEY_PAIR_ID: cloudFrontConfig.keyPairId || '',
 	  SAMSAR_EXTERNAL_MEDIA_CLOUDFRONT_PRIVATE_KEY: cloudFrontConfig.privateKey || '',
 	  SAMSAR_EXTERNAL_MEDIA_CLOUDFRONT_PRIVATE_KEY_BASE64: cloudFrontConfig.privateKeyBase64 || '',
@@ -423,6 +454,7 @@ const env = {
   SAMSAR_DOCKER_PUBLIC_CLIENT_BASE_URL: publicClientBaseUrl,
   SAMSAR_DOCKER_PUBLIC_PROCESSOR_BASE_URL: publicProcessorBaseUrl,
   SAMSAR_DOCKER_PUBLIC_ASSET_BASE_URL: publicAssetBaseUrl,
+  SAMSAR_DOCKER_PREVIEW_ASSET_BASE_URL: publicAssetBaseUrl,
   SAMSAR_REVERSE_PROXY_ENABLED: String(reverseProxyEnabled),
   SAMSAR_REVERSE_PROXY_ACCESS_TYPE: reverseProxyConfig.accessType || '',
   SAMSAR_REVERSE_PROXY_SSL_ENABLED: String(reverseProxyConfig.ssl?.enabled === true),

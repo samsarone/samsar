@@ -4,6 +4,7 @@ import { getHeaders } from "../utils/web.jsx";
 import {
   extractDeploymentModelAvailability,
   fetchDeploymentProviderConfig,
+  hasSubtitleGenerationProvider,
 } from "../utils/deploymentProviders.js";
 
 const PROCESSOR_API_URL = import.meta.env.VITE_PROCESSOR_API || "";
@@ -17,6 +18,7 @@ const EMPTY_AVAILABILITY = Object.freeze({
   imageModelValues: [],
   imageEditModelValues: [],
   videoModelValues: [],
+  hasSubtitleGenerationCredentials: false,
   error: null,
 });
 
@@ -39,6 +41,7 @@ async function loadDeploymentModelAvailability() {
       .then((payload) => {
         const availability = {
           ...extractDeploymentModelAvailability(payload),
+          hasSubtitleGenerationCredentials: hasSubtitleGenerationProvider(payload),
           error: null,
         };
         availabilityCache.availability = availability;
@@ -93,5 +96,7 @@ export function useDeploymentModelAvailability() {
     isDockerInstall: IS_DOCKER_INSTALL,
     isLoading,
     ...availability,
+    hasSubtitleGenerationCredentials: !IS_DOCKER_INSTALL ||
+      availability.hasSubtitleGenerationCredentials === true,
   };
 }

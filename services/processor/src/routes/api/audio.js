@@ -8,6 +8,7 @@ import {
   getExternalAudioStatus,
 } from '../../models/api/ExternalAudioAPI.js';
 import { resolveRequestActorFromAuthHeaders } from '../../models/external/User.js';
+import { createExternalTranscriptAlignment } from '../../models/api/ExternalTranscriptAlignAPI.js';
 
 const router = express.Router();
 
@@ -118,6 +119,30 @@ router.post(
   ['/text_to_sound_effect', '/sound_effect', '/sound'],
   validateAPIKeyAndUserId,
   (req, res) => handleCreateExternalAudio(req, res, AUDIO_ROUTE_TEXT_TO_SOUND_EFFECT),
+);
+
+router.post(
+  ['/transcript_align', '/transcript_alignment'],
+  validateAPIKeyAndUserId,
+  async (req, res) => {
+    try {
+      const result = await createExternalTranscriptAlignment({
+        userId: req.userId,
+        payload: req.body || {},
+      });
+      setCreditHeaders(res, result);
+      return res.status(200).json(result.response);
+    } catch (error) {
+      if (error?.code === 'INSUFFICIENT_CREDITS') {
+        return res.status(402).json({ message: 'Insufficient credits or no credits remaining.' });
+      }
+      const statusCode = error?.statusCode || error?.status || error?.response?.status || 500;
+      return res.status(statusCode).json({
+        code: error?.code || 'TRANSCRIPT_ALIGN_FAILED',
+        message: error?.message || 'Internal server error while aligning transcript audio.',
+      });
+    }
+  },
 );
 
 export default router;

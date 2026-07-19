@@ -35,6 +35,7 @@ import { createCanvas, loadImage } from 'canvas';
 import { getAnimationPresetForType } from '../utils/AnimationUtils.js';
 import { getModerationForNarrative } from './moderation/CreateModeration.js';
 import { normalizeInferenceModel } from '../consts/InferenceModels.js';
+import { assertSubtitleGenerationAvailable } from '../consts/DockerAudioAvailability.js';
 import { translateSpeech } from './agent/AudioCreatorAgent.js';
 import {
   applySubtitleLanguageSelectionForRerun,
@@ -48,6 +49,7 @@ import { getModelType } from '../utils/video_utils/VideoTypeUtils.js';
 import sharp from "sharp";
 import ffmpeg from 'fluent-ffmpeg';
 import { deletePublicPublicationMediaForSession } from './PublicationMedia.js';
+import { deleteInteractivePublicationForSession } from './InteractivePublication.js';
 
 
 
@@ -9803,6 +9805,7 @@ export async function requestRegenerateSubtitlesForVideoSession(userId, payload)
 }
 
 export async function requestRegenerateSubtitles(userId, payload) {
+  assertSubtitleGenerationAvailable();
   const { sessionId, realignAudio } = payload;
 
   await getDBConnectionString();
@@ -12847,7 +12850,12 @@ export async function deleteVideoSessionsForUser(userId) {
     if (publicationIds.length > 0) {
       await Comment.deleteMany({ publicationId: { $in: publicationIds } });
     }
-    await Promise.all(sessionIds.map((sessionId) => deletePublicPublicationMediaForSession(sessionId)));
+    await Promise.all(sessionIds.map(async (sessionId) => {
+      await Promise.all([
+        deletePublicPublicationMediaForSession(sessionId),
+        deleteInteractivePublicationForSession(sessionId),
+      ]);
+    }));
     await Publication.deleteMany({ sessionId: { $in: sessionIds } });
   }
   await VideoSession.deleteMany({ userId });
@@ -13100,6 +13108,7 @@ export async function deleteVideoSessionForUser(userId, payload = {}) {
     await Publication.deleteOne({ _id: publication._id });
   }
   await deletePublicPublicationMediaForSession(sessionId);
+  await deleteInteractivePublicationForSession(sessionId);
 
   const generatedImageRows = await GeneratedImage.find({ sessionId })
     .select('url')

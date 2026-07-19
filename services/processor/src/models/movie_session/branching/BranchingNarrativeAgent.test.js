@@ -306,6 +306,7 @@ test('generates a full child movieResourceList with an exact cloned prefix and i
       path_description: 'Ada boards the ferry and races downstream.',
     },
     inferenceModel: 'gpt-5.6-sol',
+    videoGenerationModel: 'COSMOS3SUPERI2V',
     requestKey: 'narrative:create_branching:level-1:path-1:mrl',
     externalRequestContext: { sessionId: 'branch-request-2', userId: 'user-1' },
     onInferenceResponse: (receipt) => receipts.push(receipt),
@@ -337,7 +338,16 @@ test('generates a full child movieResourceList with an exact cloned prefix and i
   assert.equal(receipts[0].pathName, 'Take the river');
   assert.equal(capturedRequest.maxRetries, 0);
   assert.equal(capturedRequest.externalMaxRetries, 0);
+  assert.match(
+    capturedRequest.messages[0].content,
+    /25 characters for 5 second scenes/,
+  );
+  assert.match(
+    capturedRequest.messages[0].content,
+    /40 characters for 7\.875 second scenes/,
+  );
   const payload = JSON.parse(capturedRequest.messages[1].content);
+  assert.equal(payload.videoGenerationModel, 'COSMOS3SUPERI2V');
   assert.deepEqual(payload.timelineSlots, [
     { sceneIndex: 2, startTime: 10, duration: 5, endTime: 15 },
     { sceneIndex: 3, startTime: 15, duration: 5, endTime: 20 },

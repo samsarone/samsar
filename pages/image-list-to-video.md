@@ -82,7 +82,7 @@ curl http://localhost:3002/v1/video/supported_models
 5. `ai-video-layer-generator` handles remote video generation/lip sync tasks.
 6. `express-video-listener` coordinates stage completion and queues rendering.
 7. `video-generator` renders the final output.
-8. `media-gateway` serves local Docker outputs under `http://localhost:8080/assets_v2/...`.
+8. `processor` serves local Docker outputs from the mounted volume under its configured `/assets_v2/...` URL (default `http://localhost:3002/assets_v2/...`).
 
 ## Validation Notes
 

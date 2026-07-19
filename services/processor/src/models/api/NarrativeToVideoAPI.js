@@ -13,7 +13,10 @@ import {
 } from '../movie_session/branching/BranchingNarrativeTree.js';
 import * as MovieAPI from './MovieAPI.js';
 import { validateExpressImageModelKey } from './PromptUtils.js';
-import { getCurrentAPIKeyUsageContext } from './RequestAuthContext.js';
+import {
+  getCurrentAPIKeyUsageContext,
+  normalizeAPIKeyUsageContext,
+} from './RequestAuthContext.js';
 
 const DEFAULT_IMAGE_MODEL = 'GPTIMAGE2';
 const DEFAULT_VIDEO_MODEL = 'RUNWAYML';
@@ -155,6 +158,7 @@ function assertProvidedModelIsValid(model, validator, label, code) {
 export function resolveNarrativeToVideoModels({
   requestedImageModel = null,
   requestedVideoModel = null,
+  sourceVideoModel = null,
   user = {},
 } = {}) {
   assertProvidedModelIsValid(
@@ -172,17 +176,25 @@ export function resolveNarrativeToVideoModels({
 
   const userImageModel = normalizeString(user?.agentImageModel);
   const userVideoModel = normalizeString(user?.agentVideoModel);
+  const normalizedSourceVideoModel = normalizeString(sourceVideoModel);
   const imageModel = requestedImageModel || (
     isValidExpressImageModel(userImageModel) ? userImageModel : DEFAULT_IMAGE_MODEL
   );
   const videoModel = requestedVideoModel || (
-    isValidExpressVideoModel(userVideoModel) ? userVideoModel : DEFAULT_VIDEO_MODEL
+    isValidExpressVideoModel(normalizedSourceVideoModel)
+      ? normalizedSourceVideoModel
+      : isValidExpressVideoModel(userVideoModel)
+        ? userVideoModel
+        : DEFAULT_VIDEO_MODEL
   );
 
   return { imageModel, videoModel };
 }
 
-export function validateNarrativeToVideoSourceRequest(source) {
+export function validateNarrativeToVideoSourceRequest(
+  source,
+  { videoGenerationModel = null } = {},
+) {
   if (!source) {
     throw buildError('Narrative request not found.', 404, 'NOT_FOUND');
   }
@@ -243,12 +255,13 @@ export function validateNarrativeToVideoSourceRequest(source) {
 
   const validation = isBranchedSource
     ? validateBranchingNarrativeTree(deepCloneJson(source.movieResourceList), {
-      videoGenerationModel: source.videoGenerationModel || DEFAULT_VIDEO_MODEL,
+      videoGenerationModel: videoGenerationModel ||
+        source.videoGenerationModel || DEFAULT_VIDEO_MODEL,
       requestedDuration: duration,
     })
     : validateTextToVideoNarrative(
       deepCloneJson(source.movieResourceList),
-      source.videoGenerationModel || DEFAULT_VIDEO_MODEL,
+      videoGenerationModel || source.videoGenerationModel || DEFAULT_VIDEO_MODEL,
       undefined,
       { requestedDuration: duration },
     );
@@ -288,6 +301,8 @@ export async function createVideoFromNarrativeRequest({
   userId,
   payload = {},
   webhookUrl = null,
+  destinationSessionId = null,
+  authContext = null,
   dependencies = {},
 } = {}) {
   if (!userId) {
@@ -310,11 +325,29 @@ export async function createVideoFromNarrativeRequest({
   if (!user) {
     throw buildError('User not found.', 404, 'USER_NOT_FOUND');
   }
-  validateNarrativeToVideoSourceRequest(source);
+  if (!source) {
+    validateNarrativeToVideoSourceRequest(source);
+  }
+  const sourceVideoModel = normalizeString(source.videoGenerationModel) || DEFAULT_VIDEO_MODEL;
+  if (
+    normalizedPayload.videoModel &&
+    sourceVideoModel &&
+    normalizedPayload.videoModel !== sourceVideoModel
+  ) {
+    throw buildError(
+      'video_model must match the model used to create the source NarrativeRequest.',
+      409,
+      'SOURCE_VIDEO_MODEL_MISMATCH',
+    );
+  }
   const { imageModel, videoModel } = resolveNarrativeToVideoModels({
     requestedImageModel: normalizedPayload.imageModel,
     requestedVideoModel: normalizedPayload.videoModel,
+    sourceVideoModel,
     user,
+  });
+  validateNarrativeToVideoSourceRequest(source, {
+    videoGenerationModel: videoModel,
   });
 
   const requestCreateVideoFromNarrativeArtifacts =
@@ -357,7 +390,9 @@ export async function createVideoFromNarrativeRequest({
     language: 'auto',
     requestType: 'API',
     creditSource: 'narrative_to_video',
-    apiKeyUsage: getCurrentAPIKeyUsageContext(),
+    apiKeyUsage: normalizeAPIKeyUsageContext(authContext) ||
+      getCurrentAPIKeyUsageContext(),
+    ...(destinationSessionId ? { session_id: destinationSessionId } : {}),
   };
 
   const response = await requestCreateVideoFromNarrativeArtifacts(

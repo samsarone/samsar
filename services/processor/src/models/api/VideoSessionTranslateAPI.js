@@ -14,6 +14,7 @@ import User from '../../schema/User.js';
 import { normalizeSupportedLanguage, SUPPORTED_LANGUAGES } from '../../consts/SupportedLanguages.js';
 import { getLanguageStringFromLanguageCode } from '../../consts/LanguageCodes.js';
 import { normalizeInferenceModel } from '../../consts/InferenceModels.js';
+import { assertSubtitleGenerationAvailable } from '../../consts/DockerAudioAvailability.js';
 import { translateTextContent } from '../OpenAI.js';
 import { translateSpeech } from '../agent/AudioCreatorAgent.js';
 import {
@@ -1702,6 +1703,7 @@ export const __testOnly__ = {
 };
 
 export async function translateVideoSessionAndQueueGeneration(userId, payload = {}) {
+  assertSubtitleGenerationAvailable();
   const {
     oldSessionId,
     originalSessionData,
@@ -1997,6 +1999,7 @@ export async function removeSubtitlesAndQueueGeneration(userId, payload = {}) {
 }
 
 export async function addSubtitlesAndQueueGeneration(userId, payload = {}) {
+  assertSubtitleGenerationAvailable();
   const originalSessionId = payload.videoSessionId || payload.sessionId || payload.session_id;
   const webhookUrl = typeof payload.webhookUrl === 'string' && payload.webhookUrl.trim()
     ? payload.webhookUrl.trim()

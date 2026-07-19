@@ -187,6 +187,14 @@ test('resolves explicit models, then account preferences, then stable express de
   });
 
   assert.deepEqual(resolveNarrativeToVideoModels({
+    sourceVideoModel: 'COSMOS3SUPERI2V',
+    user: { agentImageModel: 'SEEDREAM', agentVideoModel: 'RUNWAYML' },
+  }), {
+    imageModel: 'SEEDREAM',
+    videoModel: 'COSMOS3SUPERI2V',
+  });
+
+  assert.deepEqual(resolveNarrativeToVideoModels({
     user: { agentImageModel: 'SEEDREAM', agentVideoModel: 'KLINGIMGTOVIDTURBO' },
   }), {
     imageModel: 'SEEDREAM',
@@ -424,6 +432,41 @@ test('submission returns not found for an unowned source without starting the vi
       },
     }),
     (error) => error.code === 'NOT_FOUND' && error.status === 404,
+  );
+  assert.equal(pipelineStarted, false);
+});
+
+test('submission rejects a render model that differs from the speech-aware source model', async (t) => {
+  setConnectionReadyForTest(t);
+  let pipelineStarted = false;
+
+  t.mock.method(NarrativeRequest, 'findOne', () => ({
+    lean: async () => buildSource({ videoGenerationModel: 'COSMOS3SUPERI2V' }),
+  }));
+  t.mock.method(User, 'findById', () => ({
+    select: () => ({
+      lean: async () => ({
+        _id: USER_ID,
+        agentImageModel: 'GPTIMAGE2',
+        agentVideoModel: 'RUNWAYML',
+      }),
+    }),
+  }));
+
+  await assert.rejects(
+    createVideoFromNarrativeRequest({
+      userId: USER_ID,
+      payload: {
+        narrative_request_id: SOURCE_ID,
+        video_model: 'RUNWAYML',
+      },
+      dependencies: {
+        requestCreateVideoFromNarrativeArtifacts: async () => {
+          pipelineStarted = true;
+        },
+      },
+    }),
+    (error) => error.code === 'SOURCE_VIDEO_MODEL_MISMATCH' && error.status === 409,
   );
   assert.equal(pipelineStarted, false);
 });

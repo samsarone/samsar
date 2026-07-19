@@ -18,7 +18,11 @@ import {
   NARRATIVE_PRICING_MULTIPLIER,
   validateNarrativeBilling,
 } from './NarrativeBilling.js';
-import { buildNarrativeRequestPayload } from './NarrativeAPI.js';
+import {
+  NARRATIVE_BILLING_POLICIES,
+  buildNarrativeRequestPayload,
+  normalizeNarrativeVideoModel,
+} from './NarrativeAPI.js';
 
 const MAX_BRANCHING_LEVELS = 3;
 const ABSOLUTE_MAX_BRANCHING_LEVELS = 6;
@@ -238,10 +242,34 @@ async function findExistingCharge(request) {
 }
 
 async function chargeUsage(request, billing, workerLeaseId) {
+  if (request.billingPolicy ===
+    NARRATIVE_BILLING_POLICIES.INCLUDED_IN_INTERACTIVE_VIDEO_RATE) {
+    const result = await NarrativeRequest.updateOne(
+      buildOwnedFilter(request._id, workerLeaseId),
+      {
+        $set: {
+          billingStatus: 'WAIVED',
+          billingReason: NARRATIVE_BILLING_POLICIES.INCLUDED_IN_INTERACTIVE_VIDEO_RATE,
+          creditsCharged: 0,
+          remainingCredits: null,
+          billingTransactionId: null,
+        },
+      },
+    );
+    assertWorkerUpdateMatched(result);
+    return { creditsCharged: 0, remainingCredits: null, transactionId: null };
+  }
+
   if (!(billing.credits > 0)) {
     const result = await NarrativeRequest.updateOne(
       buildOwnedFilter(request._id, workerLeaseId),
-      { $set: { billingStatus: 'WAIVED', creditsCharged: 0 } },
+      {
+        $set: {
+          billingStatus: 'WAIVED',
+          billingReason: 'no_billable_inference_usage',
+          creditsCharged: 0,
+        },
+      },
     );
     assertWorkerUpdateMatched(result);
     return { creditsCharged: 0, remainingCredits: null, transactionId: null };
@@ -407,6 +435,47 @@ function startLeaseHeartbeat(requestId, workerLeaseId, leaseMs) {
   return heartbeat;
 }
 
+export function normalizeNarrativeBranchingLevels(rawNumLevels) {
+  if (rawNumLevels === undefined || rawNumLevels === null || rawNumLevels === '') {
+    throw buildError('num_levels is required.', 400, 'INVALID_NUM_LEVELS');
+  }
+  const isNumericPrimitive = typeof rawNumLevels === 'number' ||
+    (typeof rawNumLevels === 'string' && /^\d+$/.test(rawNumLevels.trim()));
+  const numLevels = isNumericPrimitive ? Number(rawNumLevels) : Number.NaN;
+  const maxBranchingLevels = getMaxBranchingLevels();
+  if (!Number.isSafeInteger(numLevels) || numLevels < 1 || numLevels > maxBranchingLevels) {
+    throw buildError(
+      `num_levels must be an integer between 1 and ${maxBranchingLevels}.`,
+      400,
+      'INVALID_NUM_LEVELS',
+    );
+  }
+  return numLevels;
+}
+
+export function normalizeNarrativeBranchingLevelAliases(source = {}) {
+  const hasSnakeCase = Object.prototype.hasOwnProperty.call(source || {}, 'num_levels');
+  const hasCamelCase = Object.prototype.hasOwnProperty.call(source || {}, 'numLevels');
+  if (!hasSnakeCase && !hasCamelCase) {
+    return normalizeNarrativeBranchingLevels(undefined);
+  }
+  const snakeCaseValue = hasSnakeCase
+    ? normalizeNarrativeBranchingLevels(source.num_levels)
+    : null;
+  const camelCaseValue = hasCamelCase
+    ? normalizeNarrativeBranchingLevels(source.numLevels)
+    : null;
+  if (snakeCaseValue !== null && camelCaseValue !== null &&
+    snakeCaseValue !== camelCaseValue) {
+    throw buildError(
+      'num_levels and numLevels must match when both are provided.',
+      400,
+      'CONFLICTING_NUM_LEVELS',
+    );
+  }
+  return snakeCaseValue ?? camelCaseValue;
+}
+
 export function normalizeCreateBranchingNarrativePayload(payload = {}) {
   const source = isObject(payload?.input) ? payload.input : payload;
   const sourceRequestId = normalizeString(
@@ -424,26 +493,21 @@ export function normalizeCreateBranchingNarrativePayload(payload = {}) {
     );
   }
 
-  const rawNumLevels = source?.num_levels ?? source?.numLevels;
-  if (rawNumLevels === undefined || rawNumLevels === null || rawNumLevels === '') {
-    throw buildError('num_levels is required.', 400, 'INVALID_NUM_LEVELS');
-  }
-  const isNumericPrimitive = typeof rawNumLevels === 'number' ||
-    (typeof rawNumLevels === 'string' && /^\d+$/.test(rawNumLevels.trim()));
-  const numLevels = isNumericPrimitive ? Number(rawNumLevels) : Number.NaN;
-  const maxBranchingLevels = getMaxBranchingLevels();
-  if (!Number.isSafeInteger(numLevels) || numLevels < 1 || numLevels > maxBranchingLevels) {
-    throw buildError(
-      `num_levels must be an integer between 1 and ${maxBranchingLevels}.`,
-      400,
-      'INVALID_NUM_LEVELS',
-    );
-  }
+  const numLevels = normalizeNarrativeBranchingLevelAliases(source);
+  const videoModelWasProvided = Object.prototype.hasOwnProperty.call(source || {}, 'video_model') ||
+    Object.prototype.hasOwnProperty.call(source || {}, 'videoModel');
+  const videoModel = videoModelWasProvided
+    ? normalizeNarrativeVideoModel(source, { required: true, fallback: null })
+    : null;
 
-  return { sourceRequestId, numLevels };
+  return { sourceRequestId, numLevels, videoModel };
 }
 
-export function validateBranchingSourceRequest(source, numLevels) {
+export function validateBranchingSourceRequest(
+  source,
+  numLevels,
+  { videoGenerationModel = null } = {},
+) {
   if (!source) throw buildError('Narrative request not found.', 404, 'NOT_FOUND');
 
   const narrativeType = source.narrativeType ||
@@ -498,7 +562,7 @@ export function validateBranchingSourceRequest(source, numLevels) {
   }
   const validation = validateTextToVideoNarrative(
     deepCloneJson(source.movieResourceList),
-    source.videoGenerationModel || 'RUNWAYML',
+    videoGenerationModel || source.videoGenerationModel || 'RUNWAYML',
     undefined,
     { requestedDuration: source.duration },
   );
@@ -519,6 +583,7 @@ function buildSourceSnapshot(source) {
     prompt: source.prompt,
     duration: source.duration,
     inferenceModel: source.inferenceModel,
+    videoGenerationModel: source.videoGenerationModel || 'RUNWAYML',
     themeJson: deepCloneJson(source.themeJson),
     narrativeJson: deepCloneJson(source.narrativeJson),
     movieResourceList: deepCloneJson(source.movieResourceList),
@@ -900,6 +965,8 @@ export async function createBranchingNarrativeRequest({
   userId,
   payload = {},
   authContext = null,
+  billingPolicy = NARRATIVE_BILLING_POLICIES.STANDALONE,
+  interactiveVideoRequestId = null,
   dependencies = {},
 } = {}) {
   if (!userId) throw buildError('User ID is required.', 401, 'UNAUTHORIZED');
@@ -919,7 +986,19 @@ export async function createBranchingNarrativeRequest({
     _id: normalized.sourceRequestId,
     userId: userId?.toString?.() || String(userId),
   }).lean();
-  validateBranchingSourceRequest(source, normalized.numLevels);
+  if (!source) {
+    validateBranchingSourceRequest(source, normalized.numLevels);
+  }
+  const sourceVideoModel = normalizeString(source?.videoGenerationModel) || 'RUNWAYML';
+  if (normalized.videoModel && normalized.videoModel !== sourceVideoModel) {
+    throw buildError(
+      'video_model must match the model used by the source singular NarrativeRequest.',
+      409,
+      'SOURCE_VIDEO_MODEL_MISMATCH',
+    );
+  }
+  const videoGenerationModel = normalized.videoModel || sourceVideoModel;
+  validateBranchingSourceRequest(source, normalized.numLevels, { videoGenerationModel });
 
   const apiKeyUsage = normalizeAPIKeyUsageContext(authContext);
   if (apiKeyUsage?.apiKeyId) {
@@ -943,12 +1022,17 @@ export async function createBranchingNarrativeRequest({
     duration: source.duration,
     totalDuration: source.totalDuration || source.duration,
     inferenceModel: source.inferenceModel,
-    videoGenerationModel: source.videoGenerationModel || 'RUNWAYML',
+    videoGenerationModel,
     videoTone: source.videoTone || 'grounded',
     speakerOptions: deepCloneJson(source.speakerOptions || null),
     pricingMultiplier: NARRATIVE_PRICING_MULTIPLIER,
     apiKeyId: apiKeyUsage?.apiKeyId || null,
     apiKeyUsage,
+    billingPolicy: billingPolicy ===
+      NARRATIVE_BILLING_POLICIES.INCLUDED_IN_INTERACTIVE_VIDEO_RATE
+      ? billingPolicy
+      : NARRATIVE_BILLING_POLICIES.STANDALONE,
+    interactiveVideoRequestId: interactiveVideoRequestId || null,
     meteringSlotActive: false,
   });
   const request = created.toObject();

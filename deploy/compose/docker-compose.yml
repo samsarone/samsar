@@ -42,7 +42,7 @@ services:
       args:
         VITE_PROCESSOR_API: ${PROCESSOR_API:-http://localhost:3002}
         VITE_CLIENT_URL: ${CLIENT_APP:-http://localhost:3000}
-        VITE_STATIC_CDN_URL: ${PUBLIC_STATIC_CDN_URL:-http://localhost:8080}
+        VITE_STATIC_CDN_URL: ${PUBLIC_STATIC_CDN_URL:-http://localhost:3002}
         VITE_DOCKER_INSTALL: "true"
         VITE_SETUP_WIZARD_API: http://localhost:8089
     ports:
@@ -169,8 +169,6 @@ services:
       - ./media-gateway.conf:/etc/nginx/conf.d/default.conf:ro
       - media-assets:/usr/share/nginx/html/assets:ro
       - media-assets-v2:/usr/share/nginx/html/assets_v2:ro
-    ports:
-      - "8080:80"
 
   reverse-proxy:
     profiles: ["reverse-proxy"]

@@ -6,6 +6,9 @@ import { startCreateSingleNarrativeRequestRecovery } from './src/models/api/Narr
 import {
   startCreateBranchingNarrativeRequestRecovery,
 } from './src/models/api/BranchingNarrativeAPI.js';
+import {
+  startTextToInteractiveVideoRecovery,
+} from './src/models/api/TextToInteractiveVideoAPI.js';
 
 const PORT = 3002;
 const DEFAULT_HTTP_SERVER_TIMEOUT_MS = 11 * 60 * 1000;
@@ -43,6 +46,7 @@ if (cluster.isPrimary) {
   const stopBuilderRecovery = startPersistedTextToVideoBuilderRecovery();
   const stopNarrativeRecovery = startCreateSingleNarrativeRequestRecovery();
   const stopBranchingNarrativeRecovery = startCreateBranchingNarrativeRequestRecovery();
+  const stopInteractiveVideoRecovery = startTextToInteractiveVideoRecovery();
   const timeoutMs = getHttpServerTimeoutMs();
   server.timeout = timeoutMs;
   server.requestTimeout = timeoutMs;
@@ -53,4 +57,5 @@ if (cluster.isPrimary) {
   server.on('close', stopBuilderRecovery);
   server.on('close', stopNarrativeRecovery);
   server.on('close', stopBranchingNarrativeRecovery);
+  server.on('close', stopInteractiveVideoRecovery);
 }

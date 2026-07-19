@@ -7,6 +7,7 @@ import GeneratedAIVideo from '../schema/generations/GeneratedAIVideo.js';
 import GeneratedMusic from '../schema/generations/GeneratedMusic.js';
 import VideoSession from '../schema/VideoSession.js';
 import { Publication } from '../schema/Publication.js';
+import InteractivePublication from '../schema/InteractivePublication.js';
 import { buildSecureMediaDeliveryUrl } from './AWS.js';
 
 export async function getUserImages(userId) {
@@ -470,9 +471,27 @@ function mapGeneratedVideoToGalleryItem(item = {}, sessionMetadata = {}) {
   };
 }
 
-function mapFinalRenderToGalleryItem(sessionData = {}, publicationsBySessionId = {}) {
+export function mapFinalRenderToGalleryItem(sessionData = {}, publicationsBySessionId = {}) {
   const sessionId = sessionData?._id?.toString?.() || sessionData?._id;
-  const videoPath = normalizeVideoAssetPath(sessionData?.remoteURL) || normalizeVideoAssetPath(sessionData?.videoLink);
+  const publication = publicationsBySessionId[sessionId] || null;
+  const publicationPaths = Array.isArray(publication?.manifest?.outputs?.paths)
+    ? publication.manifest.outputs.paths
+    : [];
+  const publicationDefaultPath = publicationPaths.find((path) => (
+    path?.path_id === publication?.manifest?.default_path_id && path?.is_default === true
+  ));
+  const branchPaths = Array.isArray(sessionData?.branchRenderPaths)
+    ? sessionData.branchRenderPaths
+    : [];
+  const defaultBranchPath = branchPaths.find((path) => (
+    path?.pathId === sessionData?.defaultBranchPathId
+  )) || branchPaths[0];
+  const videoPath = normalizeVideoAssetPath(sessionData?.remoteURL) ||
+    normalizeVideoAssetPath(sessionData?.videoLink) ||
+    normalizeVideoAssetPath(publicationDefaultPath?.contentUrl) ||
+    normalizeVideoAssetPath(sessionData?.publishedVideoURL) ||
+    normalizeVideoAssetPath(defaultBranchPath?.remoteURL) ||
+    normalizeVideoAssetPath(defaultBranchPath?.videoLink);
   if (!sessionId || !videoPath) {
     return null;
   }
@@ -480,10 +499,11 @@ function mapFinalRenderToGalleryItem(sessionData = {}, publicationsBySessionId =
   const projectName = resolveSessionProjectName(sessionData);
   const promptPreview = getSessionPromptPreview(sessionData);
   const title = projectName || 'Completed render';
-  const normalizedSplashImage = normalizeVideoAssetPath(sessionData?.splashImage);
+  const normalizedSplashImage = normalizeVideoAssetPath(publication?.thumbnailUrl) ||
+    normalizeVideoAssetPath(sessionData?.splashImage) ||
+    normalizeVideoAssetPath(sessionData?.publishedSplashImage);
   const thumbnailPath = normalizedSplashImage || `/video/splash/${sessionId}/splash.png`;
   const duration = Number(sessionData?.totalDuration);
-  const publication = publicationsBySessionId[sessionId] || null;
 
   return {
     _id: `final_render:${sessionId}`,
@@ -559,6 +579,18 @@ export async function requestUserGenerationsGallery(userId, options = {}) {
     $or: [
       { remoteURL: { $exists: true, $nin: [null, ''] } },
       { videoLink: { $exists: true, $nin: [null, ''] } },
+      {
+        $and: [
+          {
+            $or: [
+              { narrativeType: 'branched' },
+              { sourceNarrativeType: 'branched' },
+            ],
+          },
+          { branchRenderCompletionFinalized: true },
+          { 'branchRenderPaths.0': { $exists: true } },
+        ],
+      },
     ],
     expressGenerationPending: { $ne: true },
     videoGenerationPending: { $ne: true },
@@ -574,15 +606,16 @@ export async function requestUserGenerationsGallery(userId, options = {}) {
       .select('url remoteUrl description prompt sessionId layerId userId model audioPrompt duration generationType thumbnailPath endThumbnailPath thumbnailVideoPath thumbnailVideoRemoteUrl createdAt updatedAt')
       .lean(),
     VideoSession.find(completedRenderFilter)
-      .select('_id userId sessionName promptList aspectRatio splashImage remoteURL videoLink totalDuration createdAt updatedAt')
+      .select('_id userId sessionName promptList aspectRatio splashImage publishedSplashImage remoteURL videoLink publishedVideoURL totalDuration narrativeType sourceNarrativeType defaultBranchPathId branchRenderCompletionFinalized branchRenderPaths.pathId branchRenderPaths.remoteURL branchRenderPaths.videoLink createdAt updatedAt')
       .lean(),
   ]);
 
   const completedRenderSessionIds = completedRenders
     .map((item) => item?._id?.toString?.() || item?._id)
     .filter((value) => typeof value === 'string' && value.length > 0);
-  const activePublications = completedRenderSessionIds.length > 0
-    ? await Publication.find({
+  const [activePublications, activeInteractivePublications] = completedRenderSessionIds.length > 0
+    ? await Promise.all([
+      Publication.find({
         sessionId: { $in: completedRenderSessionIds },
         $and: [
           { $or: [{ isDeleted: { $exists: false } }, { isDeleted: false }] },
@@ -590,9 +623,24 @@ export async function requestUserGenerationsGallery(userId, options = {}) {
         ],
       })
         .select('_id sessionId')
-        .lean()
-    : [];
-  const publicationsBySessionId = activePublications.reduce((publicationMap, publication) => {
+        .lean(),
+      InteractivePublication.find({
+        sessionId: { $in: completedRenderSessionIds },
+        isPublished: true,
+        isRenderable: true,
+        $and: [
+          { $or: [{ isDeleted: { $exists: false } }, { isDeleted: false }] },
+          { $or: [{ isHidden: { $exists: false } }, { isHidden: false }] },
+        ],
+      })
+        .select('_id sessionId thumbnailUrl manifest')
+        .lean(),
+    ])
+    : [[], []];
+  const publicationsBySessionId = [
+    ...activePublications,
+    ...activeInteractivePublications,
+  ].reduce((publicationMap, publication) => {
     const sessionId = publication?.sessionId?.toString?.() || publication?.sessionId;
     if (sessionId) {
       publicationMap[sessionId] = publication;

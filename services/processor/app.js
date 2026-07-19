@@ -46,6 +46,7 @@ import contentPublicationRouter from './src/routes/content/publication.js';
 
 import adMakerRouter from './src/routes/admaker.js';
 import publicationRouter from './src/routes/publications.js';
+import interactivePublicationRouter from './src/routes/interactive_publications.js';
 import galleryRouter from './src/routes/gallery.js';
 import automationRouter from './src/routes/automation.js';
 import apiIndexRouter from './src/routes/api/index.js';
@@ -189,6 +190,8 @@ const corsOptions = {
     'Content-Length',
     'Content-Range',
     'Content-Type',
+    'x-credits-charged',
+    'x-credits-remaining',
   ],
   optionsSuccessStatus: 200,
   credentials: false, // This is important for setting `crossOrigin` to "anonymous"
@@ -285,6 +288,7 @@ app.use('/v1/support', supportApiRouter);
 app.use('/v1/external_users', externalUsersApiRouter);
 app.use('/v1/customer_sub_accounts', customerSubAccountsApiRouter);
 app.use('/v1/publications', publicationRouter);
+app.use('/v1/interactive_publications', interactivePublicationRouter);
 app.use('/v1/gallery', galleryRouter);
 app.use('/v1', receiptTemplateCompatApiRouter);
 app.use('/v1', apiIndexRouter);
@@ -301,6 +305,7 @@ app.use('/external', externalApiRouter);
 app.use('/videos', publicVideosRouter);
 app.use('/publication', publicationRouter);
 app.use('/publications', publicationRouter);
+app.use('/interactive_publications', interactivePublicationRouter);
 app.use('/gallery', galleryRouter);
 app.use('/', automationRouter);
 

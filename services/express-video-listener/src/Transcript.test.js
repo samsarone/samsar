@@ -505,6 +505,66 @@ test('GPT-4o transcription skips unsupported verbose JSON and uses Whisper for w
   assert.ok(streamTracker.streams.every((stream) => stream.destroyed));
 });
 
+test('Docker Samsar-only alignment delegates Whisper timestamps without a direct OpenAI call', async (t) => {
+  t.mock.method(console, 'info', () => {});
+  const originalEnvironment = {
+    CURRENT_ENV: process.env.CURRENT_ENV,
+    OPENAI_API_KEY: process.env.OPENAI_API_KEY,
+    SAMSAR_API_KEY: process.env.SAMSAR_API_KEY,
+  };
+  process.env.CURRENT_ENV = 'docker';
+  delete process.env.OPENAI_API_KEY;
+  process.env.SAMSAR_API_KEY = 'samsar-key';
+  const delegatedRequests = [];
+  const usageLogs = [];
+  let result;
+  try {
+    result = await __testOnly__.transcribeWithOpenAI(
+      '/unused/speech.mp3',
+      'Delegated alignment',
+      'en',
+      2,
+      {},
+      {
+        transcriptionModel: 'gpt-4o-transcribe',
+        wordTimestampModel: 'whisper-1',
+        samsarTranscriptAlign: async (audioFilePath, payload, durationSeconds) => {
+          delegatedRequests.push({ audioFilePath, payload, durationSeconds });
+          return {
+            id: 'transcript-1',
+            text: 'Delegated alignment',
+            duration: 2,
+            words: [
+              { word: 'Delegated', start: 0.1, end: 0.9 },
+              { word: 'alignment', start: 1, end: 1.8 },
+            ],
+          };
+        },
+        recordUsageLog: async (entry) => usageLogs.push(entry),
+      },
+    );
+  } finally {
+    for (const [key, value] of Object.entries(originalEnvironment)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+
+  assert.equal(delegatedRequests.length, 1);
+  assert.equal(delegatedRequests[0].audioFilePath, '/unused/speech.mp3');
+  assert.equal(delegatedRequests[0].durationSeconds, 2);
+  assert.equal(delegatedRequests[0].payload.model, 'whisper-1');
+  assert.equal(delegatedRequests[0].payload.response_format, 'verbose_json');
+  assert.deepEqual(delegatedRequests[0].payload.timestamp_granularities, ['word']);
+  assert.equal(delegatedRequests[0].payload.file, undefined);
+  assert.equal(usageLogs[0].provider, 'samsar');
+  assert.equal(usageLogs[0].metadata.underlyingProvider, 'openai');
+  assert.deepEqual(result.words.map(({ word, start, end }) => ({ word, start, end })), [
+    { word: 'Delegated', start: 0.1, end: 0.9 },
+    { word: 'alignment', start: 1, end: 1.8 },
+  ]);
+});
+
 test('Chinese fallback creates multiple timed units after timestamp service failure', async (t) => {
   t.mock.method(console, 'warn', () => {});
   const transcript = '这是一个测试。';

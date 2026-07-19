@@ -70,6 +70,13 @@ export function extractDeploymentProviders(payload = {}) {
     });
 }
 
+export function hasSubtitleGenerationProvider(payload = {}) {
+  const providers = new Set(
+    extractDeploymentProviders(payload).map(normalizeDeploymentProviderKey),
+  );
+  return providers.has('openai') || providers.has('samsar');
+}
+
 export function normalizeDeploymentInferenceModelValue(value) {
   if (typeof value !== "string") return "";
 

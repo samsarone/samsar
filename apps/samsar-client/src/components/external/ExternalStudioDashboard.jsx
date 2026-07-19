@@ -93,11 +93,14 @@ export default function ExternalStudioDashboard() {
   const [imageFiles, setImageFiles] = useState([]);
   const {
     isDockerInstall: isDockerModelFilteringEnabled,
+    hasSubtitleGenerationCredentials,
     textToVideoImageModelValues,
     textToVideoVideoModelValues,
     imageListToVideoImageModelValues,
     imageListToVideoVideoModelValues,
   } = useDeploymentModelAvailability();
+  const canGenerateSubtitles =
+    !isDockerModelFilteringEnabled || hasSubtitleGenerationCredentials;
   const textVideoModels = useMemo(
     () => (
       isDockerModelFilteringEnabled
@@ -154,6 +157,13 @@ export default function ExternalStudioDashboard() {
         : imageListImageModels[0]?.value || '',
     }));
   }, [imageListImageModels, imageListVideoModels]);
+
+  useEffect(() => {
+    if (!canGenerateSubtitles) {
+      setTextForm((current) => ({ ...current, enable_subtitles: false }));
+      setImageForm((current) => ({ ...current, enable_subtitles: false }));
+    }
+  }, [canGenerateSubtitles]);
 
   const isTextVideoModelAvailable = textVideoModels.some((model) => model.value === textForm.video_model);
   const isTextImageModelAvailable = textImageModels.some((model) => model.value === textForm.image_model);
@@ -296,6 +306,7 @@ export default function ExternalStudioDashboard() {
           input: {
             ...textForm,
             duration: Number(textForm.duration),
+            enable_subtitles: canGenerateSubtitles && textForm.enable_subtitles === true,
           },
         },
       });
@@ -345,6 +356,7 @@ export default function ExternalStudioDashboard() {
             ...imageForm,
             duration: Number(imageForm.duration),
             image_urls: uploadResponse?.image_urls || [],
+            enable_subtitles: canGenerateSubtitles && imageForm.enable_subtitles === true,
           },
         },
       });
@@ -513,16 +525,18 @@ export default function ExternalStudioDashboard() {
                     ))}
                   </select>
                 </div>
-                <label className="flex items-center gap-2 text-sm text-slate-300">
-                  <input
-                    type="checkbox"
-                    checked={Boolean(textForm.enable_subtitles)}
-                    onChange={(event) =>
-                      setTextForm((current) => ({ ...current, enable_subtitles: event.target.checked }))
-                    }
-                  />
-                  Enable subtitles
-                </label>
+                {canGenerateSubtitles ? (
+                  <label className="flex items-center gap-2 text-sm text-slate-300">
+                    <input
+                      type="checkbox"
+                      checked={Boolean(textForm.enable_subtitles)}
+                      onChange={(event) =>
+                        setTextForm((current) => ({ ...current, enable_subtitles: event.target.checked }))
+                      }
+                    />
+                    Enable subtitles
+                  </label>
+                ) : null}
                 <button
                   type="button"
                   onClick={() => void handleSubmitText()}
@@ -582,16 +596,18 @@ export default function ExternalStudioDashboard() {
                     ))}
                   </select>
                 </div>
-                <label className="flex items-center gap-2 text-sm text-slate-300">
-                  <input
-                    type="checkbox"
-                    checked={Boolean(imageForm.enable_subtitles)}
-                    onChange={(event) =>
-                      setImageForm((current) => ({ ...current, enable_subtitles: event.target.checked }))
-                    }
-                  />
-                  Enable subtitles
-                </label>
+                {canGenerateSubtitles ? (
+                  <label className="flex items-center gap-2 text-sm text-slate-300">
+                    <input
+                      type="checkbox"
+                      checked={Boolean(imageForm.enable_subtitles)}
+                      onChange={(event) =>
+                        setImageForm((current) => ({ ...current, enable_subtitles: event.target.checked }))
+                      }
+                    />
+                    Enable subtitles
+                  </label>
+                ) : null}
                 <button
                   type="button"
                   onClick={() => void handleSubmitImageList()}

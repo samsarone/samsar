@@ -7,6 +7,7 @@ const DEFAULT_STATIC_ASSET_BASE_URL = 'https://static.samsar.one';
 const USER_RESOURCES_PREFIX = 'user_resources/';
 const SECURE_ASSET_PREFIX = (process.env.SECURE_ASSET_PREFIX || 'assets_v2').replace(/^\/+|\/+$/g, '');
 const BRANCHED_VIDEO_STATUS_SCHEMA = 'branched_video_status.v1';
+const COMPLETED_INTERACTIVE_VIDEO_DETAIL_SCHEMA = 'interactive_video_manifest.v1';
 const BRANCH_COMPLETED_STATUSES = new Set(['COMPLETED', 'SUCCESS', 'SUCCEEDED', 'DONE']);
 const BRANCH_FAILED_STATUSES = new Set(['FAILED', 'ERROR', 'TIMEOUT']);
 
@@ -692,6 +693,237 @@ export function buildNormalizedBranchingStatus(sessionData = {}, req = null, { d
         : {}),
     },
   });
+}
+
+function normalizePublicStatusFieldName(value) {
+  return normalizeString(value)
+    .replace(/([a-z0-9])([A-Z])/g, '$1_$2')
+    .replace(/[-\s]+/g, '_')
+    .toLowerCase();
+}
+
+function isBranchedStatusBillingField(fieldName) {
+  const normalized = normalizePublicStatusFieldName(fieldName);
+  return /(^|_)billing($|_)/.test(normalized) ||
+    /(^|_)credits?($|_)/.test(normalized) ||
+    /(^|_)(cost|price|pricing|payment|transaction)($|_)/.test(normalized) ||
+    ['usage', 'metering', 'token_usage'].includes(normalized);
+}
+
+function stripBranchedStatusBilling(value) {
+  if (Array.isArray(value)) {
+    return value.map((entry) => stripBranchedStatusBilling(entry));
+  }
+  if (!value || typeof value !== 'object' || value instanceof Date) {
+    return value;
+  }
+
+  return Object.entries(value).reduce((result, [key, entryValue]) => {
+    if (!isBranchedStatusBillingField(key)) {
+      result[key] = stripBranchedStatusBilling(entryValue);
+    }
+    return result;
+  }, {});
+}
+
+function isBranchedStatusPayload(payload = {}) {
+  return normalizeNonEmptyString(
+    payload?.narrative_type || payload?.narrativeType || payload?.session?.narrativeType,
+  )?.toLowerCase() === 'branched' || Boolean(payload?.branching || payload?.session?.branching);
+}
+
+function buildCompletedBranchChoicePoint(choicePoint = {}) {
+  const options = (Array.isArray(choicePoint?.options) ? choicePoint.options : [])
+    .map((option) => compactObject({
+      child_node_id: normalizeNonEmptyString(option?.child_node_id),
+      path_name: normalizeNonEmptyString(option?.path_name),
+      path_description: normalizeNonEmptyString(option?.path_description),
+      leaf_path_ids: normalizeStringList(option?.leaf_path_ids),
+    }));
+
+  return compactObject({
+    branch_point_id: normalizeNonEmptyString(choicePoint?.branch_point_id),
+    parent_node_id: normalizeNonEmptyString(choicePoint?.parent_node_id),
+    switch_at_seconds: normalizeNumber(choicePoint?.switch_at_seconds),
+    options,
+  });
+}
+
+function buildCompletedBranchOutputPath(path = {}) {
+  const pathId = normalizeNonEmptyString(path?.path_id);
+  const url = normalizeNonEmptyString(path?.url || path?.result_url);
+  if (!pathId || !url) {
+    return null;
+  }
+
+  return compactObject({
+    path_id: pathId,
+    url,
+    duration: normalizeNumber(path?.duration),
+    is_default: path?.is_default === true,
+  });
+}
+
+/**
+ * Final branched renders use a compact manifest: one path-aware video list and
+ * media-relative choice timing. Generation diagnostics remain available while
+ * work is pending or failed, but are not repeated after completion.
+ */
+export function buildCompletedBranchingManifest(branching = {}) {
+  const outputPaths = (Array.isArray(branching?.outputs?.paths)
+    ? branching.outputs.paths
+    : Array.isArray(branching?.paths)
+      ? branching.paths
+      : [])
+    .map((path) => buildCompletedBranchOutputPath(path))
+    .filter(Boolean);
+  if (!outputPaths.length) {
+    return null;
+  }
+
+  const defaultPathId = normalizeNonEmptyString(branching?.default_path_id) ||
+    outputPaths.find((path) => path.is_default)?.path_id ||
+    outputPaths[0].path_id;
+  outputPaths.forEach((path) => {
+    path.is_default = path.path_id === defaultPathId;
+  });
+  const defaultOutput = outputPaths.find((path) => path.is_default) || outputPaths[0];
+  const choicePoints = (Array.isArray(branching?.tree?.choice_points)
+    ? branching.tree.choice_points
+    : [])
+    .map((choicePoint) => buildCompletedBranchChoicePoint(choicePoint));
+
+  return compactObject({
+    schema: normalizeNonEmptyString(branching?.schema) || BRANCHED_VIDEO_STATUS_SCHEMA,
+    status: 'COMPLETED',
+    completed_at: branching?.completed_at || null,
+    default_path_id: defaultPathId,
+    timing: {
+      origin: 'media',
+      unit: 'seconds',
+    },
+    tree: {
+      root_node_id: normalizeNonEmptyString(branching?.tree?.root_node_id),
+      choice_points: choicePoints,
+    },
+    outputs: {
+      ready: true,
+      default_path_id: defaultPathId,
+      default_url: defaultOutput?.url,
+      paths: outputPaths,
+    },
+  });
+}
+
+function buildCompletedInteractiveSession(session = {}, payload = {}, branching = {}) {
+  const resultUrl = normalizeNonEmptyString(
+    payload?.result_url || branching?.outputs?.default_url || session?.result?.url,
+  );
+
+  return compactObject({
+    id: toObjectIdString(session?.id || session?._id || payload?.session_id),
+    requestId: toObjectIdString(session?.requestId || payload?.request_id),
+    type: 'video',
+    routeType: normalizeNonEmptyString(session?.routeType),
+    aspectRatio: normalizeNonEmptyString(session?.aspectRatio),
+    framesPerSecond: normalizeNumber(session?.framesPerSecond),
+    duration: normalizeNumber(session?.duration),
+    language: normalizeNonEmptyString(session?.language || payload?.result_language),
+    hasSubtitles: session?.hasSubtitles ?? payload?.has_subtitles,
+    hasFooter: session?.hasFooter ?? payload?.has_footer,
+    narrativeType: 'branched',
+    defaultBranchPathId: normalizeNonEmptyString(branching?.default_path_id),
+    result: {
+      url: resultUrl,
+      hasSubtitles: session?.result?.hasSubtitles ?? session?.hasSubtitles ?? payload?.has_subtitles,
+      hasFooter: session?.result?.hasFooter ?? session?.hasFooter ?? payload?.has_footer,
+      language: normalizeNonEmptyString(
+        session?.result?.language || session?.language || payload?.result_language,
+      ),
+    },
+  });
+}
+
+/**
+ * Converts internal status data to its public HTTP representation. Singular
+ * sessions are returned untouched to preserve the existing linear contract.
+ */
+export function serializePublicVideoStatusResponse(payload = {}) {
+  if (!isBranchedStatusPayload(payload)) {
+    return payload;
+  }
+
+  const sanitizedPayload = stripBranchedStatusBilling(payload);
+  const sourceBranching = sanitizedPayload.branching || sanitizedPayload.session?.branching;
+  const completed = BRANCH_COMPLETED_STATUSES.has(
+    normalizeNonEmptyString(sanitizedPayload.status)?.toUpperCase(),
+  ) && sourceBranching?.outputs?.ready === true;
+  if (!completed) {
+    return sanitizedPayload;
+  }
+
+  const branching = buildCompletedBranchingManifest(sourceBranching);
+  if (!branching) {
+    return sanitizedPayload;
+  }
+
+  const resultUrl = normalizeNonEmptyString(
+    sanitizedPayload.result_url || branching.outputs?.default_url,
+  );
+  return compactObject({
+    session_id: toObjectIdString(sanitizedPayload.session_id),
+    request_id: toObjectIdString(sanitizedPayload.request_id),
+    external_request_id: normalizeNonEmptyString(sanitizedPayload.external_request_id),
+    external_session_id: normalizeNonEmptyString(sanitizedPayload.external_session_id),
+    status: 'COMPLETED',
+    type: normalizeNonEmptyString(sanitizedPayload.type) || 'video',
+    provider: normalizeNonEmptyString(sanitizedPayload.provider),
+    narrative_type: 'branched',
+    source_narrative_request_id: toObjectIdString(sanitizedPayload.source_narrative_request_id),
+    render_plan_version: normalizeNumber(sanitizedPayload.render_plan_version),
+    default_path_id: branching.default_path_id,
+    result_url: resultUrl,
+    has_subtitles: sanitizedPayload.has_subtitles,
+    has_footer: sanitizedPayload.has_footer,
+    result_language: normalizeNonEmptyString(sanitizedPayload.result_language),
+    branching,
+    ...(sanitizedPayload.session
+      ? {
+        status_detail_schema: COMPLETED_INTERACTIVE_VIDEO_DETAIL_SCHEMA,
+        session: buildCompletedInteractiveSession(
+          sanitizedPayload.session,
+          sanitizedPayload,
+          branching,
+        ),
+      }
+      : {}),
+  });
+}
+
+/** Builds public usage headers without placing billing details in branched JSON. */
+export function buildVideoStatusUsageHeaders(payload = {}, {
+  creditsCharged,
+  remainingCredits,
+} = {}) {
+  if (!isBranchedStatusPayload(payload)) {
+    return {};
+  }
+
+  const stageCharges = payload?.expressGenerationCreditCharges ||
+    payload?.express_generation_credit_charges;
+  const resolvedCreditsCharged = normalizeNumber(creditsCharged) ??
+    normalizeNumber(payload?.creditsCharged ?? payload?.credits_charged) ??
+    normalizeNumber(stageCharges?.totalCharged);
+  const resolvedRemainingCredits = normalizeNumber(remainingCredits);
+
+  return {
+    ...(resolvedCreditsCharged === null
+      ? {}
+      : { 'x-credits-charged': String(resolvedCreditsCharged) }),
+    ...(resolvedRemainingCredits === null
+      ? {}
+      : { 'x-credits-remaining': String(resolvedRemainingCredits) }),
+  };
 }
 
 function buildLegacyBranchResultsFromPaths(paths = []) {

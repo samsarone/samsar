@@ -101,7 +101,7 @@ GET /v1/external_users/status?request_id=<external-request-id>
 Final local Docker media links usually resolve under:
 
 ```text
-http://localhost:8080/assets_v2/video/output/<session-id>/<file>.mp4
+http://localhost:3002/assets_v2/video/output/<session-id>/<file>.mp4
 ```
 
 ## Validation Notes

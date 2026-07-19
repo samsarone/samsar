@@ -18,6 +18,10 @@ import {
 import { getFramesPerSecondFromValue, resolveFramesPerSecond } from './utils/FpsUtils.js';
 import { recordProviderUsageLog } from './utils/ProviderUsageAudit.js';
 import { resolveLocalAssetPath } from './utils/LocalAssetPath.js';
+import {
+  requestSamsarTranscriptAlignment,
+  shouldUseSamsarTranscriptAlignment,
+} from './SamsarTranscriptAlignment.js';
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY || '' });
 const TRANSCRIPTION_MODEL = process.env.OPENAI_TRANSCRIPTION_MODEL || 'whisper-1';
@@ -1729,23 +1733,35 @@ async function transcribeWithOpenAI(
     const createReadStream = options.createReadStream || fs.createReadStream;
     const recordUsageLog = options.recordUsageLog || recordProviderUsageLog;
     const syntheticAlignmentWindow = options.syntheticAlignmentWindow || null;
+    const useSamsarAlignment = options.useSamsarTranscriptAlignment ??
+      (!options.openaiClient && shouldUseSamsarTranscriptAlignment());
+    const samsarTranscriptAlign = options.samsarTranscriptAlign || requestSamsarTranscriptAlignment;
 
     const requestPayloadBase = {
       language: normalizeTranscriptionLanguageCode(languageCode),
       prompt: transcriptText && transcriptText.trim() ? transcriptText : undefined,
     };
 
-    const attempts = buildTranscriptionAttempts(transcriptionModel, wordTimestampModel);
+    const configuredAttempts = buildTranscriptionAttempts(transcriptionModel, wordTimestampModel);
+    const attempts = useSamsarAlignment
+      ? configuredAttempts.filter((attempt) => attempt.requiresExplicitWordTimings)
+      : configuredAttempts;
 
     let response = null;
     let lastError = null;
 
     for (const attempt of attempts) {
-      const fileStream = createReadStream(audioFilePath);
+      const fileStream = useSamsarAlignment ? null : createReadStream(audioFilePath);
       const { requiresExplicitWordTimings, ...requestAttempt } = attempt;
-      const payload = { ...requestPayloadBase, ...requestAttempt, file: fileStream };
+      const payload = {
+        ...requestPayloadBase,
+        ...requestAttempt,
+        ...(fileStream ? { file: fileStream } : {}),
+      };
       try {
-        const candidateResponse = await transcriptionClient.audio.transcriptions.create(payload);
+        const candidateResponse = useSamsarAlignment
+          ? await samsarTranscriptAlign(audioFilePath, payload, audioDurationSeconds)
+          : await transcriptionClient.audio.transcriptions.create(payload);
         await recordUsageLog({
           payload: auditContext,
           userId: auditContext.userId,
@@ -1763,7 +1779,7 @@ async function transcribeWithOpenAI(
           ].filter(Boolean).join(':'),
           requestType: 'transcription',
           callType: 'transcription',
-          provider: 'openai',
+          provider: useSamsarAlignment ? 'samsar' : 'openai',
           model: attempt.model,
           source: auditContext.source || 'express_video_transcription',
           service: 'samsar_express_video_listener',
@@ -1772,6 +1788,7 @@ async function transcribeWithOpenAI(
             responseFormat: attempt.response_format,
             languageCode,
             audioDurationSeconds,
+            underlyingProvider: 'openai',
           },
         });
         if (requiresExplicitWordTimings) {

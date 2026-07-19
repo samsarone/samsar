@@ -6,6 +6,7 @@ import {
   resolveSessionAudioLanguage,
   resolveSubtitleRegenerationDefault,
 } from '../../../../utils/subtitleRegenerationLanguage.mjs';
+import { useDeploymentModelAvailability } from '../../../../hooks/useDeploymentModelAvailability.js';
 
 const AudioOptionsDialog = ({
   regenerateVideoSessionSubtitles,
@@ -37,6 +38,11 @@ const AudioOptionsDialog = ({
     selectedLanguage: subtitleLanguage,
     audioLanguage,
   });
+  const {
+    isDockerInstall,
+    hasSubtitleGenerationCredentials,
+  } = useDeploymentModelAvailability();
+  const canGenerateSubtitles = !isDockerInstall || hasSubtitleGenerationCredentials;
 
   useEffect(() => {
     setLocalApplyAudioDucking(Boolean(applyAudioDucking));
@@ -132,50 +138,54 @@ const AudioOptionsDialog = ({
 
   return (
     <div>
-      <div className="mb-4 mt-4">
-        <label className="flex items-center gap-2 text-sm">
-          <input
-            type="checkbox"
-            checked={sessionSubtitlesEnabled}
-            onChange={handleSessionSubtitlesChange}
-            disabled={!sessionSubtitlesEnabled && typeof regenerateVideoSessionSubtitles !== 'function'}
-          />
-          <span>Session subtitles</span>
-        </label>
-      </div>
-      <div className="mb-4 mt-4">
-        <label className="block text-left">
-          <span className="mb-1 block text-xs font-medium opacity-75">
-            Subtitle language <span className="font-normal">(optional)</span>
-          </span>
-          <select
-            value={subtitleLanguage}
-            onChange={(event) => {
-              hasSelectedSubtitleLanguageRef.current = true;
-              setSubtitleLanguage(event.target.value);
-            }}
-            className="w-full rounded-md border border-slate-500/30 bg-transparent px-2.5 py-1.5 text-sm outline-none"
-            aria-label="Subtitle regeneration language"
-          >
-            <option value="">Same as audio</option>
-            {SUPPORTED_LANGUAGES.map((language) => (
-              <option key={language.code} value={language.code}>
-                {language.name}
-              </option>
-            ))}
-          </select>
-          {useTranslatedSubtitleRegeneration ? (
-            <span className="mt-1 block text-xs opacity-70">
-              Subtitle text will be translated while the original audio stays unchanged.
-            </span>
-          ) : null}
-        </label>
-      </div>
-      <div className="mb-4 mt-4">
-        <SecondaryButton onClick={handleRegenerateSubs}>
-          Generate / regenerate subtitles
-        </SecondaryButton>
-      </div>
+      {canGenerateSubtitles ? (
+        <>
+          <div className="mb-4 mt-4">
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={sessionSubtitlesEnabled}
+                onChange={handleSessionSubtitlesChange}
+                disabled={!sessionSubtitlesEnabled && typeof regenerateVideoSessionSubtitles !== 'function'}
+              />
+              <span>Session subtitles</span>
+            </label>
+          </div>
+          <div className="mb-4 mt-4">
+            <label className="block text-left">
+              <span className="mb-1 block text-xs font-medium opacity-75">
+                Subtitle language <span className="font-normal">(optional)</span>
+              </span>
+              <select
+                value={subtitleLanguage}
+                onChange={(event) => {
+                  hasSelectedSubtitleLanguageRef.current = true;
+                  setSubtitleLanguage(event.target.value);
+                }}
+                className="w-full rounded-md border border-slate-500/30 bg-transparent px-2.5 py-1.5 text-sm outline-none"
+                aria-label="Subtitle regeneration language"
+              >
+                <option value="">Same as audio</option>
+                {SUPPORTED_LANGUAGES.map((language) => (
+                  <option key={language.code} value={language.code}>
+                    {language.name}
+                  </option>
+                ))}
+              </select>
+              {useTranslatedSubtitleRegeneration ? (
+                <span className="mt-1 block text-xs opacity-70">
+                  Subtitle text will be translated while the original audio stays unchanged.
+                </span>
+              ) : null}
+            </label>
+          </div>
+          <div className="mb-4 mt-4">
+            <SecondaryButton onClick={handleRegenerateSubs}>
+              Generate / regenerate subtitles
+            </SecondaryButton>
+          </div>
+        </>
+      ) : null}
       {typeof removeAllSubtitles === 'function' && (
         <div className="mb-4">
           <SecondaryButton onClick={handleRemoveAllSubtitles}>

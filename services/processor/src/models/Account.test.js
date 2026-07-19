@@ -1,7 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { normalizeImageAssetPath } from './Account.js';
+import {
+  mapFinalRenderToGalleryItem,
+  normalizeImageAssetPath,
+} from './Account.js';
 
 test('normalizeImageAssetPath preserves assets_v2 paths as secure media URLs', () => {
   const normalized = normalizeImageAssetPath(
@@ -34,4 +37,39 @@ test('normalizeImageAssetPath keeps legacy generation filenames under /generatio
     normalizeImageAssetPath('/generations/generation_123.png'),
     '/generations/generation_123.png'
   );
+});
+
+test('branched final renders use their InteractivePublication in the user gallery', () => {
+  const sessionId = '507f1f77bcf86cd799439011';
+  const publicationId = '507f1f77bcf86cd799439012';
+  const item = mapFinalRenderToGalleryItem({
+    _id: sessionId,
+    narrativeType: 'branched',
+    sessionName: 'Choose a road',
+    defaultBranchPathId: 'root.1',
+    branchRenderPaths: [{
+      pathId: 'root.1',
+      remoteURL: 'https://private.example/root.1.mp4',
+    }],
+  }, {
+    [sessionId]: {
+      _id: publicationId,
+      thumbnailUrl: 'https://static.samsar.one/published/root.1.png',
+      manifest: {
+        default_path_id: 'root.1',
+        outputs: {
+          paths: [{
+            path_id: 'root.1',
+            contentUrl: 'https://static.samsar.one/published/root.1.mp4',
+            is_default: true,
+          }],
+        },
+      },
+    },
+  });
+
+  assert.equal(item.url, 'https://static.samsar.one/published/root.1.mp4');
+  assert.equal(item.thumbnail, 'https://static.samsar.one/published/root.1.png');
+  assert.equal(item.isPublished, true);
+  assert.equal(item.publicationId, publicationId);
 });

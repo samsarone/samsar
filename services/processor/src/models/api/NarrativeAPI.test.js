@@ -9,6 +9,7 @@ import User from '../../schema/User.js';
 import {
   __testOnly__,
   buildNarrativeRequestPayload,
+  createSingleNarrativeRequest,
   getSingleNarrativeRequest,
   normalizeCreateSingleNarrativePayload,
   processCreateSingleNarrativeRequest,
@@ -40,7 +41,37 @@ test('normalizes the create_single prompt, duration, and inference model aliases
       duration: 240,
       inference_model: 'QWEN3.7',
       inferenceModel: 'QWEN3.7',
+      video_model: 'RUNWAYML',
+      videoGenerationModel: 'RUNWAYML',
     },
+  );
+});
+
+test('normalizes and validates the video model used to size narrative speech', () => {
+  const normalized = normalizeCreateSingleNarrativePayload({
+    prompt: 'Make a concise film',
+    duration: 30,
+    video_model: 'COSMOS3SUPERI2V',
+  });
+
+  assert.equal(normalized.video_model, 'COSMOS3SUPERI2V');
+  assert.equal(normalized.videoGenerationModel, 'COSMOS3SUPERI2V');
+  assert.throws(
+    () => normalizeCreateSingleNarrativePayload({
+      prompt: 'Make a concise film',
+      duration: 30,
+      video_model: 'UNKNOWN_MODEL',
+    }),
+    (error) => error.code === 'INVALID_VIDEO_MODEL' && error.status === 400,
+  );
+  assert.throws(
+    () => normalizeCreateSingleNarrativePayload({
+      prompt: 'Make a concise film',
+      duration: 30,
+      video_model: 'RUNWAYML',
+      videoModel: 'COSMOS3SUPERI2V',
+    }),
+    (error) => error.code === 'CONFLICTING_VIDEO_MODEL' && error.status === 400,
   );
 });
 
@@ -73,6 +104,47 @@ test('uses strict text-to-video inference aliases and falls back to the user sel
     () => resolveNarrativeInferenceModel({ inference_model: 'unknown-model' }, 'QWEN3.7'),
     (error) => error.status === 400 && /inference_model/.test(error.message),
   );
+});
+
+test('submission persists the selected video model for model-aware speech generation', async (t) => {
+  setConnectionReadyForTest(t);
+  const userId = '507f191e810c19729de860ea';
+  const requestId = '507f1f77bcf86cd799439011';
+  let createdDocument = null;
+  const queued = [];
+
+  t.mock.method(GenerationCreditTransaction, 'createIndexes', async () => []);
+  t.mock.method(NarrativeRequest, 'createIndexes', async () => []);
+  t.mock.method(User, 'findById', () => ({
+    select: () => ({
+      lean: async () => ({
+        _id: userId,
+        generationCredits: 100,
+        selectedInferenceModel: 'QWEN3.7',
+        speakerOptions: null,
+      }),
+    }),
+  }));
+  t.mock.method(NarrativeRequest, 'create', async (document) => {
+    createdDocument = document;
+    return { toObject: () => ({ ...document, _id: requestId }) };
+  });
+
+  const result = await createSingleNarrativeRequest({
+    userId,
+    payload: {
+      prompt: 'Create a short journey.',
+      duration: 30,
+      video_model: 'COSMOS3SUPERI2V',
+    },
+    dependencies: {
+      queueCreateSingleNarrativeRequest: (id) => queued.push(id),
+    },
+  });
+
+  assert.equal(createdDocument.videoGenerationModel, 'COSMOS3SUPERI2V');
+  assert.equal(result.video_model, 'COSMOS3SUPERI2V');
+  assert.deepEqual(queued, [requestId]);
 });
 
 test('completed polling payload returns the three requested narrative artifacts', () => {
@@ -343,6 +415,58 @@ test('a recovered worker reuses persisted artifacts and an existing narrative de
   const ownedWrites = writes.filter(({ filter }) => filter.status === 'PROCESSING');
   assert.ok(ownedWrites.length >= 2);
   assert.ok(ownedWrites.every(({ filter }) => filter.workerLeaseId === workerLeaseId));
+});
+
+test('an interactive-video singular stage records usage but never debits narrative credits', async (t) => {
+  setConnectionReadyForTest(t);
+  const requestId = '507f1f77bcf86cd799439021';
+  let storedRequest = {
+    _id: { toString: () => requestId },
+    userId: '507f191e810c19729de860ea',
+    requestType: 'create_single',
+    narrativeType: 'singular',
+    status: 'PROCESSING',
+    generationOutcome: 'SUCCEEDED',
+    prompt: 'Make a film',
+    duration: 30,
+    inferenceModel: 'gpt-5.6-sol',
+    videoGenerationModel: 'RUNWAYML',
+    videoTone: 'grounded',
+    themeJson: { style: ['cinematic'] },
+    narrativeJson: { scenes: [{ visual: 'raw' }], sounds: [] },
+    movieResourceList: { scenes: [{ visual: 'enriched' }], sounds: [] },
+    validation: { narrative: { valid: true }, movieResourceList: { valid: true } },
+    inferenceReceipts: [{
+      stage: 'narrative_generation',
+      requestKey: 'narrative:create_single:narrative',
+      model: 'gpt-5.6-sol',
+      provider: 'openai',
+      usage: { inputTokens: 1_000, outputTokens: 100 },
+    }],
+    billingStatus: 'PENDING',
+    billingPolicy: 'included_in_interactive_video_rate',
+  };
+
+  t.mock.method(NarrativeRequest, 'findOneAndUpdate', (_filter, update) => {
+    storedRequest = { ...storedRequest, ...(update.$set || {}) };
+    return asLeanQuery(storedRequest);
+  });
+  t.mock.method(NarrativeRequest, 'updateOne', async (_filter, update) => {
+    storedRequest = { ...storedRequest, ...(update.$set || {}) };
+    return { acknowledged: true, matchedCount: 1, modifiedCount: 1 };
+  });
+  const transactionLookup = t.mock.method(GenerationCreditTransaction, 'findOne', () => {
+    throw new Error('interactive narrative stages must not inspect or create debit transactions');
+  });
+
+  const result = await processCreateSingleNarrativeRequest(requestId);
+
+  assert.equal(result.status, 'COMPLETED');
+  assert.equal(result.billing.credits_charged, 0);
+  assert.equal(result.billing.policy, 'included_in_interactive_video_rate');
+  assert.equal(result.billing.reason, 'included_in_interactive_video_rate');
+  assert.equal(storedRequest.billingStatus, 'WAIVED');
+  assert.equal(transactionLookup.mock.callCount(), 0);
 });
 
 test('a worker fails closed when any persisted inference receipt cannot be billed', async (t) => {

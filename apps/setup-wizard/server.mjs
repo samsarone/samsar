@@ -44,6 +44,12 @@ const CONFIG_PATH = path.join(ROOT_DIR, 'runtime', 'config', 'samsar.config.json
 const AVAILABLE_MODELS_PATH = path.join(ROOT_DIR, 'runtime', 'config', 'available-models.json');
 const ROOT_ENV_PATH = path.join(ROOT_DIR, 'runtime', 'secrets', 'root.env');
 const PROVIDER_SECRETS_PATH = path.join(ROOT_DIR, 'runtime', 'secrets', 'provider.credentials.json');
+const MEDIA_TUNNEL_REFRESH_REQUEST_PATH = path.join(
+  ROOT_DIR,
+  'runtime',
+  'config',
+  'media-tunnel-refresh.request.json',
+);
 const MAIL_SECRETS_PATH = path.join(ROOT_DIR, 'runtime', 'secrets', 'mail.credentials.json');
 const ALIBABA_VALIDATION_SCRIPT_PATH = path.join(
   ROOT_DIR,
@@ -66,6 +72,13 @@ const PROCESSOR_INTERNAL_URL = process.env.SAMSAR_SETUP_PROCESSOR_INTERNAL_URL |
 const CLIENT_INTERNAL_URL = process.env.SAMSAR_SETUP_CLIENT_INTERNAL_URL || 'http://host.docker.internal:3000';
 const PROCESSOR_READY_URL = `${PROCESSOR_INTERNAL_URL}/v1/health/ready`;
 const MEDIA_TUNNEL_CONTAINER_NAME = process.env.SAMSAR_MEDIA_TUNNEL_CONTAINER || 'samsar-media-tunnel';
+const MEDIA_TUNNEL_MONITOR_INTERVAL_MS = Math.max(
+  5000,
+  Number(process.env.SAMSAR_MEDIA_TUNNEL_MONITOR_INTERVAL_MS) || 5000,
+);
+const MEDIA_TUNNEL_MONITOR_ENABLED = !['0', 'false', 'no', 'off'].includes(
+  normalizeString(process.env.SAMSAR_MEDIA_TUNNEL_MONITOR_ENABLED).toLowerCase(),
+);
 const SETUP_CLOUD_ENVIRONMENT = normalizeString(process.env.SAMSAR_SETUP_CLOUD_ENVIRONMENT);
 const SETUP_REMOTE_INSTALL = normalizeBoolean(process.env.SAMSAR_SETUP_REMOTE_INSTALL) || Boolean(SETUP_CLOUD_ENVIRONMENT);
 const SETUP_CLOUD_SUBSCRIPTION_ID = normalizeString(process.env.SAMSAR_SETUP_CLOUD_SUBSCRIPTION_ID);
@@ -835,7 +848,7 @@ function buildStorageConfig(infrastructure = {}) {
   return {
     provider: 's3-compatible',
     mediaBucketName: 'samsar-resources',
-    staticCdnUrl: 'http://localhost:8080/',
+    staticCdnUrl: `${PROCESSOR_PUBLIC_URL.replace(/\/+$/, '')}/`,
     secureAssetPrefix: 'assets_v2',
     accessKeyId: 'samsar',
     secretAccessKey: 'samsar-local-password',
@@ -909,6 +922,17 @@ function isPublicHttpUrl(value) {
   try {
     const parsedUrl = new URL(value);
     return ['http:', 'https:'].includes(parsedUrl.protocol) && !isLocalOrPrivateHost(parsedUrl.hostname);
+  } catch {
+    return false;
+  }
+}
+
+function isTemporaryMediaTunnelUrl(value) {
+  try {
+    const hostname = new URL(value).hostname.toLowerCase();
+    return hostname.endsWith('.trycloudflare.com') ||
+      hostname.endsWith('.loca.lt') ||
+      hostname.endsWith('.share.zrok.io');
   } catch {
     return false;
   }
@@ -1359,7 +1383,9 @@ function buildRuntimeConfig(payload) {
     : {
       clientApp: CLIENT_URL,
       processorApi: PROCESSOR_PUBLIC_URL,
-      media: storage.staticCdnUrl || (storage.externalMediaPublishEnabled ? '' : 'http://localhost:8080'),
+      media: storage.externalMediaPublishEnabled
+        ? storage.staticCdnUrl
+        : PROCESSOR_PUBLIC_URL,
     };
   const googleCredentials = normalizeGoogleCredentials(credentials.googleCredentialsJson);
   const mail = buildSanitizedMailConfig(payload?.mail || {}, payload?.mailValidation);
@@ -1393,7 +1419,9 @@ function buildRuntimeConfig(payload) {
 	      clientApp: publicUrls.clientApp || CLIENT_URL,
 	      processorApi: publicUrls.processorApi || PROCESSOR_PUBLIC_URL,
 	      samsarApi: exampleConfig.publicUrls?.samsarApi || 'https://api.samsar.one/v1',
-	      media: publicUrls.media || storage.staticCdnUrl || (storage.externalMediaPublishEnabled ? '' : exampleConfig.publicUrls?.media || 'http://localhost:8080'),
+	      media: publicUrls.media || (storage.externalMediaPublishEnabled
+          ? storage.staticCdnUrl
+          : publicUrls.processorApi || PROCESSOR_PUBLIC_URL),
 	    },
 	    database,
 	    storage,
@@ -1567,47 +1595,78 @@ function hasConfiguredSamsarApiKey(credentials = {}) {
 function hasConfiguredRemoteMediaProvider(credentials = {}) {
   return Boolean(
     hasConfiguredSamsarApiKey(credentials) ||
+    normalizeString(credentials.openaiApiKey || credentials?.openai?.apiKey) ||
     normalizeString(credentials.openrouterApiKey || credentials?.openrouter?.apiKey) ||
     normalizeString(credentials.alibabaApiKey || credentials?.alibabaCloud?.apiKey) ||
     normalizeString(credentials.falApiKey || credentials?.fal?.apiKey) ||
+    normalizeString(credentials.elevenLabsApiKey || credentials?.elevenlabs?.apiKey) ||
     normalizeString(credentials.runwayApiKey || credentials?.runway?.apiKey) ||
     normalizeString(credentials.googleCredentialsJson) ||
     normalizeString(credentials.googleCloudCredentialsJsonB64 || credentials?.googleCloud?.credentialsJsonB64)
   );
 }
 
-function shouldPublishLocalMediaGateway(payload) {
+async function shouldPublishLocalMediaGateway(payload) {
   const deployment = payload?.deployment || {};
   const credentials = payload?.credentials || {};
   const infrastructure = deployment.infrastructure || {};
   const storage = buildStorageConfig(infrastructure);
-  const publicMediaUrl = deployment.reverseProxy?.publicUrls?.media || deployment.publicUrls?.media;
-  if (isPublicHttpUrl(publicMediaUrl)) {
-    return false;
-  }
-  return storage.externalMediaPublishEnabled !== true && hasConfiguredRemoteMediaProvider(credentials);
+  const requiresPublicMedia = storage.externalMediaPublishEnabled !== true &&
+    hasConfiguredRemoteMediaProvider(credentials);
+  return requiresPublicMedia;
 }
 
-function shouldPublishRuntimeLocalMediaGateway(config = {}) {
-  const storage = config.storage || {};
-  const providers = config.providers || {};
-  if (isPublicHttpUrl(config.publicUrls?.media)) {
+async function isReachableManagedMediaTunnel(value) {
+  if (!isPublicHttpUrl(value)) {
     return false;
   }
-  return storage.externalMediaPublishEnabled !== true && Boolean(
+  const healthUrl = `${normalizeString(value).replace(/\/+$/, '')}/__samsar_media_health`;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 5000);
+  try {
+    const response = await fetch(healthUrl, {
+      cache: 'no-store',
+      signal: controller.signal,
+    });
+    return response.ok && (await response.text()).trim() === 'samsar-media-gateway';
+  } catch {
+    return false;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function shouldPublishRuntimeLocalMediaGateway(config = {}) {
+  const storage = config.storage || {};
+  const providers = config.providers || {};
+  const hasRuntimeRemoteProvider = Boolean(
     normalizeString(providers.samsar?.apiKey) ||
+    providers.openai?.enabled === true ||
+    normalizeString(providers.openai?.apiKey) ||
     providers.openrouter?.enabled === true ||
     providers.alibabaCloud?.enabled === true ||
     normalizeString(providers.fal?.apiKey) ||
+    normalizeString(providers.elevenlabs?.apiKey) ||
     normalizeString(providers.runway?.apiKey) ||
     normalizeString(providers.googleCloud?.credentialsJsonB64)
   );
+  if (storage.externalMediaPublishEnabled === true || config.runtime === 'local' || !hasRuntimeRemoteProvider) {
+    return false;
+  }
+
+  const tunnelConfig = config.localMediaTunnel || config.mediaTunnel || {};
+  const configuredBrowserMediaUrl = normalizeString(config.publicUrls?.media);
+  const tunnelPublicUrl = tunnelConfig.enabled === false
+    ? ''
+    : (normalizeString(tunnelConfig.publicUrl || tunnelConfig.url) ||
+      (isTemporaryMediaTunnelUrl(configuredBrowserMediaUrl) ? configuredBrowserMediaUrl : ''));
+  return !tunnelPublicUrl || !(await isReachableManagedMediaTunnel(tunnelPublicUrl));
 }
 
 async function publishLocalMediaGateway(run, profileArgs, options = {}) {
   const shouldPublish = options.runtimeConfig
-    ? shouldPublishRuntimeLocalMediaGateway(options.runtimeConfig)
-    : shouldPublishLocalMediaGateway(options.payload);
+    ? await shouldPublishRuntimeLocalMediaGateway(options.runtimeConfig)
+    : await shouldPublishLocalMediaGateway(options.payload);
 
   if (!shouldPublish) {
     setStepStatus(run, 'media', 'complete', 'Public media gateway not required for this configuration.', { log: false });
@@ -1615,11 +1674,24 @@ async function publishLocalMediaGateway(run, profileArgs, options = {}) {
   }
 
   setStepStatus(run, 'media', 'running', 'Publishing local media gateway for external Samsar adapter requests.');
+  await runCommand('docker', getComposeArgs(
+    ...profileArgs,
+    'up',
+    '-d',
+    '--no-deps',
+    '--force-recreate',
+    'media-gateway',
+  ), {
+    cwd: ROOT_DIR,
+    run,
+    onOutput: (text) => appendLog(run, text.trim()),
+  });
   await runCommand('bash', [path.join(ROOT_DIR, 'scripts', 'start-local-media-tunnel.sh')], {
     cwd: ROOT_DIR,
     run,
     onOutput: (text) => appendLog(run, text.trim()),
   });
+  await fs.rm(MEDIA_TUNNEL_REFRESH_REQUEST_PATH, { force: true });
 
   const restartServices = options.includeWorkers === false
     ? ['processor']
@@ -1639,6 +1711,56 @@ async function publishLocalMediaGateway(run, profileArgs, options = {}) {
     onOutput: (text) => appendLog(run, text.trim()),
   });
   setStepStatus(run, 'media', 'complete', 'Local media gateway published.');
+}
+
+let mediaTunnelRefreshPromise = null;
+
+function hasActiveSetupOperation() {
+  return [...runs.values(), ...maintenanceRuns.values()].some((run) => run?.status === 'running');
+}
+
+async function monitorAndRefreshLocalMediaTunnel() {
+  if (!MEDIA_TUNNEL_MONITOR_ENABLED || hasActiveSetupOperation()) {
+    return;
+  }
+  if (mediaTunnelRefreshPromise) {
+    return mediaTunnelRefreshPromise;
+  }
+
+  mediaTunnelRefreshPromise = (async () => {
+    const runtimeConfig = await readJson(CONFIG_PATH).catch(() => null);
+    const refreshRequested = existsSync(MEDIA_TUNNEL_REFRESH_REQUEST_PATH);
+    if (runtimeConfig?.storage?.externalMediaPublishEnabled === true) {
+      await fs.rm(MEDIA_TUNNEL_REFRESH_REQUEST_PATH, { force: true });
+      return;
+    }
+    if (!runtimeConfig || (!refreshRequested && !(await shouldPublishRuntimeLocalMediaGateway(runtimeConfig)))) {
+      return;
+    }
+
+    console.warn('[media-tunnel-monitor] Public provider media URL is unreachable; publishing a replacement tunnel.');
+    const profiles = getRuntimeComposeProfiles(runtimeConfig);
+    const profileArgs = profiles.flatMap((profile) => ['--profile', profile]);
+    await runCommand('docker', getComposeArgs(
+      ...profileArgs,
+      'up',
+      '-d',
+      '--no-deps',
+      '--force-recreate',
+      'media-gateway',
+    ), { cwd: ROOT_DIR });
+    await runCommand('bash', [path.join(ROOT_DIR, 'scripts', 'start-local-media-tunnel.sh')], {
+      cwd: ROOT_DIR,
+    });
+    await fs.rm(MEDIA_TUNNEL_REFRESH_REQUEST_PATH, { force: true });
+    console.log('[media-tunnel-monitor] Replacement tunnel published; provider workers will read it from runtime config.');
+  })().catch((error) => {
+    console.error('[media-tunnel-monitor] Unable to refresh the public provider media URL:', error?.message || error);
+  }).finally(() => {
+    mediaTunnelRefreshPromise = null;
+  });
+
+  return mediaTunnelRefreshPromise;
 }
 
 function isSuccessfulHttpResponse(response) {
@@ -2937,6 +3059,9 @@ async function recoverSetupRun(runId, existingRun = null) {
 
 async function runSetup(run, payload) {
   try {
+    if (mediaTunnelRefreshPromise) {
+      await mediaTunnelRefreshPromise;
+    }
     await cleanupComposeStack(run);
 
     setStepStatus(run, 'config', 'running', 'Writing runtime/config/samsar.config.json');
@@ -3010,6 +3135,9 @@ async function runDockerMaintenance(run) {
   const composeEnv = { COMPOSE_BAKE: 'false' };
 
   try {
+    if (mediaTunnelRefreshPromise) {
+      await mediaTunnelRefreshPromise;
+    }
     await ensureComposeEnvFile();
 
     setStepStatus(run, 'runtime', 'running', 'Rendering runtime env files.');
@@ -3110,6 +3238,7 @@ async function removeGeneratedRuntimeFiles() {
   await Promise.allSettled([
     fs.rm(CONFIG_PATH, { force: true }),
     fs.rm(AVAILABLE_MODELS_PATH, { force: true }),
+    fs.rm(MEDIA_TUNNEL_REFRESH_REQUEST_PATH, { force: true }),
     fs.rm(ROOT_ENV_PATH, { force: true }),
     fs.rm(PROVIDER_SECRETS_PATH, { force: true }),
     fs.rm(MAIL_SECRETS_PATH, { force: true }),
@@ -3624,6 +3753,17 @@ const server = http.createServer(async (req, res) => {
     sendJson(res, 500, { message: error?.message || 'Internal setup wizard error.' });
   }
 });
+
+if (MEDIA_TUNNEL_MONITOR_ENABLED) {
+  const monitorTimer = setInterval(() => {
+    void monitorAndRefreshLocalMediaTunnel();
+  }, MEDIA_TUNNEL_MONITOR_INTERVAL_MS);
+  monitorTimer.unref();
+  const initialMonitorTimer = setTimeout(() => {
+    void monitorAndRefreshLocalMediaTunnel();
+  }, Math.min(15000, MEDIA_TUNNEL_MONITOR_INTERVAL_MS));
+  initialMonitorTimer.unref();
+}
 
 server.listen(PORT, '0.0.0.0', () => {
   console.log(`Samsar setup wizard listening on ${PORT}`);

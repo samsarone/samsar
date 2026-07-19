@@ -7,7 +7,10 @@ import { zodResponseFormat } from "openai/helpers/zod";
 import { getDBConnectionString } from "../DBString.js";
 import { getModelForUserInferenceModel } from "./ModelUtils.js";
 import { createCompatibleChatCompletion } from "../ai_utils/OpenAICompat.js";
-import { getDefaultUserInferenceModel } from "../../consts/InferenceModels.js";
+import {
+  INFERENCE_MODELS,
+  getDefaultUserInferenceModel,
+} from "../../consts/InferenceModels.js";
 import { normalizeDetectedLanguageCode } from '../../consts/SupportedLanguages.js';
 import {
   getSubtitleAlignmentMapCoverage,
@@ -153,7 +156,7 @@ function getSpeechTranslationAlignmentValidationError({
 export async function translateSpeech(
   text,
   targetLanguage,
-  inferenceModel = getDefaultUserInferenceModel(),
+  _inferenceModel = getDefaultUserInferenceModel(),
   options = {},
 ) {
   const normalizedText = typeof text === 'string' ? text.trim() : '';
@@ -200,7 +203,11 @@ export async function translateSpeech(
       content: normalizedText,
     },
   ];
-  const modelName = getModelForUserInferenceModel(inferenceModel);
+  // Subtitle translation is an OpenAI-owned pipeline regardless of the
+  // inference model selected for narrative or image/video generation. The
+  // compatible client still permits the configured Samsar API fallback when
+  // Docker has no native OpenAI key.
+  const modelName = INFERENCE_MODELS.Inference;
   const createChatCompletion = typeof options.createChatCompletion === 'function'
     ? options.createChatCompletion
     : createCompatibleChatCompletion;
@@ -328,7 +335,7 @@ export async function translateSpeech(
       const localizedSpeakerCharacterName = await translateSpeech(
         speakerCharacterName,
         normalizedTargetLanguage,
-        inferenceModel,
+        _inferenceModel,
         { createChatCompletion },
       );
       translatedSpeakerCharacterName = typeof localizedSpeakerCharacterName === 'string'

@@ -29,7 +29,11 @@ import {
 import { createLoginTokenForUser } from '../../models/api/UserAPI.js';
 import { chargeExternalUserUtilityUsage } from '../../models/api/ExternalUserUtilityAPI.js';
 import { uploadImageDataList } from '../../models/api/ImageUploadAPI.js';
-import { buildVideoStatusDetailedResponse } from '../../models/api/StatusAPI.js';
+import {
+  buildVideoStatusDetailedResponse,
+  buildVideoStatusUsageHeaders,
+  serializePublicVideoStatusResponse,
+} from '../../models/api/StatusAPI.js';
 import { createEmbeddingsFromPlainText } from '../../models/embeddings/EmbeddingService.js';
 import {
   normalizeOutroCtaImageFromPayload,
@@ -1922,6 +1926,7 @@ router.post('/translate_video', authenticateExternalRequest, async (req, res) =>
 
     const statusCode = error?.status || error?.response?.status || 500;
     return res.status(statusCode).json({
+      code: error?.code,
       message: error?.message || 'Internal server error while retranslating external user video.',
     });
   }
@@ -2775,12 +2780,17 @@ router.get('/status', authenticateExternalRequest, async (req, res) => {
       return res.status(404).json({ message: 'Request not found.' });
     }
 
-    return res.status(200).json(
-      buildExternalStatusResponse({
-        externalRequest: latestExternalRequest || externalRequest,
-        upstreamStatus,
-      }),
-    );
+    const requestRecord = latestExternalRequest || externalRequest;
+    const requestPayload = requestRecord?.toObject?.() || requestRecord || {};
+    const responsePayload = buildExternalStatusResponse({
+      externalRequest: requestRecord,
+      upstreamStatus,
+    });
+    res.set(buildVideoStatusUsageHeaders(upstreamStatus, {
+      creditsCharged: requestPayload.creditsCharged,
+      remainingCredits: scopedExternalUser?.generationCredits,
+    }));
+    return res.status(200).json(serializePublicVideoStatusResponse(responsePayload));
   } catch (error) {
     return res.status(error?.status || 500).json({
       message: error?.message || 'Internal server error while fetching external request status.',
@@ -2858,7 +2868,11 @@ async function handleExternalDetailedStatus(req, res) {
       externalStatus.session.requestId = requestPayload.externalRequestId;
     }
 
-    return res.status(200).json(externalStatus);
+    res.set(buildVideoStatusUsageHeaders(detailedUpstreamStatus || upstreamStatus, {
+      creditsCharged: requestPayload.creditsCharged,
+      remainingCredits: scopedExternalUser?.generationCredits,
+    }));
+    return res.status(200).json(serializePublicVideoStatusResponse(externalStatus));
   } catch (error) {
     return res.status(error?.status || 500).json({
       message: error?.message || 'Internal server error while fetching detailed external request status.',

@@ -2,7 +2,13 @@ function normalizeLanguageValue(value) {
   return typeof value === 'string' ? value.trim().toLowerCase() : '';
 }
 
-export const DEFAULT_VIDGENIE_SUBTITLES_ENABLED = true;
+export const DEFAULT_VIDGENIE_SUBTITLES_ENABLED = false;
+export const VIDGENIE_SUBTITLE_PREFERENCE_VERSION = 2;
+
+export function resolveInitialVidgenieSubtitlesEnabled(preferences = {}) {
+  return preferences?.subtitlePreferenceVersion === VIDGENIE_SUBTITLE_PREFERENCE_VERSION &&
+    preferences?.enableSubtitles === true;
+}
 
 export function resolveSubtitleLanguageOverride({
   enableSubtitles,

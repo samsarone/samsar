@@ -65,7 +65,7 @@ Samsar is a generative video and media automation platform for turning prompts, 
 | Text enhance | `POST /v1/chat/enhance` | `processor`, configured inference provider, MongoDB for user/session state |
 | Assistant workflows | `POST /v1/assistant/*`, `POST /v2/assistant/*` aliases | `processor`, `assistant-query-processor`, configured inference provider |
 | Audio, speech, music, sound effects | Studio tools and video generation stages | `audio-generator`, configured OpenAI, Google, ElevenLabs, FAL, or Samsar provider |
-| Local media delivery | `http://localhost:8080/assets_v2/...` | `media-gateway`, `minio`, Docker volumes |
+| Local media delivery | `http://localhost:3002/assets_v2/...` | `processor`, `minio`, Docker volumes |
 | Observability | Grafana at `http://localhost:4000` | `loki`, `promtail`, `grafana` |
 
 ## Installation
@@ -121,7 +121,7 @@ Open the local services after setup completes:
 | --- | --- |
 | Studio | `http://localhost:3000` |
 | Processor API | `http://localhost:3002` |
-| Local media gateway | `http://localhost:8080` |
+| Local media through Processor API | `http://localhost:3002/assets_v2/...` |
 | MinIO console | `http://localhost:9001` |
 | Grafana logs | `http://localhost:4000` |
 
@@ -297,12 +297,12 @@ Avoid restarting generation workers while a video, audio, or sound-effect job is
 In local Docker, completed render URLs are expected to look like:
 
 ```bash
-http://localhost:8080/assets_v2/video/output/<session-id>/<file>.mp4
+http://localhost:3002/assets_v2/video/output/<session-id>/<file>.mp4
 ```
 
-That URL is served by the local media gateway. It is not an S3 or CloudFront URL unless external media publishing is enabled in runtime config.
+That browser URL is served by the configured processor API from the mounted media volume. It is not an S3 or CloudFront URL unless external media publishing is enabled in runtime config.
 
-If the setup wizard configures a public domain or public IP reverse proxy for the processor API, returned media URLs and external AI adapter input media use that public processor host instead of the local media gateway/tunnel. Public/private IP installs use one machine IP: Studio is served at `http://<ip>` and processor/media URLs use `http://<ip>/api`. If the reverse proxy uses a private IP, intranet users can still access the instance, but external AI providers continue to use the public media tunnel because private addresses are not provider-visible.
+If the setup wizard configures a reverse proxy, browser media URLs use that configured processor API origin. Public/private IP installs use one machine IP: Studio is served at `http://<ip>` and processor/media URLs use `http://<ip>/api`. External AI adapters still use the separately managed, validated media tunnel unless external S3/CloudFront publishing is explicitly enabled.
 
 When a remote provider must fetch local-only media from your Docker stack, Samsar needs a public media base URL. The setup wizard starts a temporary media tunnel automatically when local media publishing is required for the selected configuration. If you are using the manual config flow, or if a remote provider cannot fetch local media, start the tunnel yourself:
 
@@ -310,7 +310,7 @@ When a remote provider must fetch local-only media from your Docker stack, Samsa
 scripts/start-local-media-tunnel.sh
 ```
 
-The script starts a short-lived public tunnel to the local media gateway, updates `runtime/secrets/root.env` and `runtime/config/samsar.config.json` with the tunnel base URL, and requires the provider-calling services to be recreated so they read the updated env. The tunnel is a public base URL for local media paths, not a separate signed URL per asset.
+The script starts a short-lived public tunnel to the internal media gateway and atomically updates the dedicated `localMediaTunnel.publicUrl`. Provider workers reload and validate that URL before each public adapter request; it is never used for browser previews.
 
 ## Runtime Config
 
@@ -324,11 +324,11 @@ The example config uses local Docker defaults:
 
 - `database.provider`: `local-mongo`
 - `storage.provider`: `s3-compatible`
-- `storage.staticCdnUrl`: `http://localhost:8080/`
+- `storage.staticCdnUrl`: `http://localhost:3002/`
 - `storage.externalMediaPublishEnabled`: `false`
 - `publicUrls.clientApp`: `http://localhost:3000`
 - `publicUrls.processorApi`: `http://localhost:3002`
-- `publicUrls.media`: `http://localhost:8080`
+- `publicUrls.media`: `http://localhost:3002`
 - `reverseProxy.enabled`: `false`
 
 Provider enablement is configured under `providers`. Enable only the providers you intend to use, then rerender config:
@@ -422,13 +422,13 @@ Production cluster deployment should use persistent volumes for MongoDB, MinIO o
 
 If a local Docker page fails only on first navigation with a dynamic import error, the browser is usually holding an old frontend build while the container serves a newer build. Refresh the tab. The Docker client server also returns a reload module for missing hashed JS chunks so stale tabs can recover automatically.
 
-If local downloads open in a new tab instead of downloading, confirm the media gateway is running and returning CORS headers:
+If local downloads open in a new tab instead of downloading, confirm the processor API can serve the mounted asset:
 
 ```bash
-curl -I http://localhost:8080/assets_v2/video/output/<session-id>/<file>.mp4
+curl -I http://localhost:3002/assets_v2/video/output/<session-id>/<file>.mp4
 ```
 
-If remote generation providers cannot fetch local media, run `scripts/start-local-media-tunnel.sh` and recreate the workers that call those providers. If the setup wizard already published the local media gateway, a `samsar-media-tunnel` container should be running and the worker env should contain the tunnel URL.
+If remote generation providers cannot fetch local media, confirm the setup wizard remains available to service JIT tunnel-refresh requests. A `samsar-media-tunnel` container should be running; provider workers validate the exact asset and wait for a refreshed tunnel before dispatching.
 
 If an OpenRouter-backed inference model is missing from a Docker deployment, confirm `providers.openrouter.enabled` is `true`, confirm `runtime/secrets/provider.credentials.json` contains the OpenRouter key, rerun `npm run config:render`, and recreate the processor and inference workers. For hosted production and external-production, Qwen requires `OPENROUTER_API_KEY`; Alibaba credentials do not satisfy hosted Qwen inference. In Docker, Qwen can instead use validated Alibaba credentials or the configured Samsar fallback unless `SAMSAR_QWEN_OPENROUTER_ONLY=true`.
 

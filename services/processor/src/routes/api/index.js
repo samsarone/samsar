@@ -15,7 +15,11 @@ import { createLoginTokenForUser } from '../../models/api/UserAPI.js';
 import { resolveRequestActorFromAuthHeaders } from '../../models/external/User.js';
 import { saveAutoRechargeSettings, updateAutoRechargeThreshold } from '../../models/AutoRecharge.js';
 import { getBillingPortalUrl } from '../../models/BillingPortal.js';
-import { buildVideoStatusResponse } from '../../models/api/StatusAPI.js';
+import {
+  buildVideoStatusResponse,
+  buildVideoStatusUsageHeaders,
+  serializePublicVideoStatusResponse,
+} from '../../models/api/StatusAPI.js';
 import mongoose from 'mongoose';
 import Stripe from 'stripe';
 
@@ -753,8 +757,10 @@ router.get('/status', async (req, res) => {
   const rawRequestId = req.query.request_id || req.query.session_id;
   const requestId = typeof rawRequestId === 'string' ? rawRequestId.trim() : '';
   const sendStatusResponse = (statusCode, payload) => {
-    res.locals.statusEndpointStatus = payload?.status || null;
-    return res.status(statusCode).json(payload);
+    const publicPayload = serializePublicVideoStatusResponse(payload);
+    res.locals.statusEndpointStatus = publicPayload?.status || null;
+    res.set(buildVideoStatusUsageHeaders(payload));
+    return res.status(statusCode).json(publicPayload);
   };
 
   try {

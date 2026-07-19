@@ -861,7 +861,7 @@ function buildInfrastructureConfig(dataConfig = {}) {
         mode: 'local-minio',
         provider: 's3-compatible',
         mediaBucketName: 'samsar-resources',
-        staticCdnUrl: 'http://localhost:8080/',
+        staticCdnUrl: `${API_BASE_URL}/`,
         secureAssetPrefix: 'assets_v2',
         accessKeyId: 'samsar',
         secretAccessKey: 'samsar-local-password',

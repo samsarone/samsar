@@ -242,6 +242,65 @@ export function hasSamsarCredential() {
   return hasEnvCredential('SAMSAR_API_KEY');
 }
 
+export function isSubtitleGenerationAvailable() {
+  const isDockerInstall = normalizeString(process.env.CURRENT_ENV).toLowerCase() === 'docker';
+  if (!isDockerInstall) {
+    return true;
+  }
+  return hasOpenAICredential() || hasSamsarCredential();
+}
+
+export function buildSubtitleConfigurationError() {
+  const error = new Error(
+    'Subtitle generation requires an OpenAI API key or Samsar API key in this Docker deployment.',
+  );
+  error.code = 'SUBTITLE_PROVIDER_NOT_CONFIGURED';
+  error.status = 503;
+  error.statusCode = 503;
+  return error;
+}
+
+export function assertSubtitleGenerationAvailable() {
+  if (!isSubtitleGenerationAvailable()) {
+    throw buildSubtitleConfigurationError();
+  }
+}
+
+export function applyDockerSubtitleAvailability(payload = {}) {
+  if (
+    !payload ||
+    typeof payload !== 'object' ||
+    Array.isArray(payload) ||
+    isSubtitleGenerationAvailable()
+  ) {
+    return payload;
+  }
+
+  const normalizedPayload = {
+    ...payload,
+    enable_subtitles: false,
+    enableSubtitles: false,
+    add_subtitles: false,
+    addSubtitles: false,
+    subtitle_translation_required: false,
+    subtitleTranslationRequired: false,
+    subtitles_translation_required: false,
+    subtitlesTranslationRequired: false,
+    translate_subtitles: false,
+    translateSubtitles: false,
+    subtitle_language_explicit: false,
+    subtitleLanguageExplicit: false,
+  };
+
+  // A requested subtitle language implies subtitle generation in the normal
+  // request parser. Remove it before validation when Docker cannot run the
+  // OpenAI-backed subtitle pipeline.
+  delete normalizedPayload.subtitle_language;
+  delete normalizedPayload.subtitleLanguage;
+
+  return normalizedPayload;
+}
+
 export function hasGoogleCloudCredential() {
   if (hasEnvCredential(...GOOGLE_NATIVE_CREDENTIAL_KEYS)) {
     return true;

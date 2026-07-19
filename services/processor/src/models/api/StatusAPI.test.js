@@ -6,12 +6,15 @@ import {
   VIDEO_STATUS_DETAILED_SESSION_PROJECTION,
   VIDEO_STATUS_SESSION_PROJECTION,
   buildBranchVideoResults,
+  buildCompletedBranchingManifest,
   buildNormalizedBranchingStatus,
   buildNormalizedVideoSessionPreview,
   buildVideoStatusResponse,
+  buildVideoStatusUsageHeaders,
   normalizeResponseAssetUrl,
   reconcileDetailedBranchStatus,
   resolveVideoHasFooter,
+  serializePublicVideoStatusResponse,
 } from './StatusAPI.js';
 
 test('buildBranchVideoResults preserves the leaf-to-output mapping and order', () => {
@@ -145,6 +148,21 @@ function buildLevelTwoBranchStatusFixture() {
   };
 }
 
+function completeBranchStatusFixture(fixture = buildLevelTwoBranchStatusFixture()) {
+  fixture.branchRenderCompletionFinalized = true;
+  fixture.branchRenderCompletedAt = new Date('2026-07-19T01:02:03.000Z');
+  fixture.expressGenerationStatus.status = 'COMPLETED';
+  fixture.expressGenerationStatus.video_generation = 'COMPLETED';
+  fixture.branchRenderPaths.forEach((path) => {
+    path.frameGenerationStatus = 'COMPLETED';
+    path.frameGenerationPending = false;
+    path.videoGenerationStatus = 'COMPLETED';
+    path.videoGenerationPending = false;
+    path.remoteURL = `https://cdn.example.com/${path.pathId}.mp4`;
+  });
+  return fixture;
+}
+
 test('normalized branching status provides stable aggregate progress and a client choice tree', () => {
   const status = buildNormalizedBranchingStatus(buildLevelTwoBranchStatusFixture());
 
@@ -183,17 +201,7 @@ test('normalized branching status provides stable aggregate progress and a clien
 });
 
 test('normalized branching status publishes all final URLs atomically after every path completes', () => {
-  const fixture = buildLevelTwoBranchStatusFixture();
-  fixture.branchRenderCompletionFinalized = true;
-  fixture.branchRenderCompletedAt = new Date('2026-07-19T01:02:03.000Z');
-  fixture.expressGenerationStatus.status = 'COMPLETED';
-  fixture.branchRenderPaths.forEach((path) => {
-    path.frameGenerationStatus = 'COMPLETED';
-    path.frameGenerationPending = false;
-    path.videoGenerationStatus = 'COMPLETED';
-    path.videoGenerationPending = false;
-    path.remoteURL = `https://cdn.example.com/${path.pathId}.mp4`;
-  });
+  const fixture = completeBranchStatusFixture();
 
   const status = buildNormalizedBranchingStatus(fixture);
 
@@ -210,6 +218,214 @@ test('normalized branching status publishes all final URLs atomically after ever
     'root.2.2',
   ]);
   assert.equal(status.outputs.paths.every((path) => path.url.endsWith(`${path.path_id}.mp4`)), true);
+});
+
+test('completed branch manifest contains one path-aware video list and normalized media timing', () => {
+  const branching = buildNormalizedBranchingStatus(completeBranchStatusFixture(), null, {
+    detailed: true,
+  });
+  const manifest = buildCompletedBranchingManifest(branching);
+
+  assert.deepEqual(Object.keys(manifest), [
+    'schema',
+    'status',
+    'completed_at',
+    'default_path_id',
+    'timing',
+    'tree',
+    'outputs',
+  ]);
+  assert.deepEqual(manifest.timing, { origin: 'media', unit: 'seconds' });
+  assert.deepEqual(manifest.outputs.paths[0], {
+    path_id: 'root.1.1',
+    url: 'https://cdn.example.com/root.1.1.mp4',
+    duration: 30,
+    is_default: true,
+  });
+  assert.equal(manifest.tree.choice_points[0].switch_at_seconds, 10);
+  assert.deepEqual(manifest.tree.choice_points[0].options[0].leaf_path_ids, [
+    'root.1.1',
+    'root.1.2',
+  ]);
+  assert.equal(Object.hasOwn(manifest, 'paths'), false);
+  assert.equal(JSON.stringify(manifest).includes('stage_details'), false);
+  assert.equal(JSON.stringify(manifest).includes('selection_trail'), false);
+  assert.equal(JSON.stringify(manifest).includes('audio_timeline'), false);
+});
+
+test('public completed branched status removes billing and duplicate output aliases', () => {
+  const branching = buildNormalizedBranchingStatus(completeBranchStatusFixture());
+  const internalPayload = {
+    session_id: 'session-1',
+    request_id: 'request-1',
+    status: 'COMPLETED',
+    type: 'video',
+    provider: 'RUNWAYML',
+    narrative_type: 'branched',
+    default_path_id: 'root.1.1',
+    branch_results: branching.paths,
+    branching,
+    result_url: branching.outputs.default_url,
+    result_urls: branching.outputs.paths.map((path) => path.url),
+    videoLink: branching.outputs.default_url,
+    remoteURL: branching.outputs.default_url,
+    expressGenerationStatus: { status: 'COMPLETED', video_generation: 'COMPLETED' },
+    expressGenerationCreditCharges: {
+      totalCharged: 42,
+      stages: { video_generation: { creditsCharged: 10 } },
+    },
+    express_generation_credit_charges: { totalCharged: 42 },
+    creditsCharged: 42,
+    credits_charged: 42,
+    has_subtitles: true,
+    has_footer: false,
+    result_language: 'en',
+  };
+
+  const response = serializePublicVideoStatusResponse(internalPayload);
+  const serialized = JSON.stringify(response);
+
+  assert.deepEqual(Object.keys(response), [
+    'session_id',
+    'request_id',
+    'status',
+    'type',
+    'provider',
+    'narrative_type',
+    'default_path_id',
+    'result_url',
+    'has_subtitles',
+    'has_footer',
+    'result_language',
+    'branching',
+  ]);
+  assert.equal(response.branching.outputs.paths.length, 4);
+  assert.equal(response.result_url, 'https://cdn.example.com/root.1.1.mp4');
+  assert.equal(Object.hasOwn(response, 'result_urls'), false);
+  assert.equal(Object.hasOwn(response, 'branch_results'), false);
+  assert.equal(Object.hasOwn(response, 'expressGenerationStatus'), false);
+  assert.equal(/billing|credits?/i.test(serialized), false);
+  assert.equal(Object.hasOwn(internalPayload, 'expressGenerationCreditCharges'), true);
+});
+
+test('public completed detailed branched status keeps a compact session envelope without duplicate branch data', () => {
+  const branching = buildNormalizedBranchingStatus(completeBranchStatusFixture(), null, {
+    detailed: true,
+  });
+  const response = serializePublicVideoStatusResponse({
+    session_id: 'session-1',
+    request_id: 'request-1',
+    status: 'COMPLETED',
+    type: 'video',
+    narrative_type: 'branched',
+    result_url: branching.outputs.default_url,
+    has_subtitles: true,
+    has_footer: false,
+    result_language: 'en',
+    branching,
+    creditsCharged: 42,
+    session: {
+      id: 'session-1',
+      requestId: 'request-1',
+      type: 'video',
+      routeType: 'express',
+      aspectRatio: '16:9',
+      framesPerSecond: 24,
+      duration: 30,
+      narrativeType: 'branched',
+      branching,
+      branchingMeta: { internal: 'duplicate' },
+      branchResults: branching.paths,
+      layers: [{ id: 'layer-1', prompt: 'generation detail' }],
+      audioLayers: [{ id: 'audio-1' }],
+      result: { url: branching.outputs.default_url, hasSubtitles: true, language: 'en' },
+    },
+  });
+
+  assert.equal(response.status_detail_schema, 'interactive_video_manifest.v1');
+  assert.deepEqual(Object.keys(response.session), [
+    'id',
+    'requestId',
+    'type',
+    'routeType',
+    'aspectRatio',
+    'framesPerSecond',
+    'duration',
+    'language',
+    'hasSubtitles',
+    'hasFooter',
+    'narrativeType',
+    'defaultBranchPathId',
+    'result',
+  ]);
+  assert.equal(Object.hasOwn(response.session, 'branching'), false);
+  assert.equal(Object.hasOwn(response.session, 'layers'), false);
+  assert.equal(Object.hasOwn(response.session, 'audioLayers'), false);
+  assert.equal(Object.hasOwn(response.branching, 'paths'), false);
+});
+
+test('public pending branched status keeps diagnostics but strips all billing fields', () => {
+  const branching = buildNormalizedBranchingStatus(buildLevelTwoBranchStatusFixture());
+  const response = serializePublicVideoStatusResponse({
+    status: 'PENDING',
+    narrative_type: 'branched',
+    branching,
+    expressGenerationCreditCharges: { totalCharged: 12 },
+    creditsCharged: 12,
+    cost_usd: 0.12,
+    pricing_multiplier: 1.5,
+    usage: { input_tokens: 100 },
+    nested: { billing: { underlying_cost_usd: 0.1 }, credits_refunded: 2 },
+  });
+
+  assert.equal(response.branching.summary.progress_percent, 50);
+  assert.equal(response.branching.paths.length, 4);
+  assert.equal(response.branching.outputs.ready, false);
+  assert.equal(/billing|credits?|cost_usd|pricing_multiplier|input_tokens/i.test(JSON.stringify(response)), false);
+});
+
+test('public video status leaves the completed singular response contract untouched', () => {
+  const singular = {
+    session_id: 'linear-session',
+    request_id: 'linear-request',
+    status: 'COMPLETED',
+    type: 'video',
+    narrative_type: 'singular',
+    result_url: 'https://cdn.example.com/linear.mp4',
+    result_urls: ['https://cdn.example.com/linear.mp4'],
+    expressGenerationCreditCharges: { totalCharged: 9 },
+    creditsCharged: 9,
+    session: { layers: [{ id: 'linear-layer' }] },
+  };
+
+  assert.equal(serializePublicVideoStatusResponse(singular), singular);
+  assert.deepEqual(singular.result_urls, ['https://cdn.example.com/linear.mp4']);
+  assert.equal(singular.creditsCharged, 9);
+  assert.deepEqual(singular.session.layers, [{ id: 'linear-layer' }]);
+});
+
+test('branched status usage is returned through standard credit headers', () => {
+  const payload = {
+    status: 'COMPLETED',
+    narrative_type: 'branched',
+    expressGenerationCreditCharges: { totalCharged: 42 },
+  };
+
+  assert.deepEqual(buildVideoStatusUsageHeaders(payload), {
+    'x-credits-charged': '42',
+  });
+  assert.deepEqual(buildVideoStatusUsageHeaders(payload, {
+    creditsCharged: 50,
+    remainingCredits: 150.5,
+  }), {
+    'x-credits-charged': '50',
+    'x-credits-remaining': '150.5',
+  });
+  assert.deepEqual(buildVideoStatusUsageHeaders({
+    status: 'COMPLETED',
+    narrative_type: 'singular',
+    creditsCharged: 9,
+  }), {});
 });
 
 test('normalized branching status fails closed and withholds aggregate outputs after a path error', () => {

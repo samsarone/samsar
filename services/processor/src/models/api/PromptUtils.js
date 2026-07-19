@@ -74,6 +74,44 @@ export function validateExpressImageModelKey(imageModel, options = {}) {
   };
 }
 
+export function validateExpressVideoModelKey(videoModel, options = {}) {
+  const isRequired = options.required !== false;
+  const hasValue = videoModel !== undefined && videoModel !== null &&
+    String(videoModel).trim().length > 0;
+  const normalizedVideoModel = typeof videoModel === 'string'
+    ? videoModel.trim()
+    : videoModel;
+
+  if (!hasValue && !isRequired) {
+    return {
+      status: true,
+      videoModel: null,
+    };
+  }
+
+  const videoGenerationModelExists = VIDEO_GENERATION_MODEL_TYPES.find(
+    (model) => model.key === normalizedVideoModel,
+  );
+  if (!videoGenerationModelExists) {
+    return {
+      status: false,
+      message: 'Invalid video model',
+    };
+  }
+  if (!videoGenerationModelExists.isExpressModel ||
+    !TEXT_TO_VIDEO_VIDEO_MODEL_KEYS.includes(normalizedVideoModel)) {
+    return {
+      status: false,
+      message: 'Video model is not supported for this type',
+    };
+  }
+
+  return {
+    status: true,
+    videoModel: normalizedVideoModel,
+  };
+}
+
 export function validateMovieInput(payload) {
 
   let {
@@ -111,20 +149,11 @@ export function validateMovieInput(payload) {
 
 
 
-  const videoGenerationModelExists = VIDEO_GENERATION_MODEL_TYPES.find(model => model.key === video_model);
-  const isSupportedExpressVideoModel = TEXT_TO_VIDEO_VIDEO_MODEL_KEYS.includes(video_model);
-
-  if (!isSupportedExpressVideoModel) {
+  const videoModelValidation = validateExpressVideoModelKey(video_model);
+  if (!videoModelValidation.status) {
     return {
       status: false,
-      message: videoGenerationModelExists ? "Video model is not supported for this type" : "Invalid video model"
-    };
-  }
-
-  if (videoGenerationModelExists && !videoGenerationModelExists.isExpressModel) {
-    return {
-      status: false,
-      message: "Video model is not supported for this type"
+      message: videoModelValidation.message,
     };
   }
 

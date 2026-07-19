@@ -564,3 +564,56 @@ test('whisper explicit word timestamps remain unchanged for the existing happy p
     { word: 'timing', start: 1.83, end: 2.76 },
   ]);
 });
+
+test('Docker Samsar-only alignment delegates Whisper word timestamps without using the OpenAI client', async () => {
+  const originalEnvironment = {
+    CURRENT_ENV: process.env.CURRENT_ENV,
+    OPENAI_API_KEY: process.env.OPENAI_API_KEY,
+    SAMSAR_API_KEY: process.env.SAMSAR_API_KEY,
+  };
+  process.env.CURRENT_ENV = 'docker';
+  delete process.env.OPENAI_API_KEY;
+  process.env.SAMSAR_API_KEY = 'samsar-key';
+  const delegatedRequests = [];
+  let result;
+  try {
+    result = await transcribeWithOpenAI(
+      '/unused/speech.mp3',
+      'Delegated alignment',
+      'en',
+      2,
+      {
+        transcriptionModel: 'gpt-4o-transcribe',
+        wordTimestampModel: 'whisper-1',
+        samsarTranscriptAlign: async (audioFilePath, payload, durationSeconds) => {
+          delegatedRequests.push({ audioFilePath, payload, durationSeconds });
+          return {
+            text: 'Delegated alignment',
+            duration: 2,
+            words: [
+              { word: 'Delegated', start: 0.1, end: 0.9 },
+              { word: 'alignment', start: 1, end: 1.8 },
+            ],
+          };
+        },
+      },
+    );
+  } finally {
+    for (const [key, value] of Object.entries(originalEnvironment)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+
+  assert.equal(delegatedRequests.length, 1);
+  assert.equal(delegatedRequests[0].audioFilePath, '/unused/speech.mp3');
+  assert.equal(delegatedRequests[0].durationSeconds, 2);
+  assert.equal(delegatedRequests[0].payload.model, 'whisper-1');
+  assert.equal(delegatedRequests[0].payload.response_format, 'verbose_json');
+  assert.deepEqual(delegatedRequests[0].payload.timestamp_granularities, ['word']);
+  assert.equal(delegatedRequests[0].payload.file, undefined);
+  assert.deepEqual(result.words.map(({ word, start, end }) => ({ word, start, end })), [
+    { word: 'Delegated', start: 0.1, end: 0.9 },
+    { word: 'alignment', start: 1, end: 1.8 },
+  ]);
+});

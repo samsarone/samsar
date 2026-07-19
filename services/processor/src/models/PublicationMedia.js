@@ -26,6 +26,11 @@ const MEDIA_HOSTS = new Set([
   'static.samsar.one',
   `${MEDIA_BUCKET_NAME}.s3.amazonaws.com`,
 ]);
+const INTERACTIVE_PUBLICATION_MEDIA_NAMES = new Set(['video.mp4', 'thumbnail.png']);
+const INTERACTIVE_PATH_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]*$/;
+const MAX_INTERACTIVE_PATH_ID_LENGTH = 256;
+const SAFE_PUBLICATION_SESSION_ID_PATTERN = /^[A-Za-z0-9_-]+$/;
+const SAFE_INTERACTIVE_MEDIA_REVISION_PATTERN = /^[A-Za-z0-9_-]+$/;
 
 const normalizeString = (value) => (typeof value === 'string' ? value.trim() : '');
 
@@ -299,10 +304,118 @@ const buildPublicationMediaKey = (sessionId, mediaName) => {
   return [keyPrefix, sessionId, mediaName].filter(Boolean).join('/');
 };
 
+const normalizeInteractivePublicationSessionId = (sessionId) => {
+  const normalized = sessionId?._id?.toString?.() ||
+    sessionId?.id?.toString?.() ||
+    sessionId?.toString?.() ||
+    '';
+  if (
+    !normalized ||
+    normalized.length > 128 ||
+    !SAFE_PUBLICATION_SESSION_ID_PATTERN.test(normalized)
+  ) {
+    throw new Error('Interactive publication media requires a safe session ID.');
+  }
+  return normalized;
+};
+
+/**
+ * Validates the logical branch path ID before it can influence a storage key.
+ * Whitespace, separators, percent escapes, and traversal-shaped values are
+ * rejected instead of normalized so distinct IDs can never collapse together.
+ */
+export function validateInteractivePublicationPathId(pathId) {
+  const normalized = typeof pathId === 'string' ? pathId : '';
+  if (!normalized) {
+    throw new Error('Interactive publication media requires a path ID.');
+  }
+  if (normalized.length > MAX_INTERACTIVE_PATH_ID_LENGTH) {
+    throw new Error(
+      `Interactive publication path ID cannot exceed ${MAX_INTERACTIVE_PATH_ID_LENGTH} characters.`
+    );
+  }
+  if (
+    normalized === '.' ||
+    normalized === '..' ||
+    !INTERACTIVE_PATH_ID_PATTERN.test(normalized)
+  ) {
+    throw new Error(`Unsafe interactive publication path ID: ${normalized}`);
+  }
+  return normalized;
+}
+
+/**
+ * Base64url is injective over the validated UTF-8 ID and contains no path
+ * separators. Keep the original path ID in publication metadata for clients;
+ * this segment exists only to make object keys collision- and traversal-safe.
+ */
+export function buildInteractivePublicationSafePathId(pathId) {
+  return Buffer.from(validateInteractivePublicationPathId(pathId), 'utf8').toString('base64url');
+}
+
+const normalizeInteractivePublicationMediaRevision = (revisionId) => {
+  const normalized = normalizeString(revisionId);
+  if (
+    !normalized ||
+    normalized.length > 128 ||
+    !SAFE_INTERACTIVE_MEDIA_REVISION_PATTERN.test(normalized)
+  ) {
+    throw new Error('Interactive publication media requires a safe revision ID.');
+  }
+  return normalized;
+};
+
+export function buildInteractivePublicationMediaKey(
+  sessionId,
+  pathId,
+  mediaName,
+  { revisionId = null } = {},
+) {
+  const normalizedSessionId = normalizeInteractivePublicationSessionId(sessionId);
+  if (!INTERACTIVE_PUBLICATION_MEDIA_NAMES.has(mediaName)) {
+    throw new Error(`Unsupported interactive publication media name: ${mediaName || '<empty>'}`);
+  }
+  const safePathId = buildInteractivePublicationSafePathId(pathId);
+  const mediaPath = revisionId
+    ? `interactive/revisions/${normalizeInteractivePublicationMediaRevision(revisionId)}/paths/${safePathId}/${mediaName}`
+    : `interactive/paths/${safePathId}/${mediaName}`;
+  return buildPublicationMediaKey(
+    normalizedSessionId,
+    mediaPath,
+  );
+}
+
 const resolveVideoSource = (session = {}) => firstNonEmptyString([
   session.remoteURL,
   session.videoLink,
 ]);
+
+const resolveInteractivePathVideoSource = (branchPath = {}) => firstNonEmptyString([
+  branchPath.remoteURL,
+  branchPath.remote_url,
+  branchPath.videoLink,
+  branchPath.video_link,
+  branchPath.resultUrl,
+  branchPath.result_url,
+  branchPath.contentUrl,
+  branchPath.videoUrl,
+  branchPath.video_url,
+  branchPath.url,
+]);
+
+const resolveInteractivePathId = (branchPath) => {
+  if (typeof branchPath === 'string') {
+    return validateInteractivePublicationPathId(branchPath);
+  }
+  if (!branchPath || typeof branchPath !== 'object' || Array.isArray(branchPath)) {
+    throw new Error('Interactive publication media requires a path ID or path media entry.');
+  }
+  return validateInteractivePublicationPathId(firstNonEmptyString([
+    branchPath.pathId,
+    branchPath.path_id,
+    branchPath.id,
+  ]));
+};
 
 const materializeVideoUrl = async (session) => {
   const source = resolveVideoSource(session);
@@ -346,6 +459,84 @@ const materializeVideoUrl = async (session) => {
   }
 
   throw new Error(`Unable to resolve rendered video source for session ${sessionId}.`);
+};
+
+const materializeInteractivePathVideoUrl = async (
+  sessionId,
+  branchPath,
+  { revisionId = null } = {},
+) => {
+  const pathId = resolveInteractivePathId(branchPath);
+  const source = resolveInteractivePathVideoSource(branchPath);
+  if (!source) {
+    throw new Error(`No rendered video source is available for interactive path ${pathId}.`);
+  }
+
+  const completionStatus = firstNonEmptyString([
+    branchPath.videoGenerationStatus,
+    branchPath.video_generation_status,
+    branchPath.status,
+  ]).toUpperCase();
+  if (completionStatus && completionStatus !== 'COMPLETED') {
+    throw new Error(`Interactive path ${pathId} is not complete.`);
+  }
+
+  const key = buildInteractivePublicationMediaKey(
+    sessionId,
+    pathId,
+    'video.mp4',
+    { revisionId },
+  );
+  const localFilePath = resolveLocalFilePath(source);
+  if (localFilePath) {
+    return {
+      key,
+      url: await uploadFileToPublicationsMedia({
+        filePath: localFilePath,
+        key,
+        contentType: 'video/mp4',
+      }),
+      source: localFilePath,
+    };
+  }
+
+  const sourceKey = normalizeAssetKey(source);
+  if (sourceKey && isS3MediaReference(source)) {
+    return {
+      key,
+      url: await copyObjectToPublicationsMedia({
+        sourceBucketName: MEDIA_BUCKET_NAME,
+        sourceKey,
+        key,
+        contentType: 'video/mp4',
+      }),
+      source: `s3:${sourceKey}`,
+    };
+  }
+
+  if (/^https?:\/\//i.test(source)) {
+    const tempDir = await fs.promises.mkdtemp(
+      path.join(os.tmpdir(), 'samsar-interactive-publication-video-')
+    );
+    try {
+      const inputPath = await createTemporaryVideoInput(source, tempDir);
+      return {
+        key,
+        url: await uploadFileToPublicationsMedia({
+          filePath: inputPath,
+          key,
+          contentType: 'video/mp4',
+        }),
+        // Keep the durable source reference. The temporary input is removed
+        // before this function returns and must never leak into publication data.
+        source,
+      };
+    } finally {
+      await fs.promises.rm(tempDir, { recursive: true, force: true }).catch(() => {});
+    }
+  }
+
+  throw new Error(`Unable to resolve rendered video source for interactive path ${pathId}.`);
 };
 
 const resolveVideoSourceKey = (source) => {
@@ -508,6 +699,129 @@ export async function preparePublicPublicationThumbnail(
     );
   }
   return materializeThumbnailUrl(session, { thumbnailReference, forceFirstFrame });
+}
+
+/**
+ * Publishes one completed branch render without consulting any session-level
+ * splash or frame candidates. Its thumbnail is always decoded from frame zero
+ * of this path's own rendered video.
+ */
+export async function preparePublicInteractivePublicationPathMedia(
+  session,
+  branchPath,
+  { revisionId = null } = {},
+) {
+  if (!isPublicPublicationMediaConfigured()) {
+    throw new Error(
+      'Publication media is not configured. Set MEDIA_BUCKET_NAME and STATIC_CDN_URL.'
+    );
+  }
+
+  const sessionId = normalizeInteractivePublicationSessionId(normalizeSessionId(session));
+  const pathId = resolveInteractivePathId(branchPath);
+  const safePathId = buildInteractivePublicationSafePathId(pathId);
+  const video = await materializeInteractivePathVideoUrl(
+    sessionId,
+    branchPath,
+    { revisionId },
+  );
+  const thumbnailBuffer = await extractThumbnailFromVideo(video.source);
+  if (!thumbnailBuffer || thumbnailBuffer.length === 0) {
+    throw new Error(`Unable to extract a first-frame thumbnail for interactive path ${pathId}.`);
+  }
+
+  const thumbnailKey = buildInteractivePublicationMediaKey(
+    sessionId,
+    pathId,
+    'thumbnail.png',
+    { revisionId },
+  );
+  const thumbnailUrl = await uploadBufferToPublicationsMedia({
+    key: thumbnailKey,
+    buffer: thumbnailBuffer,
+    contentType: 'image/png',
+  });
+
+  return {
+    pathId,
+    safePathId,
+    revisionId,
+    videoUrl: video.url,
+    thumbnailUrl,
+    storageKeys: {
+      video: video.key,
+      thumbnail: thumbnailKey,
+    },
+    videoSource: video.source,
+    thumbnailSource: 'ffmpeg-first-video-frame',
+  };
+}
+
+/**
+ * Removes only the two exact objects owned by each supplied interactive path.
+ * The session's existing linear `video.mp4` and `thumbnail.png` are deliberately
+ * outside this key set and are never touched here.
+ */
+export async function deletePublicInteractivePublicationMediaForSession(
+  sessionId,
+  pathIdsOrEntries = [],
+  { revisionId = null } = {},
+) {
+  const normalizedSessionId = normalizeInteractivePublicationSessionId(sessionId);
+  const entries = Array.isArray(pathIdsOrEntries)
+    ? pathIdsOrEntries
+    : [pathIdsOrEntries];
+  const pathsBySafeId = new Map();
+
+  entries.forEach((entry) => {
+    const pathId = resolveInteractivePathId(entry);
+    const safePathId = buildInteractivePublicationSafePathId(pathId);
+    const existingPathId = pathsBySafeId.get(safePathId);
+    if (existingPathId && existingPathId !== pathId) {
+      throw new Error(
+        `Interactive publication path IDs ${existingPathId} and ${pathId} collide in storage.`
+      );
+    }
+    pathsBySafeId.set(safePathId, pathId);
+  });
+
+  const pathIds = [...pathsBySafeId.values()];
+  const keys = pathIds.flatMap((pathId) => [
+    buildInteractivePublicationMediaKey(
+      normalizedSessionId,
+      pathId,
+      'video.mp4',
+      { revisionId },
+    ),
+    buildInteractivePublicationMediaKey(
+      normalizedSessionId,
+      pathId,
+      'thumbnail.png',
+      { revisionId },
+    ),
+  ]);
+  const results = await Promise.allSettled(
+    keys.map((key) => deleteObjectFromPublicationsMedia({ key }))
+  );
+  const failed = results
+    .map((result, index) => ({ result, key: keys[index] }))
+    .filter(({ result }) => result.status === 'rejected')
+    .map(({ result, key }) => ({
+      key,
+      error: result.reason instanceof Error ? result.reason.message : String(result.reason),
+    }));
+
+  failed.forEach(({ key, error }) => {
+    console.error(`Failed to delete interactive publication media object ${key}: ${error}`);
+  });
+
+  return {
+    sessionId: normalizedSessionId,
+    revisionId,
+    pathIds,
+    deleted: keys.filter((_, index) => results[index].status === 'fulfilled'),
+    failed,
+  };
 }
 
 export async function deletePublicPublicationMediaForSession(sessionId) {

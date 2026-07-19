@@ -70,7 +70,9 @@ import { getHeaders } from '../../utils/web.jsx';
 import { getSessionType } from '../../utils/environment.jsx';
 import {
   DEFAULT_VIDGENIE_SUBTITLES_ENABLED,
+  VIDGENIE_SUBTITLE_PREFERENCE_VERSION,
   buildVidgenieLanguageFields,
+  resolveInitialVidgenieSubtitlesEnabled,
 } from './vidgenieSubtitleLanguage.mjs';
 import {
   buildSubtitleRegenerationLanguageFields,
@@ -93,6 +95,8 @@ import { useInferenceModelAvailability } from '../../hooks/useInferenceModelAvai
 import 'react-tooltip/dist/react-tooltip.css';
 import 'react-toastify/dist/ReactToastify.css';
 import './mobileStyles.css';
+
+const IS_DOCKER_INSTALL = import.meta.env.VITE_DOCKER_INSTALL === 'true';
 
 const LazyAceEditor = lazy(async () => {
   const [aceModule, reactAceModule] = await Promise.all([
@@ -3649,8 +3653,7 @@ export default function OneshotEditor() {
     return languageOptions.find((option) => option.value === saved) || defaultLanguageOption;
   });
   const [enableSubtitles, setEnableSubtitles] = useState(() => {
-    const saved = readVidgeniePreferences().enableSubtitles;
-    return typeof saved === 'boolean' ? saved : DEFAULT_VIDGENIE_SUBTITLES_ENABLED;
+    return resolveInitialVidgenieSubtitlesEnabled(readVidgeniePreferences());
   });
   const [selectedSubtitleLanguageOption, setSelectedSubtitleLanguageOption] = useState(
     () => {
@@ -3677,11 +3680,25 @@ export default function OneshotEditor() {
   const {
     isDockerInstall: isDockerModelFilteringEnabled,
     isLoading: isDeploymentModelAvailabilityLoading,
+    hasSubtitleGenerationCredentials,
     textToVideoImageModelValues,
     textToVideoVideoModelValues,
     imageListToVideoImageModelValues,
     imageListToVideoVideoModelValues,
   } = useDeploymentModelAvailability();
+  const canGenerateSubtitles =
+    !isDockerModelFilteringEnabled || hasSubtitleGenerationCredentials;
+  const subtitleGenerationEnabled = canGenerateSubtitles && enableSubtitles;
+
+  useEffect(() => {
+    if (!isDeploymentModelAvailabilityLoading && !canGenerateSubtitles) {
+      setEnableSubtitles(false);
+      setPostProcessingForm((current) => ({
+        ...current,
+        translationEnableSubtitles: false,
+      }));
+    }
+  }, [canGenerateSubtitles, isDeploymentModelAvailabilityLoading]);
   const deploymentModelAvailability = useMemo(() => ({
     isDockerInstall: isDockerModelFilteringEnabled,
     textToVideoImageModelValues,
@@ -4066,7 +4083,10 @@ export default function OneshotEditor() {
       generationMode,
       generationStepMode,
       audioLanguage: selectedLanguageOption?.value || 'auto',
-      enableSubtitles,
+      enableSubtitles: isDeploymentModelAvailabilityLoading
+        ? enableSubtitles
+        : subtitleGenerationEnabled,
+      subtitlePreferenceVersion: VIDGENIE_SUBTITLE_PREFERENCE_VERSION,
       subtitleLanguage: selectedSubtitleLanguageOption?.value || '',
       isAdvancedOpen,
       advancedOptions,
@@ -4081,12 +4101,14 @@ export default function OneshotEditor() {
     generationMode,
     generationStepMode,
     isAdvancedOpen,
+    isDeploymentModelAvailabilityLoading,
     selectedCustomAdapterEndpointId,
     selectedImageStyle,
     selectedInferenceModel,
     selectedLanguageOption,
     selectedSubtitleLanguageOption,
     selectedVideoModelSubType,
+    subtitleGenerationEnabled,
   ]);
 
   // ─────────────────────────────────────────────────────────
@@ -5741,7 +5763,7 @@ export default function OneshotEditor() {
     const resolvedSubtitleLanguage = resolveLanguageCode(selectedSubtitleLanguageValue, '');
     Object.assign(requestInput, buildVidgenieLanguageFields({
       audioLanguage: resolvedAudioLanguage,
-      enableSubtitles,
+      enableSubtitles: subtitleGenerationEnabled,
       subtitleLanguage: resolvedSubtitleLanguage,
     }));
     Object.assign(requestInput, advancedRequestConfiguration.input);
@@ -6019,13 +6041,17 @@ export default function OneshotEditor() {
         payload = {
           ...payload,
           language: languageCode,
-          enable_subtitles: postProcessingForm.translationEnableSubtitles === true,
+          enable_subtitles: canGenerateSubtitles &&
+            postProcessingForm.translationEnableSubtitles === true,
           translate_outro: postProcessingForm.translationTranslateOutro !== false,
           translate_footer: postProcessingForm.translationTranslateFooter !== false,
         };
         endpoint = 'retranslate_video';
         successLabel = 'Retranslation';
       } else if (actionKey === 'add_subtitles') {
+        if (!canGenerateSubtitles) {
+          throw new Error('OpenAI or Samsar configuration is required to generate subtitles.');
+        }
         payload = {
           ...payload,
           ...buildSubtitleRegenerationLanguageFields({
@@ -6203,6 +6229,7 @@ export default function OneshotEditor() {
     postProcessingPendingAction,
     rerollLayerIndexes,
     currentRenderHasOutro,
+    canGenerateSubtitles,
     showLoginDialog,
     user,
   ]);
@@ -6277,12 +6304,12 @@ export default function OneshotEditor() {
       duration: selectedDurationOption?.value || 30,
       aspectRatio: selectedAspectRatioOption?.value || '16:9',
       language: resolveLanguageCode(jsonModeLanguageValue, 'en'),
-      enableSubtitles,
+      enableSubtitles: subtitleGenerationEnabled,
       subtitleLanguage: resolveLanguageCode(jsonModeSubtitleLanguageValue, ''),
       inferenceModel: selectedInferenceModel?.value || inferenceModelOptions[0]?.value || user?.selectedInferenceModel || DEFAULT_INFERENCE_MODEL,
     })
   ), [
-    enableSubtitles,
+    subtitleGenerationEnabled,
     generationMode,
     jsonModeLanguageValue,
     jsonModeSubtitleLanguageValue,
@@ -6489,26 +6516,28 @@ export default function OneshotEditor() {
         >
           View&nbsp;in&nbsp;Studio
         </PrimaryPublicButton>
-        <PrimaryPublicButton
-          extraClasses="w-full sm:w-auto px-4 py-2 rounded-xl shadow-sm hover:shadow-md transition active:scale-[0.98]"
-          onClick={
-            isCompletedSessionPublished
-              ? handleUnpublishClick
-              : handlePublishClick
-          }
-          isPending={
-            isCompletedSessionPublished ? isUnpublishing : isPublishing
-          }
-          isDisabled={isGuestPreview || isPublishing || isUnpublishing}
-        >
-          {isCompletedSessionPublished
-            ? isUnpublishing
-              ? t("vidgenie.unpublishing")
-              : t("vidgenie.unpublish")
-            : isPublishing
-              ? t("vidgenie.publishing")
-              : t("vidgenie.publish")}
-        </PrimaryPublicButton>
+        {!IS_DOCKER_INSTALL && (
+          <PrimaryPublicButton
+            extraClasses="w-full sm:w-auto px-4 py-2 rounded-xl shadow-sm hover:shadow-md transition active:scale-[0.98]"
+            onClick={
+              isCompletedSessionPublished
+                ? handleUnpublishClick
+                : handlePublishClick
+            }
+            isPending={
+              isCompletedSessionPublished ? isUnpublishing : isPublishing
+            }
+            isDisabled={isGuestPreview || isPublishing || isUnpublishing}
+          >
+            {isCompletedSessionPublished
+              ? isUnpublishing
+                ? t("vidgenie.unpublishing")
+                : t("vidgenie.unpublish")
+              : isPublishing
+                ? t("vidgenie.publishing")
+                : t("vidgenie.publish")}
+          </PrimaryPublicButton>
+        )}
         <PrimaryPublicButton
           extraClasses="w-full sm:w-auto px-4 py-2 rounded-xl shadow-sm hover:shadow-md transition active:scale-[0.98]"
           onClick={handleDownloadVideo}
@@ -6592,29 +6621,30 @@ export default function OneshotEditor() {
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="text-sm font-semibold">Post-processing</div>
           <div className="flex flex-wrap items-center gap-2">
-            {POST_PROCESSING_ACTIONS.map((action) => {
-              const Icon = action.icon;
-              const isActive = postProcessingAction === action.key;
-              const isDisabled =
-                isAnyPostProcessingPending;
-              return (
-                <button
-                  key={action.key}
-                  type="button"
-                  onClick={() => selectPostProcessingAction(action.key)}
-                  disabled={isDisabled}
-                  title={action.label}
-                  className={`
-                    inline-flex min-h-[34px] items-center gap-2 rounded-full px-3 py-1.5 text-xs font-semibold ring-1 transition
-                    ${isActive ? activeActionClass : inactiveActionClass}
-                    ${isDisabled ? 'cursor-not-allowed opacity-50' : 'active:scale-[0.98]'}
-                  `}
-                >
-                  <Icon className="h-3.5 w-3.5" aria-hidden="true" />
-                  <span>{action.label}</span>
-                </button>
-              );
-            })}
+            {POST_PROCESSING_ACTIONS
+              .filter((action) => canGenerateSubtitles || action.key !== 'subtitles')
+              .map((action) => {
+                const Icon = action.icon;
+                const isActive = postProcessingAction === action.key;
+                const isDisabled = isAnyPostProcessingPending;
+                return (
+                  <button
+                    key={action.key}
+                    type="button"
+                    onClick={() => selectPostProcessingAction(action.key)}
+                    disabled={isDisabled}
+                    title={action.label}
+                    className={`
+                      inline-flex min-h-[34px] items-center gap-2 rounded-full px-3 py-1.5 text-xs font-semibold ring-1 transition
+                      ${isActive ? activeActionClass : inactiveActionClass}
+                      ${isDisabled ? 'cursor-not-allowed opacity-50' : 'active:scale-[0.98]'}
+                    `}
+                  >
+                    <Icon className="h-3.5 w-3.5" aria-hidden="true" />
+                    <span>{action.label}</span>
+                  </button>
+                );
+              })}
           </div>
         </div>
 
@@ -6649,18 +6679,20 @@ export default function OneshotEditor() {
                 </button>
               </div>
               <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-                <label className={`flex items-start gap-2 rounded-lg px-3 py-2 text-sm ring-1 ${inactiveActionClass}`}>
-                  <input
-                    type="checkbox"
-                    checked={postProcessingForm.translationEnableSubtitles}
-                    onChange={(event) =>
-                      updatePostProcessingFormField('translationEnableSubtitles', event.target.checked)
-                    }
-                    disabled={isAnyPostProcessingPending}
-                    className={checkboxClass}
-                  />
-                  <span>Add translated subtitles</span>
-                </label>
+                {canGenerateSubtitles ? (
+                  <label className={`flex items-start gap-2 rounded-lg px-3 py-2 text-sm ring-1 ${inactiveActionClass}`}>
+                    <input
+                      type="checkbox"
+                      checked={postProcessingForm.translationEnableSubtitles}
+                      onChange={(event) =>
+                        updatePostProcessingFormField('translationEnableSubtitles', event.target.checked)
+                      }
+                      disabled={isAnyPostProcessingPending}
+                      className={checkboxClass}
+                    />
+                    <span>Add translated subtitles</span>
+                  </label>
+                ) : null}
                 <label className={`flex items-start gap-2 rounded-lg px-3 py-2 text-sm ring-1 ${inactiveActionClass}`}>
                   <input
                     type="checkbox"
@@ -6703,7 +6735,7 @@ export default function OneshotEditor() {
             </div>
           )}
 
-          {postProcessingAction === 'subtitles' && (
+          {postProcessingAction === 'subtitles' && canGenerateSubtitles && (
             <div className="space-y-2">
               <div className="flex flex-wrap items-end gap-2">
                 <label className="min-w-[190px] flex-1 sm:max-w-xs">
@@ -7614,27 +7646,29 @@ export default function OneshotEditor() {
               </p>
             </div>
 
-            <div className="group w-full">
-              <label
-                className={`flex items-start gap-3 ${controlShell} rounded-xl p-3 transition-transform duration-200 group-hover:translate-y-[-1px] cursor-pointer`}
-              >
-                <input
-                  type="checkbox"
-                  checked={enableSubtitles}
-                  onChange={(e) => setEnableSubtitles(e.target.checked)}
-                  disabled={isFormDisabled}
-                  className="mt-0.5 h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
-                />
-                <div className="min-w-0">
-                  <div className="text-sm font-medium">
-                    {t("vidgenie.enableSubtitles")}
+            {canGenerateSubtitles && (
+              <div className="group w-full">
+                <label
+                  className={`flex items-start gap-3 ${controlShell} rounded-xl p-3 transition-transform duration-200 group-hover:translate-y-[-1px] cursor-pointer`}
+                >
+                  <input
+                    type="checkbox"
+                    checked={enableSubtitles}
+                    onChange={(e) => setEnableSubtitles(e.target.checked)}
+                    disabled={isFormDisabled}
+                    className="mt-0.5 h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                  />
+                  <div className="min-w-0">
+                    <div className="text-sm font-medium">
+                      {t("vidgenie.enableSubtitles")}
+                    </div>
+                    <p className={`mt-1 text-[11px] ${mutedText}`}>
+                      {t("vidgenie.enableSubtitlesHelp")}
+                    </p>
                   </div>
-                  <p className={`mt-1 text-[11px] ${mutedText}`}>
-                    {t("vidgenie.enableSubtitlesHelp")}
-                  </p>
-                </div>
-              </label>
-            </div>
+                </label>
+              </div>
+            )}
 
           </div>
         </div>
@@ -7644,7 +7678,7 @@ export default function OneshotEditor() {
 
           {isAdvancedOpen && (
             <div className="mt-3 space-y-5">
-              {enableSubtitles && (
+              {subtitleGenerationEnabled && (
                 <div className={`flex items-center justify-between gap-3 rounded-lg px-2.5 py-2 ${advancedRowBg}`}>
                   <label
                     htmlFor="vidgenie-subtitle-language"

@@ -1,6 +1,11 @@
 import fs from 'fs';
 import OpenAI from 'openai';
 
+import {
+  requestSamsarTranscriptAlignment,
+  shouldUseSamsarTranscriptAlignment,
+} from './SamsarTranscriptAlignment.js';
+
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY || '' });
 const TRANSCRIPTION_MODEL = process.env.OPENAI_TRANSCRIPTION_MODEL || 'gpt-4o-transcribe';
 const WORD_TIMESTAMP_TRANSCRIPTION_MODEL =
@@ -417,27 +422,39 @@ export async function transcribeWithOpenAI(
     const wordTimestampModel = options.wordTimestampModel || WORD_TIMESTAMP_TRANSCRIPTION_MODEL;
     const transcriptionClient = options.openaiClient || openai;
     const createReadStream = options.createReadStream || fs.createReadStream;
+    const useSamsarAlignment = options.useSamsarTranscriptAlignment ??
+      (!options.openaiClient && shouldUseSamsarTranscriptAlignment());
+    const samsarTranscriptAlign = options.samsarTranscriptAlign || requestSamsarTranscriptAlignment;
 
     const requestPayloadBase = {
       language: normalizeTranscriptionLanguageCode(languageCode),
       prompt: transcriptText && transcriptText.trim() ? transcriptText : undefined,
     };
 
-    const attempts = buildTranscriptionAttempts(transcriptionModel, wordTimestampModel);
+    const configuredAttempts = buildTranscriptionAttempts(transcriptionModel, wordTimestampModel);
+    const attempts = useSamsarAlignment
+      ? configuredAttempts.filter((attempt) => attempt.requiresExplicitWordTimings)
+      : configuredAttempts;
 
     let response = null;
     let responseHasAuthoritativeTimings = false;
     let lastError = null;
 
     for (const attempt of attempts) {
-      const fileStream = createReadStream(audioFilePath);
+      const fileStream = useSamsarAlignment ? null : createReadStream(audioFilePath);
       const {
         requiresExplicitWordTimings,
         ...requestAttempt
       } = attempt;
-      const payload = { ...requestPayloadBase, ...requestAttempt, file: fileStream };
+      const payload = {
+        ...requestPayloadBase,
+        ...requestAttempt,
+        ...(fileStream ? { file: fileStream } : {}),
+      };
       try {
-        const candidateResponse = await transcriptionClient.audio.transcriptions.create(payload);
+        const candidateResponse = useSamsarAlignment
+          ? await samsarTranscriptAlign(audioFilePath, payload, audioDurationSeconds)
+          : await transcriptionClient.audio.transcriptions.create(payload);
         if (requiresExplicitWordTimings) {
           try {
             if (!hasExplicitWordTimings(candidateResponse)) {
