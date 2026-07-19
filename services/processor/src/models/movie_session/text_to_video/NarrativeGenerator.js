@@ -9,6 +9,28 @@ import { validateTextToVideoNarrative } from '../utils/TranscriptUtils.js';
 
 export const TEXT_TO_VIDEO_NARRATIVE_MAX_VALIDATION_ATTEMPTS = 5;
 
+function normalizeMinimumSceneCount(value) {
+  const count = Number(value);
+  return Number.isSafeInteger(count) && count >= 2 ? count : null;
+}
+
+function validateMinimumSceneCount(validation, minimumSceneCount) {
+  if (!minimumSceneCount) return validation;
+  const sceneCount = Array.isArray(validation?.narrativeJson?.scenes)
+    ? validation.narrativeJson.scenes.length
+    : 0;
+  if (sceneCount >= minimumSceneCount) return validation;
+  return {
+    ...validation,
+    valid: false,
+    errors: [
+      ...(Array.isArray(validation?.errors) ? validation.errors : []),
+      `Narrative has ${sceneCount} scenes but at least ${minimumSceneCount} are required ` +
+        'for the requested branching depth.',
+    ],
+  };
+}
+
 function buildInferenceOptions({
   externalRequestContext,
   requestKey,
@@ -55,6 +77,7 @@ function buildNarrativeValidationError({ attempts, errors }) {
 export async function generateValidatedTextToVideoNarrative({
   prompt,
   duration,
+  minimumSceneCount = null,
   videoGenerationModel = 'RUNWAYML',
   inferenceModel,
   videoTone = 'grounded',
@@ -75,6 +98,7 @@ export async function generateValidatedTextToVideoNarrative({
   const validateNarrative = dependencies.validateTextToVideoNarrative ||
     validateTextToVideoNarrative;
   const grounded = videoTone === 'grounded';
+  const normalizedMinimumSceneCount = normalizeMinimumSceneCount(minimumSceneCount);
   const themeOptions = buildInferenceOptions({
     externalRequestContext,
     requestKey: `${requestKeyPrefix}:theme`,
@@ -96,6 +120,9 @@ export async function generateValidatedTextToVideoNarrative({
       onInferenceResponse,
       validationAttempt: attempt,
     });
+    if (normalizedMinimumSceneCount) {
+      narrativeOptions.minimumSceneCount = normalizedMinimumSceneCount;
+    }
     const generatedNarrative = grounded
       ? await extractGroundedNarrative(
         themeJson,
@@ -116,7 +143,7 @@ export async function generateValidatedTextToVideoNarrative({
         narrativeOptions,
       );
 
-    validation = validateNarrative(
+    validation = validateMinimumSceneCount(validateNarrative(
       generatedNarrative,
       videoGenerationModel,
       undefined,
@@ -125,7 +152,7 @@ export async function generateValidatedTextToVideoNarrative({
         requestedDuration: duration,
         languageString,
       },
-    );
+    ), normalizedMinimumSceneCount);
 
     if (validation.valid) {
       return {

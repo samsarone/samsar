@@ -133,6 +133,7 @@ test('one-step initialization immediately applies default and overridden branch 
         inferenceModel: 'QWEN3.7',
         imageModel: 'SEEDREAM',
         videoModel: 'COSMOS3SUPERI2V',
+        numLevels: 2,
         ...(aspectRatio ? { aspectRatio } : {}),
       },
     }, {
@@ -152,7 +153,22 @@ test('one-step initialization immediately applies default and overridden branch 
     ['16:9', '9:16'],
   );
   assert.equal(sessionUpdates.every((update) => update.$set.narrativeType === 'branched'), true);
+  assert.deepEqual(sessionUpdates[0].$set.interactiveVideoDraftConfig, {
+    duration: 40,
+    imageModel: 'SEEDREAM',
+    videoModel: 'COSMOS3SUPERI2V',
+    numLevels: 2,
+    aspectRatio: '16:9',
+  });
+  assert.deepEqual(sessionUpdates[1].$set.interactiveVideoDraftConfig, {
+    duration: 40,
+    imageModel: 'SEEDREAM',
+    videoModel: 'COSMOS3SUPERI2V',
+    numLevels: 2,
+    aspectRatio: '9:16',
+  });
   assert.equal(mappings.every((mapping) => mapping.sessionId === SESSION_ID), true);
+  assert.equal(mappings.every((mapping) => mapping.metadata.numLevels === 2), true);
 });
 
 test('creates a dedicated branched draft with interactive-video defaults', async (t) => {
@@ -304,12 +320,14 @@ test('response exposes the preallocated final video session for detailed-status 
     sessionId: SESSION_ID,
     status: 'PROCESSING',
     stage: 'BRANCHED_NARRATIVE',
+    payload: { numLevels: 2 },
     singularNarrativeRequestId: SINGULAR_REQUEST_ID,
   }), {
     request_id: SESSION_ID,
     session_id: SESSION_ID,
     status: 'PENDING',
     narrative_type: 'branched',
+    num_levels: 2,
     interactive_video_request_id: INTERACTIVE_REQUEST_ID,
     workflow_status: 'PROCESSING',
     workflow_stage: 'BRANCHED_NARRATIVE',
@@ -470,6 +488,7 @@ test('durable worker sequences both waived narrative stages before scheduling on
       createSingleNarrativeRequest: async (options) => {
         sequence.push('create-single');
         assert.equal(options.billingPolicy, 'included_in_interactive_video_rate');
+        assert.equal(options.minimumSceneCount, 3);
         assert.equal(options.payload.video_model, 'COSMOS3SUPERI2V');
         assert.equal(options.interactiveVideoRequestId, INTERACTIVE_REQUEST_ID);
         return { request_id: SINGULAR_REQUEST_ID, status: 'PENDING' };

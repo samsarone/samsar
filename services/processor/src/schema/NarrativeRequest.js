@@ -55,6 +55,18 @@ const narrativeRequestSchema = new Schema({
   inputPrompt: { type: String, required: true, maxlength: 4000 },
   duration: { type: Number, required: true, min: 10, max: 240 },
   totalDuration: { type: Number, required: true, min: 10, max: 240 },
+  // Interactive branching needs at least one source scene per branch level,
+  // plus a terminal scene after the final divergence point.
+  minimumSceneCount: {
+    type: Number,
+    default: null,
+    min: 2,
+    max: 7,
+    validate: {
+      validator: (value) => value === null || value === undefined || Number.isSafeInteger(value),
+      message: 'minimumSceneCount must be an integer.',
+    },
+  },
   inferenceModel: {
     type: String,
     enum: ['gpt-5.6-sol', 'gemini-3.1-pro', 'QWEN3.7'],

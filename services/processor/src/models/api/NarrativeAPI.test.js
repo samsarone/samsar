@@ -132,6 +132,7 @@ test('submission persists the selected video model for model-aware speech genera
 
   const result = await createSingleNarrativeRequest({
     userId,
+    minimumSceneCount: 3,
     payload: {
       prompt: 'Create a short journey.',
       duration: 30,
@@ -143,6 +144,7 @@ test('submission persists the selected video model for model-aware speech genera
   });
 
   assert.equal(createdDocument.videoGenerationModel, 'COSMOS3SUPERI2V');
+  assert.equal(createdDocument.minimumSceneCount, 3);
   assert.equal(result.video_model, 'COSMOS3SUPERI2V');
   assert.deepEqual(queued, [requestId]);
 });

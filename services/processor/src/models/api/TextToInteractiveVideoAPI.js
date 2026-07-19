@@ -222,11 +222,15 @@ export function buildTextToInteractiveVideoResponse(request) {
   const requestId = request?._id?.toString?.() || request?._id;
   const sessionId = request?.sessionId?.toString?.() || request?.sessionId;
   const failed = request?.status === 'FAILED';
+  const acceptedNumLevels = Number(request?.payload?.numLevels);
   return {
     request_id: sessionId,
     session_id: sessionId,
     status: failed ? 'FAILED' : 'PENDING',
     narrative_type: 'branched',
+    ...(Number.isSafeInteger(acceptedNumLevels) && acceptedNumLevels > 0
+      ? { num_levels: acceptedNumLevels }
+      : {}),
     interactive_video_request_id: requestId,
     workflow_status: request?.status || 'PENDING',
     workflow_stage: request?.stage || 'SINGULAR_NARRATIVE',
@@ -271,6 +275,13 @@ async function initializeVideoSession(
     upsertSessionMapping = upsertGlobalSessionMapping,
   } = {},
 ) {
+  const acceptedConfig = {
+    duration: payload.duration,
+    imageModel: payload.imageModel,
+    videoModel: payload.videoModel,
+    numLevels: payload.numLevels,
+    aspectRatio: payload.aspectRatio || DEFAULT_BRANCHED_VIDEO_ASPECT_RATIO,
+  };
   const initialStatus = {
     prompt_generation: 'PENDING',
     image_generation: 'INIT',
@@ -303,7 +314,10 @@ async function initializeVideoSession(
       inputPrompt: payload.prompt,
       expressInputPrompt: payload.prompt,
       totalDuration: payload.duration,
-      aspectRatio: payload.aspectRatio || DEFAULT_BRANCHED_VIDEO_ASPECT_RATIO,
+      aspectRatio: acceptedConfig.aspectRatio,
+      // Replace draft defaults with the canonical settings accepted for this
+      // request so the session remains an accurate audit record after submit.
+      interactiveVideoDraftConfig: acceptedConfig,
     },
   });
   await upsertSessionMapping({
@@ -318,6 +332,7 @@ async function initializeVideoSession(
     metadata: {
       interactiveVideoRequestId: requestId?.toString?.() || requestId,
       narrativeType: 'branched',
+      numLevels: payload.numLevels,
     },
   });
 }
@@ -607,6 +622,12 @@ export async function createTextToInteractiveVideoRequest({
     requestId: request._id,
     payload: normalizedPayload,
   });
+  console.info('[text_to_interactive_video] request accepted', {
+    sessionId,
+    interactiveVideoRequestId: request._id?.toString?.() || request._id,
+    numLevels: normalizedPayload.numLevels,
+    reusedDraftSession: Boolean(requestedSessionId),
+  });
   const queueRequest = dependencies.queueTextToInteractiveVideoRequest ||
     queueTextToInteractiveVideoRequest;
   queueRequest(request._id.toString());
@@ -677,6 +698,7 @@ async function ensureSingularNarrative(job, workerLeaseId, dependencies) {
     try {
       created = await createSingle({
         userId: job.userId,
+        minimumSceneCount: job.payload.numLevels + 1,
         payload: {
           prompt: job.payload.prompt,
           duration: job.payload.duration,

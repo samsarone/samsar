@@ -116,6 +116,50 @@ test('returns a typed failure after the configured semantic validation attempts'
   );
 });
 
+test('retries until the singular narrative can support the requested branching depth', async () => {
+  let narrativeCalls = 0;
+  const observedMinimums = [];
+
+  const result = await generateValidatedTextToVideoNarrative({
+    prompt: 'Create an interactive journey.',
+    duration: 30,
+    minimumSceneCount: 3,
+    inferenceModel: 'gpt-5.6-sol',
+    videoTone: 'cinematic',
+    maxValidationAttempts: 2,
+    dependencies: {
+      extractThemeFromUserPrompt: async () => ({ style: [] }),
+      extractMovieNarrativeFromThemeAndUserPrompt: async (
+        _theme,
+        _prompt,
+        _duration,
+        _videoModel,
+        _inferenceModel,
+        _language,
+        options,
+      ) => {
+        narrativeCalls += 1;
+        observedMinimums.push(options.minimumSceneCount);
+        return {
+          scenes: Array.from({ length: narrativeCalls + 1 }, (_unused, index) => ({
+            visual: `Scene ${index + 1}`,
+          })),
+          sounds: [],
+        };
+      },
+      validateTextToVideoNarrative: (narrative) => ({
+        valid: true,
+        errors: [],
+        narrativeJson: narrative,
+      }),
+    },
+  });
+
+  assert.equal(narrativeCalls, 2);
+  assert.deepEqual(observedMinimums, [3, 3]);
+  assert.equal(result.narrativeJson.scenes.length, 3);
+});
+
 test('singular narrative generation retries speech beyond the model-aware tolerance', async () => {
   let narrativeCalls = 0;
 

@@ -513,7 +513,16 @@ export async function extractGroundedMovieNarrativeFromThemeAndUserPrompt(
 ) {
 
 
-  const narrativePrompt = getGroundedMovieNarrativeExtractorSystemPrompt(duration, videoModel, false, languageString);
+  const minimumSceneCount = Number(options?.minimumSceneCount);
+  const minimumSceneInstruction = Number.isSafeInteger(minimumSceneCount) && minimumSceneCount >= 2
+    ? `\n- The transcript must contain at least ${minimumSceneCount} scenes so it can support the requested branching depth.`
+    : '';
+  const narrativePrompt = getGroundedMovieNarrativeExtractorSystemPrompt(
+    duration,
+    videoModel,
+    false,
+    languageString,
+  ) + minimumSceneInstruction;
 
 
   const messageList = [
@@ -604,7 +613,16 @@ export async function extractMovieNarrativeFromThemeAndUserPrompt(
 ) {
 
 
-  const narrativePrompt = getMovieNarrativeExtractorSystemPrompt(duration, videoModel, false, languageString);
+  const minimumSceneCount = Number(options?.minimumSceneCount);
+  const minimumSceneInstruction = Number.isSafeInteger(minimumSceneCount) && minimumSceneCount >= 2
+    ? `\n- The transcript must contain at least ${minimumSceneCount} scenes so it can support the requested branching depth.`
+    : '';
+  const narrativePrompt = getMovieNarrativeExtractorSystemPrompt(
+    duration,
+    videoModel,
+    false,
+    languageString,
+  ) + minimumSceneInstruction;
 
   const messageList = [
     {

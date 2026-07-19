@@ -43,6 +43,7 @@ const DEFAULT_NARRATIVE_RECOVERY_INTERVAL_MS = 60 * 1000;
 const NARRATIVE_BILLING_SOURCE = 'external_narrative_create_single';
 const NARRATIVE_ADMISSION_CREDIT_FLOOR = 0.0001;
 const NARRATIVE_LEASE_LOST_CODE = 'NARRATIVE_WORKER_LEASE_LOST';
+const MAX_BRANCHING_SOURCE_SCENE_COUNT = 7;
 export const NARRATIVE_BILLING_POLICIES = Object.freeze({
   STANDALONE: 'standalone',
   INCLUDED_IN_INTERACTIVE_VIDEO_RATE: 'included_in_interactive_video_rate',
@@ -64,6 +65,19 @@ function normalizeString(value) {
 
 function hasOwn(source, key) {
   return Object.prototype.hasOwnProperty.call(source || {}, key);
+}
+
+function normalizeMinimumSceneCount(value) {
+  if (value === null || value === undefined) return null;
+  const count = Number(value);
+  if (!Number.isSafeInteger(count) || count < 2 || count > MAX_BRANCHING_SOURCE_SCENE_COUNT) {
+    throw buildError(
+      `minimumSceneCount must be an integer between 2 and ${MAX_BRANCHING_SOURCE_SCENE_COUNT}.`,
+      400,
+      'INVALID_MINIMUM_SCENE_COUNT',
+    );
+  }
+  return count;
 }
 
 export function normalizeNarrativeVideoModel(
@@ -707,6 +721,7 @@ export async function processCreateSingleNarrativeRequest(requestId) {
       const narrative = await generateValidatedTextToVideoNarrative({
         prompt: request.prompt,
         duration: request.duration,
+        minimumSceneCount: request.minimumSceneCount,
         videoGenerationModel: request.videoGenerationModel || NARRATIVE_VIDEO_MODEL,
         inferenceModel: request.inferenceModel,
         videoTone: request.videoTone || NARRATIVE_VIDEO_TONE,
@@ -771,6 +786,17 @@ export async function processCreateSingleNarrativeRequest(requestId) {
           `Final movieResourceList validation failed: ${finalValidation.errors.join(', ')}`,
           502,
           'MOVIE_RESOURCE_LIST_VALIDATION_FAILED',
+        );
+      }
+      const finalSceneCount = Array.isArray(finalValidation.narrativeJson?.scenes)
+        ? finalValidation.narrativeJson.scenes.length
+        : 0;
+      if (request.minimumSceneCount && finalSceneCount < request.minimumSceneCount) {
+        throw buildError(
+          `Final movieResourceList has ${finalSceneCount} scenes but at least ` +
+            `${request.minimumSceneCount} are required for the requested branching depth.`,
+          502,
+          'MINIMUM_SCENE_COUNT_NOT_MET',
         );
       }
 
@@ -998,6 +1024,7 @@ export async function createSingleNarrativeRequest({
   authContext = null,
   billingPolicy = NARRATIVE_BILLING_POLICIES.STANDALONE,
   interactiveVideoRequestId = null,
+  minimumSceneCount = null,
   dependencies = {},
 } = {}) {
   if (!userId) throw buildError('User ID is required.', 401, 'UNAUTHORIZED');
@@ -1017,6 +1044,7 @@ export async function createSingleNarrativeRequest({
     normalizedPayload,
     user.selectedInferenceModel,
   );
+  const normalizedMinimumSceneCount = normalizeMinimumSceneCount(minimumSceneCount);
   const apiKeyUsage = normalizeAPIKeyUsageContext(authContext);
   if (apiKeyUsage?.apiKeyId) {
     await assertAPIKeyUsageLimitForDebit(
@@ -1034,6 +1062,7 @@ export async function createSingleNarrativeRequest({
     inputPrompt: normalizedPayload.prompt,
     duration: normalizedPayload.duration,
     totalDuration: normalizedPayload.duration,
+    minimumSceneCount: normalizedMinimumSceneCount,
     inferenceModel,
     videoGenerationModel: normalizedPayload.videoGenerationModel,
     videoTone: NARRATIVE_VIDEO_TONE,
