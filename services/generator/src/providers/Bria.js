@@ -166,9 +166,9 @@ async function getRequestPayloadForModel(inputPayload) {
     model
   } = inputPayload;
 
-  const imageUrl = await getAccessibleMediaUrlForProvider(image);
+  const imageUrl = await getAccessibleMediaUrlForProvider(image, { mediaKind: 'image' });
   const maskUrl = maskImage
-    ? await getAccessibleMediaUrlForProvider(maskImage)
+    ? await getAccessibleMediaUrlForProvider(maskImage, { mediaKind: 'image' })
     : null;
 
   let payload;

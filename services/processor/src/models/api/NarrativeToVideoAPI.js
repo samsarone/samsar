@@ -21,6 +21,9 @@ import {
 const DEFAULT_IMAGE_MODEL = 'GPTIMAGE2';
 const DEFAULT_VIDEO_MODEL = 'RUNWAYML';
 const NARRATIVE_ASPECT_RATIO = '1:1';
+export const DEFAULT_BRANCHED_VIDEO_ASPECT_RATIO = '16:9';
+export const BRANCHED_VIDEO_ASPECT_RATIOS = Object.freeze(['16:9', '9:16']);
+const BRANCHED_VIDEO_ASPECT_RATIO_SET = new Set(BRANCHED_VIDEO_ASPECT_RATIOS);
 const SETTLED_NARRATIVE_BILLING_STATUSES = new Set(['CHARGED', 'WAIVED']);
 
 function buildError(message, status, code) {
@@ -85,6 +88,41 @@ function readOptionalModelAlias(source, snakeKey, camelKey, label) {
   }
 
   return snakeValue || camelValue;
+}
+
+export function normalizeBranchedVideoAspectRatio(source = {}) {
+  const hasSnakeKey = hasOwn(source, 'aspect_ratio');
+  const hasCamelKey = hasOwn(source, 'aspectRatio');
+  if (!hasSnakeKey && !hasCamelKey) {
+    return DEFAULT_BRANCHED_VIDEO_ASPECT_RATIO;
+  }
+
+  const snakeValue = hasSnakeKey ? normalizeString(source.aspect_ratio) : '';
+  const camelValue = hasCamelKey ? normalizeString(source.aspectRatio) : '';
+  if ((hasSnakeKey && !snakeValue) || (hasCamelKey && !camelValue)) {
+    throw buildError(
+      'aspectRatio must be a non-empty string when provided.',
+      400,
+      'INVALID_ASPECT_RATIO',
+    );
+  }
+  if (snakeValue && camelValue && snakeValue !== camelValue) {
+    throw buildError(
+      'aspect_ratio and aspectRatio must match when both are provided.',
+      400,
+      'CONFLICTING_ASPECT_RATIO',
+    );
+  }
+
+  const aspectRatio = snakeValue || camelValue;
+  if (!BRANCHED_VIDEO_ASPECT_RATIO_SET.has(aspectRatio)) {
+    throw buildError(
+      `aspectRatio must be one of: ${BRANCHED_VIDEO_ASPECT_RATIOS.join(', ')}.`,
+      400,
+      'INVALID_ASPECT_RATIO',
+    );
+  }
+  return aspectRatio;
 }
 
 export function normalizeNarrativeToVideoPayload(payload = {}) {
@@ -364,7 +402,11 @@ export async function createVideoFromNarrativeRequest({
   const sourceNarrativeRequestId = source._id?.toString?.() || normalizedPayload.sourceRequestId;
   const narrativeType = source.narrativeType || 'singular';
   const inferenceModel = normalizeString(source.inferenceModel);
-  const aspectRatio = NARRATIVE_ASPECT_RATIO;
+  // The aspect-ratio input belongs to branched rendering. Preserve the legacy
+  // singular narrative-to-video default so this addition cannot alter linear output.
+  const aspectRatio = narrativeType === 'branched'
+    ? normalizeBranchedVideoAspectRatio(getPayloadSource(payload))
+    : NARRATIVE_ASPECT_RATIO;
   const preparedPayload = {
     sourceNarrativeRequestId,
     narrativeRequestId: sourceNarrativeRequestId,

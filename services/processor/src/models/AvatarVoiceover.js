@@ -39,6 +39,7 @@ import {
   creditGenerationCredits,
   deductGenerationCredits,
 } from './GenerationCredits.js';
+import { getAccessibleProviderMediaUrl } from './ai_utils/VisionMediaUrl.js';
 
 const API_SERVER = process.env.API_SERVER;
 const RUNWAY_API_BASE_URL = (process.env.RUNWAYML_BASE_URL || 'https://api.dev.runwayml.com').replace(/\/+$/, '');
@@ -959,15 +960,6 @@ async function getAvatarSpeechAudioReference(task) {
     ? buildRemoteAssetUrl(speechAudioAssetPath)
     : speechAudioUrl;
 
-  if (!/^https:\/\//i.test(audioUrl) && !/^data:audio\//i.test(audioUrl)) {
-    return {
-      audioUrl: '',
-      audioPath: '',
-      assetPath: speechAudioAssetPath,
-      durationSeconds: 0,
-    };
-  }
-
   const metadata = hasLocalAudio
     ? await getVideoMetadata(audioPath).catch(() => null)
     : null;
@@ -1482,11 +1474,17 @@ export async function requestGenerateAvatarVideoFromHints(userId, payload = {}) 
     throw new Error('Generate speech from hints before generating avatar video.');
   }
 
-  const avatarSpeechAudio = avatarSpeechAudioReference.audioUrl;
-  if (!/^https:\/\//i.test(avatarSpeechAudio) && !/^data:audio\//i.test(avatarSpeechAudio)) {
+  const avatarSpeechAudioSource = normalizeString(avatarSpeechAudioReference.audioPath)
+    && normalizeString(avatarSpeechAudioReference.assetPath)
+    ? normalizeString(avatarSpeechAudioReference.assetPath)
+    : normalizeString(avatarSpeechAudioReference.audioUrl)
+      || normalizeString(avatarSpeechAudioReference.assetPath);
+  const avatarSpeechAudioPreviewUrl = normalizeString(avatarSpeechAudioReference.audioUrl)
+    || normalizeString(avatarSpeechAudioReference.assetPath);
+  if (!avatarSpeechAudioSource) {
     throw new Error(useSessionSpeechAudio
-      ? 'Generated session speech audio must be available through an HTTPS URL before generating video.'
-      : 'Avatar speech audio must be available through an HTTPS URL before generating video.');
+      ? 'Generated session speech audio is not available before generating video.'
+      : 'Avatar speech audio is not available before generating video.');
   }
 
   const sessionForHints = await VideoSession.findOne({ _id: task.sessionId, userId });
@@ -1560,7 +1558,7 @@ export async function requestGenerateAvatarVideoFromHints(userId, payload = {}) 
   task.avatarVideoUrl = '';
   task.avatarVideoAssetPath = '';
   task.avatarVideoResponse = null;
-  task.avatarVideoSpeechAudioUrl = avatarSpeechAudio;
+  task.avatarVideoSpeechAudioUrl = avatarSpeechAudioPreviewUrl;
   task.avatarVideoSpeechAudioAssetPath = avatarSpeechAudioReference.assetPath;
   task.avatarVideoSpeechAudioDuration = avatarSpeechAudioReference.durationSeconds || pricingDurationSeconds;
   task.globalVideoId = '';
@@ -1571,6 +1569,14 @@ export async function requestGenerateAvatarVideoFromHints(userId, payload = {}) 
   await task.save();
 
   try {
+    const avatarSpeechAudio = await getAccessibleProviderMediaUrl(avatarSpeechAudioSource, {
+      mediaKind: 'audio',
+      serviceName: 'samsar_processor_runway_avatar',
+    });
+    if (!/^https:\/\//i.test(avatarSpeechAudio) && !/^data:audio\//i.test(avatarSpeechAudio)) {
+      throw new Error('Avatar speech audio could not be resolved to a provider-accessible HTTPS URL.');
+    }
+
     const avatarVideo = await runwayPost('/v1/avatar_videos', {
       model: 'gwm1_avatars',
       avatar: {

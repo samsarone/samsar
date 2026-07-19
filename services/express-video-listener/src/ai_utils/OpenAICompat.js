@@ -11,6 +11,8 @@ import {
   createSamsarExternalChatCompletion,
   shouldUseSamsarExternalInference,
 } from './SamsarExternalInferenceAdapter.js';
+import { normalizeProviderMediaUrl } from '../ai_video/utils/AWS.js';
+import { normalizeProviderMediaPayload } from './ProviderMediaPayload.js';
 
 export function isResponsesOnlyModel(model) {
   const inferenceModel = normalizeInferenceModel(model || getDefaultInferenceModel());
@@ -25,7 +27,7 @@ export async function createCompatibleChatCompletion(openaiClient, chatRequest =
     return await createSamsarExternalChatCompletion(chatRequest);
   }
 
-  const requestOptions = buildRequestOptions({ timeout, maxRetries });
+  const requestOptions = buildRequestOptions({ timeout });
   if (isQwenInferenceModel(model)) {
     return await createQwenChatCompletion({
       ...request,
@@ -39,10 +41,15 @@ export async function createCompatibleChatCompletion(openaiClient, chatRequest =
 
   if (!isResponsesOnlyModel(model)) {
     const { reasoning, ...chatPayload } = request || {};
-    return await openaiClient.chat.completions.create(chatPayload, requestOptions);
+    return await openaiClient.chat.completions.create(
+      await normalizeProviderMediaPayload(chatPayload, normalizeProviderMediaUrl),
+      requestOptions,
+    );
   }
 
-  const responsesRequest = buildResponsesRequest(request);
+  const responsesRequest = buildResponsesRequest(
+    await normalizeProviderMediaPayload(request, normalizeProviderMediaUrl),
+  );
   const responsesResponse = await openaiClient.post('/responses', {
     body: responsesRequest,
     ...requestOptions,
@@ -52,18 +59,12 @@ export async function createCompatibleChatCompletion(openaiClient, chatRequest =
   return normalizeResponsesToChatCompletion(responsesResponse, outputText);
 }
 
-function buildRequestOptions({ timeout, maxRetries } = {}) {
-  const options = {};
+export function buildRequestOptions({ timeout } = {}) {
+  const options = { maxRetries: 0 };
   const parsedTimeout = Number(timeout);
   if (Number.isFinite(parsedTimeout) && parsedTimeout > 0) {
     options.timeout = Math.floor(parsedTimeout);
   }
-
-  const parsedMaxRetries = Number(maxRetries);
-  if (Number.isInteger(parsedMaxRetries) && parsedMaxRetries >= 0) {
-    options.maxRetries = parsedMaxRetries;
-  }
-
   return options;
 }
 

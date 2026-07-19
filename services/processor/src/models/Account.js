@@ -9,6 +9,10 @@ import VideoSession from '../schema/VideoSession.js';
 import { Publication } from '../schema/Publication.js';
 import InteractivePublication from '../schema/InteractivePublication.js';
 import { buildSecureMediaDeliveryUrl } from './AWS.js';
+import {
+  normalizeResponseAssetUrl,
+  selectResponseMediaSource,
+} from './api/StatusAPI.js';
 
 export async function getUserImages(userId) {
   const db = await getDBConnectionString();
@@ -272,11 +276,8 @@ function normalizeVideoAssetPath(value) {
     return null;
   }
 
-  if (/^https?:\/\//i.test(trimmedValue)) {
-    return trimmedValue;
-  }
-
-  return trimmedValue.startsWith('/') ? trimmedValue : `/${trimmedValue}`;
+  return normalizeResponseAssetUrl(trimmedValue) ||
+    (trimmedValue.startsWith('/') ? trimmedValue : `/${trimmedValue}`);
 }
 
 function getVideoGenerationSourceLabel(generationType = 'ai_video') {
@@ -423,7 +424,10 @@ function mapGeneratedImageToGalleryItem(item = {}, sessionMetadata = {}) {
 function mapGeneratedVideoToGalleryItem(item = {}, sessionMetadata = {}) {
   const videoPath = normalizeVideoAssetPath(item?.url);
   const remoteVideoPath = normalizeVideoAssetPath(item?.remoteUrl);
-  const primaryVideoPath = videoPath || remoteVideoPath;
+  const primaryVideoPath = normalizeVideoAssetPath(selectResponseMediaSource({
+    local: item?.url,
+    remote: item?.remoteUrl,
+  }));
   if (!primaryVideoPath) {
     return null;
   }
@@ -451,10 +455,10 @@ function mapGeneratedVideoToGalleryItem(item = {}, sessionMetadata = {}) {
     duration: Number.isFinite(Number(item?.duration)) && Number(item.duration) > 0
       ? Math.round(Number(item.duration) * 100) / 100
       : null,
-    url: remoteVideoPath || primaryVideoPath,
-    assetPath: primaryVideoPath,
-    remoteUrl: remoteVideoPath || null,
-    remoteURL: remoteVideoPath || null,
+    url: primaryVideoPath,
+    assetPath: videoPath || primaryVideoPath,
+    remoteUrl: primaryVideoPath,
+    remoteURL: primaryVideoPath,
     thumbnailPath: normalizeImageAssetPath(item?.thumbnailPath) || null,
     thumbnail: normalizeImageAssetPath(item?.thumbnailPath) || null,
     endThumbnailPath: normalizeImageAssetPath(item?.endThumbnailPath) || null,
@@ -486,12 +490,15 @@ export function mapFinalRenderToGalleryItem(sessionData = {}, publicationsBySess
   const defaultBranchPath = branchPaths.find((path) => (
     path?.pathId === sessionData?.defaultBranchPathId
   )) || branchPaths[0];
-  const videoPath = normalizeVideoAssetPath(sessionData?.remoteURL) ||
-    normalizeVideoAssetPath(sessionData?.videoLink) ||
-    normalizeVideoAssetPath(publicationDefaultPath?.contentUrl) ||
-    normalizeVideoAssetPath(sessionData?.publishedVideoURL) ||
-    normalizeVideoAssetPath(defaultBranchPath?.remoteURL) ||
-    normalizeVideoAssetPath(defaultBranchPath?.videoLink);
+  const videoPath = normalizeVideoAssetPath(selectResponseMediaSource({
+    local: [sessionData?.videoLink, defaultBranchPath?.videoLink],
+    remote: [
+      sessionData?.remoteURL,
+      publicationDefaultPath?.contentUrl,
+      sessionData?.publishedVideoURL,
+      defaultBranchPath?.remoteURL,
+    ],
+  }));
   if (!sessionId || !videoPath) {
     return null;
   }
@@ -499,9 +506,10 @@ export function mapFinalRenderToGalleryItem(sessionData = {}, publicationsBySess
   const projectName = resolveSessionProjectName(sessionData);
   const promptPreview = getSessionPromptPreview(sessionData);
   const title = projectName || 'Completed render';
-  const normalizedSplashImage = normalizeVideoAssetPath(publication?.thumbnailUrl) ||
-    normalizeVideoAssetPath(sessionData?.splashImage) ||
-    normalizeVideoAssetPath(sessionData?.publishedSplashImage);
+  const normalizedSplashImage = normalizeVideoAssetPath(selectResponseMediaSource({
+    local: sessionData?.splashImage,
+    remote: [publication?.thumbnailUrl, sessionData?.publishedSplashImage],
+  }));
   const thumbnailPath = normalizedSplashImage || `/video/splash/${sessionId}/splash.png`;
   const duration = Number(sessionData?.totalDuration);
 

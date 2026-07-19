@@ -38,6 +38,7 @@ import {
 } from '../../models/api/ExternalVideoAPI.js';
 import { createVideoFromNarrativeRequest } from '../../models/api/NarrativeToVideoAPI.js';
 import {
+  createTextToInteractiveVideoDraftSession,
   createTextToInteractiveVideoRequest,
 } from '../../models/api/TextToInteractiveVideoAPI.js';
 import {
@@ -1199,6 +1200,23 @@ async function handleTextToInteractiveVideo(req, res) {
   }
 }
 
+async function handleTextToInteractiveVideoDraftSession(req, res) {
+  try {
+    const authContext = await resolveV2AuthContext(req);
+    assertNarrativeToVideoCredential(authContext);
+    const response = await createTextToInteractiveVideoDraftSession({
+      userId: authContext.internalUserId,
+    });
+    return res.status(201).json(response);
+  } catch (error) {
+    return res.status(error?.status || error?.response?.status || 500).json({
+      message: error?.message ||
+        'Internal server error while creating an interactive-video draft session.',
+      ...(error?.code ? { code: error.code } : {}),
+    });
+  }
+}
+
 async function handleExternalImageToVideo(req, res) {
   try {
     const authContext = await resolveV2AuthContext(req);
@@ -1721,6 +1739,7 @@ router.post(
   ['/text_to_interactive_video', '/external/video/text_to_interactive_video'],
   handleTextToInteractiveVideo,
 );
+router.post('/text_to_interactive_video/session', handleTextToInteractiveVideoDraftSession);
 router.post('/external/video/image_to_video', handleExternalImageToVideo);
 router.post('/external/video/lip_sync', handleExternalLipSyncVideo);
 router.post('/external/video/sound_effect', handleExternalSoundEffectVideo);

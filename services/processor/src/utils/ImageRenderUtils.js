@@ -8,6 +8,12 @@ function isRemoteUrl(value) {
 }
 
 function getAssetRoot(folderName = 'assets_v2') {
+  const configuredRoot = folderName === 'assets_v2'
+    ? process.env.SAMSAR_ASSETS_V2_ROOT
+    : process.env.SAMSAR_ASSETS_ROOT;
+  if (typeof configuredRoot === 'string' && configuredRoot.trim()) {
+    return path.resolve(configuredRoot.trim());
+  }
   return process.env.CURRENT_ENV === 'staging' || process.env.CURRENT_ENV === 'docker'
     ? `/${folderName}`
     : path.join(process.cwd(), '../', 'samsar_processor', folderName);
@@ -69,7 +75,16 @@ function getExistingAbsoluteImagePath(ref) {
   }
 
   try {
-    return fs.statSync(withoutQuery).isFile() ? withoutQuery : '';
+    if (!fs.statSync(withoutQuery).isFile()) return '';
+    const realCandidate = fs.realpathSync(withoutQuery);
+    const isContained = [getAssetRoot('assets_v2'), getAssetRoot('assets')].some((root) => {
+      if (!fs.existsSync(root)) return false;
+      const realRoot = fs.realpathSync(root);
+      const relativePath = path.relative(realRoot, realCandidate);
+      return relativePath === '' ||
+        (!path.isAbsolute(relativePath) && relativePath !== '..' && !relativePath.startsWith(`..${path.sep}`));
+    });
+    return isContained ? realCandidate : '';
   } catch {
     return '';
   }

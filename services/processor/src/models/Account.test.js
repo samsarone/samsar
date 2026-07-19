@@ -73,3 +73,30 @@ test('branched final renders use their InteractivePublication in the user galler
   assert.equal(item.isPublished, true);
   assert.equal(item.publicationId, publicationId);
 });
+
+test('Docker-local final-render gallery prefers mounted video and thumbnail assets', () => {
+  const previousEnv = process.env.CURRENT_ENV;
+  const previousMode = process.env.SAMSAR_MEDIA_DELIVERY_MODE;
+  const previousProcessor = process.env.PROCESSOR_URL;
+  process.env.CURRENT_ENV = 'docker';
+  process.env.SAMSAR_MEDIA_DELIVERY_MODE = 'docker-local';
+  process.env.PROCESSOR_URL = 'http://localhost:3002';
+  try {
+    const item = mapFinalRenderToGalleryItem({
+      _id: '507f1f77bcf86cd799439011',
+      videoLink: 'assets_v2/video/output/session/final.mp4',
+      remoteURL: 'https://provider.example/expiring-final.mp4',
+      splashImage: 'assets_v2/video/output/session/thumbnail.png',
+      publishedSplashImage: 'https://provider.example/expiring-thumbnail.png',
+    });
+    assert.equal(item.url, 'http://localhost:3002/assets_v2/video/output/session/final.mp4');
+    assert.equal(item.thumbnail, 'http://localhost:3002/assets_v2/video/output/session/thumbnail.png');
+  } finally {
+    if (previousEnv === undefined) delete process.env.CURRENT_ENV;
+    else process.env.CURRENT_ENV = previousEnv;
+    if (previousMode === undefined) delete process.env.SAMSAR_MEDIA_DELIVERY_MODE;
+    else process.env.SAMSAR_MEDIA_DELIVERY_MODE = previousMode;
+    if (previousProcessor === undefined) delete process.env.PROCESSOR_URL;
+    else process.env.PROCESSOR_URL = previousProcessor;
+  }
+});

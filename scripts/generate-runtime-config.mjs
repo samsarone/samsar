@@ -47,6 +47,25 @@ const storageRegion = storageConfig.region || storageConfig.awsRegion || 'us-eas
 const storageAccessKeyId = storageConfig.accessKeyId || storageConfig.awsAccessKeyId || defaultLocalS3AccessKey;
 const storageSecretAccessKey = storageConfig.secretAccessKey || storageConfig.awsSecretAccessKey || defaultLocalS3SecretKey;
 const externalMediaPublishEnabled = Boolean(storageConfig.externalMediaPublishEnabled);
+if (isDockerRuntime && externalMediaPublishEnabled) {
+  const staticCdnUrl = normalizeString(storageConfig.staticCdnUrl);
+  let parsedStaticCdnUrl;
+  try {
+    parsedStaticCdnUrl = new URL(staticCdnUrl);
+  } catch {
+    throw new Error('Docker external-S3 media publishing requires storage.staticCdnUrl to be a valid HTTPS URL.');
+  }
+  if (
+    parsedStaticCdnUrl.protocol !== 'https:' ||
+    parsedStaticCdnUrl.username ||
+    parsedStaticCdnUrl.password ||
+    parsedStaticCdnUrl.search ||
+    parsedStaticCdnUrl.hash
+  ) {
+    throw new Error('Docker external-S3 storage.staticCdnUrl must be HTTPS and must not contain credentials, a query, or a fragment.');
+  }
+}
+const secureAssetPrefix = isDockerRuntime ? 'assets_v2' : (storageConfig.secureAssetPrefix || 'assets_v2');
 const mediaDeliveryMode = isDockerRuntime && !externalMediaPublishEnabled
   ? 'docker-local'
   : 's3-cloudfront';
@@ -65,13 +84,13 @@ const stableBrowserMediaUrl = isTemporaryMediaTunnelUrl(configuredPublicMediaUrl
   ? ''
   : configuredPublicMediaUrl;
 const publicAssetBaseUrl = externalMediaPublishEnabled
-  ? (storageConfig.staticCdnUrl || stableBrowserMediaUrl || publicProcessorBaseUrl)
+  ? storageConfig.staticCdnUrl
   : publicProcessorBaseUrl;
 const mediaPublicUrl = externalMediaPublishEnabled
-  ? (storageConfig.staticCdnUrl || stableBrowserMediaUrl || '')
+  ? storageConfig.staticCdnUrl
   : (configuredTunnelPublicUrl || stableBrowserMediaUrl || publicProcessorBaseUrl);
 const externalMediaPublicBaseUrl = externalMediaPublishEnabled
-  ? (storageConfig.staticCdnUrl || '')
+  ? storageConfig.staticCdnUrl
   : mediaPublicUrl;
 const alibabaCloudConfig = config.providers?.alibabaCloud || {};
 const alibabaCloudSecrets = providerSecrets.alibabaCloud || {};
@@ -415,7 +434,7 @@ const env = {
 	  STATIC_CDN_BUCKET: storageBucketName,
 	  STATIC_CDN_URL: storageConfig.staticCdnUrl || '',
 	  PUBLIC_STATIC_CDN_URL: publicAssetBaseUrl,
-	  SECURE_ASSET_PREFIX: storageConfig.secureAssetPrefix || 'assets_v2',
+	  SECURE_ASSET_PREFIX: secureAssetPrefix,
 	  S3_ENDPOINT: s3Endpoint,
 	  S3_FORCE_PATH_STYLE: s3ForcePathStyle,
 	  AWS_ACCESS_KEY_ID: storageAccessKeyId,

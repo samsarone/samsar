@@ -6,6 +6,7 @@ import {
   isGeminiInferenceModel,
   isQwenInferenceModel,
 } from "../../consts/InferenceModels.js";
+import { resolveProviderMediaPayload } from "../ai_utils/ProviderMediaPayload.js";
 import { createDeployedSamsarClient } from "../api/DeployedSamsarClient.js";
 import { createGoogleModerationForNarrative } from "./GoogleModeration.js";
 
@@ -762,12 +763,18 @@ export async function createNativeOpenAIModeration(requestData, options = {}) {
     DEFAULT_OPENAI_MODERATION_MODEL;
 
   return runModerationWithRetry(
-    async ({ signal, timeoutMs }) => requireModerationResponse(
-      await openAIClient.moderations.create(
-        { input: requestData, model },
-        { signal, timeout: timeoutMs, maxRetries: 0 },
-      ),
-    ),
+    async ({ signal, timeoutMs }) => {
+      const providerInput = await resolveProviderMediaPayload(requestData, {
+        resolveMediaUrl: options.resolveMediaUrl,
+        serviceName: "samsar_processor_openai_moderation",
+      });
+      return requireModerationResponse(
+        await openAIClient.moderations.create(
+          { input: providerInput, model },
+          { signal, timeout: timeoutMs, maxRetries: 0 },
+        ),
+      );
+    },
     {
       ...retryConfig,
       signal: options.signal,

@@ -11,36 +11,52 @@ import {
   createSamsarExternalChatCompletion,
   shouldUseSamsarExternalInference,
 } from './SamsarExternalInferenceAdapter.js';
+import { resolveProviderMediaPayload } from './ProviderMediaPayload.js';
 
 export function isResponsesOnlyModel(model) {
   const inferenceModel = normalizeOpenAIInferenceModel(model || getDefaultUserInferenceModel());
   return !isGeminiInferenceModel(inferenceModel) && !isQwenInferenceModel(inferenceModel);
 }
 
-export async function createCompatibleChatCompletion(openaiClient, chatRequest = {}) {
+export async function createCompatibleChatCompletion(
+  openaiClient,
+  chatRequest = {},
+  dependencyOverrides = {},
+) {
   const { timeout, maxRetries, ...request } = chatRequest || {};
   const model = request?.model || getDefaultUserInferenceModel();
   if (shouldUseSamsarExternalInference(chatRequest)) {
-    return await createSamsarExternalChatCompletion(chatRequest);
+    return await createSamsarExternalChatCompletion(chatRequest, dependencyOverrides);
   }
 
   const requestOptions = buildRequestOptions({ timeout, maxRetries });
   if (isQwenInferenceModel(model)) {
-    return await createAlibabaQwenChatCompletion({ ...request, timeout, maxRetries });
+    return await createAlibabaQwenChatCompletion(
+      { ...request, timeout, maxRetries },
+      dependencyOverrides,
+    );
   }
 
   if (isGeminiInferenceModel(model)) {
-    return await createGoogleGeminiChatCompletion(request);
+    return await createGoogleGeminiChatCompletion(request, dependencyOverrides);
   }
 
   if (!isResponsesOnlyModel(model)) {
     const { reasoning, ...chatPayload } = request || {};
-    return await openaiClient.chat.completions.create(chatPayload, requestOptions);
+    const providerPayload = await resolveProviderMediaPayload(chatPayload, {
+      resolveMediaUrl: dependencyOverrides.resolveMediaUrl,
+      serviceName: 'samsar_processor_openai_chat',
+    });
+    return await openaiClient.chat.completions.create(providerPayload, requestOptions);
   }
 
   const responsesRequest = buildResponsesRequest(request);
+  const providerPayload = await resolveProviderMediaPayload(responsesRequest, {
+    resolveMediaUrl: dependencyOverrides.resolveMediaUrl,
+    serviceName: 'samsar_processor_openai_responses',
+  });
   const responsesResponse = await openaiClient.post('/responses', {
-    body: responsesRequest,
+    body: providerPayload,
     ...requestOptions,
   });
   const outputText = extractResponsesOutputText(responsesResponse);
@@ -49,15 +65,13 @@ export async function createCompatibleChatCompletion(openaiClient, chatRequest =
 }
 
 function buildRequestOptions({ timeout, maxRetries } = {}) {
-  const options = {};
+  // Media URLs are resolved immediately before this SDK call. Hidden SDK
+  // retries would reuse the same short-lived Docker tunnel URL; outer callers
+  // that retry must rebuild from the canonical reference instead.
+  const options = { maxRetries: 0 };
   const parsedTimeout = Number(timeout);
   if (Number.isFinite(parsedTimeout) && parsedTimeout > 0) {
     options.timeout = Math.floor(parsedTimeout);
-  }
-
-  const parsedMaxRetries = Number(maxRetries);
-  if (Number.isInteger(parsedMaxRetries) && parsedMaxRetries >= 0) {
-    options.maxRetries = parsedMaxRetries;
   }
 
   return options;

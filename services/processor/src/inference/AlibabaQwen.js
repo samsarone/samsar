@@ -4,6 +4,7 @@ import {
   getProviderModelForInferenceModel,
   QWEN_37_INFERENCE_MODEL,
 } from '../consts/InferenceModels.js';
+import { resolveProviderMediaPayload } from '../models/ai_utils/ProviderMediaPayload.js';
 
 const DEFAULT_DASHSCOPE_BASE_URL =
   'https://dashscope-intl.aliyuncs.com/compatible-mode/v1';
@@ -90,10 +91,20 @@ function hasActualMediaReference(value, seen = new Set()) {
   return [
     'url',
     'uri',
+    'source',
+    'src',
+    'href',
+    'urls',
+    'uris',
+    'sources',
     'image_url',
     'imageUrl',
+    'image_urls',
+    'imageUrls',
     'video_url',
     'videoUrl',
+    'video_urls',
+    'videoUrls',
     'data',
     'base64',
     'file_id',
@@ -106,11 +117,21 @@ function getMediaReference(part = {}) {
   return part.image_url ??
     part.imageUrl ??
     part.image ??
+    part.image_urls ??
+    part.imageUrls ??
     part.video_url ??
     part.videoUrl ??
     part.video ??
+    part.video_urls ??
+    part.videoUrls ??
     part.url ??
-    part.source;
+    part.uri ??
+    part.source ??
+    part.src ??
+    part.href ??
+    part.urls ??
+    part.uris ??
+    part.sources;
 }
 
 function isVisionContentPart(part) {
@@ -137,7 +158,7 @@ export function hasQwenVisionInput(messages = []) {
 }
 
 function normalizeMediaUrl(value, defaultMimeType) {
-  if (typeof value === 'string' || Array.isArray(value)) {
+  if (typeof value === 'string') {
     return { url: value };
   }
   if (!value || typeof value !== 'object') {
@@ -150,51 +171,85 @@ function normalizeMediaUrl(value, defaultMimeType) {
   }
   return {
     ...value,
-    url: value.url ?? value.uri ?? value.image_url ?? value.video_url ?? '',
+    url: value.url ?? value.uri ?? value.source ?? value.src ?? value.href ??
+      value.urls ?? value.uris ?? value.sources ??
+      value.image_url ?? value.image_urls ?? value.video_url ?? value.video_urls ?? '',
   };
+}
+
+function normalizeMediaUrls(value, defaultMimeType) {
+  if (Array.isArray(value)) {
+    const normalized = value.flatMap((entry) => normalizeMediaUrls(entry, defaultMimeType));
+    return normalized.length > 0 ? normalized : [{ url: '' }];
+  }
+
+  const descriptor = normalizeMediaUrl(value, defaultMimeType);
+  const nestedUrl = descriptor.url;
+  if (Array.isArray(nestedUrl) || (nestedUrl && typeof nestedUrl === 'object')) {
+    const {
+      url: _url,
+      uri: _uri,
+      source: _source,
+      src: _src,
+      href: _href,
+      urls: _urls,
+      uris: _uris,
+      sources: _sources,
+      image_url: _imageUrl,
+      image_urls: _imageUrls,
+      video_url: _videoUrl,
+      video_urls: _videoUrls,
+      ...metadata
+    } = descriptor;
+    return normalizeMediaUrls(nestedUrl, defaultMimeType).map((entry) => ({
+      ...metadata,
+      ...entry,
+    }));
+  }
+  return [descriptor];
 }
 
 function normalizeContentPart(part) {
   if (!part || typeof part !== 'object') {
-    return part;
+    return [part];
   }
 
   if (part.type === 'input_text' || part.type === 'output_text') {
-    return { type: 'text', text: part.text || '' };
+    return [{ type: 'text', text: part.text || '' }];
   }
 
   if (part.type === 'input_image' || part.type === 'image') {
-    return {
+    return normalizeMediaUrls(getMediaReference(part), 'image/png').map((imageUrl) => ({
       type: 'image_url',
       image_url: {
-        ...normalizeMediaUrl(getMediaReference(part), 'image/png'),
+        ...imageUrl,
         ...(part.detail ? { detail: part.detail } : {}),
       },
-    };
+    }));
   }
 
   if (part.type === 'image_url') {
-    return {
+    return normalizeMediaUrls(getMediaReference(part), 'image/png').map((imageUrl) => ({
       ...part,
-      image_url: normalizeMediaUrl(part.image_url, 'image/png'),
-    };
+      image_url: imageUrl,
+    }));
   }
 
   if (part.type === 'input_video' || part.type === 'video') {
-    return {
+    return normalizeMediaUrls(getMediaReference(part), 'video/mp4').map((videoUrl) => ({
       type: 'video_url',
-      video_url: normalizeMediaUrl(getMediaReference(part), 'video/mp4'),
-    };
+      video_url: videoUrl,
+    }));
   }
 
   if (part.type === 'video_url') {
-    return {
+    return normalizeMediaUrls(getMediaReference(part), 'video/mp4').map((videoUrl) => ({
       ...part,
-      video_url: normalizeMediaUrl(part.video_url, 'video/mp4'),
-    };
+      video_url: videoUrl,
+    }));
   }
 
-  return part;
+  return [part];
 }
 
 export function normalizeMessagesForAlibabaQwen(messages = []) {
@@ -210,7 +265,7 @@ export function normalizeMessagesForAlibabaQwen(messages = []) {
       ...message,
       role: message.role === 'developer' ? 'system' : message.role,
       content: Array.isArray(message.content)
-        ? message.content.map(normalizeContentPart)
+        ? message.content.flatMap(normalizeContentPart)
         : message.content,
     };
   });
@@ -310,7 +365,14 @@ export function buildAlibabaQwenChatRequest(chatRequest = {}) {
   };
 }
 
-export async function createAlibabaQwenChatCompletion(chatRequest = {}) {
+export async function createAlibabaQwenChatCompletion(chatRequest = {}, dependencyOverrides = {}) {
   const { payload, requestOptions } = buildAlibabaQwenChatRequest(chatRequest);
-  return await getAlibabaQwenClient().chat.completions.create(payload, requestOptions);
+  const providerPayload = await resolveProviderMediaPayload(payload, {
+    resolveMediaUrl: dependencyOverrides.resolveMediaUrl,
+    serviceName: 'samsar_processor_alibaba_qwen',
+  });
+  return await getAlibabaQwenClient().chat.completions.create(providerPayload, {
+    ...requestOptions,
+    maxRetries: 0,
+  });
 }

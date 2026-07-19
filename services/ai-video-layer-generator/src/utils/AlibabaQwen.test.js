@@ -73,6 +73,15 @@ test('selects Qwen Max for text and Qwen Plus for multimodal vision input', () =
   assert.equal(textRequest.payload.enable_thinking, false);
 });
 
+test('disables hidden SDK retries so provider media is never reused after tunnel expiry', () => {
+  const { requestOptions } = buildAlibabaQwenChatRequest({
+    model: 'QWEN3.7',
+    maxRetries: 4,
+    messages: [{ role: 'user', content: 'hello' }],
+  });
+  assert.equal(requestOptions.maxRetries, 0);
+});
+
 test('normalizes image, base64, video, and string Responses input forms', () => {
   const mediaRequest = buildAlibabaQwenChatRequest({
     model: 'QWEN3.7',
@@ -104,5 +113,22 @@ test('normalizes image, base64, video, and string Responses input forms', () => 
   });
   assert.deepEqual(stringInput.payload.messages, [
     { role: 'user', content: 'Create a transition.' },
+  ]);
+});
+
+test('expands media arrays into valid Qwen content parts instead of placing an array in url', () => {
+  const request = buildAlibabaQwenChatRequest({
+    messages: [{
+      role: 'user',
+      content: [{
+        type: 'input_image',
+        source: { urls: ['https://example.com/one.png', 'https://example.com/two.png'] },
+      }],
+    }],
+  });
+
+  assert.deepEqual(request.payload.messages[0].content, [
+    { type: 'image_url', image_url: { url: 'https://example.com/one.png' } },
+    { type: 'image_url', image_url: { url: 'https://example.com/two.png' } },
   ]);
 });

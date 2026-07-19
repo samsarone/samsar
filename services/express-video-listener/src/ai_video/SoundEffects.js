@@ -2,7 +2,7 @@ import { getDBConnectionString } from "../DBString.js";
 import AIVideoLayerGeneration from "../schema/AIVideoLayerGeneration.js";
 import VideoSession from "../schema/VideoSession.js";
 import User from "../schema/User.js";
-import { resolveProviderAiVideoUrl } from './utils/ProviderMediaUrl.js';
+import { getCanonicalAiVideoReference } from './utils/ProviderMediaUrl.js';
 
 export async function generateSoundEffectsForSession(sessionId) {
 
@@ -61,7 +61,7 @@ async function generateSoundEffectsForLayer(userId, sessionId, currentLayer, aud
 
    return;
   }
-  const videoUrl = await resolveProviderAiVideoUrl({
+  const videoUrl = getCanonicalAiVideoReference({
     layer: currentLayer,
     userId,
   });

@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
+  createGoogleGeminiChatCompletion,
   normalizeGeminiUsage,
   normalizeJsonSchemaForGemini,
 } from './GoogleGemini.js';
@@ -52,4 +53,49 @@ test('normalizeGeminiUsage includes thinking tokens in billable output tokens', 
   assert.equal(usage.output_tokens, 27);
   assert.equal(usage.completion_tokens_details.reasoning_tokens, 7);
   assert.equal(usage.total_tokens, 127);
+});
+
+test('native Google Gemini reads mounted image media before building inline provider content', async () => {
+  let capturedRequestBody;
+  const messages = [{
+    role: 'user',
+    content: [{
+      type: 'input_image',
+      image_url: 'http://localhost:3002/assets_v2/generations/session/gemini.png',
+    }],
+  }];
+  const originalMessages = JSON.parse(JSON.stringify(messages));
+
+  const response = await createGoogleGeminiChatCompletion({
+    model: 'gemini-3.1-pro',
+    projectId: 'gemini-media-project',
+    messages,
+  }, {
+    resolveMediaUrl: async () => {
+      throw new Error('Gemini inlineData must not create a provider tunnel.');
+    },
+    readLocalMediaBuffer: async (source) => {
+      assert.equal(source, 'http://localhost:3002/assets_v2/generations/session/gemini.png');
+      return Buffer.from('ABC');
+    },
+    getAccessToken: async () => 'google-access-token',
+    fetch: async (_url, options) => {
+      capturedRequestBody = JSON.parse(options.body);
+      return {
+        ok: true,
+        status: 200,
+        text: async () => JSON.stringify({
+          responseId: 'gemini-media-response',
+          candidates: [{ index: 0, content: { parts: [{ text: 'seen' }] }, finishReason: 'STOP' }],
+          usageMetadata: { promptTokenCount: 1, candidatesTokenCount: 1, totalTokenCount: 2 },
+        }),
+      };
+    },
+  });
+
+  assert.deepEqual(messages, originalMessages);
+  assert.deepEqual(capturedRequestBody.contents[0].parts[0], {
+    inlineData: { mimeType: 'image/png', data: 'QUJD' },
+  });
+  assert.equal(response.choices[0].message.content, 'seen');
 });

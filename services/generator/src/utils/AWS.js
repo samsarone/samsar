@@ -6,6 +6,10 @@ import path from 'path';
 import crypto from 'crypto';
 
 import { NodeHttpHandler } from '@aws-sdk/node-http-handler';
+import {
+  assertExplicitDockerExternalMediaConfiguration,
+  buildStableDockerMediaUrl,
+} from './DockerMediaDeliveryUrl.js';
 
 /**
  * Reads AWS credentials and region from environment variables.
@@ -160,10 +164,10 @@ function buildMediaUploadKey(folderName, remoteFileName) {
 }
 
 function buildMediaDeliveryUrl(key) {
-  const cdnUrl = buildStaticCdnUrl(key);
   if (shouldUseDockerLocalMedia()) {
-    return cdnUrl;
+    return buildStableDockerMediaUrl(key);
   }
+  const cdnUrl = buildStaticCdnUrl(key);
   return isSecureAssetKey(key) ? signCloudFrontUrl(cdnUrl) : cdnUrl;
 }
 
@@ -342,6 +346,8 @@ export async function uploadImageToCDN(absolutePath, remoteFileName) {
   if (shouldUseDockerLocalMedia()) {
     return persistDockerMediaFile(absolutePath, uploadKey);
   }
+
+  assertExplicitDockerExternalMediaConfiguration();
 
   const s3 = getS3Client();
 

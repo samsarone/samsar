@@ -9,6 +9,85 @@ const staleFinalVideoUrl = 'https://static.samsar.one/assets_v2/video/output/ses
 const staleThumbnailUrl = 'https://static.samsar.one/assets_v2/generations/session_123/thumb.png?Expires=1&Signature=old&Key-Pair-Id=old';
 const staleAudioUrl = 'https://static.samsar.one/assets_v2/user_resources/user_123/audio/session_123.mp3?Expires=1&Signature=old&Key-Pair-Id=old';
 
+test('downstream video effects prefer the durable mounted AI-video over an expired provider URL', () => {
+  const reference = __testOnly__.resolveLayerAiVideoRemoteUrl({
+    userId: 'user_123',
+    layer: {
+      aiVideoLayer: 'ai_video/generations/session_123/layer_1/scene.mp4',
+      aiVideoRemoteLink: 'https://provider.example/expired-result.mp4',
+    },
+  });
+  assert.equal(
+    reference,
+    '/assets_v2/user_resources/user_123/ai_videos/session_123/layer_1/scene.mp4',
+  );
+});
+
+test('Docker-local padded audio remains a mounted reference until provider dispatch', () => {
+  assert.equal(__testOnly__.shouldUseDockerLocalMediaDelivery({
+    CURRENT_ENV: 'docker',
+    SAMSAR_MEDIA_DELIVERY_MODE: 'docker-local',
+  }), true);
+  assert.equal(__testOnly__.shouldUseDockerLocalMediaDelivery({
+    CURRENT_ENV: 'docker',
+    SAMSAR_MEDIA_DELIVERY_MODE: 'external-s3',
+  }), false);
+});
+
+test('response hydration source selection is local-first only for Docker-local delivery', () => {
+  const candidates = {
+    local: 'assets_v2/ai_video/generations/session_123/scene.mp4',
+    generated: 'https://generated.example/scene.mp4',
+    remote: 'https://provider.example/expiring-scene.mp4',
+  };
+  assert.equal(__testOnly__.selectMediaDeliverySource(candidates, {
+    CURRENT_ENV: 'docker',
+    SAMSAR_MEDIA_DELIVERY_MODE: 'docker-local',
+  }), candidates.local);
+  assert.equal(__testOnly__.selectMediaDeliverySource(candidates, {
+    CURRENT_ENV: 'docker',
+    SAMSAR_MEDIA_DELIVERY_MODE: 'external-s3',
+  }), candidates.remote);
+});
+
+test('Docker guest media reads mounted assets with byte-range support', async (t) => {
+  const tempRoot = path.join(
+    process.cwd(),
+    'assets_v2',
+    `guest_media_${process.pid}_${Date.now()}`,
+  );
+  const assetKey = `assets_v2/${path.basename(tempRoot)}/session_123/video.mp4`;
+  const absolutePath = path.join(tempRoot, 'session_123', 'video.mp4');
+  fs.mkdirSync(path.dirname(absolutePath), { recursive: true });
+  fs.writeFileSync(absolutePath, Buffer.from('0123456789'));
+  const previousRoot = process.env.SAMSAR_ASSETS_V2_ROOT;
+  process.env.SAMSAR_ASSETS_V2_ROOT = path.join(process.cwd(), 'assets_v2');
+  t.after(() => {
+    if (previousRoot === undefined) delete process.env.SAMSAR_ASSETS_V2_ROOT;
+    else process.env.SAMSAR_ASSETS_V2_ROOT = previousRoot;
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  });
+
+  const media = await __testOnly__.buildLocalGuestMediaObject(assetKey, 'bytes=2-5');
+  assert.equal(media.statusCode, 206);
+  assert.equal(media.contentLength, 4);
+  assert.equal(media.contentRange, 'bytes 2-5/10');
+  const chunks = [];
+  for await (const chunk of media.stream) chunks.push(chunk);
+  assert.equal(Buffer.concat(chunks).toString(), '2345');
+});
+
+test('Docker guest media rejects unsafe and unsatisfiable mounted ranges', async () => {
+  assert.equal(await __testOnly__.buildLocalGuestMediaObject(
+    'assets_v2/../private.key',
+    '',
+  ), null);
+  assert.throws(
+    () => __testOnly__.parseGuestMediaByteRange('bytes=99-100', 10),
+    (error) => error?.statusCode === 416,
+  );
+});
+
 test('owner session media hydration refreshes final video, thumbnails, image assets, video assets, and audio assets', () => {
   const hydrated = __testOnly__.hydrateStudioSessionMediaForResponse({
     _id: 'session_123',
@@ -80,6 +159,25 @@ test('studio media hydration preserves unrelated external URLs', () => {
 });
 
 test('studio media hydration serves locally finalized user videos from assets_v2', (t) => {
+  const envKeys = [
+    'CURRENT_ENV',
+    'SAMSAR_MEDIA_DELIVERY_MODE',
+    'PROCESSOR_API',
+    'SAMSAR_DOCKER_PUBLIC_ASSET_BASE_URL',
+    'SAMSAR_DOCKER_PUBLIC_PROCESSOR_BASE_URL',
+  ];
+  const envSnapshot = Object.fromEntries(envKeys.map((key) => [key, process.env[key]]));
+  process.env.CURRENT_ENV = 'docker';
+  process.env.SAMSAR_MEDIA_DELIVERY_MODE = 'docker-local';
+  process.env.PROCESSOR_API = 'http://localhost:3002';
+  delete process.env.SAMSAR_DOCKER_PUBLIC_ASSET_BASE_URL;
+  delete process.env.SAMSAR_DOCKER_PUBLIC_PROCESSOR_BASE_URL;
+  t.after(() => {
+    envKeys.forEach((key) => {
+      if (envSnapshot[key] === undefined) delete process.env[key];
+      else process.env[key] = envSnapshot[key];
+    });
+  });
   const relativePath = path.join(
     'assets_v2',
     'ai_video',
@@ -112,7 +210,7 @@ test('studio media hydration serves locally finalized user videos from assets_v2
     const resolvedUrl = new URL(value, 'https://processor.example.com');
     assert.equal(resolvedUrl.pathname, expectedPathname);
     assert.equal(resolvedUrl.search, '');
-    assert.notEqual(resolvedUrl.hostname, 'static.samsar.one');
+    assert.equal(resolvedUrl.origin, 'http://localhost:3002');
   }
 });
 

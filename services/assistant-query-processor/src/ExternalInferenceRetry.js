@@ -52,6 +52,12 @@ function isRetryable(error) {
   ) {
     return false;
   }
+  if (error?.retryable === false || error?.cause?.retryable === false) {
+    return false;
+  }
+  if (error?.retryable === true || error?.cause?.retryable === true) {
+    return true;
+  }
   if (status !== null) {
     return status === 408 || status === 409 || status === 425 || status === 429 || status >= 500;
   }

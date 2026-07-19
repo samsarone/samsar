@@ -1,5 +1,6 @@
 import OpenAI from 'openai';
 import { GPT_56_SOL_REASONING_EFFORT } from '../../consts/InferenceModels.js';
+import { getAccessibleProviderMediaUrl } from '../ai_utils/VisionMediaUrl.js';
 import { deductGenerationCredits } from '../GenerationCredits.js';
 import { calculateAssistantCreditsFromUsage } from './AssistantBilling.js';
 
@@ -97,6 +98,11 @@ export async function assignTitleToImage(payload = {}) {
 }
 
 async function analyzeImageForSeoTitle({ imageInput }) {
+  const providerImageUrl = await getAccessibleProviderMediaUrl(imageInput.imageUrl, {
+    mediaKind: 'image',
+    serviceName: 'samsar_processor_image_title',
+  });
+
   return createOpenAIResponse({
     label: 'image title description',
     body: {
@@ -121,7 +127,7 @@ async function analyzeImageForSeoTitle({ imageInput }) {
             },
             {
               type: 'input_image',
-              image_url: imageInput.imageUrl,
+              image_url: providerImageUrl,
               detail: ASSIGN_TITLE_IMAGE_DETAIL,
             },
           ],
@@ -173,7 +179,7 @@ async function createSeoFriendlyTitle({ imageDescription, metadata }) {
 
 async function createOpenAIResponse({ body, label }) {
   return withTimeout(
-    openaiClient.post('/responses', { body }),
+    openaiClient.post('/responses', { body, maxRetries: 0 }),
     ASSIGN_TITLE_OPENAI_TIMEOUT_MS,
     label,
   );

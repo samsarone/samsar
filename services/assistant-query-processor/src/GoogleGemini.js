@@ -4,6 +4,8 @@ import {
   DEFAULT_INFERENCE_MODEL,
   getProviderModelForInferenceModel,
 } from './InferenceModels.js';
+import { runExternalInferenceWithRetry } from './ExternalInferenceRetry.js';
+import { readMountedProviderMediaBufferIfAvailable } from './ProviderMediaUrl.js';
 
 const DEFAULT_GEMINI_LOCATION = 'global';
 const DEFAULT_IMAGE_MIME_TYPE = 'image/png';
@@ -66,8 +68,31 @@ function parseDataUrl(dataUrl) {
   };
 }
 
-async function buildInlineImagePart(imageUrl) {
-  const normalizedUrl = normalizeString(typeof imageUrl === 'string' ? imageUrl : imageUrl?.url);
+function getImageMimeType(reference) {
+  const normalized = normalizeString(reference).split('?')[0].split('#')[0].toLowerCase();
+  if (normalized.endsWith('.jpg') || normalized.endsWith('.jpeg')) return 'image/jpeg';
+  if (normalized.endsWith('.webp')) return 'image/webp';
+  if (normalized.endsWith('.gif')) return 'image/gif';
+  if (normalized.endsWith('.avif')) return 'image/avif';
+  return DEFAULT_IMAGE_MIME_TYPE;
+}
+
+async function buildInlineImagePart(imageUrl, options = {}) {
+  const fetchImpl = options.fetchImpl || globalThis.fetch;
+  const signal = options.signal;
+  const inlineData = imageUrl && typeof imageUrl === 'object'
+    ? normalizeString(imageUrl.data || imageUrl.base64)
+    : '';
+  const inlineMimeType = imageUrl && typeof imageUrl === 'object'
+    ? normalizeString(imageUrl.media_type || imageUrl.mime_type || imageUrl.mimeType)
+    : '';
+  const normalizedUrl = inlineData
+    ? `data:${inlineMimeType || DEFAULT_IMAGE_MIME_TYPE};base64,${inlineData}`
+    : normalizeString(
+      typeof imageUrl === 'string'
+        ? imageUrl
+        : imageUrl?.url || imageUrl?.uri || imageUrl?.image_url || imageUrl?.imageUrl,
+    );
   if (!normalizedUrl) {
     return null;
   }
@@ -82,9 +107,25 @@ async function buildInlineImagePart(imageUrl) {
     };
   }
 
-  const response = await fetch(normalizedUrl);
+  const readLocalMediaBuffer = options.readLocalMediaBuffer || readMountedProviderMediaBufferIfAvailable;
+  const localBuffer = await readLocalMediaBuffer(normalizedUrl, { mediaKind: 'image' });
+  if (localBuffer) {
+    if (localBuffer.length > MAX_INLINE_IMAGE_BYTES) {
+      throw new Error('Image is too large for inline Gemini vision input.');
+    }
+    return {
+      inlineData: {
+        mimeType: getImageMimeType(normalizedUrl),
+        data: localBuffer.toString('base64'),
+      },
+    };
+  }
+
+  const response = await fetchImpl(normalizedUrl, { signal });
   if (!response.ok) {
-    throw new Error(`Unable to fetch image for Gemini vision request: ${response.status}`);
+    const error = new Error(`Unable to fetch image for Gemini vision request: ${response.status}`);
+    error.status = response.status;
+    throw error;
   }
 
   const mimeType = response.headers.get('content-type')?.split(';')?.[0] || DEFAULT_IMAGE_MIME_TYPE;
@@ -99,6 +140,38 @@ async function buildInlineImagePart(imageUrl) {
       data: buffer.toString('base64'),
     },
   };
+}
+
+function flattenImageReferences(value, depth = 0) {
+  if (typeof value === 'string') return value.trim() ? [value] : [];
+  if (Array.isArray(value) && depth < 4) {
+    return value.flatMap((entry) => flattenImageReferences(entry, depth + 1));
+  }
+  if (!value || typeof value !== 'object' || depth >= 4) return [];
+  if (
+    normalizeString(value.data || value.base64) ||
+    normalizeString(value.url || value.uri || value.image_url || value.imageUrl)
+  ) {
+    return [value];
+  }
+  return [
+    'image_url', 'imageUrl', 'image_uri', 'imageUri',
+    'source', 'urls', 'uris', 'sources',
+  ]
+    .flatMap((field) => flattenImageReferences(value[field], depth + 1));
+}
+
+function getImageReferences(item) {
+  return [
+    'image_url', 'imageUrl', 'image_uri', 'imageUri', 'input_image', 'inputImage', 'image',
+    'image_urls', 'imageUrls', 'image_uris', 'imageUris', 'images',
+    'url', 'uri', 'source', 'urls', 'uris', 'sources',
+  ].flatMap((field) => flattenImageReferences(item?.[field]));
+}
+
+function isTypedImagePart(item) {
+  const type = normalizeString(item?.type).toLowerCase().replace(/[\s-]+/g, '_');
+  return /(?:^|_)image(?:_|$)/.test(type);
 }
 
 function stringifySystemContent(content) {
@@ -124,7 +197,7 @@ function stringifySystemContent(content) {
     .join('\n');
 }
 
-async function normalizeContentParts(content) {
+async function normalizeContentParts(content, options = {}) {
   if (typeof content === 'string') {
     return content ? [{ text: content }] : [];
   }
@@ -149,10 +222,10 @@ async function normalizeContentParts(content) {
       continue;
     }
 
-    if ((item.type === 'image_url' && item.image_url) || (item.type === 'input_image' && item.image_url)) {
-      const imagePart = await buildInlineImagePart(item.image_url);
-      if (imagePart) {
-        parts.push(imagePart);
+    if (isTypedImagePart(item)) {
+      for (const imageReference of getImageReferences(item)) {
+        const imagePart = await buildInlineImagePart(imageReference, options);
+        if (imagePart) parts.push(imagePart);
       }
     }
   }
@@ -160,7 +233,7 @@ async function normalizeContentParts(content) {
   return parts;
 }
 
-async function buildGeminiContents(messages = []) {
+async function buildGeminiContents(messages = [], options = {}) {
   const systemParts = [];
   const contents = [];
 
@@ -178,7 +251,7 @@ async function buildGeminiContents(messages = []) {
     }
 
     const role = message.role === 'assistant' || message.role === 'model' ? 'model' : 'user';
-    const parts = await normalizeContentParts(message.content);
+    const parts = await normalizeContentParts(message.content, options);
     if (parts.length) {
       contents.push({ role, parts });
     }
@@ -339,57 +412,73 @@ function summarizeGeminiError(payload) {
   };
 }
 
-export async function sendAssistantGeminiCompletionRequest(messageList, inferenceModel, options = {}) {
+export async function sendAssistantGeminiCompletionRequest(
+  messageList,
+  inferenceModel,
+  options = {},
+  dependencyOverrides = {},
+) {
   const model = resolveGeminiModel(options.model || options.providerModel || options.vertexModel || inferenceModel);
   const location = resolveGeminiLocation(options);
-  const config = getGoogleCloudConfig({ ...options, location });
+  const getCloudConfig = dependencyOverrides.getGoogleCloudConfig || getGoogleCloudConfig;
+  const getAccessToken = dependencyOverrides.getGoogleAccessToken || getGoogleAccessToken;
+  const fetchImpl = dependencyOverrides.fetchImpl || globalThis.fetch;
+  const config = getCloudConfig({ ...options, location });
   const projectId = normalizeString(config.projectId);
 
   if (!projectId) {
     throw new Error('Google Gemini inference requires GOOGLE_CLOUD_PROJECT or GOOGLE_PROJECT_ID.');
   }
 
-  const { systemInstruction, contents } = await buildGeminiContents(messageList);
-  if (!contents.length) {
-    throw new Error('Google Gemini inference requires at least one user message.');
-  }
-
   const generationConfig = buildGenerationConfig(options, model);
-  const requestBody = {
-    ...(systemInstruction ? { systemInstruction } : {}),
-    contents,
-    ...(generationConfig ? { generationConfig } : {}),
-  };
-
-  const token = await getGoogleAccessToken(config);
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), getGeminiTimeoutMs(options));
-  let response;
-  try {
-    response = await fetch(buildVertexGenerateContentUrl({ projectId, location, model }), {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${token}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(requestBody),
-      signal: controller.signal,
-    });
-  } finally {
-    clearTimeout(timeoutId);
-  }
-
-  const responseText = await response.text();
-  const responsePayload = responseText ? JSON.parse(responseText) : {};
-
-  if (!response.ok) {
-    const error = new Error(
-      responsePayload?.error?.message || `Google Gemini inference failed with status ${response.status}`
-    );
-    error.status = response.status;
-    error.error = summarizeGeminiError(responsePayload);
-    throw error;
-  }
+  const timeoutMs = getGeminiTimeoutMs(options);
+  const responsePayload = await runExternalInferenceWithRetry(
+    async ({ signal }) => {
+      const { systemInstruction, contents } = await buildGeminiContents(messageList, {
+        fetchImpl,
+        signal,
+        readLocalMediaBuffer: dependencyOverrides.readLocalMediaBuffer,
+      });
+      if (!contents.length) {
+        const error = new Error('Google Gemini inference requires at least one user message.');
+        error.retryable = false;
+        throw error;
+      }
+      const requestBody = {
+        ...(systemInstruction ? { systemInstruction } : {}),
+        contents,
+        ...(generationConfig ? { generationConfig } : {}),
+      };
+      const token = await getAccessToken(config);
+      const response = await fetchImpl(buildVertexGenerateContentUrl({ projectId, location, model }), {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(requestBody),
+        signal,
+      });
+      const responseText = await response.text();
+      const payload = responseText ? JSON.parse(responseText) : {};
+      if (!response.ok) {
+        const error = new Error(
+          payload?.error?.message || `Google Gemini inference failed with status ${response.status}`,
+        );
+        error.status = response.status;
+        error.error = summarizeGeminiError(payload);
+        throw error;
+      }
+      return payload;
+    },
+    {
+      provider: 'google-gemini',
+      model,
+      timeoutMs,
+      maxRetries: options.externalMaxRetries ?? options.maxRetries,
+      ...(dependencyOverrides.retryOptions || {}),
+    },
+  );
 
   const outputText = extractGeminiOutputText(responsePayload);
   return {

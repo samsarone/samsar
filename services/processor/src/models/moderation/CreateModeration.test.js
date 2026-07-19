@@ -489,6 +489,62 @@ test("native OpenAI moderation retries malformed transient responses", async () 
   assert.equal(result.results[0].flagged, false);
 });
 
+test("native OpenAI moderation resolves image media freshly for every retry", async () => {
+  const requestData = [
+    { type: "text", text: "A calm landscape" },
+    {
+      type: "image_url",
+      image_url: {
+        url: "http://localhost:3002/assets_v2/generations/session/moderation.png",
+      },
+    },
+  ];
+  const originalRequestData = JSON.parse(JSON.stringify(requestData));
+  const bodies = [];
+  let resolverCalls = 0;
+
+  const result = await createNativeOpenAIModeration(requestData, {
+    openaiClient: {
+      moderations: {
+        create: async (body) => {
+          bodies.push(body);
+          if (bodies.length === 1) {
+            return { results: [{}] };
+          }
+          return {
+            results: [{ flagged: false, categories: {}, category_scores: {} }],
+          };
+        },
+      },
+    },
+    resolveMediaUrl: async (_source, options) => {
+      resolverCalls += 1;
+      assert.deepEqual(options, {
+        mediaKind: "image",
+        serviceName: "samsar_processor_openai_moderation",
+      });
+      return `https://fresh-${resolverCalls}.example/assets_v2/generations/session/moderation.png`;
+    },
+    timeoutMs: 100,
+    maxRetries: 1,
+    retryBaseDelayMs: 1,
+    sleep: async () => {},
+    logRetries: false,
+  });
+
+  assert.equal(result.results[0].flagged, false);
+  assert.equal(resolverCalls, 2);
+  assert.equal(
+    bodies[0].input[1].image_url.url,
+    "https://fresh-1.example/assets_v2/generations/session/moderation.png",
+  );
+  assert.equal(
+    bodies[1].input[1].image_url.url,
+    "https://fresh-2.example/assets_v2/generations/session/moderation.png",
+  );
+  assert.deepEqual(requestData, originalRequestData);
+});
+
 test("getModerationForNarrative skips without calling a provider in credential-less Docker", async () => {
   let called = false;
   const safe = await getModerationForNarrative("prompt", {

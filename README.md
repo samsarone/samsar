@@ -260,7 +260,7 @@ npm run docker:config
 | `workers` | `generator`, `audio-generator`, `frames-processor`, `video-generator`, `ai-video-layer-generator`, `express-video-listener`, `assistant-query-processor`, `task-processor` |
 | `local-mongo` | `mongo` |
 | `minio` | `minio` |
-| `local-media` | `media-gateway` |
+| `local-media` | `media-gateway`, `media-tunnel-controller` |
 | `logger` | `loki`, `promtail`, `grafana` |
 | `reverse-proxy` | Optional `reverse-proxy` nginx service when enabled by the setup wizard. |
 
@@ -304,13 +304,28 @@ That browser URL is served by the configured processor API from the mounted medi
 
 If the setup wizard configures a reverse proxy, browser media URLs use that configured processor API origin. Public/private IP installs use one machine IP: Studio is served at `http://<ip>` and processor/media URLs use `http://<ip>/api`. External AI adapters still use the separately managed, validated media tunnel unless external S3/CloudFront publishing is explicitly enabled.
 
-When a remote provider must fetch local-only media from your Docker stack, Samsar needs a public media base URL. The setup wizard starts a temporary media tunnel automatically when local media publishing is required for the selected configuration. If you are using the manual config flow, or if a remote provider cannot fetch local media, start the tunnel yourself:
+When a remote provider must fetch local-only media from your Docker stack, Samsar needs a public media base URL. The `local-media` profile includes a Compose-managed Cloudflared controller. It starts a quick tunnel when runtime config enables a remote media consumer, validates the exact media-gateway health marker, atomically publishes `localMediaTunnel.publicUrl`, and replaces the tunnel when its health checks fail or a worker writes the shared refresh marker. It does not mount the Docker socket and does not depend on the setup-wizard process.
+
+For a manual runtime, start or recreate only the local-media services with:
 
 ```bash
-scripts/start-local-media-tunnel.sh
+docker compose --env-file runtime/secrets/root.env \
+  -f deploy/compose/docker-compose.yml \
+  --profile local-media up -d --build \
+  media-gateway media-tunnel-controller
 ```
 
-The script starts a short-lived public tunnel to the internal media gateway and atomically updates the dedicated `localMediaTunnel.publicUrl`. Provider workers reload and validate that URL before each public adapter request; it is never used for browser previews.
+Inspect its lifecycle and the current URL with:
+
+```bash
+docker compose --env-file runtime/secrets/root.env \
+  -f deploy/compose/docker-compose.yml \
+  --profile local-media logs -f media-tunnel-controller
+```
+
+Provider workers reload and validate the published URL before each public adapter request. The controller keeps `publicUrls.media` on the configured processor/reverse-proxy URL, so the temporary tunnel is never used for browser previews.
+
+The legacy `scripts/start-local-media-tunnel.sh` command remains as a compatibility wrapper; it now starts and waits for these same Compose services instead of creating a second tunnel container.
 
 ## Runtime Config
 

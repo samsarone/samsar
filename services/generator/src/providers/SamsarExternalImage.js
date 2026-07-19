@@ -5,7 +5,10 @@ import ImageGeneration from '../schema/ImageGeneration.js';
 import { saveRemoteFile } from '../utils/FileUtils.js';
 import { getCurrentEnvironment } from '../utils/Environment.js';
 import { recordProviderUsageLog } from '../utils/ProviderUsageAudit.js';
-import { getAccessibleMediaUrlsForProvider } from '../utils/MediaReferenceUtils.js';
+import {
+  getAccessibleMediaUrlForProvider,
+  getAccessibleMediaUrlsForProvider,
+} from '../utils/MediaReferenceUtils.js';
 import {
   DOCKER_ADAPTER_PROVIDER,
   resolveDockerImageEditProvider,
@@ -250,12 +253,44 @@ async function getExternalImageUrlsForEdit(payload = {}) {
     }
   });
 
-  return getAccessibleMediaUrlsForProvider(urls);
+  return getAccessibleMediaUrlsForProvider(urls, { mediaKind: 'image' });
 }
 
-async function buildExternalImageEditPayload(payload = {}, route) {
-  const imageUrls = await getExternalImageUrlsForEdit(payload);
+const EXTERNAL_MEDIA_ALIAS_TOKENS = new Set([
+  'image', 'imageurl', 'imageurls', 'imageref', 'images',
+  'inputimage', 'inputimages', 'inputimageurl', 'inputimageurls',
+  'sourceimage', 'sourceimageurl', 'referenceimage', 'referenceimageurl',
+  'mask', 'maskimage', 'maskimageurl', 'maskurl',
+  'video', 'videourl', 'videourls', 'videolink',
+  'audio', 'audiourl', 'audiourls', 'audiolink',
+]);
+
+function normalizeAliasToken(value) {
+  return String(value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+function stripExternalMediaAliases(value) {
+  if (Array.isArray(value)) return value.map(stripExternalMediaAliases);
+  if (!value || typeof value !== 'object') return value;
+  const sanitized = {};
+  for (const [key, child] of Object.entries(value)) {
+    if (EXTERNAL_MEDIA_ALIAS_TOKENS.has(normalizeAliasToken(key))) continue;
+    // Metadata is opaque audit context, not provider media input.
+    sanitized[key] = key === 'metadata' ? child : stripExternalMediaAliases(child);
+  }
+  return sanitized;
+}
+
+export async function buildExternalImageEditPayload(payload = {}, route, dependencies = {}) {
+  const resolveMediaUrls = dependencies.resolveMediaUrls || getExternalImageUrlsForEdit;
+  const resolveMediaUrl = dependencies.resolveMediaUrl || ((value) =>
+    getAccessibleMediaUrlForProvider(value, { mediaKind: 'image' }));
+  const imageUrls = await resolveMediaUrls(payload);
   const aspectRatio = normalizeString(payload.aspectRatio || payload.aspect_ratio) || '16:9';
+  const maskReference = normalizeString(
+    payload.maskImage || payload.mask_image || payload.maskUrl || payload.mask_url || payload.mask,
+  );
+  const maskUrl = maskReference ? await resolveMediaUrl(maskReference) : '';
 
   if (route === 'remove_branding') {
     return {
@@ -288,9 +323,10 @@ async function buildExternalImageEditPayload(payload = {}, route) {
 
   return {
     input: {
-      ...payload,
+      ...stripExternalMediaAliases(payload),
       image_urls: imageUrls,
       image_url: imageUrls[0],
+      ...(maskUrl ? { mask_url: maskUrl } : {}),
       aspect_ratio: aspectRatio,
       model: payload.model,
       metadata: payload.metadata || {},

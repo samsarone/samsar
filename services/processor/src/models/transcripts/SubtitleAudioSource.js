@@ -45,6 +45,48 @@ function normalizeString(value) {
   return typeof value === 'string' ? value.trim() : '';
 }
 
+function isTruthyEnv(value) {
+  return ['1', 'true', 'yes', 'on'].includes(normalizeString(value).toLowerCase());
+}
+
+export function shouldUseSubtitleObjectStorageRecovery(env = process.env) {
+  if (normalizeString(env.CURRENT_ENV).toLowerCase() !== 'docker') {
+    return true;
+  }
+  const mode = normalizeString(env.SAMSAR_MEDIA_DELIVERY_MODE || env.MEDIA_DELIVERY_MODE)
+    .toLowerCase();
+  if (mode === 'docker-local' || mode === 'local-filesystem') {
+    return false;
+  }
+  if (
+    mode !== 'external-s3' &&
+    mode !== 's3-cloudfront' &&
+    !isTruthyEnv(env.SAMSAR_EXTERNAL_MEDIA_PUBLISH_ENABLED || env.EXTERNAL_MEDIA_PUBLISH_ENABLED)
+  ) {
+    return false;
+  }
+
+  const bucketName = normalizeString(
+    env.MEDIA_BUCKET_NAME || env.STATIC_CDN_BUCKET || env.SAMSAR_EXTERNAL_MEDIA_BUCKET,
+  );
+  const cdnUrl = normalizeString(
+    env.STATIC_CDN_URL || env.SAMSAR_EXTERNAL_MEDIA_PUBLIC_BASE_URL,
+  );
+  try {
+    const parsedUrl = new URL(cdnUrl);
+    return Boolean(
+      bucketName &&
+      parsedUrl.protocol === 'https:' &&
+      !parsedUrl.username &&
+      !parsedUrl.password &&
+      !parsedUrl.search &&
+      !parsedUrl.hash
+    );
+  } catch {
+    return false;
+  }
+}
+
 function addUniqueString(list, seen, value) {
   const normalized = normalizeString(value);
   if (!normalized || seen.has(normalized)) {
@@ -455,6 +497,16 @@ export async function resolveSubtitleAudioSource({
         cleanup: createNoopCleanup(),
       };
     }
+  }
+
+  if (!shouldUseSubtitleObjectStorageRecovery()) {
+    const audioLayerId = audioLayer?._id?.toString?.() || 'unknown';
+    const error = new Error(
+      `Subtitle alignment audio is unavailable for audio layer ${audioLayerId}: ` +
+      'the mounted Docker media file was not found and external S3 recovery is not configured.',
+    );
+    error.code = 'SAMSAR_SUBTITLE_LOCAL_MEDIA_UNAVAILABLE';
+    throw error;
   }
 
   const references = collectSubtitleAudioSourceReferences(audioLayer);

@@ -18,37 +18,83 @@ function positiveInteger(value, fallback, minimum = 1) {
 function normalizeMediaPath(value) {
   const normalized = normalizeString(value).replace(/^\/+/, '');
   const segments = normalized.split('/').filter(Boolean);
-  if (!segments.length || segments.some((segment) => segment === '.' || segment === '..')) {
+  const decodedSegments = segments.map((segment) => {
+    try {
+      return decodeURIComponent(segment);
+    } catch {
+      throw new Error('Provider media path contains invalid URL encoding.');
+    }
+  });
+  if (
+    !decodedSegments.length ||
+    decodedSegments.some((segment) => segment === '.' || segment === '..' || segment.includes('/') || segment.includes('\\'))
+  ) {
     throw new Error('Provider media path must be a safe non-empty relative path.');
   }
-  return segments.map((segment) => {
-    try {
-      return encodeURIComponent(decodeURIComponent(segment));
-    } catch {
-      return encodeURIComponent(segment);
+  return decodedSegments.map((segment) => encodeURIComponent(segment)).join('/');
+}
+
+function normalizeManagedBaseUrl(value) {
+  const normalized = normalizeString(value);
+  if (!normalized) return '';
+  try {
+    const url = new URL(normalized);
+    if (
+      url.protocol !== 'https:' ||
+      url.username ||
+      url.password ||
+      (url.pathname && url.pathname !== '/') ||
+      url.search ||
+      url.hash
+    ) {
+      return '';
     }
-  }).join('/');
+    return url.origin;
+  } catch {
+    return '';
+  }
 }
 
 function uniqueBaseUrls(values = []) {
   return values
-    .map((value) => normalizeString(value).replace(/\/+$/, ''))
+    .map(normalizeManagedBaseUrl)
     .filter(Boolean)
     .filter((value, index, list) => list.indexOf(value) === index);
 }
 
-function buildCandidateUrls(mediaPath, baseUrls) {
-  return uniqueBaseUrls(baseUrls).map((baseUrl) => `${baseUrl}/${mediaPath}`);
+function isPrivateOrLocalHostname(value) {
+  const hostname = normalizeString(value).toLowerCase().replace(/^\[|\]$/g, '').replace(/\.$/, '');
+  return hostname === 'localhost' ||
+    hostname === 'media-gateway' ||
+    hostname === 'host.docker.internal' ||
+    hostname === '0.0.0.0' ||
+    hostname === '::1' ||
+    hostname.endsWith('.local') ||
+    /^127\./.test(hostname) ||
+    /^10\./.test(hostname) ||
+    /^192\.168\./.test(hostname) ||
+    /^172\.(1[6-9]|2\d|3[01])\./.test(hostname) ||
+    /^169\.254\./.test(hostname) ||
+    /^f[cd][0-9a-f]{2}:/i.test(hostname) ||
+    /^fe[89ab][0-9a-f]:/i.test(hostname);
 }
 
-async function probeExactMediaUrl(url) {
+function buildCandidateUrls(mediaPath, baseUrls) {
+  return uniqueBaseUrls(baseUrls).map((baseUrl) => new URL(mediaPath, `${baseUrl}/`).href);
+}
+
+export async function probeExactMediaUrl(
+  url,
+  expectedContentTypePrefix,
+  { fetchImpl = globalThis.fetch } = {},
+) {
   const controller = new AbortController();
   const timeout = setTimeout(
     () => controller.abort(),
     positiveInteger(process.env.SAMSAR_PUBLIC_MEDIA_PROBE_TIMEOUT_MS, DEFAULT_PROBE_TIMEOUT_MS, 100),
   );
   try {
-    const response = await fetch(url, {
+    const response = await fetchImpl(url, {
       method: 'GET',
       headers: { Range: 'bytes=0-0' },
       redirect: 'follow',
@@ -56,12 +102,31 @@ async function probeExactMediaUrl(url) {
       signal: controller.signal,
     });
     const contentType = normalizeString(response.headers?.get?.('content-type')).toLowerCase();
+    const finalUrl = normalizeString(response.url) || url;
+    let parsedFinalUrl;
+    try {
+      parsedFinalUrl = new URL(finalUrl);
+    } catch {
+      parsedFinalUrl = null;
+    }
+    const publicHttpsFinalUrl = Boolean(
+      parsedFinalUrl &&
+      parsedFinalUrl.protocol === 'https:' &&
+      !isPrivateOrLocalHostname(parsedFinalUrl.hostname),
+    );
     if (response.body && typeof response.body.cancel === 'function') {
       try {
         await response.body.cancel();
       } catch {}
     }
-    return (response.ok || response.status === 206) && !contentType.includes('text/html');
+    const invalidContentType = contentType.includes('text/html') ||
+      contentType.includes('application/json') ||
+      contentType.startsWith('text/');
+    const expectedPrefix = normalizeString(expectedContentTypePrefix).toLowerCase();
+    return (response.ok || response.status === 206) &&
+      publicHttpsFinalUrl &&
+      !invalidContentType &&
+      (!expectedPrefix || contentType.startsWith(expectedPrefix));
   } catch {
     return false;
   } finally {
@@ -69,10 +134,15 @@ async function probeExactMediaUrl(url) {
   }
 }
 
-async function findReachableCandidate(mediaPath, getBaseUrlCandidates) {
+async function findReachableCandidate(
+  mediaPath,
+  getBaseUrlCandidates,
+  expectedContentTypePrefix,
+  fetchImpl,
+) {
   const candidateUrls = buildCandidateUrls(mediaPath, await getBaseUrlCandidates());
   for (const candidateUrl of candidateUrls) {
-    if (await probeExactMediaUrl(candidateUrl)) {
+    if (await probeExactMediaUrl(candidateUrl, expectedContentTypePrefix, { fetchImpl })) {
       return { url: candidateUrl, attemptedUrls: candidateUrls };
     }
   }
@@ -137,13 +207,20 @@ export async function resolveFreshManagedProviderMediaUrl({
   mediaPath,
   getBaseUrlCandidates,
   serviceName = 'samsar_provider_worker',
+  expectedContentTypePrefix = '',
+  fetchImpl = globalThis.fetch,
 }) {
   if (typeof getBaseUrlCandidates !== 'function') {
     throw new TypeError('getBaseUrlCandidates must be a function.');
   }
 
   const normalizedMediaPath = normalizeMediaPath(mediaPath);
-  const initial = await findReachableCandidate(normalizedMediaPath, getBaseUrlCandidates);
+  const initial = await findReachableCandidate(
+    normalizedMediaPath,
+    getBaseUrlCandidates,
+    expectedContentTypePrefix,
+    fetchImpl,
+  );
   if (initial.url) {
     return initial.url;
   }
@@ -180,7 +257,12 @@ export async function resolveFreshManagedProviderMediaUrl({
 
   while (Date.now() < deadline) {
     await new Promise((resolve) => setTimeout(resolve, Math.min(pollMs, Math.max(1, deadline - Date.now()))));
-    const refreshed = await findReachableCandidate(normalizedMediaPath, getBaseUrlCandidates);
+    const refreshed = await findReachableCandidate(
+      normalizedMediaPath,
+      getBaseUrlCandidates,
+      expectedContentTypePrefix,
+      fetchImpl,
+    );
     attemptedUrls = [...new Set([...attemptedUrls, ...refreshed.attemptedUrls])];
     if (refreshed.url) {
       return refreshed.url;
@@ -194,4 +276,3 @@ export async function resolveFreshManagedProviderMediaUrl({
     refreshRequestPath,
   });
 }
-

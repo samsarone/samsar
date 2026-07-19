@@ -4,6 +4,7 @@ import VideoGeneration from "../schema/VideoGeneration.js";
 import AudioGeneration from "../schema/AudioGeneration.js";
 import FrameGeneration from "../schema/FrameGeneration.js";
 import { buildSecureMediaDeliveryUrl } from './AWS.js';
+import { resolveVideoResultUrl } from './api/VideoResultMediaUrl.js';
 
 
 import { requestGenerateLayeredSpeech, deleteAllFrameGenerations, requestGenerateTranscriptSpeech } from './VideoSession.js';
@@ -946,8 +947,9 @@ export async function getQuickSessionGenerationStatus(sessionId) {
   const videoGenerationPending = sessionData.videoGenerationPending;
   const videoCompleted = Boolean(sessionData.remoteURL || sessionData.videoLink);
   const sessionInferenceModel = sessionData.expressGenerationInferenceModel || sessionData.inferenceModel || null;
-  const resolvedVideoLink = resolveQuickSessionMediaUrl(sessionData.videoLink);
-  const resolvedRemoteUrl = resolveQuickSessionMediaUrl(sessionData.remoteURL);
+  const resolvedResultUrl = resolveVideoResultUrl(sessionData);
+  const resolvedVideoLink = resolvedResultUrl;
+  const resolvedRemoteUrl = resolvedResultUrl;
 
   // create timestamped list of images by layer duration
 
@@ -1026,8 +1028,9 @@ export async function getQuickSessionDetails(sessionId) {
     throw new Error('Session not found');
   }
   
-  const videoLink = resolveQuickSessionMediaUrl(sessionData.videoLink);
-  const remoteUrl = resolveQuickSessionMediaUrl(sessionData.remoteURL);
+  const resolvedResultUrl = resolveVideoResultUrl(sessionData);
+  const videoLink = resolvedResultUrl;
+  const remoteUrl = resolvedResultUrl;
 
   const publishedTags = Array.isArray(sessionData.publishedTags)
     ? sessionData.publishedTags

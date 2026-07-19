@@ -258,15 +258,9 @@ export async function addVisionDescriptionsForLayerImage(
   // We will no longer fetch the session to store the data here
   // This function just returns the generated description
 
-  const accessibleUrl = await getAccessibleMediaUrlForProvider(remoteImageUrl, {
-    preferDataUrl: false,
-    preferInternalDockerUrl: false,
-  });
-  const remoteUrl = await resolveVisionImageUrl(accessibleUrl);
-
   // Actually retrieve the description
   const responseData = await getDescriptionForImage(
-    remoteUrl,
+    remoteImageUrl,
     videoMode,
     userInferenceModel,
     requestedAspectRatio,
@@ -332,43 +326,57 @@ Provide an information-dense, condensed and thorough description in 3000 charact
     Provide an information-dense, condensed and thorough description in 3000 characters or less without any line breaks or special formatting.`;
   }
 
-  const activePayload = {
-    model: inferenceModel,
-    ...(!isGeminiInferenceModel(inferenceModel) && !isQwenInferenceModel(inferenceModel)
-      ? { reasoning_effort: GPT_56_SOL_REASONING_EFFORT }
-      : {}),
-    messages: [
-      {
-        role: "developer",
-        content: visionSystemPrompt,
-      },
-      {
-        role: "user",
-        content: [
-          { type: "text", text: userPrompt },
-          {
-            type: "image_url",
-            image_url: {
-              url: activeImageRemoteLink,
+  const buildActivePayload = (providerImageUrl) => ({
+      model: inferenceModel,
+      ...(!isGeminiInferenceModel(inferenceModel) && !isQwenInferenceModel(inferenceModel)
+        ? { reasoning_effort: GPT_56_SOL_REASONING_EFFORT }
+        : {}),
+      messages: [
+        {
+          role: "developer",
+          content: visionSystemPrompt,
+        },
+        {
+          role: "user",
+          content: [
+            { type: "text", text: userPrompt },
+            {
+              type: "image_url",
+              image_url: {
+                url: providerImageUrl,
+              },
             },
-          },
-        ],
-      },
-    ],
-  };
-  const routingPayload = withInferenceAuthorization(activePayload, inferenceAuthorization);
+          ],
+        },
+      ],
+    });
 
   const response = await runVisionInferenceWithRetry(
-    () => shouldUseSamsarExternalInference(routingPayload)
+    async () => {
+      if (isGeminiInferenceModel(inferenceModel)) {
+        const sourcePayload = buildActivePayload(activeImageRemoteLink);
+        const sourceRoutingPayload = withInferenceAuthorization(sourcePayload, inferenceAuthorization);
+        if (!shouldUseSamsarExternalInference(sourceRoutingPayload)) {
+          return createGoogleGeminiChatCompletion(sourcePayload.messages, inferenceModel);
+        }
+      }
+      const accessibleUrl = await getAccessibleMediaUrlForProvider(activeImageRemoteLink, {
+        preferDataUrl: false,
+        preferInternalDockerUrl: false,
+        mediaKind: 'image',
+      });
+      const providerImageUrl = await resolveVisionImageUrl(accessibleUrl);
+      const activePayload = buildActivePayload(providerImageUrl);
+      const routingPayload = withInferenceAuthorization(activePayload, inferenceAuthorization);
+      return shouldUseSamsarExternalInference(routingPayload)
         ? createSamsarExternalChatCompletion({ ...routingPayload, externalMaxRetries: 0 })
         : isQwenInferenceModel(inferenceModel)
           ? createQwenChatCompletion(routingPayload)
-          : isGeminiInferenceModel(inferenceModel)
-            ? createGoogleGeminiChatCompletion(activePayload.messages, inferenceModel)
-            : openai.chat.completions.create(activePayload),
+          : openai.chat.completions.create(activePayload, { maxRetries: 0 });
+    },
     {
       operationName: 'image description',
-      model: activePayload.model,
+      model: inferenceModel,
       imageReference: activeImageRemoteLink,
       finalErrorFactory: (error, attempt) => buildVisionProviderError(
         `Vision image description failed after ${attempt} attempts: ${getErrorMessage(error)}`,
@@ -484,7 +492,7 @@ Return only a single integer between 0 and 100.`;
         ? createQwenChatCompletion(routingPayload)
         : isGeminiInferenceModel(inferenceModel)
           ? createGoogleGeminiChatCompletion(messages, inferenceModel)
-          : openai.chat.completions.create(inferencePayload),
+          : openai.chat.completions.create(inferencePayload, { maxRetries: 0 }),
     {
       operationName: 'image score',
       model: inferencePayload.model,

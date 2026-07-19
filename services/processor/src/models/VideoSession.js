@@ -36,6 +36,7 @@ import { getAnimationPresetForType } from '../utils/AnimationUtils.js';
 import { getModerationForNarrative } from './moderation/CreateModeration.js';
 import { normalizeInferenceModel } from '../consts/InferenceModels.js';
 import { assertSubtitleGenerationAvailable } from '../consts/DockerAudioAvailability.js';
+import { resolveDockerLocalPublicProcessorBaseUrl } from '../consts/DockerDeploymentUrls.js';
 import { translateSpeech } from './agent/AudioCreatorAgent.js';
 import {
   applySubtitleLanguageSelectionForRerun,
@@ -121,6 +122,7 @@ import { buildSecureMediaDeliveryUrl, getObjectFromS3, uploadSpeechAudioToCDN } 
 
 import fs from 'fs';
 import fsPromises from 'fs/promises';
+import { resolveLocalMediaFilePath } from '../utils/LocalMediaAsset.js';
 import { randomBytes, randomUUID } from 'crypto';
 import VideoLayerEditTask from '../schema/VideoLayerEditTask.js';
 import {
@@ -180,6 +182,15 @@ function normalizeAiVideoGenerationRelativePath(value) {
 }
 
 function resolveLayerAiVideoRemoteUrl({ layer, userId }) {
+  // Prefer the durable mounted copy. Provider result URLs (FAL, signed CDN,
+  // etc.) may expire before a later lip-sync or sound-effect request. The
+  // downstream video worker resolves this canonical asset into a fresh public
+  // URL only when it submits to the external adapter.
+  const relativeVideoPath = normalizeAiVideoGenerationRelativePath(layer?.aiVideoLayer);
+  if (relativeVideoPath && userId) {
+    return `/${SECURE_ASSET_PREFIX}/${USER_RESOURCES_PREFIX}${userId}/ai_videos/${relativeVideoPath}`;
+  }
+
   const remoteLink = [
     layer?.aiVideoRemoteLink,
     layer?.soundEffectRemoteLink,
@@ -188,15 +199,27 @@ function resolveLayerAiVideoRemoteUrl({ layer, userId }) {
   if (remoteLink) {
     return buildSecureMediaDeliveryUrl(remoteLink) || remoteLink;
   }
+  return null;
+}
 
-  const relativeVideoPath = normalizeAiVideoGenerationRelativePath(layer?.aiVideoLayer);
-  if (!relativeVideoPath) {
-    return null;
-  }
-
-  return buildSecureMediaDeliveryUrl(
-    `${SECURE_ASSET_PREFIX}/${USER_RESOURCES_PREFIX}${userId}/ai_videos/${relativeVideoPath}`
+function shouldUseDockerLocalMediaDelivery(env = process.env) {
+  const mode = String(env.SAMSAR_MEDIA_DELIVERY_MODE || env.MEDIA_DELIVERY_MODE || '')
+    .trim()
+    .toLowerCase();
+  if (mode === 'docker-local' || mode === 'local-filesystem') return true;
+  if (mode === 's3-cloudfront' || mode === 'external-s3') return false;
+  const externalPublish = ['1', 'true', 'yes', 'on'].includes(
+    String(env.SAMSAR_EXTERNAL_MEDIA_PUBLISH_ENABLED || env.EXTERNAL_MEDIA_PUBLISH_ENABLED || '')
+      .trim()
+      .toLowerCase(),
   );
+  return String(env.CURRENT_ENV || '').trim().toLowerCase() === 'docker' && !externalPublish;
+}
+
+function selectMediaDeliverySource({ local, remote, generated } = {}, env = process.env) {
+  return shouldUseDockerLocalMediaDelivery(env)
+    ? getFirstNonEmptyString(local, generated, remote)
+    : getFirstNonEmptyString(remote, generated, local);
 }
 
 async function generateUniqueReadOnlyShareToken() {
@@ -467,6 +490,9 @@ function normalizeShareOgString(value) {
 }
 
 function getPublicApiBaseUrl() {
+  if (shouldUseDockerLocalMediaDelivery()) {
+    return resolveDockerLocalPublicProcessorBaseUrl();
+  }
   return (
     normalizeShareOgString(API_SERVER) ||
     normalizeShareOgString(process.env.PUBLIC_API_BASE_URL) ||
@@ -1647,7 +1673,7 @@ function buildRemoteAssetUrl(assetPath) {
     return '';
   }
 
-  const apiServer = typeof API_SERVER === 'string' ? API_SERVER.trim().replace(/\/+$/, '') : '';
+  const apiServer = getPublicApiBaseUrl();
   return apiServer ? `${apiServer}/${normalizedAssetPath}` : `/${normalizedAssetPath}`;
 }
 
@@ -2131,7 +2157,10 @@ function hydrateGuestLayerMediaForResponse(layer = {}, sessionPayload = {}) {
   videoSourceFields.forEach(([assetField, remoteField]) => {
     const rawAssetSource = hydratedLayer[assetField];
     const rawRemoteSource = hydratedLayer[remoteField];
-    const hydratedUrl = buildGuestMediaDeliveryUrl(rawRemoteSource || rawAssetSource, sessionPayload);
+    const hydratedUrl = buildGuestMediaDeliveryUrl(selectMediaDeliverySource({
+      local: rawAssetSource,
+      remote: rawRemoteSource,
+    }), sessionPayload);
     if (hydratedUrl) {
       if (rawAssetSource) {
         hydratedLayer[`raw${assetField[0].toUpperCase()}${assetField.slice(1)}`] = rawAssetSource;
@@ -2318,7 +2347,11 @@ function hydrateStudioLayerMediaForResponse(layer = {}, sessionPayload = {}, opt
       )
       : '';
     const hydratedUrl = buildStudioMediaDeliveryUrl(
-      rawRemoteSource || generatedRemoteSource || rawAssetSource
+      selectMediaDeliverySource({
+        local: rawAssetSource,
+        remote: rawRemoteSource,
+        generated: generatedRemoteSource,
+      })
     );
     if (!hydratedUrl) {
       return;
@@ -8589,6 +8622,93 @@ function getGuestMediaContentType(assetKey, fallbackContentType = '') {
   return 'application/octet-stream';
 }
 
+function parseGuestMediaByteRange(range, size) {
+  const normalizedRange = normalizeOptionalString(range);
+  if (!normalizedRange) {
+    return null;
+  }
+  const match = normalizedRange.match(/^bytes=(\d*)-(\d*)$/i);
+  if (!match || (!match[1] && !match[2])) {
+    const error = new Error('Invalid media byte range.');
+    error.statusCode = 416;
+    throw error;
+  }
+
+  let start;
+  let end;
+  if (!match[1]) {
+    const suffixLength = Number(match[2]);
+    if (!Number.isSafeInteger(suffixLength) || suffixLength <= 0) {
+      const error = new Error('Invalid media byte range.');
+      error.statusCode = 416;
+      throw error;
+    }
+    start = Math.max(size - suffixLength, 0);
+    end = size - 1;
+  } else {
+    start = Number(match[1]);
+    end = match[2] ? Number(match[2]) : size - 1;
+  }
+
+  if (
+    !Number.isSafeInteger(start) ||
+    !Number.isSafeInteger(end) ||
+    start < 0 ||
+    start >= size ||
+    end < start
+  ) {
+    const error = new Error('Requested media byte range is not satisfiable.');
+    error.statusCode = 416;
+    throw error;
+  }
+  return { start, end: Math.min(end, size - 1) };
+}
+
+async function buildLocalGuestMediaObject(assetKey, range = '') {
+  const candidatePath = resolveLocalMediaFilePath(assetKey);
+  if (!candidatePath) {
+    return null;
+  }
+
+  const assetsV2Root = path.resolve(process.env.SAMSAR_ASSETS_V2_ROOT || '/assets_v2');
+  try {
+    const [realRoot, realPath] = await Promise.all([
+      fsPromises.realpath(assetsV2Root),
+      fsPromises.realpath(candidatePath),
+    ]);
+    if (realPath !== realRoot && !realPath.startsWith(`${realRoot}${path.sep}`)) {
+      return null;
+    }
+    const stats = await fsPromises.stat(realPath);
+    if (!stats.isFile() || stats.size <= 0) {
+      return null;
+    }
+    const byteRange = parseGuestMediaByteRange(range, stats.size);
+    const streamOptions = byteRange
+      ? { start: byteRange.start, end: byteRange.end }
+      : undefined;
+    return {
+      stream: fs.createReadStream(realPath, streamOptions),
+      assetKey,
+      fileName: path.basename(assetKey),
+      contentType: getGuestMediaContentType(assetKey),
+      contentLength: byteRange
+        ? byteRange.end - byteRange.start + 1
+        : stats.size,
+      contentRange: byteRange
+        ? `bytes ${byteRange.start}-${byteRange.end}/${stats.size}`
+        : undefined,
+      acceptRanges: 'bytes',
+      statusCode: byteRange ? 206 : 200,
+    };
+  } catch (error) {
+    if (error?.statusCode === 416) {
+      throw error;
+    }
+    return null;
+  }
+}
+
 export async function getGuestSessionMediaObject(payload = {}) {
   await getDBConnectionString();
 
@@ -8614,6 +8734,16 @@ export async function getGuestSessionMediaObject(payload = {}) {
   });
   if (!guestSession) {
     const error = new Error('Guest session not found.');
+    error.statusCode = 404;
+    throw error;
+  }
+
+  if (shouldUseDockerLocalMediaDelivery()) {
+    const localMediaObject = await buildLocalGuestMediaObject(assetKey, range);
+    if (localMediaObject) {
+      return localMediaObject;
+    }
+    const error = new Error('Guest media asset was not found in mounted Docker storage.');
     error.statusCode = 404;
     throw error;
   }
@@ -13636,10 +13766,16 @@ export async function requestGenerateLipSync(userId, payload) {
 
     paddedAudioRelativePath = toAssetRelativePath(paddedAudioPath);
 
-    const dateString = new Date().toISOString().replace(/:/g, '-');
-
-    const remotePaddedAudioName = `padded_${speechLayerId}_${dateString}.mp3`;
-    paddedAudioRemotePath = await uploadSpeechAudioToCDN(paddedAudioPath, remotePaddedAudioName);
+    if (shouldUseDockerLocalMediaDelivery()) {
+      // The padded file already lives in the shared assets_v2 mount. Keep its
+      // canonical reference for UI/status/queue state; the downstream public
+      // adapter resolves a fresh tunnel only when it submits the lip-sync job.
+      paddedAudioRemotePath = paddedAudioRelativePath;
+    } else {
+      const dateString = new Date().toISOString().replace(/:/g, '-');
+      const remotePaddedAudioName = `padded_${speechLayerId}_${dateString}.mp3`;
+      paddedAudioRemotePath = await uploadSpeechAudioToCDN(paddedAudioPath, remotePaddedAudioName);
+    }
 
     // update audio layer links and duration
 
@@ -13814,4 +13950,9 @@ export const __testOnly__ = {
   hydrateStudioSessionMediaForResponse,
   collectSessionListThumbnailCandidates,
   buildSessionListThumbnailPayload,
+  resolveLayerAiVideoRemoteUrl,
+  shouldUseDockerLocalMediaDelivery,
+  selectMediaDeliverySource,
+  buildLocalGuestMediaObject,
+  parseGuestMediaByteRange,
 };

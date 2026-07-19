@@ -96,6 +96,7 @@ import {
 
 import { generateSoundEffectSyncedMMVideo, listenToPendingSoundEffectSyncedMMVideoRequest } from './sound_effect/SoundEffectSyncedMMVideoListener.js';
 import { uploadVideoToBucket, uploadFrameLayerImageToCDN, normalizeProviderMediaUrl } from './AWS.js';
+import { normalizeSelectedVideoGenerationMediaPayload } from './utils/VideoGenerationMediaPayload.js';
 
 import { generatePixVerseVideoLayer, listenToPendingPixVerseRequests } from './base/PixVerseI2VListener.js';
 
@@ -206,43 +207,6 @@ const MAX_DB_TRANSIENT_BACKOFF_MS = Math.max(
   MIN_DB_TRANSIENT_BACKOFF_MS,
   Number(process.env.AI_VIDEO_MAX_DB_TRANSIENT_BACKOFF_MS) || 60 * 1000
 );
-const PROVIDER_MEDIA_FIELDS = [
-  'startImage',
-  'start_image',
-  'start_image_url',
-  'endImage',
-  'end_image',
-  'firstFrame',
-  'first_frame',
-  'first_frame_url',
-  'lastFrame',
-  'last_frame',
-  'last_frame_url',
-  'imageUrl',
-  'imageURL',
-  'image_url',
-  'end_image_url',
-  'startVideo',
-  'start_video',
-  'startVideoUrl',
-  'start_video_url',
-  'inputVideo',
-  'input_video',
-  'inputVideoUrl',
-  'input_video_url',
-  'sourceVideo',
-  'source_video',
-  'sourceVideoUrl',
-  'source_video_url',
-  'videoLink',
-  'audioLink',
-  'videoUrl',
-  'audioUrl',
-  'video_url',
-  'audio_url',
-  'audioVideoAudioLink',
-];
-
 function normalizeString(value) {
   return typeof value === 'string' ? value.trim() : '';
 }
@@ -366,21 +330,6 @@ async function recordAIVideoProviderUsage(payload = {}, generationId) {
       originalVideoModel: payload.originalVideoModel,
     },
   });
-}
-
-async function normalizeProviderMediaPayload(payload) {
-  const normalizedPayload = typeof payload?.toObject === 'function'
-    ? payload.toObject()
-    : { ...payload };
-
-  for (const fieldName of PROVIDER_MEDIA_FIELDS) {
-    if (typeof normalizedPayload[fieldName] !== 'string' || !normalizedPayload[fieldName].trim()) {
-      continue;
-    }
-    normalizedPayload[fieldName] = await normalizeProviderMediaUrl(normalizedPayload[fieldName]);
-  }
-
-  return normalizedPayload;
 }
 
 export function resolveConnectedAudioLayerDuration({
@@ -1422,12 +1371,26 @@ async function generateAIVideoLayer(payload) {
     console.error('RETRYING...' + numRetries);
   }
 
-  payload = await normalizeProviderMediaPayload(payload);
+  // Resolve only media that the selected public adapter will actually receive.
+  // Samsar external adapters normalize their own exact request body, while
+  // native Google Veo reads mounted images into inline bytes and needs no
+  // public tunnel URL.
+  const usesSamsarExternalProvider = shouldUseSamsarExternalVideoProvider(payload);
+  const usesGoogleInlineMedia = (
+    ['VEO3.1', 'VEO3.1FAST', 'VEO3.1I2V', 'VEO3.1I2VFAST'].includes(model) &&
+    shouldUseGoogleVeo3ForPayload(model, payload)
+  );
+  if (!usesSamsarExternalProvider && !usesGoogleInlineMedia) {
+    payload = await normalizeSelectedVideoGenerationMediaPayload(
+      payload,
+      normalizeProviderMediaUrl,
+    );
+  }
 
   let generationId;
 
 
-  if (shouldUseSamsarExternalVideoProvider(payload)) {
+  if (usesSamsarExternalProvider) {
     generationId = await generateSamsarExternalVideoLayer(payload);
   } else if (model === 'LUMA' || model === 'LUMAFLASH2') {
     // generationId = await generateLumaAiVideoLayer(payload);

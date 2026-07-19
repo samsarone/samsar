@@ -212,3 +212,136 @@ test('docker media URLs require a media tunnel for remote provider requests', as
     }
   }
 });
+
+test('docker provider media canonicalizes mounted keys and rejects malformed local references', async () => {
+  const previousEnv = {
+    CURRENT_ENV: process.env.CURRENT_ENV,
+    SAMSAR_ASSETS_V2_ROOT: process.env.SAMSAR_ASSETS_V2_ROOT,
+    SAMSAR_ASSETS_ROOT: process.env.SAMSAR_ASSETS_ROOT,
+    SAMSAR_MEDIA_TUNNEL_PUBLIC_URL: process.env.SAMSAR_MEDIA_TUNNEL_PUBLIC_URL,
+    SAMSAR_MEDIA_DELIVERY_MODE: process.env.SAMSAR_MEDIA_DELIVERY_MODE,
+    MEDIA_DELIVERY_MODE: process.env.MEDIA_DELIVERY_MODE,
+  };
+  const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'samsar-media-canonical-'));
+  const assetsV2Root = path.join(tempRoot, 'assets_v2');
+  const assetsRoot = path.join(tempRoot, 'assets');
+
+  try {
+    process.env.CURRENT_ENV = 'docker';
+    process.env.SAMSAR_ASSETS_V2_ROOT = assetsV2Root;
+    process.env.SAMSAR_ASSETS_ROOT = assetsRoot;
+    process.env.SAMSAR_MEDIA_TUNNEL_PUBLIC_URL = 'https://media-tunnel.trycloudflare.com';
+    process.env.SAMSAR_MEDIA_DELIVERY_MODE = 'docker-local';
+    process.env.MEDIA_DELIVERY_MODE = 'docker-local';
+    const bareReference = 'generations/session-id/frame.png';
+    const mediaPath = path.join(assetsV2Root, bareReference);
+    await fs.mkdir(path.dirname(mediaPath), { recursive: true });
+    await fs.mkdir(assetsRoot, { recursive: true });
+    await fs.writeFile(mediaPath, Buffer.from([6]));
+
+    assert.equal(
+      await getAccessibleMediaUrlForProvider(bareReference),
+      'https://media-tunnel.trycloudflare.com/assets_v2/generations/session-id/frame.png',
+    );
+    assert.equal(
+      await getAccessibleMediaUrlForProvider('https://third-party.example/assets_v2/reference.png'),
+      'https://third-party.example/assets_v2/reference.png',
+    );
+    assert.equal(
+      await getAccessibleMediaUrlForProvider('https://s3.us-east-1.amazonaws.com/unrelated-bucket/assets_v2/reference.png'),
+      'https://s3.us-east-1.amazonaws.com/unrelated-bucket/assets_v2/reference.png',
+    );
+    assert.equal(
+      await getAccessibleMediaUrlForProvider('https://foreign.trycloudflare.com/assets_v2/other/reference.png'),
+      'https://foreign.trycloudflare.com/assets_v2/other/reference.png',
+    );
+    assert.equal(
+      await getAccessibleMediaUrlForProvider(
+        'https://expired.trycloudflare.com/assets_v2/generations/session-id/frame.png',
+      ),
+      'https://media-tunnel.trycloudflare.com/assets_v2/generations/session-id/frame.png',
+    );
+    assert.equal(
+      await getAccessibleMediaUrlForProvider('https://static.samsar.one/assets_v2/other/reference.png'),
+      'https://static.samsar.one/assets_v2/other/reference.png',
+    );
+    await assert.rejects(
+      () => getAccessibleMediaUrlForProvider('http://localhost:3002/not-assets/frame.png'),
+      (error) => error?.code === 'SAMSAR_PROVIDER_MEDIA_REFERENCE_INVALID' && error?.retryable === false,
+    );
+  } finally {
+    await fs.rm(tempRoot, { recursive: true, force: true });
+    for (const [key, value] of Object.entries(previousEnv)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+});
+
+test('docker external-S3 media fails closed instead of using an implicit hosted CDN', async () => {
+  const previousEnv = {
+    CURRENT_ENV: process.env.CURRENT_ENV,
+    SAMSAR_ASSETS_V2_ROOT: process.env.SAMSAR_ASSETS_V2_ROOT,
+    SAMSAR_MEDIA_DELIVERY_MODE: process.env.SAMSAR_MEDIA_DELIVERY_MODE,
+    MEDIA_DELIVERY_MODE: process.env.MEDIA_DELIVERY_MODE,
+    SAMSAR_EXTERNAL_MEDIA_PUBLISH_ENABLED: process.env.SAMSAR_EXTERNAL_MEDIA_PUBLISH_ENABLED,
+    MEDIA_BUCKET_NAME: process.env.MEDIA_BUCKET_NAME,
+    STATIC_CDN_BUCKET: process.env.STATIC_CDN_BUCKET,
+    STATIC_CDN_URL: process.env.STATIC_CDN_URL,
+  };
+  const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'samsar-external-media-config-'));
+  try {
+    process.env.CURRENT_ENV = 'docker';
+    process.env.SAMSAR_ASSETS_V2_ROOT = tempRoot;
+    process.env.SAMSAR_MEDIA_DELIVERY_MODE = 'external-s3';
+    process.env.MEDIA_DELIVERY_MODE = 'external-s3';
+    process.env.SAMSAR_EXTERNAL_MEDIA_PUBLISH_ENABLED = 'true';
+    delete process.env.MEDIA_BUCKET_NAME;
+    delete process.env.STATIC_CDN_BUCKET;
+    delete process.env.STATIC_CDN_URL;
+    const mediaPath = path.join(tempRoot, 'generations', 'session-id', 'frame.png');
+    await fs.mkdir(path.dirname(mediaPath), { recursive: true });
+    await fs.writeFile(mediaPath, Buffer.from([7]));
+
+    await assert.rejects(
+      () => getAccessibleMediaUrlForProvider('/assets_v2/generations/session-id/frame.png'),
+      (error) => error?.code === 'SAMSAR_PROVIDER_MEDIA_REFERENCE_INVALID',
+    );
+  } finally {
+    await fs.rm(tempRoot, { recursive: true, force: true });
+    for (const [key, value] of Object.entries(previousEnv)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+});
+
+test('inline Docker media uses a media-kind-correct fallback MIME type', async () => {
+  const previousEnv = {
+    CURRENT_ENV: process.env.CURRENT_ENV,
+    SAMSAR_ASSETS_V2_ROOT: process.env.SAMSAR_ASSETS_V2_ROOT,
+    SAMSAR_MEDIA_DELIVERY_MODE: process.env.SAMSAR_MEDIA_DELIVERY_MODE,
+  };
+  const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'samsar-media-mime-'));
+  try {
+    process.env.CURRENT_ENV = 'docker';
+    process.env.SAMSAR_ASSETS_V2_ROOT = tempRoot;
+    process.env.SAMSAR_MEDIA_DELIVERY_MODE = 'docker-local';
+    const mediaPath = path.join(tempRoot, 'audio', 'sample.unknown');
+    await fs.mkdir(path.dirname(mediaPath), { recursive: true });
+    await fs.writeFile(mediaPath, Buffer.from([1, 2]));
+    assert.equal(
+      await getAccessibleMediaUrlForProvider('/assets_v2/audio/sample.unknown', {
+        preferDataUrl: true,
+        mediaKind: 'audio',
+      }),
+      'data:audio/mpeg;base64,AQI=',
+    );
+  } finally {
+    await fs.rm(tempRoot, { recursive: true, force: true });
+    for (const [key, value] of Object.entries(previousEnv)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+});

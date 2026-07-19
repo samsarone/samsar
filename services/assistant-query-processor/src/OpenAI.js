@@ -13,6 +13,8 @@ import {
   resolveConfiguredInferenceProvider,
   shouldUseSamsarExternalInference,
 } from './SamsarExternalInferenceAdapter.js';
+import { runExternalInferenceWithRetry } from './ExternalInferenceRetry.js';
+import { resolveProviderMediaPayload } from './ProviderMediaPayload.js';
 
 const API_KEY = process.env.OPENAI_API_KEY;
 
@@ -149,24 +151,49 @@ export async function sendAssistantSamsarExternalCompletionRequest(messageList, 
   };
 }
 
-export async function sendAssistantOpenAICompletionRequest(messageList, inferenceModel, reasoningEffort, options = {}) {
-
-
+export async function sendAssistantOpenAICompletionRequest(
+  messageList,
+  inferenceModel,
+  reasoningEffort,
+  options = {},
+  dependencyOverrides = {},
+) {
   const model = getModelNameForInferenceModel(inferenceModel);
+  const client = dependencyOverrides.client || openai;
+  const timeoutMs = getRequestTimeoutMs(options);
+  const retryOptions = {
+    timeoutMs,
+    maxRetries: options.externalMaxRetries ?? options.maxRetries,
+    ...(dependencyOverrides.retryOptions || {}),
+  };
 
   try {
-    const body = {
+    const sourceBody = {
       model,
       input: normalizeMessagesForResponses(messageList),
     };
-
-    body.reasoning = { effort: GPT_56_SOL_REASONING_EFFORT };
+    sourceBody.reasoning = { effort: GPT_56_SOL_REASONING_EFFORT };
 
     try {
-      const response = await openai.post('/responses', {
-        body,
-        timeout: getRequestTimeoutMs(options),
-      });
+      const response = await runExternalInferenceWithRetry(
+        async ({ signal }) => {
+          const body = await resolveProviderMediaPayload(sourceBody, {
+            resolveMediaUrl: dependencyOverrides.resolveMediaUrl,
+            serviceName: 'samsar_assistant_query_processor_openai_responses',
+          });
+          return client.post('/responses', {
+            body,
+            timeout: timeoutMs,
+            maxRetries: 0,
+            signal,
+          });
+        },
+        {
+          provider: 'openai-responses',
+          model,
+          ...retryOptions,
+        },
+      );
 
       return {
         model: response?.model || model,
@@ -175,18 +202,34 @@ export async function sendAssistantOpenAICompletionRequest(messageList, inferenc
         outputContent: extractResponsesOutputContent(response),
       };
     } catch (responsesError) {
-      if (!shouldFallbackToChatCompletions(responsesError, model)) {
+      const shouldFallback = dependencyOverrides.shouldFallbackToChatCompletions ||
+        shouldFallbackToChatCompletions;
+      if (!shouldFallback(responsesError, model)) {
         throw responsesError;
       }
 
-      const payload = {
+      const sourcePayload = {
         messages: normalizeMessagesForChatCompletions(messageList),
         model,
       };
-
-      const response = await openai.chat.completions.create(payload, {
-        timeout: getRequestTimeoutMs(options),
-      });
+      const response = await runExternalInferenceWithRetry(
+        async ({ signal }) => {
+          const payload = await resolveProviderMediaPayload(sourcePayload, {
+            resolveMediaUrl: dependencyOverrides.resolveMediaUrl,
+            serviceName: 'samsar_assistant_query_processor_openai_chat',
+          });
+          return client.chat.completions.create(payload, {
+            timeout: timeoutMs,
+            maxRetries: 0,
+            signal,
+          });
+        },
+        {
+          provider: 'openai-chat',
+          model,
+          ...retryOptions,
+        },
+      );
       const outputText = response?.choices?.[0]?.message?.content || '';
 
       return {
@@ -197,8 +240,13 @@ export async function sendAssistantOpenAICompletionRequest(messageList, inferenc
       };
     }
   } catch (error) {
-    let errorString = 'An error occurred while sending the message. Please try again with a different message.'
-    throw new Error(errorString);
+    if (typeof error?.code === 'string' && error.code.startsWith('SAMSAR_')) {
+      throw error;
+    }
+    throw new Error(
+      'An error occurred while sending the message. Please try again with a different message.',
+      { cause: error },
+    );
   }
 
 }
@@ -256,8 +304,7 @@ function normalizeContentForChatCompletions(content) {
   }
 
   const normalizedParts = content
-    .map((part) => normalizeChatCompletionContentPart(part))
-    .filter(Boolean);
+    .flatMap((part) => normalizeChatCompletionContentParts(part));
 
   if (normalizedParts.length === 0) {
     return '';
@@ -271,44 +318,88 @@ function normalizeContentForChatCompletions(content) {
   return normalizedParts;
 }
 
-function normalizeChatCompletionContentPart(part) {
+function flattenChatImageReferences(value, depth = 0) {
+  if (typeof value === 'string') return value.trim() ? [value] : [];
+  if (Array.isArray(value) && depth < 4) {
+    return value.flatMap((entry) => flattenChatImageReferences(entry, depth + 1));
+  }
+  if (!value || typeof value !== 'object' || depth >= 4) return [];
+  if (
+    typeof value.url === 'string' ||
+    typeof value.uri === 'string' ||
+    typeof value.image_url === 'string' ||
+    typeof value.imageUrl === 'string' ||
+    typeof value.data === 'string' ||
+    typeof value.base64 === 'string'
+  ) {
+    return [value];
+  }
+  return [
+    'image_url', 'imageUrl', 'image_uri', 'imageUri',
+    'source', 'urls', 'uris', 'sources',
+  ].flatMap((field) => flattenChatImageReferences(value[field], depth + 1));
+}
+
+function getChatImageReferences(part) {
+  return [
+    'image_url', 'imageUrl', 'image_uri', 'imageUri', 'input_image', 'inputImage', 'image',
+    'image_urls', 'imageUrls', 'image_uris', 'imageUris', 'images',
+    'url', 'uri', 'source', 'urls', 'uris', 'sources',
+  ].flatMap((field) => flattenChatImageReferences(part?.[field]));
+}
+
+function toChatImageUrl(reference, detail) {
+  if (typeof reference === 'string') {
+    return { url: reference, ...(detail ? { detail } : {}) };
+  }
+  if (!reference || typeof reference !== 'object') return null;
+  const data = typeof reference.data === 'string' ? reference.data : reference.base64;
+  const mimeType = reference.media_type || reference.mime_type || reference.mimeType || 'image/png';
+  const url = data
+    ? `data:${mimeType};base64,${data}`
+    : reference.url || reference.uri || reference.image_url || reference.imageUrl;
+  if (typeof url !== 'string' || !url.trim()) return null;
+  return {
+    url: url.trim(),
+    ...((reference.detail || detail) ? { detail: reference.detail || detail } : {}),
+  };
+}
+
+function normalizeChatCompletionContentParts(part) {
   if (!part || typeof part !== 'object') {
-    return null;
+    return [];
   }
 
   if (part.type === 'input_text' || part.type === 'output_text' || part.type === 'text') {
     return typeof part.text === 'string'
-      ? {
+      ? [{
           type: 'text',
           text: part.text,
-        }
-      : null;
+        }]
+      : [];
   }
 
-  if (part.type === 'input_image' || part.type === 'image_url') {
-    const imageUrl =
-      typeof part.image_url === 'string'
-        ? part.image_url
-        : typeof part.image_url?.url === 'string'
-        ? part.image_url.url
-        : '';
-
-    return imageUrl
-      ? {
+  const normalizedType = typeof part.type === 'string'
+    ? part.type.toLowerCase().replace(/[\s-]+/g, '_')
+    : '';
+  if (/(?:^|_)image(?:_|$)/.test(normalizedType)) {
+    return getChatImageReferences(part)
+      .map((reference) => toChatImageUrl(reference, part.detail))
+      .filter(Boolean)
+      .map((imageUrl) => ({
           type: 'image_url',
-          image_url: { url: imageUrl },
-        }
-      : null;
+          image_url: imageUrl,
+        }));
   }
 
   if (typeof part.text === 'string') {
-    return {
+    return [{
       type: 'text',
       text: part.text,
-    };
+    }];
   }
 
-  return null;
+  return [];
 }
 
 function extractResponsesOutputText(response) {

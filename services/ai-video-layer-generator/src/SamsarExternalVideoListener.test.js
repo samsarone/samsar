@@ -12,12 +12,19 @@ import {
 const originalFetch = globalThis.fetch;
 
 test.beforeEach(() => {
-  globalThis.fetch = async () => ({
-    ok: true,
-    status: 206,
-    headers: { get: () => 'application/octet-stream' },
-    body: { cancel: async () => {} },
-  });
+  globalThis.fetch = async (url) => {
+    const normalizedUrl = String(url);
+    const contentType = /\.mp3(?:$|\?)/i.test(normalizedUrl)
+      ? 'audio/mpeg'
+      : 'video/mp4';
+    return {
+      ok: true,
+      status: 206,
+      url: normalizedUrl,
+      headers: { get: () => contentType },
+      body: { cancel: async () => {} },
+    };
+  };
 });
 
 test.afterEach(() => {

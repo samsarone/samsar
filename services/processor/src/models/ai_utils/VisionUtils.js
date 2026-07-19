@@ -5,17 +5,50 @@ import { zodResponseFormat } from "openai/helpers/zod";
 import { createCompatibleChatCompletion } from "./OpenAICompat.js";
 import { getModelForUserInferenceModel } from "../agent/ModelUtils.js";
 import { getAccessibleVisionImageUrl } from './VisionMediaUrl.js';
-import { getDefaultUserInferenceModel } from '../../consts/InferenceModels.js';
+import {
+  getDefaultUserInferenceModel,
+  isGeminiInferenceModel,
+} from '../../consts/InferenceModels.js';
 
 const API_KEY = process.env.OPENAI_API_KEY;
 
 
 const openai = new OpenAI({ apiKey: API_KEY || '' });
 
+function getVisionDependencies(overrides = {}) {
+  return {
+    resolveImageUrl: typeof overrides.resolveImageUrl === 'function'
+      ? overrides.resolveImageUrl
+      : getAccessibleVisionImageUrl,
+    createCompletion: typeof overrides.createCompletion === 'function'
+      ? overrides.createCompletion
+      : createCompatibleChatCompletion,
+    sleep: typeof overrides.sleep === 'function'
+      ? overrides.sleep
+      : (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)),
+  };
+}
 
-export async function getImageMetaData(startImageUrl, userInferenceModel = getDefaultUserInferenceModel()) {
+function isRetryableVisionError(error) {
+  return Boolean(error?.message) && error?.retryable !== false;
+}
 
-  const imageData = await getDescriptionForImage(startImageUrl, userInferenceModel);
+async function getProviderImageReference(sourceReference, model, dependencies) {
+  // Native Gemini embeds bytes as inlineData and reads Docker-mounted media
+  // directly. URL-based providers still need a fresh public URL per attempt.
+  return isGeminiInferenceModel(model)
+    ? sourceReference
+    : dependencies.resolveImageUrl(sourceReference);
+}
+
+
+export async function getImageMetaData(
+  startImageUrl,
+  userInferenceModel = getDefaultUserInferenceModel(),
+  dependencyOverrides = {},
+) {
+
+  const imageData = await getDescriptionForImage(startImageUrl, userInferenceModel, dependencyOverrides);
 
   return imageData;
 
@@ -23,11 +56,15 @@ export async function getImageMetaData(startImageUrl, userInferenceModel = getDe
 
 
 
-async function getDescriptionForImage(activeImageRemoteLink, userInferenceModel = getDefaultUserInferenceModel()) {
+async function getDescriptionForImage(
+  activeImageRemoteLink,
+  userInferenceModel = getDefaultUserInferenceModel(),
+  dependencyOverrides = {},
+) {
   let attempts = 0;
   const maxRetries = 2;
   let backoff = 1000;
-  const accessibleImageUrl = await getAccessibleVisionImageUrl(activeImageRemoteLink);
+  const dependencies = getVisionDependencies(dependencyOverrides);
 
   const userPrompt = `
   You are analyzing a single generative frame image which will be used to generate a video.
@@ -35,28 +72,33 @@ async function getDescriptionForImage(activeImageRemoteLink, userInferenceModel 
   Create Detailed Theme of the image including cinematic and color details, image style, image vibes etc. in a single paragraph upto 3000 characters without any title, linebreaks or heading.
   Create a detailed Description of the image including detailed features of any people or objects of interest in the image upto 3000 characters in a single paragraph without any title, linebreaks or heading.`;
 
-  const activePayload = {
-    model: getModelForUserInferenceModel(userInferenceModel),
-    messages: [
-      {
-        role: "user",
-        content: [
-          { type: "text", text: userPrompt },
-          {
-            type: "image_url",
-            image_url: {
-              url: accessibleImageUrl,
-            },
-          },
-        ],
-      },
-    ],
-  };
-
   while (attempts <= maxRetries) {
     try {
+      const model = getModelForUserInferenceModel(userInferenceModel);
+      const accessibleImageUrl = await getProviderImageReference(
+        activeImageRemoteLink,
+        model,
+        dependencies,
+      );
+      const activePayload = {
+        model,
+        messages: [
+          {
+            role: "user",
+            content: [
+              { type: "text", text: userPrompt },
+              {
+                type: "image_url",
+                image_url: {
+                  url: accessibleImageUrl,
+                },
+              },
+            ],
+          },
+        ],
+      };
 
-      const response = await createCompatibleChatCompletion(openai, activePayload);
+      const response = await dependencies.createCompletion(openai, activePayload);
       const responsePayload = response.choices[0].message.content;
 
 
@@ -75,14 +117,14 @@ async function getDescriptionForImage(activeImageRemoteLink, userInferenceModel 
       return resData;
     } catch (error) {
       // Check if error indicates an image upload issue
-      if (error.message) {
+      if (isRetryableVisionError(error)) {
 
         attempts++;
         if (attempts > maxRetries) {
           console.error("Max retries reached. Returning score 0.");
           return 0;
         }
-        await new Promise(resolve => setTimeout(resolve, backoff));
+        await dependencies.sleep(backoff);
         backoff *= 2; // Exponential backoff
       } else {
         // If it's not an image upload error, rethrow it
@@ -97,39 +139,48 @@ async function getDescriptionForImage(activeImageRemoteLink, userInferenceModel 
 
 
 
-export async function getDescriptionForImageToCreateImageList(activeImageRemoteLink, userInferenceModel = getDefaultUserInferenceModel()) {
+export async function getDescriptionForImageToCreateImageList(
+  activeImageRemoteLink,
+  userInferenceModel = getDefaultUserInferenceModel(),
+  dependencyOverrides = {},
+) {
   let attempts = 0;
   const maxRetries = 2;
   let backoff = 1000;
-  const accessibleImageUrl = await getAccessibleVisionImageUrl(activeImageRemoteLink);
+  const dependencies = getVisionDependencies(dependencyOverrides);
 
   const userPrompt = `
   You are analyzing a user provided image which will be used to generate multiple related images.
   Describe the image in detail including style, colors, objects, people, setting and mood.
   Give a single paragraph 4-5 line description without any title, linebreaks or heading.`;
 
-  const activePayload = {
-    model: getModelForUserInferenceModel(userInferenceModel),
-    messages: [
-      {
-        role: "user",
-        content: [
-          { type: "text", text: userPrompt },
-          {
-            type: "image_url",
-            image_url: {
-              url: accessibleImageUrl,
-            },
-          },
-        ],
-      },
-    ],
-  };
-
   while (attempts <= maxRetries) {
     try {
+      const model = getModelForUserInferenceModel(userInferenceModel);
+      const accessibleImageUrl = await getProviderImageReference(
+        activeImageRemoteLink,
+        model,
+        dependencies,
+      );
+      const activePayload = {
+        model,
+        messages: [
+          {
+            role: "user",
+            content: [
+              { type: "text", text: userPrompt },
+              {
+                type: "image_url",
+                image_url: {
+                  url: accessibleImageUrl,
+                },
+              },
+            ],
+          },
+        ],
+      };
 
-      const response = await createCompatibleChatCompletion(openai, activePayload);
+      const response = await dependencies.createCompletion(openai, activePayload);
 
 
 
@@ -141,7 +192,7 @@ export async function getDescriptionForImageToCreateImageList(activeImageRemoteL
 
     } catch (error) {
       // Check if error indicates an image upload issue
-      if (error.message) {
+      if (isRetryableVisionError(error)) {
         console.error(error.message);
 
 
@@ -150,7 +201,7 @@ export async function getDescriptionForImageToCreateImageList(activeImageRemoteL
           console.error("Max retries reached. Returning score 0.");
           return 0;
         }
-        await new Promise(resolve => setTimeout(resolve, backoff));
+        await dependencies.sleep(backoff);
         backoff *= 2; // Exponential backoff
       } else {
         // If it's not an image upload error, rethrow it
@@ -163,11 +214,15 @@ export async function getDescriptionForImageToCreateImageList(activeImageRemoteL
 }
 
 
-export async function getDescriptionForImageToCreateTranscript(activeImageRemoteLink, userInferenceModel = getDefaultUserInferenceModel()) {
+export async function getDescriptionForImageToCreateTranscript(
+  activeImageRemoteLink,
+  userInferenceModel = getDefaultUserInferenceModel(),
+  dependencyOverrides = {},
+) {
     let attempts = 0;
   const maxRetries = 2;
   let backoff = 1000;
-  const accessibleImageUrl = await getAccessibleVisionImageUrl(activeImageRemoteLink);
+  const dependencies = getVisionDependencies(dependencyOverrides);
 
   const userPrompt = `
   You are analyzing a user provided image which will be used to create a treanscript for video generation.
@@ -175,28 +230,33 @@ export async function getDescriptionForImageToCreateTranscript(activeImageRemote
   Describe any characters appearing prominently in details such that can can be referenced and tagged across images for character definition.
   Give a single paragraph 6-8 line description without any title, linebreaks or heading.`;
 
-  const activePayload = {
-    model: getModelForUserInferenceModel(userInferenceModel),
-    messages: [
-      {
-        role: "user",
-        content: [
-          { type: "text", text: userPrompt },
-          {
-            type: "image_url",
-            image_url: {
-              url: accessibleImageUrl,
-            },
-          },
-        ],
-      },
-    ],
-  };
-
   while (attempts <= maxRetries) {
     try {
+      const model = getModelForUserInferenceModel(userInferenceModel);
+      const accessibleImageUrl = await getProviderImageReference(
+        activeImageRemoteLink,
+        model,
+        dependencies,
+      );
+      const activePayload = {
+        model,
+        messages: [
+          {
+            role: "user",
+            content: [
+              { type: "text", text: userPrompt },
+              {
+                type: "image_url",
+                image_url: {
+                  url: accessibleImageUrl,
+                },
+              },
+            ],
+          },
+        ],
+      };
 
-      const response = await createCompatibleChatCompletion(openai, activePayload);
+      const response = await dependencies.createCompletion(openai, activePayload);
 
 
 
@@ -208,7 +268,7 @@ export async function getDescriptionForImageToCreateTranscript(activeImageRemote
 
     } catch (error) {
       // Check if error indicates an image upload issue
-      if (error.message) {
+      if (isRetryableVisionError(error)) {
         console.error(error.message);
 
 
@@ -217,7 +277,7 @@ export async function getDescriptionForImageToCreateTranscript(activeImageRemote
           console.error("Max retries reached. Returning score 0.");
           return 0;
         }
-        await new Promise(resolve => setTimeout(resolve, backoff));
+        await dependencies.sleep(backoff);
         backoff *= 2; // Exponential backoff
       } else {
         // If it's not an image upload error, rethrow it

@@ -102,6 +102,49 @@ test('uses Qwen Plus only for a nonempty assistant frame image', () => {
   });
 });
 
+test('expands every array-valued Qwen image and video reference into its own provider part', () => {
+  const { payload } = buildQwenChatRequest({
+    model: 'QWEN3.7',
+    messages: [{
+      role: 'user',
+      content: [
+        {
+          type: 'input_image',
+          sources: [
+            'https://media.example/one.png',
+            { uri: 'https://media.example/two.png' },
+          ],
+        },
+        {
+          type: 'input_video',
+          urls: [
+            'https://media.example/one.mp4',
+            { url: 'https://media.example/two.mp4', detail: 'high' },
+          ],
+        },
+        {
+          type: 'input_image',
+          src: 'https://media.example/three.png',
+        },
+        {
+          type: 'input_video',
+          href: 'https://media.example/three.mp4',
+        },
+      ],
+    }],
+  });
+
+  assert.equal(payload.model, 'qwen3.7-plus');
+  assert.deepEqual(payload.messages[0].content, [
+    { type: 'image_url', image_url: { url: 'https://media.example/one.png' } },
+    { type: 'image_url', image_url: { url: 'https://media.example/two.png' } },
+    { type: 'video_url', video_url: { url: 'https://media.example/one.mp4' } },
+    { type: 'video_url', video_url: { url: 'https://media.example/two.mp4' } },
+    { type: 'image_url', image_url: { url: 'https://media.example/three.png' } },
+    { type: 'video_url', video_url: { url: 'https://media.example/three.mp4' } },
+  ]);
+});
+
 test('converts JSON Schema output to Qwen JSON mode while retaining the schema instruction', () => {
   const { payload } = buildQwenChatRequest({
     model: 'QWEN3.7',

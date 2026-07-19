@@ -1,4 +1,8 @@
 import { GoogleAuth } from 'google-auth-library';
+import fs from 'node:fs';
+import { readFile } from 'node:fs/promises';
+
+import { resolveLocalAssetPath } from '../utils/LocalAssetPath.js';
 
 export const GPT_56_SOL_INFERENCE_MODEL = 'gpt-5.6-sol';
 export const GPT_56_SOL_REASONING_EFFORT = 'xhigh';
@@ -166,14 +170,60 @@ function parseDataUrl(dataUrl) {
   return match ? { mimeType: match[1] || DEFAULT_IMAGE_MIME_TYPE, data: match[2] } : null;
 }
 
-async function buildInlineImagePart(imageUrl) {
-  const normalizedUrl = normalizeString(typeof imageUrl === 'string' ? imageUrl : imageUrl?.url);
-  if (!normalizedUrl) return null;
+function getImageMimeType(reference) {
+  const normalized = normalizeString(reference).split('?')[0].split('#')[0].toLowerCase();
+  if (normalized.endsWith('.jpg') || normalized.endsWith('.jpeg')) return 'image/jpeg';
+  if (normalized.endsWith('.webp')) return 'image/webp';
+  if (normalized.endsWith('.gif')) return 'image/gif';
+  if (normalized.endsWith('.avif')) return 'image/avif';
+  return DEFAULT_IMAGE_MIME_TYPE;
+}
 
-  const dataImage = parseDataUrl(normalizedUrl);
+function getMountedImagePath(reference) {
+  let normalized = normalizeString(reference);
+  if (!normalized) return '';
+  if (/^file:/i.test(normalized)) {
+    try {
+      normalized = new URL(normalized).pathname;
+    } catch {
+      return '';
+    }
+  } else if (/^https?:\/\//i.test(normalized)) {
+    try {
+      const pathname = decodeURIComponent(new URL(normalized).pathname).replace(/^\/+/, '');
+      const mediaStart = pathname.search(/(?:^|\/)(?:assets_v2|assets)\//);
+      if (mediaStart < 0) return '';
+      normalized = pathname.slice(mediaStart).replace(/^\/+/, '');
+    } catch {
+      return '';
+    }
+  }
+  const localPath = resolveLocalAssetPath(normalized);
+  return localPath && fs.existsSync(localPath) ? localPath : '';
+}
+
+export async function buildInlineImagePart(imageUrl, options = {}) {
+  const sourceUrl = normalizeString(typeof imageUrl === 'string' ? imageUrl : imageUrl?.url);
+  if (!sourceUrl) return null;
+
+  const dataImage = parseDataUrl(sourceUrl);
   if (dataImage) return { inlineData: { mimeType: dataImage.mimeType, data: dataImage.data } };
 
-  const response = await fetch(normalizedUrl);
+  // Gemini receives inlineData. Read Docker-owned media from the shared mount;
+  // creating a public tunnel here would publish a URL the provider never uses.
+  const localPath = (options.resolveMountedImagePath || getMountedImagePath)(sourceUrl);
+  if (localPath) {
+    const buffer = await (options.readFileImpl || readFile)(localPath);
+    if (buffer.length > MAX_INLINE_IMAGE_BYTES) throw new Error('Image is too large for inline Gemini vision input.');
+    return {
+      inlineData: {
+        mimeType: getImageMimeType(localPath),
+        data: buffer.toString('base64'),
+      },
+    };
+  }
+
+  const response = await (options.fetchImpl || globalThis.fetch)(sourceUrl);
   if (!response.ok) throw new Error(`Unable to fetch image for Gemini vision request: ${response.status}`);
 
   const mimeType = response.headers.get('content-type')?.split(';')?.[0] || DEFAULT_IMAGE_MIME_TYPE;

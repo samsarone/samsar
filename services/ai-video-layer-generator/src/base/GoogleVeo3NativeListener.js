@@ -1,4 +1,8 @@
 import { GoogleAuth } from 'google-auth-library';
+import fs from 'node:fs';
+import path from 'node:path';
+
+import { getDockerPublicMediaKey } from '../AWS.js';
 
 const DEFAULT_VEO_LOCATION = 'us-central1';
 const DEFAULT_VEO_31_MODEL = 'veo-3.1-generate-001';
@@ -280,6 +284,50 @@ async function fetchRemoteImageForGoogleVeo(url) {
   };
 }
 
+function resolveMountedImagePath(reference) {
+  const normalized = normalizeString(reference);
+  if (!normalized) return '';
+
+  let directPath = normalized;
+  if (/^file:/i.test(normalized)) {
+    try {
+      directPath = new URL(normalized).pathname;
+    } catch {
+      return '';
+    }
+  }
+  if (!/^https?:/i.test(directPath) && path.isAbsolute(directPath) && fs.existsSync(directPath)) {
+    return directPath;
+  }
+
+  const mediaKey = getDockerPublicMediaKey(normalized);
+  if (!mediaKey) return '';
+  const normalizedKey = mediaKey.replace(/^\/+/, '');
+  const [prefix, ...relativeSegments] = normalizedKey.split('/');
+  const root = prefix === 'assets_v2'
+    ? path.resolve(process.env.SAMSAR_ASSETS_V2_ROOT || '/assets_v2')
+    : prefix === 'assets'
+      ? path.resolve(process.env.SAMSAR_ASSETS_ROOT || '/assets')
+      : '';
+  if (!root || !relativeSegments.length) return '';
+  const candidate = path.resolve(root, ...relativeSegments);
+  if (!candidate.startsWith(`${root}${path.sep}`) || !fs.existsSync(candidate)) return '';
+  return candidate;
+}
+
+async function readMountedImageForGoogleVeo(reference) {
+  const localPath = resolveMountedImagePath(reference);
+  if (!localPath) return null;
+  const buffer = await fs.promises.readFile(localPath);
+  if (buffer.length > MAX_GOOGLE_VEO_INPUT_IMAGE_BYTES) {
+    throw new Error('Google Veo input image exceeds the 20 MB limit.');
+  }
+  return {
+    bytesBase64Encoded: buffer.toString('base64'),
+    mimeType: detectImageMimeType(buffer) || normalizeImageMimeType('', localPath),
+  };
+}
+
 async function buildVeoImagePayload(value) {
   const imageRef = normalizeString(value);
   if (!imageRef) return null;
@@ -294,12 +342,23 @@ async function buildVeoImagePayload(value) {
   const dataUrlPayload = parseDataImageUrl(imageRef);
   if (dataUrlPayload) return dataUrlPayload;
 
+  // Vertex receives inline bytes, not a media URL. A Docker-owned image can
+  // therefore be read straight from the mounted volume without creating a
+  // public tunnel that the provider never consumes.
+  const mountedImagePayload = await readMountedImageForGoogleVeo(imageRef);
+  if (mountedImagePayload) return mountedImagePayload;
+
   if (/^https?:\/\//i.test(imageRef)) {
     return await fetchRemoteImageForGoogleVeo(imageRef);
   }
 
   throw new Error(`Unsupported Google Veo input image reference: ${imageRef}`);
 }
+
+export const __testOnly__ = {
+  buildVeoImagePayload,
+  resolveMountedImagePath,
+};
 
 function resolveOptionalStorageUri(payload) {
   return (

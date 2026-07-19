@@ -14,9 +14,13 @@ import fs from 'fs';
 import crypto from 'crypto';
 import path from 'path';
 import sharp from 'sharp';
+import { resolveDockerLocalPublicProcessorBaseUrl } from '../consts/DockerDeploymentUrls.js';
 
 const DEFAULT_AWS_REGION = 'us-west-2';
-const MEDIA_BUCKET_NAME = process.env.MEDIA_BUCKET_NAME || process.env.STATIC_CDN_BUCKET || 'samsar-resources';
+const MEDIA_BUCKET_NAME = process.env.MEDIA_BUCKET_NAME ||
+  process.env.STATIC_CDN_BUCKET ||
+  process.env.SAMSAR_EXTERNAL_MEDIA_BUCKET ||
+  'samsar-resources';
 const STATIC_CDN_URL = process.env.STATIC_CDN_URL || 'https://static.samsar.one/';
 const PUBLICATION_MEDIA_KEY_PREFIX = 'published';
 const CDN_PRIME_RETRY_DELAY_MS = 500;
@@ -133,8 +137,8 @@ function encodeObjectKeyForUrl(key) {
     .join('/');
 }
 
-function buildStaticCdnUrl(key) {
-  const cdnBase = STATIC_CDN_URL.endsWith('/') ? STATIC_CDN_URL.slice(0, -1) : STATIC_CDN_URL;
+function buildStaticCdnUrl(key, baseUrl = STATIC_CDN_URL) {
+  const cdnBase = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;
   return `${cdnBase}/${encodeObjectKeyForUrl(key)}`;
 }
 
@@ -146,12 +150,39 @@ function buildPublicationMediaUrl(key) {
 }
 
 export function getPublicationsMediaConfig() {
+  if (shouldUseDockerLocalMedia()) {
+    return {
+      bucketName: MEDIA_BUCKET_NAME,
+      cdnUrl: resolveDockerLocalPublicProcessorBaseUrl(),
+      region: resolveBucketRegion(),
+      keyPrefix: PUBLICATION_MEDIA_KEY_PREFIX,
+      configured: true,
+      deliveryMode: 'docker-local',
+      externalStorageConfigured: false,
+    };
+  }
+
+  const externalConfig = getExplicitDockerExternalMediaConfig();
+  if (isDockerRuntime()) {
+    return {
+      bucketName: externalConfig.bucketName,
+      cdnUrl: externalConfig.cdnUrl,
+      region: resolveBucketRegion(),
+      keyPrefix: PUBLICATION_MEDIA_KEY_PREFIX,
+      configured: externalConfig.configured,
+      deliveryMode: 'external-s3',
+      externalStorageConfigured: externalConfig.configured,
+    };
+  }
+
   return {
     bucketName: MEDIA_BUCKET_NAME,
     cdnUrl: STATIC_CDN_URL.trim().replace(/\/+$/, ''),
     region: resolveBucketRegion(),
     keyPrefix: PUBLICATION_MEDIA_KEY_PREFIX,
     configured: Boolean(MEDIA_BUCKET_NAME && STATIC_CDN_URL.trim()),
+    deliveryMode: 'hosted-s3',
+    externalStorageConfigured: Boolean(MEDIA_BUCKET_NAME && STATIC_CDN_URL.trim()),
   };
 }
 
@@ -332,6 +363,50 @@ function shouldUseDockerLocalMedia() {
   return isDockerRuntime() && !isExternalMediaPublishEnabled();
 }
 
+function getExplicitDockerExternalMediaConfig() {
+  const bucketName = String(
+    process.env.MEDIA_BUCKET_NAME ||
+    process.env.STATIC_CDN_BUCKET ||
+    process.env.SAMSAR_EXTERNAL_MEDIA_BUCKET ||
+    '',
+  ).trim();
+  const cdnUrl = String(
+    process.env.STATIC_CDN_URL ||
+    process.env.SAMSAR_EXTERNAL_MEDIA_PUBLIC_BASE_URL ||
+    process.env.SAMSAR_PUBLIC_MEDIA_BASE_URL ||
+    '',
+  ).trim().replace(/\/+$/, '');
+  let validCdnUrl = false;
+  try {
+    const parsedUrl = new URL(cdnUrl);
+    validCdnUrl = parsedUrl.protocol === 'https:' &&
+      !parsedUrl.username &&
+      !parsedUrl.password &&
+      !parsedUrl.search &&
+      !parsedUrl.hash;
+  } catch {
+    validCdnUrl = false;
+  }
+  return {
+    bucketName,
+    cdnUrl,
+    configured: Boolean(bucketName && validCdnUrl),
+  };
+}
+
+function assertDockerExternalMediaConfigured() {
+  if (!isDockerRuntime() || shouldUseDockerLocalMedia()) {
+    return null;
+  }
+  const config = getExplicitDockerExternalMediaConfig();
+  if (!config.configured) {
+    throw new Error(
+      'Docker external-S3 media delivery requires an explicit bucket and public HTTPS CDN URL.',
+    );
+  }
+  return config;
+}
+
 function toSecureAssetKey(key) {
   const normalizedKey = normalizeObjectKey(key);
   return isSecureAssetKey(normalizedKey) ? normalizedKey : `${SECURE_ASSET_PREFIX}/${normalizedKey}`;
@@ -347,10 +422,11 @@ function buildMediaUploadKey(folderName, remoteFileName) {
 }
 
 function buildMediaDeliveryUrl(key) {
-  const cdnUrl = buildStaticCdnUrl(key);
   if (shouldUseDockerLocalMedia()) {
-    return cdnUrl;
+    return `${resolveDockerLocalPublicProcessorBaseUrl()}/${encodeObjectKeyForUrl(key)}`;
   }
+  const dockerExternalConfig = assertDockerExternalMediaConfigured();
+  const cdnUrl = buildStaticCdnUrl(key, dockerExternalConfig?.cdnUrl || STATIC_CDN_URL);
   return isSecureAssetKey(key) ? signCloudFrontUrl(cdnUrl) : cdnUrl;
 }
 
@@ -384,8 +460,8 @@ async function persistDockerMediaBuffer(buffer, key) {
 function isKnownMediaDeliveryUrl(value) {
   try {
     const parsedUrl = new URL(value);
-    const staticCdnHostname = new URL(STATIC_CDN_URL).hostname;
-    return parsedUrl.hostname === staticCdnHostname ||
+    const configuredMediaHostname = new URL(getPublicationsMediaConfig().cdnUrl).hostname;
+    return parsedUrl.hostname === configuredMediaHostname ||
       parsedUrl.hostname === `${MEDIA_BUCKET_NAME}.s3.amazonaws.com` ||
       parsedUrl.hostname.startsWith(`${MEDIA_BUCKET_NAME}.s3.`);
   } catch {
@@ -429,7 +505,10 @@ const ensureS3Client = () => {
   return getS3ClientForRegion(region);
 };
 
-const ensureCdnS3Client = () => getS3ClientForRegion(resolveCdnRegion());
+const ensureCdnS3Client = () => {
+  assertDockerExternalMediaConfigured();
+  return getS3ClientForRegion(resolveCdnRegion());
+};
 
 function scheduleS3ObjectDeletion({ s3, bucketName, key, expiresInSeconds }) {
   const ttlSeconds = Number(expiresInSeconds);
@@ -1042,3 +1121,9 @@ export async function deleteObjectsWithPrefix({ bucketName, prefix }) {
     continuationToken = listResponse?.IsTruncated ? listResponse.NextContinuationToken : undefined;
   } while (continuationToken);
 }
+
+export const __testOnly__ = {
+  buildMediaDeliveryUrl,
+  getExplicitDockerExternalMediaConfig,
+  shouldUseDockerLocalMedia,
+};

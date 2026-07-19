@@ -57,9 +57,9 @@ export async function submitFluxEditRequest(payload) {
 
 
 
-  const imageUrl = await getAccessibleMediaUrlForProvider(payload.image);
+  const imageUrl = await getAccessibleMediaUrlForProvider(payload.image, { mediaKind: 'image' });
   const maskUrl = payload.maskImage
-    ? await getAccessibleMediaUrlForProvider(payload.maskImage)
+    ? await getAccessibleMediaUrlForProvider(payload.maskImage, { mediaKind: 'image' })
     : null;
 
   let reqPayload =  {

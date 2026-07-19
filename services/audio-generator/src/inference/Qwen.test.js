@@ -33,6 +33,8 @@ test('uses Qwen Max for text and Plus only for actual multimodal content', () =>
       role: 'user',
       content: [
         { type: 'input_image', source: { data: 'abc', mime_type: 'image/jpeg' } },
+        { type: 'input_image', source: { urls: ['https://example.test/still-0.png'] } },
+        { imageUrls: ['https://example.test/still-1.png', 'https://example.test/still-2.png'] },
         {
           type: 'video_url',
           video_url: { url: ['https://example.test/frame-1.png', 'https://example.test/frame-2.png'] },
@@ -46,7 +48,15 @@ test('uses Qwen Max for text and Plus only for actual multimodal content', () =>
     'data:image/jpeg;base64,abc',
   );
   assert.deepEqual(
-    alternateMediaShapes.messages[0].content[1].video_url.url,
+    alternateMediaShapes.messages[0].content.slice(1, 4).map((item) => item.image_url.url),
+    [
+      'https://example.test/still-0.png',
+      'https://example.test/still-1.png',
+      'https://example.test/still-2.png',
+    ],
+  );
+  assert.deepEqual(
+    alternateMediaShapes.messages[0].content.slice(4).map((item) => item.video_url.url),
     ['https://example.test/frame-1.png', 'https://example.test/frame-2.png'],
   );
 });

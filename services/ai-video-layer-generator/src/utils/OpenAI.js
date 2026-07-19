@@ -21,6 +21,8 @@ import {
   resolveConfiguredInferenceProvider,
   shouldUseSamsarExternalInference,
 } from './SamsarExternalInferenceAdapter.js';
+import { normalizeProviderMediaUrl } from '../AWS.js';
+import { normalizeProviderMediaPayload } from './ProviderMediaPayload.js';
 
 let openaiClient = null;
 let openaiClientApiKey = '';
@@ -445,12 +447,17 @@ export async function sendAssistantMessageRequest(messageList, userInferenceMode
     }
 
     if (RESPONSES_ONLY_MODELS.has(modelName)) {
+      const providerPayload = await normalizeProviderMediaPayload(
+        { messages: messageList },
+        normalizeProviderMediaUrl,
+      );
       const response = await getOpenAIClient().post('/responses', {
         body: {
           model: modelName,
-          input: normalizeMessagesForResponses(messageList),
+          input: normalizeMessagesForResponses(providerPayload.messages),
           reasoning: { effort: GPT_56_SOL_REASONING_EFFORT },
         },
+        maxRetries: 0,
       });
       await recordInferenceProviderUsage({
         messageList,
@@ -465,9 +472,12 @@ export async function sendAssistantMessageRequest(messageList, userInferenceMode
       };
     }
 
-    const response = await getOpenAIClient().chat.completions.create({
+    const nativePayload = await normalizeProviderMediaPayload({
       messages: messageList,
       model: modelName,
+    }, normalizeProviderMediaUrl);
+    const response = await getOpenAIClient().chat.completions.create(nativePayload, {
+      maxRetries: 0,
     });
     await recordInferenceProviderUsage({
       messageList,
@@ -519,7 +529,10 @@ export async function sendAssistantStructuredMessageRequest(
     } else if (isQwenInferenceModel(payload.model)) {
       response = await createAlibabaQwenChatCompletion(payload);
     } else {
-      response = await getOpenAIClient().chat.completions.create(nativePayload);
+      response = await getOpenAIClient().chat.completions.create(
+        await normalizeProviderMediaPayload(nativePayload, normalizeProviderMediaUrl),
+        { maxRetries: 0 },
+      );
     }
     const messageContent = response.choices[0].message.content;
 

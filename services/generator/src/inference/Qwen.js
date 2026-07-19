@@ -1,4 +1,6 @@
 import OpenAI from 'openai';
+import { getAccessibleMediaUrlForProvider } from '../utils/MediaReferenceUtils.js';
+import { normalizeProviderMediaPayload } from '../utils/ProviderMediaPayload.js';
 
 import {
   DEFAULT_QWEN_37_MAX_MODEL,
@@ -75,9 +77,10 @@ function containsMultimodalContent(value, seen = new Set()) {
 
   if (typeof value.type === 'string' && MULTIMODAL_CONTENT_TYPES.has(value.type.toLowerCase())) {
     const mediaReference =
-      value.image_url || value.imageUrl || value.image ||
-      value.video_url || value.videoUrl || value.video ||
-      value.url || value.source;
+      value.image_url ?? value.imageUrl ?? value.image ?? value.image_urls ?? value.imageUrls ??
+      value.video_url ?? value.videoUrl ?? value.video ?? value.video_urls ?? value.videoUrls ??
+      value.url ?? value.uri ?? value.source ?? value.src ?? value.href ??
+      value.urls ?? value.uris ?? value.sources;
     if (typeof mediaReference === 'string' && mediaReference.trim()) {
       return true;
     }
@@ -114,6 +117,15 @@ function hasNonEmptyMediaReference(value, seen = new Set()) {
     value.file_id,
     value.fileId,
     value.source,
+    value.src,
+    value.href,
+    value.urls,
+    value.uris,
+    value.sources,
+    value.image_urls,
+    value.imageUrls,
+    value.video_urls,
+    value.videoUrls,
   ].some((item) => hasNonEmptyMediaReference(item, seen));
 }
 
@@ -192,62 +204,116 @@ function normalizeContentForQwen(content) {
   if (!Array.isArray(content)) {
     return content;
   }
-  return content.map((item) => {
+  return content.flatMap((item) => {
     if (!item || typeof item !== 'object') {
-      return item;
+      return [item];
     }
     if (item.type === 'input_text' || item.type === 'output_text') {
-      return { type: 'text', text: item.text || '' };
+      return [{ type: 'text', text: item.text || '' }];
     }
     if (item.type === 'input_image' || item.type === 'image') {
-      const imageUrl = normalizeMediaUrl(
-        item.image_url || item.imageUrl || item.image || item.url || item.source,
+      const imageUrls = normalizeMediaUrls(
+        item.image_url ?? item.imageUrl ?? item.image ?? item.image_urls ?? item.imageUrls ??
+          item.url ?? item.uri ?? item.source ?? item.src ?? item.href ??
+          item.urls ?? item.uris ?? item.sources,
         'image/png',
       );
-      return {
+      return imageUrls.map((imageUrl) => ({
         type: 'image_url',
         image_url: {
           url: imageUrl,
           ...(item.detail ? { detail: item.detail } : {}),
         },
-      };
+      }));
     }
     if (item.type === 'image_url') {
-      const imageUrl = normalizeMediaUrl(item.image_url || item.imageUrl || item.url, 'image/png');
-      return {
+      const imageReference = item.image_url ?? item.imageUrl ?? item.image_urls ?? item.imageUrls ??
+        item.url ?? item.uri ?? item.source ?? item.src ?? item.href ??
+        item.urls ?? item.uris ?? item.sources;
+      const imageUrls = normalizeMediaUrls(imageReference, 'image/png');
+      return imageUrls.map((imageUrl) => ({
         ...item,
         image_url: {
-          ...(item.image_url && typeof item.image_url === 'object' ? item.image_url : {}),
+          ...getMediaDescriptorMetadata(item.image_url),
           url: imageUrl,
         },
-      };
+      }));
     }
     if (item.type === 'input_video' || item.type === 'video') {
-      return {
+      const videoUrls = normalizeMediaUrls(
+        item.video_url ?? item.videoUrl ?? item.video ?? item.video_urls ?? item.videoUrls ??
+          item.url ?? item.uri ?? item.source ?? item.src ?? item.href ??
+          item.urls ?? item.uris ?? item.sources,
+        'video/mp4',
+      );
+      return videoUrls.map((videoUrl) => ({
         type: 'video_url',
         video_url: {
-          url: normalizeMediaUrl(
-            item.video_url || item.videoUrl || item.video || item.url || item.source,
-            'video/mp4',
-          ),
+          url: videoUrl,
         },
-      };
+      }));
     }
     if (item.type === 'video_url') {
-      return {
+      const videoReference = item.video_url ?? item.videoUrl ?? item.video_urls ?? item.videoUrls ??
+        item.url ?? item.uri ?? item.source ?? item.src ?? item.href ??
+        item.urls ?? item.uris ?? item.sources;
+      const videoUrls = normalizeMediaUrls(videoReference, 'video/mp4');
+      return videoUrls.map((videoUrl) => ({
         ...item,
         video_url: {
-          ...(item.video_url && typeof item.video_url === 'object' ? item.video_url : {}),
-          url: normalizeMediaUrl(item.video_url || item.videoUrl || item.url, 'video/mp4'),
+          ...getMediaDescriptorMetadata(item.video_url),
+          url: videoUrl,
         },
-      };
+      }));
     }
-    return item;
+    return [item];
   });
 }
 
+function normalizeMediaUrls(value, defaultMimeType) {
+  if (Array.isArray(value)) {
+    const normalized = value.flatMap((entry) => normalizeMediaUrls(entry, defaultMimeType));
+    return normalized.length > 0 ? normalized : [''];
+  }
+
+  if (value && typeof value === 'object' && !value.data && !value.base64) {
+    const nested = value.url ?? value.uri ?? value.source ?? value.src ?? value.href ??
+      value.urls ?? value.uris ?? value.sources ??
+      value.image_url ?? value.image_urls ?? value.video_url ?? value.video_urls;
+    if (Array.isArray(nested) || (nested && typeof nested === 'object')) {
+      return normalizeMediaUrls(nested, defaultMimeType);
+    }
+  }
+
+  return [normalizeMediaUrl(value, defaultMimeType)];
+}
+
+function getMediaDescriptorMetadata(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  const {
+    url: _url,
+    uri: _uri,
+    source: _source,
+    src: _src,
+    href: _href,
+    urls: _urls,
+    uris: _uris,
+    sources: _sources,
+    image_url: _imageUrl,
+    image_urls: _imageUrls,
+    video_url: _videoUrl,
+    video_urls: _videoUrls,
+    data: _data,
+    base64: _base64,
+    media_type: _mediaType,
+    mime_type: _mimeType,
+    ...metadata
+  } = value;
+  return metadata;
+}
+
 function normalizeMediaUrl(value, defaultMimeType) {
-  if (typeof value === 'string' || Array.isArray(value)) {
+  if (typeof value === 'string') {
     return value;
   }
   if (!value || typeof value !== 'object') {
@@ -258,7 +324,9 @@ function normalizeMediaUrl(value, defaultMimeType) {
     const mimeType = normalizeString(value.media_type || value.mime_type) || defaultMimeType;
     return `data:${mimeType};base64,${data}`;
   }
-  const url = value.url ?? value.uri ?? value.image_url ?? value.video_url ?? '';
+  const url = value.url ?? value.uri ?? value.source ?? value.src ?? value.href ??
+    value.urls ?? value.uris ?? value.sources ??
+    value.image_url ?? value.image_urls ?? value.video_url ?? value.video_urls ?? '';
   return typeof url === 'string' || Array.isArray(url) ? url : '';
 }
 
@@ -319,16 +387,20 @@ function getQwenClient() {
 }
 
 export async function createQwenChatCompletion(chatRequest = {}) {
-  const payload = buildQwenChatCompletionPayload(chatRequest);
+  const payload = await normalizeProviderMediaPayload(
+    buildQwenChatCompletionPayload(chatRequest),
+    (value, { mediaKind }) => getAccessibleMediaUrlForProvider(value, { mediaKind }),
+  );
   const timeout = toPositiveInteger(
     chatRequest.timeout ?? chatRequest.timeoutMs ?? process.env.QWEN_INFERENCE_TIMEOUT_MS,
   ) || DEFAULT_QWEN_TIMEOUT_MS;
-  const parsedMaxRetries = Number(chatRequest.maxRetries);
   const requestOptions = {
     timeout,
-    ...(Number.isInteger(parsedMaxRetries) && parsedMaxRetries >= 0
-      ? { maxRetries: parsedMaxRetries }
-      : {}),
+    // Provider media URLs are normalized immediately before this dispatch. Do
+    // not let the SDK retry the same payload after a short-lived Docker tunnel
+    // has expired; callers that retry must rebuild the payload so the URL is
+    // resolved again for every provider attempt.
+    maxRetries: 0,
   };
 
   return getQwenClient().chat.completions.create(payload, requestOptions);

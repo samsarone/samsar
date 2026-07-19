@@ -123,7 +123,13 @@ export async function downloadToFile(url) {
   const fileName = `image_${tsSeconds}.png`;
   const filePath = path.resolve(process.cwd(), fileName);
 
-  const accessibleUrl = await getAccessibleMediaUrlForProvider(url);
+  const accessibleUrl = await getAccessibleMediaUrlForProvider(url, {
+    mediaKind: 'image',
+    // This URL is consumed by this service before OpenAI receives multipart
+    // bytes. In Docker, use the internal media gateway instead of publishing a
+    // provider tunnel URL that no external adapter will ever see.
+    preferInternalDockerUrl: String(process.env.CURRENT_ENV || '').toLowerCase() === 'docker',
+  });
   const fileData = await axios.get(accessibleUrl, { responseType: "arraybuffer" });
   await fs.promises.writeFile(filePath, Buffer.from(fileData.data));
 

@@ -480,13 +480,14 @@ async function finalizeExternalSoundEffectGeneration(payload, remoteAudioUrl) {
     timeout: 60000,
   });
   await fs.promises.writeFile(audioSaveFilePath, Buffer.from(audioResponse.data));
+  const remoteFilePath = await uploadAudioAssetToCDN(audioSaveFilePath, audioAssetPath);
 
   if (await finalizeStandaloneExternalAudioGeneration({
     payload,
-    resultUrl: remoteAudioUrl,
-    resultUrls: [remoteAudioUrl],
+    resultUrl: remoteFilePath,
+    resultUrls: [remoteFilePath],
     localAudioPath: audioAssetPath,
-    remoteAudioData: [{ audio_url: remoteAudioUrl, title: 'Sound Effect' }],
+    remoteAudioData: [{ audio_url: remoteFilePath, title: 'Sound Effect' }],
     title: 'Sound Effect',
   })) {
     return;
@@ -497,8 +498,8 @@ async function finalizeExternalSoundEffectGeneration(payload, remoteAudioUrl) {
     {
       $set: {
         'audioLayers.$.localAudioLinks': [audioAssetPath],
-        'audioLayers.$.remoteAudioLinks': [remoteAudioUrl],
-        'audioLayers.$.remoteAudioData': [{ audio_url: remoteAudioUrl, title: 'Sound Effect' }],
+        'audioLayers.$.remoteAudioLinks': [remoteFilePath],
+        'audioLayers.$.remoteAudioData': [{ audio_url: remoteFilePath, title: 'Sound Effect' }],
         'audioLayers.$.generationStatus': 'COMPLETED',
         'audioLayers.$.generationError': null,
         'audioLayers.$.errorMessage': null,

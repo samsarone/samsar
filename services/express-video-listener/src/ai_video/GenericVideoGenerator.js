@@ -3,7 +3,6 @@
 import { getDBConnectionString } from '../DBString.js';
 import VideoSession from '../schema/VideoSession.js';
 import AIVideoLayerGeneration from '../schema/AIVideoLayerGeneration.js';
-import { normalizeProviderMediaUrl } from './utils/AWS.js';
 import { buildRetryableImageToVideoQueuePayload } from './utils/AIVideoQueuePayload.js';
 
 const IMAGE_REFERENCE_KEYS = [
@@ -59,18 +58,12 @@ function getLayerStartImageReference(currentLayer = {}, activeItemList = []) {
   return candidates.map(normalizeString).find(Boolean) || '';
 }
 
-async function getImageToVideoStartImageUrl(currentLayer, activeItemList, layerId) {
+function getImageToVideoStartImageReference(currentLayer, activeItemList, layerId) {
   const startImageReference = getLayerStartImageReference(currentLayer, activeItemList);
   if (!startImageReference) {
     throw new Error(`Image-to-video generation requires a start image for layer ${layerId}.`);
   }
-
-  const providerStartImageUrl = await normalizeProviderMediaUrl(startImageReference);
-  if (!/^https?:\/\//i.test(providerStartImageUrl)) {
-    throw new Error(`Image-to-video generation requires a provider-readable start image URL for layer ${layerId}.`);
-  }
-
-  return providerStartImageUrl;
+  return startImageReference;
 }
 
 export async function requestRenderExpressCustomVideo(payload) {
@@ -95,7 +88,7 @@ export async function requestRenderExpressCustomVideo(payload) {
   if (useStartFrame) {
 
     const currentLayerId = currentLayer._id.toString();
-    currentLayerFrameImage = await getImageToVideoStartImageUrl(
+    currentLayerFrameImage = getImageToVideoStartImageReference(
       currentLayer,
       activeItemList,
       currentLayerId,
@@ -163,3 +156,7 @@ export async function requestRenderExpressCustomVideo(payload) {
 
   // Render video
 }
+
+export const __testOnly__ = {
+  getImageToVideoStartImageReference,
+};

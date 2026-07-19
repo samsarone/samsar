@@ -3,6 +3,7 @@ import test from 'node:test';
 
 import {
   buildExternalChatRequestObjectId,
+  createExternalChatCompletion,
   getExternalChatTimeoutMs,
   isExternalChatPollingRequested,
   normalizeExternalChatRequestCorrelation,
@@ -63,4 +64,54 @@ test('hosted request ids are deterministic for a Docker client request id', () =
 
   assert.equal(first, second);
   assert.notEqual(first, otherUser);
+});
+
+test('external chat preserves raw multimodal aliases for adapter-boundary dispatch', async () => {
+  const payload = {
+    model: 'gpt-5.6-sol',
+    messages: [{
+      role: 'user',
+      content: [{
+        type: 'image_url',
+        image_url: {
+          url: 'http://localhost:3002/assets_v2/generations/session/external.png',
+        },
+      }],
+    }],
+  };
+  const originalPayload = JSON.parse(JSON.stringify(payload));
+  let capturedPayload;
+  let chargedMetadata;
+
+  const result = await createExternalChatCompletion({
+    userId: 'external-chat-user',
+    payload,
+  }, {
+    resolveMediaUrl: async () => {
+      throw new Error('API orchestration must not create provider media URLs.');
+    },
+    createCompletion: async (_client, providerPayload) => {
+      capturedPayload = providerPayload;
+      return {
+        id: 'external-chat-media',
+        model: 'gpt-5.6-sol',
+        choices: [{ message: { role: 'assistant', content: 'described' } }],
+        usage: { input_tokens: 10, output_tokens: 2, total_tokens: 12 },
+      };
+    },
+    deductCredits: async (_userId, _credits, options) => {
+      chargedMetadata = options.metadata;
+      return { remainingCredits: 123 };
+    },
+  });
+
+  assert.deepEqual(payload, originalPayload);
+  assert.equal(
+    capturedPayload.messages[0].content[0].image_url.url,
+    payload.messages[0].content[0].image_url.url,
+  );
+  assert.equal(capturedPayload.bypassSamsarExternalInference, true);
+  assert.equal(chargedMetadata.category, 'external_chat');
+  assert.equal(result.response.choices[0].message.content, 'described');
+  assert.equal(result.remainingCredits, 123);
 });

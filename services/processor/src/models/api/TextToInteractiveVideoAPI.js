@@ -22,7 +22,11 @@ import {
   normalizeNarrativeVideoModel,
   processCreateSingleNarrativeRequest,
 } from './NarrativeAPI.js';
-import { createVideoFromNarrativeRequest } from './NarrativeToVideoAPI.js';
+import {
+  DEFAULT_BRANCHED_VIDEO_ASPECT_RATIO,
+  createVideoFromNarrativeRequest,
+  normalizeBranchedVideoAspectRatio,
+} from './NarrativeToVideoAPI.js';
 import {
   validateExpressImageModelKey,
 } from './PromptUtils.js';
@@ -82,6 +86,43 @@ function readRequiredAlias(source, snakeKey, camelKey, label, code) {
   return snakeValue || camelValue;
 }
 
+function readTextToInteractiveVideoSessionId(payload = {}) {
+  const source = getPayloadSource(payload);
+  const aliases = [
+    'session_id',
+    'sessionId',
+    'sessionID',
+    'request_id',
+    'requestId',
+    'requestID',
+  ];
+  const provided = aliases.filter((key) => hasOwn(source, key));
+  if (provided.length === 0) return null;
+  const values = provided.map((key) => normalizeString(source[key]));
+  if (values.some((value) => !value)) {
+    throw buildError(
+      'session_id/request_id must be a non-empty string when provided.',
+      400,
+      'INVALID_SESSION_ID',
+    );
+  }
+  if (new Set(values).size > 1) {
+    throw buildError(
+      'session_id and request_id aliases must match when provided together.',
+      400,
+      'CONFLICTING_SESSION_ID',
+    );
+  }
+  if (values[0].length > 200) {
+    throw buildError(
+      'session_id/request_id must not exceed 200 characters.',
+      400,
+      'INVALID_SESSION_ID',
+    );
+  }
+  return values[0];
+}
+
 export function normalizeTextToInteractiveVideoPayload(payload = {}) {
   if (!isObject(payload)) {
     throw buildError('Request payload must be a JSON object.', 400, 'INVALID_REQUEST_PAYLOAD');
@@ -116,6 +157,7 @@ export function normalizeTextToInteractiveVideoPayload(payload = {}) {
     );
   }
   const numLevels = normalizeNarrativeBranchingLevelAliases(source);
+  const sessionId = readTextToInteractiveVideoSessionId(payload);
 
   return {
     prompt: singularPayload.prompt,
@@ -124,6 +166,8 @@ export function normalizeTextToInteractiveVideoPayload(payload = {}) {
     imageModel: imageModelValidation.imageModel,
     videoModel,
     numLevels,
+    aspectRatio: normalizeBranchedVideoAspectRatio(source),
+    ...(sessionId ? { sessionId } : {}),
   };
 }
 
@@ -220,7 +264,13 @@ function assertIdempotentPayloadMatches(existing, payloadHash) {
   );
 }
 
-async function initializeVideoSession({ sessionId, userId, requestId, payload }) {
+async function initializeVideoSession(
+  { sessionId, userId, requestId, payload },
+  {
+    videoSessionModel = VideoSession,
+    upsertSessionMapping = upsertGlobalSessionMapping,
+  } = {},
+) {
   const initialStatus = {
     prompt_generation: 'PENDING',
     image_generation: 'INIT',
@@ -233,7 +283,7 @@ async function initializeVideoSession({ sessionId, userId, requestId, payload })
     delete_reflow: 'INIT',
     timeline_reflowed: 'INIT',
   };
-  await VideoSession.findByIdAndUpdate(sessionId, {
+  await videoSessionModel.findByIdAndUpdate(sessionId, {
     $set: {
       interactiveVideoRequestId: requestId,
       narrativeType: 'branched',
@@ -253,9 +303,10 @@ async function initializeVideoSession({ sessionId, userId, requestId, payload })
       inputPrompt: payload.prompt,
       expressInputPrompt: payload.prompt,
       totalDuration: payload.duration,
+      aspectRatio: payload.aspectRatio || DEFAULT_BRANCHED_VIDEO_ASPECT_RATIO,
     },
   });
-  await upsertGlobalSessionMapping({
+  await upsertSessionMapping({
     sessionId,
     sessionType: 'video',
     requestId: sessionId,
@@ -271,6 +322,130 @@ async function initializeVideoSession({ sessionId, userId, requestId, payload })
   });
 }
 
+export async function createTextToInteractiveVideoDraftSession({
+  userId,
+  dependencies = {},
+} = {}) {
+  if (!userId) throw buildError('User ID is required.', 401, 'UNAUTHORIZED');
+  await getDBConnectionString();
+
+  const createBlankSession = dependencies.createNewBlankQuickSession ||
+    createNewBlankQuickSession;
+  const videoSessionModel = dependencies.videoSessionModel || VideoSession;
+  const upsertSessionMapping = dependencies.upsertGlobalSessionMapping ||
+    upsertGlobalSessionMapping;
+  const sessionId = await createBlankSession(userId);
+  const defaults = {
+    duration: 30,
+    imageModel: 'NANOBANANA2',
+    videoModel: 'COSMOS3SUPERI2V',
+    numLevels: 2,
+    aspectRatio: DEFAULT_BRANCHED_VIDEO_ASPECT_RATIO,
+  };
+
+  await videoSessionModel.findByIdAndUpdate(sessionId, {
+    $set: {
+      narrativeType: 'branched',
+      sourceNarrativeType: 'branched',
+      sessionType: 'video',
+      isExpressGeneration: true,
+      expressGenerationPending: false,
+      videoGenerationPending: false,
+      builderRouteType: 'text_to_interactive_video',
+      builderStatus: 'DRAFT',
+      builderSessionSubType: 'interactive_video_draft',
+      totalDuration: defaults.duration,
+      aspectRatio: defaults.aspectRatio,
+      expressGenerationImageModel: defaults.imageModel,
+      expressGenerativeVideoModel: defaults.videoModel,
+      interactiveVideoDraftConfig: defaults,
+    },
+  });
+  await upsertSessionMapping({
+    sessionId,
+    sessionType: 'video',
+    requestId: sessionId,
+    provider: defaults.videoModel,
+    userId,
+    status: 'DRAFT',
+    requestType: 'CREATOR',
+    sessionSubType: 'interactive_video_draft',
+    metadata: {
+      narrativeType: 'branched',
+      source: 'tmochi',
+      defaults,
+    },
+  });
+
+  return {
+    request_id: sessionId,
+    session_id: sessionId,
+    status: 'DRAFT',
+    narrative_type: 'branched',
+    defaults,
+  };
+}
+
+export async function validateTextToInteractiveVideoSessionInput({
+  userId,
+  payload = {},
+  dependencies = {},
+} = {}) {
+  if (!userId) throw buildError('User ID is required.', 401, 'UNAUTHORIZED');
+  const requestedSessionId = readTextToInteractiveVideoSessionId(payload);
+  if (!requestedSessionId) {
+    return {
+      normalizedPayload: normalizeTextToInteractiveVideoPayload(payload),
+      draftSession: null,
+    };
+  }
+
+  const videoSessionModel = dependencies.videoSessionModel || VideoSession;
+  const draftSession = await videoSessionModel.findOne({
+    _id: requestedSessionId,
+    userId,
+    narrativeType: 'branched',
+    builderStatus: 'DRAFT',
+    builderSessionSubType: 'interactive_video_draft',
+    interactiveVideoRequestId: null,
+  }).lean();
+  if (!draftSession) {
+    throw buildError(
+      'The interactive video draft session is unavailable or has already been submitted.',
+      409,
+      'INTERACTIVE_VIDEO_DRAFT_UNAVAILABLE',
+    );
+  }
+
+  const source = getPayloadSource(payload);
+  const defaults = isObject(draftSession.interactiveVideoDraftConfig)
+    ? draftSession.interactiveVideoDraftConfig
+    : {};
+  const mergedPayload = {
+    ...source,
+    duration: source.duration ?? defaults.duration ?? draftSession.totalDuration,
+    image_model:
+      source.image_model ?? source.imageModel ??
+      defaults.imageModel ?? draftSession.expressGenerationImageModel,
+    video_model:
+      source.video_model ?? source.videoModel ??
+      defaults.videoModel ?? draftSession.expressGenerativeVideoModel,
+    num_levels:
+      source.num_levels ?? source.numLevels ??
+      defaults.numLevels ?? 2,
+    aspect_ratio:
+      source.aspect_ratio ?? source.aspectRatio ??
+      defaults.aspectRatio ?? draftSession.aspectRatio ??
+      DEFAULT_BRANCHED_VIDEO_ASPECT_RATIO,
+    session_id: requestedSessionId,
+  };
+
+  return {
+    normalizedPayload: normalizeTextToInteractiveVideoPayload({ input: mergedPayload }),
+    draftSession,
+  };
+}
+
 export async function createTextToInteractiveVideoRequest({
   userId,
   payload = {},
@@ -280,26 +455,51 @@ export async function createTextToInteractiveVideoRequest({
   dependencies = {},
 } = {}) {
   if (!userId) throw buildError('User ID is required.', 401, 'UNAUTHORIZED');
-  const normalizedPayload = normalizeTextToInteractiveVideoPayload(payload);
   const normalizedIdempotencyKey = normalizeIdempotencyKey(idempotencyKey);
   const normalizedWebhookUrl = normalizeString(webhookUrl) || null;
-  const payloadHash = buildPayloadHash(normalizedPayload, normalizedWebhookUrl);
   const apiKeyUsage = normalizeAPIKeyUsageContext(authContext);
 
   await getDBConnectionString();
   await ensureIndexes();
-
   if (normalizedIdempotencyKey) {
     const existing = await InteractiveVideoRequest.findOne({
       userId: userId?.toString?.() || String(userId),
       idempotencyKey: normalizedIdempotencyKey,
     }).lean();
     if (existing) {
+      const suppliedSessionId = readTextToInteractiveVideoSessionId(payload);
+      if (suppliedSessionId && suppliedSessionId !== existing.sessionId?.toString?.()) {
+        throw buildError(
+          'The idempotency key is already associated with a different session.',
+          409,
+          'IDEMPOTENCY_KEY_CONFLICT',
+        );
+      }
+      const replaySource = getPayloadSource(payload);
+      const replayPayload = normalizeTextToInteractiveVideoPayload({
+        input: {
+          ...existing.payload,
+          ...replaySource,
+          ...(existing.payload?.sessionId
+            ? { session_id: existing.payload.sessionId }
+            : {}),
+        },
+      });
       return buildTextToInteractiveVideoResponse(
-        assertIdempotentPayloadMatches(existing, payloadHash),
+        assertIdempotentPayloadMatches(
+          existing,
+          buildPayloadHash(replayPayload, normalizedWebhookUrl),
+        ),
       );
     }
   }
+  const { normalizedPayload, draftSession } =
+    await validateTextToInteractiveVideoSessionInput({
+      userId,
+      payload,
+      dependencies,
+    });
+  const payloadHash = buildPayloadHash(normalizedPayload, normalizedWebhookUrl);
 
   const user = await User.findById(userId).select('generationCredits').lean();
   if (!user) throw buildError('User not found.', 404, 'USER_NOT_FOUND');
@@ -316,7 +516,15 @@ export async function createTextToInteractiveVideoRequest({
 
   const createBlankSession = dependencies.createNewBlankQuickSession ||
     createNewBlankQuickSession;
-  const sessionId = await createBlankSession(userId);
+  const requestedSessionId = normalizedPayload.sessionId || null;
+  let sessionId = requestedSessionId;
+  let createdBlankSession = false;
+  if (requestedSessionId) {
+    sessionId = draftSession._id?.toString?.() || requestedSessionId;
+  } else {
+    sessionId = await createBlankSession(userId);
+    createdBlankSession = true;
+  }
   let created;
   try {
     created = await InteractiveVideoRequest.create({
@@ -335,16 +543,18 @@ export async function createTextToInteractiveVideoRequest({
     // Every contender owns a newly created, still-empty session. If another
     // request won the idempotency-key insert, remove only this losing session
     // so retries cannot accumulate orphaned VideoSession rows.
-    await VideoSession.deleteOne({
-      _id: sessionId,
-      userId,
-      sourceNarrativeRequestId: null,
-    }).catch((cleanupError) => {
-      console.error('[text_to_interactive_video] blank session cleanup failed', {
-        sessionId,
-        message: cleanupError?.message || String(cleanupError),
+    if (createdBlankSession) {
+      await VideoSession.deleteOne({
+        _id: sessionId,
+        userId,
+        sourceNarrativeRequestId: null,
+      }).catch((cleanupError) => {
+        console.error('[text_to_interactive_video] blank session cleanup failed', {
+          sessionId,
+          message: cleanupError?.message || String(cleanupError),
+        });
       });
-    });
+    }
     const existing = await InteractiveVideoRequest.findOne({
       userId: userId?.toString?.() || String(userId),
       idempotencyKey: normalizedIdempotencyKey,
@@ -596,6 +806,9 @@ async function scheduleVideoSession(job, dependencies) {
       narrative_request_id: job.branchedNarrativeRequestId.toString(),
       image_model: job.payload.imageModel,
       video_model: job.payload.videoModel,
+      aspectRatio: normalizeBranchedVideoAspectRatio({
+        aspectRatio: job.payload.aspectRatio || DEFAULT_BRANCHED_VIDEO_ASPECT_RATIO,
+      }),
     },
     webhookUrl: job.webhookUrl,
     destinationSessionId: job.sessionId,
@@ -862,6 +1075,7 @@ export const __testOnly__ = {
   RETRY_DELAY_MS,
   WORKER_LEASE_MS,
   buildPayloadHash,
+  initializeVideoSession,
   isVideoSessionAlreadyScheduled,
   markFailed,
   queuedRequestIds,

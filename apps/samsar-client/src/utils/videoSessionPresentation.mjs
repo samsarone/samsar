@@ -2,6 +2,7 @@ const INTERACTIVE_NARRATIVE_TYPES = new Set([
   'branched',
   'branching',
   'interactive',
+  'interactivevideo',
   'interactive_video',
   'interactive-video',
 ]);
@@ -63,7 +64,8 @@ export function isInteractiveVideoSession(value) {
     value.sourceNarrativeType ||
     value.source_narrative_type ||
     value.narrativeGenerationType ||
-    value.narrative_generation_type
+    value.narrative_generation_type ||
+    value.type
   );
   if (INTERACTIVE_NARRATIVE_TYPES.has(narrativeType)) {
     return true;
@@ -84,6 +86,7 @@ export function isInteractiveVideoSession(value) {
     hasBranchManifest(value.branching_timeline) ||
     hasBranchManifest(value.branchingMeta) ||
     hasBranchManifest(value.branching_meta) ||
+    hasBranchManifest(value.manifest) ||
     (Array.isArray(value.branchRenderPaths) && value.branchRenderPaths.length > 0) ||
     (Array.isArray(value.branch_render_paths) && value.branch_render_paths.length > 0) ||
     firstText([value.defaultBranchPathId, value.default_branch_path_id])
@@ -196,6 +199,8 @@ function resolveManifestDefaultVideoUrl(publication) {
     outputs.default_url,
     manifest.defaultUrl,
     manifest.default_url,
+    defaultPath?.contentUrl,
+    defaultPath?.content_url,
     defaultPath?.url,
     defaultPath?.videoUrl,
     defaultPath?.video_url,
@@ -246,6 +251,8 @@ export function mergePublishedVideoSessionState({
     responseSession.published_at,
     publication.publishedAt,
     publication.published_at,
+    publication.datePublished,
+    publication.date_published,
     publication.updatedAt,
     publication.updated_at,
     publication.createdAt,

@@ -7,6 +7,7 @@ import User from '../../schema/User.js';
 import { generateBranchingNarrativeTree } from '../movie_session/branching/BranchingNarrativeTree.js';
 import {
   createVideoFromNarrativeRequest,
+  normalizeBranchedVideoAspectRatio,
   normalizeNarrativeToVideoPayload,
   resolveNarrativeToVideoModels,
   validateNarrativeToVideoSourceRequest,
@@ -130,6 +131,23 @@ test('normalizes the canonical and camel narrative request id with optional mode
     imageModel: 'GPTIMAGE2',
     videoModel: 'RUNWAYML',
   });
+});
+
+test('normalizes only the supported branched aspect ratios with a landscape default', () => {
+  assert.equal(normalizeBranchedVideoAspectRatio({}), '16:9');
+  assert.equal(normalizeBranchedVideoAspectRatio({ aspectRatio: '9:16' }), '9:16');
+  assert.equal(normalizeBranchedVideoAspectRatio({ aspect_ratio: '16:9' }), '16:9');
+  assert.throws(
+    () => normalizeBranchedVideoAspectRatio({ aspectRatio: '1:1' }),
+    (error) => error.code === 'INVALID_ASPECT_RATIO' && error.status === 400,
+  );
+  assert.throws(
+    () => normalizeBranchedVideoAspectRatio({
+      aspect_ratio: '16:9',
+      aspectRatio: '9:16',
+    }),
+    (error) => error.code === 'CONFLICTING_ASPECT_RATIO' && error.status === 400,
+  );
 });
 
 test('rejects source prompt or duration overrides and malformed model aliases', () => {
@@ -286,7 +304,7 @@ test('branched submission preserves the tree and forwards branching metadata', a
   setConnectionReadyForTest(t);
   const source = await buildBranchedSource();
   const sourceSnapshot = structuredClone(source);
-  let preparedPayload;
+  const preparedPayloads = [];
 
   t.mock.method(NarrativeRequest, 'findOne', () => ({ lean: async () => source }));
   t.mock.method(User, 'findById', () => ({
@@ -304,7 +322,7 @@ test('branched submission preserves the tree and forwards branching metadata', a
     payload: { narrative_request_id: SOURCE_ID },
     dependencies: {
       requestCreateVideoFromNarrativeArtifacts: async (_userId, payload) => {
-        preparedPayload = payload;
+        preparedPayloads.push(payload);
         payload.movieResourceList.nodes[0].scenes[0].visual = 'downstream mutation';
         payload.branchingMeta.leafNodeIds.length = 0;
         return { request_id: VIDEO_SESSION_ID, session_id: VIDEO_SESSION_ID };
@@ -312,8 +330,28 @@ test('branched submission preserves the tree and forwards branching metadata', a
     },
   });
 
+  await createVideoFromNarrativeRequest({
+    userId: USER_ID,
+    payload: {
+      narrative_request_id: SOURCE_ID,
+      aspectRatio: '9:16',
+    },
+    dependencies: {
+      requestCreateVideoFromNarrativeArtifacts: async (_userId, payload) => {
+        preparedPayloads.push(payload);
+        return { request_id: VIDEO_SESSION_ID, session_id: VIDEO_SESSION_ID };
+      },
+    },
+  });
+
+  const [preparedPayload, portraitPayload] = preparedPayloads;
+
   assert.equal(preparedPayload.narrativeType, 'branched');
   assert.equal(preparedPayload.sourceNarrativeType, 'branched');
+  assert.equal(preparedPayload.aspect_ratio, '16:9');
+  assert.equal(preparedPayload.aspectRatio, '16:9');
+  assert.equal(portraitPayload.aspect_ratio, '9:16');
+  assert.equal(portraitPayload.aspectRatio, '9:16');
   assert.equal(preparedPayload.movieResourceList.structureType, 'branched');
   assert.equal(preparedPayload.branchingMeta.numLevels, 1);
   assert.deepEqual(
@@ -363,6 +401,9 @@ test('submission scopes the source to its owner and sends isolated prepared arti
       narrative_request_id: SOURCE_ID,
       image_model: 'GPTIMAGE2',
       videoModel: 'RUNWAYML',
+      // The new branched-only field remains ignored for a singular source,
+      // preserving this endpoint's existing linear behavior.
+      aspectRatio: '1:1',
     },
     webhookUrl: 'https://example.com/video-ready',
     dependencies: {

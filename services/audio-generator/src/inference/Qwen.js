@@ -4,6 +4,8 @@ import {
   DEFAULT_QWEN_37_MAX_MODEL,
   DEFAULT_QWEN_37_PLUS_MODEL,
 } from './InferenceModels.js';
+import { runExternalInferenceWithRetry } from './ExternalInferenceRetry.js';
+import { normalizeProviderMediaPayload } from '../utils/ProviderMediaPayload.js';
 
 const DEFAULT_DASHSCOPE_BASE_URL = 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1';
 const DEFAULT_QWEN_TIMEOUT_MS = 10 * 60 * 1000;
@@ -76,15 +78,28 @@ function containsMultimodalContent(value, seen = new Set()) {
 
   if (typeof value.type === 'string' && MULTIMODAL_CONTENT_TYPES.has(value.type.toLowerCase())) {
     const mediaReference =
-      value.image_url || value.imageUrl || value.image ||
-      value.video_url || value.videoUrl || value.video ||
-      value.url || value.source;
+      value.image_url ?? value.imageUrl ?? value.image ?? value.images ??
+      value.image_urls ?? value.imageUrls ??
+      value.video_url ?? value.videoUrl ?? value.video ?? value.videos ??
+      value.video_urls ?? value.videoUrls ??
+      value.url ?? value.uri ?? value.source ?? value.src ?? value.href ??
+      value.urls ?? value.uris ?? value.sources;
     if (typeof mediaReference === 'string' && mediaReference.trim()) {
       return true;
     }
     if (hasNonEmptyMediaReference(mediaReference)) {
       return true;
     }
+  }
+
+  const directMediaReferences = [
+    value.image_url, value.imageUrl, value.image, value.images,
+    value.image_urls, value.imageUrls,
+    value.video_url, value.videoUrl, value.video, value.videos,
+    value.video_urls, value.videoUrls,
+  ];
+  if (directMediaReferences.some((reference) => hasNonEmptyMediaReference(reference))) {
+    return true;
   }
 
   if (Array.isArray(value)) {
@@ -114,6 +129,15 @@ function hasNonEmptyMediaReference(value, seen = new Set()) {
     value.file_id,
     value.fileId,
     value.source,
+    value.src,
+    value.href,
+    value.urls,
+    value.uris,
+    value.sources,
+    value.image_urls,
+    value.imageUrls,
+    value.video_urls,
+    value.videoUrls,
   ].some((item) => hasNonEmptyMediaReference(item, seen));
 }
 
@@ -192,74 +216,124 @@ function normalizeContentForQwen(content) {
   if (!Array.isArray(content)) {
     return content;
   }
-  return content.map((item) => {
+  return content.flatMap((item) => {
     if (!item || typeof item !== 'object') {
-      return item;
+      return [item];
     }
     if (item.type === 'input_text' || item.type === 'output_text') {
-      return { type: 'text', text: item.text || '' };
+      return [{ type: 'text', text: item.text || '' }];
     }
-    if (item.type === 'input_image' || item.type === 'image') {
-      const imageUrl = normalizeMediaUrl(
-        item.image_url || item.imageUrl || item.image || item.url || item.source,
+    if (
+      item.type === 'input_image' || item.type === 'image' ||
+      (!item.type && [
+        item.image_url, item.imageUrl, item.image, item.images, item.image_urls, item.imageUrls,
+      ].some((value) => value !== undefined))
+    ) {
+      const imageUrls = normalizeMediaUrls(
+        item.image_url ?? item.imageUrl ?? item.image ?? item.images ??
+          item.image_urls ?? item.imageUrls ?? item.url ?? item.uri ?? item.source ??
+          item.src ?? item.href ?? item.urls ?? item.uris ?? item.sources,
         'image/png',
       );
-      return {
+      return imageUrls.map((imageUrl) => ({
         type: 'image_url',
         image_url: {
           url: imageUrl,
           ...(item.detail ? { detail: item.detail } : {}),
         },
-      };
+      }));
     }
     if (item.type === 'image_url') {
-      const imageUrl = normalizeMediaUrl(item.image_url || item.imageUrl || item.url, 'image/png');
-      return {
+      const imageReference = item.image_url ?? item.imageUrl ?? item.image_urls ?? item.imageUrls ??
+        item.url ?? item.uri ?? item.source ?? item.src ?? item.href ??
+        item.urls ?? item.uris ?? item.sources;
+      const imageUrls = normalizeMediaUrls(imageReference, 'image/png');
+      return imageUrls.map((imageUrl) => ({
         ...item,
         image_url: {
-          ...(item.image_url && typeof item.image_url === 'object' ? item.image_url : {}),
+          ...getMediaDescriptorMetadata(item.image_url),
           url: imageUrl,
         },
-      };
+      }));
     }
-    if (item.type === 'input_video' || item.type === 'video') {
-      return {
+    if (
+      item.type === 'input_video' || item.type === 'video' ||
+      (!item.type && [
+        item.video_url, item.videoUrl, item.video, item.videos, item.video_urls, item.videoUrls,
+      ].some((value) => value !== undefined))
+    ) {
+      const videoUrls = normalizeMediaUrls(
+        item.video_url ?? item.videoUrl ?? item.video ?? item.videos ??
+          item.video_urls ?? item.videoUrls ?? item.url ?? item.uri ?? item.source ??
+          item.src ?? item.href ?? item.urls ?? item.uris ?? item.sources,
+        'video/mp4',
+      );
+      return videoUrls.map((videoUrl) => ({
         type: 'video_url',
         video_url: {
-          url: normalizeMediaUrl(
-            item.video_url || item.videoUrl || item.video || item.url || item.source,
-            'video/mp4',
-          ),
+          url: videoUrl,
         },
-      };
+      }));
     }
     if (item.type === 'video_url') {
-      return {
+      const videoReference = item.video_url ?? item.videoUrl ?? item.video_urls ?? item.videoUrls ??
+        item.url ?? item.uri ?? item.source ?? item.src ?? item.href ??
+        item.urls ?? item.uris ?? item.sources;
+      const videoUrls = normalizeMediaUrls(videoReference, 'video/mp4');
+      return videoUrls.map((videoUrl) => ({
         ...item,
         video_url: {
-          ...(item.video_url && typeof item.video_url === 'object' ? item.video_url : {}),
-          url: normalizeMediaUrl(item.video_url || item.videoUrl || item.url, 'video/mp4'),
+          ...getMediaDescriptorMetadata(item.video_url),
+          url: videoUrl,
         },
-      };
+      }));
     }
-    return item;
+    return [item];
   });
 }
 
-function normalizeMediaUrl(value, defaultMimeType) {
-  if (typeof value === 'string' || Array.isArray(value)) {
-    return value;
+function normalizeMediaUrls(value, defaultMimeType) {
+  if (Array.isArray(value)) {
+    return value.flatMap((item) => normalizeMediaUrls(item, defaultMimeType)).filter(Boolean);
+  }
+  if (typeof value === 'string') {
+    return value.trim() ? [value] : [];
   }
   if (!value || typeof value !== 'object') {
-    return '';
+    return [];
   }
   const data = normalizeString(value.data || value.base64);
   if (data) {
     const mimeType = normalizeString(value.media_type || value.mime_type) || defaultMimeType;
-    return `data:${mimeType};base64,${data}`;
+    return [`data:${mimeType};base64,${data}`];
   }
-  const url = value.url ?? value.uri ?? value.image_url ?? value.video_url ?? '';
-  return typeof url === 'string' || Array.isArray(url) ? url : '';
+  const url = value.url ?? value.uri ?? value.urls ?? value.uris ??
+    value.source ?? value.sources ?? value.image_url ?? value.video_url ?? '';
+  return normalizeMediaUrls(url, defaultMimeType);
+}
+
+function getMediaDescriptorMetadata(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  const {
+    url: _url,
+    uri: _uri,
+    source: _source,
+    src: _src,
+    href: _href,
+    urls: _urls,
+    uris: _uris,
+    sources: _sources,
+    image_url: _imageUrl,
+    image_urls: _imageUrls,
+    video_url: _videoUrl,
+    video_urls: _videoUrls,
+    data: _data,
+    base64: _base64,
+    media_type: _mediaType,
+    mime_type: _mimeType,
+    ...metadata
+  } = value;
+  return metadata;
 }
 
 function appendStructuredJsonInstruction(messages, responseFormat) {
@@ -319,17 +393,28 @@ function getQwenClient() {
 }
 
 export async function createQwenChatCompletion(chatRequest = {}) {
-  const payload = buildQwenChatCompletionPayload(chatRequest);
   const timeout = toPositiveInteger(
     chatRequest.timeout ?? chatRequest.timeoutMs ?? process.env.QWEN_INFERENCE_TIMEOUT_MS,
   ) || DEFAULT_QWEN_TIMEOUT_MS;
   const parsedMaxRetries = Number(chatRequest.maxRetries);
-  const requestOptions = {
-    timeout,
-    ...(Number.isInteger(parsedMaxRetries) && parsedMaxRetries >= 0
-      ? { maxRetries: parsedMaxRetries }
-      : {}),
-  };
-
-  return getQwenClient().chat.completions.create(payload, requestOptions);
+  const client = getQwenClient();
+  return runExternalInferenceWithRetry(
+    async ({ signal }) => {
+      const normalizedRequest = await normalizeProviderMediaPayload(chatRequest);
+      const payload = buildQwenChatCompletionPayload(normalizedRequest);
+      return client.chat.completions.create(payload, {
+        timeout,
+        maxRetries: 0,
+        signal,
+      });
+    },
+    {
+      provider: 'alibaba_qwen',
+      model: resolveQwenProviderModel(chatRequest),
+      timeoutMs: timeout,
+      maxRetries: Number.isInteger(parsedMaxRetries) && parsedMaxRetries >= 0
+        ? parsedMaxRetries
+        : process.env.QWEN_MAX_RETRIES,
+    },
+  );
 }

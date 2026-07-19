@@ -666,7 +666,7 @@ async function getImageUrlsForRequest(payload) {
     }
   }
 
-  return await getAccessibleMediaUrlsForProvider(urls);
+  return await getAccessibleMediaUrlsForProvider(urls, { mediaKind: 'image' });
 }
 
 async function mapSessionToRequestId(sessionId, requestId, model) {

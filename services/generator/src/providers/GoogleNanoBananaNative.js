@@ -5,6 +5,7 @@ import sharp from 'sharp';
 import { getDBConnectionString } from '../DBString.js';
 import ImageGeneration from '../schema/ImageGeneration.js';
 import { getGoogleAccessToken, getGoogleCloudConfig } from '../inference/GoogleADC.js';
+import { resolveLocalMediaReferencePath } from '../utils/MediaReferenceUtils.js';
 import { getCurrentEnvironment } from '../utils/Environment.js';
 
 const DEFAULT_NANOBANANA_2_MODEL = 'gemini-3.1-flash-image';
@@ -510,9 +511,12 @@ export async function buildGoogleNanoBananaImagePart(imageReference) {
     return { inlineData: dataImage };
   }
 
-  const inlineImage = /^https?:\/\//i.test(normalizedReference)
-    ? await fetchRemoteImageReference(normalizedReference)
-    : await readLocalImageReference(normalizedReference);
+  const localPath = resolveLocalMediaReferencePath(normalizedReference);
+  const inlineImage = localPath
+    ? await readLocalImageReference(localPath)
+    : /^https?:\/\//i.test(normalizedReference)
+      ? await fetchRemoteImageReference(normalizedReference)
+      : await readLocalImageReference(normalizedReference);
 
   return { inlineData: inlineImage };
 }

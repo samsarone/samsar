@@ -197,3 +197,68 @@ test('Qwen OpenRouter uses Plus for text and vision with bounded model settings'
   assert.equal(options[0].maxRetries, 0);
   assert.equal(options[0].signal instanceof AbortSignal, true);
 });
+
+test('OpenRouter rebuilds and exact-probes Docker media URLs for every retry', async (t) => {
+  const keys = [
+    'CURRENT_ENV',
+    'OPENROUTER_API_KEY',
+    'SAMSAR_EXTERNAL_INFERENCE_RETRY_BASE_DELAY_MS',
+    'SAMSAR_EXTERNAL_INFERENCE_RETRY_MAX_DELAY_MS',
+    'SAMSAR_MEDIA_DELIVERY_MODE',
+    'SAMSAR_MEDIA_TUNNEL_PUBLIC_URL',
+  ];
+  const previous = Object.fromEntries(keys.map((key) => [key, process.env[key]]));
+  t.after(() => {
+    for (const key of keys) {
+      if (previous[key] === undefined) delete process.env[key];
+      else process.env[key] = previous[key];
+    }
+  });
+  Object.assign(process.env, {
+    CURRENT_ENV: 'docker',
+    OPENROUTER_API_KEY: 'retry-openrouter-key',
+    SAMSAR_EXTERNAL_INFERENCE_RETRY_BASE_DELAY_MS: '1',
+    SAMSAR_EXTERNAL_INFERENCE_RETRY_MAX_DELAY_MS: '1',
+    SAMSAR_MEDIA_DELIVERY_MODE: 'docker-local',
+    SAMSAR_MEDIA_TUNNEL_PUBLIC_URL: 'https://fresh-media.example.test',
+  });
+
+  const probed = [];
+  t.mock.method(globalThis, 'fetch', async (url) => {
+    probed.push(url);
+    return {
+      ok: true,
+      status: 206,
+      url,
+      headers: { get: () => 'image/png' },
+    };
+  });
+  const providerPayloads = [];
+  t.mock.method(OpenAI.Chat.Completions.prototype, 'create', async (payload) => {
+    providerPayloads.push(payload);
+    if (providerPayloads.length === 1) {
+      const error = new Error('temporary upstream failure');
+      error.status = 500;
+      throw error;
+    }
+    return { choices: [{ message: { role: 'assistant', content: 'ok' } }] };
+  });
+
+  await createOpenRouterChatCompletion({
+    model: 'QWEN3.7',
+    maxRetries: 1,
+    messages: [{
+      role: 'user',
+      content: [{ type: 'image_url', image_url: { url: '/assets_v2/run/frame.png' } }],
+    }],
+  });
+
+  assert.deepEqual(probed, [
+    'https://fresh-media.example.test/assets_v2/run/frame.png',
+    'https://fresh-media.example.test/assets_v2/run/frame.png',
+  ]);
+  assert.deepEqual(
+    providerPayloads.map((payload) => payload.messages[0].content[0].image_url.url),
+    probed,
+  );
+});

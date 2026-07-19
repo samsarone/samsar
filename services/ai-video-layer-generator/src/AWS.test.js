@@ -28,15 +28,18 @@ const ENV_KEYS = [
   'SAMSAR_MEDIA_TUNNEL_REFRESH_POLL_MS',
   'SAMSAR_MEDIA_TUNNEL_REFRESH_REQUEST_PATH',
   'SAMSAR_EXTERNAL_MEDIA_PUBLISH_ENABLED',
+  'MEDIA_BUCKET_NAME',
+  'STATIC_CDN_BUCKET',
 ];
 
 const originalFetch = globalThis.fetch;
 
 test.beforeEach(() => {
-  globalThis.fetch = async () => ({
+  globalThis.fetch = async (url) => ({
     ok: true,
     status: 206,
-    headers: { get: () => 'image/png' },
+    url: String(url),
+    headers: { get: () => /\.(mp4|mov|webm)(?:$|\?)/i.test(String(url)) ? 'video/mp4' : 'image/png' },
     body: { cancel: async () => {} },
   });
 });
@@ -112,6 +115,106 @@ test('normalizes Docker local media references to runtime public tunnel URLs', a
     const { normalizeProviderMediaUrl } = await importAwsModule();
     const url = await normalizeProviderMediaUrl(`http://localhost:3002/${mediaRelativePath}`);
     assert.equal(url, `https://media-example.trycloudflare.com/${mediaRelativePath}`);
+    assert.equal(
+      await normalizeProviderMediaUrl(`https://expired.trycloudflare.com/${mediaRelativePath}`),
+      `https://media-example.trycloudflare.com/${mediaRelativePath}`,
+    );
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+    restoreEnv(envSnapshot);
+  }
+});
+
+test('qualifies bare generation paths with the mounted assets_v2 gateway namespace', async () => {
+  const envSnapshot = snapshotEnv();
+  const { tempRoot, mediaRelativePath } = prepareDockerMediaFixture({
+    publicMediaUrl: 'https://media-example.trycloudflare.com',
+  });
+  const bareGenerationPath = mediaRelativePath.replace(/^assets_v2\//, '');
+
+  try {
+    const { getDockerPublicMediaKey, normalizeProviderMediaUrl } = await importAwsModule();
+    assert.equal(
+      getDockerPublicMediaKey(bareGenerationPath, path.join(process.env.SAMSAR_ASSETS_V2_ROOT, bareGenerationPath)),
+      mediaRelativePath,
+    );
+    assert.equal(
+      await normalizeProviderMediaUrl(bareGenerationPath),
+      `https://media-example.trycloudflare.com/${mediaRelativePath}`,
+    );
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+    restoreEnv(envSnapshot);
+  }
+});
+
+test('qualifies legacy mounted assets with the assets gateway namespace', async () => {
+  const envSnapshot = snapshotEnv();
+  const { tempRoot } = prepareDockerMediaFixture({
+    publicMediaUrl: 'https://media-example.trycloudflare.com',
+  });
+  const barePath = 'video/session/source.mp4';
+  const localPath = path.join(process.env.SAMSAR_ASSETS_ROOT, barePath);
+  fs.mkdirSync(path.dirname(localPath), { recursive: true });
+  fs.writeFileSync(localPath, 'mp4');
+
+  try {
+    const { normalizeProviderMediaUrl } = await importAwsModule();
+    assert.equal(
+      await normalizeProviderMediaUrl(barePath),
+      `https://media-example.trycloudflare.com/assets/${barePath}`,
+    );
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+    restoreEnv(envSnapshot);
+  }
+});
+
+test('does not hijack an unrelated public URL whose path contains assets_v2', async () => {
+  const envSnapshot = snapshotEnv();
+  const { tempRoot } = prepareDockerMediaFixture({
+    publicMediaUrl: 'https://media-example.trycloudflare.com',
+  });
+  const thirdPartyUrl = 'https://third-party.example/archive/assets_v2/reference.png';
+
+  try {
+    const { buildSecureMediaDeliveryUrl, normalizeProviderMediaUrl } = await importAwsModule();
+    assert.equal(await normalizeProviderMediaUrl(thirdPartyUrl), thirdPartyUrl);
+    const thirdPartyS3Url = 'https://s3.us-east-1.amazonaws.com/unrelated-bucket/assets_v2/reference.png';
+    assert.equal(await normalizeProviderMediaUrl(thirdPartyS3Url), thirdPartyS3Url);
+    const foreignTunnelUrl = 'https://foreign.trycloudflare.com/assets_v2/other/reference.png';
+    assert.equal(await normalizeProviderMediaUrl(foreignTunnelUrl), foreignTunnelUrl);
+    const implicitHostedUrl = 'https://static.samsar.one/assets_v2/other/reference.png';
+    assert.equal(await normalizeProviderMediaUrl(implicitHostedUrl), implicitHostedUrl);
+    assert.equal(buildSecureMediaDeliveryUrl(implicitHostedUrl), implicitHostedUrl);
+    const implicitDefaultBucketUrl =
+      'https://samsar-resources.s3.amazonaws.com/assets_v2/other/reference.png';
+    assert.equal(buildSecureMediaDeliveryUrl(implicitDefaultBucketUrl), implicitDefaultBucketUrl);
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+    restoreEnv(envSnapshot);
+  }
+});
+
+test('fails closed for unresolved local, file, blob, and private Docker media references', async () => {
+  const envSnapshot = snapshotEnv();
+  const { tempRoot } = prepareDockerMediaFixture({
+    publicMediaUrl: 'https://media-example.trycloudflare.com',
+  });
+
+  try {
+    const { normalizeProviderMediaUrl } = await importAwsModule();
+    for (const reference of [
+      '/not-mounted/input.png',
+      'file:///not-mounted/input.png',
+      'blob:http://localhost/id',
+      'http://localhost:3002/not-assets/input.png',
+    ]) {
+      await assert.rejects(
+        () => normalizeProviderMediaUrl(reference),
+        (error) => error?.code === 'SAMSAR_PROVIDER_MEDIA_REFERENCE_INVALID' && error?.retryable === false,
+      );
+    }
   } finally {
     fs.rmSync(tempRoot, { recursive: true, force: true });
     restoreEnv(envSnapshot);
@@ -204,7 +307,9 @@ test('normalizes Docker media references to CloudFront URLs when external media 
   process.env.SAMSAR_MEDIA_DELIVERY_MODE = 's3-cloudfront';
   process.env.MEDIA_DELIVERY_MODE = 's3-cloudfront';
   process.env.SAMSAR_EXTERNAL_MEDIA_PUBLISH_ENABLED = 'true';
+  process.env.MEDIA_BUCKET_NAME = 'demo-external-media';
   process.env.STATIC_CDN_URL = 'https://static.example.com/';
+  process.env.SAMSAR_DOCKER_PUBLIC_PROCESSOR_BASE_URL = 'http://203.0.113.10/api';
 
   try {
     const { normalizeProviderMediaUrl } = await importAwsModule();
@@ -212,6 +317,56 @@ test('normalizes Docker media references to CloudFront URLs when external media 
       prime: false,
     });
     assert.equal(url, `https://static.example.com/${mediaRelativePath}`);
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+    restoreEnv(envSnapshot);
+  }
+});
+
+test('Docker external-S3 provider media fails closed without explicit bucket and CDN config', async () => {
+  const envSnapshot = snapshotEnv();
+  const { tempRoot, mediaRelativePath } = prepareDockerMediaFixture({
+    publicMediaUrl: 'http://localhost:3002/',
+  });
+  process.env.SAMSAR_MEDIA_DELIVERY_MODE = 's3-cloudfront';
+  process.env.MEDIA_DELIVERY_MODE = 's3-cloudfront';
+  process.env.SAMSAR_EXTERNAL_MEDIA_PUBLISH_ENABLED = 'true';
+  delete process.env.MEDIA_BUCKET_NAME;
+  delete process.env.STATIC_CDN_BUCKET;
+  delete process.env.STATIC_CDN_URL;
+
+  try {
+    const { buildSecureMediaDeliveryUrl, normalizeProviderMediaUrl } = await importAwsModule();
+    assert.throws(
+      () => buildSecureMediaDeliveryUrl(`/${mediaRelativePath}`),
+      (error) => error?.code === 'SAMSAR_PROVIDER_MEDIA_REFERENCE_INVALID',
+    );
+    await assert.rejects(
+      () => normalizeProviderMediaUrl(`/${mediaRelativePath}`, { prime: false }),
+      (error) => error?.code === 'SAMSAR_PROVIDER_MEDIA_REFERENCE_INVALID',
+    );
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+    restoreEnv(envSnapshot);
+  }
+});
+
+test('Docker-local persistence ignores a temporary API server tunnel', async () => {
+  const envSnapshot = snapshotEnv();
+  const { tempRoot } = prepareDockerMediaFixture({
+    publicMediaUrl: 'https://media-example.trycloudflare.com',
+  });
+  const sourceVideoPath = path.join(tempRoot, 'generated.mp4');
+  fs.writeFileSync(sourceVideoPath, 'mp4');
+  delete process.env.SAMSAR_DOCKER_PUBLIC_ASSET_BASE_URL;
+  delete process.env.SAMSAR_DOCKER_PUBLIC_PROCESSOR_BASE_URL;
+  process.env.API_SERVER = 'https://temporary-provider-tunnel.trycloudflare.com';
+  process.env.PROCESSOR_URL = 'http://localhost:3002';
+
+  try {
+    const { uploadFrameLayerVideoToCDN } = await importAwsModule();
+    const url = await uploadFrameLayerVideoToCDN(sourceVideoPath, 'user_resources/user-1/video.mp4');
+    assert.equal(url, 'http://localhost:3002/assets_v2/user_resources/user-1/video.mp4');
   } finally {
     fs.rmSync(tempRoot, { recursive: true, force: true });
     restoreEnv(envSnapshot);

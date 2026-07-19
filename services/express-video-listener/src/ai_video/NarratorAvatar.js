@@ -7,6 +7,8 @@ import { pipeline } from 'stream/promises';
 import { getDBConnectionString } from '../DBString.js';
 import VideoSession from '../schema/VideoSession.js';
 import { uploadSpeechAudioToCDN } from '../audio/AWS.js';
+import { normalizeProviderMediaUrl } from './utils/AWS.js';
+import { resolveLocalAssetPath } from '../utils/LocalAssetPath.js';
 
 const RUNWAY_API_BASE_URL = (process.env.RUNWAYML_BASE_URL || 'https://api.dev.runwayml.com').replace(/\/+$/, '');
 const RUNWAY_API_VERSION = process.env.RUNWAYML_API_VERSION || '2024-11-06';
@@ -15,6 +17,26 @@ const AVATAR_VIDEO_MAX_FILE_SIZE_BYTES = 512 * 1024 * 1024;
 
 function normalizeString(value = '') {
   return typeof value === 'string' ? value.trim() : '';
+}
+
+export async function resolveNarratorProviderMediaReference(
+  reference,
+  mediaType = 'media',
+  normalizeMediaUrl = normalizeProviderMediaUrl,
+) {
+  const normalizedReference = await normalizeMediaUrl(reference, {
+    mediaKind: ['image', 'video', 'audio'].includes(mediaType) ? mediaType : undefined,
+  });
+  const isRemoteUrl = /^https?:\/\//i.test(normalizedReference);
+  const isSupportedImageDataUrl = mediaType === 'image' && /^data:image\/[a-z0-9.+-]+;base64,/i.test(normalizedReference);
+
+  if (isRemoteUrl || isSupportedImageDataUrl) {
+    return normalizedReference;
+  }
+
+  throw new Error(
+    `Narrator avatar ${mediaType} must resolve to a provider-readable URL${mediaType === 'image' ? ' or image data URL' : ''}.`,
+  );
 }
 
 function getRunwayApiKey() {
@@ -90,6 +112,56 @@ function resolveAssetAbsolutePath(assetPath = '') {
   return normalizedAssetPath ? path.join(getAssetsBasePath(), normalizedAssetPath) : '';
 }
 
+function getMediaPathReference(reference = '') {
+  const normalizedReference = normalizeString(reference);
+  if (!normalizedReference) {
+    return '';
+  }
+  if (/^https?:\/\//i.test(normalizedReference) || normalizedReference.startsWith('file://')) {
+    try {
+      return decodeURIComponent(new URL(normalizedReference).pathname).replace(/^\/+/, '');
+    } catch {
+      return '';
+    }
+  }
+  return normalizedReference;
+}
+
+/**
+ * Resolve media consumed by this process (ffmpeg/download) without publishing
+ * it through the provider tunnel. Public URL normalization belongs only at
+ * the outbound Runway request boundary.
+ */
+export function resolveNarratorInternalMediaReference(reference) {
+  const normalizedReference = normalizeString(reference);
+  if (!normalizedReference) {
+    return '';
+  }
+
+  const pathReference = getMediaPathReference(normalizedReference);
+  const localCandidates = [normalizedReference, pathReference]
+    .filter(Boolean)
+    .filter((value, index, values) => values.indexOf(value) === index);
+
+  for (const candidate of localCandidates) {
+    const localPath = resolveLocalAssetPath(candidate);
+    if (localPath && fs.existsSync(localPath)) {
+      return localPath;
+    }
+  }
+
+  if (/^https?:\/\//i.test(normalizedReference)) {
+    return normalizedReference;
+  }
+
+  const legacyAssetPath = resolveAssetAbsolutePath(pathReference);
+  if (legacyAssetPath && fs.existsSync(legacyAssetPath)) {
+    return legacyAssetPath;
+  }
+
+  return normalizedReference;
+}
+
 function toAssetRelativePath(absolutePath = '') {
   const relativePath = path.relative(getAssetsBasePath(), absolutePath).split(path.sep).join('/');
   return relativePath.startsWith('/') ? relativePath : `/${relativePath}`;
@@ -109,13 +181,16 @@ async function getAvatarReferenceImage(sessionData = {}) {
   if (!imageSource) {
     return '';
   }
-  if (/^data:image\//i.test(imageSource) || /^https:\/\//i.test(imageSource)) {
+  if (/^data:image\//i.test(imageSource) || /^https?:\/\//i.test(imageSource)) {
     return imageSource;
   }
 
   const absolutePath = resolveAssetAbsolutePath(imageSource);
   if (!absolutePath || !fs.existsSync(absolutePath)) {
-    return '';
+    // assets_v2 and file: references may not be rooted under this module's legacy
+    // /assets lookup. Preserve the reference so the canonical provider resolver can
+    // map it to the mounted asset and refresh its public URL at the request boundary.
+    return imageSource;
   }
 
   const imageBuffer = await fs.promises.readFile(absolutePath);
@@ -308,7 +383,7 @@ async function buildContinuousNarratorAudio(sessionData = {}) {
   if (
     existingAudioPath &&
     fs.existsSync(existingAudioPath) &&
-    /^https:\/\//i.test(existingAudioUrl) &&
+    /^https?:\/\//i.test(existingAudioUrl) &&
     existingDurationMatches
   ) {
     return {
@@ -344,23 +419,28 @@ async function buildContinuousNarratorAudio(sessionData = {}) {
     return { pending: true };
   }
 
+  const resolvedSegments = segments.map((segment) => ({
+    ...segment,
+    source: resolveNarratorInternalMediaReference(segment.source),
+  }));
+
   const outputDir = path.join(getAssetsBasePath(), 'video', 'narrator_avatar', 'audio', sessionId.toString());
   fs.mkdirSync(outputDir, { recursive: true });
   const outputPath = path.join(outputDir, 'narrator_avatar.mp3');
 
   const args = ['-y', '-f', 'lavfi', '-t', `${durationSeconds}`, '-i', 'anullsrc=r=44100:cl=stereo'];
-  segments.forEach((segment) => {
+  resolvedSegments.forEach((segment) => {
     args.push('-i', segment.source);
   });
 
-  const filterParts = segments.map((segment, index) => {
+  const filterParts = resolvedSegments.map((segment, index) => {
     const inputIndex = index + 1;
     const delayMs = Math.max(0, Math.round(segment.startTime * 1000));
     const duration = Math.max(0.01, segment.duration);
     return `[${inputIndex}:a]aformat=sample_rates=44100:channel_layouts=stereo,atrim=0:${duration},asetpts=PTS-STARTPTS,adelay=${delayMs}|${delayMs}[n${index}]`;
   });
-  const mixInputs = ['[0:a]', ...segments.map((_, index) => `[n${index}]`)].join('');
-  filterParts.push(`${mixInputs}amix=inputs=${segments.length + 1}:duration=first:dropout_transition=0[mix]`);
+  const mixInputs = ['[0:a]', ...resolvedSegments.map((_, index) => `[n${index}]`)].join('');
+  filterParts.push(`${mixInputs}amix=inputs=${resolvedSegments.length + 1}:duration=first:dropout_transition=0[mix]`);
 
   args.push(
     '-filter_complex', filterParts.join(';'),
@@ -455,21 +535,26 @@ async function ensureRunwayNarratorAvatar(sessionData = {}) {
     return { pending: true };
   }
 
-  const referenceImage = await getAvatarReferenceImage(sessionData);
-  if (!referenceImage) {
+  const referenceImageSource = await getAvatarReferenceImage(sessionData);
+  if (!referenceImageSource) {
     return { pending: true };
   }
 
-  const avatar = await runwayPost('/v1/avatars', {
+  const avatarRequest = {
     name: 'Samsar narrator avatar',
-    referenceImage,
+    referenceImage: referenceImageSource,
     personality: buildAvatarPersonality(sessionData),
     voice: {
       type: 'runway-live-preset',
       presetId: getNarratorAvatarVoicePreset(sessionData),
     },
     imageProcessing: 'optimize',
-  });
+  };
+  avatarRequest.referenceImage = await resolveNarratorProviderMediaReference(
+    avatarRequest.referenceImage,
+    'image',
+  );
+  const avatar = await runwayPost('/v1/avatars', avatarRequest);
 
   const runwayAvatarStatus = normalizeString(avatar?.status).toUpperCase() || 'PROCESSING';
   await VideoSession.updateOne(
@@ -508,13 +593,20 @@ async function downloadAvatarVideoAsset(sessionData = {}, videoUrl = '') {
   fs.mkdirSync(outputDir, { recursive: true });
   const outputPath = path.join(outputDir, 'narrator_avatar.mp4');
 
-  const response = await axios.get(videoUrl, {
-    responseType: 'stream',
-    timeout: 120000,
-    maxContentLength: AVATAR_VIDEO_MAX_FILE_SIZE_BYTES,
-    maxBodyLength: AVATAR_VIDEO_MAX_FILE_SIZE_BYTES,
-  });
-  await pipeline(response.data, fs.createWriteStream(outputPath));
+  const internalVideoReference = resolveNarratorInternalMediaReference(videoUrl);
+  if (path.isAbsolute(internalVideoReference) && fs.existsSync(internalVideoReference)) {
+    if (path.resolve(internalVideoReference) !== path.resolve(outputPath)) {
+      await fs.promises.copyFile(internalVideoReference, outputPath);
+    }
+  } else {
+    const response = await axios.get(internalVideoReference, {
+      responseType: 'stream',
+      timeout: 120000,
+      maxContentLength: AVATAR_VIDEO_MAX_FILE_SIZE_BYTES,
+      maxBodyLength: AVATAR_VIDEO_MAX_FILE_SIZE_BYTES,
+    });
+    await pipeline(response.data, fs.createWriteStream(outputPath));
+  }
 
   const stats = await fs.promises.stat(outputPath);
   if (!stats?.isFile() || stats.size === 0) {
@@ -540,7 +632,7 @@ async function ensureRunwayNarratorAvatarVideo(sessionData = {}, avatarId, audio
 
   const existingTaskId = normalizeString(sessionData.narratorAvatarVideoTaskId);
   if (!existingTaskId) {
-    const avatarVideo = await runwayPost('/v1/avatar_videos', {
+    const avatarVideoRequest = {
       model: 'gwm1_avatars',
       avatar: {
         type: 'custom',
@@ -548,9 +640,14 @@ async function ensureRunwayNarratorAvatarVideo(sessionData = {}, avatarId, audio
       },
       speech: {
         type: 'audio',
-        audio: audioReference.audioUrl,
+        audio: audioReference.audioUrl || audioReference.audioPath,
       },
-    });
+    };
+    avatarVideoRequest.speech.audio = await resolveNarratorProviderMediaReference(
+      avatarVideoRequest.speech.audio,
+      'audio',
+    );
+    const avatarVideo = await runwayPost('/v1/avatar_videos', avatarVideoRequest);
 
     await VideoSession.updateOne(
       { _id: sessionId },
@@ -568,7 +665,8 @@ async function ensureRunwayNarratorAvatarVideo(sessionData = {}, avatarId, audio
 
   const videoTask = await runwayGet(`/v1/tasks/${existingTaskId}`);
   const nextStatus = normalizeString(videoTask?.status).toUpperCase();
-  const outputUrl = Array.isArray(videoTask?.output) ? normalizeString(videoTask.output[0]) : '';
+  const outputUrl = (Array.isArray(videoTask?.output) ? normalizeString(videoTask.output[0]) : '')
+    || normalizeString(sessionData.narratorAvatarVideoUrl);
 
   const baseUpdate = {
     narratorAvatarVideoStatus: nextStatus || 'PENDING',

@@ -7,8 +7,7 @@ import path from 'path';
 
 import { uploadSpeechAudioToCDN } from '../audio/AWS.js';
 import { padBlankAudioAtBeginningAndEnd } from '../audio/Audio.js';
-import { resolveProviderAiVideoUrl } from './utils/ProviderMediaUrl.js';
-import { normalizeProviderMediaUrl } from './utils/AWS.js';
+import { getCanonicalAiVideoReference } from './utils/ProviderMediaUrl.js';
 import {
   resolveLocalAssetPath,
   toLocalAssetReference,
@@ -51,12 +50,14 @@ function buildPaddedAudioRemoteFileName({ sessionId, layerId, speechLayerId, pad
   ].filter(Boolean).join('_');
 }
 
-async function resolveProviderAudioUrl(audioReference) {
-  const providerAudioUrl = await normalizeProviderMediaUrl(audioReference);
-  if (process.env.CURRENT_ENV === 'docker' && !/^https?:\/\//i.test(providerAudioUrl || '')) {
-    throw new Error('Lip sync generation requires a provider-readable audio URL.');
+function getCanonicalAudioReference(localReference, remoteReference) {
+  const normalizedLocalReference = typeof localReference === 'string'
+    ? localReference.trim()
+    : '';
+  if (normalizedLocalReference) {
+    return normalizedLocalReference;
   }
-  return providerAudioUrl;
+  return typeof remoteReference === 'string' ? remoteReference.trim() : '';
 }
 
 function findConnectedAudioLayer(sessionAudioLayers = [], currentLayer = {}, layerIndex = -1) {
@@ -278,7 +279,7 @@ export async function generateLipSyncForLayer(sessionId, currentLayer, connected
 
 
   let paddedAudioPath;
-  let paddedAudioRemotePath = await resolveProviderAudioUrl(remoteUrl);
+  let paddedAudioReference = getCanonicalAudioReference(selectedLocalAudioLink, remoteUrl);
   let paddedAudioRelativePath = selectedLocalAudioLink;
   const layerDuration = typeof currentLayer?.duration === 'number' ? currentLayer.duration : null;
   const speechLayerDuration = typeof speechLayerDurationFromPayload === 'number'
@@ -324,7 +325,10 @@ export async function generateLipSyncForLayer(sessionId, currentLayer, connected
       paddedFileName,
     });
     const uploadedPaddedAudioUrl = await uploadSpeechAudioToCDN(paddedAudioPath, remotePaddedAudioName);
-    paddedAudioRemotePath = await resolveProviderAudioUrl(uploadedPaddedAudioUrl);
+    paddedAudioReference = getCanonicalAudioReference(
+      paddedAudioRelativePath,
+      uploadedPaddedAudioUrl,
+    );
 
     const previousAudioData = refreshedAudioLayer.previousAudioData || {
       audioLink: refreshedAudioLayer.audioLink || remoteUrl,
@@ -348,17 +352,17 @@ export async function generateLipSyncForLayer(sessionId, currentLayer, connected
         }],
     };
 
-    sessionData.audioLayers[audioLayerIndex].audioLink = paddedAudioRemotePath;
-    sessionData.audioLayers[audioLayerIndex].selectedRemoteAudioLink = paddedAudioRemotePath;
+    sessionData.audioLayers[audioLayerIndex].audioLink = uploadedPaddedAudioUrl;
+    sessionData.audioLayers[audioLayerIndex].selectedRemoteAudioLink = uploadedPaddedAudioUrl;
     sessionData.audioLayers[audioLayerIndex].selectedLocalAudioLink = paddedAudioRelativePath;
     sessionData.audioLayers[audioLayerIndex].duration = layerDuration;
     sessionData.audioLayers[audioLayerIndex].startTime = currentLayer.durationOffset;
     sessionData.audioLayers[audioLayerIndex].endTime = currentLayer.durationOffset + layerDuration;
     sessionData.audioLayers[audioLayerIndex].localAudioLinks = [paddedAudioRelativePath];
-    sessionData.audioLayers[audioLayerIndex].remoteAudioLinks = [paddedAudioRemotePath];
+    sessionData.audioLayers[audioLayerIndex].remoteAudioLinks = [uploadedPaddedAudioUrl];
     sessionData.audioLayers[audioLayerIndex].remoteAudioData = [{
       title: 'speech',
-      audio_url: paddedAudioRemotePath,
+      audio_url: uploadedPaddedAudioUrl,
     }];
     sessionData.audioLayers[audioLayerIndex].previousAudioData = previousAudioData;
     sessionData.audioLayers[audioLayerIndex].originalDuration = speechLayerDuration;
@@ -394,7 +398,7 @@ export async function generateLipSyncForLayer(sessionId, currentLayer, connected
     return;
   }
 
-  const videoLayerLink = await resolveProviderAiVideoUrl({
+  const videoLayerLink = getCanonicalAiVideoReference({
     layer: currentLayer,
     userId,
   });
@@ -430,7 +434,7 @@ export async function generateLipSyncForLayer(sessionId, currentLayer, connected
   // 3) Build the generation payload, referencing the padded audio
   const generationPayload = {
     videoLink: videoLayerLink,  // The local/remote path to the AI video
-    audioLink: paddedAudioRemotePath,
+    audioLink: paddedAudioReference,
     duration: videoDuration,
     audioDuration: videoDuration,
     model: lipSyncModel,
@@ -474,7 +478,7 @@ export async function generateLipSyncForLayer(sessionId, currentLayer, connected
     stage: generationPayload.samsarExternalProviderStage,
     retryOnFail: generationPayload.retryOnFail,
     videoLink: videoLayerLink,
-    audioLink: paddedAudioRemotePath,
+    audioLink: paddedAudioReference,
     duration: videoDuration,
     audioDuration: videoDuration,
     aspectRatio,
@@ -546,5 +550,6 @@ export async function sessionLayerDurationToMatchSpeechLayer(sessionId, currentL
 export const __testOnly__ = {
   ACTIVE_LIP_SYNC_REQUEST_STATUSES,
   buildActiveLipSyncRequestQuery,
+  getCanonicalAudioReference,
   hasReusableBaseAiVideo,
 };

@@ -18,6 +18,8 @@ test('identifies interactive sessions across list, detail, and status projection
   }), true);
   assert.equal(isInteractiveVideoSession({ sourceNarrativeType: 'branched' }), true);
   assert.equal(isInteractiveVideoSession({ source_narrative_type: 'branched' }), true);
+  assert.equal(isInteractiveVideoSession({ type: 'InteractiveVideo' }), true);
+  assert.equal(isInteractiveVideoSession({ manifest: { outputs: { paths: [] } } }), true);
   assert.equal(isInteractiveVideoSession({
     status_detail_schema: 'interactive_video_manifest.v1',
   }), true);
@@ -96,8 +98,8 @@ test('uses the serialized interactive manifest default path when mainVideoUrl is
           outputs: {
             default_path_id: 'root.2',
             paths: [
-              { path_id: 'root.1', url: 'https://static.example/root.1.mp4' },
-              { path_id: 'root.2', url: 'https://static.example/root.2.mp4' },
+              { path_id: 'root.1', contentUrl: 'https://static.example/root.1.mp4' },
+              { path_id: 'root.2', contentUrl: 'https://static.example/root.2.mp4' },
             ],
           },
         },

@@ -8,6 +8,7 @@ import {
   collectSubtitleAudioSourceReferences,
   normalizeTrustedSubtitleAudioObjectKey,
   resolveSubtitleAudioSource,
+  shouldUseSubtitleObjectStorageRecovery,
 } from './SubtitleAudioSource.js';
 
 async function makeTempDirectory(prefix) {
@@ -87,6 +88,60 @@ test('uses an existing audio file under a trusted local asset root without copyi
   assert.equal(objectReadCount, 0);
   await result.cleanup();
   assert.equal(await fs.promises.readFile(audioPath, 'utf8'), 'local-audio');
+});
+
+test('Docker-local subtitle recovery never falls through to the implicit hosted bucket', async () => {
+  const envKeys = [
+    'CURRENT_ENV',
+    'SAMSAR_MEDIA_DELIVERY_MODE',
+    'MEDIA_DELIVERY_MODE',
+    'MEDIA_BUCKET_NAME',
+    'STATIC_CDN_BUCKET',
+    'STATIC_CDN_URL',
+  ];
+  const snapshot = Object.fromEntries(envKeys.map((key) => [key, process.env[key]]));
+  process.env.CURRENT_ENV = 'docker';
+  process.env.SAMSAR_MEDIA_DELIVERY_MODE = 'docker-local';
+  delete process.env.MEDIA_BUCKET_NAME;
+  delete process.env.STATIC_CDN_BUCKET;
+  delete process.env.STATIC_CDN_URL;
+  let objectReadCount = 0;
+  try {
+    assert.equal(shouldUseSubtitleObjectStorageRecovery(), false);
+    await assert.rejects(
+      resolveSubtitleAudioSource({
+        audioLayer: {
+          _id: { toString: () => 'audio-local-missing' },
+          selectedRemoteAudioLink: 'https://static.samsar.one/assets_v2/temp_audio/missing.mp3',
+        },
+        trustedLocalRoots: [],
+        getObject: async () => {
+          objectReadCount += 1;
+          return { Body: Buffer.from('unexpected') };
+        },
+      }),
+      (error) => error?.code === 'SAMSAR_SUBTITLE_LOCAL_MEDIA_UNAVAILABLE',
+    );
+    assert.equal(objectReadCount, 0);
+  } finally {
+    envKeys.forEach((key) => {
+      if (snapshot[key] === undefined) delete process.env[key];
+      else process.env[key] = snapshot[key];
+    });
+  }
+});
+
+test('Docker subtitle object recovery requires explicit bucket and HTTPS CDN', () => {
+  assert.equal(shouldUseSubtitleObjectStorageRecovery({
+    CURRENT_ENV: 'docker',
+    SAMSAR_MEDIA_DELIVERY_MODE: 'external-s3',
+  }), false);
+  assert.equal(shouldUseSubtitleObjectStorageRecovery({
+    CURRENT_ENV: 'docker',
+    SAMSAR_MEDIA_DELIVERY_MODE: 'external-s3',
+    MEDIA_BUCKET_NAME: 'customer-media',
+    STATIC_CDN_URL: 'https://media.customer.example',
+  }), true);
 });
 
 test('canonicalizes an assets_v2 local link instead of nesting it below the legacy assets root', async (t) => {

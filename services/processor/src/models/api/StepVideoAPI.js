@@ -24,6 +24,8 @@ import {
   buildVideoStatusResponse,
   normalizeResponseAssetUrl,
   normalizeResponseAssetUrlList,
+  selectResponseMediaSource,
+  selectResponseMediaSources,
 } from './StatusAPI.js';
 import { normalizeImageToVideoStartImagePayload } from './VideoInputPayloadAliases.js';
 
@@ -427,9 +429,18 @@ function serializeLayer(layer = {}, index = 0, req = null) {
     : [];
   const baseItem = activeItems.find((item) => item?.is_base_image) || activeItems[0] || null;
   const fallbackPrompt = layer?.imageSession?.prompt || layer.prompt || null;
-  const aiVideoUrl = normalizeResponseAssetUrl(layer.aiVideoRemoteLink || layer.aiVideoLayer, req);
-  const lipSyncUrl = normalizeResponseAssetUrl(layer.lipSyncRemoteLink || layer.lipSyncVideoLayer, req);
-  const soundEffectUrl = normalizeResponseAssetUrl(layer.soundEffectRemoteLink || layer.soundEffectVideoLayer, req);
+  const aiVideoUrl = normalizeResponseAssetUrl(selectResponseMediaSource({
+    local: layer.aiVideoLayer,
+    remote: layer.aiVideoRemoteLink,
+  }), req);
+  const lipSyncUrl = normalizeResponseAssetUrl(selectResponseMediaSource({
+    local: layer.lipSyncVideoLayer,
+    remote: layer.lipSyncRemoteLink,
+  }), req);
+  const soundEffectUrl = normalizeResponseAssetUrl(selectResponseMediaSource({
+    local: layer.soundEffectVideoLayer,
+    remote: layer.soundEffectRemoteLink,
+  }), req);
   const preferredVideo = lipSyncUrl
     ? { type: 'lip_sync', url: lipSyncUrl }
     : soundEffectUrl
@@ -466,6 +477,16 @@ function serializeLayer(layer = {}, index = 0, req = null) {
 }
 
 function serializeAudioLayer(layer = {}, index = 0, req = null) {
+  const selectedAudioSource = selectResponseMediaSource({
+    local: [
+      layer.selectedLocalAudioLink,
+      ...(Array.isArray(layer.localAudioLinks) ? layer.localAudioLinks : []),
+    ],
+    remote: [
+      layer.selectedRemoteAudioLink,
+      ...(Array.isArray(layer.remoteAudioLinks) ? layer.remoteAudioLinks : []),
+    ],
+  });
   return {
     index,
     audio_layer_id: layer?._id?.toString?.() || layer?._id || null,
@@ -475,13 +496,17 @@ function serializeAudioLayer(layer = {}, index = 0, req = null) {
     start_time: layer.startTime ?? null,
     end_time: layer.endTime ?? null,
     duration: layer.duration ?? null,
-    selected_audio_url:
-      normalizeResponseAssetUrl(layer.selectedRemoteAudioLink, req) ||
-      normalizeResponseAssetUrl(layer.selectedLocalAudioLink, req) ||
-      (Array.isArray(layer.remoteAudioLinks) ? normalizeResponseAssetUrl(layer.remoteAudioLinks[0], req) : '') ||
-      (Array.isArray(layer.localAudioLinks) ? normalizeResponseAssetUrl(layer.localAudioLinks[0], req) : '') ||
-      null,
-    remote_audio_links: normalizeResponseAssetUrlList(layer.remoteAudioLinks, req),
+    selected_audio_url: normalizeResponseAssetUrl(selectedAudioSource, req) || null,
+    remote_audio_links: normalizeResponseAssetUrlList(selectResponseMediaSources({
+      local: [
+        layer.selectedLocalAudioLink,
+        ...(Array.isArray(layer.localAudioLinks) ? layer.localAudioLinks : []),
+      ],
+      remote: [
+        layer.selectedRemoteAudioLink,
+        ...(Array.isArray(layer.remoteAudioLinks) ? layer.remoteAudioLinks : []),
+      ],
+    }), req),
     speaker: layer.speaker || null,
     speaker_character_name: layer.speakerCharacterName || null,
     lyrics: layer.lyrics || null,
@@ -577,14 +602,18 @@ function buildStepResources(sessionData = {}, stepKey, req = null) {
   }
 
   if (stepKey === 'video_generation') {
+    const selectedResultSource = selectResponseMediaSource({
+      local: [sessionData.videoLink, sessionData.videoVideoLink],
+      remote: sessionData.remoteURL,
+    });
     const resultUrl = normalizeResponseAssetUrl(
-      sessionData.remoteURL || sessionData.videoLink || sessionData.videoVideoLink,
+      selectedResultSource,
       req,
     );
     const videoLink = normalizeResponseAssetUrl(sessionData.videoLink || sessionData.videoVideoLink, req);
     return {
       result_url: resultUrl,
-      remote_url: normalizeResponseAssetUrl(sessionData.remoteURL, req),
+      remote_url: resultUrl,
       video_link: videoLink,
       has_subtitles: sessionData.hasSubtitles ?? sessionData.has_subtitles ?? sessionData.enableSubtitles ?? true,
     };
@@ -653,12 +682,10 @@ export async function buildStepVideoStatus({ userId, sessionId, req }) {
   const status = normalizeStepStatus(sessionData, stepState, baseStatus || {});
   const finalVideoResultUrl = finalVideoCompleted
     ? normalizeResponseAssetUrl(
-      baseStatus?.result_url ||
-      sessionData.remoteURL ||
-      baseStatus?.remoteURL ||
-      sessionData.videoLink ||
-      baseStatus?.videoLink ||
-      sessionData.videoVideoLink,
+      selectResponseMediaSource({
+        local: [sessionData.videoLink, baseStatus?.videoLink, sessionData.videoVideoLink],
+        remote: [baseStatus?.result_url, sessionData.remoteURL, baseStatus?.remoteURL],
+      }),
       req,
     )
     : null;
@@ -1056,3 +1083,8 @@ export function getStepVideoSessionIdFromRequest(req) {
     getStepSessionId(req?.body || {})
   );
 }
+
+export const __testOnly__ = {
+  serializeLayer,
+  serializeAudioLayer,
+};

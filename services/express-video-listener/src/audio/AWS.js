@@ -4,6 +4,10 @@ import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import { Upload } from '@aws-sdk/lib-storage'; 
 import fs from 'fs';
 import path from 'path';
+import {
+  assertExplicitDockerExternalMediaConfiguration,
+  buildStableDockerMediaUrl,
+} from '../utils/DockerMediaDeliveryUrl.js';
 
 /**
  * Reads AWS credentials and region from environment variables.
@@ -120,7 +124,7 @@ async function persistDockerMediaFile(absolutePath, key) {
   if (path.resolve(absolutePath) !== path.resolve(destinationPath)) {
     await fs.promises.copyFile(absolutePath, destinationPath);
   }
-  return buildStaticCdnUrl(key);
+  return buildStableDockerMediaUrl(key);
 }
 
 /**
@@ -173,6 +177,7 @@ function initializeS3Client() {
 let s3Client;
 
 function getS3Client() {
+  assertExplicitDockerExternalMediaConfiguration();
   validateAWSEnvVariables();
   if (!s3Client) {
     s3Client = initializeS3Client();
@@ -193,6 +198,7 @@ export async function uploadFrameLayerImageToCDN(absolutePath, remoteFileName) {
   if (shouldUseDockerLocalMedia()) {
     return persistDockerMediaFile(absolutePath, uploadKey);
   }
+  assertExplicitDockerExternalMediaConfiguration();
 
   const fileSize = fs.statSync(absolutePath).size;
 
@@ -232,6 +238,7 @@ export async function uploadSpeechAudioToCDN(absolutePath, remoteFileName) {
   if (shouldUseDockerLocalMedia()) {
     return persistDockerMediaFile(absolutePath, uploadKey);
   }
+  assertExplicitDockerExternalMediaConfiguration();
 
   const fileSize = fs.statSync(absolutePath).size;
 
@@ -278,6 +285,7 @@ export async function uploadVideoToCDN(absolutePath, remoteFileName) {
   if (shouldUseDockerLocalMedia()) {
     return persistDockerMediaFile(absolutePath, uploadKey);
   }
+  assertExplicitDockerExternalMediaConfiguration();
 
   // We'll try up to 3 times before giving up
   for (let attempt = 1; attempt <= 3; attempt++) {

@@ -1,8 +1,11 @@
+import { readFile } from 'node:fs/promises';
+
 import { getGoogleAccessToken, getGoogleCloudConfig } from './GoogleADC.js';
 import {
   DEFAULT_GEMINI_31_PRO_VERTEX_MODEL,
   getProviderModelForInferenceModel,
 } from './InferenceModels.js';
+import { resolveLocalMediaReferencePath } from '../utils/MediaReferenceUtils.js';
 
 const DEFAULT_GEMINI_LOCATION = 'global';
 const DEFAULT_IMAGE_MIME_TYPE = 'image/png';
@@ -49,7 +52,16 @@ function parseDataUrl(dataUrl) {
   return { mimeType: match[1] || DEFAULT_IMAGE_MIME_TYPE, data: match[2] };
 }
 
-async function buildInlineImagePart(imageUrl) {
+function getImageMimeType(reference) {
+  const normalized = normalizeString(reference).split('?')[0].split('#')[0].toLowerCase();
+  if (normalized.endsWith('.jpg') || normalized.endsWith('.jpeg')) return 'image/jpeg';
+  if (normalized.endsWith('.webp')) return 'image/webp';
+  if (normalized.endsWith('.gif')) return 'image/gif';
+  if (normalized.endsWith('.avif')) return 'image/avif';
+  return DEFAULT_IMAGE_MIME_TYPE;
+}
+
+async function buildInlineImagePart(imageUrl, options = {}) {
   const normalizedUrl = normalizeString(typeof imageUrl === 'string' ? imageUrl : imageUrl?.url);
   if (!normalizedUrl) {
     return null;
@@ -60,7 +72,22 @@ async function buildInlineImagePart(imageUrl) {
     return { inlineData: { mimeType: dataImage.mimeType, data: dataImage.data } };
   }
 
-  const response = await fetch(normalizedUrl);
+  const resolveLocalPath = options.resolveLocalMediaPath || resolveLocalMediaReferencePath;
+  const localPath = resolveLocalPath(normalizedUrl);
+  if (localPath) {
+    const buffer = await (options.readFileImpl || readFile)(localPath);
+    if (buffer.length > MAX_INLINE_IMAGE_BYTES) {
+      throw new Error('Image is too large for inline Gemini vision input.');
+    }
+    return {
+      inlineData: {
+        mimeType: getImageMimeType(localPath),
+        data: buffer.toString('base64'),
+      },
+    };
+  }
+
+  const response = await (options.fetchImpl || globalThis.fetch)(normalizedUrl);
   if (!response.ok) {
     throw new Error(`Unable to fetch image for Gemini vision request: ${response.status}`);
   }
@@ -95,7 +122,7 @@ function stringifyTextContent(content) {
     .join('\n');
 }
 
-async function normalizeContentParts(content) {
+async function normalizeContentParts(content, options = {}) {
   if (typeof content === 'string') {
     return content ? [{ text: content }] : [];
   }
@@ -118,7 +145,7 @@ async function normalizeContentParts(content) {
       continue;
     }
     if ((item.type === 'image_url' && item.image_url) || (item.type === 'input_image' && item.image_url)) {
-      const imagePart = await buildInlineImagePart(item.image_url);
+      const imagePart = await buildInlineImagePart(item.image_url, options);
       if (imagePart) {
         parts.push(imagePart);
       }
@@ -127,7 +154,7 @@ async function normalizeContentParts(content) {
   return parts;
 }
 
-async function buildGeminiContents(messages = []) {
+export async function buildGeminiContents(messages = [], options = {}) {
   const systemParts = [];
   const contents = [];
 
@@ -144,7 +171,7 @@ async function buildGeminiContents(messages = []) {
       continue;
     }
 
-    const parts = await normalizeContentParts(message.content);
+    const parts = await normalizeContentParts(message.content, options);
     if (parts.length) {
       contents.push({
         role: message.role === 'assistant' || message.role === 'model' ? 'model' : 'user',

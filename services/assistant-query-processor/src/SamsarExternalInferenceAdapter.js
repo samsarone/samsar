@@ -10,6 +10,7 @@ import {
 } from './InferenceModels.js';
 import { hasAlibabaQwenNativeCredential } from './Qwen.js';
 import { runExternalInferenceWithRetry } from './ExternalInferenceRetry.js';
+import { resolveProviderMediaPayload } from './ProviderMediaPayload.js';
 
 const DEFAULT_SAMSAR_API_BASE_URL = 'https://api.samsar.one/v1';
 const DEFAULT_EXTERNAL_INFERENCE_TIMEOUT_MS = 10 * 60 * 1000;
@@ -337,8 +338,8 @@ export function shouldUseOpenRouterInference(chatRequest = {}) {
     DOCKER_INFERENCE_PROVIDER.OPENROUTER;
 }
 
-export async function createOpenRouterChatCompletion(chatRequest = {}) {
-  const client = getOpenRouterClient();
+export async function createOpenRouterChatCompletion(chatRequest = {}, dependencyOverrides = {}) {
+  const client = dependencyOverrides.client || getOpenRouterClient();
   if (!client) throw new Error('OPENROUTER_API_KEY is required for OpenRouter inference.');
   const {
     authorization, bypassSamsarExternalInference, samsarExternalInference,
@@ -373,11 +374,18 @@ export async function createOpenRouterChatCompletion(chatRequest = {}) {
   const openRouterModel = getOpenRouterModelForInferenceRequest(chatRequest);
   const payload = buildOpenRouterRequestPayload(request, requestedModel, openRouterModel, effort);
   return runExternalInferenceWithRetry(
-    ({ signal }) => client.chat.completions.create(payload, {
-      timeout: requestTimeout,
-      maxRetries: 0,
-      signal,
-    }),
+    async ({ signal }) => {
+      const providerPayload = await resolveProviderMediaPayload(payload, {
+        resolveMediaUrl: dependencyOverrides.resolveMediaUrl,
+        serviceName: 'samsar_assistant_query_processor_openrouter',
+      });
+      return client.chat.completions.create(providerPayload, {
+        timeout: requestTimeout,
+        // The adapter owns retries so every attempt gets fresh media URLs.
+        maxRetries: 0,
+        signal,
+      });
+    },
     {
       provider: 'openrouter',
       model: openRouterModel,
@@ -385,6 +393,7 @@ export async function createOpenRouterChatCompletion(chatRequest = {}) {
       maxRetries: externalMaxRetries ?? maxRetries ?? (
         qwenRequest ? process.env.OPENROUTER_QWEN_MAX_RETRIES : undefined
       ),
+      ...(dependencyOverrides.retryOptions || {}),
     },
   );
 }
@@ -453,11 +462,11 @@ export function shouldUseSamsarExternalInference(chatRequest = {}) {
   return shouldEnableExternalInference() && provider === DOCKER_INFERENCE_PROVIDER.SAMSAR;
 }
 
-export async function createSamsarExternalChatCompletion(chatRequest = {}) {
+export async function createSamsarExternalChatCompletion(chatRequest = {}, dependencyOverrides = {}) {
   if (shouldUseOpenRouterInference(chatRequest)) {
-    return createOpenRouterChatCompletion(chatRequest);
+    return createOpenRouterChatCompletion(chatRequest, dependencyOverrides);
   }
-  const client = getExternalClient();
+  const client = dependencyOverrides.client || getExternalClient();
   if (!client) {
     throw new Error('SAMSAR_API_KEY is required for Samsar external inference.');
   }
@@ -486,12 +495,19 @@ export async function createSamsarExternalChatCompletion(chatRequest = {}) {
     timeout: requestTimeout,
   };
   const response = await runExternalInferenceWithRetry(
-    ({ signal }) => client.createV2ExternalChatCompletion(requestPayload, { signal }),
+    async ({ signal }) => client.createV2ExternalChatCompletion(
+      await resolveProviderMediaPayload(requestPayload, {
+        resolveMediaUrl: dependencyOverrides.resolveMediaUrl,
+        serviceName: 'samsar_assistant_query_processor_external_inference',
+      }),
+      { signal },
+    ),
     {
       provider: 'samsar',
       model,
       timeoutMs: requestTimeout,
       maxRetries: externalMaxRetries ?? maxRetries,
+      ...(dependencyOverrides.retryOptions || {}),
     },
   );
 

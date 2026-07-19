@@ -32,4 +32,5 @@ test('v2 exposes the unified text-to-interactive-video routes', () => {
 
   assert.ok(postPaths.includes('/text_to_interactive_video'));
   assert.ok(postPaths.includes('/external/video/text_to_interactive_video'));
+  assert.ok(postPaths.includes('/text_to_interactive_video/session'));
 });

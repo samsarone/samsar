@@ -3,15 +3,14 @@ import path from 'path';
 import { createCanvas, loadImage } from 'canvas';
 
 import { getCanvasDimensionsForAspectRatio } from '../../utils/CanvasUtils.js';
+import { getProcessorAssetsRoot, resolveLocalAssetPath } from '../../utils/LocalAssetPath.js';
 
 function isRemoteUrl(value) {
   return typeof value === 'string' && /^https?:\/\//i.test(value.trim());
 }
 
 function getAssetRoot(folderName = 'assets_v2') {
-  return process.env.CURRENT_ENV === 'staging' || process.env.CURRENT_ENV === 'docker'
-    ? `/${folderName}`
-    : path.join(process.cwd(), '../', 'samsar_processor', folderName);
+  return getProcessorAssetsRoot(folderName);
 }
 
 const SESSION_GATED_ASSET_FOLDERS = new Set([
@@ -69,8 +68,9 @@ function getExistingAbsoluteImagePath(ref) {
     return '';
   }
 
+  const trustedPath = resolveLocalAssetPath(withoutQuery);
   try {
-    return fs.statSync(withoutQuery).isFile() ? withoutQuery : '';
+    return trustedPath && fs.statSync(trustedPath).isFile() ? trustedPath : '';
   } catch {
     return '';
   }

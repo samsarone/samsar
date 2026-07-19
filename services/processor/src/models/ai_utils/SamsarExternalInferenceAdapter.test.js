@@ -272,6 +272,50 @@ test('OpenRouter adapter sends OpenAI-compatible vision requests with the Plus d
   assert.equal(capturedOptions.timeout, 1200000);
 });
 
+test('OpenRouter resolves provider media freshly on every adapter retry', async (t) => {
+  clearProviderEnv();
+  process.env.CURRENT_ENV = 'production';
+  process.env.OPENROUTER_API_KEY = 'openrouter-fresh-media-key';
+  process.env.SAMSAR_EXTERNAL_INFERENCE_RETRY_BASE_DELAY_MS = '1';
+  process.env.SAMSAR_EXTERNAL_INFERENCE_RETRY_MAX_DELAY_MS = '1';
+  t.mock.method(console, 'error', () => {});
+  t.mock.method(console, 'warn', () => {});
+  const payloads = [];
+  t.mock.method(OpenAI.Chat.Completions.prototype, 'create', async (payload) => {
+    payloads.push(payload);
+    if (payloads.length === 1) {
+      const error = new Error('temporary OpenRouter failure');
+      error.status = 503;
+      throw error;
+    }
+    return { choices: [{ message: { role: 'assistant', content: 'ok' } }] };
+  });
+  let resolverCalls = 0;
+
+  const response = await createOpenRouterChatCompletion({
+    model: 'QWEN3.7',
+    messages: [{
+      role: 'user',
+      content: [{
+        type: 'image_url',
+        image_url: { url: '/assets_v2/generations/session/openrouter.png' },
+      }],
+    }],
+    externalMaxRetries: 1,
+  }, {
+    resolveMediaUrl: async (_source, options) => {
+      resolverCalls += 1;
+      assert.equal(options.serviceName, 'samsar_processor_openrouter');
+      return `https://fresh-${resolverCalls}.example/assets_v2/generations/session/openrouter.png`;
+    },
+  });
+
+  assert.equal(response.choices[0].message.content, 'ok');
+  assert.equal(resolverCalls, 2);
+  assert.equal(payloads[0].messages[0].content[0].image_url.url, 'https://fresh-1.example/assets_v2/generations/session/openrouter.png');
+  assert.equal(payloads[1].messages[0].content[0].image_url.url, 'https://fresh-2.example/assets_v2/generations/session/openrouter.png');
+});
+
 test('OpenRouter applies Qwen-specific token and reasoning limits to Plus text inference', async (t) => {
   clearProviderEnv();
   process.env.CURRENT_ENV = 'production';
@@ -634,6 +678,57 @@ test('external inference preserves GPT 5.6 models with xhigh without changing Ge
   assert.equal(payloads[2].reasoning_effort, 'high');
 });
 
+test('Samsar external inference resolves provider media freshly on every retry', async (t) => {
+  clearProviderEnv();
+  process.env.CURRENT_ENV = 'docker';
+  process.env.SAMSAR_API_KEY = 'fresh-media-retry-key';
+  process.env.SAMSAR_EXTERNAL_INFERENCE_RETRY_BASE_DELAY_MS = '1';
+  process.env.SAMSAR_EXTERNAL_INFERENCE_RETRY_MAX_DELAY_MS = '1';
+  t.mock.method(console, 'error', () => {});
+  t.mock.method(console, 'warn', () => {});
+  const payloads = [];
+  let providerAttempts = 0;
+  t.mock.method(SamsarClient.prototype, 'createV2ExternalChatCompletion', async (payload) => {
+    payloads.push(payload);
+    providerAttempts += 1;
+    if (providerAttempts === 1) {
+      const error = new Error('temporary hosted failure');
+      error.status = 503;
+      throw error;
+    }
+    return { choices: [{ message: { role: 'assistant', content: 'ok' } }] };
+  });
+
+  const sourceMessages = [{
+    role: 'user',
+    content: [{
+      type: 'input_image',
+      image_url: 'http://localhost:3002/assets_v2/generations/session/frame.png',
+    }],
+  }];
+  const originalMessages = JSON.parse(JSON.stringify(sourceMessages));
+  let resolverCalls = 0;
+  const response = await createSamsarExternalChatCompletion({
+    model: 'gpt-5.6-sol',
+    messages: sourceMessages,
+    externalMaxRetries: 1,
+    timeout: 1000,
+  }, {
+    resolveMediaUrl: async (_source, options) => {
+      resolverCalls += 1;
+      assert.equal(options.mediaKind, 'image');
+      assert.equal(options.serviceName, 'samsar_processor_external_inference');
+      return `https://fresh-${resolverCalls}.example/assets_v2/generations/session/frame.png`;
+    },
+  });
+
+  assert.equal(response.choices[0].message.content, 'ok');
+  assert.equal(resolverCalls, 2);
+  assert.equal(payloads[0].messages[0].content[0].image_url, 'https://fresh-1.example/assets_v2/generations/session/frame.png');
+  assert.equal(payloads[1].messages[0].content[0].image_url, 'https://fresh-2.example/assets_v2/generations/session/frame.png');
+  assert.deepEqual(sourceMessages, originalMessages);
+});
+
 test('deployed external inference can queue and poll a long-running assistant request', async (t) => {
   clearProviderEnv();
   process.env.SAMSAR_API_KEY = 'polling-test-samsar-key';
@@ -847,6 +942,7 @@ test('Docker retries a reset submit with the same hosted idempotency key', async
   clearProviderEnv();
   process.env.SAMSAR_API_KEY = 'reset-submit-test-key';
   const submittedClientIds = [];
+  const submittedMediaUrls = [];
   let submitAttempt = 0;
   const requestStore = {
     async prepare() {
@@ -866,6 +962,7 @@ test('Docker retries a reset submit with the same hosted idempotency key', async
   t.mock.method(SamsarClient.prototype, 'postV2', async (path, payload) => {
     assert.equal(path, 'external/chat/completions');
     submittedClientIds.push(payload.client_request_id);
+    submittedMediaUrls.push(payload.messages[0].content[0].image_url);
     submitAttempt += 1;
     if (submitAttempt === 1) {
       const error = new Error('socket reset after hosted request acceptance');
@@ -884,7 +981,13 @@ test('Docker retries a reset submit with the same hosted idempotency key', async
 
   const response = await createSamsarExternalChatCompletion({
     model: 'gpt-5.6-sol',
-    messages: [{ role: 'user', content: 'recover reset' }],
+    messages: [{
+      role: 'user',
+      content: [{
+        type: 'input_image',
+        image_url: '/assets_v2/generations/session/polling-reset.png',
+      }],
+    }],
     externalPolling: true,
     externalPollIntervalMs: 1,
     externalPollTimeoutMs: 1000,
@@ -894,11 +997,19 @@ test('Docker retries a reset submit with the same hosted idempotency key', async
       requestKey: 'text_to_video:theme:attempt-1',
     },
     externalRequestStore: requestStore,
+  }, {
+    resolveMediaUrl: async (_source, options) => (
+      `https://polling-${submittedMediaUrls.length + 1}.example/${options.mediaKind}.png`
+    ),
   });
 
   assert.deepEqual(submittedClientIds, [
     'stable-client-request-3',
     'stable-client-request-3',
+  ]);
+  assert.deepEqual(submittedMediaUrls, [
+    'https://polling-1.example/image.png',
+    'https://polling-2.example/image.png',
   ]);
   assert.equal(response.choices[0].message.content, 'recovered reset');
 });

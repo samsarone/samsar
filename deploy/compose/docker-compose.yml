@@ -169,6 +169,47 @@ services:
       - ./media-gateway.conf:/etc/nginx/conf.d/default.conf:ro
       - media-assets:/usr/share/nginx/html/assets:ro
       - media-assets-v2:/usr/share/nginx/html/assets_v2:ro
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1/__samsar_media_health | grep -qx samsar-media-gateway"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 3s
+    restart: unless-stopped
+
+  media-tunnel-controller:
+    profiles: ["local-media"]
+    build:
+      context: ./media-tunnel-controller
+      args:
+        CLOUDFLARED_IMAGE: ${SAMSAR_CLOUDFLARED_IMAGE:-cloudflare/cloudflared:latest}
+    init: true
+    environment:
+      SAMSAR_RUNTIME_CONFIG_FILE: /persistent/config/samsar.config.json
+      SAMSAR_MEDIA_TUNNEL_REFRESH_REQUEST_PATH: /persistent/config/media-tunnel-refresh.request.json
+      SAMSAR_MEDIA_TUNNEL_READY_FILE: /tmp/samsar-media-tunnel.ready
+      SAMSAR_INTERNAL_MEDIA_BASE_URL: http://media-gateway
+      SAMSAR_MEDIA_TUNNEL_HEALTH_PATH: ${SAMSAR_MEDIA_TUNNEL_HEALTH_PATH:-/__samsar_media_health}
+      SAMSAR_MEDIA_TUNNEL_HEALTH_MARKER: samsar-media-gateway
+      SAMSAR_CLOUDFLARED_PROTOCOL: ${SAMSAR_CLOUDFLARED_PROTOCOL:-http2}
+      SAMSAR_MEDIA_TUNNEL_MONITOR_INTERVAL_MS: ${SAMSAR_MEDIA_TUNNEL_MONITOR_INTERVAL_MS:-5000}
+      SAMSAR_MEDIA_TUNNEL_START_TIMEOUT_MS: ${SAMSAR_MEDIA_TUNNEL_START_TIMEOUT_MS:-60000}
+      SAMSAR_MEDIA_TUNNEL_HEALTH_TIMEOUT_MS: ${SAMSAR_MEDIA_TUNNEL_HEALTH_TIMEOUT_MS:-60000}
+      SAMSAR_MEDIA_TUNNEL_REQUEST_TIMEOUT_MS: ${SAMSAR_MEDIA_TUNNEL_REQUEST_TIMEOUT_MS:-5000}
+      SAMSAR_MEDIA_TUNNEL_RESTART_DELAY_MS: ${SAMSAR_MEDIA_TUNNEL_RESTART_DELAY_MS:-3000}
+      SAMSAR_MEDIA_TUNNEL_FAILURE_THRESHOLD: ${SAMSAR_MEDIA_TUNNEL_FAILURE_THRESHOLD:-3}
+    volumes:
+      - ../../runtime/config:/persistent/config
+    depends_on:
+      media-gateway:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "test -s $${SAMSAR_MEDIA_TUNNEL_READY_FILE:-/tmp/samsar-media-tunnel.ready}"]
+      interval: 15s
+      timeout: 3s
+      retries: 4
+      start_period: 75s
+    restart: unless-stopped
 
   reverse-proxy:
     profiles: ["reverse-proxy"]

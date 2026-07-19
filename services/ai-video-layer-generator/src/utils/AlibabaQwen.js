@@ -1,4 +1,6 @@
 import OpenAI from 'openai';
+import { normalizeProviderMediaUrl } from '../AWS.js';
+import { normalizeProviderMediaPayload } from './ProviderMediaPayload.js';
 
 import {
   QWEN_37_MAX_MODEL,
@@ -72,11 +74,37 @@ function getMediaReference(part = {}) {
   return part.image_url ??
     part.imageUrl ??
     part.image ??
+    part.image_urls ??
+    part.imageUrls ??
     part.video_url ??
     part.videoUrl ??
     part.video ??
+    part.video_urls ??
+    part.videoUrls ??
     part.url ??
-    part.source;
+    part.uri ??
+    part.source ??
+    part.src ??
+    part.href ??
+    part.urls ??
+    part.uris ??
+    part.sources;
+}
+
+function hasNonEmptyMediaReference(value, seen = new Set()) {
+  if (typeof value === 'string') return Boolean(value.trim());
+  if (Array.isArray(value)) {
+    return value.some((entry) => hasNonEmptyMediaReference(entry, seen));
+  }
+  if (!value || typeof value !== 'object' || seen.has(value)) return false;
+  seen.add(value);
+  return [
+    'url', 'uri', 'source', 'src', 'href', 'urls', 'uris', 'sources',
+    'image_url', 'imageUrl', 'image_urls', 'imageUrls',
+    'video_url', 'videoUrl', 'video_urls', 'videoUrls',
+    'data', 'base64', 'file_id', 'fileId',
+  ].some((key) => Object.prototype.hasOwnProperty.call(value, key) &&
+    hasNonEmptyMediaReference(value[key], seen));
 }
 
 function isVisionPart(part) {
@@ -84,21 +112,7 @@ function isVisionPart(part) {
   if (!['image', 'image_url', 'input_image', 'video', 'video_url', 'input_video'].includes(type)) {
     return false;
   }
-  const reference = getMediaReference(part);
-  if (typeof reference === 'string') {
-    return Boolean(reference.trim());
-  }
-  return Boolean(
-    reference &&
-    typeof reference === 'object' &&
-    normalizeString(
-      reference.url ||
-      reference.uri ||
-      reference.data ||
-      reference.base64 ||
-      reference.file_id,
-    ),
-  );
+  return hasNonEmptyMediaReference(getMediaReference(part));
 }
 
 export function hasQwenVisionInput(messages = []) {
@@ -116,14 +130,46 @@ function normalizeDataSource(value, defaultMimeType) {
 }
 
 function normalizeMediaUrl(value, defaultMimeType) {
-  if (typeof value === 'string' || Array.isArray(value)) return { url: value };
+  if (typeof value === 'string') return { url: value };
   if (!value || typeof value !== 'object') return { url: '' };
   const normalizedSource = normalizeDataSource(value, defaultMimeType);
   if (typeof normalizedSource === 'string') return { url: normalizedSource };
   return {
     ...value,
-    url: value.url ?? value.uri ?? value.image_url ?? value.video_url ?? '',
+    url: value.url ?? value.uri ?? value.source ?? value.src ?? value.href ??
+      value.urls ?? value.uris ?? value.sources ??
+      value.image_url ?? value.image_urls ?? value.video_url ?? value.video_urls ?? '',
   };
+}
+
+function normalizeMediaUrls(value, defaultMimeType) {
+  if (Array.isArray(value)) {
+    const normalized = value.flatMap((entry) => normalizeMediaUrls(entry, defaultMimeType));
+    return normalized.length > 0 ? normalized : [{ url: '' }];
+  }
+  const descriptor = normalizeMediaUrl(value, defaultMimeType);
+  if (Array.isArray(descriptor.url) || (descriptor.url && typeof descriptor.url === 'object')) {
+    const {
+      url: _url,
+      uri: _uri,
+      source: _source,
+      src: _src,
+      href: _href,
+      urls: _urls,
+      uris: _uris,
+      sources: _sources,
+      image_url: _imageUrl,
+      image_urls: _imageUrls,
+      video_url: _videoUrl,
+      video_urls: _videoUrls,
+      ...metadata
+    } = descriptor;
+    return normalizeMediaUrls(descriptor.url, defaultMimeType).map((entry) => ({
+      ...metadata,
+      ...entry,
+    }));
+  }
+  return [descriptor];
 }
 
 function normalizeContentPart(part) {
@@ -132,28 +178,28 @@ function normalizeContentPart(part) {
     return { type: 'text', text: part.text || '' };
   }
   if (part.type === 'input_image' || part.type === 'image') {
-    return {
+    return normalizeMediaUrls(getMediaReference(part), 'image/png').map((imageUrl) => ({
       type: 'image_url',
-      image_url: normalizeMediaUrl(getMediaReference(part), 'image/png'),
-    };
+      image_url: imageUrl,
+    }));
   }
   if (part.type === 'image_url') {
-    return {
+    return normalizeMediaUrls(getMediaReference(part), 'image/png').map((imageUrl) => ({
       ...part,
-      image_url: normalizeMediaUrl(part.image_url, 'image/png'),
-    };
+      image_url: imageUrl,
+    }));
   }
   if (part.type === 'input_video' || part.type === 'video') {
-    return {
+    return normalizeMediaUrls(getMediaReference(part), 'video/mp4').map((videoUrl) => ({
       type: 'video_url',
-      video_url: normalizeMediaUrl(getMediaReference(part), 'video/mp4'),
-    };
+      video_url: videoUrl,
+    }));
   }
   if (part.type === 'video_url') {
-    return {
+    return normalizeMediaUrls(getMediaReference(part), 'video/mp4').map((videoUrl) => ({
       ...part,
-      video_url: normalizeMediaUrl(part.video_url, 'video/mp4'),
-    };
+      video_url: videoUrl,
+    }));
   }
   return part;
 }
@@ -163,7 +209,10 @@ function normalizeMessages(messages = []) {
     ...message,
     role: message?.role === 'developer' ? 'system' : message?.role,
     content: Array.isArray(message?.content)
-      ? message.content.map(normalizeContentPart)
+      ? message.content.flatMap((part) => {
+          const normalizedPart = normalizeContentPart(part);
+          return Array.isArray(normalizedPart) ? normalizedPart : [normalizedPart];
+        })
       : message?.content,
   }));
 }
@@ -217,12 +266,9 @@ export function buildAlibabaQwenChatRequest(chatRequest = {}) {
     normalizeMessages(sourceMessages),
     responseFormat,
   );
-  const requestOptions = {};
+  const requestOptions = { maxRetries: 0 };
   const parsedTimeout = Number(timeout ?? timeoutMs);
   if (Number.isFinite(parsedTimeout) && parsedTimeout > 0) requestOptions.timeout = parsedTimeout;
-  if (Number.isInteger(Number(maxRetries)) && Number(maxRetries) >= 0) {
-    requestOptions.maxRetries = Number(maxRetries);
-  }
   return {
     payload: {
       ...request,
@@ -239,6 +285,7 @@ export function buildAlibabaQwenChatRequest(chatRequest = {}) {
 }
 
 export async function createAlibabaQwenChatCompletion(chatRequest = {}) {
-  const { payload, requestOptions } = buildAlibabaQwenChatRequest(chatRequest);
+  const { payload: rawPayload, requestOptions } = buildAlibabaQwenChatRequest(chatRequest);
+  const payload = await normalizeProviderMediaPayload(rawPayload, normalizeProviderMediaUrl);
   return await getAlibabaQwenClient().chat.completions.create(payload, requestOptions);
 }

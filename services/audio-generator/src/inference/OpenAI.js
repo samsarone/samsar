@@ -14,11 +14,13 @@ import {
 } from './InferenceModels.js';
 import { createGoogleGeminiChatCompletion } from './GoogleGemini.js';
 import { createQwenChatCompletion } from './Qwen.js';
+import { runExternalInferenceWithRetry } from './ExternalInferenceRetry.js';
 import {
   createSamsarExternalChatCompletion,
   shouldUseSamsarExternalInference,
 } from './SamsarExternalInferenceAdapter.js';
 import { withInferenceAuthorization } from './RequestInferenceModel.js';
+import { normalizeProviderMediaPayload } from '../utils/ProviderMediaPayload.js';
 
 const API_KEY = process.env.OPENAI_API_KEY;
 
@@ -98,7 +100,23 @@ export async function sendAssistantMessageRequest(
       return response.choices[0].message;
     }
 
-    const response = await openai.chat.completions.create(payload);
+    const timeoutMs = Number(process.env.OPENAI_INFERENCE_TIMEOUT_MS) || 10 * 60 * 1000;
+    const response = await runExternalInferenceWithRetry(
+      async ({ signal }) => {
+        const providerPayload = await normalizeProviderMediaPayload(payload);
+        return openai.chat.completions.create(providerPayload, {
+          timeout: timeoutMs,
+          maxRetries: 0,
+          signal,
+        });
+      },
+      {
+        provider: 'openai',
+        model: normalizedModel,
+        timeoutMs,
+        maxRetries: process.env.OPENAI_INFERENCE_MAX_RETRIES,
+      },
+    );
     return response.choices[0].message;
   } catch (error) {
     let errorString = 'An error occurred while sending the message. Please try again with a different message.'

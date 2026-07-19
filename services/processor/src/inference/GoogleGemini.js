@@ -4,6 +4,7 @@ import { getGoogleAccessToken, getGoogleCloudConfig } from './GoogleADC.js';
 import {
   getProviderModelForInferenceModel,
 } from '../consts/InferenceModels.js';
+import { readLocalMediaBufferIfAvailable } from '../utils/LocalMediaAsset.js';
 
 const DEFAULT_GEMINI_LOCATION = 'global';
 const DEFAULT_IMAGE_MIME_TYPE = 'image/png';
@@ -202,7 +203,16 @@ function parseDataUrl(dataUrl) {
   };
 }
 
-async function buildInlineImagePart(imageUrl) {
+function getImageMimeType(reference) {
+  const normalized = normalizeString(reference).split('?')[0].split('#')[0].toLowerCase();
+  if (normalized.endsWith('.jpg') || normalized.endsWith('.jpeg')) return 'image/jpeg';
+  if (normalized.endsWith('.webp')) return 'image/webp';
+  if (normalized.endsWith('.gif')) return 'image/gif';
+  if (normalized.endsWith('.avif')) return 'image/avif';
+  return DEFAULT_IMAGE_MIME_TYPE;
+}
+
+async function buildInlineImagePart(imageUrl, options = {}) {
   const url = typeof imageUrl === 'string' ? imageUrl : imageUrl?.url;
   const normalizedUrl = normalizeString(url);
   if (!normalizedUrl) {
@@ -219,7 +229,21 @@ async function buildInlineImagePart(imageUrl) {
     };
   }
 
-  const response = await fetch(normalizedUrl);
+  const readLocalMediaBuffer = options.readLocalMediaBuffer || readLocalMediaBufferIfAvailable;
+  const localBuffer = await readLocalMediaBuffer(normalizedUrl);
+  if (localBuffer) {
+    if (localBuffer.length > MAX_INLINE_IMAGE_BYTES) {
+      throw new Error('Image is too large for inline Gemini vision input.');
+    }
+    return {
+      inlineData: {
+        mimeType: getImageMimeType(normalizedUrl),
+        data: localBuffer.toString('base64'),
+      },
+    };
+  }
+
+  const response = await (options.fetchImpl || fetch)(normalizedUrl);
   if (!response.ok) {
     throw new Error(`Unable to fetch image for Gemini vision request: ${response.status}`);
   }
@@ -239,7 +263,7 @@ async function buildInlineImagePart(imageUrl) {
   };
 }
 
-async function normalizeContentParts(content) {
+async function normalizeContentParts(content, options = {}) {
   if (typeof content === 'string') {
     return content ? [{ text: content }] : [];
   }
@@ -265,7 +289,7 @@ async function normalizeContentParts(content) {
     }
 
     if ((item.type === 'image_url' && item.image_url) || (item.type === 'input_image' && item.image_url)) {
-      const imagePart = await buildInlineImagePart(item.image_url);
+      const imagePart = await buildInlineImagePart(item.image_url, options);
       if (imagePart) {
         parts.push(imagePart);
       }
@@ -275,7 +299,7 @@ async function normalizeContentParts(content) {
   return parts;
 }
 
-async function buildGeminiContents(messages = [], responseFormat) {
+async function buildGeminiContents(messages = [], responseFormat, options = {}) {
   const systemParts = [];
   const contents = [];
 
@@ -293,7 +317,7 @@ async function buildGeminiContents(messages = [], responseFormat) {
     }
 
     const role = message.role === 'assistant' || message.role === 'model' ? 'model' : 'user';
-    const parts = await normalizeContentParts(message.content);
+    const parts = await normalizeContentParts(message.content, options);
     if (parts.length) {
       contents.push({ role, parts });
     }
@@ -454,7 +478,7 @@ export function normalizeGeminiUsage(usageMetadata) {
   };
 }
 
-export async function createGoogleGeminiChatCompletion(chatRequest = {}) {
+export async function createGoogleGeminiChatCompletion(chatRequest = {}, dependencyOverrides = {}) {
   const model = resolveGeminiModel(chatRequest.model);
   const location = resolveGeminiLocation(chatRequest);
   const config = getGoogleCloudConfig({ ...chatRequest, location });
@@ -467,6 +491,12 @@ export async function createGoogleGeminiChatCompletion(chatRequest = {}) {
   const { systemInstruction, contents } = await buildGeminiContents(
     chatRequest.messages,
     chatRequest.response_format,
+    {
+      fetchImpl: typeof dependencyOverrides.fetch === 'function'
+        ? dependencyOverrides.fetch
+        : fetch,
+      readLocalMediaBuffer: dependencyOverrides.readLocalMediaBuffer,
+    },
   );
 
   if (!contents.length) {
@@ -480,12 +510,17 @@ export async function createGoogleGeminiChatCompletion(chatRequest = {}) {
     ...(generationConfig ? { generationConfig } : {}),
   };
 
-  const token = await getGoogleAccessToken(config);
+  const token = typeof dependencyOverrides.getAccessToken === 'function'
+    ? await dependencyOverrides.getAccessToken(config)
+    : await getGoogleAccessToken(config);
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), getGeminiTimeoutMs(chatRequest));
   let response;
   try {
-    response = await fetch(buildVertexGenerateContentUrl({ projectId, location, model }), {
+    const fetchImpl = typeof dependencyOverrides.fetch === 'function'
+      ? dependencyOverrides.fetch
+      : fetch;
+    response = await fetchImpl(buildVertexGenerateContentUrl({ projectId, location, model }), {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${token}`,

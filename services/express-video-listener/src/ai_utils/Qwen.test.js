@@ -2,12 +2,20 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+  buildQwenRequestOptions,
   buildQwenChatCompletionPayload,
   getAlibabaCloudApiKey,
   getAlibabaCloudBaseUrl,
   hasQwenMultimodalInput,
   resolveQwenProviderModel,
 } from './Qwen.js';
+
+test('Qwen dispatch disables hidden SDK retries after media normalization', () => {
+  assert.deepEqual(
+    buildQwenRequestOptions({ timeout: 1234, maxRetries: 8 }),
+    { timeout: 1234, maxRetries: 0 },
+  );
+});
 
 test('uses Qwen Max for text and Plus only for actual image or video content', () => {
   const textRequest = {
@@ -94,6 +102,19 @@ test('normalizes multimodal content for the DashScope chat-completions API', () 
         { type: 'input_text', text: 'Describe the media.' },
         { type: 'input_image', image_url: 'https://media.example/frame.png', detail: 'low' },
         { type: 'input_video', video_url: { url: 'https://media.example/clip.mp4' } },
+        {
+          type: 'video_url',
+          video_url: {
+            url: [
+              'https://media.example/frame-1.png',
+              'https://media.example/frame-2.png',
+            ],
+          },
+        },
+        {
+          type: 'input_image',
+          source: { urls: ['https://media.example/frame-3.png'] },
+        },
       ],
     }],
   });
@@ -109,6 +130,18 @@ test('normalizes multimodal content for the DashScope chat-completions API', () 
     {
       type: 'video_url',
       video_url: { url: 'https://media.example/clip.mp4' },
+    },
+    {
+      type: 'video_url',
+      video_url: { url: 'https://media.example/frame-1.png' },
+    },
+    {
+      type: 'video_url',
+      video_url: { url: 'https://media.example/frame-2.png' },
+    },
+    {
+      type: 'image_url',
+      image_url: { url: 'https://media.example/frame-3.png' },
     },
   ]);
 });

@@ -416,8 +416,11 @@ function buildNormalizedBranchPath(path = {}, sourceOrdinal = 0, defaultPathId =
 } = {}) {
   const pathId = normalizeNonEmptyString(path?.pathId);
   const videoLink = normalizeResponseAssetUrl(path?.videoLink, req);
-  const remoteURL = normalizeResponseAssetUrl(path?.remoteURL, req);
-  const resultUrl = remoteURL || videoLink || null;
+  const resultUrl = normalizeResponseAssetUrl(selectResponseMediaSource({
+    local: path?.videoLink,
+    remote: path?.remoteURL,
+  }), req);
+  const remoteURL = resultUrl;
   const thumbnailUrl = normalizeResponseAssetUrl(
     path?.thumbnailUrl || path?.thumbnailPath,
     req,
@@ -1248,6 +1251,29 @@ function pickFirstString(...values) {
   return null;
 }
 
+function normalizeResponseMediaCandidates(values) {
+  const candidates = Array.isArray(values) ? values : [values];
+  return [...new Set(candidates.map((value) => normalizeString(value)).filter(Boolean))];
+}
+
+export function selectResponseMediaSources({ local = [], remote = [] } = {}) {
+  const localCandidates = Array.isArray(local) ? local : [local];
+  const remoteCandidates = Array.isArray(remote) ? remote : [remote];
+  const preferred = shouldReturnDockerLocalAssetReferences()
+    ? normalizeResponseMediaCandidates(localCandidates)
+    : normalizeResponseMediaCandidates(remoteCandidates);
+  if (preferred.length > 0) {
+    return preferred;
+  }
+  return shouldReturnDockerLocalAssetReferences()
+    ? normalizeResponseMediaCandidates(remoteCandidates)
+    : normalizeResponseMediaCandidates(localCandidates);
+}
+
+export function selectResponseMediaSource(candidates = {}) {
+  return selectResponseMediaSources(candidates)[0] || null;
+}
+
 function normalizeNumber(value) {
   if (value === undefined || value === null || value === '') {
     return null;
@@ -1737,13 +1763,18 @@ function getLayerSelectedImageUrl(layer = {}) {
     activeItems[0] ||
     null;
 
-  return pickFirstString(
-    getItemAssetUrl(baseImageItem || {}),
-    layer?.imageSession?.activeImageRemoteLink,
-    layer?.imageSession?.activeGeneratedImage,
-    layer?.imageSession?.activeEditedImage,
-    layer?.imageSession?.activeSelectedImage,
-  );
+  const activeItemUrl = getItemAssetUrl(baseImageItem || {});
+  if (activeItemUrl) {
+    return activeItemUrl;
+  }
+  return selectResponseMediaSource({
+    local: [
+      layer?.imageSession?.activeGeneratedImage,
+      layer?.imageSession?.activeEditedImage,
+      layer?.imageSession?.activeSelectedImage,
+    ],
+    remote: layer?.imageSession?.activeImageRemoteLink,
+  });
 }
 
 function buildAssetStatus(rawStatus, fallbackUrl = null) {
@@ -1877,25 +1908,37 @@ function serializeDetailedLayer(
   });
   const aiVideo = buildVideoAsset({
     status: layer.aiVideoGenerationStatus,
-    url: pickFirstString(layer.aiVideoRemoteLink, layer.aiVideoLayer),
+    url: selectResponseMediaSource({
+      local: layer.aiVideoLayer,
+      remote: layer.aiVideoRemoteLink,
+    }),
     hasAsset: layer.hasAiVideoLayer === true,
     req,
   });
   const lipSyncVideo = buildVideoAsset({
     status: layer.lipSyncVideoGenerationStatus,
-    url: pickFirstString(layer.lipSyncRemoteLink, layer.lipSyncVideoLayer),
+    url: selectResponseMediaSource({
+      local: layer.lipSyncVideoLayer,
+      remote: layer.lipSyncRemoteLink,
+    }),
     hasAsset: layer.hasLipSyncVideoLayer === true,
     req,
   });
   const soundEffectVideo = buildVideoAsset({
     status: layer.soundEffectVideoGenerationStatus,
-    url: pickFirstString(layer.soundEffectRemoteLink, layer.soundEffectVideoLayer),
+    url: selectResponseMediaSource({
+      local: layer.soundEffectVideoLayer,
+      remote: layer.soundEffectRemoteLink,
+    }),
     hasAsset: layer.hasSoundEffectVideoLayer === true,
     req,
   });
   const userVideo = buildVideoAsset({
     status: layer.userVideoGenerationStatus,
-    url: pickFirstString(layer.userVideoRemoteLink, layer.userVideoLayer),
+    url: selectResponseMediaSource({
+      local: layer.userVideoLayer,
+      remote: layer.userVideoRemoteLink,
+    }),
     hasAsset: layer.hasUserVideoLayer === true,
     req,
   });
@@ -1940,12 +1983,16 @@ function serializeDetailedLayer(
 }
 
 function getAudioLayerUrl(layer = {}) {
-  return pickFirstString(
-    layer.selectedRemoteAudioLink,
-    ...normalizeStringList(layer.remoteAudioLinks),
-    layer.selectedLocalAudioLink,
-    ...normalizeStringList(layer.localAudioLinks),
-  );
+  return selectResponseMediaSource({
+    local: [
+      layer.selectedLocalAudioLink,
+      ...normalizeStringList(layer.localAudioLinks),
+    ],
+    remote: [
+      layer.selectedRemoteAudioLink,
+      ...normalizeStringList(layer.remoteAudioLinks),
+    ],
+  });
 }
 
 function serializeDetailedAudioLayer(layer = {}, index = 0, req = null) {
@@ -1980,7 +2027,16 @@ function serializeDetailedAudioLayer(layer = {}, index = 0, req = null) {
       : undefined,
     subtitleSpeakerCharacterName: normalizeNonEmptyString(layer.subtitleSpeakerCharacterName),
     url,
-    remoteAudioLinks: normalizeResponseAssetUrlList(layer.remoteAudioLinks, req),
+    remoteAudioLinks: normalizeResponseAssetUrlList(selectResponseMediaSources({
+      local: [
+        layer.selectedLocalAudioLink,
+        ...normalizeStringList(layer.localAudioLinks),
+      ],
+      remote: [
+        layer.selectedRemoteAudioLink,
+        ...normalizeStringList(layer.remoteAudioLinks),
+      ],
+    }), req),
     volume: normalizeNumber(layer.volume),
     isEnabled: normalizeBoolean(layer.isEnabled),
     defaultSelected: normalizeBoolean(layer.defaultSelected),
@@ -2009,7 +2065,10 @@ function serializeDetailedAudioLayer(layer = {}, index = 0, req = null) {
 
 function serializeDetailedGlobalVideo(globalVideo = {}, index = 0, req = null) {
   const url = normalizeResponseAssetUrl(
-    pickFirstString(globalVideo.remoteURL, globalVideo.url, globalVideo.assetPath),
+    selectResponseMediaSource({
+      local: [globalVideo.assetPath, globalVideo.url],
+      remote: globalVideo.remoteURL,
+    }),
     req,
   );
   const startTime = normalizeNumber(globalVideo.startTime) ?? 0;
@@ -2150,6 +2209,10 @@ export function buildNormalizedVideoSessionPreview(
     .map((video, index) => serializeDetailedGlobalVideo(video, index, req));
   const stageStatusMap = normalizeStageStatusMap(sessionData.expressGenerationStatus);
   const resultUrl = normalizeResponseAssetUrl(statusPayload.result_url, req);
+  const preferredSessionResultUrl = normalizeResponseAssetUrl(selectResponseMediaSource({
+    local: sessionData.videoLink,
+    remote: sessionData.remoteURL,
+  }), req);
   const currentStage = resolveCurrentStage(stageStatusMap);
   const branching = suppliedBranching || buildNormalizedBranchingStatus(
     sessionData,
@@ -2216,8 +2279,8 @@ export function buildNormalizedVideoSessionPreview(
     globalAudioLayers,
     globalVideos,
     result: {
-      url: resultUrl,
-      remoteURL: normalizeResponseAssetUrl(sessionData.remoteURL, req),
+      url: resultUrl || preferredSessionResultUrl,
+      remoteURL: preferredSessionResultUrl,
       videoLink: normalizeResponseAssetUrl(sessionData.videoLink, req),
       hasSubtitles: resolveVideoHasSubtitles(sessionData),
       hasFooter: resolveVideoHasFooter(sessionData),
@@ -2284,10 +2347,10 @@ export async function buildVideoStatusResponse({
           : sessionSnapshot.videoLink
       : null;
     const completionUrl = normalizeResponseAssetUrl(defaultBranchResult?.result_url
-      || normalizedVideoLink
-      || sessionSnapshot?.remoteURL
-      || defaultResultUrl
-      || normalizedDefaultUrls[0], req);
+      || selectResponseMediaSource({
+        local: normalizedVideoLink,
+        remote: [sessionSnapshot?.remoteURL, defaultResultUrl, normalizedDefaultUrls[0]],
+      }), req);
     let normalizedStatus = completionUrl ? 'COMPLETED' : 'PENDING';
     if (expressGenerationCancelled || stageVideoCanceled) {
       normalizedStatus = 'CANCELLED';
@@ -2362,16 +2425,20 @@ export async function buildVideoStatusResponse({
     }
 
     if (sessionSnapshot?.remoteURL && (!branchedSession || shouldReportCompleted)) {
-      payload.remoteURL = normalizeResponseAssetUrl(sessionSnapshot.remoteURL, req);
+      payload.remoteURL = normalizeResponseAssetUrl(selectResponseMediaSource({
+        local: sessionSnapshot.videoLink,
+        remote: sessionSnapshot.remoteURL,
+      }), req);
     }
 
     if (shouldReportCompleted) {
       payload.result_url = completionUrl;
       payload.result_urls = branchResultUrls.length
         ? branchResultUrls
-        : normalizedDefaultUrls.length
-          ? normalizeResponseAssetUrlList(normalizedDefaultUrls, req)
-          : [completionUrl];
+        : normalizeResponseAssetUrlList(selectResponseMediaSources({
+          local: [completionUrl],
+          remote: normalizedDefaultUrls,
+        }), req);
       payload.has_subtitles = resolveVideoHasSubtitles(sessionSnapshot);
       payload.has_footer = resolveVideoHasFooter(sessionSnapshot);
       payload.result_language = resolveVideoResultLanguage(sessionSnapshot);

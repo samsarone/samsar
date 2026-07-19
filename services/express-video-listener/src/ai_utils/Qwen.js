@@ -4,6 +4,8 @@ import {
   QWEN_37_MAX_MODEL,
   QWEN_37_PLUS_MODEL,
 } from './GoogleGemini.js';
+import { normalizeProviderMediaUrl } from '../ai_video/utils/AWS.js';
+import { normalizeProviderMediaPayload } from './ProviderMediaPayload.js';
 
 const DEFAULT_DASHSCOPE_BASE_URL = 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1';
 const DEFAULT_QWEN_TIMEOUT_MS = 10 * 60 * 1000;
@@ -26,6 +28,16 @@ const MEDIA_REFERENCE_KEYS = [
   'base64',
   'file_id',
   'fileId',
+  'source',
+  'src',
+  'href',
+  'urls',
+  'uris',
+  'sources',
+  'image_urls',
+  'imageUrls',
+  'video_urls',
+  'videoUrls',
 ];
 
 let cachedClient = null;
@@ -72,11 +84,19 @@ function getMediaReference(contentPart = {}) {
   return contentPart.image_url ??
     contentPart.imageUrl ??
     contentPart.image ??
+    contentPart.image_urls ??
+    contentPart.imageUrls ??
     contentPart.video_url ??
     contentPart.videoUrl ??
     contentPart.video ??
     contentPart.url ??
-    contentPart.source;
+    contentPart.uri ??
+    contentPart.source ??
+    contentPart.src ??
+    contentPart.href ??
+    contentPart.urls ??
+    contentPart.uris ??
+    contentPart.sources;
 }
 
 function hasActualMediaReference(value, seen = new Set()) {
@@ -141,7 +161,7 @@ function normalizeDataSource(value, defaultMimeType) {
 }
 
 function normalizeMediaUrl(value, defaultMimeType) {
-  if (typeof value === 'string' || Array.isArray(value)) {
+  if (typeof value === 'string') {
     return { url: value };
   }
   if (!value || typeof value !== 'object') {
@@ -153,8 +173,42 @@ function normalizeMediaUrl(value, defaultMimeType) {
     return { url: normalizedSource };
   }
 
-  const url = value.url ?? value.uri ?? value.image_url ?? value.video_url ?? '';
+  const url = value.url ?? value.uri ?? value.source ?? value.src ?? value.href ??
+    value.urls ?? value.uris ?? value.sources ??
+    value.image_url ?? value.image_urls ?? value.video_url ?? value.video_urls ?? '';
   return { ...value, url };
+}
+
+function normalizeMediaUrls(value, defaultMimeType) {
+  if (Array.isArray(value)) {
+    const normalized = value.flatMap((entry) => normalizeMediaUrls(entry, defaultMimeType));
+    return normalized.length > 0 ? normalized : [{ url: '' }];
+  }
+
+  const descriptor = normalizeMediaUrl(value, defaultMimeType);
+  const nestedUrl = descriptor.url;
+  if (Array.isArray(nestedUrl) || (nestedUrl && typeof nestedUrl === 'object')) {
+    const {
+      url: _url,
+      uri: _uri,
+      source: _source,
+      src: _src,
+      href: _href,
+      urls: _urls,
+      uris: _uris,
+      sources: _sources,
+      image_url: _imageUrl,
+      image_urls: _imageUrls,
+      video_url: _videoUrl,
+      video_urls: _videoUrls,
+      ...metadata
+    } = descriptor;
+    return normalizeMediaUrls(nestedUrl, defaultMimeType).map((entry) => ({
+      ...metadata,
+      ...entry,
+    }));
+  }
+  return [descriptor];
 }
 
 function normalizeContentForQwen(content) {
@@ -162,41 +216,41 @@ function normalizeContentForQwen(content) {
     return content;
   }
 
-  return content.map((item) => {
+  return content.flatMap((item) => {
     if (!item || typeof item !== 'object') {
-      return item;
+      return [item];
     }
     if (item.type === 'input_text' || item.type === 'output_text') {
-      return { type: 'text', text: item.text || '' };
+      return [{ type: 'text', text: item.text || '' }];
     }
     if (item.type === 'input_image' || item.type === 'image') {
-      return {
+      return normalizeMediaUrls(getMediaReference(item), 'image/png').map((imageUrl) => ({
         type: 'image_url',
         image_url: {
-          ...normalizeMediaUrl(getMediaReference(item), 'image/png'),
+          ...imageUrl,
           ...(item.detail ? { detail: item.detail } : {}),
         },
-      };
+      }));
     }
     if (item.type === 'image_url') {
-      return {
+      return normalizeMediaUrls(getMediaReference(item), 'image/png').map((imageUrl) => ({
         ...item,
-        image_url: normalizeMediaUrl(item.image_url, 'image/png'),
-      };
+        image_url: imageUrl,
+      }));
     }
     if (item.type === 'input_video' || item.type === 'video') {
-      return {
+      return normalizeMediaUrls(getMediaReference(item), 'video/mp4').map((videoUrl) => ({
         type: 'video_url',
-        video_url: normalizeMediaUrl(getMediaReference(item), 'video/mp4'),
-      };
+        video_url: videoUrl,
+      }));
     }
     if (item.type === 'video_url') {
-      return {
+      return normalizeMediaUrls(getMediaReference(item), 'video/mp4').map((videoUrl) => ({
         ...item,
-        video_url: normalizeMediaUrl(item.video_url, 'video/mp4'),
-      };
+        video_url: videoUrl,
+      }));
     }
-    return item;
+    return [item];
   });
 }
 
@@ -318,17 +372,23 @@ function getQwenClient() {
 }
 
 export async function createQwenChatCompletion(chatRequest = {}) {
-  const payload = buildQwenChatCompletionPayload(chatRequest);
+  const payload = await normalizeProviderMediaPayload(
+    buildQwenChatCompletionPayload(chatRequest),
+    normalizeProviderMediaUrl,
+  );
   const timeout = toPositiveInteger(
     chatRequest.timeout ?? chatRequest.timeoutMs ?? process.env.QWEN_INFERENCE_TIMEOUT_MS,
   ) || DEFAULT_QWEN_TIMEOUT_MS;
-  const parsedMaxRetries = Number(chatRequest.maxRetries);
-  const requestOptions = {
-    timeout,
-    ...(Number.isInteger(parsedMaxRetries) && parsedMaxRetries >= 0
-      ? { maxRetries: parsedMaxRetries }
-      : {}),
-  };
+  const requestOptions = buildQwenRequestOptions({ timeout });
 
   return getQwenClient().chat.completions.create(payload, requestOptions);
+}
+
+export function buildQwenRequestOptions({ timeout } = {}) {
+  return {
+    timeout: toPositiveInteger(timeout) || DEFAULT_QWEN_TIMEOUT_MS,
+    // Provider media is normalized immediately above. Hidden SDK retries
+    // would reuse a tunnel URL that may have expired between attempts.
+    maxRetries: 0,
+  };
 }

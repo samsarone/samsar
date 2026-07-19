@@ -10,9 +10,11 @@ import VideoSession from '../../schema/VideoSession.js';
 import {
   __testOnly__,
   buildTextToInteractiveVideoResponse,
+  createTextToInteractiveVideoDraftSession,
   createTextToInteractiveVideoRequest,
   normalizeTextToInteractiveVideoPayload,
   processTextToInteractiveVideoRequest,
+  validateTextToInteractiveVideoSessionInput,
 } from './TextToInteractiveVideoAPI.js';
 
 const INTERACTIVE_REQUEST_ID = '507f1f77bcf86cd799439030';
@@ -50,7 +52,18 @@ test('normalizes the complete unified payload and requires render model selectio
     imageModel: 'SEEDREAM',
     videoModel: 'COSMOS3SUPERI2V',
     numLevels: 2,
+    aspectRatio: '16:9',
   });
+
+  assert.equal(normalizeTextToInteractiveVideoPayload({
+    prompt: 'Create an interactive portrait journey.',
+    duration: 40,
+    num_levels: 2,
+    inference_model: 'QWEN3.7',
+    image_model: 'SEEDREAM',
+    video_model: 'COSMOS3SUPERI2V',
+    aspect_ratio: '9:16',
+  }).aspectRatio, '9:16');
 
   assert.throws(
     () => normalizeTextToInteractiveVideoPayload({
@@ -80,6 +93,148 @@ test('normalizes the complete unified payload and requires render model selectio
       video_model: 'RUNWAYML',
     }),
     (error) => error.code === 'CONFLICTING_NUM_LEVELS' && error.status === 400,
+  );
+  assert.throws(
+    () => normalizeTextToInteractiveVideoPayload({
+      prompt: 'Create an interactive river journey.',
+      duration: 40,
+      num_levels: 2,
+      image_model: 'SEEDREAM',
+      video_model: 'RUNWAYML',
+      aspectRatio: '1:1',
+    }),
+    (error) => error.code === 'INVALID_ASPECT_RATIO' && error.status === 400,
+  );
+  assert.throws(
+    () => normalizeTextToInteractiveVideoPayload({
+      prompt: 'Create an interactive river journey.',
+      duration: 40,
+      num_levels: 2,
+      image_model: 'SEEDREAM',
+      video_model: 'RUNWAYML',
+      aspect_ratio: '16:9',
+      aspectRatio: '9:16',
+    }),
+    (error) => error.code === 'CONFLICTING_ASPECT_RATIO' && error.status === 400,
+  );
+});
+
+test('one-step initialization immediately applies default and overridden branch ratios', async () => {
+  const sessionUpdates = [];
+  const mappings = [];
+  for (const aspectRatio of [undefined, '9:16']) {
+    await __testOnly__.initializeVideoSession({
+      sessionId: SESSION_ID,
+      userId: USER_ID,
+      requestId: INTERACTIVE_REQUEST_ID,
+      payload: {
+        prompt: 'Create an interactive journey.',
+        duration: 40,
+        inferenceModel: 'QWEN3.7',
+        imageModel: 'SEEDREAM',
+        videoModel: 'COSMOS3SUPERI2V',
+        ...(aspectRatio ? { aspectRatio } : {}),
+      },
+    }, {
+      videoSessionModel: {
+        findByIdAndUpdate: async (_sessionId, update) => {
+          sessionUpdates.push(update);
+        },
+      },
+      upsertSessionMapping: async (value) => {
+        mappings.push(value);
+      },
+    });
+  }
+
+  assert.deepEqual(
+    sessionUpdates.map((update) => update.$set.aspectRatio),
+    ['16:9', '9:16'],
+  );
+  assert.equal(sessionUpdates.every((update) => update.$set.narrativeType === 'branched'), true);
+  assert.equal(mappings.every((mapping) => mapping.sessionId === SESSION_ID), true);
+});
+
+test('creates a dedicated branched draft with interactive-video defaults', async (t) => {
+  setConnectionReadyForTest(t);
+  const updates = [];
+  const mappings = [];
+  const result = await createTextToInteractiveVideoDraftSession({
+    userId: USER_ID,
+    dependencies: {
+      createNewBlankQuickSession: async () => SESSION_ID,
+      videoSessionModel: {
+        findByIdAndUpdate: async (_sessionId, update) => updates.push(update),
+      },
+      upsertGlobalSessionMapping: async (mapping) => mappings.push(mapping),
+    },
+  });
+
+  assert.equal(result.session_id, SESSION_ID);
+  assert.equal(result.status, 'DRAFT');
+  assert.equal(result.narrative_type, 'branched');
+  assert.equal(updates[0].$set.builderSessionSubType, 'interactive_video_draft');
+  assert.equal(updates[0].$set.narrativeType, 'branched');
+  assert.equal(updates[0].$set.expressGenerationPending, false);
+  assert.equal(mappings[0].sessionSubType, 'interactive_video_draft');
+  assert.equal(mappings[0].status, 'DRAFT');
+});
+
+test('validates user input against an owned draft and fills omitted values from session defaults', async () => {
+  const result = await validateTextToInteractiveVideoSessionInput({
+    userId: USER_ID,
+    payload: {
+      input: {
+        prompt: 'Use the saved interactive defaults.',
+        request_id: SESSION_ID,
+      },
+    },
+    dependencies: {
+      videoSessionModel: {
+        findOne: () => ({
+          lean: async () => ({
+            _id: SESSION_ID,
+            userId: USER_ID,
+            narrativeType: 'branched',
+            builderStatus: 'DRAFT',
+            builderSessionSubType: 'interactive_video_draft',
+            interactiveVideoDraftConfig: {
+              duration: 30,
+              imageModel: 'NANOBANANA2',
+              videoModel: 'COSMOS3SUPERI2V',
+              numLevels: 2,
+              aspectRatio: '16:9',
+            },
+          }),
+        }),
+      },
+    },
+  });
+
+  assert.deepEqual(result.normalizedPayload, {
+    prompt: 'Use the saved interactive defaults.',
+    duration: 30,
+    inferenceModel: undefined,
+    imageModel: 'NANOBANANA2',
+    videoModel: 'COSMOS3SUPERI2V',
+    numLevels: 2,
+    aspectRatio: '16:9',
+    sessionId: SESSION_ID,
+  });
+});
+
+test('rejects conflicting session/request aliases before creating interactive work', () => {
+  assert.throws(
+    () => normalizeTextToInteractiveVideoPayload({
+      prompt: 'A branching story.',
+      duration: 30,
+      image_model: 'SEEDREAM',
+      video_model: 'RUNWAYML',
+      num_levels: 1,
+      session_id: SESSION_ID,
+      request_id: '507f1f77bcf86cd799439099',
+    }),
+    (error) => error.code === 'CONFLICTING_SESSION_ID' && error.status === 400,
   );
 });
 
@@ -211,6 +366,7 @@ test('durable worker sequences both waived narrative stages before scheduling on
       inferenceModel: 'QWEN3.7',
       imageModel: 'SEEDREAM',
       videoModel: 'COSMOS3SUPERI2V',
+      aspectRatio: '9:16',
     },
     apiKeyUsage: {
       apiKeyId: 'api-key-id',
@@ -296,6 +452,7 @@ test('durable worker sequences both waived narrative stages before scheduling on
     narrative_request_id: BRANCHED_REQUEST_ID,
     image_model: 'SEEDREAM',
     video_model: 'COSMOS3SUPERI2V',
+    aspectRatio: '9:16',
   });
   assert.deepEqual(finalVideoArguments.authContext, storedJob.apiKeyUsage);
   assert.equal(finalVideoArguments.webhookUrl, 'https://example.com/interactive-ready');

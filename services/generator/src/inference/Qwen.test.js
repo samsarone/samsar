@@ -75,9 +75,31 @@ test('uses Qwen Max for text and Plus only for actual multimodal content', () =>
     alternateMediaShapes.messages[0].content[0].image_url.url,
     'data:image/jpeg;base64,abc',
   );
-  assert.deepEqual(
-    alternateMediaShapes.messages[0].content[1].video_url.url,
-    ['https://example.test/frame-1.png', 'https://example.test/frame-2.png'],
+  assert.deepEqual(alternateMediaShapes.messages[0].content.slice(1), [
+    {
+      type: 'video_url',
+      video_url: { url: 'https://example.test/frame-1.png' },
+    },
+    {
+      type: 'video_url',
+      video_url: { url: 'https://example.test/frame-2.png' },
+    },
+  ]);
+
+  const nestedListShape = buildQwenChatCompletionPayload({
+    model: 'QWEN3.7',
+    messages: [{
+      role: 'user',
+      content: [{
+        type: 'input_image',
+        source: { urls: ['https://example.test/frame-3.png'] },
+      }],
+    }],
+  }, {});
+  assert.equal(nestedListShape.model, 'qwen3.7-plus');
+  assert.equal(
+    nestedListShape.messages[0].content[0].image_url.url,
+    'https://example.test/frame-3.png',
   );
 });
 

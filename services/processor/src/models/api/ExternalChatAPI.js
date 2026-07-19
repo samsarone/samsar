@@ -126,7 +126,10 @@ function getRequestedModel(payload = {}) {
   );
 }
 
-export async function createExternalChatCompletion({ userId, payload = {} } = {}) {
+export async function createExternalChatCompletion(
+  { userId, payload = {} } = {},
+  dependencyOverrides = {},
+) {
   if (!userId) {
     throw buildError('User ID is required.', 401);
   }
@@ -138,13 +141,20 @@ export async function createExternalChatCompletion({ userId, payload = {} } = {}
   const messages = normalizeMessages(completionPayload.messages);
   const model = getRequestedModel(completionPayload);
   const timeout = getExternalChatTimeoutMs(completionPayload);
-  const response = await createCompatibleChatCompletion(openai, {
+  // Keep canonical media references until the selected compatible adapter's
+  // actual outbound boundary. Native Gemini embeds mounted bytes; URL-based
+  // providers resolve a fresh public URL themselves.
+  const providerPayload = {
     ...completionPayload,
     model,
     messages,
     timeout,
     bypassSamsarExternalInference: true,
-  });
+  };
+  const createCompletion = typeof dependencyOverrides.createCompletion === 'function'
+    ? dependencyOverrides.createCompletion
+    : createCompatibleChatCompletion;
+  const response = await createCompletion(openai, providerPayload, dependencyOverrides);
 
   const assistantMessage = response?.choices?.[0]?.message;
   const outputText = typeof assistantMessage?.content === 'string'
@@ -160,7 +170,10 @@ export async function createExternalChatCompletion({ userId, payload = {} } = {}
     outputText,
   });
 
-  const chargeResult = await deductGenerationCredits(userId, creditsCharged, {
+  const deductCredits = typeof dependencyOverrides.deductCredits === 'function'
+    ? dependencyOverrides.deductCredits
+    : deductGenerationCredits;
+  const chargeResult = await deductCredits(userId, creditsCharged, {
     source: 'external_chat_completion',
     metadata: {
       requestType: 'API',

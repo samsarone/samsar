@@ -1,12 +1,32 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 
 import {
+  buildGoogleNanoBananaImagePart,
   buildGoogleNanoBananaGenerateContentRequest,
   normalizeGoogleNanoBananaAspectRatio,
   normalizeGoogleNanoBananaRequestPayload,
   resolveGoogleNanoBananaModel,
 } from './GoogleNanoBananaNative.js';
+
+test('builds native Google inlineData from a mounted image without a public URL', async (t) => {
+  const tempRoot = await mkdtemp(path.join(tmpdir(), 'samsar-google-inline-'));
+  const imagePath = path.join(tempRoot, 'frame.png');
+  await writeFile(imagePath, Buffer.from('mounted-image'));
+  t.after(() => rm(tempRoot, { recursive: true, force: true }));
+
+  const part = await buildGoogleNanoBananaImagePart(imagePath);
+
+  assert.deepEqual(part, {
+    inlineData: {
+      mimeType: 'image/png',
+      data: Buffer.from('mounted-image').toString('base64'),
+    },
+  });
+});
 
 test('normalizes portrait aliases and API-style aspect ratio payload fields', () => {
   assert.equal(normalizeGoogleNanoBananaAspectRatio('portrait'), '9:16');

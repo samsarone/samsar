@@ -5,7 +5,6 @@ import ImageGeneration from '../../schema/ImageGeneration.js';
 import GlobalSession from '../../schema/GlobalSession.js';
 import { markVideoSessionLayerAsFailed } from '../../VideoSession.js';
 import { uploadImageToCDN } from '../../utils/AWS.js';
-import { getAccessibleMediaUrlsForProvider } from '../../utils/MediaReferenceUtils.js';
 import {
   generateGoogleNanoBananaImages,
   getGoogleNanoBananaLocalGenerationPath,
@@ -121,7 +120,9 @@ async function getImageUrlsForRequest(payload) {
     }
   }
 
-  return await getAccessibleMediaUrlsForProvider(urls);
+  // Google receives these images as inlineData. Keep canonical references so
+  // the native adapter can read mounted Docker media directly.
+  return urls;
 }
 
 function getRequestedImageCount(payload, caseType) {

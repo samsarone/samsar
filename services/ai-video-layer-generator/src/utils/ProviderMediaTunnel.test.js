@@ -104,3 +104,84 @@ test('fails retryably and never returns a stale tunnel URL', async () => {
     restoreEnv(env);
   }
 });
+
+test('rejects encoded traversal before constructing or probing a provider URL', async () => {
+  let fetchCalled = false;
+  globalThis.fetch = async () => {
+    fetchCalled = true;
+    throw new Error('must not fetch');
+  };
+
+  await assert.rejects(
+    () => resolveFreshManagedProviderMediaUrl({
+      mediaPath: 'assets_v2/%2e%2e/secret.png',
+      getBaseUrlCandidates: () => ['https://media.trycloudflare.com'],
+    }),
+    /safe non-empty relative path/,
+  );
+  assert.equal(fetchCalled, false);
+});
+
+test('rejects managed tunnel bases containing a path, query, or fragment', async () => {
+  const env = snapshotEnv();
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'samsar-provider-tunnel-'));
+  process.env.SAMSAR_MEDIA_TUNNEL_REFRESH_WAIT_MS = '1';
+  process.env.SAMSAR_MEDIA_TUNNEL_REFRESH_POLL_MS = '10';
+  process.env.SAMSAR_MEDIA_TUNNEL_REFRESH_REQUEST_PATH = path.join(tempRoot, 'refresh.json');
+  let fetchCalled = false;
+  globalThis.fetch = async () => {
+    fetchCalled = true;
+    throw new Error('must not fetch');
+  };
+
+  try {
+    await assert.rejects(
+      () => resolveFreshManagedProviderMediaUrl({
+        mediaPath: 'assets_v2/generations/session/frame.png',
+        getBaseUrlCandidates: () => [
+          'https://media.trycloudflare.com/assets_v2',
+          'https://media.trycloudflare.com?token=bad',
+          'https://media.trycloudflare.com#bad',
+        ],
+      }),
+      (error) => error?.code === 'SAMSAR_MEDIA_TUNNEL_UNREACHABLE' && error?.attemptedUrls?.length === 0,
+    );
+    assert.equal(fetchCalled, false);
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+    restoreEnv(env);
+  }
+});
+
+test('rejects wrong media MIME types and redirects away from public HTTPS', async () => {
+  const env = snapshotEnv();
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'samsar-provider-tunnel-'));
+  process.env.SAMSAR_MEDIA_TUNNEL_REFRESH_WAIT_MS = '1';
+  process.env.SAMSAR_MEDIA_TUNNEL_REFRESH_POLL_MS = '10';
+  process.env.SAMSAR_MEDIA_TUNNEL_REFRESH_REQUEST_PATH = path.join(tempRoot, 'refresh.json');
+  let mode = 'mime';
+  globalThis.fetch = async (url) => ({
+    ok: true,
+    status: 206,
+    url: mode === 'redirect' ? 'https://169.254.169.254/assets_v2/frame.png' : String(url),
+    headers: { get: () => mode === 'mime' ? 'video/mp4' : 'image/png' },
+    body: { cancel: async () => {} },
+  });
+
+  try {
+    for (const nextMode of ['mime', 'redirect']) {
+      mode = nextMode;
+      await assert.rejects(
+        () => resolveFreshManagedProviderMediaUrl({
+          mediaPath: 'assets_v2/generations/session/frame.png',
+          getBaseUrlCandidates: () => ['https://media.trycloudflare.com'],
+          expectedContentTypePrefix: 'image/',
+        }),
+        (error) => error?.code === 'SAMSAR_MEDIA_TUNNEL_UNREACHABLE',
+      );
+    }
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+    restoreEnv(env);
+  }
+});

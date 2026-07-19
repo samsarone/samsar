@@ -8,6 +8,7 @@ import { getDBConnectionString } from '../DBString.js';
 import { deductGenerationCredits } from '../GenerationCredits.js';
 import { getModelForUserInferenceModel } from '../agent/ModelUtils.js';
 import { createCompatibleChatCompletion } from '../ai_utils/OpenAICompat.js';
+import { resolveProviderMediaPayload } from '../ai_utils/ProviderMediaPayload.js';
 import { deductExternalUserCredits } from '../external/User.js';
 import {
   GPT_56_SOL_REASONING_EFFORT,
@@ -25,6 +26,7 @@ const DEFAULT_ASSISTANT_MODEL = 'gpt-5.6-sol';
 const DEFAULT_ASSISTANT_COMPLETION_TIMEOUT_MS = 10 * 60 * 1000;
 const DEFAULT_ASSISTANT_SYSTEM_PROMPT =
   'You are a helpful assistant for Samsar. Respond clearly, accurately, and preserve any multimodal context provided by the user.';
+const ASSISTANT_PROVIDER_MEDIA_SERVICE = 'samsar_processor_assistant';
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY || '' });
 
 export function getAssistantCompletionTimeoutMs(payload = {}) {
@@ -392,6 +394,29 @@ export function buildResponsesRequest({ model, inputMessages, payload = {}, prev
   return body;
 }
 
+export async function resolveAssistantProviderMediaInput(input, dependencyOverrides = {}) {
+  if (!Array.isArray(input)) {
+    return input;
+  }
+
+  const overrides = typeof dependencyOverrides === 'function'
+    ? { resolveMediaUrl: dependencyOverrides }
+    : (dependencyOverrides || {});
+  const resolveMediaUrl = typeof overrides.resolveMediaUrl === 'function'
+    ? overrides.resolveMediaUrl
+    : getAccessibleProviderMediaUrl;
+  const serviceName = normalizeString(overrides.serviceName)
+    || ASSISTANT_PROVIDER_MEDIA_SERVICE;
+  return resolveProviderMediaPayload(input, { resolveMediaUrl, serviceName });
+}
+
+async function buildAssistantProviderRequest(responseRequest) {
+  return {
+    ...responseRequest,
+    input: await resolveAssistantProviderMediaInput(responseRequest.input),
+  };
+}
+
 async function createAssistantResponse(
   responseRequest,
   selectedAssistantModel = DEFAULT_ASSISTANT_MODEL,
@@ -403,9 +428,13 @@ async function createAssistantResponse(
     isQwenInferenceModel(selectedAssistantModel) ||
     selectedAssistantModelAuthorization === 'deployed'
   ) {
+    // Compatible adapters own provider-bound media normalization. Preserve the
+    // canonical input here so native Gemini can read mounted bytes as inlineData
+    // and URL-based adapters can create fresh URLs at their dispatch boundary.
+    const providerRequest = responseRequest;
     const chatResponse = await createCompatibleChatCompletion(openai, {
       model: selectedAssistantModel,
-      messages: responseRequest.input,
+      messages: providerRequest.input,
       ...(selectedAssistantModelAuthorization
         ? { authorization: selectedAssistantModelAuthorization }
         : {}),
@@ -414,24 +443,25 @@ async function createAssistantResponse(
       externalPolling: selectedAssistantModelAuthorization === 'deployed',
       externalPollTimeoutMs: timeoutMs,
       externalPollIntervalMs: process.env.SAMSAR_EXTERNAL_ASSISTANT_POLL_INTERVAL_MS,
-      ...(responseRequest.temperature !== undefined ? { temperature: responseRequest.temperature } : {}),
-      ...(responseRequest.top_p !== undefined ? { top_p: responseRequest.top_p } : {}),
-      ...(responseRequest.max_output_tokens !== undefined
-        ? { max_tokens: responseRequest.max_output_tokens }
+      ...(providerRequest.temperature !== undefined ? { temperature: providerRequest.temperature } : {}),
+      ...(providerRequest.top_p !== undefined ? { top_p: providerRequest.top_p } : {}),
+      ...(providerRequest.max_output_tokens !== undefined
+        ? { max_tokens: providerRequest.max_output_tokens }
         : {}),
-      ...(responseRequest.user !== undefined ? { user: responseRequest.user } : {}),
-      ...(responseRequest.tools !== undefined ? { tools: responseRequest.tools } : {}),
-      ...(responseRequest.tool_choice !== undefined ? { tool_choice: responseRequest.tool_choice } : {}),
-      ...(responseRequest.parallel_tool_calls !== undefined
-        ? { parallel_tool_calls: responseRequest.parallel_tool_calls }
+      ...(providerRequest.user !== undefined ? { user: providerRequest.user } : {}),
+      ...(providerRequest.tools !== undefined ? { tools: providerRequest.tools } : {}),
+      ...(providerRequest.tool_choice !== undefined ? { tool_choice: providerRequest.tool_choice } : {}),
+      ...(providerRequest.parallel_tool_calls !== undefined
+        ? { parallel_tool_calls: providerRequest.parallel_tool_calls }
         : {}),
     });
     return normalizeChatCompletionToResponses(chatResponse);
   }
 
   try {
+    const providerRequest = await buildAssistantProviderRequest(responseRequest);
     return await openai.post('/responses', {
-      body: responseRequest,
+      body: providerRequest,
       timeout: timeoutMs,
       maxRetries: 0,
     });
@@ -440,15 +470,16 @@ async function createAssistantResponse(
       throw error;
     }
 
+    const providerRequest = await buildAssistantProviderRequest(responseRequest);
     const chatPayload = {
-      model: responseRequest.model,
-      messages: responseRequest.input,
-      ...(responseRequest.temperature !== undefined ? { temperature: responseRequest.temperature } : {}),
-      ...(responseRequest.top_p !== undefined ? { top_p: responseRequest.top_p } : {}),
-      ...(responseRequest.max_output_tokens !== undefined
-        ? { max_completion_tokens: responseRequest.max_output_tokens }
+      model: providerRequest.model,
+      messages: providerRequest.input,
+      ...(providerRequest.temperature !== undefined ? { temperature: providerRequest.temperature } : {}),
+      ...(providerRequest.top_p !== undefined ? { top_p: providerRequest.top_p } : {}),
+      ...(providerRequest.max_output_tokens !== undefined
+        ? { max_completion_tokens: providerRequest.max_output_tokens }
         : {}),
-      ...(responseRequest.user !== undefined ? { user: responseRequest.user } : {}),
+      ...(providerRequest.user !== undefined ? { user: providerRequest.user } : {}),
     };
 
     const chatResponse = await openai.chat.completions.create(chatPayload, {

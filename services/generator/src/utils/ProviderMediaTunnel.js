@@ -10,6 +10,16 @@ function normalizeString(value) {
   return typeof value === 'string' ? value.trim() : '';
 }
 
+function isPrivateOrLocalHostname(value) {
+  const hostname = normalizeString(value).toLowerCase().replace(/^\[|\]$/g, '').replace(/\.$/, '');
+  return hostname === 'localhost' || hostname === 'media-gateway' ||
+    hostname === 'host.docker.internal' || hostname === '0.0.0.0' || hostname === '::1' ||
+    hostname.endsWith('.local') || /^127\./.test(hostname) || /^10\./.test(hostname) ||
+    /^192\.168\./.test(hostname) || /^172\.(1[6-9]|2\d|3[01])\./.test(hostname) ||
+    /^169\.254\./.test(hostname) || /^f[cd][0-9a-f]{2}:/i.test(hostname) ||
+    /^fe[89ab][0-9a-f]:/i.test(hostname);
+}
+
 function positiveInteger(value, fallback, minimum = 1) {
   const parsed = Number(value);
   return Number.isFinite(parsed) && parsed >= minimum ? Math.floor(parsed) : fallback;
@@ -18,30 +28,56 @@ function positiveInteger(value, fallback, minimum = 1) {
 function normalizeMediaPath(value) {
   const normalized = normalizeString(value).replace(/^\/+/, '');
   const segments = normalized.split('/').filter(Boolean);
-  if (!segments.length || segments.some((segment) => segment === '.' || segment === '..')) {
+  const decodedSegments = segments.map((segment) => {
+    try {
+      return decodeURIComponent(segment);
+    } catch {
+      throw new Error('Provider media path contains invalid URL encoding.');
+    }
+  });
+  if (
+    !decodedSegments.length ||
+    decodedSegments.some((segment) => segment === '.' || segment === '..' || segment.includes('/') || segment.includes('\\'))
+  ) {
     throw new Error('Provider media path must be a safe non-empty relative path.');
   }
-  return segments.map((segment) => {
-    try {
-      return encodeURIComponent(decodeURIComponent(segment));
-    } catch {
-      return encodeURIComponent(segment);
+  return decodedSegments.map((segment) => encodeURIComponent(segment)).join('/');
+}
+
+function normalizeManagedBaseUrl(value) {
+  const normalized = normalizeString(value);
+  if (!normalized) return '';
+  try {
+    const url = new URL(normalized);
+    if (
+      url.protocol !== 'https:' ||
+      isPrivateOrLocalHostname(url.hostname) ||
+      url.username ||
+      url.password ||
+      (url.pathname && url.pathname !== '/') ||
+      url.search ||
+      url.hash
+    ) {
+      return '';
     }
-  }).join('/');
+    return url.origin;
+  } catch {
+    return '';
+  }
 }
 
 function uniqueBaseUrls(values = []) {
   return values
-    .map((value) => normalizeString(value).replace(/\/+$/, ''))
+    .map(normalizeManagedBaseUrl)
     .filter(Boolean)
     .filter((value, index, list) => list.indexOf(value) === index);
 }
 
 function buildCandidateUrls(mediaPath, baseUrls) {
-  return uniqueBaseUrls(baseUrls).map((baseUrl) => `${baseUrl}/${mediaPath}`);
+  return uniqueBaseUrls(baseUrls).map((baseUrl) => new URL(mediaPath, `${baseUrl}/`).href);
 }
 
-async function probeExactMediaUrl(url) {
+async function probeExactMediaUrl(url, expectedContentTypePrefix = '') {
   const controller = new AbortController();
   const timeout = setTimeout(
     () => controller.abort(),
@@ -61,7 +97,21 @@ async function probeExactMediaUrl(url) {
         await response.body.cancel();
       } catch {}
     }
-    return (response.ok || response.status === 206) && !contentType.includes('text/html');
+    const invalidContentType = contentType.includes('text/html') ||
+      contentType.includes('application/json') ||
+      contentType.startsWith('text/');
+    let finalUrl;
+    try {
+      finalUrl = new URL(normalizeString(response.url) || url);
+    } catch {
+      return false;
+    }
+    const publicHttpsRedirect = finalUrl.protocol === 'https:' &&
+      !isPrivateOrLocalHostname(finalUrl.hostname);
+    const validExpectedContentType = !expectedContentTypePrefix ||
+      contentType.startsWith(expectedContentTypePrefix);
+    return (response.ok || response.status === 206) && !invalidContentType &&
+      validExpectedContentType && publicHttpsRedirect;
   } catch {
     return false;
   } finally {
@@ -69,10 +119,10 @@ async function probeExactMediaUrl(url) {
   }
 }
 
-async function findReachableCandidate(mediaPath, getBaseUrlCandidates) {
+async function findReachableCandidate(mediaPath, getBaseUrlCandidates, expectedContentTypePrefix = '') {
   const candidateUrls = buildCandidateUrls(mediaPath, await getBaseUrlCandidates());
   for (const candidateUrl of candidateUrls) {
-    if (await probeExactMediaUrl(candidateUrl)) {
+    if (await probeExactMediaUrl(candidateUrl, expectedContentTypePrefix)) {
       return { url: candidateUrl, attemptedUrls: candidateUrls };
     }
   }
@@ -137,13 +187,22 @@ export async function resolveFreshManagedProviderMediaUrl({
   mediaPath,
   getBaseUrlCandidates,
   serviceName = 'samsar_provider_worker',
+  expectedContentTypePrefix = '',
 }) {
   if (typeof getBaseUrlCandidates !== 'function') {
     throw new TypeError('getBaseUrlCandidates must be a function.');
   }
 
   const normalizedMediaPath = normalizeMediaPath(mediaPath);
-  const initial = await findReachableCandidate(normalizedMediaPath, getBaseUrlCandidates);
+  const normalizedContentTypePrefix = normalizeString(expectedContentTypePrefix).toLowerCase();
+  if (normalizedContentTypePrefix && !normalizedContentTypePrefix.endsWith('/')) {
+    throw new TypeError('expectedContentTypePrefix must be empty or a MIME type prefix ending in /.');
+  }
+  const initial = await findReachableCandidate(
+    normalizedMediaPath,
+    getBaseUrlCandidates,
+    normalizedContentTypePrefix,
+  );
   if (initial.url) {
     return initial.url;
   }
@@ -180,7 +239,11 @@ export async function resolveFreshManagedProviderMediaUrl({
 
   while (Date.now() < deadline) {
     await new Promise((resolve) => setTimeout(resolve, Math.min(pollMs, Math.max(1, deadline - Date.now()))));
-    const refreshed = await findReachableCandidate(normalizedMediaPath, getBaseUrlCandidates);
+    const refreshed = await findReachableCandidate(
+      normalizedMediaPath,
+      getBaseUrlCandidates,
+      normalizedContentTypePrefix,
+    );
     attemptedUrls = [...new Set([...attemptedUrls, ...refreshed.attemptedUrls])];
     if (refreshed.url) {
       return refreshed.url;
@@ -194,4 +257,3 @@ export async function resolveFreshManagedProviderMediaUrl({
     refreshRequestPath,
   });
 }
-

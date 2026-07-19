@@ -152,6 +152,47 @@ function buildMediaDeliveryUrl(key) {
   return isSecureAssetKey(key) ? signCloudFrontUrl(cdnUrl) : cdnUrl;
 }
 
+function isKnownMediaDeliveryUrl(value) {
+  try {
+    const url = new URL(value);
+    const staticCdnUrl = new URL(STATIC_CDN_URL);
+    if (url.origin === staticCdnUrl.origin) {
+      return true;
+    }
+
+    const hostname = url.hostname.toLowerCase();
+    const bucketName = String(MEDIA_BUCKET_NAME || '').trim().toLowerCase();
+    const objectPath = decodeURIComponent(url.pathname).replace(/^\/+/, '');
+    return Boolean(bucketName) && (
+      hostname === `${bucketName}.s3.amazonaws.com` ||
+      hostname.startsWith(`${bucketName}.s3.`) ||
+      ((hostname === 's3.amazonaws.com' || hostname.startsWith('s3.')) &&
+        objectPath.startsWith(`${bucketName}/`))
+    );
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Build a provider-facing delivery URL only for a Samsar media key or a URL
+ * owned by the configured media bucket/CDN. Independent third-party URLs are
+ * deliberately not rewritten.
+ */
+export function buildSecureMediaDeliveryUrl(value) {
+  const normalized = String(value || '').trim();
+  if (!normalized) {
+    return null;
+  }
+  if (/^https?:\/\//i.test(normalized) && !isKnownMediaDeliveryUrl(normalized)) {
+    return null;
+  }
+
+  const key = normalizeObjectKey(normalized);
+  assertConfiguredDockerExternalS3Delivery();
+  return key ? buildMediaDeliveryUrl(key) : null;
+}
+
 function getAudioContentType(fileName = '') {
   const extension = path.extname(fileName).toLowerCase();
   const contentTypeByExtension = {
@@ -188,6 +229,78 @@ function shouldUseDockerLocalMedia() {
     return false;
   }
   return isDockerRuntime() && !isExternalMediaPublishEnabled();
+}
+
+function isPrivateOrLocalHostname(value) {
+  const hostname = String(value || '').trim().toLowerCase().replace(/^\[|\]$/g, '');
+  if (
+    !hostname ||
+    hostname === 'localhost' ||
+    hostname.endsWith('.localhost') ||
+    hostname.endsWith('.local') ||
+    hostname === '0.0.0.0' ||
+    hostname === '::' ||
+    hostname === '::1' ||
+    hostname === 'host.docker.internal'
+  ) {
+    return true;
+  }
+
+  const ipv4Match = hostname.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  if (ipv4Match) {
+    const octets = ipv4Match.slice(1).map(Number);
+    if (octets.some((octet) => octet > 255)) return true;
+    const [first, second] = octets;
+    return first === 0 || first === 10 || first === 127 ||
+      (first === 100 && second >= 64 && second <= 127) ||
+      (first === 169 && second === 254) ||
+      (first === 172 && second >= 16 && second <= 31) ||
+      (first === 192 && second === 168) ||
+      first >= 224;
+  }
+
+  return /^(?:fc|fd|fe[89ab])/i.test(hostname);
+}
+
+function buildExternalS3ConfigurationError() {
+  const error = new Error(
+    'Docker external-S3 media delivery requires an explicitly configured media bucket and public HTTPS STATIC_CDN_URL.',
+  );
+  error.name = 'SamsarExternalS3ConfigurationError';
+  error.code = 'SAMSAR_EXTERNAL_S3_CONFIG_INVALID';
+  error.retryable = false;
+  return error;
+}
+
+/**
+ * Docker must never fall through to the hosted production bucket/CDN defaults.
+ * External publishing is allowed only when this installation explicitly owns
+ * both the upload bucket and a provider-reachable HTTPS delivery origin.
+ */
+function assertConfiguredDockerExternalS3Delivery() {
+  if (!isDockerRuntime() || shouldUseDockerLocalMedia()) {
+    return;
+  }
+
+  const explicitBucket = String(
+    process.env.MEDIA_BUCKET_NAME || process.env.STATIC_CDN_BUCKET || '',
+  ).trim();
+  const explicitCdnBase = String(process.env.STATIC_CDN_URL || '').trim();
+  let parsedCdnBase;
+  try {
+    parsedCdnBase = new URL(explicitCdnBase);
+  } catch {}
+
+  if (
+    !explicitBucket ||
+    !parsedCdnBase ||
+    parsedCdnBase.protocol !== 'https:' ||
+    parsedCdnBase.username ||
+    parsedCdnBase.password ||
+    isPrivateOrLocalHostname(parsedCdnBase.hostname)
+  ) {
+    throw buildExternalS3ConfigurationError();
+  }
 }
 
 function getDockerAssetsV2Root() {
@@ -307,6 +420,8 @@ export async function uploadFrameLayerImageToCDN(absolutePath, remoteFileName) {
     return persistDockerMediaFile(absolutePath, uploadKey);
   }
 
+  assertConfiguredDockerExternalS3Delivery();
+
   // Create a read stream for the file
   const fileStream = fs.createReadStream(absolutePath);
 
@@ -347,6 +462,8 @@ export async function uploadMusicToCDN(absolutePath, remoteFileName) {
   if (shouldUseDockerLocalMedia()) {
     return persistDockerMediaFile(absolutePath, uploadKey);
   }
+
+  assertConfiguredDockerExternalS3Delivery();
 
   // Create a read stream for the file
   const fileStream = fs.createReadStream(absolutePath);
@@ -394,6 +511,8 @@ export async function uploadAudioAssetToCDN(absolutePath, remoteFileName) {
   if (shouldUseDockerLocalMedia()) {
     return persistDockerMediaFile(absolutePath, uploadKey);
   }
+
+  assertConfiguredDockerExternalS3Delivery();
 
   const fileStream = fs.createReadStream(absolutePath);
   const uploadParams = {
@@ -481,6 +600,8 @@ export async function generateS3UrlsFromLocalFile(sessionId, filePath) {
   if (shouldUseDockerLocalMedia()) {
     return [await persistDockerMediaFile(filePath, uploadKey)];
   }
+
+  assertConfiguredDockerExternalS3Delivery();
 
   const fileStream = fs.createReadStream(filePath);
 

@@ -2668,9 +2668,25 @@ export default function OnboardingWizard() {
         ['s3Region', 'S3 region'],
         ['s3AccessKeyId', 'S3 access key'],
         ['s3SecretAccessKey', 'S3 secret key'],
+        ['staticCdnUrl', 'public CDN base URL'],
       ].filter(([field]) => !normalizeText(dataConfig[field]));
       if (missingFields.length) {
         setDataConfigError(`External S3 requires: ${missingFields.map(([, label]) => label).join(', ')}.`);
+        return false;
+      }
+      try {
+        const publicCdnUrl = new URL(normalizeText(dataConfig.staticCdnUrl));
+        if (
+          publicCdnUrl.protocol !== 'https:' ||
+          publicCdnUrl.username ||
+          publicCdnUrl.password ||
+          publicCdnUrl.search ||
+          publicCdnUrl.hash
+        ) {
+          throw new Error('invalid public CDN URL');
+        }
+      } catch {
+        setDataConfigError('Public CDN base URL must be HTTPS and must not contain credentials, a query, or a fragment.');
         return false;
       }
       if (
@@ -3694,6 +3710,7 @@ export default function OnboardingWizard() {
 	                    <label className="data-field">
 	                      <span>Public CDN base URL</span>
 	                      <input
+	                        required
 	                        value={dataConfig.staticCdnUrl}
 	                        placeholder="https://cdn.example.com/"
 	                        onChange={(event) => updateDataConfig('staticCdnUrl', event.target.value)}

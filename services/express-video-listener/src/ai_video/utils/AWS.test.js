@@ -32,17 +32,121 @@ const ENV_KEYS = [
   'SAMSAR_MEDIA_TUNNEL_REFRESH_WAIT_MS',
   'SAMSAR_MEDIA_TUNNEL_REFRESH_POLL_MS',
   'SAMSAR_MEDIA_TUNNEL_REFRESH_REQUEST_PATH',
+  'MEDIA_BUCKET_NAME',
+  'STATIC_CDN_BUCKET',
 ];
 
 const originalGlobalFetch = globalThis.fetch;
 
 test.beforeEach(() => {
-  globalThis.fetch = async () => ({
-    ok: true,
-    status: 206,
-    headers: { get: () => 'application/octet-stream' },
-    body: { cancel: async () => {} },
-  });
+  globalThis.fetch = async (url) => {
+    const value = String(url);
+    const contentType = /\.(?:mp3|wav|m4a|aac)(?:$|[?#])/i.test(value)
+      ? 'audio/mpeg'
+      : /\.(?:mp4|mov|webm)(?:$|[?#])/i.test(value)
+        ? 'video/mp4'
+        : 'image/png';
+    return {
+      ok: true,
+      status: 206,
+      url: value,
+      headers: { get: () => contentType },
+      body: { cancel: async () => {} },
+    };
+  };
+});
+
+test('Docker external-S3 provider media does not fall back to an implicit hosted CDN or tunnel', async () => {
+  const envSnapshot = snapshotEnv();
+  process.env.CURRENT_ENV = 'docker';
+  process.env.SAMSAR_MEDIA_DELIVERY_MODE = 'external-s3';
+  process.env.MEDIA_DELIVERY_MODE = 'external-s3';
+  process.env.SAMSAR_EXTERNAL_MEDIA_PUBLISH_ENABLED = 'true';
+  delete process.env.MEDIA_BUCKET_NAME;
+  delete process.env.STATIC_CDN_BUCKET;
+  delete process.env.STATIC_CDN_URL;
+
+  try {
+    const { normalizeProviderMediaUrl } = await importAwsModule();
+    await assert.rejects(
+      () => normalizeProviderMediaUrl('/assets_v2/generations/session/start.png'),
+      (error) => error?.code === 'SAMSAR_PROVIDER_MEDIA_REFERENCE_INVALID',
+    );
+  } finally {
+    restoreEnv(envSnapshot);
+  }
+});
+
+test('Docker-local uploads persist a stable processor URL instead of the default hosted CDN', async () => {
+  const envSnapshot = snapshotEnv();
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'samsar-listener-local-upload-'));
+  const assetsV2Root = path.join(tempRoot, 'assets_v2');
+  const sourcePath = path.join(tempRoot, 'source.png');
+  const configPath = path.join(tempRoot, 'samsar.config.json');
+  fs.mkdirSync(assetsV2Root, { recursive: true });
+  fs.writeFileSync(sourcePath, 'png');
+  fs.writeFileSync(configPath, JSON.stringify({
+    publicUrls: {
+      processorApi: 'http://localhost:3999',
+      media: 'https://short-lived.trycloudflare.com',
+    },
+  }));
+
+  process.env.CURRENT_ENV = 'docker';
+  process.env.SAMSAR_MEDIA_DELIVERY_MODE = 'docker-local';
+  process.env.MEDIA_DELIVERY_MODE = 'docker-local';
+  process.env.SAMSAR_ASSETS_V2_ROOT = assetsV2Root;
+  process.env.SAMSAR_RUNTIME_CONFIG_FILE = configPath;
+  delete process.env.SAMSAR_DOCKER_PUBLIC_PROCESSOR_BASE_URL;
+  delete process.env.SAMSAR_DOCKER_PUBLIC_ASSET_BASE_URL;
+  delete process.env.SAMSAR_PUBLIC_MEDIA_BASE_URL;
+  delete process.env.MEDIA_PUBLIC_URL;
+  delete process.env.PUBLIC_API_BASE_URL;
+  delete process.env.PROCESSOR_URL;
+  delete process.env.PROCESSOR_API;
+  delete process.env.STATIC_CDN_URL;
+
+  try {
+    const { uploadFrameLayerImageToCDN } = await importAwsModule();
+    const url = await uploadFrameLayerImageToCDN(sourcePath, 'frame.png');
+    assert.equal(url, 'http://localhost:3999/assets_v2/temp_images/frame.png');
+    assert.equal(
+      fs.readFileSync(path.join(assetsV2Root, 'temp_images', 'frame.png'), 'utf8'),
+      'png',
+    );
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+    restoreEnv(envSnapshot);
+  }
+});
+
+test('Docker external-S3 uploads reject implicit bucket and CDN defaults', async () => {
+  const envSnapshot = snapshotEnv();
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'samsar-listener-external-upload-'));
+  const sourcePath = path.join(tempRoot, 'source.png');
+  fs.writeFileSync(sourcePath, 'png');
+
+  process.env.CURRENT_ENV = 'docker';
+  process.env.SAMSAR_MEDIA_DELIVERY_MODE = 'external-s3';
+  process.env.MEDIA_DELIVERY_MODE = 'external-s3';
+  process.env.SAMSAR_EXTERNAL_MEDIA_PUBLISH_ENABLED = 'true';
+  process.env.AWS_ACCESS_KEY_ID = 'test-access-key';
+  process.env.AWS_SECRET_ACCESS_KEY = 'test-secret-key';
+  process.env.AWS_CDN_REGION = 'us-west-2';
+  delete process.env.MEDIA_BUCKET_NAME;
+  delete process.env.STATIC_CDN_BUCKET;
+  delete process.env.STATIC_CDN_URL;
+
+  try {
+    const { uploadFrameLayerImageToCDN } = await importAwsModule();
+    await assert.rejects(
+      () => uploadFrameLayerImageToCDN(sourcePath, 'frame.png'),
+      /explicitly configured MEDIA_BUCKET_NAME/,
+    );
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+    restoreEnv(envSnapshot);
+  }
 });
 
 test.afterEach(() => {
@@ -170,6 +274,63 @@ test('normalizes Docker local media references to the tunnel without AWS credent
       'https://media-tunnel.trycloudflare.com/assets_v2/video/audio/64b000000000000000000001/speech_padded.mp3'
     );
   } finally {
+    restoreEnv(envSnapshot);
+  }
+});
+
+test('uses explicit gateway namespaces and fails closed for malformed Docker provider media', async () => {
+  const envSnapshot = snapshotEnv();
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'samsar-listener-canonical-media-'));
+  const assetsV2Root = path.join(tempRoot, 'assets_v2');
+  const assetsRoot = path.join(tempRoot, 'assets');
+  const bareReference = 'generations/session/start.png';
+  const localPath = path.join(assetsV2Root, bareReference);
+  fs.mkdirSync(path.dirname(localPath), { recursive: true });
+  fs.mkdirSync(assetsRoot, { recursive: true });
+  fs.writeFileSync(localPath, 'png');
+
+  process.env.CURRENT_ENV = 'docker';
+  process.env.SAMSAR_MEDIA_DELIVERY_MODE = 'docker-local';
+  process.env.MEDIA_DELIVERY_MODE = 'docker-local';
+  process.env.SAMSAR_MEDIA_TUNNEL_PUBLIC_URL = 'https://media-tunnel.trycloudflare.com';
+  process.env.SAMSAR_ASSETS_V2_ROOT = assetsV2Root;
+  process.env.SAMSAR_ASSETS_ROOT = assetsRoot;
+
+  try {
+    const { normalizeProviderMediaUrl } = await importAwsModule();
+    assert.equal(
+      await normalizeProviderMediaUrl(bareReference),
+      'https://media-tunnel.trycloudflare.com/assets_v2/generations/session/start.png',
+    );
+    assert.equal(
+      await normalizeProviderMediaUrl('https://third-party.example/archive/assets_v2/reference.png'),
+      'https://third-party.example/archive/assets_v2/reference.png',
+    );
+    assert.equal(
+      await normalizeProviderMediaUrl('https://s3.us-east-1.amazonaws.com/unrelated-bucket/assets_v2/reference.png'),
+      'https://s3.us-east-1.amazonaws.com/unrelated-bucket/assets_v2/reference.png',
+    );
+    assert.equal(
+      await normalizeProviderMediaUrl('https://foreign.trycloudflare.com/assets_v2/other/reference.png'),
+      'https://foreign.trycloudflare.com/assets_v2/other/reference.png',
+    );
+    assert.equal(
+      await normalizeProviderMediaUrl('https://static.samsar.one/assets_v2/other/reference.png'),
+      'https://static.samsar.one/assets_v2/other/reference.png',
+    );
+    assert.equal(
+      await normalizeProviderMediaUrl(
+        'https://expired.trycloudflare.com/assets_v2/generations/session/start.png',
+        { mediaKind: 'image' },
+      ),
+      'https://media-tunnel.trycloudflare.com/assets_v2/generations/session/start.png',
+    );
+    await assert.rejects(
+      () => normalizeProviderMediaUrl('http://localhost:3002/not-assets/input.png'),
+      (error) => error?.code === 'SAMSAR_PROVIDER_MEDIA_REFERENCE_INVALID' && error?.retryable === false,
+    );
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
     restoreEnv(envSnapshot);
   }
 });

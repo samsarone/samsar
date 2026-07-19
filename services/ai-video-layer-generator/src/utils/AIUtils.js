@@ -10,6 +10,8 @@ import {
   createSamsarExternalChatCompletion,
   shouldUseSamsarExternalInference,
 } from './SamsarExternalInferenceAdapter.js';
+import { normalizeProviderMediaUrl } from '../AWS.js';
+import { normalizeProviderMediaPayload } from './ProviderMediaPayload.js';
 
 let openaiClient = null;
 let openaiClientApiKey = '';
@@ -113,7 +115,10 @@ export async function sendAssistantMessageRequest(
       return response.choices[0].message;
     }
 
-    const response = await getOpenAIClient().chat.completions.create(nativePayload);
+    const response = await getOpenAIClient().chat.completions.create(
+      await normalizeProviderMediaPayload(nativePayload, normalizeProviderMediaUrl),
+      { maxRetries: 0 },
+    );
     return response.choices[0].message;
   } catch (error) {
     let errorString = 'An error occurred while sending the message. Please try again with a different message.'

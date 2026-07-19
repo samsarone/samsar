@@ -15,10 +15,10 @@ export function resolveDockerLocalPublicClientBaseUrl(env = process.env) {
 
 export function resolveDockerLocalPublicProcessorBaseUrl(env = process.env) {
   return normalizeBaseUrl(env.SAMSAR_DOCKER_PUBLIC_PROCESSOR_BASE_URL) ||
-    normalizeBaseUrl(env.API_SERVER) ||
-    normalizeBaseUrl(env.PUBLIC_API_BASE_URL) ||
     normalizeBaseUrl(env.PROCESSOR_API) ||
     normalizeBaseUrl(env.PROCESSOR_URL) ||
+    normalizeBaseUrl(env.PUBLIC_API_BASE_URL) ||
+    normalizeBaseUrl(env.API_SERVER) ||
     DOCKER_LOCAL_PUBLIC_PROCESSOR_BASE_URL;
 }
 

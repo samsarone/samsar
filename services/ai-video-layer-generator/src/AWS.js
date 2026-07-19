@@ -21,6 +21,7 @@ const CDN_PRIME_RETRY_DELAY_MS = 500;
 const SECURE_ASSET_PREFIX = (process.env.SECURE_ASSET_PREFIX || 'assets_v2').replace(/^\/+|\/+$/g, '');
 const SECURE_ASSET_PREFIX_PATTERN = SECURE_ASSET_PREFIX.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const MEDIA_KEY_PREFIX_PATTERN = new RegExp(`^(${SECURE_ASSET_PREFIX_PATTERN}|assets|generations|temp_images|video|ai_video)/`);
+const DOCKER_GATEWAY_MEDIA_KEY_PATTERN = /^(assets_v2|assets)\//;
 const DEFAULT_CLOUDFRONT_SIGNED_URL_TTL_SECONDS = 7 * 24 * 60 * 60;
 const configuredCloudFrontSignedUrlTtlSeconds = Number(process.env.CLOUDFRONT_SIGNED_URL_TTL_SECONDS);
 const CLOUDFRONT_SIGNED_URL_TTL_SECONDS = Number.isFinite(configuredCloudFrontSignedUrlTtlSeconds) && configuredCloudFrontSignedUrlTtlSeconds > 0
@@ -183,12 +184,17 @@ function getDockerProviderMediaKeyReference(value) {
     return '';
   }
 
-  if (MEDIA_KEY_PREFIX_PATTERN.test(referencePath)) {
+  const normalizedValue = normalizeString(value);
+  if (!/^https?:\/\//i.test(normalizedValue) && MEDIA_KEY_PREFIX_PATTERN.test(referencePath)) {
     return referencePath;
   }
 
-  if (!/^https?:\/\//i.test(normalizeString(value))) {
+  if (!/^https?:\/\//i.test(normalizedValue) || !isOwnedDockerMediaUrl(normalizedValue)) {
     return '';
+  }
+
+  if (MEDIA_KEY_PREFIX_PATTERN.test(referencePath)) {
+    return referencePath;
   }
 
   const pathParts = referencePath.split('/').filter(Boolean);
@@ -230,6 +236,10 @@ function getExistingFilePath(candidates) {
 }
 
 function resolveLocalMediaReferencePath(reference) {
+  const normalizedReference = normalizeString(reference);
+  if (/^https?:\/\//i.test(normalizedReference) && !isOwnedDockerMediaUrl(normalizedReference)) {
+    return null;
+  }
   const referencePath = getReferencePath(reference);
   if (!referencePath) {
     return null;
@@ -286,8 +296,130 @@ function isProbablyPublicUrl(value) {
   }
 }
 
+function isPrivateOrLocalHostname(hostname = '') {
+  const normalized = normalizeString(hostname).toLowerCase();
+  return normalized === 'localhost' ||
+    normalized === 'media-gateway' ||
+    normalized === '127.0.0.1' ||
+    normalized === '0.0.0.0' ||
+    normalized.endsWith('.local') ||
+    /^10\./.test(normalized) ||
+    /^192\.168\./.test(normalized) ||
+    /^172\.(1[6-9]|2\d|3[01])\./.test(normalized);
+}
+
+function getConfiguredOwnedMediaHostnames() {
+  const hostnames = new Set();
+  const configuredUrls = [
+    process.env.SAMSAR_MEDIA_TUNNEL_PUBLIC_URL,
+    process.env.SAMSAR_DOCKER_PUBLIC_ASSET_BASE_URL,
+    process.env.SAMSAR_DOCKER_PUBLIC_PROCESSOR_BASE_URL,
+    process.env.SAMSAR_PUBLIC_MEDIA_BASE_URL,
+    process.env.SAMSAR_EXTERNAL_MEDIA_PUBLIC_BASE_URL,
+    process.env.MEDIA_PUBLIC_URL,
+    process.env.PUBLIC_API_BASE_URL,
+    process.env.PROCESSOR_API,
+    process.env.PROCESSOR_URL,
+    ...readRuntimeConfigPublicMediaUrls({ includeStorage: !shouldUseDockerLocalMedia() }),
+    ...(!shouldUseDockerLocalMedia()
+      ? [process.env.PUBLIC_STATIC_CDN_URL, process.env.STATIC_CDN_URL]
+      : []),
+  ];
+  for (const value of configuredUrls) {
+    try {
+      hostnames.add(new URL(value).hostname.toLowerCase());
+    } catch {}
+  }
+  return hostnames;
+}
+
+function isConfiguredS3MediaUrl(url) {
+  const hostname = url.hostname.toLowerCase();
+  const normalizedBucketName = normalizeString(
+    process.env.MEDIA_BUCKET_NAME || process.env.STATIC_CDN_BUCKET,
+  ).toLowerCase();
+  if (!normalizedBucketName) return false;
+  if (
+    hostname === `${normalizedBucketName}.s3.amazonaws.com` ||
+    hostname.startsWith(`${normalizedBucketName}.s3.`)
+  ) {
+    return true;
+  }
+  if (hostname !== 's3.amazonaws.com' && !hostname.startsWith('s3.')) {
+    return false;
+  }
+  try {
+    return decodeURIComponent(url.pathname).replace(/^\/+/, '').startsWith(`${normalizedBucketName}/`);
+  } catch {
+    return false;
+  }
+}
+
+function getDockerMediaKeyFromPathname(pathname) {
+  let referencePath = '';
+  try {
+    referencePath = decodeURIComponent(pathname).replace(/^\/+/, '');
+  } catch {
+    return '';
+  }
+  if (MEDIA_KEY_PREFIX_PATTERN.test(referencePath)) return referencePath;
+  const pathParts = referencePath.split('/').filter(Boolean);
+  for (let index = 1; index < pathParts.length; index += 1) {
+    const candidate = pathParts.slice(index).join('/');
+    if (MEDIA_KEY_PREFIX_PATTERN.test(candidate)) return candidate;
+  }
+  return '';
+}
+
+function isTunnelHostname(hostname) {
+  const normalized = normalizeString(hostname).toLowerCase();
+  return normalized.endsWith('.trycloudflare.com') ||
+    normalized.endsWith('.loca.lt') ||
+    normalized.endsWith('.share.zrok.io');
+}
+
+function isOwnedDockerMediaUrl(value) {
+  try {
+    const url = new URL(value);
+    const hostname = url.hostname.toLowerCase();
+    if (
+      isPrivateOrLocalHostname(hostname) ||
+      getConfiguredOwnedMediaHostnames().has(hostname) ||
+      (!shouldUseDockerLocalMedia() && isConfiguredS3MediaUrl(url))
+    ) {
+      return true;
+    }
+    if (!isTunnelHostname(hostname)) return false;
+    const mediaKey = getDockerMediaKeyFromPathname(url.pathname);
+    return Boolean(mediaKey && resolveLocalMediaReferencePath(mediaKey));
+  } catch {
+    return false;
+  }
+}
+
 function normalizeBaseUrl(value) {
   return normalizeString(value).replace(/\/+$/, '');
+}
+
+function normalizeTunnelBaseUrl(value) {
+  const normalized = normalizeString(value);
+  if (!normalized) return '';
+  try {
+    const url = new URL(normalized);
+    if (
+      url.protocol !== 'https:' ||
+      url.username ||
+      url.password ||
+      (url.pathname && url.pathname !== '/') ||
+      url.search ||
+      url.hash
+    ) {
+      return '';
+    }
+    return url.origin;
+  } catch {
+    return '';
+  }
 }
 
 function getRuntimeConfigPaths() {
@@ -301,7 +433,7 @@ function getRuntimeConfigPaths() {
     .filter((value, index, list) => list.indexOf(value) === index);
 }
 
-function readRuntimeConfigPublicMediaUrls() {
+function readRuntimeConfigPublicMediaUrls({ includeStorage = true } = {}) {
   const urls = [];
   for (const configPath of getRuntimeConfigPaths()) {
     try {
@@ -315,9 +447,13 @@ function readRuntimeConfigPublicMediaUrls() {
         ...(localTunnel.enabled === false ? [] : [localTunnel.publicUrl, localTunnel.url]),
         ...(legacyTunnel.enabled === false ? [] : [legacyTunnel.publicUrl, legacyTunnel.url]),
         config?.publicUrls?.media,
-        config?.storage?.publicMediaBaseUrl,
-        config?.storage?.externalMediaPublicBaseUrl,
-        config?.storage?.staticCdnUrl,
+        ...(includeStorage
+          ? [
+            config?.storage?.publicMediaBaseUrl,
+            config?.storage?.externalMediaPublicBaseUrl,
+            config?.storage?.staticCdnUrl,
+          ]
+          : []),
       );
     } catch (error) {
       console.warn('[AWS] Unable to read runtime media config', {
@@ -350,13 +486,13 @@ function isTunnelMediaBaseUrl(value) {
 
 function getDockerTunnelMediaBaseUrlCandidates() {
   return [
-    process.env.SAMSAR_MEDIA_TUNNEL_PUBLIC_URL,
     ...readRuntimeConfigPublicMediaUrls(),
+    process.env.SAMSAR_MEDIA_TUNNEL_PUBLIC_URL,
     process.env.SAMSAR_PUBLIC_MEDIA_BASE_URL,
     process.env.SAMSAR_EXTERNAL_MEDIA_PUBLIC_BASE_URL,
     process.env.MEDIA_PUBLIC_URL,
   ]
-    .map(normalizeBaseUrl)
+    .map(normalizeTunnelBaseUrl)
     .filter(Boolean)
     .filter(isProbablyPublicUrl)
     .filter(isTunnelMediaBaseUrl)
@@ -424,7 +560,7 @@ export function getDockerPublicMediaBaseUrl() {
   }
   throw new Error(
     'A tunneled media URL is required before sending local audio/video assets to remote video providers. ' +
-    'Run scripts/start-local-media-tunnel.sh or configure publicUrls.media, then recreate the ai-video worker.'
+    'Ensure the Compose media-tunnel-controller is healthy and has published localMediaTunnel.publicUrl.'
   );
 }
 
@@ -433,15 +569,13 @@ export function getDockerPublicMediaKey(reference, localPath = '') {
   const assetsV2Root = getProcessorAssetsRoot(SECURE_ASSET_PREFIX).replace(/\\/g, '/').replace(/\/+$/, '');
   const assetsRoot = getProcessorAssetsRoot('assets').replace(/\\/g, '/').replace(/\/+$/, '');
   const normalizedLocalPath = normalizeString(localPath).replace(/\\/g, '/');
-  return (
-    MEDIA_KEY_PREFIX_PATTERN.test(referencePath)
-      ? referencePath
-      : normalizedLocalPath.startsWith(`${assetsV2Root}/`)
-        ? `${SECURE_ASSET_PREFIX}/${normalizedLocalPath.slice(assetsV2Root.length + 1)}`
-        : normalizedLocalPath.startsWith(`${assetsRoot}/`)
-          ? normalizedLocalPath.slice(assetsRoot.length + 1)
-          : referencePath
-  );
+  if (normalizedLocalPath.startsWith(`${assetsV2Root}/`)) {
+    return `assets_v2/${normalizedLocalPath.slice(assetsV2Root.length + 1)}`;
+  }
+  if (normalizedLocalPath.startsWith(`${assetsRoot}/`)) {
+    return `assets/${normalizedLocalPath.slice(assetsRoot.length + 1)}`;
+  }
+  return DOCKER_GATEWAY_MEDIA_KEY_PATTERN.test(referencePath) ? referencePath : '';
 }
 
 export function buildDockerPublicMediaUrl(reference, localPath = '') {
@@ -449,19 +583,29 @@ export function buildDockerPublicMediaUrl(reference, localPath = '') {
   if (!mediaKey) {
     throw new Error(
       'A tunneled media URL is required before sending local audio/video assets to remote video providers. ' +
-      'Run scripts/start-local-media-tunnel.sh or configure publicUrls.media, then recreate the ai-video worker.'
+      'Ensure the Compose media-tunnel-controller is healthy and has published localMediaTunnel.publicUrl.'
     );
   }
 
   return `${getDockerPublicMediaBaseUrl()}/${mediaKey.replace(/^\/+/, '')}`;
 }
 
-async function buildBestDockerPublicMediaUrl(reference, localPath = '') {
+function getExpectedProviderMediaContentTypePrefix(mediaKind, reference, localPath) {
+  const normalizedKind = normalizeString(mediaKind).toLowerCase();
+  if (['image', 'video', 'audio'].includes(normalizedKind)) return `${normalizedKind}/`;
+  const extension = path.extname(stripQueryAndHash(localPath || getReferencePath(reference))).toLowerCase();
+  if (['.png', '.jpg', '.jpeg', '.webp', '.gif', '.avif'].includes(extension)) return 'image/';
+  if (['.mp4', '.mov', '.webm', '.mkv', '.avi'].includes(extension)) return 'video/';
+  if (['.mp3', '.wav', '.m4a', '.aac', '.flac', '.ogg'].includes(extension)) return 'audio/';
+  return '';
+}
+
+async function buildBestDockerPublicMediaUrl(reference, localPath = '', options = {}) {
   const mediaKey = getDockerPublicMediaKey(reference, localPath);
   if (!mediaKey) {
     throw new Error(
       'A tunneled media URL is required before sending local audio/video assets to remote video providers. ' +
-      'Run scripts/start-local-media-tunnel.sh or configure publicUrls.media, then recreate the ai-video worker.'
+      'Ensure the Compose media-tunnel-controller is healthy and has published localMediaTunnel.publicUrl.'
     );
   }
 
@@ -470,6 +614,11 @@ async function buildBestDockerPublicMediaUrl(reference, localPath = '') {
     mediaPath,
     getBaseUrlCandidates: getDockerTunnelMediaBaseUrlCandidates,
     serviceName: 'samsar_ai_video_layer_generator',
+    expectedContentTypePrefix: getExpectedProviderMediaContentTypePrefix(
+      options.mediaKind,
+      reference,
+      localPath,
+    ),
   });
 }
 
@@ -524,6 +673,9 @@ function buildMediaUploadKey(folderName, remoteFileName) {
 }
 
 function buildMediaDeliveryUrl(key) {
+  if (isDockerRuntime() && !shouldUseDockerLocalMedia()) {
+    assertConfiguredDockerExternalMediaDelivery(key);
+  }
   const cdnUrl = buildStaticCdnUrl(key);
   if (shouldUseDockerLocalMedia()) {
     const dockerBaseUrl = resolveDockerLocalPublicAssetBaseUrl();
@@ -555,8 +707,15 @@ async function persistDockerMediaFile(absolutePath, key) {
 }
 
 function getStaticCdnHostnames() {
-  const hosts = new Set(['static.samsar.one', 'dgyheyjs5bch6.cloudfront.net']);
-  for (const value of [STATIC_CDN_URL, process.env.PUBLIC_STATIC_CDN_URL, process.env.LEGACY_STATIC_CDN_URL]) {
+  const hosts = new Set(
+    isDockerRuntime()
+      ? []
+      : ['static.samsar.one', 'dgyheyjs5bch6.cloudfront.net'],
+  );
+  const configuredValues = isDockerRuntime()
+    ? [process.env.STATIC_CDN_URL, process.env.PUBLIC_STATIC_CDN_URL, process.env.LEGACY_STATIC_CDN_URL]
+    : [STATIC_CDN_URL, process.env.PUBLIC_STATIC_CDN_URL, process.env.LEGACY_STATIC_CDN_URL];
+  for (const value of configuredValues) {
     if (!value) {
       continue;
     }
@@ -568,16 +727,25 @@ function getStaticCdnHostnames() {
 }
 
 function getS3MediaKeyFromUrl(url) {
+  const configuredBucketName = isDockerRuntime()
+    ? normalizeString(process.env.MEDIA_BUCKET_NAME || process.env.STATIC_CDN_BUCKET)
+    : bucketName;
+  if (!configuredBucketName) {
+    return null;
+  }
   const hostname = url.hostname;
   const pathname = decodeURIComponent(url.pathname).replace(/^\/+/, '');
 
-  if (hostname === `${bucketName}.s3.amazonaws.com` || hostname.startsWith(`${bucketName}.s3.`)) {
+  if (
+    hostname === `${configuredBucketName}.s3.amazonaws.com` ||
+    hostname.startsWith(`${configuredBucketName}.s3.`)
+  ) {
     return pathname;
   }
 
   if (hostname === 's3.amazonaws.com' || hostname.startsWith('s3.')) {
-    return pathname.startsWith(`${bucketName}/`)
-      ? pathname.slice(bucketName.length + 1)
+    return pathname.startsWith(`${configuredBucketName}/`)
+      ? pathname.slice(configuredBucketName.length + 1)
       : null;
   }
 
@@ -613,6 +781,45 @@ export function buildSecureMediaDeliveryUrl(value) {
   return mediaKey ? buildMediaDeliveryUrl(mediaKey) : value;
 }
 
+function buildInvalidProviderMediaReferenceError(value) {
+  const error = new Error(
+    `Docker provider media reference is not a mounted Samsar asset or an independently public URL: ${String(value || '').split('?')[0]}`,
+  );
+  error.name = 'SamsarProviderMediaReferenceError';
+  error.code = 'SAMSAR_PROVIDER_MEDIA_REFERENCE_INVALID';
+  error.retryable = false;
+  error.mediaReference = value;
+  return error;
+}
+
+function assertConfiguredDockerExternalMediaDelivery(value) {
+  const bucket = normalizeString(
+    process.env.MEDIA_BUCKET_NAME || process.env.STATIC_CDN_BUCKET,
+  );
+  const cdnBase = normalizeString(process.env.STATIC_CDN_URL);
+  let parsedCdnBase;
+  try {
+    parsedCdnBase = new URL(cdnBase);
+  } catch {}
+  if (
+    !bucket ||
+    !parsedCdnBase ||
+    parsedCdnBase.protocol !== 'https:' ||
+    isPrivateOrLocalHostname(parsedCdnBase.hostname)
+  ) {
+    const error = buildInvalidProviderMediaReferenceError(value);
+    error.message = 'Docker external-S3 provider media requires an explicitly configured bucket and public HTTPS STATIC_CDN_URL.';
+    throw error;
+  }
+}
+
+function isDockerOwnedOrUnsafeMediaReference(value) {
+  const normalized = normalizeString(value);
+  if (!normalized) return false;
+  if (/^(file|blob):/i.test(normalized) || !/^https?:\/\//i.test(normalized)) return true;
+  return isOwnedDockerMediaUrl(normalized) || !isProbablyPublicUrl(normalized);
+}
+
 export async function normalizeProviderMediaUrl(value, options = {}) {
   const normalizedValue = normalizeString(value);
   if (!normalizedValue || normalizedValue.startsWith('data:')) {
@@ -622,50 +829,53 @@ export async function normalizeProviderMediaUrl(value, options = {}) {
   if (isDockerRuntime()) {
     const localPath = resolveLocalMediaReferencePath(normalizedValue);
     const mediaKeyReference = getDockerProviderMediaKeyReference(normalizedValue);
-    const hasMediaKeyReference = Boolean(mediaKeyReference);
+    // A public URL can legitimately expose a root-level `assets_v2/...` path
+    // without belonging to this Docker install. Only canonicalize an HTTP URL
+    // after ownership has produced a media-key reference (or a mounted file was
+    // actually resolved); otherwise preserve it as an independent public URL.
+    const canCanonicalizeMediaKey = !/^https?:\/\//i.test(normalizedValue) ||
+      Boolean(mediaKeyReference || localPath);
+    const canonicalMediaKey = canCanonicalizeMediaKey
+      ? getDockerPublicMediaKey(mediaKeyReference || normalizedValue, localPath || '')
+      : '';
 
-    if (!shouldUseDockerLocalMedia() && (localPath || hasMediaKeyReference)) {
-      const secureReference = hasMediaKeyReference ? mediaKeyReference : normalizedValue;
+    if (!shouldUseDockerLocalMedia() && canonicalMediaKey) {
+      const secureReference = canonicalMediaKey;
+      assertConfiguredDockerExternalMediaDelivery(normalizedValue);
       const signedUrl = buildSecureMediaDeliveryUrl(secureReference);
-      if (signedUrl && /^https?:\/\//i.test(signedUrl)) {
-        try {
-          if (options.prime !== false) {
-            await primeCDNCache(signedUrl, { requireSuccess: true });
-          }
-          return signedUrl;
-        } catch (error) {
-          console.error('[AWS] Falling back to Docker media tunnel after CDN prime failure', {
-            url: String(value).split('?')[0],
-            signedUrl: signedUrl.split('?')[0],
-            error: error?.message || error,
-          });
+      if (signedUrl && signedUrl !== secureReference && /^https?:\/\//i.test(signedUrl)) {
+        if (options.prime !== false) {
+          await primeCDNCache(signedUrl, { requireSuccess: true });
         }
+        return signedUrl;
       }
-      return buildBestDockerPublicMediaUrl(secureReference, localPath);
+      throw buildInvalidProviderMediaReferenceError(normalizedValue);
     }
 
-    if (shouldUseDockerLocalMedia()) {
-      if (localPath) {
-        return buildBestDockerPublicMediaUrl(normalizedValue, localPath);
-      }
-
-      if (hasMediaKeyReference) {
-        return buildBestDockerPublicMediaUrl(mediaKeyReference);
-      }
+    if (shouldUseDockerLocalMedia() && canonicalMediaKey) {
+      return buildBestDockerPublicMediaUrl(canonicalMediaKey, localPath || '', options);
     }
+
+    if (isDockerOwnedOrUnsafeMediaReference(normalizedValue)) {
+      throw buildInvalidProviderMediaReferenceError(normalizedValue);
+    }
+
+    // An independently public URL is already provider-readable. Do not pass it
+    // through legacy signing/default-CDN logic after Docker ownership checks.
+    return normalizedValue;
   }
 
-  if (shouldUseDockerLocalMedia()) {
+  if (!isDockerRuntime() && shouldUseDockerLocalMedia()) {
     const localPath = resolveLocalMediaReferencePath(normalizedValue);
     if (localPath) {
-      return buildBestDockerPublicMediaUrl(normalizedValue, localPath);
+      return buildBestDockerPublicMediaUrl(normalizedValue, localPath, options);
     }
 
     const referencePath = getReferencePath(normalizedValue).replace(/^[\\/]+/, '');
     const mediaKeyReference = getDockerProviderMediaKeyReference(normalizedValue) ||
       (MEDIA_KEY_PREFIX_PATTERN.test(referencePath) ? referencePath : '');
     if (mediaKeyReference) {
-      return buildBestDockerPublicMediaUrl(mediaKeyReference);
+      return buildBestDockerPublicMediaUrl(mediaKeyReference, '', options);
     }
 
     if (/^https?:\/\//i.test(normalizedValue) && !isProbablyPublicUrl(normalizedValue)) {
@@ -831,6 +1041,9 @@ function initializeS3Client() {
 let s3Client;
 
 function getS3Client() {
+  if (isDockerRuntime() && !shouldUseDockerLocalMedia()) {
+    assertConfiguredDockerExternalMediaDelivery('S3 media upload');
+  }
   validateAWSEnvVariables();
   if (!s3Client) {
     s3Client = initializeS3Client();

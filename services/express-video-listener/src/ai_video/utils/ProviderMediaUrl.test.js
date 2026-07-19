@@ -201,3 +201,54 @@ test('does not use private IP processor bases for external AI-video provider URL
     restoreEnv(envSnapshot);
   }
 });
+
+test('never re-keys an unrelated provider URL into a Samsar asset path', async () => {
+  const envSnapshot = snapshotEnv();
+  const { tempRoot, userId } = prepareDockerMediaFixture({
+    publicMediaUrl: 'https://media-example.trycloudflare.com',
+  });
+  const thirdPartyUrl = 'https://provider.example/jobs/assets_v2/output.mp4?token=short-lived';
+
+  try {
+    const { resolveProviderAiVideoUrl } = await importProviderMediaUrlModule();
+    assert.equal(
+      await resolveProviderAiVideoUrl({
+        userId,
+        layer: { aiVideoRemoteLink: thirdPartyUrl },
+      }),
+      thirdPartyUrl,
+    );
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+    restoreEnv(envSnapshot);
+  }
+});
+
+test('builds a stable queue reference without creating a provider tunnel URL', async () => {
+  const { getCanonicalAiVideoReference } = await importProviderMediaUrlModule();
+  const userId = '64b000000000000000000001';
+
+  assert.equal(
+    getCanonicalAiVideoReference({
+      userId,
+      layer: {
+        aiVideoLayer: 'ai_video/generations/session-1/layer-1/video.mp4',
+        aiVideoRemoteLink: 'https://expired-tunnel.trycloudflare.com/assets_v2/old.mp4',
+      },
+    }),
+    `/assets_v2/user_resources/${userId}/ai_videos/session-1/layer-1/video.mp4`,
+  );
+});
+
+test('preserves independently hosted remote-only AI-video references in queue state', async () => {
+  const { getCanonicalAiVideoReference } = await importProviderMediaUrlModule();
+  const providerUrl = 'https://provider.example/render/output.mp4?token=provider-owned';
+
+  assert.equal(
+    getCanonicalAiVideoReference({
+      userId: 'user-1',
+      layer: { aiVideoRemoteLink: providerUrl },
+    }),
+    providerUrl,
+  );
+});

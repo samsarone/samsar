@@ -14,6 +14,8 @@ import {
   normalizeResponseAssetUrl,
   reconcileDetailedBranchStatus,
   resolveVideoHasFooter,
+  selectResponseMediaSource,
+  selectResponseMediaSources,
   serializePublicVideoStatusResponse,
 } from './StatusAPI.js';
 
@@ -909,6 +911,99 @@ test('normalizeResponseAssetUrl returns Docker-local public processor URLs for s
       'http://localhost:3999/assets_v2/video/output/session-1/final-override.mp4',
     );
   });
+});
+
+test('Docker-local status selects mounted media before expiring provider results', () => {
+  withDockerLocalMediaEnv(() => {
+    assert.equal(selectResponseMediaSource({
+      local: 'assets_v2/ai_video/generations/session-1/scene.mp4',
+      remote: 'https://provider.example/expiring-scene.mp4',
+    }), 'assets_v2/ai_video/generations/session-1/scene.mp4');
+
+    const preview = buildNormalizedVideoSessionPreview({
+      _id: 'session-1',
+      expressGenerationStatus: {
+        ai_video_generation: 'COMPLETED',
+        audio_generation: 'COMPLETED',
+      },
+      layers: [{
+        aiVideoGenerationStatus: 'COMPLETED',
+        aiVideoLayer: 'assets_v2/ai_video/generations/session-1/scene.mp4',
+        aiVideoRemoteLink: 'https://provider.example/expiring-scene.mp4',
+      }, {
+        lipSyncVideoGenerationStatus: 'COMPLETED',
+        lipSyncVideoLayer: 'assets_v2/ai_video/generations/session-1/lip-sync.mp4',
+        lipSyncRemoteLink: 'https://provider.example/expiring-lip-sync.mp4',
+      }, {
+        soundEffectVideoGenerationStatus: 'COMPLETED',
+        soundEffectVideoLayer: 'assets_v2/ai_video/generations/session-1/sound-effect.mp4',
+        soundEffectRemoteLink: 'https://provider.example/expiring-sound-effect.mp4',
+      }, {
+        userVideoGenerationStatus: 'COMPLETED',
+        userVideoLayer: 'assets_v2/ai_video/generations/session-1/user-video.mp4',
+        userVideoRemoteLink: 'https://provider.example/expiring-user-video.mp4',
+      }],
+      audioLayers: [{
+        generationType: 'speech',
+        generationStatus: 'COMPLETED',
+        selectedLocalAudioLink: 'assets_v2/user_resources/user-1/audio/speech.mp3',
+        localAudioLinks: ['assets_v2/user_resources/user-1/audio/speech.mp3'],
+        selectedRemoteAudioLink: 'https://provider.example/expiring-speech.mp3',
+        remoteAudioLinks: ['https://provider.example/expiring-speech.mp3'],
+      }],
+      global_videos: [{
+        framesGenerationStatus: 'COMPLETED',
+        assetPath: 'assets_v2/video/global/session-1/overlay.mp4',
+        remoteURL: 'https://provider.example/expiring-overlay.mp4',
+      }],
+    }, { request_id: 'session-1' });
+
+    assert.equal(
+      preview.layers[0].aiVideo.url,
+      'http://localhost:3002/assets_v2/ai_video/generations/session-1/scene.mp4',
+    );
+    assert.equal(
+      preview.audioLayers[0].url,
+      'http://localhost:3002/assets_v2/user_resources/user-1/audio/speech.mp3',
+    );
+    assert.equal(
+      preview.layers[1].lipSyncVideo.url,
+      'http://localhost:3002/assets_v2/ai_video/generations/session-1/lip-sync.mp4',
+    );
+    assert.equal(
+      preview.layers[2].soundEffectVideo.url,
+      'http://localhost:3002/assets_v2/ai_video/generations/session-1/sound-effect.mp4',
+    );
+    assert.equal(
+      preview.layers[3].userVideo.url,
+      'http://localhost:3002/assets_v2/ai_video/generations/session-1/user-video.mp4',
+    );
+    assert.deepEqual(preview.audioLayers[0].remoteAudioLinks, [
+      'http://localhost:3002/assets_v2/user_resources/user-1/audio/speech.mp3',
+    ]);
+    assert.equal(
+      preview.globalVideos[0].url,
+      'http://localhost:3002/assets_v2/video/global/session-1/overlay.mp4',
+    );
+  });
+});
+
+test('explicit external media delivery keeps provider references preferred', () => {
+  const previous = process.env.SAMSAR_MEDIA_DELIVERY_MODE;
+  process.env.SAMSAR_MEDIA_DELIVERY_MODE = 'external-s3';
+  try {
+    assert.equal(selectResponseMediaSource({
+      local: 'assets_v2/ai_video/generations/session-1/scene.mp4',
+      remote: 'https://configured-cdn.example/scene.mp4',
+    }), 'https://configured-cdn.example/scene.mp4');
+    assert.deepEqual(selectResponseMediaSources({
+      local: ['assets_v2/audio/local.mp3'],
+      remote: ['https://configured-cdn.example/audio.mp3'],
+    }), ['https://configured-cdn.example/audio.mp3']);
+  } finally {
+    if (previous === undefined) delete process.env.SAMSAR_MEDIA_DELIVERY_MODE;
+    else process.env.SAMSAR_MEDIA_DELIVERY_MODE = previous;
+  }
 });
 
 test('buildNormalizedVideoSessionPreview keeps signed asset urls out of persistent image item references', () => {

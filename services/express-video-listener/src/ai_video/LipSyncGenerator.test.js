@@ -27,3 +27,23 @@ test('lip sync active request query is scoped to one session layer', () => {
     },
   );
 });
+
+test('lip sync queues the stable local audio reference instead of a provider URL', () => {
+  assert.equal(
+    __testOnly__.getCanonicalAudioReference(
+      '/assets_v2/user_resources/user-1/audio/padded.wav',
+      'https://expired-tunnel.trycloudflare.com/assets_v2/temp_audio/padded.wav',
+    ),
+    '/assets_v2/user_resources/user-1/audio/padded.wav',
+  );
+});
+
+test('lip sync preserves an independently hosted audio reference when no local asset exists', () => {
+  assert.equal(
+    __testOnly__.getCanonicalAudioReference(
+      '',
+      'https://provider.example/audio/speech.wav?token=provider-owned',
+    ),
+    'https://provider.example/audio/speech.wav?token=provider-owned',
+  );
+});

@@ -423,7 +423,10 @@ function isImageResultUrl(value) {
 }
 
 async function getStartImageUrlForExternalVideo(client, payload = {}) {
-  const normalizedStartImage = await normalizeProviderMediaUrl(getStartImageReference(payload));
+  const normalizedStartImage = await normalizeProviderMediaUrl(
+    getStartImageReference(payload),
+    { mediaKind: 'image' },
+  );
   if (/^https?:\/\//i.test(normalizedStartImage)) {
     return normalizedStartImage;
   }
@@ -640,10 +643,14 @@ function assertProviderReadableUrl(value, label) {
 
 export async function buildExternalVideoToVideoInput(payload = {}, route) {
   const videoUrl = await normalizeProviderMediaUrl(
-    getPayloadMediaUrl(payload, ['video_url', 'videoUrl', 'videoLink', 'video'])
+    getPayloadMediaUrl(payload, ['video_url', 'videoUrl', 'videoLink', 'video']),
+    { mediaKind: 'video' },
   );
   const audioUrl = route === 'lip_sync'
-    ? await normalizeProviderMediaUrl(getPayloadMediaUrl(payload, ['audio_url', 'audioUrl', 'audioLink', 'audio']))
+    ? await normalizeProviderMediaUrl(
+      getPayloadMediaUrl(payload, ['audio_url', 'audioUrl', 'audioLink', 'audio']),
+      { mediaKind: 'audio' },
+    )
     : '';
   assertProviderReadableUrl(videoUrl, 'video-to-video');
   if (route === 'lip_sync') {
@@ -787,9 +794,6 @@ export async function generateSamsarExternalVideoLayer(payload = {}) {
         externalProvider: 'samsar',
         samsarExternalProvider: true,
         samsarExternalVideoRequestId: requestId,
-        ...(routeRequest.uploadedStartImageUrl
-          ? { samsarExternalUploadedStartImage: routeRequest.uploadedStartImageUrl }
-          : {}),
       },
     },
   );

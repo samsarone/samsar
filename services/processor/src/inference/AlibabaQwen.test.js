@@ -1,8 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import OpenAI from 'openai';
 
 import {
   buildAlibabaQwenChatRequest,
+  createAlibabaQwenChatCompletion,
   getAlibabaQwenApiKey,
   getAlibabaQwenBaseURL,
   hasQwenVisionInput,
@@ -74,9 +76,31 @@ test('uses qwen3.7-plus only when a request includes vision content', () => {
     alternateMediaShapes.payload.messages[0].content[1].image_url.url,
     'data:image/jpeg;base64,abc',
   );
-  assert.deepEqual(
-    alternateMediaShapes.payload.messages[0].content[2].video_url.url,
-    ['https://example.test/one.png', 'https://example.test/two.png'],
+  assert.deepEqual(alternateMediaShapes.payload.messages[0].content.slice(2), [
+    {
+      type: 'video_url',
+      video_url: { url: 'https://example.test/one.png' },
+    },
+    {
+      type: 'video_url',
+      video_url: { url: 'https://example.test/two.png' },
+    },
+  ]);
+
+  const typedListShape = buildAlibabaQwenChatRequest({
+    model: 'QWEN3.7',
+    messages: [{
+      role: 'user',
+      content: [{
+        type: 'input_image',
+        source: { urls: ['https://example.test/three.png'] },
+      }],
+    }],
+  });
+  assert.equal(typedListShape.payload.model, 'qwen3.7-plus');
+  assert.equal(
+    typedListShape.payload.messages[0].content[0].image_url.url,
+    'https://example.test/three.png',
   );
 });
 
@@ -134,4 +158,50 @@ test('resolves standard and deployment-friendly Alibaba credential aliases', () 
     }),
     'https://custom.example.com/v1',
   );
+});
+
+test('native Alibaba Qwen resolves typed media at its provider boundary', async (t) => {
+  const previousApiKey = process.env.DASHSCOPE_API_KEY;
+  process.env.DASHSCOPE_API_KEY = 'alibaba-media-test-key';
+  let capturedPayload;
+  let capturedOptions;
+  t.mock.method(OpenAI.Chat.Completions.prototype, 'create', async (payload, options) => {
+    capturedPayload = payload;
+    capturedOptions = options;
+    return { choices: [{ message: { role: 'assistant', content: 'seen' } }] };
+  });
+
+  try {
+    const response = await createAlibabaQwenChatCompletion({
+      model: 'QWEN3.7',
+      messages: [{
+        role: 'user',
+        content: [{
+          type: 'input_image',
+          source: 'http://localhost:3002/assets_v2/generations/session/qwen.png',
+        }],
+      }],
+    }, {
+      resolveMediaUrl: async (_source, options) => {
+        assert.deepEqual(options, {
+          mediaKind: 'image',
+          serviceName: 'samsar_processor_alibaba_qwen',
+        });
+        return 'https://fresh.example/assets_v2/generations/session/qwen.png';
+      },
+    });
+
+    assert.equal(response.choices[0].message.content, 'seen');
+    assert.equal(
+      capturedPayload.messages[0].content[0].image_url.url,
+      'https://fresh.example/assets_v2/generations/session/qwen.png',
+    );
+    assert.equal(capturedOptions.maxRetries, 0);
+  } finally {
+    if (previousApiKey === undefined) {
+      delete process.env.DASHSCOPE_API_KEY;
+    } else {
+      process.env.DASHSCOPE_API_KEY = previousApiKey;
+    }
+  }
 });

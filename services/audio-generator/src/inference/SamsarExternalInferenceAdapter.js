@@ -10,6 +10,7 @@ import {
 } from './InferenceModels.js';
 import { getAlibabaCloudApiKey } from './Qwen.js';
 import { runExternalInferenceWithRetry } from './ExternalInferenceRetry.js';
+import { normalizeProviderMediaPayload } from '../utils/ProviderMediaPayload.js';
 
 const DEFAULT_SAMSAR_API_BASE_URL = 'https://api.samsar.one/v1';
 const DEFAULT_EXTERNAL_INFERENCE_TIMEOUT_MS = 10 * 60 * 1000;
@@ -397,13 +398,21 @@ export async function createOpenRouterChatCompletion(chatRequest = {}) {
     minimumTimeout,
   );
   const openRouterModel = getOpenRouterModelForInferenceRequest(chatRequest);
-  const payload = buildOpenRouterRequestPayload(request, requestedModel, openRouterModel, effort);
   return runExternalInferenceWithRetry(
-    ({ signal }) => client.chat.completions.create(payload, {
-      timeout: requestTimeout,
-      maxRetries: 0,
-      signal,
-    }),
+    async ({ signal }) => {
+      const normalizedRequest = await normalizeProviderMediaPayload(request);
+      const payload = buildOpenRouterRequestPayload(
+        normalizedRequest,
+        requestedModel,
+        openRouterModel,
+        effort,
+      );
+      return client.chat.completions.create(payload, {
+        timeout: requestTimeout,
+        maxRetries: 0,
+        signal,
+      });
+    },
     {
       provider: 'openrouter',
       model: openRouterModel,
@@ -481,7 +490,7 @@ export async function createSamsarExternalChatCompletion(chatRequest = {}) {
   const requestTimeout = Number(
     timeout ?? timeoutMs ?? process.env.SAMSAR_EXTERNAL_INFERENCE_TIMEOUT_MS
   ) || DEFAULT_EXTERNAL_INFERENCE_TIMEOUT_MS;
-  const requestPayload = {
+  const rawRequestPayload = {
     ...payload,
     model,
     ...(model === GPT_56_SOL_INFERENCE_MODEL
@@ -490,7 +499,10 @@ export async function createSamsarExternalChatCompletion(chatRequest = {}) {
     timeout: requestTimeout,
   };
   const response = await runExternalInferenceWithRetry(
-    ({ signal }) => client.createV2ExternalChatCompletion(requestPayload, { signal }),
+    async ({ signal }) => {
+      const requestPayload = await normalizeProviderMediaPayload(rawRequestPayload);
+      return client.createV2ExternalChatCompletion(requestPayload, { signal });
+    },
     {
       provider: 'samsar',
       model,

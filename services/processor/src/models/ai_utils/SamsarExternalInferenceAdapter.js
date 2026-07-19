@@ -14,6 +14,7 @@ import {
 import { hasAlibabaQwenNativeCredential } from '../../inference/AlibabaQwen.js';
 import { getCurrentEnvironment } from '../../utils/EnvironmentUtils.js';
 import { externalAssistantClientRequestStore } from './ExternalAssistantClientRequestStore.js';
+import { resolveProviderMediaPayload } from './ProviderMediaPayload.js';
 
 const DEFAULT_SAMSAR_API_BASE_URL = 'https://api.samsar.one/v1';
 const DEFAULT_EXTERNAL_INFERENCE_TIMEOUT_MS = 10 * 60 * 1000;
@@ -324,6 +325,7 @@ async function createAndPollSamsarExternalChatCompletion(client, payload, {
   pollIntervalMs,
   requestContext,
   requestStore = externalAssistantClientRequestStore,
+  resolvePayload,
 } = {}) {
   const localRequest = requestContext
     ? await requestStore.prepare(requestContext, { model: payload.model })
@@ -362,15 +364,18 @@ async function createAndPollSamsarExternalChatCompletion(client, payload, {
     while (!requestId && Date.now() - startedAt < timeoutMs) {
       let queued;
       try {
+        const providerPayload = typeof resolvePayload === 'function'
+          ? await resolvePayload(payload)
+          : payload;
         queued = typeof client.createV2ExternalChatCompletionAsync === 'function'
           ? await client.createV2ExternalChatCompletionAsync(
-            { ...payload, ...correlationPayload },
+            { ...providerPayload, ...correlationPayload },
             { signal },
           )
           : await client.postV2(
             'external/chat/completions',
             {
-              ...payload,
+              ...providerPayload,
               ...correlationPayload,
               async: true,
               response_mode: 'polling',
@@ -734,7 +739,7 @@ export function shouldUseOpenRouterInference(chatRequest = {}) {
   return resolveConfiguredInferenceProvider(model) === DOCKER_INFERENCE_PROVIDER.OPENROUTER;
 }
 
-export async function createOpenRouterChatCompletion(chatRequest = {}) {
+export async function createOpenRouterChatCompletion(chatRequest = {}, dependencyOverrides = {}) {
   const client = getOpenRouterClient();
   if (!client) {
     throw new Error('OPENROUTER_API_KEY is required for OpenRouter inference.');
@@ -792,12 +797,18 @@ export async function createOpenRouterChatCompletion(chatRequest = {}) {
   );
 
   return runExternalInferenceWithRetry(
-    ({ signal }) => client.chat.completions.create(payload, {
-      timeout: requestTimeout,
-      // The adapter owns retry timing so the SDK cannot multiply attempts.
-      maxRetries: 0,
-      signal,
-    }),
+    async ({ signal }) => {
+      const providerPayload = await resolveProviderMediaPayload(payload, {
+        resolveMediaUrl: dependencyOverrides.resolveMediaUrl,
+        serviceName: 'samsar_processor_openrouter',
+      });
+      return client.chat.completions.create(providerPayload, {
+        timeout: requestTimeout,
+        // The adapter owns retry timing so the SDK cannot multiply attempts.
+        maxRetries: 0,
+        signal,
+      });
+    },
     {
       provider: 'openrouter',
       model: openRouterModel,
@@ -863,9 +874,9 @@ export function shouldUseSamsarExternalInference(chatRequest = {}) {
   return shouldEnableExternalInference() && provider === DOCKER_INFERENCE_PROVIDER.SAMSAR;
 }
 
-export async function createSamsarExternalChatCompletion(chatRequest = {}) {
+export async function createSamsarExternalChatCompletion(chatRequest = {}, dependencyOverrides = {}) {
   if (shouldUseOpenRouterInference(chatRequest)) {
-    return createOpenRouterChatCompletion(chatRequest);
+    return createOpenRouterChatCompletion(chatRequest, dependencyOverrides);
   }
   const client = getExternalClient();
   if (!client) {
@@ -905,16 +916,24 @@ export async function createSamsarExternalChatCompletion(chatRequest = {}) {
     externalPollTimeoutMs,
     requestTimeout,
   );
+  const resolveAttemptPayload = (sourcePayload) => resolveProviderMediaPayload(sourcePayload, {
+    resolveMediaUrl: dependencyOverrides.resolveMediaUrl,
+    serviceName: 'samsar_processor_external_inference',
+  });
   const response = await runExternalInferenceWithRetry(
-    ({ signal }) => usePolling
+    async ({ signal }) => usePolling
       ? createAndPollSamsarExternalChatCompletion(client, requestPayload, {
         signal,
         timeoutMs: pollingTimeoutMs,
         pollIntervalMs: externalPollIntervalMs,
         requestContext: externalRequestContext,
         requestStore: externalRequestStore || externalAssistantClientRequestStore,
+        resolvePayload: resolveAttemptPayload,
       })
-      : client.createV2ExternalChatCompletion(requestPayload, { signal }),
+      : client.createV2ExternalChatCompletion(
+        await resolveAttemptPayload(requestPayload),
+        { signal },
+      ),
     {
       provider: 'samsar',
       model,

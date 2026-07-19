@@ -84,7 +84,7 @@ export async function createVidGPTSessionFromNarrativeArtifacts(userId, payload 
   const {
     sessionID,
     prompt,
-    aspectRatio = '1:1',
+    aspectRatio: requestedAspectRatio = null,
     duration = 10,
     videoGenerationModel: requestedVideoGenerationModel = 'RUNWAYML',
     imageModel = 'GPTIMAGE2',
@@ -146,6 +146,11 @@ export async function createVidGPTSessionFromNarrativeArtifacts(userId, payload 
       'Prepared NarrativeRequest narrativeType must be singular or branched.',
     );
   }
+  const aspectRatio = typeof requestedAspectRatio === 'string' && requestedAspectRatio.trim()
+    ? requestedAspectRatio.trim()
+    : narrativeType === 'branched'
+      ? '16:9'
+      : '1:1';
   if (!themeJson || typeof themeJson !== 'object' || Array.isArray(themeJson)) {
     throw buildInvalidPreparedNarrativeError('Prepared themeJson is invalid.');
   }

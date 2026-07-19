@@ -48,6 +48,7 @@ import {
 } from '../../models/api/VideoSessionRerollAPI.js';
 import { joinVideoSessionsAndQueueGeneration } from '../../models/api/VideoSessionJoinAPI.js';
 import { buildVideoStatusResponse } from '../../models/api/StatusAPI.js';
+import { resolveVideoResultUrl } from '../../models/api/VideoResultMediaUrl.js';
 import { uploadImageDataList } from '../../models/api/ImageUploadAPI.js';
 import { getCanvasDimensionsForAspectRatio } from '../../utils/CanvasUtils.js';
 import {
@@ -245,51 +246,6 @@ function resolveTraceId(req) {
     return header.trim();
   }
   return randomUUID();
-}
-
-function normalizeRemoteVideoUrl(remoteURL) {
-  if (typeof remoteURL !== 'string') {
-    return null;
-  }
-
-  const trimmed = remoteURL.trim();
-  if (!trimmed) {
-    return null;
-  }
-
-  const remoteBase = 'https://samsar-resources.s3.us-west-2.amazonaws.com';
-  const cdnBase = 'https://static.samsar.one';
-  return trimmed.replace(remoteBase, cdnBase);
-}
-
-function resolveAbsoluteVideoUrl(req, videoLink) {
-  if (typeof videoLink !== 'string') {
-    return null;
-  }
-
-  const trimmed = videoLink.trim();
-  if (!trimmed) {
-    return null;
-  }
-
-  if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
-    return trimmed;
-  }
-
-  const base = process.env.API_SERVER?.trim();
-  if (base) {
-    const normalizedBase = base.endsWith('/') ? base.slice(0, -1) : base;
-    const normalizedPath = trimmed.startsWith('/') ? trimmed.slice(1) : trimmed;
-    return `${normalizedBase}/${normalizedPath}`;
-  }
-
-  const host = req.get('host');
-  if (!host) {
-    return trimmed;
-  }
-
-  const normalizedPath = trimmed.startsWith('/') ? trimmed.slice(1) : trimmed;
-  return `${req.protocol}://${host}/${normalizedPath}`;
 }
 
 function resolveSessionIdFromRequest(req) {
@@ -2344,9 +2300,7 @@ router.get('/list_completed_video_sessions', validateAPIKeyAndUserId, async func
     const sessions = await sessionQuery.lean();
     const completedSessions = sessions
       .map((session) => {
-        const resultUrl =
-          normalizeRemoteVideoUrl(session?.remoteURL) ||
-          resolveAbsoluteVideoUrl(req, session?.videoLink);
+        const resultUrl = resolveVideoResultUrl(session, req);
         if (!resultUrl) {
           return null;
         }
@@ -2425,7 +2379,7 @@ async function handleFetchLatestVersion(req, res) {
       return res.status(403).json({ message: 'Session does not belong to user.' });
     }
 
-    const resultUrl = normalizeRemoteVideoUrl(session.remoteURL) || resolveAbsoluteVideoUrl(req, session.videoLink);
+    const resultUrl = resolveVideoResultUrl(session, req);
 
 
     if (resultUrl) {
