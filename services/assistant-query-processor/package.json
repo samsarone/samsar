@@ -17,6 +17,6 @@
     "google-auth-library": "^9.14.1",
     "mongoose": "^8.5.1",
     "openai": "^4.86.1",
-    "samsar-js": "0.48.47"
+    "samsar-js": "0.48.48"
   }
 }
