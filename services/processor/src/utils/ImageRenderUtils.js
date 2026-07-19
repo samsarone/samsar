@@ -39,16 +39,40 @@ function normalizeLocalAssetReference(ref) {
     return '';
   }
   const withoutQuery = ref.trim().split('?')[0];
-  if (!withoutQuery || isRemoteUrl(withoutQuery)) {
+  if (!withoutQuery) {
     return '';
   }
-  if (path.isAbsolute(withoutQuery) && fs.existsSync(withoutQuery)) {
-    return withoutQuery;
+  if (isRemoteUrl(withoutQuery)) {
+    try {
+      return decodeURIComponent(new URL(withoutQuery).pathname)
+        .replace(/^\/+/, '')
+        .replace(/^assets_v2\/+/, '')
+        .replace(/^assets\/+/, '');
+    } catch {
+      return '';
+    }
   }
   return withoutQuery
     .replace(/^\/+/, '')
     .replace(/^assets_v2\/+/, '')
     .replace(/^assets\/+/, '');
+}
+
+function getExistingAbsoluteImagePath(ref) {
+  if (typeof ref !== 'string' || isRemoteUrl(ref)) {
+    return '';
+  }
+
+  const withoutQuery = ref.trim().split('?')[0].split('#')[0];
+  if (!withoutQuery || !path.isAbsolute(withoutQuery)) {
+    return '';
+  }
+
+  try {
+    return fs.statSync(withoutQuery).isFile() ? withoutQuery : '';
+  } catch {
+    return '';
+  }
 }
 
 function getSessionGatedAssetCandidates(root, normalizedRef, sessionId) {
@@ -68,6 +92,11 @@ function getSessionGatedAssetCandidates(root, normalizedRef, sessionId) {
 }
 
 function getOriginalImagePathFromRef(ref, sessionId = null) {
+  const absoluteImagePath = getExistingAbsoluteImagePath(ref);
+  if (absoluteImagePath) {
+    return absoluteImagePath;
+  }
+
   const normalizedRef = normalizeLocalAssetReference(ref);
   if (!normalizedRef) {
     return '';

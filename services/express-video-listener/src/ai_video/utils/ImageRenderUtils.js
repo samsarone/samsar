@@ -53,13 +53,27 @@ function normalizeLocalAssetReference(ref) {
       return '';
     }
   }
-  if (path.isAbsolute(withoutQuery) && fs.existsSync(withoutQuery)) {
-    return withoutQuery;
-  }
   return withoutQuery
     .replace(/^\/+/, '')
     .replace(/^assets_v2\/+/, '')
     .replace(/^assets\/+/, '');
+}
+
+function getExistingAbsoluteImagePath(ref) {
+  if (typeof ref !== 'string' || isRemoteUrl(ref)) {
+    return '';
+  }
+
+  const withoutQuery = ref.trim().split('?')[0].split('#')[0];
+  if (!withoutQuery || !path.isAbsolute(withoutQuery)) {
+    return '';
+  }
+
+  try {
+    return fs.statSync(withoutQuery).isFile() ? withoutQuery : '';
+  } catch {
+    return '';
+  }
 }
 
 function getSessionGatedAssetCandidates(root, normalizedRef, sessionId) {
@@ -83,6 +97,11 @@ function getSessionGatedAssetCandidates(root, normalizedRef, sessionId) {
 }
 
 function getOriginalImagePathFromSrc(src, sessionId = null) {
+  const absoluteImagePath = getExistingAbsoluteImagePath(src);
+  if (absoluteImagePath) {
+    return absoluteImagePath;
+  }
+
   const normalizedRef = normalizeLocalAssetReference(src);
   if (!normalizedRef) {
     return '';
@@ -172,12 +191,7 @@ export function getBaseFrameImageForLayer(activeItemList, aspectRatio, sessionId
 }
 
 export function getInfiniteZoomFrameImageForImageSession(imageSession) {
-  const imageRelativeUrl = imageSession.activeSelectedImage;
-
-  let originalImagePath = path.join(process.cwd(), '../', 'samsar_processor', 'assets', imageRelativeUrl);
-  if (process.env.CURRENT_ENV === 'staging' || process.env.CURRENT_ENV === 'docker') {
-    originalImagePath = path.join(process.env.SAMSAR_ASSETS_ROOT || '/assets', imageRelativeUrl);
-  }
+  const originalImagePath = getOriginalImagePathFromSrc(imageSession.activeSelectedImage);
   
   if (fs.existsSync(originalImagePath)) {
     return originalImagePath;
