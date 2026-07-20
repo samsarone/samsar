@@ -62,7 +62,8 @@ const AudioTrackSlider = (props) => {
     onCreateVolumePoint,
    } = props;
 
-  const audioTrackId = audioTrack._id;
+  const audioTrackId = audioTrack._id || audioTrack.id;
+  const isLocked = Boolean(audioTrack?.isTimelineLocked);
   const { colorMode } = useColorMode();
   const [visibleStartFrame, visibleEndFrame] = selectedFrameRange;
   const hasViewportGeometry = Array.isArray(viewportGeometry?.segments) && viewportGeometry.segments.length > 0;
@@ -135,7 +136,7 @@ const AudioTrackSlider = (props) => {
         ? '0 0 0 1px rgba(103,232,249,0.24), 0 0 14px rgba(34,211,238,0.18)'
         : '0 0 0 1px rgba(14,165,233,0.18), 0 0 12px rgba(14,165,233,0.16)')
       : 'none',
-    cursor: 'grab',
+    cursor: isLocked ? 'pointer' : 'grab',
   };
 
 
@@ -173,6 +174,10 @@ const AudioTrackSlider = (props) => {
 
 
   const handleChange = (value) => {
+    if (isLocked) {
+      return;
+    }
+
     if (!isDraggingRange) {
       const [prevStartFrame, prevEndFrame] = sliderValues;
       const [newStartFrame, newEndFrame] = value;
@@ -211,6 +216,11 @@ const AudioTrackSlider = (props) => {
   const handleRangeMouseDown = (e) => {
     e.preventDefault();
     e.stopPropagation();
+    setAudioRangeSliderDisplayAsSelected(audioTrackId);
+    if (isLocked) {
+      return;
+    }
+
     if (sliderContainerRef.current) {
       setSliderHeight(sliderContainerRef.current.clientHeight);
     } else {
@@ -345,6 +355,8 @@ const AudioTrackSlider = (props) => {
       <div
         ref={sliderContainerRef}
         className={`timeline-layer-range-shell ${audioTrack.isDisplaySelected ? 'timeline-layer-range-shell--selected' : ''}`}
+        onClick={audioRangeSliderClicked}
+        title={isLocked ? 'Audio layer locked — select it to unlock' : undefined}
       >
         <div className={`timeline-layer-range-surface ${railSurfaceClassName}`}>
           <ReactSlider
@@ -355,6 +367,7 @@ const AudioTrackSlider = (props) => {
             value={sliderValues}
             onChange={handleChange}
             onClick={audioRangeSliderClicked}
+            disabled={isLocked}
             pearling
             style={{ height: `calc(100% + ${AUDIO_TRACK_THUMB_HEIGHT}px)` }}
             renderThumb={(props, state) => {

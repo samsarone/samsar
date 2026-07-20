@@ -13,6 +13,8 @@ import {
   FaCopy,
   FaDownload,
   FaLightbulb,
+  FaLock,
+  FaLockOpen,
   FaPlay,
   FaPlus,
   FaStop,
@@ -3031,22 +3033,23 @@ export default function FrameToolbar(props) {
 
     setAudioSaveState('idle');
 
-    const updatedAudioTrackListDisplay = audioTrackListDisplay.map((audioTrack) => {
-      if (audioTrack._id === audioLayerId) {
-        return {
-          ...audioTrack,
-          startTime: startTime,
-          endTime: endTime,
-          duration: duration,
-          isDirty: true,
-        };
-      } else {
-        return {
-          ...audioTrack,
-        };
+    setAudioTrackListDisplay((previousAudioTracks) => previousAudioTracks.map((audioTrack) => {
+      if (resolveAudioTrackId(audioTrack)?.toString() !== audioLayerId?.toString()) {
+        return audioTrack;
       }
-    });
-    setAudioTrackListDisplay(updatedAudioTrackListDisplay);
+
+      if (audioTrack.isTimelineLocked) {
+        return audioTrack;
+      }
+
+      return {
+        ...audioTrack,
+        startTime,
+        endTime,
+        duration,
+        isDirty: true,
+      };
+    }));
 
   }
 
@@ -3607,7 +3610,7 @@ export default function FrameToolbar(props) {
     setAudioSaveState('idle');
     setAudioTrackListDisplay((prev) =>
       prev.map((track) =>
-        track._id === trackId
+        track._id === trackId && !track.isTimelineLocked
           ? { ...track, startTime: newStart, isDirty: true }
           : track
       )
@@ -3619,7 +3622,7 @@ export default function FrameToolbar(props) {
     setAudioSaveState('idle');
     setAudioTrackListDisplay((prev) =>
       prev.map((track) =>
-        track._id === trackId
+        track._id === trackId && !track.isTimelineLocked
           ? { ...track, endTime: newEnd, isDirty: true }
           : track
       )
@@ -3924,6 +3927,17 @@ export default function FrameToolbar(props) {
     setSelectedAudioVolumePointId(null);
   };
 
+  const toggleSelectedAudioTrackLock = () => {
+    if (!selectedAudioTrackId || isSavingAudioLayers) {
+      return;
+    }
+
+    updateAudioTrackDraftById(selectedAudioTrackId, (audioTrack) => ({
+      ...audioTrack,
+      isTimelineLocked: !Boolean(audioTrack.isTimelineLocked),
+    }));
+  };
+
 
   const onUpdateAllAudioLayers = async (nextAudioTrackListDisplay) => {
     if (isSavingAudioLayers) {
@@ -3967,7 +3981,7 @@ export default function FrameToolbar(props) {
         : { success: true, serverGlobalAudioLayers: globalAudioTracks };
 
       if (!normalResponse?.success || !globalResponse?.success) {
-        throw normalResponse?.error || globalResponse?.error || new Error('Unable to update audio timing.');
+        throw normalResponse?.error || globalResponse?.error || new Error('Unable to save audio layer changes.');
       }
 
       const officialLayers = Array.isArray(normalResponse.serverLayers)
@@ -3981,7 +3995,7 @@ export default function FrameToolbar(props) {
         ...officialGlobalLayers.map((layer) => buildAudioTrackDisplayItem(layer, true, selectedTrackId)),
       ]);
       setAudioSaveState('saved');
-      toast.success('Audio timing updated.', {
+      toast.success('Audio layer changes saved.', {
         position: 'bottom-center',
         className: 'custom-toast',
       });
@@ -3992,7 +4006,7 @@ export default function FrameToolbar(props) {
     } catch (error) {
       pendingSelectedAudioLayerIdRef.current = null;
       setAudioSaveState('error');
-      toast.error(error?.message || 'Unable to update audio timing.', {
+      toast.error(error?.message || 'Unable to save audio layer changes.', {
         position: 'bottom-center',
         className: 'custom-toast',
       });
@@ -4103,23 +4117,23 @@ export default function FrameToolbar(props) {
               : 'bg-amber-300 shadow-[0_0_10px_rgba(252,211,77,0.45)]')
             : (colorMode === 'light' ? 'bg-slate-300' : 'bg-slate-600');
     const audioStatusTitle = isSavingAudioLayers
-      ? 'Saving audio timing…'
+      ? 'Saving audio layer changes…'
       : audioSaveState === 'saved'
-        ? 'Audio timing updated'
+        ? 'Audio layer changes saved'
         : audioSaveState === 'error'
-          ? 'Audio timing update failed'
+          ? 'Audio layer update failed'
           : dirtyCount > 0
             ? `${dirtyCount} audio update${dirtyCount === 1 ? '' : 's'} pending`
             : `${audioLayerView === 'global' ? 'Global' : 'Layer'} audio workspace`;
     const audioUpdateButtonTitle = isSavingAudioLayers
-      ? 'Saving audio timing…'
+      ? 'Saving audio layer changes…'
       : audioSaveState === 'saved'
-        ? 'Audio timing updated'
+        ? 'Audio layer changes saved'
         : audioSaveState === 'error'
-          ? 'Audio timing update failed. Try again.'
+          ? 'Audio layer update failed. Try again.'
           : dirtyCount > 0
-            ? 'Save audio timing'
-            : 'Audio timing is up to date';
+            ? 'Save audio layer changes'
+            : 'Audio layers are up to date';
     const metadataLabelClassName =
       colorMode === 'light'
         ? 'text-[9px] font-semibold uppercase tracking-[0.16em] text-slate-500'
@@ -4138,8 +4152,8 @@ export default function FrameToolbar(props) {
         : 'border border-[#2a3953] bg-[#111a2f]/82 text-slate-100 hover:bg-[#17223a]';
     const inlineInputClassName =
       colorMode === 'light'
-        ? 'h-4 min-w-0 bg-transparent px-0 text-right text-[10px] font-semibold text-slate-700 outline-none'
-        : 'h-4 min-w-0 bg-transparent px-0 text-right text-[10px] font-semibold text-slate-100 outline-none';
+        ? 'h-4 min-w-0 bg-transparent px-0 text-right text-[10px] font-semibold text-slate-700 outline-none disabled:cursor-not-allowed disabled:opacity-50'
+        : 'h-4 min-w-0 bg-transparent px-0 text-right text-[10px] font-semibold text-slate-100 outline-none disabled:cursor-not-allowed disabled:opacity-50';
     const audioTileClassName = `inline-flex h-6 min-w-0 items-center gap-1 rounded-md px-1 ${secondarySurfaceClassName}`;
     const audioTileLabelClassName = `${metadataLabelClassName} shrink-0`;
     const audioTileIconClassName =
@@ -4183,7 +4197,7 @@ export default function FrameToolbar(props) {
             {visibleAudioTrackListDisplay.length} track{visibleAudioTrackListDisplay.length === 1 ? '' : 's'}
           </div>
         </div>
-        <div className='grid min-w-0 grid-cols-[minmax(0,1fr)_64px_64px_50px_32px_22px_22px_22px_22px] items-center gap-1 overflow-hidden'>
+        <div className='grid min-w-0 grid-cols-[minmax(0,1fr)_64px_64px_50px_32px_22px_22px_22px_22px_22px] items-center gap-1 overflow-hidden'>
           <div
             className={audioTileClassName}
             title={selectedAudioTrack ? selectedAudioTrackDisplayTitle : audioStatusTitle}
@@ -4208,6 +4222,7 @@ export default function FrameToolbar(props) {
                   value={formatAudioTrackNumber(selectedAudioTrack.startTime, 0)}
                   className={`${inlineInputClassName} w-[38px]`}
                   onChange={(e) => handleStartTimeChangeHandler(e, selectedAudioTrack._id)}
+                  disabled={Boolean(selectedAudioTrack.isTimelineLocked)}
                   aria-label="Start time"
                 />
               </label>
@@ -4220,6 +4235,7 @@ export default function FrameToolbar(props) {
                   value={formatAudioTrackNumber(selectedAudioTrack.endTime, 0)}
                   className={`${inlineInputClassName} w-[38px]`}
                   onChange={(e) => handleEndTimeChangeHandler(e, selectedAudioTrack._id)}
+                  disabled={Boolean(selectedAudioTrack.isTimelineLocked)}
                   aria-label="End time"
                 />
               </label>
@@ -4247,6 +4263,26 @@ export default function FrameToolbar(props) {
                 {showSelectedAudioExtraOptionsToolbar ? 'Less' : 'More'}
               </button>
             </>
+          ) : null}
+
+          {selectedAudioTrack ? (
+            <button
+              type="button"
+              onClick={toggleSelectedAudioTrackLock}
+              disabled={isSavingAudioLayers}
+              title={selectedAudioTrack.isTimelineLocked
+                ? 'Unlock audio layer'
+                : 'Lock audio layer to prevent timing changes'}
+              aria-label={selectedAudioTrack.isTimelineLocked
+                ? 'Unlock audio layer'
+                : 'Lock audio layer'}
+              aria-pressed={Boolean(selectedAudioTrack.isTimelineLocked)}
+              className={`inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-[9px] transition disabled:cursor-not-allowed disabled:opacity-50 ${
+                selectedAudioTrack.isTimelineLocked ? activePillClassName : duplicateButtonClassName
+              }`}
+            >
+              {selectedAudioTrack.isTimelineLocked ? <FaLock /> : <FaLockOpen />}
+            </button>
           ) : null}
 
           {selectedAudioTrack ? (

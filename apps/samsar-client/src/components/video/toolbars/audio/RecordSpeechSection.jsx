@@ -25,7 +25,10 @@ import {
 import { toast } from 'react-toastify';
 import { getHeaders } from '../../../../utils/web';
 import { normalizeTimelineHints } from '../../../../utils/sessionTimelineText.js';
-import { TTS_COMBINED_SPEAKER_TYPES } from '../../../../constants/Types.ts';
+import {
+  IMAGE_GENERAITON_MODEL_TYPES,
+  TTS_COMBINED_SPEAKER_TYPES,
+} from '../../../../constants/Types.ts';
 import {
   getGoogleTTSVoiceDetails,
   mergeGoogleTTSSpeakers,
@@ -50,6 +53,14 @@ const AVATAR_VIDEO_UPFRONT_CREDITS = 2;
 const AVATAR_VIDEO_BASE_CREDITS_PER_UNIT = 2;
 const AVATAR_VIDEO_CREDIT_CONVERSION_MULTIPLIER = 2;
 const DEFAULT_ELEVENLABS_AVATAR_SPEAKER = 'N2lVS1w4EtoT3dr4eOWO';
+const DEFAULT_AVATAR_IMAGE_MODEL = 'GPTIMAGE2';
+const AVATAR_IMAGE_MODEL_STORAGE_KEY = 'defaultAvatarImageGenerationModel';
+const AVATAR_IMAGE_MODEL_OPTIONS = IMAGE_GENERAITON_MODEL_TYPES.filter(
+  (model) => model.isExpressModel === true
+).map((model) => ({
+  value: model.key,
+  label: model.name,
+}));
 const AVATAR_VIDEO_AUDIO_SOURCE_SESSION_SPEECH = 'session_speech';
 const AVATAR_VIDEO_AUDIO_SOURCE_HINT_SPEECH = 'hint_speech';
 const AVATAR_VIDEO_AUDIO_SOURCE_OPTIONS = [
@@ -126,6 +137,22 @@ function wait(milliseconds) {
   });
 }
 
+function getInitialAvatarImageModel() {
+  let savedModel = '';
+  try {
+    savedModel = localStorage.getItem(AVATAR_IMAGE_MODEL_STORAGE_KEY) || '';
+  } catch (_error) {
+    savedModel = '';
+  }
+  if (AVATAR_IMAGE_MODEL_OPTIONS.some((model) => model.value === savedModel)) {
+    return savedModel;
+  }
+  if (AVATAR_IMAGE_MODEL_OPTIONS.some((model) => model.value === DEFAULT_AVATAR_IMAGE_MODEL)) {
+    return DEFAULT_AVATAR_IMAGE_MODEL;
+  }
+  return AVATAR_IMAGE_MODEL_OPTIONS[0]?.value || '';
+}
+
 function getGlobalVideoId(globalVideo = {}) {
   return globalVideo?._id?.toString?.()
     || globalVideo?._id
@@ -156,6 +183,25 @@ function normalizeProcessorAssetUrl(value = '') {
   const baseUrl = (PROCESSOR_API_URL || '').replace(/\/+$/, '');
   const normalizedPath = trimmedValue.startsWith('/') ? trimmedValue : `/${trimmedValue.replace(/^\/+/, '')}`;
   return baseUrl ? `${baseUrl}${normalizedPath}` : normalizedPath;
+}
+
+function AvatarImage({
+  src,
+  className,
+  onUnavailable,
+}) {
+  if (!src) {
+    return null;
+  }
+
+  return (
+    <img
+      src={src}
+      alt=""
+      className={className}
+      onError={onUnavailable}
+    />
+  );
 }
 
 function normalizeAvatarTaskStatus(value = '') {
@@ -654,8 +700,10 @@ export default function RecordSpeechSection({
   const [uploadedGlobalVideo, setUploadedGlobalVideo] = useState(null);
   const [facecamError, setFacecamError] = useState('');
   const [avatarPrompt, setAvatarPrompt] = useState('');
+  const [selectedAvatarImageModel, setSelectedAvatarImageModel] = useState(getInitialAvatarImageModel);
   const [avatarTasks, setAvatarTasks] = useState([]);
   const [userRunwayAvatars, setUserRunwayAvatars] = useState([]);
+  const [unavailableAvatarImageKeys, setUnavailableAvatarImageKeys] = useState(() => new Set());
   const [selectedAvatarTaskId, setSelectedAvatarTaskId] = useState('');
   const [, setAvatarVoices] = useState([]);
   const [selectedAvatarVoiceId, setSelectedAvatarVoiceId] = useState('victoria');
@@ -683,6 +731,17 @@ export default function RecordSpeechSection({
     () => filterSpeakersForAudioAvailability(combinedTtsSpeakerTypes, audioAvailability),
     [audioAvailability, combinedTtsSpeakerTypes]
   );
+
+  useEffect(() => {
+    if (!selectedAvatarImageModel) {
+      return;
+    }
+    try {
+      localStorage.setItem(AVATAR_IMAGE_MODEL_STORAGE_KEY, selectedAvatarImageModel);
+    } catch (_error) {
+      // Model persistence is optional when browser storage is unavailable.
+    }
+  }, [selectedAvatarImageModel]);
 
   const mediaRecorderRef = useRef(null);
   const mediaStreamRef = useRef(null);
@@ -778,22 +837,51 @@ export default function RecordSpeechSection({
       || avatarTasks[0]
       || null;
   }, [avatarTasks, selectedAvatarTaskId]);
-  const generatedAvatarTasks = useMemo(() => avatarTasks.filter((task) => (
-    Boolean(task?.avatarImageUrl || task?.avatarImage)
-  )), [avatarTasks]);
+  const getAvatarImageKey = (task) => {
+    const taskId = getAvatarTaskId(task) || task?.runwayAvatarId || 'avatar';
+    const imageUrl = normalizeProcessorAssetUrl(task?.avatarImageUrl || task?.avatarImage || '');
+    return imageUrl ? `${taskId}:${imageUrl}` : '';
+  };
+  const markAvatarImageUnavailable = (task) => {
+    const imageKey = getAvatarImageKey(task);
+    if (!imageKey) {
+      return;
+    }
+    setUnavailableAvatarImageKeys((currentKeys) => {
+      if (currentKeys.has(imageKey)) {
+        return currentKeys;
+      }
+      const nextKeys = new Set(currentKeys);
+      nextKeys.add(imageKey);
+      return nextKeys;
+    });
+  };
+  const generatedAvatarTasks = useMemo(() => avatarTasks.filter((task) => {
+    const imageUrl = normalizeProcessorAssetUrl(task?.avatarImageUrl || task?.avatarImage || '');
+    const taskId = getAvatarTaskId(task) || task?.runwayAvatarId || 'avatar';
+    return Boolean(imageUrl) && !unavailableAvatarImageKeys.has(`${taskId}:${imageUrl}`);
+  }), [avatarTasks, unavailableAvatarImageKeys]);
   const reusableRunwayAvatars = useMemo(() => {
     const sessionAvatarIds = new Set(
       avatarTasks
         .map((task) => task?.runwayAvatarId)
         .filter(Boolean)
     );
-    return userRunwayAvatars.filter((task) => (
-      task?.runwayAvatarId && !sessionAvatarIds.has(task.runwayAvatarId)
-    ));
-  }, [avatarTasks, userRunwayAvatars]);
+    return userRunwayAvatars.filter((task) => {
+      const imageUrl = normalizeProcessorAssetUrl(task?.avatarImageUrl || task?.avatarImage || '');
+      const taskId = getAvatarTaskId(task) || task?.runwayAvatarId || 'avatar';
+      return task?.runwayAvatarId
+        && imageUrl
+        && !sessionAvatarIds.has(task.runwayAvatarId)
+        && !unavailableAvatarImageKeys.has(`${taskId}:${imageUrl}`);
+    });
+  }, [avatarTasks, unavailableAvatarImageKeys, userRunwayAvatars]);
   const selectedAvatarImageUrl = normalizeProcessorAssetUrl(
     selectedAvatarTask?.avatarImageUrl || selectedAvatarTask?.avatarImage || ''
   );
+  const selectedAvatarImageUnavailable = selectedAvatarTask
+    ? unavailableAvatarImageKeys.has(getAvatarImageKey(selectedAvatarTask))
+    : false;
   const selectedAvatarVideoUrl = normalizeProcessorAssetUrl(
     selectedAvatarTask?.avatarVideoPreviewUrl
       || selectedAvatarTask?.avatarVideoUrl
@@ -822,6 +910,7 @@ export default function RecordSpeechSection({
       || ['PENDING', 'INIT', 'PROCESSING'].includes(selectedAvatarImageStatus)
     );
   const avatarImageReady = Boolean(selectedAvatarImageUrl)
+    && !selectedAvatarImageUnavailable
     && (
       selectedAvatarStatus !== 'FAILED'
       || selectedAvatarImageStatus === 'COMPLETED'
@@ -872,8 +961,8 @@ export default function RecordSpeechSection({
         : '';
   const avatarVideoActionLabel = !runwayAvatarReady
     ? avatarGenerationStarted
-      ? 'Preparing avatar'
-      : 'Prepare avatar'
+      ? 'Preparing avatar and video'
+      : 'Generate avatar video'
     : 'Generate avatar video';
   const avatarVideoReady = Boolean(selectedAvatarVideoUrl)
     || ['VIDEO_COMPLETED', 'SAVED', 'ACCEPTED'].includes(selectedAvatarStatus);
@@ -1238,6 +1327,7 @@ export default function RecordSpeechSection({
       const response = await axios.post(`${PROCESSOR_API_URL}/video_sessions/avatar_voiceover/generate_avatar_image`, {
         sessionId: sessionDetails._id.toString(),
         prompt,
+        imageModel: selectedAvatarImageModel,
       }, headers);
       applyAvatarVoices(response?.data?.voices);
       mergeAvatarTask(response?.data?.task);
@@ -1252,7 +1342,7 @@ export default function RecordSpeechSection({
     }
   };
 
-  const handleCreateRunwayAvatar = async ({ silent = false } = {}) => {
+  const handleCreateRunwayAvatar = async ({ silent = false, autoGenerateVideo = false } = {}) => {
     if (!selectedAvatarTaskIdValue || !avatarImageReady) {
       setAvatarError('Generate or select an avatar image first.');
       return null;
@@ -1270,6 +1360,8 @@ export default function RecordSpeechSection({
       const response = await axios.post(`${PROCESSOR_API_URL}/video_sessions/avatar_voiceover/create_avatar`, {
         taskId: selectedAvatarTaskIdValue,
         voicePresetId: selectedAvatarVoiceId,
+        autoGenerateVideo,
+        audioSource: avatarVideoAudioSource,
       }, headers);
       applyAvatarVoices(response?.data?.voices);
       mergeAvatarTask(response?.data?.task);
@@ -1402,19 +1494,38 @@ export default function RecordSpeechSection({
         return;
       }
 
-      const preparedTask = await handleCreateRunwayAvatar({ silent: true });
-      const preparedAvatarReady = Boolean(preparedTask?.runwayAvatarId)
-        && (
-          normalizeAvatarTaskStatus(preparedTask?.runwayAvatarStatus) === 'READY'
-          || normalizeAvatarTaskStatus(preparedTask?.status) === 'AVATAR_READY'
-        );
-      if (!preparedAvatarReady) {
-        toast.success('Avatar is being prepared. Generate the video when it is ready.', {
-          position: 'bottom-center',
-          className: 'custom-toast',
-        });
+      const preparedTask = await handleCreateRunwayAvatar({
+        silent: true,
+        autoGenerateVideo: true,
+      });
+      if (!preparedTask) {
         return;
       }
+
+      const preparedStatus = normalizeAvatarTaskStatus(preparedTask?.status);
+      const preparedVideoStatus = normalizeAvatarTaskStatus(preparedTask?.avatarVideoStatus);
+      if (preparedStatus === 'FAILED' || preparedVideoStatus === 'FAILED') {
+        setAvatarError(
+          preparedTask?.avatarVideoError
+          || preparedTask?.errorMessage
+          || 'Unable to start avatar video generation.'
+        );
+        return;
+      }
+
+      const preparedVideoStarted = Boolean(preparedTask?.avatarVideoTaskId)
+        || preparedStatus === 'VIDEO_PROCESSING'
+        || ['PENDING', 'PROCESSING', 'RUNNING'].includes(preparedVideoStatus);
+      toast.success(
+        preparedVideoStarted
+          ? 'Avatar video generation started.'
+          : 'Avatar is being prepared. Lip sync will start automatically when it is ready.',
+        {
+          position: 'bottom-center',
+          className: 'custom-toast',
+        }
+      );
+      return;
     }
 
     const headers = getHeaders();
@@ -2695,10 +2806,23 @@ export default function RecordSpeechSection({
                   placeholder="Professional presenter with warm studio lighting"
                 />
               </label>
+              <label className="block">
+                <span className={`mb-1 block text-xs font-semibold ${mutedText}`}>Avatar image model</span>
+                <select
+                  value={selectedAvatarImageModel}
+                  onChange={(event) => setSelectedAvatarImageModel(event.target.value)}
+                  disabled={isAvatarImageGenerating || avatarAnyActionPending}
+                  className={`w-full rounded-lg ${bgColor} ${text2Color} px-3 py-2 text-sm`}
+                >
+                  {AVATAR_IMAGE_MODEL_OPTIONS.map((model) => (
+                    <option key={model.value} value={model.value}>{model.label}</option>
+                  ))}
+                </select>
+              </label>
               <button
                 type="button"
                 onClick={handleGenerateAvatarImage}
-                disabled={isAvatarImageGenerating || !avatarPrompt.trim() || avatarAnyActionPending}
+                disabled={isAvatarImageGenerating || !avatarPrompt.trim() || !selectedAvatarImageModel || avatarAnyActionPending}
                 className={`${avatarPrimaryButtonClass} w-full`}
               >
                 {isAvatarImageGenerating ? <FaSyncAlt className="animate-spin" aria-hidden="true" /> : <FaImage aria-hidden="true" />}
@@ -2736,17 +2860,11 @@ export default function RecordSpeechSection({
                         title={getAvatarTaskStatusLabel(task)}
                         aria-label={`Select avatar image: ${getAvatarTaskStatusLabel(task)}`}
                       >
-                        {imageUrl ? (
-                          <img
-                            src={imageUrl}
-                            alt=""
-                            className="h-full w-full object-cover"
-                          />
-                        ) : (
-                          <div className={`flex h-full w-full items-center justify-center ${mutedText}`}>
-                            <FaUserCircle aria-hidden="true" />
-                          </div>
-                        )}
+                        <AvatarImage
+                          src={imageUrl}
+                          className="h-full w-full object-cover"
+                          onUnavailable={() => markAvatarImageUnavailable(task)}
+                        />
                       </button>
                     );
                   })}
@@ -2754,7 +2872,7 @@ export default function RecordSpeechSection({
               </div>
             )}
 
-            {selectedAvatarTask && (
+            {selectedAvatarTask && (selectedAvatarImagePending || (selectedAvatarImageUrl && !selectedAvatarImageUnavailable)) && (
               <div className={`overflow-hidden rounded-lg border ${borderColor}`}>
                 <div className={`flex items-center justify-between gap-2 px-3 py-2 text-xs ${mutedText}`}>
                   <span className="inline-flex min-w-0 items-center gap-2 truncate">
@@ -2764,10 +2882,10 @@ export default function RecordSpeechSection({
                   <span className="shrink-0">{selectedAvatarStatusLabel}</span>
                 </div>
                 {selectedAvatarImageUrl ? (
-                  <img
+                  <AvatarImage
                     src={selectedAvatarImageUrl}
-                    alt=""
                     className="aspect-square w-full bg-black object-cover"
+                    onUnavailable={() => markAvatarImageUnavailable(selectedAvatarTask)}
                   />
                 ) : (
                   <div className={`flex aspect-square w-full flex-col items-center justify-center gap-3 ${bgColor} ${mutedText}`}>
@@ -2954,17 +3072,11 @@ export default function RecordSpeechSection({
                           title={`Use ${label}`}
                           aria-label={`Use previously generated avatar: ${label}`}
                         >
-                          {imageUrl ? (
-                            <img
-                              src={imageUrl}
-                              alt=""
-                              className="h-full w-full object-cover"
-                            />
-                          ) : (
-                            <div className={`flex h-full w-full items-center justify-center ${mutedText}`}>
-                              <FaUserCircle aria-hidden="true" />
-                            </div>
-                          )}
+                          <AvatarImage
+                            src={imageUrl}
+                            className="h-full w-full object-cover"
+                            onUnavailable={() => markAvatarImageUnavailable(task)}
+                          />
                         </button>
                       );
                     })}

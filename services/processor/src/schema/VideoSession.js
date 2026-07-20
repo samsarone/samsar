@@ -222,6 +222,7 @@ const audioLayerSchema = new Schema({
   speakerCharacterName: String,
 
   isLayerLocked: { type: Boolean, default: false },
+  isTimelineLocked: { type: Boolean, default: false },
   previousAudioData: Object,
 
   instructions: { type: String, default: '' },

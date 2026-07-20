@@ -10,6 +10,7 @@ const avatarVoiceoverTaskSchema = new Schema({
 
   prompt: { type: String, default: '' },
   avatarImagePrompt: { type: String, default: '' },
+  imageModel: { type: String, default: 'GPTIMAGE2' },
   imageRequestId: { type: String, default: '' },
   imageStatus: { type: String, default: 'PENDING' },
   imageError: { type: String, default: '' },
@@ -38,6 +39,8 @@ const avatarVoiceoverTaskSchema = new Schema({
   avatarVideoSpeechAudioDuration: { type: Number, default: 0 },
   avatarVideoAudioSource: { type: String, default: '' },
   avatarVideoSpeechAudioSource: { type: String, default: '' },
+  avatarVideoAutoStartRequested: { type: Boolean, default: false },
+  avatarVideoAutoStartAudioSource: { type: String, default: '' },
 
   hints: { type: [Object], default: [] },
   normalizedHintsText: { type: String, default: '' },

@@ -39,7 +39,13 @@ import {
   creditGenerationCredits,
   deductGenerationCredits,
 } from './GenerationCredits.js';
+import {
+  buildSecureMediaDeliveryUrl,
+  getObjectFromS3,
+  uploadSpeechAudioToCDN,
+} from './AWS.js';
 import { getAccessibleProviderMediaUrl } from './ai_utils/VisionMediaUrl.js';
+import { validateExpressImageModelKey } from './api/PromptUtils.js';
 
 const API_SERVER = process.env.API_SERVER;
 const RUNWAY_API_BASE_URL = (process.env.RUNWAYML_BASE_URL || 'https://api.dev.runwayml.com').replace(/\/+$/, '');
@@ -50,6 +56,7 @@ const RUNWAY_POLL_INTERVAL_MS = 5000;
 const RUNWAY_AVATAR_POLL_TIMEOUT_MS = 8 * 60 * 1000;
 const RUNWAY_AVATAR_VIDEO_POLL_TIMEOUT_MS = 20 * 60 * 1000;
 const AVATAR_VIDEO_MAX_FILE_SIZE_BYTES = 512 * 1024 * 1024;
+const AVATAR_IMAGE_MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024;
 const AVATAR_VIDEO_BILLING_UNIT_SECONDS = 6;
 const AVATAR_VIDEO_UPFRONT_CREDITS = 2;
 const AVATAR_VIDEO_BASE_CREDITS_PER_UNIT = 2;
@@ -58,6 +65,8 @@ const AVATAR_SPEECH_GENERATION_TYPE = 'avatar_voiceover_speech';
 const TTS_PROVIDER_PLAYAI = 'PLAYAI';
 const AVATAR_VIDEO_AUDIO_SOURCE_SESSION_SPEECH = 'session_speech';
 const AVATAR_VIDEO_AUDIO_SOURCE_HINT_SPEECH = 'hint_speech';
+const SECURE_ASSET_PREFIX = (process.env.SECURE_ASSET_PREFIX || 'assets_v2').replace(/^\/+|\/+$/g, '');
+export const DEFAULT_AVATAR_IMAGE_MODEL = 'GPTIMAGE2';
 
 export const RUNWAY_AVATAR_VOICE_PRESETS = [
   { presetId: 'victoria', name: 'Victoria' },
@@ -94,6 +103,7 @@ export const RUNWAY_AVATAR_VOICE_PRESETS = [
 
 const ACTIVE_AVATAR_POLLS = new Set();
 const ACTIVE_AVATAR_VIDEO_POLLS = new Set();
+const ACTIVE_AVATAR_VIDEO_AUTO_STARTS = new Set();
 
 export const AVATAR_VOICEOVER_TTS_PROVIDERS = [
   { value: TTS_PROVIDER_OPENAI, label: 'OpenAI' },
@@ -109,6 +119,20 @@ function wait(milliseconds) {
 
 function normalizeString(value = '') {
   return typeof value === 'string' ? value.trim() : '';
+}
+
+function resolveAvatarImageModel(payload = {}) {
+  const requestedModel = payload.imageModel ?? payload.image_model ?? payload.model;
+  const candidateModel = requestedModel === undefined
+    || requestedModel === null
+    || (typeof requestedModel === 'string' && !requestedModel.trim())
+    ? DEFAULT_AVATAR_IMAGE_MODEL
+    : requestedModel;
+  const validation = validateExpressImageModelKey(candidateModel);
+  if (!validation.status) {
+    throw new Error(validation.message || 'Invalid avatar image model.');
+  }
+  return validation.imageModel;
 }
 
 function getRunwayApiKey() {
@@ -155,6 +179,13 @@ function getAssetsBasePath() {
   return path.join(process.cwd(), 'assets');
 }
 
+function getAvatarAssetsBasePath() {
+  if (process.env.CURRENT_ENV === 'docker') {
+    return process.env.SAMSAR_ASSETS_V2_ROOT || '/assets_v2';
+  }
+  return path.join(process.cwd(), 'assets_v2');
+}
+
 function normalizeAssetPath(assetPath = '') {
   return normalizeString(assetPath)
     .replace(/^https?:\/\/[^/]+\/?/i, '')
@@ -163,13 +194,29 @@ function normalizeAssetPath(assetPath = '') {
 }
 
 function resolveAssetAbsolutePath(assetPath = '') {
-  const normalizedAssetPath = normalizeAssetPath(assetPath);
+  const secureAssetKey = getSecureAvatarAssetKey(assetPath);
+  const normalizedAssetPath = secureAssetKey || normalizeAssetPath(assetPath);
   if (!normalizedAssetPath) {
     return '';
   }
   if (path.isAbsolute(assetPath) && fs.existsSync(assetPath)) {
     return assetPath;
   }
+
+  if (secureAssetKey) {
+    const relativeAssetPath = secureAssetKey.slice(SECURE_ASSET_PREFIX.length + 1);
+    const assetsV2Roots = [
+      process.env.SAMSAR_ASSETS_V2_ROOT,
+      process.env.CURRENT_ENV === 'staging' || process.env.CURRENT_ENV === 'docker' ? '/assets_v2' : '',
+      path.join(process.cwd(), 'assets_v2'),
+      path.join(process.cwd(), '..', 'samsar_processor', 'assets_v2'),
+    ].filter(Boolean);
+    const existingPath = assetsV2Roots
+      .map((root) => path.join(root, relativeAssetPath))
+      .find((candidate) => fs.existsSync(candidate));
+    return existingPath || path.join(assetsV2Roots[0], relativeAssetPath);
+  }
+
   return path.join(getAssetsBasePath(), normalizedAssetPath);
 }
 
@@ -183,6 +230,51 @@ function buildRemoteAssetUrl(assetPath = '') {
   return apiServer ? `${apiServer}/${normalizedAssetPath}` : `/${normalizedAssetPath}`;
 }
 
+function getSecureAvatarAssetKey(value = '') {
+  const normalizedValue = normalizeString(value);
+  if (!normalizedValue || /^(data:|blob:)/i.test(normalizedValue)) {
+    return '';
+  }
+
+  let assetPath = normalizedValue;
+  if (/^https?:\/\//i.test(assetPath)) {
+    try {
+      assetPath = decodeURIComponent(new URL(assetPath).pathname);
+    } catch {
+      return '';
+    }
+  }
+
+  const normalizedPath = assetPath
+    .split('?')[0]
+    .split('#')[0]
+    .replace(/^\/+/, '');
+  return normalizedPath.startsWith(`${SECURE_ASSET_PREFIX}/`)
+    ? normalizedPath
+    : '';
+}
+
+function resolveAvatarAssetDisplayUrl(...values) {
+  const candidates = values.map(normalizeString).filter(Boolean);
+
+  for (const candidate of candidates) {
+    const secureAssetKey = getSecureAvatarAssetKey(candidate);
+    if (secureAssetKey) {
+      const localAssetPath = resolveAssetAbsolutePath(secureAssetKey);
+      if (localAssetPath && fs.existsSync(localAssetPath)) {
+        return `/${secureAssetKey}`;
+      }
+      // Persisted avatar records may contain either a stable asset key or an
+      // expired signed CloudFront URL. Always rebuild protected media through
+      // the active delivery configuration when the asset is cloud-only.
+      return buildSecureMediaDeliveryUrl(secureAssetKey) || candidate;
+    }
+  }
+
+  const directUrl = candidates.find((candidate) => /^(data:|blob:|https?:\/\/)/i.test(candidate));
+  return directUrl || buildRemoteAssetUrl(candidates[0]);
+}
+
 function getMimeTypeForAsset(assetPath = '') {
   const ext = path.extname(assetPath).toLowerCase();
   if (ext === '.jpg' || ext === '.jpeg') {
@@ -194,18 +286,101 @@ function getMimeTypeForAsset(assetPath = '') {
   return 'image/png';
 }
 
-async function readImageAsDataUri(assetPath = '') {
+async function collectAvatarImageBuffer(body) {
+  if (!body) {
+    return null;
+  }
+  if (Buffer.isBuffer(body)) {
+    return body;
+  }
+  if (typeof body.transformToByteArray === 'function') {
+    return Buffer.from(await body.transformToByteArray());
+  }
+
+  const chunks = [];
+  for await (const chunk of body) {
+    chunks.push(Buffer.from(chunk));
+  }
+  return Buffer.concat(chunks);
+}
+
+async function readImageAsDataUri(assetPath = '', dependencies = {}) {
+  const normalizedAssetPath = normalizeString(assetPath);
+  if (/^data:image\//i.test(normalizedAssetPath)) {
+    const encodedImage = normalizedAssetPath.split(',', 2)[1] || '';
+    const imageBuffer = Buffer.from(encodedImage, 'base64');
+    if (imageBuffer.length > AVATAR_IMAGE_MAX_FILE_SIZE_BYTES) {
+      throw new Error('Avatar reference image is larger than Runway allows.');
+    }
+    return normalizedAssetPath;
+  }
+
   const absolutePath = resolveAssetAbsolutePath(assetPath);
-  if (!absolutePath || !fs.existsSync(absolutePath)) {
-    throw new Error('Generated avatar image was not found on the processor.');
+  if (absolutePath && fs.existsSync(absolutePath)) {
+    const imageBuffer = await fs.promises.readFile(absolutePath);
+    if (imageBuffer.length > AVATAR_IMAGE_MAX_FILE_SIZE_BYTES) {
+      throw new Error('Avatar reference image is larger than Runway allows.');
+    }
+    return `data:${getMimeTypeForAsset(absolutePath)};base64,${imageBuffer.toString('base64')}`;
   }
 
-  const imageBuffer = await fs.promises.readFile(absolutePath);
-  if (imageBuffer.length > 10 * 1024 * 1024) {
-    throw new Error('Avatar reference image is larger than Runway allows.');
+  const secureAssetKey = getSecureAvatarAssetKey(assetPath);
+  if (secureAssetKey) {
+    const getStoredObject = dependencies.getObjectFromS3 || getObjectFromS3;
+    const bucketName = normalizeString(
+      process.env.MEDIA_BUCKET_NAME
+      || process.env.STATIC_CDN_BUCKET
+      || process.env.SAMSAR_EXTERNAL_MEDIA_BUCKET
+      || 'samsar-resources'
+    );
+    try {
+      const storedObject = await getStoredObject({
+        bucketName,
+        key: secureAssetKey,
+      });
+      const imageBuffer = await collectAvatarImageBuffer(storedObject?.Body);
+      if (!imageBuffer?.length) {
+        throw new Error('Protected avatar image was empty.');
+      }
+      if (imageBuffer.length > AVATAR_IMAGE_MAX_FILE_SIZE_BYTES) {
+        throw new Error('Avatar reference image is larger than Runway allows.');
+      }
+      const contentType = normalizeString(storedObject?.ContentType);
+      const mimeType = /^image\//i.test(contentType)
+        ? contentType.split(';')[0]
+        : getMimeTypeForAsset(secureAssetKey);
+      return `data:${mimeType};base64,${imageBuffer.toString('base64')}`;
+    } catch (storageError) {
+      const remoteUrl = buildSecureMediaDeliveryUrl(secureAssetKey);
+      if (remoteUrl) {
+        try {
+          const httpClient = dependencies.httpClient || axios;
+          const response = await httpClient.get(remoteUrl, {
+            responseType: 'arraybuffer',
+            timeout: 60000,
+            maxContentLength: AVATAR_IMAGE_MAX_FILE_SIZE_BYTES,
+            maxBodyLength: AVATAR_IMAGE_MAX_FILE_SIZE_BYTES,
+          });
+          const imageBuffer = Buffer.from(response.data);
+          if (!imageBuffer.length) {
+            throw new Error('Protected avatar image was empty.');
+          }
+          const contentType = normalizeString(response?.headers?.['content-type']);
+          const mimeType = /^image\//i.test(contentType)
+            ? contentType.split(';')[0]
+            : getMimeTypeForAsset(secureAssetKey);
+          return `data:${mimeType};base64,${imageBuffer.toString('base64')}`;
+        } catch {
+          // Report a single actionable storage error below.
+        }
+      }
+      throw new Error(
+        `Generated avatar image could not be loaded from protected media storage: ${storageError?.message || 'object unavailable'}`
+      );
+    }
   }
 
-  return `data:${getMimeTypeForAsset(absolutePath)};base64,${imageBuffer.toString('base64')}`;
+  throw new Error('Generated avatar image was not found on the processor.');
 }
 
 function normalizeVoicePresetId(value = '') {
@@ -307,20 +482,24 @@ function serializeAvatarVoiceoverTask(task) {
   const avatarImageSource = normalizeString(plainTask.avatarImage)
     || normalizeString(plainTask.avatarImageUrl);
   const avatarImageDisplayUrl = normalizeString(plainTask.avatarImageUrl);
-  const avatarImageUrl =
-    /^(data:|https?:\/\/)/i.test(avatarImageDisplayUrl)
-      ? avatarImageDisplayUrl
-      : buildRemoteAssetUrl(avatarImageSource || avatarImageDisplayUrl);
-  const avatarVideoPreviewUrl = normalizeString(plainTask.avatarVideoUrl)
-    || buildRemoteAssetUrl(plainTask.avatarVideoAssetPath);
-  const avatarSpeechAudioPreviewUrl = normalizeString(plainTask.avatarSpeechAudioUrl)
-    || buildRemoteAssetUrl(plainTask.avatarSpeechAudioAssetPath);
-  const avatarVideoSpeechAudioPreviewUrl = normalizeString(plainTask.avatarVideoSpeechAudioUrl)
-    || buildRemoteAssetUrl(plainTask.avatarVideoSpeechAudioAssetPath);
+  const avatarImageReference = getSecureAvatarAssetKey(avatarImageSource) || avatarImageSource;
+  const avatarImageUrl = resolveAvatarAssetDisplayUrl(avatarImageSource, avatarImageDisplayUrl);
+  const avatarVideoPreviewUrl = resolveAvatarAssetDisplayUrl(
+    plainTask.avatarVideoAssetPath,
+    plainTask.avatarVideoUrl
+  );
+  const avatarSpeechAudioPreviewUrl = resolveAvatarAssetDisplayUrl(
+    plainTask.avatarSpeechAudioAssetPath,
+    plainTask.avatarSpeechAudioUrl
+  );
+  const avatarVideoSpeechAudioPreviewUrl = resolveAvatarAssetDisplayUrl(
+    plainTask.avatarVideoSpeechAudioAssetPath,
+    plainTask.avatarVideoSpeechAudioUrl
+  );
 
   return {
     ...responseTask,
-    avatarImage: avatarImageSource,
+    avatarImage: avatarImageReference,
     avatarImageUrl,
     avatarSpeechAudioPreviewUrl,
     avatarVideoSpeechAudioPreviewUrl,
@@ -545,9 +724,6 @@ function getAudioLayerSourceForFfmpeg(audioLayer = {}) {
   ].map(normalizeString).filter(Boolean);
 
   for (const candidate of localCandidates) {
-    if (/^https?:\/\//i.test(candidate)) {
-      continue;
-    }
     const audioPath = resolveAssetAbsolutePath(candidate);
     if (audioPath && fs.existsSync(audioPath)) {
       return {
@@ -556,6 +732,9 @@ function getAudioLayerSourceForFfmpeg(audioLayer = {}) {
         remoteUrl: buildRemoteAssetUrl(candidate),
         isLocal: true,
       };
+    }
+    if (/^https?:\/\//i.test(candidate)) {
+      continue;
     }
   }
 
@@ -596,6 +775,49 @@ function getGeneratedSpeechSegments(sessionData = {}) {
     .sort((left, right) => left.startTime - right.startTime);
 }
 
+async function materializeRemoteSpeechSegments(segments = [], outputFolder = '') {
+  return await Promise.all(segments.map(async (segment, index) => {
+    if (segment.isLocal || !/^https?:\/\//i.test(segment.source)) {
+      return segment;
+    }
+
+    let extension = '.audio';
+    try {
+      const sourceExtension = path.extname(new URL(segment.source).pathname).toLowerCase();
+      if (/^\.[a-z0-9]{1,8}$/.test(sourceExtension)) {
+        extension = sourceExtension;
+      }
+    } catch {
+      // Keep the format-neutral extension; FFmpeg probes audio contents.
+    }
+
+    const localPath = path.join(outputFolder, `speech_input_${index}${extension}`);
+    const partialPath = `${localPath}.${process.pid}.part`;
+    try {
+      const response = await axios.get(segment.source, {
+        responseType: 'stream',
+        timeout: 120000,
+        maxContentLength: 128 * 1024 * 1024,
+        maxBodyLength: 128 * 1024 * 1024,
+      });
+      await pipeline(response.data, fs.createWriteStream(partialPath));
+      await fs.promises.rename(partialPath, localPath);
+      const stats = await fs.promises.stat(localPath);
+      if (!stats.isFile() || stats.size === 0) {
+        throw new Error('Downloaded speech audio was empty.');
+      }
+      return {
+        ...segment,
+        source: localPath,
+        isLocal: true,
+      };
+    } catch (error) {
+      await fs.promises.unlink(partialPath).catch(() => {});
+      throw new Error(`Unable to download generated speech audio ${index + 1}: ${error?.message || error}`);
+    }
+  }));
+}
+
 function runFfmpeg(args) {
   const binaryPath = ffmpegPath || 'ffmpeg';
   return new Promise((resolve, reject) => {
@@ -608,11 +830,14 @@ function runFfmpeg(args) {
       }
     });
     child.on('error', reject);
-    child.on('close', (code) => {
+    child.on('close', (code, signal) => {
       if (code === 0) {
         resolve();
       } else {
-        reject(new Error(`ffmpeg exited with code ${code}: ${stderr.slice(-4000)}`));
+        const exitReason = signal
+          ? `terminated by signal ${signal}`
+          : `exited with code ${code}`;
+        reject(new Error(`ffmpeg ${exitReason}: ${stderr.slice(-4000)}`));
       }
     });
   });
@@ -635,7 +860,7 @@ async function buildSessionSpeechAudioReference(task, userId) {
   );
 
   const outputFolder = path.join(
-    getAssetsBasePath(),
+    getAvatarAssetsBasePath(),
     'avatar_voiceover',
     'session_speech',
     task.sessionId.toString(),
@@ -643,6 +868,16 @@ async function buildSessionSpeechAudioReference(task, userId) {
   );
   await fsExtra.ensureDir(outputFolder);
   const outputPath = path.join(outputFolder, 'session_speech.mp3');
+  const ffmpegSegments = await materializeRemoteSpeechSegments(segments, outputFolder);
+
+  console.info('[avatar_voiceover] mixing generated session speech', {
+    taskId: task._id.toString(),
+    sessionId: task.sessionId.toString(),
+    segmentCount: segments.length,
+    localSegmentCount: segments.filter((segment) => segment.isLocal).length,
+    remoteSegmentCount: segments.filter((segment) => !segment.isLocal).length,
+    durationSeconds,
+  });
 
   const args = [
     '-y',
@@ -653,19 +888,19 @@ async function buildSessionSpeechAudioReference(task, userId) {
     '-i',
     'anullsrc=r=44100:cl=stereo',
   ];
-  segments.forEach((segment) => {
+  ffmpegSegments.forEach((segment) => {
     args.push('-i', segment.source);
   });
 
-  const filterParts = segments.map((segment, index) => {
+  const filterParts = ffmpegSegments.map((segment, index) => {
     const inputIndex = index + 1;
     const delayMs = Math.max(0, Math.round(segment.startTime * 1000));
     const duration = Math.max(0.01, Number(segment.duration) || 0.01);
     const trimStart = Math.max(0, Number(segment.sourceTrimStartTime) || 0);
     return `[${inputIndex}:a]aformat=sample_rates=44100:channel_layouts=stereo,atrim=start=${trimStart}:duration=${duration},asetpts=PTS-STARTPTS,adelay=${delayMs}|${delayMs}[s${index}]`;
   });
-  const mixInputs = ['[0:a]', ...segments.map((_, index) => `[s${index}]`)].join('');
-  filterParts.push(`${mixInputs}amix=inputs=${segments.length + 1}:duration=first:dropout_transition=0[mix]`);
+  const mixInputs = ['[0:a]', ...ffmpegSegments.map((_, index) => `[s${index}]`)].join('');
+  filterParts.push(`${mixInputs}amix=inputs=${ffmpegSegments.length + 1}:duration=first:dropout_transition=0[mix]`);
 
   args.push(
     '-filter_complex',
@@ -690,17 +925,37 @@ async function buildSessionSpeechAudioReference(task, userId) {
   }
 
   const assetPath = `/${toAssetRelativePath(outputPath)}`;
+  const audioUrl = await uploadSpeechAudioToCDN(
+    outputPath,
+    path.posix.join(
+      'avatar_voiceover',
+      task.sessionId.toString(),
+      task._id.toString(),
+      `session_speech_${Date.now()}.mp3`
+    )
+  );
+  console.info('[avatar_voiceover] published generated session speech', {
+    taskId: task._id.toString(),
+    sessionId: task.sessionId.toString(),
+    assetPath,
+    providerUrl: normalizeString(audioUrl).split('?')[0],
+  });
   return {
-    audioUrl: buildRemoteAssetUrl(assetPath),
+    audioUrl,
     audioPath: outputPath,
     assetPath,
     durationSeconds,
   };
 }
 
+function getAvatarSpeechProviderSource(audioReference = {}) {
+  return normalizeString(audioReference.audioUrl)
+    || normalizeString(audioReference.assetPath);
+}
+
 async function saveNormalizedHintsTextFile(task, normalizedHintsText = '') {
   const outputFolder = path.join(
-    getAssetsBasePath(),
+    getAvatarAssetsBasePath(),
     'avatar_voiceover',
     'hints',
     task.sessionId.toString(),
@@ -715,6 +970,76 @@ async function saveNormalizedHintsTextFile(task, normalizedHintsText = '') {
 
 function isTerminalRunwayTaskStatus(status = '') {
   return ['SUCCEEDED', 'FAILED', 'CANCELLED'].includes(normalizeString(status).toUpperCase());
+}
+
+async function runQueuedAvatarVideoGeneration(taskId) {
+  const normalizedTaskId = taskId?.toString?.() || normalizeString(taskId);
+  if (!normalizedTaskId || ACTIVE_AVATAR_VIDEO_AUTO_STARTS.has(normalizedTaskId)) {
+    return null;
+  }
+
+  ACTIVE_AVATAR_VIDEO_AUTO_STARTS.add(normalizedTaskId);
+  try {
+    const task = await AvatarVoiceoverTask.findOneAndUpdate(
+      {
+        _id: normalizedTaskId,
+        runwayAvatarStatus: 'READY',
+        avatarVideoAutoStartRequested: true,
+        avatarVideoTaskId: '',
+      },
+      {
+        $set: {
+          avatarVideoAutoStartRequested: false,
+          status: 'VIDEO_PROCESSING',
+          stage: 'AVATAR_VIDEO',
+          avatarVideoStatus: 'PENDING',
+          avatarVideoError: '',
+          errorMessage: '',
+        },
+      },
+      { new: true }
+    );
+    if (!task) {
+      return null;
+    }
+
+    const audioSource = normalizeAvatarVideoAudioSource(task.avatarVideoAutoStartAudioSource);
+    console.info('[avatar_voiceover] auto-starting avatar video generation', {
+      taskId: normalizedTaskId,
+      sessionId: task.sessionId?.toString?.() || task.sessionId,
+      audioSource,
+    });
+    return await requestGenerateAvatarVideoFromHints(task.userId, {
+      taskId: normalizedTaskId,
+      audioSource,
+    });
+  } catch (error) {
+    const message = error?.message || 'Unable to automatically start avatar video generation.';
+    console.error('[avatar_voiceover] automatic avatar video generation failed', {
+      taskId: normalizedTaskId,
+      error: message,
+    });
+    const failedTask = await AvatarVoiceoverTask.findByIdAndUpdate(
+      normalizedTaskId,
+      {
+        $set: {
+          status: 'FAILED',
+          stage: 'AVATAR_VIDEO',
+          avatarVideoStatus: 'FAILED',
+          avatarVideoError: message,
+          avatarVideoAutoStartRequested: false,
+          errorMessage: message,
+        },
+      },
+      { new: true }
+    );
+    return {
+      task: serializeAvatarVoiceoverTask(failedTask),
+      voices: RUNWAY_AVATAR_VOICE_PRESETS,
+    };
+  } finally {
+    ACTIVE_AVATAR_VIDEO_AUTO_STARTS.delete(normalizedTaskId);
+  }
 }
 
 async function scheduleAvatarCreationPoll(taskId) {
@@ -744,6 +1069,9 @@ async function pollAvatarCreationUntilComplete(taskId) {
 
     const status = normalizeString(task.runwayAvatarStatus).toUpperCase();
     if (status === 'READY' || status === 'FAILED') {
+      if (status === 'READY') {
+        await runQueuedAvatarVideoGeneration(taskId);
+      }
       return;
     }
 
@@ -762,6 +1090,7 @@ async function pollAvatarCreationUntilComplete(taskId) {
       update.status = 'FAILED';
       update.stage = 'AVATAR_CREATION';
       update.avatarError = 'Runway could not create the avatar from this image.';
+      update.avatarVideoAutoStartRequested = false;
       update.errorMessage = update.avatarError;
     } else {
       update.status = 'AVATAR_PROCESSING';
@@ -773,6 +1102,9 @@ async function pollAvatarCreationUntilComplete(taskId) {
     await AvatarVoiceoverTask.updateOne({ _id: taskId }, { $set: update });
 
     if (nextStatus === 'READY' || nextStatus === 'FAILED') {
+      if (nextStatus === 'READY') {
+        await runQueuedAvatarVideoGeneration(taskId);
+      }
       return;
     }
     await wait(RUNWAY_POLL_INTERVAL_MS);
@@ -784,6 +1116,7 @@ async function pollAvatarCreationUntilComplete(taskId) {
       $set: {
         status: 'FAILED',
         avatarError: 'Avatar creation timed out.',
+        avatarVideoAutoStartRequested: false,
         errorMessage: 'Avatar creation timed out.',
       },
     }
@@ -875,7 +1208,7 @@ async function downloadAvatarVideoAsset(task) {
   }
 
   const outputFolder = path.join(
-    getAssetsBasePath(),
+    getAvatarAssetsBasePath(),
     'avatar_voiceover',
     'videos',
     task.sessionId.toString(),
@@ -1078,6 +1411,7 @@ export async function requestGenerateAvatarImage(userId, payload = {}) {
 
   const sessionId = normalizeString(payload.sessionId);
   const prompt = normalizeString(payload.prompt);
+  const imageModel = resolveAvatarImageModel(payload);
   if (!sessionId) {
     throw new Error('sessionId is required.');
   }
@@ -1104,6 +1438,7 @@ export async function requestGenerateAvatarImage(userId, payload = {}) {
     stage: 'IMAGE_GENERATION',
     prompt,
     avatarImagePrompt,
+    imageModel,
     imageStatus: 'PENDING',
   });
 
@@ -1115,7 +1450,7 @@ export async function requestGenerateAvatarImage(userId, payload = {}) {
       videoSessionId: sessionId,
       layerId: null,
       prompt: avatarImagePrompt,
-      model: 'GPTIMAGE2',
+      model: imageModel,
       aspectRatio: '16:9',
       background_color: 'black',
       backgroundColor: 'black',
@@ -1290,6 +1625,16 @@ export async function getAvatarVoiceoverStatus(userId, query = {}) {
   if (task.avatarVideoTaskId && !isTerminalRunwayTaskStatus(avatarVideoStatus)) {
     await scheduleAvatarVideoPoll(task._id);
   }
+  if (
+    avatarStatus === 'READY'
+    && task.avatarVideoAutoStartRequested
+    && !task.avatarVideoTaskId
+  ) {
+    const autoStartResult = await runQueuedAvatarVideoGeneration(task._id);
+    if (autoStartResult) {
+      return autoStartResult;
+    }
+  }
 
   return {
     task: serializeAvatarVoiceoverTask(await AvatarVoiceoverTask.findById(task._id)),
@@ -1305,6 +1650,10 @@ export async function requestCreateRunwayAvatar(userId, payload = {}) {
   }
 
   const voicePresetId = normalizeVoicePresetId(payload.voicePresetId || task.voicePresetId);
+  const autoGenerateVideo = payload.autoGenerateVideo === true || payload.auto_generate_video === true;
+  const autoStartAudioSource = normalizeAvatarVideoAudioSource(
+    payload.audioSource || payload.speechSource || payload.audio_source
+  );
   const avatarName = normalizeString(payload.name || task.avatarName || 'Samsar Avatar').slice(0, 50);
   const personality = normalizeString(payload.personality || task.personality || DEFAULT_AVATAR_PERSONALITY).slice(0, 2000);
   const referenceImage = await readImageAsDataUri(task.avatarImage);
@@ -1315,6 +1664,8 @@ export async function requestCreateRunwayAvatar(userId, payload = {}) {
   task.personality = personality;
   task.voicePresetId = voicePresetId;
   task.voicePresetName = getVoicePresetName(voicePresetId);
+  task.avatarVideoAutoStartRequested = autoGenerateVideo;
+  task.avatarVideoAutoStartAudioSource = autoGenerateVideo ? autoStartAudioSource : '';
   task.avatarError = '';
   task.errorMessage = '';
   await task.save();
@@ -1343,6 +1694,11 @@ export async function requestCreateRunwayAvatar(userId, payload = {}) {
 
     if (runwayAvatarStatus !== 'READY') {
       await scheduleAvatarCreationPoll(task._id);
+    } else if (task.avatarVideoAutoStartRequested) {
+      const autoStartResult = await runQueuedAvatarVideoGeneration(task._id);
+      if (autoStartResult) {
+        return autoStartResult;
+      }
     }
 
     return {
@@ -1353,6 +1709,7 @@ export async function requestCreateRunwayAvatar(userId, payload = {}) {
     const message = error?.response?.data?.error || error?.response?.data?.message || error?.message || 'Unable to create avatar.';
     task.status = 'FAILED';
     task.avatarError = message;
+    task.avatarVideoAutoStartRequested = false;
     task.errorMessage = message;
     await task.save();
     throw new Error(message);
@@ -1474,11 +1831,7 @@ export async function requestGenerateAvatarVideoFromHints(userId, payload = {}) 
     throw new Error('Generate speech from hints before generating avatar video.');
   }
 
-  const avatarSpeechAudioSource = normalizeString(avatarSpeechAudioReference.audioPath)
-    && normalizeString(avatarSpeechAudioReference.assetPath)
-    ? normalizeString(avatarSpeechAudioReference.assetPath)
-    : normalizeString(avatarSpeechAudioReference.audioUrl)
-      || normalizeString(avatarSpeechAudioReference.assetPath);
+  const avatarSpeechAudioSource = getAvatarSpeechProviderSource(avatarSpeechAudioReference);
   const avatarSpeechAudioPreviewUrl = normalizeString(avatarSpeechAudioReference.audioUrl)
     || normalizeString(avatarSpeechAudioReference.assetPath);
   if (!avatarSpeechAudioSource) {
@@ -1592,6 +1945,13 @@ export async function requestGenerateAvatarVideoFromHints(userId, payload = {}) 
     task.avatarVideoTaskId = avatarVideo?.id || '';
     task.avatarVideoResponse = avatarVideo;
     await task.save();
+    console.info('[avatar_voiceover] avatar video generation submitted', {
+      taskId: task._id.toString(),
+      sessionId: task.sessionId.toString(),
+      runwayTaskId: task.avatarVideoTaskId,
+      audioSource,
+      durationSeconds: pricingDurationSeconds,
+    });
     await scheduleAvatarVideoPoll(task._id);
 
     return {
@@ -1602,6 +1962,12 @@ export async function requestGenerateAvatarVideoFromHints(userId, payload = {}) 
     };
   } catch (error) {
     const message = error?.response?.data?.error || error?.response?.data?.message || error?.message || 'Unable to generate avatar video.';
+    console.error('[avatar_voiceover] avatar video generation request failed', {
+      taskId: task._id.toString(),
+      sessionId: task.sessionId.toString(),
+      audioSource,
+      error: message,
+    });
     if (shouldChargeCredits && creditsToCharge > 0) {
       await creditGenerationCredits(userId, creditsToCharge, {
         source: 'avatar_voiceover_video_refund',
@@ -1812,3 +2178,17 @@ export async function rejectAvatarVoiceoverTask(userId, payload = {}) {
     task: serializeAvatarVoiceoverTask(task),
   };
 }
+
+export const __testOnly__ = {
+  readImageAsDataUri,
+  getAvatarAssetsBasePath,
+  getAvatarSpeechProviderSource,
+  getAudioLayerSourceForFfmpeg,
+  getSecureAvatarAssetKey,
+  isGeneratedSpeechLayer,
+  materializeRemoteSpeechSegments,
+  resolveAvatarImageModel,
+  resolveAvatarAssetDisplayUrl,
+  serializeAvatarVoiceoverTask,
+  toAssetRelativePath,
+};

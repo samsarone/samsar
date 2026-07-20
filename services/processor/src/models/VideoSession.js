@@ -8173,6 +8173,7 @@ export async function updateAudioLayersForSession(userId, payload) {
           'audioLayers.$.startVolume': updatedAudioLayer.startVolume,
           'audioLayers.$.endVolume': updatedAudioLayer.endVolume,
           'audioLayers.$.timestampedVolumes': updatedAudioLayer.timestampedVolumes,
+          'audioLayers.$.isTimelineLocked': Boolean(updatedAudioLayer.isTimelineLocked),
         },
       }
     );
@@ -11045,6 +11046,7 @@ export async function duplicateAudioLayerInSession(userId, payload) {
   duplicatedAudioLayer.duration = resolvedDuration;
   duplicatedAudioLayer.endTime = endTime;
   duplicatedAudioLayer.streamDownloadPending = false;
+  duplicatedAudioLayer.isTimelineLocked = false;
 
   sessionData.audioLayers.push(applyAudioLayerManualVolumeDefaults(duplicatedAudioLayer));
 
