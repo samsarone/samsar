@@ -81,7 +81,7 @@ test('preserves the structured response contract in the compatible request', () 
   assert.match(payload.messages[0].content, /JSON Schema exactly/);
   assert.match(payload.messages[0].content, /"content"/);
   assert.deepEqual(payload.response_format, { type: 'json_object' });
-  assert.equal(payload.enable_thinking, false);
+  assert.equal(payload.enable_thinking, true);
   assert.equal('reasoning_effort' in payload, false);
 });
 

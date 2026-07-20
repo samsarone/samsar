@@ -47,7 +47,7 @@ test('uses Qwen 3.8 Max Preview for text assistant history and normalizes Respon
   });
 
   assert.equal(payload.model, 'qwen3.8-max-preview');
-  assert.equal(payload.enable_thinking, false);
+  assert.equal(payload.enable_thinking, true);
   assert.equal(payload.messages[0].role, 'system');
   assert.deepEqual(payload.messages[1].content[0], { type: 'text', text: 'Prior reply.' });
 });

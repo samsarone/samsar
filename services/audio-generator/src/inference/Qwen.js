@@ -179,7 +179,7 @@ export function buildQwenChatCompletionPayload(chatRequest = {}, env = process.e
     ...request,
     model: resolveQwenProviderModel(chatRequest, env),
     messages: structuredRequest.messages,
-    enable_thinking: false,
+    enable_thinking: true,
     ...(maxTokens ? { max_tokens: maxTokens } : {}),
     ...(structuredRequest.responseFormat
       ? { response_format: structuredRequest.responseFormat }

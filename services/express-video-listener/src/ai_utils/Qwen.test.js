@@ -81,7 +81,7 @@ test('preserves structured JSON contracts through DashScope JSON mode', () => {
   });
 
   assert.equal(payload.model, 'qwen3.8-max-preview');
-  assert.equal(payload.enable_thinking, false);
+  assert.equal(payload.enable_thinking, true);
   assert.equal(payload.messages[0].role, 'system');
   assert.equal(payload.messages[0].content[0].text, 'Return the narrative JSON.');
   assert.match(payload.messages[0].content[1].text, /Return valid JSON only/);

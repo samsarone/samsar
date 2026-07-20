@@ -261,7 +261,7 @@ export function buildQwenChatRequest(chatRequest = {}) {
       ...request,
       model: QWEN_38_MAX_PREVIEW_MODEL,
       messages: structured.messages,
-      enable_thinking: false,
+      enable_thinking: true,
       ...(maxTokens ? { max_tokens: maxTokens } : {}),
       ...(structured.responseFormat ? { response_format: structured.responseFormat } : {}),
     },

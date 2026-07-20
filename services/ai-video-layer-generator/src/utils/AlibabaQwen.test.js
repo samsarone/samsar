@@ -71,7 +71,7 @@ test('selects Qwen 3.8 Max Preview for text and multimodal vision input', () => 
 
   assert.equal(textRequest.payload.model, 'qwen3.8-max-preview');
   assert.equal(visionRequest.payload.model, 'qwen3.8-max-preview');
-  assert.equal(textRequest.payload.enable_thinking, false);
+  assert.equal(textRequest.payload.enable_thinking, true);
 });
 
 test('disables hidden SDK retries so provider media is never reused after tunnel expiry', () => {

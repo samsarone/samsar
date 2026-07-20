@@ -10,7 +10,7 @@ import {
   hasQwenVisionInput,
 } from './AlibabaQwen.js';
 
-test('builds text-only Qwen requests with qwen3.8-max-preview and thinking disabled', () => {
+test('builds text-only Qwen requests with qwen3.8-max-preview and thinking enabled', () => {
   const { payload } = buildAlibabaQwenChatRequest({
     model: 'QWEN3.7',
     messages: [
@@ -21,7 +21,7 @@ test('builds text-only Qwen requests with qwen3.8-max-preview and thinking disab
   });
 
   assert.equal(payload.model, 'qwen3.8-max-preview');
-  assert.equal(payload.enable_thinking, false);
+  assert.equal(payload.enable_thinking, true);
   assert.equal(payload.messages[0].role, 'system');
   assert.deepEqual(payload.messages[2].content[0], { type: 'text', text: 'Previous scene.' });
   assert.equal(hasQwenVisionInput(payload.messages), false);

@@ -130,7 +130,7 @@ test('preserves the structured JSON contract and normalizes Responses content', 
   assert.match(payload.messages[0].content[1].text, /"title"/);
   assert.equal(payload.max_tokens, 321);
   assert.deepEqual(payload.response_format, { type: 'json_object' });
-  assert.equal(payload.enable_thinking, false);
+  assert.equal(payload.enable_thinking, true);
   assert.equal('reasoning' in payload, false);
 });
 

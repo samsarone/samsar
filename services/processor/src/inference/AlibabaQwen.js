@@ -351,7 +351,7 @@ export function buildAlibabaQwenChatRequest(chatRequest = {}) {
       ...request,
       model: QWEN_38_MAX_PREVIEW_MODEL,
       messages: structured.messages,
-      enable_thinking: false,
+      enable_thinking: true,
       ...(max_output_tokens !== undefined && request.max_tokens === undefined
         ? { max_tokens: max_output_tokens }
         : {}),
