@@ -5,6 +5,7 @@ import {
   QWEN_37_INFERENCE_MODEL,
   QWEN_37_MAX_MODEL,
   QWEN_37_PLUS_MODEL,
+  QWEN_38_MAX_PREVIEW_MODEL,
   isQwenInferenceModel,
   normalizeInferenceModel,
 } from './GoogleGemini.js';
@@ -14,11 +15,13 @@ test('normalizes Qwen 3.7 labels and provider model aliases to the canonical set
   assert.equal(QWEN_37_INFERENCE_MODEL, 'QWEN3.7');
   assert.equal(QWEN_37_MAX_MODEL, 'qwen3.7-max');
   assert.equal(QWEN_37_PLUS_MODEL, 'qwen3.7-plus');
+  assert.equal(QWEN_38_MAX_PREVIEW_MODEL, 'qwen3.8-max-preview');
   assert.equal(normalizeInferenceModel('QWEN3.7'), QWEN_37_INFERENCE_MODEL);
   assert.equal(normalizeInferenceModel('Qwen 3.7'), QWEN_37_INFERENCE_MODEL);
   assert.equal(normalizeInferenceModel('qwen3.7-max'), QWEN_37_INFERENCE_MODEL);
   assert.equal(normalizeInferenceModel('Alibaba Cloud Qwen 3.7'), QWEN_37_INFERENCE_MODEL);
   assert.equal(isQwenInferenceModel('qwen-3.7-plus'), true);
+  assert.equal(normalizeInferenceModel('qwen3.8-max-preview'), QWEN_37_INFERENCE_MODEL);
 });
 
 test('keeps Qwen out of the OpenAI Responses-only route without changing GPT or Gemini', () => {

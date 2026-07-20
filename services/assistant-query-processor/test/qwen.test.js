@@ -36,7 +36,7 @@ function restoreEnv() {
 
 test.afterEach(restoreEnv);
 
-test('uses Qwen Max for text assistant history and normalizes Responses content', () => {
+test('uses Qwen 3.8 Max Preview for text assistant history and normalizes Responses content', () => {
   const { payload } = buildQwenChatRequest({
     model: 'QWEN3.7',
     messages: [
@@ -46,7 +46,7 @@ test('uses Qwen Max for text assistant history and normalizes Responses content'
     ],
   });
 
-  assert.equal(payload.model, 'qwen3.7-max');
+  assert.equal(payload.model, 'qwen3.8-max-preview');
   assert.equal(payload.enable_thinking, false);
   assert.equal(payload.messages[0].role, 'system');
   assert.deepEqual(payload.messages[1].content[0], { type: 'text', text: 'Prior reply.' });
@@ -78,7 +78,7 @@ test('builds the OpenAI-compatible endpoint from ALIBABA_API_HOST', () => {
   );
 });
 
-test('uses Qwen Plus only for a nonempty assistant frame image', () => {
+test('uses Qwen 3.8 Max Preview for a nonempty assistant frame image', () => {
   const vision = buildQwenChatRequest({
     model: 'QWEN3.7',
     messages: [{
@@ -94,8 +94,8 @@ test('uses Qwen Plus only for a nonempty assistant frame image', () => {
     messages: [{ role: 'user', content: [{ type: 'input_image', image_url: '' }] }],
   });
 
-  assert.equal(vision.payload.model, 'qwen3.7-plus');
-  assert.equal(emptyImage.payload.model, 'qwen3.7-max');
+  assert.equal(vision.payload.model, 'qwen3.8-max-preview');
+  assert.equal(emptyImage.payload.model, 'qwen3.8-max-preview');
   assert.deepEqual(vision.payload.messages[0].content[1], {
     type: 'image_url',
     image_url: { url: 'data:image/png;base64,abc' },
@@ -134,7 +134,7 @@ test('expands every array-valued Qwen image and video reference into its own pro
     }],
   });
 
-  assert.equal(payload.model, 'qwen3.7-plus');
+  assert.equal(payload.model, 'qwen3.8-max-preview');
   assert.deepEqual(payload.messages[0].content, [
     { type: 'image_url', image_url: { url: 'https://media.example/one.png' } },
     { type: 'image_url', image_url: { url: 'https://media.example/two.png' } },

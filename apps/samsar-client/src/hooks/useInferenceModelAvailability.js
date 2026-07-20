@@ -4,9 +4,11 @@ import { ASSISTANT_MODEL_TYPES, INFERENCE_MODEL_TYPES } from "../constants/Types
 import { getHeaders } from "../utils/web.jsx";
 import {
   extractDeploymentInferenceModelValues,
+  extractDeploymentInferenceModelProviders,
   fetchDeploymentProviderConfig,
   filterHostedInferenceModelOptions,
   filterOptionsForDeploymentInferenceModels,
+  labelOptionsForDeploymentInferenceProviders,
 } from "../utils/deploymentProviders.js";
 
 const PROCESSOR_API_URL = import.meta.env.VITE_PROCESSOR_API || "";
@@ -22,10 +24,12 @@ const HOSTED_INFERENCE_MODEL_VALUES = Object.freeze(
 );
 const EMPTY_DOCKER_AVAILABILITY = Object.freeze({
   modelValues: [],
+  modelProviders: {},
   error: null,
 });
 const DEFAULT_AVAILABILITY = Object.freeze({
   modelValues: HOSTED_INFERENCE_MODEL_VALUES,
+  modelProviders: {},
   error: null,
 });
 
@@ -48,6 +52,7 @@ async function loadInferenceModelAvailability() {
       .then((payload) => {
         const availability = {
           modelValues: extractDeploymentInferenceModelValues(payload),
+          modelProviders: extractDeploymentInferenceModelProviders(payload),
           error: null,
         };
         availabilityCache.availability = availability;
@@ -56,6 +61,7 @@ async function loadInferenceModelAvailability() {
       .catch((error) => {
         const availability = {
           modelValues: [],
+          modelProviders: {},
           error,
         };
         availabilityCache.availability = availability;
@@ -104,18 +110,24 @@ export function useInferenceModelAvailability() {
   const inferenceModelOptions = useMemo(
     () => (
       IS_DOCKER_INSTALL
-        ? filterOptionsForDeploymentInferenceModels(INFERENCE_MODEL_TYPES, modelValues)
+        ? labelOptionsForDeploymentInferenceProviders(
+          filterOptionsForDeploymentInferenceModels(INFERENCE_MODEL_TYPES, modelValues),
+          availability.modelProviders,
+        )
         : HOSTED_INFERENCE_MODEL_OPTIONS
     ),
-    [modelValues]
+    [availability.modelProviders, modelValues]
   );
   const assistantModelOptions = useMemo(
     () => (
       IS_DOCKER_INSTALL
-        ? filterOptionsForDeploymentInferenceModels(ASSISTANT_MODEL_TYPES, modelValues)
+        ? labelOptionsForDeploymentInferenceProviders(
+          filterOptionsForDeploymentInferenceModels(ASSISTANT_MODEL_TYPES, modelValues),
+          availability.modelProviders,
+        )
         : HOSTED_ASSISTANT_MODEL_OPTIONS
     ),
-    [modelValues]
+    [availability.modelProviders, modelValues]
   );
 
   return {

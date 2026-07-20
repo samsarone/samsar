@@ -7,6 +7,7 @@ const GEMINI_31_PRO_INFERENCE_MODEL = 'gemini-3.1-pro';
 export const QWEN_37_INFERENCE_MODEL = 'QWEN3.7';
 export const QWEN_37_MAX_MODEL = 'qwen3.7-max';
 export const QWEN_37_PLUS_MODEL = 'qwen3.7-plus';
+export const QWEN_38_MAX_PREVIEW_MODEL = 'qwen3.8-max-preview';
 const DEFAULT_GEMINI_MODEL = 'gemini-3.1-pro-preview';
 const DEFAULT_GEMINI_LOCATION = 'global';
 const DEFAULT_SCOPES = ['https://www.googleapis.com/auth/cloud-platform'];
@@ -30,6 +31,15 @@ const QWEN_37_ALIAS_TOKENS = new Set([
   'ALIBABAQWEN37',
   'ALIBABACLOUDQWEN37',
   'DASHSCOPEQWEN37',
+  'QWEN38',
+  'QWEN38MAX',
+  'QWEN38MAXPREVIEW',
+  'ALIBABAQWEN38',
+  'ALIBABAQWEN38MAXPREVIEW',
+  'ALIBABACLOUDQWEN38',
+  'ALIBABACLOUDQWEN38MAXPREVIEW',
+  'DASHSCOPEQWEN38',
+  'DASHSCOPEQWEN38MAXPREVIEW',
 ]);
 const DEFAULT_GEMINI_3_THINKING_LEVEL = 'MEDIUM';
 const GEMINI_3_THINKING_LEVELS = new Set(['LOW', 'MEDIUM', 'HIGH']);
@@ -47,6 +57,7 @@ function normalizeAliasToken(value) {
 export function isQwenInferenceModel(value) {
   const normalized = normalizeString(value).toLowerCase();
   return normalized === QWEN_37_INFERENCE_MODEL.toLowerCase() ||
+    normalized === QWEN_38_MAX_PREVIEW_MODEL ||
     normalized === QWEN_37_MAX_MODEL ||
     normalized === QWEN_37_PLUS_MODEL ||
     QWEN_37_ALIAS_TOKENS.has(normalizeAliasToken(value));

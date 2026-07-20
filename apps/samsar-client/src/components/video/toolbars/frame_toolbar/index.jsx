@@ -3890,6 +3890,40 @@ export default function FrameToolbar(props) {
     setSelectedAudioVolumePointId('start');
   };
 
+  const resetSelectedAudioTrackChanges = () => {
+    if (!selectedAudioTrackId || !selectedAudioTrack?.isDirty || isSavingAudioLayers) {
+      return;
+    }
+
+    const authoritativeAudioTracks = selectedAudioTrack.isGlobalAudioLayer
+      ? globalAudioLayers
+      : audioLayers;
+    const authoritativeAudioTrack = (Array.isArray(authoritativeAudioTracks)
+      ? authoritativeAudioTracks
+      : []
+    ).find((audioTrack) => (
+      resolveAudioTrackId(audioTrack)?.toString() === selectedAudioTrackId.toString()
+    ));
+
+    if (!authoritativeAudioTrack) {
+      return;
+    }
+
+    const restoredAudioTrack = buildAudioTrackDisplayItem(
+      authoritativeAudioTrack,
+      Boolean(selectedAudioTrack.isGlobalAudioLayer),
+      selectedAudioTrackId,
+    );
+
+    setAudioTrackListDisplay((previousAudioTracks) => previousAudioTracks.map((audioTrack) => (
+      resolveAudioTrackId(audioTrack)?.toString() === selectedAudioTrackId.toString()
+        ? restoredAudioTrack
+        : audioTrack
+    )));
+    setAudioSaveState('idle');
+    setSelectedAudioVolumePointId(null);
+  };
+
 
   const onUpdateAllAudioLayers = async (nextAudioTrackListDisplay) => {
     if (isSavingAudioLayers) {
@@ -4149,7 +4183,7 @@ export default function FrameToolbar(props) {
             {visibleAudioTrackListDisplay.length} track{visibleAudioTrackListDisplay.length === 1 ? '' : 's'}
           </div>
         </div>
-        <div className='grid min-w-0 grid-cols-[minmax(0,1fr)_64px_64px_50px_32px_22px_22px_22px] items-center gap-1 overflow-hidden'>
+        <div className='grid min-w-0 grid-cols-[minmax(0,1fr)_64px_64px_50px_32px_22px_22px_22px_22px] items-center gap-1 overflow-hidden'>
           <div
             className={audioTileClassName}
             title={selectedAudioTrack ? selectedAudioTrackDisplayTitle : audioStatusTitle}
@@ -4225,6 +4259,21 @@ export default function FrameToolbar(props) {
               className={`inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-[9px] transition disabled:opacity-50 ${duplicateButtonClassName}`}
             >
               <FaCopy />
+            </button>
+          ) : null}
+
+          {selectedAudioTrack ? (
+            <button
+              type="button"
+              onClick={resetSelectedAudioTrackChanges}
+              disabled={!selectedAudioTrack.isDirty || isSavingAudioLayers}
+              title={selectedAudioTrack.isDirty
+                ? 'Reset unsaved audio layer changes'
+                : 'No unsaved audio layer changes'}
+              aria-label="Reset unsaved audio layer changes"
+              className={`inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-[9px] transition disabled:cursor-not-allowed disabled:opacity-35 ${duplicateButtonClassName}`}
+            >
+              <FaRedo />
             </button>
           ) : null}
 

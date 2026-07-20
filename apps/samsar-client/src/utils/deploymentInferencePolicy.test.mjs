@@ -5,13 +5,14 @@ import {
   extractDeploymentInferenceModelValues,
   filterHostedInferenceModelOptions,
   hasValidatedAlibabaQwenInference,
+  labelOptionsForDeploymentInferenceProviders,
   resolveAllowedInferenceModelOption,
 } from './deploymentInferencePolicy.mjs';
 
 const MODEL_OPTIONS = [
   { label: 'GPT 5.6 Sol', value: 'gpt-5.6-sol' },
   { label: 'Gemini 3.1 Pro', value: 'gemini-3.1-pro' },
-  { label: 'Qwen 3.7', value: 'QWEN3.7' },
+  { label: 'Qwen 3.7 Plus', value: 'QWEN3.7' },
 ];
 
 test('hosted inference exposes Qwen through the production OpenRouter route', () => {
@@ -32,6 +33,12 @@ test('Docker exposes Qwen only with an explicit model and validated Alibaba prov
 
   assert.equal(hasValidatedAlibabaQwenInference(validatedPayload), true);
   assert.deepEqual(extractDeploymentInferenceModelValues(validatedPayload), ['QWEN3.7']);
+  assert.equal(
+    labelOptionsForDeploymentInferenceProviders(MODEL_OPTIONS, {
+      'QWEN3.7': 'alibabaCloud',
+    })[2].label,
+    'Qwen 3.8 Max Preview',
+  );
 
   const incompletePayloads = [
     { deployment: { providers: ['alibabaCloud'], modelProviders: { 'QWEN3.7': 'alibabaCloud' } } },
@@ -73,6 +80,12 @@ test('OpenRouter alone exposes every inference model with validated Qwen provena
     },
   };
   assert.equal(hasValidatedAlibabaQwenInference(payload), true);
+  assert.equal(
+    labelOptionsForDeploymentInferenceProviders(MODEL_OPTIONS, {
+      'QWEN3.7': 'openrouter',
+    })[2].label,
+    'Qwen 3.7 Plus',
+  );
   assert.deepEqual(extractDeploymentInferenceModelValues(payload), [
     'gpt-5.6-sol',
     'gemini-3.1-pro',

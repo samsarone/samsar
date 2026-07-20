@@ -25,7 +25,7 @@ export const DEPLOYMENT_PROVIDER_CAPABILITIES = Object.freeze({
   },
   openrouter: {
     label: 'OpenRouter',
-    requiredFor: ['GPT 5.6 Sol', 'Gemini 3.1 Pro', 'Qwen 3.7 text and vision'],
+    requiredFor: ['GPT 5.6 Sol', 'Gemini 3.1 Pro', 'Qwen 3.7 Plus text and vision'],
     models: ['gpt-5.6-sol', 'gemini-3.1-pro', 'QWEN3.7'],
     actions: ['chat', 'assistant'],
   },
@@ -37,7 +37,7 @@ export const DEPLOYMENT_PROVIDER_CAPABILITIES = Object.freeze({
   },
   alibabaCloud: {
     label: 'Alibaba Cloud',
-    requiredFor: ['Qwen 3.7 text inference', 'Qwen 3.7 vision', 'Wan2.7 Pro image', 'Happy Horse 1.1 video'],
+    requiredFor: ['Qwen 3.8 Max Preview text and vision', 'Wan2.7 Pro image', 'Happy Horse 1.1 video'],
     models: ['QWEN3.7', 'WAN2.7PRO', 'HAPPYHORSEI2V'],
     actions: ['chat', 'assistant', 'image', 'video'],
   },

@@ -10,6 +10,7 @@ import {
   QWEN_37_INFERENCE_MODEL,
   QWEN_37_MAX_MODEL,
   QWEN_37_PLUS_MODEL,
+  QWEN_38_MAX_PREVIEW_MODEL,
   getProviderModelForInferenceModel,
   isQwenInferenceModel,
   normalizeGeminiProviderModel,
@@ -102,10 +103,12 @@ test('uses the processor Gemini provider model for Gemini 3.1 Pro even with stal
   }
 });
 
-test('normalizes Qwen 3.7 and separates Max text from Plus vision provider models', () => {
+test('normalizes Qwen 3.7 and 3.8 aliases while preserving legacy provider mappings', () => {
   assert.equal(normalizeInferenceModel('Qwen 3.7'), QWEN_37_INFERENCE_MODEL);
   assert.equal(normalizeInferenceModel('qwen3.7-max'), QWEN_37_INFERENCE_MODEL);
   assert.equal(isQwenInferenceModel('qwen3.7-plus'), true);
+  assert.equal(normalizeInferenceModel('qwen3.8-max-preview'), QWEN_37_INFERENCE_MODEL);
+  assert.equal(QWEN_38_MAX_PREVIEW_MODEL, 'qwen3.8-max-preview');
   assert.equal(getProviderModelForInferenceModel('QWEN3.7'), QWEN_37_MAX_MODEL);
   assert.equal(
     getProviderModelForInferenceModel('QWEN3.7', { vision: true }),

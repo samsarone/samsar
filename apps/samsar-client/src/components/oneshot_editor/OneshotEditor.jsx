@@ -433,6 +433,7 @@ function coerceSupportedInferenceModelKey(value) {
     normalized === 'qwen3.7' ||
     normalized === 'qwen3.7-max' ||
     normalized === 'qwen3.7-plus' ||
+    normalized === 'qwen3.8-max-preview' ||
     normalized === 'qwen-3.7' ||
     normalized === 'qwen 3.7' ||
     normalized === 'qwen37' ||

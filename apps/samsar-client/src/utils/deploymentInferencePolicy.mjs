@@ -91,7 +91,15 @@ export function normalizeDeploymentInferenceModelValue(value) {
     normalized === "qwen37max" ||
     normalized === "qwen37plus" ||
     normalized === "alibaba qwen 3.7" ||
-    normalized === "alibaba cloud qwen 3.7"
+    normalized === "alibaba cloud qwen 3.7" ||
+    normalized === "qwen3.8" ||
+    normalized === "qwen3.8-max-preview" ||
+    normalized === "qwen-3.8" ||
+    normalized === "qwen 3.8" ||
+    normalized === "qwen38" ||
+    normalized === "qwen38maxpreview" ||
+    normalized === "alibaba qwen 3.8" ||
+    normalized === "alibaba cloud qwen 3.8"
   ) {
     return QWEN_INFERENCE_MODEL_VALUE;
   }
@@ -216,6 +224,21 @@ export function filterOptionsForDeploymentInferenceModels(options = [], modelVal
   }
 
   return options.filter((option) => allowedModels.has(normalizeDeploymentInferenceModelValue(option?.value)));
+}
+
+export function labelOptionsForDeploymentInferenceProviders(options = [], modelProviders = {}) {
+  const qwenProvider = normalizeDeploymentProviderKey(
+    modelProviders?.[QWEN_INFERENCE_MODEL_VALUE],
+  );
+  const qwenLabel = qwenProvider === "alibabaCloud"
+    ? "Qwen 3.8 Max Preview"
+    : "Qwen 3.7 Plus";
+
+  return options.map((option) => (
+    normalizeDeploymentInferenceModelValue(option?.value) === QWEN_INFERENCE_MODEL_VALUE
+      ? { ...option, label: qwenLabel }
+      : option
+  ));
 }
 
 export function filterHostedInferenceModelOptions(options = []) {

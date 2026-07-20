@@ -23,10 +23,12 @@ test('normalizes Qwen 3.7 aliases to the logical provider choice', () => {
     'qwen3.7-plus',
     'Qwen 3.7',
     'Alibaba Cloud Qwen 3.7',
+    'qwen3.8-max-preview',
   ]) {
     assert.equal(normalizeInferenceModel(alias), QWEN_37_INFERENCE_MODEL);
     assert.equal(isQwenInferenceModel(alias), true);
   }
+  assert.equal(getProviderModelForInferenceModel(QWEN_37_INFERENCE_MODEL), 'qwen3.7-max');
 });
 
 test('normalizes Gemini 3.1 Pro inference aliases to the canonical key', () => {

@@ -41,6 +41,7 @@ test('validates the endpoint through its authenticated model listing', async () 
         status: 200,
         json: async () => ({
           data: [
+            { id: 'qwen3.8-max-preview' },
             { id: 'qwen3.7-max' },
             { id: 'qwen3.7-plus' },
           ],
@@ -60,7 +61,8 @@ test('validates the endpoint through its authenticated model listing', async () 
     status: 'valid',
     validationMode: 'remote_models',
     baseUrl: 'https://workspace.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1',
-    modelCount: 2,
+    modelCount: 3,
+    qwen38MaxPreviewAvailable: true,
     qwen37MaxAvailable: true,
     qwen37PlusAvailable: true,
   });

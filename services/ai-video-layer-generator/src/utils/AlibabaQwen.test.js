@@ -15,6 +15,7 @@ test('normalizes Qwen aliases to the canonical application setting', () => {
   assert.equal(normalizeInferenceModel('Qwen 3.7'), 'QWEN3.7');
   assert.equal(normalizeInferenceModel('qwen3.7-max'), 'QWEN3.7');
   assert.equal(isQwenInferenceModel('qwen3.7-plus'), true);
+  assert.equal(normalizeInferenceModel('qwen3.8-max-preview'), 'QWEN3.7');
   assert.equal(normalizeInferenceModel('gpt-5.6-sol'), 'gpt-5.6-sol');
   assert.equal(normalizeInferenceModel('gemini-3.1-pro'), 'gemini-3.1-pro');
 });
@@ -52,7 +53,7 @@ test('builds the workspace-compatible endpoint from ALIBABA_API_HOST', () => {
   );
 });
 
-test('selects Qwen Max for text and Qwen Plus for multimodal vision input', () => {
+test('selects Qwen 3.8 Max Preview for text and multimodal vision input', () => {
   const textRequest = buildAlibabaQwenChatRequest({
     model: 'QWEN3.7',
     messages: [{ role: 'user', content: 'Create a transition.' }],
@@ -68,8 +69,8 @@ test('selects Qwen Max for text and Qwen Plus for multimodal vision input', () =
     }],
   });
 
-  assert.equal(textRequest.payload.model, 'qwen3.7-max');
-  assert.equal(visionRequest.payload.model, 'qwen3.7-plus');
+  assert.equal(textRequest.payload.model, 'qwen3.8-max-preview');
+  assert.equal(visionRequest.payload.model, 'qwen3.8-max-preview');
   assert.equal(textRequest.payload.enable_thinking, false);
 });
 

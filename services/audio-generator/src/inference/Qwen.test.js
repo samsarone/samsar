@@ -9,13 +9,13 @@ import {
   resolveQwenProviderModel,
 } from './Qwen.js';
 
-test('uses Qwen Max for text and Plus only for actual multimodal content', () => {
+test('uses Qwen 3.8 Max Preview for text and multimodal content', () => {
   const textRequest = {
     model: 'QWEN3.7',
     messages: [{ role: 'user', content: 'Rewrite a music prompt.' }],
   };
   assert.equal(hasQwenMultimodalInput(textRequest), false);
-  assert.equal(resolveQwenProviderModel(textRequest, {}), 'qwen3.7-max');
+  assert.equal(resolveQwenProviderModel(textRequest, {}), 'qwen3.8-max-preview');
 
   const videoRequest = {
     model: 'QWEN3.7',
@@ -25,7 +25,7 @@ test('uses Qwen Max for text and Plus only for actual multimodal content', () =>
     }],
   };
   assert.equal(hasQwenMultimodalInput(videoRequest), true);
-  assert.equal(resolveQwenProviderModel(videoRequest, {}), 'qwen3.7-plus');
+  assert.equal(resolveQwenProviderModel(videoRequest, {}), 'qwen3.8-max-preview');
 
   const alternateMediaShapes = buildQwenChatCompletionPayload({
     model: 'QWEN3.7',
@@ -42,7 +42,7 @@ test('uses Qwen Max for text and Plus only for actual multimodal content', () =>
       ],
     }],
   }, {});
-  assert.equal(alternateMediaShapes.model, 'qwen3.7-plus');
+  assert.equal(alternateMediaShapes.model, 'qwen3.8-max-preview');
   assert.equal(
     alternateMediaShapes.messages[0].content[0].image_url.url,
     'data:image/jpeg;base64,abc',
@@ -76,7 +76,7 @@ test('preserves the structured response contract in the compatible request', () 
     reasoning_effort: 'xhigh',
   }, {});
 
-  assert.equal(payload.model, 'qwen3.7-max');
+  assert.equal(payload.model, 'qwen3.8-max-preview');
   assert.equal(payload.messages[0].role, 'system');
   assert.match(payload.messages[0].content, /JSON Schema exactly/);
   assert.match(payload.messages[0].content, /"content"/);

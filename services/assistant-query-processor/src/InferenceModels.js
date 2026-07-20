@@ -6,6 +6,7 @@ export const DEFAULT_GEMINI_31_PRO_VERTEX_MODEL = 'gemini-3.1-pro-preview';
 export const QWEN_37_INFERENCE_MODEL = 'QWEN3.7';
 export const QWEN_37_MAX_MODEL = 'qwen3.7-max';
 export const QWEN_37_PLUS_MODEL = 'qwen3.7-plus';
+export const QWEN_38_MAX_PREVIEW_MODEL = 'qwen3.8-max-preview';
 
 const GEMINI_ALIASES = new Set([
   GEMINI_31_PRO_INFERENCE_MODEL,
@@ -17,6 +18,7 @@ const QWEN_ALIASES = new Set([
   QWEN_37_INFERENCE_MODEL.toLowerCase(),
   QWEN_37_MAX_MODEL,
   QWEN_37_PLUS_MODEL,
+  QWEN_38_MAX_PREVIEW_MODEL,
   'qwen-3.7',
   'qwen-3.7-max',
   'qwen-3.7-plus',
@@ -28,6 +30,15 @@ const QWEN_ALIAS_TOKENS = new Set([
   'ALIBABAQWEN37',
   'ALIBABACLOUDQWEN37',
   'DASHSCOPEQWEN37',
+  'QWEN38',
+  'QWEN38MAX',
+  'QWEN38MAXPREVIEW',
+  'ALIBABAQWEN38',
+  'ALIBABAQWEN38MAXPREVIEW',
+  'ALIBABACLOUDQWEN38',
+  'ALIBABACLOUDQWEN38MAXPREVIEW',
+  'DASHSCOPEQWEN38',
+  'DASHSCOPEQWEN38MAXPREVIEW',
 ]);
 
 function normalizeString(value) {

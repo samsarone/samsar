@@ -4,6 +4,7 @@ import test from 'node:test';
 import {
   GPT_56_SOL_REASONING_EFFORT,
   QWEN_37_INFERENCE_MODEL,
+  getProviderModelForInferenceModel,
   isGPT56SolInferenceModel,
   isQwenInferenceModel,
   normalizeInferenceModel,
@@ -23,8 +24,10 @@ test('normalizes Qwen 3.7 aliases to the canonical logical model', () => {
     'qwen3.7-plus',
     'Qwen 3.7',
     'Alibaba Cloud Qwen 3.7',
+    'qwen3.8-max-preview',
   ]) {
     assert.equal(normalizeInferenceModel(alias), QWEN_37_INFERENCE_MODEL);
     assert.equal(isQwenInferenceModel(alias), true);
   }
+  assert.equal(getProviderModelForInferenceModel(QWEN_37_INFERENCE_MODEL), 'qwen3.7-max');
 });
