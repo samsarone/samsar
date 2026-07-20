@@ -148,7 +148,7 @@ export const DOCKER_MODEL_ACTIONS_BY_MODEL = Object.freeze({
 export const DOCKER_MODEL_DISPLAY_NAME_BY_MODEL = Object.freeze({
   'gpt-5.6-sol': 'GPT 5.6 Sol',
   'gemini-3.1-pro': 'Gemini 3.1 Pro',
-  'QWEN3.7': 'Qwen 3.7',
+  'QWEN3.7': 'Qwen 3.7 Plus',
   GPTIMAGE2: 'GPT Image 2',
   GPTIMAGE2EDIT: 'GPT Image 2 Edit',
   SEEDREAM: 'Seedream',
@@ -177,6 +177,15 @@ export const DOCKER_MODEL_DISPLAY_NAME_BY_MODEL = Object.freeze({
   KLINGLIPSYNC: 'Kling Lip Sync',
   HUMMINGBIRDLIPSYNC: 'Hummingbird Lip Sync',
   CREATIFYLIPSYNC: 'Creatify Lip Sync',
+});
+
+const DOCKER_MODEL_DISPLAY_NAME_BY_PROVIDER = Object.freeze({
+  [DOCKER_PROVIDER.ALIBABA_CLOUD]: Object.freeze({
+    'QWEN3.7': 'Qwen 3.8 Max Preview',
+  }),
+  [DOCKER_PROVIDER.OPENROUTER]: Object.freeze({
+    'QWEN3.7': 'Qwen 3.7 Plus',
+  }),
 });
 
 export const EXPRESS_PIPELINE_REQUIREMENTS = Object.freeze([
@@ -285,8 +294,14 @@ export function getCanonicalDockerModelKey(modelKey) {
   return NORMALIZED_MODEL_KEY_TO_CANONICAL[normalizedModelKey] || '';
 }
 
-export function getDockerModelDisplayName(modelKey) {
+export function getDockerModelDisplayName(modelKey, providerKey = '') {
   const canonicalModelKey = getCanonicalDockerModelKey(modelKey);
+  const normalizedProviderKey = normalizeDockerProviderKey(providerKey);
+  const providerDisplayName =
+    DOCKER_MODEL_DISPLAY_NAME_BY_PROVIDER[normalizedProviderKey]?.[canonicalModelKey];
+  if (providerDisplayName) {
+    return providerDisplayName;
+  }
   return DOCKER_MODEL_DISPLAY_NAME_BY_MODEL[canonicalModelKey] || canonicalModelKey || modelKey;
 }
 

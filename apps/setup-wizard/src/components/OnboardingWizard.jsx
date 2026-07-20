@@ -64,7 +64,7 @@ const PROVIDERS = [
     field: 'openrouterApiKey',
     inputType: 'password',
     placeholder: 'OpenRouter API key',
-    requiredFor: 'Fallback inference for supported GPT, Gemini, and Qwen text and vision models.',
+    requiredFor: 'Fallback inference for supported GPT, Gemini, and Qwen 3.7 Plus text and vision models.',
     pricingUrl: 'https://openrouter.ai/pricing',
     keysUrl: 'https://openrouter.ai/settings/keys',
     credentialLabel: 'API key',
@@ -76,7 +76,7 @@ const PROVIDERS = [
     field: 'alibabaApiKey',
     inputType: 'password',
     placeholder: 'Alibaba Cloud Model Studio API key',
-    requiredFor: 'Qwen inference, Wan image generation, and Happy Horse video.',
+    requiredFor: 'Qwen 3.8 Max Preview text and vision, Wan image generation, and Happy Horse video.',
     pricingUrl: 'https://www.alibabacloud.com/help/en/model-studio/model-pricing',
     keysUrl: 'https://modelstudio.console.alibabacloud.com/',
     credentialLabel: 'API key',
@@ -166,7 +166,10 @@ const PROVIDER_GROUPS = [
 const PROVIDER_MODELS_BY_KEY = Object.fromEntries(PROVIDERS.map((provider) => [
   provider.key,
   buildDockerAvailableModelsFromEnabledProviders([provider.key]).models
-    .map((modelKey) => ({ modelKey, label: getDockerModelDisplayName(modelKey) }))
+    .map((modelKey) => ({
+      modelKey,
+      label: getDockerModelDisplayName(modelKey, provider.key),
+    }))
     .sort((leftModel, rightModel) => leftModel.label.localeCompare(rightModel.label)),
 ]));
 
@@ -197,7 +200,7 @@ const CAPABILITY_FAMILIES = {
   },
   qwen: {
     key: 'qwen',
-    label: 'Qwen 3.7',
+    label: 'Qwen',
     providerKeys: ['alibabaCloud', 'openrouter', 'samsar'],
     modelKeys: ['QWEN3.7'],
   },

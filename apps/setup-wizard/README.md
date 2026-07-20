@@ -16,7 +16,7 @@ Step 1 places **Inference Router** above the direct-provider and Samsar fallback
 | --- | --- |
 | `gpt-5.6-sol` | Text, assistant, and corresponding vision-input calls. |
 | `gemini-3.1-pro` | Text, assistant, and corresponding vision-input calls; defaults to OpenRouter model `google/gemini-3.1-pro-preview`. |
-| `QWEN3.7` | Text, assistant, image, and video-input analysis using the configured text/vision model mapping. |
+| `QWEN3.7` | Text, assistant, image, and video-input analysis using Alibaba-native Qwen 3.8 Max Preview, or Qwen 3.7 Plus through OpenRouter. |
 
 For the local Docker runtime configured by this wizard, provider priority is direct native credential, OpenRouter, then the Samsar universal fallback. Set `SAMSAR_QWEN_OPENROUTER_ONLY=true` to force Docker Qwen requests through OpenRouter. Hosted production and external-production always apply that OpenRouter-only Qwen policy; a saved native or deployed authorization cannot override it. Other provider keys continue to enable their media, audio, and direct inference families independently.
 

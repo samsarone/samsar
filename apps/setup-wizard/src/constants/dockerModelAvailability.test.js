@@ -32,9 +32,13 @@ test('Alibaba Cloud alone exposes Qwen, Wan2.7 Pro, and native Happy Horse video
   assert.equal(available.modelProviders['QWEN3.7'], DOCKER_PROVIDER.ALIBABA_CLOUD);
   assert.equal(available.modelProviders['WAN2.7PRO'], DOCKER_PROVIDER.ALIBABA_CLOUD);
   assert.equal(available.modelProviders.HAPPYHORSEI2V, DOCKER_PROVIDER.ALIBABA_CLOUD);
+  assert.equal(
+    getDockerModelDisplayName('QWEN3.7', DOCKER_PROVIDER.ALIBABA_CLOUD),
+    'Qwen 3.8 Max Preview',
+  );
 });
 
-test('Samsar exposes GPT 5.6 Sol, Gemini 3.1 Pro, and Qwen 3.7', () => {
+test('Samsar exposes GPT 5.6 Sol, Gemini 3.1 Pro, and Qwen 3.7 Plus', () => {
   const available = buildDockerAvailableModelsFromEnabledProviders([
     DOCKER_PROVIDER.SAMSAR,
   ]);
@@ -60,6 +64,10 @@ test('OpenRouter alone exposes GPT, Gemini, and Qwen inference', () => {
   for (const model of INFERENCE_MODEL_KEYS) {
     assert.equal(available.modelProviders[model], DOCKER_PROVIDER.OPENROUTER);
   }
+  assert.equal(
+    getDockerModelDisplayName('QWEN3.7', DOCKER_PROVIDER.OPENROUTER),
+    'Qwen 3.7 Plus',
+  );
 });
 
 test('Samsar keeps moderation available when OpenRouter owns inference routing', () => {
