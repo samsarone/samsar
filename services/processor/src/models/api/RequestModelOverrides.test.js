@@ -78,6 +78,7 @@ test('normalizes request inference model aliases', () => {
   assert.equal(normalizeInferenceModelFromPayload({ inferenceModel: 'gemini-3-pro-preview' }), 'gemini-3.1-pro');
   assert.equal(normalizeInferenceModelFromPayload({ inference_model: 'Qwen 3.7' }), 'QWEN3.7');
   assert.equal(normalizeInferenceModelFromPayload({ inferenceModel: 'qwen3.7-max' }), 'QWEN3.7');
+  assert.equal(normalizeInferenceModelFromPayload({ inferenceModel: 'QWEN3.8' }), 'QWEN3.7');
   assert.equal(normalizeInferenceModelFromPayload({}), null);
 });
 

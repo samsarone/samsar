@@ -108,6 +108,24 @@ test('Docker retains Qwen only for an explicit validated Alibaba model selection
   assert.deepEqual(result.modelProviderPriority, configured.modelProviderPriority);
 });
 
+test('canonicalizes saved Qwen 3.8 selections to Qwen 3.7 until 3.8 is added separately', () => {
+  clearEnv();
+  process.env.CURRENT_ENV = 'docker';
+
+  const result = mergeRuntimeInferenceDeploymentAvailability({
+    providers: ['alibabaCloud'],
+    models: ['QWEN3.8'],
+    modelProviders: { 'QWEN3.8': 'alibabaCloud' },
+    modelProviderPriority: { 'QWEN3.8': ['alibabaCloud', 'samsar'] },
+  });
+
+  assert.deepEqual(result.models, ['QWEN3.7']);
+  assert.deepEqual(result.modelProviders, { 'QWEN3.7': 'alibabaCloud' });
+  assert.deepEqual(result.modelProviderPriority, {
+    'QWEN3.7': ['alibabaCloud', 'samsar'],
+  });
+});
+
 test('Docker drops Qwen when any saved Alibaba authorization field is missing or mismatched', () => {
   clearEnv();
   process.env.CURRENT_ENV = 'docker';

@@ -1,7 +1,8 @@
 import OpenAI from 'openai';
 
 import {
-  QWEN_38_MAX_PREVIEW_MODEL,
+  QWEN_37_MAX_MODEL,
+  QWEN_37_PLUS_MODEL,
 } from './GoogleGemini.js';
 import { normalizeProviderMediaUrl } from '../ai_video/utils/AWS.js';
 import { normalizeProviderMediaPayload } from './ProviderMediaPayload.js';
@@ -142,7 +143,9 @@ export function hasQwenMultimodalInput(request = {}) {
 }
 
 export function resolveQwenProviderModel(request = {}) {
-  return QWEN_38_MAX_PREVIEW_MODEL;
+  return hasQwenMultimodalInput(request)
+    ? QWEN_37_PLUS_MODEL
+    : QWEN_37_MAX_MODEL;
 }
 
 function normalizeDataSource(value, defaultMimeType) {

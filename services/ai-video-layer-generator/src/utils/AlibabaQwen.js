@@ -3,7 +3,8 @@ import { normalizeProviderMediaUrl } from '../AWS.js';
 import { normalizeProviderMediaPayload } from './ProviderMediaPayload.js';
 
 import {
-  QWEN_38_MAX_PREVIEW_MODEL,
+  QWEN_37_MAX_MODEL,
+  QWEN_37_PLUS_MODEL,
 } from './GoogleGemini.js';
 
 const DEFAULT_DASHSCOPE_BASE_URL =
@@ -271,7 +272,7 @@ export function buildAlibabaQwenChatRequest(chatRequest = {}) {
   return {
     payload: {
       ...request,
-      model: QWEN_38_MAX_PREVIEW_MODEL,
+      model: hasQwenVisionInput(sourceMessages) ? QWEN_37_PLUS_MODEL : QWEN_37_MAX_MODEL,
       messages: structured.messages,
       enable_thinking: true,
       ...(max_output_tokens !== undefined && request.max_tokens === undefined

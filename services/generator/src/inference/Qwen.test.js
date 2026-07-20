@@ -9,13 +9,13 @@ import {
   resolveQwenProviderModel,
 } from './Qwen.js';
 
-test('uses Qwen 3.8 Max Preview for text and multimodal content', () => {
+test('uses Qwen 3.7 Max for text and Qwen 3.7 Plus for multimodal content', () => {
   const textRequest = {
     model: 'QWEN3.7',
     messages: [{ role: 'user', content: 'Write a scene.' }],
   };
   assert.equal(hasQwenMultimodalInput(textRequest), false);
-  assert.equal(resolveQwenProviderModel(textRequest, {}), 'qwen3.8-max-preview');
+  assert.equal(resolveQwenProviderModel(textRequest, {}), 'qwen3.7-max');
 
   const imageRequest = {
     model: 'QWEN3.7',
@@ -28,7 +28,7 @@ test('uses Qwen 3.8 Max Preview for text and multimodal content', () => {
     }],
   };
   assert.equal(hasQwenMultimodalInput(imageRequest), true);
-  assert.equal(resolveQwenProviderModel(imageRequest, {}), 'qwen3.8-max-preview');
+  assert.equal(resolveQwenProviderModel(imageRequest, {}), 'qwen3.7-plus');
 
   const compatibleVisionPayload = buildQwenChatCompletionPayload({
     model: 'QWEN3.7',
@@ -40,7 +40,7 @@ test('uses Qwen 3.8 Max Preview for text and multimodal content', () => {
       ],
     }],
   }, {});
-  assert.equal(compatibleVisionPayload.model, 'qwen3.8-max-preview');
+  assert.equal(compatibleVisionPayload.model, 'qwen3.7-plus');
   assert.deepEqual(compatibleVisionPayload.messages[0].content[1], {
     type: 'image_url',
     image_url: { url: 'https://example.test/frame.png' },
@@ -70,7 +70,7 @@ test('uses Qwen 3.8 Max Preview for text and multimodal content', () => {
       ],
     }],
   }, {});
-  assert.equal(alternateMediaShapes.model, 'qwen3.8-max-preview');
+  assert.equal(alternateMediaShapes.model, 'qwen3.7-plus');
   assert.equal(
     alternateMediaShapes.messages[0].content[0].image_url.url,
     'data:image/jpeg;base64,abc',
@@ -96,7 +96,7 @@ test('uses Qwen 3.8 Max Preview for text and multimodal content', () => {
       }],
     }],
   }, {});
-  assert.equal(nestedListShape.model, 'qwen3.8-max-preview');
+  assert.equal(nestedListShape.model, 'qwen3.7-plus');
   assert.equal(
     nestedListShape.messages[0].content[0].image_url.url,
     'https://example.test/frame-3.png',
@@ -123,7 +123,7 @@ test('preserves the structured JSON contract and normalizes Responses content', 
     response_format: responseFormat,
   }, {});
 
-  assert.equal(payload.model, 'qwen3.8-max-preview');
+  assert.equal(payload.model, 'qwen3.7-max');
   assert.equal(payload.messages[0].role, 'system');
   assert.equal(payload.messages[0].content[0].text, 'Return JSON.');
   assert.match(payload.messages[0].content[1].text, /JSON Schema exactly/);

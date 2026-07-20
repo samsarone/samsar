@@ -181,7 +181,7 @@ export const DOCKER_MODEL_DISPLAY_NAME_BY_MODEL = Object.freeze({
 
 const DOCKER_MODEL_DISPLAY_NAME_BY_PROVIDER = Object.freeze({
   [DOCKER_PROVIDER.ALIBABA_CLOUD]: Object.freeze({
-    'QWEN3.7': 'Qwen 3.8 Max Preview',
+    'QWEN3.7': 'Qwen 3.7 Max / Plus Vision',
   }),
   [DOCKER_PROVIDER.OPENROUTER]: Object.freeze({
     'QWEN3.7': 'Qwen 3.7 Plus',

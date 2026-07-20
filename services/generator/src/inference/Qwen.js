@@ -3,7 +3,8 @@ import { getAccessibleMediaUrlForProvider } from '../utils/MediaReferenceUtils.j
 import { normalizeProviderMediaPayload } from '../utils/ProviderMediaPayload.js';
 
 import {
-  DEFAULT_QWEN_38_MAX_PREVIEW_MODEL,
+  DEFAULT_QWEN_37_MAX_MODEL,
+  DEFAULT_QWEN_37_PLUS_MODEL,
 } from './InferenceModels.js';
 
 const DEFAULT_DASHSCOPE_BASE_URL = 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1';
@@ -129,9 +130,12 @@ function hasNonEmptyMediaReference(value, seen = new Set()) {
 }
 
 export function resolveQwenProviderModel(request = {}, env = process.env) {
-  return normalizeString(
-    env.QWEN_38_MAX_PREVIEW_MODEL || env.ALIBABA_QWEN_38_MAX_PREVIEW_MODEL,
-  ) || DEFAULT_QWEN_38_MAX_PREVIEW_MODEL;
+  if (hasQwenMultimodalInput(request)) {
+    return normalizeString(env.QWEN_37_PLUS_MODEL || env.ALIBABA_QWEN_37_PLUS_MODEL) ||
+      DEFAULT_QWEN_37_PLUS_MODEL;
+  }
+  return normalizeString(env.QWEN_37_MAX_MODEL || env.ALIBABA_QWEN_37_MAX_MODEL) ||
+    DEFAULT_QWEN_37_MAX_MODEL;
 }
 
 export function buildQwenChatCompletionPayload(chatRequest = {}, env = process.env) {

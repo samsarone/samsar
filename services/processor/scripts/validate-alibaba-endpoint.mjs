@@ -9,6 +9,28 @@ function normalizeString(value) {
   return typeof value === 'string' ? value.trim() : '';
 }
 
+export function isAlibabaPayAsYouGoApiKey(value) {
+  const apiKey = normalizeString(value);
+  return apiKey.startsWith('sk-') && !apiKey.startsWith('sk-sp-');
+}
+
+export function isAlibabaPayAsYouGoBaseUrl(value) {
+  let hostname;
+  try {
+    hostname = new URL(value).hostname.toLowerCase();
+  } catch {
+    return false;
+  }
+
+  if (hostname.includes('token-plan') || hostname === 'coding.dashscope.aliyuncs.com' ||
+    hostname === 'coding-intl.dashscope.aliyuncs.com') {
+    return false;
+  }
+
+  return /^dashscope(?:-[a-z0-9-]+)?\.aliyuncs\.com$/.test(hostname) ||
+    (hostname.endsWith('.maas.aliyuncs.com') && !hostname.startsWith('token-plan.'));
+}
+
 export function getAlibabaCompatibleBaseUrl(value) {
   const configured = normalizeString(value);
   if (!configured) {
@@ -69,6 +91,11 @@ export async function validateAlibabaEndpoint({
       message: 'Alibaba Cloud Model Studio API key is required.',
     });
   }
+  if (!isAlibabaPayAsYouGoApiKey(normalizedApiKey)) {
+    return buildValidationResult('invalid', {
+      message: 'Use a pay-as-you-go Alibaba Cloud Model Studio API key (sk-...), not a Token Plan or Coding Plan key (sk-sp-...).',
+    });
+  }
 
   let baseUrl;
   try {
@@ -76,6 +103,12 @@ export async function validateAlibabaEndpoint({
   } catch {
     return buildValidationResult('invalid', {
       message: 'Alibaba Cloud API host or endpoint is invalid.',
+    });
+  }
+  if (!isAlibabaPayAsYouGoBaseUrl(baseUrl)) {
+    return buildValidationResult('invalid', {
+      baseUrl,
+      message: 'Use a pay-as-you-go Model Studio endpoint, not a Token Plan or Coding Plan endpoint.',
     });
   }
 
@@ -119,6 +152,7 @@ export async function validateAlibabaEndpoint({
 
     return buildValidationResult('valid', {
       baseUrl,
+      billingMode: 'pay_as_you_go',
       ...summarizeModels(body),
     });
   } catch (error) {

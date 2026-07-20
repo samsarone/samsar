@@ -1327,6 +1327,7 @@ function consumeValidatedAlibabaProviderSecret(payload = {}) {
     validation?.provider !== 'alibabaCloud' ||
     validation?.ok !== true ||
     validation?.validationMode !== 'remote_models' ||
+    validation?.billingMode !== 'pay_as_you_go' ||
     !normalizeString(validation?.baseUrl)
   ) {
     throw new Error('Validate the Alibaba Cloud API key and endpoint before starting setup.');

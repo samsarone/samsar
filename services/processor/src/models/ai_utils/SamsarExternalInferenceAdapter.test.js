@@ -5,6 +5,7 @@ import OpenAI from 'openai';
 
 const ENV_KEYS = [
   'CURRENT_ENV',
+  'NODE_ENV',
   'SAMSAR_API_KEY',
   'SAMSAR_EXTERNAL_INFERENCE_ENABLED',
   'SAMSAR_FORCE_EXTERNAL_INFERENCE',
@@ -52,6 +53,7 @@ const {
   getOpenRouterModelForInferenceRequest,
   runExternalInferenceWithRetry,
   resolveConfiguredInferenceProvider,
+  shouldUseOpenRouterInference,
   shouldUseSamsarExternalInference,
   unwrapSamsarExternalChatCompletionResponse,
 } = await import('./SamsarExternalInferenceAdapter.js');
@@ -185,6 +187,7 @@ test('shouldUseSamsarExternalInference keeps Qwen native when DashScope auth is 
 test('Docker inference uses native then OpenRouter then Samsar for every model', () => {
   clearProviderEnv();
   process.env.CURRENT_ENV = 'docker';
+  process.env.NODE_ENV = 'production';
   process.env.OPENROUTER_API_KEY = 'test-openrouter-key';
   process.env.SAMSAR_API_KEY = 'test-samsar-key';
 
@@ -227,10 +230,11 @@ test('production Qwen is constrained to OpenRouter even when Alibaba is configur
   process.env.OPENROUTER_API_KEY = 'test-openrouter-key';
 
   assert.equal(resolveConfiguredInferenceProvider('QWEN3.7'), DOCKER_INFERENCE_PROVIDER.OPENROUTER);
+  assert.equal(shouldUseOpenRouterInference({ model: 'QWEN3.7' }), true);
   assert.equal(shouldUseSamsarExternalInference({ model: 'QWEN3.7' }), true);
 });
 
-test('hosted and external Qwen never use native Alibaba routing', () => {
+test('hosted, external, and staging Qwen never use native Alibaba routing', () => {
   for (const environment of ['production', 'external-production', 'staging']) {
     clearProviderEnv();
     process.env.CURRENT_ENV = environment;
@@ -238,6 +242,10 @@ test('hosted and external Qwen never use native Alibaba routing', () => {
     process.env.OPENROUTER_API_KEY = 'test-openrouter-key';
 
     assert.equal(resolveConfiguredInferenceProvider('QWEN3.7'), DOCKER_INFERENCE_PROVIDER.OPENROUTER);
+    assert.equal(shouldUseOpenRouterInference({
+      model: 'QWEN3.7',
+      authorization: 'deployed',
+    }), true);
     assert.equal(shouldUseSamsarExternalInference({
       model: 'QWEN3.7',
       authorization: 'deployed',

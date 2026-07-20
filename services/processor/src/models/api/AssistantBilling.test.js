@@ -57,7 +57,7 @@ test('bills GPT 5.6 Sol assistant usage at long-context rates above 272K input t
   assert.equal(result.tokenPricingUsdPerMillion.longContextInputThreshold, 272_000);
 });
 
-test('uses the requested assistant pricing and bills Qwen 3.7 Max usage', () => {
+test('uses the requested assistant pricing and bills legacy Qwen 3.7 Max usage', () => {
   const result = calculateAssistantCreditsFromUsage({
     model: 'qwen3.7-max',
     usage: { input_tokens: 1_000_000, output_tokens: 1_000_000 },
@@ -74,7 +74,7 @@ test('uses the requested assistant pricing and bills Qwen 3.7 Max usage', () => 
   });
 });
 
-test('bills Qwen 3.7 Plus vision usage at standard and long-context rates', () => {
+test('bills legacy Qwen 3.7 Plus vision usage at standard and long-context rates', () => {
   const standard = calculateAssistantCreditsFromUsage({
     model: 'qwen3.7-plus',
     usage: { input_tokens: 100_000, output_tokens: 100_000 },

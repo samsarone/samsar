@@ -4,11 +4,11 @@ export const QWEN_INFERENCE_MODEL_VALUE = "QWEN3.7";
 const DEPLOYMENT_INFERENCE_MODELS_BY_PROVIDER = Object.freeze({
   openai: ["gpt-5.6-sol"],
   googleCloud: ["gemini-3.1-pro"],
-  openrouter: ["gpt-5.6-sol", "gemini-3.1-pro", "QWEN3.7"],
+  openrouter: ["gpt-5.6-sol", "gemini-3.1-pro", QWEN_INFERENCE_MODEL_VALUE],
   // Alibaba/Qwen requires explicit, validated model provenance below. A
   // provider name by itself is not enough to make Qwen selectable.
   alibabaCloud: [],
-  samsar: ["gpt-5.6-sol", "gemini-3.1-pro", "QWEN3.7"],
+  samsar: ["gpt-5.6-sol", "gemini-3.1-pro", QWEN_INFERENCE_MODEL_VALUE],
 });
 
 export function normalizeDeploymentProviderKey(value) {
@@ -231,7 +231,7 @@ export function labelOptionsForDeploymentInferenceProviders(options = [], modelP
     modelProviders?.[QWEN_INFERENCE_MODEL_VALUE],
   );
   const qwenLabel = qwenProvider === "alibabaCloud"
-    ? "Qwen 3.8 Max Preview"
+    ? "Qwen 3.7 Max / Plus Vision"
     : "Qwen 3.7 Plus";
 
   return options.map((option) => (

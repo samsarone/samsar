@@ -53,7 +53,7 @@ test('builds the workspace-compatible endpoint from ALIBABA_API_HOST', () => {
   );
 });
 
-test('selects Qwen 3.8 Max Preview for text and multimodal vision input', () => {
+test('selects Qwen 3.7 Max for text and Qwen 3.7 Plus for multimodal vision input', () => {
   const textRequest = buildAlibabaQwenChatRequest({
     model: 'QWEN3.7',
     messages: [{ role: 'user', content: 'Create a transition.' }],
@@ -69,8 +69,8 @@ test('selects Qwen 3.8 Max Preview for text and multimodal vision input', () => 
     }],
   });
 
-  assert.equal(textRequest.payload.model, 'qwen3.8-max-preview');
-  assert.equal(visionRequest.payload.model, 'qwen3.8-max-preview');
+  assert.equal(textRequest.payload.model, 'qwen3.7-max');
+  assert.equal(visionRequest.payload.model, 'qwen3.7-plus');
   assert.equal(textRequest.payload.enable_thinking, true);
 });
 

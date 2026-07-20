@@ -37,7 +37,7 @@ export const DEPLOYMENT_PROVIDER_CAPABILITIES = Object.freeze({
   },
   alibabaCloud: {
     label: 'Alibaba Cloud',
-    requiredFor: ['Qwen 3.8 Max Preview text and vision', 'Wan2.7 Pro image', 'Happy Horse 1.1 video'],
+    requiredFor: ['Qwen 3.7 Max text and Qwen 3.7 Plus vision', 'Wan2.7 Pro image', 'Happy Horse 1.1 video'],
     models: ['QWEN3.7', 'WAN2.7PRO', 'HAPPYHORSEI2V'],
     actions: ['chat', 'assistant', 'image', 'video'],
   },
@@ -57,6 +57,26 @@ export const DEPLOYMENT_PROVIDER_CAPABILITIES = Object.freeze({
 
 function normalizeString(value) {
   return typeof value === 'string' && value.trim() ? value.trim() : '';
+}
+
+function isAlibabaPayAsYouGoApiKey(value) {
+  const apiKey = normalizeString(value);
+  return apiKey.startsWith('sk-') && !apiKey.startsWith('sk-sp-');
+}
+
+function isAlibabaPayAsYouGoBaseUrl(value) {
+  let hostname;
+  try {
+    hostname = new URL(value).hostname.toLowerCase();
+  } catch {
+    return false;
+  }
+  if (hostname.includes('token-plan') || hostname === 'coding.dashscope.aliyuncs.com' ||
+    hostname === 'coding-intl.dashscope.aliyuncs.com') {
+    return false;
+  }
+  return /^dashscope(?:-[a-z0-9-]+)?\.aliyuncs\.com$/.test(hostname) ||
+    (hostname.endsWith('.maas.aliyuncs.com') && !hostname.startsWith('token-plan.'));
 }
 
 function normalizeBoolean(value) {
@@ -271,8 +291,20 @@ async function validateAlibabaCloudKey({ apiKey, baseUrl, apiHost }) {
     DASHSCOPE_BASE_URL: baseUrl,
     ALIBABA_API_HOST: apiHost,
   });
+  if (!isAlibabaPayAsYouGoApiKey(apiKey)) {
+    return providerResult('alibabaCloud', 'invalid', {
+      message: 'Use a pay-as-you-go Alibaba Cloud Model Studio API key (sk-...), not a Token Plan or Coding Plan key (sk-sp-...).',
+    });
+  }
+  if (!isAlibabaPayAsYouGoBaseUrl(normalizedBaseUrl)) {
+    return providerResult('alibabaCloud', 'invalid', {
+      baseUrl: normalizedBaseUrl,
+      message: 'Use a pay-as-you-go Model Studio endpoint, not a Token Plan or Coding Plan endpoint.',
+    });
+  }
   return providerResult('alibabaCloud', 'format_valid', {
     validationMode: 'format_only',
+    billingMode: 'pay_as_you_go',
     baseUrl: normalizedBaseUrl,
     message:
       'Alibaba Cloud Model Studio does not expose a zero-cost key introspection endpoint; the key will be verified on first inference request.',

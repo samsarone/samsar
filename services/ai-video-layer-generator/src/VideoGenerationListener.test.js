@@ -1,8 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 
 import {
   buildBaseGenerationFailureMessage,
+  buildDockerI2V429AdapterFailoverPlan,
   buildTransientProviderErrorUpdate,
   buildBaseGenerationTerminalFailureUpdate,
   getInferenceModelForSession,
@@ -250,6 +254,67 @@ test('Runway polling 429 is treated as transient provider backoff, not failure',
   assert.equal(Object.hasOwn(update.set, 'numRetries'), false);
 });
 
+test('first Docker image-to-video 429 switches to the next configured adapter', (t) => {
+  const envKeys = [
+    'CURRENT_ENV',
+    'SAMSAR_AVAILABLE_MODELS_PATH',
+    'ALIBABA_API_KEY',
+    'FAL_API_KEY',
+    'SAMSAR_API_KEY',
+  ];
+  const originalEnv = Object.fromEntries(envKeys.map((key) => [key, process.env[key]]));
+  const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'samsar-i2v-failover-'));
+  const configPath = path.join(temporaryDirectory, 'available-models.json');
+  t.after(() => {
+    fs.rmSync(temporaryDirectory, { recursive: true, force: true });
+    envKeys.forEach((key) => {
+      if (originalEnv[key] === undefined) delete process.env[key];
+      else process.env[key] = originalEnv[key];
+    });
+  });
+  fs.writeFileSync(configPath, JSON.stringify({
+    providers: ['alibabaCloud', 'fal'],
+    modelProviders: { HAPPYHORSEI2V: 'alibabaCloud' },
+    modelProviderPriority: { HAPPYHORSEI2V: ['alibabaCloud', 'fal'] },
+  }));
+  process.env.CURRENT_ENV = 'docker';
+  process.env.SAMSAR_AVAILABLE_MODELS_PATH = configPath;
+  process.env.ALIBABA_API_KEY = 'alibaba-key';
+  process.env.FAL_API_KEY = 'fal-key';
+  delete process.env.SAMSAR_API_KEY;
+
+  const request = {
+    model: 'HAPPYHORSEI2V',
+    prompt: 'Keep this exact prompt',
+    startImage: '/persistent/assets/start.png',
+    status: 'INIT',
+    transientProviderErrorCount: 0,
+  };
+  const rateLimitError = { response: { status: 429 } };
+
+  assert.deepEqual(buildDockerI2V429AdapterFailoverPlan(request, rateLimitError), {
+    currentProvider: 'alibabaCloud',
+    nextProvider: 'fal',
+  });
+  assert.equal(buildDockerI2V429AdapterFailoverPlan({
+    ...request,
+    transientProviderErrorCount: 1,
+  }, rateLimitError), null);
+  assert.equal(buildDockerI2V429AdapterFailoverPlan({
+    ...request,
+    dockerAdapterFailoverAttempted: true,
+  }, rateLimitError), null);
+  assert.equal(buildDockerI2V429AdapterFailoverPlan({
+    ...request,
+    generationId: 'already-submitted-task',
+  }, rateLimitError), null);
+  assert.equal(buildDockerI2V429AdapterFailoverPlan(request, { response: { status: 503 } }), null);
+  assert.equal(buildDockerI2V429AdapterFailoverPlan({
+    ...request,
+    startImage: '',
+  }, rateLimitError), null);
+});
+
 test('provider submit 503 is held in INIT for retry without consuming generation retries', () => {
   const error = {
     message: 'Service unavailable',
@@ -352,19 +417,30 @@ test('hosted Happy Horse uses FAL even when native Alibaba routing is configured
 
 test('Docker Happy Horse uses native Alibaba only when it wins provider priority', () => {
   const originalCurrentEnv = process.env.CURRENT_ENV;
+  const originalAvailableModelsPath = process.env.SAMSAR_AVAILABLE_MODELS_PATH;
   const originalAlibabaApiKey = process.env.ALIBABA_API_KEY;
   const originalFalApiKey = process.env.FAL_API_KEY;
   try {
     process.env.CURRENT_ENV = 'docker';
+    process.env.SAMSAR_AVAILABLE_MODELS_PATH = path.join(
+      os.tmpdir(),
+      `samsar-no-saved-video-providers-${process.pid}.json`,
+    );
     process.env.ALIBABA_API_KEY = 'alibaba-key';
     process.env.FAL_API_KEY = 'fal-key';
     assert.equal(shouldUseAlibabaNativeHappyHorse({ model: 'HAPPYHORSEI2V' }), true);
+    assert.equal(shouldUseAlibabaNativeHappyHorse({
+      model: 'HAPPYHORSEI2V',
+      dockerVideoProviderOverride: 'fal',
+    }), false);
 
     delete process.env.ALIBABA_API_KEY;
     assert.equal(shouldUseAlibabaNativeHappyHorse({ model: 'HAPPYHORSEI2V' }), false);
   } finally {
     if (originalCurrentEnv === undefined) delete process.env.CURRENT_ENV;
     else process.env.CURRENT_ENV = originalCurrentEnv;
+    if (originalAvailableModelsPath === undefined) delete process.env.SAMSAR_AVAILABLE_MODELS_PATH;
+    else process.env.SAMSAR_AVAILABLE_MODELS_PATH = originalAvailableModelsPath;
     if (originalAlibabaApiKey === undefined) delete process.env.ALIBABA_API_KEY;
     else process.env.ALIBABA_API_KEY = originalAlibabaApiKey;
     if (originalFalApiKey === undefined) delete process.env.FAL_API_KEY;

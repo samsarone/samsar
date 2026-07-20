@@ -214,6 +214,7 @@ export function shouldUseSamsarExternalVideoProvider(payload = {}) {
   }
   return resolveDockerVideoProvider(payload?.model, {
     generationType: payload?.generationType || payload?.layerAiVideoType,
+    preferredProvider: payload?.dockerVideoProviderOverride,
   }) === DOCKER_VIDEO_PROVIDER.SAMSAR;
 }
 

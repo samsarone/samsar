@@ -7,9 +7,9 @@ import { resolveLocalAssetPath } from '../utils/LocalAssetPath.js';
 export const GPT_56_SOL_INFERENCE_MODEL = 'gpt-5.6-sol';
 export const GPT_56_SOL_REASONING_EFFORT = 'xhigh';
 export const QWEN_37_INFERENCE_MODEL = 'QWEN3.7';
+export const QWEN_38_MAX_PREVIEW_MODEL = 'qwen3.8-max-preview';
 export const QWEN_37_MAX_MODEL = 'qwen3.7-max';
 export const QWEN_37_PLUS_MODEL = 'qwen3.7-plus';
-export const QWEN_38_MAX_PREVIEW_MODEL = 'qwen3.8-max-preview';
 const DEFAULT_INFERENCE_MODEL = GPT_56_SOL_INFERENCE_MODEL;
 const GEMINI_31_PRO_INFERENCE_MODEL = 'gemini-3.1-pro';
 const DEFAULT_GEMINI_MODEL = 'gemini-3.1-pro-preview';
@@ -28,6 +28,9 @@ const QWEN_37_ALIASES = new Set([
   QWEN_37_MAX_MODEL,
   QWEN_37_PLUS_MODEL,
   QWEN_38_MAX_PREVIEW_MODEL,
+  'qwen3.7',
+  'qwen3.7-max',
+  'qwen3.7-plus',
   'qwen-3.7',
   'qwen-3.7-max',
   'qwen-3.7-plus',

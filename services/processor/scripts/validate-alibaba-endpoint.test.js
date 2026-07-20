@@ -3,6 +3,8 @@ import test from 'node:test';
 
 import {
   getAlibabaCompatibleBaseUrl,
+  isAlibabaPayAsYouGoApiKey,
+  isAlibabaPayAsYouGoBaseUrl,
   validateAlibabaEndpoint,
 } from './validate-alibaba-endpoint.mjs';
 
@@ -29,10 +31,55 @@ test('normalizes an Alibaba API host or compatible endpoint', () => {
   );
 });
 
+test('identifies pay-as-you-go keys and endpoints', () => {
+  assert.equal(isAlibabaPayAsYouGoApiKey('sk-payg-test'), true);
+  assert.equal(isAlibabaPayAsYouGoApiKey('sk-sp-plan-test'), false);
+  assert.equal(
+    isAlibabaPayAsYouGoBaseUrl('https://dashscope-intl.aliyuncs.com/compatible-mode/v1'),
+    true,
+  );
+  assert.equal(
+    isAlibabaPayAsYouGoBaseUrl('https://workspace.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1'),
+    true,
+  );
+  assert.equal(
+    isAlibabaPayAsYouGoBaseUrl('https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1'),
+    false,
+  );
+  assert.equal(
+    isAlibabaPayAsYouGoBaseUrl('https://coding-intl.dashscope.aliyuncs.com/v1'),
+    false,
+  );
+});
+
+test('rejects plan-specific Alibaba keys and endpoints without sending a request', async () => {
+  let requests = 0;
+  const fetchImpl = async () => {
+    requests += 1;
+    throw new Error('unexpected request');
+  };
+  const planKey = await validateAlibabaEndpoint({
+    apiKey: 'sk-sp-plan-key',
+    apiHost: 'dashscope-intl.aliyuncs.com',
+    fetchImpl,
+  });
+  assert.equal(planKey.status, 'invalid');
+  assert.match(planKey.message, /pay-as-you-go/i);
+
+  const planEndpoint = await validateAlibabaEndpoint({
+    apiKey: 'sk-payg-test',
+    apiHost: 'token-plan.ap-southeast-1.maas.aliyuncs.com',
+    fetchImpl,
+  });
+  assert.equal(planEndpoint.status, 'invalid');
+  assert.match(planEndpoint.message, /pay-as-you-go/i);
+  assert.equal(requests, 0);
+});
+
 test('validates the endpoint through its authenticated model listing', async () => {
   let request;
   const result = await validateAlibabaEndpoint({
-    apiKey: 'test-secret-key',
+    apiKey: 'sk-test-secret-key',
     apiHost: 'workspace.ap-southeast-1.maas.aliyuncs.com',
     fetchImpl: async (...args) => {
       request = args;
@@ -54,24 +101,25 @@ test('validates the endpoint through its authenticated model listing', async () 
     request[0],
     'https://workspace.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1/models',
   );
-  assert.equal(request[1].headers.Authorization, 'Bearer test-secret-key');
+  assert.equal(request[1].headers.Authorization, 'Bearer sk-test-secret-key');
   assert.deepEqual(result, {
     provider: 'alibabaCloud',
     ok: true,
     status: 'valid',
     validationMode: 'remote_models',
     baseUrl: 'https://workspace.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1',
+    billingMode: 'pay_as_you_go',
     modelCount: 3,
     qwen38MaxPreviewAvailable: true,
     qwen37MaxAvailable: true,
     qwen37PlusAvailable: true,
   });
-  assert.equal(JSON.stringify(result).includes('test-secret-key'), false);
+  assert.equal(JSON.stringify(result).includes('sk-test-secret-key'), false);
 });
 
 test('returns a safe invalid result when Alibaba rejects the credential', async () => {
   const result = await validateAlibabaEndpoint({
-    apiKey: 'test-secret-key',
+    apiKey: 'sk-test-secret-key',
     apiHost: 'workspace.ap-southeast-1.maas.aliyuncs.com',
     fetchImpl: async () => ({
       ok: false,
@@ -88,7 +136,7 @@ test('returns a safe invalid result when Alibaba rejects the credential', async 
 
 test('rejects a successful response that is not a compatible model listing', async () => {
   const result = await validateAlibabaEndpoint({
-    apiKey: 'test-secret-key',
+    apiKey: 'sk-test-secret-key',
     apiHost: 'workspace.ap-southeast-1.maas.aliyuncs.com',
     fetchImpl: async () => ({
       ok: true,

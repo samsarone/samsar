@@ -116,12 +116,13 @@ test('FAL fallback availability keeps Happy Horse and Wan2.7 Pro enabled', () =>
 
 test('accepts deployment-friendly Alibaba credential and base URL aliases', async () => {
   const result = await validateDeploymentProviderCredentials({
-    alibaba_cloud_api_key: 'test-key',
+    alibaba_cloud_api_key: 'sk-test-key',
     dashscope_base_url: 'https://workspace.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1/',
   });
 
   assert.equal(result.providers.alibabaCloud.status, 'format_valid');
   assert.equal(result.providers.alibabaCloud.validationMode, 'format_only');
+  assert.equal(result.providers.alibabaCloud.billingMode, 'pay_as_you_go');
   assert.equal(
     result.providers.alibabaCloud.baseUrl,
     'https://workspace.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1',
@@ -133,7 +134,7 @@ test('accepts deployment-friendly Alibaba credential and base URL aliases', asyn
 
 test('accepts ALIBABA_API_HOST and expands it to the compatible endpoint', async () => {
   const result = await validateDeploymentProviderCredentials({
-    alibaba_api_key: 'test-key',
+    alibaba_api_key: 'sk-test-key',
     alibaba_api_host: 'ws-sj16tbvm14xuk9x1.ap-southeast-1.maas.aliyuncs.com',
   });
 
@@ -142,4 +143,20 @@ test('accepts ALIBABA_API_HOST and expands it to the compatible endpoint', async
     result.providers.alibabaCloud.baseUrl,
     'https://ws-sj16tbvm14xuk9x1.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1',
   );
+});
+
+test('rejects Token Plan Alibaba credentials for native deployment', async () => {
+  const planKey = await validateDeploymentProviderCredentials({
+    alibaba_api_key: 'sk-sp-plan-key',
+    alibaba_api_host: 'dashscope-intl.aliyuncs.com',
+  });
+  assert.equal(planKey.providers.alibabaCloud.status, 'invalid');
+  assert.match(planKey.providers.alibabaCloud.message, /pay-as-you-go/i);
+
+  const planEndpoint = await validateDeploymentProviderCredentials({
+    alibaba_api_key: 'sk-payg-key',
+    alibaba_api_host: 'token-plan.ap-southeast-1.maas.aliyuncs.com',
+  });
+  assert.equal(planEndpoint.providers.alibabaCloud.status, 'invalid');
+  assert.match(planEndpoint.providers.alibabaCloud.message, /pay-as-you-go/i);
 });

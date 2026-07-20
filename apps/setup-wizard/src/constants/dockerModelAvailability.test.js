@@ -34,7 +34,7 @@ test('Alibaba Cloud alone exposes Qwen, Wan2.7 Pro, and native Happy Horse video
   assert.equal(available.modelProviders.HAPPYHORSEI2V, DOCKER_PROVIDER.ALIBABA_CLOUD);
   assert.equal(
     getDockerModelDisplayName('QWEN3.7', DOCKER_PROVIDER.ALIBABA_CLOUD),
-    'Qwen 3.8 Max Preview',
+    'Qwen 3.7 Max / Plus Vision',
   );
 });
 

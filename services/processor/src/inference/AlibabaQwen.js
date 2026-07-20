@@ -1,7 +1,8 @@
 import OpenAI from 'openai';
 
 import {
-  QWEN_38_MAX_PREVIEW_MODEL,
+  getProviderModelForInferenceModel,
+  QWEN_37_INFERENCE_MODEL,
 } from '../consts/InferenceModels.js';
 import { resolveProviderMediaPayload } from '../models/ai_utils/ProviderMediaPayload.js';
 
@@ -343,13 +344,14 @@ export function buildAlibabaQwenChatRequest(chatRequest = {}) {
   const sourceMessages = typeof source === 'string'
     ? [{ role: 'user', content: source }]
     : source;
+  const vision = hasQwenVisionInput(sourceMessages);
   const normalizedMessages = normalizeMessagesForAlibabaQwen(sourceMessages);
   const structured = appendJsonInstruction(normalizedMessages, rawResponseFormat);
 
   return {
     payload: {
       ...request,
-      model: QWEN_38_MAX_PREVIEW_MODEL,
+      model: getProviderModelForInferenceModel(QWEN_37_INFERENCE_MODEL, { vision }),
       messages: structured.messages,
       enable_thinking: true,
       ...(max_output_tokens !== undefined && request.max_tokens === undefined

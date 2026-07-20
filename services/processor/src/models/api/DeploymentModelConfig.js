@@ -67,10 +67,18 @@ function normalizeDeploymentProvider(value) {
   return normalized;
 }
 
+function normalizeDeploymentModel(value) {
+  const normalized = String(value || '').trim().toUpperCase();
+  if (['QWEN3.7', 'QWEN3.7-MAX', 'QWEN3.7-PLUS', 'QWEN3.8', 'QWEN3.8-MAX-PREVIEW'].includes(normalized)) {
+    return 'QWEN3.7';
+  }
+  return normalized;
+}
+
 function findModelProvider(modelProviders = {}, modelKey = '') {
-  const normalizedModelKey = String(modelKey).trim().toUpperCase();
+  const normalizedModelKey = normalizeDeploymentModel(modelKey);
   const entry = Object.entries(modelProviders).find(
-    ([key]) => String(key).trim().toUpperCase() === normalizedModelKey,
+    ([key]) => normalizeDeploymentModel(key) === normalizedModelKey,
   );
   return entry?.[1] || '';
 }
@@ -80,7 +88,7 @@ function isSavedQwenSelectionAuthorized({ providers, models, modelProviders }) {
     return false;
   }
 
-  const hasQwenModel = models.some((model) => model.toUpperCase() === 'QWEN3.7');
+  const hasQwenModel = models.some((model) => normalizeDeploymentModel(model) === 'QWEN3.7');
   const qwenProviders = new Set(['alibabaCloud', 'openrouter', 'samsar']);
   const availableProviders = new Set(providers.map(normalizeDeploymentProvider));
   const selectedProvider = normalizeDeploymentProvider(
@@ -164,9 +172,23 @@ function mergeRuntimeInferenceProviderSelections(availability) {
 
 export function mergeRuntimeInferenceDeploymentAvailability(value = {}) {
   const configuredProviders = normalizeStringList(value?.providers);
-  const configuredModels = normalizeStringList(value?.models);
-  const modelProviders = normalizeStringMap(value?.modelProviders);
-  const modelProviderPriority = normalizeStringListMap(value?.modelProviderPriority);
+  const configuredModels = [...new Set(
+    normalizeStringList(value?.models).map((model) => (
+      normalizeDeploymentModel(model) === 'QWEN3.7' ? 'QWEN3.7' : model
+    )),
+  )];
+  const modelProviders = Object.fromEntries(
+    Object.entries(normalizeStringMap(value?.modelProviders)).map(([model, provider]) => [
+      normalizeDeploymentModel(model) === 'QWEN3.7' ? 'QWEN3.7' : model,
+      provider,
+    ]),
+  );
+  const modelProviderPriority = Object.fromEntries(
+    Object.entries(normalizeStringListMap(value?.modelProviderPriority)).map(([model, providers]) => [
+      normalizeDeploymentModel(model) === 'QWEN3.7' ? 'QWEN3.7' : model,
+      providers,
+    ]),
+  );
   const qwenAuthorized = isSavedQwenSelectionAuthorized({
     providers: configuredProviders,
     models: configuredModels,
@@ -175,7 +197,7 @@ export function mergeRuntimeInferenceDeploymentAvailability(value = {}) {
   const merged = {
     providers: configuredProviders,
     models: configuredModels.filter(
-      (model) => model.toUpperCase() !== 'QWEN3.7' || qwenAuthorized,
+      (model) => normalizeDeploymentModel(model) !== 'QWEN3.7' || qwenAuthorized,
     ),
     actions: normalizeStringList(value?.actions),
     modelProviders,
@@ -290,8 +312,8 @@ export function filterModelsForDeploymentAvailability(models = [], availableMode
   if (runtimeAvailability.models.length === 0) {
     return filterWan27WithoutConfiguredProvider(models);
   }
-  const available = new Set(runtimeAvailability.models.map((model) => model.toUpperCase()));
+  const available = new Set(runtimeAvailability.models.map(normalizeDeploymentModel));
   return filterWan27WithoutConfiguredProvider(
-    models.filter((model) => available.has(String(model?.value || model?.key || '').toUpperCase())),
+    models.filter((model) => available.has(normalizeDeploymentModel(model?.value || model?.key))),
   );
 }

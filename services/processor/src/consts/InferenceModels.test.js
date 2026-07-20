@@ -85,7 +85,7 @@ test('normalizes Gemini 3.1 Pro assistant model aliases to the current Vertex mo
   assert.equal(getProviderModelForInferenceModel('Gemini 3.1 Pro'), DEFAULT_GEMINI_31_PRO_VERTEX_MODEL);
 });
 
-test('normalizes Qwen 3.7 and 3.8 aliases while preserving legacy provider mappings', () => {
+test('normalizes Qwen 3.7 and forward-compatible 3.8 aliases to Qwen 3.7 Max', () => {
   assert.equal(QWEN_37_INFERENCE_MODEL, 'QWEN3.7');
   assert.equal(QWEN_37_MAX_MODEL, 'qwen3.7-max');
   assert.equal(QWEN_37_PLUS_MODEL, 'qwen3.7-plus');
@@ -95,6 +95,8 @@ test('normalizes Qwen 3.7 and 3.8 aliases while preserving legacy provider mappi
   assert.equal(normalizeInferenceModel('qwen3.7-max'), QWEN_37_INFERENCE_MODEL);
   assert.equal(normalizeInferenceModel('Alibaba Cloud Qwen 3.7'), QWEN_37_INFERENCE_MODEL);
   assert.equal(isQwenInferenceModel('qwen3.7-plus'), true);
+  assert.equal(normalizeInferenceModel('QWEN3.8'), QWEN_37_INFERENCE_MODEL);
+  assert.equal(normalizeInferenceModel('Qwen 3.8'), QWEN_37_INFERENCE_MODEL);
   assert.equal(normalizeInferenceModel('qwen3.8-max-preview'), QWEN_37_INFERENCE_MODEL);
   assert.equal(getProviderModelForInferenceModel('QWEN3.7'), QWEN_37_MAX_MODEL);
   assert.equal(

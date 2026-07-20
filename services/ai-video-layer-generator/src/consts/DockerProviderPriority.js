@@ -1,3 +1,6 @@
+import fs from 'node:fs';
+import path from 'node:path';
+
 export const DOCKER_VIDEO_PROVIDER = Object.freeze({
   ALIBABA_CLOUD: 'alibabaCloud',
   GOOGLE_CLOUD: 'googleCloud',
@@ -109,6 +112,79 @@ function normalizeString(value) {
   return typeof value === 'string' ? value.trim() : '';
 }
 
+function getAvailableModelsPath() {
+  return normalizeString(process.env.SAMSAR_AVAILABLE_MODELS_PATH) ||
+    (isDockerVideoProviderRoutingEnabled()
+      ? '/persistent/config/available-models.json'
+      : path.join(process.cwd(), 'runtime', 'config', 'available-models.json'));
+}
+
+function normalizeProvider(value) {
+  const normalized = normalizeString(value).toLowerCase().replace(/[^a-z0-9]/g, '');
+  if (['alibaba', 'alibabacloud', 'dashscope', 'qwen'].includes(normalized)) {
+    return DOCKER_VIDEO_PROVIDER.ALIBABA_CLOUD;
+  }
+  if (['google', 'googlecloud', 'vertex', 'vertexai'].includes(normalized)) {
+    return DOCKER_VIDEO_PROVIDER.GOOGLE_CLOUD;
+  }
+  if (normalized === 'fal') {
+    return DOCKER_VIDEO_PROVIDER.FAL;
+  }
+  if (['runway', 'runwayml'].includes(normalized)) {
+    return DOCKER_VIDEO_PROVIDER.RUNWAY;
+  }
+  if (normalized === 'samsar') {
+    return DOCKER_VIDEO_PROVIDER.SAMSAR;
+  }
+  return '';
+}
+
+function readAvailableModelsConfig() {
+  const filePath = getAvailableModelsPath();
+  if (!fs.existsSync(filePath)) {
+    return { filePath, value: null };
+  }
+  try {
+    return { filePath, value: JSON.parse(fs.readFileSync(filePath, 'utf8')) };
+  } catch {
+    return { filePath, value: null };
+  }
+}
+
+function getSavedModelProviderEntry(entries = {}, normalizedModel = '') {
+  if (!entries || typeof entries !== 'object' || Array.isArray(entries)) {
+    return undefined;
+  }
+  const matchingKey = Object.keys(entries).find(
+    (key) => normalizeVideoModelKey(key) === normalizedModel,
+  );
+  return matchingKey ? entries[matchingKey] : undefined;
+}
+
+function uniqueProviders(values = []) {
+  return [...new Set((Array.isArray(values) ? values : [values]).map(normalizeProvider).filter(Boolean))];
+}
+
+function getSavedVideoProviderPriority(model) {
+  if (!isDockerVideoProviderRoutingEnabled()) {
+    return [];
+  }
+  const normalizedModel = normalizeVideoModelKey(model);
+  const { value } = readAvailableModelsConfig();
+  if (!value) {
+    return [];
+  }
+  const savedPriority = uniqueProviders(
+    getSavedModelProviderEntry(value.modelProviderPriority, normalizedModel),
+  );
+  const savedPrimary = normalizeProvider(
+    getSavedModelProviderEntry(value.modelProviders, normalizedModel),
+  );
+  return savedPrimary
+    ? [savedPrimary, ...savedPriority.filter((provider) => provider !== savedPrimary)]
+    : savedPriority;
+}
+
 export function normalizeVideoModelKey(model) {
   return normalizeString(model).toUpperCase();
 }
@@ -192,6 +268,11 @@ export function getDockerVideoProviderPriority(model, { generationType = '' } = 
     return [DOCKER_VIDEO_PROVIDER.FAL, DOCKER_VIDEO_PROVIDER.SAMSAR];
   }
 
+  const savedPriority = getSavedVideoProviderPriority(normalizedModel);
+  if (normalizedGenerationType !== 'sound_effect' && savedPriority.length > 0) {
+    return savedPriority;
+  }
+
   if (
     normalizedGenerationType === 'sound_effect' ||
     DOCKER_FAL_SOUND_EFFECT_MODELS.includes(normalizedModel)
@@ -221,5 +302,88 @@ export function resolveDockerVideoProvider(model, options = {}) {
   if (!isDockerVideoProviderRoutingEnabled()) {
     return '';
   }
-  return resolveConfiguredVideoProvider(getDockerVideoProviderPriority(model, options));
+  const providerPriority = getDockerVideoProviderPriority(model, options);
+  const preferredProvider = normalizeProvider(options.preferredProvider);
+  if (
+    preferredProvider &&
+    providerPriority.includes(preferredProvider) &&
+    isVideoProviderConfigured(preferredProvider)
+  ) {
+    return preferredProvider;
+  }
+  return resolveConfiguredVideoProvider(providerPriority);
+}
+
+export function getConfiguredDockerVideoProviders(model, options = {}) {
+  if (!isDockerVideoProviderRoutingEnabled()) {
+    return [];
+  }
+  return getDockerVideoProviderPriority(model, options).filter(isVideoProviderConfigured);
+}
+
+export function resolveNextDockerVideoProvider(model, currentProvider, options = {}) {
+  const providers = getConfiguredDockerVideoProviders(model, options);
+  const normalizedCurrentProvider = normalizeProvider(currentProvider);
+  const currentIndex = providers.indexOf(normalizedCurrentProvider);
+  if (currentIndex < 0) {
+    return providers.find((provider) => provider !== normalizedCurrentProvider) || '';
+  }
+  return providers.slice(currentIndex + 1).find(Boolean) || '';
+}
+
+export function promoteDockerVideoProvider(model, provider) {
+  if (!isDockerVideoProviderRoutingEnabled()) {
+    return false;
+  }
+  const normalizedModel = normalizeVideoModelKey(model);
+  const normalizedProvider = normalizeProvider(provider);
+  if (!normalizedModel || !normalizedProvider || !isVideoProviderConfigured(normalizedProvider)) {
+    return false;
+  }
+
+  const { filePath, value } = readAvailableModelsConfig();
+  if (!value || !filePath) {
+    return false;
+  }
+  const modelProviders = value.modelProviders && typeof value.modelProviders === 'object'
+    ? { ...value.modelProviders }
+    : {};
+  const modelProviderPriority = value.modelProviderPriority &&
+    typeof value.modelProviderPriority === 'object'
+    ? { ...value.modelProviderPriority }
+    : {};
+  const existingPriority = uniqueProviders(
+    getSavedModelProviderEntry(modelProviderPriority, normalizedModel) ||
+      DOCKER_VIDEO_PROVIDER_PRIORITY_BY_MODEL[normalizedModel] ||
+      [],
+  );
+  const existingModelKey = Object.keys(modelProviders).find(
+    (key) => normalizeVideoModelKey(key) === normalizedModel,
+  ) || normalizedModel;
+  const existingPriorityKey = Object.keys(modelProviderPriority).find(
+    (key) => normalizeVideoModelKey(key) === normalizedModel,
+  ) || normalizedModel;
+
+  modelProviders[existingModelKey] = normalizedProvider;
+  modelProviderPriority[existingPriorityKey] = [
+    normalizedProvider,
+    ...existingPriority.filter((candidate) => candidate !== normalizedProvider),
+  ];
+  const nextValue = {
+    ...value,
+    providers: [...new Set([...(Array.isArray(value.providers) ? value.providers : []), normalizedProvider])],
+    modelProviders,
+    modelProviderPriority,
+  };
+  const temporaryPath = `${filePath}.${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2)}.tmp`;
+  const fileMode = fs.statSync(filePath).mode & 0o777;
+  try {
+    fs.writeFileSync(temporaryPath, `${JSON.stringify(nextValue, null, 2)}\n`, { mode: fileMode });
+    fs.renameSync(temporaryPath, filePath);
+  } finally {
+    if (fs.existsSync(temporaryPath)) {
+      fs.unlinkSync(temporaryPath);
+    }
+  }
+  return true;
 }

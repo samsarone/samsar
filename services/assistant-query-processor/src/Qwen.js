@@ -1,7 +1,8 @@
 import OpenAI from 'openai';
 
 import {
-  QWEN_38_MAX_PREVIEW_MODEL,
+  QWEN_37_INFERENCE_MODEL,
+  getProviderModelForInferenceModel,
 } from './InferenceModels.js';
 import { runExternalInferenceWithRetry } from './ExternalInferenceRetry.js';
 import { resolveProviderMediaPayload } from './ProviderMediaPayload.js';
@@ -259,7 +260,9 @@ export function buildQwenChatRequest(chatRequest = {}) {
   return {
     payload: {
       ...request,
-      model: QWEN_38_MAX_PREVIEW_MODEL,
+      model: getProviderModelForInferenceModel(QWEN_37_INFERENCE_MODEL, {
+        vision: hasQwenVisionInput(sourceMessages),
+      }),
       messages: structured.messages,
       enable_thinking: true,
       ...(maxTokens ? { max_tokens: maxTokens } : {}),

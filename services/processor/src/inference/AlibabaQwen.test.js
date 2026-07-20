@@ -10,7 +10,7 @@ import {
   hasQwenVisionInput,
 } from './AlibabaQwen.js';
 
-test('builds text-only Qwen requests with qwen3.8-max-preview and thinking enabled', () => {
+test('builds text-only Qwen requests with qwen3.7-max and thinking enabled', () => {
   const { payload } = buildAlibabaQwenChatRequest({
     model: 'QWEN3.7',
     messages: [
@@ -20,14 +20,14 @@ test('builds text-only Qwen requests with qwen3.8-max-preview and thinking enabl
     ],
   });
 
-  assert.equal(payload.model, 'qwen3.8-max-preview');
+  assert.equal(payload.model, 'qwen3.7-max');
   assert.equal(payload.enable_thinking, true);
   assert.equal(payload.messages[0].role, 'system');
   assert.deepEqual(payload.messages[2].content[0], { type: 'text', text: 'Previous scene.' });
   assert.equal(hasQwenVisionInput(payload.messages), false);
 });
 
-test('uses qwen3.8-max-preview when a request includes vision content', () => {
+test('uses qwen3.7-plus when a request includes vision content', () => {
   const { payload } = buildAlibabaQwenChatRequest({
     model: 'QWEN3.7',
     messages: [
@@ -41,7 +41,7 @@ test('uses qwen3.8-max-preview when a request includes vision content', () => {
     ],
   });
 
-  assert.equal(payload.model, 'qwen3.8-max-preview');
+  assert.equal(payload.model, 'qwen3.7-plus');
   assert.deepEqual(payload.messages[0].content[0], {
     type: 'text',
     text: 'Describe this frame.',
@@ -55,7 +55,7 @@ test('uses qwen3.8-max-preview when a request includes vision content', () => {
     model: 'QWEN3.7',
     messages: [{ role: 'user', content: [{ type: 'input_image', image_url: '' }] }],
   });
-  assert.equal(emptyVisionPart.payload.model, 'qwen3.8-max-preview');
+  assert.equal(emptyVisionPart.payload.model, 'qwen3.7-max');
 
   const alternateMediaShapes = buildAlibabaQwenChatRequest({
     model: 'QWEN3.7',
@@ -71,7 +71,7 @@ test('uses qwen3.8-max-preview when a request includes vision content', () => {
       ],
     }],
   });
-  assert.equal(alternateMediaShapes.payload.model, 'qwen3.8-max-preview');
+  assert.equal(alternateMediaShapes.payload.model, 'qwen3.7-plus');
   assert.equal(
     alternateMediaShapes.payload.messages[0].content[1].image_url.url,
     'data:image/jpeg;base64,abc',
@@ -97,7 +97,7 @@ test('uses qwen3.8-max-preview when a request includes vision content', () => {
       }],
     }],
   });
-  assert.equal(typedListShape.payload.model, 'qwen3.8-max-preview');
+  assert.equal(typedListShape.payload.model, 'qwen3.7-plus');
   assert.equal(
     typedListShape.payload.messages[0].content[0].image_url.url,
     'https://example.test/three.png',

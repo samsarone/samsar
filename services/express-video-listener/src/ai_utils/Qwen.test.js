@@ -17,13 +17,13 @@ test('Qwen dispatch disables hidden SDK retries after media normalization', () =
   );
 });
 
-test('uses Qwen 3.8 Max Preview for text, image, and video content', () => {
+test('uses Qwen 3.7 Max for text and Qwen 3.7 Plus for image and video content', () => {
   const textRequest = {
     model: 'QWEN3.7',
     messages: [{ role: 'user', content: 'Write an image-rich scene.' }],
   };
   assert.equal(hasQwenMultimodalInput(textRequest), false);
-  assert.equal(resolveQwenProviderModel(textRequest), 'qwen3.8-max-preview');
+  assert.equal(resolveQwenProviderModel(textRequest), 'qwen3.7-max');
 
   const imageRequest = {
     model: 'QWEN3.7',
@@ -36,7 +36,7 @@ test('uses Qwen 3.8 Max Preview for text, image, and video content', () => {
     }],
   };
   assert.equal(hasQwenMultimodalInput(imageRequest), true);
-  assert.equal(resolveQwenProviderModel(imageRequest), 'qwen3.8-max-preview');
+  assert.equal(resolveQwenProviderModel(imageRequest), 'qwen3.7-plus');
 
   const videoRequest = {
     messages: [{
@@ -45,7 +45,7 @@ test('uses Qwen 3.8 Max Preview for text, image, and video content', () => {
     }],
   };
   assert.equal(hasQwenMultimodalInput(videoRequest), true);
-  assert.equal(resolveQwenProviderModel(videoRequest), 'qwen3.8-max-preview');
+  assert.equal(resolveQwenProviderModel(videoRequest), 'qwen3.7-plus');
 
   assert.equal(hasQwenMultimodalInput({
     messages: [{ role: 'user', content: [{ type: 'image_url', image_url: {} }] }],
@@ -80,7 +80,7 @@ test('preserves structured JSON contracts through DashScope JSON mode', () => {
     response_format: responseFormat,
   });
 
-  assert.equal(payload.model, 'qwen3.8-max-preview');
+  assert.equal(payload.model, 'qwen3.7-max');
   assert.equal(payload.enable_thinking, true);
   assert.equal(payload.messages[0].role, 'system');
   assert.equal(payload.messages[0].content[0].text, 'Return the narrative JSON.');
@@ -119,7 +119,7 @@ test('normalizes multimodal content for the DashScope chat-completions API', () 
     }],
   });
 
-  assert.equal(payload.model, 'qwen3.8-max-preview');
+  assert.equal(payload.model, 'qwen3.7-plus');
   assert.equal(payload.messages[0].role, 'system');
   assert.deepEqual(payload.messages[0].content, [
     { type: 'text', text: 'Describe the media.' },

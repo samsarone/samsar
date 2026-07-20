@@ -121,7 +121,9 @@ import {
 } from './base/SamsarExternalVideoListener.js';
 import {
   DOCKER_VIDEO_PROVIDER,
+  promoteDockerVideoProvider,
   resolveDockerVideoProvider,
+  resolveNextDockerVideoProvider,
 } from './consts/DockerProviderPriority.js';
 import {
   generateHappyHorseImgToVideoLayer,
@@ -248,9 +250,7 @@ function resolveAIVideoProvider(model, payload = {}) {
   if (shouldUseAlibabaNativeHappyHorse(payload)) {
     return DOCKER_VIDEO_PROVIDER.ALIBABA_CLOUD;
   }
-  const dockerProvider = resolveDockerVideoProvider(normalizedModel, {
-    generationType: payload.generationType || payload.layerAiVideoType,
-  });
+  const dockerProvider = resolveDockerVideoProviderForPayload(normalizedModel, payload);
   if (dockerProvider) {
     return dockerProvider;
   }
@@ -267,6 +267,13 @@ function resolveAIVideoProvider(model, payload = {}) {
     return 'googleCloud';
   }
   return 'fal';
+}
+
+function resolveDockerVideoProviderForPayload(model, payload = {}) {
+  return resolveDockerVideoProvider(model, {
+    generationType: payload.generationType || payload.layerAiVideoType,
+    preferredProvider: payload.dockerVideoProviderOverride,
+  });
 }
 
 export function shouldUseAlibabaNativeHappyHorse(payload = {}) {
@@ -291,16 +298,12 @@ export function shouldUseAlibabaNativeHappyHorse(payload = {}) {
     return false;
   }
 
-  const dockerProvider = resolveDockerVideoProvider(payload.model, {
-    generationType: payload.generationType || payload.layerAiVideoType,
-  });
+  const dockerProvider = resolveDockerVideoProviderForPayload(payload.model, payload);
   return dockerProvider === DOCKER_VIDEO_PROVIDER.ALIBABA_CLOUD;
 }
 
 function shouldUseGoogleVeo3ForPayload(model, payload = {}) {
-  const dockerProvider = resolveDockerVideoProvider(model, {
-    generationType: payload.generationType || payload.layerAiVideoType,
-  });
+  const dockerProvider = resolveDockerVideoProviderForPayload(model, payload);
   if (dockerProvider) {
     return dockerProvider === DOCKER_VIDEO_PROVIDER.GOOGLE_CLOUD;
   }
@@ -817,6 +820,29 @@ function getProviderErrorStatus(error) {
   return Number.isFinite(numericStatus) ? numericStatus : null;
 }
 
+export function buildDockerI2V429AdapterFailoverPlan(request = {}, error) {
+  if (
+    getCurrentEnvironment() !== 'docker' ||
+    getProviderErrorStatus(error) !== 429 ||
+    resolveAIVideoRequestType(request.model, request) !== 'image_to_video' ||
+    Boolean(normalizeString(request.generationId)) ||
+    request.dockerAdapterFailoverAttempted === true ||
+    Math.max(0, Number(request.transientProviderErrorCount) || 0) > 0
+  ) {
+    return null;
+  }
+
+  const currentProvider = resolveDockerVideoProviderForPayload(request.model, request);
+  const nextProvider = resolveNextDockerVideoProvider(request.model, currentProvider, {
+    generationType: request.generationType || request.layerAiVideoType,
+  });
+  if (!currentProvider || !nextProvider || nextProvider === currentProvider) {
+    return null;
+  }
+
+  return { currentProvider, nextProvider };
+}
+
 export function isTransientProviderError(error) {
   const status = getProviderErrorStatus(error);
   if (status && TRANSIENT_PROVIDER_ERROR_STATUSES.has(status)) {
@@ -912,6 +938,54 @@ async function deferTransientProviderError(request, error, phase) {
     $set: update.set,
     $inc: update.inc,
   });
+}
+
+async function tryDockerI2V429AdapterFailover(request, error) {
+  const plan = buildDockerI2V429AdapterFailoverPlan(request, error);
+  if (!plan) {
+    return { attempted: false };
+  }
+
+  const failoverRequest = await AIVideoLayerGeneration.findByIdAndUpdate(request._id, {
+    $set: {
+      dockerAdapterFailoverAttempted: true,
+      dockerAdapterFailoverAttemptedAt: new Date(),
+      dockerAdapterFailoverFromProvider: plan.currentProvider,
+      dockerAdapterFailoverTriggerStatus: 429,
+      dockerVideoProviderOverride: plan.nextProvider,
+      expireAt: new Date(),
+      nextAttemptAfter: null,
+      rowLocked: false,
+    },
+  }, { new: true });
+
+  if (!failoverRequest) {
+    return { attempted: false };
+  }
+
+  console.warn(
+    `AI video provider ${plan.currentProvider} returned 429; retrying request ${request._id} ` +
+    `with ${plan.nextProvider}.`,
+  );
+
+  try {
+    await generateAIVideoLayer(failoverRequest);
+    return { attempted: true, succeeded: true };
+  } catch (failoverError) {
+    if (isTransientMongoError(failoverError)) {
+      throw failoverError;
+    }
+    console.error(
+      `AI video adapter failover to ${plan.nextProvider} failed for request ${request._id}:`,
+      getErrorLogPayload(failoverError),
+    );
+    return {
+      attempted: true,
+      succeeded: false,
+      error: failoverError,
+      request: failoverRequest,
+    };
+  }
 }
 
 function getPendingPollIntervalMs(model, payload = {}) {
@@ -1292,21 +1366,27 @@ async function generatePendingAiVideoLayerRequests() {
         throw e;
       }
       console.error('Error while starting a new INIT request:', getErrorLogPayload(e));
-      if (isTransientProviderError(e)) {
-        await deferTransientProviderError(request, e, 'submit');
+      const failoverResult = await tryDockerI2V429AdapterFailover(request, e);
+      if (failoverResult.succeeded) {
         continue;
       }
-      if (await fallbackGoogleNativeVeo3Generation(request, e?.message || 'Google native Veo submit failed.')) {
+      const failedRequest = failoverResult.request || request;
+      const providerError = failoverResult.error || e;
+      if (isTransientProviderError(providerError)) {
+        await deferTransientProviderError(failedRequest, providerError, 'submit');
         continue;
       }
-      if (await fallbackCustomAiVideoGeneration(request, e?.message || 'Custom image-to-video submit failed.')) {
+      if (await fallbackGoogleNativeVeo3Generation(failedRequest, providerError?.message || 'Google native Veo submit failed.')) {
         continue;
       }
-      await AIVideoLayerGeneration.findByIdAndUpdate(request._id, {
+      if (await fallbackCustomAiVideoGeneration(failedRequest, providerError?.message || 'Custom image-to-video submit failed.')) {
+        continue;
+      }
+      await AIVideoLayerGeneration.findByIdAndUpdate(failedRequest._id, {
         status: 'FAILED',
         rowLocked: false,
-        lastProviderFailureMessage: e?.message || String(e),
-        lastProviderFailureDetail: getErrorLogPayload(e),
+        lastProviderFailureMessage: providerError?.message || String(providerError),
+        lastProviderFailureDetail: getErrorLogPayload(providerError),
       });
     }
   }
@@ -1479,6 +1559,28 @@ async function generateAIVideoLayer(payload) {
     transientProviderErrorCount: 0,
     expireAt: new Date(),
   };
+  if (payload.dockerAdapterFailoverAttempted === true && payload.dockerVideoProviderOverride) {
+    const successfulProvider = resolveDockerVideoProviderForPayload(model, payload);
+    if (successfulProvider === payload.dockerVideoProviderOverride) {
+      let primaryPromoted = false;
+      try {
+        primaryPromoted = promoteDockerVideoProvider(model, successfulProvider);
+      } catch (promotionError) {
+        console.error(
+          `AI video generation succeeded with ${successfulProvider}, but primary promotion failed:`,
+          getErrorLogPayload(promotionError),
+        );
+      }
+      if (!primaryPromoted) {
+        console.warn(
+          `AI video generation succeeded with ${successfulProvider}, but Docker primary configuration was not updated.`,
+        );
+      }
+      generationUpdate.dockerAdapterFailoverSucceeded = true;
+      generationUpdate.dockerAdapterFailoverSucceededAt = new Date();
+      generationUpdate.dockerAdapterPrimaryPromoted = primaryPromoted;
+    }
+  }
   const pendingPollIntervalMs = getPendingPollIntervalMs(model, { ...payload, generationId });
   if (pendingPollIntervalMs) {
     generationUpdate.nextAttemptAfter = new Date(Date.now() + pendingPollIntervalMs);
