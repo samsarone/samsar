@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   findLayerIndexAtDisplayFrame,
   getLayerDisplayFrameRange,
+  resolveLayerSelectionAtDisplayFrame,
   resolveTimelineDuration,
 } from './studioPreviewTimeline.mjs';
 
@@ -19,6 +20,21 @@ test('selects the exact scene after a delayed playback frame jump', () => {
 test('switches scenes on the exact end-frame boundary', () => {
   assert.equal(getLayerDisplayFrameRange(layers[0]).endFrame, 60);
   assert.equal(findLayerIndexAtDisplayFrame(layers, 60), 1);
+});
+
+test('seek-driven selection converges on the dragged-to scene', () => {
+  const firstPass = resolveLayerSelectionAtDisplayFrame(layers, 3 * 30, 'scene-1');
+  assert.equal(firstPass.activeLayerIndex, 1);
+  assert.equal(firstPass.activeLayerId, 'scene-2');
+  assert.equal(firstPass.shouldUpdate, true);
+
+  const settledPass = resolveLayerSelectionAtDisplayFrame(
+    layers,
+    3 * 30,
+    firstPass.activeLayerId
+  );
+  assert.equal(settledPass.activeLayerIndex, 1);
+  assert.equal(settledPass.shouldUpdate, false);
 });
 
 test('uses the latest offset end for an offset-based timeline', () => {

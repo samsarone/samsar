@@ -43,7 +43,11 @@ export function hasHydratedStudioLayers(sessionDetails) {
   });
 }
 
-export function mergeStudioSessionRefresh(previousSessionDetails, incomingSessionDetails) {
+export function mergeStudioSessionRefresh(
+  previousSessionDetails,
+  incomingSessionDetails,
+  { requiredLayerIds = [] } = {}
+) {
   if (!previousSessionDetails || !incomingSessionDetails) {
     return incomingSessionDetails || previousSessionDetails;
   }
@@ -51,7 +55,22 @@ export function mergeStudioSessionRefresh(previousSessionDetails, incomingSessio
   const previousLayers = Array.isArray(previousSessionDetails.layers)
     ? previousSessionDetails.layers
     : [];
-  if (previousLayers.length > 0 && !hasHydratedStudioLayers(incomingSessionDetails)) {
+  const incomingLayers = Array.isArray(incomingSessionDetails.layers)
+    ? incomingSessionDetails.layers
+    : [];
+  const previousLayerIds = new Set(previousLayers.map(getLayerId).filter(Boolean));
+  const incomingLayerIds = new Set(incomingLayers.map(getLayerId).filter(Boolean));
+  const isMissingRequiredLocalLayer = requiredLayerIds.some((layerId) => {
+    const normalizedLayerId = layerId?.toString?.() || layerId;
+    return normalizedLayerId
+      && previousLayerIds.has(normalizedLayerId)
+      && !incomingLayerIds.has(normalizedLayerId);
+  });
+
+  if (
+    previousLayers.length > 0
+    && (!hasHydratedStudioLayers(incomingSessionDetails) || isMissingRequiredLocalLayer)
+  ) {
     return {
       ...previousSessionDetails,
       ...incomingSessionDetails,
@@ -67,10 +86,12 @@ export function resolveStudioSessionRefresh({
   incomingSessionDetails,
   currentLayerId,
   selectedLayerIndex = 0,
+  requiredLayerIds = [],
 } = {}) {
   const sessionDetails = mergeStudioSessionRefresh(
     previousSessionDetails,
-    incomingSessionDetails
+    incomingSessionDetails,
+    { requiredLayerIds }
   );
   const layers = Array.isArray(sessionDetails?.layers) ? sessionDetails.layers : [];
   const matchingLayerIndex = currentLayerId

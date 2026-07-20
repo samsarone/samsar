@@ -4404,6 +4404,37 @@ function getUserVideoLeadingSilenceTrimSeconds(audioLayer = {}) {
     : 0;
 }
 
+function prepareLayerActiveItemsForVideoReplacement(layer = {}) {
+  if (!layer.imageSession) {
+    layer.imageSession = {
+      activeItemList: [],
+      previousActiveItemList: null,
+    };
+  }
+
+  const currentActiveItemList = Array.isArray(layer.imageSession.activeItemList)
+    ? layer.imageSession.activeItemList
+    : [];
+
+  if (
+    !Array.isArray(layer.imageSession.previousActiveItemList)
+    || layer.imageSession.previousActiveItemList.length === 0
+  ) {
+    layer.imageSession.previousActiveItemList = currentActiveItemList;
+  }
+
+  // A selected video is the layer's visual base. Leaving a previous base image
+  // here causes the frame worker to draw it over every extracted video frame.
+  // Match generated-video replacement semantics: preserve supported text and
+  // configuration items, but remove renderable images, including legacy
+  // previous-scene end frames and duration-padding frames.
+  layer.imageSession.activeItemList = currentActiveItemList.filter(
+    (item) => item?.type === 'text' || item?.is_config_image
+  );
+
+  return layer.imageSession.activeItemList;
+}
+
 async function markUserVideoLayerUploadFailed({ sessionId, layerId, taskId, message }) {
   const sessionDataValue = await VideoSession.findOne({ _id: sessionId });
   if (!sessionDataValue) {
@@ -4517,6 +4548,8 @@ async function finalizeUserVideoLayerUpload({
   } finally {
     fsExtra.remove(uploadedVideoPath).catch(() => {});
   }
+
+  prepareLayerActiveItemsForVideoReplacement(layer);
 
   layer.aiVideoLayer = null;
   layer.aiVideoRemoteLink = null;
@@ -11626,22 +11659,7 @@ export async function addAiVideoLayerToSession(userId, payload) {
     throw new Error('Remove the uploaded or pending video before adding another video artefact to this layer.');
   }
   resetLayerVideoEditState(layer);
-  if (!layer.imageSession) {
-    layer.imageSession = {
-      activeItemList: [],
-      previousActiveItemList: null,
-    };
-  }
-
-  const currentActiveItemList = Array.isArray(layer.imageSession?.activeItemList)
-    ? layer.imageSession.activeItemList
-    : [];
-  if (!Array.isArray(layer.imageSession.previousActiveItemList) || layer.imageSession.previousActiveItemList.length === 0) {
-    layer.imageSession.previousActiveItemList = currentActiveItemList;
-  }
-  layer.imageSession.activeItemList = currentActiveItemList.filter(
-    (item) => item?.type === 'text' || item?.is_config_image
-  );
+  prepareLayerActiveItemsForVideoReplacement(layer);
 
   // Update the layer properties for AI video layer
 
@@ -13955,4 +13973,5 @@ export const __testOnly__ = {
   selectMediaDeliverySource,
   buildLocalGuestMediaObject,
   parseGuestMediaByteRange,
+  prepareLayerActiveItemsForVideoReplacement,
 };

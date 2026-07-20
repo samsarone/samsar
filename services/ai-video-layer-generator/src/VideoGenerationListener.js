@@ -144,6 +144,7 @@ import {
   prepareRankedFallbackImage,
   selectRankedFallbackImage,
 } from './utils/AIVideoRetryCandidates.js';
+import { shouldCarryGeneratedLastFrameToNextLayer } from './utils/NextLayerFrameCarry.js';
 
 const LIPSYNC_MODELS = ['SYNCLIPSYNC', 'LATENTSYNC', 'KLINGLIPSYNC', 'HUMMINGBIRDLIPSYNC', 'CREATIFYLIPSYNC'];
 const MAX_LIPSYNC_WAIT_MS = 5 * 60 * 1000; // fail when base never becomes ready
@@ -1671,7 +1672,7 @@ async function createGenerateVideoRecord(payload, localVideoPath) {
 
 async function processVideoGenerationCompletion(payload, localVideoLink) {
 
-  let { generationId, sessionId, _id, endImage, combineLayers,
+  let { generationId, sessionId, _id, combineLayers,
     aspectRatio, clipLayerToAiVideo, model, isAudioVideoGeneration, prompt,
   } = payload;
 
@@ -1887,7 +1888,8 @@ async function processVideoGenerationCompletion(payload, localVideoLink) {
 
 
 
-  if (endImage) {
+  const nextLayer = sessionData.layers[currentLayerIndex + 1] || null;
+  if (shouldCarryGeneratedLastFrameToNextLayer(payload, nextLayer)) {
     await replaceActiveItemNextLayer(payload, lastFrameGenerationPath, combineLayers);
   }
 
@@ -2546,7 +2548,7 @@ async function copyFrameToGenerations(lastFramePath, sessionId) {
 }
 
 async function replaceActiveItemNextLayer(payload, newImageRelativePath, combineLayers) {
-  const { sessionId, layerId, endImage, aspectRatio } = payload;
+  const { sessionId, layerId, aspectRatio } = payload;
 
   const canvasDimensions = getCanvasDimensionsForAspectRatio(aspectRatio);
 
@@ -2557,7 +2559,7 @@ async function replaceActiveItemNextLayer(payload, newImageRelativePath, combine
 
   let nextLayer = videoSession.layers[currentLayerIndex + 1];
 
-  if (nextLayer) {
+  if (nextLayer && shouldCarryGeneratedLastFrameToNextLayer(payload, nextLayer)) {
     const newId = `item_0`;
 
     const newImageName = newImageRelativePath.split('/').pop();
@@ -2606,7 +2608,9 @@ async function replaceActiveItemNextLayer(payload, newImageRelativePath, combine
       }
       nextLayer.imageSession.activeItemList = newActiveItemList;
     }
+    nextLayer.frameGenerationPending = true;
     videoSession.layers[currentLayerIndex + 1] = nextLayer;
+    videoSession.frameGenerationPending = true;
 
     await videoSession.save();
 

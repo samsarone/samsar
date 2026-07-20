@@ -62,6 +62,28 @@ export function findLayerIndexAtDisplayFrame(layers, displayFrame) {
   return 0;
 }
 
+export function resolveLayerSelectionAtDisplayFrame(
+  layers,
+  displayFrame,
+  currentLayerId = null
+) {
+  const activeLayerIndex = findLayerIndexAtDisplayFrame(layers, displayFrame);
+  const activeLayer = activeLayerIndex >= 0 ? layers[activeLayerIndex] : null;
+  const activeLayerId = activeLayer?._id?.toString?.()
+    || activeLayer?._id
+    || activeLayer?.id?.toString?.()
+    || activeLayer?.id
+    || null;
+  const normalizedCurrentLayerId = currentLayerId?.toString?.() || currentLayerId || null;
+
+  return {
+    activeLayer,
+    activeLayerId,
+    activeLayerIndex,
+    shouldUpdate: Boolean(activeLayer && activeLayerId !== normalizedCurrentLayerId),
+  };
+}
+
 export function resolveTimelineDuration(layers, sessionDetails = {}) {
   const explicitDuration = Number(sessionDetails?.totalDuration ?? sessionDetails?.duration);
   if (Number.isFinite(explicitDuration) && explicitDuration > 0) {

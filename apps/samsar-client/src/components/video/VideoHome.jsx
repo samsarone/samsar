@@ -22,8 +22,8 @@ import { getCanvasDimensionsForAspectRatio } from '../../utils/canvas.jsx';
 import { normalizeActiveTextItemListForCanvas } from '../../constants/TextConfig.jsx';
 import useUndoRedoState from '../../hooks/useUndoRedoState.js';
 import {
-  findLayerIndexAtDisplayFrame,
   getLayerDisplayFrameRanges,
+  resolveLayerSelectionAtDisplayFrame,
   resolveTimelineDuration,
 } from './util/studioPreviewTimeline.mjs';
 import {
@@ -829,6 +829,7 @@ export default function VideoHome() {
   const layerPollTimerRef = useRef(null);
   const layersRef = useRef([]);
   const currentLayerRef = useRef({});
+  const pendingLayerInsertionIdsRef = useRef(new Set());
   const activeItemListRef = useRef([]);
   const previousSyncedLayerIdRef = useRef(null);
   const sessionIdRef = useRef(null);
@@ -1025,6 +1026,7 @@ export default function VideoHome() {
     setRenderCompletedThisSession(false);
     layersRef.current = [];
     currentLayerRef.current = {};
+    pendingLayerInsertionIdsRef.current.clear();
     activeItemListRef.current = [];
     previousSyncedLayerIdRef.current = null;
 
@@ -1520,33 +1522,6 @@ export default function VideoHome() {
   }
 
   useEffect(() => {
-    if (isLayerSeeking || isVideoPreviewPlaying || !currentLayer) {
-      return;
-    }
-
-    const currentLayerIndex = layers.findIndex(
-      (layer) => getSessionLayerId(layer) === getSessionLayerId(currentLayer)
-    );
-    if (currentLayerIndex < 0) {
-      return;
-    }
-    const {
-      startFrame: newLayerSeek,
-      endFrame: currentLayerEndFrame,
-    } = getLayerDisplayFrameRanges(layers)[currentLayerIndex];
-    const resolvedCurrentLayerSeek = Number(currentLayerSeek);
-    const isSeekWithinCurrentLayer = Number.isFinite(resolvedCurrentLayerSeek)
-      && resolvedCurrentLayerSeek >= newLayerSeek
-      && resolvedCurrentLayerSeek < currentLayerEndFrame;
-
-    if (!isSeekWithinCurrentLayer) {
-      setCurrentLayerSeek(newLayerSeek);
-    }
-  }, [currentLayer, currentLayerSeek, isLayerSeeking, isVideoPreviewPlaying, layers]);
-
-
-
-  useEffect(() => {
     if (videoSessionDetails) {
       const defaultApplyAudioDucking = localStorage.getItem("applyAudioDucking") !== 'false';
       const resolvedApplyAudioDucking = typeof videoSessionDetails.applyAudioDucking === 'boolean'
@@ -1789,17 +1764,18 @@ export default function VideoHome() {
       return;
     }
 
-    const activeLayerIndex = findLayerIndexAtDisplayFrame(layers, currentLayerSeek);
-    const activeLayer = layers[activeLayerIndex];
-    const activeLayerId = getSessionLayerId(activeLayer);
-    const currentLayerId = getSessionLayerId(currentLayer);
-    if (!activeLayer || activeLayerId === currentLayerId) {
+    const selection = resolveLayerSelectionAtDisplayFrame(
+      layers,
+      currentLayerSeek,
+      getSessionLayerId(currentLayer)
+    );
+    if (!selection.shouldUpdate) {
       return;
     }
 
-    currentLayerRef.current = activeLayer;
-    setCurrentLayer(activeLayer);
-    setSelectedLayerIndex(activeLayerIndex);
+    currentLayerRef.current = selection.activeLayer;
+    setCurrentLayer(selection.activeLayer);
+    setSelectedLayerIndex(selection.activeLayerIndex);
   }, [currentLayer, currentLayerSeek, layers]);
 
 
@@ -1954,9 +1930,29 @@ export default function VideoHome() {
 
     const timer = setInterval(() => {
       axios.post(`${PROCESSOR_API_URL}/video_sessions/refresh_session_layers`, { id: id }, headers).then((dataRes) => {
-        const frameResponse = dataRes.data;
+        const incomingFrameResponse = dataRes.data;
+        const incomingLayerIds = new Set(
+          (Array.isArray(incomingFrameResponse?.layers) ? incomingFrameResponse.layers : [])
+            .map(getSessionLayerId)
+            .filter(Boolean)
+        );
+        pendingLayerInsertionIdsRef.current.forEach((layerId) => {
+          if (incomingLayerIds.has(layerId)) {
+            pendingLayerInsertionIdsRef.current.delete(layerId);
+          }
+        });
+        const refreshedSession = incomingFrameResponse
+          ? resolveStudioSessionRefresh({
+            previousSessionDetails: videoSessionDetailsRef.current,
+            incomingSessionDetails: incomingFrameResponse,
+            currentLayerId: getSessionLayerId(currentLayerRef.current),
+            selectedLayerIndex,
+            requiredLayerIds: Array.from(pendingLayerInsertionIdsRef.current),
+          })
+          : null;
+        const frameResponse = refreshedSession?.sessionDetails;
         if (frameResponse) {
-          const newLayers = Array.isArray(frameResponse.layers) ? frameResponse.layers : [];
+          const newLayers = refreshedSession.layers;
           const isGenerationPending = hasPendingFrameOrLayerGeneration(frameResponse);
           const previousLayers = layersRef.current;
           let layersUpdated = newLayers.length !== previousLayers.length;
@@ -2004,6 +2000,8 @@ export default function VideoHome() {
           }
 
           if (layersUpdated) {
+            videoSessionDetailsRef.current = frameResponse;
+            layersRef.current = newLayers;
             setLayers(newLayers);
             setVideoSessionDetails(frameResponse);
             setAudioLayers(frameResponse.audioLayers || []);
@@ -2016,6 +2014,7 @@ export default function VideoHome() {
                 (layer) => layer._id === currentLayerRef.current._id
               );
               if (refreshedCurrentLayer) {
+                currentLayerRef.current = refreshedCurrentLayer;
                 setCurrentLayer(refreshedCurrentLayer);
               }
             }
@@ -2163,11 +2162,22 @@ export default function VideoHome() {
         const sessionData = renderData.session;
 
         if (sessionData) {
+          const incomingLayerIds = new Set(
+            (Array.isArray(sessionData.layers) ? sessionData.layers : [])
+              .map(getSessionLayerId)
+              .filter(Boolean)
+          );
+          pendingLayerInsertionIdsRef.current.forEach((layerId) => {
+            if (incomingLayerIds.has(layerId)) {
+              pendingLayerInsertionIdsRef.current.delete(layerId);
+            }
+          });
           const refreshedSession = resolveStudioSessionRefresh({
             previousSessionDetails: videoSessionDetailsRef.current,
             incomingSessionDetails: sessionData,
             currentLayerId: getSessionLayerId(currentLayerRef.current),
             selectedLayerIndex,
+            requiredLayerIds: Array.from(pendingLayerInsertionIdsRef.current),
           });
           videoSessionDetailsRef.current = refreshedSession.sessionDetails;
           layersRef.current = refreshedSession.layers;
@@ -2281,16 +2291,6 @@ export default function VideoHome() {
       setAudioLayers(audioLayerMap);
     }
   }, [videoSessionDetails]);
-
-  useEffect(() => {
-
-
-
-    if (selectedLayerIndex && selectedLayerIndex === layers.length - 1) {
-
-      setSelectedLayer(layers[selectedLayerIndex]);
-    }
-  }, [layers, selectedLayerIndex]);
 
   const requestVideoLayerEdit = async ({ layerId, operations }) => {
     if (!requireEditableStudioAction()) {
@@ -3333,7 +3333,11 @@ export default function VideoHome() {
 
     setCanvasProcessLoading(true);
 
-    const currentLayerIndex = layers.findIndex(layer => layer._id === currentLayer._id);
+    const currentLayerId = getSessionLayerId(currentLayerRef.current)
+      || getSessionLayerId(currentLayer);
+    const currentLayerIndex = layersRef.current.findIndex(
+      (layer) => getSessionLayerId(layer) === currentLayerId
+    );
 
     const payload = {
       sessionId: id,
@@ -3347,20 +3351,37 @@ export default function VideoHome() {
     axios.post(`${PROCESSOR_API_URL}/video_sessions/add_layer`, payload, headers).then((dataRes) => {
       const resData = dataRes.data;
 
-      const videoSessionDetails = resData.session;
-      const newLayers = videoSessionDetails.layers;
+      const updatedSessionDetails = resData.session;
+      const newLayers = Array.isArray(updatedSessionDetails?.layers)
+        ? updatedSessionDetails.layers
+        : [];
       const newLayer = resData.layer;
-      const newLayerIndex = newLayers.findIndex(layer => layer._id === newLayer._id);
-      const insertedLayer = newLayers[newLayerIndex] || newLayer;
+      const newLayerId = getSessionLayerId(newLayer);
+      const newLayerIndex = newLayers.findIndex(
+        (layer) => getSessionLayerId(layer) === newLayerId
+      );
+      const insertedLayer = newLayerIndex >= 0 ? newLayers[newLayerIndex] : newLayer;
+
+      if (!updatedSessionDetails || !newLayerId || !insertedLayer || newLayerIndex < 0) {
+        throw new Error('The add-layer response did not include the inserted layer.');
+      }
+
+      pendingLayerInsertionIdsRef.current.add(newLayerId);
+      videoSessionDetailsRef.current = updatedSessionDetails;
+      layersRef.current = newLayers;
+      currentLayerRef.current = insertedLayer;
+      setVideoSessionDetails(updatedSessionDetails);
 
       activeItemListRef.current = [];
-      previousSyncedLayerIdRef.current = insertedLayer?._id?.toString?.() || null;
+      previousSyncedLayerIdRef.current = newLayerId;
       syncActiveItemList([], { resetHistory: true });
 
       const { startFrame: newLayerSeek } = getLayerDisplayFrameRange(insertedLayer);
       setCurrentLayerSeek(newLayerSeek);
 
       updateCurrentLayerAndLayerList(newLayers, newLayerIndex);
+      setTotalDuration(resolveTimelineDuration(newLayers, updatedSessionDetails));
+      setIsLayerGenerationPending(hasPendingFrameOrLayerGeneration(updatedSessionDetails));
       setIsCanvasDirty(true);
       setCanvasProcessLoading(false);
     }).catch(function () {
@@ -3875,6 +3896,7 @@ export default function VideoHome() {
 
 
   const updateCurrentLayerAndLayerList = (layerList, updatedLayerIndex, options = {}) => {
+    layersRef.current = layerList;
     setLayers(layerList);
 
     if (options.preserveCurrentLayer) {
@@ -3884,6 +3906,7 @@ export default function VideoHome() {
         : null;
 
       if (refreshedCurrentLayer) {
+        currentLayerRef.current = refreshedCurrentLayer;
         setCurrentLayer(refreshedCurrentLayer);
         const refreshedCurrentLayerIndex = layerList.findIndex(
           (layer) => layer?._id?.toString?.() === currentLayerId
@@ -3901,6 +3924,7 @@ export default function VideoHome() {
       updatedLayerIndex >= 0 &&
       updatedLayerIndex < layerList.length
     ) {
+      currentLayerRef.current = layerList[updatedLayerIndex];
       setCurrentLayer(layerList[updatedLayerIndex]);
       setSelectedLayerIndex(updatedLayerIndex);
       setLayerListRequestAdded(true);

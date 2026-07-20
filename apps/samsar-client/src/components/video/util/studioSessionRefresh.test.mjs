@@ -46,3 +46,43 @@ test('an unhydrated poll payload does not erase the current canvas layers', () =
   assert.equal(result.layers, previousLayers);
   assert.equal(result.sessionDetails.expressGenerationPending, true);
 });
+
+test('a stale poll payload cannot erase a newly inserted layer', () => {
+  const previousLayers = [
+    imageLayer('inserted', '/inserted.png'),
+    imageLayer('one', '/one.png'),
+  ];
+  const result = resolveStudioSessionRefresh({
+    previousSessionDetails: { layers: previousLayers, totalDuration: 4 },
+    incomingSessionDetails: {
+      layers: [imageLayer('one', '/one.png')],
+      totalDuration: 2,
+      frameGenerationPending: true,
+    },
+    currentLayerId: 'inserted',
+    selectedLayerIndex: 0,
+    requiredLayerIds: ['inserted'],
+  });
+
+  assert.equal(result.layers, previousLayers);
+  assert.equal(result.currentLayer._id, 'inserted');
+  assert.equal(result.sessionDetails.frameGenerationPending, true);
+});
+
+test('a refresh takes ownership once it includes the newly inserted layer', () => {
+  const incomingLayers = [
+    imageLayer('inserted', '/inserted-refreshed.png'),
+    imageLayer('one', '/one.png'),
+  ];
+  const result = resolveStudioSessionRefresh({
+    previousSessionDetails: {
+      layers: [imageLayer('inserted', '/inserted.png'), imageLayer('one', '/one.png')],
+    },
+    incomingSessionDetails: { layers: incomingLayers },
+    currentLayerId: 'inserted',
+    requiredLayerIds: ['inserted'],
+  });
+
+  assert.equal(result.layers, incomingLayers);
+  assert.equal(result.currentLayer.imageSession.activeItemList[0].src, '/inserted-refreshed.png');
+});

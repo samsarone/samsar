@@ -45,6 +45,7 @@ import HintTrackDisplay from './hints_toolbar/HintTrackDisplay.jsx';
 import { createPortal } from 'react-dom';
 import { FaChevronLeft, FaEye } from 'react-icons/fa6';
 import { FaRedo } from 'react-icons/fa';
+import { toast } from 'react-toastify';
 import SelectedTextToolbarDisplay from './text_toolbar/SelectedTextToolbarDisplay.jsx';
 import _ from 'lodash';
 import {
@@ -1405,6 +1406,9 @@ export default function FrameToolbar(props) {
 
   const [audioTrackListDisplay, setAudioTrackListDisplay] = useState([]);
   const pendingSelectedAudioLayerIdRef = useRef(null);
+  const audioSaveFeedbackTimerRef = useRef(null);
+  const [audioSaveState, setAudioSaveState] = useState('idle');
+  const [isSavingAudioLayers, setIsSavingAudioLayers] = useState(false);
   const [visualTrackListDisplay, setVisualTrackListDisplay] = useState([]);
   const [videoTrackListDisplay, setVideoTrackListDisplay] = useState([]);
   const [globalVideoTrackListDisplay, setGlobalVideoTrackListDisplay] = useState([]);
@@ -1437,6 +1441,12 @@ export default function FrameToolbar(props) {
       return visibleAudioDisplay;
     });
   }, [audioLayers, globalAudioLayers]);
+
+  useEffect(() => () => {
+    if (audioSaveFeedbackTimerRef.current) {
+      clearTimeout(audioSaveFeedbackTimerRef.current);
+    }
+  }, []);
 
   useEffect(() => {
     setAudioWaveformVisibilityByTrackId((previousValue) => {
@@ -3019,6 +3029,8 @@ export default function FrameToolbar(props) {
 
   const updateAudioLayerFromSlider = (audioLayerId, startTime, endTime, duration) => {
 
+    setAudioSaveState('idle');
+
     const updatedAudioTrackListDisplay = audioTrackListDisplay.map((audioTrack) => {
       if (audioTrack._id === audioLayerId) {
         return {
@@ -3580,6 +3592,7 @@ export default function FrameToolbar(props) {
 
   const handleVolumeChangeHandler = (e, trackId) => {
     const newVolume = parseFloat(e.target.value);
+    setAudioSaveState('idle');
     setAudioTrackListDisplay((prev) =>
       prev.map((track) =>
         track._id === trackId
@@ -3591,6 +3604,7 @@ export default function FrameToolbar(props) {
 
   const handleStartTimeChangeHandler = (e, trackId) => {
     const newStart = parseFloat(e.target.value);
+    setAudioSaveState('idle');
     setAudioTrackListDisplay((prev) =>
       prev.map((track) =>
         track._id === trackId
@@ -3602,6 +3616,7 @@ export default function FrameToolbar(props) {
 
   const handleEndTimeChangeHandler = (e, trackId) => {
     const newEnd = parseFloat(e.target.value);
+    setAudioSaveState('idle');
     setAudioTrackListDisplay((prev) =>
       prev.map((track) =>
         track._id === trackId
@@ -3616,6 +3631,7 @@ export default function FrameToolbar(props) {
       return;
     }
 
+    setAudioSaveState('idle');
     setAudioTrackListDisplay((prevAudioTracks) => prevAudioTracks.map((track) => {
       if (resolveAudioTrackId(track)?.toString() !== trackId.toString()) {
         return track;
@@ -3876,9 +3892,30 @@ export default function FrameToolbar(props) {
 
 
   const onUpdateAllAudioLayers = async (nextAudioTrackListDisplay) => {
+    if (isSavingAudioLayers) {
+      return;
+    }
+
     const audioTracksToUpdate = Array.isArray(nextAudioTrackListDisplay)
       ? nextAudioTrackListDisplay
       : audioTrackListDisplay;
+    const selectedTrackId = resolveAudioTrackId(
+      audioTracksToUpdate.find((audioTrack) => (
+        audioTrack.isDisplaySelected || audioTrack.isSelected
+      ))
+    );
+
+    if (selectedTrackId) {
+      pendingSelectedAudioLayerIdRef.current = selectedTrackId.toString();
+    }
+
+    if (audioSaveFeedbackTimerRef.current) {
+      clearTimeout(audioSaveFeedbackTimerRef.current);
+      audioSaveFeedbackTimerRef.current = null;
+    }
+
+    setIsSavingAudioLayers(true);
+    setAudioSaveState('saving');
 
     const normalAudioTracks = audioTracksToUpdate
       .filter((audioTrack) => !audioTrack.isGlobalAudioLayer)
@@ -3887,14 +3924,18 @@ export default function FrameToolbar(props) {
       .filter((audioTrack) => audioTrack.isGlobalAudioLayer)
       .map(stripAudioTrackDisplayState);
 
-    const normalResponse = typeof updateAllAudioLayersOneShot === 'function'
-      ? await updateAllAudioLayersOneShot(normalAudioTracks)
-      : { success: true, serverLayers: normalAudioTracks };
-    const globalResponse = typeof updateGlobalAudioLayers === 'function'
-      ? await updateGlobalAudioLayers(globalAudioTracks)
-      : { success: true, serverGlobalAudioLayers: globalAudioTracks };
+    try {
+      const normalResponse = typeof updateAllAudioLayersOneShot === 'function'
+        ? await updateAllAudioLayersOneShot(normalAudioTracks)
+        : { success: true, serverLayers: normalAudioTracks };
+      const globalResponse = typeof updateGlobalAudioLayers === 'function'
+        ? await updateGlobalAudioLayers(globalAudioTracks)
+        : { success: true, serverGlobalAudioLayers: globalAudioTracks };
 
-    if (normalResponse.success && globalResponse.success) {
+      if (!normalResponse?.success || !globalResponse?.success) {
+        throw normalResponse?.error || globalResponse?.error || new Error('Unable to update audio timing.');
+      }
+
       const officialLayers = Array.isArray(normalResponse.serverLayers)
         ? normalResponse.serverLayers
         : normalAudioTracks;
@@ -3902,11 +3943,27 @@ export default function FrameToolbar(props) {
         ? globalResponse.serverGlobalAudioLayers
         : globalAudioTracks;
       setAudioTrackListDisplay([
-        ...officialLayers.map((layer) => buildAudioTrackDisplayItem(layer, false, selectedAudioTrackId)),
-        ...officialGlobalLayers.map((layer) => buildAudioTrackDisplayItem(layer, true, selectedAudioTrackId)),
+        ...officialLayers.map((layer) => buildAudioTrackDisplayItem(layer, false, selectedTrackId)),
+        ...officialGlobalLayers.map((layer) => buildAudioTrackDisplayItem(layer, true, selectedTrackId)),
       ]);
-    } else {
-      alert("Failed to update! See console.");
+      setAudioSaveState('saved');
+      toast.success('Audio timing updated.', {
+        position: 'bottom-center',
+        className: 'custom-toast',
+      });
+      audioSaveFeedbackTimerRef.current = setTimeout(() => {
+        setAudioSaveState('idle');
+        audioSaveFeedbackTimerRef.current = null;
+      }, 3000);
+    } catch (error) {
+      pendingSelectedAudioLayerIdRef.current = null;
+      setAudioSaveState('error');
+      toast.error(error?.message || 'Unable to update audio timing.', {
+        position: 'bottom-center',
+        className: 'custom-toast',
+      });
+    } finally {
+      setIsSavingAudioLayers(false);
     }
   };
 
@@ -3967,10 +4024,17 @@ export default function FrameToolbar(props) {
       colorMode === 'light'
         ? 'h-8 w-[56px] rounded-lg border border-slate-200 bg-white/88 px-2 py-1 text-[11px] text-slate-700'
         : 'h-8 w-[56px] rounded-lg border border-[#1f2a3d] bg-[#111a2f]/82 px-2 py-1 text-[11px] text-slate-100';
-    const updateButtonClassName =
-      colorMode === 'light'
-        ? 'bg-sky-600 text-white hover:bg-sky-500'
-        : 'bg-cyan-400 text-[#041420] hover:bg-cyan-300';
+    const updateButtonClassName = audioSaveState === 'saved'
+      ? (colorMode === 'light'
+        ? 'bg-emerald-600 text-white hover:bg-emerald-500'
+        : 'bg-emerald-400 text-[#041420] hover:bg-emerald-300')
+      : audioSaveState === 'error'
+        ? (colorMode === 'light'
+          ? 'bg-rose-600 text-white hover:bg-rose-500'
+          : 'bg-rose-400 text-[#1f0707] hover:bg-rose-300')
+        : (colorMode === 'light'
+          ? 'bg-sky-600 text-white hover:bg-sky-500'
+          : 'bg-cyan-400 text-[#041420] hover:bg-cyan-300');
     const removeButtonClassName =
       colorMode === 'light'
         ? 'border border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100'
@@ -3993,14 +4057,35 @@ export default function FrameToolbar(props) {
       colorMode === 'light'
         ? 'border border-sky-200 bg-sky-50 text-sky-700'
         : 'border border-cyan-500/40 bg-cyan-500/12 text-cyan-200';
-    const audioStatusDotClass = dirtyCount > 0
-      ? (colorMode === 'light'
-        ? 'bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.4)]'
-        : 'bg-amber-300 shadow-[0_0_10px_rgba(252,211,77,0.45)]')
-      : (colorMode === 'light' ? 'bg-slate-300' : 'bg-slate-600');
-    const audioStatusTitle = dirtyCount > 0
-      ? `${dirtyCount} audio update${dirtyCount === 1 ? '' : 's'} pending`
-      : `${audioLayerView === 'global' ? 'Global' : 'Layer'} audio workspace`;
+    const audioStatusDotClass = isSavingAudioLayers
+      ? (colorMode === 'light' ? 'animate-pulse bg-sky-500' : 'animate-pulse bg-cyan-300')
+      : audioSaveState === 'saved'
+        ? (colorMode === 'light' ? 'bg-emerald-500' : 'bg-emerald-300')
+        : audioSaveState === 'error'
+          ? (colorMode === 'light' ? 'bg-rose-500' : 'bg-rose-300')
+          : dirtyCount > 0
+            ? (colorMode === 'light'
+              ? 'bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.4)]'
+              : 'bg-amber-300 shadow-[0_0_10px_rgba(252,211,77,0.45)]')
+            : (colorMode === 'light' ? 'bg-slate-300' : 'bg-slate-600');
+    const audioStatusTitle = isSavingAudioLayers
+      ? 'Saving audio timing…'
+      : audioSaveState === 'saved'
+        ? 'Audio timing updated'
+        : audioSaveState === 'error'
+          ? 'Audio timing update failed'
+          : dirtyCount > 0
+            ? `${dirtyCount} audio update${dirtyCount === 1 ? '' : 's'} pending`
+            : `${audioLayerView === 'global' ? 'Global' : 'Layer'} audio workspace`;
+    const audioUpdateButtonTitle = isSavingAudioLayers
+      ? 'Saving audio timing…'
+      : audioSaveState === 'saved'
+        ? 'Audio timing updated'
+        : audioSaveState === 'error'
+          ? 'Audio timing update failed. Try again.'
+          : dirtyCount > 0
+            ? 'Save audio timing'
+            : 'Audio timing is up to date';
     const metadataLabelClassName =
       colorMode === 'light'
         ? 'text-[9px] font-semibold uppercase tracking-[0.16em] text-slate-500'
@@ -4146,10 +4231,10 @@ export default function FrameToolbar(props) {
           <button
             type="button"
             onClick={() => onUpdateAllAudioLayers()}
-            disabled={dirtyCount === 0}
-            title="Update all audio layers"
-            aria-label="Update all audio layers"
-            className={`inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-[9px] transition disabled:opacity-50 ${updateButtonClassName}`}
+            disabled={dirtyCount === 0 || isSavingAudioLayers}
+            title={audioUpdateButtonTitle}
+            aria-label={audioUpdateButtonTitle}
+            className={`inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-[9px] transition disabled:opacity-50 ${isSavingAudioLayers ? 'animate-pulse' : ''} ${updateButtonClassName}`}
           >
             <FaCheck />
           </button>
@@ -4180,7 +4265,17 @@ export default function FrameToolbar(props) {
             ) : (
               <div className={audioTileClassName} title={audioStatusTitle}>
                 <span className={audioTileLabelClassName}>State</span>
-                <span className={audioTileValueClassName}>{dirtyCount > 0 ? 'Dirty' : 'Ready'}</span>
+                <span className={audioTileValueClassName}>
+                  {isSavingAudioLayers
+                    ? 'Saving'
+                    : audioSaveState === 'saved'
+                      ? 'Saved'
+                      : audioSaveState === 'error'
+                        ? 'Failed'
+                        : dirtyCount > 0
+                          ? 'Dirty'
+                          : 'Ready'}
+                </span>
               </div>
             )}
 
@@ -7098,16 +7193,6 @@ export default function FrameToolbar(props) {
   const handleSeekBarChange = (value) => {
     const nextFrame = Math.max(0, Math.round(Number(value) || 0));
     setCurrentLayerSeek(nextFrame);
-    const selectedLayerMeta = layerFrameMetadata.find((layerMeta) => (
-      nextFrame >= layerMeta.startFrame && nextFrame < layerMeta.endFrame
-    )) || layerFrameMetadata[layerFrameMetadata.length - 1];
-
-    if (!selectedLayerMeta) {
-      return;
-    }
-
-    setSelectedLayerIndex(selectedLayerMeta.originalIndex);
-    setSelectedLayer(selectedLayerMeta.layer);
   };
 
 

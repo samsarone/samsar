@@ -121,25 +121,6 @@ export default function FrameToolbarHorizontal({
   const handleSeek = (frame) => {
     const clamped = Math.max(0, Math.min(frame, totalFrames));
     setCurrentLayerSeek(clamped);
-
-    let acc = 0;
-    let idx = layers.length - 1;
-    for (let i = 0; i < layers.length; i++) {
-      const start = acc * fps;
-      const end = (acc + layers[i].duration) * fps;
-      if (clamped >= start && clamped < end) {
-        idx = i;
-        break;
-      }
-      acc += layers[i].duration;
-    }
-
-    // Update selection
-    setSelectedLayerIndex(idx);
-    setSelectedLayer(layers[idx]);
-
-    // Keep the newly-selected tile in view while scrubbing
-    ensureLayerIndexVisible(idx); // NEW
   };
 
   // --- dnd --------------------------------------------------------
