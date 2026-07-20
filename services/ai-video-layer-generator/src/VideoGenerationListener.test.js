@@ -349,6 +349,32 @@ test('an unreachable managed media tunnel defers provider submission for retry',
   assert.equal(update.set.status, 'INIT');
   assert.equal(update.set.rowLocked, false);
   assert.equal(update.set.transientProviderErrorPhase, 'submit');
+  assert.equal(update.set.transientProviderErrorExhausted, false);
+  assert.deepEqual(update.inc, { mediaTunnelRefreshErrorCount: 1 });
+  assert.equal(Object.hasOwn(update.inc, 'transientProviderErrorCount'), false);
+});
+
+test('managed media tunnel refreshes never exhaust the provider retry budget', () => {
+  const error = Object.assign(new Error('fresh provider media URL unavailable'), {
+    code: 'SAMSAR_MEDIA_TUNNEL_UNREACHABLE',
+    retryable: true,
+  });
+
+  const update = buildTransientProviderErrorUpdate(
+    {
+      status: 'INIT',
+      model: 'SYNCLIPSYNC',
+      transientProviderErrorCount: 99,
+      mediaTunnelRefreshErrorCount: 12,
+    },
+    error,
+    'submit',
+  );
+
+  assert.equal(update.set.status, 'INIT');
+  assert.equal(update.set.nextAttemptAfter instanceof Date, true);
+  assert.equal(update.set.transientProviderErrorExhausted, false);
+  assert.deepEqual(update.inc, { mediaTunnelRefreshErrorCount: 1 });
 });
 
 test('repeated transient provider errors are promoted to FAILED for normal retry handling', () => {

@@ -72,6 +72,7 @@ const aiVideoLayerGenerationSchema = new Schema({
   requestSubmitAt: Date,
   nextAttemptAfter: Date,
   transientProviderErrorCount: { type: Number, default: 0 },
+  mediaTunnelRefreshErrorCount: { type: Number, default: 0 },
   lastTransientProviderErrorAt: Date,
   lastTransientProviderErrorStatus: Number,
   lastTransientProviderErrorMessage: String,

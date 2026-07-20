@@ -495,7 +495,11 @@ class MediaTunnelController {
         healthPath: this.healthPath,
         healthMarker: this.healthMarker,
         timeoutMs: this.requestTimeoutMs,
-        allowPinnedDns: true,
+        // Do not publish a quick-tunnel hostname until normal container DNS can
+        // resolve and reach it. The pinned DoH fallback is useful for monitoring
+        // an already-published tunnel, but publishing through it can expose a
+        // hostname that every provider worker still sees as NXDOMAIN.
+        allowPinnedDns: false,
       })) {
         return true;
       }

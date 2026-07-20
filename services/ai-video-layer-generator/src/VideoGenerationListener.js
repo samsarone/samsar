@@ -872,21 +872,27 @@ function getRetryAfterMs(error) {
 }
 
 export function buildTransientProviderErrorUpdate(request = {}, error, phase = 'poll') {
+  const isManagedMediaTunnelError = error?.code === 'SAMSAR_MEDIA_TUNNEL_UNREACHABLE';
   const transientErrorCount = Math.max(0, Number(request.transientProviderErrorCount) || 0);
-  const nextTransientErrorCount = transientErrorCount + 1;
+  const mediaTunnelRefreshErrorCount = Math.max(0, Number(request.mediaTunnelRefreshErrorCount) || 0);
+  const retryErrorCount = isManagedMediaTunnelError
+    ? mediaTunnelRefreshErrorCount
+    : transientErrorCount;
+  const nextTransientErrorCount = transientErrorCount + (isManagedMediaTunnelError ? 0 : 1);
   const retryAfterMs = getRetryAfterMs(error);
   const exponentialBackoffMs = Math.min(
     MAX_PROVIDER_TRANSIENT_BACKOFF_MS,
-    MIN_PROVIDER_TRANSIENT_BACKOFF_MS * (2 ** Math.min(transientErrorCount, 3))
+    MIN_PROVIDER_TRANSIENT_BACKOFF_MS * (2 ** Math.min(retryErrorCount, 3))
   );
   const baseBackoffMs = Math.max(
     MIN_PROVIDER_TRANSIENT_BACKOFF_MS,
     Math.min(MAX_PROVIDER_TRANSIENT_BACKOFF_MS, retryAfterMs ?? exponentialBackoffMs)
   );
-  const shouldFailRequest = shouldFailRequestAfterTransientProviderError(
-    request,
-    nextTransientErrorCount
-  );
+  // A managed Docker tunnel outage happens before provider submission. It must
+  // never consume the provider retry budget or terminal-fail lip sync, sound
+  // effect, or base-video generation while the controller rotates the URL.
+  const shouldFailRequest = !isManagedMediaTunnelError &&
+    shouldFailRequestAfterTransientProviderError(request, nextTransientErrorCount);
   const backoffMs = shouldFailRequest
     ? 0
     : baseBackoffMs + (retryAfterMs == null ? Math.floor(Math.random() * PROVIDER_POLL_JITTER_MS) : 0);
@@ -907,9 +913,9 @@ export function buildTransientProviderErrorUpdate(request = {}, error, phase = '
       transientProviderErrorExhausted: shouldFailRequest,
       expireAt: new Date(),
     },
-    inc: {
-      transientProviderErrorCount: 1,
-    },
+    inc: isManagedMediaTunnelError
+      ? { mediaTunnelRefreshErrorCount: 1 }
+      : { transientProviderErrorCount: 1 },
     backoffMs,
   };
 }
