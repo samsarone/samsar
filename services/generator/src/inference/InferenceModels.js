@@ -125,7 +125,7 @@ export function getProviderModelForInferenceModel(value) {
     );
   }
   if (isQwenInferenceModel(value)) {
-    return DEFAULT_QWEN_37_MAX_MODEL;
+    return DEFAULT_QWEN_37_PLUS_MODEL;
   }
   return DEFAULT_INFERENCE_MODEL;
 }

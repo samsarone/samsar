@@ -8,18 +8,21 @@ import {
   getGroundedThemeForResourceJsonSystemPrompt,
 
   getPromptUpdaterWithSystemThemePrompt,
-  getMovieNarrativeExtractorSystemPrompt,
-  getGroundedMovieNarrativeExtractorSystemPrompt,
   getCharacterPromptWithSystemTheme,
   getThemeForResourceJsonSystemPromptAndImage,
   getMovieNarrativeExtractorSystemPromptForStartImage,
   getGroundedPromptUpdaterWithSystemThemePrompt,
   getGroundedCharacterPromptWithSystemTheme,
+  getTextToVideoNarrativeSystemPrompt,
 
 } from "./AgentCreatorSystemPrompts.js";
 
 import { getFunctionCallParamsForModel, getModelForUserInferenceModel } from './ModelUtils.js';
 import { createCompatibleChatCompletion } from "../ai_utils/OpenAICompat.js";
+import { createPublicInferenceError } from "../ai_utils/PublicInferenceError.js";
+import {
+  SPEECH_CHARACTER_LIMIT_EXCEEDED_CODE,
+} from '../movie_session/utils/TranscriptUtils.js';
 import {
   GPT_56_SOL_REASONING_EFFORT,
   getDefaultUserInferenceModel,
@@ -34,6 +37,8 @@ const openai = new OpenAI({ apiKey: API_KEY || '' });
 const GEMINI_THEME_NARRATIVE_REASONING_EFFORT = 'high';
 const DEFAULT_THEME_NARRATIVE_TIMEOUT_MS = 10 * 60 * 1000;
 const DEFAULT_QWEN_THEME_NARRATIVE_TIMEOUT_MS = 20 * 60 * 1000;
+const DEFAULT_NARRATIVE_SPEECH_REPAIR_MAX_ATTEMPTS = 3;
+const QWEN_NARRATIVE_SPEECH_REPAIR_MAX_TOKENS = 8192;
 const NarrativeGenderField = z.enum(['M', 'F', '']).describe(
   'For speech sounds, use exactly "M" or "F" uppercase; never use an empty string for speech. Use an empty string only for sound_effect items.'
 );
@@ -212,6 +217,8 @@ export async function sendSessionResourcesMessageRequest(messageList, inferenceM
       messageSummary: summarizeMessageList(messageList),
       openaiError: summarizeOpenAIError(error),
     });
+    const publicError = createPublicInferenceError(error, { model: modelName });
+    if (publicError) throw publicError;
     throw new Error('An error occurred while sending the message. Please try again.');
   }
 }
@@ -357,7 +364,8 @@ export async function sendSessionThemeMessageRequest(
         error?.code === 'INFERENCE_USAGE_OBSERVER_FAILED') {
         throw error;
       }
-      const isFinalAttempt = attempt >= maxRetries;
+      const publicError = createPublicInferenceError(error, { model: modelName });
+      const isFinalAttempt = attempt >= maxRetries || Boolean(publicError);
       const logPayload = {
         inferenceModel: userInferenceModel,
         model: modelName,
@@ -371,6 +379,9 @@ export async function sendSessionThemeMessageRequest(
         console.error('[MovieCreatorAgent][sendSessionThemeMessageRequest] OpenAI request failed', logPayload);
       } else {
         console.error('[MovieCreatorAgent][sendSessionThemeMessageRequest] OpenAI request failed (will retry)', logPayload);
+      }
+      if (publicError) {
+        throw publicError;
       }
       if (attempt < maxRetries) {
         const delay = Math.pow(2, attempt) * 5000; // exponential backoff: 5s, 10s, 20s
@@ -428,6 +439,8 @@ export async function sendAssistantMessageRequest(
       messageSummary: summarizeMessageList(messageList),
       openaiError: summarizeOpenAIError(error),
     });
+    const publicError = createPublicInferenceError(error, { model: callArgs?.model });
+    if (publicError) throw publicError;
     let errorString = 'An error occurred while sending the message. Please try again with a different message.'
     throw new Error(errorString);
   }
@@ -513,16 +526,16 @@ export async function extractGroundedMovieNarrativeFromThemeAndUserPrompt(
 ) {
 
 
-  const minimumSceneCount = Number(options?.minimumSceneCount);
-  const minimumSceneInstruction = Number.isSafeInteger(minimumSceneCount) && minimumSceneCount >= 2
-    ? `\n- The transcript must contain at least ${minimumSceneCount} scenes so it can support the requested branching depth.`
-    : '';
-  const narrativePrompt = getGroundedMovieNarrativeExtractorSystemPrompt(
-    duration,
-    videoModel,
-    false,
-    languageString,
-  ) + minimumSceneInstruction;
+  const narrativePrompt = typeof options?.narrativeSystemPrompt === 'string' &&
+    options.narrativeSystemPrompt.trim()
+    ? options.narrativeSystemPrompt
+    : getTextToVideoNarrativeSystemPrompt({
+      duration,
+      videoModel,
+      grounded: true,
+      languageString,
+      minimumSceneCount: options?.minimumSceneCount,
+    });
 
 
   const messageList = [
@@ -613,16 +626,16 @@ export async function extractMovieNarrativeFromThemeAndUserPrompt(
 ) {
 
 
-  const minimumSceneCount = Number(options?.minimumSceneCount);
-  const minimumSceneInstruction = Number.isSafeInteger(minimumSceneCount) && minimumSceneCount >= 2
-    ? `\n- The transcript must contain at least ${minimumSceneCount} scenes so it can support the requested branching depth.`
-    : '';
-  const narrativePrompt = getMovieNarrativeExtractorSystemPrompt(
-    duration,
-    videoModel,
-    false,
-    languageString,
-  ) + minimumSceneInstruction;
+  const narrativePrompt = typeof options?.narrativeSystemPrompt === 'string' &&
+    options.narrativeSystemPrompt.trim()
+    ? options.narrativeSystemPrompt
+    : getTextToVideoNarrativeSystemPrompt({
+      duration,
+      videoModel,
+      grounded: false,
+      languageString,
+      minimumSceneCount: options?.minimumSceneCount,
+    });
 
   const messageList = [
     {
@@ -681,9 +694,167 @@ export async function sendSessionPromptMessageRequest(messageList, themeObject, 
 
     return parsedMessage.promptList;
   } catch (error) {
+    const publicError = createPublicInferenceError(error, { model: userInferenceModel });
+    if (publicError) throw publicError;
     throw new Error('An error occurred while sending the message. Please try again.');
   }
 
+}
+
+
+export async function rewriteNarrativeSpeechItemToFitScene({
+  narrativeSystemPrompt,
+  scene,
+  speechItem,
+  maxCharacters,
+  inferenceModel = getDefaultUserInferenceModel(),
+  options = {},
+} = {}) {
+  const normalizedSystemPrompt = typeof narrativeSystemPrompt === 'string'
+    ? narrativeSystemPrompt
+    : '';
+  const normalizedMaxCharacters = Number(maxCharacters);
+  if (!normalizedSystemPrompt.trim()) {
+    throw new TypeError('narrativeSystemPrompt is required for speech repair.');
+  }
+  if (!scene || typeof scene !== 'object' || Array.isArray(scene)) {
+    throw new TypeError('scene is required for speech repair.');
+  }
+  if (!speechItem || typeof speechItem !== 'object' || Array.isArray(speechItem)) {
+    throw new TypeError('speechItem is required for speech repair.');
+  }
+  if (!Number.isSafeInteger(normalizedMaxCharacters) || normalizedMaxCharacters < 1) {
+    throw new TypeError('maxCharacters must be a positive integer for speech repair.');
+  }
+
+  const modelName = getModelForUserInferenceModel(inferenceModel);
+  const effectiveReasoningEffort = getThemeNarrativeReasoningEffort(modelName);
+  const configuredTimeoutMs = normalizePositiveInteger(
+    options.timeoutMs ?? process.env.OPENAI_NARRATIVE_TIMEOUT_MS,
+    isQwenInferenceModel(modelName)
+      ? DEFAULT_QWEN_THEME_NARRATIVE_TIMEOUT_MS
+      : DEFAULT_THEME_NARRATIVE_TIMEOUT_MS,
+  );
+  const timeoutMs = isQwenInferenceModel(modelName)
+    ? Math.max(configuredTimeoutMs, DEFAULT_QWEN_THEME_NARRATIVE_TIMEOUT_MS)
+    : configuredTimeoutMs;
+  const maxAttempts = normalizePositiveInteger(
+    options.maxAttempts ?? process.env.OPENAI_NARRATIVE_SPEECH_REPAIR_MAX_ATTEMPTS,
+    DEFAULT_NARRATIVE_SPEECH_REPAIR_MAX_ATTEMPTS,
+  );
+  const createCompletion = options.dependencies?.createCompatibleChatCompletion ||
+    createCompatibleChatCompletion;
+  const openaiClient = options.dependencies?.openaiClient || openai;
+  const sleep = options.dependencies?.sleep || ((delayMs) => new Promise((resolve) => {
+    setTimeout(resolve, delayMs);
+  }));
+  const SpeechAudioReplacement = z.object({
+    audio: z.string().trim().min(1),
+  });
+  const existingAudio = typeof speechItem.audio === 'string' ? speechItem.audio.trim() : '';
+  const existingCharacterCount = Array.from(existingAudio).length;
+  const messages = [
+    {
+      role: 'developer',
+      content: normalizedSystemPrompt,
+    },
+    {
+      role: 'developer',
+      content:
+        'The narrative is complete. Rewrite only the supplied speech item\'s "audio" text ' +
+        'so it fits the scene while preserving its meaning, language, factual content, ' +
+        `speaker, and tone. The replacement must contain no more than ${normalizedMaxCharacters} ` +
+        `characters, counting spaces and punctuation; the current line has ` +
+        `${existingCharacterCount} characters. Do not change or return any other narrative field. ` +
+        'For this correction, return only {"audio":"..."}; this focused response format ' +
+        'replaces the full-narrative response format above.',
+    },
+    {
+      role: 'user',
+      content: JSON.stringify({ scene, speechItem }),
+    },
+  ];
+  let lastError = null;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    const attemptMessages = lastError
+      ? [
+        ...messages,
+        {
+          role: 'developer',
+          content:
+            `The prior correction was invalid: ${String(lastError.message || lastError).slice(0, 1000)} ` +
+            `Try again and keep "audio" within ${normalizedMaxCharacters} characters.`,
+        },
+      ]
+      : messages;
+
+    try {
+      const response = await createCompletion(openaiClient, {
+        messages: attemptMessages,
+        model: modelName,
+        response_format: zodResponseFormat(
+          SpeechAudioReplacement,
+          'narrative_speech_repair',
+        ),
+        ...buildReasoningRequestOptions(effectiveReasoningEffort),
+        ...(isQwenInferenceModel(modelName)
+          ? { max_tokens: QWEN_NARRATIVE_SPEECH_REPAIR_MAX_TOKENS }
+          : {}),
+        timeout: timeoutMs,
+        maxRetries: 0,
+        externalPolling: true,
+        externalPollTimeoutMs: timeoutMs,
+        externalPollIntervalMs: process.env.SAMSAR_EXTERNAL_ASSISTANT_POLL_INTERVAL_MS,
+        externalRequestContext: buildExternalRequestAttemptContext(
+          options.externalRequestContext,
+          attempt,
+        ),
+        externalMaxRetries: 0,
+      });
+
+      await notifyInferenceResponse(options, response, {
+        stage: 'narrative_speech_repair',
+        attempt,
+        model: modelName,
+        sceneIndex: options.sceneIndex ?? speechItem.sceneIndex ?? null,
+        soundIndex: options.soundIndex ?? null,
+      });
+
+      const parsedJson = parseStructuredCompletion(response, 'narrative_speech_repair');
+      const parsed = SpeechAudioReplacement.safeParse(parsedJson);
+      if (!parsed.success) {
+        throw new Error('Narrative speech repair returned an invalid audio response.');
+      }
+      const replacementAudio = parsed.data.audio;
+      const replacementCharacterCount = Array.from(replacementAudio).length;
+      if (replacementCharacterCount > normalizedMaxCharacters) {
+        const error = new Error(
+          `Replacement speech has ${replacementCharacterCount} characters; ` +
+          `${normalizedMaxCharacters} are allowed.`,
+        );
+        error.code = SPEECH_CHARACTER_LIMIT_EXCEEDED_CODE;
+        throw error;
+      }
+
+      return { ...speechItem, audio: replacementAudio };
+    } catch (error) {
+      if (error?.inferenceUsageObserverFailed === true ||
+        error?.code === 'INFERENCE_USAGE_OBSERVER_FAILED') {
+        throw error;
+      }
+      const publicError = createPublicInferenceError(error, { model: modelName });
+      if (publicError) {
+        throw publicError;
+      }
+      lastError = error;
+      if (attempt < maxAttempts) {
+        await sleep(1000 * (2 ** (attempt - 1)));
+      }
+    }
+  }
+
+  throw lastError || new Error('Unable to repair narrative speech.');
 }
 
 
@@ -783,7 +954,8 @@ export async function sendNarrativePromptMessageRequest(
         error?.code === 'INFERENCE_USAGE_OBSERVER_FAILED') {
         throw error;
       }
-      const isFinalAttempt = attempt >= maxAttempts;
+      const publicError = createPublicInferenceError(error, { model: modelName });
+      const isFinalAttempt = attempt >= maxAttempts || Boolean(publicError);
       const logPayload = {
         inferenceModel,
         model: modelName,
@@ -800,7 +972,9 @@ export async function sendNarrativePromptMessageRequest(
         console.error('[MovieCreatorAgent][sendNarrativePromptMessageRequest] request failed (will retry)', logPayload);
       }
 
-      if (attempt === maxAttempts) {
+      if (publicError) {
+        throw publicError;
+      } else if (attempt === maxAttempts) {
         // After max attempts, throw the error
         throw new Error(
           'An error occurred while sending the message. Please try again.'

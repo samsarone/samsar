@@ -17,13 +17,13 @@ test('Qwen dispatch disables hidden SDK retries after media normalization', () =
   );
 });
 
-test('uses Qwen 3.7 Max for text and Qwen 3.7 Plus for image and video content', () => {
+test('uses Qwen 3.7 Plus for text, image, and video content', () => {
   const textRequest = {
     model: 'QWEN3.7',
     messages: [{ role: 'user', content: 'Write an image-rich scene.' }],
   };
   assert.equal(hasQwenMultimodalInput(textRequest), false);
-  assert.equal(resolveQwenProviderModel(textRequest, {}), 'qwen3.7-max');
+  assert.equal(resolveQwenProviderModel(textRequest, {}), 'qwen3.7-plus');
   assert.equal(
     resolveQwenProviderModel(textRequest, { ALIBABA_QWEN_TEXT_MODEL: 'qwen3.8-max-preview' }),
     'qwen3.8-max-preview',
@@ -84,7 +84,7 @@ test('preserves structured JSON contracts through DashScope JSON mode', () => {
     response_format: responseFormat,
   });
 
-  assert.equal(payload.model, 'qwen3.7-max');
+  assert.equal(payload.model, 'qwen3.7-plus');
   assert.equal(payload.enable_thinking, true);
   assert.equal(payload.messages[0].role, 'system');
   assert.equal(payload.messages[0].content[0].text, 'Return the narrative JSON.');

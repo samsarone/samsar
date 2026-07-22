@@ -29,5 +29,5 @@ test('normalizes Qwen 3.7 aliases to the canonical logical model', () => {
     assert.equal(normalizeInferenceModel(alias), QWEN_37_INFERENCE_MODEL);
     assert.equal(isQwenInferenceModel(alias), true);
   }
-  assert.equal(getProviderModelForInferenceModel(QWEN_37_INFERENCE_MODEL), 'qwen3.7-max');
+  assert.equal(getProviderModelForInferenceModel(QWEN_37_INFERENCE_MODEL), 'qwen3.7-plus');
 });

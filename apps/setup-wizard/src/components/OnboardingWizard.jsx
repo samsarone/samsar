@@ -76,7 +76,7 @@ const PROVIDERS = [
     field: 'alibabaApiKey',
     inputType: 'password',
     placeholder: 'Alibaba Cloud Model Studio API key',
-    requiredFor: 'Qwen 3.7 Max text inference, Qwen 3.7 Plus vision, Wan image generation, and Happy Horse video.',
+    requiredFor: 'Qwen 3.7 Plus inference, Wan image generation, and Happy Horse video.',
     pricingUrl: 'https://www.alibabacloud.com/help/en/model-studio/model-pricing',
     keysUrl: 'https://modelstudio.console.alibabacloud.com/',
     credentialLabel: 'API key',

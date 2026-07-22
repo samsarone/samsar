@@ -846,3 +846,33 @@ Final Response Format:
   )
 
 }
+
+export function getTextToVideoNarrativeSystemPrompt({
+  duration = 10,
+  videoModel,
+  grounded = false,
+  languageString,
+  minimumSceneCount = null,
+} = {}) {
+  const basePrompt = grounded
+    ? getGroundedMovieNarrativeExtractorSystemPrompt(
+      duration,
+      videoModel,
+      false,
+      languageString,
+    )
+    : getMovieNarrativeExtractorSystemPrompt(
+      duration,
+      videoModel,
+      false,
+      languageString,
+    );
+  const normalizedMinimumSceneCount = Number(minimumSceneCount);
+  if (!Number.isSafeInteger(normalizedMinimumSceneCount) || normalizedMinimumSceneCount < 2) {
+    return basePrompt;
+  }
+
+  return basePrompt +
+    `\n- The transcript must contain at least ${normalizedMinimumSceneCount} scenes ` +
+    'so it can support the requested branching depth.';
+}

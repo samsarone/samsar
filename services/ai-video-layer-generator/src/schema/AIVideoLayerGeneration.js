@@ -56,6 +56,11 @@ const aiVideoLayerGenerationSchema = new Schema({
   videoLink: String,  // video link for the video dubbing
   audioLink: String, // audio link for the video dubbing
   audioPrompt: String, // audio prompt for the video dubbing
+  lipSyncPromptGenerated: { type: Boolean, default: false },
+  lipSyncPromptSource: String,
+  lipSyncPromptGeneratedAt: Date,
+  lipSyncPromptSpeaker: String,
+  lipSyncPromptAudioLayerId: String,
 
   isExpressGeneration: { type: Boolean, default: false },
   isVideoGPTGeneration: { type: Boolean, default: false },

@@ -198,7 +198,7 @@ export function getProviderModelForInferenceModel(
   if (isQwenInferenceModel(value)) {
     return vision
       ? QWEN_37_PLUS_MODEL
-      : normalizeString(env?.[ALIBABA_QWEN_TEXT_MODEL_ENV]) || QWEN_37_MAX_MODEL;
+      : normalizeString(env?.[ALIBABA_QWEN_TEXT_MODEL_ENV]) || QWEN_37_PLUS_MODEL;
   }
 
   if (isGeminiInferenceModel(value)) {

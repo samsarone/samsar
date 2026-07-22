@@ -340,11 +340,15 @@ test('generates a full child movieResourceList with an exact cloned prefix and i
   assert.equal(capturedRequest.externalMaxRetries, 0);
   assert.match(
     capturedRequest.messages[0].content,
-    /25 characters for 5 second scenes/,
+    /28 characters or fewer for a 5-second scene/,
   );
   assert.match(
     capturedRequest.messages[0].content,
-    /40 characters for 7\.875 second scenes/,
+    /44 characters or fewer for a 7-second scene/,
+  );
+  assert.match(
+    capturedRequest.messages[0].content,
+    /spaces and punctuation count toward the limit/,
   );
   const payload = JSON.parse(capturedRequest.messages[1].content);
   assert.equal(payload.videoGenerationModel, 'COSMOS3SUPERI2V');
@@ -359,9 +363,9 @@ test('generates a full child movieResourceList with an exact cloned prefix and i
 
 test('retries a branch suffix whose speech exceeds the model-aware tolerance', async () => {
   const invalidSuffix = buildValidSuffix();
-  invalidSuffix.sounds[0].audio = 'a'.repeat(49);
+  invalidSuffix.sounds[0].audio = 'a'.repeat(56);
   const validSuffix = buildValidSuffix();
-  validSuffix.sounds[0].audio = 'a'.repeat(48);
+  validSuffix.sounds[0].audio = 'a'.repeat(55);
   const responses = [
     completion(JSON.stringify(invalidSuffix), 'QWEN3.7'),
     completion(JSON.stringify(validSuffix), 'QWEN3.7'),
@@ -387,7 +391,7 @@ test('retries a branch suffix whose speech exceeds the model-aware tolerance', a
     },
   });
 
-  assert.equal(result.sounds.find((sound) => sound.sceneIndex === 2).audio.length, 48);
+  assert.equal(result.sounds.find((sound) => sound.sceneIndex === 2).audio.length, 55);
   assert.equal(receipts.length, 2);
   assert.deepEqual(receipts.map((receipt) => receipt.attempt), [1, 2]);
 });

@@ -36,7 +36,7 @@ function restoreEnv() {
 
 test.afterEach(restoreEnv);
 
-test('uses Qwen 3.7 Max for text assistant history and normalizes Responses content', () => {
+test('uses Qwen 3.7 Plus for text assistant history and normalizes Responses content', () => {
   const { payload } = buildQwenChatRequest({
     model: 'QWEN3.7',
     messages: [
@@ -46,7 +46,7 @@ test('uses Qwen 3.7 Max for text assistant history and normalizes Responses cont
     ],
   });
 
-  assert.equal(payload.model, 'qwen3.7-max');
+  assert.equal(payload.model, 'qwen3.7-plus');
   assert.equal(payload.enable_thinking, true);
   assert.equal(payload.messages[0].role, 'system');
   assert.deepEqual(payload.messages[1].content[0], { type: 'text', text: 'Prior reply.' });
@@ -102,7 +102,7 @@ test('uses Qwen 3.7 Plus for a nonempty assistant frame image', () => {
   });
 
   assert.equal(vision.payload.model, 'qwen3.7-plus');
-  assert.equal(emptyImage.payload.model, 'qwen3.7-max');
+  assert.equal(emptyImage.payload.model, 'qwen3.7-plus');
   assert.deepEqual(vision.payload.messages[0].content[1], {
     type: 'image_url',
     image_url: { url: 'data:image/png;base64,abc' },

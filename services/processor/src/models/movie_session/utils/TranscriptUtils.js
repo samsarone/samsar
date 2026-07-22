@@ -3,10 +3,13 @@ import {
   VIDEO_MODEL_PRICES,
 } from '../../../consts/ModelPrices.js';
 import { normalizeTTSSpeakerGender } from '../../../consts/TTSSpeakers.js';
-import { getMaxSpeechCharacterLimitForModel } from './ModelUtils.js';
+import {
+  getMaxSpeechCharacterLimitForModel,
+  getSpeechCharacterLimitForDuration,
+} from './ModelUtils.js';
 
 const TEXT_TO_VIDEO_NARRATIVE_DURATION_TOLERANCE_SECONDS = 30;
-const TEXT_TO_VIDEO_SPEECH_CHARACTER_TOLERANCE_RATIO = 0.2;
+export const SPEECH_CHARACTER_LIMIT_EXCEEDED_CODE = 'SPEECH_CHARACTER_LIMIT_EXCEEDED';
 
 function getDurationUnitsForVideoGenerationModel(modelKey, framesPerSecond = undefined) {
   if (!modelKey) {
@@ -242,10 +245,10 @@ function repairAdjacentForwardSceneIndexMismatches(scenes, sounds, { enabled = f
   return { sounds: repairedSounds, repairCount };
 }
 
-function normalizeNarrativeSounds(sounds) {
-  const normalizedSounds = [];
+function normalizeNarrativeSoundEntries(sounds) {
+  const normalizedEntries = [];
 
-  sounds.forEach((sound) => {
+  sounds.forEach((sound, sourceSoundIndex) => {
     const hasSceneIndex = sound && Object.prototype.hasOwnProperty.call(sound, 'sceneIndex');
     if (!hasSceneIndex) {
       return;
@@ -262,10 +265,14 @@ function normalizeNarrativeSounds(sounds) {
       normalizedSound.gender = normalizedGender;
     }
 
-    normalizedSounds.push(normalizedSound);
+    normalizedEntries.push({ sound: normalizedSound, sourceSoundIndex });
   });
 
-  return normalizedSounds;
+  return normalizedEntries;
+}
+
+function normalizeNarrativeSounds(sounds) {
+  return normalizeNarrativeSoundEntries(sounds).map(({ sound }) => sound);
 }
 
 function backfillMissingSpeechGenders(scenes, sounds) {
@@ -508,26 +515,27 @@ function validateTextToVideoNarrativeContent(scenes, sounds) {
 }
 
 function validateSpeechCharacterLimits(
+  scenes,
   sounds,
   model,
   framesPerSecond,
-  { languageString } = {},
+  { languageString, sourceSoundIndexes = [] } = {},
 ) {
   const maximum = getMaxSpeechCharacterLimitForModel(
     model,
     languageString,
     framesPerSecond,
   );
-  if (!maximum) return [];
+  if (!maximum) return { errors: [], violations: [] };
 
-  const toleratedMaxCharacters = Math.floor(
-    maximum.maxCharacters * (1 + TEXT_TO_VIDEO_SPEECH_CHARACTER_TOLERANCE_RATIO),
-  );
+  const toleratedMaxCharacters = maximum.validationMaxCharacters ?? maximum.maxCharacters;
+  const maximumPromptCharacters = maximum.maxCharacters;
+  const overshootPercentage = Math.round((maximum.overshootRatio || 0) * 100);
   const modelLabel = typeof model === 'string' && model.trim()
     ? model.trim()
     : 'the selected video model';
 
-  return sounds.flatMap((sound) => {
+  const violations = sounds.flatMap((sound, soundIndex) => {
     if (normalizeComparableString(sound?.type) !== 'speech' ||
       typeof sound?.audio !== 'string') {
       return [];
@@ -537,13 +545,43 @@ function validateSpeechCharacterLimits(
     if (characterCount <= toleratedMaxCharacters) return [];
 
     const sceneIndex = parseSceneIndex(sound.sceneIndex);
-    return [
+    const sceneDuration = sceneIndex === null
+      ? getSoundLayerDuration(sound)
+      : scenes[sceneIndex]?.duration ?? getSoundLayerDuration(sound);
+    const sceneLimit = getSpeechCharacterLimitForDuration(
+      model,
+      sceneDuration,
+      languageString,
+      framesPerSecond,
+    ) || maximum;
+    const sourceSoundIndex = Number.isInteger(sourceSoundIndexes[soundIndex])
+      ? sourceSoundIndexes[soundIndex]
+      : soundIndex;
+    const message =
       `Speech item at scene ${sceneIndex ?? 'unknown'} has ${characterCount} characters; ` +
-      `${modelLabel} allows ${maximum.maxCharacters} characters at its maximum ` +
+      `${modelLabel} allows ${maximumPromptCharacters} characters at its maximum ` +
       `${maximum.durationSeconds}-second duration (${toleratedMaxCharacters} characters with ` +
-      `${TEXT_TO_VIDEO_SPEECH_CHARACTER_TOLERANCE_RATIO * 100}% tolerance).`,
-    ];
+      `${overshootPercentage}% tolerance).`;
+    return [{
+      code: SPEECH_CHARACTER_LIMIT_EXCEEDED_CODE,
+      message,
+      path: ['sounds', sourceSoundIndex, 'audio'],
+      soundIndex: sourceSoundIndex,
+      sceneIndex,
+      actualCharacters: characterCount,
+      promptMaxCharacters: sceneLimit.maxCharacters,
+      validationMaxCharacters: toleratedMaxCharacters,
+      excessCharacters: characterCount - toleratedMaxCharacters,
+      limitDurationSeconds: sceneLimit.durationSeconds,
+      validationLimitDurationSeconds: maximum.durationSeconds,
+      overshootRatio: maximum.overshootRatio || 0,
+    }];
   });
+
+  return {
+    errors: violations.map(({ message }) => message),
+    violations,
+  };
 }
 
 export function validateImageToVideoNarrative(narrativeJson, numScenes, model, framesPerSecond = undefined) {
@@ -583,22 +621,32 @@ export function validateTextToVideoNarrative(narrativeJson, model, framesPerSeco
       valid: false,
       errors: ['Missing or invalid `scenes` array.'],
       narrativeJson: { scenes: [], sounds: [] },
+      violations: { speechCharacterLimits: [] },
     };
   }
 
   let scenes = [...narrativeJson.scenes];
-  let sounds = Array.isArray(narrativeJson?.sounds) ? [...narrativeJson.sounds] : [];
+  const rawSounds = Array.isArray(narrativeJson?.sounds) ? [...narrativeJson.sounds] : [];
+  const normalizedSoundEntries = normalizeNarrativeSoundEntries(rawSounds);
+  const sourceSoundIndexes = normalizedSoundEntries.map(({ sourceSoundIndex }) => sourceSoundIndex);
+  let sounds = normalizedSoundEntries.map(({ sound }) => sound);
 
-  sounds = normalizeNarrativeSounds(sounds);
   const adjacentRepair = repairAdjacentForwardSceneIndexMismatches(scenes, sounds, {
     enabled: options.repairAdjacentSceneIndex === true,
   });
   sounds = adjacentRepair.sounds;
   sounds = backfillMissingSpeechGenders(scenes, sounds);
+  const speechCharacterValidation = validateSpeechCharacterLimits(
+    scenes,
+    sounds,
+    model,
+    framesPerSecond,
+    { ...options, sourceSoundIndexes },
+  );
 
   const errors = [
     ...validateTextToVideoNarrativeContent(scenes, sounds),
-    ...validateSpeechCharacterLimits(sounds, model, framesPerSecond, options),
+    ...speechCharacterValidation.errors,
     ...validateSpeechGenders(scenes, sounds),
     ...validateNoSpeechSoundEffectSceneConflicts(sounds),
   ];
@@ -614,6 +662,9 @@ export function validateTextToVideoNarrative(narrativeJson, model, framesPerSeco
     valid: errors.length === 0,
     errors,
     narrativeJson: normalizedNarrativeJson,
+    violations: {
+      speechCharacterLimits: speechCharacterValidation.violations,
+    },
     duration: {
       requested: requestedDuration,
       actual: actualDuration,

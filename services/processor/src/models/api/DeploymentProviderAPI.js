@@ -37,7 +37,7 @@ export const DEPLOYMENT_PROVIDER_CAPABILITIES = Object.freeze({
   },
   alibabaCloud: {
     label: 'Alibaba Cloud',
-    requiredFor: ['Qwen 3.7 Max text and Qwen 3.7 Plus vision', 'Wan2.7 Pro image', 'Happy Horse 1.1 video'],
+    requiredFor: ['Qwen 3.7 Plus inference', 'Wan2.7 Pro image', 'Happy Horse 1.1 video'],
     models: ['QWEN3.7', 'WAN2.7PRO', 'HAPPYHORSEI2V'],
     actions: ['chat', 'assistant', 'image', 'video'],
   },

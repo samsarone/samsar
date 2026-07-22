@@ -147,6 +147,10 @@ import {
   selectRankedFallbackImage,
 } from './utils/AIVideoRetryCandidates.js';
 import { shouldCarryGeneratedLastFrameToNextLayer } from './utils/NextLayerFrameCarry.js';
+import {
+  createExpressLipSyncPrompt,
+  resolveExpressLipSyncPromptContext,
+} from './utils/ExpressLipSyncPrompt.js';
 
 const LIPSYNC_MODELS = ['SYNCLIPSYNC', 'LATENTSYNC', 'KLINGLIPSYNC', 'HUMMINGBIRDLIPSYNC', 'CREATIFYLIPSYNC'];
 const MAX_LIPSYNC_WAIT_MS = 5 * 60 * 1000; // fail when base never becomes ready
@@ -793,6 +797,73 @@ export async function getInferenceSettingsForSession(
 export async function getInferenceModelForSession(videoSession, request = {}, fallbackRequest = {}) {
   const settings = await getInferenceSettingsForSession(videoSession, request, fallbackRequest);
   return settings.model;
+}
+
+async function prepareExpressLipSyncPrompt(payload = {}) {
+  if (payload?.lipSyncPromptGenerated === true && normalizeString(payload?.prompt)) {
+    return payload;
+  }
+
+  const sessionData = await VideoSession.findById(payload.sessionId);
+  if (!sessionData) {
+    throw new Error(`VideoSession with ID ${payload.sessionId} not found while building lip sync prompt.`);
+  }
+
+  const context = resolveExpressLipSyncPromptContext(sessionData, payload);
+  if (!context) {
+    throw new Error(
+      `Layer ${payload.layerId || 'unknown'} was not found while building the Express lip sync prompt.`,
+    );
+  }
+
+  const inferenceSettings = await getInferenceSettingsForSession(sessionData, payload);
+  const promptResult = await createExpressLipSyncPrompt({
+    startingFrameDescription: context.startingFrameDescription,
+    sceneDescription: context.sceneDescription,
+    speechItem: {
+      characterName: context.speakerName,
+      characterDescription: context.speakerDescription,
+      text: context.speechText,
+    },
+    userInferenceModel: inferenceSettings.model,
+    auditContext: {
+      userId: payload.userId || sessionData.userId,
+      sessionId: payload.sessionId,
+      layerId: payload.layerId,
+      audioLayerId: context.audioLayerId,
+      localRequestId: `${payload.sessionId}:${payload.layerId}:lip_sync_prompt`,
+      source: 'express_lip_sync_inference',
+      selectedInferenceModelAuthorization: inferenceSettings.authorization,
+    },
+  });
+
+  const generatedAt = new Date();
+  payload.prompt = promptResult.prompt;
+  payload.lipSyncPromptGenerated = true;
+  payload.lipSyncPromptSource = promptResult.source;
+  payload.lipSyncPromptGeneratedAt = generatedAt;
+
+  await AIVideoLayerGeneration.findByIdAndUpdate(payload._id, {
+    $set: {
+      prompt: promptResult.prompt,
+      lipSyncPromptGenerated: true,
+      lipSyncPromptSource: promptResult.source,
+      lipSyncPromptGeneratedAt: generatedAt,
+      lipSyncPromptSpeaker: context.speakerName || null,
+      lipSyncPromptAudioLayerId: context.audioLayerId || null,
+    },
+  });
+
+  console.log('[lip_sync][prompt_generation] prepared speaker-targeted Express lip sync prompt', {
+    sessionId: payload.sessionId,
+    layerId: payload.layerId,
+    audioLayerId: context.audioLayerId || null,
+    speaker: context.speakerName || null,
+    source: promptResult.source,
+    lineCount: promptResult.prompt.split('\n').filter(Boolean).length,
+  });
+
+  return payload;
 }
 
 export function buildBaseGenerationTerminalFailureUpdate(currentLayer = {}, failureMessage) {
@@ -1456,6 +1527,10 @@ async function generateAIVideoLayer(payload) {
 
   if (numRetries > 1) {
     console.error('RETRYING...' + numRetries);
+  }
+
+  if (payload.isExpressGeneration === true && LIPSYNC_MODELS.includes(model)) {
+    payload = await prepareExpressLipSyncPrompt(payload);
   }
 
   // Resolve only media that the selected public adapter will actually receive.

@@ -3,7 +3,6 @@ import { getAccessibleMediaUrlForProvider } from '../utils/MediaReferenceUtils.j
 import { normalizeProviderMediaPayload } from '../utils/ProviderMediaPayload.js';
 
 import {
-  DEFAULT_QWEN_37_MAX_MODEL,
   DEFAULT_QWEN_37_PLUS_MODEL,
 } from './InferenceModels.js';
 
@@ -137,7 +136,7 @@ export function resolveQwenProviderModel(request = {}, env = process.env) {
   return normalizeString(
     env.ALIBABA_QWEN_TEXT_MODEL || env.QWEN_37_MAX_MODEL || env.ALIBABA_QWEN_37_MAX_MODEL,
   ) ||
-    DEFAULT_QWEN_37_MAX_MODEL;
+    DEFAULT_QWEN_37_PLUS_MODEL;
 }
 
 export function buildQwenChatCompletionPayload(chatRequest = {}, env = process.env) {

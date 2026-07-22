@@ -255,7 +255,7 @@ export function labelOptionsForDeploymentInferenceProviders(
   const qwenLabel = qwenProvider === "alibabaCloud"
     ? providerEndpointTypes?.alibabaCloud === "token_plan"
       ? "Qwen 3.8 Max Preview / Qwen 3.7 Plus Vision"
-      : "Qwen 3.7 Max / Plus Vision"
+      : "Qwen 3.7 Plus"
     : "Qwen 3.7 Plus";
 
   return options.map((option) => (

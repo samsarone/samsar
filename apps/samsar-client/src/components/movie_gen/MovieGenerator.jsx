@@ -217,7 +217,12 @@ export default function MovieGenerator() {
         } else if (resData.status === 'FAILED') {
           clearInterval(interval);
           setIsGenerationPending(false);
-          setErrorMessage({ error: 'Video generation failed.' });
+          setErrorMessage({
+            error: resData.expressGenerationError ||
+              resData.message ||
+              resData.error ||
+              'Video generation failed.',
+          });
         }
       } catch  {
 

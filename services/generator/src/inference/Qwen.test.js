@@ -9,13 +9,13 @@ import {
   resolveQwenProviderModel,
 } from './Qwen.js';
 
-test('uses Qwen 3.7 Max for text and Qwen 3.7 Plus for multimodal content', () => {
+test('uses Qwen 3.7 Plus for text and multimodal content', () => {
   const textRequest = {
     model: 'QWEN3.7',
     messages: [{ role: 'user', content: 'Write a scene.' }],
   };
   assert.equal(hasQwenMultimodalInput(textRequest), false);
-  assert.equal(resolveQwenProviderModel(textRequest, {}), 'qwen3.7-max');
+  assert.equal(resolveQwenProviderModel(textRequest, {}), 'qwen3.7-plus');
   assert.equal(
     resolveQwenProviderModel(textRequest, { ALIBABA_QWEN_TEXT_MODEL: 'qwen3.8-max-preview' }),
     'qwen3.8-max-preview',
@@ -127,7 +127,7 @@ test('preserves the structured JSON contract and normalizes Responses content', 
     response_format: responseFormat,
   }, {});
 
-  assert.equal(payload.model, 'qwen3.7-max');
+  assert.equal(payload.model, 'qwen3.7-plus');
   assert.equal(payload.messages[0].role, 'system');
   assert.equal(payload.messages[0].content[0].text, 'Return JSON.');
   assert.match(payload.messages[0].content[1].text, /JSON Schema exactly/);

@@ -630,9 +630,9 @@ function createCosmosNarrativeWithSpeech(audio, duration = 7.875) {
   };
 }
 
-test('validateTextToVideoNarrative allows the model maximum speech limit plus 20 percent', () => {
+test('validateTextToVideoNarrative allows the unified model boundary with 25 percent overshoot', () => {
   const result = validateTextToVideoNarrative(
-    createCosmosNarrativeWithSpeech('a'.repeat(48), 5),
+    createCosmosNarrativeWithSpeech('a'.repeat(55), 5),
     'COSMOS3SUPERI2V',
     24,
   );
@@ -640,38 +640,72 @@ test('validateTextToVideoNarrative allows the model maximum speech limit plus 20
   assert.equal(result.valid, true);
 });
 
-test('validateTextToVideoNarrative rejects speech beyond the model maximum plus 20 percent', () => {
+test('validateTextToVideoNarrative rejects speech beyond the unified model boundary', () => {
+  const narrative = createCosmosNarrativeWithSpeech('a'.repeat(56), 5);
+  narrative.sounds.unshift({
+    type: 'sound_effect',
+    audio: 'A deliberately ignored sound without a scene index.',
+  });
   const result = validateTextToVideoNarrative(
-    createCosmosNarrativeWithSpeech('a'.repeat(49), 5),
+    narrative,
     'COSMOS3SUPERI2V',
     24,
   );
 
   assert.equal(result.valid, false);
   assert.ok(result.errors.some((error) => (
-    error.includes('scene 0 has 49 characters') &&
-    error.includes('allows 40 characters') &&
-    error.includes('48 characters with 20% tolerance')
+    error.includes('scene 0 has 56 characters') &&
+    error.includes('allows 44 characters') &&
+    error.includes('55 characters with 25% tolerance')
   )));
+  const [violation] = result.violations.speechCharacterLimits;
+  assert.deepEqual(
+    {
+      code: violation.code,
+      path: violation.path,
+      soundIndex: violation.soundIndex,
+      sceneIndex: violation.sceneIndex,
+      actualCharacters: violation.actualCharacters,
+      promptMaxCharacters: violation.promptMaxCharacters,
+      validationMaxCharacters: violation.validationMaxCharacters,
+      excessCharacters: violation.excessCharacters,
+      limitDurationSeconds: violation.limitDurationSeconds,
+      validationLimitDurationSeconds: violation.validationLimitDurationSeconds,
+      overshootRatio: violation.overshootRatio,
+    },
+    {
+      code: 'SPEECH_CHARACTER_LIMIT_EXCEEDED',
+      path: ['sounds', 1, 'audio'],
+      soundIndex: 1,
+      sceneIndex: 0,
+      actualCharacters: 56,
+      promptMaxCharacters: 28,
+      validationMaxCharacters: 55,
+      excessCharacters: 1,
+      limitDurationSeconds: 5,
+      validationLimitDurationSeconds: 7.875,
+      overshootRatio: 0.25,
+    },
+  );
 });
 
 test('validateTextToVideoNarrative derives the speech limit from the supplied frame rate', () => {
   const result = validateTextToVideoNarrative(
-    createCosmosNarrativeWithSpeech('a'.repeat(39), 6.3),
+    createCosmosNarrativeWithSpeech('a'.repeat(46), 6.3),
     'COSMOS3SUPERI2V',
     30,
   );
 
   assert.equal(result.valid, false);
   assert.ok(result.errors.some((error) => (
-    error.includes('allows 32 characters') &&
-    error.includes('38 characters with 20% tolerance')
+    error.includes('allows 36 characters') &&
+    error.includes('45 characters with 25% tolerance')
   )));
 });
 
 test('validateTextToVideoNarrative uses the prompt language character rate', () => {
   const result = validateTextToVideoNarrative(
-    createCosmosNarrativeWithSpeech('ก'.repeat(39)),
+    createCosmosNarrativeWithSpeech('ก'.repeat(46)),
     'COSMOS3SUPERI2V',
     24,
     { languageString: 'Thai' },
@@ -679,7 +713,7 @@ test('validateTextToVideoNarrative uses the prompt language character rate', () 
 
   assert.equal(result.valid, false);
   assert.ok(result.errors.some((error) => (
-    error.includes('allows 32 characters') &&
-    error.includes('38 characters with 20% tolerance')
+    error.includes('allows 36 characters') &&
+    error.includes('45 characters with 25% tolerance')
   )));
 });

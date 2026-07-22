@@ -10,7 +10,7 @@ import {
   hasQwenVisionInput,
 } from './AlibabaQwen.js';
 
-test('builds text-only Qwen requests with qwen3.7-max and thinking enabled', () => {
+test('builds text-only Qwen requests with qwen3.7-plus and thinking enabled', () => {
   const { payload } = buildAlibabaQwenChatRequest({
     model: 'QWEN3.7',
     messages: [
@@ -20,7 +20,7 @@ test('builds text-only Qwen requests with qwen3.7-max and thinking enabled', () 
     ],
   }, { CURRENT_ENV: 'docker' });
 
-  assert.equal(payload.model, 'qwen3.7-max');
+  assert.equal(payload.model, 'qwen3.7-plus');
   assert.equal(payload.enable_thinking, true);
   assert.equal(payload.messages[0].role, 'system');
   assert.deepEqual(payload.messages[2].content[0], { type: 'text', text: 'Previous scene.' });
@@ -78,14 +78,14 @@ test('uses qwen3.7-plus when a request includes vision content', () => {
       content: [{ type: 'input_image', image_url: 'data:image/png;base64,abc' }],
     }],
   }, { CURRENT_ENV: 'production' });
-  assert.equal(productionText.payload.model, 'qwen3.7-max');
+  assert.equal(productionText.payload.model, 'qwen3.7-plus');
   assert.equal(productionVision.payload.model, 'qwen3.7-plus');
 
   const emptyVisionPart = buildAlibabaQwenChatRequest({
     model: 'QWEN3.7',
     messages: [{ role: 'user', content: [{ type: 'input_image', image_url: '' }] }],
   });
-  assert.equal(emptyVisionPart.payload.model, 'qwen3.7-max');
+  assert.equal(emptyVisionPart.payload.model, 'qwen3.7-plus');
 
   const alternateMediaShapes = buildAlibabaQwenChatRequest({
     model: 'QWEN3.7',

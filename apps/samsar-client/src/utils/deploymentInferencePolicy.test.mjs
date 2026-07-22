@@ -40,7 +40,7 @@ test('Docker exposes Qwen only with an explicit model and validated Alibaba prov
     labelOptionsForDeploymentInferenceProviders(MODEL_OPTIONS, {
       'QWEN3.7': 'alibabaCloud',
     })[2].label,
-    'Qwen 3.7 Max / Plus Vision',
+    'Qwen 3.7 Plus',
   );
   assert.equal(
     labelOptionsForDeploymentInferenceProviders(MODEL_OPTIONS, {

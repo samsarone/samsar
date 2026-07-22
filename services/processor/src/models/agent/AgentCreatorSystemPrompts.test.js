@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import {
   getGroundedMovieNarrativeExtractorSystemPrompt,
   getMovieNarrativeExtractorSystemPrompt,
+  getTextToVideoNarrativeSystemPrompt,
 } from './AgentCreatorSystemPrompts.js';
 
 test('Happy Horse narrative prompts include every supported scene duration', () => {
@@ -13,7 +14,31 @@ test('Happy Horse narrative prompts include every supported scene duration', () 
   ];
 
   for (const prompt of prompts) {
-    assert.match(prompt, /Each scene can be 5, 10, or 15 seconds long/);
-    assert.match(prompt, /75 characters for 15 second scenes/);
+    assert.match(prompt, /Each scene must be 5, 10, or 15 seconds long/);
+    assert.match(prompt, /83 characters or fewer for a 15-second scene/);
+    assert.match(prompt, /spaces and punctuation count toward the limit/);
+    assert.doesNotMatch(prompt, /HARD SPEECH LIMIT/);
   }
+});
+
+test('shared text-to-video prompt builder returns the complete selected narrative prompt', () => {
+  const basePrompt = getGroundedMovieNarrativeExtractorSystemPrompt(
+    90,
+    'COSMOS3SUPERI2V',
+    false,
+    'English',
+  );
+  const sharedPrompt = getTextToVideoNarrativeSystemPrompt({
+    duration: 90,
+    videoModel: 'COSMOS3SUPERI2V',
+    grounded: true,
+    languageString: 'English',
+    minimumSceneCount: 4,
+  });
+
+  assert.equal(
+    sharedPrompt,
+    basePrompt +
+      '\n- The transcript must contain at least 4 scenes so it can support the requested branching depth.',
+  );
 });

@@ -85,7 +85,7 @@ test('normalizes Gemini 3.1 Pro assistant model aliases to the current Vertex mo
   assert.equal(getProviderModelForInferenceModel('Gemini 3.1 Pro'), DEFAULT_GEMINI_31_PRO_VERTEX_MODEL);
 });
 
-test('normalizes Qwen aliases while selecting Qwen 3.7 Max or Plus by modality', () => {
+test('normalizes Qwen aliases while selecting Qwen 3.7 Plus by default', () => {
   assert.equal(QWEN_37_INFERENCE_MODEL, 'QWEN3.7');
   assert.equal(QWEN_37_MAX_MODEL, 'qwen3.7-max');
   assert.equal(QWEN_37_PLUS_MODEL, 'qwen3.7-plus');
@@ -98,14 +98,14 @@ test('normalizes Qwen aliases while selecting Qwen 3.7 Max or Plus by modality',
   assert.equal(normalizeInferenceModel('QWEN3.8'), QWEN_37_INFERENCE_MODEL);
   assert.equal(normalizeInferenceModel('Qwen 3.8'), QWEN_37_INFERENCE_MODEL);
   assert.equal(normalizeInferenceModel('qwen3.8-max-preview'), QWEN_37_INFERENCE_MODEL);
-  assert.equal(getProviderModelForInferenceModel('QWEN3.7'), QWEN_37_MAX_MODEL);
+  assert.equal(getProviderModelForInferenceModel('QWEN3.7'), QWEN_37_PLUS_MODEL);
   assert.equal(
     getProviderModelForInferenceModel('QWEN3.7', { vision: true }),
     QWEN_37_PLUS_MODEL,
   );
   assert.equal(
     getProviderModelForInferenceModel('QWEN3.7', { environment: 'production' }),
-    QWEN_37_MAX_MODEL,
+    QWEN_37_PLUS_MODEL,
   );
   assert.equal(
     getProviderModelForInferenceModel('QWEN3.7', {
