@@ -223,7 +223,7 @@ test('OpenRouter maps Qwen text and vision requests to Plus', () => {
   }), 'qwen/qwen3.7-plus');
 });
 
-test('production Qwen is constrained to OpenRouter even when Alibaba is configured', () => {
+test('production Qwen uses OpenRouter even when native Alibaba is configured', () => {
   clearProviderEnv();
   process.env.CURRENT_ENV = 'production';
   process.env.ALIBABA_API_KEY = 'test-alibaba-key';
@@ -231,10 +231,22 @@ test('production Qwen is constrained to OpenRouter even when Alibaba is configur
 
   assert.equal(resolveConfiguredInferenceProvider('QWEN3.7'), DOCKER_INFERENCE_PROVIDER.OPENROUTER);
   assert.equal(shouldUseOpenRouterInference({ model: 'QWEN3.7' }), true);
+  assert.equal(shouldUseOpenRouterInference({ model: 'QWEN3.7', authorization: 'openrouter' }), true);
+  assert.equal(shouldUseSamsarExternalInference({ model: 'QWEN3.7' }), true);
+  assert.equal(shouldUseSamsarExternalInference({ model: 'QWEN3.7', authorization: 'deployed' }), true);
+});
+
+test('production Qwen selects OpenRouter when its credential is configured', () => {
+  clearProviderEnv();
+  process.env.CURRENT_ENV = 'production';
+  process.env.OPENROUTER_API_KEY = 'test-openrouter-key';
+
+  assert.equal(resolveConfiguredInferenceProvider('QWEN3.7'), DOCKER_INFERENCE_PROVIDER.OPENROUTER);
+  assert.equal(shouldUseOpenRouterInference({ model: 'QWEN3.7' }), true);
   assert.equal(shouldUseSamsarExternalInference({ model: 'QWEN3.7' }), true);
 });
 
-test('hosted, external, and staging Qwen never use native Alibaba routing', () => {
+test('all hosted Qwen runtimes use OpenRouter-only routing', () => {
   for (const environment of ['production', 'external-production', 'staging']) {
     clearProviderEnv();
     process.env.CURRENT_ENV = environment;
@@ -420,7 +432,7 @@ test('OpenRouter explicitly budgets high-reasoning Gemini and GPT completions', 
   assert.equal(payloads[0].max_tokens, 65536);
   assert.equal(Object.hasOwn(payloads[0], 'max_completion_tokens'), false);
   assert.equal(payloads[1].model, 'openai/gpt-5.6-sol');
-  assert.equal(payloads[1].reasoning.effort, 'xhigh');
+  assert.equal(payloads[1].reasoning.effort, 'high');
   assert.equal(payloads[1].max_completion_tokens, 65536);
   assert.equal(Object.hasOwn(payloads[1], 'max_tokens'), false);
   for (const payload of payloads) {
@@ -653,7 +665,7 @@ test('native authorization preserves Samsar fallback until provider credentials 
   }), true);
 });
 
-test('external inference preserves GPT 5.6 models with xhigh without changing Gemini reasoning', async (t) => {
+test('external inference applies each GPT 5.6 model reasoning default without changing Gemini reasoning', async (t) => {
   clearProviderEnv();
   process.env.SAMSAR_API_KEY = 'test-samsar-key';
   const payloads = [];
@@ -680,7 +692,7 @@ test('external inference preserves GPT 5.6 models with xhigh without changing Ge
     reasoning_effort: 'high',
   });
 
-  assert.equal(payloads[0].reasoning_effort, 'xhigh');
+  assert.equal(payloads[0].reasoning_effort, 'high');
   assert.equal(payloads[1].model, 'gpt-5.6-luna');
   assert.equal(payloads[1].reasoning_effort, 'xhigh');
   assert.equal(payloads[2].reasoning_effort, 'high');
@@ -777,7 +789,7 @@ test('deployed external inference can queue and poll a long-running assistant re
 
   assert.equal(queuedPayload.async, true);
   assert.equal(queuedPayload.response_mode, 'polling');
-  assert.equal(queuedPayload.reasoning_effort, 'xhigh');
+  assert.equal(queuedPayload.reasoning_effort, 'high');
   assert.deepEqual(statusQuery, { request_id: 'request-123' });
   assert.equal(response.choices[0].message.content, '{"ok":true}');
 });

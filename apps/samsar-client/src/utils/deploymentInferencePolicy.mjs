@@ -1,5 +1,7 @@
 export const DEFAULT_INFERENCE_MODEL_VALUE = "gpt-5.6-sol";
 export const QWEN_INFERENCE_MODEL_VALUE = "QWEN3.7";
+export const HOSTED_QWEN_INFERENCE_MODEL_VALUE = QWEN_INFERENCE_MODEL_VALUE;
+export const HOSTED_QWEN_INFERENCE_MODEL_LABEL = "Qwen 3.7 Plus";
 
 const DEPLOYMENT_INFERENCE_MODELS_BY_PROVIDER = Object.freeze({
   openai: ["gpt-5.6-sol"],
@@ -168,6 +170,22 @@ function extractModelProviderMap(payload = {}) {
   return modelProviders || {};
 }
 
+function extractProviderMetadataMap(payload = {}, field) {
+  const candidates = [
+    payload?.deployment?.[field],
+    payload?.available?.[field],
+    payload?.[field],
+  ];
+
+  return candidates.find(
+    (candidate) => candidate && typeof candidate === "object" && !Array.isArray(candidate),
+  ) || {};
+}
+
+export function extractDeploymentProviderEndpointTypes(payload = {}) {
+  return extractProviderMetadataMap(payload, "providerEndpointTypes");
+}
+
 export function extractDeploymentInferenceModelProviders(payload = {}) {
   const result = {};
 
@@ -226,23 +244,37 @@ export function filterOptionsForDeploymentInferenceModels(options = [], modelVal
   return options.filter((option) => allowedModels.has(normalizeDeploymentInferenceModelValue(option?.value)));
 }
 
-export function labelOptionsForDeploymentInferenceProviders(options = [], modelProviders = {}) {
+export function labelOptionsForDeploymentInferenceProviders(
+  options = [],
+  modelProviders = {},
+  providerEndpointTypes = {},
+) {
   const qwenProvider = normalizeDeploymentProviderKey(
     modelProviders?.[QWEN_INFERENCE_MODEL_VALUE],
   );
   const qwenLabel = qwenProvider === "alibabaCloud"
-    ? "Qwen 3.7 Max / Plus Vision"
+    ? providerEndpointTypes?.alibabaCloud === "token_plan"
+      ? "Qwen 3.8 Max Preview / Qwen 3.7 Plus Vision"
+      : "Qwen 3.7 Max / Plus Vision"
     : "Qwen 3.7 Plus";
 
   return options.map((option) => (
     normalizeDeploymentInferenceModelValue(option?.value) === QWEN_INFERENCE_MODEL_VALUE
-      ? { ...option, label: qwenLabel }
+      ? { ...option, label: qwenLabel, value: QWEN_INFERENCE_MODEL_VALUE }
       : option
   ));
 }
 
 export function filterHostedInferenceModelOptions(options = []) {
-  return [...options];
+  return options.map((option) => (
+    normalizeDeploymentInferenceModelValue(option?.value) === QWEN_INFERENCE_MODEL_VALUE
+      ? {
+          ...option,
+          label: HOSTED_QWEN_INFERENCE_MODEL_LABEL,
+          value: HOSTED_QWEN_INFERENCE_MODEL_VALUE,
+        }
+      : option
+  ));
 }
 
 export function resolveAllowedInferenceModelOption(

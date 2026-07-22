@@ -68,8 +68,12 @@ test('selects Qwen 3.7 Max for text and Qwen 3.7 Plus for multimodal vision inpu
       ],
     }],
   });
+  const tokenPlanTextRequest = buildAlibabaQwenChatRequest({
+    messages: [{ role: 'user', content: 'Create a transition.' }],
+  }, { ALIBABA_QWEN_TEXT_MODEL: 'qwen3.8-max-preview' });
 
   assert.equal(textRequest.payload.model, 'qwen3.7-max');
+  assert.equal(tokenPlanTextRequest.payload.model, 'qwen3.8-max-preview');
   assert.equal(visionRequest.payload.model, 'qwen3.7-plus');
   assert.equal(textRequest.payload.enable_thinking, true);
 });

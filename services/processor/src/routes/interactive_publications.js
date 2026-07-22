@@ -35,8 +35,13 @@ const visibilityClauses = [
   { $or: [{ isDeleted: { $exists: false } }, { isDeleted: false }] },
 ];
 
-export const buildPublicInteractivePublicationQuery = (cursorId = null) => {
+export const buildPublicInteractivePublicationQuery = (
+  cursorId = null,
+  { category = null, topic = null } = {},
+) => {
   const query = { $and: [...visibilityClauses] };
+  if (category) query.$and.push({ categories: category });
+  if (topic) query.$and.push({ topics: topic });
   if (cursorId) {
     query.$and.push({ _id: { $lt: cursorId } });
   }
@@ -65,6 +70,8 @@ export const paginatePublicInteractivePublications = (
 export async function listPublicInteractivePublications({
   cursorId = null,
   limit = 50,
+  category = null,
+  topic = null,
   publicationModel = InteractivePublication,
 } = {}) {
   const batchSize = limit + 1;
@@ -72,7 +79,10 @@ export async function listPublicInteractivePublications({
   let scanCursor = cursorId;
 
   while (publications.length < batchSize) {
-    const batch = await publicationModel.find(buildPublicInteractivePublicationQuery(scanCursor))
+    const batch = await publicationModel.find(buildPublicInteractivePublicationQuery(
+      scanCursor,
+      { category, topic },
+    ))
       .sort({ _id: -1 })
       .limit(batchSize)
       .lean()
@@ -98,11 +108,15 @@ router.get('/', async (req, res) => {
 
     const limitArg = Array.isArray(req.query.limit) ? req.query.limit[0] : req.query.limit;
     const cursorArg = Array.isArray(req.query.cursor) ? req.query.cursor[0] : req.query.cursor;
+    const categoryArg = Array.isArray(req.query.category) ? req.query.category[0] : req.query.category;
+    const topicArg = Array.isArray(req.query.topic) ? req.query.topic[0] : req.query.topic;
     const limit = parseLimitedInteger(limitArg, 50, 200);
     const cursorId = parseCursor(cursorArg);
     return res.json(await listPublicInteractivePublications({
       cursorId,
       limit,
+      category: typeof categoryArg === 'string' ? categoryArg.trim() : null,
+      topic: typeof topicArg === 'string' ? topicArg.trim() : null,
     }));
   } catch (error) {
     console.error('Error fetching interactive publications:', error);

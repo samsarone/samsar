@@ -16,6 +16,10 @@ test('uses Qwen 3.7 Max for text and Qwen 3.7 Plus for multimodal content', () =
   };
   assert.equal(hasQwenMultimodalInput(textRequest), false);
   assert.equal(resolveQwenProviderModel(textRequest, {}), 'qwen3.7-max');
+  assert.equal(
+    resolveQwenProviderModel(textRequest, { ALIBABA_QWEN_TEXT_MODEL: 'qwen3.8-max-preview' }),
+    'qwen3.8-max-preview',
+  );
 
   const imageRequest = {
     model: 'QWEN3.7',

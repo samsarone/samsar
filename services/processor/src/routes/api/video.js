@@ -530,6 +530,8 @@ router.get('/supported_models', function (req, res) {
       actions: Array.isArray(deploymentAvailableModels?.actions) ? deploymentAvailableModels.actions : [],
       modelProviders: deploymentAvailableModels?.modelProviders || {},
       modelProviderPriority: deploymentAvailableModels?.modelProviderPriority || {},
+      providerKeyTypes: deploymentAvailableModels?.providerKeyTypes || {},
+      providerEndpointTypes: deploymentAvailableModels?.providerEndpointTypes || {},
       audio: deploymentAvailableModels?.audio || null,
     });
     const textToVideoModels = {

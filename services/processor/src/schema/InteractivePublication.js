@@ -145,6 +145,8 @@ const interactivePublicationSchema = new Schema(
     title: { type: String, required: true },
     description: { type: String, default: '' },
     tags: { type: [String], default: [] },
+    categories: { type: [String], default: [] },
+    topics: { type: [String], default: [] },
     datePublished: { type: Date, required: true, default: Date.now },
     mainVideoUrl: { type: String, default: null },
     mainThumbnailUrl: { type: String, default: null },
@@ -169,6 +171,8 @@ const interactivePublicationSchema = new Schema(
 
 interactivePublicationSchema.index({ sessionId: 1 }, { unique: true });
 interactivePublicationSchema.index({ datePublished: -1, _id: -1 });
+interactivePublicationSchema.index({ categories: 1, datePublished: -1, _id: -1 });
+interactivePublicationSchema.index({ topics: 1, datePublished: -1, _id: -1 });
 interactivePublicationSchema.index({
   isPublished: 1,
   isRenderable: 1,

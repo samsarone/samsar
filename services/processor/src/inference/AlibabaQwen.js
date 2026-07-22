@@ -319,7 +319,7 @@ function buildRequestOptions({ timeout, timeoutMs, maxRetries } = {}) {
   return options;
 }
 
-export function buildAlibabaQwenChatRequest(chatRequest = {}) {
+export function buildAlibabaQwenChatRequest(chatRequest = {}, env = process.env) {
   const {
     authorization,
     bypassSamsarExternalInference,
@@ -351,7 +351,11 @@ export function buildAlibabaQwenChatRequest(chatRequest = {}) {
   return {
     payload: {
       ...request,
-      model: getProviderModelForInferenceModel(QWEN_37_INFERENCE_MODEL, { vision }),
+      model: getProviderModelForInferenceModel(QWEN_37_INFERENCE_MODEL, {
+        vision,
+        environment: env?.CURRENT_ENV,
+        env,
+      }),
       messages: structured.messages,
       enable_thinking: true,
       ...(max_output_tokens !== undefined && request.max_tokens === undefined

@@ -197,8 +197,11 @@ export default function AssistantHome(props) {
       !isDockerInstall ||
       (!isInferenceModelAvailabilityLoading && hasConfiguredInferenceModels);
     const normalizedUserAssistantModel = normalizeDeploymentInferenceModelValue(userAssistantModel);
+    const normalizedOptionAssistantModel = normalizeDeploymentInferenceModelValue(
+      userAssistantModelOption?.value,
+    );
     if (canReconcileAssistantModel && userAssistantModelOption?.value) {
-      if (userAssistantModelOption.value === normalizedUserAssistantModel) {
+      if (normalizedOptionAssistantModel === normalizedUserAssistantModel) {
         pendingAssistantModelSyncRef.current = '';
       } else if (pendingAssistantModelSyncRef.current !== userAssistantModelOption.value) {
         pendingAssistantModelSyncRef.current = userAssistantModelOption.value;

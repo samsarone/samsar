@@ -322,6 +322,8 @@ const buildPublicationSessionPayload = (sessionId, payload = {}, existingPublica
     title: valueOrExisting(['title'], existingPublication?.title),
     description: valueOrExisting(['description'], existingPublication?.description),
     tags: valueOrExisting(['tags', 'tag_list', 'tagList'], existingPublication?.tags),
+    categories: valueOrExisting(['categories', 'category_list', 'categoryList'], existingPublication?.categories),
+    topics: valueOrExisting(['topics', 'topic_list', 'topicList'], existingPublication?.topics),
     aspectRatio: valueOrExisting(['aspectRatio', 'aspect_ratio'], existingPublication?.aspectRatio),
     creatorHandle: valueOrExisting(
       ['creatorHandle', 'creator_handle'],

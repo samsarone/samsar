@@ -55,6 +55,31 @@ test('a raw Alibaba key enables native Qwen and Alibaba media models', () => {
   assert.equal(result.modelProviders['QWEN3.7'], 'alibabaCloud');
 });
 
+test('preserves Alibaba plan metadata for Docker clients', () => {
+  const originalApiKey = process.env.ALIBABA_API_KEY;
+  const originalKeyType = process.env.ALIBABA_API_KEY_TYPE;
+  const originalEndpointType = process.env.ALIBABA_API_ENDPOINT_TYPE;
+  try {
+    process.env.ALIBABA_API_KEY = 'alibaba-key';
+    process.env.ALIBABA_API_KEY_TYPE = 'token_plan';
+    process.env.ALIBABA_API_ENDPOINT_TYPE = 'token_plan';
+    const result = mergeRuntimeInferenceDeploymentAvailability({
+      providers: ['alibabaCloud'],
+      models: ['QWEN3.7'],
+      modelProviders: { 'QWEN3.7': 'alibabaCloud' },
+    });
+    assert.equal(result.providerKeyTypes.alibabaCloud, 'token_plan');
+    assert.equal(result.providerEndpointTypes.alibabaCloud, 'token_plan');
+  } finally {
+    if (originalApiKey === undefined) delete process.env.ALIBABA_API_KEY;
+    else process.env.ALIBABA_API_KEY = originalApiKey;
+    if (originalKeyType === undefined) delete process.env.ALIBABA_API_KEY_TYPE;
+    else process.env.ALIBABA_API_KEY_TYPE = originalKeyType;
+    if (originalEndpointType === undefined) delete process.env.ALIBABA_API_ENDPOINT_TYPE;
+    else process.env.ALIBABA_API_ENDPOINT_TYPE = originalEndpointType;
+  }
+});
+
 test('hosted runtime omits Qwen even when saved configuration selected Alibaba', () => {
   clearEnv();
 

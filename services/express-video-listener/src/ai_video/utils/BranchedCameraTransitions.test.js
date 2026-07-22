@@ -351,3 +351,31 @@ test('branch scene context includes history transitions and only one current sce
   assert.equal(context.match(/Current scene description:/g)?.length, 1);
   assert.match(context, /Current scene description: Hero follows the forest trail/);
 });
+
+test('branched traversal supports a repaired choice anchored at timeline origin', () => {
+  const traversal = buildBranchedCameraTransitionTraversal({
+    layers: [
+      { _id: 'left', branchAssetKey: 'scene:left' },
+      { _id: 'right', branchAssetKey: 'scene:right' },
+    ],
+    branchingMeta: {
+      branchSceneIndices: [null],
+      branchPoints: [{ divergenceSceneIndex: null }],
+    },
+    branchRenderPaths: [
+      {
+        pathId: 'root.1',
+        selectionTrail: [{ divergenceSceneIndex: null, switchAtSeconds: 0 }],
+        timeline: [{ layerId: 'left', sequenceIndex: 0, sceneIndex: 0 }],
+      },
+      {
+        pathId: 'root.2',
+        selectionTrail: [{ divergenceSceneIndex: null, switchAtSeconds: 0 }],
+        timeline: [{ layerId: 'right', sequenceIndex: 0, sceneIndex: 0 }],
+      },
+    ],
+  });
+
+  assert.deepEqual(traversal.rootLayerIds, []);
+  assert.deepEqual(traversal.levels[0].map((node) => node.layerId), ['left', 'right']);
+});

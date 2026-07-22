@@ -72,7 +72,9 @@
       "gemini31ProModel": "google/gemini-3.1-pro-preview"
     },
     "alibabaCloud": {
-      "enabled": false
+      "enabled": false,
+      "keyType": "",
+      "endpointType": ""
     },
     "fal": {
       "enabled": false,

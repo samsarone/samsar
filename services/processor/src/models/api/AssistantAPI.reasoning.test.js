@@ -7,14 +7,14 @@ import {
   resolveAssistantProviderMediaInput,
 } from './AssistantAPI.js';
 
-test('forces xhigh reasoning for GPT 5.6 Sol assistant requests', () => {
+test('forces high reasoning for GPT 5.6 Sol assistant requests', () => {
   const request = buildResponsesRequest({
     model: 'gpt-5.6-sol',
     inputMessages: [{ role: 'user', content: 'hello' }],
     payload: { reasoning: { effort: 'low' } },
   });
 
-  assert.deepEqual(request.reasoning, { effort: 'xhigh' });
+  assert.deepEqual(request.reasoning, { effort: 'high' });
 });
 
 test('assistant completions default to a ten-minute timeout', () => {

@@ -238,7 +238,7 @@ function normalizeStructuredOutput(messages, responseFormat) {
   return { messages: nextMessages, responseFormat: { type: 'json_object' } };
 }
 
-export function buildAlibabaQwenChatRequest(chatRequest = {}) {
+export function buildAlibabaQwenChatRequest(chatRequest = {}, env = process.env) {
   const {
     authorization,
     bypassSamsarExternalInference,
@@ -272,7 +272,9 @@ export function buildAlibabaQwenChatRequest(chatRequest = {}) {
   return {
     payload: {
       ...request,
-      model: hasQwenVisionInput(sourceMessages) ? QWEN_37_PLUS_MODEL : QWEN_37_MAX_MODEL,
+      model: hasQwenVisionInput(sourceMessages)
+        ? QWEN_37_PLUS_MODEL
+        : normalizeString(env.ALIBABA_QWEN_TEXT_MODEL) || QWEN_37_MAX_MODEL,
       messages: structured.messages,
       enable_thinking: true,
       ...(max_output_tokens !== undefined && request.max_tokens === undefined

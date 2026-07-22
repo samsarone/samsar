@@ -1743,6 +1743,14 @@
   padding: 12px 14px;
 }
 
+.warning-banner {
+  background: #fff8e1;
+  border: 1px solid #e7c86e;
+  border-radius: 8px;
+  color: #7c5700;
+  padding: 12px 14px;
+}
+
 .express-readiness-banner {
   align-items: baseline;
   display: flex;
@@ -1764,6 +1772,12 @@
   background: rgba(57, 216, 129, 0.13);
   border-color: rgba(57, 216, 129, 0.36);
   color: #bbf7d0;
+}
+
+.theme-dark .warning-banner {
+  background: rgba(245, 190, 55, 0.12);
+  border-color: rgba(245, 190, 55, 0.4);
+  color: #fde68a;
 }
 
 button:disabled {

@@ -29,6 +29,7 @@ import { handleLuminaRequest } from './providers/LuminaV2.js';
 import { handleReveRequest } from './providers/Reve.js';
 import { handleIdeogramRequest } from './providers/Ideogram.js';
 import { handleGPTImageTwoRequest } from './providers/GPTImageOne.js';
+import { handleFalGPTImageTwoRequest } from './providers/GPTImageTwoFal.js';
 import { handleFLiteRequest } from './providers/FLite.js';
 import { handleSeedreamRequest } from './providers/Seedream.js';
 import { handleHunyuanRequest } from './providers/Hunyuan.js';
@@ -51,6 +52,7 @@ import { recordProviderUsageLog } from './utils/ProviderUsageAudit.js';
 import {
   DOCKER_ADAPTER_PROVIDER,
   resolveDockerImageGenerationProvider,
+  resolveGPTImageTwoGenerationProvider,
   resolveWan27ImageGenerationProvider,
 } from './consts/DockerProviderPriority.js';
 
@@ -93,6 +95,7 @@ const IMAGE_FILTER_SCORE_CUTOFF = 50;
 const GROUNDED_IMAGE_FILTER_SCORE_CUTOFF = 61;
 const SCORE_ONLY_FILTER_FAILURES_BEFORE_RELAXATION = 2;
 const SCORE_ONLY_FILTER_RELAXED_CUTOFF = 50;
+const BRANCHED_IMAGE_FILTER_FALLBACK_SCORE_CUTOFF = 25;
 const IMAGE_FILTER_SCORE_RELAXATION_PER_GENERATION_FAILURE = 10;
 const MIN_IMAGE_FILTER_SCORE_CUTOFF = 35;
 const MIN_GROUNDED_IMAGE_FILTER_SCORE_CUTOFF = 41;
@@ -143,6 +146,9 @@ function resolveImageProviderForModel(model, payload = {}) {
   }
   if (normalizedModel === 'WAN2.7PRO') {
     return resolveWan27ImageGenerationProvider(payload?.externalProvider);
+  }
+  if (normalizedModel === 'GPTIMAGE2') {
+    return resolveGPTImageTwoGenerationProvider(payload?.externalProvider);
   }
 
   const dockerProvider = resolveDockerImageGenerationProvider(normalizedModel);
@@ -352,11 +358,30 @@ function getScoreThresholdCutoff(videoTone, payload = {}) {
   return Math.min(standardCutoff, SCORE_ONLY_FILTER_RELAXED_CUTOFF);
 }
 
-function getTerminalFilterFailurePolicy(videoTone, payload = {}) {
-  const scoreThresholdFailuresOnly = hasReachedScoreOnlyFilterRelaxation(payload);
+function isBranchedVideoSession(sessionData = {}) {
+  return normalizeString(sessionData?.narrativeType).toLowerCase() === 'branched';
+}
+
+function getTerminalFilterFailurePolicy(videoTone, payload = {}, sessionData = {}) {
+  const isBranchedSession = isBranchedVideoSession(sessionData);
   return {
-    fallbackScoreCutoff: getScoreThresholdCutoff(videoTone, payload),
-    allowExpressLayerPrune: scoreThresholdFailuresOnly,
+    fallbackScoreCutoff: isBranchedSession
+      ? BRANCHED_IMAGE_FILTER_FALLBACK_SCORE_CUTOFF
+      : getScoreThresholdCutoff(videoTone, payload),
+    // The branched prune path preserves topology and retimes only paths that
+    // reference the failed asset. Singular sessions retain their existing
+    // score-only prune policy.
+    allowExpressLayerPrune: isBranchedSession || hasReachedScoreOnlyFilterRelaxation(payload),
+  };
+}
+
+function getBranchedTerminalGenerationPruneOptions(sessionData = {}) {
+  const allowExpressImageLayerPrune = Boolean(
+    sessionData?.isExpressGeneration && isBranchedVideoSession(sessionData),
+  );
+  return {
+    pruneLayer: allowExpressImageLayerPrune,
+    allowExpressImageLayerPrune,
   };
 }
 
@@ -1277,6 +1302,7 @@ async function scheduleImageGenerationRetry(payload = {}, latestDoc, imageData, 
         failureRetryCount: nextFailureCount,
         message: `${failureMessage} Max image generation failures reached (${MAX_IMAGE_GENERATION_FAILURES}).`,
         source: 'image_generation_max_failures',
+        ...getBranchedTerminalGenerationPruneOptions(sessionData),
       });
     }
     return false;
@@ -1542,6 +1568,522 @@ function reflowLayersAndConnectedAudio(layers = [], audioLayers = []) {
   return durationOffset;
 }
 
+function normalizeDocumentId(value) {
+  if (value === null || value === undefined) {
+    return '';
+  }
+  return value?.toString?.() || String(value);
+}
+
+function cloneDocumentObject(value) {
+  const plainValue = typeof value?.toObject === 'function'
+    ? value.toObject({ depopulate: true })
+    : value;
+  return plainValue && typeof plainValue === 'object' ? { ...plainValue } : {};
+}
+
+function getNonNegativeInteger(value) {
+  if (value === null || value === undefined || value === '') {
+    return null;
+  }
+  const normalized = Number(value);
+  return Number.isInteger(normalized) && normalized >= 0 ? normalized : null;
+}
+
+function getBranchTimelineLayerId(entry = {}) {
+  return normalizeDocumentId(entry?.layerId ?? entry?.layer_id);
+}
+
+function getBranchAudioLayerId(entry = {}) {
+  return normalizeDocumentId(
+    entry?.audioLayerId ?? entry?.audio_layer_id ?? entry?.layerId ?? entry?._id,
+  );
+}
+
+function getBranchAudioConnectedLayerId(entry = {}, audioLayer = {}) {
+  return normalizeDocumentId(
+    entry?.connectedLayerId ??
+    entry?.connected_layer_id ??
+    audioLayer?.connectedLayerId ??
+    audioLayer?.connected_layer_id,
+  );
+}
+
+function getBranchAudioType(entry = {}, audioLayer = {}) {
+  return normalizeString(
+    audioLayer?.generationType ??
+    audioLayer?.type ??
+    entry?.generationType ??
+    entry?.type,
+  ).toLowerCase().replace(/[\s-]+/g, '_');
+}
+
+function getPositiveDuration(value) {
+  const duration = Number(value);
+  return Number.isFinite(duration) && duration > 0 ? duration : null;
+}
+
+function reflowSceneIndexAfterRemoval(sceneIndex, removedSceneIndices = []) {
+  const normalizedSceneIndex = getNonNegativeInteger(sceneIndex);
+  if (normalizedSceneIndex === null) {
+    return null;
+  }
+
+  const removedBeforeOrAt = removedSceneIndices.filter(
+    (removedSceneIndex) => removedSceneIndex <= normalizedSceneIndex,
+  ).length;
+  const reflowedSceneIndex = normalizedSceneIndex - removedBeforeOrAt;
+  return reflowedSceneIndex >= 0 ? reflowedSceneIndex : null;
+}
+
+function getChoicePointKey(choice = {}) {
+  const branchPointId = normalizeDocumentId(
+    choice?.branchPointId ?? choice?.branch_point_id,
+  );
+  if (branchPointId) {
+    return `branch:${branchPointId}`;
+  }
+  const parentNodeId = normalizeDocumentId(
+    choice?.parentNodeId ?? choice?.parent_node_id,
+  );
+  return parentNodeId ? `parent:${parentNodeId}` : '';
+}
+
+function getChoicePointTimingByKey(branchRenderPaths = []) {
+  const timingByKey = new Map();
+  for (const path of branchRenderPaths) {
+    for (const choice of Array.isArray(path?.selectionTrail) ? path.selectionTrail : []) {
+      const key = getChoicePointKey(choice);
+      if (!key || timingByKey.has(key)) {
+        continue;
+      }
+      timingByKey.set(key, {
+        divergenceSceneIndex: getNonNegativeInteger(
+          choice?.divergenceSceneIndex ?? choice?.divergence_scene_index,
+        ),
+        switchAtSeconds: Number.isFinite(Number(
+          choice?.switchAtSeconds ?? choice?.switch_at_seconds,
+        ))
+          ? Number(choice?.switchAtSeconds ?? choice?.switch_at_seconds)
+          : null,
+      });
+    }
+  }
+  return timingByKey;
+}
+
+function reflowBranchingMeta(branchingMeta = {}, branchRenderPaths = []) {
+  const timingByKey = getChoicePointTimingByKey(branchRenderPaths);
+  const sourceBranchPoints = Array.isArray(branchingMeta?.branchPoints)
+    ? branchingMeta.branchPoints
+    : [];
+  const branchPoints = sourceBranchPoints.map((branchPoint) => {
+    const timing = timingByKey.get(getChoicePointKey(branchPoint));
+    return timing
+      ? { ...cloneDocumentObject(branchPoint), divergenceSceneIndex: timing.divergenceSceneIndex }
+      : cloneDocumentObject(branchPoint);
+  });
+
+  const branchSceneIndices = Array.isArray(branchingMeta?.branchSceneIndices)
+    ? branchingMeta.branchSceneIndices.map((configuredIndex, arrayIndex) => {
+      const level = arrayIndex + 1;
+      const levelIndices = branchPoints
+        .filter((branchPoint) => Number(branchPoint?.level) === level)
+        .map((branchPoint) => getNonNegativeInteger(branchPoint?.divergenceSceneIndex));
+      if (levelIndices.length === 0) {
+        return configuredIndex;
+      }
+      const distinctIndices = [...new Set(levelIndices)];
+      return distinctIndices.length === 1 ? distinctIndices[0] : null;
+    })
+    : [];
+
+  return {
+    ...(branchingMeta || {}),
+    branchPoints,
+    branchSceneIndices,
+  };
+}
+
+function buildBranchOptionsFromMeta(branchPoint = {}, branchRenderPaths = []) {
+  const divergencePaths = Array.isArray(branchPoint?.divergencePaths)
+    ? branchPoint.divergencePaths
+    : [];
+  return divergencePaths.map((option, optionIndex) => {
+    const childNodeId = normalizeDocumentId(
+      option?.childNodeId ?? option?.child_node_id,
+    );
+    return {
+      childNodeId,
+      branchOrdinal: Number(option?.branchOrdinal ?? option?.branch_ordinal) || optionIndex + 1,
+      branchingHint: option?.branchingHint ?? option?.path_name ?? option?.pathName ?? null,
+      description:
+        option?.description ?? option?.path_description ?? option?.pathDescription ?? null,
+      leafPathIds: branchRenderPaths
+        .filter((path) => (Array.isArray(path?.selectionTrail) ? path.selectionTrail : [])
+          .some((choice) => normalizeDocumentId(
+            choice?.nodeId ?? choice?.node_id ?? choice?.childNodeId,
+          ) === childNodeId))
+        .map((path) => normalizeDocumentId(path?.pathId)),
+    };
+  });
+}
+
+function reflowBranchingTimeline({
+  branchingTimeline = {},
+  branchingMeta = {},
+  branchRenderPaths = [],
+  defaultBranchPathId = null,
+} = {}) {
+  const timingByKey = getChoicePointTimingByKey(branchRenderPaths);
+  const existingChoicePointByKey = new Map(
+    (Array.isArray(branchingTimeline?.choicePoints) ? branchingTimeline.choicePoints : [])
+      .map((choicePoint) => [getChoicePointKey(choicePoint), choicePoint])
+      .filter(([key]) => Boolean(key)),
+  );
+  const configuredBranchPoints = Array.isArray(branchingMeta?.branchPoints)
+    ? branchingMeta.branchPoints
+    : [];
+  const sourceBranchPoints = configuredBranchPoints.length > 0
+    ? configuredBranchPoints
+    : (Array.isArray(branchingTimeline?.choicePoints)
+      ? branchingTimeline.choicePoints
+      : []);
+  const choicePoints = sourceBranchPoints.map((branchPoint) => {
+    const key = getChoicePointKey(branchPoint);
+    const existingChoicePoint = existingChoicePointByKey.get(key) || {};
+    const timing = timingByKey.get(key) || {};
+    const existingOptions = Array.isArray(existingChoicePoint?.options)
+      ? existingChoicePoint.options.map(cloneDocumentObject)
+      : [];
+    return {
+      ...cloneDocumentObject(existingChoicePoint),
+      branchPointId: normalizeDocumentId(
+        branchPoint?.branchPointId ?? branchPoint?.branch_point_id,
+      ) || null,
+      parentNodeId: normalizeDocumentId(
+        branchPoint?.parentNodeId ?? branchPoint?.parent_node_id,
+      ) || null,
+      level: getNonNegativeInteger(branchPoint?.level),
+      divergenceSceneIndex: timing.divergenceSceneIndex ?? null,
+      switchAtSeconds: timing.switchAtSeconds ?? 0,
+      options: existingOptions.length > 0
+        ? existingOptions
+        : buildBranchOptionsFromMeta(branchPoint, branchRenderPaths),
+    };
+  });
+
+  const normalizedDefaultPathId = normalizeDocumentId(defaultBranchPathId);
+  const effectiveDefaultPathId = branchRenderPaths.some(
+    (path) => normalizeDocumentId(path?.pathId) === normalizedDefaultPathId,
+  )
+    ? normalizedDefaultPathId
+    : normalizeDocumentId(branchRenderPaths[0]?.pathId) || null;
+
+  return {
+    ...(branchingTimeline || {}),
+    schemaVersion: branchingTimeline?.schemaVersion || 'branching_timeline.v1',
+    timing: branchingTimeline?.timing || { origin: 'media', unit: 'seconds' },
+    rootNodeId:
+      normalizeDocumentId(branchingTimeline?.rootNodeId) ||
+      normalizeDocumentId(branchingMeta?.rootNodeId) ||
+      normalizeDocumentId(branchRenderPaths[0]?.nodeIds?.[0]) ||
+      null,
+    defaultPathId: effectiveDefaultPathId,
+    choicePoints,
+  };
+}
+
+function reflowBranchedAudioTimeline({
+  audioTimeline = [],
+  timeline = [],
+  pathDuration = 0,
+  remainingAudioById = new Map(),
+  removedAudioLayerIds = new Set(),
+  removedLayerId = '',
+  removedSceneIndices = [],
+} = {}) {
+  return (Array.isArray(audioTimeline) ? audioTimeline : []).flatMap((rawEntry) => {
+    const entry = cloneDocumentObject(rawEntry);
+    const audioLayerId = getBranchAudioLayerId(entry);
+    const audioLayer = remainingAudioById.get(audioLayerId) || {};
+    const connectedLayerId = getBranchAudioConnectedLayerId(entry, audioLayer);
+    if (
+      removedAudioLayerIds.has(audioLayerId) ||
+      (connectedLayerId && connectedLayerId === removedLayerId)
+    ) {
+      return [];
+    }
+
+    const audioType = getBranchAudioType(entry, audioLayer);
+    if (!connectedLayerId || audioType === 'music') {
+      return [{
+        ...entry,
+        duration: pathDuration,
+        startTime: 0,
+        endTime: pathDuration,
+        connectedLayerStartTimeOffset: 0,
+        sceneIndex: reflowSceneIndexAfterRemoval(entry?.sceneIndex, removedSceneIndices),
+      }];
+    }
+
+    const connectedLayerIndex = timeline.findIndex(
+      (timelineEntry) => getBranchTimelineLayerId(timelineEntry) === connectedLayerId,
+    );
+    if (connectedLayerIndex < 0) {
+      return [];
+    }
+
+    const connectedTimelineEntry = timeline[connectedLayerIndex];
+    const connectedLayerDuration = getPositiveDuration(connectedTimelineEntry?.duration) || 0;
+    const audioDuration = getPositiveDuration(audioLayer?.duration) ||
+      getPositiveDuration(entry?.duration) ||
+      connectedLayerDuration;
+    const relativeStart = audioType === 'speech' && connectedLayerDuration > audioDuration
+      ? (connectedLayerDuration - audioDuration) / 2
+      : Math.min(
+        connectedLayerDuration,
+        Math.max(0, Number(entry?.connectedLayerStartTimeOffset) || 0),
+      );
+    const startTime = connectedTimelineEntry.startTime + relativeStart;
+    return [{
+      ...entry,
+      connectedLayerId,
+      connectedLayerIndex,
+      sequenceIndex: connectedLayerIndex,
+      pathSequenceIndex: connectedLayerIndex,
+      connectedLayerStartTimeOffset: relativeStart,
+      sceneIndex: connectedTimelineEntry.sceneIndex,
+      duration: audioDuration,
+      startTime,
+      endTime: startTime + audioDuration,
+    }];
+  });
+}
+
+function reflowBranchedPathAfterLayerRemoval({
+  rawPath = {},
+  layerId,
+  remainingLayerDurationById = new Map(),
+  remainingAudioById = new Map(),
+  removedAudioLayerIds = new Set(),
+} = {}) {
+  const normalizedLayerId = normalizeDocumentId(layerId);
+  const rawTimeline = Array.isArray(rawPath?.timeline) ? rawPath.timeline : [];
+  const removedTimelineIndices = rawTimeline.flatMap((entry, index) => (
+    getBranchTimelineLayerId(entry) === normalizedLayerId ? [index] : []
+  ));
+  if (removedTimelineIndices.length === 0) {
+    return { affected: false, path: rawPath, followingLayerIds: [] };
+  }
+
+  const removedSceneIndices = [...new Set(rawTimeline
+    .filter((entry) => getBranchTimelineLayerId(entry) === normalizedLayerId)
+    .map((entry) => getNonNegativeInteger(entry?.sceneIndex))
+    .filter((sceneIndex) => sceneIndex !== null))]
+    .sort((left, right) => left - right);
+  const firstRemovedTimelineIndex = Math.min(...removedTimelineIndices);
+  let durationOffset = 0;
+  const timeline = rawTimeline.flatMap((rawEntry, rawEntryIndex) => {
+    const entry = cloneDocumentObject(rawEntry);
+    const currentLayerId = getBranchTimelineLayerId(entry);
+    if (currentLayerId === normalizedLayerId) {
+      return [];
+    }
+    const duration = remainingLayerDurationById.get(currentLayerId) ||
+      getPositiveDuration(entry?.duration);
+    if (duration === null || duration === undefined) {
+      throw new Error(
+        `Branch path ${normalizeDocumentId(rawPath?.pathId) || '<unknown>'} contains an invalid layer duration.`,
+      );
+    }
+    const sequenceIndex = rawTimeline
+      .slice(0, rawEntryIndex)
+      .filter((candidate) => getBranchTimelineLayerId(candidate) !== normalizedLayerId)
+      .length;
+    const shouldRegenerateFrames = sequenceIndex >= firstRemovedTimelineIndex;
+    const reflowedEntry = {
+      ...entry,
+      sequenceIndex,
+      pathSequenceIndex: sequenceIndex,
+      sceneIndex: reflowSceneIndexAfterRemoval(entry?.sceneIndex, removedSceneIndices),
+      duration,
+      durationOffset,
+      startTime: durationOffset,
+      endTime: durationOffset + duration,
+      ...(shouldRegenerateFrames
+        ? {
+          frameGenerationStatus: 'INIT',
+          frameGenerationPending: true,
+          frameGenerationError: null,
+          frames: [],
+        }
+        : {}),
+    };
+    durationOffset += duration;
+    return [reflowedEntry];
+  });
+
+  const selectionTrail = (Array.isArray(rawPath?.selectionTrail)
+    ? rawPath.selectionTrail
+    : []).map((rawChoice) => {
+    const choice = cloneDocumentObject(rawChoice);
+    const divergenceSceneIndex = reflowSceneIndexAfterRemoval(
+      choice?.divergenceSceneIndex ?? choice?.divergence_scene_index,
+      removedSceneIndices,
+    );
+    const divergenceEntry = divergenceSceneIndex === null
+      ? null
+      : [...timeline].reverse().find(
+        (entry) => getNonNegativeInteger(entry?.sceneIndex) === divergenceSceneIndex,
+      );
+    return {
+      ...choice,
+      divergenceSceneIndex,
+      switchAtSeconds: divergenceEntry?.endTime ?? 0,
+    };
+  });
+  const immediateChoice = selectionTrail.at(-1) || null;
+  const audioTimeline = reflowBranchedAudioTimeline({
+    audioTimeline: rawPath?.audioTimeline,
+    timeline,
+    pathDuration: durationOffset,
+    remainingAudioById,
+    removedAudioLayerIds,
+    removedLayerId: normalizedLayerId,
+    removedSceneIndices,
+  });
+
+  return {
+    affected: true,
+    followingLayerIds: timeline
+      .slice(firstRemovedTimelineIndex)
+      .map((entry) => getBranchTimelineLayerId(entry))
+      .filter(Boolean),
+    path: {
+      ...cloneDocumentObject(rawPath),
+      duration: durationOffset,
+      timeline,
+      audioTimeline,
+      selectionTrail,
+      frameGenerationStatus: 'INIT',
+      frameGenerationPending: true,
+      frameGenerationError: null,
+      ...(immediateChoice
+        ? {
+          branchingHint:
+            immediateChoice?.branchingHint ?? immediateChoice?.pathName ?? null,
+          branchingDescription:
+            immediateChoice?.branchingDescription ?? immediateChoice?.pathDescription ?? null,
+          branchPointId: normalizeDocumentId(immediateChoice?.branchPointId) || null,
+          divergenceSceneIndex: immediateChoice.divergenceSceneIndex,
+          switchAtSeconds: immediateChoice.switchAtSeconds,
+        }
+        : {}),
+    },
+  };
+}
+
+function buildBranchedExpressLayerPrunePlan(sessionData = {}, layerId) {
+  const normalizedLayerId = normalizeDocumentId(layerId);
+  const layers = Array.isArray(sessionData?.layers)
+    ? sessionData.layers.map(cloneDocumentObject)
+    : [];
+  const layerIndex = layers.findIndex(
+    (layer) => normalizeDocumentId(layer?._id) === normalizedLayerId,
+  );
+  if (layerIndex < 0) {
+    return { pruned: true, reason: 'missing_layer' };
+  }
+
+  const branchRenderPaths = Array.isArray(sessionData?.branchRenderPaths)
+    ? sessionData.branchRenderPaths
+    : [];
+  if (branchRenderPaths.length === 0) {
+    return { pruned: false, reason: 'missing_branch_render_paths' };
+  }
+  const affectedPaths = branchRenderPaths.filter((path) => (
+    Array.isArray(path?.timeline) && path.timeline.some(
+      (entry) => getBranchTimelineLayerId(entry) === normalizedLayerId,
+    )
+  ));
+  if (affectedPaths.some((path) => path.timeline.every(
+    (entry) => getBranchTimelineLayerId(entry) === normalizedLayerId,
+  ))) {
+    return { pruned: false, reason: 'empty_branch_path' };
+  }
+
+  const [removedLayer] = layers.splice(layerIndex, 1);
+  const removedAudioLayerIds = new Set();
+  const audioLayers = (Array.isArray(sessionData?.audioLayers)
+    ? sessionData.audioLayers
+    : []).flatMap((audioLayer) => {
+    if (getBranchAudioConnectedLayerId({}, audioLayer) === normalizedLayerId) {
+      const audioLayerId = normalizeDocumentId(audioLayer?._id);
+      if (audioLayerId) {
+        removedAudioLayerIds.add(audioLayerId);
+      }
+      return [];
+    }
+    return [cloneDocumentObject(audioLayer)];
+  });
+  const remainingLayerDurationById = new Map(layers.map((layer) => [
+    normalizeDocumentId(layer?._id),
+    getPositiveDuration(layer?.duration),
+  ]));
+  const remainingAudioById = new Map(audioLayers.map((audioLayer) => [
+    normalizeDocumentId(audioLayer?._id),
+    audioLayer,
+  ]));
+  const followingLayerIds = new Set();
+  const nextBranchRenderPaths = branchRenderPaths.map((path) => {
+    const result = reflowBranchedPathAfterLayerRemoval({
+      rawPath: path,
+      layerId: normalizedLayerId,
+      remainingLayerDurationById,
+      remainingAudioById,
+      removedAudioLayerIds,
+    });
+    result.followingLayerIds.forEach((followingLayerId) => followingLayerIds.add(followingLayerId));
+    return result.path;
+  });
+  layers.forEach((layer) => {
+    if (followingLayerIds.has(normalizeDocumentId(layer?._id))) {
+      layer.frameGenerationPending = true;
+    }
+  });
+
+  const branchingMeta = reflowBranchingMeta(
+    sessionData?.branchingMeta || {},
+    nextBranchRenderPaths,
+  );
+  const branchingTimeline = reflowBranchingTimeline({
+    branchingTimeline: sessionData?.branchingTimeline || {},
+    branchingMeta,
+    branchRenderPaths: nextBranchRenderPaths,
+    defaultBranchPathId:
+      sessionData?.defaultBranchPathId ?? sessionData?.branchingTimeline?.defaultPathId,
+  });
+  const totalDuration = nextBranchRenderPaths.reduce(
+    (maximum, path) => Math.max(maximum, Number(path?.duration) || 0),
+    0,
+  );
+
+  return {
+    pruned: true,
+    branched: true,
+    layerIndex,
+    removedLayer,
+    layers,
+    audioLayers,
+    totalDuration,
+    branchRenderPaths: nextBranchRenderPaths,
+    branchingMeta,
+    branchingTimeline,
+    followingLayerIds: [...followingLayerIds],
+  };
+}
+
 function isPrunableExpressImageLayer(layer = {}) {
   const baseType = typeof layer?.layerBaseAiImageType === 'string'
     ? layer.layerBaseAiImageType.trim().toLowerCase()
@@ -1555,6 +2097,10 @@ function isPrunableExpressImageLayer(layer = {}) {
 function buildExpressLayerPrunePlan(sessionData = {}, layerId) {
   if (!sessionData?.isExpressGeneration || !layerId) {
     return { pruned: false };
+  }
+
+  if (isBranchedVideoSession(sessionData)) {
+    return buildBranchedExpressLayerPrunePlan(sessionData, layerId);
   }
 
   const normalizedLayerId = layerId.toString();
@@ -1604,58 +2150,96 @@ async function pruneExpressImageLayerAfterFailure({
     return { pruned: false };
   }
 
-  const prunePlan = buildExpressLayerPrunePlan(sessionData, layerId);
-  if (!prunePlan.pruned) {
-    return prunePlan;
+  let currentSessionData = sessionData;
+  let prunePlan = null;
+  let updated = false;
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    prunePlan = buildExpressLayerPrunePlan(currentSessionData, layerId);
+    if (!prunePlan.pruned) {
+      return prunePlan;
+    }
+    if (prunePlan.reason === 'missing_layer') {
+      await ImageGeneration.deleteMany({ videoSessionId, layerId });
+      return prunePlan;
+    }
+
+    const now = new Date();
+    const setPayload = {
+      ...(!prunePlan.branched
+        ? {
+          layers: prunePlan.layers,
+          audioLayers: prunePlan.audioLayers,
+        }
+        : {}),
+      totalDuration: prunePlan.totalDuration,
+      frameGenerationPending: true,
+      'expressGenerationStatus.image_generation': 'PENDING',
+      'expressGenerationStatus.status': 'PENDING',
+      expressGenerationPending: true,
+      expressGenerationFailed: false,
+      expressGenerationError: null,
+      'expressStepGeneration.status': 'PENDING',
+      'expressStepGeneration.currentStep': 'image_generation',
+      'expressStepGeneration.current_step': 'image_generation',
+      'expressStepGeneration.currentStepLabel': 'Images',
+      'expressStepGeneration.current_step_label': 'Images',
+      'expressStepGeneration.waitingForProcessNext': false,
+      'expressStepGeneration.waiting_for_process_next': false,
+      'expressStepGeneration.requiresUserAction': false,
+      'expressStepGeneration.requires_user_action': false,
+      'expressStepGeneration.canProcessNext': false,
+      'expressStepGeneration.can_process_next': false,
+      'expressStepGeneration.updatedAt': now,
+      'expressStepGeneration.updated_at': now,
+      ...(prunePlan.branched
+        ? {
+          branchRenderPaths: prunePlan.branchRenderPaths,
+          branchingMeta: prunePlan.branchingMeta,
+          branchingTimeline: prunePlan.branchingTimeline,
+        }
+        : {}),
+    };
+    const version = Number(currentSessionData?.__v);
+    const hasVersion = Number.isInteger(version) && version >= 0;
+    const updateResult = await VideoSession.updateOne(
+      {
+        _id: videoSessionId,
+        'layers._id': layerId,
+        ...(hasVersion ? { __v: version } : {}),
+      },
+      {
+        $set: setPayload,
+        ...(hasVersion ? { $inc: { __v: 1 } } : {}),
+        ...(prunePlan.branched
+          ? {
+            $pull: {
+              layers: { _id: layerId },
+              audioLayers: { connectedLayerId: normalizeDocumentId(layerId) },
+            },
+          }
+          : {}),
+      },
+    );
+    const modifiedCount = Number(updateResult?.modifiedCount ?? updateResult?.nModified ?? 0);
+    if (modifiedCount > 0) {
+      updated = true;
+      break;
+    }
+    currentSessionData = await VideoSession.findOne({ _id: videoSessionId });
+    if (!currentSessionData) {
+      return { pruned: false, reason: 'missing_session' };
+    }
   }
-  if (prunePlan.reason === 'missing_layer') {
-    await ImageGeneration.deleteMany({ videoSessionId, layerId });
-    return prunePlan;
+  if (!updated) {
+    throw new Error('Unable to remove failed image layer after concurrent session updates.');
   }
 
-  const { layers, audioLayers, totalDuration } = prunePlan;
-
-  const now = new Date();
-  const nextStatus = {
-    ...(sessionData.expressGenerationStatus || {}),
-    image_generation: 'PENDING',
-    status: 'PENDING',
-  };
-  const setPayload = {
-    layers,
-    audioLayers,
-    totalDuration,
-    frameGenerationPending: true,
-    expressGenerationStatus: nextStatus,
-    expressGenerationPending: true,
-    expressGenerationFailed: false,
-    expressGenerationError: null,
-    'expressStepGeneration.status': 'PENDING',
-    'expressStepGeneration.currentStep': 'image_generation',
-    'expressStepGeneration.current_step': 'image_generation',
-    'expressStepGeneration.currentStepLabel': 'Images',
-    'expressStepGeneration.current_step_label': 'Images',
-    'expressStepGeneration.waitingForProcessNext': false,
-    'expressStepGeneration.waiting_for_process_next': false,
-    'expressStepGeneration.requiresUserAction': false,
-    'expressStepGeneration.requires_user_action': false,
-    'expressStepGeneration.canProcessNext': false,
-    'expressStepGeneration.can_process_next': false,
-    'expressStepGeneration.updatedAt': now,
-    'expressStepGeneration.updated_at': now,
-  };
-
-  await VideoSession.updateOne(
-    { _id: videoSessionId },
-    { $set: setPayload },
-  );
   await ImageGeneration.deleteMany({ videoSessionId, layerId });
   if (requestId) {
     removeTaskFromQueueById(requestId);
   }
 
-
-  return { pruned: true };
+  return { pruned: true, branched: prunePlan?.branched === true };
 }
 
 async function processNextTask() {
@@ -1907,7 +2491,12 @@ async function processPendingGenerationRequet(pendingRequestData) {
       await updateImageInSessionLayer(imageData, pendingRequestData);
     }
   } else if (model === 'GPTIMAGE2' || model === 'GPTIMAGE1') {
-    const imageData = await handleGPTImageTwoRequest(pendingRequestData);
+    const shouldUseFal = model === 'GPTIMAGE2' &&
+      resolveGPTImageTwoGenerationProvider(pendingRequestData?.externalProvider) ===
+        DOCKER_ADAPTER_PROVIDER.FAL;
+    const imageData = shouldUseFal
+      ? await handleFalGPTImageTwoRequest(pendingRequestData)
+      : await handleGPTImageTwoRequest(pendingRequestData);
     if (imageData) {
       await updateImageInSessionLayer(imageData, pendingRequestData);
     }
@@ -2330,8 +2919,16 @@ async function handleNoImageRetryOrFailure(payload, imageData) {
     const failureMessage = getImageGenerationFailureMessage(imageData);
 
     if (nextFilterRetryCount >= MAX_IMAGE_GENERATION_FILTER_RETRIES) {
-      const fallbackScoreCutoff = getImageFilterScoreCutoff(sessionData?.videoTone || 'default', latestDoc || payload);
-      if (await processBestFilterPassIfAvailable(payload, filterPassesForLayer, fallbackScoreCutoff)) {
+      const terminalFilterPolicy = getTerminalFilterFailurePolicy(
+        sessionData?.videoTone || 'default',
+        latestDoc || payload,
+        sessionData
+      );
+      if (await processBestFilterPassIfAvailable(
+        payload,
+        filterPassesForLayer,
+        terminalFilterPolicy.fallbackScoreCutoff
+      )) {
         return;
       }
     }
@@ -2348,6 +2945,7 @@ async function handleNoImageRetryOrFailure(payload, imageData) {
           failureRetryCount: nextFailureCount,
           message: `${failureMessage} Unable to build refilter retry prompt.`,
           source: 'image_generation_refilter_retry_prompt_missing',
+          ...getBranchedTerminalGenerationPruneOptions(sessionData),
         });
         return;
       }
@@ -2419,8 +3017,16 @@ async function handleNoImageRetryOrFailure(payload, imageData) {
       const sessionData = await VideoSession.findOne({ _id: videoSessionId });
       if (sessionData) {
         const layerData = sessionData.layers.find(l => l._id.toString() === layerId);
-        const fallbackScoreCutoff = getImageFilterScoreCutoff(sessionData?.videoTone || 'default', latestDoc || payload);
-        if (await processBestFilterPassIfAvailable(payload, layerData?.filterPasses || [], fallbackScoreCutoff)) {
+        const terminalFilterPolicy = getTerminalFilterFailurePolicy(
+          sessionData?.videoTone || 'default',
+          latestDoc || payload,
+          sessionData
+        );
+        if (await processBestFilterPassIfAvailable(
+          payload,
+          layerData?.filterPasses || [],
+          terminalFilterPolicy.fallbackScoreCutoff
+        )) {
           return;
         }
 
@@ -2430,6 +3036,7 @@ async function handleNoImageRetryOrFailure(payload, imageData) {
           sessionData,
           failureRetryCount: normalizeRetryCount(failureRetryCount) + 1,
           message: `${getImageGenerationFailureMessage(imageData)} Max image generation failures reached (${MAX_IMAGE_GENERATION_FAILURES}).`,
+          ...getBranchedTerminalGenerationPruneOptions(sessionData),
         });
 
 
@@ -2447,8 +3054,16 @@ async function handleNoImageRetryOrFailure(payload, imageData) {
     const sessionData = await VideoSession.findOne({ _id: videoSessionId });
     if (sessionData) {
       const layerData = sessionData.layers.find(l => l._id.toString() === layerId);
-      const fallbackScoreCutoff = getImageFilterScoreCutoff(sessionData?.videoTone || 'default', latestDoc || payload);
-      if (await processBestFilterPassIfAvailable(payload, layerData?.filterPasses || [], fallbackScoreCutoff)) {
+      const terminalFilterPolicy = getTerminalFilterFailurePolicy(
+        sessionData?.videoTone || 'default',
+        latestDoc || payload,
+        sessionData
+      );
+      if (await processBestFilterPassIfAvailable(
+        payload,
+        layerData?.filterPasses || [],
+        terminalFilterPolicy.fallbackScoreCutoff
+      )) {
         return;
       }
     }
@@ -2458,6 +3073,7 @@ async function handleNoImageRetryOrFailure(payload, imageData) {
       sessionData,
       failureRetryCount: normalizeRetryCount(latestDoc.failureRetryCount) + 1,
       message: `${getImageGenerationFailureMessage(imageData)} Max image generation failures reached (${MAX_IMAGE_GENERATION_FAILURES}).`,
+      ...getBranchedTerminalGenerationPruneOptions(sessionData),
     });
 
   }
@@ -2594,7 +3210,8 @@ async function processRefilterFailure(imageData, payload, imageScore, imageDescr
 
     const terminalFilterPolicy = getTerminalFilterFailurePolicy(
       latestSessionData?.videoTone || 'default',
-      latestGenerationData || payload
+      latestGenerationData || payload,
+      latestSessionData
     );
     if (await processBestFilterPassIfAvailable(
       payload,

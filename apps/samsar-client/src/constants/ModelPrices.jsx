@@ -86,7 +86,7 @@ export const IMAGE_MODEL_PRICES = [
   },
   {
     key: 'NANOBANANA2',
-    isExpressModel: true,
+    isExpressModel: false,
     prices: [
       { aspectRatio: '1:1', price: 23 },
       { aspectRatio: '16:9', price: 23 },

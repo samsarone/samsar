@@ -48,11 +48,21 @@ function getFirstDivergenceSceneIndex(branchingMeta = {}, branchRenderPaths = []
   const branchPointIndices = Array.isArray(branchingMeta?.branchPoints)
     ? branchingMeta.branchPoints.map((branchPoint) => branchPoint?.divergenceSceneIndex)
     : [];
-  const selectionTrailIndices = (Array.isArray(branchRenderPaths) ? branchRenderPaths : [])
-    .flatMap((path) => Array.isArray(path?.selectionTrail) ? path.selectionTrail : [])
-    .map((choice) => choice?.divergenceSceneIndex);
+  const selectionTrail = (Array.isArray(branchRenderPaths) ? branchRenderPaths : [])
+    .flatMap((path) => Array.isArray(path?.selectionTrail) ? path.selectionTrail : []);
+  const startsAtTimelineOrigin = selectionTrail.some((choice) => {
+    const divergenceSceneIndex = choice?.divergenceSceneIndex;
+    const switchAtSeconds = Number(choice?.switchAtSeconds);
+    return (divergenceSceneIndex === null || divergenceSceneIndex === undefined) &&
+      Number.isFinite(switchAtSeconds) && switchAtSeconds === 0;
+  });
+  if (startsAtTimelineOrigin) {
+    return -1;
+  }
+  const selectionTrailIndices = selectionTrail.map((choice) => choice?.divergenceSceneIndex);
 
   const indices = [...configuredIndices, ...branchPointIndices, ...selectionTrailIndices]
+    .filter((value) => value !== null && value !== undefined && value !== '')
     .map(Number)
     .filter((value) => Number.isInteger(value) && value >= 0)
     .sort((left, right) => left - right);

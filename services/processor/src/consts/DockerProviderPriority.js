@@ -175,6 +175,12 @@ export function isDockerProviderConfigured(provider) {
 
 export function getDockerImageProviderPriority(model) {
   const normalizedModel = normalizeDockerModelKey(model);
+  if (
+    normalizedModel === 'NANOBANANAPRO' &&
+    normalizeString(process.env.CURRENT_ENV).toLowerCase() === 'production'
+  ) {
+    return [DOCKER_PROVIDER.FAL, DOCKER_PROVIDER.GOOGLE_CLOUD, DOCKER_PROVIDER.SAMSAR];
+  }
   if (DOCKER_IMAGE_PROVIDER_PRIORITY_BY_MODEL[normalizedModel]) {
     return DOCKER_IMAGE_PROVIDER_PRIORITY_BY_MODEL[normalizedModel];
   }

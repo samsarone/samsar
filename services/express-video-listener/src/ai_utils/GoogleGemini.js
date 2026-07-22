@@ -5,7 +5,7 @@ import { readFile } from 'node:fs/promises';
 import { resolveLocalAssetPath } from '../utils/LocalAssetPath.js';
 
 export const GPT_56_SOL_INFERENCE_MODEL = 'gpt-5.6-sol';
-export const GPT_56_SOL_REASONING_EFFORT = 'xhigh';
+export const GPT_56_SOL_REASONING_EFFORT = 'high';
 export const QWEN_37_INFERENCE_MODEL = 'QWEN3.7';
 export const QWEN_38_MAX_PREVIEW_MODEL = 'qwen3.8-max-preview';
 export const QWEN_37_MAX_MODEL = 'qwen3.7-max';

@@ -21,7 +21,6 @@ const TEXT_MODELS = [
 
 const IMAGE_MODELS = [
   { label: 'GPT Image 2', value: 'GPTIMAGE2' },
-  { label: 'Nano Banana 2', value: 'NANOBANANA2' },
   { label: 'NanoBanana Pro', value: 'NANOBANANAPRO' },
   { label: 'Seedream', value: 'SEEDREAM' },
   { label: 'Wan2.7 Pro', value: 'WAN2.7PRO' },

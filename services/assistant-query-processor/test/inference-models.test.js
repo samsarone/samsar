@@ -27,10 +27,10 @@ test('defaults assistant inference to GPT 5.6 Sol', () => {
   assert.equal(DEFAULT_INFERENCE_MODEL, GPT_56_SOL_INFERENCE_MODEL);
   assert.equal(normalizeInferenceModel('GPT 5.6 Sol'), DEFAULT_INFERENCE_MODEL);
   assert.equal(getProviderModelForInferenceModel('gpt-5.6-sol'), 'gpt-5.6-sol');
-  assert.equal(GPT_56_SOL_REASONING_EFFORT, 'xhigh');
+  assert.equal(GPT_56_SOL_REASONING_EFFORT, 'high');
   assert.equal(
     getAssistantReasoningEffort('gpt-5.6-sol', { reasoningEffort: 'low' }),
-    'xhigh',
+    'high',
   );
 });
 

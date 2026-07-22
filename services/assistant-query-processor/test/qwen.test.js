@@ -52,6 +52,13 @@ test('uses Qwen 3.7 Max for text assistant history and normalizes Responses cont
   assert.deepEqual(payload.messages[1].content[0], { type: 'text', text: 'Prior reply.' });
 });
 
+test('uses the Docker Alibaba text-model constant for Token Plan inference', () => {
+  const text = buildQwenChatRequest({
+    messages: [{ role: 'user', content: 'Continue.' }],
+  }, { ALIBABA_QWEN_TEXT_MODEL: 'qwen3.8-max-preview' });
+  assert.equal(text.payload.model, 'qwen3.8-max-preview');
+});
+
 test('builds the OpenAI-compatible endpoint from ALIBABA_API_HOST', () => {
   assert.equal(
     getAlibabaQwenBaseURL({

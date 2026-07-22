@@ -88,11 +88,20 @@ export function shouldUseGoogleNativeNanoBanana(payloadOrModel) {
     return false;
   }
 
+  const providerStatus = payload?.apiGenerationStatus || 'INIT';
+  if (
+    model === 'NANOBANANAPRO' &&
+    normalizeString(process.env.CURRENT_ENV).toLowerCase() === 'production' &&
+    normalizeString(process.env.FAL_API_KEY) &&
+    providerStatus === 'INIT'
+  ) {
+    return false;
+  }
+
   if (!payload) {
     return true;
   }
 
-  const providerStatus = payload.apiGenerationStatus || 'INIT';
   if (providerStatus === 'INIT') {
     return true;
   }

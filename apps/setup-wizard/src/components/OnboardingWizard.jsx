@@ -71,19 +71,19 @@ const PROVIDERS = [
   },
   {
     key: 'alibabaCloud',
-    title: 'Alibaba Cloud (Pay-as-you-go)',
+    title: 'Alibaba Cloud',
     type: 'native',
     field: 'alibabaApiKey',
     inputType: 'password',
-    placeholder: 'Pay-as-you-go Model Studio API key (sk-...)',
+    placeholder: 'Alibaba Cloud Model Studio API key',
     requiredFor: 'Qwen 3.7 Max text inference, Qwen 3.7 Plus vision, Wan image generation, and Happy Horse video.',
     pricingUrl: 'https://www.alibabacloud.com/help/en/model-studio/model-pricing',
     keysUrl: 'https://modelstudio.console.alibabacloud.com/',
-    credentialLabel: 'Pay-as-you-go API key',
+    credentialLabel: 'API key',
     endpointField: 'alibabaApiHost',
-    endpointLabel: 'Pay-as-you-go API host or OpenAI-compatible endpoint (optional)',
+    endpointLabel: 'API host or OpenAI-compatible endpoint (optional)',
     endpointPlaceholder: 'workspace-id.ap-southeast-1.maas.aliyuncs.com',
-    endpointHelp: 'Leave blank to use the international pay-as-you-go endpoint. Token Plan and Coding Plan keys or endpoints are not accepted.',
+    endpointHelp: 'Leave blank to use the international Model Studio endpoint.',
   },
   {
     key: 'fal',
@@ -633,6 +633,17 @@ function pickAdminConfig(value = {}) {
 
 function normalizeText(value) {
   return typeof value === 'string' ? value.trim() : '';
+}
+
+function isAlibabaTokenPlanEndpoint(value) {
+  const configured = normalizeText(value);
+  if (!configured) return false;
+  try {
+    const url = new URL(/^[a-z][a-z\d+.-]*:\/\//i.test(configured) ? configured : `https://${configured}`);
+    return url.hostname.toLowerCase().includes('token-plan');
+  } catch {
+    return false;
+  }
 }
 
 function normalizeSecretText(value) {
@@ -3299,6 +3310,11 @@ export default function OnboardingWizard() {
                 </section>
               ))}
             </div>
+            {isAlibabaTokenPlanEndpoint(credentials.alibabaApiHost) && (
+              <div className="warning-banner" role="status">
+                Token plan API key is unsuitable for production server
+              </div>
+            )}
             {enteredProviderKeys.length > 0 && expressPipelineAvailability.isReady && (
               <div className="success-banner express-readiness-banner" role="status">
                 <strong>Express pipeline ready.</strong>

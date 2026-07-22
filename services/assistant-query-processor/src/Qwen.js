@@ -222,7 +222,7 @@ function toPositiveInteger(value) {
   return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : null;
 }
 
-export function buildQwenChatRequest(chatRequest = {}) {
+export function buildQwenChatRequest(chatRequest = {}, env = process.env) {
   const {
     authorization,
     bypassSamsarExternalInference,
@@ -262,6 +262,7 @@ export function buildQwenChatRequest(chatRequest = {}) {
       ...request,
       model: getProviderModelForInferenceModel(QWEN_37_INFERENCE_MODEL, {
         vision: hasQwenVisionInput(sourceMessages),
+        env,
       }),
       messages: structured.messages,
       enable_thinking: true,

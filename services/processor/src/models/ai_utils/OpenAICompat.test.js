@@ -4,7 +4,7 @@ import test from 'node:test';
 import { INFERENCE_MODELS } from '../../consts/InferenceModels.js';
 import { createCompatibleChatCompletion } from './OpenAICompat.js';
 
-test('forces xhigh reasoning for GPT 5.6 Sol Responses requests', async () => {
+test('forces high reasoning for GPT 5.6 Sol Responses requests', async () => {
   let capturedPath;
   let capturedBody;
   const openaiClient = {
@@ -26,7 +26,7 @@ test('forces xhigh reasoning for GPT 5.6 Sol Responses requests', async () => {
   });
 
   assert.equal(capturedPath, '/responses');
-  assert.deepEqual(capturedBody.reasoning, { effort: 'xhigh' });
+  assert.deepEqual(capturedBody.reasoning, { effort: 'high' });
   assert.equal(response.choices[0].message.content, 'ok');
 });
 

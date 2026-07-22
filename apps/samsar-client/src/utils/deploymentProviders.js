@@ -1,6 +1,7 @@
 import axios from "axios";
 
 import {
+  extractDeploymentProviderEndpointTypes,
   extractDeploymentInferenceModelProviders,
   extractDeploymentInferenceModelValues,
   extractDeploymentProviders,
@@ -15,6 +16,7 @@ import {
 } from "./deploymentInferencePolicy.mjs";
 
 export {
+  extractDeploymentProviderEndpointTypes,
   extractDeploymentInferenceModelProviders,
   extractDeploymentInferenceModelValues,
   extractDeploymentProviders,

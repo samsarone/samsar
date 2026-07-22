@@ -66,6 +66,27 @@ test('Wan2.7 Pro is accepted for both express image stages', () => {
   );
 });
 
+test('NanoBanana 2 is excluded from every express image surface', () => {
+  assert.deepEqual(validateExpressImageModelKey('NANOBANANA2'), {
+    status: false,
+    message: 'Image model is not supported for this type',
+  });
+  assert.equal(
+    validateMovieInput(buildValidMoviePayload({ image_model: 'NANOBANANA2' })).status,
+    false,
+  );
+  assert.equal(TEXT_TO_VIDEO_IMAGE_MODEL_KEYS.includes('NANOBANANA2'), false);
+  assert.equal(IMAGE_LIST_TO_VIDEO_IMAGE_MODEL_KEYS.includes('NANOBANANA2'), false);
+  assert.equal(
+    IMAGE_GENERAITON_MODEL_TYPES.find((model) => model.key === 'NANOBANANA2')?.isExpressModel,
+    false,
+  );
+  assert.equal(
+    IMAGE_MODEL_PRICES.find((model) => model.key === 'NANOBANANA2')?.isExpressModel,
+    false,
+  );
+});
+
 test('deprecated video subtype stripper removes public payload aliases only', () => {
   const payload = {
     video_model_sub_type: 'anime',

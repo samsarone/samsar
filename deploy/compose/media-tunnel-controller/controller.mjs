@@ -68,6 +68,10 @@ export function extractQuickTunnelUrl(value) {
   }
 }
 
+export function cloudflaredOutputHasRegisteredConnection(value) {
+  return /\bRegistered tunnel connection\b/i.test(normalizeString(value));
+}
+
 function isTemporaryTunnelUrl(value) {
   try {
     const hostname = new URL(value).hostname.toLowerCase();
@@ -334,7 +338,7 @@ export async function validateHealthMarker(
   }
 }
 
-class MediaTunnelController {
+export class MediaTunnelController {
   constructor(env = process.env) {
     this.configPath = normalizeString(env.SAMSAR_RUNTIME_CONFIG_FILE) || DEFAULT_CONFIG_PATH;
     this.refreshMarkerPath = normalizeString(
@@ -350,6 +354,7 @@ class MediaTunnelController {
     this.startTimeoutMs = positiveInteger(env.SAMSAR_MEDIA_TUNNEL_START_TIMEOUT_MS, 60000, 1000);
     this.healthTimeoutMs = positiveInteger(env.SAMSAR_MEDIA_TUNNEL_HEALTH_TIMEOUT_MS, 60000, 1000);
     this.requestTimeoutMs = positiveInteger(env.SAMSAR_MEDIA_TUNNEL_REQUEST_TIMEOUT_MS, 5000, 250);
+    this.dnsSettleMs = positiveInteger(env.SAMSAR_MEDIA_TUNNEL_DNS_SETTLE_MS, 5000, 0);
     this.restartDelayMs = positiveInteger(env.SAMSAR_MEDIA_TUNNEL_RESTART_DELAY_MS, 3000, 100);
     this.failureThreshold = positiveInteger(env.SAMSAR_MEDIA_TUNNEL_FAILURE_THRESHOLD, 3, 1);
     this.stopping = false;
@@ -446,9 +451,11 @@ class MediaTunnelController {
     return new Promise((resolve, reject) => {
       let settled = false;
       let logTail = '';
+      let discoveredTunnelUrl = '';
       const formatLogTail = () => logTail.replace(/\s+/g, ' ').trim().slice(-1000);
       const timeout = setTimeout(() => finish(new Error(
-        `Timed out discovering the Cloudflared quick-tunnel URL. Last output: ${formatLogTail() || '(none)'}`,
+        `Timed out waiting for the Cloudflared quick tunnel to register. ` +
+        `Last output: ${formatLogTail() || '(none)'}`,
       )), this.startTimeoutMs);
 
       const finish = (error, tunnelUrl = '') => {
@@ -475,9 +482,9 @@ class MediaTunnelController {
       const onOutput = (chunk) => {
         const text = String(chunk);
         logTail = `${logTail}${text}`.slice(-32768);
-        const tunnelUrl = extractQuickTunnelUrl(logTail);
-        if (tunnelUrl) {
-          finish(null, tunnelUrl);
+        discoveredTunnelUrl = extractQuickTunnelUrl(logTail) || discoveredTunnelUrl;
+        if (discoveredTunnelUrl && cloudflaredOutputHasRegisteredConnection(logTail)) {
+          finish(null, discoveredTunnelUrl);
         }
       };
 
@@ -489,6 +496,14 @@ class MediaTunnelController {
   }
 
   async waitForPublicGateway(tunnelUrl) {
+    // The quick-tunnel URL is printed before its public DNS record is safe to
+    // query through Docker's forwarding resolver. An immediate lookup can cache
+    // NXDOMAIN for the lifetime of this tunnel even after authoritative DNS is
+    // ready. Connector registration plus a short quiet period prevents that
+    // negative-cache race without accepting a hostname workers cannot resolve.
+    if (this.dnsSettleMs > 0) {
+      await sleep(this.dnsSettleMs);
+    }
     const deadline = Date.now() + this.healthTimeoutMs;
     while (!this.stopping && Date.now() < deadline) {
       if (await validateHealthMarker(tunnelUrl, {

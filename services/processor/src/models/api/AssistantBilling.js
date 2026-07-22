@@ -165,6 +165,9 @@ function resolvePricingModel(model) {
   }
 
   if (
+    providerModel === 'qwen3.8' ||
+    providerModel.startsWith('qwen3.8-max') ||
+    providerModel.startsWith('qwen-3.8') ||
     providerModel === 'qwen3.7' ||
     providerModel.startsWith('qwen3.7-max') ||
     providerModel.startsWith('qwen-3.7')

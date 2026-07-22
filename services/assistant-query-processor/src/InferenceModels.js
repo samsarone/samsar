@@ -1,12 +1,13 @@
 export const GPT_56_SOL_INFERENCE_MODEL = 'gpt-5.6-sol';
 export const DEFAULT_INFERENCE_MODEL = GPT_56_SOL_INFERENCE_MODEL;
-export const GPT_56_SOL_REASONING_EFFORT = 'xhigh';
+export const GPT_56_SOL_REASONING_EFFORT = 'high';
 export const GEMINI_31_PRO_INFERENCE_MODEL = 'gemini-3.1-pro';
 export const DEFAULT_GEMINI_31_PRO_VERTEX_MODEL = 'gemini-3.1-pro-preview';
 export const QWEN_37_INFERENCE_MODEL = 'QWEN3.7';
 export const QWEN_38_MAX_PREVIEW_MODEL = 'qwen3.8-max-preview';
 export const QWEN_37_MAX_MODEL = 'qwen3.7-max';
 export const QWEN_37_PLUS_MODEL = 'qwen3.7-plus';
+export const ALIBABA_QWEN_TEXT_MODEL_ENV = 'ALIBABA_QWEN_TEXT_MODEL';
 
 const GEMINI_ALIASES = new Set([
   GEMINI_31_PRO_INFERENCE_MODEL,
@@ -92,9 +93,11 @@ export function normalizeGeminiProviderModel(value) {
   return GEMINI_ALIASES.has(normalized) ? DEFAULT_GEMINI_31_PRO_VERTEX_MODEL : normalized;
 }
 
-export function getProviderModelForInferenceModel(value, { vision = false } = {}) {
+export function getProviderModelForInferenceModel(value, { vision = false, env = process.env } = {}) {
   if (isQwenInferenceModel(value)) {
-    return vision ? QWEN_37_PLUS_MODEL : QWEN_37_MAX_MODEL;
+    return vision
+      ? QWEN_37_PLUS_MODEL
+      : normalizeString(env?.[ALIBABA_QWEN_TEXT_MODEL_ENV]) || QWEN_37_MAX_MODEL;
   }
   if (isGeminiInferenceModel(value)) {
     const normalized = normalizeString(value).toLowerCase();

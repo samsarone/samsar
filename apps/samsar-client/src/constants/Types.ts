@@ -115,7 +115,7 @@ export const IMAGE_GENERAITON_MODEL_TYPES = [
   {
     name: 'NanoBanana 2',
     key: 'NANOBANANA2',
-    isExpressModel: true,
+    isExpressModel: false,
   },
   {
     name: 'NanoBanana Pro',

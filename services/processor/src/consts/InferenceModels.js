@@ -4,7 +4,7 @@ export const INFERENCE_MODELS = Object.freeze({
 });
 
 export const INFERENCE_REASONING_EFFORTS = Object.freeze({
-  Inference: 'xhigh',
+  Inference: 'high',
   PublicationMetadata: 'xhigh',
 });
 
@@ -46,6 +46,7 @@ export const QWEN_37_INFERENCE_MODEL = INFERENCE_MODEL_KEYS.QWEN_37;
 export const QWEN_37_MAX_MODEL = INFERENCE_PROVIDER_MODEL_KEYS[QWEN_37_INFERENCE_MODEL];
 export const QWEN_38_MAX_PREVIEW_MODEL = 'qwen3.8-max-preview';
 export const QWEN_37_PLUS_MODEL = 'qwen3.7-plus';
+export const ALIBABA_QWEN_TEXT_MODEL_ENV = 'ALIBABA_QWEN_TEXT_MODEL';
 
 export const SUPPORTED_INFERENCE_MODEL_VALUES = Object.freeze([
   DEFAULT_INFERENCE_MODEL,
@@ -190,9 +191,14 @@ export function normalizeGeminiProviderModel(value) {
   return isGemini31ProAlias(value) ? DEFAULT_GEMINI_31_PRO_VERTEX_MODEL : normalized;
 }
 
-export function getProviderModelForInferenceModel(value, { vision = false } = {}) {
+export function getProviderModelForInferenceModel(
+  value,
+  { vision = false, env = process.env } = {},
+) {
   if (isQwenInferenceModel(value)) {
-    return vision ? QWEN_37_PLUS_MODEL : QWEN_37_MAX_MODEL;
+    return vision
+      ? QWEN_37_PLUS_MODEL
+      : normalizeString(env?.[ALIBABA_QWEN_TEXT_MODEL_ENV]) || QWEN_37_MAX_MODEL;
   }
 
   if (isGeminiInferenceModel(value)) {

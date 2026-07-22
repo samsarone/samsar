@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { ASSISTANT_MODEL_TYPES, INFERENCE_MODEL_TYPES } from "../constants/Types.ts";
 import { getHeaders } from "../utils/web.jsx";
 import {
+  extractDeploymentProviderEndpointTypes,
   extractDeploymentInferenceModelValues,
   extractDeploymentInferenceModelProviders,
   fetchDeploymentProviderConfig,
@@ -25,11 +26,13 @@ const HOSTED_INFERENCE_MODEL_VALUES = Object.freeze(
 const EMPTY_DOCKER_AVAILABILITY = Object.freeze({
   modelValues: [],
   modelProviders: {},
+  providerEndpointTypes: {},
   error: null,
 });
 const DEFAULT_AVAILABILITY = Object.freeze({
   modelValues: HOSTED_INFERENCE_MODEL_VALUES,
   modelProviders: {},
+  providerEndpointTypes: {},
   error: null,
 });
 
@@ -53,6 +56,7 @@ async function loadInferenceModelAvailability() {
         const availability = {
           modelValues: extractDeploymentInferenceModelValues(payload),
           modelProviders: extractDeploymentInferenceModelProviders(payload),
+          providerEndpointTypes: extractDeploymentProviderEndpointTypes(payload),
           error: null,
         };
         availabilityCache.availability = availability;
@@ -62,6 +66,7 @@ async function loadInferenceModelAvailability() {
         const availability = {
           modelValues: [],
           modelProviders: {},
+          providerEndpointTypes: {},
           error,
         };
         availabilityCache.availability = availability;
@@ -113,10 +118,11 @@ export function useInferenceModelAvailability() {
         ? labelOptionsForDeploymentInferenceProviders(
           filterOptionsForDeploymentInferenceModels(INFERENCE_MODEL_TYPES, modelValues),
           availability.modelProviders,
+          availability.providerEndpointTypes,
         )
         : HOSTED_INFERENCE_MODEL_OPTIONS
     ),
-    [availability.modelProviders, modelValues]
+    [availability.modelProviders, availability.providerEndpointTypes, modelValues]
   );
   const assistantModelOptions = useMemo(
     () => (
@@ -124,10 +130,11 @@ export function useInferenceModelAvailability() {
         ? labelOptionsForDeploymentInferenceProviders(
           filterOptionsForDeploymentInferenceModels(ASSISTANT_MODEL_TYPES, modelValues),
           availability.modelProviders,
+          availability.providerEndpointTypes,
         )
         : HOSTED_ASSISTANT_MODEL_OPTIONS
     ),
-    [availability.modelProviders, modelValues]
+    [availability.modelProviders, availability.providerEndpointTypes, modelValues]
   );
 
   return {

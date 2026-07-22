@@ -24,6 +24,7 @@ export const DOCKER_IMAGE_GENERATION_PROVIDER_PRIORITY = Object.freeze({
   ],
   GPTIMAGE2: [
     DOCKER_ADAPTER_PROVIDER.OPENAI,
+    DOCKER_ADAPTER_PROVIDER.FAL,
     DOCKER_ADAPTER_PROVIDER.SAMSAR,
   ],
   GPTIMAGE1: [
@@ -209,6 +210,16 @@ export function isAdapterProviderConfigured(provider) {
 
 export function getDockerImageGenerationProviderPriority(model) {
   const normalizedModel = normalizeModelKey(model);
+  if (
+    normalizedModel === 'NANOBANANAPRO' &&
+    normalizeString(process.env.CURRENT_ENV).toLowerCase() === 'production'
+  ) {
+    return [
+      DOCKER_ADAPTER_PROVIDER.FAL,
+      DOCKER_ADAPTER_PROVIDER.GOOGLE_CLOUD,
+      DOCKER_ADAPTER_PROVIDER.SAMSAR,
+    ];
+  }
   if (DOCKER_IMAGE_GENERATION_PROVIDER_PRIORITY[normalizedModel]) {
     return DOCKER_IMAGE_GENERATION_PROVIDER_PRIORITY[normalizedModel];
   }
@@ -238,6 +249,22 @@ export function resolveDockerImageGenerationProvider(model) {
     return '';
   }
   return resolveConfiguredProvider(getDockerImageGenerationProviderPriority(model));
+}
+
+export function resolveGPTImageTwoGenerationProvider(persistedProvider = '') {
+  if (normalizeString(persistedProvider) === DOCKER_ADAPTER_PROVIDER.FAL) {
+    return DOCKER_ADAPTER_PROVIDER.FAL;
+  }
+
+  // Hosted production text-to-image generation uses FAL. Docker and staging
+  // retain their user-supplied adapter priority below.
+  const currentEnv = normalizeString(process.env.CURRENT_ENV).toLowerCase();
+  if (currentEnv === 'production') {
+    return DOCKER_ADAPTER_PROVIDER.FAL;
+  }
+
+  return resolveDockerImageGenerationProvider('GPTIMAGE2') ||
+    DOCKER_ADAPTER_PROVIDER.OPENAI;
 }
 
 export function resolveWan27ImageGenerationProvider(persistedProvider = '') {

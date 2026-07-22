@@ -142,10 +142,10 @@ export function hasQwenMultimodalInput(request = {}) {
     containsMultimodalContent(request?.input);
 }
 
-export function resolveQwenProviderModel(request = {}) {
+export function resolveQwenProviderModel(request = {}, env = process.env) {
   return hasQwenMultimodalInput(request)
     ? QWEN_37_PLUS_MODEL
-    : QWEN_37_MAX_MODEL;
+    : normalizeString(env.ALIBABA_QWEN_TEXT_MODEL) || QWEN_37_MAX_MODEL;
 }
 
 function normalizeDataSource(value, defaultMimeType) {
@@ -314,7 +314,7 @@ function toPositiveInteger(value) {
   return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : null;
 }
 
-export function buildQwenChatCompletionPayload(chatRequest = {}) {
+export function buildQwenChatCompletionPayload(chatRequest = {}, env = process.env) {
   const {
     authorization,
     bypassSamsarExternalInference,
@@ -345,7 +345,7 @@ export function buildQwenChatCompletionPayload(chatRequest = {}) {
 
   return {
     ...request,
-    model: resolveQwenProviderModel(chatRequest),
+    model: resolveQwenProviderModel(chatRequest, env),
     messages: structuredRequest.messages,
     enable_thinking: true,
     ...(maxTokens ? { max_tokens: maxTokens } : {}),

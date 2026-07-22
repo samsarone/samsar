@@ -146,13 +146,15 @@ export default function UserAccount() {
       const modelPreferencePayload: Record<string, string> = {};
       if (
         nextInferenceModel?.value &&
-        normalizeInferenceModelValue(user.selectedInferenceModel) !== nextInferenceModel.value
+        normalizeInferenceModelValue(user.selectedInferenceModel) !==
+          normalizeInferenceModelValue(nextInferenceModel.value)
       ) {
         modelPreferencePayload.selectedInferenceModel = nextInferenceModel.value;
       }
       if (
         nextAssistantModel?.value &&
-        normalizeInferenceModelValue(user.selectedAssistantModel) !== nextAssistantModel.value
+        normalizeInferenceModelValue(user.selectedAssistantModel) !==
+          normalizeInferenceModelValue(nextAssistantModel.value)
       ) {
         modelPreferencePayload.selectedAssistantModel = nextAssistantModel.value;
       }

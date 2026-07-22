@@ -91,6 +91,7 @@ import {
 } from '../../utils/videoSessionPresentation.mjs';
 import {
   filterOptionsForDeploymentModelValues,
+  normalizeDeploymentInferenceModelValue,
   normalizeDeploymentModelValue,
 } from '../../utils/deploymentProviders.js';
 import useRealtimeTranscription from '../../hooks/useRealtimeTranscription.js';
@@ -176,14 +177,12 @@ const VOICE_TRANSCRIPTION_WORD_LIMIT = 2000;
 const VIDGENIE_PROMPT_MAX_LENGTH = 4000;
 const VIDGENIE_IMAGE_MODEL_ORDER = [
   'GPTIMAGE2',
-  'NANOBANANA2',
   'NANOBANANAPRO',
   'SEEDREAM',
   'WAN2.7PRO',
 ];
 const VIDGENIE_IMAGE_MODEL_LABELS = {
   GPTIMAGE2: 'GPT Image 2',
-  NANOBANANA2: 'Nano Banana 2',
   NANOBANANAPRO: 'NanoBanana Pro',
   SEEDREAM: 'Seedream',
   'WAN2.7PRO': 'Wan2.7 Pro',
@@ -430,13 +429,17 @@ function coerceSupportedInferenceModelKey(value) {
   }
   const normalized = value.trim().toLowerCase();
   if (
-    normalized === 'qwen3.7' ||
-    normalized === 'qwen3.7-max' ||
-    normalized === 'qwen3.7-plus' ||
     normalized === 'qwen3.8' ||
     normalized === 'qwen3.8-max-preview' ||
     normalized === 'qwen-3.8' ||
-    normalized === 'qwen 3.8' ||
+    normalized === 'qwen 3.8'
+  ) {
+    return 'QWEN3.7';
+  }
+  if (
+    normalized === 'qwen3.7' ||
+    normalized === 'qwen3.7-max' ||
+    normalized === 'qwen3.7-plus' ||
     normalized === 'qwen-3.7' ||
     normalized === 'qwen 3.7' ||
     normalized === 'qwen37' ||
@@ -489,8 +492,12 @@ function getInferenceModelOption(value, fallbackValue = DEFAULT_INFERENCE_MODEL,
   const modelOptions = Array.isArray(options) ? options : INFERENCE_MODEL_TYPES;
   if (modelOptions.length === 0) return null;
   const normalizedValue = normalizeInferenceModelKey(value || fallbackValue);
+  const canonicalValue = normalizeDeploymentInferenceModelValue(normalizedValue);
   return (
     modelOptions.find((option) => option.value === normalizedValue) ||
+    modelOptions.find(
+      (option) => normalizeDeploymentInferenceModelValue(option?.value) === canonicalValue,
+    ) ||
     modelOptions.find((option) => option.value === DEFAULT_INFERENCE_MODEL) ||
     modelOptions[0]
   );
@@ -499,7 +506,11 @@ function getInferenceModelOption(value, fallbackValue = DEFAULT_INFERENCE_MODEL,
 function isSupportedInferenceModelKey(value, options = INFERENCE_MODEL_TYPES) {
   const modelOptions = Array.isArray(options) ? options : INFERENCE_MODEL_TYPES;
   const supportedKey = coerceSupportedInferenceModelKey(value);
-  return modelOptions.some((option) => option.value === supportedKey);
+  const canonicalValue = normalizeDeploymentInferenceModelValue(supportedKey);
+  return modelOptions.some((option) => (
+    option.value === supportedKey ||
+    normalizeDeploymentInferenceModelValue(option?.value) === canonicalValue
+  ));
 }
 
 function getInferenceModelDisplayLabel(value) {

@@ -17,6 +17,7 @@ const ENV_KEYS = [
   'ALIBABA_CLOUD_API_KEY',
   'QWEN_API_KEY',
   'FAL_API_KEY',
+  'GOOGLE_APPLICATION_CREDENTIALS_JSON_B64',
   'SAMSAR_API_KEY',
 ];
 const originalEnv = Object.fromEntries(ENV_KEYS.map((key) => [key, process.env[key]]));
@@ -58,6 +59,34 @@ test('processor chooses Alibaba, FAL, and Samsar Happy Horse fallbacks in order'
 test('processor and image worker agree on Wan2.7 Pro Docker provider precedence', () => {
   assert.deepEqual(getDockerImageProviderPriority('wan2.7pro'), [
     DOCKER_PROVIDER.ALIBABA_CLOUD,
+    DOCKER_PROVIDER.FAL,
+    DOCKER_PROVIDER.SAMSAR,
+  ]);
+});
+
+test('production deployment prefers Fal for NanoBanana Pro only', () => {
+  clearEnv();
+  process.env.CURRENT_ENV = 'production';
+  process.env.SAMSAR_DOCKER_ADAPTER_ROUTING_ENABLED = 'true';
+  process.env.FAL_API_KEY = 'fal-key';
+  process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON_B64 = 'google-credentials';
+
+  assert.deepEqual(getDockerImageProviderPriority('nanobananapro'), [
+    DOCKER_PROVIDER.FAL,
+    DOCKER_PROVIDER.GOOGLE_CLOUD,
+    DOCKER_PROVIDER.SAMSAR,
+  ]);
+  assert.equal(resolveDockerImageProvider('NANOBANANAPRO'), DOCKER_PROVIDER.FAL);
+
+  process.env.CURRENT_ENV = 'docker';
+  assert.deepEqual(getDockerImageProviderPriority('nanobananapro'), [
+    DOCKER_PROVIDER.GOOGLE_CLOUD,
+    DOCKER_PROVIDER.FAL,
+    DOCKER_PROVIDER.SAMSAR,
+  ]);
+  assert.equal(resolveDockerImageProvider('NANOBANANAPRO'), DOCKER_PROVIDER.GOOGLE_CLOUD);
+  assert.deepEqual(getDockerImageProviderPriority('nanobanana2'), [
+    DOCKER_PROVIDER.GOOGLE_CLOUD,
     DOCKER_PROVIDER.FAL,
     DOCKER_PROVIDER.SAMSAR,
   ]);

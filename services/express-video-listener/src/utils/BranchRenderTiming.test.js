@@ -356,3 +356,86 @@ test('compact branching timeline follows final retimed selection timings', () =>
     leafPathIds: ['root.1'],
   });
 });
+
+test('timeline-origin branch anchors remain at zero during timing normalization', () => {
+  const branchRenderPaths = [
+    {
+      pathId: 'root.1',
+      nodeIds: ['root', 'root.1'],
+      duration: 5,
+      selectionTrail: [{
+        branchPointId: 'branch:root',
+        parentNodeId: 'root',
+        nodeId: 'root.1',
+        level: 1,
+        divergenceSceneIndex: null,
+        switchAtSeconds: 0,
+      }],
+      timeline: [{
+        layerId: 'left',
+        sequenceIndex: 0,
+        sceneIndex: 0,
+        duration: 5,
+        durationOffset: 0,
+        startTime: 0,
+        endTime: 5,
+      }],
+      audioTimeline: [],
+    },
+    {
+      pathId: 'root.2',
+      nodeIds: ['root', 'root.2'],
+      duration: 5,
+      selectionTrail: [{
+        branchPointId: 'branch:root',
+        parentNodeId: 'root',
+        nodeId: 'root.2',
+        level: 1,
+        divergenceSceneIndex: null,
+        switchAtSeconds: 0,
+      }],
+      timeline: [{
+        layerId: 'right',
+        sequenceIndex: 0,
+        sceneIndex: 0,
+        duration: 5,
+        durationOffset: 0,
+        startTime: 0,
+        endTime: 5,
+      }],
+      audioTimeline: [],
+    },
+  ];
+  const normalizedPaths = normalizeBranchRenderPathTimings({
+    branchRenderPaths,
+    layers: [
+      { _id: 'left', duration: 5 },
+      { _id: 'right', duration: 5 },
+    ],
+  });
+  const branchingTimeline = buildBranchingTimeline({
+    branchRenderPaths: normalizedPaths,
+    branchingMeta: {
+      rootNodeId: 'root',
+      branchPoints: [{
+        branchPointId: 'branch:root',
+        parentNodeId: 'root',
+        level: 1,
+        divergenceSceneIndex: null,
+        divergencePaths: [
+          { childNodeId: 'root.1', path_name: 'Left' },
+          { childNodeId: 'root.2', path_name: 'Right' },
+        ],
+      }],
+    },
+  });
+
+  assert.equal(normalizedPaths[0].selectionTrail[0].divergenceSceneIndex, null);
+  assert.equal(normalizedPaths[0].selectionTrail[0].switchAtSeconds, 0);
+  assert.equal(branchingTimeline.choicePoints[0].divergenceSceneIndex, null);
+  assert.equal(branchingTimeline.choicePoints[0].switchAtSeconds, 0);
+  assert.deepEqual(
+    branchingTimeline.choicePoints[0].options.map((option) => option.childNodeId),
+    ['root.1', 'root.2'],
+  );
+});

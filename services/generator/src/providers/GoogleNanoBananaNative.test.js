@@ -10,7 +10,28 @@ import {
   normalizeGoogleNanoBananaAspectRatio,
   normalizeGoogleNanoBananaRequestPayload,
   resolveGoogleNanoBananaModel,
+  shouldUseGoogleNativeNanoBanana,
 } from './GoogleNanoBananaNative.js';
+
+const GOOGLE_PROVIDER_ENV_KEYS = [
+  'CURRENT_ENV',
+  'FAL_API_KEY',
+  'GOOGLE_NANOBANANA_USE_FAL',
+  'GOOGLE_NANOBANANA_NATIVE_ENABLED',
+];
+const originalGoogleProviderEnv = Object.fromEntries(
+  GOOGLE_PROVIDER_ENV_KEYS.map((key) => [key, process.env[key]]),
+);
+
+test.afterEach(() => {
+  GOOGLE_PROVIDER_ENV_KEYS.forEach((key) => {
+    if (originalGoogleProviderEnv[key] === undefined) {
+      delete process.env[key];
+    } else {
+      process.env[key] = originalGoogleProviderEnv[key];
+    }
+  });
+});
 
 test('builds native Google inlineData from a mounted image without a public URL', async (t) => {
   const tempRoot = await mkdtemp(path.join(tmpdir(), 'samsar-google-inline-'));
@@ -90,4 +111,42 @@ test('uses Vertex Gemini Pro Image preview model for native NanoBanana Pro', () 
       process.env.GOOGLE_NANOBANANA_PRO_MODEL = previousModel;
     }
   }
+});
+
+test('production starts NanoBanana Pro generations with Fal only', () => {
+  process.env.CURRENT_ENV = 'production';
+  process.env.FAL_API_KEY = 'fal-key';
+  delete process.env.GOOGLE_NANOBANANA_USE_FAL;
+  process.env.GOOGLE_NANOBANANA_NATIVE_ENABLED = 'true';
+
+  assert.equal(shouldUseGoogleNativeNanoBanana('NANOBANANAPRO'), false);
+  assert.equal(shouldUseGoogleNativeNanoBanana('NANOBANANA2'), true);
+
+  delete process.env.FAL_API_KEY;
+  assert.equal(shouldUseGoogleNativeNanoBanana('NANOBANANAPRO'), true);
+  process.env.FAL_API_KEY = 'fal-key';
+
+  process.env.CURRENT_ENV = 'staging';
+  assert.equal(shouldUseGoogleNativeNanoBanana('NANOBANANAPRO'), true);
+
+  process.env.CURRENT_ENV = 'docker';
+  assert.equal(shouldUseGoogleNativeNanoBanana('NANOBANANAPRO'), true);
+});
+
+test('production continues an in-flight native Google NanoBanana Pro request', () => {
+  process.env.CURRENT_ENV = 'production';
+  process.env.FAL_API_KEY = 'fal-key';
+  delete process.env.GOOGLE_NANOBANANA_USE_FAL;
+  process.env.GOOGLE_NANOBANANA_NATIVE_ENABLED = 'true';
+
+  assert.equal(shouldUseGoogleNativeNanoBanana({
+    model: 'NANOBANANAPRO',
+    apiGenerationStatus: 'PENDING',
+    apiRequestId: 'google-native-nanobanana:existing-request',
+  }), true);
+  assert.equal(shouldUseGoogleNativeNanoBanana({
+    model: 'NANOBANANAPRO',
+    apiGenerationStatus: 'PENDING',
+    apiRequestId: 'fal-request',
+  }), false);
 });

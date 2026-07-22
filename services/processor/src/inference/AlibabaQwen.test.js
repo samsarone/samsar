@@ -18,13 +18,29 @@ test('builds text-only Qwen requests with qwen3.7-max and thinking enabled', () 
       { role: 'user', content: 'Write a short scene.' },
       { role: 'assistant', content: [{ type: 'output_text', text: 'Previous scene.' }] },
     ],
-  });
+  }, { CURRENT_ENV: 'docker' });
 
   assert.equal(payload.model, 'qwen3.7-max');
   assert.equal(payload.enable_thinking, true);
   assert.equal(payload.messages[0].role, 'system');
   assert.deepEqual(payload.messages[2].content[0], { type: 'text', text: 'Previous scene.' });
   assert.equal(hasQwenVisionInput(payload.messages), false);
+});
+
+test('uses the Docker Alibaba text-model constant without changing vision routing', () => {
+  const env = { ALIBABA_QWEN_TEXT_MODEL: 'qwen3.8-max-preview' };
+  const text = buildAlibabaQwenChatRequest({
+    messages: [{ role: 'user', content: 'Write a scene.' }],
+  }, env);
+  const vision = buildAlibabaQwenChatRequest({
+    messages: [{
+      role: 'user',
+      content: [{ type: 'input_image', image_url: 'data:image/png;base64,abc' }],
+    }],
+  }, env);
+
+  assert.equal(text.payload.model, 'qwen3.8-max-preview');
+  assert.equal(vision.payload.model, 'qwen3.7-plus');
 });
 
 test('uses qwen3.7-plus when a request includes vision content', () => {
@@ -39,7 +55,7 @@ test('uses qwen3.7-plus when a request includes vision content', () => {
         ],
       },
     ],
-  });
+  }, { CURRENT_ENV: 'docker' });
 
   assert.equal(payload.model, 'qwen3.7-plus');
   assert.deepEqual(payload.messages[0].content[0], {
@@ -50,6 +66,20 @@ test('uses qwen3.7-plus when a request includes vision content', () => {
     type: 'image_url',
     image_url: { url: 'data:image/png;base64,abc' },
   });
+
+  const productionText = buildAlibabaQwenChatRequest({
+    model: 'QWEN3.7',
+    messages: [{ role: 'user', content: 'Write a short scene.' }],
+  }, { CURRENT_ENV: 'production' });
+  const productionVision = buildAlibabaQwenChatRequest({
+    model: 'QWEN3.7',
+    messages: [{
+      role: 'user',
+      content: [{ type: 'input_image', image_url: 'data:image/png;base64,abc' }],
+    }],
+  }, { CURRENT_ENV: 'production' });
+  assert.equal(productionText.payload.model, 'qwen3.7-max');
+  assert.equal(productionVision.payload.model, 'qwen3.7-plus');
 
   const emptyVisionPart = buildAlibabaQwenChatRequest({
     model: 'QWEN3.7',

@@ -189,6 +189,8 @@ export function mergeRuntimeInferenceDeploymentAvailability(value = {}) {
       providers,
     ]),
   );
+  const providerKeyTypes = normalizeStringMap(value?.providerKeyTypes);
+  const providerEndpointTypes = normalizeStringMap(value?.providerEndpointTypes);
   const qwenAuthorized = isSavedQwenSelectionAuthorized({
     providers: configuredProviders,
     models: configuredModels,
@@ -202,6 +204,8 @@ export function mergeRuntimeInferenceDeploymentAvailability(value = {}) {
     actions: normalizeStringList(value?.actions),
     modelProviders,
     modelProviderPriority,
+    providerKeyTypes,
+    providerEndpointTypes,
     audio: value?.audio || null,
   };
 
@@ -209,6 +213,10 @@ export function mergeRuntimeInferenceDeploymentAvailability(value = {}) {
     appendUnique(merged.providers, ['alibabaCloud']);
     appendUnique(merged.models, ['QWEN3.7', 'HAPPYHORSEI2V', 'WAN2.7PRO']);
     appendUnique(merged.actions, ['chat', 'assistant', 'image', 'video']);
+    const keyType = String(process.env.ALIBABA_API_KEY_TYPE || '').trim();
+    const endpointType = String(process.env.ALIBABA_API_ENDPOINT_TYPE || '').trim();
+    if (keyType) merged.providerKeyTypes.alibabaCloud = keyType;
+    if (endpointType) merged.providerEndpointTypes.alibabaCloud = endpointType;
   }
 
   if (hasEnvCredential('OPENAI_API_KEY')) {
@@ -283,6 +291,8 @@ export function readDeploymentAvailableModels() {
     const providers = normalizeStringList(parsed?.providers);
     const modelProviders = normalizeStringMap(parsed?.modelProviders);
     const modelProviderPriority = normalizeStringListMap(parsed?.modelProviderPriority);
+    const providerKeyTypes = normalizeStringMap(parsed?.providerKeyTypes);
+    const providerEndpointTypes = normalizeStringMap(parsed?.providerEndpointTypes);
     const audio = normalizeDeploymentAudioAvailability(parsed?.audio);
 
     return {
@@ -291,6 +301,8 @@ export function readDeploymentAvailableModels() {
       actions,
       modelProviders,
       modelProviderPriority,
+      providerKeyTypes,
+      providerEndpointTypes,
       audio,
       filePath,
     };

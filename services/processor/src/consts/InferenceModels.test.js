@@ -33,7 +33,7 @@ test('defaults inference model to GPT 5.6 Sol', () => {
   assert.equal(normalizeInferenceModel(''), DEFAULT_INFERENCE_MODEL);
   assert.equal(normalizeInferenceModel('gpt-5.6-sol'), DEFAULT_INFERENCE_MODEL);
   assert.equal(getProviderModelForInferenceModel('gpt-5.6-sol'), 'gpt-5.6-sol');
-  assert.equal(GPT_56_SOL_REASONING_EFFORT, 'xhigh');
+  assert.equal(GPT_56_SOL_REASONING_EFFORT, 'high');
 });
 
 test('configures GPT 5.6 Luna with xhigh reasoning only for publication metadata', () => {
@@ -85,7 +85,7 @@ test('normalizes Gemini 3.1 Pro assistant model aliases to the current Vertex mo
   assert.equal(getProviderModelForInferenceModel('Gemini 3.1 Pro'), DEFAULT_GEMINI_31_PRO_VERTEX_MODEL);
 });
 
-test('normalizes Qwen 3.7 and forward-compatible 3.8 aliases to Qwen 3.7 Max', () => {
+test('normalizes Qwen aliases while selecting Qwen 3.7 Max or Plus by modality', () => {
   assert.equal(QWEN_37_INFERENCE_MODEL, 'QWEN3.7');
   assert.equal(QWEN_37_MAX_MODEL, 'qwen3.7-max');
   assert.equal(QWEN_37_PLUS_MODEL, 'qwen3.7-plus');
@@ -101,6 +101,21 @@ test('normalizes Qwen 3.7 and forward-compatible 3.8 aliases to Qwen 3.7 Max', (
   assert.equal(getProviderModelForInferenceModel('QWEN3.7'), QWEN_37_MAX_MODEL);
   assert.equal(
     getProviderModelForInferenceModel('QWEN3.7', { vision: true }),
+    QWEN_37_PLUS_MODEL,
+  );
+  assert.equal(
+    getProviderModelForInferenceModel('QWEN3.7', { environment: 'production' }),
+    QWEN_37_MAX_MODEL,
+  );
+  assert.equal(
+    getProviderModelForInferenceModel('QWEN3.7', {
+      environment: 'production',
+      vision: true,
+    }),
+    QWEN_37_PLUS_MODEL,
+  );
+  assert.equal(
+    getProviderModelForInferenceModel('QWEN3.7', { environment: 'docker', vision: true }),
     QWEN_37_PLUS_MODEL,
   );
 });

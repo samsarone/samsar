@@ -123,6 +123,8 @@ test('accepts deployment-friendly Alibaba credential and base URL aliases', asyn
   assert.equal(result.providers.alibabaCloud.status, 'format_valid');
   assert.equal(result.providers.alibabaCloud.validationMode, 'format_only');
   assert.equal(result.providers.alibabaCloud.billingMode, 'pay_as_you_go');
+  assert.equal(result.providers.alibabaCloud.keyType, 'pay_as_you_go');
+  assert.equal(result.providers.alibabaCloud.endpointType, 'pay_as_you_go');
   assert.equal(
     result.providers.alibabaCloud.baseUrl,
     'https://workspace.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1',
@@ -145,18 +147,19 @@ test('accepts ALIBABA_API_HOST and expands it to the compatible endpoint', async
   );
 });
 
-test('rejects Token Plan Alibaba credentials for native deployment', async () => {
+test('accepts Token Plan Alibaba credentials for native deployment', async () => {
   const planKey = await validateDeploymentProviderCredentials({
     alibaba_api_key: 'sk-sp-plan-key',
     alibaba_api_host: 'dashscope-intl.aliyuncs.com',
   });
-  assert.equal(planKey.providers.alibabaCloud.status, 'invalid');
-  assert.match(planKey.providers.alibabaCloud.message, /pay-as-you-go/i);
+  assert.equal(planKey.providers.alibabaCloud.status, 'format_valid');
+  assert.equal(planKey.providers.alibabaCloud.keyType, 'plan');
 
   const planEndpoint = await validateDeploymentProviderCredentials({
     alibaba_api_key: 'sk-payg-key',
     alibaba_api_host: 'token-plan.ap-southeast-1.maas.aliyuncs.com',
   });
-  assert.equal(planEndpoint.providers.alibabaCloud.status, 'invalid');
-  assert.match(planEndpoint.providers.alibabaCloud.message, /pay-as-you-go/i);
+  assert.equal(planEndpoint.providers.alibabaCloud.status, 'format_valid');
+  assert.equal(planEndpoint.providers.alibabaCloud.keyType, 'token_plan');
+  assert.equal(planEndpoint.providers.alibabaCloud.endpointType, 'token_plan');
 });

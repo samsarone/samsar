@@ -6,10 +6,12 @@ import path from 'node:path';
 import test from 'node:test';
 
 import {
+  cloudflaredOutputHasRegisteredConnection,
   configAllowsLocalMediaTunnel,
   configRequiresLocalMediaTunnel,
   consumeRefreshMarker,
   extractQuickTunnelUrl,
+  MediaTunnelController,
   readRefreshMarkerToken,
   updateRuntimeConfigAtomically,
   validateHealthMarker,
@@ -22,6 +24,52 @@ test('extracts only a Cloudflared quick-tunnel origin from process output', () =
   );
   assert.equal(extractQuickTunnelUrl('https://example.com'), '');
   assert.equal(extractQuickTunnelUrl(''), '');
+});
+
+test('does not treat a quick-tunnel URL as ready before Cloudflared registers its connector', () => {
+  const urlOutput = [
+    'INF Your quick Tunnel has been created!',
+    'https://bright-sky.trycloudflare.com',
+  ].join('\n');
+  assert.equal(extractQuickTunnelUrl(urlOutput), 'https://bright-sky.trycloudflare.com');
+  assert.equal(cloudflaredOutputHasRegisteredConnection(urlOutput), false);
+
+  const registeredOutput = [
+    urlOutput,
+    'INF Registered tunnel connection connIndex=0 connection=abc location=bkk01 protocol=http2',
+  ].join('\n');
+  assert.equal(cloudflaredOutputHasRegisteredConnection(registeredOutput), true);
+});
+
+test('waits for Cloudflared connector registration before returning a discovered URL', async () => {
+  const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'samsar-cloudflared-fixture-'));
+  const fixturePath = path.join(tempRoot, 'cloudflared-fixture.mjs');
+  await fs.writeFile(fixturePath, `#!/usr/bin/env node
+console.error('INF Your quick Tunnel has been created! https://registered-later.trycloudflare.com');
+setTimeout(() => console.error('INF Registered tunnel connection connIndex=0 protocol=http2'), 75);
+process.once('SIGTERM', () => process.exit(0));
+setInterval(() => {}, 1000);
+`);
+  await fs.chmod(fixturePath, 0o700);
+
+  const controller = new MediaTunnelController({
+    SAMSAR_CLOUDFLARED_BINARY: fixturePath,
+    SAMSAR_MEDIA_TUNNEL_START_TIMEOUT_MS: '1000',
+    SAMSAR_MEDIA_TUNNEL_DNS_SETTLE_MS: '0',
+  });
+  try {
+    let resolved = false;
+    const launched = controller.launchCloudflared().then((url) => {
+      resolved = true;
+      return url;
+    });
+    await new Promise((resolve) => setTimeout(resolve, 40));
+    assert.equal(resolved, false);
+    assert.equal(await launched, 'https://registered-later.trycloudflare.com');
+  } finally {
+    await controller.stopTunnel();
+    await fs.rm(tempRoot, { recursive: true, force: true });
+  }
 });
 
 test('detects when Docker-local config needs the media tunnel', () => {

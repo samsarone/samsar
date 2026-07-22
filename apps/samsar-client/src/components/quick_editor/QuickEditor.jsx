@@ -345,10 +345,12 @@ export default function QuickEditor() {
         label: model.name,
       }));
     } else {
-      return deploymentModels.map((model) => ({
-        value: model.key,
-        label: model.name,
-      }));
+      return deploymentModels
+        .filter((model) => model.isExpressModel === true)
+        .map((model) => ({
+          value: model.key,
+          label: model.name,
+        }));
     }
   }, [isDockerModelFilteringEnabled, textToVideoImageModelValues, videoType]);
 

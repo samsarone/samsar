@@ -2,9 +2,9 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+  getAlibabaEndpointType,
   getAlibabaCompatibleBaseUrl,
-  isAlibabaPayAsYouGoApiKey,
-  isAlibabaPayAsYouGoBaseUrl,
+  getAlibabaKeyType,
   validateAlibabaEndpoint,
 } from './validate-alibaba-endpoint.mjs';
 
@@ -31,49 +31,42 @@ test('normalizes an Alibaba API host or compatible endpoint', () => {
   );
 });
 
-test('identifies pay-as-you-go keys and endpoints', () => {
-  assert.equal(isAlibabaPayAsYouGoApiKey('sk-payg-test'), true);
-  assert.equal(isAlibabaPayAsYouGoApiKey('sk-sp-plan-test'), false);
+test('classifies Alibaba keys and endpoints without rejecting plan credentials', () => {
   assert.equal(
-    isAlibabaPayAsYouGoBaseUrl('https://dashscope-intl.aliyuncs.com/compatible-mode/v1'),
-    true,
+    getAlibabaEndpointType('https://dashscope-intl.aliyuncs.com/compatible-mode/v1'),
+    'pay_as_you_go',
   );
   assert.equal(
-    isAlibabaPayAsYouGoBaseUrl('https://workspace.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1'),
-    true,
+    getAlibabaKeyType(
+      'sk-sp-plan-test',
+      'https://dashscope-intl.aliyuncs.com/compatible-mode/v1',
+    ),
+    'plan',
   );
   assert.equal(
-    isAlibabaPayAsYouGoBaseUrl('https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1'),
-    false,
+    getAlibabaEndpointType('https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1'),
+    'token_plan',
   );
   assert.equal(
-    isAlibabaPayAsYouGoBaseUrl('https://coding-intl.dashscope.aliyuncs.com/v1'),
-    false,
+    getAlibabaEndpointType('https://coding-intl.dashscope.aliyuncs.com/v1'),
+    'coding_plan',
   );
 });
 
-test('rejects plan-specific Alibaba keys and endpoints without sending a request', async () => {
-  let requests = 0;
-  const fetchImpl = async () => {
-    requests += 1;
-    throw new Error('unexpected request');
-  };
-  const planKey = await validateAlibabaEndpoint({
-    apiKey: 'sk-sp-plan-key',
-    apiHost: 'dashscope-intl.aliyuncs.com',
-    fetchImpl,
-  });
-  assert.equal(planKey.status, 'invalid');
-  assert.match(planKey.message, /pay-as-you-go/i);
-
+test('validates Token Plan credentials and records their type', async () => {
   const planEndpoint = await validateAlibabaEndpoint({
-    apiKey: 'sk-payg-test',
+    apiKey: 'sk-sp-plan-key',
     apiHost: 'token-plan.ap-southeast-1.maas.aliyuncs.com',
-    fetchImpl,
+    fetchImpl: async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ data: [{ id: 'qwen3.8-max-preview' }] }),
+    }),
   });
-  assert.equal(planEndpoint.status, 'invalid');
-  assert.match(planEndpoint.message, /pay-as-you-go/i);
-  assert.equal(requests, 0);
+  assert.equal(planEndpoint.status, 'valid');
+  assert.equal(planEndpoint.keyType, 'token_plan');
+  assert.equal(planEndpoint.endpointType, 'token_plan');
+  assert.equal(planEndpoint.billingMode, 'token_plan');
 });
 
 test('validates the endpoint through its authenticated model listing', async () => {
@@ -109,6 +102,8 @@ test('validates the endpoint through its authenticated model listing', async () 
     validationMode: 'remote_models',
     baseUrl: 'https://workspace.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1',
     billingMode: 'pay_as_you_go',
+    keyType: 'pay_as_you_go',
+    endpointType: 'pay_as_you_go',
     modelCount: 3,
     qwen38MaxPreviewAvailable: true,
     qwen37MaxAvailable: true,

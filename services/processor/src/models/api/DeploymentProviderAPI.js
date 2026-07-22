@@ -59,24 +59,29 @@ function normalizeString(value) {
   return typeof value === 'string' && value.trim() ? value.trim() : '';
 }
 
-function isAlibabaPayAsYouGoApiKey(value) {
-  const apiKey = normalizeString(value);
-  return apiKey.startsWith('sk-') && !apiKey.startsWith('sk-sp-');
-}
-
-function isAlibabaPayAsYouGoBaseUrl(value) {
+function getAlibabaEndpointType(value) {
   let hostname;
   try {
     hostname = new URL(value).hostname.toLowerCase();
   } catch {
-    return false;
+    return 'unknown';
   }
-  if (hostname.includes('token-plan') || hostname === 'coding.dashscope.aliyuncs.com' ||
+  if (hostname.includes('token-plan')) {
+    return 'token_plan';
+  }
+  if (hostname === 'coding.dashscope.aliyuncs.com' ||
     hostname === 'coding-intl.dashscope.aliyuncs.com') {
-    return false;
+    return 'coding_plan';
   }
-  return /^dashscope(?:-[a-z0-9-]+)?\.aliyuncs\.com$/.test(hostname) ||
-    (hostname.endsWith('.maas.aliyuncs.com') && !hostname.startsWith('token-plan.'));
+  return 'pay_as_you_go';
+}
+
+function getAlibabaKeyType(apiKey, baseUrl) {
+  const endpointType = getAlibabaEndpointType(baseUrl);
+  if (endpointType !== 'pay_as_you_go') {
+    return endpointType;
+  }
+  return normalizeString(apiKey).startsWith('sk-sp-') ? 'plan' : 'pay_as_you_go';
 }
 
 function normalizeBoolean(value) {
@@ -291,20 +296,13 @@ async function validateAlibabaCloudKey({ apiKey, baseUrl, apiHost }) {
     DASHSCOPE_BASE_URL: baseUrl,
     ALIBABA_API_HOST: apiHost,
   });
-  if (!isAlibabaPayAsYouGoApiKey(apiKey)) {
-    return providerResult('alibabaCloud', 'invalid', {
-      message: 'Use a pay-as-you-go Alibaba Cloud Model Studio API key (sk-...), not a Token Plan or Coding Plan key (sk-sp-...).',
-    });
-  }
-  if (!isAlibabaPayAsYouGoBaseUrl(normalizedBaseUrl)) {
-    return providerResult('alibabaCloud', 'invalid', {
-      baseUrl: normalizedBaseUrl,
-      message: 'Use a pay-as-you-go Model Studio endpoint, not a Token Plan or Coding Plan endpoint.',
-    });
-  }
+  const endpointType = getAlibabaEndpointType(normalizedBaseUrl);
+  const keyType = getAlibabaKeyType(apiKey, normalizedBaseUrl);
   return providerResult('alibabaCloud', 'format_valid', {
     validationMode: 'format_only',
-    billingMode: 'pay_as_you_go',
+    billingMode: keyType,
+    keyType,
+    endpointType,
     baseUrl: normalizedBaseUrl,
     message:
       'Alibaba Cloud Model Studio does not expose a zero-cost key introspection endpoint; the key will be verified on first inference request.',

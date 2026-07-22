@@ -40,6 +40,16 @@ test('interactive publication pagination counts only committed renderable record
   assert.deepEqual(query.$and.at(-1), { _id: { $lt: 'cursor-id' } });
 });
 
+test('interactive publication queries can target a category and topic', () => {
+  const query = buildPublicInteractivePublicationQuery(null, {
+    category: 'Education',
+    topic: 'cell biology',
+  });
+
+  assert.ok(query.$and.some((clause) => clause.categories === 'Education'));
+  assert.ok(query.$and.some((clause) => clause.topics === 'cell biology'));
+});
+
 const buildPublication = (
   id,
   contentUrl = `${getPublicationsMediaConfig().cdnUrl}/published/${id}.mp4`,

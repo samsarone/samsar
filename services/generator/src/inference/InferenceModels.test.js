@@ -12,8 +12,8 @@ import {
   normalizeInferenceModel,
 } from './InferenceModels.js';
 
-test('uses xhigh reasoning for GPT 5.6 Sol inference', () => {
-  assert.equal(GPT_56_SOL_REASONING_EFFORT, 'xhigh');
+test('uses high reasoning for GPT 5.6 Sol inference', () => {
+  assert.equal(GPT_56_SOL_REASONING_EFFORT, 'high');
 });
 
 test('normalizes Qwen 3.7 aliases to the logical provider choice', () => {

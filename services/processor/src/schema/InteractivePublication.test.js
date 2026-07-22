@@ -17,6 +17,8 @@ test('InteractivePublication uses explicit render-focused manifest fields', () =
   assert.equal(paths.thumbnailUrl.isRequired, true);
   assert.equal(paths.mainVideoUrl.defaultValue, null);
   assert.equal(paths.mainThumbnailUrl.defaultValue, null);
+  assert.deepEqual(paths.categories.defaultValue(), []);
+  assert.deepEqual(paths.topics.defaultValue(), []);
   assert.equal(paths.publicRenderableVersion.defaultValue, null);
   assert.equal(paths.isPublished.defaultValue, false);
   assert.equal(paths.isRenderable.defaultValue, false);

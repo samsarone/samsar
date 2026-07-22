@@ -4,7 +4,6 @@ import path from "path";
 import { mkdir, writeFile } from "fs/promises";
 import sharp from "sharp";
 import axios from "axios";
-import { saveRemoteFile } from "../utils/FileUtils.js";
 
 import OpenAI, { toFile } from "openai";
 import {
@@ -24,10 +23,12 @@ import {
   getAccessibleMediaUrlForProvider,
   resolveLocalMediaReferencePath,
 } from '../utils/MediaReferenceUtils.js';
+import {
+  buildOpenAIGPTImageTwoInput,
+  normalizeGPTImageTwoResult,
+} from './GPTImageTwoPayload.js';
 
 const API_KEY = process.env.OPENAI_API_KEY;
-const GPT_IMAGE_MODEL = "gpt-image-2";
-const GPT_IMAGE_QUALITY = "high";
 
 
 const openai = new OpenAI({ apiKey: API_KEY || '' });
@@ -40,19 +41,8 @@ export async function handleGPTImageTwoRequest(payload) {
     retryCount = 0
   } = payload;
 
-  const responseSize = getRequestDimensionsForDimensions(aspectRatio);
-
-
   try {
-
-    const inputPayload = {
-      model: GPT_IMAGE_MODEL,
-      prompt: prompt,
-      size: responseSize,
-      quality: GPT_IMAGE_QUALITY,
-      output_format: "png",
-      n: 1
-    };
+    const inputPayload = buildOpenAIGPTImageTwoInput({ prompt, aspectRatio });
 
     const image = await openai.images.generate(inputPayload);
 
@@ -70,12 +60,11 @@ export async function handleGPTImageTwoRequest(payload) {
 
 
 
-    return {
+    return normalizeGPTImageTwoResult({
       image: imageName,
       width: metadata.width,
       height: metadata.height,
-      preserveOriginalForAiVideo: true
-    };
+    });
 
   } catch (error) {
     let errorString = 'An error occurred while generating the image. Please try again with a different prompt.'
@@ -94,20 +83,6 @@ export async function handleGPTImageTwoRequest(payload) {
 export async function handleGPTImageOneRequest(payload) {
   return handleGPTImageTwoRequest(payload);
 }
-
-function getRequestDimensionsForDimensions(aspectRatio) {
-  let responseSize = '1024x1024';
-  if (aspectRatio === '16:9') {
-    responseSize = '1536x864';
-  } else if (aspectRatio === '9:16') {
-    responseSize = '864x1536';
-  }
-  return responseSize;
-
-
-
-}
-
 
 export async function downloadToFile(url) {
   const localPath = resolveLocalMediaReferencePath(url);
@@ -166,16 +141,16 @@ export async function getImage2OutpaintImageFromApi(payload) {
 
 
 
-  const imageSize = getRequestDimensionsForDimensions(aspectRatio);
+  const nativeRequest = buildOpenAIGPTImageTwoInput({ prompt, aspectRatio });
 
   const inputPayload = {
     image: imageUrlLocalFile,
     mask: maskImageLocalFile,
     prompt: prompt,
-    size: imageSize,
-    quality: GPT_IMAGE_QUALITY,
+    size: nativeRequest.size,
+    quality: nativeRequest.quality,
     output_format: "png",
-    model: GPT_IMAGE_MODEL
+    model: nativeRequest.model
   }
 
   try {

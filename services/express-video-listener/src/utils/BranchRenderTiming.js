@@ -39,6 +39,9 @@ function getPositiveDuration(value) {
 }
 
 function getNonNegativeInteger(value) {
+  if (value === null || value === undefined || value === '') {
+    return null;
+  }
   const normalized = Number(value);
   return Number.isInteger(normalized) && normalized >= 0 ? normalized : null;
 }

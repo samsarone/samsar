@@ -92,9 +92,9 @@ Maintenance runs skip the initial cleanup/config flow and execute runtime render
 | File | Purpose |
 | --- | --- |
 | `runtime/config/samsar.config.json` | Main deployment configuration. |
-| `runtime/config/available-models.json` | Enabled providers, models, actions, and derived audio availability. |
+| `runtime/config/available-models.json` | Enabled providers, models, actions, provider key/endpoint types, and derived audio availability. |
 | `runtime/secrets/root.env` | Docker env file consumed by services. |
-| `runtime/secrets/provider.credentials.json` | Mode-`0600` OpenRouter and validated Alibaba provider secrets. |
+| `runtime/secrets/provider.credentials.json` | Mode-`0600` OpenRouter and validated Alibaba provider secrets plus Alibaba key/endpoint type. |
 | `runtime/secrets/mail.credentials.json` | Sanitized and secret mail configuration when SMTP or SES is configured. |
 | `runtime/reverse-proxy/nginx.conf` | Generated nginx config when the reverse proxy feature is enabled or safely disabled. |
 

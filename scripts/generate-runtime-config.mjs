@@ -104,6 +104,36 @@ function normalizeString(value) {
   return typeof value === 'string' ? value.trim() : '';
 }
 
+function classifyAlibabaEndpoint(value) {
+  const configured = normalizeString(value);
+  if (!configured) return '';
+  try {
+    const parsed = new URL(/^[a-z][a-z\d+.-]*:\/\//i.test(configured) ? configured : `https://${configured}`);
+    const hostname = parsed.hostname.toLowerCase();
+    if (hostname.includes('token-plan')) return 'token_plan';
+    if (hostname === 'coding.dashscope.aliyuncs.com' ||
+      hostname === 'coding-intl.dashscope.aliyuncs.com') return 'coding_plan';
+    return 'pay_as_you_go';
+  } catch {
+    return '';
+  }
+}
+
+const alibabaApiKey = normalizeString(alibabaCloudSecrets.apiKey || alibabaCloudConfig.apiKey);
+const alibabaApiHost = normalizeString(
+  alibabaCloudSecrets.apiHost || alibabaCloudConfig.apiHost || alibabaCloudConfig.baseUrl,
+);
+const alibabaEndpointType = classifyAlibabaEndpoint(alibabaApiHost) ||
+  normalizeString(alibabaCloudSecrets.endpointType || alibabaCloudConfig.endpointType) ||
+  'pay_as_you_go';
+const alibabaKeyType = normalizeString(alibabaCloudSecrets.keyType || alibabaCloudConfig.keyType) ||
+  (alibabaEndpointType !== 'pay_as_you_go'
+    ? alibabaEndpointType
+    : alibabaApiKey.startsWith('sk-sp-') ? 'plan' : 'pay_as_you_go');
+const alibabaQwenTextModel = isDockerRuntime && alibabaApiKey && alibabaEndpointType === 'token_plan'
+  ? 'qwen3.8-max-preview'
+  : '';
+
 function isTemporaryMediaTunnelUrl(value) {
   const normalized = normalizeString(value);
   if (!normalized) {
@@ -400,6 +430,8 @@ function buildAvailableModels(providers = {}) {
 
   return {
     ...buildDockerAvailableModelsFromEnabledProviders(providerNames),
+    providerKeyTypes: alibabaApiKey ? { alibabaCloud: alibabaKeyType } : {},
+    providerEndpointTypes: alibabaApiKey ? { alibabaCloud: alibabaEndpointType } : {},
     audio: buildDockerAudioAvailability(providers),
   };
 }
@@ -489,12 +521,11 @@ const env = {
 	  OPENAI_API_KEY: config.providers?.openai?.apiKey || '',
 	  OPENROUTER_API_KEY: effectiveProviderConfig.openrouter.apiKey,
 	  OPENROUTER_GEMINI_31_PRO_MODEL: effectiveProviderConfig.openrouter.gemini31ProModel,
-	  ALIBABA_API_KEY: alibabaCloudSecrets.apiKey || alibabaCloudConfig.apiKey || '',
-	  ALIBABA_API_HOST:
-    alibabaCloudSecrets.apiHost ||
-    alibabaCloudConfig.apiHost ||
-    alibabaCloudConfig.baseUrl ||
-    '',
+	  ALIBABA_API_KEY: alibabaApiKey,
+	  ALIBABA_API_HOST: alibabaApiHost,
+    ALIBABA_API_KEY_TYPE: alibabaKeyType,
+    ALIBABA_API_ENDPOINT_TYPE: alibabaEndpointType,
+    ALIBABA_QWEN_TEXT_MODEL: alibabaQwenTextModel,
 	  FAL_API_KEY: config.providers?.fal?.apiKey || '',
 	  ELEVENLABS_API_TOKEN: config.providers?.elevenlabs?.apiKey || '',
 	  ELEVENLABS_API_KEY: config.providers?.elevenlabs?.apiKey || '',

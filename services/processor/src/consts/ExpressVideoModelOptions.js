@@ -2,7 +2,6 @@ import { EXPRESS_VIDEO_CREDITS_PER_SECOND_BY_MODEL } from './pricing/ExpressVide
 
 export const EXPRESS_VIDEO_IMAGE_MODEL_KEYS = Object.freeze([
   'GPTIMAGE2',
-  'NANOBANANA2',
   'NANOBANANAPRO',
   'SEEDREAM',
   'WAN2.7PRO',

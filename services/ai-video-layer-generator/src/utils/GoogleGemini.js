@@ -1,7 +1,7 @@
 import { GoogleAuth } from 'google-auth-library';
 
 export const GPT_56_SOL_INFERENCE_MODEL = 'gpt-5.6-sol';
-export const GPT_56_SOL_REASONING_EFFORT = 'xhigh';
+export const GPT_56_SOL_REASONING_EFFORT = 'high';
 const DEFAULT_INFERENCE_MODEL = GPT_56_SOL_INFERENCE_MODEL;
 const GEMINI_31_PRO_INFERENCE_MODEL = 'gemini-3.1-pro';
 export const QWEN_37_INFERENCE_MODEL = 'QWEN3.7';

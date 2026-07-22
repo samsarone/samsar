@@ -134,7 +134,9 @@ export function resolveQwenProviderModel(request = {}, env = process.env) {
     return normalizeString(env.QWEN_37_PLUS_MODEL || env.ALIBABA_QWEN_37_PLUS_MODEL) ||
       DEFAULT_QWEN_37_PLUS_MODEL;
   }
-  return normalizeString(env.QWEN_37_MAX_MODEL || env.ALIBABA_QWEN_37_MAX_MODEL) ||
+  return normalizeString(
+    env.ALIBABA_QWEN_TEXT_MODEL || env.QWEN_37_MAX_MODEL || env.ALIBABA_QWEN_37_MAX_MODEL,
+  ) ||
     DEFAULT_QWEN_37_MAX_MODEL;
 }
 

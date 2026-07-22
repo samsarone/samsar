@@ -145,7 +145,12 @@ test('branched publish upserts and returns only the optimized InteractivePublica
   const publicationModel = createMemoryModel();
   const result = await createInteractivePublicationForSessionVideo(
     '507f191e810c19729de860ea',
-    { title: 'Published fork', tags: ['interactive'] },
+    {
+      title: 'Published fork',
+      tags: ['interactive'],
+      categories: ['Education'],
+      topics: ['decision making'],
+    },
     {
       sessionData: session,
       publicationModel,
@@ -159,6 +164,8 @@ test('branched publish upserts and returns only the optimized InteractivePublica
   assert.equal(result.type, 'InteractiveVideo');
   assert.equal(result.schema, 'interactive_publication.v1');
   assert.equal(result.title, 'Published fork');
+  assert.deepEqual(result.categories, ['Education']);
+  assert.deepEqual(result.topics, ['decision making']);
   assert.equal(result.manifest.schema, 'interactive_video_manifest.v1');
   assert.equal(result.manifest.outputs.paths.length, 2);
   assert.equal(result.manifest.outputs.paths[0].contentUrl.includes('/root.1/video.mp4'), true);
@@ -608,6 +615,8 @@ test('interactive serializer does not expose persistence or generation internals
     sessionId: session._id,
     createdBy: '507f191e810c19729de860ea',
     title: 'Safe response',
+    categories: ['Education'],
+    topics: ['cell biology'],
     thumbnailUrl: 'https://static.samsar.one/published/default.png',
     manifest: {
       schemaVersion: 'interactive_video_manifest.v1',
@@ -628,6 +637,8 @@ test('interactive serializer does not expose persistence or generation internals
   assert.equal(result.mediaRevision, undefined);
   assert.equal(result.pendingMediaRevision, undefined);
   assert.equal(result.pendingPublicationData, undefined);
+  assert.deepEqual(result.categories, ['Education']);
+  assert.deepEqual(result.topics, ['cell biology']);
 });
 
 test('interactive publication maps its default public path to existing session markers', () => {

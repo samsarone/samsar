@@ -1327,7 +1327,6 @@ function consumeValidatedAlibabaProviderSecret(payload = {}) {
     validation?.provider !== 'alibabaCloud' ||
     validation?.ok !== true ||
     validation?.validationMode !== 'remote_models' ||
-    validation?.billingMode !== 'pay_as_you_go' ||
     !normalizeString(validation?.baseUrl)
   ) {
     throw new Error('Validate the Alibaba Cloud API key and endpoint before starting setup.');
@@ -1341,6 +1340,8 @@ function consumeValidatedAlibabaProviderSecret(payload = {}) {
   return {
     apiKey,
     apiHost: baseUrl,
+    keyType: normalizeString(validation.keyType || validation.billingMode) || 'pay_as_you_go',
+    endpointType: normalizeString(validation.endpointType) || 'pay_as_you_go',
   };
 }
 
@@ -1434,6 +1435,7 @@ function buildRuntimeConfig(payload) {
     'expressVideoListener',
   ];
   const workersEnabled = workerKeys.some((key) => services[key] !== false);
+  const alibabaProviderMetadata = payload.validatedAlibabaProviderSecret || {};
 
   return readJson(EXAMPLE_CONFIG_PATH).then((exampleConfig) => ({
     ...exampleConfig,
@@ -1479,6 +1481,8 @@ function buildRuntimeConfig(payload) {
       },
       alibabaCloud: {
         enabled: Boolean(normalizeSecretString(credentials.alibabaApiKey)),
+        keyType: normalizeString(alibabaProviderMetadata.keyType),
+        endpointType: normalizeString(alibabaProviderMetadata.endpointType),
       },
       fal: {
         enabled: Boolean(normalizeString(credentials.falApiKey)),
@@ -3322,6 +3326,10 @@ function summarizeRuntimeConfig(config = {}, providerSecrets = {}) {
           {
             enabled: secretBackedProvider ? configured : provider?.enabled === true,
             configured,
+            ...(key === 'alibabaCloud' ? {
+              keyType: normalizeString(providerSecrets?.[key]?.keyType || provider?.keyType),
+              endpointType: normalizeString(providerSecrets?.[key]?.endpointType || provider?.endpointType),
+            } : {}),
           },
         ];
       }),

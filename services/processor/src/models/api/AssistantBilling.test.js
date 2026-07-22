@@ -74,6 +74,17 @@ test('uses the requested assistant pricing and bills legacy Qwen 3.7 Max usage',
   });
 });
 
+test('prices production Qwen 3.8 Max Preview receipts with the Qwen Max rate', () => {
+  const result = calculateAssistantCreditsFromUsage({
+    model: 'qwen3.8-max-preview',
+    usage: { input_tokens: 1_000_000, output_tokens: 1_000_000 },
+  });
+
+  assert.equal(result.pricingModel, 'qwen3.7-max');
+  assert.equal(result.costUsd, 10);
+  assert.equal(result.credits, 1_500);
+});
+
 test('bills legacy Qwen 3.7 Plus vision usage at standard and long-context rates', () => {
   const standard = calculateAssistantCreditsFromUsage({
     model: 'qwen3.7-plus',
