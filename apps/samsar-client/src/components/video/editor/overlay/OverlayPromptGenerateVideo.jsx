@@ -80,16 +80,16 @@ export default function OverlayPromptGenerateVideo(props) {
     sessionDetails,
   });
   const {
-    isDockerInstall: isDockerModelFilteringEnabled,
+    isStandaloneDeployment: isStandaloneModelFilteringEnabled,
     videoModelValues,
   } = useDeploymentModelAvailability();
   const availableModels = useMemo(
     () => (
-      isDockerModelFilteringEnabled
+      isStandaloneModelFilteringEnabled
         ? filterOptionsForDeploymentModelValues(locallyAvailableModels, videoModelValues, (model) => model.key)
         : locallyAvailableModels
     ),
-    [isDockerModelFilteringEnabled, locallyAvailableModels, videoModelValues]
+    [isStandaloneModelFilteringEnabled, locallyAvailableModels, videoModelValues]
   );
   const availableModelKeys = useMemo(
     () => availableModels.map((model) => model.key),

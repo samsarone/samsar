@@ -49,6 +49,7 @@ import { requestGenerateCustomAIVideo } from './ai_video/index.js';
 import { getModelType } from '../utils/video_utils/VideoTypeUtils.js';
 import sharp from "sharp";
 import ffmpeg from 'fluent-ffmpeg';
+import { withProcessorFfmpegResources } from '../utils/FfmpegResources.js';
 import { deletePublicPublicationMediaForSession } from './PublicationMedia.js';
 import { deleteInteractivePublicationForSession } from './InteractivePublication.js';
 
@@ -123,6 +124,7 @@ import { buildSecureMediaDeliveryUrl, getObjectFromS3, uploadSpeechAudioToCDN } 
 import fs from 'fs';
 import fsPromises from 'fs/promises';
 import { resolveLocalMediaFilePath } from '../utils/LocalMediaAsset.js';
+import { isContainerRuntime } from '../utils/EnvironmentUtils.js';
 import { randomBytes, randomUUID } from 'crypto';
 import VideoLayerEditTask from '../schema/VideoLayerEditTask.js';
 import {
@@ -208,12 +210,19 @@ function shouldUseDockerLocalMediaDelivery(env = process.env) {
     .toLowerCase();
   if (mode === 'docker-local' || mode === 'local-filesystem') return true;
   if (mode === 's3-cloudfront' || mode === 'external-s3') return false;
+  const externalBucket = String(
+    env.MEDIA_BUCKET_NAME || env.STATIC_CDN_BUCKET || env.SAMSAR_EXTERNAL_MEDIA_BUCKET || '',
+  ).trim();
+  const externalBaseUrl = String(
+    env.STATIC_CDN_URL || env.SAMSAR_EXTERNAL_MEDIA_PUBLIC_BASE_URL || '',
+  ).trim();
+  if (externalBucket && /^https:\/\//i.test(externalBaseUrl)) return false;
   const externalPublish = ['1', 'true', 'yes', 'on'].includes(
     String(env.SAMSAR_EXTERNAL_MEDIA_PUBLISH_ENABLED || env.EXTERNAL_MEDIA_PUBLISH_ENABLED || '')
       .trim()
       .toLowerCase(),
   );
-  return String(env.CURRENT_ENV || '').trim().toLowerCase() === 'docker' && !externalPublish;
+  return isContainerRuntime(env) && !externalPublish;
 }
 
 function selectMediaDeliverySource({ local, remote, generated } = {}, env = process.env) {
@@ -1021,15 +1030,14 @@ function normalizeAudioLayerArrayManualVolumeSettings(audioLayers = []) {
 }
 
 function resolveProcessorAssetsRoot() {
-  if (process.env.CURRENT_ENV === 'staging' || process.env.CURRENT_ENV === 'docker') {
-    return process.env.SAMSAR_ASSETS_V2_ROOT || '/assets_v2';
-  }
+  if (process.env.SAMSAR_ASSETS_V2_ROOT) return process.env.SAMSAR_ASSETS_V2_ROOT;
+  if (isContainerRuntime()) return '/assets_v2';
   return path.join(process.cwd(), 'assets_v2');
 }
 
 function getProcessorAssetsV2RootCandidates() {
   const candidates = [];
-  const isDockerLike = process.env.CURRENT_ENV === 'staging' || process.env.CURRENT_ENV === 'docker';
+  const isDockerLike = isContainerRuntime();
 
   if (isDockerLike) {
     candidates.push(process.env.SAMSAR_ASSETS_V2_ROOT || '/assets_v2');
@@ -1046,10 +1054,10 @@ function getProcessorAssetsV2RootCandidates() {
 
 function getProcessorLegacyAssetsRootCandidates() {
   const candidates = [];
-  const isDockerLike = process.env.CURRENT_ENV === 'staging' || process.env.CURRENT_ENV === 'docker';
+  const isDockerLike = isContainerRuntime();
 
   if (isDockerLike) {
-    candidates.push('/assets');
+    candidates.push(process.env.SAMSAR_ASSETS_ROOT || '/assets');
     candidates.push(path.join(process.cwd(), 'assets'));
     candidates.push(path.join(process.cwd(), '..', 'samsar_processor', 'assets'));
   } else {
@@ -1852,9 +1860,12 @@ function buildStudioVideoRemoteUrl(rawSource) {
   // are not necessarily copied to the media bucket (notably in docker-local
   // delivery mode), so signing the corresponding static CDN key produces a
   // valid-looking CloudFront URL for an object that does not exist in S3.
-  // Prefer the processor static route whenever the referenced file is present
-  // locally; cloud-only assets continue through the signed CDN path below.
-  const localAssetUrl = buildProcessorStaticAssetUrlForLocalAsset(mediaReferencePath);
+  // In docker-local mode, prefer the processor static route whenever the
+  // referenced file is mounted. External-S3 mode must keep using CloudFront
+  // even when the worker also retains a local copy.
+  const localAssetUrl = shouldUseDockerLocalMediaDelivery()
+    ? buildProcessorStaticAssetUrlForLocalAsset(mediaReferencePath)
+    : null;
   if (localAssetUrl) {
     return localAssetUrl;
   }
@@ -3138,32 +3149,36 @@ async function renderVisibleVideoEdit({
     : `${concatInputs.join('')}concat=n=${segments.length}:v=1:a=0[vout]`;
   filters.push(concatFilter);
 
-  await new Promise((resolve, reject) => {
-    const command = ffmpeg(inputVideoPath)
-      .complexFilter(filters)
-      .outputOptions([
-        '-map', '[vout]',
-        '-c:v', 'libx264',
-        '-preset', 'veryfast',
-        '-pix_fmt', 'yuv420p',
-        '-movflags', '+faststart',
-      ]);
+  await withProcessorFfmpegResources((threadOptions) => (
+    new Promise((resolve, reject) => {
+      const command = ffmpeg(inputVideoPath)
+        .inputOptions(threadOptions.inputOptions)
+        .complexFilter(filters)
+        .outputOptions([
+          ...threadOptions.outputOptions,
+          '-map', '[vout]',
+          '-c:v', 'libx264',
+          '-preset', 'veryfast',
+          '-pix_fmt', 'yuv420p',
+          '-movflags', '+faststart',
+        ]);
 
-    if (includeAudio) {
-      command.outputOptions([
-        '-map', '[aout]',
-        '-c:a', 'aac',
-        '-b:a', '192k',
-      ]);
-    } else {
-      command.noAudio();
-    }
+      if (includeAudio) {
+        command.outputOptions([
+          '-map', '[aout]',
+          '-c:a', 'aac',
+          '-b:a', '192k',
+        ]);
+      } else {
+        command.noAudio();
+      }
 
-    command
-      .on('end', resolve)
-      .on('error', reject)
-      .save(outputPath);
-  });
+      command
+        .on('end', resolve)
+        .on('error', reject)
+        .save(outputPath);
+    })
+  ));
 
   return outputPath;
 }
@@ -3202,19 +3217,23 @@ async function renderEditedAudioSegments({
 
   filters.push(`${concatInputs.join('')}concat=n=${safeSegments.length}:v=0:a=1[aout]`);
 
-  await new Promise((resolve, reject) => {
-    ffmpeg(inputAudioPath)
-      .complexFilter(filters)
-      .outputOptions([
-        '-map', '[aout]',
-        '-c:a', 'libmp3lame',
-        '-b:a', '192k',
-      ])
-      .noVideo()
-      .on('end', resolve)
-      .on('error', reject)
-      .save(outputPath);
-  });
+  await withProcessorFfmpegResources((threadOptions) => (
+    new Promise((resolve, reject) => {
+      ffmpeg(inputAudioPath)
+        .inputOptions(threadOptions.inputOptions)
+        .complexFilter(filters)
+        .outputOptions([
+          ...threadOptions.outputOptions,
+          '-map', '[aout]',
+          '-c:a', 'libmp3lame',
+          '-b:a', '192k',
+        ])
+        .noVideo()
+        .on('end', resolve)
+        .on('error', reject)
+        .save(outputPath);
+    })
+  ));
 
   return outputPath;
 }
@@ -3273,7 +3292,7 @@ async function resolveLayerDurationForRealign({
   const audioVideoDirs = [];
   const baseDirs = [];
   const roots = getProcessorAssetsRootCandidates();
-  const prefersVideoNamespace = process.env.CURRENT_ENV === 'staging' || process.env.CURRENT_ENV === 'docker';
+  const prefersVideoNamespace = isContainerRuntime();
   const framesNamespacePriority = prefersVideoNamespace ? ['video', 'ai_video'] : ['ai_video', 'video'];
 
   for (const assetsRoot of roots) {
@@ -10691,15 +10710,19 @@ function resolveUploadedAudioFolderPath(sessionId, uploadFolderName = 'uploaded_
 }
 
 function transcodeUploadedAudioToMp3(inputFilePath, outputFilePath) {
-  return new Promise((resolve, reject) => {
-    ffmpeg(inputFilePath)
-      .audioCodec('libmp3lame')
-      .audioBitrate('128k')
-      .format('mp3')
-      .on('end', resolve)
-      .on('error', reject)
-      .save(outputFilePath);
-  });
+  return withProcessorFfmpegResources((threadOptions) => (
+    new Promise((resolve, reject) => {
+      ffmpeg(inputFilePath)
+        .inputOptions(threadOptions.inputOptions)
+        .audioCodec('libmp3lame')
+        .audioBitrate('128k')
+        .format('mp3')
+        .outputOptions(threadOptions.outputOptions)
+        .on('end', resolve)
+        .on('error', reject)
+        .save(outputFilePath);
+    })
+  ));
 }
 
 async function resolveMusicTrackApplication({

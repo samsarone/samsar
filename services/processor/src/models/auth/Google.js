@@ -98,6 +98,7 @@ export async function loginGoogleClient(query) {
 
   let userExists = await User.findOne({ email: sanitizedEmail });
   let userResponse;
+  const isNewUser = !userExists;
 
   if (userExists) {
     // User already exists; just prepare the response
@@ -128,5 +129,5 @@ export async function loginGoogleClient(query) {
   }
 
   const authToken = generateAuthToken(userResponse._id);
-  return authToken;
+  return { authToken, isNewUser };
 }

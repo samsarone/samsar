@@ -4,6 +4,7 @@ import { FaArrowRight, FaChevronDown, FaChevronUp } from 'react-icons/fa6';
 import { useAlertDialog } from '../../contexts/AlertDialogContext.jsx';
 import { useColorMode } from '../../contexts/ColorMode.jsx';
 import { useUser } from '../../contexts/UserContext.jsx';
+import { resolvePublisherUrl } from '../../utils/publicUrl.mjs';
 import { toast } from 'react-toastify';
 
 const creditOptions = [
@@ -15,7 +16,7 @@ const creditOptions = [
   { value: 1000, caption: 'Scale' },
 ];
 
-const GALLERY_URL = 'https://gallery.samsar.one';
+const GALLERY_URL = resolvePublisherUrl(import.meta.env.VITE_PUBLISHER_URL);
 
 export default function AddCreditsDialog(props) {
   const {

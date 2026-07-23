@@ -4,7 +4,7 @@ import { writeFile, mkdir } from 'fs/promises';
 import path from 'path';
 import sharp from 'sharp';
 
-import { getCurrentEnvironment } from './Environment.js';
+import { getCurrentEnvironment, usesLocalAssetStorage } from './Environment.js';
 
 
 export async function saveRemoteFile(remoteImageUrl) {
@@ -100,7 +100,7 @@ export async function resizeAndSaveRemoteFile(remoteImageUrl, newDimensions) {
     const pwd = process.cwd();
     let savePath = path.join(pwd, '..', 'samsar_processor', 'assets', 'generations', imageName);
 
-    if (process.env.CURRENT_ENV === 'staging' || process.env.CURRENT_ENV === 'docker') {
+    if (usesLocalAssetStorage()) {
       savePath = path.join(process.env.SAMSAR_ASSETS_ROOT || '/assets', 'generations', imageName);
     }
     

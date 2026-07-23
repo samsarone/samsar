@@ -5,12 +5,16 @@ import {
   DOCKER_PROVIDER,
   getDockerImageProviderPriority,
   getDockerVideoProviderPriority,
+  isDockerProviderRoutingEnabled,
   resolveDockerImageProvider,
   resolveDockerVideoProvider,
 } from './DockerProviderPriority.js';
 
 const ENV_KEYS = [
   'CURRENT_ENV',
+  'SAMSAR_DEPLOYMENT_EDITION',
+  'SAMSAR_EDITION',
+  'SAMSAR_RUNTIME',
   'SAMSAR_DOCKER_ADAPTER_ROUTING_ENABLED',
   'ALIBABA_API_KEY',
   'DASHSCOPE_API_KEY',
@@ -105,4 +109,18 @@ test('processor chooses Alibaba, FAL, and Samsar Wan2.7 Pro fallbacks in order',
 
   delete process.env.FAL_API_KEY;
   assert.equal(resolveDockerImageProvider('WAN2.7PRO'), DOCKER_PROVIDER.SAMSAR);
+});
+
+test('production Docker does not enable standalone provider routing implicitly', () => {
+  clearEnv();
+  process.env.SAMSAR_DEPLOYMENT_EDITION = 'production';
+  process.env.SAMSAR_RUNTIME = 'docker';
+  process.env.FAL_API_KEY = 'fal-key';
+
+  assert.equal(isDockerProviderRoutingEnabled(), false);
+  assert.equal(resolveDockerImageProvider('WAN2.7PRO'), '');
+
+  process.env.SAMSAR_DOCKER_ADAPTER_ROUTING_ENABLED = 'true';
+  assert.equal(isDockerProviderRoutingEnabled(), true);
+  assert.equal(resolveDockerImageProvider('WAN2.7PRO'), DOCKER_PROVIDER.FAL);
 });

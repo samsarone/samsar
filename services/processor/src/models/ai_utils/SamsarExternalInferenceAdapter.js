@@ -11,8 +11,8 @@ import {
   normalizeInferenceModel,
   normalizeOpenAIInferenceModel,
 } from '../../consts/InferenceModels.js';
+import { isStandaloneEdition } from '../../utils/EnvironmentUtils.js';
 import { hasAlibabaQwenNativeCredential } from '../../inference/AlibabaQwen.js';
-import { getCurrentEnvironment } from '../../utils/EnvironmentUtils.js';
 import { externalAssistantClientRequestStore } from './ExternalAssistantClientRequestStore.js';
 import { resolveProviderMediaPayload } from './ProviderMediaPayload.js';
 
@@ -611,7 +611,7 @@ function shouldEnableExternalInference() {
   if (isTruthyEnv(process.env.SAMSAR_FORCE_EXTERNAL_INFERENCE)) {
     return true;
   }
-  return getCurrentEnvironment() === 'docker';
+  return isStandaloneEdition();
 }
 
 function getExternalClient() {
@@ -693,7 +693,7 @@ function getInferenceProviderPriority(model) {
 }
 
 function isDockerInferenceRuntime() {
-  return normalizeString(process.env.CURRENT_ENV).toLowerCase() === 'docker';
+  return isStandaloneEdition();
 }
 
 function isQwenOpenRouterOnly(model) {

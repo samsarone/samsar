@@ -20,7 +20,12 @@ function getNonNegativeIntegerEnv(name, fallback) {
   return Math.floor(parsedValue);
 }
 
-if (process.env.CURRENT_ENV === 'production') {
+if (process.env.MONGO_URL) {
+  MONGO_CONNECTION_STRING = process.env.MONGO_URL;
+} else if (
+  process.env.DATABASE_PROVIDER === 'cosmos' ||
+  (process.env.CURRENT_ENV === 'production' && process.env.SAMSAR_RUNTIME !== 'docker')
+) {
   const user = encodeURIComponent(process.env.COSMOS_DB_USERNAME);
   const pass = encodeURIComponent(process.env.COSMOS_DB_PASSWORD);
   const DB_NAME = 'SamsarOne';
@@ -33,8 +38,13 @@ if (process.env.CURRENT_ENV === 'production') {
   };
   const qs = Object.entries(OPTS).map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`).join('&');
   MONGO_CONNECTION_STRING = `${BASE}/${DB_NAME}?${qs}`;
-} else if (process.env.CURRENT_ENV === 'staging' || process.env.CURRENT_ENV === 'docker') {
-  MONGO_CONNECTION_STRING = process.env.MONGO_URL || 'mongodb://mongo:27017/SamsarOne';
+} else if (
+  process.env.CURRENT_ENV === 'staging' ||
+  process.env.CURRENT_ENV === 'docker' ||
+  process.env.CURRENT_ENV === 'standalone' ||
+  process.env.SAMSAR_RUNTIME === 'docker'
+) {
+  MONGO_CONNECTION_STRING = 'mongodb://mongo:27017/SamsarOne';
 } else {
   MONGO_CONNECTION_STRING = 'mongodb://localhost:27017/SamsarOne';
 }

@@ -14,6 +14,8 @@ import { finalizeRemoteAudioGeneration, markAudioGenerationAsFailed } from '../m
 import { recordProviderUsageLog } from '../utils/ProviderUsageAudit.js';
 import { finalizeStandaloneExternalAudioGeneration } from './StandaloneExternalAudio.js';
 import { buildMusicInputPayload } from './SamsarExternalAudioPayloads.js';
+import { isStandaloneEdition } from '../util/environmentUtils.js';
+import { AUDIO_FFPROBE_THREAD_OPTIONS } from '../utils/FfmpegResources.js';
 
 const DEFAULT_SAMSAR_API_BASE_URL = 'https://api.samsar.one/v1';
 const DEFAULT_EXTERNAL_AUDIO_TIMEOUT_MS = 15 * 60 * 1000;
@@ -51,10 +53,6 @@ function isTruthyEnv(value) {
   return ['1', 'true', 'yes', 'on'].includes(normalized);
 }
 
-function isDockerRuntime() {
-  return normalizeString(process.env.CURRENT_ENV).toLowerCase() === 'docker';
-}
-
 export function shouldUseSamsarExternalAudio() {
   if (isFalseyEnv(process.env.SAMSAR_EXTERNAL_AUDIO_ENABLED)) {
     return false;
@@ -65,7 +63,7 @@ export function shouldUseSamsarExternalAudio() {
   if (isTruthyEnv(process.env.SAMSAR_EXTERNAL_AUDIO_ENABLED) || isTruthyEnv(process.env.SAMSAR_FORCE_EXTERNAL_AUDIO)) {
     return true;
   }
-  return isDockerRuntime();
+  return isStandaloneEdition();
 }
 
 function buildExternalAudioUrl(routePath) {
@@ -330,7 +328,7 @@ async function retryOrFailAudioGeneration(payload, errorMessage) {
 }
 
 async function getDurationSeconds(filePath) {
-  const { format } = await probe(filePath);
+  const { format } = await probe(filePath, AUDIO_FFPROBE_THREAD_OPTIONS);
   return format.duration;
 }
 

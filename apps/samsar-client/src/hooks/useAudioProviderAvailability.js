@@ -6,9 +6,9 @@ import {
   DEFAULT_AUDIO_AVAILABILITY,
   extractAudioAvailability,
 } from "../constants/audioProviderAvailability.js";
+import { IS_STANDALONE_DEPLOYMENT } from "../utils/environment.jsx";
 
 const PROCESSOR_API_URL = import.meta.env.VITE_PROCESSOR_API || "";
-const IS_DOCKER_INSTALL = import.meta.env.VITE_DOCKER_INSTALL === "true";
 
 const availabilityCache = {
   audioAvailability: null,
@@ -16,7 +16,7 @@ const availabilityCache = {
 };
 
 async function loadAudioAvailability() {
-  if (!IS_DOCKER_INSTALL) {
+  if (!IS_STANDALONE_DEPLOYMENT) {
     return DEFAULT_AUDIO_AVAILABILITY;
   }
 
@@ -44,12 +44,12 @@ export function useAudioProviderAvailability() {
   const [audioAvailability, setAudioAvailability] = useState(
     availabilityCache.audioAvailability || DEFAULT_AUDIO_AVAILABILITY
   );
-  const [isLoading, setIsLoading] = useState(IS_DOCKER_INSTALL && !availabilityCache.audioAvailability);
+  const [isLoading, setIsLoading] = useState(IS_STANDALONE_DEPLOYMENT && !availabilityCache.audioAvailability);
 
   useEffect(() => {
     let isMounted = true;
 
-    setIsLoading(IS_DOCKER_INSTALL && !availabilityCache.audioAvailability);
+    setIsLoading(IS_STANDALONE_DEPLOYMENT && !availabilityCache.audioAvailability);
     loadAudioAvailability()
       .then((availability) => {
         if (isMounted) {

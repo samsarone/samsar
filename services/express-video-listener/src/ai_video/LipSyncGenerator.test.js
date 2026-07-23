@@ -89,3 +89,19 @@ test('lip sync connected-audio lookup ignores non-speech layers', () => {
 
   assert.equal(connectedAudio?._id, 'speech-1');
 });
+
+test('production Docker retains production lip sync retry behavior', () => {
+  assert.equal(__testOnly__.shouldRetryLipSyncFailure({
+    CURRENT_ENV: 'production',
+    SAMSAR_DEPLOYMENT_EDITION: 'production',
+    SAMSAR_RUNTIME: 'docker',
+  }), true);
+});
+
+test('standalone and legacy Docker editions disable lip sync retry-on-fail', () => {
+  assert.equal(__testOnly__.shouldRetryLipSyncFailure({
+    SAMSAR_DEPLOYMENT_EDITION: 'standalone',
+    SAMSAR_RUNTIME: 'docker',
+  }), false);
+  assert.equal(__testOnly__.shouldRetryLipSyncFailure({ CURRENT_ENV: 'docker' }), false);
+});

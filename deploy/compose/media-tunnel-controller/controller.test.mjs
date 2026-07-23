@@ -11,10 +11,13 @@ import {
   configRequiresLocalMediaTunnel,
   consumeRefreshMarker,
   extractQuickTunnelUrl,
+  getConfiguredStableProviderMediaBaseUrl,
   MediaTunnelController,
+  normalizeStablePublicHttpsBaseUrl,
   readRefreshMarkerToken,
   updateRuntimeConfigAtomically,
   validateHealthMarker,
+  validateStableProviderMediaOrigin,
 } from './controller.mjs';
 
 test('extracts only a Cloudflared quick-tunnel origin from process output', () => {
@@ -95,6 +98,39 @@ test('detects when Docker-local config needs the media tunnel', () => {
     storage: { externalMediaPublishEnabled: false },
     services: { mediaGateway: true },
   }), true);
+});
+
+test('accepts only globally public HTTPS stable provider media origins', async () => {
+  assert.equal(
+    normalizeStablePublicHttpsBaseUrl('https://media.example.com/api/'),
+    'https://media.example.com/api',
+  );
+  assert.equal(normalizeStablePublicHttpsBaseUrl('http://media.example.com/api'), '');
+  assert.equal(normalizeStablePublicHttpsBaseUrl('https://localhost:3002'), '');
+  assert.equal(normalizeStablePublicHttpsBaseUrl('https://10.0.0.4/api'), '');
+  assert.equal(normalizeStablePublicHttpsBaseUrl('https://old.trycloudflare.com'), '');
+  assert.equal(await validateStableProviderMediaOrigin('http://media.example.com'), false);
+});
+
+test('prefers configured stable media then processor origins and ignores tunnel aliases', () => {
+  assert.equal(getConfiguredStableProviderMediaBaseUrl({
+    publicUrls: {
+      media: 'https://media.example.com',
+      processorApi: 'https://api.example.com',
+    },
+  }), 'https://media.example.com');
+  assert.equal(getConfiguredStableProviderMediaBaseUrl({
+    publicUrls: {
+      media: 'https://fallback.trycloudflare.com',
+      processorApi: 'https://api.example.com/api',
+    },
+  }), 'https://api.example.com/api');
+  assert.equal(getConfiguredStableProviderMediaBaseUrl({
+    publicUrls: {
+      media: 'http://203.0.113.10:3002',
+      processorApi: 'http://localhost:3002',
+    },
+  }), '');
 });
 
 test('atomically publishes tunnel state without replacing browser preview media URL', async () => {

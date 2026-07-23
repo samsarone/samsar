@@ -4,6 +4,7 @@ import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
+import { isDockerRuntime as isConfiguredDockerRuntime } from './util/environmentUtils.js';
 
 /**
  * Reads AWS credentials and region from environment variables.
@@ -207,7 +208,7 @@ function getAudioContentType(fileName = '') {
 }
 
 function isDockerRuntime() {
-  return String(process.env.CURRENT_ENV || '').trim().toLowerCase() === 'docker';
+  return isConfiguredDockerRuntime();
 }
 
 function isExternalMediaPublishEnabled() {

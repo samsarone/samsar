@@ -11,9 +11,9 @@ import {
   isSpeechLikeAudioType,
   shouldDuckMusicAgainstAudioType,
 } from '../video/util/audioPreviewDucking.js';
+import { IS_STANDALONE_DEPLOYMENT } from '../../utils/environment.jsx';
 
 const PROCESSOR_API_URL = import.meta.env.VITE_PROCESSOR_API;
-const IS_DOCKER_INSTALL = String(import.meta.env.VITE_DOCKER_INSTALL || '').trim().toLowerCase() === 'true';
 const STATIC_ASSET_BASE_URL = (
   import.meta.env.VITE_STATIC_CDN_URL ||
   'https://static.samsar.one'
@@ -32,9 +32,9 @@ const MOBILE_PREVIEW_MEDIA_QUERY = '(hover: none), (pointer: coarse), (max-width
 const USER_RESOURCES_PREFIX = 'user_resources/';
 const LAYER_ID_FIELDS = ['id', '_id', 'layerId', 'layer_id'];
 const MOBILE_SINGLE_VIDEO_LOAD_STAGES = new Set(['ai_video_generation', 'lip_sync_generation']);
-const TIMELINE_STRIP_MIN_WIDTH_PX = 420;
-const TIMELINE_SEGMENT_MIN_WIDTH_PX = 88;
-const TIMELINE_SECONDS_WIDTH_PX = 24;
+const TIMELINE_SEGMENT_TARGET_WIDTH_PX = 48;
+const TIMELINE_SECONDS_TARGET_WIDTH_PX = 6;
+const TIMELINE_MAX_WIDTH_FACTOR = 2;
 const previewVisualReadyCache = new Set();
 const previewVisualPreloadPromises = new Map();
 const previewVisualObjectUrlCache = new Map();
@@ -291,7 +291,7 @@ function getRawItemAssetUrl(item) {
 }
 
 function buildVideoAssetCandidates({ stage, status, localUrls = [], remoteUrls = [] }) {
-  const orderedUrls = IS_DOCKER_INSTALL
+  const orderedUrls = IS_STANDALONE_DEPLOYMENT
     ? [...localUrls, ...remoteUrls]
     : [...remoteUrls, ...localUrls];
   return orderedUrls
@@ -535,10 +535,18 @@ function isSegmentActiveAtTime(segment, previewTime) {
   return previewTime >= segment.startTime && previewTime < segment.endTime;
 }
 
-function getTimelineStripWidth(segments = [], timelineDuration) {
-  const segmentCountWidth = Math.max(1, segments.length) * TIMELINE_SEGMENT_MIN_WIDTH_PX;
-  const durationWidth = Math.max(0, timelineDuration) * TIMELINE_SECONDS_WIDTH_PX;
-  return Math.ceil(Math.max(TIMELINE_STRIP_MIN_WIDTH_PX, segmentCountWidth, durationWidth));
+function getTimelineStripStyle(segments = [], timelineDuration) {
+  const segmentCountWidth =
+    Math.max(1, segments.length) * TIMELINE_SEGMENT_TARGET_WIDTH_PX;
+  const durationWidth =
+    Math.max(0, timelineDuration) * TIMELINE_SECONDS_TARGET_WIDTH_PX;
+  const preferredWidth = Math.ceil(Math.max(segmentCountWidth, durationWidth));
+
+  // Keep ordinary timelines fully visible. Dense or long timelines can grow,
+  // but never beyond two timeline-panel widths.
+  return {
+    width: `max(100%, min(${TIMELINE_MAX_WIDTH_FACTOR * 100}%, ${preferredWidth}px))`,
+  };
 }
 
 function getTimelineSegmentStyle(segment, timelineDuration, constrainToTimeline = false) {
@@ -997,13 +1005,13 @@ export default function ProgressIndicator(props) {
   );
   const visualTimelineStripStyle = useMemo(
     () => (enableScrollableLayerTimeline
-      ? { minWidth: `${getTimelineStripWidth(visualSegments, timelineDuration)}px` }
+      ? getTimelineStripStyle(visualSegments, timelineDuration)
       : undefined),
     [enableScrollableLayerTimeline, timelineDuration, visualSegments],
   );
   const audioTimelineStripStyle = useMemo(
     () => (enableScrollableLayerTimeline
-      ? { minWidth: `${getTimelineStripWidth(audioSegments, timelineDuration)}px` }
+      ? getTimelineStripStyle(audioSegments, timelineDuration)
       : undefined),
     [audioSegments, enableScrollableLayerTimeline, timelineDuration],
   );

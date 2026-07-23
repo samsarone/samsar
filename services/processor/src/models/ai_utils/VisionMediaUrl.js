@@ -3,6 +3,7 @@ import path from 'path';
 
 import { buildSecureMediaDeliveryUrl, primeCDNCache } from '../AWS.js';
 import { resolveFreshManagedProviderMediaUrl } from '../../utils/ProviderMediaTunnel.js';
+import { isContainerRuntime } from '../../utils/EnvironmentUtils.js';
 
 const DEFAULT_RUNTIME_CONFIG_PATH = '/persistent/config/samsar.config.json';
 const DOCKER_SECURE_ASSET_PREFIX = 'assets_v2';
@@ -81,7 +82,7 @@ function isTruthyEnv(value) {
 }
 
 function isDockerRuntime() {
-  return normalizeString(process.env.CURRENT_ENV).toLowerCase() === 'docker';
+  return isContainerRuntime();
 }
 
 function shouldUseDockerLocalMedia() {
@@ -92,6 +93,9 @@ function shouldUseDockerLocalMedia() {
     return true;
   }
   if (configuredMode === 's3-cloudfront' || configuredMode === 'external-s3') {
+    return false;
+  }
+  if (hasConfiguredExternalMediaDelivery()) {
     return false;
   }
   return isDockerRuntime() && !isTruthyEnv(
@@ -125,18 +129,28 @@ function buildInvalidReferenceError(value, reason, mediaKind = 'image') {
   return error;
 }
 
-function assertConfiguredDockerExternalMediaDelivery(value, mediaKind) {
+function hasConfiguredExternalMediaDelivery() {
   const bucket = normalizeString(
-    process.env.MEDIA_BUCKET_NAME || process.env.STATIC_CDN_BUCKET,
+    process.env.MEDIA_BUCKET_NAME ||
+    process.env.STATIC_CDN_BUCKET ||
+    process.env.SAMSAR_EXTERNAL_MEDIA_BUCKET,
   );
-  const cdnBase = normalizeString(process.env.STATIC_CDN_URL);
+  const cdnBase = normalizeString(
+    process.env.STATIC_CDN_URL ||
+    process.env.SAMSAR_EXTERNAL_MEDIA_PUBLIC_BASE_URL ||
+    process.env.SAMSAR_PUBLIC_MEDIA_BASE_URL,
+  );
   const parsedCdnBase = parseHttpUrl(cdnBase);
-  if (
-    !bucket ||
-    !parsedCdnBase ||
-    parsedCdnBase.protocol !== 'https:' ||
-    isPrivateOrLocalHostname(parsedCdnBase.hostname)
-  ) {
+  return Boolean(
+    bucket &&
+    parsedCdnBase &&
+    parsedCdnBase.protocol === 'https:' &&
+    !isPrivateOrLocalHostname(parsedCdnBase.hostname)
+  );
+}
+
+function assertConfiguredDockerExternalMediaDelivery(value, mediaKind) {
+  if (!hasConfiguredExternalMediaDelivery()) {
     throw buildInvalidReferenceError(
       value,
       'external S3 delivery is enabled without an explicitly configured bucket and public HTTPS STATIC_CDN_URL',
@@ -262,6 +276,22 @@ function readRuntimeMediaConfigUrls() {
 
 function getManagedTunnelBaseUrlCandidates() {
   const runtimeUrls = readRuntimeMediaConfigUrls();
+  const stablePublicOrigins = uniqueBaseUrls([
+    ...runtimeUrls.localDeliveryUrls,
+    process.env.SAMSAR_PUBLIC_MEDIA_BASE_URL,
+    process.env.SAMSAR_EXTERNAL_MEDIA_PUBLIC_BASE_URL,
+    process.env.MEDIA_PUBLIC_URL,
+    process.env.SAMSAR_DOCKER_PUBLIC_ASSET_BASE_URL,
+    process.env.SAMSAR_DOCKER_PUBLIC_PROCESSOR_BASE_URL,
+    process.env.PUBLIC_API_BASE_URL,
+    process.env.PUBLIC_BASE_URL,
+    process.env.API_SERVER,
+  ]).filter((value) => {
+    const parsedUrl = parseHttpUrl(value);
+    return parsedUrl?.protocol === 'https:' &&
+      isProbablyPublicHttpUrl(parsedUrl) &&
+      !isTunnelHostname(parsedUrl.hostname);
+  });
   const explicitlyManaged = uniqueBaseUrls([
     ...runtimeUrls.managedTunnelUrls,
     process.env.SAMSAR_MEDIA_TUNNEL_PUBLIC_URL,
@@ -276,7 +306,7 @@ function getManagedTunnelBaseUrlCandidates() {
     return parsedUrl && isTunnelHostname(parsedUrl.hostname);
   });
 
-  return uniqueBaseUrls([...explicitlyManaged, ...tunnelShapedFallbacks])
+  return uniqueBaseUrls([...stablePublicOrigins, ...explicitlyManaged, ...tunnelShapedFallbacks])
     .filter((value) => {
       const parsedUrl = parseHttpUrl(value);
       return parsedUrl?.protocol === 'https:' && isProbablyPublicHttpUrl(parsedUrl);

@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import net from 'node:net';
 import path from 'node:path';
 import { buildDockerAvailableModelsFromEnabledProviders } from '../apps/setup-wizard/src/constants/dockerModelAvailability.js';
 import { buildDockerAudioAvailability } from './docker-audio-provider-config.mjs';
@@ -75,23 +76,26 @@ const reverseProxyEnabled = reverseProxyConfig.enabled === true;
 const publicClientBaseUrl = config.publicUrls?.clientApp || 'http://localhost:3000';
 const publicProcessorBaseUrl = config.publicUrls?.processorApi || 'http://localhost:3002';
 const configuredPublicMediaUrl = config.publicUrls?.media || '';
+const configuredStableProviderMediaUrl = [
+  configuredPublicMediaUrl,
+  publicProcessorBaseUrl,
+  reverseProxyConfig.publicUrls?.media,
+  reverseProxyConfig.publicUrls?.processorApi,
+].map(normalizeStablePublicHttpsBaseUrl).find(Boolean) || '';
 const configuredTunnelPublicUrl = localMediaTunnelConfig.enabled === false
   ? ''
   : (localMediaTunnelConfig.publicUrl ||
     localMediaTunnelConfig.url ||
     (isTemporaryMediaTunnelUrl(configuredPublicMediaUrl) ? configuredPublicMediaUrl : ''));
-const stableBrowserMediaUrl = isTemporaryMediaTunnelUrl(configuredPublicMediaUrl)
-  ? ''
-  : configuredPublicMediaUrl;
 const publicAssetBaseUrl = externalMediaPublishEnabled
   ? storageConfig.staticCdnUrl
   : publicProcessorBaseUrl;
 const mediaPublicUrl = externalMediaPublishEnabled
   ? storageConfig.staticCdnUrl
-  : (configuredTunnelPublicUrl || stableBrowserMediaUrl || publicProcessorBaseUrl);
+  : (configuredStableProviderMediaUrl || configuredTunnelPublicUrl || publicProcessorBaseUrl);
 const externalMediaPublicBaseUrl = externalMediaPublishEnabled
   ? storageConfig.staticCdnUrl
-  : mediaPublicUrl;
+  : (configuredStableProviderMediaUrl || configuredTunnelPublicUrl);
 const alibabaCloudConfig = config.providers?.alibabaCloud || {};
 const alibabaCloudSecrets = providerSecrets.alibabaCloud || {};
 const openrouterSecrets = providerSecrets.openrouter || {};
@@ -146,6 +150,61 @@ function isTemporaryMediaTunnelUrl(value) {
       hostname.endsWith('.share.zrok.io');
   } catch {
     return false;
+  }
+}
+
+function isLocalOrPrivateHostname(value) {
+  const hostname = normalizeString(value).toLowerCase().replace(/^\[|\]$/g, '');
+  if (!hostname ||
+    hostname === 'localhost' ||
+    hostname === '0.0.0.0' ||
+    hostname.endsWith('.localhost') ||
+    hostname.endsWith('.local') ||
+    hostname === 'host.docker.internal') {
+    return true;
+  }
+
+  const ipVersion = net.isIP(hostname);
+  if (ipVersion === 4) {
+    const [first, second] = hostname.split('.').map((part) => Number.parseInt(part, 10));
+    return first === 0 ||
+      first === 10 ||
+      first === 127 ||
+      (first === 100 && second >= 64 && second <= 127) ||
+      (first === 169 && second === 254) ||
+      (first === 172 && second >= 16 && second <= 31) ||
+      (first === 192 && second === 168) ||
+      first >= 224;
+  }
+  if (ipVersion === 6) {
+    return hostname === '::' ||
+      hostname === '::1' ||
+      hostname.startsWith('fc') ||
+      hostname.startsWith('fd') ||
+      /^fe[89ab]/.test(hostname);
+  }
+  return !hostname.includes('.');
+}
+
+function normalizeStablePublicHttpsBaseUrl(value) {
+  const normalized = normalizeString(value);
+  if (!normalized || isTemporaryMediaTunnelUrl(normalized)) {
+    return '';
+  }
+  try {
+    const parsedUrl = new URL(normalized);
+    if (parsedUrl.protocol !== 'https:' ||
+      parsedUrl.username ||
+      parsedUrl.password ||
+      parsedUrl.search ||
+      parsedUrl.hash ||
+      isLocalOrPrivateHostname(parsedUrl.hostname)) {
+      return '';
+    }
+    parsedUrl.pathname = parsedUrl.pathname.replace(/\/+$/, '');
+    return parsedUrl.toString().replace(/\/$/, '');
+  } catch {
+    return '';
   }
 }
 
@@ -448,7 +507,9 @@ try {
 }
 
 const env = {
-  CURRENT_ENV: config.runtime === 'local' ? 'development' : 'docker',
+  CURRENT_ENV: 'standalone',
+  SAMSAR_DEPLOYMENT_EDITION: 'standalone',
+  SAMSAR_RUNTIME: 'docker',
   NODE_ENV: config.runtime === 'local' ? 'development' : 'production',
   TOKEN_SECRET: config.security?.tokenSecret || 'samsar-local-token-secret-change-me',
   CUSTOM_ADAPTER_SECRET_KEY: config.security?.customAdapterSecret || config.security?.tokenSecret || 'samsar-local-custom-adapter-secret-change-me',

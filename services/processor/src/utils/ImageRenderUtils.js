@@ -2,6 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import { createCanvas, loadImage } from 'canvas';
 import { getCanvasDimensionsForAspectRatio } from './CanvasUtils.js';
+import { isContainerRuntime } from './EnvironmentUtils.js';
 
 function isRemoteUrl(value) {
   return typeof value === 'string' && /^https?:\/\//i.test(value.trim());
@@ -14,7 +15,7 @@ function getAssetRoot(folderName = 'assets_v2') {
   if (typeof configuredRoot === 'string' && configuredRoot.trim()) {
     return path.resolve(configuredRoot.trim());
   }
-  return process.env.CURRENT_ENV === 'staging' || process.env.CURRENT_ENV === 'docker'
+  return isContainerRuntime()
     ? `/${folderName}`
     : path.join(process.cwd(), '../', 'samsar_processor', folderName);
 }
@@ -235,11 +236,9 @@ export function getFrameImageForLayer(sessionId, layerId, aspectRatio, activeIte
     try {
       const pwd = process.cwd();
       const imageName = `${sessionId}_${layerId}.png`;
-      let currentEnv = process.env.CURRENT_ENV;
-
       let imageBaseFolder = path.join(pwd, '../', 'samsar_processor', 'assets_v2', 'ai_video', 'temp');
 
-      if (currentEnv === 'staging' || currentEnv === 'docker') {
+      if (process.env.SAMSAR_ASSETS_V2_ROOT || isContainerRuntime()) {
         imageBaseFolder = path.join(process.env.SAMSAR_ASSETS_V2_ROOT || '/assets_v2', 'ai_video', 'temp');
       }
 

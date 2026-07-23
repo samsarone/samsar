@@ -1,7 +1,7 @@
 
 import { getDBConnectionString } from '../DBString.js';
 import NotificationMailer from '../schema/NotificationMailer.js';
-import { isDockerRuntime } from './MailTransport.js';
+import { isStandaloneEdition } from './DeploymentEnvironment.js';
 import {
   sendVideoCompletedEmailDirectly,
   shouldSendVideoCompletionEmailDirectly,
@@ -51,7 +51,7 @@ export async function updateSendCompletionNotificationToUser(payload) {
     return sendVideoCompletedEmailDirectly(mailPayload);
   }
 
-  if (isDockerRuntime()) {
+  if (isStandaloneEdition()) {
     return { skipped: true, reason: 'mail_not_configured' };
   }
 

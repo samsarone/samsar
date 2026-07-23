@@ -4,7 +4,6 @@
 .env.test
 assets/
 node_modules/
-package-lock.json
 yarn.lock
 .env.*
 .DS_Store

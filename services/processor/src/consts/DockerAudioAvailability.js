@@ -5,6 +5,7 @@ import {
   TTS_PROVIDER_OPENAI,
   normalizeTTSSpeakerGender,
 } from './TTSSpeakers.js';
+import { isStandaloneEdition } from '../utils/EnvironmentUtils.js';
 
 const GOOGLE_NATIVE_CREDENTIAL_KEYS = Object.freeze([
   'GOOGLE_APPLICATION_CREDENTIALS_JSON_B64',
@@ -243,8 +244,7 @@ export function hasSamsarCredential() {
 }
 
 export function isSubtitleGenerationAvailable() {
-  const isDockerInstall = normalizeString(process.env.CURRENT_ENV).toLowerCase() === 'docker';
-  if (!isDockerInstall) {
+  if (!isStandaloneEdition()) {
     return true;
   }
   return hasOpenAICredential() || hasSamsarCredential();
@@ -252,7 +252,7 @@ export function isSubtitleGenerationAvailable() {
 
 export function buildSubtitleConfigurationError() {
   const error = new Error(
-    'Subtitle generation requires an OpenAI API key or Samsar API key in this Docker deployment.',
+    'Subtitle generation requires an OpenAI API key or Samsar API key in this standalone deployment.',
   );
   error.code = 'SUBTITLE_PROVIDER_NOT_CONFIGURED';
   error.status = 503;
@@ -293,7 +293,7 @@ export function applyDockerSubtitleAvailability(payload = {}) {
   };
 
   // A requested subtitle language implies subtitle generation in the normal
-  // request parser. Remove it before validation when Docker cannot run the
+  // request parser. Remove it before validation when the standalone edition cannot run the
   // OpenAI-backed subtitle pipeline.
   delete normalizedPayload.subtitle_language;
   delete normalizedPayload.subtitleLanguage;
@@ -317,7 +317,7 @@ export function isDockerAudioAvailabilityFilteringEnabled() {
   if (isTruthyEnv(process.env.SAMSAR_DOCKER_AUDIO_PROVIDER_ROUTING_ENABLED)) {
     return true;
   }
-  return normalizeString(process.env.CURRENT_ENV).toLowerCase() === 'docker';
+  return isStandaloneEdition();
 }
 
 export function getAvailableDockerTTSProviders() {
@@ -525,7 +525,7 @@ export function assertDockerTTSProviderAvailable(ttsProvider) {
 
   if (!isDockerTTSProviderAvailable(normalizedProvider)) {
     throw makeDockerAvailabilityError(
-      `tts_model ${normalizedProvider} is not available for this Docker installation. Configure the matching provider or Samsar API key.`
+      `tts_model ${normalizedProvider} is not available for this standalone installation. Configure the matching provider or Samsar API key.`
     );
   }
 }
@@ -538,7 +538,7 @@ export function assertDockerBackingTrackModelAvailable(model) {
   const normalizedModel = normalizeBackingTrackModel(model);
   if (!isDockerBackingTrackModelAvailable(normalizedModel)) {
     throw makeDockerAvailabilityError(
-      `backingtrack_model ${normalizedModel} is not available for this Docker installation. Configure the matching provider or Samsar API key.`
+      `backingtrack_model ${normalizedModel} is not available for this standalone installation. Configure the matching provider or Samsar API key.`
     );
   }
 }

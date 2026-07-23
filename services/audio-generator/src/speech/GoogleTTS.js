@@ -16,6 +16,7 @@ import {
   finalizeStandaloneExternalAudioGeneration,
   isStandaloneExternalAudioRequest,
 } from '../external/StandaloneExternalAudio.js';
+import { AUDIO_FFPROBE_THREAD_OPTIONS } from '../utils/FfmpegResources.js';
 
 ffmpeg.setFfprobePath('/usr/bin/ffprobe');
 
@@ -111,7 +112,7 @@ export function resolveGoogleTTSVolumeGainDb(payload = {}, { isExpressGeneration
 }
 
 async function getDurationSeconds(filePath) {
-  const { format } = await probe(filePath);
+  const { format } = await probe(filePath, AUDIO_FFPROBE_THREAD_OPTIONS);
   return format.duration;
 }
 

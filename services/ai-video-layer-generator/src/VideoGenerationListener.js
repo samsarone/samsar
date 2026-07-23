@@ -30,7 +30,11 @@ import { modifyAnimationsForNextLayer, filterZoomAndSlideAnimations } from './ut
 import { getCanvasDimensionsForAspectRatio } from './utils/CanvasUtils.js';
 import GeneratedAIVideo from './schema/GeneratedAIVideo.js';
 import { getPresetAnimationListForDistribution } from './utils/AnimationUtils.js';
-import { getCurrentEnvironment } from './utils/Environment.js';
+import {
+  getCurrentEnvironment,
+  isStandaloneEdition,
+  usesLocalAssetStorage,
+} from './utils/Environment.js';
 
 // import { generateLumaAiVideoLayer, pollLumaAiVideoLayer } from './LumaListener.js';
 import { generateSdVideoLayer, listenToPendingSDVideoRequest } from './SDListener.js';
@@ -295,10 +299,10 @@ export function shouldUseAlibabaNativeHappyHorse(payload = {}) {
   }
 
   // The hosted service always uses the FAL adapter for new Happy Horse jobs.
-  // Docker deployments may opt into native Alibaba with their validated BYOK
+  // Standalone deployments may opt into native Alibaba with their validated BYOK
   // configuration. Provider-specific ids above stay sticky so in-flight jobs
   // continue polling the adapter that created them.
-  if (getCurrentEnvironment() !== 'docker') {
+  if (!isStandaloneEdition()) {
     return false;
   }
 
@@ -893,7 +897,7 @@ function getProviderErrorStatus(error) {
 
 export function buildDockerI2V429AdapterFailoverPlan(request = {}, error) {
   if (
-    getCurrentEnvironment() !== 'docker' ||
+    !isStandaloneEdition() ||
     getProviderErrorStatus(error) !== 429 ||
     resolveAIVideoRequestType(request.model, request) !== 'image_to_video' ||
     Boolean(normalizeString(request.generationId)) ||
@@ -1470,9 +1474,7 @@ async function generatePendingAiVideoLayerRequests() {
 }
 
 async function getHailuoAdapter(queryType, payload) {
-  const currentEnv = getCurrentEnvironment();
-
-  if (currentEnv === 'docker') {
+  if (isStandaloneEdition()) {
     if (queryType === 'generate') {
       const generationId = await generateHailuoVideoLayer(payload);
       return generationId;
@@ -1912,11 +1914,11 @@ async function processVideoGenerationCompletion(payload, localVideoLink) {
               ? baseVideoPath.split('/assets/')[1]
               : baseVideoPath.replace(/^\//, '').replace(/^assets_v2\//, '').replace(/^assets\//, '');
           const assetsRoots = [
-            (process.env.CURRENT_ENV === 'staging' || process.env.CURRENT_ENV === 'docker')
+            usesLocalAssetStorage()
               ? '/assets_v2'
               : path.join(pwd, '../', 'samsar_processor', 'assets_v2'),
             ...(isAssetsV2Path ? [] : [
-              (process.env.CURRENT_ENV === 'staging' || process.env.CURRENT_ENV === 'docker')
+              usesLocalAssetStorage()
                 ? '/assets'
                 : path.join(pwd, '../', 'samsar_processor', 'assets'),
             ]),
@@ -2718,7 +2720,7 @@ async function copyFrameToGenerations(lastFramePath, sessionId) {
 
   let newImagePath = path.join(pwd, '../', 'samsar_processor', 'assets_v2', 'generations', sessionId.toString(), newImageName);
 
-  if (process.env.CURRENT_ENV === 'staging' || process.env.CURRENT_ENV === 'docker') {
+  if (usesLocalAssetStorage()) {
     newImagePath = path.join(process.env.SAMSAR_ASSETS_V2_ROOT || '/assets_v2', 'generations', sessionId.toString(), newImageName);
   }
 

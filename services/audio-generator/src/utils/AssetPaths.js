@@ -1,11 +1,12 @@
 import path from 'path';
+import { isDockerRuntime } from '../util/environmentUtils.js';
 
 export function getProcessorAssetsV2Root() {
   if (process.env.SAMSAR_ASSETS_V2_ROOT) {
     return process.env.SAMSAR_ASSETS_V2_ROOT;
   }
 
-  if (process.env.CURRENT_ENV === 'staging' || process.env.CURRENT_ENV === 'docker') {
+  if (isDockerRuntime()) {
     return '/assets_v2';
   }
 

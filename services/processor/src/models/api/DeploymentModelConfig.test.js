@@ -12,6 +12,9 @@ import {
 
 const ENV_KEYS = [
   'CURRENT_ENV',
+  'SAMSAR_DEPLOYMENT_EDITION',
+  'SAMSAR_EDITION',
+  'SAMSAR_RUNTIME',
   'ALIBABA_API_KEY',
   'DASHSCOPE_API_KEY',
   'ALIBABA_CLOUD_API_KEY',
@@ -106,6 +109,24 @@ test('hosted runtime omits Qwen even when saved configuration selected Alibaba',
     'gpt-5.6-sol': ['openai', 'samsar'],
     'QWEN3.7': ['alibabaCloud'],
   });
+});
+
+test('production Docker keeps production model-filtering policy', () => {
+  clearEnv();
+  process.env.SAMSAR_DEPLOYMENT_EDITION = 'production';
+  process.env.SAMSAR_RUNTIME = 'docker';
+
+  const result = mergeRuntimeInferenceDeploymentAvailability({
+    providers: ['alibabaCloud'],
+    models: ['gpt-5.6-sol', 'QWEN3.7'],
+    actions: ['chat', 'assistant'],
+    modelProviders: {
+      'gpt-5.6-sol': 'openai',
+      'QWEN3.7': 'alibabaCloud',
+    },
+  });
+
+  assert.deepEqual(result.models, ['gpt-5.6-sol']);
 });
 
 test('Docker retains Qwen only for an explicit validated Alibaba model selection', () => {

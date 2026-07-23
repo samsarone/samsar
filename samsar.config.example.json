@@ -1,5 +1,6 @@
 {
   "runtime": "docker",
+  "deploymentEdition": "standalone",
   "security": {
     "tokenSecret": "samsar-local-token-secret-change-me",
     "customAdapterSecret": "samsar-local-custom-adapter-secret-change-me",

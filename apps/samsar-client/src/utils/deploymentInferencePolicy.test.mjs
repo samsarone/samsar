@@ -25,7 +25,7 @@ test('hosted inference exposes the OpenRouter Qwen 3.7 Plus label', () => {
   assert.equal(hostedOptions[2].label, 'Qwen 3.7 Plus');
 });
 
-test('Docker exposes Qwen only with an explicit model and validated Alibaba provenance', () => {
+test('standalone exposes Qwen only with an explicit model and validated Alibaba provenance', () => {
   const validatedPayload = {
     deployment: {
       providers: ['alibabaCloud'],

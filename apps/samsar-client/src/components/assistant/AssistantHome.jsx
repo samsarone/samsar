@@ -148,7 +148,7 @@ export default function AssistantHome(props) {
   const { colorMode } = useColorMode();
   const { user, getUserAPI } = useUser();
   const {
-    isDockerInstall,
+    isStandaloneDeployment,
     isLoading: isInferenceModelAvailabilityLoading,
     assistantModelOptions,
     hasConfiguredInferenceModels,
@@ -171,7 +171,7 @@ export default function AssistantHome(props) {
   const [isPreparingFrameImage, setIsPreparingFrameImage] = useState(false);
   const [applyingSceneActionId, setApplyingSceneActionId] = useState(null);
   const isAssistantModelUnavailable =
-    isDockerInstall &&
+    isStandaloneDeployment &&
     (isInferenceModelAvailabilityLoading || !hasConfiguredInferenceModels);
 
   async function updateUserAssistantModel(newModelValue) {
@@ -194,7 +194,7 @@ export default function AssistantHome(props) {
     setAssistantModel(userAssistantModelOption);
 
     const canReconcileAssistantModel =
-      !isDockerInstall ||
+      !isStandaloneDeployment ||
       (!isInferenceModelAvailabilityLoading && hasConfiguredInferenceModels);
     const normalizedUserAssistantModel = normalizeDeploymentInferenceModelValue(userAssistantModel);
     const normalizedOptionAssistantModel = normalizeDeploymentInferenceModelValue(
@@ -211,7 +211,7 @@ export default function AssistantHome(props) {
   }, [
     assistantModelOptions,
     hasConfiguredInferenceModels,
-    isDockerInstall,
+    isStandaloneDeployment,
     isInferenceModelAvailabilityLoading,
     user,
   ]);
@@ -818,7 +818,7 @@ export default function AssistantHome(props) {
                   </div>
                 </div>
               ) : null}
-              {isDockerInstall && !isInferenceModelAvailabilityLoading && !hasConfiguredInferenceModels ? (
+              {isStandaloneDeployment && !isInferenceModelAvailabilityLoading && !hasConfiguredInferenceModels ? (
                 <div className="mb-3 rounded-2xl border border-amber-400/30 bg-amber-400/10 px-3 py-2 text-xs font-medium text-amber-600 dark:text-amber-200">
                   Configure OpenAI, Google Cloud, Alibaba Cloud, OpenRouter, or a Samsar API key in setup to use the assistant.
                 </div>

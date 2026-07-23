@@ -4,6 +4,7 @@ import path from "path";
 import { mkdir, writeFile } from "fs/promises";
 import sharp from "sharp";
 import axios from "axios";
+import { isDockerRuntime, usesLocalAssetStorage } from '../utils/Environment.js';
 
 import OpenAI, { toFile } from "openai";
 import {
@@ -103,7 +104,7 @@ export async function downloadToFile(url) {
     // This URL is consumed by this service before OpenAI receives multipart
     // bytes. In Docker, use the internal media gateway instead of publishing a
     // provider tunnel URL that no external adapter will ever see.
-    preferInternalDockerUrl: String(process.env.CURRENT_ENV || '').toLowerCase() === 'docker',
+    preferInternalDockerUrl: isDockerRuntime(),
   });
   const fileData = await axios.get(accessibleUrl, { responseType: "arraybuffer" });
   await fs.promises.writeFile(filePath, Buffer.from(fileData.data));
@@ -278,7 +279,7 @@ async function saveBufferToFile(buffer) {
 
   let baseAssetsPath;
 
-  if (process.env.CURRENT_ENV === 'staging' || process.env.CURRENT_ENV === 'docker') {
+  if (usesLocalAssetStorage()) {
     baseAssetsPath = '/assets/generations';
   } else {
     const pwd = process.cwd();

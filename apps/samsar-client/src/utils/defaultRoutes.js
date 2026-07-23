@@ -1,6 +1,7 @@
+import { IS_STANDALONE_DEPLOYMENT } from './environment.jsx';
+
 const STUDIO_ACCESS_CREDIT_THRESHOLD = 100;
 const VIDGENIE_MINIMUM_GENERATION_CREDITS = STUDIO_ACCESS_CREDIT_THRESHOLD;
-const IS_DOCKER_INSTALL = import.meta.env.VITE_DOCKER_INSTALL === 'true';
 
 function getGenerationCredits(user) {
   return Number(user?.generationCredits || 0);
@@ -19,7 +20,7 @@ export function getDefaultAuthenticatedPath(user, { isMobile = false } = {}) {
     return '/external/studio';
   }
 
-  if (IS_DOCKER_INSTALL && !isMobile) {
+  if (IS_STANDALONE_DEPLOYMENT && !isMobile) {
     return '/video';
   }
 

@@ -14,35 +14,17 @@ router.get('/test', async function (req, res) {
 });
 
 router.post('/request_admin_emails', async function (req, res) {
-  const secret = req.query.secret;
-
-  if (secret !== process.env.ADMIN_SECRET) {
-    res.status(401).send('Unauthorized');
-    return;
-  } else {
-
-
-    const payload = req.body;
-    try {
-
-     const resData = await requestSendAdminEmails(payload);
-      res.json(resData);
-    } catch (err) {
-      console.error('Error in /admin/users/list:', err);
-      res.status(500).json({ error: 'An error occurred while listing users' });
-    }
-
+  const payload = req.body;
+  try {
+    const resData = await requestSendAdminEmails(payload);
+    res.json(resData);
+  } catch (err) {
+    console.error('Error in /admin/email/request_admin_emails:', err);
+    res.status(500).json({ error: 'An error occurred while requesting admin emails' });
   }
 });
 
 router.post('/request_newsletter_test_email', async function (req, res) {
-  const secret = req.query.secret;
-
-  if (secret !== process.env.ADMIN_SECRET) {
-    res.status(401).send('Unauthorized');
-    return;
-  }
-
   try {
     const resData = await requestWeeklyNewsletterTestEmail(req.body || {});
     res.json(resData);
@@ -53,28 +35,5 @@ router.post('/request_newsletter_test_email', async function (req, res) {
     });
   }
 });
-
-
-router.post('/mark_verified', async function (req, res) {
-
-  const secret = req.query.secret;
-
-
-  if (secret !== process.env.ADMIN_SECRET) {
-    res.status(401).send('Unauthorized');
-    return;
-  } else {
-
-    try {
-      const data = await markUsersAsVerified();
-      res.json(data);
-    } catch (err) {
-      console.error('Error in /admin/users/mark-verified:', err);
-      res.status(500).json({ error: 'An error occurred while marking users as verified' });
-    }
-
-  }
-});
-
 
 export default router;

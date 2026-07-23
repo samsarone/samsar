@@ -15,6 +15,7 @@ import crypto from 'crypto';
 import path from 'path';
 import sharp from 'sharp';
 import { resolveDockerLocalPublicProcessorBaseUrl } from '../consts/DockerDeploymentUrls.js';
+import { isContainerRuntime } from '../utils/EnvironmentUtils.js';
 
 const DEFAULT_AWS_REGION = 'us-west-2';
 const MEDIA_BUCKET_NAME = process.env.MEDIA_BUCKET_NAME ||
@@ -163,7 +164,7 @@ export function getPublicationsMediaConfig() {
   }
 
   const externalConfig = getExplicitDockerExternalMediaConfig();
-  if (isDockerRuntime()) {
+  if (isContainerRuntime()) {
     return {
       bucketName: externalConfig.bucketName,
       cdnUrl: externalConfig.cdnUrl,
@@ -338,10 +339,6 @@ function isSecureAssetKey(key) {
   return normalizeObjectKey(key).startsWith(`${SECURE_ASSET_PREFIX}/`);
 }
 
-function isDockerRuntime() {
-  return String(process.env.CURRENT_ENV || '').trim().toLowerCase() === 'docker';
-}
-
 function isExternalMediaPublishEnabled() {
   return ['1', 'true', 'yes', 'on'].includes(
     String(process.env.SAMSAR_EXTERNAL_MEDIA_PUBLISH_ENABLED || process.env.EXTERNAL_MEDIA_PUBLISH_ENABLED || '')
@@ -360,7 +357,10 @@ function shouldUseDockerLocalMedia() {
   if (configuredMode === 's3-cloudfront' || configuredMode === 'external-s3') {
     return false;
   }
-  return isDockerRuntime() && !isExternalMediaPublishEnabled();
+  if (getExplicitDockerExternalMediaConfig().configured) {
+    return false;
+  }
+  return isContainerRuntime() && !isExternalMediaPublishEnabled();
 }
 
 function getExplicitDockerExternalMediaConfig() {
@@ -395,7 +395,7 @@ function getExplicitDockerExternalMediaConfig() {
 }
 
 function assertDockerExternalMediaConfigured() {
-  if (!isDockerRuntime() || shouldUseDockerLocalMedia()) {
+  if (!isContainerRuntime() || shouldUseDockerLocalMedia()) {
     return null;
   }
   const config = getExplicitDockerExternalMediaConfig();

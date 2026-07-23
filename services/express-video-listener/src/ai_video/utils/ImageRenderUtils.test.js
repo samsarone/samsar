@@ -4,7 +4,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 
-import { createCanvas } from 'canvas';
+import { createCanvas, loadImage } from 'canvas';
 
 import {
   getFrameImageForLayer,
@@ -63,6 +63,59 @@ test('boundary frame rendering loads an existing absolute image source', async (
     process.chdir(originalCwd);
     if (originalAssetsV2Root === undefined) delete process.env.SAMSAR_ASSETS_V2_ROOT;
     else process.env.SAMSAR_ASSETS_V2_ROOT = originalAssetsV2Root;
+    await fs.promises.rm(tmpDir, { recursive: true, force: true });
+  }
+});
+
+test('boundary frame rendering resolves a missing relative source through protected provider media', async () => {
+  const tmpDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'samsar-image-render-utils-cdn-'));
+  const listenerDir = path.join(tmpDir, 'samsar_express_video_listener');
+  const imagePath = path.join(tmpDir, 'source.png');
+  await fs.promises.mkdir(listenerDir, { recursive: true });
+  await writePng(imagePath);
+
+  const originalCwd = process.cwd();
+  const originalCurrentEnv = process.env.CURRENT_ENV;
+  process.chdir(listenerDir);
+  process.env.CURRENT_ENV = 'test';
+  const normalizedSources = [];
+  const loadedSources = [];
+  try {
+    const renderedPath = await getFrameImageForLayer(
+      '6a6201615943476697dbc22a',
+      '6a6205748a7fec54292f1d80',
+      '16:9',
+      [{
+        type: 'image',
+        src: 'assets_v2/generations/6a6201615943476697dbc22a/source.png',
+        x: 0,
+        y: 0,
+        width: 16,
+        height: 16,
+      }],
+      {
+        normalizeProviderMediaUrlImpl: async (source, options) => {
+          normalizedSources.push({ source, options });
+          return 'https://static.example.test/assets_v2/generations/6a6201615943476697dbc22a/source.png?Expires=123&Signature=signed&Key-Pair-Id=KTEST';
+        },
+        loadImageImpl: async (source) => {
+          loadedSources.push(source);
+          return loadImage(imagePath);
+        },
+      },
+    );
+
+    assert.equal(fs.existsSync(renderedPath), true);
+    assert.deepEqual(normalizedSources, [{
+      source: 'assets_v2/generations/6a6201615943476697dbc22a/source.png',
+      options: { mediaKind: 'image' },
+    }]);
+    assert.match(loadedSources[0], /^https:\/\/static\.example\.test\//);
+    assert.match(loadedSources[0], /Signature=signed/);
+  } finally {
+    process.chdir(originalCwd);
+    if (originalCurrentEnv === undefined) delete process.env.CURRENT_ENV;
+    else process.env.CURRENT_ENV = originalCurrentEnv;
     await fs.promises.rm(tmpDir, { recursive: true, force: true });
   }
 });

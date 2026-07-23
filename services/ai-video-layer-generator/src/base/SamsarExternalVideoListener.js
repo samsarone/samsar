@@ -6,7 +6,7 @@ import SamsarClient from 'samsar-js';
 
 import AIVideoLayerGeneration from '../schema/AIVideoLayerGeneration.js';
 import { getDBConnectionString } from '../DBString.js';
-import { getCurrentEnvironment } from '../utils/Environment.js';
+import { isDockerRuntime, isStandaloneEdition } from '../utils/Environment.js';
 import { recordProviderUsageLog } from '../utils/ProviderUsageAudit.js';
 import {
   DOCKER_FAL_LIP_SYNC_MODELS,
@@ -165,7 +165,7 @@ function shouldEnableExternalProviders() {
   if (isTruthyEnv(process.env.SAMSAR_FORCE_EXTERNAL_PROVIDERS)) {
     return true;
   }
-  return getCurrentEnvironment() === 'docker';
+  return isStandaloneEdition();
 }
 
 function getExternalClient() {
@@ -432,7 +432,7 @@ async function getStartImageUrlForExternalVideo(client, payload = {}) {
     return normalizedStartImage;
   }
 
-  if (getCurrentEnvironment() === 'docker') {
+  if (isDockerRuntime()) {
     throw new Error('Samsar external Docker image-to-video requires a provider-readable start image URL.');
   }
 

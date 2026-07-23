@@ -52,6 +52,8 @@ import automationRouter from './src/routes/automation.js';
 import apiIndexRouter from './src/routes/api/index.js';
 import { installStructuredLogger } from './src/utils/StructuredLogger.js';
 import { withRequestContext } from './src/models/api/RequestAuthContext.js';
+import { requireAdminUser } from './src/middleware/requireAdminUser.js';
+import { isContainerRuntime } from './src/utils/EnvironmentUtils.js';
 
 import { ensureSupportedFontSamples } from './src/utils/SupportedFontSamples.js';
 
@@ -255,6 +257,7 @@ app.use((req, res, next) => {
 app.use('/users', usersRouter);
 
 
+app.use('/admin', requireAdminUser);
 app.use('/admin', adminRouter);
 app.use('/utils', utilsRouter);
 app.use('/interactions', interactionsRouter);
@@ -323,12 +326,12 @@ let assetsPath = 'assets';
 let assetsV2Path = 'assets_v2';
 if (process.env.SAMSAR_ASSETS_ROOT) {
   assetsPath = process.env.SAMSAR_ASSETS_ROOT;
-} else if (process.env.CURRENT_ENV === 'staging' || process.env.CURRENT_ENV === 'docker') {
+} else if (isContainerRuntime()) {
   assetsPath = '/assets';
 }
 if (process.env.SAMSAR_ASSETS_V2_ROOT) {
   assetsV2Path = process.env.SAMSAR_ASSETS_V2_ROOT;
-} else if (process.env.CURRENT_ENV === 'staging' || process.env.CURRENT_ENV === 'docker') {
+} else if (isContainerRuntime()) {
   assetsV2Path = '/assets_v2';
 }
 

@@ -1,6 +1,10 @@
 import 'dotenv/config';
 import { SESClient, SendEmailCommand } from '@aws-sdk/client-ses';
 import nodemailer from 'nodemailer';
+import {
+  isDockerRuntime as isConfiguredDockerRuntime,
+  isStandaloneEdition,
+} from './DeploymentEnvironment.js';
 
 function normalizeString(value) {
   return typeof value === 'string' ? value.trim() : '';
@@ -62,7 +66,7 @@ function getSesRegion() {
 }
 
 export function isDockerRuntime() {
-  return normalizeString(process.env.CURRENT_ENV).toLowerCase() === 'docker';
+  return isConfiguredDockerRuntime();
 }
 
 export function isMailExplicitlyConfigured() {
@@ -85,7 +89,7 @@ export function isMailExplicitlyConfigured() {
 }
 
 export function shouldUseDirectDockerMail() {
-  return isDockerRuntime() && isMailExplicitlyConfigured();
+  return isStandaloneEdition() && isMailExplicitlyConfigured();
 }
 
 function getDefaultFromAddress() {
@@ -184,7 +188,7 @@ function convertSesEmailParamsToNodemailer(params = {}) {
 export async function sendConfiguredEmail(params, description = 'email') {
   const provider = getMailProvider();
 
-  if (provider === 'none' || (isDockerRuntime() && !isMailExplicitlyConfigured())) {
+  if (provider === 'none' || (isStandaloneEdition() && !isMailExplicitlyConfigured())) {
     return { skipped: true, reason: 'mail_not_configured', description };
   }
 

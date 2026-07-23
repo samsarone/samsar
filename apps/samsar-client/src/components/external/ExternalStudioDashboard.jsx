@@ -91,7 +91,7 @@ export default function ExternalStudioDashboard() {
   });
   const [imageFiles, setImageFiles] = useState([]);
   const {
-    isDockerInstall: isDockerModelFilteringEnabled,
+    isStandaloneDeployment: isStandaloneModelFilteringEnabled,
     hasSubtitleGenerationCredentials,
     textToVideoImageModelValues,
     textToVideoVideoModelValues,
@@ -99,38 +99,38 @@ export default function ExternalStudioDashboard() {
     imageListToVideoVideoModelValues,
   } = useDeploymentModelAvailability();
   const canGenerateSubtitles =
-    !isDockerModelFilteringEnabled || hasSubtitleGenerationCredentials;
+    !isStandaloneModelFilteringEnabled || hasSubtitleGenerationCredentials;
   const textVideoModels = useMemo(
     () => (
-      isDockerModelFilteringEnabled
+      isStandaloneModelFilteringEnabled
         ? filterOptionsForDeploymentModelValues(TEXT_MODELS, textToVideoVideoModelValues)
         : TEXT_MODELS
     ),
-    [isDockerModelFilteringEnabled, textToVideoVideoModelValues]
+    [isStandaloneModelFilteringEnabled, textToVideoVideoModelValues]
   );
   const textImageModels = useMemo(
     () => (
-      isDockerModelFilteringEnabled
+      isStandaloneModelFilteringEnabled
         ? filterOptionsForDeploymentModelValues(IMAGE_MODELS, textToVideoImageModelValues)
         : IMAGE_MODELS
     ),
-    [isDockerModelFilteringEnabled, textToVideoImageModelValues]
+    [isStandaloneModelFilteringEnabled, textToVideoImageModelValues]
   );
   const imageListVideoModels = useMemo(
     () => (
-      isDockerModelFilteringEnabled
+      isStandaloneModelFilteringEnabled
         ? filterOptionsForDeploymentModelValues(IMAGE_LIST_VIDEO_MODELS, imageListToVideoVideoModelValues)
         : IMAGE_LIST_VIDEO_MODELS
     ),
-    [imageListToVideoVideoModelValues, isDockerModelFilteringEnabled]
+    [imageListToVideoVideoModelValues, isStandaloneModelFilteringEnabled]
   );
   const imageListImageModels = useMemo(
     () => (
-      isDockerModelFilteringEnabled
+      isStandaloneModelFilteringEnabled
         ? filterOptionsForDeploymentModelValues(IMAGE_MODELS, imageListToVideoImageModelValues)
         : IMAGE_MODELS
     ),
-    [imageListToVideoImageModelValues, isDockerModelFilteringEnabled]
+    [imageListToVideoImageModelValues, isStandaloneModelFilteringEnabled]
   );
 
   useEffect(() => {

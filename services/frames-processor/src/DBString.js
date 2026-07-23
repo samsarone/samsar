@@ -1,30 +1,48 @@
 import 'dotenv/config';
 import mongoose from 'mongoose';
 
+import { isDockerRuntime } from './utils/DeploymentEnvironment.js';
+
 mongoose.set('bufferCommands', false);
 mongoose.set('bufferTimeoutMS', 0);
 
 let connectPromise = null;
-let MONGO_CONNECTION_STRING;
+export function buildMongoConnectionString(env = process.env) {
+  if (env.MONGO_URL) {
+    return env.MONGO_URL;
+  }
 
-if (process.env.CURRENT_ENV === 'production') {
-  const user = encodeURIComponent(process.env.COSMOS_DB_USERNAME);
-  const pass = encodeURIComponent(process.env.COSMOS_DB_PASSWORD);
-  const DB_NAME = 'SamsarOne';
-  const BASE = `mongodb+srv://${user}:${pass}@samsaroneproduction.global.mongocluster.cosmos.azure.com`;
-  const OPTS = {
-    tls: true,
-    authMechanism: 'SCRAM-SHA-256',
-    retryWrites: false,
-    maxIdleTimeMS: 120000,
-  };
-  const qs = Object.entries(OPTS).map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`).join('&');
-  MONGO_CONNECTION_STRING = `${BASE}/${DB_NAME}?${qs}`;
-} else if (process.env.CURRENT_ENV === 'staging' || process.env.CURRENT_ENV === 'docker') {
-  MONGO_CONNECTION_STRING = process.env.MONGO_URL || 'mongodb://mongo:27017/SamsarOne';
-} else {
-  MONGO_CONNECTION_STRING = 'mongodb://localhost:27017/SamsarOne';
+  if (
+    env.DATABASE_PROVIDER === 'cosmos' ||
+    (env.CURRENT_ENV === 'production' && !isDockerRuntime(env))
+  ) {
+    const user = encodeURIComponent(env.COSMOS_DB_USERNAME);
+    const pass = encodeURIComponent(env.COSMOS_DB_PASSWORD);
+    const DB_NAME = 'SamsarOne';
+    const BASE = `mongodb+srv://${user}:${pass}@samsaroneproduction.global.mongocluster.cosmos.azure.com`;
+    const OPTS = {
+      tls: true,
+      authMechanism: 'SCRAM-SHA-256',
+      retryWrites: false,
+      maxIdleTimeMS: 120000,
+    };
+    const qs = Object.entries(OPTS).map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`).join('&');
+    return `${BASE}/${DB_NAME}?${qs}`;
+  }
+
+  if (
+    env.CURRENT_ENV === 'staging' ||
+    env.CURRENT_ENV === 'docker' ||
+    env.CURRENT_ENV === 'standalone' ||
+    isDockerRuntime(env)
+  ) {
+    return 'mongodb://mongo:27017/SamsarOne';
+  }
+
+  return 'mongodb://localhost:27017/SamsarOne';
 }
+
+const MONGO_CONNECTION_STRING = buildMongoConnectionString();
 
 const isTransientAuthError = (err) => {
   return err?.code === 18 || err?.errorLabels?.has?.('HandshakeError') || err?.errorLabels?.has?.('ResetPool');

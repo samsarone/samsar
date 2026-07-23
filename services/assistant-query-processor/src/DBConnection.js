@@ -28,7 +28,15 @@ export function optionsToQueryString(options) {
 }
 
 export function buildMongoConnectionString(env = process.env) {
-  if (env.CURRENT_ENV === 'production') {
+  if (env.MONGO_URL) {
+    return env.MONGO_URL;
+  }
+
+  const useCosmos =
+    env.DATABASE_PROVIDER === 'cosmos' ||
+    (env.CURRENT_ENV === 'production' && env.SAMSAR_RUNTIME !== 'docker');
+
+  if (useCosmos) {
     if (!env.COSMOS_DB_USERNAME || !env.COSMOS_DB_PASSWORD) {
       throw new Error('Missing COSMOS_DB_USERNAME or COSMOS_DB_PASSWORD for production MongoDB connection');
     }
@@ -45,12 +53,13 @@ export function buildMongoConnectionString(env = process.env) {
     return `mongodb+srv://${encodedUsername}:${encodedPassword}@${COSMOS_HOST}/${DB_NAME}?${options}`;
   }
 
-  if (env.CURRENT_ENV === 'staging' || env.CURRENT_ENV === 'docker') {
-    if (!env.MONGO_URL) {
-      throw new Error(`Missing MONGO_URL for ${env.CURRENT_ENV} MongoDB connection`);
-    }
-
-    return env.MONGO_URL;
+  if (
+    env.CURRENT_ENV === 'staging' ||
+    env.CURRENT_ENV === 'docker' ||
+    env.CURRENT_ENV === 'standalone' ||
+    env.SAMSAR_RUNTIME === 'docker'
+  ) {
+    return `mongodb://mongo:27017/${DB_NAME}`;
   }
 
   return `mongodb://localhost:27017/${DB_NAME}`;

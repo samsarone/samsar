@@ -9,6 +9,7 @@ import {
   getInteractivePublicationPublishRevision,
   isInteractivePublicationPubliclyRenderable,
   markInteractivePublicationPublished,
+  resolveInteractiveMediaConcurrency,
   serializeInteractivePublication,
 } from './InteractivePublication.js';
 
@@ -139,6 +140,30 @@ const preparePathMedia = async (_session, path, { revisionId, isDefault } = {}) 
       mainThumbnailUrl: `https://static.samsar.one/published/${session._id}/interactive/revisions/${revisionId}/main/thumbnail.png`,
     }
     : {}),
+});
+
+test('interactive media concurrency is a CPU-aware upper bound', () => {
+  assert.equal(
+    resolveInteractiveMediaConcurrency({
+      env: {},
+      cpuBudget: 8,
+    }),
+    2,
+  );
+  assert.equal(
+    resolveInteractiveMediaConcurrency({
+      env: { SAMSAR_PROCESSOR_MAX_INTERACTIVE_MEDIA_TASKS: '6' },
+      cpuBudget: 3,
+    }),
+    3,
+  );
+  assert.equal(
+    resolveInteractiveMediaConcurrency({
+      env: { SAMSAR_PROCESSOR_MAX_INTERACTIVE_MEDIA_TASKS: '6' },
+      cpuBudget: 1,
+    }),
+    1,
+  );
 });
 
 test('branched publish upserts and returns only the optimized InteractivePublication JSON', async () => {

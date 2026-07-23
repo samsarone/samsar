@@ -5,7 +5,9 @@ import ffmpeg from 'fluent-ffmpeg';
 import { promisify } from 'util';
 import stream from 'stream';
 
+import { resolveExpressVideoFfmpegThreads } from '../utils/FfmpegResources.js';
 import { getFramesPerSecondFromValue } from '../utils/FpsUtils.js';
+import { usesLocalAssetStorage } from '../utils/EnvironmentUtils.js';
 
 const pipeline = promisify(stream.pipeline);
 
@@ -60,7 +62,7 @@ export async function downloadVideoFromRemote(videoUrl, sessionId, layerId) {
     layerId
   );
 
-  if (process.env.CURRENT_ENV === 'staging' || process.env.CURRENT_ENV === 'docker') {
+  if (usesLocalAssetStorage()) {
     outputFolder = path.join(process.env.SAMSAR_ASSETS_ROOT || '/assets', 'ai_video', 'generations', sessionId, layerId); // Docker staging volume mount path
   }
 
@@ -100,7 +102,7 @@ export async function processVideoAsFrames(videoPath, sessionId, layerId, canvas
     layerId
   );
 
-  if (process.env.CURRENT_ENV === 'staging' || process.env.CURRENT_ENV === 'docker') {
+  if (usesLocalAssetStorage()) {
     outputFolder = path.join(process.env.SAMSAR_ASSETS_ROOT || '/assets', 'ai_video', 'frames', sessionId, layerId); // Docker staging volume mount path
   }
   
@@ -147,12 +149,17 @@ export async function processVideoAsFrames(videoPath, sessionId, layerId, canvas
 
 
 function extractFrames(videoPath, outputFolder, newFrameWidth, newFrameHeight, framesPerSecond) {
+  const ffmpegThreadValue = `${resolveExpressVideoFfmpegThreads()}`;
   return new Promise((resolve, reject) => {
     ffmpeg(videoPath)
+      .inputOptions([
+        '-threads', ffmpegThreadValue,
+      ])
       .outputOptions([
         '-r', `${framesPerSecond}`,
         '-start_number', '0',
-        '-threads', '2',
+        '-filter_threads', ffmpegThreadValue,
+        '-threads', ffmpegThreadValue,
         '-vf', `scale=${newFrameWidth}:${newFrameHeight}`,
         '-sws_flags', 'lanczos',
       ])

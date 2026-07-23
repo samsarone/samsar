@@ -12,7 +12,7 @@ import { getHeaders } from '../../utils/web.jsx';
 import BrandLogo from './BrandLogo.tsx';
 import { imageAspectRatioOptions } from '../../constants/ImageAspectRatios.js';
 import { getCanvasDimensionsForAspectRatio } from '../../utils/canvas.jsx';
-import { getSessionType } from '../../utils/environment.jsx';
+import { IS_STANDALONE_DEPLOYMENT } from '../../utils/environment.jsx';
 
 const PROCESSOR_SERVER = import.meta.env.VITE_PROCESSOR_API;
 const AddSessionDropdown = lazy(() => import('./AddSessionDropdown.jsx'));
@@ -31,8 +31,6 @@ export default function MobileTopNav(props) {
   const { colorMode } = useColorMode();
   const { openAlertDialog, closeAlertDialog } = useAlertDialog();
   const location = useLocation();
-  const sessionType = getSessionType();
-
   const isImageEditor =
     location.pathname.includes('/image/') ||
     location.pathname.includes('/iamge/') ||
@@ -274,7 +272,7 @@ export default function MobileTopNav(props) {
   let userTierDisplay = null;
 
   if (user && user._id) {
-    if (sessionType !== 'docker') {
+    if (!IS_STANDALONE_DEPLOYMENT) {
       if (user.isPremiumUser) {
         userTierDisplay = (
           <div className="text-[#d7ffeb]">

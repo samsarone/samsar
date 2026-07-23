@@ -11,19 +11,9 @@ const router = express.Router();
 
 
 router.post('/create', async function(req, res) {
-  const secret = req.query.secret;
   const payload = req.body;
-
-
-  
-  if (secret !== process.env.ADMIN_SECRET) {
-    res.status(401).send('Unauthorized');
-    return;
-  } else {
-    const newCoupon = await createCoupon(payload);
-
-    res.json(newCoupon);
-  }
+  const newCoupon = await createCoupon(payload);
+  res.json(newCoupon);
 });
 
 

@@ -205,7 +205,7 @@ test('repairs only speech beyond the model-aware tolerance without regenerating 
             actor: 'Narrator',
             gender: 'F',
             sceneIndex: 0,
-            audio: 'a'.repeat(56),
+            audio: 'a'.repeat(58),
             duration: 5,
             startTime: 0,
             endTime: 5,
@@ -225,12 +225,12 @@ test('repairs only speech beyond the model-aware tolerance without regenerating 
         assert.equal(narrativeSystemPrompt, exactNarrativeSystemPrompt);
         assert.equal(scene.visual, 'A photograph rests beneath a detective’s desk lamp.');
         assert.deepEqual(speechItem, originalSpeechItem);
-        assert.equal(maxCharacters, 28);
+        assert.equal(maxCharacters, 57);
         assert.equal(
           options.externalRequestContext.requestKey,
           'text_to_video:speech-repair-1-0-0',
         );
-        return { ...speechItem, audio: 'a'.repeat(28) };
+        return { ...speechItem, audio: 'a'.repeat(57) };
       },
     },
   });
@@ -239,7 +239,7 @@ test('repairs only speech beyond the model-aware tolerance without regenerating 
   assert.equal(speechRepairCalls, 1);
   assert.equal(result.attempts, 1);
   assert.equal(result.speechRepairs, 1);
-  assert.equal(result.narrativeJson.sounds[0].audio.length, 28);
+  assert.equal(result.narrativeJson.sounds[0].audio.length, 57);
 });
 
 test('does not regenerate the full narrative when focused speech repair fails', async () => {
@@ -273,7 +273,7 @@ test('does not regenerate the full narrative when focused speech repair fails', 
               actor: 'Narrator',
               gender: 'F',
               sceneIndex: 0,
-              audio: 'a'.repeat(56),
+              audio: 'a'.repeat(58),
               duration: 5,
               startTime: 0,
               endTime: 5,
@@ -329,7 +329,7 @@ test('rejects an overlong focused replacement without regenerating the full narr
               actor: 'Narrator',
               gender: 'F',
               sceneIndex: 0,
-              audio: 'a'.repeat(56),
+              audio: 'a'.repeat(58),
               duration: 5,
               startTime: 0,
               endTime: 5,
@@ -338,13 +338,13 @@ test('rejects an overlong focused replacement without regenerating the full narr
         },
         rewriteNarrativeSpeechItemToFitScene: async ({ speechItem }) => ({
           ...speechItem,
-          audio: 'b'.repeat(29),
+          audio: 'b'.repeat(58),
         }),
       },
     }),
     (error) => {
       assert.equal(error.code, 'NARRATIVE_VALIDATION_FAILED');
-      assert.match(error.cause?.message || '', /28-character limit/);
+      assert.match(error.cause?.message || '', /57-character validation limit/);
       return true;
     },
   );
@@ -383,7 +383,7 @@ test('does not run focused speech repair when narrative validation has mixed fai
             actor: 'Narrator',
             gender: 'F',
             sceneIndex: 0,
-            audio: 'a'.repeat(valid ? 44 : 56),
+            audio: 'a'.repeat(valid ? 44 : 58),
             duration: 7.875,
             startTime: 0,
             endTime: 7.875,
@@ -405,7 +405,7 @@ test('does not run focused speech repair when narrative validation has mixed fai
 test('repairs every and only overlong speech item in a generated narrative', async () => {
   let narrativeCalls = 0;
   const repairedSoundIndexes = [];
-  const originalAudio = ['a'.repeat(56), 'Already concise.', 'b'.repeat(60)];
+  const originalAudio = ['a'.repeat(58), 'Already concise.', 'b'.repeat(60)];
 
   const result = await generateValidatedTextToVideoNarrative({
     prompt: 'Create a concise three-scene narration.',

@@ -9,14 +9,13 @@ import { useMediaQuery } from 'react-responsive';
 import { PURCHASE_CREDITS_PROMPT_STORAGE_KEY } from '../../account/PurchaseCreditsPromptDialog.jsx';
 import {
   buildGoogleLoginUrl,
-  consumeResolvedAuthRedirect,
   getCurrentAuthRedirect,
   persistAuthRedirectForFlow,
-  resolvePostAuthDestination,
+  resolvePostSignupDestination,
 } from '../../../utils/authRedirect.js';
+import { IS_STANDALONE_DEPLOYMENT } from '../../../utils/environment.jsx';
 
 const PROCESSOR_SERVER = import.meta.env.VITE_PROCESSOR_API;
-const IS_DOCKER_INSTALL = import.meta.env.VITE_DOCKER_INSTALL === 'true';
 
 export default function RegisterPage() {
   const { setUser } = useUser();
@@ -25,7 +24,7 @@ export default function RegisterPage() {
   const isMobile = useMediaQuery({ query: '(max-width: 767px)' });
   const requestedRedirect = getCurrentAuthRedirect(location);
 
-  if (IS_DOCKER_INSTALL) {
+  if (IS_STANDALONE_DEPLOYMENT) {
     return <Navigate to={{ pathname: '/login', search: location.search }} replace />;
   }
 
@@ -40,7 +39,7 @@ export default function RegisterPage() {
   };
 
   const registerWithGoogle = ({ subscribeToWeeklyNewsletter = true } = {}) => {
-    if (IS_DOCKER_INSTALL) {
+    if (IS_STANDALONE_DEPLOYMENT) {
       return;
     }
 
@@ -54,40 +53,38 @@ export default function RegisterPage() {
     });
   };
 
-  const navigateAfterAuth = async (resolvedUser = null) => {
-    const redirect = consumeResolvedAuthRedirect(requestedRedirect);
-    const destination = await resolvePostAuthDestination({
-      user: resolvedUser,
+  const navigateAfterSignup = async () => {
+    const destination = await resolvePostSignupDestination({
       isMobile,
       apiServer: PROCESSOR_SERVER,
-      redirect,
-      search: location.search,
     });
     navigate(destination, { replace: true });
   };
 
   // Register with email, same as AuthContainer
-  const registerUserWithEmail = (payload, onError = () => {}) => {
-    axios
-      .post(`${PROCESSOR_SERVER}/users/register`, payload)
-      .then((dataRes) => {
-        const userData = dataRes.data;
-        const authToken = userData.authToken;
-        persistAuthToken(authToken);
-        setUser(userData);
-        closeAlertDialog(); // no-op here
-        localStorage.setItem(PURCHASE_CREDITS_PROMPT_STORAGE_KEY, 'true');
-        navigateAfterAuth(userData);
-        localStorage.setItem('setShowSetPaymentFlow', 'true');
-      })
-      .catch((error) => {
-        const serverMessage = error.response?.data?.message || error.response?.data?.error;
-        if (serverMessage) {
-          onError(serverMessage);
-        } else {
-          onError('Unable to register user at this time. Please try again.');
-        }
-      });
+  const registerUserWithEmail = async (payload, onError = () => {}) => {
+    let userData;
+    try {
+      const response = await axios.post(`${PROCESSOR_SERVER}/users/register`, payload);
+      userData = response.data;
+    } catch (error) {
+      const serverMessage = error.response?.data?.message || error.response?.data?.error;
+      onError(serverMessage || 'Unable to register user at this time. Please try again.');
+      return;
+    }
+
+    const authToken = userData.authToken;
+    persistAuthToken(authToken);
+    setUser(userData);
+    closeAlertDialog(); // no-op here
+    localStorage.setItem(PURCHASE_CREDITS_PROMPT_STORAGE_KEY, 'true');
+    localStorage.setItem('setShowSetPaymentFlow', 'true');
+
+    try {
+      await navigateAfterSignup();
+    } catch {
+      onError('Your account was created, but a new project could not be opened.');
+    }
   };
 
   return (
@@ -97,7 +94,7 @@ export default function RegisterPage() {
           registerWithGoogle={registerWithGoogle}
           registerUserWithEmail={registerUserWithEmail}
           setUser={setUser}
-          getOrCreateUserSession={navigateAfterAuth}
+          getOrCreateUserSession={navigateAfterSignup}
           closeAlertDialog={closeAlertDialog}
           setCurrentLoginView={handleViewChange}
           showLoginButton={false}

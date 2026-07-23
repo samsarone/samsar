@@ -19,8 +19,13 @@ import {
   resolveLocalAssetPath,
   toLocalAssetReference,
 } from '../utils/LocalAssetPath.js';
+import { isStandaloneEdition } from '../utils/EnvironmentUtils.js';
 
 const ACTIVE_LIP_SYNC_REQUEST_STATUSES = ['INIT', 'PENDING'];
+
+function shouldRetryLipSyncFailure(env = process.env) {
+  return !isStandaloneEdition(env);
+}
 
 
 function normalizeStringId(value) {
@@ -442,7 +447,7 @@ export async function generateLipSyncForLayer(sessionId, currentLayer, connected
     aspectRatio: aspectRatio,
     isExpressGeneration: true,
     isVideoGPTGeneration: true,
-    retryOnFail: process.env.CURRENT_ENV !== 'docker',
+    retryOnFail: shouldRetryLipSyncFailure(),
     audioPrompt: audioPrompt,
   };
 
@@ -567,4 +572,5 @@ export const __testOnly__ = {
   getCanonicalAudioReference,
   getUploadedAudioReference,
   hasReusableBaseAiVideo,
+  shouldRetryLipSyncFailure,
 };

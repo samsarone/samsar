@@ -1,8 +1,15 @@
 import fs from 'fs';
 import path from 'path';
+import {
+  isContainerRuntime,
+  isStandaloneEdition,
+} from '../../utils/EnvironmentUtils.js';
 
 function getDefaultAvailableModelsPath() {
-  if (process.env.CURRENT_ENV === 'staging' || process.env.CURRENT_ENV === 'docker') {
+  const configuredPath = process.env.SAMSAR_AVAILABLE_MODELS_FILE ||
+    process.env.SAMSAR_AVAILABLE_MODELS_PATH;
+  if (configuredPath) return configuredPath;
+  if (isContainerRuntime()) {
     return '/persistent/config/available-models.json';
   }
   return path.join(process.cwd(), 'runtime', 'config', 'available-models.json');
@@ -45,10 +52,7 @@ function hasEnvCredential(...keys) {
 }
 
 function isDockerDeploymentRuntime() {
-  const currentEnv = typeof process.env.CURRENT_ENV === 'string'
-    ? process.env.CURRENT_ENV.trim().toLowerCase()
-    : '';
-  return currentEnv === 'docker' || currentEnv === 'staging';
+  return isStandaloneEdition();
 }
 
 function normalizeDeploymentProvider(value) {

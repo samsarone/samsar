@@ -76,6 +76,7 @@ import { getIntroSessionList, } from '../models/IntroSession.js';
 import { verifyUserAuth, verifyUserAuthAndGetUser } from '../models/Auth.js';
 import { createRealtimeTranscriptionSession } from '../models/Realtime.js';
 import { copyVideoSession } from '../models/api/VideoSessionCloneAPI.js';
+import { createNewBlankQuickSession } from '../models/QuickSession.js';
 import {
   acceptAvatarVoiceoverVideoForSession,
   getAvatarVoiceoverStatus,
@@ -124,6 +125,33 @@ router.post('/create_video_session', async function (req, res) {
     res.json(sessionData);
   } catch (e) {
     res.status(400).send("Error creating video session");
+  }
+});
+
+router.post('/create_signup_project', async function (req, res) {
+  const userId = verifyUserAuth(req.headers);
+  if (!userId) {
+    res.status(401).send("Unauthorized");
+    return;
+  }
+
+  const editor = req.body?.editor === 'vidgenie' ? 'vidgenie' : 'studio';
+
+  try {
+    if (editor === 'vidgenie') {
+      const sessionId = await createNewBlankQuickSession(userId);
+      res.status(201).json({ sessionId, editor });
+      return;
+    }
+
+    const session = await createVideoSession(userId, { prompts: [] });
+    res.status(201).json({
+      sessionId: session._id.toString(),
+      editor,
+    });
+  } catch (error) {
+    console.error('Error creating signup project:', error);
+    res.status(400).send({ error: 'Error creating signup project' });
   }
 });
 

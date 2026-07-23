@@ -3,6 +3,7 @@ import path from 'path';
 
 import { buildSecureMediaDeliveryUrl, primeCDNCache } from '../AWS.js';
 import { resolveFreshManagedProviderMediaUrl } from './ProviderMediaTunnel.js';
+import { isDockerRuntime as isConfiguredDockerRuntime } from '../util/environmentUtils.js';
 
 const DEFAULT_RUNTIME_CONFIG_PATH = '/persistent/config/samsar.config.json';
 const MEDIA_PREFIXES = new Set([
@@ -17,6 +18,7 @@ const MEDIA_KIND_CONFIG = Object.freeze({
   audio: Object.freeze({ expectedContentTypePrefix: 'audio/' }),
 });
 const LOCAL_MEDIA_BASE_URL_ENV_KEYS = [
+  'SAMSAR_PROVIDER_MEDIA_BASE_URL',
   'SAMSAR_PUBLIC_MEDIA_BASE_URL',
   'SAMSAR_EXTERNAL_MEDIA_PUBLIC_BASE_URL',
   'MEDIA_PUBLIC_URL',
@@ -41,7 +43,7 @@ function isTruthy(value) {
 }
 
 function isDockerRuntime() {
-  return normalizeString(process.env.CURRENT_ENV).toLowerCase() === 'docker';
+  return isConfiguredDockerRuntime();
 }
 
 function shouldUseLocalDockerMedia() {
@@ -164,6 +166,16 @@ function readRuntimeMediaConfig() {
 
 function getManagedTunnelBaseUrlCandidates() {
   const runtime = readRuntimeMediaConfig();
+  const stablePublicUrls = uniqueBaseUrls([
+    process.env.SAMSAR_PROVIDER_MEDIA_BASE_URL,
+    process.env.SAMSAR_PUBLIC_MEDIA_BASE_URL,
+    process.env.SAMSAR_DOCKER_PUBLIC_ASSET_BASE_URL,
+    process.env.SAMSAR_DOCKER_PUBLIC_PROCESSOR_BASE_URL,
+    ...runtime.local,
+  ]).filter((value) => {
+    const parsed = parseHttpUrl(value);
+    return parsed && !isTunnelHostname(parsed.hostname);
+  });
   const explicitlyManaged = uniqueBaseUrls([
     ...runtime.managed,
     process.env.SAMSAR_MEDIA_TUNNEL_PUBLIC_URL,
@@ -177,7 +189,7 @@ function getManagedTunnelBaseUrlCandidates() {
     const parsed = parseHttpUrl(value);
     return parsed && isTunnelHostname(parsed.hostname);
   });
-  return uniqueBaseUrls([...explicitlyManaged, ...tunnelShapedFallbacks]).filter((value) => {
+  return uniqueBaseUrls([...stablePublicUrls, ...explicitlyManaged, ...tunnelShapedFallbacks]).filter((value) => {
     const url = parseHttpUrl(value);
     return url?.protocol === 'https:' && isPublicHttpUrl(url);
   });

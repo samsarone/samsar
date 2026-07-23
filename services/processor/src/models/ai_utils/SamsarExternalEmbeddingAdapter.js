@@ -6,7 +6,7 @@ import {
   GALLERY_EMBEDDING_DIMENSIONS,
   GALLERY_EMBEDDING_MODEL,
 } from '../gallery/GalleryConstants.js';
-import { getCurrentEnvironment } from '../../utils/EnvironmentUtils.js';
+import { isStandaloneEdition } from '../../utils/EnvironmentUtils.js';
 
 function normalizeString(value) {
   return typeof value === 'string' ? value.trim() : '';
@@ -26,7 +26,7 @@ export function shouldUseSamsarExternalEmbeddings() {
   if (isTruthy(process.env.SAMSAR_FORCE_EXTERNAL_EMBEDDINGS)) return true;
   if (process.env.OPENAI_API_KEY?.trim()) return false;
   if (isTruthy(process.env.SAMSAR_EXTERNAL_EMBEDDINGS_ENABLED)) return true;
-  return getCurrentEnvironment() === 'docker';
+  return isStandaloneEdition();
 }
 
 export async function createSamsarExternalEmbeddings(inputs) {

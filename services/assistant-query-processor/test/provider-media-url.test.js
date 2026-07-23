@@ -11,6 +11,8 @@ import {
 
 const ENV_KEYS = [
   'CURRENT_ENV',
+  'SAMSAR_DEPLOYMENT_EDITION',
+  'SAMSAR_RUNTIME',
   'SAMSAR_MEDIA_DELIVERY_MODE',
   'MEDIA_DELIVERY_MODE',
   'SAMSAR_EXTERNAL_MEDIA_PUBLISH_ENABLED',
@@ -18,6 +20,7 @@ const ENV_KEYS = [
   'SAMSAR_RUNTIME_CONFIG_FILE',
   'SAMSAR_CONFIG_FILE',
   'SAMSAR_MEDIA_TUNNEL_PUBLIC_URL',
+  'SAMSAR_PROVIDER_MEDIA_BASE_URL',
   'SAMSAR_PUBLIC_MEDIA_BASE_URL',
   'SAMSAR_EXTERNAL_MEDIA_PUBLIC_BASE_URL',
   'MEDIA_PUBLIC_URL',
@@ -137,6 +140,31 @@ test('Docker mounted image, video, and audio references use the exact live manag
   assert.equal(video, 'https://fresh-assistant.trycloudflare.com/assets_v2/video/session/source.mp4');
   assert.equal(audio, 'https://fresh-assistant.trycloudflare.com/assets/avatar_voiceover/session/speech.mp3');
   assert.deepEqual(requestedUrls, [image, video, audio]);
+});
+
+test('production Docker probes a configured stable media origin before its tunnel fallback', async () => {
+  process.env.CURRENT_ENV = 'production';
+  process.env.SAMSAR_DEPLOYMENT_EDITION = 'production';
+  process.env.SAMSAR_RUNTIME = 'docker';
+  process.env.SAMSAR_PROVIDER_MEDIA_BASE_URL = 'https://media.production.example';
+  const requestedUrls = [];
+  globalThis.fetch = async (url) => {
+    const value = String(url);
+    requestedUrls.push(value);
+    return responseFor(value, { contentType: 'image/png' });
+  };
+
+  const resolved = await getAccessibleProviderMediaUrl(
+    '/assets_v2/generations/session/production.png',
+    { mediaKind: 'image' },
+  );
+
+  assert.equal(
+    resolved,
+    'https://media.production.example/assets_v2/generations/session/production.png',
+  );
+  assert.deepEqual(requestedUrls, [resolved]);
+  assert.equal(fs.existsSync(fixture.markerPath), false);
 });
 
 test('inline providers read mounted media bytes without resolving a tunnel', async () => {

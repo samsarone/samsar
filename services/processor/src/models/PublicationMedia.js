@@ -16,6 +16,8 @@ import {
   uploadBufferToPublicationsMedia,
   uploadFileToPublicationsMedia,
 } from './AWS.js';
+import { isContainerRuntime } from '../utils/EnvironmentUtils.js';
+import { withProcessorFfmpegResources } from '../utils/FfmpegResources.js';
 
 if (ffmpegPath) {
   ffmpeg.setFfmpegPath(ffmpegPath);
@@ -46,12 +48,12 @@ const normalizeSessionId = (session) => (
 
 const getAssetsRoots = () => {
   const v2Root = process.env.SAMSAR_ASSETS_V2_ROOT || (
-    process.env.CURRENT_ENV === 'staging' || process.env.CURRENT_ENV === 'docker'
+    isContainerRuntime()
       ? '/assets_v2'
       : path.join(process.cwd(), 'assets_v2')
   );
   const legacyRoot = process.env.SAMSAR_ASSETS_ROOT || (
-    process.env.CURRENT_ENV === 'staging' || process.env.CURRENT_ENV === 'docker'
+    isContainerRuntime()
       ? '/assets'
       : path.join(process.cwd(), 'assets')
   );
@@ -639,20 +641,26 @@ const extractThumbnailFromVideo = async (videoSource, { seekSeconds = 0 } = {}) 
 
   try {
     const inputPath = await createTemporaryVideoInput(videoSource, tempDir);
-    await new Promise((resolve, reject) => {
-      const command = ffmpeg(inputPath);
-      const normalizedSeekSeconds = Number(seekSeconds);
-      if (Number.isFinite(normalizedSeekSeconds) && normalizedSeekSeconds > 0) {
-        command.seekInput(normalizedSeekSeconds);
-      }
-      command
-        .outputOptions(['-frames:v', '1'])
-        .noAudio()
-        .output(outputPath)
-        .on('end', resolve)
-        .on('error', reject)
-        .run();
-    });
+    await withProcessorFfmpegResources((threadOptions) => (
+      new Promise((resolve, reject) => {
+        const command = ffmpeg(inputPath)
+          .inputOptions(threadOptions.inputOptions);
+        const normalizedSeekSeconds = Number(seekSeconds);
+        if (Number.isFinite(normalizedSeekSeconds) && normalizedSeekSeconds > 0) {
+          command.seekInput(normalizedSeekSeconds);
+        }
+        command
+          .outputOptions([
+            ...threadOptions.outputOptions,
+            '-frames:v', '1',
+          ])
+          .noAudio()
+          .output(outputPath)
+          .on('end', resolve)
+          .on('error', reject)
+          .run();
+      })
+    ));
 
     return fs.promises.readFile(outputPath);
   } finally {

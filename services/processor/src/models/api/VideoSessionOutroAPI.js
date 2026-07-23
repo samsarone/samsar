@@ -16,6 +16,7 @@ import FrameGeneration from '../../schema/FrameGeneration.js';
 import { getCanvasDimensionsForAspectRatio } from '../../utils/CanvasUtils.js';
 import { getFramesPerSecondFromValue } from '../../utils/FpsUtils.js';
 import { readLocalMediaBufferIfAvailable } from '../../utils/LocalMediaAsset.js';
+import { isContainerRuntime } from '../../utils/EnvironmentUtils.js';
 import {
   generateOutroCompositionAssetsFromImageList,
 } from './OutroImageGenerationAPI.js';
@@ -66,11 +67,8 @@ function isWritableDirectory(dirPath) {
 function resolveAssetsRoot() {
   const localAssetsRoot = path.resolve(__dirname, '../../..', 'assets_v2');
   const dockerAssetsRoot = process.env.SAMSAR_ASSETS_V2_ROOT || '/assets_v2';
-  const currentEnv = process.env.CURRENT_ENV;
 
-  // Only use the docker volume mount in docker/staging.
-  // Production uses the repo-local `samsar_processor/assets` path.
-  if (currentEnv === 'staging' || currentEnv === 'docker') {
+  if (process.env.SAMSAR_ASSETS_V2_ROOT || isContainerRuntime()) {
     if (fsExtra.existsSync(dockerAssetsRoot) && isWritableDirectory(dockerAssetsRoot)) {
       return dockerAssetsRoot;
     }

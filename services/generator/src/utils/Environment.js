@@ -1,9 +1,41 @@
 
-export function getCurrentEnvironment() {
-  const currentEnv = process.env.CURRENT_ENV;
-  if (currentEnv === 'docker' || currentEnv === 'staging'){
-    return 'docker';
-  }
+function normalize(value) {
+  return typeof value === 'string' ? value.trim().toLowerCase() : '';
+}
 
-  return 'server';
+export function getDeploymentEdition(env = process.env) {
+  const edition = normalize(
+    env.SAMSAR_DEPLOYMENT_EDITION || env.SAMSAR_EDITION || env.CURRENT_ENV,
+  );
+  if (edition === 'docker' || edition === 'community' || edition === 'standalone') {
+    return 'standalone';
+  }
+  return edition || 'development';
+}
+
+export function isStandaloneEdition(env = process.env) {
+  return getDeploymentEdition(env) === 'standalone';
+}
+
+export function isDockerRuntime(env = process.env) {
+  const runtime = normalize(env.SAMSAR_RUNTIME || env.SAMSAR_DEPLOYMENT_RUNTIME);
+  if (runtime) return runtime === 'docker';
+  return ['docker', 'standalone', 'staging'].includes(normalize(env.CURRENT_ENV));
+}
+
+export function usesLocalAssetStorage(env = process.env) {
+  return Boolean(env.SAMSAR_ASSETS_ROOT || env.SAMSAR_ASSETS_V2_ROOT) || isDockerRuntime(env);
+}
+
+export function usesExternalMediaPublishing(env = process.env) {
+  const mode = normalize(env.SAMSAR_MEDIA_DELIVERY_MODE || env.MEDIA_DELIVERY_MODE);
+  if (mode === 's3-cloudfront' || mode === 'external-s3') return true;
+  if (mode === 'docker-local' || mode === 'local-filesystem') return false;
+  return ['1', 'true', 'yes', 'on'].includes(normalize(
+    env.SAMSAR_EXTERNAL_MEDIA_PUBLISH_ENABLED || env.EXTERNAL_MEDIA_PUBLISH_ENABLED,
+  ));
+}
+
+export function getCurrentEnvironment() {
+  return isDockerRuntime() ? 'docker' : 'server';
 }

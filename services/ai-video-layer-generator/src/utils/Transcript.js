@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import { usesLocalAssetStorage } from './Environment.js';
 import axios from 'axios';
 import { createCanvas } from 'canvas';
 import { getDBConnectionString } from '../DBString.js';
@@ -104,7 +105,7 @@ export async function generateTranscriptsForSessionAudioLayers(sessionId, audioL
 
     const pwd = process.cwd();
     let audioFileBase = path.join(pwd, '../', 'samsar_processor', 'assets_v2');
-    if (process.env.CURRENT_ENV === 'staging' || process.env.CURRENT_ENV === 'docker') {
+    if (usesLocalAssetStorage()) {
       audioFileBase = process.env.SAMSAR_ASSETS_V2_ROOT || '/assets_v2';
     }
     const audioLocalFilePath = `${audioFileBase}/${audioFilePath}`;
@@ -463,5 +464,4 @@ async function alignWithGentle(audioFilePath, transcriptText, canvasDimensions, 
 }
 
 // ... (no changes in the rendering code)
-
 

@@ -6,6 +6,9 @@ import test from 'node:test';
 
 const ENV_KEYS = [
   'CURRENT_ENV',
+  'SAMSAR_DEPLOYMENT_EDITION',
+  'SAMSAR_EDITION',
+  'SAMSAR_RUNTIME',
   'SAMSAR_MEDIA_DELIVERY_MODE',
   'MEDIA_DELIVERY_MODE',
   'SAMSAR_EXTERNAL_MEDIA_PUBLISH_ENABLED',
@@ -28,6 +31,9 @@ const ENV_KEYS = [
   'PUBLIC_STATIC_CDN_URL',
   'MEDIA_BUCKET_NAME',
   'STATIC_CDN_BUCKET',
+  'PUBLIC_API_BASE_URL',
+  'PUBLIC_BASE_URL',
+  'API_SERVER',
 ];
 
 const originalFetch = globalThis.fetch;
@@ -225,6 +231,30 @@ test('Docker-local tunnel resolution prefers live runtime config over stale proc
   assert.equal(
     resolved,
     `${freshBase}/assets_v2/generations/session-id/runtime-first.png`,
+  );
+  assert.deepEqual(requestedUrls, [resolved]);
+});
+
+test('production Docker prefers its stable public HTTPS origin before a dynamic tunnel', async () => {
+  process.env.SAMSAR_DEPLOYMENT_EDITION = 'production';
+  process.env.SAMSAR_RUNTIME = 'docker';
+  process.env.CURRENT_ENV = 'production';
+  process.env.PUBLIC_API_BASE_URL = 'https://processor.example.com';
+  const requestedUrls = [];
+  globalThis.fetch = async (url) => {
+    requestedUrls.push(String(url));
+    return buildFetchResponse(String(url));
+  };
+
+  const { getAccessibleProviderMediaUrl } = await loadVisionMediaUrl();
+  const resolved = await getAccessibleProviderMediaUrl(
+    'generations/session-id/stable-origin.png',
+    { mediaKind: 'image' },
+  );
+
+  assert.equal(
+    resolved,
+    'https://processor.example.com/assets_v2/generations/session-id/stable-origin.png',
   );
   assert.deepEqual(requestedUrls, [resolved]);
 });

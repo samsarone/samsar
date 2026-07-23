@@ -9,6 +9,7 @@ import {
   calculateLegacyAssistantCredits,
 } from './AssistantBilling.js';
 import { isGeminiInferenceModel, normalizeInferenceModel } from './InferenceModels.js';
+import { isStandaloneEdition } from './DeploymentEnvironment.js';
 
 export async function listenToAssistantQueryRequests() {
   while (true) {
@@ -120,7 +121,7 @@ async function processPendingAssistantRequests() {
         : [];
 
       let creditsNeeded = 0;
-      if (!isDockerRuntime()) {
+      if (!isStandaloneEdition()) {
         const billing =
           calculateAssistantCreditsFromUsage({
             model: messageResponse?.response?.model || messageResponse?.model,
@@ -216,11 +217,6 @@ function getAssistantModelAuthorization(userData = {}, request = {}) {
   );
 
   return authorization || 'native';
-}
-
-function isDockerRuntime() {
-  return typeof process.env.CURRENT_ENV === 'string' &&
-    process.env.CURRENT_ENV.trim().toLowerCase() === 'docker';
 }
 
 async function getTimeout(timeout = 1000) {

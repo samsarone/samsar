@@ -9,6 +9,7 @@ import {
 import { resolveProviderMediaPayload } from "../ai_utils/ProviderMediaPayload.js";
 import { createDeployedSamsarClient } from "../api/DeployedSamsarClient.js";
 import { createGoogleModerationForNarrative } from "./GoogleModeration.js";
+import { isStandaloneEdition } from "../../utils/EnvironmentUtils.js";
 
 export const MODERATION_PROVIDERS = Object.freeze({
   OPENAI: "openai",
@@ -173,7 +174,7 @@ function getConfiguredDeploymentProviders({ env = process.env, availableModelCon
 }
 
 function isDockerRuntime(env = process.env) {
-  return normalizeString(env.CURRENT_ENV).toLowerCase() === "docker";
+  return isStandaloneEdition(env);
 }
 
 function tryParseGoogleCredentials(env = process.env) {
@@ -312,7 +313,7 @@ export function resolveModerationProvider({
     const availableProviders = getAvailableDockerModerationProviders(env);
 
     // OpenRouter and Alibaba credentials provide Qwen inference, not a compatible
-    // moderation endpoint. A hosted Docker Qwen render therefore uses a separately
+    // moderation endpoint. A standalone Qwen render therefore uses a separately
     // configured OpenAI or Samsar-js moderation credential, or skips moderation.
     if (useQwenInference) {
       if (availableProviders.has(MODERATION_PROVIDERS.OPENAI)) {
@@ -837,7 +838,7 @@ async function createSamsarModeration(requestData, options = {}) {
     });
   }
 
-  // The hosted endpoint owns the three native OpenAI retries. The Docker caller
+  // The hosted endpoint owns the three native OpenAI retries. The standalone caller
   // makes one bounded request so retries cannot multiply into sixteen calls.
   const requestTimeoutMs = Math.min(
     MAX_SAMSAR_EXTERNAL_MODERATION_REQUEST_TIMEOUT_MS,

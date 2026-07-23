@@ -206,7 +206,7 @@ export async function translateSpeech(
   // Subtitle translation is an OpenAI-owned pipeline regardless of the
   // inference model selected for narrative or image/video generation. The
   // compatible client still permits the configured Samsar API fallback when
-  // Docker has no native OpenAI key.
+  // The standalone edition may have no native OpenAI key.
   const modelName = INFERENCE_MODELS.Inference;
   const createChatCompletion = typeof options.createChatCompletion === 'function'
     ? options.createChatCompletion

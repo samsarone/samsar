@@ -1,10 +1,11 @@
 import ffmpeg from 'fluent-ffmpeg';
 import path from 'path';
 import fs from 'fs';
+import { isContainerRuntime } from '../../utils/EnvironmentUtils.js';
 
 function getAssetsRootCandidates() {
   const candidates = [];
-  const isDockerLike = process.env.CURRENT_ENV === 'staging' || process.env.CURRENT_ENV === 'docker';
+  const isDockerLike = isContainerRuntime();
 
   if (isDockerLike) {
     candidates.push(process.env.SAMSAR_ASSETS_V2_ROOT || '/assets_v2');

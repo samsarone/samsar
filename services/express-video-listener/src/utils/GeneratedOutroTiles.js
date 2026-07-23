@@ -5,6 +5,10 @@ import sharp from 'sharp';
 
 import VideoSession from '../schema/VideoSession.js';
 import { getCanvasDimensionsForAspectRatio } from './CanvasUtils.js';
+import { usesLocalAssetStorage } from './EnvironmentUtils.js';
+import { configureExpressVideoSharpConcurrency } from './SharpResources.js';
+
+configureExpressVideoSharpConcurrency(sharp);
 
 const MEDIA_DOWNLOAD_TIMEOUT_MS = Number.isFinite(Number(process.env.API_MEDIA_DOWNLOAD_TIMEOUT_MS))
   ? Math.max(1000, Math.floor(Number(process.env.API_MEDIA_DOWNLOAD_TIMEOUT_MS)))
@@ -50,8 +54,7 @@ function resolveAssetsRoot() {
   const dockerAssetsRoot = process.env.SAMSAR_ASSETS_V2_ROOT || '/assets_v2';
   if (
     (
-      process.env.CURRENT_ENV === 'staging' ||
-      process.env.CURRENT_ENV === 'docker' ||
+      usesLocalAssetStorage() ||
       process.env.CURRENT_ENV === 'production'
     ) &&
     fs.existsSync(dockerAssetsRoot) &&

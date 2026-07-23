@@ -14,10 +14,22 @@ import { CUSTOM_AUDIO_ADAPTER_TYPES, listenToPendingCustomAudioRequest, submitCu
 import { SPEAKERS as ELEVENLABS_SPEAKERS } from './ElevenLabsSpeakers.js';
 import { resolveGoogleTTSLanguageCode, synthesizeGoogleSpeech } from './GoogleTTS.js';
 import { uploadAudioAssetToCDN } from '../AWS.js';
+import { isDockerRuntime } from '../util/environmentUtils.js';
+import {
+  AUDIO_FFPROBE_THREAD_OPTIONS,
+  applySingleThreadAudioFfmpeg,
+} from '../utils/FfmpegResources.js';
 
-ffmpeg.setFfmpegPath(ffmpegPath);
-if (ffprobeStatic?.path) {
-  ffmpeg.setFfprobePath(ffprobeStatic.path);
+const resolvedFfmpegPath =
+  process.env.FFMPEG_PATH || (isDockerRuntime() ? '/usr/bin/ffmpeg' : ffmpegPath);
+const resolvedFfprobePath =
+  process.env.FFPROBE_PATH || (isDockerRuntime() ? '/usr/bin/ffprobe' : ffprobeStatic?.path);
+
+if (resolvedFfmpegPath) {
+  ffmpeg.setFfmpegPath(resolvedFfmpegPath);
+}
+if (resolvedFfprobePath) {
+  ffmpeg.setFfprobePath(resolvedFfprobePath);
 }
 
 fal.config({ credentials: process.env.FAL_API_KEY });
@@ -61,7 +73,7 @@ function getAssetsBasePath() {
     return process.env.SAMSAR_ASSETS_V2_ROOT;
   }
 
-  if (process.env.CURRENT_ENV === 'staging' || process.env.CURRENT_ENV === 'docker') {
+  if (isDockerRuntime()) {
     return '/assets_v2';
   }
   return path.join(process.cwd(), '..', 'samsar_processor', 'assets_v2');
@@ -132,7 +144,7 @@ function normalizeHints(hints = []) {
 
 async function probeAudioDurationSeconds(audioPath) {
   const metadata = await new Promise((resolve, reject) => {
-    ffmpeg.ffprobe(audioPath, (error, data) => {
+    ffmpeg.ffprobe(audioPath, AUDIO_FFPROBE_THREAD_OPTIONS, (error, data) => {
       if (error) {
         reject(error);
         return;
@@ -164,9 +176,11 @@ async function createSilenceSegment(outputPath, durationSeconds) {
   }
 
   await new Promise((resolve, reject) => {
-    ffmpeg()
-      .input('anullsrc=channel_layout=mono:sample_rate=44100')
-      .inputFormat('lavfi')
+    applySingleThreadAudioFfmpeg(
+      ffmpeg()
+        .input('anullsrc=channel_layout=mono:sample_rate=44100')
+        .inputFormat('lavfi'),
+    )
       .outputOptions([
         '-t', safeDuration.toFixed(3),
         '-c:a', 'libmp3lame',
@@ -184,7 +198,7 @@ async function createSilenceSegment(outputPath, durationSeconds) {
 
 async function normalizeAudioFile(inputPath, outputPath) {
   await new Promise((resolve, reject) => {
-    ffmpeg(inputPath)
+    applySingleThreadAudioFfmpeg(ffmpeg(inputPath))
       .audioChannels(1)
       .audioFrequency(44100)
       .audioCodec('libmp3lame')
@@ -413,9 +427,11 @@ async function concatenateSegments(segmentPaths, outputPath, listPath) {
   await fs.promises.writeFile(listPath, `${listText}\n`, 'utf8');
 
   await new Promise((resolve, reject) => {
-    ffmpeg()
-      .input(listPath)
-      .inputOptions(['-f', 'concat', '-safe', '0'])
+    applySingleThreadAudioFfmpeg(
+      ffmpeg()
+        .input(listPath)
+        .inputOptions(['-f', 'concat', '-safe', '0']),
+    )
       .audioCodec('libmp3lame')
       .audioChannels(1)
       .audioFrequency(44100)

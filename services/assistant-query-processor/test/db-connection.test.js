@@ -28,9 +28,13 @@ describe('DBConnection helpers', () => {
     );
   });
 
-  it('uses MONGO_URL for staging and docker environments', () => {
+  it('always gives an explicit MONGO_URL precedence over edition defaults', () => {
     const mongoUrl = 'mongodb://example.test:27017/SamsarOne';
 
+    assert.equal(
+      buildMongoConnectionString({ CURRENT_ENV: 'production', MONGO_URL: mongoUrl }),
+      mongoUrl,
+    );
     assert.equal(
       buildMongoConnectionString({ CURRENT_ENV: 'staging', MONGO_URL: mongoUrl }),
       mongoUrl,
@@ -38,6 +42,21 @@ describe('DBConnection helpers', () => {
     assert.equal(
       buildMongoConnectionString({ CURRENT_ENV: 'docker', MONGO_URL: mongoUrl }),
       mongoUrl,
+    );
+    assert.equal(
+      buildMongoConnectionString({ CURRENT_ENV: 'standalone', MONGO_URL: mongoUrl }),
+      mongoUrl,
+    );
+  });
+
+  it('uses the Compose Mongo service for either Docker edition without an explicit URL', () => {
+    assert.equal(
+      buildMongoConnectionString({ CURRENT_ENV: 'standalone', SAMSAR_RUNTIME: 'docker' }),
+      'mongodb://mongo:27017/SamsarOne',
+    );
+    assert.equal(
+      buildMongoConnectionString({ CURRENT_ENV: 'production', SAMSAR_RUNTIME: 'docker' }),
+      'mongodb://mongo:27017/SamsarOne',
     );
   });
 

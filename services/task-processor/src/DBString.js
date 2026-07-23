@@ -39,10 +39,20 @@ export async function getDBConnectionString() {
     return db;
   }
   let connectionString = `mongodb://localhost:27017/SamsarGG`;
-  if (process.env.CURRENT_ENV === 'production') {
+  if (process.env.MONGO_URL) {
+    connectionString = process.env.MONGO_URL;
+  } else if (
+    process.env.DATABASE_PROVIDER === 'cosmos' ||
+    (process.env.CURRENT_ENV === 'production' && process.env.SAMSAR_RUNTIME !== 'docker')
+  ) {
     connectionString = MONGO_CONNECTION_STRING;
-  } else if (process.env.CURRENT_ENV === 'staging' || process.env.CURRENT_ENV === 'docker') {
-    connectionString = process.env.MONGO_URL || `mongodb://mongo:27017/SamsarOne`;
+  } else if (
+    process.env.CURRENT_ENV === 'staging' ||
+    process.env.CURRENT_ENV === 'docker' ||
+    process.env.CURRENT_ENV === 'standalone' ||
+    process.env.SAMSAR_RUNTIME === 'docker'
+  ) {
+    connectionString = `mongodb://mongo:27017/SamsarOne`;
   }
 
 

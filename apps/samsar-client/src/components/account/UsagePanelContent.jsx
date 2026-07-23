@@ -7,7 +7,7 @@ import { toast } from "react-toastify";
 import SecondaryButton from "../common/SecondaryButton.tsx";
 import { useColorMode } from "../../contexts/ColorMode.jsx";
 import { getHeaders } from "../../utils/web.jsx";
-import { getSessionType } from "../../utils/environment.jsx";
+import { IS_STANDALONE_DEPLOYMENT } from "../../utils/environment.jsx";
 import {
   extractDeploymentProviders,
   fetchDeploymentProviderConfig,
@@ -74,7 +74,7 @@ const getUsageRequestType = (item = {}) => (
   ""
 );
 
-const formatDockerModelJob = (item = {}) => {
+const formatStandaloneModelJob = (item = {}) => {
   const metadata = item.metadata && typeof item.metadata === "object" ? item.metadata : {};
   const jobType = item.jobType || metadata.jobType;
   const model = item.model || metadata.model;
@@ -88,7 +88,7 @@ const formatDockerModelJob = (item = {}) => {
   return parts.length > 0 ? parts.join(" • ") : "—";
 };
 
-const formatDockerStatus = (item = {}) => {
+const formatStandaloneStatus = (item = {}) => {
   const metadata = item.metadata && typeof item.metadata === "object" ? item.metadata : {};
   return item.status || metadata.status || "requested";
 };
@@ -163,7 +163,7 @@ const resolveUsageProviderValue = (item = {}) => {
 
 export default function UsagePanelContent() {
   const { colorMode } = useColorMode();
-  const isDockerInstall = getSessionType() === "docker";
+  const isStandaloneDeployment = IS_STANDALONE_DEPLOYMENT;
 
   const [usageLogs, setUsageLogs] = useState([]);
   const [pagination, setPagination] = useState({
@@ -212,7 +212,7 @@ export default function UsagePanelContent() {
   }, []);
 
   useEffect(() => {
-    if (!isDockerInstall) return;
+    if (!isStandaloneDeployment) return;
 
     let isCancelled = false;
     setIsLoadingDeploymentProviders(true);
@@ -236,7 +236,7 @@ export default function UsagePanelContent() {
     return () => {
       isCancelled = true;
     };
-  }, [isDockerInstall]);
+  }, [isStandaloneDeployment]);
 
   const totalCreditsUsed = useMemo(
     () =>
@@ -322,7 +322,7 @@ export default function UsagePanelContent() {
         <div>
           <h2 className="text-2xl font-bold">Usage</h2>
           <p className={`text-sm ${secondaryTextColor}`}>
-            {isDockerInstall
+            {isStandaloneDeployment
               ? "Track generative requests by request type and provider."
               : "Track API calls, task totals, and stage-level credit distribution."}
           </p>
@@ -338,7 +338,7 @@ export default function UsagePanelContent() {
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {!isDockerInstall && (
+        {!isStandaloneDeployment && (
           <div className={`rounded-lg border ${borderColor} ${cardBgColor} p-4`}>
             <div className="flex items-center gap-3">
               <div className="shrink-0 rounded-full bg-rose-500/10 p-3 text-rose-400">
@@ -370,7 +370,7 @@ export default function UsagePanelContent() {
           </div>
         </div>
 
-        {isDockerInstall && (
+        {isStandaloneDeployment && (
           <div className={`rounded-lg border ${borderColor} ${cardBgColor} p-4`}>
             <div className="flex items-center gap-3">
               <div className="shrink-0 rounded-full bg-cyan-500/10 p-3 text-cyan-400">
@@ -403,7 +403,7 @@ export default function UsagePanelContent() {
         </div>
       </div>
 
-      {isDockerInstall && (
+      {isStandaloneDeployment && (
         <div className={`min-w-0 rounded-lg border ${borderColor} ${cardBgColor} overflow-hidden`}>
           <div className={`flex flex-col gap-2 px-4 py-3 border-b sm:flex-row sm:items-center sm:justify-between ${borderColor} ${headerBg}`}>
             <div>
@@ -458,7 +458,7 @@ export default function UsagePanelContent() {
           <div>
             <p className="text-lg font-semibold">Usage log</p>
             <p className={`text-xs ${secondaryTextColor}`}>
-              {isDockerInstall
+              {isStandaloneDeployment
                 ? `Showing generative request audit logs (page ${pagination.page || 1}) with ${pagination.pageSize} per page.`
                 : `Showing API charges and grouped task stage charges (page ${pagination.page || 1}) with ${pagination.pageSize} per page.`}
             </p>
@@ -475,16 +475,16 @@ export default function UsagePanelContent() {
           <div className="p-6 text-center">
             <p className="text-lg font-semibold">No usage yet</p>
             <p className={`text-sm ${secondaryTextColor}`}>
-              {isDockerInstall
+              {isStandaloneDeployment
                 ? "Generative requests will appear here with request type and provider details."
                 : "Calls you make with your API key will appear here with credit details."}
             </p>
           </div>
         ) : (
           <div className="max-w-full overflow-x-auto">
-            <table className={isDockerInstall ? "min-w-[900px] text-sm" : "min-w-[920px] text-sm"}>
+            <table className={isStandaloneDeployment ? "min-w-[900px] text-sm" : "min-w-[920px] text-sm"}>
               <thead className={headerBg}>
-                {isDockerInstall ? (
+                {isStandaloneDeployment ? (
                   <tr>
                     <th className="px-4 py-3 text-left">Request type</th>
                     <th className="px-4 py-3 text-left">Provider</th>
@@ -518,15 +518,15 @@ export default function UsagePanelContent() {
                           index % 2 === 0 ? mutedBg : ""
                         }`}
                       >
-                        {isDockerInstall ? (
+                        {isStandaloneDeployment ? (
                           <>
                             <td className="px-4 py-3 font-medium">{requestTypeLabel}</td>
                             <td className="px-4 py-3 font-medium">{providerLabel}</td>
                             <td className={`px-4 py-3 ${secondaryTextColor}`}>
-                              {formatDockerModelJob(item)}
+                              {formatStandaloneModelJob(item)}
                             </td>
                             <td className={`px-4 py-3 ${secondaryTextColor}`}>
-                              {formatDockerStatus(item)}
+                              {formatStandaloneStatus(item)}
                             </td>
                             <td className={`px-4 py-3 ${secondaryTextColor}`}>
                               {formatDate(item.createdAt)}
@@ -561,7 +561,7 @@ export default function UsagePanelContent() {
                           </>
                         )}
                       </tr>
-                      {!isDockerInstall && subRows.map((subRow) => (
+                      {!isStandaloneDeployment && subRows.map((subRow) => (
                         <tr
                           key={`${item.id || index}-${subRow.id}`}
                           className={`border-t ${borderColor} ${

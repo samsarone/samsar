@@ -1,5 +1,6 @@
 import ProviderUsageLog from '../schema/ProviderUsageLog.js';
 import { getDBConnectionString } from '../DBString.js';
+import { isStandaloneEdition } from './Environment.js';
 
 function normalizeString(value) {
   if (value === null || value === undefined) return '';
@@ -17,7 +18,7 @@ function isFalsey(value) {
 export function isProviderUsageAuditEnabled() {
   if (isFalsey(process.env.SAMSAR_PROVIDER_USAGE_AUDIT_ENABLED)) return false;
   if (isTruthy(process.env.SAMSAR_PROVIDER_USAGE_AUDIT_ENABLED)) return true;
-  return normalizeString(process.env.CURRENT_ENV).toLowerCase() === 'docker';
+  return isStandaloneEdition();
 }
 
 function normalizeMetadata(metadata) {

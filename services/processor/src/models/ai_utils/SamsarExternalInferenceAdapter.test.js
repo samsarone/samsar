@@ -5,6 +5,9 @@ import OpenAI from 'openai';
 
 const ENV_KEYS = [
   'CURRENT_ENV',
+  'SAMSAR_DEPLOYMENT_EDITION',
+  'SAMSAR_EDITION',
+  'SAMSAR_RUNTIME',
   'NODE_ENV',
   'SAMSAR_API_KEY',
   'SAMSAR_EXTERNAL_INFERENCE_ENABLED',
@@ -121,6 +124,24 @@ test('shouldUseSamsarExternalInference falls back for Gemini in docker without G
 
   assert.equal(shouldUseSamsarExternalInference({
     model: 'gemini-3.1-pro',
+    messages: [{ role: 'user', content: 'hello' }],
+  }), true);
+});
+
+test('production Docker does not enable standalone external inference implicitly', () => {
+  clearProviderEnv();
+  process.env.SAMSAR_DEPLOYMENT_EDITION = 'production';
+  process.env.SAMSAR_RUNTIME = 'docker';
+  process.env.SAMSAR_API_KEY = 'test-samsar-key';
+
+  assert.equal(shouldUseSamsarExternalInference({
+    model: 'gpt-5.6-sol',
+    messages: [{ role: 'user', content: 'hello' }],
+  }), false);
+
+  process.env.SAMSAR_EXTERNAL_INFERENCE_ENABLED = 'true';
+  assert.equal(shouldUseSamsarExternalInference({
+    model: 'gpt-5.6-sol',
     messages: [{ role: 'user', content: 'hello' }],
   }), true);
 });
@@ -464,6 +485,39 @@ test('production Qwen OpenRouter controls enforce minimum timeout and disable SD
   assert.equal(capturedOptions.timeout, 1200000);
   assert.equal(capturedOptions.maxRetries, 0);
   assert.equal(capturedOptions.signal instanceof AbortSignal, true);
+});
+
+test('production Qwen retries a transient OpenRouter connection reset', async (t) => {
+  clearProviderEnv();
+  process.env.CURRENT_ENV = 'production';
+  process.env.OPENROUTER_API_KEY = 'test-openrouter-key';
+  process.env.SAMSAR_QWEN_OPENROUTER_ONLY = 'true';
+  process.env.OPENROUTER_QWEN_MAX_RETRIES = '3';
+  process.env.SAMSAR_EXTERNAL_INFERENCE_RETRY_BASE_DELAY_MS = '1';
+  process.env.SAMSAR_EXTERNAL_INFERENCE_RETRY_MAX_DELAY_MS = '1';
+  t.mock.method(console, 'error', () => {});
+  t.mock.method(console, 'warn', () => {});
+  const requestOptions = [];
+  let calls = 0;
+  t.mock.method(OpenAI.Chat.Completions.prototype, 'create', async (_payload, options) => {
+    calls += 1;
+    requestOptions.push(options);
+    if (calls === 1) {
+      const error = new Error('read ECONNRESET');
+      error.code = 'ECONNRESET';
+      throw error;
+    }
+    return { choices: [{ message: { role: 'assistant', content: 'recovered' } }] };
+  });
+
+  const response = await createOpenRouterChatCompletion({
+    model: 'QWEN3.7',
+    messages: [{ role: 'user', content: 'hello' }],
+  });
+
+  assert.equal(response.choices[0].message.content, 'recovered');
+  assert.equal(calls, 2);
+  assert.equal(requestOptions.every((options) => options.maxRetries === 0), true);
 });
 
 test('external inference retries transient 429 responses three times with backoff', async () => {

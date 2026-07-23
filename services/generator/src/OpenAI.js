@@ -17,6 +17,7 @@ import {
   shouldUseSamsarExternalInference,
 } from './inference/SamsarExternalInferenceAdapter.js';
 import { withInferenceAuthorization } from './inference/RequestInferenceModel.js';
+import { usesLocalAssetStorage } from './utils/Environment.js';
 
 const API_KEY = process.env.OPENAI_API_KEY;
 
@@ -51,7 +52,7 @@ export async function getImageFromAPI(prompt, aspectRatio = '1:1') {
 
     let savePath = path.join(pwd, '..', 'samsar_processor', 'assets', 'generations', imageName);
 
-    if (process.env.CURRENT_ENV === 'staging' || process.env.CURRENT_ENV === 'docker') {
+    if (usesLocalAssetStorage()) {
       savePath = path.join(process.env.SAMSAR_ASSETS_ROOT || '/assets', 'generations', imageName);
     }
 
@@ -101,7 +102,7 @@ export async function getOutpaintImageFromApi(prompt, imageURL, maskImageURL) {
 
     let savePath = path.join(pwd, '..', 'samsar_processor', 'assets', 'generations', imageName);
 
-    if (process.env.CURRENT_ENV === 'staging' || process.env.CURRENT_ENV === 'docker') {
+    if (usesLocalAssetStorage()) {
       savePath = path.join(process.env.SAMSAR_ASSETS_ROOT || '/assets', 'generations', imageName);
     }
     

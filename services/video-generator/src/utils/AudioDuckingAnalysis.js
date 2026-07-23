@@ -1,4 +1,8 @@
 import { spawn } from 'child_process';
+import {
+  createOnDemandWeightedPool,
+  resolveCpuCeiling,
+} from './CpuResources.js';
 
 const AUDIO_NUMBER_PRECISION = 4;
 const DEFAULT_ANALYSIS_NOISE_THRESHOLD_DB = -38;
@@ -40,6 +44,16 @@ const FOREGROUND_DUCK_KEY_SAME_SPEAKER_MAX_STRENGTH_DELTA = 0.18;
 const FOREGROUND_DUCK_KEY_PHASE_STRENGTH_PERCENTILE = 0.35;
 const FOREGROUND_DUCK_KEY_PHASE_CEILING_PERCENTILE = 0.82;
 const MIN_FOREGROUND_DUCK_KEY_PHASE_FADE_SECONDS = 0.16;
+
+const foregroundAudioAnalysisPool = createOnDemandWeightedPool({
+  getCapacity: () => resolveCpuCeiling({
+    defaultCeiling: 8,
+    envNames: [
+      'SAMSAR_VIDEO_MAX_AUDIO_ANALYSIS_PROCESSES',
+      'SAMSAR_MAX_AUDIO_ANALYSIS_PROCESSES',
+    ],
+  }),
+});
 
 function clamp(value, min, max) {
   return Math.min(Math.max(Number(value) || 0, min), max);
@@ -890,8 +904,8 @@ function runFFmpegSilenceDetect({
     `silencedetect=noise=${formatFFmpegNumber(profile.noiseThresholdDb)}dB:d=${formatFFmpegNumber(profile.minSilenceDurationSeconds)}`,
   );
 
-  return new Promise((resolve, reject) => {
-    const args = ['-hide_banner', '-nostats'];
+  return foregroundAudioAnalysisPool.run(1, () => new Promise((resolve, reject) => {
+    const args = ['-hide_banner', '-nostats', '-threads', '1'];
 
     if (sourceTrimStartTime > 0) {
       args.push('-ss', formatFFmpegNumber(sourceTrimStartTime));
@@ -903,6 +917,8 @@ function runFFmpegSilenceDetect({
       '-i',
       audioPath,
       '-vn',
+      '-filter_threads',
+      '1',
       '-af',
       filterParts.join(','),
       '-f',
@@ -932,7 +948,7 @@ function runFFmpegSilenceDetect({
 
       reject(new Error(`ffmpeg silencedetect exited with code ${exitCode}`));
     });
-  });
+  }));
 }
 
 function buildRmsMetadataFilterChain(profile = {}) {
@@ -975,8 +991,8 @@ function runFFmpegRmsMetadataAnalysis({
 } = {}) {
   const profile = resolveAudioAnalysisProfile(audioType, audioTrack);
 
-  return new Promise((resolve, reject) => {
-    const args = ['-hide_banner', '-nostats'];
+  return foregroundAudioAnalysisPool.run(1, () => new Promise((resolve, reject) => {
+    const args = ['-hide_banner', '-nostats', '-threads', '1'];
 
     if (sourceTrimStartTime > 0) {
       args.push('-ss', formatFFmpegNumber(sourceTrimStartTime));
@@ -988,6 +1004,8 @@ function runFFmpegRmsMetadataAnalysis({
       '-i',
       audioPath,
       '-vn',
+      '-filter_threads',
+      '1',
       '-af',
       buildRmsMetadataFilterChain(profile),
       '-f',
@@ -1022,7 +1040,7 @@ function runFFmpegRmsMetadataAnalysis({
 
       reject(new Error(`ffmpeg rms metadata analysis exited with code ${exitCode}`));
     });
-  });
+  }));
 }
 
 function buildNormalizedRmsStrengthSamples({

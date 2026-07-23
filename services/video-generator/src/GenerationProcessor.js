@@ -17,6 +17,7 @@ import {
 } from './utils/AWS.js';
 import { installStructuredLogger } from './utils/StructuredLogger.js';
 import { uploadBranchThumbnailBestEffort } from './utils/BranchThumbnail.js';
+import { isDockerRuntime } from './utils/DeploymentEnvironment.js';
 import {
   buildDockerFinalVideoQueueRepairBranchPathPatch,
   buildDockerFinalVideoQueueRepairSessionPatch,
@@ -41,6 +42,7 @@ import {
   hasManualAudioVolumeAutomation,
 } from './utils/AudioVolumeAutomation.js';
 import { buildFinalAudioMixFilter } from './utils/FinalRenderAudio.js';
+import { resolveCpuCeiling } from './utils/CpuResources.js';
 import {
   buildSpeechAwareDuckingEnvelopeWindows,
   buildStudioAudioDuckingPlan,
@@ -95,6 +97,27 @@ const DOCKER_FINAL_VIDEO_QUEUE_REPAIR_INTERVAL_MS = 15 * 1000;
 const DOCKER_FINAL_VIDEO_QUEUE_REPAIR_LIMIT = 25;
 let lastDockerFinalVideoQueueRepairAt = 0;
 
+const SHARP_THREAD_LIMIT = resolveCpuCeiling({
+  defaultCeiling: 8,
+  envNames: [
+    'SAMSAR_VIDEO_MAX_SHARP_THREADS',
+    'SAMSAR_MAX_SHARP_THREADS',
+  ],
+});
+// Sharp/libvips creates its workers only while an image operation is running.
+// The video listener is sequential, so it can use the current heavy-work budget.
+sharp.concurrency(SHARP_THREAD_LIMIT);
+
+function resolveFinalRenderFfmpegThreads() {
+  return resolveCpuCeiling({
+    defaultCeiling: 8,
+    envNames: [
+      'SAMSAR_VIDEO_MAX_FFMPEG_THREADS',
+      'SAMSAR_MAX_FFMPEG_THREADS',
+    ],
+  });
+}
+
 function resolveProcessorAssetsRoot(pwd, version = 'v2') {
   if (version === 'v2' && process.env.SAMSAR_ASSETS_V2_ROOT) {
     return process.env.SAMSAR_ASSETS_V2_ROOT;
@@ -102,7 +125,7 @@ function resolveProcessorAssetsRoot(pwd, version = 'v2') {
   if (version !== 'v2' && process.env.SAMSAR_ASSETS_ROOT) {
     return process.env.SAMSAR_ASSETS_ROOT;
   }
-  if (process.env.CURRENT_ENV === 'staging' || process.env.CURRENT_ENV === 'docker') {
+  if (isDockerRuntime()) {
     return version === 'v2' ? '/assets_v2' : '/assets';
   }
 
@@ -2505,6 +2528,9 @@ function renderAndSaveVideoOnce(payload) {
   });
 
   const frameRate = normalizeFramesPerSecond(framesPerSecond) ?? DEFAULT_FRAMES_PER_SECOND;
+  const ffmpegThreads = resolveFinalRenderFfmpegThreads();
+  const ffmpegThreadValue = `${ffmpegThreads}`;
+  const ffmpegInputThreadValue = '1';
   const framePattern = `${framePath}/%d.png`;
   const analyzedStudioDuckingWindows = Array.isArray(analyzedStudioDuckingPlan?.windows)
     ? analyzedStudioDuckingPlan.windows
@@ -2522,10 +2548,17 @@ function renderAndSaveVideoOnce(payload) {
   return new Promise((resolve, reject) => {
     const command = ffmpeg()
       .input(framePattern)
+      .inputOptions([
+        '-threads', ffmpegInputThreadValue,
+      ])
       .inputFPS(frameRate);
 
     if (outroImagePath) {
-      command.input(outroImagePath);
+      command
+        .input(outroImagePath)
+        .inputOptions([
+          '-threads', ffmpegInputThreadValue,
+        ]);
     }
 
     attachFFmpegProcess(command);
@@ -2603,7 +2636,11 @@ function renderAndSaveVideoOnce(payload) {
         const audioSourceTrimEnd = audioSourceTrimStart + audioDuration;
         if (audioDuration <= 0) return;
 
-        command.input(audio.path);
+        command
+          .input(audio.path)
+          .inputOptions([
+            '-threads', ffmpegInputThreadValue,
+          ]);
         audioInputs.push(`[a${index}]`);
         if (isMusicDuckingTargetTrack(audio)) {
           musicAudioInputs.push(`[a${index}]`);
@@ -2863,10 +2900,11 @@ function renderAndSaveVideoOnce(payload) {
     command
       .complexFilter(filterComplex, outputStreams)
       .outputOptions([
-        '-c:v libx264',
-        '-pix_fmt yuv420p',
-        '-threads 8',
-        `-t ${duration}`
+        '-filter_complex_threads', ffmpegThreadValue,
+        '-c:v', 'libx264',
+        '-pix_fmt', 'yuv420p',
+        '-threads', ffmpegThreadValue,
+        '-t', `${duration}`,
       ]);
 
     if (hasAudioOutput) {

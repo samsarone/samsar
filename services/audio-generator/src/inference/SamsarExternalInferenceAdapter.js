@@ -11,6 +11,7 @@ import {
 import { getAlibabaCloudApiKey } from './Qwen.js';
 import { runExternalInferenceWithRetry } from './ExternalInferenceRetry.js';
 import { normalizeProviderMediaPayload } from '../utils/ProviderMediaPayload.js';
+import { isStandaloneEdition } from '../util/environmentUtils.js';
 
 const DEFAULT_SAMSAR_API_BASE_URL = 'https://api.samsar.one/v1';
 const DEFAULT_EXTERNAL_INFERENCE_TIMEOUT_MS = 10 * 60 * 1000;
@@ -212,7 +213,7 @@ function shouldEnableExternalInference() {
   if (isTruthyEnv(process.env.SAMSAR_FORCE_EXTERNAL_INFERENCE)) {
     return true;
   }
-  return normalizeString(process.env.CURRENT_ENV).toLowerCase() === 'docker';
+  return isStandaloneEdition();
 }
 
 function getExternalClient() {
@@ -284,15 +285,14 @@ function getInferenceProviderPriority(model) {
     DOCKER_INFERENCE_PROVIDER_PRIORITY_BY_MODEL['gpt-5.6-sol'];
 }
 
-function isDockerInferenceRuntime() {
-  const environment = normalizeString(process.env.CURRENT_ENV).toLowerCase();
-  return environment === 'docker';
+function isStandaloneInferenceEdition() {
+  return isStandaloneEdition();
 }
 
 function isQwenOpenRouterOnly(model) {
   return isQwenInferenceModel(model) && (
     isTruthyEnv(process.env.SAMSAR_QWEN_OPENROUTER_ONLY) ||
-    !isDockerInferenceRuntime()
+    !isStandaloneInferenceEdition()
   );
 }
 

@@ -5,6 +5,10 @@ import {
   normalizeGeminiProviderModel,
 } from '../../consts/InferenceModels.js';
 import {
+  DEPLOYMENT_EDITION,
+  normalizeDeploymentEdition,
+} from '../../utils/EnvironmentUtils.js';
+import {
   getGoogleAccessToken,
   getGoogleAuth,
   getGoogleCloudConfig,
@@ -122,9 +126,11 @@ function getGoogleModerationMaxOutputTokens(options = {}) {
 }
 
 function isProductionRuntime(env = process.env) {
-  const currentEnv = normalizeString(env?.CURRENT_ENV).toLowerCase();
-  if (currentEnv) {
-    return currentEnv === 'production';
+  const configuredEdition = normalizeDeploymentEdition(
+    env?.SAMSAR_DEPLOYMENT_EDITION || env?.SAMSAR_EDITION || env?.CURRENT_ENV,
+  );
+  if (configuredEdition) {
+    return configuredEdition === DEPLOYMENT_EDITION.PRODUCTION;
   }
   return normalizeString(env?.NODE_ENV).toLowerCase() === 'production';
 }

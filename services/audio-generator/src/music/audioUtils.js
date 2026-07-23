@@ -11,6 +11,10 @@ import GeneratedMusic from '../schema/generations/GeneratedMusic.js';
 import { generateS3UrlsFromLocalFile } from '../AWS.js';
 import { getProcessorAssetsV2Path, toAssetsV2RelativePath } from '../utils/AssetPaths.js';
 import {
+  AUDIO_FFPROBE_THREAD_OPTIONS,
+  applySingleThreadAudioFfmpeg,
+} from '../utils/FfmpegResources.js';
+import {
   failStandaloneExternalAudioGeneration,
   finalizeStandaloneExternalAudioGeneration,
 } from '../external/StandaloneExternalAudio.js';
@@ -58,7 +62,7 @@ function getAudioDurationFromMetadata(audioMetadata) {
 
 async function getAudioDurationSeconds(localAudioPath) {
   const audioMetadata = await new Promise((resolve, reject) => {
-    ffmpeg.ffprobe(localAudioPath, (error, metadata) => {
+    ffmpeg.ffprobe(localAudioPath, AUDIO_FFPROBE_THREAD_OPTIONS, (error, metadata) => {
       if (error) {
         reject(error);
         return;
@@ -133,7 +137,7 @@ async function createLoopedAudioTrackForDuration({
       command = command.inputOptions(['-stream_loop', String(loopsNeeded - 1)]);
     }
 
-    command
+    applySingleThreadAudioFfmpeg(command)
       .outputOptions(outputOptions)
       .save(outputFilePath)
       .on('end', resolve)

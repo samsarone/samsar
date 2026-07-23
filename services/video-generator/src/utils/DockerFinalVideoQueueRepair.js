@@ -39,7 +39,7 @@ export function isDockerLocalFinalVideoQueueRepairEnabled(env = process.env) {
   if (EXTERNAL_MEDIA_MODES.has(configuredMode)) {
     return false;
   }
-  return normalizeString(env.CURRENT_ENV).toLowerCase() === 'docker';
+  return isDockerRuntime(env);
 }
 
 export function hasFinalVideoResult(videoSession = {}) {
@@ -168,3 +168,4 @@ export function buildDockerFinalVideoQueueRepairBranchPathPatch() {
     videoGenerationCompletedAt: null,
   };
 }
+import { isDockerRuntime } from './DeploymentEnvironment.js';

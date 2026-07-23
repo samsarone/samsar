@@ -2,6 +2,7 @@ import 'dotenv/config';
 import * as fs from 'fs';
 import path from "path";
 import { mkdir, writeFile } from "fs/promises";
+import { usesLocalAssetStorage } from './utils/Environment.js';
 
 
 export async function saveGeneratedFile(imageData) {
@@ -11,7 +12,7 @@ export async function saveGeneratedFile(imageData) {
   const pwd = process.cwd();
   let savePath = path.join(pwd, '..', 'samsar_processor', 'assets', 'generations', imageName);
   
-  if (process.env.CURRENT_ENV === 'staging' || process.env.CURRENT_ENV === 'docker') {
+  if (usesLocalAssetStorage()) {
     savePath = path.join(process.env.SAMSAR_ASSETS_ROOT || '/assets', 'generations', imageName);
   }
   // Ensure the directory exists
@@ -20,5 +21,4 @@ export async function saveGeneratedFile(imageData) {
   await writeFile(savePath, imageBuffer);
   return imageName;
 }
-
 

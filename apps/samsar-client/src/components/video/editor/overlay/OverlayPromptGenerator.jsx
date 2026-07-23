@@ -38,19 +38,19 @@ export default function OverlayPromptGenerator(props) {
   const [isCharacterImage, setIsCharacterImage] = useState(false);
   const [selectedImageStyle, setSelectedImageStyle] = useState(null);
   const {
-    isDockerInstall: isDockerModelFilteringEnabled,
+    isStandaloneDeployment: isStandaloneModelFilteringEnabled,
     imageModelValues,
   } = useDeploymentModelAvailability();
   const availableImageModels = useMemo(
     () => {
-      const deploymentModels = isDockerModelFilteringEnabled
+      const deploymentModels = isStandaloneModelFilteringEnabled
         ? filterOptionsForDeploymentModelValues(IMAGE_GENERAITON_MODEL_TYPES, imageModelValues, (model) => model.key)
         : IMAGE_GENERAITON_MODEL_TYPES;
       return deploymentModels.filter((model) =>
         imageGenerationModelSupportsAspectRatio(model, aspectRatio)
       );
     },
-    [aspectRatio, imageModelValues, isDockerModelFilteringEnabled]
+    [aspectRatio, imageModelValues, isStandaloneModelFilteringEnabled]
   );
 
   const isPortraitLayout = layoutMode === "portrait";

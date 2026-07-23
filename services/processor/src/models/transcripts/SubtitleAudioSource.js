@@ -4,6 +4,7 @@ import path from 'path';
 import { randomUUID } from 'crypto';
 
 import { getObjectFromS3 } from '../AWS.js';
+import { isContainerRuntime } from '../../utils/EnvironmentUtils.js';
 
 const DEFAULT_MEDIA_BUCKET_NAME = process.env.MEDIA_BUCKET_NAME ||
   process.env.STATIC_CDN_BUCKET ||
@@ -50,7 +51,7 @@ function isTruthyEnv(value) {
 }
 
 export function shouldUseSubtitleObjectStorageRecovery(env = process.env) {
-  if (normalizeString(env.CURRENT_ENV).toLowerCase() !== 'docker') {
+  if (!isContainerRuntime(env)) {
     return true;
   }
   const mode = normalizeString(env.SAMSAR_MEDIA_DELIVERY_MODE || env.MEDIA_DELIVERY_MODE)
@@ -256,9 +257,7 @@ export function normalizeTrustedSubtitleAudioObjectKey(reference, options = {}) 
 }
 
 function getDefaultLocalAssetRoots() {
-  const isContainer = ['docker', 'staging'].includes(
-    normalizeString(process.env.CURRENT_ENV).toLowerCase(),
-  );
+  const isContainer = isContainerRuntime();
   const roots = [
     process.env.SAMSAR_ASSETS_V2_ROOT,
     process.env.SAMSAR_ASSETS_ROOT,

@@ -155,8 +155,7 @@ export function isDockerAdapterRoutingEnabled() {
   if (isTruthyEnv(process.env.SAMSAR_DOCKER_ADAPTER_ROUTING_ENABLED)) {
     return true;
   }
-  const currentEnv = normalizeString(process.env.CURRENT_ENV).toLowerCase();
-  return currentEnv === 'docker' || currentEnv === 'staging';
+  return isStandaloneEdition() || normalizeString(process.env.CURRENT_ENV).toLowerCase() === 'staging';
 }
 
 export function hasOpenAIAdapterCredential() {
@@ -212,7 +211,7 @@ export function getDockerImageGenerationProviderPriority(model) {
   const normalizedModel = normalizeModelKey(model);
   if (
     normalizedModel === 'NANOBANANAPRO' &&
-    normalizeString(process.env.CURRENT_ENV).toLowerCase() === 'production'
+    getDeploymentEdition() === 'production'
   ) {
     return [
       DOCKER_ADAPTER_PROVIDER.FAL,
@@ -256,10 +255,9 @@ export function resolveGPTImageTwoGenerationProvider(persistedProvider = '') {
     return DOCKER_ADAPTER_PROVIDER.FAL;
   }
 
-  // Hosted production text-to-image generation uses FAL. Docker and staging
+  // Production text-to-image generation uses FAL. Standalone and staging
   // retain their user-supplied adapter priority below.
-  const currentEnv = normalizeString(process.env.CURRENT_ENV).toLowerCase();
-  if (currentEnv === 'production') {
+  if (getDeploymentEdition() === 'production') {
     return DOCKER_ADAPTER_PROVIDER.FAL;
   }
 
@@ -274,10 +272,9 @@ export function resolveWan27ImageGenerationProvider(persistedProvider = '') {
     return normalizedPersistedProvider;
   }
 
-  // Hosted generation uses FAL. Docker keeps its configured native-first
+  // Production generation uses FAL. Standalone keeps its configured native-first
   // provider priority through resolveDockerImageGenerationProvider().
-  const currentEnv = normalizeString(process.env.CURRENT_ENV).toLowerCase();
-  if (currentEnv !== 'docker' && currentEnv !== 'staging') {
+  if (!isStandaloneEdition() && normalizeString(process.env.CURRENT_ENV).toLowerCase() !== 'staging') {
     return DOCKER_ADAPTER_PROVIDER.FAL;
   }
 
@@ -291,3 +288,4 @@ export function resolveDockerImageEditProvider(model) {
   }
   return resolveConfiguredProvider(getDockerImageEditProviderPriority(model));
 }
+import { getDeploymentEdition, isStandaloneEdition } from '../utils/Environment.js';

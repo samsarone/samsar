@@ -4,8 +4,7 @@ import { useLocation } from "react-router-dom";
 import { useAlertDialog } from "../../contexts/AlertDialogContext.jsx";
 import { useColorMode } from "../../contexts/ColorMode.jsx";
 import AuthContainer, { AUTH_DIALOG_OPTIONS } from "../auth/AuthContainer.jsx";
-
-const IS_DOCKER_INSTALL = import.meta.env.VITE_DOCKER_INSTALL === 'true';
+import { IS_STANDALONE_DEPLOYMENT } from "../../utils/environment.jsx";
 
 export default function BillingAccessGate() {
   const { openAlertDialog } = useAlertDialog();
@@ -67,7 +66,7 @@ export default function BillingAccessGate() {
               >
                 Log in
               </button>
-              {!IS_DOCKER_INSTALL && (
+              {!IS_STANDALONE_DEPLOYMENT && (
                 <button
                   type="button"
                   onClick={openRegisterDialog}

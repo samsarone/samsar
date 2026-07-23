@@ -46,6 +46,11 @@ import {
 } from './AWS.js';
 import { getAccessibleProviderMediaUrl } from './ai_utils/VisionMediaUrl.js';
 import { validateExpressImageModelKey } from './api/PromptUtils.js';
+import {
+  isContainerRuntime,
+  shouldBypassGenerationCredits,
+} from '../utils/EnvironmentUtils.js';
+import { withProcessorFfmpegResources } from '../utils/FfmpegResources.js';
 
 const API_SERVER = process.env.API_SERVER;
 const RUNWAY_API_BASE_URL = (process.env.RUNWAYML_BASE_URL || 'https://api.dev.runwayml.com').replace(/\/+$/, '');
@@ -173,16 +178,14 @@ async function runwayGet(pathname) {
 }
 
 function getAssetsBasePath() {
-  if (process.env.CURRENT_ENV === 'staging' || process.env.CURRENT_ENV === 'docker') {
-    return '/assets';
-  }
+  if (process.env.SAMSAR_ASSETS_ROOT) return process.env.SAMSAR_ASSETS_ROOT;
+  if (isContainerRuntime()) return '/assets';
   return path.join(process.cwd(), 'assets');
 }
 
 function getAvatarAssetsBasePath() {
-  if (process.env.CURRENT_ENV === 'docker') {
-    return process.env.SAMSAR_ASSETS_V2_ROOT || '/assets_v2';
-  }
+  if (process.env.SAMSAR_ASSETS_V2_ROOT) return process.env.SAMSAR_ASSETS_V2_ROOT;
+  if (isContainerRuntime()) return '/assets_v2';
   return path.join(process.cwd(), 'assets_v2');
 }
 
@@ -207,7 +210,7 @@ function resolveAssetAbsolutePath(assetPath = '') {
     const relativeAssetPath = secureAssetKey.slice(SECURE_ASSET_PREFIX.length + 1);
     const assetsV2Roots = [
       process.env.SAMSAR_ASSETS_V2_ROOT,
-      process.env.CURRENT_ENV === 'staging' || process.env.CURRENT_ENV === 'docker' ? '/assets_v2' : '',
+      isContainerRuntime() ? '/assets_v2' : '',
       path.join(process.cwd(), 'assets_v2'),
       path.join(process.cwd(), '..', 'samsar_processor', 'assets_v2'),
     ].filter(Boolean);
@@ -820,27 +823,35 @@ async function materializeRemoteSpeechSegments(segments = [], outputFolder = '')
 
 function runFfmpeg(args) {
   const binaryPath = ffmpegPath || 'ffmpeg';
-  return new Promise((resolve, reject) => {
-    const child = spawn(binaryPath, args, { stdio: ['ignore', 'ignore', 'pipe'] });
-    let stderr = '';
-    child.stderr.on('data', (chunk) => {
-      stderr += chunk.toString();
-      if (stderr.length > 120000) {
-        stderr = stderr.slice(-120000);
-      }
-    });
-    child.on('error', reject);
-    child.on('close', (code, signal) => {
-      if (code === 0) {
-        resolve();
-      } else {
-        const exitReason = signal
-          ? `terminated by signal ${signal}`
-          : `exited with code ${code}`;
-        reject(new Error(`ffmpeg ${exitReason}: ${stderr.slice(-4000)}`));
-      }
-    });
-  });
+  return withProcessorFfmpegResources((threadOptions) => (
+    new Promise((resolve, reject) => {
+      const outputPath = args[args.length - 1];
+      const boundedArgs = [
+        ...args.slice(0, -1),
+        ...threadOptions.outputOptions,
+        outputPath,
+      ];
+      const child = spawn(binaryPath, boundedArgs, { stdio: ['ignore', 'ignore', 'pipe'] });
+      let stderr = '';
+      child.stderr.on('data', (chunk) => {
+        stderr += chunk.toString();
+        if (stderr.length > 120000) {
+          stderr = stderr.slice(-120000);
+        }
+      });
+      child.on('error', reject);
+      child.on('close', (code, signal) => {
+        if (code === 0) {
+          resolve();
+        } else {
+          const exitReason = signal
+            ? `terminated by signal ${signal}`
+            : `exited with code ${code}`;
+          reject(new Error(`ffmpeg ${exitReason}: ${stderr.slice(-4000)}`));
+        }
+      });
+    })
+  ), { decoderThreads: 1 });
 }
 
 async function buildSessionSpeechAudioReference(task, userId) {
@@ -881,6 +892,8 @@ async function buildSessionSpeechAudioReference(task, userId) {
 
   const args = [
     '-y',
+    '-threads',
+    '1',
     '-f',
     'lavfi',
     '-t',
@@ -889,7 +902,7 @@ async function buildSessionSpeechAudioReference(task, userId) {
     'anullsrc=r=44100:cl=stereo',
   ];
   ffmpegSegments.forEach((segment) => {
-    args.push('-i', segment.source);
+    args.push('-threads', '1', '-i', segment.source);
   });
 
   const filterParts = ffmpegSegments.map((segment, index) => {
@@ -1872,7 +1885,7 @@ export async function requestGenerateAvatarVideoFromHints(userId, payload = {}) 
     pricingUpfrontCredits,
     pricingBaseCreditsPerUnit,
   } = calculateAvatarVideoCreditCost(pricingDurationSeconds);
-  const shouldChargeCredits = process.env.CURRENT_ENV !== 'docker';
+  const shouldChargeCredits = !shouldBypassGenerationCredits();
   const creditResult = shouldChargeCredits
     ? await deductGenerationCredits(userId, creditsToCharge, {
       source: 'avatar_voiceover_video',

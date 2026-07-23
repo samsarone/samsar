@@ -35,7 +35,7 @@ router.post('/register', async (req, res) => {
     res.send(session);
   } catch (e) {
     console.error(e);
-    res.status(400).send({ error: e });
+    res.status(e?.statusCode || e?.status || 400).send({ error: e?.message || e });
   }
 });
 

@@ -6,6 +6,7 @@ import { getCanvasDimensionsForAspectRatio } from '../utils/CanvasUtils.js';
 import { getSessionFramesPerSecond } from '../utils/FpsUtils.js';
 import { resolveSubtitleFont } from '../consts/SubtitleFonts.js';
 import { transcribeWithOpenAI } from './transcripts/SpeechAlignment.js';
+import { isContainerRuntime } from '../utils/EnvironmentUtils.js';
 
 
 function getAlignerLanguageCode(languageCode = '') {
@@ -128,8 +129,8 @@ export async function generateTranscriptsForSessionAudioLayer(sessionId, audioLa
   const pwd = process.cwd();
   let audioFileBase = path.join(pwd, 'assets'); // Adjust according to your file structure
 
-  if (process.env.CURRENT_ENV === 'staging' || process.env.CURRENT_ENV === 'docker') {
-    audioFileBase = 'assets'; // Use a different base for staging or docker
+  if (process.env.SAMSAR_ASSETS_ROOT || isContainerRuntime()) {
+    audioFileBase = process.env.SAMSAR_ASSETS_ROOT || '/assets';
   }
 
   const audioLocalFilePath = `${audioFileBase}/${audioFilePath}`;

@@ -1,4 +1,5 @@
 import { getAuthCookiePolicy } from './authCookiePolicy.mjs';
+import { SAMSAR_DEPLOYMENT_EDITION } from './environment.jsx';
 
 const AUTH_TOKEN_KEY = 'authToken';
 const COOKIE_CONSENT_KEY = 'samsar_cookie_consent';
@@ -8,8 +9,9 @@ let inMemoryAuthToken = null;
 
 const getCurrentAuthCookiePolicy = () =>
   getAuthCookiePolicy(
-    import.meta.env.VITE_CURRENT_ENV,
+    SAMSAR_DEPLOYMENT_EDITION,
     typeof window !== 'undefined' ? window.location.hostname : '',
+    import.meta.env.VITE_AUTH_COOKIE_DOMAIN,
   );
 
 const getAuthCookie = () => {
@@ -49,8 +51,8 @@ function clearAuthCookies() {
   if (typeof document === 'undefined') return;
   const policy = getCurrentAuthCookiePolicy();
 
-  // Docker and development expire only their host-scoped cookie. Production
-  // also expires the shared Samsar cookie used for cross-subdomain login.
+  // Host-only deployments expire only their local cookie. Production can also
+  // expire an explicitly configured cookie shared across sibling subdomains.
   expireAuthCookie(policy.cookieName, null);
   if (policy.isSharedAcrossSubdomains) {
     expireAuthCookie(policy.cookieName, policy.domain);

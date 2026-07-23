@@ -23,6 +23,7 @@ import User from "../../schema/User.js";
 import axios from 'axios';
 import fs from 'fs';
 import path from 'path';
+import { isContainerRuntime } from '../../utils/EnvironmentUtils.js';
 import sharp from 'sharp';
 import { generateOutroCompositionAssetsFromImageList } from "../api/OutroImageGenerationAPI.js";
 import { getLanguageStringFromLanguageCode } from "../../consts/LanguageCodes.js";
@@ -936,7 +937,7 @@ async function requestQuickMovieGenerationInternal(userId, payload, {
   const themeJsonString = JSON.stringify(themeJson);
 
   const canvasDimensions = getCanvasDimensionsForAspectRatio(aspectRatio);
-  const assetsRoot = (process.env.CURRENT_ENV === 'staging' || process.env.CURRENT_ENV === 'docker')
+  const assetsRoot = (process.env.SAMSAR_ASSETS_V2_ROOT || isContainerRuntime())
     ? process.env.SAMSAR_ASSETS_V2_ROOT || '/assets_v2'
     : path.join(process.cwd(), 'assets_v2');
   const toPublicAssetPath = (filePath) => path.posix.join(

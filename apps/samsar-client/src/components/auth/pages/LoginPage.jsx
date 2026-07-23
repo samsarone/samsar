@@ -11,9 +11,9 @@ import {
   persistAuthRedirectForFlow,
   resolvePostAuthDestination,
 } from '../../../utils/authRedirect.js';
+import { IS_STANDALONE_DEPLOYMENT } from '../../../utils/environment.jsx';
 
 const PROCESSOR_SERVER = import.meta.env.VITE_PROCESSOR_API;
-const IS_DOCKER_INSTALL = import.meta.env.VITE_DOCKER_INSTALL === 'true';
 
 export default function LoginPage() {
   const { setUser } = useUser();
@@ -35,7 +35,7 @@ export default function LoginPage() {
   };
 
   const signInWithGoogle = () => {
-    if (IS_DOCKER_INSTALL) {
+    if (IS_STANDALONE_DEPLOYMENT) {
       return;
     }
 
@@ -67,8 +67,8 @@ export default function LoginPage() {
             setUser={setUser}
             closeAlertDialog={closeAlertDialog}
             getOrCreateUserSession={navigateAfterAuth}
-            showSignupButton={false}
-            showGoogleAuth={!IS_DOCKER_INSTALL}
+            showSignupButton={!IS_STANDALONE_DEPLOYMENT}
+            showGoogleAuth={!IS_STANDALONE_DEPLOYMENT}
             setCurrentLoginView={handleViewChange}
           />
         </div>

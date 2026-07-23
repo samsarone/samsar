@@ -6,9 +6,9 @@ import {
   fetchDeploymentProviderConfig,
   hasSubtitleGenerationProvider,
 } from "../utils/deploymentProviders.js";
+import { IS_STANDALONE_DEPLOYMENT } from "../utils/environment.jsx";
 
 const PROCESSOR_API_URL = import.meta.env.VITE_PROCESSOR_API || "";
-const IS_DOCKER_INSTALL = import.meta.env.VITE_DOCKER_INSTALL === "true";
 
 const EMPTY_AVAILABILITY = Object.freeze({
   textToVideoImageModelValues: [],
@@ -28,7 +28,7 @@ const availabilityCache = {
 };
 
 async function loadDeploymentModelAvailability() {
-  if (!IS_DOCKER_INSTALL) {
+  if (!IS_STANDALONE_DEPLOYMENT) {
     return EMPTY_AVAILABILITY;
   }
 
@@ -65,16 +65,16 @@ async function loadDeploymentModelAvailability() {
 
 export function useDeploymentModelAvailability() {
   const [availability, setAvailability] = useState(
-    IS_DOCKER_INSTALL
+    IS_STANDALONE_DEPLOYMENT
       ? availabilityCache.availability || EMPTY_AVAILABILITY
       : EMPTY_AVAILABILITY
   );
-  const [isLoading, setIsLoading] = useState(IS_DOCKER_INSTALL && !availabilityCache.availability);
+  const [isLoading, setIsLoading] = useState(IS_STANDALONE_DEPLOYMENT && !availabilityCache.availability);
 
   useEffect(() => {
     let isMounted = true;
 
-    setIsLoading(IS_DOCKER_INSTALL && !availabilityCache.availability);
+    setIsLoading(IS_STANDALONE_DEPLOYMENT && !availabilityCache.availability);
     loadDeploymentModelAvailability()
       .then((nextAvailability) => {
         if (isMounted) {
@@ -93,10 +93,10 @@ export function useDeploymentModelAvailability() {
   }, []);
 
   return {
-    isDockerInstall: IS_DOCKER_INSTALL,
+    isStandaloneDeployment: IS_STANDALONE_DEPLOYMENT,
     isLoading,
     ...availability,
-    hasSubtitleGenerationCredentials: !IS_DOCKER_INSTALL ||
+    hasSubtitleGenerationCredentials: !IS_STANDALONE_DEPLOYMENT ||
       availability.hasSubtitleGenerationCredentials === true,
   };
 }

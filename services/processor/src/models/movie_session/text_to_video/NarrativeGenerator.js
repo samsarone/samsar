@@ -262,9 +262,17 @@ export async function generateValidatedTextToVideoNarrative({
         const repairedNarrative = cloneNarrativeForSpeechRepair(generatedNarrative);
         try {
           for (const violation of violations) {
-            const { soundIndex, sceneIndex, promptMaxCharacters } = violation;
+            const {
+              soundIndex,
+              sceneIndex,
+              promptMaxCharacters,
+              validationMaxCharacters,
+            } = violation;
             const speechItem = repairedNarrative.sounds[soundIndex];
             const scene = repairedNarrative.scenes[sceneIndex];
+            const repairMaxCharacters = Number.isSafeInteger(validationMaxCharacters)
+              ? validationMaxCharacters
+              : promptMaxCharacters;
             const repairOptions = buildInferenceOptions({
               externalRequestContext,
               requestKey:
@@ -276,7 +284,7 @@ export async function generateValidatedTextToVideoNarrative({
               narrativeSystemPrompt,
               scene,
               speechItem,
-              maxCharacters: promptMaxCharacters,
+              maxCharacters: repairMaxCharacters,
               inferenceModel,
               options: {
                 ...repairOptions,
@@ -290,9 +298,10 @@ export async function generateValidatedTextToVideoNarrative({
             if (!replacementAudio) {
               throw new Error('Narrative speech repair returned empty audio.');
             }
-            if (Array.from(replacementAudio).length > promptMaxCharacters) {
+            if (Array.from(replacementAudio).length > repairMaxCharacters) {
               throw new Error(
-                `Narrative speech repair exceeded the ${promptMaxCharacters}-character limit.`,
+                `Narrative speech repair exceeded the ${repairMaxCharacters}-character ` +
+                  'validation limit.',
               );
             }
             repairedNarrative.sounds[soundIndex] = {

@@ -3,6 +3,7 @@
 import 'dotenv/config';
 import fs from 'fs';
 import sharp from 'sharp';
+import { isContainerRuntime } from '../utils/EnvironmentUtils.js';
 
 const decodeBase64Image = (dataString) => {
   const matches = dataString.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
@@ -58,7 +59,7 @@ const getAssetsV2Root = () => {
   if (configuredRoot) {
     return configuredRoot;
   }
-  if (process.env.CURRENT_ENV === 'staging' || process.env.CURRENT_ENV === 'docker') {
+  if (isContainerRuntime()) {
     return '/assets_v2';
   }
 

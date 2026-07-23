@@ -1,5 +1,6 @@
 import { SESClient, SendEmailCommand, SendRawEmailCommand } from '@aws-sdk/client-ses';
 import nodemailer from 'nodemailer';
+import { isStandaloneEdition } from '../utils/EnvironmentUtils.js';
 
 function normalizeString(value) {
   return typeof value === 'string' ? value.trim() : '';
@@ -24,10 +25,6 @@ function parseBoolean(value, fallback = false) {
 function parsePort(value, fallback) {
   const parsed = Number.parseInt(value, 10);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
-}
-
-function isDockerRuntime() {
-  return normalizeString(process.env.CURRENT_ENV).toLowerCase() === 'docker';
 }
 
 const EXPLICIT_MAIL_PROVIDER = normalizeProvider(
@@ -156,7 +153,7 @@ function getRawMessageBuffer(params = {}) {
 }
 
 export async function sendConfiguredEmail(params, description = 'email') {
-  if (MAIL_PROVIDER === 'none' || (isDockerRuntime() && !isMailExplicitlyConfigured())) {
+  if (MAIL_PROVIDER === 'none' || (isStandaloneEdition() && !isMailExplicitlyConfigured())) {
     return { skipped: true, reason: 'mail_not_configured', description };
   }
 
@@ -168,7 +165,7 @@ export async function sendConfiguredEmail(params, description = 'email') {
 }
 
 export async function sendConfiguredRawEmail(params, description = 'raw email') {
-  if (MAIL_PROVIDER === 'none' || (isDockerRuntime() && !isMailExplicitlyConfigured())) {
+  if (MAIL_PROVIDER === 'none' || (isStandaloneEdition() && !isMailExplicitlyConfigured())) {
     return { skipped: true, reason: 'mail_not_configured', description };
   }
 

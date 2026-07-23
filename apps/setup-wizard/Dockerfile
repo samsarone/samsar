@@ -2,8 +2,8 @@ FROM node:20 AS builder
 
 WORKDIR /app
 
-COPY package*.json ./
-RUN npm install
+COPY package.json package-lock.json ./
+RUN npm ci --include=optional --no-audit --no-fund
 
 COPY . .
 RUN npm run build
@@ -14,8 +14,8 @@ RUN apk add --no-cache bash docker-cli docker-cli-compose git
 
 WORKDIR /app
 
-COPY package*.json ./
-RUN npm install --omit=dev --ignore-scripts
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev --include=optional --ignore-scripts --no-audit --no-fund
 
 COPY --from=builder /app/dist ./dist
 COPY server.mjs ./server.mjs

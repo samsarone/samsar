@@ -10,6 +10,7 @@ import {
   assertExplicitDockerExternalMediaConfiguration,
   buildStableDockerMediaUrl,
 } from './DockerMediaDeliveryUrl.js';
+import { isDockerRuntime as isConfiguredDockerRuntime } from './Environment.js';
 
 /**
  * Reads AWS credentials and region from environment variables.
@@ -125,7 +126,7 @@ function isSecureAssetKey(key) {
 }
 
 function isDockerRuntime() {
-  return String(process.env.CURRENT_ENV || '').trim().toLowerCase() === 'docker';
+  return isConfiguredDockerRuntime();
 }
 
 function isExternalMediaPublishEnabled() {

@@ -2,6 +2,7 @@ import fs from 'fs';
 import path from 'path';
 
 import { createDeployedSamsarClient } from '../api/DeployedSamsarClient.js';
+import { isStandaloneEdition } from '../../utils/EnvironmentUtils.js';
 
 const DEFAULT_TIMEOUT_MS = 3 * 60 * 1000;
 
@@ -22,7 +23,7 @@ function getAudioContentType(audioFilePath) {
 }
 
 export function shouldUseSamsarTranscriptAlignment(env = process.env) {
-  return normalizeString(env?.CURRENT_ENV).toLowerCase() === 'docker' &&
+  return isStandaloneEdition(env) &&
     !normalizeString(env?.OPENAI_API_KEY) &&
     Boolean(normalizeString(env?.SAMSAR_API_KEY));
 }

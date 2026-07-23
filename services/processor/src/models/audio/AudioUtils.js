@@ -8,7 +8,8 @@ import { tmpdir } from 'os';
 import ffmpeg from 'fluent-ffmpeg';
 import { getAlignerServerBaseUrl } from '../../utils/AlignerServer.js';
 import { getFramesPerSecondFromValue } from '../../utils/FpsUtils.js';
-import { getCurrentEnvironment } from '../../utils/EnvironmentUtils.js';
+import { isContainerRuntime } from '../../utils/EnvironmentUtils.js';
+import { withProcessorFfmpegResources } from '../../utils/FfmpegResources.js';
 
 const AUDIO_UTIL_SERVER = getAlignerServerBaseUrl();
 const API_SERVER = process.env.API_SERVER;
@@ -17,7 +18,7 @@ const LOOP_MIN_FADE_SECONDS = 0.05;
 const ASSETS_V2_URL_PREFIX = 'assets_v2';
 
 function getAssetsBasePath() {
-  if (getCurrentEnvironment() === 'docker') {
+  if (isContainerRuntime()) {
     return process.env.SAMSAR_ASSETS_V2_ROOT || '/assets_v2';
   }
 
@@ -25,7 +26,7 @@ function getAssetsBasePath() {
 }
 
 function getLegacyAssetsBasePath() {
-  if (getCurrentEnvironment() === 'docker') {
+  if (isContainerRuntime()) {
     return process.env.SAMSAR_ASSETS_ROOT || '/assets';
   }
 
@@ -246,19 +247,25 @@ export async function createLoopedAudioTrackForDuration({
       outputOptions.push('-af', buildLoopBoundaryFadeFilter(loopSeconds, fadeSeconds));
     }
 
-    await new Promise((resolve, reject) => {
-      let command = ffmpeg().input(inputAudioPath);
+    await withProcessorFfmpegResources((threadOptions) => (
+      new Promise((resolve, reject) => {
+        const inputOptions = [...threadOptions.inputOptions];
+        if (loopsNeeded > 1) {
+          inputOptions.push('-stream_loop', String(loopsNeeded - 1));
+        }
 
-      if (loopsNeeded > 1) {
-        command = command.inputOptions(['-stream_loop', String(loopsNeeded - 1)]);
-      }
-
-      command
-        .outputOptions(outputOptions)
-        .save(outputFilePath)
-        .on('end', resolve)
-        .on('error', reject);
-    });
+        ffmpeg()
+          .input(inputAudioPath)
+          .inputOptions(inputOptions)
+          .outputOptions([
+            ...threadOptions.outputOptions,
+            ...outputOptions,
+          ])
+          .save(outputFilePath)
+          .on('end', resolve)
+          .on('error', reject);
+      })
+    ));
 
     return {
       outputFilePath,

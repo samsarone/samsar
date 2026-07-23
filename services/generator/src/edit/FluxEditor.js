@@ -5,6 +5,7 @@ import axios from 'axios';
 import { markVideoSessionLayerAsFailed } from '../VideoSession.js';
 import { IMAGE_EDIT_MODEL_TYPES } from "../constants.js";
 import { getAccessibleMediaUrlForProvider } from '../utils/MediaReferenceUtils.js';
+import { usesLocalAssetStorage } from '../utils/Environment.js';
 
 
 
@@ -230,7 +231,7 @@ async function saveRemoteFile(remoteImageUrl) {
     const pwd = process.cwd();
     let savePath = path.join(pwd, '..', 'samsar_processor', 'assets', 'generations', imageName);
 
-    if (process.env.CURRENT_ENV === 'staging' || process.env.CURRENT_ENV === 'docker') {
+    if (usesLocalAssetStorage()) {
       savePath = path.join(process.env.SAMSAR_ASSETS_ROOT || '/assets', 'generations', imageName);
     }
     

@@ -12,6 +12,7 @@ import TextareaAutosize from 'react-textarea-autosize';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { Tooltip } from 'react-tooltip';
 import { resolveVidgenieLoadedProjectView } from './vidgenieProjectViewState.mjs';
+import { createVidgenieDownloadFilename } from './vidgenieDownloadFilename.mjs';
 import {
   FaChevronCircleDown,
   FaChevronDown,
@@ -67,7 +68,7 @@ import {
 } from '../../constants/pricing/ExpressVideoPricingDistribution.js';
 import { SUPPORTED_LANGUAGES, resolveLanguageCode } from '../../constants/supportedLanguages.js';
 import { getHeaders } from '../../utils/web.jsx';
-import { getSessionType } from '../../utils/environment.jsx';
+import { IS_STANDALONE_DEPLOYMENT } from '../../utils/environment.jsx';
 import {
   DEFAULT_VIDGENIE_SUBTITLES_ENABLED,
   VIDGENIE_SUBTITLE_PREFERENCE_VERSION,
@@ -101,8 +102,6 @@ import { useInferenceModelAvailability } from '../../hooks/useInferenceModelAvai
 import 'react-tooltip/dist/react-tooltip.css';
 import 'react-toastify/dist/ReactToastify.css';
 import './mobileStyles.css';
-
-const IS_DOCKER_INSTALL = import.meta.env.VITE_DOCKER_INSTALL === 'true';
 
 const LazyAceEditor = lazy(async () => {
   const [aceModule, reactAceModule] = await Promise.all([
@@ -2011,15 +2010,15 @@ function validateCommonJsonInput(input, inferenceModelOptions = INFERENCE_MODEL_
   return null;
 }
 
-function isModelAllowedByDeployment(modelKey, modelValues = [], isDockerInstall = false) {
-  if (!isDockerInstall) return true;
+function isModelAllowedByDeployment(modelKey, modelValues = [], isStandaloneDeployment = false) {
+  if (!isStandaloneDeployment) return true;
   const allowedModels = new Set(modelValues.map(normalizeDeploymentModelValue).filter(Boolean));
   return allowedModels.has(normalizeDeploymentModelValue(modelKey));
 }
 
 function getConfiguredModelError(fieldName, modelValues = []) {
   const allowedModels = formatAllowedJsonValues(modelValues);
-  return `JSON input.${fieldName} must be one of the configured Docker models: ${allowedModels || 'none'}.`;
+  return `JSON input.${fieldName} must be one of the configured standalone models: ${allowedModels || 'none'}.`;
 }
 
 function validateStageImageModel(
@@ -2028,7 +2027,7 @@ function validateStageImageModel(
     stageName,
     allowedModelKeys,
     deploymentModelValues,
-    isDockerInstall,
+    isStandaloneDeployment,
     required = true,
   }
 ) {
@@ -2041,7 +2040,7 @@ function validateStageImageModel(
   if (!imageModel || !allowedModelKeys.includes(resolvedImageModel)) {
     return `JSON input.image_model must be one of: ${formatAllowedJsonValues(allowedModelKeys)}.`;
   }
-  if (!isModelAllowedByDeployment(resolvedImageModel, deploymentModelValues, isDockerInstall)) {
+  if (!isModelAllowedByDeployment(resolvedImageModel, deploymentModelValues, isStandaloneDeployment)) {
     return getConfiguredModelError('image_model', deploymentModelValues);
   }
   if (imageModel.isExpressModel !== true) {
@@ -2061,7 +2060,7 @@ function validateTextToVideoJsonInput(
 ) {
   const commonError = validateCommonJsonInput(input, inferenceModelOptions);
   if (commonError) return commonError;
-  const isDockerInstall = deploymentModelAvailability?.isDockerInstall === true;
+  const isStandaloneDeployment = deploymentModelAvailability?.isStandaloneDeployment === true;
   const textToVideoImageModelValues = deploymentModelAvailability?.textToVideoImageModelValues || [];
   const textToVideoVideoModelValues = deploymentModelAvailability?.textToVideoVideoModelValues || [];
 
@@ -2077,7 +2076,7 @@ function validateTextToVideoJsonInput(
     stageName: 'text_to_video',
     allowedModelKeys: TEXT_TO_VIDEO_IMAGE_MODEL_KEYS,
     deploymentModelValues: textToVideoImageModelValues,
-    isDockerInstall,
+    isStandaloneDeployment,
   });
   if (imageModelError) return imageModelError;
 
@@ -2090,7 +2089,7 @@ function validateTextToVideoJsonInput(
   if (!videoModel || !TEXT_TO_VIDEO_VIDEO_MODEL_KEYS.includes(videoModelKey)) {
     return `JSON input.video_model must be one of: ${formatAllowedJsonValues(TEXT_TO_VIDEO_VIDEO_MODEL_KEYS)}.`;
   }
-  if (!isModelAllowedByDeployment(videoModelKey, textToVideoVideoModelValues, isDockerInstall)) {
+  if (!isModelAllowedByDeployment(videoModelKey, textToVideoVideoModelValues, isStandaloneDeployment)) {
     return getConfiguredModelError('video_model', textToVideoVideoModelValues);
   }
   if (videoModel.isExpressModel !== true) {
@@ -2126,7 +2125,7 @@ function validateImageListToVideoJsonInput(
 ) {
   const commonError = validateCommonJsonInput(input, inferenceModelOptions);
   if (commonError) return commonError;
-  const isDockerInstall = deploymentModelAvailability?.isDockerInstall === true;
+  const isStandaloneDeployment = deploymentModelAvailability?.isStandaloneDeployment === true;
   const imageListToVideoImageModelValues = deploymentModelAvailability?.imageListToVideoImageModelValues || [];
   const imageListToVideoVideoModelValues = deploymentModelAvailability?.imageListToVideoVideoModelValues || [];
 
@@ -2134,7 +2133,7 @@ function validateImageListToVideoJsonInput(
     stageName: 'image_list_to_video',
     allowedModelKeys: IMAGE_LIST_TO_VIDEO_IMAGE_MODEL_KEYS,
     deploymentModelValues: imageListToVideoImageModelValues,
-    isDockerInstall,
+    isStandaloneDeployment,
     required: false,
   });
   if (imageModelError) return imageModelError;
@@ -2165,7 +2164,7 @@ function validateImageListToVideoJsonInput(
     if (!videoModel || !IMAGE_LIST_TO_VIDEO_VIDEO_MODEL_KEYS.includes(videoModelKey)) {
       return `JSON input.video_model must be one of: ${formatAllowedJsonValues(IMAGE_LIST_TO_VIDEO_VIDEO_MODEL_KEYS)}.`;
     }
-    if (!isModelAllowedByDeployment(videoModelKey, imageListToVideoVideoModelValues, isDockerInstall)) {
+    if (!isModelAllowedByDeployment(videoModelKey, imageListToVideoVideoModelValues, isStandaloneDeployment)) {
       return getConfiguredModelError('video_model', imageListToVideoVideoModelValues);
     }
     if (!videoModelSupportsAspectRatio(videoModelKey, input.aspect_ratio || '16:9')) {
@@ -2786,7 +2785,7 @@ function isSessionGenerationPending(data, forcePending = false) {
   return Boolean(forcePending || backendPending);
 }
 
-function buildDockerAnonymousSessionDetailsFromStatus(data) {
+function buildStandaloneAnonymousSessionDetailsFromStatus(data) {
   if (!isPlainObject(data)) {
     return data;
   }
@@ -2939,7 +2938,7 @@ export default function OneshotEditor() {
 
   const lastWakePoll = useRef(Date.now());
 
-  const currentEnv = getSessionType();
+  const isStandaloneDeployment = IS_STANDALONE_DEPLOYMENT;
 
   const voiceSessionStartRef = useRef(null);
   const voiceSessionTimeoutRef = useRef(null);
@@ -3692,13 +3691,13 @@ export default function OneshotEditor() {
     )
   );
   const {
-    isDockerInstall: isDockerInferenceModelFilteringEnabled,
+    isStandaloneDeployment: isStandaloneInferenceModelFilteringEnabled,
     isLoading: isInferenceModelAvailabilityLoading,
     inferenceModelOptions,
     hasConfiguredInferenceModels,
   } = useInferenceModelAvailability();
   const {
-    isDockerInstall: isDockerModelFilteringEnabled,
+    isStandaloneDeployment: isStandaloneModelFilteringEnabled,
     isLoading: isDeploymentModelAvailabilityLoading,
     hasSubtitleGenerationCredentials,
     textToVideoImageModelValues,
@@ -3707,7 +3706,7 @@ export default function OneshotEditor() {
     imageListToVideoVideoModelValues,
   } = useDeploymentModelAvailability();
   const canGenerateSubtitles =
-    !isDockerModelFilteringEnabled || hasSubtitleGenerationCredentials;
+    !isStandaloneModelFilteringEnabled || hasSubtitleGenerationCredentials;
   const subtitleGenerationEnabled = canGenerateSubtitles && enableSubtitles;
 
   useEffect(() => {
@@ -3720,7 +3719,7 @@ export default function OneshotEditor() {
     }
   }, [canGenerateSubtitles, isDeploymentModelAvailabilityLoading]);
   const deploymentModelAvailability = useMemo(() => ({
-    isDockerInstall: isDockerModelFilteringEnabled,
+    isStandaloneDeployment: isStandaloneModelFilteringEnabled,
     textToVideoImageModelValues,
     textToVideoVideoModelValues,
     imageListToVideoImageModelValues,
@@ -3728,12 +3727,12 @@ export default function OneshotEditor() {
   }), [
     imageListToVideoImageModelValues,
     imageListToVideoVideoModelValues,
-    isDockerModelFilteringEnabled,
+    isStandaloneModelFilteringEnabled,
     textToVideoImageModelValues,
     textToVideoVideoModelValues,
   ]);
-  const isDockerInferenceUnavailable =
-    isDockerInferenceModelFilteringEnabled &&
+  const isStandaloneInferenceUnavailable =
+    isStandaloneInferenceModelFilteringEnabled &&
     (isInferenceModelAvailabilityLoading || !hasConfiguredInferenceModels);
   const [selectedCustomAdapterEndpointId, setSelectedCustomAdapterEndpointId] = useState(
     () => readVidgeniePreferences().customAdapterEndpointId || ''
@@ -3858,11 +3857,11 @@ export default function OneshotEditor() {
         };
       })
       .filter(Boolean);
-    return isDockerModelFilteringEnabled
+    return isStandaloneModelFilteringEnabled
       ? filterOptionsForDeploymentModelValues(orderedModels, stageDeploymentImageModelValues)
       : orderedModels;
   }, [
-    isDockerModelFilteringEnabled,
+    isStandaloneModelFilteringEnabled,
     selectedAspectRatioOption.value,
     stageDeploymentImageModelValues,
   ]);
@@ -3942,11 +3941,11 @@ export default function OneshotEditor() {
         };
       })
       .filter(Boolean);
-    return isDockerModelFilteringEnabled
+    return isStandaloneModelFilteringEnabled
       ? filterOptionsForDeploymentModelValues(orderedModels, textToVideoVideoModelValues)
       : orderedModels;
   }, [
-    isDockerModelFilteringEnabled,
+    isStandaloneModelFilteringEnabled,
     selectedAspectRatioOption.value,
     textToVideoVideoModelValues,
   ]);
@@ -3973,12 +3972,12 @@ export default function OneshotEditor() {
         };
       })
       .filter(Boolean);
-    return isDockerModelFilteringEnabled
+    return isStandaloneModelFilteringEnabled
       ? filterOptionsForDeploymentModelValues(orderedModels, imageListToVideoVideoModelValues)
       : orderedModels;
   }, [
     imageListToVideoVideoModelValues,
-    isDockerModelFilteringEnabled,
+    isStandaloneModelFilteringEnabled,
     selectedAspectRatioOption.value,
   ]);
 
@@ -4135,7 +4134,7 @@ export default function OneshotEditor() {
   //  Credits / disable form
   // ─────────────────────────────────────────────────────────
   const isGuestPreview = !user?._id;
-  const isDisabled = isGuestPreview || (user.generationCredits < 300 && currentEnv !== 'docker');
+  const isDisabled = isGuestPreview || (user.generationCredits < 300 && !isStandaloneDeployment);
 
   // ─────────────────────────────────────────────────────────
   //  CLEAN-UP ALL POLLS WHEN COMPONENT UNMOUNTS
@@ -4205,6 +4204,7 @@ export default function OneshotEditor() {
   async function handleDownloadVideo() {
     const fallbackUrl = normalizeVideoUrl(videoLink);
     let downloadUrl = fallbackUrl;
+    const downloadFilename = createVidgenieDownloadFilename();
 
     try {
       setIsDownloadingVideo(true);
@@ -4222,7 +4222,7 @@ export default function OneshotEditor() {
       }));
       const link = document.createElement('a');
       link.href = blobUrl;
-      link.setAttribute('download', `Rendition_${dateNowStr}.mp4`);
+      link.setAttribute('download', downloadFilename);
       document.body.appendChild(link);
       link.click();
       link.remove();
@@ -4231,7 +4231,7 @@ export default function OneshotEditor() {
       if (downloadUrl) {
         const link = document.createElement('a');
         link.href = downloadUrl;
-        link.setAttribute('download', `Rendition_${dateNowStr}.mp4`);
+        link.setAttribute('download', downloadFilename);
         document.body.appendChild(link);
         link.click();
         link.remove();
@@ -5069,9 +5069,9 @@ export default function OneshotEditor() {
     try {
       setSessionLoadFailed(false);
       setSessionLoadError('');
-      const canUseAnonymousDockerStatus = currentEnv === 'docker';
+      const canUseAnonymousStandaloneStatus = isStandaloneDeployment;
       let headers = user?._id ? getHeaders() : null;
-      if (!headers && !canUseAnonymousDockerStatus && user?._id) {
+      if (!headers && !canUseAnonymousStandaloneStatus && user?._id) {
         await getUserAPI();
         headers = getHeaders();
       }
@@ -5106,7 +5106,7 @@ export default function OneshotEditor() {
           if (!sessionResponse) {
             try {
               const statusData = await fetchDetailedGenerationStatus(id, headers);
-              const fallbackSession = buildDockerAnonymousSessionDetailsFromStatus(statusData);
+              const fallbackSession = buildStandaloneAnonymousSessionDetailsFromStatus(statusData);
               if (isPlainObject(fallbackSession) && (
                 isPlainObject(fallbackSession.session) ||
                 Array.isArray(fallbackSession.layers) ||
@@ -5123,13 +5123,13 @@ export default function OneshotEditor() {
           }
         }
         data = data || sessionResponse?.data;
-      } else if (canUseAnonymousDockerStatus) {
+      } else if (canUseAnonymousStandaloneStatus) {
         const statusData = await fetchDetailedGenerationStatus(id);
         if (statusData?.expressGenerationStatus) {
           setExpressGenerationStatus(statusData.expressGenerationStatus);
         }
         setGenerationStatusDetails(statusData);
-        data = buildDockerAnonymousSessionDetailsFromStatus(statusData);
+        data = buildStandaloneAnonymousSessionDetailsFromStatus(statusData);
       } else {
         const sessionResponse = await axios.get(
           `${API_SERVER}/video_sessions/session_details?id=${encodeURIComponent(id)}&cacheBust=${Date.now()}`
@@ -5300,13 +5300,13 @@ export default function OneshotEditor() {
   };
 
   useEffect(() => {
-    if (currentEnv !== 'docker' || !id) {
+    if (!isStandaloneDeployment || !id) {
       return undefined;
     }
 
     let didCancel = false;
 
-    const hydrateDockerAnonymousPreview = async () => {
+    const hydrateStandaloneAnonymousPreview = async () => {
       try {
         const statusData = await fetchDetailedGenerationStatus(id);
         if (didCancel) {
@@ -5318,7 +5318,7 @@ export default function OneshotEditor() {
         }
         setGenerationStatusDetails(statusData);
 
-        const data = buildDockerAnonymousSessionDetailsFromStatus(statusData);
+        const data = buildStandaloneAnonymousSessionDetailsFromStatus(statusData);
         setSessionDetails(data);
 
         const latestVideoUrl = getNormalizedLatestVideoUrl(data);
@@ -5351,16 +5351,16 @@ export default function OneshotEditor() {
           setShowResultDisplay(true);
         }
       } catch {
-        // Docker anonymous preview is best-effort; the basic status poll still drives progress text.
+        // Standalone anonymous preview is best-effort; the basic status poll still drives progress text.
       }
     };
 
-    hydrateDockerAnonymousPreview();
+    hydrateStandaloneAnonymousPreview();
 
     return () => {
       didCancel = true;
     };
-  }, [currentEnv, id]);
+  }, [id, isStandaloneDeployment]);
 
   async function refreshLatestVideoLink() {
     const latestSessionDetails = await getSessionDetails();
@@ -5579,8 +5579,8 @@ export default function OneshotEditor() {
     }
 
     if (isJsonMode) {
-      if (isDockerModelFilteringEnabled && isDeploymentModelAvailabilityLoading) {
-        setJsonValidationMessage('Docker model availability is still loading.');
+      if (isStandaloneModelFilteringEnabled && isDeploymentModelAvailabilityLoading) {
+        setJsonValidationMessage('Standalone model availability is still loading.');
         setErrorMessage(null);
         setShowResultDisplay(false);
         return;
@@ -5676,8 +5676,8 @@ export default function OneshotEditor() {
       setErrorMessage({ error: 'Image URLs must be valid http(s) URLs.' });
       return;
     }
-    if (isDockerModelFilteringEnabled && isDeploymentModelAvailabilityLoading) {
-      setErrorMessage({ error: 'Docker model availability is still loading.' });
+    if (isStandaloneModelFilteringEnabled && isDeploymentModelAvailabilityLoading) {
+      setErrorMessage({ error: 'Standalone model availability is still loading.' });
       return;
     }
     if (
@@ -6245,7 +6245,7 @@ export default function OneshotEditor() {
         className={`flex items-center gap-1 font-medium text-sm cursor-pointer select-none ${colorMode === 'dark' ? 'text-neutral-100' : 'text-slate-700'}`}
         onClick={togglePricingDetailsDisplay}
       >
-        {isJsonMode || currentEnv === 'docker' || hasSelectedCustomAdapters ? (
+        {isJsonMode || isStandaloneDeployment || hasSelectedCustomAdapters ? (
           <div>{t("vidgenie.pricingApiCharge")}</div>
         ) : (
           <div className="inline-flex items-center">
@@ -6258,7 +6258,7 @@ export default function OneshotEditor() {
       </div>
       {pricingDetailsDisplay && (
         <div className={`mt-2 text-sm text-left ${mutedText} transition-opacity duration-300`}>
-          {isJsonMode || currentEnv === 'docker' || hasSelectedCustomAdapters ? (
+          {isJsonMode || isStandaloneDeployment || hasSelectedCustomAdapters ? (
             <div>{t("vidgenie.pricingApiCharge")}</div>
           ) : (
             <>
@@ -6441,8 +6441,8 @@ export default function OneshotEditor() {
     isFormDisabled ||
     isSubmitting ||
     Boolean(jsonEditorErrorMessage) ||
-    isDockerInferenceUnavailable;
-  const dockerInferenceUnavailableMessage = isDockerInferenceModelFilteringEnabled
+    isStandaloneInferenceUnavailable;
+  const standaloneInferenceUnavailableMessage = isStandaloneInferenceModelFilteringEnabled
     ? isInferenceModelAvailabilityLoading
       ? 'Loading configured inference models...'
       : hasConfiguredInferenceModels
@@ -6501,7 +6501,7 @@ export default function OneshotEditor() {
         >
           View&nbsp;in&nbsp;Studio
         </PrimaryPublicButton>
-        {!IS_DOCKER_INSTALL && (
+        {!IS_STANDALONE_DEPLOYMENT && (
           <PrimaryPublicButton
             extraClasses="w-full sm:w-auto px-4 py-2 rounded-xl shadow-sm hover:shadow-md transition active:scale-[0.98]"
             onClick={
@@ -7035,7 +7035,6 @@ export default function OneshotEditor() {
   const jsonModeButtonLabel = isJsonMode
     ? t("vidgenie.wizardMode", {}, "Wizard mode")
     : t("vidgenie.jsonMode", {}, "JSON mode");
-  const dateNowStr = new Date().toISOString().replace(/[:.]/g, '-');
   const toggleShell =
     colorMode === 'dark'
       ? 'bg-[#0b1226] ring-1 ring-white/10'
@@ -7123,13 +7122,13 @@ export default function OneshotEditor() {
             {isSubmitting ? t("vidgenie.submitting") : t("vidgenie.submit")}
           </PrimaryPublicButton>
         </div>
-        {dockerInferenceUnavailableMessage ? (
+        {standaloneInferenceUnavailableMessage ? (
           <div className={`mt-3 rounded-lg border px-3 py-2 text-sm font-medium ${
             colorMode === 'dark'
               ? 'border-amber-300/20 bg-amber-300/10 text-amber-100'
               : 'border-amber-300 bg-amber-50 text-amber-800'
           }`}>
-            {dockerInferenceUnavailableMessage}
+            {standaloneInferenceUnavailableMessage}
           </div>
         ) : null}
       </>
@@ -7722,7 +7721,7 @@ export default function OneshotEditor() {
                   onChange={(event) =>
                     setSelectedInferenceModel(getInferenceModelOption(event.target.value, DEFAULT_INFERENCE_MODEL, inferenceModelOptions))
                   }
-                  disabled={isFormDisabled || isDockerInferenceUnavailable}
+                  disabled={isFormDisabled || isStandaloneInferenceUnavailable}
                   className={advancedInputClasses}
                 >
                   {inferenceModelOptions.map((option) => (
@@ -7731,13 +7730,13 @@ export default function OneshotEditor() {
                     </option>
                   ))}
                 </select>
-                {isDockerInferenceModelFilteringEnabled ? (
+                {isStandaloneInferenceModelFilteringEnabled ? (
                   <p className={`mt-1 text-[11px] ${mutedText}`}>
                     {isInferenceModelAvailabilityLoading
                       ? 'Loading configured model options...'
                       : hasConfiguredInferenceModels
-                        ? 'Only models supported by your configured Docker providers are shown.'
-                        : 'No inference model is configured for this Docker installation.'}
+                        ? 'Only models supported by your configured standalone providers are shown.'
+                        : 'No inference model is configured for this standalone installation.'}
                   </p>
                 ) : null}
               </div>

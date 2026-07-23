@@ -29,19 +29,19 @@ export default function PromptViewer(props) {
   const [selectedImageStyle, setSelectedImageStyle] = useState(null);
   const { colorMode } = useColorMode();
   const {
-    isDockerInstall: isDockerModelFilteringEnabled,
+    isStandaloneDeployment: isStandaloneModelFilteringEnabled,
     imageModelValues,
   } = useDeploymentModelAvailability();
   const availableImageModels = useMemo(
     () => {
-      const deploymentModels = isDockerModelFilteringEnabled
+      const deploymentModels = isStandaloneModelFilteringEnabled
         ? filterOptionsForDeploymentModelValues(IMAGE_GENERAITON_MODEL_TYPES, imageModelValues, (model) => model.key)
         : IMAGE_GENERAITON_MODEL_TYPES;
       return deploymentModels.filter((model) =>
         imageGenerationModelSupportsAspectRatio(model, aspectRatio)
       );
     },
-    [aspectRatio, imageModelValues, isDockerModelFilteringEnabled]
+    [aspectRatio, imageModelValues, isStandaloneModelFilteringEnabled]
   );
 
   // ─────────────────────────────────────────────────────────

@@ -9,7 +9,7 @@ import { useLocation } from "react-router-dom";
 import { useColorMode } from "../../contexts/ColorMode.jsx";
 import { useUser } from "../../contexts/UserContext.jsx";
 import { getHeaders } from "../../utils/web.jsx";
-import { getSessionType } from "../../utils/environment.jsx";
+import { IS_STANDALONE_DEPLOYMENT } from "../../utils/environment.jsx";
 import {
   extractDeploymentProviders,
   fetchDeploymentProviderConfig,
@@ -44,7 +44,7 @@ export default function BillingPanelContent() {
   const { colorMode } = useColorMode();
   const { user, getUserAPI } = useUser();
   const location = useLocation();
-  const isDockerInstall = getSessionType() === "docker";
+  const isStandaloneDeployment = IS_STANDALONE_DEPLOYMENT;
 
   const isDark = colorMode === "dark";
   const textColor = isDark ? "text-slate-100" : "text-slate-900";
@@ -87,7 +87,7 @@ export default function BillingPanelContent() {
   }, [location.search, getUserAPI]);
 
   useEffect(() => {
-    if (!isDockerInstall) return;
+    if (!isStandaloneDeployment) return;
 
     let isCancelled = false;
     setIsLoadingDeploymentProviders(true);
@@ -111,7 +111,7 @@ export default function BillingPanelContent() {
     return () => {
       isCancelled = true;
     };
-  }, [isDockerInstall]);
+  }, [isStandaloneDeployment]);
 
   const purchaseAmountUsd = useMemo(
     () => normalizeWholeDollarAmount(creditPurchaseUsd),
@@ -140,7 +140,7 @@ export default function BillingPanelContent() {
     return !(isMobileUA || isIPadOS);
   }, []);
 
-  if (isDockerInstall) {
+  if (isStandaloneDeployment) {
     return (
       <div className={`mx-auto flex w-full min-w-0 max-w-4xl flex-col gap-4 overflow-x-hidden sm:gap-5 ${textColor}`}>
         <div className="flex w-full min-w-0 flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
@@ -158,7 +158,7 @@ export default function BillingPanelContent() {
             <div className="min-w-0">
               <h3 className="text-xl font-semibold">Credits are charged provider side</h3>
               <p className={`mt-2 text-sm ${subtleText}`}>
-                Samsar does not manage a total credit balance for this Docker installation.
+                Samsar does not manage a total credit balance for this standalone installation.
                 Charges are handled by the configured provider instances.
               </p>
             </div>

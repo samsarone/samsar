@@ -3,9 +3,19 @@
 
 import ffmpeg from 'fluent-ffmpeg';
 import { promisify } from 'util';
+import {
+  buildFfmpegThreadOptions,
+  resolveExpressVideoFfmpegThreads,
+} from '../utils/FfmpegResources.js';
 
-
-
+export function getAudioPaddingFfmpegThreadOptions(
+  ffmpegThreads = resolveExpressVideoFfmpegThreads(),
+) {
+  return buildFfmpegThreadOptions({
+    threads: ffmpegThreads,
+    inputThreads: 1,
+  });
+}
 
 export async function padBlankAudioAtBeginningAndEnd(
   inputAudioPath,
@@ -43,16 +53,26 @@ export async function padBlankAudioAtBeginningAndEnd(
   const adelayFilter = `adelay=${delayMs}|${delayMs}`;
   const apadFilter = `apad=pad_dur=${endPad}`;
   const trimFilter = `atrim=duration=${targetDuration}`;
+  const {
+    inputOptions,
+    filterOptions,
+    outputOptions,
+  } = getAudioPaddingFfmpegThreadOptions();
 
   // 4) Run ffmpeg to generate a new file with padded audio
   return new Promise((resolve, reject) => {
     ffmpeg()
       .input(inputAudioPath)
+      .inputOptions(inputOptions)
       .audioFilters([adelayFilter, apadFilter, trimFilter, 'asetpts=PTS-STARTPTS'])
       .audioCodec('pcm_s16le')
       .audioFrequency(48000)
       .format('wav')
       .duration(targetDuration)
+      .outputOptions([
+        ...filterOptions,
+        ...outputOptions,
+      ])
       .on('error', reject)
       .on('end', () => {
         resolve(outputAudioPath);

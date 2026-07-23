@@ -6,7 +6,7 @@ import { getDBConnectionString } from '../DBString.js';
 import ImageGeneration from '../schema/ImageGeneration.js';
 import { getGoogleAccessToken, getGoogleCloudConfig } from '../inference/GoogleADC.js';
 import { resolveLocalMediaReferencePath } from '../utils/MediaReferenceUtils.js';
-import { getCurrentEnvironment } from '../utils/Environment.js';
+import { getCurrentEnvironment, getDeploymentEdition } from '../utils/Environment.js';
 
 const DEFAULT_NANOBANANA_2_MODEL = 'gemini-3.1-flash-image';
 const DEFAULT_NANOBANANA_PRO_MODEL = 'gemini-3-pro-image-preview';
@@ -91,7 +91,7 @@ export function shouldUseGoogleNativeNanoBanana(payloadOrModel) {
   const providerStatus = payload?.apiGenerationStatus || 'INIT';
   if (
     model === 'NANOBANANAPRO' &&
-    normalizeString(process.env.CURRENT_ENV).toLowerCase() === 'production' &&
+    getDeploymentEdition() === 'production' &&
     normalizeString(process.env.FAL_API_KEY) &&
     providerStatus === 'INIT'
   ) {

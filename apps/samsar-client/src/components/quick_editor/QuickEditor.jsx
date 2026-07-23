@@ -124,7 +124,7 @@ export default function QuickEditor() {
   );
   const { audioAvailability } = useAudioProviderAvailability();
   const {
-    isDockerInstall: isDockerModelFilteringEnabled,
+    isStandaloneDeployment: isStandaloneModelFilteringEnabled,
     textToVideoImageModelValues,
   } = useDeploymentModelAvailability();
   const deploymentSpeakerTypes = useMemo(
@@ -329,7 +329,7 @@ export default function QuickEditor() {
 
   // For infinite-zoom we only want certain models in the Image dropdown:
   const imageModelOptions = useMemo(() => {
-    const deploymentModels = isDockerModelFilteringEnabled
+    const deploymentModels = isStandaloneModelFilteringEnabled
       ? filterOptionsForDeploymentModelValues(
           IMAGE_GENERAITON_MODEL_TYPES,
           textToVideoImageModelValues,
@@ -352,7 +352,7 @@ export default function QuickEditor() {
           label: model.name,
         }));
     }
-  }, [isDockerModelFilteringEnabled, textToVideoImageModelValues, videoType]);
+  }, [isStandaloneModelFilteringEnabled, textToVideoImageModelValues, videoType]);
 
   const [selectedImageModel, setSelectedImageModel] = useState(() => {
     const defaultModel = localStorage.getItem('defaultModel');

@@ -38,6 +38,7 @@ import {
   DEFAULT_INFERENCE_MODEL,
   normalizeInferenceModel,
 } from '../consts/InferenceModels.js';
+import { isSetupAdminBootstrapEnabled } from '../utils/EnvironmentUtils.js';
 
 export const DEFAULT_TEXT_MODEL = DEFAULT_INFERENCE_MODEL;
 export const API_KEY_USAGE_LIMIT_PERIODS = Object.freeze({
@@ -1693,8 +1694,8 @@ function buildUsernameFromAdminEmail(email) {
 }
 
 export async function bootstrapDockerAdminUser(payload = {}) {
-  if (process.env.CURRENT_ENV !== 'docker') {
-    throw new Error('Docker admin bootstrap is only available in Docker deployments.');
+  if (!isSetupAdminBootstrapEnabled()) {
+    throw new Error('Admin bootstrap is only available in standalone deployments.');
   }
 
   const email = normalizeDockerAdminEmail(payload.email);

@@ -22,7 +22,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
   && rm -rf /var/lib/apt/lists/*
 
 COPY ${SERVICE_PATH}/ ./
-RUN if [ -f package-lock.json ]; then npm ci --omit=dev; else npm install --omit=dev; fi
+RUN test -f package-lock.json \
+  || (echo "Missing ${SERVICE_PATH}/package-lock.json. Commit the service lockfile before building." >&2; exit 1)
+RUN npm ci --omit=dev --include=optional --no-audit --no-fund
 
-ENV NODE_ENV=production
+ENV NODE_ENV=production \
+    FFMPEG_PATH=/usr/bin/ffmpeg \
+    FFPROBE_PATH=/usr/bin/ffprobe
 CMD ["node", "index.js"]

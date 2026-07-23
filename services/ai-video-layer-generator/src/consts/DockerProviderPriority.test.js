@@ -15,6 +15,8 @@ import {
 
 const ENV_KEYS = [
   'CURRENT_ENV',
+  'SAMSAR_DEPLOYMENT_EDITION',
+  'SAMSAR_RUNTIME',
   'SAMSAR_DOCKER_ADAPTER_ROUTING_ENABLED',
   'SAMSAR_AVAILABLE_MODELS_PATH',
   'ALIBABA_API_KEY',
@@ -73,6 +75,19 @@ test('Happy Horse resolves each configured Docker fallback in order', () => {
 
   delete process.env.FAL_API_KEY;
   assert.equal(resolveDockerVideoProvider('HAPPYHORSEI2V'), DOCKER_VIDEO_PROVIDER.SAMSAR);
+});
+
+test('production Docker keeps hosted production provider routing', () => {
+  clearEnv();
+  process.env.CURRENT_ENV = 'production';
+  process.env.SAMSAR_DEPLOYMENT_EDITION = 'production';
+  process.env.SAMSAR_RUNTIME = 'docker';
+  process.env.ALIBABA_API_KEY = 'alibaba-key';
+  process.env.FAL_API_KEY = 'fal-key';
+  process.env.SAMSAR_API_KEY = 'samsar-key';
+
+  assert.equal(resolveDockerVideoProvider('HAPPYHORSEI2V'), '');
+  assert.deepEqual(getConfiguredDockerVideoProviders('HAPPYHORSEI2V'), []);
 });
 
 test('Docker routing honors a saved primary and finds the next configured adapter', (t) => {

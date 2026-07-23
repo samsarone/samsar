@@ -7,6 +7,7 @@ import {
   buildElevenLabsMusicInput,
   ELEVENLABS_MUSIC_DEFAULT_OUTPUT_FORMAT,
 } from "./ElevenLabsMusicPayload.js";
+import { isStandaloneEdition } from '../util/environmentUtils.js';
 
 export {
   buildElevenLabsMusicInput,
@@ -29,10 +30,6 @@ function normalizeString(value) {
 
 function getElevenLabsApiKey() {
   return normalizeString(process.env.ELEVENLABS_API_TOKEN) || normalizeString(process.env.ELEVENLABS_API_KEY);
-}
-
-function isDockerRuntime() {
-  return normalizeString(process.env.CURRENT_ENV).toLowerCase() === 'docker';
 }
 
 export function hasNativeElevenLabsMusicCredential() {
@@ -85,7 +82,7 @@ export function shouldUseNativeElevenLabsMusic(payload = {}) {
     return false;
   }
 
-  return isDockerRuntime() && !normalizeString(FAL_API_KEY);
+  return isStandaloneEdition() && !normalizeString(FAL_API_KEY);
 }
 
 function buildNativeElevenLabsMusicRequest(payload) {

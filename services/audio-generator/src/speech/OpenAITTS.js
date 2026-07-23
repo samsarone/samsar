@@ -18,6 +18,7 @@ import {
   failStandaloneExternalAudioGeneration,
   finalizeStandaloneExternalAudioGeneration,
 } from '../external/StandaloneExternalAudio.js';
+import { AUDIO_FFPROBE_THREAD_OPTIONS } from '../utils/FfmpegResources.js';
 
 ffmpeg.setFfprobePath('/usr/bin/ffprobe'); // Use system-installed ffprobe
 
@@ -25,7 +26,7 @@ ffmpeg.setFfprobePath('/usr/bin/ffprobe'); // Use system-installed ffprobe
 const probe = promisify(ffmpeg.ffprobe);
 
 export async function getDurationSeconds(filePath) {
-  const { format } = await probe(filePath);
+  const { format } = await probe(filePath, AUDIO_FFPROBE_THREAD_OPTIONS);
   return format.duration;        // ← float, in seconds
 }
 

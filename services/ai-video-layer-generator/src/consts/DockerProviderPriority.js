@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { isStandaloneEdition } from '../utils/Environment.js';
 
 export const DOCKER_VIDEO_PROVIDER = Object.freeze({
   ALIBABA_CLOUD: 'alibabaCloud',
@@ -208,8 +209,7 @@ export function isDockerVideoProviderRoutingEnabled() {
   if (isTruthyEnv(process.env.SAMSAR_DOCKER_ADAPTER_ROUTING_ENABLED)) {
     return true;
   }
-  const currentEnv = normalizeString(process.env.CURRENT_ENV).toLowerCase();
-  return currentEnv === 'docker' || currentEnv === 'staging';
+  return isStandaloneEdition() || normalizeString(process.env.CURRENT_ENV).toLowerCase() === 'staging';
 }
 
 export function hasGoogleCloudVideoCredential() {

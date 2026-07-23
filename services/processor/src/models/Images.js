@@ -6,7 +6,7 @@ import { uploadTempEditImageToFileSystem } from '../storage/Files.js';
 import ImageBatchGeneration from '../schema/ImageBatchGeneration.js';
 import { IMAGE_EDIT_MODEL_PRICES, IMAGE_MODEL_PRICES } from '../consts/ModelPrices.js';
 import sizeOf from 'image-size';
-import { getCurrentEnvironment } from '../utils/EnvironmentUtils.js';
+import { shouldBypassGenerationCredits } from '../utils/EnvironmentUtils.js';
 
 import { maybeTriggerAutoRecharge } from './AutoRecharge.js';
 
@@ -223,7 +223,6 @@ export async function addImageGeneratorRequest(userId, payload, updateCredits = 
   const resolvedModel = resolveNanoBananaModelAlias(model);
 
 
-  const currentEnv = getCurrentEnvironment();
   // Find the pricing information for the selected model
   const modelPricing = IMAGE_MODEL_PRICES.find(m => m.key === resolvedModel);
 
@@ -236,7 +235,7 @@ export async function addImageGeneratorRequest(userId, payload, updateCredits = 
   // Get the price or default to 0 if not found
   const creditCost = priceObj ? priceObj.price : 0;
 
-  if (updateCredits && creditCost > 0 && currentEnv !== 'docker') {
+  if (updateCredits && creditCost > 0 && !shouldBypassGenerationCredits()) {
     // Deduct the correct amount of credits
     const updateResult = await User.updateOne(
       { _id: userId, generationCredits: { $gte: creditCost } },
@@ -285,7 +284,6 @@ export async function addImageUpscaleRequest(userId, payload, updateCredits = tr
   const resolvedModel = resolveNanoBananaModelAlias(model);
 
 
-  const currentEnv = getCurrentEnvironment();
   // Find the pricing information for the selected model
   const modelPricing = IMAGE_MODEL_PRICES.find(m => m.key === resolvedModel);
 
@@ -298,7 +296,7 @@ export async function addImageUpscaleRequest(userId, payload, updateCredits = tr
   // Get the price or default to 0 if not found
   const creditCost = priceObj ? priceObj.price : 0;
 
-  if (updateCredits && creditCost > 0 && currentEnv !== 'docker') {
+  if (updateCredits && creditCost > 0 && !shouldBypassGenerationCredits()) {
     // Deduct the correct amount of credits
     const updateResult = await User.updateOne(
       { _id: userId, generationCredits: { $gte: creditCost } },
@@ -483,9 +481,7 @@ export async function addImageEditRequest(userId, payload) {
     await primeCDNCache(remoteMaskImage);
   }
 
-  const currentEnv = getCurrentEnvironment();
-
-  if (currentEnv !== 'docker') {
+  if (!shouldBypassGenerationCredits()) {
     // Update user credits
     const updateResult = await User.updateOne(
       { _id: userId, generationCredits: { $gt: 0 } },

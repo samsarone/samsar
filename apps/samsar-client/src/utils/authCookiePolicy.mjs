@@ -1,23 +1,47 @@
 const PRODUCTION_ENVIRONMENT = 'production';
 const SHARED_AUTH_COOKIE_NAME = 'authToken';
 const HOST_ONLY_AUTH_COOKIE_NAME = 'samsarHostAuthToken';
-const SHARED_AUTH_COOKIE_DOMAIN = '.samsar.one';
 
-function isSamsarProductionHost(hostname) {
-  const normalizedHostname = String(hostname || '').trim().toLowerCase();
-  return normalizedHostname === 'samsar.one' || normalizedHostname.endsWith('.samsar.one');
+function normalizeHostname(value) {
+  return String(value || '').trim().toLowerCase().replace(/\.$/, '');
 }
 
-export function getAuthCookiePolicy(currentEnvironment, hostname) {
-  const isRemoteProduction =
-    String(currentEnvironment || '').trim().toLowerCase() === PRODUCTION_ENVIRONMENT &&
-    isSamsarProductionHost(hostname);
+export function normalizeAuthCookieDomain(value) {
+  const normalized = normalizeHostname(value).replace(/^\./, '');
+  if (!normalized || !normalized.includes('.')) return null;
+  if (!/^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$/.test(normalized)) return null;
+  if (normalized.split('.').some((label) => !label || label.length > 63 || label.startsWith('-') || label.endsWith('-'))) {
+    return null;
+  }
 
-  if (isRemoteProduction) {
+  return `.${normalized}`;
+}
+
+export function resolveAuthCookieDomain(configuredDomain, hostname) {
+  const domain = normalizeAuthCookieDomain(configuredDomain);
+  if (!domain) return null;
+
+  const normalizedHostname = normalizeHostname(hostname);
+  const domainHostname = domain.slice(1);
+  const belongsToDomain =
+    normalizedHostname === domainHostname
+    || normalizedHostname.endsWith(`.${domainHostname}`);
+
+  return belongsToDomain ? domain : null;
+}
+
+export function getAuthCookiePolicy(currentEnvironment, hostname, configuredDomain) {
+  const isProduction =
+    String(currentEnvironment || '').trim().toLowerCase() === PRODUCTION_ENVIRONMENT;
+  const sharedDomain = isProduction
+    ? resolveAuthCookieDomain(configuredDomain, hostname)
+    : null;
+
+  if (isProduction) {
     return {
       cookieName: SHARED_AUTH_COOKIE_NAME,
-      domain: SHARED_AUTH_COOKIE_DOMAIN,
-      isSharedAcrossSubdomains: true,
+      domain: sharedDomain,
+      isSharedAcrossSubdomains: Boolean(sharedDomain),
     };
   }
 

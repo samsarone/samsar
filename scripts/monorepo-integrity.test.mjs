@@ -10,6 +10,10 @@ async function readJson(relativePath) {
   return JSON.parse(await fs.readFile(path.join(root, relativePath), 'utf8'));
 }
 
+async function readText(relativePath) {
+  return fs.readFile(path.join(root, relativePath), 'utf8');
+}
+
 async function fileExists(relativePath) {
   try {
     await fs.access(path.join(root, relativePath));
@@ -68,10 +72,93 @@ test('generic Docker service paths resolve to synced workspace packages', async 
   }
 });
 
+test('every generic Docker service has a synchronized npm lockfile', async () => {
+  const compose = await readText('deploy/compose/docker-compose.yml');
+  const servicePaths = [...compose.matchAll(/SERVICE_PATH:\s*([^\s]+)/g)].map((match) => match[1]);
+
+  for (const servicePath of servicePaths) {
+    const manifest = await readJson(path.join(servicePath, 'package.json'));
+    const lock = await readJson(path.join(servicePath, 'package-lock.json'));
+    const lockedRoot = lock.packages?.[''];
+
+    assert.ok(lock.lockfileVersion >= 3, `${servicePath}/package-lock.json must use lockfileVersion 3`);
+    assert.equal(lockedRoot?.name, manifest.name, `${servicePath} lockfile name must match package.json`);
+    assert.equal(
+      lockedRoot?.version,
+      manifest.version,
+      `${servicePath} lockfile version must match package.json`,
+    );
+    assert.deepEqual(
+      lockedRoot?.dependencies || {},
+      manifest.dependencies || {},
+      `${servicePath} lockfile root dependencies must match package.json`,
+    );
+  }
+});
+
+test('Docker dependency installs are immutable and include platform optionals', async () => {
+  const [serviceDockerfile, clientDockerfile, setupWizardDockerfile] = await Promise.all([
+    readText('Dockerfile'),
+    readText('apps/samsar-client/Dockerfile'),
+    readText('apps/setup-wizard/Dockerfile'),
+  ]);
+
+  assert.match(serviceDockerfile, /test -f package-lock\.json/);
+  assert.match(serviceDockerfile, /npm ci --omit=dev --include=optional/);
+  assert.doesNotMatch(serviceDockerfile, /npm install/);
+  assert.match(serviceDockerfile, /FFMPEG_PATH=\/usr\/bin\/ffmpeg/);
+  assert.match(serviceDockerfile, /FFPROBE_PATH=\/usr\/bin\/ffprobe/);
+
+  assert.match(clientDockerfile, /yarn install --frozen-lockfile --non-interactive/);
+  assert.doesNotMatch(clientDockerfile, /yarn add/);
+
+  assert.equal(
+    [...setupWizardDockerfile.matchAll(/npm ci\b/g)].length,
+    2,
+    'setup wizard must use npm ci in both build stages',
+  );
+  assert.doesNotMatch(setupWizardDockerfile, /npm install/);
+});
+
+test('native frontend and image dependencies cover Linux x64 and arm64', async () => {
+  const compose = await readText('deploy/compose/docker-compose.yml');
+  const servicePaths = [...compose.matchAll(/SERVICE_PATH:\s*([^\s]+)/g)].map((match) => match[1]);
+
+  for (const servicePath of servicePaths) {
+    const manifest = await readJson(path.join(servicePath, 'package.json'));
+    if (!manifest.dependencies?.sharp) continue;
+
+    const lock = await readJson(path.join(servicePath, 'package-lock.json'));
+    for (const packageName of [
+      '@img/sharp-linux-arm64',
+      '@img/sharp-linux-x64',
+      '@img/sharp-libvips-linux-arm64',
+      '@img/sharp-libvips-linux-x64',
+    ]) {
+      assert.ok(
+        lock.packages?.[`node_modules/${packageName}`],
+        `${servicePath}/package-lock.json must include ${packageName}`,
+      );
+    }
+  }
+
+  const [clientLock, setupWizardLock] = await Promise.all([
+    readText('apps/samsar-client/yarn.lock'),
+    readJson('apps/setup-wizard/package-lock.json'),
+  ]);
+  assert.match(clientLock, /@esbuild\/linux-arm64@/);
+  assert.match(clientLock, /@esbuild\/linux-x64@/);
+  assert.ok(setupWizardLock.packages?.['node_modules/@esbuild/linux-arm64']);
+  assert.ok(setupWizardLock.packages?.['node_modules/@esbuild/linux-x64']);
+  assert.ok(setupWizardLock.packages?.['node_modules/@rollup/rollup-linux-arm64-gnu']);
+  assert.ok(setupWizardLock.packages?.['node_modules/@rollup/rollup-linux-x64-gnu']);
+});
+
 test('the example runtime config keeps external access and providers disabled', async () => {
   const config = await readJson('samsar.config.example.json');
 
   assert.equal(config.runtime, 'docker');
+  assert.equal(config.deploymentEdition, 'standalone');
   assert.equal(config.storage.externalMediaPublishEnabled, false);
   assert.equal(config.localMediaTunnel.enabled, false);
   assert.equal(config.reverseProxy.enabled, false);
@@ -81,6 +168,25 @@ test('the example runtime config keeps external access and providers disabled', 
     assert.equal(provider.enabled, false, `${providerName} must be disabled by default`);
     assert.equal(provider.apiKey || '', '', `${providerName} must not include an API key`);
   }
+});
+
+test('standalone edition and Docker runtime are independent deployment metadata', async () => {
+  const [compose, clientDockerfile, runtimeRenderer] = await Promise.all([
+    readText('deploy/compose/docker-compose.yml'),
+    readText('apps/samsar-client/Dockerfile'),
+    readText('scripts/generate-runtime-config.mjs'),
+  ]);
+
+  assert.match(compose, /CURRENT_ENV:\s*standalone/);
+  assert.match(compose, /SAMSAR_DEPLOYMENT_EDITION:\s*standalone/);
+  assert.match(compose, /SAMSAR_RUNTIME:\s*docker/);
+  assert.match(compose, /VITE_SAMSAR_DEPLOYMENT_EDITION:\s*standalone/);
+  assert.match(compose, /VITE_DOCKER_INSTALL:\s*"true"/);
+  assert.match(clientDockerfile, /ARG VITE_CURRENT_ENV=standalone/);
+  assert.match(clientDockerfile, /ARG VITE_SAMSAR_DEPLOYMENT_EDITION=standalone/);
+  assert.match(runtimeRenderer, /CURRENT_ENV:\s*'standalone'/);
+  assert.match(runtimeRenderer, /SAMSAR_DEPLOYMENT_EDITION:\s*'standalone'/);
+  assert.match(runtimeRenderer, /SAMSAR_RUNTIME:\s*'docker'/);
 });
 
 test('Docker Compose support files required by the deployment are present', async () => {

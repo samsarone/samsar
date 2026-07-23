@@ -2,6 +2,7 @@ import { getDBConnectionString } from './DBString.js';
 import GenerationCreditTransaction from '../schema/GenerationCreditTransaction.js';
 import ProviderUsageLog from '../schema/ProviderUsageLog.js';
 import mongoose from 'mongoose';
+import { shouldDefaultProviderUsageAuditEnabled } from '../utils/EnvironmentUtils.js';
 
 const API_USAGE_SOURCES = [
   'chat_enhance',
@@ -44,7 +45,7 @@ function isDockerUsageMode() {
   if (['1', 'true', 'yes', 'on'].includes(explicit)) {
     return true;
   }
-  return normalizeString(process.env.CURRENT_ENV).toLowerCase() === 'docker';
+  return shouldDefaultProviderUsageAuditEnabled();
 }
 
 function normalizePaging({ page = 1, pageSize = 25 } = {}) {

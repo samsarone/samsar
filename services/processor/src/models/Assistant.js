@@ -10,14 +10,10 @@ import {
   isSceneActionsCommand,
 } from './SceneActions.js';
 import { normalizeInferenceModel } from '../consts/InferenceModels.js';
+import { shouldBypassGenerationCredits } from '../utils/EnvironmentUtils.js';
 
 function normalizeAssistantQueryText(query) {
   return typeof query === 'string' ? query.trim() : '';
-}
-
-function isDockerRuntime() {
-  return typeof process.env.CURRENT_ENV === 'string' &&
-    process.env.CURRENT_ENV.trim().toLowerCase() === 'docker';
 }
 
 function normalizeAssistantFrameImage(frameImage) {
@@ -175,7 +171,7 @@ export async function createAssistantQueryRequest(userId, payload) {
     throw new Error('User not found');
   }
   const userAssistantModel = normalizeInferenceModel(userData?.selectedAssistantModel);
-  if (!isDockerRuntime() && (!Number.isFinite(userData.generationCredits) || userData.generationCredits <= 0)) {
+  if (!shouldBypassGenerationCredits() && (!Number.isFinite(userData.generationCredits) || userData.generationCredits <= 0)) {
     const error = new Error('Insufficient credits');
     error.code = 'INSUFFICIENT_CREDITS';
     throw error;

@@ -972,6 +972,115 @@ function isTemporaryMediaTunnelUrl(value) {
   }
 }
 
+function isPrivateIpv6Address(host) {
+  if (net.isIP(host) !== 6) {
+    return false;
+  }
+  const normalizedHost = host.toLowerCase().replace(/^\[|\]$/g, '');
+  return normalizedHost === '::' ||
+    normalizedHost === '::1' ||
+    normalizedHost.startsWith('fc') ||
+    normalizedHost.startsWith('fd') ||
+    /^fe[89ab]/.test(normalizedHost);
+}
+
+function isNonPublicProviderHostname(host) {
+  const normalizedHost = normalizeHostInput(host);
+  if (isLocalOrPrivateHost(normalizedHost) || isPrivateIpv6Address(normalizedHost)) {
+    return true;
+  }
+  if (net.isIP(normalizedHost) === 4) {
+    const [first, second] = normalizedHost.split('.').map((part) => Number.parseInt(part, 10));
+    return first === 0 ||
+      (first === 100 && second >= 64 && second <= 127) ||
+      first >= 224;
+  }
+  return net.isIP(normalizedHost) === 0 && !normalizedHost.includes('.');
+}
+
+function normalizeStablePublicHttpsBaseUrl(value) {
+  const normalized = normalizeString(value);
+  if (!normalized || isTemporaryMediaTunnelUrl(normalized)) {
+    return '';
+  }
+  try {
+    const parsedUrl = new URL(normalized);
+    if (parsedUrl.protocol !== 'https:' ||
+      parsedUrl.username ||
+      parsedUrl.password ||
+      parsedUrl.search ||
+      parsedUrl.hash ||
+      isNonPublicProviderHostname(parsedUrl.hostname)) {
+      return '';
+    }
+    parsedUrl.pathname = parsedUrl.pathname.replace(/\/+$/, '');
+    return parsedUrl.toString().replace(/\/$/, '');
+  } catch {
+    return '';
+  }
+}
+
+function getConfiguredStableProviderMediaBaseUrl(config = {}) {
+  const publicUrls = config.publicUrls || {};
+  const reverseProxyPublicUrls = config.reverseProxy?.publicUrls || {};
+  return [
+    publicUrls.media,
+    publicUrls.processorApi,
+    reverseProxyPublicUrls.media,
+    reverseProxyPublicUrls.processorApi,
+  ].map(normalizeStablePublicHttpsBaseUrl).find(Boolean) || '';
+}
+
+function buildProviderOriginProbeUrl(baseUrl, suffix) {
+  const parsedUrl = new URL(baseUrl);
+  parsedUrl.pathname = `${parsedUrl.pathname.replace(/\/+$/, '')}/${normalizeString(suffix).replace(/^\/+/, '')}`;
+  parsedUrl.search = '';
+  parsedUrl.hash = '';
+  return parsedUrl.toString();
+}
+
+async function fetchProviderOriginProbe(url, validateBody) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 5000);
+  try {
+    const response = await fetch(url, {
+      cache: 'no-store',
+      headers: { 'Cache-Control': 'no-store' },
+      signal: controller.signal,
+    });
+    return response.ok && validateBody(await response.text());
+  } catch {
+    return false;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function isReachableStableProviderMediaOrigin(value) {
+  const baseUrl = normalizeStablePublicHttpsBaseUrl(value);
+  if (!baseUrl) {
+    return false;
+  }
+
+  const gatewayHealthUrl = buildProviderOriginProbeUrl(baseUrl, '/__samsar_media_health');
+  if (await fetchProviderOriginProbe(
+    gatewayHealthUrl,
+    (body) => body.trim() === 'samsar-media-gateway',
+  )) {
+    return true;
+  }
+
+  const processorHealthUrl = buildProviderOriginProbeUrl(baseUrl, '/v1/health/live');
+  return fetchProviderOriginProbe(processorHealthUrl, (body) => {
+    try {
+      const payload = JSON.parse(body);
+      return payload?.status === 'ok' && payload?.service === 'samsar_processor';
+    } catch {
+      return false;
+    }
+  });
+}
+
 function buildUrlForHost(host, useHttps = false) {
   const normalizedHost = normalizeHostInput(host);
   if (!normalizedHost) {
@@ -1440,6 +1549,7 @@ function buildRuntimeConfig(payload) {
   return readJson(EXAMPLE_CONFIG_PATH).then((exampleConfig) => ({
     ...exampleConfig,
     runtime: 'docker',
+    deploymentEdition: 'standalone',
     security: {
       ...(exampleConfig.security || {}),
       dockerSetupSecret: normalizeString(payload?.setupSecret),
@@ -1652,7 +1762,22 @@ async function shouldPublishLocalMediaGateway(payload) {
   const storage = buildStorageConfig(infrastructure);
   const requiresPublicMedia = storage.externalMediaPublishEnabled !== true &&
     hasConfiguredRemoteMediaProvider(credentials);
-  return requiresPublicMedia;
+  if (!requiresPublicMedia) {
+    return false;
+  }
+
+  const reverseProxy = buildReverseProxyConfig(deployment.reverseProxy || {});
+  const stableProviderMediaUrl = getConfiguredStableProviderMediaBaseUrl({
+    publicUrls: reverseProxy.enabled
+      ? reverseProxy.publicUrls
+      : {
+        media: PROCESSOR_PUBLIC_URL,
+        processorApi: PROCESSOR_PUBLIC_URL,
+      },
+    reverseProxy,
+  });
+  return !stableProviderMediaUrl ||
+    !(await isReachableStableProviderMediaOrigin(stableProviderMediaUrl));
 }
 
 async function isReachableManagedMediaTunnel(value) {
@@ -1736,6 +1861,11 @@ async function shouldPublishRuntimeLocalMediaGateway(config = {}) {
     normalizeString(providers.googleCloud?.credentialsJsonB64)
   );
   if (storage.externalMediaPublishEnabled === true || config.runtime === 'local' || !hasRuntimeRemoteProvider) {
+    return false;
+  }
+
+  const stableProviderMediaUrl = getConfiguredStableProviderMediaBaseUrl(config);
+  if (stableProviderMediaUrl && await isReachableStableProviderMediaOrigin(stableProviderMediaUrl)) {
     return false;
   }
 

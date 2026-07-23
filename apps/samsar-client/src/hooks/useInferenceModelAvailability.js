@@ -11,9 +11,9 @@ import {
   filterOptionsForDeploymentInferenceModels,
   labelOptionsForDeploymentInferenceProviders,
 } from "../utils/deploymentProviders.js";
+import { IS_STANDALONE_DEPLOYMENT } from "../utils/environment.jsx";
 
 const PROCESSOR_API_URL = import.meta.env.VITE_PROCESSOR_API || "";
-const IS_DOCKER_INSTALL = import.meta.env.VITE_DOCKER_INSTALL === "true";
 const HOSTED_INFERENCE_MODEL_OPTIONS = Object.freeze(
   filterHostedInferenceModelOptions(INFERENCE_MODEL_TYPES),
 );
@@ -23,7 +23,7 @@ const HOSTED_ASSISTANT_MODEL_OPTIONS = Object.freeze(
 const HOSTED_INFERENCE_MODEL_VALUES = Object.freeze(
   HOSTED_INFERENCE_MODEL_OPTIONS.map((option) => option.value),
 );
-const EMPTY_DOCKER_AVAILABILITY = Object.freeze({
+const EMPTY_STANDALONE_AVAILABILITY = Object.freeze({
   modelValues: [],
   modelProviders: {},
   providerEndpointTypes: {},
@@ -42,7 +42,7 @@ const availabilityCache = {
 };
 
 async function loadInferenceModelAvailability() {
-  if (!IS_DOCKER_INSTALL) {
+  if (!IS_STANDALONE_DEPLOYMENT) {
     return DEFAULT_AVAILABILITY;
   }
 
@@ -82,20 +82,20 @@ async function loadInferenceModelAvailability() {
 
 export function useInferenceModelAvailability() {
   const [availability, setAvailability] = useState(
-    IS_DOCKER_INSTALL
-      ? availabilityCache.availability || EMPTY_DOCKER_AVAILABILITY
+    IS_STANDALONE_DEPLOYMENT
+      ? availabilityCache.availability || EMPTY_STANDALONE_AVAILABILITY
       : DEFAULT_AVAILABILITY
   );
-  const [isLoading, setIsLoading] = useState(IS_DOCKER_INSTALL && !availabilityCache.availability);
+  const [isLoading, setIsLoading] = useState(IS_STANDALONE_DEPLOYMENT && !availabilityCache.availability);
 
   useEffect(() => {
     let isMounted = true;
 
-    setIsLoading(IS_DOCKER_INSTALL && !availabilityCache.availability);
+    setIsLoading(IS_STANDALONE_DEPLOYMENT && !availabilityCache.availability);
     loadInferenceModelAvailability()
       .then((nextAvailability) => {
         if (isMounted) {
-          setAvailability(nextAvailability || EMPTY_DOCKER_AVAILABILITY);
+          setAvailability(nextAvailability || EMPTY_STANDALONE_AVAILABILITY);
         }
       })
       .finally(() => {
@@ -109,12 +109,12 @@ export function useInferenceModelAvailability() {
     };
   }, []);
 
-  const modelValues = IS_DOCKER_INSTALL
+  const modelValues = IS_STANDALONE_DEPLOYMENT
     ? availability.modelValues || []
     : HOSTED_INFERENCE_MODEL_VALUES;
   const inferenceModelOptions = useMemo(
     () => (
-      IS_DOCKER_INSTALL
+      IS_STANDALONE_DEPLOYMENT
         ? labelOptionsForDeploymentInferenceProviders(
           filterOptionsForDeploymentInferenceModels(INFERENCE_MODEL_TYPES, modelValues),
           availability.modelProviders,
@@ -126,7 +126,7 @@ export function useInferenceModelAvailability() {
   );
   const assistantModelOptions = useMemo(
     () => (
-      IS_DOCKER_INSTALL
+      IS_STANDALONE_DEPLOYMENT
         ? labelOptionsForDeploymentInferenceProviders(
           filterOptionsForDeploymentInferenceModels(ASSISTANT_MODEL_TYPES, modelValues),
           availability.modelProviders,
@@ -138,12 +138,12 @@ export function useInferenceModelAvailability() {
   );
 
   return {
-    isDockerInstall: IS_DOCKER_INSTALL,
+    isStandaloneDeployment: IS_STANDALONE_DEPLOYMENT,
     isLoading,
     error: availability.error || null,
     modelValues,
     inferenceModelOptions,
     assistantModelOptions,
-    hasConfiguredInferenceModels: !IS_DOCKER_INSTALL || modelValues.length > 0,
+    hasConfiguredInferenceModels: !IS_STANDALONE_DEPLOYMENT || modelValues.length > 0,
   };
 }

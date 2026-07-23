@@ -4,11 +4,15 @@ import test from 'node:test';
 import {
   applyDockerSubtitleAvailability,
   assertSubtitleGenerationAvailable,
+  isDockerAudioAvailabilityFilteringEnabled,
   isSubtitleGenerationAvailable,
 } from './DockerAudioAvailability.js';
 
 const ENV_KEYS = [
   'CURRENT_ENV',
+  'SAMSAR_DEPLOYMENT_EDITION',
+  'SAMSAR_EDITION',
+  'SAMSAR_RUNTIME',
   'SAMSAR_DOCKER_AUDIO_PROVIDER_ROUTING_ENABLED',
   'OPENAI_API_KEY',
   'SAMSAR_API_KEY',
@@ -46,10 +50,15 @@ test('Docker subtitle generation requires OpenAI or Samsar credentials', () => {
   assert.doesNotThrow(() => assertSubtitleGenerationAvailable());
 });
 
-test('non-Docker deployments retain subtitle generation behavior', () => {
+test('production Docker retains production subtitle and audio-provider behavior', () => {
   clearEnv();
-  process.env.CURRENT_ENV = 'production';
+  process.env.SAMSAR_DEPLOYMENT_EDITION = 'production';
+  process.env.SAMSAR_RUNTIME = 'docker';
   assert.equal(isSubtitleGenerationAvailable(), true);
+  assert.equal(isDockerAudioAvailabilityFilteringEnabled(), false);
+
+  const payload = { enable_subtitles: true, subtitle_language: 'th' };
+  assert.equal(applyDockerSubtitleAvailability(payload), payload);
 });
 
 test('Docker precheck disables subtitle generation and translation intent without credentials', () => {

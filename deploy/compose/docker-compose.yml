@@ -4,7 +4,9 @@ x-service-env: &service-env
   env_file:
     - ../../runtime/secrets/root.env
   environment:
-    CURRENT_ENV: docker
+    CURRENT_ENV: standalone
+    SAMSAR_DEPLOYMENT_EDITION: standalone
+    SAMSAR_RUNTIME: docker
     SAMSAR_ASSETS_ROOT: /assets
     SAMSAR_ASSETS_V2_ROOT: /assets_v2
     SAMSAR_INTERNAL_MEDIA_BASE_URL: ${SAMSAR_INTERNAL_MEDIA_BASE_URL:-http://media-gateway}
@@ -43,6 +45,8 @@ services:
         VITE_PROCESSOR_API: ${PROCESSOR_API:-http://localhost:3002}
         VITE_CLIENT_URL: ${CLIENT_APP:-http://localhost:3000}
         VITE_STATIC_CDN_URL: ${PUBLIC_STATIC_CDN_URL:-http://localhost:3002}
+        VITE_CURRENT_ENV: standalone
+        VITE_SAMSAR_DEPLOYMENT_EDITION: standalone
         VITE_DOCKER_INSTALL: "true"
         VITE_SETUP_WIZARD_API: http://localhost:8089
     ports:

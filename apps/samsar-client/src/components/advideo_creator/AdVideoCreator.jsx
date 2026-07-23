@@ -120,7 +120,7 @@ export default function AdVideoCreator() {
 
   // Filter out “Express” image models
   const {
-    isDockerInstall: isDockerModelFilteringEnabled,
+    isStandaloneDeployment: isStandaloneModelFilteringEnabled,
     textToVideoImageModelValues,
     textToVideoVideoModelValues,
   } = useDeploymentModelAvailability();
@@ -141,11 +141,11 @@ export default function AdVideoCreator() {
       })
       .map((m) => ({ label: m.name, value: m.key }));
 
-    return isDockerModelFilteringEnabled
+    return isStandaloneModelFilteringEnabled
       ? filterOptionsForDeploymentModelValues(models, textToVideoImageModelValues)
       : models;
   }, [
-    isDockerModelFilteringEnabled,
+    isStandaloneModelFilteringEnabled,
     selectedAspectRatioOption.value,
     textToVideoImageModelValues,
   ]);
@@ -163,11 +163,11 @@ export default function AdVideoCreator() {
         // Keep entire object so we can access modelSubTypes, etc.:
         ...m,
       }));
-    return isDockerModelFilteringEnabled
+    return isStandaloneModelFilteringEnabled
       ? filterOptionsForDeploymentModelValues(models, textToVideoVideoModelValues)
       : models;
   }, [
-    isDockerModelFilteringEnabled,
+    isStandaloneModelFilteringEnabled,
     selectedAspectRatioOption,
     textToVideoVideoModelValues,
   ]);
@@ -495,7 +495,7 @@ export default function AdVideoCreator() {
     }
     if (!id) return;
     if (!selectedImageModel?.value || !selectedVideoModel?.value) {
-      setErrorMessage({ error: 'No configured Docker model is available for ad video generation.' });
+      setErrorMessage({ error: 'No configured standalone model is available for ad video generation.' });
       return;
     }
 

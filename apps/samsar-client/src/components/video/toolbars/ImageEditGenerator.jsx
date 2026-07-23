@@ -26,16 +26,16 @@ export default function ImageEditGenerator(props) {
   const isSidebarCollapsed = sizeVariant === "sidebarCollapsed";
   const isSidebarExpanded = sizeVariant === "sidebarExpanded";
   const {
-    isDockerInstall: isDockerModelFilteringEnabled,
+    isStandaloneDeployment: isStandaloneModelFilteringEnabled,
     imageEditModelValues,
   } = useDeploymentModelAvailability();
   const availableEditModels = useMemo(
     () => (
-      isDockerModelFilteringEnabled
+      isStandaloneModelFilteringEnabled
         ? filterOptionsForDeploymentModelValues(IMAGE_EDIT_MODEL_TYPES, imageEditModelValues, (model) => model.key)
         : IMAGE_EDIT_MODEL_TYPES
     ),
-    [imageEditModelValues, isDockerModelFilteringEnabled]
+    [imageEditModelValues, isStandaloneModelFilteringEnabled]
   );
 
   useEffect(() => {

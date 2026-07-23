@@ -21,6 +21,11 @@ test('Samsar transcript alignment is selected only for Docker with Samsar and no
     SAMSAR_API_KEY: 'samsar-key',
   }), false);
   assert.equal(shouldUseSamsarTranscriptAlignment({ CURRENT_ENV: 'docker' }), false);
+  assert.equal(shouldUseSamsarTranscriptAlignment({
+    SAMSAR_DEPLOYMENT_EDITION: 'production',
+    SAMSAR_RUNTIME: 'docker',
+    SAMSAR_API_KEY: 'samsar-key',
+  }), false);
 });
 test('Samsar transcript alignment serializes the OpenAI word timestamp payload', async () => {
   let capturedPath = null;

@@ -1,3 +1,5 @@
+import { isProductionEdition, isStandaloneEdition } from '../utils/EnvironmentUtils.js';
+
 export const DOCKER_PROVIDER = Object.freeze({
   ALIBABA_CLOUD: 'alibabaCloud',
   GOOGLE_CLOUD: 'googleCloud',
@@ -127,7 +129,7 @@ export function isDockerProviderRoutingEnabled() {
   if (isTruthyEnv(process.env.SAMSAR_DOCKER_ADAPTER_ROUTING_ENABLED)) {
     return true;
   }
-  return normalizeString(process.env.CURRENT_ENV).toLowerCase() === 'docker';
+  return isStandaloneEdition();
 }
 
 export function hasGoogleCloudCredential() {
@@ -177,7 +179,7 @@ export function getDockerImageProviderPriority(model) {
   const normalizedModel = normalizeDockerModelKey(model);
   if (
     normalizedModel === 'NANOBANANAPRO' &&
-    normalizeString(process.env.CURRENT_ENV).toLowerCase() === 'production'
+    isProductionEdition()
   ) {
     return [DOCKER_PROVIDER.FAL, DOCKER_PROVIDER.GOOGLE_CLOUD, DOCKER_PROVIDER.SAMSAR];
   }

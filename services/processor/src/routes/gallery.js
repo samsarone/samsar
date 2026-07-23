@@ -59,7 +59,7 @@ async function authenticateGalleryRequest(req, res, next) {
     if (shouldUseDeployedGallery()) {
       if (!isConfiguredGalleryServiceRequest(req.headers)) {
         return res.status(401).json({
-          error: 'The configured Samsar API key is required for Docker gallery forwarding.',
+          error: 'The configured Samsar API key is required for standalone gallery forwarding.',
         });
       }
       req.galleryUsesDeployedService = true;

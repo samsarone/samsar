@@ -19,20 +19,43 @@ import {
   resolveBranchThumbnailSource,
   resolveBranchRenderContext,
 } from './utils/BranchRenderPath.js';
+import {
+  buildFrameWorkerRanges,
+  getFrameProcessingLimits,
+  usesLocalAssetStorage,
+} from './utils/DeploymentEnvironment.js';
+import {
+  getCpuResourceBudget,
+  WeightedCpuResourcePool,
+} from './utils/CpuResources.js';
 
 installStructuredLogger({
   serviceName: process.env.SERVICE_NAME || 'samsar_frames_processor',
   component: 'frame_dispatcher',
 });
 
-let MAX_CONCURRENT_TASKS = 6;
-let numChunks = 8;
+const {
+  detectedCpuCount: DETECTED_CPU_COUNT,
+  configuredCpuReserve: CONFIGURED_CPU_RESERVE,
+  cpuReserve: CPU_RESERVE,
+  heavyWorkCpuBudget: HEAVY_WORK_CPU_BUDGET,
+} = getCpuResourceBudget();
+const {
+  maxConcurrentTasks: MAX_CONCURRENT_TASKS,
+  numChunks: MAX_FRAME_WORKERS_PER_JOB,
+  ffmpegThreads: FFMPEG_THREADS,
+} = getFrameProcessingLimits(process.env, HEAVY_WORK_CPU_BUDGET);
+const CPU_RESOURCE_POOL = new WeightedCpuResourcePool(HEAVY_WORK_CPU_BUDGET);
 
-let CURRENT_ENV = process.env.CURRENT_ENV;
-if (CURRENT_ENV && (CURRENT_ENV === 'development' || CURRENT_ENV === 'docker')) {
-  MAX_CONCURRENT_TASKS = 2;
-  numChunks = 4;
-}
+console.info('Frame processing resource limits', {
+  detectedCpuCount: DETECTED_CPU_COUNT,
+  configuredCpuReserve: CONFIGURED_CPU_RESERVE,
+  cpuReserve: CPU_RESERVE,
+  heavyWorkCpuBudget: HEAVY_WORK_CPU_BUDGET,
+  maxConcurrentTasks: MAX_CONCURRENT_TASKS,
+  maxFrameWorkersPerJob: MAX_FRAME_WORKERS_PER_JOB,
+  ffmpegThreads: FFMPEG_THREADS,
+});
 
 const STALE_LOCK_RECOVERY_MS = 5 * 60 * 1000;
 const DEFAULT_SCENE_TRANSITION_PRESET = 'none';
@@ -427,7 +450,7 @@ function resolveSamsarProcessorAssetsRoot(version = 'legacy') {
   if (version !== 'v2' && process.env.SAMSAR_ASSETS_ROOT) {
     return process.env.SAMSAR_ASSETS_ROOT;
   }
-  if (process.env.CURRENT_ENV === 'staging' || process.env.CURRENT_ENV === 'docker') {
+  if (usesLocalAssetStorage()) {
     return version === 'v2' ? '/assets_v2' : '/assets';
   }
 
@@ -1111,7 +1134,7 @@ function getLayerVideoSourceType(layer = {}) {
   return 'none';
 }
 
-function extractAiVideoFramesWithFfmpeg({
+async function extractAiVideoFramesWithFfmpeg({
   videoPath,
   aiFramesDir,
   canvasDimensions,
@@ -1119,31 +1142,57 @@ function extractAiVideoFramesWithFfmpeg({
   preserveAspectRatio = false,
   fitMode,
 }) {
+  const fps = getFramesPerSecondFromValue(framesPerSecond);
+  const normalizedFitMode = fitMode || (preserveAspectRatio ? 'contain' : 'stretch');
+  const scaleFilter = normalizedFitMode === 'cover'
+    ? `scale=${canvasDimensions.width}:${canvasDimensions.height}:force_original_aspect_ratio=increase,crop=${canvasDimensions.width}:${canvasDimensions.height}`
+    : normalizedFitMode === 'contain'
+      ? `scale=${canvasDimensions.width}:${canvasDimensions.height}:force_original_aspect_ratio=decrease,pad=${canvasDimensions.width}:${canvasDimensions.height}:(ow-iw)/2:(oh-ih)/2:color=black@0`
+      : `scale=${canvasDimensions.width}:${canvasDimensions.height}`;
+  const frameFilter = `fps=${fps}:round=down,${scaleFilter}`;
+  const threadCount = String(FFMPEG_THREADS);
+  const args = [
+    '-y',
+    '-filter_threads', threadCount,
+    '-threads', threadCount,
+    '-i', videoPath,
+    '-start_number', '0',
+    '-vf', frameFilter,
+    '-sws_flags', 'lanczos',
+    '-threads', threadCount,
+  ];
+
+  if (normalizedFitMode !== 'stretch') {
+    args.push('-pix_fmt', 'rgba');
+  }
+  args.push(path.join(aiFramesDir, '%d.png'));
+
+  const releaseCpu = await CPU_RESOURCE_POOL.acquire(FFMPEG_THREADS);
+
   return new Promise((resolve, reject) => {
-    const fps = getFramesPerSecondFromValue(framesPerSecond);
-    const normalizedFitMode = fitMode || (preserveAspectRatio ? 'contain' : 'stretch');
-    const scaleFilter = normalizedFitMode === 'cover'
-      ? `scale=${canvasDimensions.width}:${canvasDimensions.height}:force_original_aspect_ratio=increase,crop=${canvasDimensions.width}:${canvasDimensions.height}`
-      : normalizedFitMode === 'contain'
-        ? `scale=${canvasDimensions.width}:${canvasDimensions.height}:force_original_aspect_ratio=decrease,pad=${canvasDimensions.width}:${canvasDimensions.height}:(ow-iw)/2:(oh-ih)/2:color=black@0`
-        : `scale=${canvasDimensions.width}:${canvasDimensions.height}`;
-    const frameFilter = `fps=${fps}:round=down,${scaleFilter}`;
-    const args = [
-      '-y',
-      '-i', videoPath,
-      '-start_number', '0',
-      '-threads', '2',
-      '-vf', frameFilter,
-      '-sws_flags', 'lanczos',
-      path.join(aiFramesDir, '%d.png'),
-    ];
-
-    if (normalizedFitMode !== 'stretch') {
-      args.splice(args.length - 1, 0, '-pix_fmt', 'rgba');
-    }
-
-    const child = spawn('ffmpeg', args, { stdio: ['ignore', 'ignore', 'pipe'] });
+    let child;
     let stderr = '';
+    let settled = false;
+
+    const finish = (error = null) => {
+      releaseCpu();
+      if (settled) {
+        return;
+      }
+      settled = true;
+      if (error) {
+        reject(error);
+      } else {
+        resolve();
+      }
+    };
+
+    try {
+      child = spawn('ffmpeg', args, { stdio: ['ignore', 'ignore', 'pipe'] });
+    } catch (error) {
+      finish(error);
+      return;
+    }
 
     child.stderr.on('data', (chunk) => {
       stderr += chunk.toString();
@@ -1152,15 +1201,15 @@ function extractAiVideoFramesWithFfmpeg({
       }
     });
 
-    child.on('error', (error) => {
-      reject(error);
+    child.once('error', (error) => {
+      finish(error);
     });
 
-    child.on('close', (code) => {
+    child.once('close', (code) => {
       if (code === 0) {
-        resolve();
+        finish();
       } else {
-        reject(new Error(`ffmpeg exited with code ${code}: ${stderr.slice(-4000)}`));
+        finish(new Error(`ffmpeg exited with code ${code}: ${stderr.slice(-4000)}`));
       }
     });
   });
@@ -1979,13 +2028,13 @@ async function generateFramesForSession(generationId, sessionId, layerId, branch
 
   // Spawn children in chunks
   const globalVideosForLayer = getGlobalVideosForLayer(renderingSession, layer);
-  const chunkSize = Math.ceil(frameCount / numChunks);
+  const frameWorkerRanges = buildFrameWorkerRanges(frameCount, MAX_FRAME_WORKERS_PER_JOB);
+  if (frameWorkerRanges.length === 0) {
+    throw new Error(`No frames requested for layer ${layerId} in session ${sessionId}`);
+  }
   const workerPromises = [];
 
-  for (let i = 0; i < numChunks; i++) {
-    const startFrame = i * chunkSize;
-    const endFrame = Math.min((i + 1) * chunkSize, frameCount);
-
+  for (const { startFrame, endFrame } of frameWorkerRanges) {
     workerPromises.push(
       createFramesInChildProcess(
         generationId,
@@ -2326,43 +2375,126 @@ async function handleFrameGenerationCompletion(
   }
 }
 
-function createFramesInChildProcess(...args) {
+async function createFramesInChildProcess(...args) {
+  const releaseCpu = await CPU_RESOURCE_POOL.acquire(1);
+
   return new Promise((resolve, reject) => {
     // This is the child worker script
-    const child = fork(path.resolve('./src/frameWorker.js'));
+    let child;
+    try {
+      child = fork(path.resolve('./src/frameWorker.js'));
+    } catch (error) {
+      releaseCpu();
+      reject(error);
+      return;
+    }
 
     const timeoutDuration = 600000; // e.g. 10 mins
     let timedOut = false;
+    let settled = false;
+    let forceKillTimeout;
+
+    const terminateChild = () => {
+      try {
+        if (child.connected) {
+          child.disconnect();
+        }
+      } catch (error) {
+        console.warn(`Failed to disconnect frame worker: ${error.message}`);
+      }
+
+      try {
+        if (!child.killed) {
+          child.kill('SIGTERM');
+        }
+      } catch (error) {
+        console.warn(`Failed to terminate frame worker: ${error.message}`);
+      }
+    };
+
+    const finish = (error, result, { terminate = false } = {}) => {
+      if (settled) {
+        return;
+      }
+
+      settled = true;
+      clearTimeout(timeout);
+      clearTimeout(forceKillTimeout);
+      if (terminate) {
+        terminateChild();
+      }
+      releaseCpu();
+
+      if (error) {
+        reject(error);
+      } else {
+        resolve(result);
+      }
+    };
+
+    const handleSendFailure = (messageType, error) => {
+      if (settled) {
+        return;
+      }
+
+      const sendError = error instanceof Error ? error : new Error(String(error));
+      finish(
+        new Error(`Failed to send ${messageType} to frame worker: ${sendError.message}`),
+        undefined,
+        { terminate: true },
+      );
+    };
 
     const timeout = setTimeout(() => {
       timedOut = true;
       console.error('Child timed out. Asking child to cancel gracefully...');
-      child.send({ type: 'CANCEL' });
+      try {
+        child.send({ type: 'CANCEL' }, (error) => {
+          if (error) {
+            handleSendFailure('CANCEL', error);
+          }
+        });
+      } catch (error) {
+        handleSendFailure('CANCEL', error);
+        return;
+      }
 
       // If it doesn’t exit in 5 seconds, force kill
-      setTimeout(() => {
-        child.kill('SIGTERM');
+      forceKillTimeout = setTimeout(() => {
+        try {
+          const signalSent = child.kill('SIGTERM');
+          if (!signalSent) {
+            finish(new Error('Frame worker timed out and could not be terminated'));
+            return;
+          }
+          finish(new Error('Frame worker was terminated after timing out'));
+        } catch (error) {
+          finish(new Error(`Frame worker timed out and could not be terminated: ${error.message}`));
+        }
       }, 5000);
     }, timeoutDuration);
 
+    child.once('error', (error) => {
+      finish(error);
+    });
+
     // Handle normal close
-    child.on('close', (code, signal) => {
-      clearTimeout(timeout);
+    child.once('close', (code, signal) => {
       if (signal) {
         console.error(`Child was killed by signal ${signal}`);
-        reject(new Error(`Child killed by signal ${signal}`));
+        finish(new Error(`Child killed by signal ${signal}`));
       } else if (code !== 0) {
         console.error(`Child exited with code ${code}`);
-        reject(new Error(`Child exited with code ${code}`));
+        finish(new Error(`Child exited with code ${code}`));
       } else {
         // code=0 => normal exit (which could be success or CANCEL)
         if (timedOut) {
           console.warn('Child exited gracefully after cancel/timeout');
-          reject(new Error('Child canceled due to timeout'));
+          finish(new Error('Child canceled due to timeout'));
         } else {
           // If the child exited normally without sending a "COMPLETED" message,
           // we still consider it as completed but no frames were returned.
-          resolve({ status: 'COMPLETED', framesList: [] });
+          finish(undefined, { status: 'COMPLETED', framesList: [] });
         }
       }
     });
@@ -2370,32 +2502,38 @@ function createFramesInChildProcess(...args) {
     // Listen for messages from the child
     child.on('message', (message) => {
       if (message.status === 'COMPLETED') {
-        clearTimeout(timeout);
-        resolve(message);
+        finish(undefined, message);
       } else if (message.status === 'ERROR') {
-        clearTimeout(timeout);
-        reject(new Error(message.error));
+        finish(new Error(message.error));
       }
       // "CANCELLED" or other statuses can be handled likewise, if desired
     });
 
     // Kick off the child's actual work
-    child.send({
-      type: 'START',
-      generationId: args[0],
-      layer: args[1],
-      sessionId: args[2],
-      startFrame: args[3],
-      endFrame: args[4],
-      canvasDimensions: args[5],
-      applyAudioVisualizer: args[6],
-      visualizerData: args[7],
-      totalVideoDuration: args[8],
-      framesPerSecond: args[9],
-      globalVideos: args[10],
-      narratorAvatarOverlay: args[11] || null,
-      frameOutputNamespace: args[12],
-    });
+    try {
+      child.send({
+        type: 'START',
+        generationId: args[0],
+        layer: args[1],
+        sessionId: args[2],
+        startFrame: args[3],
+        endFrame: args[4],
+        canvasDimensions: args[5],
+        applyAudioVisualizer: args[6],
+        visualizerData: args[7],
+        totalVideoDuration: args[8],
+        framesPerSecond: args[9],
+        globalVideos: args[10],
+        narratorAvatarOverlay: args[11] || null,
+        frameOutputNamespace: args[12],
+      }, (error) => {
+        if (error) {
+          handleSendFailure('START', error);
+        }
+      });
+    } catch (error) {
+      handleSendFailure('START', error);
+    }
   });
 }
 

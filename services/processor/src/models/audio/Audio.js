@@ -32,7 +32,10 @@ import {
   syncElevenLabsBackingTrackMusicLengthMeta,
 } from './ElevenLabsMusicPayload.js';
 
-import { getCurrentEnvironment } from '../../utils/EnvironmentUtils.js';
+import {
+  isContainerRuntime,
+  shouldBypassGenerationCredits,
+} from '../../utils/EnvironmentUtils.js';
 
 import { getCanvasDimensionsForAspectRatio } from '../../utils/CanvasUtils.js';
 import { getSessionFramesPerSecond } from '../../utils/FpsUtils.js';
@@ -43,6 +46,7 @@ import { downloadRemoteLinks } from "./AudioUtils.js";
 import ffmpeg from 'fluent-ffmpeg';
 import { promisify } from 'util';
 import { maybeTriggerAutoRecharge } from '../AutoRecharge.js';
+import { withProcessorFfmpegResources } from '../../utils/FfmpegResources.js';
 import {
   findTTSSpeaker,
   TTS_PROVIDER_CUSTOM_TEXT_TO_SPEECH,
@@ -474,10 +478,7 @@ export async function createGenerateAudioRequest(userId, payload, updateCredits 
   } = normalizedPayload;
 
 
-  const currentEnv = getCurrentEnvironment();
-
-
-  if (updateCredits && currentEnv !== 'docker') {
+  if (updateCredits && !shouldBypassGenerationCredits()) {
 
     let creditsIncrement = -1;
 
@@ -1058,7 +1059,7 @@ export async function updateAudiocraftGenerationStatus(payload) {
           // Define paths for downloading and storing audio files
           const localDownloadBase = path.join('video', 'audio', sessionId.toString(), audioLayerId.toString());
           let localDownloadFolderPath = path.join(process.cwd(), '..', 'samsar_processor', 'assets', localDownloadBase);
-          if (process.env.CURRENT_ENV === 'staging' || process.env.CURRENT_ENV === 'docker') {
+          if (process.env.SAMSAR_ASSETS_ROOT || isContainerRuntime()) {
             localDownloadFolderPath = path.join(process.env.SAMSAR_ASSETS_ROOT || '/assets', localDownloadBase); // Docker staging volume mount path
           }
 
@@ -1635,20 +1636,24 @@ export async function padBlankAudioAtBeginningAndEnd(
 
   try {
     // 4) Run ffmpeg to generate a new file with padded audio
-    const retVal = new Promise((resolve, reject) => {
-      ffmpeg()
-        .input(inputAudioPath)
-        .audioFilters([adelayFilter, apadFilter, trimFilter, 'asetpts=PTS-STARTPTS'])
-        .duration(targetDuration)
-        .on('error', (err) => {
-          console.error('Error while padding audio:', err);
-          reject(err);
-        })
-        .on('end', () => {
-          resolve(outputAudioPath);
-        })
-        .save(outputAudioPath);
-    });
+    const retVal = withProcessorFfmpegResources((threadOptions) => (
+      new Promise((resolve, reject) => {
+        ffmpeg()
+          .input(inputAudioPath)
+          .inputOptions(threadOptions.inputOptions)
+          .audioFilters([adelayFilter, apadFilter, trimFilter, 'asetpts=PTS-STARTPTS'])
+          .duration(targetDuration)
+          .outputOptions(threadOptions.outputOptions)
+          .on('error', (err) => {
+            console.error('Error while padding audio:', err);
+            reject(err);
+          })
+          .on('end', () => {
+            resolve(outputAudioPath);
+          })
+          .save(outputAudioPath);
+      })
+    ));
     return retVal;
 
   } catch (err) {

@@ -17,9 +17,15 @@ import {
 } from './interactive/InteractivePublicationManifest.js';
 import { resolvePublicationAspectRatio } from './publication/AspectRatio.js';
 import { resolvePublicationOriginalPrompt } from './publication/Transcript.js';
+import {
+  resolveProcessorInteractiveMediaTaskLimit,
+} from '../utils/CpuBudget.js';
 
-const INTERACTIVE_MEDIA_CONCURRENCY = 2;
 const INTERACTIVE_PUBLICATION_REVISION = Symbol('interactivePublicationRevision');
+
+export function resolveInteractiveMediaConcurrency(options = {}) {
+  return resolveProcessorInteractiveMediaTaskLimit(options);
+}
 
 const normalizeOptionalString = (value) => {
   if (typeof value !== 'string') return null;
@@ -323,7 +329,7 @@ export async function createInteractivePublicationForSessionVideo(
   try {
     const publicMedia = await mapWithConcurrency(
       completedPaths,
-      INTERACTIVE_MEDIA_CONCURRENCY,
+      resolveInteractiveMediaConcurrency(),
       async (path) => {
         const rawPath = rawPathsById.get(path.path_id);
         if (!rawPath) {

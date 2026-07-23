@@ -5,6 +5,7 @@ import {
   resolveFreshManagedProviderMediaUrl,
   resolveReachableConfiguredProviderMediaUrl,
 } from './ProviderMediaTunnel.js';
+import { isDockerRuntime as isConfiguredDockerRuntime } from './DeploymentEnvironment.js';
 
 const DEFAULT_RUNTIME_CONFIG_PATH = '/persistent/config/samsar.config.json';
 const DOCKER_ASSETS_V2_PREFIX = 'assets_v2';
@@ -18,6 +19,7 @@ const LOCAL_MEDIA_HOSTS = new Set([
   'media-gateway',
 ]);
 const LOCAL_MEDIA_BASE_URL_ENV_KEYS = [
+  'SAMSAR_PROVIDER_MEDIA_BASE_URL',
   'SAMSAR_PUBLIC_MEDIA_BASE_URL',
   'SAMSAR_EXTERNAL_MEDIA_PUBLIC_BASE_URL',
   'MEDIA_PUBLIC_URL',
@@ -94,7 +96,7 @@ function isTruthyEnv(value) {
 }
 
 function isDockerRuntime() {
-  return normalizeString(process.env.CURRENT_ENV).toLowerCase() === 'docker';
+  return isConfiguredDockerRuntime();
 }
 
 function shouldUseDockerLocalMedia() {
@@ -178,6 +180,16 @@ function uniqueBaseUrls(values = []) {
 
 function getManagedTunnelBaseUrlCandidates() {
   const runtime = readRuntimeMediaConfig();
+  const stablePublicUrls = uniqueBaseUrls([
+    process.env.SAMSAR_PROVIDER_MEDIA_BASE_URL,
+    process.env.SAMSAR_PUBLIC_MEDIA_BASE_URL,
+    process.env.SAMSAR_DOCKER_PUBLIC_ASSET_BASE_URL,
+    process.env.SAMSAR_DOCKER_PUBLIC_PROCESSOR_BASE_URL,
+    ...runtime.localDeliveryUrls,
+  ]).filter((value) => {
+    const parsed = parseHttpUrl(value);
+    return parsed && !isTunnelHostname(parsed.hostname);
+  });
   const explicitManagedUrls = uniqueBaseUrls([
     ...runtime.managedTunnelUrls,
     process.env.SAMSAR_MEDIA_TUNNEL_PUBLIC_URL,
@@ -192,7 +204,7 @@ function getManagedTunnelBaseUrlCandidates() {
     return parsed && isTunnelHostname(parsed.hostname);
   });
 
-  return uniqueBaseUrls([...explicitManagedUrls, ...tunnelShapedFallbacks])
+  return uniqueBaseUrls([...stablePublicUrls, ...explicitManagedUrls, ...tunnelShapedFallbacks])
     .filter(isPublicHttpsUrl);
 }
 

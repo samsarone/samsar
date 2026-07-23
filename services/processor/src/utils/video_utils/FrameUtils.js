@@ -1,9 +1,14 @@
 import fs from 'fs';
 import path from 'path';
 import { getFramesPerSecondFromValue, getSessionFramesPerSecond } from '../FpsUtils.js';
+import { isContainerRuntime } from '../EnvironmentUtils.js';
 
 function getAssetsRoot(folderName = 'assets_v2') {
-  return process.env.CURRENT_ENV === 'staging' || process.env.CURRENT_ENV === 'docker'
+  const configuredRoot = folderName === 'assets_v2'
+    ? process.env.SAMSAR_ASSETS_V2_ROOT
+    : process.env.SAMSAR_ASSETS_ROOT;
+  if (configuredRoot) return configuredRoot;
+  return isContainerRuntime()
     ? `/${folderName}`
     : path.join(process.cwd(), folderName);
 }

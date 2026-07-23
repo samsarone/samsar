@@ -9,6 +9,11 @@ import VideoSession from '../schema/VideoSession.js';
 import { uploadSpeechAudioToCDN } from '../audio/AWS.js';
 import { normalizeProviderMediaUrl } from './utils/AWS.js';
 import { resolveLocalAssetPath } from '../utils/LocalAssetPath.js';
+import { isDockerRuntime } from '../utils/EnvironmentUtils.js';
+import {
+  buildFfmpegThreadOptions,
+  resolveExpressVideoFfmpegThreads,
+} from '../utils/FfmpegResources.js';
 
 const RUNWAY_API_BASE_URL = (process.env.RUNWAYML_BASE_URL || 'https://api.dev.runwayml.com').replace(/\/+$/, '');
 const RUNWAY_API_VERSION = process.env.RUNWAYML_API_VERSION || '2024-11-06';
@@ -77,7 +82,7 @@ async function runwayGet(pathname) {
 }
 
 function isDockerLikeEnv() {
-  return process.env.CURRENT_ENV === 'staging' || process.env.CURRENT_ENV === 'docker';
+  return isDockerRuntime();
 }
 
 function getAssetsBasePath() {
@@ -373,6 +378,60 @@ function runFfmpeg(args) {
   });
 }
 
+export function buildNarratorAudioFfmpegArgs({
+  durationSeconds,
+  resolvedSegments,
+  outputPath,
+  ffmpegThreads = resolveExpressVideoFfmpegThreads(),
+}) {
+  const {
+    inputOptions,
+    filterOptions,
+    outputOptions,
+  } = buildFfmpegThreadOptions({
+    threads: ffmpegThreads,
+    inputThreads: 1,
+    complexFilter: true,
+  });
+  const args = [
+    '-y',
+    '-f',
+    'lavfi',
+    '-t',
+    `${durationSeconds}`,
+    ...inputOptions,
+    '-i',
+    'anullsrc=r=44100:cl=stereo',
+  ];
+
+  resolvedSegments.forEach((segment) => {
+    args.push(...inputOptions, '-i', segment.source);
+  });
+
+  const filterParts = resolvedSegments.map((segment, index) => {
+    const inputIndex = index + 1;
+    const delayMs = Math.max(0, Math.round(segment.startTime * 1000));
+    const duration = Math.max(0.01, segment.duration);
+    return `[${inputIndex}:a]aformat=sample_rates=44100:channel_layouts=stereo,atrim=0:${duration},asetpts=PTS-STARTPTS,adelay=${delayMs}|${delayMs}[n${index}]`;
+  });
+  const mixInputs = ['[0:a]', ...resolvedSegments.map((_, index) => `[n${index}]`)].join('');
+  filterParts.push(`${mixInputs}amix=inputs=${resolvedSegments.length + 1}:duration=first:dropout_transition=0[mix]`);
+
+  args.push(
+    ...filterOptions,
+    '-filter_complex', filterParts.join(';'),
+    '-map', '[mix]',
+    '-t', `${durationSeconds}`,
+    '-ac', '2',
+    '-ar', '44100',
+    '-b:a', '192k',
+    ...outputOptions,
+    outputPath,
+  );
+
+  return args;
+}
+
 async function buildContinuousNarratorAudio(sessionData = {}) {
   const durationSeconds = resolveNarratorAvatarDurationSeconds(sessionData);
   const existingAudioPath = resolveAssetAbsolutePath(sessionData.narratorAvatarAudioAssetPath);
@@ -428,29 +487,11 @@ async function buildContinuousNarratorAudio(sessionData = {}) {
   fs.mkdirSync(outputDir, { recursive: true });
   const outputPath = path.join(outputDir, 'narrator_avatar.mp3');
 
-  const args = ['-y', '-f', 'lavfi', '-t', `${durationSeconds}`, '-i', 'anullsrc=r=44100:cl=stereo'];
-  resolvedSegments.forEach((segment) => {
-    args.push('-i', segment.source);
-  });
-
-  const filterParts = resolvedSegments.map((segment, index) => {
-    const inputIndex = index + 1;
-    const delayMs = Math.max(0, Math.round(segment.startTime * 1000));
-    const duration = Math.max(0.01, segment.duration);
-    return `[${inputIndex}:a]aformat=sample_rates=44100:channel_layouts=stereo,atrim=0:${duration},asetpts=PTS-STARTPTS,adelay=${delayMs}|${delayMs}[n${index}]`;
-  });
-  const mixInputs = ['[0:a]', ...resolvedSegments.map((_, index) => `[n${index}]`)].join('');
-  filterParts.push(`${mixInputs}amix=inputs=${resolvedSegments.length + 1}:duration=first:dropout_transition=0[mix]`);
-
-  args.push(
-    '-filter_complex', filterParts.join(';'),
-    '-map', '[mix]',
-    '-t', `${durationSeconds}`,
-    '-ac', '2',
-    '-ar', '44100',
-    '-b:a', '192k',
+  const args = buildNarratorAudioFfmpegArgs({
+    durationSeconds,
+    resolvedSegments,
     outputPath,
-  );
+  });
 
   await runFfmpeg(args);
   const stats = await fs.promises.stat(outputPath);

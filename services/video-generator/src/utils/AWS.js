@@ -6,6 +6,7 @@ import fs from 'fs';
 import crypto from 'crypto';
 import path from 'path';
 import { resolveDockerLocalPublicAssetBaseUrl } from '../consts/DockerDeploymentUrls.js';
+import { isDockerRuntime as isConfiguredDockerRuntime } from './DeploymentEnvironment.js';
 
 
 const AWS_ACCESS_KEY_ID = process.env.AWS_ACCESS_KEY_ID;
@@ -152,7 +153,7 @@ function buildMediaDeliveryUrl(key) {
 }
 
 function isDockerRuntime() {
-  return String(process.env.CURRENT_ENV || '').trim().toLowerCase() === 'docker';
+  return isConfiguredDockerRuntime();
 }
 
 function isExternalMediaPublishEnabled() {

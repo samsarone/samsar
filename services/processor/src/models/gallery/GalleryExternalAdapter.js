@@ -4,7 +4,7 @@ import {
   createDeployedSamsarClient,
   getDeployedSamsarApiKey,
 } from '../api/DeployedSamsarClient.js';
-import { getCurrentEnvironment } from '../../utils/EnvironmentUtils.js';
+import { isStandaloneEdition } from '../../utils/EnvironmentUtils.js';
 
 function normalizeString(value) {
   return typeof value === 'string' ? value.trim() : '';
@@ -42,7 +42,7 @@ export function shouldUseDeployedGallery() {
   if (!getDeployedSamsarApiKey()) return false;
   if (isTruthy(process.env.SAMSAR_FORCE_EXTERNAL_GALLERY)) return true;
   if (isTruthy(process.env.SAMSAR_EXTERNAL_GALLERY_ENABLED)) return true;
-  return getCurrentEnvironment() === 'docker';
+  return isStandaloneEdition();
 }
 
 export function isConfiguredGalleryServiceRequest(headers = {}) {

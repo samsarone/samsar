@@ -3,7 +3,7 @@ import SamsarClient from 'samsar-js';
 import { getDBConnectionString } from '../DBString.js';
 import ImageGeneration from '../schema/ImageGeneration.js';
 import { saveRemoteFile } from '../utils/FileUtils.js';
-import { getCurrentEnvironment } from '../utils/Environment.js';
+import { isStandaloneEdition } from '../utils/Environment.js';
 import { recordProviderUsageLog } from '../utils/ProviderUsageAudit.js';
 import {
   getAccessibleMediaUrlForProvider,
@@ -87,7 +87,7 @@ function shouldEnableExternalProviders() {
   if (isTruthyEnv(process.env.SAMSAR_FORCE_EXTERNAL_PROVIDERS)) {
     return true;
   }
-  return getCurrentEnvironment() === 'docker';
+  return isStandaloneEdition();
 }
 
 function getExternalClient() {

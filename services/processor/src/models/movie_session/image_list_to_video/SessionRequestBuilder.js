@@ -29,6 +29,7 @@ import {
 } from '../SubtitleLanguage.js';
 import User from "../../../schema/User.js";
 import axios from 'axios';
+import { isContainerRuntime } from '../../../utils/EnvironmentUtils.js';
 import fs from 'fs';
 import path from 'path';
 import sharp from 'sharp';
@@ -639,7 +640,7 @@ export async function requestImageListToVideGeneration(userId, payload) {
     .some((metadata) => metadata.subtitleTranslationRequired === true);
 
   const canvasDimensions = getCanvasDimensionsForAspectRatio(aspectRatio);
-  const assetsRoot = (process.env.CURRENT_ENV === 'staging' || process.env.CURRENT_ENV === 'docker')
+  const assetsRoot = (process.env.SAMSAR_ASSETS_V2_ROOT || isContainerRuntime())
     ? process.env.SAMSAR_ASSETS_V2_ROOT || '/assets_v2'
     : path.join(process.cwd(), 'assets_v2');
   const toPublicAssetPath = (filePath) => path.posix.join(

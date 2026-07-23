@@ -98,6 +98,7 @@ function getConfiguredOwnedMediaHostnames() {
   for (const value of [
     ...readRuntimeManagedTunnelUrls(),
     process.env.SAMSAR_MEDIA_TUNNEL_PUBLIC_URL,
+    process.env.SAMSAR_PROVIDER_MEDIA_BASE_URL,
     process.env.SAMSAR_INTERNAL_MEDIA_BASE_URL,
     process.env.SAMSAR_DOCKER_PUBLIC_ASSET_BASE_URL,
     process.env.SAMSAR_DOCKER_PUBLIC_PROCESSOR_BASE_URL,
@@ -292,18 +293,24 @@ function getDockerMediaBaseCandidates(options = {}) {
     return [normalizeString(process.env.SAMSAR_INTERNAL_MEDIA_BASE_URL) ||
       normalizeString(process.env.MEDIA_PUBLIC_URL || process.env.STATIC_CDN_URL)].filter(Boolean);
   }
-  return [
-    ...readRuntimeManagedTunnelUrls(),
-    process.env.SAMSAR_MEDIA_TUNNEL_PUBLIC_URL,
+  const candidates = [
+    process.env.SAMSAR_PROVIDER_MEDIA_BASE_URL,
     process.env.SAMSAR_PUBLIC_MEDIA_BASE_URL,
     process.env.SAMSAR_EXTERNAL_MEDIA_PUBLIC_BASE_URL,
     process.env.MEDIA_PUBLIC_URL,
+    process.env.SAMSAR_DOCKER_PUBLIC_ASSET_BASE_URL,
+    process.env.SAMSAR_DOCKER_PUBLIC_PROCESSOR_BASE_URL,
+    ...readRuntimeManagedTunnelUrls(),
+    process.env.SAMSAR_MEDIA_TUNNEL_PUBLIC_URL,
   ]
     .map((value) => normalizeString(value).replace(/\/+$/, ''))
     .filter(Boolean)
     .filter(isProbablyPublicUrl)
-    .filter(isTunnelMediaBaseUrl)
     .filter((value, index, list) => list.indexOf(value) === index);
+  return [
+    ...candidates.filter((value) => !isTunnelMediaBaseUrl(value)),
+    ...candidates.filter(isTunnelMediaBaseUrl),
+  ];
 }
 
 async function buildDockerMediaUrl(reference, localPath = '', options = {}) {

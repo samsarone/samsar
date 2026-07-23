@@ -146,7 +146,7 @@ export function isDockerAudioProviderRoutingEnabled() {
   if (isTruthyEnv(process.env.SAMSAR_DOCKER_AUDIO_PROVIDER_ROUTING_ENABLED)) {
     return true;
   }
-  return normalizeString(process.env.CURRENT_ENV).toLowerCase() === 'docker';
+  return isStandaloneEdition();
 }
 
 export function shouldForceSamsarExternalAudioProvider() {
@@ -215,3 +215,4 @@ export function isInitialDockerAudioRoutingRequest(payload = {}) {
   return isDockerAudioProviderRoutingEnabled() &&
     normalizeKey(payload?.status || 'INIT') === 'INIT';
 }
+import { isStandaloneEdition } from '../util/environmentUtils.js';

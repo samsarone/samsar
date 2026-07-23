@@ -39,7 +39,7 @@ import { requestRenderCosmos3I2VVideo } from './Cosmos3I2V.js';
 
 import { requestRenderGenericVideo, requestRenderGenericLipSyncVideo } from './Generic.js';
 
-import { getCurrentEnvironment } from '../../utils/EnvironmentUtils.js';
+import { shouldBypassGenerationCredits } from '../../utils/EnvironmentUtils.js';
 import { maybeTriggerAutoRecharge } from '../AutoRecharge.js';
 import VideoSession from '../../schema/VideoSession.js';
 import { getRenderableItemListForLayer } from '../../utils/ImageRenderUtils.js';
@@ -164,9 +164,7 @@ export async function requestGenerateCustomAIVideo(userId, payload) {
   const { model, aspectRatio, duration = 5 } = payload;
 
 
-  const currentEnv = getCurrentEnvironment();
-
-  if (currentEnv !== 'docker') {
+  if (!shouldBypassGenerationCredits()) {
     const generationCostObject = VIDEO_MODEL_PRICES.find((model) => (model.key === payload.model));
     if (!generationCostObject?.prices?.length) {
       throw new Error('Invalid model');

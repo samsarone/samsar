@@ -10,6 +10,7 @@ import { NodeHttpHandler } from "@aws-sdk/node-http-handler";
 import { Agent } from "https";
 import { resolveDockerLocalPublicAssetBaseUrl } from './consts/DockerDeploymentUrls.js';
 import { resolveFreshManagedProviderMediaUrl } from './utils/ProviderMediaTunnel.js';
+import { isDockerRuntime as isConfiguredDockerRuntime, usesLocalAssetStorage } from './utils/Environment.js';
 
 
 
@@ -129,8 +130,7 @@ function normalizeString(value) {
 }
 
 function isDockerRuntime() {
-  const currentEnv = normalizeString(process.env.CURRENT_ENV).toLowerCase();
-  return currentEnv === 'docker';
+  return isConfiguredDockerRuntime();
 }
 
 function isExternalMediaPublishEnabled() {
@@ -312,6 +312,7 @@ function getConfiguredOwnedMediaHostnames() {
   const hostnames = new Set();
   const configuredUrls = [
     process.env.SAMSAR_MEDIA_TUNNEL_PUBLIC_URL,
+    process.env.SAMSAR_PROVIDER_MEDIA_BASE_URL,
     process.env.SAMSAR_DOCKER_PUBLIC_ASSET_BASE_URL,
     process.env.SAMSAR_DOCKER_PUBLIC_PROCESSOR_BASE_URL,
     process.env.SAMSAR_PUBLIC_MEDIA_BASE_URL,
@@ -485,22 +486,29 @@ function isTunnelMediaBaseUrl(value) {
 }
 
 function getDockerTunnelMediaBaseUrlCandidates() {
-  return [
-    ...readRuntimeConfigPublicMediaUrls(),
-    process.env.SAMSAR_MEDIA_TUNNEL_PUBLIC_URL,
+  const candidates = [
+    process.env.SAMSAR_PROVIDER_MEDIA_BASE_URL,
     process.env.SAMSAR_PUBLIC_MEDIA_BASE_URL,
     process.env.SAMSAR_EXTERNAL_MEDIA_PUBLIC_BASE_URL,
     process.env.MEDIA_PUBLIC_URL,
+    process.env.SAMSAR_DOCKER_PUBLIC_ASSET_BASE_URL,
+    process.env.SAMSAR_DOCKER_PUBLIC_PROCESSOR_BASE_URL,
+    ...readRuntimeConfigPublicMediaUrls(),
+    process.env.SAMSAR_MEDIA_TUNNEL_PUBLIC_URL,
   ]
     .map(normalizeTunnelBaseUrl)
     .filter(Boolean)
     .filter(isProbablyPublicUrl)
-    .filter(isTunnelMediaBaseUrl)
     .filter((value, index, list) => list.indexOf(value) === index);
+  return [
+    ...candidates.filter((value) => !isTunnelMediaBaseUrl(value)),
+    ...candidates.filter(isTunnelMediaBaseUrl),
+  ];
 }
 
 function getPublicMediaBaseUrlCandidates() {
   return [
+    process.env.SAMSAR_PROVIDER_MEDIA_BASE_URL,
     process.env.SAMSAR_DOCKER_PUBLIC_ASSET_BASE_URL,
     process.env.SAMSAR_DOCKER_PUBLIC_PROCESSOR_BASE_URL,
     process.env.SAMSAR_PUBLIC_MEDIA_BASE_URL,
@@ -554,13 +562,13 @@ export function getPublicMediaBaseUrl() {
 }
 
 export function getDockerPublicMediaBaseUrl() {
-  const tunnelBaseUrl = getDockerTunnelMediaBaseUrlCandidates()[0];
-  if (tunnelBaseUrl) {
-    return tunnelBaseUrl;
+  const publicBaseUrl = getDockerTunnelMediaBaseUrlCandidates()[0];
+  if (publicBaseUrl) {
+    return publicBaseUrl;
   }
   throw new Error(
-    'A tunneled media URL is required before sending local audio/video assets to remote video providers. ' +
-    'Ensure the Compose media-tunnel-controller is healthy and has published localMediaTunnel.publicUrl.'
+    'A public media URL is required before sending local audio/video assets to remote video providers. ' +
+    'Configure a stable HTTPS origin or wait for the Compose media-tunnel-controller.'
   );
 }
 
@@ -938,7 +946,7 @@ export async function uploadVideoToBucket(localPath, payload) {
     .replace(/^assets\/?/, '');
   let videoAbsolutePath = path.join(pwd, '../', 'samsar_processor', 'assets_v2', normalizedLocalPath);
 
-  if (process.env.CURRENT_ENV === 'staging' || process.env.CURRENT_ENV === 'docker') {
+  if (usesLocalAssetStorage()) {
     videoAbsolutePath = path.join(process.env.SAMSAR_ASSETS_V2_ROOT || '/assets_v2', normalizedLocalPath);
   }
   

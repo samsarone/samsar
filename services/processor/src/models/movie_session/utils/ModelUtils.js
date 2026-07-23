@@ -8,7 +8,7 @@ import {
 } from '../../../consts/InferenceModels.js';
 
 export const TEXT_TO_VIDEO_SPEECH_CHARACTER_BOUNDARY_INCREASE_RATIO = 0.1;
-export const TEXT_TO_VIDEO_SPEECH_CHARACTER_OVERSHOOT_RATIO = 0.25;
+export const TEXT_TO_VIDEO_SPEECH_CHARACTER_OVERSHOOT_RATIO = 0.3;
 
 function formatDurationList(units) {
   if (units.length === 1) {

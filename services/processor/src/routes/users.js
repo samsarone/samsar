@@ -36,6 +36,12 @@ import { getBillingPortalUrl } from '../models/BillingPortal.js';
 
 import { getGoogleLogin, loginGoogleClient } from '../models/auth/Google.js';
 import { sendEnterpriseAdminWelcomeEmail } from '../models/Mailer.js';
+import {
+  isGoogleLoginEnabled,
+  isPublicRegistrationEnabled,
+  isSetupAdminBootstrapEnabled,
+} from '../utils/EnvironmentUtils.js';
+import { getAuthCookieDomain } from '../utils/AuthCookie.js';
 
 import('dotenv/config');
 
@@ -51,10 +57,6 @@ function setNoStoreAuthHeaders(res) {
     Expires: '0',
     'Surrogate-Control': 'no-store',
   });
-}
-
-function isDockerRuntime() {
-  return process.env.CURRENT_ENV === 'docker';
 }
 
 function verifyDockerSetupSecret(req) {
@@ -123,8 +125,8 @@ router.get('/profile', async (req, res) => {
 
 router.get('/google_login', async (req, res) => {
   try {
-    if (isDockerRuntime()) {
-      return res.status(403).send({ error: 'Google login is disabled for Docker deployments. Use the configured admin account.' });
+    if (!isGoogleLoginEnabled()) {
+      return res.status(403).send({ error: 'Google login is disabled for standalone deployments. Use the configured admin account.' });
     }
     const loginUrl = await getGoogleLogin(req.query);
     const responseMode = typeof req.query?.responseMode === 'string'
@@ -166,8 +168,8 @@ function decodeGoogleOAuthState(state) {
 
 router.get('/google_login_callback', async (req, res) => {
   try {
-    if (isDockerRuntime()) {
-      return res.status(403).send({ error: 'Google login is disabled for Docker deployments. Use the configured admin account.' });
+    if (!isGoogleLoginEnabled()) {
+      return res.status(403).send({ error: 'Google login is disabled for standalone deployments. Use the configured admin account.' });
     }
     const { state, code } = req.query;
     const defaultOriginDomain = CLIENT_APP || 'https://app.samsar.one';
@@ -183,20 +185,22 @@ router.get('/google_login_callback', async (req, res) => {
       redirectPath = decodedState?.redirect || null;
     } catch (_) {}
 
-    const authToken = await loginGoogleClient({
+    const { authToken, isNewUser } = await loginGoogleClient({
       code,
       subscribeToWeeklyNewsletter: decodedState?.subscribeToWeeklyNewsletter,
     });
 
     const shouldSetCookie = cookieConsent ? cookieConsent === 'accepted' : true;
     if (shouldSetCookie) {
-      res.cookie('authToken', authToken, {
+      const cookieOptions = {
         httpOnly: false,
         secure: true,
         sameSite: 'Lax',
-        domain: '.samsar.one',
         maxAge: 30 * 24 * 60 * 60 * 1000,
-      });
+      };
+      const cookieDomain = getAuthCookieDomain();
+      if (cookieDomain) cookieOptions.domain = cookieDomain;
+      res.cookie('authToken', authToken, cookieOptions);
     }
 
     const safeRedirect =
@@ -205,8 +209,9 @@ router.get('/google_login_callback', async (req, res) => {
       !redirectPath.startsWith('//')
         ? `&redirect=${encodeURIComponent(redirectPath)}`
         : '';
+    const newUserParam = isNewUser ? '&newUser=true' : '';
 
-    res.redirect(`${originDomain}/verify?authToken=${authToken}${safeRedirect}`);
+    res.redirect(`${originDomain}/verify?authToken=${authToken}${safeRedirect}${newUserParam}`);
   } catch (e) {
     console.error('Google login failed', e);
     res.status(500).send({ error: e?.message || 'Google login failed' });
@@ -223,7 +228,7 @@ router.post('/login', async (req, res) => {
 });
 
 router.post('/docker_setup_admin', async (req, res) => {
-  if (!isDockerRuntime()) {
+  if (!isSetupAdminBootstrapEnabled()) {
     return res.status(404).send({ error: 'Not found' });
   }
   if (!verifyDockerSetupSecret(req)) {
@@ -241,7 +246,7 @@ router.post('/docker_setup_admin', async (req, res) => {
           organizationName: req.body?.organizationName,
         });
       } catch (mailError) {
-        console.error('Failed to send Docker admin welcome email:', mailError);
+        console.error('Failed to send standalone admin welcome email:', mailError);
         welcomeEmail = {
           sent: false,
           error: mailError?.message || 'Unable to send welcome email.',
@@ -268,8 +273,8 @@ router.post('/docker_setup_admin', async (req, res) => {
 
 router.post('/register', async (req, res) => {
   try {
-    if (isDockerRuntime()) {
-      return res.status(403).send({ error: 'Registration is disabled for Docker deployments. Use the admin account configured in setup.' });
+    if (!isPublicRegistrationEnabled()) {
+      return res.status(403).send({ error: 'Registration is disabled for standalone deployments. Use the admin account configured in setup.' });
     }
     
     const session = await registerUserByEmail(req.body);

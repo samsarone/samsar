@@ -10,6 +10,7 @@ import { uploadMusicToCDN } from '../AWS.js';
 import { getGoogleAccessToken, getGoogleCloudConfig } from '../inference/GoogleADC.js';
 import { finalizeRemoteAudioGeneration, markAudioGenerationAsFailed } from './audioUtils.js';
 import { getSimplifiedBackingTrackPromptForRetry } from './BackingTrackPromptUtils.js';
+import { isDockerRuntime } from '../util/environmentUtils.js';
 
 const DEFAULT_LYRIA_3_MODEL = 'lyria-3-pro-preview';
 const DEFAULT_LYRIA_3_LOCATION = 'global';
@@ -107,7 +108,7 @@ function buildVertexGenerateContentUrl({ projectId, location, model }) {
 }
 
 function getTempDir(sessionId = 'audio') {
-  const isDockerEnv = process.env.CURRENT_ENV === 'staging' || process.env.CURRENT_ENV === 'docker';
+  const isDockerEnv = isDockerRuntime();
   const safeSessionId = String(sessionId || 'audio').replace(/[^a-zA-Z0-9_-]/g, '_');
   const tempDir = isDockerEnv ? joinPath(process.env.SAMSAR_ASSETS_V2_ROOT || '/assets_v2', 'temp', safeSessionId) : tmpdir();
 

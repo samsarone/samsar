@@ -90,6 +90,16 @@ test("resolveModerationProvider defaults to OpenAI outside Docker", () => {
   }), MODERATION_PROVIDERS.OPENAI);
 });
 
+test("production Docker retains production moderation routing", () => {
+  assert.equal(resolveModerationProvider({
+    env: {
+      SAMSAR_DEPLOYMENT_EDITION: "production",
+      SAMSAR_RUNTIME: "docker",
+    },
+    inferenceModel: "QWEN3.7",
+  }), MODERATION_PROVIDERS.OPENAI);
+});
+
 test("Docker skips moderation when no supported moderation credential is present", () => {
   assert.equal(resolveModerationProvider({
     env: {

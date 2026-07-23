@@ -5,6 +5,7 @@ import { writeFile, mkdir } from 'fs/promises';
 import path from 'path';
 import { execSync } from 'child_process';
 import { saveRemoteFile } from "../utils/FileUtils.js";
+import { usesLocalAssetStorage } from '../utils/Environment.js';
 
 const GCP_PROJECT_ID =
   process.env.GOOGLE_CLOUD_PROJECT ||
@@ -233,7 +234,7 @@ async function saveBase64Image(base64Str) {
     const pwd = process.cwd();
     let savePath = path.join(pwd, '..', 'samsar_processor', 'assets', 'generations', imageName);
 
-    if (process.env.CURRENT_ENV === 'staging' || process.env.CURRENT_ENV === 'docker') {
+    if (usesLocalAssetStorage()) {
       savePath = path.join(process.env.SAMSAR_ASSETS_ROOT || '/assets', 'generations', imageName);
     }
     

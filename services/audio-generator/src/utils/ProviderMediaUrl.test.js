@@ -12,6 +12,8 @@ import {
 
 const ENV_KEYS = [
   'CURRENT_ENV',
+  'SAMSAR_DEPLOYMENT_EDITION',
+  'SAMSAR_RUNTIME',
   'MEDIA_DELIVERY_MODE',
   'SAMSAR_MEDIA_DELIVERY_MODE',
   'SAMSAR_EXTERNAL_MEDIA_PUBLISH_ENABLED',
@@ -22,6 +24,7 @@ const ENV_KEYS = [
   'SAMSAR_RUNTIME_CONFIG_FILE',
   'SAMSAR_CONFIG_FILE',
   'SAMSAR_MEDIA_TUNNEL_PUBLIC_URL',
+  'SAMSAR_PROVIDER_MEDIA_BASE_URL',
   'SAMSAR_PUBLIC_MEDIA_BASE_URL',
   'SAMSAR_EXTERNAL_MEDIA_PUBLIC_BASE_URL',
   'MEDIA_PUBLIC_URL',
@@ -184,7 +187,7 @@ test('managed tunnel resolver probes the exact encoded asset and MIME type', asy
   assert.equal(requests[0][1].headers.Range, 'bytes=0-0');
 });
 
-test('ordinary HTTPS runtime media URLs are not promoted to managed tunnel candidates', async (t) => {
+test('a configured stable public HTTPS media origin is probed before tunnel fallback', async (t) => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'samsar-audio-tunnel-candidates-'));
   t.after(() => fs.rmSync(tempRoot, { recursive: true, force: true }));
   const configPath = path.join(tempRoot, 'samsar.config.json');
@@ -199,18 +202,19 @@ test('ordinary HTTPS runtime media URLs are not promoted to managed tunnel candi
     SAMSAR_MEDIA_TUNNEL_REFRESH_POLL_MS: '10',
     SAMSAR_MEDIA_TUNNEL_REFRESH_REQUEST_PATH: path.join(tempRoot, 'refresh.json'),
   });
-  let fetchCount = 0;
-
-  await assert.rejects(
-    () => getAccessibleProviderMediaUrl('assets_v2/run/clip.mp4', {
-      mediaKind: 'video',
-      fetchImpl: async () => {
-        fetchCount += 1;
-        throw new Error('ordinary public URL must not be probed as a managed tunnel');
-      },
-    }),
-    (error) => error?.code === 'SAMSAR_MEDIA_TUNNEL_UNREACHABLE' &&
-      error?.attemptedUrls?.length === 0,
-  );
-  assert.equal(fetchCount, 0);
+  const requestedUrls = [];
+  const resolved = await getAccessibleProviderMediaUrl('assets_v2/run/clip.mp4', {
+    mediaKind: 'video',
+    fetchImpl: async (url) => {
+      requestedUrls.push(url);
+      return {
+        ok: true,
+        status: 206,
+        url,
+        headers: { get: () => 'video/mp4' },
+      };
+    },
+  });
+  assert.equal(resolved, 'https://ordinary-public.example.test/assets_v2/run/clip.mp4');
+  assert.deepEqual(requestedUrls, [resolved]);
 });

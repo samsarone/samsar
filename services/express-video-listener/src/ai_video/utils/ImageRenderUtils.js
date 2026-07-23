@@ -1,9 +1,11 @@
 import fs from 'fs';
 import path from 'path';
+import { usesLocalAssetStorage } from '../../utils/EnvironmentUtils.js';
 import { createCanvas, loadImage } from 'canvas';
 
 import { getCanvasDimensionsForAspectRatio } from '../../utils/CanvasUtils.js';
 import { getProcessorAssetsRoot, resolveLocalAssetPath } from '../../utils/LocalAssetPath.js';
+import { normalizeProviderMediaUrl } from './AWS.js';
 
 function isRemoteUrl(value) {
   return typeof value === 'string' && /^https?:\/\//i.test(value.trim());
@@ -127,26 +129,39 @@ function getOriginalImagePathFromSrc(src, sessionId = null) {
   return candidates[0] || path.join(roots[0], normalizedRef);
 }
 
-async function loadCanvasImageFromItem(item, sessionId = null) {
+export async function resolveCanvasImageSource(
+  item,
+  sessionId = null,
+  {
+    normalizeProviderMediaUrlImpl = normalizeProviderMediaUrl,
+    fileExists = fs.existsSync,
+  } = {},
+) {
   const imageRef = getItemImageReference(item);
   if (!imageRef) {
-    return null;
+    return '';
   }
 
-  try {
-    const originalImagePath = getOriginalImagePathFromSrc(imageRef, sessionId);
-    if (originalImagePath && fs.existsSync(originalImagePath)) {
-      return await loadImage(originalImagePath);
-    }
+  const originalImagePath = getOriginalImagePathFromSrc(imageRef, sessionId);
+  if (originalImagePath && fileExists(originalImagePath)) {
+    return originalImagePath;
+  }
 
-    if (isRemoteUrl(imageRef)) {
-      return await loadImage(imageRef);
-    }
+  const providerImageUrl = await normalizeProviderMediaUrlImpl(imageRef, {
+    mediaKind: 'image',
+  });
+  return isRemoteUrl(providerImageUrl) ? providerImageUrl : '';
+}
+
+async function loadCanvasImageFromItem(item, sessionId = null, dependencies = {}) {
+  try {
+    const imageSource = await resolveCanvasImageSource(item, sessionId, dependencies);
+    return imageSource
+      ? await (dependencies.loadImageImpl || loadImage)(imageSource)
+      : null;
   } catch {
     return null;
   }
-
-  return null;
 }
 
 function getVisibleImageItems(activeItemList = []) {
@@ -214,15 +229,21 @@ export function getSelectedFrameImageForImageSession(imageSession = {}, sessionI
   }
 }
 
-export function getFrameImageForLayer(sessionId, layerId, aspectRatio, activeItemList) {
+export function getFrameImageForLayer(
+  sessionId,
+  layerId,
+  aspectRatio,
+  activeItemList,
+  dependencies = {},
+) {
   return new Promise(async (resolve, reject) => {
     try {
       const pwd = process.cwd();
       const imageName = `${sessionId}_${layerId}.png`;
       let imageBaseFolder = path.join(pwd, '../', 'samsar_processor', 'assets', 'ai_video', 'temp');
 
-      if (process.env.CURRENT_ENV === 'staging' || process.env.CURRENT_ENV === 'docker') {
-        imageBaseFolder = '/assets/ai_video/temp';  // Docker staging volume mount path
+      if (usesLocalAssetStorage()) {
+        imageBaseFolder = path.join(getAssetRoot('assets'), 'ai_video', 'temp');
       }
       
 
@@ -261,7 +282,7 @@ export function getFrameImageForLayer(sessionId, layerId, aspectRatio, activeIte
           if (!imageRef) {
             return;
           }
-          const image = await loadCanvasImageFromItem(item, sessionId);
+          const image = await loadCanvasImageFromItem(item, sessionId, dependencies);
           if (image) {
             images[imageRef] = image;
             loadedImageCount += 1;

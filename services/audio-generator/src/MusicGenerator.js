@@ -12,11 +12,17 @@ import { markAudioGenerationAsFailed } from './music/audioUtils.js';
 
 import path from 'path';
 import { installStructuredLogger } from './utils/StructuredLogger.js';
+import { resolveCpuUpperBound } from './utils/CpuResources.js';
 
 installStructuredLogger({
   serviceName: process.env.SERVICE_NAME || 'samsar_audio_generator',
   component: 'music_generator_worker',
 });
+
+const MAX_CONCURRENT_REQUESTS = resolveCpuUpperBound(
+  process.env.SAMSAR_AUDIO_MAX_CONCURRENT_REQUESTS,
+  3,
+);
 
 export async function processPendingAudioRequests() {
   while (true) {
@@ -52,7 +58,7 @@ async function checkForPendingRequestsAndGenerate() {
   const pendingAudioGenerationRequests = await AudioGeneration.find({
     rowLocked: false,
     
-  }).limit(10);
+  }).limit(MAX_CONCURRENT_REQUESTS);
 
   const lockedRequests = await Promise.all(
     pendingAudioGenerationRequests.map(async (request) => {
@@ -68,8 +74,8 @@ async function checkForPendingRequestsAndGenerate() {
   const filteredLockedRequests = lockedRequests.filter(Boolean);
 
   const chunks = [];
-  for (let i = 0; i < filteredLockedRequests.length; i += 3) {
-    chunks.push(filteredLockedRequests.slice(i, i + 3));
+  for (let i = 0; i < filteredLockedRequests.length; i += MAX_CONCURRENT_REQUESTS) {
+    chunks.push(filteredLockedRequests.slice(i, i + MAX_CONCURRENT_REQUESTS));
   }
 
   for (const chunk of chunks) {

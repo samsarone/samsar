@@ -4,6 +4,9 @@ import { SamsarClient } from 'samsar-js';
 
 const ENV_KEYS = [
   'CURRENT_ENV',
+  'SAMSAR_DEPLOYMENT_EDITION',
+  'SAMSAR_EDITION',
+  'SAMSAR_RUNTIME',
   'SAMSAR_API_KEY',
   'SAMSAR_DEPLOYED_API_KEY',
   'SAMSAR_EXTERNAL_API_KEY',
@@ -45,6 +48,17 @@ test('Docker gallery forwarding requires the configured Samsar service key', () 
     isConfiguredGalleryServiceRequest({ authorization: 'Bearer incorrect-key' }),
     false,
   );
+});
+
+test('production Docker does not enable standalone gallery forwarding implicitly', () => {
+  clearEnv();
+  process.env.SAMSAR_DEPLOYMENT_EDITION = 'production';
+  process.env.SAMSAR_RUNTIME = 'docker';
+  process.env.SAMSAR_API_KEY = 'samsar-gallery-key';
+  assert.equal(shouldUseDeployedGallery(), false);
+
+  process.env.SAMSAR_EXTERNAL_GALLERY_ENABLED = 'true';
+  assert.equal(shouldUseDeployedGallery(), true);
 });
 
 test('gallery search is forwarded through samsar-js to the deployed v2 endpoint', async (t) => {

@@ -6,6 +6,11 @@ import { getFramesPerSecondFromValue } from '../../utils/FpsUtils.js';
 import { promisify } from 'util';
 import stream from 'stream';
 import { fileURLToPath } from 'url';
+import { isContainerRuntime } from '../../utils/EnvironmentUtils.js';
+import {
+  buildProcessorFfmpegThreadOptions,
+  withProcessorFfmpegResources,
+} from '../../utils/FfmpegResources.js';
 
 const pipeline = promisify(stream.pipeline);
 const __filename = fileURLToPath(import.meta.url);
@@ -15,6 +20,17 @@ const AUDIO_EDGE_SILENCE_MIN_DURATION_SECONDS = 0.25;
 const AUDIO_EDGE_SILENCE_WINDOW_SECONDS = 0.03;
 const AUDIO_EDGE_DETECTION_TOLERANCE_SECONDS = 0.1;
 const MIN_RETAINED_AUDIO_DURATION_SECONDS = 0.1;
+
+export function buildFrameExtractionThreadOptions(threadCount) {
+  const threadOptions = buildProcessorFfmpegThreadOptions(threadCount);
+  return {
+    inputOptions: threadOptions.inputOptions,
+    outputOptions: [
+      ...threadOptions.simpleFilterOptions,
+      ...threadOptions.encoderOptions,
+    ],
+  };
+}
 
 function isWritableDirectory(dirPath) {
   try {
@@ -29,12 +45,9 @@ function resolveAssetRoot() {
   const configuredAssetsRoot = String(process.env.SAMSAR_ASSETS_V2_ROOT || '').trim();
   const dockerAssetsRoot = configuredAssetsRoot || '/assets_v2';
   const localAssetsRoot = path.resolve(__dirname, '../../..', 'assets_v2');
-  const currentEnv = process.env.CURRENT_ENV;
-
-  // An explicit root is authoritative in deployed containers, including when
-  // CURRENT_ENV is "production". Docker Compose mounts the persistent volume
-  // at this path.
-  if ((configuredAssetsRoot || currentEnv === 'staging' || currentEnv === 'docker')
+  // An explicit root is authoritative in every deployment. Docker Compose
+  // mounts the persistent volume at this path.
+  if ((configuredAssetsRoot || isContainerRuntime())
     && fs.existsSync(dockerAssetsRoot)
     && isWritableDirectory(dockerAssetsRoot)) {
     return dockerAssetsRoot;
@@ -227,19 +240,23 @@ async function detectAudioEdgeSilence(audioPath) {
 
   let stderrOutput = '';
 
-  await new Promise((resolve, reject) => {
-    ffmpeg(audioPath)
-      .noVideo()
-      .audioFilters([silenceDetectFilter])
-      .format('null')
-      .output('-')
-      .on('stderr', (line) => {
-        stderrOutput += `${line}\n`;
-      })
-      .on('end', resolve)
-      .on('error', reject)
-      .run();
-  });
+  await withProcessorFfmpegResources((threadOptions) => (
+    new Promise((resolve, reject) => {
+      ffmpeg(audioPath)
+        .inputOptions(threadOptions.inputOptions)
+        .noVideo()
+        .audioFilters([silenceDetectFilter])
+        .outputOptions(threadOptions.outputOptions)
+        .format('null')
+        .output('-')
+        .on('stderr', (line) => {
+          stderrOutput += `${line}\n`;
+        })
+        .on('end', resolve)
+        .on('error', reject)
+        .run();
+    })
+  ));
 
   return {
     durationSeconds,
@@ -264,16 +281,20 @@ async function trimTrailingSilenceFromAudioFile(audioPath) {
     'areverse',
   ].join(',');
 
-  await new Promise((resolve, reject) => {
-    ffmpeg(audioPath)
-      .noVideo()
-      .audioCodec('libmp3lame')
-      .audioBitrate('192k')
-      .audioFilters([trailingTrimFilter])
-      .on('end', resolve)
-      .on('error', reject)
-      .save(trimmedOutputPath);
-  });
+  await withProcessorFfmpegResources((threadOptions) => (
+    new Promise((resolve, reject) => {
+      ffmpeg(audioPath)
+        .inputOptions(threadOptions.inputOptions)
+        .noVideo()
+        .audioCodec('libmp3lame')
+        .audioBitrate('192k')
+        .audioFilters([trailingTrimFilter])
+        .outputOptions(threadOptions.outputOptions)
+        .on('end', resolve)
+        .on('error', reject)
+        .save(trimmedOutputPath);
+    })
+  ));
 
   await fs.move(trimmedOutputPath, audioPath, { overwrite: true });
 }
@@ -349,19 +370,23 @@ export async function normalizeVideoAssetToMp4WithoutAudio(
 
   const outputPath = path.join(outputFolder, `${prefix}_${Date.now()}.mp4`);
 
-  await new Promise((resolve, reject) => {
-    ffmpeg(inputVideoPath)
-      .noAudio()
-      .videoCodec('libx264')
-      .outputOptions([
-        '-preset', 'veryfast',
-        '-pix_fmt', 'yuv420p',
-        '-movflags', '+faststart',
-      ])
-      .on('end', resolve)
-      .on('error', reject)
-      .save(outputPath);
-  });
+  await withProcessorFfmpegResources((threadOptions) => (
+    new Promise((resolve, reject) => {
+      ffmpeg(inputVideoPath)
+        .inputOptions(threadOptions.inputOptions)
+        .noAudio()
+        .videoCodec('libx264')
+        .outputOptions([
+          ...threadOptions.outputOptions,
+          '-preset', 'veryfast',
+          '-pix_fmt', 'yuv420p',
+          '-movflags', '+faststart',
+        ])
+        .on('end', resolve)
+        .on('error', reject)
+        .save(outputPath);
+    })
+  ));
 
   return outputPath;
 }
@@ -686,7 +711,7 @@ function extractFrames(
   framesPerSecond,
   options = {}
 ) {
-  return new Promise((resolve, reject) => {
+  return withProcessorFfmpegResources((threadOptions) => new Promise((resolve, reject) => {
     const preserveAspectRatio = Boolean(options?.preserveAspectRatio);
     const fpsFilter = `fps=${framesPerSecond}:round=down,${buildFrameFilter(
       newFrameWidth,
@@ -696,7 +721,7 @@ function extractFrames(
 
     const outputOptions = [
       '-start_number', '0',
-      '-threads', '2',
+      ...threadOptions.outputOptions,
       '-vf', fpsFilter,
       '-sws_flags', 'lanczos',
     ];
@@ -706,6 +731,7 @@ function extractFrames(
     }
 
     ffmpeg(videoPath)
+      .inputOptions(threadOptions.inputOptions)
       .outputOptions(outputOptions)
       .output(path.join(outputFolder, '%d.png'))
       .on('end', () => {
@@ -715,7 +741,7 @@ function extractFrames(
         reject(err);
       })
       .run();
-  });
+  }));
 }
 
 function extractSingleFrame(
@@ -726,9 +752,10 @@ function extractSingleFrame(
   seekSeconds = 0,
   options = {}
 ) {
-  return new Promise((resolve, reject) => {
+  return withProcessorFfmpegResources((threadOptions) => new Promise((resolve, reject) => {
     const preserveAspectRatio = Boolean(options?.preserveAspectRatio);
-    const command = ffmpeg(videoPath);
+    const command = ffmpeg(videoPath)
+      .inputOptions(threadOptions.inputOptions);
 
     if (Number.isFinite(seekSeconds) && seekSeconds > 0) {
       command.seekInput(seekSeconds);
@@ -736,7 +763,7 @@ function extractSingleFrame(
 
     const outputOptions = [
       '-frames:v', '1',
-      '-threads', '2',
+      ...threadOptions.outputOptions,
       '-vf', buildFrameFilter(newFrameWidth, newFrameHeight, preserveAspectRatio),
       '-sws_flags', 'lanczos',
     ];
@@ -751,7 +778,7 @@ function extractSingleFrame(
       .on('end', resolve)
       .on('error', reject)
       .run();
-  });
+  }));
 }
 
 function extractAudio(
@@ -762,8 +789,9 @@ function extractAudio(
     durationSeconds = 0,
   } = {}
 ) {
-  return new Promise((resolve, reject) => {
+  return withProcessorFfmpegResources((threadOptions) => new Promise((resolve, reject) => {
     const command = ffmpeg(videoPath)
+      .inputOptions(threadOptions.inputOptions)
       .noVideo()
       .audioCodec('libmp3lame')  // re-encode the audio to MP3
       .audioBitrate('192k');      // optional: adjust as needed
@@ -783,8 +811,9 @@ function extractAudio(
     }
 
     command
+      .outputOptions(threadOptions.outputOptions)
       .on('end', resolve)
       .on('error', reject)
       .save(outputPath);
-  });
+  }));
 }

@@ -3,6 +3,7 @@ import fs from 'fs';
 import fsExtra from 'fs-extra';
 import { fileURLToPath } from 'url';
 import { Types } from 'mongoose';
+import { isContainerRuntime } from '../../utils/EnvironmentUtils.js';
 
 import { getDBConnectionString } from '../DBString.js';
 import { createNewBlankQuickSession } from '../QuickSession.js';
@@ -244,10 +245,9 @@ function resolveAssetsRoots() {
   const localAssetsV2Root = path.resolve(__dirname, '../../..', 'assets_v2');
   const dockerAssetsRoot = process.env.SAMSAR_ASSETS_ROOT || '/assets';
   const dockerAssetsV2Root = process.env.SAMSAR_ASSETS_V2_ROOT || '/assets_v2';
-  const currentEnv = process.env.CURRENT_ENV;
   const roots = [];
 
-  if (currentEnv === 'staging' || currentEnv === 'docker' || currentEnv === 'production') {
+  if (process.env.SAMSAR_ASSETS_ROOT || process.env.SAMSAR_ASSETS_V2_ROOT || isContainerRuntime()) {
     pushUniqueWritableRoot(roots, dockerAssetsRoot);
     pushUniqueWritableRoot(roots, dockerAssetsV2Root);
   }

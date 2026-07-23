@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import { isDockerRuntime } from './EnvironmentUtils.js';
 
 const DEFAULT_RUNTIME_CONFIG_PATH = '/persistent/config/samsar.config.json';
 const DEFAULT_DOCKER_PROCESSOR_BASE_URL = 'http://localhost:3002';
@@ -104,7 +105,7 @@ export function buildStableDockerMediaUrl(key, env = process.env) {
 }
 
 export function assertExplicitDockerExternalMediaConfiguration(env = process.env) {
-  if (normalizeString(env.CURRENT_ENV).toLowerCase() !== 'docker') {
+  if (!isDockerRuntime(env)) {
     return;
   }
 

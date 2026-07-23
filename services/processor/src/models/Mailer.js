@@ -480,7 +480,7 @@ export async function sendEnterpriseAdminWelcomeEmail(payload = {}) {
                 </div>
                 <h1>Welcome to Samsar Enterprise Suite</h1>
                 <p>${safeOrganizationName} is ready to use the Samsar omni suite for private video, image, audio, assistant, and automation workflows.</p>
-                <p>Your Docker deployment is configured for admin-only access. Use the admin credentials created during setup to sign in, manage provider keys, and operate your local Samsar workspace.</p>
+                <p>Your standalone deployment is configured for admin-only access. Use the admin credentials created during setup to sign in, manage provider keys, and operate your local Samsar workspace.</p>
                 <p>Forgot-password and operational completion emails will use the mail provider validated during setup.</p>
                 <div class="footer">
                   <p>${escapeHtml(suiteLabel)}</p>
@@ -496,7 +496,7 @@ export async function sendEnterpriseAdminWelcomeEmail(payload = {}) {
             'Welcome to Samsar Enterprise Suite',
             '',
             `${organizationName || 'Your organization'} is ready to use the Samsar omni suite for private video, image, audio, assistant, and automation workflows.`,
-            'Your Docker deployment is configured for admin-only access. Use the admin credentials created during setup to sign in.',
+            'Your standalone deployment is configured for admin-only access. Use the admin credentials created during setup to sign in.',
             '',
             `Open Samsar Studio: ${BASE_APP_DOMAIN}`,
           ].join('\n'),

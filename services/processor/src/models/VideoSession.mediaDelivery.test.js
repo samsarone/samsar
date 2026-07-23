@@ -214,6 +214,55 @@ test('studio media hydration serves locally finalized user videos from assets_v2
   }
 });
 
+test('external-S3 studio hydration keeps mounted final videos on signed CloudFront delivery', (t) => {
+  const envKeys = [
+    'CURRENT_ENV',
+    'SAMSAR_MEDIA_DELIVERY_MODE',
+    'SAMSAR_ASSETS_V2_ROOT',
+    'SAMSAR_EXTERNAL_MEDIA_PUBLISH_ENABLED',
+    'MEDIA_BUCKET_NAME',
+    'STATIC_CDN_URL',
+  ];
+  const envSnapshot = Object.fromEntries(envKeys.map((key) => [key, process.env[key]]));
+  process.env.CURRENT_ENV = 'docker';
+  process.env.SAMSAR_MEDIA_DELIVERY_MODE = 's3-cloudfront';
+  process.env.SAMSAR_ASSETS_V2_ROOT = path.join(process.cwd(), 'assets_v2');
+  process.env.SAMSAR_EXTERNAL_MEDIA_PUBLISH_ENABLED = 'true';
+  process.env.MEDIA_BUCKET_NAME = 'samsar-resources';
+  process.env.STATIC_CDN_URL = 'https://static.samsar.one';
+  t.after(() => {
+    envKeys.forEach((key) => {
+      if (envSnapshot[key] === undefined) delete process.env[key];
+      else process.env[key] = envSnapshot[key];
+    });
+  });
+
+  const relativePath = path.join(
+    'assets_v2',
+    'video',
+    'output',
+    `media_delivery_${process.pid}_${Date.now()}`,
+    'final.mp4',
+  );
+  const absolutePath = path.resolve(relativePath);
+  fs.mkdirSync(path.dirname(absolutePath), { recursive: true });
+  fs.writeFileSync(absolutePath, 'test-video');
+  t.after(() => fs.rmSync(path.dirname(absolutePath), { recursive: true, force: true }));
+
+  const hydrated = __testOnly__.hydrateStudioSessionMediaForResponse({
+    videoLink: relativePath.replaceAll(path.sep, '/'),
+    remoteURL: `https://static.samsar.one/${relativePath.replaceAll(path.sep, '/')}?Expires=1&Signature=old&Key-Pair-Id=old`,
+  });
+
+  for (const value of [hydrated.videoLink, hydrated.remoteURL]) {
+    const resolvedUrl = new URL(value);
+    assert.equal(resolvedUrl.hostname, 'static.samsar.one');
+    assert.equal(resolvedUrl.pathname, `/${relativePath.replaceAll(path.sep, '/')}`);
+    assert.notEqual(resolvedUrl.searchParams.get('Signature'), 'old');
+    assert.notEqual(resolvedUrl.searchParams.get('Expires'), '1');
+  }
+});
+
 test('studio media hydration resolves legacy generated images from durable temp_images keys', () => {
   const hydrated = __testOnly__.hydrateStudioSessionMediaForResponse({
     aspectRatio: '16:9',

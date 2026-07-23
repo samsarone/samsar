@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import { isDockerRuntime } from './EnvironmentUtils.js';
 
 export function getProcessorAssetsRoot(folderName) {
   const configuredRoot = folderName === 'assets_v2'
@@ -8,7 +9,7 @@ export function getProcessorAssetsRoot(folderName) {
   if (typeof configuredRoot === 'string' && configuredRoot.trim()) {
     return path.resolve(configuredRoot.trim());
   }
-  if (process.env.CURRENT_ENV === 'staging' || process.env.CURRENT_ENV === 'docker') {
+  if (isDockerRuntime()) {
     return `/${folderName}`;
   }
   return path.join(process.cwd(), '../', 'samsar_processor', folderName);
@@ -113,7 +114,7 @@ export function toLocalAssetReference(absolutePath) {
   }
 
   const normalizedPath = absolutePath.replace(/\\/g, '/');
-  const isStagingOrDocker = process.env.CURRENT_ENV === 'staging' || process.env.CURRENT_ENV === 'docker';
+  const isStagingOrDocker = isDockerRuntime();
   const roots = [
     { root: getProcessorAssetsRoot('assets_v2'), prefix: 'assets_v2' },
     { root: getProcessorAssetsRoot('assets'), prefix: '' },

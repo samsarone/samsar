@@ -18,6 +18,7 @@ import {
 import {
   processSamsarExternalSpeechRequest,
 } from '../external/SamsarExternalAudioAdapter.js';
+import { isStandaloneEdition } from '../util/environmentUtils.js';
 
 function normalizeString(value) {
   return typeof value === 'string' ? value.trim() : '';
@@ -36,7 +37,7 @@ function shouldUseNativeElevenLabsSpeech() {
     return false;
   }
 
-  return normalizeString(process.env.CURRENT_ENV).toLowerCase() === 'docker' && !normalizeString(process.env.FAL_API_KEY);
+  return isStandaloneEdition() && !normalizeString(process.env.FAL_API_KEY);
 }
 
 function normalizeTTSProvider(provider, speakerValue = '') {

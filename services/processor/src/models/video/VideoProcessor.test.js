@@ -9,13 +9,39 @@ import ffmpegPath from 'ffmpeg-static';
 import ffmpeg from 'fluent-ffmpeg';
 
 import {
+  buildFrameExtractionThreadOptions,
   extractAudioFromVideoIfPresent,
+  extractVideoBoundaryFrames,
   getVideoMetadata,
+  processVideoAsFrames,
 } from './VideoProcessor.js';
 
 const execFileAsync = promisify(execFile);
 
 ffmpeg.setFfmpegPath(ffmpegPath);
+
+test('frame extraction applies the CPU cap to decoder, filter, and encoder threads', () => {
+  assert.deepEqual(
+    buildFrameExtractionThreadOptions(3),
+    {
+      inputOptions: ['-threads', '3'],
+      outputOptions: [
+        '-filter_threads', '3',
+        '-threads', '3',
+      ],
+    },
+  );
+  assert.deepEqual(
+    buildFrameExtractionThreadOptions(0),
+    {
+      inputOptions: ['-threads', '1'],
+      outputOptions: [
+        '-filter_threads', '1',
+        '-threads', '1',
+      ],
+    },
+  );
+});
 
 test('custom video audio extraction preserves a delayed audio stream on the video timeline', async (t) => {
   const temporaryRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'samsar-video-audio-timeline-'));
@@ -73,6 +99,25 @@ test('custom video audio extraction preserves a delayed audio stream on the vide
     Number(sourceAudioStream.start_time) >= 1.9 && Number(sourceAudioStream.start_time) <= 2.1,
     `expected the fixture audio stream to start around two seconds, got ${sourceAudioStream.start_time}`
   );
+
+  const boundaryFrames = await extractVideoBoundaryFrames(
+    sourceVideoPath,
+    'thread-cap-boundary-session',
+    'thread-cap-boundary-layer',
+    { width: 32, height: 32 },
+    { durationSeconds: 4 },
+  );
+  assert.equal(fs.existsSync(boundaryFrames.firstFrame), true);
+  assert.equal(fs.existsSync(boundaryFrames.lastFrame), true);
+
+  const extractedFrames = await processVideoAsFrames(
+    sourceVideoPath,
+    'thread-cap-frames-session',
+    'thread-cap-frames-layer',
+    { width: 32, height: 32 },
+    1,
+  );
+  assert.ok(extractedFrames.frameCount > 0);
 
   const extraction = await extractAudioFromVideoIfPresent(sourceVideoPath, {
     sessionId: 'test-session',

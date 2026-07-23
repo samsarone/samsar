@@ -18,6 +18,10 @@ import { join as joinPath } from "path";
 import { v4 as uuidv4 } from "uuid";
 import { promises as fs } from "fs";         // optional, in case you upload / delete temp files
 import { uploadMusicToCDN } from '../AWS.js';
+import {
+  AUDIO_FFPROBE_THREAD_OPTIONS,
+  applySingleThreadAudioFfmpeg,
+} from '../utils/FfmpegResources.js';
 
 import { getSimplifiedBackingTrackPromptForRetry } from "./BackingTrackPromptUtils.js";
 
@@ -29,7 +33,7 @@ import { getSimplifiedBackingTrackPromptForRetry } from "./BackingTrackPromptUti
 import axios from "axios";
 import { createWriteStream } from "fs";
 import { pipeline } from "stream/promises";   // Node ≥ 16
-import { getCurrentEnvironment } from "../util/environmentUtils.js";
+import { getCurrentEnvironment, isDockerRuntime } from "../util/environmentUtils.js";
 
 
 
@@ -53,7 +57,7 @@ fal.config({
 
 
 function getTempDir(sessionId = 'audio') {
-  const isDockerEnv = process.env.CURRENT_ENV === 'staging' || process.env.CURRENT_ENV === 'docker';
+  const isDockerEnv = isDockerRuntime();
   const safeSessionId = String(sessionId || 'audio').replace(/[^a-zA-Z0-9_-]/g, '_');
   const tempDir = isDockerEnv ? joinPath(process.env.SAMSAR_ASSETS_V2_ROOT || '/assets_v2', 'temp', safeSessionId) : tmpdir();
 
@@ -257,7 +261,7 @@ async function ensureAudioLength(sourceUrl, wantedSec = 10, sessionId = 'audio')
     let realSec;
     try {
       realSec = await new Promise((resolve, reject) => {
-        ffmpeg.ffprobe(tmpIn, (err, data) => {
+        ffmpeg.ffprobe(tmpIn, AUDIO_FFPROBE_THREAD_OPTIONS, (err, data) => {
           if (err) return reject(err);
           resolve(data.format.duration || 0);
         });
@@ -305,9 +309,11 @@ async function ensureAudioLength(sourceUrl, wantedSec = 10, sessionId = 'audio')
 
     try {
       await new Promise((resolve, reject) => {
-        ffmpeg()
-          .input(tmpIn)
-          .inputOptions(["-stream_loop", String(loopsNeeded - 1)])
+        applySingleThreadAudioFfmpeg(
+          ffmpeg()
+            .input(tmpIn)
+            .inputOptions(["-stream_loop", String(loopsNeeded - 1)]),
+        )
           .outputOptions(outputOptions)
           .save(tmpOut)
           .on("end", resolve)

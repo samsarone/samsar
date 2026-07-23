@@ -1,6 +1,7 @@
 import path from 'path';
 import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
+import { DEPLOYMENT_EDITION, normalizeDeploymentEdition } from '../utils/EnvironmentUtils.js';
 
 const currentDir = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(currentDir, '../..');
@@ -12,7 +13,11 @@ const explicitEnvFile =
 
 const productionLike =
   process.env.NODE_ENV === 'production' ||
-  process.env.CURRENT_ENV === 'production';
+  normalizeDeploymentEdition(
+    process.env.SAMSAR_DEPLOYMENT_EDITION ||
+    process.env.SAMSAR_EDITION ||
+    process.env.CURRENT_ENV
+  ) === DEPLOYMENT_EDITION.PRODUCTION;
 
 const envFile = explicitEnvFile || (productionLike ? '.env.production' : '.env');
 const envPath = path.isAbsolute(envFile) ? envFile : path.resolve(projectRoot, envFile);

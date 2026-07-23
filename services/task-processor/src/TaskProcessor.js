@@ -16,6 +16,7 @@ const HOME_DIR = os.homedir();
 const CRON_LOG_PATH = path.join(HOME_DIR, 'cronTabs.log');
 const CRON_ERROR_PATH = path.join(HOME_DIR, 'cronTabs.error');
 const DEFAULT_STALE_SESSION_FRAME_CLEANUP_HOURS = 7 * 24;
+const DEFAULT_STALE_SESSION_FRAME_CLEANUP_BATCH_SIZE = 64;
 const DEFAULT_ASSETS_V2_MEDIA_CLEANUP_DAYS = 7;
 
 const MEDIA_FILE_EXTENSIONS = new Set([
@@ -68,6 +69,50 @@ function readPositiveIntegerEnv(name, fallbackValue) {
   }
 
   return parsedValue;
+}
+
+function isTaskProcessorFeatureEnabled(
+  featureName,
+  env = process.env,
+  dockerMarkerPresent = fs.existsSync('/.dockerenv'),
+) {
+  const configuredValue = env[featureName];
+  if (configuredValue !== undefined && configuredValue !== '') {
+    return String(configuredValue).trim().toLowerCase() === 'true';
+  }
+
+  const samsarRuntime = String(env.SAMSAR_RUNTIME || '').trim().toLowerCase();
+  const currentEnv = String(env.CURRENT_ENV || '').trim().toLowerCase();
+  const isDockerRuntime =
+    dockerMarkerPresent ||
+    samsarRuntime === 'docker' ||
+    currentEnv === 'docker';
+
+  // Preserve legacy behavior for non-Docker cron execution. Docker must
+  // explicitly opt in to each maintenance or generation mutation feature.
+  return !isDockerRuntime;
+}
+
+export function isTaskProcessorGenerationSideEffectsEnabled(
+  env = process.env,
+  dockerMarkerPresent = fs.existsSync('/.dockerenv'),
+) {
+  return isTaskProcessorFeatureEnabled(
+    'TASK_PROCESSOR_ENABLE_GENERATION_SIDE_EFFECTS',
+    env,
+    dockerMarkerPresent,
+  );
+}
+
+export function isTaskProcessorFileCleanupEnabled(
+  env = process.env,
+  dockerMarkerPresent = fs.existsSync('/.dockerenv'),
+) {
+  return isTaskProcessorFeatureEnabled(
+    'TASK_PROCESSOR_ENABLE_FILE_CLEANUP',
+    env,
+    dockerMarkerPresent,
+  );
 }
 
 function getProcessorAssetsRoot(folderName) {
@@ -165,6 +210,39 @@ async function deleteOldMediaFiles(directoryPath, rootPath, cutoffTimeMs, counte
   }
 }
 
+function createStaleVideoSessionCursor(
+  VideoSessionModel,
+  staleBefore,
+  batchSize,
+) {
+  return VideoSessionModel.find({
+    updatedAt: { $lt: staleBefore },
+    isGuestSession: false,
+    isIntroSession: false,
+  })
+    .select({ _id: 1 })
+    .lean()
+    .batchSize(batchSize)
+    .cursor();
+}
+
+async function markSessionFramesForRegeneration(
+  sessionId,
+  VideoSessionModel = VideoSession,
+) {
+  await VideoSessionModel.updateOne(
+    { _id: sessionId },
+    { $set: { frameGenerationPending: true } },
+  );
+
+  // Updating every layer in place avoids loading or replacing the potentially
+  // very large layers array and does not overwrite concurrent layer changes.
+  await VideoSessionModel.updateOne(
+    { _id: sessionId, 'layers.0': { $exists: true } },
+    { $set: { 'layers.$[].frameGenerationPending': true } },
+  );
+}
+
 export async function deleteFramesForStaleSessions() {
   await getDBConnectionString();
 
@@ -172,67 +250,71 @@ export async function deleteFramesForStaleSessions() {
     'STALE_SESSION_FRAME_CLEANUP_HOURS',
     DEFAULT_STALE_SESSION_FRAME_CLEANUP_HOURS,
   );
-
-  const videoSessions = await VideoSession.find({
-    updatedAt: { $lt: new Date(Date.now() - staleSessionFrameCleanupHours * 60 * 60 * 1000) },
-    isGuestSession: false,
-    isIntroSession: false,
-  });
+  const staleSessionFrameCleanupBatchSize = readPositiveIntegerEnv(
+    'STALE_SESSION_FRAME_CLEANUP_BATCH_SIZE',
+    DEFAULT_STALE_SESSION_FRAME_CLEANUP_BATCH_SIZE,
+  );
+  const staleBefore = new Date(
+    Date.now() - staleSessionFrameCleanupHours * 60 * 60 * 1000,
+  );
+  const videoSessionCursor = createStaleVideoSessionCursor(
+    VideoSession,
+    staleBefore,
+    staleSessionFrameCleanupBatchSize,
+  );
+  const generationSideEffectsEnabled =
+    isTaskProcessorGenerationSideEffectsEnabled();
 
   const legacyAssetsRoot = getProcessorAssetsRoot('assets');
   const assetsV2Root = getProcessorAssetsRoot('assets_v2');
+  let checkedSessionCount = 0;
   let deletedFrameFolderCount = 0;
 
-  for (const videoSession of videoSessions) {
-    try {
-      const sessionId = videoSession._id.toString();
-      const framePaths = [
-        path.join(legacyAssetsRoot, 'video', 'frames', sessionId),
-        path.join(assetsV2Root, 'video', 'frames', sessionId),
-      ];
-      const aiVideoFramePaths = [
-        path.join(legacyAssetsRoot, 'ai_video', 'frames', sessionId),
-        path.join(assetsV2Root, 'ai_video', 'frames', sessionId),
-      ];
+  try {
+    for await (const videoSession of videoSessionCursor) {
+      checkedSessionCount += 1;
 
-      // Delete real camera frames
-      let deletedRealCameraFrames = false;
-      for (const folderPath of framePaths) {
-        const deleted = removeDirectoryIfExists(folderPath);
-        if (deleted) {
-          deletedFrameFolderCount += 1;
-          deletedRealCameraFrames = true;
-        }
-      }
+      try {
+        const sessionId = videoSession._id.toString();
+        const framePaths = [
+          path.join(legacyAssetsRoot, 'video', 'frames', sessionId),
+          path.join(assetsV2Root, 'video', 'frames', sessionId),
+        ];
+        const aiVideoFramePaths = [
+          path.join(legacyAssetsRoot, 'ai_video', 'frames', sessionId),
+          path.join(assetsV2Root, 'ai_video', 'frames', sessionId),
+        ];
+        const existingFramePaths = framePaths.filter((folderPath) => fs.existsSync(folderPath));
 
-      if (deletedRealCameraFrames) {
-        let sessionLayers = videoSession.layers;
-        for (let i = 0; i < sessionLayers.length; i++) {
-          sessionLayers[i].frameGenerationPending = true;
+        if (existingFramePaths.length > 0 && generationSideEffectsEnabled) {
+          // Persist regeneration intent before deleting files. If the process
+          // exits between these operations, the next run can safely retry the
+          // still-present directory without losing the database signal.
+          await markSessionFramesForRegeneration(videoSession._id);
         }
 
-        await VideoSession.findByIdAndUpdate(videoSession._id, {
-          $set: {
-            frameGenerationPending: true,
-            layers: sessionLayers,
-          },
-        });
-      }
-
-      // Delete AI frames
-      for (const aiVideoFramePath of aiVideoFramePaths) {
-        if (removeDirectoryIfExists(aiVideoFramePath)) {
-          deletedFrameFolderCount += 1;
+        for (const folderPath of existingFramePaths) {
+          if (removeDirectoryIfExists(folderPath)) {
+            deletedFrameFolderCount += 1;
+          }
         }
-      }
 
-    } catch (error) {
-      // Here you might also want to log errors on a per-session basis:
-      logError(`Error while deleting folder for session ${videoSession._id}: ${error.message}`);
+        // Delete AI frames
+        for (const aiVideoFramePath of aiVideoFramePaths) {
+          if (removeDirectoryIfExists(aiVideoFramePath)) {
+            deletedFrameFolderCount += 1;
+          }
+        }
+
+      } catch (error) {
+        logError(`Error while deleting folder for session ${videoSession._id}: ${error.message}`);
+      }
     }
+  } finally {
+    await videoSessionCursor.close();
   }
 
-  logInfo(`Stale session frame cleanup checked ${videoSessions.length} session(s); deleted ${deletedFrameFolderCount} frame folder(s).`);
+  logInfo(`Stale session frame cleanup checked ${checkedSessionCount} session(s); deleted ${deletedFrameFolderCount} frame folder(s).`);
 }
 
 export async function cleanupOldLocalAssetsV2Media() {
@@ -264,6 +346,11 @@ export async function cleanupOldLocalAssetsV2Media() {
 }
 
 export async function downloadMusicForCompletedGenerations() {
+  if (!isTaskProcessorGenerationSideEffectsEnabled()) {
+    logInfo('Pending music generation processing skipped because generation side effects are disabled.');
+    return;
+  }
+
   await getDBConnectionString();
 
   const fiveMinAgo = new Date(Date.now() - 60 * 5 * 1000);
@@ -368,10 +455,28 @@ async function downloadRemoteLinks(localDownloadFolderPath, audioRemoteLinks) {
   return localAudioLinks;
 }
 
+async function runFileCleanupTasksIfEnabled(
+  enabled,
+  cleanupOldLocalAssetsV2MediaTask = cleanupOldLocalAssetsV2Media,
+  deleteFramesForStaleSessionsTask = deleteFramesForStaleSessions,
+) {
+  if (!enabled) {
+    return false;
+  }
+
+  await cleanupOldLocalAssetsV2MediaTask();
+  await deleteFramesForStaleSessionsTask();
+  return true;
+}
+
 export async function runScheduledTasks() {
   try {
-    await cleanupOldLocalAssetsV2Media();
-    await deleteFramesForStaleSessions();
+    const fileCleanupRan = await runFileCleanupTasksIfEnabled(
+      isTaskProcessorFileCleanupEnabled(),
+    );
+    if (!fileCleanupRan) {
+      logInfo('Local media and stale-session frame cleanup skipped because file cleanup is disabled.');
+    }
 
     try {
       await downloadMusicForCompletedGenerations();
@@ -385,3 +490,9 @@ export async function runScheduledTasks() {
     throw error;
   }
 }
+
+export const __testOnly__ = {
+  createStaleVideoSessionCursor,
+  markSessionFramesForRegeneration,
+  runFileCleanupTasksIfEnabled,
+};

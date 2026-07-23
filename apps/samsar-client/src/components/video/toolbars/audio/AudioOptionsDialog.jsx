@@ -39,10 +39,10 @@ const AudioOptionsDialog = ({
     audioLanguage,
   });
   const {
-    isDockerInstall,
+    isStandaloneDeployment,
     hasSubtitleGenerationCredentials,
   } = useDeploymentModelAvailability();
-  const canGenerateSubtitles = !isDockerInstall || hasSubtitleGenerationCredentials;
+  const canGenerateSubtitles = !isStandaloneDeployment || hasSubtitleGenerationCredentials;
 
   useEffect(() => {
     setLocalApplyAudioDucking(Boolean(applyAudioDucking));

@@ -1,4 +1,5 @@
 
+import 'dotenv/config';
 import { getImageFromText, getEditImageFromText } from './Dispatcher.js';
 import { getDBConnectionString } from './DBString.js';
 import ImageGeneration from './schema/ImageGeneration.js';
@@ -47,8 +48,17 @@ import {
 import { handleAlibabaWan27Request } from './providers/AlibabaWan27.js';
 import { handleFalWan27Request } from './providers/FalWan27.js';
 
-import { getCurrentEnvironment } from './utils/Environment.js';
+import {
+  isDockerRuntime,
+  usesExternalMediaPublishing,
+  usesLocalAssetStorage,
+} from './utils/Environment.js';
 import { recordProviderUsageLog } from './utils/ProviderUsageAudit.js';
+import {
+  getAvailableCpuCount,
+  resolveCpuUpperBound,
+  resolvePerTaskCpuUpperBound,
+} from './utils/CpuResources.js';
 import {
   DOCKER_ADAPTER_PROVIDER,
   resolveDockerImageGenerationProvider,
@@ -72,11 +82,27 @@ import {
   persistImageToLocalAssets,
 } from './utils/UpscaleUtils.js';
 import { uploadImageToCDN } from './utils/AWS.js';
-import('dotenv/config');
 import * as path from 'path';
 import fs from 'fs';
+import sharp from 'sharp';
 
-const MAX_CONCURRENT_REQUESTS = 4;
+const HEAVY_WORK_CPU_BUDGET = getAvailableCpuCount();
+const MAX_CONCURRENT_REQUESTS = resolveCpuUpperBound(
+  process.env.SAMSAR_GENERATOR_MAX_CONCURRENT_REQUESTS,
+  4,
+  { availableCpuCount: HEAVY_WORK_CPU_BUDGET },
+);
+const SHARP_THREADS_PER_REQUEST = resolvePerTaskCpuUpperBound(
+  process.env.SAMSAR_GENERATOR_MAX_SHARP_THREADS,
+  8,
+  {
+    availableCpuCount: HEAVY_WORK_CPU_BUDGET,
+    maxConcurrentTasks: MAX_CONCURRENT_REQUESTS,
+  },
+);
+// This configures an upper bound only. libvips creates worker threads when a
+// Sharp operation actually runs, and the outer queue owns request parallelism.
+sharp.concurrency(SHARP_THREADS_PER_REQUEST);
 const MAX_IMAGE_GENERATION_FAILURES = 3;
 const MAX_IMAGE_GENERATION_FILTER_RETRIES = 3;
 const IMAGE_GENERATION_RETRY_BASE_DELAY_MS = Math.max(
@@ -192,7 +218,7 @@ async function recordImageProviderUsage(payload = {}, provider, metadata = {}) {
 }
 
 function getProcessorAssetsRoot(folderName) {
-  if (process.env.CURRENT_ENV === 'staging' || process.env.CURRENT_ENV === 'docker') {
+  if (usesLocalAssetStorage()) {
     if (folderName === 'assets_v2') {
       return process.env.SAMSAR_ASSETS_V2_ROOT || '/assets_v2';
     }
@@ -242,7 +268,11 @@ async function uploadGenerationAssetToCDN(localPath, relativePath) {
   if (!localPath || !relativePath) {
     return;
   }
-  if (getCurrentEnvironment() === 'docker' && !isTruthyEnv(process.env.SAMSAR_DOCKER_UPLOAD_GENERATED_ASSETS)) {
+  if (
+    isDockerRuntime() &&
+    !usesExternalMediaPublishing() &&
+    !isTruthyEnv(process.env.SAMSAR_DOCKER_UPLOAD_GENERATED_ASSETS)
+  ) {
     return;
   }
   await uploadImageToCDN(localPath, relativePath);
@@ -2345,10 +2375,17 @@ export async function getAndProcessPendingImageGenerationRows() {
 }
 
 export async function processPendingImageRequests() {
+  const availableSlots = Math.max(
+    0,
+    MAX_CONCURRENT_REQUESTS - ongoingRequests - taskQueue.length,
+  );
+  if (availableSlots === 0) {
+    return;
+  }
+
   await getDBConnectionString();
 
   const TERMINAL_STATUSES = ["COMPLETED", "FAILED", "CANCELLED"];
-
   const pendingRequests = await ImageGeneration.find({
     rowLocked: false,
     $and: [
@@ -2369,19 +2406,25 @@ export async function processPendingImageRequests() {
     ],
   })
     .sort({ createdAt: 1 })
-    .limit(MAX_CONCURRENT_REQUESTS);
+    .limit(availableSlots);
 
   for (let pendingRequestData of pendingRequests) {
     try {
-      await ImageGeneration.findByIdAndUpdate(pendingRequestData._id, { rowLocked: true });
-      taskQueue.push(pendingRequestData);
+      const lockedRequest = await ImageGeneration.findOneAndUpdate(
+        { _id: pendingRequestData._id, rowLocked: false },
+        { $set: { rowLocked: true } },
+        { new: true },
+      );
+      if (lockedRequest) {
+        taskQueue.push(lockedRequest);
+      }
     } catch (e) {
       console.error(`Error locking row for request ${pendingRequestData._id}:`, e);
     }
   }
 
-  // Kick off up to MAX_CONCURRENT_REQUESTS tasks in parallel
-  for (let i = 0; i < MAX_CONCURRENT_REQUESTS; i++) {
+  // Start only the capacity claimed during this poll.
+  for (let i = 0; i < availableSlots; i++) {
     processNextTask();
   }
 }

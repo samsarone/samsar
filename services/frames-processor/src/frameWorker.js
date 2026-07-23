@@ -17,6 +17,7 @@ import { installStructuredLogger } from './utils/StructuredLogger.js';
 import { isMotionlessSubtitleItem } from './utils/SubtitleRenderPolicy.js';
 import { selectActiveItemsForFrame } from './utils/ActiveSubtitleItems.js';
 import { validateFrameOutputNamespace } from './utils/BranchRenderPath.js';
+import { usesLocalAssetStorage } from './utils/DeploymentEnvironment.js';
 
 installStructuredLogger({
   serviceName: process.env.SERVICE_NAME || 'samsar_frames_processor',
@@ -129,7 +130,7 @@ function resolveAssetsRoot(version = 'legacy') {
   if (version !== 'v2' && process.env.SAMSAR_ASSETS_ROOT) {
     return process.env.SAMSAR_ASSETS_ROOT;
   }
-  if (process.env.CURRENT_ENV === 'staging' || process.env.CURRENT_ENV === 'docker') {
+  if (usesLocalAssetStorage()) {
     return version === 'v2' ? '/assets_v2' : '/assets';
   }
 

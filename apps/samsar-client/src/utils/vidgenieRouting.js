@@ -1,8 +1,8 @@
 import axios from 'axios';
 import { getDefaultAuthenticatedPath } from './defaultRoutes.js';
+import { IS_STANDALONE_DEPLOYMENT } from './environment.jsx';
 
 const VIDEO_SESSION_STORAGE_KEY = 'videoSessionId';
-const IS_DOCKER_INSTALL = import.meta.env.VITE_DOCKER_INSTALL === 'true';
 
 function normalizeSessionId(value) {
   if (!value) return null;
@@ -174,7 +174,7 @@ async function createBlankVidgenieSession(apiServer, headers) {
 }
 
 export async function fetchGuestVidgenieSession(apiServer) {
-  if (IS_DOCKER_INSTALL || !apiServer) return null;
+  if (IS_STANDALONE_DEPLOYMENT || !apiServer) return null;
 
   try {
     const { data } = await axios.get(`${apiServer}/video_sessions/fetch_guest_session`);

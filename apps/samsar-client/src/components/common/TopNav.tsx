@@ -15,7 +15,7 @@ import { useLocalization } from '../../contexts/LocalizationContext.jsx';
 import { hasInsufficientGenerationCredits } from '../../utils/defaultRoutes.js';
 
 import CanvasControlBar from '../video/toolbars/CanvasControlBar.jsx';
-import { getSessionType } from '../../utils/environment.jsx';
+import { IS_STANDALONE_DEPLOYMENT } from '../../utils/environment.jsx';
 
 import { NavCanvasControlContext } from '../../contexts/NavCanvasControlContext.jsx';
 import { FaCog, FaTimes } from 'react-icons/fa';
@@ -27,7 +27,6 @@ import { buildSubtitleRegenerationLanguageFields } from '../../utils/subtitleReg
 
 
 const PROCESSOR_SERVER = import.meta.env.VITE_PROCESSOR_API;
-const IS_DOCKER_INSTALL = import.meta.env.VITE_DOCKER_INSTALL === 'true';
 const AddSessionDropdown = lazy(() => import('./AddSessionDropdown.jsx'));
 const AuthContainer = lazy(() => import('../auth/AuthContainer.jsx'));
 const UpgradePlan = lazy(() => import('../payments/UpgradePlan.tsx'));
@@ -118,8 +117,6 @@ export default function TopNav(props) {
   const location = useLocation();
   const { openAlertDialog, closeAlertDialog } = useAlertDialog();
 
-  const sessionType = getSessionType();
-
   const isImageEditor =
     location.pathname.includes('/image/') ||
     location.pathname.includes('/iamge/') ||
@@ -169,7 +166,7 @@ export default function TopNav(props) {
     if (!user || !user._id) {
 
       if (register === 'true') {
-        if (IS_DOCKER_INSTALL) {
+        if (IS_STANDALONE_DEPLOYMENT) {
           showLoginDialog();
         } else {
           showRegisterDialog();
@@ -295,7 +292,7 @@ export default function TopNav(props) {
   };
 
   const showRegisterDialog = () => {
-    if (IS_DOCKER_INSTALL) {
+    if (IS_STANDALONE_DEPLOYMENT) {
       showLoginDialog();
       return;
     }
@@ -614,7 +611,7 @@ export default function TopNav(props) {
   let userCredits;
 
   if (user && user._id && !isReadOnlyShareView) {
-    if (sessionType !== 'docker') {
+    if (!IS_STANDALONE_DEPLOYMENT) {
       if (user.isPremiumUser) {
         let premiumUserType = 'Premium';
         if (user.premiumUserType) {
@@ -737,7 +734,7 @@ export default function TopNav(props) {
   }
 
   let userCreditsDisplay = <span />;
-  if (user && user._id && sessionType !== 'docker') {
+  if (user && user._id && !IS_STANDALONE_DEPLOYMENT) {
     const creditsButtonClass = colorMode === 'dark'
       ? 'border border-white/10 bg-black/15 text-slate-100 hover:border-cyan-300/35 hover:bg-[#13233d]'
       : 'border border-slate-200 bg-white/75 text-slate-900 hover:border-slate-300 hover:bg-white';

@@ -170,12 +170,13 @@
     margin-right: -2px;
     padding-left: 2px;
     padding-right: 2px;
+    overscroll-behavior-inline: contain;
     scrollbar-width: thin;
   }
 
   .vidgenie-timeline-strip {
     width: 100%;
-    min-width: 420px;
+    min-width: 100%;
     max-width: none;
   }
 
@@ -200,7 +201,4 @@
     max-height: min(34dvh, 280px) !important;
   }
 
-  .vidgenie-timeline-strip {
-    min-width: 360px;
-  }
 }

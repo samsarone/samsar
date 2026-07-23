@@ -25,6 +25,7 @@ import { maybeTriggerAutoRecharge } from './AutoRecharge.js';
 
 import { getModerationForNarrative } from './moderation/CreateModeration.js';
 import { normalizeInferenceModel } from '../consts/InferenceModels.js';
+import { isContainerRuntime } from '../utils/EnvironmentUtils.js';
 
 import { getCanvasDimensionsForAspectRatio } from "../utils/CanvasUtils.js";
 
@@ -122,7 +123,7 @@ export async function setSessionQuickGenerationPending(userId, payload) {
 
     let previousVideoLocalLink = `${pwd}/assets/${previousVideoLink}`;
 
-    if (process.env.CURRENT_ENV === 'staging' || process.env.CURRENT_ENV === 'docker') {
+    if (process.env.SAMSAR_ASSETS_ROOT || isContainerRuntime()) {
       previousVideoLocalLink = path.join(process.env.SAMSAR_ASSETS_ROOT || '/assets', previousVideoLink);
     }
 

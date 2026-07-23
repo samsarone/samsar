@@ -3,11 +3,12 @@ import path from 'path';
 import axios from 'axios';
 import ffmpeg from 'fluent-ffmpeg';
 import ffmpegPath from 'ffmpeg-static';
-import os from 'os';
 import { promisify } from 'util';
 import stream from 'stream';
 
+import { resolveCpuCeiling } from './utils/CpuResources.js';
 import { getFramesPerSecondFromValue } from './utils/FpsUtils.js';
+import { usesLocalAssetStorage } from './utils/Environment.js';
 
 // utils/FFmpegUtils.js  (new file)
 import { spawn } from 'child_process';
@@ -18,6 +19,16 @@ const pipeline = promisify(stream.pipeline);
 
 if (ffmpegPath) {
   ffmpeg.setFfmpegPath(ffmpegPath);
+}
+
+function resolveAiVideoFfmpegThreads() {
+  return resolveCpuCeiling({
+    defaultCeiling: 2,
+    envNames: [
+      'SAMSAR_AI_VIDEO_MAX_FFMPEG_THREADS',
+      'SAMSAR_MAX_FFMPEG_THREADS',
+    ],
+  });
 }
 
 function getAssetsV2Root() {
@@ -141,7 +152,7 @@ export async function downloadVideoFromRemote(videoUrl, sessionId, layerId) {
     layerId
   );
 
-  if (process.env.CURRENT_ENV === 'staging' || process.env.CURRENT_ENV === 'docker') {
+  if (usesLocalAssetStorage()) {
    outputFolder = path.join(getAssetsV2Root(), 'ai_video', 'generations', sessionId, layerId);
   }
   
@@ -184,7 +195,7 @@ export async function downloadVideoFromRemoteBlob(remoteBlob, sessionId, layerId
     layerId
   );
 
-  if (process.env.CURRENT_ENV === 'staging' || process.env.CURRENT_ENV === 'docker') {
+  if (usesLocalAssetStorage()) {
     outputFolder = path.join(getAssetsV2Root(), 'ai_video', 'generations', sessionId, layerId);
   }
 
@@ -265,7 +276,7 @@ export async function processVideoAsFrames(videoPath, sessionId, layerId, canvas
     layerId
   );
 
-  if (process.env.CURRENT_ENV === 'staging' || process.env.CURRENT_ENV === 'docker') {
+  if (usesLocalAssetStorage()) {
     outputFolder = path.join(getAssetsV2Root(), 'ai_video', 'frames', sessionId, layerId);
   } 
 
@@ -360,7 +371,7 @@ export async function processVideoAsFramesAndAudio(
     'audio_video'
   );
 
-  if (process.env.CURRENT_ENV === 'staging' || process.env.CURRENT_ENV === 'docker') {
+  if (usesLocalAssetStorage()) {
     framesOutputFolder = path.join(getAssetsV2Root(), 'ai_video', 'frames', sessionId, layerId, 'audio_video');
   } 
 
@@ -382,7 +393,7 @@ export async function processVideoAsFramesAndAudio(
     sessionId,
     layerId
   );
-  if (process.env.CURRENT_ENV === 'staging' || process.env.CURRENT_ENV === 'docker') {
+  if (usesLocalAssetStorage()) {
     audioOutputFolder = path.join(getAssetsV2Root(), 'ai_video', 'audio', sessionId, layerId);
   }
   
@@ -454,13 +465,18 @@ export async function processVideoAsFramesAndAudio(
 }
 
 function extractFrames(videoPath, outputFolder, newFrameWidth, newFrameHeight, framesPerSecond) {
+  const ffmpegThreadValue = `${resolveAiVideoFfmpegThreads()}`;
   return new Promise((resolve, reject) => {
     const frameFilter = `fps=${framesPerSecond}:round=down,scale=${newFrameWidth}:${newFrameHeight}`;
 
     ffmpeg(videoPath)
+      .inputOptions([
+        '-threads', ffmpegThreadValue,
+      ])
       .outputOptions([
         '-start_number', '0',
-        '-threads', '2',
+        '-filter_threads', ffmpegThreadValue,
+        '-threads', ffmpegThreadValue,
         '-vf', frameFilter,
         '-sws_flags', 'lanczos',
       ])
@@ -472,11 +488,18 @@ function extractFrames(videoPath, outputFolder, newFrameWidth, newFrameHeight, f
 }
 
 function extractAudio(videoPath, outputPath) {
+  const ffmpegThreadValue = `${resolveAiVideoFfmpegThreads()}`;
   return new Promise((resolve, reject) => {
     ffmpeg(videoPath)
+      .inputOptions([
+        '-threads', ffmpegThreadValue,
+      ])
       .noVideo()
       .audioCodec('libmp3lame')  // re-encode the audio to MP3
       .audioBitrate('192k')      // optional: adjust as needed
+      .outputOptions([
+        '-threads', ffmpegThreadValue,
+      ])
       .on('end', resolve)
       .on('error', reject)
       .save(outputPath);
@@ -661,13 +684,22 @@ async function encodeThumbnailPreviewFromFrameSequence(inputPattern, startNumber
 
 async function runThumbnailEncode(command, outputPath, encoderOptions, context) {
   const { maxWidth, fps, crf } = encoderOptions;
+  const ffmpegThreadValue = `${resolveAiVideoFfmpegThreads()}`;
   let stderr = '';
 
   await fs.remove(outputPath);
 
   await new Promise((resolve, reject) => {
     command
-      .outputOptions(getThumbnailOutputOptions({ maxWidth, fps, crf }))
+      .inputOptions([
+        '-threads', ffmpegThreadValue,
+      ])
+      .outputOptions(getThumbnailOutputOptions({
+        maxWidth,
+        fps,
+        crf,
+        ffmpegThreadValue,
+      }))
       .on('stderr', (line) => {
         stderr += `${line}\n`;
         if (stderr.length > 8000) {
@@ -680,7 +712,7 @@ async function runThumbnailEncode(command, outputPath, encoderOptions, context) 
   });
 }
 
-function getThumbnailOutputOptions({ maxWidth, fps, crf }) {
+function getThumbnailOutputOptions({ maxWidth, fps, crf, ffmpegThreadValue }) {
   return [
     '-y',
     '-pix_fmt', 'yuv420p',
@@ -689,6 +721,8 @@ function getThumbnailOutputOptions({ maxWidth, fps, crf }) {
     '-crf', `${crf}`,
     '-profile:v', 'baseline',
     '-level', '3.0',
+    '-filter_threads', ffmpegThreadValue,
+    '-threads', ffmpegThreadValue,
     '-vf',
     `fps=${fps},scale=w='if(gt(iw,${maxWidth}),${maxWidth},trunc(iw/2)*2)':h=-2:force_original_aspect_ratio=decrease,setsar=1`,
   ];

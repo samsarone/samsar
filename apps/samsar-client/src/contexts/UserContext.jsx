@@ -48,6 +48,8 @@ export const UserProvider = ({ children }) => {
   const resetUser = useCallback(() => {
     setUserState(null);
     clearAuthData();
+    setUserFetching(false);
+    setUserInitiated(true);
   }, []);
 
   const getUserAPI = useCallback(async () => {
@@ -71,8 +73,11 @@ export const UserProvider = ({ children }) => {
       setUserState(userProfile);
       setUserInitiated(true);
       return userProfile;
-    } catch  {
+    } catch (error) {
       setUserState(null);
+      if ([400, 401, 403].includes(error?.response?.status)) {
+        clearAuthData();
+      }
       setUserInitiated(true);
       return null;
     } finally {

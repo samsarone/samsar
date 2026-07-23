@@ -12,6 +12,7 @@ import dayjs from 'dayjs';
 import validator from 'validator';
 import { isSupportedLanguage } from '../../consts/SupportedLanguages.js';
 import { normalizeNewsletterPreference } from '../Newsletter.js';
+import { isPublicRegistrationEnabled } from '../../utils/EnvironmentUtils.js';
 
 /**
  * Validates and sanitizes email and password.
@@ -117,9 +118,12 @@ export async function loginUserByEmail(payload) {
 }
 
 export async function registerUserByEmail(payload) {
-
-
-
+  if (!isPublicRegistrationEnabled()) {
+    const error = new Error('Registration is disabled for standalone deployments.');
+    error.status = 403;
+    error.statusCode = 403;
+    throw error;
+  }
   // Validate and sanitize registration data
   const {
     email,

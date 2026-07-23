@@ -15,11 +15,12 @@ import {
   getCurrentAuthRedirect,
   persistAuthRedirectForFlow,
   resolvePostAuthDestination,
+  resolvePostSignupDestination,
 } from '../../utils/authRedirect.js';
 import { PURCHASE_CREDITS_PROMPT_STORAGE_KEY } from '../account/PurchaseCreditsPromptDialog.jsx';
+import { IS_STANDALONE_DEPLOYMENT } from '../../utils/environment.jsx';
 
 const PROCESSOR_SERVER = import.meta.env.VITE_PROCESSOR_API;
-const IS_DOCKER_INSTALL = import.meta.env.VITE_DOCKER_INSTALL === 'true';
 
 export const AUTH_DIALOG_OPTIONS = {
   surface: 'auth',
@@ -45,7 +46,7 @@ export default function AuthContainer(props) {
 
   useEffect(() => {
     if (initView) {
-      if (initView === 'register' && !IS_DOCKER_INSTALL) {
+      if (initView === 'register' && !IS_STANDALONE_DEPLOYMENT) {
         setCurrentLoginView('register');
       } else {
         setCurrentLoginView('login');
@@ -54,7 +55,7 @@ export default function AuthContainer(props) {
   }, [initView]);
 
   const signInWithGoogle = () => {
-    if (IS_DOCKER_INSTALL) {
+    if (IS_STANDALONE_DEPLOYMENT) {
       return;
     }
     const redirect = persistAuthRedirectForFlow(requestedRedirect, { isMobile });
@@ -66,7 +67,7 @@ export default function AuthContainer(props) {
   };
 
   const registerWithGoogle = ({ subscribeToWeeklyNewsletter = true } = {}) => {
-    if (IS_DOCKER_INSTALL) {
+    if (IS_STANDALONE_DEPLOYMENT) {
       return;
     }
     const redirect = persistAuthRedirectForFlow(requestedRedirect, { isMobile });
@@ -96,6 +97,14 @@ export default function AuthContainer(props) {
     }
   };
 
+  const navigateAfterSignup = async () => {
+    const destination = await resolvePostSignupDestination({
+      isMobile,
+      apiServer: API_SERVER,
+    });
+    navigate(destination, { replace: true });
+  };
+
   const verifyAndSetUserProfile = (profile) => {
     axios.post(`${PROCESSOR_SERVER}/users/verify`, profile)
       .then((dataRes) => {
@@ -115,28 +124,28 @@ export default function AuthContainer(props) {
    * Register user with email and bubble up server errors if any
    */
   const registerUserWithEmail = async (payload, onError) => {
+    let userData;
     try {
       const { data } = await axios.post(`${PROCESSOR_SERVER}/users/register`, payload);
-      const userData = data;
-      const authToken = userData.authToken;
-
-      persistAuthToken(authToken);
-      setUser(userData);
-      closeAlertDialog();
-      localStorage.setItem(PURCHASE_CREDITS_PROMPT_STORAGE_KEY, 'true');
-      navigateAfterAuth(userData);
-
-      localStorage.setItem("setShowSetPaymentFlow", true);
+      userData = data;
     } catch (error) {
-      
-
-      // Attempt to bubble server error back to <Register />
       const serverMessage = error.response?.data?.message || error.response?.data?.error;
-      if (serverMessage) {
-        onError(serverMessage);
-      } else {
-        onError('Unable to register user at this time. Please try again.');
-      }
+      onError(serverMessage || 'Unable to register user at this time. Please try again.');
+      return;
+    }
+
+    persistAuthToken(userData.authToken);
+    setUser(userData);
+    localStorage.setItem(PURCHASE_CREDITS_PROMPT_STORAGE_KEY, 'true');
+    localStorage.setItem("setShowSetPaymentFlow", true);
+
+    try {
+      await navigateAfterSignup();
+      closeAlertDialog();
+    } catch {
+      const message = 'Your account was created, but a new project could not be opened.';
+      setError(message);
+      onError(message);
     }
   };
 
@@ -153,8 +162,8 @@ export default function AuthContainer(props) {
         setUser={setUser}
         closeAlertDialog={closeAlertDialog}
         getOrCreateUserSession={navigateAfterAuth}
-        showSignupButton={!IS_DOCKER_INSTALL}
-        showGoogleAuth={!IS_DOCKER_INSTALL}
+        showSignupButton={!IS_STANDALONE_DEPLOYMENT}
+        showGoogleAuth={!IS_STANDALONE_DEPLOYMENT}
       />
     );
   } else if (currentLoginView === 'forgotPassword') {
@@ -164,7 +173,7 @@ export default function AuthContainer(props) {
         closeAlertDialog={closeAlertDialog}
       />
     );
-  } else if (!IS_DOCKER_INSTALL) {
+  } else if (!IS_STANDALONE_DEPLOYMENT) {
     authoComponent = (
       <Register
         setCurrentLoginView={setCurrentLoginView}

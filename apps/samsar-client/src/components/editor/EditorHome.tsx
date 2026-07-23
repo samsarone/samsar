@@ -6,6 +6,7 @@ import { useUser } from '../../contexts/UserContext.jsx';
 import { useAlertDialog } from '../../contexts/AlertDialogContext.jsx';
 import { useColorMode } from '../../contexts/ColorMode.jsx';
 import { getHeaders } from '../../utils/web.jsx';
+import { resolvePublisherUrl } from '../../utils/publicUrl.mjs';
 import { CURRENT_TOOLBAR_VIEW, CANVAS_ACTION } from '../../constants/Types.ts';
 import { STAGE_DIMENSIONS } from '../../constants/Image.jsx';
 import SMSCanvas from './SMSCanvas.tsx';
@@ -18,7 +19,7 @@ import UploadImageDialog from './utils/UploadImageDialog.jsx';
 
 import './editor.css';
 
-const PUBLISHER_URL = import.meta.env.VITE_PUBLISHER_URL;
+const PUBLISHER_URL = resolvePublisherUrl(import.meta.env.VITE_PUBLISHER_URL);
 const PROCESSOR_API_URL = import.meta.env.VITE_PROCESSOR_API;
 
 

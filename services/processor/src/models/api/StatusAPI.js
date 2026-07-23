@@ -2,6 +2,7 @@ import VideoSession from '../../schema/VideoSession.js';
 import GeneratedImage from '../../schema/generations/GeneratedImage.js';
 import { buildSecureMediaDeliveryUrl } from '../AWS.js';
 import { resolveDockerLocalPublicAssetBaseUrl } from '../../consts/DockerDeploymentUrls.js';
+import { isContainerRuntime } from '../../utils/EnvironmentUtils.js';
 
 const DEFAULT_STATIC_ASSET_BASE_URL = 'https://static.samsar.one';
 const USER_RESOURCES_PREFIX = 'user_resources/';
@@ -1075,11 +1076,21 @@ function shouldReturnDockerLocalAssetReferences() {
   if (configuredMode === 's3-cloudfront' || configuredMode === 'external-s3') {
     return false;
   }
-  const isDockerRuntime = String(process.env.CURRENT_ENV || '').trim().toLowerCase() === 'docker';
+  const externalBucket = normalizeString(
+    process.env.MEDIA_BUCKET_NAME ||
+    process.env.STATIC_CDN_BUCKET ||
+    process.env.SAMSAR_EXTERNAL_MEDIA_BUCKET,
+  );
+  const externalBaseUrl = normalizeString(
+    process.env.STATIC_CDN_URL || process.env.SAMSAR_EXTERNAL_MEDIA_PUBLIC_BASE_URL,
+  );
+  if (externalBucket && /^https:\/\//i.test(externalBaseUrl)) {
+    return false;
+  }
   const externalMediaPublishEnabled = isTruthyEnv(
     process.env.SAMSAR_EXTERNAL_MEDIA_PUBLISH_ENABLED || process.env.EXTERNAL_MEDIA_PUBLISH_ENABLED,
   );
-  return isDockerRuntime && !externalMediaPublishEnabled;
+  return isContainerRuntime() && !externalMediaPublishEnabled;
 }
 
 function normalizeDockerLocalSecureAssetReference(value) {

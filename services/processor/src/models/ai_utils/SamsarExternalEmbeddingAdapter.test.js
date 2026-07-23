@@ -4,6 +4,9 @@ import { SamsarClient } from 'samsar-js';
 
 const ENV_KEYS = [
   'CURRENT_ENV',
+  'SAMSAR_DEPLOYMENT_EDITION',
+  'SAMSAR_EDITION',
+  'SAMSAR_RUNTIME',
   'OPENAI_API_KEY',
   'SAMSAR_API_KEY',
   'SAMSAR_DEPLOYED_API_KEY',
@@ -38,6 +41,17 @@ test('Docker uses deployed embeddings only when the local OpenAI key is absent',
 
   process.env.OPENAI_API_KEY = 'local-openai-key';
   assert.equal(shouldUseSamsarExternalEmbeddings(), false);
+});
+
+test('production Docker does not enable standalone embedding forwarding implicitly', () => {
+  clearEnv();
+  process.env.SAMSAR_DEPLOYMENT_EDITION = 'production';
+  process.env.SAMSAR_RUNTIME = 'docker';
+  process.env.SAMSAR_API_KEY = 'samsar-test-key';
+  assert.equal(shouldUseSamsarExternalEmbeddings(), false);
+
+  process.env.SAMSAR_EXTERNAL_EMBEDDINGS_ENABLED = 'true';
+  assert.equal(shouldUseSamsarExternalEmbeddings(), true);
 });
 
 test('deployed embedding response is unwrapped into ordered vectors', async (t) => {

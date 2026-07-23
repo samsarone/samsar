@@ -3,6 +3,7 @@ import crypto from 'node:crypto';
 import { once } from 'node:events';
 import fsp from 'node:fs/promises';
 import https from 'node:https';
+import net from 'node:net';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 
@@ -81,6 +82,72 @@ function isTemporaryTunnelUrl(value) {
   } catch {
     return false;
   }
+}
+
+function isLocalOrPrivateHostname(value) {
+  const hostname = normalizeString(value).toLowerCase().replace(/^\[|\]$/g, '');
+  if (!hostname ||
+    hostname === 'localhost' ||
+    hostname === '0.0.0.0' ||
+    hostname.endsWith('.localhost') ||
+    hostname.endsWith('.local') ||
+    hostname === 'host.docker.internal') {
+    return true;
+  }
+
+  const ipVersion = net.isIP(hostname);
+  if (ipVersion === 4) {
+    const [first, second] = hostname.split('.').map((part) => Number.parseInt(part, 10));
+    return first === 0 ||
+      first === 10 ||
+      first === 127 ||
+      (first === 100 && second >= 64 && second <= 127) ||
+      (first === 169 && second === 254) ||
+      (first === 172 && second >= 16 && second <= 31) ||
+      (first === 192 && second === 168) ||
+      first >= 224;
+  }
+  if (ipVersion === 6) {
+    return hostname === '::' ||
+      hostname === '::1' ||
+      hostname.startsWith('fc') ||
+      hostname.startsWith('fd') ||
+      /^fe[89ab]/.test(hostname);
+  }
+  return !hostname.includes('.');
+}
+
+export function normalizeStablePublicHttpsBaseUrl(value) {
+  const normalized = normalizeString(value);
+  if (!normalized || isTemporaryTunnelUrl(normalized)) {
+    return '';
+  }
+  try {
+    const parsedUrl = new URL(normalized);
+    if (parsedUrl.protocol !== 'https:' ||
+      parsedUrl.username ||
+      parsedUrl.password ||
+      parsedUrl.search ||
+      parsedUrl.hash ||
+      isLocalOrPrivateHostname(parsedUrl.hostname)) {
+      return '';
+    }
+    parsedUrl.pathname = parsedUrl.pathname.replace(/\/+$/, '');
+    return parsedUrl.toString().replace(/\/$/, '');
+  } catch {
+    return '';
+  }
+}
+
+export function getConfiguredStableProviderMediaBaseUrl(config = {}) {
+  const publicUrls = config.publicUrls || {};
+  const reverseProxyPublicUrls = config.reverseProxy?.publicUrls || {};
+  return [
+    publicUrls.media,
+    publicUrls.processorApi,
+    reverseProxyPublicUrls.media,
+    reverseProxyPublicUrls.processorApi,
+  ].map(normalizeStablePublicHttpsBaseUrl).find(Boolean) || '';
 }
 
 function hasRemoteMediaConsumer(config = {}) {
@@ -338,6 +405,32 @@ export async function validateHealthMarker(
   }
 }
 
+export async function validateStableProviderMediaOrigin(
+  baseUrl,
+  { timeoutMs = 5000, allowPinnedDns = true } = {},
+) {
+  const normalizedBaseUrl = normalizeStablePublicHttpsBaseUrl(baseUrl);
+  if (!normalizedBaseUrl) {
+    return false;
+  }
+
+  if (await validateHealthMarker(normalizedBaseUrl, {
+    timeoutMs,
+    allowPinnedDns,
+  })) {
+    return true;
+  }
+
+  try {
+    const processorHealthUrl = buildHealthUrl(normalizedBaseUrl, '/v1/health/live');
+    const responseBody = await fetchHealthBody(processorHealthUrl, timeoutMs, allowPinnedDns);
+    const payload = JSON.parse(responseBody);
+    return payload?.status === 'ok' && payload?.service === 'samsar_processor';
+  } catch {
+    return false;
+  }
+}
+
 export class MediaTunnelController {
   constructor(env = process.env) {
     this.configPath = normalizeString(env.SAMSAR_RUNTIME_CONFIG_FILE) || DEFAULT_CONFIG_PATH;
@@ -579,8 +672,22 @@ export class MediaTunnelController {
           logError('Unable to read refresh marker:', error);
           return '';
         });
-        const tunnelRequired = configRequiresLocalMediaTunnel(config) ||
-          (Boolean(refreshMarkerToken) && configAllowsLocalMediaTunnel(config));
+        const stableProviderMediaUrl = getConfiguredStableProviderMediaBaseUrl(config);
+        const stableProviderMediaReachable = stableProviderMediaUrl
+          ? await validateStableProviderMediaOrigin(stableProviderMediaUrl, {
+            timeoutMs: this.requestTimeoutMs,
+            allowPinnedDns: true,
+          })
+          : false;
+        if (stableProviderMediaReachable && refreshMarkerToken) {
+          await consumeRefreshMarker(this.refreshMarkerPath, refreshMarkerToken).catch((error) => {
+            logError('Unable to consume an obsolete tunnel refresh marker:', error);
+          });
+        }
+        const tunnelRequired = !stableProviderMediaReachable && (
+          configRequiresLocalMediaTunnel(config) ||
+          (Boolean(refreshMarkerToken) && configAllowsLocalMediaTunnel(config))
+        );
         if (!tunnelRequired) {
           if (this.child) {
             log('Runtime config no longer requires a public local-media tunnel; stopping Cloudflared.');
