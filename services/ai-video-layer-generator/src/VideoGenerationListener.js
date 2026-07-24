@@ -421,6 +421,25 @@ export function resolveCompletedLayerDuration({
     : currentLayerDuration;
 }
 
+export function buildBaseAiVideoCompletionUpdate({
+  localVideoLink,
+  remoteAIVideoLink,
+  startFrameGenerationPath,
+  lastFrameGenerationPath,
+  thumbnailVideoPath,
+} = {}) {
+  return {
+    aiVideoGenerationPending: false,
+    hasAiVideoLayer: true,
+    aiVideoLayer: localVideoLink,
+    aiVideoRemoteLink: remoteAIVideoLink,
+    aiVideoThumbnailPath: startFrameGenerationPath,
+    aiVideoEndThumbnailPath: lastFrameGenerationPath,
+    aiVideoThumbnailVideo: thumbnailVideoPath,
+    aiVideoGenerationStatus: 'COMPLETED',
+  };
+}
+
 function roundAudioSeconds(value) {
   const numericValue = Number(value);
   if (!Number.isFinite(numericValue)) {
@@ -2364,14 +2383,13 @@ async function markVideoLayerGenerationAsComplete(localVideoLink, payload) {
     currentLayer.lipSyncEndThumbnailPath = lastFrameGenerationPath;
     currentLayer.lipSyncThumbnailVideo = thumbnailVideoPath;
   } else {
-    currentLayer.aiVideoGenerationPending = false;
-    currentLayer.aiVideoLayer = localVideoLink;
-    currentLayer.aiVideoRemoteLink = remoteAIVideoLink;
-    currentLayer.aiVideoThumbnailPath = startFrameGenerationPath;
-    currentLayer.aiVideoEndThumbnailPath = lastFrameGenerationPath;
-    currentLayer.aiVideoThumbnailVideo = thumbnailVideoPath;
-
-    currentLayer.aiVideoGenerationStatus = 'COMPLETED';
+    Object.assign(currentLayer, buildBaseAiVideoCompletionUpdate({
+      localVideoLink,
+      remoteAIVideoLink,
+      startFrameGenerationPath,
+      lastFrameGenerationPath,
+      thumbnailVideoPath,
+    }));
   }
 
   currentLayer.frameGenerationPending = true;

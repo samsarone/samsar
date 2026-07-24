@@ -1094,6 +1094,14 @@ function RerollScenePreviewTile({
     setCurrentVisualUrl('');
   };
 
+  const handleVideoLoadedMetadata = () => {
+    const video = videoRef.current;
+    if (!video || isPlaying || !Number.isFinite(video.duration) || video.duration <= 0) return;
+
+    // Fetch a real frame without eagerly downloading every scene video in full.
+    video.currentTime = Math.min(0.1, video.duration / 2);
+  };
+
   const handlePlaybackClick = (event) => {
     event.preventDefault();
     event.stopPropagation();
@@ -1124,7 +1132,6 @@ function RerollScenePreviewTile({
   };
 
   const canAttemptPlayback = Boolean(currentVideoUrl) && !videoLoadFailed;
-  const shouldShowVideo = isPlaying && canAttemptPlayback;
 
   return (
     <div
@@ -1143,30 +1150,32 @@ function RerollScenePreviewTile({
       <div className={`relative aspect-video w-full overflow-hidden rounded-md ${
         colorMode === 'dark' ? 'bg-slate-900' : 'bg-slate-100'
       }`}>
-        {currentVisualUrl ? (
-          <img
-            src={currentVisualUrl}
-            alt={`Scene ${item.layerIndex}`}
-            loading="lazy"
-            onError={handleImageError}
-            className="h-full w-full object-cover"
-          />
-        ) : (
+        {!currentVisualUrl && !canAttemptPlayback ? (
           <div className={`flex h-full w-full items-center justify-center ${mutedText}`}>
             <FaImage className="h-5 w-5" aria-hidden="true" />
           </div>
-        )}
-        {shouldShowVideo ? (
+        ) : null}
+        {canAttemptPlayback ? (
           <video
             ref={videoRef}
             src={currentVideoUrl}
-            preload="auto"
-            autoPlay
+            preload="metadata"
             playsInline
             loop
             muted
+            aria-label={`Scene ${item.layerIndex} video preview`}
             onError={handleVideoError}
+            onLoadedMetadata={handleVideoLoadedMetadata}
             onLoadedData={() => setVideoLoadFailed(false)}
+            className="absolute inset-0 h-full w-full object-cover"
+          />
+        ) : null}
+        {currentVisualUrl && !isPlaying ? (
+          <img
+            src={currentVisualUrl}
+            alt={`Scene ${item.layerIndex}`}
+            loading="eager"
+            onError={handleImageError}
             className="absolute inset-0 h-full w-full object-cover"
           />
         ) : null}

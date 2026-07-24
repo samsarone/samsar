@@ -136,7 +136,7 @@ test('explicit native authorization preserves Samsar fallback while provider cre
   });
 });
 
-test('Qwen OpenRouter uses Plus for text and vision with bounded model settings', async (t) => {
+test('Qwen OpenRouter uses Max for text and Plus for vision with bounded settings', async (t) => {
   const keys = [
     'CURRENT_ENV',
     'OPENROUTER_API_KEY',
@@ -152,7 +152,7 @@ test('Qwen OpenRouter uses Plus for text and vision with bounded model settings'
   });
   process.env.CURRENT_ENV = 'production';
   process.env.OPENROUTER_API_KEY = 'openrouter-key';
-  delete process.env.OPENROUTER_QWEN_MAX_TOKENS;
+  process.env.OPENROUTER_QWEN_MAX_TOKENS = '50000';
   delete process.env.OPENROUTER_QWEN_REASONING_EFFORT;
 
   const payloads = [];
@@ -186,12 +186,13 @@ test('Qwen OpenRouter uses Plus for text and vision with bounded model settings'
     plugins: [{ id: 'existing-plugin' }],
   });
 
-  assert.equal(payloads[0].model, 'qwen/qwen3.7-plus');
+  assert.equal(payloads[0].model, 'qwen/qwen3.7-max');
   assert.equal(payloads[0].max_tokens, 20000);
   assert.equal(payloads[0].reasoning.effort, 'high');
   assert.equal(Object.hasOwn(payloads[0], 'max_completion_tokens'), false);
   assert.equal(payloads[1].model, 'qwen/qwen3.7-plus');
-  assert.equal(payloads[1].max_tokens, 65536);
+  assert.equal(payloads[1].max_tokens, 16384);
+  assert.equal(payloads[2].model, 'qwen/qwen3.7-max');
   assert.equal(payloads[2].reasoning.effort, 'high');
   assert.equal(payloads[2].max_tokens, 8192);
   assert.deepEqual(payloads[2].provider, { data_collection: 'deny', require_parameters: true });

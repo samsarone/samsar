@@ -12,7 +12,10 @@ import {
   normalizeOpenAIInferenceModel,
 } from '../../consts/InferenceModels.js';
 import { isStandaloneEdition } from '../../utils/EnvironmentUtils.js';
-import { hasAlibabaQwenNativeCredential } from '../../inference/AlibabaQwen.js';
+import {
+  hasAlibabaQwenNativeCredential,
+  hasQwenVisionInput,
+} from '../../inference/AlibabaQwen.js';
 import { externalAssistantClientRequestStore } from './ExternalAssistantClientRequestStore.js';
 import { resolveProviderMediaPayload } from './ProviderMediaPayload.js';
 
@@ -23,7 +26,8 @@ const DEFAULT_EXTERNAL_INFERENCE_MAX_RETRIES = 3;
 const DEFAULT_EXTERNAL_INFERENCE_RETRY_BASE_DELAY_MS = 5000;
 const DEFAULT_EXTERNAL_INFERENCE_RETRY_MAX_DELAY_MS = 60000;
 const DEFAULT_EXTERNAL_INFERENCE_POLL_INTERVAL_MS = 2000;
-const DEFAULT_OPENROUTER_QWEN_MAX_TOKENS = 65536;
+const OPENROUTER_QWEN_MAX_TOKEN_CEILING = 24000;
+const DEFAULT_OPENROUTER_QWEN_MAX_TOKENS = 16384;
 const DEFAULT_OPENROUTER_GEMINI_MAX_TOKENS = 65536;
 const DEFAULT_OPENROUTER_GPT_MAX_COMPLETION_TOKENS = 65536;
 const DEFAULT_OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1';
@@ -194,9 +198,12 @@ function getExternalInferenceRetryDelayMs(retryNumber, error) {
 function getOpenRouterCompletionLimit(requestedModel, request = {}) {
   let configuredLimit;
   if (isQwenInferenceModel(requestedModel)) {
-    configuredLimit = normalizePositiveInteger(
-      process.env.OPENROUTER_QWEN_MAX_TOKENS,
-      DEFAULT_OPENROUTER_QWEN_MAX_TOKENS,
+    configuredLimit = Math.min(
+      normalizePositiveInteger(
+        process.env.OPENROUTER_QWEN_MAX_TOKENS,
+        OPENROUTER_QWEN_MAX_TOKEN_CEILING,
+      ),
+      OPENROUTER_QWEN_MAX_TOKEN_CEILING,
     );
   } else if (isGeminiInferenceModel(requestedModel)) {
     configuredLimit = normalizePositiveInteger(
@@ -211,7 +218,9 @@ function getOpenRouterCompletionLimit(requestedModel, request = {}) {
   }
   const requestedLimit = normalizePositiveInteger(
     request.max_completion_tokens ?? request.max_tokens,
-    configuredLimit,
+    isQwenInferenceModel(requestedModel)
+      ? DEFAULT_OPENROUTER_QWEN_MAX_TOKENS
+      : configuredLimit,
   );
   return Math.min(requestedLimit, configuredLimit);
 }
@@ -722,7 +731,9 @@ export function resolveConfiguredInferenceProvider(model) {
 export function getOpenRouterModelForInferenceRequest(chatRequest = {}, env = process.env) {
   const model = getRequestedInferenceModel(chatRequest);
   if (isQwenInferenceModel(model)) {
-    return normalizeString(env?.OPENROUTER_QWEN_37_PLUS_MODEL) || 'qwen/qwen3.7-plus';
+    return hasQwenVisionInput(chatRequest.messages)
+      ? normalizeString(env?.OPENROUTER_QWEN_37_PLUS_MODEL) || 'qwen/qwen3.7-plus'
+      : normalizeString(env?.OPENROUTER_QWEN_37_MAX_MODEL) || 'qwen/qwen3.7-max';
   }
   if (isGeminiInferenceModel(model)) {
     return normalizeString(env?.OPENROUTER_GEMINI_31_PRO_MODEL) || 'google/gemini-3.1-pro-preview';

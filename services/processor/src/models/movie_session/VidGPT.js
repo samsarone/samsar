@@ -500,14 +500,23 @@ export async function createVidGPTSession(userId, payload) {
     throw error;
   }
 
-  const { themeJson, narrativeJson } = narrativeGeneration;
+  const {
+    themeJson,
+    narrativeJson,
+    movieResourceList,
+  } = narrativeGeneration;
+  const stableNarrativeJson = clonePreparedNarrativeArtifact(narrativeJson);
+  const stableMovieResourceList = clonePreparedNarrativeArtifact(
+    movieResourceList || narrativeJson,
+  );
 
 
 
   let quickMoviePayload = {
     aspectRatio: aspectRatio,
     sessionId: sessionID,
-    movieResourceList: narrativeJson,
+    movieResourceList: stableMovieResourceList,
+    narrativeJson: stableNarrativeJson,
     imageModel: imageModel,
     musicProvider: userBackingTrackModel,
     requestMusicGeneration: true,
@@ -752,7 +761,8 @@ export async function createInfoVidSession(userId, payload) {
   let quickMoviePayload = {
     aspectRatio: aspectRatio,
     sessionId: sessionID,
-    movieResourceList: narrativeJson,
+    movieResourceList: clonePreparedNarrativeArtifact(narrativeJson),
+    narrativeJson: clonePreparedNarrativeArtifact(narrativeJson),
     imageModel: imageModel,
     musicProvider: userBackingTrackModel,
     requestMusicGeneration: true,

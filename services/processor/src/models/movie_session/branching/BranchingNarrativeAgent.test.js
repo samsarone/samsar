@@ -203,7 +203,7 @@ test('generates exactly two divergence paths and meters invalid structured attem
   assert.match(requests[1].messages.at(-1).content, /paths/i);
   assert.equal(requests[0].maxRetries, 0);
   assert.equal(requests[0].externalMaxRetries, 0);
-  assert.equal(requests[0].max_tokens, 65536);
+  assert.equal(requests[0].max_tokens, 16384);
   assert.equal(
     requests[0].externalRequestContext.requestKey,
     'narrative:create_branching:level-1:root:paths:attempt-1',
@@ -363,9 +363,9 @@ test('generates a full child movieResourceList with an exact cloned prefix and i
 
 test('retries a branch suffix whose speech exceeds the model-aware tolerance', async () => {
   const invalidSuffix = buildValidSuffix();
-  invalidSuffix.sounds[0].audio = 'a'.repeat(56);
+  invalidSuffix.sounds[0].audio = 'a'.repeat(58);
   const validSuffix = buildValidSuffix();
-  validSuffix.sounds[0].audio = 'a'.repeat(55);
+  validSuffix.sounds[0].audio = 'a'.repeat(57);
   const responses = [
     completion(JSON.stringify(invalidSuffix), 'QWEN3.7'),
     completion(JSON.stringify(validSuffix), 'QWEN3.7'),
@@ -391,7 +391,7 @@ test('retries a branch suffix whose speech exceeds the model-aware tolerance', a
     },
   });
 
-  assert.equal(result.sounds.find((sound) => sound.sceneIndex === 2).audio.length, 55);
+  assert.equal(result.sounds.find((sound) => sound.sceneIndex === 2).audio.length, 57);
   assert.equal(receipts.length, 2);
   assert.deepEqual(receipts.map((receipt) => receipt.attempt), [1, 2]);
 });

@@ -38,7 +38,10 @@ const GEMINI_THEME_NARRATIVE_REASONING_EFFORT = 'high';
 const DEFAULT_THEME_NARRATIVE_TIMEOUT_MS = 10 * 60 * 1000;
 const DEFAULT_QWEN_THEME_NARRATIVE_TIMEOUT_MS = 20 * 60 * 1000;
 const NARRATIVE_SPEECH_REPAIR_MAX_ATTEMPTS = 3;
-const QWEN_NARRATIVE_SPEECH_REPAIR_MAX_TOKENS = 8192;
+const NARRATIVE_SPEECH_REPAIR_RETRY_SHRINK_RATIO = 0.1;
+const QWEN_THEME_KEYWORDS_MAX_TOKENS = 16000;
+const QWEN_NARRATIVE_SPEECH_REPAIR_MAX_TOKENS = 2048;
+const QWEN_SCREENPLAY_STORYLINE_MAX_TOKENS = 24000;
 const NarrativeGenderField = z.enum(['M', 'F', '']).describe(
   'For speech sounds, use exactly "M" or "F" uppercase; never use an empty string for speech. Use an empty string only for sound_effect items.'
 );
@@ -53,6 +56,76 @@ function buildExternalRequestAttemptContext(context, attempt) {
     ...context,
     requestKey: `${requestKey}:attempt-${attempt}`,
   };
+}
+
+function getSpeechRepairAttemptTarget(maxCharacters, attempt) {
+  const decrement = Math.max(
+    1,
+    Math.ceil(maxCharacters * NARRATIVE_SPEECH_REPAIR_RETRY_SHRINK_RATIO),
+  );
+  return Math.max(1, maxCharacters - (decrement * Math.max(0, attempt - 1)));
+}
+
+function buildNarrativeSpeechRepairSystemPrompt(maxCharacters) {
+  return (
+    `Rewrite the target speech to fit its scene in at most ${maxCharacters} characters. ` +
+    'Preserve its meaning, language, speaker, and tone, using movieResourceList only for context. ' +
+    'Return only the rewritten speech text.'
+  );
+}
+
+function buildNarrativeSpeechRepairUserPrompt({
+  movieResourceList,
+  scene,
+  speechItem,
+  sceneIndex,
+  soundIndex,
+}) {
+  const sceneDescription = typeof scene?.visual === 'string'
+    ? scene.visual.trim()
+    : '';
+  return JSON.stringify({
+    movieResourceList,
+    targetSceneIndex: sceneIndex,
+    targetSoundIndex: soundIndex,
+    originalAudioItem: speechItem,
+    sceneDescription,
+  });
+}
+
+function parseNarrativeSpeechRepairResponse(response) {
+  const rawContent = response?.choices?.[0]?.message?.content;
+  if (typeof rawContent !== 'string' || !rawContent.trim()) {
+    throw new Error('Narrative speech repair returned empty audio.');
+  }
+
+  let replacementAudio = rawContent.trim();
+  if (replacementAudio.startsWith('```') || replacementAudio.endsWith('```')) {
+    throw new Error(
+      'Narrative speech repair must return plain speech text without Markdown.',
+    );
+  }
+
+  let parsedJson;
+  let parsedAsJson = false;
+  try {
+    parsedJson = JSON.parse(replacementAudio);
+    parsedAsJson = true;
+  } catch {
+    // Plain speech is expected and normally is not valid JSON.
+  }
+  if (parsedAsJson && typeof parsedJson === 'string') {
+    replacementAudio = parsedJson.trim();
+  } else if (parsedAsJson) {
+    throw new Error(
+      'Narrative speech repair must return only the speech text, not JSON.',
+    );
+  }
+
+  if (!replacementAudio) {
+    throw new Error('Narrative speech repair returned empty audio.');
+  }
+  return replacementAudio;
 }
 
 async function notifyInferenceResponse(options, response, metadata = {}) {
@@ -333,7 +406,7 @@ export async function sendSessionThemeMessageRequest(
         model: modelName,
         response_format: zodResponseFormat(ThemeKeywordsExtraction, "theme_keywords_extraction"),
         ...buildReasoningRequestOptions(effectiveReasoningEffort),
-        ...(isQwenInferenceModel(modelName) ? { max_tokens: 65536 } : {}),
+        ...(isQwenInferenceModel(modelName) ? { max_tokens: QWEN_THEME_KEYWORDS_MAX_TOKENS } : {}),
         timeout: timeoutMs,
         maxRetries: 1,
         externalPolling: true,
@@ -703,19 +776,21 @@ export async function sendSessionPromptMessageRequest(messageList, themeObject, 
 
 
 export async function rewriteNarrativeSpeechItemToFitScene({
-  narrativeSystemPrompt,
+  movieResourceList,
   scene,
   speechItem,
   maxCharacters,
   inferenceModel = getDefaultUserInferenceModel(),
   options = {},
 } = {}) {
-  const normalizedSystemPrompt = typeof narrativeSystemPrompt === 'string'
-    ? narrativeSystemPrompt
-    : '';
   const normalizedMaxCharacters = Number(maxCharacters);
-  if (!normalizedSystemPrompt.trim()) {
-    throw new TypeError('narrativeSystemPrompt is required for speech repair.');
+  if (!movieResourceList || typeof movieResourceList !== 'object' ||
+    Array.isArray(movieResourceList) ||
+    !Array.isArray(movieResourceList.scenes) ||
+    !Array.isArray(movieResourceList.sounds)) {
+    throw new TypeError(
+      'movieResourceList with scenes and sounds is required for speech repair.',
+    );
   }
   if (!scene || typeof scene !== 'object' || Array.isArray(scene)) {
     throw new TypeError('scene is required for speech repair.');
@@ -751,55 +826,65 @@ export async function rewriteNarrativeSpeechItemToFitScene({
   const sleep = options.dependencies?.sleep || ((delayMs) => new Promise((resolve) => {
     setTimeout(resolve, delayMs);
   }));
-  const SpeechAudioReplacement = z.object({
-    audio: z.string().trim().min(1),
-  });
   const existingAudio = typeof speechItem.audio === 'string' ? speechItem.audio.trim() : '';
   const existingCharacterCount = Array.from(existingAudio).length;
-  const messages = [
-    {
-      role: 'developer',
-      content: normalizedSystemPrompt,
-    },
-    {
-      role: 'developer',
-      content:
-        'The narrative is complete. Rewrite only the supplied speech item\'s "audio" text ' +
-        'so it fits the scene while preserving its meaning, language, factual content, ' +
-        `speaker, and tone. The replacement must contain no more than ${normalizedMaxCharacters} ` +
-        `characters, counting spaces and punctuation; the current line has ` +
-        `${existingCharacterCount} characters. Do not change or return any other narrative field. ` +
-        'For this correction, return only {"audio":"..."}; this focused response format ' +
-        'replaces the full-narrative response format above.',
-    },
-    {
-      role: 'user',
-      content: JSON.stringify({ scene, speechItem }),
-    },
-  ];
+  const targetSceneIndex = Number.isSafeInteger(options.sceneIndex)
+    ? options.sceneIndex
+    : (Number.isSafeInteger(speechItem.sceneIndex) ? speechItem.sceneIndex : null);
+  const targetSoundIndex = Number.isSafeInteger(options.soundIndex)
+    ? options.soundIndex
+    : null;
+  if (targetSceneIndex === null || !movieResourceList.scenes[targetSceneIndex]) {
+    throw new TypeError(
+      'sceneIndex must identify the supplied scene in movieResourceList for speech repair.',
+    );
+  }
+  if (targetSoundIndex === null || !movieResourceList.sounds[targetSoundIndex]) {
+    throw new TypeError(
+      'soundIndex must identify the supplied speech item in movieResourceList for speech repair.',
+    );
+  }
+  if (movieResourceList.scenes[targetSceneIndex] !== scene) {
+    throw new TypeError(
+      'scene must be the original movieResourceList scene selected by sceneIndex.',
+    );
+  }
+  if (movieResourceList.sounds[targetSoundIndex] !== speechItem) {
+    throw new TypeError(
+      'speechItem must be the original movieResourceList sound selected by soundIndex.',
+    );
+  }
+  if (String(speechItem.type || '').trim().toLowerCase() !== 'speech') {
+    throw new TypeError('speechItem must have type "speech" for speech repair.');
+  }
   let lastError = null;
 
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
-    const attemptMessages = lastError
-      ? [
-        ...messages,
-        {
-          role: 'developer',
-          content:
-            `The prior correction was invalid: ${String(lastError.message || lastError).slice(0, 1000)} ` +
-            `Try again and keep "audio" within ${normalizedMaxCharacters} characters.`,
-        },
-      ]
-      : messages;
+    const attemptTargetCharacters = getSpeechRepairAttemptTarget(
+      normalizedMaxCharacters,
+      attempt,
+    );
+    const attemptMessages = [
+      {
+        role: 'developer',
+        content: buildNarrativeSpeechRepairSystemPrompt(attemptTargetCharacters),
+      },
+      {
+        role: 'user',
+        content: buildNarrativeSpeechRepairUserPrompt({
+          movieResourceList,
+          scene,
+          speechItem,
+          sceneIndex: targetSceneIndex,
+          soundIndex: targetSoundIndex,
+        }),
+      },
+    ];
 
     try {
       const response = await createCompletion(openaiClient, {
         messages: attemptMessages,
         model: modelName,
-        response_format: zodResponseFormat(
-          SpeechAudioReplacement,
-          'narrative_speech_repair',
-        ),
         ...buildReasoningRequestOptions(effectiveReasoningEffort),
         ...(isQwenInferenceModel(modelName)
           ? { max_tokens: QWEN_NARRATIVE_SPEECH_REPAIR_MAX_TOKENS }
@@ -816,6 +901,16 @@ export async function rewriteNarrativeSpeechItemToFitScene({
         externalMaxRetries: 0,
       });
 
+      const returnedValue = response?.choices?.[0]?.message?.content ?? null;
+      console.info(
+        '[model][MovieCreatorAgent][narrative_speech_repair] retry_result',
+        {
+          sessionId: options.externalRequestContext?.sessionId || null,
+          retryIndex: attempt,
+          value: returnedValue,
+        },
+      );
+
       await notifyInferenceResponse(options, response, {
         stage: 'narrative_speech_repair',
         attempt,
@@ -824,23 +919,26 @@ export async function rewriteNarrativeSpeechItemToFitScene({
         soundIndex: options.soundIndex ?? null,
       });
 
-      const parsedJson = parseStructuredCompletion(response, 'narrative_speech_repair');
-      const parsed = SpeechAudioReplacement.safeParse(parsedJson);
-      if (!parsed.success) {
-        throw new Error('Narrative speech repair returned an invalid audio response.');
-      }
-      const replacementAudio = parsed.data.audio;
+      const replacementAudio = parseNarrativeSpeechRepairResponse(response);
       const replacementCharacterCount = Array.from(replacementAudio).length;
-      if (replacementCharacterCount > normalizedMaxCharacters) {
+      if (replacementCharacterCount > attemptTargetCharacters) {
         const error = new Error(
           `Replacement speech has ${replacementCharacterCount} characters; ` +
-          `${normalizedMaxCharacters} are allowed.`,
+          `${attemptTargetCharacters} are allowed.`,
+        );
+        error.code = SPEECH_CHARACTER_LIMIT_EXCEEDED_CODE;
+        throw error;
+      }
+      if (replacementCharacterCount >= existingCharacterCount) {
+        const error = new Error(
+          `Replacement speech has ${replacementCharacterCount} characters and must be shorter ` +
+          `than the original ${existingCharacterCount}-character speech.`,
         );
         error.code = SPEECH_CHARACTER_LIMIT_EXCEEDED_CODE;
         throw error;
       }
 
-      return { ...speechItem, audio: replacementAudio };
+      return replacementAudio;
     } catch (error) {
       if (error?.inferenceUsageObserverFailed === true ||
         error?.code === 'INFERENCE_USAGE_OBSERVER_FAILED') {
@@ -924,7 +1022,7 @@ export async function sendNarrativePromptMessageRequest(
         model: modelName,
         response_format: responseFormat,
         ...buildReasoningRequestOptions(effectiveReasoningEffort),
-        ...(isQwenInferenceModel(modelName) ? { max_tokens: 65536 } : {}),
+        ...(isQwenInferenceModel(modelName) ? { max_tokens: QWEN_SCREENPLAY_STORYLINE_MAX_TOKENS } : {}),
         timeout: timeoutMs,
         maxRetries: 1,
         externalPolling: true,

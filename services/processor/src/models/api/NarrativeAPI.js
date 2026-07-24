@@ -207,6 +207,90 @@ function deepCloneJson(value) {
   return JSON.parse(JSON.stringify(value));
 }
 
+const REPAIRED_SOUND_IDENTITY_FIELDS = Object.freeze([
+  'type',
+  'subType',
+  'actor',
+  'gender',
+  'sceneIndex',
+  'audio',
+]);
+
+function assertRepairedNarrativeSoundsPreserved(rawNarrativeJson, movieResourceList) {
+  const rawScenes = rawNarrativeJson?.scenes;
+  const rawSounds = rawNarrativeJson?.sounds;
+  const enrichedScenes = movieResourceList?.scenes;
+  const enrichedSounds = movieResourceList?.sounds;
+  if (!Array.isArray(rawScenes) || !Array.isArray(rawSounds) ||
+    !Array.isArray(enrichedScenes) || !Array.isArray(enrichedSounds)) {
+    throw buildError(
+      'Repaired narrative artifacts must contain scenes and sounds arrays.',
+      502,
+      'MOVIE_RESOURCE_LIST_SOUND_PRESERVATION_FAILED',
+    );
+  }
+  if (enrichedScenes.length !== rawScenes.length || enrichedSounds.length !== rawSounds.length) {
+    throw buildError(
+      `Repaired narrative enrichment changed scenes ${rawScenes.length}→` +
+        `${enrichedScenes.length} or sounds ${rawSounds.length}→${enrichedSounds.length}.`,
+      502,
+      'MOVIE_RESOURCE_LIST_SOUND_PRESERVATION_FAILED',
+    );
+  }
+
+  rawSounds.forEach((rawSound, soundIndex) => {
+    const enrichedSound = enrichedSounds[soundIndex];
+    for (const field of REPAIRED_SOUND_IDENTITY_FIELDS) {
+      if (enrichedSound?.[field] !== rawSound?.[field]) {
+        throw buildError(
+          `Repaired sound ${soundIndex} changed ${field} during enrichment.`,
+          502,
+          'MOVIE_RESOURCE_LIST_SOUND_PRESERVATION_FAILED',
+        );
+      }
+    }
+  });
+}
+
+export function finalizeNarrativeMovieResourceList({
+  narrative,
+  rawNarrativeJson,
+  movieResourceList,
+  videoGenerationModel,
+  inferenceModel,
+  requestedDuration,
+  validateNarrative = validateTextToVideoNarrative,
+} = {}) {
+  if (Number(narrative?.speechRepairs) > 0) {
+    assertRepairedNarrativeSoundsPreserved(rawNarrativeJson, movieResourceList);
+    const preservedMovieResourceList = deepCloneJson(movieResourceList);
+    return {
+      movieResourceList: preservedMovieResourceList,
+      validation: {
+        ...(narrative?.validation || {}),
+        valid: true,
+        errors: [],
+        narrativeJson: deepCloneJson(preservedMovieResourceList),
+        fullValidationSkippedAfterSpeechRepair: true,
+      },
+    };
+  }
+
+  const validation = validateNarrative(
+    movieResourceList,
+    videoGenerationModel,
+    undefined,
+    {
+      repairAdjacentSceneIndex: isGeminiInferenceModel(inferenceModel),
+      requestedDuration,
+    },
+  );
+  return {
+    movieResourceList: validation.narrativeJson,
+    validation,
+  };
+}
+
 function restoreGenerationError(request) {
   return buildError(
     normalizeString(request?.generationFailureMessage) || 'Narrative generation failed.',
@@ -772,15 +856,15 @@ export async function processCreateSingleNarrativeRequest(requestId) {
         ),
       });
       const movieResourceList = visualPromptResult.movieResourceList;
-      const finalValidation = validateTextToVideoNarrative(
+      const finalizedMovieResourceList = finalizeNarrativeMovieResourceList({
+        narrative,
+        rawNarrativeJson,
         movieResourceList,
-        request.videoGenerationModel || NARRATIVE_VIDEO_MODEL,
-        undefined,
-        {
-          repairAdjacentSceneIndex: isGeminiInferenceModel(request.inferenceModel),
-          requestedDuration: request.duration,
-        },
-      );
+        videoGenerationModel: request.videoGenerationModel || NARRATIVE_VIDEO_MODEL,
+        inferenceModel: request.inferenceModel,
+        requestedDuration: request.duration,
+      });
+      const finalValidation = finalizedMovieResourceList.validation;
       if (!finalValidation.valid) {
         throw buildError(
           `Final movieResourceList validation failed: ${finalValidation.errors.join(', ')}`,
@@ -803,7 +887,7 @@ export async function processCreateSingleNarrativeRequest(requestId) {
       generated = {
         themeJson: narrative.themeJson,
         narrativeJson: rawNarrativeJson,
-        movieResourceList: finalValidation.narrativeJson,
+        movieResourceList: finalizedMovieResourceList.movieResourceList,
         validation: {
           narrative: narrative.validation,
           movieResourceList: finalValidation,

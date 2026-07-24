@@ -8,7 +8,7 @@ import {
   isQwenInferenceModel,
   normalizeInferenceModel,
 } from './InferenceModels.js';
-import { getAlibabaCloudApiKey } from './Qwen.js';
+import { getAlibabaCloudApiKey, hasQwenMultimodalInput } from './Qwen.js';
 import { runExternalInferenceWithRetry } from './ExternalInferenceRetry.js';
 import { getAccessibleMediaUrlForProvider } from '../utils/MediaReferenceUtils.js';
 import { normalizeProviderMediaPayload } from '../utils/ProviderMediaPayload.js';
@@ -17,7 +17,8 @@ import { isStandaloneEdition } from '../utils/Environment.js';
 const DEFAULT_SAMSAR_API_BASE_URL = 'https://api.samsar.one/v1';
 const DEFAULT_EXTERNAL_INFERENCE_TIMEOUT_MS = 10 * 60 * 1000;
 const DEFAULT_OPENROUTER_QWEN_INFERENCE_TIMEOUT_MS = 20 * 60 * 1000;
-const DEFAULT_OPENROUTER_QWEN_MAX_TOKENS = 65536;
+const OPENROUTER_QWEN_MAX_TOKEN_CEILING = 24000;
+const DEFAULT_OPENROUTER_QWEN_MAX_TOKENS = 16384;
 const DEFAULT_OPENROUTER_GEMINI_MAX_TOKENS = 65536;
 const DEFAULT_OPENROUTER_GPT_MAX_COMPLETION_TOKENS = 65536;
 const DEFAULT_OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1';
@@ -75,7 +76,10 @@ function normalizePositiveInteger(value, fallback) {
 
 function getOpenRouterCompletionLimit(requestedModel, request = {}) {
   const configuredLimit = isQwenInferenceModel(requestedModel)
-    ? normalizePositiveInteger(process.env.OPENROUTER_QWEN_MAX_TOKENS, DEFAULT_OPENROUTER_QWEN_MAX_TOKENS)
+    ? Math.min(
+      normalizePositiveInteger(process.env.OPENROUTER_QWEN_MAX_TOKENS, OPENROUTER_QWEN_MAX_TOKEN_CEILING),
+      OPENROUTER_QWEN_MAX_TOKEN_CEILING,
+    )
     : isGeminiInferenceModel(requestedModel)
       ? normalizePositiveInteger(process.env.OPENROUTER_GEMINI_MAX_TOKENS, DEFAULT_OPENROUTER_GEMINI_MAX_TOKENS)
       : normalizePositiveInteger(
@@ -84,7 +88,9 @@ function getOpenRouterCompletionLimit(requestedModel, request = {}) {
       );
   const requestedLimit = normalizePositiveInteger(
     request.max_completion_tokens ?? request.max_tokens,
-    configuredLimit,
+    isQwenInferenceModel(requestedModel)
+      ? DEFAULT_OPENROUTER_QWEN_MAX_TOKENS
+      : configuredLimit,
   );
   return Math.min(requestedLimit, configuredLimit);
 }
@@ -347,7 +353,9 @@ function getRequestedInferenceModel(chatRequest = {}) {
 export function getOpenRouterModelForInferenceRequest(chatRequest = {}, env = process.env) {
   const model = getRequestedInferenceModel(chatRequest);
   if (isQwenInferenceModel(model)) {
-    return normalizeString(env?.OPENROUTER_QWEN_37_PLUS_MODEL) || 'qwen/qwen3.7-plus';
+    return hasQwenMultimodalInput(chatRequest)
+      ? normalizeString(env?.OPENROUTER_QWEN_37_PLUS_MODEL) || 'qwen/qwen3.7-plus'
+      : normalizeString(env?.OPENROUTER_QWEN_37_MAX_MODEL) || 'qwen/qwen3.7-max';
   }
   if (isGeminiInferenceModel(model)) {
     return normalizeString(env?.OPENROUTER_GEMINI_31_PRO_MODEL) || 'google/gemini-3.1-pro-preview';

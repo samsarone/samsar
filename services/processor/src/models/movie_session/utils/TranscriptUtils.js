@@ -10,6 +10,10 @@ import {
 
 const TEXT_TO_VIDEO_NARRATIVE_DURATION_TOLERANCE_SECONDS = 30;
 export const SPEECH_CHARACTER_LIMIT_EXCEEDED_CODE = 'SPEECH_CHARACTER_LIMIT_EXCEEDED';
+export const ACCEPTED_NARRATIVE_SOUND_TYPES = Object.freeze([
+  'speech',
+  'sound_effect',
+]);
 
 function getDurationUnitsForVideoGenerationModel(modelKey, framesPerSecond = undefined) {
   if (!modelKey) {
@@ -105,6 +109,80 @@ function parseSceneIndex(sceneIndex) {
 
 function normalizeComparableString(value) {
   return typeof value === 'string' ? value.trim().toLowerCase() : '';
+}
+
+function normalizeSoundTypeToken(value) {
+  return normalizeComparableString(value)
+    .replace(/[\s-]+/g, '_')
+    .replace(/_+/g, '_');
+}
+
+function getEditDistance(leftValue, rightValue) {
+  const left = Array.from(leftValue);
+  const right = Array.from(rightValue);
+  const previous = Array.from({ length: right.length + 1 }, (_unused, index) => index);
+
+  for (let leftIndex = 1; leftIndex <= left.length; leftIndex += 1) {
+    const current = [leftIndex];
+    for (let rightIndex = 1; rightIndex <= right.length; rightIndex += 1) {
+      current[rightIndex] = Math.min(
+        current[rightIndex - 1] + 1,
+        previous[rightIndex] + 1,
+        previous[rightIndex - 1] +
+          (left[leftIndex - 1] === right[rightIndex - 1] ? 0 : 1),
+      );
+    }
+    previous.splice(0, previous.length, ...current);
+  }
+
+  return previous[right.length];
+}
+
+function findNearestNarrativeSoundType(rawType) {
+  const normalizedType = normalizeSoundTypeToken(rawType);
+  if (!normalizedType) {
+    return null;
+  }
+
+  return ACCEPTED_NARRATIVE_SOUND_TYPES.reduce((nearest, candidate) => {
+    const distance = getEditDistance(normalizedType, candidate);
+    if (!nearest || distance < nearest.distance) {
+      return { type: candidate, distance };
+    }
+    return nearest;
+  }, null);
+}
+
+function canonicalizeNarrativeSoundTypes(sounds, { enabled = false } = {}) {
+  const repairs = [];
+  const canonicalSounds = sounds.map((sound, soundIndex) => {
+    if (!sound || typeof sound !== 'object' || Array.isArray(sound)) {
+      return sound;
+    }
+
+    const normalizedType = normalizeSoundTypeToken(sound.type);
+    if (ACCEPTED_NARRATIVE_SOUND_TYPES.includes(normalizedType)) {
+      return normalizedType === sound.type ? sound : { ...sound, type: normalizedType };
+    }
+    if (!enabled) {
+      return { ...sound, type: normalizedType };
+    }
+
+    const nearest = findNearestNarrativeSoundType(normalizedType);
+    if (!nearest) {
+      return { ...sound, type: normalizedType };
+    }
+
+    repairs.push({
+      soundIndex,
+      from: normalizedType,
+      to: nearest.type,
+      distance: nearest.distance,
+    });
+    return { ...sound, type: nearest.type };
+  });
+
+  return { sounds: canonicalSounds, repairs };
 }
 
 function normalizeSpeechGender(rawGender) {
@@ -514,6 +592,19 @@ function validateTextToVideoNarrativeContent(scenes, sounds) {
   return errors;
 }
 
+function validateNarrativeSoundTypes(sounds) {
+  return sounds.flatMap((sound, soundIndex) => {
+    const soundType = normalizeSoundTypeToken(sound?.type);
+    if (ACCEPTED_NARRATIVE_SOUND_TYPES.includes(soundType)) {
+      return [];
+    }
+    return [
+      `Sound ${soundIndex} has invalid type "${soundType || 'empty'}"; ` +
+        `expected ${ACCEPTED_NARRATIVE_SOUND_TYPES.join(' or ')}.`,
+    ];
+  });
+}
+
 function validateSpeechCharacterLimits(
   scenes,
   sounds,
@@ -627,7 +718,17 @@ export function validateTextToVideoNarrative(narrativeJson, model, framesPerSeco
 
   let scenes = [...narrativeJson.scenes];
   const rawSounds = Array.isArray(narrativeJson?.sounds) ? [...narrativeJson.sounds] : [];
-  const normalizedSoundEntries = normalizeNarrativeSoundEntries(rawSounds);
+  const soundTypeNormalization = canonicalizeNarrativeSoundTypes(rawSounds, {
+    enabled: options.repairSoundTypes === true,
+  });
+  const canonicalNarrativeJson = {
+    ...narrativeJson,
+    scenes: scenes.map((scene) => ({ ...scene })),
+    sounds: soundTypeNormalization.sounds.map((sound) => (
+      sound && typeof sound === 'object' && !Array.isArray(sound) ? { ...sound } : sound
+    )),
+  };
+  const normalizedSoundEntries = normalizeNarrativeSoundEntries(soundTypeNormalization.sounds);
   const sourceSoundIndexes = normalizedSoundEntries.map(({ sourceSoundIndex }) => sourceSoundIndex);
   let sounds = normalizedSoundEntries.map(({ sound }) => sound);
 
@@ -636,17 +737,10 @@ export function validateTextToVideoNarrative(narrativeJson, model, framesPerSeco
   });
   sounds = adjacentRepair.sounds;
   sounds = backfillMissingSpeechGenders(scenes, sounds);
-  const speechCharacterValidation = validateSpeechCharacterLimits(
-    scenes,
-    sounds,
-    model,
-    framesPerSecond,
-    { ...options, sourceSoundIndexes },
-  );
 
   const errors = [
+    ...validateNarrativeSoundTypes(sounds),
     ...validateTextToVideoNarrativeContent(scenes, sounds),
-    ...speechCharacterValidation.errors,
     ...validateSpeechGenders(scenes, sounds),
     ...validateNoSpeechSoundEffectSceneConflicts(sounds),
   ];
@@ -658,10 +752,22 @@ export function validateTextToVideoNarrative(narrativeJson, model, framesPerSeco
     : Number(options.requestedDuration);
   errors.push(...validateNarrativeDuration(requestedDuration, actualDuration));
 
+  const speechCharacterValidation = errors.length === 0
+    ? validateSpeechCharacterLimits(
+      scenes,
+      sounds,
+      model,
+      framesPerSecond,
+      { ...options, sourceSoundIndexes },
+    )
+    : { errors: [], violations: [] };
+  errors.push(...speechCharacterValidation.errors);
+
   return {
     valid: errors.length === 0,
     errors,
     narrativeJson: normalizedNarrativeJson,
+    canonicalNarrativeJson,
     violations: {
       speechCharacterLimits: speechCharacterValidation.violations,
     },
@@ -673,6 +779,7 @@ export function validateTextToVideoNarrative(narrativeJson, model, framesPerSeco
     },
     repairs: {
       adjacentSceneIndex: adjacentRepair.repairCount,
+      soundTypes: soundTypeNormalization.repairs,
     },
   };
 }

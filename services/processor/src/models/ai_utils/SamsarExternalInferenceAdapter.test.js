@@ -228,13 +228,14 @@ test('Docker inference uses native then OpenRouter then Samsar for every model',
   assert.equal(shouldUseSamsarExternalInference({ model: 'QWEN3.7' }), false);
 });
 
-test('OpenRouter maps Qwen text and vision requests to Plus', () => {
+test('OpenRouter maps Qwen text to Max and vision requests to Plus', () => {
   assert.equal(getOpenRouterModelForInferenceRequest({
     model: 'QWEN3.7',
     messages: [{ role: 'user', content: 'hello' }],
   }, {
+    OPENROUTER_QWEN_37_MAX_MODEL: 'qwen/qwen3.7-max',
     OPENROUTER_QWEN_37_PLUS_MODEL: 'qwen/qwen3.7-plus',
-  }), 'qwen/qwen3.7-plus');
+  }), 'qwen/qwen3.7-max');
   assert.equal(getOpenRouterModelForInferenceRequest({
     model: 'QWEN3.7',
     messages: [{
@@ -290,6 +291,7 @@ test('OpenRouter adapter sends OpenAI-compatible vision requests with the Plus d
   clearProviderEnv();
   process.env.CURRENT_ENV = 'production';
   process.env.OPENROUTER_API_KEY = 'test-openrouter-key';
+  process.env.OPENROUTER_QWEN_MAX_TOKENS = '50000';
   let capturedPayload;
   let capturedOptions;
   t.mock.method(OpenAI.Chat.Completions.prototype, 'create', async (payload, options) => {
@@ -309,7 +311,7 @@ test('OpenRouter adapter sends OpenAI-compatible vision requests with the Plus d
 
   assert.equal(capturedPayload.model, 'qwen/qwen3.7-plus');
   assert.equal(capturedPayload.messages[0].content[0].type, 'image_url');
-  assert.equal(capturedPayload.max_tokens, 65536);
+  assert.equal(capturedPayload.max_tokens, 16384);
   assert.equal(capturedOptions.timeout, 1200000);
 });
 
@@ -357,7 +359,7 @@ test('OpenRouter resolves provider media freshly on every adapter retry', async 
   assert.equal(payloads[1].messages[0].content[0].image_url.url, 'https://fresh-2.example/assets_v2/generations/session/openrouter.png');
 });
 
-test('OpenRouter applies Qwen-specific token and reasoning limits to Plus text inference', async (t) => {
+test('OpenRouter applies Qwen-specific token and reasoning limits to Max text inference', async (t) => {
   clearProviderEnv();
   process.env.CURRENT_ENV = 'production';
   process.env.OPENROUTER_API_KEY = 'test-openrouter-key';
@@ -374,7 +376,7 @@ test('OpenRouter applies Qwen-specific token and reasoning limits to Plus text i
     max_completion_tokens: 20000,
   });
 
-  assert.equal(capturedPayload.model, 'qwen/qwen3.7-plus');
+  assert.equal(capturedPayload.model, 'qwen/qwen3.7-max');
   assert.equal(capturedPayload.reasoning.effort, 'high');
   assert.equal(capturedPayload.max_tokens, 20000);
   assert.equal(Object.hasOwn(capturedPayload, 'max_completion_tokens'), false);
@@ -413,7 +415,7 @@ test('OpenRouter reserves Qwen output tokens and enforces schema support for str
     plugins: [{ id: 'existing-plugin' }],
   });
 
-  assert.equal(capturedPayload.model, 'qwen/qwen3.7-plus');
+  assert.equal(capturedPayload.model, 'qwen/qwen3.7-max');
   assert.equal(capturedPayload.reasoning.effort, 'high');
   assert.equal(capturedPayload.max_tokens, 4096);
   assert.deepEqual(capturedPayload.provider, {

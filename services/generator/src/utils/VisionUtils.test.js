@@ -11,6 +11,12 @@ const silentLogger = {
   warn() {},
 };
 
+test('Qwen vision requests use operation-specific bounded output limits', () => {
+  assert.equal(__testOnly__.getQwenVisionMaxTokens('QWEN3.7', 'description'), 8192);
+  assert.equal(__testOnly__.getQwenVisionMaxTokens('QWEN3.7', 'score'), 1024);
+  assert.equal(__testOnly__.getQwenVisionMaxTokens('gpt-5.6-sol', 'description'), undefined);
+});
+
 test('vision inference retries a 429 three times with exponential backoff', async () => {
   let calls = 0;
   const observedDelays = [];

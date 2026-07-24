@@ -6,9 +6,53 @@ import {
   alignSpeechSpeakerNamesToScenes,
   buildPreparedNarrativeVisualPromptList,
   buildMovieResourceListVisualPrompts,
+  buildVideoSessionNarrativeArtifactFields,
   buildVideoSessionMovieResourceList,
   ensureNarrativeSpeechGenders,
 } from './TranscriptMovieGenerator.js';
+
+test('session artifact fields preserve repaired speech at the same index in both narratives', () => {
+  const narrativeJson = {
+    scenes: [
+      { visual: 'Silent opening.', type: 'base', duration: 5 },
+      { visual: 'Narrated reveal.', type: 'narration', duration: 5 },
+    ],
+    sounds: [
+      { type: 'sound_effect', sceneIndex: 0, audio: 'Soft room tone.' },
+      {
+        type: 'speech',
+        subType: 'narration',
+        actor: 'Narrator',
+        sceneIndex: 1,
+        audio: 'The repaired line.',
+      },
+    ],
+  };
+  const movieResourceList = {
+    ...structuredClone(narrativeJson),
+    scenes: narrativeJson.scenes.map((scene, sceneIndex) => ({
+      ...scene,
+      visual: `Enriched ${sceneIndex}: ${scene.visual}`,
+    })),
+  };
+
+  const fields = buildVideoSessionNarrativeArtifactFields({
+    narrativeJson,
+    movieResourceList,
+  });
+
+  assert.equal(fields.narrativeJson.sounds[1].audio, 'The repaired line.');
+  assert.equal(fields.movieResourceList.sounds[1].audio, 'The repaired line.');
+  assert.equal(fields.narrativeJson.sounds[1].sceneIndex, 1);
+  assert.equal(fields.movieResourceList.sounds[1].sceneIndex, 1);
+  assert.notEqual(fields.narrativeJson, narrativeJson);
+  assert.notEqual(fields.movieResourceList, movieResourceList);
+  assert.notEqual(fields.narrativeJson.sounds, fields.movieResourceList.sounds);
+
+  fields.narrativeJson.sounds[1].audio = 'mutated persisted copy';
+  assert.equal(narrativeJson.sounds[1].audio, 'The repaired line.');
+  assert.equal(fields.movieResourceList.sounds[1].audio, 'The repaired line.');
+});
 
 test('shared movieResourceList builder preserves the existing stage-one enrichment sequence', async () => {
   const narrativeJson = {

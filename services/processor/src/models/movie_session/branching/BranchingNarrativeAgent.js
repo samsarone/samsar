@@ -21,6 +21,7 @@ const DEFAULT_MAX_ATTEMPTS = 4;
 const DEFAULT_TIMEOUT_MS = 10 * 60 * 1000;
 const DEFAULT_QWEN_TIMEOUT_MS = 20 * 60 * 1000;
 const DEFAULT_RETRY_DELAY_MS = 5000;
+const QWEN_INFERENCE_MAX_TOKENS = 16384;
 const MAX_PATH_NAME_LENGTH = 120;
 const MAX_PATH_DESCRIPTION_LENGTH = 4000;
 const NUM_DIVERGENCE_PATHS = 2;
@@ -368,7 +369,7 @@ async function runStructuredInference({
         model,
         response_format: zodResponseFormat(schema, responseFormatName),
         ...getReasoningRequestOptions(model),
-        ...(isQwenInferenceModel(model) ? { max_tokens: 65536 } : {}),
+        ...(isQwenInferenceModel(model) ? { max_tokens: QWEN_INFERENCE_MAX_TOKENS } : {}),
         timeout: effectiveTimeoutMs,
         maxRetries: 0,
         externalPolling: true,

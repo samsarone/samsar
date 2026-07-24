@@ -90,6 +90,7 @@ test('hosted Qwen retry prompts use OpenRouter even when Alibaba is configured',
   ENV_KEYS.forEach((key) => delete process.env[key]);
   process.env.CURRENT_ENV = 'production';
   process.env.OPENROUTER_API_KEY = 'openrouter-test-key';
+  process.env.OPENROUTER_QWEN_MAX_TOKENS = '50000';
   process.env.ALIBABA_API_KEY = 'alibaba-test-key';
 
   const request = {
@@ -118,10 +119,10 @@ test('external production and staging Qwen use OpenRouter instead of native adap
   }
 });
 
-test('OpenRouter maps Qwen text and vision requests to Plus', () => {
+test('OpenRouter maps Qwen text to Max and vision requests to Plus', () => {
   assert.equal(
     getOpenRouterModelForInferenceRequest({ model: 'QWEN3.7', messages: [] }),
-    'qwen/qwen3.7-plus',
+    'qwen/qwen3.7-max',
   );
   assert.equal(
     getOpenRouterModelForInferenceRequest({
@@ -183,7 +184,7 @@ test('the ALIBABA_API_KEY alias authorizes native Qwen routing', () => {
   }), false);
 });
 
-test('Qwen OpenRouter applies Plus routing and bounded settings', async (t) => {
+test('Qwen OpenRouter applies Max text and Plus vision routing with bounded settings', async (t) => {
   ENV_KEYS.forEach((key) => delete process.env[key]);
   process.env.CURRENT_ENV = 'production';
   process.env.OPENROUTER_API_KEY = 'openrouter-test-key';
@@ -215,11 +216,12 @@ test('Qwen OpenRouter applies Plus routing and bounded settings', async (t) => {
     plugins: [{ id: 'existing-plugin' }],
   });
 
-  assert.equal(payloads[0].model, 'qwen/qwen3.7-plus');
+  assert.equal(payloads[0].model, 'qwen/qwen3.7-max');
   assert.equal(payloads[0].reasoning.effort, 'high');
   assert.equal(payloads[0].max_tokens, 20000);
   assert.equal(payloads[1].model, 'qwen/qwen3.7-plus');
-  assert.equal(payloads[1].max_tokens, 65536);
+  assert.equal(payloads[1].max_tokens, 16384);
+  assert.equal(payloads[2].model, 'qwen/qwen3.7-max');
   assert.equal(payloads[2].reasoning.effort, 'high');
   assert.equal(payloads[2].max_tokens, 16384);
   assert.deepEqual(payloads[2].provider, { data_collection: 'deny', require_parameters: true });

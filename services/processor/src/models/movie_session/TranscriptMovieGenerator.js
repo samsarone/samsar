@@ -741,6 +741,20 @@ function clonePreparedNarrativeArtifact(value) {
   return JSON.parse(JSON.stringify(value));
 }
 
+export function buildVideoSessionNarrativeArtifactFields({
+  movieResourceList,
+  narrativeJson,
+} = {}) {
+  return {
+    ...(movieResourceList && typeof movieResourceList === 'object'
+      ? { movieResourceList: clonePreparedNarrativeArtifact(movieResourceList) }
+      : {}),
+    ...(narrativeJson && typeof narrativeJson === 'object'
+      ? { narrativeJson: clonePreparedNarrativeArtifact(narrativeJson) }
+      : {}),
+  };
+}
+
 export function buildPreparedNarrativeVisualPromptList(movieResourceList = {}) {
   const scenes = Array.isArray(movieResourceList?.scenes)
     ? movieResourceList.scenes
@@ -1697,16 +1711,18 @@ async function requestQuickMovieGenerationInternal(userId, payload, {
       isVidGPTGen: true,
       parentJsonTheme: themeJsonString,
       movieGenSpeakers: movieGenSpeakerList,
-      movieResourceList: branchedVideoSessionPlan
-        ? clonePreparedNarrativeArtifact(sourcePreparedMovieResourceList)
-        : movieResourceListWithCharacters,
+      ...buildVideoSessionNarrativeArtifactFields({
+        movieResourceList: branchedVideoSessionPlan
+          ? sourcePreparedMovieResourceList
+          : movieResourceListWithCharacters,
+        narrativeJson: sourceNarrativeJson,
+      }),
       ...(usePreparedNarrativeArtifacts
         ? {
           sourceNarrativeRequestId,
           sourceNarrativeType: sourceNarrativeType || 'singular',
           narrativeType: sourceNarrativeType || 'singular',
           themeJson: clonePreparedNarrativeArtifact(themeJson),
-          narrativeJson: clonePreparedNarrativeArtifact(sourceNarrativeJson),
           branchingMeta: clonePreparedNarrativeArtifact(
             branchedVideoSessionPlan?.branchingMeta || sourceBranchingMeta,
           ),

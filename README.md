@@ -24,7 +24,6 @@ Samsar is a generative video and media automation platform for turning prompts, 
 - Full Studio workspace for detailed, granular post-processing.
 - Sandboxed local logging, with logs and traces kept on your machine.
 - Multi-provider model routing so each operation can use the best available provider and model.
-- OpenRouter-backed Qwen 3.7 orchestration in hosted deployments, with native Alibaba Qwen available only in Docker deployments.
 - Built-in search and recommendations for creating a generative video library and Studio knowledge base.
 
 ## Documentation
@@ -156,7 +155,7 @@ The wizard follows five configuration steps:
 
 | Step | What it configures | Runtime effect |
 | --- | --- | --- |
-| Providers | OpenRouter inference routing, OpenAI, Google Cloud, Alibaba Cloud, FAL, ElevenLabs, RunwayML, Samsar | Controls which models/actions appear in `runtime/config/available-models.json`. |
+| Providers | Inference routing, OpenAI, Google Cloud, Alibaba Cloud, FAL, ElevenLabs, RunwayML, Samsar | Controls which models/actions appear in `runtime/config/available-models.json`. |
 | Services | Processor, setup wizard, image generator, assistant query processor, audio generator, AI video layer generator, video renderer, frames processor, express video listener, and logger | Determines which Docker service families are enabled for the local runtime. |
 | Mail and Data | Local or remote MongoDB, local MinIO or external S3-compatible storage, SMTP/SES/disabled mail | Writes database, storage, CDN, media, and mail settings. |
 | Domain | Optional nginx reverse proxy for a public domain/subdomain, public IP, or private IP, with optional IP detection, port opening, and Let's Encrypt SSL for validated domains | Enables public or intranet access URLs for Studio and the processor API. |
@@ -165,8 +164,6 @@ The wizard follows five configuration steps:
 All provider keys are optional and enable different capabilities. A Samsar API key enables all capabilities and can also be used as a universal fallback with other provider keys.
 
 For Alibaba Cloud, enter the Model Studio API key and, when using a workspace endpoint, its API host or full OpenAI-compatible base URL. The wizard validates the endpoint once before setup, stores the validated credential in `runtime/secrets/provider.credentials.json`, and renders `ALIBABA_API_KEY` and `ALIBABA_API_HOST` only into the backend Docker environment. The key is not retained in browser session storage or written to `runtime/config/samsar.config.json`.
-
-For OpenRouter, expand the top-level **Inference Router** section and enter one optional API key. The wizard checks the authenticated key metadata, rejects management-only keys, and binds setup to a short-lived one-time validation token. It does not retain the key or token in browser storage or the general runtime config, and stores the accepted key in the same mode-`0600` provider secret file. Runtime rendering exposes it to backend containers only as `OPENROUTER_API_KEY`. That single key enables the supported GPT 5.6 Sol, Gemini 3.1 Pro, and Qwen 3.7 inference families, including their corresponding vision-input paths.
 
 During setup, the wizard saves deployment config, renders runtime env, starts containers, configures the optional reverse proxy, publishes the local media gateway when required, verifies the processor API and client, and prepares local login. See [Setup Wizard](pages/setup-wizard.md) for the detailed lifecycle.
 
@@ -181,7 +178,7 @@ mkdir -p runtime/config runtime/secrets
 cp -n samsar.config.example.json runtime/config/samsar.config.json
 ```
 
-Edit `runtime/config/samsar.config.json` for provider enablement, non-secret provider settings, storage, database, and public URLs. OpenRouter and Alibaba credentials can be kept in `runtime/secrets/provider.credentials.json`; legacy/manual OpenRouter values under `providers.openrouter.apiKey` remain supported for compatibility. The stable `gemini-3.1-pro` selection defaults to OpenRouter model `google/gemini-3.1-pro-preview` and can be overridden with `providers.openrouter.gemini31ProModel`. The checked-in example is safe for local Docker defaults: local MongoDB, local MinIO-compatible storage, local media gateway, and no external provider enabled.
+Edit `runtime/config/samsar.config.json` for provider enablement, non-secret provider settings, storage, database, and public URLs. Provider credentials can be kept in `runtime/secrets/provider.credentials.json`. The checked-in example is safe for local Docker defaults: local MongoDB, local MinIO-compatible storage, local media gateway, and no external provider enabled.
 
 Render env files:
 
@@ -210,38 +207,24 @@ Provider availability is explicit. `npm run config:render` reads `runtime/config
 | Samsar API key | Universal fallback for configured Docker deployments | All configured Docker model families in the setup logic, including `gpt-5.6-sol`, `gemini-3.1-pro`, `QWEN3.7`, chat, assistant, image, image edit, video, audio, lip sync, sound effects, and NanoBanana families. |
 | OpenAI | Chat, assistant, image, image edit, audio, moderation, search, recommendations | `gpt-5.6-sol`, `GPTIMAGE2`, `GPTIMAGE2EDIT`, `OPENAI_TTS`. |
 | Google Cloud | Gemini, image, image edit, video, audio, moderation | `gemini-3.1-pro`, `VEO3.1I2V`, `VEO3.1I2VFAST`, `LYRIA3`, `GOOGLE_TTS`, `NANOBANANA2`, `NANOBANANA2EDIT`, `NANOBANANAPRO`, `NANOBANANAPROEDIT`. |
-| OpenRouter | Text/vision inference and assistant workflows through one routed credential | `gpt-5.6-sol`, `gemini-3.1-pro`, and `QWEN3.7`; text-only and image/video-input calls use the corresponding OpenRouter model mapping. |
 | Alibaba Cloud | Native Qwen inference in Docker, plus Alibaba media models | Public model key `QWEN3.7` is available through the native adapter only when `CURRENT_ENV=docker`; Alibaba media-model routing is independent of the hosted Qwen inference rule. |
 | FAL | Image, image edit, video, audio, lip sync, sound effects | `SEEDREAM` (Seedream 5 Pro), `NANOBANANA2`, `NANOBANANA2EDIT`, `NANOBANANAPRO`, `NANOBANANAPROEDIT`, VEO via FAL, `COSMOS3SUPERI2V`, `SEEDANCEI2V`, Kling image-to-video, `HAPPYHORSEI2V` (Happy Horse 1.1 I2V), ElevenLabs/PlayAI/CassetteAI/AudioCraft via FAL, `MMAUDIOV2`, `MIRELOAI`, and lip sync model families. |
 | ElevenLabs | Speech and music | `ELEVENLABS`, `ELEVENLABS_MUSIC`. |
 | RunwayML | Video generation and image-to-video | `RUNWAYML`. |
 
-In Docker, direct native provider keys are used first, followed by OpenRouter and then the Samsar fallback. Hosted Qwen routing is stricter: production, external-production, staging, and other non-Docker runtimes always send `QWEN3.7` inference through OpenRouter. A saved native or deployed authorization does not override that server-side policy. See [Providers and Models](pages/providers-and-models.md).
+Provider precedence and deployment-specific routing are documented in [Providers and Models](pages/providers-and-models.md).
 
 ## Inference Adapters
 
 The built-in inference adapters normalize stable model selections, text and vision payloads, structured output, timeouts, retries, and provider authorization across the processor and inference workers. They are separate from `configuration.custom_adapters`, which are user-supplied media-operation endpoints for workflows such as text-to-image, image-to-video, speech, music, and sound effects.
 
-| Deployment mode | Qwen inference route |
-| --- | --- |
-| Hosted `production`, `external-production`, `staging`, or any other non-Docker runtime | OpenRouter only. Native Alibaba and deployed Samsar authorization are ignored for Qwen inference. |
-| Docker (`CURRENT_ENV=docker`) | Native Alibaba first, then OpenRouter, then the Samsar deployed fallback. |
-| Docker with `SAMSAR_QWEN_OPENROUTER_ONLY=true` | OpenRouter only, matching hosted behavior. |
-
-The stable `QWEN3.7` selection maps OpenRouter text and vision requests to `qwen/qwen3.7-plus`; `OPENROUTER_QWEN_37_PLUS_MODEL` can override that mapping. Native Alibaba routing also uses `qwen3.7-plus` for text and vision. OpenRouter requests explicitly use high reasoning for Qwen and Gemini and the native-equivalent `xhigh` setting for GPT, with a 65,536-token completion allowance. Structured requests also require compatible provider parameters and enable response healing.
-
-| Runtime variable | Purpose |
-| --- | --- |
-| `OPENROUTER_API_KEY` | Required for hosted Qwen inference. One backend-only key is shared through `runtime/secrets/root.env`. |
-| `SAMSAR_QWEN_OPENROUTER_ONLY` | Forces Qwen through OpenRouter even if the runtime is identified as Docker. |
-| `OPENROUTER_INFERENCE_TIMEOUT_MS` / `OPENROUTER_QWEN_INFERENCE_TIMEOUT_MS` | Minimum OpenRouter request timeout. Hosted production uses `600000` milliseconds generally and `1200000` milliseconds for Qwen. |
-| `OPENROUTER_QWEN_MAX_TOKENS` / `OPENROUTER_GEMINI_MAX_TOKENS` | Qwen and Gemini completion ceilings; the default is `65536`. |
-| `OPENROUTER_GPT_MAX_COMPLETION_TOKENS` | GPT completion ceiling; the default is `65536`. |
-| `OPENROUTER_QWEN_REASONING_EFFORT` / `OPENROUTER_GEMINI_REASONING_EFFORT` | OpenRouter reasoning effort; hosted production uses `high`. |
-| `OPENROUTER_GPT_REASONING_EFFORT` | GPT reasoning effort; hosted production preserves the native adapter's `xhigh` default. |
-| `SAMSAR_EXTERNAL_INFERENCE_MAX_RETRIES` | Transient external-inference retries after the initial attempt; defaults to `3` with exponential backoff and provider `Retry-After` support. |
+Transient external-inference requests retry up to three times after the initial attempt, with exponential backoff and provider `Retry-After` support.
 
 The same adapter contract is used by `processor`, `generator`, `audio-generator`, `ai-video-layer-generator`, `express-video-listener`, and `assistant-query-processor`. This keeps provider selection consistent across chat, assistant, prompt generation, vision analysis, and express-video stages.
+
+### OpenRouter
+
+OpenRouter is an optional inference router for supported GPT, Gemini, and Qwen text/vision workflows. Configure `OPENROUTER_API_KEY` through the setup wizard or `runtime/secrets/provider.credentials.json`; see [Providers and Models](pages/providers-and-models.md) for routing and model details.
 
 ## API
 
@@ -369,14 +352,11 @@ Provider enablement is configured under `providers`. Enable only the providers y
 npm run config:render
 ```
 
-For a manual OpenRouter or Alibaba Cloud setup, enable the matching provider in `runtime/config/samsar.config.json` and create the following mode-`0600` secret file. The setup wizard performs these steps automatically after validating the credentials.
+For a manual Alibaba Cloud setup, enable the provider in `runtime/config/samsar.config.json` and create the following mode-`0600` secret file. The setup wizard performs these steps automatically after validating the credentials.
 
 ```json
 {
   "version": 1,
-  "openrouter": {
-    "apiKey": "<openrouter-api-key>"
-  },
   "alibabaCloud": {
     "apiKey": "<alibaba-model-studio-api-key>",
     "apiHost": "https://workspace-id.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1"
@@ -389,7 +369,7 @@ Save it as `runtime/secrets/provider.credentials.json`, then run `chmod 600 runt
 Generated files:
 
 - `runtime/secrets/root.env`: env consumed by Docker services.
-- `runtime/secrets/provider.credentials.json`: setup-wizard-managed OpenRouter key plus Alibaba Cloud key and validated endpoint. Keep this file private and mode `0600`.
+- `runtime/secrets/provider.credentials.json`: setup-wizard-managed provider keys and validated endpoints. Keep this file private and mode `0600`.
 - `runtime/config/available-models.json`: model/action availability derived from enabled providers.
 
 ## API Providers
@@ -397,21 +377,19 @@ Generated files:
 All API provider keys are optional. Add only the credentials needed for the generative features you want to enable. Common minimal setups are:
 
 - `Samsar API key` only
-- `OpenRouter` only for GPT, Gemini, and Qwen text/vision inference and assistant workflows
 - `Alibaba Cloud` only for native Qwen 3.7 inference and assistant workflows in Docker
 - `Alibaba Cloud + Samsar API key` for native Qwen with Samsar fallback in Docker
 - `OpenAI + FAL`
 - `OpenAI + Samsar API key`
 - `Google Cloud service account + FAL`
 
-Provider keys can provide direct or routed inference while still using the Samsar media generation pipeline inside your environment. The setup wizard stores OpenRouter and Alibaba Cloud credentials separately in `runtime/secrets/provider.credentials.json`; `npm run config:render` then renders them into `runtime/secrets/root.env` for backend Docker services only. Every backend service inherits that single env file, so one OpenRouter secret is sufficient for processor and inference workers. Do not commit `runtime/` or copy keys into browser/client-side code.
+Provider keys can provide direct or routed inference while still using the Samsar media generation pipeline inside your environment. The setup wizard stores sensitive provider credentials in `runtime/secrets/provider.credentials.json`; `npm run config:render` then renders them into `runtime/secrets/root.env` for backend Docker services only. Do not commit `runtime/` or copy keys into browser/client-side code.
 
 | Provider | Runtime config | How to get the key |
 | --- | --- | --- |
 | Samsar API key | `providers.samsar.apiKey` -> `SAMSAR_API_KEY` | Go to [app.samsar.one](https://app.samsar.one), register or log in, then open [Billing](https://app.samsar.one/account/billing) to add credits or set up automatic recharge. Open [API Keys](https://app.samsar.one/account/apiKeys), create a new API key, copy it, and paste it into the setup wizard Step 1 field labeled **Samsar universal fallback**. This key can act as the universal fallback for supported model families. |
 | OpenAI | `providers.openai.apiKey` -> `OPENAI_API_KEY` | Go to [OpenAI API keys](https://platform.openai.com/api-keys), choose the correct project, create a new secret key, and paste it into the setup wizard or config. The key is shown only once. |
 | Google Cloud | `providers.googleCloud.projectId`, `providers.googleCloud.credentialsJsonB64` -> `GOOGLE_CLOUD_PROJECT`, `GOOGLE_APPLICATION_CREDENTIALS_JSON_B64` | Use a Google Cloud service account JSON key, not a standard API key. In [Google Cloud Service Accounts](https://console.cloud.google.com/iam-admin/serviceaccounts), create or select a service account with the minimum required permissions for your installation. Leave **Principals with access** blank. Then open **Keys** -> **Add key** -> **Create new key** -> **JSON**. Paste the JSON in the setup wizard, or base64 it for manual config with `base64 < service-account.json | tr -d '\n'`. |
-| OpenRouter | `runtime/secrets/provider.credentials.json` -> `OPENROUTER_API_KEY` | Create a key in [OpenRouter settings](https://openrouter.ai/settings/keys), then paste it into setup Step 1 under **Inference Router**. One key enables the supported GPT, Gemini, and Qwen text/vision inference mappings. |
 | Alibaba Cloud | `runtime/secrets/provider.credentials.json` -> `ALIBABA_API_KEY`, `ALIBABA_API_HOST` | Create a Model Studio API key in the [Alibaba Cloud Model Studio console](https://modelstudio.console.alibabacloud.com/). In the setup wizard, paste the key and optionally provide the workspace API host, such as `workspace-id.ap-southeast-1.maas.aliyuncs.com`, or its full `/compatible-mode/v1` endpoint. Leave the host blank to use the international Model Studio endpoint. |
 | FAL | `providers.fal.apiKey` -> `FAL_API_KEY` | Create a key from the [fal dashboard](https://fal.ai/dashboard/keys) or follow the [fal authentication docs](https://fal.ai/docs/documentation/setting-up/authentication). Samsar uses `FAL_API_KEY`; fal SDK examples may call the same credential `FAL_KEY`. |
 
@@ -434,8 +412,6 @@ curl -I http://localhost:3002/assets_v2/video/output/<session-id>/<file>.mp4
 ```
 
 If remote generation providers cannot fetch local media, confirm the setup wizard remains available to service JIT tunnel-refresh requests. A `samsar-media-tunnel` container should be running; provider workers validate the exact asset and wait for a refreshed tunnel before dispatching.
-
-If an OpenRouter-backed inference model is missing from a Docker deployment, confirm `providers.openrouter.enabled` is `true`, confirm `runtime/secrets/provider.credentials.json` contains the OpenRouter key, rerun `npm run config:render`, and recreate the processor and inference workers. For hosted production and external-production, Qwen requires `OPENROUTER_API_KEY`; Alibaba credentials do not satisfy hosted Qwen inference. In Docker, Qwen can instead use validated Alibaba credentials or the configured Samsar fallback unless `SAMSAR_QWEN_OPENROUTER_ONLY=true`.
 
 For a remote Docker host, set `GRAFANA_ROOT_URL` and optionally `GRAFANA_DOMAIN`, `GRAFANA_PORT`, or `LOKI_PORT` before starting Compose.
 

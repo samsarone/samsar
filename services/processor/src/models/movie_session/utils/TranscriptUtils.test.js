@@ -630,6 +630,76 @@ function createCosmosNarrativeWithSpeech(audio, duration = 7.875) {
   };
 }
 
+test('validateTextToVideoNarrative repairs Qwen sound type typos before speech length validation', () => {
+  const narrative = createCosmosNarrativeWithSpeech('a'.repeat(58), 5);
+  narrative.sounds[0].type = 'spech';
+
+  const result = validateTextToVideoNarrative(
+    narrative,
+    'COSMOS3SUPERI2V',
+    24,
+    { repairSoundTypes: true },
+  );
+
+  assert.equal(result.valid, false);
+  assert.deepEqual(result.repairs.soundTypes, [{
+    soundIndex: 0,
+    from: 'spech',
+    to: 'speech',
+    distance: 1,
+  }]);
+  assert.equal(result.canonicalNarrativeJson.sounds[0].type, 'speech');
+  assert.equal(result.violations.speechCharacterLimits.length, 1);
+  assert.equal(result.violations.speechCharacterLimits[0].soundIndex, 0);
+  assert.equal(result.violations.speechCharacterLimits[0].actualCharacters, 58);
+});
+
+test('validateTextToVideoNarrative repairs Qwen sound-effect type typos', () => {
+  const result = validateTextToVideoNarrative({
+    scenes: [{
+      visual: 'A steel door closes with a resonant mechanical clang.',
+      type: 'sound_effect',
+      duration: 5,
+      startTime: 0,
+      endTime: 5,
+    }],
+    sounds: [{
+      type: 'sound_efect',
+      sceneIndex: 0,
+      audio: 'A resonant mechanical clang.',
+      duration: 5,
+      startTime: 0,
+      endTime: 5,
+    }],
+  }, 'COSMOS3SUPERI2V', 24, { repairSoundTypes: true });
+
+  assert.equal(result.valid, true, result.errors.join(', '));
+  assert.equal(result.narrativeJson.sounds[0].type, 'sound_effect');
+  assert.equal(result.canonicalNarrativeJson.sounds[0].type, 'sound_effect');
+  assert.deepEqual(result.repairs.soundTypes, [{
+    soundIndex: 0,
+    from: 'sound_efect',
+    to: 'sound_effect',
+    distance: 1,
+  }]);
+});
+
+test('validateTextToVideoNarrative rejects invalid sound types when fuzzy repair is disabled', () => {
+  const narrative = createCosmosNarrativeWithSpeech('a'.repeat(58), 5);
+  narrative.sounds[0].type = 'spech';
+
+  const result = validateTextToVideoNarrative(
+    narrative,
+    'COSMOS3SUPERI2V',
+    24,
+  );
+
+  assert.equal(result.valid, false);
+  assert.match(result.errors.join(' '), /invalid type "spech".*speech or sound_effect/i);
+  assert.deepEqual(result.violations.speechCharacterLimits, []);
+  assert.deepEqual(result.repairs.soundTypes, []);
+});
+
 test('validateTextToVideoNarrative allows the unified model boundary with 30 percent overshoot', () => {
   const result = validateTextToVideoNarrative(
     createCosmosNarrativeWithSpeech('a'.repeat(57), 5),
@@ -638,6 +708,25 @@ test('validateTextToVideoNarrative allows the unified model boundary with 30 per
   );
 
   assert.equal(result.valid, true);
+});
+
+test('validateTextToVideoNarrative runs speech length only after prior validation passes', () => {
+  const narrative = createCosmosNarrativeWithSpeech('a'.repeat(58), 5);
+  narrative.scenes[0].visual = '   ';
+
+  const result = validateTextToVideoNarrative(
+    narrative,
+    'COSMOS3SUPERI2V',
+    24,
+  );
+
+  assert.equal(result.valid, false);
+  assert.match(result.errors.join(' '), /scene 0.*visual/i);
+  assert.equal(
+    result.errors.some((error) => error.includes('58 characters')),
+    false,
+  );
+  assert.deepEqual(result.violations.speechCharacterLimits, []);
 });
 
 test('validateTextToVideoNarrative rejects speech beyond the unified model boundary', () => {

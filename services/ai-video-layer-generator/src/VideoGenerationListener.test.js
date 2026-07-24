@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 
 import {
+  buildBaseAiVideoCompletionUpdate,
   buildBaseGenerationFailureMessage,
   buildDockerI2V429AdapterFailoverPlan,
   buildTransientProviderErrorUpdate,
@@ -21,6 +22,25 @@ import {
   shouldUseAlibabaNativeHappyHorse,
 } from './VideoGenerationListener.js';
 import { isTransientMongoError } from './DBString.js';
+
+test('base AI-video completion marks the generated media as available', () => {
+  assert.deepEqual(buildBaseAiVideoCompletionUpdate({
+    localVideoLink: '/assets/video.mp4',
+    remoteAIVideoLink: 'https://static.example/video.mp4',
+    startFrameGenerationPath: '/assets/start.png',
+    lastFrameGenerationPath: '/assets/end.png',
+    thumbnailVideoPath: '/assets/preview.mp4',
+  }), {
+    aiVideoGenerationPending: false,
+    hasAiVideoLayer: true,
+    aiVideoLayer: '/assets/video.mp4',
+    aiVideoRemoteLink: 'https://static.example/video.mp4',
+    aiVideoThumbnailPath: '/assets/start.png',
+    aiVideoEndThumbnailPath: '/assets/end.png',
+    aiVideoThumbnailVideo: '/assets/preview.mp4',
+    aiVideoGenerationStatus: 'COMPLETED',
+  });
+});
 
 test('base generation retry picks the next highest scored filter pass for each retry', () => {
   const passes = [

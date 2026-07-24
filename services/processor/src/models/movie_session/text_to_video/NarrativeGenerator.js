@@ -1,4 +1,7 @@
-import { isGeminiInferenceModel } from '../../../consts/InferenceModels.js';
+import {
+  isGeminiInferenceModel,
+  isQwenInferenceModel,
+} from '../../../consts/InferenceModels.js';
 import {
   extractGroundedMovieNarrativeFromThemeAndUserPrompt,
   extractGroundedThemeFromUserPrompt,
@@ -11,7 +14,7 @@ import {
 } from '../../agent/AgentCreatorSystemPrompts.js';
 import { validateTextToVideoNarrative } from '../utils/TranscriptUtils.js';
 
-export const TEXT_TO_VIDEO_NARRATIVE_MAX_VALIDATION_ATTEMPTS = 5;
+export const TEXT_TO_VIDEO_NARRATIVE_MAX_VALIDATION_ATTEMPTS = 3;
 
 function normalizeMinimumSceneCount(value) {
   const count = Number(value);
@@ -125,6 +128,76 @@ function cloneNarrativeForSpeechRepair(narrative) {
   };
 }
 
+function getSpeechRepairAcceptanceLimit(violation) {
+  if (Number.isSafeInteger(violation?.validationMaxCharacters)) {
+    return violation.validationMaxCharacters;
+  }
+  return Number.isSafeInteger(violation?.promptMaxCharacters)
+    ? violation.promptMaxCharacters
+    : null;
+}
+
+function getSpeechRepairLocalValidationError(repairedNarrative, violations) {
+  for (const violation of violations) {
+    const soundIndex = violation?.soundIndex;
+    const repairedAudio = typeof repairedNarrative?.sounds?.[soundIndex]?.audio === 'string'
+      ? repairedNarrative.sounds[soundIndex].audio.trim()
+      : '';
+    const acceptanceLimit = getSpeechRepairAcceptanceLimit(violation);
+    if (!repairedAudio) {
+      return new Error(`Narrative speech repair returned empty audio for sound ${soundIndex}.`);
+    }
+    if (acceptanceLimit === null) {
+      return new Error(
+        `Narrative speech repair has no character limit for sound ${soundIndex}.`,
+      );
+    }
+    const repairedCharacterCount = Array.from(repairedAudio).length;
+    if (repairedCharacterCount > acceptanceLimit) {
+      return new Error(
+        `Narrative speech repair returned ${repairedCharacterCount} characters for sound ` +
+          `${soundIndex}; ${acceptanceLimit} are allowed with overshoot tolerance.`,
+      );
+    }
+  }
+  return null;
+}
+
+function buildSuccessfulSpeechRepairValidation(validation, repairedNarrative, speechRepairs) {
+  return {
+    ...validation,
+    valid: true,
+    errors: [],
+    narrativeJson: cloneNarrativeForSpeechRepair(repairedNarrative),
+    violations: {
+      ...(validation?.violations || {}),
+      speechCharacterLimits: [],
+    },
+    repairs: {
+      ...(validation?.repairs || {}),
+      speechCharacterLimits: speechRepairs,
+    },
+  };
+}
+
+function buildSuccessfulNarrativeGeneration({
+  themeJson,
+  narrativeJson,
+  validation,
+  attempts,
+  speechRepairs,
+}) {
+  const stableNarrativeJson = cloneNarrativeForSpeechRepair(narrativeJson);
+  return {
+    themeJson,
+    narrativeJson: stableNarrativeJson,
+    movieResourceList: cloneNarrativeForSpeechRepair(stableNarrativeJson),
+    validation,
+    attempts,
+    ...(Number.isSafeInteger(speechRepairs) ? { speechRepairs } : {}),
+  };
+}
+
 function validateGeneratedNarrative({
   narrative,
   validateNarrative,
@@ -140,6 +213,7 @@ function validateGeneratedNarrative({
     undefined,
     {
       repairAdjacentSceneIndex: isGeminiInferenceModel(inferenceModel),
+      repairSoundTypes: isQwenInferenceModel(inferenceModel),
       requestedDuration: duration,
       languageString,
     },
@@ -238,28 +312,49 @@ export async function generateValidatedTextToVideoNarrative({
     });
 
     if (validation.valid) {
-      return {
+      return buildSuccessfulNarrativeGeneration({
         themeJson,
         narrativeJson: validation.narrativeJson,
         validation,
         attempts: attempt,
-      };
+      });
     }
 
     if (hasOnlySpeechCharacterLimitViolations(validation)) {
       const violations = getSpeechCharacterLimitViolations(validation);
-      const repairable = Array.isArray(generatedNarrative?.scenes) &&
-        Array.isArray(generatedNarrative?.sounds) &&
+      console.error(
+        '[model][NarrativeGenerator][text_to_video] speech_length_validation_failed',
+        {
+          sessionId: externalRequestContext?.sessionId || null,
+          validationAttempt: attempt,
+          violations: violations.map((violation) => ({
+            soundIndex: violation?.soundIndex ?? null,
+            sceneIndex: violation?.sceneIndex ?? null,
+            actualCharacters: violation?.actualCharacters ?? null,
+            validationMaxCharacters: violation?.validationMaxCharacters ?? null,
+          })),
+        },
+      );
+      const soundTypeRepairCount = Array.isArray(validation?.repairs?.soundTypes)
+        ? validation.repairs.soundTypes.length
+        : 0;
+      const repairSourceNarrative = soundTypeRepairCount > 0 &&
+        Array.isArray(validation?.canonicalNarrativeJson?.scenes) &&
+        Array.isArray(validation?.canonicalNarrativeJson?.sounds)
+        ? validation.canonicalNarrativeJson
+        : generatedNarrative;
+      const repairable = Array.isArray(repairSourceNarrative?.scenes) &&
+        Array.isArray(repairSourceNarrative?.sounds) &&
         violations.every(({ soundIndex, sceneIndex }) => (
           Number.isSafeInteger(soundIndex) &&
           Number.isSafeInteger(sceneIndex) &&
-          String(generatedNarrative.sounds[soundIndex]?.type || '').trim().toLowerCase() ===
+          String(repairSourceNarrative.sounds[soundIndex]?.type || '').trim().toLowerCase() ===
             'speech' &&
-          Boolean(generatedNarrative.scenes[sceneIndex])
+          Boolean(repairSourceNarrative.scenes[sceneIndex])
         ));
 
       if (repairable) {
-        const repairedNarrative = cloneNarrativeForSpeechRepair(generatedNarrative);
+        const repairedNarrative = cloneNarrativeForSpeechRepair(repairSourceNarrative);
         try {
           for (const violation of violations) {
             const {
@@ -268,9 +363,9 @@ export async function generateValidatedTextToVideoNarrative({
               promptMaxCharacters,
               validationMaxCharacters,
             } = violation;
-            const speechItem = repairedNarrative.sounds[soundIndex];
+            const originalSpeechItem = repairedNarrative.sounds[soundIndex];
             const scene = repairedNarrative.scenes[sceneIndex];
-            const repairMaxCharacters = Number.isSafeInteger(validationMaxCharacters)
+            const requiredMaxCharacters = Number.isSafeInteger(validationMaxCharacters)
               ? validationMaxCharacters
               : promptMaxCharacters;
             const repairOptions = buildInferenceOptions({
@@ -281,10 +376,10 @@ export async function generateValidatedTextToVideoNarrative({
               validationAttempt: attempt,
             });
             const replacement = await rewriteSpeechItem({
-              narrativeSystemPrompt,
+              movieResourceList: repairedNarrative,
               scene,
-              speechItem,
-              maxCharacters: repairMaxCharacters,
+              speechItem: originalSpeechItem,
+              maxCharacters: requiredMaxCharacters,
               inferenceModel,
               options: {
                 ...repairOptions,
@@ -292,20 +387,14 @@ export async function generateValidatedTextToVideoNarrative({
                 soundIndex,
               },
             });
-            const replacementAudio = typeof replacement?.audio === 'string'
-              ? replacement.audio.trim()
+            const replacementAudio = typeof replacement === 'string'
+              ? replacement.trim()
               : '';
             if (!replacementAudio) {
               throw new Error('Narrative speech repair returned empty audio.');
             }
-            if (Array.from(replacementAudio).length > repairMaxCharacters) {
-              throw new Error(
-                `Narrative speech repair exceeded the ${repairMaxCharacters}-character ` +
-                  'validation limit.',
-              );
-            }
             repairedNarrative.sounds[soundIndex] = {
-              ...speechItem,
+              ...originalSpeechItem,
               audio: replacementAudio,
             };
           }
@@ -321,28 +410,29 @@ export async function generateValidatedTextToVideoNarrative({
           });
         }
 
-        validation = validateGeneratedNarrative({
-          narrative: repairedNarrative,
-          validateNarrative,
-          videoGenerationModel,
-          inferenceModel,
-          duration,
-          languageString,
-          minimumSceneCount: normalizedMinimumSceneCount,
-        });
-        if (validation.valid) {
-          return {
-            themeJson,
-            narrativeJson: validation.narrativeJson,
-            validation,
+        const localValidationError = getSpeechRepairLocalValidationError(
+          repairedNarrative,
+          violations,
+        );
+        if (localValidationError) {
+          throw buildNarrativeValidationError({
             attempts: attempt,
-            speechRepairs: violations.length,
-          };
+            errors: [localValidationError.message],
+            violations,
+            cause: localValidationError,
+          });
         }
-        throw buildNarrativeValidationError({
+        validation = buildSuccessfulSpeechRepairValidation(
+          validation,
+          repairedNarrative,
+          violations.length,
+        );
+        return buildSuccessfulNarrativeGeneration({
+          themeJson,
+          narrativeJson: repairedNarrative,
+          validation,
           attempts: attempt,
-          errors: validation.errors,
-          violations: getSpeechCharacterLimitViolations(validation),
+          speechRepairs: violations.length,
         });
       }
 

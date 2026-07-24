@@ -72,6 +72,10 @@ test('OpenRouter is the Docker fallback for all inference and Qwen vision models
     }
     assert.equal(getOpenRouterModelForInferenceRequest({
       model: 'QWEN3.7',
+      messages: [{ role: 'user', content: 'hello' }],
+    }), 'qwen/qwen3.7-max');
+    assert.equal(getOpenRouterModelForInferenceRequest({
+      model: 'QWEN3.7',
       messages: [{ role: 'user', content: [{ type: 'input_image', image_url: 'frame' }] }],
     }), 'qwen/qwen3.7-plus');
   });
@@ -149,7 +153,7 @@ test('the ALIBABA_API_KEY alias authorizes explicit native Qwen routing', () => 
   });
 });
 
-test('Qwen OpenRouter applies Plus routing and bounded settings', async (t) => {
+test('Qwen OpenRouter applies Max text and Plus vision routing with bounded settings', async (t) => {
   const keys = ['CURRENT_ENV', 'OPENROUTER_API_KEY', 'OPENROUTER_QWEN_MAX_TOKENS'];
   const previous = Object.fromEntries(keys.map((key) => [key, process.env[key]]));
   t.after(() => {
@@ -160,7 +164,7 @@ test('Qwen OpenRouter applies Plus routing and bounded settings', async (t) => {
   });
   process.env.CURRENT_ENV = 'production';
   process.env.OPENROUTER_API_KEY = 'openrouter-key';
-  delete process.env.OPENROUTER_QWEN_MAX_TOKENS;
+  process.env.OPENROUTER_QWEN_MAX_TOKENS = '50000';
   const payloads = [];
   const options = [];
   t.mock.method(OpenAI.Chat.Completions.prototype, 'create', async (payload, requestOptions) => {
@@ -189,11 +193,12 @@ test('Qwen OpenRouter applies Plus routing and bounded settings', async (t) => {
     plugins: [{ id: 'existing-plugin' }],
   });
 
-  assert.equal(payloads[0].model, 'qwen/qwen3.7-plus');
+  assert.equal(payloads[0].model, 'qwen/qwen3.7-max');
   assert.equal(payloads[0].reasoning.effort, 'high');
   assert.equal(payloads[0].max_tokens, 20000);
   assert.equal(payloads[1].model, 'qwen/qwen3.7-plus');
-  assert.equal(payloads[1].max_tokens, 65536);
+  assert.equal(payloads[1].max_tokens, 16384);
+  assert.equal(payloads[2].model, 'qwen/qwen3.7-max');
   assert.equal(payloads[2].reasoning.effort, 'high');
   assert.equal(payloads[2].max_tokens, 16384);
   assert.deepEqual(payloads[2].provider, { data_collection: 'deny', require_parameters: true });

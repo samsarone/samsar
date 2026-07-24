@@ -10,6 +10,7 @@ import {
   __testOnly__,
   buildNarrativeRequestPayload,
   createSingleNarrativeRequest,
+  finalizeNarrativeMovieResourceList,
   getSingleNarrativeRequest,
   normalizeCreateSingleNarrativePayload,
   processCreateSingleNarrativeRequest,
@@ -103,6 +104,99 @@ test('uses strict text-to-video inference aliases and falls back to the user sel
   assert.throws(
     () => resolveNarrativeInferenceModel({ inference_model: 'unknown-model' }, 'QWEN3.7'),
     (error) => error.status === 400 && /inference_model/.test(error.message),
+  );
+});
+
+test('skips full normalization after localized speech repair and preserves enriched sounds', () => {
+  const scenes = Array.from({ length: 5 }, (_unused, sceneIndex) => ({
+    visual: `Scene ${sceneIndex}.`,
+    type: 'character',
+  }));
+  const sounds = Array.from({ length: 8 }, (_unused, soundIndex) => ({
+    type: 'speech',
+    subType: 'character',
+    actor: soundIndex % 2 === 0 ? 'Athena' : 'Narrator',
+    gender: soundIndex % 2 === 0 ? 'F' : 'M',
+    sceneIndex: soundIndex % scenes.length,
+    audio: `Repaired line ${soundIndex}.`,
+  }));
+  const rawNarrativeJson = { scenes, sounds };
+  const enrichedMovieResourceList = {
+    scenes: scenes.map((scene) => ({ ...scene, imagePrompt: `Image: ${scene.visual}` })),
+    sounds: sounds.map((sound) => ({
+      ...sound,
+      speaker: sound.actor === 'Athena' ? 'shimmer' : 'echo',
+      provider: 'OPENAI',
+      speakerCharacterName: sound.actor,
+    })),
+  };
+  let validationCalls = 0;
+
+  const finalized = finalizeNarrativeMovieResourceList({
+    narrative: {
+      speechRepairs: 3,
+      validation: {
+        valid: true,
+        errors: [],
+        violations: { speechCharacterLimits: [] },
+      },
+    },
+    rawNarrativeJson,
+    movieResourceList: enrichedMovieResourceList,
+    videoGenerationModel: 'COSMOS3SUPERI2V',
+    inferenceModel: 'QWEN3.7',
+    requestedDuration: 40,
+    validateNarrative: () => {
+      validationCalls += 1;
+      throw new Error('full validation must not rerun after localized speech repair');
+    },
+  });
+
+  assert.equal(validationCalls, 0);
+  assert.equal(finalized.validation.valid, true);
+  assert.equal(finalized.validation.fullValidationSkippedAfterSpeechRepair, true);
+  assert.equal(finalized.movieResourceList.sounds.length, 8);
+  assert.deepEqual(finalized.movieResourceList, enrichedMovieResourceList);
+  assert.notEqual(finalized.movieResourceList, enrichedMovieResourceList);
+  assert.deepEqual(
+    finalized.movieResourceList.sounds.map(({ audio }) => audio),
+    sounds.map(({ audio }) => audio),
+  );
+});
+
+test('rejects enrichment that loses repaired sounds instead of normalizing the loss', () => {
+  const rawNarrativeJson = {
+    scenes: Array.from({ length: 5 }, (_unused, sceneIndex) => ({
+      visual: `Scene ${sceneIndex}.`,
+      type: 'character',
+    })),
+    sounds: Array.from({ length: 8 }, (_unused, soundIndex) => ({
+      type: 'speech',
+      subType: 'character',
+      actor: 'Athena',
+      gender: 'F',
+      sceneIndex: soundIndex % 5,
+      audio: `Line ${soundIndex}.`,
+    })),
+  };
+  const movieResourceList = {
+    scenes: rawNarrativeJson.scenes.map((scene) => ({ ...scene })),
+    sounds: rawNarrativeJson.sounds.slice(0, 5).map((sound) => ({ ...sound })),
+  };
+
+  assert.throws(
+    () => finalizeNarrativeMovieResourceList({
+      narrative: { speechRepairs: 3, validation: { valid: true, errors: [] } },
+      rawNarrativeJson,
+      movieResourceList,
+      validateNarrative: () => {
+        throw new Error('full validation must not run');
+      },
+    }),
+    (error) => (
+      error.code === 'MOVIE_RESOURCE_LIST_SOUND_PRESERVATION_FAILED' &&
+      /sounds 8→5/.test(error.message)
+    ),
   );
 });
 
