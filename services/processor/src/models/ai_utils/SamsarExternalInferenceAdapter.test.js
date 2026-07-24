@@ -311,7 +311,7 @@ test('OpenRouter adapter sends OpenAI-compatible vision requests with the Plus d
 
   assert.equal(capturedPayload.model, 'qwen/qwen3.7-plus');
   assert.equal(capturedPayload.messages[0].content[0].type, 'image_url');
-  assert.equal(capturedPayload.max_tokens, 16384);
+  assert.equal(capturedPayload.max_tokens, 2048);
   assert.equal(capturedOptions.timeout, 1200000);
 });
 
@@ -378,7 +378,7 @@ test('OpenRouter applies Qwen-specific token and reasoning limits to Max text in
 
   assert.equal(capturedPayload.model, 'qwen/qwen3.7-max');
   assert.equal(capturedPayload.reasoning.effort, 'high');
-  assert.equal(capturedPayload.max_tokens, 20000);
+  assert.equal(capturedPayload.max_tokens, 2048);
   assert.equal(Object.hasOwn(capturedPayload, 'max_completion_tokens'), false);
 });
 
@@ -417,7 +417,7 @@ test('OpenRouter reserves Qwen output tokens and enforces schema support for str
 
   assert.equal(capturedPayload.model, 'qwen/qwen3.7-max');
   assert.equal(capturedPayload.reasoning.effort, 'high');
-  assert.equal(capturedPayload.max_tokens, 4096);
+  assert.equal(capturedPayload.max_tokens, 2048);
   assert.deepEqual(capturedPayload.provider, {
     data_collection: 'deny',
     require_parameters: true,

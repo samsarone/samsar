@@ -26,8 +26,11 @@ const DEFAULT_EXTERNAL_INFERENCE_MAX_RETRIES = 3;
 const DEFAULT_EXTERNAL_INFERENCE_RETRY_BASE_DELAY_MS = 5000;
 const DEFAULT_EXTERNAL_INFERENCE_RETRY_MAX_DELAY_MS = 60000;
 const DEFAULT_EXTERNAL_INFERENCE_POLL_INTERVAL_MS = 2000;
-const OPENROUTER_QWEN_MAX_TOKEN_CEILING = 24000;
-const DEFAULT_OPENROUTER_QWEN_MAX_TOKENS = 16384;
+// OpenRouter checks whether the account can afford the requested maximum before
+// generation. Keep Qwen Max and Plus reservations close to observed production
+// usage instead of reserving their much larger provider output windows.
+const OPENROUTER_QWEN_MAX_TOKEN_CEILING = 2048;
+const DEFAULT_OPENROUTER_QWEN_MAX_TOKENS = 2048;
 const DEFAULT_OPENROUTER_GEMINI_MAX_TOKENS = 65536;
 const DEFAULT_OPENROUTER_GPT_MAX_COMPLETION_TOKENS = 65536;
 const DEFAULT_OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1';

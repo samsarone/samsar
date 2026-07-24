@@ -42,9 +42,10 @@ function getErrorMessage(error) {
   return '';
 }
 
-function isQuotaExhaustionError(error) {
+function isQuotaExhaustionError(error, { model } = {}) {
   const code = getErrorCode(error);
   const message = getErrorMessage(error).toLowerCase();
+  const isQwen37Max = normalizeString(model).toLowerCase() === 'qwen/qwen3.7-max';
 
   return [
     'insufficient_quota',
@@ -55,7 +56,8 @@ function isQuotaExhaustionError(error) {
     message.includes('quota is exhausted') ||
     message.includes('insufficient quota') ||
     message.includes('out of credits') ||
-    message.includes('insufficient credit');
+    message.includes('insufficient credit') ||
+    (isQwen37Max && message.includes('requires more credits'));
 }
 
 function getModelLabel(model) {
@@ -74,7 +76,7 @@ function extractQuotaResetNotice(error) {
 }
 
 export function createPublicInferenceError(error, { model } = {}) {
-  if (!isQuotaExhaustionError(error)) {
+  if (!isQuotaExhaustionError(error, { model })) {
     return null;
   }
 

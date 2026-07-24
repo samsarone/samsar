@@ -38,6 +38,36 @@ test('recognizes nested OpenAI-compatible quota errors', () => {
   assert.equal(result.message, 'Gemini inference quota has been exhausted.');
 });
 
+test('recognizes OpenRouter Qwen max-token affordability errors', () => {
+  const providerError = new Error(
+    '402 This request requires more credits, or fewer max_tokens. ' +
+    'You requested up to 16000 tokens, but can only afford 2353.',
+  );
+  providerError.status = 402;
+  providerError.code = 402;
+
+  const result = createPublicInferenceError(providerError, {
+    model: 'qwen/qwen3.7-max',
+  });
+
+  assert.equal(result.message, 'Qwen inference quota has been exhausted.');
+  assert.equal(result.code, 'INFERENCE_PROVIDER_QUOTA_EXHAUSTED');
+  assert.equal(result.retryable, false);
+  assert.equal(result.cause, providerError);
+});
+
+test('limits OpenRouter max-token affordability handling to Qwen 3.7 Max', () => {
+  const providerError = new Error(
+    '402 This request requires more credits, or fewer max_tokens.',
+  );
+  providerError.status = 402;
+
+  assert.equal(
+    createPublicInferenceError(providerError, { model: 'qwen/qwen3.7-plus' }),
+    null,
+  );
+});
+
 test('does not expose unrelated provider failures', () => {
   const providerError = new Error('Internal database hostname db.internal.local failed');
   providerError.status = 500;
