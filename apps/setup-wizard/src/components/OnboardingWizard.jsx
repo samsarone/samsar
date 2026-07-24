@@ -58,6 +58,18 @@ const PROVIDERS = [
     credentialLabel: 'Service account JSON',
   },
   {
+    key: 'kimi',
+    title: 'Kimi K3',
+    type: 'native',
+    field: 'kimiK3ApiKey',
+    inputType: 'password',
+    placeholder: 'Kimi API key',
+    requiredFor: 'Native Kimi K3 text, strict structured-output, assistant, and latest vision inference with high reasoning.',
+    pricingUrl: 'https://platform.kimi.ai/docs/pricing/chat-k3',
+    keysUrl: 'https://platform.kimi.ai/',
+    credentialLabel: 'API key',
+  },
+  {
     key: 'openrouter',
     title: 'OpenRouter',
     type: 'native',
@@ -144,7 +156,7 @@ const PROVIDER_GROUPS = [
     key: 'inference',
     title: 'Inference',
     description: 'Choose a primary provider for agent reasoning, text, and vision.',
-    providerKeys: ['openai', 'googleCloud', 'alibabaCloud'],
+    providerKeys: ['openai', 'googleCloud', 'kimi', 'alibabaCloud'],
   },
   {
     key: 'fallbacks',
@@ -204,6 +216,12 @@ const CAPABILITY_FAMILIES = {
     providerKeys: ['alibabaCloud', 'openrouter', 'samsar'],
     modelKeys: ['QWEN3.7'],
   },
+  kimiK3: {
+    key: 'kimiK3',
+    label: 'Kimi K3',
+    providerKeys: ['kimi', 'samsar'],
+    modelKeys: ['KIMIK3'],
+  },
   gptAssistant: {
     key: 'gptAssistant',
     label: 'GPT Assistant',
@@ -221,6 +239,12 @@ const CAPABILITY_FAMILIES = {
     label: 'Qwen Assistant',
     providerKeys: ['alibabaCloud', 'openrouter', 'samsar'],
     modelKeys: ['QWEN3.7'],
+  },
+  kimiK3Assistant: {
+    key: 'kimiK3Assistant',
+    label: 'Kimi K3 Assistant',
+    providerKeys: ['kimi', 'samsar'],
+    modelKeys: ['KIMIK3'],
   },
   openaiImage: {
     key: 'openaiImage',
@@ -401,14 +425,24 @@ const SETUP_SERVICE_CATALOG = [
     label: 'Inference',
     category: 'Inference',
     description: 'Chat, reasoning, and vision inference families available for provider-backed model calls.',
-    modelFamilies: [CAPABILITY_FAMILIES.gpt56, CAPABILITY_FAMILIES.gemini, CAPABILITY_FAMILIES.qwen],
+    modelFamilies: [
+      CAPABILITY_FAMILIES.gpt56,
+      CAPABILITY_FAMILIES.gemini,
+      CAPABILITY_FAMILIES.kimiK3,
+      CAPABILITY_FAMILIES.qwen,
+    ],
   },
   {
     key: 'assistant',
     label: 'Assistant',
     category: 'Inference',
-    description: 'Assistant workflows backed by the configured GPT, Gemini, or Qwen provider families.',
-    modelFamilies: [CAPABILITY_FAMILIES.gptAssistant, CAPABILITY_FAMILIES.geminiAssistant, CAPABILITY_FAMILIES.qwenAssistant],
+    description: 'Assistant workflows backed by the configured GPT, Gemini, Kimi, or Qwen provider families.',
+    modelFamilies: [
+      CAPABILITY_FAMILIES.gptAssistant,
+      CAPABILITY_FAMILIES.geminiAssistant,
+      CAPABILITY_FAMILIES.kimiK3Assistant,
+      CAPABILITY_FAMILIES.qwenAssistant,
+    ],
   },
   {
     key: 'imageGeneration',
@@ -479,6 +513,7 @@ const DEFAULT_CREDENTIALS = Object.freeze({
   openaiApiKey: '',
   openrouterApiKey: '',
   googleCredentialsJson: '',
+  kimiK3ApiKey: '',
   alibabaApiKey: '',
   alibabaApiHost: '',
   falApiKey: '',
@@ -1009,7 +1044,11 @@ function sanitizeValidationResultForStorage(validationResult, credentials = {}) 
       const sanitizedValidation = stripValidationToken(providerValidation);
       const provider = PROVIDERS.find((candidate) => candidate.key === providerKey);
       const requiresCredentialReentry = (
-        (providerKey === 'openrouter' || providerKey === 'alibabaCloud') &&
+        (
+          providerKey === 'openrouter' ||
+          providerKey === 'alibabaCloud' ||
+          providerKey === 'kimi'
+        ) &&
         providerValidation?.ok === true &&
         provider &&
         !hasCredentialValue(credentials, provider)
@@ -1283,6 +1322,7 @@ function buildDeploymentPayload(
       openai: { enabled: Boolean(sanitizedCredentials.openaiApiKey), validation: getProviderStatus(validationResult, 'openai') },
       openrouter: { enabled: Boolean(sanitizedCredentials.openrouterApiKey), validation: getProviderStatus(validationResult, 'openrouter') },
       googleCloud: { enabled: Boolean(sanitizedCredentials.googleCredentialsJson), validation: getProviderStatus(validationResult, 'googleCloud') },
+      kimi: { enabled: Boolean(sanitizedCredentials.kimiK3ApiKey), validation: getProviderStatus(validationResult, 'kimi') },
       alibabaCloud: { enabled: Boolean(sanitizedCredentials.alibabaApiKey), validation: getProviderStatus(validationResult, 'alibabaCloud') },
       fal: { enabled: Boolean(sanitizedCredentials.falApiKey), validation: getProviderStatus(validationResult, 'fal') },
       elevenlabs: { enabled: Boolean(sanitizedCredentials.elevenLabsApiKey), validation: getProviderStatus(validationResult, 'elevenlabs') },
@@ -2229,6 +2269,7 @@ export default function OnboardingWizard() {
       maxStep,
 	      credentials: {
           ...credentials,
+          kimiK3ApiKey: '',
           alibabaApiKey: '',
           openrouterApiKey: '',
         },

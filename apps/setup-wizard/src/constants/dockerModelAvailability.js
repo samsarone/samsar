@@ -1,6 +1,7 @@
 export const DOCKER_PROVIDER = Object.freeze({
   OPENAI: 'openai',
   GOOGLE_CLOUD: 'googleCloud',
+  KIMI: 'kimi',
   ALIBABA_CLOUD: 'alibabaCloud',
   OPENROUTER: 'openrouter',
   FAL: 'fal',
@@ -12,6 +13,7 @@ export const DOCKER_PROVIDER = Object.freeze({
 export const DOCKER_PROVIDER_DISPLAY_ORDER = Object.freeze([
   DOCKER_PROVIDER.OPENAI,
   DOCKER_PROVIDER.GOOGLE_CLOUD,
+  DOCKER_PROVIDER.KIMI,
   DOCKER_PROVIDER.ALIBABA_CLOUD,
   DOCKER_PROVIDER.OPENROUTER,
   DOCKER_PROVIDER.FAL,
@@ -50,6 +52,10 @@ const GOOGLE_INFERENCE_OR_SAMSAR = Object.freeze([
   DOCKER_PROVIDER.OPENROUTER,
   DOCKER_PROVIDER.SAMSAR,
 ]);
+const KIMI_OR_SAMSAR = Object.freeze([
+  DOCKER_PROVIDER.KIMI,
+  DOCKER_PROVIDER.SAMSAR,
+]);
 const ALIBABA_OR_SAMSAR = Object.freeze([
   DOCKER_PROVIDER.ALIBABA_CLOUD,
   DOCKER_PROVIDER.OPENROUTER,
@@ -80,6 +86,7 @@ const MODERATION_CAPABLE_PROVIDERS = Object.freeze([
 export const DOCKER_MODEL_PROVIDER_PRIORITY_BY_MODEL = Object.freeze({
   'gpt-5.6-sol': OPENAI_INFERENCE_OR_SAMSAR,
   'gemini-3.1-pro': GOOGLE_INFERENCE_OR_SAMSAR,
+  KIMIK3: KIMI_OR_SAMSAR,
   'QWEN3.7': ALIBABA_OR_SAMSAR,
   GPTIMAGE2: OPENAI_OR_SAMSAR,
   GPTIMAGE2EDIT: OPENAI_OR_SAMSAR,
@@ -114,6 +121,7 @@ export const DOCKER_MODEL_PROVIDER_PRIORITY_BY_MODEL = Object.freeze({
 export const DOCKER_MODEL_ACTIONS_BY_MODEL = Object.freeze({
   'gpt-5.6-sol': ['chat', 'assistant', 'moderation', 'recommendations', 'search'],
   'gemini-3.1-pro': ['chat', 'assistant', 'moderation'],
+  KIMIK3: ['chat', 'assistant'],
   'QWEN3.7': ['chat', 'assistant'],
   GPTIMAGE2: ['image'],
   GPTIMAGE2EDIT: ['image_edit'],
@@ -148,6 +156,7 @@ export const DOCKER_MODEL_ACTIONS_BY_MODEL = Object.freeze({
 export const DOCKER_MODEL_DISPLAY_NAME_BY_MODEL = Object.freeze({
   'gpt-5.6-sol': 'GPT 5.6 Sol',
   'gemini-3.1-pro': 'Gemini 3.1 Pro',
+  KIMIK3: 'Kimi K3',
   'QWEN3.7': 'Qwen 3.7 Plus',
   GPTIMAGE2: 'GPT Image 2',
   GPTIMAGE2EDIT: 'GPT Image 2 Edit',
@@ -192,7 +201,7 @@ export const EXPRESS_PIPELINE_REQUIREMENTS = Object.freeze([
   Object.freeze({
     key: 'inference',
     label: 'Inference',
-    modelKeys: Object.freeze(['gpt-5.6-sol', 'gemini-3.1-pro', 'QWEN3.7']),
+    modelKeys: Object.freeze(['gpt-5.6-sol', 'gemini-3.1-pro', 'KIMIK3', 'QWEN3.7']),
   }),
   Object.freeze({
     key: 'imageGeneration',
@@ -234,6 +243,13 @@ const NORMALIZED_MODEL_KEY_TO_CANONICAL = Object.freeze(
     ]),
   ),
 );
+const NORMALIZED_KIMI_K3_MODEL_ALIASES = new Set([
+  'KIMIK3',
+  'KIMI3',
+  'KIMIK3LATEST',
+  'MOONSHOTKIMIK3',
+  'MOONSHOTK3',
+]);
 
 export function normalizeDockerModelKey(value) {
   return typeof value === 'string' ? value.trim().toUpperCase() : '';
@@ -256,6 +272,9 @@ export function normalizeDockerProviderKey(value) {
     compact === 'qwen'
   ) {
     return DOCKER_PROVIDER.ALIBABA_CLOUD;
+  }
+  if (compact === 'kimi' || compact === 'moonshot' || compact === 'moonshotai') {
+    return DOCKER_PROVIDER.KIMI;
   }
   if (compact === 'runway' || compact === 'runwayml') {
     return DOCKER_PROVIDER.RUNWAY;
@@ -291,6 +310,10 @@ export function orderDockerProviderKeys(providerKeys = []) {
 
 export function getCanonicalDockerModelKey(modelKey) {
   const normalizedModelKey = normalizeDockerModelKey(modelKey);
+  const compactModelKey = normalizedModelKey.replace(/[^A-Z0-9]/g, '');
+  if (NORMALIZED_KIMI_K3_MODEL_ALIASES.has(compactModelKey)) {
+    return 'KIMIK3';
+  }
   return NORMALIZED_MODEL_KEY_TO_CANONICAL[normalizedModelKey] || '';
 }
 

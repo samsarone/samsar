@@ -155,13 +155,15 @@ The wizard follows five configuration steps:
 
 | Step | What it configures | Runtime effect |
 | --- | --- | --- |
-| Providers | Inference routing, OpenAI, Google Cloud, Alibaba Cloud, FAL, ElevenLabs, RunwayML, Samsar | Controls which models/actions appear in `runtime/config/available-models.json`. |
+| Providers | Inference routing, OpenAI, Google Cloud, Kimi K3, Alibaba Cloud, FAL, ElevenLabs, RunwayML, Samsar | Controls which models/actions appear in `runtime/config/available-models.json`. |
 | Services | Processor, setup wizard, image generator, assistant query processor, audio generator, AI video layer generator, video renderer, frames processor, express video listener, and logger | Determines which Docker service families are enabled for the local runtime. |
 | Mail and Data | Local or remote MongoDB, local MinIO or external S3-compatible storage, SMTP/SES/disabled mail | Writes database, storage, CDN, media, and mail settings. |
 | Domain | Optional nginx reverse proxy for a public domain/subdomain, public IP, or private IP, with optional IP detection, port opening, and Let's Encrypt SSL for validated domains | Enables public or intranet access URLs for Studio and the processor API. |
 | Admin | Organization and initial admin/login setup | Prepares Docker setup login and local access details. |
 
 All provider keys are optional and enable different capabilities. A Samsar API key enables all capabilities and can also be used as a universal fallback with other provider keys.
+
+For Kimi K3, enter `KIMI_K3_API_KEY` through the Kimi K3 provider field. The wizard validates it with the processor provider-validation API, enables the `KIMIK3` model selection, and routes inference, assistants, strict structured output, and vision to the native Kimi API first. If no native Kimi key is configured, a Samsar API key can provide the fallback route.
 
 For Alibaba Cloud, enter the Model Studio API key and, when using a workspace endpoint, its API host or full OpenAI-compatible base URL. The wizard validates the endpoint once before setup, stores the validated credential in `runtime/secrets/provider.credentials.json`, and renders `ALIBABA_API_KEY` and `ALIBABA_API_HOST` only into the backend Docker environment. The key is not retained in browser session storage or written to `runtime/config/samsar.config.json`.
 
@@ -204,9 +206,10 @@ Provider availability is explicit. `npm run config:render` reads `runtime/config
 
 | Provider | Enables | Models and families from the setup logic |
 | --- | --- | --- |
-| Samsar API key | Universal fallback for configured Docker deployments | All configured Docker model families in the setup logic, including `gpt-5.6-sol`, `gemini-3.1-pro`, `QWEN3.7`, chat, assistant, image, image edit, video, audio, lip sync, sound effects, and NanoBanana families. |
+| Samsar API key | Universal fallback for configured Docker deployments | All configured Docker model families in the setup logic, including `gpt-5.6-sol`, `gemini-3.1-pro`, `KIMIK3`, `QWEN3.7`, chat, assistant, image, image edit, video, audio, lip sync, sound effects, and NanoBanana families. |
 | OpenAI | Chat, assistant, image, image edit, audio, moderation, search, recommendations | `gpt-5.6-sol`, `GPTIMAGE2`, `GPTIMAGE2EDIT`, `OPENAI_TTS`. |
 | Google Cloud | Gemini, image, image edit, video, audio, moderation | `gemini-3.1-pro`, `VEO3.1I2V`, `VEO3.1I2VFAST`, `LYRIA3`, `GOOGLE_TTS`, `NANOBANANA2`, `NANOBANANA2EDIT`, `NANOBANANAPRO`, `NANOBANANAPROEDIT`. |
+| Kimi K3 | Native inference, assistants, strict structured output, and vision | `KIMIK3`, backed by the exact provider model `kimi-k3` with high reasoning. Native Kimi is preferred, followed by the Samsar fallback when configured. |
 | Alibaba Cloud | Native Qwen inference in Docker, plus Alibaba media models | Public model key `QWEN3.7` is available through the native adapter only when `CURRENT_ENV=docker`; Alibaba media-model routing is independent of the hosted Qwen inference rule. |
 | FAL | Image, image edit, video, audio, lip sync, sound effects | `SEEDREAM` (Seedream 5 Pro), `NANOBANANA2`, `NANOBANANA2EDIT`, `NANOBANANAPRO`, `NANOBANANAPROEDIT`, VEO via FAL, `COSMOS3SUPERI2V`, `SEEDANCEI2V`, Kling image-to-video, `HAPPYHORSEI2V` (Happy Horse 1.1 I2V), ElevenLabs/PlayAI/CassetteAI/AudioCraft via FAL, `MMAUDIOV2`, `MIRELOAI`, and lip sync model families. |
 | ElevenLabs | Speech and music | `ELEVENLABS`, `ELEVENLABS_MUSIC`. |
@@ -225,6 +228,10 @@ The same adapter contract is used by `processor`, `generator`, `audio-generator`
 ### OpenRouter
 
 OpenRouter is an optional inference router for supported GPT, Gemini, and Qwen text/vision workflows. Configure `OPENROUTER_API_KEY` through the setup wizard or `runtime/secrets/provider.credentials.json`; see [Providers and Models](pages/providers-and-models.md) for routing and model details.
+
+### Kimi K3
+
+Kimi K3 uses `https://api.moonshot.ai/v1` and the exact model `kimi-k3` for both inference and vision. The adapters always request high reasoning, translate developer messages to Kimi-compatible system messages, preserve the existing chat/JSON contracts, and enforce strict JSON schemas for structured output. Public image inputs are prepared as inline data and video inputs use Kimi file references where supported.
 
 ## API
 
@@ -377,19 +384,22 @@ Generated files:
 All API provider keys are optional. Add only the credentials needed for the generative features you want to enable. Common minimal setups are:
 
 - `Samsar API key` only
+- `Kimi K3` only for native inference, assistant, structured-output, and vision workflows
+- `Kimi K3 + Samsar API key` for native Kimi with Samsar fallback
 - `Alibaba Cloud` only for native Qwen 3.7 inference and assistant workflows in Docker
 - `Alibaba Cloud + Samsar API key` for native Qwen with Samsar fallback in Docker
 - `OpenAI + FAL`
 - `OpenAI + Samsar API key`
 - `Google Cloud service account + FAL`
 
-Provider keys can provide direct or routed inference while still using the Samsar media generation pipeline inside your environment. The setup wizard stores sensitive provider credentials in `runtime/secrets/provider.credentials.json`; `npm run config:render` then renders them into `runtime/secrets/root.env` for backend Docker services only. Do not commit `runtime/` or copy keys into browser/client-side code.
+Provider keys can provide direct or routed inference while still using the Samsar media generation pipeline inside your environment. The setup wizard stores credentials in protected mode-`0600` runtime configuration or, for validated secret-only providers, `runtime/secrets/provider.credentials.json`; `npm run config:render` then renders them into `runtime/secrets/root.env` for backend Docker services only. Do not commit `runtime/` or copy keys into browser/client-side code.
 
 | Provider | Runtime config | How to get the key |
 | --- | --- | --- |
 | Samsar API key | `providers.samsar.apiKey` -> `SAMSAR_API_KEY` | Go to [app.samsar.one](https://app.samsar.one), register or log in, then open [Billing](https://app.samsar.one/account/billing) to add credits or set up automatic recharge. Open [API Keys](https://app.samsar.one/account/apiKeys), create a new API key, copy it, and paste it into the setup wizard Step 1 field labeled **Samsar universal fallback**. This key can act as the universal fallback for supported model families. |
 | OpenAI | `providers.openai.apiKey` -> `OPENAI_API_KEY` | Go to [OpenAI API keys](https://platform.openai.com/api-keys), choose the correct project, create a new secret key, and paste it into the setup wizard or config. The key is shown only once. |
 | Google Cloud | `providers.googleCloud.projectId`, `providers.googleCloud.credentialsJsonB64` -> `GOOGLE_CLOUD_PROJECT`, `GOOGLE_APPLICATION_CREDENTIALS_JSON_B64` | Use a Google Cloud service account JSON key, not a standard API key. In [Google Cloud Service Accounts](https://console.cloud.google.com/iam-admin/serviceaccounts), create or select a service account with the minimum required permissions for your installation. Leave **Principals with access** blank. Then open **Keys** -> **Add key** -> **Create new key** -> **JSON**. Paste the JSON in the setup wizard, or base64 it for manual config with `base64 < service-account.json | tr -d '\n'`. |
+| Kimi K3 | `providers.kimi.apiKey` -> `KIMI_K3_API_KEY` | Create a key in the [Kimi platform](https://platform.kimi.ai/), paste it into the setup wizard Kimi K3 field or protected runtime config, and rerender. The browser session copy redacts this key, while the generated backend-only env shares it with every inference worker. |
 | Alibaba Cloud | `runtime/secrets/provider.credentials.json` -> `ALIBABA_API_KEY`, `ALIBABA_API_HOST` | Create a Model Studio API key in the [Alibaba Cloud Model Studio console](https://modelstudio.console.alibabacloud.com/). In the setup wizard, paste the key and optionally provide the workspace API host, such as `workspace-id.ap-southeast-1.maas.aliyuncs.com`, or its full `/compatible-mode/v1` endpoint. Leave the host blank to use the international Model Studio endpoint. |
 | FAL | `providers.fal.apiKey` -> `FAL_API_KEY` | Create a key from the [fal dashboard](https://fal.ai/dashboard/keys) or follow the [fal authentication docs](https://fal.ai/docs/documentation/setting-up/authentication). Samsar uses `FAL_API_KEY`; fal SDK examples may call the same credential `FAL_KEY`. |
 

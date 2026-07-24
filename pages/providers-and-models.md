@@ -6,9 +6,10 @@ Provider configuration is driven by `runtime/config/samsar.config.json` or the s
 
 | Provider | Credential field | Actions | Model families from setup/config logic |
 | --- | --- | --- | --- |
-| Samsar | `providers.samsar.apiKey` -> `SAMSAR_API_KEY` | Chat, assistant, image, video, audio, lip sync, sound effects, moderation, recommendations, search in the setup availability matrix | Universal fallback across `gpt-5.6-sol`, `gemini-3.1-pro`, `GPTIMAGE2`, `SEEDREAM` (Seedream 5 Pro), `RUNWAYML`, VEO 3.1 I2V, FAL video models including `HAPPYHORSEI2V` (Happy Horse 1.1 I2V), Lyria, ElevenLabs, OpenAI TTS, Google TTS, sound effects, lip sync, NanoBanana. |
+| Samsar | `providers.samsar.apiKey` -> `SAMSAR_API_KEY` | Chat, assistant, image, video, audio, lip sync, sound effects, moderation, recommendations, search in the setup availability matrix | Universal fallback across `gpt-5.6-sol`, `gemini-3.1-pro`, `KIMIK3`, `QWEN3.7`, `GPTIMAGE2`, `SEEDREAM` (Seedream 5 Pro), `RUNWAYML`, VEO 3.1 I2V, FAL video models including `HAPPYHORSEI2V` (Happy Horse 1.1 I2V), Lyria, ElevenLabs, OpenAI TTS, Google TTS, sound effects, lip sync, NanoBanana. |
 | OpenAI | `providers.openai.apiKey` -> `OPENAI_API_KEY` | Chat, assistant, image, audio, moderation, recommendations, search | `gpt-5.6-sol`, `GPTIMAGE2`, `OPENAI_TTS`. |
 | Google Cloud | `providers.googleCloud.credentialsJsonB64`, `projectId` | Chat, assistant, image, video, audio, moderation | `gemini-3.1-pro`, `VEO3.1I2V`, `VEO3.1I2VFAST`, `LYRIA3`, `GOOGLE_TTS`, `NANOBANANA2`, `NANOBANANAPRO`. |
+| Kimi K3 | `providers.kimi.apiKey` -> `KIMI_K3_API_KEY` | Chat, vision inference, strict structured output, assistant | `KIMIK3`, backed by the exact native `kimi-k3` model at `https://api.moonshot.ai/v1`. |
 | OpenRouter | `runtime/secrets/provider.credentials.json` -> `OPENROUTER_API_KEY` | Chat, vision inference, assistant | `gpt-5.6-sol`, `gemini-3.1-pro`, `QWEN3.7`; each stable selection routes text and media-bearing requests to its corresponding OpenRouter model. The Gemini selection defaults to `google/gemini-3.1-pro-preview` and can be overridden with `providers.openrouter.gemini31ProModel`. |
 | Alibaba Cloud | `runtime/secrets/provider.credentials.json` -> `ALIBABA_API_KEY`, `ALIBABA_API_HOST` | Native Qwen chat, vision inference, and assistant in Docker; image and video routing where supported | `QWEN3.7`, `WAN2.7PRO`, `HAPPYHORSEI2V`. Hosted Qwen inference does not use the native Alibaba adapter. |
 | FAL | `providers.fal.apiKey` -> `FAL_API_KEY` | Image, video, audio, lip sync, sound effects | `SEEDREAM` (Seedream 5 Pro), `NANOBANANA2`, `NANOBANANAPRO`, `VEO3.1I2V`, `VEO3.1I2VFAST`, `COSMOS3SUPERI2V`, `SEEDANCEI2V`, `KLINGIMGTOVID3PRO`, `KLINGIMGTOVIDTURBO`, `HAPPYHORSEI2V` (Happy Horse 1.1 I2V), `ELEVENLABS_MUSIC`, `ELEVENLABS`, `MMAUDIOV2`, `MIRELOAI`, `SYNCLIPSYNC`, `LATENTSYNC`, `KLINGLIPSYNC`, `HUMMINGBIRDLIPSYNC`, `CREATIFYLIPSYNC`. |
@@ -37,17 +38,24 @@ The video API reads this file through `DeploymentModelConfig` and filters `GET /
 
 ## Fallback Rules
 
-Inference routing depends on the deployment mode. Docker keeps the configurable native-first fallback chain. Hosted Qwen inference is OpenRouter-only.
+Inference routing depends on the deployment mode. Docker keeps the configurable native-first fallback chain. Kimi is always native-first with Samsar fallback; hosted Qwen inference is OpenRouter-only.
 
 The code uses this fallback in two places:
 
 | Area | Fallback behavior |
 | --- | --- |
+| Kimi K3 inference | `KIMIK3` uses `KIMI_K3_API_KEY` first and `SAMSAR_API_KEY` second. OpenRouter is not in this chain. The same selected model follows text, assistant, structured JSON, vision, and Express stages. |
 | Hosted Qwen inference | In `production`, `external-production`, `staging`, and any other non-Docker runtime, `QWEN3.7` always uses `OPENROUTER_API_KEY`. Saved native or deployed authorization and Alibaba credentials do not override this rule. |
 | Docker chat/inference compatibility | GPT, Gemini, and Qwen use their direct provider first, then `OPENROUTER_API_KEY`, then `SAMSAR_API_KEY`. Set `SAMSAR_QWEN_OPENROUTER_ONLY=true` to force Qwen through OpenRouter in Docker as well. |
 | Express video stages | Text-to-image and image-to-video stages can be marked as deployed Samsar provider stages when the Samsar key is present and no native/custom adapter credential is available for the requested model. |
 
 Current embedding/search implementation note: although the setup availability matrix includes `search` and `recommendations` for Samsar, `EmbeddingService` calls OpenAI embeddings directly with `text-embedding-3-large` and checks `OPENAI_API_KEY`. URL crawling also requires `FIRECRAWL_API_KEY`.
+
+## Kimi K3 Adapter
+
+`KIMIK3` is the stable setup/runtime model key and `kimi-k3` is the exact native provider model. Native requests use `https://api.moonshot.ai/v1`, always set high reasoning, normalize developer messages to system messages, and remove sampling fields that Kimi fixes internally. Structured-output requests preserve the existing response contract and force strict JSON schemas. Vision uses the same model: public images are converted to inline data, while supported video inputs are uploaded and referenced through Kimi file storage.
+
+The runtime renderer writes `KIMI_K3_API_KEY` once into mode-`0600` `runtime/secrets/root.env`. Compose shares that env with `processor`, `generator`, `audio-generator`, `ai-video-layer-generator`, `express-video-listener`, and `assistant-query-processor`.
 
 ## OpenRouter Qwen Adapter
 
@@ -75,7 +83,7 @@ Public API keys remain stable when their backing provider model is upgraded. The
 | --- | --- |
 | Express image models | `GPTIMAGE2`, `NANOBANANA2`, `NANOBANANAPRO`, `SEEDREAM`, `CUSTOM_TEXT_TO_IMAGE`. |
 | Express video models | `RUNWAYML`, `VEO3.1I2V`, `VEO3.1I2VFAST`, `COSMOS3SUPERI2V`, `SEEDANCEI2V`, `KLINGIMGTOVID3PRO`, `KLINGIMGTOVIDTURBO`, `HAPPYHORSEI2V`. |
-| Inference models | `gpt-5.6-sol`, `gemini-3.1-pro`, `QWEN3.7`. |
+| Inference models | `gpt-5.6-sol`, `gemini-3.1-pro`, `KIMIK3`, `QWEN3.7`. |
 | Lip sync models | `SYNCLIPSYNC`, `LATENTSYNC`, `KLINGLIPSYNC`, `HUMMINGBIRDLIPSYNC`, `CREATIFYLIPSYNC`. |
 | Sound effects | `MMAUDIOV2`, `MIRELOAI`. |
 

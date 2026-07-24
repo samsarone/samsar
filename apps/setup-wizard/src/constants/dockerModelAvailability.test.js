@@ -12,6 +12,7 @@ import {
 const INFERENCE_MODEL_KEYS = Object.freeze([
   'gpt-5.6-sol',
   'gemini-3.1-pro',
+  'KIMIK3',
   'QWEN3.7',
 ]);
 
@@ -38,14 +39,14 @@ test('Alibaba Cloud alone exposes Qwen, Wan2.7 Pro, and native Happy Horse video
   );
 });
 
-test('Samsar exposes GPT 5.6 Sol, Gemini 3.1 Pro, and Qwen 3.7 Plus', () => {
+test('Samsar exposes every supported inference model, including Kimi K3', () => {
   const available = buildDockerAvailableModelsFromEnabledProviders([
     DOCKER_PROVIDER.SAMSAR,
   ]);
 
   assert.deepEqual(
     getAvailableInferenceModels(available),
-    ['QWEN3.7', 'gemini-3.1-pro', 'gpt-5.6-sol'],
+    ['KIMIK3', 'QWEN3.7', 'gemini-3.1-pro', 'gpt-5.6-sol'],
   );
   for (const model of INFERENCE_MODEL_KEYS) {
     assert.equal(available.modelProviders[model], DOCKER_PROVIDER.SAMSAR);
@@ -61,9 +62,10 @@ test('OpenRouter alone exposes GPT, Gemini, and Qwen inference', () => {
     ['QWEN3.7', 'gemini-3.1-pro', 'gpt-5.6-sol'],
   );
   assert.deepEqual(available.actions, ['assistant', 'chat']);
-  for (const model of INFERENCE_MODEL_KEYS) {
+  for (const model of ['gpt-5.6-sol', 'gemini-3.1-pro', 'QWEN3.7']) {
     assert.equal(available.modelProviders[model], DOCKER_PROVIDER.OPENROUTER);
   }
+  assert.equal(available.modelProviders.KIMIK3, undefined);
   assert.equal(
     getDockerModelDisplayName('QWEN3.7', DOCKER_PROVIDER.OPENROUTER),
     'Qwen 3.7 Plus',
@@ -110,6 +112,37 @@ test('Qwen priority is Alibaba Cloud, OpenRouter, then Samsar', () => {
     resolveDockerModelProvider('QWEN3.7', [DOCKER_PROVIDER.SAMSAR, DOCKER_PROVIDER.OPENROUTER]),
     DOCKER_PROVIDER.OPENROUTER,
   );
+});
+
+test('Kimi K3 priority is the native Kimi API, then Samsar', () => {
+  const enabledProviders = [
+    DOCKER_PROVIDER.SAMSAR,
+    DOCKER_PROVIDER.KIMI,
+  ];
+  const available = buildDockerAvailableModelsFromEnabledProviders(enabledProviders);
+
+  assert.equal(
+    resolveDockerModelProvider('KIMIK3', enabledProviders),
+    DOCKER_PROVIDER.KIMI,
+  );
+  assert.equal(available.modelProviders.KIMIK3, DOCKER_PROVIDER.KIMI);
+  assert.deepEqual(available.modelProviderPriority.KIMIK3, [
+    DOCKER_PROVIDER.KIMI,
+    DOCKER_PROVIDER.SAMSAR,
+  ]);
+  assert.equal(getDockerModelDisplayName('KIMIK3', DOCKER_PROVIDER.KIMI), 'Kimi K3');
+
+  assert.equal(
+    resolveDockerModelProvider('KIMIK3', [DOCKER_PROVIDER.SAMSAR]),
+    DOCKER_PROVIDER.SAMSAR,
+  );
+  for (const alias of ['kimi-k3', 'Kimi K3', 'kimi_k3', 'Moonshot K3']) {
+    assert.equal(
+      resolveDockerModelProvider(alias, enabledProviders),
+      DOCKER_PROVIDER.KIMI,
+    );
+    assert.equal(getDockerModelDisplayName(alias), 'Kimi K3');
+  }
 });
 
 test('Happy Horse resolves Alibaba then FAL then Samsar', () => {
@@ -179,6 +212,7 @@ test('Fal needs an inference provider for the complete Express pipeline model se
   for (const inferenceProvider of [
     DOCKER_PROVIDER.OPENAI,
     DOCKER_PROVIDER.GOOGLE_CLOUD,
+    DOCKER_PROVIDER.KIMI,
     DOCKER_PROVIDER.ALIBABA_CLOUD,
     DOCKER_PROVIDER.OPENROUTER,
   ]) {

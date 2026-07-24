@@ -72,6 +72,10 @@
       "enabled": false,
       "gemini31ProModel": "google/gemini-3.1-pro-preview"
     },
+    "kimi": {
+      "enabled": false,
+      "apiKey": ""
+    },
     "alibabaCloud": {
       "enabled": false,
       "keyType": "",

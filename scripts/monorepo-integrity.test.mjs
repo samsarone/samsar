@@ -170,6 +170,54 @@ test('the example runtime config keeps external access and providers disabled', 
   }
 });
 
+test('Kimi K3 setup renders into the shared backend environment for every inference consumer', async () => {
+  const [config, compose, runtimeRenderer, setupServer, setupWizard] = await Promise.all([
+    readJson('samsar.config.example.json'),
+    readText('deploy/compose/docker-compose.yml'),
+    readText('scripts/generate-runtime-config.mjs'),
+    readText('apps/setup-wizard/server.mjs'),
+    readText('apps/setup-wizard/src/components/OnboardingWizard.jsx'),
+  ]);
+
+  assert.deepEqual(config.providers.kimi, { enabled: false, apiKey: '' });
+  assert.match(
+    runtimeRenderer,
+    /KIMI_K3_API_KEY:\s*config\.providers\?\.kimi\?\.apiKey\s*\|\|\s*''/,
+  );
+  assert.match(
+    setupServer,
+    /kimi:\s*\{\s*enabled:\s*Boolean\(normalizeSecretString\(credentials\.kimiK3ApiKey\)\),\s*apiKey:\s*normalizeSecretString\(credentials\.kimiK3ApiKey\)/s,
+  );
+  assert.match(
+    setupWizard,
+    /key:\s*'kimi',\s*title:\s*'Kimi K3',[\s\S]*?field:\s*'kimiK3ApiKey'/,
+  );
+  assert.match(
+    setupWizard,
+    /key:\s*'kimiK3',[\s\S]*?providerKeys:\s*\['kimi',\s*'samsar'\],[\s\S]*?modelKeys:\s*\['KIMIK3'\]/,
+  );
+  assert.match(
+    setupWizard,
+    /credentials:\s*\{\s*\.\.\.credentials,\s*kimiK3ApiKey:\s*''/s,
+    'the browser session copy must redact the Kimi API key',
+  );
+
+  for (const serviceName of [
+    'processor',
+    'generator',
+    'audio-generator',
+    'ai-video-layer-generator',
+    'express-video-listener',
+    'assistant-query-processor',
+  ]) {
+    assert.match(
+      compose,
+      new RegExp(`^  ${serviceName}:\\n    <<: \\*service-env`, 'm'),
+      `${serviceName} must inherit the shared provider environment`,
+    );
+  }
+});
+
 test('standalone edition and Docker runtime are independent deployment metadata', async () => {
   const [compose, clientDockerfile, runtimeRenderer] = await Promise.all([
     readText('deploy/compose/docker-compose.yml'),

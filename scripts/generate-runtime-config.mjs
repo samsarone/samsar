@@ -582,6 +582,7 @@ const env = {
 	  OPENAI_API_KEY: config.providers?.openai?.apiKey || '',
 	  OPENROUTER_API_KEY: effectiveProviderConfig.openrouter.apiKey,
 	  OPENROUTER_GEMINI_31_PRO_MODEL: effectiveProviderConfig.openrouter.gemini31ProModel,
+	  KIMI_K3_API_KEY: config.providers?.kimi?.apiKey || '',
 	  ALIBABA_API_KEY: alibabaApiKey,
 	  ALIBABA_API_HOST: alibabaApiHost,
     ALIBABA_API_KEY_TYPE: alibabaKeyType,
