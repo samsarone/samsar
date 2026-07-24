@@ -7,6 +7,7 @@ import {
   extractDeploymentProviders,
   filterHostedInferenceModelOptions,
   filterOptionsForDeploymentInferenceModels,
+  formatDeploymentProviderLabel,
   hasSubtitleGenerationProvider,
   hasValidatedAlibabaQwenInference,
   labelOptionsForDeploymentInferenceProviders,
@@ -22,6 +23,7 @@ export {
   extractDeploymentProviders,
   filterHostedInferenceModelOptions,
   filterOptionsForDeploymentInferenceModels,
+  formatDeploymentProviderLabel,
   hasSubtitleGenerationProvider,
   hasValidatedAlibabaQwenInference,
   labelOptionsForDeploymentInferenceProviders,
@@ -29,29 +31,6 @@ export {
   normalizeDeploymentProviderKey,
   resolveAllowedInferenceModelOption,
 };
-
-const PROVIDER_LABELS = {
-  samsar: "Samsar API Key",
-  openai: "OpenAI",
-  openrouter: "OpenRouter",
-  googleCloud: "Google Cloud",
-  alibabaCloud: "Alibaba Cloud",
-  fal: "FAL",
-  runway: "RunwayML",
-};
-
-export function formatDeploymentProviderLabel(value) {
-  const key = normalizeDeploymentProviderKey(value);
-  if (PROVIDER_LABELS[key]) {
-    return PROVIDER_LABELS[key];
-  }
-
-  return String(value || "")
-    .trim()
-    .replace(/[_-]+/g, " ")
-    .replace(/\s+/g, " ")
-    .replace(/\b\w/g, (letter) => letter.toUpperCase()) || "Unknown provider";
-}
 
 export function normalizeDeploymentModelValue(value) {
   return typeof value === "string" ? value.trim().toUpperCase() : "";

@@ -2,10 +2,12 @@ import OpenAI from "openai";
 import {
   createGoogleGeminiChatCompletion,
   isGeminiInferenceModel,
+  isKimiInferenceModel,
   isQwenInferenceModel,
   normalizeInferenceModel,
 } from './GoogleGemini.js';
 import { createAlibabaQwenChatCompletion } from './AlibabaQwen.js';
+import { createKimiK3ChatCompletion } from './KimiK3.js';
 import {
   createSamsarExternalChatCompletion,
   shouldUseSamsarExternalInference,
@@ -87,9 +89,11 @@ export async function sendAssistantMessageRequest(
       isGeminiInferenceModel(normalizedInferenceModel);
     const isQwenModel = isQwenInferenceModel(userInferenceModel) ||
       isQwenInferenceModel(normalizedInferenceModel);
+    const isKimiModel = isKimiInferenceModel(userInferenceModel) ||
+      isKimiInferenceModel(normalizedInferenceModel);
     const payload = {
       messages: messageList,
-      model: isGeminiModel || isQwenModel
+      model: isGeminiModel || isQwenModel || isKimiModel
         ? normalizedInferenceModel
         : "gpt-4.1-2025-04-14",
       ...(selectedInferenceModelAuthorization
@@ -112,6 +116,11 @@ export async function sendAssistantMessageRequest(
 
     if (isQwenModel) {
       const response = await createAlibabaQwenChatCompletion(nativePayload);
+      return response.choices[0].message;
+    }
+
+    if (isKimiModel) {
+      const response = await createKimiK3ChatCompletion(nativePayload);
       return response.choices[0].message;
     }
 

@@ -4,6 +4,7 @@ import OpenAI from 'openai';
 
 import {
   DOCKER_INFERENCE_PROVIDER,
+  DOCKER_INFERENCE_PROVIDER_PRIORITY_BY_MODEL,
   createOpenRouterChatCompletion,
   getOpenRouterModelForInferenceRequest,
   resolveConfiguredInferenceProvider,
@@ -16,6 +17,7 @@ const ENV_KEYS = [
   'ALIBABA_API_KEY',
   'CURRENT_ENV',
   'DASHSCOPE_API_KEY',
+  'KIMI_K3_API_KEY',
   'OPENAI_API_KEY',
   'OPENROUTER_API_KEY',
   'QWEN_API_KEY',
@@ -104,6 +106,31 @@ test('the existing GPT and Gemini native-credential decisions are unchanged', ()
   }, () => {
     assert.equal(shouldUseSamsarExternalInference({ model: 'gpt-5.6-sol' }), false);
     assert.equal(shouldUseSamsarExternalInference({ model: 'gemini-3.1-pro' }), true);
+  });
+});
+
+test('Kimi K3 uses the native Kimi key first and Samsar as its only fallback', () => {
+  withEnvironment({
+    CURRENT_ENV: 'docker',
+    SAMSAR_API_KEY: 'samsar-key',
+  }, () => {
+    assert.equal(resolveConfiguredInferenceProvider('KIMIK3'), DOCKER_INFERENCE_PROVIDER.SAMSAR);
+    assert.equal(shouldUseSamsarExternalInference({ model: 'kimi-k3' }), true);
+  });
+
+  withEnvironment({
+    CURRENT_ENV: 'docker',
+    KIMI_K3_API_KEY: 'kimi-key',
+    OPENROUTER_API_KEY: 'openrouter-key',
+    SAMSAR_API_KEY: 'samsar-key',
+  }, () => {
+    assert.equal(resolveConfiguredInferenceProvider('Kimi K3'), DOCKER_INFERENCE_PROVIDER.KIMI);
+    assert.equal(shouldUseOpenRouterInference({ model: 'kimi-k3' }), false);
+    assert.equal(shouldUseSamsarExternalInference({ model: 'kimi-k3' }), false);
+    assert.deepEqual(DOCKER_INFERENCE_PROVIDER_PRIORITY_BY_MODEL['kimi-k3'], [
+      DOCKER_INFERENCE_PROVIDER.KIMI,
+      DOCKER_INFERENCE_PROVIDER.SAMSAR,
+    ]);
   });
 });
 

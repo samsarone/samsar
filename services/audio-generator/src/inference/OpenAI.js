@@ -9,10 +9,12 @@ import {
   getDefaultUserInferenceModel,
   isGPT56SolInferenceModel,
   isGeminiInferenceModel,
+  isKimiInferenceModel,
   isQwenInferenceModel,
   normalizeInferenceModel,
 } from './InferenceModels.js';
 import { createGoogleGeminiChatCompletion } from './GoogleGemini.js';
+import { createKimiK3ChatCompletion } from './KimiK3.js';
 import { createQwenChatCompletion } from './Qwen.js';
 import { runExternalInferenceWithRetry } from './ExternalInferenceRetry.js';
 import {
@@ -73,7 +75,9 @@ export async function sendAssistantMessageRequest(
 ) {
 
   try {
-    const normalizedModel = isQwenInferenceModel(model) || isGeminiInferenceModel(model)
+    const normalizedModel = isQwenInferenceModel(model) ||
+      isGeminiInferenceModel(model) ||
+      isKimiInferenceModel(model)
       ? normalizeInferenceModel(model)
       : model;
     const payload = {
@@ -92,6 +96,11 @@ export async function sendAssistantMessageRequest(
 
     if (isQwenInferenceModel(normalizedModel)) {
       const response = await createQwenChatCompletion(routingPayload);
+      return response.choices[0].message;
+    }
+
+    if (isKimiInferenceModel(normalizedModel)) {
+      const response = await createKimiK3ChatCompletion(routingPayload);
       return response.choices[0].message;
     }
 

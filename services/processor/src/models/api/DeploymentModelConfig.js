@@ -68,6 +68,10 @@ function normalizeDeploymentProvider(value) {
     return 'openrouter';
   }
 
+  if (['kimi', 'kimik3', 'moonshot', 'moonshotai'].includes(normalized)) {
+    return 'kimi';
+  }
+
   return normalized;
 }
 
@@ -75,6 +79,9 @@ function normalizeDeploymentModel(value) {
   const normalized = String(value || '').trim().toUpperCase();
   if (['QWEN3.7', 'QWEN3.7-MAX', 'QWEN3.7-PLUS', 'QWEN3.8', 'QWEN3.8-MAX-PREVIEW'].includes(normalized)) {
     return 'QWEN3.7';
+  }
+  if (['KIMIK3', 'KIMI-K3', 'KIMI K3'].includes(normalized)) {
+    return 'KIMIK3';
   }
   return normalized;
 }
@@ -152,6 +159,7 @@ function mergeRuntimeInferenceProviderSelections(availability) {
     'gpt-5.6-sol': ['openai', 'openrouter', 'samsar'],
     'gemini-3.1-pro': ['googleCloud', 'openrouter', 'samsar'],
     'QWEN3.7': ['alibabaCloud', 'openrouter', 'samsar'],
+    KIMIK3: ['kimi', 'samsar'],
   };
   const configured = {
     openai: hasEnvCredential('OPENAI_API_KEY'),
@@ -163,6 +171,7 @@ function mergeRuntimeInferenceProviderSelections(availability) {
       'QWEN_API_KEY',
     ),
     openrouter: hasOpenRouter,
+    kimi: hasEnvCredential('KIMI_K3_API_KEY'),
     samsar: hasSamsar,
   };
 
@@ -235,6 +244,12 @@ export function mergeRuntimeInferenceDeploymentAvailability(value = {}) {
     appendUnique(merged.actions, ['chat', 'assistant']);
   }
 
+  if (hasEnvCredential('KIMI_K3_API_KEY')) {
+    appendUnique(merged.providers, ['kimi']);
+    appendUnique(merged.models, ['KIMIK3']);
+    appendUnique(merged.actions, ['chat', 'assistant']);
+  }
+
   if (hasEnvCredential('FAL_API_KEY')) {
     appendUnique(merged.providers, ['fal']);
     appendUnique(merged.models, ['WAN2.7PRO', 'HAPPYHORSEI2V']);
@@ -243,7 +258,7 @@ export function mergeRuntimeInferenceDeploymentAvailability(value = {}) {
 
   if (hasEnvCredential('SAMSAR_API_KEY')) {
     appendUnique(merged.providers, ['samsar']);
-    appendUnique(merged.models, ['gpt-5.6-sol', 'gemini-3.1-pro', 'QWEN3.7', 'HAPPYHORSEI2V', 'WAN2.7PRO']);
+    appendUnique(merged.models, ['gpt-5.6-sol', 'gemini-3.1-pro', 'QWEN3.7', 'KIMIK3', 'HAPPYHORSEI2V', 'WAN2.7PRO']);
     appendUnique(merged.actions, ['chat', 'assistant', 'image', 'video']);
   }
 

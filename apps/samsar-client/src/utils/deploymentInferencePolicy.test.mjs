@@ -7,6 +7,8 @@ import {
   filterHostedInferenceModelOptions,
   hasValidatedAlibabaQwenInference,
   labelOptionsForDeploymentInferenceProviders,
+  normalizeDeploymentInferenceModelValue,
+  normalizeDeploymentProviderKey,
   resolveAllowedInferenceModelOption,
 } from './deploymentInferencePolicy.mjs';
 
@@ -14,13 +16,14 @@ const MODEL_OPTIONS = [
   { label: 'GPT 5.6 Sol', value: 'gpt-5.6-sol' },
   { label: 'Gemini 3.1 Pro', value: 'gemini-3.1-pro' },
   { label: 'Qwen 3.7 Plus', value: 'QWEN3.7' },
+  { label: 'Kimi K3', value: 'kimi-k3' },
 ];
 
 test('hosted inference labels OpenRouter Qwen text Max and vision Plus', () => {
   const hostedOptions = filterHostedInferenceModelOptions(MODEL_OPTIONS);
   assert.deepEqual(
     hostedOptions.map((option) => option.value),
-    ['gpt-5.6-sol', 'gemini-3.1-pro', 'QWEN3.7'],
+    ['gpt-5.6-sol', 'gemini-3.1-pro', 'QWEN3.7', 'kimi-k3'],
   );
   assert.equal(
     hostedOptions[2].label,
@@ -81,7 +84,7 @@ test('standalone exposes Qwen only with an explicit model and validated Alibaba 
 test('provider fallbacks expose their configured inference models', () => {
   assert.deepEqual(
     extractDeploymentInferenceModelValues({ deployment: { providers: ['samsar'] } }),
-    ['gpt-5.6-sol', 'gemini-3.1-pro', 'QWEN3.7'],
+    ['gpt-5.6-sol', 'gemini-3.1-pro', 'QWEN3.7', 'kimi-k3'],
   );
   assert.equal(
     labelOptionsForDeploymentInferenceProviders(MODEL_OPTIONS, {
@@ -96,6 +99,21 @@ test('provider fallbacks expose their configured inference models', () => {
   assert.deepEqual(
     extractDeploymentInferenceModelValues({ deployment: { providers: ['alibabaCloud'] } }),
     [],
+  );
+});
+
+test('Kimi provider and model aliases resolve to the canonical top-level model', () => {
+  assert.equal(normalizeDeploymentProviderKey('Moonshot AI'), 'kimi');
+  assert.equal(normalizeDeploymentProviderKey('Kimi API'), 'kimi');
+  assert.equal(normalizeDeploymentInferenceModelValue('KIMIK3'), 'kimi-k3');
+  assert.equal(normalizeDeploymentInferenceModelValue('Moonshot K3'), 'kimi-k3');
+  assert.deepEqual(
+    extractDeploymentInferenceModelValues({ deployment: { providers: ['kimi'] } }),
+    ['kimi-k3'],
+  );
+  assert.equal(
+    resolveAllowedInferenceModelOption('KIMIK3', MODEL_OPTIONS)?.value,
+    'kimi-k3',
   );
 });
 
@@ -147,5 +165,6 @@ test('model preferences resolve against the allowed options without mutating can
     'gpt-5.6-sol',
     'gemini-3.1-pro',
     'QWEN3.7',
+    'kimi-k3',
   ]);
 });

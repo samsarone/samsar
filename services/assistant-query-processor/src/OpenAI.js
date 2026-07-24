@@ -3,9 +3,11 @@ import {
   DEFAULT_INFERENCE_MODEL,
   GPT_56_SOL_REASONING_EFFORT,
   isGeminiInferenceModel,
+  isKimiK3InferenceModel,
   isQwenInferenceModel,
   normalizeInferenceModel,
 } from './InferenceModels.js';
+import { createKimiK3ChatCompletion } from './KimiK3.js';
 import { createQwenChatCompletion } from './Qwen.js';
 import { sendAssistantGeminiCompletionRequest } from './GoogleGemini.js';
 import {
@@ -49,6 +51,25 @@ function normalizeCompletionOptions(options) {
   return {};
 }
 
+function getCompatibleChatRequestOptions(options = {}) {
+  const supportedFields = [
+    'response_format',
+    'tools',
+    'tool_choice',
+    'parallel_tool_calls',
+    'max_tokens',
+    'max_completion_tokens',
+    'max_output_tokens',
+    'stop',
+    'seed',
+  ];
+  return Object.fromEntries(
+    supportedFields
+      .filter((field) => options[field] !== undefined)
+      .map((field) => [field, options[field]]),
+  );
+}
+
 function getReasoningEffort(options = {}) {
   return (
     options.reasoningEffort ||
@@ -61,6 +82,9 @@ function getReasoningEffort(options = {}) {
 export function getAssistantReasoningEffort(inferenceModel, options = {}) {
   if (isQwenInferenceModel(inferenceModel)) {
     return null;
+  }
+  if (isKimiK3InferenceModel(inferenceModel)) {
+    return GPT_56_SOL_REASONING_EFFORT;
   }
   return isGeminiInferenceModel(inferenceModel)
     ? getReasoningEffort(options)
@@ -83,6 +107,8 @@ export async function sendAssistantCompletionRequest(messageList, inferenceModel
   const model = getModelNameForInferenceModel(inferenceModel);
   const isGeminiModel = isGeminiInferenceModel(inferenceModel);
   const isQwenModel = isQwenInferenceModel(inferenceModel) || isQwenInferenceModel(model);
+  const isKimiModel =
+    isKimiK3InferenceModel(inferenceModel) || isKimiK3InferenceModel(model);
   const reasoningEffort = getAssistantReasoningEffort(inferenceModel, completionOptions);
   const externalPayload = {
     model,
@@ -103,12 +129,41 @@ export async function sendAssistantCompletionRequest(messageList, inferenceModel
     return await sendAssistantQwenCompletionRequest(messageList, model, completionOptions);
   }
 
+  if (isKimiModel) {
+    return await sendAssistantKimiK3CompletionRequest(messageList, model, completionOptions);
+  }
+
   return await sendAssistantOpenAICompletionRequest(
     messageList,
     inferenceModel,
     reasoningEffort,
     completionOptions,
   );
+}
+
+export async function sendAssistantKimiK3CompletionRequest(
+  messageList,
+  inferenceModel,
+  options = {},
+  dependencyOverrides = {},
+) {
+  const model = getModelNameForInferenceModel(inferenceModel);
+  const response = await createKimiK3ChatCompletion({
+    ...getCompatibleChatRequestOptions(options),
+    model,
+    messages: messageList,
+    reasoning_effort: GPT_56_SOL_REASONING_EFFORT,
+    timeout: getRequestTimeoutMs(options),
+  }, dependencyOverrides);
+  const outputText = response?.choices?.[0]?.message?.content || '';
+
+  return {
+    model: response?.model || model,
+    response: normalizeChatCompletionToResponses(response),
+    outputText,
+    outputContent: buildFallbackAssistantContent(outputText),
+    externalProvider: 'kimi',
+  };
 }
 
 export async function sendAssistantQwenCompletionRequest(messageList, inferenceModel, options = {}) {
@@ -134,6 +189,7 @@ export async function sendAssistantSamsarExternalCompletionRequest(messageList, 
   const model = getModelNameForInferenceModel(inferenceModel);
   const reasoningEffort = getAssistantReasoningEffort(inferenceModel, options);
   const response = await createSamsarExternalChatCompletion({
+    ...getCompatibleChatRequestOptions(options),
     model,
     messages: messageList,
     authorization: options.authorization,

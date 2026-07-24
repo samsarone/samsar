@@ -32,6 +32,7 @@ const ENV_KEYS = [
   'FUNCTION_TARGET',
   'GCE_METADATA_HOST',
   'OPENAI_API_KEY',
+  'KIMI_K3_API_KEY',
   'OPENROUTER_API_KEY',
   'OPENROUTER_BASE_URL',
   'OPENROUTER_API_BASE_URL',
@@ -69,6 +70,45 @@ test('Qwen stays native when a DashScope key is configured', () => {
   process.env.DASHSCOPE_API_KEY = 'dashscope-test-key';
 
   assert.equal(shouldUseSamsarExternalInference({ model: 'QWEN3.7' }), false);
+});
+
+test('Kimi K3 prefers its native credential and otherwise uses Samsar fallback', () => {
+  ENV_KEYS.forEach((key) => delete process.env[key]);
+  process.env.CURRENT_ENV = 'docker';
+  process.env.SAMSAR_API_KEY = 'samsar-test-key';
+
+  assert.equal(
+    resolveConfiguredInferenceProvider('Kimi K3'),
+    DOCKER_INFERENCE_PROVIDER.SAMSAR,
+  );
+  assert.equal(shouldUseSamsarExternalInference({ model: 'Kimi K3' }), true);
+
+  process.env.KIMI_K3_API_KEY = 'kimi-test-key';
+
+  assert.equal(
+    resolveConfiguredInferenceProvider('KIMIK3'),
+    DOCKER_INFERENCE_PROVIDER.KIMI,
+  );
+  assert.equal(shouldUseSamsarExternalInference({ model: 'KIMIK3' }), false);
+  assert.equal(shouldUseSamsarExternalInference({
+    model: 'KIMIK3',
+    authorization: 'deployed',
+  }), true);
+});
+
+test('Kimi K3 aliases never route through OpenRouter, even when explicitly authorized', () => {
+  ENV_KEYS.forEach((key) => delete process.env[key]);
+  process.env.CURRENT_ENV = 'docker';
+  process.env.OPENROUTER_API_KEY = 'openrouter-test-key';
+  process.env.SAMSAR_API_KEY = 'samsar-test-key';
+
+  for (const model of ['kimi-k3', 'kimi-k3-latest', 'KIMIK3', 'Kimi K3', 'Moonshot K3']) {
+    assert.equal(
+      shouldUseOpenRouterInference({ model, authorization: 'openrouter' }),
+      false,
+      `${model} must bypass OpenRouter`,
+    );
+  }
 });
 
 test('OpenRouter is the Docker fallback before Samsar for every inference model', () => {

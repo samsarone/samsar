@@ -1,6 +1,8 @@
 name: samsar
 
 x-service-env: &service-env
+  # Provider credentials, including KIMI_K3_API_KEY, are rendered once into
+  # root.env and inherited by every backend inference consumer.
   env_file:
     - ../../runtime/secrets/root.env
   environment:

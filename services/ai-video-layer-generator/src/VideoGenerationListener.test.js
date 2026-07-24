@@ -131,6 +131,9 @@ test('session inference override wins for express generation retries', async () 
   assert.equal(await getInferenceModelForSession({
     inferenceModel: 'gemini-3.1-pro',
   }), 'gemini-3.1-pro');
+  assert.equal(await getInferenceModelForSession({
+    expressGenerationInferenceModel: 'Kimi K3',
+  }), 'kimi-k3');
 });
 
 test('request inference settings win over express session and account fallbacks', async () => {

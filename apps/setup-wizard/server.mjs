@@ -1589,6 +1589,10 @@ function buildRuntimeConfig(payload) {
         projectId: googleCredentials.projectId,
         credentialsJsonB64: googleCredentials.credentialsJsonB64,
       },
+      kimi: {
+        enabled: Boolean(normalizeSecretString(credentials.kimiK3ApiKey)),
+        apiKey: normalizeSecretString(credentials.kimiK3ApiKey),
+      },
       alibabaCloud: {
         enabled: Boolean(normalizeSecretString(credentials.alibabaApiKey)),
         keyType: normalizeString(alibabaProviderMetadata.keyType),
@@ -1746,6 +1750,7 @@ function hasConfiguredRemoteMediaProvider(credentials = {}) {
     hasConfiguredSamsarApiKey(credentials) ||
     normalizeString(credentials.openaiApiKey || credentials?.openai?.apiKey) ||
     normalizeString(credentials.openrouterApiKey || credentials?.openrouter?.apiKey) ||
+    normalizeString(credentials.kimiK3ApiKey || credentials?.kimi?.apiKey) ||
     normalizeString(credentials.alibabaApiKey || credentials?.alibabaCloud?.apiKey) ||
     normalizeString(credentials.falApiKey || credentials?.fal?.apiKey) ||
     normalizeString(credentials.elevenLabsApiKey || credentials?.elevenlabs?.apiKey) ||
@@ -1854,6 +1859,8 @@ async function shouldPublishRuntimeLocalMediaGateway(config = {}) {
     providers.openai?.enabled === true ||
     normalizeString(providers.openai?.apiKey) ||
     providers.openrouter?.enabled === true ||
+    providers.kimi?.enabled === true ||
+    normalizeString(providers.kimi?.apiKey) ||
     providers.alibabaCloud?.enabled === true ||
     normalizeString(providers.fal?.apiKey) ||
     normalizeString(providers.elevenlabs?.apiKey) ||

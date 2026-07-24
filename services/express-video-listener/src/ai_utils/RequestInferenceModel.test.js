@@ -24,6 +24,14 @@ test('the express session model wins over the account setting and generic sessio
   }), 'QWEN3.7');
 });
 
+test('preserves Kimi K3 from the express request through the canonical model contract', () => {
+  assert.equal(resolveRequestInferenceModel({
+    request: { expressGenerationInferenceModel: 'Kimi K3' },
+    session: { expressGenerationInferenceModel: 'gemini-3.1-pro' },
+    user: { selectedInferenceModel: 'gpt-5.6-sol' },
+  }), 'kimi-k3');
+});
+
 test('falls back to the account setting and normalizes display labels', () => {
   assert.equal(resolveRequestInferenceModel({
     user: { selectedInferenceModel: 'Qwen 3.7' },

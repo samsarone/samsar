@@ -79,17 +79,19 @@ test('normalizes request inference model aliases', () => {
   assert.equal(normalizeInferenceModelFromPayload({ inference_model: 'Qwen 3.7' }), 'QWEN3.7');
   assert.equal(normalizeInferenceModelFromPayload({ inferenceModel: 'qwen3.7-max' }), 'QWEN3.7');
   assert.equal(normalizeInferenceModelFromPayload({ inferenceModel: 'QWEN3.8' }), 'QWEN3.7');
+  assert.equal(normalizeInferenceModelFromPayload({ inferenceModel: 'KIMIK3' }), 'kimi-k3');
+  assert.equal(normalizeInferenceModelFromPayload({ inference_model: 'Kimi K3' }), 'kimi-k3');
   assert.equal(normalizeInferenceModelFromPayload({}), null);
 });
 
 test('rejects unsupported request inference model aliases', () => {
   assert.throws(
     () => normalizeInferenceModelFromPayload({ inference_model: 'gpt-5' }),
-    /inference_model must be one of: gpt-5\.6-sol, gemini-3\.1-pro, QWEN3\.7/,
+    /inference_model must be one of: gpt-5\.6-sol, gemini-3\.1-pro, QWEN3\.7, kimi-k3/,
   );
   assert.throws(
     () => normalizeInferenceModelFromPayload({ inference_model: 'claude' }),
-    /inference_model must be one of: gpt-5\.6-sol, gemini-3\.1-pro, QWEN3\.7/,
+    /inference_model must be one of: gpt-5\.6-sol, gemini-3\.1-pro, QWEN3\.7, kimi-k3/,
   );
 });
 

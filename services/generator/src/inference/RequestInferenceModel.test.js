@@ -40,6 +40,13 @@ test('falls back to saved user setting and normalizes aliases', () => {
   }), 'QWEN3.7');
 });
 
+test('keeps Kimi K3 as the express-generation inference override', () => {
+  assert.equal(resolveRequestInferenceModel({
+    request: { expressGenerationInferenceModel: 'Kimi K3' },
+    session: { expressGenerationInferenceModel: 'gpt-5.6-sol' },
+  }), 'kimi-k3');
+});
+
 test('inference authorization follows request, queued fallback, session, then user precedence', () => {
   assert.equal(resolveRequestInferenceAuthorization({
     request: { selectedInferenceModelAuthorization: 'native' },

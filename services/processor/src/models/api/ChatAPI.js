@@ -10,6 +10,7 @@ import { getLanguageStringFromLanguageCode } from "../../consts/LanguageCodes.js
 import {
   DEFAULT_INFERENCE_MODEL,
   isGeminiInferenceModel,
+  isKimiInferenceModel,
   isQwenInferenceModel,
   normalizeInferenceModel,
 } from "../../consts/InferenceModels.js";
@@ -97,7 +98,12 @@ export async function requestChatEnhance(payload = {}) {
   const inferenceModel = await getInferenceModelForUser(userId);
   const model = getModelForUserInferenceModel(inferenceModel);
 
-  if (!API_KEY && !isGeminiInferenceModel(model) && !isQwenInferenceModel(model)) {
+  if (
+    !API_KEY &&
+    !isGeminiInferenceModel(model) &&
+    !isKimiInferenceModel(model) &&
+    !isQwenInferenceModel(model)
+  ) {
     throw new Error('OPENAI_API_KEY is not set');
   }
 

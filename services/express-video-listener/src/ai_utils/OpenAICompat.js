@@ -3,9 +3,11 @@ import {
   createGoogleGeminiChatCompletion,
   getDefaultInferenceModel,
   isGeminiInferenceModel,
+  isKimiInferenceModel,
   isQwenInferenceModel,
   normalizeInferenceModel,
 } from './GoogleGemini.js';
+import { createKimiK3ChatCompletion } from './KimiK3.js';
 import { createQwenChatCompletion } from './Qwen.js';
 import {
   createSamsarExternalChatCompletion,
@@ -17,6 +19,7 @@ import { normalizeProviderMediaPayload } from './ProviderMediaPayload.js';
 export function isResponsesOnlyModel(model) {
   const inferenceModel = normalizeInferenceModel(model || getDefaultInferenceModel());
   return !isGeminiInferenceModel(inferenceModel) &&
+    !isKimiInferenceModel(inferenceModel) &&
     !isQwenInferenceModel(inferenceModel);
 }
 
@@ -28,6 +31,13 @@ export async function createCompatibleChatCompletion(openaiClient, chatRequest =
   }
 
   const requestOptions = buildRequestOptions({ timeout });
+  if (isKimiInferenceModel(model)) {
+    return await createKimiK3ChatCompletion({
+      ...request,
+      ...(timeout !== undefined ? { timeout } : {}),
+      ...(maxRetries !== undefined ? { maxRetries } : {}),
+    });
+  }
   if (isQwenInferenceModel(model)) {
     return await createQwenChatCompletion({
       ...request,

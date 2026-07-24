@@ -10,6 +10,8 @@ import {
   INFERENCE_MODELS,
   INFERENCE_PROVIDER_MODEL_KEYS,
   INFERENCE_REASONING_EFFORTS,
+  KIMI_K3_INFERENCE_MODEL,
+  KIMI_K3_PROVIDER_MODEL,
   PUBLICATION_METADATA_INFERENCE_SETTINGS,
   QWEN_37_INFERENCE_MODEL,
   QWEN_37_MAX_MODEL,
@@ -19,6 +21,7 @@ import {
   getPublicationMetadataInferenceSettings,
   getProviderModelForInferenceModel,
   isOpenAIInferenceModel,
+  isKimiInferenceModel,
   isQwenInferenceModel,
   normalizeGeminiProviderModel,
   normalizeInferenceModel,
@@ -118,4 +121,18 @@ test('normalizes Qwen aliases while selecting Qwen 3.7 Plus by default', () => {
     getProviderModelForInferenceModel('QWEN3.7', { environment: 'docker', vision: true }),
     QWEN_37_PLUS_MODEL,
   );
+});
+
+test('normalizes Kimi K3 aliases to the native multimodal provider model', () => {
+  assert.equal(INFERENCE_MODEL_KEYS.KIMI_K3, 'kimi-k3');
+  assert.equal(KIMI_K3_INFERENCE_MODEL, 'kimi-k3');
+  assert.equal(KIMI_K3_PROVIDER_MODEL, 'kimi-k3');
+  assert.equal(normalizeInferenceModel('KIMIK3'), KIMI_K3_INFERENCE_MODEL);
+  assert.equal(normalizeInferenceModel('Kimi K3'), KIMI_K3_INFERENCE_MODEL);
+  assert.equal(normalizeInferenceModel('Moonshot Kimi K3'), KIMI_K3_INFERENCE_MODEL);
+  assert.equal(isKimiInferenceModel('kimi-k3'), true);
+  assert.equal(getProviderModelForInferenceModel('KIMIK3'), KIMI_K3_PROVIDER_MODEL);
+  assert.deepEqual(getPublicationMetadataInferenceSettings('KIMIK3'), {
+    model: KIMI_K3_INFERENCE_MODEL,
+  });
 });

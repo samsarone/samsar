@@ -1,6 +1,7 @@
 import {
   DEFAULT_INFERENCE_MODEL,
   GEMINI_31_PRO_INFERENCE_MODEL,
+  KIMI_K3_INFERENCE_MODEL,
   QWEN_37_INFERENCE_MODEL,
   normalizeInferenceModel,
 } from '../../consts/InferenceModels.js';
@@ -93,6 +94,10 @@ const INFERENCE_MODEL_ALIASES = Object.freeze({
   ALIBABAQWEN38: QWEN_37_INFERENCE_MODEL,
   ALIBABACLOUDQWEN38: QWEN_37_INFERENCE_MODEL,
   DASHSCOPEQWEN38: QWEN_37_INFERENCE_MODEL,
+  KIMIK3: KIMI_K3_INFERENCE_MODEL,
+  KIMI3: KIMI_K3_INFERENCE_MODEL,
+  MOONSHOTKIMIK3: KIMI_K3_INFERENCE_MODEL,
+  MOONSHOTK3: KIMI_K3_INFERENCE_MODEL,
 });
 
 const CUSTOM_ADAPTER_OPERATION_KEYS_WITHOUT_TTS = Object.freeze([
@@ -210,7 +215,9 @@ export function normalizeInferenceModelFromPayload(payload = {}) {
 
   const normalizedModel = INFERENCE_MODEL_ALIASES[token];
   if (!normalizedModel) {
-    throw makeValidationError('inference_model must be one of: gpt-5.6-sol, gemini-3.1-pro, QWEN3.7.');
+    throw makeValidationError(
+      'inference_model must be one of: gpt-5.6-sol, gemini-3.1-pro, QWEN3.7, kimi-k3.'
+    );
   }
 
   return normalizedModel;

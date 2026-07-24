@@ -120,7 +120,7 @@ test('retries invalid speech repairs three times with backoff and preserves item
     requests[2].externalRequestContext.requestKey,
     'text_to_video:speech-repair-1-4-2:attempt-3',
   );
-  assert.equal(requests[0].max_tokens, 256);
+  assert.equal(requests[0].max_tokens, 512);
   assert.equal(requests[0].reasoning.effort, 'low');
   assert.deepEqual(delays, [1000, 2000]);
   assert.equal(receipts.length, 3);

@@ -14,6 +14,7 @@ import {
   createGoogleGeminiChatCompletion,
   getDefaultInferenceModel,
   isGeminiInferenceModel,
+  isKimiInferenceModel,
   isQwenInferenceModel,
   normalizeInferenceModel,
 } from '../../ai_utils/GoogleGemini.js';
@@ -538,6 +539,18 @@ export async function sendAssistantMessageRequest(messageList, userInferenceMode
       return response.choices[0].message;
     }
 
+    if (isKimiInferenceModel(modelName)) {
+      const response = await createCompatibleChatCompletion(openai, basePayload);
+      await recordInferenceProviderUsage({
+        basePayload,
+        provider: 'kimi',
+        response,
+        auditContext,
+        reasoningEffort: GPT_56_SOL_REASONING_EFFORT,
+      });
+      return response.choices[0].message;
+    }
+
     if (isResponsesOnlyModel(modelName)) {
       const body = {
         model: modelName,
@@ -576,9 +589,16 @@ export async function sendAssistantMessageRequest(messageList, userInferenceMode
     return resData;
   } catch (error) {
     const isGeminiModel = isGeminiInferenceModel(modelName);
+    const isKimiModel = isKimiInferenceModel(modelName);
     const isQwenModel = isQwenInferenceModel(modelName);
     console.error('[Inference][sendAssistantMessageRequest] request failed', {
-      provider: isQwenModel ? 'alibaba_qwen' : isGeminiModel ? 'google_gemini' : 'openai',
+      provider: isQwenModel
+        ? 'alibaba_qwen'
+        : isGeminiModel
+          ? 'google_gemini'
+          : isKimiModel
+            ? 'kimi'
+            : 'openai',
       inferenceModel: userInferenceModel,
       model: modelName,
       messageCount: Array.isArray(messageList) ? messageList.length : 0,

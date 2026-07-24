@@ -8,6 +8,7 @@ export const QWEN_37_INFERENCE_MODEL = 'QWEN3.7';
 export const QWEN_38_MAX_PREVIEW_MODEL = 'qwen3.8-max-preview';
 export const QWEN_37_MAX_MODEL = 'qwen3.7-max';
 export const QWEN_37_PLUS_MODEL = 'qwen3.7-plus';
+export const KIMI_K3_INFERENCE_MODEL = 'kimi-k3';
 const DEFAULT_GEMINI_MODEL = 'gemini-3.1-pro-preview';
 const DEFAULT_GEMINI_LOCATION = 'global';
 const DEFAULT_SCOPES = ['https://www.googleapis.com/auth/cloud-platform'];
@@ -41,6 +42,12 @@ const QWEN_37_ALIAS_TOKENS = new Set([
   'DASHSCOPEQWEN38',
   'DASHSCOPEQWEN38MAXPREVIEW',
 ]);
+const KIMI_K3_ALIAS_TOKENS = new Set([
+  'KIMIK3',
+  'KIMI3',
+  'MOONSHOTKIMIK3',
+  'MOONSHOTK3',
+]);
 const DEFAULT_GEMINI_3_THINKING_LEVEL = 'MEDIUM';
 const GEMINI_3_THINKING_LEVELS = new Set(['LOW', 'MEDIUM', 'HIGH']);
 
@@ -61,6 +68,13 @@ export function isQwenInferenceModel(value) {
     normalized === QWEN_37_MAX_MODEL ||
     normalized === QWEN_37_PLUS_MODEL ||
     QWEN_37_ALIAS_TOKENS.has(normalizeAliasToken(value));
+}
+
+export function isKimiInferenceModel(value) {
+  const normalized = normalizeString(value).toLowerCase();
+  return normalized === KIMI_K3_INFERENCE_MODEL ||
+    normalized === 'kimi-k3-latest' ||
+    KIMI_K3_ALIAS_TOKENS.has(normalizeAliasToken(value));
 }
 
 function getConfiguredProjectId() {
@@ -127,6 +141,9 @@ export function normalizeInferenceModel(value) {
   }
   if (isQwenInferenceModel(value)) {
     return QWEN_37_INFERENCE_MODEL;
+  }
+  if (isKimiInferenceModel(value)) {
+    return KIMI_K3_INFERENCE_MODEL;
   }
   return DEFAULT_INFERENCE_MODEL;
 }

@@ -3,6 +3,7 @@ import test from 'node:test';
 
 import {
   buildResponsesRequest,
+  getCompatibleAssistantResponseFormat,
   getAssistantCompletionTimeoutMs,
   resolveAssistantProviderMediaInput,
 } from './AssistantAPI.js';
@@ -15,6 +16,38 @@ test('forces high reasoning for GPT 5.6 Sol assistant requests', () => {
   });
 
   assert.deepEqual(request.reasoning, { effort: 'high' });
+});
+
+test('translates Responses structured output into strict chat JSON schema for Kimi-compatible adapters', () => {
+  const schema = {
+    type: 'object',
+    properties: { title: { type: 'string' } },
+    required: ['title'],
+    additionalProperties: false,
+  };
+  const request = buildResponsesRequest({
+    model: 'kimi-k3',
+    inputMessages: [{ role: 'user', content: 'Return JSON' }],
+    payload: {
+      text: {
+        format: {
+          type: 'json_schema',
+          name: 'assistant_result',
+          strict: false,
+          schema,
+        },
+      },
+    },
+  });
+
+  assert.deepEqual(getCompatibleAssistantResponseFormat(request), {
+    type: 'json_schema',
+    json_schema: {
+      name: 'assistant_result',
+      schema,
+      strict: true,
+    },
+  });
 });
 
 test('assistant completions default to a ten-minute timeout', () => {

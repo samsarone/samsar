@@ -14,6 +14,7 @@ import {
   createGoogleGeminiChatCompletion,
   getDefaultInferenceModel,
   isGeminiInferenceModel,
+  isKimiInferenceModel,
   isQwenInferenceModel,
   normalizeInferenceModel,
 } from './GoogleGemini.js';
@@ -284,7 +285,11 @@ async function getDescriptionForImage(activeImageRemoteLink, userInferenceModel 
     provider = 'googleCloud';
     response = await createGoogleGeminiChatCompletion(inferencePayload);
   } else {
-    provider = isQwenInferenceModel(model) ? 'alibabaCloud' : 'openai';
+    provider = isQwenInferenceModel(model)
+      ? 'alibabaCloud'
+      : isKimiInferenceModel(model)
+        ? 'kimi'
+        : 'openai';
     response = await createCompatibleChatCompletion(openai, inferencePayload);
   }
 

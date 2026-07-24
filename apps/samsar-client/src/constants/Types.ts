@@ -372,6 +372,10 @@ export const ASSISTANT_MODEL_TYPES = [
     label: 'Qwen 3.7 Plus',
     value: 'QWEN3.7',
   },
+  {
+    label: 'Kimi K3',
+    value: 'kimi-k3',
+  },
 
 
 ];
@@ -390,6 +394,10 @@ export const INFERENCE_MODEL_TYPES = [
   {
     label: 'Qwen 3.7 Plus',
     value: 'QWEN3.7',
+  },
+  {
+    label: 'Kimi K3',
+    value: 'kimi-k3',
   },
 
 

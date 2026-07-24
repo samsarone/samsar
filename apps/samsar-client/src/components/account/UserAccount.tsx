@@ -83,7 +83,7 @@ export default function UserAccount() {
       ? "Loading configured inference models..."
       : hasConfiguredInferenceModels
         ? "Only models supported by your configured standalone providers are shown."
-        : "Configure OpenAI, Google Cloud, Alibaba Cloud, OpenRouter, or a Samsar API key in setup to enable inference and assistant models."
+        : "Configure OpenAI, Google Cloud, Alibaba Cloud, Kimi, OpenRouter, or a Samsar API key in setup to enable inference and assistant models."
     : "";
 
   const validPanels = [

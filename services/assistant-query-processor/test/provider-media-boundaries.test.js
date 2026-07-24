@@ -4,6 +4,7 @@ import test from 'node:test';
 import { sendAssistantGeminiCompletionRequest } from '../src/GoogleGemini.js';
 import { sendAssistantOpenAICompletionRequest } from '../src/OpenAI.js';
 import { createQwenChatCompletion } from '../src/Qwen.js';
+import { createKimiK3ChatCompletion } from '../src/KimiK3.js';
 import {
   createOpenRouterChatCompletion,
   createSamsarExternalChatCompletion,
@@ -95,6 +96,49 @@ test('native Qwen rebuilds and freshly resolves its media payload on every retry
   assert.notEqual(payloads[0], payloads[1]);
   assert.equal(requestOptions.every((options) => options.maxRetries === 0), true);
   assert.equal(requestOptions.every((options) => options.signal instanceof AbortSignal), true);
+});
+
+test('native Kimi rereads mounted image bytes on every owned retry attempt', async () => {
+  const readImages = [];
+  const payloads = [];
+  const client = {
+    chat: {
+      completions: {
+        create: async (payload) => {
+          payloads.push(payload);
+          if (payloads.length === 1) throw retryableFailure();
+          return { model: payload.model, choices: [{ message: { content: 'ok' } }] };
+        },
+      },
+    },
+    files: { delete: async () => {} },
+  };
+
+  await createKimiK3ChatCompletion({
+    model: 'kimi-k3',
+    messages: imageMessages(),
+    maxRetries: 1,
+  }, {
+    client,
+    readLocalMediaBuffer: async (source, { mediaKind }) => {
+      assert.equal(mediaKind, 'image');
+      readImages.push(source);
+      return Buffer.from(readImages.length === 1 ? [1, 2, 3] : [4, 5, 6]);
+    },
+    resolveMediaUrl: async () => assert.fail('mounted Kimi media must not use a tunnel'),
+    retryOptions: retryOptions(),
+  });
+
+  assert.equal(payloads.length, 2);
+  assert.equal(readImages.length, 2);
+  assert.equal(
+    payloads[0].messages[0].content[0].image_url.url,
+    'data:image/png;base64,AQID',
+  );
+  assert.equal(
+    payloads[1].messages[0].content[0].image_url.url,
+    'data:image/png;base64,BAUG',
+  );
 });
 
 test('OpenRouter rebuilds and freshly resolves its media payload inside each external retry', async () => {
