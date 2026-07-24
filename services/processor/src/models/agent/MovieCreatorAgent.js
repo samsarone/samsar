@@ -40,7 +40,11 @@ const DEFAULT_QWEN_THEME_NARRATIVE_TIMEOUT_MS = 20 * 60 * 1000;
 const NARRATIVE_SPEECH_REPAIR_MAX_ATTEMPTS = 3;
 const NARRATIVE_SPEECH_REPAIR_RETRY_SHRINK_RATIO = 0.1;
 const QWEN_THEME_KEYWORDS_MAX_TOKENS = 16000;
-const QWEN_NARRATIVE_SPEECH_REPAIR_MAX_TOKENS = 2048;
+// A speech repair returns one short line, so reserving the general Qwen output
+// allowance can trigger OpenRouter's affordability check after the larger
+// narrative request has already consumed credits.
+const QWEN_NARRATIVE_SPEECH_REPAIR_MAX_TOKENS = 256;
+const QWEN_NARRATIVE_SPEECH_REPAIR_REASONING_EFFORT = 'low';
 const QWEN_SCREENPLAY_STORYLINE_MAX_TOKENS = 24000;
 const NarrativeGenderField = z.enum(['M', 'F', '']).describe(
   'For speech sounds, use exactly "M" or "F" uppercase; never use an empty string for speech. Use an empty string only for sound_effect items.'
@@ -803,7 +807,9 @@ export async function rewriteNarrativeSpeechItemToFitScene({
   }
 
   const modelName = getModelForUserInferenceModel(inferenceModel);
-  const effectiveReasoningEffort = getThemeNarrativeReasoningEffort(modelName);
+  const effectiveReasoningEffort = isQwenInferenceModel(modelName)
+    ? QWEN_NARRATIVE_SPEECH_REPAIR_REASONING_EFFORT
+    : getThemeNarrativeReasoningEffort(modelName);
   const configuredTimeoutMs = normalizePositiveInteger(
     options.timeoutMs ?? process.env.OPENAI_NARRATIVE_TIMEOUT_MS,
     isQwenInferenceModel(modelName)
