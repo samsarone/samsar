@@ -1,7 +1,10 @@
 export const DEFAULT_INFERENCE_MODEL_VALUE = "gpt-5.6-sol";
 export const QWEN_INFERENCE_MODEL_VALUE = "QWEN3.7";
 export const HOSTED_QWEN_INFERENCE_MODEL_VALUE = QWEN_INFERENCE_MODEL_VALUE;
-export const HOSTED_QWEN_INFERENCE_MODEL_LABEL = "Qwen 3.7 Plus";
+export const OPENROUTER_QWEN_INFERENCE_MODEL_LABEL =
+  "Qwen 3.7 Max / Qwen 3.7 Plus Vision";
+export const HOSTED_QWEN_INFERENCE_MODEL_LABEL =
+  OPENROUTER_QWEN_INFERENCE_MODEL_LABEL;
 
 const DEPLOYMENT_INFERENCE_MODELS_BY_PROVIDER = Object.freeze({
   openai: ["gpt-5.6-sol"],
@@ -256,7 +259,9 @@ export function labelOptionsForDeploymentInferenceProviders(
     ? providerEndpointTypes?.alibabaCloud === "token_plan"
       ? "Qwen 3.8 Max Preview / Qwen 3.7 Plus Vision"
       : "Qwen 3.7 Plus"
-    : "Qwen 3.7 Plus";
+    : qwenProvider === "openrouter" || qwenProvider === "samsar"
+      ? OPENROUTER_QWEN_INFERENCE_MODEL_LABEL
+      : "Qwen 3.7 Plus";
 
   return options.map((option) => (
     normalizeDeploymentInferenceModelValue(option?.value) === QWEN_INFERENCE_MODEL_VALUE

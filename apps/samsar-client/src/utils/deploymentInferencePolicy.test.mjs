@@ -16,13 +16,16 @@ const MODEL_OPTIONS = [
   { label: 'Qwen 3.7 Plus', value: 'QWEN3.7' },
 ];
 
-test('hosted inference exposes the OpenRouter Qwen 3.7 Plus label', () => {
+test('hosted inference labels OpenRouter Qwen text Max and vision Plus', () => {
   const hostedOptions = filterHostedInferenceModelOptions(MODEL_OPTIONS);
   assert.deepEqual(
     hostedOptions.map((option) => option.value),
     ['gpt-5.6-sol', 'gemini-3.1-pro', 'QWEN3.7'],
   );
-  assert.equal(hostedOptions[2].label, 'Qwen 3.7 Plus');
+  assert.equal(
+    hostedOptions[2].label,
+    'Qwen 3.7 Max / Qwen 3.7 Plus Vision',
+  );
 });
 
 test('standalone exposes Qwen only with an explicit model and validated Alibaba provenance', () => {
@@ -80,6 +83,12 @@ test('provider fallbacks expose their configured inference models', () => {
     extractDeploymentInferenceModelValues({ deployment: { providers: ['samsar'] } }),
     ['gpt-5.6-sol', 'gemini-3.1-pro', 'QWEN3.7'],
   );
+  assert.equal(
+    labelOptionsForDeploymentInferenceProviders(MODEL_OPTIONS, {
+      'QWEN3.7': 'samsar',
+    })[2].label,
+    'Qwen 3.7 Max / Qwen 3.7 Plus Vision',
+  );
   assert.deepEqual(
     extractDeploymentInferenceModelValues({ deployment: { providers: ['openai', 'googleCloud'] } }),
     ['gpt-5.6-sol', 'gemini-3.1-pro'],
@@ -107,7 +116,7 @@ test('OpenRouter alone exposes every inference model with validated Qwen provena
     labelOptionsForDeploymentInferenceProviders(MODEL_OPTIONS, {
       'QWEN3.7': 'openrouter',
     })[2].label,
-    'Qwen 3.7 Plus',
+    'Qwen 3.7 Max / Qwen 3.7 Plus Vision',
   );
   assert.deepEqual(extractDeploymentInferenceModelValues(payload), [
     'gpt-5.6-sol',

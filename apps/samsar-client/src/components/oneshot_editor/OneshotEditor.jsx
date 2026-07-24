@@ -239,10 +239,6 @@ const IMAGE_LIST_TO_VIDEO_VIDEO_MODEL_KEYS = [
   'CUSTOM_IMAGE_TO_VIDEO',
 ];
 const DEFAULT_INFERENCE_MODEL = 'gpt-5.6-sol';
-const INFERENCE_MODEL_LABEL_BY_VALUE = INFERENCE_MODEL_TYPES.reduce((result, option) => {
-  result[option.value] = option.label;
-  return result;
-}, {});
 const JSON_MODE_ASPECT_RATIOS = ['16:9', '9:16'];
 const JSON_MODE_VIDEO_MODEL_SUB_TYPES = ['anime', '3d_animation', 'clay', 'comic', 'cyberpunk'];
 const GENERATION_STEP_MODE_ONE_STEP = 'one_step';
@@ -512,9 +508,10 @@ function isSupportedInferenceModelKey(value, options = INFERENCE_MODEL_TYPES) {
   ));
 }
 
-function getInferenceModelDisplayLabel(value) {
+function getInferenceModelDisplayLabel(value, options = INFERENCE_MODEL_TYPES) {
   const normalizedValue = normalizeInferenceModelKey(value);
-  return INFERENCE_MODEL_LABEL_BY_VALUE[normalizedValue] || normalizedValue;
+  return getInferenceModelOption(normalizedValue, DEFAULT_INFERENCE_MODEL, options)?.label ||
+    normalizedValue;
 }
 
 function normalizeModeToken(value) {
@@ -6419,7 +6416,7 @@ export default function OneshotEditor() {
     [sessionDetails],
   );
   const sessionInferenceModelLabel = sessionInferenceModelKey
-    ? getInferenceModelDisplayLabel(sessionInferenceModelKey)
+    ? getInferenceModelDisplayLabel(sessionInferenceModelKey, inferenceModelOptions)
     : '';
   const shouldCollapseOriginalRequest = renderState === 'complete' && Boolean(videoLink);
   const shouldShowOriginalRequestInputs =
