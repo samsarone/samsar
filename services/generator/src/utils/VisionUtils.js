@@ -10,12 +10,15 @@ import {
   DEFAULT_INFERENCE_MODEL,
   GEMINI_31_PRO_INFERENCE_MODEL,
   GPT_56_SOL_REASONING_EFFORT,
+  KIMI_K3_INFERENCE_MODEL,
   QWEN_37_INFERENCE_MODEL,
   getDefaultUserInferenceModel,
   isGeminiInferenceModel,
+  isKimiInferenceModel,
   isQwenInferenceModel,
 } from '../inference/InferenceModels.js';
 import { createGoogleGeminiChatCompletion } from '../inference/GoogleGemini.js';
+import { createKimiK3ChatCompletion } from '../inference/KimiK3.js';
 import { createQwenChatCompletion } from '../inference/Qwen.js';
 import {
   createSamsarExternalChatCompletion,
@@ -116,6 +119,9 @@ async function resolveVisionImageUrl(remoteImageUrl = '') {
 function resolveVisionInferenceModel(userInferenceModel = getDefaultUserInferenceModel()) {
   if (isQwenInferenceModel(userInferenceModel)) {
     return QWEN_37_INFERENCE_MODEL;
+  }
+  if (isKimiInferenceModel(userInferenceModel)) {
+    return KIMI_K3_INFERENCE_MODEL;
   }
   return isGeminiInferenceModel(userInferenceModel)
     ? GEMINI_31_PRO_INFERENCE_MODEL
@@ -392,6 +398,8 @@ Provide an information-dense, condensed and thorough description in 3000 charact
         ? createSamsarExternalChatCompletion({ ...routingPayload, externalMaxRetries: 0 })
         : isQwenInferenceModel(inferenceModel)
           ? createQwenChatCompletion(routingPayload)
+          : isKimiInferenceModel(inferenceModel)
+            ? createKimiK3ChatCompletion(routingPayload)
           : openai.chat.completions.create(activePayload, { maxRetries: 0 });
     },
     {
@@ -515,6 +523,8 @@ Return only a single integer between 0 and 100.`;
         ? createQwenChatCompletion(routingPayload)
         : isGeminiInferenceModel(inferenceModel)
           ? createGoogleGeminiChatCompletion(messages, inferenceModel)
+          : isKimiInferenceModel(inferenceModel)
+            ? createKimiK3ChatCompletion(routingPayload)
           : openai.chat.completions.create(inferencePayload, { maxRetries: 0 }),
     {
       operationName: 'image score',
@@ -530,8 +540,10 @@ Return only a single integer between 0 and 100.`;
 }
 
 export const __testOnly__ = {
+  getDescriptionForImage,
   getVisionInferenceErrorStatus,
   getVisionInferenceRetryDelayMs,
   getQwenVisionMaxTokens,
   isRetryableVisionInferenceError,
+  resolveVisionInferenceModel,
 };

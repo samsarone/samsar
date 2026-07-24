@@ -10,6 +10,7 @@ export const QWEN_37_INFERENCE_MODEL = 'QWEN3.7';
 export const QWEN_38_MAX_PREVIEW_MODEL = 'qwen3.8-max-preview';
 export const QWEN_37_MAX_MODEL = 'qwen3.7-max';
 export const QWEN_37_PLUS_MODEL = 'qwen3.7-plus';
+export const KIMI_K3_INFERENCE_MODEL = 'kimi-k3';
 const DEFAULT_INFERENCE_MODEL = GPT_56_SOL_INFERENCE_MODEL;
 const GEMINI_31_PRO_INFERENCE_MODEL = 'gemini-3.1-pro';
 const DEFAULT_GEMINI_MODEL = 'gemini-3.1-pro-preview';
@@ -49,6 +50,16 @@ const QWEN_37_ALIAS_TOKENS = new Set([
   'ALIBABACLOUDQWEN38',
   'ALIBABACLOUDQWEN38MAXPREVIEW',
 ]);
+const KIMI_K3_ALIASES = new Set([
+  KIMI_K3_INFERENCE_MODEL,
+  'kimi-k3-latest',
+]);
+const KIMI_K3_ALIAS_TOKENS = new Set([
+  'KIMIK3',
+  'KIMI3',
+  'MOONSHOTK3',
+  'MOONSHOTKIMIK3',
+]);
 const GEMINI_3_THINKING_LEVEL = 'HIGH';
 const MIN_GEMINI_3_MAX_OUTPUT_TOKENS = 64;
 const authCache = new Map();
@@ -65,6 +76,12 @@ function isQwen37Alias(value) {
   const normalized = normalizeString(value).toLowerCase();
   return QWEN_37_ALIASES.has(normalized) ||
     QWEN_37_ALIAS_TOKENS.has(normalizeAliasToken(value));
+}
+
+export function isKimiInferenceModel(value) {
+  const normalized = normalizeString(value).toLowerCase();
+  return KIMI_K3_ALIASES.has(normalized) ||
+    KIMI_K3_ALIAS_TOKENS.has(normalizeAliasToken(value));
 }
 
 function getConfiguredProjectId() {
@@ -125,6 +142,9 @@ export function normalizeInferenceModel(value) {
   }
   if (isQwen37Alias(value)) {
     return QWEN_37_INFERENCE_MODEL;
+  }
+  if (isKimiInferenceModel(value)) {
+    return KIMI_K3_INFERENCE_MODEL;
   }
   return DEFAULT_INFERENCE_MODEL;
 }

@@ -43,7 +43,7 @@ const QWEN_THEME_KEYWORDS_MAX_TOKENS = 16000;
 // A speech repair returns one short line, so reserving the general Qwen output
 // allowance can trigger OpenRouter's affordability check after the larger
 // narrative request has already consumed credits.
-const QWEN_NARRATIVE_SPEECH_REPAIR_MAX_TOKENS = 256;
+const QWEN_NARRATIVE_SPEECH_REPAIR_MAX_TOKENS = 512;
 const QWEN_NARRATIVE_SPEECH_REPAIR_REASONING_EFFORT = 'low';
 const QWEN_SCREENPLAY_STORYLINE_MAX_TOKENS = 24000;
 const NarrativeGenderField = z.enum(['M', 'F', '']).describe(

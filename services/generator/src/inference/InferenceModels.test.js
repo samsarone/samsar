@@ -5,7 +5,9 @@ import {
   DEFAULT_GEMINI_31_PRO_VERTEX_MODEL,
   GEMINI_31_PRO_INFERENCE_MODEL,
   GPT_56_SOL_REASONING_EFFORT,
+  KIMI_K3_INFERENCE_MODEL,
   QWEN_37_INFERENCE_MODEL,
+  isKimiInferenceModel,
   isQwenInferenceModel,
   getProviderModelForInferenceModel,
   normalizeGeminiProviderModel,
@@ -41,4 +43,19 @@ test('normalizes Gemini 3.1 Pro inference aliases to the canonical key', () => {
 
   assert.equal(getProviderModelForInferenceModel('Gemini 3.1 Pro'), DEFAULT_GEMINI_31_PRO_VERTEX_MODEL);
   assert.equal(normalizeGeminiProviderModel('gemini31pro'), DEFAULT_GEMINI_31_PRO_VERTEX_MODEL);
+});
+
+test('normalizes Kimi K3 aliases to the native provider model', () => {
+  for (const alias of [
+    'kimi-k3',
+    'KIMIK3',
+    'Kimi K3',
+    'kimi-k3-latest',
+    'Moonshot Kimi K3',
+    'Moonshot K3',
+  ]) {
+    assert.equal(normalizeInferenceModel(alias), KIMI_K3_INFERENCE_MODEL);
+    assert.equal(isKimiInferenceModel(alias), true);
+  }
+  assert.equal(getProviderModelForInferenceModel('Kimi K3'), 'kimi-k3');
 });

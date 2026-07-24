@@ -13,6 +13,7 @@ import { deductExternalUserCredits } from '../external/User.js';
 import {
   GPT_56_SOL_REASONING_EFFORT,
   isGeminiInferenceModel,
+  isKimiInferenceModel,
   isQwenInferenceModel,
   normalizeInferenceModel,
 } from '../../consts/InferenceModels.js';
@@ -168,6 +169,7 @@ export async function createAssistantCompletion(userId, payload = {}, { external
   });
   const usesOpenAIResponses =
     !isGeminiInferenceModel(selectedAssistantModel) &&
+    !isKimiInferenceModel(selectedAssistantModel) &&
     !isQwenInferenceModel(selectedAssistantModel);
   const previousResponseId = usesOpenAIResponses
     ? resolvePreviousResponseId({ payload, sessionMessages, inputMessages })
@@ -373,6 +375,9 @@ export function buildResponsesRequest({ model, inputMessages, payload = {}, prev
   if (payload.text && typeof payload.text === 'object') {
     body.text = payload.text;
   }
+  if (payload.response_format && typeof payload.response_format === 'object') {
+    body.response_format = payload.response_format;
+  }
   if (payload.metadata && typeof payload.metadata === 'object') {
     body.metadata = payload.metadata;
   }
@@ -392,6 +397,37 @@ export function buildResponsesRequest({ model, inputMessages, payload = {}, prev
   body.reasoning = { effort: GPT_56_SOL_REASONING_EFFORT };
 
   return body;
+}
+
+export function getCompatibleAssistantResponseFormat(responseRequest = {}) {
+  if (
+    responseRequest.response_format &&
+    typeof responseRequest.response_format === 'object'
+  ) {
+    return responseRequest.response_format;
+  }
+
+  const format = responseRequest.text?.format;
+  if (!format || typeof format !== 'object') {
+    return undefined;
+  }
+  if (format.type === 'json_object') {
+    return { type: 'json_object' };
+  }
+  if (format.type !== 'json_schema' || !format.name || !format.schema) {
+    return undefined;
+  }
+  return {
+    type: 'json_schema',
+    json_schema: {
+      name: format.name,
+      schema: format.schema,
+      strict: true,
+      ...(format.description !== undefined
+        ? { description: format.description }
+        : {}),
+    },
+  };
 }
 
 export async function resolveAssistantProviderMediaInput(input, dependencyOverrides = {}) {
@@ -425,6 +461,7 @@ async function createAssistantResponse(
 ) {
   if (
     isGeminiInferenceModel(selectedAssistantModel) ||
+    isKimiInferenceModel(selectedAssistantModel) ||
     isQwenInferenceModel(selectedAssistantModel) ||
     selectedAssistantModelAuthorization === 'deployed'
   ) {
@@ -432,6 +469,7 @@ async function createAssistantResponse(
     // canonical input here so native Gemini can read mounted bytes as inlineData
     // and URL-based adapters can create fresh URLs at their dispatch boundary.
     const providerRequest = responseRequest;
+    const responseFormat = getCompatibleAssistantResponseFormat(providerRequest);
     const chatResponse = await createCompatibleChatCompletion(openai, {
       model: selectedAssistantModel,
       messages: providerRequest.input,
@@ -448,6 +486,7 @@ async function createAssistantResponse(
       ...(providerRequest.max_output_tokens !== undefined
         ? { max_tokens: providerRequest.max_output_tokens }
         : {}),
+      ...(responseFormat ? { response_format: responseFormat } : {}),
       ...(providerRequest.user !== undefined ? { user: providerRequest.user } : {}),
       ...(providerRequest.tools !== undefined ? { tools: providerRequest.tools } : {}),
       ...(providerRequest.tool_choice !== undefined ? { tool_choice: providerRequest.tool_choice } : {}),

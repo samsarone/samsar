@@ -11,10 +11,12 @@ import {
   GPT_56_SOL_REASONING_EFFORT,
   createGoogleGeminiChatCompletion,
   isGeminiInferenceModel,
+  isKimiInferenceModel,
   isQwenInferenceModel,
   normalizeInferenceModel,
 } from './GoogleGemini.js';
 import { createAlibabaQwenChatCompletion } from './AlibabaQwen.js';
+import { createKimiK3ChatCompletion } from './KimiK3.js';
 import { recordProviderUsageLog } from './ProviderUsageAudit.js';
 import {
   createSamsarExternalChatCompletion,
@@ -446,6 +448,18 @@ export async function sendAssistantMessageRequest(messageList, userInferenceMode
       return response.choices[0].message;
     }
 
+    if (isKimiInferenceModel(modelName)) {
+      const response = await createKimiK3ChatCompletion(basePayload);
+      await recordInferenceProviderUsage({
+        messageList,
+        modelName,
+        provider: 'kimi',
+        response,
+        auditContext,
+      });
+      return response.choices[0].message;
+    }
+
     if (RESPONSES_ONLY_MODELS.has(modelName)) {
       const providerPayload = await normalizeProviderMediaPayload(
         { messages: messageList },
@@ -514,7 +528,8 @@ export async function sendAssistantStructuredMessageRequest(
       auditContext.authorization;
     const payload = {
       messages: messageList,
-      model: isQwenInferenceModel(selectedInferenceModel)
+      model: isQwenInferenceModel(selectedInferenceModel) ||
+        isKimiInferenceModel(selectedInferenceModel)
         ? selectedInferenceModel
         : "gpt-4o-2024-11-20",
       response_format: zodResponseFormat(ScreenplayTransitionExtraction, "screenplay_transition_extraction"),
@@ -528,6 +543,8 @@ export async function sendAssistantStructuredMessageRequest(
       response = await createSamsarExternalChatCompletion(payload);
     } else if (isQwenInferenceModel(payload.model)) {
       response = await createAlibabaQwenChatCompletion(payload);
+    } else if (isKimiInferenceModel(payload.model)) {
+      response = await createKimiK3ChatCompletion(payload);
     } else {
       response = await getOpenAIClient().chat.completions.create(
         await normalizeProviderMediaPayload(nativePayload, normalizeProviderMediaUrl),

@@ -419,60 +419,7 @@ function findDefaultVideoModelOption(options = [], savedValue = '') {
 }
 
 function coerceSupportedInferenceModelKey(value) {
-  if (typeof value !== 'string') {
-    return '';
-  }
-  const normalized = value.trim().toLowerCase();
-  if (
-    normalized === 'qwen3.8' ||
-    normalized === 'qwen3.8-max-preview' ||
-    normalized === 'qwen-3.8' ||
-    normalized === 'qwen 3.8'
-  ) {
-    return 'QWEN3.7';
-  }
-  if (
-    normalized === 'qwen3.7' ||
-    normalized === 'qwen3.7-max' ||
-    normalized === 'qwen3.7-plus' ||
-    normalized === 'qwen-3.7' ||
-    normalized === 'qwen 3.7' ||
-    normalized === 'qwen37' ||
-    normalized === 'qwen37max' ||
-    normalized === 'qwen37plus' ||
-    normalized === 'alibaba qwen 3.7' ||
-    normalized === 'alibaba cloud qwen 3.7'
-  ) {
-    return 'QWEN3.7';
-  }
-  if (
-    normalized === 'gemini-3.1-pro' ||
-    normalized === 'gemini-3.1-pro-preview' ||
-    normalized === 'gemini-3-pro' ||
-    normalized === 'gemini-3-pro-preview' ||
-    normalized === 'gemini 3.1 pro' ||
-    normalized === 'gemini 3.1 pro preview' ||
-    normalized === 'gemini 3 pro' ||
-    normalized === 'gemini 3 pro preview' ||
-    normalized === 'gemini31pro' ||
-    normalized === 'gemini31propreview' ||
-    normalized === 'gemini3pro' ||
-    normalized === 'gemini3propreview'
-  ) {
-    return 'gemini-3.1-pro';
-  }
-  if (normalized === DEFAULT_INFERENCE_MODEL || normalized.startsWith(`${DEFAULT_INFERENCE_MODEL}-`)) {
-    return DEFAULT_INFERENCE_MODEL;
-  }
-  if (
-    normalized === 'gpt-5.6' ||
-    normalized === 'gpt 5.6 sol' ||
-    normalized === 'gpt56' ||
-    normalized === 'gpt56sol'
-  ) {
-    return DEFAULT_INFERENCE_MODEL;
-  }
-  return '';
+  return normalizeDeploymentInferenceModelValue(value);
 }
 
 function normalizeInferenceModelKey(value) {

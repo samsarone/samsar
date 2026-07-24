@@ -1,10 +1,12 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import OpenAI from 'openai';
+import SamsarClient from 'samsar-js';
 
 import {
   DOCKER_INFERENCE_PROVIDER,
   createOpenRouterChatCompletion,
+  createSamsarExternalChatCompletion,
   resolveConfiguredInferenceProvider,
   shouldUseOpenRouterInference,
   shouldUseSamsarExternalInference,
@@ -16,11 +18,15 @@ const ENV_KEYS = [
   'CURRENT_ENV',
   'DASHSCOPE_API_KEY',
   'GOOGLE_APPLICATION_CREDENTIALS_JSON',
+  'KIMI_K3_API_KEY',
   'OPENAI_API_KEY',
   'OPENROUTER_API_KEY',
   'QWEN_API_KEY',
   'SAMSAR_API_KEY',
+  'SAMSAR_DEPLOYMENT_EDITION',
+  'SAMSAR_EDITION',
   'SAMSAR_EXTERNAL_INFERENCE_ENABLED',
+  'SAMSAR_FORCE_EXTERNAL_INFERENCE',
   'SAMSAR_QWEN_OPENROUTER_ONLY',
 ];
 
@@ -72,6 +78,72 @@ test('Qwen routing falls back to Samsar in Docker when no native key exists', ()
   });
 });
 
+test('Kimi K3 routing prefers its native key and falls back to Samsar-js', () => {
+  withEnvironment({
+    CURRENT_ENV: 'docker',
+    KIMI_K3_API_KEY: 'kimi-key',
+    SAMSAR_API_KEY: 'samsar-key',
+  }, () => {
+    assert.equal(
+      resolveConfiguredInferenceProvider('Kimi K3'),
+      DOCKER_INFERENCE_PROVIDER.KIMI,
+    );
+    assert.equal(shouldUseSamsarExternalInference({
+      model: 'Kimi K3',
+      authorization: 'native',
+    }), false);
+  });
+
+  withEnvironment({
+    CURRENT_ENV: 'docker',
+    SAMSAR_API_KEY: 'samsar-key',
+  }, () => {
+    assert.equal(
+      resolveConfiguredInferenceProvider('kimi-k3'),
+      DOCKER_INFERENCE_PROVIDER.SAMSAR,
+    );
+    assert.equal(shouldUseSamsarExternalInference({
+      model: 'kimi-k3',
+      authorization: 'native',
+    }), true);
+  });
+});
+
+test('Kimi K3 Samsar-js fallback preserves the model and forces high reasoning', async (t) => {
+  const previous = Object.fromEntries(ENV_KEYS.map((key) => [key, process.env[key]]));
+  t.after(() => {
+    for (const key of ENV_KEYS) {
+      if (previous[key] === undefined) delete process.env[key];
+      else process.env[key] = previous[key];
+    }
+  });
+  for (const key of ENV_KEYS) delete process.env[key];
+  Object.assign(process.env, {
+    CURRENT_ENV: 'docker',
+    SAMSAR_API_KEY: 'kimi-fallback-key',
+  });
+
+  let capturedPayload;
+  t.mock.method(
+    SamsarClient.prototype,
+    'createV2ExternalChatCompletion',
+    async (payload) => {
+      capturedPayload = payload;
+      return { choices: [{ message: { role: 'assistant', content: 'ok' } }] };
+    },
+  );
+
+  const response = await createSamsarExternalChatCompletion({
+    model: 'Kimi K3',
+    reasoning_effort: 'low',
+    messages: [{ role: 'user', content: 'hello' }],
+  });
+
+  assert.equal(response.choices[0].message.content, 'ok');
+  assert.equal(capturedPayload.model, 'kimi-k3');
+  assert.equal(capturedPayload.reasoning_effort, 'high');
+});
+
 test('OpenRouter enables every inference model while preserving native-first routing', () => {
   withEnvironment({
     CURRENT_ENV: 'docker',
@@ -107,9 +179,10 @@ test('explicit deployed authorization overrides native credentials for every inf
     SAMSAR_API_KEY: 'samsar-key',
     DASHSCOPE_API_KEY: 'dashscope-key',
     GOOGLE_APPLICATION_CREDENTIALS_JSON: '{}',
+    KIMI_K3_API_KEY: 'kimi-key',
     OPENAI_API_KEY: 'openai-key',
   }, () => {
-    for (const model of ['QWEN3.7', 'gemini-3.1-pro', 'gpt-5.6-sol']) {
+    for (const model of ['QWEN3.7', 'gemini-3.1-pro', 'kimi-k3', 'gpt-5.6-sol']) {
       assert.equal(shouldUseSamsarExternalInference({
         model,
         authorization: 'deployed',
@@ -127,7 +200,7 @@ test('explicit native authorization preserves Samsar fallback while provider cre
       model: 'QWEN3.7',
       authorization: 'native',
     }), true);
-    for (const model of ['gemini-3.1-pro', 'gpt-5.6-sol']) {
+    for (const model of ['gemini-3.1-pro', 'kimi-k3', 'gpt-5.6-sol']) {
       assert.equal(shouldUseSamsarExternalInference({
         model,
         authorization: 'native',

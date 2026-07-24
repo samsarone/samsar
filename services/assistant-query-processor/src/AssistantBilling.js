@@ -31,6 +31,11 @@ const TOKEN_PRICING_USD_PER_MILLION = Object.freeze({
     longContextOutput: 4.8,
     longContextInputThreshold: 256_000,
   },
+  'kimi-k3': {
+    input: 3,
+    cachedInput: 0.3,
+    output: 15,
+  },
 });
 
 export function calculateAssistantCreditsFromUsage({
@@ -149,6 +154,14 @@ function resolvePricingModel(model) {
     normalized.startsWith('qwen-3.7')
   ) {
     return 'qwen3.7-max';
+  }
+
+  if (
+    normalized === 'kimi-k3' ||
+    normalized === 'kimik3' ||
+    normalized.startsWith('moonshot/kimi-k3')
+  ) {
+    return 'kimi-k3';
   }
 
   return null;

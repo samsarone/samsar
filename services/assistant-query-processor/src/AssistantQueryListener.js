@@ -8,7 +8,11 @@ import {
   calculateAssistantCreditsFromUsage,
   calculateLegacyAssistantCredits,
 } from './AssistantBilling.js';
-import { isGeminiInferenceModel, normalizeInferenceModel } from './InferenceModels.js';
+import {
+  isGeminiInferenceModel,
+  isKimiK3InferenceModel,
+  normalizeInferenceModel,
+} from './InferenceModels.js';
 import { isStandaloneEdition } from './DeploymentEnvironment.js';
 
 export async function listenToAssistantQueryRequests() {
@@ -189,7 +193,7 @@ async function processPendingAssistantRequests() {
 }
 
 function getAssistantRequestInferenceModel(inferenceModel) {
-  if (isGeminiInferenceModel(inferenceModel)) {
+  if (isGeminiInferenceModel(inferenceModel) || isKimiK3InferenceModel(inferenceModel)) {
     return typeof inferenceModel === 'string' && inferenceModel.trim()
       ? inferenceModel.trim()
       : normalizeInferenceModel(inferenceModel);

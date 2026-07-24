@@ -22,6 +22,7 @@ import mongoose from 'mongoose';
 import { SUPPORTED_SUBTITLE_FONTS_BY_LANGUAGE } from '../../consts/SubtitleFonts.js';
 import {
   isGeminiInferenceModel,
+  isKimiInferenceModel,
   isQwenInferenceModel,
   normalizeInferenceModel,
 } from '../../consts/InferenceModels.js';
@@ -1783,6 +1784,7 @@ async function generatePromptForImageSet({
   const normalizedInferenceModel = normalizeInferenceModel(inferenceModel);
   const usesSelectedNonOpenAIProvider =
     isGeminiInferenceModel(normalizedInferenceModel) ||
+    isKimiInferenceModel(normalizedInferenceModel) ||
     isQwenInferenceModel(normalizedInferenceModel);
 
   if (!openaiClient && !usesSelectedNonOpenAIProvider) {

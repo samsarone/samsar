@@ -179,3 +179,26 @@ test('does not silently price an unknown Gemini deployment as Gemini 3.1 Pro', (
   assert.equal(result.costUsd, 0);
   assert.equal(result.credits, 0);
 });
+
+test('bills Kimi K3 cached, uncached, and reasoning-inclusive output at 1.5x native cost', () => {
+  const result = calculateAssistantCreditsFromUsage({
+    model: 'kimi-k3',
+    usage: {
+      prompt_tokens: 1_000_000,
+      prompt_tokens_details: { cached_tokens: 200_000 },
+      completion_tokens: 100_000,
+      completion_tokens_details: { reasoning_tokens: 60_000 },
+    },
+  });
+
+  assert.equal(DEFAULT_ASSISTANT_PRICING_MULTIPLIER, 1.5);
+  assert.equal(result.pricingModel, 'kimi-k3');
+  assert.equal(result.costUsd, 3.96);
+  assert.equal(result.credits, 594);
+  assert.deepEqual(result.tokenPricingUsdPerMillion, {
+    input: 3,
+    cachedInput: 0.3,
+    output: 15,
+  });
+  assert.equal(result.usage.reasoningTokens, 60_000);
+});

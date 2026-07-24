@@ -7,11 +7,14 @@ import {
   GEMINI_31_PRO_INFERENCE_MODEL,
   GPT_56_SOL_INFERENCE_MODEL,
   GPT_56_SOL_REASONING_EFFORT,
+  KIMI_K3_INFERENCE_MODEL,
+  KIMI_K3_PROVIDER_MODEL,
   QWEN_37_INFERENCE_MODEL,
   QWEN_37_MAX_MODEL,
   QWEN_37_PLUS_MODEL,
   QWEN_38_MAX_PREVIEW_MODEL,
   getProviderModelForInferenceModel,
+  isKimiK3InferenceModel,
   isQwenInferenceModel,
   normalizeGeminiProviderModel,
   normalizeInferenceModel,
@@ -115,6 +118,41 @@ test('normalizes Qwen 3.7 and 3.8 aliases while defaulting native inference to P
     QWEN_37_PLUS_MODEL,
   );
   assert.equal(getAssistantReasoningEffort('QWEN3.7'), null);
+});
+
+test('normalizes Kimi K3 aliases and always uses high assistant reasoning', () => {
+  assert.equal(normalizeInferenceModel('KIMIK3'), KIMI_K3_INFERENCE_MODEL);
+  assert.equal(normalizeInferenceModel('Moonshot K3'), KIMI_K3_INFERENCE_MODEL);
+  assert.equal(isKimiK3InferenceModel('Kimi K3'), true);
+  assert.equal(
+    getProviderModelForInferenceModel('kimi-k3'),
+    KIMI_K3_PROVIDER_MODEL,
+  );
+  assert.equal(
+    getAssistantReasoningEffort('kimi-k3', { reasoningEffort: 'low' }),
+    'high',
+  );
+});
+
+test('bills Kimi K3 cached, uncached, and output tokens at native rates with 1.5x billing', () => {
+  const result = calculateAssistantCreditsFromUsage({
+    model: 'kimi-k3',
+    usage: {
+      prompt_tokens: 1_000_000,
+      prompt_tokens_details: { cached_tokens: 200_000 },
+      completion_tokens: 100_000,
+    },
+  });
+
+  assert.equal(result.pricingModel, 'kimi-k3');
+  assert.equal(result.costUsd, 3.96);
+  assert.equal(result.credits, 594);
+  assert.deepEqual(result.tokenPricingUsdPerMillion, {
+    input: 3,
+    cachedInput: 0.3,
+    output: 15,
+  });
+  assert.equal(result.pricingMultiplier, DEFAULT_ASSISTANT_PRICING_MULTIPLIER);
 });
 
 test('bills Qwen assistant usage with the configured credit conversion', () => {

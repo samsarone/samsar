@@ -10,10 +10,12 @@ import OpenAI, { toFile } from "openai";
 import {
   getDefaultUserInferenceModel,
   isGeminiInferenceModel,
+  isKimiInferenceModel,
   isQwenInferenceModel,
   normalizeInferenceModel,
 } from '../inference/InferenceModels.js';
 import { createGoogleGeminiChatCompletion } from '../inference/GoogleGemini.js';
+import { createKimiK3ChatCompletion } from '../inference/KimiK3.js';
 import { createQwenChatCompletion } from '../inference/Qwen.js';
 import {
   createSamsarExternalChatCompletion,
@@ -243,7 +245,9 @@ export async function sendAssistantMessageRequest(
     const inferenceModel = normalizeInferenceModel(userInferenceModel);
     const payload = {
       messages: messageList,
-      model: isGeminiInferenceModel(inferenceModel) || isQwenInferenceModel(inferenceModel)
+      model: isGeminiInferenceModel(inferenceModel) ||
+        isKimiInferenceModel(inferenceModel) ||
+        isQwenInferenceModel(inferenceModel)
         ? inferenceModel
         : "gpt-4o-mini",
     };
@@ -256,6 +260,11 @@ export async function sendAssistantMessageRequest(
 
     if (isQwenInferenceModel(inferenceModel)) {
       const response = await createQwenChatCompletion(routingPayload);
+      return response.choices[0].message;
+    }
+
+    if (isKimiInferenceModel(inferenceModel)) {
+      const response = await createKimiK3ChatCompletion(routingPayload);
       return response.choices[0].message;
     }
 

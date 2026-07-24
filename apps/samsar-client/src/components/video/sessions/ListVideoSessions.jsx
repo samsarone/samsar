@@ -12,6 +12,11 @@ import {
   normalizeSessionListData,
 } from './sessionListUtils.js';
 import {
+  getProjectListErrorMessage,
+  PROJECT_LIST_RETRY_DELAYS_MS,
+  shouldRetryProjectListRequest,
+} from './projectListRequest.mjs';
+import {
   isInteractiveVideoSession,
   isVideoSessionPublished,
 } from '../../../utils/videoSessionPresentation.mjs';
@@ -246,6 +251,8 @@ export default function ListVideoSessions() {
   const [totalSessions, setTotalSessions] = useState(0);
   const [refreshCounter, setRefreshCounter] = useState(0);
   const [failedPreviewSources, setFailedPreviewSources] = useState(() => new Set());
+  const [isLoading, setIsLoading] = useState(true);
+  const [listError, setListError] = useState('');
   const listRequestIdRef = useRef(0);
 
   // Rendered/Pending and Completed/Not completed were two names for the same
@@ -290,6 +297,7 @@ export default function ListVideoSessions() {
     const requestId = listRequestIdRef.current + 1;
     listRequestIdRef.current = requestId;
     let isCancelled = false;
+    let retryTimer = null;
     const queryParams = new URLSearchParams({
       page: page.toString(),
       limit: limit.toString(),
@@ -298,54 +306,84 @@ export default function ListVideoSessions() {
       publishedStatus,
     });
 
-    axios
-      .get(`${PROCESSOR_API}/video_sessions/list?${queryParams.toString()}`, headers)
-      .then(function (response) {
-        if (isCancelled || requestId !== listRequestIdRef.current) {
-          return;
-        }
+    setIsLoading(true);
+    setListError('');
 
-        // Expecting { data, total, totalPages, currentPage, pageSize } from the server
-        const responsePayload = response.data || {};
-        const total = Number(responsePayload.total) || 0;
-        const normalizedTotalPages = total > 0
-          ? Math.max(1, Math.ceil(total / limit))
-          : 1;
+    const requestSessions = (attempt = 0) => {
+      axios
+        .get(`${PROCESSOR_API}/video_sessions/list?${queryParams.toString()}`, headers)
+        .then(function (response) {
+          if (isCancelled || requestId !== listRequestIdRef.current) {
+            return;
+          }
 
-        // A page persisted before a filter change can be outside the new
-        // result set. Re-request the first valid page instead of leaving the
-        // projects grid empty.
-        const validPage = total > 0
-          ? Math.min(Math.max(1, page), normalizedTotalPages)
-          : 1;
-        if (validPage !== page) {
-          setPage(validPage);
-          return;
-        }
+          // Expecting { data, total, totalPages, currentPage, pageSize } from the server
+          const responsePayload = response.data || {};
+          const total = Number(responsePayload.total) || 0;
+          const normalizedTotalPages = total > 0
+            ? Math.max(1, Math.ceil(total / limit))
+            : 1;
 
-        const normalizedData = normalizeSessionListData(responsePayload.data);
-        setSessionList(normalizedData);
-        setFailedPreviewSources(new Set());
-        setTotalSessions(total);
-        setTotalPages(normalizedTotalPages);
+          // A page persisted before a filter change can be outside the new
+          // result set. Re-request the first valid page instead of leaving the
+          // projects grid empty.
+          const validPage = total > 0
+            ? Math.min(Math.max(1, page), normalizedTotalPages)
+            : 1;
+          if (validPage !== page) {
+            setPage(validPage);
+            return;
+          }
 
-        // If no sessions, show your intro display
-        if (normalizedData.length === 0) {
-          setShowIntroDisplay(true);
-        } else {
-          setShowIntroDisplay(false);
-        }
-      })
-      .catch(() => {
-        if (!isCancelled && requestId === listRequestIdRef.current) {
-          
-        }
-      });
+          const normalizedData = normalizeSessionListData(responsePayload.data);
+          setSessionList(normalizedData);
+          setFailedPreviewSources(new Set());
+          setTotalSessions(total);
+          setTotalPages(normalizedTotalPages);
+          setIsLoading(false);
+
+          // If no sessions, show your intro display
+          if (normalizedData.length === 0) {
+            setShowIntroDisplay(true);
+          } else {
+            setShowIntroDisplay(false);
+          }
+        })
+        .catch((error) => {
+          if (isCancelled || requestId !== listRequestIdRef.current) {
+            return;
+          }
+
+          const retryDelay = PROJECT_LIST_RETRY_DELAYS_MS[attempt];
+          if (
+            retryDelay !== undefined &&
+            shouldRetryProjectListRequest(error)
+          ) {
+            retryTimer = window.setTimeout(
+              () => requestSessions(attempt + 1),
+              retryDelay
+            );
+            return;
+          }
+
+          setIsLoading(false);
+          setListError(getProjectListErrorMessage(error));
+        });
+    };
+
+    requestSessions();
 
     return () => {
       isCancelled = true;
+      if (retryTimer !== null) {
+        window.clearTimeout(retryTimer);
+      }
     };
   }, [page, limit, renderType, aspectRatio, publishedStatus, refreshCounter]);
+
+  const retrySessionList = () => {
+    setRefreshCounter((currentValue) => currentValue + 1);
+  };
 
   // Handle filter changes
   const handleChangeRenderType = (selectedOption) => {
@@ -533,7 +571,7 @@ export default function ListVideoSessions() {
 
   // Projects label
   let projectsLabelDisplay = null;
-  if (sessionList.length > 0) {
+  if (sessionList.length > 0 || isLoading || listError) {
     projectsLabelDisplay = (
       <div className="mx-auto mb-3 w-full max-w-[1600px] text-left text-lg font-bold">
         My Projects
@@ -636,6 +674,39 @@ export default function ListVideoSessions() {
         {/* Projects label */}
         {projectsLabelDisplay}
 
+        {isLoading && sessionList.length === 0 && (
+          <div
+            className="mx-auto mb-6 flex w-full max-w-[1600px] items-center gap-3 rounded-xl border border-slate-500/20 px-4 py-4 text-left text-sm text-slate-500"
+            role="status"
+          >
+            <span
+              className="h-5 w-5 shrink-0 animate-spin rounded-full border-2 border-sky-500 border-t-transparent"
+              aria-hidden="true"
+            />
+            Loading your projects...
+          </div>
+        )}
+
+        {listError && (
+          <div
+            className={`mx-auto mb-6 flex w-full max-w-[1600px] flex-col gap-3 rounded-xl border px-4 py-4 text-left text-sm sm:flex-row sm:items-center sm:justify-between ${
+              colorMode === 'dark'
+                ? 'border-rose-400/30 bg-rose-500/10 text-rose-100'
+                : 'border-rose-200 bg-rose-50 text-rose-800'
+            }`}
+            role="alert"
+          >
+            <span>{listError}</span>
+            <button
+              type="button"
+              onClick={retrySessionList}
+              className="min-h-[38px] shrink-0 rounded-lg bg-rose-600 px-4 py-2 font-semibold text-white transition-colors hover:bg-rose-500"
+            >
+              Try again
+            </button>
+          </div>
+        )}
+
         {/* Sessions grid */}
         <div className="mx-auto grid w-full max-w-[1600px] grid-cols-[repeat(auto-fit,minmax(min(100%,260px),1fr))] gap-4 sm:gap-5 lg:gap-6">
           {sessionList.map((session, index) => {
@@ -643,7 +714,10 @@ export default function ListVideoSessions() {
             const sessionKey = getSessionKey(session, index);
             const sessionName = normalizeSessionText(session.sessionName);
             const sessionDescription = normalizeSessionText(session.sessionDescription);
-            const sessionDisplayName = sessionName || session.name;
+            const sessionDisplayName =
+              sessionName ||
+              normalizeSessionText(session.name) ||
+              'Untitled project';
             const sessionDisplayDescription = truncateSessionDescription(sessionDescription);
             const sessionPreview = resolveSessionPreviewImage(
               session,

@@ -72,9 +72,11 @@ test('fallback prompt uses the explicit prompt arguments to target the named spe
   });
   const lines = prompt.split('\n');
 
-  assert.equal(lines.length, 6);
+  assert.equal(lines.length, 7);
   assert.match(lines[0], /Maya is the character/);
-  assert.match(prompt, /foreground/);
+  assert.match(prompt, /identity anchor/);
+  assert.match(prompt, /camera movement, cuts, reframing, or position changes/);
+  assert.match(prompt, /never switch, share, or distribute/);
 });
 
 test('normalizes valid model output and rejects output outside the 5-8 line contract', () => {
@@ -112,6 +114,9 @@ test('inference request uses a minimal natural system prompt and a structured in
 
   assert.equal(messages[0].content.split('\n').length, 1);
   assert.match(messages[0].content, /identify the speaker and describe that same character's location/);
+  assert.match(messages[0].content, /starting position as an identity anchor/);
+  assert.match(messages[0].content, /sole lip-sync target throughout the video/);
+  assert.match(messages[0].content, /never switch, share, or distribute/);
   assert.doesNotMatch(messages[0].content, /\bif\b|\bwhen\b|\botherwise\b/i);
 
   assert.deepEqual(JSON.parse(messages[1].content), {

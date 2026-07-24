@@ -8,13 +8,14 @@ import { getAlibabaQwenBaseURL } from '../../inference/AlibabaQwen.js';
 
 const GOOGLE_CLOUD_SCOPE = 'https://www.googleapis.com/auth/cloud-platform';
 const OPENROUTER_KEY_URL = 'https://openrouter.ai/api/v1/key';
+const KIMI_MODELS_URL = 'https://api.moonshot.ai/v1/models';
 const RUNWAY_ORGANIZATION_URL = 'https://api.dev.runwayml.com/v1/organization';
 
 export const DEPLOYMENT_PROVIDER_CAPABILITIES = Object.freeze({
   samsar: {
     label: 'Samsar API Key',
     requiredFor: ['All models', 'All actions', 'moderation'],
-    models: ['gpt-5.6-sol', 'gemini-3.1-pro', 'QWEN3.7', 'GPTIMAGE2', 'WAN2.7PRO', 'RUNWAYML', 'VEO3.1I2V', 'HAPPYHORSEI2V', 'LYRIA3', 'OPENAI_TTS', 'GOOGLE_TTS', 'MMAUDIO', 'LATENT_SYNC'],
+    models: ['gpt-5.6-sol', 'gemini-3.1-pro', 'QWEN3.7', 'KIMIK3', 'GPTIMAGE2', 'WAN2.7PRO', 'RUNWAYML', 'VEO3.1I2V', 'HAPPYHORSEI2V', 'LYRIA3', 'OPENAI_TTS', 'GOOGLE_TTS', 'MMAUDIO', 'LATENT_SYNC'],
     actions: ['chat', 'assistant', 'moderation', 'image', 'video', 'audio', 'lip_sync', 'sound_effect'],
   },
   openai: {
@@ -27,6 +28,12 @@ export const DEPLOYMENT_PROVIDER_CAPABILITIES = Object.freeze({
     label: 'OpenRouter',
     requiredFor: ['GPT 5.6 Sol', 'Gemini 3.1 Pro', 'Qwen 3.7 Plus text and vision'],
     models: ['gpt-5.6-sol', 'gemini-3.1-pro', 'QWEN3.7'],
+    actions: ['chat', 'assistant'],
+  },
+  kimi: {
+    label: 'Kimi',
+    requiredFor: ['Kimi K3 inference', 'assistant', 'vision', 'structured output'],
+    models: ['KIMIK3'],
     actions: ['chat', 'assistant'],
   },
   googleCloud: {
@@ -170,6 +177,12 @@ export async function validateDeploymentProviderCredentials(payload = {}) {
     );
   }
 
+  if (normalizeString(payload.kimiK3ApiKey || payload.kimi_k3_api_key)) {
+    providerResults.kimi = await validateKimiK3Key(
+      normalizeString(payload.kimiK3ApiKey || payload.kimi_k3_api_key),
+    );
+  }
+
   const alibabaApiKey = normalizeString(
     payload.dashscopeApiKey ||
     payload.dashscope_api_key ||
@@ -287,6 +300,32 @@ export async function validateOpenRouterKey(apiKey, { fetchImpl = fetch } = {}) 
   } catch (error) {
     return providerResult('openrouter', 'error', {
       message: error?.message || 'Unable to validate OpenRouter API key.',
+    });
+  }
+}
+
+export async function validateKimiK3Key(apiKey, { fetchImpl = fetch } = {}) {
+  try {
+    const response = await fetchImpl(KIMI_MODELS_URL, {
+      method: 'GET',
+      headers: {
+        Accept: 'application/json',
+        Authorization: `Bearer ${apiKey}`,
+      },
+    });
+    if (!response.ok) {
+      const authenticationFailure = response.status === 401 || response.status === 403;
+      return providerResult('kimi', authenticationFailure ? 'invalid' : 'error', {
+        statusCode: response.status,
+        message: authenticationFailure
+          ? 'Kimi rejected the API key.'
+          : `Kimi key validation failed with status ${response.status}.`,
+      });
+    }
+    return providerResult('kimi', 'valid');
+  } catch (error) {
+    return providerResult('kimi', 'error', {
+      message: error?.message || 'Unable to validate Kimi API key.',
     });
   }
 }

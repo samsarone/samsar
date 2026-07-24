@@ -119,7 +119,8 @@ export function buildFallbackExpressLipSyncPrompt({
     `Distinguish the speaker by the described position, appearance, clothing, pose, and nearby visual anchors.`,
     `The speech associated with ${speakerName} is: ${singleLine(speechItem.text)}`,
     `Keep the character consistent with this scene: ${singleLine(sceneDescription)}`,
-    `Apply the speech-driven mouth movement to ${speakerName}, not to the most prominent or foreground character.`,
+    `Treat the starting position as an identity anchor and track ${speakerName} through camera movement, cuts, reframing, or position changes.`,
+    `Pin all speech-driven mouth movement to ${speakerName}; never switch, share, or distribute it across other characters.`,
   ].join('\n');
 }
 
@@ -156,7 +157,7 @@ export function buildExpressLipSyncPromptMessages({
   return [
     {
       role: 'developer',
-      content: `You create precise subject descriptions for multi-character lip-sync video generation. From the starting-frame description and the named speech item in the input payload, identify the speaker and describe that same character's location in the frame, visible appearance, clothing, pose, and nearby visual anchors. Make the description specific enough for the video model to select the named speaker instead of the most prominent or foreground character. State naturally that this character delivers the supplied speech and is the lip-sync target while preserving the other characters and the existing scene. Return only the finished prompt in 5-8 concise lines.`,
+      content: `You create precise subject descriptions for multi-character lip-sync video generation. From the starting-frame description and the named speech item in the input payload, identify the speaker and describe that same character's location in the frame, visible appearance, clothing, pose, and nearby visual anchors. Make the description specific enough for the video model to select the named speaker instead of the most prominent or foreground character. Treat the starting position as an identity anchor, then track that same character through camera movement, cuts, reframing, or position changes. State naturally that this character delivers the supplied speech and is the sole lip-sync target throughout the video; pin all speech-driven mouth movement to that character and never switch, share, or distribute it across other characters while preserving them and the existing scene. Return only the finished prompt in 5-8 concise lines.`,
     },
     {
       role: 'user',

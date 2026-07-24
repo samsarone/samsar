@@ -2,6 +2,7 @@
 
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import { Upload } from '@aws-sdk/lib-storage';
+import { NodeHttpHandler } from '@aws-sdk/node-http-handler';
 import fs from 'fs';
 import crypto from 'crypto';
 import path from 'path';
@@ -1023,7 +1024,18 @@ function initializeS3Client() {
       secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || AWS_SECRET_ACCESS_KEY,
     },
     ...getS3EndpointOptions(),
+    requestHandler: new NodeHttpHandler({
+      connectionTimeout: getPositiveIntegerEnv('SAMSAR_S3_CONNECTION_TIMEOUT_MS', 30_000),
+      socketTimeout: getPositiveIntegerEnv('SAMSAR_S3_SOCKET_TIMEOUT_MS', 300_000),
+    }),
+    maxAttempts: getPositiveIntegerEnv('SAMSAR_S3_CLIENT_MAX_ATTEMPTS', 3),
+    retryMode: 'standard',
   });
+}
+
+function getPositiveIntegerEnv(name, fallback) {
+  const value = Number(process.env[name]);
+  return Number.isFinite(value) && value > 0 ? Math.floor(value) : fallback;
 }
 
 /**
@@ -1034,9 +1046,126 @@ function createFileStream(filePath) {
   return fs.createReadStream(filePath);
 }
 
-export async function uploadFrameLayerImageToCDN(absolutePath, remoteFileName) {
+function getUploadErrorCode(error) {
+  let current = error;
+  for (let depth = 0; current && depth < 4; depth += 1) {
+    const code = current.code || current.name;
+    if (code) {
+      return String(code);
+    }
+    current = current.cause;
+  }
+  return '';
+}
 
-  
+function getUploadErrorSummary(error) {
+  const name = error?.name && error.name !== 'Error' ? `${error.name}: ` : '';
+  const message = error?.message || String(error || 'Unknown upload error');
+  return `${name}${message}`;
+}
+
+function isRetryableUploadError(error) {
+  const statusCode = Number(error?.$metadata?.httpStatusCode || error?.statusCode || error?.status);
+  if (Number.isFinite(statusCode)) {
+    return statusCode === 408 || statusCode === 429 || statusCode >= 500;
+  }
+
+  const code = getUploadErrorCode(error).toUpperCase();
+  if (
+    code.includes('TIMEOUT') ||
+    [
+      'ECONNRESET',
+      'ECONNABORTED',
+      'ECONNREFUSED',
+      'EPIPE',
+      'ETIMEDOUT',
+      'EAI_AGAIN',
+      'ENETUNREACH',
+      'REQUESTTIMEOUT',
+      'SLOWDOWN',
+      'SERVICEUNAVAILABLE',
+      'INTERNALERROR',
+    ].includes(code)
+  ) {
+    return true;
+  }
+
+  return error?.$retryable !== undefined || !Number.isFinite(statusCode);
+}
+
+function getUploadRetryDelayMs(attempt) {
+  const baseDelayMs = getPositiveIntegerEnv('SAMSAR_MEDIA_UPLOAD_RETRY_BASE_DELAY_MS', 500);
+  const maxDelayMs = getPositiveIntegerEnv('SAMSAR_MEDIA_UPLOAD_RETRY_MAX_DELAY_MS', 5_000);
+  const exponentialDelayMs = Math.min(maxDelayMs, baseDelayMs * (2 ** Math.max(0, attempt - 1)));
+  return exponentialDelayMs + Math.floor(Math.random() * Math.max(1, baseDelayMs));
+}
+
+async function uploadImageObject({ absolutePath, fileSize, uploadKey }) {
+  const maxAttempts = getPositiveIntegerEnv('SAMSAR_MEDIA_UPLOAD_MAX_ATTEMPTS', 3);
+  const reusableBody = fileSize < MULTIPART_UPLOAD_THRESHOLD_BYTES
+    ? await fs.promises.readFile(absolutePath)
+    : null;
+  let attemptsMade = 0;
+  let lastError = null;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    attemptsMade = attempt;
+    const fileStream = reusableBody ? null : createFileStream(absolutePath);
+    const uploadParams = {
+      Bucket: MEDIA_BUCKET_NAME,
+      Key: uploadKey,
+      Body: reusableBody || fileStream,
+      ContentType: getMediaContentType(absolutePath),
+      ContentLength: fileSize,
+    };
+
+    try {
+      if (fileSize >= MULTIPART_UPLOAD_THRESHOLD_BYTES) {
+        const upload = new Upload({
+          client: getS3Client(),
+          params: uploadParams,
+          leavePartsOnError: false,
+        });
+        await upload.done();
+      } else {
+        await getS3Client().send(new PutObjectCommand(uploadParams));
+      }
+      return;
+    } catch (error) {
+      lastError = error;
+      if (fileStream && !fileStream.destroyed) {
+        fileStream.destroy();
+      }
+
+      const willRetry = attempt < maxAttempts && isRetryableUploadError(error);
+      console.warn('[AWS] Image media upload attempt failed', {
+        attempt,
+        maxAttempts,
+        willRetry,
+        objectKey: uploadKey,
+        fileSize,
+        error: getUploadErrorSummary(error),
+      });
+      if (!willRetry) {
+        break;
+      }
+      await new Promise((resolve) => setTimeout(resolve, getUploadRetryDelayMs(attempt)));
+    }
+  }
+
+  const error = new Error(
+    `Failed to upload image to media storage after ${attemptsMade} attempts. ` +
+    `Last error: ${getUploadErrorSummary(lastError)}`,
+    { cause: lastError },
+  );
+  error.name = 'MediaUploadError';
+  error.code = 'SAMSAR_MEDIA_UPLOAD_FAILED';
+  error.attempts = attemptsMade;
+  error.objectKey = uploadKey;
+  throw error;
+}
+
+export async function uploadFrameLayerImageToCDN(absolutePath, remoteFileName) {
   const folderName = 'temp_images';
 
   if (!remoteFileName) {
@@ -1057,40 +1186,12 @@ export async function uploadFrameLayerImageToCDN(absolutePath, remoteFileName) {
   assertExplicitDockerExternalMediaConfiguration();
 
   const fileSize = fs.statSync(absolutePath).size;
+  await uploadImageObject({ absolutePath, fileSize, uploadKey });
 
-
-
-  // We will attempt to upload up to 3 times
-  let lastError = null;
-  for (let attempt = 1; attempt <= 3; attempt++) {
-    // Create a fresh file stream for each attempt
-    const fileStream = createFileStream(absolutePath);
-    // Define the S3 upload parameters
-    const uploadParams = {
-      Bucket: MEDIA_BUCKET_NAME,
-      Key: uploadKey,
-      Body: fileStream,
-      ContentType: 'image/png', // Assuming all images are PNG
-      ContentLength: fileSize,
-    };
-
-    try {
-
-      
-      await getS3Client().send(new PutObjectCommand(uploadParams));
-
-      const cdnUrl = buildMediaDeliveryUrl(uploadParams.Key);
-      await primeCDNCache(cdnUrl, { requireSuccess: true });
-      return cdnUrl;
-    } catch (error) {
-      lastError = error;
-      // Optionally add a delay before the next attempt
-      // await new Promise(resolve => setTimeout(resolve, 1000));
-    }
-  }
-
-  // If we reach here, all attempts have failed
-  throw new Error(`Failed to upload image to CDN after 3 attempts. Last error: ${lastError}`);
+  // Cache priming is intentionally left to callers as a best-effort step. A
+  // transient CDN read failure must not turn a completed object write into a
+  // failed upload or cause the same object to be uploaded repeatedly.
+  return buildMediaDeliveryUrl(uploadKey);
 }
 
 /**

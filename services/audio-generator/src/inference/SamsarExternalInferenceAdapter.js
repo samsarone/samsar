@@ -5,9 +5,14 @@ import {
   GPT_56_SOL_INFERENCE_MODEL,
   GPT_56_SOL_REASONING_EFFORT,
   isGeminiInferenceModel,
+  isKimiInferenceModel,
   isQwenInferenceModel,
   normalizeInferenceModel,
 } from './InferenceModels.js';
+import {
+  KIMI_K3_REASONING_EFFORT,
+  hasKimiK3ApiKey,
+} from './KimiK3.js';
 import { getAlibabaCloudApiKey, hasQwenMultimodalInput } from './Qwen.js';
 import { runExternalInferenceWithRetry } from './ExternalInferenceRetry.js';
 import { normalizeProviderMediaPayload } from '../utils/ProviderMediaPayload.js';
@@ -35,6 +40,7 @@ const GOOGLE_ATTACHED_SERVICE_ACCOUNT_KEYS = Object.freeze([
 export const DOCKER_INFERENCE_PROVIDER = Object.freeze({
   ALIBABA_CLOUD: 'alibabaCloud',
   GOOGLE_CLOUD: 'googleCloud',
+  KIMI: 'kimi',
   OPENAI: 'openai',
   OPENROUTER: 'openrouter',
   SAMSAR: 'samsar',
@@ -48,6 +54,10 @@ export const DOCKER_INFERENCE_PROVIDER_PRIORITY_BY_MODEL = Object.freeze({
   'gemini-3.1-pro': Object.freeze([
     DOCKER_INFERENCE_PROVIDER.GOOGLE_CLOUD,
     DOCKER_INFERENCE_PROVIDER.OPENROUTER,
+    DOCKER_INFERENCE_PROVIDER.SAMSAR,
+  ]),
+  'kimi-k3': Object.freeze([
+    DOCKER_INFERENCE_PROVIDER.KIMI,
     DOCKER_INFERENCE_PROVIDER.SAMSAR,
   ]),
   'gpt-5.6-sol': Object.freeze([
@@ -268,6 +278,9 @@ function hasConfiguredInferenceProvider(provider) {
   if (provider === DOCKER_INFERENCE_PROVIDER.GOOGLE_CLOUD) {
     return hasGoogleNativeCredential();
   }
+  if (provider === DOCKER_INFERENCE_PROVIDER.KIMI) {
+    return hasKimiK3ApiKey();
+  }
   if (provider === DOCKER_INFERENCE_PROVIDER.OPENAI) {
     return hasOpenAINativeCredential();
   }
@@ -286,6 +299,9 @@ function getInferenceProviderPriority(model) {
   }
   if (isGeminiInferenceModel(model)) {
     return DOCKER_INFERENCE_PROVIDER_PRIORITY_BY_MODEL['gemini-3.1-pro'];
+  }
+  if (isKimiInferenceModel(model)) {
+    return DOCKER_INFERENCE_PROVIDER_PRIORITY_BY_MODEL['kimi-k3'];
   }
   return DOCKER_INFERENCE_PROVIDER_PRIORITY_BY_MODEL[normalizeInferenceModel(model)] ||
     DOCKER_INFERENCE_PROVIDER_PRIORITY_BY_MODEL['gpt-5.6-sol'];
@@ -365,6 +381,7 @@ export function getOpenRouterModelForInferenceRequest(chatRequest = {}, env = pr
 export function shouldUseOpenRouterInference(chatRequest = {}) {
   if (!chatRequest || typeof chatRequest !== 'object') return false;
   const model = getRequestedInferenceModel(chatRequest);
+  if (isKimiInferenceModel(model)) return false;
   if (isQwenOpenRouterOnly(model)) return true;
   if (isOpenRouterAuthorization(chatRequest.authorization)) return true;
   if (isDeployedAuthorization(chatRequest.authorization)) return false;
@@ -503,7 +520,9 @@ export async function createSamsarExternalChatCompletion(chatRequest = {}) {
     model,
     ...(model === GPT_56_SOL_INFERENCE_MODEL
       ? { reasoning_effort: GPT_56_SOL_REASONING_EFFORT }
-      : {}),
+      : isKimiInferenceModel(model)
+        ? { reasoning_effort: KIMI_K3_REASONING_EFFORT }
+        : {}),
     timeout: requestTimeout,
   };
   const response = await runExternalInferenceWithRetry(

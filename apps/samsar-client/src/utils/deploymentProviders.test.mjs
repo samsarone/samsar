@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { hasSubtitleGenerationProvider } from './deploymentInferencePolicy.mjs';
+import {
+  formatDeploymentProviderLabel,
+  hasSubtitleGenerationProvider,
+} from './deploymentInferencePolicy.mjs';
 
 test('subtitle generation accepts OpenAI or Samsar deployment configuration', () => {
   assert.equal(hasSubtitleGenerationProvider({ deployment: { providers: ['openai'] } }), true);
@@ -11,4 +14,9 @@ test('subtitle generation accepts OpenAI or Samsar deployment configuration', ()
 test('subtitle generation rejects unrelated deployment providers', () => {
   assert.equal(hasSubtitleGenerationProvider({ deployment: { providers: ['googleCloud', 'fal'] } }), false);
   assert.equal(hasSubtitleGenerationProvider({}), false);
+});
+
+test('deployment provider labels identify the native Kimi provider', () => {
+  assert.equal(formatDeploymentProviderLabel('kimi'), 'Kimi');
+  assert.equal(formatDeploymentProviderLabel('Moonshot AI'), 'Kimi');
 });

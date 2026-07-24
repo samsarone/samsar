@@ -13,6 +13,7 @@ const ENV_KEYS = [
   'SAMSAR_EXTERNAL_INFERENCE_ENABLED',
   'SAMSAR_FORCE_EXTERNAL_INFERENCE',
   'OPENAI_API_KEY',
+  'KIMI_K3_API_KEY',
   'OPENROUTER_API_KEY',
   'OPENROUTER_GEMINI_MAX_TOKENS',
   'OPENROUTER_GEMINI_REASONING_EFFORT',
@@ -205,6 +206,55 @@ test('shouldUseSamsarExternalInference keeps Qwen native when DashScope auth is 
   }), false);
 });
 
+test('Kimi K3 uses its native key first and Samsar as the standalone fallback', () => {
+  clearProviderEnv();
+  process.env.CURRENT_ENV = 'docker';
+  process.env.SAMSAR_API_KEY = 'test-samsar-key';
+
+  assert.equal(
+    resolveConfiguredInferenceProvider('KIMIK3'),
+    DOCKER_INFERENCE_PROVIDER.SAMSAR,
+  );
+  assert.equal(shouldUseSamsarExternalInference({ model: 'kimi-k3' }), true);
+  assert.equal(shouldUseOpenRouterInference({
+    model: 'kimi-k3',
+    authorization: 'openrouter',
+  }), false);
+
+  process.env.KIMI_K3_API_KEY = 'test-kimi-key';
+  assert.equal(
+    resolveConfiguredInferenceProvider('Kimi K3'),
+    DOCKER_INFERENCE_PROVIDER.KIMI,
+  );
+  assert.equal(shouldUseSamsarExternalInference({ model: 'kimi-k3' }), false);
+  assert.deepEqual(DOCKER_INFERENCE_PROVIDER_PRIORITY_BY_MODEL['kimi-k3'], [
+    DOCKER_INFERENCE_PROVIDER.KIMI,
+    DOCKER_INFERENCE_PROVIDER.SAMSAR,
+  ]);
+});
+
+test('Kimi K3 Samsar fallback forces high reasoning', async (t) => {
+  clearProviderEnv();
+  process.env.SAMSAR_API_KEY = 'test-samsar-key';
+  let capturedPayload;
+  t.mock.method(SamsarClient.prototype, 'createV2ExternalChatCompletion', async (payload) => {
+    capturedPayload = payload;
+    return {
+      choices: [{ message: { role: 'assistant', content: 'ok' } }],
+    };
+  });
+
+  await createSamsarExternalChatCompletion({
+    model: 'kimi-k3',
+    messages: [{ role: 'user', content: 'hello' }],
+    reasoning_effort: 'low',
+    externalMaxRetries: 0,
+  });
+
+  assert.equal(capturedPayload.model, 'kimi-k3');
+  assert.equal(capturedPayload.reasoning_effort, 'high');
+});
+
 test('Docker inference uses native then OpenRouter then Samsar for every model', () => {
   clearProviderEnv();
   process.env.CURRENT_ENV = 'docker';
@@ -311,7 +361,7 @@ test('OpenRouter adapter sends OpenAI-compatible vision requests with the Plus d
 
   assert.equal(capturedPayload.model, 'qwen/qwen3.7-plus');
   assert.equal(capturedPayload.messages[0].content[0].type, 'image_url');
-  assert.equal(capturedPayload.max_tokens, 1024);
+  assert.equal(capturedPayload.max_tokens, 2048);
   assert.equal(capturedOptions.timeout, 1200000);
 });
 
@@ -378,7 +428,7 @@ test('OpenRouter applies Qwen-specific token and reasoning limits to Max text in
 
   assert.equal(capturedPayload.model, 'qwen/qwen3.7-max');
   assert.equal(capturedPayload.reasoning.effort, 'high');
-  assert.equal(capturedPayload.max_tokens, 512);
+  assert.equal(capturedPayload.max_tokens, 2048);
   assert.equal(Object.hasOwn(capturedPayload, 'max_completion_tokens'), false);
 });
 
@@ -417,7 +467,7 @@ test('OpenRouter reserves Qwen output tokens and enforces schema support for str
 
   assert.equal(capturedPayload.model, 'qwen/qwen3.7-max');
   assert.equal(capturedPayload.reasoning.effort, 'high');
-  assert.equal(capturedPayload.max_tokens, 1024);
+  assert.equal(capturedPayload.max_tokens, 2048);
   assert.deepEqual(capturedPayload.provider, {
     data_collection: 'deny',
     require_parameters: true,
@@ -428,7 +478,7 @@ test('OpenRouter reserves Qwen output tokens and enforces schema support for str
   ]);
 });
 
-test('OpenRouter applies shared operation budgets to Gemini and GPT completions', async (t) => {
+test('OpenRouter explicitly budgets high-reasoning Gemini and GPT completions', async (t) => {
   clearProviderEnv();
   process.env.CURRENT_ENV = 'production';
   process.env.OPENROUTER_API_KEY = 'test-openrouter-key';
@@ -452,94 +502,16 @@ test('OpenRouter applies shared operation budgets to Gemini and GPT completions'
 
   assert.equal(payloads[0].model, 'google/gemini-3.1-pro-preview');
   assert.equal(payloads[0].reasoning.effort, 'high');
-  assert.equal(payloads[0].max_tokens, 1024);
+  assert.equal(payloads[0].max_tokens, 65536);
   assert.equal(Object.hasOwn(payloads[0], 'max_completion_tokens'), false);
   assert.equal(payloads[1].model, 'openai/gpt-5.6-sol');
   assert.equal(payloads[1].reasoning.effort, 'high');
-  assert.equal(payloads[1].max_completion_tokens, 1024);
+  assert.equal(payloads[1].max_completion_tokens, 65536);
   assert.equal(Object.hasOwn(payloads[1], 'max_tokens'), false);
   for (const payload of payloads) {
     assert.equal(payload.provider.require_parameters, true);
     assert.deepEqual(payload.plugins, [{ id: 'response-healing' }]);
   }
-});
-
-test('OpenRouter preserves the larger bounded budget only for known large structured outputs', async (t) => {
-  clearProviderEnv();
-  process.env.CURRENT_ENV = 'production';
-  process.env.OPENROUTER_API_KEY = 'test-openrouter-key';
-  let capturedPayload;
-  t.mock.method(OpenAI.Chat.Completions.prototype, 'create', async (payload) => {
-    capturedPayload = payload;
-    return { choices: [{ message: { role: 'assistant', content: '{"scenes":[],"sounds":[]}' } }] };
-  });
-
-  await createOpenRouterChatCompletion({
-    model: 'QWEN3.7',
-    messages: [{ role: 'user', content: 'return a complete narrative' }],
-    max_tokens: 24000,
-    response_format: {
-      type: 'json_schema',
-      json_schema: {
-        name: 'screenplay_storyline_extraction',
-        schema: { type: 'object' },
-      },
-    },
-  });
-
-  assert.equal(capturedPayload.max_tokens, 2048);
-});
-
-test('OpenRouter honors a smaller explicit budget and reasoning effort over environment defaults', async (t) => {
-  clearProviderEnv();
-  process.env.CURRENT_ENV = 'production';
-  process.env.OPENROUTER_API_KEY = 'test-openrouter-key';
-  process.env.OPENROUTER_QWEN_REASONING_EFFORT = 'high';
-  let capturedPayload;
-  t.mock.method(OpenAI.Chat.Completions.prototype, 'create', async (payload) => {
-    capturedPayload = payload;
-    return { choices: [{ message: { role: 'assistant', content: 'Short.' } }] };
-  });
-
-  await createOpenRouterChatCompletion({
-    model: 'QWEN3.7',
-    messages: [{ role: 'developer', content: 'Return one short line.' }],
-    max_tokens: 256,
-    reasoning: { effort: 'low' },
-  });
-
-  assert.equal(capturedPayload.max_tokens, 256);
-  assert.equal(capturedPayload.reasoning.effort, 'low');
-});
-
-test('OpenRouter retries one affordability rejection at the provider-reported safe token bound', async (t) => {
-  clearProviderEnv();
-  process.env.CURRENT_ENV = 'production';
-  process.env.OPENROUTER_API_KEY = 'test-openrouter-key';
-  const limits = [];
-  t.mock.method(console, 'warn', () => {});
-  t.mock.method(OpenAI.Chat.Completions.prototype, 'create', async (payload) => {
-    limits.push(payload.max_tokens);
-    if (limits.length === 1) {
-      const error = new Error(
-        '402 This request requires more credits, or fewer max_tokens. ' +
-        'You requested up to 1024 tokens, but can only afford 901.',
-      );
-      error.status = 402;
-      throw error;
-    }
-    return { choices: [{ message: { role: 'assistant', content: '{"value":"ok"}' } }] };
-  });
-
-  const response = await createOpenRouterChatCompletion({
-    model: 'gemini-3.1-pro',
-    messages: [{ role: 'user', content: 'return JSON' }],
-    response_format: { type: 'json_object' },
-    externalMaxRetries: 0,
-  });
-
-  assert.equal(response.choices[0].message.content, '{"value":"ok"}');
-  assert.deepEqual(limits, [1024, 810]);
 });
 
 test('production Qwen OpenRouter controls enforce minimum timeout and disable SDK retries', async (t) => {

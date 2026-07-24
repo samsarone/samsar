@@ -23,6 +23,7 @@ const ENV_KEYS = [
   'SAMSAR_API_KEY',
   'OPENROUTER_API_KEY',
   'OPENAI_API_KEY',
+  'KIMI_K3_API_KEY',
   'GOOGLE_APPLICATION_CREDENTIALS_JSON',
   'SAMSAR_AVAILABLE_MODELS_PATH',
 ];
@@ -213,10 +214,24 @@ test('Samsar fallback advertises every inference model', () => {
     'gpt-5.6-sol',
     'gemini-3.1-pro',
     'QWEN3.7',
+    'KIMIK3',
     'HAPPYHORSEI2V',
     'WAN2.7PRO',
   ]);
   assert.deepEqual(result.actions, ['chat', 'assistant', 'image', 'video']);
+});
+
+test('Kimi runtime credentials advertise K3 with native-first provider selection', () => {
+  clearEnv();
+  process.env.KIMI_K3_API_KEY = 'test-kimi-key';
+
+  const result = mergeRuntimeInferenceDeploymentAvailability({});
+
+  assert.deepEqual(result.providers, ['kimi']);
+  assert.deepEqual(result.models, ['KIMIK3']);
+  assert.deepEqual(result.actions, ['chat', 'assistant']);
+  assert.equal(result.modelProviders.KIMIK3, 'kimi');
+  assert.deepEqual(result.modelProviderPriority.KIMIK3, ['kimi', 'samsar']);
 });
 
 test('OpenRouter runtime credentials advertise all inference models without media models', () => {

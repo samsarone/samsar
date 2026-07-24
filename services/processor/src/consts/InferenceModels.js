@@ -12,12 +12,14 @@ export const INFERENCE_MODEL_KEYS = Object.freeze({
   GPT_56_SOL: INFERENCE_MODELS.Inference,
   GEMINI_31_PRO: 'gemini-3.1-pro',
   QWEN_37: 'QWEN3.7',
+  KIMI_K3: 'kimi-k3',
 });
 
 export const INFERENCE_PROVIDER_MODEL_KEYS = Object.freeze({
   [INFERENCE_MODEL_KEYS.GPT_56_SOL]: INFERENCE_MODELS.Inference,
   [INFERENCE_MODEL_KEYS.GEMINI_31_PRO]: 'gemini-3.1-pro-preview',
   [INFERENCE_MODEL_KEYS.QWEN_37]: 'qwen3.7-max',
+  [INFERENCE_MODEL_KEYS.KIMI_K3]: 'kimi-k3',
 });
 
 export const DEFAULT_INFERENCE_MODEL = INFERENCE_MODEL_KEYS.GPT_56_SOL;
@@ -47,11 +49,15 @@ export const QWEN_37_MAX_MODEL = INFERENCE_PROVIDER_MODEL_KEYS[QWEN_37_INFERENCE
 export const QWEN_38_MAX_PREVIEW_MODEL = 'qwen3.8-max-preview';
 export const QWEN_37_PLUS_MODEL = 'qwen3.7-plus';
 export const ALIBABA_QWEN_TEXT_MODEL_ENV = 'ALIBABA_QWEN_TEXT_MODEL';
+export const KIMI_K3_INFERENCE_MODEL = INFERENCE_MODEL_KEYS.KIMI_K3;
+export const KIMI_K3_PROVIDER_MODEL =
+  INFERENCE_PROVIDER_MODEL_KEYS[KIMI_K3_INFERENCE_MODEL];
 
 export const SUPPORTED_INFERENCE_MODEL_VALUES = Object.freeze([
   DEFAULT_INFERENCE_MODEL,
   GEMINI_31_PRO_INFERENCE_MODEL,
   QWEN_37_INFERENCE_MODEL,
+  KIMI_K3_INFERENCE_MODEL,
 ]);
 
 const CONFIGURED_OPENAI_INFERENCE_MODELS = new Set(Object.values(INFERENCE_MODELS));
@@ -107,6 +113,18 @@ const QWEN_37_ALIAS_TOKENS = new Set([
   'DASHSCOPEQWEN38MAXPREVIEW',
 ]);
 
+const KIMI_K3_ALIASES = new Set([
+  KIMI_K3_INFERENCE_MODEL,
+  'kimi-k3-latest',
+]);
+
+const KIMI_K3_ALIAS_TOKENS = new Set([
+  'KIMIK3',
+  'KIMI3',
+  'MOONSHOTKIMIK3',
+  'MOONSHOTK3',
+]);
+
 function normalizeString(value) {
   return typeof value === 'string' && value.trim() ? value.trim() : '';
 }
@@ -127,6 +145,12 @@ function isQwen37Alias(value) {
     QWEN_37_ALIAS_TOKENS.has(normalizeAliasToken(value));
 }
 
+function isKimiK3Alias(value) {
+  const normalized = normalizeString(value).toLowerCase();
+  return KIMI_K3_ALIASES.has(normalized) ||
+    KIMI_K3_ALIAS_TOKENS.has(normalizeAliasToken(value));
+}
+
 export function normalizeInferenceModel(value) {
   const normalized = normalizeString(value).toLowerCase();
 
@@ -144,6 +168,10 @@ export function normalizeInferenceModel(value) {
 
   if (isQwen37Alias(value)) {
     return QWEN_37_INFERENCE_MODEL;
+  }
+
+  if (isKimiK3Alias(value)) {
+    return KIMI_K3_INFERENCE_MODEL;
   }
 
   return DEFAULT_INFERENCE_MODEL;
@@ -183,6 +211,10 @@ export function isQwenInferenceModel(value) {
   return isQwen37Alias(value);
 }
 
+export function isKimiInferenceModel(value) {
+  return isKimiK3Alias(value);
+}
+
 export function normalizeGeminiProviderModel(value) {
   const normalized = normalizeString(value).toLowerCase();
   if (!normalized) {
@@ -195,6 +227,10 @@ export function getProviderModelForInferenceModel(
   value,
   { vision = false, env = process.env } = {},
 ) {
+  if (isKimiInferenceModel(value)) {
+    return KIMI_K3_PROVIDER_MODEL;
+  }
+
   if (isQwenInferenceModel(value)) {
     return vision
       ? QWEN_37_PLUS_MODEL

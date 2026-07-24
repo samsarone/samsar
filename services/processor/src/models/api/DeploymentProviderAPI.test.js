@@ -5,8 +5,38 @@ import {
   DEPLOYMENT_PROVIDER_CAPABILITIES,
   buildAvailableDeploymentModels,
   validateDeploymentProviderCredentials,
+  validateKimiK3Key,
   validateOpenRouterKey,
 } from './DeploymentProviderAPI.js';
+
+test('Kimi credentials expose K3 chat and assistant capability', () => {
+  const available = buildAvailableDeploymentModels({
+    kimi: { ok: true, status: 'valid' },
+  });
+
+  assert.deepEqual(available.providers, ['kimi']);
+  assert.deepEqual(available.models, ['KIMIK3']);
+  assert.deepEqual(available.actions, ['assistant', 'chat']);
+});
+
+test('validates a Kimi key without sending an inference request', async () => {
+  let request;
+  const result = await validateKimiK3Key('kimi-test-key', {
+    fetchImpl: async (url, options) => {
+      request = { url, options };
+      return { ok: true, status: 200 };
+    },
+  });
+
+  assert.equal(request.url, 'https://api.moonshot.ai/v1/models');
+  assert.equal(request.options.method, 'GET');
+  assert.equal(request.options.headers.Authorization, 'Bearer kimi-test-key');
+  assert.deepEqual(result, {
+    provider: 'kimi',
+    status: 'valid',
+    ok: true,
+  });
+});
 
 test('Alibaba Cloud credentials expose Qwen, Wan2.7 Pro, and native Happy Horse', () => {
   const available = buildAvailableDeploymentModels({

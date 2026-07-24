@@ -1,19 +1,37 @@
 export const DEFAULT_INFERENCE_MODEL_VALUE = "gpt-5.6-sol";
 export const QWEN_INFERENCE_MODEL_VALUE = "QWEN3.7";
+export const KIMI_K3_INFERENCE_MODEL_VALUE = "kimi-k3";
 export const HOSTED_QWEN_INFERENCE_MODEL_VALUE = QWEN_INFERENCE_MODEL_VALUE;
 export const OPENROUTER_QWEN_INFERENCE_MODEL_LABEL =
   "Qwen 3.7 Max / Qwen 3.7 Plus Vision";
 export const HOSTED_QWEN_INFERENCE_MODEL_LABEL =
   OPENROUTER_QWEN_INFERENCE_MODEL_LABEL;
 
+const DEPLOYMENT_PROVIDER_LABELS = Object.freeze({
+  samsar: "Samsar API Key",
+  openai: "OpenAI",
+  openrouter: "OpenRouter",
+  googleCloud: "Google Cloud",
+  alibabaCloud: "Alibaba Cloud",
+  kimi: "Kimi",
+  fal: "FAL",
+  runway: "RunwayML",
+});
+
 const DEPLOYMENT_INFERENCE_MODELS_BY_PROVIDER = Object.freeze({
   openai: ["gpt-5.6-sol"],
   googleCloud: ["gemini-3.1-pro"],
+  kimi: [KIMI_K3_INFERENCE_MODEL_VALUE],
   openrouter: ["gpt-5.6-sol", "gemini-3.1-pro", QWEN_INFERENCE_MODEL_VALUE],
   // Alibaba/Qwen requires explicit, validated model provenance below. A
   // provider name by itself is not enough to make Qwen selectable.
   alibabaCloud: [],
-  samsar: ["gpt-5.6-sol", "gemini-3.1-pro", QWEN_INFERENCE_MODEL_VALUE],
+  samsar: [
+    "gpt-5.6-sol",
+    "gemini-3.1-pro",
+    QWEN_INFERENCE_MODEL_VALUE,
+    KIMI_K3_INFERENCE_MODEL_VALUE,
+  ],
 });
 
 export function normalizeDeploymentProviderKey(value) {
@@ -44,6 +62,14 @@ export function normalizeDeploymentProviderKey(value) {
   if (compact === "openrouter" || compact === "openrouterai") {
     return "openrouter";
   }
+  if (
+    compact === "kimi" ||
+    compact === "kimiapi" ||
+    compact === "moonshot" ||
+    compact === "moonshotai"
+  ) {
+    return "kimi";
+  }
   if (compact === "fal") {
     return "fal";
   }
@@ -52,6 +78,19 @@ export function normalizeDeploymentProviderKey(value) {
   }
 
   return trimmed;
+}
+
+export function formatDeploymentProviderLabel(value) {
+  const key = normalizeDeploymentProviderKey(value);
+  if (DEPLOYMENT_PROVIDER_LABELS[key]) {
+    return DEPLOYMENT_PROVIDER_LABELS[key];
+  }
+
+  return String(value || "")
+    .trim()
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .replace(/\b\w/g, (letter) => letter.toUpperCase()) || "Unknown provider";
 }
 
 export function extractDeploymentProviders(payload = {}) {
@@ -86,6 +125,16 @@ export function normalizeDeploymentInferenceModelValue(value) {
   if (typeof value !== "string") return "";
 
   const normalized = value.trim().toLowerCase();
+  if (
+    normalized === KIMI_K3_INFERENCE_MODEL_VALUE ||
+    normalized === "kimi k3" ||
+    normalized === "kimik3" ||
+    normalized === "moonshot k3" ||
+    normalized === "moonshot kimi k3" ||
+    normalized === "moonshotai kimi k3"
+  ) {
+    return KIMI_K3_INFERENCE_MODEL_VALUE;
+  }
   if (
     normalized === "qwen3.7" ||
     normalized === "qwen3.7-max" ||

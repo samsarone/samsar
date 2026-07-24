@@ -32,6 +32,13 @@ test('saved user setting is used when no request or session model exists', () =>
   }), 'QWEN3.7');
 });
 
+test('keeps Kimi K3 as the express-generation inference override', () => {
+  assert.equal(resolveRequestInferenceModel({
+    request: { expressGenerationInferenceModel: 'Kimi K3' },
+    session: { expressGenerationInferenceModel: 'gpt-5.6-sol' },
+  }), 'kimi-k3');
+});
+
 test('inference authorization follows request, session, then user precedence', () => {
   assert.equal(resolveRequestInferenceAuthorization({
     request: { selectedInferenceModelAuthorization: 'native' },

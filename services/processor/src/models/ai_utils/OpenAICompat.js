@@ -2,11 +2,13 @@ import {
   getReasoningEffortForInferenceModel,
   getDefaultUserInferenceModel,
   isGeminiInferenceModel,
+  isKimiInferenceModel,
   isQwenInferenceModel,
   normalizeOpenAIInferenceModel,
 } from '../../consts/InferenceModels.js';
 import { createAlibabaQwenChatCompletion } from '../../inference/AlibabaQwen.js';
 import { createGoogleGeminiChatCompletion } from '../../inference/GoogleGemini.js';
+import { createKimiK3ChatCompletion } from '../../inference/KimiK3.js';
 import {
   createSamsarExternalChatCompletion,
   shouldUseSamsarExternalInference,
@@ -15,7 +17,9 @@ import { resolveProviderMediaPayload } from './ProviderMediaPayload.js';
 
 export function isResponsesOnlyModel(model) {
   const inferenceModel = normalizeOpenAIInferenceModel(model || getDefaultUserInferenceModel());
-  return !isGeminiInferenceModel(inferenceModel) && !isQwenInferenceModel(inferenceModel);
+  return !isGeminiInferenceModel(inferenceModel) &&
+    !isKimiInferenceModel(inferenceModel) &&
+    !isQwenInferenceModel(inferenceModel);
 }
 
 export async function createCompatibleChatCompletion(
@@ -32,6 +36,13 @@ export async function createCompatibleChatCompletion(
   const requestOptions = buildRequestOptions({ timeout, maxRetries });
   if (isQwenInferenceModel(model)) {
     return await createAlibabaQwenChatCompletion(
+      { ...request, timeout, maxRetries },
+      dependencyOverrides,
+    );
+  }
+
+  if (isKimiInferenceModel(model)) {
+    return await createKimiK3ChatCompletion(
       { ...request, timeout, maxRetries },
       dependencyOverrides,
     );

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+  createOpenRouterChatCompletion,
   DOCKER_INFERENCE_PROVIDER,
   resolveConfiguredInferenceProvider,
   shouldUseOpenRouterInference,
@@ -11,6 +12,7 @@ import {
 const ENV_KEYS = [
   'ALIBABA_API_KEY',
   'CURRENT_ENV',
+  'KIMI_K3_API_KEY',
   'OPENROUTER_API_KEY',
   'SAMSAR_API_KEY',
   'SAMSAR_QWEN_OPENROUTER_ONLY',
@@ -55,4 +57,46 @@ test('Docker Qwen may use the native Alibaba adapter', () => {
     assert.equal(shouldUseOpenRouterInference({ model: 'QWEN3.7' }), false);
     assert.equal(shouldUseSamsarExternalInference({ model: 'QWEN3.7' }), false);
   });
+});
+
+test('Kimi K3 uses only native Kimi or the Samsar fallback', () => {
+  withEnvironment({
+    CURRENT_ENV: 'production',
+    KIMI_K3_API_KEY: 'kimi-key',
+    OPENROUTER_API_KEY: 'openrouter-key',
+    SAMSAR_API_KEY: 'samsar-key',
+  }, () => {
+    assert.equal(
+      resolveConfiguredInferenceProvider('KIMIK3'),
+      DOCKER_INFERENCE_PROVIDER.KIMI,
+    );
+    assert.equal(shouldUseOpenRouterInference({ model: 'kimi-k3' }), false);
+    assert.equal(shouldUseSamsarExternalInference({ model: 'kimi-k3' }), false);
+  });
+
+  withEnvironment({
+    CURRENT_ENV: 'production',
+    OPENROUTER_API_KEY: 'openrouter-key',
+    SAMSAR_API_KEY: 'samsar-key',
+  }, () => {
+    assert.equal(
+      resolveConfiguredInferenceProvider('Moonshot K3'),
+      DOCKER_INFERENCE_PROVIDER.SAMSAR,
+    );
+    assert.equal(shouldUseOpenRouterInference({
+      model: 'kimi-k3',
+      authorization: 'openrouter',
+    }), false);
+    assert.equal(shouldUseSamsarExternalInference({ model: 'kimi-k3' }), true);
+  });
+});
+
+test('the OpenRouter adapter rejects direct Kimi K3 dispatch', async () => {
+  await assert.rejects(
+    () => createOpenRouterChatCompletion(
+      { model: 'kimi-k3', messages: [{ role: 'user', content: 'hello' }] },
+      { client: { chat: { completions: { create: async () => assert.fail() } } } },
+    ),
+    /only the native Kimi API or Samsar API fallback/,
+  );
 });

@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
@@ -9,6 +10,10 @@ const ENV_KEYS = [
   'AWS_SECRET_ACCESS_KEY',
   'AWS_CDN_REGION',
   'AWS_REGION',
+  'S3_ENDPOINT',
+  'AWS_S3_ENDPOINT',
+  'S3_FORCE_PATH_STYLE',
+  'AWS_S3_FORCE_PATH_STYLE',
   'CURRENT_ENV',
   'SAMSAR_EXTERNAL_MEDIA_PUBLISH_ENABLED',
   'EXTERNAL_MEDIA_PUBLISH_ENABLED',
@@ -34,6 +39,12 @@ const ENV_KEYS = [
   'SAMSAR_MEDIA_TUNNEL_REFRESH_REQUEST_PATH',
   'MEDIA_BUCKET_NAME',
   'STATIC_CDN_BUCKET',
+  'SAMSAR_S3_CLIENT_MAX_ATTEMPTS',
+  'SAMSAR_S3_CONNECTION_TIMEOUT_MS',
+  'SAMSAR_S3_SOCKET_TIMEOUT_MS',
+  'SAMSAR_MEDIA_UPLOAD_MAX_ATTEMPTS',
+  'SAMSAR_MEDIA_UPLOAD_RETRY_BASE_DELAY_MS',
+  'SAMSAR_MEDIA_UPLOAD_RETRY_MAX_DELAY_MS',
 ];
 
 const originalGlobalFetch = globalThis.fetch;
@@ -149,6 +160,83 @@ test('Docker external-S3 uploads reject implicit bucket and CDN defaults', async
   }
 });
 
+test('external-S3 image uploads do not fail or repeat after a CDN cache-prime reset', async () => {
+  const envSnapshot = snapshotEnv();
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'samsar-listener-cdn-reset-'));
+  const sourcePath = path.join(tempRoot, 'source.png');
+  fs.writeFileSync(sourcePath, 'png');
+  let objectWrites = 0;
+  let cachePrimeRequests = 0;
+  const server = http.createServer((request, response) => {
+    objectWrites += 1;
+    response.writeHead(200, {
+      ETag: '"test-etag"',
+      'x-amz-request-id': 'test-request-id',
+    });
+    response.end();
+  });
+
+  try {
+    const endpoint = await listenOnLocalhost(server);
+    configureExternalS3TestEnv(endpoint);
+    globalThis.fetch = async () => {
+      cachePrimeRequests += 1;
+      const error = new Error('read ECONNRESET');
+      error.name = 'TimeoutError';
+      error.code = 'ECONNRESET';
+      throw error;
+    };
+
+    const { uploadFrameLayerImageToCDN, primeCDNCache } = await importAwsModule();
+    const url = await uploadFrameLayerImageToCDN(sourcePath, 'frame.png');
+
+    assert.equal(url, 'https://cdn.example/assets_v2/temp_images/frame.png');
+    assert.equal(objectWrites, 1);
+    assert.equal(cachePrimeRequests, 0);
+    assert.equal(await primeCDNCache(url), false);
+    assert.equal(cachePrimeRequests, 1);
+  } finally {
+    await closeServer(server);
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+    restoreEnv(envSnapshot);
+  }
+});
+
+test('external-S3 image uploads retry a reset object write with a fresh request', async () => {
+  const envSnapshot = snapshotEnv();
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'samsar-listener-s3-reset-'));
+  const sourcePath = path.join(tempRoot, 'source.png');
+  fs.writeFileSync(sourcePath, 'png');
+  let objectWriteAttempts = 0;
+  const server = http.createServer((request, response) => {
+    objectWriteAttempts += 1;
+    if (objectWriteAttempts === 1) {
+      request.socket.destroy();
+      return;
+    }
+    response.writeHead(200, {
+      ETag: '"test-etag"',
+      'x-amz-request-id': 'test-request-id',
+    });
+    response.end();
+  });
+
+  try {
+    const endpoint = await listenOnLocalhost(server);
+    configureExternalS3TestEnv(endpoint);
+
+    const { uploadFrameLayerImageToCDN } = await importAwsModule();
+    const url = await uploadFrameLayerImageToCDN(sourcePath, 'frame.png');
+
+    assert.equal(url, 'https://cdn.example/assets_v2/temp_images/frame.png');
+    assert.equal(objectWriteAttempts, 2);
+  } finally {
+    await closeServer(server);
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+    restoreEnv(envSnapshot);
+  }
+});
+
 test.afterEach(() => {
   globalThis.fetch = originalGlobalFetch;
 });
@@ -170,6 +258,44 @@ function restoreEnv(snapshot) {
 async function importAwsModule() {
   const moduleUrl = new URL('./AWS.js', import.meta.url).href;
   return import(`${moduleUrl}?test=${Date.now()}-${Math.random()}`);
+}
+
+function configureExternalS3TestEnv(endpoint) {
+  process.env.CURRENT_ENV = 'production';
+  process.env.SAMSAR_MEDIA_DELIVERY_MODE = 'external-s3';
+  process.env.MEDIA_DELIVERY_MODE = 'external-s3';
+  process.env.AWS_ACCESS_KEY_ID = 'test-access-key';
+  process.env.AWS_SECRET_ACCESS_KEY = 'test-secret-key';
+  process.env.AWS_CDN_REGION = 'us-west-2';
+  process.env.MEDIA_BUCKET_NAME = 'test-bucket';
+  process.env.STATIC_CDN_URL = 'https://cdn.example/';
+  process.env.S3_ENDPOINT = endpoint;
+  process.env.S3_FORCE_PATH_STYLE = 'true';
+  process.env.SAMSAR_S3_CLIENT_MAX_ATTEMPTS = '1';
+  process.env.SAMSAR_MEDIA_UPLOAD_MAX_ATTEMPTS = '3';
+  process.env.SAMSAR_MEDIA_UPLOAD_RETRY_BASE_DELAY_MS = '1';
+  process.env.SAMSAR_MEDIA_UPLOAD_RETRY_MAX_DELAY_MS = '2';
+}
+
+function listenOnLocalhost(server) {
+  return new Promise((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(0, '127.0.0.1', () => {
+      server.off('error', reject);
+      const address = server.address();
+      resolve(`http://127.0.0.1:${address.port}`);
+    });
+  });
+}
+
+function closeServer(server) {
+  if (!server.listening) {
+    return Promise.resolve();
+  }
+  return new Promise((resolve, reject) => {
+    server.close((error) => (error ? reject(error) : resolve()));
+    server.closeAllConnections?.();
+  });
 }
 
 test('normalizes Docker assets_v2 image references to the media tunnel without local rasterization', async () => {

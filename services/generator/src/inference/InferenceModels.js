@@ -7,6 +7,8 @@ export const QWEN_37_INFERENCE_MODEL = 'QWEN3.7';
 export const DEFAULT_QWEN_38_MAX_PREVIEW_MODEL = 'qwen3.8-max-preview';
 export const DEFAULT_QWEN_37_MAX_MODEL = 'qwen3.7-max';
 export const DEFAULT_QWEN_37_PLUS_MODEL = 'qwen3.7-plus';
+export const KIMI_K3_INFERENCE_MODEL = 'kimi-k3';
+export const KIMIK3 = 'KIMIK3';
 
 const GEMINI_ALIASES = new Set([
   GEMINI_31_PRO_INFERENCE_MODEL,
@@ -63,6 +65,18 @@ const QWEN_37_ALIAS_TOKENS = new Set([
   'DASHSCOPEQWEN38MAXPREVIEW',
 ]);
 
+const KIMI_K3_ALIASES = new Set([
+  KIMI_K3_INFERENCE_MODEL,
+  'kimi-k3-latest',
+]);
+
+const KIMI_K3_ALIAS_TOKENS = new Set([
+  KIMIK3,
+  'KIMI3',
+  'MOONSHOTKIMIK3',
+  'MOONSHOTK3',
+]);
+
 function normalizeString(value) {
   return typeof value === 'string' && value.trim() ? value.trim() : '';
 }
@@ -81,6 +95,11 @@ function isQwen37Alias(value) {
   return QWEN_37_ALIASES.has(normalized) || QWEN_37_ALIAS_TOKENS.has(normalizeAliasToken(value));
 }
 
+export function isKimiInferenceModel(value) {
+  return KIMI_K3_ALIASES.has(normalizeString(value).toLowerCase()) ||
+    KIMI_K3_ALIAS_TOKENS.has(normalizeAliasToken(value));
+}
+
 export function normalizeInferenceModel(value) {
   const normalized = normalizeString(value).toLowerCase();
   if (!normalized) return DEFAULT_INFERENCE_MODEL;
@@ -92,6 +111,9 @@ export function normalizeInferenceModel(value) {
   }
   if (isQwen37Alias(value)) {
     return QWEN_37_INFERENCE_MODEL;
+  }
+  if (isKimiInferenceModel(value)) {
+    return KIMI_K3_INFERENCE_MODEL;
   }
   return DEFAULT_INFERENCE_MODEL;
 }
@@ -126,6 +148,9 @@ export function getProviderModelForInferenceModel(value) {
   }
   if (isQwenInferenceModel(value)) {
     return DEFAULT_QWEN_37_PLUS_MODEL;
+  }
+  if (isKimiInferenceModel(value)) {
+    return KIMI_K3_INFERENCE_MODEL;
   }
   return DEFAULT_INFERENCE_MODEL;
 }

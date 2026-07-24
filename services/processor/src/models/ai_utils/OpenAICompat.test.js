@@ -97,3 +97,47 @@ test('resolves multimodal media immediately before a native OpenAI Responses req
   });
   assert.equal(capturedOptions.maxRetries, 0);
 });
+
+test('routes Kimi K3 through its native high-reasoning chat adapter', async () => {
+  let capturedPayload;
+  const kimiClient = {
+    chat: {
+      completions: {
+        create: async (payload) => {
+          capturedPayload = payload;
+          return {
+            model: 'kimi-k3',
+            choices: [{ message: { role: 'assistant', content: '{"ok":true}' } }],
+          };
+        },
+      },
+    },
+    files: {
+      create: async () => assert.fail('unexpected upload'),
+      delete: async () => {},
+    },
+  };
+
+  const response = await createCompatibleChatCompletion({}, {
+    model: 'KIMIK3',
+    messages: [{ role: 'developer', content: 'Return JSON.' }],
+    response_format: {
+      type: 'json_schema',
+      json_schema: {
+        name: 'result',
+        schema: {
+          type: 'object',
+          properties: { ok: { type: 'boolean' } },
+          required: ['ok'],
+          additionalProperties: false,
+        },
+      },
+    },
+  }, { client: kimiClient });
+
+  assert.equal(capturedPayload.model, 'kimi-k3');
+  assert.equal(capturedPayload.reasoning_effort, 'high');
+  assert.equal(capturedPayload.messages[0].role, 'system');
+  assert.equal(capturedPayload.response_format.json_schema.strict, true);
+  assert.equal(response.choices[0].message.content, '{"ok":true}');
+});

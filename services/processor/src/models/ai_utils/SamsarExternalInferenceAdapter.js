@@ -3,9 +3,11 @@ import OpenAI from 'openai';
 
 import {
   INFERENCE_MODELS,
+  KIMI_K3_INFERENCE_MODEL,
   QWEN_37_INFERENCE_MODEL,
   getReasoningEffortForInferenceModel,
   isGeminiInferenceModel,
+  isKimiInferenceModel,
   isOpenAIInferenceModel,
   isQwenInferenceModel,
   normalizeInferenceModel,
@@ -16,6 +18,7 @@ import {
   hasAlibabaQwenNativeCredential,
   hasQwenVisionInput,
 } from '../../inference/AlibabaQwen.js';
+import { hasKimiK3NativeCredential } from '../../inference/KimiK3.js';
 import { externalAssistantClientRequestStore } from './ExternalAssistantClientRequestStore.js';
 import { resolveProviderMediaPayload } from './ProviderMediaPayload.js';
 
@@ -31,33 +34,8 @@ const DEFAULT_EXTERNAL_INFERENCE_POLL_INTERVAL_MS = 2000;
 // usage instead of reserving their much larger provider output windows.
 const OPENROUTER_QWEN_MAX_TOKEN_CEILING = 2048;
 const DEFAULT_OPENROUTER_QWEN_MAX_TOKENS = 2048;
-const DEFAULT_OPENROUTER_GEMINI_MAX_TOKENS = 4096;
-const DEFAULT_OPENROUTER_GPT_MAX_COMPLETION_TOKENS = 4096;
-const DEFAULT_OPENROUTER_PLAIN_TEXT_MAX_TOKENS = 512;
-const DEFAULT_OPENROUTER_VISION_MAX_TOKENS = 1024;
-const DEFAULT_OPENROUTER_COMPACT_STRUCTURED_MAX_TOKENS = 768;
-const DEFAULT_OPENROUTER_STRUCTURED_MAX_TOKENS = 1024;
-const DEFAULT_OPENROUTER_LARGE_STRUCTURED_MAX_TOKENS = 2048;
-const OPENROUTER_CREDIT_DOWNSHIFT_RATIO = 0.9;
-const OPENROUTER_MIN_COMPLETION_TOKENS = 16;
-const OPENROUTER_COMPACT_RESPONSE_FORMATS = new Set([
-  'branch_divergence_paths',
-  'express_cta_text_payload',
-  'gallery_classification',
-  'prompt_generation',
-  'receipt_extraction_result',
-  'receipt_extraction_retry',
-  'speech_translation',
-  'theme_keywords_extraction',
-  'title_and_description',
-]);
-const OPENROUTER_LARGE_RESPONSE_FORMATS = new Set([
-  'branch_movie_resource_suffix',
-  'receipt_template_builder',
-  'screenplay_storyline_extraction',
-  'sounds_with_emotions',
-  'speech_translation_alignment',
-]);
+const DEFAULT_OPENROUTER_GEMINI_MAX_TOKENS = 65536;
+const DEFAULT_OPENROUTER_GPT_MAX_COMPLETION_TOKENS = 65536;
 const DEFAULT_OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1';
 const GOOGLE_NATIVE_CREDENTIAL_KEYS = Object.freeze([
   'GOOGLE_APPLICATION_CREDENTIALS_JSON_B64',
@@ -75,6 +53,7 @@ export const DOCKER_INFERENCE_PROVIDER = Object.freeze({
   GOOGLE_CLOUD: 'googleCloud',
   OPENAI: 'openai',
   OPENROUTER: 'openrouter',
+  KIMI: 'kimi',
   SAMSAR: 'samsar',
 });
 export const DOCKER_INFERENCE_PROVIDER_PRIORITY_BY_MODEL = Object.freeze({
@@ -91,6 +70,10 @@ export const DOCKER_INFERENCE_PROVIDER_PRIORITY_BY_MODEL = Object.freeze({
   [INFERENCE_MODELS.Inference]: Object.freeze([
     DOCKER_INFERENCE_PROVIDER.OPENAI,
     DOCKER_INFERENCE_PROVIDER.OPENROUTER,
+    DOCKER_INFERENCE_PROVIDER.SAMSAR,
+  ]),
+  [KIMI_K3_INFERENCE_MODEL]: Object.freeze([
+    DOCKER_INFERENCE_PROVIDER.KIMI,
     DOCKER_INFERENCE_PROVIDER.SAMSAR,
   ]),
 });
@@ -223,7 +206,7 @@ function getExternalInferenceRetryDelayMs(retryNumber, error) {
   return Math.max(exponentialDelayMs, getExternalInferenceRetryAfterMs(error) ?? 0);
 }
 
-function getOpenRouterConfiguredCompletionLimit(requestedModel) {
+function getOpenRouterCompletionLimit(requestedModel, request = {}) {
   let configuredLimit;
   if (isQwenInferenceModel(requestedModel)) {
     configuredLimit = Math.min(
@@ -244,41 +227,13 @@ function getOpenRouterConfiguredCompletionLimit(requestedModel) {
       DEFAULT_OPENROUTER_GPT_MAX_COMPLETION_TOKENS,
     );
   }
-  return configuredLimit;
-}
-
-function getOpenRouterResponseFormatName(request = {}) {
-  return normalizeString(request?.response_format?.json_schema?.name).toLowerCase();
-}
-
-function getOpenRouterOperationCompletionLimit(request = {}) {
-  const responseFormatName = getOpenRouterResponseFormatName(request);
-  if (OPENROUTER_LARGE_RESPONSE_FORMATS.has(responseFormatName)) {
-    return DEFAULT_OPENROUTER_LARGE_STRUCTURED_MAX_TOKENS;
-  }
-  if (OPENROUTER_COMPACT_RESPONSE_FORMATS.has(responseFormatName)) {
-    return DEFAULT_OPENROUTER_COMPACT_STRUCTURED_MAX_TOKENS;
-  }
-  if (isOpenRouterStructuredOutputRequest(request)) {
-    return DEFAULT_OPENROUTER_STRUCTURED_MAX_TOKENS;
-  }
-  if (hasQwenVisionInput(request.messages)) {
-    return DEFAULT_OPENROUTER_VISION_MAX_TOKENS;
-  }
-  if (Array.isArray(request.tools) && request.tools.length > 0) {
-    return DEFAULT_OPENROUTER_STRUCTURED_MAX_TOKENS;
-  }
-  return DEFAULT_OPENROUTER_PLAIN_TEXT_MAX_TOKENS;
-}
-
-function getOpenRouterCompletionLimit(requestedModel, request = {}) {
-  const configuredLimit = getOpenRouterConfiguredCompletionLimit(requestedModel);
-  const operationLimit = getOpenRouterOperationCompletionLimit(request);
   const requestedLimit = normalizePositiveInteger(
     request.max_completion_tokens ?? request.max_tokens,
-    operationLimit,
+    isQwenInferenceModel(requestedModel)
+      ? DEFAULT_OPENROUTER_QWEN_MAX_TOKENS
+      : configuredLimit,
   );
-  return Math.min(requestedLimit, configuredLimit, operationLimit);
+  return Math.min(requestedLimit, configuredLimit);
 }
 
 function isOpenRouterStructuredOutputRequest(request = {}) {
@@ -298,14 +253,9 @@ function addOpenRouterResponseHealingPlugin(plugins) {
 }
 
 function getOpenRouterReasoningEffort(requestedModel, effort, request = {}) {
-  const normalizedEffort = normalizeString(effort).toLowerCase();
-  if (!isOpenAIInferenceModel(requestedModel) && ['xhigh', 'max'].includes(normalizedEffort)) {
+  if (!isOpenAIInferenceModel(requestedModel) && isOpenRouterStructuredOutputRequest(request)) {
     return 'high';
   }
-  if (['low', 'medium', 'high', 'xhigh', 'max'].includes(normalizedEffort)) {
-    return normalizedEffort;
-  }
-
   const configuredEffort = normalizeString(
     isQwenInferenceModel(requestedModel)
       ? process.env.OPENROUTER_QWEN_REASONING_EFFORT
@@ -320,59 +270,17 @@ function getOpenRouterReasoningEffort(requestedModel, effort, request = {}) {
     return configuredEffort;
   }
 
+  const normalizedEffort = normalizeString(effort).toLowerCase();
+  if (!isOpenAIInferenceModel(requestedModel) && ['xhigh', 'max'].includes(normalizedEffort)) {
+    return 'high';
+  }
+  if (['low', 'medium', 'high', 'xhigh', 'max'].includes(normalizedEffort)) {
+    return normalizedEffort;
+  }
+
   // OpenRouter providers otherwise choose their own (often medium) reasoning
   // default. Keep Samsar's quality-first policy explicit on every model call.
   return 'high';
-}
-
-function getOpenRouterPayloadCompletionLimit(payload, requestedModel) {
-  return Number(
-    isOpenAIInferenceModel(requestedModel)
-      ? payload?.max_completion_tokens
-      : payload?.max_tokens,
-  );
-}
-
-function withOpenRouterPayloadCompletionLimit(payload, requestedModel, limit) {
-  const adjustedPayload = { ...payload };
-  if (isOpenAIInferenceModel(requestedModel)) {
-    delete adjustedPayload.max_tokens;
-    adjustedPayload.max_completion_tokens = limit;
-  } else {
-    delete adjustedPayload.max_completion_tokens;
-    adjustedPayload.max_tokens = limit;
-  }
-  return adjustedPayload;
-}
-
-function getOpenRouterAffordableCompletionLimit(error) {
-  const visited = new Set();
-  let current = error;
-  while (current && typeof current === 'object' && !visited.has(current)) {
-    visited.add(current);
-    const message = normalizeString(current?.message || current?.error?.message);
-    const match = message.match(/can only afford\s+([\d,]+)(?:\s+tokens?)?/i);
-    if (match) {
-      const parsed = Number(match[1].replace(/,/g, ''));
-      if (Number.isSafeInteger(parsed) && parsed > 0) return parsed;
-    }
-    current = current.cause;
-  }
-  return null;
-}
-
-function getOpenRouterCreditAdjustedCompletionLimit(error, payload, requestedModel) {
-  if (getExternalInferenceErrorStatus(error) !== 402) return null;
-  const affordableLimit = getOpenRouterAffordableCompletionLimit(error);
-  const currentLimit = getOpenRouterPayloadCompletionLimit(payload, requestedModel);
-  if (!Number.isSafeInteger(affordableLimit) || !Number.isSafeInteger(currentLimit) ||
-    affordableLimit >= currentLimit) {
-    return null;
-  }
-  return Math.max(
-    OPENROUTER_MIN_COMPLETION_TOKENS,
-    Math.min(currentLimit - 1, Math.floor(affordableLimit * OPENROUTER_CREDIT_DOWNSHIFT_RATIO)),
-  );
 }
 
 function buildOpenRouterRequestPayload(request, requestedModel, openRouterModel, effort) {
@@ -787,6 +695,9 @@ function hasConfiguredInferenceProvider(provider) {
   if (provider === DOCKER_INFERENCE_PROVIDER.OPENROUTER) {
     return hasOpenRouterCredential();
   }
+  if (provider === DOCKER_INFERENCE_PROVIDER.KIMI) {
+    return hasKimiK3NativeCredential();
+  }
   if (provider === DOCKER_INFERENCE_PROVIDER.SAMSAR) {
     return Boolean(getExternalClient());
   }
@@ -799,6 +710,9 @@ function getInferenceProviderPriority(model) {
   }
   if (isGeminiInferenceModel(model)) {
     return DOCKER_INFERENCE_PROVIDER_PRIORITY_BY_MODEL['gemini-3.1-pro'];
+  }
+  if (isKimiInferenceModel(model)) {
+    return DOCKER_INFERENCE_PROVIDER_PRIORITY_BY_MODEL[KIMI_K3_INFERENCE_MODEL];
   }
   return DOCKER_INFERENCE_PROVIDER_PRIORITY_BY_MODEL[normalizeInferenceModel(model)] ||
     DOCKER_INFERENCE_PROVIDER_PRIORITY_BY_MODEL[INFERENCE_MODELS.Inference];
@@ -847,6 +761,7 @@ export function getOpenRouterModelForInferenceRequest(chatRequest = {}, env = pr
 export function shouldUseOpenRouterInference(chatRequest = {}) {
   if (!chatRequest || typeof chatRequest !== 'object') return false;
   const model = getRequestedInferenceModel(chatRequest);
+  if (isKimiInferenceModel(model)) return false;
   if (isQwenOpenRouterOnly(model)) return true;
   if (isOpenRouterAuthorization(chatRequest.authorization)) return true;
   if (isDeployedAuthorization(chatRequest.authorization)) return false;
@@ -903,50 +818,25 @@ export async function createOpenRouterChatCompletion(chatRequest = {}, dependenc
     minimumTimeout,
   );
   const openRouterModel = getOpenRouterModelForInferenceRequest(chatRequest);
-  let payload = buildOpenRouterRequestPayload(
+  const payload = buildOpenRouterRequestPayload(
     request,
     requestedModel,
     openRouterModel,
     effort,
   );
-  let creditDownshiftApplied = false;
 
   return runExternalInferenceWithRetry(
     async ({ signal }) => {
-      const dispatch = async () => {
-        const providerPayload = await resolveProviderMediaPayload(payload, {
-          resolveMediaUrl: dependencyOverrides.resolveMediaUrl,
-          serviceName: 'samsar_processor_openrouter',
-        });
-        return client.chat.completions.create(providerPayload, {
-          timeout: requestTimeout,
-          // The adapter owns retry timing so the SDK cannot multiply attempts.
-          maxRetries: 0,
-          signal,
-        });
-      };
-
-      try {
-        return await dispatch();
-      } catch (error) {
-        const adjustedLimit = creditDownshiftApplied
-          ? null
-          : getOpenRouterCreditAdjustedCompletionLimit(error, payload, requestedModel);
-        if (!Number.isSafeInteger(adjustedLimit)) throw error;
-
-        const previousLimit = getOpenRouterPayloadCompletionLimit(payload, requestedModel);
-        payload = withOpenRouterPayloadCompletionLimit(payload, requestedModel, adjustedLimit);
-        creditDownshiftApplied = true;
-        console.warn('[external_inference] reducing OpenRouter output reservation', {
-          provider: 'openrouter',
-          model: openRouterModel,
-          previousLimit,
-          adjustedLimit,
-        });
-        // A 402 affordability response is rejected before generation. Retry the
-        // same request once with the provider-reported affordable output bound.
-        return dispatch();
-      }
+      const providerPayload = await resolveProviderMediaPayload(payload, {
+        resolveMediaUrl: dependencyOverrides.resolveMediaUrl,
+        serviceName: 'samsar_processor_openrouter',
+      });
+      return client.chat.completions.create(providerPayload, {
+        timeout: requestTimeout,
+        // The adapter owns retry timing so the SDK cannot multiply attempts.
+        maxRetries: 0,
+        signal,
+      });
     },
     {
       provider: 'openrouter',
@@ -1046,7 +936,7 @@ export async function createSamsarExternalChatCompletion(chatRequest = {}, depen
   const requestPayload = {
     ...payload,
     model,
-    ...(isOpenAIInferenceModel(model)
+    ...(isOpenAIInferenceModel(model) || isKimiInferenceModel(model)
       ? { reasoning_effort: getReasoningEffortForInferenceModel(model) }
       : {}),
   };
