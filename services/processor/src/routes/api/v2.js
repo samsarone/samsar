@@ -31,6 +31,7 @@ import {
 import {
   buildExternalVideoDetailedStatus,
   buildExternalVideoStatus,
+  requestExternalDirectImageToVideo,
   requestExternalImageToVideo,
   requestExternalLipSyncVideo,
   requestExternalSoundEffectVideo,
@@ -1300,7 +1301,10 @@ async function handleExternalImageToVideo(req, res) {
     const response = await requestExternalImageToVideo({
       userId: authContext.internalUserId,
       payload,
-      webhookUrl: getWebhookUrlFromStepRequest(req, payload),
+      idempotencyKey:
+        req.get('Idempotency-Key') ||
+        payload?.client_request_id ||
+        payload?.clientRequestId,
       req,
     });
     return res.status(200).json(response);
@@ -1310,6 +1314,30 @@ async function handleExternalImageToVideo(req, res) {
     }
     return res.status(error?.status || error?.response?.status || 500).json({
       message: error?.message || 'Internal server error while creating external image-to-video request.',
+    });
+  }
+}
+
+async function handleExternalDirectImageToVideo(req, res) {
+  try {
+    const authContext = await resolveV2AuthContext(req);
+    const payload = normalizeInputPayload(req);
+    const response = await requestExternalDirectImageToVideo({
+      userId: authContext.internalUserId,
+      payload,
+      idempotencyKey:
+        req.get('Idempotency-Key') ||
+        payload?.client_request_id ||
+        payload?.clientRequestId,
+      req,
+    });
+    return res.status(200).json(response);
+  } catch (error) {
+    if (error?.code === 'INSUFFICIENT_CREDITS') {
+      return res.status(402).json({ message: 'Insufficient credits.' });
+    }
+    return res.status(error?.status || error?.response?.status || 500).json({
+      message: error?.message || 'Internal server error while creating direct image-to-video request.',
     });
   }
 }
@@ -1818,6 +1846,7 @@ router.post(
 router.post('/text_to_interactive_video/session', handleTextToInteractiveVideoDraftSession);
 router.post('/interactive_publication/generate_meta', handleInteractivePublicationMetadata);
 router.post('/external/video/image_to_video', handleExternalImageToVideo);
+router.post('/external/video/direct_image_to_video', handleExternalDirectImageToVideo);
 router.post('/external/video/lip_sync', handleExternalLipSyncVideo);
 router.post('/external/video/sound_effect', handleExternalSoundEffectVideo);
 router.get('/external/video/status', handleExternalVideoStatus);

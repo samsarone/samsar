@@ -100,6 +100,14 @@ const OUTRO_IMAGE_EXTENSION_BY_MIME = {
 
 const wait = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
 
+export function resolveImageListItemRequiresEnhancement(imageMeta = {}) {
+  return typeof imageMeta?.requires_enhancement === 'boolean'
+    ? imageMeta.requires_enhancement
+    : typeof imageMeta?.requiresEnhancement === 'boolean'
+      ? imageMeta.requiresEnhancement
+      : false;
+}
+
 function normalizeBackingTrackProvider(value) {
   return value === 'LYRIA2' ? 'LYRIA3' : value;
 }
@@ -1475,12 +1483,7 @@ export async function requestImageListToVideGeneration(userId, payload) {
       imageMeta?.skip_enhancement === true ||
       imageMeta?.skipEnhancement === true ||
       (layer.skipAiVideoGeneration === true && layer.hasAiVideoLayer === false);
-    const requiresEnhancement =
-      typeof imageMeta?.requires_enhancement === 'boolean'
-        ? imageMeta.requires_enhancement
-        : typeof imageMeta?.requiresEnhancement === 'boolean'
-          ? imageMeta.requiresEnhancement
-          : true;
+    const requiresEnhancement = resolveImageListItemRequiresEnhancement(imageMeta);
 
     let generationPayload = {
       videoSessionId: sessionId,

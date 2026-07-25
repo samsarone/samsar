@@ -9,7 +9,7 @@ import { resolveLocalMediaReferencePath } from '../utils/MediaReferenceUtils.js'
 import { getCurrentEnvironment, getDeploymentEdition } from '../utils/Environment.js';
 
 const DEFAULT_NANOBANANA_2_MODEL = 'gemini-3.1-flash-image';
-const DEFAULT_NANOBANANA_PRO_MODEL = 'gemini-3-pro-image-preview';
+const DEFAULT_NANOBANANA_PRO_MODEL = 'gemini-3-pro-image';
 const DEFAULT_GOOGLE_IMAGE_LOCATION = 'global';
 const DEFAULT_IMAGE_MIME_TYPE = 'image/png';
 const DEFAULT_GOOGLE_IMAGE_ASPECT_RATIO = '1:1';
@@ -116,9 +116,7 @@ export function resolveGoogleNanoBananaModel(model) {
       normalizeString(process.env.GOOGLE_NANO_BANANA_PRO_MODEL) ||
       DEFAULT_NANOBANANA_PRO_MODEL
     );
-    return configuredModel === 'gemini-3-pro-image'
-      ? DEFAULT_NANOBANANA_PRO_MODEL
-      : configuredModel;
+    return configuredModel;
   }
 
   return (

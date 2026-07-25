@@ -17,7 +17,7 @@ import { normalizeProviderMediaUrl } from '../AWS.js';
 
 const EXTERNAL_REQUEST_PREFIX = 'samsar-external-video:';
 const DEFAULT_SAMSAR_API_BASE_URL = 'https://api.samsar.one/v1';
-const DEFAULT_EXTERNAL_VIDEO_ROUTE = 'image_to_video';
+const DEFAULT_EXTERNAL_VIDEO_ROUTE = 'direct_image_to_video';
 
 function normalizeString(value) {
   return typeof value === 'string' ? value.trim() : '';
@@ -536,7 +536,13 @@ function normalizeExternalVideoRoute(route) {
   if (!normalized) return '';
   if (normalized === 'step/text_to_video') return 'text_to_video';
   if (normalized === 'step/image_to_video') return 'step/image_to_video';
-  if (normalized === 'text_to_video' || normalized === 'image_to_video') return normalized;
+  if (normalized === 'image_to_video') return DEFAULT_EXTERNAL_VIDEO_ROUTE;
+  if (
+    normalized === 'text_to_video' ||
+    normalized === 'direct_image_to_video'
+  ) {
+    return normalized;
+  }
   if (normalized === 'lip_sync' || normalized === 'lip_sync_generation') return 'lip_sync';
   if (
     normalized === 'sound_effect' ||
@@ -582,7 +588,7 @@ export function resolveExternalVideoRoute(payload = {}) {
   if (configuredRoute) {
     if (
       inferredVideoToVideoRoute &&
-      ['text_to_video', 'image_to_video', 'step/image_to_video'].includes(configuredRoute)
+      ['text_to_video', 'direct_image_to_video', 'step/image_to_video'].includes(configuredRoute)
     ) {
       return inferredVideoToVideoRoute;
     }
@@ -617,7 +623,9 @@ function buildExternalTextToVideoInput(payload = {}) {
 }
 
 export function buildExternalImageToVideoInput(payload = {}, uploadedStartImageUrl) {
+  const clientRequestId = getExternalVideoAttemptId(payload);
   return {
+    client_request_id: clientRequestId,
     image_url: uploadedStartImageUrl,
     image_urls: [uploadedStartImageUrl],
     start_image_url: uploadedStartImageUrl,
@@ -629,11 +637,22 @@ export function buildExternalImageToVideoInput(payload = {}, uploadedStartImageU
     metadata: {
       source: 'local_docker_ai_video_generator',
       local_request_id: payload?._id?.toString?.() || payload?._id || null,
+      local_attempt_id: clientRequestId,
+      local_attempt_number: Math.max(0, Number(payload?.numRetries) || 0),
       local_session_id: payload?.sessionId || null,
       local_layer_id: payload?.layerId || null,
       original_video_model: normalizeString(payload.originalVideoModel) || null,
     },
   };
+}
+
+export function getExternalVideoAttemptId(payload = {}) {
+  const localRequestId = payload?._id?.toString?.() || payload?._id;
+  if (!localRequestId) {
+    return '';
+  }
+  const attemptNumber = Math.max(0, Number(payload?.numRetries) || 0);
+  return `${localRequestId}:attempt:${attemptNumber}`;
 }
 
 function assertProviderReadableUrl(value, label) {
@@ -707,7 +726,9 @@ async function buildExternalVideoRouteRequest(client, payload = {}, route) {
   }
 
   return {
-    route: 'image_to_video',
+    // A provider adapter must never enter the high-level image-list workflow,
+    // even when an older queue document carries the legacy route name.
+    route: 'direct_image_to_video',
     uploadedStartImageUrl,
     body: {
       input: buildExternalImageToVideoInput(payload, uploadedStartImageUrl),
@@ -746,7 +767,7 @@ export async function generateSamsarExternalVideoLayer(payload = {}) {
     route,
     routeRequest.body,
     {
-      idempotencyKey: payload?._id?.toString?.() || undefined,
+      idempotencyKey: getExternalVideoAttemptId(payload) || undefined,
     },
   );
 

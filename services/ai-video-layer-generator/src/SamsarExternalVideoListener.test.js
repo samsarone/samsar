@@ -5,6 +5,7 @@ import {
   buildExternalImageToVideoInput,
   buildExternalStepImageToVideoInput,
   buildExternalVideoToVideoInput,
+  getExternalVideoAttemptId,
   getStartImageReference,
   resolveExternalVideoRoute,
 } from './base/SamsarExternalVideoListener.js';
@@ -78,6 +79,8 @@ function configureDockerPublicMedia() {
 test('Samsar external image-to-video payload includes start image URL compatibility aliases', () => {
   const startImageUrl = 'https://media.example.com/assets_v2/session/start.png';
   const input = buildExternalImageToVideoInput({
+    _id: 'local-generation-id',
+    numRetries: 1,
     prompt: 'camera pan',
     originalVideoModel: 'MODEL_A',
     aspectRatio: '9:16',
@@ -89,6 +92,14 @@ test('Samsar external image-to-video payload includes start image URL compatibil
   assert.equal(input.start_image_url, startImageUrl);
   assert.equal(input.startImage, startImageUrl);
   assert.equal(input.video_model, 'MODEL_A');
+  assert.equal(input.client_request_id, 'local-generation-id:attempt:1');
+  assert.equal(input.metadata.local_attempt_number, 1);
+  assert.equal(Object.hasOwn(input, 'image_model'), false);
+  assert.equal(Object.hasOwn(input, 'requires_enhancement'), false);
+  assert.equal(getExternalVideoAttemptId({
+    _id: 'local-generation-id',
+    numRetries: 1,
+  }), 'local-generation-id:attempt:1');
 });
 
 test('Samsar external step image-to-video payload includes start image URL compatibility aliases', () => {
@@ -110,7 +121,7 @@ test('Samsar external route detection treats start image aliases as image-to-vid
       'https://media.example.com/start.png',
       key,
     );
-    assert.equal(resolveExternalVideoRoute({ [key]: 'https://media.example.com/start.png' }), 'image_to_video', key);
+    assert.equal(resolveExternalVideoRoute({ [key]: 'https://media.example.com/start.png' }), 'direct_image_to_video', key);
   }
 });
 
@@ -120,7 +131,17 @@ test('Samsar external route detection prefers image-to-video when a stale text r
       samsarExternalVideoRoute: 'text_to_video',
       startImage: 'https://media.example.com/start.png',
     }),
-    'image_to_video',
+    'direct_image_to_video',
+  );
+});
+
+test('legacy configured image-to-video route is forced through the direct provider path', () => {
+  assert.equal(
+    resolveExternalVideoRoute({
+      samsarExternalVideoRoute: 'image_to_video',
+      startImage: 'https://media.example.com/start.png',
+    }),
+    'direct_image_to_video',
   );
 });
 

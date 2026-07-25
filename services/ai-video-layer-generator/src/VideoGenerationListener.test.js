@@ -1,20 +1,21 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
 import {
   buildBaseAiVideoCompletionUpdate,
   buildBaseGenerationFailureMessage,
-  buildDockerI2V429AdapterFailoverPlan,
   buildTransientProviderErrorUpdate,
   buildBaseGenerationTerminalFailureUpdate,
+  getPendingPollIntervalMs,
+  getExplicitFailureRetryBackoffMs,
   getInferenceModelForSession,
   getInferenceSettingsForSession,
   getRetryLipSyncModel,
   getRetryPromptSeedAction,
   isTransientProviderError,
+  isSafeProviderSubmissionRetry,
   resolveCompletedLayerDuration,
   resolveConnectedAudioLayerDuration,
   selectFilterPassForBaseGenerationRetry,
@@ -277,84 +278,61 @@ test('Runway polling 429 is treated as transient provider backoff, not failure',
   assert.equal(Object.hasOwn(update.set, 'numRetries'), false);
 });
 
-test('first Docker image-to-video 429 switches to the next configured adapter', (t) => {
-  const envKeys = [
-    'CURRENT_ENV',
-    'SAMSAR_AVAILABLE_MODELS_PATH',
-    'ALIBABA_API_KEY',
-    'FAL_API_KEY',
-    'SAMSAR_API_KEY',
-  ];
-  const originalEnv = Object.fromEntries(envKeys.map((key) => [key, process.env[key]]));
-  const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'samsar-i2v-failover-'));
-  const configPath = path.join(temporaryDirectory, 'available-models.json');
-  t.after(() => {
-    fs.rmSync(temporaryDirectory, { recursive: true, force: true });
-    envKeys.forEach((key) => {
-      if (originalEnv[key] === undefined) delete process.env[key];
-      else process.env[key] = originalEnv[key];
-    });
-  });
-  fs.writeFileSync(configPath, JSON.stringify({
-    providers: ['alibabaCloud', 'fal'],
-    modelProviders: { HAPPYHORSEI2V: 'alibabaCloud' },
-    modelProviderPriority: { HAPPYHORSEI2V: ['alibabaCloud', 'fal'] },
-  }));
-  process.env.CURRENT_ENV = 'docker';
-  process.env.SAMSAR_AVAILABLE_MODELS_PATH = configPath;
-  process.env.ALIBABA_API_KEY = 'alibaba-key';
-  process.env.FAL_API_KEY = 'fal-key';
-  delete process.env.SAMSAR_API_KEY;
-
+test('image-to-video 429 retries the same adapter and stops after three explicit rejections', () => {
   const request = {
-    model: 'HAPPYHORSEI2V',
+    model: 'COSMOS3SUPERI2V',
     prompt: 'Keep this exact prompt',
     startImage: '/persistent/assets/start.png',
     status: 'INIT',
     transientProviderErrorCount: 0,
   };
-  const rateLimitError = { response: { status: 429 } };
+  const rateLimitError = {
+    message: 'rate limited',
+    response: { status: 429, headers: {} },
+  };
 
-  assert.deepEqual(buildDockerI2V429AdapterFailoverPlan(request, rateLimitError), {
-    currentProvider: 'alibabaCloud',
-    nextProvider: 'fal',
-  });
-  assert.equal(buildDockerI2V429AdapterFailoverPlan({
+  assert.equal(isSafeProviderSubmissionRetry(rateLimitError), true);
+  const firstRejection = buildTransientProviderErrorUpdate(
+    request,
+    rateLimitError,
+    'submit',
+  );
+  assert.equal(firstRejection.set.status, 'INIT');
+  assert.equal(firstRejection.set.transientProviderErrorExhausted, false);
+
+  const thirdRejection = buildTransientProviderErrorUpdate({
     ...request,
-    transientProviderErrorCount: 1,
-  }, rateLimitError), null);
-  assert.equal(buildDockerI2V429AdapterFailoverPlan({
-    ...request,
-    dockerAdapterFailoverAttempted: true,
-  }, rateLimitError), null);
-  assert.equal(buildDockerI2V429AdapterFailoverPlan({
-    ...request,
-    generationId: 'already-submitted-task',
-  }, rateLimitError), null);
-  assert.equal(buildDockerI2V429AdapterFailoverPlan(request, { response: { status: 503 } }), null);
-  assert.equal(buildDockerI2V429AdapterFailoverPlan({
-    ...request,
-    startImage: '',
-  }, rateLimitError), null);
+    transientProviderErrorCount: 2,
+  }, rateLimitError, 'submit');
+  assert.equal(thirdRejection.set.status, 'FAILED');
+  assert.equal(thirdRejection.set.retryOnFail, false);
+  assert.equal(thirdRejection.set.transientProviderErrorExhausted, true);
 });
 
-test('provider submit 503 is held in INIT for retry without consuming generation retries', () => {
+test('image-to-video submit 503 is not safe to resubmit because acceptance is ambiguous', () => {
   const error = {
     message: 'Service unavailable',
     response: { status: 503, headers: {} },
   };
 
-  const update = buildTransientProviderErrorUpdate(
-    { status: 'INIT', transientProviderErrorCount: 2 },
-    error,
-    'submit'
-  );
-
   assert.equal(isTransientProviderError(error), true);
-  assert.equal(update.set.status, 'INIT');
-  assert.equal(update.set.lastTransientProviderErrorStatus, 503);
-  assert.equal(update.set.transientProviderErrorPhase, 'submit');
-  assert.equal(Object.hasOwn(update.set, 'numRetries'), false);
+  assert.equal(isSafeProviderSubmissionRetry(error), false);
+});
+
+test('Samsar external pending video status uses a three-second polling cadence', () => {
+  assert.equal(
+    getPendingPollIntervalMs('SAMSAR_EXTERNAL_VIDEO', {
+      samsarExternalProvider: true,
+    }),
+    3000,
+  );
+});
+
+test('explicit provider failures use deterministic exponential retry backoff', () => {
+  assert.equal(getExplicitFailureRetryBackoffMs(0), 10000);
+  assert.equal(getExplicitFailureRetryBackoffMs(1), 20000);
+  assert.equal(getExplicitFailureRetryBackoffMs(2), 40000);
+  assert.equal(getExplicitFailureRetryBackoffMs(3), 60000);
 });
 
 test('an unreachable managed media tunnel defers provider submission for retry', () => {

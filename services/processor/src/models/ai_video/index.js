@@ -36,11 +36,13 @@ import { requestRenderVeoI2VVideo } from './VeoI2V.js';
 import { requestRenderVeo3I2VVideo } from './Veo3I2V.js';
 import { requestRenderVeo3FirstLastFrameVideo } from './Veo3FirstLastFrame.js';
 import { requestRenderCosmos3I2VVideo } from './Cosmos3I2V.js';
+import { requestRenderDirectExternalI2VVideo } from './DirectExternalI2V.js';
 
 import { requestRenderGenericVideo, requestRenderGenericLipSyncVideo } from './Generic.js';
 
 import { shouldBypassGenerationCredits } from '../../utils/EnvironmentUtils.js';
 import { maybeTriggerAutoRecharge } from '../AutoRecharge.js';
+import { deductGenerationCreditsIdempotently } from '../GenerationCredits.js';
 import VideoSession from '../../schema/VideoSession.js';
 import { getRenderableItemListForLayer } from '../../utils/ImageRenderUtils.js';
 
@@ -202,26 +204,40 @@ export async function requestGenerateCustomAIVideo(userId, payload) {
       throw new Error('Invalid model');
     }
 
-    const updateResult = await User.updateOne(
-      { _id: userId, generationCredits: { $gt: generationCost } },
-      { $inc: { generationCredits: -generationCost } }
-    );
+    if (payload.creditIdempotencyKey) {
+      await deductGenerationCreditsIdempotently(userId, generationCost, {
+        source: 'direct_external_image_to_video',
+        idempotencyKey: payload.creditIdempotencyKey,
+        metadata: {
+          sessionId: payload.videoSessionId || payload.sessionId,
+          layerId: payload.currentLayerId || payload.layerId,
+          model: payload.model,
+        },
+      });
+    } else {
+      const updateResult = await User.updateOne(
+        { _id: userId, generationCredits: { $gt: generationCost } },
+        { $inc: { generationCredits: -generationCost } }
+      );
 
 
 
-    // If no documents were updated, it means the user either doesn't exist or doesn't have enough credits
-    if (updateResult.modifiedCount === 0) {
-      throw new Error('Not enough credits');
+      // If no documents were updated, it means the user either doesn't exist or doesn't have enough credits
+      if (updateResult.modifiedCount === 0) {
+        throw new Error('Not enough credits');
+      }
+
+      await maybeTriggerAutoRecharge(userId);
     }
-
-    await maybeTriggerAutoRecharge(userId);
   }
 
   payload.userId = userId;
 
   await setSessionLayerAiVideoGenerationPending(payload);
 
-  if (payload.model === 'LUMA' || payload.model === 'LUMAFLASH2') {
+  if (payload.directExternalImageToVideo === true) {
+    await requestRenderDirectExternalI2VVideo(payload);
+  } else if (payload.model === 'LUMA' || payload.model === 'LUMAFLASH2') {
     await requestRenderLumaVideo(payload);
   } else if (payload.model === 'SDVIDEO') {
     await requestRenderSDVideo(payload);

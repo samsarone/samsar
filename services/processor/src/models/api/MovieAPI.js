@@ -2965,7 +2965,9 @@ async function prepareImageListToVideoInputImages({
             prepared_height: preparedImage.preparedHeight ?? item.prepared_height,
             required_width: preparedImage.requiredWidth ?? item.required_width,
             required_height: preparedImage.requiredHeight ?? item.required_height,
-            requires_enhancement: preparedImage.requiresEnhancement ?? item.requires_enhancement,
+            // Image enhancement is opt-in. Resolution analysis must never
+            // silently turn a supplied image into an AI image-edit request.
+            requires_enhancement: item.requires_enhancement,
             temp_image_expires_at: preparedImage.expiresAt ?? item.temp_image_expires_at,
           }
           : {}),

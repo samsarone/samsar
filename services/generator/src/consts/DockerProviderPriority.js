@@ -1,3 +1,5 @@
+import { getDeploymentEdition, isStandaloneEdition } from '../utils/Environment.js';
+
 export const DOCKER_ADAPTER_PROVIDER = Object.freeze({
   ALIBABA_CLOUD: 'alibabaCloud',
   GOOGLE_CLOUD: 'googleCloud',
@@ -230,6 +232,16 @@ export function getDockerImageGenerationProviderPriority(model) {
 
 export function getDockerImageEditProviderPriority(model) {
   const normalizedModel = normalizeModelKey(model);
+  if (
+    normalizedModel === 'NANOBANANAPROEDIT' &&
+    getDeploymentEdition() === 'production'
+  ) {
+    return [
+      DOCKER_ADAPTER_PROVIDER.FAL,
+      DOCKER_ADAPTER_PROVIDER.GOOGLE_CLOUD,
+      DOCKER_ADAPTER_PROVIDER.SAMSAR,
+    ];
+  }
   if (DOCKER_IMAGE_EDIT_PROVIDER_PRIORITY[normalizedModel]) {
     return DOCKER_IMAGE_EDIT_PROVIDER_PRIORITY[normalizedModel];
   }
@@ -288,4 +300,3 @@ export function resolveDockerImageEditProvider(model) {
   }
   return resolveConfiguredProvider(getDockerImageEditProviderPriority(model));
 }
-import { getDeploymentEdition, isStandaloneEdition } from '../utils/Environment.js';

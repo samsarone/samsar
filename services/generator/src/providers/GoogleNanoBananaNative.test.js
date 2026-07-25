@@ -15,6 +15,7 @@ import {
 
 const GOOGLE_PROVIDER_ENV_KEYS = [
   'CURRENT_ENV',
+  'SAMSAR_DEPLOYMENT_EDITION',
   'FAL_API_KEY',
   'GOOGLE_NANOBANANA_USE_FAL',
   'GOOGLE_NANOBANANA_NATIVE_ENABLED',
@@ -95,15 +96,15 @@ test('builds Gemini image generation request with imageConfig aspectRatio', () =
   assert.equal(request.contents[0].parts[0].text, 'A portrait product photo');
 });
 
-test('uses Vertex Gemini Pro Image preview model for native NanoBanana Pro', () => {
+test('uses the stable Vertex Gemini Pro Image model for native NanoBanana Pro', () => {
   const previousModel = process.env.GOOGLE_NANOBANANA_PRO_MODEL;
   delete process.env.GOOGLE_NANOBANANA_PRO_MODEL;
 
   try {
-    assert.equal(resolveGoogleNanoBananaModel('NANOBANANAPRO'), 'gemini-3-pro-image-preview');
+    assert.equal(resolveGoogleNanoBananaModel('NANOBANANAPRO'), 'gemini-3-pro-image');
 
     process.env.GOOGLE_NANOBANANA_PRO_MODEL = 'gemini-3-pro-image';
-    assert.equal(resolveGoogleNanoBananaModel('NANOBANANAPRO'), 'gemini-3-pro-image-preview');
+    assert.equal(resolveGoogleNanoBananaModel('NANOBANANAPRO'), 'gemini-3-pro-image');
   } finally {
     if (previousModel === undefined) {
       delete process.env.GOOGLE_NANOBANANA_PRO_MODEL;
@@ -115,6 +116,7 @@ test('uses Vertex Gemini Pro Image preview model for native NanoBanana Pro', () 
 
 test('production starts NanoBanana Pro generations with Fal only', () => {
   process.env.CURRENT_ENV = 'production';
+  process.env.SAMSAR_DEPLOYMENT_EDITION = 'production';
   process.env.FAL_API_KEY = 'fal-key';
   delete process.env.GOOGLE_NANOBANANA_USE_FAL;
   process.env.GOOGLE_NANOBANANA_NATIVE_ENABLED = 'true';
@@ -127,14 +129,17 @@ test('production starts NanoBanana Pro generations with Fal only', () => {
   process.env.FAL_API_KEY = 'fal-key';
 
   process.env.CURRENT_ENV = 'staging';
+  process.env.SAMSAR_DEPLOYMENT_EDITION = 'staging';
   assert.equal(shouldUseGoogleNativeNanoBanana('NANOBANANAPRO'), true);
 
   process.env.CURRENT_ENV = 'docker';
+  process.env.SAMSAR_DEPLOYMENT_EDITION = 'standalone';
   assert.equal(shouldUseGoogleNativeNanoBanana('NANOBANANAPRO'), true);
 });
 
 test('production continues an in-flight native Google NanoBanana Pro request', () => {
   process.env.CURRENT_ENV = 'production';
+  process.env.SAMSAR_DEPLOYMENT_EDITION = 'production';
   process.env.FAL_API_KEY = 'fal-key';
   delete process.env.GOOGLE_NANOBANANA_USE_FAL;
   process.env.GOOGLE_NANOBANANA_NATIVE_ENABLED = 'true';

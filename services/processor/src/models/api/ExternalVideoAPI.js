@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import { createHash } from 'node:crypto';
 import dns from 'node:dns/promises';
 import net from 'node:net';
 
@@ -7,7 +8,6 @@ import { getDBConnectionString } from '../DBString.js';
 import { requestGenerateCustomAIVideo } from '../ai_video/index.js';
 import {
   requestCreateVideo,
-  requestCreateVideoFromImageListAndMetadata,
 } from './MovieAPI.js';
 import {
   buildVideoStatusDetailedResponse,
@@ -17,6 +17,7 @@ import {
 import { normalizeImageToVideoStartImagePayload } from './VideoInputPayloadAliases.js';
 
 const EXTERNAL_VIDEO_STAGE_LABELS = {
+  ai_video_generation: 'Image to video',
   lip_sync_generation: 'Lip sync',
   sound_effect_generation: 'Sound effect',
 };
@@ -92,6 +93,41 @@ function buildExternalVideoError(message, status = 400) {
   const error = new Error(message);
   error.status = status;
   return error;
+}
+
+function buildDeterministicExternalVideoObjectId(userId, idempotencyKey, namespace) {
+  const digest = createHash('sha256')
+    .update(`${userId?.toString?.() || userId}:${idempotencyKey}:${namespace}`)
+    .digest('hex')
+    .slice(0, 24);
+  return new mongoose.Types.ObjectId(digest);
+}
+
+export function buildDirectExternalImageToVideoIdentity(userId, idempotencyKey) {
+  const normalizedIdempotencyKey = normalizeString(idempotencyKey);
+  if (!normalizedIdempotencyKey) {
+    throw buildExternalVideoError(
+      'Idempotency-Key or client_request_id is required for direct image-to-video.',
+    );
+  }
+  return {
+    idempotencyKey: normalizedIdempotencyKey,
+    sessionId: buildDeterministicExternalVideoObjectId(
+      userId,
+      normalizedIdempotencyKey,
+      'direct-i2v-session',
+    ),
+    layerId: buildDeterministicExternalVideoObjectId(
+      userId,
+      normalizedIdempotencyKey,
+      'direct-i2v-layer',
+    ),
+    generationRequestId: buildDeterministicExternalVideoObjectId(
+      userId,
+      normalizedIdempotencyKey,
+      'direct-i2v-generation',
+    ),
+  };
 }
 
 function isPrivateOrLocalHostname(hostname) {
@@ -338,10 +374,19 @@ function getExternalVideoStageKey(sessionData = {}) {
   if (routeType === 'sound_effect' || routeType === 'sound_effect_generation') {
     return 'sound_effect_generation';
   }
+  if (
+    routeType === 'direct_image_to_video' ||
+    routeType === 'direct_image_to_video_generation'
+  ) {
+    return 'ai_video_generation';
+  }
   return null;
 }
 
 function getExternalVideoRouteType(stageKey) {
+  if (stageKey === 'ai_video_generation') {
+    return 'image_to_video';
+  }
   if (stageKey === 'lip_sync_generation') {
     return 'lip_sync';
   }
@@ -366,6 +411,9 @@ function getExternalStageResultUrl(sessionData = {}, stageKey) {
   if (stageKey === 'sound_effect_generation') {
     return layer.soundEffectRemoteLink || layer.soundEffectVideoLayer || null;
   }
+  if (stageKey === 'ai_video_generation') {
+    return layer.aiVideoRemoteLink || layer.aiVideoLayer || null;
+  }
   return null;
 }
 
@@ -375,9 +423,11 @@ function getExternalStageStatus(sessionData = {}, stageKey) {
     return 'PENDING';
   }
 
-  const statusValue = stageKey === 'lip_sync_generation'
-    ? layer.lipSyncVideoGenerationStatus
-    : layer.soundEffectVideoGenerationStatus;
+  const statusValue = stageKey === 'ai_video_generation'
+    ? layer.aiVideoGenerationStatus
+    : stageKey === 'lip_sync_generation'
+      ? layer.lipSyncVideoGenerationStatus
+      : layer.soundEffectVideoGenerationStatus;
   if (isFailedStatus(statusValue)) {
     return 'FAILED';
   }
@@ -445,7 +495,8 @@ function decorateExternalStageStatus(statusPayload = {}, sessionData = {}, req =
       routeType,
       provider: decorated.provider || null,
       errorMessage,
-      layerStatus: getExternalStageLayer(sessionData)?.lipSyncVideoGenerationStatus ||
+      layerStatus: getExternalStageLayer(sessionData)?.aiVideoGenerationStatus ||
+        getExternalStageLayer(sessionData)?.lipSyncVideoGenerationStatus ||
         getExternalStageLayer(sessionData)?.soundEffectVideoGenerationStatus ||
         null,
     });
@@ -518,21 +569,181 @@ export async function requestExternalTextToVideo({ userId, payload = {}, webhook
   };
 }
 
-export async function requestExternalImageToVideo({ userId, payload = {}, webhookUrl = null, req = null }) {
-  const normalizedPayload = await validateExternalImageToVideoPublicUrls(payload);
-  const response = await requestCreateVideoFromImageListAndMetadata(
-    userId,
-    normalizedPayload,
-    webhookUrl,
-  );
-  const sessionId = response?.session_id || response?.request_id;
-  const statusPayload = sessionId
-    ? await buildExternalVideoStatus({ userId, sessionId, req })
-    : null;
+function getValidatedDirectStartImage(normalizedPayload = {}) {
+  if (!Array.isArray(normalizedPayload.image_urls) || normalizedPayload.image_urls.length !== 1) {
+    throw buildExternalVideoError(
+      'Direct image-to-video requires exactly one public start image URL.',
+    );
+  }
+  return normalizeExternalImageUrlItem(normalizedPayload.image_urls[0], 0).url;
+}
+
+export function buildDirectExternalImageToVideoSession({
+  userId,
+  identity,
+  payload,
+  startImage,
+}) {
+  const model = getFirstStringValue(payload, ['video_model', 'videoModel', 'model']);
+  if (!model) {
+    throw buildExternalVideoError('video_model is required for direct image-to-video.');
+  }
+
+  const prompt = getFirstStringValue(payload, ['prompt']);
+  const aspectRatio = getFirstStringValue(payload, ['aspect_ratio', 'aspectRatio']) || '16:9';
+  const duration = normalizeDurationSeconds(payload.duration, 5);
+  const framesPerSecond = Number(payload.frames_per_second || payload.framesPerSecond) || 24;
+  const now = new Date();
+
   return {
-    ...response,
-    ...(statusPayload?.status ? { status: statusPayload.status } : {}),
+    _id: identity.sessionId,
+    userId,
+    sessionName: 'Direct image-to-video request',
+    requestType: 'API',
+    isExternalVideoGeneration: true,
+    externalVideoRoute: 'direct_image_to_video',
+    externalVideoStage: 'ai_video_generation',
+    externalRequestIdempotencyKey: identity.idempotencyKey,
+    directExternalImageToVideo: true,
+    expressGenerationType: 'DIRECT_IMAGE_TO_VIDEO',
+    expressGenerativeVideoModel: model,
+    expressGenerativeVideoRequired: true,
+    expressGenerationPending: false,
+    videoGenerationPending: false,
+    aspectRatio,
+    framesPerSecond,
+    expressGenerationStatus: {
+      status: 'PENDING',
+      prompt_generation: 'COMPLETED',
+      image_generation: 'COMPLETED',
+      speech_generation: 'COMPLETED',
+      music_generation: 'COMPLETED',
+      audio_generation: 'COMPLETED',
+      frame_generation: 'COMPLETED',
+      ai_video_generation: 'PENDING',
+      lip_sync_generation: 'COMPLETED',
+      sound_effect_generation: 'COMPLETED',
+      delete_reflow: 'COMPLETED',
+      timeline_reflowed: 'COMPLETED',
+      video_generation: 'COMPLETED',
+    },
+    layers: [{
+      _id: identity.layerId,
+      imageSession: {
+        userId,
+        generations: [],
+        activeSelectedImage: startImage,
+        activeImageRemoteLink: startImage,
+        activeItemList: [{
+          type: 'image',
+          id: `direct-start-image:${identity.idempotencyKey}`,
+          src: startImage,
+        }],
+        generationStatus: 'COMPLETED',
+        editStatus: 'COMPLETED',
+        activeImageDescription: prompt,
+        prompt,
+      },
+      prompt,
+      videoGenerationPrompt: prompt,
+      duration,
+      durationOffset: 0,
+      layerAiVideoType: 'ai_video',
+      layerBaseAiImageType: 'image',
+      aiVideoGenerationPending: true,
+      aiVideoGenerationStatus: 'PENDING',
+      hasAiVideoLayer: false,
+      status: 'pending',
+      createdAt: now,
+      updatedAt: now,
+    }],
+    audioLayers: [],
   };
+}
+
+export async function requestExternalDirectImageToVideo({
+  userId,
+  payload = {},
+  idempotencyKey,
+  req = null,
+}) {
+  const normalizedPayload = await validateExternalImageToVideoPublicUrls(payload);
+  const startImage = getValidatedDirectStartImage(normalizedPayload);
+  const identity = buildDirectExternalImageToVideoIdentity(
+    userId,
+    idempotencyKey ||
+      normalizedPayload.client_request_id ||
+      normalizedPayload.clientRequestId,
+  );
+  const sessionInsert = buildDirectExternalImageToVideoSession({
+    userId,
+    identity,
+    payload: normalizedPayload,
+    startImage,
+  });
+
+  await getDBConnectionString();
+  const sessionDoc = await VideoSession.findOneAndUpdate(
+    { _id: identity.sessionId, userId },
+    { $setOnInsert: sessionInsert },
+    { upsert: true, new: true, setDefaultsOnInsert: true },
+  );
+  const layer = sessionDoc?.layers?.find(
+    (candidate) => candidate?._id?.toString?.() === identity.layerId.toString(),
+  );
+  const layerStatus = normalizeStatusString(layer?.aiVideoGenerationStatus);
+
+  // Repeated HTTP submissions for the same attempt reuse both the session and
+  // deterministic queue document. Completed and failed attempts are immutable.
+  if (!isCompletedStatus(layerStatus) && !isFailedStatus(layerStatus)) {
+    const persistedStartImage =
+      normalizeString(layer?.imageSession?.activeSelectedImage) ||
+      normalizeString(layer?.imageSession?.activeImageRemoteLink) ||
+      startImage;
+    await requestGenerateCustomAIVideo(userId, {
+      sessionId: identity.sessionId.toString(),
+      videoSessionId: identity.sessionId.toString(),
+      currentLayerId: identity.layerId.toString(),
+      layerId: identity.layerId.toString(),
+      generationRequestId: identity.generationRequestId.toString(),
+      externalRequestIdempotencyKey: identity.idempotencyKey,
+      creditIdempotencyKey: `direct-external-i2v:${userId}:${identity.idempotencyKey}`,
+      directExternalImageToVideo: true,
+      model: sessionDoc.expressGenerativeVideoModel,
+      prompt: layer?.prompt || '',
+      duration: layer?.duration,
+      aspectRatio: sessionDoc.aspectRatio,
+      framesPerSecond: sessionDoc.framesPerSecond,
+      startImage: persistedStartImage,
+      useStartFrame: true,
+      useEndFrame: false,
+      combineLayers: false,
+      clipLayerToAiVideo: false,
+      retryOnFail: false,
+      generationType: 'generate',
+      samsarExternalProviderStage: 'ai_video_generation',
+      samsarExternalVideoRoute: 'direct_image_to_video',
+    });
+  }
+
+  const statusPayload = await buildExternalVideoStatus({
+    userId,
+    sessionId: identity.sessionId.toString(),
+    req,
+  });
+
+  return {
+    request_id: identity.sessionId.toString(),
+    session_id: identity.sessionId.toString(),
+    status: statusPayload?.status || 'PENDING',
+    route_type: 'image_to_video',
+    external_video_route: 'image_to_video',
+    external_video_stage: 'ai_video_generation',
+  };
+}
+
+export async function requestExternalImageToVideo(options = {}) {
+  return requestExternalDirectImageToVideo(options);
 }
 
 async function requestExternalVideoMediaStage({

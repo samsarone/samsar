@@ -127,7 +127,6 @@ import {
   DOCKER_VIDEO_PROVIDER,
   promoteDockerVideoProvider,
   resolveDockerVideoProvider,
-  resolveNextDockerVideoProvider,
 } from './consts/DockerProviderPriority.js';
 import {
   generateHappyHorseImgToVideoLayer,
@@ -203,12 +202,24 @@ const MAX_PROVIDER_TRANSIENT_ERRORS = Math.max(
   1,
   Number(process.env.AI_VIDEO_MAX_PROVIDER_TRANSIENT_ERRORS) || 6
 );
+const MAX_EXPLICIT_I2V_SUBMISSION_REJECTIONS = Math.max(
+  1,
+  Number(process.env.AI_VIDEO_MAX_EXPLICIT_I2V_SUBMISSION_REJECTIONS) || 3
+);
 const MAX_BASE_PROVIDER_PENDING_MS = Math.max(
   5 * 60 * 1000,
   Number(process.env.AI_VIDEO_MAX_BASE_PROVIDER_PENDING_MS) || 30 * 60 * 1000
 );
 const RUNWAY_PENDING_POLL_INTERVAL_MS = 15 * 1000;
 const ALIBABA_HAPPY_HORSE_PENDING_POLL_INTERVAL_MS = 15 * 1000;
+const SAMSAR_EXTERNAL_PENDING_POLL_INTERVAL_MS = Math.max(
+  1000,
+  Number(process.env.SAMSAR_EXTERNAL_VIDEO_PENDING_POLL_INTERVAL_MS) || 3 * 1000
+);
+const BASE_GENERATION_FAILURE_RETRY_BACKOFF_MS = Math.max(
+  1000,
+  Number(process.env.AI_VIDEO_EXPLICIT_FAILURE_RETRY_BACKOFF_MS) || 10 * 1000
+);
 const PROVIDER_POLL_JITTER_MS = 5 * 1000;
 const MIN_DB_TRANSIENT_BACKOFF_MS = Math.max(
   1000,
@@ -555,6 +566,14 @@ export function buildBaseGenerationFailureMessage({
       : '',
     firstNonEmptyString(retryPreparationFailureMessage),
   ].filter(Boolean).join(' ');
+}
+
+export function getExplicitFailureRetryBackoffMs(completedRetryCount = 0) {
+  return Math.min(
+    60 * 1000,
+    BASE_GENERATION_FAILURE_RETRY_BACKOFF_MS *
+      (2 ** Math.min(Math.max(0, Number(completedRetryCount) || 0), 3)),
+  );
 }
 
 function getFilterPassGenerationAssetPath(filterPassSrc) {
@@ -914,29 +933,6 @@ function getProviderErrorStatus(error) {
   return Number.isFinite(numericStatus) ? numericStatus : null;
 }
 
-export function buildDockerI2V429AdapterFailoverPlan(request = {}, error) {
-  if (
-    !isStandaloneEdition() ||
-    getProviderErrorStatus(error) !== 429 ||
-    resolveAIVideoRequestType(request.model, request) !== 'image_to_video' ||
-    Boolean(normalizeString(request.generationId)) ||
-    request.dockerAdapterFailoverAttempted === true ||
-    Math.max(0, Number(request.transientProviderErrorCount) || 0) > 0
-  ) {
-    return null;
-  }
-
-  const currentProvider = resolveDockerVideoProviderForPayload(request.model, request);
-  const nextProvider = resolveNextDockerVideoProvider(request.model, currentProvider, {
-    generationType: request.generationType || request.layerAiVideoType,
-  });
-  if (!currentProvider || !nextProvider || nextProvider === currentProvider) {
-    return null;
-  }
-
-  return { currentProvider, nextProvider };
-}
-
 export function isTransientProviderError(error) {
   const status = getProviderErrorStatus(error);
   if (status && TRANSIENT_PROVIDER_ERROR_STATUSES.has(status)) {
@@ -944,6 +940,13 @@ export function isTransientProviderError(error) {
   }
   const code = typeof error?.code === 'string' ? error.code : '';
   return TRANSIENT_PROVIDER_ERROR_CODES.has(code);
+}
+
+export function isSafeProviderSubmissionRetry(error) {
+  return (
+    getProviderErrorStatus(error) === 429 ||
+    error?.code === 'SAMSAR_MEDIA_TUNNEL_UNREACHABLE'
+  );
 }
 
 function getRetryAfterMs(error) {
@@ -986,7 +989,7 @@ export function buildTransientProviderErrorUpdate(request = {}, error, phase = '
   // never consume the provider retry budget or terminal-fail lip sync, sound
   // effect, or base-video generation while the controller rotates the URL.
   const shouldFailRequest = !isManagedMediaTunnelError &&
-    shouldFailRequestAfterTransientProviderError(request, nextTransientErrorCount);
+    shouldFailRequestAfterTransientProviderError(request, nextTransientErrorCount, phase);
   const backoffMs = shouldFailRequest
     ? 0
     : baseBackoffMs + (retryAfterMs == null ? Math.floor(Math.random() * PROVIDER_POLL_JITTER_MS) : 0);
@@ -1005,6 +1008,7 @@ export function buildTransientProviderErrorUpdate(request = {}, error, phase = '
       lastTransientProviderErrorMessage: error?.message || String(error || ''),
       transientProviderErrorPhase: phase,
       transientProviderErrorExhausted: shouldFailRequest,
+      ...(shouldFailRequest && phase === 'submit' ? { retryOnFail: false } : {}),
       expireAt: new Date(),
     },
     inc: isManagedMediaTunnelError
@@ -1014,8 +1018,16 @@ export function buildTransientProviderErrorUpdate(request = {}, error, phase = '
   };
 }
 
-function shouldFailRequestAfterTransientProviderError(request = {}, nextTransientErrorCount = 0) {
-  if (nextTransientErrorCount >= MAX_PROVIDER_TRANSIENT_ERRORS) {
+function shouldFailRequestAfterTransientProviderError(
+  request = {},
+  nextTransientErrorCount = 0,
+  phase = 'poll',
+) {
+  const maxErrors = phase === 'submit' &&
+    resolveAIVideoRequestType(request.model, request) === 'image_to_video'
+    ? MAX_EXPLICIT_I2V_SUBMISSION_REJECTIONS
+    : MAX_PROVIDER_TRANSIENT_ERRORS;
+  if (nextTransientErrorCount >= maxErrors) {
     return true;
   }
 
@@ -1040,55 +1052,10 @@ async function deferTransientProviderError(request, error, phase) {
   });
 }
 
-async function tryDockerI2V429AdapterFailover(request, error) {
-  const plan = buildDockerI2V429AdapterFailoverPlan(request, error);
-  if (!plan) {
-    return { attempted: false };
+export function getPendingPollIntervalMs(model, payload = {}) {
+  if (isSamsarExternalVideoRequest(payload)) {
+    return SAMSAR_EXTERNAL_PENDING_POLL_INTERVAL_MS;
   }
-
-  const failoverRequest = await AIVideoLayerGeneration.findByIdAndUpdate(request._id, {
-    $set: {
-      dockerAdapterFailoverAttempted: true,
-      dockerAdapterFailoverAttemptedAt: new Date(),
-      dockerAdapterFailoverFromProvider: plan.currentProvider,
-      dockerAdapterFailoverTriggerStatus: 429,
-      dockerVideoProviderOverride: plan.nextProvider,
-      expireAt: new Date(),
-      nextAttemptAfter: null,
-      rowLocked: false,
-    },
-  }, { new: true });
-
-  if (!failoverRequest) {
-    return { attempted: false };
-  }
-
-  console.warn(
-    `AI video provider ${plan.currentProvider} returned 429; retrying request ${request._id} ` +
-    `with ${plan.nextProvider}.`,
-  );
-
-  try {
-    await generateAIVideoLayer(failoverRequest);
-    return { attempted: true, succeeded: true };
-  } catch (failoverError) {
-    if (isTransientMongoError(failoverError)) {
-      throw failoverError;
-    }
-    console.error(
-      `AI video adapter failover to ${plan.nextProvider} failed for request ${request._id}:`,
-      getErrorLogPayload(failoverError),
-    );
-    return {
-      attempted: true,
-      succeeded: false,
-      error: failoverError,
-      request: failoverRequest,
-    };
-  }
-}
-
-function getPendingPollIntervalMs(model, payload = {}) {
   if (model === 'RUNWAYML') {
     return RUNWAY_PENDING_POLL_INTERVAL_MS;
   }
@@ -1466,27 +1433,41 @@ async function generatePendingAiVideoLayerRequests() {
         throw e;
       }
       console.error('Error while starting a new INIT request:', getErrorLogPayload(e));
-      const failoverResult = await tryDockerI2V429AdapterFailover(request, e);
-      if (failoverResult.succeeded) {
+      const isImageToVideoSubmission =
+        resolveAIVideoRequestType(request.model, request) === 'image_to_video';
+      if (isImageToVideoSubmission && isSafeProviderSubmissionRetry(e)) {
+        await deferTransientProviderError(request, e, 'submit');
         continue;
       }
-      const failedRequest = failoverResult.request || request;
-      const providerError = failoverResult.error || e;
-      if (isTransientProviderError(providerError)) {
-        await deferTransientProviderError(failedRequest, providerError, 'submit');
+      if (isImageToVideoSubmission) {
+        // A timeout, connection reset, or 5xx can occur after the provider
+        // accepted the request. Never resubmit or switch adapters when the
+        // submission outcome is unknown.
+        await AIVideoLayerGeneration.findByIdAndUpdate(request._id, {
+          status: 'FAILED',
+          rowLocked: false,
+          retryOnFail: false,
+          submissionOutcomeUnknown: isTransientProviderError(e),
+          lastProviderFailureMessage: e?.message || String(e),
+          lastProviderFailureDetail: getErrorLogPayload(e),
+        });
         continue;
       }
-      if (await fallbackGoogleNativeVeo3Generation(failedRequest, providerError?.message || 'Google native Veo submit failed.')) {
+      if (isTransientProviderError(e)) {
+        await deferTransientProviderError(request, e, 'submit');
         continue;
       }
-      if (await fallbackCustomAiVideoGeneration(failedRequest, providerError?.message || 'Custom image-to-video submit failed.')) {
+      if (await fallbackGoogleNativeVeo3Generation(request, e?.message || 'Google native Veo submit failed.')) {
         continue;
       }
-      await AIVideoLayerGeneration.findByIdAndUpdate(failedRequest._id, {
+      if (await fallbackCustomAiVideoGeneration(request, e?.message || 'Custom image-to-video submit failed.')) {
+        continue;
+      }
+      await AIVideoLayerGeneration.findByIdAndUpdate(request._id, {
         status: 'FAILED',
         rowLocked: false,
-        lastProviderFailureMessage: providerError?.message || String(providerError),
-        lastProviderFailureDetail: getErrorLogPayload(providerError),
+        lastProviderFailureMessage: e?.message || String(e),
+        lastProviderFailureDetail: getErrorLogPayload(e),
       });
     }
   }
@@ -3116,8 +3097,6 @@ async function processBaseGenerationFailed(payload) {
   // RETRY PATH (tries 0,1,2) if allowed
   // ---------------------------
   if (willRetry && tries < MAX_BASE_GENERATION_RETRIES) {
-    await getTimeout(1000);
-
     let newModel = model;
     let newPrompt = prompt;
     let retryPreparationSucceeded = true;
@@ -3126,6 +3105,7 @@ async function processBaseGenerationFailed(payload) {
       numRetries: tries + 1,
       rowLocked: false,
       generationId: null,
+      nextAttemptAfter: new Date(Date.now() + getExplicitFailureRetryBackoffMs(tries)),
       expireAt: new Date(),
     };
 
@@ -3173,13 +3153,10 @@ async function processBaseGenerationFailed(payload) {
       retryUpdate.aiVideoRetryFilterPassScore = chosen.score;
       retryUpdate.aiVideoRetryFilterPassSrc = chosen.src;
       retryUpdate.startImageDescription = chosen.description || '';
-    } else if (
-      tries === 0 &&
-      previouslyAttemptedFallbackSources.length === 0 &&
-      fallbackPreparation.attemptedSources.length === 0
-    ) {
-      // A session with no alternate image still gets one explicit prompt-only
-      // retry. It is separate from fallback progression and never repeats.
+    } else {
+      // A definitively failed provider attempt may retry the same prepared
+      // start image. Each retry has a distinct attempt id and deterministic
+      // backoff, so it is not a duplicate submission of an unknown outcome.
       retryPromptCandidate = {
         description: getRetryStartImageDescription(null, currentLayer) ||
           firstNonEmptyString(
@@ -3188,13 +3165,11 @@ async function processBaseGenerationFailed(payload) {
           ),
       };
       retryUpdate.aiVideoPromptOnlySameImageRetry = true;
-    } else {
-      retryPreparationSucceeded = false;
-      retryPreparationFailureMessage = fallbackPreparation.preparationErrors.length > 0
-        ? 'No usable fallback start image remained after local fallback preparation failed.'
-        : 'No unused fallback start image remained after AI video generation failed.';
       for (const preparationError of fallbackPreparation.preparationErrors) {
-        console.error('Error preparing AI-video fallback image:', preparationError);
+        console.warn(
+          'AI-video fallback image preparation failed; retrying the original start image:',
+          preparationError,
+        );
       }
     }
 
@@ -3258,7 +3233,6 @@ async function processBaseGenerationFailed(payload) {
           model: newModel,
         },
         $unset: {
-          nextAttemptAfter: '',
           lastTransientProviderErrorAt: '',
           lastTransientProviderErrorStatus: '',
           lastTransientProviderErrorMessage: '',

@@ -5,6 +5,7 @@ import ImageGeneration from '../../schema/ImageGeneration.js';
 import GlobalSession from '../../schema/GlobalSession.js';
 import { markVideoSessionLayerAsFailed } from '../../VideoSession.js';
 import { uploadImageToCDN } from '../../utils/AWS.js';
+import { getDeploymentEdition } from '../../utils/Environment.js';
 import {
   generateGoogleNanoBananaImages,
   getGoogleNanoBananaLocalGenerationPath,
@@ -59,6 +60,14 @@ export function shouldUseGoogleNativeNanoBananaEdit(payloadOrModel) {
   }
 
   const providerStatus = payload.apiEditStatus || 'INIT';
+  if (
+    model === 'NANOBANANAPROEDIT' &&
+    getDeploymentEdition() === 'production' &&
+    normalizeString(process.env.FAL_API_KEY) &&
+    providerStatus === 'INIT'
+  ) {
+    return false;
+  }
   if (providerStatus === 'INIT') {
     return true;
   }
