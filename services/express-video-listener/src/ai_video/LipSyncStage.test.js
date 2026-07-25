@@ -5,6 +5,7 @@ import {
   assessLipSyncStage,
   findConnectedSpeechAudioLayer,
   hasLipSyncOutput,
+  isCharacterLipSyncLayer,
 } from './LipSyncStage.js';
 
 function characterLayer(id, overrides = {}) {
@@ -80,7 +81,7 @@ test('one failed branch layer fails the aggregate instead of looking completed',
   assert.equal(result.failed[0].layerId, 'branch-b');
 });
 
-test('detects a historical silent skip after layerAiVideoType was downgraded', () => {
+test('does not track a layer whose current scene type is no longer character', () => {
   const layer = characterLayer('branch-c', {
     layerAiVideoType: 'ai_video',
     lipSyncGenerationPending: false,
@@ -90,8 +91,44 @@ test('detects a historical silent skip after layerAiVideoType was downgraded', (
     [speechLayer('audio-branch-c', 'branch-c', 0)],
   );
 
-  assert.equal(result.state, 'INCOMPLETE');
-  assert.equal(result.incomplete[0].layerId, 'branch-c');
+  assert.equal(result.state, 'NOT_REQUIRED');
+  assert.equal(result.required.length, 0);
+});
+
+test('narration scenes never qualify from a character-style base image', () => {
+  const layer = characterLayer('narrator', {
+    layerAiVideoType: 'narration',
+  });
+
+  assert.equal(isCharacterLipSyncLayer(layer), false);
+  assert.equal(
+    assessLipSyncStage(
+      [layer],
+      [speechLayer('narrator-audio', 'narrator', 0)],
+    ).state,
+    'NOT_REQUIRED',
+  );
+});
+
+test('current character scene type remains authoritative over the base image type', () => {
+  assert.equal(isCharacterLipSyncLayer(characterLayer('speaker', {
+    layerBaseAiImageType: 'scene',
+  })), true);
+});
+
+test('character scenes without connected speech do not enter lip sync', () => {
+  const result = assessLipSyncStage(
+    [characterLayer('silent-character')],
+    [{
+      _id: 'music',
+      generationType: 'music',
+      connectedLayerId: 'silent-character',
+      connectedLayerIndex: 0,
+    }],
+  );
+
+  assert.equal(result.state, 'NOT_REQUIRED');
+  assert.equal(result.required.length, 0);
 });
 
 test('connected audio selection ignores music and falls back to canonical layer index', () => {

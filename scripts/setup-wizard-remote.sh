@@ -39,7 +39,7 @@ enabled() {
 
 usage() {
   cat <<EOF
-Usage: npm run setup-wizard:remote -- <user@host> [options]
+Usage: ./scripts/setup-wizard-remote.sh <user@host> [options]
 
 Starts the setup wizard on a remote Linux host and opens it locally through SSH.
 No public cloud port or Azure/AWS/GCP firewall rule is required.
@@ -58,8 +58,8 @@ Options:
   -h, --help                  Show this help text.
 
 Examples:
-  npm run setup-wizard:remote -- azureuser@172.188.83.14 -i /path/to/key.pem
-  SAMSAR_SETUP_MIN_DISK_FREE_GB=20 npm run setup-wizard:remote -- azureuser@172.188.83.14 -i /path/to/key.pem
+  ./scripts/setup-wizard-remote.sh azureuser@172.188.83.14 -i /path/to/key.pem
+  SAMSAR_SETUP_MIN_DISK_FREE_GB=20 ./scripts/setup-wizard-remote.sh azureuser@172.188.83.14 -i /path/to/key.pem
 EOF
 }
 
@@ -210,7 +210,7 @@ build_remote_command() {
   else
     extra_args=""
   fi
-  command+=" ${remote_env} npm run setup-wizard -- --no-open-setup-port"
+  command+=" ${remote_env} ./setup.sh --no-open-setup-port"
   if [[ -n "$extra_args" ]]; then
     command+=" ${extra_args}"
   fi

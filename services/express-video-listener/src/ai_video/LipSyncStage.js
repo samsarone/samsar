@@ -30,10 +30,9 @@ function normalizeOptionalInteger(value) {
 }
 
 export function isCharacterLipSyncLayer(layer = {}) {
-  // layerAiVideoType was historically changed to `ai_video` when lip sync
-  // could not be queued. The base image type preserves the original intent.
-  return normalizeLayerType(layer?.layerBaseAiImageType) === 'character'
-    || normalizeLayerType(layer?.layerAiVideoType) === 'character';
+  // The current scene type is authoritative. A narration scene can still use
+  // a character-style base image, but that must never make it lip-syncable.
+  return normalizeLayerType(layer?.layerAiVideoType) === 'character';
 }
 
 export function hasReusableBaseAiVideo(layer = {}) {
@@ -87,7 +86,11 @@ export function findConnectedSpeechAudioLayer(
 }
 
 function isTrackedLipSyncLayer(layer = {}, connectedSpeechAudioLayer = null) {
-  if (!isCharacterLipSyncLayer(layer) || !hasReusableBaseAiVideo(layer)) {
+  if (
+    !isCharacterLipSyncLayer(layer)
+    || !connectedSpeechAudioLayer
+    || !hasReusableBaseAiVideo(layer)
+  ) {
     return false;
   }
 

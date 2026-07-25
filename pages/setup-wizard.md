@@ -1,12 +1,36 @@
 # Setup Wizard
 
-The setup wizard is the browser-driven local Docker setup path. Start it from the `samsar` mono-repo root:
+The setup wizard is the browser-driven local Docker setup path. Node.js and
+npm run inside its Docker image and are not required on the host.
+
+Start it from the `samsar` mono-repo root on Linux, macOS, or WSL:
 
 ```bash
-npm run setup-wizard
+./setup.sh
 ```
 
-The command prints setup wizard URLs for localhost and detected private IPs, and prints a public-IP setup URL only when TCP `8089` responds on that public address. It also waits for the wizard to respond and attempts to open `http://localhost:8089` in the default browser on hosts with desktop browser access. Set `SAMSAR_SETUP_OPEN_BROWSER=0` to skip browser auto-open.
+On Windows, use either native launcher:
+
+```powershell
+.\setup.ps1
+```
+
+```bat
+setup.cmd
+```
+
+The launcher installs Docker CE, Buildx, and Compose automatically on
+supported Linux distributions when Docker is missing. The Windows launcher
+can install Docker Desktop through `winget`; the macOS launcher can install
+Docker Desktop through Homebrew. Set `SAMSAR_SETUP_INSTALL_DOCKER=0` to
+disable automatic Docker installation. `npm run setup-wizard` remains an
+optional developer alias.
+
+The command prints setup wizard URLs for localhost and detected private IPs,
+and prints a public-IP setup URL only when TCP `8089` responds on that public
+address. It also waits for the wizard to respond and attempts to open
+`http://localhost:8089` in the default browser on hosts with desktop browser
+access. Set `SAMSAR_SETUP_OPEN_BROWSER=0` to skip browser auto-open.
 
 ## Wizard Steps
 

@@ -12,10 +12,7 @@ LOCAL_SETUP_WIZARD_URL="http://localhost:${HOST_PORT}"
 PUBLIC_IP_TIMEOUT_SECONDS="${SAMSAR_SETUP_PUBLIC_IP_TIMEOUT_SECONDS:-2}"
 READY_TIMEOUT_SECONDS="${SAMSAR_SETUP_READY_TIMEOUT_SECONDS:-30}"
 BOOTSTRAP_ENABLED="${SAMSAR_SETUP_BOOTSTRAP:-1}"
-INSTALL_NODE_ENABLED="${SAMSAR_SETUP_INSTALL_NODE:-1}"
-INSTALL_YARN_ENABLED="${SAMSAR_SETUP_INSTALL_YARN:-1}"
-NODE_MAJOR="${SAMSAR_SETUP_NODE_MAJOR:-22}"
-MIN_NODE_MAJOR="${SAMSAR_SETUP_MIN_NODE_MAJOR:-20}"
+INSTALL_DOCKER_ENABLED="${SAMSAR_SETUP_INSTALL_DOCKER:-1}"
 ALLOW_DOCKER_CONVENIENCE_SCRIPT="${SAMSAR_SETUP_ALLOW_DOCKER_CONVENIENCE_SCRIPT:-1}"
 RESOURCE_CHECK_ENABLED="${SAMSAR_SETUP_RESOURCE_CHECK:-1}"
 MIN_MEMORY_GB="${SAMSAR_SETUP_MIN_MEMORY_GB:-16}"
@@ -61,7 +58,7 @@ enabled() {
 
 usage() {
   cat <<EOF
-Usage: npm run setup-wizard -- [options]
+Usage: ./setup.sh [options]
 
 Options:
   -y, --yes             Run non-interactively and open TCP ${HOST_PORT} in host/cloud firewalls when possible.
@@ -73,10 +70,15 @@ Options:
 Environment:
   SAMSAR_SETUP_OPEN_SETUP_PORT=ask|true|false
   SAMSAR_SETUP_OPEN_CLOUD_PORT=ask|true|false
+  SAMSAR_SETUP_INSTALL_DOCKER=1
   SAMSAR_SETUP_INSTALL_CLOUD_CLI=1
   SAMSAR_SETUP_AZURE_NSG_PRIORITY=1000
   SAMSAR_SETUP_YES=1
   SAMSAR_SETUP_MIN_DISK_FREE_GB=<gb>
+
+Node.js and npm are not required on the host. They run inside the setup
+wizard container. On supported Linux hosts, missing Docker CE, Buildx, and
+the Compose plugin are installed automatically before the wizard starts.
 EOF
 }
 
@@ -338,70 +340,6 @@ ensure_base_packages() {
   esac
 }
 
-installed_node_major() {
-  if ! command -v node >/dev/null 2>&1; then
-    return 1
-  fi
-  node -v 2>/dev/null | sed -E 's/^v([0-9]+).*/\1/'
-}
-
-node_prerequisites_satisfied() {
-  local major
-  major="$(installed_node_major || true)"
-  [[ -n "$major" ]] && [[ "$major" =~ ^[0-9]+$ ]] && (( major >= MIN_NODE_MAJOR )) && command -v npm >/dev/null 2>&1
-}
-
-install_nodejs() {
-  if node_prerequisites_satisfied; then
-    return 0
-  fi
-  enabled "$INSTALL_NODE_ENABLED" || die "Node.js/npm are missing or too old. Install Node.js ${NODE_MAJOR}.x, then rerun this script."
-
-  log "Installing Node.js ${NODE_MAJOR}.x and npm..."
-  ensure_base_packages
-  case "$PACKAGE_MANAGER" in
-    apt)
-      curl -fsSL "https://deb.nodesource.com/setup_${NODE_MAJOR}.x" | run_as_root_preserve_env bash -
-      run_as_root env DEBIAN_FRONTEND=noninteractive apt-get install -y nodejs
-      ;;
-    dnf)
-      curl -fsSL "https://rpm.nodesource.com/setup_${NODE_MAJOR}.x" | run_as_root_preserve_env bash -
-      run_as_root dnf install -y nodejs
-      ;;
-    yum)
-      curl -fsSL "https://rpm.nodesource.com/setup_${NODE_MAJOR}.x" | run_as_root_preserve_env bash -
-      run_as_root yum install -y nodejs
-      ;;
-    apk)
-      run_as_root apk add --no-cache nodejs npm
-      ;;
-    pacman)
-      run_as_root pacman -Sy --needed --noconfirm nodejs npm
-      ;;
-    *)
-      die "Cannot auto-install Node.js on ${OS_PRETTY_NAME}. Install Node.js ${NODE_MAJOR}.x from https://nodejs.org/en/download and rerun this script."
-      ;;
-  esac
-
-  node_prerequisites_satisfied || die "Node.js/npm installation did not complete successfully."
-}
-
-install_yarn_if_needed() {
-  local yarn_version
-  enabled "$INSTALL_YARN_ENABLED" || return 0
-  [[ -f "$ROOT_DIR/package.json" ]] || return 0
-  grep -q '"packageManager"[[:space:]]*:[[:space:]]*"yarn@' "$ROOT_DIR/package.json" || return 0
-  command -v yarn >/dev/null 2>&1 && return 0
-  command -v npm >/dev/null 2>&1 || return 0
-
-  yarn_version="$(
-    sed -n 's/.*"packageManager"[[:space:]]*:[[:space:]]*"yarn@\([^"+]*\).*/\1/p' "$ROOT_DIR/package.json" | head -n 1
-  )"
-  yarn_version="${yarn_version:-1.22.22}"
-  log "Installing Yarn ${yarn_version}..."
-  run_as_root npm install -g "yarn@${yarn_version}"
-}
-
 docker_apt_repo_id() {
   case "$OS_ID" in
     ubuntu|pop|linuxmint|elementary|neon)
@@ -512,11 +450,39 @@ install_docker_convenience_script() {
   rm -f /tmp/samsar-get-docker.sh
 }
 
+install_docker_desktop_macos() {
+  command -v brew >/dev/null 2>&1 || {
+    warn "Automatic Docker Desktop installation on macOS requires Homebrew."
+    warn "Install Homebrew from https://brew.sh or install Docker Desktop from $(docker_install_docs_url)."
+    return 1
+  }
+
+  log "Installing Docker Desktop with Homebrew..."
+  brew install --cask docker || return 1
+  if [[ -x /Applications/Docker.app/Contents/Resources/bin/docker ]]; then
+    export PATH="/Applications/Docker.app/Contents/Resources/bin:$PATH"
+  fi
+}
+
 install_docker_engine() {
+  if [[ "$(uname -s 2>/dev/null || true)" == "Darwin" \
+    && -x /Applications/Docker.app/Contents/Resources/bin/docker ]]; then
+    export PATH="/Applications/Docker.app/Contents/Resources/bin:$PATH"
+  fi
   command -v docker >/dev/null 2>&1 && return 0
   print_docker_install_hint
   enabled "$BOOTSTRAP_ENABLED" || exit 1
-  is_linux || die "Automatic Docker installation is only supported for Linux hosts. Install Docker manually from the guide above, then rerun this script."
+  enabled "$INSTALL_DOCKER_ENABLED" || die "Automatic Docker installation is disabled. Install Docker from $(docker_install_docs_url), then rerun this script."
+
+  if [[ "$(uname -s 2>/dev/null || true)" == "Darwin" ]]; then
+    install_docker_desktop_macos ||
+      die "Could not install Docker Desktop automatically. Use: $(docker_install_docs_url)"
+    command -v docker >/dev/null 2>&1 ||
+      die "Docker Desktop installation completed, but docker is still not on PATH. Restart the shell and rerun setup."
+    return 0
+  fi
+
+  is_linux || die "Automatic Docker installation is not supported on this host. Install Docker from the guide above, then rerun this script."
 
   log "Attempting automatic Docker installation..."
   ensure_base_packages
@@ -542,6 +508,21 @@ install_docker_engine() {
 }
 
 start_docker_service() {
+  local attempt
+  if [[ "$(uname -s 2>/dev/null || true)" == "Darwin" ]]; then
+    if docker info >/dev/null 2>&1; then
+      return 0
+    fi
+    command -v open >/dev/null 2>&1 || return 0
+    log "Starting Docker Desktop..."
+    open -ga Docker >/dev/null 2>&1 || true
+    for attempt in $(seq 1 90); do
+      docker info >/dev/null 2>&1 && return 0
+      sleep 2
+    done
+    return 0
+  fi
+
   is_linux || return 0
   log "Starting Docker service..."
   if command -v systemctl >/dev/null 2>&1; then
@@ -871,11 +852,6 @@ bootstrap_host() {
   detect_cloud_environment
   log "Detected environment: ${OS_PRETTY_NAME}${CLOUD_ENVIRONMENT:+ on $CLOUD_ENVIRONMENT}"
   require_system_resources
-
-  if enabled "$BOOTSTRAP_ENABLED" && is_linux; then
-    install_nodejs
-    install_yarn_if_needed
-  fi
 
   install_docker_engine
   start_docker_service

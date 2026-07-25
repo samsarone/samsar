@@ -90,26 +90,23 @@ GitHub Actions runs both checks for pull requests into `main` and pushes to `mai
 ### **1. Prerequisites**
 
 - Git.
-- Node.js 20+ with npm.
-- Docker running with the Compose plugin.
 - `rsync`, only when syncing source projects from the parent workspace.
 
-Install Docker from the official Docker docs for your platform:
+Node.js, npm, and Yarn are not host prerequisites. The setup wizard and its
+JavaScript tooling run inside Docker.
 
-| Platform | Docker install path |
+The direct setup launcher checks Docker before continuing:
+
+| Platform | Bootstrap behavior |
 | --- | --- |
-| macOS | [Docker Desktop for Mac](https://docs.docker.com/desktop/setup/install/mac-install/) |
-| Windows | [Docker Desktop for Windows](https://docs.docker.com/desktop/setup/install/windows-install/) |
-| Linux desktop | [Docker Desktop for Linux](https://docs.docker.com/desktop/setup/install/linux/) |
-| Linux server / Docker CE | [Docker Engine install](https://docs.docker.com/engine/install/) |
-| Linux Compose plugin only | [Docker Compose plugin install](https://docs.docker.com/compose/install/linux/) |
+| Linux | Installs Docker CE, Buildx, and the Compose plugin from Docker's official package repository, enables the service, and configures user access. |
+| macOS | Uses an existing Docker Desktop installation, or installs it automatically through Homebrew when Homebrew is available. |
+| Windows | `setup.ps1` installs Docker Desktop with `winget` when needed and runs the launcher through Docker Desktop's WSL 2 integration. |
 
-Confirm Docker is installed and running before starting setup:
-
-```bash
-docker info
-docker compose version
-```
+Set `SAMSAR_SETUP_INSTALL_DOCKER=0` to disable automatic Docker installation.
+On macOS without Homebrew, install [Docker Desktop for Mac](https://docs.docker.com/desktop/setup/install/mac-install/).
+On Windows without `winget`, install [Docker Desktop for Windows](https://docs.docker.com/desktop/setup/install/windows-install/)
+and enable WSL 2 integration.
 
 From the parent workspace checkout, enter the Samsar deployable monorepo. If you cloned this repository directly, start from the repository root instead.
 
@@ -125,11 +122,35 @@ npm run sync
 
 ### **2. One-Step Command to Start the Setup Wizard**
 
+Linux, macOS, or WSL:
+
 ```bash
-npm run setup-wizard
+./setup.sh
 ```
 
-The command builds and starts the setup wizard container, prints localhost/private-IP setup URLs, prints a public-IP setup URL only when TCP `8089` responds on that public address, waits for the wizard to respond, and tries to open `http://localhost:8089` in the default browser on hosts with desktop browser access. Set `SAMSAR_SETUP_OPEN_BROWSER=0` to skip browser auto-open. After you complete the browser flow, the wizard writes deployment config, renders runtime env and model availability, builds and starts the selected Docker Compose profiles, publishes the local media gateway when required, verifies the processor API and Studio client, and prepares local login.
+Windows PowerShell or Command Prompt:
+
+```powershell
+.\setup.ps1
+```
+
+```bat
+setup.cmd
+```
+
+`npm run setup-wizard` remains available as a developer convenience, but is
+not required for installation.
+
+The launcher installs or starts Docker when supported, builds and starts the
+containerized setup wizard, prints localhost/private-IP setup URLs, prints a
+public-IP setup URL only when TCP `8089` responds on that public address,
+waits for the wizard to respond, and tries to open `http://localhost:8089` in
+the default browser on hosts with desktop browser access. Set
+`SAMSAR_SETUP_OPEN_BROWSER=0` to skip browser auto-open. After you complete
+the browser flow, the wizard writes deployment config, renders runtime env
+and model availability, builds and starts the selected Docker Compose
+profiles, publishes the local media gateway when required, verifies the
+processor API and Studio client, and prepares local login.
 
 Open the local services after setup completes:
 

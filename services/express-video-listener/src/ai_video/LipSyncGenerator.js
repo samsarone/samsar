@@ -141,17 +141,9 @@ export async function generateLipSyncForSession(sessionId) {
         i,
       );
 
-      // Character scenes without speech do not need lip sync. A layer that was
-      // explicitly marked pending but lost its speech binding is an error.
+      // A character scene without connected speech never enters lip sync.
       if (!connectedAudioLayer) {
-        if (!currentLayer.lipSyncGenerationPending) {
-          continue;
-        }
-        const error = new Error(
-          `Lip sync input is missing a connected speech audio layer for character layer ${normalizeStringId(currentLayer?._id) || i}.`,
-        );
-        await markLipSyncLayerFailed(sessionId, currentLayer._id, error);
-        throw error;
+        continue;
       }
 
       try {
