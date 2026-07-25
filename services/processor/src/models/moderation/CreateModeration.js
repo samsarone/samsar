@@ -29,6 +29,7 @@ const DEFAULT_EXTERNAL_MODERATION_TIMEOUT_BUFFER_MS = 5_000;
 const DEFAULT_SAMSAR_EXTERNAL_MODERATION_REQUEST_TIMEOUT_MS = 130_000;
 const MAX_SAMSAR_EXTERNAL_MODERATION_REQUEST_TIMEOUT_MS = 130_000;
 const DEFAULT_MODERATION_REJECT_SCORE_THRESHOLD = 0.65;
+const DEFAULT_NARRATIVE_VIOLENCE_REJECT_SCORE_THRESHOLD = 0.9;
 const OPENAI_MODERATION_REJECT_SCORE_THRESHOLD = parseModerationScoreThreshold(
   process.env.OPENAI_MODERATION_REJECT_SCORE_THRESHOLD ||
   process.env.MODERATION_REJECT_SCORE_THRESHOLD,
@@ -38,6 +39,10 @@ const GOOGLE_MODERATION_REJECT_SCORE_THRESHOLD = parseModerationScoreThreshold(
   process.env.GOOGLE_MODERATION_REJECT_SCORE_THRESHOLD ||
   process.env.MODERATION_REJECT_SCORE_THRESHOLD,
   DEFAULT_MODERATION_REJECT_SCORE_THRESHOLD,
+);
+const NARRATIVE_VIOLENCE_REJECT_SCORE_THRESHOLD = parseModerationScoreThreshold(
+  process.env.NARRATIVE_VIOLENCE_REJECT_SCORE_THRESHOLD,
+  DEFAULT_NARRATIVE_VIOLENCE_REJECT_SCORE_THRESHOLD,
 );
 
 const missingProviderWarningLogged = new Set();
@@ -111,6 +116,26 @@ function getModerationRejectScoreThreshold(provider) {
     return GOOGLE_MODERATION_REJECT_SCORE_THRESHOLD;
   }
   return OPENAI_MODERATION_REJECT_SCORE_THRESHOLD;
+}
+
+function isBroadViolenceCategory(category) {
+  return normalizeString(category).toLowerCase() === "violence";
+}
+
+function getCategoryScore(categoryScores, category) {
+  const normalizedScore = Number(categoryScores?.[category]);
+  return Number.isFinite(normalizedScore) ? normalizedScore : null;
+}
+
+function shouldRelaxNarrativeViolence(options = {}) {
+  return options.moderationContext === "narrative";
+}
+
+function getCategoryRejectScoreThreshold(category, options = {}) {
+  if (shouldRelaxNarrativeViolence(options) && isBroadViolenceCategory(category)) {
+    return NARRATIVE_VIOLENCE_REJECT_SCORE_THRESHOLD;
+  }
+  return getModerationRejectScoreThreshold(options.provider);
 }
 
 function normalizeDeploymentProviderName(value) {
@@ -890,37 +915,63 @@ export function getModerationDecision(moderationResult, options = {}) {
   if (!moderationResult) {
     return { safe: false, reason: "missing_result" };
   }
-  const rejectScoreThreshold = getModerationRejectScoreThreshold(options.provider);
 
   const categories = moderationResult.categories || {};
+  const categoryScores = moderationResult.category_scores || {};
   const flaggedCategories = Object
     .entries(categories)
     .filter(([, flagged]) => flagged === true)
     .map(([category]) => category);
+  const blockingFlaggedCategories = flaggedCategories.filter((category) => {
+    if (!shouldRelaxNarrativeViolence(options) || !isBroadViolenceCategory(category)) {
+      return true;
+    }
 
-  if (moderationResult.flagged === true || flaggedCategories.length > 0) {
+    const score = getCategoryScore(categoryScores, category);
+    return score === null || score >= getCategoryRejectScoreThreshold(category, options);
+  });
+  const hasUncategorizedProviderFlag =
+    moderationResult.flagged === true && flaggedCategories.length === 0;
+
+  if (hasUncategorizedProviderFlag || blockingFlaggedCategories.length > 0) {
     return {
       safe: false,
       reason: "flagged",
-      categories: flaggedCategories,
+      categories: blockingFlaggedCategories,
     };
   }
 
-  const categoryScores = moderationResult.category_scores || {};
   const highScoreCategories = Object
     .entries(categoryScores)
     .filter(([, score]) => {
       const normalizedScore = Number(score);
-      return Number.isFinite(normalizedScore) && normalizedScore >= rejectScoreThreshold;
+      return Number.isFinite(normalizedScore);
     })
+    .filter(([category, score]) => (
+      Number(score) >= getCategoryRejectScoreThreshold(category, options)
+    ))
     .map(([category]) => category);
 
   if (highScoreCategories.length > 0) {
+    const thresholds = highScoreCategories.map((category) => (
+      getCategoryRejectScoreThreshold(category, options)
+    ));
+    const threshold = Math.min(...thresholds);
     return {
       safe: false,
       reason: "category_score",
       categories: highScoreCategories,
-      threshold: rejectScoreThreshold,
+      threshold,
+    };
+  }
+
+  if (
+    shouldRelaxNarrativeViolence(options) &&
+    flaggedCategories.some(isBroadViolenceCategory)
+  ) {
+    return {
+      safe: true,
+      reason: "passed_non_graphic_narrative_violence",
     };
   }
 
@@ -981,16 +1032,21 @@ export async function getModerationForNarrative(requestData, options = {}) {
   }
 
   try {
-    const moderation = await runSingleModerationRequest(
-      ({ signal }) => typeof options.moderationCall === "function"
-        ? options.moderationCall(provider, requestData, { ...options, signal })
-        : createModerationWithProvider(provider, requestData, { ...options, signal }),
-      {
-        timeoutMs: totalTimeoutMs,
-        signal: options.signal,
-      },
+    const moderation = requireModerationResponse(
+      await runSingleModerationRequest(
+        ({ signal }) => typeof options.moderationCall === "function"
+          ? options.moderationCall(provider, requestData, { ...options, signal })
+          : createModerationWithProvider(provider, requestData, { ...options, signal }),
+        {
+          timeoutMs: totalTimeoutMs,
+          signal: options.signal,
+        },
+      ),
     );
-    const decision = getModerationResponseDecision(moderation, { provider });
+    const decision = getModerationResponseDecision(moderation, {
+      provider,
+      moderationContext: "narrative",
+    });
     if (sessionId) {
       console.info("[moderation] request_complete", {
         sessionId,
@@ -1002,7 +1058,7 @@ export async function getModerationForNarrative(requestData, options = {}) {
     }
     return decision.safe;
   } catch (error) {
-    console.error("ERROR IN MODERATION", {
+    console.error("[moderation] provider_error_bypassed", {
       sessionId: sessionId || null,
       provider,
       message: error?.message || error,
@@ -1015,6 +1071,8 @@ export async function getModerationForNarrative(requestData, options = {}) {
       error?.code === 'INFERENCE_USAGE_OBSERVER_FAILED') {
       throw error;
     }
-    return false;
+    // Provider/configuration failures are not moderation decisions. Fail open so
+    // only an explicit unsafe provider response can reject the request.
+    return true;
   }
 }

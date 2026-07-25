@@ -1531,9 +1531,11 @@ async function generateAIVideoLayer(payload) {
     console.error('RETRYING...' + numRetries);
   }
 
-  if (payload.isExpressGeneration === true && LIPSYNC_MODELS.includes(model)) {
-    payload = await prepareExpressLipSyncPrompt(payload);
-  }
+  // TODO: Re-enable Express lip-sync prompt generation when the selected
+  // lip-sync model supports prompt input.
+  // if (payload.isExpressGeneration === true && LIPSYNC_MODELS.includes(model)) {
+  //   payload = await prepareExpressLipSyncPrompt(payload);
+  // }
 
   // Resolve only media that the selected public adapter will actually receive.
   // Samsar external adapters normalize their own exact request body, while

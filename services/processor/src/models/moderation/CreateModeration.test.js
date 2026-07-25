@@ -36,6 +36,81 @@ test("getModerationDecision rejects flagged moderation results", () => {
   });
 });
 
+test("narrative moderation allows broad non-graphic fantasy violence below the relaxed threshold", () => {
+  assert.deepEqual(getModerationDecision({
+    flagged: true,
+    categories: {
+      violence: true,
+      "violence/graphic": false,
+    },
+    category_scores: {
+      violence: 0.82,
+      "violence/graphic": 0.08,
+    },
+  }, {
+    provider: MODERATION_PROVIDERS.OPENAI,
+    moderationContext: "narrative",
+  }), {
+    safe: true,
+    reason: "passed_non_graphic_narrative_violence",
+  });
+});
+
+test("narrative moderation still rejects graphic violence and extreme broad violence", () => {
+  assert.deepEqual(getModerationDecision({
+    flagged: true,
+    categories: {
+      violence: true,
+      "violence/graphic": true,
+    },
+    category_scores: {
+      violence: 0.82,
+      "violence/graphic": 0.72,
+    },
+  }, {
+    provider: MODERATION_PROVIDERS.OPENAI,
+    moderationContext: "narrative",
+  }), {
+    safe: false,
+    reason: "flagged",
+    categories: ["violence/graphic"],
+  });
+
+  assert.deepEqual(getModerationDecision({
+    flagged: true,
+    categories: { violence: true },
+    category_scores: { violence: 0.94 },
+  }, {
+    provider: MODERATION_PROVIDERS.OPENAI,
+    moderationContext: "narrative",
+  }), {
+    safe: false,
+    reason: "flagged",
+    categories: ["violence"],
+  });
+});
+
+test("narrative moderation never relaxes non-violence categories", () => {
+  assert.deepEqual(getModerationDecision({
+    flagged: true,
+    categories: {
+      violence: true,
+      "self-harm": true,
+    },
+    category_scores: {
+      violence: 0.8,
+      "self-harm": 0.7,
+    },
+  }, {
+    provider: MODERATION_PROVIDERS.OPENAI,
+    moderationContext: "narrative",
+  }), {
+    safe: false,
+    reason: "flagged",
+    categories: ["self-harm"],
+  });
+});
+
 test("getModerationDecision rejects high category scores before the API flag threshold", () => {
   assert.deepEqual(getModerationDecision({
     flagged: false,
@@ -568,18 +643,85 @@ test("getModerationForNarrative skips without calling a provider in credential-l
   assert.equal(called, false);
 });
 
-test("getModerationForNarrative fails closed after a configured provider error", async (t) => {
+test("getModerationForNarrative allows a non-graphic Morgana-style fantasy action prompt", async () => {
+  const prompt = [
+    "Morgana — The Veiled Redeemer",
+    "Morgana walks through a fantasy kingdom, secretly protecting mages condemned by unjust laws.",
+    "Armored pursuers enter her ruined sanctuary and celestial bindings stop their advance.",
+    "Living shadow consumes hostile enchantments while a translucent barrier shelters the outcasts.",
+    "Burning shackles hold the pursuers motionless as Morgana leads the outcasts toward freedom.",
+  ].join("\n");
+
+  const safe = await getModerationForNarrative(prompt, {
+    env: { CURRENT_ENV: "production" },
+    moderationCall: async (provider, requestData) => {
+      assert.equal(provider, MODERATION_PROVIDERS.OPENAI);
+      assert.equal(requestData, prompt);
+      return {
+        results: [{
+          flagged: true,
+          categories: {
+            violence: true,
+            "violence/graphic": false,
+          },
+          category_scores: {
+            violence: 0.82,
+            "violence/graphic": 0.04,
+          },
+        }],
+      };
+    },
+  });
+
+  assert.equal(safe, true);
+});
+
+test("getModerationForNarrative fails open after provider errors in every environment", async (t) => {
+  t.mock.method(console, "error", () => {});
+  for (const env of [
+    { CURRENT_ENV: "development" },
+    { CURRENT_ENV: "production" },
+    { CURRENT_ENV: "docker", OPENAI_API_KEY: "openai-test-key" },
+  ]) {
+    const safe = await getModerationForNarrative("prompt", {
+      env,
+      moderationCall: async () => {
+        const error = new Error("provider unavailable");
+        error.status = 503;
+        throw error;
+      },
+    });
+    assert.equal(safe, true);
+  }
+});
+
+test("getModerationForNarrative fails open when production credentials are not configured", async (t) => {
   t.mock.method(console, "error", () => {});
   const safe = await getModerationForNarrative("prompt", {
-    env: {
-      CURRENT_ENV: "docker",
-      OPENAI_API_KEY: "openai-test-key",
-    },
-    moderationCall: async () => {
-      const error = new Error("provider unavailable");
-      error.status = 503;
-      throw error;
-    },
+    env: { CURRENT_ENV: "production" },
+  });
+  assert.equal(safe, true);
+});
+
+test("getModerationForNarrative fails open after an invalid provider response", async (t) => {
+  t.mock.method(console, "error", () => {});
+  const safe = await getModerationForNarrative("prompt", {
+    env: { CURRENT_ENV: "production" },
+    moderationCall: async () => ({ results: [] }),
+  });
+  assert.equal(safe, true);
+});
+
+test("getModerationForNarrative rejects only an explicit unsafe moderation result", async () => {
+  const safe = await getModerationForNarrative("unsafe prompt", {
+    env: { CURRENT_ENV: "production" },
+    moderationCall: async () => ({
+      results: [{
+        flagged: true,
+        categories: { "self-harm": true },
+        category_scores: { "self-harm": 0.99 },
+      }],
+    }),
   });
   assert.equal(safe, false);
 });
@@ -619,7 +761,7 @@ test("getModerationForNarrative has a caller-level deadline for a provider that 
     moderationCall: async () => new Promise(() => {}),
   });
 
-  assert.equal(safe, false);
+  assert.equal(safe, true);
   assert.ok(Date.now() - startedAt < 500);
 });
 
@@ -642,7 +784,7 @@ test("Docker Samsar moderation relies on one bounded hosted request", async (t) 
     },
   });
 
-  assert.equal(safe, false);
+  assert.equal(safe, true);
   assert.equal(calls, 1);
 });
 
