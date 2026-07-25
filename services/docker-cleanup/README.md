@@ -15,8 +15,8 @@ It does not clean final renders, API generated resources, generated music, user 
 ## Environment
 
 - `SAMSAR_ASSETS_V2_ROOT`: defaults to `/assets_v2`
-- `CLEANUP_MIN_AGE_HOURS`: defaults to `24`
-- `CLEANUP_CRON_SCHEDULE`: defaults to `17 3 * * *`
+- `CLEANUP_MIN_AGE_HOURS`: defaults to `4`
+- `CLEANUP_CRON_SCHEDULE`: defaults to `17 */3 * * *` (every three hours)
 - `CLEANUP_ON_START`: defaults to `true`
 - `CLEANUP_DRY_RUN`: defaults to `false`
 - `CLEANUP_TARGETS`: optional comma-separated list of supported target ids or paths
@@ -32,3 +32,8 @@ Run tests:
 ```sh
 npm test
 ```
+
+Cleanup is age-based rather than render-triggered. A render can therefore
+reuse its intermediate frames for at least four hours; the next three-hour
+sweep removes an eligible session directory only when its newest file is
+older than that grace period.

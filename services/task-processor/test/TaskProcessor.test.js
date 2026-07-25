@@ -1,11 +1,19 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
 import test from 'node:test';
 
 import {
   __testOnly__,
+  cleanupOldLocalAssetsV2Media,
   isTaskProcessorFileCleanupEnabled,
   isTaskProcessorGenerationSideEffectsEnabled,
 } from '../src/TaskProcessor.js';
+import {
+  getTaskProcessorSchedule,
+  runTaskProcessorSchedule,
+} from '../src/TaskScheduler.js';
 
 test('generation side effects preserve legacy behavior outside Docker', () => {
   assert.equal(
@@ -71,7 +79,7 @@ test('generation side effects fail closed in Docker unless explicitly enabled', 
   );
 });
 
-test('file cleanup preserves legacy behavior outside Docker and fails closed in Docker', () => {
+test('safe file cleanup is enabled by default in Docker and remains overridable', () => {
   assert.equal(
     isTaskProcessorFileCleanupEnabled(
       { CURRENT_ENV: 'production' },
@@ -84,14 +92,14 @@ test('file cleanup preserves legacy behavior outside Docker and fails closed in 
       { SAMSAR_RUNTIME: 'docker' },
       false,
     ),
-    false,
+    true,
   );
   assert.equal(
     isTaskProcessorFileCleanupEnabled(
       { CURRENT_ENV: 'production' },
       true,
     ),
-    false,
+    true,
   );
   assert.equal(
     isTaskProcessorFileCleanupEnabled(
@@ -217,4 +225,103 @@ test('frame regeneration flags are updated in place without replacing layers', a
     Object.hasOwn(updates[1].update.$set, 'layers'),
     false,
   );
+});
+
+test('intermediate media cleanup never sweeps final or user resources', async () => {
+  const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'samsar-task-cleanup-'));
+  const assetsV2Root = path.join(tempRoot, 'assets_v2');
+  const temporaryRender = path.join(assetsV2Root, 'ai_video', 'temp', 'old.png');
+  const finalRender = path.join(assetsV2Root, 'video', 'output', 'session', 'final.mp4');
+  const userResource = path.join(assetsV2Root, 'user_resources', 'user', 'video.mp4');
+  const oldTime = new Date(Date.now() - 5 * 60 * 60 * 1000);
+  const previousRoot = process.env.SAMSAR_ASSETS_V2_ROOT;
+  const previousCleanupHours = process.env.INTERMEDIATE_MEDIA_CLEANUP_HOURS;
+
+  try {
+    for (const filePath of [temporaryRender, finalRender, userResource]) {
+      await fs.mkdir(path.dirname(filePath), { recursive: true });
+      await fs.writeFile(filePath, 'media');
+      await fs.utimes(filePath, oldTime, oldTime);
+    }
+
+    process.env.SAMSAR_ASSETS_V2_ROOT = assetsV2Root;
+    process.env.INTERMEDIATE_MEDIA_CLEANUP_HOURS = '4';
+    const counters = await cleanupOldLocalAssetsV2Media();
+
+    await assert.rejects(fs.stat(temporaryRender), { code: 'ENOENT' });
+    await fs.stat(finalRender);
+    await fs.stat(userResource);
+    assert.equal(counters.deletedFiles, 1);
+  } finally {
+    if (previousRoot === undefined) delete process.env.SAMSAR_ASSETS_V2_ROOT;
+    else process.env.SAMSAR_ASSETS_V2_ROOT = previousRoot;
+    if (previousCleanupHours === undefined) delete process.env.INTERMEDIATE_MEDIA_CLEANUP_HOURS;
+    else process.env.INTERMEDIATE_MEDIA_CLEANUP_HOURS = previousCleanupHours;
+    await fs.rm(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test('task processor remains one shot outside Docker and recurs every three hours in Docker', () => {
+  assert.deepEqual(getTaskProcessorSchedule({}, false), {
+    recurring: false,
+    intervalMs: 0,
+    retryMs: 5 * 60 * 1000,
+  });
+  assert.deepEqual(
+    getTaskProcessorSchedule({ SAMSAR_RUNTIME: 'docker' }, false),
+    {
+      recurring: true,
+      intervalMs: 3 * 60 * 60 * 1000,
+      retryMs: 5 * 60 * 1000,
+    },
+  );
+  assert.deepEqual(
+    getTaskProcessorSchedule(
+      {
+        TASK_PROCESSOR_INTERVAL_HOURS: '6',
+        TASK_PROCESSOR_RETRY_MINUTES: '7',
+      },
+      false,
+    ),
+    {
+      recurring: true,
+      intervalMs: 6 * 60 * 60 * 1000,
+      retryMs: 7 * 60 * 1000,
+    },
+  );
+});
+
+test('recurring task processor retries a failed run and remains scheduled', async () => {
+  const calls = [];
+  const delays = [];
+  const logger = {
+    log(message) {
+      calls.push(['log', message]);
+    },
+    error(message) {
+      calls.push(['error', message]);
+    },
+  };
+  let runCount = 0;
+
+  const result = await runTaskProcessorSchedule({
+    env: {
+      TASK_PROCESSOR_INTERVAL_HOURS: '3',
+      TASK_PROCESSOR_RETRY_MINUTES: '5',
+    },
+    maxIterations: 2,
+    logger,
+    sleep: async (milliseconds) => delays.push(milliseconds),
+    runTask: async () => {
+      runCount += 1;
+      if (runCount === 1) {
+        throw new Error('temporary database outage');
+      }
+    },
+  });
+
+  assert.deepEqual(result, { iterations: 2, recurring: true });
+  assert.equal(runCount, 2);
+  assert.deepEqual(delays, [5 * 60 * 1000]);
+  assert.equal(calls.some(([level]) => level === 'error'), true);
 });

@@ -127,6 +127,7 @@ services:
   task-processor:
     <<: *service-env
     profiles: ["workers"]
+    restart: unless-stopped
     build:
       context: ../..
       dockerfile: Dockerfile
@@ -136,12 +137,13 @@ services:
 
   docker-cleanup:
     profiles: ["workers"]
+    restart: unless-stopped
     build:
       context: ../../services/docker-cleanup
     environment:
       SAMSAR_ASSETS_V2_ROOT: /assets_v2
-      CLEANUP_MIN_AGE_HOURS: "${CLEANUP_MIN_AGE_HOURS:-24}"
-      CLEANUP_CRON_SCHEDULE: "${CLEANUP_CRON_SCHEDULE:-17 3 * * *}"
+      CLEANUP_MIN_AGE_HOURS: "${CLEANUP_MIN_AGE_HOURS:-4}"
+      CLEANUP_CRON_SCHEDULE: "${CLEANUP_CRON_SCHEDULE:-17 */3 * * *}"
       CLEANUP_ON_START: "${CLEANUP_ON_START:-true}"
       CLEANUP_DRY_RUN: "${CLEANUP_DRY_RUN:-false}"
     volumes:

@@ -3,7 +3,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const DEFAULT_ASSETS_V2_ROOT = '/assets_v2';
-const DEFAULT_MIN_AGE_HOURS = 24;
+const DEFAULT_MIN_AGE_HOURS = 4;
 
 const MEDIA_FILE_EXTENSIONS = new Set([
   '.aac',

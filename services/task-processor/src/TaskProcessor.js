@@ -15,9 +15,9 @@ import { getDBConnectionString } from './DBString.js';
 const HOME_DIR = os.homedir();
 const CRON_LOG_PATH = path.join(HOME_DIR, 'cronTabs.log');
 const CRON_ERROR_PATH = path.join(HOME_DIR, 'cronTabs.error');
-const DEFAULT_STALE_SESSION_FRAME_CLEANUP_HOURS = 7 * 24;
+const DEFAULT_STALE_SESSION_FRAME_CLEANUP_HOURS = 4;
 const DEFAULT_STALE_SESSION_FRAME_CLEANUP_BATCH_SIZE = 64;
-const DEFAULT_ASSETS_V2_MEDIA_CLEANUP_DAYS = 7;
+const DEFAULT_INTERMEDIATE_MEDIA_CLEANUP_HOURS = 4;
 
 const MEDIA_FILE_EXTENSIONS = new Set([
   '.aac',
@@ -75,6 +75,7 @@ function isTaskProcessorFeatureEnabled(
   featureName,
   env = process.env,
   dockerMarkerPresent = fs.existsSync('/.dockerenv'),
+  dockerDefault = false,
 ) {
   const configuredValue = env[featureName];
   if (configuredValue !== undefined && configuredValue !== '') {
@@ -88,9 +89,9 @@ function isTaskProcessorFeatureEnabled(
     samsarRuntime === 'docker' ||
     currentEnv === 'docker';
 
-  // Preserve legacy behavior for non-Docker cron execution. Docker must
-  // explicitly opt in to each maintenance or generation mutation feature.
-  return !isDockerRuntime;
+  // Preserve legacy behavior for non-Docker cron execution. Safe maintenance
+  // can opt in by default in Docker, while generation mutations remain off.
+  return isDockerRuntime ? dockerDefault : true;
 }
 
 export function isTaskProcessorGenerationSideEffectsEnabled(
@@ -112,6 +113,7 @@ export function isTaskProcessorFileCleanupEnabled(
     'TASK_PROCESSOR_ENABLE_FILE_CLEANUP',
     env,
     dockerMarkerPresent,
+    true,
   );
 }
 
@@ -279,6 +281,8 @@ export async function deleteFramesForStaleSessions() {
         const framePaths = [
           path.join(legacyAssetsRoot, 'video', 'frames', sessionId),
           path.join(assetsV2Root, 'video', 'frames', sessionId),
+          path.join(assetsV2Root, 'video', 'narrator_avatar', 'frames', sessionId),
+          path.join(assetsV2Root, 'video', 'narrator_avatar', 'joined_frames', sessionId),
         ];
         const aiVideoFramePaths = [
           path.join(legacyAssetsRoot, 'ai_video', 'frames', sessionId),
@@ -329,17 +333,26 @@ export async function cleanupOldLocalAssetsV2Media() {
     return { deletedFiles: 0, deletedBytes: 0 };
   }
 
-  const cleanupDays = readPositiveIntegerEnv(
-    'ASSETS_V2_MEDIA_CLEANUP_DAYS',
-    DEFAULT_ASSETS_V2_MEDIA_CLEANUP_DAYS,
+  const cleanupHours = readPositiveIntegerEnv(
+    'INTERMEDIATE_MEDIA_CLEANUP_HOURS',
+    DEFAULT_INTERMEDIATE_MEDIA_CLEANUP_HOURS,
   );
-  const cutoffTimeMs = Date.now() - cleanupDays * 24 * 60 * 60 * 1000;
+  const cutoffTimeMs = Date.now() - cleanupHours * 60 * 60 * 1000;
   const counters = { deletedFiles: 0, deletedBytes: 0 };
+  const temporaryRenderRoot = path.join(resolvedAssetsV2Root, 'ai_video', 'temp');
 
-  await deleteOldMediaFiles(resolvedAssetsV2Root, resolvedAssetsV2Root, cutoffTimeMs, counters);
+  // Never sweep assets_v2 itself. That tree contains final renders and user
+  // resources. Only the known temporary render path is eligible here; session
+  // frame directories are handled separately by deleteFramesForStaleSessions.
+  await deleteOldMediaFiles(
+    temporaryRenderRoot,
+    temporaryRenderRoot,
+    cutoffTimeMs,
+    counters,
+  );
 
   logInfo(
-    `assets_v2 media cleanup deleted ${counters.deletedFiles} file(s), ${counters.deletedBytes} byte(s), older than ${cleanupDays} day(s) from ${resolvedAssetsV2Root}.`,
+    `Intermediate media cleanup deleted ${counters.deletedFiles} file(s), ${counters.deletedBytes} byte(s), older than ${cleanupHours} hour(s) from ${temporaryRenderRoot}.`,
   );
 
   return counters;

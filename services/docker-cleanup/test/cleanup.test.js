@@ -36,8 +36,8 @@ test('cleanup removes stale frame transformations and preserves protected assets
   const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'samsar-cleanup-'));
   const assetsV2Root = path.join(tempRoot, 'assets_v2');
   const nowMs = Date.parse('2026-07-06T00:00:00.000Z');
-  const oldMs = nowMs - 26 * 60 * 60 * 1000;
-  const recentMs = nowMs - 2 * 60 * 60 * 1000;
+  const oldMs = nowMs - 5 * 60 * 60 * 1000;
+  const recentMs = nowMs - 3 * 60 * 60 * 1000;
 
   await writeFileWithAge(path.join(assetsV2Root, 'video/frames/old-session/layer-a/0.png'), 'old frame', oldMs);
   await setTreeMtime(path.join(assetsV2Root, 'video/frames/old-session'), oldMs);
@@ -57,7 +57,7 @@ test('cleanup removes stale frame transformations and preserves protected assets
 
   const counters = await cleanupAssetsV2({
     assetsV2Root,
-    minAgeHours: 24,
+    minAgeHours: 4,
     nowMs,
   });
 

@@ -253,3 +253,32 @@ test('Docker Compose support files required by the deployment are present', asyn
     assert.equal(await fileExists(requiredFile), true, `${requiredFile} must exist`);
   }
 });
+
+test('intermediate cleanup workers run every few hours with a reuse grace period', async () => {
+  const [compose, taskProcessorSource, taskSchedulerSource] = await Promise.all([
+    readText('deploy/compose/docker-compose.yml'),
+    readText('services/task-processor/src/TaskProcessor.js'),
+    readText('services/task-processor/src/TaskScheduler.js'),
+  ]);
+  const taskProcessorBlock = compose
+    .split(/\n  docker-cleanup:\n/, 1)[0]
+    .split(/\n  task-processor:\n/, 2)[1];
+  const cleanupBlock = compose
+    .split(/\n  mongo:\n/, 1)[0]
+    .split(/\n  docker-cleanup:\n/, 2)[1];
+
+  assert.ok(taskProcessorBlock);
+  assert.match(taskProcessorBlock, /restart:\s*unless-stopped/);
+  assert.doesNotMatch(taskProcessorBlock, /TASK_PROCESSOR_(?:ENABLE|INTERVAL|RETRY)_/);
+  assert.match(taskSchedulerSource, /DEFAULT_DOCKER_INTERVAL_HOURS\s*=\s*3/);
+  assert.match(taskProcessorSource, /DEFAULT_STALE_SESSION_FRAME_CLEANUP_HOURS\s*=\s*4/);
+  assert.match(
+    taskProcessorSource,
+    /'TASK_PROCESSOR_ENABLE_FILE_CLEANUP',\s*env,\s*dockerMarkerPresent,\s*true/s,
+  );
+
+  assert.ok(cleanupBlock);
+  assert.match(cleanupBlock, /restart:\s*unless-stopped/);
+  assert.match(cleanupBlock, /CLEANUP_MIN_AGE_HOURS:[^\n]*:-4/);
+  assert.match(cleanupBlock, /CLEANUP_CRON_SCHEDULE:[^\n]*17 \*\/3 \* \* \*/);
+});
