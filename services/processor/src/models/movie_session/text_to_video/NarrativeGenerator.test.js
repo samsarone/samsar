@@ -759,6 +759,59 @@ test('uses three full narrative-generation attempts by default for pre-speech fa
   assert.equal(narrativeCalls, 3);
 });
 
+test('retries full narrative generation when a character scene is missing speech', async () => {
+  let narrativeCalls = 0;
+  let speechRepairCalls = 0;
+
+  const result = await generateValidatedTextToVideoNarrative({
+    prompt: 'Create a character-led desert scene.',
+    duration: 8,
+    videoGenerationModel: 'COSMOS3SUPERI2V',
+    inferenceModel: 'QWEN3.7',
+    videoTone: 'grounded',
+    maxValidationAttempts: 2,
+    dependencies: {
+      extractGroundedThemeFromUserPrompt: async () => ({ style: ['cinematic'] }),
+      extractGroundedMovieNarrativeFromThemeAndUserPrompt: async () => {
+        narrativeCalls += 1;
+        const scenes = [{
+          visual: 'Close-up of Mara, an adult woman, speaking beside a desert monument.',
+          type: 'character',
+          speaker: 'Mara',
+          duration: 7.875,
+          startTime: 0,
+          endTime: 7.875,
+        }];
+        return {
+          scenes,
+          sounds: narrativeCalls === 1
+            ? []
+            : [{
+              type: 'speech',
+              subType: 'character',
+              actor: 'Mara',
+              gender: 'F',
+              sceneIndex: 0,
+              audio: 'The desert remembers every name.',
+              duration: 7.875,
+              startTime: 0,
+              endTime: 7.875,
+            }],
+        };
+      },
+      rewriteNarrativeSpeechItemToFitScene: async () => {
+        speechRepairCalls += 1;
+        throw new Error('Missing character speech must trigger full narrative regeneration.');
+      },
+    },
+  });
+
+  assert.equal(narrativeCalls, 2);
+  assert.equal(speechRepairCalls, 0);
+  assert.equal(result.attempts, 2);
+  assert.equal(result.narrativeJson.sounds.length, 1);
+});
+
 test('does not run focused speech repair when narrative validation has mixed failures', async () => {
   let narrativeCalls = 0;
   let speechRepairCalls = 0;

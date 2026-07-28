@@ -571,6 +571,19 @@ function validateTextToVideoNarrativeContent(scenes, sounds) {
     if (typeof scene?.visual !== 'string' || !scene.visual.trim()) {
       errors.push(`Scene ${sceneIndex} must include a non-empty visual.`);
     }
+
+    if (normalizeNarrativeSceneType(scene?.type) === 'character') {
+      const hasCharacterSpeech = sounds.some((sound) => (
+        parseSceneIndex(sound?.sceneIndex) === sceneIndex &&
+        normalizeComparableString(sound?.type) === 'speech' &&
+        normalizeComparableString(sound?.subType) === 'character'
+      ));
+      if (!hasCharacterSpeech) {
+        errors.push(
+          `Character scene ${sceneIndex} must include a corresponding character speech sound.`,
+        );
+      }
+    }
   });
 
   sounds.forEach((sound, soundIndex) => {

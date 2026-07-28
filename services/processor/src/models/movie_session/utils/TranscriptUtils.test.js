@@ -93,6 +93,26 @@ test('validateTextToVideoNarrative keeps base scenes speech-free', () => {
   assert.equal(result.narrativeJson.sounds.length, 0);
 });
 
+test('validateTextToVideoNarrative rejects a character scene without corresponding speech', () => {
+  const result = validateTextToVideoNarrative({
+    scenes: [{
+      visual: 'Close-up of Mara speaking beside a desert monument.',
+      type: 'character',
+      speaker: 'Mara',
+      duration: 5,
+      startTime: 0,
+      endTime: 5,
+    }],
+    sounds: [],
+  }, 'RUNWAYML');
+
+  assert.equal(result.valid, false);
+  assert.match(
+    result.errors.join(' '),
+    /character scene 0 must include a corresponding character speech sound/i,
+  );
+});
+
 test('validateTextToVideoNarrative keeps mismatched adjacent sound dropped by default', () => {
   const narrative = {
     scenes: [
