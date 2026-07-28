@@ -125,8 +125,8 @@ import {
 } from './base/SamsarExternalVideoListener.js';
 import {
   DOCKER_VIDEO_PROVIDER,
-  promoteDockerVideoProvider,
   resolveDockerVideoProvider,
+  resolveNextDockerVideoProvider,
 } from './consts/DockerProviderPriority.js';
 import {
   generateHappyHorseImgToVideoLayer,
@@ -289,10 +289,189 @@ function resolveAIVideoProvider(model, payload = {}) {
 }
 
 function resolveDockerVideoProviderForPayload(model, payload = {}) {
+  const selectedProvider = normalizeString(payload?.dockerVideoProvider);
+  if (
+    isStandaloneEdition() &&
+    Object.values(DOCKER_VIDEO_PROVIDER).includes(selectedProvider)
+  ) {
+    return selectedProvider;
+  }
   return resolveDockerVideoProvider(model, {
     generationType: payload.generationType || payload.layerAiVideoType,
     preferredProvider: payload.dockerVideoProviderOverride,
   });
+}
+
+function getDockerAdapterRoutingModel(payload = {}) {
+  const model = normalizeString(payload?.model);
+  if (model === 'SAMSAR_EXTERNAL_VIDEO') {
+    return normalizeString(payload?.originalVideoModel) || model;
+  }
+  return model;
+}
+
+function restoreStandaloneAdapterRoutableModel(payload = {}) {
+  if (
+    !isStandaloneEdition() ||
+    normalizeString(payload?.model) !== 'SAMSAR_EXTERNAL_VIDEO' ||
+    normalizeString(payload?.status || 'INIT').toUpperCase() !== 'INIT' ||
+    normalizeString(payload?.generationId)
+  ) {
+    return payload;
+  }
+
+  const originalVideoModel = normalizeString(payload?.originalVideoModel);
+  if (!originalVideoModel) {
+    return payload;
+  }
+  const selectedProvider = resolveDockerVideoProviderForPayload(originalVideoModel, payload);
+  if (!selectedProvider || selectedProvider === DOCKER_VIDEO_PROVIDER.SAMSAR) {
+    return payload;
+  }
+
+  const source = typeof payload?.toObject === 'function' ? payload.toObject() : payload;
+  return {
+    ...(source || {}),
+    model: originalVideoModel,
+    samsarExternalProvider: false,
+    externalProvider: '',
+  };
+}
+
+function getDockerAdapterAttemptedProviders(payload = {}) {
+  return [...new Set(
+    [
+      ...(Array.isArray(payload?.dockerAdapterAttemptedProviders)
+        ? payload.dockerAdapterAttemptedProviders
+        : []),
+    ]
+      .map((provider) => normalizeString(provider))
+      .filter((provider) => Object.values(DOCKER_VIDEO_PROVIDER).includes(provider)),
+  )];
+}
+
+export function buildDockerVideoAdapterRetryPlan(
+  request = {},
+  { definitiveFailure = request?.providerFailureDefinitive === true } = {},
+) {
+  if (
+    !isStandaloneEdition() ||
+    definitiveFailure !== true ||
+    request?.submissionOutcomeUnknown === true ||
+    resolveAIVideoRequestType(getDockerAdapterRoutingModel(request), request) !== 'image_to_video'
+  ) {
+    return null;
+  }
+
+  const model = getDockerAdapterRoutingModel(request);
+  const currentProvider = normalizeString(request?.dockerVideoProvider) ||
+    resolveAIVideoProvider(model, request);
+  if (!Object.values(DOCKER_VIDEO_PROVIDER).includes(currentProvider)) {
+    return null;
+  }
+
+  const attemptedProviders = getDockerAdapterAttemptedProviders(request);
+  if (!attemptedProviders.includes(currentProvider)) {
+    attemptedProviders.push(currentProvider);
+  }
+  const nextProvider = resolveNextDockerVideoProvider(model, currentProvider, {
+    generationType: request.generationType || request.layerAiVideoType,
+    attemptedProviders,
+  });
+  if (!nextProvider || nextProvider === currentProvider) {
+    return null;
+  }
+
+  return {
+    model,
+    currentProvider,
+    nextProvider,
+    attemptedProviders,
+  };
+}
+
+async function requeueNextDockerVideoAdapterAfterDefinitiveFailure(
+  payload = {},
+  generationDocument = {},
+) {
+  const payloadValue = typeof payload?.toObject === 'function' ? payload.toObject() : payload;
+  const request = {
+    ...(generationDocument || {}),
+    ...(payloadValue || {}),
+    providerFailureDefinitive:
+      generationDocument?.providerFailureDefinitive === true ||
+      payloadValue?.providerFailureDefinitive === true,
+    submissionOutcomeUnknown:
+      generationDocument?.submissionOutcomeUnknown === true ||
+      payloadValue?.submissionOutcomeUnknown === true,
+  };
+  const plan = buildDockerVideoAdapterRetryPlan(request);
+  if (!plan || !request?._id) {
+    return false;
+  }
+
+  const failoverCount = Math.max(0, Number(request.dockerAdapterFailoverCount) || 0);
+  const attemptedAt = new Date();
+  await AIVideoLayerGeneration.findByIdAndUpdate(request._id, {
+    $set: {
+      model: plan.model,
+      status: 'INIT',
+      aiVideoGenerationStatus: 'INIT',
+      generationId: null,
+      rowLocked: false,
+      transientProviderErrorCount: 0,
+      dockerVideoProviderOverride: plan.nextProvider,
+      dockerAdapterAttemptedProviders: plan.attemptedProviders,
+      dockerAdapterFailoverAttempted: true,
+      dockerAdapterFailoverAttemptedAt: attemptedAt,
+      dockerAdapterFailoverFromProvider: plan.currentProvider,
+      dockerAdapterFailoverTriggerStatus:
+        Number(request.lastTransientProviderErrorStatus) ||
+        Number(request.dockerAdapterFailoverTriggerStatus) ||
+        null,
+      dockerAdapterFailoverSucceeded: false,
+      providerFailureDefinitive: false,
+      submissionOutcomeUnknown: false,
+      nextAttemptAfter: new Date(
+        Date.now() + getExplicitFailureRetryBackoffMs(failoverCount),
+      ),
+      expireAt: new Date(),
+    },
+    $inc: {
+      dockerAdapterFailoverCount: 1,
+    },
+    $push: {
+      dockerAdapterFailoverHistory: {
+        fromProvider: plan.currentProvider,
+        toProvider: plan.nextProvider,
+        attemptedAt,
+        failureMessage: getProviderFailureMessage(request),
+      },
+    },
+    $unset: {
+      dockerVideoProvider: '',
+      requestSubmitAt: '',
+      lastProviderPendingPollAt: '',
+      lastTransientProviderErrorAt: '',
+      lastTransientProviderErrorStatus: '',
+      lastTransientProviderErrorMessage: '',
+      transientProviderErrorPhase: '',
+      samsarExternalProvider: '',
+      externalProvider: '',
+      googleVeoNativeFallbackUsed: '',
+      dockerAdapterFailoverSucceededAt: '',
+      dockerAdapterPrimaryPromoted: '',
+    },
+  });
+
+  console.warn('[ai_video_adapter_failover] retrying definitive provider failure', {
+    requestId: request._id?.toString?.() || request._id,
+    model: plan.model,
+    fromProvider: plan.currentProvider,
+    toProvider: plan.nextProvider,
+    attemptedProviders: plan.attemptedProviders,
+  });
+  return true;
 }
 
 export function shouldUseAlibabaNativeHappyHorse(payload = {}) {
@@ -1009,6 +1188,15 @@ export function buildTransientProviderErrorUpdate(request = {}, error, phase = '
       transientProviderErrorPhase: phase,
       transientProviderErrorExhausted: shouldFailRequest,
       ...(shouldFailRequest && phase === 'submit' ? { retryOnFail: false } : {}),
+      providerFailureDefinitive:
+        shouldFailRequest &&
+        phase === 'submit' &&
+        isSafeProviderSubmissionRetry(error),
+      submissionOutcomeUnknown:
+        shouldFailRequest &&
+        phase === 'submit' &&
+        !isSafeProviderSubmissionRetry(error) &&
+        isTransientProviderError(error),
       expireAt: new Date(),
     },
     inc: isManagedMediaTunnelError
@@ -1373,12 +1561,19 @@ async function generatePendingAiVideoLayerRequests() {
         await deferTransientProviderError(request, e, 'poll');
         continue;
       }
-      if (await fallbackGoogleNativeVeo3Generation(request, e?.message || 'Google native Veo poll failed.')) {
+      if (
+        !isStandaloneEdition() &&
+        await fallbackGoogleNativeVeo3Generation(
+          request,
+          e?.message || 'Google native Veo poll failed.',
+        )
+      ) {
         continue;
       }
       await AIVideoLayerGeneration.findByIdAndUpdate(request._id, {
         status: 'FAILED',
         rowLocked: false,
+        providerFailureDefinitive: false,
       });
     }
   }
@@ -1443,11 +1638,13 @@ async function generatePendingAiVideoLayerRequests() {
         // A timeout, connection reset, or 5xx can occur after the provider
         // accepted the request. Never resubmit or switch adapters when the
         // submission outcome is unknown.
+        const submissionOutcomeUnknown = isTransientProviderError(e);
         await AIVideoLayerGeneration.findByIdAndUpdate(request._id, {
           status: 'FAILED',
           rowLocked: false,
           retryOnFail: false,
-          submissionOutcomeUnknown: isTransientProviderError(e),
+          submissionOutcomeUnknown,
+          providerFailureDefinitive: !submissionOutcomeUnknown,
           lastProviderFailureMessage: e?.message || String(e),
           lastProviderFailureDetail: getErrorLogPayload(e),
         });
@@ -1495,12 +1692,26 @@ async function getHailuoAdapter(queryType, payload) {
 
 
 async function generateAIVideoLayer(payload) {
-  const { _id, model, numRetries } = payload;
+  const queuedModel = normalizeString(payload?.model);
+  payload = restoreStandaloneAdapterRoutableModel(payload);
+  const { _id, numRetries } = payload;
+  let model = normalizeString(payload?.model);
 
   await getDBConnectionString();
 
-
-  await AIVideoLayerGeneration.findByIdAndUpdate(_id, { rowLocked: true });
+  const initialUpdate = {
+    $set: {
+      rowLocked: true,
+      ...(model !== queuedModel ? { model } : {}),
+    },
+  };
+  if (model !== queuedModel) {
+    initialUpdate.$unset = {
+      samsarExternalProvider: '',
+      externalProvider: '',
+    };
+  }
+  await AIVideoLayerGeneration.findByIdAndUpdate(_id, initialUpdate);
 
   if (!payload.framesPerSecond) {
     const sessionData = await VideoSession.findById(payload.sessionId);
@@ -1536,6 +1747,44 @@ async function generateAIVideoLayer(payload) {
   // if (payload.isExpressGeneration === true && LIPSYNC_MODELS.includes(model)) {
   //   payload = await prepareExpressLipSyncPrompt(payload);
   // }
+
+  if (
+    isStandaloneEdition() &&
+    resolveAIVideoRequestType(getDockerAdapterRoutingModel(payload), payload) === 'image_to_video'
+  ) {
+    const selectedProvider = resolveAIVideoProvider(
+      getDockerAdapterRoutingModel(payload),
+      payload,
+    );
+    if (Object.values(DOCKER_VIDEO_PROVIDER).includes(selectedProvider)) {
+      if (
+        model === 'SAMSAR_EXTERNAL_VIDEO' &&
+        selectedProvider !== DOCKER_VIDEO_PROVIDER.SAMSAR &&
+        normalizeString(payload.originalVideoModel)
+      ) {
+        model = normalizeString(payload.originalVideoModel);
+        payload.model = model;
+        payload.samsarExternalProvider = false;
+        payload.externalProvider = '';
+      }
+      payload.dockerVideoProvider = selectedProvider;
+      const providerSelectionUpdate = {
+        $set: {
+          model,
+          dockerVideoProvider: selectedProvider,
+          providerFailureDefinitive: false,
+          submissionOutcomeUnknown: false,
+        },
+      };
+      if (selectedProvider !== DOCKER_VIDEO_PROVIDER.SAMSAR) {
+        providerSelectionUpdate.$unset = {
+          samsarExternalProvider: '',
+          externalProvider: '',
+        };
+      }
+      await AIVideoLayerGeneration.findByIdAndUpdate(_id, providerSelectionUpdate);
+    }
+  }
 
   // Resolve only media that the selected public adapter will actually receive.
   // Samsar external adapters normalize their own exact request body, while
@@ -1644,26 +1893,19 @@ async function generateAIVideoLayer(payload) {
     transientProviderErrorCount: 0,
     expireAt: new Date(),
   };
+  const submittedProvider = normalizeString(payload.dockerVideoProvider) ||
+    resolveAIVideoProvider(getDockerAdapterRoutingModel(payload), {
+      ...payload,
+      generationId,
+    });
+  if (Object.values(DOCKER_VIDEO_PROVIDER).includes(submittedProvider)) {
+    generationUpdate.dockerVideoProvider = submittedProvider;
+  }
   if (payload.dockerAdapterFailoverAttempted === true && payload.dockerVideoProviderOverride) {
-    const successfulProvider = resolveDockerVideoProviderForPayload(model, payload);
+    const successfulProvider = submittedProvider;
     if (successfulProvider === payload.dockerVideoProviderOverride) {
-      let primaryPromoted = false;
-      try {
-        primaryPromoted = promoteDockerVideoProvider(model, successfulProvider);
-      } catch (promotionError) {
-        console.error(
-          `AI video generation succeeded with ${successfulProvider}, but primary promotion failed:`,
-          getErrorLogPayload(promotionError),
-        );
-      }
-      if (!primaryPromoted) {
-        console.warn(
-          `AI video generation succeeded with ${successfulProvider}, but Docker primary configuration was not updated.`,
-        );
-      }
       generationUpdate.dockerAdapterFailoverSucceeded = true;
       generationUpdate.dockerAdapterFailoverSucceededAt = new Date();
-      generationUpdate.dockerAdapterPrimaryPromoted = primaryPromoted;
     }
   }
   const pendingPollIntervalMs = getPendingPollIntervalMs(model, { ...payload, generationId });
@@ -1678,6 +1920,9 @@ async function generateAIVideoLayer(payload) {
       lastTransientProviderErrorStatus: '',
       lastTransientProviderErrorMessage: '',
       transientProviderErrorPhase: '',
+      providerFailureDefinitive: '',
+      submissionOutcomeUnknown: '',
+      dockerAdapterPrimaryPromoted: '',
     },
   });
 }
@@ -1788,7 +2033,13 @@ async function pollForAIVideoCompletion(reqPayload) {
 
 
   } else if (responseStatus === 'FAILED') {
-    if (await fallbackGoogleNativeVeo3Generation(payload, 'Google native Veo generation failed.')) {
+    if (
+      !isStandaloneEdition() &&
+      await fallbackGoogleNativeVeo3Generation(
+        payload,
+        'Google native Veo generation failed.',
+      )
+    ) {
       return;
     }
     if (responseData?.providerFailureMessage) {
@@ -1797,6 +2048,8 @@ async function pollForAIVideoCompletion(reqPayload) {
     if (responseData?.providerStatus) {
       payload.lastProviderFailureDetail = responseData.providerStatus;
     }
+    payload.providerFailureDefinitive = true;
+    payload.submissionOutcomeUnknown = false;
     await processVideoGenerationFailed(payload);
   } else if (responseStatus === 'PENDING') {
     await scheduleNextPendingProviderPoll(payload);
@@ -3059,6 +3312,10 @@ async function processBaseGenerationFailed(payload) {
     return;
   }
 
+  if (await requeueNextDockerVideoAdapterAfterDefinitiveFailure(payload, genDoc)) {
+    return;
+  }
+
   const tries = Number.isFinite(Number(genDoc.numRetries)) ? Number(genDoc.numRetries) : Number(payload.numRetries || 0);
 
   // Fetch session + layer once
@@ -3085,7 +3342,10 @@ async function processBaseGenerationFailed(payload) {
     model,
   });
 
-  if (await fallbackGoogleNativeVeo3Generation(payload, 'Google native Veo generation failed.')) {
+  if (
+    !isStandaloneEdition() &&
+    await fallbackGoogleNativeVeo3Generation(payload, 'Google native Veo generation failed.')
+  ) {
     return;
   }
 

@@ -43,6 +43,12 @@ const ROOT_DIR = resolveRootDir();
 const COMPOSE_FILE = path.join(ROOT_DIR, 'deploy', 'compose', 'docker-compose.yml');
 const CONFIG_PATH = path.join(ROOT_DIR, 'runtime', 'config', 'samsar.config.json');
 const AVAILABLE_MODELS_PATH = path.join(ROOT_DIR, 'runtime', 'config', 'available-models.json');
+const MODEL_ADAPTER_PREFERENCES_PATH = path.join(
+  ROOT_DIR,
+  'runtime',
+  'config',
+  'model-adapter-preferences.json',
+);
 const ROOT_ENV_PATH = path.join(ROOT_DIR, 'runtime', 'secrets', 'root.env');
 const PROVIDER_SECRETS_PATH = path.join(ROOT_DIR, 'runtime', 'secrets', 'provider.credentials.json');
 const MEDIA_TUNNEL_REFRESH_REQUEST_PATH = path.join(
@@ -3402,6 +3408,7 @@ async function removeGeneratedRuntimeFiles() {
   await Promise.allSettled([
     fs.rm(CONFIG_PATH, { force: true }),
     fs.rm(AVAILABLE_MODELS_PATH, { force: true }),
+    fs.rm(MODEL_ADAPTER_PREFERENCES_PATH, { force: true }),
     fs.rm(MEDIA_TUNNEL_REFRESH_REQUEST_PATH, { force: true }),
     fs.rm(ROOT_ENV_PATH, { force: true }),
     fs.rm(PROVIDER_SECRETS_PATH, { force: true }),

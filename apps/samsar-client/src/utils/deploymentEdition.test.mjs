@@ -13,7 +13,7 @@ test('normalizes supported deployment editions and legacy standalone aliases', (
   assert.equal(normalizeDeploymentEdition('standalone'), STANDALONE_DEPLOYMENT_EDITION);
   assert.equal(normalizeDeploymentEdition('community'), STANDALONE_DEPLOYMENT_EDITION);
   assert.equal(normalizeDeploymentEdition('docker'), STANDALONE_DEPLOYMENT_EDITION);
-  assert.equal(normalizeDeploymentEdition('staging'), STANDALONE_DEPLOYMENT_EDITION);
+  assert.equal(normalizeDeploymentEdition('staging'), null);
 });
 
 test('prefers the explicit edition over legacy environment signals', () => {

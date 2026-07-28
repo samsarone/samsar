@@ -338,6 +338,7 @@ export async function buildKimiK3ChatRequest(
     timeout,
     timeoutMs,
     maxRetries,
+    externalMaxRetries,
     max_tokens,
     max_output_tokens,
     max_completion_tokens,

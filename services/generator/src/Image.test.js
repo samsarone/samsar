@@ -307,6 +307,154 @@ test('image generation retries use bounded exponential backoff', () => {
   );
 });
 
+test('standalone image retries advance to the next configured adapter and clear stale request state', () => {
+  const previous = {
+    CURRENT_ENV: process.env.CURRENT_ENV,
+    SAMSAR_DEPLOYMENT_EDITION: process.env.SAMSAR_DEPLOYMENT_EDITION,
+    ALIBABA_API_KEY: process.env.ALIBABA_API_KEY,
+    FAL_API_KEY: process.env.FAL_API_KEY,
+    SAMSAR_API_KEY: process.env.SAMSAR_API_KEY,
+    SAMSAR_MODEL_ADAPTER_PREFERENCES_PATH: process.env.SAMSAR_MODEL_ADAPTER_PREFERENCES_PATH,
+  };
+
+  process.env.CURRENT_ENV = 'standalone';
+  process.env.SAMSAR_DEPLOYMENT_EDITION = 'standalone';
+  process.env.ALIBABA_API_KEY = 'configured';
+  process.env.FAL_API_KEY = 'configured';
+  delete process.env.SAMSAR_API_KEY;
+  process.env.SAMSAR_MODEL_ADAPTER_PREFERENCES_PATH = '/tmp/missing-model-adapter-preferences.json';
+
+  try {
+    const retryState = __testOnly__.getImageGenerationAdapterRetryState({
+      model: 'WAN2.7PRO',
+      adapterProvider: 'alibabaCloud',
+      apiGenerationStatus: 'PENDING',
+      apiRequestId: 'provider-request-1',
+      externalProvider: 'alibabaCloud',
+    });
+
+    assert.equal(retryState.provider, 'fal');
+    assert.equal(retryState.setFields.adapterProvider, 'fal');
+    assert.equal(retryState.setFields.adapterProviderOverride, 'fal');
+    assert.deepEqual(retryState.unsetFields, {
+      apiRequestId: '',
+      apiSubmittedAt: '',
+      externalProvider: '',
+    });
+  } finally {
+    for (const [key, value] of Object.entries(previous)) {
+      if (value === undefined) {
+        delete process.env[key];
+      } else {
+        process.env[key] = value;
+      }
+    }
+  }
+});
+
+test('production image retries never enable standalone adapter rotation', () => {
+  const previousEdition = process.env.SAMSAR_DEPLOYMENT_EDITION;
+  process.env.SAMSAR_DEPLOYMENT_EDITION = 'production';
+
+  try {
+    assert.deepEqual(
+      __testOnly__.getImageGenerationAdapterRetryState({
+        model: 'WAN2.7PRO',
+        adapterProvider: 'alibabaCloud',
+      }),
+      {
+        provider: '',
+        setFields: {},
+        unsetFields: {},
+      },
+    );
+  } finally {
+    if (previousEdition === undefined) {
+      delete process.env.SAMSAR_DEPLOYMENT_EDITION;
+    } else {
+      process.env.SAMSAR_DEPLOYMENT_EDITION = previousEdition;
+    }
+  }
+});
+
+test('standalone Image List enhancement retries advance edit adapters and clear stale requests', () => {
+  const previous = {
+    CURRENT_ENV: process.env.CURRENT_ENV,
+    SAMSAR_DEPLOYMENT_EDITION: process.env.SAMSAR_DEPLOYMENT_EDITION,
+    GOOGLE_APPLICATION_CREDENTIALS_JSON: process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON,
+    FAL_API_KEY: process.env.FAL_API_KEY,
+    SAMSAR_API_KEY: process.env.SAMSAR_API_KEY,
+    SAMSAR_MODEL_ADAPTER_PREFERENCES_PATH: process.env.SAMSAR_MODEL_ADAPTER_PREFERENCES_PATH,
+  };
+
+  process.env.CURRENT_ENV = 'standalone';
+  process.env.SAMSAR_DEPLOYMENT_EDITION = 'standalone';
+  process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON = '{"type":"service_account"}';
+  process.env.FAL_API_KEY = 'configured';
+  process.env.SAMSAR_API_KEY = 'configured';
+  process.env.SAMSAR_MODEL_ADAPTER_PREFERENCES_PATH = '/tmp/missing-model-adapter-preferences.json';
+
+  try {
+    const retryState = __testOnly__.getImageEditAdapterRetryState({
+      model: 'NANOBANANAPROEDIT',
+      adapterProvider: 'googleCloud',
+      apiEditStatus: 'PENDING',
+      apiRequestId: 'google-native-nanobanana-edit:request-1',
+    });
+
+    assert.equal(retryState.provider, 'fal');
+    assert.deepEqual(retryState.setFields, {
+      adapterProvider: 'fal',
+      adapterProviderOverride: 'fal',
+    });
+    assert.deepEqual(retryState.unsetFields, {
+      apiRequestId: '',
+      apiSubmittedAt: '',
+      externalProvider: '',
+    });
+    assert.equal(
+      __testOnly__.getImageEditAdapterRetryState({
+        model: 'NANOBANANAPROEDIT',
+        adapterProvider: 'samsar',
+      }).provider,
+      '',
+    );
+  } finally {
+    for (const [key, value] of Object.entries(previous)) {
+      if (value === undefined) {
+        delete process.env[key];
+      } else {
+        process.env[key] = value;
+      }
+    }
+  }
+});
+
+test('production Image List enhancement retries never enable standalone edit-adapter rotation', () => {
+  const previousEdition = process.env.SAMSAR_DEPLOYMENT_EDITION;
+  process.env.SAMSAR_DEPLOYMENT_EDITION = 'production';
+
+  try {
+    assert.deepEqual(
+      __testOnly__.getImageEditAdapterRetryState({
+        model: 'NANOBANANAPROEDIT',
+        adapterProvider: 'googleCloud',
+      }),
+      {
+        provider: '',
+        setFields: {},
+        unsetFields: {},
+      },
+    );
+  } finally {
+    if (previousEdition === undefined) {
+      delete process.env.SAMSAR_DEPLOYMENT_EDITION;
+    } else {
+      process.env.SAMSAR_DEPLOYMENT_EDITION = previousEdition;
+    }
+  }
+});
+
 test('retryable vision failures return to the normal express image retry path', () => {
   assert.equal(__testOnly__.shouldRetryUnhandledGenerationTask({
     operationType: 'GENERATE',

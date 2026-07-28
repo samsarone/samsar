@@ -48,7 +48,6 @@ const SETTINGS_TABS = [
   { key: "danger", label: "Danger" },
 ];
 
-const SETTINGS_TAB_KEYS = SETTINGS_TABS.map((tab) => tab.key);
 const CUSTOM_ADAPTER_FIELDS = [
   "api_key",
   "base_url",
@@ -79,10 +78,11 @@ const CUSTOM_ENDPOINT_OPERATION_KEYS = new Set(
 const DEFAULT_CUSTOM_ENDPOINT_BASE_URL = "https://queue.fal.run";
 const DEFAULT_HAPPY_HORSE_ENDPOINT = "alibaba/happy-horse/v1.1/image-to-video";
 
-function resolveSettingsTabFromPath(pathname) {
+function resolveSettingsTabFromPath(pathname, settingsTabs = SETTINGS_TABS) {
   const segments = pathname.split("/").filter(Boolean);
   const requestedTab = segments[2];
-  return SETTINGS_TAB_KEYS.includes(requestedTab) ? requestedTab : "general";
+  const allowedTabKeys = settingsTabs.map((tab) => tab.key);
+  return allowedTabKeys.includes(requestedTab) ? requestedTab : "general";
 }
 
 function getSettingsTabPath(tabKey) {
@@ -304,7 +304,9 @@ export default function SettingsPanelContent(props) {
   const mutedBg = colorMode === "dark" ? "bg-[#111a2f]" : "bg-slate-50";
   const PROCESSOR_SERVER = import.meta.env.VITE_PROCESSOR_API;
 
-  const [activeTab, setActiveTab] = useState(() => resolveSettingsTabFromPath(location.pathname));
+  const [activeTab, setActiveTab] = useState(() =>
+    resolveSettingsTabFromPath(location.pathname)
+  );
   const [username, setUsername] = useState(user.username || "");
   const [preferredLanguage, setPreferredLanguage] = useState(user.preferredLanguage || "en");
   const [backingTrackModel, setBackingTrackModel] = useState(
@@ -370,7 +372,8 @@ export default function SettingsPanelContent(props) {
   }, [user]);
 
   useEffect(() => {
-    setActiveTab(resolveSettingsTabFromPath(location.pathname));
+    const nextTab = resolveSettingsTabFromPath(location.pathname);
+    setActiveTab(nextTab);
   }, [location.pathname]);
 
   useEffect(() => {

@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { normalizeTextToImageRequestOptions } from './ImageAPI.js';
+import {
+  normalizeTextToImageRequestOptions,
+  shouldUsePreferenceAwareImagePromptRouting,
+} from './ImageAPI.js';
 
 test('normalizes Wan2.7 Pro text-to-image requests to 1:1 at 1K by default', () => {
   assert.deepEqual(normalizeTextToImageRequestOptions({
@@ -49,3 +52,26 @@ test('rejects non-1K Wan2.7 Pro output resolution', () => {
   );
 });
 
+test('standalone image prompt inference uses saved adapter routing without changing production OpenAI routing', () => {
+  assert.equal(
+    shouldUsePreferenceAwareImagePromptRouting(
+      'gpt-5.6-sol',
+      { SAMSAR_DEPLOYMENT_EDITION: 'standalone' },
+    ),
+    true,
+  );
+  assert.equal(
+    shouldUsePreferenceAwareImagePromptRouting(
+      'gpt-5.6-sol',
+      { SAMSAR_DEPLOYMENT_EDITION: 'production' },
+    ),
+    false,
+  );
+  assert.equal(
+    shouldUsePreferenceAwareImagePromptRouting(
+      'qwen3.7',
+      { SAMSAR_DEPLOYMENT_EDITION: 'production' },
+    ),
+    true,
+  );
+});

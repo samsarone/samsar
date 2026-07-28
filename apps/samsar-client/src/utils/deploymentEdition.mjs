@@ -10,7 +10,6 @@ const STANDALONE_ALIASES = new Set([
   STANDALONE_DEPLOYMENT_EDITION,
   'community',
   'docker',
-  'staging',
 ]);
 
 function normalizeString(value) {

@@ -26,6 +26,7 @@ const ENV_KEYS = [
   'KIMI_K3_API_KEY',
   'GOOGLE_APPLICATION_CREDENTIALS_JSON',
   'SAMSAR_AVAILABLE_MODELS_PATH',
+  'SAMSAR_MODEL_ADAPTER_PREFERENCES_PATH',
 ];
 const originalEnv = Object.fromEntries(ENV_KEYS.map((key) => [key, process.env[key]]));
 
@@ -350,6 +351,49 @@ test('reads provider-selection metadata from the saved availability artifact', (
       'QWEN3.7': ['alibabaCloud', 'samsar'],
       'WAN2.7PRO': ['alibabaCloud', 'fal', 'samsar'],
     });
+  } finally {
+    fs.rmSync(tempDirectory, { recursive: true, force: true });
+  }
+});
+
+test('runtime enrichment preserves the installation default order separately from saved preferences', () => {
+  clearEnv();
+  const tempDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'samsar-adapter-defaults-'));
+  const preferencePath = path.join(tempDirectory, 'model-adapter-preferences.json');
+  process.env.SAMSAR_DEPLOYMENT_EDITION = 'standalone';
+  process.env.SAMSAR_RUNTIME = 'docker';
+  process.env.ALIBABA_API_KEY = 'configured';
+  process.env.SAMSAR_API_KEY = 'configured';
+  process.env.SAMSAR_MODEL_ADAPTER_PREFERENCES_PATH = preferencePath;
+  fs.writeFileSync(preferencePath, JSON.stringify({
+    modelProviderPriority: {
+      'QWEN3.7': ['samsar', 'alibabaCloud'],
+    },
+  }));
+
+  try {
+    const result = mergeRuntimeInferenceDeploymentAvailability({
+      providers: ['alibabaCloud', 'samsar'],
+      models: ['QWEN3.7'],
+      modelProviders: { 'QWEN3.7': 'samsar' },
+      modelProviderPriority: {
+        'QWEN3.7': ['samsar', 'alibabaCloud', 'openrouter'],
+      },
+      defaultModelProviderPriority: {
+        'QWEN3.7': ['alibabaCloud', 'openrouter', 'samsar'],
+      },
+    });
+
+    assert.deepEqual(result.modelProviderPriority['QWEN3.7'], [
+      'samsar',
+      'alibabaCloud',
+      'openrouter',
+    ]);
+    assert.deepEqual(result.defaultModelProviderPriority['QWEN3.7'], [
+      'alibabaCloud',
+      'openrouter',
+      'samsar',
+    ]);
   } finally {
     fs.rmSync(tempDirectory, { recursive: true, force: true });
   }

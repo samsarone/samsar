@@ -1,3 +1,5 @@
+import fs from 'node:fs';
+
 import { getDeploymentEdition, isStandaloneEdition } from '../utils/Environment.js';
 
 export const DOCKER_ADAPTER_PROVIDER = Object.freeze({
@@ -130,12 +132,118 @@ const GOOGLE_ATTACHED_SERVICE_ACCOUNT_KEYS = Object.freeze([
   'GCE_METADATA_HOST',
 ]);
 
+const DEFAULT_MODEL_ADAPTER_PREFERENCES_PATH =
+  '/persistent/config/model-adapter-preferences.json';
+
+const IMAGE_EDIT_PREFERENCE_MODEL_KEYS = Object.freeze({
+  NANOBANANA2EDIT: 'NANOBANANA2',
+  NANOBANANAPROEDIT: 'NANOBANANAPRO',
+  NANOBANANAEDIT: 'NANOBANANA2',
+  GPTIMAGE2EDIT: 'GPTIMAGE2',
+  GPTIMAGE1EDIT: 'GPTIMAGE1',
+});
+
 function normalizeString(value) {
   return typeof value === 'string' ? value.trim() : '';
 }
 
 function normalizeModelKey(model) {
   return normalizeString(model).toUpperCase();
+}
+
+function normalizeAdapterProvider(value) {
+  const normalized = normalizeString(value).toLowerCase().replace(/[^a-z0-9]/g, '');
+  if (['alibaba', 'alibabacloud', 'aliyun', 'dashscope', 'qwen'].includes(normalized)) {
+    return DOCKER_ADAPTER_PROVIDER.ALIBABA_CLOUD;
+  }
+  if (['google', 'googlecloud', 'gcp', 'vertex', 'vertexai'].includes(normalized)) {
+    return DOCKER_ADAPTER_PROVIDER.GOOGLE_CLOUD;
+  }
+  if (normalized === 'fal') {
+    return DOCKER_ADAPTER_PROVIDER.FAL;
+  }
+  if (normalized === 'openai') {
+    return DOCKER_ADAPTER_PROVIDER.OPENAI;
+  }
+  if (normalized === 'samsar') {
+    return DOCKER_ADAPTER_PROVIDER.SAMSAR;
+  }
+  return '';
+}
+
+function uniqueAdapterProviders(value) {
+  const values = Array.isArray(value) ? value : [];
+  return [...new Set(values.map(normalizeAdapterProvider).filter(Boolean))];
+}
+
+function getModelAdapterPreferencesPath() {
+  return normalizeString(process.env.SAMSAR_MODEL_ADAPTER_PREFERENCES_PATH) ||
+    DEFAULT_MODEL_ADAPTER_PREFERENCES_PATH;
+}
+
+function readSavedModelAdapterPriorityMap() {
+  if (!isStandaloneEdition()) {
+    return {};
+  }
+
+  const filePath = getModelAdapterPreferencesPath();
+  if (!fs.existsSync(filePath)) {
+    return {};
+  }
+
+  try {
+    const parsed = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+    const priorityMap =
+      parsed?.modelProviderPriority || parsed?.model_provider_priority;
+    return priorityMap && typeof priorityMap === 'object' && !Array.isArray(priorityMap)
+      ? priorityMap
+      : {};
+  } catch {
+    return {};
+  }
+}
+
+function findSavedModelAdapterPriority(priorityMap, modelKeys = []) {
+  const normalizedModelKeys = [
+    ...new Set(
+      modelKeys.map(normalizeModelKey).filter(Boolean),
+    ),
+  ];
+  if (normalizedModelKeys.length === 0) {
+    return [];
+  }
+
+  for (const normalizedModelKey of normalizedModelKeys) {
+    const matchingEntry = Object.entries(priorityMap).find(
+      ([modelKey]) => normalizeModelKey(modelKey) === normalizedModelKey,
+    );
+    if (matchingEntry) {
+      return uniqueAdapterProviders(matchingEntry[1]);
+    }
+  }
+  return [];
+}
+
+function applySavedModelAdapterPriority(defaultPriority, modelKeys = []) {
+  if (!isStandaloneEdition()) {
+    return defaultPriority;
+  }
+
+  const normalizedDefaultPriority = uniqueAdapterProviders(defaultPriority);
+  const compatibleProviders = new Set(normalizedDefaultPriority);
+  const savedPriority = findSavedModelAdapterPriority(
+    readSavedModelAdapterPriorityMap(),
+    modelKeys,
+  ).filter((provider) => compatibleProviders.has(provider));
+
+  if (savedPriority.length === 0) {
+    return defaultPriority;
+  }
+
+  return [
+    ...savedPriority,
+    ...normalizedDefaultPriority.filter((provider) => !savedPriority.includes(provider)),
+  ];
 }
 
 function hasEnvCredential(...keys) {
@@ -211,48 +319,78 @@ export function isAdapterProviderConfigured(provider) {
 
 export function getDockerImageGenerationProviderPriority(model) {
   const normalizedModel = normalizeModelKey(model);
+  let defaultPriority;
   if (
     normalizedModel === 'NANOBANANAPRO' &&
     getDeploymentEdition() === 'production'
   ) {
-    return [
+    defaultPriority = [
       DOCKER_ADAPTER_PROVIDER.FAL,
       DOCKER_ADAPTER_PROVIDER.GOOGLE_CLOUD,
       DOCKER_ADAPTER_PROVIDER.SAMSAR,
     ];
+  } else if (DOCKER_IMAGE_GENERATION_PROVIDER_PRIORITY[normalizedModel]) {
+    defaultPriority = DOCKER_IMAGE_GENERATION_PROVIDER_PRIORITY[normalizedModel];
+  } else if (DOCKER_FAL_IMAGE_GENERATION_MODELS.includes(normalizedModel)) {
+    defaultPriority = [DOCKER_ADAPTER_PROVIDER.FAL, DOCKER_ADAPTER_PROVIDER.SAMSAR];
+  } else {
+    defaultPriority = hasSamsarAdapterCredential()
+      ? [DOCKER_ADAPTER_PROVIDER.SAMSAR]
+      : [];
   }
-  if (DOCKER_IMAGE_GENERATION_PROVIDER_PRIORITY[normalizedModel]) {
-    return DOCKER_IMAGE_GENERATION_PROVIDER_PRIORITY[normalizedModel];
-  }
-  if (DOCKER_FAL_IMAGE_GENERATION_MODELS.includes(normalizedModel)) {
-    return [DOCKER_ADAPTER_PROVIDER.FAL, DOCKER_ADAPTER_PROVIDER.SAMSAR];
-  }
-  return hasSamsarAdapterCredential() ? [DOCKER_ADAPTER_PROVIDER.SAMSAR] : [];
+
+  return applySavedModelAdapterPriority(defaultPriority, [normalizedModel]);
 }
 
 export function getDockerImageEditProviderPriority(model) {
   const normalizedModel = normalizeModelKey(model);
+  let defaultPriority;
   if (
     normalizedModel === 'NANOBANANAPROEDIT' &&
     getDeploymentEdition() === 'production'
   ) {
-    return [
+    defaultPriority = [
       DOCKER_ADAPTER_PROVIDER.FAL,
       DOCKER_ADAPTER_PROVIDER.GOOGLE_CLOUD,
       DOCKER_ADAPTER_PROVIDER.SAMSAR,
     ];
+  } else if (DOCKER_IMAGE_EDIT_PROVIDER_PRIORITY[normalizedModel]) {
+    defaultPriority = DOCKER_IMAGE_EDIT_PROVIDER_PRIORITY[normalizedModel];
+  } else if (
+    DOCKER_FAL_IMAGE_EDIT_MODELS.includes(normalizedModel) ||
+    normalizedModel.startsWith('FLUX')
+  ) {
+    defaultPriority = [DOCKER_ADAPTER_PROVIDER.FAL, DOCKER_ADAPTER_PROVIDER.SAMSAR];
+  } else {
+    defaultPriority = hasSamsarAdapterCredential()
+      ? [DOCKER_ADAPTER_PROVIDER.SAMSAR]
+      : [];
   }
-  if (DOCKER_IMAGE_EDIT_PROVIDER_PRIORITY[normalizedModel]) {
-    return DOCKER_IMAGE_EDIT_PROVIDER_PRIORITY[normalizedModel];
-  }
-  if (DOCKER_FAL_IMAGE_EDIT_MODELS.includes(normalizedModel) || normalizedModel.startsWith('FLUX')) {
-    return [DOCKER_ADAPTER_PROVIDER.FAL, DOCKER_ADAPTER_PROVIDER.SAMSAR];
-  }
-  return hasSamsarAdapterCredential() ? [DOCKER_ADAPTER_PROVIDER.SAMSAR] : [];
+
+  return applySavedModelAdapterPriority(defaultPriority, [
+    normalizedModel,
+    IMAGE_EDIT_PREFERENCE_MODEL_KEYS[normalizedModel],
+  ]);
 }
 
 export function resolveConfiguredProvider(providerPriority = []) {
   return providerPriority.find(isAdapterProviderConfigured) || '';
+}
+
+function getConfiguredProviders(providerPriority = []) {
+  return providerPriority.filter(isAdapterProviderConfigured);
+}
+
+function resolveNextConfiguredProvider(providerPriority = [], currentProvider = '') {
+  const configuredProviders = getConfiguredProviders(providerPriority);
+  const normalizedCurrentProvider = normalizeAdapterProvider(currentProvider);
+  const currentIndex = configuredProviders.indexOf(normalizedCurrentProvider);
+  if (currentIndex < 0) {
+    return configuredProviders.find(
+      (provider) => provider !== normalizedCurrentProvider,
+    ) || '';
+  }
+  return configuredProviders[currentIndex + 1] || '';
 }
 
 export function resolveDockerImageGenerationProvider(model) {
@@ -260,6 +398,23 @@ export function resolveDockerImageGenerationProvider(model) {
     return '';
   }
   return resolveConfiguredProvider(getDockerImageGenerationProviderPriority(model));
+}
+
+export function getConfiguredDockerImageGenerationProviders(model) {
+  if (!isDockerAdapterRoutingEnabled()) {
+    return [];
+  }
+  return getConfiguredProviders(getDockerImageGenerationProviderPriority(model));
+}
+
+export function resolveNextDockerImageGenerationProvider(model, currentProvider) {
+  if (!isDockerAdapterRoutingEnabled()) {
+    return '';
+  }
+  return resolveNextConfiguredProvider(
+    getDockerImageGenerationProviderPriority(model),
+    currentProvider,
+  );
 }
 
 export function resolveGPTImageTwoGenerationProvider(persistedProvider = '') {
@@ -299,4 +454,21 @@ export function resolveDockerImageEditProvider(model) {
     return '';
   }
   return resolveConfiguredProvider(getDockerImageEditProviderPriority(model));
+}
+
+export function getConfiguredDockerImageEditProviders(model) {
+  if (!isDockerAdapterRoutingEnabled()) {
+    return [];
+  }
+  return getConfiguredProviders(getDockerImageEditProviderPriority(model));
+}
+
+export function resolveNextDockerImageEditProvider(model, currentProvider) {
+  if (!isDockerAdapterRoutingEnabled()) {
+    return '';
+  }
+  return resolveNextConfiguredProvider(
+    getDockerImageEditProviderPriority(model),
+    currentProvider,
+  );
 }

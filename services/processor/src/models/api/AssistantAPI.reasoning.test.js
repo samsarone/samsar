@@ -6,6 +6,7 @@ import {
   getCompatibleAssistantResponseFormat,
   getAssistantCompletionTimeoutMs,
   resolveAssistantProviderMediaInput,
+  shouldUseCompatibleAssistantRouting,
 } from './AssistantAPI.js';
 
 test('forces high reasoning for GPT 5.6 Sol assistant requests', () => {
@@ -53,6 +54,33 @@ test('translates Responses structured output into strict chat JSON schema for Ki
 test('assistant completions default to a ten-minute timeout', () => {
   assert.equal(getAssistantCompletionTimeoutMs({}), 10 * 60 * 1000);
   assert.equal(getAssistantCompletionTimeoutMs({ timeout: 4321 }), 4321);
+});
+
+test('standalone assistant requests use preference-aware routing without changing production OpenAI routing', () => {
+  assert.equal(
+    shouldUseCompatibleAssistantRouting(
+      'gpt-5.6-sol',
+      '',
+      { SAMSAR_DEPLOYMENT_EDITION: 'standalone' },
+    ),
+    true,
+  );
+  assert.equal(
+    shouldUseCompatibleAssistantRouting(
+      'gpt-5.6-sol',
+      '',
+      { SAMSAR_DEPLOYMENT_EDITION: 'production' },
+    ),
+    false,
+  );
+  assert.equal(
+    shouldUseCompatibleAssistantRouting(
+      'gemini-3.1-pro',
+      '',
+      { SAMSAR_DEPLOYMENT_EDITION: 'production' },
+    ),
+    true,
+  );
 });
 
 test('assistant provider dispatch resolves every URL-backed media item without mutating session input', async () => {

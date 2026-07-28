@@ -1,5 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import {
+  mkdtempSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import OpenAI from 'openai';
 import SamsarClient from 'samsar-js';
 
@@ -169,6 +176,96 @@ test('Kimi K3 describe and judge stages use the Samsar-js fallback without a nat
     payloads[0].messages[1].content[1].image_url.url,
     'data:image/png;base64,AQID',
   );
+});
+
+test('vision describe and judge stages advance through the saved adapter order', async (t) => {
+  const environmentKeys = [
+    'CURRENT_ENV',
+    'KIMI_K3_API_KEY',
+    'SAMSAR_API_KEY',
+    'SAMSAR_DEPLOYMENT_EDITION',
+    'SAMSAR_EDITION',
+    'SAMSAR_EXTERNAL_INFERENCE_ENABLED',
+    'SAMSAR_FORCE_EXTERNAL_INFERENCE',
+    'SAMSAR_MODEL_ADAPTER_PREFERENCES_PATH',
+  ];
+  const previous = Object.fromEntries(
+    environmentKeys.map((key) => [key, process.env[key]]),
+  );
+  const temporaryDirectory = mkdtempSync(path.join(os.tmpdir(), 'samsar-vision-order-'));
+  const preferencePath = path.join(temporaryDirectory, 'model-adapter-preferences.json');
+  writeFileSync(preferencePath, JSON.stringify({
+    modelProviderPriority: {
+      KIMIK3: ['samsar', 'kimi'],
+    },
+  }));
+  t.after(() => {
+    rmSync(temporaryDirectory, { recursive: true, force: true });
+    for (const key of environmentKeys) {
+      if (previous[key] === undefined) delete process.env[key];
+      else process.env[key] = previous[key];
+    }
+  });
+  for (const key of environmentKeys) delete process.env[key];
+  Object.assign(process.env, {
+    CURRENT_ENV: 'docker',
+    KIMI_K3_API_KEY: 'native-kimi-key',
+    SAMSAR_API_KEY: 'samsar-key',
+    SAMSAR_EXTERNAL_INFERENCE_ENABLED: 'true',
+    SAMSAR_MODEL_ADAPTER_PREFERENCES_PATH: preferencePath,
+  });
+
+  const calls = [];
+  let kimiCalls = 0;
+  t.mock.method(console, 'error', () => {});
+  t.mock.method(console, 'warn', () => {});
+  t.mock.method(
+    SamsarClient.prototype,
+    'createV2ExternalChatCompletion',
+    async () => {
+      calls.push('samsar');
+      const error = new Error('temporary Samsar limit');
+      error.status = 429;
+      throw error;
+    },
+  );
+  t.mock.method(
+    OpenAI.Chat.Completions.prototype,
+    'create',
+    async (payload, options) => {
+      calls.push('kimi');
+      kimiCalls += 1;
+      assert.equal(payload.model, 'kimi-k3');
+      assert.equal(options.maxRetries, 0);
+      return {
+        choices: [{
+          message: {
+            role: 'assistant',
+            content: kimiCalls === 1 ? 'Ordered image description.' : '91',
+          },
+        }],
+      };
+    },
+  );
+
+  const description = await __testOnly__.getDescriptionForImage(
+    'data:image/png;base64,AQID',
+    'cinematic',
+    'Kimi K3',
+    '16:9',
+    '',
+  );
+  const score = await assignScoreForTheImage(
+    'A cinematic image',
+    description,
+    'cinematic',
+    'Kimi K3',
+    '16:9',
+  );
+
+  assert.equal(description, 'Ordered image description.');
+  assert.equal(score, '91');
+  assert.deepEqual(calls, ['samsar', 'kimi', 'samsar', 'kimi']);
 });
 
 test('vision inference retries a 429 three times with exponential backoff', async () => {

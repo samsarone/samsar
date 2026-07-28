@@ -19,9 +19,16 @@ import SceneLibraryHome from "../library/aivideo/SceneLibraryHome.jsx";
 import OverflowContainer from "../common/OverflowContainer.tsx";
 import APIKeysPanelContent from "./APIKeysPanelContent.jsx";
 import UsagePanelContent from "./UsagePanelContent.jsx";
+import ModelAdaptersPanelContent from "./ModelAdaptersPanelContent.jsx";
 import SingleSelect from "../common/SingleSelect.jsx";
 import { IS_STANDALONE_DEPLOYMENT } from "../../utils/environment.jsx";
 import { useInferenceModelAvailability } from "../../hooks/useInferenceModelAvailability.js";
+import {
+  MODEL_ADAPTERS_ACCOUNT_PANEL_KEY,
+  canManageModelAdapters,
+  isLegacyModelAdaptersSettingsPath,
+  isModelAdaptersAccountPath,
+} from "../../utils/modelAdapterPreferences.mjs";
 import {
   normalizeDeploymentInferenceModelValue,
   resolveAllowedInferenceModelOption,
@@ -68,6 +75,10 @@ export default function UserAccount() {
   const borderColor = colorMode === "dark" ? "border-[#1f2a3d]" : "border-slate-200";
   const mutedBg = colorMode === "dark" ? "bg-[#111a2f]" : "bg-slate-50";
   const isStandaloneDeployment = IS_STANDALONE_DEPLOYMENT;
+  const canManageInstallationModelAdapters = canManageModelAdapters({
+    isStandaloneDeployment,
+    isAdminUser: user?.isAdminUser === true,
+  });
   const {
     isStandaloneDeployment: isStandaloneModelFilteringEnabled,
     isLoading: isInferenceModelAvailabilityLoading,
@@ -96,6 +107,9 @@ export default function UserAccount() {
     "usage",
     "billing",
     "settings",
+    ...(canManageInstallationModelAdapters
+      ? [MODEL_ADAPTERS_ACCOUNT_PANEL_KEY]
+      : []),
   ];
 
   const resolvePanelFromPath = () => {
@@ -106,6 +120,7 @@ export default function UserAccount() {
 
   const [displayPanel, setDisplayPanel] = useState(resolvePanelFromPath());
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [, setHasApiKeys] = useState<boolean | null>(null);
 
   const [notifyOnCompletion, setNotifyOnCompletion] = useState(false);
   const [inferenceModel, setInferenceModel] = useState(
@@ -178,7 +193,61 @@ export default function UserAccount() {
 
   useEffect(() => {
     setDisplayPanel(resolvePanelFromPath());
-  }, [location.pathname]);
+  }, [canManageInstallationModelAdapters, location.pathname]);
+
+  useEffect(() => {
+    if (!user) return;
+
+    if (isLegacyModelAdaptersSettingsPath(location.pathname)) {
+      navigate(
+        canManageInstallationModelAdapters
+          ? `/account/${MODEL_ADAPTERS_ACCOUNT_PANEL_KEY}`
+          : "/account/settings",
+        { replace: true },
+      );
+      return;
+    }
+
+    if (
+      isModelAdaptersAccountPath(location.pathname) &&
+      !canManageInstallationModelAdapters
+    ) {
+      navigate("/account", { replace: true });
+    }
+  }, [
+    canManageInstallationModelAdapters,
+    location.pathname,
+    navigate,
+    user,
+  ]);
+
+  useEffect(() => {
+    let isCancelled = false;
+
+    if (!user?._id) {
+      setHasApiKeys(null);
+      return undefined;
+    }
+
+    const fetchAPIKeyPresence = async () => {
+      try {
+        const response = await axios.get(`${PROCESSOR_SERVER}/users/api_keys`, getHeaders());
+        if (!isCancelled) {
+          setHasApiKeys((response.data.apiKeys || []).length > 0);
+        }
+      } catch {
+        if (!isCancelled) {
+          setHasApiKeys(null);
+        }
+      }
+    };
+
+    fetchAPIKeyPresence();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [user?._id]);
 
   if (!user) {
     if (displayPanel === "billing") {
@@ -306,13 +375,22 @@ export default function UserAccount() {
 
   const accountNavItems = [
     { panel: "account", label: "Account" },
+    {
+      panel: "apiKeys",
+      label: "API Key",
+    },
     { panel: "billing", label: "Billing" },
+    ...(canManageInstallationModelAdapters
+      ? [{
+          panel: MODEL_ADAPTERS_ACCOUNT_PANEL_KEY,
+          label: "Model Adapters",
+        }]
+      : []),
     { panel: "settings", label: "Settings" },
     { panel: "images", label: "Images" },
     { panel: "sounds", label: "Sounds" },
     { panel: "scenes", label: "Scenes" },
     { panel: "videos", label: "Videos" },
-    { panel: "apiKeys", label: "API Keys" },
     { panel: "usage", label: "Usage" },
   ];
 
@@ -325,6 +403,7 @@ export default function UserAccount() {
     apiKeys: "API Keys",
     usage: "Usage Logs",
     billing: "Billing Information",
+    [MODEL_ADAPTERS_ACCOUNT_PANEL_KEY]: "Model Adapters",
     settings: "Settings",
   };
 
@@ -601,6 +680,10 @@ export default function UserAccount() {
               {displayPanel === "images" && <ImagePanelContent />}
               {displayPanel === "sounds" && <MusicPanelContent />}
               {displayPanel === "billing" && <BillingPanelContent />}
+              {canManageInstallationModelAdapters &&
+                displayPanel === MODEL_ADAPTERS_ACCOUNT_PANEL_KEY && (
+                  <ModelAdaptersPanelContent enabled />
+                )}
               {displayPanel === "settings" && (
                 <SettingsPanelContent
                   logoutUser={logoutUser}
@@ -611,7 +694,9 @@ export default function UserAccount() {
                   deleteAccountForUser={deleteAccountForUser}
                 />
               )}
-              {displayPanel === "apiKeys" && <APIKeysPanelContent />}
+              {displayPanel === "apiKeys" && (
+                <APIKeysPanelContent onAPIKeyPresenceChange={setHasApiKeys} />
+              )}
               {displayPanel === "usage" && <UsagePanelContent />}
               {displayPanel === "scenes" && <SceneLibraryHome hideSelectButton />}
               {displayPanel === "videos" && <SceneLibraryHome hideSelectButton />}

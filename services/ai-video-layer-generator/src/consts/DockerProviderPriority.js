@@ -120,6 +120,11 @@ function getAvailableModelsPath() {
       : path.join(process.cwd(), 'runtime', 'config', 'available-models.json'));
 }
 
+function getModelAdapterPreferencesPath() {
+  return normalizeString(process.env.SAMSAR_MODEL_ADAPTER_PREFERENCES_PATH) ||
+    '/persistent/config/model-adapter-preferences.json';
+}
+
 function normalizeProvider(value) {
   const normalized = normalizeString(value).toLowerCase().replace(/[^a-z0-9]/g, '');
   if (['alibaba', 'alibabacloud', 'dashscope', 'qwen'].includes(normalized)) {
@@ -166,7 +171,7 @@ function uniqueProviders(values = []) {
   return [...new Set((Array.isArray(values) ? values : [values]).map(normalizeProvider).filter(Boolean))];
 }
 
-function getSavedVideoProviderPriority(model) {
+function getLegacySavedVideoProviderPriority(model) {
   if (!isDockerVideoProviderRoutingEnabled()) {
     return [];
   }
@@ -184,6 +189,42 @@ function getSavedVideoProviderPriority(model) {
   return savedPrimary
     ? [savedPrimary, ...savedPriority.filter((provider) => provider !== savedPrimary)]
     : savedPriority;
+}
+
+function getStandaloneVideoProviderPreference(model) {
+  if (!isStandaloneEdition()) {
+    return [];
+  }
+  const filePath = getModelAdapterPreferencesPath();
+  if (!fs.existsSync(filePath)) {
+    return [];
+  }
+  try {
+    const value = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+    return uniqueProviders(
+      getSavedModelProviderEntry(
+        value?.modelProviderPriority || value?.model_provider_priority,
+        normalizeVideoModelKey(model),
+      ),
+    );
+  } catch (error) {
+    console.error('[docker_video_provider_priority] failed to read model adapter preferences', {
+      filePath,
+      message: error?.message || String(error),
+    });
+    return [];
+  }
+}
+
+function applyProviderPreferenceOrder(defaultPriority = [], savedPreference = []) {
+  const normalizedDefault = uniqueProviders(defaultPriority);
+  const allowedProviders = new Set(normalizedDefault);
+  const preferredProviders = uniqueProviders(savedPreference)
+    .filter((provider) => allowedProviders.has(provider));
+  return [
+    ...preferredProviders,
+    ...normalizedDefault.filter((provider) => !preferredProviders.includes(provider)),
+  ];
 }
 
 export function normalizeVideoModelKey(model) {
@@ -268,30 +309,38 @@ export function getDockerVideoProviderPriority(model, { generationType = '' } = 
     return [DOCKER_VIDEO_PROVIDER.FAL, DOCKER_VIDEO_PROVIDER.SAMSAR];
   }
 
-  const savedPriority = getSavedVideoProviderPriority(normalizedModel);
-  if (normalizedGenerationType !== 'sound_effect' && savedPriority.length > 0) {
-    return savedPriority;
-  }
-
+  let defaultPriority;
   if (
     normalizedGenerationType === 'sound_effect' ||
     DOCKER_FAL_SOUND_EFFECT_MODELS.includes(normalizedModel)
   ) {
     const modelPriority = DOCKER_VIDEO_PROVIDER_PRIORITY_BY_MODEL[normalizedModel] || [];
-    return modelPriority.length
+    defaultPriority = modelPriority.length
       ? [...modelPriority]
       : [DOCKER_VIDEO_PROVIDER.FAL, DOCKER_VIDEO_PROVIDER.SAMSAR];
+  } else if (DOCKER_VIDEO_PROVIDER_PRIORITY_BY_MODEL[normalizedModel]) {
+    defaultPriority = [...DOCKER_VIDEO_PROVIDER_PRIORITY_BY_MODEL[normalizedModel]];
+  } else if (DOCKER_FAL_VIDEO_MODELS.includes(normalizedModel) || normalizedModel.startsWith('KLING')) {
+    defaultPriority = [DOCKER_VIDEO_PROVIDER.FAL, DOCKER_VIDEO_PROVIDER.SAMSAR];
+  } else {
+    defaultPriority = hasSamsarVideoCredential() ? [DOCKER_VIDEO_PROVIDER.SAMSAR] : [];
   }
 
-  if (DOCKER_VIDEO_PROVIDER_PRIORITY_BY_MODEL[normalizedModel]) {
-    return DOCKER_VIDEO_PROVIDER_PRIORITY_BY_MODEL[normalizedModel];
+  if (normalizedGenerationType === 'sound_effect') {
+    return defaultPriority;
   }
 
-  if (DOCKER_FAL_VIDEO_MODELS.includes(normalizedModel) || normalizedModel.startsWith('KLING')) {
-    return [DOCKER_VIDEO_PROVIDER.FAL, DOCKER_VIDEO_PROVIDER.SAMSAR];
+  if (isStandaloneEdition()) {
+    return applyProviderPreferenceOrder(
+      defaultPriority,
+      getStandaloneVideoProviderPreference(normalizedModel),
+    );
   }
 
-  return hasSamsarVideoCredential() ? [DOCKER_VIDEO_PROVIDER.SAMSAR] : [];
+  // Preserve the existing staging/explicit-routing behavior. Standalone
+  // installations use the administrator-owned preference file above.
+  const legacySavedPriority = getLegacySavedVideoProviderPriority(normalizedModel);
+  return legacySavedPriority.length > 0 ? legacySavedPriority : defaultPriority;
 }
 
 export function resolveConfiguredVideoProvider(providerPriority = []) {
@@ -324,66 +373,16 @@ export function getConfiguredDockerVideoProviders(model, options = {}) {
 export function resolveNextDockerVideoProvider(model, currentProvider, options = {}) {
   const providers = getConfiguredDockerVideoProviders(model, options);
   const normalizedCurrentProvider = normalizeProvider(currentProvider);
+  const attemptedProviders = new Set(
+    uniqueProviders(options.attemptedProviders || options.excludeProviders || []),
+  );
   const currentIndex = providers.indexOf(normalizedCurrentProvider);
   if (currentIndex < 0) {
-    return providers.find((provider) => provider !== normalizedCurrentProvider) || '';
+    return providers.find(
+      (provider) => provider !== normalizedCurrentProvider && !attemptedProviders.has(provider),
+    ) || '';
   }
-  return providers.slice(currentIndex + 1).find(Boolean) || '';
-}
-
-export function promoteDockerVideoProvider(model, provider) {
-  if (!isDockerVideoProviderRoutingEnabled()) {
-    return false;
-  }
-  const normalizedModel = normalizeVideoModelKey(model);
-  const normalizedProvider = normalizeProvider(provider);
-  if (!normalizedModel || !normalizedProvider || !isVideoProviderConfigured(normalizedProvider)) {
-    return false;
-  }
-
-  const { filePath, value } = readAvailableModelsConfig();
-  if (!value || !filePath) {
-    return false;
-  }
-  const modelProviders = value.modelProviders && typeof value.modelProviders === 'object'
-    ? { ...value.modelProviders }
-    : {};
-  const modelProviderPriority = value.modelProviderPriority &&
-    typeof value.modelProviderPriority === 'object'
-    ? { ...value.modelProviderPriority }
-    : {};
-  const existingPriority = uniqueProviders(
-    getSavedModelProviderEntry(modelProviderPriority, normalizedModel) ||
-      DOCKER_VIDEO_PROVIDER_PRIORITY_BY_MODEL[normalizedModel] ||
-      [],
-  );
-  const existingModelKey = Object.keys(modelProviders).find(
-    (key) => normalizeVideoModelKey(key) === normalizedModel,
-  ) || normalizedModel;
-  const existingPriorityKey = Object.keys(modelProviderPriority).find(
-    (key) => normalizeVideoModelKey(key) === normalizedModel,
-  ) || normalizedModel;
-
-  modelProviders[existingModelKey] = normalizedProvider;
-  modelProviderPriority[existingPriorityKey] = [
-    normalizedProvider,
-    ...existingPriority.filter((candidate) => candidate !== normalizedProvider),
-  ];
-  const nextValue = {
-    ...value,
-    providers: [...new Set([...(Array.isArray(value.providers) ? value.providers : []), normalizedProvider])],
-    modelProviders,
-    modelProviderPriority,
-  };
-  const temporaryPath = `${filePath}.${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2)}.tmp`;
-  const fileMode = fs.statSync(filePath).mode & 0o777;
-  try {
-    fs.writeFileSync(temporaryPath, `${JSON.stringify(nextValue, null, 2)}\n`, { mode: fileMode });
-    fs.renameSync(temporaryPath, filePath);
-  } finally {
-    if (fs.existsSync(temporaryPath)) {
-      fs.unlinkSync(temporaryPath);
-    }
-  }
-  return true;
+  return providers.slice(currentIndex + 1).find(
+    (provider) => !attemptedProviders.has(provider),
+  ) || '';
 }

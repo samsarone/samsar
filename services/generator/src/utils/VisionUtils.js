@@ -3,7 +3,6 @@
  ********************************************/
 import { getDBConnectionString } from "../DBString.js";
 import VideoSession from "../schema/VideoSession.js";
-import OpenAI from "openai";
 import { getAccessibleMediaUrlForProvider } from './MediaReferenceUtils.js';
 import { getCurrentEnvironment } from './Environment.js';
 import {
@@ -17,16 +16,9 @@ import {
   isKimiInferenceModel,
   isQwenInferenceModel,
 } from '../inference/InferenceModels.js';
-import { createGoogleGeminiChatCompletion } from '../inference/GoogleGemini.js';
-import { createKimiK3ChatCompletion } from '../inference/KimiK3.js';
-import { createQwenChatCompletion } from '../inference/Qwen.js';
-import {
-  createSamsarExternalChatCompletion,
-  shouldUseSamsarExternalInference,
-} from '../inference/SamsarExternalInferenceAdapter.js';
+import { createCompatibleInferenceChatCompletion } from '../OpenAI.js';
 import { withInferenceAuthorization } from '../inference/RequestInferenceModel.js';
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY || '' });
 const IMAGE_ACCESSIBILITY_TIMEOUT_MS = 2500;
 const VISION_INFERENCE_MAX_RETRIES = normalizeNonNegativeInteger(
   process.env.VISION_INFERENCE_MAX_RETRIES,
@@ -379,28 +371,19 @@ Provide an information-dense, condensed and thorough description in 3000 charact
 
   const response = await runVisionInferenceWithRetry(
     async () => {
-      if (isGeminiInferenceModel(inferenceModel)) {
-        const sourcePayload = buildActivePayload(activeImageRemoteLink);
-        const sourceRoutingPayload = withInferenceAuthorization(sourcePayload, inferenceAuthorization);
-        if (!shouldUseSamsarExternalInference(sourceRoutingPayload)) {
-          return createGoogleGeminiChatCompletion(sourcePayload.messages, inferenceModel);
-        }
-      }
       const accessibleUrl = await getAccessibleMediaUrlForProvider(activeImageRemoteLink, {
         preferDataUrl: false,
         preferInternalDockerUrl: false,
         mediaKind: 'image',
       });
       const providerImageUrl = await resolveVisionImageUrl(accessibleUrl);
-      const activePayload = buildActivePayload(providerImageUrl);
+      const activePayload = {
+        ...buildActivePayload(providerImageUrl),
+        externalMaxRetries: 0,
+        maxRetries: 0,
+      };
       const routingPayload = withInferenceAuthorization(activePayload, inferenceAuthorization);
-      return shouldUseSamsarExternalInference(routingPayload)
-        ? createSamsarExternalChatCompletion({ ...routingPayload, externalMaxRetries: 0 })
-        : isQwenInferenceModel(inferenceModel)
-          ? createQwenChatCompletion(routingPayload)
-          : isKimiInferenceModel(inferenceModel)
-            ? createKimiK3ChatCompletion(routingPayload)
-          : openai.chat.completions.create(activePayload, { maxRetries: 0 });
+      return createCompatibleInferenceChatCompletion(routingPayload);
     },
     {
       operationName: 'image description',
@@ -507,6 +490,8 @@ Return only a single integer between 0 and 100.`;
   const inferenceModel = resolveVisionInferenceModel(userInferenceModel);
   const inferencePayload = {
     model: inferenceModel,
+    externalMaxRetries: 0,
+    maxRetries: 0,
     ...(isQwenInferenceModel(inferenceModel)
       ? { max_tokens: getQwenVisionMaxTokens(inferenceModel, 'score') }
       : {}),
@@ -517,15 +502,7 @@ Return only a single integer between 0 and 100.`;
   };
   const routingPayload = withInferenceAuthorization(inferencePayload, inferenceAuthorization);
   const response = await runVisionInferenceWithRetry(
-    () => shouldUseSamsarExternalInference(routingPayload)
-      ? createSamsarExternalChatCompletion({ ...routingPayload, externalMaxRetries: 0 })
-      : isQwenInferenceModel(inferenceModel)
-        ? createQwenChatCompletion(routingPayload)
-        : isGeminiInferenceModel(inferenceModel)
-          ? createGoogleGeminiChatCompletion(messages, inferenceModel)
-          : isKimiInferenceModel(inferenceModel)
-            ? createKimiK3ChatCompletion(routingPayload)
-          : openai.chat.completions.create(inferencePayload, { maxRetries: 0 }),
+    () => createCompatibleInferenceChatCompletion(routingPayload),
     {
       operationName: 'image score',
       model: inferencePayload.model,

@@ -26,6 +26,7 @@ import {
 } from '../../consts/DockerProviderPriority.js';
 import ImageGeneration from '../../schema/ImageGeneration.js';
 import { markVideoSessionLayerAsFailed } from '../../VideoSession.js';
+import { isStandaloneEdition } from '../../utils/Environment.js';
 
 const CASE_TYPE_HANDLERS = {
   image_edit: {
@@ -50,19 +51,78 @@ const CASE_TYPE_HANDLERS = {
   },
 };
 
+function normalizeAdapterProvider(value) {
+  const normalized = typeof value === 'string'
+    ? value.trim().toLowerCase().replace(/[^a-z0-9]/g, '')
+    : '';
+  if (['google', 'googlecloud', 'gcp', 'vertex', 'vertexai'].includes(normalized)) {
+    return DOCKER_ADAPTER_PROVIDER.GOOGLE_CLOUD;
+  }
+  if (normalized === 'fal') {
+    return DOCKER_ADAPTER_PROVIDER.FAL;
+  }
+  if (normalized === 'samsar') {
+    return DOCKER_ADAPTER_PROVIDER.SAMSAR;
+  }
+  return '';
+}
+
+export function resolveNanoBananaEditAdapterProvider(payload = {}) {
+  if (!isStandaloneEdition()) {
+    return '';
+  }
+  const pinnedProvider = normalizeAdapterProvider(
+    payload?.adapterProviderOverride || payload?.adapterProvider,
+  );
+  if (pinnedProvider) {
+    return pinnedProvider;
+  }
+  const requestId = typeof payload?.apiRequestId === 'string'
+    ? payload.apiRequestId.trim().toLowerCase()
+    : '';
+  if (requestId.startsWith('google-native-nanobanana-edit:')) {
+    return DOCKER_ADAPTER_PROVIDER.GOOGLE_CLOUD;
+  }
+  if (requestId.startsWith('samsar-external-image:')) {
+    return DOCKER_ADAPTER_PROVIDER.SAMSAR;
+  }
+  const externalProvider = normalizeAdapterProvider(payload?.externalProvider);
+  return externalProvider || resolveDockerImageEditProvider(payload?.model);
+}
+
 export async function handleNanoBananaEditDispatch(payload) {
   const { apiEditStatus = 'INIT', case_type, model } = payload || {};
-
-  if (shouldUseSamsarExternalImageEditProvider(payload)) {
-    return await handleSamsarExternalImageEditRequest(payload);
+  const standaloneProvider = resolveNanoBananaEditAdapterProvider(payload);
+  const routedPayload = standaloneProvider
+    ? {
+      ...payload,
+      adapterProvider: standaloneProvider,
+      adapterProviderOverride: standaloneProvider,
+    }
+    : payload;
+  if (apiEditStatus === 'INIT' && standaloneProvider && payload?._id) {
+    try {
+      await ImageGeneration.findByIdAndUpdate(payload._id, {
+        adapterProvider: standaloneProvider,
+        adapterProviderOverride: standaloneProvider,
+      });
+    } catch {
+    }
   }
 
-  const dockerProvider = resolveDockerImageEditProvider(model);
+  if (
+    standaloneProvider === DOCKER_ADAPTER_PROVIDER.SAMSAR ||
+    (!standaloneProvider && shouldUseSamsarExternalImageEditProvider(payload))
+  ) {
+    return await handleSamsarExternalImageEditRequest(routedPayload);
+  }
+
+  const dockerProvider = standaloneProvider || resolveDockerImageEditProvider(model);
   if (
     dockerProvider === DOCKER_ADAPTER_PROVIDER.GOOGLE_CLOUD ||
     (!dockerProvider && shouldUseGoogleNativeNanoBananaEdit(payload))
   ) {
-    return await handleGoogleNanoBananaEditDispatch(payload);
+    return await handleGoogleNanoBananaEditDispatch(routedPayload);
   }
 
   const caseType = resolveCaseType(case_type);
@@ -84,7 +144,7 @@ export async function handleNanoBananaEditDispatch(payload) {
 
   try {
     if (apiEditStatus === 'INIT') {
-      const submitResult = await handler.submit(payload);
+      const submitResult = await handler.submit(routedPayload);
       if (submitResult?.error) {
         throw new Error(submitResult.error);
       }
@@ -92,21 +152,24 @@ export async function handleNanoBananaEditDispatch(payload) {
     }
 
     if (apiEditStatus === 'PENDING') {
-      return await handler.poll(payload);
+      const pollResult = await handler.poll(routedPayload);
+      return pollResult?.error
+        ? { ...pollResult, definitiveAdapterFailure: true }
+        : pollResult;
     }
 
     if (apiEditStatus === 'COMPLETED') {
       // Allow idempotent polling to pull down the final assets without failing the request
-      return await handler.poll(payload);
+      return await handler.poll(routedPayload);
     }
 
     if (apiEditStatus === 'FAILED') {
-      return await markCaseAsFailed(payload, caseType, `NanoBanana request failed for case_type ${caseType}`);
+      return await markCaseAsFailed(routedPayload, caseType, `NanoBanana request failed for case_type ${caseType}`);
     }
 
-    return handleUnsupportedCaseType(payload, caseType);
+    return handleUnsupportedCaseType(routedPayload, caseType);
   } catch (error) {
-    return await markCaseAsFailed(payload, caseType, error?.message || 'NanoBanana dispatcher error');
+    return await markCaseAsFailed(routedPayload, caseType, error?.message || 'NanoBanana dispatcher error');
   }
 }
 
@@ -134,6 +197,9 @@ async function handleUnsupportedCaseType(payload, caseType) {
 }
 
 async function markCaseAsFailed(payload, caseType, message) {
+  if (payload?.deferAdapterFailureFinalization === true) {
+    return { error: message, definitiveAdapterFailure: true };
+  }
 
 
   try {

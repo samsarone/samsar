@@ -277,9 +277,22 @@ export async function createGoogleGeminiChatCompletion(messageList) {
   });
 
   const responseText = await response.text();
-  const payload = responseText ? JSON.parse(responseText) : {};
+  let payload = {};
+  if (responseText) {
+    try {
+      payload = JSON.parse(responseText);
+    } catch (error) {
+      if (response.ok) {
+        throw error;
+      }
+    }
+  }
   if (!response.ok) {
-    throw new Error(payload?.error?.message || `Google Gemini inference failed with status ${response.status}`);
+    const error = new Error(
+      payload?.error?.message || `Google Gemini inference failed with status ${response.status}`,
+    );
+    error.status = response.status;
+    throw error;
   }
 
   return {

@@ -8,6 +8,7 @@ import {
   getExternalVideoAttemptId,
   getStartImageReference,
   resolveExternalVideoRoute,
+  shouldUseSamsarExternalVideoProvider,
 } from './base/SamsarExternalVideoListener.js';
 
 const originalFetch = globalThis.fetch;
@@ -75,6 +76,25 @@ function configureDockerPublicMedia() {
   process.env.SAMSAR_MEDIA_TUNNEL_REFRESH_WAIT_MS = '1';
   process.env.SAMSAR_MEDIA_TUNNEL_REFRESH_POLL_MS = '10';
 }
+
+test('a persisted provider selection keeps INIT retries on the selected adapter', () => {
+  const envSnapshot = snapshotEnv();
+  try {
+    configureDockerPublicMedia();
+    assert.equal(shouldUseSamsarExternalVideoProvider({
+      model: 'COSMOS3SUPERI2V',
+      status: 'INIT',
+      dockerVideoProvider: 'fal',
+    }), false);
+    assert.equal(shouldUseSamsarExternalVideoProvider({
+      model: 'COSMOS3SUPERI2V',
+      status: 'INIT',
+      dockerVideoProvider: 'samsar',
+    }), true);
+  } finally {
+    restoreEnv(envSnapshot);
+  }
+});
 
 test('Samsar external image-to-video payload includes start image URL compatibility aliases', () => {
   const startImageUrl = 'https://media.example.com/assets_v2/session/start.png';

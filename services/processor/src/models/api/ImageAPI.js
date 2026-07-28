@@ -27,6 +27,7 @@ import {
   normalizeInferenceModel,
 } from '../../consts/InferenceModels.js';
 import { createCompatibleChatCompletion } from '../ai_utils/OpenAICompat.js';
+import { isStandaloneEdition } from '../../utils/EnvironmentUtils.js';
 
 const OPENAI_MODEL = process.env.IMAGE_SET_PROMPT_MODEL || 'gpt-4o-mini';
 const openaiClient = process.env.OPENAI_API_KEY ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY }) : null;
@@ -58,6 +59,19 @@ const OVERLAY_TEXT_STROKE_COLOR = 'rgba(255,255,255,0.6)';
 const FOOTER_TEXT_WIDTH_SAFETY = 0.98;
 const FOOTER_TEXT_WRAP_RETRIES = 6;
 const TOP_LEFT_FONT_SCALE = 1.0;
+
+export function shouldUsePreferenceAwareImagePromptRouting(
+  inferenceModel,
+  env = process.env,
+) {
+  const normalizedInferenceModel = normalizeInferenceModel(inferenceModel);
+  return (
+    isStandaloneEdition(env) ||
+    isGeminiInferenceModel(normalizedInferenceModel) ||
+    isKimiInferenceModel(normalizedInferenceModel) ||
+    isQwenInferenceModel(normalizedInferenceModel)
+  );
+}
 const TOP_RIGHT_FONT_SCALE = 1.5;
 const TOP_RIGHT_FONT_SIZE_SCALE = 0.75;
 const TOP_RIGHT_MARGIN_BOOST_MIN = 18;
@@ -1786,8 +1800,10 @@ async function generatePromptForImageSet({
     isGeminiInferenceModel(normalizedInferenceModel) ||
     isKimiInferenceModel(normalizedInferenceModel) ||
     isQwenInferenceModel(normalizedInferenceModel);
+  const usesPreferenceAwareRouting =
+    shouldUsePreferenceAwareImagePromptRouting(normalizedInferenceModel);
 
-  if (!openaiClient && !usesSelectedNonOpenAIProvider) {
+  if (!openaiClient && !usesPreferenceAwareRouting) {
     return fallbackPromptWithDescriptions;
   }
 
@@ -1802,7 +1818,7 @@ async function generatePromptForImageSet({
       ],
       temperature: 0.8,
     };
-    const completion = usesSelectedNonOpenAIProvider
+    const completion = usesPreferenceAwareRouting
       ? await createCompatibleChatCompletion(openaiClient, completionPayload)
       : await openaiClient.chat.completions.create(completionPayload);
 

@@ -36,10 +36,21 @@ import { getBillingPortalUrl } from '../models/BillingPortal.js';
 
 import { getGoogleLogin, loginGoogleClient } from '../models/auth/Google.js';
 import { sendEnterpriseAdminWelcomeEmail } from '../models/Mailer.js';
+import User from '../schema/User.js';
+import {
+  mergeRuntimeInferenceDeploymentAvailability,
+  readDeploymentAvailableModels,
+} from '../models/api/DeploymentModelConfig.js';
+import {
+  buildModelAdapterSettings,
+  readModelAdapterPreferences,
+  writeModelAdapterPreferences,
+} from '../models/api/ModelAdapterPreferences.js';
 import {
   isGoogleLoginEnabled,
   isPublicRegistrationEnabled,
   isSetupAdminBootstrapEnabled,
+  isStandaloneEdition,
 } from '../utils/EnvironmentUtils.js';
 import { getAuthCookieDomain } from '../utils/AuthCookie.js';
 
@@ -291,6 +302,89 @@ async function getUserIdOrReject(req, res) {
   if (!userId) res.status(401).send("Unauthorized");
   return userId;
 }
+
+async function getStandaloneAdminUserOrReject(req, res) {
+  if (!isStandaloneEdition()) {
+    res.status(404).send({ error: 'Not found' });
+    return null;
+  }
+
+  let userId;
+  try {
+    userId = await verifyUserAuthentication(req.headers);
+  } catch {
+    res.status(401).send({ error: 'Unauthorized' });
+    return null;
+  }
+  if (!userId) {
+    if (!res.headersSent) {
+      res.status(401).send({ error: 'Unauthorized' });
+    }
+    return null;
+  }
+
+  const user = await User.findById(userId).select({ isAdminUser: 1 }).lean();
+  if (!user?.isAdminUser) {
+    res.status(403).send({ error: 'Standalone administrator access is required.' });
+    return null;
+  }
+  return user;
+}
+
+function getModelAdapterAvailability() {
+  const deploymentAvailableModels = readDeploymentAvailableModels() || {};
+  return mergeRuntimeInferenceDeploymentAvailability({
+    providers: Array.isArray(deploymentAvailableModels.providers)
+      ? deploymentAvailableModels.providers
+      : [],
+    models: Array.isArray(deploymentAvailableModels.models)
+      ? deploymentAvailableModels.models
+      : [],
+    actions: Array.isArray(deploymentAvailableModels.actions)
+      ? deploymentAvailableModels.actions
+      : [],
+    modelProviders: deploymentAvailableModels.modelProviders || {},
+    modelProviderPriority: deploymentAvailableModels.modelProviderPriority || {},
+    defaultModelProviderPriority:
+      deploymentAvailableModels.defaultModelProviderPriority || {},
+    providerKeyTypes: deploymentAvailableModels.providerKeyTypes || {},
+    providerEndpointTypes: deploymentAvailableModels.providerEndpointTypes || {},
+    audio: deploymentAvailableModels.audio || null,
+  });
+}
+
+router.get('/model_adapters', async (req, res) => {
+  try {
+    const adminUser = await getStandaloneAdminUserOrReject(req, res);
+    if (!adminUser) return;
+
+    const availability = getModelAdapterAvailability();
+    const preferences = readModelAdapterPreferences();
+    res.send(buildModelAdapterSettings(availability, preferences));
+  } catch (error) {
+    res.status(error?.status || 500).send({
+      error: error?.message || 'Unable to load model adapter preferences.',
+    });
+  }
+});
+
+router.put('/model_adapters', async (req, res) => {
+  try {
+    const adminUser = await getStandaloneAdminUserOrReject(req, res);
+    if (!adminUser) return;
+
+    const availability = getModelAdapterAvailability();
+    const { settings } = writeModelAdapterPreferences(
+      req.body?.modelProviderPriority,
+      availability,
+    );
+    res.send(settings);
+  } catch (error) {
+    res.status(error?.status || 500).send({
+      error: error?.message || 'Unable to save model adapter preferences.',
+    });
+  }
+});
 
 router.post('/upgrade_plan', async (req, res) => {
   try {

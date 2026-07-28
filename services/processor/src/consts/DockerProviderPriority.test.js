@@ -1,4 +1,7 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import test from 'node:test';
 
 import {
@@ -7,6 +10,7 @@ import {
   getDockerVideoProviderPriority,
   isDockerProviderRoutingEnabled,
   resolveDockerImageProvider,
+  resolveNextDockerImageProvider,
   resolveDockerVideoProvider,
 } from './DockerProviderPriority.js';
 
@@ -16,6 +20,7 @@ const ENV_KEYS = [
   'SAMSAR_EDITION',
   'SAMSAR_RUNTIME',
   'SAMSAR_DOCKER_ADAPTER_ROUTING_ENABLED',
+  'SAMSAR_MODEL_ADAPTER_PREFERENCES_PATH',
   'ALIBABA_API_KEY',
   'DASHSCOPE_API_KEY',
   'ALIBABA_CLOUD_API_KEY',
@@ -63,6 +68,14 @@ test('processor chooses Alibaba, FAL, and Samsar Happy Horse fallbacks in order'
 test('processor and image worker agree on Wan2.7 Pro Docker provider precedence', () => {
   assert.deepEqual(getDockerImageProviderPriority('wan2.7pro'), [
     DOCKER_PROVIDER.ALIBABA_CLOUD,
+    DOCKER_PROVIDER.FAL,
+    DOCKER_PROVIDER.SAMSAR,
+  ]);
+});
+
+test('processor and image worker agree on GPT Image 2 Docker provider precedence', () => {
+  assert.deepEqual(getDockerImageProviderPriority('GPTIMAGE2'), [
+    DOCKER_PROVIDER.OPENAI,
     DOCKER_PROVIDER.FAL,
     DOCKER_PROVIDER.SAMSAR,
   ]);
@@ -123,4 +136,58 @@ test('production Docker does not enable standalone provider routing implicitly',
   process.env.SAMSAR_DOCKER_ADAPTER_ROUTING_ENABLED = 'true';
   assert.equal(isDockerProviderRoutingEnabled(), true);
   assert.equal(resolveDockerImageProvider('WAN2.7PRO'), DOCKER_PROVIDER.FAL);
+});
+
+test('standalone routing honors the saved order and exposes the next configured adapter', (t) => {
+  clearEnv();
+  const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'processor-adapter-order-'));
+  const preferencePath = path.join(temporaryDirectory, 'model-adapter-preferences.json');
+  t.after(() => fs.rmSync(temporaryDirectory, { recursive: true, force: true }));
+  fs.writeFileSync(preferencePath, JSON.stringify({
+    modelProviderPriority: {
+      'WAN2.7PRO': ['samsar', 'fal', 'alibabaCloud'],
+    },
+  }));
+  process.env.SAMSAR_DEPLOYMENT_EDITION = 'standalone';
+  process.env.SAMSAR_RUNTIME = 'docker';
+  process.env.SAMSAR_MODEL_ADAPTER_PREFERENCES_PATH = preferencePath;
+  process.env.ALIBABA_API_KEY = 'alibaba-key';
+  process.env.FAL_API_KEY = 'fal-key';
+  process.env.SAMSAR_API_KEY = 'samsar-key';
+
+  assert.deepEqual(getDockerImageProviderPriority('WAN2.7PRO'), [
+    DOCKER_PROVIDER.SAMSAR,
+    DOCKER_PROVIDER.FAL,
+    DOCKER_PROVIDER.ALIBABA_CLOUD,
+  ]);
+  assert.equal(resolveDockerImageProvider('WAN2.7PRO'), DOCKER_PROVIDER.SAMSAR);
+  assert.equal(
+    resolveNextDockerImageProvider('WAN2.7PRO', DOCKER_PROVIDER.SAMSAR),
+    DOCKER_PROVIDER.FAL,
+  );
+});
+
+test('production ignores a standalone preference artifact', (t) => {
+  clearEnv();
+  const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'processor-prod-adapter-order-'));
+  const preferencePath = path.join(temporaryDirectory, 'model-adapter-preferences.json');
+  t.after(() => fs.rmSync(temporaryDirectory, { recursive: true, force: true }));
+  fs.writeFileSync(preferencePath, JSON.stringify({
+    modelProviderPriority: {
+      'WAN2.7PRO': ['samsar', 'fal', 'alibabaCloud'],
+    },
+  }));
+  process.env.SAMSAR_DEPLOYMENT_EDITION = 'production';
+  process.env.SAMSAR_RUNTIME = 'docker';
+  process.env.SAMSAR_DOCKER_ADAPTER_ROUTING_ENABLED = 'true';
+  process.env.SAMSAR_MODEL_ADAPTER_PREFERENCES_PATH = preferencePath;
+  process.env.ALIBABA_API_KEY = 'alibaba-key';
+  process.env.FAL_API_KEY = 'fal-key';
+  process.env.SAMSAR_API_KEY = 'samsar-key';
+
+  assert.deepEqual(getDockerImageProviderPriority('WAN2.7PRO'), [
+    DOCKER_PROVIDER.ALIBABA_CLOUD,
+    DOCKER_PROVIDER.FAL,
+    DOCKER_PROVIDER.SAMSAR,
+  ]);
 });

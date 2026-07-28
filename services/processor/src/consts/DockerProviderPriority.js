@@ -1,4 +1,9 @@
 import { isProductionEdition, isStandaloneEdition } from '../utils/EnvironmentUtils.js';
+import {
+  applyModelAdapterPreferenceOrder,
+  normalizeModelAdapterModelKey,
+  readModelAdapterPreferences,
+} from '../models/api/ModelAdapterPreferences.js';
 
 export const DOCKER_PROVIDER = Object.freeze({
   ALIBABA_CLOUD: 'alibabaCloud',
@@ -11,7 +16,11 @@ export const DOCKER_PROVIDER = Object.freeze({
 
 export const DOCKER_IMAGE_PROVIDER_PRIORITY_BY_MODEL = Object.freeze({
   'WAN2.7PRO': [DOCKER_PROVIDER.ALIBABA_CLOUD, DOCKER_PROVIDER.FAL, DOCKER_PROVIDER.SAMSAR],
-  GPTIMAGE2: [DOCKER_PROVIDER.OPENAI, DOCKER_PROVIDER.SAMSAR],
+  GPTIMAGE2: [
+    DOCKER_PROVIDER.OPENAI,
+    DOCKER_PROVIDER.FAL,
+    DOCKER_PROVIDER.SAMSAR,
+  ],
   GPTIMAGE1: [DOCKER_PROVIDER.OPENAI, DOCKER_PROVIDER.SAMSAR],
   DALLE3: [DOCKER_PROVIDER.OPENAI, DOCKER_PROVIDER.SAMSAR],
   NANOBANANA2: [DOCKER_PROVIDER.GOOGLE_CLOUD, DOCKER_PROVIDER.FAL, DOCKER_PROVIDER.SAMSAR],
@@ -177,6 +186,7 @@ export function isDockerProviderConfigured(provider) {
 
 export function getDockerImageProviderPriority(model) {
   const normalizedModel = normalizeDockerModelKey(model);
+  let defaultPriority;
   if (
     normalizedModel === 'NANOBANANAPRO' &&
     isProductionEdition()
@@ -184,23 +194,35 @@ export function getDockerImageProviderPriority(model) {
     return [DOCKER_PROVIDER.FAL, DOCKER_PROVIDER.GOOGLE_CLOUD, DOCKER_PROVIDER.SAMSAR];
   }
   if (DOCKER_IMAGE_PROVIDER_PRIORITY_BY_MODEL[normalizedModel]) {
-    return DOCKER_IMAGE_PROVIDER_PRIORITY_BY_MODEL[normalizedModel];
+    defaultPriority = DOCKER_IMAGE_PROVIDER_PRIORITY_BY_MODEL[normalizedModel];
+  } else if (DOCKER_FAL_IMAGE_MODELS.includes(normalizedModel)) {
+    defaultPriority = [DOCKER_PROVIDER.FAL, DOCKER_PROVIDER.SAMSAR];
+  } else {
+    defaultPriority = hasSamsarCredential() ? [DOCKER_PROVIDER.SAMSAR] : [];
   }
-  if (DOCKER_FAL_IMAGE_MODELS.includes(normalizedModel)) {
-    return [DOCKER_PROVIDER.FAL, DOCKER_PROVIDER.SAMSAR];
-  }
-  return hasSamsarCredential() ? [DOCKER_PROVIDER.SAMSAR] : [];
+  const savedPriority = readModelAdapterPreferences().modelProviderPriority[
+    normalizeModelAdapterModelKey(normalizedModel)
+  ];
+  return applyModelAdapterPreferenceOrder(defaultPriority, savedPriority);
 }
 
 export function getDockerVideoProviderPriority(model) {
   const normalizedModel = normalizeDockerModelKey(model);
+  let defaultPriority;
   if (DOCKER_VIDEO_PROVIDER_PRIORITY_BY_MODEL[normalizedModel]) {
-    return DOCKER_VIDEO_PROVIDER_PRIORITY_BY_MODEL[normalizedModel];
+    defaultPriority = DOCKER_VIDEO_PROVIDER_PRIORITY_BY_MODEL[normalizedModel];
+  } else if (
+    DOCKER_FAL_VIDEO_MODELS.includes(normalizedModel) ||
+    normalizedModel.startsWith('KLING')
+  ) {
+    defaultPriority = [DOCKER_PROVIDER.FAL, DOCKER_PROVIDER.SAMSAR];
+  } else {
+    defaultPriority = hasSamsarCredential() ? [DOCKER_PROVIDER.SAMSAR] : [];
   }
-  if (DOCKER_FAL_VIDEO_MODELS.includes(normalizedModel) || normalizedModel.startsWith('KLING')) {
-    return [DOCKER_PROVIDER.FAL, DOCKER_PROVIDER.SAMSAR];
-  }
-  return hasSamsarCredential() ? [DOCKER_PROVIDER.SAMSAR] : [];
+  const savedPriority = readModelAdapterPreferences().modelProviderPriority[
+    normalizeModelAdapterModelKey(normalizedModel)
+  ];
+  return applyModelAdapterPreferenceOrder(defaultPriority, savedPriority);
 }
 
 export function resolveConfiguredDockerProvider(providerPriority = []) {
@@ -215,4 +237,37 @@ export function resolveDockerImageProvider(model) {
 export function resolveDockerVideoProvider(model) {
   if (!isDockerProviderRoutingEnabled()) return '';
   return resolveConfiguredDockerProvider(getDockerVideoProviderPriority(model));
+}
+
+export function getConfiguredDockerImageProviders(model) {
+  if (!isDockerProviderRoutingEnabled()) return [];
+  return getDockerImageProviderPriority(model).filter(isDockerProviderConfigured);
+}
+
+export function getConfiguredDockerVideoProviders(model) {
+  if (!isDockerProviderRoutingEnabled()) return [];
+  return getDockerVideoProviderPriority(model).filter(isDockerProviderConfigured);
+}
+
+function resolveNextConfiguredProvider(providers, currentProvider) {
+  const normalizedCurrentProvider = normalizeString(currentProvider);
+  const currentIndex = providers.indexOf(normalizedCurrentProvider);
+  if (currentIndex < 0) {
+    return providers.find((provider) => provider !== normalizedCurrentProvider) || '';
+  }
+  return providers.slice(currentIndex + 1).find(Boolean) || '';
+}
+
+export function resolveNextDockerImageProvider(model, currentProvider) {
+  return resolveNextConfiguredProvider(
+    getConfiguredDockerImageProviders(model),
+    currentProvider,
+  );
+}
+
+export function resolveNextDockerVideoProvider(model, currentProvider) {
+  return resolveNextConfiguredProvider(
+    getConfiguredDockerVideoProviders(model),
+    currentProvider,
+  );
 }

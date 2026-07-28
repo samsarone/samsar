@@ -42,6 +42,7 @@ test('preserves chat contracts while enforcing Kimi high reasoning and strict JS
     n: 2,
     presence_penalty: 1,
     frequency_penalty: 1,
+    externalMaxRetries: 7,
     max_tokens: 321,
     response_format: {
       type: 'json_schema',
@@ -66,6 +67,7 @@ test('preserves chat contracts while enforcing Kimi high reasoning and strict JS
   assert.equal(payload.messages[0].role, 'system');
   assert.equal(payload.max_completion_tokens, 321);
   assert.equal(payload.response_format.json_schema.strict, true);
+  assert.equal(Object.hasOwn(payload, 'externalMaxRetries'), false);
   for (const unsupported of [
     'temperature',
     'top_p',

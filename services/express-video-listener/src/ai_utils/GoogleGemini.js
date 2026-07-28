@@ -411,8 +411,22 @@ export async function createGoogleGeminiChatCompletion(chatRequest = {}) {
     }),
   });
   const responseText = await response.text();
-  const payload = responseText ? JSON.parse(responseText) : {};
-  if (!response.ok) throw new Error(payload?.error?.message || `Google Gemini inference failed with status ${response.status}`);
+  let payload = {};
+  if (responseText) {
+    try {
+      payload = JSON.parse(responseText);
+    } catch (error) {
+      if (response.ok) throw error;
+    }
+  }
+  if (!response.ok) {
+    const error = new Error(
+      payload?.error?.message || `Google Gemini inference failed with status ${response.status}`,
+    );
+    error.status = response.status;
+    error.code = payload?.error?.code ?? response.status;
+    throw error;
+  }
   const candidate = payload?.candidates?.[0] || {};
   const message = { role: 'assistant', content: extractGeminiOutputText(payload) };
   if (legacyMessageListInput) {

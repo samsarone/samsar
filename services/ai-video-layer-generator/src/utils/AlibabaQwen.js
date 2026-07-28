@@ -252,6 +252,7 @@ export function buildAlibabaQwenChatRequest(chatRequest = {}, env = process.env)
     timeout,
     timeoutMs,
     maxRetries,
+    externalMaxRetries,
     max_output_tokens,
     messages: rawMessages,
     response_format: responseFormat,

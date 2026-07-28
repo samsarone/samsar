@@ -32,9 +32,20 @@ The generated file contains:
 | `providers` | Enabled provider keys. |
 | `models` | Available model identifiers from enabled providers. |
 | `actions` | Available action families such as `chat`, `image`, `video`, `search`, `recommendations`, `audio`, `lip_sync`, and `sound_effect`. |
+| `modelProviderPriority` | Default compatible adapter order for each model. |
 | `audio` | Derived audio provider availability for TTS, music, and sound effects. |
 
 The video API reads this file through `DeploymentModelConfig` and filters `GET /v1/video/supported_models` responses to the deployment's available models.
+
+## Standalone Model Adapter Preferences
+
+The standalone administrator can open **Settings > Model Adapters** in the Samsar client to reorder the installed adapters for inference, text-to-image, and image-to-video models. Only models and adapters available in the current installation are shown.
+
+The default order comes from `runtime/config/available-models.json`. Saved overrides are written atomically to `runtime/config/model-adapter-preferences.json`; rerunning `npm run config:render` does not overwrite that file. Resetting the setup wizard removes it together with the other generated runtime configuration.
+
+For Text to Video, Image List to Video, and Studio work, a new request starts with the first configured adapter. A definitive provider failure advances the retry to the next configured adapter. Requests already submitted to an asynchronous provider remain pinned to that provider while polling, so changing the preference order cannot redirect an in-flight request.
+
+This preference file is read only when `SAMSAR_DEPLOYMENT_EDITION=standalone`. Production and staging deployments keep their existing provider-routing behavior, and their settings UI does not expose this control.
 
 ## Fallback Rules
 

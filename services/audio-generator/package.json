@@ -5,7 +5,7 @@
   "main": "index.js",
   "type": "module",
   "scripts": {
-    "test": "node --test src/AWS.test.js src/music/GoogleLyriaNativeGenerator.test.js src/music/audioUtils.test.js src/speech/GoogleTTS.test.js src/music/ElevenLabsMusicGenerator.test.js src/music/MusicDispatcher.test.js src/external/SamsarExternalAudioAdapter.test.js src/inference/GoogleGemini.test.js src/inference/InferenceModels.test.js src/inference/KimiK3.test.js src/inference/Qwen.test.js src/inference/RequestInferenceModel.test.js src/inference/SamsarExternalInferenceAdapter.test.js src/utils/CpuResources.test.js src/utils/FfmpegResources.test.js src/utils/ProviderMediaPayload.test.js src/utils/ProviderMediaUrl.test.js"
+    "test": "node --test src/AWS.test.js src/music/GoogleLyriaNativeGenerator.test.js src/music/audioUtils.test.js src/speech/GoogleTTS.test.js src/music/ElevenLabsMusicGenerator.test.js src/music/MusicDispatcher.test.js src/external/SamsarExternalAudioAdapter.test.js src/inference/GoogleGemini.test.js src/inference/InferenceModels.test.js src/inference/KimiK3.test.js src/inference/OpenAI.test.js src/inference/Qwen.test.js src/inference/RequestInferenceModel.test.js src/inference/SamsarExternalInferenceAdapter.test.js src/utils/CpuResources.test.js src/utils/FfmpegResources.test.js src/utils/ProviderMediaPayload.test.js src/utils/ProviderMediaUrl.test.js"
   },
   "author": "",
   "license": "ISC",

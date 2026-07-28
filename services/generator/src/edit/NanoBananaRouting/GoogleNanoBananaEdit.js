@@ -227,6 +227,12 @@ async function uploadGenerationToCDN(imageName, remoteUrl) {
 
 async function markGoogleNanoBananaEditAsFailed(payload, message) {
   const failureMessage = message || 'Google Nano Banana edit failed';
+  if (payload?.deferAdapterFailureFinalization === true) {
+    return {
+      error: failureMessage,
+      definitiveAdapterFailure: true,
+    };
+  }
 
   try {
     await ImageGeneration.findOneAndUpdate(

@@ -76,6 +76,7 @@ import {
   buildBranchedVideoSessionPlan,
   materializeBranchedVideoSessionPaths,
 } from './branching/BranchedVideoSessionPlan.js';
+import { hasConnectedSpeechAudioLayer } from '../video/LipSyncLayerState.js';
 
 const MEDIA_DOWNLOAD_TIMEOUT_MS = Number.isFinite(Number(process.env.API_MEDIA_DOWNLOAD_TIMEOUT_MS))
   ? Math.max(1000, Math.floor(Number(process.env.API_MEDIA_DOWNLOAD_TIMEOUT_MS)))
@@ -1446,7 +1447,8 @@ async function requestQuickMovieGenerationInternal(userId, payload, {
       durationOffset: durationOffset,
       layerAiVideoType: layerAiVideoType,
       hasAiVideoLayer: true,
-      lipSyncGenerationPending: isLipSyncRequired,
+      lipSyncGenerationPending: isLipSyncRequired
+        && hasConnectedSpeechAudioLayer(audioLayers, {}, pIdx),
       soundEffectGenerationPending: isSoundEffectRequired,
       layerBaseAiImageType: layerBaseAiImageType,
       ...(promptItem.branchAssetKey ? { branchAssetKey: promptItem.branchAssetKey } : {}),

@@ -69,7 +69,7 @@ const buildUsageLimitPayload = (usageLimitPeriod, usageLimit) => {
   };
 };
 
-export default function APIKeysPanelContent() {
+export default function APIKeysPanelContent({ onAPIKeyPresenceChange }) {
   const { colorMode } = useColorMode();
   const { user } = useUser();
 
@@ -105,6 +105,7 @@ export default function APIKeysPanelContent() {
       const apiKeyResponse = response.data.apiKeys || [];
       setApiKeys(apiKeyResponse);
       setLimitDrafts(buildLimitDrafts(apiKeyResponse));
+      onAPIKeyPresenceChange?.(apiKeyResponse.length > 0);
     } catch  {
       
       toast.error('Failed to fetch API keys', {
@@ -125,6 +126,7 @@ export default function APIKeysPanelContent() {
       const response = await axios.post(`${PROCESSOR_SERVER}/users/api_keys`, payload, headers);
       const newKey = response.data.apiKey;
       setApiKeys((prevKeys) => [...prevKeys, newKey]);
+      onAPIKeyPresenceChange?.(true);
       setLimitDrafts((prevDrafts) => ({
         ...prevDrafts,
         [newKey._id]: getLimitDraftFromKey(newKey),
@@ -179,7 +181,9 @@ export default function APIKeysPanelContent() {
     try {
       const headers = getHeaders();
       await axios.delete(`${PROCESSOR_SERVER}/users/api_keys/${keyId}`, headers);
-      setApiKeys((prevKeys) => prevKeys.filter((key) => key._id !== keyId));
+      const remainingKeys = apiKeys.filter((key) => key._id !== keyId);
+      setApiKeys(remainingKeys);
+      onAPIKeyPresenceChange?.(remainingKeys.length > 0);
       toast.success('API key deleted successfully!', {
         position: 'bottom-center',
       });

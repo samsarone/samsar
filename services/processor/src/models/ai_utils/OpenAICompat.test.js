@@ -2,7 +2,13 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { INFERENCE_MODELS } from '../../consts/InferenceModels.js';
-import { createCompatibleChatCompletion } from './OpenAICompat.js';
+import { buildAlibabaQwenChatRequest } from '../../inference/AlibabaQwen.js';
+import {
+  buildProviderPinnedChatRequest,
+  createCompatibleChatCompletion,
+  isRetryableInferenceAdapterError,
+  runInferenceAdapterFallback,
+} from './OpenAICompat.js';
 
 test('forces high reasoning for GPT 5.6 Sol Responses requests', async () => {
   let capturedPath;
@@ -140,4 +146,74 @@ test('routes Kimi K3 through its native high-reasoning chat adapter', async () =
   assert.equal(capturedPayload.messages[0].role, 'system');
   assert.equal(capturedPayload.response_format.json_schema.strict, true);
   assert.equal(response.choices[0].message.content, '{"ok":true}');
+});
+
+test('adapter fallback follows preference order after a retryable provider failure', async () => {
+  const attempts = [];
+  const response = await runInferenceAdapterFallback(
+    ['openrouter', 'samsar'],
+    async (provider) => {
+      attempts.push(provider);
+      if (provider === 'openrouter') {
+        const error = new Error('rate limited');
+        error.status = 429;
+        throw error;
+      }
+      return { provider };
+    },
+  );
+
+  assert.deepEqual(attempts, ['openrouter', 'samsar']);
+  assert.deepEqual(response, { provider: 'samsar' });
+});
+
+test('adapter fallback does not hide a non-retryable request error', async () => {
+  const attempts = [];
+  await assert.rejects(
+    runInferenceAdapterFallback(
+      ['openai', 'samsar'],
+      async (provider) => {
+        attempts.push(provider);
+        const error = new Error('invalid schema');
+        error.status = 400;
+        throw error;
+      },
+    ),
+    /invalid schema/,
+  );
+
+  assert.deepEqual(attempts, ['openai']);
+  assert.equal(isRetryableInferenceAdapterError({ status: 503 }), true);
+  assert.equal(isRetryableInferenceAdapterError({ status: 400 }), false);
+});
+
+test('automatic adapter attempts disable provider-local retries and preserve provider pins', () => {
+  assert.deepEqual(
+    buildProviderPinnedChatRequest(
+      { model: 'gpt-5.6-sol', maxRetries: 4, externalMaxRetries: 4 },
+      'openrouter',
+    ),
+    {
+      model: 'gpt-5.6-sol',
+      maxRetries: 0,
+      externalMaxRetries: 0,
+      authorization: 'openrouter',
+      bypassSamsarExternalInference: false,
+      samsarExternalInference: true,
+    },
+  );
+});
+
+test('automatic retry metadata does not leak into native Qwen payloads', () => {
+  const { payload, requestOptions } = buildAlibabaQwenChatRequest({
+    model: 'QWEN3.7',
+    messages: [{ role: 'user', content: 'hello' }],
+    authorization: 'native',
+    bypassSamsarExternalInference: true,
+    externalMaxRetries: 9,
+    maxRetries: 0,
+  });
+
+  assert.equal(Object.hasOwn(payload, 'externalMaxRetries'), false);
+  assert.equal(requestOptions.maxRetries, 0);
 });

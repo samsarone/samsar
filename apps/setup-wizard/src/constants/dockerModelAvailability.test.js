@@ -145,6 +145,20 @@ test('Kimi K3 priority is the native Kimi API, then Samsar', () => {
   }
 });
 
+test('GPT Image 2 priority is OpenAI, FAL, then Samsar', () => {
+  const available = buildDockerAvailableModelsFromEnabledProviders([
+    DOCKER_PROVIDER.OPENAI,
+    DOCKER_PROVIDER.FAL,
+    DOCKER_PROVIDER.SAMSAR,
+  ]);
+
+  assert.deepEqual(available.modelProviderPriority.GPTIMAGE2, [
+    DOCKER_PROVIDER.OPENAI,
+    DOCKER_PROVIDER.FAL,
+    DOCKER_PROVIDER.SAMSAR,
+  ]);
+});
+
 test('Happy Horse resolves Alibaba then FAL then Samsar', () => {
   assert.equal(
     resolveDockerModelProvider('HAPPYHORSEI2V', [

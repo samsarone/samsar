@@ -1,4 +1,11 @@
 import assert from 'node:assert/strict';
+import {
+  mkdtempSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import test from 'node:test';
 import OpenAI from 'openai';
 import SamsarClient from 'samsar-js';
@@ -7,6 +14,7 @@ import {
   DOCKER_INFERENCE_PROVIDER,
   createOpenRouterChatCompletion,
   createSamsarExternalChatCompletion,
+  getConfiguredInferenceProviders,
   resolveConfiguredInferenceProvider,
   shouldUseOpenRouterInference,
   shouldUseSamsarExternalInference,
@@ -27,6 +35,7 @@ const ENV_KEYS = [
   'SAMSAR_EDITION',
   'SAMSAR_EXTERNAL_INFERENCE_ENABLED',
   'SAMSAR_FORCE_EXTERNAL_INFERENCE',
+  'SAMSAR_MODEL_ADAPTER_PREFERENCES_PATH',
   'SAMSAR_QWEN_OPENROUTER_ONLY',
 ];
 
@@ -76,6 +85,76 @@ test('Qwen routing falls back to Samsar in Docker when no native key exists', ()
   }, () => {
     assert.equal(shouldUseSamsarExternalInference({ model: 'QWEN3.7' }), true);
   });
+});
+
+test('standalone inference routing honors saved provider order and appends omitted defaults', () => {
+  const temporaryDirectory = mkdtempSync(path.join(os.tmpdir(), 'samsar-inference-order-'));
+  const preferencePath = path.join(temporaryDirectory, 'model-adapter-preferences.json');
+  writeFileSync(preferencePath, JSON.stringify({
+    modelProviderPriority: {
+      'QWEN3.7': ['samsar', 'alibabaCloud'],
+    },
+  }));
+
+  try {
+    withEnvironment({
+      CURRENT_ENV: 'docker',
+      SAMSAR_MODEL_ADAPTER_PREFERENCES_PATH: preferencePath,
+      SAMSAR_API_KEY: 'samsar-key',
+      DASHSCOPE_API_KEY: 'dashscope-key',
+      OPENROUTER_API_KEY: 'openrouter-key',
+    }, () => {
+      assert.deepEqual(
+        getConfiguredInferenceProviders('QWEN3.7'),
+        [
+          DOCKER_INFERENCE_PROVIDER.SAMSAR,
+          DOCKER_INFERENCE_PROVIDER.ALIBABA_CLOUD,
+          DOCKER_INFERENCE_PROVIDER.OPENROUTER,
+        ],
+      );
+    });
+  } finally {
+    rmSync(temporaryDirectory, { recursive: true, force: true });
+  }
+});
+
+test('hosted inference ignores saved preferences and keeps Qwen OpenRouter-only', () => {
+  const temporaryDirectory = mkdtempSync(path.join(os.tmpdir(), 'samsar-hosted-order-'));
+  const preferencePath = path.join(temporaryDirectory, 'model-adapter-preferences.json');
+  writeFileSync(preferencePath, JSON.stringify({
+    modelProviderPriority: {
+      'gpt-5.6-sol': ['samsar', 'openrouter', 'openai'],
+      'QWEN3.7': ['samsar', 'alibabaCloud', 'openrouter'],
+    },
+  }));
+
+  try {
+    for (const environment of ['production', 'staging']) {
+      withEnvironment({
+        CURRENT_ENV: environment,
+        SAMSAR_MODEL_ADAPTER_PREFERENCES_PATH: preferencePath,
+        SAMSAR_API_KEY: 'samsar-key',
+        OPENAI_API_KEY: 'openai-key',
+        OPENROUTER_API_KEY: 'openrouter-key',
+        DASHSCOPE_API_KEY: 'dashscope-key',
+      }, () => {
+        assert.deepEqual(
+          getConfiguredInferenceProviders('gpt-5.6-sol'),
+          [
+            DOCKER_INFERENCE_PROVIDER.OPENAI,
+            DOCKER_INFERENCE_PROVIDER.OPENROUTER,
+            DOCKER_INFERENCE_PROVIDER.SAMSAR,
+          ],
+        );
+        assert.deepEqual(
+          getConfiguredInferenceProviders('QWEN3.7'),
+          [DOCKER_INFERENCE_PROVIDER.OPENROUTER],
+        );
+      });
+    }
+  } finally {
+    rmSync(temporaryDirectory, { recursive: true, force: true });
+  }
 });
 
 test('Kimi K3 routing prefers its native key and falls back to Samsar-js', () => {

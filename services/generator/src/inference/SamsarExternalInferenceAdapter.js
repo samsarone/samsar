@@ -1,3 +1,5 @@
+import fs from 'node:fs';
+
 import SamsarClient from 'samsar-js';
 import OpenAI from 'openai';
 
@@ -38,6 +40,8 @@ const GOOGLE_ATTACHED_SERVICE_ACCOUNT_KEYS = Object.freeze([
   'FUNCTION_TARGET',
   'GCE_METADATA_HOST',
 ]);
+const DEFAULT_MODEL_ADAPTER_PREFERENCES_PATH =
+  '/persistent/config/model-adapter-preferences.json';
 export const DOCKER_INFERENCE_PROVIDER = Object.freeze({
   ALIBABA_CLOUD: 'alibabaCloud',
   GOOGLE_CLOUD: 'googleCloud',
@@ -77,6 +81,97 @@ let cachedOpenRouterBaseUrl = '';
 
 function normalizeString(value) {
   return typeof value === 'string' ? value.trim() : '';
+}
+
+function normalizeInferenceProvider(value) {
+  const normalized = normalizeString(value).toLowerCase().replace(/[^a-z0-9]/g, '');
+  if (['alibaba', 'alibabacloud', 'aliyun', 'dashscope', 'qwen'].includes(normalized)) {
+    return DOCKER_INFERENCE_PROVIDER.ALIBABA_CLOUD;
+  }
+  if (['google', 'googlecloud', 'gcp', 'vertex', 'vertexai'].includes(normalized)) {
+    return DOCKER_INFERENCE_PROVIDER.GOOGLE_CLOUD;
+  }
+  if (['kimi', 'moonshot', 'moonshotai'].includes(normalized)) {
+    return DOCKER_INFERENCE_PROVIDER.KIMI;
+  }
+  if (normalized === 'openai') {
+    return DOCKER_INFERENCE_PROVIDER.OPENAI;
+  }
+  if (['openrouter', 'openrouterai'].includes(normalized)) {
+    return DOCKER_INFERENCE_PROVIDER.OPENROUTER;
+  }
+  if (normalized === 'samsar') {
+    return DOCKER_INFERENCE_PROVIDER.SAMSAR;
+  }
+  return '';
+}
+
+function uniqueInferenceProviders(value) {
+  const providers = Array.isArray(value) ? value : [];
+  return [...new Set(providers.map(normalizeInferenceProvider).filter(Boolean))];
+}
+
+function normalizeSavedInferencePreferenceModelKey(model) {
+  const token = normalizeString(model).replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+  if (['QWEN37', 'QWEN3PLUS', 'QWEN37PLUS'].includes(token)) return 'QWEN3.7';
+  if (['GEMINI31PRO', 'GEMINI3PRO'].includes(token)) return 'gemini-3.1-pro';
+  if (['KIMIK3', 'KIMI3', 'MOONSHOTK3'].includes(token)) return 'KIMIK3';
+  if (['GPT56SOL', 'GPT5SOL'].includes(token)) return 'gpt-5.6-sol';
+  return '';
+}
+
+function getInferencePreferenceModelKey(model) {
+  if (isQwenInferenceModel(model)) return 'QWEN3.7';
+  if (isGeminiInferenceModel(model)) return 'gemini-3.1-pro';
+  if (isKimiInferenceModel(model)) return 'KIMIK3';
+  return 'gpt-5.6-sol';
+}
+
+function readSavedInferenceProviderPriority(model) {
+  if (!isStandaloneEdition()) {
+    return [];
+  }
+
+  const filePath =
+    normalizeString(process.env.SAMSAR_MODEL_ADAPTER_PREFERENCES_PATH) ||
+    DEFAULT_MODEL_ADAPTER_PREFERENCES_PATH;
+  if (!fs.existsSync(filePath)) {
+    return [];
+  }
+
+  try {
+    const parsed = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+    const priorityMap =
+      parsed?.modelProviderPriority || parsed?.model_provider_priority;
+    if (!priorityMap || typeof priorityMap !== 'object' || Array.isArray(priorityMap)) {
+      return [];
+    }
+    const preferenceModelKey = getInferencePreferenceModelKey(model);
+    const matchingEntry = Object.entries(priorityMap).find(
+      ([modelKey]) => normalizeSavedInferencePreferenceModelKey(modelKey) === preferenceModelKey,
+    );
+    return uniqueInferenceProviders(matchingEntry?.[1]);
+  } catch {
+    return [];
+  }
+}
+
+function applySavedInferenceProviderPriority(defaultPriority, model) {
+  if (!isStandaloneEdition()) {
+    return defaultPriority;
+  }
+
+  const normalizedDefault = uniqueInferenceProviders(defaultPriority);
+  const compatibleProviders = new Set(normalizedDefault);
+  const savedPriority = readSavedInferenceProviderPriority(model)
+    .filter((provider) => compatibleProviders.has(provider));
+  if (savedPriority.length === 0) {
+    return defaultPriority;
+  }
+  return [
+    ...savedPriority,
+    ...normalizedDefault.filter((provider) => !savedPriority.includes(provider)),
+  ];
 }
 
 function normalizePositiveInteger(value, fallback) {
@@ -295,17 +390,19 @@ function hasConfiguredInferenceProvider(provider) {
 }
 
 function getInferenceProviderPriority(model) {
+  let defaultPriority;
   if (isQwenInferenceModel(model)) {
-    return DOCKER_INFERENCE_PROVIDER_PRIORITY_BY_MODEL['QWEN3.7'];
+    defaultPriority = DOCKER_INFERENCE_PROVIDER_PRIORITY_BY_MODEL['QWEN3.7'];
+  } else if (isGeminiInferenceModel(model)) {
+    defaultPriority = DOCKER_INFERENCE_PROVIDER_PRIORITY_BY_MODEL['gemini-3.1-pro'];
+  } else if (isKimiInferenceModel(model)) {
+    defaultPriority = DOCKER_INFERENCE_PROVIDER_PRIORITY_BY_MODEL['kimi-k3'];
+  } else {
+    defaultPriority = DOCKER_INFERENCE_PROVIDER_PRIORITY_BY_MODEL[normalizeInferenceModel(model)] ||
+      DOCKER_INFERENCE_PROVIDER_PRIORITY_BY_MODEL['gpt-5.6-sol'];
   }
-  if (isGeminiInferenceModel(model)) {
-    return DOCKER_INFERENCE_PROVIDER_PRIORITY_BY_MODEL['gemini-3.1-pro'];
-  }
-  if (isKimiInferenceModel(model)) {
-    return DOCKER_INFERENCE_PROVIDER_PRIORITY_BY_MODEL['kimi-k3'];
-  }
-  return DOCKER_INFERENCE_PROVIDER_PRIORITY_BY_MODEL[normalizeInferenceModel(model)] ||
-    DOCKER_INFERENCE_PROVIDER_PRIORITY_BY_MODEL['gpt-5.6-sol'];
+
+  return applySavedInferenceProviderPriority(defaultPriority, model);
 }
 
 function isStandaloneInferenceEdition() {
@@ -332,6 +429,11 @@ export function resolveConfiguredInferenceProvider(model) {
     }
   }
   return '';
+}
+
+export function getConfiguredInferenceProviders(model) {
+  return getRuntimeInferenceProviderPriority(model)
+    .filter(hasConfiguredInferenceProvider);
 }
 
 function normalizeRequestedInferenceModel(value) {

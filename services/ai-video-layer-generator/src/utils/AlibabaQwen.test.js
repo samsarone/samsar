@@ -79,12 +79,14 @@ test('selects Qwen 3.7 Plus for text and multimodal vision input', () => {
 });
 
 test('disables hidden SDK retries so provider media is never reused after tunnel expiry', () => {
-  const { requestOptions } = buildAlibabaQwenChatRequest({
+  const { payload, requestOptions } = buildAlibabaQwenChatRequest({
     model: 'QWEN3.7',
+    externalMaxRetries: 7,
     maxRetries: 4,
     messages: [{ role: 'user', content: 'hello' }],
   });
   assert.equal(requestOptions.maxRetries, 0);
+  assert.equal(Object.hasOwn(payload, 'externalMaxRetries'), false);
 });
 
 test('normalizes image, base64, video, and string Responses input forms', () => {

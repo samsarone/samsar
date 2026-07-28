@@ -1,11 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
 import {
   buildBaseAiVideoCompletionUpdate,
   buildBaseGenerationFailureMessage,
+  buildDockerVideoAdapterRetryPlan,
   buildTransientProviderErrorUpdate,
   buildBaseGenerationTerminalFailureUpdate,
   getPendingPollIntervalMs,
@@ -307,6 +309,8 @@ test('image-to-video 429 retries the same adapter and stops after three explicit
   assert.equal(thirdRejection.set.status, 'FAILED');
   assert.equal(thirdRejection.set.retryOnFail, false);
   assert.equal(thirdRejection.set.transientProviderErrorExhausted, true);
+  assert.equal(thirdRejection.set.providerFailureDefinitive, true);
+  assert.equal(thirdRejection.set.submissionOutcomeUnknown, false);
 });
 
 test('image-to-video submit 503 is not safe to resubmit because acceptance is ambiguous', () => {
@@ -317,6 +321,101 @@ test('image-to-video submit 503 is not safe to resubmit because acceptance is am
 
   assert.equal(isTransientProviderError(error), true);
   assert.equal(isSafeProviderSubmissionRetry(error), false);
+});
+
+test('definitive standalone failures rotate through the saved adapter order', (t) => {
+  const envKeys = [
+    'CURRENT_ENV',
+    'SAMSAR_DEPLOYMENT_EDITION',
+    'SAMSAR_MODEL_ADAPTER_PREFERENCES_PATH',
+    'ALIBABA_API_KEY',
+    'FAL_API_KEY',
+    'SAMSAR_API_KEY',
+  ];
+  const originalEnv = Object.fromEntries(envKeys.map((key) => [key, process.env[key]]));
+  const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'samsar-video-retry-plan-'));
+  const preferencesPath = path.join(temporaryDirectory, 'model-adapter-preferences.json');
+  t.after(() => {
+    fs.rmSync(temporaryDirectory, { recursive: true, force: true });
+    envKeys.forEach((key) => {
+      if (originalEnv[key] === undefined) delete process.env[key];
+      else process.env[key] = originalEnv[key];
+    });
+  });
+  fs.writeFileSync(preferencesPath, JSON.stringify({
+    modelProviderPriority: {
+      HAPPYHORSEI2V: ['alibabaCloud', 'fal', 'samsar'],
+    },
+  }));
+  process.env.CURRENT_ENV = 'standalone';
+  process.env.SAMSAR_DEPLOYMENT_EDITION = 'standalone';
+  process.env.SAMSAR_MODEL_ADAPTER_PREFERENCES_PATH = preferencesPath;
+  process.env.ALIBABA_API_KEY = 'alibaba-key';
+  process.env.FAL_API_KEY = 'fal-key';
+  process.env.SAMSAR_API_KEY = 'samsar-key';
+
+  assert.deepEqual(buildDockerVideoAdapterRetryPlan({
+    model: 'HAPPYHORSEI2V',
+    startImage: '/persistent/assets/start.png',
+    dockerVideoProvider: 'alibabaCloud',
+    providerFailureDefinitive: true,
+  }), {
+    model: 'HAPPYHORSEI2V',
+    currentProvider: 'alibabaCloud',
+    nextProvider: 'fal',
+    attemptedProviders: ['alibabaCloud'],
+  });
+
+  assert.deepEqual(buildDockerVideoAdapterRetryPlan({
+    model: 'HAPPYHORSEI2V',
+    startImage: '/persistent/assets/start.png',
+    dockerVideoProvider: 'fal',
+    dockerAdapterAttemptedProviders: ['alibabaCloud'],
+    providerFailureDefinitive: true,
+  }), {
+    model: 'HAPPYHORSEI2V',
+    currentProvider: 'fal',
+    nextProvider: 'samsar',
+    attemptedProviders: ['alibabaCloud', 'fal'],
+  });
+});
+
+test('adapter retry plan refuses ambiguous submissions and hosted production', (t) => {
+  const envKeys = [
+    'CURRENT_ENV',
+    'SAMSAR_DEPLOYMENT_EDITION',
+    'SAMSAR_DOCKER_ADAPTER_ROUTING_ENABLED',
+    'FAL_API_KEY',
+    'SAMSAR_API_KEY',
+  ];
+  const originalEnv = Object.fromEntries(envKeys.map((key) => [key, process.env[key]]));
+  t.after(() => {
+    envKeys.forEach((key) => {
+      if (originalEnv[key] === undefined) delete process.env[key];
+      else process.env[key] = originalEnv[key];
+    });
+  });
+  process.env.CURRENT_ENV = 'standalone';
+  process.env.SAMSAR_DEPLOYMENT_EDITION = 'standalone';
+  process.env.FAL_API_KEY = 'fal-key';
+  process.env.SAMSAR_API_KEY = 'samsar-key';
+
+  const ambiguousRequest = {
+    model: 'COSMOS3SUPERI2V',
+    startImage: '/persistent/assets/start.png',
+    dockerVideoProvider: 'fal',
+    providerFailureDefinitive: true,
+    submissionOutcomeUnknown: true,
+  };
+  assert.equal(buildDockerVideoAdapterRetryPlan(ambiguousRequest), null);
+
+  process.env.CURRENT_ENV = 'production';
+  process.env.SAMSAR_DEPLOYMENT_EDITION = 'production';
+  process.env.SAMSAR_DOCKER_ADAPTER_ROUTING_ENABLED = 'true';
+  assert.equal(buildDockerVideoAdapterRetryPlan({
+    ...ambiguousRequest,
+    submissionOutcomeUnknown: false,
+  }), null);
 });
 
 test('Samsar external pending video status uses a three-second polling cadence', () => {
@@ -444,12 +543,12 @@ test('hosted Happy Horse uses FAL even when native Alibaba routing is configured
 
 test('Docker Happy Horse uses native Alibaba only when it wins provider priority', () => {
   const originalCurrentEnv = process.env.CURRENT_ENV;
-  const originalAvailableModelsPath = process.env.SAMSAR_AVAILABLE_MODELS_PATH;
+  const originalPreferencesPath = process.env.SAMSAR_MODEL_ADAPTER_PREFERENCES_PATH;
   const originalAlibabaApiKey = process.env.ALIBABA_API_KEY;
   const originalFalApiKey = process.env.FAL_API_KEY;
   try {
     process.env.CURRENT_ENV = 'docker';
-    process.env.SAMSAR_AVAILABLE_MODELS_PATH = path.join(
+    process.env.SAMSAR_MODEL_ADAPTER_PREFERENCES_PATH = path.join(
       os.tmpdir(),
       `samsar-no-saved-video-providers-${process.pid}.json`,
     );
@@ -466,8 +565,8 @@ test('Docker Happy Horse uses native Alibaba only when it wins provider priority
   } finally {
     if (originalCurrentEnv === undefined) delete process.env.CURRENT_ENV;
     else process.env.CURRENT_ENV = originalCurrentEnv;
-    if (originalAvailableModelsPath === undefined) delete process.env.SAMSAR_AVAILABLE_MODELS_PATH;
-    else process.env.SAMSAR_AVAILABLE_MODELS_PATH = originalAvailableModelsPath;
+    if (originalPreferencesPath === undefined) delete process.env.SAMSAR_MODEL_ADAPTER_PREFERENCES_PATH;
+    else process.env.SAMSAR_MODEL_ADAPTER_PREFERENCES_PATH = originalPreferencesPath;
     if (originalAlibabaApiKey === undefined) delete process.env.ALIBABA_API_KEY;
     else process.env.ALIBABA_API_KEY = originalAlibabaApiKey;
     if (originalFalApiKey === undefined) delete process.env.FAL_API_KEY;

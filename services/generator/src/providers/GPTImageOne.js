@@ -14,13 +14,7 @@ import {
   isQwenInferenceModel,
   normalizeInferenceModel,
 } from '../inference/InferenceModels.js';
-import { createGoogleGeminiChatCompletion } from '../inference/GoogleGemini.js';
-import { createKimiK3ChatCompletion } from '../inference/KimiK3.js';
-import { createQwenChatCompletion } from '../inference/Qwen.js';
-import {
-  createSamsarExternalChatCompletion,
-  shouldUseSamsarExternalInference,
-} from '../inference/SamsarExternalInferenceAdapter.js';
+import { createCompatibleInferenceChatCompletion } from '../OpenAI.js';
 import { withInferenceAuthorization } from '../inference/RequestInferenceModel.js';
 import {
   getAccessibleMediaUrlForProvider,
@@ -253,27 +247,7 @@ export async function sendAssistantMessageRequest(
     };
     const routingPayload = withInferenceAuthorization(payload, userInferenceAuthorization);
 
-    if (shouldUseSamsarExternalInference(routingPayload)) {
-      const response = await createSamsarExternalChatCompletion(routingPayload);
-      return response.choices[0].message;
-    }
-
-    if (isQwenInferenceModel(inferenceModel)) {
-      const response = await createQwenChatCompletion(routingPayload);
-      return response.choices[0].message;
-    }
-
-    if (isKimiInferenceModel(inferenceModel)) {
-      const response = await createKimiK3ChatCompletion(routingPayload);
-      return response.choices[0].message;
-    }
-
-    if (isGeminiInferenceModel(inferenceModel)) {
-      const response = await createGoogleGeminiChatCompletion(messageList, inferenceModel);
-      return response.choices[0].message;
-    }
-
-    const response = await openai.chat.completions.create(payload);
+    const response = await createCompatibleInferenceChatCompletion(routingPayload);
     return response.choices[0].message;
   } catch (error) {
     let errorString = 'An error occurred while sending the message. Please try again with a different message.'

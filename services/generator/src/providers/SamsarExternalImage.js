@@ -355,6 +355,12 @@ export function shouldUseSamsarExternalImageProvider(payload = {}) {
   if (status !== 'INIT') {
     return false;
   }
+  const selectedAdapter = normalizeString(
+    payload?.adapterProviderOverride || payload?.adapterProvider,
+  );
+  if (selectedAdapter) {
+    return selectedAdapter === DOCKER_ADAPTER_PROVIDER.SAMSAR;
+  }
   return resolveDockerImageGenerationProvider(model) === DOCKER_ADAPTER_PROVIDER.SAMSAR;
 }
 
@@ -381,6 +387,12 @@ export function shouldUseSamsarExternalImageEditProvider(payload = {}) {
   }
   if (status !== 'INIT') {
     return false;
+  }
+  const selectedAdapter = normalizeString(
+    payload?.adapterProviderOverride || payload?.adapterProvider,
+  );
+  if (selectedAdapter) {
+    return selectedAdapter === DOCKER_ADAPTER_PROVIDER.SAMSAR;
   }
   return resolveDockerImageEditProvider(model) === DOCKER_ADAPTER_PROVIDER.SAMSAR;
 }
@@ -640,7 +652,11 @@ async function pollSamsarExternalImageEditRequest(payload = {}) {
     if (status === 'FAILED') {
       const message = normalizeString(statusData?.message || statusData?.error) || 'Samsar external image edit failed.';
       await failExternalEditRequest(_id, message);
-      return { image: null, error: message };
+      return {
+        image: null,
+        error: message,
+        definitiveAdapterFailure: true,
+      };
     }
 
     if (status !== 'COMPLETED') {
@@ -665,6 +681,10 @@ async function pollSamsarExternalImageEditRequest(payload = {}) {
     const message = error?.message || 'Error polling Samsar external image edit API.';
     console.error('Error polling Samsar external image edit API: ', error);
     await failExternalEditRequest(_id, message);
-    return { image: null, error: message };
+    return {
+      image: null,
+      error: message,
+      ambiguousAdapterFailure: true,
+    };
   }
 }

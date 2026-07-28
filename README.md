@@ -399,6 +399,7 @@ Generated files:
 - `runtime/secrets/root.env`: env consumed by Docker services.
 - `runtime/secrets/provider.credentials.json`: setup-wizard-managed provider keys and validated endpoints. Keep this file private and mode `0600`.
 - `runtime/config/available-models.json`: model/action availability derived from enabled providers.
+- `runtime/config/model-adapter-preferences.json`: standalone-admin adapter order overrides saved from **Settings > Model Adapters**. Config rendering preserves this file.
 
 ## API Providers
 

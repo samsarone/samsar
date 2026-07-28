@@ -1,19 +1,29 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import test from 'node:test';
 import OpenAI from 'openai';
 
 import {
   DOCKER_INFERENCE_PROVIDER,
   createOpenRouterChatCompletion,
+  getConfiguredInferenceProviders,
   getOpenRouterModelForInferenceRequest,
+  isRetryableInferenceAdapterError,
   normalizeOpenRouterBaseUrl,
   resolveConfiguredInferenceProvider,
+  runInferenceAdapterFallback,
+  runInferenceWithConfiguredAdapters,
   shouldUseOpenRouterInference,
   shouldUseSamsarExternalInference,
 } from './SamsarExternalInferenceAdapter.js';
 
 const ENV_KEYS = [
   'CURRENT_ENV',
+  'SAMSAR_DEPLOYMENT_EDITION',
+  'SAMSAR_EDITION',
+  'SAMSAR_RUNTIME',
   'SAMSAR_API_KEY',
   'DASHSCOPE_API_KEY',
   'ALIBABA_CLOUD_API_KEY',
@@ -43,6 +53,7 @@ const ENV_KEYS = [
   'SAMSAR_EXTERNAL_INFERENCE_ENABLED',
   'SAMSAR_FORCE_EXTERNAL_INFERENCE',
   'SAMSAR_QWEN_OPENROUTER_ONLY',
+  'SAMSAR_MODEL_ADAPTER_PREFERENCES_PATH',
 ];
 const originalEnv = Object.fromEntries(ENV_KEYS.map((key) => [key, process.env[key]]));
 
@@ -124,6 +135,240 @@ test('OpenRouter is the Docker fallback before Samsar for every inference model'
     );
     assert.equal(shouldUseSamsarExternalInference({ model }), true);
   }
+});
+
+test('standalone inference overlays saved adapter order and appends omitted defaults', (t) => {
+  ENV_KEYS.forEach((key) => delete process.env[key]);
+  const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'samsar-inference-order-'));
+  const preferencesPath = path.join(temporaryDirectory, 'model-adapter-preferences.json');
+  t.after(() => fs.rmSync(temporaryDirectory, { recursive: true, force: true }));
+  fs.writeFileSync(preferencesPath, JSON.stringify({
+    modelProviderPriority: {
+      'QWEN3.7': ['samsar', 'openrouter'],
+      KIMIK3: ['samsar'],
+      'gpt-5.6-sol': ['openrouter', 'samsar'],
+    },
+  }));
+  process.env.CURRENT_ENV = 'docker';
+  process.env.SAMSAR_MODEL_ADAPTER_PREFERENCES_PATH = preferencesPath;
+  process.env.ALIBABA_API_KEY = 'alibaba-test-key';
+  process.env.KIMI_K3_API_KEY = 'kimi-test-key';
+  process.env.OPENAI_API_KEY = 'openai-test-key';
+  process.env.OPENROUTER_API_KEY = 'openrouter-test-key';
+  process.env.SAMSAR_API_KEY = 'samsar-test-key';
+
+  assert.deepEqual(getConfiguredInferenceProviders('QWEN3.7'), [
+    DOCKER_INFERENCE_PROVIDER.SAMSAR,
+    DOCKER_INFERENCE_PROVIDER.OPENROUTER,
+    DOCKER_INFERENCE_PROVIDER.ALIBABA_CLOUD,
+  ]);
+  assert.deepEqual(getConfiguredInferenceProviders('Kimi K3'), [
+    DOCKER_INFERENCE_PROVIDER.SAMSAR,
+    DOCKER_INFERENCE_PROVIDER.KIMI,
+  ]);
+  assert.deepEqual(getConfiguredInferenceProviders('gpt-5.6-sol'), [
+    DOCKER_INFERENCE_PROVIDER.OPENROUTER,
+    DOCKER_INFERENCE_PROVIDER.SAMSAR,
+    DOCKER_INFERENCE_PROVIDER.OPENAI,
+  ]);
+  assert.equal(
+    resolveConfiguredInferenceProvider('QWEN3.7'),
+    DOCKER_INFERENCE_PROVIDER.SAMSAR,
+  );
+});
+
+test('production and staging ignore standalone inference preferences', (t) => {
+  const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'samsar-inference-hosted-'));
+  const preferencesPath = path.join(temporaryDirectory, 'model-adapter-preferences.json');
+  t.after(() => fs.rmSync(temporaryDirectory, { recursive: true, force: true }));
+  fs.writeFileSync(preferencesPath, JSON.stringify({
+    modelProviderPriority: {
+      'gpt-5.6-sol': ['samsar', 'openrouter', 'openai'],
+    },
+  }));
+
+  for (const environment of ['production', 'staging']) {
+    ENV_KEYS.forEach((key) => delete process.env[key]);
+    process.env.CURRENT_ENV = environment;
+    process.env.SAMSAR_MODEL_ADAPTER_PREFERENCES_PATH = preferencesPath;
+    process.env.OPENAI_API_KEY = 'openai-test-key';
+    process.env.OPENROUTER_API_KEY = 'openrouter-test-key';
+    process.env.SAMSAR_API_KEY = 'samsar-test-key';
+
+    assert.equal(
+      resolveConfiguredInferenceProvider('gpt-5.6-sol'),
+      DOCKER_INFERENCE_PROVIDER.OPENAI,
+    );
+    assert.deepEqual(getConfiguredInferenceProviders('gpt-5.6-sol'), [
+      DOCKER_INFERENCE_PROVIDER.OPENAI,
+      DOCKER_INFERENCE_PROVIDER.OPENROUTER,
+      DOCKER_INFERENCE_PROVIDER.SAMSAR,
+    ]);
+  }
+});
+
+test('production Docker runtime does not activate standalone inference fallback', async (t) => {
+  ENV_KEYS.forEach((key) => delete process.env[key]);
+  const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'samsar-inference-production-'));
+  const preferencesPath = path.join(temporaryDirectory, 'model-adapter-preferences.json');
+  t.after(() => fs.rmSync(temporaryDirectory, { recursive: true, force: true }));
+  fs.writeFileSync(preferencesPath, JSON.stringify({
+    modelProviderPriority: {
+      'gpt-5.6-sol': ['samsar', 'openrouter', 'openai'],
+    },
+  }));
+  process.env.CURRENT_ENV = 'docker';
+  process.env.SAMSAR_DEPLOYMENT_EDITION = 'production';
+  process.env.SAMSAR_RUNTIME = 'docker';
+  process.env.SAMSAR_MODEL_ADAPTER_PREFERENCES_PATH = preferencesPath;
+  process.env.OPENAI_API_KEY = 'openai-test-key';
+  process.env.OPENROUTER_API_KEY = 'openrouter-test-key';
+  process.env.SAMSAR_API_KEY = 'samsar-test-key';
+
+  assert.equal(
+    resolveConfiguredInferenceProvider('gpt-5.6-sol'),
+    DOCKER_INFERENCE_PROVIDER.OPENAI,
+  );
+  const attempts = [];
+  const request = { model: 'gpt-5.6-sol' };
+  await runInferenceWithConfiguredAdapters(request, async (provider, dispatchedRequest) => {
+    attempts.push({ provider, dispatchedRequest });
+    return 'ok';
+  });
+  assert.deepEqual(attempts, [{ provider: '', dispatchedRequest: request }]);
+});
+
+test('configured adapter fallback advances in saved order on retryable errors', async (t) => {
+  ENV_KEYS.forEach((key) => delete process.env[key]);
+  const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'samsar-inference-retry-'));
+  const preferencesPath = path.join(temporaryDirectory, 'model-adapter-preferences.json');
+  t.after(() => fs.rmSync(temporaryDirectory, { recursive: true, force: true }));
+  fs.writeFileSync(preferencesPath, JSON.stringify({
+    modelProviderPriority: {
+      'gpt-5.6-sol': ['openrouter', 'samsar', 'openai'],
+    },
+  }));
+  process.env.CURRENT_ENV = 'docker';
+  process.env.SAMSAR_MODEL_ADAPTER_PREFERENCES_PATH = preferencesPath;
+  process.env.OPENAI_API_KEY = 'openai-test-key';
+  process.env.OPENROUTER_API_KEY = 'openrouter-test-key';
+  process.env.SAMSAR_API_KEY = 'samsar-test-key';
+
+  const attempts = [];
+  const response = await runInferenceWithConfiguredAdapters(
+    {
+      model: 'gpt-5.6-sol',
+      messages: [{ role: 'user', content: 'hello' }],
+      authorization: 'native',
+    },
+    async (provider, request) => {
+      attempts.push({ provider, request });
+      if (provider === DOCKER_INFERENCE_PROVIDER.OPENROUTER) {
+        const error = new Error('rate limited');
+        error.status = 429;
+        throw error;
+      }
+      return { provider };
+    },
+  );
+
+  assert.deepEqual(attempts.map(({ provider }) => provider), [
+    DOCKER_INFERENCE_PROVIDER.OPENROUTER,
+    DOCKER_INFERENCE_PROVIDER.SAMSAR,
+  ]);
+  assert.equal(attempts[0].request.authorization, 'openrouter');
+  assert.equal(attempts[0].request.bypassSamsarExternalInference, false);
+  assert.equal(attempts[0].request.externalMaxRetries, 0);
+  assert.equal(attempts[0].request.maxRetries, 0);
+  assert.equal(attempts[1].request.authorization, 'deployed');
+  assert.equal(attempts[1].request.samsarExternalInference, true);
+  assert.equal(attempts[1].request.externalMaxRetries, 0);
+  assert.equal(attempts[1].request.maxRetries, 0);
+  assert.deepEqual(response, { provider: DOCKER_INFERENCE_PROVIDER.SAMSAR });
+});
+
+test('explicit external pins and bypass flags do not enter the cross-adapter chain', async () => {
+  ENV_KEYS.forEach((key) => delete process.env[key]);
+  process.env.CURRENT_ENV = 'docker';
+  process.env.OPENAI_API_KEY = 'openai-test-key';
+  process.env.OPENROUTER_API_KEY = 'openrouter-test-key';
+  process.env.SAMSAR_API_KEY = 'samsar-test-key';
+
+  for (const request of [
+    { model: 'gpt-5.6-sol', authorization: 'deployed' },
+    { model: 'gpt-5.6-sol', authorization: 'openrouter' },
+    { model: 'gpt-5.6-sol', bypassSamsarExternalInference: true },
+    { model: 'gpt-5.6-sol', samsarExternalInference: true },
+    { model: 'gpt-5.6-sol', samsarExternalInference: false },
+  ]) {
+    const attempts = [];
+    await runInferenceWithConfiguredAdapters(request, async (provider, dispatchedRequest) => {
+      attempts.push({ provider, dispatchedRequest });
+      return 'ok';
+    });
+    assert.equal(attempts.length, 1);
+    assert.equal(attempts[0].provider, '');
+    assert.equal(attempts[0].dispatchedRequest, request);
+  }
+});
+
+test('standalone fallback excludes Samsar when external inference is disabled', async (t) => {
+  ENV_KEYS.forEach((key) => delete process.env[key]);
+  const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'samsar-inference-disabled-'));
+  const preferencesPath = path.join(temporaryDirectory, 'model-adapter-preferences.json');
+  t.after(() => fs.rmSync(temporaryDirectory, { recursive: true, force: true }));
+  fs.writeFileSync(preferencesPath, JSON.stringify({
+    modelProviderPriority: {
+      'gpt-5.6-sol': ['samsar', 'openrouter', 'openai'],
+    },
+  }));
+  process.env.CURRENT_ENV = 'docker';
+  process.env.SAMSAR_MODEL_ADAPTER_PREFERENCES_PATH = preferencesPath;
+  process.env.SAMSAR_EXTERNAL_INFERENCE_ENABLED = 'false';
+  process.env.SAMSAR_API_KEY = 'samsar-test-key';
+  process.env.OPENROUTER_API_KEY = 'openrouter-test-key';
+  process.env.OPENAI_API_KEY = 'openai-test-key';
+
+  const attempts = [];
+  await runInferenceWithConfiguredAdapters(
+    { model: 'gpt-5.6-sol' },
+    async (provider) => {
+      attempts.push(provider);
+      return 'ok';
+    },
+  );
+  assert.deepEqual(attempts, [DOCKER_INFERENCE_PROVIDER.OPENROUTER]);
+});
+
+test('adapter fallback stops on request errors and reports a fully exhausted chain', async () => {
+  const nonRetryableAttempts = [];
+  await assert.rejects(
+    runInferenceAdapterFallback(['openai', 'samsar'], async (provider) => {
+      nonRetryableAttempts.push(provider);
+      const error = new Error('invalid request');
+      error.status = 400;
+      throw error;
+    }),
+    /invalid request/,
+  );
+  assert.deepEqual(nonRetryableAttempts, ['openai']);
+  assert.equal(isRetryableInferenceAdapterError({ status: 503 }), true);
+  assert.equal(isRetryableInferenceAdapterError({ status: 400 }), false);
+
+  let exhaustedError;
+  try {
+    await runInferenceAdapterFallback(['openrouter', 'samsar'], async () => {
+      const error = new Error('temporarily unavailable');
+      error.code = 'ECONNRESET';
+      throw error;
+    });
+  } catch (error) {
+    exhaustedError = error;
+  }
+  assert.deepEqual(exhaustedError?.attemptedInferenceAdapters, [
+    'openrouter',
+    'samsar',
+  ]);
 });
 
 test('hosted Qwen retry prompts use OpenRouter even when Alibaba is configured', () => {

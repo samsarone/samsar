@@ -203,6 +203,10 @@ export function shouldUseSamsarExternalVideoProvider(payload = {}) {
   if (!shouldEnableExternalProviders()) {
     return false;
   }
+  const selectedProvider = normalizeString(payload?.dockerVideoProvider);
+  if (isStandaloneEdition() && selectedProvider) {
+    return selectedProvider === DOCKER_VIDEO_PROVIDER.SAMSAR;
+  }
   if (!getExternalClient()) {
     return false;
   }

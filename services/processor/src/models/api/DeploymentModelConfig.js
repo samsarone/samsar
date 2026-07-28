@@ -4,6 +4,12 @@ import {
   isContainerRuntime,
   isStandaloneEdition,
 } from '../../utils/EnvironmentUtils.js';
+import {
+  applyModelAdapterPreferencesToPriorityMap,
+  normalizeModelAdapterModelKey,
+  normalizeModelAdapterProviderKey,
+  readModelAdapterPreferences,
+} from './ModelAdapterPreferences.js';
 
 function getDefaultAvailableModelsPath() {
   const configuredPath = process.env.SAMSAR_AVAILABLE_MODELS_FILE ||
@@ -176,11 +182,93 @@ function mergeRuntimeInferenceProviderSelections(availability) {
   };
 
   for (const [model, providerPriority] of Object.entries(priorities)) {
-    const provider = providerPriority.find((candidate) => configured[candidate]);
+    const configuredPriority = normalizeStringList(
+      availability.modelProviderPriority?.[model],
+    );
+    const configuredDefaultPriority = normalizeStringList(
+      availability.defaultModelProviderPriority?.[model],
+    );
+    const effectivePriority = [
+      ...configuredPriority,
+      ...providerPriority.filter((provider) => !configuredPriority.includes(provider)),
+    ];
+    const defaultPriority = [
+      ...configuredDefaultPriority,
+      ...providerPriority.filter((provider) => !configuredDefaultPriority.includes(provider)),
+    ];
+    availability.defaultModelProviderPriority[model] = defaultPriority;
+    const provider = effectivePriority.find((candidate) => configured[candidate]);
     if (!provider) continue;
     availability.modelProviders[model] = provider;
-    availability.modelProviderPriority[model] = [...providerPriority];
+    availability.modelProviderPriority[model] = effectivePriority;
   }
+}
+
+function applyStandaloneModelAdapterPreferences(availability = {}) {
+  if (!isStandaloneEdition()) {
+    return availability;
+  }
+
+  const preferences = readModelAdapterPreferences();
+  const defaultPriorityMap = availability.defaultModelProviderPriority ||
+    availability.modelProviderPriority ||
+    {};
+  const reorderedDefaultPriorityMap = applyModelAdapterPreferencesToPriorityMap(
+    defaultPriorityMap,
+    preferences.modelProviderPriority,
+  );
+  const effectivePriorityMap = applyModelAdapterPreferencesToPriorityMap(
+    availability.modelProviderPriority || {},
+    {},
+  );
+  const configuredProviders = new Set(
+    normalizeStringList(availability.providers)
+      .map(normalizeModelAdapterProviderKey)
+      .filter(Boolean),
+  );
+  const modelProviders = {
+    ...(availability.modelProviders || {}),
+  };
+  const preferenceModelKeys = new Set(
+    Object.keys(preferences.modelProviderPriority || {})
+      .map(normalizeModelAdapterModelKey),
+  );
+
+  for (const rawPreferenceModelKey of preferenceModelKeys) {
+    const matchingDefaultKey = Object.keys(reorderedDefaultPriorityMap).find(
+      (candidate) => normalizeModelAdapterModelKey(candidate) === rawPreferenceModelKey,
+    );
+    if (!matchingDefaultKey) {
+      continue;
+    }
+    const matchingEffectiveKey = Object.keys(effectivePriorityMap).find(
+      (candidate) => normalizeModelAdapterModelKey(candidate) === rawPreferenceModelKey,
+    ) || matchingDefaultKey;
+    effectivePriorityMap[matchingEffectiveKey] =
+      reorderedDefaultPriorityMap[matchingDefaultKey];
+  }
+
+  for (const [rawModelKey, priority] of Object.entries(effectivePriorityMap)) {
+    const modelKey = normalizeModelAdapterModelKey(rawModelKey);
+    if (!preferenceModelKeys.has(modelKey)) {
+      continue;
+    }
+    const provider = priority.find((candidate) => configuredProviders.has(candidate));
+    if (provider) {
+      const matchingModelKey = Object.keys(modelProviders).find(
+        (candidate) => normalizeModelAdapterModelKey(candidate) === modelKey,
+      ) || rawModelKey;
+      modelProviders[matchingModelKey] = provider;
+    }
+  }
+
+  return {
+    ...availability,
+    modelProviders,
+    modelProviderPriority: effectivePriorityMap,
+    defaultModelProviderPriority: normalizeStringListMap(defaultPriorityMap),
+    modelAdapterPreferencesUpdatedAt: preferences.updatedAt,
+  };
 }
 
 export function mergeRuntimeInferenceDeploymentAvailability(value = {}) {
@@ -202,6 +290,14 @@ export function mergeRuntimeInferenceDeploymentAvailability(value = {}) {
       providers,
     ]),
   );
+  const defaultModelProviderPriority = Object.fromEntries(
+    Object.entries(normalizeStringListMap(
+      value?.defaultModelProviderPriority || value?.modelProviderPriority,
+    )).map(([model, providers]) => [
+      normalizeDeploymentModel(model) === 'QWEN3.7' ? 'QWEN3.7' : model,
+      providers,
+    ]),
+  );
   const providerKeyTypes = normalizeStringMap(value?.providerKeyTypes);
   const providerEndpointTypes = normalizeStringMap(value?.providerEndpointTypes);
   const qwenAuthorized = isSavedQwenSelectionAuthorized({
@@ -217,6 +313,7 @@ export function mergeRuntimeInferenceDeploymentAvailability(value = {}) {
     actions: normalizeStringList(value?.actions),
     modelProviders,
     modelProviderPriority,
+    defaultModelProviderPriority,
     providerKeyTypes,
     providerEndpointTypes,
     audio: value?.audio || null,
@@ -270,7 +367,7 @@ export function mergeRuntimeInferenceDeploymentAvailability(value = {}) {
 
   mergeRuntimeInferenceProviderSelections(merged);
 
-  return merged;
+  return applyStandaloneModelAdapterPreferences(merged);
 }
 
 function normalizeDeploymentAudioAvailability(value = {}) {
@@ -314,17 +411,18 @@ export function readDeploymentAvailableModels() {
     const providerEndpointTypes = normalizeStringMap(parsed?.providerEndpointTypes);
     const audio = normalizeDeploymentAudioAvailability(parsed?.audio);
 
-    return {
+    return applyStandaloneModelAdapterPreferences({
       providers,
       models,
       actions,
       modelProviders,
       modelProviderPriority,
+      defaultModelProviderPriority: modelProviderPriority,
       providerKeyTypes,
       providerEndpointTypes,
       audio,
       filePath,
-    };
+    });
   } catch (error) {
     console.error('[deployment_model_config] failed to read available models file', {
       filePath,

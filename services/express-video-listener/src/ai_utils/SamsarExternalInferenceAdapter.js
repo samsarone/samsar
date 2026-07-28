@@ -19,6 +19,11 @@ import { runExternalInferenceWithRetry } from './ExternalInferenceRetry.js';
 import { normalizeProviderMediaUrl } from '../ai_video/utils/AWS.js';
 import { normalizeProviderMediaPayload } from './ProviderMediaPayload.js';
 import { isStandaloneEdition } from '../utils/EnvironmentUtils.js';
+import {
+  applyModelAdapterPreferenceOrder,
+  normalizeModelAdapterModelKey,
+  readModelAdapterPreferences,
+} from './ModelAdapterPreferences.js';
 
 const DEFAULT_SAMSAR_API_BASE_URL = 'https://api.samsar.one/v1';
 const DEFAULT_EXTERNAL_INFERENCE_TIMEOUT_MS = 10 * 60 * 1000;
@@ -296,17 +301,27 @@ function hasConfiguredInferenceProvider(provider) {
 }
 
 function getInferenceProviderPriority(model) {
+  let defaultPriority;
+  let preferenceModelKey;
   if (isQwenInferenceModel(model)) {
-    return DOCKER_INFERENCE_PROVIDER_PRIORITY_BY_MODEL['QWEN3.7'];
+    defaultPriority = DOCKER_INFERENCE_PROVIDER_PRIORITY_BY_MODEL['QWEN3.7'];
+    preferenceModelKey = 'QWEN3.7';
+  } else if (isGeminiInferenceModel(model)) {
+    defaultPriority = DOCKER_INFERENCE_PROVIDER_PRIORITY_BY_MODEL['gemini-3.1-pro'];
+    preferenceModelKey = 'gemini-3.1-pro';
+  } else if (isKimiInferenceModel(model)) {
+    defaultPriority = DOCKER_INFERENCE_PROVIDER_PRIORITY_BY_MODEL[KIMI_K3_INFERENCE_MODEL];
+    preferenceModelKey = KIMI_K3_INFERENCE_MODEL;
+  } else {
+    preferenceModelKey = normalizeInferenceModel(model);
+    defaultPriority = DOCKER_INFERENCE_PROVIDER_PRIORITY_BY_MODEL[preferenceModelKey] ||
+      DOCKER_INFERENCE_PROVIDER_PRIORITY_BY_MODEL['gpt-5.6-sol'];
   }
-  if (isGeminiInferenceModel(model)) {
-    return DOCKER_INFERENCE_PROVIDER_PRIORITY_BY_MODEL['gemini-3.1-pro'];
-  }
-  if (isKimiInferenceModel(model)) {
-    return DOCKER_INFERENCE_PROVIDER_PRIORITY_BY_MODEL[KIMI_K3_INFERENCE_MODEL];
-  }
-  return DOCKER_INFERENCE_PROVIDER_PRIORITY_BY_MODEL[normalizeInferenceModel(model)] ||
-    DOCKER_INFERENCE_PROVIDER_PRIORITY_BY_MODEL['gpt-5.6-sol'];
+
+  const savedPriority = readModelAdapterPreferences().modelProviderPriority[
+    normalizeModelAdapterModelKey(preferenceModelKey)
+  ];
+  return applyModelAdapterPreferenceOrder(defaultPriority, savedPriority);
 }
 
 function isStandaloneInferenceEdition() {
@@ -333,6 +348,11 @@ export function resolveConfiguredInferenceProvider(model) {
     }
   }
   return '';
+}
+
+export function getConfiguredInferenceProviders(model) {
+  return getRuntimeInferenceProviderPriority(model)
+    .filter(hasConfiguredInferenceProvider);
 }
 
 function getRequestedInferenceModel(chatRequest = {}) {

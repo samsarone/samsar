@@ -22,6 +22,7 @@ import {
   calculateLegacyAssistantCredits,
   DEFAULT_ASSISTANT_PRICING_MULTIPLIER,
 } from './AssistantBilling.js';
+import { isStandaloneEdition } from '../../utils/EnvironmentUtils.js';
 
 const DEFAULT_ASSISTANT_MODEL = 'gpt-5.6-sol';
 const DEFAULT_ASSISTANT_COMPLETION_TIMEOUT_MS = 10 * 60 * 1000;
@@ -453,18 +454,30 @@ async function buildAssistantProviderRequest(responseRequest) {
   };
 }
 
+export function shouldUseCompatibleAssistantRouting(
+  selectedAssistantModel,
+  selectedAssistantModelAuthorization = '',
+  env = process.env,
+) {
+  return (
+    isStandaloneEdition(env) ||
+    isGeminiInferenceModel(selectedAssistantModel) ||
+    isKimiInferenceModel(selectedAssistantModel) ||
+    isQwenInferenceModel(selectedAssistantModel) ||
+    selectedAssistantModelAuthorization === 'deployed'
+  );
+}
+
 async function createAssistantResponse(
   responseRequest,
   selectedAssistantModel = DEFAULT_ASSISTANT_MODEL,
   selectedAssistantModelAuthorization = '',
   timeoutMs = DEFAULT_ASSISTANT_COMPLETION_TIMEOUT_MS,
 ) {
-  if (
-    isGeminiInferenceModel(selectedAssistantModel) ||
-    isKimiInferenceModel(selectedAssistantModel) ||
-    isQwenInferenceModel(selectedAssistantModel) ||
-    selectedAssistantModelAuthorization === 'deployed'
-  ) {
+  if (shouldUseCompatibleAssistantRouting(
+    selectedAssistantModel,
+    selectedAssistantModelAuthorization,
+  )) {
     // Compatible adapters own provider-bound media normalization. Preserve the
     // canonical input here so native Gemini can read mounted bytes as inlineData
     // and URL-based adapters can create fresh URLs at their dispatch boundary.

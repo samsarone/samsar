@@ -11,23 +11,20 @@ import path from "path";
 import { normalizeProviderMediaUrl } from '../ai_video/utils/AWS.js';
 import {
   GPT_56_SOL_REASONING_EFFORT,
-  createGoogleGeminiChatCompletion,
   getDefaultInferenceModel,
   isGeminiInferenceModel,
   isKimiInferenceModel,
   isQwenInferenceModel,
   normalizeInferenceModel,
 } from './GoogleGemini.js';
-import { createCompatibleChatCompletion } from './OpenAICompat.js';
+import {
+  createCompatibleChatCompletion,
+  getInferenceAdapterProvider,
+} from './OpenAICompat.js';
 import {
   resolveRequestInferenceAuthorization,
   resolveRequestInferenceModel,
 } from './RequestInferenceModel.js';
-import {
-  createSamsarExternalChatCompletion,
-  resolveConfiguredInferenceProvider,
-  shouldUseSamsarExternalInference,
-} from './SamsarExternalInferenceAdapter.js';
 import { recordProviderUsageLog } from '../utils/ProviderUsageAudit.js';
 import { resolveLocalAssetPath } from '../utils/LocalAssetPath.js';
 
@@ -239,7 +236,7 @@ export async function addVisionDescriptionsForImages(sessionId) {
 }
 
 
-async function getDescriptionForImage(activeImageRemoteLink, userInferenceModel = getDefaultInferenceModel(), auditContext = {}) {
+export async function getDescriptionForImage(activeImageRemoteLink, userInferenceModel = getDefaultInferenceModel(), auditContext = {}) {
   const userPrompt = `Describe the images and the actors in the image.
   Describe their position relative to the camera.
   Describe the scene and the objects in the scene include the cinematography and the lighting.
@@ -276,22 +273,15 @@ async function getDescriptionForImage(activeImageRemoteLink, userInferenceModel 
       }
       : {}),
   };
-  let response;
-  let provider;
-  if (shouldUseSamsarExternalInference(inferencePayload)) {
-    provider = resolveConfiguredInferenceProvider(model) || 'samsar';
-    response = await createSamsarExternalChatCompletion(inferencePayload);
-  } else if (isGeminiInferenceModel(model)) {
-    provider = 'googleCloud';
-    response = await createGoogleGeminiChatCompletion(inferencePayload);
-  } else {
-    provider = isQwenInferenceModel(model)
-      ? 'alibabaCloud'
-      : isKimiInferenceModel(model)
-        ? 'kimi'
-        : 'openai';
-    response = await createCompatibleChatCompletion(openai, inferencePayload);
-  }
+  const response = await createCompatibleChatCompletion(openai, inferencePayload);
+  const provider = getInferenceAdapterProvider(response) ||
+    (isGeminiInferenceModel(model)
+      ? 'googleCloud'
+      : isQwenInferenceModel(model)
+        ? 'alibabaCloud'
+        : isKimiInferenceModel(model)
+          ? 'kimi'
+          : 'openai');
 
   await recordProviderUsageLog({
     payload: auditContext,

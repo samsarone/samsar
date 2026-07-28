@@ -1,3 +1,4 @@
+import fs from 'node:fs';
 import SamsarClient from 'samsar-js';
 import OpenAI from 'openai';
 
@@ -26,6 +27,8 @@ const DEFAULT_OPENROUTER_QWEN_MAX_TOKENS = 16384;
 const DEFAULT_OPENROUTER_GEMINI_MAX_TOKENS = 65536;
 const DEFAULT_OPENROUTER_GPT_MAX_COMPLETION_TOKENS = 65536;
 const DEFAULT_OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1';
+const DEFAULT_MODEL_ADAPTER_PREFERENCES_PATH =
+  '/persistent/config/model-adapter-preferences.json';
 const GOOGLE_NATIVE_CREDENTIAL_KEYS = Object.freeze([
   'GOOGLE_APPLICATION_CREDENTIALS_JSON_B64',
   'GOOGLE_APPLICATION_CREDENTIALS_JSON',
@@ -76,6 +79,94 @@ let cachedOpenRouterBaseUrl = '';
 
 function normalizeString(value) {
   return typeof value === 'string' ? value.trim() : '';
+}
+
+function normalizeInferenceProvider(value) {
+  const normalized = normalizeString(value).toLowerCase().replace(/[^a-z0-9]/g, '');
+  if (['alibaba', 'alibabacloud', 'aliyun', 'dashscope', 'qwen'].includes(normalized)) {
+    return DOCKER_INFERENCE_PROVIDER.ALIBABA_CLOUD;
+  }
+  if (['google', 'googlecloud', 'gcp', 'vertex', 'vertexai'].includes(normalized)) {
+    return DOCKER_INFERENCE_PROVIDER.GOOGLE_CLOUD;
+  }
+  if (['kimi', 'moonshot', 'moonshotai'].includes(normalized)) {
+    return DOCKER_INFERENCE_PROVIDER.KIMI;
+  }
+  if (normalized === 'openai') {
+    return DOCKER_INFERENCE_PROVIDER.OPENAI;
+  }
+  if (['openrouter', 'openrouterai'].includes(normalized)) {
+    return DOCKER_INFERENCE_PROVIDER.OPENROUTER;
+  }
+  if (normalized === 'samsar') {
+    return DOCKER_INFERENCE_PROVIDER.SAMSAR;
+  }
+  return '';
+}
+
+function uniqueInferenceProviders(values = []) {
+  const source = Array.isArray(values) ? values : [values];
+  return [...new Set(source.map(normalizeInferenceProvider).filter(Boolean))];
+}
+
+function normalizeInferencePreferenceModelKey(model) {
+  const normalizedModel = normalizeString(model).toLowerCase();
+  if (isQwenInferenceModel(model)) {
+    return QWEN_37_INFERENCE_MODEL;
+  }
+  if (isGeminiInferenceModel(model)) {
+    return 'gemini-3.1-pro';
+  }
+  if (isKimiInferenceModel(model)) {
+    return 'KIMIK3';
+  }
+  if (!normalizedModel || normalizedModel.startsWith('gpt-')) {
+    return GPT_56_SOL_INFERENCE_MODEL;
+  }
+  return normalizedModel;
+}
+
+function getSavedInferenceProviderPriority(model, env = process.env) {
+  if (!isStandaloneEdition(env)) {
+    return [];
+  }
+  const filePath = normalizeString(env.SAMSAR_MODEL_ADAPTER_PREFERENCES_PATH) ||
+    DEFAULT_MODEL_ADAPTER_PREFERENCES_PATH;
+  if (!fs.existsSync(filePath)) {
+    return [];
+  }
+
+  try {
+    const parsed = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+    const priorityMap = parsed?.modelProviderPriority || parsed?.model_provider_priority;
+    if (!priorityMap || typeof priorityMap !== 'object' || Array.isArray(priorityMap)) {
+      return [];
+    }
+    const normalizedModel = normalizeInferencePreferenceModelKey(model);
+    const matchingKey = Object.keys(priorityMap).find(
+      (key) => normalizeInferencePreferenceModelKey(key) === normalizedModel,
+    );
+    return matchingKey
+      ? uniqueInferenceProviders(priorityMap[matchingKey])
+      : [];
+  } catch (error) {
+    console.error('[inference_adapter_priority] failed to read model adapter preferences', {
+      filePath,
+      message: error?.message || String(error),
+    });
+    return [];
+  }
+}
+
+function applyInferenceProviderPreferenceOrder(defaultPriority = [], savedPriority = []) {
+  const normalizedDefault = uniqueInferenceProviders(defaultPriority);
+  const allowedProviders = new Set(normalizedDefault);
+  const preferredProviders = uniqueInferenceProviders(savedPriority)
+    .filter((provider) => allowedProviders.has(provider));
+  return [
+    ...preferredProviders,
+    ...normalizedDefault.filter((provider) => !preferredProviders.includes(provider)),
+  ];
 }
 
 function normalizePositiveInteger(value, fallback) {
@@ -308,17 +399,22 @@ function hasConfiguredInferenceProvider(provider) {
 }
 
 function getInferenceProviderPriority(model) {
+  let defaultPriority;
   if (isQwenInferenceModel(model)) {
-    return DOCKER_INFERENCE_PROVIDER_PRIORITY_BY_MODEL[QWEN_37_INFERENCE_MODEL];
+    defaultPriority = DOCKER_INFERENCE_PROVIDER_PRIORITY_BY_MODEL[QWEN_37_INFERENCE_MODEL];
+  } else if (isGeminiInferenceModel(model)) {
+    defaultPriority = DOCKER_INFERENCE_PROVIDER_PRIORITY_BY_MODEL['gemini-3.1-pro'];
+  } else if (isKimiInferenceModel(model)) {
+    defaultPriority = DOCKER_INFERENCE_PROVIDER_PRIORITY_BY_MODEL[KIMI_K3_INFERENCE_MODEL];
+  } else {
+    defaultPriority = DOCKER_INFERENCE_PROVIDER_PRIORITY_BY_MODEL[normalizeInferenceModel(model)] ||
+      DOCKER_INFERENCE_PROVIDER_PRIORITY_BY_MODEL['gpt-5.6-sol'];
   }
-  if (isGeminiInferenceModel(model)) {
-    return DOCKER_INFERENCE_PROVIDER_PRIORITY_BY_MODEL['gemini-3.1-pro'];
-  }
-  if (isKimiInferenceModel(model)) {
-    return DOCKER_INFERENCE_PROVIDER_PRIORITY_BY_MODEL[KIMI_K3_INFERENCE_MODEL];
-  }
-  return DOCKER_INFERENCE_PROVIDER_PRIORITY_BY_MODEL[normalizeInferenceModel(model)] ||
-    DOCKER_INFERENCE_PROVIDER_PRIORITY_BY_MODEL['gpt-5.6-sol'];
+
+  return applyInferenceProviderPreferenceOrder(
+    defaultPriority,
+    getSavedInferenceProviderPriority(model),
+  );
 }
 
 function isStandaloneInferenceEdition() {
@@ -346,6 +442,203 @@ export function resolveConfiguredInferenceProvider(model) {
     }
   }
   return '';
+}
+
+export function getConfiguredInferenceProviders(model) {
+  return getRuntimeInferenceProviderPriority(model)
+    .filter(hasConfiguredInferenceProvider);
+}
+
+export function shouldUseStandaloneInferenceAdapterFallback(chatRequest = {}) {
+  if (!isStandaloneEdition() || !chatRequest || typeof chatRequest !== 'object') {
+    return false;
+  }
+  if (
+    isOpenRouterAuthorization(chatRequest.authorization) ||
+    isDeployedAuthorization(chatRequest.authorization)
+  ) {
+    return false;
+  }
+  if (
+    chatRequest.bypassSamsarExternalInference ||
+    typeof chatRequest.samsarExternalInference === 'boolean'
+  ) {
+    return false;
+  }
+  return true;
+}
+
+export function buildInferenceProviderPinnedRequest(chatRequest = {}, provider) {
+  const {
+    authorization: _authorization,
+    bypassSamsarExternalInference: _bypassSamsarExternalInference,
+    samsarExternalInference: _samsarExternalInference,
+    ...request
+  } = chatRequest || {};
+  const providerRequest = {
+    ...request,
+    // The ordered adapter loop owns automatic retry so a transient failure
+    // advances to the next saved preference instead of repeatedly using one.
+    externalMaxRetries: 0,
+    maxRetries: 0,
+  };
+
+  if (provider === DOCKER_INFERENCE_PROVIDER.OPENROUTER) {
+    return {
+      ...providerRequest,
+      authorization: 'openrouter',
+      bypassSamsarExternalInference: false,
+    };
+  }
+  if (provider === DOCKER_INFERENCE_PROVIDER.SAMSAR) {
+    return {
+      ...providerRequest,
+      authorization: 'deployed',
+      bypassSamsarExternalInference: false,
+      samsarExternalInference: true,
+    };
+  }
+  return {
+    ...providerRequest,
+    authorization: 'native',
+    bypassSamsarExternalInference: true,
+    samsarExternalInference: false,
+  };
+}
+
+function getInferenceAdapterErrorStatus(error) {
+  const visited = new Set();
+  let current = error;
+  while (current && typeof current === 'object' && !visited.has(current)) {
+    visited.add(current);
+    const status = Number(
+      current.status ??
+      current.statusCode ??
+      current.response?.status ??
+      current.error?.status,
+    );
+    if (Number.isInteger(status) && status > 0) {
+      return status;
+    }
+    current = current.cause;
+  }
+  return null;
+}
+
+function getInferenceAdapterErrorCode(error) {
+  const visited = new Set();
+  let current = error;
+  while (current && typeof current === 'object' && !visited.has(current)) {
+    visited.add(current);
+    const code = normalizeString(current.code).toUpperCase();
+    if (code) {
+      return code;
+    }
+    current = current.cause;
+  }
+  return '';
+}
+
+export function isRetryableInferenceAdapterError(error) {
+  const status = getInferenceAdapterErrorStatus(error);
+  const message = normalizeString(error?.message || error?.cause?.message).toLowerCase();
+  if (
+    status === 402 ||
+    message.includes('insufficient credit') ||
+    message.includes('insufficient quota') ||
+    message.includes('payment required') ||
+    message.includes('out of credits')
+  ) {
+    return false;
+  }
+  if (
+    status === 401 ||
+    status === 403 ||
+    status === 408 ||
+    status === 409 ||
+    status === 425 ||
+    status === 429 ||
+    (status !== null && status >= 500)
+  ) {
+    return true;
+  }
+  if ([
+    'EAI_AGAIN',
+    'ECONNABORTED',
+    'ECONNREFUSED',
+    'ECONNRESET',
+    'EHOSTUNREACH',
+    'ENETUNREACH',
+    'ETIMEDOUT',
+    'UND_ERR_CONNECT_TIMEOUT',
+    'UND_ERR_HEADERS_TIMEOUT',
+    'UND_ERR_SOCKET',
+  ].includes(getInferenceAdapterErrorCode(error))) {
+    return true;
+  }
+  const errorName = normalizeString(error?.name || error?.cause?.name).toUpperCase();
+  return [
+    'APICONNECTIONERROR',
+    'APICONNECTIONTIMEOUTERROR',
+    'EXTERNALINFERENCETIMEOUTERROR',
+  ].includes(errorName);
+}
+
+export async function runInferenceAdapterFallback(
+  providers = [],
+  dispatchProvider,
+) {
+  if (typeof dispatchProvider !== 'function') {
+    throw new TypeError('Inference adapter dispatch must be a function.');
+  }
+
+  let lastError = null;
+  const attemptedProviders = [];
+  for (const provider of providers) {
+    attemptedProviders.push(provider);
+    try {
+      return await dispatchProvider(provider);
+    } catch (error) {
+      lastError = error;
+      if (!isRetryableInferenceAdapterError(error)) {
+        throw error;
+      }
+    }
+  }
+  if (lastError) {
+    lastError.attemptedInferenceAdapters = attemptedProviders;
+    throw lastError;
+  }
+  return dispatchProvider('');
+}
+
+export async function runInferenceWithConfiguredAdapters(
+  chatRequest = {},
+  dispatchProvider,
+) {
+  if (typeof dispatchProvider !== 'function') {
+    throw new TypeError('Inference adapter dispatch must be a function.');
+  }
+  if (!shouldUseStandaloneInferenceAdapterFallback(chatRequest)) {
+    return dispatchProvider('', chatRequest);
+  }
+
+  const providers = getConfiguredInferenceProviders(
+    getRequestedInferenceModel(chatRequest),
+  ).filter(
+    (provider) => provider !== DOCKER_INFERENCE_PROVIDER.SAMSAR ||
+      shouldEnableExternalInference(),
+  );
+  if (!providers.length) {
+    return dispatchProvider('', chatRequest);
+  }
+  return runInferenceAdapterFallback(
+    providers,
+    (provider) => dispatchProvider(
+      provider,
+      buildInferenceProviderPinnedRequest(chatRequest, provider),
+    ),
+  );
 }
 
 function normalizeRequestedInferenceModel(value) {

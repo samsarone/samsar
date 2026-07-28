@@ -115,6 +115,9 @@ import {
   resetLayerSoundEffectState,
 } from './video/SoundEffectLayerState.js';
 import {
+  reconcileOrphanedLipSyncGenerationState,
+} from './video/LipSyncLayerState.js';
+import {
   extendSessionTimelineToCustomSpeechEnd,
   extendSessionTimelineToEndTime,
 } from './video/SessionTimelineExtension.js';
@@ -5372,6 +5375,8 @@ export async function requestGuestVideoGeneration(sessionId, renderOptions = {})
     throw new Error('Video session not found');
   }
 
+  reconcileOrphanedLipSyncGenerationState(videoSession);
+
   const requestedSceneTransitionPreset = normalizeSceneTransitionPreset(
     renderOptions?.sceneTransitionPreset ?? videoSession.sceneTransitionPreset
   );
@@ -5503,6 +5508,8 @@ export async function requestVideoGeneration(userId, sessionId, renderOptions = 
   const videoSession = await requireVideoSessionForStudioAccess(userId, sessionId, renderOptions, {
     markEdited: true,
   });
+
+  reconcileOrphanedLipSyncGenerationState(videoSession);
 
   const requestedSceneTransitionPreset = normalizeSceneTransitionPreset(
     renderOptions?.sceneTransitionPreset ?? videoSession.sceneTransitionPreset
@@ -8130,6 +8137,10 @@ export async function updateAllAudioLayersForSession(userId, payload) {
   });
 
   const session = await VideoSession.findById(sessionId);
+  const lipSyncReconciliation = reconcileOrphanedLipSyncGenerationState(session);
+  if (lipSyncReconciliation.changed) {
+    await session.save();
+  }
   const updatedAudioLayers = session.audioLayers || [];
 
   for (let audioLayer of updatedAudioLayers) {
@@ -8142,6 +8153,7 @@ export async function updateAllAudioLayersForSession(userId, payload) {
   }
 
   return {
+    layers: session.layers || [],
     audioLayers: updatedAudioLayers
   };
 
@@ -8224,6 +8236,10 @@ export async function updateAudioLayersForSession(userId, payload) {
   }
 
   const latestSessionData = await VideoSession.findById(sessionId);
+  const lipSyncReconciliation = reconcileOrphanedLipSyncGenerationState(latestSessionData);
+  if (lipSyncReconciliation.changed) {
+    await latestSessionData.save();
+  }
 
   const latestAudioLayers = latestSessionData.audioLayers || [];
 

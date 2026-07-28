@@ -21,6 +21,11 @@ import {
 import { hasKimiK3NativeCredential } from '../../inference/KimiK3.js';
 import { externalAssistantClientRequestStore } from './ExternalAssistantClientRequestStore.js';
 import { resolveProviderMediaPayload } from './ProviderMediaPayload.js';
+import {
+  applyModelAdapterPreferenceOrder,
+  normalizeModelAdapterModelKey,
+  readModelAdapterPreferences,
+} from '../api/ModelAdapterPreferences.js';
 
 const DEFAULT_SAMSAR_API_BASE_URL = 'https://api.samsar.one/v1';
 const DEFAULT_EXTERNAL_INFERENCE_TIMEOUT_MS = 10 * 60 * 1000;
@@ -705,17 +710,22 @@ function hasConfiguredInferenceProvider(provider) {
 }
 
 function getInferenceProviderPriority(model) {
+  let defaultPriority;
   if (isQwenInferenceModel(model)) {
-    return DOCKER_INFERENCE_PROVIDER_PRIORITY_BY_MODEL[QWEN_37_INFERENCE_MODEL];
+    defaultPriority = DOCKER_INFERENCE_PROVIDER_PRIORITY_BY_MODEL[QWEN_37_INFERENCE_MODEL];
+  } else if (isGeminiInferenceModel(model)) {
+    defaultPriority = DOCKER_INFERENCE_PROVIDER_PRIORITY_BY_MODEL['gemini-3.1-pro'];
+  } else if (isKimiInferenceModel(model)) {
+    defaultPriority = DOCKER_INFERENCE_PROVIDER_PRIORITY_BY_MODEL[KIMI_K3_INFERENCE_MODEL];
+  } else {
+    defaultPriority = DOCKER_INFERENCE_PROVIDER_PRIORITY_BY_MODEL[normalizeInferenceModel(model)] ||
+      DOCKER_INFERENCE_PROVIDER_PRIORITY_BY_MODEL[INFERENCE_MODELS.Inference];
   }
-  if (isGeminiInferenceModel(model)) {
-    return DOCKER_INFERENCE_PROVIDER_PRIORITY_BY_MODEL['gemini-3.1-pro'];
-  }
-  if (isKimiInferenceModel(model)) {
-    return DOCKER_INFERENCE_PROVIDER_PRIORITY_BY_MODEL[KIMI_K3_INFERENCE_MODEL];
-  }
-  return DOCKER_INFERENCE_PROVIDER_PRIORITY_BY_MODEL[normalizeInferenceModel(model)] ||
-    DOCKER_INFERENCE_PROVIDER_PRIORITY_BY_MODEL[INFERENCE_MODELS.Inference];
+
+  const savedPriority = readModelAdapterPreferences().modelProviderPriority[
+    normalizeModelAdapterModelKey(model)
+  ];
+  return applyModelAdapterPreferenceOrder(defaultPriority, savedPriority);
 }
 
 function isDockerInferenceRuntime() {
@@ -743,6 +753,11 @@ export function resolveConfiguredInferenceProvider(model) {
     }
   }
   return '';
+}
+
+export function getConfiguredInferenceProviders(model) {
+  return getRuntimeInferenceProviderPriority(model)
+    .filter(hasConfiguredInferenceProvider);
 }
 
 export function getOpenRouterModelForInferenceRequest(chatRequest = {}, env = process.env) {

@@ -1,4 +1,7 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import test from 'node:test';
 import OpenAI from 'openai';
 
@@ -6,6 +9,7 @@ import {
   DOCKER_INFERENCE_PROVIDER,
   DOCKER_INFERENCE_PROVIDER_PRIORITY_BY_MODEL,
   createOpenRouterChatCompletion,
+  getConfiguredInferenceProviders,
   getOpenRouterModelForInferenceRequest,
   resolveConfiguredInferenceProvider,
   shouldUseOpenRouterInference,
@@ -22,8 +26,11 @@ const ENV_KEYS = [
   'OPENROUTER_API_KEY',
   'QWEN_API_KEY',
   'SAMSAR_API_KEY',
+  'SAMSAR_DEPLOYMENT_EDITION',
+  'SAMSAR_EDITION',
   'SAMSAR_EXTERNAL_INFERENCE_ENABLED',
   'SAMSAR_FORCE_EXTERNAL_INFERENCE',
+  'SAMSAR_MODEL_ADAPTER_PREFERENCES_PATH',
   'SAMSAR_QWEN_OPENROUTER_ONLY',
 ];
 
@@ -96,6 +103,63 @@ test('hosted and external Qwen always use OpenRouter even with Alibaba credentia
       assert.equal(shouldUseSamsarExternalInference(request), true);
     });
   }
+});
+
+test('standalone inference adapters follow the saved per-model preference order', (t) => {
+  const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'samsar-inference-order-'));
+  const preferencePath = path.join(temporaryDirectory, 'model-adapter-preferences.json');
+  t.after(() => fs.rmSync(temporaryDirectory, { recursive: true, force: true }));
+  fs.writeFileSync(preferencePath, JSON.stringify({
+    modelProviderPriority: {
+      'gpt-5.6-sol': ['samsar', 'openrouter', 'openai'],
+    },
+  }));
+
+  withEnvironment({
+    CURRENT_ENV: 'docker',
+    SAMSAR_DEPLOYMENT_EDITION: 'standalone',
+    SAMSAR_MODEL_ADAPTER_PREFERENCES_PATH: preferencePath,
+    OPENAI_API_KEY: 'openai-key',
+    OPENROUTER_API_KEY: 'openrouter-key',
+    SAMSAR_API_KEY: 'samsar-key',
+  }, () => {
+    assert.deepEqual(getConfiguredInferenceProviders('gpt-5.6-sol'), [
+      DOCKER_INFERENCE_PROVIDER.SAMSAR,
+      DOCKER_INFERENCE_PROVIDER.OPENROUTER,
+      DOCKER_INFERENCE_PROVIDER.OPENAI,
+    ]);
+  });
+});
+
+test('production inference ignores standalone preference files', (t) => {
+  const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'samsar-inference-production-'));
+  const preferencePath = path.join(temporaryDirectory, 'model-adapter-preferences.json');
+  t.after(() => fs.rmSync(temporaryDirectory, { recursive: true, force: true }));
+  fs.writeFileSync(preferencePath, JSON.stringify({
+    modelProviderPriority: {
+      'gpt-5.6-sol': ['samsar', 'openrouter', 'openai'],
+      'QWEN3.7': ['alibabaCloud', 'samsar', 'openrouter'],
+    },
+  }));
+
+  withEnvironment({
+    CURRENT_ENV: 'production',
+    SAMSAR_DEPLOYMENT_EDITION: 'production',
+    SAMSAR_MODEL_ADAPTER_PREFERENCES_PATH: preferencePath,
+    OPENAI_API_KEY: 'openai-key',
+    OPENROUTER_API_KEY: 'openrouter-key',
+    SAMSAR_API_KEY: 'samsar-key',
+    ALIBABA_API_KEY: 'alibaba-key',
+  }, () => {
+    assert.deepEqual(getConfiguredInferenceProviders('gpt-5.6-sol'), [
+      DOCKER_INFERENCE_PROVIDER.OPENAI,
+      DOCKER_INFERENCE_PROVIDER.OPENROUTER,
+      DOCKER_INFERENCE_PROVIDER.SAMSAR,
+    ]);
+    assert.deepEqual(getConfiguredInferenceProviders('QWEN3.7'), [
+      DOCKER_INFERENCE_PROVIDER.OPENROUTER,
+    ]);
+  });
 });
 
 test('the existing GPT and Gemini native-credential decisions are unchanged', () => {

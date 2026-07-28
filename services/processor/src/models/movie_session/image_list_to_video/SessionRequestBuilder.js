@@ -74,6 +74,7 @@ import {
   resolveDockerBackingTrackModel,
   resolveDockerTTSProvider,
 } from "../../../consts/DockerAudioAvailability.js";
+import { hasConnectedSpeechAudioLayer } from '../../video/LipSyncLayerState.js';
 
 const MEDIA_DOWNLOAD_TIMEOUT_MS = Number.isFinite(Number(process.env.API_MEDIA_DOWNLOAD_TIMEOUT_MS))
   ? Math.max(1000, Math.floor(Number(process.env.API_MEDIA_DOWNLOAD_TIMEOUT_MS)))
@@ -1039,7 +1040,8 @@ export async function requestImageListToVideGeneration(userId, payload) {
 	      durationOffset: durationOffset,
 		      layerAiVideoType,
 		      hasAiVideoLayer: true,
-		      lipSyncGenerationPending: isLipSyncRequired,
+		      lipSyncGenerationPending: isLipSyncRequired
+		        && hasConnectedSpeechAudioLayer(audioLayers, {}, pIdx),
 		      soundEffectGenerationPending: false,
 		      layerBaseAiImageType,
       ...(shouldAddFooterAnimation && normalizedFooterMetadata[pIdx]

@@ -11,12 +11,15 @@ import { createKimiK3ChatCompletion } from './KimiK3.js';
 import { createQwenChatCompletion } from './Qwen.js';
 import { sendAssistantGeminiCompletionRequest } from './GoogleGemini.js';
 import {
+  DOCKER_INFERENCE_PROVIDER,
   createSamsarExternalChatCompletion,
+  getConfiguredInferenceProviders,
   resolveConfiguredInferenceProvider,
   shouldUseSamsarExternalInference,
 } from './SamsarExternalInferenceAdapter.js';
 import { runExternalInferenceWithRetry } from './ExternalInferenceRetry.js';
 import { resolveProviderMediaPayload } from './ProviderMediaPayload.js';
+import { isStandaloneEdition } from './DeploymentEnvironment.js';
 
 const API_KEY = process.env.OPENAI_API_KEY;
 
@@ -49,6 +52,170 @@ function normalizeCompletionOptions(options) {
   }
 
   return {};
+}
+
+function normalizeAuthorization(value) {
+  return typeof value === 'string'
+    ? value.trim().toLowerCase().replace(/[_\s]+/g, '-')
+    : '';
+}
+
+function shouldUseStandaloneInferenceAdapterFallback(options = {}) {
+  if (!isStandaloneEdition()) {
+    return false;
+  }
+  const authorization = normalizeAuthorization(options.authorization);
+  if (
+    authorization === 'openrouter' ||
+    ['deployed', 'samsar', 'samsar-api-key', 'samsar-key'].includes(authorization)
+  ) {
+    return false;
+  }
+  if (
+    options.bypassSamsarExternalInference === true ||
+    typeof options.samsarExternalInference === 'boolean'
+  ) {
+    return false;
+  }
+  return true;
+}
+
+function buildProviderPinnedCompletionOptions(options, provider) {
+  const providerOptions = {
+    ...options,
+    // The ordered adapter loop owns retries. Move to the next configured
+    // adapter immediately after one retryable failure.
+    externalMaxRetries: 0,
+    maxRetries: 0,
+  };
+  if (provider === DOCKER_INFERENCE_PROVIDER.OPENROUTER) {
+    return {
+      ...providerOptions,
+      authorization: 'openrouter',
+      bypassSamsarExternalInference: false,
+      samsarExternalInference: true,
+      inferenceAdapterProvider: provider,
+    };
+  }
+  if (provider === DOCKER_INFERENCE_PROVIDER.SAMSAR) {
+    return {
+      ...providerOptions,
+      authorization: 'deployed',
+      bypassSamsarExternalInference: false,
+      samsarExternalInference: true,
+      inferenceAdapterProvider: provider,
+    };
+  }
+  return {
+    ...providerOptions,
+    authorization: 'native',
+    bypassSamsarExternalInference: true,
+    samsarExternalInference: false,
+    inferenceAdapterProvider: provider,
+  };
+}
+
+function getInferenceAdapterErrorMetadata(error) {
+  const visited = new Set();
+  let current = error;
+  let status = null;
+  const codes = [];
+  const names = [];
+  const messages = [];
+
+  while (current && typeof current === 'object' && !visited.has(current)) {
+    visited.add(current);
+    if (current.message) messages.push(String(current.message));
+    if (current.code !== undefined) {
+      codes.push(String(current.code).trim().toUpperCase());
+    }
+    if (current.name !== undefined) {
+      names.push(String(current.name).trim().toUpperCase());
+    }
+    const candidateStatus = Number(
+      current.status ??
+      current.statusCode ??
+      current.response?.status ??
+      current.error?.status ??
+      current.code ??
+      current.error?.code,
+    );
+    if (status === null && Number.isInteger(candidateStatus) && candidateStatus > 0) {
+      status = candidateStatus;
+    }
+    current = current.cause;
+  }
+
+  return {
+    status,
+    codes,
+    names,
+    message: messages.join(' ').toLowerCase(),
+  };
+}
+
+export function isRetryableInferenceAdapterError(error) {
+  const { status, codes, names, message } = getInferenceAdapterErrorMetadata(error);
+  if (status !== null) {
+    return status === 401 ||
+      status === 403 ||
+      status === 408 ||
+      status === 409 ||
+      status === 425 ||
+      status === 429 ||
+      status >= 500;
+  }
+  const retryableCodes = [
+    'EAI_AGAIN',
+    'ECONNABORTED',
+    'ECONNREFUSED',
+    'ECONNRESET',
+    'EHOSTUNREACH',
+    'ENETUNREACH',
+    'ENOTFOUND',
+    'ETIMEDOUT',
+    'UND_ERR_CONNECT_TIMEOUT',
+    'UND_ERR_HEADERS_TIMEOUT',
+    'UND_ERR_SOCKET',
+  ];
+  if (codes.some((code) => retryableCodes.includes(code))) {
+    return true;
+  }
+  if (names.some((name) =>
+    ['APICONNECTIONERROR', 'APICONNECTIONTIMEOUTERROR'].includes(name)
+  )) {
+    return true;
+  }
+  return message.includes('fetch failed') ||
+    message.includes('network error') ||
+    message.includes('socket hang up');
+}
+
+export async function runInferenceAdapterFallback(
+  providers = [],
+  dispatchProvider,
+) {
+  let lastError = null;
+  const attemptedProviders = [];
+  for (const provider of providers) {
+    attemptedProviders.push(provider);
+    try {
+      return await dispatchProvider(provider);
+    } catch (error) {
+      lastError = error;
+      if (!isRetryableInferenceAdapterError(error)) {
+        throw error;
+      }
+    }
+  }
+
+  if (lastError) {
+    if (typeof lastError === 'object') {
+      lastError.attemptedInferenceAdapters = attemptedProviders;
+    }
+    throw lastError;
+  }
+  return dispatchProvider(undefined);
 }
 
 function getCompatibleChatRequestOptions(options = {}) {
@@ -105,6 +272,33 @@ function getRequestTimeoutMs(options = {}) {
 export async function sendAssistantCompletionRequest(messageList, inferenceModel, options) {
   const completionOptions = normalizeCompletionOptions(options);
   const model = getModelNameForInferenceModel(inferenceModel);
+  if (shouldUseStandaloneInferenceAdapterFallback(completionOptions)) {
+    const providers = getConfiguredInferenceProviders(model);
+    if (providers.length > 1) {
+      return runInferenceAdapterFallback(
+        providers,
+        (provider) => sendAssistantCompletionRequestForProvider(
+          messageList,
+          model,
+          buildProviderPinnedCompletionOptions(completionOptions, provider),
+        ),
+      );
+    }
+  }
+
+  return sendAssistantCompletionRequestForProvider(
+    messageList,
+    inferenceModel,
+    completionOptions,
+  );
+}
+
+async function sendAssistantCompletionRequestForProvider(
+  messageList,
+  inferenceModel,
+  completionOptions,
+) {
+  const model = getModelNameForInferenceModel(inferenceModel);
   const isGeminiModel = isGeminiInferenceModel(inferenceModel);
   const isQwenModel = isQwenInferenceModel(inferenceModel) || isQwenInferenceModel(model);
   const isKimiModel =
@@ -114,6 +308,8 @@ export async function sendAssistantCompletionRequest(messageList, inferenceModel
     model,
     messages: messageList,
     authorization: completionOptions.authorization,
+    bypassSamsarExternalInference: completionOptions.bypassSamsarExternalInference,
+    samsarExternalInference: completionOptions.samsarExternalInference,
     reasoning_effort: reasoningEffort || undefined,
     timeout: getRequestTimeoutMs(completionOptions),
   };
@@ -168,8 +364,15 @@ export async function sendAssistantKimiK3CompletionRequest(
 
 export async function sendAssistantQwenCompletionRequest(messageList, inferenceModel, options = {}) {
   const model = getModelNameForInferenceModel(inferenceModel);
+  const {
+    authorization,
+    bypassSamsarExternalInference,
+    samsarExternalInference,
+    inferenceAdapterProvider,
+    ...providerOptions
+  } = options;
   const response = await createQwenChatCompletion({
-    ...options,
+    ...providerOptions,
     model,
     messages: messageList,
     timeout: getRequestTimeoutMs(options),
@@ -193,6 +396,8 @@ export async function sendAssistantSamsarExternalCompletionRequest(messageList, 
     model,
     messages: messageList,
     authorization: options.authorization,
+    bypassSamsarExternalInference: options.bypassSamsarExternalInference,
+    samsarExternalInference: options.samsarExternalInference,
     reasoning_effort: reasoningEffort || undefined,
     timeout: getRequestTimeoutMs(options),
   });
@@ -203,7 +408,9 @@ export async function sendAssistantSamsarExternalCompletionRequest(messageList, 
     response: normalizeChatCompletionToResponses(response),
     outputText,
     outputContent: buildFallbackAssistantContent(outputText),
-    externalProvider: resolveConfiguredInferenceProvider(model) || 'samsar',
+    externalProvider: options.inferenceAdapterProvider ||
+      resolveConfiguredInferenceProvider(model) ||
+      'samsar',
   };
 }
 

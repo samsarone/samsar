@@ -11,28 +11,21 @@ import { z } from "zod";
 import { zodResponseFormat } from "openai/helpers/zod";
 import {
   GPT_56_SOL_REASONING_EFFORT,
-  createGoogleGeminiChatCompletion,
   getDefaultInferenceModel,
   isGeminiInferenceModel,
   isKimiInferenceModel,
   isQwenInferenceModel,
   normalizeInferenceModel,
 } from '../../ai_utils/GoogleGemini.js';
-import { createCompatibleChatCompletion } from '../../ai_utils/OpenAICompat.js';
-import { createQwenChatCompletion } from '../../ai_utils/Qwen.js';
 import {
-  createSamsarExternalChatCompletion,
-  resolveConfiguredInferenceProvider,
-  shouldUseSamsarExternalInference,
-} from '../../ai_utils/SamsarExternalInferenceAdapter.js';
+  createCompatibleChatCompletion,
+  getInferenceAdapterProvider,
+} from '../../ai_utils/OpenAICompat.js';
 import { recordProviderUsageLog } from '../../utils/ProviderUsageAudit.js';
 import { formatBranchedCameraTransitionContext } from '../utils/BranchedCameraTransitions.js';
 
 const openai = new OpenAI({ apiKey: API_KEY || '' });
 
-const RESPONSES_ONLY_MODELS = new Set([
-  'gpt-5.6-sol',
-]);
 const DEFAULT_GEMINI_REASONING_EFFORT = 'high';
 
 function getAuditHash(value) {
@@ -492,101 +485,24 @@ export async function sendAssistantMessageRequest(messageList, userInferenceMode
       ...(selectedInferenceModelAuthorization
         ? { authorization: selectedInferenceModelAuthorization }
         : {}),
-      ...(!isGeminiInferenceModel(modelName) && !isQwenInferenceModel(modelName)
-        ? { reasoning_effort: GPT_56_SOL_REASONING_EFFORT }
-        : reasoningEffort
-          ? (!isQwenInferenceModel(modelName) ? { reasoning_effort: reasoningEffort } : {})
-          : {}),
+      ...(!isQwenInferenceModel(modelName)
+        ? {
+          reasoning_effort: isGeminiInferenceModel(modelName)
+            ? reasoningEffort || DEFAULT_GEMINI_REASONING_EFFORT
+            : GPT_56_SOL_REASONING_EFFORT,
+        }
+        : {}),
     };
-    if (shouldUseSamsarExternalInference(basePayload)) {
-      const response = await createSamsarExternalChatCompletion(basePayload);
-      await recordInferenceProviderUsage({
-        basePayload,
-        provider: resolveConfiguredInferenceProvider(modelName) || 'samsar',
-        response,
-        auditContext,
-        reasoningEffort,
-      });
-      return response.choices[0].message;
-    }
-
-    if (isGeminiInferenceModel(modelName)) {
-      const geminiPayload = {
-        model: modelName,
-        messages: messageList,
-        reasoning_effort: reasoningEffort || DEFAULT_GEMINI_REASONING_EFFORT,
-      };
-      const response = await createGoogleGeminiChatCompletion(geminiPayload);
-      await recordInferenceProviderUsage({
-        basePayload: geminiPayload,
-        provider: 'googleCloud',
-        response,
-        auditContext,
-        reasoningEffort: reasoningEffort || DEFAULT_GEMINI_REASONING_EFFORT,
-      });
-      return response.choices[0].message;
-    }
-
-    if (isQwenInferenceModel(modelName)) {
-      const response = await createQwenChatCompletion(basePayload);
-      await recordInferenceProviderUsage({
-        basePayload,
-        provider: 'alibabaCloud',
-        response,
-        auditContext,
-        reasoningEffort,
-      });
-      return response.choices[0].message;
-    }
-
-    if (isKimiInferenceModel(modelName)) {
-      const response = await createCompatibleChatCompletion(openai, basePayload);
-      await recordInferenceProviderUsage({
-        basePayload,
-        provider: 'kimi',
-        response,
-        auditContext,
-        reasoningEffort: GPT_56_SOL_REASONING_EFFORT,
-      });
-      return response.choices[0].message;
-    }
-
-    if (isResponsesOnlyModel(modelName)) {
-      const body = {
-        model: modelName,
-        input: normalizeMessagesForResponses(messageList),
-      };
-
-      body.reasoning = { effort: GPT_56_SOL_REASONING_EFFORT };
-
-      const responsesResponse = await openai.post('/responses', {
-        body,
-      });
-      await recordInferenceProviderUsage({
-        basePayload,
-        provider: 'openai',
-        response: responsesResponse,
-        auditContext,
-        reasoningEffort: GPT_56_SOL_REASONING_EFFORT,
-      });
-      const outputText = extractResponsesOutputText(responsesResponse);
-      return { role: 'assistant', content: outputText ?? '' };
-    }
-    const chatPayload = {
-      messages: messageList,
-      model: modelName,
-    };
-    const response = await openai.chat.completions.create(chatPayload);
+    const response = await createCompatibleChatCompletion(openai, basePayload);
     await recordInferenceProviderUsage({
-      basePayload: chatPayload,
-      provider: 'openai',
+      basePayload,
+      provider: getInferenceAdapterProvider(response) ||
+        getDefaultInferenceProviderForModel(modelName),
       response,
       auditContext,
-      reasoningEffort,
+      reasoningEffort: basePayload.reasoning_effort,
     });
-    const resData = response.choices[0].message;
-
-    return resData;
+    return response.choices[0].message;
   } catch (error) {
     const isGeminiModel = isGeminiInferenceModel(modelName);
     const isKimiModel = isKimiInferenceModel(modelName);
@@ -658,60 +574,15 @@ function getModelNameForInferenceModel(userInferenceModel) {
   return normalizeInferenceModel(userInferenceModel);
 }
 
-function isResponsesOnlyModel(model) {
-  return typeof model === 'string' && RESPONSES_ONLY_MODELS.has(model);
-}
-
-function normalizeMessagesForResponses(messages) {
-  if (!Array.isArray(messages)) {
-    return [];
+function getDefaultInferenceProviderForModel(model) {
+  if (isGeminiInferenceModel(model)) {
+    return 'googleCloud';
   }
-
-  return messages.map((message) => {
-    if (!message || typeof message !== 'object') {
-      return message;
-    }
-
-    if (message.role === 'system') {
-      return { ...message, role: 'developer' };
-    }
-
-    return message;
-  });
-}
-
-function extractResponsesOutputText(response) {
-  if (!response || typeof response !== 'object') {
-    return '';
+  if (isQwenInferenceModel(model)) {
+    return 'alibabaCloud';
   }
-
-  if (typeof response.output_text === 'string') {
-    return response.output_text;
+  if (isKimiInferenceModel(model)) {
+    return 'kimi';
   }
-
-  const output = response.output;
-  if (!Array.isArray(output)) {
-    return '';
-  }
-
-  const texts = [];
-  for (const item of output) {
-    if (!item || typeof item !== 'object' || item.type !== 'message') {
-      continue;
-    }
-    const contentList = item.content;
-    if (!Array.isArray(contentList)) {
-      continue;
-    }
-    for (const content of contentList) {
-      if (!content || typeof content !== 'object') {
-        continue;
-      }
-      if (content.type === 'output_text' && typeof content.text === 'string') {
-        texts.push(content.text);
-      }
-    }
-  }
-
-  return texts.join('');
+  return 'openai';
 }

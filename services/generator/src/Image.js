@@ -50,6 +50,7 @@ import { handleFalWan27Request } from './providers/FalWan27.js';
 
 import {
   isDockerRuntime,
+  isStandaloneEdition,
   usesExternalMediaPublishing,
   usesLocalAssetStorage,
 } from './utils/Environment.js';
@@ -61,6 +62,9 @@ import {
 } from './utils/CpuResources.js';
 import {
   DOCKER_ADAPTER_PROVIDER,
+  resolveNextDockerImageGenerationProvider,
+  resolveNextDockerImageEditProvider,
+  resolveDockerImageEditProvider,
   resolveDockerImageGenerationProvider,
   resolveGPTImageTwoGenerationProvider,
   resolveWan27ImageGenerationProvider,
@@ -165,10 +169,66 @@ function normalizeString(value) {
   return typeof value === 'string' ? value.trim() : '';
 }
 
+function normalizeAdapterProvider(value) {
+  const normalized = normalizeString(value).toLowerCase().replace(/[^a-z0-9]/g, '');
+  if (['alibaba', 'alibabacloud', 'aliyun', 'dashscope', 'qwen'].includes(normalized)) {
+    return DOCKER_ADAPTER_PROVIDER.ALIBABA_CLOUD;
+  }
+  if (['google', 'googlecloud', 'gcp', 'vertex', 'vertexai'].includes(normalized)) {
+    return DOCKER_ADAPTER_PROVIDER.GOOGLE_CLOUD;
+  }
+  if (normalized === 'fal') {
+    return DOCKER_ADAPTER_PROVIDER.FAL;
+  }
+  if (normalized === 'openai') {
+    return DOCKER_ADAPTER_PROVIDER.OPENAI;
+  }
+  if (normalized === 'samsar') {
+    return DOCKER_ADAPTER_PROVIDER.SAMSAR;
+  }
+  return '';
+}
+
+function getPinnedImageAdapterProvider(payload = {}) {
+  if (isStandaloneEdition()) {
+    const overrideProvider = normalizeAdapterProvider(payload?.adapterProviderOverride);
+    if (overrideProvider) {
+      return overrideProvider;
+    }
+
+    const selectedProvider = normalizeAdapterProvider(payload?.adapterProvider);
+    if (selectedProvider) {
+      return selectedProvider;
+    }
+  }
+
+  const status = normalizeString(payload?.apiGenerationStatus).toUpperCase();
+  const externalProvider = normalizeAdapterProvider(payload?.externalProvider);
+  if (
+    externalProvider &&
+    (status === 'PENDING' || payload?.requestType !== 'API' || externalProvider !== DOCKER_ADAPTER_PROVIDER.SAMSAR)
+  ) {
+    return externalProvider;
+  }
+
+  const requestId = normalizeString(payload?.apiRequestId).toLowerCase();
+  if (requestId.startsWith('google-native-nanobanana:')) {
+    return DOCKER_ADAPTER_PROVIDER.GOOGLE_CLOUD;
+  }
+  if (requestId.startsWith('samsar-external-image:')) {
+    return DOCKER_ADAPTER_PROVIDER.SAMSAR;
+  }
+  return '';
+}
+
 function resolveImageProviderForModel(model, payload = {}) {
   const normalizedModel = normalizeString(model).toUpperCase();
   if (!normalizedModel) {
     return '';
+  }
+  const pinnedProvider = getPinnedImageAdapterProvider(payload);
+  if (pinnedProvider) {
+    return pinnedProvider;
   }
   if (normalizedModel === 'WAN2.7PRO') {
     return resolveWan27ImageGenerationProvider(payload?.externalProvider);
@@ -195,6 +255,104 @@ function resolveImageProviderForModel(model, payload = {}) {
     return '';
   }
   return 'fal';
+}
+
+function getImageGenerationAdapterRetryState(payload = {}, { rotateAdapter = true } = {}) {
+  if (!isStandaloneEdition()) {
+    return {
+      provider: '',
+      setFields: {},
+      unsetFields: {},
+    };
+  }
+
+  const model = normalizeString(payload?.model).toUpperCase();
+  const currentProvider =
+    getPinnedImageAdapterProvider(payload) ||
+    resolveImageProviderForModel(model, payload);
+  const nextProvider = rotateAdapter
+    ? resolveNextDockerImageGenerationProvider(model, currentProvider)
+    : '';
+  const retryProvider = nextProvider || currentProvider;
+
+  return {
+    provider: retryProvider,
+    setFields: retryProvider
+      ? {
+        adapterProvider: retryProvider,
+        adapterProviderOverride: retryProvider,
+      }
+      : {},
+    unsetFields: {
+      apiRequestId: '',
+      apiSubmittedAt: '',
+      externalProvider: '',
+    },
+  };
+}
+
+function getPinnedImageEditAdapterProvider(payload = {}) {
+  if (!isStandaloneEdition()) {
+    return '';
+  }
+
+  const overrideProvider = normalizeAdapterProvider(payload?.adapterProviderOverride);
+  if (overrideProvider) {
+    return overrideProvider;
+  }
+  const selectedProvider = normalizeAdapterProvider(payload?.adapterProvider);
+  if (selectedProvider) {
+    return selectedProvider;
+  }
+
+  const requestId = normalizeString(payload?.apiRequestId).toLowerCase();
+  if (requestId.startsWith('google-native-nanobanana-edit:')) {
+    return DOCKER_ADAPTER_PROVIDER.GOOGLE_CLOUD;
+  }
+  if (requestId.startsWith('samsar-external-image:')) {
+    return DOCKER_ADAPTER_PROVIDER.SAMSAR;
+  }
+  return normalizeAdapterProvider(payload?.externalProvider);
+}
+
+function resolveImageEditProviderForModel(model, payload = {}) {
+  if (!isStandaloneEdition()) {
+    return '';
+  }
+  return getPinnedImageEditAdapterProvider(payload) ||
+    resolveDockerImageEditProvider(model);
+}
+
+function getImageEditAdapterRetryState(payload = {}, { rotateAdapter = true } = {}) {
+  if (!isStandaloneEdition()) {
+    return {
+      provider: '',
+      setFields: {},
+      unsetFields: {},
+    };
+  }
+
+  const model = normalizeString(payload?.model).toUpperCase();
+  const currentProvider = resolveImageEditProviderForModel(model, payload);
+  const nextProvider = rotateAdapter
+    ? resolveNextDockerImageEditProvider(model, currentProvider)
+    : '';
+  const retryProvider = rotateAdapter ? nextProvider : currentProvider;
+
+  return {
+    provider: retryProvider,
+    setFields: retryProvider
+      ? {
+        adapterProvider: retryProvider,
+        adapterProviderOverride: retryProvider,
+      }
+      : {},
+    unsetFields: {
+      apiRequestId: '',
+      apiSubmittedAt: '',
+      externalProvider: '',
+    },
+  };
 }
 
 async function recordImageProviderUsage(payload = {}, provider, metadata = {}) {
@@ -1007,6 +1165,7 @@ async function recordImageGenerationFailure(payload, {
   failureRetryCount = null,
   source = 'image_generation',
   setFields = {},
+  unsetFields = {},
 } = {}) {
   const requestId = payload?._id;
   if (!requestId) {
@@ -1025,9 +1184,7 @@ async function recordImageGenerationFailure(payload, {
   );
 
 
-  await ImageGeneration.updateOne(
-    { _id: requestId },
-    {
+  const update = {
       $set: {
         generationError: failureMessage,
         lastFailureAt: historyEntry.at,
@@ -1041,8 +1198,12 @@ async function recordImageGenerationFailure(payload, {
           $slice: -FAILURE_HISTORY_LIMIT,
         },
       },
-    }
-  );
+  };
+  if (Object.keys(unsetFields).length > 0) {
+    update.$unset = unsetFields;
+  }
+
+  await ImageGeneration.updateOne({ _id: requestId }, update);
 
   return historyEntry;
 }
@@ -1320,6 +1481,7 @@ async function scheduleImageGenerationRetry(payload = {}, latestDoc, imageData, 
   updateLayerPrompt = true,
   terminalOnMaxFailures = true,
   sessionData = {},
+  rotateAdapter = true,
 } = {}) {
   const previousFailureCount = normalizeRetryCount(latestDoc?.failureRetryCount);
   const nextFailureCount = previousFailureCount + 1;
@@ -1371,6 +1533,11 @@ async function scheduleImageGenerationRetry(payload = {}, latestDoc, imageData, 
     failureRetryCount: nextFailureCount,
     nextAttemptAfter: getImageGenerationNextAttemptAfter(nextFailureCount),
   };
+  const adapterRetryState = getImageGenerationAdapterRetryState(
+    latestDoc || payload,
+    { rotateAdapter },
+  );
+  Object.assign(setFields, adapterRetryState.setFields);
   if (!latestDoc?.originalRetryPrompt) {
     setFields.originalRetryPrompt = retryPrompt;
   }
@@ -1381,6 +1548,7 @@ async function scheduleImageGenerationRetry(payload = {}, latestDoc, imageData, 
     failureRetryCount: nextFailureCount,
     source: retrySource,
     setFields,
+    unsetFields: adapterRetryState.unsetFields,
   });
 
   if (updateLayerPrompt) {
@@ -2439,8 +2607,23 @@ async function processPendingGenerationRequet(pendingRequestData) {
     await handleNoImageRetryOrFailure(pendingRequestData, {
       image: null,
       error: `Image provider request timed out after ${ageMinutes} minutes.`,
+    }, {
+      rotateAdapter: false,
     });
     return;
+  }
+
+  const selectedAdapterProvider = resolveImageProviderForModel(model, pendingRequestData);
+  if (
+    isStandaloneEdition() &&
+    selectedAdapterProvider &&
+    normalizeAdapterProvider(pendingRequestData?.adapterProvider) !== selectedAdapterProvider
+  ) {
+    pendingRequestData.adapterProvider = selectedAdapterProvider;
+    await ImageGeneration.updateOne(
+      { _id: pendingRequestData._id },
+      { $set: { adapterProvider: selectedAdapterProvider } },
+    );
   }
 
   if (shouldUseSamsarExternalImageProvider(pendingRequestData)) {
@@ -2448,12 +2631,7 @@ async function processPendingGenerationRequet(pendingRequestData) {
     if (imageData?.image) {
       await updateImageInSessionLayer(imageData, pendingRequestData);
     } else if (imageData?.error) {
-      await markImageGenerationRequestFailed(pendingRequestData, imageData, {
-        message: imageData.error,
-        failureRetryCount: normalizeRetryCount(pendingRequestData?.failureRetryCount) + 1,
-        source: 'samsar_external_image_generation_failed',
-        pruneLayer: false,
-      });
+      await handleNoImageRetryOrFailure(pendingRequestData, imageData);
     }
     return;
   }
@@ -2535,8 +2713,7 @@ async function processPendingGenerationRequet(pendingRequestData) {
     }
   } else if (model === 'GPTIMAGE2' || model === 'GPTIMAGE1') {
     const shouldUseFal = model === 'GPTIMAGE2' &&
-      resolveGPTImageTwoGenerationProvider(pendingRequestData?.externalProvider) ===
-        DOCKER_ADAPTER_PROVIDER.FAL;
+      selectedAdapterProvider === DOCKER_ADAPTER_PROVIDER.FAL;
     const imageData = shouldUseFal
       ? await handleFalGPTImageTwoRequest(pendingRequestData)
       : await handleGPTImageTwoRequest(pendingRequestData);
@@ -2559,19 +2736,15 @@ async function processPendingGenerationRequet(pendingRequestData) {
       await updateImageInSessionLayer(imageData, pendingRequestData);
     }
   } else if (model === 'NANOBANANA2' || model === 'NANOBANANAPRO') {
-    const dockerProvider = resolveDockerImageGenerationProvider(model);
-    const imageData = dockerProvider === DOCKER_ADAPTER_PROVIDER.GOOGLE_CLOUD ||
-      (!dockerProvider && shouldUseGoogleNativeNanoBanana(pendingRequestData))
+    const imageData = selectedAdapterProvider === DOCKER_ADAPTER_PROVIDER.GOOGLE_CLOUD ||
+      (!selectedAdapterProvider && shouldUseGoogleNativeNanoBanana(pendingRequestData))
       ? await handleGoogleNanoBananaRequest(pendingRequestData)
       : await handleNanoBananaFalRequest(pendingRequestData);
     if (imageData) {
       await updateImageInSessionLayer(imageData, pendingRequestData);
     }
   } else if (model === 'WAN2.7PRO') {
-    const wanProvider = resolveWan27ImageGenerationProvider(
-      pendingRequestData?.externalProvider,
-    );
-    const imageData = wanProvider === DOCKER_ADAPTER_PROVIDER.FAL
+    const imageData = selectedAdapterProvider === DOCKER_ADAPTER_PROVIDER.FAL
       ? await handleFalWan27Request(pendingRequestData)
       : await handleAlibabaWan27Request(pendingRequestData);
     if (imageData) {
@@ -2885,7 +3058,7 @@ async function updateAvatarVoiceoverImageGeneration(imageData, payload) {
   }
 }
 
-async function handleNoImageRetryOrFailure(payload, imageData) {
+async function handleNoImageRetryOrFailure(payload, imageData, options = {}) {
 
   const {
     _id: requestId,
@@ -2913,6 +3086,7 @@ async function handleNoImageRetryOrFailure(payload, imageData) {
         source: 'express_narrator_avatar_image_retry',
         updateLayerPrompt: false,
         terminalOnMaxFailures: false,
+        rotateAdapter: options.rotateAdapter !== false,
       });
       if (scheduledRetry) {
         return;
@@ -3008,6 +3182,9 @@ async function handleNoImageRetryOrFailure(payload, imageData) {
         retryInferenceSettings.model,
         retryInferenceSettings.authorization,
       );
+      const adapterRetryState = getImageGenerationAdapterRetryState(
+        latestDoc || payload,
+      );
 
       await recordImageGenerationFailure(payload, {
         imageData,
@@ -3025,8 +3202,10 @@ async function handleNoImageRetryOrFailure(payload, imageData) {
           filterRetryCount: nextFilterRetryCount,
           prompt: newPrompt,
           nextAttemptAfter: getImageGenerationNextAttemptAfter(nextFailureCount),
+          ...adapterRetryState.setFields,
           ...(!latestDoc.originalRetryPrompt ? { originalRetryPrompt: retryPrompt } : {}),
         },
+        unsetFields: adapterRetryState.unsetFields,
       });
 
       await updateLayerPromptForRetry(payload, newPrompt, failureMessage);
@@ -3048,6 +3227,7 @@ async function handleNoImageRetryOrFailure(payload, imageData) {
     const scheduledRetry = await scheduleImageGenerationRetry(payload, latestDoc, imageData, {
       terminalOnMaxFailures: false,
       sessionData,
+      rotateAdapter: options.rotateAdapter !== false,
     });
     if (scheduledRetry) {
       return; // Return here so we don't remove the doc
@@ -3229,6 +3409,9 @@ async function processRefilterFailure(imageData, payload, imageScore, imageDescr
       retryInferenceSettings.model,
       retryInferenceSettings.authorization,
     );
+    const adapterRetryState = getImageGenerationAdapterRetryState(
+      latestGenerationData || payload,
+    );
 
     await recordImageGenerationFailure(payload, {
       message: failureMessage,
@@ -3240,8 +3423,10 @@ async function processRefilterFailure(imageData, payload, imageScore, imageDescr
         apiGenerationStatus: "INIT",
         prompt: newPrompt,
         filterRetryCount: nextFilterRetryCount,
+        ...adapterRetryState.setFields,
         ...(!latestGenerationData.originalRetryPrompt ? { originalRetryPrompt: retryPrompt } : {}),
       },
+      unsetFields: adapterRetryState.unsetFields,
     });
 
     await updateLayerPromptForRetry(payload, newPrompt, failureMessage);
@@ -3499,6 +3684,63 @@ async function processImageGenerationSuccess(imageData, payload, imageScore) {
   removeTaskFromQueueById(payload._id);
 }
 
+async function scheduleImageEditAdapterRetry(
+  payload = {},
+  message = 'Image edit adapter failed',
+  { rotateAdapter = true } = {},
+) {
+  const adapterRetryState = getImageEditAdapterRetryState(
+    payload,
+    { rotateAdapter },
+  );
+  if (!adapterRetryState.provider) {
+    return false;
+  }
+
+  const retryStatus = rotateAdapter ? 'INIT' : 'PENDING';
+  const update = {
+    $set: {
+      ...adapterRetryState.setFields,
+      editStatus: retryStatus,
+      apiEditStatus: retryStatus,
+      generationStatus: retryStatus,
+      apiGenerationStatus: retryStatus,
+      rowLocked: false,
+      errorMessage: null,
+      editError: null,
+      generationError: null,
+    },
+  };
+  if (rotateAdapter) {
+    update.$unset = adapterRetryState.unsetFields;
+  }
+
+  await ImageGeneration.updateOne(
+    { _id: payload?._id },
+    update,
+  );
+
+  try {
+    await GlobalSession.findOneAndUpdate(
+      { sessionId: payload?._id?.toString?.() || payload?._id },
+      {
+        $set: { status: 'PENDING' },
+        $unset: { errorMessage: '' },
+      },
+    );
+  } catch {
+  }
+
+  console.warn('[image_edit] scheduling adapter retry', {
+    requestId: payload?._id?.toString?.() || payload?._id,
+    model: payload?.model || null,
+    provider: adapterRetryState.provider,
+    rotated: rotateAdapter,
+    message,
+  });
+  return true;
+}
+
 async function processUpscaleRequest(pendingRequestData) {
   await getDBConnectionString();
 
@@ -3507,6 +3749,12 @@ async function processUpscaleRequest(pendingRequestData) {
       pendingRequestData?.editStatus === 'FAILED' ||
       pendingRequestData?.apiEditStatus === 'FAILED';
     if (editAlreadyFailed) {
+      if (await scheduleImageEditAdapterRetry(
+        pendingRequestData,
+        pendingRequestData?.errorMessage || pendingRequestData?.editError,
+      )) {
+        return;
+      }
       await finalizeUpscaleFailure(
         pendingRequestData,
         pendingRequestData?.errorMessage || pendingRequestData?.editError || 'Image enhancement failed'
@@ -3548,6 +3796,10 @@ async function processUpscaleRequest(pendingRequestData) {
     const enhanceCaseType = 'enhance_image';
     const imageUrls = sourceImageRef ? [sourceImageRef] : [];
     const apiEditStatus = pendingRequestData.apiEditStatus || 'INIT';
+    const selectedAdapterProvider = resolveImageEditProviderForModel(
+      enhanceModel,
+      pendingRequestData,
+    );
 
     const editPayload = {
       ...(pendingRequestData.toObject ? pendingRequestData.toObject() : pendingRequestData),
@@ -3557,6 +3809,13 @@ async function processUpscaleRequest(pendingRequestData) {
       resolution: pendingRequestData.resolution || '1k',
       image: sourceImageRef,
       image_urls: imageUrls,
+      ...(selectedAdapterProvider
+        ? {
+          adapterProvider: selectedAdapterProvider,
+          adapterProviderOverride: selectedAdapterProvider,
+          deferAdapterFailureFinalization: true,
+        }
+        : {}),
     };
 
     const enhanceUpdates = {};
@@ -3578,6 +3837,13 @@ async function processUpscaleRequest(pendingRequestData) {
     if (!pendingRequestData.editStatus) {
       enhanceUpdates.editStatus = 'INIT';
     }
+    if (
+      selectedAdapterProvider &&
+      normalizeAdapterProvider(pendingRequestData.adapterProvider) !== selectedAdapterProvider
+    ) {
+      enhanceUpdates.adapterProvider = selectedAdapterProvider;
+      enhanceUpdates.adapterProviderOverride = selectedAdapterProvider;
+    }
 
     if (Object.keys(enhanceUpdates).length > 0) {
       await ImageGeneration.updateOne(
@@ -3590,6 +3856,17 @@ async function processUpscaleRequest(pendingRequestData) {
 
 
     if (!editedImageData) {
+      const latestRequest = await ImageGeneration.findById(pendingRequestData._id).lean();
+      const providerMarkedFailed =
+        latestRequest?.editStatus === 'FAILED' ||
+        latestRequest?.apiEditStatus === 'FAILED';
+      if (providerMarkedFailed) {
+        await scheduleImageEditAdapterRetry(
+          editPayload,
+          latestRequest?.errorMessage || latestRequest?.editError || 'Image enhancement adapter failed',
+          { rotateAdapter: apiEditStatus !== 'PENDING' },
+        );
+      }
       return;
     }
 
@@ -3606,11 +3883,31 @@ async function processUpscaleRequest(pendingRequestData) {
     if (resolvedEditImageRef) {
       await finalizeUpscaleSuccess(pendingRequestData, resolvedEditImageRef);
     } else if (editedImageData.error) {
+      const rotateAdapter =
+        apiEditStatus !== 'PENDING' ||
+        editedImageData.definitiveAdapterFailure === true;
+      if (await scheduleImageEditAdapterRetry(
+        editPayload,
+        editedImageData.error,
+        { rotateAdapter },
+      )) {
+        return;
+      }
       await finalizeUpscaleFailure(pendingRequestData, editedImageData.error);
     } else {
       await finalizeUpscaleFailure(pendingRequestData, 'Upscale enhancement completed without an image result');
     }
   } catch (error) {
+    if (await scheduleImageEditAdapterRetry(
+      pendingRequestData,
+      error?.message || 'Upscale request failed',
+      {
+        rotateAdapter:
+          normalizeString(pendingRequestData?.apiEditStatus).toUpperCase() !== 'PENDING',
+      },
+    )) {
+      return;
+    }
     await finalizeUpscaleFailure(pendingRequestData, error?.message || 'Upscale request failed');
   }
 }
@@ -3889,8 +4186,39 @@ async function processEditRequest(pendingRequestData) {
       return;
     }
 
-    const editedImageData = await getEditImageFromText(pendingRequestData);
+    const selectedAdapterProvider = resolveImageEditProviderForModel(
+      pendingRequestData.model,
+      pendingRequestData,
+    );
+    const editRequestPayload = selectedAdapterProvider
+      ? {
+        ...(pendingRequestData.toObject
+          ? pendingRequestData.toObject()
+          : pendingRequestData),
+        adapterProvider: selectedAdapterProvider,
+        adapterProviderOverride: selectedAdapterProvider,
+        deferAdapterFailureFinalization: true,
+      }
+      : pendingRequestData;
+    const editedImageData = await getEditImageFromText(editRequestPayload);
 
+    if (!editedImageData) {
+      const latestRequest = await ImageGeneration.findById(requestId).lean();
+      const providerMarkedFailed =
+        latestRequest?.editStatus === 'FAILED' ||
+        latestRequest?.apiEditStatus === 'FAILED';
+      if (providerMarkedFailed) {
+        await scheduleImageEditAdapterRetry(
+          editRequestPayload,
+          latestRequest?.errorMessage || latestRequest?.editError || 'Image edit adapter failed',
+          {
+            rotateAdapter:
+              normalizeString(pendingRequestData?.apiEditStatus).toUpperCase() !== 'PENDING',
+          },
+        );
+      }
+      return;
+    }
 
     if (editedImageData && editedImageData.image) {
       // Standalone API edits (no session/layer) should bypass video session updates
@@ -3900,6 +4228,16 @@ async function processEditRequest(pendingRequestData) {
         await markEditImageAsCompleted(genRowValue, editedImageData);
       }
     } else if (editedImageData && editedImageData.error) {
+      const rotateAdapter =
+        normalizeString(pendingRequestData?.apiEditStatus).toUpperCase() !== 'PENDING' ||
+        editedImageData.definitiveAdapterFailure === true;
+      if (await scheduleImageEditAdapterRetry(
+        editRequestPayload,
+        editedImageData.error,
+        { rotateAdapter },
+      )) {
+        return;
+      }
       // If edit returned no image, handle similar retry logic if needed
       // (or finalize as your use case demands)
       if (genRowValue.isBatchGeneration) {
@@ -3954,6 +4292,16 @@ async function processEditRequest(pendingRequestData) {
       }
     }
   } catch (e) {
+    if (await scheduleImageEditAdapterRetry(
+      pendingRequestData,
+      e?.message || 'Image edit adapter failed',
+      {
+        rotateAdapter:
+          normalizeString(pendingRequestData?.apiEditStatus).toUpperCase() !== 'PENDING',
+      },
+    )) {
+      return;
+    }
     console.error(e);
   }
 }
@@ -4321,6 +4669,12 @@ export const __testOnly__ = {
   isSafetyRejectionMessage,
   getImageGenerationRetryDelayMs,
   getImageGenerationNextAttemptAfter,
+  getPinnedImageAdapterProvider,
+  getImageGenerationAdapterRetryState,
+  getPinnedImageEditAdapterProvider,
+  getImageEditAdapterRetryState,
+  resolveImageEditProviderForModel,
+  resolveImageProviderForModel,
   shouldRetryUnhandledGenerationTask,
   getImageFilterScoreCutoff,
   getScoreThresholdCutoff,

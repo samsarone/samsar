@@ -19,8 +19,10 @@ import { createAlibabaQwenChatCompletion } from './AlibabaQwen.js';
 import { createKimiK3ChatCompletion } from './KimiK3.js';
 import { recordProviderUsageLog } from './ProviderUsageAudit.js';
 import {
+  DOCKER_INFERENCE_PROVIDER,
   createSamsarExternalChatCompletion,
-  resolveConfiguredInferenceProvider,
+  runInferenceWithConfiguredAdapters,
+  shouldUseOpenRouterInference,
   shouldUseSamsarExternalInference,
 } from './SamsarExternalInferenceAdapter.js';
 import { normalizeProviderMediaUrl } from '../AWS.js';
@@ -394,6 +396,132 @@ export async function getAccentForText(text, auditContext = {}) {
   }
 }
 
+function isExternalInferenceProvider(provider) {
+  return provider === DOCKER_INFERENCE_PROVIDER.OPENROUTER ||
+    provider === DOCKER_INFERENCE_PROVIDER.SAMSAR;
+}
+
+function resolveExternalInferenceProvider(request, provider = '') {
+  if (isExternalInferenceProvider(provider)) {
+    return provider;
+  }
+  return shouldUseOpenRouterInference(request)
+    ? DOCKER_INFERENCE_PROVIDER.OPENROUTER
+    : DOCKER_INFERENCE_PROVIDER.SAMSAR;
+}
+
+async function dispatchAssistantMessageRequest(request, provider = '') {
+  const modelName = getModelNameForInferenceModel(request?.model);
+  const messageList = Array.isArray(request?.messages) ? request.messages : [];
+
+  if (
+    isExternalInferenceProvider(provider) ||
+    (!provider && shouldUseSamsarExternalInference(request))
+  ) {
+    const response = await createSamsarExternalChatCompletion(request);
+    return {
+      response,
+      message: response.choices[0].message,
+      provider: resolveExternalInferenceProvider(request, provider),
+      auditModelName: modelName,
+    };
+  }
+
+  if (isGeminiInferenceModel(modelName)) {
+    const response = await createGoogleGeminiChatCompletion(messageList);
+    return {
+      response,
+      message: response,
+      provider: DOCKER_INFERENCE_PROVIDER.GOOGLE_CLOUD,
+      auditModelName: modelName,
+    };
+  }
+
+  if (isQwenInferenceModel(modelName)) {
+    const response = await createAlibabaQwenChatCompletion(request);
+    return {
+      response,
+      message: response.choices[0].message,
+      provider: DOCKER_INFERENCE_PROVIDER.ALIBABA_CLOUD,
+      auditModelName: response?.model || modelName,
+    };
+  }
+
+  if (isKimiInferenceModel(modelName)) {
+    const response = await createKimiK3ChatCompletion(request);
+    return {
+      response,
+      message: response.choices[0].message,
+      provider: DOCKER_INFERENCE_PROVIDER.KIMI,
+      auditModelName: modelName,
+    };
+  }
+
+  if (RESPONSES_ONLY_MODELS.has(modelName)) {
+    const providerPayload = await normalizeProviderMediaPayload(
+      { messages: messageList },
+      normalizeProviderMediaUrl,
+    );
+    const response = await getOpenAIClient().post('/responses', {
+      body: {
+        model: modelName,
+        input: normalizeMessagesForResponses(providerPayload.messages),
+        reasoning: { effort: GPT_56_SOL_REASONING_EFFORT },
+      },
+      maxRetries: 0,
+    });
+    return {
+      response,
+      message: {
+        role: 'assistant',
+        content: extractResponsesOutputText(response),
+      },
+      provider: DOCKER_INFERENCE_PROVIDER.OPENAI,
+      auditModelName: modelName,
+    };
+  }
+
+  const nativePayload = await normalizeProviderMediaPayload({
+    messages: messageList,
+    model: modelName,
+  }, normalizeProviderMediaUrl);
+  const response = await getOpenAIClient().chat.completions.create(nativePayload, {
+    maxRetries: 0,
+  });
+  return {
+    response,
+    message: response.choices[0].message,
+    provider: DOCKER_INFERENCE_PROVIDER.OPENAI,
+    auditModelName: modelName,
+  };
+}
+
+async function dispatchStructuredMessageRequest(request, provider = '') {
+  if (
+    isExternalInferenceProvider(provider) ||
+    (!provider && shouldUseSamsarExternalInference(request))
+  ) {
+    return createSamsarExternalChatCompletion(request);
+  }
+  if (isQwenInferenceModel(request?.model)) {
+    return createAlibabaQwenChatCompletion(request);
+  }
+  if (isKimiInferenceModel(request?.model)) {
+    return createKimiK3ChatCompletion(request);
+  }
+
+  const {
+    authorization: _authorization,
+    bypassSamsarExternalInference: _bypassSamsarExternalInference,
+    samsarExternalInference: _samsarExternalInference,
+    ...nativePayload
+  } = request || {};
+  return getOpenAIClient().chat.completions.create(
+    await normalizeProviderMediaPayload(nativePayload, normalizeProviderMediaUrl),
+    { maxRetries: 0 },
+  );
+}
+
 export async function sendAssistantMessageRequest(messageList, userInferenceModel = 'gpt-5.6-sol', auditContext = {}) {
 
 
@@ -412,98 +540,25 @@ export async function sendAssistantMessageRequest(messageList, userInferenceMode
         : {}),
     };
 
-    if (shouldUseSamsarExternalInference(basePayload)) {
-      const response = await createSamsarExternalChatCompletion(basePayload);
-      await recordInferenceProviderUsage({
-        messageList,
-        modelName,
-        provider: resolveConfiguredInferenceProvider(modelName) || 'samsar',
-        response,
-        auditContext,
-      });
-      return response.choices[0].message;
-    }
-
-    if (isGeminiInferenceModel(modelName)) {
-      const response = await createGoogleGeminiChatCompletion(messageList);
-      await recordInferenceProviderUsage({
-        messageList,
-        modelName,
-        provider: 'googleCloud',
-        response,
-        auditContext,
-      });
-      return response;
-    }
-
-    if (isQwenInferenceModel(modelName)) {
-      const response = await createAlibabaQwenChatCompletion(basePayload);
-      await recordInferenceProviderUsage({
-        messageList,
-        modelName: response?.model || modelName,
-        provider: 'alibabaCloud',
-        response,
-        auditContext,
-      });
-      return response.choices[0].message;
-    }
-
-    if (isKimiInferenceModel(modelName)) {
-      const response = await createKimiK3ChatCompletion(basePayload);
-      await recordInferenceProviderUsage({
-        messageList,
-        modelName,
-        provider: 'kimi',
-        response,
-        auditContext,
-      });
-      return response.choices[0].message;
-    }
-
-    if (RESPONSES_ONLY_MODELS.has(modelName)) {
-      const providerPayload = await normalizeProviderMediaPayload(
-        { messages: messageList },
-        normalizeProviderMediaUrl,
-      );
-      const response = await getOpenAIClient().post('/responses', {
-        body: {
-          model: modelName,
-          input: normalizeMessagesForResponses(providerPayload.messages),
-          reasoning: { effort: GPT_56_SOL_REASONING_EFFORT },
-        },
-        maxRetries: 0,
-      });
-      await recordInferenceProviderUsage({
-        messageList,
-        modelName,
-        provider: 'openai',
-        response,
-        auditContext,
-      });
-      return {
-        role: 'assistant',
-        content: extractResponsesOutputText(response),
-      };
-    }
-
-    const nativePayload = await normalizeProviderMediaPayload({
-      messages: messageList,
-      model: modelName,
-    }, normalizeProviderMediaUrl);
-    const response = await getOpenAIClient().chat.completions.create(nativePayload, {
-      maxRetries: 0,
-    });
+    const result = await runInferenceWithConfiguredAdapters(
+      basePayload,
+      (provider, request) => dispatchAssistantMessageRequest(request, provider),
+    );
     await recordInferenceProviderUsage({
       messageList,
-      modelName,
-      provider: 'openai',
-      response,
+      modelName: result.auditModelName || modelName,
+      provider: result.provider,
+      response: result.response,
       auditContext,
     });
-    return response.choices[0].message;
+    return result.message;
   } catch (error) {
     let errorString = 'An error occurred while sending the message. Please try again with a different message.'
-    throw new Error(errorString);
+    const wrappedError = new Error(errorString, { cause: error });
+    if (Array.isArray(error?.attemptedInferenceAdapters)) {
+      wrappedError.attemptedInferenceAdapters = error.attemptedInferenceAdapters;
+    }
+    throw wrappedError;
   }
 
 }
@@ -537,20 +592,10 @@ export async function sendAssistantStructuredMessageRequest(
         ? { authorization: selectedInferenceModelAuthorization }
         : {}),
     };
-    const { authorization: _authorization, ...nativePayload } = payload;
-    let response;
-    if (shouldUseSamsarExternalInference(payload)) {
-      response = await createSamsarExternalChatCompletion(payload);
-    } else if (isQwenInferenceModel(payload.model)) {
-      response = await createAlibabaQwenChatCompletion(payload);
-    } else if (isKimiInferenceModel(payload.model)) {
-      response = await createKimiK3ChatCompletion(payload);
-    } else {
-      response = await getOpenAIClient().chat.completions.create(
-        await normalizeProviderMediaPayload(nativePayload, normalizeProviderMediaUrl),
-        { maxRetries: 0 },
-      );
-    }
+    const response = await runInferenceWithConfiguredAdapters(
+      payload,
+      (provider, request) => dispatchStructuredMessageRequest(request, provider),
+    );
     const messageContent = response.choices[0].message.content;
 
     const parsedMessage = JSON.parse(messageContent);

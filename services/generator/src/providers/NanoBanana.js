@@ -19,8 +19,7 @@ export async function handleNanoBananaFalRequest(payload) {
   const { apiGenerationStatus } = payload;
 
   if (apiGenerationStatus === "INIT") {
-    await submitNanoBananaFalRequest(payload);
-    return null;
+    return await submitNanoBananaFalRequest(payload);
   } else if (apiGenerationStatus === "PENDING") {
     const imageData = await pollNanoBananaFalRequest(payload);
     return imageData;
@@ -57,20 +56,22 @@ export async function submitNanoBananaFalRequest(payload) {
       {
         apiRequestId: requestId,
         apiGenerationStatus: "PENDING",
+        apiSubmittedAt: new Date(),
+        externalProvider: "fal",
         rowLocked: false,
       }
     );
+    return null;
   } catch (error) {
     console.error("Error submitting request to FAL: ", error);
+    const message = error?.message || "Unable to submit Nano Banana request to FAL.";
     await ImageGeneration.findOneAndUpdate(
       { _id },
       {
-        generationStatus: "FAILED",
-        apiGenerationStatus: "FAILED",
         rowLocked: false,
       }
     );
-    return { image: null };
+    return { image: null, error: message };
   }
 }
 
@@ -89,21 +90,27 @@ export async function pollNanoBananaFalRequest(payload) {
     });
   } catch (error) {
     console.error("Error getting result from FAL: ", error);
+    // A polling transport error does not prove that the submitted provider
+    // request failed. Keep it pinned so the next pass resumes the same request.
     await ImageGeneration.findOneAndUpdate(
       { _id },
       {
-        generationStatus: "FAILED",
-        apiGenerationStatus: "FAILED",
         rowLocked: false,
       }
     );
-    return { image: null };
+    return null;
   }
 
 
 
   const responseStatus = responseStatusData.status;
 
+
+  if (responseStatus === "FAILED" || responseStatus === "CANCELLED" || responseStatus === "CANCELED") {
+    const message = `FAL Nano Banana request ${responseStatus.toLowerCase()}.`;
+    await ImageGeneration.findOneAndUpdate({ _id }, { rowLocked: false });
+    return { image: null, error: message };
+  }
 
   if (responseStatus === "COMPLETED") {
       try {
@@ -126,12 +133,13 @@ export async function pollNanoBananaFalRequest(payload) {
       await ImageGeneration.findOneAndUpdate(
         { _id },
         {
-          generationStatus: "FAILED",
-          apiGenerationStatus: "FAILED",
           rowLocked: false,
         }
       );
-      return { image: null };
+      return {
+        image: null,
+        error: error?.message || "FAL Nano Banana result could not be downloaded.",
+      };
     }
   } else {
     await ImageGeneration.findOneAndUpdate({ _id }, { rowLocked: false });
