@@ -3,7 +3,16 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const DEFAULT_ASSETS_V2_ROOT = '/assets_v2';
-const DEFAULT_MIN_AGE_HOURS = 4;
+const DEFAULT_MIN_AGE_HOURS = 24;
+
+const VIDEO_FILE_EXTENSIONS = new Set([
+  '.avi',
+  '.m4v',
+  '.mkv',
+  '.mov',
+  '.mp4',
+  '.webm',
+]);
 
 const MEDIA_FILE_EXTENSIONS = new Set([
   '.aac',
@@ -52,6 +61,11 @@ export const CLEANUP_TARGETS = Object.freeze([
     mode: 'session-directories',
   },
   {
+    id: 'final-video-renders',
+    relativePath: 'video/output',
+    mode: 'old-video-files',
+  },
+  {
     id: 'ai-video-temp-renders',
     relativePath: 'ai_video/temp',
     mode: 'old-media-files',
@@ -66,7 +80,6 @@ const PROTECTED_PREFIXES = Object.freeze([
   'temp',
   'user_resources',
   'video/audio',
-  'video/output',
   'video/outro',
   'video/narrator_avatar/video',
 ]);
@@ -180,6 +193,10 @@ function resolveTargets(rawTargets) {
 
 function isMediaFile(filePath) {
   return MEDIA_FILE_EXTENSIONS.has(path.extname(filePath).toLowerCase());
+}
+
+function isVideoFile(filePath) {
+  return VIDEO_FILE_EXTENSIONS.has(path.extname(filePath).toLowerCase());
 }
 
 function createCounters() {
@@ -327,7 +344,7 @@ async function cleanupSessionDirectories(targetRoot, cutoffTimeMs, counters, dry
   }
 }
 
-async function cleanupOldMediaFiles(directoryPath, rootPath, cutoffTimeMs, counters, dryRun) {
+async function cleanupOldFiles(directoryPath, rootPath, cutoffTimeMs, counters, dryRun, isEligibleFile) {
   let entries;
   try {
     entries = await fs.readdir(directoryPath, { withFileTypes: true });
@@ -347,12 +364,12 @@ async function cleanupOldMediaFiles(directoryPath, rootPath, cutoffTimeMs, count
     }
 
     if (entry.isDirectory()) {
-      await cleanupOldMediaFiles(entryPath, rootPath, cutoffTimeMs, counters, dryRun);
+      await cleanupOldFiles(entryPath, rootPath, cutoffTimeMs, counters, dryRun, isEligibleFile);
       await removeEmptyDirectoryIfPossible(entryPath, rootPath);
       continue;
     }
 
-    if (!entry.isFile() || !isMediaFile(entryPath)) {
+    if (!entry.isFile() || !isEligibleFile(entryPath)) {
       continue;
     }
 
@@ -414,7 +431,12 @@ export async function cleanupAssetsV2(options = {}) {
     }
 
     if (target.mode === 'old-media-files') {
-      await cleanupOldMediaFiles(targetRoot, targetRoot, cutoffTimeMs, counters, dryRun);
+      await cleanupOldFiles(targetRoot, targetRoot, cutoffTimeMs, counters, dryRun, isMediaFile);
+      continue;
+    }
+
+    if (target.mode === 'old-video-files') {
+      await cleanupOldFiles(targetRoot, targetRoot, cutoffTimeMs, counters, dryRun, isVideoFile);
       continue;
     }
 

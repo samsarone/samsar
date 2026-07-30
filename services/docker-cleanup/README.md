@@ -8,14 +8,17 @@ The cleanup is intentionally scoped to transient frame/cache paths:
 - `ai_video/frames/<sessionId>`
 - `video/narrator_avatar/frames/<sessionId>`
 - `video/narrator_avatar/joined_frames/<sessionId>`
+- final video files under `video/output`
 - old media files in `ai_video/temp`
 
-It does not clean final renders, API generated resources, generated music, user resources, outro assets, or AI video generation outputs.
+It does not clean API generated resources, generated music, user resources,
+outro assets, or AI video generation outputs such as
+`ai_video/generations`.
 
 ## Environment
 
 - `SAMSAR_ASSETS_V2_ROOT`: defaults to `/assets_v2`
-- `CLEANUP_MIN_AGE_HOURS`: defaults to `4`
+- `CLEANUP_MIN_AGE_HOURS`: defaults to `24`
 - `CLEANUP_CRON_SCHEDULE`: defaults to `17 */3 * * *` (every three hours)
 - `CLEANUP_ON_START`: defaults to `true`
 - `CLEANUP_DRY_RUN`: defaults to `false`
@@ -34,6 +37,6 @@ npm test
 ```
 
 Cleanup is age-based rather than render-triggered. A render can therefore
-reuse its intermediate frames for at least four hours; the next three-hour
+reuse its intermediate frames for at least 24 hours; the next three-hour
 sweep removes an eligible session directory only when its newest file is
 older than that grace period.

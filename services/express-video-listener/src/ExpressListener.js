@@ -83,7 +83,11 @@ function isStepStageBeforeCurrent(stepStageKey, currentStep) {
   return stepStageIndex >= 0 && currentStepIndex >= 0 && stepStageIndex < currentStepIndex;
 }
 
-async function completeExpressStageForBillingAndStep(sessionId, stageKey) {
+async function completeExpressStageForBillingAndStep(
+  sessionId,
+  stageKey,
+  { skipBilling = false } = {},
+) {
   const normalizedStageKey = normalizeStepStage(stageKey);
   const stepStageKey = getStepStageForBillingStage(normalizedStageKey);
   const stepSession = await VideoSession.findById(sessionId)
@@ -118,7 +122,9 @@ async function completeExpressStageForBillingAndStep(sessionId, stageKey) {
     }
   }
 
-  const chargeResult = await chargeExpressVideoStageCredits({ sessionId, stageKey: normalizedStageKey });
+  const chargeResult = skipBilling
+    ? { ok: true, skipped: true }
+    : await chargeExpressVideoStageCredits({ sessionId, stageKey: normalizedStageKey });
   if (chargeResult?.ok) {
     if (isStepSession) {
       const stepResult = await pauseExpressStepAfterCompletedStage(sessionId, stepStageKey);
@@ -723,23 +729,21 @@ async function markLipSyncGenerationStageFailed(
   await processSessionCompletionFailure(sessionId);
 }
 
-async function markSoundEffectGenerationStageFailed(
+async function skipSoundEffectGenerationStage(
   sessionId,
   currentGenerationStatus = {},
-  failedAssessment = {},
+  fallbackAssessment = {},
 ) {
-  const failureMessage = getSoundEffectFailureMessage(failedAssessment);
-  const now = new Date();
-  const failedStatus = {
+  const failureMessage = getSoundEffectFailureMessage(fallbackAssessment);
+  const completedStatus = {
     ...(currentGenerationStatus || {}),
-    sound_effect_generation: 'FAILED',
-    status: 'FAILED',
+    sound_effect_generation: 'COMPLETED',
   };
 
-  console.error('[sound_effect][stage_failed] required layer has no completed sound-effect output', {
+  console.warn('[sound_effect][stage_skipped] using base AI video after optional sound-effect failure', {
     sessionId,
-    layerId: failedAssessment?.layerId || null,
-    layerStatus: failedAssessment?.status || null,
+    layerId: fallbackAssessment?.layerId || null,
+    layerStatus: fallbackAssessment?.status || null,
     error: failureMessage,
   });
 
@@ -747,32 +751,15 @@ async function markSoundEffectGenerationStageFailed(
     { _id: sessionId },
     {
       $set: {
-        expressGenerationStatus: failedStatus,
+        expressGenerationStatus: completedStatus,
         soundEffectGenerationPending: false,
-        expressGenerationPending: false,
-        expressGenerationFailed: true,
-        expressGenerationError: failureMessage,
+        soundEffectGenerationSkipped: true,
+        soundEffectGenerationSkippedAt: new Date(),
+        soundEffectGenerationSkipReason: failureMessage,
         lastSoundEffectGenerationError: failureMessage,
-        'expressStepGeneration.status': 'FAILED',
-        'expressStepGeneration.currentStep': 'sound_effect_generation',
-        'expressStepGeneration.current_step': 'sound_effect_generation',
-        'expressStepGeneration.currentStepLabel': 'Sound effect',
-        'expressStepGeneration.current_step_label': 'Sound effect',
-        'expressStepGeneration.error': failureMessage,
-        'expressStepGeneration.waiting': false,
-        'expressStepGeneration.waitingForProcessNext': false,
-        'expressStepGeneration.waiting_for_process_next': false,
-        'expressStepGeneration.requiresUserAction': false,
-        'expressStepGeneration.requires_user_action': false,
-        'expressStepGeneration.canProcessNext': false,
-        'expressStepGeneration.can_process_next': false,
-        'expressStepGeneration.updatedAt': now,
-        'expressStepGeneration.updated_at': now,
       },
     },
   );
-
-  await processSessionCompletionFailure(sessionId);
 }
 
 function buildCancelledExpressGenerationStatus(rawStatus) {
@@ -1435,7 +1422,7 @@ async function checkVideoRenderStatus(session) {
     }
 
     const soundEffectSessionData = await VideoSession.findById(sessionId)
-      .select('layers expressGenerationStatus')
+      .select('layers expressGenerationStatus soundEffectGenerationSkipped')
       .lean();
     if (!soundEffectSessionData) {
       return;
@@ -1445,15 +1432,7 @@ async function checkVideoRenderStatus(session) {
     let soundEffectGenerationStatus = normalizeStatusValue(
       currentGenerationStatus.sound_effect_generation,
     ) || 'INIT';
-
-    if (soundEffectAssessment.failed[0]) {
-      await markSoundEffectGenerationStageFailed(
-        sessionId,
-        currentGenerationStatus,
-        soundEffectAssessment.failed[0],
-      );
-      return;
-    }
+    let soundEffectStageSkipped = Boolean(soundEffectSessionData.soundEffectGenerationSkipped);
 
     if (soundEffectGenerationStatus === 'INIT') {
       if (['NOT_REQUIRED', 'COMPLETED'].includes(soundEffectAssessment.state)) {
@@ -1468,8 +1447,15 @@ async function checkVideoRenderStatus(session) {
       } else {
         currentGenerationStatus.sound_effect_generation = 'PENDING';
         await VideoSession.updateOne({ _id: sessionId }, {
-          expressGenerationStatus: currentGenerationStatus,
-          soundEffectGenerationPending: true,
+          $set: {
+            expressGenerationStatus: currentGenerationStatus,
+            soundEffectGenerationPending: true,
+            soundEffectGenerationSkipped: false,
+          },
+          $unset: {
+            soundEffectGenerationSkippedAt: '',
+            soundEffectGenerationSkipReason: '',
+          },
         }, { new: true });
 
         await generateSoundEffectsForSession(latestSessionId);
@@ -1485,32 +1471,55 @@ async function checkVideoRenderStatus(session) {
             soundEffectGenerationPending: false,
           },
         }, { new: true });
-      } else if (soundEffectAssessment.state === 'INCOMPLETE') {
-        await markSoundEffectGenerationStageFailed(
+      } else if (soundEffectAssessment.state === 'FALLBACK') {
+        await skipSoundEffectGenerationStage(
           sessionId,
           currentGenerationStatus,
-          soundEffectAssessment.incomplete[0],
+          soundEffectAssessment.skipped[0]
+            || soundEffectAssessment.incomplete[0]
+            || soundEffectAssessment.failed[0],
         );
-        return;
+        soundEffectGenerationStatus = 'COMPLETED';
+        currentGenerationStatus.sound_effect_generation = soundEffectGenerationStatus;
+        soundEffectStageSkipped = true;
       } else {
         return;
       }
+    } else if (soundEffectGenerationStatus === 'FAILED') {
+      await skipSoundEffectGenerationStage(
+        sessionId,
+        currentGenerationStatus,
+        soundEffectAssessment.skipped[0]
+          || soundEffectAssessment.failed[0]
+          || soundEffectAssessment.incomplete[0],
+      );
+      soundEffectGenerationStatus = 'COMPLETED';
+      currentGenerationStatus.sound_effect_generation = soundEffectGenerationStatus;
+      soundEffectStageSkipped = true;
     } else if (
       soundEffectGenerationStatus === 'COMPLETED'
       && !['NOT_REQUIRED', 'COMPLETED'].includes(soundEffectAssessment.state)
     ) {
-      await markSoundEffectGenerationStageFailed(
-        sessionId,
-        currentGenerationStatus,
-        soundEffectAssessment.incomplete[0] || soundEffectAssessment.pending[0],
-      );
-      return;
+      if (soundEffectAssessment.state === 'PENDING') {
+        return;
+      }
+      if (!soundEffectStageSkipped) {
+        await skipSoundEffectGenerationStage(
+          sessionId,
+          currentGenerationStatus,
+          soundEffectAssessment.skipped[0]
+            || soundEffectAssessment.incomplete[0]
+            || soundEffectAssessment.failed[0],
+        );
+        soundEffectStageSkipped = true;
+      }
     }
 
     if (soundEffectGenerationStatus === 'COMPLETED') {
       const soundEffectStageResult = await completeExpressStageForBillingAndStep(
         sessionId,
         EXPRESS_VIDEO_BILLING_STAGES.SOUND_EFFECT_GENERATION,
+        { skipBilling: soundEffectStageSkipped },
       );
       if (!soundEffectStageResult.ok || soundEffectStageResult.paused) {
         return;

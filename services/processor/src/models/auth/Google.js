@@ -15,6 +15,7 @@ const API_SERVER = process.env.API_SERVER;
 const CLIENT_APP = process.env.CLIENT_APP;
 
 const CALLBACK_URL = `${API_SERVER}/users/google_login_callback`;
+export const GOOGLE_ADMIN_ACCESS_DENIED = 'GOOGLE_ADMIN_ACCESS_DENIED';
 
 const oauth2Client = new google.auth.OAuth2(
   CLIENT_ID,
@@ -38,6 +39,7 @@ export async function getGoogleLogin(params = {}) {
   // You can store more fields if needed.
   const payload = typeof params === 'string' ? { origin: params } : params;
   const {
+    adminLogin,
     origin,
     cookieConsent,
     redirect,
@@ -45,6 +47,9 @@ export async function getGoogleLogin(params = {}) {
     subscribeToWeeklyNewsletter,
   } = payload || {};
   const stateData = { origin };
+  if (adminLogin === true || adminLogin === 'true') {
+    stateData.adminLogin = true;
+  }
   if (cookieConsent) {
     stateData.cookieConsent = cookieConsent;
   }
@@ -67,10 +72,23 @@ export async function getGoogleLogin(params = {}) {
   return url;
 }
 
+export function requireGoogleAdminAccess(user, adminLogin = false) {
+  if (!adminLogin) {
+    return;
+  }
+
+  if (!user || user.isAdminUser !== true) {
+    const error = new Error('This Google account does not have administrator privileges.');
+    error.code = GOOGLE_ADMIN_ACCESS_DENIED;
+    error.status = 403;
+    error.statusCode = 403;
+    throw error;
+  }
+}
 
 
 export async function loginGoogleClient(query) {
-  const { code } = query;
+  const { code, adminLogin = false } = query;
   const subscribeToWeeklyNewsletter = normalizeNewsletterPreference(
     query?.subscribeToWeeklyNewsletter ?? query?.subscribeToNewsletter,
     false
@@ -97,6 +115,8 @@ export async function loginGoogleClient(query) {
   const sanitizedEmail = userData.email?.trim().toLowerCase();
 
   let userExists = await User.findOne({ email: sanitizedEmail });
+  requireGoogleAdminAccess(userExists, adminLogin === true);
+
   let userResponse;
   const isNewUser = !userExists;
 

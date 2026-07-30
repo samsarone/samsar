@@ -56,9 +56,11 @@ export function assessSoundEffectStage(layers = []) {
       const hasOutput = hasSoundEffectOutput(layer);
       let state = 'INCOMPLETE';
       if (status === 'FAILED') {
-        state = 'FAILED';
+        state = 'SKIPPED';
       } else if (status === 'COMPLETED' && hasOutput) {
         state = 'COMPLETED';
+      } else if (status === 'COMPLETED') {
+        state = 'SKIPPED';
       } else if (layer?.soundEffectGenerationPending || status === 'PENDING') {
         state = 'PENDING';
       }
@@ -72,22 +74,31 @@ export function assessSoundEffectStage(layers = []) {
       };
     });
 
-  const failed = assessments.filter((assessment) => assessment.state === 'FAILED');
+  const failed = assessments.filter((assessment) => assessment.status === 'FAILED');
+  const skipped = assessments.filter((assessment) => assessment.state === 'SKIPPED');
   const incomplete = assessments.filter((assessment) => assessment.state === 'INCOMPLETE');
   const pending = assessments.filter((assessment) => assessment.state === 'PENDING');
   const completed = assessments.filter((assessment) => assessment.state === 'COMPLETED');
   let state = 'NOT_REQUIRED';
-  if (failed.length) {
-    state = 'FAILED';
-  } else if (incomplete.length) {
-    state = 'INCOMPLETE';
-  } else if (pending.length) {
+  if (pending.length) {
     state = 'PENDING';
+  } else if (skipped.length || incomplete.length) {
+    // Sound effects are optional. Once no requests remain pending, any
+    // terminal/missing output falls back to the already generated base video.
+    state = 'FALLBACK';
   } else if (assessments.length && completed.length === assessments.length) {
     state = 'COMPLETED';
   }
 
-  return { state, required: assessments, failed, incomplete, pending, completed };
+  return {
+    state,
+    required: assessments,
+    failed,
+    skipped,
+    incomplete,
+    pending,
+    completed,
+  };
 }
 
 export function getSoundEffectFailureMessage(assessment = {}) {

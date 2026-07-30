@@ -34,7 +34,11 @@ import {
 } from '../models/AutoRecharge.js';
 import { getBillingPortalUrl } from '../models/BillingPortal.js';
 
-import { getGoogleLogin, loginGoogleClient } from '../models/auth/Google.js';
+import {
+  GOOGLE_ADMIN_ACCESS_DENIED,
+  getGoogleLogin,
+  loginGoogleClient,
+} from '../models/auth/Google.js';
 import { sendEnterpriseAdminWelcomeEmail } from '../models/Mailer.js';
 import User from '../schema/User.js';
 import {
@@ -178,6 +182,8 @@ function decodeGoogleOAuthState(state) {
 }
 
 router.get('/google_login_callback', async (req, res) => {
+  let decodedState = null;
+
   try {
     if (!isGoogleLoginEnabled()) {
       return res.status(403).send({ error: 'Google login is disabled for standalone deployments. Use the configured admin account.' });
@@ -187,7 +193,6 @@ router.get('/google_login_callback', async (req, res) => {
     let originDomain = defaultOriginDomain;
     let cookieConsent = null;
     let redirectPath = null;
-    let decodedState = null;
 
     try {
       decodedState = decodeGoogleOAuthState(state);
@@ -198,6 +203,7 @@ router.get('/google_login_callback', async (req, res) => {
 
     const { authToken, isNewUser } = await loginGoogleClient({
       code,
+      adminLogin: decodedState?.adminLogin === true,
       subscribeToWeeklyNewsletter: decodedState?.subscribeToWeeklyNewsletter,
     });
 
@@ -224,8 +230,27 @@ router.get('/google_login_callback', async (req, res) => {
 
     res.redirect(`${originDomain}/verify?authToken=${authToken}${safeRedirect}${newUserParam}`);
   } catch (e) {
+    if (
+      decodedState?.adminLogin === true &&
+      e?.code === GOOGLE_ADMIN_ACCESS_DENIED &&
+      typeof decodedState?.origin === 'string'
+    ) {
+      try {
+        const errorRedirect = new URL(decodedState.origin);
+        if (errorRedirect.protocol === 'https:' || errorRedirect.protocol === 'http:') {
+          errorRedirect.pathname = '/';
+          errorRedirect.search = '?googleLoginError=admin_access_denied';
+          errorRedirect.hash = '';
+          res.redirect(errorRedirect.toString());
+          return;
+        }
+      } catch (_) {
+        // Fall through to the JSON error response when the requested origin is invalid.
+      }
+    }
+
     console.error('Google login failed', e);
-    res.status(500).send({ error: e?.message || 'Google login failed' });
+    res.status(e?.statusCode || e?.status || 500).send({ error: e?.message || 'Google login failed' });
   }
 });
 

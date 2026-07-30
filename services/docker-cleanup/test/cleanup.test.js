@@ -36,8 +36,8 @@ test('cleanup removes stale frame transformations and preserves protected assets
   const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'samsar-cleanup-'));
   const assetsV2Root = path.join(tempRoot, 'assets_v2');
   const nowMs = Date.parse('2026-07-06T00:00:00.000Z');
-  const oldMs = nowMs - 5 * 60 * 60 * 1000;
-  const recentMs = nowMs - 3 * 60 * 60 * 1000;
+  const oldMs = nowMs - 25 * 60 * 60 * 1000;
+  const recentMs = nowMs - 23 * 60 * 60 * 1000;
 
   await writeFileWithAge(path.join(assetsV2Root, 'video/frames/old-session/layer-a/0.png'), 'old frame', oldMs);
   await setTreeMtime(path.join(assetsV2Root, 'video/frames/old-session'), oldMs);
@@ -52,12 +52,15 @@ test('cleanup removes stale frame transformations and preserves protected assets
   await writeFileWithAge(path.join(assetsV2Root, 'video/frames/recent-session/layer-a/0.png'), 'recent frame', recentMs);
   await setTreeMtime(path.join(assetsV2Root, 'video/frames/recent-session'), recentMs);
   await writeFileWithAge(path.join(assetsV2Root, 'video/output/old-session/final.mp4'), 'final render', oldMs);
+  await writeFileWithAge(path.join(assetsV2Root, 'video/output/old-session/manifest.json'), 'keep metadata', oldMs);
+  await writeFileWithAge(path.join(assetsV2Root, 'video/output/recent-session/final.mp4'), 'recent final render', recentMs);
   await writeFileWithAge(path.join(assetsV2Root, 'generations/old-session/generated.png'), 'api generated image', oldMs);
+  await writeFileWithAge(path.join(assetsV2Root, 'ai_video/generations/old-session/generated.mp4'), 'generated ai video', oldMs);
   await writeFileWithAge(path.join(assetsV2Root, 'user_resources/user-1/ai_videos/old-session/video.mp4'), 'returned video', oldMs);
 
   const counters = await cleanupAssetsV2({
     assetsV2Root,
-    minAgeHours: 4,
+    minAgeHours: 24,
     nowMs,
   });
 
@@ -67,12 +70,15 @@ test('cleanup removes stale frame transformations and preserves protected assets
   await assert.rejects(fs.stat(path.join(assetsV2Root, 'ai_video/temp/old-render.png')), { code: 'ENOENT' });
 
   await fs.stat(path.join(assetsV2Root, 'video/frames/recent-session/layer-a/0.png'));
-  await fs.stat(path.join(assetsV2Root, 'video/output/old-session/final.mp4'));
+  await assert.rejects(fs.stat(path.join(assetsV2Root, 'video/output/old-session/final.mp4')), { code: 'ENOENT' });
+  await fs.stat(path.join(assetsV2Root, 'video/output/old-session/manifest.json'));
+  await fs.stat(path.join(assetsV2Root, 'video/output/recent-session/final.mp4'));
   await fs.stat(path.join(assetsV2Root, 'generations/old-session/generated.png'));
+  await fs.stat(path.join(assetsV2Root, 'ai_video/generations/old-session/generated.mp4'));
   await fs.stat(path.join(assetsV2Root, 'user_resources/user-1/ai_videos/old-session/video.mp4'));
 
   assert.equal(counters.deletedDirectories, 3);
-  assert.equal(counters.deletedFiles, 4);
+  assert.equal(counters.deletedFiles, 5);
   assert.equal(counters.errors.length, 0);
 });
 
@@ -83,7 +89,7 @@ test('cleanup refuses unknown target paths', async () => {
   await assert.rejects(
     cleanupAssetsV2({
       assetsV2Root,
-      targets: 'video/output',
+      targets: 'video/audio',
     }),
     /Unsupported CLEANUP_TARGETS entry/,
   );

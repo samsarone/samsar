@@ -16,7 +16,7 @@ function soundEffectLayer(id, overrides = {}) {
   };
 }
 
-test('sound-effect aggregate requires completed output from every tracked layer', () => {
+test('sound-effect aggregate falls back after a terminal layer failure', () => {
   const result = assessSoundEffectStage([
     soundEffectLayer('one', {
       soundEffectGenerationPending: false,
@@ -31,11 +31,12 @@ test('sound-effect aggregate requires completed output from every tracked layer'
     }),
   ]);
 
-  assert.equal(result.state, 'FAILED');
+  assert.equal(result.state, 'FALLBACK');
   assert.equal(result.failed[0].layerId, 'two');
+  assert.equal(result.skipped[0].layerId, 'two');
 });
 
-test('sound-effect aggregate detects failure after layerAiVideoType fallback', () => {
+test('sound-effect aggregate detects fallback after layerAiVideoType changes', () => {
   const result = assessSoundEffectStage([
     soundEffectLayer('fallback', {
       layerAiVideoType: 'ai_video',
@@ -44,7 +45,7 @@ test('sound-effect aggregate detects failure after layerAiVideoType fallback', (
     }),
   ]);
 
-  assert.equal(result.state, 'FAILED');
+  assert.equal(result.state, 'FALLBACK');
   assert.equal(result.required.length, 1);
 });
 
@@ -58,13 +59,32 @@ test('sound-effect aggregate completes only with flag, status, and media link', 
     }),
   ]).state, 'COMPLETED');
 
-  assert.equal(assessSoundEffectStage([
+  const missingOutput = assessSoundEffectStage([
     soundEffectLayer('missing-output', {
       soundEffectGenerationPending: false,
       soundEffectVideoGenerationStatus: 'COMPLETED',
       hasSoundEffectVideoLayer: true,
     }),
-  ]).state, 'INCOMPLETE');
+  ]);
+  assert.equal(missingOutput.state, 'FALLBACK');
+  assert.equal(missingOutput.skipped[0].layerId, 'missing-output');
+});
+
+test('sound-effect aggregate waits for active layers before applying fallback', () => {
+  const result = assessSoundEffectStage([
+    soundEffectLayer('failed', {
+      soundEffectGenerationPending: false,
+      soundEffectVideoGenerationStatus: 'FAILED',
+    }),
+    soundEffectLayer('pending', {
+      soundEffectGenerationPending: true,
+      soundEffectVideoGenerationStatus: 'PENDING',
+    }),
+  ]);
+
+  assert.equal(result.state, 'PENDING');
+  assert.equal(result.failed[0].layerId, 'failed');
+  assert.equal(result.pending[0].layerId, 'pending');
 });
 
 test('remote-only base AI video remains eligible for sound-effect generation', () => {

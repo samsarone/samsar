@@ -279,6 +279,6 @@ test('intermediate cleanup workers run every few hours with a reuse grace period
 
   assert.ok(cleanupBlock);
   assert.match(cleanupBlock, /restart:\s*unless-stopped/);
-  assert.match(cleanupBlock, /CLEANUP_MIN_AGE_HOURS:[^\n]*:-4/);
+  assert.match(cleanupBlock, /CLEANUP_MIN_AGE_HOURS:[^\n]*:-24/);
   assert.match(cleanupBlock, /CLEANUP_CRON_SCHEDULE:[^\n]*17 \*\/3 \* \* \*/);
 });

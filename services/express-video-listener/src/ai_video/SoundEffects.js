@@ -2,7 +2,6 @@ import { getDBConnectionString } from '../DBString.js';
 import AIVideoLayerGeneration from '../schema/AIVideoLayerGeneration.js';
 import VideoSession from '../schema/VideoSession.js';
 import User from '../schema/User.js';
-import { processSessionCompletionFailure } from '../ExpressSessionStateUpdater.js';
 import { getCanonicalAiVideoReference } from './utils/ProviderMediaUrl.js';
 import {
   hasReusableBaseAiVideo,
@@ -62,36 +61,23 @@ async function markSoundEffectLayerFailed(sessionId, layerId, error) {
   );
 }
 
-async function markSoundEffectStageFailed(sessionId, error) {
+async function recordSoundEffectStageFallback(sessionId, error, { completeStage = false } = {}) {
   const message = error?.message || String(error || 'Sound-effect generation failed.');
-  const now = new Date();
+  const setPayload = {
+    soundEffectGenerationSkipped: true,
+    soundEffectGenerationSkippedAt: new Date(),
+    soundEffectGenerationSkipReason: message,
+    lastSoundEffectGenerationError: message,
+  };
+  if (completeStage) {
+    setPayload['expressGenerationStatus.sound_effect_generation'] = 'COMPLETED';
+    setPayload.soundEffectGenerationPending = false;
+  }
+
   await VideoSession.updateOne(
     { _id: sessionId },
     {
-      $set: {
-        'expressGenerationStatus.sound_effect_generation': 'FAILED',
-        'expressGenerationStatus.status': 'FAILED',
-        soundEffectGenerationPending: false,
-        expressGenerationPending: false,
-        expressGenerationFailed: true,
-        expressGenerationError: message,
-        lastSoundEffectGenerationError: message,
-        'expressStepGeneration.status': 'FAILED',
-        'expressStepGeneration.currentStep': 'sound_effect_generation',
-        'expressStepGeneration.current_step': 'sound_effect_generation',
-        'expressStepGeneration.currentStepLabel': 'Sound effect',
-        'expressStepGeneration.current_step_label': 'Sound effect',
-        'expressStepGeneration.error': message,
-        'expressStepGeneration.waiting': false,
-        'expressStepGeneration.waitingForProcessNext': false,
-        'expressStepGeneration.waiting_for_process_next': false,
-        'expressStepGeneration.requiresUserAction': false,
-        'expressStepGeneration.requires_user_action': false,
-        'expressStepGeneration.canProcessNext': false,
-        'expressStepGeneration.can_process_next': false,
-        'expressStepGeneration.updatedAt': now,
-        'expressStepGeneration.updated_at': now,
-      },
+      $set: setPayload,
     },
   );
 }
@@ -115,6 +101,7 @@ export async function generateSoundEffectsForSession(sessionId) {
         && !hasSoundEffectOutput(layer)
       ));
 
+    let firstEnqueueError = null;
     for (const currentLayer of sessionSoundEffectLayers) {
       try {
         await generateSoundEffectsForLayer({
@@ -126,17 +113,25 @@ export async function generateSoundEffectsForSession(sessionId) {
         });
       } catch (error) {
         await markSoundEffectLayerFailed(sessionId, currentLayer._id, error);
-        throw error;
+        firstEnqueueError ||= error;
+        console.warn('[sound_effect][request_enqueue] skipping failed layer and keeping base AI video', {
+          sessionId,
+          layerId: normalizeId(currentLayer._id),
+          error: error?.message || error,
+        });
       }
     }
+
+    if (firstEnqueueError) {
+      await recordSoundEffectStageFallback(sessionId, firstEnqueueError);
+    }
   } catch (error) {
-    console.error('[sound_effect][request_enqueue] failed to create generation request', {
+    console.warn('[sound_effect][request_enqueue] skipping optional stage after setup failure', {
       sessionId,
       error: error?.message || error,
       stack: error?.stack,
     });
-    await markSoundEffectStageFailed(sessionId, error);
-    await processSessionCompletionFailure(sessionId);
+    await recordSoundEffectStageFallback(sessionId, error, { completeStage: true });
   }
 }
 
