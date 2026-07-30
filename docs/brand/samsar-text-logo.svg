@@ -1,22 +1,39 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="360" height="88" viewBox="0 0 360 88" role="img" aria-labelledby="title desc">
+<svg xmlns="http://www.w3.org/2000/svg" width="168" height="60" viewBox="0 0 168 60" role="img" aria-labelledby="title desc">
   <title id="title">Samsar</title>
-  <desc id="desc">Transparent Samsar text logo matching the Studio top navigation style.</desc>
+  <desc id="desc">Samsar text logo matching the landing-site navigation style.</desc>
 
   <defs>
-    <linearGradient id="samsarBlue" x1="0%" y1="0%" x2="100%" y2="0%">
-      <stop offset="0%" stop-color="#46bfff"/>
-      <stop offset="100%" stop-color="#89dcff"/>
+    <linearGradient id="tile" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#32131c"/>
+      <stop offset="48%" stop-color="#11131d"/>
+      <stop offset="100%" stop-color="#0b0f1a"/>
     </linearGradient>
+    <filter id="glow" x="-30%" y="-45%" width="160%" height="190%">
+      <feDropShadow dx="0" dy="5" stdDeviation="7" flood-color="#f87171" flood-opacity=".16"/>
+    </filter>
   </defs>
 
+  <rect
+    x="5"
+    y="5"
+    width="158"
+    height="50"
+    rx="10"
+    fill="url(#tile)"
+    stroke="#f87171"
+    stroke-opacity=".28"
+    filter="url(#glow)"
+  />
+
   <text
-    x="18"
-    y="58"
-    fill="url(#samsarBlue)"
+    x="84"
+    y="38"
+    fill="#ffffff"
     font-family="Inter, Segoe UI, Arial, sans-serif"
-    font-size="44"
+    font-size="20"
     font-weight="900"
-    letter-spacing="7"
+    letter-spacing="2.4"
+    text-anchor="middle"
   >
     SAMSAR
   </text>

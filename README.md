@@ -1,6 +1,6 @@
 <h1 align="center">
   <a href="https://app.samsar.one">
-    <img src="docs/brand/samsar-text-logo.svg" alt="Samsar" width="280">
+    <img src="docs/brand/samsar-text-logo.svg" alt="Samsar" width="168">
   </a>
 </h1>
 
