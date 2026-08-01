@@ -20,6 +20,7 @@ RUN npm ci --omit=dev --include=optional --ignore-scripts --no-audit --no-fund
 COPY --from=builder /app/dist ./dist
 COPY server.mjs ./server.mjs
 COPY openrouterValidation.mjs ./openrouterValidation.mjs
+COPY src/constants/providerEnvironment.js ./src/constants/providerEnvironment.js
 
 ENV SETUP_WIZARD_STATIC_DIR=/app/dist
 EXPOSE 80

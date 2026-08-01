@@ -178,7 +178,7 @@ export default function FrameToolbarHorizontal({
     <div
       className={`${
         colorMode === "dark"
-          ? "bg-[#0f1629] text-slate-100 border border-[#1f2a3d] shadow-[0_14px_36px_rgba(0,0,0,0.32)]"
+          ? "bg-[#181b24] text-slate-100 border border-[#3a4050] shadow-[0_14px_36px_rgba(0,0,0,0.32)]"
           : "bg-white/90 text-slate-800 border border-slate-200 backdrop-blur-sm"
       } w-full overflow-hidden`}
       aria-disabled={isRenderPending}
@@ -202,10 +202,10 @@ export default function FrameToolbarHorizontal({
                   className={`h-[4px] rounded-full ${
                     state.index === 0
                       ? colorMode === "dark"
-                        ? "bg-rose-400/70"
+                        ? "bg-indigo-400/75"
                         : "bg-amber-400/70"
                       : colorMode === "dark"
-                        ? "bg-[#16213a]"
+                        ? "bg-[#292d3a]"
                         : "bg-slate-200"
                   } ${className ?? ""}`}
                   style={style}
@@ -239,7 +239,7 @@ export default function FrameToolbarHorizontal({
               <button
                 className={`absolute left-1 top-1/2 z-10 -translate-y-1/2 rounded-full p-2 transition-colors duration-150 ${
                   colorMode === "dark"
-                    ? "bg-[#111a2f] text-slate-100 border border-[#1f2a3d] hover:bg-[#16213a]"
+                    ? "bg-[#20232e] text-slate-100 border border-[#3a4050] hover:bg-[#292d3a]"
                     : "bg-white text-slate-600 border border-slate-200 hover:bg-slate-50"
                 } ${colorMode === "dark" ? "shadow-sm" : ""}`}
                 onClick={() => scrollByAmount(-1)}
@@ -253,7 +253,7 @@ export default function FrameToolbarHorizontal({
               <button
                 className={`absolute right-1 top-1/2 z-10 -translate-y-1/2 rounded-full p-2 transition-colors duration-150 ${
                   colorMode === "dark"
-                    ? "bg-[#111a2f] text-slate-100 border border-[#1f2a3d] hover:bg-[#16213a]"
+                    ? "bg-[#20232e] text-slate-100 border border-[#3a4050] hover:bg-[#292d3a]"
                     : "bg-white text-slate-600 border border-slate-200 hover:bg-slate-50"
                 } ${colorMode === "dark" ? "shadow-sm" : ""}`}
                 onClick={() => scrollByAmount(1)}
@@ -305,10 +305,10 @@ export default function FrameToolbarHorizontal({
                                   className={`rounded-md border transition-colors duration-150 ${
                                     isSelected
                                       ? colorMode === "dark"
-                                        ? "border-rose-400/60 bg-rose-500/20 shadow-[0_6px_18px_rgba(248,113,113,0.18)]"
+                                        ? "border-[#f6c453]/60 bg-[#f6c453]/16 shadow-[0_6px_20px_rgba(246,196,83,0.18)]"
                                         : "border-amber-300 bg-amber-50"
                                       : colorMode === "dark"
-                                        ? "border-[#1f2a3d] bg-[#111a2f] hover:border-rose-400/30"
+                                        ? "border-[#3a4050] bg-[#20232e] hover:border-[#f6c453]/35"
                                         : "border-slate-200 bg-slate-100 hover:border-slate-300"
                                   } cursor-pointer flex items-center justify-center select-none overflow-hidden box-border`}
                                   style={{

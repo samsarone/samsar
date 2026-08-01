@@ -8,7 +8,7 @@ export default function RouteLoadingScreen({ label = 'Loading...' }) {
     <div
       className={`flex min-h-screen items-center justify-center ${
         isDark
-          ? 'bg-[#0b1021] text-slate-100'
+          ? 'bg-[#0c0d12] text-slate-100'
           : 'bg-[#f7f9fc] text-slate-700'
       }`}
     >

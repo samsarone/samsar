@@ -1,11 +1,10 @@
 import { useEffect } from 'react';
 import axios from 'axios';
-import { FaSpinner } from 'react-icons/fa6';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useMediaQuery } from 'react-responsive';
-import Loader from '../common/Loader';
 import { persistAuthToken } from '../../utils/web';
 import { useUser } from '../../contexts/UserContext.jsx';
+import VidgenieSkeletonLoader from '../oneshot_editor/VidgenieSkeletonLoader.jsx';
 import {
   buildLoginPathForRedirect,
   consumeResolvedAuthRedirect,
@@ -95,23 +94,5 @@ export default function VerificationHome() {
     }
   }, [authToken, getUserAPI, isMobile, isNewUser, location.search, loginToken, navigate, safeRedirect]);
 
-  if (!authToken && !loginToken) {
-    return <FaSpinner className="animate-spin" />;
-  }
-
-  return (
-    <div className='bg-gray-800 h-full absolute w-full'>
-      <div className='m-auto text-center min-w-16 h-full mt-8 text-neutral-100'>
-
-        <div>
-          Verification Completed.
-        </div>
-        <div className='m-auto'>
-          Redirecting to Home 
-          <Loader />
-        </div>
-
-      </div>
-    </div>
-  );
+  return <VidgenieSkeletonLoader />;
 }

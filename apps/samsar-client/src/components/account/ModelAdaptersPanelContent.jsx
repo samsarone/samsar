@@ -13,6 +13,7 @@ import {
   updateModelAdapterPreference,
 } from "../../utils/modelAdapterPreferences.mjs";
 import SecondaryButton from "../common/SecondaryButton.tsx";
+import CustomTextToImageAdaptersEditor from "./CustomTextToImageAdaptersEditor.jsx";
 
 function getErrorMessage(error, fallbackMessage) {
   return (
@@ -31,7 +32,7 @@ function formatUpdatedAt(updatedAt) {
   return Number.isNaN(date.getTime()) ? "" : date.toLocaleString();
 }
 
-export default function ModelAdaptersPanelContent({ enabled = false }) {
+function ProviderAdapterPriorityEditor({ enabled = false }) {
   const { colorMode } = useColorMode();
   const {
     stages: serverStages,
@@ -70,18 +71,18 @@ export default function ModelAdaptersPanelContent({ enabled = false }) {
   const secondaryTextColor =
     colorMode === "dark" ? "text-slate-400" : "text-slate-600";
   const borderColor =
-    colorMode === "dark" ? "border-[#1f2a3d]" : "border-slate-200";
+    colorMode === "dark" ? "border-[#3a4050]" : "border-slate-200";
   const stageSurface =
-    colorMode === "dark" ? "bg-[#0b1224]" : "bg-slate-50";
+    colorMode === "dark" ? "bg-[#151720]" : "bg-slate-50";
   const modelSurface =
-    colorMode === "dark" ? "bg-[#0f1629]" : "bg-white";
+    colorMode === "dark" ? "bg-[#181b24]" : "bg-white";
   const adapterSurface =
     colorMode === "dark"
-      ? "bg-[#111a2f] hover:bg-[#16213a]"
+      ? "bg-[#20232e] hover:bg-[#292d3a]"
       : "bg-slate-50 hover:bg-slate-100";
   const draggingSurface =
     colorMode === "dark"
-      ? "bg-[#16213a] border-rose-400/50 shadow-[0_10px_28px_rgba(0,0,0,0.35)]"
+      ? "bg-[#292d3a] border-rose-400/50 shadow-[0_10px_28px_rgba(0,0,0,0.35)]"
       : "bg-rose-50 border-rose-200 shadow-lg";
   const primaryBadge =
     colorMode === "dark"
@@ -446,6 +447,22 @@ export default function ModelAdaptersPanelContent({ enabled = false }) {
           Save Preference Order
         </SecondaryButton>
       </div>
+    </div>
+  );
+}
+
+export default function ModelAdaptersPanelContent({
+  enabled = false,
+  preferencesEnabled = false,
+}) {
+  if (!enabled) {
+    return null;
+  }
+
+  return (
+    <div className="space-y-6">
+      <CustomTextToImageAdaptersEditor />
+      <ProviderAdapterPriorityEditor enabled={preferencesEnabled} />
     </div>
   );
 }

@@ -77,16 +77,52 @@ export default function ImageToolbar(props) {
             onChange={handleFilterChange}
             placeholder="Filter"
             styles={{
-              control: (provided) => ({
+              control: (provided, state) => ({
                 ...provided,
                 marginBottom: '10px',
                 width: '100%',
-                backgroundColor: colorMode === 'dark' ? '#1a202c' : '#f7fafc',
+                minHeight: '36px',
+                height: '36px',
+                backgroundColor: colorMode === 'dark' ? '#181b24' : '#f7fafc',
+                borderColor: state.isFocused
+                  ? colorMode === 'dark' ? '#f6c453' : '#007BFF'
+                  : colorMode === 'dark' ? '#667188' : '#ced4da',
+                boxShadow: state.isFocused
+                  ? colorMode === 'dark'
+                    ? '0 0 16px rgba(246, 196, 83, 0.18)'
+                    : '0 0 12px rgba(0, 123, 255, 0.16)'
+                  : null,
+                '&:hover': {
+                  borderColor: state.isFocused
+                    ? colorMode === 'dark' ? '#f6c453' : '#007BFF'
+                    : colorMode === 'dark' ? '#667188' : '#ced4da',
+                },
               }),
               menu: (provided) => ({
                 ...provided,
+                backgroundColor: colorMode === 'dark' ? '#181b24' : '#f7fafc',
+                border: `1px solid ${colorMode === 'dark' ? '#3a4050' : '#d1d5db'}`,
+                borderRadius: 10,
+                overflow: 'hidden',
                 zIndex: 9999
-              })
+              }),
+              option: (provided, state) => ({
+                ...provided,
+                backgroundColor: state.isSelected
+                  ? colorMode === 'dark' ? 'rgba(255,70,85,0.14)' : '#dbeafe'
+                  : state.isFocused
+                    ? colorMode === 'dark' ? '#292d3a' : '#e2e8f0'
+                    : colorMode === 'dark' ? '#181b24' : '#f7fafc',
+                color: state.isSelected && colorMode === 'dark' ? '#ffd4d8' : colorMode === 'dark' ? '#f4f6fb' : '#111827',
+              }),
+              singleValue: (provided) => ({
+                ...provided,
+                color: colorMode === 'dark' ? '#f4f6fb' : '#111827',
+              }),
+              placeholder: (provided) => ({
+                ...provided,
+                color: colorMode === 'dark' ? '#8b96aa' : '#6b7280',
+              }),
             }}
           />
           {selectedFilter && (

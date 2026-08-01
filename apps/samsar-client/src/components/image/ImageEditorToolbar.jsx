@@ -95,47 +95,47 @@ export default function ImageEditorToolbar(props) {
 
   const panelSurface =
     colorMode === 'dark'
-      ? 'bg-[#0f1629] border border-[#1f2a3d] text-slate-100'
+      ? 'bg-[#181b24] border border-[#3a4050] text-slate-100'
       : 'bg-white border border-slate-200 text-slate-900';
   const textColor = colorMode === 'dark' ? 'text-slate-100' : 'text-slate-900';
   const pillSelected =
     colorMode === 'dark'
-      ? 'bg-rose-500/25 border border-rose-400/30 text-rose-100'
+      ? 'bg-[#f6c453]/15 border border-[#f6c453]/40 text-[#ffe0a3]'
       : 'bg-rose-100 border border-rose-200 text-rose-700';
   const pillUnselected =
     colorMode === 'dark'
-      ? 'bg-[#111a2f] border border-[#1f2a3d] text-slate-200'
+      ? 'bg-[#20232e] border border-[#3a4050] text-slate-200'
       : 'bg-gray-200 border border-transparent text-gray-600';
   const secondaryButton =
     colorMode === 'dark'
-      ? 'bg-[#111a2f] text-slate-200 hover:bg-[#16213a] border border-[#1f2a3d]'
+      ? 'bg-[#20232e] text-slate-200 hover:bg-[#292d3a] border border-[#3a4050]'
       : 'bg-slate-100 text-slate-700 hover:bg-slate-200 border border-slate-200';
   const downloadLink =
     colorMode === 'dark'
-      ? 'text-slate-300 hover:text-rose-200'
+      ? 'text-slate-300 hover:text-[#ffe0a3]'
       : 'text-slate-500 hover:text-rose-600';
   const advancedButton =
     colorMode === 'dark'
-      ? 'bg-[#111a2f] text-slate-300 hover:text-rose-200 border border-[#1f2a3d]'
+      ? 'bg-[#20232e] text-slate-300 hover:text-[#ffe0a3] border border-[#3a4050]'
       : 'bg-slate-100 text-slate-600 hover:text-rose-600 border border-slate-200';
   const sectionButtonClass = `w-full rounded-2xl px-4 py-2.5 text-[15px] font-medium transition flex items-center justify-between ${
-    colorMode === 'dark' ? 'shadow-[0_10px_22px_rgba(2,6,23,0.22)]' : ''
+    colorMode === 'dark' ? 'shadow-[0_10px_22px_rgba(0,0,0,0.22)]' : ''
   }`;
   const actionIconClass = 'text-[30px] m-auto cursor-pointer';
   const actionLabelClass = 'mt-2 text-[13px] font-medium tracking-tight';
   const actionTileActive =
     colorMode === 'dark'
-      ? 'bg-rose-500/20 border-rose-400/30 text-rose-100'
+      ? 'bg-[#f6c453]/15 border-[#f6c453]/40 text-[#ffe0a3]'
       : 'bg-rose-50 border-rose-200 text-rose-700';
   const actionTileInactive =
     colorMode === 'dark'
-      ? 'bg-[#111a2f] border-[#1f2a3d] text-slate-200 hover:bg-[#16213a]'
+      ? 'bg-[#20232e] border-[#3a4050] text-slate-200 hover:bg-[#292d3a]'
       : 'bg-slate-100 border-slate-200 text-slate-700 hover:bg-white';
-  const sliderAccentColor = colorMode === 'dark' ? '#ff5f8a' : '#f97316';
-  const sliderTrackColor = colorMode === 'dark' ? '#1f2a3d' : '#d7deef';
+  const sliderAccentColor = colorMode === 'dark' ? '#f6c453' : '#f97316';
+  const sliderTrackColor = colorMode === 'dark' ? '#3a4050' : '#d7deef';
   const colorInputClass =
     colorMode === 'dark'
-      ? 'w-full h-11 rounded-xl border border-[#1f2a3d] bg-[#111a2f] p-1'
+      ? 'w-full h-11 rounded-xl border border-[#3a4050] bg-[#20232e] p-1'
       : 'w-full h-11 rounded-xl border border-slate-200 bg-white p-1';
   const subtleText =
     colorMode === 'dark'
@@ -143,7 +143,7 @@ export default function ImageEditorToolbar(props) {
       : 'text-slate-500';
   const historyButtonClass = `${
     colorMode === 'dark'
-      ? 'bg-[#17233d] text-slate-100 border border-[#24324f] hover:bg-[#1c3153] disabled:bg-[#111a2f] disabled:text-slate-500'
+      ? 'bg-[#20232e] text-slate-100 border border-[#3a4050] hover:bg-[#292d3a] disabled:bg-[#181b24] disabled:text-slate-500'
       : 'bg-white text-slate-800 border border-slate-200 hover:bg-slate-50 disabled:bg-slate-100 disabled:text-slate-400'
   } flex items-center justify-center gap-2 rounded-xl px-3 py-2.5 text-sm font-medium transition disabled:cursor-not-allowed`;
 
@@ -166,7 +166,7 @@ export default function ImageEditorToolbar(props) {
   };
   const aspectRatioSurface =
     colorMode === 'dark'
-      ? 'bg-[#111a2f] border border-[#1f2a3d]'
+      ? 'bg-[#20232e] border border-[#3a4050]'
       : 'bg-slate-50 border border-slate-200';
   const normalizedCanvasDimensions = normalizeCanvasDimensions(canvasDimensions, aspectRatioLabel);
   const matchingCanvasAspectRatioOption = findAspectRatioOptionForCanvasDimensions(

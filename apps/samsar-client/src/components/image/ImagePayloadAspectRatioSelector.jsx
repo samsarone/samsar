@@ -32,13 +32,13 @@ export default function ImagePayloadAspectRatioSelector(props) {
 
   const cardSurface =
     colorMode === 'dark'
-      ? 'bg-[#10192e] border border-[#25324a] text-slate-100'
+      ? 'bg-[#20232e] border border-[#3a4050] text-slate-100'
       : 'bg-rose-50 border border-rose-200 text-slate-900';
   const subtleText = colorMode === 'dark' ? 'text-slate-300' : 'text-slate-600';
   const eyebrowText = colorMode === 'dark' ? 'text-slate-400' : 'text-rose-600';
   const selectShell =
     colorMode === 'dark'
-      ? 'bg-slate-950/80 text-slate-100 border border-white/10'
+      ? 'bg-[#151720] text-slate-100 border border-[#667188] focus:border-[#f6c453] focus:outline-none focus:ring-2 focus:ring-[#f6c453]/20'
       : 'bg-white text-slate-900 border border-rose-200 shadow-sm';
   const cardPaddingClass = isImageStudio ? 'rounded-2xl px-4 py-3' : 'rounded-lg px-3 py-2';
   const layoutClassName = compactInline

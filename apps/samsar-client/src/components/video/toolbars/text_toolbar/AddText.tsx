@@ -132,15 +132,15 @@ export default function AddText(props) {
 
   const fieldSurface =
     colorMode === 'dark'
-      ? 'bg-[#111a2f] border border-[#1f2a3d] text-slate-100'
+      ? 'bg-[#20232e] border border-[#3a4050] text-slate-100'
       : 'bg-white border border-slate-200 text-slate-900';
   const compactSurface =
     colorMode === 'dark'
-      ? 'bg-[#111a2f] border border-[#24314d] text-slate-100'
+      ? 'bg-[#20232e] border border-[#24314d] text-slate-100'
       : 'bg-slate-50 border border-slate-200 text-slate-900';
   const mutedText = colorMode === 'dark' ? 'text-slate-400' : 'text-slate-500';
   const secondaryButtonClass = colorMode === 'dark'
-    ? 'border border-[#273956] bg-[#111a2f] text-slate-100 hover:bg-[#172642]'
+    ? 'border border-[#273956] bg-[#20232e] text-slate-100 hover:bg-[#172642]'
     : 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-50';
 
   if (!isExpandedView) {

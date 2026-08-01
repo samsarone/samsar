@@ -79,7 +79,7 @@ export default function ShapeToolbar(props) {
 
   const iconColor = colorMode === 'dark' ? 'text-neutral-200' : 'text-grey-800';
 
-  const bgColor = colorMode === 'dark' ? `bg-[#111a2f]` : `bg-neutral-300`;
+  const bgColor = colorMode === 'dark' ? `bg-[#20232e]` : `bg-neutral-300`;
   const textColor = colorMode === 'dark' ? `text-slate-100` : `text-black`;
   const inputClassName = `w-full ${isImageStudio ? 'rounded-xl px-3 py-2 text-[15px]' : 'rounded-sm p-1 pr-0 text-sm'} ${bgColor} ${textColor}`;
   const labelClassName = isImageStudio ? 'mt-1 text-sm text-center' : 'text-xs text-center';
@@ -87,7 +87,7 @@ export default function ShapeToolbar(props) {
 
   return (
     <div key={pos.id} style={{
-      position: 'absolute', left: pos.x, top: pos.y, background: "#0f1629",
+      position: 'absolute', left: pos.x, top: pos.y, background: "#181b24",
       width: isImageStudio ? "480px" : "400px", borderRadius: isImageStudio ? "16px" : "5px", padding: isImageStudio ? "14px" : "5px", paddingTop: isImageStudio ? "14px" : "1px", paddingBottom: isImageStudio ? "14px" : "1px", display: "flex", flexDirection: "column", alignItems: "center",
       zIndex: 100
     }}>

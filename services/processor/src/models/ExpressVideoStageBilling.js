@@ -101,11 +101,18 @@ function isCustomStageConfigured(sessionData, stageKey) {
     return true;
   }
   const adapter = sessionData?.custom_adapters;
+  const imageModel = normalizeModelKey(sessionData?.expressGenerationImageModel);
+  if (
+    stageKey === EXPRESS_VIDEO_BILLING_STAGES.IMAGE_GENERATION &&
+    imageModel.startsWith('CUSTOM_TEXT_TO_IMAGE:')
+  ) {
+    return true;
+  }
   if (!adapter?.base_url) {
     return false;
   }
   if (stageKey === EXPRESS_VIDEO_BILLING_STAGES.IMAGE_GENERATION) {
-    return normalizeModelKey(sessionData?.expressGenerationImageModel) === 'CUSTOM_TEXT_TO_IMAGE' && Boolean(adapter.text_to_image);
+    return imageModel === 'CUSTOM_TEXT_TO_IMAGE' && Boolean(adapter.text_to_image);
   }
   if (stageKey === EXPRESS_VIDEO_BILLING_STAGES.SPEECH_GENERATION) {
     return Boolean(adapter.text_to_speech);

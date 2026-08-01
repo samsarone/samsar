@@ -31,3 +31,35 @@ jobs:
 
       - name: Run tests
         run: npm run test:ci
+
+  windows-launcher:
+    name: Windows launcher validation
+    runs-on: windows-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 20
+
+      - name: Parse the PowerShell launcher
+        shell: powershell
+        run: |
+          $tokens = $null
+          $errors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile(
+            (Resolve-Path ./setup.ps1),
+            [ref] $tokens,
+            [ref] $errors
+          ) | Out-Null
+          if ($errors.Count -gt 0) {
+            $errors | ForEach-Object { Write-Error $_.Message }
+            exit 1
+          }
+
+      - name: Run launcher contract tests
+        run: node --test --test-name-pattern="Windows launchers" scripts/setup-launchers.test.mjs

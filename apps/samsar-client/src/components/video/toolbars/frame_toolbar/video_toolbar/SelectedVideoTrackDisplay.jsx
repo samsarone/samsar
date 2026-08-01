@@ -47,7 +47,7 @@ function ActionButton({
       ? 'bg-cyan-500/22 border-cyan-300/55 text-cyan-100 shadow-[0_0_18px_rgba(34,211,238,0.18)]'
       : 'bg-sky-100 border-sky-400/55 text-sky-700')
     : (colorMode === 'dark'
-      ? 'bg-[#111a2f]/72 border-[#1f2a3d] text-slate-300 hover:bg-[#16213a]'
+      ? 'bg-[#20232e]/72 border-[#3a4050] text-slate-300 hover:bg-[#292d3a]'
       : 'bg-white/80 border-slate-200 text-slate-600 hover:bg-slate-100');
 
   return (
@@ -135,19 +135,19 @@ export default function SelectedVideoTrackDisplay(props) {
             : (colorMode === 'dark' ? 'bg-slate-600' : 'bg-slate-300');
 
   const toolbarSurfaceClassName = colorMode === 'dark'
-    ? 'bg-[#0b1224]/68 border border-[#1f2a3d] backdrop-blur-md'
+    ? 'bg-[#151720]/68 border border-[#3a4050] backdrop-blur-md'
     : 'bg-white/72 border border-slate-200 backdrop-blur-md';
   const inputSurfaceClassName = colorMode === 'dark'
-    ? 'bg-[#111a2f]/82 border border-[#1f2a3d] text-slate-100'
+    ? 'bg-[#20232e]/82 border border-[#3a4050] text-slate-100'
     : 'bg-white/88 border border-slate-200 text-slate-700';
   const secondaryButtonClassName = colorMode === 'dark'
-    ? 'border border-[#31405e] bg-[#111a2f]/78 text-slate-200 hover:bg-[#16213a]'
+    ? 'border border-[#31405e] bg-[#20232e]/78 text-slate-200 hover:bg-[#292d3a]'
     : 'border border-slate-200 bg-white/85 text-slate-700 hover:bg-slate-100';
   const destructiveButtonClassName = colorMode === 'dark'
     ? 'border border-rose-500/40 bg-rose-500/10 text-rose-200 hover:bg-rose-500/18'
     : 'border border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100';
   const primaryButtonClassName = colorMode === 'dark'
-    ? 'bg-cyan-400 text-[#041420] hover:bg-cyan-300'
+    ? 'bg-cyan-400 text-[#080a10] hover:bg-cyan-300'
     : 'bg-sky-600 text-white hover:bg-sky-500';
   const showClearDrafts = draftOperations.length > 0;
 

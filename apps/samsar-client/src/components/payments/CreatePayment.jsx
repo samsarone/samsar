@@ -36,12 +36,12 @@ export default function CreatePayment() {
     if (isActive) {
       // Active / Selected button styles
       return colorMode === 'dark'
-        ? `${baseClasses} bg-[#46bfff] text-[#041420]`
+        ? `${baseClasses} bg-[#ff4655] text-[#080a10]`
         : `${baseClasses} bg-slate-950 text-white`;
     } else {
       // Inactive / Unselected button styles
       return colorMode === 'dark'
-        ? `${baseClasses} text-slate-400 hover:bg-[#111a2f] hover:text-slate-100`
+        ? `${baseClasses} text-slate-400 hover:bg-[#20232e] hover:text-slate-100`
         : `${baseClasses} text-slate-600 hover:bg-white hover:text-slate-950`;
     }
   };
@@ -96,13 +96,13 @@ export default function CreatePayment() {
 
 
   const pageClasses = colorMode === 'dark'
-    ? 'bg-[#0b1021] text-slate-100'
+    ? 'bg-[#0c0d12] text-slate-100'
     : 'bg-[#f7f9fc] text-slate-950';
   const segmentedClasses = colorMode === 'dark'
-    ? 'border-[#1f2a3d] bg-[#0f1629]'
+    ? 'border-[#3a4050] bg-[#181b24]'
     : 'border-[#d7deef] bg-white/70';
   const pricingLinkClasses = colorMode === 'dark'
-    ? 'text-[#89dcff] hover:text-[#d7ffeb]'
+    ? 'text-[#ffe0a3] hover:text-[#ffe5e8]'
     : 'text-sky-700 hover:text-sky-600';
   const pageContainerClasses = selectedTab === 'purchaseCredits'
     ? 'mx-auto w-full max-w-5xl'

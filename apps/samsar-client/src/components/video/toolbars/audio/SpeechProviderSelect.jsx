@@ -27,10 +27,12 @@ export default function SpeechProviderSelect(props) {
   } = props;
 
   // Styles for select and dropdowns
-  const formSelectBgColor = colorMode === 'dark' ? '#030712' : '#f3f4f6';
-  const formSelectTextColor = colorMode === 'dark' ? '#f3f4f6' : '#111827';
-  const formSelectSelectedTextColor = colorMode === 'dark' ? '#f3f4f6' : '#111827';
-  const formSelectHoverColor = colorMode === 'dark' ? '#1f2937' : '#2563EB';
+  const formSelectBgColor = colorMode === 'dark' ? '#181b24' : '#f3f4f6';
+  const formSelectTextColor = colorMode === 'dark' ? '#f4f6fb' : '#111827';
+  const formSelectSelectedTextColor = colorMode === 'dark' ? '#ffd4d8' : '#111827';
+  const formSelectHoverColor = colorMode === 'dark' ? '#292d3a' : '#2563EB';
+  const formSelectBorderColor = colorMode === 'dark' ? '#667188' : '#ced4da';
+  const formSelectFocusColor = colorMode === 'dark' ? '#f6c453' : '#007BFF';
   const { googleSpeakers, isLoading, error } = useGoogleTTSSpeakers();
   const combinedSpeakerTypes = useMemo(
     () => mergeGoogleTTSSpeakers(TTS_COMBINED_SPEAKER_TYPES, googleSpeakers),
@@ -54,13 +56,9 @@ export default function SpeechProviderSelect(props) {
     }
     return speaker.label || speaker.name || speaker.value;
   };
-  const longestSpeakerLabelLength = availableSpeakerTypes.reduce(
-    (maxLength, speaker) => Math.max(maxLength, String(getOptionLabel(speaker) || '').length),
-    0
-  );
   const shouldUseMultilineValue =
-    !truncateLabels && (compactLayout || longestSpeakerLabelLength > 18);
-  const controlMinHeight = shouldUseMultilineValue ? 52 : 38;
+    !compactLayout && !truncateLabels && String(getOptionLabel(speakerType) || '').length > 42;
+  const controlMinHeight = compactLayout ? 34 : shouldUseMultilineValue ? 46 : 36;
 
   // Build speaker options from combined list
   const speakerOptions = availableSpeakerTypes.map((speaker) => {
@@ -164,6 +162,9 @@ export default function SpeechProviderSelect(props) {
           menu: (provided) => ({
             ...provided,
             backgroundColor: formSelectBgColor,
+            border: `1px solid ${colorMode === 'dark' ? '#3a4050' : '#d1d5db'}`,
+            borderRadius: 10,
+            overflow: 'hidden',
             zIndex: 11050,
           }),
           menuPortal: (provided) => ({
@@ -185,23 +186,24 @@ export default function SpeechProviderSelect(props) {
           }),
           valueContainer: (provided) => ({
             ...provided,
-            paddingTop: shouldUseMultilineValue ? 6 : provided.paddingTop,
-            paddingBottom: shouldUseMultilineValue ? 6 : provided.paddingBottom,
+            padding: shouldUseMultilineValue ? '4px 10px' : '0 10px',
             overflow: 'visible',
             minWidth: 0,
           }),
           control: (provided, state) => ({
             ...provided,
             backgroundColor: formSelectBgColor,
-            borderColor: state.isFocused ? '#007BFF' : '#ced4da',
+            borderColor: state.isFocused ? formSelectFocusColor : formSelectBorderColor,
             '&:hover': {
-              borderColor: state.isFocused ? '#007BFF' : '#ced4da',
+              borderColor: state.isFocused ? formSelectFocusColor : formSelectBorderColor,
             },
             boxShadow: state.isFocused
-              ? '0 0 0 0.2rem rgba(0, 123, 255, 0.25)'
+              ? colorMode === 'dark'
+                ? '0 0 16px rgba(246, 196, 83, 0.18)'
+                : '0 0 12px rgba(0, 123, 255, 0.16)'
               : null,
             minHeight: `${controlMinHeight}px`,
-            height: shouldUseMultilineValue ? 'auto' : '38px',
+            height: shouldUseMultilineValue ? 'auto' : `${controlMinHeight}px`,
             width: '100%',
             minWidth: 0,
           }),

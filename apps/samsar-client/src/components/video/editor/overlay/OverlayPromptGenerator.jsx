@@ -11,6 +11,8 @@ import ImagePayloadAspectRatioSelector from "../../../image/ImagePayloadAspectRa
 import { imageAspectRatioOptions } from "../../../../constants/ImageAspectRatios.js";
 import { useDeploymentModelAvailability } from "../../../../hooks/useDeploymentModelAvailability.js";
 import { filterOptionsForDeploymentModelValues } from "../../../../utils/deploymentProviders.js";
+import { useUser } from "../../../../contexts/UserContext.jsx";
+import { mergeCustomTextToImageModelDefinitions } from "../../../../utils/customTextToImageAdapters.mjs";
 
 import { FaCheck, FaQuestionCircle } from "react-icons/fa";
 import { Tooltip } from "react-tooltip";
@@ -34,6 +36,7 @@ export default function OverlayPromptGenerator(props) {
   } = props;
 
   const { colorMode } = useColorMode();
+  const { user } = useUser();
   const [retryOnFailure, setRetryOnFailure] = useState(false);
   const [isCharacterImage, setIsCharacterImage] = useState(false);
   const [selectedImageStyle, setSelectedImageStyle] = useState(null);
@@ -46,22 +49,25 @@ export default function OverlayPromptGenerator(props) {
       const deploymentModels = isStandaloneModelFilteringEnabled
         ? filterOptionsForDeploymentModelValues(IMAGE_GENERAITON_MODEL_TYPES, imageModelValues, (model) => model.key)
         : IMAGE_GENERAITON_MODEL_TYPES;
-      return deploymentModels.filter((model) =>
+      const modelsWithCustomAdapters = isStandaloneModelFilteringEnabled
+        ? mergeCustomTextToImageModelDefinitions(deploymentModels, user?.custom_adapters)
+        : deploymentModels;
+      return modelsWithCustomAdapters.filter((model) =>
         imageGenerationModelSupportsAspectRatio(model, aspectRatio)
       );
     },
-    [aspectRatio, imageModelValues, isStandaloneModelFilteringEnabled]
+    [aspectRatio, imageModelValues, isStandaloneModelFilteringEnabled, user?.custom_adapters]
   );
 
   const isPortraitLayout = layoutMode === "portrait";
   const isImageStudioPrompt = editorVariant === "imageStudio";
   const selectShell =
     colorMode === "dark"
-      ? "bg-slate-950 text-slate-100 border border-slate-700"
+      ? "bg-[#151720] text-slate-100 border border-[#667188] focus:border-[#f6c453] focus:outline-none focus:ring-2 focus:ring-[#f6c453]/20"
       : "bg-slate-50 text-slate-900 border border-slate-200 shadow-sm";
   const textareaShell =
     colorMode === "dark"
-      ? "bg-slate-950 text-slate-100 border border-slate-700"
+      ? "bg-[#151720] text-slate-100 border border-[#667188] focus:border-[#f6c453] focus:outline-none focus:ring-2 focus:ring-[#f6c453]/20"
       : "bg-slate-50 text-slate-900 border border-slate-200 shadow-sm";
   const checkboxText =
     colorMode === "dark" ? "text-slate-200" : "text-slate-600";
@@ -91,19 +97,19 @@ export default function OverlayPromptGenerator(props) {
     : "ml-auto flex flex-wrap items-center gap-2";
   const optionChipBase =
     colorMode === "dark"
-      ? "bg-slate-950 border border-slate-700 text-slate-300 hover:bg-slate-900"
+      ? "bg-[#20232e] border border-[#4a5265] text-slate-300 hover:bg-[#292d3a]"
       : "bg-slate-50 border border-slate-200 text-slate-600 hover:bg-white";
   const optionChipActive =
     colorMode === "dark"
-      ? "bg-slate-900 border border-slate-500 text-white"
+      ? "bg-[#f6c453]/14 border border-[#f6c453]/55 text-[#fff1c8]"
       : "bg-slate-100 border border-slate-300 text-slate-900";
   const optionIndicatorBase =
     colorMode === "dark"
-      ? "border-slate-600 bg-slate-950 text-slate-200"
+      ? "border-[#667188] bg-[#151720] text-slate-200"
       : "border-slate-300 bg-white text-slate-700";
   const optionIndicatorActive =
     colorMode === "dark"
-      ? "border-slate-400 bg-slate-100 text-slate-900"
+      ? "border-[#f6c453] bg-[#f6c453] text-[#101117]"
       : "border-slate-400 bg-slate-900 text-white";
   const inputPaddingClass = isImageStudioPrompt ? "rounded-xl px-4 py-3 text-sm" : "rounded-md px-2.5 py-2";
   const labelClassName = isImageStudioPrompt

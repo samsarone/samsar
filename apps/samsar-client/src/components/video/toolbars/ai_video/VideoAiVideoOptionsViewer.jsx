@@ -24,7 +24,7 @@ export default function VideoAiVideoOptionsViewer(props) {
   const [soundEffectPrompt, setSoundEffectPrompt] = useState('');
   const { colorMode } = useColorMode();
   const soundEffectPromptClassName = colorMode === 'dark'
-    ? 'w-full text-sm p-1 bg-[#111a2f] text-slate-100 border border-[#1f2a3d] rounded'
+    ? 'w-full text-sm p-1 bg-[#20232e] text-slate-100 border border-[#3a4050] rounded'
     : 'w-full text-sm p-1 bg-white text-slate-900 border border-slate-200 rounded placeholder:text-slate-400';
 
   // Lip sync options

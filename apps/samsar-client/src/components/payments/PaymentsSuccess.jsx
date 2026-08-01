@@ -69,11 +69,11 @@ export default function PaymentsSuccess() {
   const isDark = colorMode === 'dark';
   const textColor = isDark ? 'text-slate-100' : 'text-slate-900';
   const secondaryText = isDark ? 'text-slate-400' : 'text-slate-600';
-  const cardBgColor = isDark ? 'bg-[#0f1629]' : 'bg-white';
-  const borderColor = isDark ? 'border-[#1f2a3d]' : 'border-slate-200';
-  const mutedBg = isDark ? 'bg-[#0b1224]' : 'bg-slate-50';
+  const cardBgColor = isDark ? 'bg-[#181b24]' : 'bg-white';
+  const borderColor = isDark ? 'border-[#3a4050]' : 'border-slate-200';
+  const mutedBg = isDark ? 'bg-[#151720]' : 'bg-slate-50';
   const buttonClasses = isDark
-    ? 'bg-[#111a2f] text-slate-100 shadow-[0_8px_20px_rgba(0,0,0,0.28)] hover:bg-[#162744] hover:shadow-[0_12px_24px_rgba(70,191,255,0.2)]'
+    ? 'border border-[#4a5265] bg-[#20232e] text-slate-100 shadow-[0_8px_20px_rgba(0,0,0,0.28)] hover:border-[#ff4655]/45 hover:bg-[#292d3a] hover:shadow-[0_12px_24px_rgba(255,70,85,0.16)]'
     : 'bg-white text-slate-900 shadow-[0_8px_16px_rgba(15,23,42,0.08)] hover:bg-slate-50 hover:shadow-[0_12px_20px_rgba(15,23,42,0.14)]';
 
   const monthLabel = useMemo(

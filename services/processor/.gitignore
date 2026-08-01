@@ -9,5 +9,6 @@ tmp/
 node_modules/
 yarn.lock
 .env.*
+!.env.example
 .DS_Store
 agents.md

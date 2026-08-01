@@ -22,19 +22,19 @@ export default function ImageUploadOverlay(props) {
 
   const overlaySurface =
     colorMode === "dark"
-      ? "bg-[#0f1629]/95 text-slate-100 border border-[#1f2a3d] shadow-[0_20px_60px_rgba(0,0,0,0.55)]"
+      ? "bg-[#181b24]/95 text-slate-100 border border-[#3a4050] shadow-[0_20px_60px_rgba(0,0,0,0.55)]"
       : "bg-white/90 text-slate-900 border border-slate-200 shadow-xl shadow-slate-200/60";
   const buttonShell =
     colorMode === "dark"
-      ? "bg-[#111a2f] text-slate-100 border border-[#1f2a3d] hover:bg-[#17233d]"
+      ? "bg-[#20232e] text-slate-100 border border-[#3a4050] hover:bg-[#292d3a]"
       : "bg-slate-100 text-slate-700 border border-slate-200 hover:bg-white";
   const tabBase =
     colorMode === "dark"
-      ? "bg-[#111a2f] text-slate-300 border border-[#1f2a3d] hover:text-white"
+      ? "bg-[#20232e] text-slate-300 border border-[#3a4050] hover:text-white"
       : "bg-slate-100 text-slate-600 border border-slate-200 hover:text-slate-900";
   const tabActive =
     colorMode === "dark"
-      ? "bg-rose-500/20 text-rose-100 border border-rose-400/30 shadow-sm"
+      ? "bg-[#f6c453]/14 text-[#fff1c8] border border-[#f6c453]/55 shadow-sm"
       : "bg-indigo-500/10 text-indigo-600 border border-indigo-200 shadow-sm";
   const subText = colorMode === "dark" ? "text-slate-300" : "text-slate-600";
 

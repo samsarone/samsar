@@ -14,6 +14,8 @@ import ImagePayloadAspectRatioSelector from "../../image/ImagePayloadAspectRatio
 import { imageAspectRatioOptions } from "../../../constants/ImageAspectRatios.js";
 import { useDeploymentModelAvailability } from "../../../hooks/useDeploymentModelAvailability.js";
 import { filterOptionsForDeploymentModelValues } from "../../../utils/deploymentProviders.js";
+import { useUser } from "../../../contexts/UserContext.jsx";
+import { mergeCustomTextToImageModelDefinitions } from "../../../utils/customTextToImageAdapters.mjs";
 
 export default function PromptGenerator(props) {
   const {
@@ -32,6 +34,7 @@ export default function PromptGenerator(props) {
   } = props;
 
   const { colorMode } = useColorMode();
+  const { user } = useUser();
   const isImageStudio = sizeVariant === "imageStudio";
   const isSidebarCollapsed = sizeVariant === "sidebarCollapsed";
   const isSidebarExpanded = sizeVariant === "sidebarExpanded";
@@ -44,11 +47,14 @@ export default function PromptGenerator(props) {
       const deploymentModels = isStandaloneModelFilteringEnabled
         ? filterOptionsForDeploymentModelValues(IMAGE_GENERAITON_MODEL_TYPES, imageModelValues, (model) => model.key)
         : IMAGE_GENERAITON_MODEL_TYPES;
-      return deploymentModels.filter((model) =>
+      const modelsWithCustomAdapters = isStandaloneModelFilteringEnabled
+        ? mergeCustomTextToImageModelDefinitions(deploymentModels, user?.custom_adapters)
+        : deploymentModels;
+      return modelsWithCustomAdapters.filter((model) =>
         imageGenerationModelSupportsAspectRatio(model, aspectRatio)
       );
     },
-    [aspectRatio, imageModelValues, isStandaloneModelFilteringEnabled]
+    [aspectRatio, imageModelValues, isStandaloneModelFilteringEnabled, user?.custom_adapters]
   );
 
 
@@ -105,11 +111,11 @@ export default function PromptGenerator(props) {
   // ------------------------------------------------------------------
   const selectShell =
     colorMode === "dark"
-      ? "bg-slate-900/60 text-slate-100 border border-white/10"
+      ? "bg-[#151720] text-slate-100 border border-[#667188] focus:border-[#f6c453] focus:outline-none focus:ring-2 focus:ring-[#f6c453]/20"
       : "bg-white text-slate-900 border border-slate-200 shadow-sm";
   const textareaShell =
     colorMode === "dark"
-      ? "bg-slate-900/60 text-slate-100 border border-white/10"
+      ? "bg-[#151720] text-slate-100 border border-[#667188] focus:border-[#f6c453] focus:outline-none focus:ring-2 focus:ring-[#f6c453]/20"
       : "bg-white text-slate-900 border border-slate-200 shadow-sm";
   const fieldRowClass = isImageStudio
     ? "flex w-full items-center gap-4 py-1"
@@ -291,7 +297,7 @@ export default function PromptGenerator(props) {
           <label className="flex items-center">
             <input
               type="checkbox"
-              className={`${isImageStudio ? "h-[18px] w-[18px]" : "h-4 w-4"} form-checkbox text-blue-600`}
+              className={`${isImageStudio ? "h-[18px] w-[18px]" : "h-4 w-4"} form-checkbox ${colorMode === "dark" ? "text-[#f6c453] focus:ring-[#f6c453]/35" : "text-blue-600"}`}
               checked={retryOnFailure}
               onChange={(e) => setRetryOnFailure(e.target.checked)}
             />
@@ -312,7 +318,7 @@ export default function PromptGenerator(props) {
           <label className="flex items-center">
             <input
               type="checkbox"
-              className={`${isImageStudio ? "h-[18px] w-[18px]" : "h-4 w-4"} form-checkbox text-blue-600`}
+              className={`${isImageStudio ? "h-[18px] w-[18px]" : "h-4 w-4"} form-checkbox ${colorMode === "dark" ? "text-[#f6c453] focus:ring-[#f6c453]/35" : "text-blue-600"}`}
               checked={isCharacterImage}
               onChange={(e) => setIsCharacterImage(e.target.checked)}
             />

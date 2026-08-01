@@ -52,31 +52,31 @@ export default function AddCreditsDialog(props) {
   const selectedCredits = selectedOption ? selectedOption.value * 100 : 0;
 
   const shellClasses = isDark
-    ? 'border-[#1f2a3d] bg-[#0f1629] text-slate-100 shadow-[0_18px_54px_rgba(0,0,0,0.36)]'
+    ? 'border-[#3a4050] bg-[#181b24] text-slate-100 shadow-[0_18px_54px_rgba(0,0,0,0.36)]'
     : 'border-[#d7deef] bg-white text-slate-950 shadow-[0_18px_44px_rgba(15,23,42,0.12)]';
 
   const mutedText = isDark ? 'text-slate-400' : 'text-slate-600';
   const subtleText = isDark ? 'text-slate-500' : 'text-slate-500';
-  const accentText = isDark ? 'text-[#72f1b0]' : 'text-sky-700';
-  const galleryLinkClasses = isDark ? 'text-[#89dcff] hover:text-[#d7ffeb]' : 'text-sky-700 hover:text-sky-600';
-  const dividerClasses = isDark ? 'border-[#1f2a3d]' : 'border-[#d7deef]';
+  const accentText = isDark ? 'text-[#ffe0a3]' : 'text-sky-700';
+  const galleryLinkClasses = isDark ? 'text-[#ffe0a3] hover:text-[#ffe5e8]' : 'text-sky-700 hover:text-sky-600';
+  const dividerClasses = isDark ? 'border-[#3a4050]' : 'border-[#d7deef]';
   const panelClasses = isDark
-    ? 'border-[#1f2a3d] bg-[#0f1629]'
+    ? 'border-[#3a4050] bg-[#181b24]'
     : 'border-[#d7deef] bg-white/60';
 
   const inactiveOptionClasses = isDark
-    ? 'border-[#1f2a3d] bg-[#0f1629] hover:border-[#46bfff]/70 hover:bg-[#13213a]'
+    ? 'border-[#3a4050] bg-[#181b24] hover:border-[#ff4655]/70 hover:bg-[#292d3a]'
     : 'border-[#d7deef] bg-white/65 hover:border-sky-300 hover:bg-sky-50/60';
 
   const activeOptionClasses = isDark
-    ? 'border-[#46bfff] bg-[#10223c] ring-1 ring-[#46bfff]/30'
-    : 'border-sky-400 bg-sky-50/90 ring-1 ring-sky-200';
+    ? 'border-[#ff4655] bg-[#ff4655]/10'
+    : 'border-sky-400 bg-sky-50/90';
   const checkoutButtonClasses = isPage
     ? isDark
-      ? 'min-h-[54px] w-full rounded-xl bg-[#39d881] px-6 text-base text-[#041420] shadow-[0_16px_32px_rgba(57,216,129,0.22)] hover:bg-[#55e8a2]'
+      ? 'min-h-11 w-full rounded-xl bg-[#ff4655] px-5 text-sm text-[#080a10] shadow-[0_14px_30px_rgba(255,70,85,0.22)] hover:bg-[#ff6572]'
       : 'min-h-[54px] w-full rounded-xl bg-sky-600 px-6 text-base text-white shadow-[0_16px_32px_rgba(2,132,199,0.18)] hover:bg-sky-700'
     : isDark
-      ? 'min-h-[44px] w-full rounded-lg bg-[#39d881] px-5 text-sm text-[#041420] hover:bg-[#55e8a2] sm:w-auto'
+      ? 'min-h-10 w-full rounded-lg bg-[#ff4655] px-4 text-sm text-[#080a10] hover:bg-[#ff6572] sm:min-h-9 sm:w-auto'
       : 'min-h-[44px] w-full rounded-lg bg-sky-600 px-5 text-sm text-white hover:bg-sky-700 sm:w-auto';
 
   const shellWidthClasses = isPage ? 'max-w-5xl' : 'max-w-[560px]';
@@ -163,11 +163,11 @@ export default function AddCreditsDialog(props) {
                 <span className="flex min-w-0 items-center gap-3">
                   <span className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full border ${
                     isSelected
-                      ? isDark ? 'border-[#46bfff]' : 'border-sky-500'
+                      ? isDark ? 'border-[#ff4655]' : 'border-sky-500'
                       : isDark ? 'border-slate-600' : 'border-slate-300'
                   }`}>
                     {isSelected && (
-                      <span className={isDark ? 'h-2 w-2 rounded-full bg-[#46bfff]' : 'h-2 w-2 rounded-full bg-sky-500'} />
+                      <span className={isDark ? 'h-2 w-2 rounded-full bg-[#ff4655]' : 'h-2 w-2 rounded-full bg-sky-500'} />
                     )}
                   </span>
                   <span className="min-w-0">
@@ -177,7 +177,7 @@ export default function AddCreditsDialog(props) {
                 </span>
                 <span className={`shrink-0 rounded-full px-2 py-1 text-[11px] font-medium ${
                   option.badge
-                    ? isDark ? 'bg-[#13243d] text-[#72f1b0]' : 'bg-sky-50 text-sky-700'
+                    ? isDark ? 'bg-[#20232e] text-[#ffe0a3]' : 'bg-sky-50 text-sky-700'
                     : subtleText
                 }`}>
                   {option.caption}
@@ -187,7 +187,7 @@ export default function AddCreditsDialog(props) {
               <>
                 {option.badge ? (
                   <span className={`absolute right-3 top-3 text-[10px] font-semibold uppercase tracking-[0.16em] ${
-                    isDark ? 'text-[#72f1b0]' : 'text-sky-700'
+                    isDark ? 'text-[#ffe0a3]' : 'text-sky-700'
                   }`}>
                     {option.badge}
                   </span>
@@ -225,7 +225,7 @@ export default function AddCreditsDialog(props) {
             onChange={(e) => setCouponCode(e.target.value)}
             className={`w-full rounded-lg border px-3 py-2 text-sm ${
               isDark
-                ? 'border-[#1f2a3d] bg-[#0b1021] text-slate-100 placeholder:text-slate-600'
+                ? 'border-[#3a4050] bg-[#0c0d12] text-slate-100 placeholder:text-[#8b96aa]'
                 : 'border-[#cbd6e6] bg-white/80 text-slate-950 placeholder:text-slate-400'
             }`}
           />
@@ -235,7 +235,7 @@ export default function AddCreditsDialog(props) {
             disabled={!hasUser || !couponCode.trim() || typeof requestApplyCreditsCoupon !== 'function'}
             className={`inline-flex min-h-[38px] items-center justify-center rounded-lg px-4 text-sm font-semibold transition ${
               isDark
-                ? 'bg-[#111a2f] text-[#d7ffeb] hover:bg-[#172c49]'
+                ? 'bg-[#20232e] text-[#ffe5e8] hover:bg-[#292d3a]'
                 : 'bg-slate-200 text-slate-900 hover:bg-slate-300'
             } disabled:cursor-not-allowed disabled:opacity-50`}
           >
@@ -285,7 +285,7 @@ export default function AddCreditsDialog(props) {
           aria-label="Close add credits dialog"
           className={`absolute right-3 top-3 z-10 inline-flex h-9 w-9 items-center justify-center rounded-full transition focus:outline-none focus:ring-2 ${
             isDark
-              ? 'text-slate-400 hover:bg-[#16213a] hover:text-slate-100 focus:ring-cyan-400/40'
+              ? 'text-slate-400 hover:bg-[#292d3a] hover:text-slate-100 focus:ring-cyan-400/40'
               : 'text-slate-500 hover:bg-slate-100 hover:text-slate-900 focus:ring-slate-300'
           }`}
         >

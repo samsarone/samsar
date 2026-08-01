@@ -158,26 +158,26 @@ export default function VideoLibraryHome(props) {
   const videoRefs = useRef({});
 
   const panelSurface = colorMode === 'dark'
-    ? 'bg-[#0f1629] text-slate-100 border border-[#1f2a3d]'
+    ? 'bg-[#181b24] text-slate-100 border border-[#3a4050]'
     : 'bg-white text-slate-900 border border-slate-200';
   const sectionSurface = colorMode === 'dark'
-    ? 'bg-[#0b1226] border border-[#1f2a3d]'
+    ? 'bg-[#12141c] border border-[#3a4050]'
     : 'bg-slate-50 border border-slate-200';
   const cardSurface = colorMode === 'dark'
-    ? 'bg-[#111a2f] border border-[#1f2a3d]'
+    ? 'bg-[#20232e] border border-[#3a4050]'
     : 'bg-white border border-slate-200';
   const mutedText = colorMode === 'dark' ? 'text-slate-400' : 'text-slate-500';
   const pillSurface = colorMode === 'dark'
     ? 'bg-slate-900/70 text-slate-200 border border-slate-700/60'
     : 'bg-slate-100 text-slate-700 border border-slate-200';
   const actionButtonSurface = colorMode === 'dark'
-    ? 'bg-[#16213a] text-slate-100 hover:bg-[#1b2745] border border-[#31405e]'
+    ? 'bg-[#292d3a] text-slate-100 hover:bg-[#1b2745] border border-[#31405e]'
     : 'bg-white text-slate-700 hover:bg-slate-100 border border-slate-200';
   const selectButtonSurface = colorMode === 'dark'
     ? 'bg-gradient-to-r from-cyan-500 via-sky-500 to-indigo-500 text-white'
     : 'bg-gradient-to-r from-sky-500 via-blue-500 to-indigo-500 text-white';
   const inputSurface = colorMode === 'dark'
-    ? 'bg-[#111a2f] border border-[#1f2a3d] text-slate-100 placeholder:text-slate-500'
+    ? 'bg-[#20232e] border border-[#3a4050] text-slate-100 placeholder:text-[#8b96aa]'
     : 'bg-white border border-slate-200 text-slate-700 placeholder:text-slate-400';
 
   const fetchLibraryData = async () => {

@@ -147,6 +147,7 @@ const DEFAULT_ROLLUP_IMAGE_TILING_POSITION = Object.freeze({
 });
 
 const DEFAULT_TEXT_TO_IMAGE_MODEL = 'NANOBANANA2';
+const CUSTOM_TEXT_TO_IMAGE_MODEL_PREFIX = 'CUSTOM_TEXT_TO_IMAGE:';
 const WAN_27_PRO_TEXT_TO_IMAGE_MODEL = 'WAN2.7PRO';
 const WAN_27_PRO_TEXT_TO_IMAGE_RESOLUTION = '1K';
 const WAN_27_PRO_TEXT_TO_IMAGE_ASPECT_RATIOS = Object.freeze(['1:1', '16:9', '9:16']);
@@ -205,10 +206,18 @@ function createBadRequestError(message) {
 
 export function normalizeTextToImageRequestOptions(payload = {}) {
   const modelValue = payload.model || payload.mode;
-  const model = typeof modelValue === 'string' && modelValue.trim()
-    ? modelValue.trim().toUpperCase()
-    : DEFAULT_TEXT_TO_IMAGE_MODEL;
-  if (!SUPPORTED_TEXT_TO_IMAGE_MODELS.includes(model)) {
+  const rawModel = typeof modelValue === 'string' ? modelValue.trim() : '';
+  const isCustomModel = rawModel.startsWith(CUSTOM_TEXT_TO_IMAGE_MODEL_PREFIX) &&
+    rawModel.length > CUSTOM_TEXT_TO_IMAGE_MODEL_PREFIX.length;
+  const model = isCustomModel
+    ? rawModel
+    : rawModel
+      ? rawModel.toUpperCase()
+      : DEFAULT_TEXT_TO_IMAGE_MODEL;
+  if (isCustomModel && !isStandaloneEdition()) {
+    throw createBadRequestError('Custom text-to-image models are only available in standalone deployments.');
+  }
+  if (!isCustomModel && !SUPPORTED_TEXT_TO_IMAGE_MODELS.includes(model)) {
     throw createBadRequestError(`model must be one of: ${SUPPORTED_TEXT_TO_IMAGE_MODELS.join(', ')}.`);
   }
 
@@ -415,6 +424,27 @@ export async function generateTextToImage(payload = {}) {
   const outputImages = Math.max(1, Math.floor(requestedImages));
   const pricing = getTextToImagePricing(outputImages);
 
+  await getDBConnectionString();
+  if (normalizedModel.startsWith(CUSTOM_TEXT_TO_IMAGE_MODEL_PREFIX)) {
+    const adapterId = normalizedModel.slice(CUSTOM_TEXT_TO_IMAGE_MODEL_PREFIX.length);
+    const ownsAdapter = await User.exists({
+      _id: userId,
+      custom_adapters: {
+        $ne: null,
+      },
+      'custom_adapters.custom_endpoints': {
+        $elemMatch: {
+          id: adapterId,
+          operation: 'text_to_image',
+          generate_url: { $type: 'string' },
+        },
+      },
+    });
+    if (!ownsAdapter) {
+      throw createBadRequestError('The selected custom text-to-image model is not configured for this user.');
+    }
+  }
+
   const creditResult = await deductGenerationCredits(userId, pricing.credits, {
     source: 'image_text_to_image',
     metadata: {
@@ -426,8 +456,6 @@ export async function generateTextToImage(payload = {}) {
       requestType: 'API',
     },
   });
-
-  await getDBConnectionString();
 
   const normalizedPrompt = prompt.trim();
   const generationPayload = new ImageGeneration({

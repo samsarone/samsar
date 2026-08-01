@@ -8,9 +8,107 @@ import {
   logSharedSessionEditOperation,
 } from '../models/VideoSession.js';
 import { verifyUserAuth } from '../models/Auth.js';
+import {
+  getAudioStudioJoinStatus,
+  getAudioStudioLibraryPage,
+  getStudioAudioGenerationStatus,
+  requestAudioStudioJoin,
+  requestStudioAudioGeneration,
+} from '../models/audio/AudioStudio.js';
 import 'dotenv/config';
 
 const router = express.Router();
+
+function requireAuthenticatedUser(req, res) {
+  const userId = verifyUserAuth(req.headers);
+  if (!userId) {
+    res.status(401).send({ error: 'Unauthorized' });
+    return null;
+  }
+  return userId;
+}
+
+router.post('/studio/generate', async function(req, res) {
+  const userId = requireAuthenticatedUser(req, res);
+  if (!userId) return;
+
+  try {
+    const response = await requestStudioAudioGeneration(userId, req.body || {});
+    res.status(202).json(response);
+  } catch (error) {
+    res.status(error?.statusCode || error?.status || 400).json({
+      error: error?.message || 'Unable to request audio generation.',
+      code: error?.code,
+    });
+  }
+});
+
+router.get('/studio/status', async function(req, res) {
+  const userId = requireAuthenticatedUser(req, res);
+  if (!userId) return;
+
+  try {
+    const response = await getStudioAudioGenerationStatus(
+      userId,
+      req.query.requestId || req.query.request_id
+    );
+    res.json(response);
+  } catch (error) {
+    res.status(error?.statusCode || error?.status || 400).json({
+      error: error?.message || 'Unable to fetch audio generation status.',
+      code: error?.code,
+    });
+  }
+});
+
+router.get('/studio/library', async function(req, res) {
+  const userId = requireAuthenticatedUser(req, res);
+  if (!userId) return;
+
+  try {
+    const response = await getAudioStudioLibraryPage(userId, req.query || {});
+    res.json(response);
+  } catch (error) {
+    res.status(error?.statusCode || error?.status || 400).json({
+      error: error?.message || 'Unable to fetch the Audio Studio library.',
+      code: error?.code,
+    });
+  }
+});
+
+router.post('/join', async function(req, res) {
+  const userId = requireAuthenticatedUser(req, res);
+  if (!userId) return;
+
+  try {
+    const response = await requestAudioStudioJoin(userId, req.body || {});
+    res.status(202).json(response);
+  } catch (error) {
+    console.error('Error joining Audio Studio items:', error);
+    res.status(error?.statusCode || error?.status || 400).json({
+      error: error?.message || 'Unable to join the selected audio items.',
+      code: error?.code,
+    });
+  }
+});
+
+router.get('/join/status', async function(req, res) {
+  const userId = requireAuthenticatedUser(req, res);
+  if (!userId) return;
+
+  try {
+    const response = await getAudioStudioJoinStatus(
+      userId,
+      req.query.requestId || req.query.request_id
+    );
+    res.json(response);
+  } catch (error) {
+    res.status(error?.statusCode || error?.status || 400).json({
+      error: error?.message || 'Unable to fetch the audio join status.',
+      code: error?.code,
+    });
+  }
+});
 
 
 router.post('/request_generate_audio', async function(req, res) {

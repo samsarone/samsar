@@ -80,6 +80,28 @@ npm run sync
 
 The sync script excludes common secret and generated paths when copying projects into this monorepo. Skip this workflow in a standalone clone.
 
+It also packages the Vast.ai FLUX.2 standalone utility under
+`utils/vast-flux2`. From a synchronized workspace or standalone clone:
+
+```bash
+cd utils/vast-flux2
+./provision-vast-flux2.sh --check
+./provision-vast-flux2.sh --configure-samsar
+```
+
+For an already provisioned endpoint, register the latest securely saved
+adapter with the running standalone Samsar processor:
+
+```bash
+cd utils/vast-flux2
+./configure-samsar-custom-image-model.sh
+```
+
+The provisioner stores credentials outside the repository under
+`~/.config/samsar/vast-flux2` with owner-only permissions. See
+`utils/vast-flux2/README.md` for credential setup, URL output, instance
+destruction, and advanced options.
+
 </details>
 
 <details>
@@ -89,13 +111,21 @@ The direct setup launcher checks Docker before continuing:
 
 | Platform | Bootstrap behavior |
 | --- | --- |
-| Linux | Installs Docker CE, Buildx, and the Compose plugin from Docker's official package repository, enables the service, and configures user access. |
-| macOS | Uses an existing Docker Desktop installation, or installs it automatically through Homebrew when Homebrew is available. |
-| Windows | `setup.ps1` installs Docker Desktop with `winget` when needed and runs the launcher through Docker Desktop's WSL 2 integration. |
+| Linux | Requires Docker Engine 20.10.0+, Docker Compose 2.20.0+, and Buildx. Missing installations receive current packages; deficient existing installations are updated only through their existing installation channel without changing package families. |
+| macOS | Requires Docker Desktop 4.84.0 or newer. Uses an existing compatible installation, or installs/updates it automatically when the Docker Desktop updater or Homebrew is available. |
+| Windows | Requires Docker Desktop 4.84.0 or newer. `setup.ps1` detects per-user and all-users installations, uses the Docker Desktop updater or `winget` to install/update it, and runs the launcher through WSL 2 integration. |
 
-Set `SAMSAR_SETUP_INSTALL_DOCKER=0` to disable automatic Docker installation.
+Set `SAMSAR_SETUP_INSTALL_DOCKER=0` to disable automatic Docker installation and updates. An incompatible installation then produces a platform-specific manual update instruction instead of being changed.
 On macOS without Homebrew, install [Docker Desktop for Mac](https://docs.docker.com/desktop/setup/install/mac-install/).
 On Windows without `winget`, install [Docker Desktop for Windows](https://docs.docker.com/desktop/setup/install/windows-install/) and enable WSL 2 integration.
+On Linux, the launcher does not replace an existing distro, Snap, rootless, or Docker Desktop installation with a different package family. It updates through a recognized existing channel when that is safe and otherwise links the matching [Docker Engine installation guide](https://docs.docker.com/engine/install/). Docker's convenience installer is used only as a fresh-install fallback, never to upgrade an existing Engine.
+Arch requires a full system package upgrade, so the launcher asks for explicit confirmation (or requires `--yes`) before running `pacman -Syu`. Inside WSL, the launcher uses Docker Desktop's Windows integration and never installs or starts a competing in-distribution Engine.
+The Linux version numbers are functional compatibility floors, not a recommendation to remain on an old patch; keep Docker on a current, vendor-supported release.
+
+> [!IMPORTANT]
+> On macOS, use Docker Desktop 4.84.0 or newer. Earlier releases predate the [4.45.0 wake-from-sleep VM fix](https://docs.docker.com/desktop/release-notes/#4450) and the [4.79.0 VM-wake API 500 fix](https://docs.docker.com/desktop/release-notes/#4790). The launcher verifies the installed app version before starting the setup wizard. When automatic Docker installation is enabled, it attempts an in-place update; otherwise it stops with an upgrade instruction.
+>
+> Windows uses the same Docker Desktop minimum so launcher behavior stays consistent across Desktop platforms. Native Linux does not contain Docker Desktop's macOS VM/network path; its separate Engine and Compose floors are based on Samsar's runtime and compose-file features.
 
 </details>
 

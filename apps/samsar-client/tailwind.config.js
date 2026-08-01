@@ -8,14 +8,15 @@ module.exports = {
   theme: {
     extend: {
       colors: {
-        'void-ink': '#0b1226',
-        'void-ink-2': '#0f1c35',
+        'void-ink': '#0c0d12',
+        'void-ink-2': '#20232e',
+        'gamer-scarlet': '#ff4655',
+        'pulse-violet': '#f6c453',
         'neon-rose': '#ff5f8a',
-        'neon-cyan': '#2dd4ff',
-        'ember-amber': '#ffb869',
+        'neon-cyan': '#f6c453',
+        'ember-amber': '#f4c86b',
       }
     },
   },
   plugins: [],
 }
-

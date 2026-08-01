@@ -180,10 +180,10 @@ export default function UsagePanelContent() {
 
   const textColor = colorMode === "dark" ? "text-slate-100" : "text-slate-900";
   const secondaryTextColor = colorMode === "dark" ? "text-slate-400" : "text-slate-500";
-  const cardBgColor = colorMode === "dark" ? "bg-[#0f1629]" : "bg-white";
-  const borderColor = colorMode === "dark" ? "border-[#1f2a3d]" : "border-slate-200";
-  const mutedBg = colorMode === "dark" ? "bg-[#111a2f]" : "bg-slate-50";
-  const headerBg = colorMode === "dark" ? "bg-[#0b1224]" : "bg-slate-100";
+  const cardBgColor = colorMode === "dark" ? "bg-[#181b24]" : "bg-white";
+  const borderColor = colorMode === "dark" ? "border-[#3a4050]" : "border-slate-200";
+  const mutedBg = colorMode === "dark" ? "bg-[#20232e]" : "bg-slate-50";
+  const headerBg = colorMode === "dark" ? "bg-[#151720]" : "bg-slate-100";
 
   const fetchUsageLogs = async (pageToLoad = 1) => {
     setLoading(true);
@@ -565,7 +565,7 @@ export default function UsagePanelContent() {
                         <tr
                           key={`${item.id || index}-${subRow.id}`}
                           className={`border-t ${borderColor} ${
-                            colorMode === "dark" ? "bg-[#0b1224]/55" : "bg-slate-50/70"
+                            colorMode === "dark" ? "bg-[#151720]/55" : "bg-slate-50/70"
                           }`}
                         >
                           <td className="px-4 py-2 pl-8">

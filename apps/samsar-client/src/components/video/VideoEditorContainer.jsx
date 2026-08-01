@@ -3163,7 +3163,7 @@ export default function VideoEditorContainer(props) {
 
   const mainWorkspaceShell =
     colorMode === 'dark'
-      ? 'bg-[#0b1021] text-slate-100'
+      ? 'bg-[#0c0d12] text-slate-100'
       : 'bg-gradient-to-br from-[#e9edf7] via-[#eef3fb] to-white text-slate-900';
 
   return (

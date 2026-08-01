@@ -1,5 +1,4 @@
 import { google } from 'googleapis';
-import Auth from '../../schema/Auth.js';
 import User from '../../schema/User.js';
 import { generateAuthToken } from '../Auth.js';
 import { getDBConnectionString } from '../DBString.js';
@@ -8,68 +7,46 @@ import {
   notifyAdminForNewsletterSubscription,
   prepareUserForVerifiedNewsletterSubscription,
 } from '../Newsletter.js';
+import { createClientGoogleOAuthState } from './GoogleOAuthState.js';
 
 const CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
 const CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
 const API_SERVER = process.env.API_SERVER;
-const CLIENT_APP = process.env.CLIENT_APP;
-
 const CALLBACK_URL = `${API_SERVER}/users/google_login_callback`;
 export const GOOGLE_ADMIN_ACCESS_DENIED = 'GOOGLE_ADMIN_ACCESS_DENIED';
 
-const oauth2Client = new google.auth.OAuth2(
-  CLIENT_ID,
-  CLIENT_SECRET,
-  CALLBACK_URL
-);
-
-function encodeOAuthState(payload = {}) {
-  return Buffer.from(JSON.stringify(payload))
-    .toString('base64url');
+function createOAuth2Client() {
+  return new google.auth.OAuth2(
+    CLIENT_ID,
+    CLIENT_SECRET,
+    CALLBACK_URL,
+  );
 }
 
-
-export async function getGoogleLogin(params = {}) {
+function buildGoogleLoginUrl(state) {
   const scopes = [
     'https://www.googleapis.com/auth/userinfo.profile',
     'https://www.googleapis.com/auth/userinfo.email',
   ];
 
-  // Create a small object to store in `state`.
-  // You can store more fields if needed.
-  const payload = typeof params === 'string' ? { origin: params } : params;
-  const {
-    adminLogin,
-    origin,
-    cookieConsent,
-    redirect,
-    subscribeToNewsletter,
-    subscribeToWeeklyNewsletter,
-  } = payload || {};
-  const stateData = { origin };
-  if (adminLogin === true || adminLogin === 'true') {
-    stateData.adminLogin = true;
-  }
-  if (cookieConsent) {
-    stateData.cookieConsent = cookieConsent;
-  }
-  if (typeof redirect === 'string' && redirect.startsWith('/') && !redirect.startsWith('//')) {
-    stateData.redirect = redirect;
-  }
-  const newsletterPreference = subscribeToWeeklyNewsletter ?? subscribeToNewsletter;
-  if (newsletterPreference !== undefined) {
-    stateData.subscribeToWeeklyNewsletter = normalizeNewsletterPreference(newsletterPreference, false);
-  }
-  const encodedState = encodeOAuthState(stateData);
-
-  const url = oauth2Client.generateAuthUrl({
+  return createOAuth2Client().generateAuthUrl({
     access_type: 'offline',
     scope: scopes,
     prompt: 'consent',
-    state: encodedState, // <--- pass encoded state
+    state,
   });
+}
 
-  return url;
+export async function getGoogleLogin(params = {}) {
+  const payload = typeof params === 'string' ? { origin: params } : params;
+  return buildGoogleLoginUrl(createClientGoogleOAuthState(payload));
+}
+
+export async function getGoogleLoginWithState(state) {
+  if (typeof state !== 'string' || !state.trim()) {
+    throw new Error('A signed Google OAuth state is required.');
+  }
+  return buildGoogleLoginUrl(state.trim());
 }
 
 export function requireGoogleAdminAccess(user, adminLogin = false) {
@@ -88,7 +65,7 @@ export function requireGoogleAdminAccess(user, adminLogin = false) {
 
 
 export async function loginGoogleClient(query) {
-  const { code, adminLogin = false } = query;
+  const { code, adminLogin = false, issueAuthToken = true } = query;
   const subscribeToWeeklyNewsletter = normalizeNewsletterPreference(
     query?.subscribeToWeeklyNewsletter ?? query?.subscribeToNewsletter,
     false
@@ -97,6 +74,7 @@ export async function loginGoogleClient(query) {
   // Ensure DB is connected
   await getDBConnectionString();
 
+  const oauth2Client = createOAuth2Client();
   const clientData = await oauth2Client.getToken(code);
   const { tokens } = clientData;
 
@@ -132,6 +110,7 @@ export async function loginGoogleClient(query) {
       username: userData.name,
       displayName: userData.name,
       isEmailVerified: true,
+      generationCredits: 0,
       weeklyNewsletterSubscribed: subscribeToWeeklyNewsletter,
       weeklyNewsletterSubscriptionSource: subscribeToWeeklyNewsletter ? 'google_registration' : undefined,
     });
@@ -148,6 +127,7 @@ export async function loginGoogleClient(query) {
     }
   }
 
-  const authToken = generateAuthToken(userResponse._id);
-  return { authToken, isNewUser };
+  const userId = userResponse._id.toString();
+  const authToken = issueAuthToken ? generateAuthToken(userId) : null;
+  return { authToken, isNewUser, userId };
 }

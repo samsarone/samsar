@@ -57,10 +57,10 @@ export default function Login(props) {
   const cardClasses =
     colorMode === 'light'
       ? 'bg-[#f8fafc] text-slate-900 border border-slate-200'
-      : 'bg-slate-950 text-slate-100 border border-slate-800 shadow-xl';
+      : 'border border-[#3a4050] bg-[#181b24]/96 text-slate-100 shadow-[0_24px_70px_rgba(0,0,0,0.38)] backdrop-blur-xl';
   const tabBase =
-    'rounded-md px-3 py-2 text-sm font-semibold transition focus:outline-none focus:ring-2 focus:ring-blue-500/40';
-  const tabActive = colorMode === 'light' ? 'bg-blue-600 text-white' : 'bg-blue-500/20 text-blue-200';
+    'rounded-md px-3 py-2 text-sm font-semibold transition focus:outline-none focus:ring-2 focus:ring-[#f6c453]/65';
+  const tabActive = colorMode === 'light' ? 'bg-blue-600 text-white' : 'bg-[#ff4655]/16 text-[#ffd4d8]';
   const tabInactive =
     colorMode === 'light'
       ? 'text-slate-500 hover:text-slate-900'
@@ -69,16 +69,16 @@ export default function Login(props) {
   const inputClasses =
     colorMode === 'light'
       ? 'bg-[#ffffff] border-slate-200 text-slate-900 placeholder:text-slate-400 focus:border-blue-500 focus:ring-blue-200'
-      : 'bg-slate-900 border-slate-700 text-slate-100 placeholder:text-slate-500 focus:border-blue-400 focus:ring-blue-500/30';
+      : 'bg-[#151720] border-[#667188] text-slate-100 placeholder:text-[#8b96aa] focus:border-[#f6c453] focus:ring-[#f6c453]/24';
 
   const googleButtonClasses =
     colorMode === 'light'
       ? 'bg-[#ffffff] text-slate-900 border border-slate-200 hover:border-blue-400/70 hover:bg-slate-50'
-      : 'bg-slate-900 text-slate-100 border border-slate-700 hover:border-blue-400/60 hover:bg-slate-800';
+      : 'bg-[#20232e] text-slate-100 border border-[#667188] hover:border-[#ff4655]/60 hover:bg-[#292d3a]';
   const tabShellClasses =
     colorMode === 'light'
       ? 'border border-slate-200 bg-slate-100'
-      : 'border border-slate-300/30 bg-black/5';
+      : 'border border-[#3a4050] bg-[#12141c]';
   const subduedText = colorMode === 'light' ? 'text-slate-500' : 'text-slate-400';
   const fieldClasses = 'space-y-1.5';
   const labelClasses = 'block text-xs font-semibold';
@@ -116,10 +116,10 @@ export default function Login(props) {
         <>
           <button
             type="button"
-            className={`flex items-center justify-center w-full rounded-lg py-2.5 text-sm transition focus:outline-none focus:ring-2 focus:ring-blue-500/40 ${googleButtonClasses}`}
+            className={`flex items-center justify-center w-full rounded-lg py-2.5 text-sm transition focus:outline-none focus:ring-2 focus:ring-[#f6c453]/65 ${googleButtonClasses}`}
             onClick={signInWithGoogle}
           >
-            <FaGoogle className="inline-block mr-2 text-blue-600" />
+            <FaGoogle className={`inline-block mr-2 ${colorMode === 'dark' ? 'text-[#ffe0a3]' : 'text-blue-600'}`} />
             <span className="font-semibold">Continue with Google</span>
           </button>
 
@@ -164,7 +164,7 @@ export default function Login(props) {
       </form>
 
       <div className="text-center text-xs text-slate-500">
-        <Link to="/forgot_password" className="text-blue-600 hover:underline">
+        <Link to="/forgot_password" className={colorMode === 'dark' ? 'text-[#ffe0a3] hover:underline' : 'text-blue-600 hover:underline'}>
           Forgot password?
         </Link>
       </div>
@@ -175,7 +175,7 @@ export default function Login(props) {
           <button
             type="button"
             onClick={() => setCurrentLoginView('register')}
-            className="text-blue-500 hover:underline"
+            className={colorMode === 'dark' ? 'text-[#ffe0a3] hover:underline' : 'text-blue-500 hover:underline'}
           >
             Sign up
           </button>

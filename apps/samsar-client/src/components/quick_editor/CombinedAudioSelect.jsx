@@ -10,10 +10,12 @@ export default function CombinedAudioSelect(props) {
   } = props;
 
   // Styles for select and dropdowns
-  const formSelectBgColor = colorMode === 'dark' ? '#1a1a1a' : '#f3f4f6';
-  const formSelectTextColor = colorMode === 'dark' ? '#f3f4f6' : '#111827';
-  const formSelectSelectedTextColor = colorMode === 'dark' ? '#f3f4f6' : '#111827';
-  const formSelectHoverColor = colorMode === 'dark' ? '#007BFF' : '#2563EB';
+  const formSelectBgColor = colorMode === 'dark' ? '#181b24' : '#f3f4f6';
+  const formSelectTextColor = colorMode === 'dark' ? '#f4f6fb' : '#111827';
+  const formSelectSelectedTextColor = colorMode === 'dark' ? '#ffd4d8' : '#111827';
+  const formSelectHoverColor = colorMode === 'dark' ? '#292d3a' : '#2563EB';
+  const formSelectBorderColor = colorMode === 'dark' ? '#667188' : '#ced4da';
+  const formSelectFocusColor = colorMode === 'dark' ? '#f6c453' : '#007BFF';
 
 
   // Custom Option Component to include play/pause icons and provider
@@ -61,6 +63,9 @@ export default function CombinedAudioSelect(props) {
             menu: (provided) => ({
               ...provided,
               backgroundColor: formSelectBgColor,
+              border: `1px solid ${colorMode === 'dark' ? '#3a4050' : '#d1d5db'}`,
+              borderRadius: 10,
+              overflow: 'hidden',
             }),
             singleValue: (provided) => ({
               ...provided,
@@ -69,15 +74,17 @@ export default function CombinedAudioSelect(props) {
             control: (provided, state) => ({
               ...provided,
               backgroundColor: formSelectBgColor,
-              borderColor: state.isFocused ? '#007BFF' : '#ced4da',
+              borderColor: state.isFocused ? formSelectFocusColor : formSelectBorderColor,
               '&:hover': {
-                borderColor: state.isFocused ? '#007BFF' : '#ced4da',
+                borderColor: state.isFocused ? formSelectFocusColor : formSelectBorderColor,
               },
               boxShadow: state.isFocused
-                ? '0 0 0 0.2rem rgba(0, 123, 255, 0.25)'
+                ? colorMode === 'dark'
+                  ? '0 0 16px rgba(246, 196, 83, 0.18)'
+                  : '0 0 12px rgba(0, 123, 255, 0.16)'
                 : null,
-              minHeight: '38px',
-              height: '38px',
+              minHeight: '36px',
+              height: '36px',
             }),
             option: (provided, state) => ({
               ...provided,

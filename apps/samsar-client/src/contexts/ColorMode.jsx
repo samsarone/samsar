@@ -46,13 +46,28 @@ export const ColorModeProvider = ({ children }) => {
     // Toggle the color mode and update localStorage
     const newMode = colorMode === 'light' ? 'dark' : 'light';
     setColorMode(newMode);
-    localStorage.setItem('colorMode', newMode);
+    try {
+      localStorage.setItem('colorMode', newMode);
+    } catch {
+      // The in-memory theme can still change when storage is unavailable.
+    }
   };
 
   useEffect(() => {
+    const isDark = colorMode === 'dark';
     const body = document.body;
+    const root = document.documentElement;
+    const themeColorMeta = document.querySelector('meta[name="theme-color"]');
+
     body.classList.remove('theme-dark', 'theme-light');
-    body.classList.add(colorMode === 'dark' ? 'theme-dark' : 'theme-light');
+    body.classList.add(isDark ? 'theme-dark' : 'theme-light');
+    root.classList.toggle('dark', isDark);
+    root.style.backgroundColor = isDark ? '#0c0d12' : '#d9e2f0';
+    root.style.colorScheme = isDark ? 'dark' : 'light';
+
+    if (themeColorMeta) {
+      themeColorMeta.setAttribute('content', isDark ? '#0c0d12' : '#d9e2f0');
+    }
   }, [colorMode]);
 
   return (

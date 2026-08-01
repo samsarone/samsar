@@ -6,8 +6,10 @@ import {
   TEXT_TO_VIDEO_IMAGE_MODEL_KEYS,
   TEXT_TO_VIDEO_VIDEO_MODEL_KEYS,
 } from '../../consts/ExpressVideoModelOptions.js';
+import { isStandaloneEdition } from '../../utils/EnvironmentUtils.js';
 
 export const MAX_MOVIE_PROMPT_LENGTH = 4000;
+export const CUSTOM_TEXT_TO_IMAGE_MODEL_PREFIX = 'CUSTOM_TEXT_TO_IMAGE:';
 
 export const DEPRECATED_VIDEO_MODEL_SUBTYPE_PAYLOAD_KEYS = [
   'video_model_sub_type',
@@ -16,6 +18,12 @@ export const DEPRECATED_VIDEO_MODEL_SUBTYPE_PAYLOAD_KEYS = [
 
 function resolveImageModelAlias(modelKey) {
   return modelKey;
+}
+
+export function isCustomTextToImageModelKey(modelKey) {
+  const normalized = typeof modelKey === 'string' ? modelKey.trim() : '';
+  return normalized.startsWith(CUSTOM_TEXT_TO_IMAGE_MODEL_PREFIX) &&
+    normalized.length > CUSTOM_TEXT_TO_IMAGE_MODEL_PREFIX.length;
 }
 
 export function stripDeprecatedVideoModelSubtypeOptions(payload) {
@@ -45,6 +53,18 @@ export function validateExpressImageModelKey(imageModel, options = {}) {
   }
 
   const resolvedImageModel = resolveImageModelAlias(normalizedImageModel);
+  if (isCustomTextToImageModelKey(resolvedImageModel)) {
+    if (!isStandaloneEdition()) {
+      return {
+        status: false,
+        message: 'Custom image models are only supported in standalone deployments',
+      };
+    }
+    return {
+      status: true,
+      imageModel: resolvedImageModel,
+    };
+  }
   const imageGenerationModelExists = IMAGE_GENERAITON_MODEL_TYPES.find(model => model.key === resolvedImageModel);
 
   if (!imageGenerationModelExists) {
@@ -229,20 +249,11 @@ export function validateNarrativeInput(payload) {
     };
   }
 
-  const resolvedImageModel = resolveImageModelAlias(image_model);
-  const imageGenerationModelExists = IMAGE_GENERAITON_MODEL_TYPES.find(model => model.key === resolvedImageModel);
-
-  if (!imageGenerationModelExists) {
+  const imageModelValidation = validateExpressImageModelKey(image_model);
+  if (!imageModelValidation.status) {
     return {
       status: false,
-      message: "Invalid image model"
-    };
-  }
-
-  if (!imageGenerationModelExists.isExpressModel) {
-    return {
-      status: false,
-      message: "Image model is not supported for this type"
+      message: imageModelValidation.message,
     };
   }
 

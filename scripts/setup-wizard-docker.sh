@@ -13,6 +13,9 @@ PUBLIC_IP_TIMEOUT_SECONDS="${SAMSAR_SETUP_PUBLIC_IP_TIMEOUT_SECONDS:-2}"
 READY_TIMEOUT_SECONDS="${SAMSAR_SETUP_READY_TIMEOUT_SECONDS:-30}"
 BOOTSTRAP_ENABLED="${SAMSAR_SETUP_BOOTSTRAP:-1}"
 INSTALL_DOCKER_ENABLED="${SAMSAR_SETUP_INSTALL_DOCKER:-1}"
+MIN_DOCKER_DESKTOP_MACOS_VERSION="4.84.0"
+MIN_DOCKER_ENGINE_LINUX_VERSION="20.10.0"
+MIN_DOCKER_COMPOSE_VERSION="2.20.0"
 ALLOW_DOCKER_CONVENIENCE_SCRIPT="${SAMSAR_SETUP_ALLOW_DOCKER_CONVENIENCE_SCRIPT:-1}"
 RESOURCE_CHECK_ENABLED="${SAMSAR_SETUP_RESOURCE_CHECK:-1}"
 MIN_MEMORY_GB="${SAMSAR_SETUP_MIN_MEMORY_GB:-16}"
@@ -31,6 +34,33 @@ OS_VERSION_CODENAME=""
 OS_UBUNTU_CODENAME=""
 PACKAGE_MANAGER=""
 CLOUD_ENVIRONMENT=""
+DOCKER_ENGINE_VERSION=""
+DOCKER_COMPOSE_VERSION=""
+DOCKER_ENGINE_COMPATIBLE=0
+DOCKER_COMPOSE_COMPATIBLE=0
+DOCKER_BUILDX_AVAILABLE=0
+DOCKER_ENGINE_PACKAGE_UPDATED=0
+DOCKER_UPDATE_CHANNEL=""
+DOCKER_UPDATE_GUIDE=""
+PROVIDER_ENV_DOCKER_ARGS=()
+PROVIDER_ENV_ALLOWLIST=""
+DEFAULT_PROVIDER_ENV_NAMES=(
+  SAMSAR_API_KEY
+  OPENAI_API_KEY
+  OPENROUTER_API_KEY
+  GOOGLE_APPLICATION_CREDENTIALS_JSON_B64
+  GOOGLE_APPLICATION_CREDENTIALS_JSON
+  KIMI_K3_API_KEY
+  ALIBABA_API_KEY
+  ALIBABA_API_HOST
+  DASHSCOPE_API_KEY
+  DASHSCOPE_BASE_URL
+  FAL_API_KEY
+  ELEVENLABS_API_KEY
+  ELEVENLABS_API_TOKEN
+  RUNWAY_API_KEY
+  RUNWAYML_API_KEY
+)
 
 log() {
   echo "[setup-wizard] $*"
@@ -56,6 +86,143 @@ enabled() {
   esac
 }
 
+build_provider_environment_forwarding() {
+  local raw_custom_names name existing configured_name
+  local -a provider_env_names
+  provider_env_names=("${DEFAULT_PROVIDER_ENV_NAMES[@]}")
+  raw_custom_names="${SAMSAR_SETUP_PROVIDER_ENV_NAMES:-}"
+  raw_custom_names="${raw_custom_names//,/ }"
+
+  for name in $raw_custom_names; do
+    [[ "$name" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] ||
+      die "Invalid provider environment variable name: $name"
+    existing=0
+    for configured_name in "${provider_env_names[@]}"; do
+      if [[ "$configured_name" == "$name" ]]; then
+        existing=1
+        break
+      fi
+    done
+    if [[ "$existing" == 0 ]]; then
+      provider_env_names+=("$name")
+    fi
+  done
+
+  PROVIDER_ENV_DOCKER_ARGS=()
+  for name in "${provider_env_names[@]}"; do
+    if printenv "$name" >/dev/null 2>&1; then
+      PROVIDER_ENV_DOCKER_ARGS+=(--env "$name=${!name}")
+    fi
+  done
+  PROVIDER_ENV_ALLOWLIST="$(IFS=,; printf '%s' "${provider_env_names[*]}")"
+}
+
+version_at_least() {
+  local current="${1%%[-+]*}"
+  local required="${2%%[-+]*}"
+  local index current_part required_part
+  local -a current_parts required_parts
+
+  IFS='.' read -r -a current_parts <<< "$current"
+  IFS='.' read -r -a required_parts <<< "$required"
+
+  for index in 0 1 2; do
+    current_part="${current_parts[$index]:-0}"
+    required_part="${required_parts[$index]:-0}"
+    [[ "$current_part" =~ ^[0-9]+$ && "$required_part" =~ ^[0-9]+$ ]] || return 1
+    if (( current_part > required_part )); then
+      return 0
+    fi
+    if (( current_part < required_part )); then
+      return 1
+    fi
+  done
+
+  return 0
+}
+
+normalize_version() {
+  local raw="${1:-}"
+  raw="${raw#v}"
+  if [[ "$raw" =~ ([0-9]+)\.([0-9]+)(\.([0-9]+))? ]]; then
+    printf '%s.%s.%s\n' "${BASH_REMATCH[1]}" "${BASH_REMATCH[2]}" "${BASH_REMATCH[4]:-0}"
+    return 0
+  fi
+  return 1
+}
+
+docker_desktop_macos_version() {
+  local plist="/Applications/Docker.app/Contents/Info.plist"
+  [[ "$(uname -s 2>/dev/null || true)" == "Darwin" && -r "$plist" ]] || return 1
+
+  if command -v plutil >/dev/null 2>&1; then
+    plutil -extract CFBundleShortVersionString raw -o - "$plist" 2>/dev/null && return 0
+  fi
+  if [[ -x /usr/libexec/PlistBuddy ]]; then
+    /usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$plist" 2>/dev/null
+  fi
+}
+
+wait_for_docker_desktop_macos_version() {
+  local attempt installed_version
+  for attempt in $(seq 1 60); do
+    installed_version="$(docker_desktop_macos_version || true)"
+    if [[ -n "$installed_version" ]] &&
+      version_at_least "$installed_version" "$MIN_DOCKER_DESKTOP_MACOS_VERSION"; then
+      printf '%s\n' "$installed_version"
+      return 0
+    fi
+    sleep 1
+  done
+  return 1
+}
+
+ensure_docker_desktop_macos_version() {
+  local installed_version
+  [[ "$(uname -s 2>/dev/null || true)" == "Darwin" ]] || return 0
+
+  installed_version="$(docker_desktop_macos_version || true)"
+  [[ -n "$installed_version" ]] ||
+    die "Could not determine the installed Docker Desktop version. Install Docker Desktop ${MIN_DOCKER_DESKTOP_MACOS_VERSION} or newer from $(docker_install_docs_url)."
+
+  if version_at_least "$installed_version" "$MIN_DOCKER_DESKTOP_MACOS_VERSION"; then
+    log "Docker Desktop ${installed_version} satisfies the macOS minimum (${MIN_DOCKER_DESKTOP_MACOS_VERSION})."
+    return 0
+  fi
+
+  warn "Docker Desktop ${installed_version} is older than the required macOS minimum ${MIN_DOCKER_DESKTOP_MACOS_VERSION}."
+  enabled "$BOOTSTRAP_ENABLED" && enabled "$INSTALL_DOCKER_ENABLED" ||
+    die "Update Docker Desktop to ${MIN_DOCKER_DESKTOP_MACOS_VERSION} or newer, then rerun setup. Guide: $(docker_install_docs_url)"
+
+  if docker desktop update --help >/dev/null 2>&1; then
+    log "Updating Docker Desktop to ${MIN_DOCKER_DESKTOP_MACOS_VERSION} or newer..."
+    if docker desktop update --quiet; then
+      installed_version="$(wait_for_docker_desktop_macos_version || true)"
+      if [[ -n "$installed_version" ]]; then
+        log "Docker Desktop updated to ${installed_version}."
+        return 0
+      fi
+    else
+      warn "Docker Desktop's in-place updater did not complete successfully."
+    fi
+  fi
+
+  if command -v brew >/dev/null 2>&1 && brew list --cask docker >/dev/null 2>&1; then
+    log "Updating Docker Desktop with Homebrew..."
+    if brew upgrade --cask docker; then
+      installed_version="$(wait_for_docker_desktop_macos_version || true)"
+      if [[ -n "$installed_version" ]]; then
+        log "Docker Desktop updated to ${installed_version}."
+        return 0
+      fi
+    else
+      warn "Homebrew could not update Docker Desktop."
+    fi
+  fi
+
+  die "Docker Desktop ${MIN_DOCKER_DESKTOP_MACOS_VERSION} or newer is required on macOS. Update it from $(docker_install_docs_url), then rerun setup."
+}
+
 usage() {
   cat <<EOF
 Usage: ./setup.sh [options]
@@ -79,6 +246,9 @@ Environment:
 Node.js and npm are not required on the host. They run inside the setup
 wizard container. On supported Linux hosts, missing Docker CE, Buildx, and
 the Compose plugin are installed automatically before the wizard starts.
+Existing Linux installations must provide Engine ${MIN_DOCKER_ENGINE_LINUX_VERSION}+, Compose
+${MIN_DOCKER_COMPOSE_VERSION}+, and Buildx; recognized package channels can be updated in place.
+On macOS, Docker Desktop ${MIN_DOCKER_DESKTOP_MACOS_VERSION} or newer is required.
 EOF
 }
 
@@ -265,6 +435,10 @@ run_as_root_preserve_env() {
 
 docker_install_docs_url() {
   if is_linux; then
+    if is_wsl_environment; then
+      echo "https://docs.docker.com/desktop/setup/install/windows-install/"
+      return 0
+    fi
     case "$OS_ID" in
       ubuntu|pop|linuxmint|elementary|neon)
         echo "https://docs.docker.com/engine/install/ubuntu/"
@@ -308,6 +482,18 @@ docker_install_docs_url() {
   esac
 }
 
+is_wsl_environment() {
+  grep -Eqi 'microsoft|wsl' /proc/sys/kernel/osrelease /proc/version 2>/dev/null
+}
+
+docker_update_docs_url() {
+  if [[ -n "$DOCKER_UPDATE_GUIDE" ]]; then
+    printf '%s\n' "$DOCKER_UPDATE_GUIDE"
+  else
+    docker_install_docs_url
+  fi
+}
+
 print_docker_install_hint() {
   warn "Docker is not installed or not available on PATH."
   warn "Detected environment: ${OS_PRETTY_NAME}${CLOUD_ENVIRONMENT:+ on $CLOUD_ENVIRONMENT}"
@@ -330,7 +516,9 @@ ensure_base_packages() {
       run_as_root apk add --no-cache bash ca-certificates curl git iproute2
       ;;
     pacman)
-      run_as_root pacman -Sy --needed --noconfirm ca-certificates curl gnupg git iproute2
+      # Arch does not support partial upgrades; synchronize the whole system
+      # before installing bootstrap packages.
+      run_as_root pacman -Syu --needed --noconfirm ca-certificates curl gnupg git iproute2
       ;;
     *)
       if ! command -v curl >/dev/null 2>&1; then
@@ -432,13 +620,24 @@ install_docker_rpm() {
 install_docker_alpine() {
   [[ "$PACKAGE_MANAGER" == "apk" ]] || return 1
   log "Installing Docker from Alpine packages..."
-  run_as_root apk add --no-cache docker docker-cli-compose || return 1
+  run_as_root apk add --no-cache docker docker-cli-compose docker-cli-buildx || return 1
+}
+
+approve_arch_full_upgrade() {
+  warn "Arch Linux requires a full system upgrade before Docker packages can be safely installed or updated."
+  if confirm_action "Run 'sudo pacman -Syu' and update Docker packages now?"; then
+    return 0
+  fi
+  warn "No system packages were changed. Run 'sudo pacman -Syu docker docker-compose docker-buildx', then rerun setup."
+  return 1
 }
 
 install_docker_arch() {
   [[ "$PACKAGE_MANAGER" == "pacman" ]] || return 1
+  approve_arch_full_upgrade || return 1
   log "Installing Docker from Arch packages..."
-  run_as_root pacman -Sy --needed --noconfirm docker docker-compose || return 1
+  run_as_root pacman -Syu --needed --noconfirm \
+    ca-certificates curl gnupg git iproute2 docker docker-compose docker-buildx || return 1
 }
 
 install_docker_convenience_script() {
@@ -457,7 +656,7 @@ install_docker_desktop_macos() {
     return 1
   }
 
-  log "Installing Docker Desktop with Homebrew..."
+  log "Installing the latest Docker Desktop available through Homebrew..."
   brew install --cask docker || return 1
   if [[ -x /Applications/Docker.app/Contents/Resources/bin/docker ]]; then
     export PATH="/Applications/Docker.app/Contents/Resources/bin:$PATH"
@@ -465,27 +664,38 @@ install_docker_desktop_macos() {
 }
 
 install_docker_engine() {
-  if [[ "$(uname -s 2>/dev/null || true)" == "Darwin" \
-    && -x /Applications/Docker.app/Contents/Resources/bin/docker ]]; then
-    export PATH="/Applications/Docker.app/Contents/Resources/bin:$PATH"
-  fi
-  command -v docker >/dev/null 2>&1 && return 0
-  print_docker_install_hint
-  enabled "$BOOTSTRAP_ENABLED" || exit 1
-  enabled "$INSTALL_DOCKER_ENABLED" || die "Automatic Docker installation is disabled. Install Docker from $(docker_install_docs_url), then rerun this script."
-
   if [[ "$(uname -s 2>/dev/null || true)" == "Darwin" ]]; then
-    install_docker_desktop_macos ||
-      die "Could not install Docker Desktop automatically. Use: $(docker_install_docs_url)"
+    if [[ -x /Applications/Docker.app/Contents/Resources/bin/docker ]]; then
+      export PATH="/Applications/Docker.app/Contents/Resources/bin:$PATH"
+    elif [[ ! -d /Applications/Docker.app ]]; then
+      print_docker_install_hint
+      enabled "$BOOTSTRAP_ENABLED" || exit 1
+      enabled "$INSTALL_DOCKER_ENABLED" || die "Automatic Docker installation is disabled. Install Docker from $(docker_install_docs_url), then rerun this script."
+      install_docker_desktop_macos ||
+        die "Could not install Docker Desktop automatically. Use: $(docker_install_docs_url)"
+    fi
     command -v docker >/dev/null 2>&1 ||
       die "Docker Desktop installation completed, but docker is still not on PATH. Restart the shell and rerun setup."
     return 0
   fi
 
+  command -v docker >/dev/null 2>&1 && return 0
+  print_docker_install_hint
+  enabled "$BOOTSTRAP_ENABLED" || exit 1
+  enabled "$INSTALL_DOCKER_ENABLED" || die "Automatic Docker installation is disabled. Install Docker from $(docker_install_docs_url), then rerun this script."
+
   is_linux || die "Automatic Docker installation is not supported on this host. Install Docker from the guide above, then rerun this script."
+  if is_wsl_environment; then
+    die "Install or update Docker Desktop on Windows, enable WSL integration for this distribution, and rerun setup. Guide: $(docker_install_docs_url)"
+  fi
 
   log "Attempting automatic Docker installation..."
-  ensure_base_packages
+  if [[ "$PACKAGE_MANAGER" == "pacman" ]]; then
+    install_docker_arch ||
+      die "Arch Docker installation was not approved. Run 'sudo pacman -Syu docker docker-compose docker-buildx', then rerun setup."
+  else
+    ensure_base_packages
+  fi
   case "$PACKAGE_MANAGER" in
     apt)
       install_docker_apt || install_docker_convenience_script || die "Could not install Docker automatically. Use: $(docker_install_docs_url)"
@@ -497,7 +707,6 @@ install_docker_engine() {
       install_docker_alpine || die "Could not install Docker automatically. Use: $(docker_install_docs_url)"
       ;;
     pacman)
-      install_docker_arch || die "Could not install Docker automatically. Use: $(docker_install_docs_url)"
       ;;
     *)
       install_docker_convenience_script || die "Could not install Docker automatically. Use: $(docker_install_docs_url)"
@@ -508,7 +717,7 @@ install_docker_engine() {
 }
 
 start_docker_service() {
-  local attempt
+  local attempt context_name context_host docker_path
   if [[ "$(uname -s 2>/dev/null || true)" == "Darwin" ]]; then
     if docker info >/dev/null 2>&1; then
       return 0
@@ -524,11 +733,56 @@ start_docker_service() {
   fi
 
   is_linux || return 0
+  docker info >/dev/null 2>&1 && return 0
+  enabled "$BOOTSTRAP_ENABLED" || {
+    warn "Host bootstrap is disabled; Docker services will not be started automatically."
+    return 0
+  }
+
+  context_name="${DOCKER_CONTEXT:-$(docker context show 2>/dev/null || true)}"
+  context_host="$(active_docker_endpoint || true)"
+  if [[ -n "$context_host" && "$context_host" != unix://* ]]; then
+    warn "The active Docker context uses ${context_host}; local Docker services will not be started."
+    return 0
+  fi
+  if [[ "$context_name" == "desktop-linux" || "$context_host" == *'/.docker/desktop/docker.sock' ]]; then
+    log "Starting Docker Desktop for Linux..."
+    if docker desktop start --help >/dev/null 2>&1; then
+      docker desktop start >/dev/null 2>&1 || true
+    elif command -v systemctl >/dev/null 2>&1; then
+      systemctl --user start docker-desktop >/dev/null 2>&1 || true
+    fi
+    for attempt in $(seq 1 90); do
+      docker info >/dev/null 2>&1 && return 0
+      sleep 2
+    done
+    return 0
+  fi
+  if is_wsl_environment; then
+    warn "Docker Desktop is not reachable from WSL; an in-distribution system Engine will not be started."
+    warn "Start or update Docker Desktop on Windows and enable WSL integration for this distribution."
+    return 0
+  fi
+  if [[ "$context_name" == "rootless" || "$context_host" == unix:///run/user/* ]]; then
+    warn "The active Docker context is rootless; the system Docker service will not be started."
+    return 0
+  fi
+  if [[ -n "$context_host" && "$context_host" != "unix:///var/run/docker.sock" && "$context_host" != "unix:///run/docker.sock" ]]; then
+    warn "The active Docker context uses ${context_host}; a different system Docker service will not be started."
+    return 0
+  fi
+
+  docker_path="$(command -v docker 2>/dev/null || true)"
   log "Starting Docker service..."
-  if command -v systemctl >/dev/null 2>&1; then
+  if [[ "$docker_path" == /snap/bin/* || "$(readlink -f "$docker_path" 2>/dev/null || true)" == /snap/docker/* ]]; then
+    if command -v systemctl >/dev/null 2>&1; then
+      run_as_root systemctl enable --now snap.docker.dockerd >/dev/null 2>&1 || true
+    elif command -v snap >/dev/null 2>&1; then
+      run_as_root snap start --enable docker >/dev/null 2>&1 || true
+    fi
+  elif command -v systemctl >/dev/null 2>&1; then
     run_as_root systemctl enable --now containerd >/dev/null 2>&1 || true
     run_as_root systemctl enable --now docker >/dev/null 2>&1 || run_as_root systemctl start docker >/dev/null 2>&1 || true
-    run_as_root systemctl enable --now snap.docker.dockerd >/dev/null 2>&1 || true
   elif command -v rc-service >/dev/null 2>&1; then
     run_as_root rc-update add docker default >/dev/null 2>&1 || true
     run_as_root rc-service docker start >/dev/null 2>&1 || true
@@ -550,6 +804,10 @@ target_docker_user() {
 ensure_docker_group_permissions() {
   local target_user
   is_linux || return 0
+  enabled "$BOOTSTRAP_ENABLED" || {
+    warn "Host bootstrap is disabled; Docker group membership will not be changed."
+    return 0
+  }
   target_user="$(target_docker_user)"
   [[ "$target_user" != "root" ]] || return 0
   id "$target_user" >/dev/null 2>&1 || return 0
@@ -574,8 +832,24 @@ docker_cli() {
   "${DOCKER_CMD[@]}" "$@"
 }
 
+active_docker_endpoint() {
+  local context_name
+  if [[ "${DOCKER_CMD[0]:-docker}" == "sudo" ]]; then
+    context_name="$(docker_cli context show 2>/dev/null || true)"
+  elif [[ -n "${DOCKER_CONTEXT:-}" ]]; then
+    context_name="$DOCKER_CONTEXT"
+  elif [[ -n "${DOCKER_HOST:-}" ]]; then
+    printf '%s\n' "$DOCKER_HOST"
+    return 0
+  else
+    context_name="$(docker_cli context show 2>/dev/null || true)"
+  fi
+  [[ -n "$context_name" ]] || return 1
+  docker_cli context inspect "$context_name" --format '{{(index .Endpoints "docker").Host}}' 2>/dev/null
+}
+
 select_docker_command() {
-  local docker_info_output sudo_info_output
+  local docker_info_output sudo_info_output requested_endpoint
   if docker_info_output="$(try_docker_info docker)"; then
     DOCKER_CMD=(docker)
     return 0
@@ -585,8 +859,22 @@ select_docker_command() {
     ensure_docker_group_permissions
   fi
 
-  if command -v sudo >/dev/null 2>&1 && sudo_info_output="$(try_docker_info sudo docker)"; then
-    DOCKER_CMD=(sudo docker)
+  requested_endpoint="$(active_docker_endpoint || true)"
+  if [[ -z "$requested_endpoint" ]]; then
+    warn "The active Docker endpoint could not be identified; sudo will not use a potentially different Docker context."
+  elif [[ "$requested_endpoint" != "unix:///var/run/docker.sock" \
+    && "$requested_endpoint" != "unix:///run/docker.sock" ]]; then
+    warn "The active Docker endpoint is ${requested_endpoint}; sudo will not be redirected to root's different Docker context."
+  elif command -v sudo >/dev/null 2>&1 && sudo_info_output="$(
+    try_docker_info sudo env \
+      -u DOCKER_HOST -u DOCKER_CONTEXT -u DOCKER_CONFIG \
+      -u DOCKER_CERT_PATH -u DOCKER_TLS_VERIFY docker
+  )"; then
+    DOCKER_CMD=(
+      sudo env
+      -u DOCKER_HOST -u DOCKER_CONTEXT -u DOCKER_CONFIG
+      -u DOCKER_CERT_PATH -u DOCKER_TLS_VERIFY docker
+    )
     if (( DOCKER_GROUP_CHANGED )); then
       warn "Using sudo for Docker in this run. Start a new SSH session later to use Docker without sudo."
     else
@@ -604,18 +892,610 @@ select_docker_command() {
   die "Fix Docker using the install guide for this host: $(docker_install_docs_url)"
 }
 
-detect_docker_socket_path() {
-  if [[ -n "${SAMSAR_SETUP_DOCKER_SOCKET:-}" ]]; then
-    echo "$SAMSAR_SETUP_DOCKER_SOCKET"
-  elif [[ "${DOCKER_HOST:-}" == unix://* ]]; then
-    echo "${DOCKER_HOST#unix://}"
-  elif [[ -S /var/run/docker.sock ]]; then
-    echo "/var/run/docker.sock"
-  elif [[ -n "${XDG_RUNTIME_DIR:-}" && -S "${XDG_RUNTIME_DIR}/docker.sock" ]]; then
-    echo "${XDG_RUNTIME_DIR}/docker.sock"
-  else
-    echo "/var/run/docker.sock"
+probe_linux_docker_requirements() {
+  local raw_version
+
+  DOCKER_ENGINE_VERSION=""
+  DOCKER_COMPOSE_VERSION=""
+  DOCKER_ENGINE_COMPATIBLE=0
+  DOCKER_COMPOSE_COMPATIBLE=0
+  DOCKER_BUILDX_AVAILABLE=0
+
+  raw_version="$(docker_cli version --format '{{.Server.Version}}' 2>/dev/null || true)"
+  DOCKER_ENGINE_VERSION="$(normalize_version "$raw_version" || true)"
+  if [[ -n "$DOCKER_ENGINE_VERSION" ]] &&
+    version_at_least "$DOCKER_ENGINE_VERSION" "$MIN_DOCKER_ENGINE_LINUX_VERSION"; then
+    DOCKER_ENGINE_COMPATIBLE=1
   fi
+
+  raw_version="$(docker_cli compose version --short 2>/dev/null || true)"
+  if [[ -z "$raw_version" ]]; then
+    raw_version="$(docker_cli compose version 2>/dev/null || true)"
+  fi
+  DOCKER_COMPOSE_VERSION="$(normalize_version "$raw_version" || true)"
+  if [[ -n "$DOCKER_COMPOSE_VERSION" ]] &&
+    version_at_least "$DOCKER_COMPOSE_VERSION" "$MIN_DOCKER_COMPOSE_VERSION"; then
+    DOCKER_COMPOSE_COMPATIBLE=1
+  fi
+
+  if docker_cli buildx version >/dev/null 2>&1; then
+    DOCKER_BUILDX_AVAILABLE=1
+  fi
+}
+
+linux_docker_requirements_met() {
+  (( DOCKER_ENGINE_COMPATIBLE && DOCKER_COMPOSE_COMPATIBLE && DOCKER_BUILDX_AVAILABLE ))
+}
+
+linux_docker_requirements_summary() {
+  local engine_display="${DOCKER_ENGINE_VERSION:-not detected}"
+  local compose_display="${DOCKER_COMPOSE_VERSION:-not installed}"
+  local buildx_display="missing"
+  (( DOCKER_BUILDX_AVAILABLE )) && buildx_display="available"
+  printf 'Engine %s (required >= %s), Compose %s (required >= %s), Buildx %s' \
+    "$engine_display" "$MIN_DOCKER_ENGINE_LINUX_VERSION" \
+    "$compose_display" "$MIN_DOCKER_COMPOSE_VERSION" "$buildx_display"
+}
+
+docker_is_desktop_backed() {
+  local details
+  details="$(docker_cli info --format '{{.OperatingSystem}} {{.Name}}' 2>/dev/null || true)"
+  printf '%s\n' "$details" | grep -Eqi 'docker[[:space:]-]*desktop'
+}
+
+docker_is_rootless() {
+  local security_options
+  security_options="$(docker_cli info --format '{{json .SecurityOptions}}' 2>/dev/null || true)"
+  printf '%s\n' "$security_options" | grep -qi 'rootless'
+}
+
+docker_uses_local_unix_socket() {
+  local context_host
+  context_host="$(active_docker_endpoint || true)"
+  [[ "$context_host" == "unix:///var/run/docker.sock" || "$context_host" == "unix:///run/docker.sock" ]]
+}
+
+active_docker_cli_paths() {
+  local docker_path resolved_path
+  docker_path="$(command -v docker 2>/dev/null || true)"
+  [[ -n "$docker_path" ]] || return 1
+  printf '%s\n' "$docker_path"
+  resolved_path="$(readlink -f "$docker_path" 2>/dev/null || true)"
+  if [[ -n "$resolved_path" && "$resolved_path" != "$docker_path" ]]; then
+    printf '%s\n' "$resolved_path"
+  fi
+}
+
+dpkg_owner_of_active_docker_cli() {
+  local docker_path owner
+  while IFS= read -r docker_path; do
+    owner="$(dpkg-query -S "$docker_path" 2>/dev/null | head -n 1 | cut -d: -f1 || true)"
+    if [[ -n "$owner" ]]; then
+      printf '%s\n' "$owner"
+      return 0
+    fi
+  done < <(active_docker_cli_paths)
+  return 1
+}
+
+detect_apt_docker_family() {
+  local owner owner_family="" installed_family="" family_count=0
+  owner="$(dpkg_owner_of_active_docker_cli || true)"
+  case "$owner" in
+    docker-ce-cli) owner_family="docker-ce" ;;
+    docker.io) owner_family="docker.io" ;;
+    moby-cli) owner_family="moby" ;;
+  esac
+  [[ -n "$owner_family" ]] || {
+    warn "The active Docker CLI is not owned by a recognized apt Docker package; no packages will be changed."
+    return 1
+  }
+
+  if dpkg_package_installed docker-ce || dpkg_package_installed docker-ce-cli; then
+    installed_family="docker-ce"
+    ((family_count += 1))
+  fi
+  if dpkg_package_installed docker.io; then
+    installed_family="docker.io"
+    ((family_count += 1))
+  fi
+  if dpkg_package_installed moby-engine || dpkg_package_installed moby-cli; then
+    installed_family="moby"
+    ((family_count += 1))
+  fi
+  if (( family_count != 1 )) || [[ "$installed_family" != "$owner_family" ]]; then
+    warn "Multiple or mismatched apt Docker package families were detected; no packages will be changed."
+    return 1
+  fi
+
+  if (( ! DOCKER_ENGINE_COMPATIBLE )); then
+    case "$owner_family" in
+      docker-ce) dpkg_package_installed docker-ce || return 1 ;;
+      docker.io) dpkg_package_installed docker.io || return 1 ;;
+      moby) dpkg_package_installed moby-engine || return 1 ;;
+    esac
+  fi
+  printf '%s\n' "$owner_family"
+}
+
+dpkg_package_installed() {
+  command -v dpkg-query >/dev/null 2>&1 || return 1
+  dpkg-query -W -f='${db:Status-Status}\n' "$1" 2>/dev/null | grep -qx installed
+}
+
+apt_package_available() {
+  command -v apt-cache >/dev/null 2>&1 || return 1
+  apt-cache show "$1" >/dev/null 2>&1
+}
+
+first_available_apt_package() {
+  local package
+  for package in "$@"; do
+    if apt_package_available "$package"; then
+      printf '%s\n' "$package"
+      return 0
+    fi
+  done
+  return 1
+}
+
+update_existing_docker_apt() {
+  local family="" compose_package="" buildx_package=""
+  local -a packages=()
+
+  family="$(detect_apt_docker_family || true)"
+  [[ -n "$family" ]] || return 1
+
+  log "Refreshing apt metadata for the existing ${family} package channel..."
+  run_as_root apt-get update || return 1
+
+  if (( ! DOCKER_ENGINE_COMPATIBLE )); then
+    case "$family" in
+      docker-ce)
+        packages+=(docker-ce docker-ce-cli containerd.io)
+        ;;
+      docker.io)
+        packages+=(docker.io)
+        ;;
+      moby)
+        packages+=(moby-engine moby-cli)
+        ;;
+    esac
+    DOCKER_ENGINE_PACKAGE_UPDATED=1
+  fi
+
+  if (( ! DOCKER_COMPOSE_COMPATIBLE )); then
+    case "$family" in
+      docker-ce)
+        compose_package="$(first_available_apt_package docker-compose-plugin || true)"
+        ;;
+      docker.io)
+        compose_package="$(first_available_apt_package docker-compose-v2 || true)"
+        ;;
+      moby)
+        compose_package="$(first_available_apt_package moby-compose || true)"
+        ;;
+    esac
+    [[ -n "$compose_package" ]] || {
+      warn "No Compose package candidate was found in the existing ${family} apt channel."
+      return 1
+    }
+    packages+=("$compose_package")
+  fi
+
+  if (( ! DOCKER_BUILDX_AVAILABLE )); then
+    case "$family" in
+      docker-ce)
+        buildx_package="$(first_available_apt_package docker-buildx-plugin || true)"
+        ;;
+      docker.io)
+        buildx_package="$(first_available_apt_package docker-buildx || true)"
+        ;;
+      moby)
+        buildx_package="$(first_available_apt_package moby-buildx || true)"
+        ;;
+    esac
+    [[ -n "$buildx_package" ]] || {
+      warn "No Buildx package was found in the existing ${family} apt channel."
+      return 1
+    }
+    packages+=("$buildx_package")
+  fi
+
+  ((${#packages[@]} > 0)) || return 0
+  log "Updating Docker requirements from the existing ${family} apt channel..."
+  run_as_root env DEBIAN_FRONTEND=noninteractive apt-get install -y "${packages[@]}" || return 1
+  DOCKER_UPDATE_CHANNEL="apt:${family}"
+}
+
+rpm_package_installed() {
+  command -v rpm >/dev/null 2>&1 || return 1
+  rpm -q "$1" >/dev/null 2>&1
+}
+
+rpm_owner_of_active_docker_cli() {
+  local docker_path owner
+  while IFS= read -r docker_path; do
+    owner="$(rpm -qf --queryformat '%{NAME}\n' "$docker_path" 2>/dev/null | head -n 1 || true)"
+    if [[ -n "$owner" ]]; then
+      printf '%s\n' "$owner"
+      return 0
+    fi
+  done < <(active_docker_cli_paths)
+  return 1
+}
+
+detect_rpm_docker_family() {
+  local owner installed_family="" family_count=0
+  owner="$(rpm_owner_of_active_docker_cli || true)"
+
+  if rpm_package_installed docker-ce; then
+    installed_family="docker-ce"
+    ((family_count += 1))
+  fi
+  if rpm_package_installed moby-engine; then
+    installed_family="moby"
+    ((family_count += 1))
+  fi
+  if rpm_package_installed docker; then
+    installed_family="docker"
+    ((family_count += 1))
+  fi
+  if (( family_count != 1 )); then
+    warn "Multiple or missing rpm Docker Engine package families were detected; no packages will be changed."
+    return 1
+  fi
+
+  case "$installed_family:$owner" in
+    docker-ce:docker-ce-cli|moby:moby-cli|moby:docker-cli|docker:docker|docker:docker-cli)
+      ;;
+    *)
+      warn "The active Docker CLI package (${owner:-unknown}) does not match the installed ${installed_family} Engine family; no packages will be changed."
+      return 1
+      ;;
+  esac
+  printf '%s\n' "$installed_family"
+}
+
+rpm_cli_package_for_family() {
+  local family="$1" owner
+  owner="$(rpm_owner_of_active_docker_cli || true)"
+  case "$family:$owner" in
+    docker-ce:docker-ce-cli) printf 'docker-ce-cli\n' ;;
+    moby:moby-cli) printf 'moby-cli\n' ;;
+    moby:docker-cli|docker:docker-cli) printf 'docker-cli\n' ;;
+    docker:docker) printf 'docker\n' ;;
+    *) return 1 ;;
+  esac
+}
+
+rpm_package_available() {
+  "$PACKAGE_MANAGER" info "$1" >/dev/null 2>&1
+}
+
+first_available_rpm_package() {
+  local package
+  for package in "$@"; do
+    if rpm_package_available "$package"; then
+      printf '%s\n' "$package"
+      return 0
+    fi
+  done
+  return 1
+}
+
+update_existing_docker_rpm() {
+  local family="" cli_package="" compose_package="" buildx_package=""
+  local -a packages=()
+
+  family="$(detect_rpm_docker_family || true)"
+  [[ -n "$family" ]] || return 1
+
+  if (( ! DOCKER_ENGINE_COMPATIBLE )); then
+    case "$family" in
+      docker-ce)
+        packages+=(docker-ce docker-ce-cli containerd.io)
+        ;;
+      moby)
+        cli_package="$(rpm_cli_package_for_family "$family" || true)"
+        [[ -n "$cli_package" ]] || return 1
+        packages+=(moby-engine "$cli_package")
+        ;;
+      docker)
+        cli_package="$(rpm_cli_package_for_family "$family" || true)"
+        [[ -n "$cli_package" ]] || return 1
+        packages+=(docker)
+        [[ "$cli_package" == "docker" ]] || packages+=("$cli_package")
+        ;;
+    esac
+    DOCKER_ENGINE_PACKAGE_UPDATED=1
+  fi
+
+  if (( ! DOCKER_COMPOSE_COMPATIBLE )); then
+    case "$family" in
+      docker-ce)
+        compose_package="$(first_available_rpm_package docker-compose-plugin || true)"
+        ;;
+      moby)
+        compose_package="$(first_available_rpm_package moby-compose docker-compose || true)"
+        ;;
+      docker)
+        compose_package="$(first_available_rpm_package docker-compose-plugin || true)"
+        ;;
+    esac
+    [[ -n "$compose_package" ]] || {
+      warn "No Compose package candidate was found in the existing ${family} rpm channel."
+      return 1
+    }
+    packages+=("$compose_package")
+  fi
+
+  if (( ! DOCKER_BUILDX_AVAILABLE )); then
+    case "$family" in
+      docker-ce)
+        buildx_package="$(first_available_rpm_package docker-buildx-plugin || true)"
+        ;;
+      moby)
+        buildx_package="$(first_available_rpm_package moby-buildx docker-buildx || true)"
+        ;;
+      docker)
+        buildx_package="$(first_available_rpm_package docker-buildx-plugin || true)"
+        ;;
+    esac
+    [[ -n "$buildx_package" ]] || {
+      warn "No Buildx package was found in the existing ${family} rpm channel."
+      return 1
+    }
+    packages+=("$buildx_package")
+  fi
+
+  ((${#packages[@]} > 0)) || return 0
+  log "Updating Docker requirements from the existing ${family} rpm channel..."
+  run_as_root "$PACKAGE_MANAGER" install -y "${packages[@]}" || return 1
+  DOCKER_UPDATE_CHANNEL="${PACKAGE_MANAGER}:${family}"
+}
+
+update_existing_docker_apk() {
+  local docker_path owner=""
+  local -a packages=()
+  command -v apk >/dev/null 2>&1 || return 1
+  while IFS= read -r docker_path; do
+    owner="$(apk info --who-owns "$docker_path" 2>/dev/null || true)"
+    [[ "$owner" =~ [[:space:]]owned[[:space:]]by[[:space:]](docker|docker-cli)-[0-9] ]] && break
+    owner=""
+  done < <(active_docker_cli_paths)
+  if [[ -z "$owner" ]]; then
+    warn "The active Docker CLI is not owned by an Alpine Docker package; no packages will be changed."
+    return 1
+  fi
+  if (( ! DOCKER_ENGINE_COMPATIBLE )) && ! apk info -e docker >/dev/null 2>&1; then
+    warn "The active deficient Engine is not owned by Alpine's docker package; no packages will be changed."
+    return 1
+  fi
+
+  if (( ! DOCKER_ENGINE_COMPATIBLE )); then
+    packages+=(docker)
+    DOCKER_ENGINE_PACKAGE_UPDATED=1
+  fi
+  (( DOCKER_COMPOSE_COMPATIBLE )) || packages+=(docker-cli-compose)
+  (( DOCKER_BUILDX_AVAILABLE )) || packages+=(docker-cli-buildx)
+
+  ((${#packages[@]} > 0)) || return 0
+  log "Updating Docker requirements from the existing Alpine package channel..."
+  run_as_root apk add --no-cache --upgrade "${packages[@]}" || return 1
+  DOCKER_UPDATE_CHANNEL="apk"
+}
+
+snap_docker_installed() {
+  command -v snap >/dev/null 2>&1 && snap list docker >/dev/null 2>&1
+}
+
+active_docker_cli_is_snap() {
+  local docker_path
+  while IFS= read -r docker_path; do
+    [[ "$docker_path" == /snap/bin/* || "$docker_path" == /snap/docker/* ]] && return 0
+  done < <(active_docker_cli_paths)
+  return 1
+}
+
+active_docker_cli_is_arch_package() {
+  local docker_path owner
+  while IFS= read -r docker_path; do
+    owner="$(pacman -Qoq "$docker_path" 2>/dev/null | head -n 1 || true)"
+    [[ "$owner" == "docker" ]] && return 0
+  done < <(active_docker_cli_paths)
+  return 1
+}
+
+update_existing_docker_snap() {
+  snap_docker_installed && active_docker_cli_is_snap || {
+    warn "The installed Docker snap does not own the active Docker CLI; the snap will not be refreshed."
+    return 1
+  }
+  log "Refreshing the existing Docker snap..."
+  run_as_root snap refresh docker || return 1
+  (( DOCKER_ENGINE_COMPATIBLE )) || DOCKER_ENGINE_PACKAGE_UPDATED=1
+  DOCKER_UPDATE_CHANNEL="snap"
+}
+
+update_existing_docker_desktop_linux() {
+  local attempt
+  if is_wsl_environment; then
+    DOCKER_UPDATE_GUIDE="https://docs.docker.com/desktop/setup/install/windows-install/"
+  else
+    DOCKER_UPDATE_GUIDE="https://docs.docker.com/desktop/setup/install/linux/"
+  fi
+  if ! docker_cli desktop update --help >/dev/null 2>&1; then
+    warn "This Docker Desktop installation does not provide the supported in-place update command."
+    warn "Update Docker Desktop using ${DOCKER_UPDATE_GUIDE}, then rerun setup."
+    return 1
+  fi
+
+  log "Updating Docker Desktop through its in-place updater..."
+  if ! docker_cli desktop update --quiet; then
+    warn "Docker Desktop's in-place updater failed. Update it using ${DOCKER_UPDATE_GUIDE}, then rerun setup."
+    return 1
+  fi
+  DOCKER_UPDATE_CHANNEL="desktop-linux"
+
+  # Desktop updates can briefly restart their VM. Wait for the active context
+  # instead of starting or replacing a native Linux Engine.
+  for attempt in $(seq 1 90); do
+    docker_cli info >/dev/null 2>&1 && return 0
+    sleep 2
+  done
+  warn "Docker Desktop was updated, but its engine did not become ready within three minutes."
+  return 1
+}
+
+update_existing_docker_linux() {
+  DOCKER_ENGINE_PACKAGE_UPDATED=0
+  DOCKER_UPDATE_CHANNEL=""
+
+  if docker_is_desktop_backed; then
+    log "This Linux environment is backed by Docker Desktop; native Linux packages will not be changed."
+    update_existing_docker_desktop_linux
+    return
+  fi
+  if docker_is_rootless; then
+    warn "A rootless Docker daemon is active; update it using the same rootless installation method, then rerun setup."
+    return 1
+  fi
+  if ! docker_uses_local_unix_socket; then
+    warn "The active Docker endpoint is remote, custom, or could not be identified; local packages cannot safely update it."
+    return 1
+  fi
+
+  if snap_docker_installed && active_docker_cli_is_snap; then
+    update_existing_docker_snap
+    return
+  fi
+
+  case "$PACKAGE_MANAGER" in
+    apt)
+      update_existing_docker_apt
+      ;;
+    dnf|yum)
+      update_existing_docker_rpm
+      ;;
+    apk)
+      update_existing_docker_apk
+      ;;
+    pacman)
+      if ! active_docker_cli_is_arch_package; then
+        warn "The active Docker CLI is not owned by the Arch docker package; no packages will be changed."
+        return 1
+      fi
+      approve_arch_full_upgrade || return 1
+      log "Updating Docker requirements with a full Arch system upgrade..."
+      run_as_root pacman -Syu --needed --noconfirm docker docker-compose docker-buildx || return 1
+      DOCKER_ENGINE_PACKAGE_UPDATED=1
+      DOCKER_UPDATE_CHANNEL="pacman"
+      ;;
+    *)
+      warn "No supported package provenance was found for the existing Docker installation."
+      return 1
+      ;;
+  esac
+}
+
+running_docker_engine_meets_minimum() {
+  local raw_version current_version
+  raw_version="$(docker_cli version --format '{{.Server.Version}}' 2>/dev/null || true)"
+  current_version="$(normalize_version "$raw_version" || true)"
+  [[ -n "$current_version" ]] && version_at_least "$current_version" "$MIN_DOCKER_ENGINE_LINUX_VERSION"
+}
+
+restart_updated_docker_engine_if_needed() {
+  local attempt
+  (( DOCKER_ENGINE_PACKAGE_UPDATED )) || return 0
+  running_docker_engine_meets_minimum && return 0
+
+  log "Restarting Docker to activate the updated Engine..."
+  if [[ "$DOCKER_UPDATE_CHANNEL" == "snap" ]]; then
+    run_as_root snap restart docker >/dev/null 2>&1 || true
+  elif command -v systemctl >/dev/null 2>&1; then
+    run_as_root systemctl restart docker >/dev/null 2>&1 || true
+  elif command -v rc-service >/dev/null 2>&1; then
+    run_as_root rc-service docker restart >/dev/null 2>&1 || true
+  elif command -v service >/dev/null 2>&1; then
+    run_as_root service docker restart >/dev/null 2>&1 || true
+  fi
+
+  for attempt in $(seq 1 30); do
+    docker_cli info >/dev/null 2>&1 && return 0
+    sleep 1
+  done
+  return 1
+}
+
+ensure_linux_docker_requirements() {
+  is_linux || return 0
+  probe_linux_docker_requirements
+  if linux_docker_requirements_met; then
+    log "Docker requirements satisfied: $(linux_docker_requirements_summary)."
+    return 0
+  fi
+
+  warn "Docker requirements are not satisfied: $(linux_docker_requirements_summary)."
+  if docker_is_desktop_backed; then
+    if is_wsl_environment; then
+      DOCKER_UPDATE_GUIDE="https://docs.docker.com/desktop/setup/install/windows-install/"
+    else
+      DOCKER_UPDATE_GUIDE="https://docs.docker.com/desktop/setup/install/linux/"
+    fi
+  fi
+  if ! enabled "$BOOTSTRAP_ENABLED" || ! enabled "$INSTALL_DOCKER_ENABLED"; then
+    die "Automatic Docker management is disabled. Update Docker using $(docker_update_docs_url), then rerun setup."
+  fi
+
+  update_existing_docker_linux ||
+    die "Could not safely update this Docker installation in place. Update it through its existing installation channel using $(docker_update_docs_url), then rerun setup."
+
+  restart_updated_docker_engine_if_needed ||
+    die "Docker was updated, but its daemon did not become ready. Restart Docker and rerun setup."
+  start_docker_service
+  select_docker_command
+  probe_linux_docker_requirements
+  linux_docker_requirements_met ||
+    die "Docker is still incompatible after the update: $(linux_docker_requirements_summary). Update it through its existing installation channel using $(docker_update_docs_url), then rerun setup."
+
+  log "Docker requirements satisfied after update: $(linux_docker_requirements_summary)."
+}
+
+detect_docker_socket_path() {
+  local endpoint socket_path
+  if [[ -n "${SAMSAR_SETUP_DOCKER_SOCKET:-}" ]]; then
+    [[ "$SAMSAR_SETUP_DOCKER_SOCKET" == /* ]] ||
+      die "SAMSAR_SETUP_DOCKER_SOCKET must be an absolute local path."
+    printf '%s\n' "$SAMSAR_SETUP_DOCKER_SOCKET"
+    return 0
+  fi
+
+  if docker_is_desktop_backed; then
+    if [[ "$(uname -s 2>/dev/null || true)" == "Darwin" && -S /var/run/docker.sock ]]; then
+      # Preserve Docker Desktop for Mac's supported compatibility symlink; it
+      # is known to work for ordinary containers and avoids host socket sharing.
+      printf '/var/run/docker.sock\n'
+    elif is_wsl_environment; then
+      printf '/var/run/docker.sock\n'
+    else
+      # Desktop containers run in a VM. Docker documents the raw VM socket for
+      # container-to-Engine access instead of bind-mounting the host user socket.
+      printf '/var/run/docker.sock.raw\n'
+    fi
+    return 0
+  fi
+
+  endpoint="$(active_docker_endpoint || true)"
+  [[ -n "$endpoint" ]] ||
+    die "Could not determine the active Docker context endpoint; set SAMSAR_SETUP_DOCKER_SOCKET to its local Unix socket path."
+  [[ "$endpoint" == unix://* ]] ||
+    die "The setup wizard needs a local Unix Docker socket, but the active context uses ${endpoint}."
+  socket_path="${endpoint#unix://}"
+  [[ "$socket_path" == /* ]] ||
+    die "The active Docker context returned a non-absolute socket path: ${socket_path}"
+  printf '%s\n' "$socket_path"
 }
 
 is_interactive_terminal() {
@@ -682,9 +1562,9 @@ install_azure_cli_if_needed() {
   enabled "$INSTALL_CLOUD_CLI_ENABLED" || return 1
   enabled "$BOOTSTRAP_ENABLED" || return 1
   is_linux || return 1
-  ensure_base_packages
   case "$PACKAGE_MANAGER" in
     apt)
+      ensure_base_packages
       log "Installing Azure CLI for Azure Network Security Group automation..."
       curl -sL https://aka.ms/InstallAzureCLIDeb | run_as_root_preserve_env bash -
       ;;
@@ -855,7 +1735,12 @@ bootstrap_host() {
 
   install_docker_engine
   start_docker_service
+  if [[ "$(uname -s 2>/dev/null || true)" == "Darwin" ]]; then
+    ensure_docker_desktop_macos_version
+    start_docker_service
+  fi
   select_docker_command
+  ensure_linux_docker_requirements
 }
 
 extract_private_ipv4_addresses() {
@@ -1057,6 +1942,7 @@ print_setup_wizard_urls() {
 parse_args "$@"
 bootstrap_host
 maybe_open_setup_wizard_host_port
+build_provider_environment_forwarding
 
 HOST_PRIVATE_IPS="$(extract_private_ipv4_addresses "${SAMSAR_SETUP_HOST_PRIVATE_IPS:-$(detect_host_private_ips)}")"
 HOST_PUBLIC_IPS="$(extract_public_ipv4_addresses "${SAMSAR_SETUP_HOST_PUBLIC_IPS:-$(detect_host_public_ips)}")"
@@ -1115,9 +2001,11 @@ docker_cli run -d \
     -e "SAMSAR_SETUP_CLOUD_RESOURCE_GROUP=$AZURE_RESOURCE_GROUP" \
     -e "SAMSAR_SETUP_CLOUD_VM_NAME=$AZURE_VM_NAME" \
     -e "SAMSAR_SETUP_CLOUD_SUBSCRIPTION_ID=$AZURE_SUBSCRIPTION_ID" \
+    -e "SAMSAR_SETUP_PROVIDER_ENV_NAMES=$PROVIDER_ENV_ALLOWLIST" \
     -e "SAMSAR_MEDIA_TUNNEL_PROVIDER=${SAMSAR_MEDIA_TUNNEL_PROVIDER:-}" \
     -e "SAMSAR_CLOUDFLARED_PROTOCOL=${SAMSAR_CLOUDFLARED_PROTOCOL:-}" \
     -e "ZROK_ENABLE_TOKEN=${ZROK_ENABLE_TOKEN:-}" \
+    ${PROVIDER_ENV_DOCKER_ARGS[@]+"${PROVIDER_ENV_DOCKER_ARGS[@]}"} \
     "$IMAGE_NAME"
 )"
 

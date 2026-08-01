@@ -69,16 +69,6 @@ export function appendRouteSearch(path, search = '') {
   return `${path}${search.startsWith('?') ? search : `?${search}`}`;
 }
 
-function getStoredVidgenieSessionId() {
-  if (typeof window === 'undefined') return null;
-
-  try {
-    return normalizeSessionId(window.localStorage.getItem(VIDEO_SESSION_STORAGE_KEY));
-  } catch {
-    return null;
-  }
-}
-
 function storeVidgenieSessionId(sessionId) {
   if (typeof window === 'undefined') return;
   const normalizedSessionId = normalizeSessionId(sessionId);
@@ -88,20 +78,6 @@ function storeVidgenieSessionId(sessionId) {
     window.localStorage.setItem(VIDEO_SESSION_STORAGE_KEY, normalizedSessionId);
   } catch {
     // Storage access can fail in private browsing modes; routing still works.
-  }
-}
-
-async function fetchSessionDetails(apiServer, headers, sessionId) {
-  if (!apiServer || !headers || !sessionId) return null;
-
-  try {
-    const { data } = await axios.get(
-      `${apiServer}/video_sessions/session_details?id=${encodeURIComponent(sessionId)}`,
-      headers
-    );
-    return data || null;
-  } catch {
-    return null;
   }
 }
 
@@ -116,50 +92,11 @@ async function fetchLatestSession(apiServer, headers) {
   }
 }
 
-async function fetchPendingSessionCandidates(apiServer, headers) {
-  if (!apiServer || !headers) return [];
-
-  try {
-    const { data } = await axios.get(
-      `${apiServer}/video_sessions/list?page=1&limit=5&renderType=Pending`,
-      headers
-    );
-    return Array.isArray(data?.data) ? data.data : [];
-  } catch {
-    return [];
-  }
-}
-
-async function findPendingVidgenieSession(apiServer, headers) {
-  const storedSessionId = getStoredVidgenieSessionId();
-  const storedSessionPromise = fetchSessionDetails(apiServer, headers, storedSessionId);
+async function findLatestPendingVidgenieSession(apiServer, headers) {
+  // The server returns the user's newest session by createdAt. Only that
+  // session may be resumed; an older pending project must not override it.
   const latestSession = await fetchLatestSession(apiServer, headers);
-  if (isPendingVidgenieSession(latestSession)) {
-    return latestSession;
-  }
-
-  const storedSession = await storedSessionPromise;
-  if (isPendingVidgenieSession(storedSession)) {
-    return storedSession;
-  }
-
-  const pendingSessionCandidates = await fetchPendingSessionCandidates(apiServer, headers);
-  const latestSessionId = getVidgenieSessionId(latestSession);
-  const candidateSessionIds = pendingSessionCandidates
-    .map(getVidgenieSessionId)
-    .filter((candidateSessionId) => candidateSessionId && candidateSessionId !== latestSessionId);
-
-  if (candidateSessionIds.length > 0) {
-    const candidateDetailsList = await Promise.all(
-      candidateSessionIds.map((candidateSessionId) => fetchSessionDetails(apiServer, headers, candidateSessionId))
-    );
-    const pendingCandidate = candidateDetailsList.find(isPendingVidgenieSession);
-    if (pendingCandidate) {
-      return pendingCandidate;
-    }
-  }
-
-  return null;
+  return isPendingVidgenieSession(latestSession) ? latestSession : null;
 }
 
 async function createBlankVidgenieSession(apiServer, headers) {
@@ -216,7 +153,7 @@ export async function resolveVidgenieEntryPath({
     });
   }
 
-  const pendingSession = await findPendingVidgenieSession(apiServer, headers);
+  const pendingSession = await findLatestPendingVidgenieSession(apiServer, headers);
   const pendingSessionId = getVidgenieSessionId(pendingSession);
   if (pendingSessionId) {
     storeVidgenieSessionId(pendingSessionId);

@@ -11,9 +11,9 @@ export function AlertDialog() {
 
   const isAuthSurface = dialogOptions?.surface === 'auth';
   const isTransparentShell = Boolean(dialogOptions?.transparentShell);
-  let bgColor = colorMode === 'dark' ? 'bg-gray-900 text-neutral-100' : 'bg-neutral-100 text-neutral-900';
+  let bgColor = colorMode === 'dark' ? 'border-[#3a4050] bg-[#181b24] text-[#f4f6fb]' : 'bg-neutral-100 text-neutral-900';
   if (isAuthSurface) {
-    bgColor = colorMode === 'dark' ? 'bg-slate-950 text-slate-100' : 'bg-white text-slate-900';
+    bgColor = colorMode === 'dark' ? 'border-[#3a4050] bg-[#181b24] text-slate-100' : 'bg-white text-slate-900';
   }
   if (isTransparentShell) {
     bgColor = 'bg-transparent';
@@ -32,8 +32,8 @@ export function AlertDialog() {
   const dialogRadiusClass = isTransparentShell ? '' : dialogOptions?.fullBleed ? 'rounded-xl' : 'rounded-lg';
   const dialogShadowClass = isTransparentShell || (isAuthSurface && colorMode === 'light') ? '' : 'shadow-lg';
   const overlayClass = dialogOptions?.centerContent
-    ? 'fixed inset-0 overflow-y-auto bg-slate-950/50 p-3 sm:p-4 flex items-center justify-center'
-    : 'fixed inset-0 overflow-y-auto bg-slate-950/50 p-3 sm:p-4 flex items-start justify-center';
+    ? 'fixed inset-0 overflow-y-auto bg-[#030409]/70 p-3 backdrop-blur-sm sm:p-4 flex items-center justify-center'
+    : 'fixed inset-0 overflow-y-auto bg-[#030409]/70 p-3 backdrop-blur-sm sm:p-4 flex items-start justify-center';
   const contentClass = dialogOptions?.centerContent
     ? 'w-full min-h-full flex items-center justify-center text-left'
     : 'text-center max-h-[calc(100dvh-4rem)] overflow-y-auto pr-1';
@@ -55,7 +55,7 @@ export function AlertDialog() {
             aria-label="Close dialog"
             className={`absolute right-3 top-3 z-10 inline-flex h-9 w-9 items-center justify-center rounded-full transition focus:outline-none focus:ring-2 ${
               colorMode === 'dark'
-                ? 'text-slate-400 hover:bg-white/5 hover:text-slate-100 focus:ring-cyan-400/40'
+                ? 'text-slate-400 hover:bg-white/5 hover:text-slate-100 focus:ring-[#f6c453]/70'
                 : 'text-slate-500 hover:bg-slate-200/70 hover:text-slate-900 focus:ring-slate-300'
             }`}
             onClick={closeAlertDialog}

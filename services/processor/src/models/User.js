@@ -38,7 +38,7 @@ import {
   DEFAULT_INFERENCE_MODEL,
   normalizeInferenceModel,
 } from '../consts/InferenceModels.js';
-import { isSetupAdminBootstrapEnabled } from '../utils/EnvironmentUtils.js';
+import { isSetupAdminBootstrapEnabled, isStandaloneEdition } from '../utils/EnvironmentUtils.js';
 
 export const DEFAULT_TEXT_MODEL = DEFAULT_INFERENCE_MODEL;
 export const API_KEY_USAGE_LIMIT_PERIODS = Object.freeze({
@@ -48,6 +48,11 @@ export const API_KEY_USAGE_LIMIT_PERIODS = Object.freeze({
 const USER_GENERATION_BUCKET = process.env.USER_GENERATIONS_BUCKET || process.env.AWS_USER_GENERATIONS_BUCKET || process.env.AWS_GENERATIONS_BUCKET || 'samsar-resources';
 const USER_GENERATION_PREFIX = process.env.USER_GENERATIONS_PREFIX || 'user_resources';
 const CUSTOM_ADAPTER_SECRET_PREFIX = 'enc:v1:';
+const CUSTOM_TEXT_TO_IMAGE_MODEL_PREFIX = 'CUSTOM_TEXT_TO_IMAGE:';
+const CUSTOM_TEXT_TO_IMAGE_REQUEST_ID_TOKEN = '{request_id}';
+const CUSTOM_ADAPTER_HEADER_KEY_PATTERN = /^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/;
+const CUSTOM_ADAPTER_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
+const MAX_CUSTOM_ADAPTER_ENDPOINTS = 20;
 
 function normalizeBackingTrackModel(value) {
   return value === 'LYRIA2' ? 'LYRIA3' : value;
@@ -113,15 +118,17 @@ function encryptStoredCustomAdapterSecrets(customAdapters) {
 
   if (Array.isArray(customAdapters.custom_endpoints)) {
     customAdapters.custom_endpoints.forEach((endpoint) => {
-      if (
-        endpoint &&
-        typeof endpoint === 'object' &&
-        typeof endpoint.api_key === 'string' &&
-        endpoint.api_key.trim() &&
-        !isEncryptedCustomAdapterSecret(endpoint.api_key.trim())
-      ) {
-        endpoint.api_key = encryptCustomAdapterSecret(endpoint.api_key);
-        changed = true;
+      if (endpoint && typeof endpoint === 'object') {
+        for (const secretField of ['api_key', 'header_value']) {
+          if (
+            typeof endpoint[secretField] === 'string' &&
+            endpoint[secretField].trim() &&
+            !isEncryptedCustomAdapterSecret(endpoint[secretField].trim())
+          ) {
+            endpoint[secretField] = encryptCustomAdapterSecret(endpoint[secretField]);
+            changed = true;
+          }
+        }
       }
     });
   }
@@ -129,7 +136,7 @@ function encryptStoredCustomAdapterSecrets(customAdapters) {
   return changed;
 }
 
-function getExistingCustomEndpointSecret(currentCustomAdapters, endpoint) {
+function getExistingCustomEndpointSecret(currentCustomAdapters, endpoint, secretField = 'api_key') {
   const currentEndpoints = Array.isArray(currentCustomAdapters?.custom_endpoints)
     ? currentCustomAdapters.custom_endpoints
     : [];
@@ -152,7 +159,7 @@ function getExistingCustomEndpointSecret(currentCustomAdapters, endpoint) {
     );
   });
 
-  return typeof match?.api_key === 'string' ? match.api_key.trim() : '';
+  return typeof match?.[secretField] === 'string' ? match[secretField].trim() : '';
 }
 
 function sanitizeCustomAdaptersForClient(customAdapters) {
@@ -178,7 +185,11 @@ function sanitizeCustomAdaptersForClient(customAdapters) {
       if (hasCustomAdapterSecret(nextEndpoint.api_key)) {
         nextEndpoint.has_api_key = true;
       }
+      if (hasCustomAdapterSecret(nextEndpoint.header_value)) {
+        nextEndpoint.has_header_value = true;
+      }
       delete nextEndpoint.api_key;
+      delete nextEndpoint.header_value;
       return nextEndpoint;
     });
   }
@@ -281,7 +292,32 @@ const normalizeFontPreferencesPayload = (fontPreferences) => {
   return normalized;
 };
 
-function normalizeCustomAdaptersPayload(customAdapters, currentCustomAdapters = null) {
+function normalizeHttpUrl(value, { requireRequestId = false } = {}) {
+  const normalized = typeof value === 'string' ? value.trim() : '';
+  if (!normalized) {
+    return '';
+  }
+  if (requireRequestId && !normalized.includes(CUSTOM_TEXT_TO_IMAGE_REQUEST_ID_TOKEN)) {
+    return '';
+  }
+  try {
+    const candidate = requireRequestId
+      ? normalized.replaceAll(CUSTOM_TEXT_TO_IMAGE_REQUEST_ID_TOKEN, 'request-id')
+      : normalized;
+    const parsed = new URL(candidate);
+    return ['http:', 'https:'].includes(parsed.protocol) ? normalized : '';
+  } catch {
+    return '';
+  }
+}
+
+function customAdapterValidationError(message) {
+  const error = new Error(message);
+  error.status = 400;
+  return error;
+}
+
+export function normalizeCustomAdaptersPayload(customAdapters, currentCustomAdapters = null) {
   if (customAdapters === undefined) {
     return undefined;
   }
@@ -336,6 +372,10 @@ function normalizeCustomAdaptersPayload(customAdapters, currentCustomAdapters = 
       ? customAdapters.customEndpoints
       : [];
   const normalizedCustomEndpoints = [];
+  if (rawCustomEndpoints.length > MAX_CUSTOM_ADAPTER_ENDPOINTS) {
+    throw customAdapterValidationError(`A maximum of ${MAX_CUSTOM_ADAPTER_ENDPOINTS} custom endpoints is allowed.`);
+  }
+  const endpointIds = new Set();
   rawCustomEndpoints.forEach((endpoint, index) => {
     if (!endpoint || typeof endpoint !== 'object' || Array.isArray(endpoint)) {
       const error = new Error(`custom_adapters.custom_endpoints[${index}] must be an object when provided.`);
@@ -349,6 +389,102 @@ function normalizeCustomAdaptersPayload(customAdapters, currentCustomAdapters = 
       const error = new Error(`custom_adapters.custom_endpoints[${index}].operation is invalid.`);
       error.status = 400;
       throw error;
+    }
+
+    const id = typeof endpoint.id === 'string' && endpoint.id.trim()
+      ? endpoint.id.trim()
+      : `custom_endpoint_${index + 1}`;
+    if (!CUSTOM_ADAPTER_ID_PATTERN.test(id)) {
+      throw customAdapterValidationError(
+        `custom_adapters.custom_endpoints[${index}].id may only contain letters, numbers, dots, underscores, and hyphens.`,
+      );
+    }
+    if (endpointIds.has(id)) {
+      throw customAdapterValidationError(`custom_adapters.custom_endpoints[${index}].id must be unique.`);
+    }
+    endpointIds.add(id);
+
+    const submittedGenerateUrl =
+      typeof endpoint.generate_url === 'string'
+        ? endpoint.generate_url.trim()
+        : typeof endpoint.generateUrl === 'string'
+          ? endpoint.generateUrl.trim()
+          : '';
+    if (operation === 'text_to_image' && submittedGenerateUrl) {
+      const name = typeof endpoint.name === 'string' ? endpoint.name.trim() : '';
+      const statusUrl =
+        typeof endpoint.status_url === 'string'
+          ? endpoint.status_url.trim()
+          : typeof endpoint.statusUrl === 'string'
+            ? endpoint.statusUrl.trim()
+            : '';
+      const resultUrl =
+        typeof endpoint.result_url === 'string'
+          ? endpoint.result_url.trim()
+          : typeof endpoint.resultUrl === 'string'
+            ? endpoint.resultUrl.trim()
+            : '';
+      if (!name) {
+        throw customAdapterValidationError(`custom_adapters.custom_endpoints[${index}].name is required.`);
+      }
+      if (name.length > 120) {
+        throw customAdapterValidationError(`custom_adapters.custom_endpoints[${index}].name is too long.`);
+      }
+      if ([submittedGenerateUrl, statusUrl, resultUrl].some((url) => url.length > 4096)) {
+        throw customAdapterValidationError(`custom_adapters.custom_endpoints[${index}] contains a URL that is too long.`);
+      }
+      if (!normalizeHttpUrl(submittedGenerateUrl)) {
+        throw customAdapterValidationError(`custom_adapters.custom_endpoints[${index}].generate_url must be a valid HTTP or HTTPS URL.`);
+      }
+      if (!normalizeHttpUrl(statusUrl, { requireRequestId: true })) {
+        throw customAdapterValidationError(
+          `custom_adapters.custom_endpoints[${index}].status_url must be an HTTP or HTTPS URL containing ${CUSTOM_TEXT_TO_IMAGE_REQUEST_ID_TOKEN}.`,
+        );
+      }
+      if (!normalizeHttpUrl(resultUrl, { requireRequestId: true })) {
+        throw customAdapterValidationError(
+          `custom_adapters.custom_endpoints[${index}].result_url must be an HTTP or HTTPS URL containing ${CUSTOM_TEXT_TO_IMAGE_REQUEST_ID_TOKEN}.`,
+        );
+      }
+
+      const headerKey = typeof endpoint.header_key === 'string'
+        ? endpoint.header_key.trim()
+        : typeof endpoint.headerKey === 'string'
+          ? endpoint.headerKey.trim()
+          : 'Authorization';
+      if (headerKey.length > 128 || (headerKey && !CUSTOM_ADAPTER_HEADER_KEY_PATTERN.test(headerKey))) {
+        throw customAdapterValidationError(`custom_adapters.custom_endpoints[${index}].header_key is invalid.`);
+      }
+      const submittedHeaderValue = typeof endpoint.header_value === 'string'
+        ? endpoint.header_value.trim()
+        : typeof endpoint.headerValue === 'string'
+          ? endpoint.headerValue.trim()
+          : '';
+      if (submittedHeaderValue.includes('\n') || submittedHeaderValue.includes('\r')) {
+        throw customAdapterValidationError(`custom_adapters.custom_endpoints[${index}].header_value is invalid.`);
+      }
+      if (submittedHeaderValue.length > 8192) {
+        throw customAdapterValidationError(`custom_adapters.custom_endpoints[${index}].header_value is too long.`);
+      }
+      const headerValue = submittedHeaderValue || getExistingCustomEndpointSecret(
+        currentCustomAdapters,
+        { id },
+        'header_value',
+      );
+
+      normalizedCustomEndpoints.push({
+        id,
+        model_key: `${CUSTOM_TEXT_TO_IMAGE_MODEL_PREFIX}${id}`,
+        name,
+        provider: 'custom',
+        operation,
+        generate_url: submittedGenerateUrl,
+        status_url: statusUrl,
+        result_url: resultUrl,
+        header_key: headerKey || 'Authorization',
+        ...(headerValue ? { header_value: encryptCustomAdapterSecret(headerValue) } : {}),
+      });
+      return;
     }
 
     const baseUrl =
@@ -394,10 +530,6 @@ function normalizeCustomAdaptersPayload(customAdapters, currentCustomAdapters = 
     const provider = typeof endpoint.provider === 'string' && endpoint.provider.trim()
       ? endpoint.provider.trim()
       : 'fal';
-    const id = typeof endpoint.id === 'string' && endpoint.id.trim()
-      ? endpoint.id.trim()
-      : `custom_endpoint_${index + 1}`;
-
     normalizedCustomEndpoints.push({
       id,
       name: name || modelEndpoint,
@@ -814,6 +946,12 @@ export async function updateUserDetails(userId, payload) {
       Object.prototype.hasOwnProperty.call(payload, 'custom_adapters') ||
       Object.prototype.hasOwnProperty.call(payload, 'customAdapters')
     );
+
+  if (hasCustomAdaptersPayload && !isStandaloneEdition()) {
+    const error = new Error('Custom adapters are only available in standalone deployments.');
+    error.status = 403;
+    throw error;
+  }
 
   const {
     username,

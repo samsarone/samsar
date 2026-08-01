@@ -60,7 +60,7 @@ export default function RenderActionButton(props) {
   const cancelButtonSizeClasses = compact ? 'h-[34px] px-2.5 text-sm' : 'px-2 py-2';
   const cancelButtonClasses = colorMode === 'light'
     ? 'border border-slate-300 bg-white text-slate-700 hover:bg-slate-100'
-    : 'border border-[#31405e] bg-[#111a2f] text-slate-200 hover:bg-[#16213a]';
+    : 'border border-[#31405e] bg-[#20232e] text-slate-200 hover:bg-[#292d3a]';
   const cancelButtonShadow = colorMode === 'dark' ? 'shadow-[0_6px_14px_rgba(3,12,28,0.2)]' : '';
 
   const submitDownloadVideo = () => {

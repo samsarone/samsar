@@ -48,6 +48,10 @@ import {
   filterSpeakersForAudioAvailability,
 } from '../../constants/audioProviderAvailability.js';
 import { filterOptionsForDeploymentModelValues } from '../../utils/deploymentProviders.js';
+import {
+  isCustomTextToImageModelKey,
+  mergeCustomTextToImageModelDefinitions,
+} from '../../utils/customTextToImageAdapters.mjs';
 
 import {
   COSMOS3_SUPER_MODEL_KEY,
@@ -336,8 +340,11 @@ export default function QuickEditor() {
           (model) => model.key
         )
       : IMAGE_GENERAITON_MODEL_TYPES;
+    const modelsWithCustomAdapters = isStandaloneModelFilteringEnabled
+      ? mergeCustomTextToImageModelDefinitions(deploymentModels, user?.custom_adapters)
+      : deploymentModels;
     if (videoType.value === 'Infinitezoom') {
-      return deploymentModels.filter(
+      return modelsWithCustomAdapters.filter(
         (model) =>
           model.key === 'FLUX1PRO'
       ).map((model) => ({
@@ -345,14 +352,14 @@ export default function QuickEditor() {
         label: model.name,
       }));
     } else {
-      return deploymentModels
+      return modelsWithCustomAdapters
         .filter((model) => model.isExpressModel === true)
         .map((model) => ({
           value: model.key,
           label: model.name,
         }));
     }
-  }, [isStandaloneModelFilteringEnabled, textToVideoImageModelValues, videoType]);
+  }, [isStandaloneModelFilteringEnabled, textToVideoImageModelValues, user?.custom_adapters, videoType]);
 
   const [selectedImageModel, setSelectedImageModel] = useState(() => {
     const defaultModel = localStorage.getItem('defaultModel');
@@ -1109,7 +1116,11 @@ export default function QuickEditor() {
     const imagePriceObj = imageModelPricing
       ? imageModelPricing.prices.find((price) => price.aspectRatio === aspectRatioValue)
       : null;
-    const imageCreditCostPerImage = imagePriceObj ? imagePriceObj.price : 8;
+    const imageCreditCostPerImage = isCustomTextToImageModelKey(imageModelKey)
+      ? 0
+      : imagePriceObj
+        ? imagePriceObj.price
+        : 8;
     const totalImageCredits = numImages * imageCreditCostPerImage;
     credits += totalImageCredits;
 

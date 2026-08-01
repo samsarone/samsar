@@ -40,7 +40,7 @@ export default function MobileTopNav(props) {
 
   const navShell =
     colorMode === 'dark'
-      ? 'bg-gradient-to-r from-[#071223] via-[#0d1d35] to-[#0a1b2d] text-slate-100 border-b border-[#2a4e70] shadow-[0_14px_32px_rgba(0,0,0,0.38)]'
+      ? 'border-b border-[#3a4050] bg-[#12141c]/94 text-slate-100 shadow-[0_10px_28px_rgba(0,0,0,0.32)] backdrop-blur-xl'
       : 'bg-gradient-to-r from-[#e9edf7] via-[#dfe7f5] to-[#eef3fb] text-slate-900 border-b border-[#d7deef]';
 
   const resetSession = () => {
@@ -275,8 +275,8 @@ export default function MobileTopNav(props) {
     if (!IS_STANDALONE_DEPLOYMENT) {
       if (user.isPremiumUser) {
         userTierDisplay = (
-          <div className="text-[#d7ffeb]">
-            <FaStar className="inline-flex text-[#39d881]" /> Premium
+          <div className="text-[#ffe5e8]">
+            <FaStar className="inline-flex text-[#f6c453]" /> Premium
           </div>
         );
       } else {
@@ -304,8 +304,8 @@ export default function MobileTopNav(props) {
     );
   } else {
     const loginButtonClass = colorMode === 'dark'
-      ? 'm-auto text-center min-w-16 rounded-lg text-slate-100 bg-[#111a2f] pl-8 pr-8 pt-1 pb-2 font-bold text-lg shadow-[0_8px_20px_rgba(0,0,0,0.3)] transition-all duration-200 ease-out hover:-translate-y-[1px] hover:bg-[#162744] hover:text-[#d7ffeb] hover:shadow-[0_12px_24px_rgba(70,191,255,0.2)] active:translate-y-0'
-      : 'm-auto text-center min-w-16 rounded-lg border border-slate-200 bg-white/80 pl-8 pr-8 pt-1 pb-2 text-lg font-bold text-slate-900 transition-all duration-200 ease-out hover:-translate-y-[1px] hover:bg-white active:translate-y-0';
+      ? 'm-auto inline-flex min-h-11 min-w-16 items-center justify-center gap-1.5 rounded-lg border border-[#667188] bg-[#20232e] px-4 py-1.5 text-center text-sm font-semibold text-slate-100 shadow-[0_8px_20px_rgba(0,0,0,0.28)] transition-all duration-200 ease-out hover:-translate-y-[1px] hover:border-[#ff4655]/60 hover:bg-[#292d3a] hover:text-[#ffe5e8] hover:shadow-[0_12px_26px_rgba(255,70,85,0.16)] active:translate-y-0'
+      : 'm-auto inline-flex min-h-11 min-w-16 items-center justify-center gap-1.5 rounded-lg border border-slate-200 bg-white/80 px-4 py-1.5 text-center text-sm font-semibold text-slate-900 transition-all duration-200 ease-out hover:-translate-y-[1px] hover:bg-white active:translate-y-0';
 
     userProfile = (
       <div className="mt-1 flex justify-end">
@@ -382,15 +382,15 @@ export default function MobileTopNav(props) {
         )}
         {isGenerationsView && (
           <div className={`grid w-full grid-cols-3 gap-2 rounded-full px-2 py-2 ${colorMode === 'dark'
-            ? 'border border-white/10 bg-black/10'
-            : 'border border-white/70 bg-white/80 backdrop-blur'
+            ? 'bg-black/10'
+            : 'bg-white/80 backdrop-blur'
           }`}>
             <button
               type="button"
               className={`${colorMode === 'dark'
-                ? 'border border-cyan-400/25 bg-[#13233d] text-slate-100 hover:bg-[#1a2f4d] hover:border-cyan-300/40'
+                ? 'border border-[#667188] bg-[#20232e] text-slate-100 hover:bg-[#292d3a] hover:border-[#f6c453]/60'
                 : 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-100 hover:border-slate-300'
-              } inline-flex min-h-[42px] min-w-0 items-center justify-center rounded-full px-2 py-2.5 text-[11px] font-semibold transition sm:text-xs`}
+              } inline-flex min-h-11 min-w-0 items-center justify-center rounded-full px-2 py-1.5 text-[11px] font-semibold transition sm:text-xs`}
               onClick={openVideoEditor}
             >
               Video Editor
@@ -398,9 +398,9 @@ export default function MobileTopNav(props) {
             <button
               type="button"
               className={`${colorMode === 'dark'
-                ? 'border border-cyan-400/25 bg-[#13233d] text-slate-100 hover:bg-[#1a2f4d] hover:border-cyan-300/40'
+                ? 'border border-[#667188] bg-[#20232e] text-slate-100 hover:bg-[#292d3a] hover:border-[#f6c453]/60'
                 : 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-100 hover:border-slate-300'
-              } inline-flex min-h-[42px] min-w-0 items-center justify-center rounded-full px-2 py-2.5 text-[11px] font-semibold transition sm:text-xs`}
+              } inline-flex min-h-11 min-w-0 items-center justify-center rounded-full px-2 py-1.5 text-[11px] font-semibold transition sm:text-xs`}
               onClick={openImageEditor}
             >
               Image Editor
@@ -408,9 +408,9 @@ export default function MobileTopNav(props) {
             <button
               type="button"
               className={`${colorMode === 'dark'
-                ? 'border border-cyan-400/25 bg-[#13233d] text-slate-100 hover:bg-[#1a2f4d] hover:border-cyan-300/40'
+                ? 'border border-[#667188] bg-[#20232e] text-slate-100 hover:bg-[#292d3a] hover:border-[#f6c453]/60'
                 : 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-100 hover:border-slate-300'
-              } inline-flex min-h-[42px] min-w-0 items-center justify-center rounded-full px-2 py-2.5 text-[11px] font-semibold transition sm:text-xs`}
+              } inline-flex min-h-11 min-w-0 items-center justify-center rounded-full px-2 py-1.5 text-[11px] font-semibold transition sm:text-xs`}
               onClick={openStudioWorkspace}
             >
               VidGenie

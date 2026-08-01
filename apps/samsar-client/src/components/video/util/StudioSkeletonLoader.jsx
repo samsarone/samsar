@@ -14,27 +14,31 @@ export default function StudioSkeletonLoader() {
   const reservedRightRailWidth = `calc(${collapsedRightPanelWidth} + ${studioInsetPx}px)`;
 
   const railSurface = isDark
-    ? 'bg-[#111a2f]/92 border border-[#1f2a3d] shadow-[0_10px_28px_rgba(0,0,0,0.35)]'
+    ? 'bg-[#20232e]/92 border border-[#3a4050] shadow-[0_12px_32px_rgba(0,0,0,0.30)] backdrop-blur-xl'
     : 'bg-white/90 border border-slate-200 shadow-[0_12px_30px_rgba(15,23,42,0.08)]';
   const workspaceSurface = isDark
-    ? 'bg-[#0b1021]'
+    ? 'bg-[linear-gradient(180deg,#15171f_0%,#0c0d12_100%)]'
     : 'bg-gradient-to-br from-[#e9edf7] via-[#eef3fb] to-white';
   const canvasCardSurface = isDark
-    ? 'bg-[#0f1629] border border-[#1f2a3d] shadow-[0_16px_34px_rgba(2,6,23,0.18)]'
+    ? 'bg-[#181b24] border border-[#3a4050] shadow-[0_16px_34px_rgba(2,6,23,0.18)]'
     : 'bg-[#f1f5f9] border border-slate-300 shadow-[0_14px_28px_rgba(15,23,42,0.08)]';
   const timelineSurface = isDark
-    ? 'bg-[#0f1629] border border-[#1f2a3d] shadow-[0_14px_36px_rgba(0,0,0,0.32)]'
+    ? 'bg-[#181b24] border border-[#3a4050] shadow-[0_14px_36px_rgba(0,0,0,0.32)]'
     : 'bg-white/90 border border-slate-200 shadow-[0_14px_32px_rgba(15,23,42,0.06)]';
-  const mutedSurface = isDark ? 'bg-[#16213a]' : 'bg-slate-200';
-  const subtleSurface = isDark ? 'bg-[#22314b]' : 'bg-slate-300';
+  const mutedSurface = isDark ? 'bg-[#273247]' : 'bg-slate-200';
+  const subtleSurface = isDark ? 'bg-[#3b4862]' : 'bg-slate-300';
 
   return (
     <CommonContainer>
       <div
         className="box-border h-[100dvh] overflow-hidden px-4 pb-4"
         style={{ paddingTop: `${studioTopInsetPx}px` }}
+        role="status"
+        aria-busy="true"
+        aria-label="Loading Studio"
       >
-        <div className="grid h-full min-h-0 grid-rows-[minmax(0,1fr)_auto] gap-4 overflow-hidden animate-pulse">
+        <span className="sr-only">Loading Studio</span>
+        <div className="theme-skeleton-pulse grid h-full min-h-0 grid-rows-[minmax(0,1fr)_auto] gap-4 overflow-hidden">
           <div className="flex min-h-0 gap-4 overflow-hidden">
             <div className="shrink-0" style={{ width: reservedLeftRailWidth }} />
 
@@ -91,7 +95,7 @@ export default function StudioSkeletonLoader() {
         </div>
 
         <div
-          className="pointer-events-none fixed left-4 top-[72px] bottom-4 z-10 animate-pulse"
+          className="theme-skeleton-pulse pointer-events-none fixed left-4 top-[72px] bottom-4 z-10"
           style={{ width: collapsedFrameToolbarWidth }}
         >
           <div className={`${railSurface} flex h-full flex-col rounded-2xl p-3`}>
@@ -108,7 +112,7 @@ export default function StudioSkeletonLoader() {
         </div>
 
         <div
-          className="pointer-events-none fixed top-[72px] right-4 bottom-4 z-10 animate-pulse"
+          className="theme-skeleton-pulse pointer-events-none fixed top-[72px] right-4 bottom-4 z-10"
           style={{ width: collapsedRightPanelWidth }}
         >
           <div className={`${railSurface} flex h-full flex-col rounded-2xl p-3`}>
@@ -124,9 +128,9 @@ export default function StudioSkeletonLoader() {
           </div>
         </div>
 
-        <div className="pointer-events-none fixed right-4 bottom-4 z-20 animate-pulse">
+        <div className="theme-skeleton-pulse pointer-events-none fixed right-4 bottom-4 z-20">
           <div className={`${railSurface} flex items-center gap-3 rounded-full px-4 py-3`}>
-            <div className="h-10 w-10 rounded-full bg-gradient-to-br from-[#46bfff]/60 to-[#39d881]/60" />
+            <div className="h-10 w-10 rounded-full bg-gradient-to-br from-[#343844] to-[#f6c453]/70" />
             <div className={`${mutedSurface} h-4 w-20 rounded-full`} />
           </div>
         </div>

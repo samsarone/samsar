@@ -472,32 +472,32 @@ export default function AssistantHome(props) {
 
   const launcherShell =
     colorMode === 'dark'
-      ? 'border border-slate-700 bg-[#10192f] text-slate-100 shadow-[0_18px_38px_rgba(2,6,23,0.5)]'
+      ? 'border border-[#4a5265] bg-[#181b24] text-slate-100 shadow-[0_18px_38px_rgba(0,0,0,0.45)]'
       : 'border border-slate-200 bg-white text-slate-900 shadow-[0_16px_34px_rgba(15,23,42,0.18)]';
   const panelShell =
     colorMode === 'dark'
-      ? 'border border-slate-700 bg-[#0f172a] text-slate-100'
+      ? 'border border-[#3a4050] bg-[#151720] text-slate-100'
       : 'border border-slate-200 bg-white text-slate-900';
   const subtleText = colorMode === 'dark' ? 'text-slate-300' : 'text-slate-600';
   const headerButtonShell =
     colorMode === 'dark'
-      ? 'border border-slate-700 bg-slate-950 text-slate-200 hover:bg-slate-900'
+      ? 'border border-[#3a4050] bg-[#181b24] text-slate-200 hover:bg-[#292d3a]'
       : 'border border-slate-200 bg-slate-100 text-slate-700 hover:bg-slate-200';
   const inputShell =
     colorMode === 'dark'
-      ? 'border border-slate-700 bg-slate-950 text-slate-100'
+      ? 'border border-[#667188] bg-[#181b24] text-slate-100 focus:border-[#f6c453] focus:ring-2 focus:ring-[#f6c453]/20'
       : 'border border-slate-200 bg-slate-50 text-slate-900';
   const emptyStateShell =
     colorMode === 'dark'
-      ? 'border border-dashed border-slate-700 bg-slate-950/50 text-slate-400'
+      ? 'border border-dashed border-[#3a4050] bg-[#0c0d12]/70 text-slate-400'
       : 'border border-dashed border-slate-200 bg-slate-50 text-slate-500';
   const resetConfirmShell =
     colorMode === 'dark'
-      ? 'border border-slate-700 bg-slate-950/80 text-slate-100'
+      ? 'border border-[#3a4050] bg-[#181b24] text-slate-100'
       : 'border border-slate-200 bg-slate-50 text-slate-900';
   const resetConfirmButtonShell =
     colorMode === 'dark'
-      ? 'border border-slate-700 bg-slate-900 text-slate-100 hover:bg-slate-800'
+      ? 'border border-[#4a5265] bg-[#20232e] text-slate-100 hover:bg-[#292d3a]'
       : 'border border-slate-200 bg-white text-slate-800 hover:bg-slate-100';
   const panelDimensions = isExpanded
     ? 'fixed inset-4 md:inset-6'
@@ -535,7 +535,7 @@ export default function AssistantHome(props) {
         onClick={() => setIsOpen((current) => !current)}
         className={`group inline-flex items-center gap-3 rounded-full px-4 py-3 transition ${launcherShell}`}
       >
-        <span className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-[#46bfff] to-[#39d881] text-[#041420] shadow-[0_10px_24px_rgba(70,191,255,0.28)]">
+        <span className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-[#ff4655] to-[#f6c453] text-[#080a10] shadow-[0_10px_24px_rgba(255,70,85,0.22)]">
           <MdChatBubbleOutline className="text-[22px]" />
         </span>
         <span className="flex flex-col items-start leading-none">
@@ -617,10 +617,10 @@ export default function AssistantHome(props) {
                     const isUserMessage = message.role === 'user';
                     const bubbleShell = isUserMessage
                       ? colorMode === 'dark'
-                        ? 'border border-slate-700 bg-[#111c32]'
+                        ? 'border border-[#4a5265] bg-[#20232e]'
                         : 'border border-slate-200 bg-slate-50'
                       : colorMode === 'dark'
-                      ? 'border border-slate-700 bg-slate-950'
+                      ? 'border border-[#3a4050] bg-[#0c0d12]'
                       : 'border border-slate-200 bg-white';
 
                     return (
@@ -665,7 +665,7 @@ export default function AssistantHome(props) {
                               <span
                                 className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium ${
                                   colorMode === 'dark'
-                                    ? 'border-slate-600 bg-slate-900 text-slate-300'
+                                    ? 'border-[#4a5265] bg-[#20232e] text-slate-300'
                                     : 'border-slate-200 bg-white text-slate-500'
                                 }`}
                               >
@@ -688,7 +688,7 @@ export default function AssistantHome(props) {
                                     disabled={!currentLayerId || Boolean(applyingSceneActionId)}
                                     className={`rounded-xl border px-3 py-2 text-left text-xs transition disabled:cursor-not-allowed disabled:opacity-50 ${
                                       colorMode === 'dark'
-                                        ? 'border-slate-700 bg-slate-900 hover:bg-slate-800'
+                                        ? 'border-[#3a4050] bg-[#20232e] hover:border-[#f6c453]/50 hover:bg-[#292d3a]'
                                         : 'border-slate-200 bg-slate-50 hover:bg-slate-100'
                                     }`}
                                     title={!currentLayerId ? 'Select a layer before applying a scene action' : action.description}
@@ -730,8 +730,8 @@ export default function AssistantHome(props) {
                   <div className={`flex h-full min-h-[88px] flex-col items-stretch justify-center rounded-2xl p-3 ${emptyStateShell}`}>
                     {isAssistantQueryGenerating || isPreparingFrameImage ? (
                       <div className="flex items-center justify-center gap-2">
-                        <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-[#46bfff]" />
-                        <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-[#39d881] [animation-delay:120ms]" />
+                        <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-[#ff4655]" />
+                        <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-[#f6c453] [animation-delay:120ms]" />
                         <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-[#f97316] [animation-delay:240ms]" />
                       </div>
                     ) : (
@@ -755,7 +755,7 @@ export default function AssistantHome(props) {
                                 onClick={option.onClick}
                                 className={`rounded-xl border px-3 py-2 text-left transition ${
                                   colorMode === 'dark'
-                                    ? 'border-slate-700 bg-slate-900 hover:bg-slate-800'
+                                    ? 'border-[#3a4050] bg-[#20232e] hover:border-[#f6c453]/50 hover:bg-[#292d3a]'
                                     : 'border-slate-200 bg-white hover:bg-slate-100'
                                 }`}
                               >
@@ -769,7 +769,7 @@ export default function AssistantHome(props) {
                               key={option.title}
                               className={`rounded-xl border px-3 py-2 ${
                                 colorMode === 'dark'
-                                  ? 'border-slate-800 bg-slate-950/60'
+                                  ? 'border-[#3a4050] bg-[#181b24]'
                                   : 'border-slate-200 bg-white'
                               }`}
                             >
@@ -843,7 +843,7 @@ export default function AssistantHome(props) {
                     <label
                       className={`inline-flex cursor-pointer items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-medium transition ${
                         colorMode === 'dark'
-                          ? 'border-slate-700 bg-slate-950 text-slate-200'
+                          ? 'border-[#3a4050] bg-[#181b24] text-slate-200 hover:border-[#f6c453]/50'
                           : 'border-slate-200 bg-slate-50 text-slate-700'
                       }`}
                     >
@@ -852,7 +852,7 @@ export default function AssistantHome(props) {
                         checked={includeFrameImage}
                         onChange={(event) => setIncludeFrameImage(event.target.checked)}
                         disabled={isAssistantQueryGenerating || isPreparingFrameImage}
-                        className="h-3.5 w-3.5 rounded border-slate-300 accent-[#46bfff]"
+                        className="h-3.5 w-3.5 rounded border-slate-300 accent-[#ff4655]"
                       />
                       <span>Include frame image</span>
                     </label>

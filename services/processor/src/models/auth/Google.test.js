@@ -6,17 +6,29 @@ import {
   getGoogleLogin,
   requireGoogleAdminAccess,
 } from './Google.js';
+import { verifyGoogleOAuthState } from './GoogleOAuthState.js';
 
 test('admin Google login intent is preserved in OAuth state', async () => {
-  const loginUrl = await getGoogleLogin({
-    adminLogin: 'true',
-    origin: 'https://admin.example.com',
-  });
-  const state = new URL(loginUrl).searchParams.get('state');
-  const decodedState = JSON.parse(Buffer.from(state, 'base64url').toString());
+  const previousAllowedOrigins = process.env.SAMSAR_GOOGLE_OAUTH_ALLOWED_ORIGINS;
+  process.env.SAMSAR_GOOGLE_OAUTH_ALLOWED_ORIGINS = 'https://admin.example.com';
 
-  assert.equal(decodedState.adminLogin, true);
-  assert.equal(decodedState.origin, 'https://admin.example.com');
+  try {
+    const loginUrl = await getGoogleLogin({
+      adminLogin: 'true',
+      origin: 'https://admin.example.com',
+    });
+    const state = new URL(loginUrl).searchParams.get('state');
+    const decodedState = verifyGoogleOAuthState(state);
+
+    assert.equal(decodedState.adminLogin, true);
+    assert.equal(decodedState.origin, 'https://admin.example.com');
+  } finally {
+    if (previousAllowedOrigins === undefined) {
+      delete process.env.SAMSAR_GOOGLE_OAUTH_ALLOWED_ORIGINS;
+    } else {
+      process.env.SAMSAR_GOOGLE_OAUTH_ALLOWED_ORIGINS = previousAllowedOrigins;
+    }
+  }
 });
 
 test('admin Google login accepts only an existing admin user', () => {

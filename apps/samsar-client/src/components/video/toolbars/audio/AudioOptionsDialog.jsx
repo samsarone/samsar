@@ -7,6 +7,7 @@ import {
   resolveSubtitleRegenerationDefault,
 } from '../../../../utils/subtitleRegenerationLanguage.mjs';
 import { useDeploymentModelAvailability } from '../../../../hooks/useDeploymentModelAvailability.js';
+import { useColorMode } from '../../../../contexts/ColorMode.jsx';
 
 const AudioOptionsDialog = ({
   regenerateVideoSessionSubtitles,
@@ -24,6 +25,7 @@ const AudioOptionsDialog = ({
   isUpdateLayerPending = false,
   closeDialog,
 }) => {
+  const { colorMode } = useColorMode();
   const [localApplyAudioDucking, setLocalApplyAudioDucking] = useState(Boolean(applyAudioDucking));
   const [localRegenerateFramesBeforeRender, setLocalRegenerateFramesBeforeRender] = useState(
     Boolean(regenerateFramesBeforeRender)
@@ -200,7 +202,7 @@ const AudioOptionsDialog = ({
         <button
           type="button"
           onClick={handleRealignLayers}
-          className="text-sm font-semibold text-blue-500 underline underline-offset-4 hover:text-blue-400"
+          className={`text-sm font-semibold underline underline-offset-4 ${colorMode === 'dark' ? 'text-[#ffe0a3] hover:text-[#f6c453]' : 'text-blue-500 hover:text-blue-400'}`}
         >
           Realign layers
         </button>
@@ -212,7 +214,7 @@ const AudioOptionsDialog = ({
           <label className="flex items-start gap-2 text-sm">
             <input
               type="checkbox"
-              className="mt-0.5"
+              className={colorMode === 'dark' ? 'mt-0.5 accent-[#f6c453]' : 'mt-0.5'}
               checked={localApplyAudioDucking}
               onChange={handleAudioDuckingChange}
             />
@@ -227,7 +229,7 @@ const AudioOptionsDialog = ({
           <label className="flex items-start gap-2 text-sm">
             <input
               type="checkbox"
-              className="mt-0.5"
+              className={colorMode === 'dark' ? 'mt-0.5 accent-[#f6c453]' : 'mt-0.5'}
               checked={localRegenerateFramesBeforeRender}
               onChange={handleRegenerateFramesBeforeRenderChange}
             />
@@ -245,7 +247,7 @@ const AudioOptionsDialog = ({
             type="button"
             onClick={handleRender}
             disabled={isRenderActionDisabled}
-            className="inline-flex min-h-[40px] min-w-24 items-center justify-center rounded-lg bg-gradient-to-r from-blue-500 to-blue-600 px-6 py-2 text-sm font-bold text-white shadow-[0_8px_18px_rgba(3,12,28,0.22)] transition-all duration-200 ease-out hover:-translate-y-[1px] hover:shadow-[0_10px_18px_rgba(15,23,42,0.14)] disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0"
+            className={`inline-flex min-h-[40px] min-w-24 items-center justify-center rounded-lg px-6 py-2 text-sm font-bold shadow-[0_8px_18px_rgba(3,12,28,0.22)] transition-all duration-200 ease-out hover:-translate-y-[1px] hover:shadow-[0_10px_18px_rgba(15,23,42,0.14)] disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0 ${colorMode === 'dark' ? 'bg-[#ff4655] text-[#080a10] hover:bg-[#ff6572]' : 'bg-gradient-to-r from-blue-500 to-blue-600 text-white'}`}
           >
             {isDialogRenderPending || isVideoGenerating || isRenderPending ? 'Rendering...' : 'Render'}
           </button>

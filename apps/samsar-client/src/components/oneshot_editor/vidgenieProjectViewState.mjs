@@ -1,7 +1,6 @@
 export function resolveVidgenieLoadedProjectView({
   hasPausedGeneration = false,
   hasPendingGeneration = false,
-  hasStartedGeneration = false,
   latestVideoUrl = null,
   failureStatus = '',
 } = {}) {
@@ -18,8 +17,7 @@ export function resolveVidgenieLoadedProjectView({
       isPaused ||
       isPending ||
       hasResult ||
-      hasFailure ||
-      hasStartedGeneration
+      hasFailure
     ),
   };
 }

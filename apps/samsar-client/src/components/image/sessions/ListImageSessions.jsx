@@ -32,15 +32,15 @@ export default function ListImageSessions() {
 
   const containerSurface =
     colorMode === 'dark'
-      ? 'bg-[#0b1021] text-slate-100'
+      ? 'bg-[#0c0d12] text-slate-100'
       : 'bg-[#f7f9fc] text-slate-900';
   const cardSurface =
     colorMode === 'dark'
-      ? 'bg-[#0f1629] border border-[#1f2a3d] shadow-[0_14px_36px_rgba(0,0,0,0.35)]'
+      ? 'bg-[#181b24] border border-[#3a4050] shadow-[0_14px_36px_rgba(0,0,0,0.35)]'
       : 'bg-white border border-slate-200 shadow-sm';
   const paginationButtonClass =
     colorMode === 'dark'
-      ? 'bg-[#111a2f] hover:bg-[#16213a] text-slate-100 border border-[#1f2a3d]'
+      ? 'bg-[#20232e] hover:bg-[#292d3a] text-slate-100 border border-[#3a4050]'
       : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 shadow-sm';
 
   useEffect(() => {
@@ -194,7 +194,7 @@ export default function ListImageSessions() {
       : 'border border-slate-200 text-slate-600 hover:bg-slate-100';
   const dialogSurface =
     colorMode === 'dark'
-      ? 'bg-[#0f172a] text-slate-100 border border-[#1f2a3d]'
+      ? 'bg-[#0f172a] text-slate-100 border border-[#3a4050]'
       : 'bg-white text-slate-900 border border-slate-200';
   const dialogInputSurface =
     colorMode === 'dark'

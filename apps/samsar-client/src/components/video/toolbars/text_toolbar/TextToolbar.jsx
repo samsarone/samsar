@@ -255,27 +255,29 @@ export default function TextToolbar(props) {
 
   const toolbarSurface =
     colorMode === 'dark'
-      ? 'bg-[#0f1629] border border-[#1f2a3d] text-slate-100 shadow-[0_18px_42px_rgba(2,6,23,0.45)]'
+      ? 'bg-[#181b24] border border-[#3a4050] text-slate-100 shadow-[0_18px_42px_rgba(2,6,23,0.45)]'
       : 'bg-white border border-slate-200 text-slate-900 shadow-[0_18px_36px_rgba(15,23,42,0.16)]';
   const fieldSurface =
     colorMode === 'dark'
-      ? 'bg-[#111a2f] border border-[#1f2a3d] text-slate-100'
+      ? 'bg-[#20232e] border border-[#3a4050] text-slate-100'
       : 'bg-slate-50 border border-slate-200 text-slate-900';
   const mutedText = colorMode === 'dark' ? 'text-slate-400' : 'text-slate-500';
   const actionButtonClass =
     colorMode === 'dark'
-      ? 'bg-rose-500 text-white hover:bg-rose-400 disabled:bg-[#17233d] disabled:text-slate-500'
+      ? 'bg-[#ff4655] text-[#080a10] hover:bg-[#ff6572] disabled:bg-[#20232e] disabled:text-slate-500'
       : 'bg-rose-500 text-white hover:bg-rose-600 disabled:bg-slate-200 disabled:text-slate-400';
   const secondaryButtonClass =
     colorMode === 'dark'
-      ? 'border border-[#273956] bg-[#111a2f] text-slate-100 hover:bg-[#172642]'
+      ? 'border border-[#667188] bg-[#20232e] text-slate-100 hover:bg-[#292d3a]'
       : 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-50';
   const deleteButtonClass =
     colorMode === 'dark'
       ? 'bg-rose-500/12 border border-rose-400/30 text-rose-100 hover:bg-rose-500/18'
       : 'bg-rose-50 border border-rose-200 text-rose-700 hover:bg-rose-100';
   const wrapButtonClass = draft.autoWrap
-    ? 'bg-blue-600 text-white hover:bg-blue-500'
+    ? colorMode === 'dark'
+      ? 'bg-[#f6c453] text-[#101117] hover:bg-[#ffe0a3]'
+      : 'bg-blue-600 text-white hover:bg-blue-500'
     : secondaryButtonClass;
   const toolbarWidth = isImageStudio ? 330 : 310;
   const toolbarHeight = 205;
@@ -352,7 +354,7 @@ export default function TextToolbar(props) {
         minRows={2}
         value={draft.text || ''}
         onChange={(event) => updateDraft({ text: event.target.value })}
-        className={`mb-3 min-h-[76px] w-full resize-none rounded-xl px-3 py-2 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-400/20 ${fieldSurface}`}
+        className={`mb-3 min-h-[76px] w-full resize-none rounded-xl px-3 py-2 text-sm shadow-sm focus:outline-none focus:ring-2 ${colorMode === 'dark' ? 'focus:border-[#f6c453] focus:ring-[#f6c453]/20' : 'focus:ring-blue-400/20'} ${fieldSurface}`}
         placeholder="Edit text"
       />
 

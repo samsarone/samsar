@@ -590,6 +590,75 @@
   margin-right: 10px;
 }
 
+.credential-source-panel {
+  align-items: center;
+  background: color-mix(in srgb, var(--panel-strong) 88%, var(--accent-soft) 12%);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  display: flex;
+  gap: 18px;
+  justify-content: space-between;
+  padding: 12px 14px;
+}
+
+.credential-source-copy {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.credential-source-copy strong {
+  color: var(--text);
+  font-size: 14px;
+}
+
+.credential-source-copy small {
+  color: var(--muted);
+  font-size: 11.5px;
+  line-height: 1.4;
+}
+
+.credential-source-toggle {
+  background: var(--bg-soft);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  display: grid;
+  flex: 0 0 auto;
+  grid-template-columns: repeat(2, minmax(150px, 1fr));
+  padding: 3px;
+}
+
+.credential-source-toggle button {
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: var(--muted);
+  display: grid;
+  font-size: 12px;
+  font-weight: 800;
+  gap: 2px;
+  min-height: 42px;
+  padding: 6px 11px;
+  text-align: left;
+}
+
+.credential-source-toggle button small {
+  color: var(--subtle);
+  font-size: 9.5px;
+  font-weight: 700;
+}
+
+.credential-source-toggle button.active {
+  background: var(--panel-strong);
+  border-color: var(--border-strong);
+  color: var(--text);
+  box-shadow: 0 5px 16px color-mix(in srgb, var(--ink-950) 12%, transparent);
+}
+
+.credential-source-toggle button.active small {
+  color: var(--accent-text);
+}
+
 .provider-list {
   display: grid;
   gap: 12px;
@@ -1897,6 +1966,16 @@ button:disabled {
   .panel-header p::before {
     content: "";
     margin: 0;
+  }
+
+  .credential-source-panel {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .credential-source-toggle {
+    grid-template-columns: 1fr;
   }
 
   .topbar-actions {

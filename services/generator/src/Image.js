@@ -251,7 +251,7 @@ function resolveImageProviderForModel(model, payload = {}) {
   if (normalizedModel === 'NANOBANANA2' || normalizedModel === 'NANOBANANAPRO') {
     return shouldUseGoogleNativeNanoBanana(payload) ? 'googleCloud' : 'fal';
   }
-  if (normalizedModel === 'CUSTOM_TEXT_TO_IMAGE') {
+  if (normalizedModel === 'CUSTOM_TEXT_TO_IMAGE' || normalizedModel.startsWith('CUSTOM_TEXT_TO_IMAGE:')) {
     return '';
   }
   return 'fal';
@@ -2730,7 +2730,7 @@ async function processPendingGenerationRequet(pendingRequestData) {
     if (imageData) {
       await updateImageInSessionLayer(imageData, pendingRequestData);
     }
-  } else if (model === 'CUSTOM_TEXT_TO_IMAGE') {
+  } else if (model === 'CUSTOM_TEXT_TO_IMAGE' || model?.startsWith?.('CUSTOM_TEXT_TO_IMAGE:')) {
     const imageData = await handleCustomTextToImageRequest(pendingRequestData);
     if (imageData?.image) {
       await updateImageInSessionLayer(imageData, pendingRequestData);

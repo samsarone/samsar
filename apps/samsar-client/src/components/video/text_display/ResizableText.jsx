@@ -366,7 +366,7 @@ const ResizableText = ({
           <Rect
             width={Math.max(shapeState.width, MIN_TEXT_DIMENSION)}
             height={Math.max(shapeState.height, MIN_TEXT_DIMENSION)}
-            stroke="rgba(70,191,255,0.9)"
+            stroke="rgba(255,70,85,0.9)"
             strokeWidth={1}
             dash={[4, 4]}
             cornerRadius={8}
@@ -444,10 +444,10 @@ const ResizableText = ({
             'bottom-center',
             'bottom-right',
           ]}
-          borderStroke="rgba(70,191,255,0.01)"
+          borderStroke="rgba(255,70,85,0.01)"
           borderStrokeWidth={0.1}
           anchorFill="#ffffff"
-          anchorStroke="#46bfff"
+          anchorStroke="#ff4655"
           anchorStrokeWidth={2.5}
           flipEnabled={false}
           boundBoxFunc={(oldBox, newBox) => {

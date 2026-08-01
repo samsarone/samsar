@@ -8,7 +8,7 @@
 
   width: 20px;
 
-  background-color: #111a2f; /* Material dark rail */
+  background-color: #20232e; /* Material dark rail */
   border-radius: 10px;
   position: relative;
   overflow: visible;
@@ -90,7 +90,7 @@
 }
 
 .dual-thumb-slider .thumb {
-  background-color: #0b1021;
+  background-color: #0c0d12;
   width: 28px; /* Adjust thumb width as needed */
   height: 10px; /* Adjust thumb height as needed */
   cursor: pointer;
@@ -228,7 +228,7 @@
 }
 
 .samsar-slider-arrow:hover {
-  background: #16213a;
+  background: #292d3a;
  
 }
 
@@ -718,7 +718,7 @@ body.theme-light .time-ruler {
 body.theme-light .samsar-slider-arrow {
   background: #e4ebf5;
   border: 1px solid #cbd6e6;
-  color: #1f2a3d;
+  color: #3a4050;
 }
 
 body.theme-light .samsar-slider-arrow:hover {

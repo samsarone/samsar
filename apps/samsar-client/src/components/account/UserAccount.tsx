@@ -69,11 +69,11 @@ export default function UserAccount() {
   const location = useLocation();
 
   const textColor = colorMode === "dark" ? "text-slate-100" : "text-slate-900";
-  const bgColor = colorMode === "dark" ? "bg-[#0b1021]" : "bg-[#f7f9fc]";
+  const bgColor = colorMode === "dark" ? "bg-[#0c0d12]" : "bg-[#f7f9fc]";
   const secondaryTextColor = colorMode === "dark" ? "text-slate-400" : "text-slate-500";
-  const cardBgColor = colorMode === "dark" ? "bg-[#0f1629] shadow-[0_16px_40px_rgba(0,0,0,0.35)]" : "bg-white shadow-sm";
-  const borderColor = colorMode === "dark" ? "border-[#1f2a3d]" : "border-slate-200";
-  const mutedBg = colorMode === "dark" ? "bg-[#111a2f]" : "bg-slate-50";
+  const cardBgColor = colorMode === "dark" ? "bg-[#181b24] shadow-[0_16px_40px_rgba(0,0,0,0.35)]" : "bg-white shadow-sm";
+  const borderColor = colorMode === "dark" ? "border-[#3a4050]" : "border-slate-200";
+  const mutedBg = colorMode === "dark" ? "bg-[#20232e]" : "bg-slate-50";
   const isStandaloneDeployment = IS_STANDALONE_DEPLOYMENT;
   const canManageInstallationModelAdapters = canManageModelAdapters({
     isStandaloneDeployment,
@@ -107,7 +107,7 @@ export default function UserAccount() {
     "usage",
     "billing",
     "settings",
-    ...(canManageInstallationModelAdapters
+    ...(isStandaloneDeployment
       ? [MODEL_ADAPTERS_ACCOUNT_PANEL_KEY]
       : []),
   ];
@@ -193,14 +193,14 @@ export default function UserAccount() {
 
   useEffect(() => {
     setDisplayPanel(resolvePanelFromPath());
-  }, [canManageInstallationModelAdapters, location.pathname]);
+  }, [isStandaloneDeployment, location.pathname]);
 
   useEffect(() => {
     if (!user) return;
 
     if (isLegacyModelAdaptersSettingsPath(location.pathname)) {
       navigate(
-        canManageInstallationModelAdapters
+        isStandaloneDeployment
           ? `/account/${MODEL_ADAPTERS_ACCOUNT_PANEL_KEY}`
           : "/account/settings",
         { replace: true },
@@ -210,12 +210,12 @@ export default function UserAccount() {
 
     if (
       isModelAdaptersAccountPath(location.pathname) &&
-      !canManageInstallationModelAdapters
+      !isStandaloneDeployment
     ) {
       navigate("/account", { replace: true });
     }
   }, [
-    canManageInstallationModelAdapters,
+    isStandaloneDeployment,
     location.pathname,
     navigate,
     user,
@@ -355,11 +355,11 @@ export default function UserAccount() {
   const navItemBase = "w-full text-left mb-2 px-3 py-2 rounded-lg transition-colors";
   const navItemActive =
     colorMode === "dark"
-      ? "bg-[#16213a] border border-rose-400/40 text-rose-200 shadow-[0_0_0_1px_rgba(248,113,113,0.16)]"
+      ? "bg-[#292d3a] border border-[#ff4655]/55 text-[#ffd4d8]"
       : "bg-white border border-rose-100 text-rose-700 shadow-sm";
   const navItemIdle =
     colorMode === "dark"
-      ? "border border-transparent text-slate-300 hover:bg-[#0f1629]"
+      ? "border border-transparent text-slate-300 hover:bg-[#181b24]"
       : "border border-transparent text-slate-600 hover:bg-slate-100";
 
   const NavLink = ({ panel, label }) => (
@@ -380,10 +380,10 @@ export default function UserAccount() {
       label: "API Key",
     },
     { panel: "billing", label: "Billing" },
-    ...(canManageInstallationModelAdapters
+    ...(isStandaloneDeployment
       ? [{
           panel: MODEL_ADAPTERS_ACCOUNT_PANEL_KEY,
-          label: "Model Adapters",
+          label: "Custom Adapters",
         }]
       : []),
     { panel: "settings", label: "Settings" },
@@ -403,7 +403,7 @@ export default function UserAccount() {
     apiKeys: "API Keys",
     usage: "Usage Logs",
     billing: "Billing Information",
-    [MODEL_ADAPTERS_ACCOUNT_PANEL_KEY]: "Model Adapters",
+    [MODEL_ADAPTERS_ACCOUNT_PANEL_KEY]: "Custom Adapters",
     settings: "Settings",
   };
 
@@ -680,9 +680,12 @@ export default function UserAccount() {
               {displayPanel === "images" && <ImagePanelContent />}
               {displayPanel === "sounds" && <MusicPanelContent />}
               {displayPanel === "billing" && <BillingPanelContent />}
-              {canManageInstallationModelAdapters &&
+              {isStandaloneDeployment &&
                 displayPanel === MODEL_ADAPTERS_ACCOUNT_PANEL_KEY && (
-                  <ModelAdaptersPanelContent enabled />
+                  <ModelAdaptersPanelContent
+                    enabled
+                    preferencesEnabled={canManageInstallationModelAdapters}
+                  />
                 )}
               {displayPanel === "settings" && (
                 <SettingsPanelContent

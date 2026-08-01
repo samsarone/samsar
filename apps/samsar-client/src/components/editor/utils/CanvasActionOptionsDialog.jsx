@@ -14,14 +14,14 @@ export default function CanvasActionOptionsDialog({
   const { colorMode } = useColorMode();
 
   const surfaceClass = colorMode === 'dark'
-    ? 'bg-[#0f1629] text-slate-100 border border-[#1f2a3d]'
+    ? 'bg-[#181b24] text-slate-100 border border-[#3a4050]'
     : 'bg-white text-slate-900 border border-slate-200';
   const mutedClass = colorMode === 'dark' ? 'text-slate-400' : 'text-slate-500';
   const secondaryButtonClass = colorMode === 'dark'
-    ? 'border border-[#273956] bg-[#111a2f] text-slate-100 hover:bg-[#172642]'
+    ? 'border border-[#667188] bg-[#20232e] text-slate-100 hover:bg-[#292d3a]'
     : 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-50';
   const badgeClass = colorMode === 'dark'
-    ? 'bg-cyan-500/15 text-cyan-200'
+    ? 'bg-[#f6c453]/14 text-[#ffe0a3]'
     : 'bg-blue-50 text-blue-700';
 
   return (

@@ -462,19 +462,19 @@ export default function MusicLibraryHome({
   const currentProjectName = getProjectName(sessionDetails);
 
   const textColor = colorMode === 'dark' ? 'text-slate-100' : 'text-slate-900';
-  const borderColor = colorMode === 'dark' ? 'border-[#1f2a3d]' : 'border-slate-200';
-  const cardBg = colorMode === 'dark' ? 'bg-[#0f1629]' : 'bg-white';
-  const headerBg = colorMode === 'dark' ? 'bg-[#0b1224]' : 'bg-slate-50';
+  const borderColor = colorMode === 'dark' ? 'border-[#3a4050]' : 'border-slate-200';
+  const cardBg = colorMode === 'dark' ? 'bg-[#181b24]' : 'bg-white';
+  const headerBg = colorMode === 'dark' ? 'bg-[#151720]' : 'bg-slate-50';
   const mutedText = colorMode === 'dark' ? 'text-slate-400' : 'text-slate-600';
   const surfaceButton = colorMode === 'dark'
-    ? 'bg-[#0b1224] hover:bg-[#0f1629]'
+    ? 'bg-[#151720] hover:bg-[#181b24]'
     : 'bg-white hover:bg-slate-100';
   const activeButton = 'bg-gradient-to-r from-blue-500 to-blue-600 text-white';
   const selectButtonBg = 'bg-gradient-to-r from-blue-500 to-blue-600 text-white hover:opacity-90';
-  const tagBg = colorMode === 'dark' ? 'bg-[#0b1224]' : 'bg-slate-100';
+  const tagBg = colorMode === 'dark' ? 'bg-[#151720]' : 'bg-slate-100';
   const iconColor = colorMode === 'dark' ? 'text-slate-100' : 'text-slate-800';
   const sliderAccent = colorMode === 'dark' ? '#6366f1' : '#2563eb';
-  const sliderTrack = colorMode === 'dark' ? '#1f2a3d' : '#e2e8f0';
+  const sliderTrack = colorMode === 'dark' ? '#3a4050' : '#e2e8f0';
   const sessionEndTime = getSessionEndTime(sessionDetails);
   const currentLayerId = currentLayer?._id?.toString?.() || currentLayer?._id || null;
   const currentLayerStartTime = Number(currentLayer?.durationOffset ?? currentLayer?.startTime ?? 0);

@@ -43,39 +43,39 @@ export default function CommonDropdownButton({
   // Replicate the gradient styles from CommonButton
   const gradientBg =
     colorMode === "dark"
-      ? "text-[#041420] from-[#46bfff] to-[#39d881] hover:from-[#60cbff] hover:to-[#55e8a2]"
+      ? "text-[#080a10] from-[#ff4655] to-[#ff6b4a] hover:from-[#ff6572] hover:to-[#ff8066]"
       : "text-neutral-100 from-blue-500 to-blue-600 hover:text-neutral-300";
   const interactionClasses =
     colorMode === "dark"
-      ? "transition-all duration-200 ease-out hover:-translate-y-[1px] hover:shadow-[0_12px_24px_rgba(70,191,255,0.22)] active:translate-y-0"
+      ? "transition-all duration-200 ease-out hover:-translate-y-[1px] hover:shadow-[0_12px_28px_rgba(255,70,85,0.24)] active:translate-y-0"
       : "transition-all duration-200 ease-out hover:-translate-y-[1px] active:translate-y-0";
   const buttonShadow = colorMode === "dark" ? "shadow-lg" : "";
-  const mainButtonShadow = colorMode === "dark" ? "shadow-sm" : "";
   const menuSurface =
     colorMode === "dark"
-      ? "bg-neutral-900/95 ring-1 ring-white/10 shadow-[0_16px_30px_rgba(0,0,0,0.42)]"
+      ? "bg-[#181b24]/95 ring-1 ring-[#3a4050] shadow-[0_18px_42px_rgba(0,0,0,0.38)] backdrop-blur-xl"
       : "bg-white ring-1 ring-slate-200";
   const menuItemBase = colorMode === "dark" ? "text-gray-300" : "text-slate-700";
-  const menuItemActive = colorMode === "dark" ? "bg-gray-800 text-white" : "bg-slate-100 text-slate-900";
+  const menuItemActive = colorMode === "dark" ? "bg-[#292d3a] text-white" : "bg-slate-100 text-slate-900";
 
   const mainButtonSizeClasses = compact
-    ? "min-h-[34px] px-3 py-1.5 text-sm"
-    : "min-h-[42px] px-3 py-2";
+    ? "min-h-[34px] px-3 py-1 text-xs"
+    : "min-h-11 px-3 py-1.5 text-sm sm:min-h-[38px]";
   const menuButtonSizeClasses = compact
-    ? "min-h-[34px] px-2 text-[11px]"
-    : "min-h-[42px] px-2";
+    ? "min-h-[34px] px-2 text-[10px]"
+    : "min-h-11 px-2 text-[11px] sm:min-h-[38px]";
 
   return (
     <Menu as="div" className="relative z-[260] inline-block text-left">
       <div className={`flex ${buttonShadow}`}>
         {/* Main (left) portion of the split-button */}
         <button
+          type="button"
           onClick={onMainClick}
           disabled={isBtnDisabled}
           className={`
             relative m-auto inline-flex min-w-16 items-center justify-center text-center
-            rounded-l-lg ${mainButtonShadow}
-            font-bold bg-gradient-to-r
+            rounded-l-lg
+            font-semibold bg-gradient-to-r
             whitespace-nowrap leading-none
             cursor-pointer
             disabled:opacity-50 disabled:cursor-not-allowed
@@ -83,6 +83,7 @@ export default function CommonDropdownButton({
             ${mainButtonSizeClasses}
             ${gradientBg}
             ${interactionClasses}
+            focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#ffe0a3]/80 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0c0d12]
             ${extraClasses}
           `}
         >
@@ -95,16 +96,18 @@ export default function CommonDropdownButton({
         {/* Chevron (right) portion of the split-button */}
         <Menu.Button
           disabled={isBtnDisabled}
+          aria-label={`${typeof mainLabel === "string" ? mainLabel : "Action"} options`}
           className={`
             inline-flex items-center justify-center
             rounded-r-lg
-            font-bold bg-gradient-to-r
+            font-semibold bg-gradient-to-r
             cursor-pointer
             disabled:opacity-50 disabled:cursor-not-allowed
             disabled:bg-gray-800 disabled:text-neutral-100
             ${menuButtonSizeClasses}
             ${gradientBg}
             ${interactionClasses}
+            focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#ffe0a3]/80 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0c0d12]
           `}
         >
           ▼
@@ -124,23 +127,24 @@ export default function CommonDropdownButton({
         <Menu.Items
           className={`
             origin-top-right absolute right-0 mt-2
-            w-36 rounded z-[320] ${menuSurface}
+            w-36 rounded-lg p-1 z-[320] ${menuSurface}
           `}
         >
           {dropdownItems.map((item, idx) => (
             <Menu.Item key={idx}>
               {({ active }) => (
-                <div
+                <button
+                  type="button"
                   onClick={item.onClick}
                   className={`
-                    block pl-8 py-2 text-sm
+                    block w-full rounded-md px-3 py-1.5 text-left text-xs
                     ${menuItemBase}
                     ${active ? menuItemActive : ""}
                     cursor-pointer
                   `}
                 >
                   {item.label}
-                </div>
+                </button>
               )}
             </Menu.Item>
           ))}

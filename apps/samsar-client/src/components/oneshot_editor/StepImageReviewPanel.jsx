@@ -192,11 +192,11 @@ export default function StepImageReviewPanel({
     ? 'border-white/10 bg-white/[0.04] text-slate-100'
     : 'border-slate-200 bg-slate-50 text-slate-900';
   const tileClass = isDark
-    ? 'border-white/10 bg-[#101827]'
+    ? 'border-white/10 bg-[#181b24]'
     : 'border-slate-200 bg-white';
   const mutedText = isDark ? 'text-slate-400' : 'text-slate-500';
   const inputClass = isDark
-    ? 'border-white/10 bg-black/20 text-slate-100 focus:border-indigo-400'
+    ? 'border-[#4a5265] bg-[#20232e] text-slate-100 focus:border-[#f6c453] focus:ring-2 focus:ring-[#f6c453]/25'
     : 'border-slate-200 bg-white text-slate-900 focus:border-indigo-500';
   const quietButton = isDark
     ? 'border-white/10 bg-white/5 text-slate-100 hover:bg-white/10'
@@ -255,7 +255,15 @@ export default function StepImageReviewPanel({
             alt={`${selectedScene.title} ${primary ? 'primary' : 'alternate'}`}
             className="h-full w-full object-contain"
           />
-          <div className={`absolute left-2 top-2 rounded-full px-2 py-1 text-[11px] font-semibold ${primary ? 'bg-indigo-600 text-white' : 'bg-amber-500 text-white'}`}>
+          <div className={`absolute left-2 top-2 rounded-full px-2 py-1 text-[11px] font-semibold ${
+            primary
+              ? isDark
+                ? 'bg-[#f6c453] text-[#111318]'
+                : 'bg-indigo-600 text-white'
+              : isDark
+                ? 'bg-[#2b303b] text-[#ffe0a3] ring-1 ring-[#f6c453]/25'
+                : 'bg-amber-500 text-white'
+          }`}>
             {primary ? 'Primary' : 'Alternate'}
           </div>
         </div>
@@ -272,7 +280,11 @@ export default function StepImageReviewPanel({
                 type="button"
                 onClick={() => handleSelect(item)}
                 disabled={Boolean(busyKey)}
-                className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-3 py-2 text-xs font-semibold text-white transition hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-60"
+                className={`inline-flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold transition disabled:cursor-not-allowed disabled:opacity-60 ${
+                  isDark
+                    ? 'bg-[#f6c453] text-[#111318] hover:bg-[#ffe0a3] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#fff1c8]/70'
+                    : 'bg-indigo-600 text-white hover:bg-indigo-500'
+                }`}
               >
                 {busyKey === selectKey ? <FaSpinner className="animate-spin" /> : <FaCheck />}
                 Use as primary
@@ -297,7 +309,7 @@ export default function StepImageReviewPanel({
     <div className={`mt-4 rounded-xl border p-3 ${shellClass}`}>
       <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2 text-sm font-semibold">
-          <FaImage className={isDark ? 'text-indigo-300' : 'text-indigo-600'} />
+          <FaImage className={isDark ? 'text-[#f6c453]' : 'text-indigo-600'} />
           Image review
         </div>
         <div className={`text-xs ${mutedText}`}>
@@ -315,7 +327,9 @@ export default function StepImageReviewPanel({
               onClick={() => setSelectedSceneIndex(index)}
               className={`shrink-0 rounded-lg border px-3 py-2 text-xs font-semibold transition ${
                 active
-                  ? 'border-indigo-500 bg-indigo-600 text-white'
+                  ? isDark
+                    ? 'border-[#f6c453] bg-[#f6c453] text-[#111318]'
+                    : 'border-indigo-500 bg-indigo-600 text-white'
                   : quietButton
               }`}
             >

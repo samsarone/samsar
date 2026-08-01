@@ -12,13 +12,13 @@ export default function ShowNewUserIntroDisplay(props) {
   const { colorMode } = useColorMode();
   const panelSurface =
     colorMode === 'dark'
-      ? 'bg-[#0b1021] text-slate-100 border border-[#1f2a3d]'
+      ? 'bg-[#0c0d12] text-slate-100 border border-[#3a4050]'
       : 'bg-slate-50 text-slate-900 border border-slate-200';
   const cardSurface =
     colorMode === 'dark'
-      ? 'bg-[#0f1629] border border-[#1f2a3d] shadow-[0_14px_36px_rgba(0,0,0,0.35)]'
+      ? 'bg-[#181b24] border border-[#3a4050] shadow-[0_14px_36px_rgba(0,0,0,0.35)]'
       : 'bg-white border border-slate-200 shadow-sm';
-  const iconStyle = colorMode === 'dark' ? 'text-rose-200' : 'text-indigo-500';
+  const iconStyle = colorMode === 'dark' ? 'text-indigo-300' : 'text-indigo-500';
 
   return (
     <div>

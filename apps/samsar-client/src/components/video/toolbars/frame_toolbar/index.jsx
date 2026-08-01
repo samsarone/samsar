@@ -1069,23 +1069,23 @@ export default function FrameToolbar(props) {
   const bgColor =
     colorMode === 'light'
       ? 'bg-white/72 text-slate-900 border border-slate-200/90 backdrop-blur-md'
-      : 'bg-[#0f1629]/72 text-slate-100 border border-[#1f2a3d]/90 shadow-[0_10px_28px_rgba(0,0,0,0.35)] backdrop-blur-md';
+      : 'bg-[#181b24]/72 text-slate-100 border border-[#3a4050]/90 shadow-[0_10px_28px_rgba(0,0,0,0.35)] backdrop-blur-md';
   const bg2Color =
     colorMode === 'light'
       ? 'bg-white/60 border border-slate-200/90 backdrop-blur-md'
-      : 'bg-[#111a2f]/60 border border-[#1f2a3d]/90 backdrop-blur-md';
+      : 'bg-[#20232e]/60 border border-[#3a4050]/90 backdrop-blur-md';
   let bg3Color =
     colorMode === 'light'
       ? 'bg-slate-50 border border-slate-200'
-      : 'bg-[#0f172a] border border-[#1f2a3d]';
+      : 'bg-[#0f172a] border border-[#3a4050]';
   const panelShellSurface =
     colorMode === 'light'
       ? 'bg-white/68 backdrop-blur-md'
-      : 'bg-[#0b1224]/68 backdrop-blur-md';
+      : 'bg-[#151720]/68 backdrop-blur-md';
   const panelBodySurface =
     colorMode === 'light'
       ? 'bg-white/62 backdrop-blur-sm'
-      : 'bg-[#0b1224]/62 backdrop-blur-sm';
+      : 'bg-[#151720]/62 backdrop-blur-sm';
   const bgSelectedColor =
     colorMode === 'light'
       ? 'bg-sky-50 border-sky-400/70'
@@ -4067,22 +4067,22 @@ export default function FrameToolbar(props) {
     const audioToolbarSurface =
       colorMode === 'light'
         ? 'bg-white/72 border border-slate-200 backdrop-blur-md'
-        : 'bg-[#0b1224]/68 border border-[#1f2a3d] backdrop-blur-md';
+        : 'bg-[#151720]/68 border border-[#3a4050] backdrop-blur-md';
     const compactInputClassName =
       colorMode === 'light'
         ? 'h-8 w-[56px] rounded-lg border border-slate-200 bg-white/88 px-2 py-1 text-[11px] text-slate-700'
-        : 'h-8 w-[56px] rounded-lg border border-[#1f2a3d] bg-[#111a2f]/82 px-2 py-1 text-[11px] text-slate-100';
+        : 'h-8 w-[56px] rounded-lg border border-[#3a4050] bg-[#20232e]/82 px-2 py-1 text-[11px] text-slate-100';
     const updateButtonClassName = audioSaveState === 'saved'
       ? (colorMode === 'light'
         ? 'bg-emerald-600 text-white hover:bg-emerald-500'
-        : 'bg-emerald-400 text-[#041420] hover:bg-emerald-300')
+        : 'bg-emerald-400 text-[#080a10] hover:bg-emerald-300')
       : audioSaveState === 'error'
         ? (colorMode === 'light'
           ? 'bg-rose-600 text-white hover:bg-rose-500'
           : 'bg-rose-400 text-[#1f0707] hover:bg-rose-300')
         : (colorMode === 'light'
           ? 'bg-sky-600 text-white hover:bg-sky-500'
-          : 'bg-cyan-400 text-[#041420] hover:bg-cyan-300');
+          : 'bg-cyan-400 text-[#080a10] hover:bg-cyan-300');
     const removeButtonClassName =
       colorMode === 'light'
         ? 'border border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100'
@@ -4090,7 +4090,7 @@ export default function FrameToolbar(props) {
     const duplicateButtonClassName =
       colorMode === 'light'
         ? 'border border-slate-200 bg-white/90 text-slate-700 hover:bg-slate-100'
-        : 'border border-[#2a3953] bg-[#111a2f]/82 text-slate-100 hover:bg-[#17223a]';
+        : 'border border-[#2a3953] bg-[#20232e]/82 text-slate-100 hover:bg-[#17223a]';
     const advancedButtonClassName = showSelectedAudioExtraOptionsToolbar
       ? (colorMode === 'light'
         ? 'border border-indigo-200 bg-indigo-50 text-indigo-700'
@@ -4145,11 +4145,11 @@ export default function FrameToolbar(props) {
     const promptPreviewClassName =
       colorMode === 'light'
         ? 'border border-slate-200 bg-white/90 hover:bg-slate-50'
-        : 'border border-[#2a3953] bg-[#111a2f]/82 hover:bg-[#17223a]';
+        : 'border border-[#2a3953] bg-[#20232e]/82 hover:bg-[#17223a]';
     const promptCopyButtonClassName =
       colorMode === 'light'
         ? 'border border-slate-200 bg-white/90 text-slate-700 hover:bg-slate-100'
-        : 'border border-[#2a3953] bg-[#111a2f]/82 text-slate-100 hover:bg-[#17223a]';
+        : 'border border-[#2a3953] bg-[#20232e]/82 text-slate-100 hover:bg-[#17223a]';
     const inlineInputClassName =
       colorMode === 'light'
         ? 'h-4 min-w-0 bg-transparent px-0 text-right text-[10px] font-semibold text-slate-700 outline-none disabled:cursor-not-allowed disabled:opacity-50'
@@ -5772,7 +5772,7 @@ export default function FrameToolbar(props) {
   const renderAudioTrackRail = (audioTrackNodes) => {
     const shouldShowRailControl = isAudioTrackRailOverflowing || isAudioTrackRailExpanded;
     const railButtonClassName = colorMode === 'dark'
-      ? 'border border-[#2a3953] bg-[#0f172a]/92 text-slate-100 shadow-[0_10px_22px_rgba(0,0,0,0.28)] hover:bg-[#16213a]'
+      ? 'border border-[#2a3953] bg-[#0f172a]/92 text-slate-100 shadow-[0_10px_22px_rgba(0,0,0,0.28)] hover:bg-[#292d3a]'
       : 'border border-slate-200 bg-white/95 text-slate-700 shadow-[0_10px_22px_rgba(15,23,42,0.12)] hover:bg-slate-50';
     const railControlLabel = isAudioTrackRailExpanded
       ? 'Collapse audio lanes'
@@ -6669,11 +6669,11 @@ export default function FrameToolbar(props) {
 
   const collapsedToggleSurface =
     colorMode === 'dark'
-      ? 'bg-[#111a2f]/78 text-slate-100 border border-[#1f2a3d]/90 shadow-[0_10px_28px_rgba(0,0,0,0.35)] backdrop-blur-md'
+      ? 'bg-[#20232e]/78 text-slate-100 border border-[#3a4050]/90 shadow-[0_10px_28px_rgba(0,0,0,0.35)] backdrop-blur-md'
       : 'bg-white/80 text-slate-700 border border-slate-200 backdrop-blur-md';
   const expandedToggleSurface =
     colorMode === 'dark'
-      ? 'bg-[#0f1629]/78 text-slate-100 border border-[#1f2a3d]/90 shadow-[0_12px_32px_rgba(0,0,0,0.4)] backdrop-blur-md'
+      ? 'bg-[#181b24]/78 text-slate-100 border border-[#3a4050]/90 shadow-[0_12px_32px_rgba(0,0,0,0.4)] backdrop-blur-md'
       : 'bg-white/80 text-slate-700 border border-slate-200 backdrop-blur-md';
   let expandButtonLabel = (
     <button
@@ -6730,16 +6730,16 @@ export default function FrameToolbar(props) {
   }
 
   const sceneCardClassName = colorMode === 'dark'
-    ? 'bg-[#0f172a]/70 border border-[#1f2a3d]/90 text-slate-100'
+    ? 'bg-[#0f172a]/70 border border-[#3a4050]/90 text-slate-100'
     : 'bg-white/70 border border-slate-200/90 text-slate-700';
   const panelSectionClassName = colorMode === 'dark'
-    ? 'bg-[#111a2f]/58 border border-[#1f2a3d]/90'
+    ? 'bg-[#20232e]/58 border border-[#3a4050]/90'
     : 'bg-white/58 border border-slate-200/90';
   const sceneButtonClassName = colorMode === 'dark'
     ? 'inline-flex cursor-pointer rounded-md px-1.5 py-1 text-slate-200 transition hover:bg-slate-800/80 disabled:opacity-50'
     : 'inline-flex cursor-pointer rounded-md px-1.5 py-1 text-slate-600 transition hover:bg-slate-200/80 disabled:opacity-50';
   const sceneQuickEditorToggleClassName = `${colorMode === 'dark'
-    ? 'border border-[#22314d]/90 bg-[#10192e]/84 hover:bg-[#16213a]'
+    ? 'border border-[#22314d]/90 bg-[#10192e]/84 hover:bg-[#292d3a]'
     : 'border border-slate-200 bg-white/92 hover:bg-slate-50'
     } ${showUpdateLayerPortal
       ? (colorMode === 'dark' ? 'text-cyan-100' : 'text-sky-600')
@@ -6973,13 +6973,13 @@ export default function FrameToolbar(props) {
     : 'flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white/85 px-3 py-2 text-sm text-slate-700';
   const settingsPillBaseClassName = 'inline-flex items-center rounded-full px-3 py-1 text-[11px] font-semibold transition';
   const settingsPillActiveClassName = colorMode === 'dark'
-    ? 'bg-cyan-400 text-[#041420]'
+    ? 'bg-cyan-400 text-[#080a10]'
     : 'bg-sky-500 text-white';
   const settingsPillIdleClassName = colorMode === 'dark'
-    ? 'bg-[#111a2f] text-slate-300 hover:bg-[#16213a]'
+    ? 'bg-[#20232e] text-slate-300 hover:bg-[#292d3a]'
     : 'bg-slate-100 text-slate-600 hover:bg-slate-200';
   const settingsActionButtonClasses = colorMode === 'dark'
-    ? 'inline-flex items-center justify-center rounded-xl border border-[#2a3953] bg-[#111a2f]/82 px-3 py-2 text-xs font-semibold text-slate-100 transition hover:bg-[#17223a]'
+    ? 'inline-flex items-center justify-center rounded-xl border border-[#2a3953] bg-[#20232e]/82 px-3 py-2 text-xs font-semibold text-slate-100 transition hover:bg-[#17223a]'
     : 'inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white/90 px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-100';
   const settingsCancelRenderButtonClasses = colorMode === 'dark'
     ? 'inline-flex items-center justify-center gap-2 rounded-xl border border-rose-400/45 bg-rose-500/12 px-3 py-2 text-xs font-semibold text-rose-100 transition hover:bg-rose-500/20'
@@ -7642,7 +7642,7 @@ export default function FrameToolbar(props) {
                 <div className='mt-1 mb-2'>
                   <button
                     onClick={onUpdateDuration}
-                  className={`px-4 py-2 mt-1 text-xs rounded m-auto ${colorMode === 'light' ? 'bg-sky-600 text-white border border-sky-600 hover:bg-sky-500' : 'bg-[#111a2f] text-slate-100 border border-[#1f2a3d]'} ${durationChanged ? 'highlight' : ''
+                  className={`px-4 py-2 mt-1 text-xs rounded m-auto ${colorMode === 'light' ? 'bg-sky-600 text-white border border-sky-600 hover:bg-sky-500' : 'bg-[#20232e] text-slate-100 border border-[#3a4050]'} ${durationChanged ? 'highlight' : ''
                       }`}
                   >
                     Update

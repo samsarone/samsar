@@ -56,19 +56,19 @@ export default function LibraryHome(props) {
   };
 
   const panelSurface = colorMode === 'dark'
-    ? 'border border-[#1f2a3d] bg-[#07101f] text-slate-100'
+    ? 'border border-[#3a4050] bg-[#0c0d12] text-slate-100'
     : 'border border-slate-200 bg-slate-50 text-slate-900';
   const toolbarSurface = colorMode === 'dark'
-    ? 'border-b border-[#1f2a3d] bg-[#0b1224]/95'
+    ? 'border-b border-[#3a4050] bg-[#151720]/95'
     : 'border-b border-slate-200 bg-white/95';
   const backButtonSurface = colorMode === 'dark'
-    ? 'border border-[#31405e] bg-[#111a2f] text-slate-100 hover:bg-[#16213a]'
+    ? 'border border-[#4a5265] bg-[#20232e] text-slate-100 hover:bg-[#292d3a]'
     : 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-100';
   const inactiveTabSurface = colorMode === 'dark'
-    ? 'border border-[#1f2a3d] bg-[#0f1629] text-slate-300 hover:bg-[#16213a]'
+    ? 'border border-[#3a4050] bg-[#181b24] text-slate-300 hover:bg-[#292d3a]'
     : 'border border-slate-200 bg-white text-slate-600 hover:bg-slate-100';
   const activeTabSurface = colorMode === 'dark'
-    ? 'border border-cyan-400/30 bg-gradient-to-r from-cyan-500 via-sky-500 to-indigo-500 text-white shadow-lg shadow-cyan-500/20'
+    ? 'border border-[#f6c453]/60 bg-[#f6c453] text-[#0c0d12] shadow-[0_8px_20px_rgba(246,196,83,0.2)]'
     : 'border border-sky-300 bg-gradient-to-r from-sky-500 via-blue-500 to-indigo-500 text-white shadow';
   const mutedText = colorMode === 'dark' ? 'text-slate-400' : 'text-slate-500';
   const loadingOverlay = colorMode === 'dark'

@@ -238,36 +238,36 @@ export default function ImageLibraryHome(props) {
 
   const panelSurface =
     colorMode === 'dark'
-      ? 'bg-[#0f1629] text-slate-100 border border-[#1f2a3d]'
+      ? 'bg-[#181b24] text-slate-100 border border-[#3a4050]'
       : 'bg-white text-slate-900 border border-slate-200';
   const sectionSurface =
     colorMode === 'dark'
-      ? 'bg-[#0b1226] border border-[#1f2a3d]'
+      ? 'bg-[#12141c] border border-[#3a4050]'
       : 'bg-slate-50 border border-slate-200';
   const tileSurface =
     colorMode === 'dark'
-      ? 'bg-[#111a2f] border border-[#1f2a3d] hover:border-rose-300/40'
+      ? 'bg-[#20232e] border border-[#3a4050] hover:border-rose-300/40'
       : 'bg-white border border-slate-200 hover:border-rose-300';
   const selectedTileSurface =
     colorMode === 'dark'
-      ? 'border-sky-400/60 ring-2 ring-sky-400/25'
-      : 'border-sky-400 ring-2 ring-sky-200';
+      ? 'border-[#ff4655]/70 bg-[#ff4655]/10'
+      : 'border-sky-400 bg-sky-50';
   const actionButton =
     colorMode === 'dark'
-      ? 'border border-[#2b3853] bg-[#0f1629] text-slate-200 hover:bg-[#17233a] disabled:opacity-50'
+      ? 'border border-[#2b3853] bg-[#181b24] text-slate-200 hover:bg-[#17233a] disabled:opacity-50'
       : 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-100 disabled:opacity-50';
   const paginationButton =
     colorMode === 'dark'
-      ? 'bg-[#111a2f] border border-[#1f2a3d] text-slate-200 hover:bg-[#16213a] disabled:opacity-50'
+      ? 'bg-[#20232e] border border-[#3a4050] text-slate-200 hover:bg-[#292d3a] disabled:opacity-50'
       : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 disabled:opacity-50';
   const helperText = colorMode === 'dark' ? 'text-slate-400' : 'text-slate-500';
   const backButtonStyle =
     colorMode === 'dark'
-      ? 'bg-[#111a2f] border border-[#1f2a3d] text-slate-100 hover:bg-[#16213a]'
+      ? 'bg-[#20232e] border border-[#3a4050] text-slate-100 hover:bg-[#292d3a]'
       : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100';
   const headerSurface =
     colorMode === 'dark'
-      ? 'bg-[#0f1629]/95 border-b border-[#1f2a3d]'
+      ? 'bg-[#181b24]/95 border-b border-[#3a4050]'
       : 'bg-white/95 border-b border-slate-200';
 
   const renderAssetsGrid = (assets, sectionKey, emptyMessage) => {

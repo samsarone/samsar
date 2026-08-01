@@ -75,9 +75,9 @@ export default function APIKeysPanelContent({ onAPIKeyPresenceChange }) {
 
   const textColor = colorMode === 'dark' ? 'text-neutral-100' : 'text-neutral-800';
   const secondaryTextColor = colorMode === 'dark' ? 'text-neutral-400' : 'text-neutral-500';
-  const cardBgColor = colorMode === 'dark' ? 'bg-[#0f1629]' : 'bg-white';
-  const borderColor = colorMode === 'dark' ? 'border-[#1f2a3d]' : 'border-slate-200';
-  const headerBg = colorMode === 'dark' ? 'bg-[#0b1224]' : 'bg-slate-50';
+  const cardBgColor = colorMode === 'dark' ? 'bg-[#181b24]' : 'bg-white';
+  const borderColor = colorMode === 'dark' ? 'border-[#3a4050]' : 'border-slate-200';
+  const headerBg = colorMode === 'dark' ? 'bg-[#151720]' : 'bg-slate-50';
 
   const [apiKeys, setApiKeys] = useState([]);
   const [showKey, setShowKey] = useState({});
@@ -250,7 +250,7 @@ export default function APIKeysPanelContent({ onAPIKeyPresenceChange }) {
               id="api-key-expiry"
               value={selectedExpiry}
               onChange={(e) => setSelectedExpiry(e.target.value)}
-              className={`w-full border ${borderColor} rounded px-3 py-2 sm:w-auto ${colorMode === 'dark' ? 'bg-[#0f1629]' : 'bg-white'} ${textColor}`}
+              className={`w-full border ${borderColor} rounded px-3 py-2 sm:w-auto ${colorMode === 'dark' ? 'bg-[#181b24]' : 'bg-white'} ${textColor}`}
             >
               {API_KEY_EXPIRY_OPTIONS.map((option) => (
                 <option key={option.value} value={option.value}>
@@ -267,7 +267,7 @@ export default function APIKeysPanelContent({ onAPIKeyPresenceChange }) {
               id="api-key-limit-period"
               value={selectedLimitPeriod}
               onChange={(e) => setSelectedLimitPeriod(e.target.value)}
-              className={`w-full border ${borderColor} rounded px-3 py-2 ${colorMode === 'dark' ? 'bg-[#0f1629]' : 'bg-white'} ${textColor}`}
+              className={`w-full border ${borderColor} rounded px-3 py-2 ${colorMode === 'dark' ? 'bg-[#181b24]' : 'bg-white'} ${textColor}`}
             >
               {API_KEY_LIMIT_OPTIONS.map((option) => (
                 <option key={option.value} value={option.value}>
@@ -283,7 +283,7 @@ export default function APIKeysPanelContent({ onAPIKeyPresenceChange }) {
               disabled={selectedLimitPeriod === 'none'}
               onChange={(e) => setSelectedUsageLimit(e.target.value)}
               placeholder="Credits"
-              className={`w-full border ${borderColor} rounded px-3 py-2 disabled:opacity-50 ${colorMode === 'dark' ? 'bg-[#0f1629]' : 'bg-white'} ${textColor}`}
+              className={`w-full border ${borderColor} rounded px-3 py-2 disabled:opacity-50 ${colorMode === 'dark' ? 'bg-[#181b24]' : 'bg-white'} ${textColor}`}
             />
           </div>
           <SecondaryButton onClick={handleCreateKey} className="w-full sm:w-auto">Create Key</SecondaryButton>
@@ -316,7 +316,7 @@ export default function APIKeysPanelContent({ onAPIKeyPresenceChange }) {
                   const rowBg =
                     index % 2 === 0
                       ? colorMode === 'dark'
-                        ? 'bg-[#0b1224]'
+                        ? 'bg-[#151720]'
                         : 'bg-slate-50'
                       : '';
                   return (
@@ -331,7 +331,7 @@ export default function APIKeysPanelContent({ onAPIKeyPresenceChange }) {
                           </span>
                           <button
                             onClick={() => toggleShowKey(keyItem._id)}
-                            className={`rounded-md px-2 py-1 text-xs font-semibold border ${borderColor} ${colorMode === 'dark' ? 'hover:bg-[#0f1629]' : 'hover:bg-slate-100'}`}
+                            className={`rounded-md px-2 py-1 text-xs font-semibold border ${borderColor} ${colorMode === 'dark' ? 'hover:bg-[#181b24]' : 'hover:bg-slate-100'}`}
                           >
                             {showKey[keyItem._id] ? 'Hide' : 'Show'}
                           </button>
@@ -351,7 +351,7 @@ export default function APIKeysPanelContent({ onAPIKeyPresenceChange }) {
                             <select
                               value={limitDrafts[keyItem._id]?.usageLimitPeriod || 'none'}
                               onChange={(e) => handleLimitDraftChange(keyItem._id, 'usageLimitPeriod', e.target.value)}
-                              className={`border ${borderColor} rounded px-2 py-1 ${colorMode === 'dark' ? 'bg-[#0f1629]' : 'bg-white'} ${textColor}`}
+                              className={`border ${borderColor} rounded px-2 py-1 ${colorMode === 'dark' ? 'bg-[#181b24]' : 'bg-white'} ${textColor}`}
                             >
                               {API_KEY_LIMIT_OPTIONS.map((option) => (
                                 <option key={option.value} value={option.value}>
@@ -367,7 +367,7 @@ export default function APIKeysPanelContent({ onAPIKeyPresenceChange }) {
                               disabled={(limitDrafts[keyItem._id]?.usageLimitPeriod || 'none') === 'none'}
                               onChange={(e) => handleLimitDraftChange(keyItem._id, 'usageLimit', e.target.value)}
                               placeholder="Credits"
-                              className={`w-24 min-w-0 border ${borderColor} rounded px-2 py-1 disabled:opacity-50 ${colorMode === 'dark' ? 'bg-[#0f1629]' : 'bg-white'} ${textColor}`}
+                              className={`w-24 min-w-0 border ${borderColor} rounded px-2 py-1 disabled:opacity-50 ${colorMode === 'dark' ? 'bg-[#181b24]' : 'bg-white'} ${textColor}`}
                             />
                             <button
                               type="button"
@@ -375,7 +375,7 @@ export default function APIKeysPanelContent({ onAPIKeyPresenceChange }) {
                               title="Save API key limit"
                               disabled={savingLimitKeyId === keyItem._id}
                               onClick={() => handleSaveKeyLimit(keyItem._id)}
-                              className={`rounded-md p-2 border ${borderColor} disabled:opacity-50 ${colorMode === 'dark' ? 'hover:bg-[#0f1629]' : 'hover:bg-slate-100'}`}
+                              className={`rounded-md p-2 border ${borderColor} disabled:opacity-50 ${colorMode === 'dark' ? 'hover:bg-[#181b24]' : 'hover:bg-slate-100'}`}
                             >
                               <FaSave />
                             </button>

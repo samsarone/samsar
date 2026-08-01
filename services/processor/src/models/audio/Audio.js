@@ -294,8 +294,14 @@ function buildGeneratedMusicLibraryItem(generatedMusic, projectNameBySessionId =
   const sessionId = typeof generatedMusic?.sessionId === 'string' && generatedMusic.sessionId.trim()
     ? generatedMusic.sessionId.trim()
     : null;
-  const projectName = projectNameBySessionId.get(sessionId)
-    || (sessionId ? getFallbackProjectName(sessionId, null) : 'Legacy Library');
+  const isAudioStudioArtifact = Boolean(
+    generatedMusic?.generationMeta?.audioStudioRequest ||
+    generatedMusic?.generationMeta?.audioStudioJoined
+  );
+  const projectName = isAudioStudioArtifact
+    ? 'Audio Studio'
+    : projectNameBySessionId.get(sessionId)
+      || (sessionId ? getFallbackProjectName(sessionId, null) : 'Legacy Library');
 
   return {
     _id: `generated_music:${generatedMusic?._id?.toString?.() || generatedMusic?._id || url}`,

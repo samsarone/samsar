@@ -94,7 +94,7 @@ export default function VideoEditorDefaultsViewer(props) {
   const bgColor =
     colorMode === 'light'
       ? 'bg-white text-slate-900 border border-slate-200'
-      : 'bg-[#0f1629] text-slate-100 border border-[#1f2a3d] shadow-[0_14px_36px_rgba(0,0,0,0.35)]';
+      : 'bg-[#181b24] text-slate-100 border border-[#3a4050] shadow-[0_14px_36px_rgba(0,0,0,0.35)]';
   const buttonBgcolor =
     colorMode === 'light'
       ? 'bg-slate-100 text-slate-900 border border-slate-200'

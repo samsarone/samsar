@@ -16,6 +16,7 @@ export default function SingleSelect(props) {
     compactLayout = false,
     truncateLabels = false,
     isDisabled = false,
+    className,
     styles: customStyles,
   } = props;
 
@@ -23,25 +24,18 @@ export default function SingleSelect(props) {
 
 
   // Styles for select and dropdowns
-  const formSelectBgColor = colorMode === 'dark' ? '#030712' : '#f3f4f6';
-  const formSelectTextColor = colorMode === 'dark' ? '#f3f4f6' : '#111827';
+  const formSelectBgColor = colorMode === 'dark' ? '#181b24' : '#f3f4f6';
+  const formSelectTextColor = colorMode === 'dark' ? '#f4f6fb' : '#111827';
   const formSelectSelectedTextColor =
-    colorMode === 'dark' ? '#f3f4f6' : '#111827';
-  const formSelectHoverColor = colorMode === 'dark' ? '#1f2937' : '#2563EB';
-  const normalizedLabels = [
-    ...(Array.isArray(options) ? options.map((option) => option?.label) : []),
-    value?.label,
-    placeholder,
-  ]
-    .filter(Boolean)
-    .map((label) => String(label));
-  const longestLabelLength = normalizedLabels.reduce(
-    (maxLength, label) => Math.max(maxLength, label.length),
-    0
-  );
+    colorMode === 'dark' ? '#fff1c8' : '#1e3a8a';
+  const formSelectSelectedBgColor =
+    colorMode === 'dark' ? 'rgba(246, 196, 83, 0.14)' : '#dbeafe';
+  const formSelectHoverColor = colorMode === 'dark' ? '#292d3a' : '#2563EB';
+  const formSelectBorderColor = colorMode === 'dark' ? '#667188' : '#737373';
+  const formSelectFocusColor = colorMode === 'dark' ? '#f6c453' : '#007BFF';
   const shouldUseMultilineValue =
-    !truncateLabels && (compactLayout || longestLabelLength > 18);
-  const controlMinHeight = shouldUseMultilineValue ? 52 : 38;
+    !compactLayout && !truncateLabels && String(value?.label || '').length > 42;
+  const controlMinHeight = compactLayout ? 34 : shouldUseMultilineValue ? 46 : 36;
   const resolveCustomStyle = (slotName, ...args) => {
     const slotOverride = customStyles?.[slotName];
     return typeof slotOverride === 'function' ? slotOverride(...args) : {};
@@ -61,6 +55,12 @@ export default function SingleSelect(props) {
     menu: (provided) => ({
       ...provided,
       backgroundColor: formSelectBgColor,
+      border: `1px solid ${colorMode === 'dark' ? '#3a4050' : '#d1d5db'}`,
+      borderRadius: 10,
+      boxShadow: colorMode === 'dark'
+        ? '0 18px 42px rgba(0, 0, 0, 0.38)'
+        : '0 14px 30px rgba(15, 23, 42, 0.14)',
+      overflow: 'hidden',
       zIndex: MENU_Z_INDEX,
       ...resolveCustomStyle('menu', provided),
     }),
@@ -80,54 +80,79 @@ export default function SingleSelect(props) {
     }),
     valueContainer: (provided) => ({
       ...provided,
-      paddingTop: shouldUseMultilineValue ? 6 : provided.paddingTop,
-      paddingBottom: shouldUseMultilineValue ? 6 : provided.paddingBottom,
-      overflow: 'visible',
+      padding: shouldUseMultilineValue ? '4px 10px' : '0 10px',
+      overflow: shouldUseMultilineValue ? 'visible' : 'hidden',
       minWidth: 0,
       ...resolveCustomStyle('valueContainer', provided),
     }),
     control: (provided, state) => ({
       ...provided,
       backgroundColor: formSelectBgColor,
-      borderColor: state.isFocused ? '#007BFF' : '#737373',
+      borderColor: state.isFocused ? formSelectFocusColor : formSelectBorderColor,
       '&:hover': {
-        borderColor: state.isFocused ? '#007BFF' : '#737373',
+        borderColor: state.isFocused ? formSelectFocusColor : formSelectBorderColor,
       },
       boxShadow: state.isFocused
-        ? '0 0 0 0.2rem rgba(0, 123, 255, 0.25)'
+        ? colorMode === 'dark'
+          ? '0 0 16px rgba(246, 196, 83, 0.18)'
+          : '0 0 12px rgba(0, 123, 255, 0.16)'
         : null,
+      borderRadius: 8,
       minHeight: `${controlMinHeight}px`,
-      height: shouldUseMultilineValue ? 'auto' : '38px',
+      height: shouldUseMultilineValue ? 'auto' : `${controlMinHeight}px`,
       width: '100%',
       minWidth: 0,
       ...resolveCustomStyle('control', provided, state),
     }),
     option: (provided, state) => ({
       ...provided,
-      backgroundColor: formSelectBgColor,
+      backgroundColor: state.isSelected
+        ? formSelectSelectedBgColor
+        : state.isFocused
+          ? formSelectHoverColor
+          : formSelectBgColor,
       color: state.isSelected
         ? formSelectSelectedTextColor
-        : formSelectTextColor,
+        : state.isFocused && colorMode !== 'dark'
+          ? '#ffffff'
+          : formSelectTextColor,
       whiteSpace: 'normal',
       wordBreak: 'break-word',
+      fontSize: 13,
+      padding: '7px 10px',
       '&:hover': {
-        backgroundColor: formSelectHoverColor,
+        backgroundColor: state.isSelected ? formSelectSelectedBgColor : formSelectHoverColor,
       },
       ...resolveCustomStyle('option', provided, state),
     }),
     input: (provided) => ({
       ...provided,
-      color: formSelectTextColor,
+      color: colorMode === 'dark' ? '#8b96aa' : formSelectTextColor,
       ...resolveCustomStyle('input', provided),
     }),
     placeholder: (provided) => ({
       ...provided,
-      color: formSelectTextColor,
+      color: colorMode === 'dark' ? '#8b96aa' : '#6b7280',
       whiteSpace: shouldUseMultilineValue ? 'normal' : 'nowrap',
       overflow: shouldUseMultilineValue ? 'visible' : 'hidden',
       textOverflow: shouldUseMultilineValue ? 'clip' : 'ellipsis',
       maxWidth: '100%',
       ...resolveCustomStyle('placeholder', provided),
+    }),
+    indicatorSeparator: (provided) => ({
+      ...provided,
+      display: 'none',
+      ...resolveCustomStyle('indicatorSeparator', provided),
+    }),
+    dropdownIndicator: (provided) => ({
+      ...provided,
+      padding: compactLayout ? 5 : 6,
+      ...resolveCustomStyle('dropdownIndicator', provided),
+    }),
+    clearIndicator: (provided) => ({
+      ...provided,
+      padding: compactLayout ? 5 : 6,
+      ...resolveCustomStyle('clearIndicator', provided),
     }),
   };
 
@@ -135,6 +160,7 @@ export default function SingleSelect(props) {
   return (
     <Select
       name={name}
+      className={className}
       isSearchable={isSearchable}
       placeholder={placeholder}
       menuPortalTarget={typeof document !== 'undefined' ? document.body : undefined}

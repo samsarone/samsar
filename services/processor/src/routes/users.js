@@ -13,7 +13,7 @@ import {
 import { authenticateWithAuthToken, authenticateWithLoginToken, createLoginTokenForUser } from '../models/api/UserAPI.js';
 import { formatExternalUserClientProfile } from '../models/external/User.js';
 
-import { verifyUserAuthentication } from '../models/Auth.js';
+import { generateAuthToken, verifyUserAuthentication } from '../models/Auth.js';
 import {
   loginUserByEmail, registerUserByEmail, sendForgotPasswordEmail,
   resetUserPassword, updateUserPassword
@@ -37,8 +37,21 @@ import { getBillingPortalUrl } from '../models/BillingPortal.js';
 import {
   GOOGLE_ADMIN_ACCESS_DENIED,
   getGoogleLogin,
+  getGoogleLoginWithState,
   loginGoogleClient,
 } from '../models/auth/Google.js';
+import {
+  GOOGLE_OAUTH_FLOW,
+  buildBlogGoogleOAuthHandoffRedirect,
+  createBlogGoogleOAuthState,
+  getBlogGoogleOAuthCallbackUrl,
+  verifyGoogleOAuthState,
+} from '../models/auth/GoogleOAuthState.js';
+import {
+  GoogleOAuthHandoffError,
+  consumeGoogleOAuthHandoff,
+  issueGoogleOAuthHandoff,
+} from '../models/auth/GoogleOAuthHandoff.js';
 import { sendEnterpriseAdminWelcomeEmail } from '../models/Mailer.js';
 import User from '../schema/User.js';
 import {
@@ -71,6 +84,7 @@ function setNoStoreAuthHeaders(res) {
     Pragma: 'no-cache',
     Expires: '0',
     'Surrogate-Control': 'no-store',
+    'Referrer-Policy': 'no-referrer',
   });
 }
 
@@ -139,11 +153,18 @@ router.get('/profile', async (req, res) => {
 });
 
 router.get('/google_login', async (req, res) => {
+  setNoStoreAuthHeaders(res);
+
   try {
     if (!isGoogleLoginEnabled()) {
       return res.status(403).send({ error: 'Google login is disabled for standalone deployments. Use the configured admin account.' });
     }
-    const loginUrl = await getGoogleLogin(req.query);
+    const flow = typeof req.query?.flow === 'string'
+      ? req.query.flow.trim().toLowerCase()
+      : '';
+    const loginUrl = flow === GOOGLE_OAUTH_FLOW.BLOG
+      ? await getGoogleLoginWithState(createBlogGoogleOAuthState(req.query))
+      : await getGoogleLogin(req.query);
     const responseMode = typeof req.query?.responseMode === 'string'
       ? req.query.responseMode.trim().toLowerCase()
       : '';
@@ -153,35 +174,18 @@ router.get('/google_login', async (req, res) => {
     }
     res.json({ loginUrl });
   } catch (e) {
-    console.error('Failed to generate Google login URL', e);
-    res.status(500).send({ error: e?.message || 'Failed to generate Google login URL' });
+    const status = e?.statusCode || e?.status || 500;
+    if (status >= 500) {
+      console.error('Failed to generate Google login URL', e);
+    }
+    res.status(status).send({
+      error: e?.message || 'Failed to generate Google login URL',
+    });
   }
 });
 
-function decodeGoogleOAuthState(state) {
-  if (typeof state !== 'string' || !state.trim()) {
-    return null;
-  }
-
-  const normalizedState = state.trim();
-  const decodeAttempts = [
-    () => Buffer.from(normalizedState, 'base64url').toString(),
-    () => Buffer.from(normalizedState, 'base64').toString(),
-  ];
-
-  for (const decodeAttempt of decodeAttempts) {
-    try {
-      const decoded = decodeAttempt();
-      return JSON.parse(decoded);
-    } catch (_) {
-      // Try the next decoder.
-    }
-  }
-
-  return null;
-}
-
 router.get('/google_login_callback', async (req, res) => {
+  setNoStoreAuthHeaders(res);
   let decodedState = null;
 
   try {
@@ -189,25 +193,28 @@ router.get('/google_login_callback', async (req, res) => {
       return res.status(403).send({ error: 'Google login is disabled for standalone deployments. Use the configured admin account.' });
     }
     const { state, code } = req.query;
-    const defaultOriginDomain = CLIENT_APP || 'https://app.samsar.one';
-    let originDomain = defaultOriginDomain;
-    let cookieConsent = null;
-    let redirectPath = null;
+    decodedState = verifyGoogleOAuthState(state);
+    const isBlogFlow = decodedState.flow === GOOGLE_OAUTH_FLOW.BLOG;
 
-    try {
-      decodedState = decodeGoogleOAuthState(state);
-      originDomain = decodedState?.origin || originDomain;
-      cookieConsent = decodedState?.cookieConsent || null;
-      redirectPath = decodedState?.redirect || null;
-    } catch (_) {}
-
-    const { authToken, isNewUser } = await loginGoogleClient({
+    const { authToken, isNewUser, userId } = await loginGoogleClient({
       code,
       adminLogin: decodedState?.adminLogin === true,
       subscribeToWeeklyNewsletter: decodedState?.subscribeToWeeklyNewsletter,
+      issueAuthToken: !isBlogFlow,
     });
 
-    const shouldSetCookie = cookieConsent ? cookieConsent === 'accepted' : true;
+    if (isBlogFlow) {
+      const handoff = await issueGoogleOAuthHandoff({
+        userId,
+        nonceHash: decodedState.nonceHash,
+        redirect: decodedState.redirect,
+        isNewUser,
+      });
+      res.redirect(buildBlogGoogleOAuthHandoffRedirect(handoff.code));
+      return;
+    }
+
+    const shouldSetCookie = decodedState.cookieConsent === 'accepted';
     if (shouldSetCookie) {
       const cookieOptions = {
         httpOnly: false,
@@ -220,6 +227,8 @@ router.get('/google_login_callback', async (req, res) => {
       res.cookie('authToken', authToken, cookieOptions);
     }
 
+    const originDomain = decodedState.origin || CLIENT_APP || 'https://app.samsar.one';
+    const redirectPath = decodedState.redirect || null;
     const safeRedirect =
       typeof redirectPath === 'string' &&
       redirectPath.startsWith('/') &&
@@ -230,6 +239,13 @@ router.get('/google_login_callback', async (req, res) => {
 
     res.redirect(`${originDomain}/verify?authToken=${authToken}${safeRedirect}${newUserParam}`);
   } catch (e) {
+    if (decodedState?.flow === GOOGLE_OAUTH_FLOW.BLOG) {
+      const errorRedirect = new URL(getBlogGoogleOAuthCallbackUrl());
+      errorRedirect.searchParams.set('error', 'google');
+      res.redirect(errorRedirect.toString());
+      return;
+    }
+
     if (
       decodedState?.adminLogin === true &&
       e?.code === GOOGLE_ADMIN_ACCESS_DENIED &&
@@ -249,8 +265,47 @@ router.get('/google_login_callback', async (req, res) => {
       }
     }
 
-    console.error('Google login failed', e);
-    res.status(e?.statusCode || e?.status || 500).send({ error: e?.message || 'Google login failed' });
+    const status = e?.statusCode || e?.status || 500;
+    if (status >= 500) {
+      console.error('Google login failed', e);
+    }
+    res.status(status).send({ error: e?.message || 'Google login failed' });
+  }
+});
+
+router.post('/google_handoff_exchange', async (req, res) => {
+  setNoStoreAuthHeaders(res);
+
+  try {
+    const handoff = await consumeGoogleOAuthHandoff({
+      code: req.body?.code,
+      nonce: req.body?.nonce,
+    });
+    const user = await User.findById(handoff.userId);
+    if (!user) {
+      throw new GoogleOAuthHandoffError();
+    }
+
+    const authToken = generateAuthToken(user._id.toString());
+    res.send({
+      authToken,
+      email: user.email,
+      displayName: user.displayName,
+      username: user.username,
+      pfpUrl: user.pfpUrl,
+      redirect: handoff.redirect,
+      newUser: handoff.isNewUser,
+    });
+  } catch (e) {
+    const status = e?.statusCode || e?.status || 500;
+    if (status >= 500) {
+      console.error('Google login handoff exchange failed', e);
+    }
+    res.status(status).send({
+      error: status < 500
+        ? 'Google login handoff is invalid or has expired.'
+        : 'Google login handoff could not be completed.',
+    });
   }
 });
 
@@ -606,7 +661,7 @@ router.post('/update', async (req, res) => {
     const session = await updateUserDetails(userId, req.body);
     res.send(formatUserClientProfile(session));
   } catch (e) {
-    res.status(400).send({ error: e.message });
+    res.status(e.status || 400).send({ error: e.message });
   }
 });
 

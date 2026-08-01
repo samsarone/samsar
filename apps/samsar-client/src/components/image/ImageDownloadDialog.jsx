@@ -32,12 +32,12 @@ export default function ImageDownloadDialog({
 
   const surface =
     colorMode === 'dark'
-      ? 'bg-[#0f1629] border border-[#1f2a3d] text-slate-100'
+      ? 'bg-[#181b24] border border-[#3a4050] text-slate-100'
       : 'bg-white border border-slate-200 text-slate-900';
   const mutedText = colorMode === 'dark' ? 'text-slate-400' : 'text-slate-500';
   const inputClass =
     colorMode === 'dark'
-      ? 'bg-[#111a2f] border border-[#1f2a3d] text-slate-100'
+      ? 'bg-[#20232e] border border-[#3a4050] text-slate-100'
       : 'bg-white border border-slate-200 text-slate-900';
   const primaryButton =
     colorMode === 'dark'
@@ -45,7 +45,7 @@ export default function ImageDownloadDialog({
       : 'bg-rose-500 text-white hover:bg-rose-600';
   const secondaryButton =
     colorMode === 'dark'
-      ? 'bg-[#111a2f] text-slate-200 hover:bg-[#16213a] border border-[#1f2a3d]'
+      ? 'bg-[#20232e] text-slate-200 hover:bg-[#292d3a] border border-[#3a4050]'
       : 'bg-slate-100 text-slate-700 hover:bg-slate-200 border border-slate-200';
 
   const handleWidthChange = (event) => {
@@ -96,7 +96,7 @@ export default function ImageDownloadDialog({
                 scale === option
                   ? 'border-rose-400 text-rose-400'
                   : colorMode === 'dark'
-                    ? 'border-[#1f2a3d] text-slate-300'
+                    ? 'border-[#3a4050] text-slate-300'
                     : 'border-slate-200 text-slate-600'
               }`}
               onClick={() => setScale(option)}

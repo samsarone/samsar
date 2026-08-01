@@ -6,6 +6,27 @@ import {
   shouldUsePreferenceAwareImagePromptRouting,
 } from './ImageAPI.js';
 
+test('standalone text-to-image requests preserve per-user custom adapter model keys', () => {
+  const previousEdition = process.env.SAMSAR_DEPLOYMENT_EDITION;
+  process.env.SAMSAR_DEPLOYMENT_EDITION = 'standalone';
+  try {
+    assert.deepEqual(normalizeTextToImageRequestOptions({
+      model: 'CUSTOM_TEXT_TO_IMAGE:flux2-klein',
+      aspect_ratio: '16:9',
+    }), {
+      model: 'CUSTOM_TEXT_TO_IMAGE:flux2-klein',
+      aspectRatio: '16:9',
+      resolution: null,
+    });
+  } finally {
+    if (previousEdition === undefined) {
+      delete process.env.SAMSAR_DEPLOYMENT_EDITION;
+    } else {
+      process.env.SAMSAR_DEPLOYMENT_EDITION = previousEdition;
+    }
+  }
+});
+
 test('normalizes Wan2.7 Pro text-to-image requests to 1:1 at 1K by default', () => {
   assert.deepEqual(normalizeTextToImageRequestOptions({
     model: 'wan2.7pro',

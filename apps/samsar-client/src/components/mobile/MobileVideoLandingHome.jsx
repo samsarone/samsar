@@ -3,7 +3,7 @@ import { useUser } from '../../contexts/UserContext';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
 import { getHeaders, getAuthToken } from '../../utils/web';
-import RouteLoadingScreen from '../common/RouteLoadingScreen.jsx';
+import VidgenieSkeletonLoader from '../oneshot_editor/VidgenieSkeletonLoader.jsx';
 import { IS_STANDALONE_DEPLOYMENT } from '../../utils/environment.jsx';
 
 
@@ -79,6 +79,6 @@ export default function MobileVideoLandingHome() {
   }, [userInitiated, userFetching, user, navigate]);
 
   return (
-    <RouteLoadingScreen label="Opening VidGenie..." />
+    <VidgenieSkeletonLoader />
   );
 }

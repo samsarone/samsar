@@ -63,7 +63,7 @@ export default function ImageEditGenerator(props) {
 
   const inputShell =
     colorMode === "dark"
-      ? "bg-slate-900/60 text-slate-100 border border-white/10"
+      ? "bg-[#151720] text-slate-100 border border-[#667188] focus:border-[#f6c453] focus:outline-none focus:ring-2 focus:ring-[#f6c453]/20"
       : "bg-white text-slate-900 border border-slate-200 shadow-sm";
   const modelLabelClass = isImageStudio ? "text-sm font-semibold" : "text-xs font-bold";
   const selectClass = isImageStudio

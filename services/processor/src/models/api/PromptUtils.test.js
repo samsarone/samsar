@@ -87,6 +87,28 @@ test('NanoBanana 2 is excluded from every express image surface', () => {
   );
 });
 
+test('per-user custom text-to-image model keys are accepted for express generation', () => {
+  const modelKey = 'CUSTOM_TEXT_TO_IMAGE:text_to_image_flux2';
+  const previousEdition = process.env.SAMSAR_DEPLOYMENT_EDITION;
+  process.env.SAMSAR_DEPLOYMENT_EDITION = 'standalone';
+  try {
+    assert.deepEqual(validateExpressImageModelKey(modelKey), {
+      status: true,
+      imageModel: modelKey,
+    });
+    assert.equal(
+      validateMovieInput(buildValidMoviePayload({ image_model: modelKey })).status,
+      true,
+    );
+  } finally {
+    if (previousEdition === undefined) {
+      delete process.env.SAMSAR_DEPLOYMENT_EDITION;
+    } else {
+      process.env.SAMSAR_DEPLOYMENT_EDITION = previousEdition;
+    }
+  }
+});
+
 test('deprecated video subtype stripper removes public payload aliases only', () => {
   const payload = {
     video_model_sub_type: 'anime',

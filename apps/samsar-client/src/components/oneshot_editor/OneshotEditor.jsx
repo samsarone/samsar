@@ -95,6 +95,10 @@ import {
   normalizeDeploymentInferenceModelValue,
   normalizeDeploymentModelValue,
 } from '../../utils/deploymentProviders.js';
+import {
+  getCustomTextToImageModelDefinitions,
+  isCustomTextToImageModelKey,
+} from '../../utils/customTextToImageAdapters.mjs';
 import useRealtimeTranscription from '../../hooks/useRealtimeTranscription.js';
 import { useDeploymentModelAvailability } from '../../hooks/useDeploymentModelAvailability.js';
 import { useInferenceModelAvailability } from '../../hooks/useInferenceModelAvailability.js';
@@ -1147,7 +1151,11 @@ function RerollScenePreviewTile({
           </button>
         ) : null}
         {isSelected ? (
-          <span className="absolute right-1.5 top-1.5 inline-flex h-5 w-5 items-center justify-center rounded-full bg-cyan-300 text-slate-950 shadow">
+          <span className={`absolute right-1.5 top-1.5 inline-flex h-5 w-5 items-center justify-center rounded-full shadow ${
+            colorMode === 'dark'
+              ? 'bg-[#f6c453] text-[#111318] shadow-[0_0_0_2px_rgba(246,196,83,0.18)]'
+              : 'bg-cyan-300 text-slate-950'
+          }`}>
             <FaCheck className="h-3 w-3" aria-hidden="true" />
           </span>
         ) : null}
@@ -2930,13 +2938,17 @@ export default function OneshotEditor() {
   // ✨ UI tokens for light/dark surfaces
   const surfaceCard =
     colorMode === 'dark'
-      ? 'bg-[#0f1629] text-slate-100 border border-[#1f2a3d] shadow-[0_16px_40px_rgba(0,0,0,0.38)]'
+      ? 'bg-[#181b24]/96 text-slate-100 border border-[#3a4050] shadow-[0_20px_56px_rgba(0,0,0,0.32)] backdrop-blur-xl'
       : 'bg-white text-slate-900 border border-slate-200 shadow-sm';
 
   const controlShell =
     colorMode === 'dark'
-      ? 'bg-[#111a2f] ring-1 ring-[#1f2a3d] hover:ring-rose-400/40'
-      : 'bg-white ring-1 ring-slate-200 hover:ring-slate-300 shadow-sm';
+      ? 'bg-[#20232e]'
+      : 'bg-white';
+  const borderedControlShell =
+    colorMode === 'dark'
+      ? `${controlShell} ring-1 ring-[#667188] hover:ring-[#ff4655]/60`
+      : `${controlShell} ring-1 ring-slate-200 hover:ring-slate-300 shadow-sm`;
 
   const mutedText = colorMode === 'dark' ? 'text-slate-400' : 'text-slate-500';
 
@@ -3810,13 +3822,26 @@ export default function OneshotEditor() {
         };
       })
       .filter(Boolean);
-    return isStandaloneModelFilteringEnabled
+    const configuredModels = isStandaloneModelFilteringEnabled
       ? filterOptionsForDeploymentModelValues(orderedModels, stageDeploymentImageModelValues)
       : orderedModels;
+    if (!isStandaloneModelFilteringEnabled || generationMode !== 'T2V') {
+      return configuredModels;
+    }
+    const customModels = getCustomTextToImageModelDefinitions(user?.custom_adapters)
+      .filter((model) => model.supportedAspectRatios.includes(selectedAspectRatioOption.value))
+      .map((model) => ({
+        label: model.name,
+        value: model.key,
+        imageStyles: model.imageStyles,
+      }));
+    return [...configuredModels, ...customModels];
   }, [
+    generationMode,
     isStandaloneModelFilteringEnabled,
     selectedAspectRatioOption.value,
     stageDeploymentImageModelValues,
+    user?.custom_adapters,
   ]);
 
   const [selectedImageModel, setSelectedImageModel] = useState(() => {
@@ -3855,8 +3880,8 @@ export default function OneshotEditor() {
   // When image-model changes, verify / reset style
   useEffect(() => {
     if (!selectedImageModel) return;
-    const modelCfg = IMAGE_GENERAITON_MODEL_TYPES.find(
-      (m) => m.key === selectedImageModel.value
+    const modelCfg = stageImageModels.find(
+      (m) => (m.key || m.value) === selectedImageModel.value
     );
     if (modelCfg?.imageStyles?.length) {
       const styleExists = modelCfg.imageStyles.includes(selectedImageStyle?.value);
@@ -3867,7 +3892,7 @@ export default function OneshotEditor() {
     } else {
       setSelectedImageStyle(null);
     }
-  }, [selectedImageModel]);
+  }, [selectedImageModel, selectedImageStyle, stageImageModels]);
 
   // ─────────────────────────────────────────────────────────
   //  Video-model select
@@ -5648,7 +5673,9 @@ export default function OneshotEditor() {
       isTextToVideo,
       advancedOptions,
       customAdapters: user?.custom_adapters,
-      selectedCustomAdapterEndpointId,
+      selectedCustomAdapterEndpointId: isCustomTextToImageModelKey(selectedImageModel.value)
+        ? ''
+        : selectedCustomAdapterEndpointId,
       selectedInferenceModel,
       inferenceModelOptions,
     });
@@ -6446,9 +6473,10 @@ export default function OneshotEditor() {
     }
 
     return (
-      <div className={`flex flex-col justify-center gap-2 sm:flex-row ${extraClasses}`}>
+      <div className={`grid ${IS_STANDALONE_DEPLOYMENT ? 'grid-cols-2' : 'grid-cols-3'} gap-2 sm:flex sm:flex-row sm:justify-center ${extraClasses}`}>
         <PrimaryPublicButton
-          extraClasses="w-full sm:w-auto px-4 py-2 rounded-xl shadow-sm hover:shadow-md transition active:scale-[0.98]"
+          tone="amber"
+          extraClasses="w-full min-w-0 px-1.5 py-2 text-[11px] sm:w-auto sm:px-4 sm:text-sm rounded-xl shadow-sm transition active:scale-[0.98]"
           onClick={viewInStudio}
           isDisabled={isGuestPreview}
         >
@@ -6456,7 +6484,8 @@ export default function OneshotEditor() {
         </PrimaryPublicButton>
         {!IS_STANDALONE_DEPLOYMENT && (
           <PrimaryPublicButton
-            extraClasses="w-full sm:w-auto px-4 py-2 rounded-xl shadow-sm hover:shadow-md transition active:scale-[0.98]"
+            tone="mint"
+            extraClasses="w-full min-w-0 px-1.5 py-2 text-[11px] sm:w-auto sm:px-4 sm:text-sm rounded-xl shadow-sm transition active:scale-[0.98]"
             onClick={
               isCompletedSessionPublished
                 ? handleUnpublishClick
@@ -6477,7 +6506,8 @@ export default function OneshotEditor() {
           </PrimaryPublicButton>
         )}
         <PrimaryPublicButton
-          extraClasses="w-full sm:w-auto px-4 py-2 rounded-xl shadow-sm hover:shadow-md transition active:scale-[0.98]"
+          tone="neutral"
+          extraClasses="w-full min-w-0 px-1.5 py-2 text-[11px] sm:w-auto sm:px-4 sm:text-sm rounded-xl shadow-sm transition active:scale-[0.98]"
           onClick={handleDownloadVideo}
           isPending={isDownloadingVideo}
           isDisabled={isGuestPreview || !videoLink}
@@ -6496,11 +6526,11 @@ export default function OneshotEditor() {
     const isAnyPostProcessingPending = Boolean(postProcessingPendingAction);
     const panelClass =
       colorMode === 'dark'
-        ? 'bg-[#0b1224] text-slate-100 ring-white/10'
+        ? 'bg-[#151720] text-slate-100 ring-white/10'
         : 'bg-white text-slate-900 ring-slate-200';
     const inputClass =
       colorMode === 'dark'
-        ? 'border-white/10 bg-[#111a2f] text-slate-100 placeholder:text-slate-500 focus:border-cyan-300'
+        ? 'border-[#667188] bg-[#20232e] text-slate-100 placeholder:text-[#8b96aa] focus:border-[#f6c453] focus:ring-[#f6c453]/24'
         : 'border-slate-200 bg-white text-slate-900 placeholder:text-slate-400 focus:border-blue-400';
     const subtleButtonClass =
       colorMode === 'dark'
@@ -6508,7 +6538,7 @@ export default function OneshotEditor() {
         : 'border-slate-200 text-slate-700 hover:border-slate-300 hover:bg-slate-50';
     const activeActionClass =
       colorMode === 'dark'
-        ? 'bg-cyan-400/15 text-cyan-100 ring-cyan-300/25'
+        ? 'bg-[#ff4655]/16 text-[#ffd4d8] ring-[#ff4655]/35'
         : 'bg-blue-50 text-blue-700 ring-blue-200';
     const inactiveActionClass =
       colorMode === 'dark'
@@ -6518,7 +6548,7 @@ export default function OneshotEditor() {
       'inline-flex min-h-[38px] items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-60';
     const primarySubmitClass =
       colorMode === 'dark'
-        ? `${submitButtonClass} bg-cyan-300 text-slate-950 hover:bg-cyan-200`
+        ? `${submitButtonClass} bg-[#ff4655] text-[#080a10] hover:bg-[#ff6572] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#ffe0a3]/75`
         : `${submitButtonClass} bg-blue-600 text-white hover:bg-blue-700`;
     const secondarySubmitClass = `${submitButtonClass} border ${subtleButtonClass}`;
     const dangerSubmitClass =
@@ -6526,7 +6556,9 @@ export default function OneshotEditor() {
         ? `${submitButtonClass} border border-rose-300/30 text-rose-100 hover:bg-rose-400/10`
         : `${submitButtonClass} border border-rose-200 text-rose-700 hover:bg-rose-50`;
     const fieldClass = `min-h-[40px] w-full rounded-lg border px-3 py-2 text-sm outline-none transition ${inputClass}`;
-    const checkboxClass = 'mt-0.5 h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500';
+    const checkboxClass = colorMode === 'dark'
+      ? 'mt-0.5 h-4 w-4 rounded border-[#6f6450] bg-[#20232e] text-[#f6c453] focus:ring-[#f6c453]/45 focus:ring-offset-[#151720]'
+      : 'mt-0.5 h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500';
     const isGeneratedOutroPending = postProcessingPendingAction === 'generated_outro';
     const isFooterPending = postProcessingPendingAction === 'footer_cta';
     const isRemoveFooterPending = postProcessingPendingAction === 'remove_footer';
@@ -6990,11 +7022,11 @@ export default function OneshotEditor() {
     : t("vidgenie.jsonMode", {}, "JSON mode");
   const toggleShell =
     colorMode === 'dark'
-      ? 'bg-[#0b1226] ring-1 ring-white/10'
+      ? 'bg-[#12141c] ring-1 ring-[#4a5265]'
       : 'bg-white ring-1 ring-slate-200';
   const toggleActive =
     colorMode === 'dark'
-      ? 'bg-indigo-500 text-white shadow'
+      ? 'bg-[#f6c453] text-[#101117] shadow-[0_6px_18px_rgba(246,196,83,0.18)]'
       : 'bg-indigo-600 text-white shadow';
   const toggleInactive =
     colorMode === 'dark'
@@ -7022,35 +7054,38 @@ export default function OneshotEditor() {
   const advancedInputClasses = `
     w-full rounded-lg px-3 py-2 text-sm outline-none ring-1 transition
     ${colorMode === 'dark'
-      ? 'bg-[#0b1224] text-slate-100 ring-white/10 focus:ring-indigo-400/60 placeholder:text-slate-500'
+      ? 'bg-[#151720] text-slate-100 ring-[#667188] focus:ring-[#f6c453]/55 placeholder:text-[#8b96aa]'
       : 'bg-white text-slate-900 ring-slate-200 focus:ring-indigo-500/50 placeholder:text-slate-400'
     }
   `;
   const advancedCompactSelectClasses = `
     h-8 w-36 shrink-0 rounded-lg px-2 text-xs outline-none ring-1 transition sm:w-48
     ${colorMode === 'dark'
-      ? 'bg-[#0b1224] text-slate-100 ring-white/10 focus:ring-indigo-400/60'
+      ? 'bg-[#151720] text-slate-100 ring-[#667188] focus:ring-[#f6c453]/55'
       : 'bg-white text-slate-900 ring-slate-200 focus:ring-indigo-500/50'
     }
   `;
   const advancedLabelClasses = `block text-[11px] font-medium mb-1 ${mutedText}`;
   const advancedSectionBorder = colorMode === 'dark' ? 'border-white/10' : 'border-slate-200';
   const advancedRowBg = colorMode === 'dark' ? 'bg-white/[0.03]' : 'bg-slate-50';
+  const choiceInputClasses = colorMode === 'dark'
+    ? 'mt-0.5 h-4 w-4 rounded border-[#6f6450] bg-[#20232e] text-[#f6c453] focus:ring-[#f6c453]/45 focus:ring-offset-[#151720]'
+    : 'mt-0.5 h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500';
   const stepModeShell =
     colorMode === 'dark'
       ? 'bg-white/[0.03] ring-white/10'
       : 'bg-slate-50 ring-slate-200';
   const stepModeSelectedClasses =
     colorMode === 'dark'
-      ? 'bg-white/10 text-slate-100 ring-white/10'
-      : 'bg-white text-slate-900 ring-slate-200 shadow-sm';
+      ? 'bg-[#ff4655]/14 text-[#ffe5e8]'
+      : 'bg-white text-slate-900 shadow-sm';
   const stepModeInactiveClasses =
     colorMode === 'dark'
       ? 'text-slate-400 hover:bg-white/[0.06] hover:text-slate-200'
       : 'text-slate-500 hover:bg-white hover:text-slate-800';
   const secondaryActionClasses =
     colorMode === 'dark'
-      ? 'bg-white/[0.03] text-slate-200 ring-white/10 hover:bg-white/[0.06]'
+      ? 'bg-white/[0.03] text-slate-200 ring-[#667188] hover:bg-white/[0.06] hover:ring-[#f6c453]/55'
       : 'bg-slate-50 text-slate-700 ring-slate-200 hover:bg-white';
   const headerTitle = isJsonMode
     ? generationMode === 'I2V'
@@ -7102,7 +7137,7 @@ export default function OneshotEditor() {
                 key={option.value}
                 title={option.description}
                 className={`
-                  inline-flex min-h-9 cursor-pointer items-center justify-center gap-2 rounded-lg px-2 py-1.5 text-center font-medium ring-1 ring-transparent transition sm:px-3
+                  inline-flex min-h-9 cursor-pointer items-center justify-center gap-2 rounded-lg px-2 py-1.5 text-center font-medium transition has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-[#f6c453]/70 sm:px-3
                   ${isSelected ? stepModeSelectedClasses : stepModeInactiveClasses}
                   ${isFormDisabled ? 'cursor-not-allowed opacity-60' : ''}
                 `}
@@ -7150,7 +7185,7 @@ export default function OneshotEditor() {
       return (
         <div className={`mx-auto mt-6 w-full max-w-lg rounded-2xl border p-6 text-center ${
           colorMode === 'dark'
-            ? 'border-white/10 bg-[#0f1629] text-slate-100'
+            ? 'border-white/10 bg-[#181b24] text-slate-100'
             : 'border-slate-200 bg-white text-slate-900'
         }`}>
           <h1 className="text-xl font-semibold">Unable to open this VidGenie project</h1>
@@ -7181,23 +7216,23 @@ export default function OneshotEditor() {
         <div
           className={`mt-2 flex flex-col gap-3 rounded-2xl border px-4 py-3 sm:mt-6 sm:flex-row sm:items-center sm:justify-between ${
             colorMode === 'dark'
-              ? 'border-cyan-300/20 bg-cyan-300/10 text-cyan-50'
+              ? 'border-[#f6c453]/25 bg-[#f6c453]/[0.08] text-[#fff1c8]'
               : 'border-blue-200 bg-blue-50 text-blue-950'
           }`}
           role="status"
         >
           <div className="min-w-0">
             <div className="text-sm font-semibold">Sample VidGenie project</div>
-            <p className={`mt-0.5 text-xs ${colorMode === 'dark' ? 'text-cyan-100/75' : 'text-blue-800'}`}>
+            <p className={`mt-0.5 text-xs ${colorMode === 'dark' ? 'text-[#ffe0a3]' : 'text-blue-800'}`}>
               You can preview this project. Log in to create videos in your own workspace.
             </p>
           </div>
           <button
             type="button"
             onClick={showLoginDialog}
-            className={`inline-flex min-h-10 w-full shrink-0 items-center justify-center rounded-xl px-4 py-2 text-sm font-semibold transition sm:w-auto ${
+            className={`inline-flex min-h-10 w-auto shrink-0 self-center items-center justify-center rounded-xl px-5 py-2 text-sm font-semibold transition sm:self-auto ${
               colorMode === 'dark'
-                ? 'bg-cyan-200 text-slate-950 hover:bg-cyan-100'
+                ? 'bg-[#ff4655] text-[#080a10] hover:bg-[#ff6572]'
                 : 'bg-blue-600 text-white hover:bg-blue-700'
             }`}
           >
@@ -7209,7 +7244,7 @@ export default function OneshotEditor() {
       <div
         className={`
           ${surfaceCard}
-          vidgenie-editor-card relative mt-2 flex flex-col rounded-2xl p-3 transition-shadow duration-300 hover:shadow-xl sm:mt-6 sm:p-8
+          vidgenie-editor-card relative mt-2 flex flex-col rounded-2xl p-3 transition-shadow duration-300 hover:shadow-xl sm:mt-6 sm:px-8 sm:py-5
         `}
       >
         {/* 1️⃣ Heading */}
@@ -7269,7 +7304,7 @@ export default function OneshotEditor() {
               className={`
                 vidgenie-pricing-pill px-3 py-1.5 rounded-full text-center transition
                 ${colorMode === 'dark'
-                  ? 'bg-[#111a2f] text-slate-100 ring-1 ring-[#1f2a3d]'
+                  ? 'bg-[#20232e] text-slate-100 ring-1 ring-[#3a4050]'
                   : 'bg-white text-slate-900 ring-1 ring-slate-200'
                 }
               `}
@@ -7418,7 +7453,7 @@ export default function OneshotEditor() {
         {shouldCollapseOriginalRequest && (
           <div className={`mt-4 rounded-xl p-3 ring-1 ${
             colorMode === 'dark'
-              ? 'bg-[#0b1224] ring-white/10'
+              ? 'bg-[#151720] ring-white/10'
               : 'bg-slate-50 ring-slate-200'
           }`}>
             <button
@@ -7449,12 +7484,13 @@ export default function OneshotEditor() {
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
             {/* Aspect Ratio */}
             <div className="group w-full">
-              <div className={`w-full md:w-full ${controlShell} rounded-xl p-2 transition-transform duration-200 group-hover:translate-y-[-1px] relative z-10 focus-within:z-50 group-hover:z-50`}>
+              <div className={`relative z-10 w-full rounded-lg p-0 transition-transform duration-200 group-hover:translate-y-[-1px] group-hover:z-50 focus-within:z-50 ${controlShell}`}>
                 <SingleSelect
                   value={selectedAspectRatioOption}
                   onChange={setSelectedAspectRatioOption}
                   options={aspectRatioOptions}
                   isDisabled={isFormDisabled}
+                  compactLayout
                   className="w-full"
                 />
               </div>
@@ -7463,12 +7499,13 @@ export default function OneshotEditor() {
 
             {/* Image Model */}
             <div className="group w-full">
-              <div className={`w-full md:w-full ${controlShell} rounded-xl p-2 transition-transform duration-200 group-hover:translate-y-[-1px] relative z-10 focus-within:z-50 group-hover:z-50`}>
+              <div className={`relative z-10 w-full rounded-lg p-0 transition-transform duration-200 group-hover:translate-y-[-1px] group-hover:z-50 focus-within:z-50 ${controlShell}`}>
                 <SingleSelect
                   value={selectedImageModel}
                   onChange={setSelectedImageModel}
                   options={stageImageModels}
                   isDisabled={isFormDisabled}
+                  compactLayout
                   className="w-full"
                 />
               </div>
@@ -7483,12 +7520,13 @@ export default function OneshotEditor() {
               if (modelCfg?.imageStyles) {
                 return (
                   <div className="group w-full">
-                    <div className={`w-full md:w-full ${controlShell} rounded-xl p-2 transition-transform duration-200 group-hover:translate-y-[-1px] relative z-10 focus-within:z-50 group-hover:z-50`}>
+                    <div className={`relative z-10 w-full rounded-lg p-0 transition-transform duration-200 group-hover:translate-y-[-1px] group-hover:z-50 focus-within:z-50 ${controlShell}`}>
                       <SingleSelect
                         value={selectedImageStyle}
                         onChange={setSelectedImageStyle}
                         options={modelCfg.imageStyles.map((s) => ({ label: s, value: s }))}
                         isDisabled={isFormDisabled}
+                        compactLayout
                         className="w-full"
                       />
                     </div>
@@ -7503,12 +7541,13 @@ export default function OneshotEditor() {
               <>
                 {/* Video Model */}
                 <div className="group w-full">
-                  <div className={`w-full md:w-full ${controlShell} rounded-xl p-2 transition-transform duration-200 group-hover:translate-y-[-1px] relative z-10 focus-within:z-50 group-hover:z-50`}>
+                  <div className={`relative z-10 w-full rounded-lg p-0 transition-transform duration-200 group-hover:translate-y-[-1px] group-hover:z-50 focus-within:z-50 ${controlShell}`}>
                     <SingleSelect
                       value={selectedVideoModel}
                       onChange={setSelectedVideoModel}
                       options={expressVideoModels}
                       isDisabled={isFormDisabled}
+                      compactLayout
                       className="w-full"
                     />
                   </div>
@@ -7518,12 +7557,13 @@ export default function OneshotEditor() {
                 {/* Pixverse Style */}
                 {selectedVideoModel?.value?.startsWith('PIXVERSE') && selectedVideoModelSubType && (
                   <div className="group w-full">
-                    <div className={`w-full md:w-full ${controlShell} rounded-xl p-2 transition-transform duration-200 group-hover:translate-y-[-1px] relative z-10 focus-within:z-50 group-hover:z-50`}>
+                    <div className={`relative z-10 w-full rounded-lg p-0 transition-transform duration-200 group-hover:translate-y-[-1px] group-hover:z-50 focus-within:z-50 ${controlShell}`}>
                       <SingleSelect
                         value={selectedVideoModelSubType}
                         onChange={setSelectedVideoModelSubType}
                         options={PIXVERRSE_VIDEO_STYLES.map((s) => ({ label: s, value: s }))}
                         isDisabled={isFormDisabled}
+                        compactLayout
                         className="w-full"
                       />
                   </div>
@@ -7534,12 +7574,13 @@ export default function OneshotEditor() {
                 {/* Generic Sub-type */}
                 {selectedVideoModel?.modelSubTypes?.length && selectedVideoModelSubType && (
                   <div className="group w-full">
-                    <div className={`w-full md:w-full ${controlShell} rounded-xl p-2 transition-transform duration-200 group-hover:translate-y-[-1px] relative z-10 focus-within:z-50 group-hover:z-50`}>
+                    <div className={`relative z-10 w-full rounded-lg p-0 transition-transform duration-200 group-hover:translate-y-[-1px] group-hover:z-50 focus-within:z-50 ${controlShell}`}>
                       <SingleSelect
                         value={selectedVideoModelSubType}
                         onChange={setSelectedVideoModelSubType}
                         options={selectedVideoModel.modelSubTypes.map((s) => ({ label: s, value: s }))}
                         isDisabled={isFormDisabled}
+                        compactLayout
                         className="w-full"
                       />
                   </div>
@@ -7551,12 +7592,13 @@ export default function OneshotEditor() {
 
             {generationMode === 'I2V' && (
               <div className="group w-full">
-                <div className={`w-full md:w-full ${controlShell} rounded-xl p-2 transition-transform duration-200 group-hover:translate-y-[-1px] relative z-10 focus-within:z-50 group-hover:z-50`}>
+                <div className={`relative z-10 w-full rounded-lg p-0 transition-transform duration-200 group-hover:translate-y-[-1px] group-hover:z-50 focus-within:z-50 ${controlShell}`}>
                   <SingleSelect
                     value={selectedVideoModel}
                     onChange={setSelectedVideoModel}
                     options={imageListVideoModels}
                     isDisabled={isFormDisabled}
+                    compactLayout
                     truncateLabels
                     className="w-full"
                   />
@@ -7568,12 +7610,13 @@ export default function OneshotEditor() {
             {/* Duration */}
             {generationMode === 'T2V' && (
               <div className="group w-full">
-                <div className={`w-full md:w-full ${controlShell} rounded-xl p-2 transition-transform duration-200 group-hover:translate-y-[-1px] relative z-10 focus-within:z-50 group-hover:z-50`}>
+                <div className={`relative z-10 w-full rounded-lg p-0 transition-transform duration-200 group-hover:translate-y-[-1px] group-hover:z-50 focus-within:z-50 ${controlShell}`}>
                   <SingleSelect
                     value={selectedDurationOption}
                     onChange={setSelectedDurationOption}
                     options={durationOptions}
                     isDisabled={isFormDisabled}
+                    compactLayout
                     className="w-full"
                   />
                 </div>
@@ -7583,12 +7626,13 @@ export default function OneshotEditor() {
 
             {/* Audio language */}
             <div className="group w-full">
-              <div className={`w-full md:w-full ${controlShell} rounded-xl p-2 transition-transform duration-200 group-hover:translate-y-[-1px] relative z-10 focus-within:z-50 group-hover:z-50`}>
+              <div className={`relative z-10 w-full rounded-lg p-0 transition-transform duration-200 group-hover:translate-y-[-1px] group-hover:z-50 focus-within:z-50 ${controlShell}`}>
                 <SingleSelect
                   value={selectedLanguageOption}
                   onChange={setSelectedLanguageOption}
                   options={languageOptions}
                   isDisabled={isFormDisabled}
+                  compactLayout
                   className="w-full"
                 />
               </div>
@@ -7600,14 +7644,14 @@ export default function OneshotEditor() {
             {canGenerateSubtitles && (
               <div className="group w-full">
                 <label
-                  className={`flex items-start gap-3 ${controlShell} rounded-xl p-3 transition-transform duration-200 group-hover:translate-y-[-1px] cursor-pointer`}
+                  className={`flex items-start gap-3 ${borderedControlShell} rounded-xl p-3 transition-transform duration-200 group-hover:translate-y-[-1px] cursor-pointer`}
                 >
                   <input
                     type="checkbox"
                     checked={enableSubtitles}
                     onChange={(e) => setEnableSubtitles(e.target.checked)}
                     disabled={isFormDisabled}
-                    className="mt-0.5 h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                    className={choiceInputClasses}
                   />
                   <div className="min-w-0">
                     <div className="text-sm font-medium">
@@ -7723,7 +7767,7 @@ export default function OneshotEditor() {
                           updateAdvancedOption('add_narrator_avatar', event.target.checked)
                         }
                         disabled={isFormDisabled}
-                        className="mt-0.5 h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                        className={choiceInputClasses}
                       />
                       <span className="text-sm font-medium">Add narrator avatar</span>
                     </label>
@@ -7744,7 +7788,7 @@ export default function OneshotEditor() {
                       updateAdvancedOption('generate_outro_image', event.target.checked)
                     }
                     disabled={isFormDisabled}
-                    className="mt-0.5 h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                    className={choiceInputClasses}
                   />
                   <span className="text-sm font-medium">Generate CTA outro</span>
                 </label>
@@ -7937,7 +7981,7 @@ export default function OneshotEditor() {
                           checked={selectedCustomAdapterEndpointId === endpoint.id}
                           onChange={() => toggleSelectedCustomAdapterEndpoint(endpoint.id)}
                           disabled={isFormDisabled}
-                          className="mt-0.5 h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                          className={choiceInputClasses}
                         />
                         <span className="min-w-0">
                           <span className="block text-sm font-medium">{endpoint.name}</span>
@@ -8034,7 +8078,7 @@ export default function OneshotEditor() {
         {isJsonMode && shouldCollapseJsonEditorForProgress ? (
           <div className={`mt-4 rounded-2xl p-4 ring-1 transition ${
             colorMode === 'dark'
-              ? 'bg-[#0b1224] text-slate-100 ring-white/10'
+              ? 'bg-[#151720] text-slate-100 ring-white/10'
               : 'bg-white text-slate-900 ring-slate-200'
           }`}>
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -8176,9 +8220,9 @@ export default function OneshotEditor() {
                 className={`
                   vidgenie-prompt-textarea
                   w-full pl-4 pt-4 pr-16 p-2 rounded-2xl resize-none placeholder:opacity-60
-                  focus:outline-none focus:ring-2 focus:ring-indigo-500/60 ring-1 transition
+                  focus:outline-none focus:ring-2 ring-1 transition
                   ${colorMode === 'dark'
-                    ? 'bg-gray-950/90 text-white ring-white/10 focus:ring-indigo-500/50'
+                    ? 'bg-[#151720] text-white ring-[#4a5265] focus:ring-[#f6c453]/55'
                     : 'bg-white text-slate-900 ring-slate-200 focus:ring-indigo-500/50'
                   }
                   ${isVoiceBusy ? 'opacity-95' : ''}
@@ -8198,11 +8242,11 @@ export default function OneshotEditor() {
                   absolute bottom-3 right-3 h-11 w-11 rounded-full flex items-center justify-center
                   transition-all duration-200 shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2
                   ${colorMode === 'dark'
-                    ? 'bg-indigo-500/80 hover:bg-indigo-500 text-white focus:ring-indigo-400/70 focus:ring-offset-slate-900'
+                    ? 'bg-[#f6c453] text-[#111318] hover:bg-[#ffe0a3] focus:ring-[#fff1c8]/70 focus:ring-offset-[#151720]'
                     : 'bg-indigo-500 hover:bg-indigo-600 text-white focus:ring-indigo-500/40 focus:ring-offset-white'}
                   ${isVoiceBusy ? 'animate-pulse scale-105' : ''}
                   ${isVoiceInitializing && !isBrowserRecognitionActive ? 'opacity-70 cursor-wait' : 'cursor-pointer'}
-                  ${(!isVoiceSupported && !isBrowserSpeechSupported) ? 'opacity-40 cursor-not-allowed hover:bg-indigo-500' : ''}
+                  ${(!isVoiceSupported && !isBrowserSpeechSupported) ? 'opacity-40 cursor-not-allowed' : ''}
                 `}
                 title={
                   (!isVoiceSupported && !isBrowserSpeechSupported)
@@ -8393,7 +8437,7 @@ export default function OneshotEditor() {
                                 mt-auto inline-flex min-h-[38px] items-center justify-center gap-2 rounded-lg border border-dashed px-3 py-2 text-xs font-semibold transition
                                 ${isFormDisabled || uploadingImageIndex !== null ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'}
                                 ${colorMode === 'dark'
-                                  ? 'border-indigo-300/30 bg-indigo-400/10 text-indigo-100 hover:bg-indigo-400/15'
+                                  ? 'border-[#f6c453]/35 bg-[#f6c453]/10 text-[#fff1c8] hover:bg-[#f6c453]/16'
                                   : 'border-indigo-300 bg-indigo-50 text-indigo-800 hover:bg-indigo-100'
                                 }
                               `}
@@ -8457,9 +8501,9 @@ export default function OneshotEditor() {
                 className={`
                   vidgenie-prompt-textarea
                   w-full pl-4 pt-4 pr-4 p-2 rounded-2xl resize-none placeholder:opacity-60
-                  focus:outline-none focus:ring-2 focus:ring-indigo-500/60 ring-1 transition
+                  focus:outline-none focus:ring-2 ring-1 transition
                   ${colorMode === 'dark'
-                    ? 'bg-gray-950/90 text-white ring-white/10 focus:ring-indigo-500/50'
+                    ? 'bg-[#151720] text-white ring-[#4a5265] focus:ring-[#f6c453]/55'
                     : 'bg-white text-slate-900 ring-slate-200 focus:ring-indigo-500/50'
                   }
                 `}
@@ -8487,7 +8531,7 @@ export default function OneshotEditor() {
       {shouldShowOriginalRequestInputs && (
       <div className={`vidgenie-assistant-anchor mt-6 rounded-2xl p-3 sm:p-4 ring-1 transition-shadow hover:shadow-sm ${
         colorMode === 'dark'
-          ? 'bg-[#0f1629] text-slate-100 ring-[#1f2a3d]'
+          ? 'bg-[#181b24] text-slate-100 ring-[#3a4050]'
           : 'bg-white text-slate-900 ring-slate-200'
       }`}>
         <AssistantHome

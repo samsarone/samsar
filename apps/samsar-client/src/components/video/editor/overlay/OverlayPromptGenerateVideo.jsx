@@ -51,16 +51,20 @@ export default function OverlayPromptGenerateVideo(props) {
   const isLandscapeLayout = layoutMode === "landscape";
   const selectShell =
     colorMode === "dark"
-      ? "bg-slate-950 text-slate-100 border border-slate-700"
+      ? "bg-[#151720] text-slate-100 border border-[#667188] focus:border-[#f6c453] focus:outline-none focus:ring-2 focus:ring-[#f6c453]/20"
       : "bg-slate-50 text-slate-900 border border-slate-200 shadow-sm";
   const textareaShell =
     colorMode === "dark"
-      ? "bg-slate-950 text-slate-100 border border-slate-700"
+      ? "bg-[#151720] text-slate-100 border border-[#667188] focus:border-[#f6c453] focus:outline-none focus:ring-2 focus:ring-[#f6c453]/20"
       : "bg-slate-50 text-slate-900 border border-slate-200 shadow-sm";
   const chipShell =
     colorMode === "dark"
-      ? "bg-slate-950 border border-slate-700 text-slate-300 hover:bg-slate-900"
+      ? "bg-[#20232e] border border-[#4a5265] text-slate-300 hover:bg-[#292d3a]"
       : "bg-slate-50 border border-slate-200 text-slate-600 hover:bg-white";
+  const activeChipShell =
+    colorMode === "dark"
+      ? "bg-[#f6c453]/14 border-[#f6c453]/55 text-[#fff1c8]"
+      : "bg-indigo-50 border-indigo-200 text-indigo-700";
   const fieldLabelClassName =
     colorMode === "dark"
       ? "text-xs font-semibold text-slate-200"
@@ -419,9 +423,7 @@ export default function OverlayPromptGenerateVideo(props) {
           <label
             className={`inline-flex items-center gap-2 rounded-full border px-2.5 py-1.5 transition-colors duration-150 cursor-pointer ${
               useStartFrame
-                ? colorMode === "dark"
-                  ? "bg-indigo-500/20 border-indigo-400/40 text-white"
-                  : "bg-indigo-50 border-indigo-200 text-indigo-700"
+                ? activeChipShell
                 : chipShell
             }`}
           >
@@ -439,9 +441,7 @@ export default function OverlayPromptGenerateVideo(props) {
           <label
             className={`inline-flex items-center gap-2 rounded-full border px-2.5 py-1.5 transition-colors duration-150 cursor-pointer ${
               useEndFrame
-                ? colorMode === "dark"
-                  ? "bg-indigo-500/20 border-indigo-400/40 text-white"
-                  : "bg-indigo-50 border-indigo-200 text-indigo-700"
+                ? activeChipShell
                 : chipShell
             }`}
           >
@@ -459,9 +459,7 @@ export default function OverlayPromptGenerateVideo(props) {
           <label
             className={`inline-flex items-center gap-2 rounded-full border px-2.5 py-1.5 transition-colors duration-150 cursor-pointer ${
               combineLayers
-                ? colorMode === "dark"
-                  ? "bg-indigo-500/20 border-indigo-400/40 text-white"
-                  : "bg-indigo-50 border-indigo-200 text-indigo-700"
+                ? activeChipShell
                 : chipShell
             }`}
           >
@@ -479,9 +477,7 @@ export default function OverlayPromptGenerateVideo(props) {
           <label
             className={`inline-flex items-center gap-2 rounded-full border px-2.5 py-1.5 transition-colors duration-150 cursor-pointer ${
               clipLayerToAiVideo
-                ? colorMode === "dark"
-                  ? "bg-indigo-500/20 border-indigo-400/40 text-white"
-                  : "bg-indigo-50 border-indigo-200 text-indigo-700"
+                ? activeChipShell
                 : chipShell
             }`}
           >
@@ -500,9 +496,7 @@ export default function OverlayPromptGenerateVideo(props) {
           <label
             className={`inline-flex items-center gap-2 rounded-full border px-2.5 py-1.5 transition-colors duration-150 cursor-pointer ${
               optimizePrompt
-                ? colorMode === "dark"
-                  ? "bg-indigo-500/20 border-indigo-400/40 text-white"
-                  : "bg-indigo-50 border-indigo-200 text-indigo-700"
+                ? activeChipShell
                 : chipShell
             }`}
           >
@@ -522,9 +516,7 @@ export default function OverlayPromptGenerateVideo(props) {
           <label
             className={`inline-flex items-center gap-2 rounded-full border px-2.5 py-1.5 transition-colors duration-150 cursor-pointer ${
               generateAudio
-                ? colorMode === "dark"
-                  ? "bg-indigo-500/20 border-indigo-400/40 text-white"
-                  : "bg-indigo-50 border-indigo-200 text-indigo-700"
+                ? activeChipShell
                 : chipShell
             }`}
           >

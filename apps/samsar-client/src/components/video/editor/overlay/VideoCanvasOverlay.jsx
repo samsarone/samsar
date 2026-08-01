@@ -110,19 +110,19 @@ export default function VideoCanvasOverlay(props) {
   if (!activeItemList || activeItemList.length === 0) {
     const overlaySurface =
       colorMode === "dark"
-        ? "bg-[#0f172a] text-slate-100 border border-slate-700 shadow-[0_28px_70px_rgba(2,6,23,0.6)]"
+        ? "bg-[#181b24] text-slate-100 border border-[#3a4050] shadow-[0_28px_70px_rgba(0,0,0,0.46)]"
         : "bg-white text-slate-900 border border-slate-200 shadow-[0_24px_60px_rgba(15,23,42,0.18)]";
     const tabBase =
       colorMode === "dark"
-        ? "bg-slate-950 text-slate-300 border border-slate-700 hover:text-white"
+        ? "bg-[#20232e] text-slate-300 border border-[#4a5265] hover:bg-[#292d3a] hover:text-white"
         : "bg-slate-100 text-slate-600 border border-slate-200 hover:text-slate-900";
     const tabActive =
       colorMode === "dark"
-        ? "bg-rose-500 text-white border border-rose-400 shadow-sm"
+        ? "bg-[#f6c453] text-[#101117] border border-[#ffe0a3]/70 shadow-[0_8px_20px_rgba(246,196,83,0.16)]"
         : "bg-indigo-600 text-white border border-indigo-600 shadow-sm";
     const closeButtonColor =
       colorMode === "dark"
-        ? "bg-slate-950 text-slate-200 border border-slate-700 hover:bg-slate-900"
+        ? "bg-[#20232e] text-slate-200 border border-[#4a5265] hover:bg-[#292d3a]"
         : "bg-slate-100 text-slate-700 border border-slate-200 hover:bg-slate-200";
     const subText = colorMode === "dark" ? "text-slate-300" : "text-slate-600";
     const headerTextLayout = isImageStudioOverlay

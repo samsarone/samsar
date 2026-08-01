@@ -291,7 +291,12 @@ async function findAudioGenerationForSession(globalSession, requestId) {
   return AudioGeneration.findById(candidateId);
 }
 
-export async function createExternalAudioRequest({ userId, route, payload = {} }) {
+export async function createExternalAudioRequest({
+  userId,
+  route,
+  payload = {},
+  meterCredits = true,
+}) {
   if (!userId) {
     throw buildError('userId is required.', 401);
   }
@@ -302,16 +307,18 @@ export async function createExternalAudioRequest({ userId, route, payload = {} }
     payload,
   });
   const generationType = AUDIO_ROUTE_TO_GENERATION_TYPE[normalizedRoute];
-  const creditsCharged = getAudioCreditCost(generationType);
-  const creditResult = await deductGenerationCredits(userId, creditsCharged, {
-    source: 'external_audio_api',
-    metadata: {
-      requestType: 'API',
-      route: normalizedRoute,
-      generationType,
-      model: normalizedPayload.model || normalizedPayload.ttsProvider,
-    },
-  });
+  const creditsCharged = meterCredits ? getAudioCreditCost(generationType) : 0;
+  const creditResult = meterCredits
+    ? await deductGenerationCredits(userId, creditsCharged, {
+        source: 'external_audio_api',
+        metadata: {
+          requestType: 'API',
+          route: normalizedRoute,
+          generationType,
+          model: normalizedPayload.model || normalizedPayload.ttsProvider,
+        },
+      })
+    : { remainingCredits: null };
 
   await getDBConnectionString();
 

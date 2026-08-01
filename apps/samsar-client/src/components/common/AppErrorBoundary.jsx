@@ -19,8 +19,8 @@ export default class AppErrorBoundary extends Component {
     }
 
     return (
-      <main className="flex min-h-screen items-center justify-center bg-[#0b1021] px-6 text-slate-100">
-        <section className="w-full max-w-md rounded-2xl border border-slate-700 bg-[#0f1629] p-7 text-center shadow-2xl">
+      <main className="flex min-h-screen items-center justify-center bg-[#0c0d12] px-6 text-slate-100">
+        <section className="w-full max-w-md rounded-2xl border border-slate-700 bg-[#181b24] p-7 text-center shadow-2xl">
           <h1 className="text-xl font-semibold">We couldn&apos;t open this page</h1>
           <p className="mt-3 text-sm leading-6 text-slate-300">
             The app may have been updated while this page was open. Reload to

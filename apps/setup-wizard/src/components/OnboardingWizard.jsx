@@ -8,6 +8,7 @@ import {
   getDockerModelDisplayName,
   orderDockerProviderKeys,
 } from '../constants/dockerModelAvailability.js';
+import { getProviderEnvironmentReferencePlaceholder } from '../constants/providerEnvironment.js';
 
 const API_BASE_URL = (import.meta.env.VITE_PROCESSOR_API || 'http://localhost:3002').replace(/\/+$/, '');
 const SAMSAR_API_BASE_URL = (import.meta.env.VITE_SAMSAR_API_URL || 'https://api.samsar.one/v1').replace(/\/+$/, '');
@@ -30,7 +31,9 @@ const STEPS = [
 ];
 const SETUP_POLL_INTERVAL_MS = 1200;
 const WIZARD_STORAGE_KEY = 'samsar.setupWizard.session.v1';
-const WIZARD_STORAGE_VERSION = 7;
+const WIZARD_STORAGE_VERSION = 8;
+const CREDENTIAL_SOURCE_MANUAL = 'manual';
+const CREDENTIAL_SOURCE_ENVIRONMENT = 'environment';
 
 const PROVIDERS = [
   {
@@ -520,6 +523,7 @@ const DEFAULT_CREDENTIALS = Object.freeze({
   elevenLabsApiKey: '',
   runwayApiKey: '',
 });
+const DEFAULT_ENVIRONMENT_REFERENCES = Object.freeze({ ...DEFAULT_CREDENTIALS });
 const CREDENTIAL_PLACEHOLDER_VALUES = new Set(
   PROVIDERS
     .map((provider) => provider.placeholder)
@@ -609,6 +613,21 @@ function normalizeCredentialSet(value = {}) {
 
 function pickCredentials(value = {}) {
   return normalizeCredentialSet(value);
+}
+
+function normalizeCredentialSource(value) {
+  return value === CREDENTIAL_SOURCE_ENVIRONMENT
+    ? CREDENTIAL_SOURCE_ENVIRONMENT
+    : CREDENTIAL_SOURCE_MANUAL;
+}
+
+function pickEnvironmentReferences(value = {}) {
+  return Object.fromEntries(
+    Object.keys(DEFAULT_ENVIRONMENT_REFERENCES).map((key) => [
+      key,
+      typeof value?.[key] === 'string' ? value[key].trim() : '',
+    ]),
+  );
 }
 
 function pickServices(value = {}) {
@@ -963,10 +982,15 @@ function readStoredWizardState() {
 
 function buildInitialWizardState() {
   const storedState = readStoredWizardState();
+  const credentialSource = normalizeCredentialSource(storedState?.credentialSource);
   const restoredCredentials = pickCredentials(storedState?.credentials);
+  const restoredEnvironmentReferences = pickEnvironmentReferences(storedState?.environmentReferences);
+  const activeCredentials = credentialSource === CREDENTIAL_SOURCE_ENVIRONMENT
+    ? restoredEnvironmentReferences
+    : restoredCredentials;
   const restoredValidationResult = sanitizeValidationResultForStorage(
     storedState?.validationResult,
-    restoredCredentials,
+    activeCredentials,
   );
   const requiresProviderCredentialReentry = getProviderCredentialReentryKeys(restoredValidationResult).length > 0;
   const restoredStep = requiresProviderCredentialReentry ? 1 : clampStep(storedState?.step, 1);
@@ -977,7 +1001,9 @@ function buildInitialWizardState() {
   return {
     step: restoredStep,
     maxStep: restoredMaxStep,
+    credentialSource,
     credentials: restoredCredentials,
+    environmentReferences: restoredEnvironmentReferences,
     services: pickServices(storedState?.services),
     mailConfig: pickMailConfig(storedState?.mailConfig),
     mailValidationResult: storedState?.mailValidationResult || null,
@@ -1002,7 +1028,12 @@ function writeStoredWizardState(state) {
       JSON.stringify({
         version: WIZARD_STORAGE_VERSION,
         ...state,
-        validationResult: sanitizeValidationResultForStorage(state.validationResult, state.credentials),
+        validationResult: sanitizeValidationResultForStorage(
+          state.validationResult,
+          state.credentialSource === CREDENTIAL_SOURCE_ENVIRONMENT
+            ? state.environmentReferences
+            : state.credentials,
+        ),
         setupRun: serializeSetupRun(state.setupRun),
         savedAt: new Date().toISOString(),
       }),
@@ -1951,6 +1982,19 @@ async function validateOpenRouterCredential(credentials, headers = {}) {
   return body;
 }
 
+async function validateEnvironmentCredentials(credentials, headers = {}) {
+  const response = await fetch('/api/setup/providers/environment/validate', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...headers },
+    body: JSON.stringify({ credentials: pickEnvironmentReferences(credentials) }),
+  });
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(body?.message || 'Provider environment variable validation failed.');
+  }
+  return body;
+}
+
 function getInitialColorMode() {
   if (typeof window === 'undefined') {
     return 'dark';
@@ -1964,7 +2008,9 @@ export default function OnboardingWizard() {
   const [initialWizardState] = useState(buildInitialWizardState);
   const [step, setStep] = useState(initialWizardState.step);
   const [colorMode, setColorMode] = useState(getInitialColorMode);
+  const [credentialSource, setCredentialSource] = useState(initialWizardState.credentialSource);
   const [credentials, setCredentials] = useState(initialWizardState.credentials);
+  const [environmentReferences, setEnvironmentReferences] = useState(initialWizardState.environmentReferences);
   const [services, setServices] = useState(initialWizardState.services);
   const [mailConfig, setMailConfig] = useState(initialWizardState.mailConfig);
   const [mailValidationResult, setMailValidationResult] = useState(initialWizardState.mailValidationResult);
@@ -2014,10 +2060,14 @@ export default function OnboardingWizard() {
     fallbacks: true,
     media: true,
   });
+  const activeCredentials = useMemo(
+    () => credentialSource === CREDENTIAL_SOURCE_ENVIRONMENT ? environmentReferences : credentials,
+    [credentialSource, credentials, environmentReferences],
+  );
 
   const deploymentPayload = useMemo(
     () => buildDeploymentPayload(
-      credentials,
+      activeCredentials,
       services,
       dataConfig,
       validationResult,
@@ -2026,7 +2076,7 @@ export default function OnboardingWizard() {
       reverseProxyConfig,
       reverseProxyValidationResult,
     ),
-    [credentials, dataConfig, mailConfig, mailValidationResult, reverseProxyConfig, reverseProxyValidationResult, services, validationResult],
+    [activeCredentials, dataConfig, mailConfig, mailValidationResult, reverseProxyConfig, reverseProxyValidationResult, services, validationResult],
   );
   const displayDeploymentPayload = useMemo(
     () => sanitizeDeploymentPayloadForDisplay(deploymentPayload),
@@ -2041,8 +2091,8 @@ export default function OnboardingWizard() {
     [validationResult],
   );
   const enteredProviderKeys = useMemo(
-    () => PROVIDERS.filter((provider) => hasCredentialValue(credentials, provider)).map((provider) => provider.key),
-    [credentials],
+    () => PROVIDERS.filter((provider) => hasCredentialValue(activeCredentials, provider)).map((provider) => provider.key),
+    [activeCredentials],
   );
   const enteredProviderAvailability = useMemo(
     () => buildDockerAvailableModelsFromEnabledProviders(enteredProviderKeys),
@@ -2119,6 +2169,7 @@ export default function OnboardingWizard() {
 
   const renderProviderRow = (provider) => {
     const isSamsarProvider = provider.type === 'samsar';
+    const usesEnvironmentReference = credentialSource === CREDENTIAL_SOURCE_ENVIRONMENT;
     const providerModels = PROVIDER_MODELS_BY_KEY[provider.key] || [];
     const rowClassName = [
       'provider-row',
@@ -2156,12 +2207,12 @@ export default function OnboardingWizard() {
         </div>
         <div className="provider-control">
           <label className="credential-label" htmlFor={`${provider.key}-credential`}>
-            {provider.credentialLabel}
+            {usesEnvironmentReference ? 'Bash variable' : provider.credentialLabel}
           </label>
-          {provider.inputType === 'textarea' ? (
+          {provider.inputType === 'textarea' && !usesEnvironmentReference ? (
             <textarea
               id={`${provider.key}-credential`}
-              value={credentials[provider.field]}
+              value={activeCredentials[provider.field]}
               placeholder={provider.placeholder}
               autoComplete="new-password"
               data-lpignore="true"
@@ -2171,9 +2222,11 @@ export default function OnboardingWizard() {
           ) : (
             <input
               id={`${provider.key}-credential`}
-              type={provider.inputType}
-              value={credentials[provider.field]}
-              placeholder={provider.placeholder}
+              type={usesEnvironmentReference ? 'text' : provider.inputType}
+              value={activeCredentials[provider.field]}
+              placeholder={usesEnvironmentReference
+                ? getProviderEnvironmentReferencePlaceholder(provider.field)
+                : provider.placeholder}
               autoComplete="new-password"
               data-lpignore="true"
               onChange={(event) => updateCredential(provider.field, event.target.value)}
@@ -2182,19 +2235,23 @@ export default function OnboardingWizard() {
           {provider.endpointField && (
             <>
               <label className="credential-label" htmlFor={`${provider.key}-endpoint`}>
-                {provider.endpointLabel}
+                {usesEnvironmentReference ? 'Endpoint Bash variable (optional)' : provider.endpointLabel}
               </label>
               <input
                 id={`${provider.key}-endpoint`}
                 type="text"
-                value={credentials[provider.endpointField]}
-                placeholder={provider.endpointPlaceholder}
+                value={activeCredentials[provider.endpointField]}
+                placeholder={usesEnvironmentReference
+                  ? getProviderEnvironmentReferencePlaceholder(provider.endpointField)
+                  : provider.endpointPlaceholder}
                 autoComplete="off"
                 data-lpignore="true"
                 onChange={(event) => updateCredential(provider.endpointField, event.target.value)}
                 spellCheck="false"
               />
-              {provider.endpointHelp && <small className="provider-endpoint-help">{provider.endpointHelp}</small>}
+              {usesEnvironmentReference ? (
+                <small className="provider-endpoint-help">Leave blank to use the provider default.</small>
+              ) : provider.endpointHelp && <small className="provider-endpoint-help">{provider.endpointHelp}</small>}
             </>
           )}
         </div>
@@ -2267,12 +2324,14 @@ export default function OnboardingWizard() {
     writeStoredWizardState({
       step,
       maxStep,
+	      credentialSource,
 	      credentials: {
           ...credentials,
           kimiK3ApiKey: '',
           alibabaApiKey: '',
           openrouterApiKey: '',
         },
+	      environmentReferences,
 	      services,
 	      mailConfig: {
         ...mailConfig,
@@ -2293,7 +2352,7 @@ export default function OnboardingWizard() {
 	      setupRun,
 	      setupStartError,
 	    });
-	  }, [adminConfig, credentials, dataConfig, mailConfig, mailValidationResult, maxStep, reverseProxyConfig, reverseProxyValidationResult, services, setupRun, setupStartError, step, validationResult]);
+	  }, [adminConfig, credentialSource, credentials, dataConfig, environmentReferences, mailConfig, mailValidationResult, maxStep, reverseProxyConfig, reverseProxyValidationResult, services, setupRun, setupStartError, step, validationResult]);
 
   useEffect(() => {
     if (!setupRun?.id || setupRun.status === 'completed' || setupRun.status === 'failed') {
@@ -2492,7 +2551,23 @@ export default function OnboardingWizard() {
   ]);
 
   const updateCredential = (field, value) => {
-    setCredentials((current) => normalizeCredentialSet({ ...current, [field]: value }));
+    if (credentialSource === CREDENTIAL_SOURCE_ENVIRONMENT) {
+      setEnvironmentReferences((current) => ({ ...current, [field]: value }));
+    } else {
+      setCredentials((current) => normalizeCredentialSet({ ...current, [field]: value }));
+    }
+    setValidationResult(null);
+    setValidationError('');
+    setExpressWarningMissingRequirements([]);
+    setMaxStep(1);
+  };
+
+  const updateCredentialSource = (nextSource) => {
+    const normalizedSource = normalizeCredentialSource(nextSource);
+    if (normalizedSource === credentialSource) {
+      return;
+    }
+    setCredentialSource(normalizedSource);
     setValidationResult(null);
     setValidationError('');
     setExpressWarningMissingRequirements([]);
@@ -2593,7 +2668,7 @@ export default function OnboardingWizard() {
   };
 
   const validateCredentials = async (setupPassword = setupAuthPassword) => {
-    if (!hasAnyCredentialValue(credentials)) {
+    if (!hasAnyCredentialValue(activeCredentials)) {
       const emptyResult = {
         providers: {},
         available: { providers: [], models: [], actions: [] },
@@ -2606,14 +2681,21 @@ export default function OnboardingWizard() {
     setIsValidating(true);
     setValidationError('');
     try {
-      const body = mergeValidationResults([
-        await validateSamsarCredential(credentials),
-        await validateAlibabaCredential(credentials, buildSetupHeaders({}, setupPassword)),
-        await validateOpenRouterCredential(credentials, buildSetupHeaders({}, setupPassword)),
-        await validateNativeCredentials(credentials),
-      ]);
+      const body = credentialSource === CREDENTIAL_SOURCE_ENVIRONMENT
+        ? mergeValidationResults([
+          await validateEnvironmentCredentials(
+            activeCredentials,
+            buildSetupHeaders({}, setupPassword),
+          ),
+        ])
+        : mergeValidationResults([
+          await validateSamsarCredential(activeCredentials),
+          await validateAlibabaCredential(activeCredentials, buildSetupHeaders({}, setupPassword)),
+          await validateOpenRouterCredential(activeCredentials, buildSetupHeaders({}, setupPassword)),
+          await validateNativeCredentials(activeCredentials),
+        ]);
       setValidationResult(body);
-      const invalidProviders = getInvalidEnteredProviders(credentials, body);
+      const invalidProviders = getInvalidEnteredProviders(activeCredentials, body);
       if (invalidProviders.length) {
         const invalidNames = invalidProviders.map((provider) => provider.title).join(', ');
         throw new Error(`Could not validate: ${invalidNames}. Check the entered credential values and try again.`);
@@ -2621,7 +2703,9 @@ export default function OnboardingWizard() {
       return body;
     } catch (error) {
       const message = error?.message === 'Failed to fetch'
-        ? `Unable to reach the local processor API at ${API_BASE_URL}. Start samsar-processor before validating native provider credentials.`
+        ? credentialSource === CREDENTIAL_SOURCE_ENVIRONMENT
+          ? 'Unable to reach the local setup service. Rebuild and run the setup wizard Docker container.'
+          : `Unable to reach the local processor API at ${API_BASE_URL}. Start samsar-processor before validating native provider credentials.`
         : error?.message || 'Credential validation failed.';
       setValidationError(message);
       return null;
@@ -2972,7 +3056,7 @@ export default function OnboardingWizard() {
         return;
       }
       const freshDeploymentPayload = buildDeploymentPayload(
-        credentials,
+        activeCredentials,
         services,
         dataConfig,
         freshValidationResult,
@@ -2986,7 +3070,10 @@ export default function OnboardingWizard() {
         headers: buildSetupHeaders({ 'Content-Type': 'application/json' }, requestAuthPassword),
         body: JSON.stringify({
           deployment: freshDeploymentPayload,
-          credentials: normalizeCredentialSet(credentials),
+          credentialSource,
+          credentials: credentialSource === CREDENTIAL_SOURCE_ENVIRONMENT
+            ? pickEnvironmentReferences(activeCredentials)
+            : normalizeCredentialSet(activeCredentials),
           mail: normalizeMailConfig(mailConfig),
           admin: normalizedAdmin,
         }),
@@ -3095,7 +3182,9 @@ export default function OnboardingWizard() {
     clearStoredWizardState();
     setStep(1);
     setMaxStep(1);
+    setCredentialSource(CREDENTIAL_SOURCE_MANUAL);
     setCredentials(pickCredentials());
+    setEnvironmentReferences(pickEnvironmentReferences());
     setServices(buildDefaultServices());
     setMailConfig(pickMailConfig());
     setMailValidationResult(null);
@@ -3313,7 +3402,9 @@ export default function OnboardingWizard() {
         <div className="panel-header">
           <h2>{step === 1 ? 'Add optional provider configurations to enable specific models.' : activeStep.label}</h2>
 	          <p>
-                {step === 1 && 'Choose only the adapters you need. Each provider shows every model its credential enables.'}
+                {step === 1 && (credentialSource === CREDENTIAL_SOURCE_ENVIRONMENT
+                  ? 'Choose adapters and reference exported Bash variables without placing raw credentials in the browser.'
+                  : 'Choose only the adapters you need. Each provider shows every model its credential enables.')}
 	            {step === 2 && 'Available services are derived from the credentials validated in Providers.'}
 	            {step === 3 && 'Choose data storage, logging, and optional SMTP or Amazon SES email.'}
                 {step === 4 && 'Optionally expose Studio and the processor API through nginx.'}
@@ -3323,6 +3414,36 @@ export default function OnboardingWizard() {
 
         {step === 1 && (
           <>
+            <section className="credential-source-panel" aria-labelledby="credential-source-title">
+              <div className="credential-source-copy">
+                <strong id="credential-source-title">Credential source</strong>
+                <small>
+                  {credentialSource === CREDENTIAL_SOURCE_ENVIRONMENT
+                    ? 'Use references such as $OPENAI_API_KEY. Values are resolved inside the setup service and never returned to the browser.'
+                    : 'Enter provider credentials directly in the fields below.'}
+                </small>
+              </div>
+              <div className="credential-source-toggle" role="group" aria-label="Provider credential source">
+                <button
+                  type="button"
+                  className={credentialSource === CREDENTIAL_SOURCE_MANUAL ? 'active' : ''}
+                  aria-pressed={credentialSource === CREDENTIAL_SOURCE_MANUAL}
+                  onClick={() => updateCredentialSource(CREDENTIAL_SOURCE_MANUAL)}
+                >
+                  Enter values
+                  <small>Default</small>
+                </button>
+                <button
+                  type="button"
+                  className={credentialSource === CREDENTIAL_SOURCE_ENVIRONMENT ? 'active' : ''}
+                  aria-pressed={credentialSource === CREDENTIAL_SOURCE_ENVIRONMENT}
+                  onClick={() => updateCredentialSource(CREDENTIAL_SOURCE_ENVIRONMENT)}
+                >
+                  Bash environment
+                  <small>Use $VARIABLE_NAME</small>
+                </button>
+              </div>
+            </section>
             <div className="provider-list">
               {PROVIDER_GROUPS.map((group) => (
                 <section
@@ -3351,7 +3472,7 @@ export default function OnboardingWizard() {
                 </section>
               ))}
             </div>
-            {isAlibabaTokenPlanEndpoint(credentials.alibabaApiHost) && (
+            {isAlibabaTokenPlanEndpoint(activeCredentials.alibabaApiHost) && (
               <div className="warning-banner" role="status">
                 Token plan API key is unsuitable for production server
               </div>

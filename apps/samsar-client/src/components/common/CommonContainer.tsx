@@ -87,7 +87,7 @@ export default function CommonContainer(props) {
 
   const shellBg =
     colorMode === 'dark'
-      ? 'bg-gradient-to-b from-[#060a16] via-[#0b1226] to-[#070b16]'
+      ? 'bg-[linear-gradient(180deg,#15171f_0%,#12141c_44%,#0c0d12_100%)]'
       : 'bg-gradient-to-b from-[#e9edf7] via-[#dfe7f5] to-[#eef3fb]';
 
   return (

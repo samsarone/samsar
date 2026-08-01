@@ -349,32 +349,32 @@ export default function GenerationsGalleryPanel({
   const pageSurface = embedded
     ? ''
     : colorMode === 'dark'
-      ? 'min-h-screen bg-[#050914]'
+      ? 'min-h-screen bg-[#0c0d12]'
       : 'min-h-screen bg-[#f4f6fb]';
   const panelSurface = colorMode === 'dark'
-    ? 'border border-[#1d2840] bg-[#07101f] text-slate-100'
+    ? 'border border-[#3a4050] bg-[#151720] text-slate-100'
     : 'border border-slate-200 bg-white text-slate-900';
   const headerSurface = colorMode === 'dark'
-    ? 'border border-[#1d2840] bg-[#0b1426]'
+    ? 'border border-[#3a4050] bg-[#181b24]'
     : 'border border-slate-200 bg-white';
   const tileSurface = colorMode === 'dark'
-    ? 'border border-[#1d2840] bg-[#0c1528] shadow-[0_18px_35px_rgba(0,0,0,0.24)]'
+    ? 'border border-[#3a4050] bg-[#181b24] shadow-[0_18px_35px_rgba(0,0,0,0.24)]'
     : 'border border-slate-200 bg-white shadow-[0_14px_28px_rgba(15,23,42,0.08)]';
   const inputSurface = colorMode === 'dark'
-    ? 'bg-[#0f1a31] border border-[#1d2840] text-slate-100 placeholder:text-slate-500'
+    ? 'bg-[#181b24] border border-[#3a4050] text-slate-100 placeholder:text-[#8b96aa]'
     : 'bg-slate-50 border border-slate-200 text-slate-700 placeholder:text-slate-400';
   const mutedText = colorMode === 'dark' ? 'text-slate-400' : 'text-slate-500';
   const pillSurface = colorMode === 'dark'
     ? 'border border-white/10 bg-black/45 text-slate-100'
     : 'border border-slate-200 bg-white/90 text-slate-700';
   const actionSurface = colorMode === 'dark'
-    ? 'border border-[#31405e] bg-[#111c32] text-slate-100 hover:bg-[#16233c]'
+    ? 'border border-[#4a5265] bg-[#20232e] text-slate-100 hover:bg-[#292d3a]'
     : 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-100';
   const primaryActionSurface = colorMode === 'dark'
-    ? 'bg-gradient-to-r from-cyan-500 via-sky-500 to-blue-500 text-white'
+    ? 'bg-gradient-to-r from-[#ff4655] to-[#ff6b4a] text-white shadow-[0_10px_24px_rgba(255,70,85,0.2)]'
     : 'bg-gradient-to-r from-sky-500 via-blue-500 to-indigo-500 text-white';
   const modalSurface = colorMode === 'dark'
-    ? 'border border-[#1d2840] bg-[#07101f] text-slate-100'
+    ? 'border border-[#4a5265] bg-[#151720] text-slate-100'
     : 'border border-slate-200 bg-white text-slate-900';
   const subtleIconButton = colorMode === 'dark'
     ? 'border border-white/10 bg-white/5 text-slate-300 hover:bg-white/10 hover:text-white'
@@ -597,7 +597,7 @@ export default function GenerationsGalleryPanel({
           <div className={`sticky ${embedded ? 'top-0' : 'top-[124px] md:top-[56px]'} z-10 rounded-t-[30px] border-b px-4 py-4 backdrop-blur md:px-6 ${headerSurface}`}>
             <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
               <div className="min-w-0">
-                <div className="text-[11px] font-semibold uppercase tracking-[0.3em] text-sky-500">
+                <div className={`text-[11px] font-semibold uppercase tracking-[0.3em] ${colorMode === 'dark' ? 'text-[#f6c453]' : 'text-sky-500'}`}>
                   Internal Gallery
                 </div>
                 <h1 className={`mt-1 font-semibold ${embedded ? 'text-xl' : 'text-2xl md:text-3xl'}`}>
@@ -752,7 +752,7 @@ export default function GenerationsGalleryPanel({
                           )}
                         </div>
 
-                        <div className={`border-t p-4 ${colorMode === 'dark' ? 'border-[#1d2840]' : 'border-slate-200'}`}>
+                        <div className={`border-t p-4 ${colorMode === 'dark' ? 'border-[#3a4050]' : 'border-slate-200'}`}>
                           <div className="flex items-center justify-between gap-3">
                             <div className="min-w-0 flex-1 truncate text-sm font-semibold">
                               {titleLabel}

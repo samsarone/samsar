@@ -113,23 +113,23 @@ export default function ImageStudioLandingHome() {
 
   const mainWorkspaceShell =
     colorMode === 'dark'
-      ? 'bg-[#0b1021] text-slate-100'
+      ? 'bg-[#0c0d12] text-slate-100'
       : 'bg-gradient-to-br from-[#e9edf7] via-[#eef3fb] to-white text-slate-900';
   const toolbarShell =
     colorMode === 'dark'
-      ? 'bg-[#0f1629] border-l border-[#1f2a3d] shadow-[0_1px_0_rgba(255,255,255,0.04)]'
+      ? 'bg-[#181b24] border-l border-[#3a4050] shadow-[0_1px_0_rgba(255,255,255,0.04)]'
       : 'bg-white border-l border-slate-200';
   const canvasSurface =
     colorMode === 'dark'
-      ? 'bg-[#0f1629] border border-[#1f2a3d] shadow-[0_20px_50px_rgba(0,0,0,0.55)]'
+      ? 'bg-[#181b24] border border-[#3a4050] shadow-[0_20px_50px_rgba(0,0,0,0.55)]'
       : 'bg-[#f1f5f9] border border-slate-300';
   const placeholderSurface =
     colorMode === 'dark'
-      ? 'bg-gradient-to-br from-[#081426] via-[#0e2238] to-[#10253a] border border-[#2a4e70]'
+      ? 'bg-gradient-to-br from-[#081426] via-[#0e2238] to-[#10253a] border border-[#4a5265]'
       : 'bg-gradient-to-br from-white via-[#f1f5f9] to-[#e2e8f0] border border-slate-200';
   const accentSurface =
     colorMode === 'dark'
-      ? 'bg-gradient-to-r from-[#46bfff]/20 to-[#39d881]/20 border border-[#39d881]/35'
+      ? 'bg-gradient-to-r from-[#ff4655]/20 to-[#f6c453]/20 border border-[#f6c453]/35'
       : 'bg-rose-200/60 border border-rose-200';
   const mutedSurface =
     colorMode === 'dark' ? 'bg-slate-700/30 border border-slate-600/30' : 'bg-slate-200/70 border border-slate-200';

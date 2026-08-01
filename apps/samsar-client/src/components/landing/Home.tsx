@@ -18,6 +18,8 @@ import {
 import { useUser } from "../../contexts/UserContext";
 import { useColorMode } from "../../contexts/ColorMode.jsx";
 import { IS_STANDALONE_DEPLOYMENT } from '../../utils/environment.jsx';
+import VidgenieSkeletonLoader from '../oneshot_editor/VidgenieSkeletonLoader.jsx';
+import StudioSkeletonLoader from '../video/util/StudioSkeletonLoader.jsx';
 
 const EditorHome = lazy(() => import("../editor/EditorHome.tsx"));
 const UserAccount = lazy(() => import("../account/UserAccount.tsx"));
@@ -45,6 +47,7 @@ const MovieGeneratorContainer = lazy(() => import("../movie_gen/MovieGeneratorCo
 const ImageStudioHome = lazy(() => import("../image/ImageStudioHome.jsx"));
 const ListImageSessions = lazy(() => import("../image/sessions/ListImageSessions.jsx"));
 const ImageStudioLandingHome = lazy(() => import("../image/ImageStudioLandingHome.jsx"));
+const AudioStudioHome = lazy(() => import("../audio/AudioStudioHome.jsx"));
 const ExternalStudioDashboard = lazy(() => import("../external/ExternalStudioDashboard.jsx"));
 const GenerationsHome = lazy(() => import("../generations/GenerationsHome.jsx"));
 
@@ -61,6 +64,33 @@ function preloadVidgenieEditor() {
   return loadOneshotEditorContainer().then(({ preloadOneshotEditor }) => preloadOneshotEditor());
 }
 
+function getRouteLoadingFallback(pathname, isMobile) {
+  if (
+    pathname.startsWith('/vidgenie') ||
+    pathname.startsWith('/vidgpt') ||
+    pathname.startsWith('/videogpt') ||
+    (isMobile && (
+      pathname === '/' ||
+      pathname.startsWith('/video') ||
+      pathname.startsWith('/quick_video')
+    ))
+  ) {
+    return <VidgenieSkeletonLoader />;
+  }
+
+  if (
+    !isMobile && (
+      pathname === '/' ||
+      pathname.startsWith('/video') ||
+      pathname.startsWith('/quick_video')
+    )
+  ) {
+    return <StudioSkeletonLoader />;
+  }
+
+  return <RouteLoadingScreen />;
+}
+
 function RouteLoadingScreen({ label = 'Loading...' }) {
   const { colorMode } = useColorMode();
   const isDark = colorMode === 'dark';
@@ -69,7 +99,7 @@ function RouteLoadingScreen({ label = 'Loading...' }) {
     <div
       className={`flex min-h-screen items-center justify-center ${
         isDark
-          ? 'bg-[#0b1021] text-slate-100'
+          ? 'bg-[#0c0d12] text-slate-100'
           : 'bg-[#f7f9fc] text-slate-700'
       }`}
     >
@@ -94,7 +124,7 @@ function SharedVideoDesktopOnlyMessage() {
     <div
       className={`flex min-h-screen items-center justify-center px-6 ${
         isDark
-          ? 'bg-[#0b1021] text-slate-100'
+          ? 'bg-[#0c0d12] text-slate-100'
           : 'bg-[#f7f9fc] text-slate-800'
       }`}
     >
@@ -219,6 +249,7 @@ export default function Home() {
     if (isVidgeniePath) return true;
     if (location.pathname.startsWith('/account') || location.pathname.startsWith('/accounts')) return true;
     if (location.pathname === '/image_sessions' && user) return true;
+    if (location.pathname === '/audio/studio' && user) return true;
     const allowed = new Set([
       '/login',
       '/register',
@@ -446,11 +477,12 @@ export default function Home() {
   let bodyBGColor = "bg-stone-100";
   
   if (colorMode === 'dark') {
-    bodyBGColor = "bg-[#0b1021] text-slate-100";
+    bodyBGColor = "bg-[#0c0d12] text-slate-100";
   } else {
     bodyBGColor = "bg-[#f7f9fc] text-slate-900";
   }
   const rootAuthenticatedSearch = sanitizedRouteSearch;
+  const routeLoadingFallback = getRouteLoadingFallback(location.pathname, isMobile);
   const shouldRequireStandaloneLogin =
     IS_STANDALONE_DEPLOYMENT &&
     userInitiated &&
@@ -474,7 +506,7 @@ export default function Home() {
 
   return (
     <div className={bodyBGColor}>
-      <Suspense fallback={<RouteLoadingScreen />}>
+      <Suspense fallback={routeLoadingFallback}>
         <Routes>
           <Route
             path="/"
@@ -496,6 +528,7 @@ export default function Home() {
           <Route path="/video/:id" element={isMobile ? <MobileStudioSessionRedirect /> : <VideoHome />} />
           <Route path="/image/studio" element={<ImageStudioLandingHome />} />
           <Route path="/image/studio/:id" element={<ImageStudioHome />} />
+          <Route path="/audio/studio" element={<AudioStudioHome />} />
           <Route path="/iamge/studio" element={<ImageStudioLandingHome />} />
           <Route path="/iamge/studio/:id" element={<ImageStudioHome />} />
           <Route path="/external/studio" element={<ExternalStudioDashboard />} />

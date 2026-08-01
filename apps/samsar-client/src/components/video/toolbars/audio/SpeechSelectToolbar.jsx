@@ -69,7 +69,7 @@ export default function SpeechSelectToolbar(props) {
 
   const panelSurface =
     colorMode === 'dark'
-      ? 'bg-[#0f1629] text-slate-100 border border-[#1f2a3d] shadow-[0_10px_28px_rgba(0,0,0,0.35)]'
+      ? 'bg-[#181b24] text-slate-100 border border-[#3a4050] shadow-[0_10px_28px_rgba(0,0,0,0.35)]'
       : 'bg-white text-slate-900 border border-slate-200 shadow-sm';
   const compactButtonClass = '!m-0 !min-w-0 !rounded-md !px-2 !py-1 text-xs leading-tight';
   const audioUrl = `${PROCESSOR_API_URL}/${audioLayer.localAudioLinks[0]}`;

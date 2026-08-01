@@ -61,11 +61,14 @@ export default function PublishOptionsDialog(props) {
 
   const labelClassName = colorMode === 'dark' ? 'text-slate-200' : 'text-slate-700';
   const fieldClassName = colorMode === 'dark'
-    ? 'border-[#2a3a57] bg-[#111a2f] text-slate-100 placeholder:text-slate-500 focus:border-cyan-400 focus:ring-cyan-400/20'
+    ? 'border-[#667188] bg-[#20232e] text-slate-100 placeholder:text-slate-500 focus:border-[#f6c453] focus:ring-[#f6c453]/24'
     : 'border-slate-300 bg-white text-slate-900 placeholder:text-slate-400 focus:border-sky-500 focus:ring-sky-500/20';
   const cancelButtonClassName = colorMode === 'dark'
-    ? 'border border-[#2a3a57] bg-[#111a2f] text-slate-100 hover:bg-[#16213a]'
+    ? 'border border-[#2a3a57] bg-[#20232e] text-slate-100 hover:bg-[#292d3a]'
     : 'border border-slate-300 bg-white text-slate-700 hover:bg-slate-50';
+  const primaryButtonClassName = colorMode === 'dark'
+    ? 'bg-[#ff4655] text-[#080a10] hover:bg-[#ff6572] focus:ring-[#ffe0a3]/65'
+    : 'bg-rose-500 text-white hover:bg-rose-400 focus:ring-rose-400/40';
 
   return (
     <div className="w-full text-left">
@@ -84,7 +87,7 @@ export default function PublishOptionsDialog(props) {
         <button
           type="button"
           onClick={generateMeta}
-          className="shrink-0 rounded-lg bg-rose-500 px-3 py-2 text-sm font-medium text-white transition hover:bg-rose-400 focus:outline-none focus:ring-2 focus:ring-rose-400/40"
+          className={`shrink-0 rounded-lg px-3 py-2 text-sm font-medium transition focus:outline-none focus:ring-2 ${primaryButtonClassName}`}
         >
           Generate metadata
         </button>
@@ -127,7 +130,7 @@ export default function PublishOptionsDialog(props) {
           </button>
           <button
             type="submit"
-            className="rounded-lg bg-rose-500 px-4 py-2 text-sm font-medium text-white transition hover:bg-rose-400 focus:outline-none focus:ring-2 focus:ring-rose-400/40"
+            className={`rounded-lg px-4 py-2 text-sm font-medium transition focus:outline-none focus:ring-2 ${primaryButtonClassName}`}
           >
             {isRepublish ? 'Republish' : 'Publish'}
           </button>

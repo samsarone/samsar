@@ -1,12 +1,17 @@
 import axios from 'axios';
+import crypto from 'crypto';
 import { getDBConnectionString } from '../DBString.js';
 import ImageGeneration from '../schema/ImageGeneration.js';
 import VideoSession from '../schema/VideoSession.js';
 import { User } from '../schema/User.js';
 import { saveRemoteFile } from '../utils/FileUtils.js';
 import { recordProviderUsageLog } from '../utils/ProviderUsageAudit.js';
+import { isStandaloneEdition } from '../utils/Environment.js';
 
 const CUSTOM_TEXT_TO_IMAGE_ADAPTER_KEY = 'text_to_image';
+export const CUSTOM_TEXT_TO_IMAGE_MODEL_PREFIX = 'CUSTOM_TEXT_TO_IMAGE:';
+const CUSTOM_ADAPTER_SECRET_PREFIX = 'enc:v1:';
+const CUSTOM_TEXT_TO_IMAGE_REQUEST_ID_TOKEN = '{request_id}';
 
 function isPlainObject(value) {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -14,6 +19,50 @@ function isPlainObject(value) {
 
 function normalizeString(value) {
   return typeof value === 'string' ? value.trim() : '';
+}
+
+export function isCustomTextToImageModel(model) {
+  const normalized = normalizeString(model);
+  return normalized === 'CUSTOM_TEXT_TO_IMAGE' || normalized.startsWith(CUSTOM_TEXT_TO_IMAGE_MODEL_PREFIX);
+}
+
+function getCustomTextToImageAdapterId(model) {
+  const normalized = normalizeString(model);
+  return normalized.startsWith(CUSTOM_TEXT_TO_IMAGE_MODEL_PREFIX)
+    ? normalized.slice(CUSTOM_TEXT_TO_IMAGE_MODEL_PREFIX.length)
+    : '';
+}
+
+function getCustomAdapterSecretKey() {
+  const secret =
+    process.env.CUSTOM_ADAPTER_SECRET_KEY ||
+    process.env.CUSTOM_CREDENTIALS_SECRET ||
+    process.env.TOKEN_SECRET;
+  if (!secret || !secret.trim()) {
+    throw new Error('CUSTOM_ADAPTER_SECRET_KEY or TOKEN_SECRET is required to use custom adapter credentials.');
+  }
+  return crypto.createHash('sha256').update(secret).digest();
+}
+
+export function decryptCustomAdapterSecret(value) {
+  const normalized = normalizeString(value);
+  if (!normalized || !normalized.startsWith(CUSTOM_ADAPTER_SECRET_PREFIX)) {
+    return normalized;
+  }
+  const parts = normalized.split(':');
+  if (parts.length !== 5 || parts[1] !== 'v1') {
+    throw new Error('Invalid encrypted custom adapter credential format.');
+  }
+  const decipher = crypto.createDecipheriv(
+    'aes-256-gcm',
+    getCustomAdapterSecretKey(),
+    Buffer.from(parts[2], 'base64'),
+  );
+  decipher.setAuthTag(Buffer.from(parts[3], 'base64'));
+  return Buffer.concat([
+    decipher.update(Buffer.from(parts[4], 'base64')),
+    decipher.final(),
+  ]).toString('utf8');
 }
 
 function hasTextToImageAdapter(adapter) {
@@ -24,9 +73,34 @@ function hasTextToImageAdapter(adapter) {
   );
 }
 
+function hasModernTextToImageEndpoint(endpoint) {
+  return Boolean(
+    isPlainObject(endpoint) &&
+    normalizeString(endpoint.operation) === CUSTOM_TEXT_TO_IMAGE_ADAPTER_KEY &&
+    normalizeString(endpoint.generate_url) &&
+    normalizeString(endpoint.status_url) &&
+    normalizeString(endpoint.result_url)
+  );
+}
+
+function withDecryptedCredentials(adapter) {
+  if (!adapter) {
+    return adapter;
+  }
+  return {
+    ...adapter,
+    ...(normalizeString(adapter.api_key)
+      ? { api_key: decryptCustomAdapterSecret(adapter.api_key) }
+      : {}),
+    ...(normalizeString(adapter.header_value)
+      ? { header_value: decryptCustomAdapterSecret(adapter.header_value) }
+      : {}),
+  };
+}
+
 function getAdapterFromSource(source) {
   const adapter = source?.custom_adapters;
-  return hasTextToImageAdapter(adapter) ? adapter : null;
+  return hasTextToImageAdapter(adapter) ? withDecryptedCredentials(adapter) : null;
 }
 
 function buildCustomEndpointUrl(baseUrl, endpointPath, suffix = '') {
@@ -45,14 +119,29 @@ function buildCustomEndpointUrl(baseUrl, endpointPath, suffix = '') {
   return new URL(relativePath, `${normalizedBaseUrl}/`).toString();
 }
 
-async function resolveCustomTextToImageAdapter(payload) {
+export function getUserCustomTextToImageEndpoint(customAdapters, adapterId = '', sessionAdapter = null) {
+  const endpoints = Array.isArray(customAdapters?.custom_endpoints)
+    ? customAdapters.custom_endpoints
+    : [];
+  const requestedId = normalizeString(adapterId) || normalizeString(sessionAdapter?.custom_endpoint_id);
+  const endpoint = endpoints.find((candidate) => (
+    hasModernTextToImageEndpoint(candidate) &&
+    (!requestedId || normalizeString(candidate.id) === requestedId)
+  ));
+  return endpoint ? withDecryptedCredentials(endpoint) : null;
+}
+
+export async function resolveCustomTextToImageAdapter(payload) {
+  if (getCustomTextToImageAdapterId(payload.model) && !isStandaloneEdition()) {
+    throw new Error('Per-user custom text-to-image models are only available in standalone deployments.');
+  }
   let sessionData = null;
   if (payload.videoSessionId) {
     sessionData = await VideoSession.findById(payload.videoSessionId)
       .select('custom_adapters userId')
       .lean();
     const sessionAdapter = getAdapterFromSource(sessionData);
-    if (sessionAdapter) {
+    if (sessionAdapter && !getCustomTextToImageAdapterId(payload.model)) {
       return {
         adapter: sessionAdapter,
         source: 'video_session',
@@ -68,9 +157,14 @@ async function resolveCustomTextToImageAdapter(payload) {
   const userData = await User.findById(userId)
     .select('custom_adapters')
     .lean();
-  const userAdapter = getAdapterFromSource(userData);
+  const requestedAdapterId = getCustomTextToImageAdapterId(payload.model);
+  const userAdapter = getUserCustomTextToImageEndpoint(
+    userData?.custom_adapters,
+    requestedAdapterId,
+    sessionData?.custom_adapters,
+  ) || (requestedAdapterId ? null : getAdapterFromSource(userData));
   if (!userAdapter) {
-    throw new Error('Missing custom_adapters.text_to_image configuration for custom text-to-image generation.');
+    throw new Error(`Missing custom text-to-image adapter configuration for model ${payload.model || 'CUSTOM_TEXT_TO_IMAGE'}.`);
   }
 
   return {
@@ -79,15 +173,51 @@ async function resolveCustomTextToImageAdapter(payload) {
   };
 }
 
-function buildHeaders(apiKey) {
+export function buildCustomAdapterHeaders(adapter = {}) {
   const headers = {
     'Content-Type': 'application/json',
   };
-  const normalizedApiKey = normalizeString(apiKey);
+  const headerKey = normalizeString(adapter.header_key);
+  const headerValue = normalizeString(adapter.header_value);
+  if (headerKey && headerValue) {
+    headers[headerKey] = headerValue;
+    return headers;
+  }
+  const normalizedApiKey = normalizeString(adapter.api_key);
   if (normalizedApiKey) {
     headers.Authorization = `Key ${normalizedApiKey}`;
   }
   return headers;
+}
+
+export function interpolateCustomAdapterUrl(urlTemplate, requestId) {
+  const template = normalizeString(urlTemplate);
+  if (!template) {
+    return '';
+  }
+  if (!template.includes(CUSTOM_TEXT_TO_IMAGE_REQUEST_ID_TOKEN)) {
+    throw new Error(`Custom adapter URL must include ${CUSTOM_TEXT_TO_IMAGE_REQUEST_ID_TOKEN}.`);
+  }
+  return template.replaceAll(
+    CUSTOM_TEXT_TO_IMAGE_REQUEST_ID_TOKEN,
+    encodeURIComponent(normalizeString(requestId)),
+  );
+}
+
+function getProviderUrl(responseData, keys) {
+  for (const key of keys) {
+    const candidates = [responseData?.[key], responseData?.data?.[key]];
+    for (const candidate of candidates) {
+      const normalized = normalizeString(candidate);
+      if (!normalized) continue;
+      try {
+        return new URL(normalized).toString();
+      } catch {
+        // Ignore malformed provider URLs and fall back to configured templates.
+      }
+    }
+  }
+  return '';
 }
 
 function getCustomAdapterProvider(adapter = {}) {
@@ -197,17 +327,22 @@ function getRequestId(responseData) {
     responseData?.id ||
     responseData?.data?.request_id ||
     responseData?.data?.requestId ||
+    responseData?.request?.id ||
+    responseData?.data?.request?.id ||
     null
   );
 }
 
-function normalizeProviderStatus(statusData) {
+export function normalizeProviderStatus(statusData) {
   const rawStatus = normalizeString(
     statusData?.status ||
     statusData?.state ||
     statusData?.request_status ||
     statusData?.data?.status ||
-    statusData?.data?.state
+    statusData?.data?.state ||
+    statusData?.request?.status ||
+    statusData?.data?.request?.status ||
+    statusData?.result?.status
   ).toUpperCase();
 
   if (['COMPLETED', 'SUCCEEDED', 'SUCCESS', 'DONE'].includes(rawStatus)) {
@@ -226,7 +361,7 @@ function normalizeProviderStatus(statusData) {
   return 'PENDING';
 }
 
-function getImageUrl(resultData) {
+export function getImageUrl(resultData) {
   const candidates = [
     resultData?.image?.url,
     typeof resultData?.image === 'string' ? resultData.image : null,
@@ -234,6 +369,8 @@ function getImageUrl(resultData) {
     typeof resultData?.data?.image === 'string' ? resultData.data.image : null,
     resultData?.output?.image?.url,
     resultData?.data?.output?.image?.url,
+    resultData?.result?.image?.url,
+    typeof resultData?.result?.image === 'string' ? resultData.result.image : null,
     resultData?.url,
     resultData?.data?.url,
     resultData?.image_url,
@@ -256,6 +393,20 @@ function getImageUrl(resultData) {
 
   if (Array.isArray(resultData?.data?.images)) {
     const firstImageUrl = normalizeString(resultData.data.images[0]?.url || resultData.data.images[0]);
+    if (firstImageUrl) {
+      return firstImageUrl;
+    }
+  }
+
+  for (const collection of [
+    resultData?.output,
+    resultData?.data?.output,
+    resultData?.output?.images,
+    resultData?.data?.output?.images,
+    resultData?.result?.images,
+  ]) {
+    if (!Array.isArray(collection)) continue;
+    const firstImageUrl = normalizeString(collection[0]?.url || collection[0]);
     if (firstImageUrl) {
       return firstImageUrl;
     }
@@ -285,15 +436,15 @@ async function submitCustomTextToImageRequest(payload) {
 
   try {
     const { adapter, source } = await resolveCustomTextToImageAdapter(payload);
-    const submitUrl = buildCustomEndpointUrl(
+    const submitUrl = normalizeString(adapter.generate_url) || buildCustomEndpointUrl(
       adapter.base_url,
-      adapter[CUSTOM_TEXT_TO_IMAGE_ADAPTER_KEY]
+      adapter[CUSTOM_TEXT_TO_IMAGE_ADAPTER_KEY],
     );
     const response = await axios.post(
       submitUrl,
       { input: buildCustomInputPayload(payload) },
       {
-        headers: buildHeaders(adapter.api_key),
+        headers: buildCustomAdapterHeaders(adapter),
         timeout: 60000,
       }
     );
@@ -315,17 +466,25 @@ async function submitCustomTextToImageRequest(payload) {
       status: 'requested',
       metadata: {
         adapterSource: source,
-        endpoint: adapter[CUSTOM_TEXT_TO_IMAGE_ADAPTER_KEY],
+        endpoint: submitUrl,
         aspectRatio: payload?.aspectRatio,
         numImages: payload?.numImages,
       },
     });
 
+    const providerStatusUrl = getProviderUrl(response.data, ['status_url', 'statusUrl']);
+    const providerResultUrl = getProviderUrl(
+      response.data,
+      ['result_url', 'resultUrl', 'response_url', 'responseUrl'],
+    );
     await ImageGeneration.findOneAndUpdate(
       { _id },
       {
         apiRequestId: requestId,
         apiGenerationStatus: 'PENDING',
+        customAdapterId: normalizeString(adapter.id) || null,
+        customAdapterStatusUrl: providerStatusUrl || null,
+        customAdapterResultUrl: providerResultUrl || null,
         rowLocked: false,
       }
     );
@@ -359,17 +518,21 @@ async function pollCustomTextToImageRequest(payload) {
 
   try {
     const { adapter } = await resolveCustomTextToImageAdapter(payload);
-    const encodedRequestId = encodeURIComponent(apiRequestId);
-    const statusUrl = buildCustomEndpointUrl(
-      adapter.base_url,
-      adapter[CUSTOM_TEXT_TO_IMAGE_ADAPTER_KEY],
-      `requests/${encodedRequestId}/status`
+    const statusUrl = normalizeString(payload.customAdapterStatusUrl) || (
+      normalizeString(adapter.status_url)
+        ? interpolateCustomAdapterUrl(adapter.status_url, apiRequestId)
+        : buildCustomEndpointUrl(
+          adapter.base_url,
+          adapter[CUSTOM_TEXT_TO_IMAGE_ADAPTER_KEY],
+          `requests/${encodeURIComponent(apiRequestId)}/status`,
+        )
     );
     const statusResponse = await axios.get(statusUrl, {
-      headers: buildHeaders(adapter.api_key),
+      headers: buildCustomAdapterHeaders(adapter),
       timeout: 60000,
     });
     const responseStatus = normalizeProviderStatus(statusResponse.data);
+    const statusImageUrl = getImageUrl(statusResponse.data);
 
     if (responseStatus === 'FAILED') {
       if (await fallbackCustomTextToImageRequest(payload, 'Custom text-to-image generation failed.')) {
@@ -386,7 +549,7 @@ async function pollCustomTextToImageRequest(payload) {
       return { image: null };
     }
 
-    if (responseStatus !== 'COMPLETED') {
+    if (responseStatus !== 'COMPLETED' && !statusImageUrl) {
       await ImageGeneration.findOneAndUpdate(
         { _id },
         { rowLocked: false }
@@ -394,16 +557,22 @@ async function pollCustomTextToImageRequest(payload) {
       return null;
     }
 
-    const resultUrl = buildCustomEndpointUrl(
-      adapter.base_url,
-      adapter[CUSTOM_TEXT_TO_IMAGE_ADAPTER_KEY],
-      `requests/${encodedRequestId}`
+    const resultUrl = normalizeString(payload.customAdapterResultUrl) || (
+      normalizeString(adapter.result_url)
+        ? interpolateCustomAdapterUrl(adapter.result_url, apiRequestId)
+        : buildCustomEndpointUrl(
+          adapter.base_url,
+          adapter[CUSTOM_TEXT_TO_IMAGE_ADAPTER_KEY],
+          `requests/${encodeURIComponent(apiRequestId)}`,
+        )
     );
-    const resultResponse = await axios.get(resultUrl, {
-      headers: buildHeaders(adapter.api_key),
-      timeout: 60000,
-    });
-    const imageRemoteUrl = getImageUrl(resultResponse.data);
+    const resultResponse = statusImageUrl
+      ? null
+      : await axios.get(resultUrl, {
+        headers: buildCustomAdapterHeaders(adapter),
+        timeout: 60000,
+      });
+    const imageRemoteUrl = statusImageUrl || getImageUrl(resultResponse?.data);
     if (!imageRemoteUrl) {
       throw new Error('Custom text-to-image result did not include an image url.');
     }

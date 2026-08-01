@@ -273,7 +273,7 @@ function ShapePreferencesFields({
 }) {
   const subtleTextColor = colorMode === 'dark' ? 'text-slate-300' : 'text-slate-600';
   const inputSurface = colorMode === 'dark'
-    ? 'bg-[#111a2f] border border-[#24314d] text-slate-100'
+    ? 'bg-[#20232e] border border-[#24314d] text-slate-100'
     : 'bg-slate-50 border border-slate-200 text-slate-900';
   const gridClass = isExpandedView
     ? 'grid grid-cols-2 gap-3'
@@ -381,7 +381,7 @@ function ShapeOptionsDialogContent({
   const [draftPreferences, setDraftPreferences] = useState(initialPreferences);
   const mutedClass = colorMode === 'dark' ? 'text-slate-400' : 'text-slate-500';
   const secondaryButtonClass = colorMode === 'dark'
-    ? 'border border-[#273956] bg-[#111a2f] text-slate-100 hover:bg-[#172642]'
+    ? 'border border-[#273956] bg-[#20232e] text-slate-100 hover:bg-[#172642]'
     : 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-50';
 
   const updateDraftPreferences = (preferenceChanges, options = {}) => {
@@ -499,19 +499,19 @@ export default function AddShapeDisplay(props: any) {
   const textColor = colorMode === 'dark' ? 'text-slate-100' : 'text-slate-900';
   const subtleTextColor = colorMode === 'dark' ? 'text-slate-300' : 'text-slate-600';
   const panelSurface = colorMode === 'dark'
-    ? 'bg-[#0f1629] border border-[#1f2a3d]'
+    ? 'bg-[#181b24] border border-[#3a4050]'
     : 'bg-white border border-slate-200';
   const compactSurface = colorMode === 'dark'
-    ? 'bg-[#111a2f] border border-[#24314d]'
+    ? 'bg-[#20232e] border border-[#24314d]'
     : 'bg-slate-50 border border-slate-200';
   const activePillClass = colorMode === 'dark'
     ? 'bg-rose-500/20 border-rose-400/40 text-rose-100'
     : 'bg-rose-50 border-rose-200 text-rose-700';
   const inactivePillClass = colorMode === 'dark'
-    ? 'bg-[#111a2f] border-[#24314d] text-slate-200 hover:bg-[#18243c]'
+    ? 'bg-[#20232e] border-[#24314d] text-slate-200 hover:bg-[#18243c]'
     : 'bg-slate-100 border-slate-200 text-slate-700 hover:bg-white';
   const secondaryButtonClass = colorMode === 'dark'
-    ? 'border border-[#273956] bg-[#111a2f] text-slate-100 hover:bg-[#172642]'
+    ? 'border border-[#273956] bg-[#20232e] text-slate-100 hover:bg-[#172642]'
     : 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-50';
 
   const syncParentColorState = (preferences) => {

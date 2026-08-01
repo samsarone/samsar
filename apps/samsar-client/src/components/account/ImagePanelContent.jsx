@@ -68,9 +68,9 @@ export default function ImagePanelContent() {
 
   const textColor = colorMode === "dark" ? "text-slate-100" : "text-slate-900";
   const secondaryTextColor = colorMode === "dark" ? "text-slate-400" : "text-slate-600";
-  const cardBgColor = colorMode === "dark" ? "bg-[#0f1629]" : "bg-white";
-  const borderColor = colorMode === "dark" ? "border-[#1f2a3d]" : "border-slate-200";
-  const mutedBg = colorMode === "dark" ? "bg-[#0b1224]" : "bg-slate-50";
+  const cardBgColor = colorMode === "dark" ? "bg-[#181b24]" : "bg-white";
+  const borderColor = colorMode === "dark" ? "border-[#3a4050]" : "border-slate-200";
+  const mutedBg = colorMode === "dark" ? "bg-[#151720]" : "bg-slate-50";
 
   const fetchImages = useCallback(
     async (pageToLoad = 1) => {

@@ -9,6 +9,8 @@ import {
 import { useColorMode } from '../../../contexts/ColorMode.jsx';
 import { useDeploymentModelAvailability } from '../../../hooks/useDeploymentModelAvailability.js';
 import { filterOptionsForDeploymentModelValues } from '../../../utils/deploymentProviders.js';
+import { useUser } from '../../../contexts/UserContext.jsx';
+import { mergeCustomTextToImageModelDefinitions } from '../../../utils/customTextToImageAdapters.mjs';
 
 export default function PromptViewer(props) {
   const {
@@ -28,6 +30,7 @@ export default function PromptViewer(props) {
   // Selected image style, if the model supports it
   const [selectedImageStyle, setSelectedImageStyle] = useState(null);
   const { colorMode } = useColorMode();
+  const { user } = useUser();
   const {
     isStandaloneDeployment: isStandaloneModelFilteringEnabled,
     imageModelValues,
@@ -37,11 +40,14 @@ export default function PromptViewer(props) {
       const deploymentModels = isStandaloneModelFilteringEnabled
         ? filterOptionsForDeploymentModelValues(IMAGE_GENERAITON_MODEL_TYPES, imageModelValues, (model) => model.key)
         : IMAGE_GENERAITON_MODEL_TYPES;
-      return deploymentModels.filter((model) =>
+      const modelsWithCustomAdapters = isStandaloneModelFilteringEnabled
+        ? mergeCustomTextToImageModelDefinitions(deploymentModels, user?.custom_adapters)
+        : deploymentModels;
+      return modelsWithCustomAdapters.filter((model) =>
         imageGenerationModelSupportsAspectRatio(model, aspectRatio)
       );
     },
-    [aspectRatio, imageModelValues, isStandaloneModelFilteringEnabled]
+    [aspectRatio, imageModelValues, isStandaloneModelFilteringEnabled, user?.custom_adapters]
   );
 
   // ─────────────────────────────────────────────────────────
@@ -144,9 +150,9 @@ export default function PromptViewer(props) {
     ? 'bg-neutral-800 text-slate-100'
     : 'bg-white/90 text-slate-900 border border-slate-200';
   const helperTextClassName = colorMode === 'dark' ? 'text-gray-300' : 'text-slate-600';
-  const creditTextClassName = colorMode === 'dark' ? 'text-blue-300' : 'text-blue-700';
+  const creditTextClassName = colorMode === 'dark' ? 'text-[#ffe0a3]' : 'text-blue-700';
   const fieldClassName = colorMode === 'dark'
-    ? 'border-[#1f2a3d] bg-[#171717] text-[#fafafa]'
+    ? 'border-[#667188] bg-[#151720] text-[#fafafa] focus:border-[#f6c453] focus:outline-none focus:ring-2 focus:ring-[#f6c453]/20'
     : 'border-slate-200 bg-white text-slate-900 placeholder:text-slate-400';
 
   // Build the model dropdown
@@ -165,7 +171,7 @@ export default function PromptViewer(props) {
           <label className="ml-2 items-center">
             <input
               type="checkbox"
-              className="form-checkbox h-4 w-4 text-blue-600"
+              className={`form-checkbox h-4 w-4 ${colorMode === 'dark' ? 'text-[#f6c453] focus:ring-[#f6c453]/35' : 'text-blue-600'}`}
               checked={retryOnFailure}
               onChange={(e) => setRetryOnFailure(e.target.checked)}
             />
@@ -227,7 +233,7 @@ export default function PromptViewer(props) {
       {/* ───────────── Action Buttons ───────────── */}
       <div className="flex space-x-4">
         <SecondaryButton
-          className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+          className="px-4 py-2"
           onClick={handleSubmit}
           isPending={isGenerationPending}
         >
@@ -235,7 +241,7 @@ export default function PromptViewer(props) {
         </SecondaryButton>
 
         <SecondaryButton
-          className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+          className="px-4 py-2"
           onClick={showCreateNewPrompt}
           isPending={isGenerationPending}
         >

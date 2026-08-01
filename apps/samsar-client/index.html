@@ -5,7 +5,7 @@
   <meta charset="utf-8" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <meta name="theme-color" content="#000000" />
+  <meta name="theme-color" content="#0c0d12" />
   <meta name="description" content="Turn one prompt into a finished video with Vidgenie’s 1-shot text-to-video agent and Studio’s full-fledged post-processing tools." />
   <link rel="canonical" href="https://app.samsar.one/" />
 
@@ -46,8 +46,12 @@
         colorMode = 'dark';
       }
 
-      document.documentElement.style.backgroundColor = colorMode === 'dark' ? '#050814' : '#d9e2f0';
-      if (colorMode === 'dark') {
+      const isDark = colorMode === 'dark';
+      const themeColor = isDark ? '#0c0d12' : '#d9e2f0';
+      document.documentElement.style.backgroundColor = themeColor;
+      document.documentElement.style.colorScheme = isDark ? 'dark' : 'light';
+      document.querySelector('meta[name="theme-color"]').setAttribute('content', themeColor);
+      if (isDark) {
         document.documentElement.classList.add('dark');
       } else {
         document.documentElement.classList.remove('dark');

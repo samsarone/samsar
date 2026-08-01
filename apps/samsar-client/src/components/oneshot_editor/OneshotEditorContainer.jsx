@@ -110,11 +110,11 @@ export default function OneshotEditorContainer() {
 
   const outerShell =
     colorMode === 'dark'
-      ? 'bg-[#0b1021] text-slate-100'
+      ? 'bg-[#0c0d12] text-slate-100'
       : 'bg-gradient-to-br from-[#e9edf7] via-[#eef3fb] to-white text-slate-900';
   const subtleGradient =
     colorMode === 'dark'
-      ? 'bg-gradient-to-b from-[#080f21] via-[#0d1830] to-[#0b1226]'
+      ? 'bg-[linear-gradient(180deg,#15171f_0%,#12141c_44%,#0c0d12_100%)]'
       : 'bg-gradient-to-b from-[#eef3fb] via-[#e4ebf8] to-[#f7fbff]';
 
   if (shouldWaitForProjectAuth) {

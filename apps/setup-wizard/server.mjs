@@ -18,6 +18,11 @@ import {
   createOpenRouterValidationRegistry,
   validateOpenRouterProviderCredential,
 } from './openrouterValidation.mjs';
+import {
+  PROVIDER_ENVIRONMENT_VARIABLE_NAMES,
+  isValidEnvironmentVariableName,
+  resolveProviderEnvironmentReferences,
+} from './src/constants/providerEnvironment.js';
 
 const PORT = Number.parseInt(process.env.PORT || '80', 10);
 const STATIC_DIR = process.env.SETUP_WIZARD_STATIC_DIR || path.resolve('dist');
@@ -78,6 +83,7 @@ const PROCESSOR_PUBLIC_URL = process.env.SAMSAR_SETUP_PROCESSOR_PUBLIC_URL || 'h
 const PROCESSOR_INTERNAL_URL = process.env.SAMSAR_SETUP_PROCESSOR_INTERNAL_URL || 'http://host.docker.internal:3002';
 const CLIENT_INTERNAL_URL = process.env.SAMSAR_SETUP_CLIENT_INTERNAL_URL || 'http://host.docker.internal:3000';
 const PROCESSOR_READY_URL = `${PROCESSOR_INTERNAL_URL}/v1/health/ready`;
+const SAMSAR_API_KEY_VALIDATION_URL = 'https://api.samsar.one/v2/external/api_key/validate';
 const MEDIA_TUNNEL_CONTAINER_NAME = process.env.SAMSAR_MEDIA_TUNNEL_CONTAINER || 'samsar-media-tunnel';
 const MEDIA_TUNNEL_CONTROLLER_SERVICE = 'media-tunnel-controller';
 const MEDIA_TUNNEL_START_TIMEOUT_MS = Math.max(
@@ -135,6 +141,14 @@ const ALIBABA_PROVIDER_VALIDATION_TTL_MS = 60 * 60 * 1000;
 const ALL_COMPOSE_PROFILES = ['core', 'workers', 'local-mongo', 'minio', 'local-media', 'logger', 'reverse-proxy'];
 const ALLOWED_FIREWALL_PORTS = [80, 443, 3000, 3002, 8089];
 const SETUP_PASSWORD_HASH_VERSION = 'scrypt-v1';
+
+function getAllowedProviderEnvironmentVariableNames() {
+  const customNames = normalizeString(process.env.SAMSAR_SETUP_PROVIDER_ENV_NAMES)
+    .split(/[\s,]+/)
+    .map((value) => value.trim())
+    .filter(isValidEnvironmentVariableName);
+  return [...new Set([...PROVIDER_ENVIRONMENT_VARIABLE_NAMES, ...customNames])];
+}
 
 function cloneRun(run) {
   return {
@@ -1424,6 +1438,113 @@ function normalizeGoogleCredentials(rawValue) {
       return { credentialsJsonB64: value, projectId: '' };
     }
   }
+}
+
+function resolveEnvironmentProviderCredentials(references = {}) {
+  return resolveProviderEnvironmentReferences(references, process.env, {
+    allowedVariableNames: getAllowedProviderEnvironmentVariableNames(),
+  });
+}
+
+function configuredEnvironmentProviderResult(provider, extra = {}) {
+  return {
+    provider,
+    status: 'configured',
+    ok: true,
+    validationMode: 'host_environment',
+    message: 'Resolved from the host Bash environment.',
+    ...extra,
+  };
+}
+
+function validateEnvironmentGoogleCredentials(rawValue) {
+  let parsed;
+  try {
+    parsed = JSON.parse(normalizeString(rawValue));
+  } catch {
+    try {
+      parsed = JSON.parse(Buffer.from(normalizeString(rawValue), 'base64').toString('utf8'));
+    } catch {
+      return {
+        provider: 'googleCloud',
+        status: 'invalid',
+        ok: false,
+        validationMode: 'host_environment',
+        message: 'The referenced Google Cloud variable must contain valid JSON or base64 JSON.',
+      };
+    }
+  }
+  return configuredEnvironmentProviderResult('googleCloud', {
+    status: 'format_valid',
+    projectId: normalizeString(parsed?.project_id),
+    clientEmail: normalizeString(parsed?.client_email),
+  });
+}
+
+async function validateEnvironmentSamsarCredential(apiKey) {
+  let response;
+  try {
+    response = await fetch(SAMSAR_API_KEY_VALIDATION_URL, {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${apiKey}` },
+    });
+  } catch (error) {
+    throw new Error(`Unable to reach Samsar for credential validation: ${error?.message || error}`);
+  }
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok || body?.valid === false) {
+    return {
+      provider: 'samsar',
+      status: 'invalid',
+      ok: false,
+      statusCode: response.status,
+      message: body?.message || 'Samsar rejected the API key.',
+    };
+  }
+  return {
+    ...body,
+    provider: 'samsar',
+    status: 'valid',
+    ok: true,
+    validationMode: 'host_environment',
+  };
+}
+
+async function validateEnvironmentProviderCredentials(credentials = {}) {
+  const providers = {};
+  const configuredProviderFields = [
+    ['openai', 'openaiApiKey'],
+    ['kimi', 'kimiK3ApiKey'],
+    ['fal', 'falApiKey'],
+    ['elevenlabs', 'elevenLabsApiKey'],
+    ['runway', 'runwayApiKey'],
+  ];
+
+  configuredProviderFields.forEach(([provider, field]) => {
+    if (normalizeSecretString(credentials[field])) {
+      providers[provider] = configuredEnvironmentProviderResult(provider);
+    }
+  });
+
+  if (normalizeSecretString(credentials.googleCredentialsJson)) {
+    providers.googleCloud = validateEnvironmentGoogleCredentials(credentials.googleCredentialsJson);
+  }
+  if (normalizeSecretString(credentials.samsarApiKey)) {
+    providers.samsar = await validateEnvironmentSamsarCredential(credentials.samsarApiKey);
+  }
+  if (normalizeSecretString(credentials.alibabaApiKey)) {
+    Object.assign(providers, (await validateAlibabaProviderCredential(credentials)).providers || {});
+  }
+  if (normalizeSecretString(credentials.openrouterApiKey)) {
+    const result = await validateOpenRouterProviderCredential(credentials);
+    const validation = result?.providers?.openrouter;
+    if (validation?.ok === true) {
+      validation.validationToken = openrouterProviderValidations.register(credentials.openrouterApiKey);
+    }
+    Object.assign(providers, result?.providers || {});
+  }
+
+  return { providers };
 }
 
 function consumeValidatedAlibabaProviderSecret(payload = {}) {
@@ -3627,6 +3748,21 @@ async function handleApi(req, res, pathname) {
     return true;
   }
 
+  if (req.method === 'POST' && pathname === '/api/setup/providers/environment/validate') {
+    if (!await requireSetupAuth(req, res)) {
+      return true;
+    }
+    try {
+      const payload = await readRequestBody(req);
+      const resolved = resolveEnvironmentProviderCredentials(payload.credentials || payload.references || payload);
+      const validation = await validateEnvironmentProviderCredentials(resolved.credentials);
+      sendJson(res, 200, validation);
+    } catch (error) {
+      sendJson(res, 400, { message: error?.message || 'Unable to validate provider environment variables.' });
+    }
+    return true;
+  }
+
   if (req.method === 'POST' && pathname === '/api/setup/providers/alibaba/validate') {
     if (!await requireSetupAuth(req, res)) {
       return true;
@@ -3738,6 +3874,12 @@ async function handleApi(req, res, pathname) {
     }
 
     try {
+      if (normalizeString(payload.credentialSource).toLowerCase() === 'environment') {
+        const references = payload.credentials || {};
+        const resolved = resolveEnvironmentProviderCredentials(references);
+        payload.credentialReferences = references;
+        payload.credentials = resolved.credentials;
+      }
       validateExternalStorageConfig(payload?.deployment?.infrastructure || {});
       payload.admin = buildAdminConfig(payload.admin);
       payload.setupSecret = randomBytes(32).toString('hex');

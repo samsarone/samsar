@@ -439,20 +439,20 @@ export default function TextStylePanel(props) {
 
   const fieldSurface =
     colorMode === 'dark'
-      ? 'bg-[#111a2f] border border-[#1f2a3d] text-slate-100'
+      ? 'bg-[#20232e] border border-[#3a4050] text-slate-100'
       : 'bg-white border border-slate-200 text-slate-900';
   const cardSurface =
     colorMode === 'dark'
-      ? 'bg-[#0f1629] border border-[#1f2a3d] text-slate-100'
+      ? 'bg-[#181b24] border border-[#3a4050] text-slate-100'
       : 'bg-slate-50 border border-slate-200 text-slate-900';
   const mutedText = colorMode === 'dark' ? 'text-slate-400' : 'text-slate-500';
   const activeToggle =
     colorMode === 'dark'
-      ? 'bg-rose-500 text-white shadow-[0_10px_22px_rgba(244,63,94,0.24)]'
+      ? 'bg-[#f6c453] text-[#101117] shadow-[0_10px_24px_rgba(246,196,83,0.18)]'
       : 'bg-rose-500 text-white shadow-sm';
   const inactiveToggle =
     colorMode === 'dark'
-      ? 'bg-[#111a2f] border-[#1f2a3d] text-slate-200 hover:bg-[#17233d]'
+      ? 'bg-[#20232e] border-[#3a4050] text-slate-200 hover:bg-[#292d3a]'
       : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-100';
   const destructiveAction =
     colorMode === 'dark'
@@ -460,9 +460,9 @@ export default function TextStylePanel(props) {
       : 'bg-rose-50 border-rose-200 text-rose-700 hover:bg-rose-100';
   const neutralAction =
     colorMode === 'dark'
-      ? 'bg-[#111a2f] border-[#1f2a3d] text-slate-200 hover:bg-[#17233d]'
+      ? 'bg-[#20232e] border-[#3a4050] text-slate-200 hover:bg-[#292d3a]'
       : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-100';
-  const inputClassName = `w-full rounded-xl px-3 ${isCompact ? 'py-2' : 'py-2.5'} text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-400/20 ${fieldSurface}`;
+  const inputClassName = `w-full rounded-xl px-3 ${isCompact ? 'py-2' : 'py-2.5'} text-sm shadow-sm focus:outline-none focus:ring-2 ${colorMode === 'dark' ? 'focus:border-[#f6c453] focus:ring-[#f6c453]/20' : 'focus:ring-blue-400/20'} ${fieldSurface}`;
   const sectionTitleClass = `${isCompact ? 'mb-1' : 'mb-2'} text-[11px] font-semibold uppercase tracking-[0.18em] ${mutedText}`;
 
   const updateDraft = (changes) => {

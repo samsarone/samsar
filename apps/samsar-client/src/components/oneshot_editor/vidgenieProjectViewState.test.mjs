@@ -34,6 +34,12 @@ test('an untouched blank project continues to show the request form', () => {
   assert.equal(resolveVidgenieLoadedProjectView().showResultDisplay, false);
 });
 
+test('a prepared project does not show an empty preview before rendering starts', () => {
+  assert.equal(resolveVidgenieLoadedProjectView({
+    hasStartedGeneration: true,
+  }).showResultDisplay, false);
+});
+
 test('a project route waits for authentication bootstrap before loading private session data', () => {
   assert.equal(shouldDeferVidgenieProjectLoad({
     sessionId: '6a573a3fb530bc6f473657ec',

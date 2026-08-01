@@ -735,7 +735,7 @@ export default function EditorHome(props) {
     <CommonContainer resetSession={resetSession}>
       <div className='m-auto'>
         <div className='block'>
-          <div className='w-[5%] bg-[#0f1629] inline-block'>
+          <div className='w-[5%] bg-[#181b24] inline-block'>
             <ActionToolbar
               setCurrentAction={setCurrentAction}
               setCurrentViewDisplay={setCurrentViewDisplay}
@@ -760,7 +760,7 @@ export default function EditorHome(props) {
           <div className='text-center w-[78%] inline-block h-[100vh] overflow-scroll m-auto  mb-8 '>
             {viewDisplay}
           </div>
-          <div className='w-[17%] inline-block bg-[#0f1629] '>
+          <div className='w-[17%] inline-block bg-[#181b24] '>
             <EditorToolbar promptText={promptText} setPromptText={setPromptText}
               submitGenerateRequest={submitGenerateRequest}
               submitOutpaintRequest={submitOutpaintRequest}

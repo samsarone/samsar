@@ -4,7 +4,7 @@ import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
 import { getHeaders, getAuthToken } from '../../utils/web';
 import './home.css';
-import RouteLoadingScreen from '../common/RouteLoadingScreen.jsx';
+import StudioSkeletonLoader from './util/StudioSkeletonLoader.jsx';
 import { IS_STANDALONE_DEPLOYMENT } from '../../utils/environment.jsx';
 
 const API_SERVER = import.meta.env.VITE_PROCESSOR_API;
@@ -118,7 +118,7 @@ export default function VideoEditorLandingHome() {
 
   if (routeError) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-[#0b1021] px-6 text-slate-100">
+      <div className="flex min-h-screen items-center justify-center bg-[#0c0d12] px-6 text-slate-100">
         <div className="max-w-md text-center">
           <h1 className="text-xl font-semibold">Studio is unavailable</h1>
           <p className="mt-2 text-sm text-slate-300">{routeError}</p>
@@ -135,6 +135,6 @@ export default function VideoEditorLandingHome() {
   }
 
   return (
-    <RouteLoadingScreen />
+    <StudioSkeletonLoader />
   );
 }

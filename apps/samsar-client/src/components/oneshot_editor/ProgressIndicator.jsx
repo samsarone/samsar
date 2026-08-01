@@ -1369,11 +1369,11 @@ export default function ProgressIndicator(props) {
 
   const panelShell =
     colorMode === 'dark'
-      ? 'bg-[#0f1629] text-slate-100 border border-[#1f2a3d] shadow-[0_10px_28px_rgba(0,0,0,0.35)]'
+      ? 'bg-[#181b24] text-slate-100 border border-[#3a4050] shadow-[0_10px_28px_rgba(0,0,0,0.35)]'
       : 'bg-white/95 text-slate-900 border border-[#d7deef] shadow-sm';
-  const progressTrack = colorMode === 'dark' ? 'bg-[#1f2a3d]' : 'bg-slate-200';
+  const progressTrack = colorMode === 'dark' ? 'bg-[#3a4050]' : 'bg-slate-200';
   const mutedText = colorMode === 'dark' ? 'text-slate-400' : 'text-slate-500';
-  const timelineTrack = colorMode === 'dark' ? 'bg-[#0b1224]' : 'bg-slate-100';
+  const timelineTrack = colorMode === 'dark' ? 'bg-[#151720]' : 'bg-slate-100';
   const errorPanel =
     colorMode === 'dark'
       ? 'bg-rose-900/50 text-rose-100 border border-rose-700/60'

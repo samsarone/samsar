@@ -254,6 +254,38 @@ test('Docker Compose support files required by the deployment are present', asyn
   }
 });
 
+test('standalone includes the native Vast.ai FLUX.2 provisioning utility', async () => {
+  const requiredFiles = [
+    'utils/vast-flux2/README.md',
+    'utils/vast-flux2/provision-vast-flux2.sh',
+    'utils/vast-flux2/configure-samsar-custom-image-model.sh',
+    'utils/vast-flux2/scripts/configure-samsar-custom-image-model.mjs',
+    'utils/vast-flux2/scripts/configure-samsar-custom-image-model.test.mjs',
+    'utils/vast-flux2/scripts/vast-flux2/provision.py',
+    'utils/vast-flux2/scripts/vast-flux2/server.py',
+    'utils/vast-flux2/scripts/vast-flux2/bootstrap.sh',
+    'utils/vast-flux2/scripts/vast-flux2/start.sh',
+    'utils/vast-flux2/scripts/vast-flux2/requirements.txt',
+  ];
+
+  for (const requiredFile of requiredFiles) {
+    assert.equal(await fileExists(requiredFile), true, `${requiredFile} must exist`);
+  }
+
+  for (const launcher of [
+    'utils/vast-flux2/provision-vast-flux2.sh',
+    'utils/vast-flux2/configure-samsar-custom-image-model.sh',
+  ]) {
+    const mode = (await fs.stat(path.join(root, launcher))).mode & 0o777;
+    assert.ok(mode & 0o100, `${launcher} must be executable by its owner`);
+  }
+
+  const provisionLauncher = await readText('utils/vast-flux2/provision-vast-flux2.sh');
+  const configureLauncher = await readText('utils/vast-flux2/configure-samsar-custom-image-model.sh');
+  assert.match(provisionLauncher, /scripts\/vast-flux2\/provision\.py/);
+  assert.match(configureLauncher, /scripts\/configure-samsar-custom-image-model\.mjs/);
+});
+
 test('intermediate cleanup workers run every few hours with a reuse grace period', async () => {
   const [compose, taskProcessorSource, taskSchedulerSource] = await Promise.all([
     readText('deploy/compose/docker-compose.yml'),

@@ -10,7 +10,7 @@ export default function MinimalTaskSkeleton({
   const isDark = colorMode === 'dark';
 
   const shell = isDark
-    ? 'border border-[#1f2a3d] bg-[#0f1629]/90 text-slate-100 shadow-[0_18px_48px_rgba(0,0,0,0.4)]'
+    ? 'border border-[#3a4050] bg-[#181b24]/90 text-slate-100 shadow-[0_18px_48px_rgba(0,0,0,0.4)]'
     : 'border border-slate-200 bg-white/95 text-slate-800 shadow-[0_18px_48px_rgba(15,23,42,0.12)]';
   const block = isDark ? 'bg-slate-700/70' : 'bg-slate-200';
   const line = isDark ? 'bg-slate-600/70' : 'bg-slate-200';

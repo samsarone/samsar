@@ -91,23 +91,23 @@ export default function ImageLayersPanel(props) {
 
   const cardSurface =
     colorMode === 'dark'
-      ? 'bg-[#10192f] border border-[#1f2a3d] text-slate-100'
+      ? 'bg-[#181b24] border border-[#3a4050] text-slate-100'
       : 'bg-white border border-slate-200 text-slate-900';
   const listBackground =
     colorMode === 'dark'
-      ? 'bg-[#0b1226]'
+      ? 'bg-[#151720]'
       : 'bg-slate-50';
   const rowBase =
     colorMode === 'dark'
-      ? 'bg-[#0f172a] border border-[#1f2a3d] hover:bg-[#16213a]'
+      ? 'bg-[#20232e] border border-[#3a4050] hover:bg-[#292d3a]'
       : 'bg-white border border-slate-200 hover:bg-slate-100';
   const rowSelected =
     colorMode === 'dark'
-      ? 'ring-1 ring-rose-400/40 border-rose-400/30'
-      : 'ring-1 ring-rose-300 border-rose-300';
+      ? '!border-[#f6c453]/70 bg-[#f6c453]/10'
+      : 'border-rose-300 bg-rose-50';
   const iconButton =
     colorMode === 'dark'
-      ? 'text-slate-300 hover:text-rose-200'
+      ? 'text-slate-300 hover:text-[#ffe0a3]'
       : 'text-slate-500 hover:text-rose-600';
   const emptyState =
     colorMode === 'dark'

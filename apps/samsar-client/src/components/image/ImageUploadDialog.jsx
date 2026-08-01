@@ -17,19 +17,19 @@ export default function ImageUploadDialog({ setUploadURL, setUploadVideo, aspect
   const isDark = colorMode === 'dark';
 
   const shellClass = isDark
-    ? 'border border-[#1d2940] bg-[radial-gradient(circle_at_top,rgba(239,68,68,0.12),transparent_34%),linear-gradient(180deg,#0b1220_0%,#0f1729_100%)] text-slate-100 shadow-[0_30px_90px_rgba(2,6,23,0.55)]'
+    ? 'border border-[#3a4050] bg-[linear-gradient(180deg,#181b24_0%,#151720_52%,#0c0d12_100%)] text-slate-100 shadow-[0_30px_90px_rgba(0,0,0,0.52)]'
     : 'border border-slate-200 bg-[radial-gradient(circle_at_top,rgba(251,113,133,0.12),transparent_30%),linear-gradient(180deg,#ffffff_0%,#f8fafc_100%)] text-slate-800 shadow-[0_24px_70px_rgba(15,23,42,0.12)]';
   const panelClass = isDark
-    ? 'border border-[#1f2a3d] bg-[#0f1629]/88'
+    ? 'border border-[#3a4050] bg-[#181b24]/88'
     : 'border border-slate-200 bg-white/92';
   const mutedTextClass = isDark ? 'text-slate-400' : 'text-slate-500';
   const secondaryTextClass = isDark ? 'text-slate-300' : 'text-slate-600';
   const dropZoneClass = isDark
     ? isDragging
-      ? 'border-rose-400 bg-rose-500/10 shadow-[0_0_0_1px_rgba(251,113,133,0.35)]'
-      : 'border-[#32415d] bg-[#0b1322]/85 hover:border-[#4a5d83] hover:bg-[#10192d]'
+      ? 'border-[#f6c453] bg-[#f6c453]/10 shadow-[0_0_24px_rgba(246,196,83,0.12)]'
+      : 'border-[#3a4050] bg-[#151720]/90 hover:border-[#667188] hover:bg-[#181b24]'
     : isDragging
-      ? 'border-rose-500 bg-rose-50 shadow-[0_0_0_1px_rgba(244,63,94,0.15)]'
+      ? 'border-rose-500 bg-rose-50 shadow-[0_0_18px_rgba(244,63,94,0.10)]'
       : 'border-slate-300 bg-slate-50/80 hover:border-slate-400 hover:bg-white';
 
   const normalizedStatus = uploadStatus.toLowerCase();
@@ -279,7 +279,7 @@ export default function ImageUploadDialog({ setUploadURL, setUploadVideo, aspect
               Paste ready
             </div>
             {supportsVideoUpload && (
-              <div className={`rounded-full px-3 py-1 text-[11px] font-medium ${isDark ? 'bg-rose-500/14 text-rose-100' : 'bg-rose-50 text-rose-700'}`}>
+              <div className={`rounded-full px-3 py-1 text-[11px] font-medium ${isDark ? 'bg-[#f6c453]/12 text-[#ffe0a3]' : 'bg-rose-50 text-rose-700'}`}>
                 1 video max
               </div>
             )}
@@ -290,17 +290,19 @@ export default function ImageUploadDialog({ setUploadURL, setUploadVideo, aspect
           htmlFor="image-upload-input"
           className={`group relative flex min-h-[280px] cursor-pointer flex-col overflow-hidden rounded-[24px] border p-5 transition-all ${dropZoneClass}`}
         >
-          <div className="pointer-events-none absolute inset-0 opacity-80">
-            <div className={`absolute left-4 top-4 h-24 w-24 rounded-full blur-3xl ${isDark ? 'bg-rose-500/20' : 'bg-rose-200/70'}`} />
-            <div className={`absolute bottom-0 right-2 h-28 w-28 rounded-full blur-3xl ${isDark ? 'bg-cyan-500/10' : 'bg-cyan-100/80'}`} />
-          </div>
+          {!isDark && (
+            <div className="pointer-events-none absolute inset-0 opacity-80">
+              <div className="absolute left-4 top-4 h-24 w-24 rounded-full bg-rose-200/70 blur-3xl" />
+              <div className="absolute bottom-0 right-2 h-28 w-28 rounded-full bg-cyan-100/80 blur-3xl" />
+            </div>
+          )}
 
           <div className="relative z-10 flex h-full flex-col justify-between">
             <div className="flex items-start justify-between gap-4">
               <div className={`flex h-14 w-14 items-center justify-center rounded-2xl text-lg font-semibold ${isDark ? 'bg-white/10 text-white' : 'bg-white text-slate-800 shadow-sm'}`}>
                 {supportsVideoUpload ? 'IV' : 'IM'}
               </div>
-              <div className={`rounded-full px-3 py-1 text-[11px] uppercase tracking-[0.24em] ${isDark ? 'bg-[#111a2f] text-slate-300' : 'bg-white text-slate-600 shadow-sm'}`}>
+              <div className={`rounded-full px-3 py-1 text-[11px] uppercase tracking-[0.24em] ${isDark ? 'bg-[#20232e] text-slate-300' : 'bg-white text-slate-600 shadow-sm'}`}>
                 {isDragging ? 'Drop now' : 'Click or drag'}
               </div>
             </div>
@@ -317,15 +319,15 @@ export default function ImageUploadDialog({ setUploadURL, setUploadVideo, aspect
             </div>
 
             <div className="mt-8 flex flex-wrap gap-2">
-              <div className={`rounded-full px-3 py-1 text-[11px] ${isDark ? 'bg-[#111a2f]/92 text-slate-300' : 'bg-white/90 text-slate-600 shadow-sm'}`}>
+              <div className={`rounded-full px-3 py-1 text-[11px] ${isDark ? 'bg-[#20232e]/92 text-slate-300' : 'bg-white/90 text-slate-600 shadow-sm'}`}>
                 Multi-image
               </div>
               {supportsVideoUpload && (
                 <>
-                  <div className={`rounded-full px-3 py-1 text-[11px] ${isDark ? 'bg-[#111a2f]/92 text-slate-300' : 'bg-white/90 text-slate-600 shadow-sm'}`}>
+                  <div className={`rounded-full px-3 py-1 text-[11px] ${isDark ? 'bg-[#20232e]/92 text-slate-300' : 'bg-white/90 text-slate-600 shadow-sm'}`}>
                     5 min max
                   </div>
-                  <div className={`rounded-full px-3 py-1 text-[11px] ${isDark ? 'bg-[#111a2f]/92 text-slate-300' : 'bg-white/90 text-slate-600 shadow-sm'}`}>
+                  <div className={`rounded-full px-3 py-1 text-[11px] ${isDark ? 'bg-[#20232e]/92 text-slate-300' : 'bg-white/90 text-slate-600 shadow-sm'}`}>
                     2 GB
                   </div>
                 </>
@@ -357,7 +359,7 @@ export default function ImageUploadDialog({ setUploadURL, setUploadVideo, aspect
                 {images.slice(0, 6).map((previewUrl, index) => (
                   <div
                     key={`${previewUrl}-${index}`}
-                    className={`overflow-hidden rounded-2xl ${isDark ? 'border border-[#22314b] bg-[#0b1322]' : 'border border-slate-200 bg-white'} shadow-sm`}
+                    className={`overflow-hidden rounded-2xl ${isDark ? 'border border-[#3a4050] bg-[#151720]' : 'border border-slate-200 bg-white'} shadow-sm`}
                   >
                     <img
                       src={previewUrl}
@@ -367,7 +369,7 @@ export default function ImageUploadDialog({ setUploadURL, setUploadVideo, aspect
                   </div>
                 ))}
                 {images.length > 6 && (
-                  <div className={`flex h-20 w-20 items-center justify-center rounded-2xl text-xs font-medium ${isDark ? 'border border-[#22314b] bg-[#0b1322] text-slate-300' : 'border border-slate-200 bg-white text-slate-600'}`}>
+                  <div className={`flex h-20 w-20 items-center justify-center rounded-2xl text-xs font-medium ${isDark ? 'border border-[#3a4050] bg-[#151720] text-slate-300' : 'border border-slate-200 bg-white text-slate-600'}`}>
                     +{images.length - 6}
                   </div>
                 )}
@@ -375,7 +377,7 @@ export default function ImageUploadDialog({ setUploadURL, setUploadVideo, aspect
             )}
 
             {!images.length && videoPreviewName && (
-              <div className={`mt-4 rounded-2xl px-4 py-4 text-sm ${isDark ? 'bg-[#0b1322] text-slate-200 border border-[#22314b]' : 'bg-white text-slate-700 border border-slate-200'} shadow-sm`}>
+              <div className={`mt-4 rounded-2xl px-4 py-4 text-sm ${isDark ? 'bg-[#151720] text-slate-200 border border-[#3a4050]' : 'bg-white text-slate-700 border border-slate-200'} shadow-sm`}>
                 <div className="break-all font-medium">{videoPreviewName}</div>
               </div>
             )}
@@ -392,7 +394,7 @@ export default function ImageUploadDialog({ setUploadURL, setUploadVideo, aspect
       {isProcessing && (
         <div
           className={`absolute inset-0 z-20 flex items-center justify-center rounded-[28px] ${
-            isDark ? 'bg-[#09101d]/78 backdrop-blur-sm' : 'bg-white/72 backdrop-blur-sm'
+            isDark ? 'bg-[#0c0d12]/80 backdrop-blur-sm' : 'bg-white/72 backdrop-blur-sm'
           }`}
         >
           <MinimalTaskSkeleton

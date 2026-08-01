@@ -19,12 +19,23 @@ On Windows, use either native launcher:
 setup.cmd
 ```
 
-The launcher installs Docker CE, Buildx, and Compose automatically on
-supported Linux distributions when Docker is missing. The Windows launcher
-can install Docker Desktop through `winget`; the macOS launcher can install
-Docker Desktop through Homebrew. Set `SAMSAR_SETUP_INSTALL_DOCKER=0` to
-disable automatic Docker installation. `npm run setup-wizard` remains an
-optional developer alias.
+The launcher requires Docker Engine 20.10.0+, Docker Compose 2.20.0+, and
+Buildx on native Linux, and Docker Desktop 4.84.0+ on macOS and Windows.
+Missing installations receive current packages. When an existing installation
+is below those compatibility floors, the launcher attempts an in-place update
+through Docker Desktop, Homebrew, `winget`, or the existing Linux package
+channel, as appropriate. It never changes the package family of an existing
+Linux installation. macOS 4.84.0 includes the wake-from-sleep VM and VM-wake
+API fixes that motivated the Desktop floor; Windows uses the same floor for a
+consistent Desktop lifecycle. Set `SAMSAR_SETUP_INSTALL_DOCKER=0` to disable
+automatic installation and updates; the launcher then prints a manual update
+instruction for an incompatible installation.
+Arch users are asked before the required full `pacman -Syu` transaction. WSL
+uses Docker Desktop's Windows integration and does not install a second Engine
+inside the distribution.
+The Linux values are functional compatibility floors; keep Docker on a
+current, vendor-supported patch release.
+`npm run setup-wizard` remains an optional developer alias.
 
 The command prints setup wizard URLs for localhost and detected private IPs,
 and prints a public-IP setup URL only when TCP `8089` responds on that public
@@ -43,6 +54,8 @@ access. Set `SAMSAR_SETUP_OPEN_BROWSER=0` to skip browser auto-open.
 | 5 | Admin | Organization name and admin/login details | Initial local setup/admin state. |
 
 ## Provider Logic
+
+At the top of Providers, **Enter values** remains the default and shows the existing credential fields. **Bash environment** switches those fields to variable references such as `$OPENAI_API_KEY` or `${OPENAI_API_KEY}`. The launcher forwards the standard provider variable names into the isolated setup service; the service resolves and validates them without returning raw values to the browser. To use a custom exported name, include it in `SAMSAR_SETUP_PROVIDER_ENV_NAMES` before launching, for example `SAMSAR_SETUP_PROVIDER_ENV_NAMES=LIVE_DEMO_KEY ./setup.sh`, then enter `$LIVE_DEMO_KEY` for the matching provider.
 
 The wizard presents three provider groups:
 

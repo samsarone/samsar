@@ -189,19 +189,19 @@ function EditImageProjectDialogContent({
 
   const dialogSurface =
     colorMode === 'dark'
-      ? 'bg-[#0f172a] text-slate-100 border border-[#1f2a3d]'
+      ? 'bg-[#181b24] text-slate-100 border border-[#3a4050]'
       : 'bg-white text-slate-900 border border-slate-200';
   const dialogInputSurface =
     colorMode === 'dark'
-      ? 'bg-slate-900 border-slate-700 text-slate-100'
+      ? 'bg-[#151720] border-[#667188] text-slate-100 focus:border-[#f6c453] focus:ring-[#f6c453]/30'
       : 'bg-white border-slate-300 text-slate-900';
   const dialogSecondaryButton =
     colorMode === 'dark'
-      ? 'bg-[#17253f] text-slate-100 hover:bg-[#1c3153]'
+      ? 'border border-[#3a4050] bg-[#20232e] text-slate-100 hover:bg-[#292d3a]'
       : 'bg-slate-100 text-slate-800 hover:bg-white';
   const dialogPrimaryButton =
     colorMode === 'dark'
-      ? 'bg-rose-500 text-white hover:bg-rose-400'
+      ? 'bg-[#ff4655] text-white hover:bg-[#ff6470]'
       : 'bg-rose-500 text-white hover:bg-rose-600';
   const dialogSubtleText = colorMode === 'dark' ? 'text-slate-300' : 'text-slate-600';
 
@@ -258,7 +258,7 @@ function EditImageProjectDialogContent({
                   step="1"
                   value={customCanvasWidth}
                   onChange={(event) => setCustomCanvasWidth(event.target.value)}
-                  className={`w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/40 ${dialogInputSurface}`}
+                  className={`w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2 ${dialogInputSurface}`}
                 />
               </div>
 
@@ -274,7 +274,7 @@ function EditImageProjectDialogContent({
                   step="1"
                   value={customCanvasHeight}
                   onChange={(event) => setCustomCanvasHeight(event.target.value)}
-                  className={`w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/40 ${dialogInputSurface}`}
+                  className={`w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2 ${dialogInputSurface}`}
                 />
               </div>
             </div>
@@ -2057,12 +2057,12 @@ export default function ImageStudioHome() {
     const canvasInternalLoading = isGenerationPending || isOutpaintPending;
     const canvasSurface =
       colorMode === 'dark'
-        ? 'bg-[#0f1629] border border-[#1f2a3d] shadow-[0_16px_36px_rgba(57,217,129,0.12)]'
+        ? 'bg-[#181b24] border border-[#3a4050] shadow-[0_16px_36px_rgba(0,0,0,0.28)]'
         : 'bg-[#f1f5f9] border border-slate-300';
     const canvasDropSurfaceHighlight = isCanvasDragActive
       ? colorMode === 'dark'
-        ? 'ring-2 ring-[#46bfff] bg-[#13203a]'
-        : 'ring-2 ring-rose-400 bg-rose-50'
+        ? '!border-[#f6c453] bg-[#f6c453]/10 shadow-[0_0_24px_rgba(246,196,83,0.12)]'
+        : '!border-rose-400 bg-rose-50 shadow-[0_0_18px_rgba(244,63,94,0.10)]'
       : '';
     const shouldScaleCanvas = !isCanvasManualZoom && canvasDisplayScale < 0.999;
     const scaledCanvasWrapperStyle =
@@ -2100,7 +2100,13 @@ export default function ImageStudioHome() {
               </div>
             )}
             {isCanvasDragActive && !isCanvasDropProcessing && (
-              <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-xl border-2 border-dashed border-rose-400/70 bg-rose-400/10 text-sm font-medium text-rose-500">
+              <div
+                className={`pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-xl border-2 border-dashed text-sm font-medium ${
+                  colorMode === 'dark'
+                    ? 'border-[#f6c453]/70 bg-[#f6c453]/10 text-[#ffe0a3]'
+                    : 'border-rose-400/70 bg-rose-400/10 text-rose-500'
+                }`}
+              >
                 Drop image to upload
               </div>
             )}
@@ -2195,11 +2201,11 @@ export default function ImageStudioHome() {
 
   const mainWorkspaceShell =
     colorMode === 'dark'
-      ? 'bg-[#0b1021] text-slate-100'
+      ? 'bg-[#0c0d12] text-slate-100'
       : 'bg-gradient-to-br from-[#e9edf7] via-[#eef3fb] to-white text-slate-900';
   const toolbarShell =
     colorMode === 'dark'
-      ? 'bg-[#0f1629] border-l border-[#1f2a3d] shadow-[0_1px_0_rgba(255,255,255,0.04)]'
+      ? 'bg-[#181b24] border-l border-[#3a4050] shadow-[0_1px_0_rgba(255,255,255,0.04)]'
       : 'bg-white border-l border-slate-200';
   const imageStudioRightPanelWidth = 'clamp(360px, 24vw, 460px)';
   const canvasViewportLayout = isCanvasStudioDisplay
