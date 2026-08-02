@@ -29,6 +29,14 @@ jobs:
         with:
           node-version: 20
 
+      - name: Install UI test dependencies
+        run: |
+          mkdir -p "$RUNNER_TEMP/samsar-client-deps"
+          cp apps/samsar-client/package.json apps/samsar-client/yarn.lock "$RUNNER_TEMP/samsar-client-deps/"
+          yarn --cwd "$RUNNER_TEMP/samsar-client-deps" install --frozen-lockfile --non-interactive
+          ln -s "$RUNNER_TEMP/samsar-client-deps/node_modules" apps/samsar-client/node_modules
+          npm ci --prefix apps/setup-wizard --no-audit --no-fund
+
       - name: Run tests
         run: npm run test:ci
 
