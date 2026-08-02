@@ -24,6 +24,7 @@ const PROCESSOR_SERVER = import.meta.env.VITE_PROCESSOR_API;
 
 export const AUTH_DIALOG_OPTIONS = {
   surface: 'auth',
+  transparentShell: true,
   fullBleed: true,
   centerContent: true,
   hideBorder: true,

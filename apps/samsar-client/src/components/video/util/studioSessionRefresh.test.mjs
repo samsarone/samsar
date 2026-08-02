@@ -86,3 +86,15 @@ test('a refresh takes ownership once it includes the newly inserted layer', () =
   assert.equal(result.layers, incomingLayers);
   assert.equal(result.currentLayer.imageSession.activeItemList[0].src, '/inserted-refreshed.png');
 });
+
+test('a refresh restores a selected layer after the session was temporarily empty', () => {
+  const result = resolveStudioSessionRefresh({
+    previousSessionDetails: { layers: [] },
+    incomingSessionDetails: { layers: [imageLayer('restored', '/restored.png')] },
+    currentLayerId: null,
+    selectedLayerIndex: 0,
+  });
+
+  assert.equal(result.currentLayer._id, 'restored');
+  assert.equal(result.currentLayerIndex, 0);
+});

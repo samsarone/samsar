@@ -1,6 +1,10 @@
 // uploadImageToCDN.js
 
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
+import {
+  createBackblazeNativeClientFromEnv,
+  shouldUseBackblazeNativeApi,
+} from '@samsar/backblaze-native-client';
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
@@ -113,7 +117,19 @@ function normalizeObjectKey(key) {
   }
   if (/^https?:\/\//i.test(rawKey)) {
     try {
-      return decodeURIComponent(new URL(rawKey).pathname).replace(/^\/+/, '');
+      const parsedUrl = new URL(rawKey);
+      let objectKey = decodeURIComponent(parsedUrl.pathname).replace(/^\/+/, '');
+      const configuredCdnUrl = new URL(process.env.STATIC_CDN_URL || STATIC_CDN_URL);
+      const configuredBasePath = decodeURIComponent(configuredCdnUrl.pathname)
+        .replace(/^\/+|\/+$/g, '');
+      if (
+        configuredBasePath &&
+        parsedUrl.origin === configuredCdnUrl.origin &&
+        (objectKey === configuredBasePath || objectKey.startsWith(`${configuredBasePath}/`))
+      ) {
+        objectKey = objectKey.slice(configuredBasePath.length).replace(/^\/+/, '');
+      }
+      return objectKey;
     } catch {
       return rawKey.replace(/^https?:\/\/[^/]+/i, '').replace(/^\/+/, '');
     }
@@ -253,6 +269,9 @@ function getS3EndpointOptions() {
  * if the body cannot be re-sent. We will implement manual retries below.
  */
 function initializeS3Client() {
+  if (shouldUseBackblazeNativeApi()) {
+    return createBackblazeNativeClientFromEnv();
+  }
   return new S3Client({
     region: AWS_REGION,
     credentials: {

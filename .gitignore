@@ -8,6 +8,10 @@
 **/.next/
 **/coverage/
 **/.cache/
+**/.pytest_cache/
+**/__pycache__/
+**/*.py[cod]
+**/.venv/
 **/*.tsbuildinfo
 
 # env and secrets
@@ -53,6 +57,8 @@ services/*/Dockerfile
 services/*/.dockerignore
 !services/docker-cleanup/Dockerfile
 !services/docker-cleanup/.dockerignore
+!services/genblaze-gateway/Dockerfile
+!services/genblaze-gateway/.dockerignore
 services/processor/scripts/check_production_session_state.js
 services/processor/scripts/cleanup_s3_resources.js
 services/processor/scripts/cleanup_static_temp_assets.sh

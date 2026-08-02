@@ -75,7 +75,9 @@ export default function OverlayPromptGenerator(props) {
     colorMode === "dark"
       ? "text-xs font-semibold text-slate-200"
       : "text-xs font-semibold text-slate-700";
-  const controlGroupClassName = isImageStudioPrompt
+  const controlGroupClassName = isPortraitLayout && !isImageStudioPrompt
+    ? "flex w-full min-w-0 flex-col items-stretch gap-1.5"
+    : isImageStudioPrompt
     ? "flex w-full min-w-0 items-center gap-4"
     : "flex w-full min-w-0 items-center gap-3";
   const topControlRowClassName = isPortraitLayout
@@ -111,7 +113,11 @@ export default function OverlayPromptGenerator(props) {
     colorMode === "dark"
       ? "border-[#f6c453] bg-[#f6c453] text-[#101117]"
       : "border-slate-400 bg-slate-900 text-white";
-  const inputPaddingClass = isImageStudioPrompt ? "rounded-xl px-4 py-3 text-sm" : "rounded-md px-2.5 py-2";
+  const inputPaddingClass = isImageStudioPrompt
+    ? "rounded-xl px-4 py-3 text-sm"
+    : isPortraitLayout
+    ? "rounded-lg px-3 py-2.5 text-sm"
+    : "rounded-md px-2.5 py-2";
   const labelClassName = isImageStudioPrompt
     ? colorMode === "dark"
       ? "text-sm font-semibold text-slate-100"
@@ -123,7 +129,7 @@ export default function OverlayPromptGenerator(props) {
   const promptTextareaMaxRows = isImageStudioPrompt
     ? 7
     : isPortraitLayout
-    ? 5
+    ? 4
     : 4;
 
   useEffect(() => {
@@ -221,7 +227,7 @@ export default function OverlayPromptGenerator(props) {
   ) : null;
 
   return (
-    <div className="flex min-h-0 w-full flex-col gap-3">
+    <div className="flex h-full min-h-full w-full flex-col gap-2 pb-0.5">
       <div className={`shrink-0 ${topControlRowClassName}`}>
         <div className={selectControlGroupClassName}>
           <div
@@ -347,8 +353,8 @@ export default function OverlayPromptGenerator(props) {
       <TextareaAutosize
         onChange={(event) => setPromptText(event.target.value)}
         placeholder="Describe your prompt to generate an image"
-        className={`${textareaShell} min-h-0 w-full resize-none overflow-y-auto ${isImageStudioPrompt ? "rounded-2xl px-4 py-3.5 text-sm leading-6" : "rounded-lg px-3 py-2"}`}
-        minRows={isImageStudioPrompt ? 4 : isPortraitLayout ? 3 : 2}
+        className={`${textareaShell} min-h-[5rem] w-full flex-1 resize-none overflow-y-auto ${isImageStudioPrompt ? "rounded-2xl px-4 py-3.5 text-sm leading-6" : "rounded-lg px-3 py-2"}`}
+        minRows={isImageStudioPrompt ? 4 : isPortraitLayout ? 2 : 2}
         maxRows={promptTextareaMaxRows}
         value={promptText}
       />

@@ -287,7 +287,7 @@ async function getExternalAudioStatus(requestId) {
   return response.data;
 }
 
-async function retryOrFailAudioGeneration(payload, errorMessage) {
+export async function retryOrFailAudioGeneration(payload, errorMessage) {
   const currentRetries = Number.isFinite(Number(payload?.numRetries))
     ? Number(payload.numRetries)
     : 0;
@@ -298,6 +298,10 @@ async function retryOrFailAudioGeneration(payload, errorMessage) {
       status: 'INIT',
       generationId: null,
       apiRequestId: null,
+      genblazeRequestId: null,
+      genblazeModel: null,
+      audioAdapterProvider: null,
+      externalProvider: null,
       externalAudioError: errorMessage || null,
       rowLocked: false,
     };
@@ -332,7 +336,7 @@ async function getDurationSeconds(filePath) {
   return format.duration;
 }
 
-async function finalizeExternalSpeechGeneration(payload, remoteAudioUrl) {
+export async function finalizeExternalSpeechGeneration(payload, remoteAudioUrl) {
   const { sessionId, audioLayerId, _id } = payload;
   const audioFileBase = path.join('video', 'audio', sessionId, audioLayerId, 'speech.mp3');
   const audioAssetPath = toAssetsV2RelativePath(audioFileBase);

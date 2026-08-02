@@ -10,6 +10,10 @@ import {
   GetBucketLocationCommand,
   GetObjectCommand,
 } from '@aws-sdk/client-s3';
+import {
+  createBackblazeNativeClientFromEnv,
+  shouldUseBackblazeNativeApi,
+} from '@samsar/backblaze-native-client';
 import fs from 'fs';
 import crypto from 'crypto';
 import path from 'path';
@@ -86,7 +90,9 @@ const resolveBucketRegion = () => (
 );
 const resolveS3Endpoint = () => process.env.S3_ENDPOINT || process.env.AWS_S3_ENDPOINT || '';
 const isTruthyEnv = (value) => ['1', 'true', 'yes', 'on'].includes(String(value || '').trim().toLowerCase());
+const isFalseyEnv = (value) => ['0', 'false', 'no', 'off'].includes(String(value || '').trim().toLowerCase());
 const shouldForceS3PathStyle = () => isTruthyEnv(process.env.S3_FORCE_PATH_STYLE || process.env.AWS_S3_FORCE_PATH_STYLE);
+const shouldUseS3ObjectTagging = () => !isFalseyEnv(process.env.SAMSAR_S3_OBJECT_TAGGING_SUPPORTED);
 const getS3EndpointOptions = () => {
   const options = {};
   const endpoint = resolveS3Endpoint();
@@ -101,7 +107,8 @@ const getS3EndpointOptions = () => {
 
 const getS3ClientForRegion = (region) => {
   const resolvedRegion = region || resolveBucketRegion();
-  const cacheKey = `${resolvedRegion}:${resolveS3Endpoint()}:${shouldForceS3PathStyle()}`;
+  const useBackblazeNativeApi = shouldUseBackblazeNativeApi();
+  const cacheKey = `${resolvedRegion}:${resolveS3Endpoint()}:${shouldForceS3PathStyle()}:${useBackblazeNativeApi ? 'backblaze-native' : 's3'}`;
   if (s3ClientCache.has(cacheKey)) {
     return s3ClientCache.get(cacheKey);
   }
@@ -116,14 +123,16 @@ const getS3ClientForRegion = (region) => {
     throw new Error('Missing AWS_SECRET_ACCESS_KEY environment variable.');
   }
 
-  const client = new S3Client({
-    region: resolvedRegion,
-    credentials: {
-      accessKeyId,
-      secretAccessKey,
-    },
-    ...getS3EndpointOptions(),
-  });
+  const client = useBackblazeNativeApi
+    ? createBackblazeNativeClientFromEnv(process.env, { region: resolvedRegion })
+    : new S3Client({
+      region: resolvedRegion,
+      credentials: {
+        accessKeyId,
+        secretAccessKey,
+      },
+      ...getS3EndpointOptions(),
+    });
   s3ClientCache.set(cacheKey, client);
   cachedS3Client = client;
   cachedS3Region = resolvedRegion;
@@ -327,7 +336,19 @@ function normalizeObjectKey(key) {
   }
   if (/^https?:\/\//i.test(rawKey)) {
     try {
-      return decodeURIComponent(new URL(rawKey).pathname).replace(/^\/+/, '');
+      const parsedUrl = new URL(rawKey);
+      let objectKey = decodeURIComponent(parsedUrl.pathname).replace(/^\/+/, '');
+      const configuredCdnUrl = new URL(process.env.STATIC_CDN_URL || STATIC_CDN_URL);
+      const configuredBasePath = decodeURIComponent(configuredCdnUrl.pathname)
+        .replace(/^\/+|\/+$/g, '');
+      if (
+        configuredBasePath &&
+        parsedUrl.origin === configuredCdnUrl.origin &&
+        (objectKey === configuredBasePath || objectKey.startsWith(`${configuredBasePath}/`))
+      ) {
+        objectKey = objectKey.slice(configuredBasePath.length).replace(/^\/+/, '');
+      }
+      return objectKey;
     } catch {
       return rawKey.replace(/^https?:\/\/[^/]+/i, '').replace(/^\/+/, '');
     }
@@ -684,7 +705,9 @@ export async function uploadImageDataUrlToCDN(imageDataUrl, imageName, options =
         ...(uploadParams.Metadata || {}),
         expires_at: expiresAt.toISOString(),
       };
-      uploadParams.Tagging = `ttl_seconds=${encodeURIComponent(String(ttlSeconds))}`;
+      if (shouldUseS3ObjectTagging()) {
+        uploadParams.Tagging = `ttl_seconds=${encodeURIComponent(String(ttlSeconds))}`;
+      }
     }
 
     await s3.send(new PutObjectCommand(uploadParams));
@@ -741,7 +764,9 @@ export async function uploadImageBufferToCDN(buffer, imageName, contentType = 'i
     uploadParams.Metadata = {
       expires_at: expiresAt.toISOString(),
     };
-    uploadParams.Tagging = `ttl_seconds=${encodeURIComponent(String(ttlSeconds))}`;
+    if (shouldUseS3ObjectTagging()) {
+      uploadParams.Tagging = `ttl_seconds=${encodeURIComponent(String(ttlSeconds))}`;
+    }
   }
 
   try {
@@ -1125,5 +1150,6 @@ export async function deleteObjectsWithPrefix({ bucketName, prefix }) {
 export const __testOnly__ = {
   buildMediaDeliveryUrl,
   getExplicitDockerExternalMediaConfig,
+  shouldUseS3ObjectTagging,
   shouldUseDockerLocalMedia,
 };

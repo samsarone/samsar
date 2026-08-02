@@ -31,6 +31,7 @@ export default function VideoCanvasOverlay(props) {
     currentLayer,
     sessionDetails,
     editorVariant = "videoStudio",
+    maxContentHeight,
   } = props;
 
   const { colorMode } = useColorMode();
@@ -46,26 +47,28 @@ export default function VideoCanvasOverlay(props) {
     : isLandscapeCanvas
     ? "landscape"
     : "square";
-  const baseVideoOverlayCardWidth = isLandscapeCanvas
-    ? Math.min(680, Math.max(460, canvasWidth * 0.62))
+  const overlayCardWidth = isLandscapeCanvas
+    ? Math.min(760, Math.max(560, canvasWidth * 0.68))
     : isPortraitCanvas
-    ? Math.min(420, Math.max(300, canvasWidth * 0.82))
-    : Math.min(520, Math.max(360, canvasWidth * 0.72));
-  const overlayCardWidth = isImageStudioOverlay
-    ? isLandscapeCanvas
-      ? Math.min(760, Math.max(560, canvasWidth * 0.68))
-      : isPortraitCanvas
-      ? Math.min(560, Math.max(360, canvasWidth * 0.96))
-      : Math.min(660, Math.max(420, canvasWidth * 0.9))
-    : Math.max(280, Math.round(baseVideoOverlayCardWidth * 0.67));
+    ? Math.min(560, Math.max(360, canvasWidth * 0.96))
+    : Math.min(660, Math.max(420, canvasWidth * 0.9));
   const imageStudioTopOffset = isPortraitCanvas
     ? Math.min(140, Math.max(36, canvasHeight * 0.18))
     : isLandscapeCanvas
     ? Math.min(100, Math.max(24, canvasHeight * 0.13))
     : Math.min(120, Math.max(30, canvasHeight * 0.16));
-  const overlayCardMaxHeight = isImageStudioOverlay
-    ? `calc(100% - ${imageStudioTopOffset + 16}px)`
-    : "calc(100% - 24px)";
+  const overlayCardMaxHeight = `calc(100% - ${imageStudioTopOffset + 16}px)`;
+  const videoStudioPanelWidth = isLandscapeCanvas
+    ? Math.min(560, Math.max(400, canvasWidth * 0.6))
+    : Math.min(480, Math.max(360, canvasWidth * 0.84));
+  const availableVideoStudioPanelHeight = Number.isFinite(maxContentHeight)
+    ? maxContentHeight
+    : Math.max(0, canvasHeight - 24);
+  const videoStudioPanelMaxHeight = isPortraitCanvas
+    ? availableVideoStudioPanelHeight
+    : isLandscapeCanvas
+    ? Math.min(320, availableVideoStudioPanelHeight, Math.max(0, canvasHeight - 24))
+    : Math.min(420, availableVideoStudioPanelHeight, Math.max(0, canvasHeight - 24));
 
   const [selectedTab, setSelectedTab] = useState(activeTab || "image");
 
@@ -112,6 +115,10 @@ export default function VideoCanvasOverlay(props) {
       colorMode === "dark"
         ? "bg-[#181b24] text-slate-100 border border-[#3a4050] shadow-[0_28px_70px_rgba(0,0,0,0.46)]"
         : "bg-white text-slate-900 border border-slate-200 shadow-[0_24px_60px_rgba(15,23,42,0.18)]";
+    const videoOverlayBackdrop =
+      colorMode === "dark"
+        ? "bg-[#181b24] text-slate-100"
+        : "bg-white text-slate-900";
     const tabBase =
       colorMode === "dark"
         ? "bg-[#20232e] text-slate-300 border border-[#4a5265] hover:bg-[#292d3a] hover:text-white"
@@ -127,7 +134,9 @@ export default function VideoCanvasOverlay(props) {
     const subText = colorMode === "dark" ? "text-slate-300" : "text-slate-600";
     const headerTextLayout = isImageStudioOverlay
       ? "min-w-0 flex flex-wrap items-baseline gap-x-2 gap-y-1"
-      : "min-w-0 flex flex-col gap-1";
+      : isPortraitCanvas
+      ? "min-w-0 flex flex-col gap-0.5"
+      : "min-w-0 flex flex-wrap items-baseline gap-x-2 gap-y-0.5";
     const overlayTitle = isImageStudioOverlay
       ? "Start this canvas"
       : "Start this frame";
@@ -136,20 +145,36 @@ export default function VideoCanvasOverlay(props) {
       : "Generate media directly on canvas";
     return (
       <div
-        className={`absolute inset-0 z-[320] flex justify-center px-3 pb-4 pointer-events-none overflow-visible ${
-          isImageStudioOverlay ? "items-start" : "items-center"
+        data-studio-blank-overlay
+        data-overlay-layout={overlayLayout}
+        className={`absolute inset-0 z-[320] flex justify-center pointer-events-none ${
+          isImageStudioOverlay
+            ? "items-start overflow-visible px-3 pb-4"
+            : `items-start overflow-visible rounded-[inherit] ${videoOverlayBackdrop}`
         }`}
         style={isImageStudioOverlay ? { paddingTop: `${imageStudioTopOffset}px` } : undefined}
       >
         <div
-          className={`pointer-events-auto relative z-[321] flex min-h-0 flex-col ${overlaySurface} ${isImageStudioOverlay ? "rounded-[28px] px-5 py-5" : "rounded-2xl px-4 py-4"}`}
-          style={{
+          data-studio-blank-overlay-content
+          className={`pointer-events-auto relative z-[321] flex min-h-0 flex-col text-left ${
+            isImageStudioOverlay
+              ? `${overlaySurface} rounded-[28px] px-5 py-5`
+              : `sticky top-3 overflow-hidden p-3 ${
+                  isPortraitCanvas ? "h-full w-full" : ""
+                }`
+          }`}
+          style={isImageStudioOverlay ? {
             width: `${overlayCardWidth}px`,
-            maxWidth: isImageStudioOverlay ? "calc(100% - 24px)" : "calc(100% - 32px)",
+            maxWidth: "calc(100% - 24px)",
             maxHeight: overlayCardMaxHeight,
+          } : {
+            width: isPortraitCanvas ? "100%" : `${videoStudioPanelWidth}px`,
+            maxWidth: "calc(100% - 24px)",
+            height: isPortraitCanvas ? "100%" : "auto",
+            maxHeight: `${videoStudioPanelMaxHeight}px`,
           }}
         >
-          <div className={`flex shrink-0 items-start justify-between gap-3 ${isImageStudioOverlay ? "mb-5" : "mb-4"}`}>
+          <div className={`flex shrink-0 items-start justify-between gap-3 ${isImageStudioOverlay ? "mb-5" : "mb-2"}`}>
             <div className={headerTextLayout}>
               <div className={isImageStudioOverlay ? "text-base font-semibold" : "text-sm font-semibold"}>{overlayTitle}</div>
               <div className={`${isImageStudioOverlay ? "text-sm" : "text-xs"} ${subText}`}>
@@ -169,17 +194,17 @@ export default function VideoCanvasOverlay(props) {
           </div>
 
           {!isImageStudioOverlay ? (
-            <div className="mb-4 grid shrink-0 grid-cols-2 gap-2">
+            <div className="mb-2 grid shrink-0 grid-cols-2 gap-2">
               <button
                 type="button"
-                className={`w-full rounded-full px-3 py-2 text-sm font-semibold transition-colors duration-150 ${selectedTab === "image" ? tabActive : tabBase}`}
+                className={`w-full whitespace-nowrap rounded-full px-3 py-2 text-xs font-semibold text-center transition-colors duration-150 ${selectedTab === "image" ? tabActive : tabBase}`}
                 onClick={() => setSelectedTab("image")}
               >
                 Generate Image
               </button>
               <button
                 type="button"
-                className={`w-full rounded-full px-3 py-2 text-sm font-semibold transition-colors duration-150 ${selectedTab === "video" ? tabActive : tabBase}`}
+                className={`w-full whitespace-nowrap rounded-full px-3 py-2 text-xs font-semibold text-center transition-colors duration-150 ${selectedTab === "video" ? tabActive : tabBase}`}
                 onClick={() => setSelectedTab("video")}
               >
                 Generate Video
@@ -187,7 +212,7 @@ export default function VideoCanvasOverlay(props) {
             </div>
           ) : null}
 
-          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pr-1">
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pr-0.5">
             {selectedTab === "image" ? (
               <OverlayPromptGenerator
                 promptText={promptText}
@@ -207,7 +232,7 @@ export default function VideoCanvasOverlay(props) {
                 editorVariant={editorVariant}
               />
             ) : (
-              <div className="w-full">{overlayVidPrompt}</div>
+              <div className="h-full w-full">{overlayVidPrompt}</div>
             )}
           </div>
         </div>

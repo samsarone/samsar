@@ -30,6 +30,13 @@ import {
   isStudioVideoSourceReady,
   shouldSuppressStudioBaseImage,
 } from '../util/studioVideoLayers.mjs';
+import {
+  isBlankStudioCanvas,
+  resolveBlankCanvasOverlayMaxHeight,
+  resolveStudioCanvasLayerKey,
+  shouldRestoreBlankCanvasOverlay,
+  shouldShowBlankCanvasOverlay,
+} from '../util/studioCanvasOverlay.mjs';
 
 
 const FPS = 30;
@@ -156,6 +163,15 @@ const VideoCanvas = forwardRef((props, ref) => {
 
 
   const [showOverlayPromptGenerator, setShowOverlayPromptGenerator] = useState(true);
+  const isBlankCanvas = isBlankStudioCanvas(activeItemList, aiVideoLayer);
+  const canvasLayerKey = resolveStudioCanvasLayerKey(
+    currentLayer,
+    selectedFrameId || sessionId
+  );
+  const previousBlankCanvasStateRef = useRef({
+    isCanvasBlank: isBlankCanvas,
+    layerKey: canvasLayerKey,
+  });
 
 
   const [canvasDimensions, setCanvasDimensions] = useState({ width: 1024, height: 1024 });
@@ -903,15 +919,32 @@ const VideoCanvas = forwardRef((props, ref) => {
   ].includes(overlayView);
 
   useEffect(() => {
+    const previousBlankCanvasState = previousBlankCanvasStateRef.current;
+    if (shouldRestoreBlankCanvasOverlay({
+      isCanvasBlank: isBlankCanvas,
+      wasCanvasBlank: previousBlankCanvasState.isCanvasBlank,
+      layerKey: canvasLayerKey,
+      previousLayerKey: previousBlankCanvasState.layerKey,
+    })) {
+      setShowOverlayPromptGenerator(true);
+    }
+
+    previousBlankCanvasStateRef.current = {
+      isCanvasBlank: isBlankCanvas,
+      layerKey: canvasLayerKey,
+    };
+  }, [canvasLayerKey, isBlankCanvas]);
+
+  useEffect(() => {
     if (
-      !isRightPanelExpanded && (
+      isBlankCanvas && (
       overlayView === CURRENT_TOOLBAR_VIEW.SHOW_GENERATE_DISPLAY ||
       overlayView === CURRENT_TOOLBAR_VIEW.SHOW_GENERATE_VIDEO_DISPLAY
       )
     ) {
       setShowOverlayPromptGenerator(true);
     }
-  }, [overlayView, isRightPanelExpanded]);
+  }, [isBlankCanvas, overlayView]);
   const hasActiveImageInFrame = (() => {
     if (!activeItemList || activeItemList.length === 0) {
       return false;
@@ -928,14 +961,71 @@ const VideoCanvas = forwardRef((props, ref) => {
       ? promptAspectRatio || aspectRatio
       : aspectRatio;
 
+  const isBlankCanvasOverlayVisible = shouldShowBlankCanvasOverlay({
+    isCanvasBlank: isBlankCanvas,
+    isEditImageView,
+    isOverlayOpen: showOverlayPromptGenerator,
+  });
+  const isVideoStudioBlankOverlayVisible =
+    isBlankCanvasOverlayVisible && editorVariant !== "imageStudio";
+  const [blankOverlayMaxHeight, setBlankOverlayMaxHeight] = useState(null);
+
+  useEffect(() => {
+    if (!isVideoStudioBlankOverlayVisible || !canvasFrameRef.current) {
+      setBlankOverlayMaxHeight(null);
+      return undefined;
+    }
+
+    const frameElement = canvasFrameRef.current;
+    let scrollportElement = frameElement.parentElement;
+    while (scrollportElement) {
+      const overflowY = window.getComputedStyle(scrollportElement).overflowY;
+      if (/(auto|scroll|overlay)/.test(overflowY)) {
+        break;
+      }
+      scrollportElement = scrollportElement.parentElement;
+    }
+
+    if (!scrollportElement) {
+      return undefined;
+    }
+
+    const updateOverlayMaxHeight = () => {
+      const frameRect = frameElement.getBoundingClientRect();
+      const scrollportRect = scrollportElement.getBoundingClientRect();
+      const nextMaxHeight = resolveBlankCanvasOverlayMaxHeight({
+        frameTop: frameRect.top,
+        scrollportTop: scrollportRect.top,
+        scrollportBottom: scrollportRect.bottom,
+      });
+      const frameContentMaxHeight = Math.max(
+        0,
+        Math.floor(canvasDimensions.height - 12)
+      );
+      const boundedMaxHeight = Number.isFinite(nextMaxHeight)
+        ? Math.min(nextMaxHeight, frameContentMaxHeight)
+        : nextMaxHeight;
+      setBlankOverlayMaxHeight((currentMaxHeight) => (
+        currentMaxHeight === boundedMaxHeight ? currentMaxHeight : boundedMaxHeight
+      ));
+    };
+
+    updateOverlayMaxHeight();
+    const resizeObserver = new ResizeObserver(updateOverlayMaxHeight);
+    resizeObserver.observe(frameElement);
+    resizeObserver.observe(scrollportElement);
+    scrollportElement.addEventListener('scroll', updateOverlayMaxHeight, { passive: true });
+    window.addEventListener('resize', updateOverlayMaxHeight);
+
+    return () => {
+      resizeObserver.disconnect();
+      scrollportElement.removeEventListener('scroll', updateOverlayMaxHeight);
+      window.removeEventListener('resize', updateOverlayMaxHeight);
+    };
+  }, [canvasDimensions.height, isVideoStudioBlankOverlayVisible]);
+
   let canvasActionOverlay = <span />;
-  if (
-    !isRightPanelExpanded
-    && !isEditImageView
-    && activeItemList.length === 0
-    && !aiVideoLayer
-    && showOverlayPromptGenerator
-  ) {
+  if (isBlankCanvasOverlayVisible) {
 
     canvasActionOverlay = <VideoCanvasOverlay activeItemList={activeItemList}
       currentLayer={currentLayer}
@@ -969,6 +1059,7 @@ const VideoCanvas = forwardRef((props, ref) => {
         setShowOverlayPromptGenerator(false);
       }}
       editorVariant={editorVariant}
+      maxContentHeight={blankOverlayMaxHeight}
 
     />;
 
@@ -1037,7 +1128,8 @@ const VideoCanvas = forwardRef((props, ref) => {
       : `m-auto relative rounded-xl px-4 py-6 ${canvasSurfaceClassName}`;
 
   return (
-    <div className={`${canvasShellClassName} ${textColor} overflow-visible`}
+    <div
+      className={`${canvasShellClassName} ${textColor} overflow-visible`}
       style={{
         display: 'inline-block',
         boxSizing: 'border-box',

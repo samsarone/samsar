@@ -43,6 +43,7 @@ import {
   mergePublishedVideoSessionState,
 } from '../../utils/videoSessionPresentation.mjs';
 import { resolveStudioSessionRefresh } from './util/studioSessionRefresh.mjs';
+import { canRemoveStudioScene } from './util/studioSceneLifecycle.mjs';
 
 
 import FrameToolbarHorizontal from './toolbars/frame_toolbar/FrameToolbarHorizontal.jsx';
@@ -1991,15 +1992,9 @@ export default function VideoHome() {
               setTotalDuration(frameResponse.totalDuration);
             }
 
-            if (currentLayerRef.current?._id) {
-              const refreshedCurrentLayer = newLayers.find(
-                (layer) => layer._id === currentLayerRef.current._id
-              );
-              if (refreshedCurrentLayer) {
-                currentLayerRef.current = refreshedCurrentLayer;
-                setCurrentLayer(refreshedCurrentLayer);
-              }
-            }
+            currentLayerRef.current = refreshedSession.currentLayer;
+            setCurrentLayer(refreshedSession.currentLayer);
+            setSelectedLayerIndex(refreshedSession.currentLayerIndex);
           }
 
           setIsLayerGenerationPending(isGenerationPending);
@@ -3495,12 +3490,20 @@ export default function VideoHome() {
   } // Adjust the delay as needed
 
   const removeSessionLayer = (layerIndex) => {
+    if (!Array.isArray(layers) || !layers[layerIndex]) {
+      return;
+    }
+    if (!canRemoveStudioScene(layers)) {
+      toast.info('A project must keep at least one scene.', {
+        position: 'bottom-center',
+        className: 'custom-toast',
+      });
+      return;
+    }
+
     const headers = getHeaders();
     if (!headers) {
       showLoginDialog();
-      return;
-    }
-    if (!Array.isArray(layers) || !layers[layerIndex]) {
       return;
     }
     setCanvasProcessLoading(true);

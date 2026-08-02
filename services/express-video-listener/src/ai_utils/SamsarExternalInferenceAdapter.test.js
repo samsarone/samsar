@@ -30,9 +30,28 @@ const ENV_KEYS = [
   'SAMSAR_EDITION',
   'SAMSAR_EXTERNAL_INFERENCE_ENABLED',
   'SAMSAR_FORCE_EXTERNAL_INFERENCE',
+  'SAMSAR_GENBLAZE_BASE_URL',
+  'SAMSAR_GENBLAZE_ENABLED',
+  'SAMSAR_GENBLAZE_MODEL_CATALOG_PATH',
   'SAMSAR_MODEL_ADAPTER_PREFERENCES_PATH',
   'SAMSAR_QWEN_OPENROUTER_ONLY',
 ];
+
+function createTestGenblazeCatalog() {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'samsar-genblaze-inference-'));
+  const catalogPath = path.join(directory, 'genblaze-model-catalog.json');
+  fs.writeFileSync(catalogPath, JSON.stringify({
+    version: 1,
+    provider: 'gmicloud',
+    models: {
+      'QWEN3.7': {
+        text: { modelId: 'Qwen/Qwen3.7-Max', operation: 'chat.completions' },
+        vision: { modelId: 'Qwen/Qwen3.7-Plus', operation: 'chat.completions' },
+      },
+    },
+  }));
+  return { catalogPath, directory };
+}
 
 function withEnvironment(overrides, callback) {
   const previous = Object.fromEntries(ENV_KEYS.map((key) => [key, process.env[key]]));
@@ -70,13 +89,27 @@ test('Qwen routing falls back to Samsar in Docker when no Alibaba key exists', (
   });
 });
 
-test('OpenRouter is the Docker fallback for all inference and Qwen vision models', () => {
+test('Qwen uses GMICloud through GenBlaze before OpenRouter', (t) => {
+  const { catalogPath, directory } = createTestGenblazeCatalog();
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  withEnvironment({
+    CURRENT_ENV: 'docker',
+    SAMSAR_GENBLAZE_ENABLED: 'true',
+    SAMSAR_GENBLAZE_MODEL_CATALOG_PATH: catalogPath,
+    OPENROUTER_API_KEY: 'openrouter-key',
+  }, () => {
+    assert.equal(resolveConfiguredInferenceProvider('QWEN3.7'), DOCKER_INFERENCE_PROVIDER.GMICLOUD);
+  });
+});
+
+test('Samsar stays ahead of third-party Qwen adapters in Docker', () => {
   withEnvironment({
     CURRENT_ENV: 'docker',
     OPENROUTER_API_KEY: 'openrouter-key',
     SAMSAR_API_KEY: 'samsar-key',
   }, () => {
-    for (const model of ['QWEN3.7', 'gemini-3.1-pro', 'gpt-5.6-sol']) {
+    assert.equal(resolveConfiguredInferenceProvider('QWEN3.7'), DOCKER_INFERENCE_PROVIDER.SAMSAR);
+    for (const model of ['gemini-3.1-pro', 'gpt-5.6-sol']) {
       assert.equal(resolveConfiguredInferenceProvider(model), DOCKER_INFERENCE_PROVIDER.OPENROUTER);
     }
     assert.equal(getOpenRouterModelForInferenceRequest({

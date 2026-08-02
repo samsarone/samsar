@@ -1,4 +1,4 @@
-import { useState, useContext, createContext, useCallback } from 'react';
+import { useState, useContext, createContext, useCallback, useRef } from 'react';
 import axios from 'axios';
 import { getHeaders, getAuthToken, clearAuthData } from '../utils/web'; // Adjust the path if needed
 
@@ -34,6 +34,7 @@ export const UserProvider = ({ children }) => {
   const [user, setUserState] = useState(null);
   const [userFetching, setUserFetching] = useState(initialAuthState.userFetching);
   const [userInitiated, setUserInitiated] = useState(initialAuthState.userInitiated);
+  const authRequestSequence = useRef(0);
 
   const setUserApi = () => {
     // Placeholder for future use
@@ -46,6 +47,7 @@ export const UserProvider = ({ children }) => {
   const getUser = () => user;
 
   const resetUser = useCallback(() => {
+    authRequestSequence.current += 1;
     setUserState(null);
     clearAuthData();
     setUserFetching(false);
@@ -53,6 +55,8 @@ export const UserProvider = ({ children }) => {
   }, []);
 
   const getUserAPI = useCallback(async () => {
+    const requestSequence = ++authRequestSequence.current;
+    const isLatestRequest = () => authRequestSequence.current === requestSequence;
     const authToken = getAuthToken();
 
     if (!authToken || authToken === 'undefined') {
@@ -69,11 +73,13 @@ export const UserProvider = ({ children }) => {
         ...(authHeaders || {}),
         params: { _: Date.now() },
       });
+      if (!isLatestRequest()) return null;
       const userProfile = res.data;
       setUserState(userProfile);
       setUserInitiated(true);
       return userProfile;
     } catch (error) {
+      if (!isLatestRequest()) return null;
       setUserState(null);
       if ([400, 401, 403].includes(error?.response?.status)) {
         clearAuthData();
@@ -81,7 +87,7 @@ export const UserProvider = ({ children }) => {
       setUserInitiated(true);
       return null;
     } finally {
-      setUserFetching(false);
+      if (isLatestRequest()) setUserFetching(false);
     }
   }, []);
 

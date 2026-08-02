@@ -105,6 +105,24 @@ function prepareDockerMediaFixture({ publicMediaUrl }) {
   };
 }
 
+test('Backblaze path-prefixed public URLs remain idempotent', async () => {
+  const envSnapshot = snapshotEnv();
+  process.env.CURRENT_ENV = 'docker';
+  process.env.SAMSAR_MEDIA_DELIVERY_MODE = 'external-s3';
+  process.env.MEDIA_DELIVERY_MODE = 'external-s3';
+  process.env.SAMSAR_EXTERNAL_MEDIA_PUBLISH_ENABLED = 'true';
+  process.env.MEDIA_BUCKET_NAME = 'my-bucket';
+  process.env.STATIC_CDN_URL = 'https://f000.backblazeb2.com/file/my-bucket/';
+  process.env.PUBLIC_STATIC_CDN_URL = process.env.STATIC_CDN_URL;
+  try {
+    const { buildSecureMediaDeliveryUrl } = await importAwsModule();
+    const publicUrl = 'https://f000.backblazeb2.com/file/my-bucket/assets_v2/session/video.mp4';
+    assert.equal(buildSecureMediaDeliveryUrl(publicUrl), publicUrl);
+  } finally {
+    restoreEnv(envSnapshot);
+  }
+});
+
 test('normalizes Docker local media references to runtime public tunnel URLs', async () => {
   const envSnapshot = snapshotEnv();
   const { tempRoot, mediaRelativePath } = prepareDockerMediaFixture({

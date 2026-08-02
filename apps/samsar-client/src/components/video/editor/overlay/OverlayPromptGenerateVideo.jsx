@@ -73,7 +73,7 @@ export default function OverlayPromptGenerateVideo(props) {
     ? "grid w-full grid-cols-3 gap-3"
     : "flex w-full flex-col gap-3";
   const controlGroupClassName = "flex w-full flex-col gap-1.5";
-  const promptTextareaMaxRows = isPortraitLayout ? 5 : 4;
+  const promptTextareaMaxRows = 4;
 
   const {
     hasImageItem,
@@ -356,7 +356,7 @@ export default function OverlayPromptGenerateVideo(props) {
   ) : null;
 
   return (
-    <div className="flex min-h-0 w-full flex-col gap-3">
+    <div className="flex h-full min-h-full w-full flex-col gap-2 pb-0.5">
       <div className={`shrink-0 ${fieldLayoutClassName}`}>
         <div className={controlGroupClassName}>
           <div className={`${fieldLabelClassName} flex items-center gap-1`}>
@@ -535,8 +535,8 @@ export default function OverlayPromptGenerateVideo(props) {
         <TextareaAutosize
           onChange={(event) => setVideoPromptText(event.target.value)}
           placeholder="Describe the motion, pacing, and cinematic details you want..."
-          className={`${textareaShell} min-h-0 w-full resize-none overflow-y-auto rounded-lg px-3 py-2`}
-          minRows={isPortraitLayout ? 3 : 2}
+          className={`${textareaShell} min-h-[5rem] w-full flex-1 resize-none overflow-y-auto rounded-lg px-3 py-2`}
+          minRows={isPortraitLayout ? 2 : 2}
           maxRows={promptTextareaMaxRows}
           value={videoPromptText}
         />

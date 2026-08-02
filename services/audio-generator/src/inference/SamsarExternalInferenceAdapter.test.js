@@ -36,6 +36,9 @@ const ENV_KEYS = [
   'SAMSAR_EDITION',
   'SAMSAR_EXTERNAL_INFERENCE_ENABLED',
   'SAMSAR_FORCE_EXTERNAL_INFERENCE',
+  'SAMSAR_GENBLAZE_BASE_URL',
+  'SAMSAR_GENBLAZE_ENABLED',
+  'SAMSAR_GENBLAZE_MODEL_CATALOG_PATH',
   'SAMSAR_MODEL_ADAPTER_PREFERENCES_PATH',
   'SAMSAR_QWEN_OPENROUTER_ONLY',
 ];
@@ -52,6 +55,22 @@ function withEnvironment(overrides, callback) {
       else process.env[key] = previous[key];
     }
   }
+}
+
+function createTestGenblazeCatalog() {
+  const directory = mkdtempSync(path.join(os.tmpdir(), 'samsar-genblaze-inference-'));
+  const catalogPath = path.join(directory, 'genblaze-model-catalog.json');
+  writeFileSync(catalogPath, JSON.stringify({
+    version: 1,
+    provider: 'gmicloud',
+    models: {
+      'QWEN3.7': {
+        text: { modelId: 'Qwen/Qwen3.7-Max', operation: 'chat.completions' },
+        vision: { modelId: 'Qwen/Qwen3.7-Plus', operation: 'chat.completions' },
+      },
+    },
+  }));
+  return { catalogPath, directory };
 }
 
 test('Qwen routing prefers native Alibaba credentials', () => {
@@ -74,6 +93,23 @@ test('ALIBABA_API_KEY is detected as native Qwen credentials', () => {
     ALIBABA_API_KEY: 'alibaba-key',
   }, () => {
     assert.equal(shouldUseSamsarExternalInference({ model: 'QWEN3.7' }), false);
+  });
+});
+
+test('Qwen uses GMICloud through GenBlaze before OpenRouter', (t) => {
+  const { catalogPath, directory } = createTestGenblazeCatalog();
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  withEnvironment({
+    CURRENT_ENV: 'docker',
+    SAMSAR_GENBLAZE_ENABLED: 'true',
+    SAMSAR_GENBLAZE_MODEL_CATALOG_PATH: catalogPath,
+    OPENROUTER_API_KEY: 'openrouter-key',
+  }, () => {
+    assert.equal(resolveConfiguredInferenceProvider('QWEN3.7'), DOCKER_INFERENCE_PROVIDER.GMICLOUD);
+    assert.deepEqual(getConfiguredInferenceProviders('QWEN3.7'), [
+      DOCKER_INFERENCE_PROVIDER.GMICLOUD,
+      DOCKER_INFERENCE_PROVIDER.OPENROUTER,
+    ]);
   });
 });
 
@@ -219,13 +255,14 @@ test('Kimi K3 Samsar-js fallback preserves the model and forces high reasoning',
   assert.equal(capturedPayload.reasoning_effort, 'high');
 });
 
-test('OpenRouter is preferred after native credentials and before Samsar for text and vision', () => {
+test('Samsar is preferred ahead of third-party Qwen adapters', () => {
   withEnvironment({
     CURRENT_ENV: 'docker',
     OPENROUTER_API_KEY: 'openrouter-key',
     SAMSAR_API_KEY: 'samsar-key',
   }, () => {
-    for (const model of ['QWEN3.7', 'gemini-3.1-pro', 'gpt-5.6-sol']) {
+    assert.equal(resolveConfiguredInferenceProvider('QWEN3.7'), DOCKER_INFERENCE_PROVIDER.SAMSAR);
+    for (const model of ['gemini-3.1-pro', 'gpt-5.6-sol']) {
       assert.equal(resolveConfiguredInferenceProvider(model), DOCKER_INFERENCE_PROVIDER.OPENROUTER);
     }
     assert.equal(getOpenRouterModelForInferenceRequest({

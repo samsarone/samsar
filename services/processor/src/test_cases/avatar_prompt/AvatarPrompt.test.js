@@ -9,6 +9,75 @@ import { buildAvatarImagePrompt, __testOnly__ } from '../../models/AvatarVoiceov
 import { buildNarratorAvatarImagePrompt } from '../../models/movie_session/image_list_to_video/SessionRequestBuilder.js';
 import { EXPRESS_VIDEO_IMAGE_MODEL_KEYS } from '../../consts/ExpressVideoModelOptions.js';
 
+const AUDIO_AVAILABILITY_ENV_KEYS = [
+  'SAMSAR_DOCKER_AUDIO_PROVIDER_ROUTING_ENABLED',
+  'SAMSAR_AVAILABLE_MODELS_PATH',
+  'SAMSAR_GENBLAZE_ENABLED',
+  'SAMSAR_GENBLAZE_MODEL_CATALOG_PATH',
+  'OPENAI_API_KEY',
+  'FAL_API_KEY',
+  'ELEVENLABS_API_KEY',
+  'ELEVENLABS_API_TOKEN',
+  'SAMSAR_API_KEY',
+  'GOOGLE_APPLICATION_CREDENTIALS_JSON_B64',
+  'GOOGLE_APPLICATION_CREDENTIALS_JSON',
+  'GOOGLE_APPLICATION_CREDENTIALS',
+  'GOOGLE_CLOUD_PROJECT',
+  'GOOGLE_PROJECT_ID',
+  'GCP_PROJECT',
+  'GCLOUD_PROJECT',
+  'PROJECT_ID',
+  'K_SERVICE',
+  'GAE_SERVICE',
+  'FUNCTION_TARGET',
+  'GCE_METADATA_HOST',
+];
+
+function configureIsolatedAvatarAudioAvailability(context, {
+  providers = [],
+  ttsProviders = [],
+  genBlazeModels = null,
+} = {}) {
+  const previousEnvironment = Object.fromEntries(
+    AUDIO_AVAILABILITY_ENV_KEYS.map((key) => [key, process.env[key]]),
+  );
+  const tempDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'avatar-audio-availability-'));
+  const availableModelsPath = path.join(tempDirectory, 'available-models.json');
+  fs.writeFileSync(availableModelsPath, JSON.stringify({
+    providers,
+    models: [],
+    actions: [],
+    audio: {
+      providers,
+      ttsProviders,
+      musicProviders: [],
+      soundEffectProviders: [],
+      source: 'docker-audio-provider-config',
+    },
+  }));
+
+  AUDIO_AVAILABILITY_ENV_KEYS.forEach((key) => delete process.env[key]);
+  process.env.SAMSAR_DOCKER_AUDIO_PROVIDER_ROUTING_ENABLED = 'true';
+  process.env.SAMSAR_AVAILABLE_MODELS_PATH = availableModelsPath;
+  if (genBlazeModels) {
+    const genBlazeCatalogPath = path.join(tempDirectory, 'genblaze-model-catalog.json');
+    fs.writeFileSync(genBlazeCatalogPath, JSON.stringify({
+      version: 1,
+      provider: 'gmicloud',
+      models: genBlazeModels,
+    }));
+    process.env.SAMSAR_GENBLAZE_ENABLED = 'true';
+    process.env.SAMSAR_GENBLAZE_MODEL_CATALOG_PATH = genBlazeCatalogPath;
+  }
+  context.after(() => {
+    for (const key of AUDIO_AVAILABILITY_ENV_KEYS) {
+      if (previousEnvironment[key] === undefined) delete process.env[key];
+      else process.env[key] = previousEnvironment[key];
+    }
+    fs.rmSync(tempDirectory, { recursive: true, force: true });
+  });
+}
+
 test('avatar image model defaults to GPT Image 2', () => {
   assert.equal(__testOnly__.resolveAvatarImageModel({}), 'GPTIMAGE2');
   assert.equal(__testOnly__.resolveAvatarImageModel({ imageModel: '  ' }), 'GPTIMAGE2');
@@ -48,6 +117,93 @@ test('avatar retrieval rebuilds protected image keys through media delivery', ()
 
   assert.equal(serializedTask.avatarImage, 'assets_v2/generations/session_123/avatar.png');
   assert.equal(avatarUrl.pathname, '/assets_v2/generations/session_123/avatar.png');
+});
+
+test('avatar speech rejects unavailable standalone providers before generation is queued', (context) => {
+  configureIsolatedAvatarAudioAvailability(context, {
+    providers: ['gmicloud'],
+    ttsProviders: ['ELEVENLABS'],
+    genBlazeModels: {
+      ELEVENLABS: {
+        audio: {
+          modelId: 'elevenlabs-tts-multilingual-v2',
+          operation: 'audio.generate',
+        },
+      },
+    },
+  });
+
+  assert.doesNotThrow(() => (
+    __testOnly__.assertAvatarSpeechProviderAvailable('ELEVENLABS')
+  ));
+  assert.throws(
+    () => __testOnly__.assertAvatarSpeechProviderAvailable('OPENAI'),
+    (error) => (
+      error?.code === 'DOCKER_AUDIO_PROVIDER_UNAVAILABLE' && error?.status === 400
+    ),
+  );
+});
+
+test('avatar status reports only effective standalone TTS providers', (context) => {
+  configureIsolatedAvatarAudioAvailability(context, {
+    providers: ['gmicloud'],
+    ttsProviders: ['ELEVENLABS'],
+    genBlazeModels: {
+      ELEVENLABS: {
+        audio: {
+          modelId: 'elevenlabs-tts-multilingual-v2',
+          operation: 'audio.generate',
+        },
+      },
+    },
+  });
+
+  const expectedProviders = [
+    { value: 'ELEVENLABS', label: 'ElevenLabs' },
+    { value: 'CUSTOM_TEXT_TO_SPEECH', label: 'Custom TTS' },
+  ];
+  assert.deepEqual(
+    __testOnly__.getAvailableAvatarVoiceoverTTSProviders(),
+    expectedProviders,
+  );
+  assert.deepEqual(
+    __testOnly__.serializeAvatarVoiceoverTask({}).ttsProviders,
+    expectedProviders,
+  );
+});
+
+test('avatar status preserves Fal-backed ElevenLabs and PlayAI providers', (context) => {
+  configureIsolatedAvatarAudioAvailability(context);
+  process.env.FAL_API_KEY = 'configured-fal-key';
+
+  const expectedProviders = [
+    { value: 'ELEVENLABS', label: 'ElevenLabs' },
+    { value: 'PLAYAI', label: 'Play.ht' },
+    { value: 'CUSTOM_TEXT_TO_SPEECH', label: 'Custom TTS' },
+  ];
+  assert.deepEqual(
+    __testOnly__.getAvailableAvatarVoiceoverTTSProviders(),
+    expectedProviders,
+  );
+  assert.doesNotThrow(() => (
+    __testOnly__.assertAvatarSpeechProviderAvailable('PLAYAI')
+  ));
+});
+
+test('avatar status preserves the complete hosted TTS provider list', (context) => {
+  configureIsolatedAvatarAudioAvailability(context);
+  process.env.SAMSAR_DOCKER_AUDIO_PROVIDER_ROUTING_ENABLED = 'false';
+
+  assert.deepEqual(
+    __testOnly__.getAvailableAvatarVoiceoverTTSProviders(),
+    [
+      { value: 'OPENAI', label: 'OpenAI' },
+      { value: 'ELEVENLABS', label: 'ElevenLabs' },
+      { value: 'PLAYAI', label: 'Play.ht' },
+      { value: 'GOOGLE', label: 'Google TTS' },
+      { value: 'CUSTOM_TEXT_TO_SPEECH', label: 'Custom TTS' },
+    ],
+  );
 });
 
 test('avatar retrieval uses the processor route for a mounted protected image', (t) => {

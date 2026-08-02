@@ -33,6 +33,10 @@ import {
   TTS_PROVIDER_GOOGLE,
   TTS_PROVIDER_OPENAI,
 } from '../consts/TTSSpeakers.js';
+import {
+  assertDockerTTSProviderAvailable,
+  isDockerTTSProviderAvailable,
+} from '../consts/DockerAudioAvailability.js';
 import { applyAudioLayerManualVolumeDefaults } from '../utils/AudioVolumeAutomation.js';
 import { extendSessionTimelineToCustomSpeechEnd } from './video/SessionTimelineExtension.js';
 import {
@@ -117,6 +121,17 @@ export const AVATAR_VOICEOVER_TTS_PROVIDERS = [
   { value: TTS_PROVIDER_GOOGLE, label: 'Google TTS' },
   { value: TTS_PROVIDER_CUSTOM_TEXT_TO_SPEECH, label: 'Custom TTS' },
 ];
+
+function getAvailableAvatarVoiceoverTTSProviders() {
+  return AVATAR_VOICEOVER_TTS_PROVIDERS.filter((provider) => (
+    isDockerTTSProviderAvailable(provider.value)
+  ));
+}
+
+function assertAvatarSpeechProviderAvailable(provider) {
+  assertDockerTTSProviderAvailable(provider);
+  return provider;
+}
 
 function wait(milliseconds) {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
@@ -508,7 +523,7 @@ function serializeAvatarVoiceoverTask(task) {
     avatarVideoSpeechAudioPreviewUrl,
     avatarVideoPreviewUrl,
     voices: RUNWAY_AVATAR_VOICE_PRESETS,
-    ttsProviders: AVATAR_VOICEOVER_TTS_PROVIDERS,
+    ttsProviders: getAvailableAvatarVoiceoverTTSProviders(),
   };
 }
 
@@ -1740,21 +1755,23 @@ export async function requestGenerateAvatarSpeechFromHints(userId, payload = {})
     }
   }
 
+  const speechProvider = normalizeSpeechProvider(payload.provider || payload.ttsProvider, payload.speaker);
+  const speechSpeaker = normalizeString(payload.speaker) || normalizeString(payload.speakerVoiceId);
+  if (!speechSpeaker) {
+    throw new Error('Choose a speaker before generating speech from hints.');
+  }
+  assertAvatarSpeechProviderAvailable(speechProvider);
+
   const {
     hints,
     normalizedHintsText,
     spokenScript,
     normalizedHintsAssetPath,
   } = await prepareAvatarHintsForTask(task, userId);
-  const speechProvider = normalizeSpeechProvider(payload.provider || payload.ttsProvider, payload.speaker);
-  const speechSpeaker = normalizeString(payload.speaker) || normalizeString(payload.speakerVoiceId);
   const speechLanguageCode = normalizeString(payload.languageCode || payload.language_code || payload.language);
   const speechLanguageCodes = Array.isArray(payload.languageCodes)
     ? payload.languageCodes.map(normalizeString).filter(Boolean)
     : [];
-  if (!speechSpeaker) {
-    throw new Error('Choose a speaker before generating speech from hints.');
-  }
 
   const speechSpeakerVoiceId = normalizeString(payload.speakerVoiceId) || speechSpeaker;
   const speechSpeakerName = normalizeString(payload.speakerName)
@@ -1818,7 +1835,7 @@ export async function requestGenerateAvatarSpeechFromHints(userId, payload = {})
   return {
     task: serializeAvatarVoiceoverTask(task),
     voices: RUNWAY_AVATAR_VOICE_PRESETS,
-    ttsProviders: AVATAR_VOICEOVER_TTS_PROVIDERS,
+    ttsProviders: getAvailableAvatarVoiceoverTTSProviders(),
   };
 }
 
@@ -2193,6 +2210,8 @@ export async function rejectAvatarVoiceoverTask(userId, payload = {}) {
 }
 
 export const __testOnly__ = {
+  assertAvatarSpeechProviderAvailable,
+  getAvailableAvatarVoiceoverTTSProviders,
   readImageAsDataUri,
   getAvatarAssetsBasePath,
   getAvatarSpeechProviderSource,

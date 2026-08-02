@@ -66,6 +66,8 @@ function shouldUseStandaloneInferenceAdapterFallback(options = {}) {
   }
   const authorization = normalizeAuthorization(options.authorization);
   if (
+    authorization === 'gmicloud' ||
+    authorization === 'genblaze' ||
     authorization === 'openrouter' ||
     ['deployed', 'samsar', 'samsar-api-key', 'samsar-key'].includes(authorization)
   ) {
@@ -92,6 +94,15 @@ function buildProviderPinnedCompletionOptions(options, provider) {
     return {
       ...providerOptions,
       authorization: 'openrouter',
+      bypassSamsarExternalInference: false,
+      samsarExternalInference: true,
+      inferenceAdapterProvider: provider,
+    };
+  }
+  if (provider === DOCKER_INFERENCE_PROVIDER.GMICLOUD) {
+    return {
+      ...providerOptions,
+      authorization: 'gmicloud',
       bypassSamsarExternalInference: false,
       samsarExternalInference: true,
       inferenceAdapterProvider: provider,
@@ -156,6 +167,9 @@ function getInferenceAdapterErrorMetadata(error) {
 
 export function isRetryableInferenceAdapterError(error) {
   const { status, codes, names, message } = getInferenceAdapterErrorMetadata(error);
+  if (codes.includes('GENBLAZE_MODEL_UNSUPPORTED')) {
+    return true;
+  }
   if (status !== null) {
     return status === 401 ||
       status === 403 ||
@@ -273,7 +287,10 @@ export async function sendAssistantCompletionRequest(messageList, inferenceModel
   const completionOptions = normalizeCompletionOptions(options);
   const model = getModelNameForInferenceModel(inferenceModel);
   if (shouldUseStandaloneInferenceAdapterFallback(completionOptions)) {
-    const providers = getConfiguredInferenceProviders(model);
+    const providers = getConfiguredInferenceProviders(model, {
+      ...completionOptions,
+      messages: messageList,
+    });
     if (providers.length > 1) {
       return runInferenceAdapterFallback(
         providers,

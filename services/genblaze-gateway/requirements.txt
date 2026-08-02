@@ -1,0 +1,5 @@
+cryptography==45.0.6
+fastapi==0.116.1
+genblaze-core==0.3.8
+genblaze-gmicloud==0.3.5
+uvicorn==0.35.0

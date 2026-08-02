@@ -34,6 +34,7 @@ function getOpenAIClient() {
 
 function isExternalInferenceProvider(provider) {
   return provider === DOCKER_INFERENCE_PROVIDER.OPENROUTER ||
+    provider === DOCKER_INFERENCE_PROVIDER.GMICLOUD ||
     provider === DOCKER_INFERENCE_PROVIDER.SAMSAR;
 }
 

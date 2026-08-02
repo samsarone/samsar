@@ -39,6 +39,11 @@ import {
   handleSamsarExternalTextToImageRequest,
   shouldUseSamsarExternalImageProvider,
 } from './providers/SamsarExternalImage.js';
+import {
+  handleGenBlazeImageRequest,
+  isGenBlazeImageRequestApplicable,
+  shouldUseGenBlazeImageProvider,
+} from './providers/GenBlazeImage.js';
 
 import { handleNanoBananaFalRequest } from './providers/NanoBanana.js';
 import {
@@ -186,6 +191,9 @@ function normalizeAdapterProvider(value) {
   if (normalized === 'samsar') {
     return DOCKER_ADAPTER_PROVIDER.SAMSAR;
   }
+  if (['gmi', 'gmicloud', 'genblaze'].includes(normalized)) {
+    return DOCKER_ADAPTER_PROVIDER.GMICLOUD;
+  }
   return '';
 }
 
@@ -218,7 +226,46 @@ function getPinnedImageAdapterProvider(payload = {}) {
   if (requestId.startsWith('samsar-external-image:')) {
     return DOCKER_ADAPTER_PROVIDER.SAMSAR;
   }
+  if (requestId.startsWith('genblaze-image:')) {
+    return DOCKER_ADAPTER_PROVIDER.GMICLOUD;
+  }
   return '';
+}
+
+function isImageGenerationProviderApplicable(model, provider, payload = {}) {
+  const normalizedProvider = normalizeAdapterProvider(provider);
+  if (normalizedProvider !== DOCKER_ADAPTER_PROVIDER.GMICLOUD) {
+    return true;
+  }
+  return isGenBlazeImageRequestApplicable({
+    ...payload,
+    model: normalizeString(model).toUpperCase(),
+  });
+}
+
+function resolveNextApplicableImageGenerationProvider(model, currentProvider, payload = {}) {
+  let nextProvider = resolveNextDockerImageGenerationProvider(model, currentProvider);
+  const visitedProviders = new Set();
+  while (
+    nextProvider &&
+    !visitedProviders.has(nextProvider) &&
+    !isImageGenerationProviderApplicable(model, nextProvider, payload)
+  ) {
+    visitedProviders.add(nextProvider);
+    nextProvider = resolveNextDockerImageGenerationProvider(model, nextProvider);
+  }
+  return nextProvider;
+}
+
+function resolveApplicableImageGenerationProvider(model, provider, payload = {}) {
+  if (!provider || isImageGenerationProviderApplicable(model, provider, payload)) {
+    return provider;
+  }
+
+  // Preserve an explicit GMI selection if no exact configured alternative
+  // exists; the gateway then returns its precise contract error rather than
+  // silently changing the requested aspect ratio.
+  return resolveNextApplicableImageGenerationProvider(model, provider, payload) || provider;
 }
 
 function resolveImageProviderForModel(model, payload = {}) {
@@ -228,18 +275,34 @@ function resolveImageProviderForModel(model, payload = {}) {
   }
   const pinnedProvider = getPinnedImageAdapterProvider(payload);
   if (pinnedProvider) {
-    return pinnedProvider;
+    return resolveApplicableImageGenerationProvider(
+      normalizedModel,
+      pinnedProvider,
+      payload,
+    );
   }
   if (normalizedModel === 'WAN2.7PRO') {
-    return resolveWan27ImageGenerationProvider(payload?.externalProvider);
+    return resolveApplicableImageGenerationProvider(
+      normalizedModel,
+      resolveWan27ImageGenerationProvider(payload?.externalProvider),
+      payload,
+    );
   }
   if (normalizedModel === 'GPTIMAGE2') {
-    return resolveGPTImageTwoGenerationProvider(payload?.externalProvider);
+    return resolveApplicableImageGenerationProvider(
+      normalizedModel,
+      resolveGPTImageTwoGenerationProvider(payload?.externalProvider),
+      payload,
+    );
   }
 
   const dockerProvider = resolveDockerImageGenerationProvider(normalizedModel);
   if (dockerProvider) {
-    return dockerProvider;
+    return resolveApplicableImageGenerationProvider(
+      normalizedModel,
+      dockerProvider,
+      payload,
+    );
   }
 
   if (normalizedModel === 'DALLE3' || normalizedModel === 'GPTIMAGE2' || normalizedModel === 'GPTIMAGE1') {
@@ -271,7 +334,7 @@ function getImageGenerationAdapterRetryState(payload = {}, { rotateAdapter = tru
     getPinnedImageAdapterProvider(payload) ||
     resolveImageProviderForModel(model, payload);
   const nextProvider = rotateAdapter
-    ? resolveNextDockerImageGenerationProvider(model, currentProvider)
+    ? resolveNextApplicableImageGenerationProvider(model, currentProvider, payload)
     : '';
   const retryProvider = nextProvider || currentProvider;
 
@@ -311,6 +374,9 @@ function getPinnedImageEditAdapterProvider(payload = {}) {
   }
   if (requestId.startsWith('samsar-external-image:')) {
     return DOCKER_ADAPTER_PROVIDER.SAMSAR;
+  }
+  if (requestId.startsWith('genblaze-image-edit:')) {
+    return DOCKER_ADAPTER_PROVIDER.GMICLOUD;
   }
   return normalizeAdapterProvider(payload?.externalProvider);
 }
@@ -2636,6 +2702,20 @@ async function processPendingGenerationRequet(pendingRequestData) {
     return;
   }
 
+  if (
+    selectedAdapterProvider === DOCKER_ADAPTER_PROVIDER.GMICLOUD &&
+    shouldUseGenBlazeImageProvider(pendingRequestData)
+  ) {
+    await recordImageProviderUsage(pendingRequestData, DOCKER_ADAPTER_PROVIDER.GMICLOUD);
+    const imageData = await handleGenBlazeImageRequest(pendingRequestData);
+    if (imageData?.image) {
+      await updateImageInSessionLayer(imageData, pendingRequestData);
+    } else if (imageData?.error) {
+      await handleNoImageRetryOrFailure(pendingRequestData, imageData);
+    }
+    return;
+  }
+
   await recordImageProviderUsage(
     pendingRequestData,
     resolveImageProviderForModel(model, pendingRequestData)
@@ -4534,20 +4614,25 @@ async function markEditImageAsCompleted(genRowValue, editedImageData) {
 async function markStandaloneEditAsCompleted(genRowValue, editedImageData) {
   const { _id: requestId } = genRowValue;
 
-  const imageName = editedImageData.image;
-  const firstResultUrl = Array.isArray(editedImageData.resultUrls) ? editedImageData.resultUrls[0] : null;
-  const remoteImageUrl = editedImageData.resultUrl || firstResultUrl || `/generations/${imageName}`;
+  const remoteImageUrl = await resolveStandaloneGenerationResultUrl(
+    editedImageData,
+    genRowValue,
+  );
+  const completionUpdate = {
+    editStatus: "COMPLETED",
+    apiEditStatus: "COMPLETED",
+    generationStatus: "COMPLETED",
+    apiGenerationStatus: "COMPLETED",
+    resultUrl: remoteImageUrl,
+    rowLocked: false,
+  };
+  if (isGenBlazeImageCompletion(genRowValue)) {
+    completionUpdate.resultUrls = remoteImageUrl ? [remoteImageUrl] : [];
+  }
 
   await ImageGeneration.updateOne(
     { _id: requestId },
-    {
-      editStatus: "COMPLETED",
-      apiEditStatus: "COMPLETED",
-      generationStatus: "COMPLETED",
-      apiGenerationStatus: "COMPLETED",
-      resultUrl: remoteImageUrl,
-      rowLocked: false
-    }
+    completionUpdate,
   );
 
   removeTaskFromQueueById(requestId);
@@ -4556,7 +4641,7 @@ async function markStandaloneEditAsCompleted(genRowValue, editedImageData) {
 async function markStandaloneGenerationAsCompleted(payload, imageData) {
   const { _id: requestId } = payload;
   const imageName = imageData?.image;
-  const resultUrl = await resolveStandaloneGenerationResultUrl(imageData);
+  const resultUrl = await resolveStandaloneGenerationResultUrl(imageData, payload);
 
   await ImageGeneration.updateOne(
     { _id: requestId },
@@ -4605,9 +4690,21 @@ async function markStandaloneGenerationAsCompleted(payload, imageData) {
   removeTaskFromQueueById(requestId);
 }
 
-async function resolveStandaloneGenerationResultUrl(imageData) {
+function isGenBlazeImageCompletion(payload = {}) {
+  const provider = normalizeAdapterProvider(
+    payload?.adapterProviderOverride || payload?.adapterProvider || payload?.externalProvider,
+  );
+  if (provider === DOCKER_ADAPTER_PROVIDER.GMICLOUD) {
+    return true;
+  }
+  const requestId = normalizeString(payload?.apiRequestId).toLowerCase();
+  return requestId.startsWith('genblaze-image:') ||
+    requestId.startsWith('genblaze-image-edit:');
+}
+
+async function resolveStandaloneGenerationResultUrl(imageData, payload = {}, dependencies = {}) {
   const firstResultUrl = Array.isArray(imageData?.resultUrls) ? imageData.resultUrls[0] : null;
-  if (imageData?.resultUrl || firstResultUrl) {
+  if (!isGenBlazeImageCompletion(payload) && (imageData?.resultUrl || firstResultUrl)) {
     return imageData.resultUrl || firstResultUrl;
   }
 
@@ -4617,9 +4714,11 @@ async function resolveStandaloneGenerationResultUrl(imageData) {
   }
 
   const remotePath = `generations/${imageName}`;
-  const absolutePath = path.join(getProcessorAssetsRoot('assets'), 'generations', imageName);
+  const resolveAssetsRoot = dependencies.getAssetsRoot || getProcessorAssetsRoot;
+  const uploadImage = dependencies.uploadImage || uploadImageToCDN;
+  const absolutePath = path.join(resolveAssetsRoot('assets'), 'generations', imageName);
   try {
-    const cdnUrl = await uploadImageToCDN(absolutePath, remotePath);
+    const cdnUrl = await uploadImage(absolutePath, remotePath);
     if (cdnUrl) {
       return cdnUrl;
     }
@@ -4671,10 +4770,14 @@ export const __testOnly__ = {
   getImageGenerationNextAttemptAfter,
   getPinnedImageAdapterProvider,
   getImageGenerationAdapterRetryState,
+  isImageGenerationProviderApplicable,
+  resolveNextApplicableImageGenerationProvider,
   getPinnedImageEditAdapterProvider,
   getImageEditAdapterRetryState,
   resolveImageEditProviderForModel,
   resolveImageProviderForModel,
+  isGenBlazeImageCompletion,
+  resolveStandaloneGenerationResultUrl,
   shouldRetryUnhandledGenerationTask,
   getImageFilterScoreCutoff,
   getScoreThresholdCutoff,

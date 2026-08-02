@@ -9,6 +9,14 @@ import { getImage2OutpaintImageFromApi } from './providers/GPTImageOne.js';
 import { handleFluxEditRequest } from './edit/FluxEditor.js';
 import { handleBriaEditRequest } from './providers/Bria.js';
 import { handleNanoBananaEditDispatch } from './edit/NanoBananaRouting/NanoBananaDispatcher.js';
+import {
+  handleGenBlazeImageEditRequest,
+  shouldUseGenBlazeImageEditProvider,
+} from './providers/GenBlazeImageEdit.js';
+import {
+  handleSamsarExternalImageEditRequest,
+  shouldUseSamsarExternalImageEditProvider,
+} from './providers/SamsarExternalImage.js';
 
 
 const IMAGE_PROCESSOR_SERVER = process.env.IMAGE_PROCESSOR_SERVER;
@@ -30,6 +38,13 @@ export async function getImageFromText(payload) {
 export async function getEditImageFromText(payload) {
 
   const { prompt, model, image, maskImage, guidanceScale, numInferenceSteps, strength } = payload;
+
+  if (shouldUseGenBlazeImageEditProvider(payload)) {
+    return handleGenBlazeImageEditRequest(payload);
+  }
+  if (shouldUseSamsarExternalImageEditProvider(payload)) {
+    return handleSamsarExternalImageEditRequest(payload);
+  }
 
   
   if (model.startsWith('FLUX')) {

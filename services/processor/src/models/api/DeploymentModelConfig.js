@@ -57,6 +57,63 @@ function hasEnvCredential(...keys) {
   return keys.some((key) => typeof process.env[key] === 'string' && process.env[key].trim());
 }
 
+function isTruthyEnv(value) {
+  return ['1', 'true', 'yes', 'on'].includes(String(value || '').trim().toLowerCase());
+}
+
+function readRuntimeGenBlazeModelMappings(env = process.env) {
+  if (!isTruthyEnv(env.SAMSAR_GENBLAZE_ENABLED)) {
+    return {};
+  }
+  const catalogPath = String(env.SAMSAR_GENBLAZE_MODEL_CATALOG_PATH || '').trim();
+  if (!catalogPath || !fs.existsSync(catalogPath)) {
+    return {};
+  }
+  try {
+    const catalog = JSON.parse(fs.readFileSync(catalogPath, 'utf8'));
+    return catalog?.provider === 'gmicloud' &&
+      catalog?.models &&
+      typeof catalog.models === 'object' &&
+      !Array.isArray(catalog.models)
+      ? catalog.models
+      : {};
+  } catch {
+    return {};
+  }
+}
+
+function hasRuntimeGenBlazeRoute(modelMappings, model, modality, operation = 'chat.completions') {
+  const modelKey = Object.keys(modelMappings || {}).find(
+    (candidate) => normalizeDeploymentModel(candidate) === normalizeDeploymentModel(model),
+  );
+  const route = modelKey ? modelMappings[modelKey]?.[modality] : null;
+  return Boolean(
+    route &&
+    typeof route.modelId === 'string' &&
+    route.modelId.trim() &&
+    (!route.operation || route.operation === operation),
+  );
+}
+
+function hasRuntimeGenBlazeInferenceModel(modelMappings, model) {
+  return hasRuntimeGenBlazeRoute(modelMappings, model, 'text') &&
+    hasRuntimeGenBlazeRoute(modelMappings, model, 'vision');
+}
+
+export function hasRuntimeGenBlazeCatalogRoute(
+  model,
+  modality,
+  operation,
+  env = process.env,
+) {
+  return hasRuntimeGenBlazeRoute(
+    readRuntimeGenBlazeModelMappings(env),
+    model,
+    modality,
+    operation,
+  );
+}
+
 function isDockerDeploymentRuntime() {
   return isStandaloneEdition();
 }
@@ -72,6 +129,10 @@ function normalizeDeploymentProvider(value) {
 
   if (['openrouter', 'openrouterai'].includes(normalized)) {
     return 'openrouter';
+  }
+
+  if (['gmi', 'gmicloud', 'genblaze'].includes(normalized)) {
+    return 'gmicloud';
   }
 
   if (['kimi', 'kimik3', 'moonshot', 'moonshotai'].includes(normalized)) {
@@ -106,7 +167,7 @@ function isSavedQwenSelectionAuthorized({ providers, models, modelProviders }) {
   }
 
   const hasQwenModel = models.some((model) => normalizeDeploymentModel(model) === 'QWEN3.7');
-  const qwenProviders = new Set(['alibabaCloud', 'openrouter', 'samsar']);
+  const qwenProviders = new Set(['alibabaCloud', 'samsar', 'gmicloud', 'openrouter']);
   const availableProviders = new Set(providers.map(normalizeDeploymentProvider));
   const selectedProvider = normalizeDeploymentProvider(
     findModelProvider(modelProviders, 'QWEN3.7'),
@@ -161,10 +222,11 @@ function hasGoogleInferenceCredential() {
 function mergeRuntimeInferenceProviderSelections(availability) {
   const hasOpenRouter = hasEnvCredential('OPENROUTER_API_KEY');
   const hasSamsar = hasEnvCredential('SAMSAR_API_KEY');
+  const gmiCloudModelMappings = readRuntimeGenBlazeModelMappings();
   const priorities = {
-    'gpt-5.6-sol': ['openai', 'openrouter', 'samsar'],
-    'gemini-3.1-pro': ['googleCloud', 'openrouter', 'samsar'],
-    'QWEN3.7': ['alibabaCloud', 'openrouter', 'samsar'],
+    'gpt-5.6-sol': ['openai', 'samsar', 'gmicloud', 'openrouter'],
+    'gemini-3.1-pro': ['googleCloud', 'samsar', 'gmicloud', 'openrouter'],
+    'QWEN3.7': ['alibabaCloud', 'samsar', 'gmicloud', 'openrouter'],
     KIMIK3: ['kimi', 'samsar'],
   };
   const configured = {
@@ -188,16 +250,35 @@ function mergeRuntimeInferenceProviderSelections(availability) {
     const configuredDefaultPriority = normalizeStringList(
       availability.defaultModelProviderPriority?.[model],
     );
-    const effectivePriority = [
-      ...configuredPriority,
-      ...providerPriority.filter((provider) => !configuredPriority.includes(provider)),
-    ];
-    const defaultPriority = [
-      ...configuredDefaultPriority,
-      ...providerPriority.filter((provider) => !configuredDefaultPriority.includes(provider)),
-    ];
+    // Qwen's persisted availability predates GMICloud and may contain the old
+    // OpenRouter-before-Samsar order. Rebase that installation default onto
+    // the current hierarchy; the separate user preference file is applied
+    // afterwards and can still override it intentionally.
+    const useCanonicalPriority = model === 'QWEN3.7';
+    const effectivePriority = useCanonicalPriority
+      ? [
+        ...providerPriority,
+        ...configuredPriority.filter((provider) => !providerPriority.includes(provider)),
+      ]
+      : [
+        ...configuredPriority,
+        ...providerPriority.filter((provider) => !configuredPriority.includes(provider)),
+      ];
+    const defaultPriority = useCanonicalPriority
+      ? [
+        ...providerPriority,
+        ...configuredDefaultPriority.filter((provider) => !providerPriority.includes(provider)),
+      ]
+      : [
+        ...configuredDefaultPriority,
+        ...providerPriority.filter((provider) => !configuredDefaultPriority.includes(provider)),
+      ];
     availability.defaultModelProviderPriority[model] = defaultPriority;
-    const provider = effectivePriority.find((candidate) => configured[candidate]);
+    const provider = effectivePriority.find((candidate) => (
+      candidate === 'gmicloud'
+        ? hasRuntimeGenBlazeInferenceModel(gmiCloudModelMappings, model)
+        : configured[candidate]
+    ));
     if (!provider) continue;
     availability.modelProviders[model] = provider;
     availability.modelProviderPriority[model] = effectivePriority;
@@ -272,6 +353,7 @@ function applyStandaloneModelAdapterPreferences(availability = {}) {
 }
 
 export function mergeRuntimeInferenceDeploymentAvailability(value = {}) {
+  const gmiCloudModelMappings = readRuntimeGenBlazeModelMappings();
   const configuredProviders = normalizeStringList(value?.providers);
   const configuredModels = [...new Set(
     normalizeStringList(value?.models).map((model) => (
@@ -305,10 +387,21 @@ export function mergeRuntimeInferenceDeploymentAvailability(value = {}) {
     models: configuredModels,
     modelProviders,
   });
+  const hasAuthorizedSavedModel = (model) => {
+    const normalizedModel = normalizeDeploymentModel(model);
+    const selectedProvider = normalizeDeploymentProvider(
+      findModelProvider(modelProviders, normalizedModel),
+    );
+    return selectedProvider !== 'gmicloud' ||
+      hasRuntimeGenBlazeInferenceModel(gmiCloudModelMappings, normalizedModel);
+  };
   const merged = {
     providers: configuredProviders,
     models: configuredModels.filter(
-      (model) => normalizeDeploymentModel(model) !== 'QWEN3.7' || qwenAuthorized,
+      (model) => (
+        (normalizeDeploymentModel(model) !== 'QWEN3.7' || qwenAuthorized) &&
+        hasAuthorizedSavedModel(model)
+      ),
     ),
     actions: normalizeStringList(value?.actions),
     modelProviders,
@@ -359,10 +452,41 @@ export function mergeRuntimeInferenceDeploymentAvailability(value = {}) {
     appendUnique(merged.actions, ['chat', 'assistant', 'image', 'video']);
   }
 
+  const runtimeGenBlazeInferenceModels = [
+    'gpt-5.6-sol',
+    'gemini-3.1-pro',
+    'QWEN3.7',
+  ].filter((model) => hasRuntimeGenBlazeInferenceModel(gmiCloudModelMappings, model));
+  if (runtimeGenBlazeInferenceModels.length > 0) {
+    appendUnique(merged.providers, ['gmicloud']);
+    appendUnique(merged.models, runtimeGenBlazeInferenceModels);
+    appendUnique(merged.actions, ['chat', 'assistant']);
+  }
+
   if (hasEnvCredential('OPENROUTER_API_KEY')) {
     appendUnique(merged.providers, ['openrouter']);
     appendUnique(merged.models, ['gpt-5.6-sol', 'gemini-3.1-pro', 'QWEN3.7']);
     appendUnique(merged.actions, ['chat', 'assistant']);
+  }
+
+  for (const [model, provider] of Object.entries(merged.modelProviders)) {
+    if (
+      normalizeDeploymentProvider(provider) === 'gmicloud' &&
+      !hasRuntimeGenBlazeInferenceModel(gmiCloudModelMappings, model)
+    ) {
+      delete merged.modelProviders[model];
+    }
+  }
+  const inferenceModels = new Set([
+    normalizeDeploymentModel('gpt-5.6-sol'),
+    normalizeDeploymentModel('gemini-3.1-pro'),
+    normalizeDeploymentModel('QWEN3.7'),
+    normalizeDeploymentModel('KIMIK3'),
+  ]);
+  if (!merged.models.some((model) => inferenceModels.has(normalizeDeploymentModel(model)))) {
+    merged.actions = merged.actions.filter(
+      (action) => action !== 'chat' && action !== 'assistant',
+    );
   }
 
   mergeRuntimeInferenceProviderSelections(merged);

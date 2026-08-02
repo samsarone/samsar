@@ -20,6 +20,12 @@ const DOCKER_LOCAL_ENV_KEYS = [
   'PROCESSOR_URL',
   'SAMSAR_EXTERNAL_MEDIA_PUBLISH_ENABLED',
   'EXTERNAL_MEDIA_PUBLISH_ENABLED',
+  'MEDIA_BUCKET_NAME',
+  'STATIC_CDN_BUCKET',
+  'AWS_ACCESS_KEY_ID',
+  'AWS_SECRET_ACCESS_KEY',
+  'AWS_CDN_REGION',
+  'AWS_REGION',
 ];
 
 function restoreEnv(snapshot) {
@@ -108,5 +114,69 @@ test('uploadVideoToCDN returns a Docker-local public processor URL after persist
       'utf8',
     ),
     'rendered-thumbnail',
+  );
+});
+
+test('path-prefixed Backblaze URLs do not become duplicated storage keys', async (t) => {
+  const envSnapshot = Object.fromEntries(DOCKER_LOCAL_ENV_KEYS.map((key) => [key, process.env[key]]));
+  const assetsRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'samsar-b2-video-assets-'));
+  const renderRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'samsar-b2-video-render-'));
+  const sourcePath = path.join(renderRoot, 'final.mp4');
+  await fs.writeFile(sourcePath, 'rendered-video');
+
+  Object.assign(process.env, {
+    CURRENT_ENV: 'docker',
+    SAMSAR_MEDIA_DELIVERY_MODE: 'docker-local',
+    MEDIA_DELIVERY_MODE: 'docker-local',
+    SAMSAR_ASSETS_V2_ROOT: assetsRoot,
+    SAMSAR_DOCKER_PUBLIC_PROCESSOR_BASE_URL: 'http://localhost:3002',
+    STATIC_CDN_URL: 'https://f000.backblazeb2.com/file/my-bucket/',
+  });
+  t.after(async () => {
+    restoreEnv(envSnapshot);
+    await fs.rm(assetsRoot, { recursive: true, force: true });
+    await fs.rm(renderRoot, { recursive: true, force: true });
+  });
+
+  const { uploadVideoToCDN } = await import(`./AWS.js?b2-prefix-${Date.now()}-${Math.random()}`);
+  const publicB2Url = 'https://f000.backblazeb2.com/file/my-bucket/assets_v2/video/output/session-1/final.mp4';
+  assert.equal(
+    await uploadVideoToCDN(sourcePath, publicB2Url),
+    'http://localhost:3002/assets_v2/video/output/session-1/final.mp4',
+  );
+  assert.equal(
+    await fs.readFile(path.join(assetsRoot, 'video/output/session-1/final.mp4'), 'utf8'),
+    'rendered-video',
+  );
+});
+
+test('standalone external video uploads reject an implicit production bucket', async (t) => {
+  const envSnapshot = Object.fromEntries(DOCKER_LOCAL_ENV_KEYS.map((key) => [key, process.env[key]]));
+  const renderRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'samsar-external-video-render-'));
+  const sourcePath = path.join(renderRoot, 'final.mp4');
+  await fs.writeFile(sourcePath, 'rendered-video');
+
+  Object.assign(process.env, {
+    CURRENT_ENV: 'docker',
+    SAMSAR_MEDIA_DELIVERY_MODE: 'external-s3',
+    MEDIA_DELIVERY_MODE: 'external-s3',
+    SAMSAR_EXTERNAL_MEDIA_PUBLISH_ENABLED: 'true',
+    AWS_ACCESS_KEY_ID: 'test-access-key',
+    AWS_SECRET_ACCESS_KEY: 'test-secret-key',
+    AWS_CDN_REGION: 'us-east-1',
+  });
+  delete process.env.MEDIA_BUCKET_NAME;
+  delete process.env.STATIC_CDN_BUCKET;
+  delete process.env.STATIC_CDN_URL;
+
+  t.after(async () => {
+    restoreEnv(envSnapshot);
+    await fs.rm(renderRoot, { recursive: true, force: true });
+  });
+
+  const { uploadVideoToCDN } = await import(`./AWS.js?external-no-bucket-${Date.now()}-${Math.random()}`);
+  await assert.rejects(
+    () => uploadVideoToCDN(sourcePath, 'assets_v2/video/output/session-1/final.mp4'),
+    (error) => error?.code === 'SAMSAR_EXTERNAL_S3_CONFIG_INVALID' && error?.retryable === false,
   );
 });

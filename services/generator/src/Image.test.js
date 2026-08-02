@@ -1,5 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { Types } from 'mongoose';
 
 import { __testOnly__ } from './Image.js';
@@ -352,6 +355,102 @@ test('standalone image retries advance to the next configured adapter and clear 
   }
 });
 
+test('Nano Banana GMI routing preserves exact Pro ratios and bypasses only unsupported Pro ratios', (t) => {
+  const environmentKeys = [
+    'CURRENT_ENV',
+    'SAMSAR_DEPLOYMENT_EDITION',
+    'SAMSAR_DOCKER_ADAPTER_ROUTING_ENABLED',
+    'SAMSAR_GENBLAZE_ENABLED',
+    'SAMSAR_GENBLAZE_MODEL_CATALOG_PATH',
+    'SAMSAR_MODEL_ADAPTER_PREFERENCES_PATH',
+    'FAL_API_KEY',
+    'SAMSAR_API_KEY',
+    'GOOGLE_APPLICATION_CREDENTIALS_JSON_B64',
+    'GOOGLE_APPLICATION_CREDENTIALS_JSON',
+    'GOOGLE_APPLICATION_CREDENTIALS',
+    'GOOGLE_CLOUD_PROJECT',
+    'GOOGLE_PROJECT_ID',
+    'GCP_PROJECT',
+    'GCLOUD_PROJECT',
+    'PROJECT_ID',
+    'K_SERVICE',
+    'GAE_SERVICE',
+    'FUNCTION_TARGET',
+  ];
+  const previousEnvironment = Object.fromEntries(
+    environmentKeys.map((key) => [key, process.env[key]]),
+  );
+  const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'samsar-nano-gmi-routing-'));
+  const catalogPath = path.join(temporaryDirectory, 'catalog.json');
+  const preferencesPath = path.join(temporaryDirectory, 'missing-preferences.json');
+
+  t.after(() => {
+    fs.rmSync(temporaryDirectory, { recursive: true, force: true });
+    for (const [key, value] of Object.entries(previousEnvironment)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  });
+
+  fs.writeFileSync(catalogPath, JSON.stringify({
+    version: 1,
+    provider: 'gmicloud',
+    models: {
+      NANOBANANA2: { image: { modelId: 'gemini-3.1-flash-image' } },
+      NANOBANANAPRO: { image: { modelId: 'gemini-3-pro-image' } },
+    },
+  }));
+  process.env.CURRENT_ENV = 'standalone';
+  process.env.SAMSAR_DEPLOYMENT_EDITION = 'standalone';
+  process.env.SAMSAR_DOCKER_ADAPTER_ROUTING_ENABLED = 'true';
+  process.env.SAMSAR_GENBLAZE_ENABLED = 'true';
+  process.env.SAMSAR_GENBLAZE_MODEL_CATALOG_PATH = catalogPath;
+  process.env.SAMSAR_MODEL_ADAPTER_PREFERENCES_PATH = preferencesPath;
+  process.env.FAL_API_KEY = 'configured';
+  delete process.env.SAMSAR_API_KEY;
+  for (const key of environmentKeys.filter(
+    (key) => key.startsWith('GOOGLE_') || key.startsWith('GCLOUD_') ||
+      ['GCP_PROJECT', 'PROJECT_ID', 'K_SERVICE', 'GAE_SERVICE', 'FUNCTION_TARGET'].includes(key),
+  )) {
+    delete process.env[key];
+  }
+
+  assert.equal(
+    __testOnly__.resolveImageProviderForModel('NANOBANANA2', { aspectRatio: '3:2' }),
+    'gmicloud',
+  );
+  assert.equal(
+    __testOnly__.resolveImageProviderForModel('NANOBANANAPRO', { aspectRatio: '4:5' }),
+    'gmicloud',
+  );
+  assert.equal(
+    __testOnly__.resolveImageProviderForModel('NANOBANANAPRO', { aspectRatio: '3:2' }),
+    'fal',
+  );
+  assert.equal(
+    __testOnly__.resolveImageProviderForModel('NANOBANANAPRO', {
+      aspect_ratio: '2:3',
+      adapterProviderOverride: 'gmicloud',
+    }),
+    'fal',
+  );
+  assert.equal(
+    __testOnly__.resolveImageProviderForModel('NANOBANANAPRO', {
+      aspectRatio: '3:2',
+      adapterProviderOverride: 'gmicloud',
+      apiRequestId: 'genblaze-image:already-submitted',
+    }),
+    'gmicloud',
+  );
+
+  const retryState = __testOnly__.getImageGenerationAdapterRetryState({
+    model: 'NANOBANANAPRO',
+    aspectRatio: '3:2',
+    adapterProvider: 'samsar',
+  });
+  assert.equal(retryState.provider, 'fal');
+});
+
 test('production image retries never enable standalone adapter rotation', () => {
   const previousEdition = process.env.SAMSAR_DEPLOYMENT_EDITION;
   process.env.SAMSAR_DEPLOYMENT_EDITION = 'production';
@@ -453,6 +552,74 @@ test('production Image List enhancement retries never enable standalone edit-ada
       process.env.SAMSAR_DEPLOYMENT_EDITION = previousEdition;
     }
   }
+});
+
+test('GenBlaze standalone generation persists its local download before publishing a result URL', async () => {
+  const uploads = [];
+  const resultUrl = await __testOnly__.resolveStandaloneGenerationResultUrl({
+    image: 'generation_gmi.png',
+    resultUrl: 'https://upstream.gmicloud.example/temporary.png',
+    resultUrls: ['https://upstream.gmicloud.example/temporary.png'],
+  }, {
+    externalProvider: 'gmicloud',
+    apiRequestId: 'genblaze-image:sealed-job',
+  }, {
+    getAssetsRoot: () => '/mounted/assets',
+    uploadImage: async (absolutePath, remotePath) => {
+      uploads.push({ absolutePath, remotePath });
+      return 'https://f000.backblazeb2.com/file/samsar/temp_images/generations/generation_gmi.png';
+    },
+  });
+
+  assert.equal(
+    resultUrl,
+    'https://f000.backblazeb2.com/file/samsar/temp_images/generations/generation_gmi.png',
+  );
+  assert.deepEqual(uploads, [{
+    absolutePath: '/mounted/assets/generations/generation_gmi.png',
+    remotePath: 'generations/generation_gmi.png',
+  }]);
+});
+
+test('GenBlaze standalone edit request ids also replace temporary upstream result URLs', async () => {
+  let uploadCount = 0;
+  const resultUrl = await __testOnly__.resolveStandaloneGenerationResultUrl({
+    image: 'generation_edit.png',
+    resultUrl: 'https://upstream.gmicloud.example/edit.png',
+  }, {
+    apiRequestId: 'genblaze-image-edit:sealed-job',
+  }, {
+    getAssetsRoot: () => '/assets',
+    uploadImage: async () => {
+      uploadCount += 1;
+      return 'https://public.example/persisted-edit.png';
+    },
+  });
+
+  assert.equal(resultUrl, 'https://public.example/persisted-edit.png');
+  assert.equal(uploadCount, 1);
+  assert.equal(__testOnly__.isGenBlazeImageCompletion({
+    apiRequestId: 'genblaze-image-edit:sealed-job',
+  }), true);
+});
+
+test('non-GenBlaze adapters preserve their existing upstream result URL contract', async () => {
+  let uploadCount = 0;
+  const resultUrl = await __testOnly__.resolveStandaloneGenerationResultUrl({
+    image: 'generation_native.png',
+    resultUrl: 'https://native-provider.example/result.png',
+  }, {
+    externalProvider: 'fal',
+  }, {
+    getAssetsRoot: () => '/assets',
+    uploadImage: async () => {
+      uploadCount += 1;
+      return 'https://should-not-be-used.example/result.png';
+    },
+  });
+
+  assert.equal(resultUrl, 'https://native-provider.example/result.png');
+  assert.equal(uploadCount, 0);
 });
 
 test('retryable vision failures return to the normal express image retry path', () => {

@@ -60,6 +60,8 @@ import {
 } from '../../../hooks/useGoogleTTSSpeakers.js';
 import { useAudioProviderAvailability } from '../../../hooks/useAudioProviderAvailability.js';
 import { filterMusicProvidersForAudioAvailability } from '../../../constants/audioProviderAvailability.js';
+import { resolveStudioVideoToolbarMode } from '../util/studioVideoLayers.mjs';
+import { hasActionableStudioLayer } from '../util/studioSceneLifecycle.mjs';
 
 const SOUND_EFFECT_MODEL_OPTIONS = [
   { value: 'SDAUDIO', label: 'Stable Audio' },
@@ -128,6 +130,30 @@ function resolveSessionSubtitlesEnabled(sessionDetails = {}) {
   }
 
   return true;
+}
+
+function StudioLayerUnavailableState({ colorMode, isLoading }) {
+  const surfaceClassName = colorMode === 'dark'
+    ? 'border-[#4a5265] bg-[#151720] text-slate-200'
+    : 'border-slate-300 bg-slate-50 text-slate-700';
+  const detailClassName = colorMode === 'dark' ? 'text-slate-400' : 'text-slate-500';
+
+  return (
+    <div
+      className={`rounded-xl border border-dashed px-3 py-4 text-center ${surfaceClassName}`}
+      role="status"
+      aria-live="polite"
+    >
+      <div className="text-sm font-semibold">
+        {isLoading ? 'Loading scene…' : 'No scene selected'}
+      </div>
+      <div className={`mt-1 text-xs leading-5 ${detailClassName}`}>
+        {isLoading
+          ? 'Generation tools will be available when the scene finishes loading.'
+          : 'Add or select a scene before using generation tools.'}
+      </div>
+    </div>
+  );
 }
 
 export default function VideoEditorToolbar(props) {
@@ -294,6 +320,16 @@ export default function VideoEditorToolbar(props) {
   }, [isExpandedView, onExpandedChange]);
 
   const { colorMode } = useColorMode();
+  const hasActionableCurrentLayer = hasActionableStudioLayer(currentLayer);
+  const isCurrentLayerLoading = Boolean(
+    Array.isArray(sessionDetails?.layers) && sessionDetails.layers.length > 0
+  );
+  const studioLayerUnavailableDisplay = (
+    <StudioLayerUnavailableState
+      colorMode={colorMode}
+      isLoading={isCurrentLayerLoading}
+    />
+  );
   const disabledShellClass = isRenderPending ? 'pending-disabled-shell' : '';
   const defaultMusicProvider = availableMusicProviders[0] || null;
   const currentMusicProvider =
@@ -728,7 +764,9 @@ export default function VideoEditorToolbar(props) {
 
   let generateDisplay = <span />;
   if (currentViewDisplay === CURRENT_TOOLBAR_VIEW.SHOW_GENERATE_DISPLAY) {
-    if (currentDefaultPrompt && !showCreateNewPromptDisplay) {
+    if (!hasActionableCurrentLayer) {
+      generateDisplay = studioLayerUnavailableDisplay;
+    } else if (currentDefaultPrompt && !showCreateNewPromptDisplay) {
       generateDisplay = (
         <PromptViewer
           {...props}
@@ -743,17 +781,12 @@ export default function VideoEditorToolbar(props) {
 
   let generateVideoDisplay = <span />;
   if (currentViewDisplay === CURRENT_TOOLBAR_VIEW.SHOW_GENERATE_VIDEO_DISPLAY) {
-    if (currentLayer.hasLipSyncVideoLayer) {
+    const toolbarMode = resolveStudioVideoToolbarMode(currentLayer);
+    if (toolbarMode === 'unavailable') {
+      generateVideoDisplay = studioLayerUnavailableDisplay;
+    } else if (toolbarMode === 'lip_sync') {
       generateVideoDisplay = <VideoLipSyncOptionsViewer {...props} sizeVariant={sidebarSizeVariant} />;
-    } else if (
-      currentLayer.userVideoGenerationPending
-      || currentLayer?.userVideoUploadTask?.status === 'UPLOADING'
-      || currentLayer?.userVideoUploadTask?.status === 'PROCESSING'
-    ) {
-      generateVideoDisplay = <VideoAiVideoOptionsViewer {...props} sizeVariant={sidebarSizeVariant} />;
-    } else if (currentLayer.hasUserVideoLayer && currentLayer.userVideoGenerationStatus === "COMPLETED") {
-      generateVideoDisplay = <VideoAiVideoOptionsViewer {...props} sizeVariant={sidebarSizeVariant} />;
-    } else if (currentLayer.hasAiVideoLayer && currentLayer.aiVideoGenerationStatus === "COMPLETED") {
+    } else if (toolbarMode === 'video_options') {
       generateVideoDisplay = <VideoAiVideoOptionsViewer {...props} sizeVariant={sidebarSizeVariant} />;
     } else {
       generateVideoDisplay = <VideoPromptGenerator {...props} sizeVariant={sidebarSizeVariant} />;
@@ -876,10 +909,6 @@ export default function VideoEditorToolbar(props) {
     colorMode === 'dark'
       ? 'bg-[#f6c453]/14 border border-[#f6c453]/45 text-[#fff1c8]'
       : 'bg-rose-50 border border-rose-200 text-rose-700';
-  const buttonBgcolor =
-    colorMode === 'dark'
-      ? 'bg-[#20232e] border border-[#3a4050] text-white'
-      : 'bg-slate-100 border border-slate-200 text-slate-900';
   const textInnerColor = colorMode === 'dark' ? 'text-slate-100' : 'text-slate-900';
   const text2Color = colorMode === 'dark' ? 'text-slate-100' : 'text-neutral-900';
   const formSelectBgColor = colorMode === 'dark' ? '#181b24' : '#f8fafc';
@@ -1916,16 +1945,13 @@ export default function VideoEditorToolbar(props) {
                     ? 'mb-4'
                     : 'mb-1'
                   : 'mb-0';
-                const toolbarItemContainerSurfaceClass = isSelected
-                  ? 'bg-transparent border border-transparent'
-                  : buttonBgcolor;
                 const toolbarItemBodyOverflowClass =
                   isSelected && item.showOverflow ? 'overflow-visible' : 'overflow-hidden';
                 const toolbarItemBodyPointerClass = isSelected ? 'pointer-events-auto' : 'pointer-events-none';
 
                 return (
               <div
-                className={`${toolbarItemContainerSurfaceClass} rounded-sm text-left ${isSelected ? 'mt-1' : 'mt-4'
+                className={`text-left ${isSelected ? 'mt-1' : 'mt-4'
                   } transition-colors duration-300`}
               >
                 <div

@@ -11,6 +11,7 @@ const DEPLOYMENT_PROVIDER_LABELS = Object.freeze({
   samsar: "Samsar API Key",
   openai: "OpenAI",
   openrouter: "OpenRouter",
+  gmicloud: "GMICloud via GenBlaze",
   googleCloud: "Google Cloud",
   alibabaCloud: "Alibaba Cloud",
   kimi: "Kimi",
@@ -23,6 +24,7 @@ const DEPLOYMENT_INFERENCE_MODELS_BY_PROVIDER = Object.freeze({
   googleCloud: ["gemini-3.1-pro"],
   kimi: [KIMI_K3_INFERENCE_MODEL_VALUE],
   openrouter: ["gpt-5.6-sol", "gemini-3.1-pro", QWEN_INFERENCE_MODEL_VALUE],
+  gmicloud: [QWEN_INFERENCE_MODEL_VALUE],
   // Alibaba/Qwen requires explicit, validated model provenance below. A
   // provider name by itself is not enough to make Qwen selectable.
   alibabaCloud: [],
@@ -61,6 +63,9 @@ export function normalizeDeploymentProviderKey(value) {
   }
   if (compact === "openrouter" || compact === "openrouterai") {
     return "openrouter";
+  }
+  if (compact === "gmi" || compact === "gmicloud" || compact === "genblaze") {
+    return "gmicloud";
   }
   if (
     compact === "kimi" ||
@@ -261,7 +266,7 @@ export function hasValidatedAlibabaQwenInference(payload = {}) {
   const availableProviders = new Set(
     extractDeploymentProviders(payload).map(normalizeDeploymentProviderKey),
   );
-  const qwenProviders = new Set(["alibabaCloud", "openrouter", "samsar"]);
+  const qwenProviders = new Set(["alibabaCloud", "samsar", "gmicloud", "openrouter"]);
   const selectedProvider = extractDeploymentInferenceModelProviders(payload)[QWEN_INFERENCE_MODEL_VALUE];
   if (!qwenProviders.has(selectedProvider) || !availableProviders.has(selectedProvider)) {
     return false;
@@ -308,7 +313,7 @@ export function labelOptionsForDeploymentInferenceProviders(
     ? providerEndpointTypes?.alibabaCloud === "token_plan"
       ? "Qwen 3.8 Max Preview / Qwen 3.7 Plus Vision"
       : "Qwen 3.7 Plus"
-    : qwenProvider === "openrouter" || qwenProvider === "samsar"
+    : qwenProvider === "openrouter" || qwenProvider === "samsar" || qwenProvider === "gmicloud"
       ? OPENROUTER_QWEN_INFERENCE_MODEL_LABEL
       : "Qwen 3.7 Plus";
 

@@ -8,28 +8,38 @@ export const DOCKER_VIDEO_PROVIDER = Object.freeze({
   FAL: 'fal',
   RUNWAY: 'runway',
   SAMSAR: 'samsar',
+  GMICLOUD: 'gmicloud',
 });
 
 export const DOCKER_VIDEO_PROVIDER_PRIORITY_BY_MODEL = Object.freeze({
   'VEO3.1': [
     DOCKER_VIDEO_PROVIDER.GOOGLE_CLOUD,
-    DOCKER_VIDEO_PROVIDER.FAL,
     DOCKER_VIDEO_PROVIDER.SAMSAR,
+    DOCKER_VIDEO_PROVIDER.GMICLOUD,
+    DOCKER_VIDEO_PROVIDER.FAL,
   ],
   'VEO3.1FAST': [
     DOCKER_VIDEO_PROVIDER.GOOGLE_CLOUD,
-    DOCKER_VIDEO_PROVIDER.FAL,
     DOCKER_VIDEO_PROVIDER.SAMSAR,
+    DOCKER_VIDEO_PROVIDER.GMICLOUD,
+    DOCKER_VIDEO_PROVIDER.FAL,
   ],
   'VEO3.1I2V': [
     DOCKER_VIDEO_PROVIDER.GOOGLE_CLOUD,
-    DOCKER_VIDEO_PROVIDER.FAL,
     DOCKER_VIDEO_PROVIDER.SAMSAR,
+    DOCKER_VIDEO_PROVIDER.GMICLOUD,
+    DOCKER_VIDEO_PROVIDER.FAL,
   ],
   'VEO3.1I2VFAST': [
     DOCKER_VIDEO_PROVIDER.GOOGLE_CLOUD,
-    DOCKER_VIDEO_PROVIDER.FAL,
     DOCKER_VIDEO_PROVIDER.SAMSAR,
+    DOCKER_VIDEO_PROVIDER.GMICLOUD,
+    DOCKER_VIDEO_PROVIDER.FAL,
+  ],
+  'VEO3.1FLIV': [
+    DOCKER_VIDEO_PROVIDER.SAMSAR,
+    DOCKER_VIDEO_PROVIDER.GMICLOUD,
+    DOCKER_VIDEO_PROVIDER.FAL,
   ],
   RUNWAYML: [
     DOCKER_VIDEO_PROVIDER.RUNWAY,
@@ -37,8 +47,59 @@ export const DOCKER_VIDEO_PROVIDER_PRIORITY_BY_MODEL = Object.freeze({
   ],
   HAPPYHORSEI2V: [
     DOCKER_VIDEO_PROVIDER.ALIBABA_CLOUD,
-    DOCKER_VIDEO_PROVIDER.FAL,
     DOCKER_VIDEO_PROVIDER.SAMSAR,
+    DOCKER_VIDEO_PROVIDER.GMICLOUD,
+    DOCKER_VIDEO_PROVIDER.FAL,
+  ],
+  SEEDANCEI2V: [
+    DOCKER_VIDEO_PROVIDER.SAMSAR,
+    DOCKER_VIDEO_PROVIDER.GMICLOUD,
+    DOCKER_VIDEO_PROVIDER.FAL,
+  ],
+  'SEEDANCE2.0I2V': [
+    DOCKER_VIDEO_PROVIDER.SAMSAR,
+    DOCKER_VIDEO_PROVIDER.GMICLOUD,
+    DOCKER_VIDEO_PROVIDER.FAL,
+  ],
+  'SEEDANCE2.0T2V': [
+    DOCKER_VIDEO_PROVIDER.SAMSAR,
+    DOCKER_VIDEO_PROVIDER.GMICLOUD,
+    DOCKER_VIDEO_PROVIDER.FAL,
+  ],
+  KLINGIMGTOVID3PRO: [
+    DOCKER_VIDEO_PROVIDER.SAMSAR,
+    DOCKER_VIDEO_PROVIDER.GMICLOUD,
+    DOCKER_VIDEO_PROVIDER.FAL,
+  ],
+  KLINGIMGTOVIDTURBO: [
+    DOCKER_VIDEO_PROVIDER.SAMSAR,
+    DOCKER_VIDEO_PROVIDER.GMICLOUD,
+    DOCKER_VIDEO_PROVIDER.FAL,
+  ],
+  KLINGIMGTOVIDPRO: [
+    DOCKER_VIDEO_PROVIDER.SAMSAR,
+    DOCKER_VIDEO_PROVIDER.GMICLOUD,
+    DOCKER_VIDEO_PROVIDER.FAL,
+  ],
+  'KLINGIMGTOVID2.1MASTER': [
+    DOCKER_VIDEO_PROVIDER.SAMSAR,
+    DOCKER_VIDEO_PROVIDER.GMICLOUD,
+    DOCKER_VIDEO_PROVIDER.FAL,
+  ],
+  'KLINGIMGTOVID2.1PRO': [
+    DOCKER_VIDEO_PROVIDER.SAMSAR,
+    DOCKER_VIDEO_PROVIDER.GMICLOUD,
+    DOCKER_VIDEO_PROVIDER.FAL,
+  ],
+  'KLINGIMGTOVID2.1STANDARD': [
+    DOCKER_VIDEO_PROVIDER.SAMSAR,
+    DOCKER_VIDEO_PROVIDER.GMICLOUD,
+    DOCKER_VIDEO_PROVIDER.FAL,
+  ],
+  HAILUOPRO: [
+    DOCKER_VIDEO_PROVIDER.SAMSAR,
+    DOCKER_VIDEO_PROVIDER.GMICLOUD,
+    DOCKER_VIDEO_PROVIDER.FAL,
   ],
 });
 
@@ -142,6 +203,9 @@ function normalizeProvider(value) {
   if (normalized === 'samsar') {
     return DOCKER_VIDEO_PROVIDER.SAMSAR;
   }
+  if (['gmi', 'gmicloud', 'genblaze'].includes(normalized)) {
+    return DOCKER_VIDEO_PROVIDER.GMICLOUD;
+  }
   return '';
 }
 
@@ -169,6 +233,18 @@ function getSavedModelProviderEntry(entries = {}, normalizedModel = '') {
 
 function uniqueProviders(values = []) {
   return [...new Set((Array.isArray(values) ? values : [values]).map(normalizeProvider).filter(Boolean))];
+}
+
+function applyHostedFalPriority(priority = []) {
+  const normalizedPriority = uniqueProviders(priority);
+  const falIndex = normalizedPriority.indexOf(DOCKER_VIDEO_PROVIDER.FAL);
+  const samsarIndex = normalizedPriority.indexOf(DOCKER_VIDEO_PROVIDER.SAMSAR);
+  if (falIndex < 0 || samsarIndex < 0 || falIndex < samsarIndex) {
+    return normalizedPriority;
+  }
+  normalizedPriority.splice(falIndex, 1);
+  normalizedPriority.splice(samsarIndex, 0, DOCKER_VIDEO_PROVIDER.FAL);
+  return normalizedPriority;
 }
 
 function getLegacySavedVideoProviderPriority(model) {
@@ -235,6 +311,17 @@ function hasEnvCredential(...keys) {
   return keys.some((key) => Boolean(normalizeString(process.env[key])));
 }
 
+function hasGmiCloudVideoModelMapping(model, env = process.env) {
+  const catalogPath = normalizeString(env.SAMSAR_GENBLAZE_MODEL_CATALOG_PATH);
+  if (!catalogPath) return false;
+  try {
+    const catalog = JSON.parse(fs.readFileSync(catalogPath, 'utf8'));
+    return Boolean(normalizeString(catalog?.models?.[normalizeVideoModelKey(model)]?.video?.modelId));
+  } catch {
+    return false;
+  }
+}
+
 function isTruthyEnv(value) {
   return ['1', 'true', 'yes', 'on'].includes(normalizeString(value).toLowerCase());
 }
@@ -282,6 +369,10 @@ export function hasSamsarVideoCredential() {
   return hasEnvCredential('SAMSAR_API_KEY');
 }
 
+export function hasGmiCloudVideoCredential() {
+  return isTruthyEnv(process.env.SAMSAR_GENBLAZE_ENABLED);
+}
+
 export function isVideoProviderConfigured(provider) {
   if (provider === DOCKER_VIDEO_PROVIDER.ALIBABA_CLOUD) {
     return hasAlibabaCloudVideoCredential();
@@ -297,6 +388,9 @@ export function isVideoProviderConfigured(provider) {
   }
   if (provider === DOCKER_VIDEO_PROVIDER.SAMSAR) {
     return hasSamsarVideoCredential();
+  }
+  if (provider === DOCKER_VIDEO_PROVIDER.GMICLOUD) {
+    return hasGmiCloudVideoCredential();
   }
   return false;
 }
@@ -324,6 +418,16 @@ export function getDockerVideoProviderPriority(model, { generationType = '' } = 
     defaultPriority = [DOCKER_VIDEO_PROVIDER.FAL, DOCKER_VIDEO_PROVIDER.SAMSAR];
   } else {
     defaultPriority = hasSamsarVideoCredential() ? [DOCKER_VIDEO_PROVIDER.SAMSAR] : [];
+  }
+
+  if (!isStandaloneEdition()) {
+    defaultPriority = applyHostedFalPriority(defaultPriority)
+      .filter((provider) => provider !== DOCKER_VIDEO_PROVIDER.GMICLOUD);
+  }
+  if (!hasGmiCloudVideoModelMapping(normalizedModel)) {
+    defaultPriority = defaultPriority.filter(
+      (provider) => provider !== DOCKER_VIDEO_PROVIDER.GMICLOUD,
+    );
   }
 
   if (normalizedGenerationType === 'sound_effect') {

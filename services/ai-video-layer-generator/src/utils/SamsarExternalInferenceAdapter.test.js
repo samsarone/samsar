@@ -52,9 +52,28 @@ const ENV_KEYS = [
   'OPENROUTER_GPT_56_SOL_MODEL',
   'SAMSAR_EXTERNAL_INFERENCE_ENABLED',
   'SAMSAR_FORCE_EXTERNAL_INFERENCE',
+  'SAMSAR_GENBLAZE_BASE_URL',
+  'SAMSAR_GENBLAZE_ENABLED',
+  'SAMSAR_GENBLAZE_MODEL_CATALOG_PATH',
   'SAMSAR_QWEN_OPENROUTER_ONLY',
   'SAMSAR_MODEL_ADAPTER_PREFERENCES_PATH',
 ];
+
+function createTestGenblazeCatalog() {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'samsar-genblaze-inference-'));
+  const catalogPath = path.join(directory, 'genblaze-model-catalog.json');
+  fs.writeFileSync(catalogPath, JSON.stringify({
+    version: 1,
+    provider: 'gmicloud',
+    models: {
+      'QWEN3.7': {
+        text: { modelId: 'Qwen/Qwen3.7-Max', operation: 'chat.completions' },
+        vision: { modelId: 'Qwen/Qwen3.7-Plus', operation: 'chat.completions' },
+      },
+    },
+  }));
+  return { catalogPath, directory };
+}
 const originalEnv = Object.fromEntries(ENV_KEYS.map((key) => [key, process.env[key]]));
 
 function resetEnv() {
@@ -81,6 +100,21 @@ test('Qwen stays native when a DashScope key is configured', () => {
   process.env.DASHSCOPE_API_KEY = 'dashscope-test-key';
 
   assert.equal(shouldUseSamsarExternalInference({ model: 'QWEN3.7' }), false);
+});
+
+test('Qwen uses GMICloud through GenBlaze before OpenRouter', (t) => {
+  const { catalogPath, directory } = createTestGenblazeCatalog();
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  ENV_KEYS.forEach((key) => delete process.env[key]);
+  process.env.CURRENT_ENV = 'docker';
+  process.env.SAMSAR_GENBLAZE_ENABLED = 'true';
+  process.env.SAMSAR_GENBLAZE_MODEL_CATALOG_PATH = catalogPath;
+  process.env.OPENROUTER_API_KEY = 'openrouter-test-key';
+
+  assert.equal(
+    resolveConfiguredInferenceProvider('QWEN3.7'),
+    DOCKER_INFERENCE_PROVIDER.GMICLOUD,
+  );
 });
 
 test('Kimi K3 prefers its native credential and otherwise uses Samsar fallback', () => {
@@ -122,13 +156,18 @@ test('Kimi K3 aliases never route through OpenRouter, even when explicitly autho
   }
 });
 
-test('OpenRouter is the Docker fallback before Samsar for every inference model', () => {
+test('Samsar stays ahead of third-party Qwen adapters in Docker', () => {
   ENV_KEYS.forEach((key) => delete process.env[key]);
   process.env.CURRENT_ENV = 'docker';
   process.env.OPENROUTER_API_KEY = 'openrouter-test-key';
   process.env.SAMSAR_API_KEY = 'samsar-test-key';
 
-  for (const model of ['QWEN3.7', 'gemini-3.1-pro', 'gpt-5.6-sol']) {
+  assert.equal(
+    resolveConfiguredInferenceProvider('QWEN3.7'),
+    DOCKER_INFERENCE_PROVIDER.SAMSAR,
+  );
+  assert.equal(shouldUseSamsarExternalInference({ model: 'QWEN3.7' }), true);
+  for (const model of ['gemini-3.1-pro', 'gpt-5.6-sol']) {
     assert.equal(
       resolveConfiguredInferenceProvider(model),
       DOCKER_INFERENCE_PROVIDER.OPENROUTER,

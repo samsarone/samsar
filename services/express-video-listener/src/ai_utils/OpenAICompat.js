@@ -13,6 +13,7 @@ import {
   DOCKER_INFERENCE_PROVIDER,
   createSamsarExternalChatCompletion,
   getConfiguredInferenceProviders,
+  resolveConfiguredInferenceProvider,
   shouldUseOpenRouterInference,
   shouldUseSamsarExternalInference,
 } from './SamsarExternalInferenceAdapter.js';
@@ -36,7 +37,7 @@ export async function createCompatibleChatCompletion(
 ) {
   if (shouldUseStandaloneInferenceAdapterFallback(chatRequest)) {
     const model = chatRequest?.model || getDefaultInferenceModel();
-    const providers = getConfiguredInferenceProviders(model);
+    const providers = getConfiguredInferenceProviders(model, chatRequest);
     if (providers.length > 1) {
       return runInferenceAdapterFallback(
         providers,
@@ -81,6 +82,14 @@ export function getInferenceAdapterProvider(response) {
 function resolveInferenceAdapterProvider(chatRequest = {}) {
   const model = chatRequest?.model || getDefaultInferenceModel();
   if (shouldUseSamsarExternalInference(chatRequest)) {
+    if (normalizeAuthorization(chatRequest.authorization) === 'gmicloud' ||
+        normalizeAuthorization(chatRequest.authorization) === 'genblaze') {
+      return DOCKER_INFERENCE_PROVIDER.GMICLOUD;
+    }
+    const configuredProvider = resolveConfiguredInferenceProvider(model);
+    if (configuredProvider === DOCKER_INFERENCE_PROVIDER.GMICLOUD) {
+      return configuredProvider;
+    }
     return shouldUseOpenRouterInference(chatRequest)
       ? DOCKER_INFERENCE_PROVIDER.OPENROUTER
       : DOCKER_INFERENCE_PROVIDER.SAMSAR;
@@ -109,6 +118,8 @@ function shouldUseStandaloneInferenceAdapterFallback(chatRequest = {}) {
   }
   const authorization = normalizeAuthorization(chatRequest?.authorization);
   if (
+    authorization === 'gmicloud' ||
+    authorization === 'genblaze' ||
     authorization === 'openrouter' ||
     ['deployed', 'samsar', 'samsar-api-key', 'samsar-key'].includes(authorization)
   ) {
@@ -133,6 +144,14 @@ function buildProviderPinnedChatRequest(chatRequest, provider) {
     return {
       ...providerRequest,
       authorization: 'openrouter',
+      bypassSamsarExternalInference: false,
+      samsarExternalInference: true,
+    };
+  }
+  if (provider === DOCKER_INFERENCE_PROVIDER.GMICLOUD) {
+    return {
+      ...providerRequest,
+      authorization: 'gmicloud',
       bypassSamsarExternalInference: false,
       samsarExternalInference: true,
     };
@@ -194,6 +213,9 @@ function getInferenceAdapterErrorMetadata(error) {
 
 export function isRetryableInferenceAdapterError(error) {
   const { status, codes, names, message } = getInferenceAdapterErrorMetadata(error);
+  if (codes.includes('GENBLAZE_MODEL_UNSUPPORTED')) {
+    return true;
+  }
   if (status !== null) {
     return status === 401 ||
       status === 403 ||

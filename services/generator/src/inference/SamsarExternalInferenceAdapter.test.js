@@ -35,6 +35,9 @@ const ENV_KEYS = [
   'SAMSAR_EDITION',
   'SAMSAR_EXTERNAL_INFERENCE_ENABLED',
   'SAMSAR_FORCE_EXTERNAL_INFERENCE',
+  'SAMSAR_GENBLAZE_BASE_URL',
+  'SAMSAR_GENBLAZE_ENABLED',
+  'SAMSAR_GENBLAZE_MODEL_CATALOG_PATH',
   'SAMSAR_MODEL_ADAPTER_PREFERENCES_PATH',
   'SAMSAR_QWEN_OPENROUTER_ONLY',
 ];
@@ -53,6 +56,22 @@ function withEnvironment(overrides, callback) {
       else process.env[key] = previous[key];
     }
   }
+}
+
+function createTestGenblazeCatalog() {
+  const directory = mkdtempSync(path.join(os.tmpdir(), 'samsar-genblaze-inference-'));
+  const catalogPath = path.join(directory, 'genblaze-model-catalog.json');
+  writeFileSync(catalogPath, JSON.stringify({
+    version: 1,
+    provider: 'gmicloud',
+    models: {
+      'QWEN3.7': {
+        text: { modelId: 'Qwen/Qwen3.7-Max', operation: 'chat.completions' },
+        vision: { modelId: 'Qwen/Qwen3.7-Plus', operation: 'chat.completions' },
+      },
+    },
+  }));
+  return { catalogPath, directory };
 }
 
 test('Qwen routing prefers a native Alibaba key before Samsar fallback', () => {
@@ -75,6 +94,133 @@ test('ALIBABA_API_KEY is detected as native Qwen credentials', () => {
     ALIBABA_API_KEY: 'alibaba-key',
   }, () => {
     assert.equal(shouldUseSamsarExternalInference({ model: 'QWEN3.7' }), false);
+  });
+});
+
+test('Qwen uses GMICloud through GenBlaze after native and Samsar adapters', (t) => {
+  const { catalogPath, directory } = createTestGenblazeCatalog();
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  withEnvironment({
+    CURRENT_ENV: 'docker',
+    SAMSAR_GENBLAZE_ENABLED: 'true',
+    SAMSAR_GENBLAZE_MODEL_CATALOG_PATH: catalogPath,
+    OPENROUTER_API_KEY: 'openrouter-key',
+  }, () => {
+    assert.equal(resolveConfiguredInferenceProvider('QWEN3.7'), DOCKER_INFERENCE_PROVIDER.GMICLOUD);
+    assert.deepEqual(getConfiguredInferenceProviders('QWEN3.7'), [
+      DOCKER_INFERENCE_PROVIDER.GMICLOUD,
+      DOCKER_INFERENCE_PROVIDER.OPENROUTER,
+    ]);
+  });
+});
+
+test('GMICloud selection follows the validated text and vision catalog mappings', () => {
+  const temporaryDirectory = mkdtempSync(path.join(os.tmpdir(), 'samsar-genblaze-catalog-'));
+  const catalogPath = path.join(temporaryDirectory, 'genblaze-model-catalog.json');
+  writeFileSync(catalogPath, JSON.stringify({
+    version: 1,
+    provider: 'gmicloud',
+    models: {
+      'QWEN3.7': {
+        text: { modelId: 'Qwen/Qwen3.7-Max', operation: 'chat.completions' },
+      },
+      'gpt-5.6-sol': {
+        text: { modelId: 'gpt-5.6-sol', operation: 'chat.completions' },
+        vision: { modelId: 'gpt-5.6-sol', operation: 'chat.completions' },
+      },
+      'gemini-3.1-pro': {
+        text: { modelId: 'gemini-3.1-pro', operation: 'chat.completions' },
+        vision: { modelId: 'gemini-3.1-pro', operation: 'chat.completions' },
+      },
+    },
+  }));
+
+  try {
+    withEnvironment({
+      CURRENT_ENV: 'docker',
+      SAMSAR_GENBLAZE_ENABLED: 'true',
+      SAMSAR_GENBLAZE_MODEL_CATALOG_PATH: catalogPath,
+      OPENROUTER_API_KEY: 'openrouter-key',
+    }, () => {
+      assert.equal(
+        resolveConfiguredInferenceProvider('QWEN3.7'),
+        DOCKER_INFERENCE_PROVIDER.GMICLOUD,
+      );
+      assert.equal(
+        resolveConfiguredInferenceProvider('QWEN3.7', {
+          model: 'QWEN3.7',
+          messages: [{
+            role: 'user',
+            content: [{ type: 'image_url', image_url: 'https://assets.example/frame.png' }],
+          }],
+        }),
+        DOCKER_INFERENCE_PROVIDER.OPENROUTER,
+      );
+      assert.deepEqual(getConfiguredInferenceProviders('gpt-5.6-sol'), [
+        DOCKER_INFERENCE_PROVIDER.GMICLOUD,
+        DOCKER_INFERENCE_PROVIDER.OPENROUTER,
+      ]);
+      assert.deepEqual(getConfiguredInferenceProviders('gemini-3.1-pro'), [
+        DOCKER_INFERENCE_PROVIDER.GMICLOUD,
+        DOCKER_INFERENCE_PROVIDER.OPENROUTER,
+      ]);
+      process.env.SAMSAR_API_KEY = 'samsar-key';
+      process.env.OPENAI_API_KEY = 'openai-key';
+      assert.deepEqual(getConfiguredInferenceProviders('gpt-5.6-sol'), [
+        DOCKER_INFERENCE_PROVIDER.OPENAI,
+        DOCKER_INFERENCE_PROVIDER.SAMSAR,
+        DOCKER_INFERENCE_PROVIDER.GMICLOUD,
+        DOCKER_INFERENCE_PROVIDER.OPENROUTER,
+      ]);
+      assert.deepEqual(getConfiguredInferenceProviders('gemini-3.1-pro'), [
+        DOCKER_INFERENCE_PROVIDER.SAMSAR,
+        DOCKER_INFERENCE_PROVIDER.GMICLOUD,
+        DOCKER_INFERENCE_PROVIDER.OPENROUTER,
+      ]);
+    });
+    withEnvironment({
+      CURRENT_ENV: 'production',
+      SAMSAR_GENBLAZE_ENABLED: 'true',
+      SAMSAR_GENBLAZE_MODEL_CATALOG_PATH: catalogPath,
+      OPENAI_API_KEY: 'openai-key',
+      OPENROUTER_API_KEY: 'openrouter-key',
+      SAMSAR_API_KEY: 'samsar-key',
+    }, () => {
+      assert.deepEqual(getConfiguredInferenceProviders('gpt-5.6-sol'), [
+        DOCKER_INFERENCE_PROVIDER.OPENAI,
+        DOCKER_INFERENCE_PROVIDER.OPENROUTER,
+        DOCKER_INFERENCE_PROVIDER.SAMSAR,
+      ]);
+      assert.deepEqual(getConfiguredInferenceProviders('gemini-3.1-pro'), [
+        DOCKER_INFERENCE_PROVIDER.OPENROUTER,
+        DOCKER_INFERENCE_PROVIDER.SAMSAR,
+      ]);
+    });
+  } finally {
+    rmSync(temporaryDirectory, { recursive: true, force: true });
+  }
+});
+
+test('GPT and Gemini preserve legacy priority when GenBlaze lacks an exact mapping', (t) => {
+  const { catalogPath, directory } = createTestGenblazeCatalog();
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  withEnvironment({
+    CURRENT_ENV: 'docker',
+    SAMSAR_GENBLAZE_ENABLED: 'true',
+    SAMSAR_GENBLAZE_MODEL_CATALOG_PATH: catalogPath,
+    OPENAI_API_KEY: 'openai-key',
+    OPENROUTER_API_KEY: 'openrouter-key',
+    SAMSAR_API_KEY: 'samsar-key',
+  }, () => {
+    assert.deepEqual(getConfiguredInferenceProviders('gpt-5.6-sol'), [
+      DOCKER_INFERENCE_PROVIDER.OPENAI,
+      DOCKER_INFERENCE_PROVIDER.OPENROUTER,
+      DOCKER_INFERENCE_PROVIDER.SAMSAR,
+    ]);
+    assert.deepEqual(getConfiguredInferenceProviders('gemini-3.1-pro'), [
+      DOCKER_INFERENCE_PROVIDER.OPENROUTER,
+      DOCKER_INFERENCE_PROVIDER.SAMSAR,
+    ]);
   });
 });
 
@@ -223,13 +369,14 @@ test('Kimi K3 Samsar-js fallback preserves the model and forces high reasoning',
   assert.equal(capturedPayload.reasoning_effort, 'high');
 });
 
-test('OpenRouter enables every inference model while preserving native-first routing', () => {
+test('Samsar remains ahead of third-party inference while native adapters stay first', () => {
   withEnvironment({
     CURRENT_ENV: 'docker',
     OPENROUTER_API_KEY: 'openrouter-key',
     SAMSAR_API_KEY: 'samsar-key',
   }, () => {
-    for (const model of ['QWEN3.7', 'gemini-3.1-pro', 'gpt-5.6-sol']) {
+    assert.equal(resolveConfiguredInferenceProvider('QWEN3.7'), DOCKER_INFERENCE_PROVIDER.SAMSAR);
+    for (const model of ['gemini-3.1-pro', 'gpt-5.6-sol']) {
       assert.equal(resolveConfiguredInferenceProvider(model), DOCKER_INFERENCE_PROVIDER.OPENROUTER);
     }
     process.env.OPENAI_API_KEY = 'openai-key';

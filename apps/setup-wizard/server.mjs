@@ -19,10 +19,26 @@ import {
   validateOpenRouterProviderCredential,
 } from './openrouterValidation.mjs';
 import {
+  createGmiCloudValidationRegistry,
+  normalizeGmiCloudModelMappings,
+  validateGmiCloudProviderCredential,
+} from './gmiCloudValidation.mjs';
+import {
+  GENBLAZE_FINAL_UP_ARGS,
+  hasValidatedGenBlazeRuntimeCatalog,
+  splitGenBlazeComposeProfiles,
+} from './genblazeCompose.mjs';
+import {
   PROVIDER_ENVIRONMENT_VARIABLE_NAMES,
   isValidEnvironmentVariableName,
   resolveProviderEnvironmentReferences,
 } from './src/constants/providerEnvironment.js';
+import {
+  buildBackblazePublicBucketUrl,
+  parseBackblazeS3Endpoint,
+  validateExternalStorageConfig,
+} from './storageConfig.mjs';
+import { validateBackblazeStorageCredentials } from './backblazeValidation.mjs';
 
 const PORT = Number.parseInt(process.env.PORT || '80', 10);
 const STATIC_DIR = process.env.SETUP_WIZARD_STATIC_DIR || path.resolve('dist');
@@ -48,6 +64,12 @@ const ROOT_DIR = resolveRootDir();
 const COMPOSE_FILE = path.join(ROOT_DIR, 'deploy', 'compose', 'docker-compose.yml');
 const CONFIG_PATH = path.join(ROOT_DIR, 'runtime', 'config', 'samsar.config.json');
 const AVAILABLE_MODELS_PATH = path.join(ROOT_DIR, 'runtime', 'config', 'available-models.json');
+const GENBLAZE_MODEL_CATALOG_PATH = path.join(
+  ROOT_DIR,
+  'runtime',
+  'config',
+  'genblaze-model-catalog.json',
+);
 const MODEL_ADAPTER_PREFERENCES_PATH = path.join(
   ROOT_DIR,
   'runtime',
@@ -55,6 +77,7 @@ const MODEL_ADAPTER_PREFERENCES_PATH = path.join(
   'model-adapter-preferences.json',
 );
 const ROOT_ENV_PATH = path.join(ROOT_DIR, 'runtime', 'secrets', 'root.env');
+const GENBLAZE_ENV_PATH = path.join(ROOT_DIR, 'runtime', 'secrets', 'genblaze.env');
 const PROVIDER_SECRETS_PATH = path.join(ROOT_DIR, 'runtime', 'secrets', 'provider.credentials.json');
 const MEDIA_TUNNEL_REFRESH_REQUEST_PATH = path.join(
   ROOT_DIR,
@@ -137,8 +160,9 @@ const runs = new Map();
 const maintenanceRuns = new Map();
 const alibabaProviderValidations = new Map();
 const openrouterProviderValidations = createOpenRouterValidationRegistry();
+const gmiCloudProviderValidations = createGmiCloudValidationRegistry();
 const ALIBABA_PROVIDER_VALIDATION_TTL_MS = 60 * 60 * 1000;
-const ALL_COMPOSE_PROFILES = ['core', 'workers', 'local-mongo', 'minio', 'local-media', 'logger', 'reverse-proxy'];
+const ALL_COMPOSE_PROFILES = ['core', 'workers', 'local-mongo', 'minio', 'local-media', 'logger', 'reverse-proxy', 'genblaze'];
 const ALLOWED_FIREWALL_PORTS = [80, 443, 3000, 3002, 8089];
 const SETUP_PASSWORD_HASH_VERSION = 'scrypt-v1';
 
@@ -266,6 +290,59 @@ function runCommandCapture(command, args, options = {}) {
 
 function getComposeArgs(...args) {
   return ['compose', '--env-file', ROOT_ENV_PATH, '-f', COMPOSE_FILE, ...args];
+}
+
+async function getComposeServiceHealthStatus(serviceName) {
+  const containerId = normalizeString(await runCommandCapture('docker', [
+    'ps',
+    '-a',
+    '--filter',
+    'label=com.docker.compose.project=samsar',
+    '--filter',
+    `label=com.docker.compose.service=${serviceName}`,
+    '--format',
+    '{{.ID}}',
+  ])).split('\n')[0];
+  if (!containerId) {
+    return 'missing';
+  }
+  return normalizeString(await runCommandCapture('docker', [
+    'inspect',
+    '--format',
+    '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}',
+    containerId,
+  ]));
+}
+
+async function waitForComposeServiceHealthy(serviceName, { timeoutMs = 120_000 } = {}) {
+  const startedAt = Date.now();
+  let lastStatus = 'missing';
+  while (Date.now() - startedAt < timeoutMs) {
+    lastStatus = await getComposeServiceHealthStatus(serviceName).catch(() => 'missing');
+    if (lastStatus === 'healthy' || lastStatus === 'running') {
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 2_000));
+  }
+  throw new Error(
+    `${serviceName} did not become healthy within ${Math.round(timeoutMs / 1000)} seconds (last status: ${lastStatus}).`,
+  );
+}
+
+async function removeDisabledGenBlazeContainer(run = null) {
+  await runCommand('docker', getComposeArgs(
+    '--profile',
+    'genblaze',
+    'rm',
+    '-s',
+    '-f',
+    'genblaze',
+  ), {
+    cwd: ROOT_DIR,
+    env: { COMPOSE_BAKE: 'false' },
+    run,
+    onOutput: run ? (text) => appendLog(run, text.trim()) : undefined,
+  });
 }
 
 function cancelRun(run, message = 'Setup was reset by the user.') {
@@ -815,50 +892,6 @@ function ensureTrailingSlash(value) {
   return normalized.endsWith('/') ? normalized : `${normalized}/`;
 }
 
-function validateExternalStorageConfig(infrastructure = {}) {
-  const storage = infrastructure.storage || {};
-  if (storage.mode !== 'external-s3') {
-    return;
-  }
-
-  const requiredFields = [
-    ['mediaBucketName', 'S3 bucket'],
-    ['region', 'S3 region'],
-    ['accessKeyId', 'S3 access key'],
-    ['secretAccessKey', 'S3 secret key'],
-    ['staticCdnUrl', 'public CDN base URL'],
-  ];
-  const missingFields = requiredFields
-    .filter(([field]) => !normalizeString(storage[field]))
-    .map(([, label]) => label);
-  if (missingFields.length) {
-    throw new Error(`External S3 requires: ${missingFields.join(', ')}.`);
-  }
-
-  let publicCdnUrl;
-  try {
-    publicCdnUrl = new URL(normalizeString(storage.staticCdnUrl));
-  } catch {
-    throw new Error('External S3 public CDN base URL must be a valid HTTPS URL.');
-  }
-  if (
-    publicCdnUrl.protocol !== 'https:' ||
-    publicCdnUrl.username ||
-    publicCdnUrl.password ||
-    publicCdnUrl.search ||
-    publicCdnUrl.hash
-  ) {
-    throw new Error('External S3 public CDN base URL must be HTTPS and must not contain credentials, a query, or a fragment.');
-  }
-
-  const keyPairId = normalizeString(storage.cloudFront?.keyPairId);
-  const privateKey = normalizeString(storage.cloudFront?.privateKey);
-  const privateKeyBase64 = normalizeString(storage.cloudFront?.privateKeyBase64);
-  if ((keyPairId || privateKey || privateKeyBase64) && (!keyPairId || (!privateKey && !privateKeyBase64))) {
-    throw new Error('CloudFront signing requires both a key pair ID and a private key or base64 private key.');
-  }
-}
-
 function buildDatabaseConfig(infrastructure = {}) {
   const database = infrastructure.database || {};
   const remoteMongoUrl = normalizeString(database.mongoUrl);
@@ -878,29 +911,46 @@ function buildDatabaseConfig(infrastructure = {}) {
 
 function buildStorageConfig(infrastructure = {}) {
   const storage = infrastructure.storage || {};
-  if (storage.mode === 'external-s3') {
+  if (['external-s3', 'backblaze-b2'].includes(storage.mode)) {
+    const isBackblazeB2 = storage.mode === 'backblaze-b2';
+    const configuredEndpoint = normalizeString(storage.s3Endpoint);
+    const backblazeEndpoint = isBackblazeB2
+      ? parseBackblazeS3Endpoint(configuredEndpoint)
+      : null;
+    const region = backblazeEndpoint?.region || normalizeString(storage.region) || 'us-east-1';
+    const mediaBucketName = normalizeString(storage.mediaBucketName);
     return {
+      mode: storage.mode,
       provider: 's3-compatible',
-      mediaBucketName: normalizeString(storage.mediaBucketName) || 'samsar-resources',
-      staticCdnUrl: ensureTrailingSlash(storage.staticCdnUrl),
+      backend: isBackblazeB2 ? 'backblaze-b2' : 'generic-s3',
+      mediaBucketName,
+      staticCdnUrl: isBackblazeB2
+        ? buildBackblazePublicBucketUrl(mediaBucketName, backblazeEndpoint.endpoint)
+        : ensureTrailingSlash(storage.staticCdnUrl),
       secureAssetPrefix: 'assets_v2',
       accessKeyId: normalizeString(storage.accessKeyId),
       secretAccessKey: normalizeString(storage.secretAccessKey),
-      region: normalizeString(storage.region) || 'us-east-1',
-      s3Endpoint: normalizeString(storage.s3Endpoint),
-      s3ForcePathStyle: normalizeBoolean(storage.s3ForcePathStyle),
+      region,
+      s3Endpoint: backblazeEndpoint?.endpoint || configuredEndpoint,
+      s3ForcePathStyle: isBackblazeB2 || normalizeBoolean(storage.s3ForcePathStyle),
+      objectTaggingSupported: !isBackblazeB2,
+      credentialType: isBackblazeB2 ? normalizeString(storage.credentialType) : '',
       externalMediaPublishEnabled: true,
       cloudFront: {
-        keyPairId: normalizeString(storage.cloudFront?.keyPairId),
-        privateKey: typeof storage.cloudFront?.privateKey === 'string' ? storage.cloudFront.privateKey : '',
-        privateKeyBase64: normalizeString(storage.cloudFront?.privateKeyBase64),
+        keyPairId: isBackblazeB2 ? '' : normalizeString(storage.cloudFront?.keyPairId),
+        privateKey: isBackblazeB2
+          ? ''
+          : typeof storage.cloudFront?.privateKey === 'string' ? storage.cloudFront.privateKey : '',
+        privateKeyBase64: isBackblazeB2 ? '' : normalizeString(storage.cloudFront?.privateKeyBase64),
         signedUrlTtlSeconds: normalizeString(storage.cloudFront?.signedUrlTtlSeconds) || '604800',
       },
     };
   }
 
   return {
+    mode: 'local-minio',
     provider: 's3-compatible',
+    backend: 'minio',
     mediaBucketName: 'samsar-resources',
     staticCdnUrl: `${PROCESSOR_PUBLIC_URL.replace(/\/+$/, '')}/`,
     secureAssetPrefix: 'assets_v2',
@@ -909,6 +959,7 @@ function buildStorageConfig(infrastructure = {}) {
     region: 'us-east-1',
     s3Endpoint: 'http://minio:9000',
     s3ForcePathStyle: true,
+    objectTaggingSupported: true,
     externalMediaPublishEnabled: false,
   };
 }
@@ -1543,6 +1594,17 @@ async function validateEnvironmentProviderCredentials(credentials = {}) {
     }
     Object.assign(providers, result?.providers || {});
   }
+  if (normalizeSecretString(credentials.gmiCloudApiKey)) {
+    const result = await validateGmiCloudProviderCredential(credentials);
+    const validation = result?.providers?.gmicloud;
+    if (validation?.ok === true) {
+      validation.validationToken = gmiCloudProviderValidations.register(
+        credentials.gmiCloudApiKey,
+        { modelMappings: validation.modelMappings },
+      );
+    }
+    Object.assign(providers, result?.providers || {});
+  }
 
   return { providers };
 }
@@ -1602,9 +1664,40 @@ function consumeValidatedOpenRouterProviderSecret(payload = {}) {
   return { apiKey };
 }
 
+function consumeValidatedGmiCloudProviderSecret(payload = {}) {
+  const apiKey = normalizeSecretString(
+    payload?.credentials?.gmiCloudApiKey ||
+    payload?.credentials?.gmicloudApiKey ||
+    payload?.credentials?.gmi_api_key,
+  );
+  if (!apiKey) {
+    return null;
+  }
+
+  const validation = payload?.deployment?.providers?.gmicloud?.validation;
+  if (
+    validation?.provider !== 'gmicloud' ||
+    validation?.ok !== true ||
+    validation?.validationMode !== 'remote_key'
+  ) {
+    throw new Error('Validate the GMICloud API key before starting setup.');
+  }
+  const validated = gmiCloudProviderValidations.consume(validation.validationToken, apiKey);
+  if (!validated) {
+    throw new Error('GMICloud validation expired or does not match this credential. Validate it again.');
+  }
+
+  return {
+    apiKey,
+    credentialFingerprint: validated.credentialFingerprint,
+    modelMappings: normalizeGmiCloudModelMappings(validated.modelMappings),
+  };
+}
+
 async function writeProviderSecrets(payload = {}) {
   const alibabaCloud = payload.validatedAlibabaProviderSecret ?? consumeValidatedAlibabaProviderSecret(payload);
   const openrouter = payload.validatedOpenRouterProviderSecret ?? consumeValidatedOpenRouterProviderSecret(payload);
+  const gmicloud = payload.validatedGmiCloudProviderSecret ?? consumeValidatedGmiCloudProviderSecret(payload);
   const existingSecrets = await readJson(PROVIDER_SECRETS_PATH).catch(() => ({}));
   const providerSecrets = {
     ...existingSecrets,
@@ -1621,6 +1714,12 @@ async function writeProviderSecrets(payload = {}) {
     providerSecrets.openrouter = openrouter;
   } else {
     delete providerSecrets.openrouter;
+  }
+
+  if (gmicloud) {
+    providerSecrets.gmicloud = { apiKey: gmicloud.apiKey };
+  } else {
+    delete providerSecrets.gmicloud;
   }
 
   await fs.mkdir(path.dirname(PROVIDER_SECRETS_PATH), { recursive: true, mode: 0o700 });
@@ -1672,6 +1771,10 @@ function buildRuntimeConfig(payload) {
   ];
   const workersEnabled = workerKeys.some((key) => services[key] !== false);
   const alibabaProviderMetadata = payload.validatedAlibabaProviderSecret || {};
+  const gmiCloudProviderMetadata = payload.validatedGmiCloudProviderSecret || {};
+  const gmiCloudEnabled = Boolean(normalizeSecretString(
+    gmiCloudProviderMetadata.apiKey || credentials.gmiCloudApiKey,
+  ));
 
   return readJson(EXAMPLE_CONFIG_PATH).then((exampleConfig) => ({
     ...exampleConfig,
@@ -1711,6 +1814,15 @@ function buildRuntimeConfig(payload) {
       openrouter: {
         enabled: Boolean(normalizeString(credentials.openrouterApiKey)),
       },
+      gmicloud: {
+        enabled: gmiCloudEnabled,
+        credentialFingerprint: gmiCloudEnabled
+          ? normalizeString(gmiCloudProviderMetadata.credentialFingerprint)
+          : '',
+        modelMappings: gmiCloudEnabled
+          ? normalizeGmiCloudModelMappings(gmiCloudProviderMetadata.modelMappings)
+          : {},
+      },
       googleCloud: {
         enabled: Boolean(googleCredentials.credentialsJsonB64),
         projectId: googleCredentials.projectId,
@@ -1745,6 +1857,7 @@ function buildRuntimeConfig(payload) {
       localMongo: database.provider === 'local-mongo',
       minio: storage.externalMediaPublishEnabled !== true,
       mediaGateway: storage.externalMediaPublishEnabled !== true,
+      genblaze: gmiCloudEnabled,
       logger: services.logger !== false,
       reverseProxy: reverseProxy.enabled,
     },
@@ -1808,6 +1921,9 @@ function getComposeProfiles(services = {}, infrastructure = {}, reverseProxyInpu
   if (loggerEnabled) {
     profiles.push('logger');
   }
+  if (services.genblaze === true) {
+    profiles.push('genblaze');
+  }
   if (reverseProxy.enabled) {
     profiles.push('reverse-proxy');
   }
@@ -1815,7 +1931,7 @@ function getComposeProfiles(services = {}, infrastructure = {}, reverseProxyInpu
   return profiles;
 }
 
-function getRuntimeComposeProfiles(config = {}) {
+function getRuntimeComposeProfiles(config = {}, { genBlazeCatalog } = {}) {
   const services = config.services || {};
   const profiles = ['core'];
 
@@ -1833,6 +1949,13 @@ function getRuntimeComposeProfiles(config = {}) {
   }
   if (services.logger !== false) {
     profiles.push('logger');
+  }
+  if (
+    services.genblaze === true &&
+    config.providers?.gmicloud?.enabled === true &&
+    (genBlazeCatalog === undefined || hasValidatedGenBlazeRuntimeCatalog(config, genBlazeCatalog))
+  ) {
+    profiles.push('genblaze');
   }
   if (services.reverseProxy === true || config.reverseProxy?.enabled === true) {
     profiles.push('reverse-proxy');
@@ -1856,6 +1979,12 @@ function validateDockerBuildInputs(profiles = []) {
   if (profileSet.has('workers')) {
     requirements.push({ path: path.join(ROOT_DIR, 'services', 'docker-cleanup', 'Dockerfile'), label: 'docker-cleanup Dockerfile' });
   }
+  if (profileSet.has('genblaze')) {
+    requirements.push({
+      path: path.join(ROOT_DIR, 'services', 'genblaze-gateway', 'Dockerfile'),
+      label: 'GenBlaze gateway Dockerfile',
+    });
+  }
 
   const missing = requirements.filter((requirement) => !existsSync(requirement.path));
   if (!missing.length) {
@@ -1877,6 +2006,7 @@ function hasConfiguredRemoteMediaProvider(credentials = {}) {
     hasConfiguredSamsarApiKey(credentials) ||
     normalizeString(credentials.openaiApiKey || credentials?.openai?.apiKey) ||
     normalizeString(credentials.openrouterApiKey || credentials?.openrouter?.apiKey) ||
+    normalizeString(credentials.gmiCloudApiKey || credentials?.gmicloud?.apiKey) ||
     normalizeString(credentials.kimiK3ApiKey || credentials?.kimi?.apiKey) ||
     normalizeString(credentials.alibabaApiKey || credentials?.alibabaCloud?.apiKey) ||
     normalizeString(credentials.falApiKey || credentials?.fal?.apiKey) ||
@@ -3322,6 +3452,18 @@ async function recoverSetupRun(runId, existingRun = null) {
   run.error = '';
   run.completedAt = null;
 
+  const runtimeConfig = await readJson(CONFIG_PATH).catch(() => ({}));
+  const genBlazeCatalog = await readJson(GENBLAZE_MODEL_CATALOG_PATH).catch(() => null);
+  if (getRuntimeComposeProfiles(runtimeConfig, { genBlazeCatalog }).includes('genblaze')) {
+    const genBlazeHealth = await getComposeServiceHealthStatus('genblaze').catch(() => 'missing');
+    if (genBlazeHealth !== 'healthy') {
+      setStepStatus(run, 'compose', 'running', 'Waiting for the GenBlaze gateway after setup wizard restart.', { log: false });
+      runs.set(run.id, run);
+      return run;
+    }
+    setStepStatus(run, 'compose', 'complete', 'GenBlaze gateway is healthy.', { log: false });
+  }
+
   const processorReady = await checkHttp(PROCESSOR_READY_URL);
   if (!processorReady) {
     setStepStatus(run, 'processor', 'running', 'Waiting for samsar-processor after setup wizard restart.', { log: false });
@@ -3339,7 +3481,6 @@ async function recoverSetupRun(runId, existingRun = null) {
   setStepStatus(run, 'client', 'complete', 'samsar-client is ready.', { log: false });
 
   try {
-    const runtimeConfig = await readJson(CONFIG_PATH).catch(() => ({}));
     await checkFinalExternalAccess(run, buildReverseProxyConfig(runtimeConfig.reverseProxy || {}));
     setStepStatus(run, 'login', 'running', 'Preparing local authenticated session.', { log: false });
     run.redirectUrl = `${CLIENT_URL.replace(/\/+$/, '')}/login?redirect=%2Fvidgenie`;
@@ -3380,18 +3521,36 @@ async function runSetup(run, payload) {
       payload?.deployment?.reverseProxy || {},
     );
     const profileArgs = profiles.flatMap((profile) => ['--profile', profile]);
+    const genBlazeComposePlan = splitGenBlazeComposeProfiles(profiles);
+    const nonGenBlazeProfiles = genBlazeComposePlan.primaryProfiles;
+    const nonGenBlazeProfileArgs = nonGenBlazeProfiles.flatMap((profile) => ['--profile', profile]);
     const reverseProxy = buildReverseProxyConfig(payload?.deployment?.reverseProxy || {});
     await maybeOpenExternalAccessPorts(run, reverseProxy);
 
     setStepStatus(run, 'compose', 'running', `Validating Docker build inputs for profiles: ${profiles.join(', ')}`);
     validateDockerBuildInputs(profiles);
-    setStepStatus(run, 'compose', 'running', `Starting Docker Compose profiles: ${profiles.join(', ')}`);
-    await runCommand('docker', getComposeArgs(...profileArgs, 'up', '-d', '--build'), {
+    setStepStatus(run, 'compose', 'running', `Starting Docker Compose profiles: ${nonGenBlazeProfiles.join(', ')}`);
+    await runCommand('docker', getComposeArgs(...nonGenBlazeProfileArgs, 'up', '-d', '--build'), {
       cwd: ROOT_DIR,
       env: { COMPOSE_BAKE: 'false' },
       run,
       onOutput: (text) => appendLog(run, text.trim()),
     });
+    if (genBlazeComposePlan.enabled) {
+      setStepStatus(run, 'compose', 'running', 'Building and starting the validated GenBlaze gateway as the final Compose stage.');
+      await runCommand('docker', getComposeArgs(
+        '--profile',
+        'genblaze',
+        ...GENBLAZE_FINAL_UP_ARGS,
+      ), {
+        cwd: ROOT_DIR,
+        env: { COMPOSE_BAKE: 'false' },
+        run,
+        onOutput: (text) => appendLog(run, text.trim()),
+      });
+      setStepStatus(run, 'compose', 'running', 'Waiting for the GenBlaze gateway to become healthy.');
+      await waitForComposeServiceHealthy('genblaze');
+    }
     setStepStatus(run, 'compose', 'complete', 'Docker containers started.');
 
     await ensureReverseProxy(run, profileArgs, reverseProxy);
@@ -3441,9 +3600,19 @@ async function runDockerMaintenance(run) {
     setStepStatus(run, 'runtime', 'complete', 'Runtime env files rendered.');
 
     const runtimeConfig = await readJson(CONFIG_PATH).catch(() => readJson(EXAMPLE_CONFIG_PATH));
-    const profiles = getRuntimeComposeProfiles(runtimeConfig);
+    const genBlazeCatalog = await readJson(GENBLAZE_MODEL_CATALOG_PATH).catch(() => null);
+    const profiles = getRuntimeComposeProfiles(runtimeConfig, { genBlazeCatalog });
     const profileArgs = profiles.flatMap((profile) => ['--profile', profile]);
+    const genBlazeComposePlan = splitGenBlazeComposeProfiles(profiles);
+    const nonGenBlazeProfiles = genBlazeComposePlan.primaryProfiles;
+    const nonGenBlazeProfileArgs = nonGenBlazeProfiles.flatMap((profile) => ['--profile', profile]);
     const reverseProxy = buildReverseProxyConfig(runtimeConfig.reverseProxy || {});
+
+    if (!genBlazeComposePlan.enabled) {
+      setStepStatus(run, 'runtime', 'running', 'Removing the disabled GenBlaze gateway container.');
+      await removeDisabledGenBlazeContainer(run);
+      setStepStatus(run, 'runtime', 'complete', 'Runtime env files rendered; disabled GenBlaze gateway removed.');
+    }
 
     await closeManagedExternalAccessPorts(run, {
       source: 'setup-wizard-maintenance',
@@ -3452,7 +3621,7 @@ async function runDockerMaintenance(run) {
 
     setStepStatus(run, 'pull', 'running', 'Pulling available images.');
     try {
-      await runCommand('docker', getComposeArgs(...profileArgs, 'pull', '--ignore-pull-failures'), {
+      await runCommand('docker', getComposeArgs(...nonGenBlazeProfileArgs, 'pull', '--ignore-pull-failures'), {
         cwd: ROOT_DIR,
         env: composeEnv,
         run,
@@ -3469,12 +3638,27 @@ async function runDockerMaintenance(run) {
     setStepStatus(run, 'compose', 'running', `Validating Docker build inputs for profiles: ${profiles.join(', ')}`);
     validateDockerBuildInputs(profiles);
     setStepStatus(run, 'compose', 'running', 'Rebuilding and restarting Docker containers.');
-    await runCommand('docker', getComposeArgs(...profileArgs, 'up', '-d', '--build', '--remove-orphans'), {
+    await runCommand('docker', getComposeArgs(...nonGenBlazeProfileArgs, 'up', '-d', '--build', '--remove-orphans'), {
       cwd: ROOT_DIR,
       env: composeEnv,
       run,
       onOutput: (text) => appendLog(run, text.trim()),
     });
+    if (genBlazeComposePlan.enabled) {
+      setStepStatus(run, 'compose', 'running', 'Building and starting the validated GenBlaze gateway as the final Compose stage.');
+      await runCommand('docker', getComposeArgs(
+        '--profile',
+        'genblaze',
+        ...GENBLAZE_FINAL_UP_ARGS,
+      ), {
+        cwd: ROOT_DIR,
+        env: composeEnv,
+        run,
+        onOutput: (text) => appendLog(run, text.trim()),
+      });
+      setStepStatus(run, 'compose', 'running', 'Waiting for the GenBlaze gateway to become healthy.');
+      await waitForComposeServiceHealthy('genblaze');
+    }
     setStepStatus(run, 'compose', 'complete', 'Docker containers updated and restarted.');
 
     await ensureReverseProxy(run, profileArgs, reverseProxy);
@@ -3513,15 +3697,17 @@ async function ensureComposeEnvFile() {
   } catch (_) {
     // Best effort; Docker Desktop bind mounts may ignore chmod on some hosts.
   }
-  try {
-    await fs.access(ROOT_ENV_PATH);
-  } catch {
-    await fs.writeFile(ROOT_ENV_PATH, '', { mode: 0o600 });
-  }
-  try {
-    await fs.chmod(ROOT_ENV_PATH, 0o600);
-  } catch (_) {
-    // Best effort; Docker Desktop bind mounts may ignore chmod on some hosts.
+  for (const envPath of [ROOT_ENV_PATH, GENBLAZE_ENV_PATH]) {
+    try {
+      await fs.access(envPath);
+    } catch {
+      await fs.writeFile(envPath, '', { mode: 0o600 });
+    }
+    try {
+      await fs.chmod(envPath, 0o600);
+    } catch (_) {
+      // Best effort; Docker Desktop bind mounts may ignore chmod on some hosts.
+    }
   }
 }
 
@@ -3529,9 +3715,11 @@ async function removeGeneratedRuntimeFiles() {
   await Promise.allSettled([
     fs.rm(CONFIG_PATH, { force: true }),
     fs.rm(AVAILABLE_MODELS_PATH, { force: true }),
+    fs.rm(GENBLAZE_MODEL_CATALOG_PATH, { force: true }),
     fs.rm(MODEL_ADAPTER_PREFERENCES_PATH, { force: true }),
     fs.rm(MEDIA_TUNNEL_REFRESH_REQUEST_PATH, { force: true }),
     fs.rm(ROOT_ENV_PATH, { force: true }),
+    fs.rm(GENBLAZE_ENV_PATH, { force: true }),
     fs.rm(PROVIDER_SECRETS_PATH, { force: true }),
     fs.rm(MAIL_SECRETS_PATH, { force: true }),
     fs.rm(REVERSE_PROXY_NGINX_CONFIG_PATH, { force: true }),
@@ -3579,7 +3767,7 @@ function summarizeRuntimeConfig(config = {}, providerSecrets = {}) {
     runtime: config.runtime || 'docker',
     providers: Object.fromEntries(
       Object.entries(providers).map(([key, provider]) => {
-        const secretBackedProvider = key === 'alibabaCloud' || key === 'openrouter';
+        const secretBackedProvider = key === 'alibabaCloud' || key === 'openrouter' || key === 'gmicloud';
         const configured = secretBackedProvider
           ? Boolean(
             provider?.enabled === true &&
@@ -3604,6 +3792,7 @@ function summarizeRuntimeConfig(config = {}, providerSecrets = {}) {
       localMongo: services.localMongo !== false,
       minio: services.minio !== false,
       mediaGateway: services.mediaGateway !== false,
+      genblaze: services.genblaze === true && providers.gmicloud?.enabled === true,
       logger: services.logger !== false,
       reverseProxy: services.reverseProxy === true || reverseProxy.enabled === true,
     },
@@ -3613,10 +3802,13 @@ function summarizeRuntimeConfig(config = {}, providerSecrets = {}) {
     },
     storage: {
       provider: storage.provider || 's3-compatible',
-      mode: storage.externalMediaPublishEnabled === true ? 'external-s3' : 'local-minio',
+      backend: storage.backend || (storage.externalMediaPublishEnabled === true ? 'generic-s3' : 'minio'),
+      mode: storage.mode || (storage.externalMediaPublishEnabled === true ? 'external-s3' : 'local-minio'),
       mediaBucketName: storage.mediaBucketName || '',
+      s3Endpoint: storage.s3Endpoint || '',
       staticCdnUrl: storage.staticCdnUrl || '',
       externalMediaPublishEnabled: storage.externalMediaPublishEnabled === true,
+      credentialType: storage.credentialType || '',
     },
     publicUrls: {
       clientApp: publicUrls.clientApp || CLIENT_URL,
@@ -3801,6 +3993,34 @@ async function handleApi(req, res, pathname) {
     return true;
   }
 
+  if (req.method === 'POST' && pathname === '/api/setup/providers/gmicloud/validate') {
+    if (!await requireSetupAuth(req, res)) {
+      return true;
+    }
+    try {
+      const payload = await readRequestBody(req);
+      const result = await validateGmiCloudProviderCredential(payload.credentials || payload);
+      const validation = result?.providers?.gmicloud;
+      if (validation?.ok === true) {
+        const apiKey = normalizeSecretString(
+          payload?.credentials?.gmiCloudApiKey ||
+          payload?.gmiCloudApiKey ||
+          payload?.gmicloudApiKey ||
+          payload?.gmi_api_key ||
+          payload?.apiKey,
+        );
+        validation.validationToken = gmiCloudProviderValidations.register(
+          apiKey,
+          { modelMappings: validation.modelMappings },
+        );
+      }
+      sendJson(res, 200, result);
+    } catch (error) {
+      sendJson(res, 400, { message: error?.message || 'Unable to validate GMICloud credentials.' });
+    }
+    return true;
+  }
+
   if (req.method === 'POST' && pathname === '/api/setup/mail/validate') {
     const payload = await readRequestBody(req);
     try {
@@ -3808,6 +4028,22 @@ async function handleApi(req, res, pathname) {
       sendJson(res, 200, validation);
     } catch (error) {
       sendJson(res, 400, { ok: false, message: error?.message || 'Mail validation failed.' });
+    }
+    return true;
+  }
+
+  if (req.method === 'POST' && pathname === '/api/setup/storage/backblaze/validate') {
+    if (!await requireSetupAuth(req, res)) {
+      return true;
+    }
+    const payload = await readRequestBody(req);
+    try {
+      const validation = await validateBackblazeStorageCredentials(
+        payload.storage || payload.deployment?.infrastructure?.storage || payload,
+      );
+      sendJson(res, 200, validation);
+    } catch (error) {
+      sendJson(res, 400, { ok: false, message: error?.message || 'Backblaze storage validation failed.' });
     }
     return true;
   }
@@ -3880,7 +4116,12 @@ async function handleApi(req, res, pathname) {
         payload.credentialReferences = references;
         payload.credentials = resolved.credentials;
       }
-      validateExternalStorageConfig(payload?.deployment?.infrastructure || {});
+      const infrastructure = payload?.deployment?.infrastructure || {};
+      validateExternalStorageConfig(infrastructure);
+      if (infrastructure.storage?.mode === 'backblaze-b2') {
+        const validation = await validateBackblazeStorageCredentials(infrastructure.storage);
+        infrastructure.storage.credentialType = validation.credentialType;
+      }
       payload.admin = buildAdminConfig(payload.admin);
       payload.setupSecret = randomBytes(32).toString('hex');
       payload.mailValidation = await validateMailConfig(payload.mail || {});
@@ -3892,6 +4133,22 @@ async function handleApi(req, res, pathname) {
       };
       payload.validatedAlibabaProviderSecret = consumeValidatedAlibabaProviderSecret(payload);
       payload.validatedOpenRouterProviderSecret = consumeValidatedOpenRouterProviderSecret(payload);
+      payload.validatedGmiCloudProviderSecret = consumeValidatedGmiCloudProviderSecret(payload);
+      const gmiCloudEnabled = Boolean(payload.validatedGmiCloudProviderSecret?.apiKey);
+      payload.deployment = {
+        ...(payload.deployment || {}),
+        providers: {
+          ...(payload.deployment?.providers || {}),
+          gmicloud: {
+            ...(payload.deployment?.providers?.gmicloud || {}),
+            enabled: gmiCloudEnabled,
+          },
+        },
+        services: {
+          ...(payload.deployment?.services || {}),
+          genblaze: gmiCloudEnabled,
+        },
+      };
     } catch (error) {
       sendJson(res, 400, { message: error?.message || 'Setup validation failed.' });
       return true;

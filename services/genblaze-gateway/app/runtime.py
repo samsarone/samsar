@@ -1,0 +1,1570 @@
+"""GenBlaze/GMICloud runtime with no persisted job state."""
+
+from __future__ import annotations
+
+import asyncio
+import base64
+import binascii
+import hashlib
+import json
+import math
+import mimetypes
+import os
+from dataclasses import dataclass
+from typing import Any, Awaitable, Callable, Sequence
+
+from cryptography.exceptions import InvalidTag
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+
+from .catalog import (
+    CatalogConfigurationError,
+    ModelCatalog,
+    ModelRoute,
+    UnsupportedModelError,
+    load_model_catalog,
+)
+from .config import Settings
+from .errors import GatewayError
+
+
+_IMAGE_MEDIA_PARAMS = frozenset(
+    {
+        "negative_prompt",
+        "aspect_ratio",
+        "resolution",
+        "size",
+        "quality",
+        "output_format",
+        "number_of_images",
+        "num_images",
+        "image_size",
+        "seed",
+        "guidance_scale",
+        "num_inference_steps",
+    }
+)
+_VIDEO_MEDIA_PARAMS = frozenset(
+    {
+        "negative_prompt",
+        "duration",
+        "aspect_ratio",
+        "resolution",
+        "seed",
+        "sound",
+        "generate_audio",
+        "mode",
+        "person_generation",
+        "prompt_optimizer",
+    }
+)
+_ELEVENLABS_AUDIO_PARAMS = frozenset({"voice", "voice_id", "output_format"})
+_OPENAI_AUDIO_PARAMS = frozenset({"voice", "output_format", "instructions"})
+_AUDIO_MEDIA_PARAMS = _ELEVENLABS_AUDIO_PARAMS | _OPENAI_AUDIO_PARAMS
+_SEEDREAM_SIZE_BY_ASPECT_RATIO = {
+    "1:1": "1024x1024",
+    "16:9": "1792x1024",
+    "9:16": "1024x1792",
+    "4:3": "1152x864",
+    "3:4": "864x1152",
+}
+_FAL_ASPECT_RATIO_ALIASES = {
+    "square": "1:1",
+    "square_hd": "1:1",
+    "landscape_16_9": "16:9",
+    "portrait_16_9": "9:16",
+    "landscape_4_3": "4:3",
+    "portrait_4_3": "3:4",
+}
+_FAL_AUTO_SIZE_ALIASES = {
+    "auto_1k": "1K",
+    "auto_2k": "2K",
+}
+_SAMSAR_IMAGE_ASPECT_RATIOS = ("1:1", "16:9", "9:16", "4:3", "3:4")
+_GMI_NANO_FLASH_ASPECT_RATIOS = (
+    "1:1",
+    "3:2",
+    "2:3",
+    "3:4",
+    "4:3",
+    "4:5",
+    "5:4",
+    "9:16",
+    "16:9",
+    "21:9",
+)
+_GMI_NANO_PRO_ASPECT_RATIOS = (
+    "1:1",
+    "3:4",
+    "4:3",
+    "4:5",
+    "5:4",
+    "9:16",
+    "16:9",
+    "21:9",
+)
+_GMI_SEEDANCE_ASPECT_RATIOS = ("16:9", "9:16", "4:3", "3:4", "21:9", "1:1")
+_SEEDREAM_MIN_PIXELS = 1280 * 720
+_SEEDREAM_MAX_PIXELS = int(2048 * 2048 * 1.1025)
+
+
+def _drop_params(*names: str) -> Callable[[dict[str, Any]], dict[str, Any]]:
+    def transform(params: dict[str, Any]) -> dict[str, Any]:
+        transformed = dict(params)
+        for name in names:
+            transformed.pop(name, None)
+        return transformed
+
+    return transform
+
+
+def _aspect_ratio_coercer(*allowed: str) -> Callable[[Any], str]:
+    allowed_values = frozenset(allowed)
+
+    def coerce(value: Any) -> str:
+        normalized = str(value).strip().lower().replace(" ", "").replace("x", ":")
+        normalized = _FAL_ASPECT_RATIO_ALIASES.get(normalized, normalized)
+        if normalized not in allowed_values:
+            raise ValueError(f"expected one of {sorted(allowed_values)}")
+        return normalized
+
+    return coerce
+
+
+def _seedream_size(value: Any) -> str:
+    if isinstance(value, dict):
+        if set(value) != {"width", "height"}:
+            raise ValueError("custom Seedream size requires width and height")
+        width = value["width"]
+        height = value["height"]
+        if isinstance(width, bool) or isinstance(height, bool):
+            raise ValueError("custom Seedream width and height must be integers")
+        try:
+            width = int(width)
+            height = int(height)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("custom Seedream width and height must be integers") from exc
+        if width <= 0 or height <= 0:
+            raise ValueError("custom Seedream width and height must be positive")
+        normalized = f"{width}x{height}"
+    else:
+        raw = str(value).strip()
+        alias = raw.lower().replace(" ", "")
+        if alias in _FAL_AUTO_SIZE_ALIASES:
+            return _FAL_AUTO_SIZE_ALIASES[alias]
+        if alias in _FAL_ASPECT_RATIO_ALIASES:
+            ratio = _FAL_ASPECT_RATIO_ALIASES[alias]
+            return _SEEDREAM_SIZE_BY_ASPECT_RATIO[ratio]
+        if raw.upper() in {"1K", "2K"}:
+            return raw.upper()
+        normalized = raw.lower().replace(" ", "")
+
+    try:
+        width_text, height_text = normalized.split("x", 1)
+        width = int(width_text)
+        height = int(height_text)
+    except (AttributeError, TypeError, ValueError) as exc:
+        raise ValueError(
+            "Seedream size must be 1K, 2K, a supported Fal size, or widthxheight"
+        ) from exc
+    pixels = width * height
+    ratio = width / height
+    if not _SEEDREAM_MIN_PIXELS <= pixels <= _SEEDREAM_MAX_PIXELS:
+        raise ValueError(
+            "Seedream 5 Pro custom size must contain between 921600 and "
+            f"{_SEEDREAM_MAX_PIXELS} pixels"
+        )
+    if not 1 / 16 <= ratio <= 16:
+        raise ValueError("Seedream 5 Pro custom size aspect ratio must be between 1:16 and 16:1")
+    return f"{width}x{height}"
+
+
+def _seedream_params(params: dict[str, Any]) -> dict[str, Any]:
+    transformed = dict(params)
+    # Samsar always supplies an aspect ratio; the exact size mapping below is
+    # authoritative for this GMI route, so its generic resolution hint must
+    # not reach the strict upstream payload.
+    transformed.pop("resolution", None)
+    # Samsar's Seedream contract generates one image per request. GMICloud's
+    # max_images parameter is only meaningful when sequential generation is
+    # enabled, so forwarding the shared image-count hint can make an otherwise
+    # valid single-image request fail upstream.
+    transformed.pop("number_of_images", None)
+    transformed.pop("num_images", None)
+    transformed.pop("max_images", None)
+    aspect_ratio = transformed.pop("aspect_ratio", None)
+    explicit_size = transformed.get("size")
+    if explicit_size is not None:
+        transformed["size"] = _seedream_size(explicit_size)
+    elif aspect_ratio is not None:
+        normalized_ratio = _aspect_ratio_coercer(*_SAMSAR_IMAGE_ASPECT_RATIOS)(
+            aspect_ratio
+        )
+        transformed["size"] = _SEEDREAM_SIZE_BY_ASPECT_RATIO[normalized_ratio]
+    return transformed
+
+
+def _image_size_coercer(*allowed: str) -> Callable[[Any], str]:
+    allowed_values = frozenset(allowed)
+
+    def coerce(value: Any) -> str:
+        normalized = str(value).strip().upper()
+        # Samsar/Fal call Gemini Flash Image's 512px tier `0.5K`, while
+        # GMICloud's queue contract names the same tier `512`.
+        if normalized == "0.5K":
+            normalized = "512"
+        # Accept the Fal-style automatic tier names at the gateway boundary,
+        # but emit only the exact GMICloud enum values on the upstream wire.
+        elif normalized == "AUTO_1K":
+            normalized = "1K"
+        elif normalized == "AUTO_2K":
+            normalized = "2K"
+        if normalized not in allowed_values:
+            raise ValueError(f"expected one of {sorted(allowed_values)}")
+        return normalized
+
+    return coerce
+
+
+def _image_output_format(value: Any) -> str:
+    normalized = str(value).strip().lower()
+    if normalized not in {"png", "jpeg"}:
+        raise ValueError("image output format must be png or jpeg")
+    return normalized
+
+
+def _whole_seconds_string(value: Any) -> str:
+    if isinstance(value, bool):
+        raise ValueError("duration must be a whole number of seconds")
+    try:
+        numeric = float(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("duration must be a whole number of seconds") from exc
+    if not numeric.is_integer() or numeric <= 0:
+        raise ValueError("duration must be a positive whole number of seconds")
+    return str(int(numeric))
+
+
+def _legacy_kling_duration(value: Any) -> str:
+    duration = _whole_seconds_string(value)
+    if duration not in {"5", "10"}:
+        raise ValueError("legacy Kling duration must be 5 or 10 seconds")
+    return duration
+
+
+def _boolean(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    normalized = str(value).strip().lower()
+    if normalized in {"1", "true", "yes", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "off"}:
+        return False
+    raise ValueError("expected a boolean value")
+
+
+def _uint32(value: Any) -> int:
+    if isinstance(value, bool):
+        raise ValueError("seed must be an integer between 0 and 4294967295")
+    try:
+        numeric = int(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("seed must be an integer between 0 and 4294967295") from exc
+    if str(value).strip() != str(numeric) and not isinstance(value, int):
+        try:
+            if float(value) != numeric:
+                raise ValueError
+        except (TypeError, ValueError) as exc:
+            raise ValueError(
+                "seed must be an integer between 0 and 4294967295"
+            ) from exc
+    if not 0 <= numeric <= 4_294_967_295:
+        raise ValueError("seed must be an integer between 0 and 4294967295")
+    return numeric
+
+
+def _veo_duration(value: Any) -> int:
+    if isinstance(value, bool):
+        return 8
+    try:
+        # This deliberately mirrors the native adapter's parseInt-style
+        # duration buckets rather than exposing GMICloud's enum directly.
+        duration = int(float(value))
+    except (TypeError, ValueError, OverflowError):
+        return 8
+    if duration <= 4:
+        return 4
+    if duration <= 6:
+        return 6
+    return 8
+
+
+def _veo_aspect_ratio(value: Any) -> str:
+    normalized = (
+        str(value)
+        .strip()
+        .lower()
+        .replace(" ", "")
+        .replace("x", ":")
+        .replace("/", ":")
+    )
+    if normalized in {"9:16", "portrait", "vertical"}:
+        return "9:16"
+    if normalized in {"16:9", "landscape", "horizontal"}:
+        return "16:9"
+    return "16:9"
+
+
+def _veo_resolution_or_none(value: Any) -> str | None:
+    normalized = str(value).strip().lower()
+    aliases = {
+        "720": "720p",
+        "720p": "720p",
+        "1080": "1080p",
+        "1080p": "1080p",
+        "4k": "4k",
+    }
+    return aliases.get(normalized)
+
+
+def _veo_params(params: dict[str, Any]) -> dict[str, Any]:
+    transformed = dict(params)
+    if "resolution" in transformed:
+        resolution = _veo_resolution_or_none(transformed["resolution"])
+        if resolution is None:
+            transformed.pop("resolution", None)
+        else:
+            transformed["resolution"] = resolution
+    return transformed
+
+
+def _veo_person_generation(value: Any) -> str:
+    normalized = str(value).strip().lower().replace("-", "_").replace(" ", "_")
+    if normalized not in {"allow_all", "allow_adult", "disallow"}:
+        raise ValueError("person generation must be allow_all, allow_adult, or disallow")
+    return normalized
+
+
+def _string(value: Any) -> str:
+    if not isinstance(value, str):
+        raise ValueError("expected a string")
+    return value
+
+
+def _rounded_duration(value: Any, *, minimum: int, maximum: int, name: str) -> int:
+    if isinstance(value, bool):
+        raise ValueError(f"{name} duration must be a number")
+    try:
+        numeric = float(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{name} duration must be a number") from exc
+    if not math.isfinite(numeric):
+        raise ValueError(f"{name} duration must be finite")
+    rounded = math.floor(numeric + 0.5)
+    return min(max(rounded, minimum), maximum)
+
+
+def _seedance_1_5_duration(value: Any) -> int:
+    return _rounded_duration(value, minimum=4, maximum=12, name="Seedance 1.5")
+
+
+def _seedance_2_duration(value: Any) -> int:
+    return _rounded_duration(value, minimum=4, maximum=15, name="Seedance 2.0")
+
+
+def _seedance_2_aspect_ratio(value: Any) -> str:
+    normalized = str(value).strip().lower().replace(" ", "").replace("x", ":")
+    normalized = _FAL_ASPECT_RATIO_ALIASES.get(normalized, normalized)
+    if normalized == "auto":
+        normalized = "adaptive"
+    allowed = frozenset((*_GMI_SEEDANCE_ASPECT_RATIOS, "adaptive"))
+    if normalized not in allowed:
+        raise ValueError(f"expected one of {sorted(allowed)}")
+    return normalized
+
+
+def _kling_v3_turbo_duration(value: Any) -> str:
+    duration = _whole_seconds_string(value)
+    if not 3 <= int(duration) <= 15:
+        raise ValueError("Kling 3.0 Turbo duration must be between 3 and 15 seconds")
+    return duration
+
+
+def _kling_v3_turbo_params(params: dict[str, Any]) -> dict[str, Any]:
+    transformed = _drop_params(
+        "aspect_ratio",
+        "negative_prompt",
+        "seed",
+        "sound",
+        "generate_audio",
+        "mode",
+    )(params)
+    # Samsar's Turbo route is the fixed Standard/720p equivalent.
+    transformed["resolution"] = "720p"
+    return transformed
+
+
+def _bool_to_on_off(value: Any) -> str:
+    if isinstance(value, bool):
+        return "on" if value else "off"
+    normalized = str(value).strip().lower()
+    if normalized in {"1", "true", "yes", "on"}:
+        return "on"
+    if normalized in {"0", "false", "no", "off"}:
+        return "off"
+    raise ValueError("sound must be a boolean or on/off value")
+
+
+def _happyhorse_duration(value: Any) -> int:
+    if isinstance(value, bool):
+        return 5
+    try:
+        numeric = float(value)
+    except (TypeError, ValueError):
+        return 5
+    if not math.isfinite(numeric):
+        return 5
+    for duration in (5, 10, 15):
+        if duration >= numeric:
+            return duration
+    return 15
+
+
+def _happyhorse_seed(value: Any) -> int:
+    seed = _uint32(value)
+    if seed > 2_147_483_647:
+        raise ValueError("HappyHorse seed must be between 0 and 2147483647")
+    return seed
+
+
+def _happyhorse_params(params: dict[str, Any]) -> dict[str, Any]:
+    # Audio is not a Samsar HappyHorse setting. Drop the shared adapter's
+    # synthetic false value so GMICloud, like the native model, applies its
+    # own model default instead of making this route uniquely silent.
+    transformed = _drop_params(
+        "aspect_ratio",
+        "audio",
+        "generate_audio",
+        "negative_prompt",
+        "sound",
+        "mode",
+    )(params)
+    transformed["resolution"] = "720P"
+    return transformed
+
+
+def _elevenlabs_output_format(value: Any) -> str:
+    normalized = str(value).strip()
+    if normalized != "mp3_44100_128":
+        raise ValueError(
+            "ElevenLabs via GMICloud supports output_format mp3_44100_128"
+        )
+    return normalized
+
+
+def _legacy_kling_params(params: dict[str, Any]) -> dict[str, Any]:
+    return _drop_params(
+        "aspect_ratio",
+        "resolution",
+        "seed",
+        "sound",
+        "generate_audio",
+        "mode",
+    )(params)
+
+
+def _hailuo_pro_params(params: dict[str, Any]) -> dict[str, Any]:
+    transformed = _drop_params(
+        "aspect_ratio",
+        "seed",
+        "sound",
+        "generate_audio",
+        "mode",
+    )(params)
+    # The live GMICloud Hailuo route supports 1080P only at six seconds.
+    # Samsar's HAILUOPRO contract is pinned to that exact quality tier.
+    transformed["duration"] = 6
+    transformed["resolution"] = "1080P"
+    return transformed
+
+
+def _media_contract_key(samsar_model: str) -> str:
+    if samsar_model == "GPTIMAGE2":
+        return "gpt-image"
+    if samsar_model == "GPTIMAGE2EDIT":
+        return "gpt-image-edit"
+    if samsar_model == "SEEDREAM":
+        return "seedream"
+    if samsar_model in {"NANOBANANA2", "NANOBANANA2EDIT"}:
+        return "nano-flash"
+    if samsar_model in {"NANOBANANAPRO", "NANOBANANAPROEDIT"}:
+        return "nano-pro"
+    if samsar_model == "BRIA_ERASER":
+        return "bria-eraser"
+    if samsar_model == "BRIA_GENFILL":
+        return "bria-genfill"
+    if samsar_model.startswith("VEO3.1"):
+        return "veo"
+    if samsar_model == "SEEDANCEI2V":
+        return "seedance-1-5"
+    if samsar_model in {"SEEDANCE2.0I2V", "SEEDANCE2.0T2V"}:
+        return "seedance-2"
+    if samsar_model == "KLINGIMGTOVID3PRO":
+        return "kling-v3"
+    if samsar_model == "KLINGIMGTOVIDTURBO":
+        return "kling-v3-turbo"
+    if samsar_model in {
+        "KLINGIMGTOVIDPRO",
+        "KLINGIMGTOVID2.1MASTER",
+        "KLINGIMGTOVID2.1PRO",
+        "KLINGIMGTOVID2.1STANDARD",
+    }:
+        return "kling-legacy"
+    if samsar_model == "HAILUOPRO":
+        return "hailuo-pro"
+    if samsar_model == "HAPPYHORSEI2V":
+        return "happyhorse"
+    if samsar_model == "ELEVENLABS":
+        return "elevenlabs-tts"
+    if samsar_model == "OPENAI_TTS":
+        return "openai-tts"
+    raise ValueError(f"No exact GenBlaze media contract for {samsar_model!r}")
+
+
+@dataclass(frozen=True, slots=True)
+class GenBlazeBindings:
+    """Imported GenBlaze symbols, injectable for network-free contract tests."""
+
+    achat: Callable[..., Awaitable[Any]]
+    image_provider_type: type
+    video_provider_type: type
+    audio_provider_type: type
+    provider_error_type: type[Exception]
+    step_type: type
+    asset_type: type
+    modality_type: type
+    media_registry_factory: Callable[[str, Sequence[ModelRoute]], Any] | None = None
+
+
+def load_genblaze_bindings() -> GenBlazeBindings:
+    from genblaze_core.exceptions import ProviderError
+    from genblaze_core.models.asset import Asset
+    from genblaze_core.models.enums import Modality
+    from genblaze_core.models.step import Step
+    from genblaze_core.providers import ModelRegistry, ModelSpec, route_images
+    from genblaze_gmicloud import (
+        GMICloudAudioProvider,
+        GMICloudImageProvider,
+        GMICloudVideoProvider,
+        achat,
+    )
+
+    def media_registry_factory(
+        modality: str,
+        routes: Sequence[ModelRoute],
+    ) -> Any:
+        if modality not in {"image", "video", "audio"} or any(
+            route.modality != modality for route in routes
+        ):
+            raise ValueError(f"Invalid {modality!r} routes for GenBlaze media registry")
+        registry = ModelRegistry(strict_params=True)
+        specs = []
+        routes_by_upstream: dict[str, list[ModelRoute]] = {}
+        for route in routes:
+            routes_by_upstream.setdefault(route.gmi_model, []).append(route)
+        for upstream_model, upstream_routes in routes_by_upstream.items():
+            contract_keys = {
+                _media_contract_key(route.samsar_model) for route in upstream_routes
+            }
+            if len(contract_keys) != 1:
+                raise ValueError(
+                    f"Conflicting Samsar contracts for GMICloud model {upstream_model!r}"
+                )
+            contract_key = contract_keys.pop()
+            input_mapping = None
+            param_aliases: dict[str, str] = {}
+            param_transformer = None
+            param_coercers: dict[str, Callable[[Any], Any]] = {}
+            param_defaults: dict[str, Any] = {}
+            param_required: frozenset[str] = frozenset()
+            extras: dict[str, Any] = {"envelope_key": "payload"}
+
+            if modality == "video":
+                slot_options = [_media_input_slots(route) for route in upstream_routes]
+                # GMI can expose one upstream slug through both Samsar T2V and
+                # I2V contracts (Veo) or through two quality labels (Kling).
+                # A longer positional mapping is a safe union: with no inputs
+                # it adds nothing, while I2V still reaches the expected slot.
+                input_slots = max(slot_options, key=len, default=())
+                if any(
+                    slots and input_slots[: len(slots)] != slots
+                    for slots in slot_options
+                ):
+                    raise ValueError(
+                        f"Conflicting input mappings for GMICloud model {upstream_model!r}"
+                    )
+                input_mapping = route_images(slots=input_slots)
+
+            if contract_key == "gpt-image-edit":
+                input_mapping = route_images(slots=("image", "mask"))
+            elif contract_key in {"nano-flash", "nano-pro"}:
+                input_mapping = route_images(array_slot="image")
+            elif contract_key in {"bria-eraser", "bria-genfill"}:
+                input_mapping = route_images(slots=("image", "mask"))
+
+            if contract_key == "gpt-image":
+                param_aliases = {"number_of_images": "n", "num_images": "n"}
+                param_transformer = _drop_params("aspect_ratio")
+                allowlist = frozenset({"prompt", "size", "quality", "output_format", "n"})
+            elif contract_key == "gpt-image-edit":
+                param_aliases = {"number_of_images": "n", "num_images": "n"}
+                allowlist = frozenset({"prompt", "image", "mask", "size", "quality", "n"})
+                param_required = frozenset({"prompt", "image"})
+            elif contract_key == "seedream":
+                param_transformer = _seedream_params
+                allowlist = frozenset(
+                    {
+                        "prompt",
+                        "size",
+                        "output_format",
+                    }
+                )
+            elif contract_key in {"nano-flash", "nano-pro"}:
+                param_aliases = {
+                    "output_format": "image_output_format",
+                    "resolution": "image_size",
+                }
+                param_transformer = _drop_params("number_of_images", "num_images")
+                param_coercers = {
+                    "aspect_ratio": _aspect_ratio_coercer(
+                        *(
+                            _GMI_NANO_FLASH_ASPECT_RATIOS
+                            if contract_key == "nano-flash"
+                            else _GMI_NANO_PRO_ASPECT_RATIOS
+                        )
+                    ),
+                    "image_size": _image_size_coercer(
+                        *("512", "1K", "2K", "4K")
+                        if contract_key == "nano-flash"
+                        else ("1K", "2K", "4K")
+                    ),
+                    "image_output_format": _image_output_format,
+                }
+                allowlist = frozenset(
+                    {
+                        "prompt",
+                        "aspect_ratio",
+                        "image_output_format",
+                        "image_size",
+                        "image",
+                    }
+                )
+            elif contract_key == "bria-eraser":
+                allowlist = frozenset({"image", "mask"})
+                param_required = frozenset({"image", "mask"})
+            elif contract_key == "bria-genfill":
+                allowlist = frozenset(
+                    {
+                        "prompt",
+                        "image",
+                        "mask",
+                        "negative_prompt",
+                        "guidance_scale",
+                        "num_inference_steps",
+                    }
+                )
+                param_required = frozenset({"prompt", "image", "mask"})
+            elif contract_key == "veo":
+                param_aliases = {
+                    "duration": "durationSeconds",
+                    "aspect_ratio": "aspectRatio",
+                    "generate_audio": "generateAudio",
+                    "negative_prompt": "negativePrompt",
+                    "person_generation": "personGeneration",
+                }
+                param_transformer = _veo_params
+                allowlist = frozenset(
+                    {
+                        "prompt",
+                        "durationSeconds",
+                        "aspectRatio",
+                        "generateAudio",
+                        "negativePrompt",
+                        "personGeneration",
+                        "resolution",
+                        "seed",
+                        "image",
+                        "lastFrame",
+                    }
+                )
+                param_coercers = {
+                    "durationSeconds": _veo_duration,
+                    "aspectRatio": _veo_aspect_ratio,
+                    "generateAudio": _boolean,
+                    "negativePrompt": _string,
+                    "personGeneration": _veo_person_generation,
+                    "seed": _uint32,
+                }
+                if input_mapping is not None:
+                    veo_image_mapping = input_mapping
+
+                    def map_veo_inputs(
+                        inputs: Sequence[Any],
+                        mapping: Callable[[Sequence[Any]], dict[str, Any]] = veo_image_mapping,
+                    ) -> dict[str, Any]:
+                        mapped = mapping(inputs)
+                        if any(key in mapped for key in ("image", "lastFrame")):
+                            mapped.setdefault("resolution", "720p")
+                        return mapped
+
+                    input_mapping = map_veo_inputs
+                extras["has_audio"] = True
+            elif contract_key == "kling-v3":
+                param_aliases = {"generate_audio": "sound"}
+                param_transformer = _drop_params("aspect_ratio")
+                param_coercers = {
+                    "duration": _whole_seconds_string,
+                    "sound": _bool_to_on_off,
+                }
+                param_defaults = {"mode": "pro"}
+                allowlist = frozenset(
+                    {"prompt", "image", "image_tail", "duration", "sound", "mode"}
+                )
+            elif contract_key == "kling-v3-turbo":
+                param_transformer = _kling_v3_turbo_params
+                param_coercers = {"duration": _kling_v3_turbo_duration}
+                allowlist = frozenset(
+                    {"prompt", "first_frame", "duration", "resolution"}
+                )
+            elif contract_key == "kling-legacy":
+                param_transformer = _legacy_kling_params
+                param_coercers = {"duration": _legacy_kling_duration}
+                allowlist = frozenset(
+                    {"prompt", "image", "duration", "negative_prompt"}
+                )
+            elif contract_key in {"seedance-1-5", "seedance-2"}:
+                param_aliases = {"aspect_ratio": "ratio"}
+                param_coercers = {
+                    "duration": (
+                        _seedance_1_5_duration
+                        if contract_key == "seedance-1-5"
+                        else _seedance_2_duration
+                    ),
+                    "ratio": (
+                        _aspect_ratio_coercer(*_GMI_SEEDANCE_ASPECT_RATIOS)
+                        if contract_key == "seedance-1-5"
+                        else _seedance_2_aspect_ratio
+                    ),
+                    "generate_audio": _boolean,
+                    "seed": _uint32,
+                }
+                allowlist = frozenset(
+                    {
+                        "prompt",
+                        "first_frame",
+                        "last_frame",
+                        "duration",
+                        "ratio",
+                        "generate_audio",
+                        "seed",
+                    }
+                )
+            elif contract_key == "hailuo-pro":
+                param_transformer = _hailuo_pro_params
+                param_coercers = {"prompt_optimizer": _boolean}
+                allowlist = frozenset(
+                    {
+                        "prompt",
+                        "first_frame_image",
+                        "duration",
+                        "resolution",
+                        "prompt_optimizer",
+                    }
+                )
+            elif contract_key == "happyhorse":
+                param_transformer = _happyhorse_params
+                param_coercers = {
+                    "duration": _happyhorse_duration,
+                    "seed": _happyhorse_seed,
+                }
+                allowlist = frozenset(
+                    {
+                        "prompt",
+                        "first_frame",
+                        "duration",
+                        "resolution",
+                        "seed",
+                    }
+                )
+            elif contract_key == "elevenlabs-tts":
+                param_aliases = {
+                    "prompt": "text",
+                    "voice": "voice_id",
+                }
+                param_defaults = {"output_format": "mp3_44100_128"}
+                param_coercers = {"output_format": _elevenlabs_output_format}
+                allowlist = frozenset({"text", "voice_id", "output_format"})
+                param_required = frozenset({"text", "voice_id"})
+                extras["is_music"] = False
+            elif contract_key == "openai-tts":
+                param_aliases = {
+                    "prompt": "input",
+                    "output_format": "response_format",
+                }
+                param_defaults = {"response_format": "mp3"}
+                allowlist = frozenset(
+                    {"input", "voice", "response_format", "instructions"}
+                )
+                param_required = frozenset({"input", "voice"})
+                extras["is_music"] = False
+            else:  # pragma: no cover - protected by _media_contract_key
+                raise ValueError(f"Unhandled GenBlaze media contract {contract_key!r}")
+
+            specs.append(
+                ModelSpec(
+                    model_id=upstream_model,
+                    modality=getattr(Modality, modality.upper()),
+                    param_allowlist=allowlist,
+                    param_aliases=param_aliases,
+                    param_transformer=param_transformer,
+                    param_coercers=param_coercers,
+                    param_defaults=param_defaults,
+                    param_required=param_required,
+                    input_mapping=input_mapping,
+                    extras=extras,
+                )
+            )
+        registry.extend(specs)
+        return registry
+
+    return GenBlazeBindings(
+        achat=achat,
+        image_provider_type=GMICloudImageProvider,
+        video_provider_type=GMICloudVideoProvider,
+        audio_provider_type=GMICloudAudioProvider,
+        provider_error_type=ProviderError,
+        step_type=Step,
+        asset_type=Asset,
+        modality_type=Modality,
+        media_registry_factory=media_registry_factory,
+    )
+
+
+class JobTokenCodec:
+    """AES-GCM-sealed job envelope used as the public, opaque request id."""
+
+    _VERSION = 1
+    _MAX_TOKEN_LENGTH = 4096
+    _NONCE_BYTES = 12
+    _AAD = b"samsar-genblaze-media-job:v1"
+
+    def __init__(self, secret: str, *, legacy_secrets: Sequence[str] = ()):
+        if not secret:
+            raise ValueError("A job token secret is required")
+        secrets = (
+            secret,
+            *(value for value in legacy_secrets if value and value != secret),
+        )
+        self._ciphers = tuple(
+            AESGCM(
+                hashlib.sha256(
+                    b"samsar-genblaze-media-job-key:v1\0" + value.encode("utf-8")
+                ).digest()
+            )
+            for value in secrets
+        )
+        self._cipher = self._ciphers[0]
+
+    @staticmethod
+    def _encode_part(value: bytes) -> str:
+        return base64.urlsafe_b64encode(value).rstrip(b"=").decode("ascii")
+
+    @staticmethod
+    def _decode_part(value: str) -> bytes:
+        padding = "=" * (-len(value) % 4)
+        return base64.b64decode(value + padding, altchars=b"-_", validate=True)
+
+    def encode(self, *, model: str, upstream_id: str) -> str:
+        payload = json.dumps(
+            {"v": self._VERSION, "m": model, "i": upstream_id},
+            separators=(",", ":"),
+            sort_keys=True,
+        ).encode("utf-8")
+        nonce = os.urandom(self._NONCE_BYTES)
+        ciphertext = self._cipher.encrypt(nonce, payload, self._AAD)
+        return self._encode_part(nonce + ciphertext)
+
+    def decode(self, token: str) -> tuple[str, str]:
+        try:
+            if not token or len(token) > self._MAX_TOKEN_LENGTH:
+                raise ValueError("invalid token length")
+            sealed = self._decode_part(token)
+            if len(sealed) <= self._NONCE_BYTES + 16:
+                raise ValueError("invalid token payload")
+            nonce = sealed[: self._NONCE_BYTES]
+            ciphertext = sealed[self._NONCE_BYTES :]
+            invalid_tag: InvalidTag | None = None
+            for cipher in self._ciphers:
+                try:
+                    plaintext = cipher.decrypt(nonce, ciphertext, self._AAD)
+                except InvalidTag as exc:
+                    invalid_tag = exc
+                    continue
+                payload = json.loads(plaintext)
+                if set(payload) != {"v", "m", "i"} or payload["v"] != self._VERSION:
+                    raise ValueError("invalid token payload")
+                model = payload["m"]
+                upstream_id = payload["i"]
+                if (
+                    not isinstance(model, str)
+                    or not model
+                    or not isinstance(upstream_id, str)
+                    or not upstream_id
+                ):
+                    raise ValueError("invalid token fields")
+                return model, upstream_id
+            raise invalid_tag or InvalidTag
+        except (
+            InvalidTag,
+            binascii.Error,
+            ValueError,
+            TypeError,
+            KeyError,
+            json.JSONDecodeError,
+        ) as exc:
+            raise GatewayError(
+                "The GenBlaze request id is invalid or has been tampered with.",
+                status_code=400,
+                code="invalid_request_id",
+                error_type="invalid_request_error",
+            ) from exc
+
+
+class GatewayRuntime:
+    def __init__(
+        self,
+        settings: Settings,
+        *,
+        bindings: GenBlazeBindings | None = None,
+    ):
+        self.settings = settings
+        self._bindings: GenBlazeBindings | None = None
+        self._image_provider: Any = None
+        self._video_provider: Any = None
+        self._audio_provider: Any = None
+        self._token_codec: JobTokenCodec | None = None
+        self._catalog: ModelCatalog | None = None
+        self._initialization_error: str | None = None
+
+        if not settings.gmi_api_key:
+            if not settings.model_catalog_path:
+                self._catalog = load_model_catalog(None)
+            self._initialization_error = "GMI_API_KEY is not configured"
+            return
+
+        try:
+            self._catalog = load_model_catalog(
+                settings.model_catalog_path,
+                gmi_api_key=settings.gmi_api_key,
+            )
+            self._bindings = bindings or load_genblaze_bindings()
+            common_provider_options: dict[str, Any] = {
+                "api_key": settings.gmi_api_key,
+                "http_timeout": settings.upstream_timeout_seconds,
+            }
+            if settings.media_base_url:
+                common_provider_options["base_url"] = settings.media_base_url
+            image_options = dict(common_provider_options)
+            video_options = dict(common_provider_options)
+            audio_options = dict(common_provider_options)
+            if self._bindings.media_registry_factory is not None:
+                image_options["models"] = self._bindings.media_registry_factory(
+                    "image",
+                    tuple(
+                        route for route in self._catalog.routes if route.modality == "image"
+                    ),
+                )
+                video_options["models"] = self._bindings.media_registry_factory(
+                    "video",
+                    tuple(
+                        route for route in self._catalog.routes if route.modality == "video"
+                    ),
+                )
+                audio_options["models"] = self._bindings.media_registry_factory(
+                    "audio",
+                    tuple(
+                        route for route in self._catalog.routes if route.modality == "audio"
+                    ),
+                )
+            self._image_provider = self._bindings.image_provider_type(**image_options)
+            self._video_provider = self._bindings.video_provider_type(**video_options)
+            self._audio_provider = self._bindings.audio_provider_type(**audio_options)
+            primary_token_secret = settings.job_token_secret or settings.gmi_api_key
+            legacy_token_secrets = (
+                (settings.gmi_api_key,)
+                if settings.gmi_api_key != primary_token_secret
+                else ()
+            )
+            self._token_codec = JobTokenCodec(
+                primary_token_secret,
+                legacy_secrets=legacy_token_secrets,
+            )
+        except CatalogConfigurationError as exc:
+            self._catalog = None
+            self._initialization_error = f"GenBlaze model catalog is invalid: {exc}"
+        except Exception as exc:
+            message = str(exc)
+            if settings.gmi_api_key:
+                message = message.replace(settings.gmi_api_key, "[redacted]")
+            self._initialization_error = f"GenBlaze initialization failed: {message}"
+
+    @property
+    def ready(self) -> bool:
+        return (
+            self._initialization_error is None
+            and self._bindings is not None
+            and self._image_provider is not None
+            and self._video_provider is not None
+            and self._audio_provider is not None
+            and self._token_codec is not None
+            and self._catalog is not None
+        )
+
+    @property
+    def readiness_reason(self) -> str | None:
+        return self._initialization_error
+
+    def _require_ready(self) -> tuple[GenBlazeBindings, JobTokenCodec]:
+        if not self.ready:
+            raise GatewayError(
+                "The GenBlaze gateway is not ready.",
+                status_code=503,
+                code="gateway_not_ready",
+            )
+        assert self._bindings is not None
+        assert self._token_codec is not None
+        return self._bindings, self._token_codec
+
+    def model_list(self) -> dict[str, Any]:
+        if self._catalog is None:
+            raise GatewayError(
+                "The GenBlaze model catalog is unavailable.",
+                status_code=503,
+                code="gateway_not_ready",
+            )
+        return self._catalog.openai_model_list()
+
+    def _resolve_model(
+        self,
+        model: object,
+        *,
+        modality: str | None = None,
+    ) -> ModelRoute:
+        if self._catalog is None:
+            raise GatewayError(
+                "The GenBlaze model catalog is unavailable.",
+                status_code=503,
+                code="gateway_not_ready",
+            )
+        # The only modality values passed internally are the catalog Literal
+        # values. Keeping the small wrapper here avoids any global catalog.
+        return self._catalog.resolve(model, modality=modality)  # type: ignore[arg-type]
+
+    @staticmethod
+    def _model_error(exc: UnsupportedModelError) -> GatewayError:
+        return GatewayError(
+            str(exc),
+            status_code=404,
+            code="GENBLAZE_MODEL_UNSUPPORTED",
+            error_type="invalid_request_error",
+        )
+
+    def _provider_error(self, exc: Exception) -> GatewayError:
+        return GatewayError.from_provider(exc, secret=self.settings.gmi_api_key)
+
+    async def chat_completion(self, request: dict[str, Any]) -> dict[str, Any]:
+        bindings, _ = self._require_ready()
+        try:
+            route = self._resolve_model(request.get("model"), modality="text")
+        except UnsupportedModelError as exc:
+            raise self._model_error(exc) from exc
+
+        stream = request.get("stream")
+        if stream is not None and stream is not False:
+            raise GatewayError(
+                "Streaming chat completions are not supported by the pinned "
+                "GenBlaze GMICloud connector.",
+                status_code=400,
+                code="streaming_not_supported",
+                error_type="invalid_request_error",
+            )
+        content_kinds = _message_content_kinds(request.get("messages"))
+        if "audio" in content_kinds:
+            raise GatewayError(
+                f"{route.samsar_model} via GMICloud does not support audio message content.",
+                status_code=400,
+                code="multimodal_not_supported",
+                error_type="invalid_request_error",
+            )
+
+        upstream_model = route.gmi_model
+        if "vision" in content_kinds:
+            if not route.gmi_vision_model:
+                raise GatewayError(
+                    f"{route.samsar_model} does not have a configured GMICloud vision model.",
+                    status_code=400,
+                    code="multimodal_not_supported",
+                    error_type="invalid_request_error",
+                )
+            upstream_model = route.gmi_vision_model
+
+        payload = dict(request)
+        payload.pop("model", None)
+        messages = payload.pop("messages", None)
+        # These are gateway transport controls, never upstream JSON fields.
+        # Removing them prevents an internal caller from overriding the trusted
+        # endpoint or injecting a fake client object through the request body.
+        for protected_field in ("api_key", "base_url", "client", "stream", "timeout"):
+            payload.pop(protected_field, None)
+        payload["api_key"] = self.settings.gmi_api_key
+        payload["timeout"] = self.settings.upstream_timeout_seconds
+        if self.settings.chat_base_url:
+            payload["base_url"] = self.settings.chat_base_url
+
+        try:
+            response = await bindings.achat(upstream_model, messages, **payload)
+        except bindings.provider_error_type as exc:
+            raise self._provider_error(exc) from exc
+
+        raw = getattr(response, "raw", None)
+        if not isinstance(raw, dict):
+            raise GatewayError(
+                "GMICloud returned an invalid chat completion payload.",
+                status_code=502,
+                code="invalid_upstream_response",
+                error_type="provider_error",
+            )
+        return raw
+
+    async def submit_media(self, request: dict[str, Any]) -> dict[str, str]:
+        bindings, token_codec = self._require_ready()
+        route = self._resolve_media_request(request)
+        provider = self._provider_for(route)
+        step = self._build_media_step(bindings, provider, route, request)
+
+        try:
+            result = await asyncio.to_thread(provider.submit, step)
+        except bindings.provider_error_type as exc:
+            raise self._provider_error(exc) from exc
+
+        upstream_id = str(getattr(result, "prediction_id", "") or "").strip()
+        if not upstream_id:
+            raise GatewayError(
+                "GMICloud accepted the media request without returning a request id.",
+                status_code=502,
+                code="invalid_upstream_response",
+                error_type="provider_error",
+            )
+        request_id = token_codec.encode(
+            model=route.samsar_model,
+            upstream_id=upstream_id,
+        )
+        return {"request_id": request_id, "status": "pending"}
+
+    async def poll_media(self, request_id: str) -> dict[str, Any]:
+        bindings, token_codec = self._require_ready()
+        model, upstream_id = token_codec.decode(request_id)
+        try:
+            route = self._resolve_model(model)
+        except UnsupportedModelError as exc:
+            raise GatewayError(
+                "The model encoded in this GenBlaze request id is no longer enabled.",
+                status_code=410,
+                code="model_no_longer_available",
+                error_type="invalid_request_error",
+            ) from exc
+        if route.modality not in {"image", "video", "audio"}:
+            raise GatewayError(
+                "The GenBlaze request id does not refer to a media model.",
+                status_code=400,
+                code="invalid_request_id",
+                error_type="invalid_request_error",
+            )
+
+        provider = self._provider_for(route)
+        step = self._build_media_step(bindings, provider, route, {})
+
+        def poll_once() -> tuple[bool, Any, Exception | None]:
+            terminal = provider.poll(upstream_id)
+            if not terminal:
+                return False, step, None
+            try:
+                return True, provider.fetch_output(upstream_id, step), None
+            except bindings.provider_error_type as exc:
+                return True, step, exc
+
+        try:
+            terminal, fetched_step, terminal_error = await asyncio.to_thread(poll_once)
+        except bindings.provider_error_type as exc:
+            raise self._provider_error(exc) from exc
+
+        if not terminal:
+            return {"status": "pending", "assets": [], "error": None}
+
+        terminal_status = _terminal_status(fetched_step)
+        if terminal_error is not None:
+            if terminal_status not in {"failed", "cancelled"}:
+                raise self._provider_error(terminal_error) from terminal_error
+            message = str(terminal_error) or f"Media generation {terminal_status}"
+            if self.settings.gmi_api_key:
+                message = message.replace(self.settings.gmi_api_key, "[redacted]")
+            return {"status": terminal_status, "assets": [], "error": message}
+
+        return {
+            "status": "succeeded",
+            "assets": [
+                {"url": asset.url, "media_type": asset.media_type}
+                for asset in getattr(fetched_step, "assets", [])
+            ],
+            "error": None,
+        }
+
+    def _resolve_media_request(self, request: dict[str, Any]) -> ModelRoute:
+        allowed_fields = {"model", "modality", "prompt", "input_urls", "params"}
+        unknown_fields = sorted(set(request) - allowed_fields)
+        if unknown_fields:
+            raise GatewayError(
+                f"Unknown media request fields: {unknown_fields}",
+                status_code=400,
+                code="invalid_media_request",
+                error_type="invalid_request_error",
+            )
+        modality = request.get("modality")
+        if modality not in {"image", "video", "audio"}:
+            raise GatewayError(
+                "Media request modality must be 'image', 'video', or 'audio'.",
+                status_code=400,
+                code="invalid_media_request",
+                error_type="invalid_request_error",
+            )
+        try:
+            return self._resolve_model(request.get("model"), modality=modality)
+        except UnsupportedModelError as exc:
+            raise self._model_error(exc) from exc
+
+    def _provider_for(self, route: ModelRoute) -> Any:
+        if route.modality == "image":
+            return self._image_provider
+        if route.modality == "video":
+            return self._video_provider
+        if route.modality == "audio":
+            return self._audio_provider
+        raise GatewayError(
+            f"Model {route.samsar_model!r} is not a media model.",
+            status_code=400,
+            code="invalid_media_request",
+            error_type="invalid_request_error",
+        )
+
+    @staticmethod
+    def _build_media_step(
+        bindings: GenBlazeBindings,
+        provider: Any,
+        route: ModelRoute,
+        request: dict[str, Any],
+    ) -> Any:
+        prompt = request.get("prompt")
+        if prompt is not None and not isinstance(prompt, str):
+            raise GatewayError(
+                "Media request prompt must be a string.",
+                status_code=400,
+                code="invalid_media_request",
+                error_type="invalid_request_error",
+            )
+        params = request.get("params", {})
+        if not isinstance(params, dict):
+            raise GatewayError(
+                "Media request params must be an object.",
+                status_code=400,
+                code="invalid_media_request",
+                error_type="invalid_request_error",
+            )
+        allowed_params = {
+            "image": _IMAGE_MEDIA_PARAMS,
+            "video": _VIDEO_MEDIA_PARAMS,
+            "audio": _AUDIO_MEDIA_PARAMS,
+        }[route.modality]
+        if route.modality == "audio":
+            allowed_params = {
+                "elevenlabs-tts": _ELEVENLABS_AUDIO_PARAMS,
+                "openai-tts": _OPENAI_AUDIO_PARAMS,
+            }[_media_contract_key(route.samsar_model)]
+        unknown_params = sorted(set(params) - allowed_params)
+        if unknown_params:
+            raise GatewayError(
+                f"Unsupported params for {route.samsar_model}: {unknown_params}",
+                status_code=400,
+                code="invalid_media_request",
+                error_type="invalid_request_error",
+            )
+        input_urls = request.get("input_urls", [])
+        if not isinstance(input_urls, list) or not all(
+            isinstance(value, str) and value.strip() for value in input_urls
+        ):
+            raise GatewayError(
+                "Media request input_urls must be an array of non-empty URLs.",
+                status_code=400,
+                code="invalid_media_request",
+                error_type="invalid_request_error",
+            )
+        if request and route.modality == "image":
+            if route.operation == "image.generate" and input_urls:
+                raise GatewayError(
+                    f"{route.samsar_model} is an image-generation route and does not "
+                    "accept edit/reference inputs through GMICloud.",
+                    status_code=400,
+                    code="invalid_media_request",
+                    error_type="invalid_request_error",
+                )
+            if route.operation == "image.edit":
+                minimum_inputs, maximum_inputs = _image_edit_input_bounds(route)
+                if len(input_urls) < minimum_inputs or len(input_urls) > maximum_inputs:
+                    expected = (
+                        str(minimum_inputs)
+                        if minimum_inputs == maximum_inputs
+                        else f"{minimum_inputs} to {maximum_inputs}"
+                    )
+                    raise GatewayError(
+                        f"{route.samsar_model} requires {expected} public image input URL(s).",
+                        status_code=400,
+                        code="invalid_media_request",
+                        error_type="invalid_request_error",
+                    )
+        if request and route.modality == "video":
+            input_slots = _media_input_slots(route)
+            minimum_inputs = _media_minimum_input_count(route)
+            if len(input_urls) < minimum_inputs:
+                raise GatewayError(
+                    f"{route.samsar_model} requires {minimum_inputs} public image "
+                    "input URL(s).",
+                    status_code=400,
+                    code="invalid_media_request",
+                    error_type="invalid_request_error",
+                )
+            if len(input_urls) > len(input_slots):
+                raise GatewayError(
+                    f"{route.samsar_model} accepts at most {len(input_slots)} input URL(s).",
+                    status_code=400,
+                    code="invalid_media_request",
+                    error_type="invalid_request_error",
+                )
+            if route.samsar_model == "SEEDANCE2.0T2V" and (
+                not isinstance(prompt, str) or not prompt.strip()
+            ):
+                raise GatewayError(
+                    "SEEDANCE2.0T2V requires a non-empty prompt.",
+                    status_code=400,
+                    code="invalid_media_request",
+                    error_type="invalid_request_error",
+                )
+            if route.samsar_model.startswith("VEO3.1") and (
+                not isinstance(prompt, str) or not prompt.strip()
+            ):
+                raise GatewayError(
+                    f"{route.samsar_model} requires a non-empty prompt.",
+                    status_code=400,
+                    code="invalid_media_request",
+                    error_type="invalid_request_error",
+                )
+            if route.samsar_model == "HAILUOPRO" and not input_urls and (
+                not isinstance(prompt, str) or not prompt.strip()
+            ):
+                raise GatewayError(
+                    "HAILUOPRO requires a non-empty prompt or first-frame input.",
+                    status_code=400,
+                    code="invalid_media_request",
+                    error_type="invalid_request_error",
+                )
+        if request and route.modality == "audio":
+            if not isinstance(prompt, str) or not prompt.strip():
+                raise GatewayError(
+                    f"{route.samsar_model} requires a non-empty speech prompt.",
+                    status_code=400,
+                    code="invalid_media_request",
+                    error_type="invalid_request_error",
+                )
+            if input_urls:
+                raise GatewayError(
+                    f"{route.samsar_model} text-to-speech does not accept input URLs.",
+                    status_code=400,
+                    code="invalid_media_request",
+                    error_type="invalid_request_error",
+                )
+            if route.samsar_model == "ELEVENLABS" and "output_format" in params:
+                try:
+                    _elevenlabs_output_format(params["output_format"])
+                except ValueError as exc:
+                    raise GatewayError(
+                        str(exc),
+                        status_code=400,
+                        code="invalid_media_request",
+                        error_type="invalid_request_error",
+                    ) from exc
+            voice = (
+                params.get("voice")
+                if route.samsar_model == "OPENAI_TTS"
+                else params.get("voice_id") or params.get("voice")
+            )
+            if not isinstance(voice, str) or not voice.strip():
+                field_name = (
+                    "voice"
+                    if route.samsar_model == "OPENAI_TTS"
+                    else "voice_id or voice"
+                )
+                raise GatewayError(
+                    f"{route.samsar_model} requires a non-empty {field_name}.",
+                    status_code=400,
+                    code="invalid_media_request",
+                    error_type="invalid_request_error",
+                )
+        inputs = [
+            bindings.asset_type(
+                url=url.strip(),
+                media_type=_input_media_type(url),
+            )
+            for url in input_urls
+        ]
+        modality = getattr(bindings.modality_type, route.modality.upper())
+        return bindings.step_type(
+            provider=provider.name,
+            model=route.gmi_model,
+            modality=modality,
+            prompt=prompt,
+            params=dict(params),
+            inputs=inputs,
+        )
+
+    async def close(self) -> None:
+        for provider in (
+            self._image_provider,
+            self._video_provider,
+            self._audio_provider,
+        ):
+            if provider is None:
+                continue
+            close = getattr(provider, "close", None)
+            if callable(close):
+                await asyncio.to_thread(close)
+
+
+def _message_content_kinds(messages: object) -> set[str]:
+    kinds: set[str] = set()
+    if not isinstance(messages, list):
+        return kinds
+    for message in messages:
+        if not isinstance(message, dict):
+            continue
+        if any(key in message for key in ("image", "image_url", "images")):
+            kinds.add("vision")
+        if any(key in message for key in ("video", "video_url", "videos")):
+            kinds.add("vision")
+        if any(key in message for key in ("audio", "audio_url", "audios")):
+            kinds.add("audio")
+        content = message.get("content")
+        blocks = content if isinstance(content, list) else [content]
+        for block in blocks:
+            if not isinstance(block, dict):
+                continue
+            block_type = str(block.get("type", "")).lower()
+            if "image" in block_type or "video" in block_type:
+                kinds.add("vision")
+            if "audio" in block_type:
+                kinds.add("audio")
+            if any(key in block for key in ("image", "image_url", "video", "video_url")):
+                kinds.add("vision")
+            if any(key in block for key in ("audio", "audio_url")):
+                kinds.add("audio")
+    return kinds
+
+
+def _input_media_type(url: str) -> str:
+    media_type, _ = mimetypes.guess_type(url.split("?", 1)[0])
+    if media_type and media_type.startswith(("image/", "video/", "audio/")):
+        return media_type
+    # Current/future Samsar media intersections consume image references. The
+    # explicit input_urls field intentionally denotes those source images.
+    return "image/png"
+
+
+def _media_input_slots(route: ModelRoute) -> tuple[str, ...]:
+    if route.samsar_model in {"VEO3.1", "VEO3.1FAST", "SEEDANCE2.0T2V"}:
+        return ()
+    if route.samsar_model in {"SEEDANCEI2V", "SEEDANCE2.0I2V"}:
+        return ("first_frame", "last_frame")
+    if route.samsar_model in {"VEO3.1I2V", "VEO3.1I2VFAST"}:
+        return ("image",)
+    if route.samsar_model == "VEO3.1FLIV":
+        return ("image", "lastFrame")
+    if route.samsar_model == "KLINGIMGTOVID3PRO":
+        return ("image", "image_tail")
+    if route.samsar_model == "KLINGIMGTOVIDTURBO":
+        return ("first_frame",)
+    if route.samsar_model in {
+        "KLINGIMGTOVIDPRO",
+        "KLINGIMGTOVID2.1MASTER",
+        "KLINGIMGTOVID2.1PRO",
+        "KLINGIMGTOVID2.1STANDARD",
+    }:
+        return ("image",)
+    if route.samsar_model == "HAILUOPRO":
+        return ("first_frame_image",)
+    if route.samsar_model == "HAPPYHORSEI2V":
+        return ("first_frame",)
+    raise ValueError(f"No exact video input contract for {route.samsar_model!r}")
+
+
+def _media_minimum_input_count(route: ModelRoute) -> int:
+    if route.samsar_model == "VEO3.1FLIV":
+        return 2
+    if route.samsar_model in {
+        "VEO3.1I2V",
+        "VEO3.1I2VFAST",
+        "SEEDANCEI2V",
+        "SEEDANCE2.0I2V",
+        "KLINGIMGTOVID3PRO",
+        "KLINGIMGTOVIDTURBO",
+        "KLINGIMGTOVIDPRO",
+        "KLINGIMGTOVID2.1MASTER",
+        "KLINGIMGTOVID2.1PRO",
+        "KLINGIMGTOVID2.1STANDARD",
+        "HAPPYHORSEI2V",
+    }:
+        return 1
+    if route.samsar_model in {
+        "VEO3.1",
+        "VEO3.1FAST",
+        "SEEDANCE2.0T2V",
+        "HAILUOPRO",
+    }:
+        return 0
+    raise ValueError(f"No exact video input contract for {route.samsar_model!r}")
+
+
+def _image_edit_input_bounds(route: ModelRoute) -> tuple[int, int]:
+    if route.samsar_model == "GPTIMAGE2EDIT":
+        return 1, 2
+    if route.samsar_model in {"NANOBANANA2EDIT", "NANOBANANAPROEDIT"}:
+        return 1, 14
+    if route.samsar_model in {"BRIA_ERASER", "BRIA_GENFILL"}:
+        return 2, 2
+    raise ValueError(f"No exact image edit input contract for {route.samsar_model!r}")
+
+
+def _terminal_status(step: Any) -> str | None:
+    payload = getattr(step, "provider_payload", {})
+    if not isinstance(payload, dict):
+        return None
+    gmi = payload.get("gmicloud", {})
+    if not isinstance(gmi, dict):
+        return None
+    status = str(gmi.get("status", "")).lower()
+    return status if status in {"failed", "cancelled", "success"} else None

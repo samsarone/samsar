@@ -11,6 +11,7 @@ import { processCustomTextToSpeechRequest } from './CustomTextToSpeech.js';
 import { recordProviderUsageLog } from '../utils/ProviderUsageAudit.js';
 import {
   DOCKER_AUDIO_PROVIDER,
+  getGenBlazeSpeechLogicalModel,
   hasDockerSpeechProviderPriority,
   isInitialDockerAudioRoutingRequest,
   resolveDockerSpeechProvider,
@@ -18,6 +19,7 @@ import {
 import {
   processSamsarExternalSpeechRequest,
 } from '../external/SamsarExternalAudioAdapter.js';
+import { processGenBlazeSpeechRequest } from './GenBlazeSpeech.js';
 import { isStandaloneEdition } from '../util/environmentUtils.js';
 
 function normalizeString(value) {
@@ -98,7 +100,7 @@ function normalizeSpeechRequestPayload(speechRequest, normalizedTtsProvider) {
   };
 }
 
-function resolveSpeechProvider(normalizedTtsProvider, payload = {}) {
+export function resolveSpeechProvider(normalizedTtsProvider, payload = {}) {
   if (normalizedTtsProvider === 'CUSTOM_TEXT_TO_SPEECH') {
     return '';
   }
@@ -138,7 +140,9 @@ async function recordSpeechProviderUsage(payload, normalizedTtsProvider) {
     requestType: 'text_to_speech',
     callType: 'text_to_speech',
     provider,
-    model: payload?.model || normalizedTtsProvider,
+    model: provider === DOCKER_AUDIO_PROVIDER.GMICLOUD
+      ? getGenBlazeSpeechLogicalModel(normalizedTtsProvider)
+      : payload?.model || normalizedTtsProvider,
     source: 'speech_generator',
     service: 'samsar_audio_generator',
     status: 'requested',
@@ -171,6 +175,8 @@ export async function dispatchSpeechRequest(speechRequest) {
 
   if (provider === DOCKER_AUDIO_PROVIDER.SAMSAR) {
     await processSamsarExternalSpeechRequest(normalizedSpeechRequest);
+  } else if (provider === DOCKER_AUDIO_PROVIDER.GMICLOUD) {
+    await processGenBlazeSpeechRequest(normalizedSpeechRequest);
   } else if (normalizedTtsProvider === 'OPENAI') {
     await processOpenAITTSSpeechRequest(normalizedSpeechRequest);
   } else if (normalizedTtsProvider === 'PLAYAI') {

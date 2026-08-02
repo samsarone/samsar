@@ -106,7 +106,12 @@ const ROLLUP_TEXT_CHAR_WIDTH_RATIO = Object.freeze({
   dense: 0.72,
   cjk: 0.92,
 });
-const ROLLUP_BUCKET = process.env.ROLLUP_BANNER_BUCKET || process.env.AWS_ROLLUP_BUCKET || 'samsar-resources';
+const ROLLUP_BUCKET = process.env.ROLLUP_BANNER_BUCKET ||
+  process.env.AWS_ROLLUP_BUCKET ||
+  process.env.MEDIA_BUCKET_NAME ||
+  process.env.STATIC_CDN_BUCKET ||
+  process.env.SAMSAR_EXTERNAL_MEDIA_BUCKET ||
+  'samsar-resources';
 const ROLLUP_FOLDER = process.env.ROLLUP_BANNER_FOLDER || 'rollup_banners';
 const ROLLUP_BANNER_CREDITS = 30;
 const ROLLUP_TEXT_SCALE = 1.08;

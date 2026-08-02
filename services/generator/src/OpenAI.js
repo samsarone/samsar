@@ -40,6 +40,8 @@ function shouldUseStandaloneInferenceAdapterFallback(chatRequest = {}) {
   }
   const authorization = normalizeAuthorization(chatRequest?.authorization);
   if (
+    authorization === 'gmicloud' ||
+    authorization === 'genblaze' ||
     authorization === 'openrouter' ||
     ['deployed', 'samsar', 'samsar-api-key', 'samsar-key'].includes(authorization)
   ) {
@@ -61,6 +63,14 @@ function buildProviderPinnedChatRequest(chatRequest, provider) {
     return {
       ...providerRequest,
       authorization: 'openrouter',
+      bypassSamsarExternalInference: false,
+      samsarExternalInference: true,
+    };
+  }
+  if (provider === DOCKER_INFERENCE_PROVIDER.GMICLOUD) {
+    return {
+      ...providerRequest,
+      authorization: 'gmicloud',
       bypassSamsarExternalInference: false,
       samsarExternalInference: true,
     };
@@ -105,6 +115,7 @@ export function isRetryableInferenceAdapterError(error) {
     '',
   ).trim().toUpperCase();
   return [
+    'GENBLAZE_MODEL_UNSUPPORTED',
     'ECONNABORTED',
     'ECONNREFUSED',
     'ECONNRESET',
@@ -208,6 +219,7 @@ export async function createCompatibleInferenceChatCompletion(
   if (shouldUseStandaloneInferenceAdapterFallback(chatRequest)) {
     const providers = getConfiguredInferenceProviders(
       chatRequest?.model || getDefaultUserInferenceModel(),
+      chatRequest,
     );
     if (providers.length > 1) {
       return runInferenceAdapterFallback(

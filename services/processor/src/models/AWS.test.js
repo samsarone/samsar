@@ -1,7 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { __testOnly__, getPublicationsMediaConfig } from './AWS.js';
+import {
+  __testOnly__,
+  buildSecureMediaDeliveryUrl,
+  getPublicationsMediaConfig,
+} from './AWS.js';
 
 const ENV_KEYS = [
   'CURRENT_ENV',
@@ -18,6 +22,7 @@ const ENV_KEYS = [
   'SAMSAR_EXTERNAL_MEDIA_BUCKET',
   'SAMSAR_EXTERNAL_MEDIA_PUBLIC_BASE_URL',
   'SAMSAR_PUBLIC_MEDIA_BASE_URL',
+  'SAMSAR_S3_OBJECT_TAGGING_SUPPORTED',
 ];
 
 function withEnv(overrides, callback) {
@@ -82,5 +87,30 @@ test('Docker external-S3 delivery uses only the explicitly configured CDN', () =
       'https://media.customer.example/assets_v2/user_resources/user-1/video.mp4',
     );
     assert.equal(getPublicationsMediaConfig().externalStorageConfigured, true);
+  });
+});
+
+test('Backblaze path-prefixed public URLs remain idempotent', () => {
+  withEnv({
+    CURRENT_ENV: 'docker',
+    SAMSAR_MEDIA_DELIVERY_MODE: 'external-s3',
+    MEDIA_BUCKET_NAME: 'my-bucket',
+    STATIC_CDN_URL: 'https://f000.backblazeb2.com/file/my-bucket/',
+  }, () => {
+    const publicUrl = 'https://f000.backblazeb2.com/file/my-bucket/assets_v2/session/image.png';
+    assert.equal(buildSecureMediaDeliveryUrl(publicUrl), publicUrl);
+    assert.equal(
+      buildSecureMediaDeliveryUrl('assets_v2/session/image one.png'),
+      'https://f000.backblazeb2.com/file/my-bucket/assets_v2/session/image%20one.png',
+    );
+  });
+});
+
+test('Backblaze-compatible storage disables unsupported S3 object tagging explicitly', () => {
+  withEnv({ SAMSAR_S3_OBJECT_TAGGING_SUPPORTED: 'false' }, () => {
+    assert.equal(__testOnly__.shouldUseS3ObjectTagging(), false);
+  });
+  withEnv({}, () => {
+    assert.equal(__testOnly__.shouldUseS3ObjectTagging(), true);
   });
 });

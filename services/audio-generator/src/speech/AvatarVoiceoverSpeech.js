@@ -19,6 +19,11 @@ import {
   AUDIO_FFPROBE_THREAD_OPTIONS,
   applySingleThreadAudioFfmpeg,
 } from '../utils/FfmpegResources.js';
+import {
+  DOCKER_AUDIO_PROVIDER,
+  resolveDockerSpeechProvider,
+} from '../consts/DockerProviderPriority.js';
+import { generateGenBlazeSpeechAudioUrl } from './GenBlazeSpeech.js';
 
 const resolvedFfmpegPath =
   process.env.FFMPEG_PATH || (isDockerRuntime() ? '/usr/bin/ffmpeg' : ffmpegPath);
@@ -66,6 +71,19 @@ function normalizeProvider(value = '', speaker = '') {
     return 'PLAYAI';
   }
   return 'OPENAI';
+}
+
+export function resolveAvatarSpeechAdapterProvider(payload = {}) {
+  const normalizedPayload = payload?._doc ? { ...payload._doc } : { ...payload };
+  const provider = normalizeProvider(
+    normalizedPayload.ttsProvider || normalizedPayload.provider,
+    normalizedPayload.speaker,
+  );
+  return resolveDockerSpeechProvider(provider, {
+    ...normalizedPayload,
+    ttsProvider: provider,
+    status: 'INIT',
+  });
 }
 
 function getAssetsBasePath() {
@@ -379,6 +397,7 @@ async function generateCustomSpeechFile({ text, outputPath, payload }) {
 
 async function generateSpeechFileForHint({
   provider,
+  adapterProvider,
   hint,
   index,
   outputFolder,
@@ -395,7 +414,16 @@ async function generateSpeechFileForHint({
     payload,
   };
 
-  if (provider === 'ELEVENLABS') {
+  if (adapterProvider === DOCKER_AUDIO_PROVIDER.GMICLOUD) {
+    const audioUrl = await generateGenBlazeSpeechAudioUrl({
+      ...payload,
+      prompt: hint.text,
+      text: hint.text,
+      ttsProvider: provider,
+      provider,
+    });
+    await downloadAudioFile(audioUrl, rawOutputPath);
+  } else if (provider === 'ELEVENLABS') {
     await generateElevenLabsSpeechFile(speechPayload);
   } else if (provider === 'PLAYAI') {
     await generatePlayAISpeechFile(speechPayload);
@@ -455,6 +483,10 @@ async function createContinuousSpeechFromHints({
   await fs.promises.mkdir(tempFolder, { recursive: true });
 
   const provider = normalizeProvider(payload.ttsProvider || payload.provider, payload.speaker);
+  const adapterProvider = resolveAvatarSpeechAdapterProvider({
+    ...payload,
+    ttsProvider: provider,
+  });
   const segmentPaths = [];
   const segmentMetadata = [];
   const timelineSegments = [];
@@ -508,6 +540,7 @@ async function createContinuousSpeechFromHints({
     const actualStartTime = currentTime;
     const speechPath = await generateSpeechFileForHint({
       provider,
+      adapterProvider,
       hint,
       index,
       outputFolder: tempFolder,

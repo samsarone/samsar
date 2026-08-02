@@ -56,6 +56,8 @@ const EXTERNAL_IMAGE_EDIT_MODELS = new Set([
   'NANOBANANAEDIT',
   'GPTIMAGE2EDIT',
   'GPTIMAGE1EDIT',
+  'BRIA_ERASER',
+  'BRIA_GENFILL',
 ]);
 
 function normalizeString(value) {

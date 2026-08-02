@@ -275,6 +275,7 @@ test('the setup-wizard image owns its Node and Compose dependencies', () => {
   assert.match(dockerfile, /^FROM node:20 AS builder/m);
   assert.match(dockerfile, /^FROM node:20-alpine/m);
   assert.match(dockerfile, /docker-cli-compose/);
+  assert.match(dockerfile, /COPY storageConfig\.mjs \.\/storageConfig\.mjs/);
   assert.match(dockerfile, /CMD \["node", "server\.mjs"\]/);
 });
 

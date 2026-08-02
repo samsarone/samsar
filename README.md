@@ -40,6 +40,8 @@
   ·
   <a href="#documentation">Documentation</a>
   ·
+  <a href="#adapters-models-and-storage">Adapters</a>
+  ·
   <a href="#api">API</a>
   ·
   <a href="#deployment-and-operations">Operations</a>
@@ -162,7 +164,7 @@ Complete the browser flow to write deployment config, render runtime env and mod
 | Studio | `http://localhost:3000` |
 | Processor API | `http://localhost:3002` |
 | Local media through Processor API | `http://localhost:3002/assets_v2/...` |
-| MinIO console | `http://localhost:9001` |
+| MinIO console (local storage mode) | `http://localhost:9001` |
 | Grafana logs | `http://localhost:4000` |
 
 Stop the stack:
@@ -176,9 +178,9 @@ npm run docker:down
 
 | Step | What it configures | Runtime effect |
 | --- | --- | --- |
-| Providers | Inference routing, OpenAI, Google Cloud, Kimi K3, Alibaba Cloud, FAL, ElevenLabs, RunwayML, Samsar | Controls which models/actions appear in `runtime/config/available-models.json`. |
+| Providers | Inference routing, OpenAI, Google Cloud, Kimi K3, Alibaba Cloud, GMICloud through GenBlaze, OpenRouter, FAL, ElevenLabs, RunwayML, Samsar | Validates credentials and controls which models/actions appear in `runtime/config/available-models.json`. |
 | Services | Processor, setup wizard, image generator, assistant query processor, audio generator, AI video layer generator, video renderer, frames processor, express video listener, and logger | Determines which Docker service families are enabled for the local runtime. |
-| Mail and Data | Local or remote MongoDB, local MinIO or external S3-compatible storage, SMTP/SES/disabled mail | Writes database, storage, CDN, media, and mail settings. |
+| Mail and Data | Local or remote MongoDB, local MinIO, external S3/CloudFront, Backblaze B2, SMTP/SES/disabled mail | Writes database, storage, CDN, media, and mail settings. |
 | Domain | Optional nginx reverse proxy for a public domain/subdomain, public IP, or private IP, with optional IP detection, port opening, and Let's Encrypt SSL for validated domains | Enables public or intranet access URLs for Studio and the processor API. |
 | Admin | Organization and initial admin/login setup | Prepares Docker setup login and local access details. |
 
@@ -253,6 +255,7 @@ The diagrams below show the primary generation and discovery pipelines. Open any
 | Processor API | `services/processor` | Public API, Studio API, auth, billing, session orchestration, search/recommendation APIs, and status endpoints. Runs on port `3002`. |
 | Generation workers | `services/generator`, `services/ai-video-layer-generator`, `services/video-generator`, `services/audio-generator`, `services/frames-processor` | Image generation/editing, AI video layers, final rendering, speech/music/sound effects, frame processing, and media processing. |
 | Workflow workers | `services/express-video-listener`, `services/assistant-query-processor`, `services/task-processor` | Express video state machine, assistant queries, and scheduled/background tasks. |
+| Provider gateway | `services/genblaze-gateway` | Local GenBlaze gateway for credential-scoped GMICloud inference and media models. |
 | Runtime config | `runtime/config`, `runtime/secrets` | Generated deployment config, model availability, env files, and local secrets. Not committed. |
 | Deployment | `deploy/compose` | Docker Compose stack and local deployment configuration. |
 | Docs | `docs`, `pages` | Runtime notes, brand assets, and deeper Markdown documentation linked from this README. |
@@ -266,57 +269,78 @@ The diagrams below show the primary generation and discovery pipelines. Open any
 
 </details>
 
-## Providers and models
+## Adapters, models, and storage
 
-Provider availability is explicit. `npm run config:render` reads `runtime/config/samsar.config.json` and the optional `runtime/secrets/provider.credentials.json`, writes `runtime/secrets/root.env`, and generates `runtime/config/available-models.json` from enabled providers. The video API then filters supported model responses through that generated availability file.
+Provider availability is explicit: `npm run config:render` turns validated provider configuration into backend-only environment files and `runtime/config/available-models.json`. The Studio and API expose only models available to the current deployment.
 
-| Provider | Enables | Models and families from the setup logic |
+### Model adapters
+
+<p align="center">
+  <img src="https://img.shields.io/badge/OpenAI-412991?logo=openai&amp;logoColor=white" alt="OpenAI">
+  <img src="https://img.shields.io/badge/Google_Cloud-4285F4?logo=googlecloud&amp;logoColor=white" alt="Google Cloud">
+  <img src="https://img.shields.io/badge/Kimi_K3-111111?logo=moonshot&amp;logoColor=white" alt="Kimi K3">
+  <img src="https://img.shields.io/badge/Alibaba_Cloud-FF6A00?logo=alibabacloud&amp;logoColor=white" alt="Alibaba Cloud">
+  <img src="https://img.shields.io/badge/Samsar--js-111827" alt="Samsar-js">
+  <img src="https://img.shields.io/badge/GMICloud_via_GenBlaze-E21E29?logo=backblaze&amp;logoColor=white" alt="GMICloud via GenBlaze">
+  <img src="https://img.shields.io/badge/Fal-111111" alt="Fal">
+  <img src="https://img.shields.io/badge/OpenRouter-6467F2?logo=openrouter&amp;logoColor=white" alt="OpenRouter">
+  <img src="https://img.shields.io/badge/ElevenLabs-111111?logo=elevenlabs&amp;logoColor=white" alt="ElevenLabs">
+  <img src="https://img.shields.io/badge/RunwayML-111111?logo=runway&amp;logoColor=white" alt="RunwayML">
+</p>
+
+### Supported models by capability
+
+The names in code style are the stable Samsar model keys. This is the complete standalone adapter catalog; GenBlaze enables only the exact routes returned for the configured GMICloud credential.
+
+| Capability | Supported models |
+| --- | --- |
+| **Inference** | GPT 5.6 Sol (`gpt-5.6-sol`) · Gemini 3.1 Pro (`gemini-3.1-pro`) · Kimi K3 (`KIMIK3`) · Qwen 3.7 Plus (`QWEN3.7`) |
+| **Text → image** | GPT Image 2 (`GPTIMAGE2`) · Seedream (`SEEDREAM`) · Nano Banana 2 (`NANOBANANA2`) · Nano Banana Pro (`NANOBANANAPRO`) · Wan 2.7 Pro (`WAN2.7PRO`) |
+| **Image edit** | GPT Image 2 Edit (`GPTIMAGE2EDIT`) · Nano Banana 2 Edit (`NANOBANANA2EDIT`) · Nano Banana Pro Edit (`NANOBANANAPROEDIT`) · BRIA Eraser (`BRIA_ERASER`) · BRIA GenFill (`BRIA_GENFILL`) |
+| **Text → video** | RunwayML (`RUNWAYML`) · Veo 3.1 (`VEO3.1`) · Veo 3.1 Fast (`VEO3.1FAST`) · Seedance 2.0 (`SEEDANCE2.0T2V`) · Hailuo 02 Pro (`HAILUOPRO`) |
+| **Image / frame → video** | RunwayML (`RUNWAYML`) · Veo 3.1 I2V (`VEO3.1I2V`) · Veo 3.1 Fast I2V (`VEO3.1I2VFAST`) · Veo 3.1 first/last frame (`VEO3.1FLIV`) · Cosmos 3 Super (`COSMOS3SUPERI2V`) · Seedance 1.5 / 2.0 (`SEEDANCEI2V`, `SEEDANCE2.0I2V`) · Kling 3 Pro / Turbo / 1.6 Pro / 2.1 Master / Pro / Standard (`KLINGIMGTOVID3PRO`, `KLINGIMGTOVIDTURBO`, `KLINGIMGTOVIDPRO`, `KLINGIMGTOVID2.1MASTER`, `KLINGIMGTOVID2.1PRO`, `KLINGIMGTOVID2.1STANDARD`) · Hailuo 02 Pro (`HAILUOPRO`) · Happy Horse 1.1 (`HAPPYHORSEI2V`) |
+| **Speech and music** | OpenAI TTS (`OPENAI_TTS`) · Google TTS (`GOOGLE_TTS`) · ElevenLabs Speech (`ELEVENLABS`) · ElevenLabs Music (`ELEVENLABS_MUSIC`) · Lyria 3 (`LYRIA3`) |
+| **Lip sync** | Sync (`SYNCLIPSYNC`) · LatentSync (`LATENTSYNC`) · Kling (`KLINGLIPSYNC`) · Hummingbird (`HUMMINGBIRDLIPSYNC`) · Creatify (`CREATIFYLIPSYNC`) |
+| **Sound effects** | MMAudio V2 (`MMAUDIOV2`) · Mirelo AI (`MIRELOAI`) |
+
+### Minimal adapter setup
+
+Open **Providers** in `./setup.sh` and add only the credentials you need. The wizard validates them, writes secrets outside browser-visible config, and calculates adapter priority. Per-model ordering can then be changed in **Settings → Model Adapters**.
+
+| Adapter | Credential | Enables |
 | --- | --- | --- |
-| Samsar API key | Universal fallback for configured Docker deployments | All configured Docker model families in the setup logic, including `gpt-5.6-sol`, `gemini-3.1-pro`, `KIMIK3`, `QWEN3.7`, chat, assistant, image, image edit, video, audio, lip sync, sound effects, and NanoBanana families. |
-| OpenAI | Chat, assistant, image, image edit, audio, moderation, search, recommendations | `gpt-5.6-sol`, `GPTIMAGE2`, `GPTIMAGE2EDIT`, `OPENAI_TTS`. |
-| Google Cloud | Gemini, image, image edit, video, audio, moderation | `gemini-3.1-pro`, `VEO3.1I2V`, `VEO3.1I2VFAST`, `LYRIA3`, `GOOGLE_TTS`, `NANOBANANA2`, `NANOBANANA2EDIT`, `NANOBANANAPRO`, `NANOBANANAPROEDIT`. |
-| Kimi K3 | Native inference, assistants, strict structured output, and vision | `KIMIK3`, backed by the exact provider model `kimi-k3` with high reasoning. Native Kimi is preferred, followed by the Samsar fallback when configured. |
-| Alibaba Cloud | Native Qwen inference in Docker, plus Alibaba media models | Public model key `QWEN3.7` is available through the native adapter only when `CURRENT_ENV=docker`; Alibaba media-model routing is independent of the hosted Qwen inference rule. |
-| FAL | Image, image edit, video, audio, lip sync, sound effects | `SEEDREAM` (Seedream 5 Pro), `NANOBANANA2`, `NANOBANANA2EDIT`, `NANOBANANAPRO`, `NANOBANANAPROEDIT`, VEO via FAL, `COSMOS3SUPERI2V`, `SEEDANCEI2V`, Kling image-to-video, `HAPPYHORSEI2V` (Happy Horse 1.1 I2V), ElevenLabs/PlayAI/CassetteAI/AudioCraft via FAL, `MMAUDIOV2`, `MIRELOAI`, and lip sync model families. |
-| ElevenLabs | Speech and music | `ELEVENLABS`, `ELEVENLABS_MUSIC`. |
-| RunwayML | Video generation and image-to-video | `RUNWAYML`. |
+| [OpenAI](https://platform.openai.com/api-keys) | `OPENAI_API_KEY` | GPT inference, image generation/editing, and TTS. |
+| [Google Cloud](https://console.cloud.google.com/iam-admin/serviceaccounts) | Service account JSON or `GOOGLE_APPLICATION_CREDENTIALS_JSON_B64` | Gemini, Nano Banana, Veo, Lyria, and Google TTS. |
+| [Kimi K3](https://platform.kimi.ai/) | `KIMI_K3_API_KEY` | Native Kimi text, vision, structured output, and assistants. |
+| [Alibaba Cloud](https://modelstudio.console.alibabacloud.com/) | `ALIBABA_API_KEY`; optional `ALIBABA_API_HOST` | Qwen, Wan, and Happy Horse. |
+| [Samsar-js](https://app.samsar.one/account/apiKeys) | `SAMSAR_API_KEY` | Universal fallback across the supported catalog using Samsar credits. |
+| [GMICloud via GenBlaze](https://console.gmicloud.ai/) | `GMI_API_KEY` | The wizard discovers compatible GMICloud models, writes a credential-scoped catalog, and starts the local `genblaze` gateway. |
+| [Fal](https://fal.ai/dashboard/keys) | `FAL_API_KEY` | Image, edit, video, speech/music, lip sync, and sound effects. |
+| [OpenRouter](https://openrouter.ai/settings/keys) | `OPENROUTER_API_KEY` | Supported GPT, Gemini, and Qwen text/vision fallback routes. |
+| [ElevenLabs](https://elevenlabs.io/app/settings/api-keys) | `ELEVENLABS_API_KEY` | Direct speech and music generation. |
+| [RunwayML](https://docs.dev.runwayml.com/guides/setup/) | `RUNWAY_API_KEY` | Direct text-to-video and image-to-video generation. |
 
-Provider precedence and deployment-specific routing are documented in [Providers and Models](pages/providers-and-models.md).
+> **Keep credentials private:** Do not commit `runtime/` or copy keys into browser/client-side code. GMICloud and Alibaba credentials are stored in `runtime/secrets/provider.credentials.json`; generated service environment files are mode `0600`.
 
-### Inference adapters
+Provider precedence, retries, and deployment-specific routing are documented in [Providers and Models](pages/providers-and-models.md).
 
-The built-in adapters normalize model selection, text and vision payloads, structured output, timeouts, retries, and provider authorization across the processor and inference workers. They remain separate from `configuration.custom_adapters`, which are user-supplied media-operation endpoints. Transient external-inference requests retry up to three times after the initial attempt, with exponential backoff and provider `Retry-After` support.
+### Storage adapters
 
-OpenRouter optionally routes supported GPT, Gemini, and Qwen text/vision workflows. Kimi K3 uses native `kimi-k3` with high reasoning first and the Samsar fallback when configured. Validated Alibaba credentials stay in `runtime/secrets/provider.credentials.json` and render only into the backend Docker environment.
+<p align="center">
+  <img src="https://img.shields.io/badge/MinIO-C72E49?logo=minio&amp;logoColor=white" alt="MinIO">
+  <img src="https://img.shields.io/badge/S3_%2F_CloudFront-FF9900?logo=amazons3&amp;logoColor=white" alt="S3 and CloudFront">
+  <img src="https://img.shields.io/badge/Backblaze_B2-E21E29?logo=backblaze&amp;logoColor=white" alt="Backblaze B2 Cloud Storage">
+</p>
 
-<details>
-<summary><strong>Adapter implementation details</strong></summary>
+Choose one option under **Mail & Data → Media storage** in the setup wizard.
 
-The same adapter contract is used by `processor`, `generator`, `audio-generator`, `ai-video-layer-generator`, `express-video-listener`, and `assistant-query-processor`. This keeps provider selection consistent across chat, assistant, prompt generation, vision analysis, and express-video stages.
-
-Configure `OPENROUTER_API_KEY` through the setup wizard or `runtime/secrets/provider.credentials.json` for supported GPT, Gemini, and Qwen text/vision workflows.
-
-Kimi K3 uses `https://api.moonshot.ai/v1` and the exact model `kimi-k3` for both inference and vision. The adapters request high reasoning, translate developer messages to Kimi-compatible system messages, preserve the chat/JSON contracts, and enforce strict JSON schemas for structured output. Public image inputs are prepared as inline data and video inputs use Kimi file references where supported.
-
-</details>
-
-<details>
-<summary><strong>Configure provider credentials</strong></summary>
-
-All API provider keys are optional. Add only the credentials needed for the generative features you want to enable. Provider keys can provide direct or routed inference while still using the Samsar media generation pipeline inside your environment. Google Cloud uses a service account JSON key, not a standard API key.
-
-> **Keep credentials private:** Do not commit `runtime/` or copy keys into browser/client-side code.
-
-| Provider | Runtime config | Credential source and setup note |
+| Adapter | Wizard option | Configuration |
 | --- | --- | --- |
-| Samsar | `providers.samsar.apiKey` → `SAMSAR_API_KEY` | Register or log in, add credits in [Billing](https://app.samsar.one/account/billing), then create an [API key](https://app.samsar.one/account/apiKeys) and paste it into **Samsar universal fallback**. |
-| OpenAI | `providers.openai.apiKey` → `OPENAI_API_KEY` | Choose the correct project in [OpenAI API keys](https://platform.openai.com/api-keys), create a secret key, and copy it when shown. |
-| Google Cloud | `providers.googleCloud.projectId`, `providers.googleCloud.credentialsJsonB64` | Create a JSON key for a minimally permitted [service account](https://console.cloud.google.com/iam-admin/serviceaccounts), leave **Principals with access** blank, then paste the JSON or encode it with `base64 < service-account.json \| tr -d '\n'`. |
-| Kimi K3 | `providers.kimi.apiKey` → `KIMI_K3_API_KEY` | Create a key in the [Kimi platform](https://platform.kimi.ai/). The browser session copy redacts it; the generated backend env shares it with every inference worker. |
-| Alibaba Cloud | `runtime/secrets/provider.credentials.json` → `ALIBABA_API_KEY`, `ALIBABA_API_HOST` | Create a key in the [Model Studio console](https://modelstudio.console.alibabacloud.com/). Optionally provide a workspace API host or full `/compatible-mode/v1` URL; leave it blank for the international endpoint. |
-| FAL | `providers.fal.apiKey` → `FAL_API_KEY` | Create a key in the [fal dashboard](https://fal.ai/dashboard/keys). FAL SDK examples may call the same credential `FAL_KEY`. |
+| MinIO | **Local MinIO** | No cloud credentials. Starts the bundled S3-compatible service with bucket `samsar-resources`; media remains local and is served through the Processor API. |
+| S3-compatible / AWS S3 | **External S3 / CloudFront** | Enter bucket, region, access key, secret key, and an HTTPS public CDN base URL. Add an endpoint for non-AWS S3, enable path-style URLs when required, and optionally add CloudFront signing keys. |
+| Backblaze B2 Cloud Storage | **Backblaze B2** | Create a public bucket, then enter bucket name, Application Key ID, Application Key value, and its endpoint such as `s3.us-east-005.backblazeb2.com`. The wizard derives the public bucket URL and verifies region, bucket access, and `writeFiles`. Master keys upload through the native B2 API; standard application keys use the S3-compatible API. |
 
-</details>
+External S3 and B2 publish media for remote model providers. MinIO keeps media local and starts the local media tunnel automatically when a configured provider needs a public URL.
 
 ## API
 
@@ -392,6 +416,7 @@ npm run docker:config
 | `workers` | `generator`, `audio-generator`, `frames-processor`, `video-generator`, `ai-video-layer-generator`, `express-video-listener`, `assistant-query-processor`, `task-processor` |
 | `local-mongo` | `mongo` |
 | `minio` | `minio` |
+| `genblaze` | `genblaze` (enabled only with a validated GMICloud provider) |
 | `local-media` | `media-gateway`, `media-tunnel-controller` |
 | `logger` | `loki`, `promtail`, `grafana` |
 | `reverse-proxy` | Optional `reverse-proxy` nginx service when enabled by the setup wizard. |
@@ -463,7 +488,9 @@ The legacy `scripts/start-local-media-tunnel.sh` command remains a compatibility
 The main config file is `runtime/config/samsar.config.json`. Its local Docker defaults are:
 
 - `database.provider`: `local-mongo`
+- `storage.mode`: `local-minio`
 - `storage.provider`: `s3-compatible`
+- `storage.backend`: `minio`
 - `storage.staticCdnUrl`: `http://localhost:3002/`
 - `storage.externalMediaPublishEnabled`: `false`
 - `publicUrls.clientApp`: `http://localhost:3000`

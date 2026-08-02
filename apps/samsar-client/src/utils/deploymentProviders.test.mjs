@@ -20,3 +20,8 @@ test('deployment provider labels identify the native Kimi provider', () => {
   assert.equal(formatDeploymentProviderLabel('kimi'), 'Kimi');
   assert.equal(formatDeploymentProviderLabel('Moonshot AI'), 'Kimi');
 });
+
+test('deployment provider labels identify GMICloud through GenBlaze', () => {
+  assert.equal(formatDeploymentProviderLabel('gmicloud'), 'GMICloud via GenBlaze');
+  assert.equal(formatDeploymentProviderLabel('GenBlaze'), 'GMICloud via GenBlaze');
+});

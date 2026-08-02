@@ -1,18 +1,35 @@
 // uploadImageToCDN.js
 
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
+import {
+  createBackblazeNativeClientFromEnv,
+  shouldUseBackblazeNativeApi,
+} from '@samsar/backblaze-native-client';
 import fs from 'fs';
 
 import { NodeHttpHandler } from '@aws-sdk/node-http-handler';
+import { isStandaloneEdition } from '../utils/EnvironmentUtils.js';
 
 /**
  * Reads AWS credentials and region from environment variables.
  */
 const AWS_ACCESS_KEY_ID = process.env.AWS_ACCESS_KEY_ID;
 const AWS_SECRET_ACCESS_KEY = process.env.AWS_SECRET_ACCESS_KEY;
-const AWS_REGION = 'us-west-2';
+const AWS_REGION = process.env.AWS_CDN_REGION || process.env.AWS_REGION || 'us-west-2';
 
-const STATIC_CDN_URL = process.env.STATIC_CDN_URL;
+const MEDIA_BUCKET_NAME = process.env.MEDIA_BUCKET_NAME ||
+  process.env.STATIC_CDN_BUCKET ||
+  process.env.SAMSAR_EXTERNAL_MEDIA_BUCKET ||
+  (isStandaloneEdition() ? '' : 'samsar-resources');
+const STATIC_CDN_URL = process.env.STATIC_CDN_URL ||
+  process.env.SAMSAR_EXTERNAL_MEDIA_PUBLIC_BASE_URL ||
+  (isStandaloneEdition() ? '' : 'https://static.samsar.one/');
+
+export const __testOnly__ = Object.freeze({
+  mediaBucketName: MEDIA_BUCKET_NAME,
+  staticCdnUrl: STATIC_CDN_URL,
+  region: AWS_REGION,
+});
 
 /**
  * Validates that all required AWS environment variables are set.
@@ -26,6 +43,12 @@ function validateAWSEnvVariables() {
   }
   if (!AWS_REGION) {
     throw new Error('Missing AWS_REGION environment variable.');
+  }
+  if (!MEDIA_BUCKET_NAME) {
+    throw new Error('Standalone Docker media storage requires an explicitly configured MEDIA_BUCKET_NAME.');
+  }
+  if (!STATIC_CDN_URL) {
+    throw new Error('Standalone Docker media storage requires an explicitly configured STATIC_CDN_URL.');
   }
 }
 
@@ -55,6 +78,9 @@ function getS3EndpointOptions() {
  * if the body cannot be re-sent. We will implement manual retries below.
  */
 function initializeS3Client() {
+  if (shouldUseBackblazeNativeApi()) {
+    return createBackblazeNativeClientFromEnv();
+  }
   return new S3Client({
     region: AWS_REGION,
     credentials: {
@@ -94,9 +120,8 @@ export async function primeCDNCache(url) {
  * @throws {Error} - If all attempts fail.
  */
 export async function uploadImageToCDN(absolutePath, remoteFileName) {
-  const bucketName = 'samsar-resources';
+  const bucketName = MEDIA_BUCKET_NAME;
   const folderName = 'temp_images';
-  const region = 'us-west-2'; // or AWS_REGION if you prefer
 
   // Check if the file exists
   if (!fs.existsSync(absolutePath)) {
@@ -127,7 +152,7 @@ export async function uploadImageToCDN(absolutePath, remoteFileName) {
       await s3.send(new PutObjectCommand(uploadParams));
 
       // If successful, construct the public (CDN) URL
-      const cdnUrl = `${STATIC_CDN_URL}${folderName}/${remoteFileName}`;
+      const cdnUrl = `${STATIC_CDN_URL.replace(/\/+$/, '')}/${folderName}/${remoteFileName}`;
 
       return cdnUrl;
     } catch (error) {

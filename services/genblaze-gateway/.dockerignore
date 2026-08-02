@@ -1,0 +1,5 @@
+**
+!app/
+!app/**
+!requirements.txt
+!THIRD_PARTY_NOTICES.md

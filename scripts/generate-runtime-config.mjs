@@ -1,9 +1,27 @@
 import fs from 'node:fs';
 import net from 'node:net';
 import path from 'node:path';
+import { randomBytes } from 'node:crypto';
 import { buildDockerAvailableModelsFromEnabledProviders } from '../apps/setup-wizard/src/constants/dockerModelAvailability.js';
+import {
+  buildGmiCloudRuntimeCatalog,
+  normalizeGmiCloudModelMappings,
+} from '../apps/setup-wizard/gmiCloudValidation.mjs';
 import { buildDockerAudioAvailability } from './docker-audio-provider-config.mjs';
 import { applyEffectiveOpenRouterProviderConfig } from './openrouter-runtime-config.mjs';
+import {
+  isExternalStorageConfig,
+  parseBackblazeS3Endpoint,
+  resolveRuntimeMediaBucketName,
+  validateExternalStorageConfig,
+} from '../apps/setup-wizard/storageConfig.mjs';
+import {
+  applyEffectiveGmiCloudProviderConfig,
+  buildGenBlazeServiceEnvironment,
+  isGmiCloudCredentialValidationCurrent,
+  readEnvironmentValue,
+  serializeEnvironment,
+} from './genblaze-runtime-config.mjs';
 
 const root = path.resolve(new URL('..', import.meta.url).pathname);
 const runtimeConfigDir = path.join(root, 'runtime', 'config');
@@ -12,6 +30,8 @@ const configPath = path.join(runtimeConfigDir, 'samsar.config.json');
 const exampleConfigPath = path.join(root, 'samsar.config.example.json');
 const mailSecretsPath = path.join(runtimeSecretsDir, 'mail.credentials.json');
 const providerSecretsPath = path.join(runtimeSecretsDir, 'provider.credentials.json');
+const genblazeEnvPath = path.join(runtimeSecretsDir, 'genblaze.env');
+const genblazeModelCatalogPath = path.join(runtimeConfigDir, 'genblaze-model-catalog.json');
 const reverseProxyDir = path.join(root, 'runtime', 'reverse-proxy');
 const reverseProxyNginxPath = path.join(reverseProxyDir, 'nginx.conf');
 const reverseProxyCertbotWebroot = path.join(reverseProxyDir, 'certbot', 'www');
@@ -32,21 +52,39 @@ const config = fs.existsSync(configPath)
 const mailSecrets = readJsonIfExists(mailSecretsPath) || {};
 const providerSecrets = readJsonIfExists(providerSecretsPath) || {};
 const storageConfig = config.storage || {};
+const isDockerRuntime = config.runtime !== 'local';
+const storageBackend = storageConfig.backend || (
+  storageConfig.mode === 'backblaze-b2'
+    ? 'backblaze-b2'
+    : storageConfig.externalMediaPublishEnabled
+      ? 'generic-s3'
+      : isDockerRuntime ? 'minio' : 'aws-s3'
+);
 const localMediaTunnelConfig = config.localMediaTunnel || config.mediaTunnel || {};
 const databaseConfig = config.database || {};
 const cloudFrontConfig = storageConfig.cloudFront || {};
 const mailConfig = config.mail || {};
-const isDockerRuntime = config.runtime !== 'local';
 const storageProvider = storageConfig.provider || (isDockerRuntime ? 's3-compatible' : 'aws-s3-cloudfront');
 const isS3CompatibleStorage = storageProvider === 's3-compatible';
 const defaultLocalS3AccessKey = isDockerRuntime && isS3CompatibleStorage ? 'samsar' : '';
 const defaultLocalS3SecretKey = isDockerRuntime && isS3CompatibleStorage ? 'samsar-local-password' : '';
-const s3Endpoint = storageConfig.s3Endpoint || '';
+const backblazeEndpoint = storageBackend === 'backblaze-b2'
+  ? parseBackblazeS3Endpoint(storageConfig.s3Endpoint)
+  : null;
+const s3Endpoint = backblazeEndpoint?.endpoint || storageConfig.s3Endpoint || '';
 const s3ForcePathStyle = String(Boolean(storageConfig.s3ForcePathStyle));
-const storageBucketName = storageConfig.mediaBucketName || 'samsar-resources';
-const storageRegion = storageConfig.region || storageConfig.awsRegion || 'us-east-1';
+if (isDockerRuntime && isExternalStorageConfig(storageConfig)) {
+  validateExternalStorageConfig({ storage: storageConfig });
+}
+const storageBucketName = resolveRuntimeMediaBucketName(storageConfig, {
+  dockerRuntime: isDockerRuntime,
+});
+const storageRegion = backblazeEndpoint?.region || storageConfig.region || storageConfig.awsRegion || 'us-east-1';
 const storageAccessKeyId = storageConfig.accessKeyId || storageConfig.awsAccessKeyId || defaultLocalS3AccessKey;
 const storageSecretAccessKey = storageConfig.secretAccessKey || storageConfig.awsSecretAccessKey || defaultLocalS3SecretKey;
+const backblazeCredentialType = storageBackend === 'backblaze-b2'
+  ? normalizeString(storageConfig.credentialType)
+  : '';
 const externalMediaPublishEnabled = Boolean(storageConfig.externalMediaPublishEnabled);
 if (isDockerRuntime && externalMediaPublishEnabled) {
   const staticCdnUrl = normalizeString(storageConfig.staticCdnUrl);
@@ -69,7 +107,7 @@ if (isDockerRuntime && externalMediaPublishEnabled) {
 const secureAssetPrefix = isDockerRuntime ? 'assets_v2' : (storageConfig.secureAssetPrefix || 'assets_v2');
 const mediaDeliveryMode = isDockerRuntime && !externalMediaPublishEnabled
   ? 'docker-local'
-  : 's3-cloudfront';
+  : storageBackend === 'backblaze-b2' ? 'external-s3' : 's3-cloudfront';
 const loggerEnabled = config.services?.logger !== false;
 const reverseProxyConfig = config.reverseProxy || {};
 const reverseProxyEnabled = reverseProxyConfig.enabled === true;
@@ -99,10 +137,42 @@ const externalMediaPublicBaseUrl = externalMediaPublishEnabled
 const alibabaCloudConfig = config.providers?.alibabaCloud || {};
 const alibabaCloudSecrets = providerSecrets.alibabaCloud || {};
 const openrouterSecrets = providerSecrets.openrouter || {};
-const effectiveProviderConfig = applyEffectiveOpenRouterProviderConfig(
+const gmiCloudConfig = config.providers?.gmicloud || {};
+const gmiCloudSecrets = providerSecrets.gmicloud || {};
+const openRouterProviderConfig = applyEffectiveOpenRouterProviderConfig(
   config.providers || {},
   openrouterSecrets,
 );
+const effectiveGmiCloudConfig = applyEffectiveGmiCloudProviderConfig(
+  openRouterProviderConfig.providers,
+  gmiCloudSecrets,
+);
+const gmiCloudCredentialValidationCurrent = isGmiCloudCredentialValidationCurrent({
+  apiKey: effectiveGmiCloudConfig.apiKey,
+  credentialFingerprint: gmiCloudConfig.credentialFingerprint,
+});
+const genblazeRuntimeEnabled = effectiveGmiCloudConfig.enabled &&
+  gmiCloudCredentialValidationCurrent &&
+  config.services?.genblaze === true;
+const gmiCloudModelMappings = genblazeRuntimeEnabled
+  ? normalizeGmiCloudModelMappings(gmiCloudConfig.modelMappings)
+  : {};
+const effectiveProviderConfig = {
+  ...openRouterProviderConfig,
+  providers: {
+    ...effectiveGmiCloudConfig.providers,
+    gmicloud: {
+      ...effectiveGmiCloudConfig.providers.gmicloud,
+      enabled: genblazeRuntimeEnabled,
+    },
+  },
+};
+if (gmiCloudConfig.enabled === true && !effectiveGmiCloudConfig.apiKey) {
+  throw new Error('GMICloud is enabled but runtime/secrets/provider.credentials.json does not contain its API key. Validate GMICloud again in setup.');
+}
+if (gmiCloudConfig.enabled === true && effectiveGmiCloudConfig.apiKey && !gmiCloudCredentialValidationCurrent) {
+  console.warn('GMICloud was disabled because its API key no longer matches the credential validated by setup. Validate GMICloud again to enable GenBlaze.');
+}
 
 function normalizeString(value) {
   return typeof value === 'string' ? value.trim() : '';
@@ -488,10 +558,12 @@ function buildAvailableModels(providers = {}) {
     .map(([provider]) => provider);
 
   return {
-    ...buildDockerAvailableModelsFromEnabledProviders(providerNames),
+    ...buildDockerAvailableModelsFromEnabledProviders(providerNames, {
+      gmiCloudModelMappings,
+    }),
     providerKeyTypes: alibabaApiKey ? { alibabaCloud: alibabaKeyType } : {},
     providerEndpointTypes: alibabaApiKey ? { alibabaCloud: alibabaEndpointType } : {},
-    audio: buildDockerAudioAvailability(providers),
+    audio: buildDockerAudioAvailability(providers, { gmiCloudModelMappings }),
   };
 }
 
@@ -522,7 +594,10 @@ const env = {
 	  MONGO_USERNAME: databaseConfig.parsed?.username || '',
 	  MONGO_AUTH_SOURCE: databaseConfig.parsed?.authSource || '',
 	  MONGO_TLS: databaseConfig.parsed?.tls || '',
-		  STORAGE_PROVIDER: storageProvider,
+	  STORAGE_PROVIDER: storageProvider,
+	  SAMSAR_STORAGE_BACKEND: storageBackend,
+	  SAMSAR_BACKBLAZE_CREDENTIAL_TYPE: backblazeCredentialType,
+	  SAMSAR_S3_OBJECT_TAGGING_SUPPORTED: String(storageConfig.objectTaggingSupported !== false),
 	  MEDIA_BUCKET_NAME: storageBucketName,
 	  STATIC_CDN_BUCKET: storageBucketName,
 	  STATIC_CDN_URL: storageConfig.staticCdnUrl || '',
@@ -571,6 +646,9 @@ const env = {
   SAMSAR_REVERSE_PROXY_ACCESS_TYPE: reverseProxyConfig.accessType || '',
   SAMSAR_REVERSE_PROXY_SSL_ENABLED: String(reverseProxyConfig.ssl?.enabled === true),
   SAMSAR_JS_API_URL: config.publicUrls?.samsarApi || 'https://api.samsar.one/v1',
+  SAMSAR_GENBLAZE_ENABLED: String(genblazeRuntimeEnabled),
+  SAMSAR_GENBLAZE_BASE_URL: genblazeRuntimeEnabled ? 'http://genblaze:8080/v1' : '',
+  SAMSAR_GENBLAZE_MODEL_CATALOG_PATH: '/persistent/config/genblaze-model-catalog.json',
   LOGGER_HEALTH_REQUIRED: String(loggerEnabled),
   LOKI_HEALTH_URL: isDockerRuntime ? 'http://loki:3100/ready' : 'http://127.0.0.1:4100/ready',
   GRAFANA_HEALTH_URL: isDockerRuntime ? 'http://grafana:3000/api/health' : 'http://127.0.0.1:4000/api/health',
@@ -612,6 +690,25 @@ try {
   // Best effort; Docker Desktop bind mounts may ignore chmod on some hosts.
 }
 
+const existingGenBlazeEnvironment = fs.existsSync(genblazeEnvPath)
+  ? fs.readFileSync(genblazeEnvPath, 'utf8')
+  : '';
+const genblazeJobTokenSecret =
+  readEnvironmentValue(existingGenBlazeEnvironment, 'GENBLAZE_JOB_TOKEN_SECRET') ||
+  randomBytes(32).toString('hex');
+const genblazeEnvContent = serializeEnvironment(buildGenBlazeServiceEnvironment({
+  apiKey: genblazeRuntimeEnabled ? effectiveGmiCloudConfig.apiKey : '',
+  chatBaseUrl: gmiCloudConfig.chatBaseUrl,
+  mediaBaseUrl: gmiCloudConfig.mediaBaseUrl,
+  jobTokenSecret: genblazeJobTokenSecret,
+}));
+fs.writeFileSync(genblazeEnvPath, genblazeEnvContent, { mode: 0o600 });
+try {
+  fs.chmodSync(genblazeEnvPath, 0o600);
+} catch (_) {
+  // Best effort; Docker Desktop bind mounts may ignore chmod on some hosts.
+}
+
 const availableModelsPath = path.join(runtimeConfigDir, 'available-models.json');
 fs.writeFileSync(
   availableModelsPath,
@@ -619,8 +716,20 @@ fs.writeFileSync(
   { mode: 0o600 },
 );
 
+fs.writeFileSync(
+  genblazeModelCatalogPath,
+  JSON.stringify(buildGmiCloudRuntimeCatalog({
+    apiKey: effectiveGmiCloudConfig.apiKey,
+    enabled: genblazeRuntimeEnabled,
+    modelMappings: gmiCloudModelMappings,
+  }), null, 2) + '\n',
+  { mode: 0o644 },
+);
+
 fs.writeFileSync(reverseProxyNginxPath, buildReverseProxyNginxConfig(), { mode: 0o644 });
 
 console.log(`Rendered ${path.relative(root, rootEnvPath)}`);
+console.log(`Rendered ${path.relative(root, genblazeEnvPath)}`);
 console.log(`Rendered ${path.relative(root, availableModelsPath)}`);
+console.log(`Rendered ${path.relative(root, genblazeModelCatalogPath)}`);
 console.log(`Rendered ${path.relative(root, reverseProxyNginxPath)}`);

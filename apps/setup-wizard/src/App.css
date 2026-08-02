@@ -1336,6 +1336,15 @@
   grid-template-columns: 1fr;
 }
 
+.storage-option-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.storage-option-grid .data-option-card {
+  min-height: 78px;
+  padding: 11px;
+}
+
 .data-option-card {
   align-items: flex-start;
   background: var(--bg-soft);
@@ -1390,6 +1399,10 @@
 
 .data-field-grid.single {
   grid-template-columns: 1fr;
+}
+
+.backblaze-storage-fields {
+  gap: 10px 12px;
 }
 
 .data-field {

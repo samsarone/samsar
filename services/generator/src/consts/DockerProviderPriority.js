@@ -8,6 +8,7 @@ export const DOCKER_ADAPTER_PROVIDER = Object.freeze({
   FAL: 'fal',
   OPENAI: 'openai',
   SAMSAR: 'samsar',
+  GMICLOUD: 'gmicloud',
 });
 
 export const DOCKER_IMAGE_GENERATION_PROVIDER_PRIORITY = Object.freeze({
@@ -18,18 +19,26 @@ export const DOCKER_IMAGE_GENERATION_PROVIDER_PRIORITY = Object.freeze({
   ],
   NANOBANANA2: [
     DOCKER_ADAPTER_PROVIDER.GOOGLE_CLOUD,
-    DOCKER_ADAPTER_PROVIDER.FAL,
     DOCKER_ADAPTER_PROVIDER.SAMSAR,
+    DOCKER_ADAPTER_PROVIDER.GMICLOUD,
+    DOCKER_ADAPTER_PROVIDER.FAL,
   ],
   NANOBANANAPRO: [
     DOCKER_ADAPTER_PROVIDER.GOOGLE_CLOUD,
-    DOCKER_ADAPTER_PROVIDER.FAL,
     DOCKER_ADAPTER_PROVIDER.SAMSAR,
+    DOCKER_ADAPTER_PROVIDER.GMICLOUD,
+    DOCKER_ADAPTER_PROVIDER.FAL,
   ],
   GPTIMAGE2: [
     DOCKER_ADAPTER_PROVIDER.OPENAI,
+    DOCKER_ADAPTER_PROVIDER.SAMSAR,
+    DOCKER_ADAPTER_PROVIDER.GMICLOUD,
+    DOCKER_ADAPTER_PROVIDER.FAL,
+  ],
+  SEEDREAM: [
     DOCKER_ADAPTER_PROVIDER.FAL,
     DOCKER_ADAPTER_PROVIDER.SAMSAR,
+    DOCKER_ADAPTER_PROVIDER.GMICLOUD,
   ],
   GPTIMAGE1: [
     DOCKER_ADAPTER_PROVIDER.OPENAI,
@@ -58,11 +67,13 @@ export const DOCKER_IMAGE_EDIT_PROVIDER_PRIORITY = Object.freeze({
     DOCKER_ADAPTER_PROVIDER.GOOGLE_CLOUD,
     DOCKER_ADAPTER_PROVIDER.FAL,
     DOCKER_ADAPTER_PROVIDER.SAMSAR,
+    DOCKER_ADAPTER_PROVIDER.GMICLOUD,
   ],
   NANOBANANAPROEDIT: [
     DOCKER_ADAPTER_PROVIDER.GOOGLE_CLOUD,
     DOCKER_ADAPTER_PROVIDER.FAL,
     DOCKER_ADAPTER_PROVIDER.SAMSAR,
+    DOCKER_ADAPTER_PROVIDER.GMICLOUD,
   ],
   NANOBANANAEDIT: [
     DOCKER_ADAPTER_PROVIDER.GOOGLE_CLOUD,
@@ -72,10 +83,21 @@ export const DOCKER_IMAGE_EDIT_PROVIDER_PRIORITY = Object.freeze({
   GPTIMAGE2EDIT: [
     DOCKER_ADAPTER_PROVIDER.OPENAI,
     DOCKER_ADAPTER_PROVIDER.SAMSAR,
+    DOCKER_ADAPTER_PROVIDER.GMICLOUD,
   ],
   GPTIMAGE1EDIT: [
     DOCKER_ADAPTER_PROVIDER.OPENAI,
     DOCKER_ADAPTER_PROVIDER.SAMSAR,
+  ],
+  BRIA_ERASER: [
+    DOCKER_ADAPTER_PROVIDER.FAL,
+    DOCKER_ADAPTER_PROVIDER.SAMSAR,
+    DOCKER_ADAPTER_PROVIDER.GMICLOUD,
+  ],
+  BRIA_GENFILL: [
+    DOCKER_ADAPTER_PROVIDER.FAL,
+    DOCKER_ADAPTER_PROVIDER.SAMSAR,
+    DOCKER_ADAPTER_PROVIDER.GMICLOUD,
   ],
 });
 
@@ -168,12 +190,27 @@ function normalizeAdapterProvider(value) {
   if (normalized === 'samsar') {
     return DOCKER_ADAPTER_PROVIDER.SAMSAR;
   }
+  if (['gmi', 'gmicloud', 'genblaze'].includes(normalized)) {
+    return DOCKER_ADAPTER_PROVIDER.GMICLOUD;
+  }
   return '';
 }
 
 function uniqueAdapterProviders(value) {
   const values = Array.isArray(value) ? value : [];
   return [...new Set(values.map(normalizeAdapterProvider).filter(Boolean))];
+}
+
+function applyHostedFalPriority(priority = []) {
+  const normalizedPriority = uniqueAdapterProviders(priority);
+  const falIndex = normalizedPriority.indexOf(DOCKER_ADAPTER_PROVIDER.FAL);
+  const samsarIndex = normalizedPriority.indexOf(DOCKER_ADAPTER_PROVIDER.SAMSAR);
+  if (falIndex < 0 || samsarIndex < 0 || falIndex < samsarIndex) {
+    return normalizedPriority;
+  }
+  normalizedPriority.splice(falIndex, 1);
+  normalizedPriority.splice(samsarIndex, 0, DOCKER_ADAPTER_PROVIDER.FAL);
+  return normalizedPriority;
 }
 
 function getModelAdapterPreferencesPath() {
@@ -250,6 +287,17 @@ function hasEnvCredential(...keys) {
   return keys.some((key) => Boolean(normalizeString(process.env[key])));
 }
 
+function hasGmiCloudModelMapping(model, modality = 'image', env = process.env) {
+  const catalogPath = normalizeString(env.SAMSAR_GENBLAZE_MODEL_CATALOG_PATH);
+  if (!catalogPath) return false;
+  try {
+    const catalog = JSON.parse(fs.readFileSync(catalogPath, 'utf8'));
+    return Boolean(normalizeString(catalog?.models?.[normalizeModelKey(model)]?.[modality]?.modelId));
+  } catch {
+    return false;
+  }
+}
+
 function isFalseyEnv(value) {
   return ['0', 'false', 'no', 'off'].includes(normalizeString(value).toLowerCase());
 }
@@ -289,6 +337,10 @@ export function hasSamsarAdapterCredential() {
   return hasEnvCredential('SAMSAR_API_KEY');
 }
 
+export function hasGmiCloudAdapterCredential() {
+  return isTruthyEnv(process.env.SAMSAR_GENBLAZE_ENABLED);
+}
+
 export function hasGoogleCloudAdapterCredential() {
   if (hasEnvCredential(...GOOGLE_CLOUD_CREDENTIAL_KEYS)) {
     return true;
@@ -313,6 +365,9 @@ export function isAdapterProviderConfigured(provider) {
   }
   if (provider === DOCKER_ADAPTER_PROVIDER.SAMSAR) {
     return hasSamsarAdapterCredential();
+  }
+  if (provider === DOCKER_ADAPTER_PROVIDER.GMICLOUD) {
+    return hasGmiCloudAdapterCredential();
   }
   return false;
 }
@@ -339,7 +394,16 @@ export function getDockerImageGenerationProviderPriority(model) {
       : [];
   }
 
-  return applySavedModelAdapterPriority(defaultPriority, [normalizedModel]);
+  let deploymentPriority = isStandaloneEdition()
+    ? defaultPriority
+    : applyHostedFalPriority(defaultPriority)
+      .filter((provider) => provider !== DOCKER_ADAPTER_PROVIDER.GMICLOUD);
+  if (!hasGmiCloudModelMapping(normalizedModel)) {
+    deploymentPriority = deploymentPriority.filter(
+      (provider) => provider !== DOCKER_ADAPTER_PROVIDER.GMICLOUD,
+    );
+  }
+  return applySavedModelAdapterPriority(deploymentPriority, [normalizedModel]);
 }
 
 export function getDockerImageEditProviderPriority(model) {
@@ -367,7 +431,16 @@ export function getDockerImageEditProviderPriority(model) {
       : [];
   }
 
-  return applySavedModelAdapterPriority(defaultPriority, [
+  let deploymentPriority = isStandaloneEdition()
+    ? defaultPriority
+    : defaultPriority.filter((provider) => provider !== DOCKER_ADAPTER_PROVIDER.GMICLOUD);
+  if (!hasGmiCloudModelMapping(normalizedModel)) {
+    deploymentPriority = deploymentPriority.filter(
+      (provider) => provider !== DOCKER_ADAPTER_PROVIDER.GMICLOUD,
+    );
+  }
+
+  return applySavedModelAdapterPriority(deploymentPriority, [
     normalizedModel,
     IMAGE_EDIT_PREFERENCE_MODEL_KEYS[normalizedModel],
   ]);
@@ -418,8 +491,12 @@ export function resolveNextDockerImageGenerationProvider(model, currentProvider)
 }
 
 export function resolveGPTImageTwoGenerationProvider(persistedProvider = '') {
-  if (normalizeString(persistedProvider) === DOCKER_ADAPTER_PROVIDER.FAL) {
-    return DOCKER_ADAPTER_PROVIDER.FAL;
+  const normalizedPersistedProvider = normalizeAdapterProvider(persistedProvider);
+  if (
+    normalizedPersistedProvider === DOCKER_ADAPTER_PROVIDER.FAL ||
+    normalizedPersistedProvider === DOCKER_ADAPTER_PROVIDER.GMICLOUD
+  ) {
+    return normalizedPersistedProvider;
   }
 
   // Production text-to-image generation uses FAL. Standalone and staging
@@ -433,7 +510,7 @@ export function resolveGPTImageTwoGenerationProvider(persistedProvider = '') {
 }
 
 export function resolveWan27ImageGenerationProvider(persistedProvider = '') {
-  const normalizedPersistedProvider = normalizeString(persistedProvider);
+  const normalizedPersistedProvider = normalizeAdapterProvider(persistedProvider);
   if (normalizedPersistedProvider === DOCKER_ADAPTER_PROVIDER.FAL ||
     normalizedPersistedProvider === DOCKER_ADAPTER_PROVIDER.ALIBABA_CLOUD) {
     return normalizedPersistedProvider;

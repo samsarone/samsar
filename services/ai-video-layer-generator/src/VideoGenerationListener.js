@@ -124,6 +124,12 @@ import {
   shouldUseSamsarExternalVideoProvider,
 } from './base/SamsarExternalVideoListener.js';
 import {
+  generateGenBlazeVideoLayer,
+  isGenBlazeVideoRequest,
+  listenToPendingGenBlazeVideoRequest,
+  shouldUseGenBlazeVideoProvider,
+} from './base/GenBlazeVideoListener.js';
+import {
   DOCKER_VIDEO_PROVIDER,
   resolveDockerVideoProvider,
   resolveNextDockerVideoProvider,
@@ -215,6 +221,10 @@ const ALIBABA_HAPPY_HORSE_PENDING_POLL_INTERVAL_MS = 15 * 1000;
 const SAMSAR_EXTERNAL_PENDING_POLL_INTERVAL_MS = Math.max(
   1000,
   Number(process.env.SAMSAR_EXTERNAL_VIDEO_PENDING_POLL_INTERVAL_MS) || 3 * 1000
+);
+const GENBLAZE_PENDING_POLL_INTERVAL_MS = Math.max(
+  1000,
+  Number(process.env.SAMSAR_GENBLAZE_VIDEO_PENDING_POLL_INTERVAL_MS) || 3 * 1000
 );
 const BASE_GENERATION_FAILURE_RETRY_BACKOFF_MS = Math.max(
   1000,
@@ -354,11 +364,15 @@ export function buildDockerVideoAdapterRetryPlan(
   request = {},
   { definitiveFailure = request?.providerFailureDefinitive === true } = {},
 ) {
+  const requestType = resolveAIVideoRequestType(
+    getDockerAdapterRoutingModel(request),
+    request,
+  );
   if (
     !isStandaloneEdition() ||
     definitiveFailure !== true ||
     request?.submissionOutcomeUnknown === true ||
-    resolveAIVideoRequestType(getDockerAdapterRoutingModel(request), request) !== 'image_to_video'
+    !['image_to_video', 'text_to_video'].includes(requestType)
   ) {
     return null;
   }
@@ -1117,7 +1131,11 @@ export function isTransientProviderError(error) {
   if (status && TRANSIENT_PROVIDER_ERROR_STATUSES.has(status)) {
     return true;
   }
-  const code = typeof error?.code === 'string' ? error.code : '';
+  const code = typeof error?.code === 'string'
+    ? error.code
+    : typeof error?.cause?.code === 'string'
+      ? error.cause.code
+      : '';
   return TRANSIENT_PROVIDER_ERROR_CODES.has(code);
 }
 
@@ -1211,8 +1229,12 @@ function shouldFailRequestAfterTransientProviderError(
   nextTransientErrorCount = 0,
   phase = 'poll',
 ) {
+  const requestType = resolveAIVideoRequestType(request.model, request);
   const maxErrors = phase === 'submit' &&
-    resolveAIVideoRequestType(request.model, request) === 'image_to_video'
+    (
+      requestType === 'image_to_video' ||
+      (requestType === 'text_to_video' && isStandaloneEdition())
+    )
     ? MAX_EXPLICIT_I2V_SUBMISSION_REJECTIONS
     : MAX_PROVIDER_TRANSIENT_ERRORS;
   if (nextTransientErrorCount >= maxErrors) {
@@ -1243,6 +1265,9 @@ async function deferTransientProviderError(request, error, phase) {
 export function getPendingPollIntervalMs(model, payload = {}) {
   if (isSamsarExternalVideoRequest(payload)) {
     return SAMSAR_EXTERNAL_PENDING_POLL_INTERVAL_MS;
+  }
+  if (isGenBlazeVideoRequest(payload)) {
+    return GENBLAZE_PENDING_POLL_INTERVAL_MS;
   }
   if (model === 'RUNWAYML') {
     return RUNWAY_PENDING_POLL_INTERVAL_MS;
@@ -1628,13 +1653,15 @@ async function generatePendingAiVideoLayerRequests() {
         throw e;
       }
       console.error('Error while starting a new INIT request:', getErrorLogPayload(e));
-      const isImageToVideoSubmission =
-        resolveAIVideoRequestType(request.model, request) === 'image_to_video';
-      if (isImageToVideoSubmission && isSafeProviderSubmissionRetry(e)) {
+      const requestType = resolveAIVideoRequestType(request.model, request);
+      const protectsAmbiguousSubmission =
+        requestType === 'image_to_video' ||
+        (requestType === 'text_to_video' && isStandaloneEdition());
+      if (protectsAmbiguousSubmission && isSafeProviderSubmissionRetry(e)) {
         await deferTransientProviderError(request, e, 'submit');
         continue;
       }
-      if (isImageToVideoSubmission) {
+      if (protectsAmbiguousSubmission) {
         // A timeout, connection reset, or 5xx can occur after the provider
         // accepted the request. Never resubmit or switch adapters when the
         // submission outcome is unknown.
@@ -1748,9 +1775,13 @@ async function generateAIVideoLayer(payload) {
   //   payload = await prepareExpressLipSyncPrompt(payload);
   // }
 
+  const dockerAdapterRequestType = resolveAIVideoRequestType(
+    getDockerAdapterRoutingModel(payload),
+    payload,
+  );
   if (
     isStandaloneEdition() &&
-    resolveAIVideoRequestType(getDockerAdapterRoutingModel(payload), payload) === 'image_to_video'
+    ['image_to_video', 'text_to_video'].includes(dockerAdapterRequestType)
   ) {
     const selectedProvider = resolveAIVideoProvider(
       getDockerAdapterRoutingModel(payload),
@@ -1791,6 +1822,7 @@ async function generateAIVideoLayer(payload) {
   // native Google Veo reads mounted images into inline bytes and needs no
   // public tunnel URL.
   const usesSamsarExternalProvider = shouldUseSamsarExternalVideoProvider(payload);
+  const usesGenBlazeProvider = shouldUseGenBlazeVideoProvider(payload);
   const usesGoogleInlineMedia = (
     ['VEO3.1', 'VEO3.1FAST', 'VEO3.1I2V', 'VEO3.1I2VFAST'].includes(model) &&
     shouldUseGoogleVeo3ForPayload(model, payload)
@@ -1807,6 +1839,8 @@ async function generateAIVideoLayer(payload) {
 
   if (usesSamsarExternalProvider) {
     generationId = await generateSamsarExternalVideoLayer(payload);
+  } else if (usesGenBlazeProvider) {
+    generationId = await generateGenBlazeVideoLayer(payload);
   } else if (model === 'LUMA' || model === 'LUMAFLASH2') {
     // generationId = await generateLumaAiVideoLayer(payload);
   } else if (model === 'SDVIDEO') {
@@ -1901,6 +1935,9 @@ async function generateAIVideoLayer(payload) {
   if (Object.values(DOCKER_VIDEO_PROVIDER).includes(submittedProvider)) {
     generationUpdate.dockerVideoProvider = submittedProvider;
   }
+  if (submittedProvider === DOCKER_VIDEO_PROVIDER.GMICLOUD) {
+    generationUpdate.externalProvider = DOCKER_VIDEO_PROVIDER.GMICLOUD;
+  }
   if (payload.dockerAdapterFailoverAttempted === true && payload.dockerVideoProviderOverride) {
     const successfulProvider = submittedProvider;
     if (successfulProvider === payload.dockerVideoProviderOverride) {
@@ -1944,6 +1981,8 @@ async function pollForAIVideoCompletion(reqPayload) {
   let responseData;
   if (shouldUseSamsarExternalVideoProvider(payload)) {
     responseData = await listenToPendingSamsarExternalVideoRequest(payload);
+  } else if (shouldUseGenBlazeVideoProvider(payload)) {
+    responseData = await listenToPendingGenBlazeVideoRequest(payload);
   } else if (model === 'LUMA' || model === 'LUMAFLASH2') {
     // responseData = await pollLumaAiVideoLayer(payload);
   } else if (model === 'SDVIDEO') {

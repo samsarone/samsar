@@ -3,12 +3,16 @@ import SamsarClient from 'samsar-js';
 import {
   buildDockerAvailableModelsFromEnabledProviders,
   buildDockerAvailableModelsFromProviderResults,
-  buildDockerCapabilityFamilyAvailability,
   buildExpressPipelineAvailability,
   getDockerModelDisplayName,
   orderDockerProviderKeys,
 } from '../constants/dockerModelAvailability.js';
 import { getProviderEnvironmentReferencePlaceholder } from '../constants/providerEnvironment.js';
+import {
+  buildBackblazePublicBucketUrl,
+  parseBackblazeS3Endpoint,
+  validateExternalStorageConfig,
+} from '../../storageConfig.mjs';
 
 const API_BASE_URL = (import.meta.env.VITE_PROCESSOR_API || 'http://localhost:3002').replace(/\/+$/, '');
 const SAMSAR_API_BASE_URL = (import.meta.env.VITE_SAMSAR_API_URL || 'https://api.samsar.one/v1').replace(/\/+$/, '');
@@ -31,7 +35,7 @@ const STEPS = [
 ];
 const SETUP_POLL_INTERVAL_MS = 1200;
 const WIZARD_STORAGE_KEY = 'samsar.setupWizard.session.v1';
-const WIZARD_STORAGE_VERSION = 8;
+const WIZARD_STORAGE_VERSION = 10;
 const CREDENTIAL_SOURCE_MANUAL = 'manual';
 const CREDENTIAL_SOURCE_ENVIRONMENT = 'environment';
 
@@ -149,6 +153,19 @@ const PROVIDERS = [
     credentialLabel: 'API key',
     badge: 'All model access',
   },
+  {
+    key: 'gmicloud',
+    title: 'GMICloud via GenBlaze',
+    type: 'genblaze',
+    field: 'gmiCloudApiKey',
+    inputType: 'password',
+    placeholder: 'GMICloud API key',
+    requiredFor: 'Compatible GPT, Gemini, Qwen, image, video, and speech models discovered for this GMICloud credential and routed through the local GenBlaze gateway.',
+    pricingUrl: 'https://www.gmicloud.ai/pricing',
+    keysUrl: 'https://console.gmicloud.ai/',
+    credentialLabel: 'GMICloud API key',
+    badge: 'Local GenBlaze gateway',
+  },
 ];
 const NATIVE_PROVIDERS = PROVIDERS.filter((provider) => provider.type === 'native');
 const STANDARD_NATIVE_PROVIDERS = NATIVE_PROVIDERS.filter(
@@ -164,8 +181,8 @@ const PROVIDER_GROUPS = [
   {
     key: 'fallbacks',
     title: 'Fallbacks',
-    description: 'Fill model gaps with universal access or route supported inference through OpenRouter.',
-    providerKeys: ['samsar', 'openrouter'],
+    description: 'Fill model gaps with universal access or route supported inference through GenBlaze and OpenRouter.',
+    providerKeys: ['samsar', 'gmicloud', 'openrouter'],
     featured: true,
   },
   {
@@ -180,7 +197,9 @@ const PROVIDER_GROUPS = [
 }));
 const PROVIDER_MODELS_BY_KEY = Object.fromEntries(PROVIDERS.map((provider) => [
   provider.key,
-  buildDockerAvailableModelsFromEnabledProviders([provider.key]).models
+  (provider.key === 'gmicloud'
+    ? []
+    : buildDockerAvailableModelsFromEnabledProviders([provider.key]).models)
     .map((modelKey) => ({
       modelKey,
       label: getDockerModelDisplayName(modelKey, provider.key),
@@ -204,19 +223,19 @@ const CAPABILITY_FAMILIES = {
   gpt56: {
     key: 'gpt56',
     label: 'GPT 5.6 Sol',
-    providerKeys: ['openai', 'openrouter', 'samsar'],
+    providerKeys: ['openai', 'samsar', 'gmicloud', 'openrouter'],
     modelKeys: ['gpt-5.6-sol'],
   },
   gemini: {
     key: 'gemini',
     label: 'Gemini',
-    providerKeys: ['googleCloud', 'openrouter', 'samsar'],
+    providerKeys: ['googleCloud', 'samsar', 'gmicloud', 'openrouter'],
     modelKeys: ['gemini-3.1-pro'],
   },
   qwen: {
     key: 'qwen',
     label: 'Qwen',
-    providerKeys: ['alibabaCloud', 'openrouter', 'samsar'],
+    providerKeys: ['alibabaCloud', 'samsar', 'gmicloud', 'openrouter'],
     modelKeys: ['QWEN3.7'],
   },
   kimiK3: {
@@ -228,19 +247,19 @@ const CAPABILITY_FAMILIES = {
   gptAssistant: {
     key: 'gptAssistant',
     label: 'GPT Assistant',
-    providerKeys: ['openai', 'openrouter', 'samsar'],
+    providerKeys: ['openai', 'samsar', 'gmicloud', 'openrouter'],
     modelKeys: ['gpt-5.6-sol'],
   },
   geminiAssistant: {
     key: 'geminiAssistant',
     label: 'Gemini Assistant',
-    providerKeys: ['googleCloud', 'openrouter', 'samsar'],
+    providerKeys: ['googleCloud', 'samsar', 'gmicloud', 'openrouter'],
     modelKeys: ['gemini-3.1-pro'],
   },
   qwenAssistant: {
     key: 'qwenAssistant',
     label: 'Qwen Assistant',
-    providerKeys: ['alibabaCloud', 'openrouter', 'samsar'],
+    providerKeys: ['alibabaCloud', 'samsar', 'gmicloud', 'openrouter'],
     modelKeys: ['QWEN3.7'],
   },
   kimiK3Assistant: {
@@ -252,26 +271,32 @@ const CAPABILITY_FAMILIES = {
   openaiImage: {
     key: 'openaiImage',
     label: 'OpenAI Image',
-    providerKeys: ['openai', 'samsar'],
-    modelKeys: ['GPTIMAGE2'],
+    providerKeys: ['openai', 'samsar', 'gmicloud'],
+    modelKeys: ['GPTIMAGE2', 'GPTIMAGE2EDIT'],
   },
   seedream: {
     key: 'seedream',
     label: 'Seedream',
-    providerKeys: ['fal', 'samsar'],
+    providerKeys: ['fal', 'samsar', 'gmicloud'],
     modelKeys: ['SEEDREAM'],
   },
   nanoBanana2: {
     key: 'nanoBanana2',
     label: 'NanoBanana 2',
-    providerKeys: ['googleCloud', 'fal', 'samsar'],
-    modelKeys: ['NANOBANANA2'],
+    providerKeys: ['googleCloud', 'fal', 'samsar', 'gmicloud'],
+    modelKeys: ['NANOBANANA2', 'NANOBANANA2EDIT'],
   },
   nanoBananaPro: {
     key: 'nanoBananaPro',
     label: 'NanoBanana Pro',
-    providerKeys: ['googleCloud', 'fal', 'samsar'],
-    modelKeys: ['NANOBANANAPRO'],
+    providerKeys: ['googleCloud', 'fal', 'samsar', 'gmicloud'],
+    modelKeys: ['NANOBANANAPRO', 'NANOBANANAPROEDIT'],
+  },
+  briaEdit: {
+    key: 'briaEdit',
+    label: 'BRIA Image Edit',
+    providerKeys: ['fal', 'samsar', 'gmicloud'],
+    modelKeys: ['BRIA_ERASER', 'BRIA_GENFILL'],
   },
   wan27Pro: {
     key: 'wan27Pro',
@@ -282,25 +307,25 @@ const CAPABILITY_FAMILIES = {
   veo: {
     key: 'veoI2V',
     label: 'VEO 3.1 I2V',
-    providerKeys: ['googleCloud', 'fal', 'samsar'],
-    modelKeys: ['VEO3.1I2V'],
+    providerKeys: ['googleCloud', 'fal', 'samsar', 'gmicloud'],
+    modelKeys: ['VEO3.1', 'VEO3.1I2V'],
   },
   veoFast: {
     key: 'veoFastI2V',
     label: 'VEO 3.1 Fast I2V',
-    providerKeys: ['googleCloud', 'fal', 'samsar'],
-    modelKeys: ['VEO3.1I2VFAST'],
+    providerKeys: ['googleCloud', 'fal', 'samsar', 'gmicloud'],
+    modelKeys: ['VEO3.1FAST', 'VEO3.1I2VFAST'],
   },
   seedance: {
     key: 'seedance',
     label: 'Seedance',
-    providerKeys: ['fal', 'samsar'],
+    providerKeys: ['fal', 'samsar', 'gmicloud'],
     modelKeys: ['SEEDANCEI2V'],
   },
   kling: {
     key: 'kling',
     label: 'Kling',
-    providerKeys: ['fal', 'samsar'],
+    providerKeys: ['fal', 'samsar', 'gmicloud'],
     modelKeys: ['KLINGIMGTOVID3PRO', 'KLINGIMGTOVIDTURBO'],
   },
   cosmos: {
@@ -312,7 +337,7 @@ const CAPABILITY_FAMILIES = {
   happyHorse: {
     key: 'happyHorse',
     label: 'Happy Horse',
-    providerKeys: ['alibabaCloud', 'fal', 'samsar'],
+    providerKeys: ['alibabaCloud', 'fal', 'samsar', 'gmicloud'],
     modelKeys: ['HAPPYHORSEI2V'],
   },
   runway: {
@@ -354,7 +379,7 @@ const CAPABILITY_FAMILIES = {
   openaiTts: {
     key: 'openaiTts',
     label: 'OpenAI TTS',
-    providerKeys: ['openai', 'samsar'],
+    providerKeys: ['openai', 'samsar', 'gmicloud'],
     modelKeys: ['OPENAI_TTS'],
   },
   googleTts: {
@@ -366,7 +391,7 @@ const CAPABILITY_FAMILIES = {
   elevenlabsSpeech: {
     key: 'elevenlabsSpeech',
     label: 'ElevenLabs Speech',
-    providerKeys: ['fal', 'samsar'],
+    providerKeys: ['elevenlabs', 'fal', 'samsar', 'gmicloud'],
     modelKeys: ['ELEVENLABS'],
   },
   soundEffects: {
@@ -457,6 +482,7 @@ const SETUP_SERVICE_CATALOG = [
       CAPABILITY_FAMILIES.seedream,
       CAPABILITY_FAMILIES.nanoBanana2,
       CAPABILITY_FAMILIES.nanoBananaPro,
+      CAPABILITY_FAMILIES.briaEdit,
       CAPABILITY_FAMILIES.wan27Pro,
     ],
   },
@@ -515,6 +541,7 @@ const DEFAULT_CREDENTIALS = Object.freeze({
   samsarApiKey: '',
   openaiApiKey: '',
   openrouterApiKey: '',
+  gmiCloudApiKey: '',
   googleCredentialsJson: '',
   kimiK3ApiKey: '',
   alibabaApiKey: '',
@@ -533,9 +560,10 @@ const DEFAULT_DATA_CONFIG = Object.freeze({
   databaseMode: 'local',
   mongoConnectionString: '',
   storageMode: 'local',
-  s3Bucket: 'samsar-resources',
+  s3Bucket: '',
   s3Region: 'us-east-1',
   s3Endpoint: '',
+  backblazeCredentialType: '',
   s3ForcePathStyle: false,
   s3AccessKeyId: '',
   s3SecretAccessKey: '',
@@ -687,6 +715,23 @@ function pickAdminConfig(value = {}) {
 
 function normalizeText(value) {
   return typeof value === 'string' ? value.trim() : '';
+}
+
+export function hydrateBackblazeDataConfig(dataConfig = {}, runtimeStorage = {}) {
+  const normalizedConfig = pickDataConfig(dataConfig);
+  const runtimeIsBackblaze = runtimeStorage?.mode === 'backblaze-b2' ||
+    runtimeStorage?.backend === 'backblaze-b2';
+  if (!runtimeIsBackblaze) {
+    return normalizedConfig;
+  }
+
+  return {
+    ...normalizedConfig,
+    s3Bucket: normalizeText(normalizedConfig.s3Bucket) || normalizeText(runtimeStorage.mediaBucketName),
+    s3Endpoint: normalizeText(normalizedConfig.s3Endpoint) || normalizeText(runtimeStorage.s3Endpoint),
+    backblazeCredentialType: normalizeText(normalizedConfig.backblazeCredentialType) || normalizeText(runtimeStorage.credentialType),
+    staticCdnUrl: normalizeText(normalizedConfig.staticCdnUrl) || normalizeText(runtimeStorage.staticCdnUrl),
+  };
 }
 
 function isAlibabaTokenPlanEndpoint(value) {
@@ -886,11 +931,28 @@ function ensureTrailingSlash(value) {
   return normalized.endsWith('/') ? normalized : `${normalized}/`;
 }
 
-function buildInfrastructureConfig(dataConfig = {}) {
+export function buildInfrastructureConfig(dataConfig = {}) {
   const databaseMode = dataConfig.databaseMode === 'remote' ? 'remote' : 'local';
-  const storageMode = dataConfig.storageMode === 'externalS3' ? 'externalS3' : 'local';
+  const storageMode = ['externalS3', 'backblazeB2'].includes(dataConfig.storageMode)
+    ? dataConfig.storageMode
+    : 'local';
+  const isExternalStorage = storageMode !== 'local';
+  const isBackblazeB2 = storageMode === 'backblazeB2';
   const remoteMongoUrl = normalizeText(dataConfig.mongoConnectionString);
-  const staticCdnUrl = ensureTrailingSlash(dataConfig.staticCdnUrl);
+  let staticCdnUrl = ensureTrailingSlash(dataConfig.staticCdnUrl);
+  let storageRegion = normalizeText(dataConfig.s3Region) || (isBackblazeB2 ? '' : 'us-east-1');
+  let s3Endpoint = normalizeText(dataConfig.s3Endpoint);
+  if (isBackblazeB2 && s3Endpoint) {
+    try {
+      const parsedEndpoint = parseBackblazeS3Endpoint(s3Endpoint);
+      storageRegion = parsedEndpoint.region;
+      s3Endpoint = parsedEndpoint.endpoint;
+      staticCdnUrl = buildBackblazePublicBucketUrl(dataConfig.s3Bucket, s3Endpoint);
+    } catch {
+      storageRegion = '';
+      staticCdnUrl = '';
+    }
+  }
 
   return {
     database: databaseMode === 'remote'
@@ -905,29 +967,33 @@ function buildInfrastructureConfig(dataConfig = {}) {
         provider: 'local-mongo',
         mongoUrl: 'mongodb://mongo:27017/SamsarOne',
       },
-    storage: storageMode === 'externalS3'
+    storage: isExternalStorage
       ? {
-        mode: 'external-s3',
+        mode: isBackblazeB2 ? 'backblaze-b2' : 'external-s3',
         provider: 's3-compatible',
+        backend: isBackblazeB2 ? 'backblaze-b2' : 'generic-s3',
         mediaBucketName: normalizeText(dataConfig.s3Bucket),
         staticCdnUrl,
         secureAssetPrefix: 'assets_v2',
         accessKeyId: normalizeText(dataConfig.s3AccessKeyId),
         secretAccessKey: normalizeText(dataConfig.s3SecretAccessKey),
-        region: normalizeText(dataConfig.s3Region) || 'us-east-1',
-        s3Endpoint: normalizeText(dataConfig.s3Endpoint),
-        s3ForcePathStyle: Boolean(dataConfig.s3ForcePathStyle),
+        credentialType: isBackblazeB2 ? normalizeText(dataConfig.backblazeCredentialType) : '',
+        region: storageRegion,
+        s3Endpoint,
+        s3ForcePathStyle: isBackblazeB2 || Boolean(dataConfig.s3ForcePathStyle),
+        objectTaggingSupported: !isBackblazeB2,
         externalMediaPublishEnabled: true,
         cloudFront: {
-          keyPairId: normalizeText(dataConfig.cloudFrontKeyPairId),
-          privateKey: dataConfig.cloudFrontPrivateKey || '',
-          privateKeyBase64: normalizeText(dataConfig.cloudFrontPrivateKeyBase64),
+          keyPairId: isBackblazeB2 ? '' : normalizeText(dataConfig.cloudFrontKeyPairId),
+          privateKey: isBackblazeB2 ? '' : dataConfig.cloudFrontPrivateKey || '',
+          privateKeyBase64: isBackblazeB2 ? '' : normalizeText(dataConfig.cloudFrontPrivateKeyBase64),
           signedUrlTtlSeconds: normalizeText(dataConfig.cloudFrontSignedUrlTtlSeconds) || '604800',
         },
       }
       : {
         mode: 'local-minio',
         provider: 's3-compatible',
+        backend: 'minio',
         mediaBucketName: 'samsar-resources',
         staticCdnUrl: `${API_BASE_URL}/`,
         secureAssetPrefix: 'assets_v2',
@@ -936,17 +1002,19 @@ function buildInfrastructureConfig(dataConfig = {}) {
         region: 'us-east-1',
         s3Endpoint: 'http://minio:9000',
         s3ForcePathStyle: true,
+        objectTaggingSupported: true,
         externalMediaPublishEnabled: false,
       },
   };
 }
 
-function buildServicePayload(services, infrastructure) {
+function buildServicePayload(services, infrastructure, validationResult = {}) {
   return {
     ...services,
     localMongo: infrastructure.database.provider === 'local-mongo',
     minio: infrastructure.storage.mode === 'local-minio',
     mediaGateway: infrastructure.storage.mode === 'local-minio',
+    genblaze: getProviderStatus(validationResult, 'gmicloud')?.ok === true,
   };
 }
 
@@ -1078,7 +1146,8 @@ function sanitizeValidationResultForStorage(validationResult, credentials = {}) 
         (
           providerKey === 'openrouter' ||
           providerKey === 'alibabaCloud' ||
-          providerKey === 'kimi'
+          providerKey === 'kimi' ||
+          providerKey === 'gmicloud'
         ) &&
         providerValidation?.ok === true &&
         provider &&
@@ -1301,14 +1370,28 @@ function getServiceProviderKeys(service) {
   ]);
 }
 
-function buildCapabilityFamilyAvailability(family, enabledProviderSet) {
-  return buildDockerCapabilityFamilyAvailability(family, [...enabledProviderSet]);
+function buildCapabilityFamilyAvailability(family, available = EMPTY_AVAILABLE) {
+  const availableModelSet = new Set(available.models || []);
+  const modelKeys = Array.isArray(family.modelKeys) ? family.modelKeys : [];
+  const modelProviders = Object.fromEntries(modelKeys
+    .filter((modelKey) => availableModelSet.has(modelKey) && available.modelProviders?.[modelKey])
+    .map((modelKey) => [modelKey, available.modelProviders[modelKey]]));
+  const enabledProviderKeys = orderProviderKeys(Object.values(modelProviders));
+  return {
+    ...family,
+    providerKeys: orderProviderKeys(family.providerKeys || []),
+    enabledProviderKeys,
+    modelProviders,
+    availableModelKeys: Object.keys(modelProviders),
+    isAvailable: Object.keys(modelProviders).length > 0,
+  };
 }
 
 function buildSetupServiceAvailability(validationResult = {}) {
   const enabledProviderSet = new Set(getEnabledProviderKeys(validationResult));
+  const available = buildDockerAvailableModelsFromProviderResults(validationResult?.providers || {});
   return SETUP_SERVICE_CATALOG.map((service) => {
-    const families = (service.modelFamilies || []).map((family) => buildCapabilityFamilyAvailability(family, enabledProviderSet));
+    const families = (service.modelFamilies || []).map((family) => buildCapabilityFamilyAvailability(family, available));
     const providerKeys = getServiceProviderKeys(service);
     const enabledProviderKeys = providerKeys.filter((providerKey) => enabledProviderSet.has(providerKey));
     const availableFamilies = families.filter((family) => family.isAvailable);
@@ -1352,6 +1435,7 @@ function buildDeploymentPayload(
       samsar: { enabled: Boolean(sanitizedCredentials.samsarApiKey), validation: getProviderStatus(validationResult, 'samsar') },
       openai: { enabled: Boolean(sanitizedCredentials.openaiApiKey), validation: getProviderStatus(validationResult, 'openai') },
       openrouter: { enabled: Boolean(sanitizedCredentials.openrouterApiKey), validation: getProviderStatus(validationResult, 'openrouter') },
+      gmicloud: { enabled: Boolean(sanitizedCredentials.gmiCloudApiKey), validation: getProviderStatus(validationResult, 'gmicloud') },
       googleCloud: { enabled: Boolean(sanitizedCredentials.googleCredentialsJson), validation: getProviderStatus(validationResult, 'googleCloud') },
       kimi: { enabled: Boolean(sanitizedCredentials.kimiK3ApiKey), validation: getProviderStatus(validationResult, 'kimi') },
       alibabaCloud: { enabled: Boolean(sanitizedCredentials.alibabaApiKey), validation: getProviderStatus(validationResult, 'alibabaCloud') },
@@ -1359,7 +1443,7 @@ function buildDeploymentPayload(
       elevenlabs: { enabled: Boolean(sanitizedCredentials.elevenLabsApiKey), validation: getProviderStatus(validationResult, 'elevenlabs') },
       runway: { enabled: Boolean(sanitizedCredentials.runwayApiKey), validation: getProviderStatus(validationResult, 'runway') },
     },
-    services: buildServicePayload(services, infrastructure),
+    services: buildServicePayload(services, infrastructure, validationResult),
     infrastructure,
     mail: buildMailDeploymentConfig(mailConfig, mailValidationResult),
     reverseProxy,
@@ -1697,7 +1781,11 @@ function ExistingInstallHome({
             <h3>Data</h3>
             <ul>
               <li>{config.database?.mode === 'remote' ? 'Remote MongoDB' : 'Local MongoDB'}</li>
-              <li>{config.storage?.mode === 'external-s3' ? 'External S3 / CloudFront' : 'Local MinIO media'}</li>
+              <li>{config.storage?.mode === 'backblaze-b2'
+                ? 'Backblaze B2 media storage'
+                : config.storage?.mode === 'external-s3'
+                  ? 'External S3 / CloudFront'
+                  : 'Local MinIO media'}</li>
               {config.storage?.staticCdnUrl && <li>{config.storage.staticCdnUrl}</li>}
             </ul>
           </section>
@@ -1982,6 +2070,24 @@ async function validateOpenRouterCredential(credentials, headers = {}) {
   return body;
 }
 
+async function validateGmiCloudCredential(credentials, headers = {}) {
+  const apiKey = credentials.gmiCloudApiKey.trim();
+  if (!apiKey) {
+    return null;
+  }
+
+  const response = await fetch('/api/setup/providers/gmicloud/validate', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...headers },
+    body: JSON.stringify({ gmiCloudApiKey: apiKey }),
+  });
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(body?.message || 'GMICloud credential validation failed.');
+  }
+  return body;
+}
+
 async function validateEnvironmentCredentials(credentials, headers = {}) {
   const response = await fetch('/api/setup/providers/environment/validate', {
     method: 'POST',
@@ -2038,6 +2144,8 @@ export default function OnboardingWizard() {
   const [validationResult, setValidationResult] = useState(initialWizardState.validationResult);
   const [validationError, setValidationError] = useState('');
   const [dataConfigError, setDataConfigError] = useState('');
+  const [storageValidationResult, setStorageValidationResult] = useState(null);
+  const [isValidatingStorage, setIsValidatingStorage] = useState(false);
   const [isValidating, setIsValidating] = useState(false);
   const [isConfigCopied, setIsConfigCopied] = useState(false);
   const [isStartingSetup, setIsStartingSetup] = useState(false);
@@ -2090,13 +2198,22 @@ export default function OnboardingWizard() {
     () => getEnabledProviderKeys(validationResult),
     [validationResult],
   );
+  const gmiCloudMediaCatalogWarning = getProviderStatus(validationResult, 'gmicloud')?.mediaCatalogWarning || '';
   const enteredProviderKeys = useMemo(
     () => PROVIDERS.filter((provider) => hasCredentialValue(activeCredentials, provider)).map((provider) => provider.key),
     [activeCredentials],
   );
   const enteredProviderAvailability = useMemo(
-    () => buildDockerAvailableModelsFromEnabledProviders(enteredProviderKeys),
-    [enteredProviderKeys],
+    () => buildDockerAvailableModelsFromEnabledProviders(
+      enteredProviderKeys,
+      enteredProviderKeys.includes('gmicloud')
+        ? {
+          gmiCloudModelMappings:
+            getProviderStatus(validationResult, 'gmicloud')?.modelMappings || {},
+        }
+        : {},
+    ),
+    [enteredProviderKeys, validationResult],
   );
   const expressPipelineAvailability = useMemo(
     () => buildExpressPipelineAvailability(validationResult?.available || enteredProviderAvailability),
@@ -2170,7 +2287,24 @@ export default function OnboardingWizard() {
   const renderProviderRow = (provider) => {
     const isSamsarProvider = provider.type === 'samsar';
     const usesEnvironmentReference = credentialSource === CREDENTIAL_SOURCE_ENVIRONMENT;
-    const providerModels = PROVIDER_MODELS_BY_KEY[provider.key] || [];
+    const providerValidation = getProviderStatus(validationResult, provider.key);
+    const validatedGmiCloudModels = provider.key === 'gmicloud' && providerValidation?.ok === true
+      ? Object.entries(providerValidation.modelMappings || {}).map(([modelKey, routes]) => {
+        const upstreamModels = [...new Set(Object.values(routes || {})
+          .map((route) => route?.modelId)
+          .filter(Boolean))];
+        return {
+          modelKey,
+          label: upstreamModels.length
+            ? `${getDockerModelDisplayName(modelKey, provider.key)} (${upstreamModels.join(' / ')})`
+            : getDockerModelDisplayName(modelKey, provider.key),
+        };
+      }).sort((leftModel, rightModel) => leftModel.label.localeCompare(rightModel.label))
+      : null;
+    const awaitingGmiCloudDiscovery = provider.key === 'gmicloud' && providerValidation?.ok !== true;
+    const providerModels = provider.key === 'gmicloud'
+      ? (validatedGmiCloudModels || [])
+      : (PROVIDER_MODELS_BY_KEY[provider.key] || []);
     const rowClassName = [
       'provider-row',
       isSamsarProvider ? 'provider-row-featured' : 'provider-row-native',
@@ -2196,7 +2330,9 @@ export default function OnboardingWizard() {
           </div>
           <div className="provider-model-access">
             <span className="provider-model-access-label">
-              Enables {providerModels.length} {providerModels.length === 1 ? 'model' : 'models'}
+              {awaitingGmiCloudDiscovery
+                ? 'Validate the key to discover exact compatible models'
+                : `Enables ${providerModels.length} ${providerModels.length === 1 ? 'model' : 'models'}`}
             </span>
             <div className="provider-model-list" aria-label={`${provider.title} enabled models`}>
               {providerModels.map((model) => (
@@ -2299,6 +2435,11 @@ export default function OnboardingWizard() {
       }
       setInstallStatus(body);
       setInstallActionError('');
+      if (body?.config?.storage) {
+        setDataConfig((current) => current.storageMode === 'backblazeB2'
+          ? hydrateBackblazeDataConfig(current, body.config.storage)
+          : current);
+      }
       if (!body?.setupAuthRequired) {
         setIsSetupAuthenticated(false);
         setSetupAuthError('');
@@ -2330,6 +2471,7 @@ export default function OnboardingWizard() {
           kimiK3ApiKey: '',
           alibabaApiKey: '',
           openrouterApiKey: '',
+          gmiCloudApiKey: '',
         },
 	      environmentReferences,
 	      services,
@@ -2604,8 +2746,39 @@ export default function OnboardingWizard() {
   };
 
   const updateDataConfig = (field, value) => {
-    setDataConfig((current) => ({ ...current, [field]: value }));
+    setDataConfig((current) => ({
+      ...current,
+      [field]: value,
+      ...(
+        current.storageMode === 'backblazeB2' &&
+        ['s3Bucket', 's3Endpoint', 's3AccessKeyId', 's3SecretAccessKey'].includes(field)
+          ? { backblazeCredentialType: '' }
+          : {}
+      ),
+    }));
     setDataConfigError('');
+    setStorageValidationResult(null);
+    if (step < 4) {
+      setMaxStep((currentMaxStep) => Math.min(currentMaxStep, 3));
+    }
+  };
+
+  const selectStorageMode = (storageMode) => {
+    setDataConfig((current) => {
+      if (storageMode !== 'backblazeB2' || current.storageMode === 'backblazeB2') {
+        return { ...current, storageMode };
+      }
+      return hydrateBackblazeDataConfig({
+        ...current,
+        storageMode,
+        s3ForcePathStyle: true,
+        cloudFrontKeyPairId: '',
+        cloudFrontPrivateKey: '',
+        cloudFrontPrivateKeyBase64: '',
+      }, installStatus?.config?.storage);
+    });
+    setDataConfigError('');
+    setStorageValidationResult(null);
     if (step < 4) {
       setMaxStep((currentMaxStep) => Math.min(currentMaxStep, 3));
     }
@@ -2692,6 +2865,7 @@ export default function OnboardingWizard() {
           await validateSamsarCredential(activeCredentials),
           await validateAlibabaCredential(activeCredentials, buildSetupHeaders({}, setupPassword)),
           await validateOpenRouterCredential(activeCredentials, buildSetupHeaders({}, setupPassword)),
+          await validateGmiCloudCredential(activeCredentials, buildSetupHeaders({}, setupPassword)),
           await validateNativeCredentials(activeCredentials),
         ]);
       setValidationResult(body);
@@ -2801,38 +2975,11 @@ export default function OnboardingWizard() {
       }
     }
 
-    if (dataConfig.storageMode === 'externalS3') {
-      const missingFields = [
-        ['s3Bucket', 'S3 bucket'],
-        ['s3Region', 'S3 region'],
-        ['s3AccessKeyId', 'S3 access key'],
-        ['s3SecretAccessKey', 'S3 secret key'],
-        ['staticCdnUrl', 'public CDN base URL'],
-      ].filter(([field]) => !normalizeText(dataConfig[field]));
-      if (missingFields.length) {
-        setDataConfigError(`External S3 requires: ${missingFields.map(([, label]) => label).join(', ')}.`);
-        return false;
-      }
+    if (['externalS3', 'backblazeB2'].includes(dataConfig.storageMode)) {
       try {
-        const publicCdnUrl = new URL(normalizeText(dataConfig.staticCdnUrl));
-        if (
-          publicCdnUrl.protocol !== 'https:' ||
-          publicCdnUrl.username ||
-          publicCdnUrl.password ||
-          publicCdnUrl.search ||
-          publicCdnUrl.hash
-        ) {
-          throw new Error('invalid public CDN URL');
-        }
-      } catch {
-        setDataConfigError('Public CDN base URL must be HTTPS and must not contain credentials, a query, or a fragment.');
-        return false;
-      }
-      if (
-        (normalizeText(dataConfig.cloudFrontKeyPairId) || normalizeText(dataConfig.cloudFrontPrivateKey) || normalizeText(dataConfig.cloudFrontPrivateKeyBase64)) &&
-        (!normalizeText(dataConfig.cloudFrontKeyPairId) || (!normalizeText(dataConfig.cloudFrontPrivateKey) && !normalizeText(dataConfig.cloudFrontPrivateKeyBase64)))
-      ) {
-        setDataConfigError('CloudFront signing requires both a key pair ID and a private key or base64 private key.');
+        validateExternalStorageConfig(buildInfrastructureConfig(dataConfig));
+      } catch (error) {
+        setDataConfigError(error?.message || 'External storage configuration is invalid.');
         return false;
       }
     }
@@ -2841,8 +2988,52 @@ export default function OnboardingWizard() {
     return true;
   };
 
+  const validateBackblazeStorageConfiguration = async () => {
+    if (dataConfig.storageMode !== 'backblazeB2') {
+      setStorageValidationResult(null);
+      return { ok: true };
+    }
+
+    setIsValidatingStorage(true);
+    setStorageValidationResult(null);
+    try {
+      const response = await fetch('/api/setup/storage/backblaze/validate', {
+        method: 'POST',
+        headers: buildSetupHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ storage: buildInfrastructureConfig(dataConfig).storage }),
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        if (response.status === 401) {
+          handleSetupAuthFailure(body);
+        }
+        throw new Error(body?.message || 'Backblaze storage validation failed.');
+      }
+      setStorageValidationResult(body);
+      setDataConfig((current) => ({
+        ...current,
+        backblazeCredentialType: body.credentialType || '',
+      }));
+      setDataConfigError('');
+      return body;
+    } catch (error) {
+      setDataConfigError(
+        error?.message === 'Failed to fetch'
+          ? 'Unable to reach the local setup service. Rebuild and run the setup wizard Docker container.'
+          : error?.message || 'Backblaze storage validation failed.',
+      );
+      return null;
+    } finally {
+      setIsValidatingStorage(false);
+    }
+  };
+
   const continueFromMailAndData = async () => {
     if (!validateDataConfig()) {
+      return;
+    }
+    const storageResult = await validateBackblazeStorageConfiguration();
+    if (!storageResult) {
       return;
     }
     const mailResult = await validateMailConfiguration();
@@ -3477,6 +3668,11 @@ export default function OnboardingWizard() {
                 Token plan API key is unsuitable for production server
               </div>
             )}
+            {gmiCloudMediaCatalogWarning && (
+              <div className="warning-banner" role="status">
+                {gmiCloudMediaCatalogWarning}
+              </div>
+            )}
             {enteredProviderKeys.length > 0 && expressPipelineAvailability.isReady && (
               <div className="success-banner express-readiness-banner" role="status">
                 <strong>Express pipeline ready.</strong>
@@ -3834,15 +4030,19 @@ export default function OnboardingWizard() {
 	              <section className="data-config-card">
 	                <div className="data-config-card-header">
 	                  <h3>Media storage</h3>
-	                  <span>{dataConfig.storageMode === 'externalS3' ? 'External S3' : 'Local MinIO'}</span>
+	                  <span>{dataConfig.storageMode === 'externalS3'
+	                    ? 'External S3'
+	                    : dataConfig.storageMode === 'backblazeB2'
+	                      ? 'Backblaze B2'
+	                      : 'Local MinIO'}</span>
 	                </div>
-	                <div className="data-option-grid">
+	                <div className="data-option-grid storage-option-grid">
 	                  <label className={`data-option-card ${dataConfig.storageMode === 'local' ? 'selected' : ''}`}>
 	                    <input
 	                      type="radio"
 	                      name="storage-mode"
 	                      checked={dataConfig.storageMode === 'local'}
-	                      onChange={() => updateDataConfig('storageMode', 'local')}
+	                      onChange={() => selectStorageMode('local')}
 	                    />
 	                    <span>
 	                      <strong>Local MinIO</strong>
@@ -3854,65 +4054,95 @@ export default function OnboardingWizard() {
 	                      type="radio"
 	                      name="storage-mode"
 	                      checked={dataConfig.storageMode === 'externalS3'}
-	                      onChange={() => updateDataConfig('storageMode', 'externalS3')}
+	                      onChange={() => selectStorageMode('externalS3')}
 	                    />
 	                    <span>
 	                      <strong>External S3 / CloudFront</strong>
 	                      <small>Publishes local media to your bucket and sends signed CloudFront URLs when signing keys are provided.</small>
 	                    </span>
 	                  </label>
+	                  <label className={`data-option-card ${dataConfig.storageMode === 'backblazeB2' ? 'selected' : ''}`}>
+	                    <input
+	                      type="radio"
+	                      name="storage-mode"
+	                      checked={dataConfig.storageMode === 'backblazeB2'}
+	                      onChange={() => selectStorageMode('backblazeB2')}
+	                    />
+	                    <span>
+	                      <strong>Backblaze B2</strong>
+	                      <small>Uses a public B2 bucket through its secure S3-compatible endpoint for provider-accessible media.</small>
+	                    </span>
+	                  </label>
 	                </div>
-	                {dataConfig.storageMode === 'externalS3' && (
-	                  <div className="data-field-grid">
+	                {['externalS3', 'backblazeB2'].includes(dataConfig.storageMode) && (
+	                  <div className={`data-field-grid ${dataConfig.storageMode === 'backblazeB2' ? 'backblaze-storage-fields' : ''}`}>
 	                    <label className="data-field">
-	                      <span>Bucket</span>
+	                      <span>Bucket name</span>
 	                      <input
+	                        required
 	                        value={dataConfig.s3Bucket}
-	                        placeholder="samsar-resources"
+	                        placeholder={dataConfig.storageMode === 'backblazeB2' ? 'samsar' : 'your-media-bucket'}
+	                        autoComplete="off"
+	                        spellCheck={false}
 	                        onChange={(event) => updateDataConfig('s3Bucket', event.target.value)}
 	                      />
 	                    </label>
-	                    <label className="data-field">
-	                      <span>Region</span>
-	                      <input
-	                        value={dataConfig.s3Region}
-	                        placeholder="us-east-1"
-	                        onChange={(event) => updateDataConfig('s3Region', event.target.value)}
-	                      />
-	                    </label>
+	                    {dataConfig.storageMode === 'externalS3' && (
+	                      <label className="data-field">
+	                        <span>Region</span>
+	                        <input
+	                          required
+	                          value={dataConfig.s3Region}
+	                          placeholder="us-east-1"
+	                          onChange={(event) => updateDataConfig('s3Region', event.target.value)}
+	                        />
+	                      </label>
+	                    )}
 	                    <label className="data-field">
 	                      <span>S3 endpoint</span>
 	                      <input
+	                        required={dataConfig.storageMode === 'backblazeB2'}
 	                        value={dataConfig.s3Endpoint}
-	                        placeholder="Optional for AWS S3"
+	                        placeholder={dataConfig.storageMode === 'backblazeB2'
+	                          ? 's3.us-east-005.backblazeb2.com'
+	                          : 'Optional for AWS S3'}
+	                        autoComplete="off"
+	                        autoCapitalize="off"
+	                        spellCheck={false}
 	                        onChange={(event) => updateDataConfig('s3Endpoint', event.target.value)}
 	                      />
 	                    </label>
+	                    {dataConfig.storageMode === 'externalS3' && (
+	                      <label className="data-field">
+	                        <span>Public CDN base URL</span>
+	                        <input
+	                          required
+	                          value={dataConfig.staticCdnUrl}
+	                          placeholder="https://cdn.example.com/"
+	                          onChange={(event) => updateDataConfig('staticCdnUrl', event.target.value)}
+	                        />
+	                      </label>
+	                    )}
 	                    <label className="data-field">
-	                      <span>Public CDN base URL</span>
-	                      <input
-	                        required
-	                        value={dataConfig.staticCdnUrl}
-	                        placeholder="https://cdn.example.com/"
-	                        onChange={(event) => updateDataConfig('staticCdnUrl', event.target.value)}
-	                      />
-	                    </label>
-	                    <label className="data-field">
-	                      <span>Access key</span>
+	                      <span>{dataConfig.storageMode === 'backblazeB2' ? 'Key ID' : 'Access key'}</span>
 	                      <input
 	                        type="password"
 	                        value={dataConfig.s3AccessKeyId}
+	                        placeholder={dataConfig.storageMode === 'backblazeB2' ? 'Master or application key ID' : ''}
 	                        onChange={(event) => updateDataConfig('s3AccessKeyId', event.target.value)}
 	                      />
 	                    </label>
 	                    <label className="data-field">
-	                      <span>Secret key</span>
+	                      <span>{dataConfig.storageMode === 'backblazeB2' ? 'Key value' : 'Secret key'}</span>
 	                      <input
 	                        type="password"
 	                        value={dataConfig.s3SecretAccessKey}
+	                        placeholder={dataConfig.storageMode === 'backblazeB2' ? 'Key value, not the key name' : ''}
 	                        onChange={(event) => updateDataConfig('s3SecretAccessKey', event.target.value)}
 	                      />
 	                    </label>
+	                    {dataConfig.storageMode === 'externalS3' && (
+	                      <>
 	                    <label className="data-field data-checkbox-field">
 	                      <input
 	                        type="checkbox"
@@ -3955,6 +4185,8 @@ export default function OnboardingWizard() {
 	                        spellCheck="false"
 	                      />
 	                    </label>
+	                      </>
+	                    )}
 	                  </div>
 	                )}
 	              </section>
@@ -3979,6 +4211,9 @@ export default function OnboardingWizard() {
 	                </div>
 	              </section>
 	            </div>
+	            {storageValidationResult?.ok && (
+	              <div className="success-banner data-status-banner">{storageValidationResult.message}</div>
+	            )}
 	            {dataConfigError && <div className="error-banner data-status-banner">{dataConfigError}</div>}
 	          </>
 	        )}
@@ -4320,7 +4555,11 @@ export default function OnboardingWizard() {
 	                <h3>Data</h3>
 	                <ul>
 	                  <li>{deploymentPayload.infrastructure.database.provider === 'local-mongo' ? 'Local MongoDB' : 'Remote MongoDB'}</li>
-	                  <li>{deploymentPayload.infrastructure.storage.mode === 'local-minio' ? 'Local MinIO storage' : 'External S3 storage'}</li>
+	                  <li>{deploymentPayload.infrastructure.storage.mode === 'local-minio'
+	                    ? 'Local MinIO storage'
+	                    : deploymentPayload.infrastructure.storage.mode === 'backblaze-b2'
+	                      ? 'Backblaze B2 storage'
+	                      : 'External S3 storage'}</li>
 	                  <li>{deploymentPayload.services.logger ? 'Grafana logger enabled' : 'Grafana logger disabled'}</li>
 	                </ul>
 	              </section>
@@ -4383,8 +4622,8 @@ export default function OnboardingWizard() {
             </button>
           )}
 	          {step === 3 && (
-	            <button type="button" className="primary-action flow-primary" onClick={continueFromMailAndData} disabled={isValidatingMail}>
-	              {isValidatingMail ? 'Verifying mail...' : 'Continue'}
+	            <button type="button" className="primary-action flow-primary" onClick={continueFromMailAndData} disabled={isValidatingMail || isValidatingStorage}>
+	              {isValidatingStorage ? 'Verifying storage...' : isValidatingMail ? 'Verifying mail...' : 'Continue'}
 	            </button>
 	          )}
 	          {step === 4 && (

@@ -1,8 +1,46 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import test from 'node:test';
 import OpenAI from 'openai';
 
-import { createOpenRouterChatCompletion } from './SamsarExternalInferenceAdapter.js';
+import {
+  DOCKER_INFERENCE_PROVIDER,
+  createOpenRouterChatCompletion,
+  resolveConfiguredInferenceProvider,
+} from './SamsarExternalInferenceAdapter.js';
+
+test('Qwen uses GMICloud through GenBlaze before OpenRouter', (t) => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'samsar-genblaze-inference-'));
+  const catalogPath = path.join(directory, 'genblaze-model-catalog.json');
+  fs.writeFileSync(catalogPath, JSON.stringify({
+    version: 1,
+    provider: 'gmicloud',
+    models: {
+      'QWEN3.7': {
+        text: { modelId: 'Qwen/Qwen3.7-Max', operation: 'chat.completions' },
+        vision: { modelId: 'Qwen/Qwen3.7-Plus', operation: 'chat.completions' },
+      },
+    },
+  }));
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  const keys = ['CURRENT_ENV', 'SAMSAR_GENBLAZE_ENABLED', 'SAMSAR_GENBLAZE_MODEL_CATALOG_PATH', 'OPENROUTER_API_KEY', 'SAMSAR_API_KEY', 'ALIBABA_API_KEY'];
+  const previous = Object.fromEntries(keys.map((key) => [key, process.env[key]]));
+  t.after(() => {
+    for (const key of keys) {
+      if (previous[key] === undefined) delete process.env[key];
+      else process.env[key] = previous[key];
+    }
+  });
+  for (const key of keys) delete process.env[key];
+  process.env.CURRENT_ENV = 'docker';
+  process.env.SAMSAR_GENBLAZE_ENABLED = 'true';
+  process.env.SAMSAR_GENBLAZE_MODEL_CATALOG_PATH = catalogPath;
+  process.env.OPENROUTER_API_KEY = 'openrouter-key';
+
+  assert.equal(resolveConfiguredInferenceProvider('QWEN3.7'), DOCKER_INFERENCE_PROVIDER.GMICLOUD);
+});
 
 test('Qwen OpenRouter applies Max text and Plus vision routing with bounded settings', async (t) => {
   const keys = ['CURRENT_ENV', 'OPENROUTER_API_KEY', 'OPENROUTER_QWEN_MAX_TOKENS'];

@@ -71,6 +71,21 @@ test('settings expose only installed compatible adapters in stage order', () => 
   );
 });
 
+test('GMICloud is exposed to the account adapter UI with its GenBlaze label', () => {
+  const result = buildModelAdapterSettings({
+    providers: ['gmicloud'],
+    models: ['QWEN3.7'],
+    modelProviderPriority: {
+      'QWEN3.7': ['gmicloud'],
+    },
+  });
+  const inference = result.stages.find((stage) => stage.key === 'inference');
+  assert.deepEqual(inference.models[0].availableAdapters, [
+    { key: 'gmicloud', label: 'GMICloud via GenBlaze' },
+  ]);
+  assert.deepEqual(inference.models[0].preference, ['gmicloud']);
+});
+
 test('updates must be exact permutations of installed adapters', () => {
   assert.throws(
     () => validateModelAdapterPreferenceUpdate(

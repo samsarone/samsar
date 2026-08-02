@@ -68,6 +68,7 @@ import {
   buildSpeechTranscriptHintRows,
   normalizeTimelineHints,
 } from '../../../../utils/sessionTimelineText.js';
+import { canRemoveStudioScene } from '../../util/studioSceneLifecycle.mjs';
 const MAX_VISIBLE_LAYERS = 10;
 const MIN_LAYER_HEIGHT = 20; // in pixels
 const VISUAL_TRACK_DISPLAY_FRAMES_PER_SECOND = 30;
@@ -1107,6 +1108,7 @@ export default function FrameToolbar(props) {
       return Math.max(maximumEndTime, layerStart + layerDuration);
     }, 0);
   }, [layers]);
+  const canRemoveScene = canRemoveStudioScene(layers);
   const [highlightBoundaries, setHighlightBoundaries] = useState({ start: 0, height: 0 });
   const totalDurationInFrames = Math.max(0, secondsToDisplayFrames(totalDuration));
   const disabledMenuClass = isRenderPending ? 'pending-disabled-shell' : '';
@@ -2984,7 +2986,7 @@ export default function FrameToolbar(props) {
   };
 
   const removeLayer = (index) => {
-    if (!layers || layers.length === 0) return;
+    if (!canRemoveScene) return;
     openPopupLayerIdRef.current = null;
     removeSessionLayer(index);
     clearTrimDragBaseline();
@@ -7651,8 +7653,11 @@ export default function FrameToolbar(props) {
               )}
               <div className='mt-auto absolute bottom-1 left-0 right-0'>
                 <button
+                  type="button"
                   onClick={() => removeLayer(openPopupLayerIndex)}
-                  className={`px-3 py-1 text-xs rounded w-[80px] ${colorMode === 'light' ? 'bg-rose-600 text-white hover:bg-rose-500' : 'bg-red-900 text-neutral-100 hover:bg-red-800'}`}
+                  disabled={!canRemoveScene || isRenderPending}
+                  title={canRemoveScene ? 'Remove scene' : 'A project must keep at least one scene'}
+                  className={`px-3 py-1 text-xs rounded w-[80px] disabled:cursor-not-allowed disabled:opacity-50 ${colorMode === 'light' ? 'bg-rose-600 text-white hover:bg-rose-500' : 'bg-red-900 text-neutral-100 hover:bg-red-800'}`}
                 >
                   <div className='flex m-auto'>
                     <div className='inline-flex'>

@@ -1,3 +1,5 @@
+import fs from 'node:fs';
+
 import SamsarClient from 'samsar-js';
 import OpenAI from 'openai';
 
@@ -33,6 +35,16 @@ const DEFAULT_OPENROUTER_QWEN_MAX_TOKENS = 16384;
 const DEFAULT_OPENROUTER_GEMINI_MAX_TOKENS = 65536;
 const DEFAULT_OPENROUTER_GPT_MAX_COMPLETION_TOKENS = 65536;
 const DEFAULT_OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1';
+const DEFAULT_GENBLAZE_BASE_URL = 'http://genblaze:8080/v1';
+const GENBLAZE_INFERENCE_MODELS = new Set([
+  'QWEN3.7',
+  'gpt-5.6-sol',
+  'gemini-3.1-pro',
+]);
+const GENBLAZE_HIGH_REASONING_MODELS = new Set([
+  'gpt-5.6-sol',
+  'gemini-3.1-pro',
+]);
 const GOOGLE_NATIVE_CREDENTIAL_KEYS = Object.freeze([
   'GOOGLE_APPLICATION_CREDENTIALS_JSON_B64',
   'GOOGLE_APPLICATION_CREDENTIALS_JSON',
@@ -51,17 +63,20 @@ export const DOCKER_INFERENCE_PROVIDER = Object.freeze({
   OPENAI: 'openai',
   OPENROUTER: 'openrouter',
   SAMSAR: 'samsar',
+  GMICLOUD: 'gmicloud',
 });
 export const DOCKER_INFERENCE_PROVIDER_PRIORITY_BY_MODEL = Object.freeze({
   'QWEN3.7': Object.freeze([
     DOCKER_INFERENCE_PROVIDER.ALIBABA_CLOUD,
-    DOCKER_INFERENCE_PROVIDER.OPENROUTER,
     DOCKER_INFERENCE_PROVIDER.SAMSAR,
+    DOCKER_INFERENCE_PROVIDER.GMICLOUD,
+    DOCKER_INFERENCE_PROVIDER.OPENROUTER,
   ]),
   'gemini-3.1-pro': Object.freeze([
     DOCKER_INFERENCE_PROVIDER.GOOGLE_CLOUD,
-    DOCKER_INFERENCE_PROVIDER.OPENROUTER,
     DOCKER_INFERENCE_PROVIDER.SAMSAR,
+    DOCKER_INFERENCE_PROVIDER.GMICLOUD,
+    DOCKER_INFERENCE_PROVIDER.OPENROUTER,
   ]),
   [KIMI_K3_INFERENCE_MODEL]: Object.freeze([
     DOCKER_INFERENCE_PROVIDER.KIMI,
@@ -69,8 +84,9 @@ export const DOCKER_INFERENCE_PROVIDER_PRIORITY_BY_MODEL = Object.freeze({
   ]),
   'gpt-5.6-sol': Object.freeze([
     DOCKER_INFERENCE_PROVIDER.OPENAI,
-    DOCKER_INFERENCE_PROVIDER.OPENROUTER,
     DOCKER_INFERENCE_PROVIDER.SAMSAR,
+    DOCKER_INFERENCE_PROVIDER.GMICLOUD,
+    DOCKER_INFERENCE_PROVIDER.OPENROUTER,
   ]),
 });
 
@@ -80,6 +96,8 @@ let cachedBaseUrl = '';
 let cachedOpenRouterClient = null;
 let cachedOpenRouterClientKey = '';
 let cachedOpenRouterBaseUrl = '';
+let cachedGenblazeClient = null;
+let cachedGenblazeBaseUrl = '';
 
 function normalizeString(value) {
   return typeof value === 'string' ? value.trim() : '';
@@ -184,6 +202,10 @@ function isOpenRouterAuthorization(value) {
   return normalizeAuthorization(value) === 'openrouter';
 }
 
+function isGenblazeAuthorization(value) {
+  return ['gmi', 'gmicloud', 'genblaze'].includes(normalizeAuthorization(value));
+}
+
 function isTruthyEnv(value) {
   const normalized = normalizeString(value).toLowerCase();
   return normalized === '1' || normalized === 'true' || normalized === 'yes' || normalized === 'on';
@@ -278,7 +300,48 @@ function getOpenRouterClient() {
   return cachedOpenRouterClient;
 }
 
-function hasConfiguredInferenceProvider(provider) {
+function getGenblazeClient() {
+  if (!isStandaloneEdition() || !isTruthyEnv(process.env.SAMSAR_GENBLAZE_ENABLED)) return null;
+  const baseURL = normalizeBaseUrl(
+    process.env.SAMSAR_GENBLAZE_BASE_URL || DEFAULT_GENBLAZE_BASE_URL,
+  );
+  if (!cachedGenblazeClient || cachedGenblazeBaseUrl !== baseURL) {
+    cachedGenblazeClient = new OpenAI({ apiKey: 'samsar-internal', baseURL });
+    cachedGenblazeBaseUrl = baseURL;
+  }
+  return cachedGenblazeClient;
+}
+
+function getGenblazeInferenceModality(chatRequest = {}) {
+  return hasQwenMultimodalInput(chatRequest) ? 'vision' : 'text';
+}
+
+function getCanonicalGenblazeInferenceModel(model) {
+  if (isQwenInferenceModel(model)) return 'QWEN3.7';
+  if (isGeminiInferenceModel(model) && normalizeInferenceModel(model) === 'gemini-3.1-pro') {
+    return 'gemini-3.1-pro';
+  }
+  const normalized = normalizeString(model).toLowerCase();
+  return normalized === 'gpt-5.6-sol' || normalized.startsWith('gpt-5.6-sol-')
+    ? 'gpt-5.6-sol'
+    : '';
+}
+
+function hasGenblazeModelMapping(model, chatRequest = {}, env = process.env) {
+  const canonicalModel = getCanonicalGenblazeInferenceModel(model);
+  if (!GENBLAZE_INFERENCE_MODELS.has(canonicalModel)) return false;
+  const catalogPath = normalizeString(env.SAMSAR_GENBLAZE_MODEL_CATALOG_PATH);
+  if (!catalogPath) return false;
+  try {
+    const catalog = JSON.parse(fs.readFileSync(catalogPath, 'utf8'));
+    const route = catalog?.models?.[canonicalModel]?.[getGenblazeInferenceModality(chatRequest)];
+    return Boolean(normalizeString(route?.modelId));
+  } catch {
+    return false;
+  }
+}
+
+function hasConfiguredInferenceProvider(provider, model, chatRequest = {}) {
   if (provider === DOCKER_INFERENCE_PROVIDER.ALIBABA_CLOUD) {
     return hasAlibabaCloudNativeCredential();
   }
@@ -294,28 +357,44 @@ function hasConfiguredInferenceProvider(provider) {
   if (provider === DOCKER_INFERENCE_PROVIDER.OPENROUTER) {
     return hasOpenRouterCredential();
   }
+  if (provider === DOCKER_INFERENCE_PROVIDER.GMICLOUD) {
+    return Boolean(getGenblazeClient()) && hasGenblazeModelMapping(model, chatRequest);
+  }
   if (provider === DOCKER_INFERENCE_PROVIDER.SAMSAR) {
     return Boolean(getExternalClient());
   }
   return false;
 }
 
-function getInferenceProviderPriority(model) {
+function getInferenceProviderPriority(model, chatRequest = {}) {
   let defaultPriority;
   let preferenceModelKey;
   if (isQwenInferenceModel(model)) {
     defaultPriority = DOCKER_INFERENCE_PROVIDER_PRIORITY_BY_MODEL['QWEN3.7'];
     preferenceModelKey = 'QWEN3.7';
   } else if (isGeminiInferenceModel(model)) {
-    defaultPriority = DOCKER_INFERENCE_PROVIDER_PRIORITY_BY_MODEL['gemini-3.1-pro'];
+    defaultPriority = Boolean(getGenblazeClient()) && hasGenblazeModelMapping(model, chatRequest)
+      ? DOCKER_INFERENCE_PROVIDER_PRIORITY_BY_MODEL['gemini-3.1-pro']
+      : [
+        DOCKER_INFERENCE_PROVIDER.GOOGLE_CLOUD,
+        DOCKER_INFERENCE_PROVIDER.OPENROUTER,
+        DOCKER_INFERENCE_PROVIDER.SAMSAR,
+      ];
     preferenceModelKey = 'gemini-3.1-pro';
   } else if (isKimiInferenceModel(model)) {
     defaultPriority = DOCKER_INFERENCE_PROVIDER_PRIORITY_BY_MODEL[KIMI_K3_INFERENCE_MODEL];
     preferenceModelKey = KIMI_K3_INFERENCE_MODEL;
   } else {
     preferenceModelKey = normalizeInferenceModel(model);
-    defaultPriority = DOCKER_INFERENCE_PROVIDER_PRIORITY_BY_MODEL[preferenceModelKey] ||
+    const genblazePriority = DOCKER_INFERENCE_PROVIDER_PRIORITY_BY_MODEL[preferenceModelKey] ||
       DOCKER_INFERENCE_PROVIDER_PRIORITY_BY_MODEL['gpt-5.6-sol'];
+    defaultPriority = Boolean(getGenblazeClient()) && hasGenblazeModelMapping(model, chatRequest)
+      ? genblazePriority
+      : [
+        DOCKER_INFERENCE_PROVIDER.OPENAI,
+        DOCKER_INFERENCE_PROVIDER.OPENROUTER,
+        DOCKER_INFERENCE_PROVIDER.SAMSAR,
+      ];
   }
 
   const savedPriority = readModelAdapterPreferences().modelProviderPriority[
@@ -335,24 +414,24 @@ function isQwenOpenRouterOnly(model) {
   );
 }
 
-function getRuntimeInferenceProviderPriority(model) {
+function getRuntimeInferenceProviderPriority(model, chatRequest = {}) {
   return isQwenOpenRouterOnly(model)
     ? [DOCKER_INFERENCE_PROVIDER.OPENROUTER]
-    : getInferenceProviderPriority(model);
+    : getInferenceProviderPriority(model, chatRequest);
 }
 
-export function resolveConfiguredInferenceProvider(model) {
-  for (const provider of getRuntimeInferenceProviderPriority(model)) {
-    if (hasConfiguredInferenceProvider(provider)) {
+export function resolveConfiguredInferenceProvider(model, chatRequest = {}) {
+  for (const provider of getRuntimeInferenceProviderPriority(model, chatRequest)) {
+    if (hasConfiguredInferenceProvider(provider, model, chatRequest)) {
       return provider;
     }
   }
   return '';
 }
 
-export function getConfiguredInferenceProviders(model) {
-  return getRuntimeInferenceProviderPriority(model)
-    .filter(hasConfiguredInferenceProvider);
+export function getConfiguredInferenceProviders(model, chatRequest = {}) {
+  return getRuntimeInferenceProviderPriority(model, chatRequest)
+    .filter((provider) => hasConfiguredInferenceProvider(provider, model, chatRequest));
 }
 
 function getRequestedInferenceModel(chatRequest = {}) {
@@ -385,8 +464,59 @@ export function shouldUseOpenRouterInference(chatRequest = {}) {
   if (isQwenOpenRouterOnly(model)) return true;
   if (isOpenRouterAuthorization(chatRequest.authorization)) return true;
   if (isDeployedAuthorization(chatRequest.authorization)) return false;
-  return resolveConfiguredInferenceProvider(model) ===
+  return resolveConfiguredInferenceProvider(model, chatRequest) ===
     DOCKER_INFERENCE_PROVIDER.OPENROUTER;
+}
+
+export function shouldUseGenblazeInference(chatRequest = {}) {
+  if (!chatRequest || typeof chatRequest !== 'object') return false;
+  if (isGenblazeAuthorization(chatRequest.authorization)) return true;
+  if (isDeployedAuthorization(chatRequest.authorization) || isOpenRouterAuthorization(chatRequest.authorization)) {
+    return false;
+  }
+  return resolveConfiguredInferenceProvider(getRequestedInferenceModel(chatRequest), chatRequest) ===
+    DOCKER_INFERENCE_PROVIDER.GMICLOUD;
+}
+
+export async function createGenblazeChatCompletion(chatRequest = {}) {
+  const model = getCanonicalGenblazeInferenceModel(getRequestedInferenceModel(chatRequest));
+  if (!hasGenblazeModelMapping(model, chatRequest)) {
+    const error = new Error(
+      'GMICloud via GenBlaze does not expose an exact compatible model for this inference request.',
+    );
+    error.code = 'GENBLAZE_MODEL_UNSUPPORTED';
+    throw error;
+  }
+  const client = getGenblazeClient();
+  if (!client) throw new Error('SAMSAR_GENBLAZE_ENABLED is required for GMICloud inference.');
+  const {
+    authorization, bypassSamsarExternalInference, samsarExternalInference,
+    timeout, timeoutMs, maxRetries, externalMaxRetries, ...request
+  } = chatRequest || {};
+  const requestTimeout = Number(timeout ?? timeoutMs ?? process.env.SAMSAR_GENBLAZE_INFERENCE_TIMEOUT_MS) ||
+    DEFAULT_EXTERNAL_INFERENCE_TIMEOUT_MS;
+  return runExternalInferenceWithRetry(
+    async ({ signal }) => client.chat.completions.create(
+      await normalizeProviderMediaPayload({
+        ...request,
+        model,
+        ...(GENBLAZE_HIGH_REASONING_MODELS.has(model)
+          ? {
+            reasoning_effort: request.reasoning_effort === 'high'
+              ? request.reasoning_effort
+              : 'high',
+          }
+          : {}),
+      }, normalizeProviderMediaUrl),
+      { timeout: requestTimeout, maxRetries: 0, signal },
+    ),
+    {
+      provider: 'gmicloud',
+      model,
+      timeoutMs: requestTimeout,
+      maxRetries: externalMaxRetries ?? maxRetries,
+    },
+  );
 }
 
 export async function createOpenRouterChatCompletion(chatRequest = {}) {
@@ -500,15 +630,20 @@ export function shouldUseSamsarExternalInference(chatRequest = {}) {
     return false;
   }
   if (isOpenRouterAuthorization(chatRequest.authorization)) return true;
+  if (isGenblazeAuthorization(chatRequest.authorization)) return true;
   if (chatRequest.samsarExternalInference === true || isDeployedAuthorization(chatRequest.authorization)) {
     return shouldEnableExternalInference() && Boolean(getExternalClient());
   }
-  const provider = resolveConfiguredInferenceProvider(inferenceModel);
+  const provider = resolveConfiguredInferenceProvider(inferenceModel, chatRequest);
   if (provider === DOCKER_INFERENCE_PROVIDER.OPENROUTER) return true;
+  if (provider === DOCKER_INFERENCE_PROVIDER.GMICLOUD) return true;
   return shouldEnableExternalInference() && provider === DOCKER_INFERENCE_PROVIDER.SAMSAR;
 }
 
 export async function createSamsarExternalChatCompletion(chatRequest = {}) {
+  if (shouldUseGenblazeInference(chatRequest)) {
+    return createGenblazeChatCompletion(chatRequest);
+  }
   if (shouldUseOpenRouterInference(chatRequest)) {
     return createOpenRouterChatCompletion(chatRequest);
   }

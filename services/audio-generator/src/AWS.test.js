@@ -105,6 +105,24 @@ test('Docker external-S3 uses an explicitly configured bucket and public HTTPS C
   );
 });
 
+test('Backblaze path-prefixed public URLs remain idempotent', async (t) => {
+  const snapshot = snapshotEnvironment();
+  t.after(() => restoreEnvironment(snapshot));
+  clearEnvironment();
+  process.env.CURRENT_ENV = 'docker';
+  process.env.SAMSAR_MEDIA_DELIVERY_MODE = 'external-s3';
+  process.env.MEDIA_BUCKET_NAME = 'my-bucket';
+  process.env.STATIC_CDN_URL = 'https://f000.backblazeb2.com/file/my-bucket/';
+  const aws = await importAwsModule();
+  const publicUrl = 'https://f000.backblazeb2.com/file/my-bucket/assets_v2/session/audio.wav';
+
+  assert.equal(aws.buildSecureMediaDeliveryUrl(publicUrl), publicUrl);
+  assert.equal(
+    aws.buildSecureMediaDeliveryUrl('assets_v2/session/audio one.wav'),
+    'https://f000.backblazeb2.com/file/my-bucket/assets_v2/session/audio%20one.wav',
+  );
+});
+
 test('Docker-local upload persists a stable mounted reference without S3 configuration', async (t) => {
   const snapshot = snapshotEnvironment();
   t.after(() => restoreEnvironment(snapshot));

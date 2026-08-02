@@ -20,6 +20,29 @@ x-service-env: &service-env
     - ../../runtime/fonts:/usr/local/share/fonts:ro
 
 services:
+  genblaze:
+    profiles: ["genblaze"]
+    image: samsar-genblaze-gateway:local
+    build:
+      context: ../../services/genblaze-gateway
+    env_file:
+      - ../../runtime/secrets/genblaze.env
+    environment:
+      PYTHONUNBUFFERED: "1"
+      GENBLAZE_MODEL_CATALOG_PATH: /app/config/genblaze-model-catalog.json
+    volumes:
+      - ../../runtime/config/genblaze-model-catalog.json:/app/config/genblaze-model-catalog.json:ro
+    expose:
+      - "8080"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health/ready', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 10s
+    init: true
+    restart: unless-stopped
+
   processor:
     <<: *service-env
     profiles: ["core"]

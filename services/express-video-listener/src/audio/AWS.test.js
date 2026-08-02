@@ -104,3 +104,37 @@ test('Docker external-S3 audio uploads reject implicit hosted defaults', async (
     restoreEnv(envSnapshot);
   }
 });
+
+test('path-prefixed Backblaze URLs do not become duplicated storage keys', async () => {
+  const envSnapshot = snapshotEnv();
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'samsar-b2-audio-upload-'));
+  const assetsV2Root = path.join(tempRoot, 'assets_v2');
+  const sourcePath = path.join(tempRoot, 'speech.wav');
+  fs.mkdirSync(assetsV2Root, { recursive: true });
+  fs.writeFileSync(sourcePath, 'wav');
+
+  Object.assign(process.env, {
+    CURRENT_ENV: 'docker',
+    SAMSAR_MEDIA_DELIVERY_MODE: 'docker-local',
+    MEDIA_DELIVERY_MODE: 'docker-local',
+    SAMSAR_ASSETS_V2_ROOT: assetsV2Root,
+    SAMSAR_DOCKER_PUBLIC_PROCESSOR_BASE_URL: 'http://localhost:3002',
+    STATIC_CDN_URL: 'https://f000.backblazeb2.com/file/my-bucket/',
+  });
+
+  try {
+    const { uploadSpeechAudioToCDN } = await importAudioAwsModule();
+    const publicB2Url = 'https://f000.backblazeb2.com/file/my-bucket/assets_v2/session/audio.wav';
+    assert.equal(
+      await uploadSpeechAudioToCDN(sourcePath, publicB2Url),
+      'http://localhost:3002/assets_v2/session/audio.wav',
+    );
+    assert.equal(
+      fs.readFileSync(path.join(assetsV2Root, 'session/audio.wav'), 'utf8'),
+      'wav',
+    );
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+    restoreEnv(envSnapshot);
+  }
+});

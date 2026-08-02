@@ -34,6 +34,7 @@ export const DOCKER_AUDIO_PROVIDER_ORDER = Object.freeze([
   'fal',
   'elevenlabs',
   'samsar',
+  'gmicloud',
 ]);
 
 function isProviderEnabled(providerConfig = {}) {
@@ -44,7 +45,28 @@ function uniqueSorted(values = []) {
   return [...new Set(values.filter((value) => typeof value === 'string' && value.trim()))].sort();
 }
 
-export function buildDockerAudioAvailability(providers = {}) {
+function hasGmiCloudAudioRoute(modelMappings, modelKey) {
+  const route = modelMappings?.[modelKey]?.audio;
+  return Boolean(route && typeof route.modelId === 'string' && route.modelId.trim());
+}
+
+function getProviderCapabilities(provider, options = {}) {
+  if (provider !== 'gmicloud') {
+    return DOCKER_AUDIO_PROVIDER_CAPABILITIES[provider];
+  }
+
+  const modelMappings = options.gmiCloudModelMappings || {};
+  return {
+    ttsProviders: [
+      ...(hasGmiCloudAudioRoute(modelMappings, 'OPENAI_TTS') ? ['OPENAI'] : []),
+      ...(hasGmiCloudAudioRoute(modelMappings, 'ELEVENLABS') ? ['ELEVENLABS'] : []),
+    ],
+    musicProviders: [],
+    soundEffectProviders: [],
+  };
+}
+
+export function buildDockerAudioAvailability(providers = {}, options = {}) {
   const enabledProviders = Object.entries(providers)
     .filter(([, providerConfig]) => isProviderEnabled(providerConfig))
     .map(([provider]) => provider);
@@ -54,7 +76,7 @@ export function buildDockerAudioAvailability(providers = {}) {
   const soundEffectProviders = [];
 
   for (const provider of enabledProviders) {
-    const capabilities = DOCKER_AUDIO_PROVIDER_CAPABILITIES[provider];
+    const capabilities = getProviderCapabilities(provider, options);
     if (!capabilities) {
       continue;
     }

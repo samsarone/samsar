@@ -1,4 +1,7 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import test from 'node:test';
 
 import {
@@ -20,6 +23,9 @@ const ENV_KEYS = [
   'ALIBABA_CLOUD_API_KEY',
   'QWEN_API_KEY',
   'OPENROUTER_API_KEY',
+  'SAMSAR_GENBLAZE_ENABLED',
+  'SAMSAR_GENBLAZE_BASE_URL',
+  'SAMSAR_GENBLAZE_MODEL_CATALOG_PATH',
 ];
 const originalEnv = Object.fromEntries(ENV_KEYS.map((key) => [key, process.env[key]]));
 
@@ -200,12 +206,30 @@ test('uses native Alibaba credentials first and Samsar fallback when they are ab
   }), false);
 });
 
-test('uses OpenRouter between native Alibaba and Samsar in Docker', () => {
+test('uses Samsar and GMICloud before OpenRouter after native Alibaba in Docker', (t) => {
   clearEnv();
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'samsar-qwen-genblaze-'));
+  const catalogPath = path.join(directory, 'genblaze-model-catalog.json');
+  fs.writeFileSync(catalogPath, JSON.stringify({
+    version: 1,
+    provider: 'gmicloud',
+    models: {
+      'QWEN3.7': {
+        text: { modelId: 'Qwen/Qwen3.7-Max', operation: 'chat.completions' },
+      },
+    },
+  }));
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
   process.env.CURRENT_ENV = 'docker';
   process.env.OPENROUTER_API_KEY = 'openrouter-test-key';
   process.env.SAMSAR_API_KEY = 'samsar-test-key';
-  assert.equal(resolveConfiguredInferenceProvider('QWEN3.7'), DOCKER_INFERENCE_PROVIDER.OPENROUTER);
+  assert.equal(resolveConfiguredInferenceProvider('QWEN3.7'), DOCKER_INFERENCE_PROVIDER.SAMSAR);
+
+  delete process.env.SAMSAR_API_KEY;
+  process.env.SAMSAR_GENBLAZE_ENABLED = 'true';
+  process.env.SAMSAR_GENBLAZE_BASE_URL = 'http://genblaze:8080/v1';
+  process.env.SAMSAR_GENBLAZE_MODEL_CATALOG_PATH = catalogPath;
+  assert.equal(resolveConfiguredInferenceProvider('QWEN3.7'), DOCKER_INFERENCE_PROVIDER.GMICLOUD);
 
   process.env.ALIBABA_API_KEY = 'alibaba-test-key';
   assert.equal(resolveConfiguredInferenceProvider('QWEN3.7'), DOCKER_INFERENCE_PROVIDER.ALIBABA_CLOUD);

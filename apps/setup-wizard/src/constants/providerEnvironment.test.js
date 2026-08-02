@@ -19,17 +19,21 @@ test('resolves only explicitly allowed provider environment variables', () => {
   const result = resolveProviderEnvironmentReferences({
     openaiApiKey: '$OPENAI_API_KEY',
     falApiKey: '${FAL_API_KEY}',
+    gmiCloudApiKey: '$GMI_API_KEY',
   }, {
     OPENAI_API_KEY: 'openai-secret',
     FAL_API_KEY: 'fal-secret',
+    GMI_API_KEY: 'gmi-secret',
   });
 
   assert.equal(result.credentials.openaiApiKey, 'openai-secret');
   assert.equal(result.credentials.falApiKey, 'fal-secret');
+  assert.equal(result.credentials.gmiCloudApiKey, 'gmi-secret');
   assert.equal(result.credentials.samsarApiKey, '');
   assert.deepEqual(result.variableNames, {
     openaiApiKey: 'OPENAI_API_KEY',
     falApiKey: 'FAL_API_KEY',
+    gmiCloudApiKey: 'GMI_API_KEY',
   });
 });
 
@@ -56,4 +60,5 @@ test('reports missing variables without exposing any credential value', () => {
     /\$OPENAI_API_KEY is not set or is empty/,
   );
   assert.equal(getProviderEnvironmentReferencePlaceholder('googleCredentialsJson'), '$GOOGLE_APPLICATION_CREDENTIALS_JSON_B64');
+  assert.equal(getProviderEnvironmentReferencePlaceholder('gmiCloudApiKey'), '$GMI_API_KEY');
 });

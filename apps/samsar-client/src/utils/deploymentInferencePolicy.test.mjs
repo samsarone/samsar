@@ -5,6 +5,7 @@ import {
   extractDeploymentProviderEndpointTypes,
   extractDeploymentInferenceModelValues,
   filterHostedInferenceModelOptions,
+  formatDeploymentProviderLabel,
   hasValidatedAlibabaQwenInference,
   labelOptionsForDeploymentInferenceProviders,
   normalizeDeploymentInferenceModelValue,
@@ -100,6 +101,29 @@ test('provider fallbacks expose their configured inference models', () => {
     extractDeploymentInferenceModelValues({ deployment: { providers: ['alibabaCloud'] } }),
     [],
   );
+  assert.deepEqual(
+    extractDeploymentInferenceModelValues({ deployment: { providers: ['gmicloud'] } }),
+    ['QWEN3.7'],
+  );
+  assert.equal(
+    labelOptionsForDeploymentInferenceProviders(MODEL_OPTIONS, {
+      'QWEN3.7': 'gmicloud',
+    })[2].label,
+    'Qwen 3.7 Max / Qwen 3.7 Plus Vision',
+  );
+});
+
+test('GMICloud and GenBlaze aliases normalize to the deployment provider', () => {
+  assert.equal(normalizeDeploymentProviderKey('GMI Cloud'), 'gmicloud');
+  assert.equal(normalizeDeploymentProviderKey('GenBlaze'), 'gmicloud');
+  assert.equal(formatDeploymentProviderLabel('gmicloud'), 'GMICloud via GenBlaze');
+  assert.equal(hasValidatedAlibabaQwenInference({
+    deployment: {
+      providers: ['gmicloud'],
+      models: ['QWEN3.7'],
+      modelProviders: { 'QWEN3.7': 'gmicloud' },
+    },
+  }), true);
 });
 
 test('Kimi provider and model aliases resolve to the canonical top-level model', () => {

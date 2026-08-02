@@ -23,6 +23,7 @@ import {
 import {
   DOCKER_ADAPTER_PROVIDER,
   resolveDockerImageEditProvider,
+  resolveNextDockerImageEditProvider,
 } from '../../consts/DockerProviderPriority.js';
 import ImageGeneration from '../../schema/ImageGeneration.js';
 import { markVideoSessionLayerAsFailed } from '../../VideoSession.js';
@@ -64,6 +65,9 @@ function normalizeAdapterProvider(value) {
   if (normalized === 'samsar') {
     return DOCKER_ADAPTER_PROVIDER.SAMSAR;
   }
+  if (['gmi', 'gmicloud', 'genblaze'].includes(normalized)) {
+    return DOCKER_ADAPTER_PROVIDER.GMICLOUD;
+  }
   return '';
 }
 
@@ -86,13 +90,38 @@ export function resolveNanoBananaEditAdapterProvider(payload = {}) {
   if (requestId.startsWith('samsar-external-image:')) {
     return DOCKER_ADAPTER_PROVIDER.SAMSAR;
   }
+  if (requestId.startsWith('genblaze-image-edit:')) {
+    return DOCKER_ADAPTER_PROVIDER.GMICLOUD;
+  }
   const externalProvider = normalizeAdapterProvider(payload?.externalProvider);
   return externalProvider || resolveDockerImageEditProvider(payload?.model);
 }
 
+export function resolveNanoBananaImageSetAdapterProvider(payload = {}) {
+  const provider = resolveNanoBananaEditAdapterProvider(payload);
+  if (
+    provider !== DOCKER_ADAPTER_PROVIDER.GMICLOUD ||
+    resolveCaseType(payload?.case_type) !== 'image_list_to_image_set'
+  ) {
+    return provider;
+  }
+  return resolveNextDockerImageEditProvider(payload?.model, provider);
+}
+
 export async function handleNanoBananaEditDispatch(payload) {
   const { apiEditStatus = 'INIT', case_type, model } = payload || {};
-  const standaloneProvider = resolveNanoBananaEditAdapterProvider(payload);
+  let standaloneProvider = resolveNanoBananaEditAdapterProvider(payload);
+  const caseType = resolveCaseType(case_type);
+  if (
+    standaloneProvider === DOCKER_ADAPTER_PROVIDER.GMICLOUD &&
+    caseType === 'image_list_to_image_set'
+  ) {
+    const nextProvider = resolveNanoBananaImageSetAdapterProvider(payload);
+    if (!nextProvider) {
+      return handleUnsupportedGmiCloudImageSet(payload);
+    }
+    standaloneProvider = nextProvider;
+  }
   const routedPayload = standaloneProvider
     ? {
       ...payload,
@@ -125,7 +154,6 @@ export async function handleNanoBananaEditDispatch(payload) {
     return await handleGoogleNanoBananaEditDispatch(routedPayload);
   }
 
-  const caseType = resolveCaseType(case_type);
   let handler = CASE_TYPE_HANDLERS[caseType];
 
   if (!handler && caseType === 'image_enhance') {
@@ -171,6 +199,14 @@ export async function handleNanoBananaEditDispatch(payload) {
   } catch (error) {
     return await markCaseAsFailed(routedPayload, caseType, error?.message || 'NanoBanana dispatcher error');
   }
+}
+
+async function handleUnsupportedGmiCloudImageSet(payload) {
+  const message = 'GMICloud image editing does not preserve Samsar multi-output image-set requests.';
+  if (payload?.deferAdapterFailureFinalization === true) {
+    return { error: message, definitiveAdapterFailure: true };
+  }
+  return markCaseAsFailed(payload, 'image_list_to_image_set', message);
 }
 
 function normalizeCaseType(caseType) {

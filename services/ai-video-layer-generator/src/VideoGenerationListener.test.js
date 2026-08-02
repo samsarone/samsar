@@ -323,6 +323,72 @@ test('image-to-video submit 503 is not safe to resubmit because acceptance is am
   assert.equal(isSafeProviderSubmissionRetry(error), false);
 });
 
+test('nested fetch network failures are treated as transient provider errors', () => {
+  const error = new TypeError('fetch failed', {
+    cause: Object.assign(new Error('socket reset'), { code: 'ECONNRESET' }),
+  });
+
+  assert.equal(isTransientProviderError(error), true);
+});
+
+test('standalone text-to-video 429 uses the same bounded safe-submit retry contract', (t) => {
+  const previousEdition = process.env.SAMSAR_DEPLOYMENT_EDITION;
+  const previousEnvironment = process.env.CURRENT_ENV;
+  t.after(() => {
+    if (previousEdition === undefined) delete process.env.SAMSAR_DEPLOYMENT_EDITION;
+    else process.env.SAMSAR_DEPLOYMENT_EDITION = previousEdition;
+    if (previousEnvironment === undefined) delete process.env.CURRENT_ENV;
+    else process.env.CURRENT_ENV = previousEnvironment;
+  });
+  process.env.SAMSAR_DEPLOYMENT_EDITION = 'standalone';
+  process.env.CURRENT_ENV = 'standalone';
+
+  const request = {
+    model: 'VEO3.1',
+    prompt: 'A landscape at sunrise',
+    status: 'INIT',
+    transientProviderErrorCount: 2,
+  };
+  const rateLimitError = {
+    message: 'rate limited',
+    response: { status: 429, headers: {} },
+  };
+
+  const thirdRejection = buildTransientProviderErrorUpdate(
+    request,
+    rateLimitError,
+    'submit',
+  );
+  assert.equal(thirdRejection.set.status, 'FAILED');
+  assert.equal(thirdRejection.set.providerFailureDefinitive, true);
+  assert.equal(thirdRejection.set.submissionOutcomeUnknown, false);
+});
+
+test('hosted text-to-video retains the existing provider retry budget', (t) => {
+  const previousEdition = process.env.SAMSAR_DEPLOYMENT_EDITION;
+  const previousEnvironment = process.env.CURRENT_ENV;
+  t.after(() => {
+    if (previousEdition === undefined) delete process.env.SAMSAR_DEPLOYMENT_EDITION;
+    else process.env.SAMSAR_DEPLOYMENT_EDITION = previousEdition;
+    if (previousEnvironment === undefined) delete process.env.CURRENT_ENV;
+    else process.env.CURRENT_ENV = previousEnvironment;
+  });
+  process.env.SAMSAR_DEPLOYMENT_EDITION = 'production';
+  process.env.CURRENT_ENV = 'production';
+
+  const update = buildTransientProviderErrorUpdate({
+    model: 'VEO3.1',
+    status: 'INIT',
+    transientProviderErrorCount: 2,
+  }, {
+    message: 'rate limited',
+    response: { status: 429, headers: {} },
+  }, 'submit');
+
+  assert.equal(update.set.status, 'INIT');
+  assert.equal(update.set.transientProviderErrorExhausted, false);
+});
+
 test('definitive standalone failures rotate through the saved adapter order', (t) => {
   const envKeys = [
     'CURRENT_ENV',
@@ -345,6 +411,7 @@ test('definitive standalone failures rotate through the saved adapter order', (t
   fs.writeFileSync(preferencesPath, JSON.stringify({
     modelProviderPriority: {
       HAPPYHORSEI2V: ['alibabaCloud', 'fal', 'samsar'],
+      'VEO3.1': ['samsar', 'fal'],
     },
   }));
   process.env.CURRENT_ENV = 'standalone';
@@ -377,6 +444,18 @@ test('definitive standalone failures rotate through the saved adapter order', (t
     currentProvider: 'fal',
     nextProvider: 'samsar',
     attemptedProviders: ['alibabaCloud', 'fal'],
+  });
+
+  assert.deepEqual(buildDockerVideoAdapterRetryPlan({
+    model: 'VEO3.1',
+    prompt: 'A landscape at sunrise',
+    dockerVideoProvider: 'samsar',
+    providerFailureDefinitive: true,
+  }), {
+    model: 'VEO3.1',
+    currentProvider: 'samsar',
+    nextProvider: 'fal',
+    attemptedProviders: ['samsar'],
   });
 });
 

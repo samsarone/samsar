@@ -19,12 +19,14 @@ const ENV_KEYS = [
   'SAMSAR_DOCKER_ADAPTER_ROUTING_ENABLED',
   'SAMSAR_AVAILABLE_MODELS_PATH',
   'SAMSAR_MODEL_ADAPTER_PREFERENCES_PATH',
+  'SAMSAR_GENBLAZE_MODEL_CATALOG_PATH',
   'ALIBABA_API_KEY',
   'DASHSCOPE_API_KEY',
   'ALIBABA_CLOUD_API_KEY',
   'QWEN_API_KEY',
   'FAL_API_KEY',
   'SAMSAR_API_KEY',
+  'SAMSAR_GENBLAZE_ENABLED',
 ];
 const originalEnv = Object.fromEntries(ENV_KEYS.map((key) => [key, process.env[key]]));
 
@@ -39,13 +41,13 @@ test.afterEach(() => {
   });
 });
 
-test('Happy Horse Docker priority is Alibaba then FAL then Samsar', () => {
+test('Happy Horse Docker priority is Alibaba then Samsar then FAL', () => {
   clearEnv();
-  process.env.CURRENT_ENV = 'test';
+  process.env.CURRENT_ENV = 'docker';
   assert.deepEqual(getDockerVideoProviderPriority('HAPPYHORSEI2V'), [
     DOCKER_VIDEO_PROVIDER.ALIBABA_CLOUD,
-    DOCKER_VIDEO_PROVIDER.FAL,
     DOCKER_VIDEO_PROVIDER.SAMSAR,
+    DOCKER_VIDEO_PROVIDER.FAL,
   ]);
 });
 
@@ -71,10 +73,10 @@ test('Happy Horse resolves each configured Docker fallback in order', () => {
   assert.equal(resolveDockerVideoProvider('HAPPYHORSEI2V'), DOCKER_VIDEO_PROVIDER.ALIBABA_CLOUD);
 
   delete process.env.ALIBABA_API_KEY;
-  assert.equal(resolveDockerVideoProvider('HAPPYHORSEI2V'), DOCKER_VIDEO_PROVIDER.FAL);
-
-  delete process.env.FAL_API_KEY;
   assert.equal(resolveDockerVideoProvider('HAPPYHORSEI2V'), DOCKER_VIDEO_PROVIDER.SAMSAR);
+
+  delete process.env.SAMSAR_API_KEY;
+  assert.equal(resolveDockerVideoProvider('HAPPYHORSEI2V'), DOCKER_VIDEO_PROVIDER.FAL);
 });
 
 test('production Docker keeps hosted production provider routing', () => {
@@ -134,9 +136,105 @@ test('standalone routing overlays the saved preference and finds each next confi
   ]);
   assert.deepEqual(getDockerVideoProviderPriority('VEO3.1I2V', { generationType: 'sound_effect' }), [
     DOCKER_VIDEO_PROVIDER.GOOGLE_CLOUD,
-    DOCKER_VIDEO_PROVIDER.FAL,
     DOCKER_VIDEO_PROVIDER.SAMSAR,
+    DOCKER_VIDEO_PROVIDER.FAL,
   ]);
+});
+
+test('standalone places credential-scoped GMICloud below native and Samsar but above Fal', (t) => {
+  clearEnv();
+  const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'samsar-video-gmi-enabled-'));
+  const catalogPath = path.join(temporaryDirectory, 'genblaze-model-catalog.json');
+  t.after(() => fs.rmSync(temporaryDirectory, { recursive: true, force: true }));
+  fs.writeFileSync(catalogPath, JSON.stringify({
+    version: 1,
+    provider: 'gmicloud',
+    models: {
+      HAPPYHORSEI2V: { video: { modelId: 'happyhorse-1.1-i2v' } },
+      SEEDANCEI2V: { video: { modelId: 'seedance-1-5-pro-251215' } },
+      'SEEDANCE2.0I2V': { video: { modelId: 'seedance-2-0-260128' } },
+      'SEEDANCE2.0T2V': { video: { modelId: 'seedance-2-0-260128' } },
+      KLINGIMGTOVID3PRO: { video: { modelId: 'kling-v3-image-to-video' } },
+      KLINGIMGTOVIDTURBO: { video: { modelId: 'kling-3.0-turbo-i2v' } },
+      KLINGIMGTOVIDPRO: { video: { modelId: 'Kling-Image2Video-V1.6-Pro' } },
+      'KLINGIMGTOVID2.1MASTER': { video: { modelId: 'Kling-Image2Video-V2.1-Master' } },
+      'KLINGIMGTOVID2.1PRO': { video: { modelId: 'Kling-Image2Video-V2.1-Pro' } },
+      'KLINGIMGTOVID2.1STANDARD': { video: { modelId: 'Kling-Image2Video-V2.1-Standard' } },
+      HAILUOPRO: { video: { modelId: 'Minimax-Hailuo-02' } },
+      'VEO3.1FLIV': { video: { modelId: 'veo-3.1-generate-001' } },
+    },
+  }));
+  process.env.CURRENT_ENV = 'docker';
+  process.env.SAMSAR_GENBLAZE_ENABLED = 'true';
+  process.env.SAMSAR_GENBLAZE_MODEL_CATALOG_PATH = catalogPath;
+  process.env.FAL_API_KEY = 'fal-key';
+
+  assert.deepEqual(getDockerVideoProviderPriority('HAPPYHORSEI2V'), [
+    DOCKER_VIDEO_PROVIDER.ALIBABA_CLOUD,
+    DOCKER_VIDEO_PROVIDER.SAMSAR,
+    DOCKER_VIDEO_PROVIDER.GMICLOUD,
+    DOCKER_VIDEO_PROVIDER.FAL,
+  ]);
+  assert.equal(
+    resolveDockerVideoProvider('HAPPYHORSEI2V'),
+    DOCKER_VIDEO_PROVIDER.GMICLOUD,
+  );
+  process.env.SAMSAR_API_KEY = 'samsar-key';
+  assert.equal(
+    resolveDockerVideoProvider('HAPPYHORSEI2V'),
+    DOCKER_VIDEO_PROVIDER.SAMSAR,
+  );
+  assert.deepEqual(getDockerVideoProviderPriority('SEEDANCEI2V'), [
+    DOCKER_VIDEO_PROVIDER.SAMSAR,
+    DOCKER_VIDEO_PROVIDER.GMICLOUD,
+    DOCKER_VIDEO_PROVIDER.FAL,
+  ]);
+  assert.deepEqual(getDockerVideoProviderPriority('KLINGIMGTOVID3PRO'), [
+    DOCKER_VIDEO_PROVIDER.SAMSAR,
+    DOCKER_VIDEO_PROVIDER.GMICLOUD,
+    DOCKER_VIDEO_PROVIDER.FAL,
+  ]);
+  for (const model of [
+    'VEO3.1FLIV',
+    'SEEDANCE2.0I2V',
+    'SEEDANCE2.0T2V',
+    'KLINGIMGTOVIDTURBO',
+    'KLINGIMGTOVIDPRO',
+    'KLINGIMGTOVID2.1MASTER',
+    'KLINGIMGTOVID2.1PRO',
+    'KLINGIMGTOVID2.1STANDARD',
+    'HAILUOPRO',
+  ]) {
+    assert.deepEqual(getDockerVideoProviderPriority(model), [
+      DOCKER_VIDEO_PROVIDER.SAMSAR,
+      DOCKER_VIDEO_PROVIDER.GMICLOUD,
+      DOCKER_VIDEO_PROVIDER.FAL,
+    ], model);
+  }
+});
+
+test('credential-scoped GMICloud catalog excludes unverified video routes', (t) => {
+  clearEnv();
+  const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'samsar-video-gmi-catalog-'));
+  const catalogPath = path.join(temporaryDirectory, 'genblaze-model-catalog.json');
+  t.after(() => fs.rmSync(temporaryDirectory, { recursive: true, force: true }));
+  fs.writeFileSync(catalogPath, JSON.stringify({
+    version: 1,
+    provider: 'gmicloud',
+    models: {
+      SEEDANCEI2V: { video: { modelId: 'seedance-1-5-pro-251215' } },
+    },
+  }));
+  process.env.CURRENT_ENV = 'docker';
+  process.env.SAMSAR_GENBLAZE_ENABLED = 'true';
+  process.env.SAMSAR_GENBLAZE_MODEL_CATALOG_PATH = catalogPath;
+
+  assert.equal(resolveDockerVideoProvider('SEEDANCEI2V'), DOCKER_VIDEO_PROVIDER.GMICLOUD);
+  assert.equal(resolveDockerVideoProvider('HAPPYHORSEI2V'), '');
+  assert.equal(
+    getDockerVideoProviderPriority('HAPPYHORSEI2V').includes(DOCKER_VIDEO_PROVIDER.GMICLOUD),
+    false,
+  );
 });
 
 test('standalone preference reads do not mutate available-models configuration', (t) => {

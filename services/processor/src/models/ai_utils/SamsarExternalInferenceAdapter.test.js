@@ -1,4 +1,7 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import test from 'node:test';
 import SamsarClient from 'samsar-js';
 import OpenAI from 'openai';
@@ -12,6 +15,9 @@ const ENV_KEYS = [
   'SAMSAR_API_KEY',
   'SAMSAR_EXTERNAL_INFERENCE_ENABLED',
   'SAMSAR_FORCE_EXTERNAL_INFERENCE',
+  'SAMSAR_GENBLAZE_BASE_URL',
+  'SAMSAR_GENBLAZE_ENABLED',
+  'SAMSAR_GENBLAZE_MODEL_CATALOG_PATH',
   'OPENAI_API_KEY',
   'KIMI_K3_API_KEY',
   'OPENROUTER_API_KEY',
@@ -52,6 +58,7 @@ const originalEnv = Object.fromEntries(
 const {
   DOCKER_INFERENCE_PROVIDER,
   DOCKER_INFERENCE_PROVIDER_PRIORITY_BY_MODEL,
+  createGenblazeChatCompletion,
   createOpenRouterChatCompletion,
   createSamsarExternalChatCompletion,
   getOpenRouterModelForInferenceRequest,
@@ -61,6 +68,108 @@ const {
   shouldUseSamsarExternalInference,
   unwrapSamsarExternalChatCompletionResponse,
 } = await import('./SamsarExternalInferenceAdapter.js');
+
+function createTestGenblazeCatalog() {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'samsar-genblaze-inference-'));
+  const catalogPath = path.join(directory, 'genblaze-model-catalog.json');
+  fs.writeFileSync(catalogPath, JSON.stringify({
+    version: 1,
+    provider: 'gmicloud',
+    models: {
+      'QWEN3.7': {
+        text: { modelId: 'Qwen/Qwen3.7-Max', operation: 'chat.completions' },
+        vision: { modelId: 'Qwen/Qwen3.7-Plus', operation: 'chat.completions' },
+      },
+      'gpt-5.6-sol': {
+        text: { modelId: 'gpt-5.6-sol', operation: 'chat.completions' },
+        vision: { modelId: 'gpt-5.6-sol', operation: 'chat.completions' },
+      },
+      'gemini-3.1-pro': {
+        text: { modelId: 'gemini-3.1-pro', operation: 'chat.completions' },
+        vision: { modelId: 'gemini-3.1-pro', operation: 'chat.completions' },
+      },
+    },
+  }));
+  return { catalogPath, directory };
+}
+
+test('GenBlaze adapter preserves the OpenAI chat completion contract', async (t) => {
+  const { catalogPath, directory } = createTestGenblazeCatalog();
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  process.env.SAMSAR_GENBLAZE_MODEL_CATALOG_PATH = catalogPath;
+  let capturedPayload;
+  const expected = {
+    id: 'chatcmpl-genblaze',
+    model: 'Qwen/Qwen3.7-Max',
+    choices: [{ message: { role: 'assistant', content: 'ok' } }],
+    usage: { prompt_tokens: 3, completion_tokens: 1, total_tokens: 4 },
+  };
+  const response = await createGenblazeChatCompletion({
+    model: 'qwen3.7-max',
+    messages: [{ role: 'user', content: 'hello' }],
+    authorization: 'gmicloud',
+  }, {
+    genblazeClient: {
+      chat: {
+        completions: {
+          create: async (payload) => {
+            capturedPayload = payload;
+            return expected;
+          },
+        },
+      },
+    },
+  });
+
+  assert.equal(capturedPayload.model, 'QWEN3.7');
+  assert.equal(capturedPayload.authorization, undefined);
+  assert.deepEqual(response, expected);
+});
+
+test('GenBlaze sends canonical GPT and Gemini models with high reasoning and multimodal content', async (t) => {
+  const { catalogPath, directory } = createTestGenblazeCatalog();
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  process.env.SAMSAR_GENBLAZE_MODEL_CATALOG_PATH = catalogPath;
+  const payloads = [];
+  const genblazeClient = {
+    chat: {
+      completions: {
+        create: async (payload) => {
+          payloads.push(payload);
+          return { choices: [{ message: { role: 'assistant', content: 'ok' } }] };
+        },
+      },
+    },
+  };
+  const imagePart = {
+    type: 'image_url',
+    image_url: { url: 'https://assets.example/frame.png' },
+  };
+
+  await createGenblazeChatCompletion({
+    model: 'gpt-5.6-sol',
+    messages: [{ role: 'user', content: 'reason deeply' }],
+    reasoning_effort: 'low',
+  }, { genblazeClient });
+  await createGenblazeChatCompletion({
+    model: 'gemini-3.1-pro',
+    messages: [{ role: 'user', content: [{ type: 'text', text: 'inspect' }, imagePart] }],
+    reasoning_effort: 'high',
+  }, {
+    genblazeClient,
+    resolveMediaUrl: async (url) => url,
+  });
+
+  assert.equal(payloads[0].model, 'gpt-5.6-sol');
+  assert.equal(payloads[0].reasoning_effort, 'high');
+  assert.equal(payloads[1].model, 'gemini-3.1-pro');
+  assert.equal(payloads[1].reasoning_effort, 'high');
+  assert.deepEqual(payloads[1].messages[0].content[1], imagePart);
+  await assert.rejects(
+    createGenblazeChatCompletion({ model: 'kimi-k3', messages: [] }, { genblazeClient }),
+    (error) => error?.code === 'GENBLAZE_MODEL_UNSUPPORTED',
+  );
+});
 
 function restoreEnv() {
   for (const key of ENV_KEYS) {
@@ -255,27 +364,42 @@ test('Kimi K3 Samsar fallback forces high reasoning', async (t) => {
   assert.equal(capturedPayload.reasoning_effort, 'high');
 });
 
-test('Docker inference uses native then OpenRouter then Samsar for every model', () => {
+test('Docker Qwen uses native, Samsar, GMICloud, then OpenRouter', () => {
   clearProviderEnv();
   process.env.CURRENT_ENV = 'docker';
   process.env.NODE_ENV = 'production';
   process.env.OPENROUTER_API_KEY = 'test-openrouter-key';
   process.env.SAMSAR_API_KEY = 'test-samsar-key';
 
-  for (const model of ['gpt-5.6-sol', 'gemini-3.1-pro', 'QWEN3.7']) {
+  for (const model of ['gpt-5.6-sol', 'gemini-3.1-pro']) {
     assert.equal(resolveConfiguredInferenceProvider(model), DOCKER_INFERENCE_PROVIDER.OPENROUTER);
     assert.equal(shouldUseSamsarExternalInference({ model }), true);
   }
+  assert.equal(resolveConfiguredInferenceProvider('QWEN3.7'), DOCKER_INFERENCE_PROVIDER.SAMSAR);
+  assert.equal(shouldUseSamsarExternalInference({ model: 'QWEN3.7' }), true);
 
   assert.deepEqual(DOCKER_INFERENCE_PROVIDER_PRIORITY_BY_MODEL['QWEN3.7'], [
     DOCKER_INFERENCE_PROVIDER.ALIBABA_CLOUD,
-    DOCKER_INFERENCE_PROVIDER.OPENROUTER,
     DOCKER_INFERENCE_PROVIDER.SAMSAR,
+    DOCKER_INFERENCE_PROVIDER.GMICLOUD,
+    DOCKER_INFERENCE_PROVIDER.OPENROUTER,
   ]);
 
   process.env.ALIBABA_API_KEY = 'test-alibaba-key';
   assert.equal(resolveConfiguredInferenceProvider('QWEN3.7'), DOCKER_INFERENCE_PROVIDER.ALIBABA_CLOUD);
   assert.equal(shouldUseSamsarExternalInference({ model: 'QWEN3.7' }), false);
+});
+
+test('Docker Qwen selects GMICloud through GenBlaze before OpenRouter', (t) => {
+  const { catalogPath, directory } = createTestGenblazeCatalog();
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  clearProviderEnv();
+  process.env.CURRENT_ENV = 'docker';
+  process.env.SAMSAR_GENBLAZE_ENABLED = 'true';
+  process.env.SAMSAR_GENBLAZE_MODEL_CATALOG_PATH = catalogPath;
+  process.env.OPENROUTER_API_KEY = 'test-openrouter-key';
+
+  assert.equal(resolveConfiguredInferenceProvider('QWEN3.7'), DOCKER_INFERENCE_PROVIDER.GMICLOUD);
 });
 
 test('OpenRouter maps Qwen text to Max and vision requests to Plus', () => {

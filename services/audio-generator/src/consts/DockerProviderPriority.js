@@ -1,3 +1,7 @@
+import fs from 'fs';
+
+import { isStandaloneEdition } from '../util/environmentUtils.js';
+
 export const DOCKER_AUDIO_PROVIDER = Object.freeze({
   GOOGLE_CLOUD: 'googleCloud',
   OPENAI: 'openai',
@@ -5,6 +9,12 @@ export const DOCKER_AUDIO_PROVIDER = Object.freeze({
   ELEVENLABS: 'elevenlabs',
   REPLICATE: 'replicate',
   SAMSAR: 'samsar',
+  GMICLOUD: 'gmicloud',
+});
+
+export const GENBLAZE_SPEECH_MODEL_BY_TTS_PROVIDER = Object.freeze({
+  OPENAI: 'OPENAI_TTS',
+  ELEVENLABS: 'ELEVENLABS',
 });
 
 const GOOGLE_NATIVE_CREDENTIAL_KEYS = Object.freeze([
@@ -24,6 +34,7 @@ export const DOCKER_SPEECH_PROVIDER_PRIORITY_BY_TTS_PROVIDER = Object.freeze({
   OPENAI: Object.freeze([
     DOCKER_AUDIO_PROVIDER.OPENAI,
     DOCKER_AUDIO_PROVIDER.SAMSAR,
+    DOCKER_AUDIO_PROVIDER.GMICLOUD,
   ]),
   GOOGLE: Object.freeze([
     DOCKER_AUDIO_PROVIDER.GOOGLE_CLOUD,
@@ -33,6 +44,7 @@ export const DOCKER_SPEECH_PROVIDER_PRIORITY_BY_TTS_PROVIDER = Object.freeze({
     DOCKER_AUDIO_PROVIDER.ELEVENLABS,
     DOCKER_AUDIO_PROVIDER.FAL,
     DOCKER_AUDIO_PROVIDER.SAMSAR,
+    DOCKER_AUDIO_PROVIDER.GMICLOUD,
   ]),
   PLAYAI: Object.freeze([
     DOCKER_AUDIO_PROVIDER.FAL,
@@ -113,6 +125,43 @@ export function hasSamsarCredential() {
   return hasEnvCredential('SAMSAR_API_KEY');
 }
 
+export function getGenBlazeSpeechLogicalModel(ttsProvider) {
+  return GENBLAZE_SPEECH_MODEL_BY_TTS_PROVIDER[normalizeKey(ttsProvider)] || '';
+}
+
+export function getGenBlazeSpeechModelMapping(ttsProvider, env = process.env) {
+  if (!isTruthyEnv(env.SAMSAR_GENBLAZE_ENABLED)) {
+    return null;
+  }
+
+  const logicalModel = getGenBlazeSpeechLogicalModel(ttsProvider);
+  const catalogPath = normalizeString(env.SAMSAR_GENBLAZE_MODEL_CATALOG_PATH);
+  if (!logicalModel || !catalogPath) {
+    return null;
+  }
+
+  try {
+    const catalog = JSON.parse(fs.readFileSync(catalogPath, 'utf8'));
+    const route = catalog?.models?.[logicalModel]?.audio;
+    const modelId = normalizeString(route?.modelId);
+    const operation = normalizeString(route?.operation);
+    if (!modelId || (operation && operation !== 'audio.generate')) {
+      return null;
+    }
+    return Object.freeze({
+      logicalModel,
+      modelId,
+      operation: operation || 'audio.generate',
+    });
+  } catch {
+    return null;
+  }
+}
+
+export function hasGenBlazeSpeechModelMapping(ttsProvider, env = process.env) {
+  return Boolean(getGenBlazeSpeechModelMapping(ttsProvider, env));
+}
+
 export function hasGoogleCloudCredential() {
   if (hasEnvCredential(...GOOGLE_NATIVE_CREDENTIAL_KEYS)) {
     return true;
@@ -158,7 +207,23 @@ function isPendingExternalAudioRequest(payload = {}) {
     Boolean(normalizeString(payload?.externalAudioRoute));
 }
 
-function resolvePriority(priority, payload = {}) {
+function isPendingGenBlazeSpeechRequest(payload = {}) {
+  if (normalizeKey(payload?.status || 'INIT') !== 'PENDING') {
+    return false;
+  }
+
+  const selectedProvider = normalizeString(
+    payload?.externalProvider || payload?.audioAdapterProvider,
+  ).toLowerCase().replace(/[^a-z0-9]/g, '');
+  return Boolean(normalizeString(payload?.genblazeRequestId)) ||
+    ['gmi', 'gmicloud', 'genblaze'].includes(selectedProvider);
+}
+
+function resolvePriority(priority, payload = {}, options = {}) {
+  if (isPendingGenBlazeSpeechRequest(payload)) {
+    return DOCKER_AUDIO_PROVIDER.GMICLOUD;
+  }
+
   if (isPendingExternalAudioRequest(payload)) {
     return hasSamsarCredential() ? DOCKER_AUDIO_PROVIDER.SAMSAR : '';
   }
@@ -176,6 +241,12 @@ function resolvePriority(priority, payload = {}) {
   }
 
   for (const provider of priority || []) {
+    if (provider === DOCKER_AUDIO_PROVIDER.GMICLOUD) {
+      if (hasGenBlazeSpeechModelMapping(options.ttsProvider)) {
+        return provider;
+      }
+      continue;
+    }
     if (hasProviderCredential(provider)) {
       return provider;
     }
@@ -186,7 +257,7 @@ function resolvePriority(priority, payload = {}) {
 
 export function resolveDockerSpeechProvider(ttsProvider, payload = {}) {
   const priority = DOCKER_SPEECH_PROVIDER_PRIORITY_BY_TTS_PROVIDER[normalizeKey(ttsProvider)];
-  return resolvePriority(priority, payload);
+  return resolvePriority(priority, payload, { ttsProvider });
 }
 
 export function resolveDockerMusicProvider(model, payload = {}) {
@@ -215,4 +286,3 @@ export function isInitialDockerAudioRoutingRequest(payload = {}) {
   return isDockerAudioProviderRoutingEnabled() &&
     normalizeKey(payload?.status || 'INIT') === 'INIT';
 }
-import { isStandaloneEdition } from '../util/environmentUtils.js';

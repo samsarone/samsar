@@ -22,6 +22,7 @@ import {
   DOCKER_INFERENCE_PROVIDER,
   createSamsarExternalChatCompletion,
   runInferenceWithConfiguredAdapters,
+  shouldUseGenblazeInference,
   shouldUseOpenRouterInference,
   shouldUseSamsarExternalInference,
 } from './SamsarExternalInferenceAdapter.js';
@@ -398,12 +399,16 @@ export async function getAccentForText(text, auditContext = {}) {
 
 function isExternalInferenceProvider(provider) {
   return provider === DOCKER_INFERENCE_PROVIDER.OPENROUTER ||
+    provider === DOCKER_INFERENCE_PROVIDER.GMICLOUD ||
     provider === DOCKER_INFERENCE_PROVIDER.SAMSAR;
 }
 
 function resolveExternalInferenceProvider(request, provider = '') {
   if (isExternalInferenceProvider(provider)) {
     return provider;
+  }
+  if (shouldUseGenblazeInference(request)) {
+    return DOCKER_INFERENCE_PROVIDER.GMICLOUD;
   }
   return shouldUseOpenRouterInference(request)
     ? DOCKER_INFERENCE_PROVIDER.OPENROUTER

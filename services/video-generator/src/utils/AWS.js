@@ -1,7 +1,11 @@
 // uploadImageToCDN.js
 
-import { S3Client } from '@aws-sdk/client-s3';
+import { PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { Upload } from '@aws-sdk/lib-storage'; 
+import {
+  createBackblazeNativeClientFromEnv,
+  shouldUseBackblazeNativeApi,
+} from '@samsar/backblaze-native-client';
 import fs from 'fs';
 import crypto from 'crypto';
 import path from 'path';
@@ -118,7 +122,19 @@ function normalizeObjectKey(key) {
   }
   if (/^https?:\/\//i.test(rawKey)) {
     try {
-      return decodeURIComponent(new URL(rawKey).pathname).replace(/^\/+/, '');
+      const parsedUrl = new URL(rawKey);
+      let objectKey = decodeURIComponent(parsedUrl.pathname).replace(/^\/+/, '');
+      const configuredCdnUrl = new URL(process.env.STATIC_CDN_URL || STATIC_CDN_URL);
+      const configuredBasePath = decodeURIComponent(configuredCdnUrl.pathname)
+        .replace(/^\/+|\/+$/g, '');
+      if (
+        configuredBasePath &&
+        parsedUrl.origin === configuredCdnUrl.origin &&
+        (objectKey === configuredBasePath || objectKey.startsWith(`${configuredBasePath}/`))
+      ) {
+        objectKey = objectKey.slice(configuredBasePath.length).replace(/^\/+/, '');
+      }
+      return objectKey;
     } catch {
       return rawKey.replace(/^https?:\/\/[^/]+/i, '').replace(/^\/+/, '');
     }
@@ -202,6 +218,27 @@ async function persistDockerMediaFile(absolutePath, key) {
  * Validates that all required AWS environment variables are set.
  */
 function validateAWSEnvVariables() {
+  if (isDockerRuntime() && !shouldUseDockerLocalMedia()) {
+    const explicitBucket = String(
+      process.env.MEDIA_BUCKET_NAME ||
+      process.env.STATIC_CDN_BUCKET ||
+      process.env.SAMSAR_EXTERNAL_MEDIA_BUCKET ||
+      '',
+    ).trim();
+    const explicitPublicUrl = String(
+      process.env.STATIC_CDN_URL ||
+      process.env.SAMSAR_EXTERNAL_MEDIA_PUBLIC_BASE_URL ||
+      '',
+    ).trim();
+    if (!explicitBucket || !explicitPublicUrl) {
+      const error = new Error(
+        'Standalone Docker external media storage requires an explicitly configured bucket and public HTTPS STATIC_CDN_URL.',
+      );
+      error.code = 'SAMSAR_EXTERNAL_S3_CONFIG_INVALID';
+      error.retryable = false;
+      throw error;
+    }
+  }
   if (!AWS_ACCESS_KEY_ID) {
     throw new Error('Missing AWS_ACCESS_KEY_ID environment variable.');
   }
@@ -235,6 +272,9 @@ function getS3EndpointOptions() {
  * @returns {S3Client} - Configured S3 client instance.
  */
 function initializeS3Client() {
+  if (shouldUseBackblazeNativeApi()) {
+    return createBackblazeNativeClientFromEnv();
+  }
   return new S3Client({
     region: AWS_REGION,
     credentials: {
@@ -277,24 +317,23 @@ export async function uploadVideoToCDN(absolutePath, remoteFileName) {
   // We'll try up to 3 times before giving up
   for (let attempt = 1; attempt <= 3; attempt++) {
     try {
-      // Prepare the multipart upload
-      const upload = new Upload({
-        client: s3,
-        params: {
-          Bucket: bucketName,
-          Key: uploadKey,
-          Body: fs.createReadStream(absolutePath),
-          ContentType: 'video/mp4', 
-          ContentDisposition: `attachment; filename="${downloadFileName}"`,
-        },
-        // Optional configuration for concurrency/part size:
-        // partSize: 5 * 1024 * 1024, // 5MB part size
-        // queueSize: 4, // concurrency for uploading parts
-        leavePartsOnError: false, // automatically clean up parts if upload fails
-      });
-
-      // Initiate the upload
-      await upload.done();
+      const uploadParams = {
+        Bucket: bucketName,
+        Key: uploadKey,
+        Body: fs.createReadStream(absolutePath),
+        ContentType: 'video/mp4',
+        ContentDisposition: `attachment; filename="${downloadFileName}"`,
+      };
+      if (shouldUseBackblazeNativeApi()) {
+        await s3.send(new PutObjectCommand(uploadParams));
+      } else {
+        const upload = new Upload({
+          client: s3,
+          params: uploadParams,
+          leavePartsOnError: false,
+        });
+        await upload.done();
+      }
 
       cdnUrl = buildMediaDeliveryUrl(uploadKey);
       break;
@@ -327,18 +366,23 @@ export async function uploadPublicationThumbnailToCDN(absolutePath, sessionId) {
   }
 
   const s3 = getS3Client();
-  const upload = new Upload({
-    client: s3,
-    params: {
-      Bucket: MEDIA_BUCKET_NAME,
-      Key: publicationKey,
-      Body: fs.createReadStream(absolutePath),
-      ContentType: 'image/png',
-      CacheControl: 'public, max-age=60, must-revalidate',
-    },
-    leavePartsOnError: false,
-  });
-  await upload.done();
+  const uploadParams = {
+    Bucket: MEDIA_BUCKET_NAME,
+    Key: publicationKey,
+    Body: fs.createReadStream(absolutePath),
+    ContentType: 'image/png',
+    CacheControl: 'public, max-age=60, must-revalidate',
+  };
+  if (shouldUseBackblazeNativeApi()) {
+    await s3.send(new PutObjectCommand(uploadParams));
+  } else {
+    const upload = new Upload({
+      client: s3,
+      params: uploadParams,
+      leavePartsOnError: false,
+    });
+    await upload.done();
+  }
 
   const publicUrl = buildStaticCdnUrl(publicationKey);
   await primeCDNCache(publicUrl, { requireSuccess: false });
@@ -374,18 +418,23 @@ export async function uploadBranchPublicationThumbnailToCDN(
   }
 
   const s3 = getS3Client();
-  const upload = new Upload({
-    client: s3,
-    params: {
-      Bucket: MEDIA_BUCKET_NAME,
-      Key: publicationKey,
-      Body: fs.createReadStream(absolutePath),
-      ContentType: 'image/png',
-      CacheControl: 'public, max-age=60, must-revalidate',
-    },
-    leavePartsOnError: false,
-  });
-  await upload.done();
+  const uploadParams = {
+    Bucket: MEDIA_BUCKET_NAME,
+    Key: publicationKey,
+    Body: fs.createReadStream(absolutePath),
+    ContentType: 'image/png',
+    CacheControl: 'public, max-age=60, must-revalidate',
+  };
+  if (shouldUseBackblazeNativeApi()) {
+    await s3.send(new PutObjectCommand(uploadParams));
+  } else {
+    const upload = new Upload({
+      client: s3,
+      params: uploadParams,
+      leavePartsOnError: false,
+    });
+    await upload.done();
+  }
 
   const publicUrl = buildStaticCdnUrl(publicationKey);
   await primeCDNCache(publicUrl, { requireSuccess: false });

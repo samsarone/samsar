@@ -1,3 +1,5 @@
+import { hasActionableStudioLayer } from './studioSceneLifecycle.mjs';
+
 const VIDEO_LAYER_CANDIDATES = [
   {
     type: 'lip_sync',
@@ -303,4 +305,27 @@ export function resolveStudioLayerVideo(layer, sessionDetails = {}, options = {}
   return resolvedVideo
     ? { url: resolvedVideo.url, type: resolvedVideo.type }
     : { url: null, type: null };
+}
+
+export function resolveStudioVideoToolbarMode(layer) {
+  if (!hasActionableStudioLayer(layer)) {
+    return 'unavailable';
+  }
+
+  if (layer.hasLipSyncVideoLayer) {
+    return 'lip_sync';
+  }
+
+  const uploadStatus = layer.userVideoUploadTask?.status;
+  if (
+    layer.userVideoGenerationPending
+    || uploadStatus === 'UPLOADING'
+    || uploadStatus === 'PROCESSING'
+    || (layer.hasUserVideoLayer && layer.userVideoGenerationStatus === 'COMPLETED')
+    || (layer.hasAiVideoLayer && layer.aiVideoGenerationStatus === 'COMPLETED')
+  ) {
+    return 'video_options';
+  }
+
+  return 'generate';
 }

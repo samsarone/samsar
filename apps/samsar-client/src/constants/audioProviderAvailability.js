@@ -63,19 +63,16 @@ export function extractAudioAvailability(payload = {}) {
   );
 }
 
-export function hasAudioAvailabilityRules(audioAvailability = DEFAULT_AUDIO_AVAILABILITY) {
+export function hasAudioAvailabilityRules() {
   if (!IS_STANDALONE_DEPLOYMENT) {
     return false;
   }
 
-  return (
-    audioAvailability.source === "standalone-audio-provider-config" ||
-    audioAvailability.source === "docker-audio-provider-config" ||
-    audioAvailability.allowAllTtsSpeakers ||
-    audioAvailability.allowAllMusicProviders ||
-    audioAvailability.ttsProviders.length > 0 ||
-    audioAvailability.musicProviders.length > 0
-  );
+  // Standalone availability is an allow-list. While it is loading, when the
+  // processor cannot be reached, or when an older response omits `source`, an
+  // empty list must therefore mean "nothing configured" instead of disabling
+  // filtering and exposing every hosted provider.
+  return true;
 }
 
 export function filterSpeakersForAudioAvailability(

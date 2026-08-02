@@ -507,14 +507,9 @@ export default function AssistantHome(props) {
   const assistantOverlayZIndex = 2000;
   const canIncludeFrameImage = typeof getFrameImageData === 'function';
   const assistantInputPlaceholder = canIncludeFrameImage
-    ? 'Ask about this session...\nTry /scene_actions for canvas animations.\nUse Include frame image for visual feedback.'
-    : 'Ask about this session...\nTry /scene_actions for canvas animations.';
+    ? 'Ask about this session...\nUse Include frame image for visual feedback.'
+    : 'Ask about this session...';
   const welcomeOptionList = [
-    {
-      title: '/scene_actions',
-      description: 'Show static canvas animation actions for the current layer.',
-      onClick: () => setUserInput('/scene_actions'),
-    },
     {
       title: 'Ask about the session',
       description: 'Get help with prompts, captions, titles, descriptions, or edits.',

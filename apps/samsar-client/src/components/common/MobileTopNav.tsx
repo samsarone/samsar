@@ -19,6 +19,7 @@ const AddSessionDropdown = lazy(() => import('./AddSessionDropdown.jsx'));
 const AuthContainer = lazy(() => import('../auth/AuthContainer.jsx'));
 const AUTH_DIALOG_OPTIONS = {
   surface: 'auth',
+  transparentShell: true,
   fullBleed: true,
   centerContent: true,
   hideBorder: true,

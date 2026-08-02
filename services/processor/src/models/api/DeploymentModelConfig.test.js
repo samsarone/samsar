@@ -22,6 +22,9 @@ const ENV_KEYS = [
   'FAL_API_KEY',
   'SAMSAR_API_KEY',
   'OPENROUTER_API_KEY',
+  'SAMSAR_GENBLAZE_ENABLED',
+  'SAMSAR_GENBLAZE_BASE_URL',
+  'SAMSAR_GENBLAZE_MODEL_CATALOG_PATH',
   'OPENAI_API_KEY',
   'KIMI_K3_API_KEY',
   'GOOGLE_APPLICATION_CREDENTIALS_JSON',
@@ -251,6 +254,107 @@ test('OpenRouter runtime credentials advertise all inference models without medi
   });
 });
 
+test('GenBlaze runtime advertises exact GMICloud Qwen text and vision inference', () => {
+  clearEnv();
+  process.env.CURRENT_ENV = 'docker';
+  process.env.SAMSAR_GENBLAZE_ENABLED = 'true';
+  process.env.SAMSAR_GENBLAZE_BASE_URL = 'http://genblaze:8080/v1';
+  const tempDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'samsar-genblaze-catalog-'));
+  process.env.SAMSAR_GENBLAZE_MODEL_CATALOG_PATH = path.join(
+    tempDirectory,
+    'genblaze-model-catalog.json',
+  );
+  fs.writeFileSync(process.env.SAMSAR_GENBLAZE_MODEL_CATALOG_PATH, JSON.stringify({
+    provider: 'gmicloud',
+    models: {
+      'QWEN3.7': {
+        text: { modelId: 'Qwen/Qwen3.7-Max', operation: 'chat.completions' },
+        vision: { modelId: 'Qwen/Qwen3.7-Plus', operation: 'chat.completions' },
+      },
+    },
+  }));
+
+  try {
+    const result = mergeRuntimeInferenceDeploymentAvailability({});
+    assert.deepEqual(result.providers, ['gmicloud']);
+    assert.deepEqual(result.models, ['QWEN3.7']);
+    assert.deepEqual(result.actions, ['chat', 'assistant']);
+    assert.equal(result.modelProviders['QWEN3.7'], 'gmicloud');
+    assert.deepEqual(result.modelProviderPriority['QWEN3.7'], [
+      'alibabaCloud',
+      'samsar',
+      'gmicloud',
+      'openrouter',
+    ]);
+  } finally {
+    fs.rmSync(tempDirectory, { recursive: true, force: true });
+  }
+});
+
+test('GenBlaze runtime flag never advertises inference without exact catalog routes', () => {
+  clearEnv();
+  process.env.CURRENT_ENV = 'docker';
+  process.env.SAMSAR_GENBLAZE_ENABLED = 'true';
+
+  const result = mergeRuntimeInferenceDeploymentAvailability({});
+  assert.deepEqual(result.providers, []);
+  assert.deepEqual(result.models, []);
+  assert.deepEqual(result.actions, []);
+});
+
+test('stale saved GMICloud inference is removed when its runtime catalog route is absent', () => {
+  clearEnv();
+  process.env.CURRENT_ENV = 'docker';
+  process.env.SAMSAR_GENBLAZE_ENABLED = 'true';
+
+  const result = mergeRuntimeInferenceDeploymentAvailability({
+    providers: ['gmicloud'],
+    models: ['QWEN3.7'],
+    actions: ['chat', 'assistant'],
+    modelProviders: { 'QWEN3.7': 'gmicloud' },
+    modelProviderPriority: {
+      'QWEN3.7': ['alibabaCloud', 'samsar', 'gmicloud', 'openrouter'],
+    },
+  });
+
+  assert.deepEqual(result.models, []);
+  assert.deepEqual(result.actions, []);
+  assert.equal(result.modelProviders['QWEN3.7'], undefined);
+});
+
+test('Docker retains Qwen with validated GMICloud provenance', () => {
+  clearEnv();
+  process.env.CURRENT_ENV = 'docker';
+  process.env.SAMSAR_GENBLAZE_ENABLED = 'true';
+  const tempDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'samsar-genblaze-saved-'));
+  process.env.SAMSAR_GENBLAZE_MODEL_CATALOG_PATH = path.join(
+    tempDirectory,
+    'genblaze-model-catalog.json',
+  );
+  fs.writeFileSync(process.env.SAMSAR_GENBLAZE_MODEL_CATALOG_PATH, JSON.stringify({
+    provider: 'gmicloud',
+    models: {
+      'QWEN3.7': {
+        text: { modelId: 'Qwen/Qwen3.7-Max' },
+        vision: { modelId: 'Qwen/Qwen3.7-Plus' },
+      },
+    },
+  }));
+  try {
+    const result = mergeRuntimeInferenceDeploymentAvailability({
+      providers: ['gmicloud'],
+      models: ['QWEN3.7'],
+      modelProviders: { 'QWEN3.7': 'gmicloud' },
+      modelProviderPriority: {
+        'QWEN3.7': ['alibabaCloud', 'samsar', 'gmicloud', 'openrouter'],
+      },
+    });
+    assert.deepEqual(result.models, ['QWEN3.7']);
+  } finally {
+    fs.rmSync(tempDirectory, { recursive: true, force: true });
+  }
+});
+
 test('Docker retains Qwen with validated OpenRouter provenance', () => {
   clearEnv();
   process.env.CURRENT_ENV = 'docker';
@@ -387,12 +491,14 @@ test('runtime enrichment preserves the installation default order separately fro
     assert.deepEqual(result.modelProviderPriority['QWEN3.7'], [
       'samsar',
       'alibabaCloud',
+      'gmicloud',
       'openrouter',
     ]);
     assert.deepEqual(result.defaultModelProviderPriority['QWEN3.7'], [
       'alibabaCloud',
-      'openrouter',
       'samsar',
+      'gmicloud',
+      'openrouter',
     ]);
   } finally {
     fs.rmSync(tempDirectory, { recursive: true, force: true });

@@ -45,7 +45,13 @@ export const API_KEY_USAGE_LIMIT_PERIODS = Object.freeze({
   MONTHLY: 'monthly',
   TOTAL: 'total',
 });
-const USER_GENERATION_BUCKET = process.env.USER_GENERATIONS_BUCKET || process.env.AWS_USER_GENERATIONS_BUCKET || process.env.AWS_GENERATIONS_BUCKET || 'samsar-resources';
+const USER_GENERATION_BUCKET = process.env.USER_GENERATIONS_BUCKET ||
+  process.env.AWS_USER_GENERATIONS_BUCKET ||
+  process.env.AWS_GENERATIONS_BUCKET ||
+  process.env.MEDIA_BUCKET_NAME ||
+  process.env.STATIC_CDN_BUCKET ||
+  process.env.SAMSAR_EXTERNAL_MEDIA_BUCKET ||
+  'samsar-resources';
 const USER_GENERATION_PREFIX = process.env.USER_GENERATIONS_PREFIX || 'user_resources';
 const CUSTOM_ADAPTER_SECRET_PREFIX = 'enc:v1:';
 const CUSTOM_TEXT_TO_IMAGE_MODEL_PREFIX = 'CUSTOM_TEXT_TO_IMAGE:';

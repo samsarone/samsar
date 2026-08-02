@@ -79,6 +79,10 @@ test('adapter fallback stops on a non-retryable 4xx error', async () => {
   assert.deepEqual(attempts, ['openai']);
   assert.equal(isRetryableInferenceAdapterError({ status: 403 }), true);
   assert.equal(isRetryableInferenceAdapterError({ status: 404 }), false);
+  assert.equal(isRetryableInferenceAdapterError({
+    status: 404,
+    code: 'GENBLAZE_MODEL_UNSUPPORTED',
+  }), true);
 });
 
 test('completion dispatch retries the next saved adapter after a retryable failure', async (t) => {

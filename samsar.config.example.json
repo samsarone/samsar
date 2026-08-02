@@ -11,7 +11,9 @@
     "mongoUrl": "mongodb://mongo:27017/SamsarOne"
   },
   "storage": {
+    "mode": "local-minio",
     "provider": "s3-compatible",
+    "backend": "minio",
     "mediaBucketName": "samsar-resources",
     "staticCdnUrl": "http://localhost:3002/",
     "secureAssetPrefix": "assets_v2",
@@ -20,6 +22,8 @@
     "region": "us-east-1",
     "s3Endpoint": "http://minio:9000",
     "s3ForcePathStyle": true,
+    "objectTaggingSupported": true,
+    "credentialType": "",
     "externalMediaPublishEnabled": false,
     "cloudFront": {
       "keyPairId": "",
@@ -72,6 +76,13 @@
       "enabled": false,
       "gemini31ProModel": "google/gemini-3.1-pro-preview"
     },
+    "gmicloud": {
+      "enabled": false,
+      "credentialFingerprint": "",
+      "chatBaseUrl": "",
+      "mediaBaseUrl": "",
+      "modelMappings": {}
+    },
     "kimi": {
       "enabled": false,
       "apiKey": ""
@@ -100,6 +111,7 @@
     "localMongo": true,
     "minio": true,
     "mediaGateway": true,
+    "genblaze": false,
     "logger": true
   }
 }

@@ -32,6 +32,7 @@ const AuthContainer = lazy(() => import('../auth/AuthContainer.jsx'));
 const UpgradePlan = lazy(() => import('../payments/UpgradePlan.tsx'));
 const AUTH_DIALOG_OPTIONS = {
   surface: 'auth',
+  transparentShell: true,
   fullBleed: true,
   centerContent: true,
   hideBorder: true,

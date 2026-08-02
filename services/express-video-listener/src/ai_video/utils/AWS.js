@@ -2,6 +2,10 @@
 
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import { Upload } from '@aws-sdk/lib-storage';
+import {
+  createBackblazeNativeClientFromEnv,
+  shouldUseBackblazeNativeApi,
+} from '@samsar/backblaze-native-client';
 import { NodeHttpHandler } from '@aws-sdk/node-http-handler';
 import fs from 'fs';
 import crypto from 'crypto';
@@ -125,7 +129,19 @@ function normalizeObjectKey(key) {
   }
   if (/^https?:\/\//i.test(rawKey)) {
     try {
-      return decodeURIComponent(new URL(rawKey).pathname).replace(/^\/+/, '');
+      const parsedUrl = new URL(rawKey);
+      let objectKey = decodeURIComponent(parsedUrl.pathname).replace(/^\/+/, '');
+      const configuredCdnUrl = new URL(process.env.STATIC_CDN_URL || STATIC_CDN_URL);
+      const configuredBasePath = decodeURIComponent(configuredCdnUrl.pathname)
+        .replace(/^\/+|\/+$/g, '');
+      if (
+        configuredBasePath &&
+        parsedUrl.origin === configuredCdnUrl.origin &&
+        (objectKey === configuredBasePath || objectKey.startsWith(`${configuredBasePath}/`))
+      ) {
+        objectKey = objectKey.slice(configuredBasePath.length).replace(/^\/+/, '');
+      }
+      return objectKey;
     } catch {
       return rawKey.replace(/^https?:\/\/[^/]+/i, '').replace(/^\/+/, '');
     }
@@ -815,7 +831,7 @@ async function uploadLocalMediaFileToCDN(localPath, mediaKey) {
     ContentLength: fileSize,
   };
 
-  if (fileSize >= MULTIPART_UPLOAD_THRESHOLD_BYTES) {
+  if (fileSize >= MULTIPART_UPLOAD_THRESHOLD_BYTES && !shouldUseBackblazeNativeApi()) {
     const upload = new Upload({
       client: getS3Client(),
       params: uploadParams,
@@ -1017,6 +1033,9 @@ function getS3EndpointOptions() {
  * @returns {S3Client} - Configured S3 client instance.
  */
 function initializeS3Client() {
+  if (shouldUseBackblazeNativeApi()) {
+    return createBackblazeNativeClientFromEnv();
+  }
   return new S3Client({
     region: process.env.AWS_CDN_REGION || AWS_REGION,
     credentials: {
@@ -1120,7 +1139,7 @@ async function uploadImageObject({ absolutePath, fileSize, uploadKey }) {
     };
 
     try {
-      if (fileSize >= MULTIPART_UPLOAD_THRESHOLD_BYTES) {
+      if (fileSize >= MULTIPART_UPLOAD_THRESHOLD_BYTES && !shouldUseBackblazeNativeApi()) {
         const upload = new Upload({
           client: getS3Client(),
           params: uploadParams,

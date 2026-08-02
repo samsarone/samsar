@@ -3,6 +3,7 @@ export const DOCKER_PROVIDER = Object.freeze({
   GOOGLE_CLOUD: 'googleCloud',
   KIMI: 'kimi',
   ALIBABA_CLOUD: 'alibabaCloud',
+  GMI_CLOUD: 'gmicloud',
   OPENROUTER: 'openrouter',
   FAL: 'fal',
   ELEVENLABS: 'elevenlabs',
@@ -15,21 +16,35 @@ export const DOCKER_PROVIDER_DISPLAY_ORDER = Object.freeze([
   DOCKER_PROVIDER.GOOGLE_CLOUD,
   DOCKER_PROVIDER.KIMI,
   DOCKER_PROVIDER.ALIBABA_CLOUD,
-  DOCKER_PROVIDER.OPENROUTER,
+  DOCKER_PROVIDER.SAMSAR,
+  DOCKER_PROVIDER.GMI_CLOUD,
   DOCKER_PROVIDER.FAL,
+  DOCKER_PROVIDER.OPENROUTER,
   DOCKER_PROVIDER.ELEVENLABS,
   DOCKER_PROVIDER.RUNWAY,
-  DOCKER_PROVIDER.SAMSAR,
 ]);
 
 export const DOCKER_NANO_BANANA_MODELS = Object.freeze(['NANOBANANA2', 'NANOBANANAPRO']);
-export const DOCKER_VEO_MODELS = Object.freeze(['VEO3.1I2V', 'VEO3.1I2VFAST']);
+export const DOCKER_VEO_MODELS = Object.freeze([
+  'VEO3.1',
+  'VEO3.1FAST',
+  'VEO3.1I2V',
+  'VEO3.1I2VFAST',
+]);
 export const DOCKER_FAL_VIDEO_MODELS = Object.freeze([
   'COSMOS3SUPERI2V',
   'SEEDANCEI2V',
+  'SEEDANCE2.0I2V',
+  'SEEDANCE2.0T2V',
   'KLINGIMGTOVID3PRO',
   'KLINGIMGTOVIDTURBO',
+  'KLINGIMGTOVIDPRO',
+  'KLINGIMGTOVID2.1MASTER',
+  'KLINGIMGTOVID2.1PRO',
+  'KLINGIMGTOVID2.1STANDARD',
+  'HAILUOPRO',
   'HAPPYHORSEI2V',
+  'VEO3.1FLIV',
 ]);
 export const DOCKER_LIP_SYNC_MODELS = Object.freeze([
   'SYNCLIPSYNC',
@@ -40,22 +55,18 @@ export const DOCKER_LIP_SYNC_MODELS = Object.freeze([
 ]);
 export const DOCKER_SOUND_EFFECT_MODELS = Object.freeze(['MMAUDIOV2', 'MIRELOAI']);
 
-const OPENAI_OR_SAMSAR = Object.freeze([DOCKER_PROVIDER.OPENAI, DOCKER_PROVIDER.SAMSAR]);
-const OPENAI_FAL_OR_SAMSAR = Object.freeze([
-  DOCKER_PROVIDER.OPENAI,
-  DOCKER_PROVIDER.FAL,
-  DOCKER_PROVIDER.SAMSAR,
-]);
 const GOOGLE_OR_SAMSAR = Object.freeze([DOCKER_PROVIDER.GOOGLE_CLOUD, DOCKER_PROVIDER.SAMSAR]);
 const OPENAI_INFERENCE_OR_SAMSAR = Object.freeze([
   DOCKER_PROVIDER.OPENAI,
-  DOCKER_PROVIDER.OPENROUTER,
   DOCKER_PROVIDER.SAMSAR,
+  DOCKER_PROVIDER.GMI_CLOUD,
+  DOCKER_PROVIDER.OPENROUTER,
 ]);
 const GOOGLE_INFERENCE_OR_SAMSAR = Object.freeze([
   DOCKER_PROVIDER.GOOGLE_CLOUD,
-  DOCKER_PROVIDER.OPENROUTER,
   DOCKER_PROVIDER.SAMSAR,
+  DOCKER_PROVIDER.GMI_CLOUD,
+  DOCKER_PROVIDER.OPENROUTER,
 ]);
 const KIMI_OR_SAMSAR = Object.freeze([
   DOCKER_PROVIDER.KIMI,
@@ -63,13 +74,9 @@ const KIMI_OR_SAMSAR = Object.freeze([
 ]);
 const ALIBABA_OR_SAMSAR = Object.freeze([
   DOCKER_PROVIDER.ALIBABA_CLOUD,
+  DOCKER_PROVIDER.SAMSAR,
+  DOCKER_PROVIDER.GMI_CLOUD,
   DOCKER_PROVIDER.OPENROUTER,
-  DOCKER_PROVIDER.SAMSAR,
-]);
-const ALIBABA_FAL_OR_SAMSAR = Object.freeze([
-  DOCKER_PROVIDER.ALIBABA_CLOUD,
-  DOCKER_PROVIDER.FAL,
-  DOCKER_PROVIDER.SAMSAR,
 ]);
 const FAL_OR_SAMSAR = Object.freeze([DOCKER_PROVIDER.FAL, DOCKER_PROVIDER.SAMSAR]);
 const ELEVENLABS_FAL_OR_SAMSAR = Object.freeze([
@@ -77,10 +84,49 @@ const ELEVENLABS_FAL_OR_SAMSAR = Object.freeze([
   DOCKER_PROVIDER.FAL,
   DOCKER_PROVIDER.SAMSAR,
 ]);
+const ELEVENLABS_FAL_SAMSAR_OR_GMI = Object.freeze([
+  DOCKER_PROVIDER.ELEVENLABS,
+  DOCKER_PROVIDER.SAMSAR,
+  DOCKER_PROVIDER.GMI_CLOUD,
+  DOCKER_PROVIDER.FAL,
+]);
 const GOOGLE_FAL_OR_SAMSAR = Object.freeze([
   DOCKER_PROVIDER.GOOGLE_CLOUD,
   DOCKER_PROVIDER.FAL,
   DOCKER_PROVIDER.SAMSAR,
+]);
+const ALIBABA_FAL_OR_SAMSAR = Object.freeze([
+  DOCKER_PROVIDER.ALIBABA_CLOUD,
+  DOCKER_PROVIDER.FAL,
+  DOCKER_PROVIDER.SAMSAR,
+]);
+const OPENAI_FAL_SAMSAR_OR_GMI = Object.freeze([
+  DOCKER_PROVIDER.OPENAI,
+  DOCKER_PROVIDER.SAMSAR,
+  DOCKER_PROVIDER.GMI_CLOUD,
+  DOCKER_PROVIDER.FAL,
+]);
+const OPENAI_SAMSAR_OR_GMI = Object.freeze([
+  DOCKER_PROVIDER.OPENAI,
+  DOCKER_PROVIDER.SAMSAR,
+  DOCKER_PROVIDER.GMI_CLOUD,
+]);
+const FAL_SAMSAR_OR_GMI = Object.freeze([
+  DOCKER_PROVIDER.SAMSAR,
+  DOCKER_PROVIDER.GMI_CLOUD,
+  DOCKER_PROVIDER.FAL,
+]);
+const GOOGLE_FAL_SAMSAR_OR_GMI = Object.freeze([
+  DOCKER_PROVIDER.GOOGLE_CLOUD,
+  DOCKER_PROVIDER.SAMSAR,
+  DOCKER_PROVIDER.GMI_CLOUD,
+  DOCKER_PROVIDER.FAL,
+]);
+const ALIBABA_FAL_SAMSAR_OR_GMI = Object.freeze([
+  DOCKER_PROVIDER.ALIBABA_CLOUD,
+  DOCKER_PROVIDER.SAMSAR,
+  DOCKER_PROVIDER.GMI_CLOUD,
+  DOCKER_PROVIDER.FAL,
 ]);
 const MODERATION_CAPABLE_PROVIDERS = Object.freeze([
   DOCKER_PROVIDER.OPENAI,
@@ -93,26 +139,38 @@ export const DOCKER_MODEL_PROVIDER_PRIORITY_BY_MODEL = Object.freeze({
   'gemini-3.1-pro': GOOGLE_INFERENCE_OR_SAMSAR,
   KIMIK3: KIMI_OR_SAMSAR,
   'QWEN3.7': ALIBABA_OR_SAMSAR,
-  GPTIMAGE2: OPENAI_FAL_OR_SAMSAR,
-  GPTIMAGE2EDIT: OPENAI_OR_SAMSAR,
-  SEEDREAM: FAL_OR_SAMSAR,
-  NANOBANANA2: GOOGLE_FAL_OR_SAMSAR,
-  NANOBANANA2EDIT: GOOGLE_FAL_OR_SAMSAR,
-  NANOBANANAPRO: GOOGLE_FAL_OR_SAMSAR,
-  NANOBANANAPROEDIT: GOOGLE_FAL_OR_SAMSAR,
+  GPTIMAGE2: OPENAI_FAL_SAMSAR_OR_GMI,
+  GPTIMAGE2EDIT: OPENAI_SAMSAR_OR_GMI,
+  SEEDREAM: FAL_SAMSAR_OR_GMI,
+  NANOBANANA2: GOOGLE_FAL_SAMSAR_OR_GMI,
+  NANOBANANA2EDIT: GOOGLE_FAL_SAMSAR_OR_GMI,
+  NANOBANANAPRO: GOOGLE_FAL_SAMSAR_OR_GMI,
+  NANOBANANAPROEDIT: GOOGLE_FAL_SAMSAR_OR_GMI,
+  BRIA_ERASER: FAL_SAMSAR_OR_GMI,
+  BRIA_GENFILL: FAL_SAMSAR_OR_GMI,
   'WAN2.7PRO': ALIBABA_FAL_OR_SAMSAR,
   RUNWAYML: [DOCKER_PROVIDER.RUNWAY, DOCKER_PROVIDER.SAMSAR],
-  'VEO3.1I2V': GOOGLE_FAL_OR_SAMSAR,
-  'VEO3.1I2VFAST': GOOGLE_FAL_OR_SAMSAR,
+  'VEO3.1': GOOGLE_FAL_SAMSAR_OR_GMI,
+  'VEO3.1FAST': GOOGLE_FAL_SAMSAR_OR_GMI,
+  'VEO3.1I2V': GOOGLE_FAL_SAMSAR_OR_GMI,
+  'VEO3.1I2VFAST': GOOGLE_FAL_SAMSAR_OR_GMI,
+  'VEO3.1FLIV': FAL_SAMSAR_OR_GMI,
   COSMOS3SUPERI2V: FAL_OR_SAMSAR,
-  SEEDANCEI2V: FAL_OR_SAMSAR,
-  KLINGIMGTOVID3PRO: FAL_OR_SAMSAR,
-  KLINGIMGTOVIDTURBO: FAL_OR_SAMSAR,
-  HAPPYHORSEI2V: ALIBABA_FAL_OR_SAMSAR,
+  SEEDANCEI2V: FAL_SAMSAR_OR_GMI,
+  'SEEDANCE2.0I2V': FAL_SAMSAR_OR_GMI,
+  'SEEDANCE2.0T2V': FAL_SAMSAR_OR_GMI,
+  KLINGIMGTOVID3PRO: FAL_SAMSAR_OR_GMI,
+  KLINGIMGTOVIDTURBO: FAL_SAMSAR_OR_GMI,
+  KLINGIMGTOVIDPRO: FAL_SAMSAR_OR_GMI,
+  'KLINGIMGTOVID2.1MASTER': FAL_SAMSAR_OR_GMI,
+  'KLINGIMGTOVID2.1PRO': FAL_SAMSAR_OR_GMI,
+  'KLINGIMGTOVID2.1STANDARD': FAL_SAMSAR_OR_GMI,
+  HAILUOPRO: FAL_SAMSAR_OR_GMI,
+  HAPPYHORSEI2V: ALIBABA_FAL_SAMSAR_OR_GMI,
   LYRIA3: GOOGLE_OR_SAMSAR,
-  OPENAI_TTS: OPENAI_OR_SAMSAR,
+  OPENAI_TTS: OPENAI_SAMSAR_OR_GMI,
   GOOGLE_TTS: GOOGLE_OR_SAMSAR,
-  ELEVENLABS: ELEVENLABS_FAL_OR_SAMSAR,
+  ELEVENLABS: ELEVENLABS_FAL_SAMSAR_OR_GMI,
   ELEVENLABS_MUSIC: ELEVENLABS_FAL_OR_SAMSAR,
   MMAUDIOV2: FAL_OR_SAMSAR,
   MIRELOAI: FAL_OR_SAMSAR,
@@ -121,6 +179,19 @@ export const DOCKER_MODEL_PROVIDER_PRIORITY_BY_MODEL = Object.freeze({
   KLINGLIPSYNC: FAL_OR_SAMSAR,
   HUMMINGBIRDLIPSYNC: FAL_OR_SAMSAR,
   CREATIFYLIPSYNC: FAL_OR_SAMSAR,
+});
+
+const LEGACY_MODEL_PROVIDER_PRIORITY_WITHOUT_GMI = Object.freeze({
+  'gpt-5.6-sol': Object.freeze([
+    DOCKER_PROVIDER.OPENAI,
+    DOCKER_PROVIDER.OPENROUTER,
+    DOCKER_PROVIDER.SAMSAR,
+  ]),
+  'gemini-3.1-pro': Object.freeze([
+    DOCKER_PROVIDER.GOOGLE_CLOUD,
+    DOCKER_PROVIDER.OPENROUTER,
+    DOCKER_PROVIDER.SAMSAR,
+  ]),
 });
 
 export const DOCKER_MODEL_ACTIONS_BY_MODEL = Object.freeze({
@@ -135,14 +206,26 @@ export const DOCKER_MODEL_ACTIONS_BY_MODEL = Object.freeze({
   NANOBANANA2EDIT: ['image_edit'],
   NANOBANANAPRO: ['image'],
   NANOBANANAPROEDIT: ['image_edit'],
+  BRIA_ERASER: ['image_edit'],
+  BRIA_GENFILL: ['image_edit'],
   'WAN2.7PRO': ['image'],
   RUNWAYML: ['video'],
+  'VEO3.1': ['video'],
+  'VEO3.1FAST': ['video'],
   'VEO3.1I2V': ['video'],
   'VEO3.1I2VFAST': ['video'],
+  'VEO3.1FLIV': ['video'],
   COSMOS3SUPERI2V: ['video'],
   SEEDANCEI2V: ['video'],
+  'SEEDANCE2.0I2V': ['video'],
+  'SEEDANCE2.0T2V': ['video'],
   KLINGIMGTOVID3PRO: ['video'],
   KLINGIMGTOVIDTURBO: ['video'],
+  KLINGIMGTOVIDPRO: ['video'],
+  'KLINGIMGTOVID2.1MASTER': ['video'],
+  'KLINGIMGTOVID2.1PRO': ['video'],
+  'KLINGIMGTOVID2.1STANDARD': ['video'],
+  HAILUOPRO: ['video'],
   HAPPYHORSEI2V: ['video'],
   LYRIA3: ['audio'],
   OPENAI_TTS: ['audio'],
@@ -170,14 +253,26 @@ export const DOCKER_MODEL_DISPLAY_NAME_BY_MODEL = Object.freeze({
   NANOBANANA2EDIT: 'Nano Banana 2 Edit',
   NANOBANANAPRO: 'Nano Banana Pro',
   NANOBANANAPROEDIT: 'Nano Banana Pro Edit',
+  BRIA_ERASER: 'BRIA Eraser',
+  BRIA_GENFILL: 'BRIA GenFill',
   'WAN2.7PRO': 'Wan 2.7 Pro',
   RUNWAYML: 'RunwayML',
+  'VEO3.1': 'Veo 3.1 Text to Video',
+  'VEO3.1FAST': 'Veo 3.1 Fast Text to Video',
   'VEO3.1I2V': 'Veo 3.1 Image to Video',
   'VEO3.1I2VFAST': 'Veo 3.1 Fast Image to Video',
+  'VEO3.1FLIV': 'Veo 3.1 First/Last Frame to Video',
   COSMOS3SUPERI2V: 'Cosmos 3 Super Image to Video',
   SEEDANCEI2V: 'Seedance Image to Video',
+  'SEEDANCE2.0I2V': 'Seedance 2.0 Image to Video',
+  'SEEDANCE2.0T2V': 'Seedance 2.0 Text to Video',
   KLINGIMGTOVID3PRO: 'Kling 3 Pro Image to Video',
   KLINGIMGTOVIDTURBO: 'Kling Turbo Image to Video',
+  KLINGIMGTOVIDPRO: 'Kling 1.6 Pro Image to Video',
+  'KLINGIMGTOVID2.1MASTER': 'Kling 2.1 Master Image to Video',
+  'KLINGIMGTOVID2.1PRO': 'Kling 2.1 Pro Image to Video',
+  'KLINGIMGTOVID2.1STANDARD': 'Kling 2.1 Standard Image to Video',
+  HAILUOPRO: 'Hailuo 02 Pro',
   HAPPYHORSEI2V: 'Happy Horse Image to Video',
   LYRIA3: 'Lyria 3',
   OPENAI_TTS: 'OpenAI Text to Speech',
@@ -199,6 +294,9 @@ const DOCKER_MODEL_DISPLAY_NAME_BY_PROVIDER = Object.freeze({
   }),
   [DOCKER_PROVIDER.OPENROUTER]: Object.freeze({
     'QWEN3.7': 'Qwen 3.7 Plus',
+  }),
+  [DOCKER_PROVIDER.GMI_CLOUD]: Object.freeze({
+    'QWEN3.7': 'Qwen 3.7 Max / Plus-equivalent Vision',
   }),
 });
 
@@ -348,26 +446,72 @@ export function getDockerProviderPriorityForModels(modelKeys = []) {
 
 export function resolveDockerModelProvider(modelKey, enabledProviderKeys = []) {
   const enabledProviderSet = new Set(orderDockerProviderKeys(enabledProviderKeys));
-  return getDockerModelProviderPriority(modelKey).find((provider) => enabledProviderSet.has(provider)) || '';
+  const canonicalModelKey = getCanonicalDockerModelKey(modelKey);
+  const providerPriority = !enabledProviderSet.has(DOCKER_PROVIDER.GMI_CLOUD) &&
+    LEGACY_MODEL_PROVIDER_PRIORITY_WITHOUT_GMI[canonicalModelKey]
+    ? LEGACY_MODEL_PROVIDER_PRIORITY_WITHOUT_GMI[canonicalModelKey]
+    : getDockerModelProviderPriority(modelKey);
+  return providerPriority.find((provider) => enabledProviderSet.has(provider)) || '';
 }
 
-export function buildDockerAvailableModelsFromEnabledProviders(enabledProviderKeys = []) {
+function hasGmiCloudModelRoute(modelMappings, modelKey) {
+  const routes = modelMappings?.[modelKey];
+  if (!routes || typeof routes !== 'object') {
+    return false;
+  }
+  const routeAvailable = (modality) => Boolean(
+    routes[modality] &&
+    typeof routes[modality] === 'object' &&
+    typeof routes[modality].modelId === 'string' &&
+    routes[modality].modelId.trim(),
+  );
+  if (['gpt-5.6-sol', 'gemini-3.1-pro', 'QWEN3.7'].includes(modelKey)) {
+    return routeAvailable('text') && routeAvailable('vision');
+  }
+  return Object.values(routes).some((route) => (
+    route && typeof route === 'object' && typeof route.modelId === 'string' && route.modelId.trim()
+  ));
+}
+
+export function buildDockerAvailableModelsFromEnabledProviders(enabledProviderKeys = [], options = {}) {
   const providers = orderDockerProviderKeys(enabledProviderKeys);
+  const hasCredentialScopedGmiCatalog = Object.hasOwn(options, 'gmiCloudModelMappings');
+  const gmiCloudModelMappings = options.gmiCloudModelMappings || {};
   const models = [];
   const actions = new Set();
   const modelProviders = {};
   const modelProviderPriority = {};
 
   for (const [modelKey, providerPriority] of Object.entries(DOCKER_MODEL_PROVIDER_PRIORITY_BY_MODEL)) {
-    const provider = providerPriority.find((providerKey) => providers.includes(providerKey));
+    const gmiCloudRouteEnabled = providers.includes(DOCKER_PROVIDER.GMI_CLOUD) && (
+      !hasCredentialScopedGmiCatalog || hasGmiCloudModelRoute(gmiCloudModelMappings, modelKey)
+    );
+    const configuredProviderPriority = !gmiCloudRouteEnabled &&
+      LEGACY_MODEL_PROVIDER_PRIORITY_WITHOUT_GMI[modelKey]
+      ? LEGACY_MODEL_PROVIDER_PRIORITY_WITHOUT_GMI[modelKey]
+      : providerPriority;
+    const effectiveProviderPriority = configuredProviderPriority.filter((providerKey) => (
+      providerKey !== DOCKER_PROVIDER.GMI_CLOUD ||
+      gmiCloudRouteEnabled
+    ));
+    const provider = effectiveProviderPriority.find((providerKey) => providers.includes(providerKey));
     if (!provider) {
       continue;
     }
     models.push(modelKey);
     modelProviders[modelKey] = provider;
-    modelProviderPriority[modelKey] = [...providerPriority];
+    modelProviderPriority[modelKey] = [...effectiveProviderPriority];
     const modelActions = DOCKER_MODEL_ACTIONS_BY_MODEL[modelKey] || [];
-    const providerActions = provider === DOCKER_PROVIDER.OPENROUTER
+    const gmiCloudRoutes = gmiCloudModelMappings[modelKey] || {};
+    const providerActions = (
+      provider === DOCKER_PROVIDER.OPENROUTER ||
+      (
+        provider === DOCKER_PROVIDER.GMI_CLOUD &&
+        !Object.hasOwn(gmiCloudRoutes, 'image') &&
+        !Object.hasOwn(gmiCloudRoutes, 'video') &&
+        !Object.hasOwn(gmiCloudRoutes, 'audio')
+      )
+    )
       ? modelActions.filter((action) => action === 'chat' || action === 'assistant')
       : modelActions;
     providerActions.forEach((action) => actions.add(action));
@@ -390,7 +534,11 @@ export function buildDockerAvailableModelsFromProviderResults(providerResults = 
   const enabledProviderKeys = Object.entries(providerResults)
     .filter(([, result]) => Boolean(result?.ok || result === true))
     .map(([provider]) => provider);
-  return buildDockerAvailableModelsFromEnabledProviders(enabledProviderKeys);
+  const gmiCloudValidation = providerResults.gmicloud;
+  const options = gmiCloudValidation && typeof gmiCloudValidation === 'object'
+    ? { gmiCloudModelMappings: gmiCloudValidation.modelMappings || {} }
+    : {};
+  return buildDockerAvailableModelsFromEnabledProviders(enabledProviderKeys, options);
 }
 
 export function buildDockerCapabilityFamilyAvailability(family = {}, enabledProviderKeys = []) {

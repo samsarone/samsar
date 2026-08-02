@@ -6,6 +6,7 @@ import {
   isCloudFrontSignedVideoUrl,
   isStudioVideoSourceReady,
   resolveStudioLayerVideo,
+  resolveStudioVideoToolbarMode,
   shouldSuppressStudioBaseImage,
 } from './studioVideoLayers.mjs';
 
@@ -221,4 +222,41 @@ test('ready video composition suppresses only the base image', () => {
     type: 'image',
     is_base_image: true,
   }, currentSource, 'scene-2.mp4'), false);
+});
+
+test('video toolbar mode tolerates a temporarily missing current layer', () => {
+  assert.equal(resolveStudioVideoToolbarMode(null), 'unavailable');
+  assert.equal(resolveStudioVideoToolbarMode(undefined), 'unavailable');
+  assert.equal(resolveStudioVideoToolbarMode({}), 'unavailable');
+});
+
+test('video toolbar mode preserves existing layer-state priority', () => {
+  assert.equal(resolveStudioVideoToolbarMode({
+    _id: 'layer-lip-sync',
+    hasLipSyncVideoLayer: true,
+    userVideoGenerationPending: true,
+  }), 'lip_sync');
+  assert.equal(resolveStudioVideoToolbarMode({
+    _id: 'layer-uploading',
+    userVideoUploadTask: { status: 'UPLOADING' },
+  }), 'video_options');
+  assert.equal(resolveStudioVideoToolbarMode({
+    _id: 'layer-processing',
+    userVideoUploadTask: { status: 'PROCESSING' },
+  }), 'video_options');
+  assert.equal(resolveStudioVideoToolbarMode({
+    _id: 'layer-user-video',
+    hasUserVideoLayer: true,
+    userVideoGenerationStatus: 'COMPLETED',
+  }), 'video_options');
+  assert.equal(resolveStudioVideoToolbarMode({
+    _id: 'layer-ai-video',
+    hasAiVideoLayer: true,
+    aiVideoGenerationStatus: 'COMPLETED',
+  }), 'video_options');
+  assert.equal(resolveStudioVideoToolbarMode({
+    _id: 'layer-generate',
+    hasAiVideoLayer: true,
+    aiVideoGenerationStatus: 'PENDING',
+  }), 'generate');
 });

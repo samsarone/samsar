@@ -6,6 +6,10 @@ import {
   normalizeTTSSpeakerGender,
 } from './TTSSpeakers.js';
 import { isStandaloneEdition } from '../utils/EnvironmentUtils.js';
+import {
+  hasRuntimeGenBlazeCatalogRoute,
+  readDeploymentAvailableModels,
+} from '../models/api/DeploymentModelConfig.js';
 
 const GOOGLE_NATIVE_CREDENTIAL_KEYS = Object.freeze([
   'GOOGLE_APPLICATION_CREDENTIALS_JSON_B64',
@@ -27,6 +31,8 @@ const GOOGLE_ATTACHED_SERVICE_ACCOUNT_KEYS = Object.freeze([
   'FUNCTION_TARGET',
   'GCE_METADATA_HOST',
 ]);
+
+const TTS_PROVIDER_PLAYAI = 'PLAYAI';
 
 const DEFAULT_GOOGLE_TTS_SPEAKER_DETAILS = Object.freeze([
   Object.freeze({
@@ -321,15 +327,34 @@ export function isDockerAudioAvailabilityFilteringEnabled() {
 }
 
 export function getAvailableDockerTTSProviders() {
+  const deploymentAudio = readDeploymentAvailableModels()?.audio || {};
+  const configuredTtsProviders = new Set(deploymentAudio.ttsProviders || []);
+  const hasCatalogBackedGmiRoute = (ttsProvider, logicalModel) => (
+    (deploymentAudio.providers || []).includes('gmicloud') &&
+    configuredTtsProviders.has(ttsProvider) &&
+    hasRuntimeGenBlazeCatalogRoute(logicalModel, 'audio', 'audio.generate')
+  );
   const providers = [];
-  if (hasOpenAICredential() || hasSamsarCredential()) {
+  if (
+    hasOpenAICredential() ||
+    hasSamsarCredential() ||
+    hasCatalogBackedGmiRoute(TTS_PROVIDER_OPENAI, 'OPENAI_TTS')
+  ) {
     providers.push(TTS_PROVIDER_OPENAI);
   }
   if (hasGoogleCloudCredential() || hasSamsarCredential()) {
     providers.push(TTS_PROVIDER_GOOGLE);
   }
-  if (hasElevenLabsCredential() || hasFalCredential() || hasSamsarCredential()) {
+  if (
+    hasElevenLabsCredential() ||
+    hasFalCredential() ||
+    hasSamsarCredential() ||
+    hasCatalogBackedGmiRoute(TTS_PROVIDER_ELEVENLABS, 'ELEVENLABS')
+  ) {
     providers.push(TTS_PROVIDER_ELEVENLABS);
+  }
+  if (hasFalCredential() || hasSamsarCredential()) {
+    providers.push(TTS_PROVIDER_PLAYAI);
   }
   return providers;
 }
