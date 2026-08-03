@@ -2227,26 +2227,6 @@ function buildJsonModeRequest(
   };
 }
 
-function parseOptionalJsonValue(rawValue, label, validator) {
-  if (!hasTextValue(rawValue)) {
-    return { value: null };
-  }
-
-  const parsedValue = parseJsonOrRepair(rawValue);
-  if (parsedValue.error) {
-    return { error: `${label} must be valid JSON.` };
-  }
-
-  try {
-    if (validator && !validator(parsedValue.value)) {
-      return { error: `${label} must be valid JSON in the expected shape.` };
-    }
-    return { value: parsedValue.value, normalizedJson: parsedValue.normalizedJson };
-  } catch {
-    return { error: `${label} must be valid JSON.` };
-  }
-}
-
 function normalizeSavedCustomAdapters(customAdapters) {
   return isPlainObject(customAdapters) ? customAdapters : {};
 }

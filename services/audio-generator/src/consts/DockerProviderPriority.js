@@ -40,10 +40,12 @@ export const DOCKER_SPEECH_PROVIDER_PRIORITY_BY_TTS_PROVIDER = Object.freeze({
     DOCKER_AUDIO_PROVIDER.GOOGLE_CLOUD,
     DOCKER_AUDIO_PROVIDER.SAMSAR,
   ]),
+  // Samsar's ElevenLabs speaker ids are credential-scoped. A credential-bound
+  // GMICloud model route does not guarantee those voices, so use Samsar-js as
+  // the configured fallback instead of sending these requests to GenBlaze.
   ELEVENLABS: Object.freeze([
     DOCKER_AUDIO_PROVIDER.ELEVENLABS,
     DOCKER_AUDIO_PROVIDER.FAL,
-    DOCKER_AUDIO_PROVIDER.GMICLOUD,
     DOCKER_AUDIO_PROVIDER.SAMSAR,
   ]),
   PLAYAI: Object.freeze([

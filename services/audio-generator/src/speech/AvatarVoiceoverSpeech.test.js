@@ -44,7 +44,7 @@ function resetProviders() {
   process.env.SAMSAR_DOCKER_AUDIO_PROVIDER_ROUTING_ENABLED = 'true';
 }
 
-test('avatar timeline speech selects GenBlaze only when its exact audio mapping exists', (t) => {
+test('avatar timeline speech keeps ElevenLabs speaker ids off GenBlaze even when an audio mapping exists', (t) => {
   resetProviders();
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'samsar-avatar-gmi-'));
   const catalogPath = path.join(directory, 'genblaze-model-catalog.json');
@@ -64,7 +64,7 @@ test('avatar timeline speech selects GenBlaze only when its exact audio mapping 
   assert.equal(resolveAvatarSpeechAdapterProvider({
     ttsProvider: 'ELEVENLABS',
     speaker: 'voice-123',
-  }), 'gmicloud');
+  }), '');
   assert.equal(resolveAvatarSpeechAdapterProvider({
     ttsProvider: 'OPENAI',
     speaker: 'alloy',

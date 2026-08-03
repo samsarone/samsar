@@ -801,7 +801,6 @@ export default function VideoEditorContainer(props) {
       }
       openAlertDialog(
         <div className='relative w-full max-w-[460px] overflow-hidden pt-8 text-left'>
-          <FaTimes className='absolute right-4 top-3 z-20 cursor-pointer text-slate-300 hover:text-white' onClick={closeAlertDialog} />
           <ImageUploadDialog
             setUploadURL={setUploadURL}
             setUploadVideo={setUploadVideo}
@@ -811,10 +810,10 @@ export default function VideoEditorContainer(props) {
         </div>,
         undefined,
         false,
-        { hideBorder: true }
+        { hideBorder: true, transparentShell: true }
       );
     },
-    [aspectRatio, closeAlertDialog, openAlertDialog, setCurrentView, setUploadURL, setUploadVideo]
+    [aspectRatio, openAlertDialog, setCurrentView, setUploadURL, setUploadVideo]
   );
 
   useEffect(() => {

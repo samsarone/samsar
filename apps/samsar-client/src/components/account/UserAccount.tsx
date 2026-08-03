@@ -20,8 +20,10 @@ import OverflowContainer from "../common/OverflowContainer.tsx";
 import APIKeysPanelContent from "./APIKeysPanelContent.jsx";
 import UsagePanelContent from "./UsagePanelContent.jsx";
 import ModelAdaptersPanelContent from "./ModelAdaptersPanelContent.jsx";
+import ModelAdapterSelect from "../common/ModelAdapterSelect.jsx";
 import SingleSelect from "../common/SingleSelect.jsx";
 import { IS_STANDALONE_DEPLOYMENT } from "../../utils/environment.jsx";
+import { useDeploymentModelAvailability } from "../../hooks/useDeploymentModelAvailability.js";
 import { useInferenceModelAvailability } from "../../hooks/useInferenceModelAvailability.js";
 import {
   MODEL_ADAPTERS_ACCOUNT_PANEL_KEY,
@@ -86,6 +88,7 @@ export default function UserAccount() {
     assistantModelOptions,
     hasConfiguredInferenceModels,
   } = useInferenceModelAvailability();
+  const { primaryAdapterByModel } = useDeploymentModelAvailability();
   const areStandaloneModelSelectsDisabled =
     isStandaloneModelFilteringEnabled &&
     (isInferenceModelAvailabilityLoading || !hasConfiguredInferenceModels);
@@ -570,20 +573,24 @@ export default function UserAccount() {
                       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                         <div className="space-y-2">
                           <p className="text-sm font-semibold">Assistant model</p>
-                          <SingleSelect
+                          <ModelAdapterSelect
                             options={assistantModelOptions}
                             value={assistantModel}
                             onChange={handleAssistantModelChange}
+                            primaryAdapterByModel={primaryAdapterByModel}
+                            isStandaloneDeployment={isStandaloneModelFilteringEnabled}
                             isDisabled={areStandaloneModelSelectsDisabled}
                             placeholder={areStandaloneModelSelectsDisabled ? "No model configured" : undefined}
                           />
                         </div>
                         <div className="space-y-2">
                           <p className="text-sm font-semibold">Inference model</p>
-                          <SingleSelect
+                          <ModelAdapterSelect
                             options={inferenceModelOptions}
                             value={inferenceModel}
                             onChange={handleInferenceModelChange}
+                            primaryAdapterByModel={primaryAdapterByModel}
+                            isStandaloneDeployment={isStandaloneModelFilteringEnabled}
                             isDisabled={areStandaloneModelSelectsDisabled}
                             placeholder={areStandaloneModelSelectsDisabled ? "No model configured" : undefined}
                           />

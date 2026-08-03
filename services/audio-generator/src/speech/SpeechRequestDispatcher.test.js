@@ -60,13 +60,15 @@ function configureGmiCatalog(t) {
   process.env.SAMSAR_GENBLAZE_MODEL_CATALOG_PATH = catalogPath;
 }
 
-test('dispatcher selects GMICloud only for catalog-backed Express speech models', (t) => {
+test('dispatcher keeps ElevenLabs speaker ids on Samsar while retaining compatible GMICloud speech routes', (t) => {
   configureGmiCatalog(t);
 
   assert.equal(resolveSpeechProvider('OPENAI', { status: 'INIT' }), 'gmicloud');
-  assert.equal(resolveSpeechProvider('ELEVENLABS', { status: 'INIT' }), 'gmicloud');
   assert.equal(resolveSpeechProvider('GOOGLE', { status: 'INIT' }), 'googleCloud');
   assert.equal(resolveSpeechProvider('PLAYAI', { status: 'INIT' }), 'fal');
+
+  process.env.SAMSAR_API_KEY = 'samsar-key';
+  assert.equal(resolveSpeechProvider('ELEVENLABS', { status: 'INIT' }), 'samsar');
 });
 
 test('dispatcher preserves higher-priority native and Fal routes', (t) => {
