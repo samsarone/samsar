@@ -250,7 +250,7 @@ test('production deployment prefers Fal over Google for NanoBanana Pro only', ()
   );
 });
 
-test('places credential-scoped GMICloud below native and Samsar but above Fal', (t) => {
+test('places credential-scoped GMICloud below native providers but ahead of Samsar', (t) => {
   const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'samsar-image-gmi-enabled-'));
   const catalogPath = path.join(temporaryDirectory, 'genblaze-model-catalog.json');
   t.after(() => fs.rmSync(temporaryDirectory, { recursive: true, force: true }));
@@ -272,20 +272,20 @@ test('places credential-scoped GMICloud below native and Samsar but above Fal', 
 
   assert.deepEqual(getDockerImageGenerationProviderPriority('GPTIMAGE2'), [
     DOCKER_ADAPTER_PROVIDER.OPENAI,
-    DOCKER_ADAPTER_PROVIDER.SAMSAR,
     DOCKER_ADAPTER_PROVIDER.GMICLOUD,
+    DOCKER_ADAPTER_PROVIDER.SAMSAR,
     DOCKER_ADAPTER_PROVIDER.FAL,
   ]);
   assert.deepEqual(getDockerImageGenerationProviderPriority('NANOBANANA2'), [
     DOCKER_ADAPTER_PROVIDER.GOOGLE_CLOUD,
-    DOCKER_ADAPTER_PROVIDER.SAMSAR,
     DOCKER_ADAPTER_PROVIDER.GMICLOUD,
+    DOCKER_ADAPTER_PROVIDER.SAMSAR,
     DOCKER_ADAPTER_PROVIDER.FAL,
   ]);
   assert.deepEqual(getDockerImageGenerationProviderPriority('NANOBANANAPRO'), [
     DOCKER_ADAPTER_PROVIDER.GOOGLE_CLOUD,
-    DOCKER_ADAPTER_PROVIDER.SAMSAR,
     DOCKER_ADAPTER_PROVIDER.GMICLOUD,
+    DOCKER_ADAPTER_PROVIDER.SAMSAR,
     DOCKER_ADAPTER_PROVIDER.FAL,
   ]);
 
@@ -300,7 +300,7 @@ test('places credential-scoped GMICloud below native and Samsar but above Fal', 
   process.env.SAMSAR_API_KEY = 'samsar-key';
   assert.equal(
     resolveDockerImageGenerationProvider('NANOBANANA2'),
-    DOCKER_ADAPTER_PROVIDER.SAMSAR,
+    DOCKER_ADAPTER_PROVIDER.GMICLOUD,
   );
   process.env.OPENAI_API_KEY = 'openai-key';
   assert.equal(
@@ -345,7 +345,7 @@ test('credential-scoped GMICloud catalog enables only mapped image models', (t) 
   );
 });
 
-test('credential-scoped GMICloud edit routes remain below native, Fal, and Samsar', (t) => {
+test('credential-scoped GMICloud edit routes remain below native and Fal but ahead of Samsar', (t) => {
   const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'samsar-image-edit-gmi-'));
   const catalogPath = path.join(temporaryDirectory, 'genblaze-model-catalog.json');
   t.after(() => fs.rmSync(temporaryDirectory, { recursive: true, force: true }));
@@ -366,19 +366,19 @@ test('credential-scoped GMICloud edit routes remain below native, Fal, and Samsa
 
   assert.deepEqual(getDockerImageEditProviderPriority('GPTIMAGE2EDIT'), [
     DOCKER_ADAPTER_PROVIDER.OPENAI,
-    DOCKER_ADAPTER_PROVIDER.SAMSAR,
     DOCKER_ADAPTER_PROVIDER.GMICLOUD,
+    DOCKER_ADAPTER_PROVIDER.SAMSAR,
   ]);
   assert.deepEqual(getDockerImageEditProviderPriority('NANOBANANA2EDIT'), [
     DOCKER_ADAPTER_PROVIDER.GOOGLE_CLOUD,
     DOCKER_ADAPTER_PROVIDER.FAL,
-    DOCKER_ADAPTER_PROVIDER.SAMSAR,
     DOCKER_ADAPTER_PROVIDER.GMICLOUD,
+    DOCKER_ADAPTER_PROVIDER.SAMSAR,
   ]);
   assert.deepEqual(getDockerImageEditProviderPriority('BRIA_ERASER'), [
     DOCKER_ADAPTER_PROVIDER.FAL,
-    DOCKER_ADAPTER_PROVIDER.SAMSAR,
     DOCKER_ADAPTER_PROVIDER.GMICLOUD,
+    DOCKER_ADAPTER_PROVIDER.SAMSAR,
   ]);
   assert.equal(resolveDockerImageEditProvider('GPTIMAGE2EDIT'), DOCKER_ADAPTER_PROVIDER.GMICLOUD);
   assert.equal(resolveDockerImageEditProvider('NANOBANANAPROEDIT'), '');

@@ -9,8 +9,6 @@ export const GENBLAZE_VIDEO_MODELS = new Set([
   'VEO3.1I2VFAST',
   'VEO3.1FLIV',
   'SEEDANCEI2V',
-  'SEEDANCE2.0I2V',
-  'SEEDANCE2.0T2V',
   'KLINGIMGTOVID3PRO',
   'KLINGIMGTOVIDTURBO',
   'KLINGIMGTOVIDPRO',
@@ -26,7 +24,6 @@ const IMAGE_TO_VIDEO_MODELS = new Set([
   'VEO3.1I2VFAST',
   'VEO3.1FLIV',
   'SEEDANCEI2V',
-  'SEEDANCE2.0I2V',
   'KLINGIMGTOVID3PRO',
   'KLINGIMGTOVIDTURBO',
   'KLINGIMGTOVIDPRO',
@@ -41,7 +38,6 @@ const OPTIONAL_START_IMAGE_MODELS = new Set(['HAILUOPRO']);
 const END_IMAGE_MODELS = new Set([
   'VEO3.1FLIV',
   'SEEDANCEI2V',
-  'SEEDANCE2.0I2V',
   'KLINGIMGTOVID3PRO',
 ]);
 
@@ -53,7 +49,7 @@ const VEO_MODELS = new Set([
   'VEO3.1FLIV',
 ]);
 const VEO_IMAGE_MODELS = new Set(['VEO3.1I2V', 'VEO3.1I2VFAST', 'VEO3.1FLIV']);
-const SEEDANCE_MODELS = new Set(['SEEDANCEI2V', 'SEEDANCE2.0I2V', 'SEEDANCE2.0T2V']);
+const SEEDANCE_MODELS = new Set(['SEEDANCEI2V']);
 const SEEDANCE_ASPECT_RATIOS = new Set(['21:9', '16:9', '4:3', '1:1', '3:4', '9:16']);
 const HAPPY_HORSE_DURATIONS = Object.freeze([5, 10, 15]);
 
@@ -108,18 +104,14 @@ function normalizeVeoResolution(value) {
   return '';
 }
 
-function normalizeSeedanceDuration(value, model) {
+function normalizeSeedanceDuration(value) {
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) return 5;
-  const maximum = model === 'SEEDANCEI2V' ? 12 : 15;
-  return Math.min(maximum, Math.max(4, Math.round(parsed)));
+  return Math.min(12, Math.max(4, Math.round(parsed)));
 }
 
-function normalizeSeedanceAspectRatio(value, model) {
+function normalizeSeedanceAspectRatio(value) {
   const normalized = normalizeString(value).toLowerCase();
-  if (model !== 'SEEDANCEI2V' && (normalized === 'auto' || normalized === 'adaptive')) {
-    return 'adaptive';
-  }
   return SEEDANCE_ASPECT_RATIOS.has(normalized) ? normalized : '';
 }
 
@@ -167,11 +159,13 @@ export function shouldUseGenBlazeVideoProvider(payload = {}) {
   // current setup has since changed its provider selection or model settings.
   if (getRequestId(payload.generationId)) return true;
   if (!isTruthyEnv(process.env.SAMSAR_GENBLAZE_ENABLED)) return false;
-  if (!GENBLAZE_VIDEO_MODELS.has(normalizeModel(payload.model))) return false;
+  const model = normalizeModel(payload.model);
+  if (!GENBLAZE_VIDEO_MODELS.has(model)) return false;
   const selectedProvider = normalizeString(
     payload.dockerVideoProviderOverride || payload.dockerVideoProvider || payload.externalProvider,
   ).toLowerCase().replace(/[^a-z0-9]/g, '');
-  return ['gmi', 'gmicloud', 'genblaze'].includes(selectedProvider);
+  if (!['gmi', 'gmicloud', 'genblaze'].includes(selectedProvider)) return false;
+  return true;
 }
 
 export function buildGenBlazeVideoRequest(payload = {}) {
@@ -233,12 +227,11 @@ export function buildGenBlazeVideoRequest(payload = {}) {
     addIntegerSeed(params, payload.seed, { parse: true });
   } else if (SEEDANCE_MODELS.has(model)) {
     params = {
-      duration: normalizeSeedanceDuration(payload.duration, model),
+      duration: normalizeSeedanceDuration(payload.duration),
       generate_audio: generateAudio,
     };
     const aspectRatio = normalizeSeedanceAspectRatio(
       payload.aspectRatio || payload.aspect_ratio,
-      model,
     );
     if (aspectRatio) params.aspect_ratio = aspectRatio;
     addIntegerSeed(params, payload.seed);

@@ -39,6 +39,8 @@ import {
   filterSpeakersForAudioAvailability,
   filterTtsProviderOptionsForAudioAvailability,
 } from '../../../../constants/audioProviderAvailability.js';
+import { useDeploymentModelAvailability } from '../../../../hooks/useDeploymentModelAvailability.js';
+import ModelAdapterSelect from '../../../common/ModelAdapterSelect.jsx';
 
 const PROCESSOR_API_URL = import.meta.env.VITE_PROCESSOR_API;
 const DISPLAY_FRAMES_PER_SECOND = 30;
@@ -68,11 +70,11 @@ const AVATAR_VIDEO_AUDIO_SOURCE_OPTIONS = [
   { value: AVATAR_VIDEO_AUDIO_SOURCE_HINT_SPEECH, label: 'Text hints avatar speech' },
 ];
 const AVATAR_TTS_PROVIDER_OPTIONS = [
-  { value: 'OPENAI', label: 'OpenAI' },
-  { value: 'ELEVENLABS', label: 'ElevenLabs' },
-  { value: 'PLAYAI', label: 'Play.ht' },
-  { value: 'GOOGLE', label: 'Google TTS' },
-  { value: 'CUSTOM_TEXT_TO_SPEECH', label: 'Custom TTS' },
+  { value: 'OPENAI', label: 'OpenAI', adapterModelKey: 'OPENAI_TTS' },
+  { value: 'ELEVENLABS', label: 'ElevenLabs', adapterModelKey: 'ELEVENLABS' },
+  { value: 'PLAYAI', label: 'Play.ht', adapterModelKey: 'PLAYAI' },
+  { value: 'GOOGLE', label: 'Google TTS', adapterModelKey: 'GOOGLE_TTS' },
+  { value: 'CUSTOM_TEXT_TO_SPEECH', label: 'Custom TTS', adapterKey: 'custom' },
 ];
 
 const RECORDER_MIME_TYPES = [
@@ -727,6 +729,10 @@ export default function RecordSpeechSection({
     [googleSpeakers]
   );
   const { audioAvailability } = useAudioProviderAvailability();
+  const {
+    isStandaloneDeployment,
+    primaryAdapterByModel,
+  } = useDeploymentModelAvailability();
   const availableTtsSpeakerTypes = useMemo(
     () => filterSpeakersForAudioAvailability(combinedTtsSpeakerTypes, audioAvailability),
     [audioAvailability, combinedTtsSpeakerTypes]
@@ -2808,16 +2814,19 @@ export default function RecordSpeechSection({
               </label>
               <label className="block">
                 <span className={`mb-1 block text-xs font-semibold ${mutedText}`}>Avatar image model</span>
-                <select
+                <ModelAdapterSelect
+                  options={AVATAR_IMAGE_MODEL_OPTIONS}
                   value={selectedAvatarImageModel}
-                  onChange={(event) => setSelectedAvatarImageModel(event.target.value)}
-                  disabled={isAvatarImageGenerating || avatarAnyActionPending}
-                  className={`w-full rounded-lg ${bgColor} ${text2Color} px-3 py-2 text-sm`}
-                >
-                  {AVATAR_IMAGE_MODEL_OPTIONS.map((model) => (
-                    <option key={model.value} value={model.value}>{model.label}</option>
-                  ))}
-                </select>
+                  onChange={setSelectedAvatarImageModel}
+                  primaryAdapterByModel={primaryAdapterByModel}
+                  isStandaloneDeployment={isStandaloneDeployment}
+                  valueMode="value"
+                  hostedControl="native"
+                  nativeClassName={`w-full rounded-lg ${bgColor} ${text2Color} px-3 py-2 text-sm`}
+                  isDisabled={isAvatarImageGenerating || avatarAnyActionPending}
+                  isSearchable={false}
+                  truncateLabels={isCollapsedSidebarView}
+                />
               </label>
               <button
                 type="button"
@@ -2949,18 +2958,19 @@ export default function RecordSpeechSection({
                       <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                         <label className="block">
                           <span className={`mb-1 block text-xs font-semibold ${mutedText}`}>Speech provider</span>
-                          <select
+                          <ModelAdapterSelect
+                            options={avatarSpeechProviderOptions}
                             value={selectedAvatarSpeechProvider}
-                            onChange={(event) => handleAvatarSpeechProviderChange(event.target.value)}
-                            disabled={avatarAnyActionPending || avatarTaskBusy || avatarSpeechProviderOptions.length === 0}
-                            className={`w-full rounded-lg ${bgColor} ${text2Color} px-3 py-2 text-sm`}
-                          >
-                            {avatarSpeechProviderOptions.map((providerOption) => (
-                              <option key={providerOption.value} value={providerOption.value}>
-                                {providerOption.label}
-                              </option>
-                            ))}
-                          </select>
+                            onChange={handleAvatarSpeechProviderChange}
+                            primaryAdapterByModel={primaryAdapterByModel}
+                            isStandaloneDeployment={isStandaloneDeployment}
+                            valueMode="value"
+                            hostedControl="native"
+                            nativeClassName={`w-full rounded-lg ${bgColor} ${text2Color} px-3 py-2 text-sm`}
+                            isDisabled={avatarAnyActionPending || avatarTaskBusy || avatarSpeechProviderOptions.length === 0}
+                            isSearchable={false}
+                            truncateLabels={isCollapsedSidebarView}
+                          />
                         </label>
                         <label className="block">
                           <span className={`mb-1 block text-xs font-semibold ${mutedText}`}>Speaker</span>

@@ -107,6 +107,27 @@ _SEEDREAM_MIN_PIXELS = 1280 * 720
 _SEEDREAM_MAX_PIXELS = int(2048 * 2048 * 1.1025)
 
 
+def _normalize_chat_reasoning_params(params: dict[str, Any]) -> dict[str, Any]:
+    """Emit only the Chat Completions reasoning shape accepted by GMICloud."""
+    normalized = dict(params)
+    reasoning = normalized.pop("reasoning", None)
+    if "reasoning_effort" not in normalized and isinstance(reasoning, dict):
+        effort = reasoning.get("effort")
+        if isinstance(effort, str) and effort.strip():
+            normalized["reasoning_effort"] = effort.strip().lower()
+    if normalized.get("reasoning_effort") is None:
+        normalized.pop("reasoning_effort", None)
+    return normalized
+
+
+def _is_unknown_reasoning_parameter(exc: Exception) -> bool:
+    message = str(exc).lower()
+    unknown_parameter = "unknown parameter" in message or "unknown_parameter" in message
+    return unknown_parameter and (
+        "reasoning_effort" in message or "'reasoning'" in message or '"reasoning"' in message
+    )
+
+
 def _drop_params(*names: str) -> Callable[[dict[str, Any]], dict[str, Any]]:
     def transform(params: dict[str, Any]) -> dict[str, Any]:
         transformed = dict(params)
@@ -382,6 +403,13 @@ def _seedance_2_aspect_ratio(value: Any) -> str:
     return normalized
 
 
+def _seedance_2_resolution(value: Any) -> str:
+    normalized = str(value).strip().lower().replace(" ", "")
+    if normalized in {"720", "720p"}:
+        return "720p"
+    raise ValueError("Seedance 2.0 resolution must be 720p")
+
+
 def _kling_v3_turbo_duration(value: Any) -> str:
     duration = _whole_seconds_string(value)
     if not 3 <= int(duration) <= 15:
@@ -506,7 +534,7 @@ def _media_contract_key(samsar_model: str) -> str:
         return "veo"
     if samsar_model == "SEEDANCEI2V":
         return "seedance-1-5"
-    if samsar_model in {"SEEDANCE2.0I2V", "SEEDANCE2.0T2V"}:
+    if samsar_model == "SEEDANCE2.0I2V":
         return "seedance-2"
     if samsar_model == "KLINGIMGTOVID3PRO":
         return "kling-v3"
@@ -757,17 +785,20 @@ def load_genblaze_bindings() -> GenBlazeBindings:
                     "generate_audio": _boolean,
                     "seed": _uint32,
                 }
-                allowlist = frozenset(
-                    {
-                        "prompt",
-                        "first_frame",
-                        "last_frame",
-                        "duration",
-                        "ratio",
-                        "generate_audio",
-                        "seed",
-                    }
-                )
+                seedance_allowlist = {
+                    "prompt",
+                    "first_frame",
+                    "last_frame",
+                    "duration",
+                    "ratio",
+                    "generate_audio",
+                    "seed",
+                }
+                if contract_key == "seedance-2":
+                    param_coercers["resolution"] = _seedance_2_resolution
+                    param_defaults = {"resolution": "720p"}
+                    seedance_allowlist.add("resolution")
+                allowlist = frozenset(seedance_allowlist)
             elif contract_key == "hailuo-pro":
                 param_transformer = _hailuo_pro_params
                 param_coercers = {"prompt_optimizer": _boolean}
@@ -1125,6 +1156,7 @@ class GatewayRuntime:
         # endpoint or injecting a fake client object through the request body.
         for protected_field in ("api_key", "base_url", "client", "stream", "timeout"):
             payload.pop(protected_field, None)
+        payload = _normalize_chat_reasoning_params(payload)
         payload["api_key"] = self.settings.gmi_api_key
         payload["timeout"] = self.settings.upstream_timeout_seconds
         if self.settings.chat_base_url:
@@ -1133,7 +1165,24 @@ class GatewayRuntime:
         try:
             response = await bindings.achat(upstream_model, messages, **payload)
         except bindings.provider_error_type as exc:
-            raise self._provider_error(exc) from exc
+            # GMICloud's generic Chat Completions contract does not document a
+            # reasoning control, and parameter support can vary by upstream
+            # model revision. Prefer the canonical reasoning_effort field, but
+            # retry once without it when the provider explicitly rejects it.
+            # This avoids multiplying the processor's outer retry loop while
+            # preserving explicit reasoning wherever GMICloud accepts it.
+            if "reasoning_effort" not in payload or not _is_unknown_reasoning_parameter(exc):
+                raise self._provider_error(exc) from exc
+            fallback_payload = dict(payload)
+            fallback_payload.pop("reasoning_effort", None)
+            try:
+                response = await bindings.achat(
+                    upstream_model,
+                    messages,
+                    **fallback_payload,
+                )
+            except bindings.provider_error_type as fallback_exc:
+                raise self._provider_error(fallback_exc) from fallback_exc
 
         raw = getattr(response, "raw", None)
         if not isinstance(raw, dict):
@@ -1357,15 +1406,6 @@ class GatewayRuntime:
                     code="invalid_media_request",
                     error_type="invalid_request_error",
                 )
-            if route.samsar_model == "SEEDANCE2.0T2V" and (
-                not isinstance(prompt, str) or not prompt.strip()
-            ):
-                raise GatewayError(
-                    "SEEDANCE2.0T2V requires a non-empty prompt.",
-                    status_code=400,
-                    code="invalid_media_request",
-                    error_type="invalid_request_error",
-                )
             if route.samsar_model.startswith("VEO3.1") and (
                 not isinstance(prompt, str) or not prompt.strip()
             ):
@@ -1496,7 +1536,7 @@ def _input_media_type(url: str) -> str:
 
 
 def _media_input_slots(route: ModelRoute) -> tuple[str, ...]:
-    if route.samsar_model in {"VEO3.1", "VEO3.1FAST", "SEEDANCE2.0T2V"}:
+    if route.samsar_model in {"VEO3.1", "VEO3.1FAST"}:
         return ()
     if route.samsar_model in {"SEEDANCEI2V", "SEEDANCE2.0I2V"}:
         return ("first_frame", "last_frame")
@@ -1542,7 +1582,6 @@ def _media_minimum_input_count(route: ModelRoute) -> int:
     if route.samsar_model in {
         "VEO3.1",
         "VEO3.1FAST",
-        "SEEDANCE2.0T2V",
         "HAILUOPRO",
     }:
         return 0

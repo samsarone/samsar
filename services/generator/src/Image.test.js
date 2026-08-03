@@ -310,6 +310,150 @@ test('image generation retries use bounded exponential backoff', () => {
   );
 });
 
+test('concurrent schedulers can claim an unlocked ImageGeneration only once', async () => {
+  let rowLocked = false;
+  const filters = [];
+  const imageGenerationModel = {
+    async findOneAndUpdate(filter, update, options) {
+      filters.push(filter);
+      await Promise.resolve();
+      if (rowLocked) {
+        return null;
+      }
+      rowLocked = update.$set.rowLocked;
+      return { _id: filter._id, rowLocked };
+    },
+  };
+
+  const claims = await Promise.all([
+    __testOnly__.claimPendingImageGenerationRequest('shared-request', imageGenerationModel),
+    __testOnly__.claimPendingImageGenerationRequest('shared-request', imageGenerationModel),
+  ]);
+
+  assert.equal(claims.filter(Boolean).length, 1);
+  assert.equal(filters.length, 2);
+  assert.equal(filters[0]._id, 'shared-request');
+  assert.equal(filters[0].rowLocked, false);
+  assert.equal(Array.isArray(filters[0].$and), true);
+});
+
+test('atomic ImageGeneration claims recheck terminal status and retry backoff', () => {
+  const now = new Date('2026-08-02T12:00:00.000Z');
+  const filter = __testOnly__.buildPendingImageGenerationEligibilityFilter(now);
+  const [operationEligibility, retryEligibility] = filter.$and;
+  const [generationEligibility, editEligibility] = operationEligibility.$or;
+
+  assert.deepEqual(generationEligibility, {
+    operationType: 'GENERATE',
+    generationStatus: { $nin: ['COMPLETED', 'FAILED', 'CANCELLED'] },
+    apiGenerationStatus: { $nin: ['COMPLETED', 'FAILED', 'CANCELLED'] },
+  });
+  assert.deepEqual(editEligibility, {
+    operationType: { $in: ['EDIT', 'UPSCALE'] },
+    editStatus: { $nin: ['COMPLETED', 'FAILED', 'CANCELLED'] },
+    apiEditStatus: { $nin: ['COMPLETED', 'FAILED', 'CANCELLED'] },
+  });
+  assert.deepEqual(retryEligibility.$or.at(-1), {
+    nextAttemptAfter: { $lte: now },
+  });
+});
+
+test('final GeneratedImage persistence is idempotent per ImageGeneration request', async () => {
+  const documents = new Map();
+  const optionsSeen = [];
+  const generatedImageModel = {
+    async findOneAndUpdate(filter, update, options) {
+      optionsSeen.push(options);
+      await Promise.resolve();
+      const key = String(filter._id);
+      if (!documents.has(key)) {
+        documents.set(key, { _id: key, ...structuredClone(update.$setOnInsert) });
+      }
+      return documents.get(key);
+    },
+  };
+  const payload = {
+    _id: 'image-generation-1',
+    apiRequestId: 'samsar-external-image:provider-result-1',
+  };
+
+  const results = await Promise.all([
+    __testOnly__.persistFinalGeneratedImageForRequest(payload, {
+      url: 'first-download.png',
+      generationType: 'generate',
+    }, { generatedImageModel }),
+    __testOnly__.persistFinalGeneratedImageForRequest(payload, {
+      url: 'duplicate-download.png',
+      generationType: 'generate',
+    }, { generatedImageModel }),
+  ]);
+
+  assert.equal(documents.size, 1);
+  assert.equal(results[0]._id, 'image-generation-1');
+  assert.equal(results[1]._id, 'image-generation-1');
+  assert.equal(documents.get('image-generation-1').sourceRequestId, 'image-generation-1');
+  assert.equal(
+    documents.get('image-generation-1').sourceProviderRequestId,
+    'samsar-external-image:provider-result-1',
+  );
+  assert.ok(optionsSeen.every((options) => (
+    options.upsert === true &&
+    options.new === true &&
+    options.setDefaultsOnInsert === true
+  )));
+});
+
+test('distinct ImageGeneration requests remain distinct GeneratedImage records', async () => {
+  const documents = new Map();
+  const generatedImageModel = {
+    async findOneAndUpdate(filter, update) {
+      const key = String(filter._id);
+      documents.set(key, { _id: key, ...structuredClone(update.$setOnInsert) });
+      return documents.get(key);
+    },
+  };
+
+  await __testOnly__.persistFinalGeneratedImageForRequest(
+    { _id: 'image-generation-a', apiRequestId: 'provider-a' },
+    { url: 'a.png', generationType: 'generate' },
+    { generatedImageModel },
+  );
+  await __testOnly__.persistFinalGeneratedImageForRequest(
+    { _id: 'image-generation-b', apiRequestId: 'provider-b' },
+    { url: 'b.png', generationType: 'generate' },
+    { generatedImageModel },
+  );
+
+  assert.equal(documents.size, 2);
+});
+
+test('GeneratedImage duplicate-key races resolve to the already-persisted final record', async () => {
+  const existing = {
+    _id: 'image-generation-race',
+    url: 'winner.png',
+    generationType: 'generate',
+  };
+  const generatedImageModel = {
+    async findOneAndUpdate() {
+      const error = new Error('duplicate key');
+      error.code = 11000;
+      throw error;
+    },
+    async findById(requestId) {
+      assert.equal(requestId, 'image-generation-race');
+      return existing;
+    },
+  };
+
+  const result = await __testOnly__.persistFinalGeneratedImageForRequest(
+    { _id: 'image-generation-race', apiRequestId: 'provider-race' },
+    { url: 'loser.png', generationType: 'generate' },
+    { generatedImageModel },
+  );
+
+  assert.equal(result, existing);
+});
+
 test('standalone image retries advance to the next configured adapter and clear stale request state', () => {
   const previous = {
     CURRENT_ENV: process.env.CURRENT_ENV,

@@ -275,9 +275,6 @@ export async function requestGenerateCustomAIVideo(userId, payload) {
     await requestRenderGenericVideo(payload);
   } else if (
     payload.model === 'SEEDANCEI2V' ||
-    payload.model === 'SEEDANCE2.0I2V' ||
-    payload.model === 'SEEDANCE2.0T2V' ||
-    payload.model === 'SEEDANCET2V' ||
     payload.model === 'HAPPYHORSEI2V'
   ) {
     await requestRenderGenericVideo(payload);

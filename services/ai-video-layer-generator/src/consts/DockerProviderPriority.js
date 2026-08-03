@@ -14,31 +14,31 @@ export const DOCKER_VIDEO_PROVIDER = Object.freeze({
 export const DOCKER_VIDEO_PROVIDER_PRIORITY_BY_MODEL = Object.freeze({
   'VEO3.1': [
     DOCKER_VIDEO_PROVIDER.GOOGLE_CLOUD,
-    DOCKER_VIDEO_PROVIDER.SAMSAR,
     DOCKER_VIDEO_PROVIDER.GMICLOUD,
+    DOCKER_VIDEO_PROVIDER.SAMSAR,
     DOCKER_VIDEO_PROVIDER.FAL,
   ],
   'VEO3.1FAST': [
     DOCKER_VIDEO_PROVIDER.GOOGLE_CLOUD,
-    DOCKER_VIDEO_PROVIDER.SAMSAR,
     DOCKER_VIDEO_PROVIDER.GMICLOUD,
+    DOCKER_VIDEO_PROVIDER.SAMSAR,
     DOCKER_VIDEO_PROVIDER.FAL,
   ],
   'VEO3.1I2V': [
     DOCKER_VIDEO_PROVIDER.GOOGLE_CLOUD,
-    DOCKER_VIDEO_PROVIDER.SAMSAR,
     DOCKER_VIDEO_PROVIDER.GMICLOUD,
+    DOCKER_VIDEO_PROVIDER.SAMSAR,
     DOCKER_VIDEO_PROVIDER.FAL,
   ],
   'VEO3.1I2VFAST': [
     DOCKER_VIDEO_PROVIDER.GOOGLE_CLOUD,
-    DOCKER_VIDEO_PROVIDER.SAMSAR,
     DOCKER_VIDEO_PROVIDER.GMICLOUD,
+    DOCKER_VIDEO_PROVIDER.SAMSAR,
     DOCKER_VIDEO_PROVIDER.FAL,
   ],
   'VEO3.1FLIV': [
-    DOCKER_VIDEO_PROVIDER.SAMSAR,
     DOCKER_VIDEO_PROVIDER.GMICLOUD,
+    DOCKER_VIDEO_PROVIDER.SAMSAR,
     DOCKER_VIDEO_PROVIDER.FAL,
   ],
   RUNWAYML: [
@@ -47,58 +47,48 @@ export const DOCKER_VIDEO_PROVIDER_PRIORITY_BY_MODEL = Object.freeze({
   ],
   HAPPYHORSEI2V: [
     DOCKER_VIDEO_PROVIDER.ALIBABA_CLOUD,
-    DOCKER_VIDEO_PROVIDER.SAMSAR,
     DOCKER_VIDEO_PROVIDER.GMICLOUD,
+    DOCKER_VIDEO_PROVIDER.SAMSAR,
     DOCKER_VIDEO_PROVIDER.FAL,
   ],
   SEEDANCEI2V: [
-    DOCKER_VIDEO_PROVIDER.SAMSAR,
     DOCKER_VIDEO_PROVIDER.GMICLOUD,
-    DOCKER_VIDEO_PROVIDER.FAL,
-  ],
-  'SEEDANCE2.0I2V': [
     DOCKER_VIDEO_PROVIDER.SAMSAR,
-    DOCKER_VIDEO_PROVIDER.GMICLOUD,
-    DOCKER_VIDEO_PROVIDER.FAL,
-  ],
-  'SEEDANCE2.0T2V': [
-    DOCKER_VIDEO_PROVIDER.SAMSAR,
-    DOCKER_VIDEO_PROVIDER.GMICLOUD,
     DOCKER_VIDEO_PROVIDER.FAL,
   ],
   KLINGIMGTOVID3PRO: [
-    DOCKER_VIDEO_PROVIDER.SAMSAR,
     DOCKER_VIDEO_PROVIDER.GMICLOUD,
+    DOCKER_VIDEO_PROVIDER.SAMSAR,
     DOCKER_VIDEO_PROVIDER.FAL,
   ],
   KLINGIMGTOVIDTURBO: [
-    DOCKER_VIDEO_PROVIDER.SAMSAR,
     DOCKER_VIDEO_PROVIDER.GMICLOUD,
+    DOCKER_VIDEO_PROVIDER.SAMSAR,
     DOCKER_VIDEO_PROVIDER.FAL,
   ],
   KLINGIMGTOVIDPRO: [
-    DOCKER_VIDEO_PROVIDER.SAMSAR,
     DOCKER_VIDEO_PROVIDER.GMICLOUD,
+    DOCKER_VIDEO_PROVIDER.SAMSAR,
     DOCKER_VIDEO_PROVIDER.FAL,
   ],
   'KLINGIMGTOVID2.1MASTER': [
-    DOCKER_VIDEO_PROVIDER.SAMSAR,
     DOCKER_VIDEO_PROVIDER.GMICLOUD,
+    DOCKER_VIDEO_PROVIDER.SAMSAR,
     DOCKER_VIDEO_PROVIDER.FAL,
   ],
   'KLINGIMGTOVID2.1PRO': [
-    DOCKER_VIDEO_PROVIDER.SAMSAR,
     DOCKER_VIDEO_PROVIDER.GMICLOUD,
+    DOCKER_VIDEO_PROVIDER.SAMSAR,
     DOCKER_VIDEO_PROVIDER.FAL,
   ],
   'KLINGIMGTOVID2.1STANDARD': [
-    DOCKER_VIDEO_PROVIDER.SAMSAR,
     DOCKER_VIDEO_PROVIDER.GMICLOUD,
+    DOCKER_VIDEO_PROVIDER.SAMSAR,
     DOCKER_VIDEO_PROVIDER.FAL,
   ],
   HAILUOPRO: [
-    DOCKER_VIDEO_PROVIDER.SAMSAR,
     DOCKER_VIDEO_PROVIDER.GMICLOUD,
+    DOCKER_VIDEO_PROVIDER.SAMSAR,
     DOCKER_VIDEO_PROVIDER.FAL,
   ],
 });
@@ -121,9 +111,6 @@ export const DOCKER_FAL_VIDEO_MODELS = Object.freeze([
   'MAGIDISTILLED',
   'VIDUI2V',
   'SEEDANCEI2V',
-  'SEEDANCE2.0I2V',
-  'SEEDANCE2.0T2V',
-  'SEEDANCET2V',
   'HAPPYHORSEI2V',
   'MIRELOAI',
   'COSMOS3SUPERI2V',
@@ -142,9 +129,6 @@ export const DOCKER_FAL_SOUND_EFFECT_MODELS = Object.freeze([
   'MMAUDIOV2',
   'MIRELOAI',
   'SEEDANCEI2V',
-  'SEEDANCE2.0I2V',
-  'SEEDANCE2.0T2V',
-  'SEEDANCET2V',
   'VEO3.1I2V',
   'VEO3.1I2VFAST',
 ]);
@@ -311,12 +295,19 @@ function hasEnvCredential(...keys) {
   return keys.some((key) => Boolean(normalizeString(process.env[key])));
 }
 
-function hasGmiCloudVideoModelMapping(model, env = process.env) {
+export function hasGmiCloudVideoModelMapping(model, env = process.env) {
   const catalogPath = normalizeString(env.SAMSAR_GENBLAZE_MODEL_CATALOG_PATH);
   if (!catalogPath) return false;
   try {
     const catalog = JSON.parse(fs.readFileSync(catalogPath, 'utf8'));
-    return Boolean(normalizeString(catalog?.models?.[normalizeVideoModelKey(model)]?.video?.modelId));
+    if (normalizeProvider(catalog?.provider) !== DOCKER_VIDEO_PROVIDER.GMICLOUD) {
+      return false;
+    }
+    const normalizedModel = normalizeVideoModelKey(model);
+    const route = catalog?.models?.[normalizedModel]?.video;
+    const modelId = normalizeString(route?.modelId);
+    if (!modelId) return false;
+    return true;
   } catch {
     return false;
   }
@@ -369,8 +360,8 @@ export function hasSamsarVideoCredential() {
   return hasEnvCredential('SAMSAR_API_KEY');
 }
 
-export function hasGmiCloudVideoCredential() {
-  return isTruthyEnv(process.env.SAMSAR_GENBLAZE_ENABLED);
+export function hasGmiCloudVideoCredential(env = process.env) {
+  return isTruthyEnv(env.SAMSAR_GENBLAZE_ENABLED);
 }
 
 export function isVideoProviderConfigured(provider) {

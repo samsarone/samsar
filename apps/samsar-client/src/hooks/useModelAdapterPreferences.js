@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import axios from "axios";
 
+import { IS_STANDALONE_DEPLOYMENT } from "../utils/environment.jsx";
+import { refreshModelAvailabilityCaches } from "../utils/modelAvailabilityRefresh.mjs";
 import { getHeaders } from "../utils/web.jsx";
 import {
   buildModelProviderPriority,
@@ -103,6 +105,9 @@ export function useModelAdapterPreferences({ enabled = false } = {}) {
       );
       const normalizedData = normalizeModelAdapterResponse(response.data);
       setData(normalizedData);
+      if (IS_STANDALONE_DEPLOYMENT) {
+        await refreshModelAvailabilityCaches();
+      }
       return normalizedData;
     } catch (requestError) {
       setError(requestError);

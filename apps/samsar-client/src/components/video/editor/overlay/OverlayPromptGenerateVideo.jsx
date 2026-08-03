@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { FaQuestionCircle } from "react-icons/fa";
 import CommonButton from "../../../common/CommonButton.tsx";
+import ModelAdapterSelect from "../../../common/ModelAdapterSelect.jsx";
 import { useColorMode } from "../../../../contexts/ColorMode.jsx";
 import TextareaAutosize from "react-textarea-autosize";
 import { Tooltip } from "react-tooltip";
@@ -15,14 +16,12 @@ import {
 } from "../../../../constants/ModelPrices.jsx";
 import { useDeploymentModelAvailability } from "../../../../hooks/useDeploymentModelAvailability.js";
 import { filterOptionsForDeploymentModelValues } from "../../../../utils/deploymentProviders.js";
+import { isProviderBilledVideoPricing } from "../../../../utils/videoModelAvailability.mjs";
 import "react-tooltip/dist/react-tooltip.css";
 
 const NATIVE_AUDIO_VIDEO_MODELS = new Set([
   "KLINGIMGTOVID3PRO",
   "KLINGTXTTOVID3PRO",
-  "SEEDANCE2.0I2V",
-  "SEEDANCE2.0T2V",
-  "SEEDANCET2V",
   "VEO3.1",
   "VEO3.1FAST",
   "VEO3.1I2V",
@@ -76,17 +75,19 @@ export default function OverlayPromptGenerateVideo(props) {
   const promptTextareaMaxRows = 4;
 
   const {
+    isStandaloneDeployment: isStandaloneModelFilteringEnabled,
+    videoModelValues,
+    primaryAdapterByModel,
+  } = useDeploymentModelAvailability();
+  const {
     hasImageItem,
     availableModels: locallyAvailableModels,
   } = getVideoGenerationModelDropdownData({
     activeItemList,
     currentLayer,
     sessionDetails,
-  });
-  const {
     isStandaloneDeployment: isStandaloneModelFilteringEnabled,
-    videoModelValues,
-  } = useDeploymentModelAvailability();
+  });
   const availableModels = useMemo(
     () => (
       isStandaloneModelFilteringEnabled
@@ -101,11 +102,7 @@ export default function OverlayPromptGenerateVideo(props) {
   );
   const availableModelKeysSignature = availableModelKeys.join("|");
 
-  const modelOptions = availableModels.map((model) => (
-    <option key={model.key} value={model.key}>
-      {model.name}
-    </option>
-  ));
+  const hasAvailableModels = availableModelKeys.length > 0;
 
   const {
     modelDef: selectedModelDef,
@@ -228,8 +225,7 @@ export default function OverlayPromptGenerateVideo(props) {
     }
   }, [selectedVideoGenerationModel, selectedModelPricing, selectedModelDef, selectedModelDurationUnits]);
 
-  const handleModelChange = (event) => {
-    const newModel = event.target.value;
+  const handleModelChange = (newModel) => {
     setSelectedVideoGenerationModel(newModel);
     localStorage.setItem("defaultVideoModel", newModel);
   };
@@ -286,7 +282,7 @@ export default function OverlayPromptGenerateVideo(props) {
   };
 
   const handleSubmit = () => {
-    if (modelOptions.length === 0) return;
+    if (!hasAvailableModels) return;
 
     const payload = {
       useStartFrame:
@@ -339,6 +335,7 @@ export default function OverlayPromptGenerateVideo(props) {
     : selectedModelPricing;
   const priceObj = getModelPriceForAspect(pricingForSelectedModel, aspectRatio);
   let modelPrice = priceObj ? priceObj.price : 0;
+  const isProviderBilled = isProviderBilledVideoPricing(pricingForSelectedModel);
 
   if (pricingForSelectedModel?.isPerSecondPricing && selectedDuration !== null) {
     modelPrice *= selectedDuration;
@@ -363,20 +360,27 @@ export default function OverlayPromptGenerateVideo(props) {
             <span>Model</span>
             <a
               data-tooltip-id="videoModelCostTooltip"
-              data-tooltip-content={`Currently selected model cost: ${modelPrice} Credits`}
+              data-tooltip-content={
+                isProviderBilled
+                  ? "Provider billed by configured adapter"
+                  : `Currently selected model cost: ${modelPrice} Credits`
+              }
             >
               <FaQuestionCircle className="text-[11px]" />
             </a>
             <Tooltip id="videoModelCostTooltip" place="right" effect="solid" />
           </div>
-          <select
-            onChange={handleModelChange}
-            className={`${selectShell} w-full rounded-md px-2.5 py-2`}
+          <ModelAdapterSelect
+            options={availableModels}
             value={selectedVideoGenerationModel}
-            disabled={modelOptions.length === 0}
-          >
-            {modelOptions}
-          </select>
+            onChange={handleModelChange}
+            primaryAdapterByModel={primaryAdapterByModel}
+            isStandaloneDeployment={isStandaloneModelFilteringEnabled}
+            valueMode="value"
+            hostedControl="native"
+            nativeClassName={`${selectShell} w-full rounded-md px-2.5 py-2`}
+            isDisabled={!hasAvailableModels}
+          />
         </div>
 
         {selectedModelDef?.modelSubTypes?.length > 0 ? (
@@ -550,7 +554,7 @@ export default function OverlayPromptGenerateVideo(props) {
         <CommonButton
           onClick={handleSubmit}
           isPending={aiVideoGenerationPending}
-          isDisabled={modelOptions.length === 0}
+          isDisabled={!hasAvailableModels}
           extraClasses={isPortraitLayout ? "w-full" : "min-w-[140px]"}
         >
           Submit

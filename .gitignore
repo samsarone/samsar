@@ -134,6 +134,8 @@ apps/samsar-client/public/*
 !docs/
 !docs/brand/
 !docs/brand/*.svg
+!docs/readme-diagrams/
+!docs/readme-diagrams/*.png
 
 # local tool output
 .turbo/

@@ -7,6 +7,7 @@ import {
   imageGenerationModelSupportsAspectRatio,
 } from "../../../constants/Types.ts";
 import { useColorMode } from '../../../contexts/ColorMode.jsx';
+import ModelAdapterSelect from '../../common/ModelAdapterSelect.jsx';
 import { useDeploymentModelAvailability } from '../../../hooks/useDeploymentModelAvailability.js';
 import { filterOptionsForDeploymentModelValues } from '../../../utils/deploymentProviders.js';
 import { useUser } from '../../../contexts/UserContext.jsx';
@@ -34,6 +35,7 @@ export default function PromptViewer(props) {
   const {
     isStandaloneDeployment: isStandaloneModelFilteringEnabled,
     imageModelValues,
+    primaryAdapterByModel,
   } = useDeploymentModelAvailability();
   const availableImageModels = useMemo(
     () => {
@@ -103,8 +105,7 @@ export default function PromptViewer(props) {
     setPromptText(e.target.value);
   };
 
-  const handleModelChange = (e) => {
-    const newModel = e.target.value;
+  const handleModelChange = (newModel) => {
     setSelectedModel(newModel);
     localStorage.setItem('defaultImageModel', newModel);
   };
@@ -155,13 +156,6 @@ export default function PromptViewer(props) {
     ? 'border-[#667188] bg-[#151720] text-[#fafafa] focus:border-[#f6c453] focus:outline-none focus:ring-2 focus:ring-[#f6c453]/20'
     : 'border-slate-200 bg-white text-slate-900 placeholder:text-slate-400';
 
-  // Build the model dropdown
-  const modelOptionMap = availableImageModels.map((model) => (
-    <option key={model.key} value={model.key}>
-      {model.name}
-    </option>
-  ));
-
   return (
     <div className={`flex flex-col items-center space-y-2 p-2 rounded-lg ${panelClassName}`}>
       {/* ───────────── Display Cost & Retry Option ───────────── */}
@@ -185,13 +179,19 @@ export default function PromptViewer(props) {
         <div className="inline-flex w-[25%]">
           <div className="text-xs font-bold">Model</div>
         </div>
-        <select
-          onChange={handleModelChange}
+        <ModelAdapterSelect
+          options={availableImageModels}
           value={selectedModel}
-          className={`w-[75%] p-2 border rounded ${fieldClassName}`}
-        >
-          {modelOptionMap}
-        </select>
+          onChange={handleModelChange}
+          primaryAdapterByModel={primaryAdapterByModel}
+          isStandaloneDeployment={isStandaloneModelFilteringEnabled}
+          valueMode="value"
+          hostedControl="native"
+          nativeClassName={`w-[75%] p-2 border rounded ${fieldClassName}`}
+          styles={{
+            container: (provided) => ({ ...provided, width: "75%" }),
+          }}
+        />
       </div>
 
       {/* ───────────── Image Style Dropdown (if model has imageStyles) ───────────── */}

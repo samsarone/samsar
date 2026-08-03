@@ -6,6 +6,7 @@ import {
   buildDockerAvailableModelsFromEnabledProviders,
   buildExpressPipelineAvailability,
   getDockerModelDisplayName,
+  orderDockerProviderKeys,
   resolveDockerModelProvider,
 } from './dockerModelAvailability.js';
 
@@ -19,6 +20,13 @@ const INFERENCE_MODEL_KEYS = Object.freeze([
 function getAvailableInferenceModels(available) {
   return available.models.filter((model) => INFERENCE_MODEL_KEYS.includes(model));
 }
+
+test('GMICloud is displayed before the Samsar adapter', () => {
+  assert.deepEqual(
+    orderDockerProviderKeys([DOCKER_PROVIDER.SAMSAR, DOCKER_PROVIDER.GMI_CLOUD]),
+    [DOCKER_PROVIDER.GMI_CLOUD, DOCKER_PROVIDER.SAMSAR],
+  );
+});
 
 test('Alibaba Cloud alone exposes Qwen, Wan2.7 Pro, and native Happy Horse video', () => {
   const available = buildDockerAvailableModelsFromEnabledProviders([
@@ -119,8 +127,9 @@ test('GMICloud inference is not advertised until both text and vision routes are
 test('GMICloud exposes each credential-scoped exact compatible video model', () => {
   const videoMappings = {
     'VEO3.1FLIV': { video: { modelId: 'veo-3.1-generate-001' } },
-    'SEEDANCE2.0I2V': { video: { modelId: 'seedance-2-0-260128' } },
-    'SEEDANCE2.0T2V': { video: { modelId: 'seedance-2-0-260128' } },
+    'SEEDANCE2.0I2V': {
+      video: { modelId: 'seedance-2-0-260128', operation: 'video.generate' },
+    },
     KLINGIMGTOVID3PRO: { video: { modelId: 'kling-v3-image-to-video' } },
     KLINGIMGTOVIDTURBO: { video: { modelId: 'kling-3.0-turbo-i2v' } },
     KLINGIMGTOVIDPRO: { video: { modelId: 'Kling-Image2Video-V1.6-Pro' } },
@@ -136,14 +145,59 @@ test('GMICloud exposes each credential-scoped exact compatible video model', () 
   for (const model of Object.keys(videoMappings)) {
     assert.equal(available.models.includes(model), true, model);
     assert.equal(available.modelProviders[model], DOCKER_PROVIDER.GMI_CLOUD, model);
-    assert.equal(
-      available.modelProviderPriority[model].indexOf(DOCKER_PROVIDER.GMI_CLOUD) <
-        available.modelProviderPriority[model].indexOf(DOCKER_PROVIDER.FAL),
-      true,
-      model,
-    );
+    if (model === 'SEEDANCE2.0I2V') {
+      assert.deepEqual(available.modelProviderPriority[model], [DOCKER_PROVIDER.GMI_CLOUD]);
+    } else {
+      assert.equal(
+        available.modelProviderPriority[model].indexOf(DOCKER_PROVIDER.GMI_CLOUD) <
+          available.modelProviderPriority[model].indexOf(DOCKER_PROVIDER.FAL),
+        true,
+        model,
+      );
+    }
   }
+  assert.equal(available.models.includes('SEEDANCE2.0T2V'), false);
   assert.equal(available.models.includes('KLINGTXTTOVID3PRO'), false);
+});
+
+test('Seedance 2.0 I2V is unavailable without its credential-scoped GMICloud route', () => {
+  const withoutGmiCloud = buildDockerAvailableModelsFromEnabledProviders([
+    DOCKER_PROVIDER.FAL,
+    DOCKER_PROVIDER.SAMSAR,
+  ]);
+  assert.equal(withoutGmiCloud.models.includes('SEEDANCE2.0I2V'), false);
+
+  const withoutCredentialCatalog = buildDockerAvailableModelsFromEnabledProviders([
+    DOCKER_PROVIDER.GMI_CLOUD,
+  ]);
+  assert.equal(withoutCredentialCatalog.models.includes('SEEDANCE2.0I2V'), false);
+
+  const withoutExactRoute = buildDockerAvailableModelsFromEnabledProviders([
+    DOCKER_PROVIDER.GMI_CLOUD,
+    DOCKER_PROVIDER.FAL,
+    DOCKER_PROVIDER.SAMSAR,
+  ], { gmiCloudModelMappings: {} });
+  assert.equal(withoutExactRoute.models.includes('SEEDANCE2.0I2V'), false);
+
+  const withWrongRoute = buildDockerAvailableModelsFromEnabledProviders([
+    DOCKER_PROVIDER.GMI_CLOUD,
+  ], {
+    gmiCloudModelMappings: {
+      'SEEDANCE2.0I2V': { video: { modelId: 'seedance-2-0-preview' } },
+    },
+  });
+  assert.equal(withWrongRoute.models.includes('SEEDANCE2.0I2V'), false);
+
+  const withWrongOperation = buildDockerAvailableModelsFromEnabledProviders([
+    DOCKER_PROVIDER.GMI_CLOUD,
+  ], {
+    gmiCloudModelMappings: {
+      'SEEDANCE2.0I2V': {
+        video: { modelId: 'seedance-2-0-260128', operation: 'video.status' },
+      },
+    },
+  });
+  assert.equal(withWrongOperation.models.includes('SEEDANCE2.0I2V'), false);
 });
 
 test('GMICloud exposes only credential-scoped exact speech routes with audio actions', () => {
@@ -162,13 +216,13 @@ test('GMICloud exposes only credential-scoped exact speech routes with audio act
   assert.equal(available.modelProviders.ELEVENLABS, DOCKER_PROVIDER.GMI_CLOUD);
   assert.deepEqual(available.modelProviderPriority.OPENAI_TTS, [
     DOCKER_PROVIDER.OPENAI,
-    DOCKER_PROVIDER.SAMSAR,
     DOCKER_PROVIDER.GMI_CLOUD,
+    DOCKER_PROVIDER.SAMSAR,
   ]);
   assert.deepEqual(available.modelProviderPriority.ELEVENLABS, [
     DOCKER_PROVIDER.ELEVENLABS,
-    DOCKER_PROVIDER.SAMSAR,
     DOCKER_PROVIDER.GMI_CLOUD,
+    DOCKER_PROVIDER.SAMSAR,
     DOCKER_PROVIDER.FAL,
   ]);
 });
@@ -183,7 +237,7 @@ test('Samsar keeps moderation available when OpenRouter owns inference routing',
   assert.equal(available.actions.includes('moderation'), true);
 });
 
-test('validated GMI inference is inserted after Samsar and before OpenRouter only for mapped models', () => {
+test('validated GMI inference is preferred over Samsar only for mapped models', () => {
   const enabledProviders = [
     DOCKER_PROVIDER.OPENROUTER,
     DOCKER_PROVIDER.SAMSAR,
@@ -200,11 +254,11 @@ test('validated GMI inference is inserted after Samsar and before OpenRouter onl
 
   assert.deepEqual(available.modelProviderPriority['gpt-5.6-sol'], [
     DOCKER_PROVIDER.OPENAI,
-    DOCKER_PROVIDER.SAMSAR,
     DOCKER_PROVIDER.GMI_CLOUD,
+    DOCKER_PROVIDER.SAMSAR,
     DOCKER_PROVIDER.OPENROUTER,
   ]);
-  assert.equal(available.modelProviders['gpt-5.6-sol'], DOCKER_PROVIDER.SAMSAR);
+  assert.equal(available.modelProviders['gpt-5.6-sol'], DOCKER_PROVIDER.GMI_CLOUD);
   assert.deepEqual(available.modelProviderPriority['gemini-3.1-pro'], [
     DOCKER_PROVIDER.GOOGLE_CLOUD,
     DOCKER_PROVIDER.OPENROUTER,
@@ -220,7 +274,7 @@ test('no enabled provider exposes no Qwen model', () => {
   assert.equal(available.modelProviders['QWEN3.7'], undefined);
 });
 
-test('Qwen priority is native Alibaba, Samsar, GMICloud, then OpenRouter', () => {
+test('Qwen priority is native Alibaba, GMICloud, Samsar, then OpenRouter', () => {
   const enabledProviders = [
     DOCKER_PROVIDER.SAMSAR,
     DOCKER_PROVIDER.GMI_CLOUD,
@@ -236,8 +290,8 @@ test('Qwen priority is native Alibaba, Samsar, GMICloud, then OpenRouter', () =>
   assert.equal(available.modelProviders['QWEN3.7'], DOCKER_PROVIDER.ALIBABA_CLOUD);
   assert.deepEqual(available.modelProviderPriority['QWEN3.7'], [
     DOCKER_PROVIDER.ALIBABA_CLOUD,
-    DOCKER_PROVIDER.SAMSAR,
     DOCKER_PROVIDER.GMI_CLOUD,
+    DOCKER_PROVIDER.SAMSAR,
     DOCKER_PROVIDER.OPENROUTER,
   ]);
 
@@ -247,6 +301,10 @@ test('Qwen priority is native Alibaba, Samsar, GMICloud, then OpenRouter', () =>
   );
   assert.equal(
     resolveDockerModelProvider('QWEN3.7', [DOCKER_PROVIDER.GMI_CLOUD, DOCKER_PROVIDER.OPENROUTER]),
+    DOCKER_PROVIDER.GMI_CLOUD,
+  );
+  assert.equal(
+    resolveDockerModelProvider('QWEN3.7', [DOCKER_PROVIDER.SAMSAR, DOCKER_PROVIDER.GMI_CLOUD]),
     DOCKER_PROVIDER.GMI_CLOUD,
   );
 });
@@ -282,7 +340,7 @@ test('Kimi K3 priority is the native Kimi API, then Samsar', () => {
   }
 });
 
-test('GPT Image 2 priority places validated GMI below OpenAI and Samsar but above FAL', () => {
+test('GPT Image 2 priority places validated GMI below OpenAI but above Samsar and FAL', () => {
   const available = buildDockerAvailableModelsFromEnabledProviders([
     DOCKER_PROVIDER.OPENAI,
     DOCKER_PROVIDER.FAL,
@@ -296,8 +354,8 @@ test('GPT Image 2 priority places validated GMI below OpenAI and Samsar but abov
 
   assert.deepEqual(available.modelProviderPriority.GPTIMAGE2, [
     DOCKER_PROVIDER.OPENAI,
-    DOCKER_PROVIDER.SAMSAR,
     DOCKER_PROVIDER.GMI_CLOUD,
+    DOCKER_PROVIDER.SAMSAR,
     DOCKER_PROVIDER.FAL,
   ]);
   assert.equal(available.modelProviders.GPTIMAGE2, DOCKER_PROVIDER.OPENAI);
@@ -307,7 +365,7 @@ test('GPT Image 2 priority places validated GMI below OpenAI and Samsar but abov
   );
 });
 
-test('credential-scoped image edit routes place GMI below native and Samsar but above FAL', () => {
+test('credential-scoped image edit routes place GMI below native but above Samsar and FAL', () => {
   const available = buildDockerAvailableModelsFromEnabledProviders([
     DOCKER_PROVIDER.OPENAI,
     DOCKER_PROVIDER.GOOGLE_CLOUD,
@@ -325,18 +383,18 @@ test('credential-scoped image edit routes place GMI below native and Samsar but 
 
   assert.deepEqual(available.modelProviderPriority.GPTIMAGE2EDIT, [
     DOCKER_PROVIDER.OPENAI,
-    DOCKER_PROVIDER.SAMSAR,
     DOCKER_PROVIDER.GMI_CLOUD,
+    DOCKER_PROVIDER.SAMSAR,
   ]);
   assert.deepEqual(available.modelProviderPriority.NANOBANANA2EDIT, [
     DOCKER_PROVIDER.GOOGLE_CLOUD,
-    DOCKER_PROVIDER.SAMSAR,
     DOCKER_PROVIDER.GMI_CLOUD,
+    DOCKER_PROVIDER.SAMSAR,
     DOCKER_PROVIDER.FAL,
   ]);
   assert.deepEqual(available.modelProviderPriority.BRIA_ERASER, [
-    DOCKER_PROVIDER.SAMSAR,
     DOCKER_PROVIDER.GMI_CLOUD,
+    DOCKER_PROVIDER.SAMSAR,
     DOCKER_PROVIDER.FAL,
   ]);
   assert.equal(available.actions.includes('image_edit'), true);

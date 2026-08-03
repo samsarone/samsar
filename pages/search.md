@@ -17,7 +17,7 @@ Samsar search is built on reusable embedding templates. A template is created fr
 | `POST /v1/chat/create_embedding` | `records`, `data`, `items`, `json`, `documents`, or `urls` | Generic create endpoint. Records must be a non-empty array or URL input must contain at least one URL. |
 | `POST /v1/chat/create_embedding_from_url` | `urls`, `url_list`, `source_urls`, or `url` | Crawls URL sources and returns processed/skipped/crawl metadata when available. |
 | `POST /v1/chat/generate_embeddings_from_plain_text` | `plain_text`, `plain_texts`, `texts`, `documents`, `items`, `entries`, or text-like content fields | Creates templates from plain text. |
-| `POST /v1/chat/update_embedding` | `template_id` plus records | Replaces or updates records for an existing template. |
+| `POST /v1/chat/update_embedding` | `template_id` plus records | Upserts submitted source IDs (replaces matching IDs and adds new IDs); other template records remain. |
 
 Common optional fields:
 

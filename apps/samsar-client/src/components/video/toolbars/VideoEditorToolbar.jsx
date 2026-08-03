@@ -49,6 +49,7 @@ import PromptViewer from './PromptViewer.jsx';
 import VideoEditorDefaultsViewer from './VideoEditorDefaultsViewer.jsx';
 import VideoPromptGenerator from './VideoPromptGenerator.jsx';
 import SingleSelect from '../../common/SingleSelect.jsx';
+import ModelAdapterSelect from '../../common/ModelAdapterSelect.jsx';
 
 import { useAlertDialog } from '../../../contexts/AlertDialogContext.jsx';
 import VideoLipSyncOptionsViewer from './ai_video/VideoLipSyncOptionsViewer.jsx';
@@ -59,13 +60,14 @@ import {
   getGoogleTTSVoiceDetails,
 } from '../../../hooks/useGoogleTTSSpeakers.js';
 import { useAudioProviderAvailability } from '../../../hooks/useAudioProviderAvailability.js';
+import { useDeploymentModelAvailability } from '../../../hooks/useDeploymentModelAvailability.js';
 import { filterMusicProvidersForAudioAvailability } from '../../../constants/audioProviderAvailability.js';
 import { resolveStudioVideoToolbarMode } from '../util/studioVideoLayers.mjs';
 import { hasActionableStudioLayer } from '../util/studioSceneLifecycle.mjs';
 
 const SOUND_EFFECT_MODEL_OPTIONS = [
   { value: 'SDAUDIO', label: 'Stable Audio' },
-  { value: 'CUSTOM_TEXT_TO_SOUND_EFFECT', label: 'Custom Sound Effect' },
+  { value: 'CUSTOM_TEXT_TO_SOUND_EFFECT', label: 'Custom Sound Effect', adapterKey: 'custom' },
 ];
 
 function resolveSpeakerProvider(speaker = {}) {
@@ -270,6 +272,10 @@ export default function VideoEditorToolbar(props) {
 
   const [speakerType, setSpeakerType] = useState(null);
   const { audioAvailability } = useAudioProviderAvailability();
+  const {
+    isStandaloneDeployment,
+    primaryAdapterByModel,
+  } = useDeploymentModelAvailability();
   const availableMusicProviders = useMemo(
     () => filterMusicProvidersForAudioAvailability(MUSIC_PROVIDERS, audioAvailability),
     [audioAvailability]
@@ -1266,19 +1272,37 @@ export default function VideoEditorToolbar(props) {
                 <label className={compactFieldLabelClass} htmlFor="musicProvider">
                   Provider
                 </label>
-                <SingleSelect
+                <ModelAdapterSelect
                   name="musicProvider"
                   options={availableMusicProviders.map(provider => ({
                     value: provider.key,
-                    label: provider.name
+                    label: provider.name,
+                    adapterModelKey: provider.key,
+                    adapterKey: provider.key === 'CUSTOM_TEXT_TO_MUSIC'
+                      ? 'custom'
+                      : undefined,
+                    fallbackAdapterKey: provider.key === 'AUDIOCRAFT' ? 'native' : undefined,
+                    fallbackAdapterLabel: provider.key === 'AUDIOCRAFT'
+                      ? 'AudioCraft native adapter'
+                      : undefined,
                   }))}
                   value={currentMusicProvider
                     ? {
                       value: currentMusicProvider.key,
-                      label: currentMusicProvider.name
+                      label: currentMusicProvider.name,
+                      adapterModelKey: currentMusicProvider.key,
+                      adapterKey: currentMusicProvider.key === 'CUSTOM_TEXT_TO_MUSIC'
+                        ? 'custom'
+                        : undefined,
+                      fallbackAdapterKey: currentMusicProvider.key === 'AUDIOCRAFT' ? 'native' : undefined,
+                      fallbackAdapterLabel: currentMusicProvider.key === 'AUDIOCRAFT'
+                        ? 'AudioCraft native adapter'
+                        : undefined,
                     }
                     : null}
                   onChange={handleMusicProviderChange}
+                  primaryAdapterByModel={primaryAdapterByModel}
+                  isStandaloneDeployment={isStandaloneDeployment}
                   truncateLabels={isCollapsedSidebarView}
                 />
               </div>
@@ -1444,13 +1468,15 @@ export default function VideoEditorToolbar(props) {
               <label className={`text-xs ${text2Color}`} htmlFor="soundEffectModel">
                 Provider
               </label>
-              <SingleSelect
+              <ModelAdapterSelect
                 name="soundEffectModel"
                 options={SOUND_EFFECT_MODEL_OPTIONS}
                 value={selectedSoundEffectModel}
                 onChange={(selectedOption) =>
                   setSelectedSoundEffectModel(selectedOption || SOUND_EFFECT_MODEL_OPTIONS[0])
                 }
+                primaryAdapterByModel={primaryAdapterByModel}
+                isStandaloneDeployment={isStandaloneDeployment}
                 isSearchable={false}
                 truncateLabels={isCollapsedSidebarView}
               />

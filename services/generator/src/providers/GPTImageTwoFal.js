@@ -73,7 +73,6 @@ export async function submitFalGPTImageTwoRequest(payload = {}, dependencies = {
   } catch (error) {
     const message = `Fal GPT Image 2 submission failed: ${error?.message || 'Unknown provider error'}`;
     logger.error('[GPTImageTwoFal] submit failed:', error);
-    await unlockRequest(imageGenerationModel, _id);
     return { image: null, error: message };
   }
 }
@@ -102,7 +101,6 @@ export async function pollFalGPTImageTwoRequest(payload = {}, dependencies = {})
         statusResponse,
         `Fal GPT Image 2 request ${status.toLowerCase()}.`,
       );
-      await unlockRequest(imageGenerationModel, _id);
       return { image: null, error: message };
     }
 
@@ -140,7 +138,6 @@ export async function pollFalGPTImageTwoRequest(payload = {}, dependencies = {})
   } catch (error) {
     const message = `Fal GPT Image 2 result failed: ${error?.message || 'Unknown provider error'}`;
     logger.error('[GPTImageTwoFal] poll failed:', error);
-    await unlockRequest(imageGenerationModel, _id);
     return { image: null, error: message };
   }
 }

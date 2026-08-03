@@ -102,13 +102,14 @@ test('Qwen stays native when a DashScope key is configured', () => {
   assert.equal(shouldUseSamsarExternalInference({ model: 'QWEN3.7' }), false);
 });
 
-test('Qwen uses GMICloud through GenBlaze before OpenRouter', (t) => {
+test('Qwen uses GMICloud through GenBlaze before Samsar and OpenRouter', (t) => {
   const { catalogPath, directory } = createTestGenblazeCatalog();
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
   ENV_KEYS.forEach((key) => delete process.env[key]);
   process.env.CURRENT_ENV = 'docker';
   process.env.SAMSAR_GENBLAZE_ENABLED = 'true';
   process.env.SAMSAR_GENBLAZE_MODEL_CATALOG_PATH = catalogPath;
+  process.env.SAMSAR_API_KEY = 'samsar-test-key';
   process.env.OPENROUTER_API_KEY = 'openrouter-test-key';
 
   assert.equal(
@@ -156,7 +157,7 @@ test('Kimi K3 aliases never route through OpenRouter, even when explicitly autho
   }
 });
 
-test('Samsar stays ahead of third-party Qwen adapters in Docker', () => {
+test('Samsar stays ahead of OpenRouter for Qwen in Docker', () => {
   ENV_KEYS.forEach((key) => delete process.env[key]);
   process.env.CURRENT_ENV = 'docker';
   process.env.OPENROUTER_API_KEY = 'openrouter-test-key';

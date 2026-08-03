@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { FaPlus, FaStar } from 'react-icons/fa';
+import { FaPlus, FaStar, FaTimes } from 'react-icons/fa';
 import { useColorMode } from '../../contexts/ColorMode.jsx';
 import { MdExplore, MdCreateNewFolder } from 'react-icons/md';
 import SingleSelect from './SingleSelect.jsx';
@@ -15,6 +15,7 @@ import {
 import { useLocalization } from '../../contexts/LocalizationContext.jsx';
 
 const CUSTOM_CANVAS_OPTION_VALUE = '__custom_canvas__';
+const NEXT_VIDEO_SESSION_INDEX_STORAGE_KEY = 'nextVideoSessionIndex';
 const FRIENDLY_PROJECT_PREFIXES = [
   'Sunlit',
   'Velvet',
@@ -44,6 +45,18 @@ const getRandomFriendlyProjectName = () => {
   const prefix = FRIENDLY_PROJECT_PREFIXES[Math.floor(Math.random() * FRIENDLY_PROJECT_PREFIXES.length)];
   const suffix = FRIENDLY_PROJECT_SUFFIXES[Math.floor(Math.random() * FRIENDLY_PROJECT_SUFFIXES.length)];
   return `${prefix} ${suffix}`;
+};
+
+const getStoredVideoSessionIndex = () => {
+  if (typeof window === 'undefined') {
+    return 1;
+  }
+
+  const storedIndex = Number.parseInt(
+    window.localStorage.getItem(NEXT_VIDEO_SESSION_INDEX_STORAGE_KEY) || '',
+    10
+  );
+  return Number.isFinite(storedIndex) && storedIndex > 0 ? storedIndex : 1;
 };
 
 function AddSessionDropdown(props) {
@@ -82,6 +95,7 @@ function AddSessionDropdown(props) {
   const { t } = useLocalization();
   const [isOpen, setIsOpen] = useState(false);
   const [isProjectModalOpen, setIsProjectModalOpen] = useState(false);
+  const [sessionIndex, setSessionIndex] = useState(getStoredVideoSessionIndex);
   const [sessionName, setSessionName] = useState('');
   const [sessionDescription, setSessionDescription] = useState('');
   const [addBackgroundLayer, setAddBackgroundLayer] = useState(false);
@@ -244,13 +258,19 @@ function AddSessionDropdown(props) {
 
   const openVideoProjectModal = () => {
     setIsOpen(false);
-    setSessionName('');
+    setSessionName(`Session ${sessionIndex}`);
     setSessionDescription('');
     setIsProjectModalOpen(true);
   };
 
   const closeProjectModal = () => {
     setIsProjectModalOpen(false);
+  };
+
+  const handleDialogBackdropMouseDown = (event) => {
+    if (event.target === event.currentTarget) {
+      closeProjectModal();
+    }
   };
 
   useEffect(() => {
@@ -290,6 +310,12 @@ function AddSessionDropdown(props) {
         ...(resolvedSessionName ? { sessionName: resolvedSessionName } : {}),
         ...(resolvedSessionDescription ? { sessionDescription: resolvedSessionDescription } : {}),
       });
+      const nextSessionIndex = sessionIndex + 1;
+      setSessionIndex(nextSessionIndex);
+      window.localStorage.setItem(
+        NEXT_VIDEO_SESSION_INDEX_STORAGE_KEY,
+        String(nextSessionIndex)
+      );
       closeProjectModal();
       return;
     }
@@ -382,16 +408,6 @@ function AddSessionDropdown(props) {
         <div className={`absolute right-0 z-[1220] mt-2 min-w-[13rem] max-w-[calc(100vw-1rem)] origin-top-right overflow-hidden rounded-lg
          ${menuSurface}`} >
           <div className="p-1" role="dialog" aria-label={t("common.newProject")}>
-            <div className="p-1">
-              <div>
-                <SingleSelect
-                  options={aspectRatioOptions}
-                  onChange={handleAspectRatioChange}
-                  value={aspectRatio}
-                  compactLayout
-                />
-              </div>
-            </div>
             {showStudioOption && (
               <button
                 type="button"
@@ -455,7 +471,10 @@ function AddSessionDropdown(props) {
             className="fixed inset-0 bg-black/60"
             onClick={closeProjectModal}
           />
-          <div className="relative z-10 flex min-h-full items-start justify-center p-3 sm:items-center sm:p-4">
+          <div
+            className="relative z-10 flex min-h-full items-start justify-center p-3 sm:items-center sm:p-4"
+            onMouseDown={handleDialogBackdropMouseDown}
+          >
             <div
               role="dialog"
               aria-modal="true"
@@ -463,8 +482,33 @@ function AddSessionDropdown(props) {
               className={`max-h-[calc(100dvh-1.5rem)] w-full max-w-xl overflow-y-auto overscroll-contain rounded-xl p-4 shadow-[0_20px_46px_rgba(0,0,0,0.5)] sm:max-h-[calc(100dvh-2rem)] sm:p-6 ${modalSurface}`}
             >
               <form onSubmit={handleCreateSessionSubmit}>
-                <div id="create-project-dialog-title" className="text-lg font-semibold">
-                  {useImageProjectModal ? 'Create new Image session' : 'Create new session'}
+                <div className="flex flex-wrap items-center gap-3">
+                  <div id="create-project-dialog-title" className="min-w-0 flex-1 text-lg font-semibold">
+                    {useImageProjectModal ? 'Create new Image session' : 'Create new session'}
+                  </div>
+                  {!useImageProjectModal && (
+                    <div className="w-[112px] shrink-0" aria-label="Session aspect ratio">
+                      <SingleSelect
+                        options={aspectRatioOptions}
+                        onChange={handleAspectRatioChange}
+                        value={aspectRatio}
+                        compactLayout
+                        isSearchable={false}
+                        name="new-session-aspect-ratio"
+                        styles={{
+                          menuPortal: (provided) => ({ ...provided, zIndex: 11080 }),
+                        }}
+                      />
+                    </div>
+                  )}
+                  <button
+                    type="button"
+                    onClick={closeProjectModal}
+                    aria-label="Close create project dialog"
+                    className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md opacity-75 transition hover:bg-black/10 hover:opacity-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-current dark:hover:bg-white/10"
+                  >
+                    <FaTimes aria-hidden="true" />
+                  </button>
                 </div>
               {useImageProjectModal && (
                 <div className="mt-1 text-sm opacity-80">

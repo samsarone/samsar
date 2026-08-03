@@ -139,28 +139,7 @@ test('Veo image-to-video keeps its single-frame contract outside the FLIV route'
   assert.deepEqual(request.input_urls, ['https://media.example/first.png']);
 });
 
-test('Seedance 2.0 exposes its exact image and text request shapes', () => {
-  const imageRequest = buildGenBlazeVideoRequest({
-    model: 'SEEDANCE2.0I2V',
-    startImage: 'https://media.example/first.png',
-    endImage: 'https://media.example/last.png',
-    duration: 12,
-  });
-  const textRequest = buildGenBlazeVideoRequest({
-    model: 'SEEDANCE2.0T2V',
-    prompt: 'a quiet sunrise',
-    duration: 10,
-  });
-
-  assert.deepEqual(imageRequest.input_urls, [
-    'https://media.example/first.png',
-    'https://media.example/last.png',
-  ]);
-  assert.deepEqual(textRequest.input_urls, []);
-  assert.equal(textRequest.params.duration, 10);
-});
-
-test('Seedance applies model-specific duration and aspect-ratio contracts', () => {
+test('Seedance 1.5 applies its duration and aspect-ratio contract', () => {
   const v15 = buildGenBlazeVideoRequest({
     model: 'SEEDANCEI2V',
     startImage: 'https://media.example/first.png',
@@ -169,28 +148,6 @@ test('Seedance applies model-specific duration and aspect-ratio contracts', () =
   });
   assert.deepEqual(v15.params, {
     duration: 12,
-    generate_audio: false,
-  });
-
-  const v20 = buildGenBlazeVideoRequest({
-    model: 'SEEDANCE2.0T2V',
-    prompt: 'a quiet sunrise',
-    duration: 2,
-    aspectRatio: 'auto',
-  });
-  assert.deepEqual(v20.params, {
-    duration: 4,
-    generate_audio: false,
-    aspect_ratio: 'adaptive',
-  });
-
-  const absentAspect = buildGenBlazeVideoRequest({
-    model: 'SEEDANCE2.0T2V',
-    prompt: 'a quiet sunrise',
-    duration: 99,
-  });
-  assert.deepEqual(absentAspect.params, {
-    duration: 15,
     generate_audio: false,
   });
 });

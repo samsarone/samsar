@@ -282,8 +282,8 @@ test('GenBlaze runtime advertises exact GMICloud Qwen text and vision inference'
     assert.equal(result.modelProviders['QWEN3.7'], 'gmicloud');
     assert.deepEqual(result.modelProviderPriority['QWEN3.7'], [
       'alibabaCloud',
-      'samsar',
       'gmicloud',
+      'samsar',
       'openrouter',
     ]);
   } finally {
@@ -350,6 +350,122 @@ test('Docker retains Qwen with validated GMICloud provenance', () => {
       },
     });
     assert.deepEqual(result.models, ['QWEN3.7']);
+  } finally {
+    fs.rmSync(tempDirectory, { recursive: true, force: true });
+  }
+});
+
+test('GMICloud and FAL availability is a union with shared-model adapter preferences', () => {
+  clearEnv();
+  process.env.SAMSAR_DEPLOYMENT_EDITION = 'standalone';
+  process.env.SAMSAR_RUNTIME = 'container';
+  process.env.SAMSAR_GENBLAZE_ENABLED = 'true';
+  process.env.FAL_API_KEY = 'test-fal-key';
+  const tempDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'samsar-gmi-fal-union-'));
+  process.env.SAMSAR_GENBLAZE_MODEL_CATALOG_PATH = path.join(
+    tempDirectory,
+    'genblaze-model-catalog.json',
+  );
+  process.env.SAMSAR_MODEL_ADAPTER_PREFERENCES_PATH = path.join(
+    tempDirectory,
+    'model-adapter-preferences.json',
+  );
+  fs.writeFileSync(process.env.SAMSAR_GENBLAZE_MODEL_CATALOG_PATH, JSON.stringify({
+    provider: 'gmicloud',
+    models: {
+      GPTIMAGE2: {
+        image: { modelId: 'gpt-image-2-generate', operation: 'image.generate' },
+      },
+      SEEDREAM: {
+        image: { modelId: 'seedream-5.0-pro', operation: 'image.generate' },
+      },
+      SEEDANCEI2V: {
+        video: { modelId: 'seedance-1-5-pro-251215', operation: 'video.generate' },
+      },
+    },
+  }));
+  fs.writeFileSync(process.env.SAMSAR_MODEL_ADAPTER_PREFERENCES_PATH, JSON.stringify({
+    modelProviderPriority: {
+      GPTIMAGE2: ['fal', 'gmicloud'],
+      SEEDANCEI2V: ['gmicloud', 'fal'],
+    },
+  }));
+
+  try {
+    const result = mergeRuntimeInferenceDeploymentAvailability({
+      providers: ['gmicloud', 'fal'],
+      models: [
+        'GPTIMAGE2',
+        'SEEDREAM',
+        'WAN2.7PRO',
+        'SEEDANCEI2V',
+        'COSMOS3SUPERI2V',
+      ],
+      actions: ['image', 'video'],
+      modelProviders: {
+        GPTIMAGE2: 'gmicloud',
+        SEEDREAM: 'gmicloud',
+        'WAN2.7PRO': 'fal',
+        SEEDANCEI2V: 'gmicloud',
+        COSMOS3SUPERI2V: 'fal',
+      },
+      modelProviderPriority: {
+        GPTIMAGE2: ['gmicloud', 'fal'],
+        SEEDREAM: ['gmicloud', 'fal'],
+        'WAN2.7PRO': ['fal'],
+        SEEDANCEI2V: ['gmicloud', 'fal'],
+        COSMOS3SUPERI2V: ['fal'],
+      },
+    });
+
+    assert.deepEqual(result.models, [
+      'GPTIMAGE2',
+      'SEEDREAM',
+      'WAN2.7PRO',
+      'SEEDANCEI2V',
+      'COSMOS3SUPERI2V',
+      'HAPPYHORSEI2V',
+    ]);
+    assert.equal(result.modelProviders.GPTIMAGE2, 'fal');
+    assert.equal(result.modelProviders.SEEDREAM, 'gmicloud');
+    assert.equal(result.modelProviders.SEEDANCEI2V, 'gmicloud');
+    assert.equal(result.modelProviders['WAN2.7PRO'], 'fal');
+    assert.equal(result.modelProviders.COSMOS3SUPERI2V, 'fal');
+    assert.deepEqual(result.modelProviderPriority.GPTIMAGE2, ['fal', 'gmicloud']);
+    assert.deepEqual(result.modelProviderPriority.SEEDANCEI2V, ['gmicloud', 'fal']);
+  } finally {
+    fs.rmSync(tempDirectory, { recursive: true, force: true });
+  }
+});
+
+test('an unavailable preferred GMICloud route falls back without removing the FAL model', () => {
+  clearEnv();
+  process.env.SAMSAR_DEPLOYMENT_EDITION = 'standalone';
+  process.env.SAMSAR_RUNTIME = 'container';
+  process.env.SAMSAR_GENBLAZE_ENABLED = 'true';
+  process.env.FAL_API_KEY = 'test-fal-key';
+  const tempDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'samsar-gmi-fal-fallback-'));
+  process.env.SAMSAR_GENBLAZE_MODEL_CATALOG_PATH = path.join(
+    tempDirectory,
+    'genblaze-model-catalog.json',
+  );
+  fs.writeFileSync(process.env.SAMSAR_GENBLAZE_MODEL_CATALOG_PATH, JSON.stringify({
+    provider: 'gmicloud',
+    models: {},
+  }));
+
+  try {
+    const result = mergeRuntimeInferenceDeploymentAvailability({
+      providers: ['gmicloud', 'fal'],
+      models: ['GPTIMAGE2'],
+      actions: ['image'],
+      modelProviders: { GPTIMAGE2: 'gmicloud' },
+      modelProviderPriority: { GPTIMAGE2: ['gmicloud', 'fal'] },
+    });
+
+    assert.equal(result.models.includes('GPTIMAGE2'), true);
+    assert.equal(result.modelProviders.GPTIMAGE2, 'fal');
+    assert.deepEqual(result.modelProviderPriority.GPTIMAGE2, ['fal']);
   } finally {
     fs.rmSync(tempDirectory, { recursive: true, force: true });
   }
@@ -496,8 +612,8 @@ test('runtime enrichment preserves the installation default order separately fro
     ]);
     assert.deepEqual(result.defaultModelProviderPriority['QWEN3.7'], [
       'alibabaCloud',
-      'samsar',
       'gmicloud',
+      'samsar',
       'openrouter',
     ]);
   } finally {

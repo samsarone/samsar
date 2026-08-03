@@ -34,10 +34,11 @@ router.get('/user_image_generations', async function (req, res) {
     return;
   }
   try {
-    const { page, pageSize, limit } = req.query;
+    const { page, pageSize, limit, finalOnly } = req.query;
     const response = await requestUserImageGenerations(userId, {
       page,
       pageSize: pageSize ?? limit,
+      finalOnly: finalOnly === 'true' || finalOnly === '1',
     });
     const items = Array.isArray(response?.items) ? response.items : [];
     const pagination = response?.pagination ?? {};

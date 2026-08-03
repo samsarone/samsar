@@ -17,6 +17,10 @@ export function isStandaloneEdition(env = process.env) {
   return getDeploymentEdition(env) === 'standalone';
 }
 
+export function shouldBypassGenerationCredits(env = process.env) {
+  return isStandaloneEdition(env);
+}
+
 export function isDockerRuntime(env = process.env) {
   const runtime = normalize(env.SAMSAR_RUNTIME || env.SAMSAR_DEPLOYMENT_RUNTIME);
   if (runtime) return runtime === 'docker';

@@ -60,7 +60,7 @@ test('normalizes video/audio for lip sync, video only for sound effects, and non
     audioLink: '/assets_v2/audio/unused.mp3',
   }, normalize);
   await normalizeSelectedVideoGenerationMediaPayload({
-    model: 'SEEDANCE2.0T2V',
+    model: 'VEO',
     startImage: '/assets_v2/generations/unused-2.png',
   }, normalize);
 

@@ -226,7 +226,6 @@ def test_curated_boundary_contains_only_supported_samsar_contracts():
         "VEO3.1FLIV",
         "SEEDANCEI2V",
         "SEEDANCE2.0I2V",
-        "SEEDANCE2.0T2V",
         "KLINGIMGTOVID3PRO",
         "KLINGIMGTOVIDTURBO",
         "KLINGIMGTOVIDPRO",
@@ -275,6 +274,9 @@ def test_runtime_models_reflect_only_credential_catalog_routes(
             "VEO3.1I2V": {
                 "video": {"modelId": "veo-3.1-generate-001", "operation": "video.generate"}
             },
+            "SEEDANCE2.0I2V": {
+                "video": {"modelId": "seedance-2-0-260128", "operation": "video.generate"}
+            },
             "ELEVENLABS": {
                 "audio": {
                     "modelId": "elevenlabs-tts-multilingual-v2",
@@ -290,6 +292,7 @@ def test_runtime_models_reflect_only_credential_catalog_routes(
     assert [model["id"] for model in models] == [
         "gpt-5.6-sol",
         "GPTIMAGE2",
+        "SEEDANCE2.0I2V",
         "VEO3.1I2V",
         "ELEVENLABS",
     ]
@@ -580,6 +583,7 @@ def test_high_reasoning_and_corresponding_vision_model_are_preserved(
             json={
                 "model": samsar_model,
                 "messages": messages,
+                "reasoning": {"effort": "low"},
                 "reasoning_effort": "high",
                 "max_completion_tokens": 512,
             },
@@ -588,8 +592,58 @@ def test_high_reasoning_and_corresponding_vision_model_are_preserved(
     assert response.status_code == 200
     assert calls[0]["model"] == upstream_model
     assert calls[0]["messages"] == messages
+    assert "reasoning" not in calls[0]["kwargs"]
     assert calls[0]["kwargs"]["reasoning_effort"] == "high"
     assert calls[0]["kwargs"]["max_completion_tokens"] == 512
+
+
+def test_chat_retries_once_without_reasoning_effort_when_gmicloud_rejects_it(
+    settings,
+    fake_bindings,
+    tmp_path,
+):
+    path = write_catalog(
+        tmp_path,
+        {
+            "gpt-5.6-sol": {
+                "text": {
+                    "modelId": "openai/gpt-5.6-sol",
+                    "operation": "chat.completions",
+                },
+                "vision": {
+                    "modelId": "openai/gpt-5.6-sol",
+                    "operation": "chat.completions",
+                },
+            }
+        },
+    )
+    bindings, _, raw_response = fake_bindings
+    calls = []
+
+    async def reject_reasoning_once(model, messages, **kwargs):
+        calls.append({"model": model, "messages": messages, "kwargs": kwargs})
+        if len(calls) == 1:
+            raise FakeProviderError(
+                "GMICloud chat failed (400): Unknown parameter: 'reasoning_effort'"
+            )
+        return SimpleNamespace(raw=raw_response)
+
+    bindings = replace(bindings, achat=reject_reasoning_once)
+    with build_client(settings_with_catalog(settings, path), bindings) as client:
+        response = client.post(
+            "/v1/chat/completions",
+            json={
+                "model": "gpt-5.6-sol",
+                "messages": [{"role": "user", "content": "reason carefully"}],
+                "reasoning": {"effort": "high"},
+            },
+        )
+
+    assert response.status_code == 200
+    assert "reasoning" not in calls[0]["kwargs"]
+    assert calls[0]["kwargs"]["reasoning_effort"] == "high"
+    assert "reasoning" not in calls[1]["kwargs"]
+    assert "reasoning_effort" not in calls[1]["kwargs"]
 
 
 def test_qwen_vision_is_optional_and_fails_clearly_when_not_mapped(
@@ -1018,7 +1072,7 @@ def test_video_input_contracts_enforce_exact_required_frame_counts(
             "VEO3.1I2V": {
                 "video": {"modelId": "veo-3.1-generate-001", "operation": "video.generate"}
             },
-            "SEEDANCE2.0T2V": {
+            "SEEDANCE2.0I2V": {
                 "video": {"modelId": "seedance-2-0-260128", "operation": "video.generate"}
             },
             "KLINGIMGTOVIDPRO": {
@@ -1082,6 +1136,33 @@ def test_video_input_contracts_enforce_exact_required_frame_counts(
         )
         assert i2v_end_frame.status_code == 400
 
+        missing_seedance_source = client.post(
+            "/v1/media/requests",
+            json={
+                "model": "SEEDANCE2.0I2V",
+                "modality": "video",
+                "prompt": "move",
+                "input_urls": [],
+                "params": {},
+            },
+        )
+        assert missing_seedance_source.status_code == 400
+
+        seedance_first_last_frames = client.post(
+            "/v1/media/requests",
+            json={
+                "model": "SEEDANCE2.0I2V",
+                "modality": "video",
+                "prompt": "move",
+                "input_urls": [
+                    "https://example/start.png",
+                    "https://example/end.png",
+                ],
+                "params": {"resolution": "720P"},
+            },
+        )
+        assert seedance_first_last_frames.status_code == 202
+
         missing_kling_source = client.post(
             "/v1/media/requests",
             json={
@@ -1121,18 +1202,17 @@ def test_video_input_contracts_enforce_exact_required_frame_counts(
         )
         assert turbo_end_frame.status_code == 400
 
-        for model in ("SEEDANCE2.0T2V", "HAILUOPRO"):
-            optional_source = client.post(
-                "/v1/media/requests",
-                json={
-                    "model": model,
-                    "modality": "video",
-                    "prompt": "camera move",
-                    "input_urls": [],
-                    "params": {},
-                },
-            )
-            assert optional_source.status_code == 202
+        optional_hailuo_source = client.post(
+            "/v1/media/requests",
+            json={
+                "model": "HAILUOPRO",
+                "modality": "video",
+                "prompt": "camera move",
+                "input_urls": [],
+                "params": {},
+            },
+        )
+        assert optional_hailuo_source.status_code == 202
 
 
 def test_veo_and_hailuo_prompt_requirements_fail_before_upstream_submit(

@@ -214,7 +214,6 @@ export async function submitGenBlazeImageRequest(payload = {}, dependencies = {}
     return null;
   } catch (error) {
     logger.error('[GenBlazeImage] submit failed:', error);
-    await unlock(imageGenerationModel, _id);
     return {
       image: null,
       error: `GMICloud image submission failed: ${error?.message || 'Unknown provider error'}`,
@@ -234,7 +233,6 @@ export async function pollGenBlazeImageRequest(payload = {}, dependencies = {}) 
   await connect();
   await imageGenerationModel.findByIdAndUpdate(_id, { rowLocked: true });
   if (!requestId) {
-    await unlock(imageGenerationModel, _id);
     return { image: null, error: 'GMICloud image request is missing its GenBlaze request id.' };
   }
 
@@ -250,7 +248,6 @@ export async function pollGenBlazeImageRequest(payload = {}, dependencies = {}) 
         response,
         `GMICloud image request ${status || 'failed'}.`,
       );
-      await unlock(imageGenerationModel, _id);
       return { image: null, error: message };
     }
 
@@ -259,7 +256,8 @@ export async function pollGenBlazeImageRequest(payload = {}, dependencies = {}) 
       throw new Error('GMICloud image result returned no image URL.');
     }
     const image = await saveFile(imageUrl);
-    await unlock(imageGenerationModel, _id, { externalProvider: 'gmicloud' });
+    // Keep the request locked while the caller scores and persists the
+    // completed image. The caller owns the final delete or retry unlock.
 
     if (normalizeModel(payload.model) === 'GPTIMAGE2') {
       const output = getGPTImageTwoOutput(
@@ -274,7 +272,6 @@ export async function pollGenBlazeImageRequest(payload = {}, dependencies = {}) 
     return { image, resultUrl: imageUrl, resultUrls: [imageUrl] };
   } catch (error) {
     logger.error('[GenBlazeImage] poll failed:', error);
-    await unlock(imageGenerationModel, _id);
     return {
       image: null,
       error: `GMICloud image result failed: ${error?.message || 'Unknown provider error'}`,

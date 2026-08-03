@@ -1,6 +1,6 @@
 # Recommendations
 
-Recommendations use the same embedding templates as search, but the query asks for similar records instead of keyword-style results. This is useful for product recommendations, content similarity, lead matching, related items, and "more like this" flows.
+Recommendations use the same embedding templates and semantic-search implementation as search. The recommendation endpoints configure that shared path for reference-item similarity and return compact `{id, score}` matches. This is useful for product recommendations, content similarity, lead matching, related items, and "more like this" flows.
 
 ## Docker Services
 
@@ -64,7 +64,7 @@ Response shape:
 | Uses `search_against_embeddings`. | Uses `similar_to_embeddings`. |
 | Requires a text query. | Accepts a text query or structured record. |
 | Returns `results`. | Returns `matches`. |
-| Optimized for finding records matching an intent. | Optimized for finding records similar to a reference item or description. |
+| Supports optional reranking and raw matching details. | Disables LLM reranking and raw details, relaxes strict prefiltering for inferred filters, and returns compact matches. Strict explicit filters can still be vector prefilters; configured soft keys are post-filtered. |
 
 ## Provider Availability
 

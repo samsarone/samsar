@@ -33,8 +33,8 @@ export const DOCKER_AUDIO_PROVIDER_ORDER = Object.freeze([
   'googleCloud',
   'fal',
   'elevenlabs',
-  'samsar',
   'gmicloud',
+  'samsar',
 ]);
 
 function isProviderEnabled(providerConfig = {}) {

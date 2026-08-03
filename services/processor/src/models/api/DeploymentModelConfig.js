@@ -100,6 +100,28 @@ function hasRuntimeGenBlazeInferenceModel(modelMappings, model) {
     hasRuntimeGenBlazeRoute(modelMappings, model, 'vision');
 }
 
+function hasRuntimeGenBlazeModel(modelMappings, model, env = process.env) {
+  const normalizedModel = normalizeDeploymentModel(model);
+  if (['GPT-5.6-SOL', 'GEMINI-3.1-PRO', 'QWEN3.7'].includes(normalizedModel)) {
+    return hasRuntimeGenBlazeInferenceModel(modelMappings, normalizedModel);
+  }
+
+  const modelKey = Object.keys(modelMappings || {}).find(
+    (candidate) => normalizeDeploymentModel(candidate) === normalizedModel,
+  );
+  const routes = modelKey ? modelMappings[modelKey] : null;
+  return Boolean(
+    routes &&
+    typeof routes === 'object' &&
+    Object.values(routes).some((route) => (
+      route &&
+      typeof route === 'object' &&
+      typeof route.modelId === 'string' &&
+      route.modelId.trim()
+    )),
+  );
+}
+
 export function hasRuntimeGenBlazeCatalogRoute(
   model,
   modality,
@@ -224,9 +246,9 @@ function mergeRuntimeInferenceProviderSelections(availability) {
   const hasSamsar = hasEnvCredential('SAMSAR_API_KEY');
   const gmiCloudModelMappings = readRuntimeGenBlazeModelMappings();
   const priorities = {
-    'gpt-5.6-sol': ['openai', 'samsar', 'gmicloud', 'openrouter'],
-    'gemini-3.1-pro': ['googleCloud', 'samsar', 'gmicloud', 'openrouter'],
-    'QWEN3.7': ['alibabaCloud', 'samsar', 'gmicloud', 'openrouter'],
+    'gpt-5.6-sol': ['openai', 'gmicloud', 'samsar', 'openrouter'],
+    'gemini-3.1-pro': ['googleCloud', 'gmicloud', 'samsar', 'openrouter'],
+    'QWEN3.7': ['alibabaCloud', 'gmicloud', 'samsar', 'openrouter'],
     KIMIK3: ['kimi', 'samsar'],
   };
   const configured = {
@@ -250,11 +272,11 @@ function mergeRuntimeInferenceProviderSelections(availability) {
     const configuredDefaultPriority = normalizeStringList(
       availability.defaultModelProviderPriority?.[model],
     );
-    // Qwen's persisted availability predates GMICloud and may contain the old
-    // OpenRouter-before-Samsar order. Rebase that installation default onto
-    // the current hierarchy; the separate user preference file is applied
-    // afterwards and can still override it intentionally.
-    const useCanonicalPriority = model === 'QWEN3.7';
+    // Persisted availability may contain the previous Samsar-before-GMICloud
+    // default. Rebase GMICloud-capable inference models onto the current
+    // hierarchy; the separate user preference file is applied afterwards and
+    // can still override it intentionally.
+    const useCanonicalPriority = providerPriority.includes('gmicloud');
     const effectivePriority = useCanonicalPriority
       ? [
         ...providerPriority,
@@ -387,13 +409,56 @@ export function mergeRuntimeInferenceDeploymentAvailability(value = {}) {
     models: configuredModels,
     modelProviders,
   });
+  const configuredProviderSet = new Set(
+    configuredProviders.map(normalizeDeploymentProvider).filter(Boolean),
+  );
+  const findSavedModelPriority = (model) => {
+    const normalizedModel = normalizeDeploymentModel(model);
+    const entry = Object.entries(modelProviderPriority).find(
+      ([candidate]) => normalizeDeploymentModel(candidate) === normalizedModel,
+    );
+    return entry || null;
+  };
   const hasAuthorizedSavedModel = (model) => {
     const normalizedModel = normalizeDeploymentModel(model);
     const selectedProvider = normalizeDeploymentProvider(
       findModelProvider(modelProviders, normalizedModel),
     );
-    return selectedProvider !== 'gmicloud' ||
-      hasRuntimeGenBlazeInferenceModel(gmiCloudModelMappings, normalizedModel);
+    if (selectedProvider !== 'gmicloud') return true;
+    if (hasRuntimeGenBlazeModel(gmiCloudModelMappings, normalizedModel)) {
+      return true;
+    }
+
+    // A stale or credential-scoped GMICloud catalog must not remove a model
+    // supplied by another enabled adapter. Continue through the configured
+    // per-model priority and promote the first compatible fallback instead.
+    const priorityEntry = findSavedModelPriority(normalizedModel);
+    const fallbackProvider = normalizeStringList(priorityEntry?.[1])
+      .map(normalizeDeploymentProvider)
+      .find((provider) => provider !== 'gmicloud' && configuredProviderSet.has(provider));
+    if (!fallbackProvider) {
+      return false;
+    }
+
+    const modelProviderKey = Object.keys(modelProviders).find(
+      (candidate) => normalizeDeploymentModel(candidate) === normalizedModel,
+    ) || model;
+    modelProviders[modelProviderKey] = fallbackProvider;
+    if (priorityEntry) {
+      modelProviderPriority[priorityEntry[0]] = priorityEntry[1].filter(
+        (provider) => normalizeDeploymentProvider(provider) !== 'gmicloud',
+      );
+    }
+    const defaultPriorityEntry = Object.entries(defaultModelProviderPriority).find(
+      ([candidate]) => normalizeDeploymentModel(candidate) === normalizedModel,
+    );
+    if (defaultPriorityEntry) {
+      defaultModelProviderPriority[defaultPriorityEntry[0]] =
+        defaultPriorityEntry[1].filter(
+          (provider) => normalizeDeploymentProvider(provider) !== 'gmicloud',
+        );
+    }
+    return true;
   };
   const merged = {
     providers: configuredProviders,
@@ -470,10 +535,15 @@ export function mergeRuntimeInferenceDeploymentAvailability(value = {}) {
   }
 
   for (const [model, provider] of Object.entries(merged.modelProviders)) {
-    if (
-      normalizeDeploymentProvider(provider) === 'gmicloud' &&
-      !hasRuntimeGenBlazeInferenceModel(gmiCloudModelMappings, model)
-    ) {
+    if (normalizeDeploymentProvider(provider) !== 'gmicloud') {
+      continue;
+    }
+    const normalizedModel = normalizeDeploymentModel(model);
+    const hasAuthorizedGmiCloudRoute = hasRuntimeGenBlazeModel(
+      gmiCloudModelMappings,
+      normalizedModel,
+    );
+    if (!hasAuthorizedGmiCloudRoute) {
       delete merged.modelProviders[model];
     }
   }
@@ -567,6 +637,8 @@ export function filterModelsForDeploymentAvailability(models = [], availableMode
   }
   const available = new Set(runtimeAvailability.models.map(normalizeDeploymentModel));
   return filterWan27WithoutConfiguredProvider(
-    models.filter((model) => available.has(normalizeDeploymentModel(model?.value || model?.key))),
+    models.filter(
+      (model) => available.has(normalizeDeploymentModel(model?.value || model?.key)),
+    ),
   );
 }

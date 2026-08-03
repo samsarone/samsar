@@ -10,6 +10,8 @@ const generatedImageSchema = new Schema({
   generationType: String,
   model: String,
   aspectRatio: String,
+  sourceRequestId: String,
+  sourceProviderRequestId: String,
 
 }, { timestamps: true });
 

@@ -279,12 +279,18 @@ test('the setup-wizard image owns its Node and Compose dependencies', () => {
   assert.match(dockerfile, /CMD \["node", "server\.mjs"\]/);
 });
 
-test('the Unix launcher forwards only approved provider environment variables', () => {
+test('the Unix launcher forwards only approved setup environment variables', () => {
   const launcher = read('scripts/setup-wizard-docker.sh');
 
   assert.match(launcher, /DEFAULT_PROVIDER_ENV_NAMES=\(/);
   assert.match(launcher, /OPENAI_API_KEY/);
   assert.match(launcher, /GOOGLE_APPLICATION_CREDENTIALS_JSON_B64/);
+  assert.match(launcher, /MONGO_URL/);
+  assert.match(launcher, /SMTP_PASSWORD/);
+  assert.match(launcher, /AWS_SES_SECRET_ACCESS_KEY/);
+  assert.match(launcher, /AWS_SECRET_ACCESS_KEY/);
+  assert.match(launcher, /B2_HOST/);
+  assert.match(launcher, /CLOUDFRONT_PRIVATE_KEY/);
   assert.match(launcher, /SAMSAR_SETUP_PROVIDER_ENV_NAMES/);
   assert.match(launcher, /PROVIDER_ENV_DOCKER_ARGS\+=\(--env "\$name=\$\{!name\}"\)/);
   assert.match(

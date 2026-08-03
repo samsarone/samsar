@@ -77,7 +77,7 @@ export function parseBackblazeS3Endpoint(value) {
   }
 
   if (
-    endpoint.protocol !== 'https:' ||
+    !['http:', 'https:'].includes(endpoint.protocol) ||
     endpoint.username ||
     endpoint.password ||
     endpoint.port ||
@@ -85,19 +85,26 @@ export function parseBackblazeS3Endpoint(value) {
     endpoint.search ||
     endpoint.hash
   ) {
-    throw new Error('Backblaze B2 S3 endpoint must be an HTTPS origin without credentials, a port, path, query, or fragment.');
+    throw new Error('Backblaze B2 S3 endpoint must be an HTTP(S) origin without credentials, a port, path, query, or fragment.');
   }
 
-  const endpointMatch = endpoint.hostname.toLowerCase().match(
+  const hostname = endpoint.hostname.toLowerCase();
+  const endpointMatch = hostname.match(
     /^s3\.([a-z0-9-]+)\.backblazeb2\.com$/i,
   );
-  if (!endpointMatch) {
+  const bucketEndpointMatch = hostname.match(
+    /^(.+)\.s3\.([a-z0-9-]+)\.backblazeb2\.com$/i,
+  );
+  if (!endpointMatch && !bucketEndpointMatch) {
     throw new Error('Backblaze B2 S3 endpoint must look like https://s3.us-east-005.backblazeb2.com.');
   }
 
+  const region = endpointMatch?.[1] || bucketEndpointMatch[2];
+
   return {
-    endpoint: endpoint.origin,
-    region: endpointMatch[1],
+    endpoint: `https://s3.${region}.backblazeb2.com`,
+    region,
+    bucketName: bucketEndpointMatch?.[1] || '',
   };
 }
 
@@ -136,6 +143,12 @@ export function validateExternalStorageConfig(infrastructure = {}) {
 
   if (isBackblazeB2) {
     const backblazeEndpoint = parseBackblazeS3Endpoint(storage.s3Endpoint);
+    if (
+      backblazeEndpoint.bucketName &&
+      backblazeEndpoint.bucketName.toLowerCase() !== normalizeString(storage.mediaBucketName).toLowerCase()
+    ) {
+      throw new Error(`Backblaze B2 S3 bucket endpoint must reference the configured bucket "${normalizeString(storage.mediaBucketName)}".`);
+    }
     const publicUrl = parsePublicStorageUrl({
       ...storage,
       staticCdnUrl: normalizeString(storage.staticCdnUrl) || buildBackblazePublicBucketUrl(

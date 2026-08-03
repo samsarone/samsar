@@ -205,7 +205,6 @@ export async function submitGenBlazeImageEditRequest(payload = {}, dependencies 
     return null;
   } catch (error) {
     logger.error('[GenBlazeImageEdit] submit failed:', error);
-    await unlock(imageGenerationModel, _id);
     return {
       image: null,
       error: `GMICloud image edit submission failed: ${error?.message || 'Unknown provider error'}`,
@@ -226,7 +225,6 @@ export async function pollGenBlazeImageEditRequest(payload = {}, dependencies = 
   await connect();
   await imageGenerationModel.findByIdAndUpdate(_id, { rowLocked: true });
   if (!requestId) {
-    await unlock(imageGenerationModel, _id);
     return {
       image: null,
       error: 'GMICloud image edit request is missing its GenBlaze request id.',
@@ -244,18 +242,16 @@ export async function pollGenBlazeImageEditRequest(payload = {}, dependencies = 
     if (status !== 'succeeded') {
       const message = normalizeString(response?.error?.message || response?.error || response?.message) ||
         `GMICloud image edit request ${status || 'failed'}.`;
-      await unlock(imageGenerationModel, _id);
       return { image: null, error: message, definitiveAdapterFailure: true };
     }
 
     const resultUrl = normalizeString(response?.assets?.[0]?.url);
     if (!resultUrl) throw new Error('GMICloud image edit result returned no image URL.');
     const image = await saveFile(resultUrl);
-    await unlock(imageGenerationModel, _id, { externalProvider: 'gmicloud' });
+    // Keep the request locked until downstream edit persistence completes.
     return { image, resultUrl, resultUrls: [resultUrl] };
   } catch (error) {
     logger.error('[GenBlazeImageEdit] poll failed:', error);
-    await unlock(imageGenerationModel, _id);
     return {
       image: null,
       error: `GMICloud image edit result failed: ${error?.message || 'Unknown provider error'}`,

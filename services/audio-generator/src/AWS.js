@@ -4,7 +4,7 @@ import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import {
   createBackblazeNativeClientFromEnv,
   shouldUseBackblazeNativeApi,
-} from '@samsar/backblaze-native-client';
+} from './utils/BackblazeNativeClient.js';
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';

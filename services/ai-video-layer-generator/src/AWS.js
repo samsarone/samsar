@@ -3,7 +3,7 @@ import { Upload } from "@aws-sdk/lib-storage";
 import {
   createBackblazeNativeClientFromEnv,
   shouldUseBackblazeNativeApi,
-} from '@samsar/backblaze-native-client';
+} from './utils/BackblazeNativeClient.js';
 
 import fs from 'fs';
 import path from 'path';

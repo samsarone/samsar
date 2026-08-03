@@ -4,6 +4,7 @@ import test from 'node:test';
 import {
   buildBackblazePublicBucketUrl,
   LOCAL_MINIO_MEDIA_BUCKET,
+  parseBackblazeS3Endpoint,
   resolveRuntimeMediaBucketName,
   validateExternalStorageConfig,
 } from './storageConfig.mjs';
@@ -12,6 +13,23 @@ test('Backblaze public bucket URL is derived from the bucket and S3 endpoint', (
   assert.equal(
     buildBackblazePublicBucketUrl('customer-media', 's3.us-east-005.backblazeb2.com'),
     'https://customer-media.s3.us-east-005.backblazeb2.com/',
+  );
+});
+
+test('Backblaze endpoint variants normalize to one HTTPS S3 origin', () => {
+  const canonicalEndpoint = 'https://s3.us-east-005.backblazeb2.com';
+  for (const input of [
+    canonicalEndpoint,
+    `${canonicalEndpoint}/`,
+    's3.us-east-005.backblazeb2.com',
+    'http://s3.us-east-005.backblazeb2.com',
+    'https://customer-media.s3.us-east-005.backblazeb2.com',
+  ]) {
+    assert.equal(parseBackblazeS3Endpoint(input).endpoint, canonicalEndpoint);
+  }
+  assert.equal(
+    parseBackblazeS3Endpoint('https://customer-media.s3.us-east-005.backblazeb2.com').bucketName,
+    'customer-media',
   );
 });
 
@@ -109,19 +127,32 @@ test('Backblaze requires an explicit S3 endpoint and derives its region from tha
     }),
     /public bucket URL region must match the S3 endpoint region "us-west-004"/,
   );
+  assert.doesNotThrow(() => validateExternalStorageConfig({
+    storage: buildBackblazeStorage({
+      s3Endpoint: 'https://customer-media.s3.us-east-005.backblazeb2.com',
+    }),
+  }));
   assert.throws(
     () => validateExternalStorageConfig({
       storage: buildBackblazeStorage({
-        s3Endpoint: 'https://customer-media.s3.us-east-005.backblazeb2.com',
+        s3Endpoint: 'https://different-bucket.s3.us-east-005.backblazeb2.com',
       }),
     }),
-    /must look like https:\/\/s3\.us-east-005\.backblazeb2\.com/,
+    /bucket endpoint must reference the configured bucket "customer-media"/,
   );
   assert.doesNotThrow(() => validateExternalStorageConfig({
     storage: buildBackblazeStorage({
       s3Endpoint: 's3.us-east-005.backblazeb2.com',
     }),
   }));
+  assert.throws(
+    () => validateExternalStorageConfig({
+      storage: buildBackblazeStorage({
+        s3Endpoint: 'https://api.backblazeb2.com',
+      }),
+    }),
+    /must look like https:\/\/s3\.us-east-005\.backblazeb2\.com/,
+  );
 });
 
 test('Backblaze native public download URLs must contain the selected bucket', () => {

@@ -13,7 +13,7 @@ import {
 import {
   createBackblazeNativeClientFromEnv,
   shouldUseBackblazeNativeApi,
-} from '@samsar/backblaze-native-client';
+} from '../utils/BackblazeNativeClient.js';
 import fs from 'fs';
 import crypto from 'crypto';
 import path from 'path';

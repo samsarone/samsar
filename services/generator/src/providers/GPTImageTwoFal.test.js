@@ -117,7 +117,7 @@ test('returns Fal provider failures to the shared retry pipeline without termina
   assert.deepEqual(result, { image: null, error: 'Prompt rejected by provider.' });
   assert.deepEqual(updates.at(-1), {
     method: 'findOneAndUpdate',
-    args: [{ _id: 'generation-3' }, { rowLocked: false }],
+    args: [{ _id: 'generation-3' }, { rowLocked: true }],
   });
   for (const update of updates) {
     assert.equal(Object.hasOwn(update.args[1], 'generationStatus'), false);

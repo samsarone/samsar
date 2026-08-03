@@ -7,8 +7,6 @@ const LIP_SYNC_MODELS = new Set([
 ]);
 
 const TEXT_TO_VIDEO_MODELS = new Set([
-  'SEEDANCE2.0T2V',
-  'SEEDANCET2V',
   'VEO',
   'VEO3.1',
   'VEO3.1FAST',
@@ -17,7 +15,6 @@ const TEXT_TO_VIDEO_MODELS = new Set([
 const SOUND_EFFECT_MODELS = new Set(['MMAUDIOV2', 'MIRELOAI']);
 const END_IMAGE_MODELS = new Set([
   'SEEDANCEI2V',
-  'SEEDANCE2.0I2V',
   'VEO3.1FLIV',
   'CUSTOM_IMAGE_TO_VIDEO',
 ]);

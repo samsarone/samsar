@@ -42,8 +42,8 @@ The gateway-side allowlist currently understands these Samsar contracts:
   `NANOBANANAPROEDIT`, `BRIA_ERASER`, `BRIA_GENFILL`;
 - video generation: `VEO3.1`, `VEO3.1FAST`, `VEO3.1I2V`,
   `VEO3.1I2VFAST`, `VEO3.1FLIV`, `SEEDANCEI2V`, `SEEDANCE2.0I2V`,
-  `SEEDANCE2.0T2V`, `KLINGIMGTOVID3PRO`, `KLINGIMGTOVIDTURBO`,
-  `KLINGIMGTOVIDPRO`, `KLINGIMGTOVID2.1MASTER`,
+  `KLINGIMGTOVID3PRO`, `KLINGIMGTOVIDTURBO`, `KLINGIMGTOVIDPRO`,
+  `KLINGIMGTOVID2.1MASTER`,
   `KLINGIMGTOVID2.1PRO`, `KLINGIMGTOVID2.1STANDARD`, `HAILUOPRO`,
   `HAPPYHORSEI2V`;
 - speech: `ELEVENLABS` through the exact
@@ -63,7 +63,10 @@ within BytePlus's model-specific pixel limits; Nano resolution/output format
 become `image_size`/`image_output_format`; Veo uses its camelCase fields; Kling
 v3 uses string duration, `sound=on|off`, and the selected `mode=pro|std`;
 legacy Kling routes accept only their exact 5/10-second fields; Seedance uses
-`ratio`; Hailuo Pro is fixed to the supported six-second `1080P` combination;
+`ratio`. Seedance 2.0 is exposed only as image-to-video through the exact
+`seedance-2-0-260128` route, requires a public first frame, accepts an optional
+last frame, clamps duration to 4–15 seconds, and uses the fixed normalized
+`720p` tier; Hailuo Pro is fixed to the supported six-second `1080P` combination;
 and HappyHorse uses `audio`. Unknown provider parameters are rejected rather
 than silently forwarded. ElevenLabs maps Samsar `prompt` to `text` and
 `voice` to `voice_id`, and accepts only `mp3_44100_128`; OpenAI speech maps
@@ -124,6 +127,10 @@ first/last-frame, Kling maps them to image/image-tail, and HappyHorse maps its
 single input to first-frame. Hailuo's optional source maps to first-frame-image,
 and the exact legacy Kling routes map one source to image without changing the
 external Samsar request shape.
+
+Seedance 2.0 is intentionally unavailable as text-to-video and has no Fal or
+Samsar fallback. The standalone Docker container advertises it only when the
+validated GMICloud credential catalog contains `seedance-2-0-260128`.
 
 ## Configuration
 

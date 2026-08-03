@@ -1,7 +1,18 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { buildDockerAudioAvailability } from './docker-audio-provider-config.mjs';
+import {
+  DOCKER_AUDIO_PROVIDER_ORDER,
+  buildDockerAudioAvailability,
+} from './docker-audio-provider-config.mjs';
+
+test('GMICloud is ordered before the Samsar audio adapter', () => {
+  assert.equal(
+    DOCKER_AUDIO_PROVIDER_ORDER.indexOf('gmicloud') <
+      DOCKER_AUDIO_PROVIDER_ORDER.indexOf('samsar'),
+    true,
+  );
+});
 
 test('GMICloud audio availability is derived only from credential-scoped mappings', () => {
   const withoutMappings = buildDockerAudioAvailability({

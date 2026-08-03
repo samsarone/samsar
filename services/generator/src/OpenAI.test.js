@@ -352,7 +352,7 @@ test('GPT image prompt retries use the shared standalone adapter order', async (
       'create',
       async (request, options) => {
         calls.push('openai');
-        assert.equal(request.model, 'gpt-4o-mini');
+        assert.equal(request.model, 'gpt-5.6-sol');
         assert.equal(options.maxRetries, 0);
         return createResponse('rewritten image prompt');
       },

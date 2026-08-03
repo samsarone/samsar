@@ -15,9 +15,10 @@ import { FaCopy } from 'react-icons/fa';
 import { useColorMode } from '../../contexts/ColorMode.jsx';
 import { useUser } from "../../contexts/UserContext.jsx";
 import CommonButton from '../common/CommonButton.tsx';
-import SingleSelect from "../common/SingleSelect.jsx";
+import ModelAdapterSelect from "../common/ModelAdapterSelect.jsx";
 import { ASSISTANT_MODEL_TYPES } from "../../constants/Types.ts";
 import { getHeaders } from "../../utils/web.jsx";
+import { useDeploymentModelAvailability } from "../../hooks/useDeploymentModelAvailability.js";
 import { useInferenceModelAvailability } from "../../hooks/useInferenceModelAvailability.js";
 import {
   normalizeDeploymentInferenceModelValue,
@@ -153,6 +154,7 @@ export default function AssistantHome(props) {
     assistantModelOptions,
     hasConfiguredInferenceModels,
   } = useInferenceModelAvailability();
+  const { primaryAdapterByModel } = useDeploymentModelAvailability();
   const messagesEndRef = useRef(null);
   const launcherRef = useRef(null);
   const panelRef = useRef(null);
@@ -554,10 +556,12 @@ export default function AssistantHome(props) {
 
               <div className="flex shrink-0 items-center gap-2">
                 <div className="hidden w-40 md:block">
-                  <SingleSelect
+                  <ModelAdapterSelect
                     options={assistantModelOptions}
                     value={assistantModel}
                     onChange={handleAssistantModelChange}
+                    primaryAdapterByModel={primaryAdapterByModel}
+                    isStandaloneDeployment={isStandaloneDeployment}
                     isDisabled={isAssistantModelUnavailable}
                     placeholder={isAssistantModelUnavailable ? "No model configured" : undefined}
                   />
@@ -595,10 +599,12 @@ export default function AssistantHome(props) {
             </div>
 
             <div className="px-4 pt-3 md:hidden">
-              <SingleSelect
+              <ModelAdapterSelect
                 options={assistantModelOptions}
                 value={assistantModel}
                 onChange={handleAssistantModelChange}
+                primaryAdapterByModel={primaryAdapterByModel}
+                isStandaloneDeployment={isStandaloneDeployment}
                 isDisabled={isAssistantModelUnavailable}
                 placeholder={isAssistantModelUnavailable ? "No model configured" : undefined}
               />

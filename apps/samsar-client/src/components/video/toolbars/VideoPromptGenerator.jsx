@@ -1,5 +1,6 @@
 import { useMemo, useState, useEffect } from "react";
 import CommonButton from "../../common/CommonButton.tsx";
+import ModelAdapterSelect from "../../common/ModelAdapterSelect.jsx";
 import {
   VIDEO_GENERATION_MODEL_TYPES,
   PIXVERRSE_VIDEO_STYLES,
@@ -17,13 +18,11 @@ import {
 } from "../../../constants/ModelPrices.jsx";
 import { useDeploymentModelAvailability } from "../../../hooks/useDeploymentModelAvailability.js";
 import { filterOptionsForDeploymentModelValues } from "../../../utils/deploymentProviders.js";
+import { isProviderBilledVideoPricing } from "../../../utils/videoModelAvailability.mjs";
 
 const NATIVE_AUDIO_VIDEO_MODELS = new Set([
   "KLINGIMGTOVID3PRO",
   "KLINGTXTTOVID3PRO",
-  "SEEDANCE2.0I2V",
-  "SEEDANCE2.0T2V",
-  "SEEDANCET2V",
   "VEO3.1",
   "VEO3.1FAST",
   "VEO3.1I2V",
@@ -77,17 +76,19 @@ export default function VideoPromptGenerator(props) {
       : "bg-white text-slate-900 border border-slate-200 shadow-sm";
 
   const {
+    isStandaloneDeployment: isStandaloneModelFilteringEnabled,
+    videoModelValues,
+    primaryAdapterByModel,
+  } = useDeploymentModelAvailability();
+  const {
     hasImageItem,
     availableModels: locallyAvailableModels,
   } = getVideoGenerationModelDropdownData({
     activeItemList,
     currentLayer,
     sessionDetails,
-  });
-  const {
     isStandaloneDeployment: isStandaloneModelFilteringEnabled,
-    videoModelValues,
-  } = useDeploymentModelAvailability();
+  });
   const availableModels = useMemo(
     () => (
       isStandaloneModelFilteringEnabled
@@ -101,12 +102,6 @@ export default function VideoPromptGenerator(props) {
     [availableModels]
   );
   const availableModelKeysSignature = availableModelKeys.join("|");
-
-  const modelOptionMap = availableModels.map((model) => (
-    <option key={model.key} value={model.key}>
-      {model.name}
-    </option>
-  ));
 
   const hasAvailableModels = availableModelKeys.length > 0;
 
@@ -285,8 +280,7 @@ export default function VideoPromptGenerator(props) {
   // ------------------
   //  Handlers
   // ------------------
-  const setSelectedModelDisplay = (evt) => {
-    const newModel = evt.target.value;
+  const setSelectedModelDisplay = (newModel) => {
     setSelectedVideoGenerationModel(newModel);
     localStorage.setItem("defaultVideoModel", newModel);
   };
@@ -395,6 +389,7 @@ export default function VideoPromptGenerator(props) {
     : selectedModelPricing;
   const priceObj = getModelPriceForAspect(modelPricing, aspectRatio);
   let modelPrice = priceObj ? priceObj.price : 0;
+  const isProviderBilled = isProviderBilledVideoPricing(modelPricing);
 
   // Adjust price based on selected duration
   if (modelPricing?.isPerSecondPricing && selectedDuration !== null) {
@@ -417,8 +412,14 @@ export default function VideoPromptGenerator(props) {
       <div className={controlGridClass}>
         <div className={controlGridFullSpanClass}>
           <div className="text-xs font-semibold text-gray-300">
-            This action will incur{" "}
-            <span className="text-blue-300">{modelPrice} Credits</span>
+            {isProviderBilled ? (
+              <span className="text-blue-300">Provider billed by configured adapter</span>
+            ) : (
+              <>
+                This action will incur{" "}
+                <span className="text-blue-300">{modelPrice} Credits</span>
+              </>
+            )}
           </div>
         </div>
 
@@ -471,14 +472,17 @@ export default function VideoPromptGenerator(props) {
         <div className={videoFieldClass}>
           <div className={videoFieldLabelClass}>Model</div>
           <div className="flex w-full items-center mt-1">
-          <select
-            onChange={setSelectedModelDisplay}
-            className={`${selectShell} w-full rounded-md px-3 py-2 bg-transparent`}
+          <ModelAdapterSelect
+            options={availableModels}
             value={selectedVideoGenerationModel}
-            disabled={!hasAvailableModels}
-          >
-            {modelOptionMap}
-          </select>
+            onChange={setSelectedModelDisplay}
+            primaryAdapterByModel={primaryAdapterByModel}
+            isStandaloneDeployment={isStandaloneModelFilteringEnabled}
+            valueMode="value"
+            hostedControl="native"
+            nativeClassName={`${selectShell} w-full rounded-md px-3 py-2 bg-transparent`}
+            isDisabled={!hasAvailableModels}
+          />
         </div>
         </div>
 

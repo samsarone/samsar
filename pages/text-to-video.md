@@ -43,7 +43,7 @@ The route accepts either a raw JSON body or an `input` object:
 | `session_id` | Attach request to an existing session when supported. |
 | `enable_subtitles` or `add_subtitles` | Boolean subtitle control. |
 | `configuration`, `config`, `model_config`, `custom_model_config`, `custom_models` | Custom model/provider configuration. |
-| `webhookUrl` | Callback URL for status updates. |
+| `webhookUrl` | Best-effort terminal success/failure callback URL. |
 | External-user fields | If external-user request signals are present, the route delegates to the external-user handler. |
 
 ## Supported Model Keys
@@ -53,10 +53,10 @@ Express image models:
 | Model |
 | --- |
 | `GPTIMAGE2` |
-| `NANOBANANA2` |
 | `NANOBANANAPRO` |
 | `SEEDREAM` (Seedream 5 Pro) |
-| `CUSTOM_TEXT_TO_IMAGE` |
+| `WAN2.7PRO` |
+| `CUSTOM_TEXT_TO_IMAGE:<adapter-id>` (standalone custom adapter) |
 
 Express video models:
 
@@ -71,6 +71,8 @@ Express video models:
 | `KLINGIMGTOVIDTURBO` | 36 |
 | `HAPPYHORSEI2V` (Happy Horse 1.1 I2V) | 36 |
 
+Standalone deployments can additionally expose provider-billed `SEEDANCE2.0I2V` when its validated adapter is available. It does not use the fixed Samsar credits-per-second table above.
+
 Use the runtime endpoint for the current filtered deployment view:
 
 ```bash
@@ -79,14 +81,14 @@ curl http://localhost:3002/v1/video/supported_models
 
 ## Docker Pipeline
 
-1. `processor` validates request shape, auth, credits, models, and duration.
-2. The request is converted into a video session and queued express video state.
-3. `generator` creates source images from the prompt.
-4. `audio-generator` handles speech, music, and sound effects if required by the generated plan.
-5. `ai-video-layer-generator` handles image-to-video tasks for generated visual layers.
-6. `express-video-listener` watches stage completion, billing state, and render readiness.
-7. `video-generator` renders the final video.
-8. The result is served by the local media gateway or external storage/CDN configuration.
+1. `processor` validates request shape, auth, credits, models, providers, and duration, then persists a durable builder job for a new or reused session.
+2. The builder moderates the prompt, generates the theme once, and generates plus validates the narrative in up to three total attempts. A targeted repair path rewrites oversized speech items when possible.
+3. The completed plan is persisted as scene and audio layers. `generator` scene-image jobs run in parallel with `audio-generator` speech jobs and one backing-track job; initial audio generation does not include sound effects.
+4. `express-video-listener` joins the image, speech, and music gates, charges completed stages, handles configured step-mode pauses, and queues eligible image-to-video work.
+5. `ai-video-layer-generator` submits and polls motion, lip-sync, and later sound-effect jobs. After base motion, the listener runs reflow, conditional lip sync, optional sound effects, optional narrator avatar, and best-effort transcript generation in order.
+6. `frames-processor` renders linear layers or branch-path entries into frame manifests.
+7. `video-generator` composes frames and enabled audio with FFmpeg, uploads the result, and persists the final URL.
+8. The listener charges the final pipeline stage, settles the receipt or external request, records the terminal status, and sends the optional terminal webhook. The result is served by the local media gateway or external storage/CDN configuration.
 
 ## Status
 

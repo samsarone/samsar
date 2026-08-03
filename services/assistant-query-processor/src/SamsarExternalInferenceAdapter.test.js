@@ -11,7 +11,7 @@ import {
   resolveConfiguredInferenceProvider,
 } from './SamsarExternalInferenceAdapter.js';
 
-test('Qwen uses GMICloud through GenBlaze before OpenRouter', (t) => {
+test('Qwen uses GMICloud through GenBlaze before Samsar and OpenRouter', (t) => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'samsar-genblaze-inference-'));
   const catalogPath = path.join(directory, 'genblaze-model-catalog.json');
   fs.writeFileSync(catalogPath, JSON.stringify({
@@ -37,6 +37,7 @@ test('Qwen uses GMICloud through GenBlaze before OpenRouter', (t) => {
   process.env.CURRENT_ENV = 'docker';
   process.env.SAMSAR_GENBLAZE_ENABLED = 'true';
   process.env.SAMSAR_GENBLAZE_MODEL_CATALOG_PATH = catalogPath;
+  process.env.SAMSAR_API_KEY = 'samsar-key';
   process.env.OPENROUTER_API_KEY = 'openrouter-key';
 
   assert.equal(resolveConfiguredInferenceProvider('QWEN3.7'), DOCKER_INFERENCE_PROVIDER.GMICLOUD);

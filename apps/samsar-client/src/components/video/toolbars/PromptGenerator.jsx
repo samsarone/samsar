@@ -10,6 +10,7 @@ import { FaQuestionCircle } from "react-icons/fa";
 import "react-tooltip/dist/react-tooltip.css";
 import { Tooltip } from "react-tooltip";
 import AutoExpandableTextarea from "../../common/AutoExpandableTextarea.jsx";
+import ModelAdapterSelect from "../../common/ModelAdapterSelect.jsx";
 import ImagePayloadAspectRatioSelector from "../../image/ImagePayloadAspectRatioSelector.jsx";
 import { imageAspectRatioOptions } from "../../../constants/ImageAspectRatios.js";
 import { useDeploymentModelAvailability } from "../../../hooks/useDeploymentModelAvailability.js";
@@ -41,6 +42,7 @@ export default function PromptGenerator(props) {
   const {
     isStandaloneDeployment: isStandaloneModelFilteringEnabled,
     imageModelValues,
+    primaryAdapterByModel,
   } = useDeploymentModelAvailability();
   const availableImageModels = useMemo(
     () => {
@@ -171,8 +173,7 @@ export default function PromptGenerator(props) {
   // ------------------------------------------------------------------
   // Handle user selecting a new model from the dropdown
   // ------------------------------------------------------------------
-  const handleModelChange = (evt) => {
-    const newModel = evt.target.value;
+  const handleModelChange = (newModel) => {
     setSelectedGenerationModel(newModel);
     localStorage.setItem("defaultImageModel", newModel);
   };
@@ -236,17 +237,26 @@ export default function PromptGenerator(props) {
               <Tooltip id="modelCostTooltip" place="right" effect="solid" />
             </div>
           </div>
-          <select
-            onChange={handleModelChange}
-            className={selectClass}
+          <ModelAdapterSelect
+            options={availableImageModels}
             value={selectedGenerationModel}
-          >
-            {availableImageModels.map((model) => (
-              <option key={model.key} value={model.key}>
-                {model.name}
-              </option>
-            ))}
-          </select>
+            onChange={handleModelChange}
+            primaryAdapterByModel={primaryAdapterByModel}
+            isStandaloneDeployment={isStandaloneModelFilteringEnabled}
+            valueMode="value"
+            hostedControl="native"
+            nativeClassName={selectClass}
+            styles={{
+              container: (provided) => ({
+                ...provided,
+                ...(isImageStudio
+                  ? { width: 0, flex: "1 1 0%" }
+                  : isSidebarExpanded || isSidebarCollapsed
+                  ? { width: "100%" }
+                  : { width: "75%" }),
+              }),
+            }}
+          />
         </div>
       )}
 

@@ -122,12 +122,6 @@ export async function pollSeedreamRequest(payload, dependencies = {}) {
       logs: true,
     });
   } catch (error) {
-    await imageGenerationModel.findOneAndUpdate({
-      _id: _id
-    }, {
-      rowLocked: false
-    });
-
     return {
       image: null,
       error: `Seedream status check failed: ${error?.message || "Unknown provider error"}`,
@@ -162,12 +156,6 @@ export async function pollSeedreamRequest(payload, dependencies = {}) {
       return { image: imageName };
     } catch (error) {
       logger.error("Error retrieving Seedream image from FAL: ", error);
-      await imageGenerationModel.findOneAndUpdate({
-        _id: _id
-      }, {
-        rowLocked: false
-      });
-
       return { image: null, error: `Seedream image retrieval failed: ${error?.message || "Unknown error"}` };
 
     }
@@ -177,10 +165,6 @@ export async function pollSeedreamRequest(payload, dependencies = {}) {
       responseStatusData?.error ||
       responseStatusData?.logs?.findLast?.((entry) => entry?.message)?.message ||
       'Seedream provider request failed.';
-    await imageGenerationModel.findOneAndUpdate(
-      { _id: _id },
-      { rowLocked: false },
-    );
     return { image: null, error: String(providerMessage) };
   } else {
     await imageGenerationModel.findOneAndUpdate(

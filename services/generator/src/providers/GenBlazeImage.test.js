@@ -213,8 +213,13 @@ test('polls the same job and preserves the existing image result shape', async (
     height: 864,
     preserveOriginalForAiVideo: true,
   });
-  assert.equal(recorder.updates.at(-1).update.externalProvider, 'gmicloud');
-  assert.equal(recorder.updates.at(-1).update.rowLocked, false);
+  assert.deepEqual(recorder.updates, [
+    {
+      method: 'findByIdAndUpdate',
+      id: 'image-row-2',
+      update: { rowLocked: true },
+    },
+  ]);
 });
 
 test('GPT Image 2 polling honors the same snake-case ratio accepted at submission', async () => {
@@ -247,7 +252,7 @@ test('GPT Image 2 polling honors the same snake-case ratio accepted at submissio
   });
 });
 
-test('returns a structured provider failure so shared failover can rotate adapters', async () => {
+test('returns a structured provider failure while retaining ownership for shared failover', async () => {
   const recorder = createModelRecorder();
   const result = await handleGenBlazeImageRequest(
     {
@@ -265,5 +270,11 @@ test('returns a structured provider failure so shared failover can rotate adapte
   );
 
   assert.deepEqual(result, { image: null, error: 'quota exceeded' });
-  assert.equal(recorder.updates.at(-1).update.rowLocked, false);
+  assert.deepEqual(recorder.updates, [
+    {
+      method: 'findByIdAndUpdate',
+      id: 'image-row-3',
+      update: { rowLocked: true },
+    },
+  ]);
 });

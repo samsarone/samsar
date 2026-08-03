@@ -23,6 +23,10 @@ import AssistantHome from '../assistant/AssistantHome.jsx';
 import { IMAGE_MODEL_PRICES } from '../../constants/ModelPrices.jsx';
 import { useDeploymentModelAvailability } from '../../hooks/useDeploymentModelAvailability.js';
 import { filterOptionsForDeploymentModelValues } from '../../utils/deploymentProviders.js';
+import {
+  isProviderBilledVideoPricing,
+  isVideoModelAllowedForDeploymentScope,
+} from '../../utils/videoModelAvailability.mjs';
 
 const API_SERVER = import.meta.env.VITE_PROCESSOR_API;
 
@@ -155,6 +159,7 @@ export default function AdVideoCreator() {
       .filter(
         (m) =>
           m.isExpressModel &&
+          isVideoModelAllowedForDeploymentScope(m, isStandaloneModelFilteringEnabled) &&
           m.supportedAspectRatios?.includes(selectedAspectRatioOption.value)
       )
       .map((m) => ({
@@ -576,6 +581,9 @@ export default function AdVideoCreator() {
   let creditsPerSecondVideo = 15;
   // Example: you can conditionally change this based on model
   // if (selectedVideoModel.value === 'VEOI2V') {...}
+  const usesProviderBilling =
+    isStandaloneModelFilteringEnabled ||
+    isProviderBilledVideoPricing(selectedVideoModel);
 
   let pricingInfoDisplay = (
     <div className="relative">
@@ -583,13 +591,21 @@ export default function AdVideoCreator() {
         className="flex justify-end font-bold text-sm text-neutral-100 cursor-pointer"
         onClick={togglePricingDetailsDisplay}
       >
-        {creditsPerSecondVideo} Credits / second of video
+        {usesProviderBilling
+          ? 'Provider billed by configured adapter'
+          : `${creditsPerSecondVideo} Credits / second of video`}
         <FaChevronCircleDown className="inline-flex ml-1 mt-1" />
       </div>
       {pricingDetailsDisplay && (
         <div className="mt-1 text-sm w-full text-right">
-          <div>The total price will be shown at completion.</div>
-          <div>For example, a 60s video will cost {60 * creditsPerSecondVideo} credits.</div>
+          {usesProviderBilling ? (
+            <div>Video usage is billed by the configured adapter.</div>
+          ) : (
+            <>
+              <div>The total price will be shown at completion.</div>
+              <div>For example, a 60s video will cost {60 * creditsPerSecondVideo} credits.</div>
+            </>
+          )}
         </div>
       )}
     </div>

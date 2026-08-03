@@ -15,13 +15,13 @@ fal.config({
   credentials: FAL_API_KEY,
 });
 
-export async function handleNanoBananaFalRequest(payload) {
+export async function handleNanoBananaFalRequest(payload, dependencies = {}) {
   const { apiGenerationStatus } = payload;
 
   if (apiGenerationStatus === "INIT") {
     return await submitNanoBananaFalRequest(payload);
   } else if (apiGenerationStatus === "PENDING") {
-    const imageData = await pollNanoBananaFalRequest(payload);
+    const imageData = await pollNanoBananaFalRequest(payload, dependencies);
     return imageData;
   } else if (apiGenerationStatus === "FAILED") {
 
@@ -65,34 +65,34 @@ export async function submitNanoBananaFalRequest(payload) {
   } catch (error) {
     console.error("Error submitting request to FAL: ", error);
     const message = error?.message || "Unable to submit Nano Banana request to FAL.";
-    await ImageGeneration.findOneAndUpdate(
-      { _id },
-      {
-        rowLocked: false,
-      }
-    );
     return { image: null, error: message };
   }
 }
 
-export async function pollNanoBananaFalRequest(payload) {
+export async function pollNanoBananaFalRequest(payload, dependencies = {}) {
   const { _id, apiRequestId, model, aspectRatio, targetWidth, targetHeight } = payload;
-  await getDBConnectionString();
-  await ImageGeneration.findOneAndUpdate({ _id }, { rowLocked: true });
+  const connect = dependencies.connect || getDBConnectionString;
+  const imageGenerationModel = dependencies.imageGenerationModel || ImageGeneration;
+  const queueStatus = dependencies.queueStatus || ((...args) => fal.queue.status(...args));
+  const queueResult = dependencies.queueResult || ((...args) => fal.queue.result(...args));
+  const saveFile = dependencies.saveFile || saveRemoteFile;
+  const logger = dependencies.logger || console;
+  await connect();
+  await imageGenerationModel.findOneAndUpdate({ _id }, { rowLocked: true });
 
   const falLink = getFalLinkForModel(model);
 
   let responseStatusData;
   try {
-    responseStatusData = await fal.queue.status(falLink, {
+    responseStatusData = await queueStatus(falLink, {
       requestId: apiRequestId,
       logs: true,
     });
   } catch (error) {
-    console.error("Error getting result from FAL: ", error);
+    logger.error("Error getting result from FAL: ", error);
     // A polling transport error does not prove that the submitted provider
     // request failed. Keep it pinned so the next pass resumes the same request.
-    await ImageGeneration.findOneAndUpdate(
+    await imageGenerationModel.findOneAndUpdate(
       { _id },
       {
         rowLocked: false,
@@ -108,41 +108,30 @@ export async function pollNanoBananaFalRequest(payload) {
 
   if (responseStatus === "FAILED" || responseStatus === "CANCELLED" || responseStatus === "CANCELED") {
     const message = `FAL Nano Banana request ${responseStatus.toLowerCase()}.`;
-    await ImageGeneration.findOneAndUpdate({ _id }, { rowLocked: false });
     return { image: null, error: message };
   }
 
   if (responseStatus === "COMPLETED") {
       try {
 
-    const result = await fal.queue.result(falLink, { requestId: apiRequestId });
+    const result = await queueResult(falLink, { requestId: apiRequestId });
 
       const fileImages = result.data.images;
 
       const imageRemoteUrl = fileImages[0].url;
 
 
-      const imageName = await saveRemoteFile(imageRemoteUrl);
-
-
-      await ImageGeneration.findOneAndUpdate({ _id }, { rowLocked: false });
+      const imageName = await saveFile(imageRemoteUrl);
 
       return { image: imageName };
     } catch (error) {
-
-      await ImageGeneration.findOneAndUpdate(
-        { _id },
-        {
-          rowLocked: false,
-        }
-      );
       return {
         image: null,
         error: error?.message || "FAL Nano Banana result could not be downloaded.",
       };
     }
   } else {
-    await ImageGeneration.findOneAndUpdate({ _id }, { rowLocked: false });
+    await imageGenerationModel.findOneAndUpdate({ _id }, { rowLocked: false });
     return null;
   }
 }

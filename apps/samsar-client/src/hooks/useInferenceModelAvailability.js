@@ -12,6 +12,7 @@ import {
   labelOptionsForDeploymentInferenceProviders,
 } from "../utils/deploymentProviders.js";
 import { IS_STANDALONE_DEPLOYMENT } from "../utils/environment.jsx";
+import { subscribeToModelAvailabilityRefresh } from "../utils/modelAvailabilityRefresh.mjs";
 
 const PROCESSOR_API_URL = import.meta.env.VITE_PROCESSOR_API || "";
 const HOSTED_INFERENCE_MODEL_OPTIONS = Object.freeze(
@@ -39,6 +40,7 @@ const DEFAULT_AVAILABILITY = Object.freeze({
 const availabilityCache = {
   availability: null,
   promise: null,
+  revision: 0,
 };
 
 async function loadInferenceModelAvailability() {
@@ -51,7 +53,8 @@ async function loadInferenceModelAvailability() {
   }
 
   if (!availabilityCache.promise) {
-    availabilityCache.promise = fetchDeploymentProviderConfig(PROCESSOR_API_URL, getHeaders())
+    const revision = availabilityCache.revision;
+    const request = fetchDeploymentProviderConfig(PROCESSOR_API_URL, getHeaders())
       .then((payload) => {
         const availability = {
           modelValues: extractDeploymentInferenceModelValues(payload),
@@ -59,7 +62,9 @@ async function loadInferenceModelAvailability() {
           providerEndpointTypes: extractDeploymentProviderEndpointTypes(payload),
           error: null,
         };
-        availabilityCache.availability = availability;
+        if (availabilityCache.revision === revision) {
+          availabilityCache.availability = availability;
+        }
         return availability;
       })
       .catch((error) => {
@@ -69,15 +74,31 @@ async function loadInferenceModelAvailability() {
           providerEndpointTypes: {},
           error,
         };
-        availabilityCache.availability = availability;
+        if (availabilityCache.revision === revision) {
+          availabilityCache.availability = availability;
+        }
         return availability;
       })
       .finally(() => {
-        availabilityCache.promise = null;
+        if (availabilityCache.promise === request) {
+          availabilityCache.promise = null;
+        }
       });
+    availabilityCache.promise = request;
   }
 
   return availabilityCache.promise;
+}
+
+function refreshInferenceModelAvailability() {
+  availabilityCache.revision += 1;
+  availabilityCache.availability = null;
+  availabilityCache.promise = null;
+  return loadInferenceModelAvailability();
+}
+
+if (IS_STANDALONE_DEPLOYMENT) {
+  subscribeToModelAvailabilityRefresh(refreshInferenceModelAvailability);
 }
 
 export function useInferenceModelAvailability() {
@@ -90,22 +111,32 @@ export function useInferenceModelAvailability() {
 
   useEffect(() => {
     let isMounted = true;
+    let requestRevision = 0;
 
-    setIsLoading(IS_STANDALONE_DEPLOYMENT && !availabilityCache.availability);
-    loadInferenceModelAvailability()
-      .then((nextAvailability) => {
-        if (isMounted) {
-          setAvailability(nextAvailability || EMPTY_STANDALONE_AVAILABILITY);
-        }
-      })
-      .finally(() => {
-        if (isMounted) {
-          setIsLoading(false);
-        }
-      });
+    const updateAvailability = () => {
+      const currentRequestRevision = ++requestRevision;
+      setIsLoading(IS_STANDALONE_DEPLOYMENT && !availabilityCache.availability);
+      return loadInferenceModelAvailability()
+        .then((nextAvailability) => {
+          if (isMounted && requestRevision === currentRequestRevision) {
+            setAvailability(nextAvailability || EMPTY_STANDALONE_AVAILABILITY);
+          }
+        })
+        .finally(() => {
+          if (isMounted && requestRevision === currentRequestRevision) {
+            setIsLoading(false);
+          }
+        });
+    };
+
+    const unsubscribe = IS_STANDALONE_DEPLOYMENT
+      ? subscribeToModelAvailabilityRefresh(updateAvailability)
+      : () => {};
+    updateAvailability();
 
     return () => {
       isMounted = false;
+      unsubscribe();
     };
   }, []);
 

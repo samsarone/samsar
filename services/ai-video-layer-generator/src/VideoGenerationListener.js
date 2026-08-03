@@ -65,9 +65,7 @@ import { generateViduI2VVideoLayer, listenToPendingViduI2VVideoRequests } from '
 
 import {
   generateSeeDanceImgToVideoLayer,
-  generateSeeDanceTextToVideoLayer,
   listenToPendingSeeDanceImgToVidRequests,
-  listenToPendingSeeDanceTxtToVidRequests,
 } from './base/SeeDanceListener.js';
 
 import { generateSoundEffectMireloVideo, listenToPendingSoundEffectMireloVideoRequest } from './sound_effect/MireloAIVideoListener.js';
@@ -173,12 +171,11 @@ const SOUND_EFFECT_MODELS = [
   'VEO3.1I2V',
   'VEO3.1I2VFAST',
   'SEEDANCEI2V',
-  'SEEDANCE2.0I2V',
-  'SEEDANCE2.0T2V',
-  'SEEDANCET2V',
 ];
 
 const MAX_BASE_GENERATION_RETRIES = 3;
+const MAX_CONCURRENT_AI_VIDEO_REQUESTS = 5;
+const MAX_CONCURRENT_GMICLOUD_IMAGE_TO_VIDEO_REQUESTS = 2;
 const TRANSIENT_PROVIDER_ERROR_STATUSES = new Set([408, 425, 429, 500, 502, 503, 504]);
 
 export function isStaleSoundEffectGenerationForLayer({
@@ -244,8 +241,6 @@ function normalizeString(value) {
 }
 
 const TEXT_TO_VIDEO_MODELS = new Set([
-  'SEEDANCE2.0T2V',
-  'SEEDANCET2V',
   'VEO',
   'VEO3.1',
   'VEO3.1FAST',
@@ -358,6 +353,60 @@ function getDockerAdapterAttemptedProviders(payload = {}) {
       .map((provider) => normalizeString(provider))
       .filter((provider) => Object.values(DOCKER_VIDEO_PROVIDER).includes(provider)),
   )];
+}
+
+export function isGmiCloudImageToVideoRequest(request = {}) {
+  const model = getDockerAdapterRoutingModel(request);
+  if (resolveAIVideoRequestType(model, request) !== 'image_to_video') {
+    return false;
+  }
+
+  const persistedProvider = normalizeString(
+    request.dockerVideoProvider || request.externalProvider,
+  );
+  if (
+    persistedProvider === DOCKER_VIDEO_PROVIDER.GMICLOUD ||
+    normalizeString(request.generationId).startsWith('genblaze-video:')
+  ) {
+    return true;
+  }
+
+  return resolveAIVideoProvider(model, request) === DOCKER_VIDEO_PROVIDER.GMICLOUD;
+}
+
+export function selectAiVideoDispatchRequests({
+  activeRequests = [],
+  initRequests = [],
+  maxConcurrentRequests = MAX_CONCURRENT_AI_VIDEO_REQUESTS,
+  maxGmiCloudImageToVideoRequests = MAX_CONCURRENT_GMICLOUD_IMAGE_TO_VIDEO_REQUESTS,
+} = {}) {
+  const remainingCapacity = Math.max(0, maxConcurrentRequests - activeRequests.length);
+  if (remainingCapacity === 0) {
+    return [];
+  }
+
+  let remainingGmiCloudCapacity = Math.max(
+    0,
+    maxGmiCloudImageToVideoRequests - activeRequests.filter(
+      isGmiCloudImageToVideoRequest,
+    ).length,
+  );
+  const selectedRequests = [];
+
+  for (const request of initRequests) {
+    if (selectedRequests.length >= remainingCapacity) {
+      break;
+    }
+    if (isGmiCloudImageToVideoRequest(request)) {
+      if (remainingGmiCloudCapacity === 0) {
+        continue;
+      }
+      remainingGmiCloudCapacity -= 1;
+    }
+    selectedRequests.push(request);
+  }
+
+  return selectedRequests;
 }
 
 export function buildDockerVideoAdapterRetryPlan(
@@ -1604,25 +1653,26 @@ async function generatePendingAiVideoLayerRequests() {
   }
 
 
-  const activeCount = await withDbRetry(
-    () => AIVideoLayerGeneration.countDocuments({
+  const activeRequests = await withDbRetry(
+    () => AIVideoLayerGeneration.find({
       $or: [
         { rowLocked: true },         // those that are currently being started
         { status: 'PENDING' }        // those that have an ongoing external job
       ]
     }).exec(),
-    { operationName: 'count active AI video generation requests' }
+    { operationName: 'load active AI video generation requests' }
   );
 
   // If 5 or more jobs are active, do not pick up new "INIT" requests yet
-  if (activeCount >= 5) {
+  if (activeRequests.length >= MAX_CONCURRENT_AI_VIDEO_REQUESTS) {
     return;  // Just exit, we'll try again on the next loop iteration
   }
 
   // ------------------------------------------------------------------------
-  // STEP 3: Otherwise, pick up at most (5 - activeCount) new "INIT" requests
+  // STEP 3: Otherwise, pick up new "INIT" requests within both the global
+  //         worker limit and any provider-specific limit.
   // ------------------------------------------------------------------------
-  const capacity = 5 - activeCount;
+  const capacity = MAX_CONCURRENT_AI_VIDEO_REQUESTS - activeRequests.length;
   if (capacity <= 0) return;
 
   // Pull the oldest "INIT" requests first or newest first, your choice:
@@ -1638,13 +1688,17 @@ async function generatePendingAiVideoLayerRequests() {
         ],
       })
       .sort({ createdAt: 1 })    // newest first, matching your existing code
-      .limit(capacity)
       .exec(),
     { operationName: 'load init AI video generation requests' }
   );
 
+  const dispatchRequests = selectAiVideoDispatchRequests({
+    activeRequests,
+    initRequests,
+  });
+
   // Start each new request up to the concurrency limit
-  for (const request of initRequests) {
+  for (const request of dispatchRequests) {
     try {
 
       await generateAIVideoLayer(request);
@@ -1883,14 +1937,12 @@ async function generateAIVideoLayer(payload) {
     generationId = await generateHummingBirdLipSyncLayer(payload);
   } else if (model === 'VIDUI2V') {
     generationId = await generateViduI2VVideoLayer(payload);
-  } else if (model === 'SEEDANCEI2V' || model === 'SEEDANCE2.0I2V') {
+  } else if (model === 'SEEDANCEI2V') {
     generationId = await generateSeeDanceImgToVideoLayer(payload);
   } else if (model === 'HAPPYHORSEI2V') {
     generationId = shouldUseAlibabaNativeHappyHorse(payload)
       ? await generateAlibabaHappyHorseImgToVideoLayer(payload)
       : await generateHappyHorseImgToVideoLayer(payload);
-  } else if (model === 'SEEDANCE2.0T2V' || model === 'SEEDANCET2V') {
-    generationId = await generateSeeDanceTextToVideoLayer(payload);
   } else if (model === 'MIRELOAI') {
     generationId = await generateSoundEffectMireloVideo(payload);
   } else if (model === 'CREATIFYLIPSYNC') {
@@ -2025,14 +2077,12 @@ async function pollForAIVideoCompletion(reqPayload) {
     responseData = await listenToPendingHummingBirdLipSyncRequests(payload);
   } else if (model === 'VIDUI2V') {
     responseData = await listenToPendingViduI2VVideoRequests(payload);
-  } else if (model === 'SEEDANCEI2V' || model === 'SEEDANCE2.0I2V') {
+  } else if (model === 'SEEDANCEI2V') {
     responseData = await listenToPendingSeeDanceImgToVidRequests(payload);
   } else if (model === 'HAPPYHORSEI2V') {
     responseData = shouldUseAlibabaNativeHappyHorse(payload)
       ? await listenToPendingAlibabaHappyHorseImgToVidRequests(payload)
       : await listenToPendingHappyHorseImgToVidRequests(payload);
-  } else if (model === 'SEEDANCE2.0T2V' || model === 'SEEDANCET2V') {
-    responseData = await listenToPendingSeeDanceTxtToVidRequests(payload);
   } else if (model === 'MIRELOAI') {
     responseData = await listenToPendingSoundEffectMireloVideoRequest(payload);
   } else if (model === 'CREATIFYLIPSYNC') {

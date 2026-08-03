@@ -7,8 +7,6 @@ fal.config({
 
 
 const SEEDANCE_15_IMAGE_TO_VIDEO_LINK = "fal-ai/bytedance/seedance/v1.5/pro/image-to-video";
-const SEEDANCE_20_IMAGE_TO_VIDEO_LINK = "bytedance/seedance-2.0/image-to-video";
-const SEEDANCE_20_TEXT_TO_VIDEO_LINK = "bytedance/seedance-2.0/text-to-video";
 
 const SEEDANCE_ALLOWED_ASPECT_RATIOS = new Set([
   "auto",
@@ -46,13 +44,12 @@ function getFalRequestId(submitResponse) {
 }
 
 function getSeedanceImageToVideoLink(model) {
-  return model === "SEEDANCEI2V"
-    ? SEEDANCE_15_IMAGE_TO_VIDEO_LINK
-    : SEEDANCE_20_IMAGE_TO_VIDEO_LINK;
-}
-
-function getSeedanceTextToVideoLink() {
-  return SEEDANCE_20_TEXT_TO_VIDEO_LINK;
+  if (model === "SEEDANCEI2V") {
+    return SEEDANCE_15_IMAGE_TO_VIDEO_LINK;
+  }
+  const error = new Error(`${model || '<missing>'} is not supported by the FAL Seedance adapter.`);
+  error.code = 'FAL_MODEL_UNSUPPORTED';
+  throw error;
 }
 
 export async function generateSeeDanceImgToVideoLayer(payload) {
@@ -100,44 +97,6 @@ export async function generateSeeDanceImgToVideoLayer(payload) {
   return requestId;
 }
 
-export async function generateSeeDanceTextToVideoLayer(payload) {
-  const {
-    prompt,
-    aspectRatio,
-    duration = 5,
-    generateAudio = false,
-    userId,
-  } = payload;
-
-  const shouldGenerateAudio = Boolean(generateAudio || payload.generate_audio === true);
-  const normalizedDuration = normalizeSeedanceDuration(duration);
-  const normalizedAspectRatio = normalizeSeedanceAspectRatio(aspectRatio);
-
-  const inputPayload = {
-    prompt: prompt,
-    generate_audio: shouldGenerateAudio,
-    end_user_id: userId,
-  };
-
-  if (normalizedDuration !== undefined) {
-    inputPayload.duration = normalizedDuration;
-  }
-  if (normalizedAspectRatio) {
-    inputPayload.aspect_ratio = normalizedAspectRatio;
-  }
-
-  const submitResponse = await fal.queue.submit(getSeedanceTextToVideoLink(payload.model), {
-    input: inputPayload,
-  });
-
-  const requestId = getFalRequestId(submitResponse);
-  if (!requestId) {
-    throw new Error(`Seedance text-to-video submit returned no request id: ${JSON.stringify(submitResponse)}`);
-  }
-
-  return requestId;
-}
-
 async function listenToPendingSeeDanceRequests(payload, modelLink) {
   const { generationId } = payload;
   if (!generationId) {
@@ -177,8 +136,4 @@ async function listenToPendingSeeDanceRequests(payload, modelLink) {
 
 export async function listenToPendingSeeDanceImgToVidRequests(payload) {
   return listenToPendingSeeDanceRequests(payload, getSeedanceImageToVideoLink(payload.model));
-}
-
-export async function listenToPendingSeeDanceTxtToVidRequests(payload) {
-  return listenToPendingSeeDanceRequests(payload, getSeedanceTextToVideoLink(payload.model));
 }

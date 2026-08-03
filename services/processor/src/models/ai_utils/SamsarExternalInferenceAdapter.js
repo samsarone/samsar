@@ -77,20 +77,20 @@ export const DOCKER_INFERENCE_PROVIDER = Object.freeze({
 export const DOCKER_INFERENCE_PROVIDER_PRIORITY_BY_MODEL = Object.freeze({
   [QWEN_37_INFERENCE_MODEL]: Object.freeze([
     DOCKER_INFERENCE_PROVIDER.ALIBABA_CLOUD,
-    DOCKER_INFERENCE_PROVIDER.SAMSAR,
     DOCKER_INFERENCE_PROVIDER.GMICLOUD,
+    DOCKER_INFERENCE_PROVIDER.SAMSAR,
     DOCKER_INFERENCE_PROVIDER.OPENROUTER,
   ]),
   'gemini-3.1-pro': Object.freeze([
     DOCKER_INFERENCE_PROVIDER.GOOGLE_CLOUD,
-    DOCKER_INFERENCE_PROVIDER.SAMSAR,
     DOCKER_INFERENCE_PROVIDER.GMICLOUD,
+    DOCKER_INFERENCE_PROVIDER.SAMSAR,
     DOCKER_INFERENCE_PROVIDER.OPENROUTER,
   ]),
   [INFERENCE_MODELS.Inference]: Object.freeze([
     DOCKER_INFERENCE_PROVIDER.OPENAI,
-    DOCKER_INFERENCE_PROVIDER.SAMSAR,
     DOCKER_INFERENCE_PROVIDER.GMICLOUD,
+    DOCKER_INFERENCE_PROVIDER.SAMSAR,
     DOCKER_INFERENCE_PROVIDER.OPENROUTER,
   ]),
   [KIMI_K3_INFERENCE_MODEL]: Object.freeze([
@@ -888,8 +888,12 @@ export async function createGenblazeChatCompletion(chatRequest = {}, dependencyO
   const {
     authorization, bypassSamsarExternalInference, samsarExternalInference,
     timeout, timeoutMs, maxRetries, externalMaxRetries,
-    externalPolling, externalPollIntervalMs, externalPollTimeoutMs, ...request
+    externalPolling, externalPollIntervalMs, externalPollTimeoutMs,
+    reasoning, reasoning_effort, ...request
   } = chatRequest || {};
+  const requestedReasoningEffort = normalizeString(
+    reasoning_effort || reasoning?.effort,
+  ).toLowerCase();
   const requestTimeout = normalizePositiveInteger(
     timeout ?? timeoutMs ?? process.env.SAMSAR_GENBLAZE_INFERENCE_TIMEOUT_MS,
     DEFAULT_EXTERNAL_INFERENCE_TIMEOUT_MS,
@@ -900,12 +904,10 @@ export async function createGenblazeChatCompletion(chatRequest = {}, dependencyO
         ...request,
         model,
         ...(GENBLAZE_HIGH_REASONING_MODELS.has(model)
-          ? {
-            reasoning_effort: request.reasoning_effort === 'high'
-              ? request.reasoning_effort
-              : 'high',
-          }
-          : {}),
+          ? { reasoning_effort: 'high' }
+          : requestedReasoningEffort
+            ? { reasoning_effort: requestedReasoningEffort }
+            : {}),
       }, {
         resolveMediaUrl: dependencyOverrides.resolveMediaUrl,
         serviceName: 'samsar_processor_genblaze_inference',

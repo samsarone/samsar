@@ -13,6 +13,7 @@ import {
   normalizeResponseAssetUrl,
   selectResponseMediaSource,
 } from './api/StatusAPI.js';
+import { filterVisibleGeneratedImages } from './account/ImageGenerationVisibility.js';
 
 export async function getUserImages(userId) {
   const db = await getDBConnectionString();
@@ -154,6 +155,7 @@ export async function requestUserImageGenerations(userId, options = {}) {
   const {
     page = 1,
     pageSize = 20,
+    finalOnly = false,
   } = options;
 
   const parsedPage = Number.parseInt(page, 10);
@@ -164,14 +166,39 @@ export async function requestUserImageGenerations(userId, options = {}) {
 
   const skip = (safePage - 1) * boundedPageSize;
 
-  const [items, totalItems] = await Promise.all([
-    GeneratedImage.find({ userId })
-      .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(boundedPageSize)
-      .lean(),
-    GeneratedImage.countDocuments({ userId }),
-  ]);
+  let items;
+  let totalItems;
+
+  if (finalOnly) {
+    const generatedImages = await GeneratedImage.find({ userId })
+      .sort({ createdAt: -1, _id: -1 })
+      .lean();
+    const relatedSessionIds = Array.from(new Set(
+      generatedImages
+        .map((item) => item?.sessionId)
+        .filter((sessionId) => typeof sessionId === 'string' && /^[a-f0-9]{24}$/i.test(sessionId))
+    ));
+    const sessions = relatedSessionIds.length > 0
+      ? await VideoSession.find({
+          _id: { $in: relatedSessionIds },
+          userId,
+        })
+          .select('_id sessionType layers.imageSession.activeGeneratedImage layers.imageSession.activeEditedImage layers.activeImageCandidate.src')
+          .lean()
+      : [];
+    const visibleImages = filterVisibleGeneratedImages(generatedImages, sessions);
+    totalItems = visibleImages.length;
+    items = visibleImages.slice(skip, skip + boundedPageSize);
+  } else {
+    [items, totalItems] = await Promise.all([
+      GeneratedImage.find({ userId })
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(boundedPageSize)
+        .lean(),
+      GeneratedImage.countDocuments({ userId }),
+    ]);
+  }
 
   const totalPages = boundedPageSize === 0 ? 0 : Math.ceil(totalItems / boundedPageSize);
 

@@ -167,7 +167,7 @@ test('maps every exact compatible GMICloud video version and excludes incompatib
   const mappings = result.providers.gmicloud.modelMappings;
   assert.equal(mappings['VEO3.1FLIV'].video.modelId, 'veo-3.1-generate-001');
   assert.equal(mappings['SEEDANCE2.0I2V'].video.modelId, 'seedance-2-0-260128');
-  assert.equal(mappings['SEEDANCE2.0T2V'].video.modelId, 'seedance-2-0-260128');
+  assert.equal(mappings['SEEDANCE2.0T2V'], undefined);
   assert.equal(mappings.KLINGIMGTOVID3PRO.video.modelId, 'kling-v3-image-to-video');
   assert.equal(mappings.KLINGIMGTOVIDTURBO.video.modelId, 'kling-3.0-turbo-i2v');
   assert.equal(mappings.KLINGIMGTOVIDPRO.video.modelId, 'Kling-Image2Video-V1.6-Pro');
@@ -285,6 +285,8 @@ test('normalizes mappings against the curated exact route set', () => {
     ELEVENLABS: { audio: { modelId: 'elevenlabs-tts-v3', operation: 'attacker.operation' } },
     OPENAI_TTS: { audio: { modelId: 'minimax-tts-speech-2.6-hd' } },
     'VEO3.1I2V': { video: { modelId: 'veo-3.2-generate-001' } },
+    'SEEDANCE2.0I2V': { video: { modelId: 'seedance-2-0-260128' } },
+    'SEEDANCE2.0T2V': { video: { modelId: 'seedance-2-0-260128' } },
   }), {
     'gpt-5.6-sol': {
       text: { modelId: 'tenant/openai/gpt-5.6-sol', operation: 'chat.completions' },
@@ -303,6 +305,9 @@ test('normalizes mappings against the curated exact route set', () => {
     },
     ELEVENLABS: {
       audio: { modelId: 'elevenlabs-tts-v3', operation: 'audio.generate' },
+    },
+    'SEEDANCE2.0I2V': {
+      video: { modelId: 'seedance-2-0-260128', operation: 'video.generate' },
     },
   });
 });

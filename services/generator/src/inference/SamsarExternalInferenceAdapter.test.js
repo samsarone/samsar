@@ -12,6 +12,7 @@ import SamsarClient from 'samsar-js';
 
 import {
   DOCKER_INFERENCE_PROVIDER,
+  createGenblazeChatCompletion,
   createOpenRouterChatCompletion,
   createSamsarExternalChatCompletion,
   getConfiguredInferenceProviders,
@@ -97,18 +98,20 @@ test('ALIBABA_API_KEY is detected as native Qwen credentials', () => {
   });
 });
 
-test('Qwen uses GMICloud through GenBlaze after native and Samsar adapters', (t) => {
+test('Qwen uses GMICloud through GenBlaze before Samsar and OpenRouter', (t) => {
   const { catalogPath, directory } = createTestGenblazeCatalog();
   t.after(() => rmSync(directory, { recursive: true, force: true }));
   withEnvironment({
     CURRENT_ENV: 'docker',
     SAMSAR_GENBLAZE_ENABLED: 'true',
     SAMSAR_GENBLAZE_MODEL_CATALOG_PATH: catalogPath,
+    SAMSAR_API_KEY: 'samsar-key',
     OPENROUTER_API_KEY: 'openrouter-key',
   }, () => {
     assert.equal(resolveConfiguredInferenceProvider('QWEN3.7'), DOCKER_INFERENCE_PROVIDER.GMICLOUD);
     assert.deepEqual(getConfiguredInferenceProviders('QWEN3.7'), [
       DOCKER_INFERENCE_PROVIDER.GMICLOUD,
+      DOCKER_INFERENCE_PROVIDER.SAMSAR,
       DOCKER_INFERENCE_PROVIDER.OPENROUTER,
     ]);
   });
@@ -168,13 +171,13 @@ test('GMICloud selection follows the validated text and vision catalog mappings'
       process.env.OPENAI_API_KEY = 'openai-key';
       assert.deepEqual(getConfiguredInferenceProviders('gpt-5.6-sol'), [
         DOCKER_INFERENCE_PROVIDER.OPENAI,
-        DOCKER_INFERENCE_PROVIDER.SAMSAR,
         DOCKER_INFERENCE_PROVIDER.GMICLOUD,
+        DOCKER_INFERENCE_PROVIDER.SAMSAR,
         DOCKER_INFERENCE_PROVIDER.OPENROUTER,
       ]);
       assert.deepEqual(getConfiguredInferenceProviders('gemini-3.1-pro'), [
-        DOCKER_INFERENCE_PROVIDER.SAMSAR,
         DOCKER_INFERENCE_PROVIDER.GMICLOUD,
+        DOCKER_INFERENCE_PROVIDER.SAMSAR,
         DOCKER_INFERENCE_PROVIDER.OPENROUTER,
       ]);
     });
@@ -199,6 +202,51 @@ test('GMICloud selection follows the validated text and vision catalog mappings'
   } finally {
     rmSync(temporaryDirectory, { recursive: true, force: true });
   }
+});
+
+test('GMICloud receives reasoning_effort without the unsupported reasoning object', async (t) => {
+  const temporaryDirectory = mkdtempSync(path.join(os.tmpdir(), 'samsar-genblaze-reasoning-'));
+  const catalogPath = path.join(temporaryDirectory, 'genblaze-model-catalog.json');
+  writeFileSync(catalogPath, JSON.stringify({
+    version: 1,
+    provider: 'gmicloud',
+    models: {
+      'gpt-5.6-sol': {
+        text: { modelId: 'gpt-5.6-sol', operation: 'chat.completions' },
+      },
+    },
+  }));
+  t.after(() => rmSync(temporaryDirectory, { recursive: true, force: true }));
+
+  const previous = Object.fromEntries(ENV_KEYS.map((key) => [key, process.env[key]]));
+  t.after(() => {
+    for (const key of ENV_KEYS) {
+      if (previous[key] === undefined) delete process.env[key];
+      else process.env[key] = previous[key];
+    }
+  });
+  for (const key of ENV_KEYS) delete process.env[key];
+  Object.assign(process.env, {
+    CURRENT_ENV: 'docker',
+    SAMSAR_GENBLAZE_ENABLED: 'true',
+    SAMSAR_GENBLAZE_MODEL_CATALOG_PATH: catalogPath,
+  });
+
+  let capturedPayload;
+  t.mock.method(OpenAI.Chat.Completions.prototype, 'create', async (payload) => {
+    capturedPayload = payload;
+    return { choices: [{ message: { role: 'assistant', content: 'ok' } }] };
+  });
+
+  await createGenblazeChatCompletion({
+    model: 'gpt-5.6-sol',
+    messages: [{ role: 'user', content: 'hello' }],
+    reasoning: { effort: 'medium' },
+    reasoning_effort: 'low',
+  });
+
+  assert.equal(capturedPayload.reasoning_effort, 'high');
+  assert.equal(Object.hasOwn(capturedPayload, 'reasoning'), false);
 });
 
 test('GPT and Gemini preserve legacy priority when GenBlaze lacks an exact mapping', (t) => {
@@ -369,7 +417,7 @@ test('Kimi K3 Samsar-js fallback preserves the model and forces high reasoning',
   assert.equal(capturedPayload.reasoning_effort, 'high');
 });
 
-test('Samsar remains ahead of third-party inference while native adapters stay first', () => {
+test('Samsar remains ahead of OpenRouter while native adapters stay first', () => {
   withEnvironment({
     CURRENT_ENV: 'docker',
     OPENROUTER_API_KEY: 'openrouter-key',

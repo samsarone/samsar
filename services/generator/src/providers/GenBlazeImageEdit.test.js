@@ -169,6 +169,39 @@ test('submits and polls an opaque image-edit job while preserving Samsar result 
     resultUrl: 'https://cdn.example/edited.png',
     resultUrls: ['https://cdn.example/edited.png'],
   });
+  assert.deepEqual(recorder.updates.at(-1), {
+    method: 'findByIdAndUpdate',
+    id: 'edit-row-1',
+    update: { rowLocked: true },
+  });
+});
+
+test('failed GenBlaze edits retain ownership until shared failover is persisted', async () => {
+  const recorder = createModelRecorder();
+  const result = await handleGenBlazeImageEditRequest({
+    _id: 'edit-row-failed',
+    model: 'GPTIMAGE2EDIT',
+    apiEditStatus: 'PENDING',
+    apiRequestId: 'genblaze-image-edit:failed-job',
+  }, {
+    connect: async () => {},
+    imageGenerationModel: recorder.model,
+    request: async () => ({ status: 'failed', error: 'adapter unavailable' }),
+    logger: { error() {} },
+  });
+
+  assert.deepEqual(result, {
+    image: null,
+    error: 'adapter unavailable',
+    definitiveAdapterFailure: true,
+  });
+  assert.deepEqual(recorder.updates, [
+    {
+      method: 'findByIdAndUpdate',
+      id: 'edit-row-failed',
+      update: { rowLocked: true },
+    },
+  ]);
 });
 
 test('selects GenBlaze only for standalone compatible single-output edits', (t) => {

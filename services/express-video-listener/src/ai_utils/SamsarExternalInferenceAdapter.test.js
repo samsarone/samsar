@@ -89,20 +89,21 @@ test('Qwen routing falls back to Samsar in Docker when no Alibaba key exists', (
   });
 });
 
-test('Qwen uses GMICloud through GenBlaze before OpenRouter', (t) => {
+test('Qwen uses GMICloud through GenBlaze before Samsar and OpenRouter', (t) => {
   const { catalogPath, directory } = createTestGenblazeCatalog();
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
   withEnvironment({
     CURRENT_ENV: 'docker',
     SAMSAR_GENBLAZE_ENABLED: 'true',
     SAMSAR_GENBLAZE_MODEL_CATALOG_PATH: catalogPath,
+    SAMSAR_API_KEY: 'samsar-key',
     OPENROUTER_API_KEY: 'openrouter-key',
   }, () => {
     assert.equal(resolveConfiguredInferenceProvider('QWEN3.7'), DOCKER_INFERENCE_PROVIDER.GMICLOUD);
   });
 });
 
-test('Samsar stays ahead of third-party Qwen adapters in Docker', () => {
+test('Samsar stays ahead of OpenRouter for Qwen in Docker', () => {
   withEnvironment({
     CURRENT_ENV: 'docker',
     OPENROUTER_API_KEY: 'openrouter-key',

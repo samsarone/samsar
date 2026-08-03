@@ -9,6 +9,11 @@ import {
 } from '../constants/dockerModelAvailability.js';
 import { getProviderEnvironmentReferencePlaceholder } from '../constants/providerEnvironment.js';
 import {
+  getConfigurationEnvironmentReferencePlaceholder,
+  pickConfigurationEnvironmentReferences,
+} from '../constants/configurationEnvironment.js';
+import { PROVIDER_GROUP_DEFINITIONS } from '../constants/providerGroups.js';
+import {
   buildBackblazePublicBucketUrl,
   parseBackblazeS3Endpoint,
   validateExternalStorageConfig,
@@ -35,7 +40,7 @@ const STEPS = [
 ];
 const SETUP_POLL_INTERVAL_MS = 1200;
 const WIZARD_STORAGE_KEY = 'samsar.setupWizard.session.v1';
-const WIZARD_STORAGE_VERSION = 10;
+const WIZARD_STORAGE_VERSION = 11;
 const CREDENTIAL_SOURCE_MANUAL = 'manual';
 const CREDENTIAL_SOURCE_ENVIRONMENT = 'environment';
 
@@ -83,7 +88,7 @@ const PROVIDERS = [
     field: 'openrouterApiKey',
     inputType: 'password',
     placeholder: 'OpenRouter API key',
-    requiredFor: 'Fallback inference for supported GPT, Gemini, and Qwen 3.7 Plus text and vision models.',
+    requiredFor: 'Inference for supported GPT, Gemini, and Qwen 3.7 Plus text and vision models.',
     pricingUrl: 'https://openrouter.ai/pricing',
     keysUrl: 'https://openrouter.ai/settings/keys',
     credentialLabel: 'API key',
@@ -141,19 +146,6 @@ const PROVIDERS = [
     credentialLabel: 'API key',
   },
   {
-    key: 'samsar',
-    title: 'Samsar-js',
-    type: 'samsar',
-    field: 'samsarApiKey',
-    inputType: 'password',
-    placeholder: 'sk_live_...',
-    requiredFor: 'Universal access to every model using Samsar credits. Direct provider keys take priority when both are configured.',
-    pricingUrl: 'https://docs.samsar.one/pricing',
-    keysUrl: 'https://app.samsar.one/account/apiKeys',
-    credentialLabel: 'API key',
-    badge: 'All model access',
-  },
-  {
     key: 'gmicloud',
     title: 'GMICloud via GenBlaze',
     type: 'genblaze',
@@ -166,32 +158,25 @@ const PROVIDERS = [
     credentialLabel: 'GMICloud API key',
     badge: 'Local GenBlaze gateway',
   },
+  {
+    key: 'samsar',
+    title: 'Samsar-js',
+    type: 'samsar',
+    field: 'samsarApiKey',
+    inputType: 'password',
+    placeholder: 'sk_live_...',
+    requiredFor: 'Universal access to every model using Samsar credits.',
+    pricingUrl: 'https://docs.samsar.one/pricing',
+    keysUrl: 'https://app.samsar.one/account/apiKeys',
+    credentialLabel: 'API key',
+    badge: 'All model access',
+  },
 ];
 const NATIVE_PROVIDERS = PROVIDERS.filter((provider) => provider.type === 'native');
 const STANDARD_NATIVE_PROVIDERS = NATIVE_PROVIDERS.filter(
   (provider) => provider.key !== 'alibabaCloud' && provider.key !== 'openrouter',
 );
-const PROVIDER_GROUPS = [
-  {
-    key: 'inference',
-    title: 'Inference',
-    description: 'Choose a primary provider for agent reasoning, text, and vision.',
-    providerKeys: ['openai', 'googleCloud', 'kimi', 'alibabaCloud'],
-  },
-  {
-    key: 'fallbacks',
-    title: 'Fallbacks',
-    description: 'Fill model gaps with universal access or route supported inference through GenBlaze and OpenRouter.',
-    providerKeys: ['samsar', 'gmicloud', 'openrouter'],
-    featured: true,
-  },
-  {
-    key: 'media',
-    title: 'Media',
-    description: 'Enable dedicated image, video, speech, music, lip-sync, and sound-effect models.',
-    providerKeys: ['fal', 'elevenlabs', 'runway'],
-  },
-].map((group) => ({
+const PROVIDER_GROUPS = PROVIDER_GROUP_DEFINITIONS.map((group) => ({
   ...group,
   providers: group.providerKeys.map((providerKey) => PROVIDERS.find((provider) => provider.key === providerKey)),
 }));
@@ -223,19 +208,19 @@ const CAPABILITY_FAMILIES = {
   gpt56: {
     key: 'gpt56',
     label: 'GPT 5.6 Sol',
-    providerKeys: ['openai', 'samsar', 'gmicloud', 'openrouter'],
+    providerKeys: ['openai', 'gmicloud', 'samsar', 'openrouter'],
     modelKeys: ['gpt-5.6-sol'],
   },
   gemini: {
     key: 'gemini',
     label: 'Gemini',
-    providerKeys: ['googleCloud', 'samsar', 'gmicloud', 'openrouter'],
+    providerKeys: ['googleCloud', 'gmicloud', 'samsar', 'openrouter'],
     modelKeys: ['gemini-3.1-pro'],
   },
   qwen: {
     key: 'qwen',
     label: 'Qwen',
-    providerKeys: ['alibabaCloud', 'samsar', 'gmicloud', 'openrouter'],
+    providerKeys: ['alibabaCloud', 'gmicloud', 'samsar', 'openrouter'],
     modelKeys: ['QWEN3.7'],
   },
   kimiK3: {
@@ -247,19 +232,19 @@ const CAPABILITY_FAMILIES = {
   gptAssistant: {
     key: 'gptAssistant',
     label: 'GPT Assistant',
-    providerKeys: ['openai', 'samsar', 'gmicloud', 'openrouter'],
+    providerKeys: ['openai', 'gmicloud', 'samsar', 'openrouter'],
     modelKeys: ['gpt-5.6-sol'],
   },
   geminiAssistant: {
     key: 'geminiAssistant',
     label: 'Gemini Assistant',
-    providerKeys: ['googleCloud', 'samsar', 'gmicloud', 'openrouter'],
+    providerKeys: ['googleCloud', 'gmicloud', 'samsar', 'openrouter'],
     modelKeys: ['gemini-3.1-pro'],
   },
   qwenAssistant: {
     key: 'qwenAssistant',
     label: 'Qwen Assistant',
-    providerKeys: ['alibabaCloud', 'samsar', 'gmicloud', 'openrouter'],
+    providerKeys: ['alibabaCloud', 'gmicloud', 'samsar', 'openrouter'],
     modelKeys: ['QWEN3.7'],
   },
   kimiK3Assistant: {
@@ -271,31 +256,31 @@ const CAPABILITY_FAMILIES = {
   openaiImage: {
     key: 'openaiImage',
     label: 'OpenAI Image',
-    providerKeys: ['openai', 'samsar', 'gmicloud'],
+    providerKeys: ['openai', 'gmicloud', 'samsar'],
     modelKeys: ['GPTIMAGE2', 'GPTIMAGE2EDIT'],
   },
   seedream: {
     key: 'seedream',
     label: 'Seedream',
-    providerKeys: ['fal', 'samsar', 'gmicloud'],
+    providerKeys: ['fal', 'gmicloud', 'samsar'],
     modelKeys: ['SEEDREAM'],
   },
   nanoBanana2: {
     key: 'nanoBanana2',
     label: 'NanoBanana 2',
-    providerKeys: ['googleCloud', 'fal', 'samsar', 'gmicloud'],
+    providerKeys: ['googleCloud', 'fal', 'gmicloud', 'samsar'],
     modelKeys: ['NANOBANANA2', 'NANOBANANA2EDIT'],
   },
   nanoBananaPro: {
     key: 'nanoBananaPro',
     label: 'NanoBanana Pro',
-    providerKeys: ['googleCloud', 'fal', 'samsar', 'gmicloud'],
+    providerKeys: ['googleCloud', 'fal', 'gmicloud', 'samsar'],
     modelKeys: ['NANOBANANAPRO', 'NANOBANANAPROEDIT'],
   },
   briaEdit: {
     key: 'briaEdit',
     label: 'BRIA Image Edit',
-    providerKeys: ['fal', 'samsar', 'gmicloud'],
+    providerKeys: ['fal', 'gmicloud', 'samsar'],
     modelKeys: ['BRIA_ERASER', 'BRIA_GENFILL'],
   },
   wan27Pro: {
@@ -307,25 +292,25 @@ const CAPABILITY_FAMILIES = {
   veo: {
     key: 'veoI2V',
     label: 'VEO 3.1 I2V',
-    providerKeys: ['googleCloud', 'fal', 'samsar', 'gmicloud'],
+    providerKeys: ['googleCloud', 'fal', 'gmicloud', 'samsar'],
     modelKeys: ['VEO3.1', 'VEO3.1I2V'],
   },
   veoFast: {
     key: 'veoFastI2V',
     label: 'VEO 3.1 Fast I2V',
-    providerKeys: ['googleCloud', 'fal', 'samsar', 'gmicloud'],
+    providerKeys: ['googleCloud', 'fal', 'gmicloud', 'samsar'],
     modelKeys: ['VEO3.1FAST', 'VEO3.1I2VFAST'],
   },
   seedance: {
     key: 'seedance',
     label: 'Seedance',
-    providerKeys: ['fal', 'samsar', 'gmicloud'],
+    providerKeys: ['fal', 'gmicloud', 'samsar'],
     modelKeys: ['SEEDANCEI2V'],
   },
   kling: {
     key: 'kling',
     label: 'Kling',
-    providerKeys: ['fal', 'samsar', 'gmicloud'],
+    providerKeys: ['fal', 'gmicloud', 'samsar'],
     modelKeys: ['KLINGIMGTOVID3PRO', 'KLINGIMGTOVIDTURBO'],
   },
   cosmos: {
@@ -337,7 +322,7 @@ const CAPABILITY_FAMILIES = {
   happyHorse: {
     key: 'happyHorse',
     label: 'Happy Horse',
-    providerKeys: ['alibabaCloud', 'fal', 'samsar', 'gmicloud'],
+    providerKeys: ['alibabaCloud', 'fal', 'gmicloud', 'samsar'],
     modelKeys: ['HAPPYHORSEI2V'],
   },
   runway: {
@@ -379,7 +364,7 @@ const CAPABILITY_FAMILIES = {
   openaiTts: {
     key: 'openaiTts',
     label: 'OpenAI TTS',
-    providerKeys: ['openai', 'samsar', 'gmicloud'],
+    providerKeys: ['openai', 'gmicloud', 'samsar'],
     modelKeys: ['OPENAI_TTS'],
   },
   googleTts: {
@@ -391,7 +376,7 @@ const CAPABILITY_FAMILIES = {
   elevenlabsSpeech: {
     key: 'elevenlabsSpeech',
     label: 'ElevenLabs Speech',
-    providerKeys: ['elevenlabs', 'fal', 'samsar', 'gmicloud'],
+    providerKeys: ['elevenlabs', 'fal', 'gmicloud', 'samsar'],
     modelKeys: ['ELEVENLABS'],
   },
   soundEffects: {
@@ -490,7 +475,7 @@ const SETUP_SERVICE_CATALOG = [
     key: 'videoGeneration',
     label: 'Video Generation',
     category: 'Generative Media',
-    description: 'Public image-to-video model families and their native or Samsar fallback providers.',
+    description: 'Public image-to-video model families and their available providers.',
     modelFamilies: [
       CAPABILITY_FAMILIES.runway,
       CAPABILITY_FAMILIES.veo,
@@ -603,6 +588,20 @@ const DEFAULT_ADMIN_CONFIG = Object.freeze({
   password: '',
   confirmPassword: '',
 });
+const DATA_CONFIGURATION_SECRET_FIELDS = Object.freeze([
+  'mongoConnectionString',
+  's3AccessKeyId',
+  's3SecretAccessKey',
+  's3Endpoint',
+  'cloudFrontPrivateKey',
+  'cloudFrontPrivateKeyBase64',
+]);
+const MAIL_CONFIGURATION_SECRET_FIELDS = Object.freeze([
+  'smtpPassword',
+  'sesAccessKeyId',
+  'sesSecretAccessKey',
+  'sesSessionToken',
+]);
 
 function buildDefaultServices() {
   return {
@@ -656,6 +655,50 @@ function pickEnvironmentReferences(value = {}) {
       typeof value?.[key] === 'string' ? value[key].trim() : '',
     ]),
   );
+}
+
+function applyConfigurationEnvironmentReferences(dataConfig = {}, mailConfig = {}, references = {}) {
+  const pickedReferences = pickConfigurationEnvironmentReferences(references);
+  const storageReferences = dataConfig.storageMode === 'backblazeB2'
+    ? {
+      s3AccessKeyId: pickedReferences.b2KeyId,
+      s3SecretAccessKey: pickedReferences.b2ApplicationKey,
+      s3Endpoint: pickedReferences.b2Host,
+    }
+    : {
+      s3AccessKeyId: pickedReferences.s3AccessKeyId,
+      s3SecretAccessKey: pickedReferences.s3SecretAccessKey,
+      s3Endpoint: pickedReferences.s3Endpoint,
+    };
+  return {
+    dataConfig: {
+      ...dataConfig,
+      ...Object.fromEntries(DATA_CONFIGURATION_SECRET_FIELDS.map((field) => [field, pickedReferences[field]])),
+      ...storageReferences,
+    },
+    mailConfig: {
+      ...mailConfig,
+      ...Object.fromEntries(MAIL_CONFIGURATION_SECRET_FIELDS.map((field) => [field, pickedReferences[field]])),
+    },
+  };
+}
+
+function getDataConfigurationReferenceField(field, storageMode) {
+  if (storageMode !== 'backblazeB2') {
+    return field;
+  }
+  return {
+    s3AccessKeyId: 'b2KeyId',
+    s3SecretAccessKey: 'b2ApplicationKey',
+    s3Endpoint: 'b2Host',
+  }[field] || field;
+}
+
+function redactConfigurationSecrets(config = {}, fields = []) {
+  return {
+    ...config,
+    ...Object.fromEntries(fields.map((field) => [field, ''])),
+  };
 }
 
 function pickServices(value = {}) {
@@ -772,7 +815,6 @@ function normalizeReverseProxyAccessType(value) {
 function normalizeMailConfig(mailConfig = {}) {
   const provider = normalizeMailProvider(mailConfig.provider);
   const sesAccessKeyId = normalizeText(mailConfig.sesAccessKeyId);
-  const sesUsesTemporaryCredentials = isTemporaryAwsAccessKeyId(sesAccessKeyId);
   return {
     provider,
     fromAddress: normalizeText(mailConfig.fromAddress),
@@ -785,7 +827,7 @@ function normalizeMailConfig(mailConfig = {}) {
     sesRegion: normalizeText(mailConfig.sesRegion) || 'us-east-1',
     sesAccessKeyId,
     sesSecretAccessKey: normalizeSecretText(mailConfig.sesSecretAccessKey),
-    sesSessionToken: sesUsesTemporaryCredentials ? normalizeSecretText(mailConfig.sesSessionToken) : '',
+    sesSessionToken: normalizeSecretText(mailConfig.sesSessionToken),
   };
 }
 
@@ -1053,6 +1095,10 @@ function buildInitialWizardState() {
   const credentialSource = normalizeCredentialSource(storedState?.credentialSource);
   const restoredCredentials = pickCredentials(storedState?.credentials);
   const restoredEnvironmentReferences = pickEnvironmentReferences(storedState?.environmentReferences);
+  const configurationSecretSource = normalizeCredentialSource(storedState?.configurationSecretSource);
+  const configurationSecretReferences = pickConfigurationEnvironmentReferences(
+    storedState?.configurationSecretReferences,
+  );
   const activeCredentials = credentialSource === CREDENTIAL_SOURCE_ENVIRONMENT
     ? restoredEnvironmentReferences
     : restoredCredentials;
@@ -1072,6 +1118,8 @@ function buildInitialWizardState() {
     credentialSource,
     credentials: restoredCredentials,
     environmentReferences: restoredEnvironmentReferences,
+    configurationSecretSource,
+    configurationSecretReferences,
     services: pickServices(storedState?.services),
     mailConfig: pickMailConfig(storedState?.mailConfig),
     mailValidationResult: storedState?.mailValidationResult || null,
@@ -1178,6 +1226,11 @@ function getProviderCredentialReentryKeys(validationResult = {}) {
 }
 
 function sanitizeDeploymentPayloadForDisplay(payload = {}) {
+  const infrastructure = payload.infrastructure || {};
+  const database = infrastructure.database || {};
+  const storage = infrastructure.storage || {};
+  const cloudFront = storage.cloudFront || {};
+  const redactValue = (value) => normalizeText(value) ? '[configured secret]' : '';
   return {
     ...payload,
     providers: Object.fromEntries(
@@ -1189,6 +1242,23 @@ function sanitizeDeploymentPayloadForDisplay(payload = {}) {
         },
       ]),
     ),
+    infrastructure: {
+      ...infrastructure,
+      database: {
+        ...database,
+        mongoUrl: database.mode === 'remote' ? redactValue(database.mongoUrl) : database.mongoUrl,
+      },
+      storage: {
+        ...storage,
+        accessKeyId: redactValue(storage.accessKeyId),
+        secretAccessKey: redactValue(storage.secretAccessKey),
+        cloudFront: {
+          ...cloudFront,
+          privateKey: redactValue(cloudFront.privateKey),
+          privateKeyBase64: redactValue(cloudFront.privateKeyBase64),
+        },
+      },
+    },
   };
 }
 
@@ -2117,6 +2187,12 @@ export default function OnboardingWizard() {
   const [credentialSource, setCredentialSource] = useState(initialWizardState.credentialSource);
   const [credentials, setCredentials] = useState(initialWizardState.credentials);
   const [environmentReferences, setEnvironmentReferences] = useState(initialWizardState.environmentReferences);
+  const [configurationSecretSource, setConfigurationSecretSource] = useState(
+    initialWizardState.configurationSecretSource,
+  );
+  const [configurationSecretReferences, setConfigurationSecretReferences] = useState(
+    initialWizardState.configurationSecretReferences,
+  );
   const [services, setServices] = useState(initialWizardState.services);
   const [mailConfig, setMailConfig] = useState(initialWizardState.mailConfig);
   const [mailValidationResult, setMailValidationResult] = useState(initialWizardState.mailValidationResult);
@@ -2165,26 +2241,34 @@ export default function OnboardingWizard() {
   const [expressWarningMissingRequirements, setExpressWarningMissingRequirements] = useState([]);
   const [providerDrawersOpen, setProviderDrawersOpen] = useState({
     inference: true,
-    fallbacks: true,
+    universal: true,
     media: true,
   });
   const activeCredentials = useMemo(
     () => credentialSource === CREDENTIAL_SOURCE_ENVIRONMENT ? environmentReferences : credentials,
     [credentialSource, credentials, environmentReferences],
   );
+  const activeConfiguration = useMemo(
+    () => configurationSecretSource === CREDENTIAL_SOURCE_ENVIRONMENT
+      ? applyConfigurationEnvironmentReferences(dataConfig, mailConfig, configurationSecretReferences)
+      : { dataConfig, mailConfig },
+    [configurationSecretReferences, configurationSecretSource, dataConfig, mailConfig],
+  );
+  const activeDataConfig = activeConfiguration.dataConfig;
+  const activeMailConfig = activeConfiguration.mailConfig;
 
   const deploymentPayload = useMemo(
     () => buildDeploymentPayload(
       activeCredentials,
       services,
-      dataConfig,
+      activeDataConfig,
       validationResult,
-      mailConfig,
+      activeMailConfig,
       mailValidationResult,
       reverseProxyConfig,
       reverseProxyValidationResult,
     ),
-    [activeCredentials, dataConfig, mailConfig, mailValidationResult, reverseProxyConfig, reverseProxyValidationResult, services, validationResult],
+    [activeCredentials, activeDataConfig, activeMailConfig, mailValidationResult, reverseProxyConfig, reverseProxyValidationResult, services, validationResult],
   );
   const displayDeploymentPayload = useMemo(
     () => sanitizeDeploymentPayloadForDisplay(deploymentPayload),
@@ -2253,7 +2337,8 @@ export default function OnboardingWizard() {
   const reverseProxyRequiredPorts = normalizedReverseProxyConfig.sslEnabled ? [80, 443] : [80];
   const reverseProxyRequiredPortLabel = reverseProxyRequiredPorts.length === 1 ? '80' : '80 / 443';
   const reverseProxyRequiredPortText = reverseProxyRequiredPorts.length === 1 ? 'port 80' : 'ports 80 and 443';
-  const sesAccessKeyUsesTemporaryCredentials = isTemporaryAwsAccessKeyId(mailConfig.sesAccessKeyId);
+  const sesAccessKeyUsesTemporaryCredentials = configurationSecretSource === CREDENTIAL_SOURCE_ENVIRONMENT ||
+    isTemporaryAwsAccessKeyId(mailConfig.sesAccessKeyId);
   const setupAuthRequired = Boolean(installStatus?.setupAuthRequired || installStatus?.config?.security?.setupWizardPasswordConfigured);
   const shouldShowExistingInstall = Boolean(installStatus?.installed && !setupRun && !maintenanceRun);
   const isInitialInstallStatusLoading = Boolean(isLoadingInstallStatus && !installStatus && !setupRun && !maintenanceRun);
@@ -2474,15 +2559,12 @@ export default function OnboardingWizard() {
           gmiCloudApiKey: '',
         },
 	      environmentReferences,
+	      configurationSecretSource,
+	      configurationSecretReferences,
 	      services,
-	      mailConfig: {
-        ...mailConfig,
-        smtpPassword: '',
-        sesSecretAccessKey: '',
-        sesSessionToken: '',
-      },
+	      mailConfig: redactConfigurationSecrets(mailConfig, MAIL_CONFIGURATION_SECRET_FIELDS),
 	      mailValidationResult,
-	      dataConfig,
+	      dataConfig: redactConfigurationSecrets(dataConfig, DATA_CONFIGURATION_SECRET_FIELDS),
         reverseProxyConfig,
         reverseProxyValidationResult,
 	      adminConfig: {
@@ -2494,7 +2576,7 @@ export default function OnboardingWizard() {
 	      setupRun,
 	      setupStartError,
 	    });
-	  }, [adminConfig, credentialSource, credentials, dataConfig, environmentReferences, mailConfig, mailValidationResult, maxStep, reverseProxyConfig, reverseProxyValidationResult, services, setupRun, setupStartError, step, validationResult]);
+	  }, [adminConfig, configurationSecretReferences, configurationSecretSource, credentialSource, credentials, dataConfig, environmentReferences, mailConfig, mailValidationResult, maxStep, reverseProxyConfig, reverseProxyValidationResult, services, setupRun, setupStartError, step, validationResult]);
 
   useEffect(() => {
     if (!setupRun?.id || setupRun.status === 'completed' || setupRun.status === 'failed') {
@@ -2716,11 +2798,40 @@ export default function OnboardingWizard() {
     setMaxStep(1);
   };
 
+  const updateConfigurationSecretSource = (nextSource) => {
+    const normalizedSource = normalizeCredentialSource(nextSource);
+    if (normalizedSource === configurationSecretSource) {
+      return;
+    }
+    setConfigurationSecretSource(normalizedSource);
+    setMailValidationResult(null);
+    setMailValidationError('');
+    setStorageValidationResult(null);
+    setDataConfig((current) => ({ ...current, backblazeCredentialType: '' }));
+    setDataConfigError('');
+    setMaxStep((currentMaxStep) => Math.min(currentMaxStep, 3));
+  };
+
   const updateService = (key, checked) => {
     setServices((current) => ({ ...current, [key]: checked }));
   };
 
   const updateMailConfig = (field, value) => {
+    if (
+      configurationSecretSource === CREDENTIAL_SOURCE_ENVIRONMENT &&
+      MAIL_CONFIGURATION_SECRET_FIELDS.includes(field)
+    ) {
+      setConfigurationSecretReferences((current) => (
+        pickConfigurationEnvironmentReferences({
+          ...current,
+          [field]: value,
+        })
+      ));
+      setMailValidationResult(null);
+      setMailValidationError('');
+      setMaxStep((currentMaxStep) => Math.min(currentMaxStep, 3));
+      return;
+    }
     setMailConfig((current) => {
       const nextValue = pickMailConfig({ ...current, [field]: value });
       if (field === 'smtpSecure') {
@@ -2746,6 +2857,24 @@ export default function OnboardingWizard() {
   };
 
   const updateDataConfig = (field, value) => {
+    if (
+      configurationSecretSource === CREDENTIAL_SOURCE_ENVIRONMENT &&
+      DATA_CONFIGURATION_SECRET_FIELDS.includes(field)
+    ) {
+      setConfigurationSecretReferences((current) => (
+        pickConfigurationEnvironmentReferences({
+          ...current,
+          [getDataConfigurationReferenceField(field, dataConfig.storageMode)]: value,
+        })
+      ));
+      if (field === 's3AccessKeyId' || field === 's3SecretAccessKey' || field === 's3Endpoint') {
+        setDataConfig((current) => ({ ...current, backblazeCredentialType: '' }));
+      }
+      setDataConfigError('');
+      setStorageValidationResult(null);
+      setMaxStep((currentMaxStep) => Math.min(currentMaxStep, 3));
+      return;
+    }
     setDataConfig((current) => ({
       ...current,
       [field]: value,
@@ -2922,7 +3051,7 @@ export default function OnboardingWizard() {
   };
 
   const validateMailConfiguration = async () => {
-    const normalizedMail = normalizeMailConfig(mailConfig);
+    const normalizedMail = normalizeMailConfig(activeMailConfig);
     if (normalizedMail.provider === 'none') {
       const skippedResult = {
         ok: true,
@@ -2941,8 +3070,14 @@ export default function OnboardingWizard() {
     try {
       const response = await fetch('/api/setup/mail/validate', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ mail: normalizedMail }),
+        headers: buildSetupHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({
+          mail: normalizedMail,
+          configurationSecretSource,
+          configurationSecretReferences: pickConfigurationEnvironmentReferences(
+            configurationSecretReferences,
+          ),
+        }),
       });
       const body = await response.json().catch(() => ({}));
       if (!response.ok) {
@@ -2963,21 +3098,34 @@ export default function OnboardingWizard() {
   };
 
   const validateDataConfig = () => {
-    if (dataConfig.databaseMode === 'remote') {
-      const mongoUrl = normalizeText(dataConfig.mongoConnectionString);
+    if (activeDataConfig.databaseMode === 'remote') {
+      const mongoUrl = normalizeText(activeDataConfig.mongoConnectionString);
       if (!mongoUrl) {
         setDataConfigError('Enter a MongoDB connection string or choose local MongoDB.');
         return false;
       }
-      if (!parseMongoConnectionString(mongoUrl)) {
+      if (
+        configurationSecretSource !== CREDENTIAL_SOURCE_ENVIRONMENT &&
+        !parseMongoConnectionString(mongoUrl)
+      ) {
         setDataConfigError('MongoDB connection string must start with mongodb:// or mongodb+srv://.');
         return false;
       }
     }
 
-    if (['externalS3', 'backblazeB2'].includes(dataConfig.storageMode)) {
+    if (['externalS3', 'backblazeB2'].includes(activeDataConfig.storageMode)) {
       try {
-        validateExternalStorageConfig(buildInfrastructureConfig(dataConfig));
+        const validationDataConfig = (
+          configurationSecretSource === CREDENTIAL_SOURCE_ENVIRONMENT &&
+          activeDataConfig.storageMode === 'backblazeB2' &&
+          normalizeText(activeDataConfig.s3Endpoint)
+        )
+          ? {
+            ...activeDataConfig,
+            s3Endpoint: 'https://s3.us-east-005.backblazeb2.com',
+          }
+          : activeDataConfig;
+        validateExternalStorageConfig(buildInfrastructureConfig(validationDataConfig));
       } catch (error) {
         setDataConfigError(error?.message || 'External storage configuration is invalid.');
         return false;
@@ -2989,7 +3137,7 @@ export default function OnboardingWizard() {
   };
 
   const validateBackblazeStorageConfiguration = async () => {
-    if (dataConfig.storageMode !== 'backblazeB2') {
+    if (activeDataConfig.storageMode !== 'backblazeB2') {
       setStorageValidationResult(null);
       return { ok: true };
     }
@@ -3000,7 +3148,13 @@ export default function OnboardingWizard() {
       const response = await fetch('/api/setup/storage/backblaze/validate', {
         method: 'POST',
         headers: buildSetupHeaders({ 'Content-Type': 'application/json' }),
-        body: JSON.stringify({ storage: buildInfrastructureConfig(dataConfig).storage }),
+        body: JSON.stringify({
+          storage: buildInfrastructureConfig(activeDataConfig).storage,
+          configurationSecretSource,
+          configurationSecretReferences: pickConfigurationEnvironmentReferences(
+            configurationSecretReferences,
+          ),
+        }),
       });
       const body = await response.json().catch(() => ({}));
       if (!response.ok) {
@@ -3028,8 +3182,46 @@ export default function OnboardingWizard() {
     }
   };
 
+  const validateConfigurationEnvironment = async () => {
+    if (configurationSecretSource !== CREDENTIAL_SOURCE_ENVIRONMENT) {
+      return { ok: true };
+    }
+    try {
+      const response = await fetch('/api/setup/configuration/environment/validate', {
+        method: 'POST',
+        headers: buildSetupHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({
+          deployment: { infrastructure: buildInfrastructureConfig(activeDataConfig) },
+          mail: normalizeMailConfig(activeMailConfig),
+          configurationSecretReferences: pickConfigurationEnvironmentReferences(
+            configurationSecretReferences,
+          ),
+        }),
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        if (response.status === 401) {
+          handleSetupAuthFailure(body);
+        }
+        throw new Error(body?.message || 'Configuration environment variable validation failed.');
+      }
+      return body;
+    } catch (error) {
+      setDataConfigError(
+        error?.message === 'Failed to fetch'
+          ? 'Unable to reach the local setup service. Rebuild and run the setup wizard Docker container.'
+          : error?.message || 'Configuration environment variable validation failed.',
+      );
+      return null;
+    }
+  };
+
   const continueFromMailAndData = async () => {
     if (!validateDataConfig()) {
+      return;
+    }
+    const environmentResult = await validateConfigurationEnvironment();
+    if (!environmentResult) {
       return;
     }
     const storageResult = await validateBackblazeStorageConfiguration();
@@ -3249,9 +3441,9 @@ export default function OnboardingWizard() {
       const freshDeploymentPayload = buildDeploymentPayload(
         activeCredentials,
         services,
-        dataConfig,
+        activeDataConfig,
         freshValidationResult,
-        mailConfig,
+        activeMailConfig,
         mailValidation,
         reverseProxyConfig,
         reverseProxyValidationResult,
@@ -3265,7 +3457,11 @@ export default function OnboardingWizard() {
           credentials: credentialSource === CREDENTIAL_SOURCE_ENVIRONMENT
             ? pickEnvironmentReferences(activeCredentials)
             : normalizeCredentialSet(activeCredentials),
-          mail: normalizeMailConfig(mailConfig),
+          configurationSecretSource,
+          configurationSecretReferences: configurationSecretSource === CREDENTIAL_SOURCE_ENVIRONMENT
+            ? pickConfigurationEnvironmentReferences(configurationSecretReferences)
+            : pickConfigurationEnvironmentReferences(),
+          mail: normalizeMailConfig(activeMailConfig),
           admin: normalizedAdmin,
         }),
       });
@@ -3376,6 +3572,8 @@ export default function OnboardingWizard() {
     setCredentialSource(CREDENTIAL_SOURCE_MANUAL);
     setCredentials(pickCredentials());
     setEnvironmentReferences(pickEnvironmentReferences());
+    setConfigurationSecretSource(CREDENTIAL_SOURCE_MANUAL);
+    setConfigurationSecretReferences(pickConfigurationEnvironmentReferences());
     setServices(buildDefaultServices());
     setMailConfig(pickMailConfig());
     setMailValidationResult(null);
@@ -3597,7 +3795,9 @@ export default function OnboardingWizard() {
                   ? 'Choose adapters and reference exported Bash variables without placing raw credentials in the browser.'
                   : 'Choose only the adapters you need. Each provider shows every model its credential enables.')}
 	            {step === 2 && 'Available services are derived from the credentials validated in Providers.'}
-	            {step === 3 && 'Choose data storage, logging, and optional SMTP or Amazon SES email.'}
+	            {step === 3 && (configurationSecretSource === CREDENTIAL_SOURCE_ENVIRONMENT
+                  ? 'Choose data and mail options while keeping secret values in the host Bash environment.'
+                  : 'Choose data storage, logging, and optional SMTP or Amazon SES email.')}
                 {step === 4 && 'Optionally expose Studio and the processor API through nginx.'}
 	            {step === 5 && 'Create the Docker admin user and review the deployment.'}
 	          </p>
@@ -3767,6 +3967,36 @@ export default function OnboardingWizard() {
 
         {step === 3 && (
           <>
+            <section className="credential-source-panel" aria-labelledby="configuration-secret-source-title">
+              <div className="credential-source-copy">
+                <strong id="configuration-secret-source-title">Configuration secret source</strong>
+                <small>
+                  {configurationSecretSource === CREDENTIAL_SOURCE_ENVIRONMENT
+                    ? 'Secret fields use references such as $MONGO_URL. Values are resolved inside the setup service and never returned to the browser.'
+                    : 'Enter mail, database, and storage secret values directly in the protected fields below.'}
+                </small>
+              </div>
+              <div className="credential-source-toggle" role="group" aria-label="Mail and data secret source">
+                <button
+                  type="button"
+                  className={configurationSecretSource === CREDENTIAL_SOURCE_MANUAL ? 'active' : ''}
+                  aria-pressed={configurationSecretSource === CREDENTIAL_SOURCE_MANUAL}
+                  onClick={() => updateConfigurationSecretSource(CREDENTIAL_SOURCE_MANUAL)}
+                >
+                  Enter values
+                  <small>Default</small>
+                </button>
+                <button
+                  type="button"
+                  className={configurationSecretSource === CREDENTIAL_SOURCE_ENVIRONMENT ? 'active' : ''}
+                  aria-pressed={configurationSecretSource === CREDENTIAL_SOURCE_ENVIRONMENT}
+                  onClick={() => updateConfigurationSecretSource(CREDENTIAL_SOURCE_ENVIRONMENT)}
+                >
+                  Bash environment
+                  <small>Use $VARIABLE_NAME</small>
+                </button>
+              </div>
+            </section>
             <div className="data-config-layout mail-config-layout">
               <section className="data-config-card">
                 <div className="data-config-card-header">
@@ -3884,11 +4114,14 @@ export default function OnboardingWizard() {
                       />
                     </label>
                     <label className="data-field">
-                      <span>Password</span>
+                      <span>{configurationSecretSource === CREDENTIAL_SOURCE_ENVIRONMENT ? 'Password Bash variable' : 'Password'}</span>
                       <input
                         name="samsar-smtp-password"
-                        type="password"
-                        value={mailConfig.smtpPassword}
+                        type={configurationSecretSource === CREDENTIAL_SOURCE_ENVIRONMENT ? 'text' : 'password'}
+                        value={activeMailConfig.smtpPassword}
+                        placeholder={configurationSecretSource === CREDENTIAL_SOURCE_ENVIRONMENT
+                          ? getConfigurationEnvironmentReferencePlaceholder('smtpPassword')
+                          : ''}
                         autoComplete="off"
                         spellCheck={false}
                         onChange={(event) => updateMailConfig('smtpPassword', event.target.value)}
@@ -3925,10 +4158,14 @@ export default function OnboardingWizard() {
                       />
                     </label>
                     <label className="data-field">
-                      <span>Access key ID</span>
+                      <span>{configurationSecretSource === CREDENTIAL_SOURCE_ENVIRONMENT ? 'Access key ID Bash variable' : 'Access key ID'}</span>
                       <input
                         name="samsar-ses-access-key-id"
-                        value={mailConfig.sesAccessKeyId}
+                        type="text"
+                        value={activeMailConfig.sesAccessKeyId}
+                        placeholder={configurationSecretSource === CREDENTIAL_SOURCE_ENVIRONMENT
+                          ? getConfigurationEnvironmentReferencePlaceholder('sesAccessKeyId')
+                          : ''}
                         autoComplete="off"
                         autoCapitalize="off"
                         spellCheck={false}
@@ -3936,11 +4173,14 @@ export default function OnboardingWizard() {
                       />
                     </label>
                     <label className="data-field">
-                      <span>Secret access key</span>
+                      <span>{configurationSecretSource === CREDENTIAL_SOURCE_ENVIRONMENT ? 'Secret access key Bash variable' : 'Secret access key'}</span>
                       <input
                         name="samsar-ses-secret-access-key"
-                        type="password"
-                        value={mailConfig.sesSecretAccessKey}
+                        type={configurationSecretSource === CREDENTIAL_SOURCE_ENVIRONMENT ? 'text' : 'password'}
+                        value={activeMailConfig.sesSecretAccessKey}
+                        placeholder={configurationSecretSource === CREDENTIAL_SOURCE_ENVIRONMENT
+                          ? getConfigurationEnvironmentReferencePlaceholder('sesSecretAccessKey')
+                          : ''}
                         autoComplete="off"
                         spellCheck={false}
                         onChange={(event) => updateMailConfig('sesSecretAccessKey', event.target.value)}
@@ -3948,12 +4188,14 @@ export default function OnboardingWizard() {
                     </label>
                     {sesAccessKeyUsesTemporaryCredentials && (
                       <label className="data-field">
-                        <span>Session token</span>
+                        <span>{configurationSecretSource === CREDENTIAL_SOURCE_ENVIRONMENT ? 'Session token Bash variable' : 'Session token'}</span>
                         <input
                           name="samsar-ses-session-token"
-                          type="password"
-                          value={mailConfig.sesSessionToken}
-                          placeholder="Required for temporary credentials"
+                          type={configurationSecretSource === CREDENTIAL_SOURCE_ENVIRONMENT ? 'text' : 'password'}
+                          value={activeMailConfig.sesSessionToken}
+                          placeholder={configurationSecretSource === CREDENTIAL_SOURCE_ENVIRONMENT
+                            ? getConfigurationEnvironmentReferencePlaceholder('sesSessionToken')
+                            : 'Required for temporary credentials'}
                           autoComplete="off"
                           spellCheck={false}
                           onChange={(event) => updateMailConfig('sesSessionToken', event.target.value)}
@@ -4008,15 +4250,17 @@ export default function OnboardingWizard() {
 	                {dataConfig.databaseMode === 'remote' && (
 	                  <div className="data-field-grid single">
 	                    <label className="data-field">
-	                      <span>MongoDB connection string</span>
-	                      <input
-	                        type="password"
-	                        value={dataConfig.mongoConnectionString}
-	                        placeholder="mongodb+srv://user:password@cluster.example/SamsarOne"
-	                        onChange={(event) => updateDataConfig('mongoConnectionString', event.target.value)}
-	                      />
-	                    </label>
-	                    {parseMongoConnectionString(dataConfig.mongoConnectionString) && (
+		                      <span>{configurationSecretSource === CREDENTIAL_SOURCE_ENVIRONMENT ? 'MongoDB connection Bash variable' : 'MongoDB connection string'}</span>
+		                      <input
+		                        type={configurationSecretSource === CREDENTIAL_SOURCE_ENVIRONMENT ? 'text' : 'password'}
+		                        value={activeDataConfig.mongoConnectionString}
+		                        placeholder={configurationSecretSource === CREDENTIAL_SOURCE_ENVIRONMENT
+		                          ? getConfigurationEnvironmentReferencePlaceholder('mongoConnectionString')
+		                          : 'mongodb+srv://user:password@cluster.example/SamsarOne'}
+		                        onChange={(event) => updateDataConfig('mongoConnectionString', event.target.value)}
+		                      />
+		                    </label>
+		                    {configurationSecretSource === CREDENTIAL_SOURCE_MANUAL && parseMongoConnectionString(dataConfig.mongoConnectionString) && (
 	                      <div className="data-parse-summary">
 	                        {parseMongoConnectionString(dataConfig.mongoConnectionString).scheme} /
 	                        {' '}{parseMongoConnectionString(dataConfig.mongoConnectionString).hosts} /
@@ -4099,13 +4343,19 @@ export default function OnboardingWizard() {
 	                      </label>
 	                    )}
 	                    <label className="data-field">
-	                      <span>S3 endpoint</span>
+	                      <span>{configurationSecretSource === CREDENTIAL_SOURCE_ENVIRONMENT
+	                        ? `${dataConfig.storageMode === 'backblazeB2' ? 'B2 host' : 'S3 endpoint'} Bash variable`
+	                        : dataConfig.storageMode === 'backblazeB2' ? 'B2 host' : 'S3 endpoint'}</span>
 	                      <input
 	                        required={dataConfig.storageMode === 'backblazeB2'}
-	                        value={dataConfig.s3Endpoint}
-	                        placeholder={dataConfig.storageMode === 'backblazeB2'
-	                          ? 's3.us-east-005.backblazeb2.com'
-	                          : 'Optional for AWS S3'}
+	                        value={activeDataConfig.s3Endpoint}
+	                        placeholder={configurationSecretSource === CREDENTIAL_SOURCE_ENVIRONMENT
+	                          ? getConfigurationEnvironmentReferencePlaceholder(
+	                            getDataConfigurationReferenceField('s3Endpoint', dataConfig.storageMode),
+	                          )
+	                          : dataConfig.storageMode === 'backblazeB2'
+	                            ? 'https://s3.us-east-005.backblazeb2.com'
+	                            : 'Optional for AWS S3'}
 	                        autoComplete="off"
 	                        autoCapitalize="off"
 	                        spellCheck={false}
@@ -4124,21 +4374,33 @@ export default function OnboardingWizard() {
 	                      </label>
 	                    )}
 	                    <label className="data-field">
-	                      <span>{dataConfig.storageMode === 'backblazeB2' ? 'Key ID' : 'Access key'}</span>
-	                      <input
-	                        type="password"
-	                        value={dataConfig.s3AccessKeyId}
-	                        placeholder={dataConfig.storageMode === 'backblazeB2' ? 'Master or application key ID' : ''}
-	                        onChange={(event) => updateDataConfig('s3AccessKeyId', event.target.value)}
-	                      />
-	                    </label>
-	                    <label className="data-field">
-	                      <span>{dataConfig.storageMode === 'backblazeB2' ? 'Key value' : 'Secret key'}</span>
-	                      <input
-	                        type="password"
-	                        value={dataConfig.s3SecretAccessKey}
-	                        placeholder={dataConfig.storageMode === 'backblazeB2' ? 'Key value, not the key name' : ''}
-	                        onChange={(event) => updateDataConfig('s3SecretAccessKey', event.target.value)}
+		                      <span>{configurationSecretSource === CREDENTIAL_SOURCE_ENVIRONMENT
+		                        ? `${dataConfig.storageMode === 'backblazeB2' ? 'Key ID' : 'Access key'} Bash variable`
+		                        : dataConfig.storageMode === 'backblazeB2' ? 'Key ID' : 'Access key'}</span>
+		                      <input
+		                        type={configurationSecretSource === CREDENTIAL_SOURCE_ENVIRONMENT ? 'text' : 'password'}
+		                        value={activeDataConfig.s3AccessKeyId}
+		                        placeholder={configurationSecretSource === CREDENTIAL_SOURCE_ENVIRONMENT
+		                          ? getConfigurationEnvironmentReferencePlaceholder(
+		                            getDataConfigurationReferenceField('s3AccessKeyId', dataConfig.storageMode),
+		                          )
+		                          : dataConfig.storageMode === 'backblazeB2' ? 'Master or application key ID' : ''}
+		                        onChange={(event) => updateDataConfig('s3AccessKeyId', event.target.value)}
+		                      />
+		                    </label>
+		                    <label className="data-field">
+		                      <span>{configurationSecretSource === CREDENTIAL_SOURCE_ENVIRONMENT
+		                        ? `${dataConfig.storageMode === 'backblazeB2' ? 'Key value' : 'Secret key'} Bash variable`
+		                        : dataConfig.storageMode === 'backblazeB2' ? 'Key value' : 'Secret key'}</span>
+		                      <input
+		                        type={configurationSecretSource === CREDENTIAL_SOURCE_ENVIRONMENT ? 'text' : 'password'}
+		                        value={activeDataConfig.s3SecretAccessKey}
+		                        placeholder={configurationSecretSource === CREDENTIAL_SOURCE_ENVIRONMENT
+		                          ? getConfigurationEnvironmentReferencePlaceholder(
+		                            getDataConfigurationReferenceField('s3SecretAccessKey', dataConfig.storageMode),
+		                          )
+		                          : dataConfig.storageMode === 'backblazeB2' ? 'Key value, not the key name' : ''}
+		                        onChange={(event) => updateDataConfig('s3SecretAccessKey', event.target.value)}
 	                      />
 	                    </label>
 	                    {dataConfig.storageMode === 'externalS3' && (
@@ -4168,19 +4430,23 @@ export default function OnboardingWizard() {
 	                      />
 	                    </label>
 	                    <label className="data-field">
-	                      <span>CloudFront private key</span>
-	                      <textarea
-	                        value={dataConfig.cloudFrontPrivateKey}
-	                        placeholder="Optional PEM private key"
+		                      <span>{configurationSecretSource === CREDENTIAL_SOURCE_ENVIRONMENT ? 'CloudFront private key Bash variable' : 'CloudFront private key'}</span>
+		                      <textarea
+		                        value={activeDataConfig.cloudFrontPrivateKey}
+		                        placeholder={configurationSecretSource === CREDENTIAL_SOURCE_ENVIRONMENT
+		                          ? getConfigurationEnvironmentReferencePlaceholder('cloudFrontPrivateKey')
+		                          : 'Optional PEM private key'}
 	                        onChange={(event) => updateDataConfig('cloudFrontPrivateKey', event.target.value)}
 	                        spellCheck="false"
 	                      />
 	                    </label>
 	                    <label className="data-field">
-	                      <span>Private key base64</span>
-	                      <textarea
-	                        value={dataConfig.cloudFrontPrivateKeyBase64}
-	                        placeholder="Optional alternative to PEM"
+		                      <span>{configurationSecretSource === CREDENTIAL_SOURCE_ENVIRONMENT ? 'Private key base64 Bash variable' : 'Private key base64'}</span>
+		                      <textarea
+		                        value={activeDataConfig.cloudFrontPrivateKeyBase64}
+		                        placeholder={configurationSecretSource === CREDENTIAL_SOURCE_ENVIRONMENT
+		                          ? getConfigurationEnvironmentReferencePlaceholder('cloudFrontPrivateKeyBase64')
+		                          : 'Optional alternative to PEM'}
 	                        onChange={(event) => updateDataConfig('cloudFrontPrivateKeyBase64', event.target.value)}
 	                        spellCheck="false"
 	                      />

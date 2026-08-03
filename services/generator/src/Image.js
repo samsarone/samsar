@@ -174,6 +174,45 @@ function normalizeString(value) {
   return typeof value === 'string' ? value.trim() : '';
 }
 
+async function persistFinalGeneratedImageForRequest(
+  payload = {},
+  generatedImage = {},
+  dependencies = {},
+) {
+  const generatedImageModel = dependencies.generatedImageModel || GeneratedImage;
+  const requestId = payload?._id;
+  const sourceRequestId = requestId?.toString?.() || normalizeString(requestId);
+  const record = {
+    ...generatedImage,
+    sourceRequestId: sourceRequestId || null,
+    sourceProviderRequestId: normalizeString(payload?.apiRequestId) || null,
+  };
+
+  if (!requestId) {
+    const imageDocument = new generatedImageModel(record);
+    return imageDocument.save({});
+  }
+
+  try {
+    return await generatedImageModel.findOneAndUpdate(
+      { _id: requestId },
+      { $setOnInsert: record },
+      {
+        upsert: true,
+        new: true,
+        setDefaultsOnInsert: true,
+      },
+    );
+  } catch (error) {
+    // Concurrent upserts can race at the unique MongoDB _id boundary. The
+    // already-persisted request result is the desired idempotent outcome.
+    if (error?.code === 11000 && typeof generatedImageModel.findById === 'function') {
+      return generatedImageModel.findById(requestId);
+    }
+    throw error;
+  }
+}
+
 function normalizeAdapterProvider(value) {
   const normalized = normalizeString(value).toLowerCase().replace(/[^a-z0-9]/g, '');
   if (['alibaba', 'alibabacloud', 'aliyun', 'dashscope', 'qwen'].includes(normalized)) {
@@ -2608,6 +2647,51 @@ export async function getAndProcessPendingImageGenerationRows() {
   }
 }
 
+async function claimPendingImageGenerationRequest(
+  requestId,
+  imageGenerationModel = ImageGeneration,
+  now = new Date(),
+) {
+  return imageGenerationModel.findOneAndUpdate(
+    {
+      _id: requestId,
+      rowLocked: false,
+      ...buildPendingImageGenerationEligibilityFilter(now),
+    },
+    { $set: { rowLocked: true } },
+    { new: true },
+  );
+}
+
+function buildPendingImageGenerationEligibilityFilter(now = new Date()) {
+  const terminalStatuses = [...TERMINAL_IMAGE_REQUEST_STATUSES];
+  return {
+    $and: [
+      {
+        $or: [
+          {
+            operationType: 'GENERATE',
+            generationStatus: { $nin: terminalStatuses },
+            apiGenerationStatus: { $nin: terminalStatuses },
+          },
+          {
+            operationType: { $in: ['EDIT', 'UPSCALE'] },
+            editStatus: { $nin: terminalStatuses },
+            apiEditStatus: { $nin: terminalStatuses },
+          },
+        ],
+      },
+      {
+        $or: [
+          { nextAttemptAfter: { $exists: false } },
+          { nextAttemptAfter: null },
+          { nextAttemptAfter: { $lte: now } },
+        ],
+      },
+    ],
+  };
+}
+
 export async function processPendingImageRequests() {
   const availableSlots = Math.max(
     0,
@@ -2619,36 +2703,17 @@ export async function processPendingImageRequests() {
 
   await getDBConnectionString();
 
-  const TERMINAL_STATUSES = ["COMPLETED", "FAILED", "CANCELLED"];
+  const eligibilityFilter = buildPendingImageGenerationEligibilityFilter();
   const pendingRequests = await ImageGeneration.find({
     rowLocked: false,
-    $and: [
-      {
-        $or: [
-          { generationStatus: { $exists: true, $nin: TERMINAL_STATUSES } },
-          { editStatus: { $exists: true, $nin: TERMINAL_STATUSES } },
-          { $and: [{ generationStatus: { $exists: false } }, { editStatus: { $exists: false } }] }
-        ],
-      },
-      {
-        $or: [
-          { nextAttemptAfter: { $exists: false } },
-          { nextAttemptAfter: null },
-          { nextAttemptAfter: { $lte: new Date() } },
-        ],
-      },
-    ],
+    ...eligibilityFilter,
   })
     .sort({ createdAt: 1 })
     .limit(availableSlots);
 
   for (let pendingRequestData of pendingRequests) {
     try {
-      const lockedRequest = await ImageGeneration.findOneAndUpdate(
-        { _id: pendingRequestData._id, rowLocked: false },
-        { $set: { rowLocked: true } },
-        { new: true },
-      );
+      const lockedRequest = await claimPendingImageGenerationRequest(pendingRequestData._id);
       if (lockedRequest) {
         taskQueue.push(lockedRequest);
       }
@@ -3400,24 +3465,6 @@ async function processRefilterFailure(imageData, payload, imageScore, imageDescr
   const imageAsset = await persistGenerationImageForSession(imageData.image, videoSessionId);
   const imageURL = imageAsset.relativePath;
 
-  // add the failed image to generated images
-  const generatedImagePayload = {
-
-    url: imageURL,
-    description: imageDescription || "",
-    prompt: payload.prompt,
-    sessionId: videoSessionId,
-    userId: payload.userId,
-    generationType: 'generate',
-    model: payload.model || null,
-    aspectRatio: payload.aspectRatio || null,
-
-  };
-
-  const generatedImage = new GeneratedImage(generatedImagePayload);
-
-  await generatedImage.save();
-
   const latestGenerationData = await ImageGeneration.findOne({ _id: requestId });
   if (!latestGenerationData) {
     removeTaskFromQueueById(requestId);
@@ -3746,8 +3793,9 @@ async function processImageGenerationSuccess(imageData, payload, imageScore) {
   }
 
 
-  // Finally, save record in GeneratedImage
-  const generatedImagePayload = new GeneratedImage({
+  // Only final, user-visible results belong in GeneratedImage. The request id
+  // is also the record id, so repeated completion delivery cannot add copies.
+  await persistFinalGeneratedImageForRequest(payload, {
     url: imageURL,
     description: imageData.description || "",
     prompt: payload.prompt,
@@ -3757,7 +3805,6 @@ async function processImageGenerationSuccess(imageData, payload, imageScore) {
     model: payload.model || null,
     aspectRatio: payload.aspectRatio || sessionDataValue.aspectRatio || null,
   });
-  await generatedImagePayload.save({});
 
   // Remove the request from the queue and DB
   await ImageGeneration.deleteOne({ _id: payload._id });
@@ -4133,7 +4180,7 @@ async function finalizeUpscaleSuccess(payload, imageReference) {
   }
 
   try {
-    const generatedImagePayload = new GeneratedImage({
+    await persistFinalGeneratedImageForRequest(payload, {
       url: persistedImageName,
       description: '',
       prompt: payload.prompt || '',
@@ -4143,7 +4190,6 @@ async function finalizeUpscaleSuccess(payload, imageReference) {
       model: payload.model || null,
       aspectRatio: aspectRatio || sessionDataValue.aspectRatio || null,
     });
-    await generatedImagePayload.save({});
   } catch (error) {
     console.error(error);
   }
@@ -4543,7 +4589,7 @@ async function markEditImageAsCompleted(genRowValue, editedImageData) {
 
     // Save an entry in GeneratedImage if we got a valid edit
     if (layerUpdated && generationSrc) {
-      const generatedImagePayload = new GeneratedImage({
+      const generatedImagePayload = {
         url: generationSrc,
         description: '',
         prompt: genRowValue.prompt,
@@ -4552,9 +4598,9 @@ async function markEditImageAsCompleted(genRowValue, editedImageData) {
         generationType: 'edit',
         model: genRowValue.model || null,
         aspectRatio: genRowValue.aspectRatio || sessionDataValue.aspectRatio || null,
-      });
+      };
       try {
-        await generatedImagePayload.save({});
+        await persistFinalGeneratedImageForRequest(genRowValue, generatedImagePayload);
       } catch (e) {
         console.error(e);
       }
@@ -4672,7 +4718,7 @@ async function markStandaloneGenerationAsCompleted(payload, imageData) {
   );
 
   try {
-    const generatedImagePayload = new GeneratedImage({
+    await persistFinalGeneratedImageForRequest(payload, {
       url: resultUrl || (imageName ? `/generations/${imageName}` : ''),
       description: imageData?.description || "",
       prompt: payload?.prompt || "",
@@ -4682,7 +4728,6 @@ async function markStandaloneGenerationAsCompleted(payload, imageData) {
       model: payload?.model || null,
       aspectRatio: payload?.aspectRatio || null,
     });
-    await generatedImagePayload.save({});
   } catch (error) {
     console.error(error);
   }
@@ -4768,6 +4813,9 @@ export const __testOnly__ = {
   isSafetyRejectionMessage,
   getImageGenerationRetryDelayMs,
   getImageGenerationNextAttemptAfter,
+  buildPendingImageGenerationEligibilityFilter,
+  claimPendingImageGenerationRequest,
+  persistFinalGeneratedImageForRequest,
   getPinnedImageAdapterProvider,
   getImageGenerationAdapterRetryState,
   isImageGenerationProviderApplicable,

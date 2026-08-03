@@ -25,6 +25,13 @@ let cachedToken = null;
 let tokenFetchTime = null;
 const TOKEN_VALIDITY_SECONDS = 3600; // assume token is valid for 1 hour
 
+export function buildImagenCompletionUpdate() {
+  return {
+    apiGenerationStatus: "COMPLETED",
+    rowLocked: true,
+  };
+}
+
 export async function handleImagenRequest(payload) {
   const { apiGenerationStatus } = payload;
   if (apiGenerationStatus === 'INIT') {
@@ -152,10 +159,7 @@ export async function submitImagenRequest(payload) {
     // Mark the generation as completed directly since we have the image now
     await ImageGeneration.findOneAndUpdate(
       { _id: _id },
-      {
-        apiGenerationStatus: "COMPLETED",
-        rowLocked: false
-      }
+      buildImagenCompletionUpdate()
     );
 
     return { image: imageName };

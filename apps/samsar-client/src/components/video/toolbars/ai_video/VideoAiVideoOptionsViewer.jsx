@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import SecondaryButton from '../../../common/SecondaryButton.tsx';
-import SingleSelect from '../../../common/SingleSelect.jsx'; // <-- Update path as needed
+import ModelAdapterSelect from '../../../common/ModelAdapterSelect.jsx';
 import { useColorMode } from '../../../../contexts/ColorMode.jsx';
+import { useDeploymentModelAvailability } from '../../../../hooks/useDeploymentModelAvailability.js';
 
 export default function VideoAiVideoOptionsViewer(props) {
   const {
@@ -23,6 +24,10 @@ export default function VideoAiVideoOptionsViewer(props) {
   const [showSoundEffectPrompt, setShowSoundEffectPrompt] = useState(false);
   const [soundEffectPrompt, setSoundEffectPrompt] = useState('');
   const { colorMode } = useColorMode();
+  const {
+    isStandaloneDeployment,
+    primaryAdapterByModel,
+  } = useDeploymentModelAvailability();
   const soundEffectPromptClassName = colorMode === 'dark'
     ? 'w-full text-sm p-1 bg-[#20232e] text-slate-100 border border-[#3a4050] rounded'
     : 'w-full text-sm p-1 bg-white text-slate-900 border border-slate-200 rounded placeholder:text-slate-400';
@@ -89,10 +94,12 @@ export default function VideoAiVideoOptionsViewer(props) {
     <div className="mb-4 flex flex-col items-center">
       <div className="text-sm mb-2">Lip Sync</div>
       <div className={selectShellClass}>
-        <SingleSelect
+        <ModelAdapterSelect
           options={lipSyncOptions}
           value={selectedLipSyncOption}
           onChange={setSelectedLipSyncOption}
+          primaryAdapterByModel={primaryAdapterByModel}
+          isStandaloneDeployment={isStandaloneDeployment}
           classNamePrefix="lipSyncSelect"
           isSearchable={false}
           compactLayout={!isSidebarCollapsed && isSidebarPanel}
@@ -163,10 +170,12 @@ export default function VideoAiVideoOptionsViewer(props) {
 
         {/* NEW: Sound effect model select */}
         <div className={selectShellClass}>
-          <SingleSelect
+          <ModelAdapterSelect
             options={soundEffectOptions}
             value={selectedSoundEffectOption}
             onChange={setSelectedSoundEffectOption}
+            primaryAdapterByModel={primaryAdapterByModel}
+            isStandaloneDeployment={isStandaloneDeployment}
             classNamePrefix="soundEffectSelect"
             isSearchable={false}
             compactLayout={!isSidebarCollapsed && isSidebarPanel}

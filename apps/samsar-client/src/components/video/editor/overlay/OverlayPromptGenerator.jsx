@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import CommonButton from "../../../common/CommonButton.tsx";
+import ModelAdapterSelect from "../../../common/ModelAdapterSelect.jsx";
 import {
   IMAGE_GENERAITON_MODEL_TYPES,
   imageGenerationModelSupportsAspectRatio,
@@ -43,6 +44,7 @@ export default function OverlayPromptGenerator(props) {
   const {
     isStandaloneDeployment: isStandaloneModelFilteringEnabled,
     imageModelValues,
+    primaryAdapterByModel,
   } = useDeploymentModelAvailability();
   const availableImageModels = useMemo(
     () => {
@@ -81,19 +83,19 @@ export default function OverlayPromptGenerator(props) {
     ? "flex w-full min-w-0 items-center gap-4"
     : "flex w-full min-w-0 items-center gap-3";
   const topControlRowClassName = isPortraitLayout
-    ? "flex w-full flex-col gap-3"
+    ? "flex w-full items-center gap-3"
     : isImageStudioPrompt
     ? "flex w-full flex-wrap items-center gap-4"
     : "flex w-full flex-wrap items-center gap-3";
   const selectControlGroupClassName = isPortraitLayout
-    ? controlGroupClassName
+    ? "flex shrink-0 items-center"
     : isImageStudioPrompt
     ? "flex min-w-[240px] flex-1 items-center gap-4"
     : "flex min-w-[220px] flex-1 items-center gap-3";
   const optionRowClassName = isPortraitLayout
     ? isImageStudioPrompt
       ? "flex flex-wrap items-center gap-3"
-      : "flex flex-wrap items-center gap-2"
+      : "ml-auto flex flex-wrap items-center justify-end gap-2"
     : isImageStudioPrompt
     ? "flex flex-wrap items-center gap-3"
     : "ml-auto flex flex-wrap items-center gap-2";
@@ -191,8 +193,7 @@ export default function OverlayPromptGenerator(props) {
     (model) => model.key === selectedGenerationModel
   );
 
-  const setSelectedModelDisplay = (evt) => {
-    const newModel = evt.target.value;
+  const setSelectedModelDisplay = (newModel) => {
     setSelectedGenerationModel(newModel);
     localStorage.setItem("defaultModel", newModel);
   };
@@ -242,17 +243,25 @@ export default function OverlayPromptGenerator(props) {
             </a>
             <Tooltip id="modelCostTooltip" place="right" effect="solid" />
           </div>
-          <select
-            onChange={setSelectedModelDisplay}
-            className={`${selectShell} min-w-0 flex-1 ${inputPaddingClass}`}
-            value={selectedGenerationModel}
-          >
-            {availableImageModels.map((model) => (
-              <option key={model.key} value={model.key}>
-                {model.name}
-              </option>
-            ))}
-          </select>
+          {!isPortraitLayout ? (
+            <ModelAdapterSelect
+              options={availableImageModels}
+              value={selectedGenerationModel}
+              onChange={setSelectedModelDisplay}
+              primaryAdapterByModel={primaryAdapterByModel}
+              isStandaloneDeployment={isStandaloneModelFilteringEnabled}
+              valueMode="value"
+              hostedControl="native"
+              nativeClassName={`${selectShell} min-w-0 flex-1 ${inputPaddingClass}`}
+              styles={{
+                container: (provided) => ({
+                  ...provided,
+                  width: 0,
+                  flex: "1 1 0%",
+                }),
+              }}
+            />
+          ) : null}
         </div>
 
         {selectedModelDefinition?.imageStyles?.length ? (

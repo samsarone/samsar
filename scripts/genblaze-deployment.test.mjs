@@ -76,7 +76,7 @@ test('offers Backblaze as a public S3-compatible storage backend', async () => {
   ]);
 
   assert.match(wizard, /storageMode === 'backblazeB2'/);
-  assert.match(wizard, /value=\{dataConfig\.s3Endpoint\}/);
+  assert.match(wizard, /value=\{activeDataConfig\.s3Endpoint\}/);
   assert.match(wizard, /required=\{dataConfig\.storageMode === 'backblazeB2'\}/);
   assert.doesNotMatch(wizard, /https:\/\/s3\.\$\{storageRegion\}\.backblazeb2\.com/);
   assert.doesNotMatch(wizard, /us-west-004/);

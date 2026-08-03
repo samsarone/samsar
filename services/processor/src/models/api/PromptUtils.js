@@ -125,7 +125,6 @@ export function validateExpressVideoModelKey(videoModel, options = {}) {
       message: 'Video model is not supported for this type',
     };
   }
-
   return {
     status: true,
     videoModel: normalizedVideoModel,

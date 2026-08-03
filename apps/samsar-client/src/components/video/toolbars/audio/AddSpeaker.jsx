@@ -1,17 +1,18 @@
 import { useEffect, useMemo, useState } from 'react';
 import CommonButton from '../../../common/CommonButton.tsx';
-import SingleSelect from '../../../common/SingleSelect.jsx';
+import ModelAdapterSelect from '../../../common/ModelAdapterSelect.jsx';
 import SpeechProviderSelect from './SpeechProviderSelect.jsx';
 import { getGoogleTTSVoiceDetails } from '../../../../hooks/useGoogleTTSSpeakers.js';
 import { useAudioProviderAvailability } from '../../../../hooks/useAudioProviderAvailability.js';
+import { useDeploymentModelAvailability } from '../../../../hooks/useDeploymentModelAvailability.js';
 import { filterTtsProviderOptionsForAudioAvailability } from '../../../../constants/audioProviderAvailability.js';
 
 const TTS_PROVIDER_OPTIONS = [
-  { value: 'OPENAI', label: 'OpenAI' },
-  { value: 'ELEVENLABS', label: 'ElevenLabs' },
-  { value: 'PLAYAI', label: 'Play.ht' },
-  { value: 'GOOGLE', label: 'Google TTS' },
-  { value: 'CUSTOM_TEXT_TO_SPEECH', label: 'Custom TTS' },
+  { value: 'OPENAI', label: 'OpenAI', adapterModelKey: 'OPENAI_TTS' },
+  { value: 'ELEVENLABS', label: 'ElevenLabs', adapterModelKey: 'ELEVENLABS' },
+  { value: 'PLAYAI', label: 'Play.ht', adapterModelKey: 'PLAYAI' },
+  { value: 'GOOGLE', label: 'Google TTS', adapterModelKey: 'GOOGLE_TTS' },
+  { value: 'CUSTOM_TEXT_TO_SPEECH', label: 'Custom TTS', adapterKey: 'custom' },
 ];
 
 export default function AddSpeaker(props) {
@@ -36,6 +37,10 @@ export default function AddSpeaker(props) {
 
   const [ttsProvider, setTtsProvider] = useState(TTS_PROVIDER_OPTIONS[0]);
   const { audioAvailability } = useAudioProviderAvailability();
+  const {
+    isStandaloneDeployment,
+    primaryAdapterByModel,
+  } = useDeploymentModelAvailability();
   const availableTtsProviderOptions = useMemo(
     () => filterTtsProviderOptionsForAudioAvailability(TTS_PROVIDER_OPTIONS, audioAvailability),
     [audioAvailability]
@@ -151,11 +156,13 @@ export default function AddSpeaker(props) {
 
       <div className="mb-3">
         <label className={fieldLabelClass}>Provider</label>
-        <SingleSelect
+        <ModelAdapterSelect
           name="ttsProvider"
           options={availableTtsProviderOptions}
           value={ttsProvider}
           onChange={handleTtsProviderChange}
+          primaryAdapterByModel={primaryAdapterByModel}
+          isStandaloneDeployment={isStandaloneDeployment}
           isSearchable={false}
           truncateLabels={isSidebarCollapsed}
         />

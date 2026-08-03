@@ -25,6 +25,7 @@ COPY genblazeCompose.mjs ./genblazeCompose.mjs
 COPY storageConfig.mjs ./storageConfig.mjs
 COPY backblazeValidation.mjs ./backblazeValidation.mjs
 COPY src/constants/providerEnvironment.js ./src/constants/providerEnvironment.js
+COPY src/constants/configurationEnvironment.js ./src/constants/configurationEnvironment.js
 
 ENV SETUP_WIZARD_STATIC_DIR=/app/dist
 EXPOSE 80

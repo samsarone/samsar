@@ -18,8 +18,10 @@ import {
   getRetryPromptSeedAction,
   isTransientProviderError,
   isSafeProviderSubmissionRetry,
+  isGmiCloudImageToVideoRequest,
   resolveCompletedLayerDuration,
   resolveConnectedAudioLayerDuration,
+  selectAiVideoDispatchRequests,
   selectFilterPassForBaseGenerationRetry,
   shouldRetryBaseGeneration,
   shouldUseAlibabaNativeHappyHorse,
@@ -43,6 +45,68 @@ test('base AI-video completion marks the generated media as available', () => {
     aiVideoThumbnailVideo: '/assets/preview.mp4',
     aiVideoGenerationStatus: 'COMPLETED',
   });
+});
+
+test('GMICloud image-to-video dispatch is capped at two without blocking other adapters', () => {
+  const activeRequests = [
+    { model: 'SEEDANCEI2V', startImage: 'one.png', dockerVideoProvider: 'gmicloud' },
+    { model: 'SEEDANCEI2V', startImage: 'two.png', dockerVideoProvider: 'gmicloud' },
+    { model: 'WANI2V', startImage: 'three.png', dockerVideoProvider: 'fal' },
+  ];
+  const blockedGmiCloud = {
+    id: 'blocked-gmicloud',
+    model: 'SEEDANCEI2V',
+    startImage: 'four.png',
+    dockerVideoProvider: 'gmicloud',
+  };
+  const falRequests = [
+    { id: 'fal-one', model: 'WANI2V', startImage: 'five.png', dockerVideoProvider: 'fal' },
+    { id: 'fal-two', model: 'WANI2V', startImage: 'six.png', dockerVideoProvider: 'fal' },
+  ];
+
+  assert.deepEqual(
+    selectAiVideoDispatchRequests({
+      activeRequests,
+      initRequests: [blockedGmiCloud, ...falRequests],
+    }).map(({ id }) => id),
+    ['fal-one', 'fal-two'],
+  );
+});
+
+test('GMICloud image-to-video dispatch consumes only its remaining provider slot', () => {
+  const activeRequests = [
+    { model: 'SEEDANCEI2V', startImage: 'one.png', dockerVideoProvider: 'gmicloud' },
+  ];
+  const initRequests = [
+    { id: 'gmi-one', model: 'SEEDANCEI2V', startImage: 'two.png', dockerVideoProvider: 'gmicloud' },
+    { id: 'gmi-two', model: 'SEEDANCEI2V', startImage: 'three.png', dockerVideoProvider: 'gmicloud' },
+    { id: 'fal-one', model: 'WANI2V', startImage: 'four.png', dockerVideoProvider: 'fal' },
+    { id: 'fal-two', model: 'WANI2V', startImage: 'five.png', dockerVideoProvider: 'fal' },
+    { id: 'fal-three', model: 'WANI2V', startImage: 'six.png', dockerVideoProvider: 'fal' },
+  ];
+
+  assert.deepEqual(
+    selectAiVideoDispatchRequests({ activeRequests, initRequests }).map(({ id }) => id),
+    ['gmi-one', 'fal-one', 'fal-two', 'fal-three'],
+  );
+});
+
+test('the provider limit does not change non-GMICloud or text-to-video concurrency', () => {
+  const falRequests = Array.from({ length: 6 }, (_, index) => ({
+    id: `fal-${index}`,
+    model: 'WANI2V',
+    startImage: `${index}.png`,
+    dockerVideoProvider: 'fal',
+  }));
+
+  assert.equal(
+    selectAiVideoDispatchRequests({ initRequests: falRequests }).length,
+    5,
+  );
+  assert.equal(isGmiCloudImageToVideoRequest({
+    model: 'VEO3.1',
+    dockerVideoProvider: 'gmicloud',
+  }), false);
 });
 
 test('base generation retry picks the next highest scored filter pass for each retry', () => {

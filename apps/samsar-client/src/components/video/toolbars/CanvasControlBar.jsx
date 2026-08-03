@@ -56,7 +56,7 @@ export default function CanvasControlBar(props) {
     canZoomOutCanvas,
   } = useContext(NavCanvasControlContext);
 
-  useNavigate();
+  const navigate = useNavigate();
   const { t } = useLocalization();
   const { colorMode } = useColorMode();
   const isImageStudio = editorVariant === 'imageStudio';
@@ -113,6 +113,17 @@ export default function CanvasControlBar(props) {
   const publishedBadgeClassName = colorMode === 'dark'
     ? 'inline-flex items-center rounded-xl bg-violet-300/12 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-violet-100 ring-1 ring-violet-200/25'
     : 'inline-flex items-center rounded-xl bg-violet-50 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-violet-700 ring-1 ring-violet-200';
+  const viewInVidgenieButtonClassName = colorMode === 'dark'
+    ? 'inline-flex h-8 items-center rounded-xl px-2.5 text-[11px] font-semibold text-slate-200 transition hover:bg-[#292d3a] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#f6c453]/65'
+    : 'inline-flex h-8 items-center rounded-xl px-2.5 text-[11px] font-semibold text-slate-600 transition hover:bg-slate-100 hover:text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400/50';
+
+  const viewSessionInVidgenie = () => {
+    if (!sessionId) {
+      return;
+    }
+
+    navigate(`/vidgenie/${encodeURIComponent(sessionId)}`);
+  };
 
   const IconActionButton = ({
     title,
@@ -189,6 +200,15 @@ export default function CanvasControlBar(props) {
           <span className={interactiveVideoBadgeClassName}>Interactive video</span>
         ) : (
           isExpressGeneration && <span className={expressBadgeClassName}>Express</span>
+        )}
+        {isExpressGeneration && sessionId && (
+          <button
+            type="button"
+            className={`${viewInVidgenieButtonClassName} pending-allow-action`}
+            onClick={viewSessionInVidgenie}
+          >
+            View in Vidgenie
+          </button>
         )}
         {typeof openAdvancedVideoEditDialog === 'function' && (
           <IconActionButton title="Advanced options" onClick={openAdvancedVideoEditDialog}>

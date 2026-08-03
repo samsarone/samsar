@@ -2,13 +2,11 @@ import VideoSession from "../../schema/VideoSession.js";
 import ExpressGenerationBuilderRequest from '../../schema/ExpressGenerationBuilderRequest.js';
 import { randomUUID } from 'crypto';
 import { getDBConnectionString } from "../DBString.js";
-import { assertAPIKeyUsageLimitForDebit } from "../GenerationCredits.js";
 import {
   createVidGPTSession,
   createVidGPTSessionFromNarrativeArtifacts,
 } from "../movie_session/VidGPT.js";
 import User from "../../schema/User.js";
-import ExternalUser from "../../schema/ExternalUser.js";
 import axios from "axios";
 import sharp from "sharp";
 import { 
@@ -70,8 +68,8 @@ import {
 import { getMaxDurationForModelForScenes } from '../movie_session/utils/ModelUtils.js';
 import {
   EXPRESS_VIDEO_BILLING_STAGES,
+  assertSufficientExpressVideoCreditsForPreflight,
   buildInitialReusedNarrativeExpressVideoCreditCharges,
-  estimateExpressVideoCreditsForPreflight,
 } from '../ExpressVideoStageBilling.js';
 import { buildBranchedVideoSessionPlan } from '../movie_session/branching/BranchedVideoSessionPlan.js';
 import { resolveFramesPerSecond } from '../../utils/FpsUtils.js';
@@ -260,105 +258,6 @@ function applyFooterSubtitlePolicy(enableSubtitles, footerAnimationOptions = {})
     return false;
   }
   return enableSubtitles;
-}
-
-function buildInsufficientExpressVideoCreditsError({
-  routeType,
-  requiredCredits,
-  availableCredits,
-  estimate,
-}) {
-  const label = routeType === 'image_list_to_video' ? 'image_list_to_video' : 'text_to_video';
-  const error = new Error(
-    `Insufficient credits for ${label}. Estimated required credits: ${requiredCredits}; available credits: ${availableCredits}.`
-  );
-  error.status = 402;
-  error.code = 'INSUFFICIENT_CREDITS';
-  error.requiredCredits = requiredCredits;
-  error.availableCredits = availableCredits;
-  error.estimate = estimate;
-  return error;
-}
-
-async function resolveExpressPreflightCreditBalance(userId, payload = {}) {
-  if (payload.isExternalUserRequest === true && payload.externalRequestUserId) {
-    const externalUser = await ExternalUser.findById(payload.externalRequestUserId)
-      .select('generationCredits')
-      .lean();
-    if (!externalUser) {
-      const error = new Error('External user not found for credit validation.');
-      error.status = 404;
-      throw error;
-    }
-    return Number(externalUser.generationCredits) || 0;
-  }
-
-  const user = await User.findById(userId)
-    .select('generationCredits')
-    .lean();
-  if (!user) {
-    const error = new Error('User not found for credit validation.');
-    error.status = 404;
-    throw error;
-  }
-  return Number(user.generationCredits) || 0;
-}
-
-async function assertSufficientExpressVideoCreditsForPreflight({
-  userId,
-  payload,
-  routeType,
-  durationSeconds,
-  videoModel,
-  imageModel,
-  backingTrackModel = null,
-  expressGenerationType,
-  expressCtaGeneration = false,
-  addNarratorAvatar = false,
-  customAdapters = null,
-  customAdapterOperationUsage = null,
-  samsarExternalProviderStages = null,
-  expressGenerationNarrativeReused = false,
-  excludedStageKeys = [],
-}) {
-  const estimate = estimateExpressVideoCreditsForPreflight({
-    durationSeconds,
-    videoModel,
-    imageModel,
-    backingTrackModel,
-    expressGenerationType,
-    expressCtaGeneration,
-    addNarratorAvatar,
-    customAdapters,
-    customAdapterOperationUsage,
-    samsarExternalProviderStages,
-    expressGenerationNarrativeReused,
-    excludedStageKeys,
-  });
-  const requiredCredits = Math.ceil(Number(estimate.totalCredits) || 0);
-  const availableCredits = await resolveExpressPreflightCreditBalance(userId, payload);
-
-  if (requiredCredits > availableCredits) {
-    throw buildInsufficientExpressVideoCreditsError({
-      routeType,
-      requiredCredits,
-      availableCredits,
-      estimate,
-    });
-  }
-
-  const apiKeyUsage = normalizeAPIKeyUsageContext(payload?.apiKeyUsage);
-  await assertAPIKeyUsageLimitForDebit(
-    userId,
-    requiredCredits,
-    apiKeyUsage?.apiKeyId ? { apiKeyId: apiKeyUsage.apiKeyId } : {},
-  );
-
-  return {
-    ...estimate,
-    requiredCredits,
-    availableCredits,
-  };
 }
 
 function getSessionIdFromPayload(payload = {}) {

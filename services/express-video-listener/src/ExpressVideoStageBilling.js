@@ -4,6 +4,7 @@ import User from './schema/User.js';
 import ExternalUser from './schema/ExternalUser.js';
 import ExternalUserRequest from './schema/ExternalUserRequest.js';
 import GenerationCreditTransaction from './schema/GenerationCreditTransaction.js';
+import { shouldBypassGenerationCredits } from './utils/EnvironmentUtils.js';
 import {
   EXPRESS_VIDEO_FIXED_PRICING_COMPONENTS_PER_SECOND,
   getExpressVideoStageCreditsPerSecond,
@@ -46,6 +47,50 @@ const STAGE_LABELS = Object.freeze({
 });
 
 const STAGE_BILLING_HANDLED_STATUSES = new Set(['CHARGED', 'CUSTOM_SUCCEEDED', 'WAIVED']);
+
+const DEFAULT_BILLING_DEPENDENCIES = Object.freeze({
+  getDBConnectionString,
+  VideoSession,
+  User,
+  ExternalUser,
+  ExternalUserRequest,
+  GenerationCreditTransaction,
+  shouldBypassGenerationCredits,
+});
+
+function resolveBillingDependencies(overrides = {}) {
+  return {
+    ...DEFAULT_BILLING_DEPENDENCIES,
+    ...overrides,
+  };
+}
+
+export function buildStandaloneProviderBilledStageReceipt(stageMetadata, waivedAt = new Date()) {
+  const {
+    pricingAddons: _pricingAddons,
+    creditDistribution: stageCreditDistribution = {},
+    ...providerBilledMetadata
+  } = stageMetadata || {};
+  const {
+    pricingAddons: _creditDistributionPricingAddons,
+    ...creditDistribution
+  } = stageCreditDistribution || {};
+
+  return {
+    ...providerBilledMetadata,
+    status: 'WAIVED',
+    reason: 'standalone_provider_billed',
+    creditsPerSecond: 0,
+    creditsCharged: 0,
+    creditDistribution: {
+      ...creditDistribution,
+      credits: 0,
+      creditsPerSecond: 0,
+    },
+    chargedAt: waivedAt,
+    remainingCredits: null,
+  };
+}
 
 function normalizeString(value) {
   return typeof value === 'string' ? value.trim() : '';
@@ -256,12 +301,15 @@ function buildStageMetadata({
   };
 }
 
-async function recordGenerationCreditTransaction({ userId, amount, direction, source, metadata, balanceAfter }) {
+async function recordGenerationCreditTransaction(
+  { userId, amount, direction, source, metadata, balanceAfter },
+  dependencies,
+) {
   if (!userId || !Number.isFinite(Number(amount)) || Number(amount) <= 0 || !direction) {
     return null;
   }
 
-  const transaction = new GenerationCreditTransaction({
+  const transaction = new dependencies.GenerationCreditTransaction({
     userId,
     amount,
     direction,
@@ -273,8 +321,8 @@ async function recordGenerationCreditTransaction({ userId, amount, direction, so
   return transaction;
 }
 
-async function deductInternalUserCredits({ userId, creditsCharged, stageMetadata }) {
-  const updatedUser = await User.findOneAndUpdate(
+async function deductInternalUserCredits({ userId, creditsCharged, stageMetadata }, dependencies) {
+  const updatedUser = await dependencies.User.findOneAndUpdate(
     { _id: userId, generationCredits: { $gte: creditsCharged } },
     { $inc: { generationCredits: -creditsCharged } },
     { new: true, projection: { generationCredits: 1 } },
@@ -286,19 +334,22 @@ async function deductInternalUserCredits({ userId, creditsCharged, stageMetadata
     throw error;
   }
 
-  await recordGenerationCreditTransaction({
-    userId,
-    amount: creditsCharged,
-    direction: 'debit',
-    source: `express_video_stage_${stageMetadata.stageKey}`,
-    metadata: stageMetadata,
-    balanceAfter: updatedUser.generationCredits,
-  });
+  await recordGenerationCreditTransaction(
+    {
+      userId,
+      amount: creditsCharged,
+      direction: 'debit',
+      source: `express_video_stage_${stageMetadata.stageKey}`,
+      metadata: stageMetadata,
+      balanceAfter: updatedUser.generationCredits,
+    },
+    dependencies,
+  );
 
   return updatedUser.generationCredits;
 }
 
-async function findExternalRequestForSession(sessionData) {
+async function findExternalRequestForSession(sessionData, dependencies) {
   const externalRequestId = normalizeString(sessionData?.externalRequestId);
   const sessionId = sessionData?._id?.toString?.() || sessionData?._id;
 
@@ -306,20 +357,20 @@ async function findExternalRequestForSession(sessionData) {
     return null;
   }
 
-  return ExternalUserRequest.findOne({
+  return dependencies.ExternalUserRequest.findOne({
     ...(externalRequestId ? { externalRequestId } : { upstreamSessionId: sessionId }),
   });
 }
 
-async function chargeExternalStage({ sessionData, creditsCharged, stageMetadata }) {
-  const requestRecord = await findExternalRequestForSession(sessionData);
+async function chargeExternalStage({ sessionData, creditsCharged, stageMetadata }, dependencies) {
+  const requestRecord = await findExternalRequestForSession(sessionData, dependencies);
   if (!requestRecord) {
     const error = new Error('External request record not found for stage billing.');
     error.code = 'EXTERNAL_REQUEST_NOT_FOUND';
     throw error;
   }
 
-  const externalUser = await ExternalUser.findById(requestRecord.externalUserId);
+  const externalUser = await dependencies.ExternalUser.findById(requestRecord.externalUserId);
   if (!externalUser) {
     const error = new Error('External user not found for stage billing.');
     error.code = 'EXTERNAL_USER_NOT_FOUND';
@@ -328,21 +379,24 @@ async function chargeExternalStage({ sessionData, creditsCharged, stageMetadata 
 
   let remainingCredits = null;
   if (isInternalBillingExternalUser(externalUser) && externalUser.internalUserId) {
-    remainingCredits = await deductInternalUserCredits({
-      userId: externalUser.internalUserId,
-      creditsCharged,
-      stageMetadata: {
-        ...stageMetadata,
-        externalRequestId: requestRecord.externalRequestId,
-        externalUserId: requestRecord.externalUserId?.toString?.() || requestRecord.externalUserId,
+    remainingCredits = await deductInternalUserCredits(
+      {
+        userId: externalUser.internalUserId,
+        creditsCharged,
+        stageMetadata: {
+          ...stageMetadata,
+          externalRequestId: requestRecord.externalRequestId,
+          externalUserId: requestRecord.externalUserId?.toString?.() || requestRecord.externalUserId,
+        },
       },
-    });
-    await ExternalUser.findByIdAndUpdate(externalUser._id, {
+      dependencies,
+    );
+    await dependencies.ExternalUser.findByIdAndUpdate(externalUser._id, {
       $inc: { totalCreditsUsed: creditsCharged },
       $set: { generationCredits: remainingCredits, lastActivityAt: new Date() },
     });
   } else {
-    const updatedExternalUser = await ExternalUser.findOneAndUpdate(
+    const updatedExternalUser = await dependencies.ExternalUser.findOneAndUpdate(
       { _id: externalUser._id, generationCredits: { $gte: creditsCharged } },
       {
         $inc: {
@@ -363,7 +417,7 @@ async function chargeExternalStage({ sessionData, creditsCharged, stageMetadata 
     remainingCredits = updatedExternalUser.generationCredits;
   }
 
-  await ExternalUserRequest.findByIdAndUpdate(requestRecord._id, {
+  await dependencies.ExternalUserRequest.findByIdAndUpdate(requestRecord._id, {
     $inc: { creditsCharged },
     $set: { remainingCreditsSnapshot: remainingCredits },
   });
@@ -371,12 +425,12 @@ async function chargeExternalStage({ sessionData, creditsCharged, stageMetadata 
   return remainingCredits;
 }
 
-async function markStageBillingFailed({ sessionId, stageKey, statusKey, error }) {
+async function markStageBillingFailed({ sessionId, stageKey, statusKey, error }, dependencies) {
   const errorMessage = error?.code === 'INSUFFICIENT_CREDITS'
     ? `Insufficient credits while charging ${STAGE_LABELS[stageKey] || stageKey}.`
     : error?.message || `Unable to charge ${STAGE_LABELS[stageKey] || stageKey}.`;
 
-  await VideoSession.findByIdAndUpdate(sessionId, {
+  await dependencies.VideoSession.findByIdAndUpdate(sessionId, {
     $set: {
       [`expressGenerationCreditCharges.stages.${stageKey}.status`]: 'FAILED',
       [`expressGenerationCreditCharges.stages.${stageKey}.error`]: errorMessage,
@@ -397,8 +451,9 @@ async function markStageBillingFailed({ sessionId, stageKey, statusKey, error })
   };
 }
 
-export async function chargeExpressVideoStageCredits({ sessionId, stageKey }) {
-  await getDBConnectionString();
+export async function chargeExpressVideoStageCredits({ sessionId, stageKey }, dependencyOverrides = {}) {
+  const dependencies = resolveBillingDependencies(dependencyOverrides);
+  await dependencies.getDBConnectionString();
 
   const normalizedStageKey = normalizeStageKey(stageKey);
   const statusKey = STAGE_STATUS_KEYS[normalizedStageKey] || normalizedStageKey;
@@ -406,7 +461,7 @@ export async function chargeExpressVideoStageCredits({ sessionId, stageKey }) {
     return { ok: false, stageKey: normalizedStageKey, error: 'Missing sessionId or stageKey.' };
   }
 
-  const sessionData = await VideoSession.findById(sessionId).lean();
+  const sessionData = await dependencies.VideoSession.findById(sessionId).lean();
   if (!sessionData) {
     return { ok: false, stageKey: normalizedStageKey, error: 'Session not found.' };
   }
@@ -435,18 +490,22 @@ export async function chargeExpressVideoStageCredits({ sessionId, stageKey }) {
     creditsPerSecond,
     creditsCharged,
   });
+  const bypassGenerationCredits = dependencies.shouldBypassGenerationCredits();
 
   if (isCustomStageConfigured(sessionData, normalizedStageKey)) {
     const waivedAt = new Date();
+    const receiptMetadata = bypassGenerationCredits
+      ? buildStandaloneProviderBilledStageReceipt(stageMetadata, waivedAt)
+      : stageMetadata;
     const stageReceipt = {
-      ...stageMetadata,
+      ...receiptMetadata,
       status: 'CUSTOM_SUCCEEDED',
       creditsCharged: 0,
       customOperation: sessionData?.customAdapterOperationUsage?.[normalizedStageKey] || null,
       chargedAt: waivedAt,
       remainingCredits: null,
     };
-    await VideoSession.findByIdAndUpdate(sessionId, {
+    await dependencies.VideoSession.findByIdAndUpdate(sessionId, {
       $set: {
         'expressGenerationCreditCharges.version': 1,
         'expressGenerationCreditCharges.durationSeconds': durationSeconds,
@@ -465,7 +524,27 @@ export async function chargeExpressVideoStageCredits({ sessionId, stageKey }) {
     };
   }
 
-  const claimedSession = await VideoSession.findOneAndUpdate(
+  if (bypassGenerationCredits) {
+    const waivedAt = new Date();
+    const stageReceipt = buildStandaloneProviderBilledStageReceipt(stageMetadata, waivedAt);
+    await dependencies.VideoSession.findByIdAndUpdate(sessionId, {
+      $set: {
+        'expressGenerationCreditCharges.version': 1,
+        'expressGenerationCreditCharges.durationSeconds': durationSeconds,
+        'expressGenerationCreditCharges.updatedAt': waivedAt,
+        [`expressGenerationCreditCharges.stages.${normalizedStageKey}`]: stageReceipt,
+      },
+    });
+    return {
+      ok: true,
+      stageKey: normalizedStageKey,
+      creditsCharged: 0,
+      creditsBypassed: true,
+      stage: stageReceipt,
+    };
+  }
+
+  const claimedSession = await dependencies.VideoSession.findOneAndUpdate(
     {
       _id: sessionId,
       [`expressGenerationCreditCharges.stages.${normalizedStageKey}.status`]: {
@@ -487,7 +566,7 @@ export async function chargeExpressVideoStageCredits({ sessionId, stageKey }) {
   ).lean();
 
   if (!claimedSession) {
-    const currentSession = await VideoSession.findById(sessionId)
+    const currentSession = await dependencies.VideoSession.findById(sessionId)
       .select(`expressGenerationCreditCharges.stages.${normalizedStageKey}`)
       .lean();
     return {
@@ -502,22 +581,31 @@ export async function chargeExpressVideoStageCredits({ sessionId, stageKey }) {
   try {
     if (creditsCharged > 0) {
       if (sessionData.isExternalUserRequest) {
-        remainingCredits = await chargeExternalStage({ sessionData, creditsCharged, stageMetadata });
+        remainingCredits = await chargeExternalStage(
+          { sessionData, creditsCharged, stageMetadata },
+          dependencies,
+        );
       } else {
-        remainingCredits = await deductInternalUserCredits({
-          userId: sessionData.userId,
-          creditsCharged,
-          stageMetadata,
-        });
+        remainingCredits = await deductInternalUserCredits(
+          {
+            userId: sessionData.userId,
+            creditsCharged,
+            stageMetadata,
+          },
+          dependencies,
+        );
       }
     }
   } catch (error) {
-    return markStageBillingFailed({
-      sessionId,
-      stageKey: normalizedStageKey,
-      statusKey,
-      error,
-    });
+    return markStageBillingFailed(
+      {
+        sessionId,
+        stageKey: normalizedStageKey,
+        statusKey,
+        error,
+      },
+      dependencies,
+    );
   }
 
   const chargedAt = new Date();
@@ -528,7 +616,7 @@ export async function chargeExpressVideoStageCredits({ sessionId, stageKey }) {
     remainingCredits,
   };
 
-  await VideoSession.findByIdAndUpdate(sessionId, {
+  await dependencies.VideoSession.findByIdAndUpdate(sessionId, {
     $set: {
       'expressGenerationCreditCharges.version': 1,
       'expressGenerationCreditCharges.durationSeconds': durationSeconds,

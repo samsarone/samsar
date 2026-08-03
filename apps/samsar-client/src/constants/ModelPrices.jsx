@@ -230,30 +230,6 @@ export const VIDEO_MODEL_PRICES = [
     units: [5, 10],
   },
   {
-    key: 'SEEDANCE2.0I2V',
-    name: 'Seedance 2.0 I2V',
-    isExpressModel: false,
-    isImageToVideoModel: true,
-    isTextToVideoModel: false,
-    prices: [
-      { aspectRatio: '16:9', price: 437.5 },
-      { aspectRatio: '9:16', price: 437.5 },
-    ],
-    units: [5, 10, 15],
-  },
-  {
-    key: 'SEEDANCE2.0T2V',
-    name: 'Seedance 2.0 T2V',
-    isExpressModel: false,
-    isImageToVideoModel: false,
-    isTextToVideoModel: true,
-    prices: [
-      { aspectRatio: '16:9', price: 437.5 },
-      { aspectRatio: '9:16', price: 437.5 },
-    ],
-    units: [5, 10, 15],
-  },
-  {
     key: 'VEO3.1',
     isExpressModel: false,
     isImageToVideoModel: false,

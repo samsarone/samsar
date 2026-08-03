@@ -34,6 +34,14 @@ import {
   resolveProviderEnvironmentReferences,
 } from './src/constants/providerEnvironment.js';
 import {
+  CONFIGURATION_ENVIRONMENT_VARIABLE_NAMES,
+  applyConfigurationEnvironmentValuesToInfrastructure,
+  applyConfigurationEnvironmentValuesToMail,
+  pickApplicableConfigurationEnvironmentReferences,
+  pickConfigurationEnvironmentReferences,
+  resolveConfigurationEnvironmentReferences,
+} from './src/constants/configurationEnvironment.js';
+import {
   buildBackblazePublicBucketUrl,
   parseBackblazeS3Endpoint,
   validateExternalStorageConfig,
@@ -171,7 +179,11 @@ function getAllowedProviderEnvironmentVariableNames() {
     .split(/[\s,]+/)
     .map((value) => value.trim())
     .filter(isValidEnvironmentVariableName);
-  return [...new Set([...PROVIDER_ENVIRONMENT_VARIABLE_NAMES, ...customNames])];
+  return [...new Set([
+    ...PROVIDER_ENVIRONMENT_VARIABLE_NAMES,
+    ...CONFIGURATION_ENVIRONMENT_VARIABLE_NAMES,
+    ...customNames,
+  ])];
 }
 
 function cloneRun(run) {
@@ -1495,6 +1507,53 @@ function resolveEnvironmentProviderCredentials(references = {}) {
   return resolveProviderEnvironmentReferences(references, process.env, {
     allowedVariableNames: getAllowedProviderEnvironmentVariableNames(),
   });
+}
+
+function resolveEnvironmentConfigurationSecrets(references = {}) {
+  return resolveConfigurationEnvironmentReferences(references, process.env, {
+    allowedVariableNames: getAllowedProviderEnvironmentVariableNames(),
+  });
+}
+
+function usesEnvironmentConfigurationSecrets(payload = {}) {
+  return normalizeString(
+    payload.configurationSecretSource || payload.secretSource,
+  ).toLowerCase() === 'environment';
+}
+
+function resolveConfigurationSecretsForPayload(payload = {}) {
+  if (!usesEnvironmentConfigurationSecrets(payload)) {
+    return payload;
+  }
+  const references = pickApplicableConfigurationEnvironmentReferences(
+    payload,
+    payload.configurationSecretReferences || payload.secretReferences || {},
+  );
+  const resolved = resolveEnvironmentConfigurationSecrets(references);
+  const deployment = payload.deployment || {};
+  return {
+    ...payload,
+    configurationSecretReferences: references,
+    mail: applyConfigurationEnvironmentValuesToMail(payload.mail || {}, resolved.values),
+    deployment: {
+      ...deployment,
+      infrastructure: applyConfigurationEnvironmentValuesToInfrastructure(
+        deployment.infrastructure || {},
+        resolved.values,
+      ),
+    },
+  };
+}
+
+function validateDatabaseConfig(infrastructure = {}) {
+  const database = infrastructure.database || {};
+  if (database.provider !== 'remote-mongo' && database.mode !== 'remote') {
+    return;
+  }
+  const mongoUrl = normalizeString(database.mongoUrl);
+  if (!mongoUrl || !parseMongoConnectionString(mongoUrl)) {
+    throw new Error('MongoDB connection string must start with mongodb:// or mongodb+srv://.');
+  }
 }
 
 function configuredEnvironmentProviderResult(provider, extra = {}) {
@@ -3955,6 +4014,34 @@ async function handleApi(req, res, pathname) {
     return true;
   }
 
+  if (req.method === 'POST' && pathname === '/api/setup/configuration/environment/validate') {
+    if (!await requireSetupAuth(req, res)) {
+      return true;
+    }
+    try {
+      const payload = await readRequestBody(req);
+      const references = pickApplicableConfigurationEnvironmentReferences(
+        payload,
+        payload.configurationSecretReferences || payload.secretReferences || payload.references || payload,
+      );
+      const resolved = resolveEnvironmentConfigurationSecrets(references);
+      const infrastructure = applyConfigurationEnvironmentValuesToInfrastructure(
+        payload.deployment?.infrastructure || {},
+        resolved.values,
+      );
+      validateDatabaseConfig(infrastructure);
+      validateExternalStorageConfig(infrastructure);
+      sendJson(res, 200, {
+        ok: true,
+        resolvedFields: Object.keys(resolved.variableNames),
+        message: 'Secret references resolved from the host Bash environment.',
+      });
+    } catch (error) {
+      sendJson(res, 400, { message: error?.message || 'Unable to resolve configuration environment variables.' });
+    }
+    return true;
+  }
+
   if (req.method === 'POST' && pathname === '/api/setup/providers/alibaba/validate') {
     if (!await requireSetupAuth(req, res)) {
       return true;
@@ -4022,8 +4109,22 @@ async function handleApi(req, res, pathname) {
   }
 
   if (req.method === 'POST' && pathname === '/api/setup/mail/validate') {
-    const payload = await readRequestBody(req);
+    let payload = await readRequestBody(req);
     try {
+      if (usesEnvironmentConfigurationSecrets(payload)) {
+        if (!await requireSetupAuth(req, res)) {
+          return true;
+        }
+        const references = pickApplicableConfigurationEnvironmentReferences(
+          payload,
+          payload.configurationSecretReferences || payload.secretReferences || {},
+        );
+        const resolved = resolveEnvironmentConfigurationSecrets(references);
+        payload = {
+          ...payload,
+          mail: applyConfigurationEnvironmentValuesToMail(payload.mail || {}, resolved.values),
+        };
+      }
       const validation = await validateMailConfig(payload.mail || payload);
       sendJson(res, 200, validation);
     } catch (error) {
@@ -4036,8 +4137,29 @@ async function handleApi(req, res, pathname) {
     if (!await requireSetupAuth(req, res)) {
       return true;
     }
-    const payload = await readRequestBody(req);
+    let payload = await readRequestBody(req);
     try {
+      if (usesEnvironmentConfigurationSecrets(payload)) {
+        const references = pickApplicableConfigurationEnvironmentReferences(
+          {
+            ...payload,
+            deployment: {
+              infrastructure: {
+                storage: payload.storage || payload.deployment?.infrastructure?.storage || {},
+              },
+            },
+          },
+          payload.configurationSecretReferences || payload.secretReferences || {},
+        );
+        const resolved = resolveEnvironmentConfigurationSecrets(references);
+        payload = {
+          ...payload,
+          storage: applyConfigurationEnvironmentValuesToInfrastructure(
+            { storage: payload.storage || payload.deployment?.infrastructure?.storage || {} },
+            resolved.values,
+          ).storage,
+        };
+      }
       const validation = await validateBackblazeStorageCredentials(
         payload.storage || payload.deployment?.infrastructure?.storage || payload,
       );
@@ -4102,7 +4224,7 @@ async function handleApi(req, res, pathname) {
   }
 
   if (req.method === 'POST' && pathname === '/api/setup/start') {
-    const payload = await readRequestBody(req);
+    let payload = await readRequestBody(req);
     const runningRun = [...runs.values()].find((run) => run.status === 'running');
     if (runningRun) {
       sendJson(res, 200, cloneRun(runningRun));
@@ -4116,7 +4238,9 @@ async function handleApi(req, res, pathname) {
         payload.credentialReferences = references;
         payload.credentials = resolved.credentials;
       }
+      payload = resolveConfigurationSecretsForPayload(payload);
       const infrastructure = payload?.deployment?.infrastructure || {};
+      validateDatabaseConfig(infrastructure);
       validateExternalStorageConfig(infrastructure);
       if (infrastructure.storage?.mode === 'backblaze-b2') {
         const validation = await validateBackblazeStorageCredentials(infrastructure.storage);

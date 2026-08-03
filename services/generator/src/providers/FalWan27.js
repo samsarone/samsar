@@ -16,8 +16,8 @@ function normalizeString(value) {
   return typeof value === 'string' ? value.trim() : '';
 }
 
-async function failFalWan27Request(_id, message) {
-  await ImageGeneration.findOneAndUpdate(
+async function failFalWan27Request(_id, message, imageGenerationModel = ImageGeneration) {
+  await imageGenerationModel.findOneAndUpdate(
     { _id },
     {
       generationStatus: 'FAILED',
@@ -61,13 +61,19 @@ export async function submitFalWan27Request(payload = {}) {
   }
 }
 
-export async function pollFalWan27Request(payload = {}) {
+export async function pollFalWan27Request(payload = {}, dependencies = {}) {
   const { _id, apiRequestId } = payload;
-  await getDBConnectionString();
-  await ImageGeneration.findOneAndUpdate({ _id }, { rowLocked: true });
+  const connect = dependencies.connect || getDBConnectionString;
+  const imageGenerationModel = dependencies.imageGenerationModel || ImageGeneration;
+  const queueStatus = dependencies.queueStatus || ((...args) => fal.queue.status(...args));
+  const queueResult = dependencies.queueResult || ((...args) => fal.queue.result(...args));
+  const saveFile = dependencies.saveFile || saveRemoteFile;
+  const logger = dependencies.logger || console;
+  await connect();
+  await imageGenerationModel.findOneAndUpdate({ _id }, { rowLocked: true });
 
   try {
-    const statusData = await fal.queue.status(FAL_WAN_27_PRO_ENDPOINT, {
+    const statusData = await queueStatus(FAL_WAN_27_PRO_ENDPOINT, {
       requestId: apiRequestId,
       logs: true,
     });
@@ -77,11 +83,11 @@ export async function pollFalWan27Request(payload = {}) {
       throw new Error(`Fal Wan2.7 Pro request ${status.toLowerCase()}.`);
     }
     if (status !== 'COMPLETED') {
-      await ImageGeneration.findOneAndUpdate({ _id }, { rowLocked: false });
+      await imageGenerationModel.findOneAndUpdate({ _id }, { rowLocked: false });
       return null;
     }
 
-    const result = await fal.queue.result(FAL_WAN_27_PRO_ENDPOINT, {
+    const result = await queueResult(FAL_WAN_27_PRO_ENDPOINT, {
       requestId: apiRequestId,
     });
     const images = Array.isArray(result?.data?.images)
@@ -94,12 +100,11 @@ export async function pollFalWan27Request(payload = {}) {
       throw new Error('Fal Wan2.7 Pro result returned no image URL.');
     }
 
-    const imageName = await saveRemoteFile(imageUrl);
-    await ImageGeneration.findOneAndUpdate(
+    const imageName = await saveFile(imageUrl);
+    await imageGenerationModel.findOneAndUpdate(
       { _id },
       {
         externalProvider: 'fal',
-        rowLocked: false,
       },
     );
     return {
@@ -109,19 +114,19 @@ export async function pollFalWan27Request(payload = {}) {
     };
   } catch (error) {
     const message = error?.message || 'Unable to poll Fal Wan2.7 Pro request.';
-    console.error('[FalWan27] poll failed:', message);
-    await failFalWan27Request(_id, message);
+    logger.error('[FalWan27] poll failed:', message);
+    await failFalWan27Request(_id, message, imageGenerationModel);
     return { image: null, error: message };
   }
 }
 
-export async function handleFalWan27Request(payload = {}) {
+export async function handleFalWan27Request(payload = {}, dependencies = {}) {
   const status = normalizeString(payload.apiGenerationStatus || 'INIT').toUpperCase();
   if (status === 'INIT') {
     return submitFalWan27Request(payload);
   }
   if (status === 'PENDING') {
-    return pollFalWan27Request(payload);
+    return pollFalWan27Request(payload, dependencies);
   }
   if (status === 'FAILED') {
     return { image: null };

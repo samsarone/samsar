@@ -18,6 +18,7 @@ export default function SingleSelect(props) {
     isDisabled = false,
     className,
     styles: customStyles,
+    formatOptionLabel,
   } = props;
 
   const { colorMode } = useColorMode();
@@ -171,6 +172,7 @@ export default function SingleSelect(props) {
       onChange={onChange}
       isDisabled={isDisabled}
       classNamePrefix={classNamePrefix}
+      formatOptionLabel={formatOptionLabel}
     />
   );
 }

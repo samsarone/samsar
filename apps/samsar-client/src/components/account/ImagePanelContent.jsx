@@ -4,6 +4,10 @@ import { getHeaders } from '../../utils/web';
 import { useAlertDialog } from '../../contexts/AlertDialogContext';
 import { useColorMode } from '../../contexts/ColorMode.jsx';
 import SecondaryButton from '../common/SecondaryButton.tsx';
+import {
+  getUniqueVisibleImagePanelItems,
+  resolveImagePanelAssetSource,
+} from './imagePanelAssets.mjs';
 
 const PROCESSOR_API = import.meta.env.VITE_PROCESSOR_API;
 const DEFAULT_PAGE_SIZE = 20;
@@ -16,19 +20,8 @@ function isAbsoluteAssetUrl(value) {
   return typeof value === 'string' && /^(https?:|data:|blob:)/i.test(value.trim());
 }
 
-function firstNonEmptyString(values = []) {
-  return values.find((value) => typeof value === 'string' && value.trim()) || '';
-}
-
 function resolveImageAssetUrl(image = {}) {
-  const rawPath = firstNonEmptyString([
-    image.displayUrl,
-    image.imageUrl,
-    image.assetPath,
-    image.thumbnailPath,
-    image.thumbnail,
-    image.url,
-  ]);
+  const rawPath = resolveImagePanelAssetSource(image);
 
   if (!rawPath) {
     return null;
@@ -80,6 +73,7 @@ export default function ImagePanelContent() {
         params: {
           page: pageToLoad,
           pageSize: DEFAULT_PAGE_SIZE,
+          finalOnly: true,
         },
       };
 
@@ -98,7 +92,7 @@ export default function ImagePanelContent() {
             ? data
             : [];
 
-        setImages(items);
+        setImages(getUniqueVisibleImagePanelItems(items));
         const paginationData = data.pagination || {};
         setPagination({
           page: paginationData.page ?? pageToLoad,

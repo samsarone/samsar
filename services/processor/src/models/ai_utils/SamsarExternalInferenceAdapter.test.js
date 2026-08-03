@@ -149,6 +149,7 @@ test('GenBlaze sends canonical GPT and Gemini models with high reasoning and mul
   await createGenblazeChatCompletion({
     model: 'gpt-5.6-sol',
     messages: [{ role: 'user', content: 'reason deeply' }],
+    reasoning: { effort: 'xhigh' },
     reasoning_effort: 'low',
   }, { genblazeClient });
   await createGenblazeChatCompletion({
@@ -162,8 +163,10 @@ test('GenBlaze sends canonical GPT and Gemini models with high reasoning and mul
 
   assert.equal(payloads[0].model, 'gpt-5.6-sol');
   assert.equal(payloads[0].reasoning_effort, 'high');
+  assert.equal(payloads[0].reasoning, undefined);
   assert.equal(payloads[1].model, 'gemini-3.1-pro');
   assert.equal(payloads[1].reasoning_effort, 'high');
+  assert.equal(payloads[1].reasoning, undefined);
   assert.deepEqual(payloads[1].messages[0].content[1], imagePart);
   await assert.rejects(
     createGenblazeChatCompletion({ model: 'kimi-k3', messages: [] }, { genblazeClient }),
@@ -364,7 +367,7 @@ test('Kimi K3 Samsar fallback forces high reasoning', async (t) => {
   assert.equal(capturedPayload.reasoning_effort, 'high');
 });
 
-test('Docker Qwen uses native, Samsar, GMICloud, then OpenRouter', () => {
+test('Docker Qwen uses native, GMICloud, Samsar, then OpenRouter', () => {
   clearProviderEnv();
   process.env.CURRENT_ENV = 'docker';
   process.env.NODE_ENV = 'production';
@@ -380,8 +383,8 @@ test('Docker Qwen uses native, Samsar, GMICloud, then OpenRouter', () => {
 
   assert.deepEqual(DOCKER_INFERENCE_PROVIDER_PRIORITY_BY_MODEL['QWEN3.7'], [
     DOCKER_INFERENCE_PROVIDER.ALIBABA_CLOUD,
-    DOCKER_INFERENCE_PROVIDER.SAMSAR,
     DOCKER_INFERENCE_PROVIDER.GMICLOUD,
+    DOCKER_INFERENCE_PROVIDER.SAMSAR,
     DOCKER_INFERENCE_PROVIDER.OPENROUTER,
   ]);
 
@@ -390,13 +393,14 @@ test('Docker Qwen uses native, Samsar, GMICloud, then OpenRouter', () => {
   assert.equal(shouldUseSamsarExternalInference({ model: 'QWEN3.7' }), false);
 });
 
-test('Docker Qwen selects GMICloud through GenBlaze before OpenRouter', (t) => {
+test('Docker Qwen selects GMICloud through GenBlaze before Samsar and OpenRouter', (t) => {
   const { catalogPath, directory } = createTestGenblazeCatalog();
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
   clearProviderEnv();
   process.env.CURRENT_ENV = 'docker';
   process.env.SAMSAR_GENBLAZE_ENABLED = 'true';
   process.env.SAMSAR_GENBLAZE_MODEL_CATALOG_PATH = catalogPath;
+  process.env.SAMSAR_API_KEY = 'test-samsar-key';
   process.env.OPENROUTER_API_KEY = 'test-openrouter-key';
 
   assert.equal(resolveConfiguredInferenceProvider('QWEN3.7'), DOCKER_INFERENCE_PROVIDER.GMICLOUD);

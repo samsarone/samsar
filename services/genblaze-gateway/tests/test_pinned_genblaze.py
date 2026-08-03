@@ -1101,44 +1101,57 @@ def test_real_gmicloud_provider_submits_gpt_edit_source_with_optional_mask():
     ]
 
 
-def test_shared_seedance_2_registry_preserves_text_and_first_last_frame_payloads():
-    routes = (
-        ModelRoute("SEEDANCE2.0I2V", "seedance-2-0-260128", "video", "video.generate"),
-        ModelRoute("SEEDANCE2.0T2V", "seedance-2-0-260128", "video", "video.generate"),
+def test_seedance_2_registry_preserves_the_exact_i2v_payload():
+    route = ModelRoute(
+        "SEEDANCE2.0I2V",
+        "seedance-2-0-260128",
+        "video",
+        "video.generate",
     )
     factory = load_genblaze_bindings().media_registry_factory
     assert factory is not None
-    registry = factory("video", routes)
-
-    text_step = Step(
-        provider="gmicloud",
-        model="seedance-2-0-260128",
-        modality=Modality.VIDEO,
-        prompt="sunrise",
-        params={"duration": 10, "aspect_ratio": "auto", "generate_audio": True},
-    )
-    assert registry.prepare_payload(text_step) == {
-        "prompt": "sunrise",
-        "duration": 10,
-        "ratio": "adaptive",
-        "generate_audio": True,
-    }
+    registry = factory("video", (route,))
+    client = FakeChatClient({"request_id": "offline-seedance-2-job"})
+    provider = GMICloudVideoProvider(http_client=client, models=registry)
 
     image_step = Step(
-        provider="gmicloud",
-        model="seedance-2-0-260128",
+        provider=provider.name,
+        model=route.gmi_model,
         modality=Modality.VIDEO,
         prompt="move",
+        params={
+            "duration": 10,
+            "aspect_ratio": "auto",
+            "resolution": "720P",
+            "generate_audio": True,
+            "seed": "7",
+        },
         inputs=[
             Asset(url="https://example/start.png", media_type="image/png"),
             Asset(url="https://example/end.png", media_type="image/png"),
         ],
     )
-    assert registry.prepare_payload(image_step) == {
-        "prompt": "move",
-        "first_frame": "https://example/start.png",
-        "last_frame": "https://example/end.png",
-    }
+    result = provider.submit(image_step)
+
+    assert result.prediction_id == "offline-seedance-2-job"
+    assert client.calls == [
+        (
+            "/requests",
+            {
+                "model": "seedance-2-0-260128",
+                "payload": {
+                    "prompt": "move",
+                    "duration": 10,
+                    "ratio": "adaptive",
+                    "resolution": "720p",
+                    "generate_audio": True,
+                    "seed": 7,
+                    "first_frame": "https://example/start.png",
+                    "last_frame": "https://example/end.png",
+                },
+            },
+        )
+    ]
 
 
 def test_seedance_versions_normalize_duration_and_ratio_to_their_own_contracts():
@@ -1151,7 +1164,7 @@ def test_seedance_versions_normalize_duration_and_ratio_to_their_own_contracts()
         "video.generate",
     )
     seedance_2 = ModelRoute(
-        "SEEDANCE2.0T2V",
+        "SEEDANCE2.0I2V",
         "seedance-2-0-260128",
         "video",
         "video.generate",
@@ -1179,13 +1192,26 @@ def test_seedance_versions_normalize_duration_and_ratio_to_their_own_contracts()
         modality=Modality.VIDEO,
         prompt="sunrise",
         params={"duration": 18, "aspect_ratio": "auto", "seed": "7"},
+        inputs=[Asset(url="https://example/second-start.png", media_type="image/png")],
     )
     assert registry.prepare_payload(second) == {
         "prompt": "sunrise",
         "duration": 15,
         "ratio": "adaptive",
+        "resolution": "720p",
         "seed": 7,
+        "first_frame": "https://example/second-start.png",
     }
+
+    second.params["duration"] = 2
+    second.params["resolution"] = "720"
+    normalized_minimum = registry.prepare_payload(second)
+    assert normalized_minimum["duration"] == 4
+    assert normalized_minimum["resolution"] == "720p"
+
+    second.params["resolution"] = "1080p"
+    with pytest.raises(ProviderError, match="resolution must be 720p"):
+        registry.prepare_payload(second)
 
     first.params["aspect_ratio"] = "auto"
     with pytest.raises(ProviderError, match="expected one of"):
@@ -1355,7 +1381,6 @@ def test_full_media_catalog_builds_with_shared_upstream_ids():
         "VEO3.1I2VFAST": "veo-3.1-fast-generate-001",
         "SEEDANCEI2V": "seedance-1-5-pro-251215",
         "SEEDANCE2.0I2V": "seedance-2-0-260128",
-        "SEEDANCE2.0T2V": "seedance-2-0-260128",
         "KLINGIMGTOVID3PRO": "kling-v3-image-to-video",
         "KLINGIMGTOVIDTURBO": "kling-3.0-turbo-i2v",
         "KLINGIMGTOVIDPRO": "Kling-Image2Video-V1.6-Pro",

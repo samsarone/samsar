@@ -469,27 +469,6 @@ export const VIDEO_GENERATION_MODEL_TYPES = [
     ]
   },
   {
-    name: 'Seedance 2.0 I2V',
-    key: 'SEEDANCE2.0I2V',
-    isImgToVidModel: true,
-    isTextToVidModel: false,
-    isExpressModel: false,
-    supportedAspectRatios: [
-      '16:9', '9:16',
-    ]
-  },
-  {
-    name: 'Seedance 2.0 T2V',
-    key: 'SEEDANCE2.0T2V',
-    isImgToVidModel: false,
-    isTextToVidModel: true,
-    isExpressModel: false,
-    supportedAspectRatios: [
-      '16:9', '9:16',
-    ]
-  },
-
-  {
     name: 'VEO3.1 Img2Vid',
     key: 'VEO3.1I2V',
     isImgToVidModel: true,

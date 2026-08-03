@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { createServer } from 'vite';
+import { PROVIDER_GROUP_DEFINITIONS } from './src/constants/providerGroups.js';
 
 test('fresh setup wizard renders before provider validation exists', async () => {
   const vite = await createServer({
@@ -20,6 +21,27 @@ test('fresh setup wizard renders before provider validation exists', async () =>
       hydrateBackblazeDataConfig,
     } = await vite.ssrLoadModule(
       '/src/components/OnboardingWizard.jsx',
+    );
+
+    assert.deepEqual(
+      PROVIDER_GROUP_DEFINITIONS.map(({ key, title, providerKeys }) => ({ key, title, providerKeys })),
+      [
+        {
+          key: 'inference',
+          title: 'Inference',
+          providerKeys: ['openai', 'googleCloud', 'alibabaCloud', 'kimi', 'openrouter'],
+        },
+        {
+          key: 'universal',
+          title: 'Universal adapters',
+          providerKeys: ['gmicloud', 'samsar'],
+        },
+        {
+          key: 'media',
+          title: 'Media',
+          providerKeys: ['fal', 'elevenlabs', 'runway'],
+        },
+      ],
     );
 
     assert.doesNotThrow(() => {

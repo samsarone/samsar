@@ -198,7 +198,11 @@ The diagrams below show the primary generation and discovery pipelines. Open any
 <summary><strong>Text to Video</strong></summary>
 
 <a href="pages/text-to-video.md">
-  <img src="https://static.samsar.one/unauthenticated/readme/readme-text-to-video-pipeline-v2.png" alt="Text to Video" width="100%">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/readme-diagrams/readme-text-to-video-pipeline-v3-dark.png">
+    <source media="(prefers-color-scheme: light)" srcset="docs/readme-diagrams/readme-text-to-video-pipeline-v3.png">
+    <img src="docs/readme-diagrams/readme-text-to-video-pipeline-v3.png" alt="Text-to-video pipeline from request validation through planning, parallel media generation, motion layers, final rendering, and terminal delivery" width="100%">
+  </picture>
 </a>
 
 </details>
@@ -207,7 +211,11 @@ The diagrams below show the primary generation and discovery pipelines. Open any
 <summary><strong>Image List to Video</strong></summary>
 
 <a href="pages/image-list-to-video.md">
-  <img src="https://static.samsar.one/unauthenticated/readme/readme-image-list-to-video-pipeline-v2.png" alt="Image List to Video" width="100%">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/readme-diagrams/readme-image-list-to-video-pipeline-v3-dark.png">
+    <source media="(prefers-color-scheme: light)" srcset="docs/readme-diagrams/readme-image-list-to-video-pipeline-v3.png">
+    <img src="docs/readme-diagrams/readme-image-list-to-video-pipeline-v3.png" alt="Image-list-to-video pipeline from source preparation through the creative builder, parallel media jobs, motion layers, final rendering, and terminal delivery" width="100%">
+  </picture>
 </a>
 
 </details>
@@ -216,7 +224,11 @@ The diagrams below show the primary generation and discovery pipelines. Open any
 <summary><strong>Search Embeddings</strong></summary>
 
 <a href="pages/search.md">
-  <img src="https://static.samsar.one/unauthenticated/readme/readme-search-embeddings-pipeline-v2.png" alt="Search Embeddings" width="100%">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/readme-diagrams/readme-search-embeddings-pipeline-v3-dark.png">
+    <source media="(prefers-color-scheme: light)" srcset="docs/readme-diagrams/readme-search-embeddings-pipeline-v3.png">
+    <img src="docs/readme-diagrams/readme-search-embeddings-pipeline-v3.png" alt="Search embeddings with separate index creation and stored-index query lanes, including vector-search and reranking fallbacks" width="100%">
+  </picture>
 </a>
 
 </details>
@@ -225,7 +237,11 @@ The diagrams below show the primary generation and discovery pipelines. Open any
 <summary><strong>Recommendations</strong></summary>
 
 <a href="pages/recommendations.md">
-  <img src="https://static.samsar.one/unauthenticated/readme/readme-recommendations-pipeline-v2.png" alt="Recommendations" width="100%">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/readme-diagrams/readme-recommendations-pipeline-v3-dark.png">
+    <source media="(prefers-color-scheme: light)" srcset="docs/readme-diagrams/readme-recommendations-pipeline-v3.png">
+    <img src="docs/readme-diagrams/readme-recommendations-pipeline-v3.png" alt="Recommendations as a constrained wrapper over the shared semantic-search pipeline and reusable embedding corpus" width="100%">
+  </picture>
 </a>
 
 </details>
@@ -297,7 +313,7 @@ The names in code style are the stable Samsar model keys. This is the complete s
 | **Inference** | GPT 5.6 Sol (`gpt-5.6-sol`) · Gemini 3.1 Pro (`gemini-3.1-pro`) · Kimi K3 (`KIMIK3`) · Qwen 3.7 Plus (`QWEN3.7`) |
 | **Text → image** | GPT Image 2 (`GPTIMAGE2`) · Seedream (`SEEDREAM`) · Nano Banana 2 (`NANOBANANA2`) · Nano Banana Pro (`NANOBANANAPRO`) · Wan 2.7 Pro (`WAN2.7PRO`) |
 | **Image edit** | GPT Image 2 Edit (`GPTIMAGE2EDIT`) · Nano Banana 2 Edit (`NANOBANANA2EDIT`) · Nano Banana Pro Edit (`NANOBANANAPROEDIT`) · BRIA Eraser (`BRIA_ERASER`) · BRIA GenFill (`BRIA_GENFILL`) |
-| **Text → video** | RunwayML (`RUNWAYML`) · Veo 3.1 (`VEO3.1`) · Veo 3.1 Fast (`VEO3.1FAST`) · Seedance 2.0 (`SEEDANCE2.0T2V`) · Hailuo 02 Pro (`HAILUOPRO`) |
+| **Text → video** | RunwayML (`RUNWAYML`) · Veo 3.1 (`VEO3.1`) · Veo 3.1 Fast (`VEO3.1FAST`) · Hailuo 02 Pro (`HAILUOPRO`) |
 | **Image / frame → video** | RunwayML (`RUNWAYML`) · Veo 3.1 I2V (`VEO3.1I2V`) · Veo 3.1 Fast I2V (`VEO3.1I2VFAST`) · Veo 3.1 first/last frame (`VEO3.1FLIV`) · Cosmos 3 Super (`COSMOS3SUPERI2V`) · Seedance 1.5 / 2.0 (`SEEDANCEI2V`, `SEEDANCE2.0I2V`) · Kling 3 Pro / Turbo / 1.6 Pro / 2.1 Master / Pro / Standard (`KLINGIMGTOVID3PRO`, `KLINGIMGTOVIDTURBO`, `KLINGIMGTOVIDPRO`, `KLINGIMGTOVID2.1MASTER`, `KLINGIMGTOVID2.1PRO`, `KLINGIMGTOVID2.1STANDARD`) · Hailuo 02 Pro (`HAILUOPRO`) · Happy Horse 1.1 (`HAPPYHORSEI2V`) |
 | **Speech and music** | OpenAI TTS (`OPENAI_TTS`) · Google TTS (`GOOGLE_TTS`) · ElevenLabs Speech (`ELEVENLABS`) · ElevenLabs Music (`ELEVENLABS_MUSIC`) · Lyria 3 (`LYRIA3`) |
 | **Lip sync** | Sync (`SYNCLIPSYNC`) · LatentSync (`LATENTSYNC`) · Kling (`KLINGLIPSYNC`) · Hummingbird (`HUMMINGBIRDLIPSYNC`) · Creatify (`CREATIFYLIPSYNC`) |
@@ -314,7 +330,7 @@ Open **Providers** in `./setup.sh` and add only the credentials you need. The wi
 | [Kimi K3](https://platform.kimi.ai/) | `KIMI_K3_API_KEY` | Native Kimi text, vision, structured output, and assistants. |
 | [Alibaba Cloud](https://modelstudio.console.alibabacloud.com/) | `ALIBABA_API_KEY`; optional `ALIBABA_API_HOST` | Qwen, Wan, and Happy Horse. |
 | [Samsar-js](https://app.samsar.one/account/apiKeys) | `SAMSAR_API_KEY` | Universal fallback across the supported catalog using Samsar credits. |
-| [GMICloud via GenBlaze](https://console.gmicloud.ai/) | `GMI_API_KEY` | The wizard discovers compatible GMICloud models, writes a credential-scoped catalog, and starts the local `genblaze` gateway. |
+| [GMICloud via GenBlaze](https://console.gmicloud.ai/) | `GMI_API_KEY` | The wizard discovers compatible GMICloud models, writes a credential-scoped catalog, and starts the local `genblaze` gateway. Seedance 2.0 I2V (`seedance-2-0-260128`) is available only through this validated adapter in the standalone Docker container. |
 | [Fal](https://fal.ai/dashboard/keys) | `FAL_API_KEY` | Image, edit, video, speech/music, lip sync, and sound effects. |
 | [OpenRouter](https://openrouter.ai/settings/keys) | `OPENROUTER_API_KEY` | Supported GPT, Gemini, and Qwen text/vision fallback routes. |
 | [ElevenLabs](https://elevenlabs.io/app/settings/api-keys) | `ELEVENLABS_API_KEY` | Direct speech and music generation. |

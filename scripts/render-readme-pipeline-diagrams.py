@@ -1,606 +1,1921 @@
 #!/usr/bin/env python3
-"""Render the README architecture diagrams.
+"""Render the README workflow diagrams from code-reviewed pipeline summaries.
 
-The README uses PNGs because GitHub renders wide raster diagrams more
-predictably than SVG. Keep this script as the source of truth for those assets.
+The generated PNGs are committed with the README so a diagram change and its
+documentation change cannot drift apart.  Each workflow has transparent light
+and dark variants so text can remain readable without opaque white cards.
+
+All connectors are derived from rectangle anchors.  Do not add coordinate
+padding at either end of a connector: the arrow tip and source line must meet
+the boxes they connect.
 """
 
 from __future__ import annotations
 
-import math
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Iterable, Sequence
 
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
 
 ROOT = Path(__file__).resolve().parents[1]
-OUTPUT_DIR = ROOT / "tmp" / "readme-diagrams"
+OUTPUT_DIR = ROOT / "docs" / "readme-diagrams"
 
 WIDTH = 2000
-VIDEO_HEIGHT = 940
-EMBEDDING_HEIGHT = 700
+CARD_HEIGHT = 580
+ROW_GAP = 140
+OUTCOME_HEIGHT = 120
+CANVAS_MARGIN = 64
 
-BG = "#ffffff"
-INK = "#151a20"
-TEXT = "#242932"
-MUTED = "#5f6975"
-LIGHT_LINE = "#d8dde3"
-RETRY = "#d14b00"
-ARROW = "#2d3540"
+TRANSPARENT = (255, 255, 255, 0)
 
-BLUE = "#0b66d0"
-PURPLE = "#8a5cf6"
-TEAL = "#0b8299"
-ORANGE = "#c6530d"
-GREEN = "#18843c"
-RED = "#d9193f"
-GOLD = "#9c6a00"
-GRAY = "#5e6875"
+# Shared spacing rhythm.  These values intentionally drive every card instead
+# of leaving one-off y offsets scattered through the renderer.
+CARD_PAD_X = 26
+CARD_HEADER_TEXT_X = 101
+CARD_TITLE_TOP = 53
+CARD_DIVIDER_MIN_Y = 132
+CARD_HEADER_GAP = 18
+NODE_GAP = 18
+NODE_PAD_X = 15
+NODE_PAD_Y = 10
+NODE_MIN_HEIGHT = 62
+NOTE_BOTTOM = 18
+NOTE_GAP = 18
+NOTE_PAD_X = 12
+NOTE_PAD_Y = 10
+NOTE_MIN_HEIGHT = 64
+STEP_LINE_SPACING = 7
+NOTE_LINE_SPACING = 5
+TITLE_LINE_SPACING = 4
+
+BLUE = "#2563EB"
+VIOLET = "#7C3AED"
+CYAN = "#0891B2"
+ORANGE = "#EA580C"
+GREEN = "#16A34A"
+ROSE = "#E11D48"
+INDIGO = "#4F46E5"
+PINK = "#C026D3"
+AMBER = "#B7791F"
+SLATE = "#526174"
 
 
 FONT_CANDIDATES = {
     "bold": [
-        "/Library/Fonts/Inter.ttf",
-        "/System/Library/Fonts/Supplemental/Arial Bold.ttf",
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+        ("/System/Library/Fonts/Avenir Next.ttc", 0),
+        ("/System/Library/Fonts/Supplemental/Arial Bold.ttf", 0),
+        ("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 0),
+    ],
+    "medium": [
+        ("/System/Library/Fonts/Avenir Next.ttc", 5),
+        ("/System/Library/Fonts/Supplemental/Arial.ttf", 0),
+        ("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 0),
     ],
     "regular": [
-        "/Library/Fonts/Inter.ttf",
-        "/System/Library/Fonts/Supplemental/Arial.ttf",
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        ("/System/Library/Fonts/Avenir Next.ttc", 7),
+        ("/System/Library/Fonts/Supplemental/Arial.ttf", 0),
+        ("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 0),
     ],
 }
 
 
-def font(size: int, weight: str = "bold") -> ImageFont.ImageFont:
-    for candidate in FONT_CANDIDATES[weight]:
+def font(size: int, weight: str = "regular") -> ImageFont.ImageFont:
+    for candidate, index in FONT_CANDIDATES[weight]:
         path = Path(candidate)
-        if path.exists():
-            try:
-                return ImageFont.truetype(str(path), size=size)
-            except OSError:
-                continue
+        if not path.exists():
+            continue
+        try:
+            return ImageFont.truetype(str(path), size=size, index=index)
+        except OSError:
+            continue
     return ImageFont.load_default(size=size)
 
 
-TITLE_FONT = font(62)
-SECTION_FONT = font(30)
-INDEX_FONT = font(13)
-NODE_FONT = font(25)
-NODE_SMALL_FONT = font(23)
-NOTE_FONT = font(13)
-CONTINUE_FONT = font(13)
+TITLE_FONT = font(70, "bold")
+SUBTITLE_FONT = font(26, "regular")
+LANE_FONT = font(22, "bold")
+STAGE_TITLE_FONT = font(31, "bold")
+SERVICE_FONT = font(22, "bold")
+SERVICE_SMALL_FONT = font(20, "bold")
+STEP_FONT = font(25, "medium")
+STEP_SMALL_FONT = font(22, "medium")
+NOTE_FONT = font(21, "bold")
+BADGE_FONT = font(21, "bold")
+LEGEND_FONT = font(20, "bold")
 
 
-def text_size(draw: ImageDraw.ImageDraw, value: str, text_font: ImageFont.ImageFont) -> tuple[int, int]:
+Color = tuple[int, int, int, int]
+
+
+@dataclass(frozen=True)
+class Theme:
+    name: str
+    ink: Color
+    muted: Color
+    border: Color
+    line: Color
+    halo: Color
+    divider: Color
+    card_fill: Color
+    chrome_fill: Color
+    shadow: Color
+    accent_target: tuple[int, int, int]
+    accent_mix: float
+    accent_surface_alpha: int
+    accent_strong_alpha: int
+
+
+LIGHT_THEME = Theme(
+    name="light",
+    ink=(15, 23, 42, 255),
+    muted=(71, 85, 105, 255),
+    border=(100, 116, 139, 104),
+    line=(51, 65, 85, 232),
+    halo=(255, 255, 255, 175),
+    divider=(100, 116, 139, 72),
+    card_fill=(100, 116, 139, 18),
+    chrome_fill=(100, 116, 139, 14),
+    shadow=(15, 23, 42, 11),
+    accent_target=(15, 23, 42),
+    accent_mix=0.32,
+    accent_surface_alpha=24,
+    accent_strong_alpha=38,
+)
+
+DARK_THEME = Theme(
+    name="dark",
+    ink=(241, 245, 249, 255),
+    muted=(203, 213, 225, 255),
+    border=(148, 163, 184, 112),
+    line=(203, 213, 225, 232),
+    halo=(13, 17, 23, 185),
+    divider=(148, 163, 184, 76),
+    card_fill=(148, 163, 184, 18),
+    chrome_fill=(148, 163, 184, 14),
+    shadow=(0, 0, 0, 0),
+    accent_target=(255, 255, 255),
+    accent_mix=0.27,
+    accent_surface_alpha=30,
+    accent_strong_alpha=44,
+)
+
+ACTIVE_THEME = LIGHT_THEME
+
+
+@dataclass(frozen=True)
+class Rect:
+    x: float
+    y: float
+    w: float
+    h: float
+
+    @property
+    def left(self) -> float:
+        return self.x
+
+    @property
+    def right(self) -> float:
+        return self.x + self.w
+
+    @property
+    def top(self) -> float:
+        return self.y
+
+    @property
+    def bottom(self) -> float:
+        return self.y + self.h
+
+    @property
+    def cx(self) -> float:
+        return self.x + self.w / 2
+
+    @property
+    def cy(self) -> float:
+        return self.y + self.h / 2
+
+    def inset(self, amount: float) -> "Rect":
+        return Rect(
+            self.x + amount,
+            self.y + amount,
+            self.w - 2 * amount,
+            self.h - 2 * amount,
+        )
+
+
+@dataclass(frozen=True)
+class Stage:
+    number: int
+    title: str
+    service: str
+    color: str
+    steps: tuple[str, ...]
+    note: str | None = None
+    layout: str = "stack"
+
+
+def rgb(value: str, alpha: int = 255) -> tuple[int, int, int, int]:
+    value = value.lstrip("#")
+    return (
+        int(value[0:2], 16),
+        int(value[2:4], 16),
+        int(value[4:6], 16),
+        alpha,
+    )
+
+
+def mix_color(
+    value: str,
+    target: tuple[int, int, int],
+    strength: float,
+    alpha: int = 255,
+) -> Color:
+    base = rgb(value)
+    return tuple(
+        round(channel + (target_channel - channel) * strength)
+        for channel, target_channel in zip(base[:3], target)
+    ) + (alpha,)
+
+
+def accent_text(value: str, alpha: int = 255) -> Color:
+    return mix_color(
+        value,
+        ACTIVE_THEME.accent_target,
+        ACTIVE_THEME.accent_mix,
+        alpha,
+    )
+
+
+def accent_surface(value: str, *, strong: bool = False) -> Color:
+    alpha = (
+        ACTIVE_THEME.accent_strong_alpha
+        if strong
+        else ACTIVE_THEME.accent_surface_alpha
+    )
+    return rgb(value, alpha)
+
+
+def text_size(
+    draw: ImageDraw.ImageDraw,
+    value: str,
+    text_font: ImageFont.ImageFont,
+) -> tuple[int, int]:
     box = draw.textbbox((0, 0), value, font=text_font)
     return box[2] - box[0], box[3] - box[1]
 
 
+def text_block_size(
+    draw: ImageDraw.ImageDraw,
+    lines: Sequence[str],
+    text_font: ImageFont.ImageFont,
+    spacing: int,
+) -> tuple[int, int]:
+    value = "\n".join(lines)
+    box = draw.multiline_textbbox(
+        (0, 0),
+        value,
+        font=text_font,
+        spacing=spacing,
+        align="center",
+    )
+    return box[2] - box[0], box[3] - box[1]
+
+
+def wrap_text(
+    draw: ImageDraw.ImageDraw,
+    value: str,
+    text_font: ImageFont.ImageFont,
+    max_width: float,
+    max_lines: int | None = 3,
+) -> list[str]:
+    lines: list[str] = []
+    for paragraph in str(value).split("\n"):
+        words = paragraph.split()
+        if not words:
+            lines.append("")
+            continue
+        current = words[0]
+        for word in words[1:]:
+            candidate = f"{current} {word}"
+            if text_size(draw, candidate, text_font)[0] <= max_width:
+                current = candidate
+            else:
+                lines.append(current)
+                current = word
+        lines.append(current)
+
+    if max_lines is None or len(lines) <= max_lines:
+        return lines
+
+    kept = lines[: max_lines - 1]
+    final = " ".join(lines[max_lines - 1 :])
+    while text_size(draw, f"{final}...", text_font)[0] > max_width and " " in final:
+        final = final.rsplit(" ", 1)[0]
+    kept.append(f"{final}...")
+    return kept
+
+
 def draw_centered_text(
     draw: ImageDraw.ImageDraw,
-    center: tuple[float, float],
-    label: str | list[str],
-    text_font: ImageFont.ImageFont = NODE_FONT,
-    fill: str = TEXT,
-    line_gap: int = 7,
+    rect: Rect,
+    value: str,
+    text_font: ImageFont.ImageFont,
+    fill: Color | None = None,
+    max_lines: int = 3,
+    spacing: int = 4,
 ) -> None:
-    lines = label if isinstance(label, list) else str(label).split("\n")
-    metrics = [text_size(draw, line, text_font) for line in lines]
-    total_h = sum(h for _, h in metrics) + line_gap * (len(lines) - 1)
-    y = center[1] - total_h / 2
-    for line, (w, h) in zip(lines, metrics):
-        draw.text((center[0] - w / 2, y), line, font=text_font, fill=fill)
-        y += h + line_gap
+    lines = wrap_text(draw, value, text_font, rect.w, max_lines=max_lines)
+    block = "\n".join(lines)
+    box = draw.multiline_textbbox(
+        (0, 0),
+        block,
+        font=text_font,
+        spacing=spacing,
+        align="center",
+    )
+    origin = (
+        rect.cx - (box[0] + box[2]) / 2,
+        rect.cy - (box[1] + box[3]) / 2,
+    )
+    draw.multiline_text(
+        origin,
+        block,
+        font=text_font,
+        fill=fill or ACTIVE_THEME.ink,
+        spacing=spacing,
+        align="center",
+    )
 
 
-def hex_points(cx: float, cy: float, w: float, h: float) -> list[tuple[float, float]]:
-    x = cx - w / 2
-    y = cy - h / 2
-    cut = min(32, h * 0.42, w * 0.16)
+def draw_top_left_text(
+    draw: ImageDraw.ImageDraw,
+    x: float,
+    y: float,
+    lines: Sequence[str],
+    text_font: ImageFont.ImageFont,
+    *,
+    fill: Color,
+    spacing: int,
+) -> int:
+    block = "\n".join(lines)
+    box = draw.multiline_textbbox(
+        (0, 0),
+        block,
+        font=text_font,
+        spacing=spacing,
+        align="left",
+    )
+    draw.multiline_text(
+        (x - box[0], y - box[1]),
+        block,
+        font=text_font,
+        fill=fill,
+        spacing=spacing,
+        align="left",
+    )
+    return box[3] - box[1]
+
+
+def rounded_box(
+    draw: ImageDraw.ImageDraw,
+    rect: Rect,
+    *,
+    fill: tuple[int, int, int, int],
+    outline: Color | None = None,
+    width: int = 2,
+    radius: int = 18,
+) -> None:
+    draw.rounded_rectangle(
+        (rect.left, rect.top, rect.right, rect.bottom),
+        radius=radius,
+        fill=fill,
+        outline=outline or ACTIVE_THEME.border,
+        width=width,
+    )
+
+
+def add_shadow_layer(image: Image.Image, rects: Iterable[Rect], radius: int = 9) -> None:
+    if ACTIVE_THEME.shadow[3] == 0:
+        return
+    shadow = Image.new("RGBA", image.size, TRANSPARENT)
+    shadow_draw = ImageDraw.Draw(shadow)
+    for rect in rects:
+        shadow_draw.rounded_rectangle(
+            (rect.left + 1, rect.top + 5, rect.right + 1, rect.bottom + 5),
+            radius=22,
+            fill=ACTIVE_THEME.shadow,
+        )
+    shadow = shadow.filter(ImageFilter.GaussianBlur(radius))
+    image.alpha_composite(shadow)
+
+
+def arrow_head(
+    end: tuple[float, float],
+    previous: tuple[float, float],
+    size: float,
+) -> list[tuple[float, float]]:
+    x2, y2 = end
+    x1, y1 = previous
+    if abs(x2 - x1) >= abs(y2 - y1):
+        direction = 1 if x2 >= x1 else -1
+        return [
+            (x2, y2),
+            (x2 - direction * size, y2 - size * 0.62),
+            (x2 - direction * size, y2 + size * 0.62),
+        ]
+    direction = 1 if y2 >= y1 else -1
     return [
-        (x + cut, y),
-        (x + w - cut, y),
-        (x + w, y + h / 2),
-        (x + w - cut, y + h),
-        (x + cut, y + h),
-        (x, y + h / 2),
+        (x2, y2),
+        (x2 - size * 0.62, y2 - direction * size),
+        (x2 + size * 0.62, y2 - direction * size),
     ]
 
 
-def draw_node(
+def draw_arrow_path(
     draw: ImageDraw.ImageDraw,
-    cx: float,
-    cy: float,
-    w: float,
-    h: float,
-    label: str | list[str],
-    text_font: ImageFont.ImageFont = NODE_FONT,
-    stroke: int = 4,
+    points: Sequence[tuple[float, float]],
+    *,
+    color: Color | None = None,
+    width: int = 4,
+    head: int = 13,
+    halo: bool = True,
 ) -> None:
-    points = hex_points(cx, cy, w, h)
-    draw.polygon(points, fill=BG)
-    draw.line(points + [points[0]], fill=INK, width=stroke, joint="curve")
-    draw_centered_text(draw, (cx, cy), label, text_font=text_font)
+    if len(points) < 2:
+        return
+    line_color = color or ACTIVE_THEME.line
+    flattened = [coordinate for point in points for coordinate in point]
+    if halo:
+        draw.line(flattened, fill=ACTIVE_THEME.halo, width=width + 3, joint="curve")
+        draw.polygon(
+            arrow_head(points[-1], points[-2], head + 2),
+            fill=ACTIVE_THEME.halo,
+        )
+    draw.line(flattened, fill=line_color, width=width, joint="curve")
+    draw.polygon(arrow_head(points[-1], points[-2], head), fill=line_color)
 
 
-def draw_group(draw: ImageDraw.ImageDraw, x: float, y: float, w: float, h: float) -> None:
-    draw.rounded_rectangle((x, y, x + w, y + h), radius=7, outline=INK, width=2, fill=BG)
-
-
-def draw_connector(draw: ImageDraw.ImageDraw, x: float, y: float) -> None:
-    draw.rounded_rectangle((x, y, x + 40, y + 88), radius=10, outline=INK, width=2, fill=BG)
-
-
-def draw_arrow(
+def draw_dashed_segment(
     draw: ImageDraw.ImageDraw,
     start: tuple[float, float],
     end: tuple[float, float],
-    color: str = ARROW,
-    width: int = 3,
-    head: int = 12,
-) -> None:
-    segment = math.hypot(end[0] - start[0], end[1] - start[1])
-    if segment < 2:
-        return
-    head = min(head, max(5, int(segment * 0.38)))
-    draw.line((start[0], start[1], end[0], end[1]), fill=color, width=width)
-    angle = math.atan2(end[1] - start[1], end[0] - start[0])
-    left = (
-        end[0] - head * math.cos(angle - math.pi / 6),
-        end[1] - head * math.sin(angle - math.pi / 6),
-    )
-    right = (
-        end[0] - head * math.cos(angle + math.pi / 6),
-        end[1] - head * math.sin(angle + math.pi / 6),
-    )
-    draw.polygon([end, left, right], fill=color)
-
-
-def draw_h_arrow(
-    draw: ImageDraw.ImageDraw,
-    source_right: float,
-    y: float,
-    target_left: float,
-    pad: int = 4,
-) -> None:
-    gap = target_left - source_right
-    if gap <= 0:
-        return
-    local_pad = min(pad, max(1, int((gap - 8) / 2)))
-    draw_arrow(draw, (source_right + local_pad, y), (target_left - local_pad, y), head=10)
-
-
-def draw_v_arrow_up(
-    draw: ImageDraw.ImageDraw,
-    x: float,
-    source_top: float,
-    target_bottom: float,
-    pad: int = 4,
-) -> None:
-    gap = source_top - target_bottom
-    if gap <= 0:
-        return
-    local_pad = min(pad, max(1, int((gap - 8) / 2)))
-    draw_arrow(draw, (x, source_top - local_pad), (x, target_bottom + local_pad), head=10)
-
-
-def draw_v_arrow_down(
-    draw: ImageDraw.ImageDraw,
-    x: float,
-    source_bottom: float,
-    target_top: float,
-    pad: int = 4,
-) -> None:
-    gap = target_top - source_bottom
-    if gap <= 0:
-        return
-    local_pad = min(pad, max(1, int((gap - 8) / 2)))
-    draw_arrow(draw, (x, source_bottom + local_pad), (x, target_top - local_pad), head=10)
-
-
-def draw_elbow_arrow(
-    draw: ImageDraw.ImageDraw,
-    start: tuple[float, float],
-    mid: tuple[float, float],
-    end: tuple[float, float],
-    color: str = ARROW,
-    width: int = 3,
-) -> None:
-    draw.line((start[0], start[1], mid[0], mid[1], end[0], end[1]), fill=color, width=width)
-    draw_arrow(draw, (end[0] - 2, end[1]), end, color=color, width=width, head=10)
-
-
-def draw_dashed_line(
-    draw: ImageDraw.ImageDraw,
-    start: tuple[float, float],
-    end: tuple[float, float],
-    color: str = ARROW,
-    width: int = 3,
+    *,
+    color: tuple[int, int, int, int],
+    width: int = 4,
     dash: int = 14,
     gap: int = 10,
 ) -> None:
     x1, y1 = start
     x2, y2 = end
-    length = math.hypot(x2 - x1, y2 - y1)
-    if length == 0:
+    length = max(abs(x2 - x1), abs(y2 - y1))
+    if length <= 0:
         return
-    dx = (x2 - x1) / length
-    dy = (y2 - y1) / length
-    distance = 0.0
-    while distance < length:
-        seg_start = distance
-        seg_end = min(distance + dash, length)
-        draw.line(
-            (
-                x1 + dx * seg_start,
-                y1 + dy * seg_start,
-                x1 + dx * seg_end,
-                y1 + dy * seg_end,
-            ),
-            fill=color,
-            width=width,
-        )
-        distance += dash + gap
+    horizontal = abs(x2 - x1) >= abs(y2 - y1)
+    direction = 1 if (x2 >= x1 if horizontal else y2 >= y1) else -1
+    position = 0.0
+    while position < length:
+        segment_end = min(position + dash, length)
+        if horizontal:
+            p1 = (x1 + direction * position, y1)
+            p2 = (x1 + direction * segment_end, y1)
+        else:
+            p1 = (x1, y1 + direction * position)
+            p2 = (x1, y1 + direction * segment_end)
+        draw.line((*p1, *p2), fill=color, width=width)
+        position += dash + gap
 
 
-def draw_dashed_path(draw: ImageDraw.ImageDraw, points: list[tuple[float, float]], color: str = ARROW) -> None:
+def draw_dashed_arrow_path(
+    draw: ImageDraw.ImageDraw,
+    points: Sequence[tuple[float, float]],
+    *,
+    color: Color | None = None,
+    width: int = 4,
+    head: int = 13,
+) -> None:
+    if len(points) < 2:
+        return
+    line_color = color or ACTIVE_THEME.line
     for start, end in zip(points, points[1:]):
-        draw_dashed_line(draw, start, end, color=color)
+        draw_dashed_segment(
+            draw,
+            start,
+            end,
+            color=ACTIVE_THEME.halo,
+            width=width + 3,
+        )
+    for start, end in zip(points, points[1:]):
+        draw_dashed_segment(draw, start, end, color=line_color, width=width)
+    draw.polygon(
+        arrow_head(points[-1], points[-2], head + 2),
+        fill=ACTIVE_THEME.halo,
+    )
+    draw.polygon(arrow_head(points[-1], points[-2], head), fill=line_color)
 
 
-def label(draw: ImageDraw.ImageDraw, value: str, x: float, y: float, color: str = RETRY) -> None:
-    draw.text((x, y), value, font=NOTE_FONT, fill=color)
-
-
-def draw_title(draw: ImageDraw.ImageDraw, title: str, color: str) -> None:
-    x = 55
-    y = 38
-    draw.text((x, y), title, font=TITLE_FONT, fill=TEXT)
-    title_w, _ = text_size(draw, title, TITLE_FONT)
-    draw.rectangle((x + 2, 109, x + title_w + 12, 113), fill=color)
+def draw_edge_label(
+    draw: ImageDraw.ImageDraw,
+    center: tuple[float, float],
+    value: str,
+    color: str = SLATE,
+) -> None:
+    width, height = text_size(draw, value, NOTE_FONT)
+    rect = Rect(
+        center[0] - width / 2 - 15,
+        center[1] - height / 2 - 10,
+        width + 30,
+        height + 20,
+    )
+    rounded_box(
+        draw,
+        rect,
+        fill=accent_surface(color, strong=True),
+        outline=accent_text(color, 150),
+        width=2,
+        radius=12,
+    )
+    draw_centered_text(
+        draw,
+        rect.inset(8),
+        value,
+        NOTE_FONT,
+        fill=accent_text(color),
+        max_lines=1,
+        spacing=NOTE_LINE_SPACING,
+    )
 
 
 def draw_header(
     draw: ImageDraw.ImageDraw,
-    number: int,
     title: str,
+    subtitle: str,
     color: str,
+    *,
+    secondary_legend: str | None = None,
+) -> None:
+    draw_top_left_text(
+        draw,
+        CANVAS_MARGIN,
+        42,
+        (title,),
+        TITLE_FONT,
+        fill=ACTIVE_THEME.ink,
+        spacing=TITLE_LINE_SPACING,
+    )
+    draw.rounded_rectangle(
+        (CANVAS_MARGIN + 2, 124, CANVAS_MARGIN + 190, 132),
+        radius=4,
+        fill=accent_text(color),
+    )
+    draw_top_left_text(
+        draw,
+        CANVAS_MARGIN,
+        149,
+        (subtitle,),
+        SUBTITLE_FONT,
+        fill=ACTIVE_THEME.muted,
+        spacing=TITLE_LINE_SPACING,
+    )
+
+    primary_label = "SEQUENCE"
+    primary_width, primary_height = text_size(draw, primary_label, LEGEND_FONT)
+    secondary_width = 0
+    if secondary_legend:
+        secondary_width = text_size(draw, secondary_legend, LEGEND_FONT)[0] + 92
+    legend_width = 70 + primary_width + secondary_width
+    legend_x = WIDTH - CANVAS_MARGIN - legend_width
+    legend_y = 91
+    draw_arrow_path(
+        draw,
+        [(legend_x, legend_y), (legend_x + 54, legend_y)],
+        width=4,
+        head=10,
+        halo=False,
+    )
+    draw_centered_text(
+        draw,
+        Rect(legend_x + 68, legend_y - primary_height, primary_width, primary_height * 2),
+        primary_label,
+        LEGEND_FONT,
+        fill=ACTIVE_THEME.muted,
+        max_lines=1,
+    )
+    if secondary_legend:
+        secondary_x = legend_x + 86 + primary_width
+        draw_dashed_segment(
+            draw,
+            (secondary_x, legend_y),
+            (secondary_x + 54, legend_y),
+            color=ACTIVE_THEME.line,
+            width=4,
+            dash=10,
+            gap=7,
+        )
+        draw_centered_text(
+            draw,
+            Rect(
+                secondary_x + 68,
+                legend_y - primary_height,
+                text_size(draw, secondary_legend, LEGEND_FONT)[0],
+                primary_height * 2,
+            ),
+            secondary_legend,
+            LEGEND_FONT,
+            fill=ACTIVE_THEME.muted,
+            max_lines=1,
+        )
+
+
+def draw_lane_label(
+    draw: ImageDraw.ImageDraw,
     x: float,
     y: float,
-    w: float,
+    value: str,
+    color: str,
 ) -> None:
-    circle_r = 16
-    cy = y + 17
-    draw.ellipse((x, cy - circle_r, x + 2 * circle_r, cy + circle_r), outline=color, width=3, fill=BG)
-    draw_centered_text(draw, (x + circle_r, cy), f"{number:02d}", INDEX_FONT, fill=color, line_gap=0)
-    draw.text((x + 43, y - 1), title, font=SECTION_FONT, fill=color)
-    draw.line((x, y + 45, x + w, y + 45), fill=INK, width=3)
-    draw.line((x, y + 53, x + w, y + 53), fill=LIGHT_LINE, width=1)
+    label_width, label_height = text_size(draw, value.upper(), LANE_FONT)
+    rect = Rect(x, y, label_width + 58, label_height + 24)
+    rounded_box(
+        draw,
+        rect,
+        fill=accent_surface(color),
+        outline=accent_text(color, 145),
+        width=2,
+        radius=16,
+    )
+    draw.ellipse(
+        (rect.x + 15, rect.cy - 6, rect.x + 27, rect.cy + 6),
+        fill=accent_text(color),
+    )
+    draw_centered_text(
+        draw,
+        Rect(rect.x + 36, rect.y + 4, rect.w - 44, rect.h - 8),
+        value.upper(),
+        LANE_FONT,
+        fill=accent_text(color),
+        max_lines=1,
+    )
 
 
-def draw_narrative_group(draw: ImageDraw.ImageDraw, x: float, y: float, w: float = 390) -> tuple[float, float, float, float]:
-    h = 200
-    draw_group(draw, x, y, w, h)
-    label(draw, "retry x5", x + w / 2 - 26, y + 10)
-    left_x = x + 104
-    right_x = x + w - 104
-    draw_node(draw, left_x, y + 72, 158, 70, "Moderate")
-    draw_node(draw, right_x, y + 72, 174, 70, ["Theme +", "Narrative"], text_font=NODE_SMALL_FONT)
-    draw_node(draw, left_x, y + 150, 158, 70, "Validate")
-    draw_node(draw, right_x, y + 150, 174, 70, "Payload")
-    draw_h_arrow(draw, left_x + 79, y + 72, right_x - 87, pad=4)
-    draw_h_arrow(draw, left_x + 79, y + 150, right_x - 87, pad=4)
-    draw_v_arrow_up(draw, left_x, y + 115, y + 107, pad=2)
-    draw_v_arrow_up(draw, right_x, y + 115, y + 107, pad=2)
-    return x, y, w, h
-
-
-def draw_image_gen_group(draw: ImageDraw.ImageDraw, x: float, y: float, w: float = 390) -> tuple[float, float, float, float]:
-    h = 200
-    draw_group(draw, x, y, w, h)
-    label(draw, "rewrite x3", x + w / 2 - 32, y + 10)
-    left_x = x + 104
-    right_x = x + w - 104
-    draw_node(draw, left_x, y + 72, 148, 70, "Create")
-    draw_node(draw, right_x, y + 72, 148, 70, "Describe")
-    draw_node(draw, left_x, y + 150, 148, 70, ["Score +", "Judge"], text_font=NODE_SMALL_FONT)
-    draw_node(draw, right_x, y + 150, 148, 70, ["Active", "Image"], text_font=NODE_SMALL_FONT)
-    draw_h_arrow(draw, left_x + 74, y + 72, right_x - 74, pad=4)
-    draw_h_arrow(draw, left_x + 74, y + 150, right_x - 74, pad=4)
-    draw_v_arrow_up(draw, left_x, y + 115, y + 107, pad=2)
-    draw_v_arrow_up(draw, right_x, y + 115, y + 107, pad=2)
-    return x, y, w, h
-
-
-def draw_audio_flow(
+def choose_step_font(
     draw: ImageDraw.ImageDraw,
-    dispatch_x: float,
-    connector_x: float,
-    provider_x: float,
-    return_y: float,
-) -> None:
-    draw_node(draw, dispatch_x, 300, 138, 82, "Dispatch", text_font=NODE_SMALL_FONT)
-    draw_connector(draw, connector_x, 256)
-    label(draw, "retry <=3", provider_x - 58, 235)
-    draw_node(draw, provider_x, 300, 170, 82, "Provider", text_font=NODE_SMALL_FONT)
-    draw_node(draw, provider_x, 405, 185, 78, "Audio Links", text_font=NODE_SMALL_FONT)
-    draw_h_arrow(draw, dispatch_x + 69, 300, connector_x)
-    draw_h_arrow(draw, connector_x + 40, 300, provider_x - 85)
-    draw_v_arrow_up(draw, provider_x, 366, 341)
-    draw.line((provider_x + 92, 405, 1940, 405, 1940, return_y, 55, return_y), fill=ARROW, width=3)
-    draw.text((980, return_y - 18), "continue", font=CONTINUE_FONT, fill=MUTED)
-    draw.line((55, return_y, 55, 655), fill=ARROW, width=3)
+    value: str,
+    max_width: float,
+) -> tuple[ImageFont.ImageFont, list[str]]:
+    for candidate, preferred_lines in ((STEP_FONT, 3), (STEP_SMALL_FONT, 4)):
+        lines = wrap_text(draw, value, candidate, max_width, max_lines=None)
+        if len(lines) <= preferred_lines:
+            return candidate, lines
+    return STEP_SMALL_FONT, wrap_text(
+        draw,
+        value,
+        STEP_SMALL_FONT,
+        max_width,
+        max_lines=None,
+    )
 
 
-def draw_bottom_headers(draw: ImageDraw.ImageDraw) -> None:
-    y = 520
-    draw_header(draw, 6, "Express", RED, 55, y, 305)
-    draw_header(draw, 7, "AI Video", BLUE, 375, y, 335)
-    draw_header(draw, 8, "Post-AI", RED, 730, y, 330)
-    draw_header(draw, 9, "Frames", TEAL, 1080, y, 310)
-    draw_header(draw, 10, "Render", GOLD, 1405, y, 300)
-    draw_header(draw, 11, "Complete", GRAY, 1720, y, 225)
+def allocate_step_rects(
+    draw: ImageDraw.ImageDraw,
+    rect: Rect,
+    stage: Stage,
+    body_top: float,
+    body_bottom: float,
+) -> tuple[list[Rect], list[ImageFont.ImageFont]]:
+    is_branch = stage.layout == "parallel"
+    node_x = rect.x + (52 if is_branch else CARD_PAD_X)
+    node_width = rect.w - (94 if is_branch else CARD_PAD_X * 2)
+    layout_top = body_top + (4 if is_branch else 0)
+    available = body_bottom - layout_top
+    fonts: list[ImageFont.ImageFont] = []
+    preferred_heights: list[float] = []
+    for value in stage.steps:
+        node_font, lines = choose_step_font(
+            draw,
+            value,
+            node_width - NODE_PAD_X * 2,
+        )
+        fonts.append(node_font)
+        text_height = text_block_size(
+            draw,
+            lines,
+            node_font,
+            STEP_LINE_SPACING,
+        )[1]
+        preferred_heights.append(
+            max(NODE_MIN_HEIGHT, text_height + NODE_PAD_Y * 2)
+        )
+
+    gap_total = NODE_GAP * max(0, len(stage.steps) - 1)
+    preferred_total = sum(preferred_heights) + gap_total
+    if preferred_total > available:
+        raise ValueError(
+            f"stage {stage.number:02d} {stage.title!r} needs "
+            f"{preferred_total:.1f}px for steps but has {available:.1f}px"
+        )
+    extra_height = (available - preferred_total) / max(1, len(stage.steps))
+    y = layout_top
+    nodes: list[Rect] = []
+    for preferred_height in preferred_heights:
+        height = preferred_height + extra_height
+        nodes.append(Rect(node_x, y, node_width, height))
+        y += height + NODE_GAP
+    return nodes, fonts
 
 
-def draw_express(draw: ImageDraw.ImageDraw) -> None:
-    draw_node(draw, 132, 702, 138, 82, ["Media", "Gates"], text_font=NODE_SMALL_FONT)
-    draw_node(draw, 306, 702, 142, 82, ["Set", "Pending"], text_font=NODE_SMALL_FONT)
-    draw_node(draw, 306, 810, 142, 82, ["Queue", "AI Docs"], text_font=NODE_SMALL_FONT)
-    draw_h_arrow(draw, 201, 702, 235)
-    draw_v_arrow_down(draw, 306, 743, 769)
+def note_rect_for_stage(
+    draw: ImageDraw.ImageDraw,
+    rect: Rect,
+    stage: Stage,
+) -> tuple[Rect | None, list[str]]:
+    if not stage.note:
+        return None, []
+    note_width = rect.w - CARD_PAD_X * 2
+    lines = wrap_text(
+        draw,
+        stage.note,
+        NOTE_FONT,
+        note_width - NOTE_PAD_X * 2,
+        max_lines=None,
+    )
+    text_height = text_block_size(
+        draw,
+        lines,
+        NOTE_FONT,
+        NOTE_LINE_SPACING,
+    )[1]
+    note_height = max(NOTE_MIN_HEIGHT, text_height + NOTE_PAD_Y * 2)
+    return (
+        Rect(
+            rect.x + CARD_PAD_X,
+            rect.bottom - NOTE_BOTTOM - note_height,
+            note_width,
+            note_height,
+        ),
+        lines,
+    )
 
 
-def draw_ai_video_text(draw: ImageDraw.ImageDraw) -> None:
-    draw_group(draw, 382, 590, 338, 292)
-    label(draw, "429/5xx", 526, 598)
-    label(draw, "base x3", 526, 860)
-    draw_node(draw, 473, 702, 140, 82, "Submit/Poll", text_font=NODE_SMALL_FONT)
-    draw_node(draw, 640, 702, 140, 82, "Backoff", text_font=NODE_SMALL_FONT)
-    draw_node(draw, 473, 810, 155, 82, ["Download", "Extract"], text_font=NODE_SMALL_FONT)
-    draw_node(draw, 640, 810, 140, 82, ["Layer", "Done"], text_font=NODE_SMALL_FONT)
-    draw_h_arrow(draw, 377, 702, 403)
-    draw_h_arrow(draw, 543, 702, 570)
-    draw_h_arrow(draw, 551, 810, 570)
-    draw_v_arrow_up(draw, 473, 769, 743)
-    draw_v_arrow_up(draw, 640, 769, 743)
-    draw_h_arrow(draw, 720, 702, 742)
+def draw_stage_card(draw: ImageDraw.ImageDraw, rect: Rect, stage: Stage) -> None:
+    color = accent_text(stage.color)
+    rounded_box(
+        draw,
+        rect,
+        fill=ACTIVE_THEME.card_fill,
+        outline=ACTIVE_THEME.border,
+        width=2,
+        radius=22,
+    )
+    draw.rounded_rectangle(
+        (rect.x, rect.y, rect.x + 9, rect.bottom),
+        radius=5,
+        fill=color,
+    )
 
+    badge = Rect(rect.x + 27, rect.y + 25, 52, 52)
+    draw.ellipse(
+        (badge.left, badge.top, badge.right, badge.bottom),
+        fill=accent_surface(stage.color, strong=True),
+        outline=accent_text(stage.color, 210),
+        width=3,
+    )
+    draw_centered_text(
+        draw,
+        badge.inset(5),
+        f"{stage.number:02d}",
+        BADGE_FONT,
+        fill=color,
+        max_lines=1,
+    )
 
-def draw_ai_video_image(draw: ImageDraw.ImageDraw) -> None:
-    draw_node(draw, 470, 702, 132, 82, ["Start", "Image"], text_font=NODE_SMALL_FONT)
-    draw_node(draw, 470, 810, 155, 82, ["Download", "Extract"], text_font=NODE_SMALL_FONT)
-    draw_group(draw, 560, 590, 162, 292)
-    label(draw, "base x3", 615, 860)
-    draw_node(draw, 641, 702, 140, 82, "Submit/Poll", text_font=NODE_SMALL_FONT)
-    draw_node(draw, 641, 810, 140, 82, ["Layer", "Done"], text_font=NODE_SMALL_FONT)
-    draw_h_arrow(draw, 377, 702, 404)
-    draw_h_arrow(draw, 536, 702, 571)
-    draw_v_arrow_up(draw, 470, 769, 743)
-    draw_h_arrow(draw, 548, 810, 571)
-    draw_v_arrow_up(draw, 641, 769, 743)
-    draw_h_arrow(draw, 722, 702, 742)
+    header_x = rect.x + CARD_HEADER_TEXT_X
+    header_width = rect.w - CARD_HEADER_TEXT_X - CARD_PAD_X
+    service_font = SERVICE_FONT
+    if text_size(draw, stage.service.upper(), SERVICE_FONT)[0] > header_width:
+        service_font = SERVICE_SMALL_FONT
+    service_lines = wrap_text(
+        draw,
+        stage.service.upper(),
+        service_font,
+        header_width,
+        max_lines=2,
+    )
+    service_height = draw_top_left_text(
+        draw,
+        header_x,
+        rect.y + 23,
+        service_lines,
+        service_font,
+        fill=color,
+        spacing=TITLE_LINE_SPACING,
+    )
+    title_top = max(CARD_TITLE_TOP, 23 + service_height + 7)
+    title_lines = wrap_text(
+        draw,
+        stage.title,
+        STAGE_TITLE_FONT,
+        header_width,
+        max_lines=2,
+    )
+    title_height = draw_top_left_text(
+        draw,
+        header_x,
+        rect.y + title_top,
+        title_lines,
+        STAGE_TITLE_FONT,
+        fill=ACTIVE_THEME.ink,
+        spacing=TITLE_LINE_SPACING,
+    )
+    divider_y = rect.y + max(
+        CARD_DIVIDER_MIN_Y,
+        title_top + title_height + CARD_HEADER_GAP,
+    )
+    draw.line(
+        (rect.x + CARD_PAD_X, divider_y, rect.right - CARD_PAD_X, divider_y),
+        fill=ACTIVE_THEME.divider,
+        width=2,
+    )
 
+    note_rect, note_lines = note_rect_for_stage(draw, rect, stage)
+    body_top = divider_y + CARD_HEADER_GAP
+    body_bottom = (
+        note_rect.top - NOTE_GAP
+        if note_rect
+        else rect.bottom - NOTE_BOTTOM
+    )
+    nodes, node_fonts = allocate_step_rects(
+        draw,
+        rect,
+        stage,
+        body_top,
+        body_bottom,
+    )
 
-def draw_post_ai(draw: ImageDraw.ImageDraw) -> None:
-    draw_node(draw, 810, 702, 136, 82, "Reflow", text_font=NODE_SMALL_FONT)
-    draw_node(draw, 810, 810, 136, 82, "Transcript", text_font=NODE_SMALL_FONT)
-    draw_node(draw, 982, 702, 146, 82, ["Lip/SFX/", "Avatar"], text_font=NODE_SMALL_FONT)
-    draw_node(draw, 982, 810, 146, 82, ["Frame", "Pending"], text_font=NODE_SMALL_FONT)
-    draw_h_arrow(draw, 878, 702, 909)
-    draw_h_arrow(draw, 878, 810, 909)
-    draw_v_arrow_up(draw, 982, 769, 743)
-    draw_h_arrow(draw, 1055, 702, 1099)
-    label(draw, "wait", 889, 728)
+    for node, value, node_font in zip(nodes, stage.steps, node_fonts):
+        rounded_box(
+            draw,
+            node,
+            fill=accent_surface(stage.color),
+            outline=accent_text(stage.color, 132),
+            width=2,
+            radius=15,
+        )
+        lines = wrap_text(
+            draw,
+            value,
+            node_font,
+            node.w - NODE_PAD_X * 2,
+            max_lines=None,
+        )
+        draw_centered_text(
+            draw,
+            node.inset(NODE_PAD_Y),
+            "\n".join(lines),
+            node_font,
+            fill=ACTIVE_THEME.ink,
+            max_lines=len(lines),
+            spacing=STEP_LINE_SPACING,
+        )
 
-
-def draw_frames(draw: ImageDraw.ImageDraw) -> None:
-    draw_group(draw, 1084, 590, 323, 292)
-    label(draw, "retry x3", 1222, 598)
-    draw_node(draw, 1169, 702, 140, 82, ["Frame", "Docs"], text_font=NODE_SMALL_FONT)
-    draw_node(draw, 1322, 702, 135, 82, "Compose", text_font=NODE_SMALL_FONT)
-    draw_node(draw, 1169, 810, 140, 82, ["Docs", "Empty"], text_font=NODE_SMALL_FONT)
-    draw_node(draw, 1322, 810, 135, 82, ["Video", "Doc"], text_font=NODE_SMALL_FONT)
-    draw_h_arrow(draw, 1239, 702, 1255)
-    draw_h_arrow(draw, 1239, 810, 1255)
-    draw_v_arrow_up(draw, 1169, 769, 743)
-    draw_v_arrow_up(draw, 1322, 769, 743)
-    draw_h_arrow(draw, 1407, 702, 1420)
-
-
-def draw_render_complete(draw: ImageDraw.ImageDraw) -> None:
-    draw_node(draw, 1488, 702, 128, 82, ["Collect", "Mix"], text_font=NODE_SMALL_FONT)
-    draw_group(draw, 1575, 590, 165, 292)
-    label(draw, "retry", 1640, 598)
-    draw_node(draw, 1658, 702, 135, 82, "FFmpeg", text_font=NODE_SMALL_FONT)
-    draw_node(draw, 1658, 810, 135, 82, ["Upload", "Link"], text_font=NODE_SMALL_FONT)
-    draw_h_arrow(draw, 1552, 702, 1590)
-    draw_v_arrow_up(draw, 1658, 769, 743)
-    draw_h_arrow(draw, 1740, 755, 1760)
-    draw_node(draw, 1850, 755, 180, 90, ["Charge +", "Webhook"], text_font=NODE_SMALL_FONT)
-
-
-def draw_bottom_common(draw: ImageDraw.ImageDraw, variant: str) -> None:
-    draw_bottom_headers(draw)
-    draw_express(draw)
-    if variant == "text":
-        draw_ai_video_text(draw)
+    if stage.layout == "parallel":
+        left_rail = rect.x + 27
+        right_rail = rect.right - 26
+        entry_y = body_top + 1
+        draw.line(
+            (rect.cx, divider_y, rect.cx, entry_y),
+            fill=ACTIVE_THEME.line,
+            width=3,
+        )
+        draw.line(
+            (left_rail, entry_y, rect.cx, entry_y),
+            fill=ACTIVE_THEME.line,
+            width=3,
+        )
+        draw.line(
+            (left_rail, entry_y, left_rail, nodes[-1].cy),
+            fill=ACTIVE_THEME.line,
+            width=3,
+        )
+        draw.line(
+            (right_rail, nodes[0].cy, right_rail, nodes[-1].cy),
+            fill=ACTIVE_THEME.line,
+            width=3,
+        )
+        for node in nodes:
+            draw_arrow_path(
+                draw,
+                [(left_rail, node.cy), (node.left, node.cy)],
+                width=3,
+                head=9,
+                halo=False,
+            )
+            draw.line(
+                (node.right, node.cy, right_rail, node.cy),
+                fill=ACTIVE_THEME.line,
+                width=3,
+            )
     else:
-        draw_ai_video_image(draw)
-    draw_post_ai(draw)
-    draw_frames(draw)
-    draw_render_complete(draw)
-    label(draw, "wait", 46, 899)
+        for source, target in zip(nodes, nodes[1:]):
+            draw_arrow_path(
+                draw,
+                [(source.cx, source.bottom), (target.cx, target.top)],
+                width=3,
+                head=9,
+                halo=False,
+            )
+
+    if note_rect and stage.note:
+        rounded_box(
+            draw,
+            note_rect,
+            fill=accent_surface(stage.color, strong=True),
+            outline=accent_text(stage.color, 138),
+            width=1,
+            radius=12,
+        )
+        draw_centered_text(
+            draw,
+            note_rect.inset(NOTE_PAD_Y),
+            "\n".join(note_lines),
+            NOTE_FONT,
+            fill=color,
+            max_lines=len(note_lines),
+            spacing=NOTE_LINE_SPACING,
+        )
+
+
+def row_rects(
+    count: int,
+    *,
+    y: float,
+    height: float,
+    gap: float,
+    left: float = CANVAS_MARGIN,
+    right: float = WIDTH - CANVAS_MARGIN,
+) -> list[Rect]:
+    width = (right - left - gap * (count - 1)) / count
+    return [Rect(left + index * (width + gap), y, width, height) for index in range(count)]
+
+
+def draw_row_edges(draw: ImageDraw.ImageDraw, rects: Sequence[Rect]) -> None:
+    for source, target in zip(rects, rects[1:]):
+        draw_arrow_path(
+            draw,
+            [(source.right, source.cy), (target.left, target.cy)],
+            halo=False,
+        )
+
+
+def draw_mode_rail(
+    draw: ImageDraw.ImageDraw,
+    labels: Sequence[tuple[str, str]],
+    *,
+    y: float = 202,
+) -> None:
+    x = WIDTH - CANVAS_MARGIN
+    for value, color in reversed(labels):
+        text_width, text_height = text_size(draw, value.upper(), NOTE_FONT)
+        width = text_width + 34
+        x -= width
+        rect = Rect(x, y, width, text_height + 22)
+        rounded_box(
+            draw,
+            rect,
+            fill=accent_surface(color),
+            outline=accent_text(color, 135),
+            width=1,
+            radius=13,
+        )
+        draw_centered_text(
+            draw,
+            rect.inset(8),
+            value.upper(),
+            NOTE_FONT,
+            fill=accent_text(color),
+            max_lines=1,
+            spacing=NOTE_LINE_SPACING,
+        )
+        x -= 24 if value.lower().startswith("separate:") else 12
+
+
+def draw_outcome_strip(
+    draw: ImageDraw.ImageDraw,
+    rect: Rect,
+    title: str,
+    items: Sequence[tuple[str, str]],
+) -> None:
+    rounded_box(
+        draw,
+        rect,
+        fill=ACTIVE_THEME.chrome_fill,
+        outline=ACTIVE_THEME.border,
+        width=2,
+        radius=20,
+    )
+    title_width, title_height = text_size(draw, title.upper(), LANE_FONT)
+    title_rect = Rect(
+        rect.x + 18,
+        rect.cy - (title_height + 28) / 2,
+        title_width + 38,
+        title_height + 28,
+    )
+    rounded_box(
+        draw,
+        title_rect,
+        fill=ACTIVE_THEME.card_fill,
+        outline=ACTIVE_THEME.border,
+        width=1,
+        radius=13,
+    )
+    draw_centered_text(
+        draw,
+        title_rect.inset(8),
+        title.upper(),
+        LANE_FONT,
+        fill=ACTIVE_THEME.muted,
+        max_lines=1,
+    )
+
+    available_left = title_rect.right + 18
+    gap = 14
+    item_width = (
+        rect.right - available_left - 16 - gap * (len(items) - 1)
+    ) / len(items)
+    for index, (value, color) in enumerate(items):
+        item_rect = Rect(
+            available_left + index * (item_width + gap),
+            rect.y + 14,
+            item_width,
+            rect.h - 28,
+        )
+        rounded_box(
+            draw,
+            item_rect,
+            fill=accent_surface(color),
+            outline=accent_text(color, 125),
+            width=1,
+            radius=13,
+        )
+        draw.ellipse(
+            (item_rect.x + 12, item_rect.cy - 5, item_rect.x + 22, item_rect.cy + 5),
+            fill=accent_text(color),
+        )
+        draw_centered_text(
+            draw,
+            Rect(
+                item_rect.x + 34,
+                item_rect.y + 7,
+                item_rect.w - 50,
+                item_rect.h - 14,
+            ),
+            value,
+            NOTE_FONT,
+            fill=ACTIVE_THEME.ink,
+            max_lines=3,
+            spacing=NOTE_LINE_SPACING,
+        )
+
+
+def common_video_tail(start_number: int = 6) -> tuple[Stage, ...]:
+    return (
+        Stage(
+            start_number,
+            "Join + advance",
+            "express-video-listener",
+            ROSE,
+            (
+                "Join image, speech, and music gates",
+                "Charge completed stages",
+                "Recover queued work; honor pause/cancel",
+            ),
+            "Configured step stages may pause",
+        ),
+        Stage(
+            start_number + 1,
+            "Motion layers",
+            "ai-video-layer-generator",
+            INDIGO,
+            (
+                "Build motion prompts + start images",
+                "Submit / poll provider jobs",
+                "Process clip; attach layer output",
+            ),
+            "Defaults: submit reject 3 | transient poll 6 | base retries up to 3",
+        ),
+        Stage(
+            start_number + 2,
+            "Optional finishing",
+            "express-video-listener",
+            PINK,
+            (
+                "Delete empty layers + reflow",
+                "Lip sync, then SFX, then narrator avatar",
+                "Transcript when subtitles are enabled",
+            ),
+            "SFX / transcript can fall back; lip sync / avatar cannot",
+        ),
+        Stage(
+            start_number + 3,
+            "Frame jobs",
+            "frames-processor",
+            CYAN,
+            (
+                "Linear: one job per layer",
+                "Branched: one job per path entry",
+                "Write frames + path manifests",
+            ),
+            "Up to 3 total attempts",
+        ),
+        Stage(
+            start_number + 4,
+            "Final render",
+            "video-generator",
+            AMBER,
+            (
+                "Collect frames + enabled audio",
+                "FFmpeg compose and mix",
+                "Upload + persist result URL",
+            ),
+            "Render job: up to 2 attempts | upload: up to 3 per job",
+        ),
+        Stage(
+            start_number + 5,
+            "Terminal delivery",
+            "processor + listener",
+            SLATE,
+            (
+                "Charge final pipeline stage",
+                "Settle receipt / external request",
+                "Persist status + terminal webhook",
+            ),
+            "Webhook is best effort after terminal state",
+        ),
+    )
+
+
+def render_video_diagram(
+    *,
+    title: str,
+    subtitle: str,
+    color: str,
+    top_stages: Sequence[Stage],
+    modes: Sequence[tuple[str, str]],
+) -> Image.Image:
+    top_y = 290
+    middle_y = top_y + CARD_HEIGHT + ROW_GAP
+    final_y = middle_y + CARD_HEIGHT + ROW_GAP
+    outcome_y = final_y + CARD_HEIGHT + 60
+    video_height = outcome_y + OUTCOME_HEIGHT + 60
+    image = Image.new("RGBA", (WIDTH, video_height), TRANSPARENT)
+    draw = ImageDraw.Draw(image)
+    draw_header(draw, title, subtitle, color)
+    draw_mode_rail(draw, modes)
+
+    top_rects = row_rects(5, y=top_y, height=CARD_HEIGHT, gap=32)
+    tail = common_video_tail()
+    middle_rects = row_rects(3, y=middle_y, height=CARD_HEIGHT, gap=34)
+    final_rects = row_rects(3, y=final_y, height=CARD_HEIGHT, gap=34)
+    outcome_rect = Rect(
+        CANVAS_MARGIN,
+        outcome_y,
+        WIDTH - CANVAS_MARGIN * 2,
+        OUTCOME_HEIGHT,
+    )
+    add_shadow_layer(
+        image,
+        [*top_rects, *middle_rects, *final_rects, outcome_rect],
+    )
+    draw = ImageDraw.Draw(image)
+
+    draw_lane_label(draw, CANVAS_MARGIN, 230, "Plan + prepare", color)
+    draw_lane_label(
+        draw,
+        CANVAS_MARGIN,
+        middle_y - 60,
+        "Produce + deliver",
+        ROSE,
+    )
+    continued_label = "Produce + deliver — continued"
+    continued_width = text_size(
+        draw,
+        continued_label.upper(),
+        LANE_FONT,
+    )[0] + 58
+    draw_lane_label(
+        draw,
+        WIDTH - CANVAS_MARGIN - continued_width,
+        final_y - 60,
+        continued_label,
+        ROSE,
+    )
+    for rect, stage in zip(top_rects, top_stages):
+        draw_stage_card(draw, rect, stage)
+    for rect, stage in zip(middle_rects, tail[:3]):
+        draw_stage_card(draw, rect, stage)
+    for rect, stage in zip(final_rects, tail[3:]):
+        draw_stage_card(draw, rect, stage)
+
+    draw_row_edges(draw, top_rects)
+    draw_row_edges(draw, middle_rects)
+    draw_row_edges(draw, final_rects)
+
+    first_bridge_y = top_rects[-1].bottom + 30
+    first_bridge_points = [
+        (top_rects[-1].cx, top_rects[-1].bottom),
+        (top_rects[-1].cx, first_bridge_y),
+        (middle_rects[0].cx, first_bridge_y),
+        (middle_rects[0].cx, middle_rects[0].top),
+    ]
+    draw_arrow_path(draw, first_bridge_points)
+    draw_edge_label(
+        draw,
+        (
+            (top_rects[-1].cx + middle_rects[0].cx) / 2,
+            first_bridge_y,
+        ),
+        "parallel media gates converge",
+        color=ROSE,
+    )
+
+    second_bridge_y = middle_rects[-1].bottom + 30
+    second_bridge_points = [
+        (middle_rects[-1].cx, middle_rects[-1].bottom),
+        (middle_rects[-1].cx, second_bridge_y),
+        (final_rects[0].cx, second_bridge_y),
+        (final_rects[0].cx, final_rects[0].top),
+    ]
+    draw_arrow_path(draw, second_bridge_points)
+    draw_edge_label(
+        draw,
+        (
+            (middle_rects[-1].cx + final_rects[0].cx) / 2,
+            second_bridge_y,
+        ),
+        "pipeline continues",
+        color=ROSE,
+    )
+
+    draw_outcome_strip(
+        draw,
+        outcome_rect,
+        "Control + outcomes",
+        (
+            ("Required stage error: FAILED", ROSE),
+            ("User cancel: CANCELLED", SLATE),
+            ("Configured step: PAUSED", VIOLET),
+            ("Optional fallback: continue", ORANGE),
+            ("Result URL + settlement: COMPLETED", GREEN),
+        ),
+    )
+    return image
 
 
 def render_text_to_video() -> Image.Image:
-    image = Image.new("RGBA", (WIDTH, VIDEO_HEIGHT), BG)
-    draw = ImageDraw.Draw(image)
-    draw_title(draw, "Text to Video", BLUE)
-
-    draw_header(draw, 1, "Processor", BLUE, 55, 145, 305)
-    draw_header(draw, 2, "Narrative", PURPLE, 390, 145, 390)
-    draw_header(draw, 3, "Session", TEAL, 820, 145, 280)
-    draw_header(draw, 4, "Image Gen", ORANGE, 1130, 145, 390)
-    draw_header(draw, 5, "Audio Gen", GREEN, 1550, 145, 395)
-
-    draw_node(draw, 202, 300, 250, 92, "Auth + Preflight")
-    draw_h_arrow(draw, 327, 300, 390)
-    draw_narrative_group(draw, 390, 205)
-    draw_h_arrow(draw, 780, 300, 830)
-    draw_node(draw, 960, 300, 260, 92, ["Session +", "Media Docs"])
-    draw_h_arrow(draw, 1090, 300, 1130)
-    draw_image_gen_group(draw, 1130, 205)
-    draw_h_arrow(draw, 1520, 300, 1555)
-    draw_audio_flow(draw, 1625, 1710, 1830, 492)
-
-    draw_bottom_common(draw, "text")
-    return image
+    top = (
+        Stage(
+            1,
+            "Request gate",
+            "processor API",
+            BLUE,
+            (
+                "Authenticate + normalize payload",
+                "Validate prompt, models, duration, providers",
+                "Credit preflight",
+            ),
+            "External-user signal delegates to scoped wrapper",
+        ),
+        Stage(
+            2,
+            "Durable builder",
+            "processor + MongoDB",
+            CYAN,
+            (
+                "Create or reuse session ID",
+                "Persist QUEUED builder job",
+                "Lease, heartbeat, and recovery",
+            ),
+            "API returns request_id / session_id",
+        ),
+        Stage(
+            3,
+            "Narrative plan",
+            "processor builder",
+            VIOLET,
+            (
+                "Moderate prompt; generate theme once",
+                "Generate + validate scene narrative",
+                "Repair oversized speech when possible",
+            ),
+            "Narrative: up to 3 total attempts",
+        ),
+        Stage(
+            4,
+            "Media plan",
+            "processor + MongoDB",
+            ORANGE,
+            (
+                "Enrich scene plan",
+                "Persist visual + audio layers",
+                "Queue scene-image, speech, and music jobs",
+            ),
+            "Initial audio excludes sound effects",
+        ),
+        Stage(
+            5,
+            "Parallel media",
+            "generator + audio-generator",
+            GREEN,
+            (
+                "Generate / score scene images",
+                "Generate speech",
+                "Generate one backing track",
+            ),
+            "Image scoring/provider: up to 3 | audio retry is provider-specific",
+            layout="parallel",
+        ),
+    )
+    return render_video_diagram(
+        title="Text to Video",
+        subtitle="Prompt | durable plan | parallel media | motion | final video",
+        color=BLUE,
+        top_stages=top,
+        modes=(
+            ("standard + v2 alias", BLUE),
+            ("external wrapper", CYAN),
+            ("step mode", VIOLET),
+        ),
+    )
 
 
 def render_image_list_to_video() -> Image.Image:
-    image = Image.new("RGBA", (WIDTH, VIDEO_HEIGHT), BG)
+    top = (
+        Stage(
+            1,
+            "Request gate",
+            "processor API",
+            BLUE,
+            (
+                "Authenticate + normalize aliases",
+                "Validate image URLs, model, CTA, and options",
+                "Provider + credit preflight",
+            ),
+            "video_model defaults to RUNWAYML",
+        ),
+        Stage(
+            2,
+            "Source preparation",
+            "processor",
+            ORANGE,
+            (
+                "Download each provider-fetchable URL",
+                "Inspect orientation + target coverage",
+                "Center-crop when possible; upload temp copy",
+            ),
+            "No silent AI upscale for low resolution",
+        ),
+        Stage(
+            3,
+            "Durable builder",
+            "processor + MongoDB",
+            CYAN,
+            (
+                "Create or reuse session ID",
+                "Persist prepared source metadata",
+                "Queue builder; RUNNING, then COMPLETED / FAILED",
+            ),
+            "API returns after synchronous source preparation",
+        ),
+        Stage(
+            4,
+            "Creative plan",
+            "processor builder",
+            VIOLET,
+            (
+                "Describe images (best effort); moderate",
+                "Extract theme; generate + validate narrative",
+                "Plan optional CTA / outro / footer / avatar",
+            ),
+            "Narrative: up to 5 total | CTA copy: retry once, then fallback",
+        ),
+        Stage(
+            5,
+            "Session + parallel jobs",
+            "processor + workers",
+            GREEN,
+            (
+                "Prepared images / optional explicit enhancement",
+                "Generate speech",
+                "Generate one backing track",
+            ),
+            "Three gates: image | speech | music; generated outro skips AI video",
+            layout="parallel",
+        ),
+    )
+    return render_video_diagram(
+        title="Image List to Video",
+        subtitle="Prepared source images | creative plan | parallel media | final video",
+        color=ORANGE,
+        top_stages=top,
+        modes=(
+            ("standard + v2 alias", BLUE),
+            ("external wrapper", CYAN),
+            ("step mode", VIOLET),
+            ("separate: direct one-image clip", SLATE),
+        ),
+    )
+
+
+def render_two_lane_diagram(
+    *,
+    title: str,
+    subtitle: str,
+    color: str,
+    top_label: str,
+    bottom_label: str,
+    top_stages: Sequence[Stage],
+    bottom_stages: Sequence[Stage],
+    dependency: tuple[int, int, str],
+    callouts: Sequence[tuple[str, str]],
+) -> Image.Image:
+    split_bottom = len(bottom_stages) > 5
+    top_y = 270
+    bottom_y = top_y + CARD_HEIGHT + ROW_GAP
+    continuation_gap = ROW_GAP + 60 if split_bottom else ROW_GAP
+    continuation_y = bottom_y + CARD_HEIGHT + continuation_gap
+    last_row_y = continuation_y if split_bottom else bottom_y
+    callout_y = last_row_y + CARD_HEIGHT + 60
+    canvas_height = callout_y + OUTCOME_HEIGHT + 60
+    image = Image.new("RGBA", (WIDTH, canvas_height), TRANSPARENT)
     draw = ImageDraw.Draw(image)
-    draw_title(draw, "Image List to Video", ORANGE)
+    draw_header(
+        draw,
+        title,
+        subtitle,
+        color,
+        secondary_legend="SHARED DATA DEPENDENCY",
+    )
 
-    draw_header(draw, 1, "Processor", BLUE, 55, 145, 300)
-    draw_header(draw, 2, "Image Prep", ORANGE, 370, 145, 315)
-    draw_header(draw, 3, "Narrative", PURPLE, 725, 145, 390)
-    draw_header(draw, 4, "Session", TEAL, 1130, 145, 280)
-    draw_header(draw, 5, "Audio Gen", GREEN, 1430, 145, 515)
+    top_rects = row_rects(
+        len(top_stages),
+        y=top_y,
+        height=CARD_HEIGHT,
+        gap=32,
+    )
+    bottom_rows: list[tuple[Sequence[Stage], list[Rect]]] = []
+    if split_bottom:
+        first_stages = bottom_stages[:3]
+        second_stages = bottom_stages[3:]
+        bottom_rows = [
+            (
+                first_stages,
+                row_rects(3, y=bottom_y, height=CARD_HEIGHT, gap=34),
+            ),
+            (
+                second_stages,
+                row_rects(3, y=continuation_y, height=CARD_HEIGHT, gap=34),
+            ),
+        ]
+    else:
+        bottom_rows = [
+            (
+                bottom_stages,
+                row_rects(
+                    len(bottom_stages),
+                    y=bottom_y,
+                    height=CARD_HEIGHT,
+                    gap=32,
+                ),
+            )
+        ]
+    bottom_rects = [rect for _, rects in bottom_rows for rect in rects]
+    callout_rect = Rect(
+        CANVAS_MARGIN,
+        callout_y,
+        WIDTH - CANVAS_MARGIN * 2,
+        OUTCOME_HEIGHT,
+    )
+    add_shadow_layer(image, [*top_rects, *bottom_rects, callout_rect])
+    draw = ImageDraw.Draw(image)
 
-    draw_node(draw, 202, 300, 250, 92, "Auth + Preflight")
-    draw_h_arrow(draw, 327, 300, 410)
-    draw_node(draw, 552, 300, 250, 92, "Inspect + Upload")
-    draw_h_arrow(draw, 677, 300, 725)
-    draw_narrative_group(draw, 725, 205)
-    draw_h_arrow(draw, 1115, 300, 1160)
-    draw_node(draw, 1280, 300, 240, 92, ["Prepared", "Media Docs"])
-    draw_h_arrow(draw, 1400, 300, 1436)
-    draw_audio_flow(draw, 1505, 1615, 1765, 492)
+    draw_lane_label(draw, CANVAS_MARGIN, 210, top_label, color)
+    draw_lane_label(
+        draw,
+        CANVAS_MARGIN,
+        bottom_y - 60,
+        bottom_label,
+        VIOLET,
+    )
+    if split_bottom:
+        continued_label = f"{bottom_label} — continued"
+        continued_width = text_size(
+            draw,
+            continued_label.upper(),
+            LANE_FONT,
+        )[0] + 58
+        draw_lane_label(
+            draw,
+            WIDTH - CANVAS_MARGIN - continued_width,
+            continuation_y - 60,
+            continued_label,
+            VIOLET,
+        )
+    for rect, stage in zip(top_rects, top_stages):
+        draw_stage_card(draw, rect, stage)
+    for stages, rects in bottom_rows:
+        for rect, stage in zip(rects, stages):
+            draw_stage_card(draw, rect, stage)
+    draw_row_edges(draw, top_rects)
+    for _, rects in bottom_rows:
+        draw_row_edges(draw, rects)
 
-    draw_bottom_common(draw, "image")
+    if split_bottom:
+        first_rects = bottom_rows[0][1]
+        second_rects = bottom_rows[1][1]
+        bridge_y = first_rects[-1].bottom + 30
+        draw_arrow_path(
+            draw,
+            [
+                (first_rects[-1].cx, first_rects[-1].bottom),
+                (first_rects[-1].cx, bridge_y),
+                (second_rects[0].cx, bridge_y),
+                (second_rects[0].cx, second_rects[0].top),
+            ],
+        )
+        draw_edge_label(
+            draw,
+            (
+                (first_rects[-1].cx + second_rects[0].cx) / 2,
+                bridge_y,
+            ),
+            "pipeline continues",
+            color=VIOLET,
+        )
+
+    source_index, target_index, dependency_label = dependency
+    source = top_rects[source_index]
+    target = bottom_rects[target_index]
+    if split_bottom and target.top > 1000:
+        route_x = WIDTH - CANVAS_MARGIN + 16
+        upper_y = source.bottom + 30
+        dependency_y = target.top - 120
+        points = [
+            (source.cx, source.bottom),
+            (source.cx, upper_y),
+            (route_x, upper_y),
+            (route_x, dependency_y),
+            (target.cx, dependency_y),
+            (target.cx, target.top),
+        ]
+        label_center = ((route_x + target.cx) / 2, dependency_y)
+    else:
+        dependency_y = source.bottom + 30
+        points = [
+            (source.cx, source.bottom),
+            (source.cx, dependency_y),
+            (target.cx, dependency_y),
+            (target.cx, target.top),
+        ]
+        label_center = ((source.cx + target.cx) / 2, dependency_y)
+    draw_dashed_arrow_path(draw, points)
+    draw_edge_label(
+        draw,
+        label_center,
+        dependency_label,
+        color=CYAN,
+    )
+
+    draw_outcome_strip(draw, callout_rect, "Edge behavior", callouts)
     return image
-
-
-def draw_embedding_header_row(
-    draw: ImageDraw.ImageDraw,
-    stages: list[tuple[int, str, str, float, float]],
-    y: float = 162,
-) -> None:
-    for number, title, color, x, w in stages:
-        draw_header(draw, number, title, color, x, y, w)
 
 
 def render_search_embeddings() -> Image.Image:
-    image = Image.new("RGBA", (WIDTH, EMBEDDING_HEIGHT), BG)
-    draw = ImageDraw.Draw(image)
-    draw_title(draw, "Search Embeddings", BLUE)
-
-    stages = [
-        (1, "Create", BLUE, 60, 160),
-        (2, "Input", PURPLE, 255, 166),
-        (3, "Normalize", GRAY, 455, 166),
-        (4, "Embed", PURPLE, 650, 146),
-        (5, "Records", BLUE, 820, 160),
-        (6, "Query API", BLUE, 1000, 170),
-        (7, "Query", PURPLE, 1190, 166),
-        (8, "Vector", BLUE, 1385, 190),
-        (9, "Rank", TEAL, 1605, 146),
-        (10, "Results", TEAL, 1780, 156),
-    ]
-    draw_embedding_header_row(draw, stages)
-
-    y = 300
-    nodes = [
-        (135, 150, ["Create", "API"]),
-        (337, 150, "Inputs"),
-        (538, 166, "Normalize"),
-        (723, 148, "Embed"),
-        (895, 150, "Records"),
-        (1084, 150, ["Search", "API"]),
-        (1273, 164, ["Query", "Embed"]),
-        (1476, 172, ["Vector", "Search"]),
-        (1678, 148, "Rank"),
-        (1856, 150, "Results"),
-    ]
-    for cx, w, title in nodes:
-        draw_node(draw, cx, y, w, 76, title, text_font=NODE_SMALL_FONT)
-    for left, right in zip(nodes, nodes[1:]):
-        draw_h_arrow(draw, left[0] + left[1] / 2, y, right[0] - right[1] / 2)
-
-    draw_node(draw, 338, 445, 158, 68, ["URL", "Ingest"], text_font=NODE_SMALL_FONT)
-    draw_node(draw, 895, 445, 158, 68, ["Vector", "Index"], text_font=NODE_SMALL_FONT)
-    draw_node(draw, 1476, 595, 180, 68, "Filters", text_font=NODE_SMALL_FONT)
-    draw_dashed_path(draw, [(337, 338), (337, 392)])
-    draw_dashed_path(draw, [(417, 445), (535, 445), (535, 340)])
-    draw_dashed_path(draw, [(895, 338), (895, 392)])
-    draw_dashed_path(draw, [(974, 445), (1476, 445), (1476, 340)])
-    draw_dashed_path(draw, [(535, 522), (535, 650), (1588, 650), (1588, 340)])
-    label(draw, "index", 1117, 435, color=BLUE)
-    return image
+    top = (
+        Stage(
+            1,
+            "Create / update API",
+            "processor",
+            BLUE,
+            (
+                "Authenticate + validate input",
+                "Choose JSON, plain text, or URL source",
+                "Deduplicate source IDs",
+            ),
+            "Update upserts submitted IDs; others remain",
+        ),
+        Stage(
+            2,
+            "Source paths",
+            "processor + Firecrawl",
+            ORANGE,
+            (
+                "JSON object records",
+                "Clean plain text becomes records",
+                "URLs use crawl; skip partial failures",
+            ),
+            "URL crawl: 502 failed job | 422 no extractable content",
+            layout="parallel",
+        ),
+        Stage(
+            3,
+            "Shape corpus",
+            "embedding service",
+            SLATE,
+            (
+                "Normalize + analyze schema",
+                "Build search documents + filters",
+                "Drop rows with no searchable fields",
+            ),
+            "Valid field options can produce an empty template",
+        ),
+        Stage(
+            4,
+            "Create embeddings",
+            "processor + OpenAI",
+            VIOLET,
+            (
+                "Charge embedding credits",
+                "Create template metadata",
+                "Embed records; split oversized batches",
+            ),
+            "Transient retry up to 5 | OpenAI failure refunds + errors",
+        ),
+        Stage(
+            5,
+            "Store corpus",
+            "MongoDB",
+            CYAN,
+            (
+                "Insert embedding records",
+                "Store fields, hash, record count, and TTL",
+                "Return template metadata",
+            ),
+            "Vectors live in EmbeddingRecord documents",
+        ),
+    )
+    bottom = (
+        Stage(
+            6,
+            "Search API",
+            "processor",
+            BLUE,
+            (
+                "Authenticate + load user template",
+                "Validate non-empty text query",
+                "Prepare search options",
+            ),
+            "Missing: 404 | expired: purge + 410",
+        ),
+        Stage(
+            7,
+            "Query + filters",
+            "embedding service + OpenAI",
+            VIOLET,
+            (
+                "Resolve query and filter payloads",
+                "Charge query credits",
+                "Create OpenAI query embedding",
+            ),
+            "Embedding failure: refund + error",
+        ),
+        Stage(
+            8,
+            "Candidate search",
+            "MongoDB",
+            CYAN,
+            (
+                "Apply strict explicit vector prefilters",
+                "Run Mongo $vectorSearch",
+                "Use candidate count + result limit",
+            ),
+            "$vectorSearch error: Mongo records + JS cosine",
+        ),
+        Stage(
+            9,
+            "Post-process",
+            "embedding service",
+            GREEN,
+            (
+                "Apply soft / structured post-filters",
+                "Optional LLM rerank",
+                "Filter-match boost + final sort",
+            ),
+            "Rerank error preserves vector order",
+        ),
+        Stage(
+            10,
+            "Search response",
+            "processor API",
+            SLATE,
+            (
+                "Return results[] + filter metadata",
+                "Include raw details when requested",
+                "Set credit response headers",
+            ),
+            "No hits returns results: [] (200)",
+        ),
+    )
+    return render_two_lane_diagram(
+        title="Search Embeddings",
+        subtitle="Index creation and query execution are separate, reusable lanes",
+        color=BLUE,
+        top_label="Build or update an index",
+        bottom_label="Search a stored index",
+        top_stages=top,
+        bottom_stages=bottom,
+        dependency=(4, 2, "stored embedding records feed candidate search"),
+        callouts=(
+            ("URL crawl can partially succeed", ORANGE),
+            ("Empty corpus is valid", SLATE),
+            ("Vector failure: JS cosine", CYAN),
+            ("Rerank failure keeps order", VIOLET),
+            ("No hits returns [] (200)", GREEN),
+        ),
+    )
 
 
 def render_recommendations() -> Image.Image:
-    image = Image.new("RGBA", (WIDTH, EMBEDDING_HEIGHT), BG)
-    draw = ImageDraw.Draw(image)
-    draw_title(draw, "Recommendations", TEAL)
+    top = (
+        Stage(
+            1,
+            "Create reusable template",
+            "processor APIs",
+            BLUE,
+            (
+                "Use JSON, plain text, or URL create paths",
+                "Analyze fields + build search documents",
+                "Retain returned template_id",
+            ),
+            "Same reusable templates as search",
+        ),
+        Stage(
+            2,
+            "Embed corpus",
+            "processor + OpenAI",
+            VIOLET,
+            (
+                "Charge embedding credits",
+                "Create OpenAI record embeddings",
+                "Store retrievable source payload",
+            ),
+            "No separate recommendation model",
+        ),
+        Stage(
+            3,
+            "Store records",
+            "MongoDB",
+            CYAN,
+            (
+                "Persist EmbeddingRecord vectors",
+                "Persist search documents + filters",
+                "Maintain template fields / TTL",
+            ),
+            "Corpus is shared with search",
+        ),
+        Stage(
+            4,
+            "Reusable corpus",
+            "embedding service",
+            SLATE,
+            (
+                "Load by template_id + user",
+                "Expose stored records to similarity search",
+                "Allow an empty corpus",
+            ),
+            "Expired template: purge + 410",
+        ),
+    )
+    bottom = (
+        Stage(
+            5,
+            "Similar API",
+            "processor",
+            BLUE,
+            (
+                "Authenticate + validate template",
+                "Accept similarity options",
+                "Use recommendation billing/defaults",
+            ),
+            "Calls shared semantic search",
+        ),
+        Stage(
+            6,
+            "Reference item",
+            "embedding service",
+            ORANGE,
+            (
+                "Text query",
+                "Structured record",
+            ),
+            "Either or both; at least one query signal is required",
+            layout="parallel",
+        ),
+        Stage(
+            7,
+            "Resolve query + filters",
+            "embedding service",
+            VIOLET,
+            (
+                "Build query document",
+                "Resolve inferred, explicit, and soft filters",
+                "Charge query credits",
+            ),
+            "Inferred filters: no strict prefilter",
+        ),
+        Stage(
+            8,
+            "Query embedding",
+            "OpenAI",
+            INDIGO,
+            (
+                "Create semantic query vector",
+                "Continue to shared candidate search",
+            ),
+            "Embedding failure refunds credits + errors",
+        ),
+        Stage(
+            9,
+            "Shared semantic search",
+            "MongoDB + embedding service",
+            CYAN,
+            (
+                "Strict explicit filters use vector prefilter",
+                "Mongo $vectorSearch; JS cosine fallback",
+                "Soft post-filter + match boost (up to 0.1)",
+            ),
+            "No LLM rerank; no configurable field weights",
+        ),
+        Stage(
+            10,
+            "Recommendation response",
+            "processor API",
+            GREEN,
+            (
+                "Map results to {id, score}",
+                "Return structured_filters + matches[]",
+                "Set credit response headers",
+            ),
+            "No hits returns matches: [] (200)",
+        ),
+    )
+    return render_two_lane_diagram(
+        title="Recommendations",
+        subtitle="A constrained wrapper around the shared semantic-search pipeline",
+        color=CYAN,
+        top_label="Reusable embedding corpus",
+        bottom_label="Find similar records",
+        top_stages=top,
+        bottom_stages=bottom,
+        dependency=(3, 4, "reused corpus feeds shared semantic search"),
+        callouts=(
+            ("Text and/or structured record", ORANGE),
+            ("Strict explicit: vector prefilter", BLUE),
+            ("Inferred filter: non-strict", VIOLET),
+            ("Vector failure: JS cosine", CYAN),
+            ("No matches returns [] (200)", GREEN),
+        ),
+    )
 
-    stages = [
-        (1, "Catalog", BLUE, 60, 166),
-        (2, "Shape", GRAY, 280, 172),
-        (3, "Embed", PURPLE, 505, 146),
-        (4, "Corpus", BLUE, 690, 156),
-        (5, "Similar", BLUE, 875, 166),
-        (6, "Query", PURPLE, 1065, 166),
-        (7, "Search", GRAY, 1265, 186),
-        (8, "Weight", TEAL, 1490, 186),
-        (9, "Matches", TEAL, 1715, 160),
+
+def validate_rendered_image(name: str, image: Image.Image) -> None:
+    if image.mode != "RGBA":
+        raise ValueError(f"{name}: expected RGBA output, got {image.mode}")
+    alpha = image.getchannel("A")
+    minimum_alpha, maximum_alpha = alpha.getextrema()
+    if minimum_alpha != 0 or maximum_alpha != 255:
+        raise ValueError(
+            f"{name}: expected transparent canvas and opaque content; "
+            f"alpha extrema were {minimum_alpha}/{maximum_alpha}"
+        )
+    corners = [
+        image.getpixel((0, 0))[3],
+        image.getpixel((image.width - 1, 0))[3],
+        image.getpixel((0, image.height - 1))[3],
+        image.getpixel((image.width - 1, image.height - 1))[3],
     ]
-    draw_embedding_header_row(draw, stages)
-
-    y = 300
-    nodes = [
-        (137, 152, "Catalog"),
-        (363, 166, ["Shape", "Fields"]),
-        (575, 144, "Embed"),
-        (762, 150, "Corpus"),
-        (953, 160, ["Similar", "API"]),
-        (1143, 160, ["Query", "Item"]),
-        (1353, 175, ["Shared", "Search"]),
-        (1580, 175, ["Weighted", "Match"]),
-        (1792, 150, "Matches"),
-    ]
-    for cx, w, title in nodes:
-        draw_node(draw, cx, y, w, 76, title, text_font=NODE_SMALL_FONT)
-    for left, right in zip(nodes, nodes[1:]):
-        draw_h_arrow(draw, left[0] + left[1] / 2, y, right[0] - right[1] / 2)
-
-    draw_node(draw, 1105, 445, 165, 68, ["Query", "Embed"], text_font=NODE_SMALL_FONT)
-    draw_node(draw, 1580, 445, 180, 68, "Strict Off", text_font=NODE_SMALL_FONT)
-    draw_node(draw, 1580, 595, 180, 68, ["Field", "Weights"], text_font=NODE_SMALL_FONT)
-    draw_dashed_path(draw, [(363, 338), (363, 605), (1490, 605)])
-    draw_dashed_path(draw, [(762, 338), (762, 370), (1353, 370), (1353, 340)])
-    draw_arrow(draw, (1143, 338), (1105, 400))
-    draw.line((1188, 445, 1353, 445, 1353, 340), fill=ARROW, width=3)
-    draw_v_arrow_up(draw, 1580, 411, 340)
-    draw_dashed_path(draw, [(1580, 561), (1580, 484)])
-    label(draw, "corpus reuse", 955, 358, color=BLUE)
-    return image
+    if any(corners):
+        raise ValueError(f"{name}: canvas corners must remain transparent")
 
 
 def main() -> None:
+    global ACTIVE_THEME
+
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-    outputs = {
-        "readme-text-to-video-pipeline-v2.png": render_text_to_video(),
-        "readme-image-list-to-video-pipeline-v2.png": render_image_list_to_video(),
-        "readme-search-embeddings-pipeline-v2.png": render_search_embeddings(),
-        "readme-recommendations-pipeline-v2.png": render_recommendations(),
-    }
-    for filename, image in outputs.items():
-        output = OUTPUT_DIR / filename
-        image.save(output, optimize=True)
-        print(f"rendered {output}")
+    renderers = (
+        ("readme-text-to-video-pipeline-v3", render_text_to_video),
+        ("readme-image-list-to-video-pipeline-v3", render_image_list_to_video),
+        ("readme-search-embeddings-pipeline-v3", render_search_embeddings),
+        ("readme-recommendations-pipeline-v3", render_recommendations),
+    )
+    for theme in (LIGHT_THEME, DARK_THEME):
+        ACTIVE_THEME = theme
+        suffix = "" if theme.name == "light" else "-dark"
+        for stem, renderer in renderers:
+            filename = f"{stem}{suffix}.png"
+            image = renderer()
+            validate_rendered_image(filename, image)
+            output = OUTPUT_DIR / filename
+            image.save(output, optimize=True)
+            print(f"rendered {output}")
 
 
 if __name__ == "__main__":

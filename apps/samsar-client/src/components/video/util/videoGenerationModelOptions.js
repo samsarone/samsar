@@ -1,5 +1,6 @@
 import { VIDEO_GENERATION_MODEL_TYPES } from "../../../constants/Types.ts";
 import { VIDEO_MODEL_PRICES } from "../../../constants/ModelPrices.jsx";
+import { canListVideoModel } from "../../../utils/videoModelAvailability.mjs";
 
 const getPricingMap = () =>
   new Map(VIDEO_MODEL_PRICES.map((entry) => [entry.key, entry]));
@@ -117,6 +118,7 @@ export const getVideoGenerationModelDropdownData = ({
   mode,
   currentLayer,
   sessionDetails,
+  isStandaloneDeployment = false,
 }) => {
   const hasImageItem = hasImageInCanvas(activeItemList);
   const dropdownMode = resolveDropdownMode({ mode, hasImageItem });
@@ -129,7 +131,9 @@ export const getVideoGenerationModelDropdownData = ({
 
   const availableModels = VIDEO_GENERATION_MODEL_TYPES.filter((model) => {
     const pricingEntry = pricingMap.get(model.key);
-    if (!pricingEntry?.prices?.length) return false;
+    if (!canListVideoModel({ model, pricingEntry, isStandaloneDeployment })) {
+      return false;
+    }
 
     const capabilities = getModelCapabilities(model, pricingEntry);
     if (capabilities.supportsFirstLastFrameToVideo) {

@@ -46,6 +46,7 @@ import { useAlertDialog } from '../../contexts/AlertDialogContext.jsx';
 import { useLocalization } from '../../contexts/LocalizationContext.jsx';
 
 import AuthContainer, { AUTH_DIALOG_OPTIONS } from '../auth/AuthContainer.jsx';
+import ModelAdapterSelect from '../common/ModelAdapterSelect.jsx';
 import SingleSelect from '../common/SingleSelect.jsx';
 import ProgressIndicator from './ProgressIndicator.jsx';
 import AssistantHome from '../assistant/AssistantHome.jsx';
@@ -61,7 +62,7 @@ import {
   PIXVERRSE_VIDEO_STYLES,
   VIDEO_GENERATION_MODEL_TYPES,
 } from '../../constants/Types.ts';
-import { IMAGE_MODEL_PRICES } from '../../constants/ModelPrices.jsx';
+import { IMAGE_MODEL_PRICES, VIDEO_MODEL_PRICES } from '../../constants/ModelPrices.jsx';
 import {
   getExpressVideoCreditsPerSecond,
   getExpressVideoPricingDistributionPerSecond,
@@ -95,6 +96,10 @@ import {
   normalizeDeploymentInferenceModelValue,
   normalizeDeploymentModelValue,
 } from '../../utils/deploymentProviders.js';
+import {
+  isProviderBilledVideoPricing,
+  isVideoModelAllowedForDeploymentScope,
+} from '../../utils/videoModelAvailability.mjs';
 import {
   getCustomTextToImageModelDefinitions,
   isCustomTextToImageModelKey,
@@ -2050,6 +2055,9 @@ function validateTextToVideoJsonInput(
   if (!videoModel || !TEXT_TO_VIDEO_VIDEO_MODEL_KEYS.includes(videoModelKey)) {
     return `JSON input.video_model must be one of: ${formatAllowedJsonValues(TEXT_TO_VIDEO_VIDEO_MODEL_KEYS)}.`;
   }
+  if (!isVideoModelAllowedForDeploymentScope(videoModel, isStandaloneDeployment)) {
+    return `JSON input.video_model ${videoModelKey} is only available in standalone deployments.`;
+  }
   if (!isModelAllowedByDeployment(videoModelKey, textToVideoVideoModelValues, isStandaloneDeployment)) {
     return getConfiguredModelError('video_model', textToVideoVideoModelValues);
   }
@@ -3669,6 +3677,7 @@ export default function OneshotEditor() {
     textToVideoVideoModelValues,
     imageListToVideoImageModelValues,
     imageListToVideoVideoModelValues,
+    primaryAdapterByModel,
   } = useDeploymentModelAvailability();
   const canGenerateSubtitles =
     !isStandaloneModelFilteringEnabled || hasSubtitleGenerationCredentials;
@@ -3903,6 +3912,7 @@ export default function OneshotEditor() {
         .filter(
           (m) =>
             m.isExpressModel &&
+            isVideoModelAllowedForDeploymentScope(m, isStandaloneModelFilteringEnabled) &&
             m.supportedAspectRatios?.includes(selectedAspectRatioOption.value)
         )
         .map((model) => [model.key, model])
@@ -6210,14 +6220,22 @@ export default function OneshotEditor() {
 
   const selectedVideoModelKey = selectedVideoModel?.value || '';
   const hasSelectedCustomAdapters = hasTextValue(selectedCustomAdapterEndpointId);
+  const selectedVideoModelPricing = useMemo(
+    () => VIDEO_MODEL_PRICES.find((model) => model.key === selectedVideoModelKey),
+    [selectedVideoModelKey],
+  );
+  const isProviderBilledVideo = isProviderBilledVideoPricing(selectedVideoModelPricing);
   const creditsPerSecondVideo = useMemo(() => {
+    if (isProviderBilledVideo) return null;
     return getExpressVideoCreditsPerSecond(selectedVideoModelKey) ?? (generationMode === 'I2V' ? 60 : 30);
-  }, [generationMode, selectedVideoModelKey]);
+  }, [generationMode, isProviderBilledVideo, selectedVideoModelKey]);
 
 
   const expectedCreditsPerSecond = useMemo(() => {
     return creditsPerSecondVideo;
   }, [creditsPerSecondVideo]);
+  const usesProviderBilling =
+    isJsonMode || isStandaloneDeployment || hasSelectedCustomAdapters || isProviderBilledVideo;
 
   const pricingInfoDisplay = (
     <div className="relative">
@@ -6225,7 +6243,7 @@ export default function OneshotEditor() {
         className={`flex items-center gap-1 font-medium text-sm cursor-pointer select-none ${colorMode === 'dark' ? 'text-neutral-100' : 'text-slate-700'}`}
         onClick={togglePricingDetailsDisplay}
       >
-        {isJsonMode || isStandaloneDeployment || hasSelectedCustomAdapters ? (
+        {usesProviderBilling ? (
           <div>{t("vidgenie.pricingApiCharge")}</div>
         ) : (
           <div className="inline-flex items-center">
@@ -6238,7 +6256,7 @@ export default function OneshotEditor() {
       </div>
       {pricingDetailsDisplay && (
         <div className={`mt-2 text-sm text-left ${mutedText} transition-opacity duration-300`}>
-          {isJsonMode || isStandaloneDeployment || hasSelectedCustomAdapters ? (
+          {usesProviderBilling ? (
             <div>{t("vidgenie.pricingApiCharge")}</div>
           ) : (
             <>
@@ -7500,10 +7518,12 @@ export default function OneshotEditor() {
             {/* Image Model */}
             <div className="group w-full">
               <div className={`relative z-10 w-full rounded-lg p-0 transition-transform duration-200 group-hover:translate-y-[-1px] group-hover:z-50 focus-within:z-50 ${controlShell}`}>
-                <SingleSelect
+                <ModelAdapterSelect
                   value={selectedImageModel}
                   onChange={setSelectedImageModel}
                   options={stageImageModels}
+                  primaryAdapterByModel={primaryAdapterByModel}
+                  isStandaloneDeployment={isStandaloneModelFilteringEnabled}
                   isDisabled={isFormDisabled}
                   compactLayout
                   className="w-full"
@@ -7542,10 +7562,12 @@ export default function OneshotEditor() {
                 {/* Video Model */}
                 <div className="group w-full">
                   <div className={`relative z-10 w-full rounded-lg p-0 transition-transform duration-200 group-hover:translate-y-[-1px] group-hover:z-50 focus-within:z-50 ${controlShell}`}>
-                    <SingleSelect
+                    <ModelAdapterSelect
                       value={selectedVideoModel}
                       onChange={setSelectedVideoModel}
                       options={expressVideoModels}
+                      primaryAdapterByModel={primaryAdapterByModel}
+                      isStandaloneDeployment={isStandaloneModelFilteringEnabled}
                       isDisabled={isFormDisabled}
                       compactLayout
                       className="w-full"
@@ -7593,10 +7615,12 @@ export default function OneshotEditor() {
             {generationMode === 'I2V' && (
               <div className="group w-full">
                 <div className={`relative z-10 w-full rounded-lg p-0 transition-transform duration-200 group-hover:translate-y-[-1px] group-hover:z-50 focus-within:z-50 ${controlShell}`}>
-                  <SingleSelect
+                  <ModelAdapterSelect
                     value={selectedVideoModel}
                     onChange={setSelectedVideoModel}
                     options={imageListVideoModels}
+                    primaryAdapterByModel={primaryAdapterByModel}
+                    isStandaloneDeployment={isStandaloneModelFilteringEnabled}
                     isDisabled={isFormDisabled}
                     compactLayout
                     truncateLabels
@@ -7644,23 +7668,28 @@ export default function OneshotEditor() {
             {canGenerateSubtitles && (
               <div className="group w-full">
                 <label
-                  className={`flex items-start gap-3 ${borderedControlShell} rounded-xl p-3 transition-transform duration-200 group-hover:translate-y-[-1px] cursor-pointer`}
+                  htmlFor="vidgenie-enable-subtitles"
+                  className={`relative z-10 flex h-[34px] w-full items-center rounded-lg px-3 transition-transform duration-200 group-hover:translate-y-[-1px] focus-within:z-50 ${borderedControlShell} ${
+                    isFormDisabled ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'
+                  }`}
+                  title={t("vidgenie.enableSubtitlesHelp")}
                 >
                   <input
+                    id="vidgenie-enable-subtitles"
                     type="checkbox"
                     checked={enableSubtitles}
                     onChange={(e) => setEnableSubtitles(e.target.checked)}
                     disabled={isFormDisabled}
-                    className={choiceInputClasses}
+                    className={`${choiceInputClasses} !mt-0`}
                   />
-                  <div className="min-w-0">
-                    <div className="text-sm font-medium">
-                      {t("vidgenie.enableSubtitles")}
-                    </div>
-                    <p className={`mt-1 text-[11px] ${mutedText}`}>
-                      {t("vidgenie.enableSubtitlesHelp")}
-                    </p>
-                  </div>
+                </label>
+                <label
+                  htmlFor="vidgenie-enable-subtitles"
+                  className={`mt-1 block text-[11px] ${mutedText} ${
+                    isFormDisabled ? 'cursor-not-allowed' : 'cursor-pointer'
+                  }`}
+                >
+                  {t("vidgenie.enableSubtitles")}
                 </label>
               </div>
             )}
@@ -7713,20 +7742,18 @@ export default function OneshotEditor() {
 
               <div>
                 <label className={advancedLabelClasses}>Inference model</label>
-                <select
-                  value={selectedInferenceModel?.value || inferenceModelOptions[0]?.value || ''}
-                  onChange={(event) =>
-                    setSelectedInferenceModel(getInferenceModelOption(event.target.value, DEFAULT_INFERENCE_MODEL, inferenceModelOptions))
-                  }
-                  disabled={isFormDisabled || isStandaloneInferenceUnavailable}
-                  className={advancedInputClasses}
-                >
-                  {inferenceModelOptions.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
+                <ModelAdapterSelect
+                  value={selectedInferenceModel || inferenceModelOptions[0] || null}
+                  onChange={setSelectedInferenceModel}
+                  options={inferenceModelOptions}
+                  primaryAdapterByModel={primaryAdapterByModel}
+                  isStandaloneDeployment={isStandaloneInferenceModelFilteringEnabled}
+                  isDisabled={isFormDisabled || isStandaloneInferenceUnavailable}
+                  hostedControl="native"
+                  nativeClassName={advancedInputClasses}
+                  compactLayout
+                  className="w-full"
+                />
                 {isStandaloneInferenceModelFilteringEnabled ? (
                   <p className={`mt-1 text-[11px] ${mutedText}`}>
                     {isInferenceModelAvailabilityLoading

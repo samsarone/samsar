@@ -1,5 +1,7 @@
 import axios from "axios";
 
+import { extractPrimaryAdapterByModel } from "./adapterPresentation.mjs";
+
 import {
   extractDeploymentProviderEndpointTypes,
   extractDeploymentInferenceModelProviders,
@@ -125,6 +127,7 @@ export function extractDeploymentModelAvailability(payload = {}) {
       textToVideoVideoModelValues,
       imageListToVideoVideoModelValues,
     ]),
+    primaryAdapterByModel: extractPrimaryAdapterByModel(payload),
   };
 }
 

@@ -9,9 +9,6 @@ import { isDockerRuntime, usesLocalAssetStorage } from '../utils/Environment.js'
 import OpenAI, { toFile } from "openai";
 import {
   getDefaultUserInferenceModel,
-  isGeminiInferenceModel,
-  isKimiInferenceModel,
-  isQwenInferenceModel,
   normalizeInferenceModel,
 } from '../inference/InferenceModels.js';
 import { createCompatibleInferenceChatCompletion } from '../OpenAI.js';
@@ -239,11 +236,7 @@ export async function sendAssistantMessageRequest(
     const inferenceModel = normalizeInferenceModel(userInferenceModel);
     const payload = {
       messages: messageList,
-      model: isGeminiInferenceModel(inferenceModel) ||
-        isKimiInferenceModel(inferenceModel) ||
-        isQwenInferenceModel(inferenceModel)
-        ? inferenceModel
-        : "gpt-4o-mini",
+      model: inferenceModel,
     };
     const routingPayload = withInferenceAuthorization(payload, userInferenceAuthorization);
 

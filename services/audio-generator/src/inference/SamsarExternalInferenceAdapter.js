@@ -63,14 +63,14 @@ export const DOCKER_INFERENCE_PROVIDER = Object.freeze({
 export const DOCKER_INFERENCE_PROVIDER_PRIORITY_BY_MODEL = Object.freeze({
   'QWEN3.7': Object.freeze([
     DOCKER_INFERENCE_PROVIDER.ALIBABA_CLOUD,
-    DOCKER_INFERENCE_PROVIDER.SAMSAR,
     DOCKER_INFERENCE_PROVIDER.GMICLOUD,
+    DOCKER_INFERENCE_PROVIDER.SAMSAR,
     DOCKER_INFERENCE_PROVIDER.OPENROUTER,
   ]),
   'gemini-3.1-pro': Object.freeze([
     DOCKER_INFERENCE_PROVIDER.GOOGLE_CLOUD,
-    DOCKER_INFERENCE_PROVIDER.SAMSAR,
     DOCKER_INFERENCE_PROVIDER.GMICLOUD,
+    DOCKER_INFERENCE_PROVIDER.SAMSAR,
     DOCKER_INFERENCE_PROVIDER.OPENROUTER,
   ]),
   'kimi-k3': Object.freeze([
@@ -79,8 +79,8 @@ export const DOCKER_INFERENCE_PROVIDER_PRIORITY_BY_MODEL = Object.freeze({
   ]),
   'gpt-5.6-sol': Object.freeze([
     DOCKER_INFERENCE_PROVIDER.OPENAI,
-    DOCKER_INFERENCE_PROVIDER.SAMSAR,
     DOCKER_INFERENCE_PROVIDER.GMICLOUD,
+    DOCKER_INFERENCE_PROVIDER.SAMSAR,
     DOCKER_INFERENCE_PROVIDER.OPENROUTER,
   ]),
 });
@@ -594,8 +594,12 @@ export async function createGenblazeChatCompletion(chatRequest = {}) {
   if (!client) throw new Error('SAMSAR_GENBLAZE_ENABLED is required for GMICloud inference.');
   const {
     authorization, bypassSamsarExternalInference, samsarExternalInference,
-    timeout, timeoutMs, maxRetries, externalMaxRetries, ...request
+    timeout, timeoutMs, maxRetries, externalMaxRetries,
+    reasoning, reasoning_effort, ...request
   } = chatRequest || {};
+  const requestedReasoningEffort = normalizeString(
+    reasoning_effort || reasoning?.effort,
+  ).toLowerCase();
   const requestTimeout = Number(timeout ?? timeoutMs ?? process.env.SAMSAR_GENBLAZE_INFERENCE_TIMEOUT_MS) ||
     DEFAULT_EXTERNAL_INFERENCE_TIMEOUT_MS;
   return runExternalInferenceWithRetry(
@@ -604,12 +608,10 @@ export async function createGenblazeChatCompletion(chatRequest = {}) {
         ...request,
         model,
         ...(GENBLAZE_HIGH_REASONING_MODELS.has(model)
-          ? {
-            reasoning_effort: request.reasoning_effort === 'high'
-              ? request.reasoning_effort
-              : 'high',
-          }
-          : {}),
+          ? { reasoning_effort: 'high' }
+          : requestedReasoningEffort
+            ? { reasoning_effort: requestedReasoningEffort }
+            : {}),
       }),
       { timeout: requestTimeout, maxRetries: 0, signal },
     ),

@@ -64,6 +64,23 @@ function normalizeString(value) {
   return typeof value === 'string' ? value.trim() : '';
 }
 
+function normalizeAttemptCount(value) {
+  const count = Number(value);
+  return Number.isFinite(count) && count > 0 ? Math.trunc(count) : 0;
+}
+
+export function buildExternalImageIdempotencyKey(payload = {}) {
+  const requestId = payload?._id?.toString?.() || normalizeString(payload?._id);
+  if (!requestId) {
+    return undefined;
+  }
+  return [
+    requestId,
+    `failure-${normalizeAttemptCount(payload.failureRetryCount)}`,
+    `filter-${normalizeAttemptCount(payload.filterRetryCount)}`,
+  ].join(':');
+}
+
 function normalizeBaseUrl(value) {
   const normalized = normalizeString(value || DEFAULT_SAMSAR_API_BASE_URL).replace(/\/+$/, '');
   return normalized || DEFAULT_SAMSAR_API_BASE_URL;
@@ -177,8 +194,8 @@ function normalizeProviderStatus(statusData) {
   return 'PENDING';
 }
 
-async function failExternalRequest(_id, message) {
-  await ImageGeneration.findOneAndUpdate(
+async function failExternalRequest(_id, message, imageGenerationModel = ImageGeneration) {
+  await imageGenerationModel.findOneAndUpdate(
     { _id },
     {
       generationStatus: 'FAILED',
@@ -189,8 +206,8 @@ async function failExternalRequest(_id, message) {
   );
 }
 
-async function failExternalEditRequest(_id, message) {
-  await ImageGeneration.findOneAndUpdate(
+async function failExternalEditRequest(_id, message, imageGenerationModel = ImageGeneration) {
+  await imageGenerationModel.findOneAndUpdate(
     { _id },
     {
       editStatus: 'FAILED',
@@ -399,7 +416,7 @@ export function shouldUseSamsarExternalImageEditProvider(payload = {}) {
   return resolveDockerImageEditProvider(model) === DOCKER_ADAPTER_PROVIDER.SAMSAR;
 }
 
-export async function handleSamsarExternalTextToImageRequest(payload = {}) {
+export async function handleSamsarExternalTextToImageRequest(payload = {}, dependencies = {}) {
   const { apiGenerationStatus } = payload;
   const status = normalizeString(apiGenerationStatus || 'INIT').toUpperCase();
 
@@ -407,7 +424,7 @@ export async function handleSamsarExternalTextToImageRequest(payload = {}) {
     return submitSamsarExternalTextToImageRequest(payload);
   }
   if (status === 'PENDING') {
-    return pollSamsarExternalTextToImageRequest(payload);
+    return pollSamsarExternalTextToImageRequest(payload, dependencies);
   }
   if (status === 'FAILED') {
     return { image: null };
@@ -415,13 +432,13 @@ export async function handleSamsarExternalTextToImageRequest(payload = {}) {
   return null;
 }
 
-export async function handleSamsarExternalImageEditRequest(payload = {}) {
+export async function handleSamsarExternalImageEditRequest(payload = {}, dependencies = {}) {
   const status = normalizeString(payload?.apiEditStatus || 'INIT').toUpperCase();
   if (status === 'INIT') {
     return submitSamsarExternalImageEditRequest(payload);
   }
   if (status === 'PENDING') {
-    return pollSamsarExternalImageEditRequest(payload);
+    return pollSamsarExternalImageEditRequest(payload, dependencies);
   }
   if (status === 'FAILED') {
     return { image: null };
@@ -456,7 +473,7 @@ async function submitSamsarExternalTextToImageRequest(payload = {}) {
         },
       },
       {
-        idempotencyKey: _id?.toString?.() || undefined,
+        idempotencyKey: buildExternalImageIdempotencyKey(payload),
       }
     );
 
@@ -526,7 +543,7 @@ async function submitSamsarExternalImageEditRequest(payload = {}) {
   try {
     const requestPayload = await buildExternalImageEditPayload(payload, route);
     const response = await client.requestV2ExternalImage(route, requestPayload, {
-      idempotencyKey: _id?.toString?.() || undefined,
+      idempotencyKey: buildExternalImageIdempotencyKey(payload),
     });
 
     const requestId =
@@ -575,22 +592,24 @@ async function submitSamsarExternalImageEditRequest(payload = {}) {
   }
 }
 
-async function pollSamsarExternalTextToImageRequest(payload = {}) {
+export async function pollSamsarExternalTextToImageRequest(payload = {}, dependencies = {}) {
   const { _id, apiRequestId } = payload;
-  const client = getExternalClient();
+  const client = dependencies.client || getExternalClient();
+  const connect = dependencies.connect || getDBConnectionString;
+  const imageGenerationModel = dependencies.imageGenerationModel || ImageGeneration;
+  const saveFile = dependencies.saveFile || saveRemoteFile;
+  const logger = dependencies.logger || console;
   if (!client) {
     throw new Error('SAMSAR_API_KEY is required for external Samsar image status polling.');
   }
 
   const externalRequestId = getExternalRequestId(apiRequestId);
   if (!externalRequestId) {
-    await getDBConnectionString();
-    await ImageGeneration.findOneAndUpdate({ _id }, { rowLocked: false });
     return { image: null, error: 'Samsar external image request is missing its external request id.' };
   }
 
-  await getDBConnectionString();
-  await ImageGeneration.findOneAndUpdate({ _id }, { rowLocked: true });
+  await connect();
+  await imageGenerationModel.findOneAndUpdate({ _id }, { rowLocked: true });
 
   try {
     const statusResponse = await client.getV2ExternalImageStatus(externalRequestId);
@@ -599,23 +618,25 @@ async function pollSamsarExternalTextToImageRequest(payload = {}) {
 
     if (status === 'FAILED') {
       const message = normalizeString(statusData?.message || statusData?.error) || 'Samsar external image generation failed.';
-      await failExternalRequest(_id, message);
+      await failExternalRequest(_id, message, imageGenerationModel);
       return { image: null, error: message };
     }
 
     if (status !== 'COMPLETED') {
-      await ImageGeneration.findOneAndUpdate({ _id }, { rowLocked: false });
+      await imageGenerationModel.findOneAndUpdate({ _id }, { rowLocked: false });
       return null;
     }
 
     const resultUrl = getResultUrl(statusData);
     if (!resultUrl) {
-      await ImageGeneration.findOneAndUpdate({ _id }, { rowLocked: false });
+      await imageGenerationModel.findOneAndUpdate({ _id }, { rowLocked: false });
       return null;
     }
 
-    const imageName = await saveRemoteFile(resultUrl);
-    await ImageGeneration.findOneAndUpdate({ _id }, { rowLocked: false });
+    const imageName = await saveFile(resultUrl);
+    // Keep ownership after a terminal provider result. The caller still has to
+    // score and persist this image, and will either delete the request on
+    // success or explicitly unlock it when scheduling a legitimate retry.
     return {
       image: imageName,
       resultUrl,
@@ -623,28 +644,30 @@ async function pollSamsarExternalTextToImageRequest(payload = {}) {
     };
   } catch (error) {
     const message = error?.message || 'Error polling Samsar external image API.';
-    console.error('Error polling Samsar external image API: ', error);
-    await failExternalRequest(_id, message);
+    logger.error('Error polling Samsar external image API: ', error);
+    await failExternalRequest(_id, message, imageGenerationModel);
     return { image: null, error: message };
   }
 }
 
-async function pollSamsarExternalImageEditRequest(payload = {}) {
+export async function pollSamsarExternalImageEditRequest(payload = {}, dependencies = {}) {
   const { _id, apiRequestId } = payload;
-  const client = getExternalClient();
+  const client = dependencies.client || getExternalClient();
+  const connect = dependencies.connect || getDBConnectionString;
+  const imageGenerationModel = dependencies.imageGenerationModel || ImageGeneration;
+  const saveFile = dependencies.saveFile || saveRemoteFile;
+  const logger = dependencies.logger || console;
   if (!client) {
     throw new Error('SAMSAR_API_KEY is required for external Samsar image edit status polling.');
   }
 
   const externalRequestId = getExternalRequestId(apiRequestId);
   if (!externalRequestId) {
-    await getDBConnectionString();
-    await ImageGeneration.findOneAndUpdate({ _id }, { rowLocked: false });
     return { image: null, error: 'Samsar external image edit request is missing its external request id.' };
   }
 
-  await getDBConnectionString();
-  await ImageGeneration.findOneAndUpdate({ _id }, { rowLocked: true });
+  await connect();
+  await imageGenerationModel.findOneAndUpdate({ _id }, { rowLocked: true });
 
   try {
     const statusResponse = await client.getV2ExternalImageStatus(externalRequestId);
@@ -653,7 +676,7 @@ async function pollSamsarExternalImageEditRequest(payload = {}) {
 
     if (status === 'FAILED') {
       const message = normalizeString(statusData?.message || statusData?.error) || 'Samsar external image edit failed.';
-      await failExternalEditRequest(_id, message);
+      await failExternalEditRequest(_id, message, imageGenerationModel);
       return {
         image: null,
         error: message,
@@ -662,18 +685,19 @@ async function pollSamsarExternalImageEditRequest(payload = {}) {
     }
 
     if (status !== 'COMPLETED') {
-      await ImageGeneration.findOneAndUpdate({ _id }, { rowLocked: false });
+      await imageGenerationModel.findOneAndUpdate({ _id }, { rowLocked: false });
       return null;
     }
 
     const resultUrl = getResultUrl(statusData);
     if (!resultUrl) {
-      await ImageGeneration.findOneAndUpdate({ _id }, { rowLocked: false });
+      await imageGenerationModel.findOneAndUpdate({ _id }, { rowLocked: false });
       return null;
     }
 
-    const imageName = await saveRemoteFile(resultUrl);
-    await ImageGeneration.findOneAndUpdate({ _id }, { rowLocked: false });
+    const imageName = await saveFile(resultUrl);
+    // Editing completion follows the same ownership contract as generation:
+    // downstream persistence releases or removes the request.
     return {
       image: imageName,
       resultUrl,
@@ -681,8 +705,8 @@ async function pollSamsarExternalImageEditRequest(payload = {}) {
     };
   } catch (error) {
     const message = error?.message || 'Error polling Samsar external image edit API.';
-    console.error('Error polling Samsar external image edit API: ', error);
-    await failExternalEditRequest(_id, message);
+    logger.error('Error polling Samsar external image edit API: ', error);
+    await failExternalEditRequest(_id, message, imageGenerationModel);
     return {
       image: null,
       error: message,

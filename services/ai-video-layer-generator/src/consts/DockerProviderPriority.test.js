@@ -141,7 +141,7 @@ test('standalone routing overlays the saved preference and finds each next confi
   ]);
 });
 
-test('standalone places credential-scoped GMICloud below native and Samsar but above Fal', (t) => {
+test('standalone places credential-scoped GMICloud below native providers but ahead of Samsar', (t) => {
   clearEnv();
   const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'samsar-video-gmi-enabled-'));
   const catalogPath = path.join(temporaryDirectory, 'genblaze-model-catalog.json');
@@ -152,8 +152,6 @@ test('standalone places credential-scoped GMICloud below native and Samsar but a
     models: {
       HAPPYHORSEI2V: { video: { modelId: 'happyhorse-1.1-i2v' } },
       SEEDANCEI2V: { video: { modelId: 'seedance-1-5-pro-251215' } },
-      'SEEDANCE2.0I2V': { video: { modelId: 'seedance-2-0-260128' } },
-      'SEEDANCE2.0T2V': { video: { modelId: 'seedance-2-0-260128' } },
       KLINGIMGTOVID3PRO: { video: { modelId: 'kling-v3-image-to-video' } },
       KLINGIMGTOVIDTURBO: { video: { modelId: 'kling-3.0-turbo-i2v' } },
       KLINGIMGTOVIDPRO: { video: { modelId: 'Kling-Image2Video-V1.6-Pro' } },
@@ -171,8 +169,8 @@ test('standalone places credential-scoped GMICloud below native and Samsar but a
 
   assert.deepEqual(getDockerVideoProviderPriority('HAPPYHORSEI2V'), [
     DOCKER_VIDEO_PROVIDER.ALIBABA_CLOUD,
-    DOCKER_VIDEO_PROVIDER.SAMSAR,
     DOCKER_VIDEO_PROVIDER.GMICLOUD,
+    DOCKER_VIDEO_PROVIDER.SAMSAR,
     DOCKER_VIDEO_PROVIDER.FAL,
   ]);
   assert.equal(
@@ -182,22 +180,20 @@ test('standalone places credential-scoped GMICloud below native and Samsar but a
   process.env.SAMSAR_API_KEY = 'samsar-key';
   assert.equal(
     resolveDockerVideoProvider('HAPPYHORSEI2V'),
-    DOCKER_VIDEO_PROVIDER.SAMSAR,
+    DOCKER_VIDEO_PROVIDER.GMICLOUD,
   );
   assert.deepEqual(getDockerVideoProviderPriority('SEEDANCEI2V'), [
-    DOCKER_VIDEO_PROVIDER.SAMSAR,
     DOCKER_VIDEO_PROVIDER.GMICLOUD,
+    DOCKER_VIDEO_PROVIDER.SAMSAR,
     DOCKER_VIDEO_PROVIDER.FAL,
   ]);
   assert.deepEqual(getDockerVideoProviderPriority('KLINGIMGTOVID3PRO'), [
-    DOCKER_VIDEO_PROVIDER.SAMSAR,
     DOCKER_VIDEO_PROVIDER.GMICLOUD,
+    DOCKER_VIDEO_PROVIDER.SAMSAR,
     DOCKER_VIDEO_PROVIDER.FAL,
   ]);
   for (const model of [
     'VEO3.1FLIV',
-    'SEEDANCE2.0I2V',
-    'SEEDANCE2.0T2V',
     'KLINGIMGTOVIDTURBO',
     'KLINGIMGTOVIDPRO',
     'KLINGIMGTOVID2.1MASTER',
@@ -206,8 +202,8 @@ test('standalone places credential-scoped GMICloud below native and Samsar but a
     'HAILUOPRO',
   ]) {
     assert.deepEqual(getDockerVideoProviderPriority(model), [
-      DOCKER_VIDEO_PROVIDER.SAMSAR,
       DOCKER_VIDEO_PROVIDER.GMICLOUD,
+      DOCKER_VIDEO_PROVIDER.SAMSAR,
       DOCKER_VIDEO_PROVIDER.FAL,
     ], model);
   }

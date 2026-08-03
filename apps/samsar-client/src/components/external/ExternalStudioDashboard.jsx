@@ -6,6 +6,7 @@ import { useUser } from '../../contexts/UserContext.jsx';
 import { getHeaders } from '../../utils/web.jsx';
 import { useDeploymentModelAvailability } from '../../hooks/useDeploymentModelAvailability.js';
 import { filterOptionsForDeploymentModelValues } from '../../utils/deploymentProviders.js';
+import { isVideoModelAllowedForDeploymentScope } from '../../utils/videoModelAvailability.mjs';
 
 const PROCESSOR_SERVER = import.meta.env.VITE_PROCESSOR_API || 'http://localhost:3002';
 
@@ -101,11 +102,14 @@ export default function ExternalStudioDashboard() {
   const canGenerateSubtitles =
     !isStandaloneModelFilteringEnabled || hasSubtitleGenerationCredentials;
   const textVideoModels = useMemo(
-    () => (
-      isStandaloneModelFilteringEnabled
-        ? filterOptionsForDeploymentModelValues(TEXT_MODELS, textToVideoVideoModelValues)
-        : TEXT_MODELS
-    ),
+    () => {
+      const deploymentScopedModels = TEXT_MODELS.filter((model) =>
+        isVideoModelAllowedForDeploymentScope(model, isStandaloneModelFilteringEnabled)
+      );
+      return isStandaloneModelFilteringEnabled
+        ? filterOptionsForDeploymentModelValues(deploymentScopedModels, textToVideoVideoModelValues)
+        : deploymentScopedModels;
+    },
     [isStandaloneModelFilteringEnabled, textToVideoVideoModelValues]
   );
   const textImageModels = useMemo(

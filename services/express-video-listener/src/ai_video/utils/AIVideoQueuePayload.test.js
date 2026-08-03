@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { buildRetryableImageToVideoQueuePayload } from './AIVideoQueuePayload.js';
+import { VIDEO_MODEL_PRICES } from '../../consts/ModelPrices.js';
 
 const retryContext = {
   startImageDescription: '  The selected frame description.  ',

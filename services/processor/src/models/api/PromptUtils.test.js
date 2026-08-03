@@ -4,14 +4,18 @@ import assert from 'node:assert/strict';
 import {
   stripDeprecatedVideoModelSubtypeOptions,
   validateExpressImageModelKey,
+  validateExpressVideoModelKey,
   validateMovieInput,
 } from './PromptUtils.js';
 import {
   IMAGE_LIST_TO_VIDEO_IMAGE_MODEL_KEYS,
   TEXT_TO_VIDEO_IMAGE_MODEL_KEYS,
+  TEXT_TO_VIDEO_VIDEO_MODEL_KEYS,
 } from '../../consts/ExpressVideoModelOptions.js';
 import { IMAGE_MODEL_PRICES } from '../../consts/ModelPrices.js';
-import { IMAGE_GENERAITON_MODEL_TYPES } from '../../consts/ModelTypes.js';
+import {
+  IMAGE_GENERAITON_MODEL_TYPES,
+} from '../../consts/ModelTypes.js';
 
 function buildValidMoviePayload(overrides = {}) {
   return {
