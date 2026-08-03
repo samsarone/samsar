@@ -262,7 +262,6 @@ const OUTRO_CTA_TYPE_OPTIONS = [
   { value: OUTRO_CTA_TYPE_IMAGE, label: 'CTA image' },
 ];
 const DEFAULT_ADVANCED_OPTIONS = Object.freeze({
-  tone: 'grounded',
   generate_outro_image: false,
   outro_cta_type: OUTRO_CTA_TYPE_QR,
   cta_url: '',
@@ -270,7 +269,6 @@ const DEFAULT_ADVANCED_OPTIONS = Object.freeze({
   cta_text_bottom: '',
   cta_logo: '',
   outro_cta_image_url: '',
-  footer_metadata: '',
   limit_single_narrator: false,
   add_narrator_avatar: false,
 });
@@ -344,11 +342,6 @@ const INITIAL_EXPRESS_GENERATION_STATUS = Object.freeze({
   music_generation: 'INIT',
   delete_reflow: 'INIT',
 });
-
-const VIDGENIE_TONE_OPTIONS = [
-  { value: 'grounded', label: 'Grounded' },
-  { value: 'cinematic', label: 'Cinematic' },
-];
 
 const VIDGENIE_STEP_MODE_OPTIONS = [
   {
@@ -2383,8 +2376,8 @@ function buildAdvancedRequestConfiguration({
   input.inference_model = normalizeInferenceModelKey(inferenceModelValue);
   input.inferenceModel = input.inference_model;
 
-  if (isTextToVideo && hasTextValue(advancedOptions.tone)) {
-    input.tone = advancedOptions.tone.trim();
+  if (isTextToVideo) {
+    input.tone = 'grounded';
   }
 
   const shouldGenerateOutro = advancedOptions.generate_outro_image === true;
@@ -2429,21 +2422,6 @@ function buildAdvancedRequestConfiguration({
         input.cta_logo = advancedOptions.cta_logo.trim();
       }
     }
-  }
-
-  if (hasTextValue(advancedOptions.footer_metadata)) {
-    const parsedFooterMetadata = parseOptionalJsonValue(
-      advancedOptions.footer_metadata,
-      'Footer metadata',
-      Array.isArray,
-    );
-    if (parsedFooterMetadata.error) {
-      return { error: parsedFooterMetadata.error };
-    }
-    if (!parsedFooterMetadata.value || parsedFooterMetadata.value.length === 0) {
-      return { error: 'Footer metadata must include at least one item.' };
-    }
-    input.footer_metadata = parsedFooterMetadata.value;
   }
 
   if (!isTextToVideo) {
@@ -7669,11 +7647,11 @@ export default function OneshotEditor() {
               <div className="group w-full">
                 <label
                   htmlFor="vidgenie-enable-subtitles"
-                  className={`relative z-10 flex h-[34px] w-full items-center rounded-lg px-3 transition-transform duration-200 group-hover:translate-y-[-1px] focus-within:z-50 ${borderedControlShell} ${
+                  className={`relative z-10 flex h-[34px] w-full items-center justify-between gap-3 rounded-lg px-3 transition-transform duration-200 group-hover:translate-y-[-1px] focus-within:z-50 ${borderedControlShell} ${
                     isFormDisabled ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'
                   }`}
-                  title={t("vidgenie.enableSubtitlesHelp")}
                 >
+                  <span className="text-sm">{t("vidgenie.enableSubtitles")}</span>
                   <input
                     id="vidgenie-enable-subtitles"
                     type="checkbox"
@@ -7682,14 +7660,6 @@ export default function OneshotEditor() {
                     disabled={isFormDisabled}
                     className={`${choiceInputClasses} !mt-0`}
                   />
-                </label>
-                <label
-                  htmlFor="vidgenie-enable-subtitles"
-                  className={`mt-1 block text-[11px] ${mutedText} ${
-                    isFormDisabled ? 'cursor-not-allowed' : 'cursor-pointer'
-                  }`}
-                >
-                  {t("vidgenie.enableSubtitles")}
                 </label>
               </div>
             )}
@@ -7764,24 +7734,6 @@ export default function OneshotEditor() {
                   </p>
                 ) : null}
               </div>
-
-              {generationMode === 'T2V' && (
-                <div>
-                  <label className={advancedLabelClasses}>Tone</label>
-                  <select
-                    value={advancedOptions.tone}
-                    onChange={(event) => updateAdvancedOption('tone', event.target.value)}
-                    disabled={isFormDisabled}
-                    className={advancedInputClasses}
-                  >
-                    {VIDGENIE_TONE_OPTIONS.map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              )}
 
               {generationMode === 'I2V' && (
                 <div className={`border-t ${advancedSectionBorder} pt-4 space-y-3`}>
@@ -7969,26 +7921,6 @@ export default function OneshotEditor() {
                     )}
                   </div>
                 )}
-              </div>
-
-              <div className={`border-t ${advancedSectionBorder} pt-4 space-y-3`}>
-                <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  Footer
-                </div>
-                <div>
-                  <label className={advancedLabelClasses}>Footer metadata JSON</label>
-                  <TextareaAutosize
-                    minRows={3}
-                    maxRows={8}
-                    value={advancedOptions.footer_metadata}
-                    onChange={(event) =>
-                      updateAdvancedOption('footer_metadata', event.target.value)
-                    }
-                    disabled={isFormDisabled}
-                    className={advancedInputClasses}
-                    placeholder='[{"url":"https://example.com/book","title":"Book now"}]'
-                  />
-                </div>
               </div>
 
               {availableCustomAdapterEndpoints.length > 0 && (
