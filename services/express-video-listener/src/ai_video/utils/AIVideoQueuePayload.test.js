@@ -126,3 +126,18 @@ test('queue payload preserves model-specific image and generation overrides', ()
   assert.equal(queuePayload.isAudioVideoLayer, true);
   assert.equal(queuePayload.audioPrompt, 'Quiet footsteps on wood.');
 });
+
+test('queue payload preserves the original model for standalone provider routing', () => {
+  const queuePayload = buildRetryableImageToVideoQueuePayload({
+    videoSessionId: 'session-1',
+    layerId: 'layer-1',
+    prompt: 'Animate this frame.',
+    model: 'SAMSAR_EXTERNAL_VIDEO',
+    originalVideoModel: 'SEEDANCE2.0I2V',
+    useStartFrame: true,
+    useEndFrame: false,
+  });
+
+  assert.equal(queuePayload.model, 'SAMSAR_EXTERNAL_VIDEO');
+  assert.equal(queuePayload.originalVideoModel, 'SEEDANCE2.0I2V');
+});

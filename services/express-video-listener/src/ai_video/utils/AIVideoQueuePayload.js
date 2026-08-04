@@ -4,6 +4,7 @@ export function buildRetryableImageToVideoQueuePayload(payload = {}, overrides =
   return {
     prompt: payload.prompt,
     model: payload.model,
+    originalVideoModel: payload.originalVideoModel,
     sessionId: payload.videoSessionId || payload.sessionId,
     layerId: payload.layerId,
     useEndFrame: payload.useEndFrame,
