@@ -61,7 +61,7 @@ def test_runtime_package_pins_and_provider_constructors_are_compatible():
 def test_real_genblaze_chat_preserves_multimodal_wire_and_raw_response():
     upstream_body = {
         "id": "chatcmpl-real-wrapper",
-        "model": "Qwen/Qwen3.6-Plus",
+        "model": "Qwen/Qwen3.8-Max",
         "choices": [
             {
                 "message": {"role": "assistant", "content": "an image"},
@@ -86,7 +86,7 @@ def test_real_genblaze_chat_preserves_multimodal_wire_and_raw_response():
 
     response = asyncio.run(
         achat(
-            "Qwen/Qwen3.6-Plus",
+            "Qwen/Qwen3.8-Max",
             messages,
             client=client,
         )
@@ -96,7 +96,7 @@ def test_real_genblaze_chat_preserves_multimodal_wire_and_raw_response():
     assert client.calls == [
         (
             "/chat/completions",
-            {"model": "Qwen/Qwen3.6-Plus", "messages": messages},
+            {"model": "Qwen/Qwen3.8-Max", "messages": messages},
         )
     ]
 

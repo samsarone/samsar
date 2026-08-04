@@ -18,9 +18,9 @@ test('Qwen uses GMICloud through GenBlaze before Samsar and OpenRouter', (t) => 
     version: 1,
     provider: 'gmicloud',
     models: {
-      'QWEN3.7': {
-        text: { modelId: 'Qwen/Qwen3.7-Max', operation: 'chat.completions' },
-        vision: { modelId: 'Qwen/Qwen3.7-Plus', operation: 'chat.completions' },
+      'QWEN3.8': {
+        text: { modelId: 'Qwen/Qwen3.8-Max', operation: 'chat.completions' },
+        vision: { modelId: 'Qwen/Qwen3.8-Max', operation: 'chat.completions' },
       },
     },
   }));
@@ -40,10 +40,10 @@ test('Qwen uses GMICloud through GenBlaze before Samsar and OpenRouter', (t) => 
   process.env.SAMSAR_API_KEY = 'samsar-key';
   process.env.OPENROUTER_API_KEY = 'openrouter-key';
 
-  assert.equal(resolveConfiguredInferenceProvider('QWEN3.7'), DOCKER_INFERENCE_PROVIDER.GMICLOUD);
+  assert.equal(resolveConfiguredInferenceProvider('QWEN3.8'), DOCKER_INFERENCE_PROVIDER.GMICLOUD);
 });
 
-test('Qwen OpenRouter applies Max text and Plus vision routing with bounded settings', async (t) => {
+test('Qwen OpenRouter applies Qwen 3.8 Max to text and vision with bounded settings', async (t) => {
   const keys = ['CURRENT_ENV', 'OPENROUTER_API_KEY', 'OPENROUTER_QWEN_MAX_TOKENS'];
   const previous = Object.fromEntries(keys.map((key) => [key, process.env[key]]));
   t.after(() => {
@@ -64,17 +64,17 @@ test('Qwen OpenRouter applies Max text and Plus vision routing with bounded sett
   });
 
   await createOpenRouterChatCompletion({
-    model: 'QWEN3.7',
+    model: 'QWEN3.8',
     messages: [{ role: 'user', content: 'hello' }],
     reasoning: { effort: 'xhigh' },
     max_completion_tokens: 20000,
   });
   await createOpenRouterChatCompletion({
-    model: 'QWEN3.7',
+    model: 'QWEN3.8',
     messages: [{ role: 'user', content: [{ type: 'image_url', image_url: { url: 'x' } }] }],
   });
   await createOpenRouterChatCompletion({
-    model: 'QWEN3.7',
+    model: 'QWEN3.8',
     messages: [{ role: 'user', content: 'return JSON' }],
     reasoning: { effort: 'low' },
     max_tokens: 16384,
@@ -83,22 +83,22 @@ test('Qwen OpenRouter applies Max text and Plus vision routing with bounded sett
     plugins: [{ id: 'existing-plugin' }],
   });
   await createOpenRouterChatCompletion({
-    model: 'QWEN3.7',
+    model: 'QWEN3.8',
     messages: [{ role: 'user', content: 'large structured response' }],
     max_tokens: 50000,
   });
 
-  assert.equal(payloads[0].model, 'qwen/qwen3.7-max');
+  assert.equal(payloads[0].model, 'qwen/qwen3.8-max');
   assert.equal(payloads[0].reasoning.effort, 'high');
   assert.equal(payloads[0].max_tokens, 20000);
-  assert.equal(payloads[1].model, 'qwen/qwen3.7-plus');
+  assert.equal(payloads[1].model, 'qwen/qwen3.8-max');
   assert.equal(payloads[1].max_tokens, 16384);
-  assert.equal(payloads[2].model, 'qwen/qwen3.7-max');
+  assert.equal(payloads[2].model, 'qwen/qwen3.8-max');
   assert.equal(payloads[2].reasoning.effort, 'high');
   assert.equal(payloads[2].max_tokens, 16384);
   assert.deepEqual(payloads[2].provider, { data_collection: 'deny', require_parameters: true });
   assert.deepEqual(payloads[2].plugins, [{ id: 'existing-plugin' }, { id: 'response-healing' }]);
-  assert.equal(payloads[3].model, 'qwen/qwen3.7-max');
+  assert.equal(payloads[3].model, 'qwen/qwen3.8-max');
   assert.equal(payloads[3].max_tokens, 24000);
   assert.equal(options[0].maxRetries, 0);
   assert.equal(options[0].signal instanceof AbortSignal, true);

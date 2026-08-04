@@ -50,12 +50,12 @@ test('base AI-video completion marks the generated media as available', () => {
 test('GMICloud image-to-video dispatch is capped at two without blocking other adapters', () => {
   const activeRequests = [
     { model: 'SEEDANCEI2V', startImage: 'one.png', dockerVideoProvider: 'gmicloud' },
-    { model: 'SEEDANCEI2V', startImage: 'two.png', dockerVideoProvider: 'gmicloud' },
+    { model: 'SEEDANCE2.0I2V', startImage: 'two.png', dockerVideoProvider: 'gmicloud' },
     { model: 'WANI2V', startImage: 'three.png', dockerVideoProvider: 'fal' },
   ];
   const blockedGmiCloud = {
     id: 'blocked-gmicloud',
-    model: 'SEEDANCEI2V',
+    model: 'SEEDANCE2.0I2V',
     startImage: 'four.png',
     dockerVideoProvider: 'gmicloud',
   };
@@ -192,9 +192,9 @@ test('Infinitezoom retries retain the resolved swirl and zoom strategy', () => {
 
 test('session inference override wins for express generation retries', async () => {
   assert.equal(await getInferenceModelForSession({
-    expressGenerationInferenceModel: 'Qwen 3.7',
+    expressGenerationInferenceModel: 'Qwen 3.8 Max',
     inferenceModel: 'gemini-3.1-pro',
-  }), 'QWEN3.7');
+  }), 'QWEN3.8');
   assert.equal(await getInferenceModelForSession({
     inferenceModel: 'gemini-3.1-pro',
   }), 'gemini-3.1-pro');
@@ -208,22 +208,22 @@ test('request inference settings win over express session and account fallbacks'
     expressGenerationInferenceModel: 'gemini-3.1-pro',
     expressGenerationInferenceModelAuthorization: 'deployed',
   }, {
-    inferenceModel: 'Qwen 3.7',
+    inferenceModel: 'Qwen 3.8 Max',
     selectedInferenceModelAuthorization: 'native',
   }), {
-    model: 'QWEN3.7',
+    model: 'QWEN3.8',
     authorization: 'native',
   });
 });
 
 test('express session authorization wins over generic session authorization', async () => {
   assert.deepEqual(await getInferenceSettingsForSession({
-    expressGenerationInferenceModel: 'Qwen 3.7',
+    expressGenerationInferenceModel: 'Qwen 3.8 Max',
     inferenceModel: 'gemini-3.1-pro',
     expressGenerationInferenceModelAuthorization: 'deployed',
     inferenceModelAuthorization: 'native',
   }), {
-    model: 'QWEN3.7',
+    model: 'QWEN3.8',
     authorization: 'deployed',
   });
 });

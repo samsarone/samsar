@@ -310,7 +310,7 @@ The names in code style are the stable Samsar model keys. This is the complete s
 
 | Capability | Supported models |
 | --- | --- |
-| **Inference** | GPT 5.6 Sol (`gpt-5.6-sol`) · Gemini 3.1 Pro (`gemini-3.1-pro`) · Kimi K3 (`KIMIK3`) · Qwen 3.7 Plus (`QWEN3.7`) |
+| **Inference** | GPT 5.6 Sol (`gpt-5.6-sol`) · Gemini 3.1 Pro (`gemini-3.1-pro`) · Kimi K3 (`KIMIK3`) · Qwen 3.8 Max (`QWEN3.8`) |
 | **Text → image** | GPT Image 2 (`GPTIMAGE2`) · Seedream (`SEEDREAM`) · Nano Banana 2 (`NANOBANANA2`) · Nano Banana Pro (`NANOBANANAPRO`) · Wan 2.7 Pro (`WAN2.7PRO`) |
 | **Image edit** | GPT Image 2 Edit (`GPTIMAGE2EDIT`) · Nano Banana 2 Edit (`NANOBANANA2EDIT`) · Nano Banana Pro Edit (`NANOBANANAPROEDIT`) · BRIA Eraser (`BRIA_ERASER`) · BRIA GenFill (`BRIA_GENFILL`) |
 | **Text → video** | RunwayML (`RUNWAYML`) · Veo 3.1 (`VEO3.1`) · Veo 3.1 Fast (`VEO3.1FAST`) · Hailuo 02 Pro (`HAILUOPRO`) |

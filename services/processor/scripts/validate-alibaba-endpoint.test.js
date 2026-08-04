@@ -60,7 +60,7 @@ test('validates Token Plan credentials and records their type', async () => {
     fetchImpl: async () => ({
       ok: true,
       status: 200,
-      json: async () => ({ data: [{ id: 'qwen3.8-max-preview' }] }),
+      json: async () => ({ data: [{ id: 'qwen3.8-max' }] }),
     }),
   });
   assert.equal(planEndpoint.status, 'valid');
@@ -81,9 +81,7 @@ test('validates the endpoint through its authenticated model listing', async () 
         status: 200,
         json: async () => ({
           data: [
-            { id: 'qwen3.8-max-preview' },
-            { id: 'qwen3.7-max' },
-            { id: 'qwen3.7-plus' },
+            { id: 'qwen3.8-max' },
           ],
         }),
       };
@@ -104,10 +102,8 @@ test('validates the endpoint through its authenticated model listing', async () 
     billingMode: 'pay_as_you_go',
     keyType: 'pay_as_you_go',
     endpointType: 'pay_as_you_go',
-    modelCount: 3,
-    qwen38MaxPreviewAvailable: true,
-    qwen37MaxAvailable: true,
-    qwen37PlusAvailable: true,
+    modelCount: 1,
+    qwen38MaxAvailable: true,
   });
   assert.equal(JSON.stringify(result).includes('sk-test-secret-key'), false);
 });

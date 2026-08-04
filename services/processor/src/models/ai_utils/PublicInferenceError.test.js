@@ -10,7 +10,7 @@ test('surfaces a safe Qwen quota error with the provider reset time', () => {
   providerError.status = 429;
   providerError.code = 'insufficient_quota';
 
-  const result = createPublicInferenceError(providerError, { model: 'QWEN3.7' });
+  const result = createPublicInferenceError(providerError, { model: 'QWEN3.8' });
 
   assert.equal(
     result.message,
@@ -47,7 +47,7 @@ test('recognizes OpenRouter Qwen max-token affordability errors', () => {
   providerError.code = 402;
 
   const result = createPublicInferenceError(providerError, {
-    model: 'qwen/qwen3.7-max',
+    model: 'qwen/qwen3.8-max',
   });
 
   assert.equal(result.message, 'Qwen inference quota has been exhausted.');
@@ -56,14 +56,14 @@ test('recognizes OpenRouter Qwen max-token affordability errors', () => {
   assert.equal(result.cause, providerError);
 });
 
-test('limits OpenRouter max-token affordability handling to Qwen 3.7 Max', () => {
+test('limits OpenRouter max-token affordability handling to Qwen 3.8 Max', () => {
   const providerError = new Error(
     '402 This request requires more credits, or fewer max_tokens.',
   );
   providerError.status = 402;
 
   assert.equal(
-    createPublicInferenceError(providerError, { model: 'qwen/qwen3.7-plus' }),
+    createPublicInferenceError(providerError, { model: 'qwen/qwen3-vl' }),
     null,
   );
 });
@@ -72,7 +72,7 @@ test('does not expose unrelated provider failures', () => {
   const providerError = new Error('Internal database hostname db.internal.local failed');
   providerError.status = 500;
 
-  assert.equal(createPublicInferenceError(providerError, { model: 'QWEN3.7' }), null);
+  assert.equal(createPublicInferenceError(providerError, { model: 'QWEN3.8' }), null);
 });
 
 test('does not treat a temporary 429 rate limit as exhausted quota', () => {
@@ -80,5 +80,5 @@ test('does not treat a temporary 429 rate limit as exhausted quota', () => {
   providerError.status = 429;
   providerError.code = 'rate_limit_exceeded';
 
-  assert.equal(createPublicInferenceError(providerError, { model: 'QWEN3.7' }), null);
+  assert.equal(createPublicInferenceError(providerError, { model: 'QWEN3.8' }), null);
 });

@@ -11,14 +11,14 @@ export const INFERENCE_REASONING_EFFORTS = Object.freeze({
 export const INFERENCE_MODEL_KEYS = Object.freeze({
   GPT_56_SOL: INFERENCE_MODELS.Inference,
   GEMINI_31_PRO: 'gemini-3.1-pro',
-  QWEN_37: 'QWEN3.7',
+  QWEN_38: 'QWEN3.8',
   KIMI_K3: 'kimi-k3',
 });
 
 export const INFERENCE_PROVIDER_MODEL_KEYS = Object.freeze({
   [INFERENCE_MODEL_KEYS.GPT_56_SOL]: INFERENCE_MODELS.Inference,
   [INFERENCE_MODEL_KEYS.GEMINI_31_PRO]: 'gemini-3.1-pro-preview',
-  [INFERENCE_MODEL_KEYS.QWEN_37]: 'qwen3.7-max',
+  [INFERENCE_MODEL_KEYS.QWEN_38]: 'qwen3.8-max',
   [INFERENCE_MODEL_KEYS.KIMI_K3]: 'kimi-k3',
 });
 
@@ -44,10 +44,9 @@ export function getPublicationMetadataInferenceSettings(value) {
 export const GEMINI_31_PRO_INFERENCE_MODEL = INFERENCE_MODEL_KEYS.GEMINI_31_PRO;
 export const DEFAULT_GEMINI_31_PRO_VERTEX_MODEL =
   INFERENCE_PROVIDER_MODEL_KEYS[GEMINI_31_PRO_INFERENCE_MODEL];
-export const QWEN_37_INFERENCE_MODEL = INFERENCE_MODEL_KEYS.QWEN_37;
-export const QWEN_37_MAX_MODEL = INFERENCE_PROVIDER_MODEL_KEYS[QWEN_37_INFERENCE_MODEL];
-export const QWEN_38_MAX_PREVIEW_MODEL = 'qwen3.8-max-preview';
-export const QWEN_37_PLUS_MODEL = 'qwen3.7-plus';
+export const QWEN_38_INFERENCE_MODEL = INFERENCE_MODEL_KEYS.QWEN_38;
+export const QWEN_38_MAX_MODEL = INFERENCE_PROVIDER_MODEL_KEYS[QWEN_38_INFERENCE_MODEL];
+export const ALIBABA_QWEN_MODEL_ENV = 'ALIBABA_QWEN_MODEL';
 export const ALIBABA_QWEN_TEXT_MODEL_ENV = 'ALIBABA_QWEN_TEXT_MODEL';
 export const KIMI_K3_INFERENCE_MODEL = INFERENCE_MODEL_KEYS.KIMI_K3;
 export const KIMI_K3_PROVIDER_MODEL =
@@ -56,7 +55,7 @@ export const KIMI_K3_PROVIDER_MODEL =
 export const SUPPORTED_INFERENCE_MODEL_VALUES = Object.freeze([
   DEFAULT_INFERENCE_MODEL,
   GEMINI_31_PRO_INFERENCE_MODEL,
-  QWEN_37_INFERENCE_MODEL,
+  QWEN_38_INFERENCE_MODEL,
   KIMI_K3_INFERENCE_MODEL,
 ]);
 
@@ -83,34 +82,21 @@ const GEMINI_31_PRO_ALIAS_TOKENS = new Set([
   'GOOGLEGEMINI3PROPREVIEW',
 ]);
 
-const QWEN_37_ALIASES = new Set([
-  QWEN_37_INFERENCE_MODEL.toLowerCase(),
-  QWEN_38_MAX_PREVIEW_MODEL,
-  QWEN_37_MAX_MODEL,
-  QWEN_37_PLUS_MODEL,
-  'qwen3.7',
-  'qwen3.7-max',
-  'qwen3.7-plus',
+const QWEN_38_ALIASES = new Set([
+  QWEN_38_INFERENCE_MODEL.toLowerCase(),
+  QWEN_38_MAX_MODEL,
+  `qwen/${QWEN_38_MAX_MODEL}`,
 ]);
 
-const QWEN_37_ALIAS_TOKENS = new Set([
-  'QWEN37',
-  'QWEN37MAX',
-  'QWEN37PLUS',
-  'ALIBABAQWEN37',
-  'ALIBABAQWEN37MAX',
-  'ALIBABAQWEN37PLUS',
-  'ALIBABACLOUDQWEN37',
-  'DASHSCOPEQWEN37',
+const QWEN_38_ALIAS_TOKENS = new Set([
   'QWEN38',
   'QWEN38MAX',
-  'QWEN38MAXPREVIEW',
   'ALIBABAQWEN38',
-  'ALIBABAQWEN38MAXPREVIEW',
+  'ALIBABAQWEN38MAX',
   'ALIBABACLOUDQWEN38',
-  'ALIBABACLOUDQWEN38MAXPREVIEW',
+  'ALIBABACLOUDQWEN38MAX',
   'DASHSCOPEQWEN38',
-  'DASHSCOPEQWEN38MAXPREVIEW',
+  'DASHSCOPEQWEN38MAX',
 ]);
 
 const KIMI_K3_ALIASES = new Set([
@@ -139,10 +125,10 @@ function isGemini31ProAlias(value) {
     GEMINI_31_PRO_ALIAS_TOKENS.has(normalizeAliasToken(value));
 }
 
-function isQwen37Alias(value) {
+function isQwen38Alias(value) {
   const normalized = normalizeString(value).toLowerCase();
-  return QWEN_37_ALIASES.has(normalized) ||
-    QWEN_37_ALIAS_TOKENS.has(normalizeAliasToken(value));
+  return QWEN_38_ALIASES.has(normalized) ||
+    QWEN_38_ALIAS_TOKENS.has(normalizeAliasToken(value));
 }
 
 function isKimiK3Alias(value) {
@@ -166,8 +152,8 @@ export function normalizeInferenceModel(value) {
     return GEMINI_31_PRO_INFERENCE_MODEL;
   }
 
-  if (isQwen37Alias(value)) {
-    return QWEN_37_INFERENCE_MODEL;
+  if (isQwen38Alias(value)) {
+    return QWEN_38_INFERENCE_MODEL;
   }
 
   if (isKimiK3Alias(value)) {
@@ -208,7 +194,7 @@ export function isGeminiInferenceModel(value) {
 }
 
 export function isQwenInferenceModel(value) {
-  return isQwen37Alias(value);
+  return isQwen38Alias(value);
 }
 
 export function isKimiInferenceModel(value) {
@@ -225,16 +211,16 @@ export function normalizeGeminiProviderModel(value) {
 
 export function getProviderModelForInferenceModel(
   value,
-  { vision = false, env = process.env } = {},
+  { env = process.env } = {},
 ) {
   if (isKimiInferenceModel(value)) {
     return KIMI_K3_PROVIDER_MODEL;
   }
 
   if (isQwenInferenceModel(value)) {
-    return vision
-      ? QWEN_37_PLUS_MODEL
-      : normalizeString(env?.[ALIBABA_QWEN_TEXT_MODEL_ENV]) || QWEN_37_PLUS_MODEL;
+    return normalizeString(env?.[ALIBABA_QWEN_MODEL_ENV]) ||
+      normalizeString(env?.[ALIBABA_QWEN_TEXT_MODEL_ENV]) ||
+      QWEN_38_MAX_MODEL;
   }
 
   if (isGeminiInferenceModel(value)) {

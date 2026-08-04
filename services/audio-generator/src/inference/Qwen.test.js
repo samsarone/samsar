@@ -9,30 +9,36 @@ import {
   resolveQwenProviderModel,
 } from './Qwen.js';
 
-test('uses Qwen 3.7 Plus for text and multimodal content', () => {
+test('uses Qwen 3.8 Max for text and multimodal content', () => {
   const textRequest = {
-    model: 'QWEN3.7',
+    model: 'QWEN3.8',
     messages: [{ role: 'user', content: 'Rewrite a music prompt.' }],
   };
   assert.equal(hasQwenMultimodalInput(textRequest), false);
-  assert.equal(resolveQwenProviderModel(textRequest, {}), 'qwen3.7-plus');
+  assert.equal(resolveQwenProviderModel(textRequest, {}), 'qwen3.8-max');
   assert.equal(
-    resolveQwenProviderModel(textRequest, { ALIBABA_QWEN_TEXT_MODEL: 'qwen3.8-max-preview' }),
-    'qwen3.8-max-preview',
+    resolveQwenProviderModel(textRequest, { ALIBABA_QWEN_TEXT_MODEL: 'qwen3.8-max' }),
+    'qwen3.8-max',
   );
 
   const videoRequest = {
-    model: 'QWEN3.7',
+    model: 'QWEN3.8',
     messages: [{
       role: 'user',
       content: [{ type: 'video_url', video_url: { url: 'https://example.test/clip.mp4' } }],
     }],
   };
   assert.equal(hasQwenMultimodalInput(videoRequest), true);
-  assert.equal(resolveQwenProviderModel(videoRequest, {}), 'qwen3.7-plus');
+  assert.equal(resolveQwenProviderModel(videoRequest, {}), 'qwen3.8-max');
+  const sharedOverride = {
+    ALIBABA_QWEN_MODEL: 'qwen3.8-max-shared',
+    ALIBABA_QWEN_TEXT_MODEL: 'ignored-text-model',
+  };
+  assert.equal(resolveQwenProviderModel(textRequest, sharedOverride), 'qwen3.8-max-shared');
+  assert.equal(resolveQwenProviderModel(videoRequest, sharedOverride), 'qwen3.8-max-shared');
 
   const alternateMediaShapes = buildQwenChatCompletionPayload({
-    model: 'QWEN3.7',
+    model: 'QWEN3.8',
     messages: [{
       role: 'user',
       content: [
@@ -46,7 +52,7 @@ test('uses Qwen 3.7 Plus for text and multimodal content', () => {
       ],
     }],
   }, {});
-  assert.equal(alternateMediaShapes.model, 'qwen3.7-plus');
+  assert.equal(alternateMediaShapes.model, 'qwen3.8-max');
   assert.equal(
     alternateMediaShapes.messages[0].content[0].image_url.url,
     'data:image/jpeg;base64,abc',
@@ -74,13 +80,13 @@ test('preserves the structured response contract in the compatible request', () 
     },
   };
   const payload = buildQwenChatCompletionPayload({
-    model: 'QWEN3.7',
+    model: 'QWEN3.8',
     messages: [{ role: 'developer', content: 'Return JSON.' }],
     response_format: responseFormat,
     reasoning_effort: 'xhigh',
   }, {});
 
-  assert.equal(payload.model, 'qwen3.7-plus');
+  assert.equal(payload.model, 'qwen3.8-max');
   assert.equal(payload.messages[0].role, 'system');
   assert.match(payload.messages[0].content, /JSON Schema exactly/);
   assert.match(payload.messages[0].content, /"content"/);

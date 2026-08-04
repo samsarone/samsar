@@ -204,8 +204,8 @@ const alibabaKeyType = normalizeString(alibabaCloudSecrets.keyType || alibabaClo
   (alibabaEndpointType !== 'pay_as_you_go'
     ? alibabaEndpointType
     : alibabaApiKey.startsWith('sk-sp-') ? 'plan' : 'pay_as_you_go');
-const alibabaQwenTextModel = isDockerRuntime && alibabaApiKey && alibabaEndpointType === 'token_plan'
-  ? 'qwen3.8-max-preview'
+const alibabaQwenModel = isDockerRuntime && alibabaApiKey && alibabaEndpointType === 'token_plan'
+  ? 'qwen3.8-max'
   : '';
 
 function isTemporaryMediaTunnelUrl(value) {
@@ -665,7 +665,8 @@ const env = {
 	  ALIBABA_API_HOST: alibabaApiHost,
     ALIBABA_API_KEY_TYPE: alibabaKeyType,
     ALIBABA_API_ENDPOINT_TYPE: alibabaEndpointType,
-    ALIBABA_QWEN_TEXT_MODEL: alibabaQwenTextModel,
+    ALIBABA_QWEN_MODEL: alibabaQwenModel,
+    ALIBABA_QWEN_TEXT_MODEL: alibabaQwenModel,
 	  FAL_API_KEY: config.providers?.fal?.apiKey || '',
 	  ELEVENLABS_API_TOKEN: config.providers?.elevenlabs?.apiKey || '',
 	  ELEVENLABS_API_KEY: config.providers?.elevenlabs?.apiKey || '',

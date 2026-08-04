@@ -12,7 +12,8 @@ const MODEL_KEY_BY_TOKEN = Object.freeze({
   KIMIK3: 'KIMIK3',
   MOONSHOTK3: 'KIMIK3',
   MOONSHOTKIMIK3: 'KIMIK3',
-  QWEN37: 'QWEN3.7',
+  QWEN38: 'QWEN3.8',
+  QWEN38MAX: 'QWEN3.8',
 });
 
 const PROVIDER_BY_TOKEN = Object.freeze({

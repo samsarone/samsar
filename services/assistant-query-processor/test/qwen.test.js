@@ -42,9 +42,9 @@ function restoreEnv() {
 
 test.afterEach(restoreEnv);
 
-test('uses Qwen 3.7 Plus for text assistant history and normalizes Responses content', () => {
+test('uses Qwen 3.8 Max for text assistant history and normalizes Responses content', () => {
   const { payload } = buildQwenChatRequest({
-    model: 'QWEN3.7',
+    model: 'QWEN3.8',
     messages: [
       { role: 'developer', content: 'Be concise.' },
       { role: 'assistant', content: [{ type: 'output_text', text: 'Prior reply.' }] },
@@ -52,7 +52,7 @@ test('uses Qwen 3.7 Plus for text assistant history and normalizes Responses con
     ],
   });
 
-  assert.equal(payload.model, 'qwen3.7-plus');
+  assert.equal(payload.model, 'qwen3.8-max');
   assert.equal(payload.enable_thinking, true);
   assert.equal(payload.messages[0].role, 'system');
   assert.deepEqual(payload.messages[1].content[0], { type: 'text', text: 'Prior reply.' });
@@ -61,8 +61,27 @@ test('uses Qwen 3.7 Plus for text assistant history and normalizes Responses con
 test('uses the Docker Alibaba text-model constant for Token Plan inference', () => {
   const text = buildQwenChatRequest({
     messages: [{ role: 'user', content: 'Continue.' }],
-  }, { ALIBABA_QWEN_TEXT_MODEL: 'qwen3.8-max-preview' });
-  assert.equal(text.payload.model, 'qwen3.8-max-preview');
+  }, { ALIBABA_QWEN_TEXT_MODEL: 'qwen3.8-max' });
+  assert.equal(text.payload.model, 'qwen3.8-max');
+});
+
+test('uses the shared Alibaba Qwen model override for text and vision', () => {
+  const env = {
+    ALIBABA_QWEN_MODEL: 'qwen3.8-max-shared',
+    ALIBABA_QWEN_TEXT_MODEL: 'ignored-text-model',
+  };
+  const text = buildQwenChatRequest({
+    messages: [{ role: 'user', content: 'Continue.' }],
+  }, env);
+  const vision = buildQwenChatRequest({
+    messages: [{
+      role: 'user',
+      content: [{ type: 'input_image', image_url: 'data:image/png;base64,abc' }],
+    }],
+  }, env);
+
+  assert.equal(text.payload.model, 'qwen3.8-max-shared');
+  assert.equal(vision.payload.model, 'qwen3.8-max-shared');
 });
 
 test('builds the OpenAI-compatible endpoint from ALIBABA_API_HOST', () => {
@@ -91,9 +110,9 @@ test('builds the OpenAI-compatible endpoint from ALIBABA_API_HOST', () => {
   );
 });
 
-test('uses Qwen 3.7 Plus for a nonempty assistant frame image', () => {
+test('uses Qwen 3.8 Max for a nonempty assistant frame image', () => {
   const vision = buildQwenChatRequest({
-    model: 'QWEN3.7',
+    model: 'QWEN3.8',
     messages: [{
       role: 'user',
       content: [
@@ -103,12 +122,12 @@ test('uses Qwen 3.7 Plus for a nonempty assistant frame image', () => {
     }],
   });
   const emptyImage = buildQwenChatRequest({
-    model: 'QWEN3.7',
+    model: 'QWEN3.8',
     messages: [{ role: 'user', content: [{ type: 'input_image', image_url: '' }] }],
   });
 
-  assert.equal(vision.payload.model, 'qwen3.7-plus');
-  assert.equal(emptyImage.payload.model, 'qwen3.7-plus');
+  assert.equal(vision.payload.model, 'qwen3.8-max');
+  assert.equal(emptyImage.payload.model, 'qwen3.8-max');
   assert.deepEqual(vision.payload.messages[0].content[1], {
     type: 'image_url',
     image_url: { url: 'data:image/png;base64,abc' },
@@ -117,7 +136,7 @@ test('uses Qwen 3.7 Plus for a nonempty assistant frame image', () => {
 
 test('expands every array-valued Qwen image and video reference into its own provider part', () => {
   const { payload } = buildQwenChatRequest({
-    model: 'QWEN3.7',
+    model: 'QWEN3.8',
     messages: [{
       role: 'user',
       content: [
@@ -147,7 +166,7 @@ test('expands every array-valued Qwen image and video reference into its own pro
     }],
   });
 
-  assert.equal(payload.model, 'qwen3.7-plus');
+  assert.equal(payload.model, 'qwen3.8-max');
   assert.deepEqual(payload.messages[0].content, [
     { type: 'image_url', image_url: { url: 'https://media.example/one.png' } },
     { type: 'image_url', image_url: { url: 'https://media.example/two.png' } },
@@ -160,7 +179,7 @@ test('expands every array-valued Qwen image and video reference into its own pro
 
 test('converts JSON Schema output to Qwen JSON mode while retaining the schema instruction', () => {
   const { payload } = buildQwenChatRequest({
-    model: 'QWEN3.7',
+    model: 'QWEN3.8',
     messages: [{ role: 'user', content: 'Return the narrative as JSON.' }],
     response_format: {
       type: 'json_schema',
@@ -184,9 +203,9 @@ test('uses native Alibaba credentials first and Samsar fallback when they are ab
   clearEnv();
   process.env.CURRENT_ENV = 'docker';
   process.env.SAMSAR_API_KEY = 'samsar-test-key';
-  assert.equal(shouldUseSamsarExternalInference({ model: 'QWEN3.7' }), true);
+  assert.equal(shouldUseSamsarExternalInference({ model: 'QWEN3.8' }), true);
   assert.equal(shouldUseSamsarExternalInference({
-    model: 'QWEN3.7',
+    model: 'QWEN3.8',
     authorization: 'native',
   }), true);
   assert.equal(shouldUseSamsarExternalInference({
@@ -201,7 +220,7 @@ test('uses native Alibaba credentials first and Samsar fallback when they are ab
   process.env.ALIBABA_API_KEY = 'alibaba-test-key';
   assert.equal(getAlibabaQwenApiKey(), 'alibaba-test-key');
   assert.equal(shouldUseSamsarExternalInference({
-    model: 'QWEN3.7',
+    model: 'QWEN3.8',
     authorization: 'native',
   }), false);
 });
@@ -214,8 +233,8 @@ test('uses Samsar and GMICloud before OpenRouter after native Alibaba in Docker'
     version: 1,
     provider: 'gmicloud',
     models: {
-      'QWEN3.7': {
-        text: { modelId: 'Qwen/Qwen3.7-Max', operation: 'chat.completions' },
+      'QWEN3.8': {
+        text: { modelId: 'Qwen/Qwen3.8-Max', operation: 'chat.completions' },
       },
     },
   }));
@@ -223,14 +242,14 @@ test('uses Samsar and GMICloud before OpenRouter after native Alibaba in Docker'
   process.env.CURRENT_ENV = 'docker';
   process.env.OPENROUTER_API_KEY = 'openrouter-test-key';
   process.env.SAMSAR_API_KEY = 'samsar-test-key';
-  assert.equal(resolveConfiguredInferenceProvider('QWEN3.7'), DOCKER_INFERENCE_PROVIDER.SAMSAR);
+  assert.equal(resolveConfiguredInferenceProvider('QWEN3.8'), DOCKER_INFERENCE_PROVIDER.SAMSAR);
 
   delete process.env.SAMSAR_API_KEY;
   process.env.SAMSAR_GENBLAZE_ENABLED = 'true';
   process.env.SAMSAR_GENBLAZE_BASE_URL = 'http://genblaze:8080/v1';
   process.env.SAMSAR_GENBLAZE_MODEL_CATALOG_PATH = catalogPath;
-  assert.equal(resolveConfiguredInferenceProvider('QWEN3.7'), DOCKER_INFERENCE_PROVIDER.GMICLOUD);
+  assert.equal(resolveConfiguredInferenceProvider('QWEN3.8'), DOCKER_INFERENCE_PROVIDER.GMICLOUD);
 
   process.env.ALIBABA_API_KEY = 'alibaba-test-key';
-  assert.equal(resolveConfiguredInferenceProvider('QWEN3.7'), DOCKER_INFERENCE_PROVIDER.ALIBABA_CLOUD);
+  assert.equal(resolveConfiguredInferenceProvider('QWEN3.8'), DOCKER_INFERENCE_PROVIDER.ALIBABA_CLOUD);
 });

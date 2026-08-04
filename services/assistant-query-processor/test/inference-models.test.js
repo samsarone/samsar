@@ -9,10 +9,8 @@ import {
   GPT_56_SOL_REASONING_EFFORT,
   KIMI_K3_INFERENCE_MODEL,
   KIMI_K3_PROVIDER_MODEL,
-  QWEN_37_INFERENCE_MODEL,
-  QWEN_37_MAX_MODEL,
-  QWEN_37_PLUS_MODEL,
-  QWEN_38_MAX_PREVIEW_MODEL,
+  QWEN_38_INFERENCE_MODEL,
+  QWEN_38_MAX_MODEL,
   getProviderModelForInferenceModel,
   isKimiK3InferenceModel,
   isQwenInferenceModel,
@@ -106,18 +104,27 @@ test('uses the processor Gemini provider model for Gemini 3.1 Pro even with stal
   }
 });
 
-test('normalizes Qwen 3.7 and 3.8 aliases while defaulting native inference to Plus', () => {
-  assert.equal(normalizeInferenceModel('Qwen 3.7'), QWEN_37_INFERENCE_MODEL);
-  assert.equal(normalizeInferenceModel('qwen3.7-max'), QWEN_37_INFERENCE_MODEL);
-  assert.equal(isQwenInferenceModel('qwen3.7-plus'), true);
-  assert.equal(normalizeInferenceModel('qwen3.8-max-preview'), QWEN_37_INFERENCE_MODEL);
-  assert.equal(QWEN_38_MAX_PREVIEW_MODEL, 'qwen3.8-max-preview');
-  assert.equal(getProviderModelForInferenceModel('QWEN3.7'), QWEN_37_PLUS_MODEL);
+test('normalizes Qwen 3.8 aliases and uses Max for native text and vision', () => {
+  assert.equal(normalizeInferenceModel('Qwen 3.8'), QWEN_38_INFERENCE_MODEL);
+  assert.equal(normalizeInferenceModel('qwen3.8-max'), QWEN_38_INFERENCE_MODEL);
+  assert.equal(normalizeInferenceModel('qwen/qwen3.8-max'), QWEN_38_INFERENCE_MODEL);
+  assert.equal(isQwenInferenceModel('qwen3.8-max'), true);
+  assert.equal(QWEN_38_MAX_MODEL, 'qwen3.8-max');
+  assert.equal(getProviderModelForInferenceModel('QWEN3.8'), QWEN_38_MAX_MODEL);
   assert.equal(
-    getProviderModelForInferenceModel('QWEN3.7', { vision: true }),
-    QWEN_37_PLUS_MODEL,
+    getProviderModelForInferenceModel('QWEN3.8', { vision: true }),
+    QWEN_38_MAX_MODEL,
   );
-  assert.equal(getAssistantReasoningEffort('QWEN3.7'), null);
+  assert.equal(
+    getProviderModelForInferenceModel('QWEN3.8', {
+      env: {
+        ALIBABA_QWEN_MODEL: 'qwen3.8-max-shared',
+        ALIBABA_QWEN_TEXT_MODEL: 'ignored-text-model',
+      },
+    }),
+    'qwen3.8-max-shared',
+  );
+  assert.equal(getAssistantReasoningEffort('QWEN3.8'), null);
 });
 
 test('normalizes Kimi K3 aliases and always uses high assistant reasoning', () => {
@@ -156,56 +163,26 @@ test('bills Kimi K3 cached, uncached, and output tokens at native rates with 1.5
 });
 
 test('bills Qwen assistant usage with the configured credit conversion', () => {
-  const max = calculateAssistantCreditsFromUsage({
-    model: 'qwen3.7-max',
+  const result = calculateAssistantCreditsFromUsage({
+    model: 'qwen/qwen3.8-max',
     usage: { input_tokens: 1_000_000, output_tokens: 1_000_000 },
-  });
-  const plus = calculateAssistantCreditsFromUsage({
-    model: 'qwen3.7-plus',
-    usage: { input_tokens: 100_000, output_tokens: 100_000 },
   });
 
   assert.equal(DEFAULT_ASSISTANT_PRICING_MULTIPLIER, 1.5);
-  assert.equal(max.credits, 1_500);
-  assert.equal(plus.credits, 30);
+  assert.equal(result.pricingModel, 'qwen3.8-max');
+  assert.equal(result.credits, 1_500);
 });
 
-test('bills Qwen cached tokens at regular input rates across Max and Plus tiers', () => {
-  const max = calculateAssistantCreditsFromUsage({
-    model: 'qwen3.7-max',
+test('bills Qwen 3.8 Max cached tokens at the configured input rate', () => {
+  const result = calculateAssistantCreditsFromUsage({
+    model: 'qwen3.8-max',
     usage: {
       input_tokens: 1_000_000,
       input_tokens_details: { cached_tokens: 1_000_000 },
       output_tokens: 0,
     },
   });
-  const plusStandard = calculateAssistantCreditsFromUsage({
-    model: 'qwen3.7-plus',
-    usage: {
-      input_tokens: 100_000,
-      input_tokens_details: { cached_tokens: 100_000 },
-      output_tokens: 100_000,
-    },
-  });
-  const plusLongContext = calculateAssistantCreditsFromUsage({
-    model: 'qwen3.7-plus',
-    usage: {
-      input_tokens: 300_000,
-      input_tokens_details: { cached_tokens: 300_000 },
-      output_tokens: 100_000,
-    },
-  });
-
-  assert.equal(max.costUsd, 2.5);
-  assert.equal(max.credits, 375);
-  assert.equal(max.tokenPricingUsdPerMillion.cachedInput, 2.5);
-
-  assert.equal(plusStandard.costUsd, 0.2);
-  assert.equal(plusStandard.credits, 30);
-  assert.equal(plusStandard.tokenPricingUsdPerMillion.cachedInput, 0.4);
-
-  assert.equal(plusLongContext.costUsd, 0.84);
-  assert.equal(plusLongContext.credits, 126);
-  assert.equal(plusLongContext.tokenPricingUsdPerMillion.cachedInput, 1.2);
-  assert.equal(plusLongContext.tokenPricingUsdPerMillion.longContext, true);
+  assert.equal(result.costUsd, 2.5);
+  assert.equal(result.credits, 375);
+  assert.equal(result.tokenPricingUsdPerMillion.cachedInput, 2.5);
 });

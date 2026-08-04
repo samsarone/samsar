@@ -10,34 +10,34 @@ import {
 
 test('request model wins over session and saved user model', () => {
   assert.equal(resolveRequestInferenceModel({
-    request: { inferenceModel: 'QWEN3.7' },
+    request: { inferenceModel: 'QWEN3.8' },
     session: { expressGenerationInferenceModel: 'gemini-3.1-pro' },
     user: { selectedInferenceModel: 'gpt-5.6-sol' },
-  }), 'QWEN3.7');
+  }), 'QWEN3.8');
 });
 
 test('queued payload fallback wins when the refreshed retry row has no model', () => {
   assert.equal(resolveRequestInferenceModel({
     request: {},
-    fallbackRequest: { expressGenerationInferenceModel: 'QWEN3.7' },
+    fallbackRequest: { expressGenerationInferenceModel: 'QWEN3.8' },
     session: { expressGenerationInferenceModel: 'gemini-3.1-pro' },
-  }), 'QWEN3.7');
+  }), 'QWEN3.8');
 });
 
 test('session generation override wins over saved user setting', () => {
   assert.equal(resolveRequestInferenceModel({
     session: {
-      expressGenerationInferenceModel: 'QWEN3.7',
+      expressGenerationInferenceModel: 'QWEN3.8',
       inferenceModel: 'gemini-3.1-pro',
     },
     user: { selectedInferenceModel: 'gpt-5.6-sol' },
-  }), 'QWEN3.7');
+  }), 'QWEN3.8');
 });
 
 test('falls back to saved user setting and normalizes aliases', () => {
   assert.equal(resolveRequestInferenceModel({
-    user: { selectedInferenceModel: 'Qwen 3.7' },
-  }), 'QWEN3.7');
+    user: { selectedInferenceModel: 'Qwen 3.8 Max' },
+  }), 'QWEN3.8');
 });
 
 test('keeps Kimi K3 as the express-generation inference override', () => {
@@ -70,13 +70,13 @@ test('inference authorization follows request, queued fallback, session, then us
 
 test('inference settings keep authorization absent for automatic provider fallback', () => {
   assert.deepEqual(resolveRequestInferenceSettings({
-    request: { inferenceModel: 'QWEN3.7' },
+    request: { inferenceModel: 'QWEN3.8' },
   }), {
-    model: 'QWEN3.7',
+    model: 'QWEN3.8',
     authorization: undefined,
   });
 
-  const payload = { model: 'QWEN3.7', messages: [] };
+  const payload = { model: 'QWEN3.8', messages: [] };
   assert.equal(withInferenceAuthorization(payload), payload);
   assert.deepEqual(withInferenceAuthorization(payload, 'Samsar API Key'), {
     ...payload,

@@ -152,6 +152,9 @@ test('standalone places credential-scoped GMICloud below native providers but ah
     models: {
       HAPPYHORSEI2V: { video: { modelId: 'happyhorse-1.1-i2v' } },
       SEEDANCEI2V: { video: { modelId: 'seedance-1-5-pro-251215' } },
+      'SEEDANCE2.0I2V': {
+        video: { modelId: 'seedance-2-0-260128', operation: 'video.generate' },
+      },
       KLINGIMGTOVID3PRO: { video: { modelId: 'kling-v3-image-to-video' } },
       KLINGIMGTOVIDTURBO: { video: { modelId: 'kling-3.0-turbo-i2v' } },
       KLINGIMGTOVIDPRO: { video: { modelId: 'Kling-Image2Video-V1.6-Pro' } },
@@ -187,6 +190,13 @@ test('standalone places credential-scoped GMICloud below native providers but ah
     DOCKER_VIDEO_PROVIDER.SAMSAR,
     DOCKER_VIDEO_PROVIDER.FAL,
   ]);
+  assert.deepEqual(getDockerVideoProviderPriority('SEEDANCE2.0I2V'), [
+    DOCKER_VIDEO_PROVIDER.GMICLOUD,
+  ]);
+  assert.equal(
+    resolveDockerVideoProvider('SEEDANCE2.0I2V'),
+    DOCKER_VIDEO_PROVIDER.GMICLOUD,
+  );
   assert.deepEqual(getDockerVideoProviderPriority('KLINGIMGTOVID3PRO'), [
     DOCKER_VIDEO_PROVIDER.GMICLOUD,
     DOCKER_VIDEO_PROVIDER.SAMSAR,
@@ -226,11 +236,23 @@ test('credential-scoped GMICloud catalog excludes unverified video routes', (t) 
   process.env.SAMSAR_GENBLAZE_MODEL_CATALOG_PATH = catalogPath;
 
   assert.equal(resolveDockerVideoProvider('SEEDANCEI2V'), DOCKER_VIDEO_PROVIDER.GMICLOUD);
+  assert.equal(resolveDockerVideoProvider('SEEDANCE2.0I2V'), '');
   assert.equal(resolveDockerVideoProvider('HAPPYHORSEI2V'), '');
   assert.equal(
     getDockerVideoProviderPriority('HAPPYHORSEI2V').includes(DOCKER_VIDEO_PROVIDER.GMICLOUD),
     false,
   );
+
+  fs.writeFileSync(catalogPath, JSON.stringify({
+    version: 1,
+    provider: 'gmicloud',
+    models: {
+      'SEEDANCE2.0I2V': {
+        video: { modelId: 'seedance-2-0-preview', operation: 'video.generate' },
+      },
+    },
+  }));
+  assert.equal(resolveDockerVideoProvider('SEEDANCE2.0I2V'), '');
 });
 
 test('standalone preference reads do not mutate available-models configuration', (t) => {

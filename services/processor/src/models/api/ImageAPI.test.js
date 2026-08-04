@@ -90,7 +90,7 @@ test('standalone image prompt inference uses saved adapter routing without chang
   );
   assert.equal(
     shouldUsePreferenceAwareImagePromptRouting(
-      'qwen3.7',
+      'qwen3.8',
       { SAMSAR_DEPLOYMENT_EDITION: 'production' },
     ),
     true,

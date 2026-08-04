@@ -16,18 +16,21 @@ test('keeps GMICloud and GenBlaze disabled in the example configuration', async 
   assert.equal(config.providers.gmicloud.apiKey, undefined);
 });
 
-test('setup curates exact Qwen versions and the gateway preserves its split vision route', async () => {
-  const [validation, catalog] = await Promise.all([
+test('setup and runtime use Qwen 3.8 Max for both inference and vision', async () => {
+  const [validation, catalog, renderer] = await Promise.all([
     readText('apps/setup-wizard/gmiCloudValidation.mjs'),
     readText('services/genblaze-gateway/app/catalog.py'),
+    readText('scripts/generate-runtime-config.mjs'),
   ]);
-  for (const modelId of ['Qwen/Qwen3.7-Max', 'Qwen/Qwen3.7-Plus']) {
-    assert.match(validation, new RegExp(modelId.replaceAll('.', '\\.')));
-  }
-  assert.match(catalog, /"QWEN3\.7": CuratedModel\(\s*"text",\s*"chat\.completions",\s*\("Qwen\/Qwen3\.7-Max",\)/);
-  assert.match(catalog, /"Qwen\/Qwen3\.7-Plus"/);
-  assert.match(catalog, /Qwen is deliberately the sole split route \(Max text, Plus vision\)/);
+  assert.match(validation, /'QWEN3\.8': Object\.freeze\(\{[\s\S]*?text:[^\n]*Qwen\/Qwen3\.8-Max[\s\S]*?vision:[^\n]*Qwen\/Qwen3\.8-Max/);
+  assert.match(catalog, /"QWEN3\.8": CuratedModel\([\s\S]*?\("Qwen\/Qwen3\.8-Max",\),\s*\("Qwen\/Qwen3\.8-Max",\)/);
+  assert.match(catalog, /"QWEN3\.8": CuratedModel/);
+  assert.match(catalog, /if curated\.modality == "text":/);
+  assert.match(catalog, /must match its text model/);
   assert.match(catalog, /_validate_text_vision_pair\(samsar_model, gmi_model, vision_model\)/);
+  assert.match(renderer, /\? 'qwen3\.8-max'\s*:\s*''/);
+  assert.match(renderer, /ALIBABA_QWEN_MODEL: alibabaQwenModel/);
+  assert.match(renderer, /ALIBABA_QWEN_TEXT_MODEL: alibabaQwenModel/);
   assert.doesNotMatch(validation, /wan2\.7-image-pro/);
   assert.doesNotMatch(catalog, /WAN2\.7PRO/);
 });

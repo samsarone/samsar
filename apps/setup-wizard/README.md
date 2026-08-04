@@ -16,7 +16,7 @@ Step 1 presents native OpenAI, Gemini, Kimi K3, and Alibaba inference providers 
 | --- | --- |
 | `gpt-5.6-sol` | Text, assistant, and corresponding vision-input calls. |
 | `gemini-3.1-pro` | Text, assistant, and corresponding vision-input calls; defaults to OpenRouter model `google/gemini-3.1-pro-preview`. |
-| `QWEN3.7` | Text and assistant inference using Alibaba-native Qwen 3.7 Max, vision-input analysis using Alibaba-native Qwen 3.7 Plus, or Qwen 3.7 Plus through OpenRouter. |
+| `QWEN3.8` | Qwen 3.8 Max text, assistant, and vision inference through Alibaba Cloud, OpenRouter, GMICloud, or Samsar. |
 
 `KIMIK3` is available from the native Kimi K3 credential or the Samsar universal fallback; it is intentionally not routed through OpenRouter. The native route uses the exact `kimi-k3` model for text, assistants, strict structured output, and vision, with high reasoning on every request.
 

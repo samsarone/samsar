@@ -133,7 +133,7 @@ test('visual prompt builder selects the scene updater, propagates inference args
     movieResourceList,
     themeJson,
     aspectRatio: '16:9',
-    inferenceModel: 'QWEN3.7',
+    inferenceModel: 'QWEN3.8',
     videoTone: 'grounded',
     externalRequestContext: {
       sessionId: 'narrative-request-1',
@@ -147,7 +147,7 @@ test('visual prompt builder selects the scene updater, propagates inference args
         updaterCalls.push({ kind: 'generic', args });
         await args[6].onInferenceResponse({
           stage: 'visual_prompt_generation',
-          model: 'qwen3.7-max',
+          model: 'qwen3.8-max',
           usage: { input_tokens: 10, output_tokens: 2 },
         });
         return '  Expanded generic visual.  ';
@@ -156,7 +156,7 @@ test('visual prompt builder selects the scene updater, propagates inference args
         updaterCalls.push({ kind: 'character', args });
         await args[7].onInferenceResponse({
           stage: 'visual_prompt_generation',
-          model: 'qwen3.7-max',
+          model: 'qwen3.8-max',
           usage: { input_tokens: 12, output_tokens: 3 },
         });
         return '  Expanded character visual.  ';
@@ -172,7 +172,7 @@ test('visual prompt builder selects the scene updater, propagates inference args
     'Bangkok skyline before sunrise.',
     JSON.stringify(themeJson),
     '16:9',
-    'QWEN3.7',
+    'QWEN3.8',
     false,
     'grounded',
   ]);
@@ -182,7 +182,7 @@ test('visual prompt builder selects the scene updater, propagates inference args
     'Mali',
     JSON.stringify(themeJson),
     '16:9',
-    'QWEN3.7',
+    'QWEN3.8',
     false,
     'grounded',
   ]);

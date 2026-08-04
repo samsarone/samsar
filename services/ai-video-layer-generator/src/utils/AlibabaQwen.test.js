@@ -12,10 +12,11 @@ import {
 } from './GoogleGemini.js';
 
 test('normalizes Qwen aliases to the canonical application setting', () => {
-  assert.equal(normalizeInferenceModel('Qwen 3.7'), 'QWEN3.7');
-  assert.equal(normalizeInferenceModel('qwen3.7-max'), 'QWEN3.7');
-  assert.equal(isQwenInferenceModel('qwen3.7-plus'), true);
-  assert.equal(normalizeInferenceModel('qwen3.8-max-preview'), 'QWEN3.7');
+  assert.equal(normalizeInferenceModel('Qwen 3.8 Max'), 'QWEN3.8');
+  assert.equal(normalizeInferenceModel('qwen3.8-max'), 'QWEN3.8');
+  assert.equal(normalizeInferenceModel('qwen/qwen3.8-max'), 'QWEN3.8');
+  assert.equal(isQwenInferenceModel('qwen3.8-max'), true);
+  assert.equal(normalizeInferenceModel('Alibaba Cloud Qwen 3.8 Max'), 'QWEN3.8');
   assert.equal(normalizeInferenceModel('gpt-5.6-sol'), 'gpt-5.6-sol');
   assert.equal(normalizeInferenceModel('gemini-3.1-pro'), 'gemini-3.1-pro');
 });
@@ -53,13 +54,13 @@ test('builds the workspace-compatible endpoint from ALIBABA_API_HOST', () => {
   );
 });
 
-test('selects Qwen 3.7 Plus for text and multimodal vision input', () => {
+test('selects Qwen 3.8 Max for text and multimodal vision input', () => {
   const textRequest = buildAlibabaQwenChatRequest({
-    model: 'QWEN3.7',
+    model: 'QWEN3.8',
     messages: [{ role: 'user', content: 'Create a transition.' }],
   });
   const visionRequest = buildAlibabaQwenChatRequest({
-    model: 'QWEN3.7',
+    model: 'QWEN3.8',
     messages: [{
       role: 'user',
       content: [
@@ -70,17 +71,32 @@ test('selects Qwen 3.7 Plus for text and multimodal vision input', () => {
   });
   const tokenPlanTextRequest = buildAlibabaQwenChatRequest({
     messages: [{ role: 'user', content: 'Create a transition.' }],
-  }, { ALIBABA_QWEN_TEXT_MODEL: 'qwen3.8-max-preview' });
+  }, { ALIBABA_QWEN_TEXT_MODEL: 'qwen3.8-max' });
+  const sharedOverrideEnv = {
+    ALIBABA_QWEN_MODEL: 'qwen3.8-max-shared',
+    ALIBABA_QWEN_TEXT_MODEL: 'ignored-text-model',
+  };
+  const sharedTextRequest = buildAlibabaQwenChatRequest({
+    messages: [{ role: 'user', content: 'Create a transition.' }],
+  }, sharedOverrideEnv);
+  const sharedVisionRequest = buildAlibabaQwenChatRequest({
+    messages: [{
+      role: 'user',
+      content: [{ type: 'input_image', image_url: 'data:image/png;base64,abc' }],
+    }],
+  }, sharedOverrideEnv);
 
-  assert.equal(textRequest.payload.model, 'qwen3.7-plus');
-  assert.equal(tokenPlanTextRequest.payload.model, 'qwen3.8-max-preview');
-  assert.equal(visionRequest.payload.model, 'qwen3.7-plus');
+  assert.equal(textRequest.payload.model, 'qwen3.8-max');
+  assert.equal(tokenPlanTextRequest.payload.model, 'qwen3.8-max');
+  assert.equal(visionRequest.payload.model, 'qwen3.8-max');
+  assert.equal(sharedTextRequest.payload.model, 'qwen3.8-max-shared');
+  assert.equal(sharedVisionRequest.payload.model, 'qwen3.8-max-shared');
   assert.equal(textRequest.payload.enable_thinking, true);
 });
 
 test('disables hidden SDK retries so provider media is never reused after tunnel expiry', () => {
   const { payload, requestOptions } = buildAlibabaQwenChatRequest({
-    model: 'QWEN3.7',
+    model: 'QWEN3.8',
     externalMaxRetries: 7,
     maxRetries: 4,
     messages: [{ role: 'user', content: 'hello' }],
@@ -91,7 +107,7 @@ test('disables hidden SDK retries so provider media is never reused after tunnel
 
 test('normalizes image, base64, video, and string Responses input forms', () => {
   const mediaRequest = buildAlibabaQwenChatRequest({
-    model: 'QWEN3.7',
+    model: 'QWEN3.8',
     messages: [{
       role: 'user',
       content: [
@@ -102,7 +118,7 @@ test('normalizes image, base64, video, and string Responses input forms', () => 
     }],
   });
   const stringInput = buildAlibabaQwenChatRequest({
-    model: 'QWEN3.7',
+    model: 'QWEN3.8',
     input: 'Create a transition.',
   });
 

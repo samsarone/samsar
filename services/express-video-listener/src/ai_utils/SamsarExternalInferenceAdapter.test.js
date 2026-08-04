@@ -44,9 +44,9 @@ function createTestGenblazeCatalog() {
     version: 1,
     provider: 'gmicloud',
     models: {
-      'QWEN3.7': {
-        text: { modelId: 'Qwen/Qwen3.7-Max', operation: 'chat.completions' },
-        vision: { modelId: 'Qwen/Qwen3.7-Plus', operation: 'chat.completions' },
+      'QWEN3.8': {
+        text: { modelId: 'Qwen/Qwen3.8-Max', operation: 'chat.completions' },
+        vision: { modelId: 'Qwen/Qwen3.8-Max', operation: 'chat.completions' },
       },
     },
   }));
@@ -75,7 +75,7 @@ test('Qwen routing prefers a native Alibaba key before the Samsar Docker fallbac
     SAMSAR_API_KEY: 'samsar-key',
     DASHSCOPE_API_KEY: 'dashscope-key',
   }, () => {
-    assert.equal(shouldUseSamsarExternalInference({ model: 'QWEN3.7' }), false);
+    assert.equal(shouldUseSamsarExternalInference({ model: 'QWEN3.8' }), false);
   });
 });
 
@@ -85,7 +85,7 @@ test('Qwen routing falls back to Samsar in Docker when no Alibaba key exists', (
     SAMSAR_API_KEY: 'samsar-key',
     OPENAI_API_KEY: 'openai-key-does-not-authorize-qwen',
   }, () => {
-    assert.equal(shouldUseSamsarExternalInference({ model: 'QWEN3.7' }), true);
+    assert.equal(shouldUseSamsarExternalInference({ model: 'QWEN3.8' }), true);
   });
 });
 
@@ -99,7 +99,7 @@ test('Qwen uses GMICloud through GenBlaze before Samsar and OpenRouter', (t) => 
     SAMSAR_API_KEY: 'samsar-key',
     OPENROUTER_API_KEY: 'openrouter-key',
   }, () => {
-    assert.equal(resolveConfiguredInferenceProvider('QWEN3.7'), DOCKER_INFERENCE_PROVIDER.GMICLOUD);
+    assert.equal(resolveConfiguredInferenceProvider('QWEN3.8'), DOCKER_INFERENCE_PROVIDER.GMICLOUD);
   });
 });
 
@@ -109,18 +109,18 @@ test('Samsar stays ahead of OpenRouter for Qwen in Docker', () => {
     OPENROUTER_API_KEY: 'openrouter-key',
     SAMSAR_API_KEY: 'samsar-key',
   }, () => {
-    assert.equal(resolveConfiguredInferenceProvider('QWEN3.7'), DOCKER_INFERENCE_PROVIDER.SAMSAR);
+    assert.equal(resolveConfiguredInferenceProvider('QWEN3.8'), DOCKER_INFERENCE_PROVIDER.SAMSAR);
     for (const model of ['gemini-3.1-pro', 'gpt-5.6-sol']) {
       assert.equal(resolveConfiguredInferenceProvider(model), DOCKER_INFERENCE_PROVIDER.OPENROUTER);
     }
     assert.equal(getOpenRouterModelForInferenceRequest({
-      model: 'QWEN3.7',
+      model: 'QWEN3.8',
       messages: [{ role: 'user', content: 'hello' }],
-    }), 'qwen/qwen3.7-max');
+    }), 'qwen/qwen3.8-max');
     assert.equal(getOpenRouterModelForInferenceRequest({
-      model: 'QWEN3.7',
+      model: 'QWEN3.8',
       messages: [{ role: 'user', content: [{ type: 'input_image', image_url: 'frame' }] }],
-    }), 'qwen/qwen3.7-plus');
+    }), 'qwen/qwen3.8-max');
   });
 });
 
@@ -131,8 +131,8 @@ test('hosted and external Qwen always use OpenRouter even with Alibaba credentia
       OPENROUTER_API_KEY: 'openrouter-key',
       ALIBABA_API_KEY: 'alibaba-key',
     }, () => {
-      const request = { model: 'QWEN3.7', authorization: 'deployed' };
-      assert.equal(resolveConfiguredInferenceProvider('QWEN3.7'), DOCKER_INFERENCE_PROVIDER.OPENROUTER);
+      const request = { model: 'QWEN3.8', authorization: 'deployed' };
+      assert.equal(resolveConfiguredInferenceProvider('QWEN3.8'), DOCKER_INFERENCE_PROVIDER.OPENROUTER);
       assert.equal(shouldUseOpenRouterInference(request), true);
       assert.equal(shouldUseSamsarExternalInference(request), true);
     });
@@ -172,7 +172,7 @@ test('production inference ignores standalone preference files', (t) => {
   fs.writeFileSync(preferencePath, JSON.stringify({
     modelProviderPriority: {
       'gpt-5.6-sol': ['samsar', 'openrouter', 'openai'],
-      'QWEN3.7': ['alibabaCloud', 'samsar', 'openrouter'],
+      'QWEN3.8': ['alibabaCloud', 'samsar', 'openrouter'],
     },
   }));
 
@@ -190,7 +190,7 @@ test('production inference ignores standalone preference files', (t) => {
       DOCKER_INFERENCE_PROVIDER.OPENROUTER,
       DOCKER_INFERENCE_PROVIDER.SAMSAR,
     ]);
-    assert.deepEqual(getConfiguredInferenceProviders('QWEN3.7'), [
+    assert.deepEqual(getConfiguredInferenceProviders('QWEN3.8'), [
       DOCKER_INFERENCE_PROVIDER.OPENROUTER,
     ]);
   });
@@ -239,7 +239,7 @@ test('an explicit deployed authorization uses Samsar even when a native key exis
     ALIBABA_API_KEY: 'alibaba-key',
   }, () => {
     assert.equal(shouldUseSamsarExternalInference({
-      model: 'QWEN3.7',
+      model: 'QWEN3.8',
       authorization: 'deployed',
     }), true);
   });
@@ -251,7 +251,7 @@ test('an explicit native authorization falls back to Samsar when its provider ke
     SAMSAR_API_KEY: 'samsar-key',
   }, () => {
     assert.equal(shouldUseSamsarExternalInference({
-      model: 'QWEN3.7',
+      model: 'QWEN3.8',
       authorization: 'native',
     }), true);
     assert.equal(shouldUseSamsarExternalInference({
@@ -272,13 +272,13 @@ test('the ALIBABA_API_KEY alias authorizes explicit native Qwen routing', () => 
     ALIBABA_API_KEY: 'alibaba-key',
   }, () => {
     assert.equal(shouldUseSamsarExternalInference({
-      model: 'QWEN3.7',
+      model: 'QWEN3.8',
       authorization: 'native',
     }), false);
   });
 });
 
-test('Qwen OpenRouter applies Max text and Plus vision routing with bounded settings', async (t) => {
+test('Qwen OpenRouter applies Qwen 3.8 Max routing with bounded settings', async (t) => {
   const keys = ['CURRENT_ENV', 'OPENROUTER_API_KEY', 'OPENROUTER_QWEN_MAX_TOKENS'];
   const previous = Object.fromEntries(keys.map((key) => [key, process.env[key]]));
   t.after(() => {
@@ -299,17 +299,17 @@ test('Qwen OpenRouter applies Max text and Plus vision routing with bounded sett
   });
 
   await createOpenRouterChatCompletion({
-    model: 'QWEN3.7',
+    model: 'QWEN3.8',
     messages: [{ role: 'user', content: 'hello' }],
     reasoning: { effort: 'xhigh' },
     max_completion_tokens: 20000,
   });
   await createOpenRouterChatCompletion({
-    model: 'QWEN3.7',
+    model: 'QWEN3.8',
     messages: [{ role: 'user', content: [{ type: 'image_url', image_url: { url: 'x' } }] }],
   });
   await createOpenRouterChatCompletion({
-    model: 'QWEN3.7',
+    model: 'QWEN3.8',
     messages: [{ role: 'user', content: 'return JSON' }],
     reasoning: { effort: 'low' },
     max_tokens: 16384,
@@ -318,12 +318,12 @@ test('Qwen OpenRouter applies Max text and Plus vision routing with bounded sett
     plugins: [{ id: 'existing-plugin' }],
   });
 
-  assert.equal(payloads[0].model, 'qwen/qwen3.7-max');
+  assert.equal(payloads[0].model, 'qwen/qwen3.8-max');
   assert.equal(payloads[0].reasoning.effort, 'high');
   assert.equal(payloads[0].max_tokens, 20000);
-  assert.equal(payloads[1].model, 'qwen/qwen3.7-plus');
+  assert.equal(payloads[1].model, 'qwen/qwen3.8-max');
   assert.equal(payloads[1].max_tokens, 16384);
-  assert.equal(payloads[2].model, 'qwen/qwen3.7-max');
+  assert.equal(payloads[2].model, 'qwen/qwen3.8-max');
   assert.equal(payloads[2].reasoning.effort, 'high');
   assert.equal(payloads[2].max_tokens, 16384);
   assert.deepEqual(payloads[2].provider, { data_collection: 'deny', require_parameters: true });

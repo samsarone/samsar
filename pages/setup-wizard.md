@@ -61,7 +61,7 @@ The wizard presents three provider groups:
 
 | Mode | Providers | Behavior |
 | --- | --- | --- |
-| Inference Router | OpenRouter | One optional key enables the supported GPT 5.6 Sol, Gemini 3.1 Pro, and Qwen 3.7 text and vision inference paths. |
+| Inference Router | OpenRouter | One optional key enables the supported GPT 5.6 Sol, Gemini 3.1 Pro, and Qwen 3.8 Max text and vision inference paths. |
 | Native | OpenAI, Google Cloud, Kimi K3, Alibaba Cloud, FAL, ElevenLabs, RunwayML | Use direct provider credentials for the model families they support. Kimi K3 enables `KIMIK3` inference, assistant, strict structured-output, and vision requests. |
 | Universal fallback | Samsar API key | Enables all configured Samsar model/action families and can cover stages where native credentials are not provided. |
 

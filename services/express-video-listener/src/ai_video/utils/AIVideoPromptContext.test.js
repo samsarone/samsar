@@ -76,7 +76,7 @@ test('prompt seed context uses the canonical nested image description', () => {
     sceneDescriptions: ['one', 'current selected image description', 'three'],
     cameraTransition: 'Slow pan right',
     videoTone: 'grounded',
-    userInferenceModel: 'QWEN3.7',
+    userInferenceModel: 'QWEN3.8',
     selectedInferenceModelAuthorization: 'native',
   }), {
     sceneAction: 'The presenter points to the chart.',
@@ -86,7 +86,7 @@ test('prompt seed context uses the canonical nested image description', () => {
     indexData: { isStartScene: false, isEndScene: false },
     isSpeakerTransition: true,
     videoTone: 'grounded',
-    userInferenceModel: 'QWEN3.7',
+    userInferenceModel: 'QWEN3.8',
     selectedInferenceModelAuthorization: 'native',
     useShortFormPrompt: false,
     reasoningEffort: 'high',

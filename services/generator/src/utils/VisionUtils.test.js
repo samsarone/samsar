@@ -22,9 +22,88 @@ const silentLogger = {
 };
 
 test('Qwen vision requests use operation-specific bounded output limits', () => {
-  assert.equal(__testOnly__.getQwenVisionMaxTokens('QWEN3.7', 'description'), 8192);
-  assert.equal(__testOnly__.getQwenVisionMaxTokens('QWEN3.7', 'score'), 1024);
+  assert.equal(__testOnly__.getQwenVisionMaxTokens('QWEN3.8', 'description'), 8192);
+  assert.equal(__testOnly__.getQwenVisionMaxTokens('QWEN3.8', 'score'), 1024);
   assert.equal(__testOnly__.getQwenVisionMaxTokens('gpt-5.6-sol', 'description'), undefined);
+});
+
+test('Qwen 3.8 Max drives both native vision description and scoring', async (t) => {
+  const environmentKeys = [
+    'ALIBABA_QWEN_38_MAX_MODEL',
+    'ALIBABA_QWEN_TEXT_MODEL',
+    'CURRENT_ENV',
+    'DASHSCOPE_API_KEY',
+    'QWEN_38_MAX_MODEL',
+    'SAMSAR_API_KEY',
+    'SAMSAR_DEPLOYMENT_EDITION',
+    'SAMSAR_EDITION',
+    'SAMSAR_EXTERNAL_INFERENCE_ENABLED',
+    'SAMSAR_FORCE_EXTERNAL_INFERENCE',
+  ];
+  const previous = Object.fromEntries(
+    environmentKeys.map((key) => [key, process.env[key]]),
+  );
+  t.after(() => {
+    for (const key of environmentKeys) {
+      if (previous[key] === undefined) delete process.env[key];
+      else process.env[key] = previous[key];
+    }
+  });
+  for (const key of environmentKeys) delete process.env[key];
+  Object.assign(process.env, {
+    CURRENT_ENV: 'docker',
+    DASHSCOPE_API_KEY: 'native-qwen-key',
+    SAMSAR_DEPLOYMENT_EDITION: 'standalone',
+  });
+
+  const payloads = [];
+  t.mock.method(
+    OpenAI.Chat.Completions.prototype,
+    'create',
+    async (payload) => {
+      payloads.push(payload);
+      return {
+        choices: [{
+          message: {
+            role: 'assistant',
+            content: payloads.length === 1 ? 'Qwen image description.' : '94',
+          },
+        }],
+      };
+    },
+  );
+
+  const description = await __testOnly__.getDescriptionForImage(
+    'data:image/png;base64,AQID',
+    'cinematic',
+    'Qwen 3.8 Max',
+    '16:9',
+    'cinematic theme',
+    'native',
+  );
+  const score = await assignScoreForTheImage(
+    'A cinematic image',
+    description,
+    'cinematic',
+    'Qwen 3.8 Max',
+    '16:9',
+    'cinematic theme',
+    '',
+    'native',
+  );
+
+  assert.equal(description, 'Qwen image description.');
+  assert.equal(score, '94');
+  assert.equal(payloads.length, 2);
+  for (const payload of payloads) {
+    assert.equal(payload.model, 'qwen3.8-max');
+    assert.equal(payload.enable_thinking, true);
+  }
+  assert.equal(payloads[0].messages[1].content[1].type, 'image_url');
+  assert.equal(
+    payloads[0].messages[1].content[1].image_url.url,
+    'data:image/png;base64,AQID',
+  );
 });
 
 test('Kimi K3 drives both native describe and judge stages in high mode', async (t) => {

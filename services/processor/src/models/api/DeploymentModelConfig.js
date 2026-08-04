@@ -102,7 +102,7 @@ function hasRuntimeGenBlazeInferenceModel(modelMappings, model) {
 
 function hasRuntimeGenBlazeModel(modelMappings, model, env = process.env) {
   const normalizedModel = normalizeDeploymentModel(model);
-  if (['GPT-5.6-SOL', 'GEMINI-3.1-PRO', 'QWEN3.7'].includes(normalizedModel)) {
+  if (['GPT-5.6-SOL', 'GEMINI-3.1-PRO', 'QWEN3.8'].includes(normalizedModel)) {
     return hasRuntimeGenBlazeInferenceModel(modelMappings, normalizedModel);
   }
 
@@ -166,8 +166,8 @@ function normalizeDeploymentProvider(value) {
 
 function normalizeDeploymentModel(value) {
   const normalized = String(value || '').trim().toUpperCase();
-  if (['QWEN3.7', 'QWEN3.7-MAX', 'QWEN3.7-PLUS', 'QWEN3.8', 'QWEN3.8-MAX-PREVIEW'].includes(normalized)) {
-    return 'QWEN3.7';
+  if (['QWEN3.8', 'QWEN3.8-MAX'].includes(normalized)) {
+    return 'QWEN3.8';
   }
   if (['KIMIK3', 'KIMI-K3', 'KIMI K3'].includes(normalized)) {
     return 'KIMIK3';
@@ -188,11 +188,11 @@ function isSavedQwenSelectionAuthorized({ providers, models, modelProviders }) {
     return false;
   }
 
-  const hasQwenModel = models.some((model) => normalizeDeploymentModel(model) === 'QWEN3.7');
+  const hasQwenModel = models.some((model) => normalizeDeploymentModel(model) === 'QWEN3.8');
   const qwenProviders = new Set(['alibabaCloud', 'samsar', 'gmicloud', 'openrouter']);
   const availableProviders = new Set(providers.map(normalizeDeploymentProvider));
   const selectedProvider = normalizeDeploymentProvider(
-    findModelProvider(modelProviders, 'QWEN3.7'),
+    findModelProvider(modelProviders, 'QWEN3.8'),
   );
 
   return hasQwenModel && availableProviders.has(selectedProvider) && qwenProviders.has(selectedProvider);
@@ -248,7 +248,7 @@ function mergeRuntimeInferenceProviderSelections(availability) {
   const priorities = {
     'gpt-5.6-sol': ['openai', 'gmicloud', 'samsar', 'openrouter'],
     'gemini-3.1-pro': ['googleCloud', 'gmicloud', 'samsar', 'openrouter'],
-    'QWEN3.7': ['alibabaCloud', 'gmicloud', 'samsar', 'openrouter'],
+    'QWEN3.8': ['alibabaCloud', 'gmicloud', 'samsar', 'openrouter'],
     KIMIK3: ['kimi', 'samsar'],
   };
   const configured = {
@@ -379,18 +379,18 @@ export function mergeRuntimeInferenceDeploymentAvailability(value = {}) {
   const configuredProviders = normalizeStringList(value?.providers);
   const configuredModels = [...new Set(
     normalizeStringList(value?.models).map((model) => (
-      normalizeDeploymentModel(model) === 'QWEN3.7' ? 'QWEN3.7' : model
+      normalizeDeploymentModel(model) === 'QWEN3.8' ? 'QWEN3.8' : model
     )),
   )];
   const modelProviders = Object.fromEntries(
     Object.entries(normalizeStringMap(value?.modelProviders)).map(([model, provider]) => [
-      normalizeDeploymentModel(model) === 'QWEN3.7' ? 'QWEN3.7' : model,
+      normalizeDeploymentModel(model) === 'QWEN3.8' ? 'QWEN3.8' : model,
       provider,
     ]),
   );
   const modelProviderPriority = Object.fromEntries(
     Object.entries(normalizeStringListMap(value?.modelProviderPriority)).map(([model, providers]) => [
-      normalizeDeploymentModel(model) === 'QWEN3.7' ? 'QWEN3.7' : model,
+      normalizeDeploymentModel(model) === 'QWEN3.8' ? 'QWEN3.8' : model,
       providers,
     ]),
   );
@@ -398,7 +398,7 @@ export function mergeRuntimeInferenceDeploymentAvailability(value = {}) {
     Object.entries(normalizeStringListMap(
       value?.defaultModelProviderPriority || value?.modelProviderPriority,
     )).map(([model, providers]) => [
-      normalizeDeploymentModel(model) === 'QWEN3.7' ? 'QWEN3.7' : model,
+      normalizeDeploymentModel(model) === 'QWEN3.8' ? 'QWEN3.8' : model,
       providers,
     ]),
   );
@@ -464,7 +464,7 @@ export function mergeRuntimeInferenceDeploymentAvailability(value = {}) {
     providers: configuredProviders,
     models: configuredModels.filter(
       (model) => (
-        (normalizeDeploymentModel(model) !== 'QWEN3.7' || qwenAuthorized) &&
+        (normalizeDeploymentModel(model) !== 'QWEN3.8' || qwenAuthorized) &&
         hasAuthorizedSavedModel(model)
       ),
     ),
@@ -479,7 +479,7 @@ export function mergeRuntimeInferenceDeploymentAvailability(value = {}) {
 
   if (hasEnvCredential('ALIBABA_API_KEY', 'DASHSCOPE_API_KEY', 'ALIBABA_CLOUD_API_KEY', 'QWEN_API_KEY')) {
     appendUnique(merged.providers, ['alibabaCloud']);
-    appendUnique(merged.models, ['QWEN3.7', 'HAPPYHORSEI2V', 'WAN2.7PRO']);
+    appendUnique(merged.models, ['QWEN3.8', 'HAPPYHORSEI2V', 'WAN2.7PRO']);
     appendUnique(merged.actions, ['chat', 'assistant', 'image', 'video']);
     const keyType = String(process.env.ALIBABA_API_KEY_TYPE || '').trim();
     const endpointType = String(process.env.ALIBABA_API_ENDPOINT_TYPE || '').trim();
@@ -513,14 +513,14 @@ export function mergeRuntimeInferenceDeploymentAvailability(value = {}) {
 
   if (hasEnvCredential('SAMSAR_API_KEY')) {
     appendUnique(merged.providers, ['samsar']);
-    appendUnique(merged.models, ['gpt-5.6-sol', 'gemini-3.1-pro', 'QWEN3.7', 'KIMIK3', 'HAPPYHORSEI2V', 'WAN2.7PRO']);
+    appendUnique(merged.models, ['gpt-5.6-sol', 'gemini-3.1-pro', 'QWEN3.8', 'KIMIK3', 'HAPPYHORSEI2V', 'WAN2.7PRO']);
     appendUnique(merged.actions, ['chat', 'assistant', 'image', 'video']);
   }
 
   const runtimeGenBlazeInferenceModels = [
     'gpt-5.6-sol',
     'gemini-3.1-pro',
-    'QWEN3.7',
+    'QWEN3.8',
   ].filter((model) => hasRuntimeGenBlazeInferenceModel(gmiCloudModelMappings, model));
   if (runtimeGenBlazeInferenceModels.length > 0) {
     appendUnique(merged.providers, ['gmicloud']);
@@ -530,7 +530,7 @@ export function mergeRuntimeInferenceDeploymentAvailability(value = {}) {
 
   if (hasEnvCredential('OPENROUTER_API_KEY')) {
     appendUnique(merged.providers, ['openrouter']);
-    appendUnique(merged.models, ['gpt-5.6-sol', 'gemini-3.1-pro', 'QWEN3.7']);
+    appendUnique(merged.models, ['gpt-5.6-sol', 'gemini-3.1-pro', 'QWEN3.8']);
     appendUnique(merged.actions, ['chat', 'assistant']);
   }
 
@@ -550,7 +550,7 @@ export function mergeRuntimeInferenceDeploymentAvailability(value = {}) {
   const inferenceModels = new Set([
     normalizeDeploymentModel('gpt-5.6-sol'),
     normalizeDeploymentModel('gemini-3.1-pro'),
-    normalizeDeploymentModel('QWEN3.7'),
+    normalizeDeploymentModel('QWEN3.8'),
     normalizeDeploymentModel('KIMIK3'),
   ]);
   if (!merged.models.some((model) => inferenceModels.has(normalizeDeploymentModel(model)))) {

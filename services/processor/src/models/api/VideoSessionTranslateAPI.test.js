@@ -298,7 +298,7 @@ test('add subtitles prep regenerates translated text, alignment, and localized s
   const result = await __testOnly__.prepareSubtitleLanguageMetadataForAddition({
     clonedSession,
     subtitleLanguage: 'FR-fr',
-    inferenceModel: 'QWEN3.7',
+    inferenceModel: 'QWEN3.8',
     translateSpeechImpl: async (text, targetLanguage, inferenceModel, options) => {
       calls.push({ text, targetLanguage, inferenceModel, options });
       if (text === 'Hello world.') {
@@ -339,7 +339,7 @@ test('add subtitles prep regenerates translated text, alignment, and localized s
   assert.equal(clonedSession.audioLayers[2].subtitleLanguage, undefined);
   assert.equal(calls.length, 2);
   assert.equal(calls[0].targetLanguage, 'French');
-  assert.equal(calls[0].inferenceModel, 'QWEN3.7');
+  assert.equal(calls[0].inferenceModel, 'QWEN3.8');
   assert.equal(calls[0].options.includeSubtitleAlignment, true);
   assert.equal(calls[0].options.targetLanguageCode, 'fr');
   assert.equal(calls[0].options.speakerCharacterName, 'Guide');
@@ -400,7 +400,7 @@ test('add subtitles prep preserves legacy metadata when target language is omitt
   const result = await __testOnly__.prepareSubtitleLanguageMetadataForAddition({
     clonedSession,
     subtitleLanguage: undefined,
-    inferenceModel: 'QWEN3.7',
+    inferenceModel: 'QWEN3.8',
     translateSpeechImpl: () => {
       throw new Error('omitted target must not invoke translation');
     },

@@ -228,7 +228,7 @@ test('automatic retry metadata does not leak into a native Qwen request', async 
   }, async () => {
     let capturedRequest;
     await createCompatibleInferenceChatCompletion({
-      model: 'QWEN3.7',
+      model: 'QWEN3.8',
       messages: [{ role: 'user', content: 'hello' }],
       bypassSamsarExternalInference: true,
       externalMaxRetries: 9,

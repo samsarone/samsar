@@ -10,9 +10,9 @@ import {
   hasQwenVisionInput,
 } from './AlibabaQwen.js';
 
-test('builds text-only Qwen requests with qwen3.7-plus and thinking enabled', () => {
+test('builds text-only Qwen requests with qwen3.8-max and thinking enabled', () => {
   const { payload } = buildAlibabaQwenChatRequest({
-    model: 'QWEN3.7',
+    model: 'QWEN3.8',
     messages: [
       { role: 'developer', content: 'Follow the instructions.' },
       { role: 'user', content: 'Write a short scene.' },
@@ -20,15 +20,15 @@ test('builds text-only Qwen requests with qwen3.7-plus and thinking enabled', ()
     ],
   }, { CURRENT_ENV: 'docker' });
 
-  assert.equal(payload.model, 'qwen3.7-plus');
+  assert.equal(payload.model, 'qwen3.8-max');
   assert.equal(payload.enable_thinking, true);
   assert.equal(payload.messages[0].role, 'system');
   assert.deepEqual(payload.messages[2].content[0], { type: 'text', text: 'Previous scene.' });
   assert.equal(hasQwenVisionInput(payload.messages), false);
 });
 
-test('uses the Docker Alibaba text-model constant without changing vision routing', () => {
-  const env = { ALIBABA_QWEN_TEXT_MODEL: 'qwen3.8-max-preview' };
+test('uses the Alibaba Qwen model override for both text and vision', () => {
+  const env = { ALIBABA_QWEN_TEXT_MODEL: 'qwen3.8-max' };
   const text = buildAlibabaQwenChatRequest({
     messages: [{ role: 'user', content: 'Write a scene.' }],
   }, env);
@@ -39,13 +39,13 @@ test('uses the Docker Alibaba text-model constant without changing vision routin
     }],
   }, env);
 
-  assert.equal(text.payload.model, 'qwen3.8-max-preview');
-  assert.equal(vision.payload.model, 'qwen3.7-plus');
+  assert.equal(text.payload.model, 'qwen3.8-max');
+  assert.equal(vision.payload.model, 'qwen3.8-max');
 });
 
-test('uses qwen3.7-plus when a request includes vision content', () => {
+test('uses qwen3.8-max when a request includes vision content', () => {
   const { payload } = buildAlibabaQwenChatRequest({
-    model: 'QWEN3.7',
+    model: 'QWEN3.8',
     messages: [
       {
         role: 'user',
@@ -57,7 +57,7 @@ test('uses qwen3.7-plus when a request includes vision content', () => {
     ],
   }, { CURRENT_ENV: 'docker' });
 
-  assert.equal(payload.model, 'qwen3.7-plus');
+  assert.equal(payload.model, 'qwen3.8-max');
   assert.deepEqual(payload.messages[0].content[0], {
     type: 'text',
     text: 'Describe this frame.',
@@ -68,27 +68,27 @@ test('uses qwen3.7-plus when a request includes vision content', () => {
   });
 
   const productionText = buildAlibabaQwenChatRequest({
-    model: 'QWEN3.7',
+    model: 'QWEN3.8',
     messages: [{ role: 'user', content: 'Write a short scene.' }],
   }, { CURRENT_ENV: 'production' });
   const productionVision = buildAlibabaQwenChatRequest({
-    model: 'QWEN3.7',
+    model: 'QWEN3.8',
     messages: [{
       role: 'user',
       content: [{ type: 'input_image', image_url: 'data:image/png;base64,abc' }],
     }],
   }, { CURRENT_ENV: 'production' });
-  assert.equal(productionText.payload.model, 'qwen3.7-plus');
-  assert.equal(productionVision.payload.model, 'qwen3.7-plus');
+  assert.equal(productionText.payload.model, 'qwen3.8-max');
+  assert.equal(productionVision.payload.model, 'qwen3.8-max');
 
   const emptyVisionPart = buildAlibabaQwenChatRequest({
-    model: 'QWEN3.7',
+    model: 'QWEN3.8',
     messages: [{ role: 'user', content: [{ type: 'input_image', image_url: '' }] }],
   });
-  assert.equal(emptyVisionPart.payload.model, 'qwen3.7-plus');
+  assert.equal(emptyVisionPart.payload.model, 'qwen3.8-max');
 
   const alternateMediaShapes = buildAlibabaQwenChatRequest({
-    model: 'QWEN3.7',
+    model: 'QWEN3.8',
     messages: [{
       role: 'user',
       content: [
@@ -101,7 +101,7 @@ test('uses qwen3.7-plus when a request includes vision content', () => {
       ],
     }],
   });
-  assert.equal(alternateMediaShapes.payload.model, 'qwen3.7-plus');
+  assert.equal(alternateMediaShapes.payload.model, 'qwen3.8-max');
   assert.equal(
     alternateMediaShapes.payload.messages[0].content[1].image_url.url,
     'data:image/jpeg;base64,abc',
@@ -118,7 +118,7 @@ test('uses qwen3.7-plus when a request includes vision content', () => {
   ]);
 
   const typedListShape = buildAlibabaQwenChatRequest({
-    model: 'QWEN3.7',
+    model: 'QWEN3.8',
     messages: [{
       role: 'user',
       content: [{
@@ -127,7 +127,7 @@ test('uses qwen3.7-plus when a request includes vision content', () => {
       }],
     }],
   });
-  assert.equal(typedListShape.payload.model, 'qwen3.7-plus');
+  assert.equal(typedListShape.payload.model, 'qwen3.8-max');
   assert.equal(
     typedListShape.payload.messages[0].content[0].image_url.url,
     'https://example.test/three.png',
@@ -142,7 +142,7 @@ test('converts JSON Schema response formats to Qwen JSON mode without changing t
     additionalProperties: false,
   };
   const { payload } = buildAlibabaQwenChatRequest({
-    model: 'QWEN3.7',
+    model: 'QWEN3.8',
     messages: [{ role: 'user', content: 'Create the requested JSON narrative.' }],
     response_format: {
       type: 'json_schema',
@@ -203,7 +203,7 @@ test('native Alibaba Qwen resolves typed media at its provider boundary', async 
 
   try {
     const response = await createAlibabaQwenChatCompletion({
-      model: 'QWEN3.7',
+      model: 'QWEN3.8',
       messages: [{
         role: 'user',
         content: [{

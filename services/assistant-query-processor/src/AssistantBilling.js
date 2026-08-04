@@ -21,16 +21,7 @@ const TOKEN_PRICING_USD_PER_MILLION = Object.freeze({
     longContextOutput: 18,
     longContextInputThreshold: 200_000,
   },
-  'qwen3.7-max': { input: 2.5, cachedInput: 2.5, output: 7.5 },
-  'qwen3.7-plus': {
-    input: 0.4,
-    cachedInput: 0.4,
-    output: 1.6,
-    longContextInput: 1.2,
-    longContextCachedInput: 1.2,
-    longContextOutput: 4.8,
-    longContextInputThreshold: 256_000,
-  },
+  'qwen3.8-max': { input: 2.5, cachedInput: 2.5, output: 7.5 },
   'kimi-k3': {
     input: 3,
     cachedInput: 0.3,
@@ -144,16 +135,13 @@ function resolvePricingModel(model) {
     return 'gemini-3.1-pro';
   }
 
-  if (normalized.startsWith('qwen3.7-plus') || normalized.startsWith('qwen-3.7-plus')) {
-    return 'qwen3.7-plus';
-  }
-
   if (
-    normalized === 'qwen3.7' ||
-    normalized.startsWith('qwen3.7-max') ||
-    normalized.startsWith('qwen-3.7')
+    normalized === 'qwen3.8' ||
+    normalized.startsWith('qwen3.8-max') ||
+    normalized.startsWith('qwen-3.8') ||
+    normalized.startsWith('qwen/qwen3.8-max')
   ) {
-    return 'qwen3.7-max';
+    return 'qwen3.8-max';
   }
 
   if (

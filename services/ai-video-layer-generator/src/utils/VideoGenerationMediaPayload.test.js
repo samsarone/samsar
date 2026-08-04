@@ -39,6 +39,21 @@ test('normalizes both selected first/last frame inputs', async () => {
     ['/assets_v2/generations/start.png', 'image'],
     ['/assets_v2/generations/end.png', 'image'],
   ]);
+
+  calls.length = 0;
+  await normalizeSelectedVideoGenerationMediaPayload({
+    model: 'SEEDANCE2.0I2V',
+    startImage: '/assets_v2/generations/seedance-start.png',
+    endImage: '/assets_v2/generations/seedance-end.png',
+  }, async (value, { mediaKind }) => {
+    calls.push([value, mediaKind]);
+    return value;
+  });
+
+  assert.deepEqual(calls, [
+    ['/assets_v2/generations/seedance-start.png', 'image'],
+    ['/assets_v2/generations/seedance-end.png', 'image'],
+  ]);
 });
 
 test('normalizes video/audio for lip sync, video only for sound effects, and none for text-to-video', async () => {

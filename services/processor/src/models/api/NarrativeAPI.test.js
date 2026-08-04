@@ -35,13 +35,13 @@ test('normalizes the create_single prompt, duration, and inference model aliases
     normalizeCreateSingleNarrativePayload({
       prompt: '  Make a concise film  ',
       duration: 240,
-      inference_model: 'QWEN3.7',
+      inference_model: 'QWEN3.8',
     }),
     {
       prompt: 'Make a concise film',
       duration: 240,
-      inference_model: 'QWEN3.7',
-      inferenceModel: 'QWEN3.7',
+      inference_model: 'QWEN3.8',
+      inferenceModel: 'QWEN3.8',
       video_model: 'RUNWAYML',
       videoGenerationModel: 'RUNWAYML',
     },
@@ -93,16 +93,16 @@ test('rejects missing prompts and durations outside the text-to-video range', ()
 
 test('uses strict text-to-video inference aliases and falls back to the user selection', () => {
   assert.equal(
-    resolveNarrativeInferenceModel({ inference_model: 'GPT5.6' }, 'QWEN3.7'),
+    resolveNarrativeInferenceModel({ inference_model: 'GPT5.6' }, 'QWEN3.8'),
     'gpt-5.6-sol',
   );
   assert.equal(
-    resolveNarrativeInferenceModel({ inference_model: 'GEMINI3.1' }, 'QWEN3.7'),
+    resolveNarrativeInferenceModel({ inference_model: 'GEMINI3.1' }, 'QWEN3.8'),
     'gemini-3.1-pro',
   );
-  assert.equal(resolveNarrativeInferenceModel({}, 'QWEN3.7'), 'QWEN3.7');
+  assert.equal(resolveNarrativeInferenceModel({}, 'QWEN3.8'), 'QWEN3.8');
   assert.throws(
-    () => resolveNarrativeInferenceModel({ inference_model: 'unknown-model' }, 'QWEN3.7'),
+    () => resolveNarrativeInferenceModel({ inference_model: 'unknown-model' }, 'QWEN3.8'),
     (error) => error.status === 400 && /inference_model/.test(error.message),
   );
 });
@@ -144,7 +144,7 @@ test('skips full normalization after localized speech repair and preserves enric
     rawNarrativeJson,
     movieResourceList: enrichedMovieResourceList,
     videoGenerationModel: 'COSMOS3SUPERI2V',
-    inferenceModel: 'QWEN3.7',
+    inferenceModel: 'QWEN3.8',
     requestedDuration: 40,
     validateNarrative: () => {
       validationCalls += 1;
@@ -214,7 +214,7 @@ test('submission persists the selected video model for model-aware speech genera
       lean: async () => ({
         _id: userId,
         generationCredits: 100,
-        selectedInferenceModel: 'QWEN3.7',
+        selectedInferenceModel: 'QWEN3.8',
         speakerOptions: null,
       }),
     }),

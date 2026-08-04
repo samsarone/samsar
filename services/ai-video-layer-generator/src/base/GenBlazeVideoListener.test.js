@@ -152,6 +152,37 @@ test('Seedance 1.5 applies its duration and aspect-ratio contract', () => {
   });
 });
 
+test('Seedance 2.0 stays on the exact GMICloud I2V contract', () => {
+  const request = buildGenBlazeVideoRequest({
+    model: 'SEEDANCE2.0I2V',
+    prompt: 'camera eases between the keyframes',
+    startImage: 'https://media.example/first.png',
+    endImage: 'https://media.example/last.png',
+    duration: 18,
+    aspectRatio: '9:16',
+    resolution: '1080p',
+    generateAudio: true,
+    seed: 7,
+  });
+
+  assert.deepEqual(request, {
+    model: 'SEEDANCE2.0I2V',
+    modality: 'video',
+    prompt: 'camera eases between the keyframes',
+    input_urls: [
+      'https://media.example/first.png',
+      'https://media.example/last.png',
+    ],
+    params: {
+      duration: 15,
+      aspect_ratio: '9:16',
+      generate_audio: true,
+      resolution: '720p',
+      seed: 7,
+    },
+  });
+});
+
 test('Kling v3 Pro preserves its contract while Turbo uses its dedicated one-frame contract', () => {
   const pro = buildGenBlazeVideoRequest({
     model: 'KLINGIMGTOVID3PRO',

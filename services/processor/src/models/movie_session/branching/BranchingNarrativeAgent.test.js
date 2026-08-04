@@ -8,7 +8,7 @@ import {
   generateDivergencePaths,
 } from './BranchingNarrativeAgent.js';
 
-function completion(content, model = 'QWEN3.7') {
+function completion(content, model = 'QWEN3.8') {
   return {
     model,
     usage: { input_tokens: 100, output_tokens: 30 },
@@ -173,7 +173,7 @@ test('generates exactly two divergence paths and meters invalid structured attem
     parentMovieResourceList,
     originalPrompt: 'A ferry dispatcher makes a difficult choice.',
     divergenceSceneIndex: 1,
-    inferenceModel: 'QWEN3.7',
+    inferenceModel: 'QWEN3.8',
     externalRequestContext: { sessionId: 'branch-request-1', userId: 'user-1' },
     requestKey: 'narrative:create_branching:level-1:root:paths',
     maxAttempts: 2,
@@ -367,8 +367,8 @@ test('retries a branch suffix whose speech exceeds the model-aware tolerance', a
   const validSuffix = buildValidSuffix();
   validSuffix.sounds[0].audio = 'a'.repeat(57);
   const responses = [
-    completion(JSON.stringify(invalidSuffix), 'QWEN3.7'),
-    completion(JSON.stringify(validSuffix), 'QWEN3.7'),
+    completion(JSON.stringify(invalidSuffix), 'QWEN3.8'),
+    completion(JSON.stringify(validSuffix), 'QWEN3.8'),
   ];
   const receipts = [];
 
@@ -380,7 +380,7 @@ test('retries a branch suffix whose speech exceeds the model-aware tolerance', a
       path_name: 'Take the river',
       path_description: 'Ada boards the ferry and races downstream.',
     },
-    inferenceModel: 'QWEN3.7',
+    inferenceModel: 'QWEN3.8',
     videoGenerationModel: 'COSMOS3SUPERI2V',
     maxAttempts: 2,
     retryDelayMs: 1,

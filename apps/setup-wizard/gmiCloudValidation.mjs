@@ -6,10 +6,10 @@ export const GMI_CLOUD_MEDIA_MODELS_URL =
   'https://console.gmicloud.ai/api/v1/ie/requestqueue/apikey/models';
 export const GMI_CLOUD_PROVIDER_VALIDATION_TTL_MS = 60 * 60 * 1000;
 const DEFAULT_VALIDATION_TIMEOUT_MS = 5_000;
+const CANONICAL_QWEN_MODEL_KEY = 'QWEN3.8';
 
 // Each candidate is an exact upstream version. Chat catalog matching ignores
 // only owner prefixes and case; it never falls forward to a different version.
-// Qwen 3.6 Plus is the explicitly curated vision equivalent for Qwen 3.7 Max.
 export const GMI_CLOUD_CHAT_MODEL_SPECS = Object.freeze({
   'gpt-5.6-sol': Object.freeze({
     text: Object.freeze({ candidates: Object.freeze(['openai/gpt-5.6-sol']) }),
@@ -19,15 +19,9 @@ export const GMI_CLOUD_CHAT_MODEL_SPECS = Object.freeze({
     text: Object.freeze({ candidates: Object.freeze(['google/gemini-3.1-pro-preview']) }),
     vision: Object.freeze({ candidates: Object.freeze(['google/gemini-3.1-pro-preview']) }),
   }),
-  'QWEN3.7': Object.freeze({
-    text: Object.freeze({ candidates: Object.freeze(['Qwen/Qwen3.7-Max']) }),
-    vision: Object.freeze({
-      candidates: Object.freeze([
-        'Qwen/Qwen3.7-Plus',
-        'Qwen/Qwen3.6-Plus',
-        'Qwen/Qwen3.6-Plus-2026-04-02',
-      ]),
-    }),
+  'QWEN3.8': Object.freeze({
+    text: Object.freeze({ candidates: Object.freeze(['Qwen/Qwen3.8-Max']) }),
+    vision: Object.freeze({ candidates: Object.freeze(['Qwen/Qwen3.8-Max']) }),
   }),
 });
 
@@ -207,26 +201,34 @@ export function normalizeGmiCloudModelMappings(modelMappings = {}) {
   if (!modelMappings || typeof modelMappings !== 'object' || Array.isArray(modelMappings)) {
     return {};
   }
-  return Object.fromEntries(Object.entries(modelMappings)
-    .map(([modelKey, routes]) => {
-      const allowedModalities = ALLOWED_ROUTE_MODALITIES[modelKey];
-      if (!allowedModalities || !routes || typeof routes !== 'object' || Array.isArray(routes)) {
-        return null;
-      }
-      const normalizedRoutes = Object.fromEntries(allowedModalities
-        .map((modality) => {
-          const modelId = normalizeString(routes[modality]?.modelId);
-          return modelId && isAllowedRouteModelId(modelKey, modality, modelId)
-            ? [modality, { modelId, operation: operationForRoute(modelKey, modality, modelId) }]
-            : null;
-        })
-        .filter(Boolean));
-      if (GMI_CLOUD_CHAT_MODEL_SPECS[modelKey] && !normalizedRoutes.text) {
-        return null;
-      }
-      return Object.keys(normalizedRoutes).length ? [modelKey, normalizedRoutes] : null;
-    })
-    .filter(Boolean));
+  const normalizedMappings = {};
+  for (const [modelKey, routes] of Object.entries(modelMappings)) {
+    const allowedModalities = ALLOWED_ROUTE_MODALITIES[modelKey];
+    if (!allowedModalities || !routes || typeof routes !== 'object' || Array.isArray(routes)) {
+      continue;
+    }
+    const normalizedRoutes = Object.fromEntries(allowedModalities
+      .map((modality) => {
+        const modelId = normalizeString(routes[modality]?.modelId);
+        return modelId && isAllowedRouteModelId(modelKey, modality, modelId)
+          ? [modality, { modelId, operation: operationForRoute(modelKey, modality, modelId) }]
+          : null;
+      })
+      .filter(Boolean));
+    if (modelKey === CANONICAL_QWEN_MODEL_KEY && normalizedRoutes.text) {
+      normalizedRoutes.vision = {
+        modelId: normalizedRoutes.text.modelId,
+        operation: routeOperation('vision'),
+      };
+    }
+    if (GMI_CLOUD_CHAT_MODEL_SPECS[modelKey] && !normalizedRoutes.text) {
+      continue;
+    }
+    if (Object.keys(normalizedRoutes).length) {
+      normalizedMappings[modelKey] = normalizedRoutes;
+    }
+  }
+  return normalizedMappings;
 }
 
 export function buildGmiCloudRuntimeCatalog({

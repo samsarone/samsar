@@ -30,7 +30,7 @@ const DEFAULT_OPENROUTER_GPT_MAX_COMPLETION_TOKENS = 65536;
 const DEFAULT_OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1';
 const DEFAULT_GENBLAZE_BASE_URL = 'http://genblaze:8080/v1';
 const GENBLAZE_INFERENCE_MODELS = new Set([
-  'QWEN3.7',
+  'QWEN3.8',
   'gpt-5.6-sol',
   'gemini-3.1-pro',
 ]);
@@ -61,7 +61,7 @@ export const DOCKER_INFERENCE_PROVIDER = Object.freeze({
   GMICLOUD: 'gmicloud',
 });
 export const DOCKER_INFERENCE_PROVIDER_PRIORITY_BY_MODEL = Object.freeze({
-  'QWEN3.7': Object.freeze([
+  'QWEN3.8': Object.freeze([
     DOCKER_INFERENCE_PROVIDER.ALIBABA_CLOUD,
     DOCKER_INFERENCE_PROVIDER.GMICLOUD,
     DOCKER_INFERENCE_PROVIDER.SAMSAR,
@@ -131,7 +131,7 @@ function uniqueInferenceProviders(value) {
 
 function normalizeSavedInferencePreferenceModelKey(model) {
   const token = normalizeString(model).replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
-  if (['QWEN37', 'QWEN3PLUS', 'QWEN37PLUS'].includes(token)) return 'QWEN3.7';
+  if (['QWEN38', 'QWEN38MAX'].includes(token)) return 'QWEN3.8';
   if (['GEMINI31PRO', 'GEMINI3PRO'].includes(token)) return 'gemini-3.1-pro';
   if (['KIMIK3', 'KIMI3', 'MOONSHOTK3'].includes(token)) return 'KIMIK3';
   if (['GPT56SOL', 'GPT5SOL'].includes(token)) return 'gpt-5.6-sol';
@@ -139,7 +139,7 @@ function normalizeSavedInferencePreferenceModelKey(model) {
 }
 
 function getInferencePreferenceModelKey(model) {
-  if (isQwenInferenceModel(model)) return 'QWEN3.7';
+  if (isQwenInferenceModel(model)) return 'QWEN3.8';
   if (isGeminiInferenceModel(model)) return 'gemini-3.1-pro';
   if (isKimiInferenceModel(model)) return 'KIMIK3';
   return 'gpt-5.6-sol';
@@ -406,7 +406,7 @@ function getGenblazeInferenceModality(chatRequest = {}) {
 }
 
 function getCanonicalGenblazeInferenceModel(model) {
-  if (isQwenInferenceModel(model)) return 'QWEN3.7';
+  if (isQwenInferenceModel(model)) return 'QWEN3.8';
   if (isGeminiInferenceModel(model) && normalizeInferenceModel(model) === 'gemini-3.1-pro') {
     return 'gemini-3.1-pro';
   }
@@ -458,7 +458,7 @@ function hasConfiguredInferenceProvider(provider, model, chatRequest = {}) {
 function getInferenceProviderPriority(model, chatRequest = {}) {
   let defaultPriority;
   if (isQwenInferenceModel(model)) {
-    defaultPriority = DOCKER_INFERENCE_PROVIDER_PRIORITY_BY_MODEL['QWEN3.7'];
+    defaultPriority = DOCKER_INFERENCE_PROVIDER_PRIORITY_BY_MODEL['QWEN3.8'];
   } else if (isGeminiInferenceModel(model)) {
     defaultPriority = Boolean(getGenblazeClient()) && hasGenblazeModelMapping(model, chatRequest)
       ? DOCKER_INFERENCE_PROVIDER_PRIORITY_BY_MODEL['gemini-3.1-pro']
@@ -550,9 +550,7 @@ function getRequestedInferenceModel(chatRequest = {}) {
 export function getOpenRouterModelForInferenceRequest(chatRequest = {}, env = process.env) {
   const model = getRequestedInferenceModel(chatRequest);
   if (isQwenInferenceModel(model)) {
-    return hasQwenMultimodalInput(chatRequest)
-      ? normalizeString(env?.OPENROUTER_QWEN_37_PLUS_MODEL) || 'qwen/qwen3.7-plus'
-      : normalizeString(env?.OPENROUTER_QWEN_37_MAX_MODEL) || 'qwen/qwen3.7-max';
+    return normalizeString(env?.OPENROUTER_QWEN_38_MAX_MODEL) || 'qwen/qwen3.8-max';
   }
   if (isGeminiInferenceModel(model)) {
     return normalizeString(env?.OPENROUTER_GEMINI_31_PRO_MODEL) || 'google/gemini-3.1-pro-preview';

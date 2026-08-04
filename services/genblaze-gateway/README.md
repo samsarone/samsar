@@ -19,7 +19,7 @@ mounted read-only and has this shape:
   "provider": "gmicloud",
   "credentialFingerprint": "<sha256>",
   "models": {
-    "QWEN3.7": {
+    "QWEN3.8": {
       "text": {"modelId": "<exact GMI id>", "operation": "chat.completions"},
       "vision": {"modelId": "<exact GMI id>", "operation": "chat.completions"}
     },
@@ -35,7 +35,7 @@ mounted read-only and has this shape:
 
 The gateway-side allowlist currently understands these Samsar contracts:
 
-- inference/vision: `gpt-5.6-sol`, `gemini-3.1-pro`, `QWEN3.7`;
+- inference/vision: `gpt-5.6-sol`, `gemini-3.1-pro`, `QWEN3.8`;
 - image generation: `GPTIMAGE2`, `SEEDREAM`, `NANOBANANA2`,
   `NANOBANANAPRO`;
 - image editing: `GPTIMAGE2EDIT`, `NANOBANANA2EDIT`,
@@ -51,10 +51,11 @@ The gateway-side allowlist currently understands these Samsar contracts:
   dormant `OPENAI_TTS` contract through `gpt-4o-mini-tts` only when that exact
   route is returned for the configured credential.
 
-Only routes present in the generated file are advertised or callable. GPT and
-Gemini vision use their corresponding inference mapping. Qwen may have a
-separate optional vision mapping; if the account has no verified equivalent,
-text remains available and a vision request gets a clear 400 response.
+Only routes present in the generated file are advertised or callable. Every
+inference/vision contract uses its corresponding inference model for vision,
+including `Qwen/Qwen3.8-Max` for both Qwen text and vision. If an optional
+vision mapping is absent, text remains available and a vision request gets a
+clear 400 response.
 
 Media payloads keep Samsar's public request shape, then use strict per-model
 wire translations before GenBlaze submits them: GPT Image count becomes `n`;

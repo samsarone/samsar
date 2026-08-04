@@ -20,7 +20,7 @@ const retryContext = {
     sceneAction: 'A presenter points at a chart.',
     cameraTransition: 'Slow pan right.',
   },
-  userInferenceModel: 'QWEN3.7',
+  userInferenceModel: 'QWEN3.8',
   selectedInferenceModelAuthorization: 'native',
 };
 
@@ -33,6 +33,7 @@ const retryableImageToVideoModels = [
   'PIXVERSEI2V',
   'RUNWAYML',
   'SEEDANCEI2V',
+  'SEEDANCE2.0I2V',
   'SKYREELSI2V',
   'SORA2',
   'VEOI2V',
@@ -68,10 +69,27 @@ for (const model of retryableImageToVideoModels) {
       rank: 0,
     }]);
     assert.deepEqual(queuePayload.promptSeedContext, retryContext.promptSeedContext);
-    assert.equal(queuePayload.userInferenceModel, 'QWEN3.7');
+    assert.equal(queuePayload.userInferenceModel, 'QWEN3.8');
     assert.equal(queuePayload.selectedInferenceModelAuthorization, 'native');
   });
 }
+
+test('Seedance 2.0 express metadata stays standalone and provider billed', () => {
+  assert.deepEqual(
+    VIDEO_MODEL_PRICES.find((model) => model.key === 'SEEDANCE2.0I2V'),
+    {
+      key: 'SEEDANCE2.0I2V',
+      name: 'Seedance 2.0 I2V',
+      isExpressModel: true,
+      isImageToVideoModel: true,
+      isTextToVideoModel: false,
+      standaloneOnly: true,
+      providerBilled: true,
+      prices: [],
+      units: [5, 10, 15],
+    },
+  );
+});
 
 test('queue payload preserves model-specific image and generation overrides', () => {
   const queuePayload = buildRetryableImageToVideoQueuePayload({

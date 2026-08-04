@@ -20,7 +20,7 @@ export const MODEL_ADAPTER_STAGE_DEFINITIONS = Object.freeze([
       'gpt-5.6-sol',
       'gemini-3.1-pro',
       'KIMIK3',
-      'QWEN3.7',
+      'QWEN3.8',
     ]),
   }),
   Object.freeze({
@@ -54,7 +54,7 @@ const MODEL_LABELS = Object.freeze({
   'gpt-5.6-sol': 'GPT 5.6 Sol',
   'gemini-3.1-pro': 'Gemini 3.1 Pro',
   KIMIK3: 'Kimi K3',
-  'QWEN3.7': 'Qwen 3.7 Plus',
+  'QWEN3.8': 'Qwen 3.8 Max',
   GPTIMAGE2: 'GPT Image 2',
   SEEDREAM: 'Seedream',
   NANOBANANA2: 'Nano Banana 2',

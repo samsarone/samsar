@@ -469,6 +469,17 @@ export const VIDEO_GENERATION_MODEL_TYPES = [
     ]
   },
   {
+    name: 'Seedance 2.0 I2V',
+    key: 'SEEDANCE2.0I2V',
+    isImgToVidModel: true,
+    isTextToVidModel: false,
+    isExpressModel: true,
+    standaloneOnly: true,
+    supportedAspectRatios: [
+      '16:9', '9:16',
+    ]
+  },
+  {
     name: 'VEO3.1 Img2Vid',
     key: 'VEO3.1I2V',
     isImgToVidModel: true,
@@ -600,8 +611,8 @@ export const ASSISTANT_MODEL_TYPES = [
     value: 'gemini-3.1-pro',
   },
   {
-    label: 'Qwen 3.7 Plus',
-    value: 'QWEN3.7',
+    label: 'Qwen 3.8 Max',
+    value: 'QWEN3.8',
   },
   {
     label: 'Kimi K3',
@@ -620,8 +631,8 @@ export const INFERENCE_MODEL_TYPES = [
     value: 'gemini-3.1-pro',
   },
   {
-    label: 'Qwen 3.7 Plus',
-    value: 'QWEN3.7',
+    label: 'Qwen 3.8 Max',
+    value: 'QWEN3.8',
   },
   {
     label: 'Kimi K3',

@@ -46,8 +46,8 @@ test('hosted, external, and staging Qwen always use OpenRouter', () => {
       OPENROUTER_API_KEY: 'openrouter-key',
       ALIBABA_API_KEY: 'alibaba-key',
     }, () => {
-      const request = { model: 'QWEN3.7', authorization: 'deployed' };
-      assert.equal(resolveConfiguredInferenceProvider('QWEN3.7'), DOCKER_INFERENCE_PROVIDER.OPENROUTER);
+      const request = { model: 'QWEN3.8', authorization: 'deployed' };
+      assert.equal(resolveConfiguredInferenceProvider('QWEN3.8'), DOCKER_INFERENCE_PROVIDER.OPENROUTER);
       assert.equal(shouldUseOpenRouterInference(request), true);
       assert.equal(shouldUseSamsarExternalInference(request), true);
     });
@@ -60,9 +60,9 @@ test('Docker Qwen may use the native Alibaba adapter', () => {
     OPENROUTER_API_KEY: 'openrouter-key',
     ALIBABA_API_KEY: 'alibaba-key',
   }, () => {
-    assert.equal(resolveConfiguredInferenceProvider('QWEN3.7'), DOCKER_INFERENCE_PROVIDER.ALIBABA_CLOUD);
-    assert.equal(shouldUseOpenRouterInference({ model: 'QWEN3.7' }), false);
-    assert.equal(shouldUseSamsarExternalInference({ model: 'QWEN3.7' }), false);
+    assert.equal(resolveConfiguredInferenceProvider('QWEN3.8'), DOCKER_INFERENCE_PROVIDER.ALIBABA_CLOUD);
+    assert.equal(shouldUseOpenRouterInference({ model: 'QWEN3.8' }), false);
+    assert.equal(shouldUseSamsarExternalInference({ model: 'QWEN3.8' }), false);
   });
 });
 
@@ -99,7 +99,7 @@ test('production inference ignores standalone preference files', (t) => {
   fs.writeFileSync(preferencePath, JSON.stringify({
     modelProviderPriority: {
       'gpt-5.6-sol': ['samsar', 'openrouter', 'openai'],
-      'QWEN3.7': ['alibabaCloud', 'samsar', 'openrouter'],
+      'QWEN3.8': ['alibabaCloud', 'samsar', 'openrouter'],
     },
   }));
 
@@ -117,7 +117,7 @@ test('production inference ignores standalone preference files', (t) => {
       DOCKER_INFERENCE_PROVIDER.OPENROUTER,
       DOCKER_INFERENCE_PROVIDER.SAMSAR,
     ]);
-    assert.deepEqual(getConfiguredInferenceProviders('QWEN3.7'), [
+    assert.deepEqual(getConfiguredInferenceProviders('QWEN3.8'), [
       DOCKER_INFERENCE_PROVIDER.OPENROUTER,
     ]);
   });

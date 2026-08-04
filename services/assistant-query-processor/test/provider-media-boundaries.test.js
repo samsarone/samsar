@@ -80,7 +80,7 @@ test('native Qwen rebuilds and freshly resolves its media payload on every retry
   };
 
   await createQwenChatCompletion({
-    model: 'QWEN3.7',
+    model: 'QWEN3.8',
     messages: imageMessages(),
     maxRetries: 1,
   }, {
@@ -157,7 +157,7 @@ test('OpenRouter rebuilds and freshly resolves its media payload inside each ext
   };
 
   await createOpenRouterChatCompletion({
-    model: 'QWEN3.7',
+    model: 'QWEN3.8',
     messages: imageMessages(),
     maxRetries: 1,
   }, {

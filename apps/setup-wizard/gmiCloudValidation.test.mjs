@@ -49,8 +49,7 @@ test('validates a GMICloud credential and preserves actual active catalog ids', 
       catalog: [
         { id: 'OPENAI/GPT-5.6-SOL', status: 'active' },
         { id: 'tenant/google/gemini-3.1-pro-preview', active: true },
-        { id: 'Qwen/Qwen3.7-Max', state: 'available' },
-        { id: 'Qwen/Qwen3.6-Plus', enabled: true },
+        { id: 'Qwen/Qwen3.8-Max', state: 'available' },
       ],
     }),
   });
@@ -64,19 +63,19 @@ test('validates a GMICloud credential and preserves actual active catalog ids', 
   assert.equal(validation.ok, true);
   assert.equal(validation.modelMappings['gpt-5.6-sol'].text.modelId, 'OPENAI/GPT-5.6-SOL');
   assert.equal(validation.modelMappings['gemini-3.1-pro'].vision.modelId, 'tenant/google/gemini-3.1-pro-preview');
-  assert.equal(validation.modelMappings['QWEN3.7'].text.modelId, 'Qwen/Qwen3.7-Max');
-  assert.equal(validation.modelMappings['QWEN3.7'].vision.modelId, 'Qwen/Qwen3.6-Plus');
+  assert.equal(validation.modelMappings['QWEN3.8'].text.modelId, 'Qwen/Qwen3.8-Max');
+  assert.equal(validation.modelMappings['QWEN3.8'].vision.modelId, 'Qwen/Qwen3.8-Max');
   assert.doesNotMatch(JSON.stringify(result), /gmi-test-key/);
 });
 
-test('accepts authenticated partial catalogs and does not require Qwen vision', async () => {
+test('uses the same authenticated Qwen model for text and vision', async () => {
   const result = await validateGmiCloudProviderCredential({ gmiCloudApiKey: 'gmi-test-key' }, {
-    fetchImpl: buildFetch({ catalog: [{ id: 'Qwen/Qwen3.7-Max' }] }),
+    fetchImpl: buildFetch({ catalog: [{ id: 'Qwen/Qwen3.8-Max' }] }),
   });
 
   assert.equal(result.providers.gmicloud.ok, true);
-  assert.equal(result.providers.gmicloud.modelMappings['QWEN3.7'].text.modelId, 'Qwen/Qwen3.7-Max');
-  assert.equal(result.providers.gmicloud.modelMappings['QWEN3.7'].vision, undefined);
+  assert.equal(result.providers.gmicloud.modelMappings['QWEN3.8'].text.modelId, 'Qwen/Qwen3.8-Max');
+  assert.equal(result.providers.gmicloud.modelMappings['QWEN3.8'].vision.modelId, 'Qwen/Qwen3.8-Max');
 });
 
 test('accepts an authenticated empty catalog without advertising models', async () => {
@@ -95,18 +94,18 @@ test('requires active status when status metadata is present', async () => {
       catalog: [
         { id: 'openai/gpt-5.6-sol', status: 'inactive' },
         { id: 'google/gemini-3.1-pro-preview', enabled: false },
-        { id: 'Qwen/Qwen3.7-Max', active: true },
+        { id: 'Qwen/Qwen3.8-Max', active: true },
       ],
     }),
   });
 
-  assert.deepEqual(Object.keys(result.providers.gmicloud.modelMappings), ['QWEN3.7']);
+  assert.deepEqual(Object.keys(result.providers.gmicloud.modelMappings), ['QWEN3.8']);
 });
 
 test('chat matching ignores owner prefixes and case but remains version exact', () => {
   assert.equal(chatCatalogModelMatches('tenant/OPENAI/GPT-5.6-SOL', 'openai/gpt-5.6-sol'), true);
   assert.equal(chatCatalogModelMatches('google/gemini-3.1-pro-preview-v2', 'google/gemini-3.1-pro-preview'), false);
-  assert.equal(chatCatalogModelMatches('Qwen/Qwen3.6-Plus-2026-04-02', 'Qwen/Qwen3.6-Plus'), false);
+  assert.equal(chatCatalogModelMatches('Qwen/Qwen3.8-Max-2026-08-01', 'Qwen/Qwen3.8-Max'), false);
 });
 
 test('intersects exact active media catalog models without submitting generation requests', async () => {
@@ -275,8 +274,9 @@ test('normalizes mappings against the curated exact route set', () => {
     'gpt-5.6-sol': {
       text: { modelId: 'tenant/openai/gpt-5.6-sol', operation: 'attacker.operation' },
     },
-    'QWEN3.7': {
-      vision: { modelId: 'Qwen/Qwen3.7-Plus' },
+    'QWEN3.8': {
+      text: { modelId: 'tenant/Qwen3.8-Max' },
+      vision: { modelId: 'tenant/Qwen3.8-Max' },
     },
     GPTIMAGE2: { image: { modelId: 'gpt-image-2-generate' } },
     GPTIMAGE2EDIT: { image: { modelId: 'gpt-image-2-edit' } },
@@ -290,6 +290,10 @@ test('normalizes mappings against the curated exact route set', () => {
   }), {
     'gpt-5.6-sol': {
       text: { modelId: 'tenant/openai/gpt-5.6-sol', operation: 'chat.completions' },
+    },
+    'QWEN3.8': {
+      text: { modelId: 'tenant/Qwen3.8-Max', operation: 'chat.completions' },
+      vision: { modelId: 'tenant/Qwen3.8-Max', operation: 'chat.completions' },
     },
     GPTIMAGE2: {
       image: { modelId: 'gpt-image-2-generate', operation: 'image.generate' },

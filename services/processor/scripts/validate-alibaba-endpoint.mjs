@@ -77,9 +77,7 @@ function summarizeModels(body = {}) {
   const normalizedModelIds = new Set(modelIds.map((model) => model.toLowerCase()));
   return {
     modelCount: modelIds.length,
-    qwen38MaxPreviewAvailable: normalizedModelIds.has('qwen3.8-max-preview'),
-    qwen37MaxAvailable: normalizedModelIds.has('qwen3.7-max'),
-    qwen37PlusAvailable: normalizedModelIds.has('qwen3.7-plus'),
+    qwen38MaxAvailable: normalizedModelIds.has('qwen3.8-max'),
   };
 }
 

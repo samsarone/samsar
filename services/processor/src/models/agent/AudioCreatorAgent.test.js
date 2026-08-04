@@ -26,7 +26,7 @@ test('translateSpeech uses the OpenAI model regardless of the selected inference
 });
 
 test('translateSpeech accepts provider parsed output and skips empty speech', async () => {
-  const translated = await translateSpeech('Welcome.', 'French', 'QWEN3.7', {
+  const translated = await translateSpeech('Welcome.', 'French', 'QWEN3.8', {
     createChatCompletion: async () => ({
       choices: [{ message: { parsed: { translation: 'Bienvenue.' } } }],
     }),
@@ -34,7 +34,7 @@ test('translateSpeech accepts provider parsed output and skips empty speech', as
   assert.equal(translated, 'Bienvenue.');
 
   let called = false;
-  const empty = await translateSpeech('   ', 'French', 'QWEN3.7', {
+  const empty = await translateSpeech('   ', 'French', 'QWEN3.8', {
     createChatCompletion: async () => {
       called = true;
     },
@@ -76,7 +76,7 @@ test('translateSpeech detects canonical source language and preserves exact same
 
 test('translateSpeech returns ordered subtitle mappings and a localized speaker label', async () => {
   let capturedRequest = null;
-  const translated = await translateSpeech('Welcome home.', 'Thai', 'QWEN3.7', {
+  const translated = await translateSpeech('Welcome home.', 'Thai', 'QWEN3.8', {
     includeSubtitleAlignment: true,
     speakerCharacterName: 'Narrator',
     createChatCompletion: async (_client, request) => {
@@ -388,7 +388,7 @@ test('translateSpeech accepts complete mappings across punctuation, case, spacin
   });
   assert.equal(thai.text, 'สวัสดี โลก!');
 
-  const japanese = await translateSpeech('夜が明ける。', 'English', 'QWEN3.7', {
+  const japanese = await translateSpeech('夜が明ける。', 'English', 'QWEN3.8', {
     includeSubtitleAlignment: true,
     createChatCompletion: async () => ({
       choices: [{

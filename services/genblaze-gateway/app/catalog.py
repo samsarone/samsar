@@ -48,15 +48,11 @@ CURATED_SAMSAR_MODELS: Mapping[str, CuratedModel] = {
         ("google/gemini-3.1-pro-preview",),
         ("google/gemini-3.1-pro-preview",),
     ),
-    "QWEN3.7": CuratedModel(
+    "QWEN3.8": CuratedModel(
         "text",
         "chat.completions",
-        ("Qwen/Qwen3.7-Max",),
-        (
-            "Qwen/Qwen3.7-Plus",
-            "Qwen/Qwen3.6-Plus",
-            "Qwen/Qwen3.6-Plus-2026-04-02",
-        ),
+        ("Qwen/Qwen3.8-Max",),
+        ("Qwen/Qwen3.8-Max",),
     ),
     "GPTIMAGE2": CuratedModel("image", "image.generate", ("gpt-image-2-generate",)),
     "GPTIMAGE2EDIT": CuratedModel("image", "image.edit", ("gpt-image-2-edit",)),
@@ -552,9 +548,8 @@ def _validate_text_vision_pair(
         raise CatalogConfigurationError(
             f"Media model {samsar_model!r} cannot declare a vision mapping."
         )
-    # OpenAI and Gemini use their corresponding inference model for vision.
-    # Qwen is deliberately the sole split route (Max text, Plus vision).
-    if samsar_model in {"gpt-5.6-sol", "gemini-3.1-pro"}:
+    # Every curated inference model uses its corresponding text model for vision.
+    if curated.modality == "text":
         if vision_model is not None and vision_model != text_model:
             raise CatalogConfigurationError(
                 f"Catalog vision mapping for {samsar_model!r} must match its text model."

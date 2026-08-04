@@ -1,9 +1,9 @@
 export const DEFAULT_INFERENCE_MODEL_VALUE = "gpt-5.6-sol";
-export const QWEN_INFERENCE_MODEL_VALUE = "QWEN3.7";
+export const QWEN_INFERENCE_MODEL_VALUE = "QWEN3.8";
 export const KIMI_K3_INFERENCE_MODEL_VALUE = "kimi-k3";
 export const HOSTED_QWEN_INFERENCE_MODEL_VALUE = QWEN_INFERENCE_MODEL_VALUE;
 export const OPENROUTER_QWEN_INFERENCE_MODEL_LABEL =
-  "Qwen 3.7 Max / Qwen 3.7 Plus Vision";
+  "Qwen 3.8 Max";
 export const HOSTED_QWEN_INFERENCE_MODEL_LABEL =
   OPENROUTER_QWEN_INFERENCE_MODEL_LABEL;
 
@@ -141,24 +141,19 @@ export function normalizeDeploymentInferenceModelValue(value) {
     return KIMI_K3_INFERENCE_MODEL_VALUE;
   }
   if (
-    normalized === "qwen3.7" ||
-    normalized === "qwen3.7-max" ||
-    normalized === "qwen3.7-plus" ||
-    normalized === "qwen-3.7" ||
-    normalized === "qwen 3.7" ||
-    normalized === "qwen37" ||
-    normalized === "qwen37max" ||
-    normalized === "qwen37plus" ||
-    normalized === "alibaba qwen 3.7" ||
-    normalized === "alibaba cloud qwen 3.7" ||
     normalized === "qwen3.8" ||
-    normalized === "qwen3.8-max-preview" ||
+    normalized === "qwen3.8-max" ||
+    normalized === "qwen/qwen3.8-max" ||
     normalized === "qwen-3.8" ||
+    normalized === "qwen-3.8-max" ||
     normalized === "qwen 3.8" ||
+    normalized === "qwen 3.8 max" ||
     normalized === "qwen38" ||
-    normalized === "qwen38maxpreview" ||
+    normalized === "qwen38max" ||
     normalized === "alibaba qwen 3.8" ||
-    normalized === "alibaba cloud qwen 3.8"
+    normalized === "alibaba qwen 3.8 max" ||
+    normalized === "alibaba cloud qwen 3.8" ||
+    normalized === "alibaba cloud qwen 3.8 max"
   ) {
     return QWEN_INFERENCE_MODEL_VALUE;
   }
@@ -301,21 +296,8 @@ export function filterOptionsForDeploymentInferenceModels(options = [], modelVal
   return options.filter((option) => allowedModels.has(normalizeDeploymentInferenceModelValue(option?.value)));
 }
 
-export function labelOptionsForDeploymentInferenceProviders(
-  options = [],
-  modelProviders = {},
-  providerEndpointTypes = {},
-) {
-  const qwenProvider = normalizeDeploymentProviderKey(
-    modelProviders?.[QWEN_INFERENCE_MODEL_VALUE],
-  );
-  const qwenLabel = qwenProvider === "alibabaCloud"
-    ? providerEndpointTypes?.alibabaCloud === "token_plan"
-      ? "Qwen 3.8 Max Preview / Qwen 3.7 Plus Vision"
-      : "Qwen 3.7 Plus"
-    : qwenProvider === "openrouter" || qwenProvider === "samsar" || qwenProvider === "gmicloud"
-      ? OPENROUTER_QWEN_INFERENCE_MODEL_LABEL
-      : "Qwen 3.7 Plus";
+export function labelOptionsForDeploymentInferenceProviders(options = []) {
+  const qwenLabel = OPENROUTER_QWEN_INFERENCE_MODEL_LABEL;
 
   return options.map((option) => (
     normalizeDeploymentInferenceModelValue(option?.value) === QWEN_INFERENCE_MODEL_VALUE

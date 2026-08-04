@@ -10,7 +10,7 @@ import {
   GEMINI_31_PRO_INFERENCE_MODEL,
   GPT_56_SOL_REASONING_EFFORT,
   KIMI_K3_INFERENCE_MODEL,
-  QWEN_37_INFERENCE_MODEL,
+  QWEN_38_INFERENCE_MODEL,
   getDefaultUserInferenceModel,
   isGeminiInferenceModel,
   isKimiInferenceModel,
@@ -110,7 +110,7 @@ async function resolveVisionImageUrl(remoteImageUrl = '') {
 
 function resolveVisionInferenceModel(userInferenceModel = getDefaultUserInferenceModel()) {
   if (isQwenInferenceModel(userInferenceModel)) {
-    return QWEN_37_INFERENCE_MODEL;
+    return QWEN_38_INFERENCE_MODEL;
   }
   if (isKimiInferenceModel(userInferenceModel)) {
     return KIMI_K3_INFERENCE_MODEL;

@@ -206,7 +206,7 @@ test('automatic adapter attempts disable provider-local retries and preserve pro
 
 test('automatic retry metadata does not leak into native Qwen payloads', () => {
   const { payload, requestOptions } = buildAlibabaQwenChatRequest({
-    model: 'QWEN3.7',
+    model: 'QWEN3.8',
     messages: [{ role: 'user', content: 'hello' }],
     authorization: 'native',
     bypassSamsarExternalInference: true,

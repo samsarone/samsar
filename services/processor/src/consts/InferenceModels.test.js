@@ -13,10 +13,8 @@ import {
   KIMI_K3_INFERENCE_MODEL,
   KIMI_K3_PROVIDER_MODEL,
   PUBLICATION_METADATA_INFERENCE_SETTINGS,
-  QWEN_37_INFERENCE_MODEL,
-  QWEN_37_MAX_MODEL,
-  QWEN_37_PLUS_MODEL,
-  QWEN_38_MAX_PREVIEW_MODEL,
+  QWEN_38_INFERENCE_MODEL,
+  QWEN_38_MAX_MODEL,
   getReasoningEffortForInferenceModel,
   getPublicationMetadataInferenceSettings,
   getProviderModelForInferenceModel,
@@ -62,8 +60,8 @@ test('uses the session inference provider for publication metadata', () => {
   assert.deepEqual(getPublicationMetadataInferenceSettings('gemini-3.1-pro'), {
     model: 'gemini-3.1-pro',
   });
-  assert.deepEqual(getPublicationMetadataInferenceSettings('QWEN3.7'), {
-    model: 'QWEN3.7',
+  assert.deepEqual(getPublicationMetadataInferenceSettings('QWEN3.8'), {
+    model: 'QWEN3.8',
   });
 });
 
@@ -88,38 +86,41 @@ test('normalizes Gemini 3.1 Pro assistant model aliases to the current Vertex mo
   assert.equal(getProviderModelForInferenceModel('Gemini 3.1 Pro'), DEFAULT_GEMINI_31_PRO_VERTEX_MODEL);
 });
 
-test('normalizes Qwen aliases while selecting Qwen 3.7 Plus by default', () => {
-  assert.equal(QWEN_37_INFERENCE_MODEL, 'QWEN3.7');
-  assert.equal(QWEN_37_MAX_MODEL, 'qwen3.7-max');
-  assert.equal(QWEN_37_PLUS_MODEL, 'qwen3.7-plus');
-  assert.equal(QWEN_38_MAX_PREVIEW_MODEL, 'qwen3.8-max-preview');
-  assert.equal(normalizeInferenceModel('QWEN3.7'), QWEN_37_INFERENCE_MODEL);
-  assert.equal(normalizeInferenceModel('Qwen 3.7'), QWEN_37_INFERENCE_MODEL);
-  assert.equal(normalizeInferenceModel('qwen3.7-max'), QWEN_37_INFERENCE_MODEL);
-  assert.equal(normalizeInferenceModel('Alibaba Cloud Qwen 3.7'), QWEN_37_INFERENCE_MODEL);
-  assert.equal(isQwenInferenceModel('qwen3.7-plus'), true);
-  assert.equal(normalizeInferenceModel('QWEN3.8'), QWEN_37_INFERENCE_MODEL);
-  assert.equal(normalizeInferenceModel('Qwen 3.8'), QWEN_37_INFERENCE_MODEL);
-  assert.equal(normalizeInferenceModel('qwen3.8-max-preview'), QWEN_37_INFERENCE_MODEL);
-  assert.equal(getProviderModelForInferenceModel('QWEN3.7'), QWEN_37_PLUS_MODEL);
+test('normalizes Qwen aliases while selecting Qwen 3.8 Max by default', () => {
+  assert.equal(QWEN_38_INFERENCE_MODEL, 'QWEN3.8');
+  assert.equal(QWEN_38_MAX_MODEL, 'qwen3.8-max');
+  assert.equal(normalizeInferenceModel('QWEN3.8'), QWEN_38_INFERENCE_MODEL);
+  assert.equal(normalizeInferenceModel('Qwen 3.8'), QWEN_38_INFERENCE_MODEL);
+  assert.equal(normalizeInferenceModel('qwen3.8-max'), QWEN_38_INFERENCE_MODEL);
+  assert.equal(normalizeInferenceModel('qwen/qwen3.8-max'), QWEN_38_INFERENCE_MODEL);
+  assert.equal(normalizeInferenceModel('Alibaba Cloud Qwen 3.8'), QWEN_38_INFERENCE_MODEL);
+  assert.equal(isQwenInferenceModel('qwen3.8-max'), true);
+  assert.equal(getProviderModelForInferenceModel('QWEN3.8'), QWEN_38_MAX_MODEL);
   assert.equal(
-    getProviderModelForInferenceModel('QWEN3.7', { vision: true }),
-    QWEN_37_PLUS_MODEL,
+    getProviderModelForInferenceModel('QWEN3.8', { vision: true }),
+    QWEN_38_MAX_MODEL,
   );
   assert.equal(
-    getProviderModelForInferenceModel('QWEN3.7', { environment: 'production' }),
-    QWEN_37_PLUS_MODEL,
-  );
-  assert.equal(
-    getProviderModelForInferenceModel('QWEN3.7', {
-      environment: 'production',
-      vision: true,
+    getProviderModelForInferenceModel('QWEN3.8', {
+      env: {
+        ALIBABA_QWEN_MODEL: 'generic-qwen-model',
+        ALIBABA_QWEN_TEXT_MODEL: 'legacy-text-qwen-model',
+      },
     }),
-    QWEN_37_PLUS_MODEL,
+    'generic-qwen-model',
   );
   assert.equal(
-    getProviderModelForInferenceModel('QWEN3.7', { environment: 'docker', vision: true }),
-    QWEN_37_PLUS_MODEL,
+    getProviderModelForInferenceModel('QWEN3.8', {
+      vision: true,
+      env: { ALIBABA_QWEN_MODEL: 'generic-qwen-model' },
+    }),
+    'generic-qwen-model',
+  );
+  assert.equal(
+    getProviderModelForInferenceModel('QWEN3.8', {
+      env: { ALIBABA_QWEN_TEXT_MODEL: 'text-qwen-model' },
+    }),
+    'text-qwen-model',
   );
 });
 

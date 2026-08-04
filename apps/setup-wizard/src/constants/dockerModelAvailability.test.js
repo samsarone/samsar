@@ -14,7 +14,7 @@ const INFERENCE_MODEL_KEYS = Object.freeze([
   'gpt-5.6-sol',
   'gemini-3.1-pro',
   'KIMIK3',
-  'QWEN3.7',
+  'QWEN3.8',
 ]);
 
 function getAvailableInferenceModels(available) {
@@ -34,16 +34,16 @@ test('Alibaba Cloud alone exposes Qwen, Wan2.7 Pro, and native Happy Horse video
   ]);
 
   assert.deepEqual(available.providers, [DOCKER_PROVIDER.ALIBABA_CLOUD]);
-  assert.deepEqual(getAvailableInferenceModels(available), ['QWEN3.7']);
+  assert.deepEqual(getAvailableInferenceModels(available), ['QWEN3.8']);
   assert.equal(available.models.includes('WAN2.7PRO'), true);
   assert.equal(available.models.includes('HAPPYHORSEI2V'), true);
   assert.deepEqual(available.actions, ['assistant', 'chat', 'image', 'video']);
-  assert.equal(available.modelProviders['QWEN3.7'], DOCKER_PROVIDER.ALIBABA_CLOUD);
+  assert.equal(available.modelProviders['QWEN3.8'], DOCKER_PROVIDER.ALIBABA_CLOUD);
   assert.equal(available.modelProviders['WAN2.7PRO'], DOCKER_PROVIDER.ALIBABA_CLOUD);
   assert.equal(available.modelProviders.HAPPYHORSEI2V, DOCKER_PROVIDER.ALIBABA_CLOUD);
   assert.equal(
-    getDockerModelDisplayName('QWEN3.7', DOCKER_PROVIDER.ALIBABA_CLOUD),
-    'Qwen 3.7 Plus',
+    getDockerModelDisplayName('QWEN3.8', DOCKER_PROVIDER.ALIBABA_CLOUD),
+    'Qwen 3.8 Max',
   );
 });
 
@@ -54,7 +54,7 @@ test('Samsar exposes every supported inference model, including Kimi K3', () => 
 
   assert.deepEqual(
     getAvailableInferenceModels(available),
-    ['KIMIK3', 'QWEN3.7', 'gemini-3.1-pro', 'gpt-5.6-sol'],
+    ['KIMIK3', 'QWEN3.8', 'gemini-3.1-pro', 'gpt-5.6-sol'],
   );
   for (const model of INFERENCE_MODEL_KEYS) {
     assert.equal(available.modelProviders[model], DOCKER_PROVIDER.SAMSAR);
@@ -67,16 +67,16 @@ test('OpenRouter alone exposes GPT, Gemini, and Qwen inference', () => {
   ]);
   assert.deepEqual(
     getAvailableInferenceModels(available),
-    ['QWEN3.7', 'gemini-3.1-pro', 'gpt-5.6-sol'],
+    ['QWEN3.8', 'gemini-3.1-pro', 'gpt-5.6-sol'],
   );
   assert.deepEqual(available.actions, ['assistant', 'chat']);
-  for (const model of ['gpt-5.6-sol', 'gemini-3.1-pro', 'QWEN3.7']) {
+  for (const model of ['gpt-5.6-sol', 'gemini-3.1-pro', 'QWEN3.8']) {
     assert.equal(available.modelProviders[model], DOCKER_PROVIDER.OPENROUTER);
   }
   assert.equal(available.modelProviders.KIMIK3, undefined);
   assert.equal(
-    getDockerModelDisplayName('QWEN3.7', DOCKER_PROVIDER.OPENROUTER),
-    'Qwen 3.7 Plus',
+    getDockerModelDisplayName('QWEN3.8', DOCKER_PROVIDER.OPENROUTER),
+    'Qwen 3.8 Max',
   );
 });
 
@@ -89,23 +89,23 @@ test('GMICloud exposes only credential-scoped compatible mappings', () => {
         text: { modelId: 'openai/gpt-5.6-sol' },
         vision: { modelId: 'openai/gpt-5.6-sol' },
       },
-      'QWEN3.7': {
-        text: { modelId: 'Qwen/Qwen3.7-Max' },
-        vision: { modelId: 'Qwen/Qwen3.7-Plus' },
+      'QWEN3.8': {
+        text: { modelId: 'Qwen/Qwen3.8-Max' },
+        vision: { modelId: 'Qwen/Qwen3.8-Max' },
       },
       'VEO3.1': { video: { modelId: 'veo-3.1-generate-001' } },
     },
   });
 
   assert.deepEqual(available.providers, [DOCKER_PROVIDER.GMI_CLOUD]);
-  assert.deepEqual(available.models, ['QWEN3.7', 'VEO3.1', 'gpt-5.6-sol']);
+  assert.deepEqual(available.models, ['QWEN3.8', 'VEO3.1', 'gpt-5.6-sol']);
   assert.deepEqual(available.actions, ['assistant', 'chat', 'video']);
-  assert.equal(available.modelProviders['QWEN3.7'], DOCKER_PROVIDER.GMI_CLOUD);
+  assert.equal(available.modelProviders['QWEN3.8'], DOCKER_PROVIDER.GMI_CLOUD);
   assert.equal(available.modelProviders['gemini-3.1-pro'], undefined);
   assert.equal(available.modelProviderPriority['gemini-3.1-pro'], undefined);
   assert.equal(
-    getDockerModelDisplayName('QWEN3.7', DOCKER_PROVIDER.GMI_CLOUD),
-    'Qwen 3.7 Max / Plus-equivalent Vision',
+    getDockerModelDisplayName('QWEN3.8', DOCKER_PROVIDER.GMI_CLOUD),
+    'Qwen 3.8 Max',
   );
 });
 
@@ -116,7 +116,7 @@ test('GMICloud inference is not advertised until both text and vision routes are
     gmiCloudModelMappings: {
       'gpt-5.6-sol': { text: { modelId: 'openai/gpt-5.6-sol' } },
       'gemini-3.1-pro': { vision: { modelId: 'google/gemini-3.1-pro-preview' } },
-      'QWEN3.7': { text: { modelId: 'Qwen/Qwen3.7-Max' } },
+      'QWEN3.8': { text: { modelId: 'Qwen/Qwen3.8-Max' } },
     },
   });
 
@@ -270,8 +270,8 @@ test('validated GMI inference is preferred over Samsar only for mapped models', 
 test('no enabled provider exposes no Qwen model', () => {
   const available = buildDockerAvailableModelsFromEnabledProviders([]);
 
-  assert.equal(available.models.includes('QWEN3.7'), false);
-  assert.equal(available.modelProviders['QWEN3.7'], undefined);
+  assert.equal(available.models.includes('QWEN3.8'), false);
+  assert.equal(available.modelProviders['QWEN3.8'], undefined);
 });
 
 test('Qwen priority is native Alibaba, GMICloud, Samsar, then OpenRouter', () => {
@@ -284,11 +284,11 @@ test('Qwen priority is native Alibaba, GMICloud, Samsar, then OpenRouter', () =>
   const available = buildDockerAvailableModelsFromEnabledProviders(enabledProviders);
 
   assert.equal(
-    resolveDockerModelProvider('QWEN3.7', enabledProviders),
+    resolveDockerModelProvider('QWEN3.8', enabledProviders),
     DOCKER_PROVIDER.ALIBABA_CLOUD,
   );
-  assert.equal(available.modelProviders['QWEN3.7'], DOCKER_PROVIDER.ALIBABA_CLOUD);
-  assert.deepEqual(available.modelProviderPriority['QWEN3.7'], [
+  assert.equal(available.modelProviders['QWEN3.8'], DOCKER_PROVIDER.ALIBABA_CLOUD);
+  assert.deepEqual(available.modelProviderPriority['QWEN3.8'], [
     DOCKER_PROVIDER.ALIBABA_CLOUD,
     DOCKER_PROVIDER.GMI_CLOUD,
     DOCKER_PROVIDER.SAMSAR,
@@ -296,15 +296,15 @@ test('Qwen priority is native Alibaba, GMICloud, Samsar, then OpenRouter', () =>
   ]);
 
   assert.equal(
-    resolveDockerModelProvider('QWEN3.7', [DOCKER_PROVIDER.SAMSAR, DOCKER_PROVIDER.OPENROUTER]),
+    resolveDockerModelProvider('QWEN3.8', [DOCKER_PROVIDER.SAMSAR, DOCKER_PROVIDER.OPENROUTER]),
     DOCKER_PROVIDER.SAMSAR,
   );
   assert.equal(
-    resolveDockerModelProvider('QWEN3.7', [DOCKER_PROVIDER.GMI_CLOUD, DOCKER_PROVIDER.OPENROUTER]),
+    resolveDockerModelProvider('QWEN3.8', [DOCKER_PROVIDER.GMI_CLOUD, DOCKER_PROVIDER.OPENROUTER]),
     DOCKER_PROVIDER.GMI_CLOUD,
   );
   assert.equal(
-    resolveDockerModelProvider('QWEN3.7', [DOCKER_PROVIDER.SAMSAR, DOCKER_PROVIDER.GMI_CLOUD]),
+    resolveDockerModelProvider('QWEN3.8', [DOCKER_PROVIDER.SAMSAR, DOCKER_PROVIDER.GMI_CLOUD]),
     DOCKER_PROVIDER.GMI_CLOUD,
   );
 });

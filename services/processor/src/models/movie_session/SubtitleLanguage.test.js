@@ -227,7 +227,7 @@ test('subtitle rerun backfills known-language translation metadata and preserves
     sessionSubtitleLanguage: 'th',
     sessionSubtitleLanguageString: 'Thai',
     sessionTranslationRequired: true,
-    inferenceModel: 'QWEN3.7',
+    inferenceModel: 'QWEN3.8',
     translateSpeech: async (text, targetLanguage, inferenceModel, options) => {
       calls.push({ text, targetLanguage, inferenceModel, options });
       return {
@@ -254,7 +254,7 @@ test('subtitle rerun backfills known-language translation metadata and preserves
   assert.deepEqual(calls, [{
     text: 'Welcome home.',
     targetLanguage: 'Thai',
-    inferenceModel: 'QWEN3.7',
+    inferenceModel: 'QWEN3.8',
     options: {
       targetLanguageCode: 'th',
       includeSubtitleAlignment: true,
@@ -640,7 +640,7 @@ test('auto Japanese speech with explicit English subtitles keeps mapped word ani
     subtitleLanguage: 'en',
     subtitleLanguageString: 'English',
     subtitleLanguageExplicit: true,
-    inferenceModel: 'QWEN3.7',
+    inferenceModel: 'QWEN3.8',
     translateSpeech: async (text, targetLanguage, inferenceModel, options) => {
       calls.push({ text, targetLanguage, inferenceModel, options });
       return {
@@ -667,7 +667,7 @@ test('auto Japanese speech with explicit English subtitles keeps mapped word ani
     assert.equal(fields.subtitleWordAnimation, 'highlight');
   }
   assert.equal(calls.length, 2);
-  assert.ok(calls.every((call) => call.inferenceModel === 'QWEN3.7'));
+  assert.ok(calls.every((call) => call.inferenceModel === 'QWEN3.8'));
   assert.ok(calls.every((call) => call.options.detectSourceLanguage === true));
   assert.ok(calls.every((call) => call.options.targetLanguageCode === 'en'));
   assert.ok(calls.every((call) => call.options.includeSubtitleAlignment === true));

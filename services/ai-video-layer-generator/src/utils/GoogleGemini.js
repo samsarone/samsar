@@ -4,10 +4,8 @@ export const GPT_56_SOL_INFERENCE_MODEL = 'gpt-5.6-sol';
 export const GPT_56_SOL_REASONING_EFFORT = 'high';
 const DEFAULT_INFERENCE_MODEL = GPT_56_SOL_INFERENCE_MODEL;
 const GEMINI_31_PRO_INFERENCE_MODEL = 'gemini-3.1-pro';
-export const QWEN_37_INFERENCE_MODEL = 'QWEN3.7';
-export const QWEN_38_MAX_PREVIEW_MODEL = 'qwen3.8-max-preview';
-export const QWEN_37_MAX_MODEL = 'qwen3.7-max';
-export const QWEN_37_PLUS_MODEL = 'qwen3.7-plus';
+export const QWEN_38_INFERENCE_MODEL = 'QWEN3.8';
+export const QWEN_38_MAX_MODEL = 'qwen3.8-max';
 export const KIMI_K3_INFERENCE_MODEL = 'kimi-k3';
 const DEFAULT_GEMINI_MODEL = 'gemini-3.1-pro-preview';
 const DEFAULT_GEMINI_LOCATION = 'global';
@@ -25,22 +23,15 @@ const GEMINI_31_PRO_PROVIDER_ALIASES = new Set([
   'gemini-3-pro',
   'gemini-3-pro-preview',
 ]);
-const QWEN_37_ALIAS_TOKENS = new Set([
-  'QWEN37',
-  'QWEN37MAX',
-  'QWEN37PLUS',
-  'ALIBABAQWEN37',
-  'ALIBABACLOUDQWEN37',
-  'DASHSCOPEQWEN37',
+const QWEN_38_ALIAS_TOKENS = new Set([
   'QWEN38',
   'QWEN38MAX',
-  'QWEN38MAXPREVIEW',
   'ALIBABAQWEN38',
-  'ALIBABAQWEN38MAXPREVIEW',
+  'ALIBABAQWEN38MAX',
   'ALIBABACLOUDQWEN38',
-  'ALIBABACLOUDQWEN38MAXPREVIEW',
+  'ALIBABACLOUDQWEN38MAX',
   'DASHSCOPEQWEN38',
-  'DASHSCOPEQWEN38MAXPREVIEW',
+  'DASHSCOPEQWEN38MAX',
 ]);
 const KIMI_K3_ALIAS_TOKENS = new Set([
   'KIMIK3',
@@ -63,11 +54,10 @@ function normalizeAliasToken(value) {
 
 export function isQwenInferenceModel(value) {
   const normalized = normalizeString(value).toLowerCase();
-  return normalized === QWEN_37_INFERENCE_MODEL.toLowerCase() ||
-    normalized === QWEN_38_MAX_PREVIEW_MODEL ||
-    normalized === QWEN_37_MAX_MODEL ||
-    normalized === QWEN_37_PLUS_MODEL ||
-    QWEN_37_ALIAS_TOKENS.has(normalizeAliasToken(value));
+  return normalized === QWEN_38_INFERENCE_MODEL.toLowerCase() ||
+    normalized === QWEN_38_MAX_MODEL ||
+    normalized === 'qwen/qwen3.8-max' ||
+    QWEN_38_ALIAS_TOKENS.has(normalizeAliasToken(value));
 }
 
 export function isKimiInferenceModel(value) {
@@ -140,7 +130,7 @@ export function normalizeInferenceModel(value) {
     return GEMINI_31_PRO_INFERENCE_MODEL;
   }
   if (isQwenInferenceModel(value)) {
-    return QWEN_37_INFERENCE_MODEL;
+    return QWEN_38_INFERENCE_MODEL;
   }
   if (isKimiInferenceModel(value)) {
     return KIMI_K3_INFERENCE_MODEL;

@@ -30,7 +30,7 @@ test('enabled OpenRouter without a credential is effectively disabled', () => {
       Object.entries(result.providers)
         .filter(([, provider]) => provider.enabled === true)
         .map(([provider]) => provider),
-    ).models.includes('QWEN3.7'),
+    ).models.includes('QWEN3.8'),
     false,
   );
 });
@@ -86,7 +86,7 @@ test('effective enabled provider exposes the routed inference models', () => {
   const available = buildDockerAvailableModelsFromEnabledProviders(enabledProviders);
 
   assert.deepEqual(
-    available.models.filter((model) => ['gpt-5.6-sol', 'gemini-3.1-pro', 'QWEN3.7'].includes(model)),
-    ['QWEN3.7', 'gemini-3.1-pro', 'gpt-5.6-sol'],
+    available.models.filter((model) => ['gpt-5.6-sol', 'gemini-3.1-pro', 'QWEN3.8'].includes(model)),
+    ['QWEN3.8', 'gemini-3.1-pro', 'gpt-5.6-sol'],
   );
 });

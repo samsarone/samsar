@@ -171,7 +171,7 @@ test("production Docker retains production moderation routing", () => {
       SAMSAR_DEPLOYMENT_EDITION: "production",
       SAMSAR_RUNTIME: "docker",
     },
-    inferenceModel: "QWEN3.7",
+    inferenceModel: "QWEN3.8",
   }), MODERATION_PROVIDERS.OPENAI);
 });
 
@@ -201,7 +201,7 @@ test("Docker Qwen skips moderation when only OpenRouter or Alibaba inference cre
       OPENROUTER_API_KEY: "openrouter-test-key",
       ALIBABA_CLOUD_API_KEY: "alibaba-test-key",
     },
-    inferenceModel: "QWEN3.7",
+    inferenceModel: "QWEN3.8",
     routeType: "text_to_video",
   }), MODERATION_PROVIDERS.DISABLED);
 });
@@ -213,7 +213,7 @@ test("Docker Qwen uses OpenAI first and Samsar-js second", () => {
       OPENAI_API_KEY: "openai-test-key",
       SAMSAR_API_KEY: "samsar-test-key",
     },
-    inferenceModel: "qwen3.7-plus",
+    inferenceModel: "qwen3.8-max",
     routeType: "text_to_video",
   }), MODERATION_PROVIDERS.OPENAI);
 
@@ -223,7 +223,7 @@ test("Docker Qwen uses OpenAI first and Samsar-js second", () => {
       OPENROUTER_API_KEY: "openrouter-test-key",
       SAMSAR_API_KEY: "samsar-test-key",
     },
-    inferenceModel: "QWEN3.7",
+    inferenceModel: "QWEN3.8",
     routeType: "text_to_video",
   }), MODERATION_PROVIDERS.SAMSAR);
 });
@@ -235,7 +235,7 @@ test("Docker Qwen does not treat Google credentials as its moderation endpoint",
       GOOGLE_APPLICATION_CREDENTIALS_JSON_B64: GOOGLE_CREDENTIALS_B64,
       GOOGLE_CLOUD_PROJECT: "docker-project",
     },
-    inferenceModel: "QWEN3.7",
+    inferenceModel: "QWEN3.8",
     routeType: "text_to_video",
   }), MODERATION_PROVIDERS.DISABLED);
 });
@@ -343,7 +343,7 @@ test("production Qwen always uses native OpenAI moderation", () => {
       SAMSAR_API_KEY: "samsar-test-key",
       OPENAI_API_KEY: "openai-test-key",
     },
-    inferenceModel: "QWEN3.7",
+    inferenceModel: "QWEN3.8",
     routeType: "text_to_video",
   }), MODERATION_PROVIDERS.OPENAI);
 });

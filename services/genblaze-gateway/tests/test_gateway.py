@@ -126,7 +126,7 @@ def fake_bindings():
     raw_response = {
         "id": "chatcmpl-123",
         "object": "chat.completion",
-        "model": "Qwen/Qwen3.7-Max",
+        "model": "Qwen/Qwen3.8-Max",
         "choices": [
             {
                 "index": 0,
@@ -158,9 +158,9 @@ def settings(tmp_path):
     catalog_path = write_catalog(
         tmp_path,
         {
-            "QWEN3.7": {
-                "text": {"modelId": "Qwen/Qwen3.7-Max"},
-                "vision": {"modelId": "Qwen/Qwen3.6-Plus"},
+            "QWEN3.8": {
+                "text": {"modelId": "Qwen/Qwen3.8-Max"},
+                "vision": {"modelId": "Qwen/Qwen3.8-Max"},
             }
         },
     )
@@ -200,16 +200,16 @@ def settings_with_catalog(settings, path):
 def test_development_fallback_is_empty_and_never_guesses_upstream_models():
     assert MODEL_ROUTES == ()
     with pytest.raises(ValueError, match="not available"):
-        resolve_model("QWEN3.7")
+        resolve_model("QWEN3.8")
     with pytest.raises(ValueError, match="not available"):
-        resolve_model("Qwen/Qwen3.7-Max")
+        resolve_model("Qwen/Qwen3.8-Max")
 
 
 def test_curated_boundary_contains_only_supported_samsar_contracts():
     assert set(CURATED_SAMSAR_MODELS) == {
         "gpt-5.6-sol",
         "gemini-3.1-pro",
-        "QWEN3.7",
+        "QWEN3.8",
         "GPTIMAGE2",
         "GPTIMAGE2EDIT",
         "SEEDREAM",
@@ -248,11 +248,11 @@ def test_live_ready_and_models_contract(settings, fake_bindings):
             "provider": "gmicloud",
         }
         models = client.get("/v1/models").json()
-        assert [item["id"] for item in models["data"]] == ["QWEN3.7"]
-        assert models["data"][0]["metadata"]["upstream_model"] == "Qwen/Qwen3.7-Max"
+        assert [item["id"] for item in models["data"]] == ["QWEN3.8"]
+        assert models["data"][0]["metadata"]["upstream_model"] == "Qwen/Qwen3.8-Max"
         assert (
             models["data"][0]["metadata"]["upstream_vision_model"]
-            == "Qwen/Qwen3.6-Plus"
+            == "Qwen/Qwen3.8-Max"
         )
 
 
@@ -319,7 +319,7 @@ def test_empty_credential_catalog_is_ready_and_advertises_no_models(
         assert client.get("/v1/models").json() == {"object": "list", "data": []}
         response = client.post(
             "/v1/chat/completions",
-            json={"model": "QWEN3.7", "messages": []},
+            json={"model": "QWEN3.8", "messages": []},
         )
 
     assert response.status_code == 404
@@ -367,7 +367,7 @@ def test_catalog_must_match_the_configured_credential(
 ):
     path = write_catalog(
         tmp_path,
-        {"QWEN3.7": {"text": {"modelId": "Qwen/Qwen3.7-Max"}}},
+        {"QWEN3.8": {"text": {"modelId": "Qwen/Qwen3.8-Max"}}},
         api_key="some-other-key",
     )
     bindings, _, _ = fake_bindings
@@ -408,6 +408,21 @@ def test_catalog_rejects_unknown_samsar_ids_and_unverified_upstream_models(tmp_p
     )
     with pytest.raises(CatalogConfigurationError, match="unsupported GMICloud modelId"):
         load_model_catalog(str(media_path), gmi_api_key="gmi-test-key")
+
+
+def test_catalog_rejects_split_qwen_text_and_vision_routes(tmp_path):
+    path = write_catalog(
+        tmp_path,
+        {
+            "QWEN3.8": {
+                "text": {"modelId": "Qwen/Qwen3.8-Max"},
+                "vision": {"modelId": "tenant/Qwen3.8-Max"},
+            }
+        },
+    )
+
+    with pytest.raises(CatalogConfigurationError, match="must match its text model"):
+        load_model_catalog(str(path), gmi_api_key="gmi-test-key")
 
 
 def test_catalog_accepts_only_the_distinct_kling_turbo_upstream_slug(tmp_path):
@@ -522,7 +537,7 @@ def test_catalog_rejects_wrong_speech_operation(tmp_path):
 def test_chat_maps_model_and_returns_genblaze_raw_unchanged(settings, fake_bindings):
     bindings, calls, raw_response = fake_bindings
     request_body = {
-        "model": "QWEN3.7",
+        "model": "QWEN3.8",
         "messages": [{"role": "user", "content": "hello"}],
         "temperature": 0.25,
     }
@@ -533,7 +548,7 @@ def test_chat_maps_model_and_returns_genblaze_raw_unchanged(settings, fake_bindi
     assert response.json() == raw_response
     assert calls == [
         {
-            "model": "Qwen/Qwen3.7-Max",
+            "model": "Qwen/Qwen3.8-Max",
             "messages": request_body["messages"],
             "kwargs": {
                 "temperature": 0.25,
@@ -653,14 +668,14 @@ def test_qwen_vision_is_optional_and_fails_clearly_when_not_mapped(
 ):
     path = write_catalog(
         tmp_path,
-        {"QWEN3.7": {"text": {"modelId": "Qwen/Qwen3.7-Max"}}},
+        {"QWEN3.8": {"text": {"modelId": "Qwen/Qwen3.8-Max"}}},
     )
     bindings, calls, _ = fake_bindings
     with build_client(settings_with_catalog(settings, path), bindings) as client:
         response = client.post(
             "/v1/chat/completions",
             json={
-                "model": "QWEN3.7",
+                "model": "QWEN3.8",
                 "messages": [
                     {
                         "role": "user",
@@ -678,7 +693,7 @@ def test_qwen_vision_is_optional_and_fails_clearly_when_not_mapped(
     assert calls == []
 
 
-def test_chat_maps_vision_to_plus_and_preserves_openai_blocks(settings, fake_bindings):
+def test_chat_maps_vision_to_qwen_max_and_preserves_openai_blocks(settings, fake_bindings):
     bindings, calls, raw_response = fake_bindings
     messages = [
         {
@@ -695,12 +710,12 @@ def test_chat_maps_vision_to_plus_and_preserves_openai_blocks(settings, fake_bin
     with build_client(settings, bindings) as client:
         response = client.post(
             "/v1/chat/completions",
-            json={"model": "QWEN3.7", "messages": messages, "max_tokens": 100},
+            json={"model": "QWEN3.8", "messages": messages, "max_tokens": 100},
         )
 
     assert response.status_code == 200
     assert response.json() == raw_response
-    assert calls[0]["model"] == "Qwen/Qwen3.6-Plus"
+    assert calls[0]["model"] == "Qwen/Qwen3.8-Max"
     assert calls[0]["messages"] == messages
     assert calls[0]["kwargs"]["max_tokens"] == 100
 
@@ -711,7 +726,7 @@ def test_chat_ignores_request_body_transport_overrides(settings, fake_bindings):
         response = client.post(
             "/v1/chat/completions",
             json={
-                "model": "QWEN3.7",
+                "model": "QWEN3.8",
                 "messages": [{"role": "user", "content": "hello"}],
                 "api_key": "attacker-key",
                 "base_url": "http://attacker.invalid/v1",
@@ -731,24 +746,24 @@ def test_chat_ignores_request_body_transport_overrides(settings, fake_bindings):
     ("body", "code"),
     [
         (
-            {"model": "QWEN3.7", "messages": [], "stream": True},
+            {"model": "QWEN3.8", "messages": [], "stream": True},
             "streaming_not_supported",
         ),
         (
-            {"model": "QWEN3.7", "messages": [], "stream": 1},
+            {"model": "QWEN3.8", "messages": [], "stream": 1},
             "streaming_not_supported",
         ),
         (
-            {"model": "QWEN3.7", "messages": [], "stream": "true"},
+            {"model": "QWEN3.8", "messages": [], "stream": "true"},
             "streaming_not_supported",
         ),
         (
-            {"model": "Qwen/Qwen3.7-Plus-Vision", "messages": []},
+            {"model": "Qwen/unsupported-vision-model", "messages": []},
             "GENBLAZE_MODEL_UNSUPPORTED",
         ),
         (
             {
-                "model": "QWEN3.7",
+                "model": "QWEN3.8",
                 "messages": [
                     {
                         "role": "user",
@@ -1527,7 +1542,7 @@ def test_provider_rate_limit_maps_to_openai_error_and_retry_after(settings, fake
     with build_client(settings, bindings) as client:
         response = client.post(
             "/v1/chat/completions",
-            json={"model": "QWEN3.7", "messages": []},
+            json={"model": "QWEN3.8", "messages": []},
         )
 
     assert response.status_code == 429

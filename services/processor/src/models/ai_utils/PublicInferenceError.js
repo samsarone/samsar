@@ -45,7 +45,7 @@ function getErrorMessage(error) {
 function isQuotaExhaustionError(error, { model } = {}) {
   const code = getErrorCode(error);
   const message = getErrorMessage(error).toLowerCase();
-  const isQwen37Max = normalizeString(model).toLowerCase() === 'qwen/qwen3.7-max';
+  const isQwen38Max = normalizeString(model).toLowerCase() === 'qwen/qwen3.8-max';
 
   return [
     'insufficient_quota',
@@ -57,7 +57,7 @@ function isQuotaExhaustionError(error, { model } = {}) {
     message.includes('insufficient quota') ||
     message.includes('out of credits') ||
     message.includes('insufficient credit') ||
-    (isQwen37Max && message.includes('requires more credits'));
+    (isQwen38Max && message.includes('requires more credits'));
 }
 
 function getModelLabel(model) {

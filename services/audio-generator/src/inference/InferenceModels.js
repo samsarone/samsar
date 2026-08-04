@@ -3,10 +3,8 @@ export const DEFAULT_INFERENCE_MODEL = GPT_56_SOL_INFERENCE_MODEL;
 export const GPT_56_SOL_REASONING_EFFORT = 'high';
 export const GEMINI_31_PRO_INFERENCE_MODEL = 'gemini-3.1-pro';
 export const DEFAULT_GEMINI_31_PRO_VERTEX_MODEL = 'gemini-3.1-pro-preview';
-export const QWEN_37_INFERENCE_MODEL = 'QWEN3.7';
-export const DEFAULT_QWEN_38_MAX_PREVIEW_MODEL = 'qwen3.8-max-preview';
-export const DEFAULT_QWEN_37_MAX_MODEL = 'qwen3.7-max';
-export const DEFAULT_QWEN_37_PLUS_MODEL = 'qwen3.7-plus';
+export const QWEN_38_INFERENCE_MODEL = 'QWEN3.8';
+export const DEFAULT_QWEN_38_MAX_MODEL = 'qwen3.8-max';
 export const KIMI_K3_INFERENCE_MODEL = 'kimi-k3';
 export const KIMIK3 = 'KIMIK3';
 
@@ -17,41 +15,23 @@ const GEMINI_ALIASES = new Set([
   'gemini-3-pro-preview',
 ]);
 
-const QWEN_37_ALIASES = new Set([
-  QWEN_37_INFERENCE_MODEL.toLowerCase(),
-  DEFAULT_QWEN_37_MAX_MODEL,
-  DEFAULT_QWEN_37_PLUS_MODEL,
-  DEFAULT_QWEN_38_MAX_PREVIEW_MODEL,
-  'qwen3.7',
-  'qwen3.7-max',
-  'qwen3.7-plus',
-  'qwen-3.7',
-  'qwen-3.7-max',
-  'qwen-3.7-plus',
+const QWEN_38_ALIASES = new Set([
+  QWEN_38_INFERENCE_MODEL.toLowerCase(),
+  DEFAULT_QWEN_38_MAX_MODEL,
+  'qwen-3.8',
+  'qwen-3.8-max',
+  'qwen/qwen3.8-max',
 ]);
 
-const QWEN_37_ALIAS_TOKENS = new Set([
-  'QWEN37',
-  'QWEN37MAX',
-  'QWEN37PLUS',
-  'ALIBABAQWEN37',
-  'ALIBABAQWEN37MAX',
-  'ALIBABAQWEN37PLUS',
-  'ALIBABACLOUDQWEN37',
-  'ALIBABACLOUDQWEN37MAX',
-  'ALIBABACLOUDQWEN37PLUS',
-  'DASHSCOPEQWEN37',
-  'DASHSCOPEQWEN37MAX',
-  'DASHSCOPEQWEN37PLUS',
+const QWEN_38_ALIAS_TOKENS = new Set([
   'QWEN38',
   'QWEN38MAX',
-  'QWEN38MAXPREVIEW',
   'ALIBABAQWEN38',
-  'ALIBABAQWEN38MAXPREVIEW',
+  'ALIBABAQWEN38MAX',
   'ALIBABACLOUDQWEN38',
-  'ALIBABACLOUDQWEN38MAXPREVIEW',
+  'ALIBABACLOUDQWEN38MAX',
   'DASHSCOPEQWEN38',
-  'DASHSCOPEQWEN38MAXPREVIEW',
+  'DASHSCOPEQWEN38MAX',
 ]);
 
 const KIMI_K3_ALIASES = new Set([
@@ -74,9 +54,9 @@ function normalizeAliasToken(value) {
   return normalizeString(value).replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
 }
 
-function isQwen37Alias(value) {
+function isQwen38Alias(value) {
   const normalized = normalizeString(value).toLowerCase();
-  return QWEN_37_ALIASES.has(normalized) || QWEN_37_ALIAS_TOKENS.has(normalizeAliasToken(value));
+  return QWEN_38_ALIASES.has(normalized) || QWEN_38_ALIAS_TOKENS.has(normalizeAliasToken(value));
 }
 
 export function isKimiInferenceModel(value) {
@@ -95,8 +75,8 @@ export function normalizeInferenceModel(value) {
   if (GEMINI_ALIASES.has(normalized)) {
     return GEMINI_31_PRO_INFERENCE_MODEL;
   }
-  if (isQwen37Alias(value)) {
-    return QWEN_37_INFERENCE_MODEL;
+  if (isQwen38Alias(value)) {
+    return QWEN_38_INFERENCE_MODEL;
   }
   if (isKimiInferenceModel(value)) {
     return KIMI_K3_INFERENCE_MODEL;
@@ -110,7 +90,7 @@ export function isGeminiInferenceModel(value) {
 }
 
 export function isQwenInferenceModel(value) {
-  return isQwen37Alias(value);
+  return isQwen38Alias(value);
 }
 
 export function normalizeGeminiProviderModel(value) {
@@ -130,7 +110,7 @@ export function getProviderModelForInferenceModel(value) {
     );
   }
   if (isQwenInferenceModel(value)) {
-    return DEFAULT_QWEN_37_PLUS_MODEL;
+    return DEFAULT_QWEN_38_MAX_MODEL;
   }
   if (isKimiInferenceModel(value)) {
     return KIMI_K3_INFERENCE_MODEL;

@@ -60,7 +60,7 @@ test('retries invalid speech repairs three times with backoff and preserves item
     scene,
     speechItem,
     maxCharacters: 9,
-    inferenceModel: 'QWEN3.7',
+    inferenceModel: 'QWEN3.8',
     options: {
       externalRequestContext: {
         sessionId: 'session-1',
@@ -78,7 +78,7 @@ test('retries invalid speech repairs three times with backoff and preserves item
             ? JSON.stringify({ audio: 'Short.' })
             : (requests.length === 2 ? 'This replacement remains too long.' : 'Short.');
           return {
-            model: 'qwen/qwen3.7-plus',
+            model: 'qwen/qwen3.8-max',
             choices: [{ message: { content } }],
             usage: { input_tokens: 10, output_tokens: 3 },
           };
@@ -151,7 +151,7 @@ test('caps configured speech repair attempts at three', async () => {
       scene,
       speechItem,
       maxCharacters: 4,
-      inferenceModel: 'QWEN3.7',
+      inferenceModel: 'QWEN3.8',
       options: {
         maxAttempts: 99,
         sceneIndex: 0,
@@ -163,7 +163,7 @@ test('caps configured speech repair attempts at three', async () => {
             requests += 1;
             systemPrompts.push(request.messages[0].content);
             return {
-              model: 'qwen/qwen3.7-plus',
+              model: 'qwen/qwen3.8-max',
               choices: [{
                 message: { content: 'Still too long.' },
               }],

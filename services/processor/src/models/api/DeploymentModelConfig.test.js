@@ -58,9 +58,9 @@ test('a raw Alibaba key enables native Qwen and Alibaba media models', () => {
   });
 
   assert.deepEqual(result.providers, ['openai', 'alibabaCloud']);
-  assert.deepEqual(result.models, ['gpt-5.6-sol', 'QWEN3.7', 'HAPPYHORSEI2V', 'WAN2.7PRO']);
+  assert.deepEqual(result.models, ['gpt-5.6-sol', 'QWEN3.8', 'HAPPYHORSEI2V', 'WAN2.7PRO']);
   assert.deepEqual(result.actions, ['chat', 'assistant', 'image', 'video']);
-  assert.equal(result.modelProviders['QWEN3.7'], 'alibabaCloud');
+  assert.equal(result.modelProviders['QWEN3.8'], 'alibabaCloud');
 });
 
 test('preserves Alibaba plan metadata for Docker clients', () => {
@@ -73,8 +73,8 @@ test('preserves Alibaba plan metadata for Docker clients', () => {
     process.env.ALIBABA_API_ENDPOINT_TYPE = 'token_plan';
     const result = mergeRuntimeInferenceDeploymentAvailability({
       providers: ['alibabaCloud'],
-      models: ['QWEN3.7'],
-      modelProviders: { 'QWEN3.7': 'alibabaCloud' },
+      models: ['QWEN3.8'],
+      modelProviders: { 'QWEN3.8': 'alibabaCloud' },
     });
     assert.equal(result.providerKeyTypes.alibabaCloud, 'token_plan');
     assert.equal(result.providerEndpointTypes.alibabaCloud, 'token_plan');
@@ -93,26 +93,26 @@ test('hosted runtime omits Qwen even when saved configuration selected Alibaba',
 
   const result = mergeRuntimeInferenceDeploymentAvailability({
     providers: ['alibabaCloud'],
-    models: ['gpt-5.6-sol', 'QWEN3.7'],
+    models: ['gpt-5.6-sol', 'QWEN3.8'],
     actions: ['chat', 'assistant'],
     modelProviders: {
       'gpt-5.6-sol': 'openai',
-      'QWEN3.7': 'alibabaCloud',
+      'QWEN3.8': 'alibabaCloud',
     },
     modelProviderPriority: {
       'gpt-5.6-sol': ['openai', 'samsar'],
-      'QWEN3.7': ['alibabaCloud'],
+      'QWEN3.8': ['alibabaCloud'],
     },
   });
 
   assert.deepEqual(result.models, ['gpt-5.6-sol']);
   assert.deepEqual(result.modelProviders, {
     'gpt-5.6-sol': 'openai',
-    'QWEN3.7': 'alibabaCloud',
+    'QWEN3.8': 'alibabaCloud',
   });
   assert.deepEqual(result.modelProviderPriority, {
     'gpt-5.6-sol': ['openai', 'samsar'],
-    'QWEN3.7': ['alibabaCloud'],
+    'QWEN3.8': ['alibabaCloud'],
   });
 });
 
@@ -123,11 +123,11 @@ test('production Docker keeps production model-filtering policy', () => {
 
   const result = mergeRuntimeInferenceDeploymentAvailability({
     providers: ['alibabaCloud'],
-    models: ['gpt-5.6-sol', 'QWEN3.7'],
+    models: ['gpt-5.6-sol', 'QWEN3.8'],
     actions: ['chat', 'assistant'],
     modelProviders: {
       'gpt-5.6-sol': 'openai',
-      'QWEN3.7': 'alibabaCloud',
+      'QWEN3.8': 'alibabaCloud',
     },
   });
 
@@ -140,26 +140,26 @@ test('Docker retains Qwen only for an explicit validated Alibaba model selection
 
   const configured = {
     providers: ['alibaba_cloud'],
-    models: ['QWEN3.7', 'WAN2.7PRO'],
+    models: ['QWEN3.8', 'WAN2.7PRO'],
     actions: ['assistant', 'chat', 'image'],
     modelProviders: {
-      'QWEN3.7': 'dashscope',
+      'QWEN3.8': 'dashscope',
       'WAN2.7PRO': 'fal',
     },
     modelProviderPriority: {
-      'QWEN3.7': ['alibabaCloud', 'samsar'],
+      'QWEN3.8': ['alibabaCloud', 'samsar'],
       'WAN2.7PRO': ['alibabaCloud', 'fal', 'samsar'],
     },
   };
 
   const result = mergeRuntimeInferenceDeploymentAvailability(configured);
 
-  assert.deepEqual(result.models, ['QWEN3.7', 'WAN2.7PRO']);
+  assert.deepEqual(result.models, ['QWEN3.8', 'WAN2.7PRO']);
   assert.deepEqual(result.modelProviders, configured.modelProviders);
   assert.deepEqual(result.modelProviderPriority, configured.modelProviderPriority);
 });
 
-test('canonicalizes saved Qwen 3.8 selections to Qwen 3.7 until 3.8 is added separately', () => {
+test('canonicalizes saved Qwen 3.8 Max selections to QWEN3.8', () => {
   clearEnv();
   process.env.CURRENT_ENV = 'docker';
 
@@ -170,10 +170,10 @@ test('canonicalizes saved Qwen 3.8 selections to Qwen 3.7 until 3.8 is added sep
     modelProviderPriority: { 'QWEN3.8': ['alibabaCloud', 'samsar'] },
   });
 
-  assert.deepEqual(result.models, ['QWEN3.7']);
-  assert.deepEqual(result.modelProviders, { 'QWEN3.7': 'alibabaCloud' });
+  assert.deepEqual(result.models, ['QWEN3.8']);
+  assert.deepEqual(result.modelProviders, { 'QWEN3.8': 'alibabaCloud' });
   assert.deepEqual(result.modelProviderPriority, {
-    'QWEN3.7': ['alibabaCloud', 'samsar'],
+    'QWEN3.8': ['alibabaCloud', 'samsar'],
   });
 });
 
@@ -183,8 +183,8 @@ test('Docker drops Qwen when any saved Alibaba authorization field is missing or
 
   const base = {
     providers: ['alibabaCloud'],
-    models: ['QWEN3.7'],
-    modelProviders: { 'QWEN3.7': 'alibabaCloud' },
+    models: ['QWEN3.8'],
+    modelProviders: { 'QWEN3.8': 'alibabaCloud' },
   };
 
   assert.deepEqual(
@@ -194,7 +194,7 @@ test('Docker drops Qwen when any saved Alibaba authorization field is missing or
   assert.deepEqual(
     mergeRuntimeInferenceDeploymentAvailability({
       ...base,
-      modelProviders: { 'QWEN3.7': 'samsar' },
+      modelProviders: { 'QWEN3.8': 'samsar' },
     }).models,
     [],
   );
@@ -217,7 +217,7 @@ test('Samsar fallback advertises every inference model', () => {
   assert.deepEqual(result.models, [
     'gpt-5.6-sol',
     'gemini-3.1-pro',
-    'QWEN3.7',
+    'QWEN3.8',
     'KIMIK3',
     'HAPPYHORSEI2V',
     'WAN2.7PRO',
@@ -245,12 +245,12 @@ test('OpenRouter runtime credentials advertise all inference models without medi
 
   const result = mergeRuntimeInferenceDeploymentAvailability({});
   assert.deepEqual(result.providers, ['openrouter']);
-  assert.deepEqual(result.models, ['gpt-5.6-sol', 'gemini-3.1-pro', 'QWEN3.7']);
+  assert.deepEqual(result.models, ['gpt-5.6-sol', 'gemini-3.1-pro', 'QWEN3.8']);
   assert.deepEqual(result.actions, ['chat', 'assistant']);
   assert.deepEqual(result.modelProviders, {
     'gpt-5.6-sol': 'openrouter',
     'gemini-3.1-pro': 'openrouter',
-    'QWEN3.7': 'openrouter',
+    'QWEN3.8': 'openrouter',
   });
 });
 
@@ -267,9 +267,9 @@ test('GenBlaze runtime advertises exact GMICloud Qwen text and vision inference'
   fs.writeFileSync(process.env.SAMSAR_GENBLAZE_MODEL_CATALOG_PATH, JSON.stringify({
     provider: 'gmicloud',
     models: {
-      'QWEN3.7': {
-        text: { modelId: 'Qwen/Qwen3.7-Max', operation: 'chat.completions' },
-        vision: { modelId: 'Qwen/Qwen3.7-Plus', operation: 'chat.completions' },
+      'QWEN3.8': {
+        text: { modelId: 'Qwen/Qwen3.8-Max', operation: 'chat.completions' },
+        vision: { modelId: 'Qwen/Qwen3.8-Max', operation: 'chat.completions' },
       },
     },
   }));
@@ -277,10 +277,10 @@ test('GenBlaze runtime advertises exact GMICloud Qwen text and vision inference'
   try {
     const result = mergeRuntimeInferenceDeploymentAvailability({});
     assert.deepEqual(result.providers, ['gmicloud']);
-    assert.deepEqual(result.models, ['QWEN3.7']);
+    assert.deepEqual(result.models, ['QWEN3.8']);
     assert.deepEqual(result.actions, ['chat', 'assistant']);
-    assert.equal(result.modelProviders['QWEN3.7'], 'gmicloud');
-    assert.deepEqual(result.modelProviderPriority['QWEN3.7'], [
+    assert.equal(result.modelProviders['QWEN3.8'], 'gmicloud');
+    assert.deepEqual(result.modelProviderPriority['QWEN3.8'], [
       'alibabaCloud',
       'gmicloud',
       'samsar',
@@ -309,17 +309,17 @@ test('stale saved GMICloud inference is removed when its runtime catalog route i
 
   const result = mergeRuntimeInferenceDeploymentAvailability({
     providers: ['gmicloud'],
-    models: ['QWEN3.7'],
+    models: ['QWEN3.8'],
     actions: ['chat', 'assistant'],
-    modelProviders: { 'QWEN3.7': 'gmicloud' },
+    modelProviders: { 'QWEN3.8': 'gmicloud' },
     modelProviderPriority: {
-      'QWEN3.7': ['alibabaCloud', 'samsar', 'gmicloud', 'openrouter'],
+      'QWEN3.8': ['alibabaCloud', 'samsar', 'gmicloud', 'openrouter'],
     },
   });
 
   assert.deepEqual(result.models, []);
   assert.deepEqual(result.actions, []);
-  assert.equal(result.modelProviders['QWEN3.7'], undefined);
+  assert.equal(result.modelProviders['QWEN3.8'], undefined);
 });
 
 test('Docker retains Qwen with validated GMICloud provenance', () => {
@@ -334,22 +334,22 @@ test('Docker retains Qwen with validated GMICloud provenance', () => {
   fs.writeFileSync(process.env.SAMSAR_GENBLAZE_MODEL_CATALOG_PATH, JSON.stringify({
     provider: 'gmicloud',
     models: {
-      'QWEN3.7': {
-        text: { modelId: 'Qwen/Qwen3.7-Max' },
-        vision: { modelId: 'Qwen/Qwen3.7-Plus' },
+      'QWEN3.8': {
+        text: { modelId: 'Qwen/Qwen3.8-Max' },
+        vision: { modelId: 'Qwen/Qwen3.8-Max' },
       },
     },
   }));
   try {
     const result = mergeRuntimeInferenceDeploymentAvailability({
       providers: ['gmicloud'],
-      models: ['QWEN3.7'],
-      modelProviders: { 'QWEN3.7': 'gmicloud' },
+      models: ['QWEN3.8'],
+      modelProviders: { 'QWEN3.8': 'gmicloud' },
       modelProviderPriority: {
-        'QWEN3.7': ['alibabaCloud', 'samsar', 'gmicloud', 'openrouter'],
+        'QWEN3.8': ['alibabaCloud', 'samsar', 'gmicloud', 'openrouter'],
       },
     });
-    assert.deepEqual(result.models, ['QWEN3.7']);
+    assert.deepEqual(result.models, ['QWEN3.8']);
   } finally {
     fs.rmSync(tempDirectory, { recursive: true, force: true });
   }
@@ -476,11 +476,11 @@ test('Docker retains Qwen with validated OpenRouter provenance', () => {
   process.env.CURRENT_ENV = 'docker';
   const result = mergeRuntimeInferenceDeploymentAvailability({
     providers: ['openrouter'],
-    models: ['QWEN3.7'],
-    modelProviders: { 'QWEN3.7': 'openrouter' },
-    modelProviderPriority: { 'QWEN3.7': ['alibabaCloud', 'openrouter', 'samsar'] },
+    models: ['QWEN3.8'],
+    modelProviders: { 'QWEN3.8': 'openrouter' },
+    modelProviderPriority: { 'QWEN3.8': ['alibabaCloud', 'openrouter', 'samsar'] },
   });
-  assert.deepEqual(result.models, ['QWEN3.7']);
+  assert.deepEqual(result.models, ['QWEN3.8']);
 });
 
 test('FAL runtime enrichment exposes Wan2.7 Pro and Happy Horse media actions', () => {
@@ -549,14 +549,14 @@ test('reads provider-selection metadata from the saved availability artifact', (
 
   fs.writeFileSync(filePath, JSON.stringify({
     providers: ['alibabaCloud', 'fal'],
-    models: ['QWEN3.7', 'WAN2.7PRO'],
+    models: ['QWEN3.8', 'WAN2.7PRO'],
     actions: ['chat', 'image'],
     modelProviders: {
-      'QWEN3.7': 'alibabaCloud',
+      'QWEN3.8': 'alibabaCloud',
       'WAN2.7PRO': 'fal',
     },
     modelProviderPriority: {
-      'QWEN3.7': ['alibabaCloud', 'samsar'],
+      'QWEN3.8': ['alibabaCloud', 'samsar'],
       'WAN2.7PRO': ['alibabaCloud', 'fal', 'samsar'],
     },
   }));
@@ -564,11 +564,11 @@ test('reads provider-selection metadata from the saved availability artifact', (
   try {
     const result = readDeploymentAvailableModels();
     assert.deepEqual(result.modelProviders, {
-      'QWEN3.7': 'alibabaCloud',
+      'QWEN3.8': 'alibabaCloud',
       'WAN2.7PRO': 'fal',
     });
     assert.deepEqual(result.modelProviderPriority, {
-      'QWEN3.7': ['alibabaCloud', 'samsar'],
+      'QWEN3.8': ['alibabaCloud', 'samsar'],
       'WAN2.7PRO': ['alibabaCloud', 'fal', 'samsar'],
     });
   } finally {
@@ -587,30 +587,30 @@ test('runtime enrichment preserves the installation default order separately fro
   process.env.SAMSAR_MODEL_ADAPTER_PREFERENCES_PATH = preferencePath;
   fs.writeFileSync(preferencePath, JSON.stringify({
     modelProviderPriority: {
-      'QWEN3.7': ['samsar', 'alibabaCloud'],
+      'QWEN3.8': ['samsar', 'alibabaCloud'],
     },
   }));
 
   try {
     const result = mergeRuntimeInferenceDeploymentAvailability({
       providers: ['alibabaCloud', 'samsar'],
-      models: ['QWEN3.7'],
-      modelProviders: { 'QWEN3.7': 'samsar' },
+      models: ['QWEN3.8'],
+      modelProviders: { 'QWEN3.8': 'samsar' },
       modelProviderPriority: {
-        'QWEN3.7': ['samsar', 'alibabaCloud', 'openrouter'],
+        'QWEN3.8': ['samsar', 'alibabaCloud', 'openrouter'],
       },
       defaultModelProviderPriority: {
-        'QWEN3.7': ['alibabaCloud', 'openrouter', 'samsar'],
+        'QWEN3.8': ['alibabaCloud', 'openrouter', 'samsar'],
       },
     });
 
-    assert.deepEqual(result.modelProviderPriority['QWEN3.7'], [
+    assert.deepEqual(result.modelProviderPriority['QWEN3.8'], [
       'samsar',
       'alibabaCloud',
       'gmicloud',
       'openrouter',
     ]);
-    assert.deepEqual(result.defaultModelProviderPriority['QWEN3.7'], [
+    assert.deepEqual(result.defaultModelProviderPriority['QWEN3.8'], [
       'alibabaCloud',
       'gmicloud',
       'samsar',

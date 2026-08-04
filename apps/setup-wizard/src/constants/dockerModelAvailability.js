@@ -137,7 +137,7 @@ export const DOCKER_MODEL_PROVIDER_PRIORITY_BY_MODEL = Object.freeze({
   'gpt-5.6-sol': OPENAI_INFERENCE_GMI_OR_SAMSAR,
   'gemini-3.1-pro': GOOGLE_INFERENCE_GMI_OR_SAMSAR,
   KIMIK3: KIMI_OR_SAMSAR,
-  'QWEN3.7': ALIBABA_GMI_OR_SAMSAR,
+  'QWEN3.8': ALIBABA_GMI_OR_SAMSAR,
   GPTIMAGE2: OPENAI_GMI_SAMSAR_OR_FAL,
   GPTIMAGE2EDIT: OPENAI_GMI_OR_SAMSAR,
   SEEDREAM: GMI_SAMSAR_OR_FAL,
@@ -196,7 +196,7 @@ export const DOCKER_MODEL_ACTIONS_BY_MODEL = Object.freeze({
   'gpt-5.6-sol': ['chat', 'assistant', 'moderation', 'recommendations', 'search'],
   'gemini-3.1-pro': ['chat', 'assistant', 'moderation'],
   KIMIK3: ['chat', 'assistant'],
-  'QWEN3.7': ['chat', 'assistant'],
+  'QWEN3.8': ['chat', 'assistant'],
   GPTIMAGE2: ['image'],
   GPTIMAGE2EDIT: ['image_edit'],
   SEEDREAM: ['image'],
@@ -242,7 +242,7 @@ export const DOCKER_MODEL_DISPLAY_NAME_BY_MODEL = Object.freeze({
   'gpt-5.6-sol': 'GPT 5.6 Sol',
   'gemini-3.1-pro': 'Gemini 3.1 Pro',
   KIMIK3: 'Kimi K3',
-  'QWEN3.7': 'Qwen 3.7 Plus',
+  'QWEN3.8': 'Qwen 3.8 Max',
   GPTIMAGE2: 'GPT Image 2',
   GPTIMAGE2EDIT: 'GPT Image 2 Edit',
   SEEDREAM: 'Seedream',
@@ -286,13 +286,13 @@ export const DOCKER_MODEL_DISPLAY_NAME_BY_MODEL = Object.freeze({
 
 const DOCKER_MODEL_DISPLAY_NAME_BY_PROVIDER = Object.freeze({
   [DOCKER_PROVIDER.ALIBABA_CLOUD]: Object.freeze({
-    'QWEN3.7': 'Qwen 3.7 Plus',
+    'QWEN3.8': 'Qwen 3.8 Max',
   }),
   [DOCKER_PROVIDER.OPENROUTER]: Object.freeze({
-    'QWEN3.7': 'Qwen 3.7 Plus',
+    'QWEN3.8': 'Qwen 3.8 Max',
   }),
   [DOCKER_PROVIDER.GMI_CLOUD]: Object.freeze({
-    'QWEN3.7': 'Qwen 3.7 Max / Plus-equivalent Vision',
+    'QWEN3.8': 'Qwen 3.8 Max',
   }),
 });
 
@@ -300,7 +300,7 @@ export const EXPRESS_PIPELINE_REQUIREMENTS = Object.freeze([
   Object.freeze({
     key: 'inference',
     label: 'Inference',
-    modelKeys: Object.freeze(['gpt-5.6-sol', 'gemini-3.1-pro', 'KIMIK3', 'QWEN3.7']),
+    modelKeys: Object.freeze(['gpt-5.6-sol', 'gemini-3.1-pro', 'KIMIK3', 'QWEN3.8']),
   }),
   Object.freeze({
     key: 'imageGeneration',
@@ -466,7 +466,7 @@ function hasGmiCloudModelRoute(modelMappings, modelKey) {
     typeof routes[modality].modelId === 'string' &&
     routes[modality].modelId.trim(),
   );
-  if (['gpt-5.6-sol', 'gemini-3.1-pro', 'QWEN3.7'].includes(modelKey)) {
+  if (['gpt-5.6-sol', 'gemini-3.1-pro', 'QWEN3.8'].includes(modelKey)) {
     return routeAvailable('text') && routeAvailable('vision');
   }
   return Object.values(routes).some((route) => (

@@ -20,13 +20,13 @@ const STANDALONE_ENV = Object.freeze({
 const AVAILABILITY = Object.freeze({
   providers: ['alibabaCloud', 'fal', 'samsar'],
   models: [
-    'QWEN3.7',
+    'QWEN3.8',
     'WAN2.7PRO',
     'HAPPYHORSEI2V',
     'GPTIMAGE2',
   ],
   modelProviderPriority: {
-    'QWEN3.7': ['alibabaCloud', 'openrouter', 'samsar'],
+    'QWEN3.8': ['alibabaCloud', 'openrouter', 'samsar'],
     'WAN2.7PRO': ['alibabaCloud', 'fal', 'samsar'],
     HAPPYHORSEI2V: ['alibabaCloud', 'fal', 'samsar'],
     GPTIMAGE2: ['openai', 'samsar'],
@@ -46,7 +46,7 @@ test('saved adapters lead while missing default adapters retain their relative o
 test('settings expose only installed compatible adapters in stage order', () => {
   const result = buildModelAdapterSettings(AVAILABILITY, {
     modelProviderPriority: {
-      'QWEN3.7': ['samsar', 'alibabaCloud'],
+      'QWEN3.8': ['samsar', 'alibabaCloud'],
       'WAN2.7PRO': ['fal', 'samsar', 'alibabaCloud'],
     },
     updatedAt: '2026-07-28T00:00:00.000Z',
@@ -74,9 +74,9 @@ test('settings expose only installed compatible adapters in stage order', () => 
 test('GMICloud is exposed to the account adapter UI with its GenBlaze label', () => {
   const result = buildModelAdapterSettings({
     providers: ['gmicloud'],
-    models: ['QWEN3.7'],
+    models: ['QWEN3.8'],
     modelProviderPriority: {
-      'QWEN3.7': ['gmicloud'],
+      'QWEN3.8': ['gmicloud'],
     },
   });
   const inference = result.stages.find((stage) => stage.key === 'inference');
@@ -113,7 +113,7 @@ test('standalone preferences are written atomically and production ignores the f
 
   const written = writeModelAdapterPreferences(
     {
-      'QWEN3.7': ['samsar', 'alibabaCloud'],
+      'QWEN3.8': ['samsar', 'alibabaCloud'],
       'WAN2.7PRO': ['fal', 'samsar', 'alibabaCloud'],
     },
     AVAILABILITY,
@@ -128,7 +128,7 @@ test('standalone preferences are written atomically and production ignores the f
   assert.deepEqual(
     readModelAdapterPreferences({ env: STANDALONE_ENV, filePath }).modelProviderPriority,
     {
-      'QWEN3.7': ['samsar', 'alibabaCloud'],
+      'QWEN3.8': ['samsar', 'alibabaCloud'],
       'WAN2.7PRO': ['fal', 'samsar', 'alibabaCloud'],
     },
   );
@@ -150,12 +150,12 @@ test('saving the default installed order removes a stale override', (t) => {
   t.after(() => fs.rmSync(temporaryDirectory, { recursive: true, force: true }));
   fs.writeFileSync(filePath, JSON.stringify({
     modelProviderPriority: {
-      'QWEN3.7': ['samsar', 'alibabaCloud'],
+      'QWEN3.8': ['samsar', 'alibabaCloud'],
     },
   }));
 
   writeModelAdapterPreferences(
-    { 'QWEN3.7': ['alibabaCloud', 'samsar'] },
+    { 'QWEN3.8': ['alibabaCloud', 'samsar'] },
     AVAILABILITY,
     {
       env: STANDALONE_ENV,
@@ -176,13 +176,13 @@ test('saving current installation settings removes overrides for unavailable mod
   t.after(() => fs.rmSync(temporaryDirectory, { recursive: true, force: true }));
   fs.writeFileSync(filePath, JSON.stringify({
     modelProviderPriority: {
-      'QWEN3.7': ['samsar', 'alibabaCloud'],
+      'QWEN3.8': ['samsar', 'alibabaCloud'],
       'UNAVAILABLE-MODEL': ['samsar'],
     },
   }));
 
   writeModelAdapterPreferences(
-    { 'QWEN3.7': ['alibabaCloud', 'samsar'] },
+    { 'QWEN3.8': ['alibabaCloud', 'samsar'] },
     AVAILABILITY,
     {
       env: STANDALONE_ENV,

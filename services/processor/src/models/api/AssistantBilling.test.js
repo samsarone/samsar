@@ -57,14 +57,14 @@ test('bills GPT 5.6 Sol assistant usage at long-context rates above 272K input t
   assert.equal(result.tokenPricingUsdPerMillion.longContextInputThreshold, 272_000);
 });
 
-test('uses the requested assistant pricing and bills legacy Qwen 3.7 Max usage', () => {
+test('bills Qwen 3.8 Max usage at the Max rate', () => {
   const result = calculateAssistantCreditsFromUsage({
-    model: 'qwen3.7-max',
+    model: 'qwen3.8-max',
     usage: { input_tokens: 1_000_000, output_tokens: 1_000_000 },
   });
 
   assert.equal(DEFAULT_ASSISTANT_PRICING_MULTIPLIER, 1.5);
-  assert.equal(result.pricingModel, 'qwen3.7-max');
+  assert.equal(result.pricingModel, 'qwen3.8-max');
   assert.equal(result.costUsd, 10);
   assert.equal(result.credits, 1_500);
   assert.deepEqual(result.tokenPricingUsdPerMillion, {
@@ -74,73 +74,19 @@ test('uses the requested assistant pricing and bills legacy Qwen 3.7 Max usage',
   });
 });
 
-test('prices production Qwen 3.8 Max Preview receipts with the Qwen Max rate', () => {
+test('bills Qwen 3.8 Max cached tokens at the regular input rate', () => {
   const result = calculateAssistantCreditsFromUsage({
-    model: 'qwen3.8-max-preview',
-    usage: { input_tokens: 1_000_000, output_tokens: 1_000_000 },
-  });
-
-  assert.equal(result.pricingModel, 'qwen3.7-max');
-  assert.equal(result.costUsd, 10);
-  assert.equal(result.credits, 1_500);
-});
-
-test('bills legacy Qwen 3.7 Plus vision usage at standard and long-context rates', () => {
-  const standard = calculateAssistantCreditsFromUsage({
-    model: 'qwen3.7-plus',
-    usage: { input_tokens: 100_000, output_tokens: 100_000 },
-  });
-  const longContext = calculateAssistantCreditsFromUsage({
-    model: 'qwen3.7-plus',
-    usage: { input_tokens: 300_000, output_tokens: 100_000 },
-  });
-
-  assert.equal(standard.costUsd, 0.2);
-  assert.equal(standard.credits, 30);
-  assert.equal(longContext.costUsd, 0.84);
-  assert.equal(longContext.credits, 126);
-  assert.equal(longContext.tokenPricingUsdPerMillion.longContext, true);
-  assert.equal(longContext.tokenPricingUsdPerMillion.longContextInputThreshold, 256_000);
-});
-
-test('bills Qwen cached tokens at regular input rates across Max and Plus tiers', () => {
-  const max = calculateAssistantCreditsFromUsage({
-    model: 'qwen3.7-max',
+    model: 'qwen3.8-max',
     usage: {
       input_tokens: 1_000_000,
       input_tokens_details: { cached_tokens: 1_000_000 },
       output_tokens: 0,
     },
   });
-  const plusStandard = calculateAssistantCreditsFromUsage({
-    model: 'qwen3.7-plus',
-    usage: {
-      input_tokens: 100_000,
-      input_tokens_details: { cached_tokens: 100_000 },
-      output_tokens: 100_000,
-    },
-  });
-  const plusLongContext = calculateAssistantCreditsFromUsage({
-    model: 'qwen3.7-plus',
-    usage: {
-      input_tokens: 300_000,
-      input_tokens_details: { cached_tokens: 300_000 },
-      output_tokens: 100_000,
-    },
-  });
 
-  assert.equal(max.costUsd, 2.5);
-  assert.equal(max.credits, 375);
-  assert.equal(max.tokenPricingUsdPerMillion.cachedInput, 2.5);
-
-  assert.equal(plusStandard.costUsd, 0.2);
-  assert.equal(plusStandard.credits, 30);
-  assert.equal(plusStandard.tokenPricingUsdPerMillion.cachedInput, 0.4);
-
-  assert.equal(plusLongContext.costUsd, 0.84);
-  assert.equal(plusLongContext.credits, 126);
-  assert.equal(plusLongContext.tokenPricingUsdPerMillion.cachedInput, 1.2);
-  assert.equal(plusLongContext.tokenPricingUsdPerMillion.longContext, true);
+  assert.equal(result.costUsd, 2.5);
+  assert.equal(result.credits, 375);
+  assert.equal(result.tokenPricingUsdPerMillion.cachedInput, 2.5);
 });
 
 test('prices provider-qualified OpenRouter model identifiers', () => {
@@ -155,14 +101,14 @@ test('prices provider-qualified OpenRouter model identifiers', () => {
     pricingMultiplier: 1,
   });
   const qwen = calculateAssistantCreditsFromUsage({
-    model: 'qwen/qwen3.7-plus',
+    model: 'qwen/qwen3.8-max',
     usage: { input_tokens: 1_000, output_tokens: 100 },
     pricingMultiplier: 1,
   });
 
   assert.equal(gpt.pricingModel, 'gpt-5.6-sol');
   assert.equal(gemini.pricingModel, 'gemini-3.1-pro');
-  assert.equal(qwen.pricingModel, 'qwen3.7-plus');
+  assert.equal(qwen.pricingModel, 'qwen3.8-max');
   assert.ok(gpt.credits > 0);
   assert.ok(gemini.credits > 0);
   assert.ok(qwen.credits > 0);

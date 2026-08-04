@@ -6,7 +6,7 @@ import OpenAI from 'openai';
 import {
   INFERENCE_MODELS,
   KIMI_K3_INFERENCE_MODEL,
-  QWEN_37_INFERENCE_MODEL,
+  QWEN_38_INFERENCE_MODEL,
   getReasoningEffortForInferenceModel,
   isGeminiInferenceModel,
   isKimiInferenceModel,
@@ -37,7 +37,7 @@ const DEFAULT_EXTERNAL_INFERENCE_RETRY_BASE_DELAY_MS = 5000;
 const DEFAULT_EXTERNAL_INFERENCE_RETRY_MAX_DELAY_MS = 60000;
 const DEFAULT_EXTERNAL_INFERENCE_POLL_INTERVAL_MS = 2000;
 // OpenRouter checks whether the account can afford the requested maximum before
-// generation. Keep Qwen Max and Plus reservations close to observed production
+// generation. Keep Qwen Max reservations close to observed production
 // usage instead of reserving their much larger provider output windows.
 const OPENROUTER_QWEN_MAX_TOKEN_CEILING = 2048;
 const DEFAULT_OPENROUTER_QWEN_MAX_TOKENS = 2048;
@@ -46,7 +46,7 @@ const DEFAULT_OPENROUTER_GPT_MAX_COMPLETION_TOKENS = 65536;
 const DEFAULT_OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1';
 const DEFAULT_GENBLAZE_BASE_URL = 'http://genblaze:8080/v1';
 const GENBLAZE_INFERENCE_MODELS = new Set([
-  'QWEN3.7',
+  'QWEN3.8',
   'gpt-5.6-sol',
   'gemini-3.1-pro',
 ]);
@@ -75,7 +75,7 @@ export const DOCKER_INFERENCE_PROVIDER = Object.freeze({
   GMICLOUD: 'gmicloud',
 });
 export const DOCKER_INFERENCE_PROVIDER_PRIORITY_BY_MODEL = Object.freeze({
-  [QWEN_37_INFERENCE_MODEL]: Object.freeze([
+  [QWEN_38_INFERENCE_MODEL]: Object.freeze([
     DOCKER_INFERENCE_PROVIDER.ALIBABA_CLOUD,
     DOCKER_INFERENCE_PROVIDER.GMICLOUD,
     DOCKER_INFERENCE_PROVIDER.SAMSAR,
@@ -728,7 +728,7 @@ function getGenblazeInferenceModality(chatRequest = {}) {
 }
 
 function getCanonicalGenblazeInferenceModel(model) {
-  if (isQwenInferenceModel(model)) return 'QWEN3.7';
+  if (isQwenInferenceModel(model)) return 'QWEN3.8';
   if (isGeminiInferenceModel(model) && normalizeInferenceModel(model) === 'gemini-3.1-pro') {
     return 'gemini-3.1-pro';
   }
@@ -780,7 +780,7 @@ function hasConfiguredInferenceProvider(provider, model, chatRequest = {}) {
 function getInferenceProviderPriority(model, chatRequest = {}) {
   let defaultPriority;
   if (isQwenInferenceModel(model)) {
-    defaultPriority = DOCKER_INFERENCE_PROVIDER_PRIORITY_BY_MODEL[QWEN_37_INFERENCE_MODEL];
+    defaultPriority = DOCKER_INFERENCE_PROVIDER_PRIORITY_BY_MODEL[QWEN_38_INFERENCE_MODEL];
   } else if (isGeminiInferenceModel(model)) {
     defaultPriority = Boolean(getGenblazeClient()) && hasGenblazeModelMapping(model, chatRequest)
       ? DOCKER_INFERENCE_PROVIDER_PRIORITY_BY_MODEL['gemini-3.1-pro']
@@ -844,9 +844,7 @@ export function getConfiguredInferenceProviders(model, chatRequest = {}) {
 export function getOpenRouterModelForInferenceRequest(chatRequest = {}, env = process.env) {
   const model = getRequestedInferenceModel(chatRequest);
   if (isQwenInferenceModel(model)) {
-    return hasQwenVisionInput(chatRequest.messages)
-      ? normalizeString(env?.OPENROUTER_QWEN_37_PLUS_MODEL) || 'qwen/qwen3.7-plus'
-      : normalizeString(env?.OPENROUTER_QWEN_37_MAX_MODEL) || 'qwen/qwen3.7-max';
+    return normalizeString(env?.OPENROUTER_QWEN_38_MAX_MODEL) || 'qwen/qwen3.8-max';
   }
   if (isGeminiInferenceModel(model)) {
     return normalizeString(env?.OPENROUTER_GEMINI_31_PRO_MODEL) || 'google/gemini-3.1-pro-preview';

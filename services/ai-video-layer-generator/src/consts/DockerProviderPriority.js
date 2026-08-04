@@ -56,6 +56,9 @@ export const DOCKER_VIDEO_PROVIDER_PRIORITY_BY_MODEL = Object.freeze({
     DOCKER_VIDEO_PROVIDER.SAMSAR,
     DOCKER_VIDEO_PROVIDER.FAL,
   ],
+  'SEEDANCE2.0I2V': [
+    DOCKER_VIDEO_PROVIDER.GMICLOUD,
+  ],
   KLINGIMGTOVID3PRO: [
     DOCKER_VIDEO_PROVIDER.GMICLOUD,
     DOCKER_VIDEO_PROVIDER.SAMSAR,
@@ -307,6 +310,9 @@ export function hasGmiCloudVideoModelMapping(model, env = process.env) {
     const route = catalog?.models?.[normalizedModel]?.video;
     const modelId = normalizeString(route?.modelId);
     if (!modelId) return false;
+    if (normalizedModel === 'SEEDANCE2.0I2V') {
+      return modelId === 'seedance-2-0-260128' && route?.operation === 'video.generate';
+    }
     return true;
   } catch {
     return false;

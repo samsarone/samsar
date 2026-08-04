@@ -9,12 +9,14 @@ import {
 } from './PromptUtils.js';
 import {
   IMAGE_LIST_TO_VIDEO_IMAGE_MODEL_KEYS,
+  IMAGE_LIST_TO_VIDEO_VIDEO_MODEL_KEYS,
   TEXT_TO_VIDEO_IMAGE_MODEL_KEYS,
   TEXT_TO_VIDEO_VIDEO_MODEL_KEYS,
 } from '../../consts/ExpressVideoModelOptions.js';
-import { IMAGE_MODEL_PRICES } from '../../consts/ModelPrices.js';
+import { IMAGE_MODEL_PRICES, VIDEO_MODEL_PRICES } from '../../consts/ModelPrices.js';
 import {
   IMAGE_GENERAITON_MODEL_TYPES,
+  VIDEO_GENERATION_MODEL_TYPES,
 } from '../../consts/ModelTypes.js';
 
 function buildValidMoviePayload(overrides = {}) {
@@ -42,6 +44,37 @@ test('text-to-video validation accepts the shared express video model list', () 
   }));
 
   assert.equal(validation.status, true);
+});
+
+test('Seedance 2.0 is an express provider-billed model on standalone video surfaces', () => {
+  assert.deepEqual(validateExpressVideoModelKey('SEEDANCE2.0I2V'), {
+    status: true,
+    videoModel: 'SEEDANCE2.0I2V',
+  });
+  assert.equal(
+    validateMovieInput(buildValidMoviePayload({ video_model: 'SEEDANCE2.0I2V' })).status,
+    true,
+  );
+  assert.equal(TEXT_TO_VIDEO_VIDEO_MODEL_KEYS.includes('SEEDANCE2.0I2V'), true);
+  assert.equal(IMAGE_LIST_TO_VIDEO_VIDEO_MODEL_KEYS.includes('SEEDANCE2.0I2V'), true);
+  assert.equal(
+    VIDEO_GENERATION_MODEL_TYPES.find((model) => model.key === 'SEEDANCE2.0I2V')?.isExpressModel,
+    true,
+  );
+  assert.deepEqual(
+    VIDEO_MODEL_PRICES.find((model) => model.key === 'SEEDANCE2.0I2V'),
+    {
+      key: 'SEEDANCE2.0I2V',
+      name: 'Seedance 2.0 I2V',
+      isExpressModel: true,
+      isImageToVideoModel: true,
+      isTextToVideoModel: false,
+      standaloneOnly: true,
+      providerBilled: true,
+      prices: [],
+      units: [5, 10, 15],
+    },
+  );
 });
 
 test('Wan2.7 Pro is accepted for both express image stages', () => {

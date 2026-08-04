@@ -6,7 +6,7 @@ import {
   GEMINI_31_PRO_INFERENCE_MODEL,
   GPT_56_SOL_REASONING_EFFORT,
   KIMI_K3_INFERENCE_MODEL,
-  QWEN_37_INFERENCE_MODEL,
+  QWEN_38_INFERENCE_MODEL,
   isKimiInferenceModel,
   isQwenInferenceModel,
   getProviderModelForInferenceModel,
@@ -18,19 +18,19 @@ test('uses high reasoning for GPT 5.6 Sol inference', () => {
   assert.equal(GPT_56_SOL_REASONING_EFFORT, 'high');
 });
 
-test('normalizes Qwen 3.7 aliases to the logical provider choice', () => {
+test('normalizes Qwen 3.8 Max aliases to the logical provider choice', () => {
   for (const alias of [
-    'QWEN3.7',
-    'qwen3.7-max',
-    'qwen3.7-plus',
-    'Qwen 3.7',
-    'Alibaba Cloud Qwen 3.7',
-    'qwen3.8-max-preview',
+    'QWEN3.8',
+    'qwen3.8-max',
+    'Qwen 3.8 Max',
+    'Alibaba Cloud Qwen 3.8 Max',
+    'DashScope Qwen 3.8 Max',
+    'qwen/qwen3.8-max',
   ]) {
-    assert.equal(normalizeInferenceModel(alias), QWEN_37_INFERENCE_MODEL);
+    assert.equal(normalizeInferenceModel(alias), QWEN_38_INFERENCE_MODEL);
     assert.equal(isQwenInferenceModel(alias), true);
   }
-  assert.equal(getProviderModelForInferenceModel(QWEN_37_INFERENCE_MODEL), 'qwen3.7-plus');
+  assert.equal(getProviderModelForInferenceModel(QWEN_38_INFERENCE_MODEL), 'qwen3.8-max');
 });
 
 test('normalizes Gemini 3.1 Pro inference aliases to the canonical key', () => {

@@ -15,7 +15,7 @@ export const DEPLOYMENT_PROVIDER_CAPABILITIES = Object.freeze({
   samsar: {
     label: 'Samsar API Key',
     requiredFor: ['All models', 'All actions', 'moderation'],
-    models: ['gpt-5.6-sol', 'gemini-3.1-pro', 'QWEN3.7', 'KIMIK3', 'GPTIMAGE2', 'WAN2.7PRO', 'RUNWAYML', 'VEO3.1I2V', 'HAPPYHORSEI2V', 'LYRIA3', 'OPENAI_TTS', 'GOOGLE_TTS', 'MMAUDIO', 'LATENT_SYNC'],
+    models: ['gpt-5.6-sol', 'gemini-3.1-pro', 'QWEN3.8', 'KIMIK3', 'GPTIMAGE2', 'WAN2.7PRO', 'RUNWAYML', 'VEO3.1I2V', 'HAPPYHORSEI2V', 'LYRIA3', 'OPENAI_TTS', 'GOOGLE_TTS', 'MMAUDIO', 'LATENT_SYNC'],
     actions: ['chat', 'assistant', 'moderation', 'image', 'video', 'audio', 'lip_sync', 'sound_effect'],
   },
   openai: {
@@ -26,8 +26,8 @@ export const DEPLOYMENT_PROVIDER_CAPABILITIES = Object.freeze({
   },
   openrouter: {
     label: 'OpenRouter',
-    requiredFor: ['GPT 5.6 Sol', 'Gemini 3.1 Pro', 'Qwen 3.7 Plus text and vision'],
-    models: ['gpt-5.6-sol', 'gemini-3.1-pro', 'QWEN3.7'],
+    requiredFor: ['GPT 5.6 Sol', 'Gemini 3.1 Pro', 'Qwen 3.8 Max text and vision'],
+    models: ['gpt-5.6-sol', 'gemini-3.1-pro', 'QWEN3.8'],
     actions: ['chat', 'assistant'],
   },
   kimi: {
@@ -44,8 +44,8 @@ export const DEPLOYMENT_PROVIDER_CAPABILITIES = Object.freeze({
   },
   alibabaCloud: {
     label: 'Alibaba Cloud',
-    requiredFor: ['Qwen 3.7 Plus inference', 'Wan2.7 Pro image', 'Happy Horse 1.1 video'],
-    models: ['QWEN3.7', 'WAN2.7PRO', 'HAPPYHORSEI2V'],
+    requiredFor: ['Qwen 3.8 Max inference', 'Wan2.7 Pro image', 'Happy Horse 1.1 video'],
+    models: ['QWEN3.8', 'WAN2.7PRO', 'HAPPYHORSEI2V'],
     actions: ['chat', 'assistant', 'image', 'video'],
   },
   fal: {

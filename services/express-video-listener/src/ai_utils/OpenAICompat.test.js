@@ -174,13 +174,13 @@ test('compat dispatch does not leak external retry controls into native Qwen', a
   t.mock.method(OpenAI.Chat.Completions.prototype, 'create', async (payload) => {
     capturedPayload = payload;
     return {
-      model: 'qwen3.7-plus',
+      model: 'qwen3.8-max',
       choices: [{ message: { content: 'native qwen' } }],
     };
   });
 
   await createCompatibleChatCompletion({}, {
-    model: 'QWEN3.7',
+    model: 'QWEN3.8',
     messages: [{ role: 'user', content: 'hello' }],
     authorization: 'native',
     bypassSamsarExternalInference: true,

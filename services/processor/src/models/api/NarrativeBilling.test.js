@@ -36,7 +36,7 @@ test('aggregates mixed GPT, Gemini, and Qwen inference receipts at 1.5x', () => 
     {
       stage: 'narrative_validation',
       attempt: 1,
-      model: 'qwen3.7-max',
+      model: 'qwen3.8-max',
       provider: 'alibaba',
       usage: {
         prompt_tokens: 100_000,
@@ -80,7 +80,7 @@ test('requires every inference receipt to have usage and a recognized pricing mo
   const billing = calculateNarrativeBilling([
     { model: 'gpt-5.6-sol', usage: { input_tokens: 10, output_tokens: 2 } },
     { model: 'unknown-provider/model', usage: { input_tokens: 10, output_tokens: 2 } },
-    { model: 'QWEN3.7', usage: null },
+    { model: 'QWEN3.8', usage: null },
   ]);
   const validation = validateNarrativeBilling(billing, 3);
 
@@ -97,8 +97,8 @@ test('requires every inference receipt to have usage and a recognized pricing mo
 
 test('applies the multiplier after summing underlying cost instead of rounded call credits', () => {
   const result = calculateNarrativeBilling([
-    { model: 'qwen3.7-max', usage: { input_tokens: 1 } },
-    { model: 'qwen3.7-max', usage: { input_tokens: 1 } },
+    { model: 'qwen3.8-max', usage: { input_tokens: 1 } },
+    { model: 'qwen3.8-max', usage: { input_tokens: 1 } },
   ]);
 
   assert.equal(result.underlyingCostUsd, 0.000005);
