@@ -13,6 +13,7 @@ import {
   getPendingPollIntervalMs,
   getExplicitFailureRetryBackoffMs,
   getGmiCloudSeedance2PendingTimeoutMs,
+  hasRemainingBaseGenerationAttempts,
   getInferenceModelForSession,
   getInferenceSettingsForSession,
   getMaxConcurrentGmiCloudVideoRequests,
@@ -252,6 +253,13 @@ test('terminal AI-video errors retain the provider moderation reason', () => {
   assert.match(message, /inappropriate content/);
 });
 
+test('base generation allows exactly three total attempts', () => {
+  assert.equal(hasRemainingBaseGenerationAttempts(0), true);
+  assert.equal(hasRemainingBaseGenerationAttempts(1), true);
+  assert.equal(hasRemainingBaseGenerationAttempts(2), false);
+  assert.equal(hasRemainingBaseGenerationAttempts(3), false);
+});
+
 test('Infinitezoom retries retain the resolved swirl and zoom strategy', () => {
   assert.equal(getRetryPromptSeedAction({
     promptSeedContext: {
@@ -379,7 +387,7 @@ test('non-lip-sync completion follows generated duration', () => {
 test('terminal base failure leaves express session active for delete reflow', () => {
   const update = buildBaseGenerationTerminalFailureUpdate(
     { layerAiVideoType: 'narration' },
-    'AI video generation failed after 4 attempts.'
+    'AI video generation failed after 3 attempts.'
   );
 
   assert.equal(update['layers.$.aiVideoGenerationStatus'], 'FAILED');
@@ -395,7 +403,7 @@ test('terminal base failure leaves express session active for delete reflow', ()
 test('terminal character base failure also disables pending lip sync on that layer', () => {
   const update = buildBaseGenerationTerminalFailureUpdate(
     { layerAiVideoType: 'character' },
-    'AI video generation failed after 4 attempts.'
+    'AI video generation failed after 3 attempts.'
   );
 
   assert.equal(update['layers.$.lipSyncGenerationPending'], false);

@@ -622,11 +622,55 @@ function getFailedRequiredAiVideoLayer(layers = []) {
     if (!isAiVideoCandidateLayer(layer)) {
       return false;
     }
+    if (isFailedAiVideoLayerQueuedForDeleteReflow(layer)) {
+      return false;
+    }
     const status = typeof layer?.aiVideoGenerationStatus === 'string'
       ? layer.aiVideoGenerationStatus.trim().toUpperCase()
       : '';
     return status === 'FAILED' && !hasGeneratedAiVideoOutput(layer);
   }) || null;
+}
+
+function isFailedAiVideoLayerQueuedForDeleteReflow(layer = {}) {
+  const status = normalizeStatusValue(layer?.aiVideoGenerationStatus);
+  const processFailure = layer?.processVideoGenerationFailed === true ||
+    layer?.processVideoGenerationFailed === 'true';
+
+  return Boolean(
+    status === 'FAILED' &&
+    processFailure &&
+    !hasGeneratedAiVideoOutput(layer)
+  );
+}
+
+function shouldRemoveLayerDuringDeleteReflow(layer = {}) {
+  if (isFailedAiVideoLayerQueuedForDeleteReflow(layer)) {
+    return true;
+  }
+
+  const hasActiveVisuals = hasLayerStillVisuals(layer);
+  const hasAiVideoVisuals = Boolean(
+    layer?.aiVideoLayer ||
+    layer?.lipSyncVideoLayer ||
+    layer?.soundEffectVideoLayer ||
+    layer?.userVideoLayer ||
+    layer?.aiVideoRemoteLink ||
+    layer?.lipSyncRemoteLink ||
+    layer?.soundEffectRemoteLink ||
+    layer?.userVideoRemoteLink ||
+    layer?.hasAiVideoLayer ||
+    layer?.hasLipSyncVideoLayer ||
+    layer?.hasSoundEffectVideoLayer ||
+    layer?.hasUserVideoLayer ||
+    layer?.aiVideoGenerationStatus === 'COMPLETED' ||
+    layer?.lipSyncVideoGenerationStatus === 'COMPLETED' ||
+    layer?.soundEffectVideoGenerationStatus === 'COMPLETED' ||
+    layer?.userVideoGenerationStatus === 'COMPLETED'
+  );
+  const aiVideoFailed = normalizeStatusValue(layer?.aiVideoGenerationStatus) === 'FAILED';
+
+  return !hasActiveVisuals && (!hasAiVideoVisuals || aiVideoFailed);
 }
 
 async function markAiVideoGenerationStageFailed(sessionId, currentGenerationStatus = {}, failedLayer = {}) {
@@ -1945,32 +1989,10 @@ async function deleteEmptyLayersAndReflowTimeLine(sessionId) {
     const offset = typeof layer.durationOffset === 'number' ? layer.durationOffset : 0;
     const duration = typeof layer.duration === 'number' ? layer.duration : 0;
 
-    const hasActiveVisuals = hasLayerStillVisuals(layer);
-
-    const hasAiVideoVisuals = Boolean(
-      layer?.aiVideoLayer ||
-      layer?.lipSyncVideoLayer ||
-      layer?.soundEffectVideoLayer ||
-      layer?.userVideoLayer ||
-      layer?.aiVideoRemoteLink ||
-      layer?.lipSyncRemoteLink ||
-      layer?.soundEffectRemoteLink ||
-      layer?.userVideoRemoteLink ||
-      layer?.hasAiVideoLayer ||
-      layer?.hasLipSyncVideoLayer ||
-      layer?.hasSoundEffectVideoLayer ||
-      layer?.hasUserVideoLayer ||
-      layer?.aiVideoGenerationStatus === 'COMPLETED' ||
-      layer?.lipSyncVideoGenerationStatus === 'COMPLETED' ||
-      layer?.soundEffectVideoGenerationStatus === 'COMPLETED' ||
-      layer?.userVideoGenerationStatus === 'COMPLETED'
-    );
-
-    const aiVideoFailed = layer.aiVideoGenerationStatus === 'FAILED';
-
-    // Only remove layers that truly have nothing usable. If AI video failed but a
-    // still image exists, keep the scene so final render can fall back to frames.
-    if (!hasActiveVisuals && (!hasAiVideoVisuals || aiVideoFailed)) {
+    // Exhausted AI-video layers are explicitly discarded after their bounded
+    // attempts, even when their original still frame remains available. Other
+    // empty layers keep the legacy cleanup behavior.
+    if (shouldRemoveLayerDuringDeleteReflow(layer)) {
       if (layer._id) {
         removedLayerIds.add(layer._id.toString());
       }
@@ -2185,5 +2207,8 @@ async function getTimeout(ms = 1000) {
 export const __testOnly__ = {
   hasLayerStillVisuals,
   hasGeneratedAiVideoOutput,
+  getFailedRequiredAiVideoLayer,
+  isFailedAiVideoLayerQueuedForDeleteReflow,
+  shouldRemoveLayerDuringDeleteReflow,
   applyTranscriptGenerationResultToStatus,
 };

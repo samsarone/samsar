@@ -29,6 +29,49 @@ test('delete/reflow visual predicate ignores empty image items', () => {
   );
 });
 
+test('exhausted AI-video layers are removed during reflow even when a still image remains', () => {
+  const exhaustedLayer = {
+    layerAiVideoType: 'narration',
+    aiVideoGenerationStatus: 'FAILED',
+    processVideoGenerationFailed: true,
+    hasAiVideoLayer: false,
+    imageSession: {
+      activeGeneratedImage: 'assets_v2/generations/session/scene.png',
+    },
+  };
+
+  assert.equal(__testOnly__.hasLayerStillVisuals(exhaustedLayer), true);
+  assert.equal(__testOnly__.shouldRemoveLayerDuringDeleteReflow(exhaustedLayer), true);
+});
+
+test('completed AI-video layers are preserved during delete/reflow', () => {
+  assert.equal(__testOnly__.shouldRemoveLayerDuringDeleteReflow({
+    layerAiVideoType: 'narration',
+    aiVideoGenerationStatus: 'COMPLETED',
+    hasAiVideoLayer: true,
+    aiVideoRemoteLink: 'https://static.samsar.one/video.mp4',
+  }), false);
+});
+
+test('managed individual AI-video failure continues to delete/reflow instead of failing the session', () => {
+  const managedFailure = {
+    layerAiVideoType: 'narration',
+    aiVideoGenerationStatus: 'FAILED',
+    processVideoGenerationFailed: true,
+    hasAiVideoLayer: false,
+  };
+  const unmanagedFailure = {
+    layerAiVideoType: 'narration',
+    aiVideoGenerationStatus: 'FAILED',
+    processVideoGenerationFailed: false,
+    hasAiVideoLayer: false,
+  };
+
+  assert.equal(__testOnly__.isFailedAiVideoLayerQueuedForDeleteReflow(managedFailure), true);
+  assert.equal(__testOnly__.getFailedRequiredAiVideoLayer([managedFailure]), null);
+  assert.equal(__testOnly__.getFailedRequiredAiVideoLayer([unmanagedFailure]), unmanagedFailure);
+});
+
 test('AI video output predicate accepts remote-only reusable AI videos', () => {
   assert.equal(
     __testOnly__.hasGeneratedAiVideoOutput({

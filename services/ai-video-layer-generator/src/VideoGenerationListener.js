@@ -174,7 +174,7 @@ const SOUND_EFFECT_MODELS = [
   'SEEDANCE2.0I2V',
 ];
 
-const MAX_BASE_GENERATION_RETRIES = 3;
+const MAX_BASE_GENERATION_ATTEMPTS = 3;
 const MAX_CONCURRENT_AI_VIDEO_REQUESTS = 5;
 const TRANSIENT_PROVIDER_ERROR_STATUSES = new Set([408, 425, 429, 500, 502, 503, 504]);
 
@@ -878,6 +878,11 @@ export function buildBaseGenerationFailureMessage({
       : '',
     firstNonEmptyString(retryPreparationFailureMessage),
   ].filter(Boolean).join(' ');
+}
+
+export function hasRemainingBaseGenerationAttempts(completedRetryCount = 0) {
+  const completedAttemptCount = Math.max(1, Number(completedRetryCount || 0) + 1);
+  return completedAttemptCount < MAX_BASE_GENERATION_ATTEMPTS;
 }
 
 export function getExplicitFailureRetryBackoffMs(completedRetryCount = 0) {
@@ -3525,9 +3530,10 @@ async function processBaseGenerationFailed(payload) {
   let retryPreparationFailureMessage = '';
 
   // ---------------------------
-  // RETRY PATH (tries 0,1,2) if allowed
+  // RETRY PATH after attempts 1 and 2, if allowed. The initial request plus
+  // two retries gives every layer at most three provider attempts in total.
   // ---------------------------
-  if (willRetry && tries < MAX_BASE_GENERATION_RETRIES) {
+  if (willRetry && hasRemainingBaseGenerationAttempts(tries)) {
     let newModel = model;
     let newPrompt = prompt;
     let retryPreparationSucceeded = true;
@@ -3540,8 +3546,8 @@ async function processBaseGenerationFailed(payload) {
       expireAt: new Date(),
     };
 
-    // On the last permitted retry, adjust model/prompt before the final attempt.
-    if (tries === MAX_BASE_GENERATION_RETRIES - 1) {
+    // On the last permitted retry, adjust model/prompt before attempt 3.
+    if (tries === MAX_BASE_GENERATION_ATTEMPTS - 2) {
       if (newModel === 'VEO3.1I2V') newModel = 'VEO3.1I2VFAST';
     }
 
@@ -3627,7 +3633,7 @@ async function processBaseGenerationFailed(payload) {
       }
     }
 
-    if (retryPreparationSucceeded && tries === MAX_BASE_GENERATION_RETRIES - 1 && newPrompt === prompt) {
+    if (retryPreparationSucceeded && tries === MAX_BASE_GENERATION_ATTEMPTS - 2 && newPrompt === prompt) {
       const retryInferenceSettings = await getInferenceSettingsForSession(
         videoSession,
         genDoc,
