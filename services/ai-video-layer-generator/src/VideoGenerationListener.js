@@ -176,8 +176,21 @@ const SOUND_EFFECT_MODELS = [
 
 const MAX_BASE_GENERATION_RETRIES = 3;
 const MAX_CONCURRENT_AI_VIDEO_REQUESTS = 5;
-const MAX_CONCURRENT_GMICLOUD_IMAGE_TO_VIDEO_REQUESTS = 2;
 const TRANSIENT_PROVIDER_ERROR_STATUSES = new Set([408, 425, 429, 500, 502, 503, 504]);
+
+export function getMaxConcurrentGmiCloudVideoRequests(env = process.env) {
+  return Math.max(
+    1,
+    Number(env.AI_VIDEO_MAX_CONCURRENT_GMICLOUD_REQUESTS) || 1,
+  );
+}
+
+export function getGmiCloudSeedance2PendingTimeoutMs(env = process.env) {
+  return Math.max(
+    60 * 1000,
+    Number(env.AI_VIDEO_GMICLOUD_SEEDANCE2_PENDING_TIMEOUT_MS) || 15 * 60 * 1000,
+  );
+}
 
 export function isStaleSoundEffectGenerationForLayer({
   model,
@@ -356,14 +369,14 @@ function getDockerAdapterAttemptedProviders(payload = {}) {
   )];
 }
 
-export function isGmiCloudImageToVideoRequest(request = {}) {
+export function isGmiCloudVideoRequest(request = {}) {
   const model = getDockerAdapterRoutingModel(request);
-  if (resolveAIVideoRequestType(model, request) !== 'image_to_video') {
+  if (!['image_to_video', 'text_to_video'].includes(resolveAIVideoRequestType(model, request))) {
     return false;
   }
 
   const persistedProvider = normalizeString(
-    request.dockerVideoProvider || request.externalProvider,
+    request.dockerVideoProviderOverride || request.dockerVideoProvider || request.externalProvider,
   );
   if (
     persistedProvider === DOCKER_VIDEO_PROVIDER.GMICLOUD ||
@@ -372,14 +385,35 @@ export function isGmiCloudImageToVideoRequest(request = {}) {
     return true;
   }
 
-  return resolveAIVideoProvider(model, request) === DOCKER_VIDEO_PROVIDER.GMICLOUD;
+  // INIT rows from the express listener may still carry the hosted adapter
+  // wrapper model. Resolve the original model directly through Docker routing
+  // so the provider cap applies before the first GMICloud submission.
+  return resolveDockerVideoProviderForPayload(model, request) === DOCKER_VIDEO_PROVIDER.GMICLOUD;
+}
+
+export function isGmiCloudSeedance2RequestTimedOut(
+  request = {},
+  nowMs = Date.now(),
+  timeoutMs = getGmiCloudSeedance2PendingTimeoutMs(),
+) {
+  if (
+    normalizeString(request.status).toUpperCase() !== 'PENDING' ||
+    getDockerAdapterRoutingModel(request) !== 'SEEDANCE2.0I2V' ||
+    !isGmiCloudVideoRequest(request)
+  ) {
+    return false;
+  }
+
+  const submittedAt = request.requestSubmitAt || request.createdAt;
+  const submittedAtMs = submittedAt ? new Date(submittedAt).getTime() : Number.NaN;
+  return Number.isFinite(submittedAtMs) && nowMs - submittedAtMs >= timeoutMs;
 }
 
 export function selectAiVideoDispatchRequests({
   activeRequests = [],
   initRequests = [],
   maxConcurrentRequests = MAX_CONCURRENT_AI_VIDEO_REQUESTS,
-  maxGmiCloudImageToVideoRequests = MAX_CONCURRENT_GMICLOUD_IMAGE_TO_VIDEO_REQUESTS,
+  maxGmiCloudVideoRequests = getMaxConcurrentGmiCloudVideoRequests(),
 } = {}) {
   const remainingCapacity = Math.max(0, maxConcurrentRequests - activeRequests.length);
   if (remainingCapacity === 0) {
@@ -388,8 +422,8 @@ export function selectAiVideoDispatchRequests({
 
   let remainingGmiCloudCapacity = Math.max(
     0,
-    maxGmiCloudImageToVideoRequests - activeRequests.filter(
-      isGmiCloudImageToVideoRequest,
+    maxGmiCloudVideoRequests - activeRequests.filter(
+      isGmiCloudVideoRequest,
     ).length,
   );
   const selectedRequests = [];
@@ -398,7 +432,7 @@ export function selectAiVideoDispatchRequests({
     if (selectedRequests.length >= remainingCapacity) {
       break;
     }
-    if (isGmiCloudImageToVideoRequest(request)) {
+    if (isGmiCloudVideoRequest(request)) {
       if (remainingGmiCloudCapacity === 0) {
         continue;
       }
@@ -1616,10 +1650,25 @@ async function generatePendingAiVideoLayerRequests() {
   );
 
   for (const request of inProgressRequests) {
-    if (request.nextAttemptAfter && new Date(request.nextAttemptAfter).getTime() > Date.now()) {
-      continue;
-    }
     try {
+      if (isGmiCloudSeedance2RequestTimedOut(request)) {
+        const timeoutMs = getGmiCloudSeedance2PendingTimeoutMs();
+        const timeoutMinutes = Math.round(timeoutMs / (60 * 1000));
+        request.lastProviderFailureMessage =
+          `GMICloud Seedance 2.0 generation timed out after ${timeoutMinutes} minutes.`;
+        request.lastProviderFailureDetail = {
+          code: 'GMICLOUD_SEEDANCE2_PENDING_TIMEOUT',
+          timeoutMs,
+          requestSubmitAt: request.requestSubmitAt || request.createdAt || null,
+        };
+        request.providerFailureDefinitive = false;
+        request.submissionOutcomeUnknown = false;
+        await processVideoGenerationFailed(request);
+        continue;
+      }
+      if (request.nextAttemptAfter && new Date(request.nextAttemptAfter).getTime() > Date.now()) {
+        continue;
+      }
       if (request.status === 'PENDING') {
         // Poll to check if done or failed
         await pollForAIVideoCompletion(request);

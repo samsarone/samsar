@@ -12,13 +12,16 @@ import {
   buildBaseGenerationTerminalFailureUpdate,
   getPendingPollIntervalMs,
   getExplicitFailureRetryBackoffMs,
+  getGmiCloudSeedance2PendingTimeoutMs,
   getInferenceModelForSession,
   getInferenceSettingsForSession,
+  getMaxConcurrentGmiCloudVideoRequests,
   getRetryLipSyncModel,
   getRetryPromptSeedAction,
   isTransientProviderError,
   isSafeProviderSubmissionRetry,
-  isGmiCloudImageToVideoRequest,
+  isGmiCloudSeedance2RequestTimedOut,
+  isGmiCloudVideoRequest,
   resolveCompletedLayerDuration,
   resolveConnectedAudioLayerDuration,
   selectAiVideoDispatchRequests,
@@ -47,10 +50,9 @@ test('base AI-video completion marks the generated media as available', () => {
   });
 });
 
-test('GMICloud image-to-video dispatch is capped at two without blocking other adapters', () => {
+test('GMICloud video dispatch is capped at one without blocking other adapters', () => {
   const activeRequests = [
     { model: 'SEEDANCEI2V', startImage: 'one.png', dockerVideoProvider: 'gmicloud' },
-    { model: 'SEEDANCE2.0I2V', startImage: 'two.png', dockerVideoProvider: 'gmicloud' },
     { model: 'WANI2V', startImage: 'three.png', dockerVideoProvider: 'fal' },
   ];
   const blockedGmiCloud = {
@@ -73,10 +75,7 @@ test('GMICloud image-to-video dispatch is capped at two without blocking other a
   );
 });
 
-test('GMICloud image-to-video dispatch consumes only its remaining provider slot', () => {
-  const activeRequests = [
-    { model: 'SEEDANCEI2V', startImage: 'one.png', dockerVideoProvider: 'gmicloud' },
-  ];
+test('GMICloud video dispatch consumes its only provider slot', () => {
   const initRequests = [
     { id: 'gmi-one', model: 'SEEDANCEI2V', startImage: 'two.png', dockerVideoProvider: 'gmicloud' },
     { id: 'gmi-two', model: 'SEEDANCEI2V', startImage: 'three.png', dockerVideoProvider: 'gmicloud' },
@@ -86,12 +85,12 @@ test('GMICloud image-to-video dispatch consumes only its remaining provider slot
   ];
 
   assert.deepEqual(
-    selectAiVideoDispatchRequests({ activeRequests, initRequests }).map(({ id }) => id),
+    selectAiVideoDispatchRequests({ initRequests }).map(({ id }) => id),
     ['gmi-one', 'fal-one', 'fal-two', 'fal-three'],
   );
 });
 
-test('the provider limit does not change non-GMICloud or text-to-video concurrency', () => {
+test('the provider limit does not change non-GMICloud concurrency', () => {
   const falRequests = Array.from({ length: 6 }, (_, index) => ({
     id: `fal-${index}`,
     model: 'WANI2V',
@@ -103,10 +102,52 @@ test('the provider limit does not change non-GMICloud or text-to-video concurren
     selectAiVideoDispatchRequests({ initRequests: falRequests }).length,
     5,
   );
-  assert.equal(isGmiCloudImageToVideoRequest({
+  assert.equal(isGmiCloudVideoRequest({
     model: 'VEO3.1',
     dockerVideoProvider: 'gmicloud',
-  }), false);
+  }), true);
+});
+
+test('GMICloud concurrency recognizes standalone wrapper rows before submission', () => {
+  assert.equal(isGmiCloudVideoRequest({
+    model: 'SAMSAR_EXTERNAL_VIDEO',
+    originalVideoModel: 'SEEDANCE2.0I2V',
+    startImage: 'start.png',
+    dockerVideoProviderOverride: 'gmicloud',
+  }), true);
+});
+
+test('GMICloud concurrency defaults to one and remains configurable', () => {
+  assert.equal(getMaxConcurrentGmiCloudVideoRequests({}), 1);
+  assert.equal(getMaxConcurrentGmiCloudVideoRequests({
+    AI_VIDEO_MAX_CONCURRENT_GMICLOUD_REQUESTS: '3',
+  }), 3);
+});
+
+test('GMICloud Seedance 2.0 pending jobs time out after fifteen minutes', () => {
+  const submittedAt = new Date('2026-08-04T00:00:00.000Z');
+  const request = {
+    status: 'PENDING',
+    model: 'SEEDANCE2.0I2V',
+    startImage: 'start.png',
+    dockerVideoProvider: 'gmicloud',
+    requestSubmitAt: submittedAt,
+  };
+  const timeoutMs = getGmiCloudSeedance2PendingTimeoutMs({});
+
+  assert.equal(timeoutMs, 15 * 60 * 1000);
+  assert.equal(
+    isGmiCloudSeedance2RequestTimedOut(request, submittedAt.getTime() + timeoutMs - 1, timeoutMs),
+    false,
+  );
+  assert.equal(
+    isGmiCloudSeedance2RequestTimedOut(request, submittedAt.getTime() + timeoutMs, timeoutMs),
+    true,
+  );
+  assert.equal(isGmiCloudSeedance2RequestTimedOut({
+    ...request,
+    model: 'SEEDANCEI2V',
+  }, submittedAt.getTime() + timeoutMs, timeoutMs), false);
 });
 
 test('base generation retry picks the next highest scored filter pass for each retry', () => {

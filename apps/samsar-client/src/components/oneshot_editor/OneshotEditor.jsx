@@ -14,6 +14,10 @@ import { Tooltip } from 'react-tooltip';
 import { resolveVidgenieLoadedProjectView } from './vidgenieProjectViewState.mjs';
 import { createVidgenieDownloadFilename } from './vidgenieDownloadFilename.mjs';
 import {
+  VIDGENIE_POLL_ACTION,
+  resolveVidgeniePollAction,
+} from './vidgenieGenerationPolling.mjs';
+import {
   FaChevronCircleDown,
   FaChevronDown,
   FaChevronRight,
@@ -4126,24 +4130,36 @@ export default function OneshotEditor() {
     if (currentPollRequestIdRef.current === id) return;
 
     if (id && userInitiated && !userFetching) {
-      // Fetch session, and ONLY trigger polling if still pending
+      // getSessionDetails may start polling itself. Preserve that timer instead
+      // of clearing it when this route-load continuation observes the active id.
       getSessionDetails().then((data) => {
         const usePostProcessingPoll = shouldUsePostProcessingStatusPolling(id);
-        if (
+        const shouldPoll = Boolean(
           user?._id &&
           getHeaders() &&
-          isSessionGenerationPending(data, shouldForceAdvancedVideoEditPolling(id) || usePostProcessingPoll) &&
-          !activeRequestIdRef.current
-        ) {
+          isSessionGenerationPending(
+            data,
+            shouldForceAdvancedVideoEditPolling(id) || usePostProcessingPoll,
+          )
+        );
+        const pollAction = resolveVidgeniePollAction({
+          requestId: id,
+          currentPollRequestId: currentPollRequestIdRef.current,
+          isPending: shouldPoll,
+        });
+
+        if (pollAction === VIDGENIE_POLL_ACTION.START) {
           if (usePostProcessingPoll) {
             pollPostProcessingStatus(id);
           } else {
             pollGenerationStatus(id);
           }
-        } else {
-          // clear any existing pending polls
+        } else if (pollAction === VIDGENIE_POLL_ACTION.STOP) {
           if (pollIntervalRef.current) clearTimeout(pollIntervalRef.current);
           if (assistantPollRef.current) clearInterval(assistantPollRef.current);
+          pollIntervalRef.current = null;
+          assistantPollRef.current = null;
+          currentPollRequestIdRef.current = null;
         }
       });
     }
