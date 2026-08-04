@@ -90,6 +90,48 @@ test('GMICloud video dispatch consumes its only provider slot', () => {
   );
 });
 
+test('GMICloud retry backoff reserves the session queue head', () => {
+  const nowMs = new Date('2026-08-04T08:00:00.000Z').getTime();
+  const delayedQueueHead = {
+    id: 'gmi-retry',
+    sessionId: 'session-one',
+    model: 'SEEDANCE2.0I2V',
+    startImage: 'one.png',
+    dockerVideoProvider: 'gmicloud',
+    nextAttemptAfter: new Date(nowMs + 30_000),
+  };
+  const laterSameSession = {
+    id: 'gmi-next-layer',
+    sessionId: 'session-one',
+    model: 'SEEDANCE2.0I2V',
+    startImage: 'two.png',
+    dockerVideoProvider: 'gmicloud',
+  };
+  const unrelatedProvider = {
+    id: 'fal-one',
+    sessionId: 'session-one',
+    model: 'WANI2V',
+    startImage: 'three.png',
+    dockerVideoProvider: 'fal',
+  };
+
+  assert.deepEqual(
+    selectAiVideoDispatchRequests({
+      initRequests: [delayedQueueHead, laterSameSession, unrelatedProvider],
+      nowMs,
+    }).map(({ id }) => id),
+    ['fal-one'],
+  );
+
+  assert.deepEqual(
+    selectAiVideoDispatchRequests({
+      initRequests: [delayedQueueHead, laterSameSession, unrelatedProvider],
+      nowMs: nowMs + 30_000,
+    }).map(({ id }) => id),
+    ['gmi-retry', 'fal-one'],
+  );
+});
+
 test('the provider limit does not change non-GMICloud concurrency', () => {
   const falRequests = Array.from({ length: 6 }, (_, index) => ({
     id: `fal-${index}`,

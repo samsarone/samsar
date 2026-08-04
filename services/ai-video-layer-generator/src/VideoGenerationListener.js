@@ -409,11 +409,25 @@ export function isGmiCloudSeedance2RequestTimedOut(
   return Number.isFinite(submittedAtMs) && nowMs - submittedAtMs >= timeoutMs;
 }
 
+function getAiVideoQueueSessionKey(request = {}) {
+  return normalizeString(
+    request.sessionId || request.videoSessionId || request.expressVideoSessionId,
+  );
+}
+
+function isAiVideoDispatchReady(request = {}, nowMs = Date.now()) {
+  const nextAttemptAt = request.nextAttemptAfter || request.nextAttemptAt;
+  if (!nextAttemptAt) return true;
+  const nextAttemptMs = new Date(nextAttemptAt).getTime();
+  return !Number.isFinite(nextAttemptMs) || nextAttemptMs <= nowMs;
+}
+
 export function selectAiVideoDispatchRequests({
   activeRequests = [],
   initRequests = [],
   maxConcurrentRequests = MAX_CONCURRENT_AI_VIDEO_REQUESTS,
   maxGmiCloudVideoRequests = getMaxConcurrentGmiCloudVideoRequests(),
+  nowMs = Date.now(),
 } = {}) {
   const remainingCapacity = Math.max(0, maxConcurrentRequests - activeRequests.length);
   if (remainingCapacity === 0) {
@@ -427,16 +441,37 @@ export function selectAiVideoDispatchRequests({
     ).length,
   );
   const selectedRequests = [];
+  const firstGmiCloudRequestBySession = new Map();
+
+  for (const request of initRequests) {
+    if (!isGmiCloudVideoRequest(request)) continue;
+    const sessionKey = getAiVideoQueueSessionKey(request);
+    if (sessionKey && !firstGmiCloudRequestBySession.has(sessionKey)) {
+      firstGmiCloudRequestBySession.set(sessionKey, request);
+    }
+  }
 
   for (const request of initRequests) {
     if (selectedRequests.length >= remainingCapacity) {
       break;
     }
     if (isGmiCloudVideoRequest(request)) {
+      const sessionKey = getAiVideoQueueSessionKey(request);
+      if (
+        sessionKey &&
+        firstGmiCloudRequestBySession.get(sessionKey) !== request
+      ) {
+        continue;
+      }
       if (remainingGmiCloudCapacity === 0) {
         continue;
       }
+      if (!isAiVideoDispatchReady(request, nowMs)) {
+        continue;
+      }
       remainingGmiCloudCapacity -= 1;
+    } else if (!isAiVideoDispatchReady(request, nowMs)) {
+      continue;
     }
     selectedRequests.push(request);
   }
@@ -1731,11 +1766,6 @@ async function generatePendingAiVideoLayerRequests() {
       .find({
         status: 'INIT',
         rowLocked: false,
-        $or: [
-          { nextAttemptAfter: { $exists: false } },
-          { nextAttemptAfter: null },
-          { nextAttemptAfter: { $lte: new Date() } },
-        ],
       })
       .sort({ createdAt: 1 })    // newest first, matching your existing code
       .exec(),
