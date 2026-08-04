@@ -13,7 +13,6 @@ const VIDEO_MODEL_PRIORITY = {
   "VEO3.1FLIV": 11,
   "VEO3.1I2VFAST": 12,
   COSMOS3SUPERI2V: 13,
-  "SEEDANCE2.0I2V": 14,
 };
 
 const getVideoModelPriority = (key = "") =>

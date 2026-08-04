@@ -41,7 +41,6 @@ export const GMI_CLOUD_MEDIA_MODEL_SPECS = Object.freeze([
   Object.freeze({ samsarModel: 'VEO3.1I2VFAST', modality: 'video', modelId: 'veo-3.1-fast-generate-001' }),
   Object.freeze({ samsarModel: 'VEO3.1FLIV', modality: 'video', modelId: 'veo-3.1-generate-001' }),
   Object.freeze({ samsarModel: 'SEEDANCEI2V', modality: 'video', modelId: 'seedance-1-5-pro-251215' }),
-  Object.freeze({ samsarModel: 'SEEDANCE2.0I2V', modality: 'video', modelId: 'seedance-2-0-260128' }),
   Object.freeze({ samsarModel: 'KLINGIMGTOVID3PRO', modality: 'video', modelId: 'kling-v3-image-to-video' }),
   Object.freeze({ samsarModel: 'KLINGIMGTOVIDTURBO', modality: 'video', modelId: 'kling-3.0-turbo-i2v' }),
   Object.freeze({ samsarModel: 'KLINGIMGTOVIDPRO', modality: 'video', modelId: 'Kling-Image2Video-V1.6-Pro' }),

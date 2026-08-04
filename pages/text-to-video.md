@@ -71,8 +71,6 @@ Express video models:
 | `KLINGIMGTOVIDTURBO` | 36 |
 | `HAPPYHORSEI2V` (Happy Horse 1.1 I2V) | 36 |
 
-Standalone deployments can additionally expose provider-billed `SEEDANCE2.0I2V` when its validated adapter is available. It does not use the fixed Samsar credits-per-second table above.
-
 Use the runtime endpoint for the current filtered deployment view:
 
 ```bash

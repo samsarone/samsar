@@ -11,6 +11,8 @@ export const DOCKER_VIDEO_PROVIDER = Object.freeze({
   GMICLOUD: 'gmicloud',
 });
 
+const DISABLED_DOCKER_VIDEO_MODELS = new Set(['SEEDANCE2.0I2V']);
+
 export const DOCKER_VIDEO_PROVIDER_PRIORITY_BY_MODEL = Object.freeze({
   'VEO3.1': [
     DOCKER_VIDEO_PROVIDER.GOOGLE_CLOUD,
@@ -55,9 +57,6 @@ export const DOCKER_VIDEO_PROVIDER_PRIORITY_BY_MODEL = Object.freeze({
     DOCKER_VIDEO_PROVIDER.GMICLOUD,
     DOCKER_VIDEO_PROVIDER.SAMSAR,
     DOCKER_VIDEO_PROVIDER.FAL,
-  ],
-  'SEEDANCE2.0I2V': [
-    DOCKER_VIDEO_PROVIDER.GMICLOUD,
   ],
   KLINGIMGTOVID3PRO: [
     DOCKER_VIDEO_PROVIDER.GMICLOUD,
@@ -310,9 +309,6 @@ export function hasGmiCloudVideoModelMapping(model, env = process.env) {
     const route = catalog?.models?.[normalizedModel]?.video;
     const modelId = normalizeString(route?.modelId);
     if (!modelId) return false;
-    if (normalizedModel === 'SEEDANCE2.0I2V') {
-      return modelId === 'seedance-2-0-260128' && route?.operation === 'video.generate';
-    }
     return true;
   } catch {
     return false;
@@ -395,6 +391,10 @@ export function isVideoProviderConfigured(provider) {
 export function getDockerVideoProviderPriority(model, { generationType = '' } = {}) {
   const normalizedModel = normalizeVideoModelKey(model);
   const normalizedGenerationType = normalizeString(generationType).toLowerCase();
+
+  if (DISABLED_DOCKER_VIDEO_MODELS.has(normalizedModel)) {
+    return [];
+  }
 
   if (normalizedGenerationType === 'lip_sync' || DOCKER_FAL_LIP_SYNC_MODELS.includes(normalizedModel)) {
     return [DOCKER_VIDEO_PROVIDER.FAL, DOCKER_VIDEO_PROVIDER.SAMSAR];

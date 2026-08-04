@@ -105,11 +105,6 @@ CURATED_SAMSAR_MODELS: Mapping[str, CuratedModel] = {
         "video.generate",
         ("seedance-1-5-pro-251215",),
     ),
-    "SEEDANCE2.0I2V": CuratedModel(
-        "video",
-        "video.generate",
-        ("seedance-2-0-260128",),
-    ),
     "KLINGIMGTOVID3PRO": CuratedModel(
         "video",
         "video.generate",

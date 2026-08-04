@@ -31,7 +31,6 @@ const AUDIO_VIDEO_SOUND_EFFECT_MODELS = [
   'VEO3.1I2V',
   'VEO3.1I2VFAST',
   'SEEDANCEI2V',
-  'SEEDANCE2.0I2V',
 ];
 import {
   createTextToVideoPromptFromLayerPrompt,
@@ -460,11 +459,7 @@ export async function createGenerativeVideoAnimationsForFrames(sessionId) {
         textToVideoPrompt = videoGenerationPrompt;
       }
 
-      if (
-        (videoGenerationModel === 'SEEDANCEI2V' ||
-          videoGenerationModel === 'SEEDANCE2.0I2V') &&
-        videoTone === 'grounded'
-      ) {
+      if (videoGenerationModel === 'SEEDANCEI2V' && videoTone === 'grounded') {
         textToVideoPrompt += `Maintain text and visual accuracy. Do not distort any text or add non-english text.`;
       }
     }
@@ -575,10 +570,7 @@ export async function createGenerativeVideoAnimationsForFrames(sessionId) {
         await requestRenderExpressCustomVideo(payload);
       } else if (videoGenerationModel.startsWith('KLING')) {
         await requestRenderKlingVideo(payload);
-      } else if (
-        videoGenerationModel === 'SEEDANCEI2V' ||
-        videoGenerationModel === 'SEEDANCE2.0I2V'
-      ) {
+      } else if (videoGenerationModel === 'SEEDANCEI2V') {
         await requestRenderSeeDanceVideo(payload);
       } else if (videoGenerationModel === 'HAPPYHORSEI2V') {
         await requestRenderHappyHorseI2VVideo(payload);

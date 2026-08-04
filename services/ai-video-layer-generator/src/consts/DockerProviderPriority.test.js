@@ -190,13 +190,8 @@ test('standalone places credential-scoped GMICloud below native providers but ah
     DOCKER_VIDEO_PROVIDER.SAMSAR,
     DOCKER_VIDEO_PROVIDER.FAL,
   ]);
-  assert.deepEqual(getDockerVideoProviderPriority('SEEDANCE2.0I2V'), [
-    DOCKER_VIDEO_PROVIDER.GMICLOUD,
-  ]);
-  assert.equal(
-    resolveDockerVideoProvider('SEEDANCE2.0I2V'),
-    DOCKER_VIDEO_PROVIDER.GMICLOUD,
-  );
+  assert.deepEqual(getDockerVideoProviderPriority('SEEDANCE2.0I2V'), []);
+  assert.equal(resolveDockerVideoProvider('SEEDANCE2.0I2V'), '');
   assert.deepEqual(getDockerVideoProviderPriority('KLINGIMGTOVID3PRO'), [
     DOCKER_VIDEO_PROVIDER.GMICLOUD,
     DOCKER_VIDEO_PROVIDER.SAMSAR,

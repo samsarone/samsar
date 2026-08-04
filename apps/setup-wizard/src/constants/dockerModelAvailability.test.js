@@ -127,9 +127,6 @@ test('GMICloud inference is not advertised until both text and vision routes are
 test('GMICloud exposes each credential-scoped exact compatible video model', () => {
   const videoMappings = {
     'VEO3.1FLIV': { video: { modelId: 'veo-3.1-generate-001' } },
-    'SEEDANCE2.0I2V': {
-      video: { modelId: 'seedance-2-0-260128', operation: 'video.generate' },
-    },
     KLINGIMGTOVID3PRO: { video: { modelId: 'kling-v3-image-to-video' } },
     KLINGIMGTOVIDTURBO: { video: { modelId: 'kling-3.0-turbo-i2v' } },
     KLINGIMGTOVIDPRO: { video: { modelId: 'Kling-Image2Video-V1.6-Pro' } },
@@ -145,59 +142,33 @@ test('GMICloud exposes each credential-scoped exact compatible video model', () 
   for (const model of Object.keys(videoMappings)) {
     assert.equal(available.models.includes(model), true, model);
     assert.equal(available.modelProviders[model], DOCKER_PROVIDER.GMI_CLOUD, model);
-    if (model === 'SEEDANCE2.0I2V') {
-      assert.deepEqual(available.modelProviderPriority[model], [DOCKER_PROVIDER.GMI_CLOUD]);
-    } else {
-      assert.equal(
-        available.modelProviderPriority[model].indexOf(DOCKER_PROVIDER.GMI_CLOUD) <
-          available.modelProviderPriority[model].indexOf(DOCKER_PROVIDER.FAL),
-        true,
-        model,
-      );
-    }
+    assert.equal(
+      available.modelProviderPriority[model].indexOf(DOCKER_PROVIDER.GMI_CLOUD) <
+        available.modelProviderPriority[model].indexOf(DOCKER_PROVIDER.FAL),
+      true,
+      model,
+    );
   }
   assert.equal(available.models.includes('SEEDANCE2.0T2V'), false);
   assert.equal(available.models.includes('KLINGTXTTOVID3PRO'), false);
 });
 
-test('Seedance 2.0 I2V is unavailable without its credential-scoped GMICloud route', () => {
-  const withoutGmiCloud = buildDockerAvailableModelsFromEnabledProviders([
-    DOCKER_PROVIDER.FAL,
-    DOCKER_PROVIDER.SAMSAR,
-  ]);
-  assert.equal(withoutGmiCloud.models.includes('SEEDANCE2.0I2V'), false);
-
-  const withoutCredentialCatalog = buildDockerAvailableModelsFromEnabledProviders([
-    DOCKER_PROVIDER.GMI_CLOUD,
-  ]);
-  assert.equal(withoutCredentialCatalog.models.includes('SEEDANCE2.0I2V'), false);
-
-  const withoutExactRoute = buildDockerAvailableModelsFromEnabledProviders([
+test('Seedance 2.0 I2V remains unavailable even when a provider advertises a route', () => {
+  const available = buildDockerAvailableModelsFromEnabledProviders([
     DOCKER_PROVIDER.GMI_CLOUD,
     DOCKER_PROVIDER.FAL,
     DOCKER_PROVIDER.SAMSAR,
-  ], { gmiCloudModelMappings: {} });
-  assert.equal(withoutExactRoute.models.includes('SEEDANCE2.0I2V'), false);
-
-  const withWrongRoute = buildDockerAvailableModelsFromEnabledProviders([
-    DOCKER_PROVIDER.GMI_CLOUD,
-  ], {
-    gmiCloudModelMappings: {
-      'SEEDANCE2.0I2V': { video: { modelId: 'seedance-2-0-preview' } },
-    },
-  });
-  assert.equal(withWrongRoute.models.includes('SEEDANCE2.0I2V'), false);
-
-  const withWrongOperation = buildDockerAvailableModelsFromEnabledProviders([
-    DOCKER_PROVIDER.GMI_CLOUD,
   ], {
     gmiCloudModelMappings: {
       'SEEDANCE2.0I2V': {
-        video: { modelId: 'seedance-2-0-260128', operation: 'video.status' },
+        video: { modelId: 'seedance-2-0-260128', operation: 'video.generate' },
       },
     },
   });
-  assert.equal(withWrongOperation.models.includes('SEEDANCE2.0I2V'), false);
+
+  assert.equal(available.models.includes('SEEDANCE2.0I2V'), false);
+  assert.equal(available.modelProviders['SEEDANCE2.0I2V'], undefined);
+  assert.equal(available.modelProviderPriority['SEEDANCE2.0I2V'], undefined);
 });
 
 test('GMICloud exposes only credential-scoped exact speech routes with audio actions', () => {

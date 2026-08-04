@@ -46,34 +46,24 @@ test('text-to-video validation accepts the shared express video model list', () 
   assert.equal(validation.status, true);
 });
 
-test('Seedance 2.0 is an express provider-billed model on standalone video surfaces', () => {
+test('Seedance 2.0 is disabled for new express and image-list video requests', () => {
   assert.deepEqual(validateExpressVideoModelKey('SEEDANCE2.0I2V'), {
-    status: true,
-    videoModel: 'SEEDANCE2.0I2V',
+    status: false,
+    message: 'Invalid video model',
   });
   assert.equal(
     validateMovieInput(buildValidMoviePayload({ video_model: 'SEEDANCE2.0I2V' })).status,
-    true,
+    false,
   );
-  assert.equal(TEXT_TO_VIDEO_VIDEO_MODEL_KEYS.includes('SEEDANCE2.0I2V'), true);
-  assert.equal(IMAGE_LIST_TO_VIDEO_VIDEO_MODEL_KEYS.includes('SEEDANCE2.0I2V'), true);
+  assert.equal(TEXT_TO_VIDEO_VIDEO_MODEL_KEYS.includes('SEEDANCE2.0I2V'), false);
+  assert.equal(IMAGE_LIST_TO_VIDEO_VIDEO_MODEL_KEYS.includes('SEEDANCE2.0I2V'), false);
   assert.equal(
-    VIDEO_GENERATION_MODEL_TYPES.find((model) => model.key === 'SEEDANCE2.0I2V')?.isExpressModel,
-    true,
+    VIDEO_GENERATION_MODEL_TYPES.find((model) => model.key === 'SEEDANCE2.0I2V'),
+    undefined,
   );
-  assert.deepEqual(
+  assert.equal(
     VIDEO_MODEL_PRICES.find((model) => model.key === 'SEEDANCE2.0I2V'),
-    {
-      key: 'SEEDANCE2.0I2V',
-      name: 'Seedance 2.0 I2V',
-      isExpressModel: true,
-      isImageToVideoModel: true,
-      isTextToVideoModel: false,
-      standaloneOnly: true,
-      providerBilled: true,
-      prices: [],
-      units: [5, 10, 15],
-    },
+    undefined,
   );
 });
 

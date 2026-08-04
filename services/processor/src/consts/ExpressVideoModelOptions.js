@@ -1,4 +1,5 @@
 import { EXPRESS_VIDEO_CREDITS_PER_SECOND_BY_MODEL } from './pricing/ExpressVideoPricingDistribution.js';
+import { isVideoModelTemporarilyDisabled } from './VideoModelAvailability.js';
 
 export const EXPRESS_VIDEO_IMAGE_MODEL_KEYS = Object.freeze([
   'GPTIMAGE2',
@@ -7,14 +8,12 @@ export const EXPRESS_VIDEO_IMAGE_MODEL_KEYS = Object.freeze([
   'WAN2.7PRO',
 ]);
 
-export const STANDALONE_PROVIDER_BILLED_EXPRESS_VIDEO_MODEL_KEYS = Object.freeze([
-  'SEEDANCE2.0I2V',
-]);
+export const STANDALONE_PROVIDER_BILLED_EXPRESS_VIDEO_MODEL_KEYS = Object.freeze([]);
 
 export const EXPRESS_VIDEO_VIDEO_MODEL_KEYS = Object.freeze([
   ...Object.keys(EXPRESS_VIDEO_CREDITS_PER_SECOND_BY_MODEL),
   ...STANDALONE_PROVIDER_BILLED_EXPRESS_VIDEO_MODEL_KEYS,
-]);
+].filter((modelKey) => !isVideoModelTemporarilyDisabled(modelKey)));
 
 export const TEXT_TO_VIDEO_IMAGE_MODEL_KEYS = EXPRESS_VIDEO_IMAGE_MODEL_KEYS;
 export const TEXT_TO_VIDEO_VIDEO_MODEL_KEYS = EXPRESS_VIDEO_VIDEO_MODEL_KEYS;

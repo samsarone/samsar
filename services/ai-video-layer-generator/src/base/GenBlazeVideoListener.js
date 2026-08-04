@@ -9,7 +9,6 @@ export const GENBLAZE_VIDEO_MODELS = new Set([
   'VEO3.1I2VFAST',
   'VEO3.1FLIV',
   'SEEDANCEI2V',
-  'SEEDANCE2.0I2V',
   'KLINGIMGTOVID3PRO',
   'KLINGIMGTOVIDTURBO',
   'KLINGIMGTOVIDPRO',
@@ -25,7 +24,6 @@ const IMAGE_TO_VIDEO_MODELS = new Set([
   'VEO3.1I2VFAST',
   'VEO3.1FLIV',
   'SEEDANCEI2V',
-  'SEEDANCE2.0I2V',
   'KLINGIMGTOVID3PRO',
   'KLINGIMGTOVIDTURBO',
   'KLINGIMGTOVIDPRO',
@@ -40,7 +38,6 @@ const OPTIONAL_START_IMAGE_MODELS = new Set(['HAILUOPRO']);
 const END_IMAGE_MODELS = new Set([
   'VEO3.1FLIV',
   'SEEDANCEI2V',
-  'SEEDANCE2.0I2V',
   'KLINGIMGTOVID3PRO',
 ]);
 
@@ -52,7 +49,7 @@ const VEO_MODELS = new Set([
   'VEO3.1FLIV',
 ]);
 const VEO_IMAGE_MODELS = new Set(['VEO3.1I2V', 'VEO3.1I2VFAST', 'VEO3.1FLIV']);
-const SEEDANCE_MODELS = new Set(['SEEDANCEI2V', 'SEEDANCE2.0I2V']);
+const SEEDANCE_MODELS = new Set(['SEEDANCEI2V']);
 const SEEDANCE_ASPECT_RATIOS = new Set(['21:9', '16:9', '4:3', '1:1', '3:4', '9:16']);
 const HAPPY_HORSE_DURATIONS = Object.freeze([5, 10, 15]);
 
@@ -230,13 +227,9 @@ export function buildGenBlazeVideoRequest(payload = {}) {
     addIntegerSeed(params, payload.seed, { parse: true });
   } else if (SEEDANCE_MODELS.has(model)) {
     params = {
-      duration: normalizeSeedanceDuration(
-        payload.duration,
-        model === 'SEEDANCE2.0I2V' ? 15 : 12,
-      ),
+      duration: normalizeSeedanceDuration(payload.duration, 12),
       generate_audio: generateAudio,
     };
-    if (model === 'SEEDANCE2.0I2V') params.resolution = '720p';
     const aspectRatio = normalizeSeedanceAspectRatio(
       payload.aspectRatio || payload.aspect_ratio,
     );

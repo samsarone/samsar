@@ -171,7 +171,6 @@ const SOUND_EFFECT_MODELS = [
   'VEO3.1I2V',
   'VEO3.1I2VFAST',
   'SEEDANCEI2V',
-  'SEEDANCE2.0I2V',
 ];
 
 const MAX_BASE_GENERATION_ATTEMPTS = 3;
@@ -182,13 +181,6 @@ export function getMaxConcurrentGmiCloudVideoRequests(env = process.env) {
   return Math.max(
     1,
     Number(env.AI_VIDEO_MAX_CONCURRENT_GMICLOUD_REQUESTS) || 1,
-  );
-}
-
-export function getGmiCloudSeedance2PendingTimeoutMs(env = process.env) {
-  return Math.max(
-    60 * 1000,
-    Number(env.AI_VIDEO_GMICLOUD_SEEDANCE2_PENDING_TIMEOUT_MS) || 15 * 60 * 1000,
   );
 }
 
@@ -389,24 +381,6 @@ export function isGmiCloudVideoRequest(request = {}) {
   // wrapper model. Resolve the original model directly through Docker routing
   // so the provider cap applies before the first GMICloud submission.
   return resolveDockerVideoProviderForPayload(model, request) === DOCKER_VIDEO_PROVIDER.GMICLOUD;
-}
-
-export function isGmiCloudSeedance2RequestTimedOut(
-  request = {},
-  nowMs = Date.now(),
-  timeoutMs = getGmiCloudSeedance2PendingTimeoutMs(),
-) {
-  if (
-    normalizeString(request.status).toUpperCase() !== 'PENDING' ||
-    getDockerAdapterRoutingModel(request) !== 'SEEDANCE2.0I2V' ||
-    !isGmiCloudVideoRequest(request)
-  ) {
-    return false;
-  }
-
-  const submittedAt = request.requestSubmitAt || request.createdAt;
-  const submittedAtMs = submittedAt ? new Date(submittedAt).getTime() : Number.NaN;
-  return Number.isFinite(submittedAtMs) && nowMs - submittedAtMs >= timeoutMs;
 }
 
 function getAiVideoQueueSessionKey(request = {}) {
@@ -1691,21 +1665,6 @@ async function generatePendingAiVideoLayerRequests() {
 
   for (const request of inProgressRequests) {
     try {
-      if (isGmiCloudSeedance2RequestTimedOut(request)) {
-        const timeoutMs = getGmiCloudSeedance2PendingTimeoutMs();
-        const timeoutMinutes = Math.round(timeoutMs / (60 * 1000));
-        request.lastProviderFailureMessage =
-          `GMICloud Seedance 2.0 generation timed out after ${timeoutMinutes} minutes.`;
-        request.lastProviderFailureDetail = {
-          code: 'GMICLOUD_SEEDANCE2_PENDING_TIMEOUT',
-          timeoutMs,
-          requestSubmitAt: request.requestSubmitAt || request.createdAt || null,
-        };
-        request.providerFailureDefinitive = false;
-        request.submissionOutcomeUnknown = false;
-        await processVideoGenerationFailed(request);
-        continue;
-      }
       if (request.nextAttemptAfter && new Date(request.nextAttemptAfter).getTime() > Date.now()) {
         continue;
       }
