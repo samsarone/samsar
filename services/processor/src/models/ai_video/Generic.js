@@ -6,6 +6,14 @@ import VideoSession from '../../schema/VideoSession.js';
 import AIVideoLayerGeneration from '../../schema/AIVideoLayerGeneration.js';
 import { getFrameImageForLayer, getBaseFrameImageForLayer, getAiVideoFrameImageForLayer, getRenderableItemListForLayer } from '../../utils/ImageRenderUtils.js';
 import { uploadFrameLayerImageToCDN, primeCDNCache } from '../AWS.js';
+import { isProductionEdition } from '../../utils/EnvironmentUtils.js';
+
+export function getInitialGenericVideoAdapter(model, env = process.env) {
+  if (model === 'SEEDANCE2.0I2V' && isProductionEdition(env)) {
+    return 'gmicloud';
+  }
+  return '';
+}
 
 
 
@@ -98,6 +106,10 @@ export async function requestRenderGenericVideo(payload) {
     model: model,
     duration: requestDuration,
     generateAudio: generateAudio,
+  }
+  const initialVideoAdapter = getInitialGenericVideoAdapter(model);
+  if (initialVideoAdapter) {
+    aiVideoRenderPayload.dockerVideoProvider = initialVideoAdapter;
   }
   if (currentLayerFrameImage) {
     aiVideoRenderPayload.startImage = currentLayerFrameImage;

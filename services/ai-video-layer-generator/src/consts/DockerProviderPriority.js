@@ -424,10 +424,18 @@ export function getDockerVideoProviderPriority(model, { generationType = '' } = 
     process.env.SAMSAR_HOSTED_GENBLAZE_VIDEO_ENABLED,
   );
   if (!isStandaloneEdition()) {
-    defaultPriority = applyHostedFalPriority(defaultPriority)
-      .filter(
-        (provider) => hostedGmiCloudEnabled || provider !== DOCKER_VIDEO_PROVIDER.GMICLOUD,
-      );
+    if (normalizedModel === 'SEEDANCE2.0I2V') {
+      // Hosted production has one prescribed adapter for Seedance 2.0. Do not
+      // silently fall through to FAL when GMICloud is unavailable or invalid.
+      defaultPriority = hostedGmiCloudEnabled
+        ? [DOCKER_VIDEO_PROVIDER.GMICLOUD]
+        : [];
+    } else {
+      defaultPriority = applyHostedFalPriority(defaultPriority)
+        .filter(
+          (provider) => hostedGmiCloudEnabled || provider !== DOCKER_VIDEO_PROVIDER.GMICLOUD,
+        );
+    }
   }
   if (!hasGmiCloudVideoModelMapping(normalizedModel)) {
     defaultPriority = defaultPriority.filter(
@@ -444,6 +452,10 @@ export function getDockerVideoProviderPriority(model, { generationType = '' } = 
       defaultPriority,
       getStandaloneVideoProviderPreference(normalizedModel),
     );
+  }
+
+  if (normalizedModel === 'SEEDANCE2.0I2V') {
+    return defaultPriority;
   }
 
   // Preserve the existing staging/explicit-routing behavior. Standalone

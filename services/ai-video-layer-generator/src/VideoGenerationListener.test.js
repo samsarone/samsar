@@ -23,6 +23,7 @@ import {
   isGmiCloudVideoRequest,
   isSubmittedVideoAdapterCompatible,
   resolveSubmittedVideoAdapter,
+  resolveVideoSubmissionAdapter,
   resolveCompletedLayerDuration,
   resolveConnectedAudioLayerDuration,
   selectAiVideoDispatchRequests,
@@ -93,6 +94,16 @@ test('pending AI video requests remain pinned to their submitted adapter', () =>
     submittedAdapter: 'gmicloud',
     dockerVideoProvider: 'fal',
   }), 'gmicloud');
+});
+
+test('video submission adapter is derived from the actual dispatch path', () => {
+  assert.equal(resolveVideoSubmissionAdapter('SEEDANCE2.0I2V', {
+    model: 'SEEDANCE2.0I2V',
+    dockerVideoProvider: 'fal',
+  }), 'fal');
+  assert.equal(resolveVideoSubmissionAdapter('RUNWAYML', {
+    model: 'RUNWAYML',
+  }), 'runway');
 });
 
 test('AI video polling rejects adapter and model mismatches', () => {

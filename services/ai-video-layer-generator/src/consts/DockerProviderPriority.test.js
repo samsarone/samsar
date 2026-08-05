@@ -221,6 +221,28 @@ test('standalone places credential-scoped GMICloud below native providers but ah
   }
 });
 
+test('hosted Seedance 2.0 fails closed instead of falling back to FAL', (t) => {
+  clearEnv();
+  const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'samsar-video-hosted-gmi-missing-'));
+  const catalogPath = path.join(temporaryDirectory, 'genblaze-model-catalog.json');
+  t.after(() => fs.rmSync(temporaryDirectory, { recursive: true, force: true }));
+  fs.writeFileSync(catalogPath, JSON.stringify({
+    version: 1,
+    provider: 'gmicloud',
+    models: {},
+  }));
+
+  process.env.CURRENT_ENV = 'production';
+  process.env.SAMSAR_DOCKER_ADAPTER_ROUTING_ENABLED = 'true';
+  process.env.SAMSAR_HOSTED_GENBLAZE_VIDEO_ENABLED = 'true';
+  process.env.SAMSAR_GENBLAZE_ENABLED = 'true';
+  process.env.SAMSAR_GENBLAZE_MODEL_CATALOG_PATH = catalogPath;
+  process.env.FAL_API_KEY = 'fal-key';
+
+  assert.deepEqual(getDockerVideoProviderPriority('SEEDANCE2.0I2V'), []);
+  assert.equal(resolveDockerVideoProvider('SEEDANCE2.0I2V'), '');
+});
+
 test('hosted production can explicitly prefer validated GMICloud Seedance 2.0', (t) => {
   clearEnv();
   const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'samsar-video-hosted-gmi-'));
@@ -245,7 +267,6 @@ test('hosted production can explicitly prefer validated GMICloud Seedance 2.0', 
 
   assert.deepEqual(getDockerVideoProviderPriority('SEEDANCE2.0I2V'), [
     DOCKER_VIDEO_PROVIDER.GMICLOUD,
-    DOCKER_VIDEO_PROVIDER.FAL,
   ]);
   assert.equal(
     resolveDockerVideoProvider('SEEDANCE2.0I2V'),

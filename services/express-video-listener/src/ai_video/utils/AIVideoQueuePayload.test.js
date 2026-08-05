@@ -1,7 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { buildRetryableImageToVideoQueuePayload } from './AIVideoQueuePayload.js';
+import {
+  buildRetryableImageToVideoQueuePayload,
+  getInitialVideoAdapter,
+} from './AIVideoQueuePayload.js';
 import { VIDEO_MODEL_PRICES } from '../../consts/ModelPrices.js';
 
 const retryContext = {
@@ -83,6 +86,20 @@ test('Seedance 2.0 keeps standalone provider billing with production rate metada
     { aspectRatio: '9:16', price: 150 },
   ]);
   assert.equal(pricing?.pricingDistribution?.total, 40);
+});
+
+test('production Seedance 2.0 queue requests are born pinned to GMICloud', () => {
+  assert.equal(getInitialVideoAdapter('SEEDANCE2.0I2V', {
+    CURRENT_ENV: 'production',
+    SAMSAR_DEPLOYMENT_EDITION: 'production',
+  }), 'gmicloud');
+  assert.equal(getInitialVideoAdapter('SEEDANCE2.0I2V', {
+    CURRENT_ENV: 'docker',
+    SAMSAR_DEPLOYMENT_EDITION: 'standalone',
+  }), '');
+  assert.equal(getInitialVideoAdapter('SEEDANCEI2V', {
+    CURRENT_ENV: 'production',
+  }), '');
 });
 
 test('queue payload preserves model-specific image and generation overrides', () => {

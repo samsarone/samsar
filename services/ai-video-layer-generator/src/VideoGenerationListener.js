@@ -129,6 +129,7 @@ import {
 } from './base/GenBlazeVideoListener.js';
 import {
   DOCKER_VIDEO_PROVIDER,
+  getDockerVideoProviderPriority,
   resolveDockerVideoProvider,
   resolveNextDockerVideoProvider,
 } from './consts/DockerProviderPriority.js';
@@ -379,15 +380,43 @@ export function isSubmittedVideoAdapterCompatible(model, submittedAdapter) {
 function resolveDockerVideoProviderForPayload(model, payload = {}) {
   const selectedProvider = normalizeString(payload?.dockerVideoProvider);
   if (
-    isStandaloneEdition() &&
     Object.values(DOCKER_VIDEO_PROVIDER).includes(selectedProvider)
   ) {
-    return selectedProvider;
+    return resolveDockerVideoProvider(model, {
+      generationType: payload.generationType || payload.layerAiVideoType,
+      preferredProvider: selectedProvider,
+    });
   }
   return resolveDockerVideoProvider(model, {
     generationType: payload.generationType || payload.layerAiVideoType,
     preferredProvider: payload.dockerVideoProviderOverride,
   });
+}
+
+export function resolveVideoSubmissionAdapter(model, payload = {}) {
+  const normalizedModel = normalizeString(model);
+  if (shouldUseSamsarExternalVideoProvider(payload)) {
+    return DOCKER_VIDEO_PROVIDER.SAMSAR;
+  }
+  if (shouldUseGenBlazeVideoProvider(payload)) {
+    return DOCKER_VIDEO_PROVIDER.GMICLOUD;
+  }
+  if (normalizedModel === 'RUNWAYML') {
+    return DOCKER_VIDEO_PROVIDER.RUNWAY;
+  }
+  if (
+    ['VEO3.1', 'VEO3.1FAST', 'VEO3.1I2V', 'VEO3.1I2VFAST'].includes(normalizedModel) &&
+    shouldUseGoogleVeo3ForPayload(normalizedModel, payload)
+  ) {
+    return DOCKER_VIDEO_PROVIDER.GOOGLE_CLOUD;
+  }
+  if (normalizedModel === 'HAPPYHORSEI2V' && shouldUseAlibabaNativeHappyHorse(payload)) {
+    return DOCKER_VIDEO_PROVIDER.ALIBABA_CLOUD;
+  }
+  if (normalizedModel === 'CUSTOM_IMAGE_TO_VIDEO') {
+    return 'custom';
+  }
+  return DOCKER_VIDEO_PROVIDER.FAL;
 }
 
 function getDockerAdapterRoutingModel(payload = {}) {
@@ -1966,18 +1995,26 @@ async function generateAIVideoLayer(payload) {
     getDockerAdapterRoutingModel(payload),
     payload,
   );
-  if (
-    isStandaloneEdition() &&
-    ['image_to_video', 'text_to_video'].includes(dockerAdapterRequestType)
-  ) {
-    const selectedProvider = resolveAIVideoProvider(
-      getDockerAdapterRoutingModel(payload),
-      payload,
-    );
-    if (Object.values(DOCKER_VIDEO_PROVIDER).includes(selectedProvider)) {
+  if (['image_to_video', 'text_to_video'].includes(dockerAdapterRequestType)) {
+    const routingModel = getDockerAdapterRoutingModel(payload);
+    const providerPriority = getDockerVideoProviderPriority(routingModel, {
+      generationType: payload.generationType || payload.layerAiVideoType,
+    });
+    const selectedProvider = resolveDockerVideoProviderForPayload(routingModel, payload);
+    const normalizedSelectedProvider = normalizeVideoAdapter(selectedProvider);
+    const adapterSelectionRequired = (
+      isStandaloneEdition() && providerPriority.length > 0
+    ) || routingModel === 'SEEDANCE2.0I2V';
+    if (
+      adapterSelectionRequired &&
+      !Object.values(DOCKER_VIDEO_PROVIDER).includes(normalizedSelectedProvider)
+    ) {
+      throw new Error(`${routingModel} has no configured adapter available for submission.`);
+    }
+    if (Object.values(DOCKER_VIDEO_PROVIDER).includes(normalizedSelectedProvider)) {
       if (
         model === 'SAMSAR_EXTERNAL_VIDEO' &&
-        selectedProvider !== DOCKER_VIDEO_PROVIDER.SAMSAR &&
+        normalizedSelectedProvider !== DOCKER_VIDEO_PROVIDER.SAMSAR &&
         normalizeString(payload.originalVideoModel)
       ) {
         model = normalizeString(payload.originalVideoModel);
@@ -1985,16 +2022,16 @@ async function generateAIVideoLayer(payload) {
         payload.samsarExternalProvider = false;
         payload.externalProvider = '';
       }
-      payload.dockerVideoProvider = selectedProvider;
+      payload.dockerVideoProvider = normalizedSelectedProvider;
       const providerSelectionUpdate = {
         $set: {
           model,
-          dockerVideoProvider: selectedProvider,
+          dockerVideoProvider: normalizedSelectedProvider,
           providerFailureDefinitive: false,
           submissionOutcomeUnknown: false,
         },
       };
-      if (selectedProvider !== DOCKER_VIDEO_PROVIDER.SAMSAR) {
+      if (normalizedSelectedProvider !== DOCKER_VIDEO_PROVIDER.SAMSAR) {
         providerSelectionUpdate.$unset = {
           samsarExternalProvider: '',
           externalProvider: '',
@@ -2014,6 +2051,22 @@ async function generateAIVideoLayer(payload) {
     ['VEO3.1', 'VEO3.1FAST', 'VEO3.1I2V', 'VEO3.1I2VFAST'].includes(model) &&
     shouldUseGoogleVeo3ForPayload(model, payload)
   );
+  const submissionAdapter = resolveVideoSubmissionAdapter(model, payload);
+  const selectedAdapter = normalizeVideoAdapter(payload.dockerVideoProvider);
+  if (selectedAdapter && submissionAdapter !== selectedAdapter) {
+    throw new Error(
+      `${model} selected ${selectedAdapter} but its submission path resolved to ${submissionAdapter}.`,
+    );
+  }
+  payload.submittedAdapter = submissionAdapter;
+  await AIVideoLayerGeneration.findByIdAndUpdate(_id, {
+    $set: {
+      submittedAdapter: submissionAdapter,
+      ...(Object.values(DOCKER_VIDEO_PROVIDER).includes(submissionAdapter)
+        ? { dockerVideoProvider: submissionAdapter }
+        : {}),
+    },
+  });
   if (!usesSamsarExternalProvider && !usesGoogleInlineMedia) {
     payload = await normalizeSelectedVideoGenerationMediaPayload(
       payload,
@@ -2112,14 +2165,7 @@ async function generateAIVideoLayer(payload) {
     transientProviderErrorCount: 0,
     expireAt: new Date(),
   };
-  const submittedProvider = normalizeString(payload.dockerVideoProvider) ||
-    resolveAIVideoProvider(getDockerAdapterRoutingModel(payload), {
-      ...payload,
-      generationId,
-    });
-  const submittedAdapter = normalizeVideoAdapter(submittedProvider) || (
-    model === 'CUSTOM_IMAGE_TO_VIDEO' ? 'custom' : ''
-  );
+  const submittedAdapter = submissionAdapter;
   if (submittedAdapter) {
     generationUpdate.submittedAdapter = submittedAdapter;
     payload.submittedAdapter = submittedAdapter;
@@ -2131,7 +2177,7 @@ async function generateAIVideoLayer(payload) {
     generationUpdate.externalProvider = DOCKER_VIDEO_PROVIDER.GMICLOUD;
   }
   if (payload.dockerAdapterFailoverAttempted === true && payload.dockerVideoProviderOverride) {
-    const successfulProvider = submittedProvider;
+    const successfulProvider = submittedAdapter;
     if (successfulProvider === payload.dockerVideoProviderOverride) {
       generationUpdate.dockerAdapterFailoverSucceeded = true;
       generationUpdate.dockerAdapterFailoverSucceededAt = new Date();
