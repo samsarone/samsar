@@ -153,7 +153,7 @@ test('grounded scoring relaxes to 50 only after multiple score-only failures', (
       failureRetryCount: 0,
       filterRetryCount: 1,
     }),
-    61,
+    55,
   );
   assert.equal(
     __testOnly__.getScoreThresholdCutoff('grounded', {
@@ -167,7 +167,7 @@ test('grounded scoring relaxes to 50 only after multiple score-only failures', (
       failureRetryCount: 0,
       filterRetryCount: 2,
     }),
-    61,
+    55,
   );
 });
 
@@ -177,7 +177,7 @@ test('image generation failures do not enable score-only layer pruning', () => {
     filterRetryCount: 2,
   });
 
-  assert.equal(policy.fallbackScoreCutoff, 51);
+  assert.equal(policy.fallbackScoreCutoff, 45);
   assert.equal(policy.allowExpressLayerPrune, false);
   assert.equal(
     __testOnly__.hasReachedScoreOnlyFilterRelaxation({
@@ -454,7 +454,55 @@ test('GeneratedImage duplicate-key races resolve to the already-persisted final 
   assert.equal(result, existing);
 });
 
-test('standalone image retries advance to the next configured adapter and clear stale request state', () => {
+test('standalone image generation failures advance to the next configured adapter and clear stale request state', () => {
+  const previous = {
+    CURRENT_ENV: process.env.CURRENT_ENV,
+    SAMSAR_DEPLOYMENT_EDITION: process.env.SAMSAR_DEPLOYMENT_EDITION,
+    ALIBABA_API_KEY: process.env.ALIBABA_API_KEY,
+    FAL_API_KEY: process.env.FAL_API_KEY,
+    SAMSAR_API_KEY: process.env.SAMSAR_API_KEY,
+    SAMSAR_MODEL_ADAPTER_PREFERENCES_PATH: process.env.SAMSAR_MODEL_ADAPTER_PREFERENCES_PATH,
+  };
+
+  process.env.CURRENT_ENV = 'standalone';
+  process.env.SAMSAR_DEPLOYMENT_EDITION = 'standalone';
+  process.env.ALIBABA_API_KEY = 'configured';
+  process.env.FAL_API_KEY = 'configured';
+  delete process.env.SAMSAR_API_KEY;
+  process.env.SAMSAR_MODEL_ADAPTER_PREFERENCES_PATH = '/tmp/missing-model-adapter-preferences.json';
+
+  try {
+    const retryState = __testOnly__.getImageGenerationAdapterRetryState(
+      {
+        model: 'WAN2.7PRO',
+        adapterProvider: 'alibabaCloud',
+        apiGenerationStatus: 'PENDING',
+        apiRequestId: 'provider-request-1',
+        externalProvider: 'alibabaCloud',
+      },
+      { rotateAdapter: true },
+    );
+
+    assert.equal(retryState.provider, 'fal');
+    assert.equal(retryState.setFields.adapterProvider, 'fal');
+    assert.equal(retryState.setFields.adapterProviderOverride, 'fal');
+    assert.deepEqual(retryState.unsetFields, {
+      apiRequestId: '',
+      apiSubmittedAt: '',
+      externalProvider: '',
+    });
+  } finally {
+    for (const [key, value] of Object.entries(previous)) {
+      if (value === undefined) {
+        delete process.env[key];
+      } else {
+        process.env[key] = value;
+      }
+    }
+  }
+});
+
+test('standalone low-score retries stay on one adapter and clear only the completed provider request', () => {
   const previous = {
     CURRENT_ENV: process.env.CURRENT_ENV,
     SAMSAR_DEPLOYMENT_EDITION: process.env.SAMSAR_DEPLOYMENT_EDITION,
@@ -475,14 +523,17 @@ test('standalone image retries advance to the next configured adapter and clear 
     const retryState = __testOnly__.getImageGenerationAdapterRetryState({
       model: 'WAN2.7PRO',
       adapterProvider: 'alibabaCloud',
-      apiGenerationStatus: 'PENDING',
+      adapterProviderOverride: 'alibabaCloud',
+      apiGenerationStatus: 'COMPLETED',
       apiRequestId: 'provider-request-1',
       externalProvider: 'alibabaCloud',
     });
 
-    assert.equal(retryState.provider, 'fal');
-    assert.equal(retryState.setFields.adapterProvider, 'fal');
-    assert.equal(retryState.setFields.adapterProviderOverride, 'fal');
+    assert.equal(retryState.provider, 'alibabaCloud');
+    assert.deepEqual(retryState.setFields, {
+      adapterProvider: 'alibabaCloud',
+      adapterProviderOverride: 'alibabaCloud',
+    });
     assert.deepEqual(retryState.unsetFields, {
       apiRequestId: '',
       apiSubmittedAt: '',
@@ -587,11 +638,14 @@ test('Nano Banana GMI routing preserves exact Pro ratios and bypasses only unsup
     'gmicloud',
   );
 
-  const retryState = __testOnly__.getImageGenerationAdapterRetryState({
-    model: 'NANOBANANAPRO',
-    aspectRatio: '3:2',
-    adapterProvider: 'samsar',
-  });
+  const retryState = __testOnly__.getImageGenerationAdapterRetryState(
+    {
+      model: 'NANOBANANAPRO',
+      aspectRatio: '3:2',
+      adapterProvider: 'samsar',
+    },
+    { rotateAdapter: true },
+  );
   assert.equal(retryState.provider, 'fal');
 });
 

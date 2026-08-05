@@ -127,7 +127,7 @@ const IMAGE_GENERATION_PROVIDER_PENDING_TIMEOUT_MS = Math.max(
   Number(process.env.IMAGE_GENERATION_PROVIDER_PENDING_TIMEOUT_MS) || 20 * 60 * 1000
 );
 const IMAGE_FILTER_SCORE_CUTOFF = 50;
-const GROUNDED_IMAGE_FILTER_SCORE_CUTOFF = 61;
+const GROUNDED_IMAGE_FILTER_SCORE_CUTOFF = 55;
 const SCORE_ONLY_FILTER_FAILURES_BEFORE_RELAXATION = 2;
 const SCORE_ONLY_FILTER_RELAXED_CUTOFF = 50;
 const BRANCHED_IMAGE_FILTER_FALLBACK_SCORE_CUTOFF = 25;
@@ -359,7 +359,9 @@ function resolveImageProviderForModel(model, payload = {}) {
   return 'fal';
 }
 
-function getImageGenerationAdapterRetryState(payload = {}, { rotateAdapter = true } = {}) {
+// Crossing adapters must be explicitly authorized by a confirmed generation
+// failure. Prompt/scoring retries stay pinned by default.
+function getImageGenerationAdapterRetryState(payload = {}, { rotateAdapter = false } = {}) {
   if (!isStandaloneEdition()) {
     return {
       provider: '',
@@ -3329,6 +3331,9 @@ async function handleNoImageRetryOrFailure(payload, imageData, options = {}) {
       );
       const adapterRetryState = getImageGenerationAdapterRetryState(
         latestDoc || payload,
+        // The provider returned no image, so this is an actual generation
+        // failure and may advance to the configured fallback adapter.
+        { rotateAdapter: true },
       );
 
       await recordImageGenerationFailure(payload, {
@@ -3538,6 +3543,9 @@ async function processRefilterFailure(imageData, payload, imageScore, imageDescr
     );
     const adapterRetryState = getImageGenerationAdapterRetryState(
       latestGenerationData || payload,
+      // Scoring succeeded against a generated image. Start the next scoring
+      // attempt on the same adapter; a low score is not a provider failure.
+      { rotateAdapter: false },
     );
 
     await recordImageGenerationFailure(payload, {
