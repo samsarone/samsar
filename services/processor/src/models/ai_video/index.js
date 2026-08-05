@@ -50,6 +50,7 @@ import { assertVideoModelEnabled } from '../../consts/VideoModelAvailability.js'
 const STUDIO_VIDEO_DURATION_UNITS_BY_MODEL = {
   'VEO3.1I2V': [4, 6, 8],
   'VEO3.1I2VFAST': [4, 6, 8],
+  'SEEDANCE2.0I2V': [5, 10, 15],
   HAPPYHORSEI2V: [5, 10, 15],
 };
 
@@ -278,6 +279,7 @@ export async function requestGenerateCustomAIVideo(userId, payload) {
     await requestRenderGenericVideo(payload);
   } else if (
     payload.model === 'SEEDANCEI2V' ||
+    payload.model === 'SEEDANCE2.0I2V' ||
     payload.model === 'HAPPYHORSEI2V'
   ) {
     await requestRenderGenericVideo(payload);

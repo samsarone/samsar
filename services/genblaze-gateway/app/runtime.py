@@ -388,6 +388,28 @@ def _seedance_1_5_duration(value: Any) -> int:
     return _rounded_duration(value, minimum=4, maximum=12, name="Seedance 1.5")
 
 
+def _seedance_2_duration(value: Any) -> int:
+    return _rounded_duration(value, minimum=4, maximum=15, name="Seedance 2.0")
+
+
+def _seedance_2_aspect_ratio(value: Any) -> str:
+    normalized = str(value).strip().lower().replace(" ", "").replace("x", ":")
+    normalized = _FAL_ASPECT_RATIO_ALIASES.get(normalized, normalized)
+    if normalized == "auto":
+        normalized = "adaptive"
+    allowed = frozenset((*_GMI_SEEDANCE_ASPECT_RATIOS, "adaptive"))
+    if normalized not in allowed:
+        raise ValueError(f"expected one of {sorted(allowed)}")
+    return normalized
+
+
+def _seedance_2_resolution(value: Any) -> str:
+    normalized = str(value).strip().lower().replace(" ", "")
+    if normalized in {"720", "720p"}:
+        return "720p"
+    raise ValueError("Seedance 2.0 resolution must be 720p")
+
+
 def _kling_v3_turbo_duration(value: Any) -> str:
     duration = _whole_seconds_string(value)
     if not 3 <= int(duration) <= 15:
@@ -512,6 +534,8 @@ def _media_contract_key(samsar_model: str) -> str:
         return "veo"
     if samsar_model == "SEEDANCEI2V":
         return "seedance-1-5"
+    if samsar_model == "SEEDANCE2.0I2V":
+        return "seedance-2"
     if samsar_model == "KLINGIMGTOVID3PRO":
         return "kling-v3"
     if samsar_model == "KLINGIMGTOVIDTURBO":
@@ -745,25 +769,36 @@ def load_genblaze_bindings() -> GenBlazeBindings:
                 allowlist = frozenset(
                     {"prompt", "image", "duration", "negative_prompt"}
                 )
-            elif contract_key == "seedance-1-5":
+            elif contract_key in {"seedance-1-5", "seedance-2"}:
                 param_aliases = {"aspect_ratio": "ratio"}
                 param_coercers = {
-                    "duration": _seedance_1_5_duration,
-                    "ratio": _aspect_ratio_coercer(*_GMI_SEEDANCE_ASPECT_RATIOS),
+                    "duration": (
+                        _seedance_1_5_duration
+                        if contract_key == "seedance-1-5"
+                        else _seedance_2_duration
+                    ),
+                    "ratio": (
+                        _aspect_ratio_coercer(*_GMI_SEEDANCE_ASPECT_RATIOS)
+                        if contract_key == "seedance-1-5"
+                        else _seedance_2_aspect_ratio
+                    ),
                     "generate_audio": _boolean,
                     "seed": _uint32,
                 }
-                allowlist = frozenset(
-                    {
-                        "prompt",
-                        "first_frame",
-                        "last_frame",
-                        "duration",
-                        "ratio",
-                        "generate_audio",
-                        "seed",
-                    }
-                )
+                seedance_allowlist = {
+                    "prompt",
+                    "first_frame",
+                    "last_frame",
+                    "duration",
+                    "ratio",
+                    "generate_audio",
+                    "seed",
+                }
+                if contract_key == "seedance-2":
+                    param_coercers["resolution"] = _seedance_2_resolution
+                    param_defaults = {"resolution": "720p"}
+                    seedance_allowlist.add("resolution")
+                allowlist = frozenset(seedance_allowlist)
             elif contract_key == "hailuo-pro":
                 param_transformer = _hailuo_pro_params
                 param_coercers = {"prompt_optimizer": _boolean}
@@ -1503,7 +1538,7 @@ def _input_media_type(url: str) -> str:
 def _media_input_slots(route: ModelRoute) -> tuple[str, ...]:
     if route.samsar_model in {"VEO3.1", "VEO3.1FAST"}:
         return ()
-    if route.samsar_model == "SEEDANCEI2V":
+    if route.samsar_model in {"SEEDANCEI2V", "SEEDANCE2.0I2V"}:
         return ("first_frame", "last_frame")
     if route.samsar_model in {"VEO3.1I2V", "VEO3.1I2VFAST"}:
         return ("image",)
@@ -1534,6 +1569,7 @@ def _media_minimum_input_count(route: ModelRoute) -> int:
         "VEO3.1I2V",
         "VEO3.1I2VFAST",
         "SEEDANCEI2V",
+        "SEEDANCE2.0I2V",
         "KLINGIMGTOVID3PRO",
         "KLINGIMGTOVIDTURBO",
         "KLINGIMGTOVIDPRO",

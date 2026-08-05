@@ -507,7 +507,7 @@ export function mergeRuntimeInferenceDeploymentAvailability(value = {}) {
 
   if (hasEnvCredential('FAL_API_KEY')) {
     appendUnique(merged.providers, ['fal']);
-    appendUnique(merged.models, ['WAN2.7PRO', 'HAPPYHORSEI2V']);
+    appendUnique(merged.models, ['WAN2.7PRO', 'HAPPYHORSEI2V', 'SEEDANCE2.0I2V']);
     appendUnique(merged.actions, ['image', 'video']);
   }
 

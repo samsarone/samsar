@@ -206,6 +206,7 @@ const VIDGENIE_VIDEO_MODEL_ORDER = [
   'VEO3.1I2VFAST',
   'COSMOS3SUPERI2V',
   'SEEDANCEI2V',
+  'SEEDANCE2.0I2V',
   'KLINGIMGTOVID3PRO',
   'HAPPYHORSEI2V',
 ];
@@ -215,6 +216,7 @@ const VIDGENIE_VIDEO_MODEL_LABELS = {
   'VEO3.1I2VFAST': 'VEO3.1 I2V Fast',
   COSMOS3SUPERI2V: 'Nvidia Cosmos 3',
   SEEDANCEI2V: 'Seedance 1.5',
+  'SEEDANCE2.0I2V': 'Seedance 2.0',
   KLINGIMGTOVID3PRO: 'Kling 3 Pro',
   HAPPYHORSEI2V: 'Happy Horse 1.1 I2V',
 };
@@ -226,6 +228,7 @@ const VIDGENIE_IMAGE_LIST_VIDEO_MODEL_ORDER = [
   'VEO3.1I2VFAST',
   'COSMOS3SUPERI2V',
   'SEEDANCEI2V',
+  'SEEDANCE2.0I2V',
   'KLINGIMGTOVID3PRO',
   'HAPPYHORSEI2V',
 ];
@@ -237,6 +240,7 @@ const TEXT_TO_VIDEO_VIDEO_MODEL_KEYS = [
   'VEO3.1I2VFAST',
   'COSMOS3SUPERI2V',
   'SEEDANCEI2V',
+  'SEEDANCE2.0I2V',
   'KLINGIMGTOVID3PRO',
   'HAPPYHORSEI2V',
   'CUSTOM_IMAGE_TO_VIDEO',
@@ -247,6 +251,7 @@ const IMAGE_LIST_TO_VIDEO_VIDEO_MODEL_KEYS = [
   'VEO3.1I2VFAST',
   'COSMOS3SUPERI2V',
   'SEEDANCEI2V',
+  'SEEDANCE2.0I2V',
   'KLINGIMGTOVID3PRO',
   'HAPPYHORSEI2V',
   'CUSTOM_IMAGE_TO_VIDEO',
@@ -2133,6 +2138,9 @@ function validateImageListToVideoJsonInput(
     if (!isModelAllowedByDeployment(videoModelKey, imageListToVideoVideoModelValues, isStandaloneDeployment)) {
       return getConfiguredModelError('video_model', imageListToVideoVideoModelValues);
     }
+    if (!isVideoModelAllowedForDeploymentScope(videoModel, isStandaloneDeployment)) {
+      return `JSON input.video_model ${videoModelKey} is only available in standalone deployments.`;
+    }
     if (!videoModelSupportsAspectRatio(videoModelKey, input.aspect_ratio || '16:9')) {
       return `JSON input.video_model ${videoModelKey} does not support aspect_ratio ${input.aspect_ratio || '16:9'}.`;
     }
@@ -3906,6 +3914,7 @@ export default function OneshotEditor() {
         .filter(
           (m) =>
             VIDGENIE_IMAGE_LIST_VIDEO_MODEL_ORDER.includes(m.key) &&
+            isVideoModelAllowedForDeploymentScope(m, isStandaloneModelFilteringEnabled) &&
             m.supportedAspectRatios?.includes(selectedAspectRatioOption.value)
         )
         .map((model) => [model.key, model])

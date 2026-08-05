@@ -133,12 +133,13 @@ test('OpenRouter validation rejects management keys and reports upstream failure
   assert.match(upstreamFailure.message, /status 500/i);
 });
 
-test('FAL fallback availability keeps Happy Horse and Wan2.7 Pro enabled', () => {
+test('FAL fallback availability keeps Seedance 2.0, Happy Horse, and Wan2.7 Pro enabled', () => {
   const available = buildAvailableDeploymentModels({
     fal: { ok: true, status: 'valid' },
   });
 
   assert.equal(available.models.includes('HAPPYHORSEI2V'), true);
+  assert.equal(available.models.includes('SEEDANCE2.0I2V'), true);
   assert.equal(available.models.includes('WAN2.7PRO'), true);
   assert.equal(available.actions.includes('image'), true);
   assert.equal(available.actions.includes('video'), true);

@@ -42,7 +42,7 @@ test('normalizes both selected first/last frame inputs', async () => {
 
   calls.length = 0;
   await normalizeSelectedVideoGenerationMediaPayload({
-    model: 'SEEDANCEI2V',
+    model: 'SEEDANCE2.0I2V',
     startImage: '/assets_v2/generations/seedance-start.png',
     endImage: '/assets_v2/generations/seedance-end.png',
   }, async (value, { mediaKind }) => {

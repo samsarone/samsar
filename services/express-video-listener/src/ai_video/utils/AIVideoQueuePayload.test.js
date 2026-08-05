@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { buildRetryableImageToVideoQueuePayload } from './AIVideoQueuePayload.js';
+import { VIDEO_MODEL_PRICES } from '../../consts/ModelPrices.js';
 
 const retryContext = {
   startImageDescription: '  The selected frame description.  ',
@@ -32,6 +33,7 @@ const retryableImageToVideoModels = [
   'PIXVERSEI2V',
   'RUNWAYML',
   'SEEDANCEI2V',
+  'SEEDANCE2.0I2V',
   'SKYREELSI2V',
   'SORA2',
   'VEOI2V',
@@ -71,6 +73,23 @@ for (const model of retryableImageToVideoModels) {
     assert.equal(queuePayload.selectedInferenceModelAuthorization, 'native');
   });
 }
+
+test('Seedance 2.0 express metadata stays standalone and provider billed', () => {
+  assert.deepEqual(
+    VIDEO_MODEL_PRICES.find((model) => model.key === 'SEEDANCE2.0I2V'),
+    {
+      key: 'SEEDANCE2.0I2V',
+      name: 'Seedance 2.0 I2V',
+      isExpressModel: true,
+      isImageToVideoModel: true,
+      isTextToVideoModel: false,
+      standaloneOnly: true,
+      providerBilled: true,
+      prices: [],
+      units: [5, 10, 15],
+    },
+  );
+});
 
 test('queue payload preserves model-specific image and generation overrides', () => {
   const queuePayload = buildRetryableImageToVideoQueuePayload({
@@ -114,11 +133,11 @@ test('queue payload preserves the original model for standalone provider routing
     layerId: 'layer-1',
     prompt: 'Animate this frame.',
     model: 'SAMSAR_EXTERNAL_VIDEO',
-    originalVideoModel: 'VEO3.1I2V',
+    originalVideoModel: 'SEEDANCE2.0I2V',
     useStartFrame: true,
     useEndFrame: false,
   });
 
   assert.equal(queuePayload.model, 'SAMSAR_EXTERNAL_VIDEO');
-  assert.equal(queuePayload.originalVideoModel, 'VEO3.1I2V');
+  assert.equal(queuePayload.originalVideoModel, 'SEEDANCE2.0I2V');
 });

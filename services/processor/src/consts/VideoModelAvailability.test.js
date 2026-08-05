@@ -6,19 +6,13 @@ import {
   isVideoModelTemporarilyDisabled,
 } from './VideoModelAvailability.js';
 
-test('Seedance 2.0 image-to-video is temporarily disabled', () => {
-  assert.equal(isVideoModelTemporarilyDisabled('SEEDANCE2.0I2V'), true);
-  assert.equal(isVideoModelTemporarilyDisabled('seedance2.0i2v'), true);
+test('Seedance 2.0 image-to-video is enabled again', () => {
+  assert.equal(isVideoModelTemporarilyDisabled('SEEDANCE2.0I2V'), false);
+  assert.equal(isVideoModelTemporarilyDisabled('seedance2.0i2v'), false);
   assert.equal(isVideoModelTemporarilyDisabled('SEEDANCEI2V'), false);
 });
 
-test('disabled video models are rejected with a public request error', () => {
-  assert.throws(
-    () => assertVideoModelEnabled('SEEDANCE2.0I2V'),
-    (error) => (
-      error?.status === 400 &&
-      error?.code === 'VIDEO_MODEL_TEMPORARILY_DISABLED'
-    ),
-  );
+test('enabled video models pass the public request guard', () => {
+  assert.doesNotThrow(() => assertVideoModelEnabled('SEEDANCE2.0I2V'));
   assert.doesNotThrow(() => assertVideoModelEnabled('SEEDANCEI2V'));
 });

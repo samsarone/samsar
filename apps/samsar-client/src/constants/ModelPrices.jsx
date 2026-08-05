@@ -230,6 +230,17 @@ export const VIDEO_MODEL_PRICES = [
     units: [5, 10],
   },
   {
+    key: 'SEEDANCE2.0I2V',
+    name: 'Seedance 2.0 I2V',
+    isExpressModel: true,
+    isImageToVideoModel: true,
+    isTextToVideoModel: false,
+    standaloneOnly: true,
+    providerBilled: true,
+    prices: [],
+    units: [5, 10, 15],
+  },
+  {
     key: 'VEO3.1',
     isExpressModel: false,
     isImageToVideoModel: false,

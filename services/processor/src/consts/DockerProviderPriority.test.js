@@ -65,6 +65,21 @@ test('processor chooses Alibaba, FAL, and Samsar Happy Horse fallbacks in order'
   assert.equal(resolveDockerVideoProvider('HAPPYHORSEI2V'), DOCKER_PROVIDER.SAMSAR);
 });
 
+test('processor keeps Seedance 2.0 on deployment-owned video adapters', () => {
+  clearEnv();
+  process.env.CURRENT_ENV = 'docker';
+  process.env.FAL_API_KEY = 'fal-key';
+  process.env.SAMSAR_API_KEY = 'samsar-key';
+
+  assert.deepEqual(getDockerVideoProviderPriority('SEEDANCE2.0I2V'), [
+    DOCKER_PROVIDER.FAL,
+  ]);
+  assert.equal(resolveDockerVideoProvider('SEEDANCE2.0I2V'), DOCKER_PROVIDER.FAL);
+
+  delete process.env.FAL_API_KEY;
+  assert.equal(resolveDockerVideoProvider('SEEDANCE2.0I2V'), '');
+});
+
 test('processor and image worker agree on Wan2.7 Pro Docker provider precedence', () => {
   assert.deepEqual(getDockerImageProviderPriority('wan2.7pro'), [
     DOCKER_PROVIDER.ALIBABA_CLOUD,

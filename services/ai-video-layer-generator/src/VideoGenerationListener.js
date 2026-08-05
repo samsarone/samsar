@@ -171,6 +171,7 @@ const SOUND_EFFECT_MODELS = [
   'VEO3.1I2V',
   'VEO3.1I2VFAST',
   'SEEDANCEI2V',
+  'SEEDANCE2.0I2V',
 ];
 
 const MAX_BASE_GENERATION_ATTEMPTS = 3;
@@ -1981,7 +1982,7 @@ async function generateAIVideoLayer(payload) {
     generationId = await generateHummingBirdLipSyncLayer(payload);
   } else if (model === 'VIDUI2V') {
     generationId = await generateViduI2VVideoLayer(payload);
-  } else if (model === 'SEEDANCEI2V') {
+  } else if (model === 'SEEDANCEI2V' || model === 'SEEDANCE2.0I2V') {
     generationId = await generateSeeDanceImgToVideoLayer(payload);
   } else if (model === 'HAPPYHORSEI2V') {
     generationId = shouldUseAlibabaNativeHappyHorse(payload)
@@ -2121,7 +2122,7 @@ async function pollForAIVideoCompletion(reqPayload) {
     responseData = await listenToPendingHummingBirdLipSyncRequests(payload);
   } else if (model === 'VIDUI2V') {
     responseData = await listenToPendingViduI2VVideoRequests(payload);
-  } else if (model === 'SEEDANCEI2V') {
+  } else if (model === 'SEEDANCEI2V' || model === 'SEEDANCE2.0I2V') {
     responseData = await listenToPendingSeeDanceImgToVidRequests(payload);
   } else if (model === 'HAPPYHORSEI2V') {
     responseData = shouldUseAlibabaNativeHappyHorse(payload)

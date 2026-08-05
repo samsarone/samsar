@@ -225,6 +225,7 @@ def test_curated_boundary_contains_only_supported_samsar_contracts():
         "VEO3.1I2VFAST",
         "VEO3.1FLIV",
         "SEEDANCEI2V",
+        "SEEDANCE2.0I2V",
         "KLINGIMGTOVID3PRO",
         "KLINGIMGTOVIDTURBO",
         "KLINGIMGTOVIDPRO",
@@ -273,6 +274,9 @@ def test_runtime_models_reflect_only_credential_catalog_routes(
             "VEO3.1I2V": {
                 "video": {"modelId": "veo-3.1-generate-001", "operation": "video.generate"}
             },
+            "SEEDANCE2.0I2V": {
+                "video": {"modelId": "seedance-2-0-260128", "operation": "video.generate"}
+            },
             "ELEVENLABS": {
                 "audio": {
                     "modelId": "elevenlabs-tts-multilingual-v2",
@@ -288,6 +292,7 @@ def test_runtime_models_reflect_only_credential_catalog_routes(
     assert [model["id"] for model in models] == [
         "gpt-5.6-sol",
         "GPTIMAGE2",
+        "SEEDANCE2.0I2V",
         "VEO3.1I2V",
         "ELEVENLABS",
     ]
@@ -1082,6 +1087,9 @@ def test_video_input_contracts_enforce_exact_required_frame_counts(
             "VEO3.1I2V": {
                 "video": {"modelId": "veo-3.1-generate-001", "operation": "video.generate"}
             },
+            "SEEDANCE2.0I2V": {
+                "video": {"modelId": "seedance-2-0-260128", "operation": "video.generate"}
+            },
             "KLINGIMGTOVIDPRO": {
                 "video": {
                     "modelId": "Kling-Image2Video-V1.6-Pro",
@@ -1142,6 +1150,33 @@ def test_video_input_contracts_enforce_exact_required_frame_counts(
             },
         )
         assert i2v_end_frame.status_code == 400
+
+        missing_seedance_source = client.post(
+            "/v1/media/requests",
+            json={
+                "model": "SEEDANCE2.0I2V",
+                "modality": "video",
+                "prompt": "move",
+                "input_urls": [],
+                "params": {},
+            },
+        )
+        assert missing_seedance_source.status_code == 400
+
+        seedance_first_last_frames = client.post(
+            "/v1/media/requests",
+            json={
+                "model": "SEEDANCE2.0I2V",
+                "modality": "video",
+                "prompt": "move",
+                "input_urls": [
+                    "https://example/start.png",
+                    "https://example/end.png",
+                ],
+                "params": {"resolution": "720P"},
+            },
+        )
+        assert seedance_first_last_frames.status_code == 202
 
         missing_kling_source = client.post(
             "/v1/media/requests",

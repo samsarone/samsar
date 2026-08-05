@@ -114,7 +114,7 @@ function resolveVisionInferenceModel(userInferenceModel = getDefaultUserInferenc
     : DEFAULT_INFERENCE_MODEL;
 }
 
-function getVisionMaxTokens(inferenceModel, operation) {
+function getExternalVisionMaxTokens(inferenceModel, operation) {
   if (isKimiInferenceModel(inferenceModel)) {
     return undefined;
   }
@@ -338,7 +338,7 @@ Provide an information-dense, condensed and thorough description in 3000 charact
   const buildActivePayload = (providerImageUrl) => ({
       model: inferenceModel,
       ...(!isKimiInferenceModel(inferenceModel)
-        ? { max_tokens: getVisionMaxTokens(inferenceModel, 'description') }
+        ? { externalMaxTokens: getExternalVisionMaxTokens(inferenceModel, 'description') }
         : {}),
       ...(!isGeminiInferenceModel(inferenceModel) && !isQwenInferenceModel(inferenceModel)
         ? { reasoning_effort: GPT_56_SOL_REASONING_EFFORT }
@@ -487,7 +487,7 @@ Return only a single integer between 0 and 100.`;
     externalMaxRetries: 0,
     maxRetries: 0,
     ...(!isKimiInferenceModel(inferenceModel)
-      ? { max_tokens: getVisionMaxTokens(inferenceModel, 'score') }
+      ? { externalMaxTokens: getExternalVisionMaxTokens(inferenceModel, 'score') }
       : {}),
     ...(!isGeminiInferenceModel(inferenceModel) && !isQwenInferenceModel(inferenceModel)
       ? { reasoning_effort: GPT_56_SOL_REASONING_EFFORT }
@@ -512,9 +512,9 @@ Return only a single integer between 0 and 100.`;
 
 export const __testOnly__ = {
   getDescriptionForImage,
+  getExternalVisionMaxTokens,
   getVisionInferenceErrorStatus,
   getVisionInferenceRetryDelayMs,
-  getVisionMaxTokens,
   isRetryableVisionInferenceError,
   resolveVisionInferenceModel,
 };

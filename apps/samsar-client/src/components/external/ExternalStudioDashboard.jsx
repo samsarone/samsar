@@ -16,6 +16,7 @@ const TEXT_MODELS = [
   { label: 'Veo 3.1 Fast', value: 'VEO3.1I2VFAST' },
   { label: 'Nvidia Cosmos 3', value: 'COSMOS3SUPERI2V' },
   { label: 'Seedance 1.5', value: 'SEEDANCEI2V' },
+  { label: 'Seedance 2.0', value: 'SEEDANCE2.0I2V', standaloneOnly: true },
   { label: 'Kling Pro', value: 'KLINGIMGTOVID3PRO' },
   { label: 'Custom Image to Video', value: 'CUSTOM_IMAGE_TO_VIDEO' },
 ];
@@ -32,6 +33,7 @@ const IMAGE_LIST_VIDEO_MODELS = [
   { label: 'Veo 3.1 Fast', value: 'VEO3.1I2VFAST' },
   { label: 'Nvidia Cosmos 3', value: 'COSMOS3SUPERI2V' },
   { label: 'Seedance 1.5', value: 'SEEDANCEI2V' },
+  { label: 'Seedance 2.0', value: 'SEEDANCE2.0I2V', standaloneOnly: true },
   { label: 'Kling Pro', value: 'KLINGIMGTOVID3PRO' },
   { label: 'RunwayML Gen 4.5', value: 'RUNWAYML' },
   { label: 'Custom Image to Video', value: 'CUSTOM_IMAGE_TO_VIDEO' },
@@ -121,11 +123,14 @@ export default function ExternalStudioDashboard() {
     [isStandaloneModelFilteringEnabled, textToVideoImageModelValues]
   );
   const imageListVideoModels = useMemo(
-    () => (
-      isStandaloneModelFilteringEnabled
-        ? filterOptionsForDeploymentModelValues(IMAGE_LIST_VIDEO_MODELS, imageListToVideoVideoModelValues)
-        : IMAGE_LIST_VIDEO_MODELS
-    ),
+    () => {
+      const deploymentScopedModels = IMAGE_LIST_VIDEO_MODELS.filter((model) =>
+        isVideoModelAllowedForDeploymentScope(model, isStandaloneModelFilteringEnabled)
+      );
+      return isStandaloneModelFilteringEnabled
+        ? filterOptionsForDeploymentModelValues(deploymentScopedModels, imageListToVideoVideoModelValues)
+        : deploymentScopedModels;
+    },
     [imageListToVideoVideoModelValues, isStandaloneModelFilteringEnabled]
   );
   const imageListImageModels = useMemo(

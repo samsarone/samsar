@@ -140,3 +140,5 @@ apps/samsar-client/public/*
 # local tool output
 .turbo/
 .nx/
+
+AGENTS.md

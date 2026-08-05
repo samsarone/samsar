@@ -190,8 +190,14 @@ test('standalone places credential-scoped GMICloud below native providers but ah
     DOCKER_VIDEO_PROVIDER.SAMSAR,
     DOCKER_VIDEO_PROVIDER.FAL,
   ]);
-  assert.deepEqual(getDockerVideoProviderPriority('SEEDANCE2.0I2V'), []);
-  assert.equal(resolveDockerVideoProvider('SEEDANCE2.0I2V'), '');
+  assert.deepEqual(getDockerVideoProviderPriority('SEEDANCE2.0I2V'), [
+    DOCKER_VIDEO_PROVIDER.GMICLOUD,
+    DOCKER_VIDEO_PROVIDER.FAL,
+  ]);
+  assert.equal(
+    resolveDockerVideoProvider('SEEDANCE2.0I2V'),
+    DOCKER_VIDEO_PROVIDER.GMICLOUD,
+  );
   assert.deepEqual(getDockerVideoProviderPriority('KLINGIMGTOVID3PRO'), [
     DOCKER_VIDEO_PROVIDER.GMICLOUD,
     DOCKER_VIDEO_PROVIDER.SAMSAR,
@@ -248,6 +254,9 @@ test('credential-scoped GMICloud catalog excludes unverified video routes', (t) 
     },
   }));
   assert.equal(resolveDockerVideoProvider('SEEDANCE2.0I2V'), '');
+
+  process.env.FAL_API_KEY = 'fal-key';
+  assert.equal(resolveDockerVideoProvider('SEEDANCE2.0I2V'), DOCKER_VIDEO_PROVIDER.FAL);
 });
 
 test('standalone preference reads do not mutate available-models configuration', (t) => {

@@ -22,11 +22,87 @@ const silentLogger = {
 };
 
 test('OpenRouter vision models use operation-specific reasoning-safe output limits', () => {
-  assert.equal(__testOnly__.getVisionMaxTokens('QWEN3.8', 'description'), 16384);
-  assert.equal(__testOnly__.getVisionMaxTokens('QWEN3.8', 'score'), 8192);
-  assert.equal(__testOnly__.getVisionMaxTokens('gpt-5.6-sol', 'description'), 16384);
-  assert.equal(__testOnly__.getVisionMaxTokens('gemini-3.1-pro', 'score'), 8192);
-  assert.equal(__testOnly__.getVisionMaxTokens('kimi-k3', 'description'), undefined);
+  assert.equal(__testOnly__.getExternalVisionMaxTokens('QWEN3.8', 'description'), 16384);
+  assert.equal(__testOnly__.getExternalVisionMaxTokens('QWEN3.8', 'score'), 8192);
+  assert.equal(__testOnly__.getExternalVisionMaxTokens('gpt-5.6-sol', 'description'), 16384);
+  assert.equal(__testOnly__.getExternalVisionMaxTokens('gemini-3.1-pro', 'score'), 8192);
+  assert.equal(__testOnly__.getExternalVisionMaxTokens('kimi-k3', 'description'), undefined);
+});
+
+test('native GPT vision omits external-only completion limits', async (t) => {
+  const environmentKeys = [
+    'CURRENT_ENV',
+    'OPENAI_API_KEY',
+    'OPENROUTER_API_KEY',
+    'SAMSAR_API_KEY',
+    'SAMSAR_DEPLOYMENT_EDITION',
+    'SAMSAR_EDITION',
+    'SAMSAR_EXTERNAL_INFERENCE_ENABLED',
+    'SAMSAR_FORCE_EXTERNAL_INFERENCE',
+  ];
+  const previous = Object.fromEntries(
+    environmentKeys.map((key) => [key, process.env[key]]),
+  );
+  t.after(() => {
+    for (const key of environmentKeys) {
+      if (previous[key] === undefined) delete process.env[key];
+      else process.env[key] = previous[key];
+    }
+  });
+  for (const key of environmentKeys) delete process.env[key];
+  Object.assign(process.env, {
+    CURRENT_ENV: 'production',
+    OPENAI_API_KEY: 'native-openai-key',
+    SAMSAR_DEPLOYMENT_EDITION: 'production',
+  });
+
+  const payloads = [];
+  t.mock.method(
+    OpenAI.Chat.Completions.prototype,
+    'create',
+    async (payload, options) => {
+      payloads.push(payload);
+      assert.equal(options.maxRetries, 0);
+      return {
+        choices: [{
+          message: {
+            role: 'assistant',
+            content: payloads.length === 1 ? 'Native GPT image description.' : '95',
+          },
+        }],
+      };
+    },
+  );
+
+  const description = await __testOnly__.getDescriptionForImage(
+    'data:image/png;base64,AQID',
+    'cinematic',
+    'gpt-5.6-sol',
+    '16:9',
+    'cinematic theme',
+    'native',
+  );
+  const score = await assignScoreForTheImage(
+    'A cinematic image',
+    description,
+    'cinematic',
+    'gpt-5.6-sol',
+    '16:9',
+    'cinematic theme',
+    '',
+    'native',
+  );
+
+  assert.equal(description, 'Native GPT image description.');
+  assert.equal(score, '95');
+  assert.equal(payloads.length, 2);
+  for (const payload of payloads) {
+    assert.equal(payload.model, 'gpt-5.6-sol');
+    assert.equal(Object.hasOwn(payload, 'externalMaxTokens'), false);
+    assert.equal(Object.hasOwn(payload, 'max_tokens'), false);
+    assert.equal(Object.hasOwn(payload, 'max_completion_tokens'), false);
+    assert.equal(Object.hasOwn(payload, 'max_output_tokens'), false);
+  }
 });
 
 test('Qwen 3.8 Max drives both native vision description and scoring', async (t) => {

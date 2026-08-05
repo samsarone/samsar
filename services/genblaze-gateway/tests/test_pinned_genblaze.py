@@ -1101,7 +1101,60 @@ def test_real_gmicloud_provider_submits_gpt_edit_source_with_optional_mask():
     ]
 
 
-def test_seedance_1_5_normalizes_duration_and_ratio():
+def test_seedance_2_registry_preserves_the_exact_i2v_payload():
+    route = ModelRoute(
+        "SEEDANCE2.0I2V",
+        "seedance-2-0-260128",
+        "video",
+        "video.generate",
+    )
+    factory = load_genblaze_bindings().media_registry_factory
+    assert factory is not None
+    registry = factory("video", (route,))
+    client = FakeChatClient({"request_id": "offline-seedance-2-job"})
+    provider = GMICloudVideoProvider(http_client=client, models=registry)
+
+    image_step = Step(
+        provider=provider.name,
+        model=route.gmi_model,
+        modality=Modality.VIDEO,
+        prompt="move",
+        params={
+            "duration": 10,
+            "aspect_ratio": "auto",
+            "resolution": "720P",
+            "generate_audio": True,
+            "seed": "7",
+        },
+        inputs=[
+            Asset(url="https://example/start.png", media_type="image/png"),
+            Asset(url="https://example/end.png", media_type="image/png"),
+        ],
+    )
+    result = provider.submit(image_step)
+
+    assert result.prediction_id == "offline-seedance-2-job"
+    assert client.calls == [
+        (
+            "/requests",
+            {
+                "model": "seedance-2-0-260128",
+                "payload": {
+                    "prompt": "move",
+                    "duration": 10,
+                    "ratio": "adaptive",
+                    "resolution": "720p",
+                    "generate_audio": True,
+                    "seed": 7,
+                    "first_frame": "https://example/start.png",
+                    "last_frame": "https://example/end.png",
+                },
+            },
+        )
+    ]
+
+
+def test_seedance_versions_normalize_duration_and_ratio_to_their_own_contracts():
     factory = load_genblaze_bindings().media_registry_factory
     assert factory is not None
     seedance_1_5 = ModelRoute(
@@ -1110,7 +1163,13 @@ def test_seedance_1_5_normalizes_duration_and_ratio():
         "video",
         "video.generate",
     )
-    registry = factory("video", (seedance_1_5,))
+    seedance_2 = ModelRoute(
+        "SEEDANCE2.0I2V",
+        "seedance-2-0-260128",
+        "video",
+        "video.generate",
+    )
+    registry = factory("video", (seedance_1_5, seedance_2))
 
     first = Step(
         provider="gmicloud",
@@ -1126,6 +1185,33 @@ def test_seedance_1_5_normalizes_duration_and_ratio():
         "ratio": "16:9",
         "first_frame": "https://example/start.png",
     }
+
+    second = Step(
+        provider="gmicloud",
+        model=seedance_2.gmi_model,
+        modality=Modality.VIDEO,
+        prompt="sunrise",
+        params={"duration": 18, "aspect_ratio": "auto", "seed": "7"},
+        inputs=[Asset(url="https://example/second-start.png", media_type="image/png")],
+    )
+    assert registry.prepare_payload(second) == {
+        "prompt": "sunrise",
+        "duration": 15,
+        "ratio": "adaptive",
+        "resolution": "720p",
+        "seed": 7,
+        "first_frame": "https://example/second-start.png",
+    }
+
+    second.params["duration"] = 2
+    second.params["resolution"] = "720"
+    normalized_minimum = registry.prepare_payload(second)
+    assert normalized_minimum["duration"] == 4
+    assert normalized_minimum["resolution"] == "720p"
+
+    second.params["resolution"] = "1080p"
+    with pytest.raises(ProviderError, match="resolution must be 720p"):
+        registry.prepare_payload(second)
 
     first.params["aspect_ratio"] = "auto"
     with pytest.raises(ProviderError, match="expected one of"):
@@ -1294,6 +1380,7 @@ def test_full_media_catalog_builds_with_shared_upstream_ids():
         "VEO3.1FAST": "veo-3.1-fast-generate-001",
         "VEO3.1I2VFAST": "veo-3.1-fast-generate-001",
         "SEEDANCEI2V": "seedance-1-5-pro-251215",
+        "SEEDANCE2.0I2V": "seedance-2-0-260128",
         "KLINGIMGTOVID3PRO": "kling-v3-image-to-video",
         "KLINGIMGTOVIDTURBO": "kling-3.0-turbo-i2v",
         "KLINGIMGTOVIDPRO": "Kling-Image2Video-V1.6-Pro",

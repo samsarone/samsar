@@ -246,6 +246,86 @@ test('automatic retry metadata does not leak into a native Qwen request', async 
   });
 });
 
+test('external completion limits do not leak into any native inference adapter', async () => {
+  await withEnvironment({
+    CURRENT_ENV: 'docker',
+    OPENAI_API_KEY: 'openai-key',
+    SAMSAR_DEPLOYMENT_EDITION: 'standalone',
+  }, async () => {
+    const capturedRequests = [];
+    const dependencyOverrides = {
+      createGoogleGeminiChatCompletion: async (messages, model) => {
+        capturedRequests.push({ model, messages });
+        return createResponse('gemini');
+      },
+      createKimiK3ChatCompletion: async (request) => {
+        capturedRequests.push(request);
+        return createResponse('kimi');
+      },
+      createQwenChatCompletion: async (request) => {
+        capturedRequests.push(request);
+        return createResponse('qwen');
+      },
+      openaiClient: {
+        chat: {
+          completions: {
+            create: async (request) => {
+              capturedRequests.push(request);
+              return createResponse('openai');
+            },
+          },
+        },
+      },
+    };
+
+    for (const model of [
+      'gpt-5.6-sol',
+      'gemini-3.1-pro',
+      'QWEN3.8',
+      'kimi-k3',
+    ]) {
+      await createCompatibleInferenceChatCompletion({
+        model,
+        messages: [{ role: 'user', content: 'hello' }],
+        bypassSamsarExternalInference: true,
+        externalMaxTokens: 16384,
+      }, dependencyOverrides);
+    }
+
+    assert.equal(capturedRequests.length, 4);
+    for (const request of capturedRequests) {
+      assert.equal(Object.hasOwn(request, 'externalMaxTokens'), false);
+      assert.equal(Object.hasOwn(request, 'max_tokens'), false);
+      assert.equal(Object.hasOwn(request, 'max_completion_tokens'), false);
+      assert.equal(Object.hasOwn(request, 'max_output_tokens'), false);
+    }
+  });
+});
+
+test('external completion limits are materialized only at external dispatch', async () => {
+  await withEnvironment({
+    CURRENT_ENV: 'production',
+    SAMSAR_API_KEY: 'samsar-key',
+    SAMSAR_EXTERNAL_INFERENCE_ENABLED: 'true',
+  }, async () => {
+    let capturedRequest;
+    await createCompatibleInferenceChatCompletion({
+      model: 'gpt-5.6-sol',
+      authorization: 'deployed',
+      messages: [{ role: 'user', content: 'hello' }],
+      externalMaxTokens: 16384,
+    }, {
+      createSamsarExternalChatCompletion: async (request) => {
+        capturedRequest = request;
+        return createResponse('external');
+      },
+    });
+
+    assert.equal(capturedRequest.max_tokens, 16384);
+    assert.equal(Object.hasOwn(capturedRequest, 'externalMaxTokens'), false);
+  });
+});
+
 test('non-retryable adapter failures do not advance to the next provider', async (t) => {
   const preferencePath = createPreferenceFile(t, {
     'gpt-5.6-sol': ['samsar', 'openai'],

@@ -314,7 +314,7 @@ The names in code style are the stable Samsar model keys. This is the complete s
 | **Text → image** | GPT Image 2 (`GPTIMAGE2`) · Seedream (`SEEDREAM`) · Nano Banana 2 (`NANOBANANA2`) · Nano Banana Pro (`NANOBANANAPRO`) · Wan 2.7 Pro (`WAN2.7PRO`) |
 | **Image edit** | GPT Image 2 Edit (`GPTIMAGE2EDIT`) · Nano Banana 2 Edit (`NANOBANANA2EDIT`) · Nano Banana Pro Edit (`NANOBANANAPROEDIT`) · BRIA Eraser (`BRIA_ERASER`) · BRIA GenFill (`BRIA_GENFILL`) |
 | **Text → video** | RunwayML (`RUNWAYML`) · Veo 3.1 (`VEO3.1`) · Veo 3.1 Fast (`VEO3.1FAST`) · Hailuo 02 Pro (`HAILUOPRO`) |
-| **Image / frame → video** | RunwayML (`RUNWAYML`) · Veo 3.1 I2V (`VEO3.1I2V`) · Veo 3.1 Fast I2V (`VEO3.1I2VFAST`) · Veo 3.1 first/last frame (`VEO3.1FLIV`) · Cosmos 3 Super (`COSMOS3SUPERI2V`) · Seedance 1.5 (`SEEDANCEI2V`) · Kling 3 Pro / Turbo / 1.6 Pro / 2.1 Master / Pro / Standard (`KLINGIMGTOVID3PRO`, `KLINGIMGTOVIDTURBO`, `KLINGIMGTOVIDPRO`, `KLINGIMGTOVID2.1MASTER`, `KLINGIMGTOVID2.1PRO`, `KLINGIMGTOVID2.1STANDARD`) · Hailuo 02 Pro (`HAILUOPRO`) · Happy Horse 1.1 (`HAPPYHORSEI2V`) |
+| **Image / frame → video** | RunwayML (`RUNWAYML`) · Veo 3.1 I2V (`VEO3.1I2V`) · Veo 3.1 Fast I2V (`VEO3.1I2VFAST`) · Veo 3.1 first/last frame (`VEO3.1FLIV`) · Cosmos 3 Super (`COSMOS3SUPERI2V`) · Seedance 1.5 / 2.0 (`SEEDANCEI2V`, `SEEDANCE2.0I2V`) · Kling 3 Pro / Turbo / 1.6 Pro / 2.1 Master / Pro / Standard (`KLINGIMGTOVID3PRO`, `KLINGIMGTOVIDTURBO`, `KLINGIMGTOVIDPRO`, `KLINGIMGTOVID2.1MASTER`, `KLINGIMGTOVID2.1PRO`, `KLINGIMGTOVID2.1STANDARD`) · Hailuo 02 Pro (`HAILUOPRO`) · Happy Horse 1.1 (`HAPPYHORSEI2V`) |
 | **Speech and music** | OpenAI TTS (`OPENAI_TTS`) · Google TTS (`GOOGLE_TTS`) · ElevenLabs Speech (`ELEVENLABS`) · ElevenLabs Music (`ELEVENLABS_MUSIC`) · Lyria 3 (`LYRIA3`) |
 | **Lip sync** | Sync (`SYNCLIPSYNC`) · LatentSync (`LATENTSYNC`) · Kling (`KLINGLIPSYNC`) · Hummingbird (`HUMMINGBIRDLIPSYNC`) · Creatify (`CREATIFYLIPSYNC`) |
 | **Sound effects** | MMAudio V2 (`MMAUDIOV2`) · Mirelo AI (`MIRELOAI`) |
@@ -330,8 +330,8 @@ Open **Providers** in `./setup.sh` and add only the credentials you need. The wi
 | [Kimi K3](https://platform.kimi.ai/) | `KIMI_K3_API_KEY` | Native Kimi text, vision, structured output, and assistants. |
 | [Alibaba Cloud](https://modelstudio.console.alibabacloud.com/) | `ALIBABA_API_KEY`; optional `ALIBABA_API_HOST` | Qwen, Wan, and Happy Horse. |
 | [Samsar-js](https://app.samsar.one/account/apiKeys) | `SAMSAR_API_KEY` | Universal fallback across the supported catalog using Samsar credits. |
-| [GMICloud via GenBlaze](https://console.gmicloud.ai/) | `GMI_API_KEY` | The wizard discovers compatible GMICloud models, writes a credential-scoped catalog, and starts the local `genblaze` gateway. |
-| [Fal](https://fal.ai/dashboard/keys) | `FAL_API_KEY` | Image, edit, video, speech/music, lip sync, and sound effects. |
+| [GMICloud via GenBlaze](https://console.gmicloud.ai/) | `GMI_API_KEY` | The wizard discovers compatible GMICloud models, writes a credential-scoped catalog, and starts the local `genblaze` gateway. Seedance 2.0 is enabled only when the exact `seedance-2-0-260128` route is validated. |
+| [Fal](https://fal.ai/dashboard/keys) | `FAL_API_KEY` | Image, edit, video, speech/music, lip sync, and sound effects, including Seedance 2.0 I2V. |
 | [OpenRouter](https://openrouter.ai/settings/keys) | `OPENROUTER_API_KEY` | Supported GPT, Gemini, and Qwen text/vision fallback routes. |
 | [ElevenLabs](https://elevenlabs.io/app/settings/api-keys) | `ELEVENLABS_API_KEY` | Direct speech and music generation. |
 | [RunwayML](https://docs.dev.runwayml.com/guides/setup/) | `RUNWAY_API_KEY` | Direct text-to-video and image-to-video generation. |

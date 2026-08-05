@@ -159,6 +159,7 @@ async function createInferenceChatCompletionForProvider(
   const {
     authorization,
     bypassSamsarExternalInference,
+    externalMaxTokens,
     externalMaxRetries,
     maxRetries,
     samsarExternalInference,
@@ -171,7 +172,16 @@ async function createInferenceChatCompletionForProvider(
     dependencyOverrides.createSamsarExternalChatCompletion ||
     createSamsarExternalChatCompletion;
   if (shouldUseSamsarExternalInference(chatRequest)) {
-    return createSamsarCompletion(chatRequest);
+    const {
+      externalMaxTokens: _externalMaxTokens,
+      ...externalRequest
+    } = chatRequest || {};
+    return createSamsarCompletion({
+      ...externalRequest,
+      ...(externalMaxTokens !== undefined
+        ? { max_tokens: externalMaxTokens }
+        : {}),
+    });
   }
   const nativeProviderRequest = {
     ...providerRequest,

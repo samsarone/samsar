@@ -50,8 +50,8 @@ export const DEPLOYMENT_PROVIDER_CAPABILITIES = Object.freeze({
   },
   fal: {
     label: 'FAL',
-    requiredFor: ['FAL image models', 'Wan2.7 Pro image', 'FAL audio models', 'Happy Horse 1.1 video', 'lip sync', 'sound effects'],
-    models: ['NANOBANANA2', 'NANOBANANAPRO', 'WAN2.7PRO', 'HAPPYHORSEI2V', 'MMAUDIO', 'LATENT_SYNC'],
+    requiredFor: ['FAL image models', 'Wan2.7 Pro image', 'FAL audio models', 'Seedance 2.0 video', 'Happy Horse 1.1 video', 'lip sync', 'sound effects'],
+    models: ['NANOBANANA2', 'NANOBANANAPRO', 'WAN2.7PRO', 'SEEDANCE2.0I2V', 'HAPPYHORSEI2V', 'MMAUDIO', 'LATENT_SYNC'],
     actions: ['image', 'video', 'audio', 'lip_sync', 'sound_effect'],
   },
   runway: {

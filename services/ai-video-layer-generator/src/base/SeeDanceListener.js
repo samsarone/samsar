@@ -7,6 +7,7 @@ fal.config({
 
 
 const SEEDANCE_15_IMAGE_TO_VIDEO_LINK = "fal-ai/bytedance/seedance/v1.5/pro/image-to-video";
+const SEEDANCE_20_IMAGE_TO_VIDEO_LINK = "bytedance/seedance-2.0/image-to-video";
 
 const SEEDANCE_ALLOWED_ASPECT_RATIOS = new Set([
   "auto",
@@ -43,9 +44,12 @@ function getFalRequestId(submitResponse) {
   return submitResponse?.request_id || submitResponse?.requestId || null;
 }
 
-function getSeedanceImageToVideoLink(model) {
+export function getSeedanceImageToVideoLink(model) {
   if (model === "SEEDANCEI2V") {
     return SEEDANCE_15_IMAGE_TO_VIDEO_LINK;
+  }
+  if (model === "SEEDANCE2.0I2V") {
+    return SEEDANCE_20_IMAGE_TO_VIDEO_LINK;
   }
   const error = new Error(`${model || '<missing>'} is not supported by the FAL Seedance adapter.`);
   error.code = 'FAL_MODEL_UNSUPPORTED';

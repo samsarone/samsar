@@ -27,16 +27,17 @@ test('provider-billed models remain listable without Samsar credit prices', () =
   );
 });
 
-test('Seedance 2.0 image-to-video stays hidden while temporarily disabled', () => {
+test('Seedance 2.0 image-to-video is listable for standalone deployments', () => {
   const model = { key: 'SEEDANCE2.0I2V', standaloneOnly: true };
   const pricingEntry = { key: model.key, providerBilled: true, prices: [] };
 
-  assert.equal(isVideoModelTemporarilyDisabled(model.key), true);
-  assert.equal(isVideoModelAllowedForDeploymentScope(model, true), false);
+  assert.equal(isVideoModelTemporarilyDisabled(model.key), false);
+  assert.equal(isVideoModelAllowedForDeploymentScope(model, true), true);
   assert.equal(
     canListVideoModel({ model, pricingEntry, isStandaloneDeployment: true }),
-    false,
+    true,
   );
+  assert.equal(isVideoModelAllowedForDeploymentScope(model, false), false);
   assert.equal(isVideoModelTemporarilyDisabled('SEEDANCEI2V'), false);
 });
 
