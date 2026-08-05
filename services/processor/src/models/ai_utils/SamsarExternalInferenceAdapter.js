@@ -36,13 +36,12 @@ const DEFAULT_EXTERNAL_INFERENCE_MAX_RETRIES = 3;
 const DEFAULT_EXTERNAL_INFERENCE_RETRY_BASE_DELAY_MS = 5000;
 const DEFAULT_EXTERNAL_INFERENCE_RETRY_MAX_DELAY_MS = 60000;
 const DEFAULT_EXTERNAL_INFERENCE_POLL_INTERVAL_MS = 2000;
-// OpenRouter checks whether the account can afford the requested maximum before
-// generation. Keep Qwen Max reservations close to observed production
-// usage instead of reserving their much larger provider output windows.
-const OPENROUTER_QWEN_MAX_TOKEN_CEILING = 2048;
-const DEFAULT_OPENROUTER_QWEN_MAX_TOKENS = 2048;
-const DEFAULT_OPENROUTER_GEMINI_MAX_TOKENS = 65536;
-const DEFAULT_OPENROUTER_GPT_MAX_COMPLETION_TOKENS = 65536;
+// OpenRouter counts hidden reasoning inside the completion budget. These full
+// advertised output windows are the safe defaults and hard caps. A caller may
+// still choose a smaller, operation-specific budget for bounded output.
+const OPENROUTER_QWEN_MAX_COMPLETION_TOKENS = 131072;
+const OPENROUTER_GEMINI_MAX_COMPLETION_TOKENS = 65536;
+const OPENROUTER_GPT_MAX_COMPLETION_TOKENS = 128000;
 const DEFAULT_OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1';
 const DEFAULT_GENBLAZE_BASE_URL = 'http://genblaze:8080/v1';
 const GENBLAZE_INFERENCE_MODELS = new Set([
@@ -230,33 +229,16 @@ function getExternalInferenceRetryDelayMs(retryNumber, error) {
 }
 
 function getOpenRouterCompletionLimit(requestedModel, request = {}) {
-  let configuredLimit;
-  if (isQwenInferenceModel(requestedModel)) {
-    configuredLimit = Math.min(
-      normalizePositiveInteger(
-        process.env.OPENROUTER_QWEN_MAX_TOKENS,
-        OPENROUTER_QWEN_MAX_TOKEN_CEILING,
-      ),
-      OPENROUTER_QWEN_MAX_TOKEN_CEILING,
-    );
-  } else if (isGeminiInferenceModel(requestedModel)) {
-    configuredLimit = normalizePositiveInteger(
-      process.env.OPENROUTER_GEMINI_MAX_TOKENS,
-      DEFAULT_OPENROUTER_GEMINI_MAX_TOKENS,
-    );
-  } else {
-    configuredLimit = normalizePositiveInteger(
-      process.env.OPENROUTER_GPT_MAX_COMPLETION_TOKENS,
-      DEFAULT_OPENROUTER_GPT_MAX_COMPLETION_TOKENS,
-    );
-  }
+  const providerLimit = isQwenInferenceModel(requestedModel)
+    ? OPENROUTER_QWEN_MAX_COMPLETION_TOKENS
+    : isGeminiInferenceModel(requestedModel)
+      ? OPENROUTER_GEMINI_MAX_COMPLETION_TOKENS
+      : OPENROUTER_GPT_MAX_COMPLETION_TOKENS;
   const requestedLimit = normalizePositiveInteger(
-    request.max_completion_tokens ?? request.max_tokens,
-    isQwenInferenceModel(requestedModel)
-      ? DEFAULT_OPENROUTER_QWEN_MAX_TOKENS
-      : configuredLimit,
+    request.max_completion_tokens ?? request.max_output_tokens ?? request.max_tokens,
+    providerLimit,
   );
-  return Math.min(requestedLimit, configuredLimit);
+  return Math.min(requestedLimit, providerLimit);
 }
 
 function isOpenRouterStructuredOutputRequest(request = {}) {
@@ -317,6 +299,7 @@ function buildOpenRouterRequestPayload(request, requestedModel, openRouterModel,
   }
 
   const completionLimit = getOpenRouterCompletionLimit(requestedModel, request);
+  delete payload.max_output_tokens;
   if (isOpenAIInferenceModel(requestedModel)) {
     delete payload.max_tokens;
     payload.max_completion_tokens = completionLimit;

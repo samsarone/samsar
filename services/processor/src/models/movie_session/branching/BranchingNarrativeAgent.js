@@ -21,7 +21,9 @@ const DEFAULT_MAX_ATTEMPTS = 4;
 const DEFAULT_TIMEOUT_MS = 10 * 60 * 1000;
 const DEFAULT_QWEN_TIMEOUT_MS = 20 * 60 * 1000;
 const DEFAULT_RETRY_DELAY_MS = 5000;
-const QWEN_INFERENCE_MAX_TOKENS = 16384;
+// Branching narratives are long structured outputs, so leave the full Qwen
+// completion window available for hidden reasoning plus the JSON response.
+const QWEN_INFERENCE_MAX_TOKENS = 131072;
 const MAX_PATH_NAME_LENGTH = 120;
 const MAX_PATH_DESCRIPTION_LENGTH = 4000;
 const NUM_DIVERGENCE_PATHS = 2;

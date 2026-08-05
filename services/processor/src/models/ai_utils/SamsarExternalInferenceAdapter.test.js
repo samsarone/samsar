@@ -489,7 +489,7 @@ test('OpenRouter adapter sends OpenAI-compatible vision requests with Qwen 3.8 M
 
   assert.equal(capturedPayload.model, 'qwen/qwen3.8-max');
   assert.equal(capturedPayload.messages[0].content[0].type, 'image_url');
-  assert.equal(capturedPayload.max_tokens, 2048);
+  assert.equal(capturedPayload.max_tokens, 131072);
   assert.equal(capturedOptions.timeout, 1200000);
 });
 
@@ -556,7 +556,7 @@ test('OpenRouter applies Qwen-specific token and reasoning limits to Max text in
 
   assert.equal(capturedPayload.model, 'qwen/qwen3.8-max');
   assert.equal(capturedPayload.reasoning.effort, 'high');
-  assert.equal(capturedPayload.max_tokens, 2048);
+  assert.equal(capturedPayload.max_tokens, 20000);
   assert.equal(Object.hasOwn(capturedPayload, 'max_completion_tokens'), false);
 });
 
@@ -595,7 +595,7 @@ test('OpenRouter reserves Qwen output tokens and enforces schema support for str
 
   assert.equal(capturedPayload.model, 'qwen/qwen3.8-max');
   assert.equal(capturedPayload.reasoning.effort, 'high');
-  assert.equal(capturedPayload.max_tokens, 2048);
+  assert.equal(capturedPayload.max_tokens, 4096);
   assert.deepEqual(capturedPayload.provider, {
     data_collection: 'deny',
     require_parameters: true,
@@ -634,7 +634,7 @@ test('OpenRouter explicitly budgets high-reasoning Gemini and GPT completions', 
   assert.equal(Object.hasOwn(payloads[0], 'max_completion_tokens'), false);
   assert.equal(payloads[1].model, 'openai/gpt-5.6-sol');
   assert.equal(payloads[1].reasoning.effort, 'high');
-  assert.equal(payloads[1].max_completion_tokens, 65536);
+  assert.equal(payloads[1].max_completion_tokens, 128000);
   assert.equal(Object.hasOwn(payloads[1], 'max_tokens'), false);
   for (const payload of payloads) {
     assert.equal(payload.provider.require_parameters, true);

@@ -203,7 +203,7 @@ test('generates exactly two divergence paths and meters invalid structured attem
   assert.match(requests[1].messages.at(-1).content, /paths/i);
   assert.equal(requests[0].maxRetries, 0);
   assert.equal(requests[0].externalMaxRetries, 0);
-  assert.equal(requests[0].max_tokens, 16384);
+  assert.equal(requests[0].max_tokens, 131072);
   assert.equal(
     requests[0].externalRequestContext.requestKey,
     'narrative:create_branching:level-1:root:paths:attempt-1',

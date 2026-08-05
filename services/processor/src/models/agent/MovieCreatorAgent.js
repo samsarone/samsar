@@ -39,13 +39,15 @@ const DEFAULT_THEME_NARRATIVE_TIMEOUT_MS = 10 * 60 * 1000;
 const DEFAULT_QWEN_THEME_NARRATIVE_TIMEOUT_MS = 20 * 60 * 1000;
 const NARRATIVE_SPEECH_REPAIR_MAX_ATTEMPTS = 3;
 const NARRATIVE_SPEECH_REPAIR_RETRY_SHRINK_RATIO = 0.1;
-const QWEN_THEME_KEYWORDS_MAX_TOKENS = 16000;
+// Long structured outputs need Qwen's full completion window because hidden
+// reasoning is charged against the same OpenRouter token limit.
+const QWEN_THEME_KEYWORDS_MAX_TOKENS = 131072;
 // A speech repair returns one short line, so reserving the general Qwen output
 // allowance can trigger OpenRouter's affordability check after the larger
 // narrative request has already consumed credits.
-const QWEN_NARRATIVE_SPEECH_REPAIR_MAX_TOKENS = 512;
+const QWEN_NARRATIVE_SPEECH_REPAIR_MAX_TOKENS = 8192;
 const QWEN_NARRATIVE_SPEECH_REPAIR_REASONING_EFFORT = 'low';
-const QWEN_SCREENPLAY_STORYLINE_MAX_TOKENS = 24000;
+const QWEN_SCREENPLAY_STORYLINE_MAX_TOKENS = 131072;
 const NarrativeGenderField = z.enum(['M', 'F', '']).describe(
   'For speech sounds, use exactly "M" or "F" uppercase; never use an empty string for speech. Use an empty string only for sound_effect items.'
 );

@@ -25,10 +25,12 @@ import {
 const DEFAULT_SAMSAR_API_BASE_URL = 'https://api.samsar.one/v1';
 const DEFAULT_EXTERNAL_INFERENCE_TIMEOUT_MS = 10 * 60 * 1000;
 const DEFAULT_OPENROUTER_QWEN_INFERENCE_TIMEOUT_MS = 20 * 60 * 1000;
-const OPENROUTER_QWEN_MAX_TOKEN_CEILING = 24000;
-const DEFAULT_OPENROUTER_QWEN_MAX_TOKENS = 16384;
-const DEFAULT_OPENROUTER_GEMINI_MAX_TOKENS = 65536;
-const DEFAULT_OPENROUTER_GPT_MAX_COMPLETION_TOKENS = 65536;
+// OpenRouter counts hidden reasoning inside the completion budget. These full
+// advertised output windows are the safe defaults and hard caps. A caller may
+// still choose a smaller, operation-specific budget for bounded output.
+const OPENROUTER_QWEN_MAX_COMPLETION_TOKENS = 131072;
+const OPENROUTER_GEMINI_MAX_COMPLETION_TOKENS = 65536;
+const OPENROUTER_GPT_MAX_COMPLETION_TOKENS = 128000;
 const DEFAULT_OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1';
 const DEFAULT_GENBLAZE_BASE_URL = 'http://genblaze:8080/v1';
 const GENBLAZE_INFERENCE_MODELS = new Set([
@@ -117,24 +119,16 @@ function addOpenRouterResponseHealingPlugin(plugins) {
 }
 
 function getOpenRouterCompletionLimit(requestedModel, request = {}) {
-  const configuredLimit = isQwenInferenceModel(requestedModel)
-    ? Math.min(
-      normalizePositiveInteger(process.env.OPENROUTER_QWEN_MAX_TOKENS, OPENROUTER_QWEN_MAX_TOKEN_CEILING),
-      OPENROUTER_QWEN_MAX_TOKEN_CEILING,
-    )
+  const providerLimit = isQwenInferenceModel(requestedModel)
+    ? OPENROUTER_QWEN_MAX_COMPLETION_TOKENS
     : isGeminiInferenceModel(requestedModel)
-      ? normalizePositiveInteger(process.env.OPENROUTER_GEMINI_MAX_TOKENS, DEFAULT_OPENROUTER_GEMINI_MAX_TOKENS)
-      : normalizePositiveInteger(
-        process.env.OPENROUTER_GPT_MAX_COMPLETION_TOKENS,
-        DEFAULT_OPENROUTER_GPT_MAX_COMPLETION_TOKENS,
-      );
+      ? OPENROUTER_GEMINI_MAX_COMPLETION_TOKENS
+      : OPENROUTER_GPT_MAX_COMPLETION_TOKENS;
   const requestedLimit = normalizePositiveInteger(
-    request.max_completion_tokens ?? request.max_tokens,
-    isQwenInferenceModel(requestedModel)
-      ? DEFAULT_OPENROUTER_QWEN_MAX_TOKENS
-      : configuredLimit,
+    request.max_completion_tokens ?? request.max_output_tokens ?? request.max_tokens,
+    providerLimit,
   );
-  return Math.min(requestedLimit, configuredLimit);
+  return Math.min(requestedLimit, providerLimit);
 }
 
 function getOpenRouterReasoningEffort(requestedModel, effort, request = {}) {
@@ -162,6 +156,7 @@ function buildOpenRouterRequestPayload(request, requestedModel, openRouterModel,
   const payload = { ...request, model: openRouterModel };
   const effectiveEffort = getOpenRouterReasoningEffort(requestedModel, effort, request);
   const completionLimit = getOpenRouterCompletionLimit(requestedModel, request);
+  delete payload.max_output_tokens;
   if (isQwenInferenceModel(requestedModel) || isGeminiInferenceModel(requestedModel)) {
     delete payload.max_completion_tokens;
     payload.max_tokens = completionLimit;

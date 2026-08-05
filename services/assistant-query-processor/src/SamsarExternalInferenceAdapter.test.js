@@ -87,19 +87,29 @@ test('Qwen OpenRouter applies Qwen 3.8 Max to text and vision with bounded setti
     messages: [{ role: 'user', content: 'large structured response' }],
     max_tokens: 50000,
   });
+  await createOpenRouterChatCompletion({
+    model: 'gemini-3.1-pro',
+    messages: [{ role: 'user', content: 'hello' }],
+  });
+  await createOpenRouterChatCompletion({
+    model: 'gpt-5.6-sol',
+    messages: [{ role: 'user', content: 'hello' }],
+  });
 
   assert.equal(payloads[0].model, 'qwen/qwen3.8-max');
   assert.equal(payloads[0].reasoning.effort, 'high');
   assert.equal(payloads[0].max_tokens, 20000);
   assert.equal(payloads[1].model, 'qwen/qwen3.8-max');
-  assert.equal(payloads[1].max_tokens, 16384);
+  assert.equal(payloads[1].max_tokens, 131072);
   assert.equal(payloads[2].model, 'qwen/qwen3.8-max');
   assert.equal(payloads[2].reasoning.effort, 'high');
   assert.equal(payloads[2].max_tokens, 16384);
   assert.deepEqual(payloads[2].provider, { data_collection: 'deny', require_parameters: true });
   assert.deepEqual(payloads[2].plugins, [{ id: 'existing-plugin' }, { id: 'response-healing' }]);
   assert.equal(payloads[3].model, 'qwen/qwen3.8-max');
-  assert.equal(payloads[3].max_tokens, 24000);
+  assert.equal(payloads[3].max_tokens, 50000);
+  assert.equal(payloads[4].max_tokens, 65536);
+  assert.equal(payloads[5].max_completion_tokens, 128000);
   assert.equal(options[0].maxRetries, 0);
   assert.equal(options[0].signal instanceof AbortSignal, true);
 });

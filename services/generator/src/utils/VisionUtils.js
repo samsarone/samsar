@@ -32,14 +32,8 @@ const VISION_INFERENCE_RETRY_MAX_DELAY_MS = Math.max(
   VISION_INFERENCE_RETRY_BASE_DELAY_MS,
   normalizePositiveInteger(process.env.VISION_INFERENCE_RETRY_MAX_DELAY_MS, 60000),
 );
-const QWEN_VISION_DESCRIPTION_MAX_TOKENS = Math.min(
-  normalizePositiveInteger(process.env.QWEN_VISION_DESCRIPTION_MAX_TOKENS, 8192),
-  8192,
-);
-const QWEN_VISION_SCORE_MAX_TOKENS = Math.min(
-  normalizePositiveInteger(process.env.QWEN_VISION_SCORE_MAX_TOKENS, 1024),
-  1024,
-);
+const VISION_DESCRIPTION_MAX_TOKENS = 16384;
+const VISION_SCORE_MAX_TOKENS = 8192;
 
 function normalizeNonNegativeInteger(value, fallback) {
   const parsed = Number(value);
@@ -120,13 +114,13 @@ function resolveVisionInferenceModel(userInferenceModel = getDefaultUserInferenc
     : DEFAULT_INFERENCE_MODEL;
 }
 
-function getQwenVisionMaxTokens(inferenceModel, operation) {
-  if (!isQwenInferenceModel(inferenceModel)) {
+function getVisionMaxTokens(inferenceModel, operation) {
+  if (isKimiInferenceModel(inferenceModel)) {
     return undefined;
   }
   return operation === 'score'
-    ? QWEN_VISION_SCORE_MAX_TOKENS
-    : QWEN_VISION_DESCRIPTION_MAX_TOKENS;
+    ? VISION_SCORE_MAX_TOKENS
+    : VISION_DESCRIPTION_MAX_TOKENS;
 }
 
 function getErrorMessage(error) {
@@ -343,8 +337,8 @@ Provide an information-dense, condensed and thorough description in 3000 charact
 
   const buildActivePayload = (providerImageUrl) => ({
       model: inferenceModel,
-      ...(isQwenInferenceModel(inferenceModel)
-        ? { max_tokens: getQwenVisionMaxTokens(inferenceModel, 'description') }
+      ...(!isKimiInferenceModel(inferenceModel)
+        ? { max_tokens: getVisionMaxTokens(inferenceModel, 'description') }
         : {}),
       ...(!isGeminiInferenceModel(inferenceModel) && !isQwenInferenceModel(inferenceModel)
         ? { reasoning_effort: GPT_56_SOL_REASONING_EFFORT }
@@ -492,8 +486,8 @@ Return only a single integer between 0 and 100.`;
     model: inferenceModel,
     externalMaxRetries: 0,
     maxRetries: 0,
-    ...(isQwenInferenceModel(inferenceModel)
-      ? { max_tokens: getQwenVisionMaxTokens(inferenceModel, 'score') }
+    ...(!isKimiInferenceModel(inferenceModel)
+      ? { max_tokens: getVisionMaxTokens(inferenceModel, 'score') }
       : {}),
     ...(!isGeminiInferenceModel(inferenceModel) && !isQwenInferenceModel(inferenceModel)
       ? { reasoning_effort: GPT_56_SOL_REASONING_EFFORT }
@@ -520,7 +514,7 @@ export const __testOnly__ = {
   getDescriptionForImage,
   getVisionInferenceErrorStatus,
   getVisionInferenceRetryDelayMs,
-  getQwenVisionMaxTokens,
+  getVisionMaxTokens,
   isRetryableVisionInferenceError,
   resolveVisionInferenceModel,
 };

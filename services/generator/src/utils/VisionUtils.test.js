@@ -21,10 +21,12 @@ const silentLogger = {
   warn() {},
 };
 
-test('Qwen vision requests use operation-specific bounded output limits', () => {
-  assert.equal(__testOnly__.getQwenVisionMaxTokens('QWEN3.8', 'description'), 8192);
-  assert.equal(__testOnly__.getQwenVisionMaxTokens('QWEN3.8', 'score'), 1024);
-  assert.equal(__testOnly__.getQwenVisionMaxTokens('gpt-5.6-sol', 'description'), undefined);
+test('OpenRouter vision models use operation-specific reasoning-safe output limits', () => {
+  assert.equal(__testOnly__.getVisionMaxTokens('QWEN3.8', 'description'), 16384);
+  assert.equal(__testOnly__.getVisionMaxTokens('QWEN3.8', 'score'), 8192);
+  assert.equal(__testOnly__.getVisionMaxTokens('gpt-5.6-sol', 'description'), 16384);
+  assert.equal(__testOnly__.getVisionMaxTokens('gemini-3.1-pro', 'score'), 8192);
+  assert.equal(__testOnly__.getVisionMaxTokens('kimi-k3', 'description'), undefined);
 });
 
 test('Qwen 3.8 Max drives both native vision description and scoring', async (t) => {
