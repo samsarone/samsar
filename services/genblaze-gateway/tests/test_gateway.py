@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import asyncio
 import base64
 import hashlib
 import json
 from dataclasses import replace
 from types import SimpleNamespace
 
+import httpx
 import pytest
 from fastapi.testclient import TestClient
 
@@ -18,7 +20,13 @@ from app.catalog import (
 )
 from app.config import Settings
 from app.main import create_app
-from app.runtime import GatewayRuntime, GenBlazeBindings
+from app.media_staging import GMICloudMediaStager
+from app.runtime import (
+    GatewayRuntime,
+    GenBlazeBindings,
+    _collect_managed_tunnel_media_urls,
+    _rewrite_managed_tunnel_media_urls,
+)
 
 
 class FakeProviderError(Exception):
@@ -61,6 +69,7 @@ class FakeProvider:
     def __init__(self, **options):
         self.options = options
         self.submitted_step = None
+        self.submitted_steps = []
         self.terminal = False
         self.terminal_status = "success"
         self.terminal_error = "generation failed"
@@ -69,6 +78,7 @@ class FakeProvider:
 
     def submit(self, step):
         self.submitted_step = step
+        self.submitted_steps.append(step)
         return FakeSubmitResult()
 
     def poll(self, prediction_id):
@@ -172,10 +182,14 @@ def settings(tmp_path):
     )
 
 
-def build_client(settings, bindings):
+def build_client(settings, bindings, **runtime_kwargs):
     app = create_app(
         settings=settings,
-        runtime_factory=lambda configured: GatewayRuntime(configured, bindings=bindings),
+        runtime_factory=lambda configured: GatewayRuntime(
+            configured,
+            bindings=bindings,
+            **runtime_kwargs,
+        ),
     )
     return TestClient(app)
 
@@ -195,6 +209,22 @@ def write_catalog(tmp_path, models, *, api_key="gmi-test-key", **overrides):
 
 def settings_with_catalog(settings, path):
     return replace(settings, model_catalog_path=str(path))
+
+
+def test_media_url_attempt_setting_prefers_generic_name_and_supports_vision_legacy_name(
+    monkeypatch,
+):
+    monkeypatch.setenv("GENBLAZE_VISION_URL_MAX_ATTEMPTS", "4")
+    assert Settings.from_env().media_url_max_attempts == 4
+
+    monkeypatch.setenv("GENBLAZE_MEDIA_URL_MAX_ATTEMPTS", "5")
+    assert Settings.from_env().media_url_max_attempts == 5
+
+    monkeypatch.setenv("GENBLAZE_MEDIA_STAGE_TIMEOUT_SECONDS", "900")
+    monkeypatch.setenv("GENBLAZE_MEDIA_STAGE_MAX_BYTES", "4294967296")
+    configured = Settings.from_env()
+    assert configured.media_stage_timeout_seconds == 900
+    assert configured.media_stage_max_bytes == 4 * 1024 * 1024 * 1024
 
 
 def test_development_fallback_is_empty_and_never_guesses_upstream_models():
@@ -609,7 +639,322 @@ def test_high_reasoning_and_corresponding_vision_model_are_preserved(
     assert calls[0]["messages"] == messages
     assert "reasoning" not in calls[0]["kwargs"]
     assert calls[0]["kwargs"]["reasoning_effort"] == "high"
-    assert calls[0]["kwargs"]["max_completion_tokens"] == 512
+    assert "max_tokens" not in calls[0]["kwargs"]
+    assert "max_completion_tokens" not in calls[0]["kwargs"]
+    assert "max_output_tokens" not in calls[0]["kwargs"]
+
+
+def test_gmicloud_vision_rotates_public_tunnel_url_after_each_download_failure(
+    settings,
+    fake_bindings,
+):
+    bindings, _, raw_response = fake_bindings
+    calls = []
+    refreshed_urls = iter(
+        (
+            "https://second.trycloudflare.com/assets_v2/generations/session/frame.png",
+            "https://third.trycloudflare.com/assets_v2/generations/session/frame.png",
+        )
+    )
+
+    async def fail_two_downloads(model, messages, **kwargs):
+        calls.append({"model": model, "messages": messages, "kwargs": kwargs})
+        if len(calls) == 1:
+            raise FakeProviderError(
+                "Unable to download content from the provided URL before the timeout. "
+                "Check that the URL is publicly accessible and responds promptly."
+            )
+        if len(calls) == 2:
+            raise FakeProviderError(
+                'Provider API error: Timeout while downloading '
+                '(code="invalid_image_url")'
+            )
+        return SimpleNamespace(raw=raw_response)
+
+    async def rotate_public_url(messages, attempted_urls, retry_number):
+        assert retry_number in {1, 2}
+        assert len(attempted_urls) == retry_number
+        refreshed = json.loads(json.dumps(messages))
+        refreshed[0]["content"][1]["image_url"]["url"] = next(refreshed_urls)
+        return refreshed
+
+    bindings = replace(bindings, achat=fail_two_downloads)
+    configured = replace(settings, media_url_max_attempts=3)
+    messages = [
+        {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": "describe"},
+                {
+                    "type": "image_url",
+                    "image_url": {
+                        "url": (
+                            "https://first.trycloudflare.com/assets_v2/"
+                            "generations/session/frame.png"
+                        )
+                    },
+                },
+            ],
+        }
+    ]
+
+    with build_client(
+        configured,
+        bindings,
+        tunnel_url_refresher=rotate_public_url,
+    ) as client:
+        response = client.post(
+            "/v1/chat/completions",
+            json={
+                "model": "QWEN3.8",
+                "messages": messages,
+                "max_tokens": 512,
+                "max_completion_tokens": 512,
+            },
+        )
+
+    assert response.status_code == 200
+    assert response.json() == raw_response
+    assert [
+        call["messages"][0]["content"][1]["image_url"]["url"]
+        for call in calls
+    ] == [
+        "https://first.trycloudflare.com/assets_v2/generations/session/frame.png",
+        "https://second.trycloudflare.com/assets_v2/generations/session/frame.png",
+        "https://third.trycloudflare.com/assets_v2/generations/session/frame.png",
+    ]
+    for call in calls:
+        assert call["messages"][0]["content"][1]["image_url"]["url"].startswith("https://")
+        assert "max_tokens" not in call["kwargs"]
+        assert "max_completion_tokens" not in call["kwargs"]
+        assert "max_output_tokens" not in call["kwargs"]
+
+
+def test_gmicloud_media_stager_buffers_internal_asset_and_returns_public_url():
+    media_bytes = b"\x89PNG\r\n\x1a\nprovider-media"
+    requests = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = request.read()
+        requests.append((request.method, str(request.url), dict(request.headers), body))
+        if request.method == "GET":
+            assert str(request.url) == (
+                "http://media-gateway/assets_v2/generations/session/frame.png"
+            )
+            return httpx.Response(
+                200,
+                headers={"Content-Type": "image/png"},
+                content=media_bytes,
+            )
+        if request.method == "POST":
+            assert str(request.url).endswith("/apikey/upload-url")
+            assert request.headers["authorization"] == "Bearer gmi-test-key"
+            assert json.loads(body) == {"file_type": "png"}
+            return httpx.Response(
+                200,
+                json={
+                    "upload_url": "https://storage.googleapis.com/upload/signed.png?token=1",
+                    "public_url": "https://storage.googleapis.com/gmi-public/frame.png",
+                },
+            )
+        assert request.method == "PUT"
+        assert str(request.url) == "https://storage.googleapis.com/upload/signed.png?token=1"
+        assert request.headers["content-type"] == "image/png"
+        assert request.headers["content-length"] == str(len(media_bytes))
+        assert body == media_bytes
+        return httpx.Response(200)
+
+    stager = GMICloudMediaStager(
+        api_key="gmi-test-key",
+        timeout_seconds=5,
+        transport=httpx.MockTransport(handler),
+    )
+
+    async def stage_twice():
+        first = await stager.stage("/assets_v2/generations/session/frame.png")
+        second = await stager.stage("/assets_v2/generations/session/frame.png")
+        return first, second
+
+    first, second = asyncio.run(stage_twice())
+    assert first == "https://storage.googleapis.com/gmi-public/frame.png"
+    assert second == first
+    assert [method for method, *_ in requests] == ["GET", "POST", "PUT"]
+
+
+def test_gmicloud_media_stager_spools_and_streams_mp4_inputs(monkeypatch):
+    import app.media_staging as media_staging
+
+    monkeypatch.setattr(media_staging, "_SPOOL_MEMORY_BYTES", 8)
+    media_bytes = b"video-input" * 64
+    uploaded_bodies = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = request.read()
+        if request.method == "GET":
+            assert str(request.url).endswith("/assets_v2/video/source.mp4")
+            return httpx.Response(
+                200,
+                headers={"Content-Type": "video/mp4"},
+                content=media_bytes,
+            )
+        if request.method == "POST":
+            assert json.loads(body) == {"file_type": "mp4"}
+            return httpx.Response(
+                200,
+                json={
+                    "upload_url": "https://storage.googleapis.com/upload/signed.mp4",
+                    "public_url": "https://storage.googleapis.com/gmi-public/source.mp4",
+                },
+            )
+        assert request.headers["content-type"] == "video/mp4"
+        assert request.headers["content-length"] == str(len(media_bytes))
+        uploaded_bodies.append(body)
+        return httpx.Response(200)
+
+    stager = GMICloudMediaStager(
+        api_key="gmi-test-key",
+        timeout_seconds=5,
+        transport=httpx.MockTransport(handler),
+    )
+    public_url = asyncio.run(stager.stage("/assets_v2/video/source.mp4"))
+
+    assert public_url == "https://storage.googleapis.com/gmi-public/source.mp4"
+    assert uploaded_bodies == [media_bytes]
+
+
+def test_gmicloud_vision_stages_tunnel_image_after_remote_download_failure(
+    settings,
+    fake_bindings,
+):
+    bindings, _, raw_response = fake_bindings
+    calls = []
+    staging_calls = []
+    public_url = "https://storage.googleapis.com/gmi-public/frame.png"
+
+    async def fail_first_download(model, messages, **kwargs):
+        calls.append({"model": model, "messages": messages, "kwargs": kwargs})
+        if len(calls) == 1:
+            raise FakeProviderError(
+                "Unable to download content from the provided URL before the timeout."
+            )
+        return SimpleNamespace(raw=raw_response)
+
+    async def stage_public_url(messages):
+        staging_calls.append(messages)
+        staged = json.loads(json.dumps(messages))
+        staged[0]["content"][1]["image_url"]["url"] = public_url
+        return staged
+
+    bindings = replace(bindings, achat=fail_first_download)
+    messages = [
+        {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": "describe"},
+                {
+                    "type": "image_url",
+                    "image_url": {
+                        "url": (
+                            "https://first.trycloudflare.com/assets_v2/"
+                            "generations/session/frame.png"
+                        )
+                    },
+                },
+            ],
+        }
+    ]
+
+    with build_client(
+        settings,
+        bindings,
+        media_url_stager=stage_public_url,
+    ) as client:
+        response = client.post(
+            "/v1/chat/completions",
+            json={
+                "model": "QWEN3.8",
+                "messages": messages,
+                "max_tokens": 512,
+            },
+        )
+
+    assert response.status_code == 200
+    assert response.json() == raw_response
+    assert len(staging_calls) == 1
+    assert [
+        call["messages"][0]["content"][1]["image_url"]["url"]
+        for call in calls
+    ] == [
+        "https://first.trycloudflare.com/assets_v2/generations/session/frame.png",
+        public_url,
+    ]
+    assert all("max_tokens" not in call["kwargs"] for call in calls)
+
+
+def test_gmicloud_vision_rotates_tunnel_when_byte_staging_fails(
+    settings,
+    fake_bindings,
+):
+    bindings, _, raw_response = fake_bindings
+    calls = []
+    recovery_calls = []
+
+    async def fail_first_download(model, messages, **kwargs):
+        calls.append(messages[0]["content"][1]["image_url"]["url"])
+        if len(calls) == 1:
+            raise FakeProviderError("Timeout while downloading image")
+        return SimpleNamespace(raw=raw_response)
+
+    async def fail_staging(_messages):
+        recovery_calls.append("stage")
+        raise OSError("GMI upload allocation unavailable")
+
+    async def rotate_public_url(messages, attempted_urls, retry_number):
+        recovery_calls.append("rotate")
+        assert attempted_urls
+        assert retry_number == 1
+        refreshed = json.loads(json.dumps(messages))
+        refreshed[0]["content"][1]["image_url"]["url"] = (
+            "https://second.trycloudflare.com/assets_v2/generations/session/frame.png"
+        )
+        return refreshed
+
+    bindings = replace(bindings, achat=fail_first_download)
+    messages = [
+        {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": "describe"},
+                {
+                    "type": "image_url",
+                    "image_url": {
+                        "url": (
+                            "https://first.trycloudflare.com/assets_v2/"
+                            "generations/session/frame.png"
+                        )
+                    },
+                },
+            ],
+        }
+    ]
+
+    with build_client(
+        settings,
+        bindings,
+        media_url_stager=fail_staging,
+        tunnel_url_refresher=rotate_public_url,
+    ) as client:
+        response = client.post(
+            "/v1/chat/completions",
+            json={"model": "QWEN3.8", "messages": messages},
+        )
+
+    assert response.status_code == 200
+    assert calls == [
+        "https://first.trycloudflare.com/assets_v2/generations/session/frame.png",
+        "https://second.trycloudflare.com/assets_v2/generations/session/frame.png",
+    ]
+    assert recovery_calls == ["stage", "rotate"]
 
 
 def test_chat_retries_once_without_reasoning_effort_when_gmicloud_rejects_it(
@@ -693,7 +1038,7 @@ def test_qwen_vision_is_optional_and_fails_clearly_when_not_mapped(
     assert calls == []
 
 
-def test_chat_maps_vision_to_qwen_max_and_preserves_openai_blocks(settings, fake_bindings):
+def test_chat_maps_vision_to_qwen_max_without_openrouter_completion_limits(settings, fake_bindings):
     bindings, calls, raw_response = fake_bindings
     messages = [
         {
@@ -717,7 +1062,7 @@ def test_chat_maps_vision_to_qwen_max_and_preserves_openai_blocks(settings, fake
     assert response.json() == raw_response
     assert calls[0]["model"] == "Qwen/Qwen3.8-Max"
     assert calls[0]["messages"] == messages
-    assert calls[0]["kwargs"]["max_tokens"] == 100
+    assert "max_tokens" not in calls[0]["kwargs"]
 
 
 def test_chat_ignores_request_body_transport_overrides(settings, fake_bindings):
@@ -1071,6 +1416,299 @@ def test_image_edit_contract_preserves_inputs_and_enforces_per_model_limits(
             },
         )
         assert missing_bria_mask.status_code == 400
+
+
+def test_gmicloud_image_edit_rotates_all_tunneled_inputs_after_download_failures(
+    settings,
+    fake_bindings,
+    tmp_path,
+):
+    class RetryingImageProvider(FakeImageProvider):
+        instances = []
+
+        def submit(self, step):
+            self.submitted_step = step
+            self.submitted_steps.append(step)
+            if len(self.submitted_steps) < 3:
+                raise FakeProviderError(
+                    'GMICloud submit failed (400): code="invalid_image_url" '
+                    "Timeout while downloading image"
+                )
+            return FakeSubmitResult()
+
+    path = write_catalog(
+        tmp_path,
+        {
+            "GPTIMAGE2EDIT": {
+                "image": {"modelId": "gpt-image-2-edit", "operation": "image.edit"}
+            }
+        },
+    )
+    bindings, _, _ = fake_bindings
+    bindings = replace(bindings, image_provider_type=RetryingImageProvider)
+    replacement_origins = iter(
+        (
+            "https://second.trycloudflare.com",
+            "https://third.trycloudflare.com",
+        )
+    )
+    refresh_calls = []
+
+    async def rotate_public_urls(payload, attempted_urls, retry_number):
+        refresh_calls.append((tuple(attempted_urls), retry_number))
+        replacement_origin = next(replacement_origins)
+        refreshed = json.loads(json.dumps(payload))
+        refreshed["input_urls"] = [
+            f"{replacement_origin}/{url.split('/', 3)[3]}"
+            for url in refreshed["input_urls"]
+        ]
+        return refreshed
+
+    configured = replace(
+        settings_with_catalog(settings, path),
+        media_url_max_attempts=3,
+    )
+    with build_client(
+        configured,
+        bindings,
+        tunnel_url_refresher=rotate_public_urls,
+    ) as client:
+        response = client.post(
+            "/v1/media/requests",
+            json={
+                "model": "GPTIMAGE2EDIT",
+                "modality": "image",
+                "prompt": "edit",
+                "input_urls": [
+                    "https://first.trycloudflare.com/assets_v2/generations/session/source.png",
+                    "https://first.trycloudflare.com/assets_v2/generations/session/mask.png",
+                ],
+                "params": {},
+            },
+        )
+
+    assert response.status_code == 202
+    provider = RetryingImageProvider.instances[0]
+    assert [
+        [asset.url for asset in step.inputs]
+        for step in provider.submitted_steps
+    ] == [
+        [
+            "https://first.trycloudflare.com/assets_v2/generations/session/source.png",
+            "https://first.trycloudflare.com/assets_v2/generations/session/mask.png",
+        ],
+        [
+            "https://second.trycloudflare.com/assets_v2/generations/session/source.png",
+            "https://second.trycloudflare.com/assets_v2/generations/session/mask.png",
+        ],
+        [
+            "https://third.trycloudflare.com/assets_v2/generations/session/source.png",
+            "https://third.trycloudflare.com/assets_v2/generations/session/mask.png",
+        ],
+    ]
+    assert [retry_number for _, retry_number in refresh_calls] == [1, 2]
+
+
+def test_gmicloud_image_edit_stages_all_tunneled_inputs_after_download_failure(
+    settings,
+    fake_bindings,
+    tmp_path,
+):
+    class StagingImageProvider(FakeImageProvider):
+        instances = []
+
+        def submit(self, step):
+            self.submitted_step = step
+            self.submitted_steps.append(step)
+            if len(self.submitted_steps) == 1:
+                raise FakeProviderError(
+                    "GMICloud submit failed (400): Timeout while downloading image"
+                )
+            return FakeSubmitResult()
+
+    path = write_catalog(
+        tmp_path,
+        {
+            "GPTIMAGE2EDIT": {
+                "image": {"modelId": "gpt-image-2-edit", "operation": "image.edit"}
+            }
+        },
+    )
+    bindings, _, _ = fake_bindings
+    bindings = replace(bindings, image_provider_type=StagingImageProvider)
+    staging_calls = []
+
+    async def stage_public_urls(payload):
+        staging_calls.append(payload)
+        staged = json.loads(json.dumps(payload))
+        staged["input_urls"] = [
+            f"https://storage.googleapis.com/gmi-public/{url.rsplit('/', 1)[-1]}"
+            for url in payload["input_urls"]
+        ]
+        return staged
+
+    configured = settings_with_catalog(settings, path)
+    with build_client(
+        configured,
+        bindings,
+        media_url_stager=stage_public_urls,
+    ) as client:
+        response = client.post(
+            "/v1/media/requests",
+            json={
+                "model": "GPTIMAGE2EDIT",
+                "modality": "image",
+                "prompt": "edit",
+                "input_urls": [
+                    "https://first.trycloudflare.com/assets_v2/generations/session/source.png",
+                    "https://first.trycloudflare.com/assets_v2/generations/session/mask.png",
+                ],
+                "params": {},
+            },
+        )
+
+    assert response.status_code == 202
+    assert len(staging_calls) == 1
+    provider = StagingImageProvider.instances[0]
+    assert [
+        [asset.url for asset in step.inputs]
+        for step in provider.submitted_steps
+    ] == [
+        [
+            "https://first.trycloudflare.com/assets_v2/generations/session/source.png",
+            "https://first.trycloudflare.com/assets_v2/generations/session/mask.png",
+        ],
+        [
+            "https://storage.googleapis.com/gmi-public/source.png",
+            "https://storage.googleapis.com/gmi-public/mask.png",
+        ],
+    ]
+
+
+def test_gmicloud_image_to_video_rotates_tunneled_frames_after_download_failures(
+    settings,
+    fake_bindings,
+    tmp_path,
+):
+    class RetryingVideoProvider(FakeVideoProvider):
+        instances = []
+
+        def submit(self, step):
+            self.submitted_step = step
+            self.submitted_steps.append(step)
+            if len(self.submitted_steps) < 3:
+                raise FakeProviderError(
+                    "GMICloud submit failed: Error while downloading file. "
+                    "Upstream status code: 530"
+                )
+            return FakeSubmitResult()
+
+    path = write_catalog(
+        tmp_path,
+        {
+            "KLINGIMGTOVID3PRO": {
+                "video": {
+                    "modelId": "kling-v3-image-to-video",
+                    "operation": "video.generate",
+                }
+            }
+        },
+    )
+    bindings, _, _ = fake_bindings
+    bindings = replace(bindings, video_provider_type=RetryingVideoProvider)
+    replacement_origins = iter(
+        (
+            "https://second.trycloudflare.com",
+            "https://third.trycloudflare.com",
+        )
+    )
+
+    async def rotate_public_urls(payload, attempted_urls, retry_number):
+        assert attempted_urls
+        assert retry_number in {1, 2}
+        replacement_origin = next(replacement_origins)
+        refreshed = json.loads(json.dumps(payload))
+        refreshed["input_urls"] = [
+            f"{replacement_origin}/{url.split('/', 3)[3]}"
+            for url in refreshed["input_urls"]
+        ]
+        return refreshed
+
+    configured = replace(
+        settings_with_catalog(settings, path),
+        media_url_max_attempts=3,
+    )
+    with build_client(
+        configured,
+        bindings,
+        tunnel_url_refresher=rotate_public_urls,
+    ) as client:
+        response = client.post(
+            "/v1/media/requests",
+            json={
+                "model": "KLINGIMGTOVID3PRO",
+                "modality": "video",
+                "prompt": "animate",
+                "input_urls": [
+                    "https://first.trycloudflare.com/assets_v2/generations/session/start.png",
+                    "https://first.trycloudflare.com/assets_v2/generations/session/end.png",
+                ],
+                "params": {},
+            },
+        )
+
+    assert response.status_code == 202
+    provider = RetryingVideoProvider.instances[0]
+    assert [
+        [asset.url for asset in step.inputs]
+        for step in provider.submitted_steps
+    ] == [
+        [
+            "https://first.trycloudflare.com/assets_v2/generations/session/start.png",
+            "https://first.trycloudflare.com/assets_v2/generations/session/end.png",
+        ],
+        [
+            "https://second.trycloudflare.com/assets_v2/generations/session/start.png",
+            "https://second.trycloudflare.com/assets_v2/generations/session/end.png",
+        ],
+        [
+            "https://third.trycloudflare.com/assets_v2/generations/session/start.png",
+            "https://third.trycloudflare.com/assets_v2/generations/session/end.png",
+        ],
+    ]
+
+
+def test_managed_media_rewriter_covers_video_to_video_urls_without_touching_external_media():
+    payload = {
+        "input_urls": [
+            "https://first.trycloudflare.com/assets_v2/generations/session/source.mp4",
+            "https://cdn.example/reference.mp4",
+        ],
+        "params": {
+            "nested_video_url": (
+                "https://first.trycloudflare.com/assets/generations/session/mask.mp4"
+            ),
+        },
+    }
+
+    assert _collect_managed_tunnel_media_urls(payload) == [
+        "https://first.trycloudflare.com/assets_v2/generations/session/source.mp4",
+        "https://first.trycloudflare.com/assets/generations/session/mask.mp4",
+    ]
+    assert _rewrite_managed_tunnel_media_urls(
+        payload,
+        "https://second.trycloudflare.com",
+    ) == {
+        "input_urls": [
+            "https://second.trycloudflare.com/assets_v2/generations/session/source.mp4",
+            "https://cdn.example/reference.mp4",
+        ],
+        "params": {
+            "nested_video_url": (
+                "https://second.trycloudflare.com/assets/generations/session/mask.mp4"
+            ),
+        },
+    }
 
 
 def test_video_input_contracts_enforce_exact_required_frame_counts(

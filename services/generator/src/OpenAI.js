@@ -18,6 +18,7 @@ import {
   DOCKER_INFERENCE_PROVIDER,
   createSamsarExternalChatCompletion,
   getConfiguredInferenceProviders,
+  resolveConfiguredInferenceProvider,
   shouldUseSamsarExternalInference,
 } from './inference/SamsarExternalInferenceAdapter.js';
 import { withInferenceAuthorization } from './inference/RequestInferenceModel.js';
@@ -89,6 +90,18 @@ function buildProviderPinnedChatRequest(chatRequest, provider) {
     bypassSamsarExternalInference: true,
     samsarExternalInference: false,
   };
+}
+
+function shouldMaterializeOpenRouterMaxTokens(chatRequest = {}, model) {
+  const authorization = normalizeAuthorization(chatRequest?.authorization);
+  if (authorization === 'openrouter') {
+    return true;
+  }
+  if (authorization) {
+    return false;
+  }
+  return resolveConfiguredInferenceProvider(model, chatRequest) ===
+    DOCKER_INFERENCE_PROVIDER.OPENROUTER;
 }
 
 export function isRetryableInferenceAdapterError(error) {
@@ -178,7 +191,8 @@ async function createInferenceChatCompletionForProvider(
     } = chatRequest || {};
     return createSamsarCompletion({
       ...externalRequest,
-      ...(externalMaxTokens !== undefined
+      ...(externalMaxTokens !== undefined &&
+          shouldMaterializeOpenRouterMaxTokens(chatRequest, model)
         ? { max_tokens: externalMaxTokens }
         : {}),
     });

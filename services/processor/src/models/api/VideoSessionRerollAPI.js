@@ -9,6 +9,7 @@ import { deductGenerationCredits } from '../GenerationCredits.js';
 import { upsertGlobalSessionMapping } from '../GlobalSession.js';
 import { addImageGeneratorRequest } from '../Images.js';
 import { copyVideoSession } from './VideoSessionCloneAPI.js';
+import { buildMovieResourceListVisualPrompts } from '../movie_session/TranscriptMovieGenerator.js';
 import { IMAGE_MODEL_PRICES } from '../../consts/ModelPrices.js';
 import { getExpressVideoStageCreditsPerSecond } from '../../consts/pricing/ExpressVideoPricingDistribution.js';
 
@@ -50,6 +51,38 @@ function parseMaybeJson(value) {
 function getMovieResourceList(sessionData = {}) {
   const parsed = parseMaybeJson(sessionData.movieResourceList);
   return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : null;
+}
+
+function getNarrativeResourceList(sessionData = {}) {
+  const parsed = parseMaybeJson(sessionData.narrativeJson);
+  return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : null;
+}
+
+function getRerollVisualMovieResourceList(sessionData = {}) {
+  const movieResourceList = getMovieResourceList(sessionData) || {};
+  const narrativeJson = getNarrativeResourceList(sessionData) || {};
+  const movieScenes = Array.isArray(movieResourceList.scenes) ? movieResourceList.scenes : [];
+  const narrativeScenes = Array.isArray(narrativeJson.scenes) ? narrativeJson.scenes : [];
+  const sceneCount = Math.max(movieScenes.length, narrativeScenes.length);
+  const scenes = Array.from({ length: sceneCount }, (_, sceneIndex) => {
+    const movieScene = movieScenes[sceneIndex] || {};
+    const narrativeScene = narrativeScenes[sceneIndex] || {};
+    const narrativeVisual = normalizeString(narrativeScene.visual);
+
+    return {
+      ...movieScene,
+      ...narrativeScene,
+      ...(narrativeVisual ? { visual: narrativeVisual } : {}),
+    };
+  });
+  const movieSounds = Array.isArray(movieResourceList.sounds) ? movieResourceList.sounds : [];
+  const narrativeSounds = Array.isArray(narrativeJson.sounds) ? narrativeJson.sounds : [];
+
+  return {
+    ...movieResourceList,
+    scenes,
+    sounds: movieSounds.length ? movieSounds : narrativeSounds,
+  };
 }
 
 function normalizeLayerIndexes(rawLayerIndexes) {
@@ -290,6 +323,64 @@ function resolveVideoModel(sessionData = {}) {
   ) || DEFAULT_VIDEO_MODEL;
 }
 
+function resolveRerollVisualTheme(sessionData = {}) {
+  const candidates = [
+    sessionData.themeJson,
+    sessionData.parentJsonTheme,
+    sessionData.derivedJsonTheme,
+  ];
+
+  for (const candidate of candidates) {
+    if (candidate === null || candidate === undefined || candidate === '') {
+      continue;
+    }
+    const parsed = parseMaybeJson(candidate);
+    if (parsed !== null && parsed !== undefined && parsed !== '') {
+      return parsed;
+    }
+  }
+
+  return {};
+}
+
+async function regenerateRerollVisualPrompts(sessionData, sceneIndexes, dependencies = {}) {
+  const requestedSceneIndexes = [...new Set((Array.isArray(sceneIndexes) ? sceneIndexes : [])
+    .map(normalizeOptionalInteger))];
+  if (!requestedSceneIndexes.length || requestedSceneIndexes.some((sceneIndex) => sceneIndex === null)) {
+    const error = new Error('Unable to resolve a narrative scene for visual prompt regeneration.');
+    error.code = 'REROLL_VISUAL_SCENE_MISSING';
+    error.status = 422;
+    throw error;
+  }
+
+  const visualPromptBuilder = dependencies.buildMovieResourceListVisualPrompts ||
+    buildMovieResourceListVisualPrompts;
+  const result = await visualPromptBuilder({
+    movieResourceList: getRerollVisualMovieResourceList(sessionData),
+    themeJson: resolveRerollVisualTheme(sessionData),
+    aspectRatio: normalizeString(sessionData.aspectRatio) || '16:9',
+    inferenceModel: firstNonEmptyString(
+      sessionData.expressGenerationInferenceModel,
+      sessionData.inferenceModel,
+    ) || undefined,
+    videoTone: normalizeString(sessionData.videoTone) || 'cinematic',
+    requestKeyPrefix: `reroll:${sessionData._id?.toString?.() || sessionData._id || 'session'}:visual`,
+    sceneIndexes: requestedSceneIndexes,
+  });
+
+  if (!Array.isArray(result?.promptList) || result.promptList.length !== requestedSceneIndexes.length) {
+    const error = new Error('Visual prompt regeneration did not return every requested scene.');
+    error.code = 'REROLL_VISUAL_PROMPT_GENERATION_FAILED';
+    error.status = 502;
+    throw error;
+  }
+
+  return requestedSceneIndexes.map((sceneIndex, resultIndex) => ({
+    sceneIndex,
+    prompt: normalizeString(result.promptList[resultIndex]?.prompt),
+  }));
+}
+
 function resolveRerollProvider(sessionData = {}) {
   return firstNonEmptyString(
     sessionData.expressGenerativeVideoModel,
@@ -478,7 +569,15 @@ export async function quoteVideoSessionLayerReroll(userId, {
 
 function resetLayerForReroll(sessionData, layer, layerIndex, promptInfo, sourceSceneIndex = null, sourceSceneIndexSource = '') {
   const prompt = promptInfo?.prompt || '';
-  const shouldPersistOriginalPrompt = ['original', 'seed', 'legacy_original', 'retry_original'].includes(promptInfo?.source);
+  const shouldReplaceOriginalPrompt = promptInfo?.source === 'reroll_visual_pipeline';
+  const shouldPersistOriginalPrompt = shouldReplaceOriginalPrompt ||
+    ['original', 'seed', 'legacy_original', 'retry_original'].includes(promptInfo?.source);
+  const getOriginalPromptValue = (currentValue) => shouldReplaceOriginalPrompt
+    ? prompt
+    : currentValue || prompt;
+  const getOriginalPromptSource = (currentValue) => shouldReplaceOriginalPrompt
+    ? promptInfo.source
+    : currentValue || promptInfo.source;
   const resolvedSourceSceneIndex = normalizeOptionalInteger(sourceSceneIndex);
   const baseType = getBaseLayerType(layer);
   const runtimeType = getRuntimeLayerType(baseType);
@@ -514,11 +613,11 @@ function resetLayerForReroll(sessionData, layer, layerIndex, promptInfo, sourceS
     layer.sourceSceneIndexSource = sourceSceneIndexSource;
   }
   if (shouldPersistOriginalPrompt) {
-    layer.originalImageGenerationPrompt = layer.originalImageGenerationPrompt || prompt;
-    layer.originalImageGenerationPromptSource = layer.originalImageGenerationPromptSource || promptInfo.source;
-    layer.originalImagePrompt = layer.originalImagePrompt || prompt;
-    layer.sourcePrompt = layer.sourcePrompt || prompt;
-    layer.originalPrompt = layer.originalPrompt || prompt;
+    layer.originalImageGenerationPrompt = getOriginalPromptValue(layer.originalImageGenerationPrompt);
+    layer.originalImageGenerationPromptSource = getOriginalPromptSource(layer.originalImageGenerationPromptSource);
+    layer.originalImagePrompt = getOriginalPromptValue(layer.originalImagePrompt);
+    layer.sourcePrompt = getOriginalPromptValue(layer.sourcePrompt);
+    layer.originalPrompt = getOriginalPromptValue(layer.originalPrompt);
   }
   layer.layerAiVideoType = runtimeType;
   layer.layerBaseAiImageType = baseType || runtimeType;
@@ -569,11 +668,15 @@ function resetLayerForReroll(sessionData, layer, layerIndex, promptInfo, sourceS
     layer.imageSession.sourceSceneIndexSource = sourceSceneIndexSource;
   }
   if (shouldPersistOriginalPrompt) {
-    layer.imageSession.originalImageGenerationPrompt = layer.imageSession.originalImageGenerationPrompt || prompt;
-    layer.imageSession.originalImageGenerationPromptSource = layer.imageSession.originalImageGenerationPromptSource || promptInfo.source;
-    layer.imageSession.originalImagePrompt = layer.imageSession.originalImagePrompt || prompt;
-    layer.imageSession.sourcePrompt = layer.imageSession.sourcePrompt || prompt;
-    layer.imageSession.originalPrompt = layer.imageSession.originalPrompt || prompt;
+    layer.imageSession.originalImageGenerationPrompt = getOriginalPromptValue(
+      layer.imageSession.originalImageGenerationPrompt,
+    );
+    layer.imageSession.originalImageGenerationPromptSource = getOriginalPromptSource(
+      layer.imageSession.originalImageGenerationPromptSource,
+    );
+    layer.imageSession.originalImagePrompt = getOriginalPromptValue(layer.imageSession.originalImagePrompt);
+    layer.imageSession.sourcePrompt = getOriginalPromptValue(layer.imageSession.sourcePrompt);
+    layer.imageSession.originalPrompt = getOriginalPromptValue(layer.imageSession.originalPrompt);
   }
   layer.imageSession.originalRetryPrompt = prompt;
   layer.imageSession.generationStatus = 'PENDING';
@@ -771,19 +874,48 @@ export async function rerollVideoSessionLayersAndQueueGeneration(userId, {
   assertRerollCloneIntegrity(sourceSessionData, sessionData, normalizedLayerIndexes);
   assertSessionCanReroll(sessionData);
 
-  const rerollLayers = [];
-  for (const layerIndex of normalizedLayerIndexes) {
+  const rerollTargets = normalizedLayerIndexes.map((layerIndex) => {
     const zeroBasedIndex = layerIndex - 1;
-    const layer = sessionData.layers[zeroBasedIndex];
     const sourceLayer = sourceSessionData.layers[zeroBasedIndex];
     const sourceSceneIndexDetails = resolveLayerSourceSceneIndexDetails(sourceSessionData, sourceLayer, zeroBasedIndex);
     const { sourceSceneIndex, sourceSceneIndexSource } = sourceSceneIndexDetails;
-    const promptInfo = getLayerPromptInfo(sourceSessionData, sourceLayer, zeroBasedIndex, sourceSceneIndex);
+
+    return {
+      layerIndex,
+      zeroBasedIndex,
+      sourceSceneIndex,
+      sourceSceneIndexSource,
+    };
+  });
+  const regeneratedVisualPrompts = await regenerateRerollVisualPrompts(
+    sourceSessionData,
+    rerollTargets.map((target) => target.sourceSceneIndex),
+  );
+  const regeneratedPromptBySceneIndex = new Map(
+    regeneratedVisualPrompts.map((item) => [item.sceneIndex, item.prompt]),
+  );
+
+  const rerollLayers = [];
+  for (const target of rerollTargets) {
+    const {
+      layerIndex,
+      zeroBasedIndex,
+      sourceSceneIndex,
+      sourceSceneIndexSource,
+    } = target;
+    const layer = sessionData.layers[zeroBasedIndex];
+    const regeneratedPrompt = regeneratedPromptBySceneIndex.get(sourceSceneIndex);
+    if (!regeneratedPrompt) {
+      const error = new Error(`Visual prompt regeneration returned no prompt for layer index ${layerIndex}.`);
+      error.code = 'REROLL_VISUAL_PROMPT_GENERATION_FAILED';
+      error.status = 502;
+      throw error;
+    }
     rerollLayers.push(resetLayerForReroll(
       sessionData,
       layer,
       layerIndex,
-      promptInfo,
+      { prompt: regeneratedPrompt, source: 'reroll_visual_pipeline' },
       sourceSceneIndex,
       sourceSceneIndexSource,
     ));
@@ -888,7 +1020,9 @@ export async function rerollVideoSessionLayersAndQueueGeneration(userId, {
 export const __testOnly__ = {
   assertRerollCloneIntegrity,
   getLayerPromptInfo,
+  getRerollVisualMovieResourceList,
   markAllLayersForFrameRegeneration,
+  regenerateRerollVisualPrompts,
   resolveLayerSourceSceneIndexDetails,
   resolveLayerSourceSceneIndex,
   resetLayerForReroll,

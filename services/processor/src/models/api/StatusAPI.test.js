@@ -720,6 +720,7 @@ const DOCKER_LOCAL_ENV_KEYS = [
   'SAMSAR_LOCAL_MEDIA_BASE_URL',
   'API_SERVER',
   'PUBLIC_API_BASE_URL',
+  'PUBLIC_BASE_URL',
   'PROCESSOR_API',
   'PROCESSOR_URL',
 ];
@@ -735,6 +736,7 @@ function withDockerLocalMediaEnv(callback) {
   delete process.env.SAMSAR_LOCAL_MEDIA_BASE_URL;
   delete process.env.API_SERVER;
   delete process.env.PUBLIC_API_BASE_URL;
+  delete process.env.PUBLIC_BASE_URL;
   delete process.env.PROCESSOR_API;
   delete process.env.PROCESSOR_URL;
   delete process.env.MEDIA_DELIVERY_MODE;
@@ -1004,6 +1006,48 @@ test('explicit external media delivery keeps provider references preferred', () 
     if (previous === undefined) delete process.env.SAMSAR_MEDIA_DELIVERY_MODE;
     else process.env.SAMSAR_MEDIA_DELIVERY_MODE = previous;
   }
+});
+
+test('standalone status keeps mounted image previews request-local under external delivery', () => {
+  withDockerLocalMediaEnv(() => {
+    process.env.SAMSAR_MEDIA_DELIVERY_MODE = 'external-s3';
+    process.env.STATIC_CDN_URL = 'https://configured-cdn.example/';
+    process.env.SAMSAR_DOCKER_PUBLIC_ASSET_BASE_URL = 'https://configured-cdn.example/';
+    const req = {
+      protocol: 'http',
+      get(name) {
+        return name === 'host' ? 'localhost:3002' : '';
+      },
+    };
+
+    const preview = buildNormalizedVideoSessionPreview({
+      _id: 'session-1',
+      expressGenerationStatus: { image_generation: 'COMPLETED' },
+      layers: [{
+        _id: 'layer-1',
+        imageSession: {
+          generationStatus: 'COMPLETED',
+          activeSelectedImage: '/assets_v2/generations/session-1/scene.png',
+          activeGeneratedImage: 'assets_v2/generations/session-1/scene.png',
+          activeItemList: [{
+            type: 'image',
+            src: '/assets_v2/generations/session-1/scene.png',
+            is_base_image: true,
+          }],
+        },
+      }],
+    }, { request_id: 'session-1' }, req);
+
+    assert.equal(
+      preview.layers[0].image.url,
+      'http://localhost:3002/assets_v2/generations/session-1/scene.png',
+    );
+    assert.equal(preview.layers[0].preview.type, 'image');
+    assert.equal(
+      normalizeResponseAssetUrl('https://provider.example/scene.png', req),
+      'https://provider.example/scene.png',
+    );
+  });
 });
 
 test('buildNormalizedVideoSessionPreview keeps signed asset urls out of persistent image item references', () => {

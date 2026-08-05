@@ -3,6 +3,7 @@ import crypto from 'node:crypto';
 import { once } from 'node:events';
 import fsp from 'node:fs/promises';
 import https from 'node:https';
+import http from 'node:http';
 import net from 'node:net';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -450,10 +451,115 @@ export class MediaTunnelController {
     this.dnsSettleMs = positiveInteger(env.SAMSAR_MEDIA_TUNNEL_DNS_SETTLE_MS, 5000, 0);
     this.restartDelayMs = positiveInteger(env.SAMSAR_MEDIA_TUNNEL_RESTART_DELAY_MS, 3000, 100);
     this.failureThreshold = positiveInteger(env.SAMSAR_MEDIA_TUNNEL_FAILURE_THRESHOLD, 3, 1);
+    this.refreshPort = positiveInteger(env.SAMSAR_MEDIA_TUNNEL_REFRESH_PORT, 8081, 0);
     this.stopping = false;
     this.child = null;
+    this.refreshServer = null;
     this.currentUrl = '';
     this.failureCount = 0;
+  }
+
+  async writeRefreshRequestMarker(details = {}) {
+    const requestDirectory = path.dirname(this.refreshMarkerPath);
+    await fsp.mkdir(requestDirectory, { recursive: true });
+    const temporaryPath = `${this.refreshMarkerPath}.tmp-${process.pid}-${Date.now()}-${crypto.randomUUID()}`;
+    const payload = {
+      schema: 'samsar.media-tunnel-refresh.v1',
+      requestedAt: new Date().toISOString(),
+      requesterPid: process.pid,
+      service: normalizeString(details.service) || 'samsar_genblaze_gmicloud_media',
+      reason: 'gmicloud_media_download_failed',
+      retryNumber: positiveInteger(details.retryNumber, 1, 1),
+      attemptedUrls: Array.isArray(details.attemptedUrls)
+        ? details.attemptedUrls.filter((value) => typeof value === 'string').slice(0, 16)
+        : [],
+    };
+    await fsp.writeFile(temporaryPath, `${JSON.stringify(payload)}\n`, { mode: 0o600, flag: 'wx' });
+    await fsp.rename(temporaryPath, this.refreshMarkerPath);
+  }
+
+  async waitForReplacementTunnel(excludedOrigins = new Set()) {
+    const deadline = Date.now() + this.startTimeoutMs + this.healthTimeoutMs + this.restartDelayMs;
+    while (!this.stopping && Date.now() < deadline) {
+      const currentUrl = normalizeString(this.currentUrl);
+      if (currentUrl && !excludedOrigins.has(currentUrl)) {
+        return currentUrl;
+      }
+      await sleep(250);
+    }
+    return '';
+  }
+
+  async handleRefreshRequest(request, response) {
+    if (request.method !== 'POST' || request.url !== '/refresh') {
+      response.writeHead(404, { 'Content-Type': 'application/json' });
+      response.end('{"error":"not_found"}\n');
+      return;
+    }
+    let body = '';
+    try {
+      for await (const chunk of request) {
+        body += chunk;
+        if (body.length > 32 * 1024) {
+          throw new Error('request_too_large');
+        }
+      }
+      const details = body ? JSON.parse(body) : {};
+      const excludedOrigins = new Set(
+        (Array.isArray(details.attemptedUrls) ? details.attemptedUrls : [])
+          .map((value) => {
+            try {
+              return new URL(value).origin;
+            } catch {
+              return '';
+            }
+          })
+          .filter(Boolean),
+      );
+      const reusableUrl = normalizeString(this.currentUrl);
+      if (reusableUrl && !excludedOrigins.has(reusableUrl)) {
+        response.writeHead(200, { 'Content-Type': 'application/json' });
+        response.end(`${JSON.stringify({ publicUrl: reusableUrl })}\n`);
+        return;
+      }
+      await this.writeRefreshRequestMarker(details);
+      const publicUrl = await this.waitForReplacementTunnel(excludedOrigins);
+      if (!publicUrl) {
+        response.writeHead(504, { 'Content-Type': 'application/json' });
+        response.end('{"error":"tunnel_rotation_timeout"}\n');
+        return;
+      }
+      response.writeHead(200, { 'Content-Type': 'application/json' });
+      response.end(`${JSON.stringify({ publicUrl })}\n`);
+    } catch (error) {
+      response.writeHead(error?.message === 'request_too_large' ? 413 : 400, {
+        'Content-Type': 'application/json',
+      });
+      response.end('{"error":"invalid_refresh_request"}\n');
+    }
+  }
+
+  async startRefreshServer() {
+    if (this.refreshServer) return;
+    const server = http.createServer((request, response) => {
+      void this.handleRefreshRequest(request, response);
+    });
+    this.refreshServer = server;
+    await new Promise((resolve, reject) => {
+      server.once('error', reject);
+      server.listen(this.refreshPort, '0.0.0.0', () => {
+        server.off('error', reject);
+        resolve();
+      });
+    });
+    log(`Listening for internal tunnel refresh requests on port ${this.refreshPort}.`);
+  }
+
+  async stopRefreshServer() {
+    const server = this.refreshServer;
+    this.refreshServer = null;
+    if (!server) return;
+    await new Promise((resolve) => server.close(resolve));
   }
 
   async removeReadyState() {
@@ -666,6 +772,7 @@ export class MediaTunnelController {
     log('Started without Docker socket access.');
 
     try {
+      await this.startRefreshServer();
       while (!this.stopping) {
         const config = await this.getRuntimeConfig();
         const refreshMarkerToken = await readRefreshMarkerToken(this.refreshMarkerPath).catch((error) => {
@@ -732,6 +839,7 @@ export class MediaTunnelController {
         }
       }
     } finally {
+      await this.stopRefreshServer();
       await this.stopTunnel();
       process.off('SIGTERM', stop);
       process.off('SIGINT', stop);

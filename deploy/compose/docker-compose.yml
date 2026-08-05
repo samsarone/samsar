@@ -30,6 +30,7 @@ services:
     environment:
       PYTHONUNBUFFERED: "1"
       GENBLAZE_MODEL_CATALOG_PATH: /app/config/genblaze-model-catalog.json
+      SAMSAR_MEDIA_TUNNEL_REFRESH_URL: http://media-tunnel-controller:8081/refresh
     volumes:
       - ../../runtime/config/genblaze-model-catalog.json:/app/config/genblaze-model-catalog.json:ro
     expose:
@@ -230,11 +231,14 @@ services:
       SAMSAR_MEDIA_TUNNEL_DNS_SETTLE_MS: ${SAMSAR_MEDIA_TUNNEL_DNS_SETTLE_MS:-5000}
       SAMSAR_MEDIA_TUNNEL_RESTART_DELAY_MS: ${SAMSAR_MEDIA_TUNNEL_RESTART_DELAY_MS:-3000}
       SAMSAR_MEDIA_TUNNEL_FAILURE_THRESHOLD: ${SAMSAR_MEDIA_TUNNEL_FAILURE_THRESHOLD:-3}
+      SAMSAR_MEDIA_TUNNEL_REFRESH_PORT: "8081"
     volumes:
       - ../../runtime/config:/persistent/config
     depends_on:
       media-gateway:
         condition: service_healthy
+    expose:
+      - "8081"
     healthcheck:
       test: ["CMD-SHELL", "test -s $${SAMSAR_MEDIA_TUNNEL_READY_FILE:-/tmp/samsar-media-tunnel.ready}"]
       interval: 15s

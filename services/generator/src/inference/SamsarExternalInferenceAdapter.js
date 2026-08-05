@@ -576,6 +576,27 @@ export function shouldUseGenblazeInference(chatRequest = {}) {
     DOCKER_INFERENCE_PROVIDER.GMICLOUD;
 }
 
+function hasVisionImageInput(value, visited = new Set()) {
+  if (!value || typeof value !== 'object' || visited.has(value)) return false;
+  visited.add(value);
+  if (!Array.isArray(value)) {
+    const type = normalizeString(value.type).toLowerCase().replace(/[^a-z0-9]/g, '');
+    if (type === 'image' || type === 'imageurl' || type === 'inputimage') {
+      return true;
+    }
+  }
+  return Object.values(value).some((child) => hasVisionImageInput(child, visited));
+}
+
+function withoutVisionCompletionLimits(payload) {
+  if (!hasVisionImageInput(payload)) return payload;
+  const normalized = { ...payload };
+  delete normalized.max_tokens;
+  delete normalized.max_completion_tokens;
+  delete normalized.max_output_tokens;
+  return normalized;
+}
+
 export async function createGenblazeChatCompletion(chatRequest = {}) {
   const model = getCanonicalGenblazeInferenceModel(getRequestedInferenceModel(chatRequest));
   if (!hasGenblazeModelMapping(model, chatRequest)) {
@@ -597,26 +618,23 @@ export async function createGenblazeChatCompletion(chatRequest = {}) {
   ).toLowerCase();
   const requestTimeout = Number(timeout ?? timeoutMs ?? process.env.SAMSAR_GENBLAZE_INFERENCE_TIMEOUT_MS) ||
     DEFAULT_EXTERNAL_INFERENCE_TIMEOUT_MS;
+  const rawPayload = withoutVisionCompletionLimits({
+    ...request,
+    model,
+    ...(GENBLAZE_HIGH_REASONING_MODELS.has(model)
+      ? { reasoning_effort: 'high' }
+      : requestedReasoningEffort
+        ? { reasoning_effort: requestedReasoningEffort }
+        : {}),
+  });
   return runExternalInferenceWithRetry(
-    async ({ signal }) => {
-      const payload = await normalizeProviderMediaPayload(
-        {
-          ...request,
-          model,
-          ...(GENBLAZE_HIGH_REASONING_MODELS.has(model)
-            ? { reasoning_effort: 'high' }
-            : requestedReasoningEffort
-              ? { reasoning_effort: requestedReasoningEffort }
-              : {}),
-        },
+    async ({ signal }) => client.chat.completions.create(
+      await normalizeProviderMediaPayload(
+        rawPayload,
         (value, { mediaKind }) => getAccessibleMediaUrlForProvider(value, { mediaKind }),
-      );
-      return client.chat.completions.create(payload, {
-        timeout: requestTimeout,
-        maxRetries: 0,
-        signal,
-      });
-    },
+      ),
+      { timeout: requestTimeout, maxRetries: 0, signal },
+    ),
     {
       provider: 'gmicloud',
       model,

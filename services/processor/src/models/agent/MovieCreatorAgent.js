@@ -335,10 +335,30 @@ export async function updatePromptWithTheme(prompt, themeJson, aspectRatio = '1:
 }
 
 
+export function buildCharacterSpeakerMessage(speakerActor, speakerGender = '') {
+  const normalizedActor = typeof speakerActor === 'string' ? speakerActor.trim() : '';
+  const normalizedGender = typeof speakerGender === 'string'
+    ? speakerGender.trim().toLowerCase()
+    : '';
+  const genderLabel = normalizedGender === 'm' || normalizedGender === 'male'
+    ? 'Male'
+    : normalizedGender === 'f' || normalizedGender === 'female'
+      ? 'Female'
+      : '';
+
+  return genderLabel
+    ? `The speaker is: ${normalizedActor}. Their gender is ${genderLabel}.`
+    : `The speaker is: ${normalizedActor}`;
+}
+
+
 
 export async function updateCharacterPromptWithTheme(prompt, speakerActor, themeJson, aspectRatio = '1:1',
   userInferenceModel = getDefaultUserInferenceModel(),
   shortForm = false, videoTone = 'cinematic', options = {}) {
+
+  const normalizedOptions = options && typeof options === 'object' ? options : {};
+  const { speakerGender = '', ...inferenceOptions } = normalizedOptions;
 
   let systemPrompt = getCharacterPromptWithSystemTheme(shortForm, speakerActor, aspectRatio);
 
@@ -349,11 +369,11 @@ export async function updateCharacterPromptWithTheme(prompt, speakerActor, theme
   const messageList = [
     { role: 'system', content: systemPrompt },
     { role: 'user', content: `Theme JSON is: ${themeJson}` },
-    { role: 'user', content: `The speaker is: ${speakerActor}` },
+    { role: 'user', content: buildCharacterSpeakerMessage(speakerActor, speakerGender) },
     { role: 'user', content: `The user input prompt is: ${prompt}` },
   ];
 
-  const response = await sendAssistantMessageRequest(messageList, userInferenceModel, options);
+  const response = await sendAssistantMessageRequest(messageList, userInferenceModel, inferenceOptions);
 
   return response.content.trim();
 }

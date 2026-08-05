@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import binascii
+import copy
 import hashlib
 import json
 import math
@@ -12,6 +13,8 @@ import mimetypes
 import os
 from dataclasses import dataclass
 from typing import Any, Awaitable, Callable, Sequence
+from urllib.parse import quote, unquote, urljoin, urlsplit
+from urllib.request import Request, urlopen
 
 from cryptography.exceptions import InvalidTag
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
@@ -25,6 +28,7 @@ from .catalog import (
 )
 from .config import Settings
 from .errors import GatewayError
+from .media_staging import GMICloudMediaStager
 
 
 _IMAGE_MEDIA_PARAMS = frozenset(
@@ -105,6 +109,12 @@ _GMI_NANO_PRO_ASPECT_RATIOS = (
 _GMI_SEEDANCE_ASPECT_RATIOS = ("16:9", "9:16", "4:3", "3:4", "21:9", "1:1")
 _SEEDREAM_MIN_PIXELS = 1280 * 720
 _SEEDREAM_MAX_PIXELS = int(2048 * 2048 * 1.1025)
+_LOCAL_TUNNEL_HOST_SUFFIXES = (
+    ".trycloudflare.com",
+    ".loca.lt",
+    ".share.zrok.io",
+)
+_LOCAL_MEDIA_PATH_PREFIXES = ("/assets/", "/assets_v2/")
 
 
 def _normalize_chat_reasoning_params(params: dict[str, Any]) -> dict[str, Any]:
@@ -126,6 +136,233 @@ def _is_unknown_reasoning_parameter(exc: Exception) -> bool:
     return unknown_parameter and (
         "reasoning_effort" in message or "'reasoning'" in message or '"reasoning"' in message
     )
+
+
+def _is_gmicloud_media_download_error(exc: Exception) -> bool:
+    message = str(exc).lower()
+    return (
+        "invalid_image_url" in message
+        or "invalid_video_url" in message
+        or "invalid_media_url" in message
+        or "timeout while downloading" in message
+        or "timed out while downloading" in message
+        or "unable to download content from the provided url before the timeout" in message
+        or "error while downloading file" in message
+        or "error while downloading image" in message
+        or "error while downloading video" in message
+        or "error while downloading media" in message
+        or "upstream status code: 530" in message
+    )
+
+
+def _managed_tunnel_media_path(provider_url: str) -> str | None:
+    try:
+        provider = urlsplit(provider_url)
+    except ValueError:
+        return None
+    hostname = (provider.hostname or "").lower()
+    if provider.scheme != "https" or not hostname.endswith(_LOCAL_TUNNEL_HOST_SUFFIXES):
+        return None
+    try:
+        decoded_segments = [unquote(segment) for segment in provider.path.split("/") if segment]
+    except (TypeError, ValueError):
+        return None
+    if not decoded_segments or decoded_segments[0] not in {"assets", "assets_v2"}:
+        return None
+    if any(
+        not segment
+        or segment in {".", ".."}
+        or "/" in segment
+        or "\\" in segment
+        for segment in decoded_segments
+    ):
+        return None
+    safe_path = "/" + "/".join(quote(segment, safe="") for segment in decoded_segments)
+    if not safe_path.startswith(_LOCAL_MEDIA_PATH_PREFIXES):
+        return None
+    return safe_path
+
+
+def _collect_managed_tunnel_media_urls(payload: Any) -> list[str]:
+    urls: list[str] = []
+
+    def visit(value: Any) -> None:
+        if isinstance(value, str):
+            if _managed_tunnel_media_path(value):
+                urls.append(value)
+            return
+        if isinstance(value, list):
+            for item in value:
+                visit(item)
+            return
+        if not isinstance(value, dict):
+            return
+        for child in value.values():
+            visit(child)
+
+    visit(payload)
+    return list(dict.fromkeys(urls))
+
+
+def _normalize_tunnel_base_url(value: Any) -> str:
+    if not isinstance(value, str) or not value.strip():
+        return ""
+    try:
+        parsed = urlsplit(value.strip())
+    except ValueError:
+        return ""
+    hostname = (parsed.hostname or "").lower()
+    if parsed.scheme != "https" or not hostname.endswith(_LOCAL_TUNNEL_HOST_SUFFIXES):
+        return ""
+    return f"https://{parsed.netloc}"
+
+
+def _request_replacement_tunnel_base_url(
+    refresh_url: str,
+    *,
+    attempted_urls: Sequence[str],
+    retry_number: int,
+    timeout_seconds: float,
+) -> str:
+    try:
+        parsed_refresh_url = urlsplit(refresh_url)
+    except ValueError:
+        return ""
+    if parsed_refresh_url.scheme != "http" or parsed_refresh_url.hostname != "media-tunnel-controller":
+        return ""
+    body = json.dumps({
+        "schema": "samsar.media-tunnel-refresh.v1",
+        "service": "samsar_genblaze_gmicloud_media",
+        "reason": "gmicloud_media_download_failed",
+        "retryNumber": retry_number,
+        "attemptedUrls": list(attempted_urls),
+    }, separators=(",", ":")).encode("utf-8")
+    request = Request(
+        refresh_url,
+        data=body,
+        method="POST",
+        headers={"Content-Type": "application/json", "Accept": "application/json"},
+    )
+    try:
+        with urlopen(request, timeout=timeout_seconds + 5) as response:  # noqa: S310 - fixed internal service
+            if response.status != 200:
+                return ""
+            response_payload = json.loads(response.read(16 * 1024))
+    except (OSError, TypeError, ValueError):
+        return ""
+    return _normalize_tunnel_base_url(response_payload.get("publicUrl"))
+
+
+def _rewrite_managed_tunnel_media_urls(payload: Any, new_base_url: str) -> Any | None:
+    def visit(value: Any) -> tuple[Any, int]:
+        if isinstance(value, str):
+            media_path = _managed_tunnel_media_path(value)
+            if not media_path:
+                return value, 0
+            return (
+                urljoin(new_base_url.rstrip("/") + "/", media_path.lstrip("/")),
+                1,
+            )
+        if isinstance(value, list):
+            rewritten_items = []
+            replaced = 0
+            for item in value:
+                rewritten, child_replaced = visit(item)
+                rewritten_items.append(rewritten)
+                replaced += child_replaced
+            return rewritten_items, replaced
+        if not isinstance(value, dict):
+            return value, 0
+        rewritten_object = {}
+        replaced = 0
+        for key, child in value.items():
+            rewritten, child_replaced = visit(child)
+            rewritten_object[key] = rewritten
+            replaced += child_replaced
+        return rewritten_object, replaced
+
+    rewritten_payload, replaced = visit(copy.deepcopy(payload))
+    return rewritten_payload if replaced else None
+
+
+def _rewrite_managed_tunnel_media_urls_with_staged_urls(
+    payload: Any,
+    staged_urls_by_path: dict[str, str],
+) -> Any | None:
+    def visit(value: Any) -> tuple[Any, int]:
+        if isinstance(value, str):
+            media_path = _managed_tunnel_media_path(value)
+            staged_url = staged_urls_by_path.get(media_path or "")
+            return (staged_url, 1) if staged_url else (value, 0)
+        if isinstance(value, list):
+            rewritten_items = []
+            replaced = 0
+            for item in value:
+                rewritten, child_replaced = visit(item)
+                rewritten_items.append(rewritten)
+                replaced += child_replaced
+            return rewritten_items, replaced
+        if not isinstance(value, dict):
+            return value, 0
+        rewritten_object = {}
+        replaced = 0
+        for key, child in value.items():
+            rewritten, child_replaced = visit(child)
+            rewritten_object[key] = rewritten
+            replaced += child_replaced
+        return rewritten_object, replaced
+
+    rewritten_payload, replaced = visit(copy.deepcopy(payload))
+    return rewritten_payload if replaced else None
+
+
+async def _stage_managed_tunnel_media_urls(
+    payload: Any,
+    *,
+    stager: GMICloudMediaStager,
+) -> Any | None:
+    managed_urls = _collect_managed_tunnel_media_urls(payload)
+    if not managed_urls:
+        return None
+    staged_urls_by_path: dict[str, str] = {}
+    for provider_url in managed_urls:
+        media_path = _managed_tunnel_media_path(provider_url)
+        if not media_path or media_path in staged_urls_by_path:
+            continue
+        staged_urls_by_path[media_path] = await stager.stage(media_path)
+    if not staged_urls_by_path:
+        return None
+    return _rewrite_managed_tunnel_media_urls_with_staged_urls(
+        payload,
+        staged_urls_by_path,
+    )
+
+
+async def _refresh_managed_tunnel_media_urls(
+    payload: Any,
+    *,
+    settings: Settings,
+    attempted_urls: Sequence[str],
+    retry_number: int,
+) -> Any | None:
+    managed_urls = _collect_managed_tunnel_media_urls(payload)
+    if not managed_urls:
+        return None
+    excluded_origins = {
+        _normalize_tunnel_base_url(url)
+        for url in [*attempted_urls, *managed_urls]
+    }
+    excluded_origins.discard("")
+    new_base_url = await asyncio.to_thread(
+        _request_replacement_tunnel_base_url,
+        settings.tunnel_refresh_url,
+        attempted_urls=[*attempted_urls, *managed_urls],
+        retry_number=retry_number,
+        timeout_seconds=settings.tunnel_refresh_wait_seconds,
+    )
+    if not new_base_url or new_base_url in excluded_origins:
+        return None
+    return _rewrite_managed_tunnel_media_urls(payload, new_base_url)
 
 
 def _drop_params(*names: str) -> Callable[[dict[str, Any]], dict[str, Any]]:
@@ -976,6 +1213,11 @@ class GatewayRuntime:
         settings: Settings,
         *,
         bindings: GenBlazeBindings | None = None,
+        tunnel_url_refresher: Callable[
+            [Any, Sequence[str], int],
+            Awaitable[Any | None],
+        ] | None = None,
+        media_url_stager: Callable[[Any], Awaitable[Any | None]] | None = None,
     ):
         self.settings = settings
         self._bindings: GenBlazeBindings | None = None
@@ -984,6 +1226,9 @@ class GatewayRuntime:
         self._audio_provider: Any = None
         self._token_codec: JobTokenCodec | None = None
         self._catalog: ModelCatalog | None = None
+        self._tunnel_url_refresher = tunnel_url_refresher
+        self._media_url_stager = media_url_stager
+        self._gmi_media_stager: GMICloudMediaStager | None = None
         self._initialization_error: str | None = None
 
         if not settings.gmi_api_key:
@@ -1039,6 +1284,15 @@ class GatewayRuntime:
                 primary_token_secret,
                 legacy_secrets=legacy_token_secrets,
             )
+            # A custom tunnel refresher is a test/integration seam that owns the
+            # complete retry path unless a stager is explicitly injected too.
+            if self._media_url_stager is None and self._tunnel_url_refresher is None:
+                self._gmi_media_stager = GMICloudMediaStager(
+                    api_key=settings.gmi_api_key,
+                    media_base_url=settings.media_base_url,
+                    timeout_seconds=settings.media_stage_timeout_seconds,
+                    max_media_bytes=settings.media_stage_max_bytes,
+                )
         except CatalogConfigurationError as exc:
             self._catalog = None
             self._initialization_error = f"GenBlaze model catalog is invalid: {exc}"
@@ -1112,6 +1366,57 @@ class GatewayRuntime:
     def _provider_error(self, exc: Exception) -> GatewayError:
         return GatewayError.from_provider(exc, secret=self.settings.gmi_api_key)
 
+    async def _stage_managed_media_urls(self, payload: Any) -> Any | None:
+        if self._media_url_stager is not None:
+            return await self._media_url_stager(payload)
+        if self._gmi_media_stager is None:
+            return None
+        return await _stage_managed_tunnel_media_urls(
+            payload,
+            stager=self._gmi_media_stager,
+        )
+
+    async def _recover_managed_media_urls(
+        self,
+        active_payload: Any,
+        *,
+        last_tunnel_payload: Any,
+        attempted_urls: Sequence[str],
+        retry_number: int,
+    ) -> Any | None:
+        current_managed_urls = _collect_managed_tunnel_media_urls(active_payload)
+        if current_managed_urls:
+            try:
+                staged_payload = await self._stage_managed_media_urls(active_payload)
+            except Exception:
+                staged_payload = None
+            if (
+                staged_payload is not None
+                and not _collect_managed_tunnel_media_urls(staged_payload)
+            ):
+                return staged_payload
+            refresh_source = active_payload
+        else:
+            # A GMI-hosted staged URL should be the most reliable second attempt.
+            # If GMI still reports a download failure, retain the previous tunnel
+            # payload so the final bounded attempt can use a newly rotated origin.
+            refresh_source = last_tunnel_payload
+
+        if not _collect_managed_tunnel_media_urls(refresh_source):
+            return None
+        if self._tunnel_url_refresher is not None:
+            return await self._tunnel_url_refresher(
+                refresh_source,
+                attempted_urls,
+                retry_number,
+            )
+        return await _refresh_managed_tunnel_media_urls(
+            refresh_source,
+            settings=self.settings,
+            attempted_urls=attempted_urls,
+            retry_number=retry_number,
+        )
+
     async def chat_completion(self, request: dict[str, Any]) -> dict[str, Any]:
         bindings, _ = self._require_ready()
         try:
@@ -1157,28 +1462,79 @@ class GatewayRuntime:
         for protected_field in ("api_key", "base_url", "client", "stream", "timeout"):
             payload.pop(protected_field, None)
         payload = _normalize_chat_reasoning_params(payload)
+        if "vision" in content_kinds:
+            # Completion limits are OpenRouter controls in Samsar's vision
+            # path and are not accepted consistently by GMICloud models.
+            payload.pop("max_tokens", None)
+            payload.pop("max_completion_tokens", None)
+            payload.pop("max_output_tokens", None)
         payload["api_key"] = self.settings.gmi_api_key
         payload["timeout"] = self.settings.upstream_timeout_seconds
         if self.settings.chat_base_url:
             payload["base_url"] = self.settings.chat_base_url
 
-        try:
-            response = await bindings.achat(upstream_model, messages, **payload)
-        except bindings.provider_error_type as exc:
+        active_messages = messages
+        last_tunnel_messages = messages
+        active_error: Exception | None = None
+        attempted_urls = _collect_managed_tunnel_media_urls(active_messages)
+        max_url_attempts = (
+            self.settings.media_url_max_attempts
+            if attempted_urls
+            else 1
+        )
+        for url_attempt in range(1, max_url_attempts + 1):
+            try:
+                response = await bindings.achat(upstream_model, active_messages, **payload)
+                active_error = None
+                break
+            except bindings.provider_error_type as exc:
+                active_error = exc
+                can_refresh = (
+                    url_attempt < max_url_attempts
+                    and _is_gmicloud_media_download_error(exc)
+                )
+                if not can_refresh:
+                    break
+                try:
+                    if _collect_managed_tunnel_media_urls(active_messages):
+                        last_tunnel_messages = active_messages
+                    refreshed_messages = await self._recover_managed_media_urls(
+                        active_messages,
+                        last_tunnel_payload=last_tunnel_messages,
+                        attempted_urls=tuple(attempted_urls),
+                        retry_number=url_attempt,
+                    )
+                except Exception:
+                    refreshed_messages = None
+                if refreshed_messages is None:
+                    break
+                refreshed_urls = _collect_managed_tunnel_media_urls(refreshed_messages)
+                if refreshed_urls:
+                    if all(url in attempted_urls for url in refreshed_urls):
+                        break
+                    attempted_urls.extend(
+                        url for url in refreshed_urls if url not in attempted_urls
+                    )
+                active_messages = refreshed_messages
+
+        if active_error is not None:
             # GMICloud's generic Chat Completions contract does not document a
             # reasoning control, and parameter support can vary by upstream
             # model revision. Prefer the canonical reasoning_effort field, but
             # retry once without it when the provider explicitly rejects it.
             # This avoids multiplying the processor's outer retry loop while
             # preserving explicit reasoning wherever GMICloud accepts it.
-            if "reasoning_effort" not in payload or not _is_unknown_reasoning_parameter(exc):
-                raise self._provider_error(exc) from exc
+            if (
+                "reasoning_effort" not in payload
+                or not _is_unknown_reasoning_parameter(active_error)
+            ):
+                raise self._provider_error(active_error) from active_error
             fallback_payload = dict(payload)
             fallback_payload.pop("reasoning_effort", None)
             try:
                 response = await bindings.achat(
                     upstream_model,
-                    messages,
+                    active_messages,
                     **fallback_payload,
                 )
             except bindings.provider_error_type as fallback_exc:
@@ -1198,12 +1554,53 @@ class GatewayRuntime:
         bindings, token_codec = self._require_ready()
         route = self._resolve_media_request(request)
         provider = self._provider_for(route)
-        step = self._build_media_step(bindings, provider, route, request)
+        active_request = request
+        last_tunnel_request = request
+        active_error: Exception | None = None
+        attempted_urls = _collect_managed_tunnel_media_urls(request)
+        max_url_attempts = (
+            self.settings.media_url_max_attempts
+            if attempted_urls
+            else 1
+        )
+        for url_attempt in range(1, max_url_attempts + 1):
+            step = self._build_media_step(bindings, provider, route, active_request)
+            try:
+                result = await asyncio.to_thread(provider.submit, step)
+                active_error = None
+                break
+            except bindings.provider_error_type as exc:
+                active_error = exc
+                can_refresh = (
+                    url_attempt < max_url_attempts
+                    and _is_gmicloud_media_download_error(exc)
+                )
+                if not can_refresh:
+                    break
+                try:
+                    if _collect_managed_tunnel_media_urls(active_request):
+                        last_tunnel_request = active_request
+                    refreshed_request = await self._recover_managed_media_urls(
+                        active_request,
+                        last_tunnel_payload=last_tunnel_request,
+                        attempted_urls=tuple(attempted_urls),
+                        retry_number=url_attempt,
+                    )
+                except Exception:
+                    refreshed_request = None
+                if refreshed_request is None:
+                    break
+                refreshed_urls = _collect_managed_tunnel_media_urls(refreshed_request)
+                if refreshed_urls:
+                    if all(url in attempted_urls for url in refreshed_urls):
+                        break
+                    attempted_urls.extend(
+                        url for url in refreshed_urls if url not in attempted_urls
+                    )
+                active_request = refreshed_request
 
-        try:
-            result = await asyncio.to_thread(provider.submit, step)
-        except bindings.provider_error_type as exc:
-            raise self._provider_error(exc) from exc
+        if active_error is not None:
+            raise self._provider_error(active_error) from active_error
 
         upstream_id = str(getattr(result, "prediction_id", "") or "").strip()
         if not upstream_id:

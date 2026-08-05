@@ -223,6 +223,80 @@ test('does not consume a refresh marker that changed during rotation', async () 
   }
 });
 
+test('internal refresh endpoint waits for and returns a different public tunnel URL', async () => {
+  const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'samsar-media-refresh-api-'));
+  const markerPath = path.join(tempRoot, 'media-tunnel-refresh.request.json');
+  const controller = new MediaTunnelController({
+    SAMSAR_MEDIA_TUNNEL_REFRESH_REQUEST_PATH: markerPath,
+    SAMSAR_MEDIA_TUNNEL_REFRESH_PORT: '0',
+    SAMSAR_MEDIA_TUNNEL_START_TIMEOUT_MS: '1000',
+    SAMSAR_MEDIA_TUNNEL_HEALTH_TIMEOUT_MS: '1000',
+    SAMSAR_MEDIA_TUNNEL_RESTART_DELAY_MS: '100',
+  });
+  controller.currentUrl = 'https://first.trycloudflare.com';
+  try {
+    await controller.startRefreshServer();
+    const address = controller.refreshServer.address();
+    setTimeout(() => {
+      controller.currentUrl = 'https://second.trycloudflare.com';
+    }, 50);
+    const response = await fetch(`http://127.0.0.1:${address.port}/refresh`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        service: 'samsar_genblaze_gmicloud_media',
+        retryNumber: 1,
+        attemptedUrls: [
+          'https://first.trycloudflare.com/assets_v2/generations/session/frame.png',
+        ],
+      }),
+    });
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), {
+      publicUrl: 'https://second.trycloudflare.com',
+    });
+    const marker = JSON.parse(await fs.readFile(markerPath, 'utf8'));
+    assert.equal(marker.reason, 'gmicloud_media_download_failed');
+    assert.equal(marker.retryNumber, 1);
+  } finally {
+    await controller.stopRefreshServer();
+    await fs.rm(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test('internal refresh endpoint reuses an already-new tunnel for concurrent media retries', async () => {
+  const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'samsar-media-refresh-coalesce-'));
+  const markerPath = path.join(tempRoot, 'media-tunnel-refresh.request.json');
+  const controller = new MediaTunnelController({
+    SAMSAR_MEDIA_TUNNEL_REFRESH_REQUEST_PATH: markerPath,
+    SAMSAR_MEDIA_TUNNEL_REFRESH_PORT: '0',
+  });
+  controller.currentUrl = 'https://second.trycloudflare.com';
+  try {
+    await controller.startRefreshServer();
+    const address = controller.refreshServer.address();
+    const response = await fetch(`http://127.0.0.1:${address.port}/refresh`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        service: 'samsar_genblaze_gmicloud_media',
+        retryNumber: 1,
+        attemptedUrls: [
+          'https://first.trycloudflare.com/assets_v2/generations/session/frame.mp4',
+        ],
+      }),
+    });
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), {
+      publicUrl: 'https://second.trycloudflare.com',
+    });
+    await assert.rejects(() => fs.stat(markerPath), (error) => error?.code === 'ENOENT');
+  } finally {
+    await controller.stopRefreshServer();
+    await fs.rm(tempRoot, { recursive: true, force: true });
+  }
+});
+
 test('validates the exact media gateway health marker', async () => {
   const server = http.createServer((request, response) => {
     response.writeHead(200, { 'Content-Type': 'text/plain' });

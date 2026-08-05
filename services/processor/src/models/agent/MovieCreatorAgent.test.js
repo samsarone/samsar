@@ -1,7 +1,25 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { rewriteNarrativeSpeechItemToFitScene } from './MovieCreatorAgent.js';
+import {
+  buildCharacterSpeakerMessage,
+  rewriteNarrativeSpeechItemToFitScene,
+} from './MovieCreatorAgent.js';
+
+test('character visual speaker message includes canonical gender when available', () => {
+  assert.equal(
+    buildCharacterSpeakerMessage('Sanctuary Control Crew', 'M'),
+    'The speaker is: Sanctuary Control Crew. Their gender is Male.',
+  );
+  assert.equal(
+    buildCharacterSpeakerMessage('Kaia Vale', 'Female'),
+    'The speaker is: Kaia Vale. Their gender is Female.',
+  );
+  assert.equal(
+    buildCharacterSpeakerMessage('Narrator', ''),
+    'The speaker is: Narrator',
+  );
+});
 
 test('retries invalid speech repairs three times with backoff and preserves item metadata', async () => {
   const requests = [];

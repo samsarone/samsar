@@ -2,7 +2,7 @@ import VideoSession from '../../schema/VideoSession.js';
 import GeneratedImage from '../../schema/generations/GeneratedImage.js';
 import { buildSecureMediaDeliveryUrl } from '../AWS.js';
 import { resolveDockerLocalPublicAssetBaseUrl } from '../../consts/DockerDeploymentUrls.js';
-import { isContainerRuntime } from '../../utils/EnvironmentUtils.js';
+import { isContainerRuntime, isStandaloneEdition } from '../../utils/EnvironmentUtils.js';
 
 const DEFAULT_STATIC_ASSET_BASE_URL = 'https://static.samsar.one';
 const USER_RESOURCES_PREFIX = 'user_resources/';
@@ -1140,6 +1140,31 @@ function resolveRequestAssetBaseUrl(req) {
   return `${req.protocol || 'https'}://${host}`;
 }
 
+function normalizeStandaloneRequestAssetReference(value, req = null) {
+  if (!req || !isStandaloneEdition() || !isContainerRuntime()) {
+    return null;
+  }
+
+  const normalized = normalizeNonEmptyString(value);
+  if (
+    !normalized ||
+    /^https?:\/\//i.test(normalized) ||
+    /^data:/i.test(normalized) ||
+    /^blob:/i.test(normalized) ||
+    normalized.startsWith('//')
+  ) {
+    return null;
+  }
+
+  const relativePath = normalized.replace(/^\/+/, '');
+  if (!relativePath.startsWith(`${SECURE_ASSET_PREFIX}/`)) {
+    return null;
+  }
+
+  const requestBaseUrl = resolveRequestAssetBaseUrl(req);
+  return requestBaseUrl ? `${requestBaseUrl}/${relativePath}` : null;
+}
+
 function resolveStaticAssetBaseUrl() {
   return (
     normalizeString(process.env.STATIC_CDN_URL) ||
@@ -1208,6 +1233,11 @@ export function normalizeResponseAssetUrl(value, req = null) {
   const normalized = normalizeNonEmptyString(value);
   if (!normalized) {
     return null;
+  }
+
+  const standaloneRequestAssetUrl = normalizeStandaloneRequestAssetReference(normalized, req);
+  if (standaloneRequestAssetUrl) {
+    return standaloneRequestAssetUrl;
   }
 
   const dockerLocalSecureAssetUrl = normalizeDockerLocalSecureAssetReference(normalized);

@@ -104,6 +104,44 @@ test('resolves multimodal media immediately before a native OpenAI Responses req
   assert.equal(capturedOptions.maxRetries, 0);
 });
 
+test('/external native GPT vision preserves the existing max_tokens Responses translation', async () => {
+  let capturedBody;
+  const openaiClient = {
+    async post(path, options) {
+      assert.equal(path, '/responses');
+      capturedBody = options.body;
+      return {
+        id: 'resp-external-vision',
+        model: 'gpt-5.6-sol',
+        output_text: 'described',
+      };
+    },
+  };
+  const messages = [{
+    role: 'user',
+    content: [{
+      type: 'image_url',
+      image_url: {
+        url: 'http://localhost:3002/assets_v2/generations/session/external.png',
+      },
+    }],
+  }];
+
+  await createCompatibleChatCompletion(openaiClient, {
+    model: 'gpt-5.6-sol',
+    messages,
+    bypassSamsarExternalInference: true,
+    max_tokens: 16384,
+  }, {
+    resolveMediaUrl: async () => 'https://fresh.example/external.png',
+  });
+
+  assert.equal(capturedBody.max_output_tokens, 16384);
+  assert.equal(capturedBody.input[0].content[0].type, 'input_image');
+  assert.equal(Object.hasOwn(capturedBody, 'max_tokens'), false);
+  assert.equal(Object.hasOwn(capturedBody, 'max_completion_tokens'), false);
+});
+
 test('routes Kimi K3 through its native high-reasoning chat adapter', async () => {
   let capturedPayload;
   const kimiClient = {

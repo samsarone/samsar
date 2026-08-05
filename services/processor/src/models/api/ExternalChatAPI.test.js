@@ -69,6 +69,7 @@ test('hosted request ids are deterministic for a Docker client request id', () =
 test('external chat preserves raw multimodal aliases for adapter-boundary dispatch', async () => {
   const payload = {
     model: 'gpt-5.6-sol',
+    max_tokens: 16384,
     messages: [{
       role: 'user',
       content: [{
@@ -111,6 +112,7 @@ test('external chat preserves raw multimodal aliases for adapter-boundary dispat
     payload.messages[0].content[0].image_url.url,
   );
   assert.equal(capturedPayload.bypassSamsarExternalInference, true);
+  assert.equal(capturedPayload.max_tokens, 16384);
   assert.equal(chargedMetadata.category, 'external_chat');
   assert.equal(result.response.choices[0].message.content, 'described');
   assert.equal(result.remainingCredits, 123);

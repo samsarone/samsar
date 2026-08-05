@@ -119,8 +119,20 @@ GET /v1/media/requests/<opaque signed id>
 200 {"status":"pending|succeeded|failed|cancelled","assets":[],"error":null}
 ```
 
-POST calls the GenBlaze provider's `submit` once. GET calls `poll` once and, on
-completion, `fetch_output` once. The opaque id is an AES-GCM-sealed envelope
+POST normally calls the GenBlaze provider's `submit` once. For a managed local
+tunnel URL only, an explicit GMICloud media-download failure first activates a
+provider-native staging fallback: the gateway reads the same asset from the
+internal media gateway, buffers up to 16 MiB in memory and then spools to disk,
+streams the bytes to GMICloud's signed upload URL, and retries inference with
+the stable GMI-hosted `public_url`. If staging is unavailable or fails, the
+remaining bounded attempt uses a newly published public tunnel origin while
+preserving the same `/assets` or `/assets_v2` path. GMI's upload API currently
+accepts jpeg, jpg, png, mp4, mp3, and wav files; other formats retain the tunnel
+retry path. The shared boundary applies to chat Vision, image-edit inputs,
+image-to-video frames, and video input URLs used by current or future
+video-to-video routes. Inference payloads always contain public URLs—never
+inline data or raw bytes. GET calls `poll` once and, on completion,
+`fetch_output` once. The opaque id is an AES-GCM-sealed envelope
 containing the upstream job id and curated model id, so the gateway needs no job
 database and does not block waiting for generation. Media inputs remain public
 URLs. Veo maps two inputs to image/last-frame, Seedance maps them to
@@ -144,6 +156,10 @@ I2V adapter through `bytedance/seedance-2.0/image-to-video`.
 | `GENBLAZE_UPSTREAM_TIMEOUT_SECONDS` | no | Per-request upstream timeout; defaults to 120 seconds |
 | `GENBLAZE_JOB_TOKEN_SECRET` | no | Separate encryption key for opaque media ids; defaults to `GMI_API_KEY` |
 | `GENBLAZE_MODEL_CATALOG_PATH` | production | Read-only setup-generated credential/model mapping; an absent path exposes an empty development catalog |
+| `GENBLAZE_MEDIA_URL_MAX_ATTEMPTS` | no | Total GMICloud attempts for managed tunneled media URLs after explicit download failures; defaults to 3 |
+| `GENBLAZE_MEDIA_STAGE_TIMEOUT_SECONDS` | no | Timeout for the internal read and GMI signed upload used by the byte-staging fallback; defaults to 600 seconds |
+| `GENBLAZE_MEDIA_STAGE_MAX_BYTES` | no | Maximum staged input size; defaults to 2 GiB and can be raised when local disk capacity permits larger video inputs |
+| `SAMSAR_MEDIA_TUNNEL_REFRESH_URL` | local Docker only | Internal tunnel-controller refresh endpoint; defaults to `http://media-tunnel-controller:8081/refresh` |
 
 Do not set `GMI_BASE_URL` to GMICloud's chat `/v1` URL; GenBlaze reserves that
 variable for the media request queue. Secrets are never returned by the API.

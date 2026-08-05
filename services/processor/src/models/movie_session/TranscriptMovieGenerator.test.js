@@ -123,7 +123,14 @@ test('visual prompt builder selects the scene updater, propagates inference args
         untouched: 'character-scene',
       },
     ],
-    sounds: [{ type: 'speech', sceneIndex: 1, audio: 'Good morning.' }],
+    sounds: [{
+      type: 'speech',
+      subType: 'character',
+      actor: 'Mali',
+      gender: 'F',
+      sceneIndex: 1,
+      audio: 'Good morning.',
+    }],
   };
   const rawSnapshot = structuredClone(movieResourceList);
   const themeJson = { style: ['grounded documentary'], actors: [] };
@@ -201,6 +208,7 @@ test('visual prompt builder selects the scene updater, propagates inference args
       requestKey: 'narrative:create_single:visual:scene-1',
     },
   ]);
+  assert.equal(updaterCalls[1].args.at(-1).speakerGender, 'Female');
   assert.deepEqual(receipts.map(({ requestKey, sceneIndex }) => ({ requestKey, sceneIndex })), [
     { requestKey: 'narrative:create_single:visual:scene-0', sceneIndex: 0 },
     { requestKey: 'narrative:create_single:visual:scene-1', sceneIndex: 1 },
@@ -220,6 +228,64 @@ test('visual prompt builder selects the scene updater, propagates inference args
   });
   assert.notEqual(result.movieResourceList, movieResourceList);
   assert.notEqual(result.movieResourceList.scenes, movieResourceList.scenes);
+});
+
+test('visual prompt builder can regenerate one scene and passes its matched speech gender', async () => {
+  const calls = [];
+  const movieResourceList = {
+    scenes: [
+      { visual: 'Wide opening.', type: 'narration', duration: 5, speaker: '' },
+      {
+        visual: 'Male and female technicians monitor the descent.',
+        type: 'character',
+        duration: 10,
+        speaker: 'Control Crew',
+      },
+    ],
+    sounds: [{
+      type: 'speech',
+      subType: 'character',
+      actor: 'Control Crew',
+      gender: 'M',
+      sceneIndex: 1,
+      audio: 'Altitude dropping.',
+    }],
+  };
+
+  const result = await buildMovieResourceListVisualPrompts({
+    movieResourceList,
+    themeJson: { actors: [{ name: 'Control Crew', keywords: ['male and female technicians'] }] },
+    aspectRatio: '16:9',
+    inferenceModel: 'QWEN3.8',
+    videoTone: 'grounded',
+    requestKeyPrefix: 'reroll:session-1:visual',
+    sceneIndexes: [1],
+    dependencies: {
+      updateCharacterPromptWithTheme: async (...args) => {
+        calls.push(args);
+        return 'A male technician faces the camera while the mixed crew works behind him.';
+      },
+    },
+  });
+
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0][0], 'Male and female technicians monitor the descent.');
+  assert.equal(calls[0][1], 'Control Crew');
+  assert.equal(calls[0].at(-1).speakerGender, 'Male');
+  assert.equal(
+    calls[0].at(-1).externalRequestContext,
+    undefined,
+  );
+  assert.deepEqual(result.promptList, [{
+    prompt: 'A male technician faces the camera while the mixed crew works behind him.',
+    duration: 10,
+    sceneType: 'character',
+  }]);
+  assert.equal(result.movieResourceList.scenes[0].visual, 'Wide opening.');
+  assert.equal(
+    result.movieResourceList.scenes[1].visual,
+    'A male technician faces the camera while the mixed crew works behind him.',
+  );
 });
 
 test('visual prompt builder rejects an empty generated prompt', async () => {

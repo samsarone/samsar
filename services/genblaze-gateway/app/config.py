@@ -24,6 +24,28 @@ def _positive_float(name: str, default: float) -> float:
     return value
 
 
+def _positive_int(name: str, default: int) -> int:
+    raw = os.environ.get(name, "").strip()
+    if not raw:
+        return default
+    try:
+        value = int(raw)
+    except ValueError as exc:
+        raise ValueError(f"{name} must be an integer") from exc
+    if value <= 0:
+        raise ValueError(f"{name} must be greater than zero")
+    return value
+
+
+def _positive_int_with_legacy_name(
+    name: str,
+    legacy_name: str,
+    default: int,
+) -> int:
+    selected_name = name if os.environ.get(name, "").strip() else legacy_name
+    return _positive_int(selected_name, default)
+
+
 @dataclass(frozen=True, slots=True)
 class Settings:
     """Runtime settings without a secret-bearing repr."""
@@ -34,6 +56,11 @@ class Settings:
     upstream_timeout_seconds: float = 120.0
     job_token_secret: str | None = None
     model_catalog_path: str | None = None
+    tunnel_refresh_url: str = "http://media-tunnel-controller:8081/refresh"
+    media_url_max_attempts: int = 3
+    tunnel_refresh_wait_seconds: float = 120.0
+    media_stage_timeout_seconds: float = 600.0
+    media_stage_max_bytes: int = 2 * 1024 * 1024 * 1024
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -51,6 +78,27 @@ class Settings:
             # want job tokens to survive GMI credential rotation.
             job_token_secret=_optional_env("GENBLAZE_JOB_TOKEN_SECRET") or api_key,
             model_catalog_path=_optional_env("GENBLAZE_MODEL_CATALOG_PATH"),
+            tunnel_refresh_url=(
+                _optional_env("SAMSAR_MEDIA_TUNNEL_REFRESH_URL")
+                or "http://media-tunnel-controller:8081/refresh"
+            ),
+            media_url_max_attempts=_positive_int_with_legacy_name(
+                "GENBLAZE_MEDIA_URL_MAX_ATTEMPTS",
+                "GENBLAZE_VISION_URL_MAX_ATTEMPTS",
+                3,
+            ),
+            tunnel_refresh_wait_seconds=_positive_float(
+                "GENBLAZE_TUNNEL_REFRESH_WAIT_SECONDS",
+                120.0,
+            ),
+            media_stage_timeout_seconds=_positive_float(
+                "GENBLAZE_MEDIA_STAGE_TIMEOUT_SECONDS",
+                600.0,
+            ),
+            media_stage_max_bytes=_positive_int(
+                "GENBLAZE_MEDIA_STAGE_MAX_BYTES",
+                2 * 1024 * 1024 * 1024,
+            ),
         )
 
     def __repr__(self) -> str:
@@ -63,6 +111,11 @@ class Settings:
             f"media_base_url={self.media_base_url!r}, "
             f"upstream_timeout_seconds={self.upstream_timeout_seconds!r}, "
             f"job_token_secret={token_state!r}, "
-            f"model_catalog_path={self.model_catalog_path!r}"
+            f"model_catalog_path={self.model_catalog_path!r}, "
+            f"tunnel_refresh_url={self.tunnel_refresh_url!r}, "
+            f"media_url_max_attempts={self.media_url_max_attempts!r}, "
+            f"tunnel_refresh_wait_seconds={self.tunnel_refresh_wait_seconds!r}, "
+            f"media_stage_timeout_seconds={self.media_stage_timeout_seconds!r}, "
+            f"media_stage_max_bytes={self.media_stage_max_bytes!r}"
             ")"
         )

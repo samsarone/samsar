@@ -302,16 +302,66 @@ test('external completion limits do not leak into any native inference adapter',
   });
 });
 
-test('external completion limits are materialized only at external dispatch', async () => {
+test('standalone automatic native GPT vision strips external completion limits', async (t) => {
+  const preferencePath = createPreferenceFile(t, {
+    'gpt-5.6-sol': ['openai', 'samsar'],
+  });
+
+  await withEnvironment({
+    CURRENT_ENV: 'docker',
+    OPENAI_API_KEY: 'openai-key',
+    SAMSAR_API_KEY: 'samsar-key',
+    SAMSAR_DEPLOYMENT_EDITION: 'standalone',
+    SAMSAR_EXTERNAL_INFERENCE_ENABLED: 'true',
+    SAMSAR_MODEL_ADAPTER_PREFERENCES_PATH: preferencePath,
+  }, async () => {
+    let capturedRequest;
+    const response = await createCompatibleInferenceChatCompletion({
+      model: 'gpt-5.6-sol',
+      externalMaxTokens: 16384,
+      messages: [{
+        role: 'user',
+        content: [{
+          type: 'image_url',
+          image_url: { url: 'data:image/png;base64,AQID' },
+        }],
+      }],
+    }, {
+      createSamsarExternalChatCompletion: async () => {
+        assert.fail('native OpenAI preference unexpectedly reached Samsar');
+      },
+      openaiClient: {
+        chat: {
+          completions: {
+            create: async (request, options) => {
+              capturedRequest = request;
+              assert.equal(options.maxRetries, 0);
+              return createResponse('native vision');
+            },
+          },
+        },
+      },
+    });
+
+    assert.equal(response.choices[0].message.content, 'native vision');
+    assert.equal(capturedRequest.model, 'gpt-5.6-sol');
+    assert.equal(capturedRequest.messages[0].content[0].type, 'image_url');
+    assert.equal(Object.hasOwn(capturedRequest, 'externalMaxTokens'), false);
+    assert.equal(Object.hasOwn(capturedRequest, 'max_tokens'), false);
+    assert.equal(Object.hasOwn(capturedRequest, 'max_completion_tokens'), false);
+    assert.equal(Object.hasOwn(capturedRequest, 'max_output_tokens'), false);
+  });
+});
+
+test('external completion limits are materialized only for OpenRouter dispatch', async () => {
   await withEnvironment({
     CURRENT_ENV: 'production',
-    SAMSAR_API_KEY: 'samsar-key',
-    SAMSAR_EXTERNAL_INFERENCE_ENABLED: 'true',
+    OPENROUTER_API_KEY: 'openrouter-key',
   }, async () => {
     let capturedRequest;
     await createCompatibleInferenceChatCompletion({
       model: 'gpt-5.6-sol',
-      authorization: 'deployed',
+      authorization: 'openrouter',
       messages: [{ role: 'user', content: 'hello' }],
       externalMaxTokens: 16384,
     }, {
@@ -323,6 +373,37 @@ test('external completion limits are materialized only at external dispatch', as
 
     assert.equal(capturedRequest.max_tokens, 16384);
     assert.equal(Object.hasOwn(capturedRequest, 'externalMaxTokens'), false);
+  });
+});
+
+test('GMICloud vision receives no OpenRouter completion limit fields', async () => {
+  await withEnvironment({
+    CURRENT_ENV: 'docker',
+    SAMSAR_DEPLOYMENT_EDITION: 'standalone',
+  }, async () => {
+    let capturedRequest;
+    await createCompatibleInferenceChatCompletion({
+      model: 'gpt-5.6-sol',
+      authorization: 'gmicloud',
+      messages: [{
+        role: 'user',
+        content: [{
+          type: 'image_url',
+          image_url: { url: 'data:image/png;base64,AQID' },
+        }],
+      }],
+      externalMaxTokens: 16384,
+    }, {
+      createSamsarExternalChatCompletion: async (request) => {
+        capturedRequest = request;
+        return createResponse('gmi vision');
+      },
+    });
+
+    assert.equal(Object.hasOwn(capturedRequest, 'externalMaxTokens'), false);
+    assert.equal(Object.hasOwn(capturedRequest, 'max_tokens'), false);
+    assert.equal(Object.hasOwn(capturedRequest, 'max_completion_tokens'), false);
+    assert.equal(Object.hasOwn(capturedRequest, 'max_output_tokens'), false);
   });
 });
 

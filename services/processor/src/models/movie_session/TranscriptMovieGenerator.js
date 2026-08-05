@@ -591,6 +591,54 @@ function buildVisualPromptInferenceOptions({
   };
 }
 
+function getVisualPromptSceneIndexes(sceneIndexes, sceneCount) {
+  if (sceneIndexes === null || sceneIndexes === undefined) {
+    return Array.from({ length: sceneCount }, (_, sceneIndex) => sceneIndex);
+  }
+
+  const requestedIndexes = Array.isArray(sceneIndexes) ? sceneIndexes : [sceneIndexes];
+  const normalizedIndexes = [];
+  const seenIndexes = new Set();
+
+  for (const rawSceneIndex of requestedIndexes) {
+    const sceneIndex = normalizeSceneIndex(rawSceneIndex);
+    if (sceneIndex === null || sceneIndex >= sceneCount) {
+      const error = new Error(`Visual prompt scene index ${rawSceneIndex} is out of range.`);
+      error.code = 'INVALID_VISUAL_PROMPT_SCENE_INDEX';
+      error.status = 422;
+      throw error;
+    }
+    if (!seenIndexes.has(sceneIndex)) {
+      seenIndexes.add(sceneIndex);
+      normalizedIndexes.push(sceneIndex);
+    }
+  }
+
+  if (!normalizedIndexes.length) {
+    const error = new Error('At least one visual prompt scene index is required.');
+    error.code = 'INVALID_VISUAL_PROMPT_SCENE_INDEX';
+    error.status = 422;
+    throw error;
+  }
+
+  return normalizedIndexes;
+}
+
+function getVisualPromptSpeakerGender(movieResourceList = {}, sceneIndex) {
+  const scenes = Array.isArray(movieResourceList?.scenes) ? movieResourceList.scenes : [];
+  const sounds = Array.isArray(movieResourceList?.sounds) ? movieResourceList.sounds : [];
+  const speechSound = sounds.find((sound) => (
+    sound?.type === 'speech' &&
+    normalizeSceneIndex(sound.sceneIndex) === sceneIndex &&
+    resolveSpeechSubType(sound, scenes) === 'character'
+  ));
+  const gender = normalizeSpeechGender(speechSound?.gender);
+
+  if (gender === 'M') return 'Male';
+  if (gender === 'F') return 'Female';
+  return '';
+}
+
 export async function buildMovieResourceListVisualPrompts({
   movieResourceList,
   themeJson,
@@ -602,11 +650,13 @@ export async function buildMovieResourceListVisualPrompts({
   externalRequestContext = null,
   requestKeyPrefix = 'text_to_video:visual',
   onInferenceResponse,
+  sceneIndexes = null,
   dependencies = {},
 } = {}) {
   const scenes = Array.isArray(movieResourceList?.scenes)
     ? movieResourceList.scenes
     : [];
+  const requestedSceneIndexes = getVisualPromptSceneIndexes(sceneIndexes, scenes.length);
   const themeJsonString = typeof themeJson === 'string'
     ? themeJson
     : JSON.stringify(themeJson ?? {});
@@ -618,8 +668,9 @@ export async function buildMovieResourceListVisualPrompts({
   const updateAdCharacterPrompt = dependencies.updateAdVideoCharacterPromptWithTheme ||
     updateAdVideoCharacterPromptWithTheme;
   const promptList = [];
+  const generatedVisualsBySceneIndex = new Map();
 
-  for (let sceneIndex = 0; sceneIndex < scenes.length; sceneIndex += 1) {
+  for (const sceneIndex of requestedSceneIndexes) {
     const scene = scenes[sceneIndex] || {};
     const sceneType = normalizeLayerSceneType(scene.type);
     const requestKey = `${requestKeyPrefix}:scene-${sceneIndex}`;
@@ -629,6 +680,12 @@ export async function buildMovieResourceListVisualPrompts({
       requestKey,
       sceneIndex,
     });
+    const characterInferenceOptions = sceneType === 'character'
+      ? {
+        ...inferenceOptions,
+        speakerGender: getVisualPromptSpeakerGender(movieResourceList, sceneIndex),
+      }
+      : inferenceOptions;
     let prompt;
 
     if (isAdVideo && startImageDescriptions.length > 0) {
@@ -662,7 +719,7 @@ export async function buildMovieResourceListVisualPrompts({
           inferenceModel,
           false,
           videoTone,
-          inferenceOptions,
+          characterInferenceOptions,
         )
         : await updateGenericPrompt(
           scene.visual,
@@ -689,6 +746,7 @@ export async function buildMovieResourceListVisualPrompts({
       duration: scene.duration,
       sceneType,
     });
+    generatedVisualsBySceneIndex.set(sceneIndex, normalizedPrompt);
   }
 
   return {
@@ -697,7 +755,9 @@ export async function buildMovieResourceListVisualPrompts({
       ...(movieResourceList || {}),
       scenes: scenes.map((scene, sceneIndex) => ({
         ...(scene || {}),
-        visual: promptList[sceneIndex].prompt,
+        ...(generatedVisualsBySceneIndex.has(sceneIndex)
+          ? { visual: generatedVisualsBySceneIndex.get(sceneIndex) }
+          : {}),
       })),
     },
   };

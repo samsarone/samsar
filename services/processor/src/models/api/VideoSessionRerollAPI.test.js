@@ -183,6 +183,127 @@ test('reroll reset clears stale selected image sources while preserving non-imag
   assert.equal(layer.imageSession.lastFailureSource, null);
 });
 
+test('reroll visual regeneration uses the raw narrative scene and enriched speech metadata', async () => {
+  const calls = [];
+  const sessionData = {
+    _id: 'source-session-1',
+    aspectRatio: '16:9',
+    expressGenerationInferenceModel: 'QWEN3.8',
+    videoTone: 'grounded',
+    parentJsonTheme: JSON.stringify({
+      actors: [{ name: 'Control Crew', keywords: ['male and female technicians'] }],
+    }),
+    narrativeJson: {
+      scenes: [
+        { visual: 'Raw opening visual.', type: 'narration', duration: 5, speaker: '' },
+        {
+          visual: 'Raw mixed-gender control-room visual.',
+          type: 'character',
+          duration: 10,
+          speaker: 'Control Crew',
+        },
+      ],
+      sounds: [],
+    },
+    movieResourceList: {
+      scenes: [
+        { visual: 'Expanded opening prompt.', type: 'narration', duration: 5, speaker: '' },
+        {
+          visual: 'Old female-centered expanded prompt.',
+          type: 'character',
+          duration: 10,
+          speaker: 'Control Crew',
+        },
+      ],
+      sounds: [{
+        type: 'speech',
+        subType: 'character',
+        actor: 'Control Crew',
+        gender: 'M',
+        sceneIndex: 1,
+        audio: 'Altitude dropping.',
+        speaker: 'echo',
+      }],
+    },
+  };
+
+  const result = await __testOnly__.regenerateRerollVisualPrompts(
+    sessionData,
+    [1],
+    {
+      buildMovieResourceListVisualPrompts: async (options) => {
+        calls.push(options);
+        return {
+          promptList: [{
+            prompt: 'New male-centered expanded prompt.',
+            duration: 10,
+            sceneType: 'character',
+          }],
+        };
+      },
+    },
+  );
+
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].movieResourceList.scenes[1].visual, 'Raw mixed-gender control-room visual.');
+  assert.equal(calls[0].movieResourceList.sounds[0].gender, 'M');
+  assert.equal(calls[0].movieResourceList.sounds[0].speaker, 'echo');
+  assert.deepEqual(calls[0].themeJson, {
+    actors: [{ name: 'Control Crew', keywords: ['male and female technicians'] }],
+  });
+  assert.equal(calls[0].aspectRatio, '16:9');
+  assert.equal(calls[0].inferenceModel, 'QWEN3.8');
+  assert.equal(calls[0].videoTone, 'grounded');
+  assert.deepEqual(calls[0].sceneIndexes, [1]);
+  assert.deepEqual(result, [{ sceneIndex: 1, prompt: 'New male-centered expanded prompt.' }]);
+});
+
+test('reroll reset replaces stored original prompts with the regenerated visual prompt', () => {
+  const sessionData = { userId: 'user-1' };
+  const layer = {
+    _id: 'layer-1',
+    layerBaseAiImageType: 'character',
+    layerAiVideoType: 'character',
+    originalImageGenerationPrompt: 'Old female-centered prompt.',
+    originalImageGenerationPromptSource: 'original',
+    originalImagePrompt: 'Old female-centered prompt.',
+    sourcePrompt: 'Old female-centered prompt.',
+    originalPrompt: 'Old female-centered prompt.',
+    imageSession: {
+      originalImageGenerationPrompt: 'Old female-centered prompt.',
+      originalImageGenerationPromptSource: 'original',
+      originalImagePrompt: 'Old female-centered prompt.',
+      sourcePrompt: 'Old female-centered prompt.',
+      originalPrompt: 'Old female-centered prompt.',
+      activeItemList: [],
+    },
+  };
+
+  const result = __testOnly__.resetLayerForReroll(
+    sessionData,
+    layer,
+    1,
+    { prompt: 'New male-centered prompt.', source: 'reroll_visual_pipeline' },
+    0,
+    'layerIndexEqualSceneIndexFallback',
+  );
+
+  assert.equal(result.promptSource, 'reroll_visual_pipeline');
+  assert.equal(layer.prompt, 'New male-centered prompt.');
+  assert.equal(layer.originalImageGenerationPrompt, 'New male-centered prompt.');
+  assert.equal(layer.originalImageGenerationPromptSource, 'reroll_visual_pipeline');
+  assert.equal(layer.originalImagePrompt, 'New male-centered prompt.');
+  assert.equal(layer.sourcePrompt, 'New male-centered prompt.');
+  assert.equal(layer.originalPrompt, 'New male-centered prompt.');
+  assert.equal(layer.imageSession.prompt, 'New male-centered prompt.');
+  assert.equal(layer.imageSession.originalImageGenerationPrompt, 'New male-centered prompt.');
+  assert.equal(layer.imageSession.originalImageGenerationPromptSource, 'reroll_visual_pipeline');
+  assert.equal(layer.imageSession.originalImagePrompt, 'New male-centered prompt.');
+  assert.equal(layer.imageSession.sourcePrompt, 'New male-centered prompt.');
+  assert.equal(layer.imageSession.originalPrompt, 'New male-centered prompt.');
+  assert.equal(layer.imageSession.originalRetryPrompt, 'New male-centered prompt.');
+});
+
 test('reroll resolves source scene index from connected audio when layer and scene arrays differ', () => {
   const sessionData = {
     movieResourceList: {
