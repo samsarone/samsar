@@ -74,21 +74,15 @@ for (const model of retryableImageToVideoModels) {
   });
 }
 
-test('Seedance 2.0 express metadata stays standalone and provider billed', () => {
-  assert.deepEqual(
-    VIDEO_MODEL_PRICES.find((model) => model.key === 'SEEDANCE2.0I2V'),
-    {
-      key: 'SEEDANCE2.0I2V',
-      name: 'Seedance 2.0 I2V',
-      isExpressModel: true,
-      isImageToVideoModel: true,
-      isTextToVideoModel: false,
-      standaloneOnly: true,
-      providerBilled: true,
-      prices: [],
-      units: [5, 10, 15],
-    },
-  );
+test('Seedance 2.0 keeps standalone provider billing with production rate metadata', () => {
+  const pricing = VIDEO_MODEL_PRICES.find((model) => model.key === 'SEEDANCE2.0I2V');
+  assert.equal(pricing?.providerBilled, true);
+  assert.equal(pricing?.isPerSecondPricing, true);
+  assert.deepEqual(pricing?.prices, [
+    { aspectRatio: '16:9', price: 150 },
+    { aspectRatio: '9:16', price: 150 },
+  ]);
+  assert.equal(pricing?.pricingDistribution?.total, 40);
 });
 
 test('queue payload preserves model-specific image and generation overrides', () => {

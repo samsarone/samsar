@@ -14,6 +14,7 @@ import {
   TEXT_TO_VIDEO_VIDEO_MODEL_KEYS,
 } from '../../consts/ExpressVideoModelOptions.js';
 import { IMAGE_MODEL_PRICES, VIDEO_MODEL_PRICES } from '../../consts/ModelPrices.js';
+import { getExpressVideoCreditsPerSecond } from '../../consts/pricing/ExpressVideoPricingDistribution.js';
 import {
   IMAGE_GENERAITON_MODEL_TYPES,
   VIDEO_GENERATION_MODEL_TYPES,
@@ -61,20 +62,15 @@ test('Seedance 2.0 is an express provider-billed model on standalone video surfa
     VIDEO_GENERATION_MODEL_TYPES.find((model) => model.key === 'SEEDANCE2.0I2V')?.isExpressModel,
     true,
   );
-  assert.deepEqual(
-    VIDEO_MODEL_PRICES.find((model) => model.key === 'SEEDANCE2.0I2V'),
-    {
-      key: 'SEEDANCE2.0I2V',
-      name: 'Seedance 2.0 I2V',
-      isExpressModel: true,
-      isImageToVideoModel: true,
-      isTextToVideoModel: false,
-      standaloneOnly: true,
-      providerBilled: true,
-      prices: [],
-      units: [5, 10, 15],
-    },
-  );
+  const pricing = VIDEO_MODEL_PRICES.find((model) => model.key === 'SEEDANCE2.0I2V');
+  assert.equal(pricing?.providerBilled, true);
+  assert.equal(pricing?.isPerSecondPricing, true);
+  assert.deepEqual(pricing?.prices, [
+    { aspectRatio: '16:9', price: 150 },
+    { aspectRatio: '9:16', price: 150 },
+  ]);
+  assert.equal(pricing?.pricingDistribution?.total, 40);
+  assert.equal(getExpressVideoCreditsPerSecond('SEEDANCE2.0I2V'), 40);
 });
 
 test('Wan2.7 Pro is accepted for both express image stages', () => {

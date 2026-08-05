@@ -27,6 +27,7 @@ const ENV_KEYS = [
   'FAL_API_KEY',
   'SAMSAR_API_KEY',
   'SAMSAR_GENBLAZE_ENABLED',
+  'SAMSAR_HOSTED_GENBLAZE_VIDEO_ENABLED',
 ];
 const originalEnv = Object.fromEntries(ENV_KEYS.map((key) => [key, process.env[key]]));
 
@@ -218,6 +219,38 @@ test('standalone places credential-scoped GMICloud below native providers but ah
       DOCKER_VIDEO_PROVIDER.FAL,
     ], model);
   }
+});
+
+test('hosted production can explicitly prefer validated GMICloud Seedance 2.0', (t) => {
+  clearEnv();
+  const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'samsar-video-hosted-gmi-'));
+  const catalogPath = path.join(temporaryDirectory, 'genblaze-model-catalog.json');
+  t.after(() => fs.rmSync(temporaryDirectory, { recursive: true, force: true }));
+  fs.writeFileSync(catalogPath, JSON.stringify({
+    version: 1,
+    provider: 'gmicloud',
+    models: {
+      'SEEDANCE2.0I2V': {
+        video: { modelId: 'seedance-2-0-260128', operation: 'video.generate' },
+      },
+    },
+  }));
+
+  process.env.CURRENT_ENV = 'production';
+  process.env.SAMSAR_DOCKER_ADAPTER_ROUTING_ENABLED = 'true';
+  process.env.SAMSAR_HOSTED_GENBLAZE_VIDEO_ENABLED = 'true';
+  process.env.SAMSAR_GENBLAZE_ENABLED = 'true';
+  process.env.SAMSAR_GENBLAZE_MODEL_CATALOG_PATH = catalogPath;
+  process.env.FAL_API_KEY = 'fal-key';
+
+  assert.deepEqual(getDockerVideoProviderPriority('SEEDANCE2.0I2V'), [
+    DOCKER_VIDEO_PROVIDER.GMICLOUD,
+    DOCKER_VIDEO_PROVIDER.FAL,
+  ]);
+  assert.equal(
+    resolveDockerVideoProvider('SEEDANCE2.0I2V'),
+    DOCKER_VIDEO_PROVIDER.GMICLOUD,
+  );
 });
 
 test('credential-scoped GMICloud catalog excludes unverified video routes', (t) => {

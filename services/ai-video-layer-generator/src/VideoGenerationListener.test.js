@@ -49,13 +49,13 @@ test('base AI-video completion marks the generated media as available', () => {
   });
 });
 
-test('GMICloud video dispatch is capped at one without blocking other adapters', () => {
+test('GMICloud video dispatch permits a second request without blocking other adapters', () => {
   const activeRequests = [
     { model: 'SEEDANCEI2V', startImage: 'one.png', dockerVideoProvider: 'gmicloud' },
     { model: 'WANI2V', startImage: 'three.png', dockerVideoProvider: 'fal' },
   ];
-  const blockedGmiCloud = {
-    id: 'blocked-gmicloud',
+  const secondGmiCloud = {
+    id: 'second-gmicloud',
     model: 'SEEDANCEI2V',
     startImage: 'four.png',
     dockerVideoProvider: 'gmicloud',
@@ -68,13 +68,13 @@ test('GMICloud video dispatch is capped at one without blocking other adapters',
   assert.deepEqual(
     selectAiVideoDispatchRequests({
       activeRequests,
-      initRequests: [blockedGmiCloud, ...falRequests],
+      initRequests: [secondGmiCloud, ...falRequests],
     }).map(({ id }) => id),
-    ['fal-one', 'fal-two'],
+    ['second-gmicloud', 'fal-one', 'fal-two'],
   );
 });
 
-test('GMICloud video dispatch consumes its only provider slot', () => {
+test('GMICloud video dispatch consumes both default provider slots', () => {
   const initRequests = [
     { id: 'gmi-one', model: 'SEEDANCEI2V', startImage: 'two.png', dockerVideoProvider: 'gmicloud' },
     { id: 'gmi-two', model: 'SEEDANCEI2V', startImage: 'three.png', dockerVideoProvider: 'gmicloud' },
@@ -85,7 +85,7 @@ test('GMICloud video dispatch consumes its only provider slot', () => {
 
   assert.deepEqual(
     selectAiVideoDispatchRequests({ initRequests }).map(({ id }) => id),
-    ['gmi-one', 'fal-one', 'fal-two', 'fal-three'],
+    ['gmi-one', 'gmi-two', 'fal-one', 'fal-two', 'fal-three'],
   );
 });
 
@@ -158,8 +158,8 @@ test('GMICloud concurrency recognizes standalone wrapper rows before submission'
   }), true);
 });
 
-test('GMICloud concurrency defaults to one and remains configurable', () => {
-  assert.equal(getMaxConcurrentGmiCloudVideoRequests({}), 1);
+test('GMICloud concurrency defaults to two and remains configurable', () => {
+  assert.equal(getMaxConcurrentGmiCloudVideoRequests({}), 2);
   assert.equal(getMaxConcurrentGmiCloudVideoRequests({
     AI_VIDEO_MAX_CONCURRENT_GMICLOUD_REQUESTS: '3',
   }), 3);

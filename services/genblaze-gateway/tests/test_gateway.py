@@ -227,6 +227,13 @@ def test_media_url_attempt_setting_prefers_generic_name_and_supports_vision_lega
     assert configured.media_stage_max_bytes == 4 * 1024 * 1024 * 1024
 
 
+def test_settings_accepts_scoped_production_gmi_key_alias(monkeypatch):
+    monkeypatch.delenv("GMI_API_KEY", raising=False)
+    monkeypatch.setenv("GMI_CLOUD_API_KEY", "production-gmi-key")
+
+    assert Settings.from_env().gmi_api_key == "production-gmi-key"
+
+
 def test_development_fallback_is_empty_and_never_guesses_upstream_models():
     assert MODEL_ROUTES == ()
     with pytest.raises(ValueError, match="not available"):

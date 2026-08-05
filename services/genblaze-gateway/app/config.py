@@ -64,7 +64,7 @@ class Settings:
 
     @classmethod
     def from_env(cls) -> "Settings":
-        api_key = _optional_env("GMI_API_KEY")
+        api_key = _optional_env("GMI_API_KEY") or _optional_env("GMI_CLOUD_API_KEY")
         return cls(
             gmi_api_key=api_key,
             chat_base_url=_optional_env("GMI_CHAT_BASE_URL"),

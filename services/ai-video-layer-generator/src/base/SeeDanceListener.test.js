@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { getSeedanceImageToVideoLink } from './SeeDanceListener.js';
+import {
+  buildSeedanceInputPayload,
+  getSeedanceImageToVideoLink,
+} from './SeeDanceListener.js';
 
 test('FAL Seedance adapter selects the exact endpoint for each supported I2V model', () => {
   assert.equal(
@@ -19,4 +22,41 @@ test('FAL Seedance adapter rejects unknown model keys', () => {
     () => getSeedanceImageToVideoLink('SEEDANCE_FUTURE'),
     (error) => error?.code === 'FAL_MODEL_UNSUPPORTED',
   );
+});
+
+test('FAL Seedance 2.0 defaults to silent 720p generation', () => {
+  assert.deepEqual(
+    buildSeedanceInputPayload({
+      model: 'SEEDANCE2.0I2V',
+      prompt: 'Animate the frame.',
+      startImage: 'https://media.example/start.png',
+      endImage: 'https://media.example/end.png',
+      aspectRatio: '9:16',
+      duration: 15,
+      userId: 'user-1',
+      resolution: '1080p',
+    }),
+    {
+      prompt: 'Animate the frame.',
+      image_url: 'https://media.example/start.png',
+      end_image_url: 'https://media.example/end.png',
+      aspect_ratio: '9:16',
+      duration: 15,
+      generate_audio: false,
+      end_user_id: 'user-1',
+      resolution: '720p',
+    },
+  );
+});
+
+test('FAL Seedance 2.0 enables audio for sound-effect generation', () => {
+  const input = buildSeedanceInputPayload({
+    model: 'SEEDANCE2.0I2V',
+    prompt: 'Animate the frame with synchronized ambience.',
+    startImage: 'https://media.example/start.png',
+    isAudioVideoGeneration: true,
+  });
+
+  assert.equal(input.generate_audio, true);
+  assert.equal(input.resolution, '720p');
 });

@@ -181,7 +181,7 @@ const TRANSIENT_PROVIDER_ERROR_STATUSES = new Set([408, 425, 429, 500, 502, 503,
 export function getMaxConcurrentGmiCloudVideoRequests(env = process.env) {
   return Math.max(
     1,
-    Number(env.AI_VIDEO_MAX_CONCURRENT_GMICLOUD_REQUESTS) || 1,
+    Number(env.AI_VIDEO_MAX_CONCURRENT_GMICLOUD_REQUESTS) || 2,
   );
 }
 

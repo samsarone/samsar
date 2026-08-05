@@ -420,9 +420,14 @@ export function getDockerVideoProviderPriority(model, { generationType = '' } = 
     defaultPriority = hasSamsarVideoCredential() ? [DOCKER_VIDEO_PROVIDER.SAMSAR] : [];
   }
 
+  const hostedGmiCloudEnabled = isTruthyEnv(
+    process.env.SAMSAR_HOSTED_GENBLAZE_VIDEO_ENABLED,
+  );
   if (!isStandaloneEdition()) {
     defaultPriority = applyHostedFalPriority(defaultPriority)
-      .filter((provider) => provider !== DOCKER_VIDEO_PROVIDER.GMICLOUD);
+      .filter(
+        (provider) => hostedGmiCloudEnabled || provider !== DOCKER_VIDEO_PROVIDER.GMICLOUD,
+      );
   }
   if (!hasGmiCloudVideoModelMapping(normalizedModel)) {
     defaultPriority = defaultPriority.filter(

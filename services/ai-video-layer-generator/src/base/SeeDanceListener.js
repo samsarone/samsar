@@ -56,7 +56,7 @@ export function getSeedanceImageToVideoLink(model) {
   throw error;
 }
 
-export async function generateSeeDanceImgToVideoLayer(payload) {
+export function buildSeedanceInputPayload(payload) {
   const {
     startImage,
     endImage,
@@ -88,6 +88,15 @@ export async function generateSeeDanceImgToVideoLayer(payload) {
   if (normalizedAspectRatio) {
     inputPayload.aspect_ratio = normalizedAspectRatio;
   }
+  if (payload.model === "SEEDANCE2.0I2V") {
+    inputPayload.resolution = "720p";
+  }
+
+  return inputPayload;
+}
+
+export async function generateSeeDanceImgToVideoLayer(payload) {
+  const inputPayload = buildSeedanceInputPayload(payload);
 
   const submitResponse = await fal.queue.submit(getSeedanceImageToVideoLink(payload.model), {
     input: inputPayload,

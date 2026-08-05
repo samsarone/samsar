@@ -214,7 +214,12 @@ export const VIDEO_MODEL_PRICES = [
     isTextToVideoModel: false,
     standaloneOnly: true,
     providerBilled: true,
-    prices: [],
+    isPerSecondPricing: true,
+    prices: [
+      { aspectRatio: '16:9', price: 150 },
+      { aspectRatio: '9:16', price: 150 },
+    ],
+    pricingDistribution: getExpressVideoPricingDistributionPerSecond('SEEDANCE2.0I2V'),
     units: [5, 10, 15],
   },
   {
