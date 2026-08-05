@@ -247,6 +247,25 @@ function normalizeString(value) {
   return typeof value === 'string' ? value.trim() : '';
 }
 
+function normalizeVideoAdapter(value) {
+  const normalized = normalizeString(value).toLowerCase().replace(/[^a-z0-9]/g, '');
+  if (['alibaba', 'alibabacloud', 'aliyun', 'dashscope', 'qwen'].includes(normalized)) {
+    return DOCKER_VIDEO_PROVIDER.ALIBABA_CLOUD;
+  }
+  if (['google', 'googlecloud', 'gcp', 'vertex', 'vertexai'].includes(normalized)) {
+    return DOCKER_VIDEO_PROVIDER.GOOGLE_CLOUD;
+  }
+  if (['gmi', 'gmicloud', 'genblaze'].includes(normalized)) {
+    return DOCKER_VIDEO_PROVIDER.GMICLOUD;
+  }
+  if (normalized === 'custom' || normalized === 'customadapter') {
+    return 'custom';
+  }
+  return Object.values(DOCKER_VIDEO_PROVIDER).find((provider) => (
+    provider.toLowerCase().replace(/[^a-z0-9]/g, '') === normalized
+  )) || '';
+}
+
 const TEXT_TO_VIDEO_MODELS = new Set([
   'VEO',
   'VEO3.1',
@@ -298,6 +317,63 @@ function resolveAIVideoProvider(model, payload = {}) {
     return 'googleCloud';
   }
   return 'fal';
+}
+
+export function resolveSubmittedVideoAdapter(payload = {}) {
+  const submittedAdapter = normalizeVideoAdapter(payload?.submittedAdapter);
+  if (submittedAdapter) {
+    return submittedAdapter;
+  }
+  if (isGenBlazeVideoRequest(payload)) {
+    return DOCKER_VIDEO_PROVIDER.GMICLOUD;
+  }
+  if (isSamsarExternalVideoRequest(payload)) {
+    return DOCKER_VIDEO_PROVIDER.SAMSAR;
+  }
+  if (isAlibabaHappyHorseGenerationId(payload?.generationId)) {
+    return DOCKER_VIDEO_PROVIDER.ALIBABA_CLOUD;
+  }
+  const persistedProvider = normalizeVideoAdapter(
+    payload?.dockerVideoProvider || payload?.externalProvider,
+  );
+  if (persistedProvider) {
+    return persistedProvider;
+  }
+  if (normalizeString(payload?.model) === 'CUSTOM_IMAGE_TO_VIDEO') {
+    return 'custom';
+  }
+  // Legacy unsealed request ids were produced by the FAL adapters. This is a
+  // compatibility path only; new rows always persist submittedAdapter.
+  if (normalizeString(payload?.generationId)) {
+    if (normalizeString(payload?.model) === 'RUNWAYML') {
+      return DOCKER_VIDEO_PROVIDER.RUNWAY;
+    }
+    return DOCKER_VIDEO_PROVIDER.FAL;
+  }
+  return '';
+}
+
+export function isSubmittedVideoAdapterCompatible(model, submittedAdapter) {
+  const normalizedModel = normalizeString(model);
+  const normalizedAdapter = normalizeVideoAdapter(submittedAdapter);
+  if (!normalizedAdapter) return false;
+  if (
+    normalizedAdapter === DOCKER_VIDEO_PROVIDER.SAMSAR ||
+    normalizedAdapter === DOCKER_VIDEO_PROVIDER.GMICLOUD ||
+    normalizedAdapter === DOCKER_VIDEO_PROVIDER.FAL
+  ) {
+    return true;
+  }
+  if (normalizedAdapter === DOCKER_VIDEO_PROVIDER.RUNWAY) {
+    return normalizedModel === 'RUNWAYML';
+  }
+  if (normalizedAdapter === DOCKER_VIDEO_PROVIDER.ALIBABA_CLOUD) {
+    return normalizedModel === 'HAPPYHORSEI2V';
+  }
+  if (normalizedAdapter === DOCKER_VIDEO_PROVIDER.GOOGLE_CLOUD) {
+    return ['VEO3.1', 'VEO3.1FAST', 'VEO3.1I2V', 'VEO3.1I2VFAST'].includes(normalizedModel);
+  }
+  return normalizedAdapter === 'custom' && normalizedModel === 'CUSTOM_IMAGE_TO_VIDEO';
 }
 
 function resolveDockerVideoProviderForPayload(model, payload = {}) {
@@ -369,7 +445,10 @@ export function isGmiCloudVideoRequest(request = {}) {
   }
 
   const persistedProvider = normalizeString(
-    request.dockerVideoProviderOverride || request.dockerVideoProvider || request.externalProvider,
+    request.submittedAdapter ||
+      request.dockerVideoProviderOverride ||
+      request.dockerVideoProvider ||
+      request.externalProvider,
   );
   if (
     persistedProvider === DOCKER_VIDEO_PROVIDER.GMICLOUD ||
@@ -557,6 +636,7 @@ async function requeueNextDockerVideoAdapterAfterDefinitiveFailure(
       },
     },
     $unset: {
+      submittedAdapter: '',
       dockerVideoProvider: '',
       requestSubmitAt: '',
       lastProviderPendingPollAt: '',
@@ -1362,16 +1442,20 @@ async function deferTransientProviderError(request, error, phase) {
 }
 
 export function getPendingPollIntervalMs(model, payload = {}) {
-  if (isSamsarExternalVideoRequest(payload)) {
+  const submittedAdapter = resolveSubmittedVideoAdapter(payload);
+  if (submittedAdapter === DOCKER_VIDEO_PROVIDER.SAMSAR) {
     return SAMSAR_EXTERNAL_PENDING_POLL_INTERVAL_MS;
   }
-  if (isGenBlazeVideoRequest(payload)) {
+  if (submittedAdapter === DOCKER_VIDEO_PROVIDER.GMICLOUD) {
     return GENBLAZE_PENDING_POLL_INTERVAL_MS;
   }
   if (model === 'RUNWAYML') {
     return RUNWAY_PENDING_POLL_INTERVAL_MS;
   }
-  if (model === 'HAPPYHORSEI2V' && isAlibabaHappyHorseGenerationId(payload?.generationId)) {
+  if (
+    model === 'HAPPYHORSEI2V' &&
+    submittedAdapter === DOCKER_VIDEO_PROVIDER.ALIBABA_CLOUD
+  ) {
     return ALIBABA_HAPPY_HORSE_PENDING_POLL_INTERVAL_MS;
   }
   return null;
@@ -1419,6 +1503,7 @@ async function fallbackCustomAiVideoGeneration(payload, errorMessage) {
     status: 'INIT',
     aiVideoGenerationStatus: 'INIT',
     generationId: null,
+    submittedAdapter: null,
     numRetries: 0,
     customAdapterFallbackUsed: true,
     customAdapterError: errorMessage || null,
@@ -1465,6 +1550,9 @@ async function fallbackGoogleNativeVeo3Generation(payload, errorMessage) {
       expireAt: new Date(),
     },
     $unset: {
+      submittedAdapter: '',
+      dockerVideoProvider: '',
+      externalProvider: '',
       nextAttemptAfter: '',
       lastTransientProviderErrorAt: '',
       lastTransientProviderErrorStatus: '',
@@ -2029,10 +2117,17 @@ async function generateAIVideoLayer(payload) {
       ...payload,
       generationId,
     });
-  if (Object.values(DOCKER_VIDEO_PROVIDER).includes(submittedProvider)) {
-    generationUpdate.dockerVideoProvider = submittedProvider;
+  const submittedAdapter = normalizeVideoAdapter(submittedProvider) || (
+    model === 'CUSTOM_IMAGE_TO_VIDEO' ? 'custom' : ''
+  );
+  if (submittedAdapter) {
+    generationUpdate.submittedAdapter = submittedAdapter;
+    payload.submittedAdapter = submittedAdapter;
   }
-  if (submittedProvider === DOCKER_VIDEO_PROVIDER.GMICLOUD) {
+  if (Object.values(DOCKER_VIDEO_PROVIDER).includes(submittedAdapter)) {
+    generationUpdate.dockerVideoProvider = submittedAdapter;
+  }
+  if (submittedAdapter === DOCKER_VIDEO_PROVIDER.GMICLOUD) {
     generationUpdate.externalProvider = DOCKER_VIDEO_PROVIDER.GMICLOUD;
   }
   if (payload.dockerAdapterFailoverAttempted === true && payload.dockerVideoProviderOverride) {
@@ -2064,6 +2159,13 @@ async function generateAIVideoLayer(payload) {
 async function pollForAIVideoCompletion(reqPayload) {
   let payload = reqPayload.toObject();
   const { model } = payload;
+  const submittedAdapter = resolveSubmittedVideoAdapter(payload);
+  if (!submittedAdapter) {
+    throw new Error(`AI video request ${payload._id || '<unknown>'} has no submitted adapter affinity.`);
+  }
+  if (!isSubmittedVideoAdapterCompatible(model, submittedAdapter)) {
+    throw new Error(`${model} request cannot be polled through ${submittedAdapter}.`);
+  }
 
   if (LIPSYNC_MODELS.includes(model)) {
     const requestSubmitAt = payload.requestSubmitAt || payload.createdAt;
@@ -2076,15 +2178,18 @@ async function pollForAIVideoCompletion(reqPayload) {
   }
 
   let responseData;
-  if (shouldUseSamsarExternalVideoProvider(payload)) {
+  if (submittedAdapter === DOCKER_VIDEO_PROVIDER.SAMSAR) {
     responseData = await listenToPendingSamsarExternalVideoRequest(payload);
-  } else if (shouldUseGenBlazeVideoProvider(payload)) {
+  } else if (submittedAdapter === DOCKER_VIDEO_PROVIDER.GMICLOUD) {
     responseData = await listenToPendingGenBlazeVideoRequest(payload);
   } else if (model === 'LUMA' || model === 'LUMAFLASH2') {
     // responseData = await pollLumaAiVideoLayer(payload);
   } else if (model === 'SDVIDEO') {
     responseData = await listenToPendingSDVideoRequest(payload);
   } else if (model === 'RUNWAYML') {
+    if (submittedAdapter !== DOCKER_VIDEO_PROVIDER.RUNWAY) {
+      throw new Error(`RUNWAYML request cannot be polled through ${submittedAdapter}.`);
+    }
     responseData = await listenToPendingRunwayNativeVideoRequest(payload);
   } else if (model === 'KLINGLIPSYNC') {
     responseData = await listenToPendingKlingLipSyncRequests(payload);
@@ -2099,7 +2204,7 @@ async function pollForAIVideoCompletion(reqPayload) {
   } else if (model === 'VEO') {
     responseData = await listenToPendingVeoRequests(payload);
   } else if (model === 'VEO3.1' || model === 'VEO3.1FAST') {
-    responseData = shouldUseGoogleVeo3ForPayload(model, payload)
+    responseData = submittedAdapter === DOCKER_VIDEO_PROVIDER.GOOGLE_CLOUD
       ? await listenToPendingGoogleVeo3Requests(payload)
       : await listenToPendingVeo3Requests(payload);
   } else if (model === 'SYNCLIPSYNC') {
@@ -2125,7 +2230,7 @@ async function pollForAIVideoCompletion(reqPayload) {
   } else if (model === 'SEEDANCEI2V' || model === 'SEEDANCE2.0I2V') {
     responseData = await listenToPendingSeeDanceImgToVidRequests(payload);
   } else if (model === 'HAPPYHORSEI2V') {
-    responseData = shouldUseAlibabaNativeHappyHorse(payload)
+    responseData = submittedAdapter === DOCKER_VIDEO_PROVIDER.ALIBABA_CLOUD
       ? await listenToPendingAlibabaHappyHorseImgToVidRequests(payload)
       : await listenToPendingHappyHorseImgToVidRequests(payload);
   } else if (model === 'MIRELOAI') {
@@ -2133,7 +2238,7 @@ async function pollForAIVideoCompletion(reqPayload) {
   } else if (model === 'CREATIFYLIPSYNC') {
     responseData = await listenToPendingCreatifyLipSyncRequests(payload);
   } else if (model === 'VEO3.1I2V' || model === 'VEO3.1I2VFAST') {
-    responseData = shouldUseGoogleVeo3ForPayload(model, payload)
+    responseData = submittedAdapter === DOCKER_VIDEO_PROVIDER.GOOGLE_CLOUD
       ? await listenToPendingGoogleVeo3Requests(payload)
       : await listenToPendingVeo3ImgToVidRequests(payload);
   } else if (model === 'COSMOS3SUPERI2V') {
@@ -2141,6 +2246,9 @@ async function pollForAIVideoCompletion(reqPayload) {
   } else if (model === 'VEO3.1FLIV') {
     responseData = await listenToPendingVeo3FirstLastFrameVideoRequests(payload);
   } else if (model === 'CUSTOM_IMAGE_TO_VIDEO') {
+    if (submittedAdapter !== 'custom') {
+      throw new Error(`CUSTOM_IMAGE_TO_VIDEO request cannot be polled through ${submittedAdapter}.`);
+    }
     responseData = await listenToPendingCustomImageToVideoRequests(payload);
   }
 
@@ -3385,6 +3493,7 @@ async function processLipSyncGenerationFailed(payload) {
       model: newModel,
       rowLocked: false,
       generationId: null,
+      submittedAdapter: null,
       expireAt: new Date(),
     });
     return;
@@ -3502,6 +3611,7 @@ async function processBaseGenerationFailed(payload) {
       numRetries: tries + 1,
       rowLocked: false,
       generationId: null,
+      submittedAdapter: null,
       nextAttemptAfter: new Date(Date.now() + getExplicitFailureRetryBackoffMs(tries)),
       expireAt: new Date(),
     };

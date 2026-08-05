@@ -48,6 +48,14 @@ export async function processMusicEffectRequest(payload) {
 
   const { model, status } = payload;
   const provider = resolveDockerSoundEffectProvider(model, payload);
+  const submittedAdapter = provider || (
+    model === 'CUSTOM_TEXT_TO_SOUND_EFFECT' ? DOCKER_AUDIO_PROVIDER.CUSTOM : ''
+  );
+
+  if (status === 'INIT' && submittedAdapter && payload?._id) {
+    payload.submittedAdapter = submittedAdapter;
+    await AudioGeneration.findByIdAndUpdate(payload._id, { submittedAdapter });
+  }
 
   if (
     !provider &&

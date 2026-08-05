@@ -2,6 +2,7 @@ import { Schema, model } from 'mongoose';
 
 const audioGenerationSchema = new Schema({
   sessionId: String,
+  submittedAdapter: String,
   rowLocked: { type: Boolean, default: false },
 }, { timestamps: true, strict: false });
 

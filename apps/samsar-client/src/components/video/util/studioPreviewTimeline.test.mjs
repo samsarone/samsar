@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   findLayerIndexAtDisplayFrame,
   getLayerDisplayFrameRange,
+  getLayerDisplayFrameRanges,
   resolveLayerSelectionAtDisplayFrame,
   resolveTimelineDuration,
 } from './studioPreviewTimeline.mjs';
@@ -48,6 +49,21 @@ test('falls back to summed duration for legacy layers without offsets', () => {
   ];
   assert.equal(resolveTimelineDuration(legacyLayers), 5);
   assert.equal(findLayerIndexAtDisplayFrame(legacyLayers, 2.5 * 30), 1);
+});
+
+test('keeps an inserted layer visible while returned offsets are transiently stale', () => {
+  const layersDuringInsertion = [
+    { _id: 'scene-1', durationOffset: 0, duration: 2 },
+    { _id: 'inserted', durationOffset: 0, duration: 2 },
+    { _id: 'scene-2', durationOffset: 2, duration: 2 },
+  ];
+
+  assert.deepEqual(getLayerDisplayFrameRanges(layersDuringInsertion), [
+    { startFrame: 0, endFrame: 60 },
+    { startFrame: 60, endFrame: 120 },
+    { startFrame: 120, endFrame: 180 },
+  ]);
+  assert.equal(resolveTimelineDuration(layersDuringInsertion), 6);
 });
 
 test('prefers an explicit session timeline duration', () => {

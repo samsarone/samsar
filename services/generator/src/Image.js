@@ -237,6 +237,12 @@ function normalizeAdapterProvider(value) {
 }
 
 function getPinnedImageAdapterProvider(payload = {}) {
+  const status = normalizeString(payload?.apiGenerationStatus).toUpperCase();
+  const submittedAdapter = normalizeAdapterProvider(payload?.submittedAdapter);
+  if (status === 'PENDING' && submittedAdapter) {
+    return submittedAdapter;
+  }
+
   if (isStandaloneEdition()) {
     const overrideProvider = normalizeAdapterProvider(payload?.adapterProviderOverride);
     if (overrideProvider) {
@@ -249,7 +255,6 @@ function getPinnedImageAdapterProvider(payload = {}) {
     }
   }
 
-  const status = normalizeString(payload?.apiGenerationStatus).toUpperCase();
   const externalProvider = normalizeAdapterProvider(payload?.externalProvider);
   if (
     externalProvider &&
@@ -390,23 +395,28 @@ function getImageGenerationAdapterRetryState(payload = {}, { rotateAdapter = fal
     unsetFields: {
       apiRequestId: '',
       apiSubmittedAt: '',
+      submittedAdapter: '',
       externalProvider: '',
     },
   };
 }
 
 function getPinnedImageEditAdapterProvider(payload = {}) {
-  if (!isStandaloneEdition()) {
-    return '';
+  const status = normalizeString(payload?.apiEditStatus).toUpperCase();
+  const submittedAdapter = normalizeAdapterProvider(payload?.submittedAdapter);
+  if (status === 'PENDING' && submittedAdapter) {
+    return submittedAdapter;
   }
 
-  const overrideProvider = normalizeAdapterProvider(payload?.adapterProviderOverride);
-  if (overrideProvider) {
-    return overrideProvider;
-  }
-  const selectedProvider = normalizeAdapterProvider(payload?.adapterProvider);
-  if (selectedProvider) {
-    return selectedProvider;
+  if (isStandaloneEdition()) {
+    const overrideProvider = normalizeAdapterProvider(payload?.adapterProviderOverride);
+    if (overrideProvider) {
+      return overrideProvider;
+    }
+    const selectedProvider = normalizeAdapterProvider(payload?.adapterProvider);
+    if (selectedProvider) {
+      return selectedProvider;
+    }
   }
 
   const requestId = normalizeString(payload?.apiRequestId).toLowerCase();
@@ -423,11 +433,25 @@ function getPinnedImageEditAdapterProvider(payload = {}) {
 }
 
 function resolveImageEditProviderForModel(model, payload = {}) {
-  if (!isStandaloneEdition()) {
+  const normalizedModel = normalizeString(model).toUpperCase();
+  if (!normalizedModel) {
     return '';
   }
-  return getPinnedImageEditAdapterProvider(payload) ||
-    resolveDockerImageEditProvider(model);
+  const pinnedProvider = getPinnedImageEditAdapterProvider(payload);
+  if (pinnedProvider) {
+    return pinnedProvider;
+  }
+  const dockerProvider = resolveDockerImageEditProvider(normalizedModel);
+  if (dockerProvider) {
+    return dockerProvider;
+  }
+  if (normalizedModel === 'GPTIMAGE2EDIT' || normalizedModel === 'GPTIMAGE1EDIT') {
+    return DOCKER_ADAPTER_PROVIDER.OPENAI;
+  }
+  if (normalizedModel === 'CUSTOM_IMAGE_EDIT') {
+    return '';
+  }
+  return DOCKER_ADAPTER_PROVIDER.FAL;
 }
 
 function getImageEditAdapterRetryState(payload = {}, { rotateAdapter = true } = {}) {
@@ -457,6 +481,7 @@ function getImageEditAdapterRetryState(payload = {}, { rotateAdapter = true } = 
     unsetFields: {
       apiRequestId: '',
       apiSubmittedAt: '',
+      submittedAdapter: '',
       externalProvider: '',
     },
   };
@@ -2747,15 +2772,27 @@ async function processPendingGenerationRequet(pendingRequestData) {
   }
 
   const selectedAdapterProvider = resolveImageProviderForModel(model, pendingRequestData);
+  const adapterSelectionUpdate = {};
+  if (
+    normalizeString(pendingRequestData?.apiGenerationStatus || 'INIT').toUpperCase() === 'INIT' &&
+    selectedAdapterProvider &&
+    normalizeAdapterProvider(pendingRequestData?.submittedAdapter) !== selectedAdapterProvider
+  ) {
+    pendingRequestData.submittedAdapter = selectedAdapterProvider;
+    adapterSelectionUpdate.submittedAdapter = selectedAdapterProvider;
+  }
   if (
     isStandaloneEdition() &&
     selectedAdapterProvider &&
     normalizeAdapterProvider(pendingRequestData?.adapterProvider) !== selectedAdapterProvider
   ) {
     pendingRequestData.adapterProvider = selectedAdapterProvider;
+    adapterSelectionUpdate.adapterProvider = selectedAdapterProvider;
+  }
+  if (Object.keys(adapterSelectionUpdate).length > 0) {
     await ImageGeneration.updateOne(
       { _id: pendingRequestData._id },
-      { $set: { adapterProvider: selectedAdapterProvider } },
+      { $set: adapterSelectionUpdate },
     );
   }
 
@@ -3946,6 +3983,7 @@ async function processUpscaleRequest(pendingRequestData) {
       image_urls: imageUrls,
       ...(selectedAdapterProvider
         ? {
+          submittedAdapter: selectedAdapterProvider,
           adapterProvider: selectedAdapterProvider,
           adapterProviderOverride: selectedAdapterProvider,
           deferAdapterFailureFinalization: true,
@@ -3971,6 +4009,13 @@ async function processUpscaleRequest(pendingRequestData) {
     }
     if (!pendingRequestData.editStatus) {
       enhanceUpdates.editStatus = 'INIT';
+    }
+    if (
+      normalizeString(apiEditStatus).toUpperCase() === 'INIT' &&
+      selectedAdapterProvider &&
+      normalizeAdapterProvider(pendingRequestData.submittedAdapter) !== selectedAdapterProvider
+    ) {
+      enhanceUpdates.submittedAdapter = selectedAdapterProvider;
     }
     if (
       selectedAdapterProvider &&
@@ -4324,6 +4369,17 @@ async function processEditRequest(pendingRequestData) {
       pendingRequestData.model,
       pendingRequestData,
     );
+    if (
+      normalizeString(pendingRequestData?.apiEditStatus || 'INIT').toUpperCase() === 'INIT' &&
+      selectedAdapterProvider &&
+      normalizeAdapterProvider(pendingRequestData?.submittedAdapter) !== selectedAdapterProvider
+    ) {
+      pendingRequestData.submittedAdapter = selectedAdapterProvider;
+      await ImageGeneration.updateOne(
+        { _id: requestId },
+        { $set: { submittedAdapter: selectedAdapterProvider } },
+      );
+    }
     const editRequestPayload = selectedAdapterProvider
       ? {
         ...(pendingRequestData.toObject

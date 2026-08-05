@@ -1,5 +1,6 @@
 import axios from 'axios';
 import { getDBConnectionString } from '../DBString.js';
+import AudioGeneration from '../schema/AudioGeneration.js';
 import { dispatchAndProcessAudiocraftMusicRequest} from './AudioCraftGenerator.js';
 
 import {  dispatchAndProcessCassetteAIMusicRequest } from './CassetteAIGenerator.js';
@@ -67,6 +68,18 @@ export async function dispatchAndProcessMusicRequest(payload) {
   await getDBConnectionString();
   await recordMusicProviderUsage(payload);
   const provider = resolveMusicProvider(payload);
+  const submittedAdapter = provider || (
+    model === 'CUSTOM_TEXT_TO_MUSIC' ? DOCKER_AUDIO_PROVIDER.CUSTOM : ''
+  );
+
+  if (
+    normalizeString(payload?.status || 'INIT').toUpperCase() === 'INIT' &&
+    submittedAdapter &&
+    payload?._id
+  ) {
+    payload.submittedAdapter = submittedAdapter;
+    await AudioGeneration.findByIdAndUpdate(payload._id, { submittedAdapter });
+  }
 
   if (
     !provider &&

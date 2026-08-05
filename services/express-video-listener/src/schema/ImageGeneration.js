@@ -3,6 +3,7 @@ import { Schema, model } from 'mongoose';
 const imageGenerationSchema = new Schema({
   sessionId: String,
   videoSessionId: String,
+  submittedAdapter: String,
   rowLocked: { type: Boolean, default: false },
 }, { timestamps: true, strict: false });
 

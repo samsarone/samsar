@@ -215,6 +215,7 @@ export async function processGenBlazeSpeechRequest(payload = {}, dependencies = 
         generationId: requestId,
         genblazeRequestId: requestId,
         genblazeModel: requestBody.model,
+        submittedAdapter: 'gmicloud',
         audioAdapterProvider: 'gmicloud',
         externalProvider: 'gmicloud',
         externalAudioRoute: null,

@@ -8,6 +8,8 @@ import {
   DOCKER_AUDIO_PROVIDER,
   DOCKER_SPEECH_PROVIDER_PRIORITY_BY_TTS_PROVIDER,
   getGenBlazeSpeechModelMapping,
+  resolveDockerMusicProvider,
+  resolveDockerSoundEffectProvider,
   resolveDockerSpeechProvider,
 } from './DockerProviderPriority.js';
 
@@ -22,6 +24,8 @@ const ENV_KEYS = [
   'ELEVENLABS_API_TOKEN',
   'FAL_API_KEY',
   'SAMSAR_API_KEY',
+  'GOOGLE_CLOUD_PROJECT',
+  'K_SERVICE',
 ];
 const originalEnv = Object.fromEntries(ENV_KEYS.map((key) => [key, process.env[key]]));
 
@@ -152,4 +156,24 @@ test('keeps a submitted GenBlaze speech request on GMICloud while pending', () =
     status: 'PENDING',
     audioAdapterProvider: 'genblaze',
   }), DOCKER_AUDIO_PROVIDER.GMICLOUD);
+});
+
+test('keeps every pending audio request on its submitted adapter', () => {
+  clearProviderCredentials();
+  process.env.OPENAI_API_KEY = 'new-openai-key';
+  process.env.GOOGLE_CLOUD_PROJECT = 'new-google-project';
+  process.env.K_SERVICE = 'attached-service-account';
+
+  assert.equal(resolveDockerSpeechProvider('OPENAI', {
+    status: 'PENDING',
+    submittedAdapter: 'fal',
+  }), DOCKER_AUDIO_PROVIDER.FAL);
+  assert.equal(resolveDockerMusicProvider('LYRIA3', {
+    status: 'PENDING',
+    submittedAdapter: 'samsar',
+  }), DOCKER_AUDIO_PROVIDER.SAMSAR);
+  assert.equal(resolveDockerSoundEffectProvider('SDAUDIO', {
+    status: 'PENDING',
+    submittedAdapter: 'fal',
+  }), DOCKER_AUDIO_PROVIDER.FAL);
 });

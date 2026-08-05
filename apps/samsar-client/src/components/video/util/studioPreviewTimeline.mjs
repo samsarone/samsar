@@ -29,9 +29,13 @@ export function getLayerDisplayFrameRanges(layers) {
       && rawOffset !== null
       && rawOffset !== ''
       && Number.isFinite(Number(rawOffset));
-    const startFrame = hasExplicitOffset
+    const configuredStartFrame = hasExplicitOffset
       ? secondsToDisplayFrames(rawOffset)
       : previousEndFrame;
+    // Layer insertions can briefly expose the new ordering before every
+    // durationOffset in the response has caught up. Keep the client timeline
+    // monotonic so the inserted scene still participates in layout immediately.
+    const startFrame = Math.max(previousEndFrame, configuredStartFrame);
     const durationFrames = Math.max(1, secondsToDisplayFrames(layer?.duration));
     const range = { startFrame, endFrame: startFrame + durationFrames };
     previousEndFrame = range.endFrame;
@@ -91,20 +95,20 @@ export function resolveTimelineDuration(layers, sessionDetails = {}) {
   }
 
   const sessionLayers = Array.isArray(layers) ? layers : [];
-  const summedDuration = sessionLayers.reduce(
-    (total, layer) => total + Math.max(0, Number(layer?.duration) || 0),
-    0
-  );
-  const hasTimelineOffsets = sessionLayers.some(
-    (layer, index) => index > 0 && Number(layer?.durationOffset) > 0
-  );
+  let previousEndTime = 0;
 
-  if (!hasTimelineOffsets) {
-    return summedDuration;
-  }
+  sessionLayers.forEach((layer) => {
+    const rawOffset = layer?.durationOffset;
+    const hasExplicitOffset = rawOffset !== undefined
+      && rawOffset !== null
+      && rawOffset !== ''
+      && Number.isFinite(Number(rawOffset));
+    const configuredStartTime = hasExplicitOffset
+      ? Math.max(0, Number(rawOffset))
+      : previousEndTime;
+    const startTime = Math.max(previousEndTime, configuredStartTime);
+    previousEndTime = startTime + Math.max(0, Number(layer?.duration) || 0);
+  });
 
-  return sessionLayers.reduce((latestEndTime, layer) => Math.max(
-    latestEndTime,
-    Math.max(0, Number(layer?.durationOffset) || 0) + Math.max(0, Number(layer?.duration) || 0)
-  ), 0);
+  return previousEndTime;
 }

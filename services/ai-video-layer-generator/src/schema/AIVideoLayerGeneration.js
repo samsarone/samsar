@@ -50,6 +50,8 @@ const aiVideoLayerGenerationSchema = new Schema({
   userId: String,
 
   generationId: String,
+  // Immutable adapter affinity for the currently submitted provider request.
+  submittedAdapter: String,
   customFalStatusUrl: String,
   customFalResponseUrl: String,
 

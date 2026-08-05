@@ -18,6 +18,9 @@ const ENV_KEYS = [
   'AWS_SECRET_ACCESS_KEY',
   'AWS_CDN_REGION',
   'AWS_REGION',
+  'CLOUDFRONT_SIGNED_URL_TTL_SECONDS',
+  'CLOUDFRONT_SIGNED_URL_REFRESH_INTERVAL_SECONDS',
+  'AWS_CLOUDFRONT_SIGNED_URL_REFRESH_INTERVAL_SECONDS',
 ];
 
 function snapshotEnvironment() {
@@ -145,5 +148,50 @@ test('Docker-local upload persists a stable mounted reference without S3 configu
       'user_resources/session/audio/generated.wav',
     ), 'utf8'),
     'wave-data',
+  );
+});
+
+test('CloudFront signing caps the refresh bucket below a short configured TTL', async (t) => {
+  const snapshot = snapshotEnvironment();
+  t.after(() => restoreEnvironment(snapshot));
+  clearEnvironment();
+  const { __testOnly__ } = await importAwsModule();
+  const ttlSeconds = 15 * 60;
+  const refreshIntervalSeconds = __testOnly__.resolveCloudFrontSignedUrlRefreshIntervalSeconds({
+    ttlSeconds,
+    configuredRefreshIntervalSeconds: Number.NaN,
+  });
+
+  assert.equal(refreshIntervalSeconds, ttlSeconds / 2);
+
+  const nowSeconds = (60 * 60) + ttlSeconds + 147;
+  const expiresAt = __testOnly__.getCloudFrontSignedUrlExpirationSeconds(nowSeconds, {
+    ttlSeconds,
+    refreshIntervalSeconds,
+  });
+
+  assert.ok(expiresAt > nowSeconds);
+  assert.ok(expiresAt - nowSeconds >= ttlSeconds / 2);
+});
+
+test('CloudFront signing retains shorter explicit and safe default refresh intervals', async (t) => {
+  const snapshot = snapshotEnvironment();
+  t.after(() => restoreEnvironment(snapshot));
+  clearEnvironment();
+  const { __testOnly__ } = await importAwsModule();
+
+  assert.equal(
+    __testOnly__.resolveCloudFrontSignedUrlRefreshIntervalSeconds({
+      ttlSeconds: 15 * 60,
+      configuredRefreshIntervalSeconds: 5 * 60,
+    }),
+    5 * 60,
+  );
+  assert.equal(
+    __testOnly__.resolveCloudFrontSignedUrlRefreshIntervalSeconds({
+      ttlSeconds: 7 * 24 * 60 * 60,
+      configuredRefreshIntervalSeconds: Number.NaN,
+    }),
+    60 * 60,
   );
 });

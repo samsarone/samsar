@@ -490,6 +490,7 @@ test('standalone image generation failures advance to the next configured adapte
       apiRequestId: '',
       apiSubmittedAt: '',
       externalProvider: '',
+      submittedAdapter: '',
     });
   } finally {
     for (const [key, value] of Object.entries(previous)) {
@@ -538,6 +539,7 @@ test('standalone low-score retries stay on one adapter and clear only the comple
       apiRequestId: '',
       apiSubmittedAt: '',
       externalProvider: '',
+      submittedAdapter: '',
     });
   } finally {
     for (const [key, value] of Object.entries(previous)) {
@@ -674,6 +676,36 @@ test('production image retries never enable standalone adapter rotation', () => 
   }
 });
 
+test('pending production image requests remain pinned to their submitted adapter', () => {
+  const previousEdition = process.env.SAMSAR_DEPLOYMENT_EDITION;
+  process.env.SAMSAR_DEPLOYMENT_EDITION = 'production';
+
+  try {
+    assert.equal(
+      __testOnly__.resolveImageProviderForModel('NANOBANANA2', {
+        apiGenerationStatus: 'PENDING',
+        apiRequestId: 'fal-request-id',
+        submittedAdapter: 'fal',
+        adapterProvider: 'gmicloud',
+        externalProvider: 'gmicloud',
+      }),
+      'fal',
+    );
+    assert.equal(
+      __testOnly__.resolveImageEditProviderForModel('NANOBANANAPROEDIT', {
+        apiEditStatus: 'PENDING',
+        apiRequestId: 'fal-edit-request-id',
+        submittedAdapter: 'fal',
+        externalProvider: 'gmicloud',
+      }),
+      'fal',
+    );
+  } finally {
+    if (previousEdition === undefined) delete process.env.SAMSAR_DEPLOYMENT_EDITION;
+    else process.env.SAMSAR_DEPLOYMENT_EDITION = previousEdition;
+  }
+});
+
 test('standalone Image List enhancement retries advance edit adapters and clear stale requests', () => {
   const previous = {
     CURRENT_ENV: process.env.CURRENT_ENV,
@@ -708,6 +740,7 @@ test('standalone Image List enhancement retries advance edit adapters and clear 
       apiRequestId: '',
       apiSubmittedAt: '',
       externalProvider: '',
+      submittedAdapter: '',
     });
     assert.equal(
       __testOnly__.getImageEditAdapterRetryState({

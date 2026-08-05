@@ -69,6 +69,8 @@ import {
   normalizeTimelineHints,
 } from '../../../../utils/sessionTimelineText.js';
 import { canRemoveStudioScene } from '../../util/studioSceneLifecycle.mjs';
+import { resolveTimelineDuration } from '../../util/studioPreviewTimeline.mjs';
+
 const MAX_VISIBLE_LAYERS = 10;
 const MIN_LAYER_HEIGHT = 20; // in pixels
 const VISUAL_TRACK_DISPLAY_FRAMES_PER_SECOND = 30;
@@ -1097,17 +1099,10 @@ export default function FrameToolbar(props) {
       ? 'bg-slate-50 border-slate-300/80'
       : 'bg-[#0e1728] border-[#324157]/85';
 
-  const totalDuration = useMemo(() => {
-    if (!Array.isArray(layers) || layers.length === 0) {
-      return 0;
-    }
-
-    return layers.reduce((maximumEndTime, layer) => {
-      const layerStart = Math.max(0, Number(layer?.durationOffset) || 0);
-      const layerDuration = Math.max(0, Number(layer?.duration) || 0);
-      return Math.max(maximumEndTime, layerStart + layerDuration);
-    }, 0);
-  }, [layers]);
+  const totalDuration = useMemo(
+    () => resolveTimelineDuration(layers),
+    [layers]
+  );
   const canRemoveScene = canRemoveStudioScene(layers);
   const [highlightBoundaries, setHighlightBoundaries] = useState({ start: 0, height: 0 });
   const totalDurationInFrames = Math.max(0, secondsToDisplayFrames(totalDuration));

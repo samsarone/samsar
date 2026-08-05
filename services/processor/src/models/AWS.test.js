@@ -114,3 +114,39 @@ test('Backblaze-compatible storage disables unsupported S3 object tagging explic
     assert.equal(__testOnly__.shouldUseS3ObjectTagging(), true);
   });
 });
+
+test('CloudFront signing caps the refresh bucket below a short configured TTL', () => {
+  const ttlSeconds = 15 * 60;
+  const refreshIntervalSeconds = __testOnly__.resolveCloudFrontSignedUrlRefreshIntervalSeconds({
+    ttlSeconds,
+    configuredRefreshIntervalSeconds: Number.NaN,
+  });
+
+  assert.equal(refreshIntervalSeconds, ttlSeconds / 2);
+
+  const nowSeconds = (60 * 60) + ttlSeconds + 147;
+  const expiresAt = __testOnly__.getCloudFrontSignedUrlExpirationSeconds(nowSeconds, {
+    ttlSeconds,
+    refreshIntervalSeconds,
+  });
+
+  assert.ok(expiresAt > nowSeconds);
+  assert.ok(expiresAt - nowSeconds >= ttlSeconds / 2);
+});
+
+test('CloudFront signing retains shorter explicit and safe default refresh intervals', () => {
+  assert.equal(
+    __testOnly__.resolveCloudFrontSignedUrlRefreshIntervalSeconds({
+      ttlSeconds: 15 * 60,
+      configuredRefreshIntervalSeconds: 5 * 60,
+    }),
+    5 * 60,
+  );
+  assert.equal(
+    __testOnly__.resolveCloudFrontSignedUrlRefreshIntervalSeconds({
+      ttlSeconds: 7 * 24 * 60 * 60,
+      configuredRefreshIntervalSeconds: Number.NaN,
+    }),
+    60 * 60,
+  );
+});

@@ -10,6 +10,7 @@ export const DOCKER_AUDIO_PROVIDER = Object.freeze({
   REPLICATE: 'replicate',
   SAMSAR: 'samsar',
   GMICLOUD: 'gmicloud',
+  CUSTOM: 'custom',
 });
 
 export const GENBLAZE_SPEECH_MODEL_BY_TTS_PROVIDER = Object.freeze({
@@ -91,6 +92,25 @@ function normalizeString(value) {
 
 function normalizeKey(value) {
   return normalizeString(value).toUpperCase();
+}
+
+export function normalizeAudioAdapter(value) {
+  const normalized = normalizeString(value).toLowerCase().replace(/[^a-z0-9]/g, '');
+  if (['google', 'googlecloud', 'gcp', 'vertex', 'vertexai'].includes(normalized)) {
+    return DOCKER_AUDIO_PROVIDER.GOOGLE_CLOUD;
+  }
+  if (['gmi', 'gmicloud', 'genblaze'].includes(normalized)) {
+    return DOCKER_AUDIO_PROVIDER.GMICLOUD;
+  }
+  if (['elevenlabs', 'elevenlabsnative', 'nativeelevenlabs'].includes(normalized)) {
+    return DOCKER_AUDIO_PROVIDER.ELEVENLABS;
+  }
+  if (['custom', 'customadapter'].includes(normalized)) {
+    return DOCKER_AUDIO_PROVIDER.CUSTOM;
+  }
+  return Object.values(DOCKER_AUDIO_PROVIDER).find((provider) => (
+    provider.toLowerCase().replace(/[^a-z0-9]/g, '') === normalized
+  )) || '';
 }
 
 function isTruthyEnv(value) {
@@ -222,6 +242,12 @@ function isPendingGenBlazeSpeechRequest(payload = {}) {
 }
 
 function resolvePriority(priority, payload = {}, options = {}) {
+  const status = normalizeKey(payload?.status || 'INIT');
+  const submittedAdapter = normalizeAudioAdapter(payload?.submittedAdapter);
+  if (status === 'PENDING' && submittedAdapter) {
+    return submittedAdapter;
+  }
+
   if (isPendingGenBlazeSpeechRequest(payload)) {
     return DOCKER_AUDIO_PROVIDER.GMICLOUD;
   }
@@ -230,7 +256,7 @@ function resolvePriority(priority, payload = {}, options = {}) {
     return hasSamsarCredential() ? DOCKER_AUDIO_PROVIDER.SAMSAR : '';
   }
 
-  if (normalizeKey(payload?.status || 'INIT') !== 'INIT') {
+  if (status !== 'INIT') {
     return '';
   }
 

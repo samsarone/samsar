@@ -27,6 +27,8 @@ const imageGenerationSchema = new Schema({
   apiGenerationStatus: {type: String, default: "INIT"},
   apiRequestId: String,
   apiSubmittedAt: Date,
+  // Immutable adapter affinity for the currently submitted provider request.
+  submittedAdapter: String,
   adapterProvider: String,
   adapterProviderOverride: String,
   externalProvider: String,

@@ -40,6 +40,8 @@ const audioGenerationSchema = new Schema({
   isBackingTrack: { type: Boolean, default: false },
 
   apiRequestId: String,
+  // Immutable adapter affinity for the currently submitted provider request.
+  submittedAdapter: String,
 
   requestTimeoutUntil: Date,
   

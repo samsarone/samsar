@@ -102,6 +102,7 @@ test('submits once and persists a provider-sticky pending request', async () => 
       generationId: 'sealed-job-token',
       genblazeRequestId: 'sealed-job-token',
       genblazeModel: 'ELEVENLABS',
+      submittedAdapter: 'gmicloud',
       audioAdapterProvider: 'gmicloud',
       externalProvider: 'gmicloud',
       externalAudioRoute: null,

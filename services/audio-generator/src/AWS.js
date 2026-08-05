@@ -31,10 +31,27 @@ const configuredCloudFrontSignedUrlRefreshIntervalSeconds = Number(
   process.env.CLOUDFRONT_SIGNED_URL_REFRESH_INTERVAL_SECONDS ||
   process.env.AWS_CLOUDFRONT_SIGNED_URL_REFRESH_INTERVAL_SECONDS
 );
-const CLOUDFRONT_SIGNED_URL_REFRESH_INTERVAL_SECONDS = Number.isFinite(configuredCloudFrontSignedUrlRefreshIntervalSeconds) &&
-  configuredCloudFrontSignedUrlRefreshIntervalSeconds > 0
-  ? configuredCloudFrontSignedUrlRefreshIntervalSeconds
-  : DEFAULT_CLOUDFRONT_SIGNED_URL_REFRESH_INTERVAL_SECONDS;
+
+function resolveCloudFrontSignedUrlRefreshIntervalSeconds({
+  ttlSeconds,
+  configuredRefreshIntervalSeconds,
+} = {}) {
+  const requestedRefreshIntervalSeconds = Number.isFinite(configuredRefreshIntervalSeconds) &&
+    configuredRefreshIntervalSeconds > 0
+    ? configuredRefreshIntervalSeconds
+    : DEFAULT_CLOUDFRONT_SIGNED_URL_REFRESH_INTERVAL_SECONDS;
+  // Bucketed signatures keep delivery URLs stable, but the bucket must be
+  // shorter than the URL lifetime. Capping it at half the TTL guarantees that
+  // every generated URL has at least half of its configured lifetime left.
+  const maximumSafeRefreshIntervalSeconds = Math.max(1, Math.floor(ttlSeconds / 2));
+  return Math.min(requestedRefreshIntervalSeconds, maximumSafeRefreshIntervalSeconds);
+}
+
+const CLOUDFRONT_SIGNED_URL_REFRESH_INTERVAL_SECONDS =
+  resolveCloudFrontSignedUrlRefreshIntervalSeconds({
+    ttlSeconds: CLOUDFRONT_SIGNED_URL_TTL_SECONDS,
+    configuredRefreshIntervalSeconds: configuredCloudFrontSignedUrlRefreshIntervalSeconds,
+  });
 
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 let cachedCloudFrontPrivateKey;
@@ -95,9 +112,7 @@ function signCloudFrontUrl(url) {
   }
 
   const nowSeconds = Math.floor(Date.now() / 1000);
-  const issuedAt = Math.floor(nowSeconds / CLOUDFRONT_SIGNED_URL_REFRESH_INTERVAL_SECONDS) *
-    CLOUDFRONT_SIGNED_URL_REFRESH_INTERVAL_SECONDS;
-  const expiresAt = issuedAt + CLOUDFRONT_SIGNED_URL_TTL_SECONDS;
+  const expiresAt = getCloudFrontSignedUrlExpirationSeconds(nowSeconds);
   const policy = JSON.stringify({
     Statement: [{
       Resource: url,
@@ -114,6 +129,14 @@ function signCloudFrontUrl(url) {
   const separator = url.includes('?') ? '&' : '?';
 
   return `${url}${separator}Expires=${expiresAt}&Signature=${toCloudFrontSafeBase64(signature)}&Key-Pair-Id=${encodeURIComponent(signingConfig.keyPairId)}`;
+}
+
+function getCloudFrontSignedUrlExpirationSeconds(nowSeconds, {
+  ttlSeconds = CLOUDFRONT_SIGNED_URL_TTL_SECONDS,
+  refreshIntervalSeconds = CLOUDFRONT_SIGNED_URL_REFRESH_INTERVAL_SECONDS,
+} = {}) {
+  const issuedAt = Math.floor(nowSeconds / refreshIntervalSeconds) * refreshIntervalSeconds;
+  return issuedAt + ttlSeconds;
 }
 
 function normalizeObjectKey(key) {
@@ -658,3 +681,8 @@ export async function generateS3UrlsFromLocalFile(sessionId, filePath) {
     throw new Error('Failed to upload file to CDN');
   }
 }
+
+export const __testOnly__ = {
+  getCloudFrontSignedUrlExpirationSeconds,
+  resolveCloudFrontSignedUrlRefreshIntervalSeconds,
+};

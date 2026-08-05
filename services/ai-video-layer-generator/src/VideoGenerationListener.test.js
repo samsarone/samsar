@@ -21,6 +21,8 @@ import {
   isTransientProviderError,
   isSafeProviderSubmissionRetry,
   isGmiCloudVideoRequest,
+  isSubmittedVideoAdapterCompatible,
+  resolveSubmittedVideoAdapter,
   resolveCompletedLayerDuration,
   resolveConnectedAudioLayerDuration,
   selectAiVideoDispatchRequests,
@@ -72,6 +74,33 @@ test('GMICloud video dispatch permits a second request without blocking other ad
     }).map(({ id }) => id),
     ['second-gmicloud', 'fal-one', 'fal-two'],
   );
+});
+
+test('pending AI video requests remain pinned to their submitted adapter', () => {
+  assert.equal(resolveSubmittedVideoAdapter({
+    model: 'SEEDANCE2.0I2V',
+    status: 'PENDING',
+    generationId: 'fal-request-id',
+    submittedAdapter: 'fal',
+    dockerVideoProvider: 'gmicloud',
+    externalProvider: 'gmicloud',
+  }), 'fal');
+
+  assert.equal(resolveSubmittedVideoAdapter({
+    model: 'SEEDANCE2.0I2V',
+    status: 'PENDING',
+    generationId: 'genblaze-video:gmi-request-id',
+    submittedAdapter: 'gmicloud',
+    dockerVideoProvider: 'fal',
+  }), 'gmicloud');
+});
+
+test('AI video polling rejects adapter and model mismatches', () => {
+  assert.equal(isSubmittedVideoAdapterCompatible('SEEDANCE2.0I2V', 'fal'), true);
+  assert.equal(isSubmittedVideoAdapterCompatible('SEEDANCE2.0I2V', 'gmicloud'), true);
+  assert.equal(isSubmittedVideoAdapterCompatible('SEEDANCE2.0I2V', 'googleCloud'), false);
+  assert.equal(isSubmittedVideoAdapterCompatible('HAPPYHORSEI2V', 'alibabaCloud'), true);
+  assert.equal(isSubmittedVideoAdapterCompatible('WANI2V', 'alibabaCloud'), false);
 });
 
 test('GMICloud video dispatch consumes both default provider slots', () => {

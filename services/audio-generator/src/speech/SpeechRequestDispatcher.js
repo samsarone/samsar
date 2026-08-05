@@ -1,4 +1,5 @@
 import { getDBConnectionString } from "../DBString.js";
+import AudioGeneration from '../schema/AudioGeneration.js';
 import { processOpenAISpeechRequest } from './OpenAI.js';
 import { processOpenAITTSSpeechRequest } from './OpenAITTS.js';
 import { processPlayAISpeechRequest } from './PlayAI.js';
@@ -162,6 +163,23 @@ export async function dispatchSpeechRequest(speechRequest) {
   const normalizedTtsProvider = normalizeTTSProvider(ttsProvider, speechRequest?.speaker);
   const normalizedSpeechRequest = normalizeSpeechRequestPayload(speechRequest, normalizedTtsProvider);
   const provider = resolveSpeechProvider(normalizedTtsProvider, normalizedSpeechRequest);
+  const submittedAdapter = provider || (
+    normalizedTtsProvider === 'CUSTOM_TEXT_TO_SPEECH'
+      ? DOCKER_AUDIO_PROVIDER.CUSTOM
+      : ''
+  );
+
+  if (
+    normalizeString(normalizedSpeechRequest?.status || 'INIT').toUpperCase() === 'INIT' &&
+    submittedAdapter &&
+    normalizedSpeechRequest?._id
+  ) {
+    normalizedSpeechRequest.submittedAdapter = submittedAdapter;
+    await AudioGeneration.findByIdAndUpdate(
+      normalizedSpeechRequest._id,
+      { submittedAdapter },
+    );
+  }
 
   await recordSpeechProviderUsage(normalizedSpeechRequest, normalizedTtsProvider);
 
