@@ -2,6 +2,9 @@ import fs from 'fs';
 
 import { isStandaloneEdition } from '../util/environmentUtils.js';
 
+const DEFAULT_MODEL_ADAPTER_PREFERENCES_PATH =
+  '/persistent/config/model-adapter-preferences.json';
+
 export const DOCKER_AUDIO_PROVIDER = Object.freeze({
   GOOGLE_CLOUD: 'googleCloud',
   OPENAI: 'openai',
@@ -92,6 +95,55 @@ function normalizeString(value) {
 
 function normalizeKey(value) {
   return normalizeString(value).toUpperCase();
+}
+
+function uniqueAudioAdapters(value) {
+  const adapters = Array.isArray(value) ? value : [];
+  return [...new Set(adapters.map(normalizeAudioAdapter).filter(Boolean))];
+}
+
+function readSavedAudioAdapterPriority(modelKeys = []) {
+  if (!isStandaloneEdition()) {
+    return [];
+  }
+
+  const filePath = normalizeString(process.env.SAMSAR_MODEL_ADAPTER_PREFERENCES_PATH) ||
+    DEFAULT_MODEL_ADAPTER_PREFERENCES_PATH;
+  if (!fs.existsSync(filePath)) {
+    return [];
+  }
+
+  try {
+    const parsed = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+    const priorityMap = parsed?.modelProviderPriority || parsed?.model_provider_priority;
+    if (!priorityMap || typeof priorityMap !== 'object' || Array.isArray(priorityMap)) {
+      return [];
+    }
+    const normalizedModelKeys = new Set(modelKeys.map(normalizeKey).filter(Boolean));
+    const matchingEntry = Object.entries(priorityMap).find(
+      ([modelKey]) => normalizedModelKeys.has(normalizeKey(modelKey)),
+    );
+    return uniqueAudioAdapters(matchingEntry?.[1]);
+  } catch {
+    return [];
+  }
+}
+
+function applySavedAudioAdapterPriority(defaultPriority, modelKeys = []) {
+  if (!isStandaloneEdition()) {
+    return defaultPriority;
+  }
+  const normalizedDefault = uniqueAudioAdapters(defaultPriority);
+  const compatibleAdapters = new Set(normalizedDefault);
+  const savedPriority = readSavedAudioAdapterPriority(modelKeys)
+    .filter((adapter) => compatibleAdapters.has(adapter));
+  if (savedPriority.length === 0) {
+    return defaultPriority;
+  }
+  return [
+    ...savedPriority,
+    ...normalizedDefault.filter((adapter) => !savedPriority.includes(adapter)),
+  ];
 }
 
 export function normalizeAudioAdapter(value) {
@@ -284,17 +336,29 @@ function resolvePriority(priority, payload = {}, options = {}) {
 }
 
 export function resolveDockerSpeechProvider(ttsProvider, payload = {}) {
-  const priority = DOCKER_SPEECH_PROVIDER_PRIORITY_BY_TTS_PROVIDER[normalizeKey(ttsProvider)];
+  const normalizedTtsProvider = normalizeKey(ttsProvider);
+  const priority = applySavedAudioAdapterPriority(
+    DOCKER_SPEECH_PROVIDER_PRIORITY_BY_TTS_PROVIDER[normalizedTtsProvider],
+    [payload?.model, normalizedTtsProvider, getGenBlazeSpeechLogicalModel(normalizedTtsProvider)],
+  );
   return resolvePriority(priority, payload, { ttsProvider });
 }
 
 export function resolveDockerMusicProvider(model, payload = {}) {
-  const priority = DOCKER_MUSIC_PROVIDER_PRIORITY_BY_MODEL[normalizeKey(model)];
+  const normalizedModel = normalizeKey(model);
+  const priority = applySavedAudioAdapterPriority(
+    DOCKER_MUSIC_PROVIDER_PRIORITY_BY_MODEL[normalizedModel],
+    [normalizedModel],
+  );
   return resolvePriority(priority, payload);
 }
 
 export function resolveDockerSoundEffectProvider(model, payload = {}) {
-  const priority = DOCKER_SOUND_EFFECT_PROVIDER_PRIORITY_BY_MODEL[normalizeKey(model)];
+  const normalizedModel = normalizeKey(model);
+  const priority = applySavedAudioAdapterPriority(
+    DOCKER_SOUND_EFFECT_PROVIDER_PRIORITY_BY_MODEL[normalizedModel],
+    [normalizedModel],
+  );
   return resolvePriority(priority, payload);
 }
 

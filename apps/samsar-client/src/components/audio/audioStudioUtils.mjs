@@ -24,16 +24,21 @@ export function normalizeAudioLibraryType(value) {
 
 export function resolveAudioStudioPath(item = {}) {
   const candidates = [
-    item.playbackUrl,
-    item.url,
-    item.sourceUrl,
-    item.selectedLocalAudioLink,
-    ...(Array.isArray(item.localAudioLinks) ? item.localAudioLinks : []),
     item.selectedRemoteAudioLink,
     ...(Array.isArray(item.remoteAudioLinks) ? item.remoteAudioLinks : []),
     ...(Array.isArray(item.remoteAudioData)
-      ? item.remoteAudioData.map((audioData) => audioData?.audio_url)
+      ? item.remoteAudioData.map((audioData) => (
+          audioData?.audio_url || audioData?.audioUrl || audioData?.url
+        ))
       : []),
+    item.remoteAudioUrl,
+    item.remoteUrl,
+    item.remote_url,
+    item.playbackUrl,
+    item.sourceUrl,
+    item.url,
+    item.selectedLocalAudioLink,
+    ...(Array.isArray(item.localAudioLinks) ? item.localAudioLinks : []),
   ];
   return candidates.find((candidate) => typeof candidate === 'string' && candidate.trim())?.trim() || '';
 }
@@ -48,16 +53,21 @@ function resolveAudioStudioPathUrl(audioPath, apiServer) {
 
 export function resolveAudioStudioUrls(item = {}, apiServer) {
   const candidates = [
-    item.playbackUrl,
-    item.url,
-    item.sourceUrl,
-    item.selectedLocalAudioLink,
-    ...(Array.isArray(item.localAudioLinks) ? item.localAudioLinks : []),
     item.selectedRemoteAudioLink,
     ...(Array.isArray(item.remoteAudioLinks) ? item.remoteAudioLinks : []),
     ...(Array.isArray(item.remoteAudioData)
-      ? item.remoteAudioData.map((audioData) => audioData?.audio_url)
+      ? item.remoteAudioData.map((audioData) => (
+          audioData?.audio_url || audioData?.audioUrl || audioData?.url
+        ))
       : []),
+    item.remoteAudioUrl,
+    item.remoteUrl,
+    item.remote_url,
+    item.playbackUrl,
+    item.sourceUrl,
+    item.url,
+    item.selectedLocalAudioLink,
+    ...(Array.isArray(item.localAudioLinks) ? item.localAudioLinks : []),
   ];
   return Array.from(new Set(
     candidates

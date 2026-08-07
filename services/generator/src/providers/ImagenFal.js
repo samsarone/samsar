@@ -78,6 +78,7 @@ export async function submitImagenRequest(payload) {
     }, {
       generationStatus: "FAILED",
       apiGenerationStatus: "FAILED",
+      submissionOutcomeUnknown: true,
       rowLocked: false
     });
     return {
@@ -117,14 +118,10 @@ export async function pollImagenRequest(payload) {
     await ImageGeneration.findOneAndUpdate({
       _id: _id
     }, {
-      generationStatus: "FAILED",
-      apiGenerationStatus: "FAILED",
       rowLocked: false
     });
 
-    return {
-      image: null,
-    };
+    return null;
   }
 
   const responseStatus = responseStatusData.status;
@@ -162,14 +159,10 @@ export async function pollImagenRequest(payload) {
       await ImageGeneration.findOneAndUpdate({
         _id: _id
       }, {
-        generationStatus: "FAILED",
-        apiGenerationStatus: "FAILED",
         rowLocked: false
       });
 
-      return {
-        image: null,
-      };
+      return null;
     }
 
 
@@ -201,7 +194,4 @@ function getImageSizeForAspectRation(aspectRatio) {
     return '9:16';
   }
 }
-
-
-
 

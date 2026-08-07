@@ -114,7 +114,11 @@ test('returns Fal provider failures to the shared retry pipeline without termina
     logger: { error: () => {} },
   });
 
-  assert.deepEqual(result, { image: null, error: 'Prompt rejected by provider.' });
+  assert.deepEqual(result, {
+    image: null,
+    error: 'Prompt rejected by provider.',
+    definitiveAdapterFailure: true,
+  });
   assert.deepEqual(updates.at(-1), {
     method: 'findOneAndUpdate',
     args: [{ _id: 'generation-3' }, { rowLocked: true }],
@@ -123,4 +127,28 @@ test('returns Fal provider failures to the shared retry pipeline without termina
     assert.equal(Object.hasOwn(update.args[1], 'generationStatus'), false);
     assert.equal(Object.hasOwn(update.args[1], 'apiGenerationStatus'), false);
   }
+});
+
+test('keeps a rate-limited poll pinned to the existing Fal request', async () => {
+  const updates = [];
+  const result = await pollFalGPTImageTwoRequest({
+    _id: 'generation-4',
+    apiRequestId: 'fal-request-4',
+    model: 'GPTIMAGE2',
+  }, {
+    connect: async () => {},
+    imageGenerationModel: createImageGenerationModel(updates),
+    queueStatus: async () => {
+      const error = new Error('rate limited while polling');
+      error.status = 429;
+      throw error;
+    },
+    logger: { error: () => {} },
+  });
+
+  assert.equal(result, null);
+  assert.deepEqual(updates.at(-1), {
+    method: 'findOneAndUpdate',
+    args: [{ _id: 'generation-4' }, { rowLocked: false }],
+  });
 });

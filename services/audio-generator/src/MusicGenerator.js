@@ -13,6 +13,7 @@ import { markAudioGenerationAsFailed } from './music/audioUtils.js';
 import path from 'path';
 import { installStructuredLogger } from './utils/StructuredLogger.js';
 import { resolveCpuUpperBound } from './utils/CpuResources.js';
+import { isSubmissionOutcomeUnknownError } from './utils/ProviderSubmissionSafety.js';
 
 installStructuredLogger({
   serviceName: process.env.SERVICE_NAME || 'samsar_audio_generator',
@@ -57,7 +58,7 @@ async function checkForPendingRequestsAndGenerate() {
 
   const pendingAudioGenerationRequests = await AudioGeneration.find({
     rowLocked: false,
-    
+    status: { $in: ['INIT', 'PENDING'] },
   }).limit(MAX_CONCURRENT_REQUESTS);
 
   const lockedRequests = await Promise.all(
@@ -108,10 +109,29 @@ async function checkForPendingRequestsAndGenerate() {
         }
       } catch (error) {
         console.error(`Error processing request ${audioGenerationRequest._id}:`, error);
+        if (
+          audioGenerationRequest.status === 'PENDING' &&
+          (audioGenerationRequest.apiRequestId || audioGenerationRequest.generationId)
+        ) {
+          // A polling/download failure does not invalidate the submitted job.
+          // Keep its adapter and request id so the next pass polls the same job.
+          await AudioGeneration.findByIdAndUpdate(audioGenerationRequest._id, {
+            rowLocked: false,
+            error: error?.message || 'Audio provider polling failed.',
+          });
+          return;
+        }
         await markAudioGenerationAsFailed(
           audioGenerationRequest._id,
           error?.message || 'Audio generation worker failed.'
         );
+        if (isSubmissionOutcomeUnknownError(error)) {
+          await AudioGeneration.findByIdAndUpdate(audioGenerationRequest._id, {
+            submissionOutcomeUnknown: true,
+            rowLocked: false,
+          });
+          return;
+        }
         await AudioGeneration.deleteOne({ _id: audioGenerationRequest._id });
       }
     }));

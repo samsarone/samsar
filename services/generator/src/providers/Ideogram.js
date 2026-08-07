@@ -88,6 +88,7 @@ export async function submitIdeogramRequest(payload) {
     }, {
       generationStatus: "FAILED",
       apiGenerationStatus: "FAILED",
+      submissionOutcomeUnknown: true,
       rowLocked: false
     });
 
@@ -130,13 +131,9 @@ export async function pollIdeogramRequest(payload) {
     await ImageGeneration.findOneAndUpdate({
       _id: _id
     }, {
-      generationStatus: "FAILED",
-      apiGenerationStatus: "FAILED",
       rowLocked: false
     });
-    return {
-      image: null,
-    };
+    return null;
   }
 
   const responseStatus = responseStatusData.status;
@@ -172,13 +169,9 @@ export async function pollIdeogramRequest(payload) {
       await ImageGeneration.findOneAndUpdate({
         _id: _id
       }, {
-        generationStatus: "FAILED",
-        apiGenerationStatus: "FAILED",
         rowLocked: false,
       });
-      return {
-        image: null,
-      };
+      return null;
     }
 
 
@@ -219,4 +212,3 @@ async function checkIfBlackImage(buffer) {
     throw error;
   }
 }
-

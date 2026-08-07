@@ -16,6 +16,7 @@ import { finalizeStandaloneExternalAudioGeneration } from './StandaloneExternalA
 import { buildMusicInputPayload } from './SamsarExternalAudioPayloads.js';
 import { isStandaloneEdition } from '../util/environmentUtils.js';
 import { AUDIO_FFPROBE_THREAD_OPTIONS } from '../utils/FfmpegResources.js';
+import { createSubmissionOutcomeUnknownError } from '../utils/ProviderSubmissionSafety.js';
 
 const DEFAULT_SAMSAR_API_BASE_URL = 'https://api.samsar.one/v1';
 const DEFAULT_EXTERNAL_AUDIO_TIMEOUT_MS = 15 * 60 * 1000;
@@ -573,7 +574,14 @@ export async function processSamsarExternalSpeechRequest(payload) {
     }
   } catch (error) {
     console.error('Error in processSamsarExternalSpeechRequest:', error);
-    await retryOrFailAudioGeneration(payload, error?.message || 'Samsar external speech request failed.');
+    if (payload.status === 'PENDING' && (payload.apiRequestId || payload.generationId)) {
+      await AudioGeneration.findByIdAndUpdate(payload._id, {
+        rowLocked: false,
+        externalAudioError: error?.message || 'Samsar external speech polling failed.',
+      });
+      return;
+    }
+    throw createSubmissionOutcomeUnknownError(error, 'Samsar external speech submission');
   }
 }
 
@@ -647,7 +655,14 @@ export async function dispatchAndProcessSamsarExternalMusicRequest(payload) {
     }
   } catch (error) {
     console.error('Error in dispatchAndProcessSamsarExternalMusicRequest:', error);
-    await retryOrFailAudioGeneration(payload, error?.message || 'Samsar external music request failed.');
+    if (payload.status === 'PENDING' && (payload.apiRequestId || payload.generationId)) {
+      await AudioGeneration.findByIdAndUpdate(payload._id, {
+        rowLocked: false,
+        externalAudioError: error?.message || 'Samsar external music polling failed.',
+      });
+      return;
+    }
+    throw createSubmissionOutcomeUnknownError(error, 'Samsar external music submission');
   }
 }
 
@@ -714,6 +729,13 @@ export async function processSamsarExternalSoundEffectRequest(payload) {
     }
   } catch (error) {
     console.error('Error in processSamsarExternalSoundEffectRequest:', error);
-    await retryOrFailAudioGeneration(payload, error?.message || 'Samsar external sound effect request failed.');
+    if (payload.status === 'PENDING' && (payload.apiRequestId || payload.generationId)) {
+      await AudioGeneration.findByIdAndUpdate(payload._id, {
+        rowLocked: false,
+        externalAudioError: error?.message || 'Samsar external sound-effect polling failed.',
+      });
+      return;
+    }
+    throw createSubmissionOutcomeUnknownError(error, 'Samsar external sound-effect submission');
   }
 }

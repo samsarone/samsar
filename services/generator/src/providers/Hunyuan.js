@@ -81,6 +81,7 @@ export async function submitHunyuanRequest(payload) {
     }, {
       generationStatus: "FAILED",
       apiGenerationStatus: "FAILED",
+      submissionOutcomeUnknown: true,
       rowLocked: false
     });
 
@@ -112,12 +113,10 @@ export async function pollHunyuanRequest(payload) {
     await ImageGeneration.findOneAndUpdate({
       _id: _id
     }, {
-      generationStatus: "FAILED",
-      apiGenerationStatus: "FAILED",
       rowLocked: false
     });
 
-    return { image: null };
+    return null;
   }
 
   const responseStatus = responseStatusData.status;
@@ -147,12 +146,10 @@ export async function pollHunyuanRequest(payload) {
       await ImageGeneration.findOneAndUpdate({
         _id: _id
       }, {
-        generationStatus: "FAILED",
-        apiGenerationStatus: "FAILED",
         rowLocked: false
       });
 
-      return { image: null, error: "Image retrieval failed" };
+      return null;
 
     }
 

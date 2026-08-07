@@ -219,36 +219,21 @@ export function isRetryableInferenceAdapterError(error) {
   if (status !== null) {
     return status === 401 ||
       status === 403 ||
-      status === 408 ||
-      status === 409 ||
       status === 425 ||
-      status === 429 ||
-      status >= 500;
+      status === 429;
   }
   const retryableCodes = [
     'EAI_AGAIN',
-    'ECONNABORTED',
     'ECONNREFUSED',
-    'ECONNRESET',
     'EHOSTUNREACH',
     'ENETUNREACH',
     'ENOTFOUND',
-    'ETIMEDOUT',
     'UND_ERR_CONNECT_TIMEOUT',
-    'UND_ERR_HEADERS_TIMEOUT',
-    'UND_ERR_SOCKET',
   ];
   if (codes.some((code) => retryableCodes.includes(code))) {
     return true;
   }
-  if (names.some((name) =>
-    ['APICONNECTIONERROR', 'APICONNECTIONTIMEOUTERROR'].includes(name)
-  )) {
-    return true;
-  }
-  return message.includes('fetch failed') ||
-    message.includes('network error') ||
-    message.includes('socket hang up');
+  return false;
 }
 
 export async function runInferenceAdapterFallback(

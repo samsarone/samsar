@@ -15,6 +15,10 @@ test('FAL Seedance adapter selects the exact endpoint for each supported I2V mod
     getSeedanceImageToVideoLink('SEEDANCE2.0I2V'),
     'bytedance/seedance-2.0/image-to-video',
   );
+  assert.equal(
+    getSeedanceImageToVideoLink('SEEDANCE2.5I2V'),
+    'bytedance/seedance-2.5/image-to-video',
+  );
 });
 
 test('FAL Seedance adapter rejects unknown model keys', () => {
@@ -59,4 +63,34 @@ test('FAL Seedance 2.0 enables audio for sound-effect generation', () => {
 
   assert.equal(input.generate_audio, true);
   assert.equal(input.resolution, '720p');
+});
+
+test('FAL Seedance 2.5 uses five-second duration units, 720p, and sound-effect audio', () => {
+  assert.deepEqual(
+    buildSeedanceInputPayload({
+      model: 'SEEDANCE2.5I2V',
+      prompt: 'Animate the frame with synchronized ambience.',
+      startImage: 'https://media.example/start.png',
+      duration: 30,
+      generationType: 'sound_effect',
+    }),
+    {
+      prompt: 'Animate the frame with synchronized ambience.',
+      image_url: 'https://media.example/start.png',
+      duration: 30,
+      generate_audio: true,
+      end_user_id: undefined,
+      resolution: '720p',
+    },
+  );
+
+  assert.equal(
+    buildSeedanceInputPayload({
+      model: 'SEEDANCE2.5I2V',
+      prompt: 'Animate the frame.',
+      startImage: 'https://media.example/start.png',
+      duration: 7,
+    }).duration,
+    5,
+  );
 });

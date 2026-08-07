@@ -19,6 +19,7 @@ import {
   finalizeStandaloneExternalAudioGeneration,
 } from '../external/StandaloneExternalAudio.js';
 import { AUDIO_FFPROBE_THREAD_OPTIONS } from '../utils/FfmpegResources.js';
+import { markAudioGenerationAsFailed } from '../music/audioUtils.js';
 
 ffmpeg.setFfprobePath('/usr/bin/ffprobe'); // Use system-installed ffprobe
 
@@ -149,70 +150,16 @@ export async function processOpenAITTSSpeechRequest(payload) {
       await fs.promises.writeFile(audioSaveFilePath, buffer);
 
     } catch (error) {
-
-      const audioGenerationRecord = await AudioGeneration.findOne({ _id });
-      if (!audioGenerationRecord) return;          // nothing to retry
-
-      if ((audioGenerationRecord.numRetries ?? 0) < 3) {
-        let updatedPrompt = audioGenerationRecord.prompt;
-        if (!updatedPrompt || updatedPrompt.trim().length === 0) {
-          updatedPrompt = " ";
-        } else {
-          try {
-
-            console.error("Attempting to fix prompt for retry:", updatedPrompt);
-            
-            updatedPrompt = await updateSpeechPrompt(updatedPrompt, {
-              request: audioGenerationRecord,
-            });
-          } catch (e) {
-            console.error('Prompt fixer failed, retrying with original prompt');
-          }
-        }
-
-        await AudioGeneration.updateOne(
-          { _id },
-          {
-            $inc: { numRetries: 1 },
-            $set: {
-              rowLocked: false,
-              prompt: updatedPrompt,
-              requestTimeoutUntil: new Date(Date.now() + 5000),
-              generationStatus: 'PENDING'
-            }
-          }
-        );
-
-        // Mark this audioLayer as 'INIT' again so it will be re-attempted
-        await VideoSession.findOneAndUpdate(
-          { _id: payload.sessionId, "audioLayers._id": payload.audioLayerId },
-          {
-            $set: {
-              "audioLayers.$.generationStatus": "INIT",
-              "audioLayers.$.prompt": updatedPrompt
-            }
-          },
-          { new: true }
-        );
-
-      } else {
-        console.error('Max retries reached. Giving up.');
-        await VideoSession.updateOne(
-          { _id: sessionId, "audioLayers._id": audioLayerId },
-          { $set: { "audioLayers.$.generationStatus": "FAILED", "audioLayers.$.errorMessage": error.message || 'Unknown error' } }
-        );
-
-        if (await failStandaloneExternalAudioGeneration(
-          audioGenerationRecord,
-          error.message || 'OpenAI TTS request failed.',
-          { deleteAudioGeneration: true }
-        )) {
-          return;
-        }
-
-        await AudioGeneration.deleteOne({ _id });
-      }
-
+      // The provider may have accepted the synchronous TTS request before the
+      // response was lost. Never create a second speech request automatically.
+      await markAudioGenerationAsFailed(
+        _id,
+        `OpenAI TTS outcome is unknown: ${error?.message || 'provider request failed'}`,
+      );
+      await AudioGeneration.findByIdAndUpdate(_id, {
+        submissionOutcomeUnknown: true,
+        rowLocked: false,
+      });
       return;
 
 

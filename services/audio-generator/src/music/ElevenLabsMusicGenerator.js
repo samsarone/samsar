@@ -8,6 +8,7 @@ import {
   ELEVENLABS_MUSIC_DEFAULT_OUTPUT_FORMAT,
 } from "./ElevenLabsMusicPayload.js";
 import { isStandaloneEdition } from '../util/environmentUtils.js';
+import { createSubmissionOutcomeUnknownError } from '../utils/ProviderSubmissionSafety.js';
 
 export {
   buildElevenLabsMusicInput,
@@ -136,7 +137,7 @@ export async function requestGenerateElevenLabsMusic(payload) {
     return request_id;
   } catch (error) {
     console.error('Failed to submit ElevenLabs Music request:', error);
-    return null;
+    throw createSubmissionOutcomeUnknownError(error, 'FAL ElevenLabs Music submission');
   }
 }
 
@@ -208,7 +209,7 @@ export async function listenToPendingElevenLabsMusicRequest(payload) {
   } catch (error) {
     console.error(`Failed to fetch ElevenLabs Music status for ${generationId}:`, error);
     return {
-      responseStatus: 'FAILED',
+      responseStatus: 'PENDING',
       error: error?.message || 'Failed to fetch ElevenLabs Music request status.',
     };
   }
@@ -229,7 +230,7 @@ export async function dispatchAndProcessElevenLabsMusicRequest(payload) {
         });
       } catch (error) {
         console.error('Failed to process native ElevenLabs Music request:', error);
-        await retryOrDeleteFailedUpdate(payload, error?.message || 'Failed to process native ElevenLabs Music request.');
+        throw createSubmissionOutcomeUnknownError(error, 'Native ElevenLabs Music request');
       }
       return;
     }

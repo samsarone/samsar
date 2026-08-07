@@ -27,6 +27,7 @@ const imageGenerationSchema = new Schema({
   apiGenerationStatus: { type: String, default: "INIT" },
   apiRequestId: String,
   submittedAdapter: String,
+  submissionOutcomeUnknown: { type: Boolean, default: false },
   numInferenceSteps: Number,
   numImages: Number,
   strength: Number,

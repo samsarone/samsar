@@ -38,6 +38,7 @@ export const EXPRESS_VIDEO_CREDITS_PER_SECOND_BY_MODEL = Object.freeze({
   COSMOS3SUPERI2V: 20,
   SEEDANCEI2V: 30,
   'SEEDANCE2.0I2V': 40,
+  'SEEDANCE2.5I2V': 50,
   KLINGIMGTOVID3PRO: 36,
   KLINGIMGTOVIDTURBO: 36,
   HAPPYHORSEI2V: 36,
@@ -61,6 +62,19 @@ export const EXPRESS_VIDEO_PRICING_DISTRIBUTION_PER_SECOND_BY_MODEL = Object.fre
 export function getExpressVideoCreditsPerSecond(model) {
   const modelKey = typeof model === 'string' ? model.trim().toUpperCase() : '';
   return EXPRESS_VIDEO_CREDITS_PER_SECOND_BY_MODEL[modelKey] ?? null;
+}
+
+// Agent creator pricing is intentionally separate from Studio stage pricing.
+// Seedance 2.5 is billed at 60 credits/second in Agent and 50 credits/second
+// in Studio.
+export const AGENT_VIDEO_CREDITS_PER_SECOND_BY_MODEL = Object.freeze({
+  'SEEDANCE2.5I2V': 60,
+});
+
+export function getAgentVideoCreditsPerSecond(model) {
+  const modelKey = typeof model === 'string' ? model.trim().toUpperCase() : '';
+  return AGENT_VIDEO_CREDITS_PER_SECOND_BY_MODEL[modelKey]
+    ?? getExpressVideoCreditsPerSecond(model);
 }
 
 export function getExpressVideoStageCreditsPerSecond(stageKey, model) {

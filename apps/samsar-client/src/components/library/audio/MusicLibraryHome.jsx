@@ -13,6 +13,10 @@ import {
 } from 'react-icons/fa';
 import { getHeaders } from '../../../utils/web';
 import { useColorMode } from '../../../contexts/ColorMode';
+import {
+  resolveAudioStudioPath,
+  resolveAudioStudioUrl,
+} from '../../audio/audioStudioUtils.mjs';
 
 const API_SERVER = import.meta.env.VITE_PROCESSOR_API;
 const AUDIO_LIBRARY_PAGE_SIZE = 9;
@@ -65,56 +69,11 @@ function normalizeAudioLibraryType(generationType) {
 }
 
 function resolveAudioPath(item = {}) {
-  if (typeof item.selectedLocalAudioLink === 'string' && item.selectedLocalAudioLink.trim()) {
-    return item.selectedLocalAudioLink.trim();
-  }
-
-  if (Array.isArray(item.localAudioLinks) && item.localAudioLinks.length > 0) {
-    const localAudioLink = item.localAudioLinks.find((link) => typeof link === 'string' && link.trim());
-    if (localAudioLink) {
-      return localAudioLink.trim();
-    }
-  }
-
-  if (typeof item.url === 'string' && item.url.trim()) {
-    return item.url.trim();
-  }
-
-  if (typeof item.selectedRemoteAudioLink === 'string' && item.selectedRemoteAudioLink.trim()) {
-    return item.selectedRemoteAudioLink.trim();
-  }
-
-  if (Array.isArray(item.remoteAudioLinks) && item.remoteAudioLinks.length > 0) {
-    const remoteAudioLink = item.remoteAudioLinks.find((link) => typeof link === 'string' && link.trim());
-    if (remoteAudioLink) {
-      return remoteAudioLink.trim();
-    }
-  }
-
-  if (Array.isArray(item.remoteAudioData) && item.remoteAudioData.length > 0) {
-    const remoteAudioData = item.remoteAudioData.find((audioData) => (
-      typeof audioData?.audio_url === 'string' && audioData.audio_url.trim()
-    ));
-
-    if (remoteAudioData?.audio_url) {
-      return remoteAudioData.audio_url.trim();
-    }
-  }
-
-  return null;
+  return resolveAudioStudioPath(item) || null;
 }
 
 function resolveAudioUrl(item = {}) {
-  const audioPath = resolveAudioPath(item);
-  if (!audioPath) {
-    return null;
-  }
-
-  if (/^https?:\/\//i.test(audioPath)) {
-    return audioPath;
-  }
-
-  return `${API_SERVER}/${audioPath.replace(/^\/+/, '')}`;
+  return resolveAudioStudioUrl(item, API_SERVER) || null;
 }
 
 function getProjectName(sessionDetails) {

@@ -542,12 +542,16 @@ export default function QuickEditor() {
       { label: 'Custom', value: 'custom' },
     ];
 
-    if (selectedVideoGenerationModel?.value !== COSMOS3_SUPER_MODEL_KEY) {
+    if (
+      selectedVideoGenerationModel?.value !== COSMOS3_SUPER_MODEL_KEY &&
+      selectedVideoGenerationModel?.value !== 'SEEDANCE2.5I2V'
+    ) {
       return defaultDurationOptions;
     }
 
+    const modelKey = selectedVideoGenerationModel.value;
     const units = getVideoModelDurationUnitsForFramesPerSecond(
-      COSMOS3_SUPER_MODEL_KEY,
+      modelKey,
       user?.videoFramesPerSecond,
     );
     return [
@@ -867,9 +871,13 @@ export default function QuickEditor() {
     if (duration.value === 'custom') {
       payload.duration = parseFloat(customDuration);
     }
-    if (selectedVideoGenerationModel?.value === COSMOS3_SUPER_MODEL_KEY) {
+    if (
+      selectedVideoGenerationModel?.value === COSMOS3_SUPER_MODEL_KEY ||
+      selectedVideoGenerationModel?.value === 'SEEDANCE2.5I2V'
+    ) {
+      const modelKey = selectedVideoGenerationModel.value;
       const units = getVideoModelDurationUnitsForFramesPerSecond(
-        COSMOS3_SUPER_MODEL_KEY,
+        modelKey,
         user?.videoFramesPerSecond,
       );
       const requestedDuration = duration.value === 'auto'

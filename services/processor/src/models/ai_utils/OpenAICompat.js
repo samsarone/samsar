@@ -30,26 +30,33 @@ export async function createCompatibleChatCompletion(
   chatRequest = {},
   dependencyOverrides = {},
 ) {
-  if (shouldUseStandaloneInferenceAdapterFallback(chatRequest)) {
-    const model = chatRequest?.model || getDefaultUserInferenceModel();
-    const providers = getConfiguredInferenceProviders(model, chatRequest);
-    if (providers.length > 1) {
-      return runInferenceAdapterFallback(
-        providers,
-        (provider) => createCompatibleChatCompletionForProvider(
-            openaiClient,
-            buildProviderPinnedChatRequest(chatRequest, provider),
-            dependencyOverrides,
-          ),
-      );
+  try {
+    if (shouldUseStandaloneInferenceAdapterFallback(chatRequest)) {
+      const model = chatRequest?.model || getDefaultUserInferenceModel();
+      const providers = getConfiguredInferenceProviders(model, chatRequest);
+      if (providers.length > 1) {
+        return runInferenceAdapterFallback(
+          providers,
+          (provider) => createCompatibleChatCompletionForProvider(
+              openaiClient,
+              buildProviderPinnedChatRequest(chatRequest, provider),
+              dependencyOverrides,
+            ),
+        );
+      }
     }
-  }
 
-  return createCompatibleChatCompletionForProvider(
-    openaiClient,
-    chatRequest,
-    dependencyOverrides,
-  );
+    return await createCompatibleChatCompletionForProvider(
+      openaiClient,
+      chatRequest,
+      dependencyOverrides,
+    );
+  } catch (error) {
+    if (error && typeof error === 'object' && error.retryable === undefined) {
+      error.retryable = isRetryableInferenceAdapterError(error);
+    }
+    throw error;
+  }
 }
 
 function normalizeAuthorization(value) {
@@ -125,11 +132,8 @@ export function isRetryableInferenceAdapterError(error) {
   if (
     status === 401 ||
     status === 403 ||
-    status === 408 ||
-    status === 409 ||
     status === 425 ||
-    status === 429 ||
-    status >= 500
+    status === 429
   ) {
     return true;
   }
@@ -140,15 +144,12 @@ export function isRetryableInferenceAdapterError(error) {
   ).trim().toUpperCase();
   return [
     'GENBLAZE_MODEL_UNSUPPORTED',
-    'ECONNABORTED',
+    'EAI_AGAIN',
     'ECONNREFUSED',
-    'ECONNRESET',
     'EHOSTUNREACH',
     'ENETUNREACH',
-    'ETIMEDOUT',
+    'ENOTFOUND',
     'UND_ERR_CONNECT_TIMEOUT',
-    'UND_ERR_HEADERS_TIMEOUT',
-    'UND_ERR_SOCKET',
   ].includes(code);
 }
 

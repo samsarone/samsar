@@ -243,6 +243,30 @@ test('hosted Seedance 2.0 fails closed instead of falling back to FAL', (t) => {
   assert.equal(resolveDockerVideoProvider('SEEDANCE2.0I2V'), '');
 });
 
+test('Seedance 2.5 resolves through FAL only in standalone and production', () => {
+  clearEnv();
+  process.env.CURRENT_ENV = 'docker';
+  process.env.SAMSAR_DOCKER_ADAPTER_ROUTING_ENABLED = 'true';
+  process.env.FAL_API_KEY = 'fal-key';
+  process.env.SAMSAR_API_KEY = 'samsar-key';
+
+  assert.deepEqual(getDockerVideoProviderPriority('SEEDANCE2.5I2V'), [
+    DOCKER_VIDEO_PROVIDER.FAL,
+  ]);
+  assert.equal(resolveDockerVideoProvider('SEEDANCE2.5I2V'), DOCKER_VIDEO_PROVIDER.FAL);
+
+  delete process.env.FAL_API_KEY;
+  assert.equal(resolveDockerVideoProvider('SEEDANCE2.5I2V'), '');
+
+  process.env.CURRENT_ENV = 'production';
+  process.env.SAMSAR_DEPLOYMENT_EDITION = 'production';
+  process.env.FAL_API_KEY = 'fal-key';
+  assert.deepEqual(getDockerVideoProviderPriority('SEEDANCE2.5I2V'), [
+    DOCKER_VIDEO_PROVIDER.FAL,
+  ]);
+  assert.equal(resolveDockerVideoProvider('SEEDANCE2.5I2V'), DOCKER_VIDEO_PROVIDER.FAL);
+});
+
 test('hosted production can explicitly prefer validated GMICloud Seedance 2.0', (t) => {
   clearEnv();
   const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'samsar-video-hosted-gmi-'));

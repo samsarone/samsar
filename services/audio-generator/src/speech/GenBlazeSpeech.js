@@ -8,6 +8,7 @@ import {
   finalizeExternalSpeechGeneration,
   retryOrFailAudioGeneration,
 } from '../external/SamsarExternalAudioAdapter.js';
+import { createSubmissionOutcomeUnknownError } from '../utils/ProviderSubmissionSafety.js';
 
 const DEFAULT_GENBLAZE_BASE_URL = 'http://genblaze:8080/v1';
 const DEFAULT_GENBLAZE_MEDIA_TIMEOUT_MS = 120_000;
@@ -262,10 +263,14 @@ export async function processGenBlazeSpeechRequest(payload = {}, dependencies = 
     }
   } catch (error) {
     logger.error('[GenBlazeSpeech] request failed:', error);
-    await retryOrFail(
-      payload,
-      error?.message || 'GMICloud speech generation failed.',
-    );
+    if (status === 'PENDING' && (payload.genblazeRequestId || payload.apiRequestId || payload.generationId)) {
+      await audioGenerationModel.findByIdAndUpdate(payload._id, {
+        rowLocked: false,
+        externalAudioError: error?.message || 'GMICloud speech polling failed.',
+      });
+      return;
+    }
+    throw createSubmissionOutcomeUnknownError(error, 'GMICloud speech submission');
   }
 }
 

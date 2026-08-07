@@ -5,14 +5,13 @@ import AudioGeneration from "../schema/AudioGeneration.js";
 import mp3Duration from "mp3-duration";
 import { getDBConnectionString } from "../DBString.js";
 import { ElevenLabsClient } from "elevenlabs";
-import { updateSpeechPrompt } from './OpenAI.js';
 import { resolveSpeechLayerTimingUpdate } from "./SpeechLayerTiming.js";
 import { getProcessorAssetsV2Path, toAssetsV2RelativePath } from "../utils/AssetPaths.js";
 import { uploadAudioAssetToCDN } from "../AWS.js";
 import {
-  failStandaloneExternalAudioGeneration,
   finalizeStandaloneExternalAudioGeneration,
 } from '../external/StandaloneExternalAudio.js';
+import { markAudioGenerationAsFailed } from '../music/audioUtils.js';
 
 function normalizeString(value) {
   return typeof value === 'string' ? value.trim() : '';
@@ -28,11 +27,6 @@ export function hasNativeElevenLabsSpeechCredential() {
 
 function createElevenLabsClient() {
   return new ElevenLabsClient({ apiKey: getElevenLabsApiKey() });
-}
-
-// A small helper to introduce a delay (ms).
-async function delay(ms) {
-  return new Promise(resolve => setTimeout(resolve, ms));
 }
 
 export async function processElevenLabsSpeechRequest(payload) {
@@ -257,78 +251,15 @@ export async function processElevenLabsSpeechRequest(payload) {
 
   } catch (e) {
     console.error("Error while processing ElevenLabs speech:", e);
-
-    // Make sure we still have a record in memory
-    if (!audioGenerationRecord) {
-      console.error("AudioGeneration record missing in catch block, cannot retry.");
-      return;
-    }
-
-    // ------------------------------
-    // Retry logic with requestTimeoutUntil
-    // ------------------------------
-    // If we haven't exceeded max retries
-    if (audioGenerationRecord.numRetries < 3) {
-      // Optionally you can remove delay(1000) since we’re going
-      // to rely on requestTimeoutUntil + polling
-      // await delay(1000);
-
-      // Grab an updated (slightly different) prompt
-      const updatedSpeechPrompt = await updateSpeechPrompt(audioGenerationRecord.prompt, {
-        request: audioGenerationRecord,
-      });
-
-      // Set the record to retry
-      audioGenerationRecord.numRetries += 1;
-      audioGenerationRecord.rowLocked = false;
-      audioGenerationRecord.prompt = updatedSpeechPrompt;
-
-      // Set requestTimeoutUntil to 5 seconds from now
-      const fiveSecsFromNow = new Date(Date.now() + 5 * 1000);
-      audioGenerationRecord.requestTimeoutUntil = fiveSecsFromNow;
-
-      await audioGenerationRecord.save();
-
-      // Mark this audioLayer as 'INIT' again so it will be re-attempted
-      await VideoSession.findOneAndUpdate(
-        { _id: payload.sessionId, "audioLayers._id": payload.audioLayerId },
-        {
-          $set: {
-            "audioLayers.$.generationStatus": "INIT",
-            "audioLayers.$.prompt": updatedSpeechPrompt
-          }
-        },
-        { new: true }
-      );
-
-      // IMPORTANT:
-      // We DO NOT call `processElevenLabsSpeechRequest` again right away.
-      // Instead, we exit so that your polling/scheduling mechanism
-      // can pick it up after `requestTimeoutUntil` has passed.
-
-      console.error(`Retry scheduled. Next attempt allowed after: ${fiveSecsFromNow}`);
-      return;
-    } else {
-      // Exceeded max retries => Mark as FAILED
-      console.error("Max retries reached. Marking as FAILED.");
-
-      await VideoSession.findOneAndUpdate(
-        { _id: payload.sessionId, "audioLayers._id": payload.audioLayerId },
-        { $set: { "audioLayers.$.generationStatus": "FAILED" } },
-        { new: true }
-      );
-
-      if (await failStandaloneExternalAudioGeneration(
-        audioGenerationRecord,
-        'ElevenLabs speech generation failed.',
-        { deleteAudioGeneration: true }
-      )) {
-        return;
-      }
-
-      // Remove the AudioGeneration record
-      await AudioGeneration.deleteOne({ _id: audioGenerationRecord._id });
-      return;
-    }
+    if (!audioGenerationRecord) return;
+    await markAudioGenerationAsFailed(
+      audioGenerationRecord._id,
+      `ElevenLabs speech outcome is unknown: ${e?.message || 'provider request failed'}`,
+    );
+    await AudioGeneration.findByIdAndUpdate(audioGenerationRecord._id, {
+      submissionOutcomeUnknown: true,
+      rowLocked: false,
+    });
+    return;
   }
 }

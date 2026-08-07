@@ -50,7 +50,7 @@ test('adapter fallback follows preference order after retryable adapter errors',
         throw error;
       }
       if (provider === 'openrouter') {
-        throw new Error('connection reset', { cause: { code: 'ECONNRESET' } });
+        throw new Error('connection refused', { cause: { code: 'ECONNREFUSED' } });
       }
       return { provider };
     },
@@ -58,7 +58,7 @@ test('adapter fallback follows preference order after retryable adapter errors',
 
   assert.deepEqual(attempts, ['openai', 'openrouter', 'samsar']);
   assert.deepEqual(response, { provider: 'samsar' });
-  assert.equal(isRetryableInferenceAdapterError({ status: 503 }), true);
+  assert.equal(isRetryableInferenceAdapterError({ status: 503 }), false);
 });
 
 test('adapter fallback stops on a non-retryable 4xx error', async () => {

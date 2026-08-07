@@ -463,6 +463,9 @@ export async function sendSessionThemeMessageRequest(
         error?.code === 'INFERENCE_USAGE_OBSERVER_FAILED') {
         throw error;
       }
+      if (error?.retryable === false || error?.submissionOutcomeUnknown === true) {
+        throw error;
+      }
       const publicError = createPublicInferenceError(error, { model: modelName });
       const isFinalAttempt = attempt >= maxRetries || Boolean(publicError);
       const logPayload = {

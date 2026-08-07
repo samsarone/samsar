@@ -426,6 +426,7 @@ test('GMICloud and FAL availability is a union with shared-model adapter prefere
       'COSMOS3SUPERI2V',
       'HAPPYHORSEI2V',
       'SEEDANCE2.0I2V',
+      'SEEDANCE2.5I2V',
     ]);
     assert.equal(result.modelProviders.GPTIMAGE2, 'fal');
     assert.equal(result.modelProviders.SEEDREAM, 'gmicloud');
@@ -484,14 +485,14 @@ test('Docker retains Qwen with validated OpenRouter provenance', () => {
   assert.deepEqual(result.models, ['QWEN3.8']);
 });
 
-test('FAL runtime enrichment exposes Wan2.7 Pro, Happy Horse, and Seedance 2.0 media actions', () => {
+test('FAL runtime enrichment exposes Wan2.7 Pro, Happy Horse, and Seedance media actions', () => {
   clearEnv();
   process.env.FAL_API_KEY = 'test-key';
 
   const result = mergeRuntimeInferenceDeploymentAvailability({});
 
   assert.deepEqual(result.providers, ['fal']);
-  assert.deepEqual(result.models, ['WAN2.7PRO', 'HAPPYHORSEI2V', 'SEEDANCE2.0I2V']);
+  assert.deepEqual(result.models, ['WAN2.7PRO', 'HAPPYHORSEI2V', 'SEEDANCE2.0I2V', 'SEEDANCE2.5I2V']);
   assert.deepEqual(result.actions, ['image', 'video']);
 });
 

@@ -49,6 +49,8 @@ const aiVideoLayerGenerationSchema = new Schema({
 
   generationId: String,
   submittedAdapter: String,
+  providerFailureDefinitive: { type: Boolean, default: false },
+  submissionOutcomeUnknown: { type: Boolean, default: false },
   dockerVideoProvider: String,
 
   videoLink: String,  // video link for the video dubbing

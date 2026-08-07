@@ -80,6 +80,21 @@ test('processor keeps Seedance 2.0 on deployment-owned video adapters', () => {
   assert.equal(resolveDockerVideoProvider('SEEDANCE2.0I2V'), '');
 });
 
+test('processor keeps Seedance 2.5 on the FAL adapter only', () => {
+  clearEnv();
+  process.env.CURRENT_ENV = 'docker';
+  process.env.FAL_API_KEY = 'fal-key';
+  process.env.SAMSAR_API_KEY = 'samsar-key';
+
+  assert.deepEqual(getDockerVideoProviderPriority('SEEDANCE2.5I2V'), [
+    DOCKER_PROVIDER.FAL,
+  ]);
+  assert.equal(resolveDockerVideoProvider('SEEDANCE2.5I2V'), DOCKER_PROVIDER.FAL);
+
+  delete process.env.FAL_API_KEY;
+  assert.equal(resolveDockerVideoProvider('SEEDANCE2.5I2V'), '');
+});
+
 test('processor and image worker agree on Wan2.7 Pro Docker provider precedence', () => {
   assert.deepEqual(getDockerImageProviderPriority('wan2.7pro'), [
     DOCKER_PROVIDER.ALIBABA_CLOUD,

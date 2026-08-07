@@ -28,6 +28,7 @@ const NATIVE_AUDIO_VIDEO_MODELS = new Set([
   "VEO3.1FLIV",
   "VEO3.1I2VFAST",
   "SEEDANCE2.0I2V",
+  "SEEDANCE2.5I2V",
 ]);
 
 export default function OverlayPromptGenerateVideo(props) {

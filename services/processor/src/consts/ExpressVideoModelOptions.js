@@ -10,6 +10,7 @@ export const EXPRESS_VIDEO_IMAGE_MODEL_KEYS = Object.freeze([
 
 export const STANDALONE_PROVIDER_BILLED_EXPRESS_VIDEO_MODEL_KEYS = Object.freeze([
   'SEEDANCE2.0I2V',
+  'SEEDANCE2.5I2V',
 ]);
 
 export const EXPRESS_VIDEO_VIDEO_MODEL_KEYS = Object.freeze([

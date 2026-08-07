@@ -84,6 +84,7 @@ export async function submitHiDreamRequest(payload) {
     }, {
       generationStatus: "FAILED",
       apiGenerationStatus: "FAILED",
+      submissionOutcomeUnknown: true,
       rowLocked: false
     });
     return {
@@ -121,13 +122,9 @@ export async function pollHiDreamRequest(payload) {
     await ImageGeneration.findOneAndUpdate({
       _id: _id
     }, {
-      generationStatus: "FAILED",
-      apiGenerationStatus: "FAILED",
       rowLocked: false
     });
-    return {
-      image: null,
-    };
+    return null;
   }
 
   const responseStatus = responseStatusData.status;
@@ -162,13 +159,9 @@ export async function pollHiDreamRequest(payload) {
       await ImageGeneration.findOneAndUpdate({
         _id: _id
       }, {
-        generationStatus: "FAILED",
-        apiGenerationStatus: "FAILED",
         rowLocked: false,
       });
-      return {
-        image: null,
-      };
+      return null;
     }
 
 
@@ -222,4 +215,3 @@ async function checkIfBlackImage(buffer) {
     throw error;
   }
 }
-

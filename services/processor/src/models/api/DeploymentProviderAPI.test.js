@@ -140,6 +140,7 @@ test('FAL fallback availability keeps Seedance 2.0, Happy Horse, and Wan2.7 Pro 
 
   assert.equal(available.models.includes('HAPPYHORSEI2V'), true);
   assert.equal(available.models.includes('SEEDANCE2.0I2V'), true);
+  assert.equal(available.models.includes('SEEDANCE2.5I2V'), true);
   assert.equal(available.models.includes('WAN2.7PRO'), true);
   assert.equal(available.actions.includes('image'), true);
   assert.equal(available.actions.includes('video'), true);

@@ -53,21 +53,19 @@ function isRetryable(error) {
     return false;
   }
   if (status !== null) {
-    return status === 408 || status === 409 || status === 425 || status === 429 || status >= 500;
+    return status === 425 || status === 429;
   }
-  if (['ECONNABORTED', 'ECONNRESET', 'ETIMEDOUT', 'EAI_AGAIN', 'ENETUNREACH'].includes(getCode(error))) {
+  if ([
+    'EAI_AGAIN',
+    'ECONNREFUSED',
+    'EHOSTUNREACH',
+    'ENETUNREACH',
+    'ENOTFOUND',
+    'UND_ERR_CONNECT_TIMEOUT',
+  ].includes(getCode(error))) {
     return true;
   }
-  if (
-    message.includes('invalid json response body') ||
-    message.includes('unexpected end of json input') ||
-    message.includes('unterminated json')
-  ) {
-    return true;
-  }
-  return ['APICONNECTIONERROR', 'APICONNECTIONTIMEOUTERROR'].includes(
-    normalizeString(error?.name || error?.cause?.name).toUpperCase(),
-  );
+  return false;
 }
 
 function getRetryAfterMs(error) {

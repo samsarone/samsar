@@ -1,4 +1,5 @@
 import { fal } from "@fal-ai/client";
+import { createSubmissionOutcomeUnknownError } from '../utils/ProviderSubmissionSafety.js';
 
 const FAL_API_KEY = process.env.FAL_API_KEY;
 
@@ -28,7 +29,7 @@ export async function generateSdAudioLayer(payload) {
   return request_id;
 
 } catch (error) {
-  return null;
+  throw createSubmissionOutcomeUnknownError(error, 'FAL Stable Audio submission');
 }
 }
 

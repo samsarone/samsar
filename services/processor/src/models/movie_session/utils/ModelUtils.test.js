@@ -44,6 +44,14 @@ test('uses unified prompt and validation character boundaries for every model du
   );
 });
 
+test('Seedance 2.5 speech boundaries follow five-second scene units through 30 seconds', () => {
+  const promptRules = getSpeechDurationStringForModel('SEEDANCE2.5I2V', 'English');
+
+  assert.match(promptRules, /Each scene must be 5, 10, 15, 20, 25, or 30 seconds long/);
+  assert.match(promptRules, /28 characters or fewer for a 5-second scene/);
+  assert.match(promptRules, /165 characters or fewer for a 30-second scene/);
+});
+
 test('floors model durations only when rendering shared narrative prompt boundaries', () => {
   const promptRules = getSpeechDurationStringForModel('COSMOS3SUPERI2V', 'English', 24);
 

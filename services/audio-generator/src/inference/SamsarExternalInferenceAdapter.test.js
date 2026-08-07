@@ -443,8 +443,8 @@ test('OpenRouter rebuilds and exact-probes Docker media URLs for every retry', a
   t.mock.method(OpenAI.Chat.Completions.prototype, 'create', async (payload) => {
     providerPayloads.push(payload);
     if (providerPayloads.length === 1) {
-      const error = new Error('temporary upstream failure');
-      error.status = 500;
+      const error = new Error('rate limited before acceptance');
+      error.status = 429;
       throw error;
     }
     return { choices: [{ message: { role: 'assistant', content: 'ok' } }] };

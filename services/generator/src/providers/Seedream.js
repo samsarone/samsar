@@ -7,6 +7,7 @@ import axios from 'axios';
 import { saveRemoteFile } from "../utils/FileUtils.js";
 import { writeFile, mkdir } from 'fs/promises';
 import path from 'path';
+import { isSubmissionOutcomeUnknown } from '../utils/ProviderSubmissionSafety.js';
 
 const FAL_API_KEY = process.env.FAL_API_KEY;
 
@@ -91,6 +92,7 @@ export async function submitSeedreamRequest(payload, dependencies = {}) {
     return {
       image: null,
       error: `Seedream submission failed: ${error?.message || "Unknown provider error"}`,
+      ...(isSubmissionOutcomeUnknown(error) ? { submissionOutcomeUnknown: true } : {}),
     };
 
   }
@@ -122,10 +124,8 @@ export async function pollSeedreamRequest(payload, dependencies = {}) {
       logs: true,
     });
   } catch (error) {
-    return {
-      image: null,
-      error: `Seedream status check failed: ${error?.message || "Unknown provider error"}`,
-    };
+    await imageGenerationModel.findOneAndUpdate({ _id }, { rowLocked: false });
+    return null;
   }
 
   const responseStatus = responseStatusData.status;
@@ -156,7 +156,8 @@ export async function pollSeedreamRequest(payload, dependencies = {}) {
       return { image: imageName };
     } catch (error) {
       logger.error("Error retrieving Seedream image from FAL: ", error);
-      return { image: null, error: `Seedream image retrieval failed: ${error?.message || "Unknown error"}` };
+      await imageGenerationModel.findOneAndUpdate({ _id }, { rowLocked: false });
+      return null;
 
     }
 
@@ -165,7 +166,11 @@ export async function pollSeedreamRequest(payload, dependencies = {}) {
       responseStatusData?.error ||
       responseStatusData?.logs?.findLast?.((entry) => entry?.message)?.message ||
       'Seedream provider request failed.';
-    return { image: null, error: String(providerMessage) };
+    return {
+      image: null,
+      error: String(providerMessage),
+      definitiveAdapterFailure: true,
+    };
   } else {
     await imageGenerationModel.findOneAndUpdate(
       { _id: _id },

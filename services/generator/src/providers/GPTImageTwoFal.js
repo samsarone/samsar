@@ -9,6 +9,7 @@ import {
   GPT_IMAGE_TWO_FAL_ENDPOINT,
   normalizeGPTImageTwoResult,
 } from './GPTImageTwoPayload.js';
+import { isSubmissionOutcomeUnknown } from '../utils/ProviderSubmissionSafety.js';
 
 fal.config({
   credentials: process.env.FAL_API_KEY,
@@ -73,7 +74,11 @@ export async function submitFalGPTImageTwoRequest(payload = {}, dependencies = {
   } catch (error) {
     const message = `Fal GPT Image 2 submission failed: ${error?.message || 'Unknown provider error'}`;
     logger.error('[GPTImageTwoFal] submit failed:', error);
-    return { image: null, error: message };
+    return {
+      image: null,
+      error: message,
+      ...(isSubmissionOutcomeUnknown(error) ? { submissionOutcomeUnknown: true } : {}),
+    };
   }
 }
 
@@ -101,7 +106,7 @@ export async function pollFalGPTImageTwoRequest(payload = {}, dependencies = {})
         statusResponse,
         `Fal GPT Image 2 request ${status.toLowerCase()}.`,
       );
-      return { image: null, error: message };
+      return { image: null, error: message, definitiveAdapterFailure: true };
     }
 
     if (status !== 'COMPLETED') {
@@ -136,9 +141,11 @@ export async function pollFalGPTImageTwoRequest(payload = {}, dependencies = {})
       height: normalizePositiveInteger(generatedImage?.height, output.height),
     });
   } catch (error) {
-    const message = `Fal GPT Image 2 result failed: ${error?.message || 'Unknown provider error'}`;
     logger.error('[GPTImageTwoFal] poll failed:', error);
-    return { image: null, error: message };
+    // Poll/result transport failures (including 429) do not invalidate the
+    // submitted generation. Resume this same request on the next pass.
+    await unlockRequest(imageGenerationModel, _id);
+    return null;
   }
 }
 

@@ -63,6 +63,7 @@ export const DOCKER_VIDEO_PROVIDER_PRIORITY_BY_MODEL = Object.freeze({
   // GMICloud selection happens in the video worker, but the processor must
   // keep this provider-billed model off the Samsar external route.
   'SEEDANCE2.0I2V': [DOCKER_PROVIDER.FAL],
+  'SEEDANCE2.5I2V': [DOCKER_PROVIDER.FAL],
 });
 
 export const DOCKER_FAL_VIDEO_MODELS = Object.freeze([
@@ -83,6 +84,7 @@ export const DOCKER_FAL_VIDEO_MODELS = Object.freeze([
   'MAGIDISTILLED',
   'VIDUI2V',
   'SEEDANCEI2V',
+  'SEEDANCE2.5I2V',
   'HAPPYHORSEI2V',
   'MMAUDIOV2',
   'MIRELOAI',

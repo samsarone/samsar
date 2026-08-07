@@ -19,6 +19,7 @@ const ENV_KEYS = [
   'SAMSAR_DOCKER_AUDIO_PROVIDER_ROUTING_ENABLED',
   'SAMSAR_GENBLAZE_ENABLED',
   'SAMSAR_GENBLAZE_MODEL_CATALOG_PATH',
+  'SAMSAR_MODEL_ADAPTER_PREFERENCES_PATH',
   'OPENAI_API_KEY',
   'ELEVENLABS_API_KEY',
   'ELEVENLABS_API_TOKEN',
@@ -176,4 +177,47 @@ test('keeps every pending audio request on its submitted adapter', () => {
     status: 'PENDING',
     submittedAdapter: 'fal',
   }), DOCKER_AUDIO_PROVIDER.FAL);
+});
+
+test('standalone audio uses the highest saved compatible adapter priority', (t) => {
+  clearProviderCredentials();
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'samsar-audio-adapters-'));
+  const preferencesPath = path.join(directory, 'model-adapter-preferences.json');
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  fs.writeFileSync(preferencesPath, JSON.stringify({
+    modelProviderPriority: {
+      OPENAI_TTS: ['samsar', 'openai'],
+      ELEVENLABS_MUSIC: ['fal', 'elevenlabs'],
+      SDAUDIO: ['samsar', 'fal'],
+    },
+  }));
+  process.env.SAMSAR_MODEL_ADAPTER_PREFERENCES_PATH = preferencesPath;
+  process.env.OPENAI_API_KEY = 'openai-key';
+  process.env.ELEVENLABS_API_KEY = 'elevenlabs-key';
+  process.env.FAL_API_KEY = 'fal-key';
+  process.env.SAMSAR_API_KEY = 'samsar-key';
+
+  assert.equal(resolveDockerSpeechProvider('OPENAI', { status: 'INIT' }), 'samsar');
+  assert.equal(resolveDockerMusicProvider('ELEVENLABS_MUSIC', { status: 'INIT' }), 'fal');
+  assert.equal(resolveDockerSoundEffectProvider('SDAUDIO', { status: 'INIT' }), 'samsar');
+});
+
+test('hosted audio ignores standalone adapter preferences', (t) => {
+  clearProviderCredentials();
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'samsar-audio-hosted-'));
+  const preferencesPath = path.join(directory, 'model-adapter-preferences.json');
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  fs.writeFileSync(preferencesPath, JSON.stringify({
+    modelProviderPriority: {
+      ELEVENLABS_MUSIC: ['fal', 'elevenlabs'],
+    },
+  }));
+  process.env.CURRENT_ENV = 'production';
+  process.env.SAMSAR_DEPLOYMENT_EDITION = 'production';
+  process.env.SAMSAR_DOCKER_AUDIO_PROVIDER_ROUTING_ENABLED = 'true';
+  process.env.SAMSAR_MODEL_ADAPTER_PREFERENCES_PATH = preferencesPath;
+  process.env.ELEVENLABS_API_KEY = 'elevenlabs-key';
+  process.env.FAL_API_KEY = 'fal-key';
+
+  assert.equal(resolveDockerMusicProvider('ELEVENLABS_MUSIC', { status: 'INIT' }), 'elevenlabs');
 });

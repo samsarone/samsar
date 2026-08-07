@@ -391,23 +391,20 @@ test('adapter fallback stops on request errors and reports a fully exhausted cha
     /invalid request/,
   );
   assert.deepEqual(nonRetryableAttempts, ['openai']);
-  assert.equal(isRetryableInferenceAdapterError({ status: 503 }), true);
+  assert.equal(isRetryableInferenceAdapterError({ status: 503 }), false);
   assert.equal(isRetryableInferenceAdapterError({ status: 400 }), false);
 
-  let exhaustedError;
-  try {
-    await runInferenceAdapterFallback(['openrouter', 'samsar'], async () => {
+  const ambiguousAttempts = [];
+  await assert.rejects(
+    runInferenceAdapterFallback(['openrouter', 'samsar'], async (provider) => {
+      ambiguousAttempts.push(provider);
       const error = new Error('temporarily unavailable');
       error.code = 'ECONNRESET';
       throw error;
-    });
-  } catch (error) {
-    exhaustedError = error;
-  }
-  assert.deepEqual(exhaustedError?.attemptedInferenceAdapters, [
-    'openrouter',
-    'samsar',
-  ]);
+    }),
+    /temporarily unavailable/,
+  );
+  assert.deepEqual(ambiguousAttempts, ['openrouter']);
 });
 
 test('hosted Qwen retry prompts use OpenRouter even when Alibaba is configured', () => {

@@ -73,6 +73,28 @@ test('Seedance 2.0 is an express provider-billed model on standalone video surfa
   assert.equal(getExpressVideoCreditsPerSecond('SEEDANCE2.0I2V'), 40);
 });
 
+test('Seedance 2.5 is accepted by external express video routes', () => {
+  assert.deepEqual(validateExpressVideoModelKey('SEEDANCE2.5I2V'), {
+    status: true,
+    videoModel: 'SEEDANCE2.5I2V',
+  });
+  assert.equal(
+    validateMovieInput(buildValidMoviePayload({ video_model: 'SEEDANCE2.5I2V' })).status,
+    true,
+  );
+  assert.equal(TEXT_TO_VIDEO_VIDEO_MODEL_KEYS.includes('SEEDANCE2.5I2V'), true);
+  assert.equal(IMAGE_LIST_TO_VIDEO_VIDEO_MODEL_KEYS.includes('SEEDANCE2.5I2V'), true);
+  assert.equal(
+    VIDEO_GENERATION_MODEL_TYPES.find((model) => model.key === 'SEEDANCE2.5I2V')?.isExpressModel,
+    true,
+  );
+  const pricing = VIDEO_MODEL_PRICES.find((model) => model.key === 'SEEDANCE2.5I2V');
+  assert.equal(pricing?.providerBilled, true);
+  assert.equal(pricing?.isPerSecondPricing, true);
+  assert.equal(pricing?.pricingDistribution?.total, 50);
+  assert.equal(getExpressVideoCreditsPerSecond('SEEDANCE2.5I2V'), 50);
+});
+
 test('Wan2.7 Pro is accepted for both express image stages', () => {
   const validation = validateMovieInput(buildValidMoviePayload({
     image_model: 'WAN2.7PRO',

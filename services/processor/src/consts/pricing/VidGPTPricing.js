@@ -1,5 +1,5 @@
 
-import { getExpressVideoCreditsPerSecond } from './ExpressVideoPricingDistribution.js';
+import { getAgentVideoCreditsPerSecond } from './ExpressVideoPricingDistribution.js';
 
 export function calculatePricingForExpectedrender(movieResourceList, userInferenceModel, payload) {
 
@@ -21,7 +21,7 @@ export function calculatePricingForExpectedrender(movieResourceList, userInferen
     return 0;
   }
 
-  const creditsPerSecond = getExpressVideoCreditsPerSecond(videoGenerationModel) ?? 30;
+  const creditsPerSecond = getAgentVideoCreditsPerSecond(videoGenerationModel) ?? 30;
   const totalPrice = totalDuration * (creditsPerSecond / 100);
 
   const totalCredits = totalPrice * 100;

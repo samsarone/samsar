@@ -17,6 +17,7 @@ const TEXT_MODELS = [
   { label: 'Nvidia Cosmos 3', value: 'COSMOS3SUPERI2V' },
   { label: 'Seedance 1.5', value: 'SEEDANCEI2V' },
   { label: 'Seedance 2.0', value: 'SEEDANCE2.0I2V', standaloneOnly: true },
+  { label: 'Seedance 2.5', value: 'SEEDANCE2.5I2V' },
   { label: 'Kling Pro', value: 'KLINGIMGTOVID3PRO' },
   { label: 'Custom Image to Video', value: 'CUSTOM_IMAGE_TO_VIDEO' },
 ];
@@ -34,12 +35,14 @@ const IMAGE_LIST_VIDEO_MODELS = [
   { label: 'Nvidia Cosmos 3', value: 'COSMOS3SUPERI2V' },
   { label: 'Seedance 1.5', value: 'SEEDANCEI2V' },
   { label: 'Seedance 2.0', value: 'SEEDANCE2.0I2V', standaloneOnly: true },
+  { label: 'Seedance 2.5', value: 'SEEDANCE2.5I2V' },
   { label: 'Kling Pro', value: 'KLINGIMGTOVID3PRO' },
   { label: 'RunwayML Gen 4.5', value: 'RUNWAYML' },
   { label: 'Custom Image to Video', value: 'CUSTOM_IMAGE_TO_VIDEO' },
 ];
 
 const DURATION_OPTIONS = [10, 30, 60, 90, 120];
+const SEEDANCE_25_DURATION_OPTIONS = [5, 10, 15, 20, 25, 30];
 const CREDIT_PACKS = [1000, 2500, 5000];
 
 function formatDate(value) {
@@ -55,6 +58,10 @@ function formatCredits(value) {
   const numericValue = Number(value);
   if (!Number.isFinite(numericValue)) return '0';
   return numericValue.toLocaleString();
+}
+
+function getDurationOptionsForModel(model) {
+  return model === 'SEEDANCE2.5I2V' ? SEEDANCE_25_DURATION_OPTIONS : DURATION_OPTIONS;
 }
 
 function toDataUrl(file) {
@@ -165,6 +172,24 @@ export default function ExternalStudioDashboard() {
         : imageListImageModels[0]?.value || '',
     }));
   }, [imageListImageModels, imageListVideoModels]);
+
+  useEffect(() => {
+    setTextForm((current) => {
+      const options = getDurationOptionsForModel(current.video_model);
+      return options.some((duration) => String(duration) === current.duration)
+        ? current
+        : { ...current, duration: String(options[0]) };
+    });
+  }, [textForm.video_model]);
+
+  useEffect(() => {
+    setImageForm((current) => {
+      const options = getDurationOptionsForModel(current.video_model);
+      return options.some((duration) => String(duration) === current.duration)
+        ? current
+        : { ...current, duration: String(options[0]) };
+    });
+  }, [imageForm.video_model]);
 
   useEffect(() => {
     if (!canGenerateSubtitles) {
@@ -528,7 +553,7 @@ export default function ExternalStudioDashboard() {
                     onChange={(event) => setTextForm((current) => ({ ...current, duration: event.target.value }))}
                     className="rounded-2xl border border-white/10 bg-[#0c1528] px-4 py-3 text-sm text-white"
                   >
-                    {DURATION_OPTIONS.map((duration) => (
+                    {getDurationOptionsForModel(textForm.video_model).map((duration) => (
                       <option key={duration} value={String(duration)}>{duration} seconds</option>
                     ))}
                   </select>
@@ -599,7 +624,7 @@ export default function ExternalStudioDashboard() {
                     onChange={(event) => setImageForm((current) => ({ ...current, duration: event.target.value }))}
                     className="rounded-2xl border border-white/10 bg-[#0c1528] px-4 py-3 text-sm text-white"
                   >
-                    {DURATION_OPTIONS.map((duration) => (
+                    {getDurationOptionsForModel(imageForm.video_model).map((duration) => (
                       <option key={duration} value={String(duration)}>{duration} seconds</option>
                     ))}
                   </select>

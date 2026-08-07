@@ -8,6 +8,7 @@ import { saveRemoteFile } from "../utils/FileUtils.js"; // still available if yo
 
 import { writeFile, mkdir } from "fs/promises";
 import path from "path";
+import { isSubmissionOutcomeUnknown } from '../utils/ProviderSubmissionSafety.js';
 
 const FAL_API_KEY = process.env.FAL_API_KEY;
 
@@ -65,7 +66,11 @@ export async function submitNanoBananaFalRequest(payload) {
   } catch (error) {
     console.error("Error submitting request to FAL: ", error);
     const message = error?.message || "Unable to submit Nano Banana request to FAL.";
-    return { image: null, error: message };
+    return {
+      image: null,
+      error: message,
+      ...(isSubmissionOutcomeUnknown(error) ? { submissionOutcomeUnknown: true } : {}),
+    };
   }
 }
 
@@ -108,7 +113,7 @@ export async function pollNanoBananaFalRequest(payload, dependencies = {}) {
 
   if (responseStatus === "FAILED" || responseStatus === "CANCELLED" || responseStatus === "CANCELED") {
     const message = `FAL Nano Banana request ${responseStatus.toLowerCase()}.`;
-    return { image: null, error: message };
+    return { image: null, error: message, definitiveAdapterFailure: true };
   }
 
   if (responseStatus === "COMPLETED") {
@@ -125,10 +130,8 @@ export async function pollNanoBananaFalRequest(payload, dependencies = {}) {
 
       return { image: imageName };
     } catch (error) {
-      return {
-        image: null,
-        error: error?.message || "FAL Nano Banana result could not be downloaded.",
-      };
+      await imageGenerationModel.findOneAndUpdate({ _id }, { rowLocked: false });
+      return null;
     }
   } else {
     await imageGenerationModel.findOneAndUpdate({ _id }, { rowLocked: false });

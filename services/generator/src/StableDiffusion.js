@@ -95,8 +95,6 @@ export async function pollStableDiffusionRequest(payload) {
     await ImageGeneration.findOneAndUpdate({
       _id: _id
     }, {
-      generationStatus: "FAILED",
-      apiGenerationStatus: "FAILED",
       rowLocked: false
     });
     return null;
@@ -147,4 +145,3 @@ function getImageSizeForAspectRation(aspectRatio) {
     return 'portrait_16_9';
   }
 }
-

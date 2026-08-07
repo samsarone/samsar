@@ -1440,6 +1440,7 @@ async function markImageGenerationRequestFailed(payload = {}, imageData = null, 
       apiGenerationStatus: 'FAILED',
       rowLocked: false,
       failureRetryCount,
+      ...(options.setFields || {}),
     },
   });
 
@@ -3264,13 +3265,29 @@ async function handleNoImageRetryOrFailure(payload, imageData, options = {}) {
     return; // The doc may already have been removed elsewhere
   }
 
+  if (imageData?.submissionOutcomeUnknown === true) {
+    await markImageGenerationRequestFailed(payload, imageData, {
+      failureRetryCount: normalizeRetryCount(latestDoc.failureRetryCount) + 1,
+      message: getImageGenerationFailureMessage(imageData),
+      source: 'image_submission_outcome_unknown',
+      pruneLayer: false,
+      setFields: { submissionOutcomeUnknown: true },
+    });
+    return;
+  }
+
+  const rotateAdapterAfterFailure = options.rotateAdapter !== undefined
+    ? options.rotateAdapter
+    : normalizeString(latestDoc.apiGenerationStatus).toUpperCase() !== 'PENDING' ||
+      imageData?.definitiveAdapterFailure === true;
+
   if (isExpressNarratorAvatarImageRequest(payload)) {
     if (retryOnFailure) {
       const scheduledRetry = await scheduleImageGenerationRetry(payload, latestDoc, imageData, {
         source: 'express_narrator_avatar_image_retry',
         updateLayerPrompt: false,
         terminalOnMaxFailures: false,
-        rotateAdapter: options.rotateAdapter !== false,
+        rotateAdapter: rotateAdapterAfterFailure,
       });
       if (scheduledRetry) {
         return;
@@ -3370,7 +3387,7 @@ async function handleNoImageRetryOrFailure(payload, imageData, options = {}) {
         latestDoc || payload,
         // The provider returned no image, so this is an actual generation
         // failure and may advance to the configured fallback adapter.
-        { rotateAdapter: true },
+        { rotateAdapter: rotateAdapterAfterFailure },
       );
 
       await recordImageGenerationFailure(payload, {
@@ -3414,7 +3431,7 @@ async function handleNoImageRetryOrFailure(payload, imageData, options = {}) {
     const scheduledRetry = await scheduleImageGenerationRetry(payload, latestDoc, imageData, {
       terminalOnMaxFailures: false,
       sessionData,
-      rotateAdapter: options.rotateAdapter !== false,
+      rotateAdapter: rotateAdapterAfterFailure,
     });
     if (scheduledRetry) {
       return; // Return here so we don't remove the doc
@@ -3861,6 +3878,12 @@ async function scheduleImageEditAdapterRetry(
   message = 'Image edit adapter failed',
   { rotateAdapter = true } = {},
 ) {
+  const latestRequest = payload?._id
+    ? await ImageGeneration.findById(payload._id).select('submissionOutcomeUnknown').lean()
+    : null;
+  if (payload?.submissionOutcomeUnknown === true || latestRequest?.submissionOutcomeUnknown === true) {
+    return false;
+  }
   const adapterRetryState = getImageEditAdapterRetryState(
     payload,
     { rotateAdapter },

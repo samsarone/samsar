@@ -79,9 +79,24 @@ export async function submitFluxEditRequest(payload) {
 
 
 
-  let response = await fal.queue.submit(falLink, {
-    input: reqPayload,
-  });
+  let response;
+  try {
+    response = await fal.queue.submit(falLink, {
+      input: reqPayload,
+    });
+  } catch (error) {
+    await ImageGeneration.findByIdAndUpdate(_id, {
+      editStatus: 'FAILED',
+      apiEditStatus: 'FAILED',
+      generationStatus: 'FAILED',
+      apiGenerationStatus: 'FAILED',
+      submissionOutcomeUnknown: true,
+      rowLocked: false,
+    });
+    error.submissionOutcomeUnknown = true;
+    error.retryable = false;
+    throw error;
+  }
 
 
   const requestId = response.request_id;

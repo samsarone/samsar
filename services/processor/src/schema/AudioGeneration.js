@@ -35,6 +35,7 @@ const audioGenerationSchema = new Schema({
   ttsProvider: String,
   apiRequestId: String,
   submittedAdapter: String,
+  submissionOutcomeUnknown: { type: Boolean, default: false },
   
   requestTimeoutUntil: Date,
   

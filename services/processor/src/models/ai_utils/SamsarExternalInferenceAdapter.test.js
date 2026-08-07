@@ -505,8 +505,8 @@ test('OpenRouter resolves provider media freshly on every adapter retry', async 
   t.mock.method(OpenAI.Chat.Completions.prototype, 'create', async (payload) => {
     payloads.push(payload);
     if (payloads.length === 1) {
-      const error = new Error('temporary OpenRouter failure');
-      error.status = 503;
+      const error = new Error('OpenRouter rate limited before acceptance');
+      error.status = 429;
       throw error;
     }
     return { choices: [{ message: { role: 'assistant', content: 'ok' } }] };
@@ -667,7 +667,7 @@ test('production Qwen OpenRouter controls enforce minimum timeout and disable SD
   assert.equal(capturedOptions.signal instanceof AbortSignal, true);
 });
 
-test('production Qwen retries a transient OpenRouter connection reset', async (t) => {
+test('production Qwen does not duplicate an ambiguous OpenRouter connection reset', async (t) => {
   clearProviderEnv();
   process.env.CURRENT_ENV = 'production';
   process.env.OPENROUTER_API_KEY = 'test-openrouter-key';
@@ -690,13 +690,14 @@ test('production Qwen retries a transient OpenRouter connection reset', async (t
     return { choices: [{ message: { role: 'assistant', content: 'recovered' } }] };
   });
 
-  const response = await createOpenRouterChatCompletion({
-    model: 'QWEN3.8',
-    messages: [{ role: 'user', content: 'hello' }],
-  });
-
-  assert.equal(response.choices[0].message.content, 'recovered');
-  assert.equal(calls, 2);
+  await assert.rejects(
+    createOpenRouterChatCompletion({
+      model: 'QWEN3.8',
+      messages: [{ role: 'user', content: 'hello' }],
+    }),
+    { code: 'ECONNRESET' },
+  );
+  assert.equal(calls, 1);
   assert.equal(requestOptions.every((options) => options.maxRetries === 0), true);
 });
 
@@ -724,28 +725,27 @@ test('external inference retries transient 429 responses three times with backof
   assert.deepEqual(delays, [5000, 10000, 20000]);
 });
 
-test('external inference retries truncated OpenRouter JSON responses with backoff', async () => {
+test('external inference does not duplicate a request after a truncated response', async () => {
   let calls = 0;
   const delays = [];
 
-  const response = await runExternalInferenceWithRetry(async () => {
-    calls += 1;
-    if (calls <= 3) {
+  await assert.rejects(
+    runExternalInferenceWithRetry(async () => {
+      calls += 1;
       throw new Error(
         'invalid json response body at https://openrouter.ai/api/v1/chat/completions reason: Unexpected end of JSON input',
       );
-    }
-    return 'ok';
-  }, {
-    maxRetries: 3,
-    timeoutMs: 1000,
-    sleep: async (delayMs) => delays.push(delayMs),
-    logger: { error() {}, warn() {} },
-  });
+    }, {
+      maxRetries: 3,
+      timeoutMs: 1000,
+      sleep: async (delayMs) => delays.push(delayMs),
+      logger: { error() {}, warn() {} },
+    }),
+    /Unexpected end of JSON input/,
+  );
 
-  assert.equal(response, 'ok');
-  assert.equal(calls, 4);
-  assert.deepEqual(delays, [5000, 10000, 20000]);
+  assert.equal(calls, 1);
+  assert.deepEqual(delays, []);
 });
 
 test('external inference recognizes provider status exposed only as a numeric code', async () => {
@@ -946,8 +946,8 @@ test('Samsar external inference resolves provider media freshly on every retry',
     payloads.push(payload);
     providerAttempts += 1;
     if (providerAttempts === 1) {
-      const error = new Error('temporary hosted failure');
-      error.status = 503;
+      const error = new Error('hosted rate limited before acceptance');
+      error.status = 429;
       throw error;
     }
     return { choices: [{ message: { role: 'assistant', content: 'ok' } }] };
@@ -1192,7 +1192,7 @@ test('Docker external polling marks a completed persisted response as reused wit
   assert.equal(getMock.mock.callCount(), 0);
 });
 
-test('Docker retries a reset submit with the same hosted idempotency key', async (t) => {
+test('Docker does not resubmit after an ambiguous hosted reset', async (t) => {
   clearProviderEnv();
   process.env.SAMSAR_API_KEY = 'reset-submit-test-key';
   const submittedClientIds = [];
@@ -1233,37 +1233,37 @@ test('Docker retries a reset submit with the same hosted idempotency key', async
     },
   }));
 
-  const response = await createSamsarExternalChatCompletion({
-    model: 'gpt-5.6-sol',
-    messages: [{
-      role: 'user',
-      content: [{
-        type: 'input_image',
-        image_url: '/assets_v2/generations/session/polling-reset.png',
+  await assert.rejects(
+    createSamsarExternalChatCompletion({
+      model: 'gpt-5.6-sol',
+      messages: [{
+        role: 'user',
+        content: [{
+          type: 'input_image',
+          image_url: '/assets_v2/generations/session/polling-reset.png',
+        }],
       }],
-    }],
-    externalPolling: true,
-    externalPollIntervalMs: 1,
-    externalPollTimeoutMs: 1000,
-    externalMaxRetries: 0,
-    externalRequestContext: {
-      sessionId: 'video-session-3',
-      requestKey: 'text_to_video:theme:attempt-1',
-    },
-    externalRequestStore: requestStore,
-  }, {
-    resolveMediaUrl: async (_source, options) => (
-      `https://polling-${submittedMediaUrls.length + 1}.example/${options.mediaKind}.png`
-    ),
-  });
+      externalPolling: true,
+      externalPollIntervalMs: 1,
+      externalPollTimeoutMs: 1000,
+      externalMaxRetries: 0,
+      externalRequestContext: {
+        sessionId: 'video-session-3',
+        requestKey: 'text_to_video:theme:attempt-1',
+      },
+      externalRequestStore: requestStore,
+    }, {
+      resolveMediaUrl: async (_source, options) => (
+        `https://polling-${submittedMediaUrls.length + 1}.example/${options.mediaKind}.png`
+      ),
+    }),
+    { code: 'ECONNRESET' },
+  );
 
   assert.deepEqual(submittedClientIds, [
-    'stable-client-request-3',
     'stable-client-request-3',
   ]);
   assert.deepEqual(submittedMediaUrls, [
     'https://polling-1.example/image.png',
-    'https://polling-2.example/image.png',
   ]);
-  assert.equal(response.choices[0].message.content, 'recovered reset');
 });

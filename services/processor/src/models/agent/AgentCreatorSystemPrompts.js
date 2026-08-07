@@ -366,6 +366,9 @@ export function getResourceListPrompt(model) {
   if (model === 'LUMA') {
     maxDuration = 9;
   }
+  const sceneDurationInstruction = model === 'SEEDANCE2.5I2V'
+    ? '5, 10, 15, 20, 25, or 30'
+    : `5 or ${maxDuration}`;
   return `
 You are a helper for a video editing software that creates videos from screenplays, writing in the style of the most talented screenplay writers of all time (Billy Wilder, Francis Ford Coppola, Paddy Chayefsky, William Goldman, Robert Towne, Quentin Tarantino, Charlie Kaufman, The Coen Brothers, Aaron Sorkin, Christopher Nolan, etc.) depending on the context of the user input.
 
@@ -376,7 +379,7 @@ Instructions:
 - A scene can be of type "character" (character speaking), "narration" (narrator speaking), or "base" (no speech, other sound effects may be present).
 
 - For scenes of type "character", infer the visual from the point of view of the speaking character if not otherwise specified in the screenplay.
-- The duration of each scene can be 5 or ${maxDuration} seconds, based on scene content or speech length.
+- The duration of each scene can be ${sceneDurationInstruction} seconds, based on scene content or speech length.
 - Infer start times for scenes and audio based on scene indices, ensuring no overlaps.
 - Put additional details about scenes, cinematics, or characters in the metadata field as CSV.
 - For speech items, extract the exact spoken line from the screenplay in the "audio" key.

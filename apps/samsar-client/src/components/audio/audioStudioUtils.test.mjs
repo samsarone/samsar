@@ -52,6 +52,36 @@ test('resolves local and remote audio URLs', () => {
   );
 });
 
+test('prefers durable remote audio sources over stale local-volume URLs', () => {
+  const item = {
+    playbackUrl: 'http://processor.example/assets_v2/temp_audio/stale.mp3',
+    url: 'assets_v2/temp_audio/stale.mp3',
+    selectedLocalAudioLink: 'assets_v2/temp_audio/stale.mp3',
+    localAudioLinks: ['assets_v2/temp_audio/stale.mp3'],
+    selectedRemoteAudioLink: 'https://static.example/audio/durable.mp3',
+    remoteAudioLinks: ['https://static.example/audio/durable.mp3'],
+  };
+
+  assert.equal(
+    resolveAudioStudioUrl(item, 'http://processor.example'),
+    'https://static.example/audio/durable.mp3'
+  );
+  assert.deepEqual(resolveAudioStudioUrls(item, 'http://processor.example'), [
+    'https://static.example/audio/durable.mp3',
+    'http://processor.example/assets_v2/temp_audio/stale.mp3',
+  ]);
+});
+
+test('supports remote audio data URL aliases before local fallbacks', () => {
+  assert.equal(
+    resolveAudioStudioUrl({
+      selectedLocalAudioLink: 'temp/local.mp3',
+      remoteAudioData: [{ audioUrl: 'https://static.example/audio/alias.mp3' }],
+    }, 'http://processor.example'),
+    'https://static.example/audio/alias.mp3'
+  );
+});
+
 test('formats audio duration for compact cards', () => {
   assert.equal(formatAudioStudioDuration(65.9), '1:05');
   assert.equal(formatAudioStudioDuration(null), '--:--');

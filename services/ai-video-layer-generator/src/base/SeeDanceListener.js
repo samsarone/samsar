@@ -8,6 +8,8 @@ fal.config({
 
 const SEEDANCE_15_IMAGE_TO_VIDEO_LINK = "fal-ai/bytedance/seedance/v1.5/pro/image-to-video";
 const SEEDANCE_20_IMAGE_TO_VIDEO_LINK = "bytedance/seedance-2.0/image-to-video";
+const SEEDANCE_25_IMAGE_TO_VIDEO_LINK = "bytedance/seedance-2.5/image-to-video";
+const SEEDANCE_25_DURATION_UNITS = Object.freeze([5, 10, 15, 20, 25, 30]);
 
 const SEEDANCE_ALLOWED_ASPECT_RATIOS = new Set([
   "auto",
@@ -19,14 +21,20 @@ const SEEDANCE_ALLOWED_ASPECT_RATIOS = new Set([
   "9:16",
 ]);
 
-function normalizeSeedanceDuration(duration) {
+function normalizeSeedanceDuration(duration, model) {
   if (duration === "auto") {
-    return "auto";
+    return model === "SEEDANCE2.5I2V" ? SEEDANCE_25_DURATION_UNITS[0] : "auto";
   }
 
   const parsedDuration = Number(duration);
   if (!Number.isFinite(parsedDuration)) {
     return undefined;
+  }
+
+  if (model === "SEEDANCE2.5I2V") {
+    return SEEDANCE_25_DURATION_UNITS.reduce((closest, unit) => (
+      Math.abs(unit - parsedDuration) < Math.abs(closest - parsedDuration) ? unit : closest
+    ), SEEDANCE_25_DURATION_UNITS[0]);
   }
 
   const roundedDuration = Math.round(parsedDuration);
@@ -51,6 +59,9 @@ export function getSeedanceImageToVideoLink(model) {
   if (model === "SEEDANCE2.0I2V") {
     return SEEDANCE_20_IMAGE_TO_VIDEO_LINK;
   }
+  if (model === "SEEDANCE2.5I2V") {
+    return SEEDANCE_25_IMAGE_TO_VIDEO_LINK;
+  }
   const error = new Error(`${model || '<missing>'} is not supported by the FAL Seedance adapter.`);
   error.code = 'FAL_MODEL_UNSUPPORTED';
   throw error;
@@ -64,12 +75,26 @@ export function buildSeedanceInputPayload(payload) {
     aspectRatio,
     duration = 5,
     generateAudio = false,
+    generate_audio = false,
     isAudioVideoGeneration = false,
     userId,
   } = payload;
 
-  const shouldGenerateAudio = Boolean(generateAudio || isAudioVideoGeneration);
-  const normalizedDuration = normalizeSeedanceDuration(duration);
+  const normalizedGenerationType = typeof payload.generationType === 'string'
+    ? payload.generationType.trim().toLowerCase()
+    : '';
+  const normalizedLayerAiVideoType = typeof payload.layerAiVideoType === 'string'
+    ? payload.layerAiVideoType.trim().toLowerCase()
+    : '';
+  const isSoundEffectLayer = normalizedGenerationType === 'sound_effect' ||
+    normalizedLayerAiVideoType === 'sound_effect';
+  const shouldGenerateAudio = Boolean(
+    generateAudio === true ||
+    generate_audio === true ||
+    isAudioVideoGeneration === true ||
+    isSoundEffectLayer,
+  );
+  const normalizedDuration = normalizeSeedanceDuration(duration, payload.model);
   const normalizedAspectRatio = normalizeSeedanceAspectRatio(aspectRatio);
 
   const inputPayload = {
@@ -88,7 +113,7 @@ export function buildSeedanceInputPayload(payload) {
   if (normalizedAspectRatio) {
     inputPayload.aspect_ratio = normalizedAspectRatio;
   }
-  if (payload.model === "SEEDANCE2.0I2V") {
+  if (payload.model === "SEEDANCE2.0I2V" || payload.model === "SEEDANCE2.5I2V") {
     inputPayload.resolution = "720p";
   }
 

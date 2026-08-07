@@ -101,8 +101,6 @@ export async function pollSanaRequest(payload) {
     await ImageGeneration.findOneAndUpdate({
       _id: _id
     }, {
-      generationStatus: "FAILED",
-      apiGenerationStatus: "FAILED",
       rowLocked: false
     });
     return null;
@@ -173,4 +171,3 @@ function getImageSizeForAspectRation(aspectRatio) {
     }
   }
 }
-

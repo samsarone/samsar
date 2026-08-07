@@ -126,8 +126,8 @@ test('alternate prompt dispatch uses the same ordered retryable fallback', async
   t.mock.method(OpenAI.Chat.Completions.prototype, 'create', async (payload) => {
     attemptedModels.push(payload.model);
     if (payload.model === 'gpt-4.1-2025-04-14') {
-      const error = new Error('native unavailable');
-      error.status = 503;
+      const error = new Error('native rate limited before acceptance');
+      error.status = 429;
       throw error;
     }
     return {
@@ -159,8 +159,8 @@ test('structured prompt dispatch also advances through configured adapters', asy
   t.mock.method(OpenAI.Chat.Completions.prototype, 'create', async (payload) => {
     attemptedModels.push(payload.model);
     if (payload.model === 'gpt-4o-2024-11-20') {
-      const error = new Error('native timeout');
-      error.code = 'ETIMEDOUT';
+      const error = new Error('native connection refused');
+      error.code = 'ECONNREFUSED';
       throw error;
     }
     return {

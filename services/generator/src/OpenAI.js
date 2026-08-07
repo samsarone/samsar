@@ -114,11 +114,8 @@ export function isRetryableInferenceAdapterError(error) {
   if (
     status === 401 ||
     status === 403 ||
-    status === 408 ||
-    status === 409 ||
     status === 425 ||
-    status === 429 ||
-    status >= 500
+    status === 429
   ) {
     return true;
   }
@@ -129,15 +126,12 @@ export function isRetryableInferenceAdapterError(error) {
   ).trim().toUpperCase();
   return [
     'GENBLAZE_MODEL_UNSUPPORTED',
-    'ECONNABORTED',
+    'EAI_AGAIN',
     'ECONNREFUSED',
-    'ECONNRESET',
     'EHOSTUNREACH',
     'ENETUNREACH',
-    'ETIMEDOUT',
+    'ENOTFOUND',
     'UND_ERR_CONNECT_TIMEOUT',
-    'UND_ERR_HEADERS_TIMEOUT',
-    'UND_ERR_SOCKET',
   ].includes(code);
 }
 
@@ -224,14 +218,12 @@ async function createInferenceChatCompletionForProvider(
   }
 
   const openaiClient = dependencyOverrides.openaiClient || openai;
-  const requestOptions = {};
+  // A synchronous inference timeout/reset can happen after the provider has
+  // accepted the prompt. Hidden SDK retries could then create duplicate calls.
+  const requestOptions = { maxRetries: 0 };
   const requestedTimeout = Number(timeout ?? timeoutMs);
   if (Number.isFinite(requestedTimeout) && requestedTimeout > 0) {
     requestOptions.timeout = Math.floor(requestedTimeout);
-  }
-  const requestedMaxRetries = Number(maxRetries);
-  if (Number.isInteger(requestedMaxRetries) && requestedMaxRetries >= 0) {
-    requestOptions.maxRetries = requestedMaxRetries;
   }
   return openaiClient.chat.completions.create(providerRequest, requestOptions);
 }

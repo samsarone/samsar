@@ -34,6 +34,7 @@ import axios from "axios";
 import { createWriteStream } from "fs";
 import { pipeline } from "stream/promises";   // Node ≥ 16
 import { getCurrentEnvironment, isDockerRuntime } from "../util/environmentUtils.js";
+import { createSubmissionOutcomeUnknownError } from '../utils/ProviderSubmissionSafety.js';
 
 
 
@@ -230,7 +231,7 @@ export async function requestGenerateLyriaAiLayer(payload) {
 
   } catch (error) {
     console.error('Failed to submit Lyria backing track request:', error?.message || error);
-    return null;
+    throw createSubmissionOutcomeUnknownError(error, 'FAL Lyria submission');
   }
 }
 
@@ -353,7 +354,7 @@ export async function listenToPendingLyriaAiRequest(payload) {
   } catch (error) {
     console.error(`Failed to fetch fal queue status for ${generationId}:`, error);
     return {
-      responseStatus: "FAILED",
+      responseStatus: "PENDING",
       error: error?.message || 'Failed to fetch Lyria queue status.',
     };
   }

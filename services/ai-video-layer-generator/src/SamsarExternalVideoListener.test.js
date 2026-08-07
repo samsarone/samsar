@@ -10,6 +10,7 @@ import {
   resolveExternalVideoRoute,
   shouldUseSamsarExternalVideoProvider,
 } from './base/SamsarExternalVideoListener.js';
+import { resolveDockerVideoProvider } from './consts/DockerProviderPriority.js';
 
 const originalFetch = globalThis.fetch;
 
@@ -47,6 +48,10 @@ const ENV_KEYS = [
   'SAMSAR_MEDIA_TUNNEL_REFRESH_WAIT_MS',
   'SAMSAR_MEDIA_TUNNEL_REFRESH_POLL_MS',
   'SAMSAR_MEDIA_TUNNEL_REFRESH_REQUEST_PATH',
+  'SAMSAR_DOCKER_ADAPTER_ROUTING_ENABLED',
+  'SAMSAR_EXTERNAL_PROVIDERS_ENABLED',
+  'FAL_API_KEY',
+  'SAMSAR_API_KEY',
 ];
 
 function snapshotEnv() {
@@ -91,6 +96,30 @@ test('a persisted provider selection keeps INIT retries on the selected adapter'
       status: 'INIT',
       dockerVideoProvider: 'samsar',
     }), true);
+  } finally {
+    restoreEnv(envSnapshot);
+  }
+});
+
+test('Seedance 2.5 external requests stay on the internal Fal adapter path', () => {
+  const envSnapshot = snapshotEnv();
+  try {
+    configureDockerPublicMedia();
+    process.env.SAMSAR_DOCKER_ADAPTER_ROUTING_ENABLED = 'true';
+    process.env.FAL_API_KEY = 'fal-test-key';
+    process.env.SAMSAR_API_KEY = 'samsar-test-key';
+
+    assert.equal(
+      resolveDockerVideoProvider('SEEDANCE2.5I2V'),
+      'fal',
+    );
+    assert.equal(
+      shouldUseSamsarExternalVideoProvider({
+        model: 'SEEDANCE2.5I2V',
+        status: 'INIT',
+      }),
+      false,
+    );
   } finally {
     restoreEnv(envSnapshot);
   }

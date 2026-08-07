@@ -60,6 +60,9 @@ export const DOCKER_VIDEO_PROVIDER_PRIORITY_BY_MODEL = Object.freeze({
     DOCKER_VIDEO_PROVIDER.GMICLOUD,
     DOCKER_VIDEO_PROVIDER.FAL,
   ],
+  'SEEDANCE2.5I2V': [
+    DOCKER_VIDEO_PROVIDER.FAL,
+  ],
   KLINGIMGTOVID3PRO: [
     DOCKER_VIDEO_PROVIDER.GMICLOUD,
     DOCKER_VIDEO_PROVIDER.SAMSAR,
@@ -116,6 +119,7 @@ export const DOCKER_FAL_VIDEO_MODELS = Object.freeze([
   'VIDUI2V',
   'SEEDANCEI2V',
   'SEEDANCE2.0I2V',
+  'SEEDANCE2.5I2V',
   'HAPPYHORSEI2V',
   'MIRELOAI',
   'COSMOS3SUPERI2V',
@@ -135,6 +139,7 @@ export const DOCKER_FAL_SOUND_EFFECT_MODELS = Object.freeze([
   'MIRELOAI',
   'SEEDANCEI2V',
   'SEEDANCE2.0I2V',
+  'SEEDANCE2.5I2V',
   'VEO3.1I2V',
   'VEO3.1I2VFAST',
 ]);
@@ -430,6 +435,9 @@ export function getDockerVideoProviderPriority(model, { generationType = '' } = 
       defaultPriority = hostedGmiCloudEnabled
         ? [DOCKER_VIDEO_PROVIDER.GMICLOUD]
         : [];
+    } else if (normalizedModel === 'SEEDANCE2.5I2V') {
+      // Production Seedance 2.5 is routed through the configured FAL adapter.
+      defaultPriority = [DOCKER_VIDEO_PROVIDER.FAL];
     } else {
       defaultPriority = applyHostedFalPriority(defaultPriority)
         .filter(
@@ -454,7 +462,7 @@ export function getDockerVideoProviderPriority(model, { generationType = '' } = 
     );
   }
 
-  if (normalizedModel === 'SEEDANCE2.0I2V') {
+  if (normalizedModel === 'SEEDANCE2.0I2V' || normalizedModel === 'SEEDANCE2.5I2V') {
     return defaultPriority;
   }
 

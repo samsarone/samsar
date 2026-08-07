@@ -88,6 +88,7 @@ test('Seedream provider failures return to the shared retry path without a termi
   assert.deepEqual(result, {
     image: null,
     error: '400 Input text data may contain inappropriate content.',
+    definitiveAdapterFailure: true,
   });
   assert.equal(updates.length, 1);
   assert.equal(updates[0][1].rowLocked, true);

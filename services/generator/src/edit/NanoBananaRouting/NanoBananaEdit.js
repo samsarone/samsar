@@ -20,6 +20,14 @@ fal.config({
   credentials: FAL_API_KEY
 });
 
+async function throwSubmissionOutcomeUnknown(_id, error, message) {
+  await ImageGeneration.findByIdAndUpdate(_id, { submissionOutcomeUnknown: true });
+  const submissionError = new Error(message, { cause: error });
+  submissionError.submissionOutcomeUnknown = true;
+  submissionError.retryable = false;
+  throw submissionError;
+}
+
 
 export async function handleNanoBananaEditRequest(payload) {
   const { apiEditStatus, apiRequestId, model } = payload;
@@ -84,7 +92,7 @@ export async function submitNanoBananaEditRequest(payload) {
   } catch (error) {
     const message = getFalErrorMessage(error) || 'NanoBanana edit submission failed';
     await handlePollingError(_id, message);
-    throw new Error(message);
+    await throwSubmissionOutcomeUnknown(_id, error, message);
   }
 
 
@@ -130,7 +138,14 @@ export async function submitNanoBananaRemoveLogoRequest(payload) {
 
 
   
-  const response = await fal.queue.submit(falLink, { input: reqPayload });
+  let response;
+  try {
+    response = await fal.queue.submit(falLink, { input: reqPayload });
+  } catch (error) {
+    const message = getFalErrorMessage(error) || 'NanoBanana remove-logo submission failed';
+    await handlePollingError(_id, message);
+    await throwSubmissionOutcomeUnknown(_id, error, message);
+  }
   const requestId = response.request_id;
 
   await ImageGeneration.findOneAndUpdate(
@@ -300,7 +315,7 @@ export async function submitNanoBananaEnhanceRequest(payload) {
   } catch (error) {
     const message = getFalErrorMessage(error) || 'NanoBanana enhance submission failed';
     await handlePollingError(_id, message);
-    throw new Error(message);
+    await throwSubmissionOutcomeUnknown(_id, error, message);
   }
   const requestId = response.request_id;
 
@@ -355,7 +370,7 @@ export async function submitNanoBananaGetImageSetFromImageListRequest(payload) {
   } catch (error) {
     const message = getFalErrorMessage(error) || 'NanoBanana image_set submission failed';
     await handlePollingError(_id, message);
-    throw new Error(message);
+    await throwSubmissionOutcomeUnknown(_id, error, message);
   }
 
   const requestId = response.request_id;

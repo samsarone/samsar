@@ -641,35 +641,23 @@ export function isRetryableInferenceAdapterError(error) {
   if (
     status === 401 ||
     status === 403 ||
-    status === 408 ||
-    status === 409 ||
     status === 425 ||
-    status === 429 ||
-    (status !== null && status >= 500)
+    status === 429
   ) {
     return true;
   }
   if ([
     'GENBLAZE_MODEL_UNSUPPORTED',
     'EAI_AGAIN',
-    'ECONNABORTED',
     'ECONNREFUSED',
-    'ECONNRESET',
     'EHOSTUNREACH',
     'ENETUNREACH',
-    'ETIMEDOUT',
+    'ENOTFOUND',
     'UND_ERR_CONNECT_TIMEOUT',
-    'UND_ERR_HEADERS_TIMEOUT',
-    'UND_ERR_SOCKET',
   ].includes(getInferenceAdapterErrorCode(error))) {
     return true;
   }
-  const errorName = normalizeString(error?.name || error?.cause?.name).toUpperCase();
-  return [
-    'APICONNECTIONERROR',
-    'APICONNECTIONTIMEOUTERROR',
-    'EXTERNALINFERENCETIMEOUTERROR',
-  ].includes(errorName);
+  return false;
 }
 
 export async function runInferenceAdapterFallback(

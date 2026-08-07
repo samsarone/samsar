@@ -42,6 +42,7 @@ const audioGenerationSchema = new Schema({
   apiRequestId: String,
   // Immutable adapter affinity for the currently submitted provider request.
   submittedAdapter: String,
+  submissionOutcomeUnknown: { type: Boolean, default: false },
 
   requestTimeoutUntil: Date,
   

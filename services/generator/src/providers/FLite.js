@@ -83,6 +83,7 @@ export async function submitFLiteRequest(payload) {
     }, {
       generationStatus: "FAILED",
       apiGenerationStatus: "FAILED",
+      submissionOutcomeUnknown: true,
       rowLocked: false
     });
     return {
@@ -120,13 +121,9 @@ export async function pollFLiteRequest(payload) {
     await ImageGeneration.findOneAndUpdate({
       _id: _id
     }, {
-      generationStatus: "FAILED",
-      apiGenerationStatus: "FAILED",
       rowLocked: false
     });
-    return {
-      image: null,
-    };
+    return null;
   }
 
   const responseStatus = responseStatusData.status;
@@ -161,13 +158,9 @@ export async function pollFLiteRequest(payload) {
       await ImageGeneration.findOneAndUpdate({
         _id: _id
       }, {
-        generationStatus: "FAILED",
-        apiGenerationStatus: "FAILED",
         rowLocked: false,
       });
-      return {
-        image: null,
-      };
+      return null;
     }
 
 
@@ -201,5 +194,3 @@ function getImageSizeForAspectRation(aspectRatio) {
     return 'portrait_16_9';
   }
 }
-
-

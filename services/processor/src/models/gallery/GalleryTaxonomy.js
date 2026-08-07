@@ -1,4 +1,4 @@
-import { ensureGalleryIndexes, getGalleryModels } from './GalleryDatabase.js';
+import { ensureGalleryTaxonomyIndexes, getGalleryModels } from './GalleryDatabase.js';
 
 export const GALLERY_TAXONOMY_KINDS = Object.freeze(['category', 'topic']);
 
@@ -99,7 +99,7 @@ export async function syncGalleryTaxonomyMembership(input) {
     return { upserted: 0, removed: 0 };
   }
 
-  await ensureGalleryIndexes();
+  await ensureGalleryTaxonomyIndexes();
   const { GalleryTaxonomyEntry } = await getGalleryModels();
   const now = new Date();
 
@@ -148,7 +148,7 @@ export async function removeGalleryTaxonomyPublications(publicationIds) {
   ));
   if (normalizedIds.length === 0) return { publicationsRemoved: 0 };
 
-  await ensureGalleryIndexes();
+  await ensureGalleryTaxonomyIndexes();
   const { GalleryTaxonomyEntry } = await getGalleryModels();
   await GalleryTaxonomyEntry.updateMany(
     { publicationIds: { $in: normalizedIds } },
@@ -178,7 +178,7 @@ export async function listGalleryTaxonomyEntries({
   const normalizedKind = validateKind(kind);
   const resolvedLimit = Math.max(1, Math.min(500, Number(limit) || 100));
   const resolvedOffset = Math.max(0, Number(offset) || 0);
-  await ensureGalleryIndexes();
+  await ensureGalleryTaxonomyIndexes();
   const { GalleryTaxonomyEntry } = await getGalleryModels();
   const [records, total] = await Promise.all([
     GalleryTaxonomyEntry.aggregate([
@@ -226,7 +226,7 @@ export async function getGalleryTaxonomyPublicationIds({
   }
   const resolvedLimit = Math.max(1, Math.min(500, Number(limit) || 100));
   const resolvedOffset = Math.max(0, Number(offset) || 0);
-  await ensureGalleryIndexes();
+  await ensureGalleryTaxonomyIndexes();
   const { GalleryTaxonomyEntry } = await getGalleryModels();
   const [record] = await GalleryTaxonomyEntry.aggregate([
     { $match: { kind: normalizedKind, normalizedName } },

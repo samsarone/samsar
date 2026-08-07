@@ -221,7 +221,7 @@ test('adapter fallback does not hide a non-retryable request error', async () =>
   );
 
   assert.deepEqual(attempts, ['openai']);
-  assert.equal(isRetryableInferenceAdapterError({ status: 503 }), true);
+  assert.equal(isRetryableInferenceAdapterError({ status: 503 }), false);
   assert.equal(isRetryableInferenceAdapterError({ status: 400 }), false);
 });
 

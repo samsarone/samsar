@@ -105,11 +105,8 @@ export function isRetryableInferenceAdapterError(error) {
   if (
     status === 401 ||
     status === 403 ||
-    status === 408 ||
-    status === 409 ||
     status === 425 ||
-    status === 429 ||
-    status >= 500
+    status === 429
   ) {
     return true;
   }
@@ -120,15 +117,12 @@ export function isRetryableInferenceAdapterError(error) {
   ).trim().toUpperCase();
   return [
     'GENBLAZE_MODEL_UNSUPPORTED',
-    'ECONNABORTED',
+    'EAI_AGAIN',
     'ECONNREFUSED',
-    'ECONNRESET',
     'EHOSTUNREACH',
     'ENETUNREACH',
-    'ETIMEDOUT',
+    'ENOTFOUND',
     'UND_ERR_CONNECT_TIMEOUT',
-    'UND_ERR_HEADERS_TIMEOUT',
-    'UND_ERR_SOCKET',
   ].includes(code);
 }
 

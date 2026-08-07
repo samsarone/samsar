@@ -12,6 +12,9 @@ export function getInitialGenericVideoAdapter(model, env = process.env) {
   if (model === 'SEEDANCE2.0I2V' && isProductionEdition(env)) {
     return 'gmicloud';
   }
+  if (model === 'SEEDANCE2.5I2V' && isProductionEdition(env)) {
+    return 'fal';
+  }
   return '';
 }
 
@@ -22,7 +25,20 @@ export async function requestRenderGenericVideo(payload) {
 
   let { videoSessionId, currentLayerId, prompt, combineLayers, useStartFrame,
     useEndFrame = false, aspectRatio, model, clipLayerToAiVideo, userId, duration } = payload;
-  const generateAudio = payload.generateAudio === true || payload.generate_audio === true;
+  const normalizedGenerationType = typeof payload.generationType === 'string'
+    ? payload.generationType.trim().toLowerCase()
+    : '';
+  const normalizedLayerAiVideoType = typeof payload.layerAiVideoType === 'string'
+    ? payload.layerAiVideoType.trim().toLowerCase()
+    : '';
+  const isSoundEffectLayer = normalizedGenerationType === 'sound_effect' ||
+    normalizedLayerAiVideoType === 'sound_effect';
+  const generateAudio = Boolean(
+    payload.generateAudio === true ||
+    payload.generate_audio === true ||
+    payload.isAudioVideoGeneration === true ||
+    isSoundEffectLayer,
+  );
 
 
   await getDBConnectionString();
@@ -106,6 +122,9 @@ export async function requestRenderGenericVideo(payload) {
     model: model,
     duration: requestDuration,
     generateAudio: generateAudio,
+    isAudioVideoGeneration: generateAudio,
+    generationType: payload.generationType || payload.layerAiVideoType,
+    layerAiVideoType: payload.layerAiVideoType,
   }
   const initialVideoAdapter = getInitialGenericVideoAdapter(model);
   if (initialVideoAdapter) {

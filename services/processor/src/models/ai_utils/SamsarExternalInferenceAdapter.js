@@ -159,31 +159,21 @@ function isRetryableExternalInferenceError(error) {
     return false;
   }
   if (status !== null) {
-    return status === 408 || status === 409 || status === 425 || status === 429 || status >= 500;
+    return status === 425 || status === 429;
   }
 
   const code = getExternalInferenceErrorCode(error);
   if ([
-    'ECONNABORTED',
-    'ECONNRESET',
-    'ETIMEDOUT',
     'EAI_AGAIN',
+    'ECONNREFUSED',
+    'EHOSTUNREACH',
     'ENETUNREACH',
+    'ENOTFOUND',
+    'UND_ERR_CONNECT_TIMEOUT',
   ].includes(code)) {
     return true;
   }
-
-  if (
-    message.includes('invalid json response body') ||
-    message.includes('unexpected end of json input') ||
-    message.includes('unterminated json')
-  ) {
-    return true;
-  }
-
-  return ['APICONNECTIONERROR', 'APICONNECTIONTIMEOUTERROR'].includes(
-    normalizeString(error?.name || error?.cause?.name).toUpperCase(),
-  );
+  return false;
 }
 
 function getExternalInferenceRetryAfterMs(error) {
