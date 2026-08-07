@@ -405,7 +405,18 @@ export function getDockerVideoProviderPriority(model, { generationType = '' } = 
   const normalizedGenerationType = normalizeString(generationType).toLowerCase();
 
   if (normalizedGenerationType === 'lip_sync' || DOCKER_FAL_LIP_SYNC_MODELS.includes(normalizedModel)) {
-    return [DOCKER_VIDEO_PROVIDER.FAL, DOCKER_VIDEO_PROVIDER.SAMSAR];
+    // Standalone Docker sessions submit lip sync through the remote Samsar
+    // adapter when it is configured. FAL remains the local fallback, while
+    // hosted deployments retain their existing FAL-first behavior.
+    const defaultPriority = isStandaloneEdition()
+      ? [DOCKER_VIDEO_PROVIDER.SAMSAR, DOCKER_VIDEO_PROVIDER.FAL]
+      : [DOCKER_VIDEO_PROVIDER.FAL, DOCKER_VIDEO_PROVIDER.SAMSAR];
+    return isStandaloneEdition()
+      ? applyProviderPreferenceOrder(
+        defaultPriority,
+        getStandaloneVideoProviderPreference(normalizedModel),
+      )
+      : defaultPriority;
   }
 
   let defaultPriority;

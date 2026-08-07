@@ -65,6 +65,40 @@ test('WAN video keeps FAL as its Docker provider before Samsar fallback', () => 
   ]);
 });
 
+test('standalone lip sync prefers the Samsar external adapter before FAL fallback', () => {
+  clearEnv();
+  process.env.CURRENT_ENV = 'docker';
+  process.env.FAL_API_KEY = 'fal-key';
+  process.env.SAMSAR_API_KEY = 'samsar-key';
+
+  assert.deepEqual(getDockerVideoProviderPriority('SYNCLIPSYNC'), [
+    DOCKER_VIDEO_PROVIDER.SAMSAR,
+    DOCKER_VIDEO_PROVIDER.FAL,
+  ]);
+  assert.equal(
+    resolveDockerVideoProvider('SYNCLIPSYNC', { generationType: 'lip_sync' }),
+    DOCKER_VIDEO_PROVIDER.SAMSAR,
+  );
+
+  delete process.env.SAMSAR_API_KEY;
+  assert.equal(
+    resolveDockerVideoProvider('SYNCLIPSYNC', { generationType: 'lip_sync' }),
+    DOCKER_VIDEO_PROVIDER.FAL,
+  );
+});
+
+test('hosted lip sync keeps FAL as the primary adapter', () => {
+  clearEnv();
+  process.env.CURRENT_ENV = 'production';
+  process.env.SAMSAR_DEPLOYMENT_EDITION = 'production';
+  process.env.SAMSAR_RUNTIME = 'docker';
+
+  assert.deepEqual(getDockerVideoProviderPriority('SYNCLIPSYNC'), [
+    DOCKER_VIDEO_PROVIDER.FAL,
+    DOCKER_VIDEO_PROVIDER.SAMSAR,
+  ]);
+});
+
 test('Happy Horse resolves each configured Docker fallback in order', () => {
   clearEnv();
   process.env.CURRENT_ENV = 'docker';
