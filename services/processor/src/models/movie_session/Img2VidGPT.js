@@ -167,6 +167,7 @@ export async function processImgToVidGPT(userId, payload) {
       inputPrompt: prompt,
       requestType,
       creditSource,
+      pricingRateClass: payload.isAdVideo === true ? 'studio' : 'agent',
     };
     if (modelSubType) {
       quickMoviePayload.videoGenerationModelSubType = modelSubType;

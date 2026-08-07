@@ -44,6 +44,12 @@ export const EXPRESS_VIDEO_CREDITS_PER_SECOND_BY_MODEL = Object.freeze({
   HAPPYHORSEI2V: 36,
 });
 
+export const EXPRESS_VIDEO_PRICING_RATE_CLASSES = Object.freeze({
+  STUDIO: 'studio',
+  AGENT: 'agent',
+  VIDGENIE: 'vidgenie',
+});
+
 export const EXPRESS_VIDEO_PRICING_DISTRIBUTION_PER_SECOND_BY_MODEL = Object.freeze(
   Object.fromEntries(
     Object.entries(EXPRESS_VIDEO_CREDITS_PER_SECOND_BY_MODEL)
@@ -77,16 +83,58 @@ export function getAgentVideoCreditsPerSecond(model) {
     ?? getExpressVideoCreditsPerSecond(model);
 }
 
-export function getExpressVideoStageCreditsPerSecond(stageKey, model) {
+export function normalizeExpressVideoPricingRateClass(value) {
+  const normalizedValue = typeof value === 'string' ? value.trim().toLowerCase() : '';
+  return normalizedValue === EXPRESS_VIDEO_PRICING_RATE_CLASSES.AGENT ||
+    normalizedValue === EXPRESS_VIDEO_PRICING_RATE_CLASSES.VIDGENIE
+    ? normalizedValue
+    : EXPRESS_VIDEO_PRICING_RATE_CLASSES.STUDIO;
+}
+
+export function getExpressVideoCreditsPerSecondForRateClass(
+  model,
+  pricingRateClass = EXPRESS_VIDEO_PRICING_RATE_CLASSES.STUDIO,
+) {
+  const normalizedRateClass = normalizeExpressVideoPricingRateClass(pricingRateClass);
+  return normalizedRateClass === EXPRESS_VIDEO_PRICING_RATE_CLASSES.AGENT ||
+    normalizedRateClass === EXPRESS_VIDEO_PRICING_RATE_CLASSES.VIDGENIE
+    ? getAgentVideoCreditsPerSecond(model)
+    : getExpressVideoCreditsPerSecond(model);
+}
+
+export function getExpressVideoStageCreditsPerSecond(
+  stageKey,
+  model,
+  pricingRateClass = EXPRESS_VIDEO_PRICING_RATE_CLASSES.STUDIO,
+) {
   const normalizedStageKey = typeof stageKey === 'string' ? stageKey.trim().toLowerCase() : '';
   if (normalizedStageKey === 'ai_video_generation') {
-    const totalCreditsPerSecond = getExpressVideoCreditsPerSecond(model);
+    const totalCreditsPerSecond = getExpressVideoCreditsPerSecondForRateClass(
+      model,
+      pricingRateClass,
+    );
     return Number.isFinite(totalCreditsPerSecond)
       ? Math.max(0, totalCreditsPerSecond - EXPRESS_VIDEO_NON_VIDEO_STAGE_CREDITS_PER_SECOND_TOTAL)
       : 0;
   }
 
   return EXPRESS_VIDEO_STAGE_CREDITS_PER_SECOND[normalizedStageKey] ?? 0;
+}
+
+export function getExpressVideoPricingDistributionPerSecondForRateClass(
+  model,
+  pricingRateClass = EXPRESS_VIDEO_PRICING_RATE_CLASSES.STUDIO,
+) {
+  const distribution = getExpressVideoPricingDistributionPerSecond(model);
+  const total = getExpressVideoCreditsPerSecondForRateClass(model, pricingRateClass);
+  if (!distribution || !Number.isFinite(total)) {
+    return null;
+  }
+  return {
+    ...distribution,
+    video: Math.max(0, total - EXPRESS_VIDEO_NON_VIDEO_STAGE_CREDITS_PER_SECOND_TOTAL),
+    total,
+  };
 }
 
 export function getExpressVideoPricingDistributionPerSecond(model) {

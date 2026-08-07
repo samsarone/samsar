@@ -60,7 +60,15 @@ function isFailedStatus(value) {
 }
 
 function normalizeExternalVideoPayload(payload = {}) {
-  return payload && typeof payload === 'object' && !Array.isArray(payload) ? { ...payload } : {};
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+    return {};
+  }
+  const normalizedPayload = { ...payload };
+  // External API requests always use the Studio/external production rate.
+  // Do not allow a caller to select Agent or VidGenie pricing metadata.
+  delete normalizedPayload.pricingRateClass;
+  delete normalizedPayload.expressGenerationPricingRateClass;
+  return normalizedPayload;
 }
 
 function normalizeExternalImageToVideoPayload(payload = {}) {

@@ -71,6 +71,9 @@ import {
   assertSufficientExpressVideoCreditsForPreflight,
   buildInitialReusedNarrativeExpressVideoCreditCharges,
 } from '../ExpressVideoStageBilling.js';
+import {
+  normalizeExpressVideoPricingRateClass,
+} from '../../consts/pricing/ExpressVideoPricingDistribution.js';
 import { buildBranchedVideoSessionPlan } from '../movie_session/branching/BranchedVideoSessionPlan.js';
 import { resolveFramesPerSecond } from '../../utils/FpsUtils.js';
 import {
@@ -446,6 +449,9 @@ async function requestCreateVideoInternal(userId, payload = {}, webhookUrl, {
   const isStepVideoGeneration = payload.isStepVideoGeneration === true;
   const stepVideoRoute = getFirstStringValue(payload.stepVideoRoute, payload.step_video_route)
     || (isStepVideoGeneration ? 'text_to_video' : null);
+  const pricingRateClass = normalizeExpressVideoPricingRateClass(
+    payload.pricingRateClass || payload.expressGenerationPricingRateClass,
+  );
   const resolvedManualStepStages = Object.prototype.hasOwnProperty.call(payload, 'manual_step_stages')
     ? payload.manual_step_stages
     : payload.manualStepStages;
@@ -562,6 +568,7 @@ async function requestCreateVideoInternal(userId, payload = {}, webhookUrl, {
     customAdapterOperationUsage: customModelOverrides.operationUsage,
     samsarExternalProviderStages,
     expressGenerationNarrativeReused: reusesNarrativeArtifacts,
+    pricingRateClass,
     excludedStageKeys: reusesNarrativeArtifacts
       ? [EXPRESS_VIDEO_BILLING_STAGES.NARRATIVE_INFERENCE]
       : [],
@@ -589,6 +596,7 @@ async function requestCreateVideoInternal(userId, payload = {}, webhookUrl, {
     optionalComponentWarnings,
     isStepVideoGeneration,
     stepVideoRoute,
+    expressGenerationPricingRateClass: pricingRateClass,
     ...(resolvedManualStepStages !== undefined
       ? {
         manual_step_stages: resolvedManualStepStages,
@@ -640,6 +648,7 @@ async function requestCreateVideoInternal(userId, payload = {}, webhookUrl, {
     inferenceModel: effectiveInferenceModel,
     isStepVideoGeneration: isStepVideoGeneration === true,
     stepVideoRoute,
+    expressGenerationPricingRateClass: pricingRateClass,
     manualStepStages: resolvedManualStepStages,
     customAdapters,
     customAdapterFallbacks: customModelOverrides.fallbackModels,
@@ -717,6 +726,7 @@ async function createUnifiedSessionAndUpdateWebhook(userId, payload, webhookUrl,
     samsarExternalProviderStages = null,
     isStepVideoGeneration = false,
     stepVideoRoute = null,
+    expressGenerationPricingRateClass = 'studio',
     manual_step_stages = undefined,
     manualStepStages = undefined,
   } = payload;
@@ -800,6 +810,7 @@ async function createUnifiedSessionAndUpdateWebhook(userId, payload, webhookUrl,
     ...(requestSpeakerOptions ? { speakerOptions: requestSpeakerOptions } : {}),
     isStepVideoGeneration: isStepVideoGeneration === true,
     stepVideoRoute,
+    expressGenerationPricingRateClass,
     ...(resolvedManualStepStages !== undefined
       ? {
         manual_step_stages: resolvedManualStepStages,
@@ -963,6 +974,9 @@ export async function requestCreateVideoFromImageListAndMetadata(userId, payload
   const isStepVideoGeneration = payload.isStepVideoGeneration === true;
   const stepVideoRoute = getFirstStringValue(payload.stepVideoRoute, payload.step_video_route)
     || (isStepVideoGeneration ? 'image_to_video' : null);
+  const pricingRateClass = normalizeExpressVideoPricingRateClass(
+    payload.pricingRateClass || payload.expressGenerationPricingRateClass,
+  );
   const manualStepStages = Object.prototype.hasOwnProperty.call(payload, 'manual_step_stages')
     ? payload.manual_step_stages
     : payload.manualStepStages;
@@ -1092,6 +1106,7 @@ export async function requestCreateVideoFromImageListAndMetadata(userId, payload
     customAdapters,
     customAdapterOperationUsage: customModelOverrides.operationUsage,
     samsarExternalProviderStages,
+    pricingRateClass,
   });
 
   const sessionId = await getOrCreateSessionId(userId, payload);
@@ -1150,6 +1165,7 @@ export async function requestCreateVideoFromImageListAndMetadata(userId, payload
     ...(requestSpeakerOptions ? { speakerOptions: requestSpeakerOptions } : {}),
     isStepVideoGeneration,
     stepVideoRoute,
+    expressGenerationPricingRateClass: pricingRateClass,
     ...(manualStepStages !== undefined ? { manual_step_stages: manualStepStages } : {}),
     ...(customAdapters ? { custom_adapters: customAdapters } : {}),
     ...(customAdapters ? { customAdapterFallbacks: customModelOverrides.fallbackModels } : {}),
@@ -1194,6 +1210,7 @@ export async function requestCreateVideoFromImageListAndMetadata(userId, payload
     inferenceModel: effectiveInferenceModel,
     isStepVideoGeneration,
     stepVideoRoute,
+    expressGenerationPricingRateClass: pricingRateClass,
     manualStepStages,
     customAdapters,
     customAdapterFallbacks: customModelOverrides.fallbackModels,
@@ -1252,6 +1269,7 @@ export async function processImageListToVideoBuilderSession(sessionId, userId, p
     samsarExternalProviderStages = null,
     isStepVideoGeneration = false,
     stepVideoRoute = null,
+    expressGenerationPricingRateClass = 'studio',
     manual_step_stages = undefined,
     manualStepStages = undefined,
   } = payload;
@@ -1431,6 +1449,7 @@ export async function processImageListToVideoBuilderSession(sessionId, userId, p
     ...(builderSpeakerOptions ? { speakerOptions: builderSpeakerOptions } : {}),
     isStepVideoGeneration: isStepVideoGeneration === true,
     stepVideoRoute,
+    expressGenerationPricingRateClass,
     ...(resolvedManualStepStages !== undefined ? { manualStepStages: resolvedManualStepStages } : {}),
     ...(custom_adapters ? { custom_adapters } : {}),
     ...(customAdapterFallbacks ? { customAdapterFallbacks } : {}),
@@ -2495,6 +2514,7 @@ async function saveVideoSessionRequestMetadata(sessionId, {
   samsarExternalProviderStages,
   apiKeyUsage,
   expressCtaGeneration,
+  expressGenerationPricingRateClass,
   builderRouteType,
   builderStatus,
   builderSessionSubType,
@@ -2624,6 +2644,12 @@ async function saveVideoSessionRequestMetadata(sessionId, {
 
   if (typeof expressGenerativeVideoModel === 'string' && expressGenerativeVideoModel.trim()) {
     setPayload.expressGenerativeVideoModel = expressGenerativeVideoModel.trim();
+  }
+
+  if (typeof expressGenerationPricingRateClass === 'string' && expressGenerationPricingRateClass.trim()) {
+    setPayload.expressGenerationPricingRateClass = normalizeExpressVideoPricingRateClass(
+      expressGenerationPricingRateClass,
+    );
   }
 
   if (typeof expressGenerationImageModel === 'string' && expressGenerationImageModel.trim()) {

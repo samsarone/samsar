@@ -37,6 +37,7 @@ const retryableImageToVideoModels = [
   'RUNWAYML',
   'SEEDANCEI2V',
   'SEEDANCE2.0I2V',
+  'SEEDANCE2.5I2V',
   'SKYREELSI2V',
   'SORA2',
   'VEOI2V',
@@ -86,6 +87,18 @@ test('Seedance 2.0 keeps standalone provider billing with production rate metada
     { aspectRatio: '9:16', price: 150 },
   ]);
   assert.equal(pricing?.pricingDistribution?.total, 40);
+});
+
+test('Seedance 2.5 carries production pricing and supported duration units', () => {
+  const pricing = VIDEO_MODEL_PRICES.find((model) => model.key === 'SEEDANCE2.5I2V');
+  assert.equal(pricing?.providerBilled, true);
+  assert.equal(pricing?.isPerSecondPricing, true);
+  assert.deepEqual(pricing?.prices, [
+    { aspectRatio: '16:9', price: 50 },
+    { aspectRatio: '9:16', price: 50 },
+  ]);
+  assert.deepEqual(pricing?.units, [5, 10, 15, 20, 25, 30]);
+  assert.equal(pricing?.pricingDistribution?.total, 50);
 });
 
 test('production Seedance 2.0 queue requests are born pinned to GMICloud', () => {

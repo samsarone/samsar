@@ -68,8 +68,8 @@ import {
 } from '../../constants/Types.ts';
 import { IMAGE_MODEL_PRICES, VIDEO_MODEL_PRICES } from '../../constants/ModelPrices.jsx';
 import {
-  getExpressVideoCreditsPerSecond,
-  getExpressVideoPricingDistributionPerSecond,
+  getExpressVideoCreditsPerSecondForRateClass,
+  getExpressVideoPricingDistributionPerSecondForRateClass,
 } from '../../constants/pricing/ExpressVideoPricingDistribution.js';
 import { SUPPORTED_LANGUAGES, resolveLanguageCode } from '../../constants/supportedLanguages.js';
 import { getHeaders } from '../../utils/web.jsx';
@@ -986,7 +986,7 @@ function getRerollLocalCreditEstimate({
 
   const imageCreditsPerLayer = getImageCreditsForModel(imageModel, aspectRatio);
   const videoStageCreditsPerSecond =
-    getExpressVideoPricingDistributionPerSecond(videoModel)?.video ?? 0;
+    getExpressVideoPricingDistributionPerSecondForRateClass(videoModel, 'vidgenie')?.video ?? 0;
   const durationSeconds = selectedLayers.reduce((total, item) => total + (Number(item.duration) || 0), 0);
   const imageCredits = Math.ceil(imageCreditsPerLayer * selectedLayers.length);
   const aiVideoCredits = Math.ceil(Math.max(0, durationSeconds * videoStageCreditsPerSecond));
@@ -6213,7 +6213,8 @@ export default function OneshotEditor() {
   const isProviderBilledVideo = isProviderBilledVideoPricing(selectedVideoModelPricing);
   const creditsPerSecondVideo = useMemo(() => {
     if (isProviderBilledVideo) return null;
-    return getExpressVideoCreditsPerSecond(selectedVideoModelKey) ?? (generationMode === 'I2V' ? 60 : 30);
+    return getExpressVideoCreditsPerSecondForRateClass(selectedVideoModelKey, 'vidgenie') ??
+      (generationMode === 'I2V' ? 60 : 30);
   }, [generationMode, isProviderBilledVideo, selectedVideoModelKey]);
 
 

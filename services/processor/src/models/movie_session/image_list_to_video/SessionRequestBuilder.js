@@ -75,6 +75,7 @@ import {
   resolveDockerTTSProvider,
 } from "../../../consts/DockerAudioAvailability.js";
 import { hasConnectedSpeechAudioLayer } from '../../video/LipSyncLayerState.js';
+import { normalizeExpressVideoPricingRateClass } from '../../../consts/pricing/ExpressVideoPricingDistribution.js';
 
 const MEDIA_DOWNLOAD_TIMEOUT_MS = Number.isFinite(Number(process.env.API_MEDIA_DOWNLOAD_TIMEOUT_MS))
   ? Math.max(1000, Math.floor(Number(process.env.API_MEDIA_DOWNLOAD_TIMEOUT_MS)))
@@ -551,6 +552,7 @@ export async function requestImageListToVideGeneration(userId, payload) {
     inferenceModel = null,
     isStepVideoGeneration = false,
     stepVideoRoute = null,
+    expressGenerationPricingRateClass = 'studio',
     manualStepStages = undefined,
     manual_step_stages = undefined,
   } = payload;
@@ -1315,6 +1317,9 @@ export async function requestImageListToVideGeneration(userId, payload) {
       expressGenerationImageModel: imageModel,
 
       expressGenerationType: 'IMAGE_LIST_TO_VIDEO',
+      expressGenerationPricingRateClass: normalizeExpressVideoPricingRateClass(
+        expressGenerationPricingRateClass,
+      ),
 
       expressGenerativeVideoUseEndFrame: true,
       notifyOnCompletion: selectedNotifyOnCompletion,

@@ -320,6 +320,43 @@ test('hosted Express stage billing still debits and records a charged receipt', 
   assert.equal(debitCalls[0].options.source, 'express_video_stage_narrative_inference');
 });
 
+test('hosted VidGenie Seedance 2.5 stage billing uses 60 credits per second', async (t) => {
+  setDeploymentEditionForTest(t, 'production');
+  const harness = installVideoSessionBillingHarness(t, {
+    _id: '507f1f77bcf86cd799439012',
+    userId: '507f191e810c19729de860ea',
+    expressGenerativeVideoModel: 'SEEDANCE2.5I2V',
+    expressGenerationPricingRateClass: 'vidgenie',
+    expressGenerationType: 'IMAGE_LIST_TO_VIDEO',
+    expressGenerationBillingDurationSeconds: 10,
+    expressGenerationCreditCharges: {
+      version: 1,
+      durationSeconds: 10,
+      totalCharged: 0,
+      stages: {},
+    },
+  });
+  const debitCalls = [];
+
+  const result = await chargeExpressVideoStageCredits({
+    sessionId: '507f1f77bcf86cd799439012',
+    stageKey: EXPRESS_VIDEO_BILLING_STAGES.AI_VIDEO_GENERATION,
+    requestType: 'API',
+  }, {
+    connect: async () => {},
+    deductCredits: async (userId, credits) => {
+      debitCalls.push({ userId, credits });
+      return { remainingCredits: 4000 };
+    },
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.creditsCharged, 440);
+  assert.equal(result.stage.creditsPerSecond, 44);
+  assert.equal(debitCalls[0].credits, 440);
+  assert.equal(harness.getSession().expressGenerationCreditCharges.totalCharged, 440);
+});
+
 test('standalone custom stages retain custom-success bookkeeping before credit waiver', async (t) => {
   setDeploymentEditionForTest(t, 'standalone');
   const customOperation = {
@@ -453,6 +490,29 @@ test('NarrativeRequest-backed render preflight applies the full express model un
   assert.equal(estimate.durationSeconds, 29);
   assert.equal(estimate.stages[EXPRESS_VIDEO_BILLING_STAGES.PIPELINE].creditsPerSecond, 8);
   assert.equal(estimate.totalCredits, 29 * 30);
+});
+
+test('VidGenie preflight uses Agent pricing while Studio stays at the Studio rate', () => {
+  const studioEstimate = estimateExpressVideoCreditsForPreflight({
+    durationSeconds: 10,
+    videoModel: 'SEEDANCE2.5I2V',
+  });
+  const vidgenieEstimate = estimateExpressVideoCreditsForPreflight({
+    durationSeconds: 10,
+    videoModel: 'SEEDANCE2.5I2V',
+    pricingRateClass: 'vidgenie',
+  });
+
+  assert.equal(studioEstimate.totalCredits, 500);
+  assert.equal(
+    studioEstimate.stages[EXPRESS_VIDEO_BILLING_STAGES.AI_VIDEO_GENERATION].creditsPerSecond,
+    34,
+  );
+  assert.equal(vidgenieEstimate.totalCredits, 600);
+  assert.equal(
+    vidgenieEstimate.stages[EXPRESS_VIDEO_BILLING_STAGES.AI_VIDEO_GENERATION].creditsPerSecond,
+    44,
+  );
 });
 
 test('preflight estimates retain all stages when exclusions are not provided', () => {

@@ -429,6 +429,7 @@ const videoSessionSchema = new Schema({
   expressGenerationBillingDurationSeconds: { type: Number, default: 0 },
   expressGenerationBillingStageDurations: { type: Object, default: {} },
   expressGenerationCreditCharges: { type: Object, default: {} },
+  expressGenerationPricingRateClass: { type: String, default: 'studio' },
   isStepVideoGeneration: { type: Boolean, default: false },
   expressStepGeneration: { type: Object, default: {} },
 

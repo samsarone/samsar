@@ -11,6 +11,12 @@ const EXPRESS_VIDEO_FIXED_COMPONENTS_TOTAL_PER_SECOND =
   Object.values(EXPRESS_VIDEO_FIXED_PRICING_COMPONENTS_PER_SECOND)
     .reduce((total, value) => total + value, 0);
 
+export const EXPRESS_VIDEO_PRICING_RATE_CLASSES = Object.freeze({
+  STUDIO: 'studio',
+  AGENT: 'agent',
+  VIDGENIE: 'vidgenie',
+});
+
 export const EXPRESS_VIDEO_CREDITS_PER_SECOND_BY_MODEL = Object.freeze({
   'VEO3.1I2V': 60,
   'VEO3.1I2VFAST': 36,
@@ -43,7 +49,47 @@ export function getExpressVideoCreditsPerSecond(model) {
   return EXPRESS_VIDEO_CREDITS_PER_SECOND_BY_MODEL[modelKey] ?? null;
 }
 
+export function normalizeExpressVideoPricingRateClass(value) {
+  const normalizedValue = typeof value === 'string' ? value.trim().toLowerCase() : '';
+  return normalizedValue === EXPRESS_VIDEO_PRICING_RATE_CLASSES.AGENT ||
+    normalizedValue === EXPRESS_VIDEO_PRICING_RATE_CLASSES.VIDGENIE
+    ? normalizedValue
+    : EXPRESS_VIDEO_PRICING_RATE_CLASSES.STUDIO;
+}
+
+export function getExpressVideoCreditsPerSecondForRateClass(
+  model,
+  pricingRateClass = EXPRESS_VIDEO_PRICING_RATE_CLASSES.STUDIO,
+) {
+  const normalizedModel = typeof model === 'string' ? model.trim().toUpperCase() : '';
+  const normalizedRateClass = normalizeExpressVideoPricingRateClass(pricingRateClass);
+  if (
+    (normalizedRateClass === EXPRESS_VIDEO_PRICING_RATE_CLASSES.AGENT ||
+      normalizedRateClass === EXPRESS_VIDEO_PRICING_RATE_CLASSES.VIDGENIE) &&
+    normalizedModel === 'SEEDANCE2.5I2V'
+  ) {
+    return 60;
+  }
+  return getExpressVideoCreditsPerSecond(model);
+}
+
 export function getExpressVideoPricingDistributionPerSecond(model) {
   const modelKey = typeof model === 'string' ? model.trim().toUpperCase() : '';
   return EXPRESS_VIDEO_PRICING_DISTRIBUTION_PER_SECOND_BY_MODEL[modelKey] ?? null;
+}
+
+export function getExpressVideoPricingDistributionPerSecondForRateClass(
+  model,
+  pricingRateClass = EXPRESS_VIDEO_PRICING_RATE_CLASSES.STUDIO,
+) {
+  const distribution = getExpressVideoPricingDistributionPerSecond(model);
+  const total = getExpressVideoCreditsPerSecondForRateClass(model, pricingRateClass);
+  if (!distribution || !Number.isFinite(total)) {
+    return null;
+  }
+  return {
+    ...distribution,
+    video: Math.max(0, total - EXPRESS_VIDEO_FIXED_COMPONENTS_TOTAL_PER_SECOND),
+    total,
+  };
 }

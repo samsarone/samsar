@@ -4,6 +4,7 @@ import {
   EXPRESS_VIDEO_CREDITS_PER_SECOND_BY_MODEL,
   getExpressVideoPricingDistributionPerSecond,
 } from './pricing/ExpressVideoPricingDistribution.js';
+import { IS_STANDALONE_DEPLOYMENT } from '../utils/environment.jsx';
 
 export const COSMOS3_SUPER_MODEL_KEY = 'COSMOS3SUPERI2V';
 const COSMOS3_SUPER_MAX_FRAMES = 189;
@@ -251,7 +252,9 @@ export const VIDEO_MODEL_PRICES = [
     isExpressModel: true,
     isImageToVideoModel: true,
     isTextToVideoModel: false,
-    providerBilled: true,
+    // Standalone deployments charge the configured Fal adapter directly.
+    // Hosted production uses Samsar credits for this Fal-backed route.
+    providerBilled: IS_STANDALONE_DEPLOYMENT,
     isPerSecondPricing: true,
     prices: [
       { aspectRatio: '16:9', price: 50 },

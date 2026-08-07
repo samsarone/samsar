@@ -280,6 +280,7 @@ export async function createVidGPTSessionFromNarrativeArtifacts(userId, payload 
     languageString: effectiveLanguageString,
     requestType,
     creditSource,
+    pricingRateClass: 'agent',
     enableSubtitles,
     hasSubtitles: enableSubtitles !== false,
     has_subtitles: enableSubtitles !== false,
@@ -528,6 +529,7 @@ export async function createVidGPTSession(userId, payload) {
     languageString: effectiveLanguageString,
     requestType,
     creditSource,
+    pricingRateClass: 'agent',
     enableSubtitles,
     hasSubtitles: enableSubtitles !== false,
     has_subtitles: enableSubtitles !== false,
@@ -772,6 +774,7 @@ export async function createInfoVidSession(userId, payload) {
     videoTone: videoTone,
     requestType,
     creditSource,
+    pricingRateClass: 'agent',
 
   };
   if (imageStyle) {

@@ -13,6 +13,7 @@ import { normalizeAPIKeyUsageContext } from './api/RequestAuthContext.js';
 import {
   EXPRESS_VIDEO_FIXED_PRICING_COMPONENTS_PER_SECOND,
   EXPRESS_VIDEO_OPTIONAL_ADDON_CREDITS_PER_SECOND,
+  normalizeExpressVideoPricingRateClass,
   getExpressVideoStageCreditsPerSecond,
 } from '../consts/pricing/ExpressVideoPricingDistribution.js';
 
@@ -347,6 +348,7 @@ export function estimateExpressVideoCreditsForPreflight({
   customAdapterOperationUsage = null,
   samsarExternalProviderStages = null,
   expressGenerationNarrativeReused = false,
+  pricingRateClass = 'studio',
   excludedStageKeys = [],
 } = {}) {
   const normalizedDuration = Number(durationSeconds);
@@ -377,6 +379,7 @@ export function estimateExpressVideoCreditsForPreflight({
   const normalizedExcludedStageKeys = new Set(
     rawExcludedStageKeys.map(normalizeStageKey).filter(Boolean),
   );
+  const normalizedPricingRateClass = normalizeExpressVideoPricingRateClass(pricingRateClass);
 
   for (const stageKey of EXPRESS_VIDEO_ESTIMATE_STAGE_KEYS) {
     if (normalizedExcludedStageKeys.has(stageKey)) {
@@ -389,7 +392,7 @@ export function estimateExpressVideoCreditsForPreflight({
     const customStage = isCustomStageConfigured(sessionData, stageKey);
     const baseCreditsPerSecond = customStage
       ? 0
-      : getExpressVideoStageCreditsPerSecond(stageKey, videoModel);
+      : getExpressVideoStageCreditsPerSecond(stageKey, videoModel, normalizedPricingRateClass);
     const surchargeCreditsPerSecond = customStage
       ? 0
       : getStageSurchargeCreditsPerSecond(sessionData, stageKey);
@@ -473,6 +476,7 @@ export async function assertSufficientExpressVideoCreditsForPreflight({
   customAdapterOperationUsage = null,
   samsarExternalProviderStages = null,
   expressGenerationNarrativeReused = false,
+  pricingRateClass = 'studio',
   excludedStageKeys = [],
 }, dependencies = {}) {
   const {
@@ -492,6 +496,7 @@ export async function assertSufficientExpressVideoCreditsForPreflight({
     customAdapterOperationUsage,
     samsarExternalProviderStages,
     expressGenerationNarrativeReused,
+    pricingRateClass,
     excludedStageKeys,
   });
   if (shouldBypassCredits()) {
@@ -667,7 +672,14 @@ export async function chargeExpressVideoStageCredits({
     normalizedStageKey,
   );
   const videoModel = normalizeModelKey(sessionData.expressGenerativeVideoModel);
-  const baseCreditsPerSecond = getExpressVideoStageCreditsPerSecond(normalizedStageKey, videoModel);
+  const pricingRateClass = normalizeExpressVideoPricingRateClass(
+    sessionData.expressGenerationPricingRateClass,
+  );
+  const baseCreditsPerSecond = getExpressVideoStageCreditsPerSecond(
+    normalizedStageKey,
+    videoModel,
+    pricingRateClass,
+  );
   const surchargeCreditsPerSecond = getStageSurchargeCreditsPerSecond(sessionData, normalizedStageKey);
   const creditsPerSecond = baseCreditsPerSecond + surchargeCreditsPerSecond;
   const creditsCharged = Number.isFinite(durationSeconds) && durationSeconds > 0

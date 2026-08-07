@@ -77,6 +77,7 @@ import {
   materializeBranchedVideoSessionPaths,
 } from './branching/BranchedVideoSessionPlan.js';
 import { hasConnectedSpeechAudioLayer } from '../video/LipSyncLayerState.js';
+import { normalizeExpressVideoPricingRateClass } from '../../consts/pricing/ExpressVideoPricingDistribution.js';
 
 const MEDIA_DOWNLOAD_TIMEOUT_MS = Number.isFinite(Number(process.env.API_MEDIA_DOWNLOAD_TIMEOUT_MS))
   ? Math.max(1000, Math.floor(Number(process.env.API_MEDIA_DOWNLOAD_TIMEOUT_MS)))
@@ -923,6 +924,7 @@ async function requestQuickMovieGenerationInternal(userId, payload, {
     manualStepStages = undefined,
     manual_step_stages = undefined,
     optionalComponentWarnings: upstreamOptionalComponentWarnings = [],
+    pricingRateClass: requestedPricingRateClass = 'studio',
     sourceNarrativeRequestId = null,
     sourceNarrativeType = null,
     narrativeJson: sourceNarrativeJson = null,
@@ -931,6 +933,7 @@ async function requestQuickMovieGenerationInternal(userId, payload, {
   const resolvedManualStepStages = manualStepStages !== undefined
     ? manualStepStages
     : manual_step_stages;
+  const pricingRateClass = normalizeExpressVideoPricingRateClass(requestedPricingRateClass);
   const resolvedRequestType = typeof payload.requestType === 'string' && payload.requestType.trim()
     ? payload.requestType.trim()
     : 'APP';
@@ -1768,6 +1771,7 @@ async function requestQuickMovieGenerationInternal(userId, payload, {
       subtitleTranslationRequired,
       requestType: resolvedRequestType,
       creditSource: payload.creditSource || 'text_to_video',
+      expressGenerationPricingRateClass: pricingRateClass,
       builderRouteType: 'text_to_video',
       expressGenerationType: 'TEXT_TO_VIDEO',
       isVidGPTGen: true,

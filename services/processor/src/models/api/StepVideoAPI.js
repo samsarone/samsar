@@ -814,6 +814,7 @@ export async function requestStepTextToVideo({ userId, payload = {}, webhookUrl 
     manual_step_stages: manualStepStages,
     isStepVideoGeneration: true,
     stepVideoRoute: 'text_to_video',
+    pricingRateClass: 'vidgenie',
   };
   const response = await requestCreateVideo(userId, stepPayload, webhookUrl);
   const sessionId = response?.session_id || response?.request_id;
@@ -840,6 +841,7 @@ export async function requestStepImageToVideo({ userId, payload = {}, webhookUrl
     manual_step_stages: manualStepStages,
     isStepVideoGeneration: true,
     stepVideoRoute: 'image_to_video',
+    pricingRateClass: 'vidgenie',
   };
   const response = await requestCreateVideoFromImageListAndMetadata(userId, stepPayload, webhookUrl);
   const sessionId = response?.session_id || response?.request_id;
