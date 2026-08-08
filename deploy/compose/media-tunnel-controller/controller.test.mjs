@@ -234,13 +234,26 @@ test('internal refresh endpoint waits for and returns a different public tunnel 
     SAMSAR_MEDIA_TUNNEL_RESTART_DELAY_MS: '100',
   });
   controller.currentUrl = 'https://first.trycloudflare.com';
+  let resolveMarkerWritten;
+  let rejectMarkerWritten;
+  const markerWritten = new Promise((resolve, reject) => {
+    resolveMarkerWritten = resolve;
+    rejectMarkerWritten = reject;
+  });
+  const writeRefreshRequestMarker = controller.writeRefreshRequestMarker.bind(controller);
+  controller.writeRefreshRequestMarker = async (details) => {
+    try {
+      await writeRefreshRequestMarker(details);
+      resolveMarkerWritten();
+    } catch (error) {
+      rejectMarkerWritten(error);
+      throw error;
+    }
+  };
   try {
     await controller.startRefreshServer();
     const address = controller.refreshServer.address();
-    setTimeout(() => {
-      controller.currentUrl = 'https://second.trycloudflare.com';
-    }, 50);
-    const response = await fetch(`http://127.0.0.1:${address.port}/refresh`, {
+    const responsePromise = fetch(`http://127.0.0.1:${address.port}/refresh`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -251,13 +264,16 @@ test('internal refresh endpoint waits for and returns a different public tunnel 
         ],
       }),
     });
+    await markerWritten;
+    const marker = JSON.parse(await fs.readFile(markerPath, 'utf8'));
+    assert.equal(marker.reason, 'gmicloud_media_download_failed');
+    assert.equal(marker.retryNumber, 1);
+    controller.currentUrl = 'https://second.trycloudflare.com';
+    const response = await responsePromise;
     assert.equal(response.status, 200);
     assert.deepEqual(await response.json(), {
       publicUrl: 'https://second.trycloudflare.com',
     });
-    const marker = JSON.parse(await fs.readFile(markerPath, 'utf8'));
-    assert.equal(marker.reason, 'gmicloud_media_download_failed');
-    assert.equal(marker.retryNumber, 1);
   } finally {
     await controller.stopRefreshServer();
     await fs.rm(tempRoot, { recursive: true, force: true });
