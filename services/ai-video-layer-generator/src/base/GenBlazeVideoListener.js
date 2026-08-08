@@ -263,11 +263,13 @@ export function buildGenBlazeVideoRequest(payload = {}) {
     if (model === 'SEEDANCE2.0I2V' || model === 'SEEDANCE2.5I2V') {
       params.resolution = '720p';
     }
-    // GMICloud accepts ratio for text-to-video requests, but rejects it when
-    // Seedance 2.5 receives a first frame because that image determines the
-    // output ratio. Fal uses a separate request builder and keeps its normal
-    // aspect_ratio contract.
-    if (model !== 'SEEDANCE2.5I2V' || !startImage) {
+    // GMICloud requires framed Seedance 2.5 requests to use its adaptive
+    // ratio so the first image determines the output shape. Omitting the
+    // field lets the upstream queue materialize an invalid fixed default.
+    // Fal uses a separate request builder and keeps its normal aspect_ratio.
+    if (model === 'SEEDANCE2.5I2V' && startImage) {
+      params.aspect_ratio = 'adaptive';
+    } else {
       const aspectRatio = normalizeSeedanceAspectRatio(
         payload.aspectRatio || payload.aspect_ratio,
       );

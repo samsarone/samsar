@@ -216,6 +216,7 @@ test('GMICloud Seedance 2.5 lets framed generation derive ratio from the first i
     ],
     params: {
       duration: 15,
+      aspect_ratio: 'adaptive',
       generate_audio: true,
       resolution: '720p',
       seed: 7,

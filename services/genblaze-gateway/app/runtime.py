@@ -375,6 +375,15 @@ def _drop_params(*names: str) -> Callable[[dict[str, Any]], dict[str, Any]]:
     return transform
 
 
+def _seedance_2_5_params(params: dict[str, Any]) -> dict[str, Any]:
+    transformed = dict(params)
+    transformed.pop("aspect_ratio", None)
+    # GMICloud's framed Seedance 2.5 contract must explicitly use adaptive;
+    # omission allows the upstream queue to materialize a fixed default ratio.
+    transformed["ratio"] = "adaptive"
+    return transformed
+
+
 def _aspect_ratio_coercer(*allowed: str) -> Callable[[Any], str]:
     allowed_values = frozenset(allowed)
 
@@ -1011,9 +1020,7 @@ def load_genblaze_bindings() -> GenBlazeBindings:
             elif contract_key in {"seedance-1-5", "seedance-2", "seedance-2-5"}:
                 param_aliases = {"aspect_ratio": "ratio"}
                 if contract_key == "seedance-2-5":
-                    # This route always has a first frame. GMICloud derives the
-                    # output shape from it and rejects an explicit ratio.
-                    param_transformer = _drop_params("aspect_ratio", "ratio")
+                    param_transformer = _seedance_2_5_params
                 param_coercers = {
                     "duration": (
                         _seedance_1_5_duration

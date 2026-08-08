@@ -1154,7 +1154,7 @@ def test_seedance_2_registry_preserves_the_exact_i2v_payload():
     ]
 
 
-def test_seedance_2_5_registry_omits_ratio_for_first_frame_generation():
+def test_seedance_2_5_registry_uses_adaptive_ratio_for_first_frame_generation():
     route = ModelRoute(
         "SEEDANCE2.5I2V",
         "seedance-2-5-260628",
@@ -1195,6 +1195,7 @@ def test_seedance_2_5_registry_omits_ratio_for_first_frame_generation():
                 "payload": {
                     "prompt": "move with synchronized ambience",
                     "duration": 15,
+                    "ratio": "adaptive",
                     "resolution": "720p",
                     "generate_audio": True,
                     "first_frame": "https://example/start.png",
