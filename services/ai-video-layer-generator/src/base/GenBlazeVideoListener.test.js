@@ -194,7 +194,7 @@ test('GMICloud Seedance 2.0 enables audio for sound-effect generation', () => {
   assert.equal(request.params.resolution, '720p');
 });
 
-test('GMICloud Seedance 2.5 mirrors the Fal 720p, ratio, duration, and audio contract', () => {
+test('GMICloud Seedance 2.5 lets framed generation derive ratio from the first image', () => {
   const soundEffectRequest = buildGenBlazeVideoRequest({
     model: 'SEEDANCE2.5I2V',
     prompt: 'Camera eases between the keyframes with synchronized ambience.',
@@ -216,7 +216,6 @@ test('GMICloud Seedance 2.5 mirrors the Fal 720p, ratio, duration, and audio con
     ],
     params: {
       duration: 15,
-      aspect_ratio: '9:16',
       generate_audio: true,
       resolution: '720p',
       seed: 7,

@@ -771,8 +771,10 @@ def _media_contract_key(samsar_model: str) -> str:
         return "veo"
     if samsar_model == "SEEDANCEI2V":
         return "seedance-1-5"
-    if samsar_model in {"SEEDANCE2.0I2V", "SEEDANCE2.5I2V"}:
+    if samsar_model == "SEEDANCE2.0I2V":
         return "seedance-2"
+    if samsar_model == "SEEDANCE2.5I2V":
+        return "seedance-2-5"
     if samsar_model == "KLINGIMGTOVID3PRO":
         return "kling-v3"
     if samsar_model == "KLINGIMGTOVIDTURBO":
@@ -1006,8 +1008,12 @@ def load_genblaze_bindings() -> GenBlazeBindings:
                 allowlist = frozenset(
                     {"prompt", "image", "duration", "negative_prompt"}
                 )
-            elif contract_key in {"seedance-1-5", "seedance-2"}:
+            elif contract_key in {"seedance-1-5", "seedance-2", "seedance-2-5"}:
                 param_aliases = {"aspect_ratio": "ratio"}
+                if contract_key == "seedance-2-5":
+                    # This route always has a first frame. GMICloud derives the
+                    # output shape from it and rejects an explicit ratio.
+                    param_transformer = _drop_params("aspect_ratio", "ratio")
                 param_coercers = {
                     "duration": (
                         _seedance_1_5_duration
@@ -1031,7 +1037,7 @@ def load_genblaze_bindings() -> GenBlazeBindings:
                     "generate_audio",
                     "seed",
                 }
-                if contract_key == "seedance-2":
+                if contract_key in {"seedance-2", "seedance-2-5"}:
                     param_coercers["resolution"] = _seedance_2_resolution
                     param_defaults = {"resolution": "720p"}
                     seedance_allowlist.add("resolution")

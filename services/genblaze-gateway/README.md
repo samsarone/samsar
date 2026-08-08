@@ -65,7 +65,8 @@ within BytePlus's model-specific pixel limits; Nano resolution/output format
 become `image_size`/`image_output_format`; Veo uses its camelCase fields; Kling
 v3 uses string duration, `sound=on|off`, and the selected `mode=pro|std`;
 legacy Kling routes accept only their exact 5/10-second fields; Seedance uses
-`ratio`. Seedance 2.0 and 2.5 are exposed as image-to-video through the exact
+`ratio`, except Seedance 2.5 omits it for framed generation because GMICloud
+derives the output shape from `first_frame`. Seedance 2.0 and 2.5 are exposed as image-to-video through the exact
 `seedance-2-0-260128` and `seedance-2-5-260628` routes, require a public first frame, accept an optional
 last frame, clamps duration to 4–15 seconds, and uses the fixed normalized
 `720p` tier; Hailuo Pro is fixed to the supported six-second `1080P` combination;

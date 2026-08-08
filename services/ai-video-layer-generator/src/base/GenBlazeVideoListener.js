@@ -263,10 +263,16 @@ export function buildGenBlazeVideoRequest(payload = {}) {
     if (model === 'SEEDANCE2.0I2V' || model === 'SEEDANCE2.5I2V') {
       params.resolution = '720p';
     }
-    const aspectRatio = normalizeSeedanceAspectRatio(
-      payload.aspectRatio || payload.aspect_ratio,
-    );
-    if (aspectRatio) params.aspect_ratio = aspectRatio;
+    // GMICloud accepts ratio for text-to-video requests, but rejects it when
+    // Seedance 2.5 receives a first frame because that image determines the
+    // output ratio. Fal uses a separate request builder and keeps its normal
+    // aspect_ratio contract.
+    if (model !== 'SEEDANCE2.5I2V' || !startImage) {
+      const aspectRatio = normalizeSeedanceAspectRatio(
+        payload.aspectRatio || payload.aspect_ratio,
+      );
+      if (aspectRatio) params.aspect_ratio = aspectRatio;
+    }
     addIntegerSeed(params, payload.seed);
   } else if (model === 'KLINGIMGTOVIDTURBO') {
     // GMICloud's dedicated Kling 3.0 Turbo endpoint accepts one first frame,
