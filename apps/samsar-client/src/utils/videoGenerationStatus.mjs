@@ -13,6 +13,77 @@ function normalizeStatus(value) {
   return typeof value === 'string' ? value.trim().toUpperCase() : '';
 }
 
+function extractErrorText(value) {
+  if (typeof value === 'string') {
+    return value.trim();
+  }
+  if (Array.isArray(value)) {
+    return value.map(extractErrorText).find(Boolean) || '';
+  }
+  if (!isPlainObject(value)) {
+    return '';
+  }
+  return (
+    extractErrorText(value.message) ||
+    extractErrorText(value.error) ||
+    extractErrorText(value.detail) ||
+    extractErrorText(value.details) ||
+    extractErrorText(value.reason) ||
+    extractErrorText(value.providerError)
+  );
+}
+
+function isFailedStatus(value) {
+  return FAILED_STATUSES.has(normalizeStatus(value));
+}
+
+function getFailedLayerError(layer = {}) {
+  const candidates = [
+    [layer.aiVideo?.status || layer.aiVideoGenerationStatus, layer.aiVideo?.error || layer.aiVideoGenerationError],
+    [layer.lipSyncVideo?.status || layer.lipSyncVideoGenerationStatus, layer.lipSyncVideo?.error || layer.lipSyncVideoGenerationError],
+    [layer.soundEffectVideo?.status || layer.soundEffectVideoGenerationStatus, layer.soundEffectVideo?.error || layer.soundEffectVideoGenerationError],
+    [layer.userVideo?.status || layer.userVideoGenerationStatus, layer.userVideo?.error || layer.userVideoGenerationError],
+    [layer.image?.status || layer.imageSession?.generationStatus, layer.image?.error || layer.imageSession?.generationError],
+    [layer.image?.editStatus || layer.imageSession?.editStatus, layer.image?.editError || layer.imageSession?.editError],
+  ];
+  const failure = candidates.find(([status, error]) => isFailedStatus(status) && extractErrorText(error));
+  return failure ? extractErrorText(failure[1]) : '';
+}
+
+export function resolveVideoGenerationErrorMessage(data) {
+  if (!isPlainObject(data)) {
+    return '';
+  }
+
+  const layerCollections = [data?.session?.layers, data?.layers]
+    .filter(Array.isArray);
+  for (const layers of layerCollections) {
+    const layerError = layers.map(getFailedLayerError).find(Boolean);
+    if (layerError) {
+      return layerError;
+    }
+  }
+
+  const candidates = [
+    data.expressGenerationError,
+    data.generationError,
+    data.errorMessage,
+    data.message,
+    data.error,
+    data.step?.error,
+    data.step?.errorMessage,
+    data.step?.message,
+    data.session?.expressGenerationError,
+    data.session?.generationError,
+    data.session?.errorMessage,
+    data.session?.message,
+    data.session?.error,
+    data.session?.result?.error,
+    data.session?.result?.message,
+  ];
+  return candidates.map(extractErrorText).find(Boolean) || '';
+}
+
 function getRecordId(record = {}, fallback = '') {
   return record?._id?.toString?.() || record?._id || record?.id?.toString?.() || record?.id || fallback;
 }
@@ -87,6 +158,9 @@ function normalizeDetailedLayer(layer = {}, index = 0) {
     imageSession: {
       ...(isPlainObject(layer.imageSession) ? layer.imageSession : {}),
       generationStatus: image.status || layer.imageSession?.generationStatus || 'INIT',
+      generationError: image.error || layer.imageSession?.generationError || null,
+      editStatus: image.editStatus || layer.imageSession?.editStatus,
+      editError: image.editError || layer.imageSession?.editError || null,
       prompt: image.prompt || layer.imageSession?.prompt || layer.prompt || '',
       activeImageDescription: image.description || layer.imageSession?.activeImageDescription || '',
       activeImageRemoteLink: imageUrl || layer.imageSession?.activeImageRemoteLink || '',
@@ -99,21 +173,26 @@ function normalizeDetailedLayer(layer = {}, index = 0) {
     aiVideoLayer: aiVideoUrl || layer.aiVideoLayer,
     aiVideoRemoteLink: aiVideoUrl || layer.aiVideoRemoteLink,
     aiVideoGenerationStatus: aiVideo.status || layer.aiVideoGenerationStatus,
+    aiVideoGenerationError: aiVideo.error || layer.aiVideoGenerationError || null,
     aiVideoGenerationPending: PENDING_STATUSES.has(normalizeStatus(aiVideo.status)),
     hasLipSyncVideoLayer: Boolean(lipSyncVideoUrl),
     lipSyncVideoLayer: lipSyncVideoUrl || layer.lipSyncVideoLayer,
     lipSyncRemoteLink: lipSyncVideoUrl || layer.lipSyncRemoteLink,
     lipSyncVideoGenerationStatus: lipSyncVideo.status || layer.lipSyncVideoGenerationStatus,
+    lipSyncVideoGenerationError: lipSyncVideo.error || layer.lipSyncVideoGenerationError || null,
     lipSyncGenerationPending: PENDING_STATUSES.has(normalizeStatus(lipSyncVideo.status)),
     hasSoundEffectVideoLayer: Boolean(soundEffectVideoUrl),
     soundEffectVideoLayer: soundEffectVideoUrl || layer.soundEffectVideoLayer,
     soundEffectRemoteLink: soundEffectVideoUrl || layer.soundEffectRemoteLink,
     soundEffectVideoGenerationStatus: soundEffectVideo.status || layer.soundEffectVideoGenerationStatus,
+    soundEffectVideoGenerationError:
+      soundEffectVideo.error || layer.soundEffectVideoGenerationError || null,
     soundEffectGenerationPending: PENDING_STATUSES.has(normalizeStatus(soundEffectVideo.status)),
     hasUserVideoLayer: Boolean(userVideoUrl),
     userVideoLayer: userVideoUrl || layer.userVideoLayer,
     userVideoRemoteLink: userVideoUrl || layer.userVideoRemoteLink,
     userVideoGenerationStatus: userVideo.status || layer.userVideoGenerationStatus,
+    userVideoGenerationError: userVideo.error || layer.userVideoGenerationError || null,
     userVideoGenerationPending: PENDING_STATUSES.has(normalizeStatus(userVideo.status)),
   };
 }
@@ -399,10 +478,7 @@ export function buildStudioSessionDetailsFromStatus(data) {
       sessionPreview.expressGenerationCancelled ??
       ['CANCELLED', 'CANCELED'].includes(normalizedStatus),
     expressGenerationError:
-      data.expressGenerationError ||
-      data.message ||
-      data.error ||
-      sessionPreview.expressGenerationError,
+      resolveVideoGenerationErrorMessage(data) || sessionPreview.expressGenerationError,
     videoLink: firstText([
       sessionPreview.videoLink,
       sessionPreview.result?.videoLink,

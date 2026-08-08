@@ -5,6 +5,7 @@ import {
   buildStudioSessionDetailsFromStatus,
   fetchDetailedVideoGenerationStatus,
   materializeBranchPathPreview,
+  resolveVideoGenerationErrorMessage,
 } from './videoGenerationStatus.mjs';
 
 test('detailed status falls back from the step route to the generic route', async () => {
@@ -64,6 +65,39 @@ test('status preview is converted into Studio layers with partial image and vide
   assert.equal(Object.prototype.hasOwnProperty.call(session, 'canonicalLayers'), false);
   assert.equal(Object.prototype.hasOwnProperty.call(session, 'canonicalAudioLayers'), false);
   assert.equal(Object.prototype.hasOwnProperty.call(session, 'branching'), false);
+});
+
+test('client prefers the exact failed AI-video layer provider error over a generic status message', () => {
+  const providerError = 'Provider error: input image may contain a real person';
+  const status = {
+    status: 'FAILED',
+    message: 'Video generation failed.',
+    session: {
+      layers: [{
+        id: 'layer-1',
+        aiVideo: {
+          status: 'FAILED',
+          error: providerError,
+        },
+      }],
+    },
+  };
+
+  assert.equal(resolveVideoGenerationErrorMessage(status), providerError);
+  assert.equal(buildStudioSessionDetailsFromStatus(status).expressGenerationError, providerError);
+});
+
+test('client preserves exact image-list provider errors from nested image status', () => {
+  const providerError = 'Provider validation failed: unsupported source image';
+  assert.equal(resolveVideoGenerationErrorMessage({
+    status: 'FAILED',
+    layers: [{
+      image: {
+        status: 'FAILED',
+        error: providerError,
+      },
+    }],
+  }), providerError);
 });
 
 test('completed compact branched status uses the top-level output manifest without detailed assets', () => {

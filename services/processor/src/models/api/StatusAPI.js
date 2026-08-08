@@ -78,7 +78,9 @@ export const VIDEO_STATUS_SESSION_PROJECTION = [
   ...VIDEO_STATUS_BRANCH_PROJECTION,
   'expressGenerationStatus',
   'expressGenerationCreditCharges',
+  'generationError',
   'expressGenerationError',
+  'lastAiVideoLayerGenerationError',
   'expressGenerationFailed',
   'expressGenerationPending',
   'expressGenerationPaused',
@@ -112,6 +114,18 @@ export const VIDEO_STATUS_SESSION_PROJECTION = [
   'layers.footerMetadata',
   'layers.footerLogoImagePath',
   'layers.footer_logo_image_path',
+  'layers.imageSession.generationStatus',
+  'layers.imageSession.generationError',
+  'layers.imageSession.editStatus',
+  'layers.imageSession.editError',
+  'layers.aiVideoGenerationStatus',
+  'layers.aiVideoGenerationError',
+  'layers.lipSyncVideoGenerationStatus',
+  'layers.lipSyncVideoGenerationError',
+  'layers.soundEffectVideoGenerationStatus',
+  'layers.soundEffectVideoGenerationError',
+  'layers.userVideoGenerationStatus',
+  'layers.userVideoGenerationError',
 ].join(' ');
 
 export const VIDEO_STATUS_DETAILED_SESSION_PROJECTION = [
@@ -129,7 +143,9 @@ export const VIDEO_STATUS_DETAILED_SESSION_PROJECTION = [
   ...VIDEO_STATUS_DETAILED_BRANCH_PROJECTION,
   'expressGenerationStatus',
   'expressGenerationCreditCharges',
+  'generationError',
   'expressGenerationError',
+  'lastAiVideoLayerGenerationError',
   'expressGenerationFailed',
   'expressGenerationPending',
   'expressGenerationPaused',
@@ -184,7 +200,9 @@ export const VIDEO_STATUS_DETAILED_SESSION_PROJECTION = [
   'layers.footerLogoImagePath',
   'layers.footer_logo_image_path',
   'layers.imageSession.generationStatus',
+  'layers.imageSession.generationError',
   'layers.imageSession.editStatus',
+  'layers.imageSession.editError',
   'layers.imageSession.activeSelectedImage',
   'layers.imageSession.activeGeneratedImage',
   'layers.imageSession.activeEditedImage',
@@ -195,6 +213,7 @@ export const VIDEO_STATUS_DETAILED_SESSION_PROJECTION = [
   'layers.filterPasses',
   'layers.refilterImageScore',
   'layers.aiVideoGenerationStatus',
+  'layers.aiVideoGenerationError',
   'layers.aiVideoRemoteLink',
   'layers.aiVideoLayer',
   'layers.hasAiVideoLayer',
@@ -205,16 +224,19 @@ export const VIDEO_STATUS_DETAILED_SESSION_PROJECTION = [
   'layers.aiVideoThumbnailPath',
   'layers.thumbnailPath',
   'layers.lipSyncVideoGenerationStatus',
+  'layers.lipSyncVideoGenerationError',
   'layers.lipSyncRemoteLink',
   'layers.lipSyncVideoLayer',
   'layers.hasLipSyncVideoLayer',
   'layers.lipSyncThumbnailPath',
   'layers.soundEffectVideoGenerationStatus',
+  'layers.soundEffectVideoGenerationError',
   'layers.soundEffectRemoteLink',
   'layers.soundEffectVideoLayer',
   'layers.hasSoundEffectVideoLayer',
   'layers.soundEffectThumbnailPath',
   'layers.userVideoGenerationStatus',
+  'layers.userVideoGenerationError',
   'layers.userVideoRemoteLink',
   'layers.userVideoLayer',
   'layers.hasUserVideoLayer',
@@ -339,6 +361,98 @@ function normalizeString(value) {
 function normalizeNonEmptyString(value) {
   const normalized = normalizeString(value);
   return normalized || null;
+}
+
+function isTerminalGenerationFailureStatus(value) {
+  const normalized = normalizeString(value).toUpperCase();
+  return BRANCH_FAILED_STATUSES.has(normalized) || /FAIL|ERROR|TIMEOUT/.test(normalized);
+}
+
+function buildLayerGenerationFailure(layer = {}, layerIndex = 0) {
+  const candidates = [
+    {
+      stage: 'ai_video_generation',
+      status: layer.aiVideoGenerationStatus,
+      message: layer.aiVideoGenerationError,
+    },
+    {
+      stage: 'lip_sync_generation',
+      status: layer.lipSyncVideoGenerationStatus,
+      message: layer.lipSyncVideoGenerationError,
+    },
+    {
+      stage: 'sound_effect_generation',
+      status: layer.soundEffectVideoGenerationStatus,
+      message: layer.soundEffectVideoGenerationError,
+    },
+    {
+      stage: 'user_video_generation',
+      status: layer.userVideoGenerationStatus,
+      message: layer.userVideoGenerationError,
+    },
+    {
+      stage: 'image_generation',
+      status: layer.imageSession?.generationStatus,
+      message: layer.imageSession?.generationError,
+    },
+    {
+      stage: 'image_edit',
+      status: layer.imageSession?.editStatus,
+      message: layer.imageSession?.editError,
+    },
+  ];
+  const failure = candidates.find(({ status, message }) => (
+    isTerminalGenerationFailureStatus(status) && normalizeNonEmptyString(message)
+  ));
+  if (!failure) {
+    return null;
+  }
+
+  return {
+    message: normalizeNonEmptyString(failure.message),
+    stage: failure.stage,
+    layer_id: toObjectIdString(layer._id),
+    layer_index: layerIndex,
+  };
+}
+
+export function resolveVideoGenerationFailure(sessionData = {}) {
+  const layers = Array.isArray(sessionData?.layers) ? sessionData.layers : [];
+  for (let layerIndex = 0; layerIndex < layers.length; layerIndex += 1) {
+    const failure = buildLayerGenerationFailure(layers[layerIndex], layerIndex);
+    if (failure) {
+      return failure;
+    }
+  }
+
+  const stageStatuses = sessionData?.expressGenerationStatus &&
+    typeof sessionData.expressGenerationStatus === 'object'
+    ? Object.values(sessionData.expressGenerationStatus)
+    : [];
+  const hasAggregateFailure = sessionData?.expressGenerationFailed === true ||
+    stageStatuses.some(isTerminalGenerationFailureStatus);
+  const sessionGenerationError = normalizeNonEmptyString(sessionData?.generationError);
+  const hasActiveGeneration = sessionData?.expressGenerationPending === true ||
+    sessionData?.videoGenerationPending === true ||
+    stageStatuses.some((status) => ['PENDING', 'IN_PROGRESS', 'RUNNING', 'PROCESSING']
+      .includes(normalizeString(status).toUpperCase()));
+  const hasCompletedOutput = Boolean(sessionData?.videoLink || sessionData?.remoteURL);
+  if (
+    sessionGenerationError &&
+    (hasAggregateFailure || (!hasActiveGeneration && !hasCompletedOutput))
+  ) {
+    return { message: sessionGenerationError, stage: 'video_generation' };
+  }
+  if (!hasAggregateFailure) {
+    return null;
+  }
+
+  const aggregateError = normalizeNonEmptyString(
+    sessionData?.lastAiVideoLayerGenerationError || sessionData?.expressGenerationError,
+  );
+  return aggregateError
+    ? { message: aggregateError, stage: 'video_generation' }
+    : null;
 }
 
 function isBranchedVideoSession(sessionData = {}) {
@@ -1043,10 +1157,10 @@ export function reconcileDetailedBranchStatus(baseStatus = {}, sessionData = {},
     normalizedStatus.has_subtitles = resolveVideoHasSubtitles(sessionData);
     normalizedStatus.has_footer = resolveVideoHasFooter(sessionData);
     normalizedStatus.result_language = resolveVideoResultLanguage(sessionData);
-    if (!sessionData?.expressGenerationError) {
-      delete normalizedStatus.expressGenerationError;
-      delete normalizedStatus.message;
-    }
+    delete normalizedStatus.generationError;
+    delete normalizedStatus.expressGenerationError;
+    delete normalizedStatus.error;
+    delete normalizedStatus.message;
     return normalizedStatus;
   }
 
@@ -1834,6 +1948,7 @@ function buildAssetStatus(rawStatus, fallbackUrl = null) {
 
 function buildVideoAsset({
   status,
+  error,
   url,
   hasAsset,
   req,
@@ -1846,6 +1961,9 @@ function buildVideoAsset({
   return {
     status: buildAssetStatus(status, normalizedUrl),
     url: normalizedUrl,
+    error: isTerminalGenerationFailureStatus(status)
+      ? normalizeNonEmptyString(error)
+      : null,
   };
 }
 
@@ -1943,7 +2061,13 @@ function serializeDetailedLayer(
     : null;
   const image = compactObject({
     status: buildAssetStatus(layer?.imageSession?.generationStatus, imageUrl),
+    error: isTerminalGenerationFailureStatus(layer?.imageSession?.generationStatus)
+      ? normalizeNonEmptyString(layer?.imageSession?.generationError)
+      : null,
     editStatus: normalizeNonEmptyString(layer?.imageSession?.editStatus),
+    editError: isTerminalGenerationFailureStatus(layer?.imageSession?.editStatus)
+      ? normalizeNonEmptyString(layer?.imageSession?.editError)
+      : null,
     url: imageUrl,
     editedImage: editedImage?.url,
     editedImageRawUrl: editedImage?.rawUrl,
@@ -1955,6 +2079,7 @@ function serializeDetailedLayer(
   });
   const aiVideo = buildVideoAsset({
     status: layer.aiVideoGenerationStatus,
+    error: layer.aiVideoGenerationError,
     url: selectResponseMediaSource({
       local: layer.aiVideoLayer,
       remote: layer.aiVideoRemoteLink,
@@ -1964,6 +2089,7 @@ function serializeDetailedLayer(
   });
   const lipSyncVideo = buildVideoAsset({
     status: layer.lipSyncVideoGenerationStatus,
+    error: layer.lipSyncVideoGenerationError,
     url: selectResponseMediaSource({
       local: layer.lipSyncVideoLayer,
       remote: layer.lipSyncRemoteLink,
@@ -1973,6 +2099,7 @@ function serializeDetailedLayer(
   });
   const soundEffectVideo = buildVideoAsset({
     status: layer.soundEffectVideoGenerationStatus,
+    error: layer.soundEffectVideoGenerationError,
     url: selectResponseMediaSource({
       local: layer.soundEffectVideoLayer,
       remote: layer.soundEffectRemoteLink,
@@ -1982,6 +2109,7 @@ function serializeDetailedLayer(
   });
   const userVideo = buildVideoAsset({
     status: layer.userVideoGenerationStatus,
+    error: layer.userVideoGenerationError,
     url: selectResponseMediaSource({
       local: layer.userVideoLayer,
       remote: layer.userVideoRemoteLink,
@@ -2277,6 +2405,12 @@ export function buildNormalizedVideoSessionPreview(
     globalVideos,
     resultUrl,
   });
+  const generationFailure = resolveVideoGenerationFailure(sessionData);
+  const generationError = normalizeNonEmptyString(
+    statusPayload.generationError ||
+    statusPayload.expressGenerationError ||
+    generationFailure?.message,
+  );
 
   return compactObject({
     id: toObjectIdString(sessionData._id),
@@ -2307,6 +2441,9 @@ export function buildNormalizedVideoSessionPreview(
     ),
     generationType: normalizeNonEmptyString(sessionData.expressGenerationType),
     provider: normalizeNonEmptyString(statusPayload.provider || sessionData.provider),
+    generationError,
+    expressGenerationError: generationError,
+    error: generationError,
     narrativeType:
       normalizeNonEmptyString(sessionData.narrativeType) ||
       normalizeNonEmptyString(sessionData.sourceNarrativeType) ||
@@ -2365,6 +2502,7 @@ export async function buildVideoStatusResponse({
       stageVideoStatusRaw.includes('ERROR') ||
       stageVideoStatusRaw.includes('TIMEOUT');
     const stageVideoCanceled = stageVideoStatusRaw.includes('CANCEL');
+    const generationFailure = resolveVideoGenerationFailure(sessionSnapshot);
     const expressGenerationCancelled = Boolean(sessionSnapshot?.expressGenerationCancelled);
     const expressGenerationPaused = Boolean(sessionSnapshot?.expressGenerationPaused);
     const statusRaw = typeof sessionSnapshot?.expressGenerationStatus?.status === 'string'
@@ -2408,7 +2546,11 @@ export async function buildVideoStatusResponse({
       : completionUrl ? 'COMPLETED' : 'PENDING';
     if (!isInteractiveDraft && (expressGenerationCancelled || stageVideoCanceled)) {
       normalizedStatus = 'CANCELLED';
-    } else if (!isInteractiveDraft && (sessionSnapshot.expressGenerationFailed || stageVideoFailed)) {
+    } else if (!isInteractiveDraft && (
+      sessionSnapshot.expressGenerationFailed ||
+      stageVideoFailed ||
+      generationFailure
+    )) {
       normalizedStatus = 'FAILED';
     } else if (!isInteractiveDraft && expressGenerationPaused) {
       normalizedStatus = 'PAUSED';
@@ -2469,9 +2611,16 @@ export async function buildVideoStatusResponse({
       credits_charged: totalCreditsCharged,
     };
 
-    if (sessionSnapshot?.expressGenerationError) {
-      payload.expressGenerationError = sessionSnapshot.expressGenerationError;
-      payload.message = sessionSnapshot.expressGenerationError;
+    const generationError = normalizeNonEmptyString(
+      generationFailure?.message ||
+      sessionSnapshot?.generationError ||
+      sessionSnapshot?.expressGenerationError,
+    );
+    if (generationError && ['FAILED', 'CANCELLED'].includes(payload.status)) {
+      payload.generationError = generationError;
+      payload.expressGenerationError = generationError;
+      payload.error = generationError;
+      payload.message = generationError;
     }
 
     if (sessionSnapshot?.videoLink && (!branchedSession || shouldReportCompleted)) {

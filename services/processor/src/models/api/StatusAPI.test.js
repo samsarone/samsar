@@ -13,6 +13,7 @@ import {
   buildVideoStatusUsageHeaders,
   normalizeResponseAssetUrl,
   reconcileDetailedBranchStatus,
+  resolveVideoGenerationFailure,
   resolveVideoHasFooter,
   selectResponseMediaSource,
   selectResponseMediaSources,
@@ -619,6 +620,74 @@ test('status projections exclude branch frame lists while detailed status includ
   assert.equal(detailedFields.includes('branchRenderPaths.timeline.layerId'), true);
   assert.equal(detailedFields.includes('branchRenderPaths.audioTimeline.audioLayerId'), true);
   assert.equal(detailedFields.includes('branchRenderPaths.audioTimeline.sceneIndex'), true);
+  assert.equal(baseFields.includes('layers.aiVideoGenerationError'), true);
+  assert.equal(baseFields.includes('layers.imageSession.generationError'), true);
+  assert.equal(detailedFields.includes('layers.aiVideoGenerationError'), true);
+  assert.equal(detailedFields.includes('layers.imageSession.generationError'), true);
+});
+
+test('compact status surfaces the exact terminal AI-video provider error before aggregate failure catches up', async () => {
+  const providerError = 'Provider error: input image may contain a real person';
+  const fixture = {
+    expressGenerationStatus: {
+      status: 'PENDING',
+      ai_video_generation: 'PENDING',
+      video_generation: 'INIT',
+    },
+    expressGenerationPending: true,
+    layers: [{
+      _id: 'layer-1',
+      aiVideoGenerationStatus: 'FAILED',
+      aiVideoGenerationError: providerError,
+    }],
+  };
+  const originalFindById = VideoSession.findById;
+  VideoSession.findById = () => ({
+    select() {
+      return this;
+    },
+    async lean() {
+      return fixture;
+    },
+  });
+
+  try {
+    const status = await buildVideoStatusResponse({
+      sessionId: 'session-provider-failure',
+      requestId: 'request-provider-failure',
+    });
+    assert.equal(status.status, 'FAILED');
+    assert.equal(status.generationError, providerError);
+    assert.equal(status.expressGenerationError, providerError);
+    assert.equal(status.error, providerError);
+    assert.equal(status.message, providerError);
+  } finally {
+    VideoSession.findById = originalFindById;
+  }
+});
+
+test('provider error resolution ignores stale errors after a successful layer retry', () => {
+  assert.equal(resolveVideoGenerationFailure({
+    expressGenerationStatus: {
+      status: 'PENDING',
+      ai_video_generation: 'PENDING',
+    },
+    layers: [{
+      aiVideoGenerationStatus: 'COMPLETED',
+      aiVideoGenerationError: 'stale provider failure',
+    }],
+  }), null);
+});
+
+test('provider error resolution does not terminate an active retry from a stale session error', () => {
+  assert.equal(resolveVideoGenerationFailure({
+    generationError: 'stale session failure',
+    expressGenerationPending: true,
+    expressGenerationStatus: {
+      status: 'PENDING',
+      ai_video_generation: 'PENDING',
+    },
+  }), null);
 });
 
 test('detailed status reconciles against its newer branch snapshot without a one-poll completion lag', () => {
@@ -891,6 +960,30 @@ test('buildNormalizedVideoSessionPreview returns minimal preview assets with nor
   assert.equal(preview.audioLayers[0].subtitleSpeakerCharacterName, 'ผู้บรรยาย');
   assert.equal(preview.audioLayers[0].addTranscriptionsRequired, true);
   assert.equal(Object.prototype.hasOwnProperty.call(preview.layers[0], 'durationOffset'), false);
+});
+
+test('detailed image-list-to-video preview preserves the exact failed provider error', () => {
+  const providerError = 'GenBlaze validation failed: ratio must be adaptive';
+  const preview = buildNormalizedVideoSessionPreview({
+    _id: 'image-list-session',
+    isStepVideoGeneration: true,
+    expressStepGeneration: { routeType: 'image_list_to_video' },
+    expressGenerationStatus: {
+      status: 'PENDING',
+      ai_video_generation: 'PENDING',
+    },
+    layers: [{
+      _id: 'layer-1',
+      aiVideoGenerationStatus: 'FAILED',
+      aiVideoGenerationError: providerError,
+    }],
+  }, { request_id: 'image-list-request' });
+
+  assert.equal(preview.generationError, providerError);
+  assert.equal(preview.expressGenerationError, providerError);
+  assert.equal(preview.error, providerError);
+  assert.equal(preview.layers[0].aiVideo.status, 'FAILED');
+  assert.equal(preview.layers[0].aiVideo.error, providerError);
 });
 
 test('normalizeResponseAssetUrl returns Docker-local public processor URLs for secure assets', () => {

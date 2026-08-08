@@ -90,6 +90,7 @@ import {
   getVideoPostProcessingRequestUrls,
   isMissingVideoPostProcessingRoute,
 } from '../../utils/videoPostProcessingApi.mjs';
+import { resolveVideoGenerationErrorMessage } from '../../utils/videoGenerationStatus.mjs';
 import {
   isInteractiveVideoSession,
   isVideoSessionPublished,
@@ -2761,21 +2762,6 @@ function buildStandaloneAnonymousSessionDetailsFromStatus(data) {
   };
 }
 
-function extractErrorText(value) {
-  if (typeof value === 'string') {
-    return value.trim();
-  }
-  if (!isPlainObject(value)) {
-    return '';
-  }
-  return (
-    extractErrorText(value.message) ||
-    extractErrorText(value.error) ||
-    extractErrorText(value.detail) ||
-    extractErrorText(value.details)
-  );
-}
-
 function getDetailedGenerationFailureStatus(data) {
   if (!isPlainObject(data)) {
     return '';
@@ -2807,6 +2793,23 @@ function getDetailedGenerationFailureStatus(data) {
   if (isPlainObject(data.session?.stages)) {
     statusCandidates.push(...Object.values(data.session.stages));
   }
+  const layerCollections = [data.session?.layers, data.layers].filter(Array.isArray);
+  layerCollections.forEach((layers) => {
+    layers.forEach((layer) => {
+      statusCandidates.push(
+        layer?.aiVideo?.status,
+        layer?.aiVideoGenerationStatus,
+        layer?.lipSyncVideo?.status,
+        layer?.lipSyncVideoGenerationStatus,
+        layer?.soundEffectVideo?.status,
+        layer?.soundEffectVideoGenerationStatus,
+        layer?.userVideo?.status,
+        layer?.userVideoGenerationStatus,
+        layer?.image?.status,
+        layer?.imageSession?.generationStatus,
+      );
+    });
+  });
 
   return statusCandidates
     .map(normalizeGenerationStatus)
@@ -2814,24 +2817,7 @@ function getDetailedGenerationFailureStatus(data) {
 }
 
 function getDetailedGenerationErrorMessage(data, failureStatus = '') {
-  const candidates = [
-    data?.expressGenerationError,
-    data?.generationError,
-    data?.errorMessage,
-    data?.message,
-    data?.error,
-    data?.step?.error,
-    data?.step?.errorMessage,
-    data?.step?.message,
-    data?.session?.error,
-    data?.session?.errorMessage,
-    data?.session?.message,
-    data?.session?.generationError,
-    data?.session?.result?.error,
-    data?.session?.result?.message,
-  ];
-
-  const errorText = candidates.map(extractErrorText).find(Boolean);
+  const errorText = resolveVideoGenerationErrorMessage(data);
   if (errorText) {
     return errorText;
   }

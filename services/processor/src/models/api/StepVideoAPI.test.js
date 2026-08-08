@@ -23,6 +23,18 @@ test('step image-to-video preserves explicit image_urls over aliases', () => {
   assert.equal(normalized.image_urls, explicitImageUrls);
 });
 
+test('step status preserves a terminal provider failure detected by the base status endpoint', () => {
+  assert.equal(__testOnly__.normalizeStepStatus({
+    isStepVideoGeneration: true,
+    expressGenerationFailed: false,
+  }, {
+    status: 'PENDING',
+  }, {
+    status: 'FAILED',
+    generationError: 'Provider rejected the source image.',
+  }), 'FAILED');
+});
+
 test('Docker-local step status exposes mounted video and audio references', () => {
   const previousCurrentEnv = process.env.CURRENT_ENV;
   const previousMode = process.env.SAMSAR_MEDIA_DELIVERY_MODE;

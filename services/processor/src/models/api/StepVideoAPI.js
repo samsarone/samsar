@@ -640,7 +640,10 @@ function buildCompletedStepResources(sessionData = {}, stepState = {}, req = nul
 }
 
 function normalizeStepStatus(sessionData = {}, stepState = {}, baseStatus = {}) {
-  if (sessionData.expressGenerationFailed) {
+  if (
+    sessionData.expressGenerationFailed ||
+    normalizeStatusString(baseStatus.status) === 'FAILED'
+  ) {
     return 'FAILED';
   }
   if (isFinalVideoGenerationCompleted(sessionData, baseStatus)) {
@@ -1087,6 +1090,7 @@ export function getStepVideoSessionIdFromRequest(req) {
 }
 
 export const __testOnly__ = {
+  normalizeStepStatus,
   serializeLayer,
   serializeAudioLayer,
 };
