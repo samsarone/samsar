@@ -100,6 +100,15 @@ function hasRuntimeGenBlazeInferenceModel(modelMappings, model) {
     hasRuntimeGenBlazeRoute(modelMappings, model, 'vision');
 }
 
+function hasRuntimeGenBlazeSeedance25Model(modelMappings) {
+  const modelKey = Object.keys(modelMappings || {}).find(
+    (candidate) => normalizeDeploymentModel(candidate) === 'SEEDANCE2.5I2V',
+  );
+  const route = modelKey ? modelMappings[modelKey]?.video : null;
+  return route?.modelId === 'seedance-2-5-260628' &&
+    route?.operation === 'video.generate';
+}
+
 function hasRuntimeGenBlazeModel(modelMappings, model, env = process.env) {
   const normalizedModel = normalizeDeploymentModel(model);
   if (['GPT-5.6-SOL', 'GEMINI-3.1-PRO', 'QWEN3.8'].includes(normalizedModel)) {
@@ -305,6 +314,25 @@ function mergeRuntimeInferenceProviderSelections(availability) {
     availability.modelProviders[model] = provider;
     availability.modelProviderPriority[model] = effectivePriority;
   }
+}
+
+function mergeRuntimeSeedance25ProviderSelection(availability, modelMappings) {
+  const model = 'SEEDANCE2.5I2V';
+  const configured = {
+    gmicloud: hasRuntimeGenBlazeSeedance25Model(modelMappings),
+    samsar: hasEnvCredential('SAMSAR_API_KEY'),
+    fal: hasEnvCredential('FAL_API_KEY'),
+  };
+  const canonicalPriority = ['gmicloud', 'samsar', 'fal'];
+  const availablePriority = canonicalPriority.filter((provider) => configured[provider]);
+  if (availablePriority.length === 0) return;
+
+  appendUnique(availability.providers, availablePriority);
+  appendUnique(availability.models, [model]);
+  appendUnique(availability.actions, ['video']);
+  availability.defaultModelProviderPriority[model] = [...canonicalPriority];
+  availability.modelProviderPriority[model] = [...canonicalPriority];
+  availability.modelProviders[model] = availablePriority[0];
 }
 
 function applyStandaloneModelAdapterPreferences(availability = {}) {
@@ -533,6 +561,8 @@ export function mergeRuntimeInferenceDeploymentAvailability(value = {}) {
     appendUnique(merged.models, ['gpt-5.6-sol', 'gemini-3.1-pro', 'QWEN3.8']);
     appendUnique(merged.actions, ['chat', 'assistant']);
   }
+
+  mergeRuntimeSeedance25ProviderSelection(merged, gmiCloudModelMappings);
 
   for (const [model, provider] of Object.entries(merged.modelProviders)) {
     if (normalizeDeploymentProvider(provider) !== 'gmicloud') {

@@ -235,7 +235,7 @@ export const VIDEO_MODEL_PRICES = [
       { aspectRatio: '9:16', price: EXPRESS_VIDEO_CREDITS_PER_SECOND_BY_MODEL['SEEDANCE2.5I2V'] },
     ],
     pricingDistribution: getExpressVideoPricingDistributionPerSecond('SEEDANCE2.5I2V'),
-    units: [5, 10, 15, 20, 25, 30],
+    units: [5, 10, 15],
   },
   {
     key: 'VEO3.1I2V',

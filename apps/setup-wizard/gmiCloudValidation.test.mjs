@@ -151,6 +151,7 @@ test('maps every exact compatible GMICloud video version and excludes incompatib
       mediaCatalog: [
         { id: 'veo-3.1-generate-001', status: 'active' },
         { id: 'seedance-2-0-260128', status: 'active' },
+        { id: 'seedance-2-5-260628', status: 'active' },
         { id: 'kling-v3-image-to-video', status: 'active' },
         { id: 'kling-3.0-turbo-i2v', status: 'active' },
         { id: 'kling-v3-text-to-video', status: 'active' },
@@ -166,6 +167,7 @@ test('maps every exact compatible GMICloud video version and excludes incompatib
   const mappings = result.providers.gmicloud.modelMappings;
   assert.equal(mappings['VEO3.1FLIV'].video.modelId, 'veo-3.1-generate-001');
   assert.equal(mappings['SEEDANCE2.0I2V'].video.modelId, 'seedance-2-0-260128');
+  assert.equal(mappings['SEEDANCE2.5I2V'].video.modelId, 'seedance-2-5-260628');
   assert.equal(mappings['SEEDANCE2.0T2V'], undefined);
   assert.equal(mappings.KLINGIMGTOVID3PRO.video.modelId, 'kling-v3-image-to-video');
   assert.equal(mappings.KLINGIMGTOVIDTURBO.video.modelId, 'kling-3.0-turbo-i2v');

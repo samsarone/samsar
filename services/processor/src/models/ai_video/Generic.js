@@ -6,17 +6,15 @@ import VideoSession from '../../schema/VideoSession.js';
 import AIVideoLayerGeneration from '../../schema/AIVideoLayerGeneration.js';
 import { getFrameImageForLayer, getBaseFrameImageForLayer, getAiVideoFrameImageForLayer, getRenderableItemListForLayer } from '../../utils/ImageRenderUtils.js';
 import { uploadFrameLayerImageToCDN, primeCDNCache } from '../AWS.js';
-import { isProductionEdition } from '../../utils/EnvironmentUtils.js';
+import {
+  getInitialGenericVideoAdapter,
+  resolveGenericVideoAudioContext,
+} from './GenericVideoAdapter.js';
 
-export function getInitialGenericVideoAdapter(model, env = process.env) {
-  if (model === 'SEEDANCE2.0I2V' && isProductionEdition(env)) {
-    return 'gmicloud';
-  }
-  if (model === 'SEEDANCE2.5I2V' && isProductionEdition(env)) {
-    return 'fal';
-  }
-  return '';
-}
+export {
+  getInitialGenericVideoAdapter,
+  resolveGenericVideoAudioContext,
+} from './GenericVideoAdapter.js';
 
 
 
@@ -25,20 +23,6 @@ export async function requestRenderGenericVideo(payload) {
 
   let { videoSessionId, currentLayerId, prompt, combineLayers, useStartFrame,
     useEndFrame = false, aspectRatio, model, clipLayerToAiVideo, userId, duration } = payload;
-  const normalizedGenerationType = typeof payload.generationType === 'string'
-    ? payload.generationType.trim().toLowerCase()
-    : '';
-  const normalizedLayerAiVideoType = typeof payload.layerAiVideoType === 'string'
-    ? payload.layerAiVideoType.trim().toLowerCase()
-    : '';
-  const isSoundEffectLayer = normalizedGenerationType === 'sound_effect' ||
-    normalizedLayerAiVideoType === 'sound_effect';
-  const generateAudio = Boolean(
-    payload.generateAudio === true ||
-    payload.generate_audio === true ||
-    payload.isAudioVideoGeneration === true ||
-    isSoundEffectLayer,
-  );
 
 
   await getDBConnectionString();
@@ -47,6 +31,7 @@ export async function requestRenderGenericVideo(payload) {
   const currentLayerIndex = videoSession.layers.findIndex(layer => layer._id.toString() === currentLayerId);
 
   const currentLayer = videoSession.layers[currentLayerIndex];
+  const audioContext = resolveGenericVideoAudioContext(payload, currentLayer);
 
 
   const activeItemList = getRenderableItemListForLayer(currentLayer);
@@ -121,10 +106,10 @@ export async function requestRenderGenericVideo(payload) {
     prompt: prompt,
     model: model,
     duration: requestDuration,
-    generateAudio: generateAudio,
-    isAudioVideoGeneration: generateAudio,
-    generationType: payload.generationType || payload.layerAiVideoType,
-    layerAiVideoType: payload.layerAiVideoType,
+    generateAudio: audioContext.generateAudio,
+    isAudioVideoGeneration: audioContext.generateAudio,
+    generationType: audioContext.generationType,
+    layerAiVideoType: audioContext.layerAiVideoType,
   }
   const initialVideoAdapter = getInitialGenericVideoAdapter(model);
   if (initialVideoAdapter) {

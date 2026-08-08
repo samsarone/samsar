@@ -77,7 +77,7 @@ test('FAL Seedance 2.5 uses five-second duration units, 720p, and sound-effect a
     {
       prompt: 'Animate the frame with synchronized ambience.',
       image_url: 'https://media.example/start.png',
-      duration: 30,
+      duration: 15,
       generate_audio: true,
       end_user_id: undefined,
       resolution: '720p',
@@ -92,5 +92,16 @@ test('FAL Seedance 2.5 uses five-second duration units, 720p, and sound-effect a
       duration: 7,
     }).duration,
     5,
+  );
+
+  assert.equal(
+    buildSeedanceInputPayload({
+      model: 'SEEDANCE2.5I2V',
+      prompt: 'External request without a sound-effect layer.',
+      startImage: 'https://media.example/start.png',
+      generateAudio: true,
+      isAudioVideoGeneration: true,
+    }).generate_audio,
+    false,
   );
 });

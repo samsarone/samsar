@@ -24,6 +24,7 @@ const AVAILABILITY = Object.freeze({
     'WAN2.7PRO',
     'HAPPYHORSEI2V',
     'SEEDANCE2.0I2V',
+    'SEEDANCE2.5I2V',
     'GPTIMAGE2',
   ],
   modelProviderPriority: {
@@ -31,6 +32,7 @@ const AVAILABILITY = Object.freeze({
     'WAN2.7PRO': ['alibabaCloud', 'fal', 'samsar'],
     HAPPYHORSEI2V: ['alibabaCloud', 'fal', 'samsar'],
     'SEEDANCE2.0I2V': ['gmicloud', 'fal'],
+    'SEEDANCE2.5I2V': ['gmicloud', 'samsar', 'fal'],
     GPTIMAGE2: ['openai', 'samsar'],
   },
 });
@@ -82,6 +84,20 @@ test('settings expose only installed compatible adapters in stage order', () => 
       ],
       preference: ['gmicloud', 'fal'],
       defaultPreference: ['gmicloud', 'fal'],
+    },
+  );
+  assert.deepEqual(
+    imageToVideo.models.find((model) => model.modelKey === 'SEEDANCE2.5I2V'),
+    {
+      modelKey: 'SEEDANCE2.5I2V',
+      label: 'Seedance 2.5 Image to Video',
+      availableAdapters: [
+        { key: 'gmicloud', label: 'GMICloud via GenBlaze' },
+        { key: 'samsar', label: 'Samsar' },
+        { key: 'fal', label: 'FAL' },
+      ],
+      preference: ['gmicloud', 'samsar', 'fal'],
+      defaultPreference: ['gmicloud', 'samsar', 'fal'],
     },
   );
 });

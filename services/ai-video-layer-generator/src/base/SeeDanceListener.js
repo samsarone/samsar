@@ -9,7 +9,7 @@ fal.config({
 const SEEDANCE_15_IMAGE_TO_VIDEO_LINK = "fal-ai/bytedance/seedance/v1.5/pro/image-to-video";
 const SEEDANCE_20_IMAGE_TO_VIDEO_LINK = "bytedance/seedance-2.0/image-to-video";
 const SEEDANCE_25_IMAGE_TO_VIDEO_LINK = "bytedance/seedance-2.5/image-to-video";
-const SEEDANCE_25_DURATION_UNITS = Object.freeze([5, 10, 15, 20, 25, 30]);
+const SEEDANCE_25_DURATION_UNITS = Object.freeze([5, 10, 15]);
 
 const SEEDANCE_ALLOWED_ASPECT_RATIOS = new Set([
   "auto",
@@ -88,12 +88,14 @@ export function buildSeedanceInputPayload(payload) {
     : '';
   const isSoundEffectLayer = normalizedGenerationType === 'sound_effect' ||
     normalizedLayerAiVideoType === 'sound_effect';
-  const shouldGenerateAudio = Boolean(
-    generateAudio === true ||
-    generate_audio === true ||
-    isAudioVideoGeneration === true ||
-    isSoundEffectLayer,
-  );
+  const shouldGenerateAudio = payload.model === "SEEDANCE2.5I2V"
+    ? isSoundEffectLayer
+    : Boolean(
+      generateAudio === true ||
+      generate_audio === true ||
+      isAudioVideoGeneration === true ||
+      isSoundEffectLayer,
+    );
   const normalizedDuration = normalizeSeedanceDuration(duration, payload.model);
   const normalizedAspectRatio = normalizeSeedanceAspectRatio(aspectRatio);
 

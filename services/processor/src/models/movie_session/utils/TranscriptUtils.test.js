@@ -62,6 +62,55 @@ test('validateTextToVideoNarrative normalizes legacy none scenes to base', () =>
   assert.equal(result.narrativeJson.sounds[0].sceneIndex, 1);
 });
 
+test('Seedance 2.5 normal scene and audio duration selection uses all three partitions', () => {
+  const result = validateTextToVideoNarrative({
+    scenes: [4, 4, 4].map((duration, sceneIndex) => ({
+      visual: `Speaking scene ${sceneIndex}`,
+      type: 'narration',
+      duration,
+      startTime: sceneIndex * duration,
+      endTime: (sceneIndex + 1) * duration,
+    })),
+    sounds: [4, 8, 14].map((duration, sceneIndex) => ({
+      type: 'speech',
+      subType: 'narration',
+      actor: 'Narrator',
+      gender: 'M',
+      sceneIndex,
+      audio: `Line ${sceneIndex + 1}.`,
+      duration,
+      startTime: 0,
+      endTime: duration,
+    })),
+  }, 'SEEDANCE2.5I2V');
+
+  assert.equal(result.valid, true, result.errors.join(', '));
+  assert.deepEqual(
+    result.narrativeJson.scenes.map(({ duration, startTime, endTime }) => ({
+      duration,
+      startTime,
+      endTime,
+    })),
+    [
+      { duration: 5, startTime: 0, endTime: 5 },
+      { duration: 10, startTime: 5, endTime: 15 },
+      { duration: 15, startTime: 15, endTime: 30 },
+    ],
+  );
+  assert.deepEqual(
+    result.narrativeJson.sounds.map(({ duration, startTime, endTime }) => ({
+      duration,
+      startTime,
+      endTime,
+    })),
+    [
+      { duration: 4, startTime: 0, endTime: 4 },
+      { duration: 8, startTime: 5, endTime: 13 },
+      { duration: 14, startTime: 15, endTime: 29 },
+    ],
+  );
+});
+
 test('validateTextToVideoNarrative keeps base scenes speech-free', () => {
   const narrative = {
     scenes: [

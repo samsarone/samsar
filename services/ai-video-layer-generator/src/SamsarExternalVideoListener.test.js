@@ -1,4 +1,7 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import test from 'node:test';
 
 import {
@@ -50,6 +53,9 @@ const ENV_KEYS = [
   'SAMSAR_MEDIA_TUNNEL_REFRESH_REQUEST_PATH',
   'SAMSAR_DOCKER_ADAPTER_ROUTING_ENABLED',
   'SAMSAR_EXTERNAL_PROVIDERS_ENABLED',
+  'SAMSAR_GENBLAZE_ENABLED',
+  'SAMSAR_HOSTED_GENBLAZE_VIDEO_ENABLED',
+  'SAMSAR_GENBLAZE_MODEL_CATALOG_PATH',
   'FAL_API_KEY',
   'SAMSAR_API_KEY',
 ];
@@ -101,17 +107,34 @@ test('a persisted provider selection keeps INIT retries on the selected adapter'
   }
 });
 
-test('Seedance 2.5 external requests stay on the internal Fal adapter path', () => {
+test('production Seedance 2.5 external requests stay on the single internal GMICloud path', (t) => {
   const envSnapshot = snapshotEnv();
+  const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'samsar-external-seedance-25-'));
+  const catalogPath = path.join(temporaryDirectory, 'genblaze-model-catalog.json');
+  t.after(() => fs.rmSync(temporaryDirectory, { recursive: true, force: true }));
   try {
     configureDockerPublicMedia();
+    process.env.CURRENT_ENV = 'production';
+    process.env.SAMSAR_DEPLOYMENT_EDITION = 'production';
     process.env.SAMSAR_DOCKER_ADAPTER_ROUTING_ENABLED = 'true';
+    process.env.SAMSAR_GENBLAZE_ENABLED = 'true';
+    process.env.SAMSAR_HOSTED_GENBLAZE_VIDEO_ENABLED = 'true';
+    process.env.SAMSAR_GENBLAZE_MODEL_CATALOG_PATH = catalogPath;
     process.env.FAL_API_KEY = 'fal-test-key';
     process.env.SAMSAR_API_KEY = 'samsar-test-key';
+    fs.writeFileSync(catalogPath, JSON.stringify({
+      version: 1,
+      provider: 'gmicloud',
+      models: {
+        'SEEDANCE2.5I2V': {
+          video: { modelId: 'seedance-2-5-260628', operation: 'video.generate' },
+        },
+      },
+    }));
 
     assert.equal(
       resolveDockerVideoProvider('SEEDANCE2.5I2V'),
-      'fal',
+      'gmicloud',
     );
     assert.equal(
       shouldUseSamsarExternalVideoProvider({

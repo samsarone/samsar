@@ -2,14 +2,21 @@ import { buildAiVideoRetryQueueFields } from './AIVideoPromptContext.js';
 import { isStandaloneEdition } from '../../utils/EnvironmentUtils.js';
 
 export function getInitialVideoAdapter(model, env = process.env) {
-  if (model === 'SEEDANCE2.0I2V' && !isStandaloneEdition(env)) {
+  if (
+    (model === 'SEEDANCE2.0I2V' || model === 'SEEDANCE2.5I2V') &&
+    !isStandaloneEdition(env)
+  ) {
     return 'gmicloud';
   }
   return '';
 }
 
-export function buildRetryableImageToVideoQueuePayload(payload = {}, overrides = {}) {
-  const initialVideoAdapter = getInitialVideoAdapter(payload.model);
+export function buildRetryableImageToVideoQueuePayload(
+  payload = {},
+  overrides = {},
+  env = process.env,
+) {
+  const initialVideoAdapter = getInitialVideoAdapter(payload.model, env);
   return {
     prompt: payload.prompt,
     model: payload.model,

@@ -130,6 +130,9 @@ test('GMICloud exposes each credential-scoped exact compatible video model', () 
     'SEEDANCE2.0I2V': {
       video: { modelId: 'seedance-2-0-260128', operation: 'video.generate' },
     },
+    'SEEDANCE2.5I2V': {
+      video: { modelId: 'seedance-2-5-260628', operation: 'video.generate' },
+    },
     KLINGIMGTOVID3PRO: { video: { modelId: 'kling-v3-image-to-video' } },
     KLINGIMGTOVIDTURBO: { video: { modelId: 'kling-3.0-turbo-i2v' } },
     KLINGIMGTOVIDPRO: { video: { modelId: 'Kling-Image2Video-V1.6-Pro' } },
@@ -195,6 +198,27 @@ test('Seedance 2.0 I2V uses FAL without GMICloud and prefers an exact GMICloud r
     },
   });
   assert.equal(wrongGmiRoute.modelProviders['SEEDANCE2.0I2V'], DOCKER_PROVIDER.FAL);
+});
+
+test('Seedance 2.5 exposes GMICloud, Samsar, and FAL with exact route validation', () => {
+  const available = buildDockerAvailableModelsFromEnabledProviders([
+    DOCKER_PROVIDER.GMI_CLOUD,
+    DOCKER_PROVIDER.SAMSAR,
+    DOCKER_PROVIDER.FAL,
+  ], {
+    gmiCloudModelMappings: {
+      'SEEDANCE2.5I2V': {
+        video: { modelId: 'seedance-2-5-260628', operation: 'video.generate' },
+      },
+    },
+  });
+
+  assert.equal(available.modelProviders['SEEDANCE2.5I2V'], DOCKER_PROVIDER.GMI_CLOUD);
+  assert.deepEqual(available.modelProviderPriority['SEEDANCE2.5I2V'], [
+    DOCKER_PROVIDER.GMI_CLOUD,
+    DOCKER_PROVIDER.SAMSAR,
+    DOCKER_PROVIDER.FAL,
+  ]);
 });
 
 test('GMICloud exposes only credential-scoped exact speech routes with audio actions', () => {

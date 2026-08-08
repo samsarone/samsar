@@ -194,6 +194,46 @@ test('GMICloud Seedance 2.0 enables audio for sound-effect generation', () => {
   assert.equal(request.params.resolution, '720p');
 });
 
+test('GMICloud Seedance 2.5 mirrors the Fal 720p, ratio, duration, and audio contract', () => {
+  const soundEffectRequest = buildGenBlazeVideoRequest({
+    model: 'SEEDANCE2.5I2V',
+    prompt: 'Camera eases between the keyframes with synchronized ambience.',
+    startImage: 'https://media.example/first.png',
+    endImage: 'https://media.example/last.png',
+    duration: 30,
+    aspectRatio: '9:16',
+    generationType: 'sound_effect',
+    seed: 7,
+  });
+
+  assert.deepEqual(soundEffectRequest, {
+    model: 'SEEDANCE2.5I2V',
+    modality: 'video',
+    prompt: 'Camera eases between the keyframes with synchronized ambience.',
+    input_urls: [
+      'https://media.example/first.png',
+      'https://media.example/last.png',
+    ],
+    params: {
+      duration: 15,
+      aspect_ratio: '9:16',
+      generate_audio: true,
+      resolution: '720p',
+      seed: 7,
+    },
+  });
+
+  const normalRequest = buildGenBlazeVideoRequest({
+    model: 'SEEDANCE2.5I2V',
+    startImage: 'https://media.example/first.png',
+    duration: 7,
+    generateAudio: true,
+    isAudioVideoGeneration: true,
+  });
+  assert.equal(normalRequest.params.duration, 5);
+  assert.equal(normalRequest.params.generate_audio, false);
+});
+
 test('Kling v3 Pro preserves its contract while Turbo uses its dedicated one-frame contract', () => {
   const pro = buildGenBlazeVideoRequest({
     model: 'KLINGIMGTOVID3PRO',

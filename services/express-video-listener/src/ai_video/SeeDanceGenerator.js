@@ -78,6 +78,8 @@ export async function requestRenderSeeDanceVideo(payload) {
   aiVideoRenderPayload.userId = userId;
   aiVideoRenderPayload.retryOnFail = true;
   aiVideoRenderPayload.duration = requestDuration;
+  aiVideoRenderPayload.generationType = layerSceneType;
+  aiVideoRenderPayload.layerAiVideoType = layerSceneType;
   aiVideoRenderPayload.isAudioVideoGeneration = isAudioVideoGeneration;
   aiVideoRenderPayload.isAudioVideoLayer = payload.isAudioVideoLayer;
   aiVideoRenderPayload.audioPrompt = currentLayer.layerAISoundEffectPrompt;

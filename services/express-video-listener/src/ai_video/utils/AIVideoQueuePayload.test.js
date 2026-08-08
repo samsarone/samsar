@@ -97,7 +97,7 @@ test('Seedance 2.5 carries production pricing and supported duration units', () 
     { aspectRatio: '16:9', price: 50 },
     { aspectRatio: '9:16', price: 50 },
   ]);
-  assert.deepEqual(pricing?.units, [5, 10, 15, 20, 25, 30]);
+  assert.deepEqual(pricing?.units, [5, 10, 15]);
   assert.equal(pricing?.pricingDistribution?.total, 50);
 });
 
@@ -113,6 +113,29 @@ test('production Seedance 2.0 queue requests are born pinned to GMICloud', () =>
   assert.equal(getInitialVideoAdapter('SEEDANCEI2V', {
     CURRENT_ENV: 'production',
   }), '');
+});
+
+test('production Seedance 2.5 external queues are born pinned to GMICloud', () => {
+  assert.equal(getInitialVideoAdapter('SEEDANCE2.5I2V', {
+    CURRENT_ENV: 'production',
+    SAMSAR_DEPLOYMENT_EDITION: 'production',
+  }), 'gmicloud');
+  assert.equal(getInitialVideoAdapter('SEEDANCE2.5I2V', {
+    CURRENT_ENV: 'docker',
+    SAMSAR_DEPLOYMENT_EDITION: 'standalone',
+  }), '');
+
+  const queuePayload = buildRetryableImageToVideoQueuePayload({
+    model: 'SEEDANCE2.5I2V',
+    videoSessionId: 'session-25',
+    layerId: 'layer-25',
+    prompt: 'Animate this frame.',
+    duration: 15,
+  }, {}, {
+    CURRENT_ENV: 'production',
+    SAMSAR_DEPLOYMENT_EDITION: 'production',
+  });
+  assert.equal(queuePayload.dockerVideoProvider, 'gmicloud');
 });
 
 test('queue payload preserves model-specific image and generation overrides', () => {
@@ -133,6 +156,8 @@ test('queue payload preserves model-specific image and generation overrides', ()
     combineLayers: false,
     duration: 5,
     animationType: 'small',
+    generationType: 'sound_effect',
+    layerAiVideoType: 'sound_effect',
     generateAudio: true,
     isAudioVideoGeneration: true,
     isAudioVideoLayer: true,
@@ -145,6 +170,8 @@ test('queue payload preserves model-specific image and generation overrides', ()
   assert.equal(queuePayload.combineLayers, false);
   assert.equal(queuePayload.duration, 5);
   assert.equal(queuePayload.animationType, 'small');
+  assert.equal(queuePayload.generationType, 'sound_effect');
+  assert.equal(queuePayload.layerAiVideoType, 'sound_effect');
   assert.equal(queuePayload.generateAudio, true);
   assert.equal(queuePayload.isAudioVideoGeneration, true);
   assert.equal(queuePayload.isAudioVideoLayer, true);

@@ -771,7 +771,7 @@ def _media_contract_key(samsar_model: str) -> str:
         return "veo"
     if samsar_model == "SEEDANCEI2V":
         return "seedance-1-5"
-    if samsar_model == "SEEDANCE2.0I2V":
+    if samsar_model in {"SEEDANCE2.0I2V", "SEEDANCE2.5I2V"}:
         return "seedance-2"
     if samsar_model == "KLINGIMGTOVID3PRO":
         return "kling-v3"
@@ -1935,7 +1935,11 @@ def _input_media_type(url: str) -> str:
 def _media_input_slots(route: ModelRoute) -> tuple[str, ...]:
     if route.samsar_model in {"VEO3.1", "VEO3.1FAST"}:
         return ()
-    if route.samsar_model in {"SEEDANCEI2V", "SEEDANCE2.0I2V"}:
+    if route.samsar_model in {
+        "SEEDANCEI2V",
+        "SEEDANCE2.0I2V",
+        "SEEDANCE2.5I2V",
+    }:
         return ("first_frame", "last_frame")
     if route.samsar_model in {"VEO3.1I2V", "VEO3.1I2VFAST"}:
         return ("image",)
@@ -1967,6 +1971,7 @@ def _media_minimum_input_count(route: ModelRoute) -> int:
         "VEO3.1I2VFAST",
         "SEEDANCEI2V",
         "SEEDANCE2.0I2V",
+        "SEEDANCE2.5I2V",
         "KLINGIMGTOVID3PRO",
         "KLINGIMGTOVIDTURBO",
         "KLINGIMGTOVIDPRO",

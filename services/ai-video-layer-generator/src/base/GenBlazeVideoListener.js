@@ -10,6 +10,7 @@ export const GENBLAZE_VIDEO_MODELS = new Set([
   'VEO3.1FLIV',
   'SEEDANCEI2V',
   'SEEDANCE2.0I2V',
+  'SEEDANCE2.5I2V',
   'KLINGIMGTOVID3PRO',
   'KLINGIMGTOVIDTURBO',
   'KLINGIMGTOVIDPRO',
@@ -26,6 +27,7 @@ const IMAGE_TO_VIDEO_MODELS = new Set([
   'VEO3.1FLIV',
   'SEEDANCEI2V',
   'SEEDANCE2.0I2V',
+  'SEEDANCE2.5I2V',
   'KLINGIMGTOVID3PRO',
   'KLINGIMGTOVIDTURBO',
   'KLINGIMGTOVIDPRO',
@@ -41,6 +43,7 @@ const END_IMAGE_MODELS = new Set([
   'VEO3.1FLIV',
   'SEEDANCEI2V',
   'SEEDANCE2.0I2V',
+  'SEEDANCE2.5I2V',
   'KLINGIMGTOVID3PRO',
 ]);
 
@@ -52,8 +55,13 @@ const VEO_MODELS = new Set([
   'VEO3.1FLIV',
 ]);
 const VEO_IMAGE_MODELS = new Set(['VEO3.1I2V', 'VEO3.1I2VFAST', 'VEO3.1FLIV']);
-const SEEDANCE_MODELS = new Set(['SEEDANCEI2V', 'SEEDANCE2.0I2V']);
+const SEEDANCE_MODELS = new Set([
+  'SEEDANCEI2V',
+  'SEEDANCE2.0I2V',
+  'SEEDANCE2.5I2V',
+]);
 const SEEDANCE_ASPECT_RATIOS = new Set(['21:9', '16:9', '4:3', '1:1', '3:4', '9:16']);
+const SEEDANCE_25_DURATION_UNITS = Object.freeze([5, 10, 15]);
 const HAPPY_HORSE_DURATIONS = Object.freeze([5, 10, 15]);
 
 function normalizeString(value) {
@@ -111,6 +119,14 @@ function normalizeSeedanceDuration(value, maximum = 12) {
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) return 5;
   return Math.min(maximum, Math.max(4, Math.round(parsed)));
+}
+
+function normalizeSeedance25Duration(value) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return SEEDANCE_25_DURATION_UNITS[0];
+  return SEEDANCE_25_DURATION_UNITS.reduce((closest, unit) => (
+    Math.abs(unit - parsed) < Math.abs(closest - parsed) ? unit : closest
+  ), SEEDANCE_25_DURATION_UNITS[0]);
 }
 
 function normalizeSeedanceAspectRatio(value) {
@@ -206,7 +222,13 @@ export function buildGenBlazeVideoRequest(payload = {}) {
     }
   }
 
-  const generateAudio = payload.generateAudio === true ||
+  const normalizedGenerationType = normalizeString(payload.generationType).toLowerCase();
+  const normalizedLayerAiVideoType = normalizeString(payload.layerAiVideoType).toLowerCase();
+  const isSoundEffectLayer = normalizedGenerationType === 'sound_effect' ||
+    normalizedLayerAiVideoType === 'sound_effect';
+  const generateAudio = model === 'SEEDANCE2.5I2V'
+    ? isSoundEffectLayer
+    : payload.generateAudio === true ||
     payload.generate_audio === true ||
     payload.isAudioVideoGeneration === true;
   let params;
@@ -230,13 +252,17 @@ export function buildGenBlazeVideoRequest(payload = {}) {
     addIntegerSeed(params, payload.seed, { parse: true });
   } else if (SEEDANCE_MODELS.has(model)) {
     params = {
-      duration: normalizeSeedanceDuration(
-        payload.duration,
-        model === 'SEEDANCE2.0I2V' ? 15 : 12,
-      ),
+      duration: model === 'SEEDANCE2.5I2V'
+        ? normalizeSeedance25Duration(payload.duration)
+        : normalizeSeedanceDuration(
+          payload.duration,
+          model === 'SEEDANCE2.0I2V' ? 15 : 12,
+        ),
       generate_audio: generateAudio,
     };
-    if (model === 'SEEDANCE2.0I2V') params.resolution = '720p';
+    if (model === 'SEEDANCE2.0I2V' || model === 'SEEDANCE2.5I2V') {
+      params.resolution = '720p';
+    }
     const aspectRatio = normalizeSeedanceAspectRatio(
       payload.aspectRatio || payload.aspect_ratio,
     );

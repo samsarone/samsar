@@ -42,6 +42,7 @@ The gateway-side allowlist currently understands these Samsar contracts:
   `NANOBANANAPROEDIT`, `BRIA_ERASER`, `BRIA_GENFILL`;
 - video generation: `VEO3.1`, `VEO3.1FAST`, `VEO3.1I2V`,
   `VEO3.1I2VFAST`, `VEO3.1FLIV`, `SEEDANCEI2V`, `SEEDANCE2.0I2V`,
+  `SEEDANCE2.5I2V`,
   `KLINGIMGTOVID3PRO`, `KLINGIMGTOVIDTURBO`, `KLINGIMGTOVIDPRO`,
   `KLINGIMGTOVID2.1MASTER`,
   `KLINGIMGTOVID2.1PRO`, `KLINGIMGTOVID2.1STANDARD`, `HAILUOPRO`,
@@ -64,8 +65,8 @@ within BytePlus's model-specific pixel limits; Nano resolution/output format
 become `image_size`/`image_output_format`; Veo uses its camelCase fields; Kling
 v3 uses string duration, `sound=on|off`, and the selected `mode=pro|std`;
 legacy Kling routes accept only their exact 5/10-second fields; Seedance uses
-`ratio`. Seedance 2.0 is exposed as image-to-video through the exact
-`seedance-2-0-260128` route, requires a public first frame, accepts an optional
+`ratio`. Seedance 2.0 and 2.5 are exposed as image-to-video through the exact
+`seedance-2-0-260128` and `seedance-2-5-260628` routes, require a public first frame, accept an optional
 last frame, clamps duration to 4–15 seconds, and uses the fixed normalized
 `720p` tier; Hailuo Pro is fixed to the supported six-second `1080P` combination;
 and HappyHorse uses `audio`. Unknown provider parameters are rejected rather
@@ -141,10 +142,10 @@ single input to first-frame. Hailuo's optional source maps to first-frame-image,
 and the exact legacy Kling routes map one source to image without changing the
 external Samsar request shape.
 
-Seedance 2.0 is intentionally unavailable as text-to-video. The standalone
+Seedance 2.0 and 2.5 are intentionally unavailable as text-to-video. The standalone
 Docker container advertises its GMICloud adapter only when the validated
-credential catalog contains `seedance-2-0-260128`; FAL provides the alternate
-I2V adapter through `bytedance/seedance-2.0/image-to-video`.
+credential catalog contains their exact upstream route; FAL provides the alternate
+I2V adapters.
 
 ## Configuration
 

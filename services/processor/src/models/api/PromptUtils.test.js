@@ -91,6 +91,7 @@ test('Seedance 2.5 is accepted by external express video routes', () => {
   const pricing = VIDEO_MODEL_PRICES.find((model) => model.key === 'SEEDANCE2.5I2V');
   assert.equal(pricing?.providerBilled, true);
   assert.equal(pricing?.isPerSecondPricing, true);
+  assert.deepEqual(pricing?.units, [5, 10, 15]);
   assert.equal(pricing?.pricingDistribution?.total, 50);
   assert.equal(getExpressVideoCreditsPerSecond('SEEDANCE2.5I2V'), 50);
 });

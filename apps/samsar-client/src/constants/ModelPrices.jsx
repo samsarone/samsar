@@ -252,8 +252,8 @@ export const VIDEO_MODEL_PRICES = [
     isExpressModel: true,
     isImageToVideoModel: true,
     isTextToVideoModel: false,
-    // Standalone deployments charge the configured Fal adapter directly.
-    // Hosted production uses Samsar credits for this Fal-backed route.
+    // Standalone deployments charge the selected configured adapter directly.
+    // Hosted production uses Samsar credits for its internal GMICloud route.
     providerBilled: IS_STANDALONE_DEPLOYMENT,
     isPerSecondPricing: true,
     prices: [
@@ -261,7 +261,7 @@ export const VIDEO_MODEL_PRICES = [
       { aspectRatio: '9:16', price: 50 },
     ],
     pricingDistribution: getExpressVideoPricingDistributionPerSecond('SEEDANCE2.5I2V'),
-    units: [5, 10, 15, 20, 25, 30],
+    units: [5, 10, 15],
   },
   {
     key: 'VEO3.1',

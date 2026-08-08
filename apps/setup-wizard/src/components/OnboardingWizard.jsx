@@ -305,7 +305,7 @@ const CAPABILITY_FAMILIES = {
     key: 'seedance',
     label: 'Seedance',
     providerKeys: ['fal', 'gmicloud', 'samsar'],
-    modelKeys: ['SEEDANCEI2V', 'SEEDANCE2.0I2V'],
+    modelKeys: ['SEEDANCEI2V', 'SEEDANCE2.0I2V', 'SEEDANCE2.5I2V'],
   },
   kling: {
     key: 'kling',

@@ -21,6 +21,8 @@ const ENV_KEYS = [
   'SAMSAR_RUNTIME',
   'SAMSAR_DOCKER_ADAPTER_ROUTING_ENABLED',
   'SAMSAR_MODEL_ADAPTER_PREFERENCES_PATH',
+  'SAMSAR_GENBLAZE_ENABLED',
+  'SAMSAR_GENBLAZE_MODEL_CATALOG_PATH',
   'ALIBABA_API_KEY',
   'DASHSCOPE_API_KEY',
   'ALIBABA_CLOUD_API_KEY',
@@ -80,18 +82,83 @@ test('processor keeps Seedance 2.0 on deployment-owned video adapters', () => {
   assert.equal(resolveDockerVideoProvider('SEEDANCE2.0I2V'), '');
 });
 
-test('processor keeps Seedance 2.5 on the FAL adapter only', () => {
+test('processor resolves one Seedance 2.5 standalone adapter in saved priority order', (t) => {
   clearEnv();
+  const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'samsar-processor-seedance-25-'));
+  const catalogPath = path.join(temporaryDirectory, 'genblaze-model-catalog.json');
+  const preferencesPath = path.join(temporaryDirectory, 'model-adapter-preferences.json');
+  t.after(() => fs.rmSync(temporaryDirectory, { recursive: true, force: true }));
+  fs.writeFileSync(catalogPath, JSON.stringify({
+    provider: 'gmicloud',
+    models: {
+      'SEEDANCE2.5I2V': {
+        video: { modelId: 'seedance-2-5-260628', operation: 'video.generate' },
+      },
+    },
+  }));
+  fs.writeFileSync(preferencesPath, JSON.stringify({
+    modelProviderPriority: {
+      'SEEDANCE2.5I2V': ['fal', 'gmicloud', 'samsar'],
+    },
+  }));
   process.env.CURRENT_ENV = 'docker';
+  process.env.SAMSAR_DEPLOYMENT_EDITION = 'standalone';
+  process.env.SAMSAR_RUNTIME = 'docker';
+  process.env.SAMSAR_GENBLAZE_ENABLED = 'true';
+  process.env.SAMSAR_GENBLAZE_MODEL_CATALOG_PATH = catalogPath;
+  process.env.SAMSAR_MODEL_ADAPTER_PREFERENCES_PATH = preferencesPath;
   process.env.FAL_API_KEY = 'fal-key';
   process.env.SAMSAR_API_KEY = 'samsar-key';
 
   assert.deepEqual(getDockerVideoProviderPriority('SEEDANCE2.5I2V'), [
     DOCKER_PROVIDER.FAL,
+    DOCKER_PROVIDER.GMICLOUD,
+    DOCKER_PROVIDER.SAMSAR,
   ]);
   assert.equal(resolveDockerVideoProvider('SEEDANCE2.5I2V'), DOCKER_PROVIDER.FAL);
 
-  delete process.env.FAL_API_KEY;
+  fs.writeFileSync(preferencesPath, JSON.stringify({
+    modelProviderPriority: {
+      'SEEDANCE2.5I2V': ['gmicloud', 'samsar', 'fal'],
+    },
+  }));
+  assert.equal(resolveDockerVideoProvider('SEEDANCE2.5I2V'), DOCKER_PROVIDER.GMICLOUD);
+
+  fs.writeFileSync(preferencesPath, JSON.stringify({
+    modelProviderPriority: {
+      'SEEDANCE2.5I2V': ['samsar', 'gmicloud', 'fal'],
+    },
+  }));
+  assert.equal(resolveDockerVideoProvider('SEEDANCE2.5I2V'), DOCKER_PROVIDER.SAMSAR);
+});
+
+test('processor pins production Seedance 2.5 to validated GMICloud only', (t) => {
+  clearEnv();
+  const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'samsar-processor-hosted-seedance-25-'));
+  const catalogPath = path.join(temporaryDirectory, 'genblaze-model-catalog.json');
+  t.after(() => fs.rmSync(temporaryDirectory, { recursive: true, force: true }));
+  fs.writeFileSync(catalogPath, JSON.stringify({
+    provider: 'gmicloud',
+    models: {
+      'SEEDANCE2.5I2V': {
+        video: { modelId: 'seedance-2-5-260628', operation: 'video.generate' },
+      },
+    },
+  }));
+  process.env.CURRENT_ENV = 'production';
+  process.env.SAMSAR_DEPLOYMENT_EDITION = 'production';
+  process.env.SAMSAR_DOCKER_ADAPTER_ROUTING_ENABLED = 'true';
+  process.env.SAMSAR_GENBLAZE_ENABLED = 'true';
+  process.env.SAMSAR_GENBLAZE_MODEL_CATALOG_PATH = catalogPath;
+  process.env.FAL_API_KEY = 'fal-key';
+  process.env.SAMSAR_API_KEY = 'samsar-key';
+
+  assert.deepEqual(getDockerVideoProviderPriority('SEEDANCE2.5I2V'), [
+    DOCKER_PROVIDER.GMICLOUD,
+  ]);
+  assert.equal(resolveDockerVideoProvider('SEEDANCE2.5I2V'), DOCKER_PROVIDER.GMICLOUD);
+
+  fs.writeFileSync(catalogPath, JSON.stringify({ provider: 'gmicloud', models: {} }));
   assert.equal(resolveDockerVideoProvider('SEEDANCE2.5I2V'), '');
 });
 

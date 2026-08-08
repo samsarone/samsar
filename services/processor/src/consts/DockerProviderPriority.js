@@ -1,3 +1,5 @@
+import fs from 'node:fs';
+
 import { isProductionEdition, isStandaloneEdition } from '../utils/EnvironmentUtils.js';
 import {
   applyModelAdapterPreferenceOrder,
@@ -9,6 +11,7 @@ export const DOCKER_PROVIDER = Object.freeze({
   ALIBABA_CLOUD: 'alibabaCloud',
   GOOGLE_CLOUD: 'googleCloud',
   FAL: 'fal',
+  GMICLOUD: 'gmicloud',
   OPENAI: 'openai',
   RUNWAY: 'runway',
   SAMSAR: 'samsar',
@@ -63,7 +66,11 @@ export const DOCKER_VIDEO_PROVIDER_PRIORITY_BY_MODEL = Object.freeze({
   // GMICloud selection happens in the video worker, but the processor must
   // keep this provider-billed model off the Samsar external route.
   'SEEDANCE2.0I2V': [DOCKER_PROVIDER.FAL],
-  'SEEDANCE2.5I2V': [DOCKER_PROVIDER.FAL],
+  'SEEDANCE2.5I2V': [
+    DOCKER_PROVIDER.GMICLOUD,
+    DOCKER_PROVIDER.SAMSAR,
+    DOCKER_PROVIDER.FAL,
+  ],
 });
 
 export const DOCKER_FAL_VIDEO_MODELS = Object.freeze([
@@ -176,10 +183,27 @@ export function hasSamsarCredential() {
   return hasEnvCredential('SAMSAR_API_KEY');
 }
 
+export function hasGmiCloudSeedance25Credential(env = process.env) {
+  if (!isTruthyEnv(env.SAMSAR_GENBLAZE_ENABLED)) return false;
+  const catalogPath = normalizeString(env.SAMSAR_GENBLAZE_MODEL_CATALOG_PATH);
+  if (!catalogPath || !fs.existsSync(catalogPath)) return false;
+  try {
+    const catalog = JSON.parse(fs.readFileSync(catalogPath, 'utf8'));
+    const route = catalog?.provider === 'gmicloud'
+      ? catalog?.models?.['SEEDANCE2.5I2V']?.video
+      : null;
+    return route?.modelId === 'seedance-2-5-260628' &&
+      route?.operation === 'video.generate';
+  } catch {
+    return false;
+  }
+}
+
 export function isDockerProviderConfigured(provider) {
   if (provider === DOCKER_PROVIDER.ALIBABA_CLOUD) return hasAlibabaCloudCredential();
   if (provider === DOCKER_PROVIDER.GOOGLE_CLOUD) return hasGoogleCloudCredential();
   if (provider === DOCKER_PROVIDER.FAL) return hasFalCredential();
+  if (provider === DOCKER_PROVIDER.GMICLOUD) return hasGmiCloudSeedance25Credential();
   if (provider === DOCKER_PROVIDER.OPENAI) return hasOpenAICredential();
   if (provider === DOCKER_PROVIDER.RUNWAY) return hasRunwayCredential();
   if (provider === DOCKER_PROVIDER.SAMSAR) return hasSamsarCredential();
@@ -211,7 +235,9 @@ export function getDockerImageProviderPriority(model) {
 export function getDockerVideoProviderPriority(model) {
   const normalizedModel = normalizeDockerModelKey(model);
   let defaultPriority;
-  if (DOCKER_VIDEO_PROVIDER_PRIORITY_BY_MODEL[normalizedModel]) {
+  if (normalizedModel === 'SEEDANCE2.5I2V' && isProductionEdition()) {
+    defaultPriority = [DOCKER_PROVIDER.GMICLOUD];
+  } else if (DOCKER_VIDEO_PROVIDER_PRIORITY_BY_MODEL[normalizedModel]) {
     defaultPriority = DOCKER_VIDEO_PROVIDER_PRIORITY_BY_MODEL[normalizedModel];
   } else if (
     DOCKER_FAL_VIDEO_MODELS.includes(normalizedModel) ||

@@ -42,7 +42,7 @@ const IMAGE_LIST_VIDEO_MODELS = [
 ];
 
 const DURATION_OPTIONS = [10, 30, 60, 90, 120];
-const SEEDANCE_25_DURATION_OPTIONS = [5, 10, 15, 20, 25, 30];
+const SEEDANCE_25_DURATION_OPTIONS = [5, 10, 15];
 const CREDIT_PACKS = [1000, 2500, 5000];
 
 function formatDate(value) {

@@ -367,7 +367,7 @@ export function getResourceListPrompt(model) {
     maxDuration = 9;
   }
   const sceneDurationInstruction = model === 'SEEDANCE2.5I2V'
-    ? '5, 10, 15, 20, 25, or 30'
+    ? '5, 10, or 15'
     : `5 or ${maxDuration}`;
   return `
 You are a helper for a video editing software that creates videos from screenplays, writing in the style of the most talented screenplay writers of all time (Billy Wilder, Francis Ford Coppola, Paddy Chayefsky, William Goldman, Robert Towne, Quentin Tarantino, Charlie Kaufman, The Coen Brothers, Aaron Sorkin, Christopher Nolan, etc.) depending on the context of the user input.

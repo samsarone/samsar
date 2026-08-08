@@ -44,9 +44,10 @@ test('shared text-to-video prompt builder returns the complete selected narrativ
       '\n- The transcript must contain at least 4 scenes so it can support the requested branching depth.',
   );
 });
-test('Seedance 2.5 agent resource prompts use five-second scene boundaries', () => {
+test('Seedance 2.5 agent resource prompts use every supported scene partition', () => {
   const prompt = getResourceListPrompt('SEEDANCE2.5I2V');
 
-  assert.match(prompt, /duration of each scene can be 5, 10, 15, 20, 25, or 30 seconds/);
+  assert.match(prompt, /duration of each scene can be 5, 10, or 15 seconds/);
   assert.doesNotMatch(prompt, /duration of each scene can be 5 or 10 seconds/);
+  assert.doesNotMatch(prompt, /20, 25, or 30/);
 });

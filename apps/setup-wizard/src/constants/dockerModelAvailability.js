@@ -35,6 +35,7 @@ export const DOCKER_FAL_VIDEO_MODELS = Object.freeze([
   'COSMOS3SUPERI2V',
   'SEEDANCEI2V',
   'SEEDANCE2.0I2V',
+  'SEEDANCE2.5I2V',
   'KLINGIMGTOVID3PRO',
   'KLINGIMGTOVIDTURBO',
   'KLINGIMGTOVIDPRO',
@@ -161,6 +162,7 @@ export const DOCKER_MODEL_PROVIDER_PRIORITY_BY_MODEL = Object.freeze({
   COSMOS3SUPERI2V: FAL_OR_SAMSAR,
   SEEDANCEI2V: GMI_SAMSAR_OR_FAL,
   'SEEDANCE2.0I2V': GMI_OR_FAL,
+  'SEEDANCE2.5I2V': GMI_SAMSAR_OR_FAL,
   KLINGIMGTOVID3PRO: GMI_SAMSAR_OR_FAL,
   KLINGIMGTOVIDTURBO: GMI_SAMSAR_OR_FAL,
   KLINGIMGTOVIDPRO: GMI_SAMSAR_OR_FAL,
@@ -220,6 +222,7 @@ export const DOCKER_MODEL_ACTIONS_BY_MODEL = Object.freeze({
   COSMOS3SUPERI2V: ['video'],
   SEEDANCEI2V: ['video'],
   'SEEDANCE2.0I2V': ['video'],
+  'SEEDANCE2.5I2V': ['video'],
   KLINGIMGTOVID3PRO: ['video'],
   KLINGIMGTOVIDTURBO: ['video'],
   KLINGIMGTOVIDPRO: ['video'],
@@ -266,6 +269,7 @@ export const DOCKER_MODEL_DISPLAY_NAME_BY_MODEL = Object.freeze({
   COSMOS3SUPERI2V: 'Cosmos 3 Super Image to Video',
   SEEDANCEI2V: 'Seedance Image to Video',
   'SEEDANCE2.0I2V': 'Seedance 2.0 Image to Video',
+  'SEEDANCE2.5I2V': 'Seedance 2.5 Image to Video',
   KLINGIMGTOVID3PRO: 'Kling 3 Pro Image to Video',
   KLINGIMGTOVIDTURBO: 'Kling Turbo Image to Video',
   KLINGIMGTOVIDPRO: 'Kling 1.6 Pro Image to Video',
@@ -462,6 +466,11 @@ function hasGmiCloudModelRoute(modelMappings, modelKey) {
   if (modelKey === 'SEEDANCE2.0I2V') {
     return typeof routes.video?.modelId === 'string' &&
       routes.video.modelId.trim() === 'seedance-2-0-260128' &&
+      routes.video.operation === 'video.generate';
+  }
+  if (modelKey === 'SEEDANCE2.5I2V') {
+    return typeof routes.video?.modelId === 'string' &&
+      routes.video.modelId.trim() === 'seedance-2-5-260628' &&
       routes.video.operation === 'video.generate';
   }
   const routeAvailable = (modality) => Boolean(

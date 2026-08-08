@@ -263,6 +263,7 @@ def test_curated_boundary_contains_only_supported_samsar_contracts():
         "VEO3.1FLIV",
         "SEEDANCEI2V",
         "SEEDANCE2.0I2V",
+        "SEEDANCE2.5I2V",
         "KLINGIMGTOVID3PRO",
         "KLINGIMGTOVIDTURBO",
         "KLINGIMGTOVIDPRO",
@@ -314,6 +315,9 @@ def test_runtime_models_reflect_only_credential_catalog_routes(
             "SEEDANCE2.0I2V": {
                 "video": {"modelId": "seedance-2-0-260128", "operation": "video.generate"}
             },
+            "SEEDANCE2.5I2V": {
+                "video": {"modelId": "seedance-2-5-260628", "operation": "video.generate"}
+            },
             "ELEVENLABS": {
                 "audio": {
                     "modelId": "elevenlabs-tts-multilingual-v2",
@@ -330,6 +334,7 @@ def test_runtime_models_reflect_only_credential_catalog_routes(
         "gpt-5.6-sol",
         "GPTIMAGE2",
         "SEEDANCE2.0I2V",
+        "SEEDANCE2.5I2V",
         "VEO3.1I2V",
         "ELEVENLABS",
     ]
@@ -1735,6 +1740,9 @@ def test_video_input_contracts_enforce_exact_required_frame_counts(
             "SEEDANCE2.0I2V": {
                 "video": {"modelId": "seedance-2-0-260128", "operation": "video.generate"}
             },
+            "SEEDANCE2.5I2V": {
+                "video": {"modelId": "seedance-2-5-260628", "operation": "video.generate"}
+            },
             "KLINGIMGTOVIDPRO": {
                 "video": {
                     "modelId": "Kling-Image2Video-V1.6-Pro",
@@ -1822,6 +1830,26 @@ def test_video_input_contracts_enforce_exact_required_frame_counts(
             },
         )
         assert seedance_first_last_frames.status_code == 202
+
+        seedance_25_first_last_frames = client.post(
+            "/v1/media/requests",
+            json={
+                "model": "SEEDANCE2.5I2V",
+                "modality": "video",
+                "prompt": "move with native ambience",
+                "input_urls": [
+                    "https://example/start.png",
+                    "https://example/end.png",
+                ],
+                "params": {
+                    "duration": 15,
+                    "aspect_ratio": "9:16",
+                    "resolution": "720p",
+                    "generate_audio": True,
+                },
+            },
+        )
+        assert seedance_25_first_last_frames.status_code == 202
 
         missing_kling_source = client.post(
             "/v1/media/requests",
