@@ -78,6 +78,7 @@ const ASSISTANT_MODEL_SETTING_ALIASES = Object.freeze({
   max_completion_tokens: 'max_completion_tokens',
   thinking_level: 'thinking_level',
   thinkingLevel: 'thinkingLevel',
+  effort: 'effort',
   reasoning_effort: 'reasoning_effort',
   reasoningEffort: 'reasoningEffort',
 });

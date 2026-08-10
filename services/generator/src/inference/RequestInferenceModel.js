@@ -1,5 +1,8 @@
 import {
+  GPT_56_SOL_INFERENCE_MODEL,
+  GPT_56_SOL_XHIGH_INFERENCE_MODEL,
   getDefaultUserInferenceModel,
+  getGPT56SolReasoningEffort,
   normalizeInferenceModel,
 } from './InferenceModels.js';
 
@@ -15,6 +18,27 @@ function getRequestModel(request = {}) {
     request.inference_model,
     request.expressGenerationInferenceModel,
   );
+}
+
+function getRequestEffort(request = {}) {
+  return firstNonEmptyString(
+    request.effort,
+    request.inferenceEffort,
+    request.selectedInferenceEffort,
+    request.reasoningEffort,
+    request.reasoning_effort,
+    request.reasoning?.effort,
+    request.expressGenerationInferenceEffort,
+  );
+}
+
+function getLegacyModelEffort(model) {
+  const normalized = typeof model === 'string'
+    ? model.trim().toLowerCase().replace(/[_\s]+/g, '-')
+    : '';
+  if (!normalized.startsWith(GPT_56_SOL_INFERENCE_MODEL)) return '';
+  if (normalized.includes('xhigh') || normalized.includes('extra-high')) return 'xhigh';
+  return normalized.endsWith('-high') ? 'high' : '';
 }
 
 function normalizeAuthorization(value) {
@@ -102,9 +126,55 @@ export function resolveRequestInferenceAuthorization({
     undefined;
 }
 
+export function resolveRequestInferenceEffort({
+  request = {},
+  fallbackRequest = {},
+  session = {},
+  user = {},
+  fallback = getDefaultUserInferenceModel(),
+} = {}) {
+  const requestedModel = getRequestModel(request) || getRequestModel(fallbackRequest);
+  const sessionModel = firstNonEmptyString(
+    session.expressGenerationInferenceModel,
+    session.inferenceModel,
+    session.inference_model,
+  );
+  const userModel = firstNonEmptyString(user.selectedInferenceModel, user.inferenceModel);
+  const sourceModel = requestedModel || sessionModel || userModel || fallback;
+  const normalizedModel = normalizeInferenceModel(sourceModel);
+  if (
+    normalizedModel !== GPT_56_SOL_INFERENCE_MODEL &&
+    normalizedModel !== GPT_56_SOL_XHIGH_INFERENCE_MODEL
+  ) {
+    return undefined;
+  }
+  return getGPT56SolReasoningEffort(
+    sourceModel,
+    getRequestEffort(request) ||
+      getRequestEffort(fallbackRequest) ||
+      getLegacyModelEffort(requestedModel) ||
+      firstNonEmptyString(
+        session.expressGenerationInferenceEffort,
+        session.inferenceEffort,
+        session.inference_effort,
+        session.selectedInferenceEffort,
+      ) ||
+      getLegacyModelEffort(sessionModel) ||
+      user.selectedInferenceEffort ||
+      getLegacyModelEffort(userModel),
+  );
+}
+
 export function resolveRequestInferenceSettings(context = {}) {
+  const effort = resolveRequestInferenceEffort(context);
+  const model = resolveRequestInferenceModel(context);
   return {
-    model: resolveRequestInferenceModel(context),
+    model: effort === 'xhigh' && (
+      model === GPT_56_SOL_INFERENCE_MODEL || model === GPT_56_SOL_XHIGH_INFERENCE_MODEL
+    ) ? GPT_56_SOL_XHIGH_INFERENCE_MODEL : model === GPT_56_SOL_XHIGH_INFERENCE_MODEL
+      ? GPT_56_SOL_INFERENCE_MODEL
+      : model,
+    ...(effort ? { effort } : {}),
     authorization: resolveRequestInferenceAuthorization(context),
   };
 }

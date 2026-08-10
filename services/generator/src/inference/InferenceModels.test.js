@@ -5,6 +5,7 @@ import {
   DEFAULT_GEMINI_31_PRO_VERTEX_MODEL,
   GEMINI_31_PRO_INFERENCE_MODEL,
   GPT_56_SOL_REASONING_EFFORT,
+  getGPT56SolReasoningEffort,
   KIMI_K3_INFERENCE_MODEL,
   QWEN_38_INFERENCE_MODEL,
   isKimiInferenceModel,
@@ -16,6 +17,11 @@ import {
 
 test('uses high reasoning for GPT 5.6 Sol inference', () => {
   assert.equal(GPT_56_SOL_REASONING_EFFORT, 'high');
+  assert.equal(normalizeInferenceModel('gpt-5.6-sol-high'), 'gpt-5.6-sol');
+  assert.equal(normalizeInferenceModel('gpt-5.6-sol-xhigh'), 'gpt-5.6-sol-xhigh');
+  assert.equal(getGPT56SolReasoningEffort('gpt-5.6-sol-xhigh'), 'xhigh');
+  assert.equal(getGPT56SolReasoningEffort('gpt-5.6-sol-xhigh', 'high'), 'high');
+  assert.equal(getProviderModelForInferenceModel('gpt-5.6-sol-xhigh'), 'gpt-5.6-sol');
 });
 
 test('normalizes Qwen 3.8 Max aliases to the logical provider choice', () => {

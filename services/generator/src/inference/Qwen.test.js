@@ -52,6 +52,8 @@ test('uses Qwen 3.8 Max for text and multimodal content', () => {
 
   const compatibleVisionPayload = buildQwenChatCompletionPayload({
     model: 'QWEN3.8',
+    effort: 'xhigh',
+    reasoningEffort: 'xhigh',
     messages: [{
       role: 'user',
       content: [
@@ -61,6 +63,8 @@ test('uses Qwen 3.8 Max for text and multimodal content', () => {
     }],
   }, {});
   assert.equal(compatibleVisionPayload.model, 'qwen3.8-max');
+  assert.equal(Object.hasOwn(compatibleVisionPayload, 'effort'), false);
+  assert.equal(Object.hasOwn(compatibleVisionPayload, 'reasoningEffort'), false);
   assert.deepEqual(compatibleVisionPayload.messages[0].content[1], {
     type: 'image_url',
     image_url: { url: 'https://example.test/frame.png' },

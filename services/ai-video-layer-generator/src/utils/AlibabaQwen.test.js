@@ -57,6 +57,8 @@ test('builds the workspace-compatible endpoint from ALIBABA_API_HOST', () => {
 test('selects Qwen 3.8 Max for text and multimodal vision input', () => {
   const textRequest = buildAlibabaQwenChatRequest({
     model: 'QWEN3.8',
+    effort: 'xhigh',
+    reasoningEffort: 'xhigh',
     messages: [{ role: 'user', content: 'Create a transition.' }],
   });
   const visionRequest = buildAlibabaQwenChatRequest({
@@ -92,6 +94,8 @@ test('selects Qwen 3.8 Max for text and multimodal vision input', () => {
   assert.equal(sharedTextRequest.payload.model, 'qwen3.8-max-shared');
   assert.equal(sharedVisionRequest.payload.model, 'qwen3.8-max-shared');
   assert.equal(textRequest.payload.enable_thinking, true);
+  assert.equal(Object.hasOwn(textRequest.payload, 'effort'), false);
+  assert.equal(Object.hasOwn(textRequest.payload, 'reasoningEffort'), false);
 });
 
 test('disables hidden SDK retries so provider media is never reused after tunnel expiry', () => {

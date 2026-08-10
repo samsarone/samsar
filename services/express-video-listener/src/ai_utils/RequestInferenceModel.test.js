@@ -3,6 +3,7 @@ import test from 'node:test';
 
 import {
   resolveRequestInferenceAuthorization,
+  resolveRequestInferenceSettings,
   resolveRequestInferenceModel,
 } from './RequestInferenceModel.js';
 
@@ -61,4 +62,21 @@ test('authorization falls back to the account and remains absent when not config
     user: { selectedInferenceModelAuthorization: 'samsar_api_key' },
   }), 'deployed');
   assert.equal(resolveRequestInferenceAuthorization(), '');
+});
+
+test('separates canonical GPT 5.6 Sol from effort while retaining legacy suffixes', () => {
+  assert.deepEqual(resolveRequestInferenceSettings({
+    session: { inferenceModel: 'gpt-5.6-sol', inferenceEffort: 'xhigh' },
+  }), {
+    model: 'gpt-5.6-sol-xhigh',
+    effort: 'xhigh',
+    authorization: '',
+  });
+  assert.deepEqual(resolveRequestInferenceSettings({
+    request: { inferenceModel: 'gpt-5.6-sol-xhigh', effort: 'high' },
+  }), {
+    model: 'gpt-5.6-sol',
+    effort: 'high',
+    authorization: '',
+  });
 });

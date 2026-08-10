@@ -480,7 +480,9 @@ const videoSessionSchema = new Schema({
 
   expressGenerationImageModel: String,
   inferenceModel: { type: String, default: null },
+  inferenceEffort: { type: String, enum: ['high', 'xhigh'], default: null },
   expressGenerationInferenceModel: { type: String, default: null },
+  expressGenerationInferenceEffort: { type: String, enum: ['high', 'xhigh'], default: null },
 
 
   expressGenerationType: { type: String, default: 'TEXT_TO_VIDEO' },

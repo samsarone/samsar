@@ -279,7 +279,13 @@ test('the ALIBABA_API_KEY alias authorizes explicit native Qwen routing', () => 
 });
 
 test('Qwen OpenRouter applies Qwen 3.8 Max routing with bounded settings', async (t) => {
-  const keys = ['CURRENT_ENV', 'OPENROUTER_API_KEY', 'OPENROUTER_QWEN_MAX_TOKENS'];
+  const keys = [
+    'CURRENT_ENV',
+    'OPENROUTER_API_KEY',
+    'OPENROUTER_GPT_REASONING_EFFORT',
+    'OPENROUTER_QWEN_MAX_TOKENS',
+    'OPENROUTER_QWEN_REASONING_EFFORT',
+  ];
   const previous = Object.fromEntries(keys.map((key) => [key, process.env[key]]));
   t.after(() => {
     for (const key of keys) {
@@ -289,6 +295,7 @@ test('Qwen OpenRouter applies Qwen 3.8 Max routing with bounded settings', async
   });
   process.env.CURRENT_ENV = 'production';
   process.env.OPENROUTER_API_KEY = 'openrouter-key';
+  process.env.OPENROUTER_GPT_REASONING_EFFORT = 'high';
   process.env.OPENROUTER_QWEN_MAX_TOKENS = '50000';
   const payloads = [];
   const options = [];
@@ -301,7 +308,8 @@ test('Qwen OpenRouter applies Qwen 3.8 Max routing with bounded settings', async
   await createOpenRouterChatCompletion({
     model: 'QWEN3.8',
     messages: [{ role: 'user', content: 'hello' }],
-    reasoning: { effort: 'xhigh' },
+    reasoning: { effort: 'low' },
+    effort: 'xhigh',
     max_completion_tokens: 20000,
   });
   await createOpenRouterChatCompletion({
@@ -327,7 +335,7 @@ test('Qwen OpenRouter applies Qwen 3.8 Max routing with bounded settings', async
   });
 
   assert.equal(payloads[0].model, 'qwen/qwen3.8-max');
-  assert.equal(payloads[0].reasoning.effort, 'high');
+  assert.equal(payloads[0].reasoning.effort, 'low');
   assert.equal(payloads[0].max_tokens, 20000);
   assert.equal(payloads[1].model, 'qwen/qwen3.8-max');
   assert.equal(payloads[1].max_tokens, 131072);

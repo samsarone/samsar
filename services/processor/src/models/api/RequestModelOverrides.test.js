@@ -6,9 +6,11 @@ import {
   getSpeakerOptionsFromPayload,
   normalizeBackingTrackModelFromPayload,
   normalizeInferenceModelFromPayload,
+  normalizeInferenceEffortFromPayload,
   normalizeTTSModelFromPayload,
   omitCustomTextToSpeechAdapterForTTSModel,
   resolveEffectiveInferenceModel,
+  resolveEffectiveInferenceSettings,
 } from './RequestModelOverrides.js';
 
 function buildNarrative() {
@@ -71,7 +73,19 @@ test('normalizes request TTS model aliases', () => {
 
 test('normalizes request inference model aliases', () => {
   assert.equal(normalizeInferenceModelFromPayload({ inference_model: 'GPT 5.6 Sol' }), 'gpt-5.6-sol');
+  assert.equal(
+    normalizeInferenceModelFromPayload({ inference_model: 'GPT 5.6 Sol High' }),
+    'gpt-5.6-sol',
+  );
+  assert.equal(
+    normalizeInferenceModelFromPayload({ inference_model: 'gpt-5.6-sol-high' }),
+    'gpt-5.6-sol',
+  );
   assert.equal(normalizeInferenceModelFromPayload({ inferenceModel: 'gpt-5.6-sol' }), 'gpt-5.6-sol');
+  assert.equal(
+    normalizeInferenceModelFromPayload({ inferenceModel: 'GPT 5.6 Sol Extra High' }),
+    'gpt-5.6-sol-xhigh',
+  );
   assert.equal(normalizeInferenceModelFromPayload({ inferenceModel: 'gpt-5.6' }), 'gpt-5.6-sol');
   assert.equal(normalizeInferenceModelFromPayload({ inference_model: 'Gemini 3.1 Pro' }), 'gemini-3.1-pro');
   assert.equal(normalizeInferenceModelFromPayload({ inference_model: 'GEMINI3.1' }), 'gemini-3.1-pro');
@@ -87,11 +101,44 @@ test('normalizes request inference model aliases', () => {
 test('rejects unsupported request inference model aliases', () => {
   assert.throws(
     () => normalizeInferenceModelFromPayload({ inference_model: 'gpt-5' }),
-    /inference_model must be one of: gpt-5\.6-sol, gemini-3\.1-pro, QWEN3\.8, kimi-k3/,
+    /Legacy gpt-5\.6-sol-high and gpt-5\.6-sol-xhigh aliases are accepted/,
   );
   assert.throws(
     () => normalizeInferenceModelFromPayload({ inference_model: 'claude' }),
-    /inference_model must be one of: gpt-5\.6-sol, gemini-3\.1-pro, QWEN3\.8, kimi-k3/,
+    /Legacy gpt-5\.6-sol-high and gpt-5\.6-sol-xhigh aliases are accepted/,
+  );
+});
+
+test('resolves canonical GPT 5.6 Sol plus explicit effort and legacy suffixes', () => {
+  assert.equal(normalizeInferenceEffortFromPayload({ effort: 'XHIGH' }), 'xhigh');
+  assert.deepEqual(
+    resolveEffectiveInferenceSettings({
+      inference_model: 'gpt-5.6-sol',
+      effort: 'xhigh',
+    }),
+    { inferenceModel: 'gpt-5.6-sol-xhigh', inferenceEffort: 'xhigh' },
+  );
+  assert.deepEqual(
+    resolveEffectiveInferenceSettings({ inference_model: 'gpt-5.6-sol-high' }),
+    { inferenceModel: 'gpt-5.6-sol', inferenceEffort: 'high' },
+  );
+  assert.deepEqual(
+    resolveEffectiveInferenceSettings({
+      inference_model: 'gpt-5.6-sol-xhigh',
+      effort: 'high',
+    }),
+    { inferenceModel: 'gpt-5.6-sol', inferenceEffort: 'high' },
+  );
+  assert.deepEqual(
+    resolveEffectiveInferenceSettings({}, 'gpt-5.6-sol', 'xhigh'),
+    { inferenceModel: 'gpt-5.6-sol-xhigh', inferenceEffort: 'xhigh' },
+  );
+  assert.throws(
+    () => resolveEffectiveInferenceSettings({
+      inference_model: 'gemini-3.1-pro',
+      effort: 'xhigh',
+    }),
+    /effort is only supported when inference_model is gpt-5\.6-sol/,
   );
 });
 

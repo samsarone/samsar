@@ -1,9 +1,12 @@
 import {
   DEFAULT_INFERENCE_MODEL,
   GEMINI_31_PRO_INFERENCE_MODEL,
+  GPT_56_SOL_XHIGH_INFERENCE_MODEL,
+  INFERENCE_REASONING_EFFORTS,
   KIMI_K3_INFERENCE_MODEL,
   QWEN_38_INFERENCE_MODEL,
   normalizeInferenceModel,
+  normalizeInferenceReasoningEffort,
 } from '../../consts/InferenceModels.js';
 import {
   TTS_PROVIDER_ELEVENLABS,
@@ -34,6 +37,12 @@ const TTS_MODEL_KEYS = Object.freeze([
 const INFERENCE_MODEL_KEYS = Object.freeze([
   'inference_model',
   'inferenceModel',
+]);
+
+const INFERENCE_EFFORT_KEYS = Object.freeze([
+  'effort',
+  'reasoning_effort',
+  'reasoningEffort',
 ]);
 
 const SPEAKER_OPTIONS_KEYS = Object.freeze([
@@ -75,6 +84,12 @@ const TTS_MODEL_ALIASES = Object.freeze({
 const INFERENCE_MODEL_ALIASES = Object.freeze({
   GPT56: DEFAULT_INFERENCE_MODEL,
   GPT56SOL: DEFAULT_INFERENCE_MODEL,
+  GPT56HIGH: DEFAULT_INFERENCE_MODEL,
+  GPT56SOLHIGH: DEFAULT_INFERENCE_MODEL,
+  GPT56XHIGH: GPT_56_SOL_XHIGH_INFERENCE_MODEL,
+  GPT56SOLXHIGH: GPT_56_SOL_XHIGH_INFERENCE_MODEL,
+  GPT56EXTRAHIGH: GPT_56_SOL_XHIGH_INFERENCE_MODEL,
+  GPT56SOLEXTRAHIGH: GPT_56_SOL_XHIGH_INFERENCE_MODEL,
   GEMINI31: GEMINI_31_PRO_INFERENCE_MODEL,
   GEMINI31PRO: GEMINI_31_PRO_INFERENCE_MODEL,
   GEMINI31PROPREVIEW: GEMINI_31_PRO_INFERENCE_MODEL,
@@ -212,16 +227,85 @@ export function normalizeInferenceModelFromPayload(payload = {}) {
   const normalizedModel = INFERENCE_MODEL_ALIASES[token];
   if (!normalizedModel) {
     throw makeValidationError(
-      'inference_model must be one of: gpt-5.6-sol, gemini-3.1-pro, QWEN3.8, kimi-k3.'
+      'inference_model must be one of: gpt-5.6-sol, gemini-3.1-pro, QWEN3.8, ' +
+      'kimi-k3. Legacy gpt-5.6-sol-high and gpt-5.6-sol-xhigh aliases are accepted.'
     );
   }
 
   return normalizedModel;
 }
 
-export function resolveEffectiveInferenceModel(payload = {}, userSelectedInferenceModel = null) {
+export function normalizeInferenceEffortFromPayload(payload = {}) {
+  let { provided, value } = getPayloadAliasValue(payload, INFERENCE_EFFORT_KEYS);
+  if (!provided && payload?.reasoning && typeof payload.reasoning === 'object') {
+    provided = Object.prototype.hasOwnProperty.call(payload.reasoning, 'effort');
+    value = payload.reasoning.effort;
+  }
+  if (!provided) {
+    return null;
+  }
+  if (typeof value !== 'string') {
+    throw makeValidationError('effort must be a string when provided.');
+  }
+
+  const normalizedEffort = normalizeInferenceReasoningEffort(value);
+  if (!normalizedEffort) {
+    throw makeValidationError('effort must be one of: high, xhigh.');
+  }
+  return normalizedEffort;
+}
+
+export function resolveEffectiveInferenceSettings(
+  payload = {},
+  userSelectedInferenceModel = null,
+  userSelectedInferenceEffort = null,
+) {
   const requestedInferenceModel = normalizeInferenceModelFromPayload(payload);
-  return requestedInferenceModel || normalizeInferenceModel(userSelectedInferenceModel);
+  const selectedInferenceModel = normalizeInferenceModel(userSelectedInferenceModel);
+  const baseInferenceModel = requestedInferenceModel || selectedInferenceModel;
+  const requestedEffort = normalizeInferenceEffortFromPayload(payload);
+  const isGPT56Sol = baseInferenceModel === DEFAULT_INFERENCE_MODEL ||
+    baseInferenceModel === GPT_56_SOL_XHIGH_INFERENCE_MODEL;
+
+  if (requestedEffort && !isGPT56Sol) {
+    throw makeValidationError(
+      'effort is only supported when inference_model is gpt-5.6-sol.'
+    );
+  }
+
+  if (!isGPT56Sol) {
+    return { inferenceModel: baseInferenceModel, inferenceEffort: null };
+  }
+
+  const legacyModelEffort = baseInferenceModel === GPT_56_SOL_XHIGH_INFERENCE_MODEL
+    ? INFERENCE_REASONING_EFFORTS.BranchedInferenceExtraHigh
+    : null;
+  const savedEffort = requestedInferenceModel
+    ? null
+    : normalizeInferenceReasoningEffort(userSelectedInferenceEffort);
+  const inferenceEffort = requestedEffort || legacyModelEffort || savedEffort ||
+    INFERENCE_REASONING_EFFORTS.Inference;
+
+  return {
+    // Keep the legacy internal identifier so existing queues and workers infer
+    // XHigh without requiring every persisted job shape to change at once.
+    inferenceModel: inferenceEffort === INFERENCE_REASONING_EFFORTS.BranchedInferenceExtraHigh
+      ? GPT_56_SOL_XHIGH_INFERENCE_MODEL
+      : DEFAULT_INFERENCE_MODEL,
+    inferenceEffort,
+  };
+}
+
+export function resolveEffectiveInferenceModel(
+  payload = {},
+  userSelectedInferenceModel = null,
+  userSelectedInferenceEffort = null,
+) {
+  return resolveEffectiveInferenceSettings(
+    payload,
+    userSelectedInferenceModel,
+    userSelectedInferenceEffort,
+  ).inferenceModel;
 }
 
 export function getSpeakerOptionsFromPayload(payload = {}) {

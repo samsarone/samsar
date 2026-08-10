@@ -8,6 +8,7 @@ import User from '../../schema/User.js';
 
 import {
   __testOnly__,
+  NARRATIVE_BILLING_POLICIES,
   buildNarrativeRequestPayload,
   createSingleNarrativeRequest,
   finalizeNarrativeMovieResourceList,
@@ -42,6 +43,26 @@ test('normalizes the create_single prompt, duration, and inference model aliases
       duration: 240,
       inference_model: 'QWEN3.8',
       inferenceModel: 'QWEN3.8',
+      video_model: 'RUNWAYML',
+      videoGenerationModel: 'RUNWAYML',
+    },
+  );
+
+  assert.deepEqual(
+    normalizeCreateSingleNarrativePayload({
+      input: {
+        prompt: 'Deep technical film',
+        duration: 30,
+        inferenceModel: 'gpt-5.6-sol',
+        reasoningEffort: 'xhigh',
+      },
+    }),
+    {
+      prompt: 'Deep technical film',
+      duration: 30,
+      inference_model: 'gpt-5.6-sol',
+      inferenceModel: 'gpt-5.6-sol',
+      effort: 'xhigh',
       video_model: 'RUNWAYML',
       videoGenerationModel: 'RUNWAYML',
     },
@@ -101,10 +122,87 @@ test('uses strict text-to-video inference aliases and falls back to the user sel
     'gemini-3.1-pro',
   );
   assert.equal(resolveNarrativeInferenceModel({}, 'QWEN3.8'), 'QWEN3.8');
+  assert.equal(
+    resolveNarrativeInferenceModel(
+      { inference_model: 'gpt-5.6-sol', effort: 'xhigh' },
+      'gpt-5.6-sol',
+      'high',
+    ),
+    'gpt-5.6-sol-xhigh',
+  );
+  assert.equal(
+    resolveNarrativeInferenceModel(
+      { inference_model: 'gpt-5.6-sol-xhigh' },
+      'gpt-5.6-sol',
+      'high',
+    ),
+    'gpt-5.6-sol-xhigh',
+  );
+  assert.equal(
+    resolveNarrativeInferenceModel(
+      { inference_model: 'gpt-5.6-sol-high' },
+      'gpt-5.6-sol',
+      'xhigh',
+    ),
+    'gpt-5.6-sol',
+  );
+  assert.equal(
+    resolveNarrativeInferenceModel({}, 'gpt-5.6-sol', 'xhigh'),
+    'gpt-5.6-sol-xhigh',
+  );
   assert.throws(
     () => resolveNarrativeInferenceModel({ inference_model: 'unknown-model' }, 'QWEN3.8'),
     (error) => error.status === 400 && /inference_model/.test(error.message),
   );
+});
+
+test('submission persists request and saved GPT 5.6 Sol effort as the worker model', async (t) => {
+  setConnectionReadyForTest(t);
+  const userId = '507f191e810c19729de860ea';
+  const createdDocuments = [];
+
+  t.mock.method(GenerationCreditTransaction, 'createIndexes', async () => []);
+  t.mock.method(NarrativeRequest, 'createIndexes', async () => []);
+  t.mock.method(User, 'findById', () => ({
+    select: () => ({
+      lean: async () => ({
+        _id: userId,
+        generationCredits: 100,
+        selectedInferenceModel: 'gpt-5.6-sol',
+        selectedInferenceEffort: 'xhigh',
+        speakerOptions: null,
+      }),
+    }),
+  }));
+  t.mock.method(NarrativeRequest, 'create', async (document) => {
+    createdDocuments.push(document);
+    const suffix = createdDocuments.length === 1 ? '21' : '22';
+    return {
+      toObject: () => ({
+        ...document,
+        _id: `507f1f77bcf86cd7994390${suffix}`,
+      }),
+    };
+  });
+
+  await createSingleNarrativeRequest({
+    userId,
+    payload: { prompt: 'Use my saved effort.', duration: 30 },
+    dependencies: { queueCreateSingleNarrativeRequest: () => true },
+  });
+  await createSingleNarrativeRequest({
+    userId,
+    payload: {
+      prompt: 'Override the saved effort.',
+      duration: 30,
+      inference_model: 'gpt-5.6-sol',
+      effort: 'high',
+    },
+    dependencies: { queueCreateSingleNarrativeRequest: () => true },
+  });
+
+  assert.equal(createdDocuments[0].inferenceModel, 'gpt-5.6-sol-xhigh');
+  assert.equal(createdDocuments[1].inferenceModel, 'gpt-5.6-sol');
 });
 
 test('skips full normalization after localized speech repair and preserves enriched sounds', () => {
@@ -241,6 +339,47 @@ test('submission persists the selected video model for model-aware speech genera
   assert.equal(createdDocument.minimumSceneCount, 3);
   assert.equal(result.video_model, 'COSMOS3SUPERI2V');
   assert.deepEqual(queued, [requestId]);
+});
+
+test('interactive-video narrative admission does not require a separate credit balance', async (t) => {
+  setConnectionReadyForTest(t);
+  const userId = '507f191e810c19729de860ea';
+  const requestId = '507f1f77bcf86cd799439012';
+  let createdDocument = null;
+
+  t.mock.method(GenerationCreditTransaction, 'createIndexes', async () => []);
+  t.mock.method(NarrativeRequest, 'createIndexes', async () => []);
+  t.mock.method(User, 'findById', () => ({
+    select: () => ({
+      lean: async () => ({
+        _id: userId,
+        generationCredits: 0,
+        selectedInferenceModel: 'QWEN3.8',
+        speakerOptions: null,
+      }),
+    }),
+  }));
+  t.mock.method(NarrativeRequest, 'create', async (document) => {
+    createdDocument = document;
+    return { toObject: () => ({ ...document, _id: requestId }) };
+  });
+
+  const result = await createSingleNarrativeRequest({
+    userId,
+    payload: {
+      prompt: 'Create the shared opening narrative.',
+      duration: 30,
+      video_model: 'COSMOS3SUPERI2V',
+    },
+    billingPolicy: NARRATIVE_BILLING_POLICIES.INCLUDED_IN_INTERACTIVE_VIDEO_RATE,
+    dependencies: { queueCreateSingleNarrativeRequest: () => true },
+  });
+
+  assert.equal(result.status, 'PENDING');
+  assert.equal(
+    createdDocument.billingPolicy,
+    NARRATIVE_BILLING_POLICIES.INCLUDED_IN_INTERACTIVE_VIDEO_RATE,
+  );
 });
 
 test('completed polling payload returns the three requested narrative artifacts', () => {

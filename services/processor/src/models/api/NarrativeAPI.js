@@ -349,18 +349,38 @@ export function normalizeCreateSingleNarrativePayload(payload = {}) {
   }
 
   const videoGenerationModel = normalizeNarrativeVideoModel(source);
+  const inferenceEffortWasProvided = hasOwn(source, 'effort') ||
+    hasOwn(source, 'reasoning_effort') ||
+    hasOwn(source, 'reasoningEffort') ||
+    hasOwn(source?.reasoning, 'effort');
+  const inferenceEffort = hasOwn(source, 'effort')
+    ? source.effort
+    : hasOwn(source, 'reasoning_effort')
+      ? source.reasoning_effort
+      : hasOwn(source, 'reasoningEffort')
+        ? source.reasoningEffort
+        : source?.reasoning?.effort;
   return {
     prompt,
     duration,
     inference_model: source?.inference_model ?? source?.inferenceModel,
     inferenceModel: source?.inference_model ?? source?.inferenceModel,
+    ...(inferenceEffortWasProvided ? { effort: inferenceEffort } : {}),
     video_model: videoGenerationModel,
     videoGenerationModel,
   };
 }
 
-export function resolveNarrativeInferenceModel(payload, selectedInferenceModel) {
-  return resolveEffectiveInferenceModel(payload, selectedInferenceModel);
+export function resolveNarrativeInferenceModel(
+  payload,
+  selectedInferenceModel,
+  selectedInferenceEffort = null,
+) {
+  return resolveEffectiveInferenceModel(
+    payload,
+    selectedInferenceModel,
+    selectedInferenceEffort,
+  );
 }
 
 function buildBillingPayload(request) {
@@ -1117,20 +1137,24 @@ export async function createSingleNarrativeRequest({
   await getDBConnectionString();
   await ensureNarrativeBillingIndexes();
   const user = await User.findById(userId)
-    .select('selectedInferenceModel speakerOptions generationCredits')
+    .select('selectedInferenceModel selectedInferenceEffort speakerOptions generationCredits')
     .lean();
   if (!user) throw buildError('User not found.', 404, 'USER_NOT_FOUND');
-  if (!(Number(user.generationCredits) > 0)) {
+  const normalizedBillingPolicy = normalizeNarrativeBillingPolicy(billingPolicy);
+  const narrativeBillingIncluded = normalizedBillingPolicy ===
+    NARRATIVE_BILLING_POLICIES.INCLUDED_IN_INTERACTIVE_VIDEO_RATE;
+  if (!narrativeBillingIncluded && !(Number(user.generationCredits) > 0)) {
     throw buildError('Insufficient credits', 402, 'INSUFFICIENT_CREDITS');
   }
 
   const inferenceModel = resolveNarrativeInferenceModel(
     normalizedPayload,
     user.selectedInferenceModel,
+    user.selectedInferenceEffort,
   );
   const normalizedMinimumSceneCount = normalizeMinimumSceneCount(minimumSceneCount);
   const apiKeyUsage = normalizeAPIKeyUsageContext(authContext);
-  if (apiKeyUsage?.apiKeyId) {
+  if (!narrativeBillingIncluded && apiKeyUsage?.apiKeyId) {
     await assertAPIKeyUsageLimitForDebit(
       userId,
       NARRATIVE_ADMISSION_CREDIT_FLOOR,
@@ -1154,7 +1178,7 @@ export async function createSingleNarrativeRequest({
     pricingMultiplier: NARRATIVE_PRICING_MULTIPLIER,
     apiKeyId: apiKeyUsage?.apiKeyId || null,
     apiKeyUsage,
-    billingPolicy: normalizeNarrativeBillingPolicy(billingPolicy),
+    billingPolicy: normalizedBillingPolicy,
     interactiveVideoRequestId: interactiveVideoRequestId || null,
     meteringSlotActive: false,
   });

@@ -1,6 +1,7 @@
 import {
   getReasoningEffortForInferenceModel,
   getDefaultUserInferenceModel,
+  getProviderModelForInferenceModel,
   isGeminiInferenceModel,
   isKimiInferenceModel,
   isQwenInferenceModel,
@@ -259,20 +260,29 @@ function buildResponsesRequest(chatRequest) {
     response_format,
     reasoning,
     reasoning_effort,
+    reasoningEffort: reasoningEffortAlias,
+    effort,
   } = chatRequest || {};
 
+  const inferenceModel = normalizeOpenAIInferenceModel(
+    model || getDefaultUserInferenceModel(),
+  );
   const body = {
-    model: normalizeOpenAIInferenceModel(model || getDefaultUserInferenceModel()),
+    model: getProviderModelForInferenceModel(inferenceModel),
     input: normalizeMessagesForResponses(messages),
   };
 
-  const reasoningEffort =
+  const requestedReasoningEffort =
+    effort ??
     (reasoning && typeof reasoning === 'object' ? reasoning.effort : undefined) ??
-    reasoning_effort;
-  if (!isGeminiInferenceModel(body.model)) {
-    body.reasoning = { effort: getReasoningEffortForInferenceModel(body.model) };
-  } else if (typeof reasoningEffort === 'string' && reasoningEffort) {
-    body.reasoning = { effort: reasoningEffort };
+    reasoning_effort ??
+    reasoningEffortAlias;
+  if (!isGeminiInferenceModel(inferenceModel)) {
+    body.reasoning = {
+      effort: getReasoningEffortForInferenceModel(inferenceModel, requestedReasoningEffort),
+    };
+  } else if (typeof requestedReasoningEffort === 'string' && requestedReasoningEffort) {
+    body.reasoning = { effort: requestedReasoningEffort };
   }
 
   if (temperature !== undefined) {

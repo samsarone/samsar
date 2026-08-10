@@ -69,7 +69,13 @@ const narrativeRequestSchema = new Schema({
   },
   inferenceModel: {
     type: String,
-    enum: ['gpt-5.6-sol', 'gemini-3.1-pro', 'QWEN3.8'],
+    enum: [
+      'gpt-5.6-sol',
+      'gpt-5.6-sol-xhigh',
+      'gemini-3.1-pro',
+      'QWEN3.8',
+      'kimi-k3',
+    ],
     required: true,
   },
   videoGenerationModel: { type: String, default: 'RUNWAYML' },

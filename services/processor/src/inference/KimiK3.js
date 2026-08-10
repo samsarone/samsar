@@ -347,6 +347,7 @@ export async function buildKimiK3ChatRequest(
     providerOptions,
     inference_model,
     inferenceModel,
+    effort,
     reasoning,
     reasoning_effort,
     reasoningEffort,

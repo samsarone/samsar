@@ -231,6 +231,7 @@ export async function buildKimiK3ChatCompletionPayload(
     authorization,
     bypassSamsarExternalInference,
     externalMaxRetries,
+    effort,
     inference_model,
     inferenceModel,
     input,

@@ -81,12 +81,16 @@ test('preserves the structured response contract in the compatible request', () 
   };
   const payload = buildQwenChatCompletionPayload({
     model: 'QWEN3.8',
+    effort: 'xhigh',
+    reasoningEffort: 'xhigh',
     messages: [{ role: 'developer', content: 'Return JSON.' }],
     response_format: responseFormat,
     reasoning_effort: 'xhigh',
   }, {});
 
   assert.equal(payload.model, 'qwen3.8-max');
+  assert.equal(Object.hasOwn(payload, 'effort'), false);
+  assert.equal(Object.hasOwn(payload, 'reasoningEffort'), false);
   assert.equal(payload.messages[0].role, 'system');
   assert.match(payload.messages[0].content, /JSON Schema exactly/);
   assert.match(payload.messages[0].content, /"content"/);

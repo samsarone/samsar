@@ -41,36 +41,60 @@ test('normalizes the complete unified payload and requires render model selectio
       prompt: '  Create an interactive river journey.  ',
       duration: 40,
       num_levels: '2',
-      inference_model: 'QWEN3.8',
-      image_model: 'SEEDREAM',
+      inference_model: 'gpt-5.6-sol',
+      effort: 'xhigh',
+      image_model: 'NANOBANANAPRO',
       video_model: 'COSMOS3SUPERI2V',
     },
   }), {
     prompt: 'Create an interactive river journey.',
     duration: 40,
-    inferenceModel: 'QWEN3.8',
-    imageModel: 'SEEDREAM',
+    inferenceModel: 'gpt-5.6-sol-xhigh',
+    effort: 'xhigh',
+    imageModel: 'NANOBANANAPRO',
     videoModel: 'COSMOS3SUPERI2V',
     numLevels: 2,
     aspectRatio: '16:9',
   });
 
-  assert.equal(normalizeTextToInteractiveVideoPayload({
+  const defaultInferencePayload = normalizeTextToInteractiveVideoPayload({
     prompt: 'Create an interactive portrait journey.',
     duration: 40,
     num_levels: 2,
-    inference_model: 'QWEN3.8',
-    image_model: 'SEEDREAM',
+    image_model: 'GPTIMAGE2',
     video_model: 'COSMOS3SUPERI2V',
     aspect_ratio: '9:16',
-  }).aspectRatio, '9:16');
+  });
+  assert.equal(defaultInferencePayload.inferenceModel, 'gpt-5.6-sol');
+  assert.equal(defaultInferencePayload.effort, 'high');
+  assert.equal(defaultInferencePayload.aspectRatio, '9:16');
+
+  for (const [field, value, code] of [
+    ['inference_model', 'QWEN3.8', 'INVALID_INFERENCE_MODEL'],
+    ['image_model', 'SEEDREAM', 'INVALID_IMAGE_MODEL'],
+    ['video_model', 'RUNWAYML', 'INVALID_VIDEO_MODEL'],
+  ]) {
+    assert.throws(
+      () => normalizeTextToInteractiveVideoPayload({
+        prompt: 'Create a constrained branched lesson.',
+        duration: 40,
+        num_levels: 2,
+        inference_model: 'gpt-5.6-sol',
+        image_model: 'GPTIMAGE2',
+        video_model: 'COSMOS3SUPERI2V',
+        [field]: value,
+      }),
+      (error) => error.code === code && error.status === 400,
+    );
+  }
 
   assert.throws(
     () => normalizeTextToInteractiveVideoPayload({
       prompt: 'Create an interactive river journey.',
       duration: 40,
       num_levels: 2,
-      image_model: 'SEEDREAM',
+      inference_model: 'gpt-5.6-sol',
+      image_model: 'GPTIMAGE2',
     }),
     (error) => error.code === 'INVALID_VIDEO_MODEL' && error.status === 400,
   );
@@ -79,7 +103,8 @@ test('normalizes the complete unified payload and requires render model selectio
       prompt: 'Create an interactive river journey.',
       duration: 40,
       num_levels: 2,
-      video_model: 'RUNWAYML',
+      inference_model: 'gpt-5.6-sol',
+      video_model: 'COSMOS3SUPERI2V',
     }),
     (error) => error.code === 'INVALID_IMAGE_MODEL' && error.status === 400,
   );
@@ -89,8 +114,9 @@ test('normalizes the complete unified payload and requires render model selectio
       duration: 40,
       num_levels: 1,
       numLevels: 2,
-      image_model: 'SEEDREAM',
-      video_model: 'RUNWAYML',
+      inference_model: 'gpt-5.6-sol',
+      image_model: 'GPTIMAGE2',
+      video_model: 'COSMOS3SUPERI2V',
     }),
     (error) => error.code === 'CONFLICTING_NUM_LEVELS' && error.status === 400,
   );
@@ -99,8 +125,9 @@ test('normalizes the complete unified payload and requires render model selectio
       prompt: 'Create an interactive river journey.',
       duration: 40,
       num_levels: 2,
-      image_model: 'SEEDREAM',
-      video_model: 'RUNWAYML',
+      inference_model: 'gpt-5.6-sol',
+      image_model: 'GPTIMAGE2',
+      video_model: 'COSMOS3SUPERI2V',
       aspectRatio: '1:1',
     }),
     (error) => error.code === 'INVALID_ASPECT_RATIO' && error.status === 400,
@@ -110,8 +137,9 @@ test('normalizes the complete unified payload and requires render model selectio
       prompt: 'Create an interactive river journey.',
       duration: 40,
       num_levels: 2,
-      image_model: 'SEEDREAM',
-      video_model: 'RUNWAYML',
+      inference_model: 'gpt-5.6-sol',
+      image_model: 'GPTIMAGE2',
+      video_model: 'COSMOS3SUPERI2V',
       aspect_ratio: '16:9',
       aspectRatio: '9:16',
     }),
@@ -130,8 +158,9 @@ test('one-step initialization immediately applies default and overridden branch 
       payload: {
         prompt: 'Create an interactive journey.',
         duration: 40,
-        inferenceModel: 'QWEN3.8',
-        imageModel: 'SEEDREAM',
+        inferenceModel: 'gpt-5.6-sol-xhigh',
+        effort: 'xhigh',
+        imageModel: 'NANOBANANAPRO',
         videoModel: 'COSMOS3SUPERI2V',
         numLevels: 2,
         ...(aspectRatio ? { aspectRatio } : {}),
@@ -155,14 +184,18 @@ test('one-step initialization immediately applies default and overridden branch 
   assert.equal(sessionUpdates.every((update) => update.$set.narrativeType === 'branched'), true);
   assert.deepEqual(sessionUpdates[0].$set.interactiveVideoDraftConfig, {
     duration: 40,
-    imageModel: 'SEEDREAM',
+    inferenceModel: 'gpt-5.6-sol-xhigh',
+    effort: 'xhigh',
+    imageModel: 'NANOBANANAPRO',
     videoModel: 'COSMOS3SUPERI2V',
     numLevels: 2,
     aspectRatio: '16:9',
   });
   assert.deepEqual(sessionUpdates[1].$set.interactiveVideoDraftConfig, {
     duration: 40,
-    imageModel: 'SEEDREAM',
+    inferenceModel: 'gpt-5.6-sol-xhigh',
+    effort: 'xhigh',
+    imageModel: 'NANOBANANAPRO',
     videoModel: 'COSMOS3SUPERI2V',
     numLevels: 2,
     aspectRatio: '9:16',
@@ -290,7 +323,8 @@ test('validates user input against an owned draft and fills omitted values from 
   assert.deepEqual(result.normalizedPayload, {
     prompt: 'Use the saved interactive defaults.',
     duration: 30,
-    inferenceModel: undefined,
+    inferenceModel: 'gpt-5.6-sol',
+    effort: 'high',
     imageModel: 'GPTIMAGE2',
     videoModel: 'COSMOS3SUPERI2V',
     numLevels: 2,
@@ -304,8 +338,9 @@ test('rejects conflicting session/request aliases before creating interactive wo
     () => normalizeTextToInteractiveVideoPayload({
       prompt: 'A branching story.',
       duration: 30,
-      image_model: 'SEEDREAM',
-      video_model: 'RUNWAYML',
+      inference_model: 'gpt-5.6-sol',
+      image_model: 'GPTIMAGE2',
+      video_model: 'COSMOS3SUPERI2V',
       num_levels: 1,
       session_id: SESSION_ID,
       request_id: '507f1f77bcf86cd799439099',
@@ -336,14 +371,45 @@ test('response exposes the preallocated final video session for detailed-status 
   });
 });
 
+test('interactive-video credit admission is enforced in production and bypassed in standalone', async () => {
+  let apiKeyLimitChecks = 0;
+  const input = {
+    userId: USER_ID,
+    user: { generationCredits: 0 },
+    apiKeyUsage: { apiKeyId: 'api-key-id' },
+  };
+
+  await assert.rejects(
+    __testOnly__.assertInteractiveVideoCreditAdmission(input, {
+      shouldBypassCredits: () => false,
+      assertAPIKeyLimit: async () => {
+        apiKeyLimitChecks += 1;
+      },
+    }),
+    (error) => error.code === 'INSUFFICIENT_CREDITS' && error.status === 402,
+  );
+  assert.equal(apiKeyLimitChecks, 0);
+
+  assert.deepEqual(
+    await __testOnly__.assertInteractiveVideoCreditAdmission(input, {
+      shouldBypassCredits: () => true,
+      assertAPIKeyLimit: async () => {
+        apiKeyLimitChecks += 1;
+      },
+    }),
+    { creditsBypassed: true },
+  );
+  assert.equal(apiKeyLimitChecks, 0);
+});
+
 test('an idempotency-race loser removes only its own blank session', async (t) => {
   setConnectionReadyForTest(t);
   const input = {
     prompt: 'Create an interactive river journey.',
     duration: 40,
     num_levels: 2,
-    inference_model: 'QWEN3.8',
-    image_model: 'SEEDREAM',
+    inference_model: 'gpt-5.6-sol-xhigh',
+    image_model: 'NANOBANANAPRO',
     video_model: 'COSMOS3SUPERI2V',
   };
   const normalizedPayload = normalizeTextToInteractiveVideoPayload(input);
@@ -441,8 +507,8 @@ test('durable worker sequences both waived narrative stages before scheduling on
       prompt: 'Create an interactive river journey.',
       duration: 40,
       numLevels: 2,
-      inferenceModel: 'QWEN3.8',
-      imageModel: 'SEEDREAM',
+      inferenceModel: 'gpt-5.6-sol-xhigh',
+      imageModel: 'NANOBANANAPRO',
       videoModel: 'COSMOS3SUPERI2V',
       aspectRatio: '9:16',
     },
@@ -529,7 +595,7 @@ test('durable worker sequences both waived narrative stages before scheduling on
   assert.equal(finalVideoArguments.destinationSessionId, SESSION_ID);
   assert.deepEqual(finalVideoArguments.payload, {
     narrative_request_id: BRANCHED_REQUEST_ID,
-    image_model: 'SEEDREAM',
+    image_model: 'NANOBANANAPRO',
     video_model: 'COSMOS3SUPERI2V',
     aspectRatio: '9:16',
   });

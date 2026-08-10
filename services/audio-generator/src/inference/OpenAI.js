@@ -5,8 +5,9 @@ import { mkdir, writeFile } from "fs/promises";
 
 import OpenAI from "openai";
 import {
-  GPT_56_SOL_REASONING_EFFORT,
+  GPT_56_SOL_INFERENCE_MODEL,
   getDefaultUserInferenceModel,
+  getGPT56SolReasoningEffort,
   isGPT56SolInferenceModel,
   isGeminiInferenceModel,
   isKimiInferenceModel,
@@ -203,7 +204,27 @@ async function createInferenceChatCompletionForProvider(
   const openaiClient = dependencyOverrides.openaiClient || openai;
   return runExternalInferenceWithRetry(
     async ({ signal }) => {
-      const providerPayload = await normalizeProviderMediaPayload(providerRequest);
+      const {
+        effort,
+        reasoning,
+        reasoningEffort,
+        reasoning_effort,
+        ...openAIRequest
+      } = providerRequest;
+      const providerPayload = await normalizeProviderMediaPayload({
+        ...openAIRequest,
+        model: typeof model === 'string' && model.toLowerCase().startsWith(GPT_56_SOL_INFERENCE_MODEL)
+          ? GPT_56_SOL_INFERENCE_MODEL
+          : model,
+        ...(typeof model === 'string' && model.toLowerCase().startsWith(GPT_56_SOL_INFERENCE_MODEL)
+          ? {
+            reasoning_effort: getGPT56SolReasoningEffort(
+              model,
+              effort || reasoning?.effort || reasoning_effort || reasoningEffort,
+            ),
+          }
+          : {}),
+      });
       return openaiClient.chat.completions.create(providerPayload, {
         timeout: requestTimeoutMs,
         maxRetries: 0,
@@ -291,6 +312,7 @@ export async function sendAssistantMessageRequest(
   messageList,
   model = "gpt-4o-mini",
   inferenceAuthorization,
+  reasoningEffort,
 ) {
 
   try {
@@ -303,7 +325,7 @@ export async function sendAssistantMessageRequest(
       messages: messageList,
       model: normalizedModel,
       ...(isGPT56SolInferenceModel(normalizedModel)
-        ? { reasoning_effort: GPT_56_SOL_REASONING_EFFORT }
+        ? { reasoning_effort: getGPT56SolReasoningEffort(normalizedModel, reasoningEffort) }
         : {}),
     };
     const routingPayload = withInferenceAuthorization(payload, inferenceAuthorization);

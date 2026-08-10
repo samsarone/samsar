@@ -24,6 +24,7 @@ const ENV_KEYS = [
   'OPENROUTER_GEMINI_MAX_TOKENS',
   'OPENROUTER_GEMINI_REASONING_EFFORT',
   'OPENROUTER_GPT_MAX_COMPLETION_TOKENS',
+  'OPENROUTER_GPT_56_LUNA_MODEL',
   'OPENROUTER_GPT_REASONING_EFFORT',
   'OPENROUTER_QWEN_INFERENCE_TIMEOUT_MS',
   'OPENROUTER_QWEN_MAX_RETRIES',
@@ -154,23 +155,42 @@ test('GenBlaze sends canonical GPT and Gemini models with high reasoning and mul
     reasoning_effort: 'low',
   }, { genblazeClient });
   await createGenblazeChatCompletion({
+    model: 'gpt-5.6-sol',
+    messages: [{ role: 'user', content: 'use explicit effort' }],
+    reasoning_effort: 'xhigh',
+  }, { genblazeClient });
+  await createGenblazeChatCompletion({
     model: 'gemini-3.1-pro',
     messages: [{ role: 'user', content: [{ type: 'text', text: 'inspect' }, imagePart] }],
-    reasoning_effort: 'high',
+    reasoning_effort: 'low',
+    reasoningEffort: 'xhigh',
+    effort: 'xhigh',
   }, {
     genblazeClient,
     resolveMediaUrl: async (url) => url,
   });
+  await createGenblazeChatCompletion({
+    model: 'gpt-5.6-sol-xhigh',
+    messages: [{ role: 'user', content: 'reason extra deeply' }],
+  }, { genblazeClient });
 
   assert.equal(payloads[0].model, 'gpt-5.6-sol');
   assert.equal(payloads[0].reasoning_effort, 'high');
   assert.equal(payloads[0].reasoning, undefined);
-  assert.equal(payloads[1].model, 'gemini-3.1-pro');
-  assert.equal(payloads[1].reasoning_effort, 'high');
-  assert.equal(payloads[1].reasoning, undefined);
-  assert.deepEqual(payloads[1].messages[0].content[1], imagePart);
+  assert.equal(payloads[1].model, 'gpt-5.6-sol');
+  assert.equal(payloads[1].reasoning_effort, 'xhigh');
+  assert.equal(payloads[2].model, 'gemini-3.1-pro');
+  assert.equal(payloads[2].reasoning_effort, 'high');
+  assert.equal(payloads[2].reasoning, undefined);
+  assert.deepEqual(payloads[2].messages[0].content[1], imagePart);
+  assert.equal(payloads[3].model, 'gpt-5.6-sol');
+  assert.equal(payloads[3].reasoning_effort, 'xhigh');
   await assert.rejects(
     createGenblazeChatCompletion({ model: 'kimi-k3', messages: [] }, { genblazeClient }),
+    (error) => error?.code === 'GENBLAZE_MODEL_UNSUPPORTED',
+  );
+  await assert.rejects(
+    createGenblazeChatCompletion({ model: 'gpt-5.6-luna', messages: [] }, { genblazeClient }),
     (error) => error?.code === 'GENBLAZE_MODEL_UNSUPPORTED',
   );
 });
@@ -361,11 +381,15 @@ test('Kimi K3 Samsar fallback forces high reasoning', async (t) => {
     model: 'kimi-k3',
     messages: [{ role: 'user', content: 'hello' }],
     reasoning_effort: 'low',
+    reasoningEffort: 'xhigh',
+    effort: 'xhigh',
     externalMaxRetries: 0,
   });
 
   assert.equal(capturedPayload.model, 'kimi-k3');
   assert.equal(capturedPayload.reasoning_effort, 'high');
+  assert.equal(Object.hasOwn(capturedPayload, 'reasoningEffort'), false);
+  assert.equal(Object.hasOwn(capturedPayload, 'effort'), false);
 });
 
 test('Docker Qwen uses native, GMICloud, Samsar, then OpenRouter', () => {
@@ -606,10 +630,11 @@ test('OpenRouter reserves Qwen output tokens and enforces schema support for str
   ]);
 });
 
-test('OpenRouter explicitly budgets high-reasoning Gemini and GPT completions', async (t) => {
+test('OpenRouter preserves explicit Sol XHigh and the Luna metadata model/default', async (t) => {
   clearProviderEnv();
   process.env.CURRENT_ENV = 'production';
   process.env.OPENROUTER_API_KEY = 'test-openrouter-key';
+  process.env.OPENROUTER_GPT_REASONING_EFFORT = 'high';
   const payloads = [];
   t.mock.method(OpenAI.Chat.Completions.prototype, 'create', async (payload) => {
     payloads.push(payload);
@@ -625,6 +650,13 @@ test('OpenRouter explicitly budgets high-reasoning Gemini and GPT completions', 
   await createOpenRouterChatCompletion({
     model: 'gpt-5.6-sol',
     messages: [{ role: 'user', content: 'return JSON' }],
+    reasoning_effort: 'xhigh',
+    response_format: responseFormat,
+  });
+  await createOpenRouterChatCompletion({
+    model: 'gpt-5.6-luna',
+    messages: [{ role: 'user', content: 'generate metadata' }],
+    reasoning_effort: 'low',
     response_format: responseFormat,
   });
 
@@ -633,9 +665,12 @@ test('OpenRouter explicitly budgets high-reasoning Gemini and GPT completions', 
   assert.equal(payloads[0].max_tokens, 65536);
   assert.equal(Object.hasOwn(payloads[0], 'max_completion_tokens'), false);
   assert.equal(payloads[1].model, 'openai/gpt-5.6-sol');
-  assert.equal(payloads[1].reasoning.effort, 'high');
+  assert.equal(payloads[1].reasoning.effort, 'xhigh');
   assert.equal(payloads[1].max_completion_tokens, 128000);
   assert.equal(Object.hasOwn(payloads[1], 'max_tokens'), false);
+  assert.equal(payloads[2].model, 'openai/gpt-5.6-luna');
+  assert.equal(payloads[2].reasoning.effort, 'xhigh');
+  assert.equal(payloads[2].max_completion_tokens, 128000);
   for (const payload of payloads) {
     assert.equal(payload.provider.require_parameters, true);
     assert.deepEqual(payload.plugins, [{ id: 'response-healing' }]);
@@ -916,6 +951,11 @@ test('external inference applies each GPT 5.6 model reasoning default without ch
     reasoning_effort: 'low',
   });
   await createSamsarExternalChatCompletion({
+    model: 'gpt-5.6-sol',
+    messages: [{ role: 'user', content: 'deep analysis' }],
+    reasoning_effort: 'xhigh',
+  });
+  await createSamsarExternalChatCompletion({
     model: 'gpt-5.6-luna',
     messages: [{ role: 'user', content: 'generate metadata' }],
     reasoning_effort: 'low',
@@ -927,9 +967,11 @@ test('external inference applies each GPT 5.6 model reasoning default without ch
   });
 
   assert.equal(payloads[0].reasoning_effort, 'high');
-  assert.equal(payloads[1].model, 'gpt-5.6-luna');
+  assert.equal(payloads[1].model, 'gpt-5.6-sol');
   assert.equal(payloads[1].reasoning_effort, 'xhigh');
-  assert.equal(payloads[2].reasoning_effort, 'high');
+  assert.equal(payloads[2].model, 'gpt-5.6-luna');
+  assert.equal(payloads[2].reasoning_effort, 'xhigh');
+  assert.equal(payloads[3].reasoning_effort, 'high');
 });
 
 test('Samsar external inference resolves provider media freshly on every retry', async (t) => {
@@ -987,19 +1029,17 @@ test('deployed external inference can queue and poll a long-running assistant re
   clearProviderEnv();
   process.env.SAMSAR_API_KEY = 'polling-test-samsar-key';
   let queuedPayload;
-  let statusQuery;
+  let statusRequestId;
 
-  t.mock.method(SamsarClient.prototype, 'postV2', async (path, payload) => {
-    assert.equal(path, 'external/chat/completions');
+  t.mock.method(SamsarClient.prototype, 'createV2ExternalChatCompletionAsync', async (payload) => {
     queuedPayload = payload;
     return {
       data: { request_id: 'request-123', status: 'PENDING' },
       status: 202,
     };
   });
-  t.mock.method(SamsarClient.prototype, 'getV2', async (path, options) => {
-    assert.equal(path, 'external/chat/status');
-    statusQuery = options.query;
+  t.mock.method(SamsarClient.prototype, 'getV2ExternalChatCompletionStatus', async (requestId) => {
+    statusRequestId = requestId;
     return {
       data: {
         request_id: 'request-123',
@@ -1021,10 +1061,8 @@ test('deployed external inference can queue and poll a long-running assistant re
     externalMaxRetries: 0,
   });
 
-  assert.equal(queuedPayload.async, true);
-  assert.equal(queuedPayload.response_mode, 'polling');
   assert.equal(queuedPayload.reasoning_effort, 'high');
-  assert.deepEqual(statusQuery, { request_id: 'request-123' });
+  assert.equal(statusRequestId, 'request-123');
   assert.equal(response.choices[0].message.content, '{"ok":true}');
 });
 
@@ -1058,12 +1096,11 @@ test('Docker external polling persists correlation before polling the hosted req
     },
   };
 
-  t.mock.method(SamsarClient.prototype, 'postV2', async (path, payload) => {
-    assert.equal(path, 'external/chat/completions');
+  t.mock.method(SamsarClient.prototype, 'createV2ExternalChatCompletionAsync', async (payload) => {
     queuedPayload = payload;
     return { data: { request_id: 'hosted-request-1', status: 'PENDING' } };
   });
-  t.mock.method(SamsarClient.prototype, 'getV2', async () => ({
+  t.mock.method(SamsarClient.prototype, 'getV2ExternalChatCompletionStatus', async () => ({
     data: {
       request_id: 'hosted-request-1',
       status: 'COMPLETED',
@@ -1116,13 +1153,12 @@ test('Docker external polling resumes a persisted hosted request without resubmi
     async markCompleted() {},
     async markFailed() {},
   };
-  t.mock.method(SamsarClient.prototype, 'postV2', async () => {
+  t.mock.method(SamsarClient.prototype, 'createV2ExternalChatCompletionAsync', async () => {
     submitCalls += 1;
     throw new Error('submit must not be called for a persisted provider request');
   });
-  t.mock.method(SamsarClient.prototype, 'getV2', async (path, options) => {
-    assert.equal(path, 'external/chat/status');
-    assert.deepEqual(options.query, { request_id: 'hosted-request-2' });
+  t.mock.method(SamsarClient.prototype, 'getV2ExternalChatCompletionStatus', async (requestId) => {
+    assert.equal(requestId, 'hosted-request-2');
     return {
       data: {
         request_id: 'hosted-request-2',
@@ -1167,10 +1203,10 @@ test('Docker external polling marks a completed persisted response as reused wit
       };
     },
   };
-  const postMock = t.mock.method(SamsarClient.prototype, 'postV2', async () => {
+  const postMock = t.mock.method(SamsarClient.prototype, 'createV2ExternalChatCompletionAsync', async () => {
     throw new Error('a completed request must not be submitted again');
   });
-  const getMock = t.mock.method(SamsarClient.prototype, 'getV2', async () => {
+  const getMock = t.mock.method(SamsarClient.prototype, 'getV2ExternalChatCompletionStatus', async () => {
     throw new Error('a completed request must not be polled again');
   });
 
@@ -1213,8 +1249,7 @@ test('Docker does not resubmit after an ambiguous hosted reset', async (t) => {
     async markCompleted() {},
     async markFailed() {},
   };
-  t.mock.method(SamsarClient.prototype, 'postV2', async (path, payload) => {
-    assert.equal(path, 'external/chat/completions');
+  t.mock.method(SamsarClient.prototype, 'createV2ExternalChatCompletionAsync', async (payload) => {
     submittedClientIds.push(payload.client_request_id);
     submittedMediaUrls.push(payload.messages[0].content[0].image_url);
     submitAttempt += 1;
@@ -1225,7 +1260,7 @@ test('Docker does not resubmit after an ambiguous hosted reset', async (t) => {
     }
     return { data: { request_id: 'hosted-request-3', status: 'PENDING' } };
   });
-  t.mock.method(SamsarClient.prototype, 'getV2', async () => ({
+  t.mock.method(SamsarClient.prototype, 'getV2ExternalChatCompletionStatus', async () => ({
     data: {
       request_id: 'hosted-request-3',
       status: 'COMPLETED',

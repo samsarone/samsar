@@ -107,11 +107,13 @@ export const IMAGE_GENERAITON_MODEL_TYPES = [
     name: 'GPT Image 2',
     key: 'GPTIMAGE2',
     isExpressModel: true,
+    isBranchedImageModel: true,
   },
   {
     name: 'Seedream',
     key: 'SEEDREAM',
     isExpressModel: true,
+    isBranchedImageModel: false,
   },
   {
     name: 'NanoBanana 2',
@@ -122,17 +124,20 @@ export const IMAGE_GENERAITON_MODEL_TYPES = [
     name: 'NanoBanana Pro',
     key: 'NANOBANANAPRO',
     isExpressModel: true,
+    isBranchedImageModel: true,
   },
   {
     name: 'Wan2.7 Pro',
     key: 'WAN2.7PRO',
     isExpressModel: true,
+    isBranchedImageModel: false,
     supportedAspectRatios: ['1:1', '16:9', '9:16'],
   },
   {
     name: 'Qwen Image 3.0 Pro',
     key: QWEN_IMAGE_3_PRO_MODEL_KEY,
     isExpressModel: true,
+    isBranchedImageModel: false,
     standaloneOnly: true,
     providerBilled: true,
     supportedAspectRatios: ['1:1', '16:9', '9:16'],
@@ -155,6 +160,7 @@ export const VIDEO_GENERATION_MODEL_TYPES = [
     name: 'RunwayML Gen 4.5',
     key: 'RUNWAYML',
     isExpressModel: true,
+    isBranchedVideoModel: false,
     isTransitionModel: false,
     isImageToVideoModel: true,
     isTextToVideoModel: true,
@@ -188,6 +194,7 @@ export const VIDEO_GENERATION_MODEL_TYPES = [
     name: 'Custom Image to Video',
     key: 'CUSTOM_IMAGE_TO_VIDEO',
     isExpressModel: true,
+    isBranchedVideoModel: false,
     isTransitionModel: false,
     isImageToVideoModel: true,
     isTextToVideoModel: false,
@@ -199,6 +206,7 @@ export const VIDEO_GENERATION_MODEL_TYPES = [
     name: 'Kling 3 Pro Img2Vid',
     key: 'KLINGIMGTOVID3PRO',
     isExpressModel: true,
+    isBranchedVideoModel: false,
     isImageToVideoModel: true,
     isTextToVideoModel: false,
     supportedAspectRatios: [
@@ -209,6 +217,7 @@ export const VIDEO_GENERATION_MODEL_TYPES = [
     name: 'Happy Horse 1.1 I2V',
     key: 'HAPPYHORSEI2V',
     isExpressModel: true,
+    isBranchedVideoModel: false,
     isImageToVideoModel: true,
     isTextToVideoModel: false,
     supportedAspectRatios: [
@@ -251,6 +260,7 @@ export const VIDEO_GENERATION_MODEL_TYPES = [
     isImageToVideoModel: true,
     isTextToVideoModel: false,
     isExpressModel: true,
+    isBranchedVideoModel: false,
     supportedAspectRatios: [
       '16:9', '9:16',
     ]
@@ -261,6 +271,7 @@ export const VIDEO_GENERATION_MODEL_TYPES = [
     isImageToVideoModel: true,
     isTextToVideoModel: false,
     isExpressModel: true,
+    isBranchedVideoModel: true,
     standaloneOnly: true,
     supportedAspectRatios: [
       '16:9', '9:16',
@@ -272,6 +283,7 @@ export const VIDEO_GENERATION_MODEL_TYPES = [
     isImageToVideoModel: true,
     isTextToVideoModel: false,
     isExpressModel: true,
+    isBranchedVideoModel: false,
     supportedAspectRatios: [
       '16:9', '9:16',
     ]
@@ -303,6 +315,7 @@ export const VIDEO_GENERATION_MODEL_TYPES = [
     key: 'VEO3.1I2V',
     isImageToVideoModel: true,
     isExpressModel: true,
+    isBranchedVideoModel: true,
     isTextToVideoModel: false,
     supportedAspectRatios: [
       '16:9',
@@ -326,6 +339,7 @@ export const VIDEO_GENERATION_MODEL_TYPES = [
     key: 'VEO3.1I2VFAST',
     isImageToVideoModel: true,
     isExpressModel: true,
+    isBranchedVideoModel: true,
     isTextToVideoModel: false,
     supportedAspectRatios: [
       '16:9',
@@ -337,6 +351,7 @@ export const VIDEO_GENERATION_MODEL_TYPES = [
     key: 'COSMOS3SUPERI2V',
     isImageToVideoModel: true,
     isExpressModel: true,
+    isBranchedVideoModel: true,
     isTextToVideoModel: false,
     supportedAspectRatios: [
       '16:9',
@@ -371,7 +386,7 @@ export const IMAGE_EDIT_MODEL_TYPES = [
 
 export const ASSISTANT_MODEL_TYPES = [
   {
-    label: 'GPT 5.6 Sol',
+    label: 'gpt-5.6-sol',
     value: 'gpt-5.6-sol',
   },
   {
@@ -394,24 +409,41 @@ export const INFERENCE_MODEL_TYPES = [
 
 
   {
-    label: 'GPT 5.6 Sol',
+    label: 'gpt-5.6-sol',
     value: 'gpt-5.6-sol',
+    isBranchedInferenceModel: true,
   },
   {
     label: 'Gemini 3.1 Pro',
     value: 'gemini-3.1-pro',
+    isBranchedInferenceModel: false,
   },
   {
     label: 'Qwen 3.8 Max',
     value: 'QWEN3.8',
+    isBranchedInferenceModel: false,
   },
   {
     label: 'Kimi K3',
     value: 'kimi-k3',
+    isBranchedInferenceModel: false,
   },
 
 
 ]
+
+export const INFERENCE_EFFORT_OPTIONS = [
+  {
+    label: 'high',
+    value: 'high',
+    description: 'Faster and recommended for most use cases.',
+  },
+  {
+    label: 'xhigh',
+    value: 'xhigh',
+    description: 'Deeper analysis for technical concepts; slower inference.',
+  },
+];
 
 
 

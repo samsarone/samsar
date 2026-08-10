@@ -23,6 +23,10 @@ import {
   buildNarrativeRequestPayload,
   normalizeNarrativeVideoModel,
 } from './NarrativeAPI.js';
+import {
+  isBranchedInferenceModel,
+  isBranchedVideoModel,
+} from '../../consts/BranchedModelOptions.js';
 
 const MAX_BRANCHING_LEVELS = 3;
 const ABSOLUTE_MAX_BRANCHING_LEVELS = 6;
@@ -533,6 +537,22 @@ export function validateBranchingSourceRequest(
       'SOURCE_NARRATIVE_GENERATION_INVALID',
     );
   }
+  if (!isBranchedInferenceModel(source.inferenceModel)) {
+    throw buildError(
+      'The source NarrativeRequest inference model is not supported for branching.',
+      422,
+      'SOURCE_INFERENCE_MODEL_NOT_BRANCHABLE',
+    );
+  }
+  const effectiveVideoGenerationModel =
+    videoGenerationModel || source.videoGenerationModel || 'RUNWAYML';
+  if (!isBranchedVideoModel(effectiveVideoGenerationModel)) {
+    throw buildError(
+      'The source NarrativeRequest video model is not supported for branching.',
+      422,
+      'SOURCE_VIDEO_MODEL_NOT_BRANCHABLE',
+    );
+  }
   if (!isObject(source.themeJson) || !isObject(source.narrativeJson) ||
     !Array.isArray(source.narrativeJson.scenes) ||
     !Array.isArray(source.narrativeJson.sounds) ||
@@ -562,7 +582,7 @@ export function validateBranchingSourceRequest(
   }
   const validation = validateTextToVideoNarrative(
     deepCloneJson(source.movieResourceList),
-    videoGenerationModel || source.videoGenerationModel || 'RUNWAYML',
+    effectiveVideoGenerationModel,
     undefined,
     { requestedDuration: source.duration },
   );
@@ -978,7 +998,9 @@ export async function createBranchingNarrativeRequest({
     .select('generationCredits')
     .lean();
   if (!user) throw buildError('User not found.', 404, 'USER_NOT_FOUND');
-  if (!(Number(user.generationCredits) > 0)) {
+  const narrativeBillingIncluded = billingPolicy ===
+    NARRATIVE_BILLING_POLICIES.INCLUDED_IN_INTERACTIVE_VIDEO_RATE;
+  if (!narrativeBillingIncluded && !(Number(user.generationCredits) > 0)) {
     throw buildError('Insufficient credits', 402, 'INSUFFICIENT_CREDITS');
   }
 
@@ -1001,7 +1023,7 @@ export async function createBranchingNarrativeRequest({
   validateBranchingSourceRequest(source, normalized.numLevels, { videoGenerationModel });
 
   const apiKeyUsage = normalizeAPIKeyUsageContext(authContext);
-  if (apiKeyUsage?.apiKeyId) {
+  if (!narrativeBillingIncluded && apiKeyUsage?.apiKeyId) {
     await assertAPIKeyUsageLimitForDebit(
       userId,
       ADMISSION_CREDIT_FLOOR,

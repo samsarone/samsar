@@ -69,3 +69,20 @@ test('inference settings preserve absent authorization for automatic fallback', 
     authorization: 'deployed',
   });
 });
+
+test('inference settings preserve saved effort and explicit legacy override precedence', () => {
+  assert.deepEqual(resolveRequestInferenceSettings({
+    session: { inferenceModel: 'gpt-5.6-sol', inferenceEffort: 'xhigh' },
+  }), {
+    model: 'gpt-5.6-sol-xhigh',
+    effort: 'xhigh',
+    authorization: undefined,
+  });
+  assert.deepEqual(resolveRequestInferenceSettings({
+    request: { inferenceModel: 'gpt-5.6-sol-xhigh', effort: 'high' },
+  }), {
+    model: 'gpt-5.6-sol',
+    effort: 'high',
+    authorization: undefined,
+  });
+});

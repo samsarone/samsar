@@ -63,6 +63,7 @@ import {
   TEXT_TO_VIDEO_VIDEO_MODEL_KEYS,
 } from '../../consts/ExpressVideoModelOptions.js';
 import { getExpressVideoPricingDistributionPerSecond } from '../../consts/pricing/ExpressVideoPricingDistribution.js';
+import { INFERENCE_MODEL_OPTIONS } from '../../consts/InferenceModels.js';
 import {
   IMAGE_LIST_TO_VIDEO_VIDEO_MODEL_ERROR_MESSAGE,
   normalizeImageListToVideoModel,
@@ -73,6 +74,7 @@ import {
   mergeRuntimeInferenceDeploymentAvailability,
   readDeploymentAvailableModels,
 } from '../../models/api/DeploymentModelConfig.js';
+import { getDeploymentEdition } from '../../utils/EnvironmentUtils.js';
 
 const router = express.Router();
 const BILLING_PORTAL_URL = getBillingPortalUrl();
@@ -84,6 +86,28 @@ const INSUFFICIENT_CREDITS_MESSAGE =
 
 function getRequestPayload(req) {
   return req.body?.input ?? req.body ?? {};
+}
+
+export function copyInferenceEffortOverrides(payload = {}) {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+    return {};
+  }
+
+  const overrides = {};
+  for (const key of ['effort', 'reasoning_effort', 'reasoningEffort']) {
+    if (Object.prototype.hasOwnProperty.call(payload, key)) {
+      overrides[key] = payload[key];
+    }
+  }
+  if (
+    payload.reasoning &&
+    typeof payload.reasoning === 'object' &&
+    !Array.isArray(payload.reasoning) &&
+    Object.prototype.hasOwnProperty.call(payload.reasoning, 'effort')
+  ) {
+    overrides.reasoning = { effort: payload.reasoning.effort };
+  }
+  return overrides;
 }
 
 function hasExternalUserRouteSignal(req) {
@@ -411,6 +435,12 @@ function getExpressModels(modelPrices = [], allowedKeys = []) {
       label,
       value: key,
       basePrice,
+      ...(Object.prototype.hasOwnProperty.call(model, 'isBranchedImageModel')
+        ? { isBranchedImageModel: model.isBranchedImageModel === true }
+        : {}),
+      ...(Object.prototype.hasOwnProperty.call(model, 'isBranchedVideoModel')
+        ? { isBranchedVideoModel: model.isBranchedVideoModel === true }
+        : {}),
       ...(pricingDistribution ? { pricingDistribution } : {}),
     });
   }
@@ -524,43 +554,67 @@ router.post('/create', validateAPIKeyAndUserId, async function (req, res) {
 router.get('/supported_models', function (req, res) {
   try {
     const deploymentAvailableModels = readDeploymentAvailableModels();
-    const deploymentAvailability = mergeRuntimeInferenceDeploymentAvailability({
-      providers: Array.isArray(deploymentAvailableModels?.providers) ? deploymentAvailableModels.providers : [],
-      models: Array.isArray(deploymentAvailableModels?.models) ? deploymentAvailableModels.models : [],
-      actions: Array.isArray(deploymentAvailableModels?.actions) ? deploymentAvailableModels.actions : [],
-      modelProviders: deploymentAvailableModels?.modelProviders || {},
-      modelProviderPriority: deploymentAvailableModels?.modelProviderPriority || {},
-      defaultModelProviderPriority: deploymentAvailableModels?.defaultModelProviderPriority || {},
-      providerKeyTypes: deploymentAvailableModels?.providerKeyTypes || {},
-      providerEndpointTypes: deploymentAvailableModels?.providerEndpointTypes || {},
-      audio: deploymentAvailableModels?.audio || null,
-    });
+    const deploymentEdition = getDeploymentEdition();
+    const deploymentAvailability = {
+      ...mergeRuntimeInferenceDeploymentAvailability({
+        providers: Array.isArray(deploymentAvailableModels?.providers)
+          ? deploymentAvailableModels.providers
+          : [],
+        models: Array.isArray(deploymentAvailableModels?.models)
+          ? deploymentAvailableModels.models
+          : [],
+        actions: Array.isArray(deploymentAvailableModels?.actions)
+          ? deploymentAvailableModels.actions
+          : [],
+        modelProviders: deploymentAvailableModels?.modelProviders || {},
+        modelProviderPriority: deploymentAvailableModels?.modelProviderPriority || {},
+        defaultModelProviderPriority: deploymentAvailableModels?.defaultModelProviderPriority || {},
+        providerKeyTypes: deploymentAvailableModels?.providerKeyTypes || {},
+        providerEndpointTypes: deploymentAvailableModels?.providerEndpointTypes || {},
+        audio: deploymentAvailableModels?.audio || null,
+      }),
+      edition: deploymentEdition,
+    };
+    const catalogAvailability = deploymentAvailableModels || (
+      deploymentEdition === 'standalone' ? deploymentAvailability : null
+    );
+    const inferenceModels = filterModelsForDeploymentAvailability(
+      INFERENCE_MODEL_OPTIONS.filter((model) => model.exposeInCatalog !== false).map((model) => ({
+        label: model.label,
+        value: model.value,
+        availabilityModel: model.availabilityModel,
+        isBranchedInferenceModel: model.isBranchedInferenceModel === true,
+      })),
+      catalogAvailability,
+    ).map(({ availabilityModel, ...model }) => model);
     const textToVideoModels = {
+      inference_models: inferenceModels,
       image_models: filterModelsForDeploymentAvailability(
         getExpressModels(IMAGE_MODEL_PRICES, TEXT_TO_VIDEO_IMAGE_MODEL_KEYS),
-        deploymentAvailableModels,
+        catalogAvailability,
       ),
       video_models: filterModelsForDeploymentAvailability(
         getExpressModels(VIDEO_MODEL_PRICES, TEXT_TO_VIDEO_VIDEO_MODEL_KEYS),
-        deploymentAvailableModels,
+        catalogAvailability,
       ),
     };
     const imageListToVideoModels = {
       image_models: filterModelsForDeploymentAvailability(
         getExpressModels(IMAGE_MODEL_PRICES, IMAGE_LIST_TO_VIDEO_IMAGE_MODEL_KEYS),
-        deploymentAvailableModels,
+        catalogAvailability,
       ),
       video_models: filterModelsForDeploymentAvailability(
         getExpressModels(VIDEO_MODEL_PRICES, IMAGE_LIST_TO_VIDEO_VIDEO_MODEL_KEYS),
-        deploymentAvailableModels,
+        catalogAvailability,
       ),
     };
     const imageEditModels = filterModelsForDeploymentAvailability(
       getPricedModels(IMAGE_EDIT_MODEL_PRICES),
-      deploymentAvailableModels,
+      catalogAvailability,
     );
 
     return res.status(200).json({
+      INFERENCE_MODELS: inferenceModels,
       IMAGE_MODELS: textToVideoModels.image_models,
       IMAGE_EDIT_MODELS: imageEditModels,
       VIDEO_MODELS: textToVideoModels.video_models,
@@ -950,6 +1004,7 @@ router.post('/image_list_to_video', validateAPIKeyAndUserId, async function (req
           inferenceModel: inference_model ?? inferenceModel,
         }
         : {}),
+      ...copyInferenceEffortOverrides(requestPayload),
       ...((custom_adapters ?? customAdapters) ? { custom_adapters: custom_adapters ?? customAdapters } : {}),
       ...((configuration ?? config ?? model_config ?? modelConfig ?? custom_model_config ?? customModelConfig ?? custom_models ?? customModels)
         ? {

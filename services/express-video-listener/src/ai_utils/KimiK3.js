@@ -218,6 +218,7 @@ export async function buildKimiK3ChatCompletionPayload(
   const {
     authorization,
     bypassSamsarExternalInference,
+    effort,
     externalMaxRetries,
     frequency_penalty,
     inference_model,
@@ -235,6 +236,7 @@ export async function buildKimiK3ChatCompletionPayload(
     providerOptions,
     reasoning,
     reasoning_effort,
+    reasoningEffort,
     response_format: rawResponseFormat,
     samsarExternalInference,
     temperature,

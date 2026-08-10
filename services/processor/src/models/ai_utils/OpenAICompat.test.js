@@ -36,6 +36,43 @@ test('forces high reasoning for GPT 5.6 Sol Responses requests', async () => {
   assert.equal(response.choices[0].message.content, 'ok');
 });
 
+test('routes GPT 5.6 Sol Extra High to the Sol provider model with xhigh reasoning', async () => {
+  let capturedBody;
+  const openaiClient = {
+    async post(_path, options) {
+      capturedBody = options.body;
+      return { id: 'resp-xhigh-test', model: 'gpt-5.6-sol', output_text: 'ok' };
+    },
+  };
+
+  await createCompatibleChatCompletion(openaiClient, {
+    model: 'gpt-5.6-sol-xhigh',
+    messages: [{ role: 'user', content: 'hello' }],
+  });
+
+  assert.equal(capturedBody.model, 'gpt-5.6-sol');
+  assert.deepEqual(capturedBody.reasoning, { effort: 'xhigh' });
+});
+
+test('honors explicit xhigh effort on the canonical GPT 5.6 Sol model', async () => {
+  let capturedBody;
+  const openaiClient = {
+    async post(_path, options) {
+      capturedBody = options.body;
+      return { id: 'resp-explicit-xhigh', model: 'gpt-5.6-sol', output_text: 'ok' };
+    },
+  };
+
+  await createCompatibleChatCompletion(openaiClient, {
+    model: 'gpt-5.6-sol',
+    messages: [{ role: 'user', content: 'analyze deeply' }],
+    reasoning_effort: 'xhigh',
+  });
+
+  assert.equal(capturedBody.model, 'gpt-5.6-sol');
+  assert.deepEqual(capturedBody.reasoning, { effort: 'xhigh' });
+});
+
 test('preserves GPT 5.6 Luna and forces xhigh for publication metadata requests', async () => {
   let capturedBody;
   const openaiClient = {

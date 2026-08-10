@@ -641,7 +641,7 @@ def test_high_reasoning_and_corresponding_vision_model_are_preserved(
                 "model": samsar_model,
                 "messages": messages,
                 "reasoning": {"effort": "low"},
-                "reasoning_effort": "high",
+                "reasoning_effort": "xhigh",
                 "max_completion_tokens": 512,
             },
         )
@@ -650,7 +650,7 @@ def test_high_reasoning_and_corresponding_vision_model_are_preserved(
     assert calls[0]["model"] == upstream_model
     assert calls[0]["messages"] == messages
     assert "reasoning" not in calls[0]["kwargs"]
-    assert calls[0]["kwargs"]["reasoning_effort"] == "high"
+    assert calls[0]["kwargs"]["reasoning_effort"] == "xhigh"
     assert "max_tokens" not in calls[0]["kwargs"]
     assert "max_completion_tokens" not in calls[0]["kwargs"]
     assert "max_output_tokens" not in calls[0]["kwargs"]

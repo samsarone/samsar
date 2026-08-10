@@ -4,7 +4,7 @@ import { zodResponseFormat } from "openai/helpers/zod";
 
 import { createCompatibleChatCompletion } from "../../../ai_utils/OpenAICompat.js";
 import { getModelForUserInferenceModel } from "../../utils/ModelUtils.js";
-import { GPT_56_SOL_REASONING_EFFORT } from "../../../../consts/InferenceModels.js";
+import { getReasoningEffortForInferenceModel } from "../../../../consts/InferenceModels.js";
 
 const API_KEY = process.env.OPENAI_API_KEY;
 const openai = new OpenAI({ apiKey: API_KEY || '' });
@@ -362,7 +362,7 @@ export async function buildExpressCtaTextPayload({
       messages: messageList,
       model: modelName,
       response_format: zodResponseFormat(ExpressCtaTextPayload, "express_cta_text_payload"),
-      reasoning: { effort: GPT_56_SOL_REASONING_EFFORT },
+      reasoning: { effort: getReasoningEffortForInferenceModel(inferenceModel) },
       timeout: Number(process.env.IMAGE_LIST_TO_VIDEO_CTA_TEXT_TIMEOUT_MS) || 90000,
       maxRetries: 1,
     });

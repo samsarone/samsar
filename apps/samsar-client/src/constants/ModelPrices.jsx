@@ -71,6 +71,7 @@ export const IMAGE_MODEL_PRICES = [
   {
     key: 'GPTIMAGE2',
     isExpressModel: true,
+    isBranchedImageModel: true,
     prices: [
       { aspectRatio: '1:1', price: 46 },
       { aspectRatio: '16:9', price: 46 },
@@ -80,6 +81,7 @@ export const IMAGE_MODEL_PRICES = [
   {
     key: 'SEEDREAM',
     isExpressModel: true,
+    isBranchedImageModel: false,
     prices: [
       { aspectRatio: '1:1', price: 15 },
       { aspectRatio: '16:9', price: 23 },
@@ -98,6 +100,7 @@ export const IMAGE_MODEL_PRICES = [
   {
     key: 'NANOBANANAPRO',
     isExpressModel: true,
+    isBranchedImageModel: true,
     prices: [
       { aspectRatio: '1:1', price: 15 },
       { aspectRatio: '16:9', price: 15 },
@@ -107,6 +110,7 @@ export const IMAGE_MODEL_PRICES = [
   {
     key: 'WAN2.7PRO',
     isExpressModel: true,
+    isBranchedImageModel: false,
     prices: [
       { aspectRatio: '1:1', price: 15 },
       { aspectRatio: '16:9', price: 15 },
@@ -116,6 +120,7 @@ export const IMAGE_MODEL_PRICES = [
   {
     key: QWEN_IMAGE_3_PRO_MODEL_KEY,
     isExpressModel: true,
+    isBranchedImageModel: false,
     providerBilled: true,
     prices: [
       // Zero-valued rows preserve aspect-ratio validation while Alibaba bills
@@ -132,6 +137,7 @@ export const VIDEO_MODEL_PRICES = [
   {
     key: 'RUNWAYML',
     isExpressModel: true,
+    isBranchedVideoModel: false,
     isImageToVideoModel: true,
     isTextToVideoModel: true,
     prices: [
@@ -166,6 +172,7 @@ export const VIDEO_MODEL_PRICES = [
   {
     key: 'CUSTOM_IMAGE_TO_VIDEO',
     isExpressModel: true,
+    isBranchedVideoModel: false,
     isImageToVideoModel: true,
     isTextToVideoModel: false,
     prices: [],
@@ -174,6 +181,7 @@ export const VIDEO_MODEL_PRICES = [
   {
     key: 'KLINGIMGTOVID3PRO',
     isExpressModel: true,
+    isBranchedVideoModel: false,
     isImageToVideoModel: true,
     isTextToVideoModel: false,
     prices: [
@@ -188,6 +196,7 @@ export const VIDEO_MODEL_PRICES = [
     key: 'HAPPYHORSEI2V',
     name: 'Happy Horse 1.1 I2V',
     isExpressModel: true,
+    isBranchedVideoModel: false,
     isImageToVideoModel: true,
     isTextToVideoModel: false,
     prices: [
@@ -234,6 +243,7 @@ export const VIDEO_MODEL_PRICES = [
     key: 'SEEDANCEI2V',
     name: 'Seedance 1.5',
     isExpressModel: true,
+    isBranchedVideoModel: false,
     isImageToVideoModel: true,
     isTextToVideoModel: false,
     prices: [
@@ -247,6 +257,7 @@ export const VIDEO_MODEL_PRICES = [
     key: 'SEEDANCE2.0I2V',
     name: 'Seedance 2.0 I2V',
     isExpressModel: true,
+    isBranchedVideoModel: true,
     isImageToVideoModel: true,
     isTextToVideoModel: false,
     standaloneOnly: true,
@@ -263,6 +274,7 @@ export const VIDEO_MODEL_PRICES = [
     key: 'SEEDANCE2.5I2V',
     name: 'Seedance 2.5 I2V',
     isExpressModel: true,
+    isBranchedVideoModel: false,
     isImageToVideoModel: true,
     isTextToVideoModel: false,
     // Standalone deployments charge the selected configured adapter directly.
@@ -301,6 +313,7 @@ export const VIDEO_MODEL_PRICES = [
   {
     key: 'VEO3.1I2V',
     isExpressModel: true,
+    isBranchedVideoModel: true,
     isImageToVideoModel: true,
     isTextToVideoModel: false,
     prices: [
@@ -324,6 +337,7 @@ export const VIDEO_MODEL_PRICES = [
   {
     key: 'VEO3.1I2VFAST',
     isExpressModel: true,
+    isBranchedVideoModel: true,
     isImageToVideoModel: true,
     isTextToVideoModel: false,
     prices: [
@@ -337,6 +351,7 @@ export const VIDEO_MODEL_PRICES = [
     key: COSMOS3_SUPER_MODEL_KEY,
     name: 'Nvidia Cosmos 3',
     isExpressModel: true,
+    isBranchedVideoModel: true,
     isImageToVideoModel: true,
     isTextToVideoModel: false,
     isPerSecondPricing: true,

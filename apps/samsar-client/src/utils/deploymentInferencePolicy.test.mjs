@@ -4,9 +4,12 @@ import assert from 'node:assert/strict';
 import {
   extractDeploymentProviderEndpointTypes,
   extractDeploymentInferenceModelValues,
+  filterOptionsForDeploymentInferenceModels,
   filterHostedInferenceModelOptions,
   formatDeploymentProviderLabel,
+  getDeploymentInferenceAvailabilityModelValue,
   hasValidatedAlibabaQwenInference,
+  inferGPT56SolEffortFromModelValue,
   labelOptionsForDeploymentInferenceProviders,
   normalizeDeploymentInferenceModelValue,
   normalizeDeploymentProviderKey,
@@ -14,7 +17,7 @@ import {
 } from './deploymentInferencePolicy.mjs';
 
 const MODEL_OPTIONS = [
-  { label: 'GPT 5.6 Sol', value: 'gpt-5.6-sol' },
+  { label: 'gpt-5.6-sol', value: 'gpt-5.6-sol' },
   { label: 'Gemini 3.1 Pro', value: 'gemini-3.1-pro' },
   { label: 'Qwen 3.8 Max', value: 'QWEN3.8' },
   { label: 'Kimi K3', value: 'kimi-k3' },
@@ -126,6 +129,29 @@ test('GMICloud and GenBlaze aliases normalize to the deployment provider', () =>
   }), true);
 });
 
+test('modern GMICloud model catalogs stay authoritative while legacy envelopes retain Qwen', () => {
+  assert.deepEqual(
+    extractDeploymentInferenceModelValues({
+      deployment: {
+        providers: ['gmicloud'],
+        models: ['gpt-5.6-sol'],
+        modelProviders: { 'gpt-5.6-sol': 'gmicloud' },
+      },
+    }),
+    ['gpt-5.6-sol'],
+  );
+  assert.deepEqual(
+    extractDeploymentInferenceModelValues({
+      deployment: { providers: ['gmicloud'], models: [] },
+    }),
+    [],
+  );
+  assert.deepEqual(
+    extractDeploymentInferenceModelValues({ deployment: { providers: ['gmicloud'] } }),
+    ['QWEN3.8'],
+  );
+});
+
 test('Kimi provider and model aliases resolve to the canonical top-level model', () => {
   assert.equal(normalizeDeploymentProviderKey('Moonshot AI'), 'kimi');
   assert.equal(normalizeDeploymentProviderKey('Kimi API'), 'kimi');
@@ -195,4 +221,53 @@ test('model preferences resolve against the allowed options without mutating can
     'QWEN3.8',
     'kimi-k3',
   ]);
+});
+
+test('legacy GPT 5.6 XHigh model values resolve to canonical Sol with separate effort', () => {
+  for (const value of [
+    'gpt-5.6-sol-xhigh',
+    'GPT 5.6 Sol XHigh',
+    'GPT 5.6 Sol Extra High',
+    'GPT5.6XHIGH',
+  ]) {
+    assert.equal(
+      normalizeDeploymentInferenceModelValue(value),
+      'gpt-5.6-sol',
+    );
+    assert.equal(
+      getDeploymentInferenceAvailabilityModelValue(value),
+      'gpt-5.6-sol',
+    );
+  }
+
+  assert.equal(
+    normalizeDeploymentInferenceModelValue('GPT 5.6 Sol High'),
+    'gpt-5.6-sol',
+  );
+  assert.equal(normalizeDeploymentInferenceModelValue('gpt-5.6-sol-unknown'), '');
+  assert.equal(
+    resolveAllowedInferenceModelOption('gpt-5.6-sol-xhigh', MODEL_OPTIONS)?.value,
+    'gpt-5.6-sol',
+  );
+  assert.equal(
+    resolveAllowedInferenceModelOption('gpt-5.6-sol', MODEL_OPTIONS)?.value,
+    'gpt-5.6-sol',
+  );
+
+  assert.deepEqual(
+    filterOptionsForDeploymentInferenceModels(MODEL_OPTIONS, ['gpt-5.6-sol'])
+      .map((option) => option.value),
+    ['gpt-5.6-sol'],
+  );
+});
+
+test('GPT 5.6 Sol effort inference is exact and preserves legacy suffix intent', () => {
+  assert.equal(inferGPT56SolEffortFromModelValue('gpt-5.6-sol'), 'high');
+  assert.equal(inferGPT56SolEffortFromModelValue('gpt-5.6-sol-high'), 'high');
+  assert.equal(inferGPT56SolEffortFromModelValue('GPT 5.6 Sol Extra High'), 'xhigh');
+  assert.equal(inferGPT56SolEffortFromModelValue('gpt-5.6-sol-xhigh'), 'xhigh');
+
+  for (const value of ['gpt-5.6-pro', 'gpt-5.6-preview', 'gpt-5.6-solstice', 'gemini-xhigh']) {
+    assert.equal(inferGPT56SolEffortFromModelValue(value), '');
+  }
 });

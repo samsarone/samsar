@@ -52,6 +52,10 @@ import { useLocalization } from '../../contexts/LocalizationContext.jsx';
 import AuthContainer, { AUTH_DIALOG_OPTIONS } from '../auth/AuthContainer.jsx';
 import ModelAdapterSelect from '../common/ModelAdapterSelect.jsx';
 import SingleSelect from '../common/SingleSelect.jsx';
+import InferenceEffortSelect, {
+  getInferenceEffortOption,
+  inferSavedInferenceEffort,
+} from '../common/InferenceEffortSelect.jsx';
 import ProgressIndicator from './ProgressIndicator.jsx';
 import AssistantHome from '../assistant/AssistantHome.jsx';
 import PrimaryPublicButton from '../common/buttons/PrimaryPublicButton.tsx';
@@ -98,6 +102,7 @@ import {
 } from '../../utils/videoSessionPresentation.mjs';
 import {
   filterOptionsForDeploymentModelValues,
+  inferGPT56SolEffortFromModelValue,
   normalizeDeploymentInferenceModelValue,
   normalizeDeploymentModelValue,
 } from '../../utils/deploymentProviders.js';
@@ -117,6 +122,7 @@ import { isVidgenieImageToVideoModeAvailable } from '../../utils/vidgenieModeAva
 import useRealtimeTranscription from '../../hooks/useRealtimeTranscription.js';
 import { useDeploymentModelAvailability } from '../../hooks/useDeploymentModelAvailability.js';
 import { useInferenceModelAvailability } from '../../hooks/useInferenceModelAvailability.js';
+import { getHydratedInferenceEffortPreferenceUpdate } from './vidgenieInferenceEffort.mjs';
 
 import 'react-tooltip/dist/react-tooltip.css';
 import 'react-toastify/dist/ReactToastify.css';
@@ -601,6 +607,41 @@ function resolveInferenceModelFromSession(session) {
     .map((path) => getNestedValue(session, path))
     .find((value) => typeof value === 'string' && value.trim());
   return rawValue ? normalizeInferenceModelKey(rawValue) : '';
+}
+
+function normalizeInferenceEffort(value, fallback = 'high') {
+  return value === 'xhigh' || value === 'high' ? value : fallback;
+}
+
+function resolveInferenceEffortFromSession(session) {
+  if (!isPlainObject(session)) return '';
+  const nestedEffort = isPlainObject(session.session)
+    ? resolveInferenceEffortFromSession(session.session)
+    : '';
+  if (nestedEffort) return nestedEffort;
+
+  const effortPaths = [
+    ['expressGenerationInferenceEffort'],
+    ['inferenceEffort'],
+    ['effort'],
+    ['reasoning_effort'],
+    ['expressStepGeneration', 'inferenceEffort'],
+    ['expressGenerationBuilder', 'inferenceEffort'],
+    ['metadata', 'inferenceEffort'],
+    ['metadata', 'effort'],
+  ];
+  const effort = effortPaths
+    .map((path) => getNestedValue(session, path))
+    .find((value) => value === 'high' || value === 'xhigh');
+  if (effort) return effort;
+
+  const rawModel = [
+    session.expressGenerationInferenceModel,
+    session.inferenceModel,
+    session.inference_model,
+    session.selectedInferenceModel,
+  ].find((value) => typeof value === 'string' && value.trim());
+  return inferGPT56SolEffortFromModelValue(rawModel);
 }
 
 function resolveJsonImageModelAlias(modelKey) {
@@ -1253,6 +1294,7 @@ function normalizeJsonInputAliases(input) {
     ['limit_single_narrator', ['limitSingleNarrator']],
     ['add_narrator_avatar', ['addNarratorAvatar']],
     ['inference_model', ['inferenceModel']],
+    ['effort', ['reasoning_effort', 'reasoningEffort']],
   ];
 
   for (const [canonicalName, aliasNames] of aliases) {
@@ -1276,6 +1318,7 @@ function buildDefaultJsonModeInput({
   enableSubtitles,
   subtitleLanguage,
   inferenceModel,
+  inferenceEffort,
 }) {
   const normalizedAspectRatio = aspectRatio === '9:16' ? '9:16' : '16:9';
   const normalizedLanguage = language || 'en';
@@ -1311,6 +1354,9 @@ function buildDefaultJsonModeInput({
         ...languageFields,
         font_key: 'Poppins',
         inference_model: normalizeInferenceModelKey(inferenceModel),
+        ...(normalizeInferenceModelKey(inferenceModel) === DEFAULT_INFERENCE_MODEL
+          ? { effort: normalizeInferenceEffort(inferenceEffort) }
+          : {}),
         limit_single_narrator: false,
         add_narrator_avatar: false,
         add_footer_animation: true,
@@ -1345,6 +1391,9 @@ function buildDefaultJsonModeInput({
       ...languageFields,
       font_key: 'Poppins',
       inference_model: normalizeInferenceModelKey(inferenceModel),
+      ...(normalizeInferenceModelKey(inferenceModel) === DEFAULT_INFERENCE_MODEL
+        ? { effort: normalizeInferenceEffort(inferenceEffort) }
+        : {}),
     },
     null,
     2,
@@ -1955,6 +2004,7 @@ function validateCommonJsonInput(input, inferenceModelOptions = INFERENCE_MODEL_
     return 'JSON input.footer_metadata must include at least one item when add_footer_animation is true.';
   }
 
+  const modelImpliedEffort = inferGPT56SolEffortFromModelValue(input.inference_model);
   if (input.inference_model !== undefined) {
     if (typeof input.inference_model !== 'string') {
       return 'JSON input.inference_model must be a string when provided.';
@@ -1965,6 +2015,17 @@ function validateCommonJsonInput(input, inferenceModelOptions = INFERENCE_MODEL_
     }
     input.inference_model = normalizeInferenceModelKey(input.inference_model);
     input.inferenceModel = input.inference_model;
+  }
+
+  if (input.effort !== undefined) {
+    if (input.effort !== 'high' && input.effort !== 'xhigh') {
+      return 'JSON input.effort must be one of: high, xhigh.';
+    }
+    if (input.inference_model !== DEFAULT_INFERENCE_MODEL) {
+      return 'JSON input.effort is only supported with gpt-5.6-sol.';
+    }
+  } else if (input.inference_model === DEFAULT_INFERENCE_MODEL) {
+    input.effort = modelImpliedEffort || 'high';
   }
 
   if (input.add_outro_focus_area === true && input.add_outro_animation !== true) {
@@ -2369,6 +2430,7 @@ function buildAdvancedRequestConfiguration({
   customAdapters,
   selectedCustomAdapterEndpointId,
   selectedInferenceModel,
+  selectedInferenceEffort,
   inferenceModelOptions = INFERENCE_MODEL_TYPES,
 }) {
   const input = {};
@@ -2381,6 +2443,11 @@ function buildAdvancedRequestConfiguration({
   }
   input.inference_model = normalizeInferenceModelKey(inferenceModelValue);
   input.inferenceModel = input.inference_model;
+  if (input.inference_model === DEFAULT_INFERENCE_MODEL) {
+    input.effort = normalizeInferenceEffort(
+      selectedInferenceEffort?.value || selectedInferenceEffort,
+    );
+  }
 
   if (isTextToVideo) {
     input.tone = 'grounded';
@@ -3632,6 +3699,14 @@ export default function OneshotEditor() {
       readVidgeniePreferences().inferenceModel || user?.selectedInferenceModel
     )
   );
+  const [selectedInferenceEffort, setSelectedInferenceEffort] = useState(() => {
+    const preferences = readVidgeniePreferences();
+    return getInferenceEffortOption(
+      preferences.inferenceEffort ||
+      inferGPT56SolEffortFromModelValue(preferences.inferenceModel) ||
+      inferSavedInferenceEffort(user),
+    );
+  });
   const {
     isStandaloneDeployment: isStandaloneInferenceModelFilteringEnabled,
     isLoading: isInferenceModelAvailabilityLoading,
@@ -3726,6 +3801,7 @@ export default function OneshotEditor() {
 
   useEffect(() => {
     const sessionInferenceModel = resolveInferenceModelFromSession(sessionDetails);
+    const sessionInferenceEffort = resolveInferenceEffortFromSession(sessionDetails);
     setSelectedInferenceModel((current) => {
       const targetModel =
         sessionInferenceModel ||
@@ -3735,7 +3811,18 @@ export default function OneshotEditor() {
         DEFAULT_INFERENCE_MODEL;
       return getInferenceModelOption(targetModel, user?.selectedInferenceModel, inferenceModelOptions);
     });
-  }, [inferenceModelOptions, sessionDetails, user?.selectedInferenceModel]);
+    setSelectedInferenceEffort(getInferenceEffortOption(
+      sessionInferenceEffort ||
+      readVidgeniePreferences().inferenceEffort ||
+      inferGPT56SolEffortFromModelValue(readVidgeniePreferences().inferenceModel) ||
+      inferSavedInferenceEffort(user),
+    ));
+  }, [
+    inferenceModelOptions,
+    sessionDetails,
+    user?.selectedInferenceEffort,
+    user?.selectedInferenceModel,
+  ]);
 
   const availableCustomAdapterEndpoints = useMemo(
     () => getAvailableCustomAdapterEndpoints(user?.custom_adapters),
@@ -4095,6 +4182,10 @@ export default function OneshotEditor() {
       isAdvancedOpen,
       advancedOptions,
       inferenceModel: selectedInferenceModel?.value || '',
+      ...getHydratedInferenceEffortPreferenceUpdate(
+        selectedInferenceEffort?.value,
+        { userInitiated, userFetching },
+      ),
       customAdapterEndpointId: selectedCustomAdapterEndpointId,
       imageStyle: selectedImageStyle?.value || '',
       videoModelSubType: selectedVideoModelSubType?.value || '',
@@ -4109,10 +4200,13 @@ export default function OneshotEditor() {
     selectedCustomAdapterEndpointId,
     selectedImageStyle,
     selectedInferenceModel,
+    selectedInferenceEffort,
     selectedLanguageOption,
     selectedSubtitleLanguageOption,
     selectedVideoModelSubType,
     subtitleGenerationEnabled,
+    userFetching,
+    userInitiated,
   ]);
 
   // ─────────────────────────────────────────────────────────
@@ -5696,6 +5790,7 @@ export default function OneshotEditor() {
         ? ''
         : selectedCustomAdapterEndpointId,
       selectedInferenceModel,
+      selectedInferenceEffort,
       inferenceModelOptions,
     });
     if (advancedRequestConfiguration.error) {
@@ -5839,6 +5934,7 @@ export default function OneshotEditor() {
     setIsAdvancedOpen(false);
     setAdvancedOptions({ ...DEFAULT_ADVANCED_OPTIONS });
     setSelectedInferenceModel(getInferenceModelOption(user?.selectedInferenceModel, DEFAULT_INFERENCE_MODEL, inferenceModelOptions));
+    setSelectedInferenceEffort(getInferenceEffortOption(inferSavedInferenceEffort(user)));
     setSelectedCustomAdapterEndpointId('');
     setPricingDetailsDisplay(false);        // ⬅️ NEW
     setSelectedVideoModelSubType(null);     // ⬅️ NEW
@@ -6301,6 +6397,7 @@ export default function OneshotEditor() {
       enableSubtitles: subtitleGenerationEnabled,
       subtitleLanguage: resolveLanguageCode(jsonModeSubtitleLanguageValue, ''),
       inferenceModel: selectedInferenceModel?.value || inferenceModelOptions[0]?.value || user?.selectedInferenceModel || DEFAULT_INFERENCE_MODEL,
+      inferenceEffort: selectedInferenceEffort?.value || inferSavedInferenceEffort(user),
     })
   ), [
     subtitleGenerationEnabled,
@@ -6311,9 +6408,11 @@ export default function OneshotEditor() {
     selectedDurationOption?.value,
     selectedImageModel?.value,
     selectedInferenceModel?.value,
+    selectedInferenceEffort?.value,
     inferenceModelOptions,
     selectedVideoModel?.value,
     user?.selectedInferenceModel,
+    user?.selectedInferenceEffort,
   ]);
 
   useEffect(() => {
@@ -7749,29 +7848,48 @@ export default function OneshotEditor() {
                 </div>
               )}
 
-              <div>
-                <label className={advancedLabelClasses}>Inference model</label>
-                <ModelAdapterSelect
-                  value={selectedInferenceModel || inferenceModelOptions[0] || null}
-                  onChange={setSelectedInferenceModel}
-                  options={inferenceModelOptions}
-                  primaryAdapterByModel={primaryAdapterByModel}
-                  isStandaloneDeployment={isStandaloneInferenceModelFilteringEnabled}
-                  isDisabled={isFormDisabled || isStandaloneInferenceUnavailable}
-                  hostedControl="native"
-                  nativeClassName={advancedInputClasses}
-                  compactLayout
-                  className="w-full"
-                />
-                {isStandaloneInferenceModelFilteringEnabled ? (
-                  <p className={`mt-1 text-[11px] ${mutedText}`}>
-                    {isInferenceModelAvailabilityLoading
-                      ? 'Loading configured model options...'
-                      : hasConfiguredInferenceModels
-                        ? 'Only models supported by your configured standalone providers are shown.'
-                        : 'No inference model is configured for this standalone installation.'}
-                  </p>
-                ) : null}
+              <div className={`grid grid-cols-1 gap-3 ${
+                selectedInferenceModel?.value === DEFAULT_INFERENCE_MODEL
+                  ? 'sm:grid-cols-[minmax(0,7fr)_minmax(7.5rem,3fr)]'
+                  : ''
+              }`}>
+                <div className="min-w-0">
+                  <label className={advancedLabelClasses}>Inference model</label>
+                  <ModelAdapterSelect
+                    value={selectedInferenceModel || inferenceModelOptions[0] || null}
+                    onChange={setSelectedInferenceModel}
+                    options={inferenceModelOptions}
+                    primaryAdapterByModel={primaryAdapterByModel}
+                    isStandaloneDeployment={isStandaloneInferenceModelFilteringEnabled}
+                    isDisabled={isFormDisabled || isStandaloneInferenceUnavailable}
+                    hostedControl="native"
+                    nativeClassName={advancedInputClasses}
+                    compactLayout
+                    className="w-full"
+                  />
+                  {isStandaloneInferenceModelFilteringEnabled ? (
+                    <p className={`mt-1 text-[11px] ${mutedText}`}>
+                      {isInferenceModelAvailabilityLoading
+                        ? 'Loading configured model options...'
+                        : hasConfiguredInferenceModels
+                          ? 'Only models supported by your configured standalone providers are shown.'
+                          : 'No inference model is configured for this standalone installation.'}
+                    </p>
+                  ) : null}
+                </div>
+
+                {selectedInferenceModel?.value === DEFAULT_INFERENCE_MODEL && (
+                  <div className="min-w-0">
+                    <label className={advancedLabelClasses}>Inference effort</label>
+                    <InferenceEffortSelect
+                      value={selectedInferenceEffort}
+                      onChange={setSelectedInferenceEffort}
+                      isDisabled={isFormDisabled || isStandaloneInferenceUnavailable}
+                      compactLayout
+                      className="w-full"
+                    />
+                  </div>
+                )}
               </div>
 
               {generationMode === 'I2V' && (

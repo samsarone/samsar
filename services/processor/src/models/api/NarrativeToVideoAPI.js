@@ -17,9 +17,15 @@ import {
   getCurrentAPIKeyUsageContext,
   normalizeAPIKeyUsageContext,
 } from './RequestAuthContext.js';
+import {
+  isBranchedImageModel,
+  isBranchedInferenceModel,
+  isBranchedVideoModel,
+} from '../../consts/BranchedModelOptions.js';
 
 const DEFAULT_IMAGE_MODEL = 'GPTIMAGE2';
 const DEFAULT_VIDEO_MODEL = 'RUNWAYML';
+const DEFAULT_BRANCHED_VIDEO_MODEL = 'COSMOS3SUPERI2V';
 const NARRATIVE_ASPECT_RATIO = '1:1';
 export const DEFAULT_BRANCHED_VIDEO_ASPECT_RATIO = '16:9';
 export const BRANCHED_VIDEO_ASPECT_RATIOS = Object.freeze(['16:9', '9:16']);
@@ -198,6 +204,7 @@ export function resolveNarrativeToVideoModels({
   requestedVideoModel = null,
   sourceVideoModel = null,
   user = {},
+  branched = false,
 } = {}) {
   assertProvidedModelIsValid(
     requestedImageModel,
@@ -205,6 +212,20 @@ export function resolveNarrativeToVideoModels({
     'image model',
     'INVALID_IMAGE_MODEL',
   );
+  if (branched && requestedImageModel && !isBranchedImageModel(requestedImageModel)) {
+    throw buildError(
+      'Invalid image model for a branched video session.',
+      400,
+      'INVALID_BRANCHED_IMAGE_MODEL',
+    );
+  }
+  if (branched && requestedVideoModel && !isBranchedVideoModel(requestedVideoModel)) {
+    throw buildError(
+      'Invalid video model for a branched video session.',
+      400,
+      'INVALID_BRANCHED_VIDEO_MODEL',
+    );
+  }
   assertProvidedModelIsValid(
     requestedVideoModel,
     isValidExpressVideoModel,
@@ -216,14 +237,20 @@ export function resolveNarrativeToVideoModels({
   const userVideoModel = normalizeString(user?.agentVideoModel);
   const normalizedSourceVideoModel = normalizeString(sourceVideoModel);
   const imageModel = requestedImageModel || (
-    isValidExpressImageModel(userImageModel) ? userImageModel : DEFAULT_IMAGE_MODEL
+    isValidExpressImageModel(userImageModel) && (!branched || isBranchedImageModel(userImageModel))
+      ? userImageModel
+      : DEFAULT_IMAGE_MODEL
   );
   const videoModel = requestedVideoModel || (
-    isValidExpressVideoModel(normalizedSourceVideoModel)
+    isValidExpressVideoModel(normalizedSourceVideoModel) &&
+      (!branched || isBranchedVideoModel(normalizedSourceVideoModel))
       ? normalizedSourceVideoModel
-      : isValidExpressVideoModel(userVideoModel)
+      : isValidExpressVideoModel(userVideoModel) &&
+          (!branched || isBranchedVideoModel(userVideoModel))
         ? userVideoModel
-        : DEFAULT_VIDEO_MODEL
+        : branched
+          ? DEFAULT_BRANCHED_VIDEO_MODEL
+          : DEFAULT_VIDEO_MODEL
   );
 
   return { imageModel, videoModel };
@@ -261,6 +288,23 @@ export function validateNarrativeToVideoSourceRequest(
       'The source NarrativeRequest must have a successful generation outcome.',
       422,
       'SOURCE_NARRATIVE_GENERATION_INVALID',
+    );
+  }
+  if (isBranchedSource && !isBranchedInferenceModel(source.inferenceModel)) {
+    throw buildError(
+      'The branched NarrativeRequest inference model is not supported for branched sessions.',
+      422,
+      'SOURCE_INFERENCE_MODEL_NOT_BRANCHABLE',
+    );
+  }
+  if (
+    isBranchedSource &&
+    !isBranchedVideoModel(videoGenerationModel || source.videoGenerationModel)
+  ) {
+    throw buildError(
+      'The branched NarrativeRequest video model is not supported for branched sessions.',
+      422,
+      'SOURCE_VIDEO_MODEL_NOT_BRANCHABLE',
     );
   }
   if (!SETTLED_NARRATIVE_BILLING_STATUSES.has(source.billingStatus)) {
@@ -367,6 +411,7 @@ export async function createVideoFromNarrativeRequest({
     validateNarrativeToVideoSourceRequest(source);
   }
   const sourceVideoModel = normalizeString(source.videoGenerationModel) || DEFAULT_VIDEO_MODEL;
+  const narrativeType = source.narrativeType || 'singular';
   if (
     normalizedPayload.videoModel &&
     sourceVideoModel &&
@@ -383,6 +428,7 @@ export async function createVideoFromNarrativeRequest({
     requestedVideoModel: normalizedPayload.videoModel,
     sourceVideoModel,
     user,
+    branched: narrativeType === 'branched',
   });
   validateNarrativeToVideoSourceRequest(source, {
     videoGenerationModel: videoModel,
@@ -400,7 +446,6 @@ export async function createVideoFromNarrativeRequest({
   }
 
   const sourceNarrativeRequestId = source._id?.toString?.() || normalizedPayload.sourceRequestId;
-  const narrativeType = source.narrativeType || 'singular';
   const inferenceModel = normalizeString(source.inferenceModel);
   // The aspect-ratio input belongs to branched rendering. Preserve the legacy
   // singular narrative-to-video default so this addition cannot alter linear output.

@@ -19,6 +19,22 @@ test('forces high reasoning for GPT 5.6 Sol assistant requests', () => {
   assert.deepEqual(request.reasoning, { effort: 'high' });
 });
 
+test('assistant requests preserve explicit effort and legacy aliases', () => {
+  assert.deepEqual(buildResponsesRequest({
+    model: 'gpt-5.6-sol',
+    inferenceModel: 'gpt-5.6-sol',
+    inputMessages: [{ role: 'user', content: 'hello' }],
+    payload: { effort: 'xhigh' },
+  }).reasoning, { effort: 'xhigh' });
+
+  assert.deepEqual(buildResponsesRequest({
+    model: 'gpt-5.6-sol',
+    inferenceModel: 'gpt-5.6-sol-xhigh',
+    inputMessages: [{ role: 'user', content: 'hello' }],
+    payload: { effort: 'high' },
+  }).reasoning, { effort: 'high' });
+});
+
 test('translates Responses structured output into strict chat JSON schema for Kimi-compatible adapters', () => {
   const schema = {
     type: 'object',

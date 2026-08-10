@@ -319,6 +319,38 @@ test('OpenRouter runtime credentials advertise all inference models without medi
   });
 });
 
+test('standalone raw provider credentials expose declared branched media capabilities', () => {
+  const mergeForStandalone = (credentials) => {
+    clearEnv();
+    process.env.SAMSAR_DEPLOYMENT_EDITION = 'standalone';
+    Object.assign(process.env, credentials);
+    return mergeRuntimeInferenceDeploymentAvailability({});
+  };
+
+  const openai = mergeForStandalone({ OPENAI_API_KEY: 'test-openai-key' });
+  assert.deepEqual(openai.models, ['gpt-5.6-sol', 'GPTIMAGE2']);
+  assert.deepEqual(openai.actions, ['chat', 'assistant', 'image']);
+
+  const google = mergeForStandalone({
+    GOOGLE_APPLICATION_CREDENTIALS_JSON: '{"project_id":"test-project"}',
+  });
+  assert.deepEqual(google.models, [
+    'gemini-3.1-pro',
+    'VEO3.1I2V',
+    'VEO3.1I2VFAST',
+  ]);
+  assert.deepEqual(google.actions, ['chat', 'assistant', 'video']);
+
+  const fal = mergeForStandalone({ FAL_API_KEY: 'test-fal-key' });
+  assert.equal(fal.models.includes('NANOBANANAPRO'), true);
+  assert.equal(fal.models.includes('SEEDANCE2.0I2V'), true);
+
+  const samsar = mergeForStandalone({ SAMSAR_API_KEY: 'test-samsar-key' });
+  assert.equal(samsar.models.includes('GPTIMAGE2'), true);
+  assert.equal(samsar.models.includes('VEO3.1I2V'), true);
+  assert.equal(samsar.models.includes('VEO3.1I2VFAST'), false);
+});
+
 test('GenBlaze runtime advertises exact GMICloud Qwen text and vision inference', () => {
   clearEnv();
   process.env.CURRENT_ENV = 'docker';
@@ -347,6 +379,53 @@ test('GenBlaze runtime advertises exact GMICloud Qwen text and vision inference'
     assert.equal(result.modelProviders['QWEN3.8'], 'gmicloud');
     assert.deepEqual(result.modelProviderPriority['QWEN3.8'], [
       'alibabaCloud',
+      'gmicloud',
+      'samsar',
+      'openrouter',
+    ]);
+  } finally {
+    fs.rmSync(tempDirectory, { recursive: true, force: true });
+  }
+});
+
+test('GenBlaze advertises GPT 5.6 Sol only with exact text and vision routes', () => {
+  clearEnv();
+  process.env.CURRENT_ENV = 'docker';
+  process.env.SAMSAR_GENBLAZE_ENABLED = 'true';
+  const tempDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'samsar-genblaze-sol-'));
+  process.env.SAMSAR_GENBLAZE_MODEL_CATALOG_PATH = path.join(
+    tempDirectory,
+    'genblaze-model-catalog.json',
+  );
+
+  try {
+    fs.writeFileSync(process.env.SAMSAR_GENBLAZE_MODEL_CATALOG_PATH, JSON.stringify({
+      provider: 'gmicloud',
+      models: {
+        'gpt-5.6-sol': {
+          text: { modelId: 'gpt-5.6-sol', operation: 'chat.completions' },
+        },
+      },
+    }));
+    const textOnly = mergeRuntimeInferenceDeploymentAvailability({});
+    assert.equal(textOnly.models.includes('gpt-5.6-sol'), false);
+    assert.equal(textOnly.providers.includes('gmicloud'), false);
+
+    fs.writeFileSync(process.env.SAMSAR_GENBLAZE_MODEL_CATALOG_PATH, JSON.stringify({
+      provider: 'gmicloud',
+      models: {
+        'gpt-5.6-sol': {
+          text: { modelId: 'gpt-5.6-sol', operation: 'chat.completions' },
+          vision: { modelId: 'gpt-5.6-sol', operation: 'chat.completions' },
+        },
+      },
+    }));
+    const exact = mergeRuntimeInferenceDeploymentAvailability({});
+    assert.deepEqual(exact.providers, ['gmicloud']);
+    assert.deepEqual(exact.models, ['gpt-5.6-sol']);
+    assert.equal(exact.modelProviders['gpt-5.6-sol'], 'gmicloud');
+    assert.deepEqual(exact.modelProviderPriority['gpt-5.6-sol'], [
+      'openai',
       'gmicloud',
       'samsar',
       'openrouter',
@@ -492,6 +571,7 @@ test('GMICloud and FAL availability is a union with shared-model adapter prefere
       'HAPPYHORSEI2V',
       'SEEDANCE2.0I2V',
       'SEEDANCE2.5I2V',
+      'NANOBANANAPRO',
     ]);
     assert.equal(result.modelProviders.GPTIMAGE2, 'fal');
     assert.equal(result.modelProviders.SEEDREAM, 'gmicloud');
@@ -658,6 +738,39 @@ test('runtime FAL availability supplements a stale saved image model filter', ()
   ]);
 });
 
+test('branched GPT reasoning variants share the physical deployment availability key', () => {
+  clearEnv();
+  process.env.SAMSAR_DEPLOYMENT_EDITION = 'standalone';
+  const models = [
+    {
+      value: 'gpt-5.6-sol',
+      availabilityModel: 'gpt-5.6-sol',
+    },
+    {
+      value: 'gpt-5.6-sol-xhigh',
+      availabilityModel: 'gpt-5.6-sol',
+    },
+    {
+      value: 'gemini-3.1-pro',
+      availabilityModel: 'gemini-3.1-pro',
+    },
+  ];
+
+  assert.deepEqual(filterModelsForDeploymentAvailability(models, {
+    models: ['gpt-5.6-sol'],
+  }), models.slice(0, 2));
+});
+
+test('missing availability fails closed only for standalone deployments', () => {
+  clearEnv();
+  const models = [{ value: 'GPTIMAGE2' }];
+  assert.deepEqual(filterModelsForDeploymentAvailability(models, null), models);
+
+  process.env.SAMSAR_DEPLOYMENT_EDITION = 'standalone';
+  assert.deepEqual(filterModelsForDeploymentAvailability(models, null), []);
+  assert.deepEqual(filterModelsForDeploymentAvailability(models, { models: [] }), []);
+});
+
 test('reads provider-selection metadata from the saved availability artifact', () => {
   clearEnv();
   const tempDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'samsar-available-models-'));
@@ -746,12 +859,8 @@ test('Docker hides Wan2.7 Pro without an Alibaba, FAL, or Samsar credential', ()
     { value: 'WAN2.7PRO' },
   ];
 
-  assert.deepEqual(filterModelsForDeploymentAvailability(models, null), [
-    { value: 'GPTIMAGE2' },
-  ]);
-  assert.deepEqual(filterModelsForDeploymentAvailability(models, { models: [] }), [
-    { value: 'GPTIMAGE2' },
-  ]);
+  assert.deepEqual(filterModelsForDeploymentAvailability(models, null), []);
+  assert.deepEqual(filterModelsForDeploymentAvailability(models, { models: [] }), []);
   assert.deepEqual(filterModelsForDeploymentAvailability(models, {
     models: ['GPTIMAGE2', 'WAN2.7PRO'],
   }), [
@@ -759,7 +868,9 @@ test('Docker hides Wan2.7 Pro without an Alibaba, FAL, or Samsar credential', ()
   ]);
 
   process.env.FAL_API_KEY = 'test-key';
-  assert.deepEqual(filterModelsForDeploymentAvailability(models, null), models);
+  assert.deepEqual(filterModelsForDeploymentAvailability(models, null), [
+    { value: 'WAN2.7PRO' },
+  ]);
 });
 
 test('supported-model filtering exposes Qwen Image 3.0 Pro only for Alibaba PAYG', () => {
@@ -787,7 +898,9 @@ test('supported-model filtering exposes Qwen Image 3.0 Pro only for Alibaba PAYG
   process.env.SAMSAR_DEPLOYMENT_EDITION = 'standalone';
   process.env.SAMSAR_RUNTIME = 'docker';
   process.env.ALIBABA_API_KEY = 'test-key';
-  assert.deepEqual(filterModelsForDeploymentAvailability(models, null), models);
+  assert.deepEqual(filterModelsForDeploymentAvailability(models, null), [
+    { value: 'QWENIMAGE3PRO' },
+  ]);
   assert.deepEqual(
     filterModelsForDeploymentAvailability(models, staleAvailability),
     models,

@@ -37,7 +37,10 @@ test('defaults assistant inference to GPT 5.6 Sol', () => {
 
 test('keeps Gemini reasoning settings separate from the GPT 5.6 Sol default', () => {
   assert.equal(
-    getAssistantReasoningEffort('gemini-3.1-pro', { reasoningEffort: 'medium' }),
+    getAssistantReasoningEffort('gemini-3.1-pro', {
+      reasoningEffort: 'medium',
+      effort: 'xhigh',
+    }),
     'medium',
   );
 });

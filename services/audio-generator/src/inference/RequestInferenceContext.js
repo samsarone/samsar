@@ -2,7 +2,6 @@ import {
   hasRequestInferenceAuthorization,
   hasRequestInferenceModel,
   resolveRequestInferenceAuthorization,
-  resolveRequestInferenceModel,
   resolveRequestInferenceSettings,
 } from './RequestInferenceModel.js';
 import User from '../schema/User.js';
@@ -44,7 +43,7 @@ export async function resolveInferenceModelFromContext(inferenceContext = {}) {
     const sessionId = request.sessionId || request.videoSessionId;
     if (sessionId) {
       session = await VideoSession.findById(sessionId)
-        .select('expressGenerationInferenceModel inferenceModel userId')
+        .select('expressGenerationInferenceModel expressGenerationInferenceEffort inferenceModel inferenceEffort userId')
         .lean() || {};
     }
   }
@@ -57,11 +56,11 @@ export async function resolveInferenceModelFromContext(inferenceContext = {}) {
     userId
   ) {
     user = await User.findById(userId)
-      .select('selectedInferenceModel')
+      .select('selectedInferenceModel selectedInferenceEffort')
       .lean() || {};
   }
 
-  return resolveRequestInferenceModel({ request, session, user });
+  return resolveRequestInferenceSettings({ request, session, user }).model;
 }
 
 export async function resolveInferenceSettingsFromContext(inferenceContext = {}) {
@@ -80,7 +79,9 @@ export async function resolveInferenceSettingsFromContext(inferenceContext = {})
       const fetchedSession = await VideoSession.findById(sessionId)
         .select([
           'expressGenerationInferenceModel',
+          'expressGenerationInferenceEffort',
           'inferenceModel',
+          'inferenceEffort',
           'expressGenerationInferenceModelAuthorization',
           'selectedInferenceModelAuthorization',
           'inferenceModelAuthorization',
@@ -104,7 +105,7 @@ export async function resolveInferenceSettingsFromContext(inferenceContext = {})
     userId
   ) {
     const fetchedUser = await User.findById(userId)
-      .select('selectedInferenceModel selectedInferenceModelAuthorization')
+      .select('selectedInferenceModel selectedInferenceEffort selectedInferenceModelAuthorization')
       .lean() || {};
     user = { ...fetchedUser, ...user };
   }

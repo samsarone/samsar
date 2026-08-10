@@ -82,6 +82,8 @@ test('preserves structured JSON contracts through DashScope JSON mode', () => {
   };
   const payload = buildQwenChatCompletionPayload({
     model: 'QWEN3.8',
+    effort: 'xhigh',
+    reasoningEffort: 'xhigh',
     input: [{
       role: 'developer',
       content: [{ type: 'input_text', text: 'Return the narrative JSON.' }],
@@ -92,6 +94,8 @@ test('preserves structured JSON contracts through DashScope JSON mode', () => {
   });
 
   assert.equal(payload.model, 'qwen3.8-max');
+  assert.equal(Object.hasOwn(payload, 'effort'), false);
+  assert.equal(Object.hasOwn(payload, 'reasoningEffort'), false);
   assert.equal(payload.enable_thinking, true);
   assert.equal(payload.messages[0].role, 'system');
   assert.equal(payload.messages[0].content[0].text, 'Return the narrative JSON.');

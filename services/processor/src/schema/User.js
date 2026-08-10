@@ -156,6 +156,7 @@ const userSchema = new Schema({
   oauthRefreshTokens: [OAuthRefreshToken],
 
   selectedInferenceModel: {type: String, default: 'gpt-5.6-sol'},
+  selectedInferenceEffort: { type: String, enum: ['high', 'xhigh'], default: 'high' },
   selectedInferenceModelAuthorization: { type: String, enum: ['native', 'deployed'], default: 'native' }, // native uses local provider credentials; deployed uses Samsar API key fallback.
 
   selectedAssistantModel: {type: String, default: 'gpt-5.6-sol'},

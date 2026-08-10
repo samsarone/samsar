@@ -75,7 +75,7 @@ function buildSource(overrides = {}) {
 }
 
 async function buildBranchedSource(overrides = {}) {
-  const source = buildSource();
+  const source = buildSource({ videoGenerationModel: 'COSMOS3SUPERI2V' });
   const generated = await generateBranchingNarrativeTree({
     sourceMovieResourceList: source.movieResourceList,
     themeJson: source.themeJson,
@@ -220,6 +220,38 @@ test('resolves explicit models, then account preferences, then stable express de
   });
 
   assert.deepEqual(resolveNarrativeToVideoModels({
+    branched: true,
+    sourceVideoModel: 'COSMOS3SUPERI2V',
+    user: { agentImageModel: 'SEEDREAM', agentVideoModel: 'RUNWAYML' },
+  }), {
+    imageModel: 'GPTIMAGE2',
+    videoModel: 'COSMOS3SUPERI2V',
+  });
+  assert.deepEqual(resolveNarrativeToVideoModels({
+    branched: true,
+    user: { agentImageModel: 'SEEDREAM', agentVideoModel: 'RUNWAYML' },
+  }), {
+    imageModel: 'GPTIMAGE2',
+    videoModel: 'COSMOS3SUPERI2V',
+  });
+  assert.throws(
+    () => resolveNarrativeToVideoModels({
+      branched: true,
+      requestedImageModel: 'SEEDREAM',
+      requestedVideoModel: 'COSMOS3SUPERI2V',
+    }),
+    (error) => error.code === 'INVALID_BRANCHED_IMAGE_MODEL' && error.status === 400,
+  );
+  assert.throws(
+    () => resolveNarrativeToVideoModels({
+      branched: true,
+      requestedImageModel: 'GPTIMAGE2',
+      requestedVideoModel: 'RUNWAYML',
+    }),
+    (error) => error.code === 'INVALID_BRANCHED_VIDEO_MODEL' && error.status === 400,
+  );
+
+  assert.deepEqual(resolveNarrativeToVideoModels({
     user: { agentImageModel: 'REMOVED_IMAGE_MODEL', agentVideoModel: 'REMOVED_VIDEO_MODEL' },
   }), {
     imageModel: 'GPTIMAGE2',
@@ -241,6 +273,27 @@ test('accepts settled singular and branched sources and rejects invalid source s
   assert.equal(validateNarrativeToVideoSourceRequest(legacySource), legacySource);
   const branchedSource = await buildBranchedSource();
   assert.equal(validateNarrativeToVideoSourceRequest(branchedSource), branchedSource);
+  assert.throws(
+    () => validateNarrativeToVideoSourceRequest({
+      ...branchedSource,
+      inferenceModel: 'QWEN3.8',
+    }),
+    (error) => error.code === 'SOURCE_INFERENCE_MODEL_NOT_BRANCHABLE' && error.status === 422,
+  );
+  assert.throws(
+    () => validateNarrativeToVideoSourceRequest({
+      ...branchedSource,
+      inferenceModel: undefined,
+    }),
+    (error) => error.code === 'SOURCE_INFERENCE_MODEL_NOT_BRANCHABLE' && error.status === 422,
+  );
+  assert.throws(
+    () => validateNarrativeToVideoSourceRequest({
+      ...branchedSource,
+      videoGenerationModel: 'RUNWAYML',
+    }),
+    (error) => error.code === 'SOURCE_VIDEO_MODEL_NOT_BRANCHABLE' && error.status === 422,
+  );
 
   const invalidCases = [
     [buildSource({ requestType: 'create_single', narrativeType: 'branched' }), 'SOURCE_NARRATIVE_TYPE_INVALID', 422],

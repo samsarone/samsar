@@ -24,6 +24,8 @@ test('Kimi K3 request keeps contracts while enforcing high reasoning and strict 
   };
   const { payload } = await buildKimiK3ChatRequest({
     model: 'KIMIK3',
+    effort: 'xhigh',
+    reasoningEffort: 'xhigh',
     messages: [
       { role: 'developer', content: 'Return structured data.' },
       { role: 'user', content: 'Hello' },
@@ -60,6 +62,8 @@ test('Kimi K3 request keeps contracts while enforcing high reasoning and strict 
     'n',
     'presence_penalty',
     'frequency_penalty',
+    'effort',
+    'reasoningEffort',
   ]) {
     assert.equal(Object.hasOwn(payload, unsupported), false);
   }

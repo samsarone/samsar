@@ -22,6 +22,10 @@ import UsagePanelContent from "./UsagePanelContent.jsx";
 import ModelAdaptersPanelContent from "./ModelAdaptersPanelContent.jsx";
 import ModelAdapterSelect from "../common/ModelAdapterSelect.jsx";
 import SingleSelect from "../common/SingleSelect.jsx";
+import InferenceEffortSelect, {
+  getInferenceEffortOption,
+  inferSavedInferenceEffort,
+} from "../common/InferenceEffortSelect.jsx";
 import { IS_STANDALONE_DEPLOYMENT } from "../../utils/environment.jsx";
 import { useDeploymentModelAvailability } from "../../hooks/useDeploymentModelAvailability.js";
 import { useInferenceModelAvailability } from "../../hooks/useInferenceModelAvailability.js";
@@ -129,6 +133,9 @@ export default function UserAccount() {
   const [inferenceModel, setInferenceModel] = useState(
     getInferenceModelOption(DEFAULT_TEXT_MODEL)
   );
+  const [inferenceEffort, setInferenceEffort] = useState(
+    getInferenceEffortOption('high')
+  );
   const [assistantModel, setAssistantModel] = useState(
     getAssistantModelOption(DEFAULT_TEXT_MODEL)
   );
@@ -152,8 +159,10 @@ export default function UserAccount() {
     if (!user) return;
 
     const nextInferenceModel = getInferenceModelOption(user.selectedInferenceModel, inferenceModelOptions);
+    const nextInferenceEffort = getInferenceEffortOption(inferSavedInferenceEffort(user));
     const nextAssistantModel = getAssistantModelOption(user.selectedAssistantModel, assistantModelOptions);
     setInferenceModel(nextInferenceModel);
+    setInferenceEffort(nextInferenceEffort);
     setAssistantModel(nextAssistantModel);
     setNotifyOnCompletion(!!user.selectedNotifyOnCompletion);
     setVideoFps(getVideoFpsOption(user.videoFramesPerSecond));
@@ -168,6 +177,9 @@ export default function UserAccount() {
           normalizeInferenceModelValue(nextInferenceModel.value)
       ) {
         modelPreferencePayload.selectedInferenceModel = nextInferenceModel.value;
+      }
+      if (user.selectedInferenceEffort !== nextInferenceEffort.value) {
+        modelPreferencePayload.selectedInferenceEffort = nextInferenceEffort.value;
       }
       if (
         nextAssistantModel?.value &&
@@ -294,6 +306,12 @@ export default function UserAccount() {
     if (!nextOption) return;
     setInferenceModel(nextOption);
     updateUserDetails({ selectedInferenceModel: nextOption.value });
+  };
+
+  const handleInferenceEffortChange = (newVal) => {
+    const nextOption = getInferenceEffortOption(newVal?.value);
+    setInferenceEffort(nextOption);
+    updateUserDetails({ selectedInferenceEffort: nextOption.value });
   };
 
   const handleAssistantModelChange = (newVal) => {
@@ -595,6 +613,15 @@ export default function UserAccount() {
                             placeholder={areStandaloneModelSelectsDisabled ? "No model configured" : undefined}
                           />
                         </div>
+                        {inferenceModel?.value === DEFAULT_TEXT_MODEL && (
+                          <div className="space-y-2">
+                            <p className="text-sm font-semibold">Inference effort</p>
+                            <InferenceEffortSelect
+                              value={inferenceEffort}
+                              onChange={handleInferenceEffortChange}
+                            />
+                          </div>
+                        )}
                         <div className="space-y-2">
                           <p className="text-sm font-semibold">Final render FPS</p>
                           <SingleSelect

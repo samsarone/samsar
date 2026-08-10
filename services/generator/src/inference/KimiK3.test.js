@@ -19,6 +19,8 @@ test('Kimi K3 uses the dedicated credential and international endpoint', () => {
 test('Kimi K3 preserves chat contracts while enforcing high reasoning and strict JSON', async () => {
   const payload = await buildKimiK3ChatCompletionPayload({
     model: 'KIMIK3',
+    effort: 'xhigh',
+    reasoningEffort: 'xhigh',
     messages: [
       { role: 'developer', content: 'Return structured data.' },
       { role: 'user', content: ['Hello'] },
@@ -58,6 +60,8 @@ test('Kimi K3 preserves chat contracts while enforcing high reasoning and strict
     'n',
     'presence_penalty',
     'frequency_penalty',
+    'effort',
+    'reasoningEffort',
     'reasoning',
   ]) {
     assert.equal(Object.hasOwn(payload, unsupported), false);

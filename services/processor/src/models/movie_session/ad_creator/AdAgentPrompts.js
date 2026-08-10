@@ -80,7 +80,10 @@ export async function extractThemeForImageListAndPrompt(themeText, prompt, userI
 
   const effectiveInferenceModel = normalizeInferenceModel(userInferenceModel);
 
-  const responseData = await sendSessionThemeMessageRequest(messageList, effectiveInferenceModel, 'high');
+  const responseData = await sendSessionThemeMessageRequest(
+    messageList,
+    effectiveInferenceModel,
+  );
 
   return responseData;
 

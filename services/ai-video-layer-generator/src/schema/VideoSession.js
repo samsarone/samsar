@@ -316,6 +316,13 @@ const videoSessionSchema = new Schema({
     videoGenerationModelSubType: String,
 
     videoTone: String,
+
+    inferenceModel: String,
+    inferenceEffort: { type: String, enum: ['high', 'xhigh'], default: null },
+    expressGenerationInferenceModel: String,
+    expressGenerationInferenceEffort: { type: String, enum: ['high', 'xhigh'], default: null },
+    inferenceModelAuthorization: String,
+    expressGenerationInferenceModelAuthorization: String,
     
 
     backingTrackModel: { type: String, default: 'CASSETTEAI'},

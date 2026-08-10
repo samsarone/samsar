@@ -114,6 +114,9 @@ export function buildAiVideoRetryQueueFields(payload = {}) {
     fallbackStartImages,
     promptSeedContext,
     userInferenceModel: normalizeString(payload.userInferenceModel) || null,
+    ...(['high', 'xhigh'].includes(normalizeString(payload.inferenceEffort).toLowerCase())
+      ? { inferenceEffort: normalizeString(payload.inferenceEffort).toLowerCase() }
+      : {}),
     selectedInferenceModelAuthorization:
       normalizeString(payload.selectedInferenceModelAuthorization) || null,
   };
@@ -130,6 +133,7 @@ export function buildAiVideoPromptSeedContext({
   cameraTransition,
   videoTone,
   userInferenceModel,
+  inferenceEffort,
   selectedInferenceModelAuthorization,
   useShortFormPrompt = false,
 } = {}) {
@@ -154,6 +158,6 @@ export function buildAiVideoPromptSeedContext({
     userInferenceModel: normalizeString(userInferenceModel),
     selectedInferenceModelAuthorization: normalizeString(selectedInferenceModelAuthorization),
     useShortFormPrompt: useShortFormPrompt === true,
-    reasoningEffort: 'high',
+    reasoningEffort: normalizeString(inferenceEffort).toLowerCase() === 'xhigh' ? 'xhigh' : 'high',
   };
 }

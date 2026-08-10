@@ -6,6 +6,7 @@ import {
   buildDefaultBranchMovieResourceList,
   generateInteractivePublicationMetadata,
 } from './InteractivePublicationMetadataAPI.js';
+import { extractMetaForMovieResourceList } from '../agent/MetaCreatorAgent.js';
 
 const USER_ID = '507f1f77bcf86cd799439011';
 const SESSION_ID = '507f1f77bcf86cd799439012';
@@ -415,6 +416,43 @@ test('generates, meters, and durably settles default-path publication metadata',
     remainingCredits: 19.76,
     reused: false,
   });
+});
+
+test('interactive Sol publication metadata keeps the baseline GPT 5.6 Luna xhigh request', async () => {
+  let completionPayload = null;
+  const harness = createHarness({
+    generateMetadata: (movieResourceList, options) => extractMetaForMovieResourceList(
+      movieResourceList,
+      {
+        ...options,
+        createChatCompletion: async (_client, payload) => {
+          completionPayload = payload;
+          return {
+            model: 'gpt-5.6-luna',
+            usage: PROVIDER_RECEIPT.usage,
+            choices: [{
+              message: {
+                content: JSON.stringify({
+                  title: 'Signal at Dawn',
+                  description: 'Choose a route through the forest.',
+                }),
+              },
+            }],
+          };
+        },
+      },
+    ),
+  });
+
+  await generateInteractivePublicationMetadata(
+    USER_ID,
+    { session_id: SESSION_ID, client_request_id: 'meta-luna-baseline' },
+    harness.dependencies,
+  );
+
+  assert.equal(completionPayload.model, 'gpt-5.6-luna');
+  assert.deepEqual(completionPayload.reasoning, { effort: 'xhigh' });
+  assert.equal(harness.charges[0].options.metadata.pricingModel, 'gpt-5.6-luna');
 });
 
 test('replays a completed metadata request without inference or a second debit', async () => {

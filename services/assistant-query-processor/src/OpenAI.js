@@ -2,6 +2,7 @@ import OpenAI from "openai";
 import {
   DEFAULT_INFERENCE_MODEL,
   GPT_56_SOL_REASONING_EFFORT,
+  getGPT56SolReasoningEffort,
   isGeminiInferenceModel,
   isKimiK3InferenceModel,
   isQwenInferenceModel,
@@ -251,13 +252,17 @@ function getCompatibleChatRequestOptions(options = {}) {
   );
 }
 
-function getReasoningEffort(options = {}) {
+function getLegacyReasoningEffort(options = {}) {
   return (
     options.reasoningEffort ||
     options.reasoning_effort ||
     options.reasoning?.effort ||
     null
   );
+}
+
+function getReasoningEffort(options = {}) {
+  return options.effort || getLegacyReasoningEffort(options);
 }
 
 export function getAssistantReasoningEffort(inferenceModel, options = {}) {
@@ -268,8 +273,8 @@ export function getAssistantReasoningEffort(inferenceModel, options = {}) {
     return GPT_56_SOL_REASONING_EFFORT;
   }
   return isGeminiInferenceModel(inferenceModel)
-    ? getReasoningEffort(options)
-    : GPT_56_SOL_REASONING_EFFORT;
+    ? getLegacyReasoningEffort(options)
+    : getGPT56SolReasoningEffort(inferenceModel, getReasoningEffort(options));
 }
 
 function getRequestTimeoutMs(options = {}) {
@@ -284,7 +289,11 @@ function getRequestTimeoutMs(options = {}) {
 }
 
 export async function sendAssistantCompletionRequest(messageList, inferenceModel, options) {
-  const completionOptions = normalizeCompletionOptions(options);
+  const baseCompletionOptions = normalizeCompletionOptions(options);
+  const completionOptions = {
+    ...baseCompletionOptions,
+    reasoningEffort: getAssistantReasoningEffort(inferenceModel, baseCompletionOptions),
+  };
   const model = getModelNameForInferenceModel(inferenceModel);
   if (shouldUseStandaloneInferenceAdapterFallback(completionOptions)) {
     const providers = getConfiguredInferenceProviders(model, {
@@ -331,7 +340,10 @@ async function sendAssistantCompletionRequestForProvider(
     timeout: getRequestTimeoutMs(completionOptions),
   };
   if (shouldUseSamsarExternalInference(externalPayload)) {
-    return await sendAssistantSamsarExternalCompletionRequest(messageList, model, completionOptions);
+    return await sendAssistantSamsarExternalCompletionRequest(messageList, model, {
+      ...completionOptions,
+      reasoningEffort,
+    });
   }
 
   if (isGeminiModel) {
@@ -452,7 +464,9 @@ export async function sendAssistantOpenAICompletionRequest(
       model,
       input: normalizeMessagesForResponses(messageList),
     };
-    sourceBody.reasoning = { effort: GPT_56_SOL_REASONING_EFFORT };
+    sourceBody.reasoning = {
+      effort: getGPT56SolReasoningEffort(inferenceModel, reasoningEffort),
+    };
 
     try {
       const response = await runExternalInferenceWithRetry(

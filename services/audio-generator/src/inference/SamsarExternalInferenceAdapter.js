@@ -5,7 +5,7 @@ import OpenAI from 'openai';
 
 import {
   GPT_56_SOL_INFERENCE_MODEL,
-  GPT_56_SOL_REASONING_EFFORT,
+  getGPT56SolReasoningEffort,
   isGeminiInferenceModel,
   isKimiInferenceModel,
   isQwenInferenceModel,
@@ -228,6 +228,13 @@ function addOpenRouterResponseHealingPlugin(plugins) {
 function getOpenRouterReasoningEffort(requestedModel, effort, request = {}) {
   if ((isQwenInferenceModel(requestedModel) || isGeminiInferenceModel(requestedModel)) &&
       isOpenRouterStructuredOutputRequest(request)) return 'high';
+  const normalizedEffort = normalizeString(effort).toLowerCase();
+  if (
+    normalizeString(requestedModel).toLowerCase().startsWith(GPT_56_SOL_INFERENCE_MODEL) &&
+    ['low', 'medium', 'high', 'xhigh', 'max'].includes(normalizedEffort)
+  ) {
+    return normalizedEffort;
+  }
   const configuredEffort = normalizeString(
     isQwenInferenceModel(requestedModel)
       ? process.env.OPENROUTER_QWEN_REASONING_EFFORT
@@ -238,7 +245,6 @@ function getOpenRouterReasoningEffort(requestedModel, effort, request = {}) {
   if (['low', 'medium', 'high'].includes(configuredEffort)) return configuredEffort;
   if (!isQwenInferenceModel(requestedModel) && !isGeminiInferenceModel(requestedModel) &&
       ['xhigh', 'max'].includes(configuredEffort)) return configuredEffort;
-  const normalizedEffort = normalizeString(effort).toLowerCase();
   if ((isQwenInferenceModel(requestedModel) || isGeminiInferenceModel(requestedModel)) &&
       ['xhigh', 'max'].includes(normalizedEffort)) return 'high';
   return ['low', 'medium', 'high', 'xhigh', 'max'].includes(normalizedEffort)
@@ -575,7 +581,8 @@ export function shouldUseGenblazeInference(chatRequest = {}) {
 }
 
 export async function createGenblazeChatCompletion(chatRequest = {}) {
-  const model = getCanonicalGenblazeInferenceModel(getRequestedInferenceModel(chatRequest));
+  const requestedModel = getRequestedInferenceModel(chatRequest);
+  const model = getCanonicalGenblazeInferenceModel(requestedModel);
   if (!hasGenblazeModelMapping(model, chatRequest)) {
     const error = new Error(
       'GMICloud via GenBlaze does not expose an exact compatible model for this inference request.',
@@ -588,10 +595,13 @@ export async function createGenblazeChatCompletion(chatRequest = {}) {
   const {
     authorization, bypassSamsarExternalInference, samsarExternalInference,
     timeout, timeoutMs, maxRetries, externalMaxRetries,
-    reasoning, reasoning_effort, ...request
+    reasoning, reasoning_effort, reasoningEffort, effort: requestEffort, ...request
   } = chatRequest || {};
-  const requestedReasoningEffort = normalizeString(
+  const legacyReasoningEffort = normalizeString(
     reasoning_effort || reasoning?.effort,
+  ).toLowerCase();
+  const requestedGPTReasoningEffort = normalizeString(
+    requestEffort || reasoningEffort || legacyReasoningEffort,
   ).toLowerCase();
   const requestTimeout = Number(timeout ?? timeoutMs ?? process.env.SAMSAR_GENBLAZE_INFERENCE_TIMEOUT_MS) ||
     DEFAULT_EXTERNAL_INFERENCE_TIMEOUT_MS;
@@ -600,11 +610,13 @@ export async function createGenblazeChatCompletion(chatRequest = {}) {
       await normalizeProviderMediaPayload({
         ...request,
         model,
-        ...(GENBLAZE_HIGH_REASONING_MODELS.has(model)
-          ? { reasoning_effort: 'high' }
-          : requestedReasoningEffort
-            ? { reasoning_effort: requestedReasoningEffort }
-            : {}),
+    ...(normalizeString(requestedModel).toLowerCase().startsWith(GPT_56_SOL_INFERENCE_MODEL)
+      ? { reasoning_effort: getGPT56SolReasoningEffort(chatRequest.model, requestedGPTReasoningEffort) }
+      : GENBLAZE_HIGH_REASONING_MODELS.has(model)
+        ? { reasoning_effort: 'high' }
+      : legacyReasoningEffort
+        ? { reasoning_effort: legacyReasoningEffort }
+        : {}),
       }),
       { timeout: requestTimeout, maxRetries: 0, signal },
     ),
@@ -622,14 +634,19 @@ export async function createOpenRouterChatCompletion(chatRequest = {}) {
   if (!client) throw new Error('OPENROUTER_API_KEY is required for OpenRouter inference.');
   const {
     authorization, bypassSamsarExternalInference, samsarExternalInference,
-    timeout, timeoutMs, maxRetries, externalMaxRetries, reasoning_effort, reasoning, ...request
+    timeout, timeoutMs, maxRetries, externalMaxRetries,
+    reasoning_effort, reasoningEffort, reasoning, effort: requestEffort, ...request
   } = chatRequest || {};
-  const effort = reasoning?.effort || reasoning_effort || (
-    getRequestedInferenceModel(chatRequest) === GPT_56_SOL_INFERENCE_MODEL
-      ? GPT_56_SOL_REASONING_EFFORT
-      : undefined
-  );
   const requestedModel = getRequestedInferenceModel(chatRequest);
+  const legacyReasoningEffort = reasoning?.effort || reasoning_effort;
+  const isGPT56SolRequest = normalizeString(requestedModel).toLowerCase()
+    .startsWith(GPT_56_SOL_INFERENCE_MODEL);
+  const explicitEffort = isGPT56SolRequest
+    ? requestEffort || reasoningEffort || legacyReasoningEffort
+    : legacyReasoningEffort;
+  const effort = isGPT56SolRequest
+    ? getGPT56SolReasoningEffort(chatRequest.model, explicitEffort)
+    : explicitEffort;
   const qwenRequest = isQwenInferenceModel(requestedModel);
   const configuredTimeout = Number(
     qwenRequest
@@ -741,18 +758,33 @@ export async function createSamsarExternalChatCompletion(chatRequest = {}) {
     timeoutMs,
     maxRetries,
     externalMaxRetries,
+    reasoning,
+    reasoning_effort,
+    reasoningEffort,
+    effort: requestEffort,
     ...payload
   } = chatRequest || {};
 
   const model = getRequestedInferenceModel(payload);
+  const providerModel = normalizeString(model).toLowerCase().startsWith(GPT_56_SOL_INFERENCE_MODEL)
+    ? GPT_56_SOL_INFERENCE_MODEL
+    : model;
+  const requestedReasoningEffort = requestEffort ||
+    reasoning?.effort || reasoning_effort || reasoningEffort;
   const requestTimeout = Number(
     timeout ?? timeoutMs ?? process.env.SAMSAR_EXTERNAL_INFERENCE_TIMEOUT_MS
   ) || DEFAULT_EXTERNAL_INFERENCE_TIMEOUT_MS;
   const rawRequestPayload = {
     ...payload,
-    model,
-    ...(model === GPT_56_SOL_INFERENCE_MODEL
-      ? { reasoning_effort: GPT_56_SOL_REASONING_EFFORT }
+    model: providerModel,
+    ...(providerModel !== GPT_56_SOL_INFERENCE_MODEL && reasoning !== undefined
+      ? { reasoning }
+      : {}),
+    ...(providerModel !== GPT_56_SOL_INFERENCE_MODEL && reasoning_effort !== undefined
+      ? { reasoning_effort }
+      : {}),
+    ...(providerModel === GPT_56_SOL_INFERENCE_MODEL
+      ? { reasoning_effort: getGPT56SolReasoningEffort(chatRequest.model, requestedReasoningEffort) }
       : isKimiInferenceModel(model)
         ? { reasoning_effort: KIMI_K3_REASONING_EFFORT }
         : {}),
@@ -765,7 +797,7 @@ export async function createSamsarExternalChatCompletion(chatRequest = {}) {
     },
     {
       provider: 'samsar',
-      model,
+      model: providerModel,
       timeoutMs: requestTimeout,
       maxRetries: externalMaxRetries ?? maxRetries,
     },

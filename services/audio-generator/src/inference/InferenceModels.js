@@ -1,6 +1,8 @@
 export const GPT_56_SOL_INFERENCE_MODEL = 'gpt-5.6-sol';
+export const GPT_56_SOL_XHIGH_INFERENCE_MODEL = 'gpt-5.6-sol-xhigh';
 export const DEFAULT_INFERENCE_MODEL = GPT_56_SOL_INFERENCE_MODEL;
 export const GPT_56_SOL_REASONING_EFFORT = 'high';
+export const GPT_56_SOL_XHIGH_REASONING_EFFORT = 'xhigh';
 export const GEMINI_31_PRO_INFERENCE_MODEL = 'gemini-3.1-pro';
 export const DEFAULT_GEMINI_31_PRO_VERTEX_MODEL = 'gemini-3.1-pro-preview';
 export const QWEN_38_INFERENCE_MODEL = 'QWEN3.8';
@@ -70,7 +72,10 @@ export function normalizeInferenceModel(value) {
     return DEFAULT_INFERENCE_MODEL;
   }
   if (normalized === DEFAULT_INFERENCE_MODEL || normalized.startsWith(`${DEFAULT_INFERENCE_MODEL}-`)) {
-    return DEFAULT_INFERENCE_MODEL;
+    const token = normalizeAliasToken(value);
+    return token.includes('XHIGH') || token.includes('EXTRAHIGH')
+      ? GPT_56_SOL_XHIGH_INFERENCE_MODEL
+      : DEFAULT_INFERENCE_MODEL;
   }
   if (GEMINI_ALIASES.has(normalized)) {
     return GEMINI_31_PRO_INFERENCE_MODEL;
@@ -82,6 +87,16 @@ export function normalizeInferenceModel(value) {
     return KIMI_K3_INFERENCE_MODEL;
   }
   return DEFAULT_INFERENCE_MODEL;
+}
+
+export function getGPT56SolReasoningEffort(model, requestedEffort = null) {
+  const normalizedEffort = normalizeString(requestedEffort).toLowerCase();
+  if (normalizedEffort === 'high' || normalizedEffort === 'xhigh') {
+    return normalizedEffort;
+  }
+  return normalizeInferenceModel(model) === GPT_56_SOL_XHIGH_INFERENCE_MODEL
+    ? GPT_56_SOL_XHIGH_REASONING_EFFORT
+    : GPT_56_SOL_REASONING_EFFORT;
 }
 
 export function isGeminiInferenceModel(value) {
@@ -114,6 +129,9 @@ export function getProviderModelForInferenceModel(value) {
   }
   if (isKimiInferenceModel(value)) {
     return KIMI_K3_INFERENCE_MODEL;
+  }
+  if (normalizeInferenceModel(value) === GPT_56_SOL_XHIGH_INFERENCE_MODEL) {
+    return GPT_56_SOL_INFERENCE_MODEL;
   }
   return DEFAULT_INFERENCE_MODEL;
 }

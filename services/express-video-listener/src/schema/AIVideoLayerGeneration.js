@@ -20,6 +20,7 @@ const aiVideoLayerGenerationSchema = new Schema({
   }],
   promptSeedContext: { type: Object, default: null },
   userInferenceModel: String,
+  inferenceEffort: { type: String, enum: ['high', 'xhigh'], default: null },
   selectedInferenceModelAuthorization: String,
 
   useStartFrame: { type: Boolean, default: true },

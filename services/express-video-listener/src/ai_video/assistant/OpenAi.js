@@ -10,8 +10,8 @@ const API_KEY = process.env.OPENAI_API_KEY;
 import { z } from "zod";
 import { zodResponseFormat } from "openai/helpers/zod";
 import {
-  GPT_56_SOL_REASONING_EFFORT,
   getDefaultInferenceModel,
+  getGPT56SolReasoningEffort,
   isGeminiInferenceModel,
   isKimiInferenceModel,
   isQwenInferenceModel,
@@ -473,6 +473,13 @@ export async function getAccentForText(text, auditContext = {}) {
 export async function sendAssistantMessageRequest(messageList, userInferenceModel = getDefaultInferenceModel(), reasoningEffort, auditContext = {}) {
 
   const modelName = getModelNameForInferenceModel(userInferenceModel);
+  const requestedReasoningEffort = reasoningEffort ||
+    auditContext.effort ||
+    auditContext.inferenceEffort ||
+    auditContext.selectedInferenceEffort ||
+    auditContext.reasoningEffort ||
+    auditContext.reasoning_effort ||
+    auditContext.reasoning?.effort;
 
   try {
     const selectedInferenceModelAuthorization =
@@ -488,8 +495,8 @@ export async function sendAssistantMessageRequest(messageList, userInferenceMode
       ...(!isQwenInferenceModel(modelName)
         ? {
           reasoning_effort: isGeminiInferenceModel(modelName)
-            ? reasoningEffort || DEFAULT_GEMINI_REASONING_EFFORT
-            : GPT_56_SOL_REASONING_EFFORT,
+            ? requestedReasoningEffort || DEFAULT_GEMINI_REASONING_EFFORT
+            : getGPT56SolReasoningEffort(userInferenceModel, requestedReasoningEffort),
         }
         : {}),
     };
@@ -555,6 +562,17 @@ export async function sendAssistantStructuredMessageRequest(
       response_format: zodResponseFormat(ScreenplayTransitionExtraction, "screenplay_transition_extraction"),
       ...(selectedInferenceModelAuthorization
         ? { authorization: selectedInferenceModelAuthorization }
+        : {}),
+      ...(!isGeminiInferenceModel(modelName) && !isQwenInferenceModel(modelName)
+        ? {
+          reasoning_effort: getGPT56SolReasoningEffort(
+            userInferenceModel,
+            auditContext.effort ||
+              auditContext.inferenceEffort ||
+              auditContext.reasoningEffort ||
+              auditContext.reasoning_effort,
+          ),
+        }
         : {}),
     };
     const response = await createCompatibleChatCompletion(openai, payload);

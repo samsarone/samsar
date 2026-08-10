@@ -10,8 +10,8 @@ import path from "path";
 
 import { normalizeProviderMediaUrl } from '../ai_video/utils/AWS.js';
 import {
-  GPT_56_SOL_REASONING_EFFORT,
   getDefaultInferenceModel,
+  getGPT56SolReasoningEffort,
   isGeminiInferenceModel,
   isKimiInferenceModel,
   isQwenInferenceModel,
@@ -22,8 +22,7 @@ import {
   getInferenceAdapterProvider,
 } from './OpenAICompat.js';
 import {
-  resolveRequestInferenceAuthorization,
-  resolveRequestInferenceModel,
+  resolveRequestInferenceSettings,
 } from './RequestInferenceModel.js';
 import { recordProviderUsageLog } from '../utils/ProviderUsageAudit.js';
 import { resolveLocalAssetPath } from '../utils/LocalAssetPath.js';
@@ -155,17 +154,15 @@ export async function addVisionDescriptionsForImages(sessionId) {
   let sessionData = await VideoSession.findById(sessionId);
   const userData = sessionData?.userId
     ? await User.findById(sessionData.userId)
-      .select('selectedInferenceModel selectedInferenceModelAuthorization')
+      .select('selectedInferenceModel selectedInferenceEffort selectedInferenceModelAuthorization')
       .lean()
     : null;
-  const userInferenceModel = resolveRequestInferenceModel({
+  const inferenceSettings = resolveRequestInferenceSettings({
     session: sessionData,
     user: userData,
   });
-  const selectedInferenceModelAuthorization = resolveRequestInferenceAuthorization({
-    session: sessionData,
-    user: userData,
-  });
+  const userInferenceModel = inferenceSettings.model;
+  const selectedInferenceModelAuthorization = inferenceSettings.authorization;
 
 
   let sessionLayers = sessionData.layers;
@@ -199,6 +196,7 @@ export async function addVisionDescriptionsForImages(sessionId) {
       requestType: 'vision_inference',
       source: 'express_video_vision',
       localRequestId: `${sessionId}:${layer?._id?.toString?.() || i}:vision_description`,
+      inferenceEffort: inferenceSettings.effort,
       selectedInferenceModelAuthorization,
     });
 
@@ -269,7 +267,13 @@ export async function getDescriptionForImage(activeImageRemoteLink, userInferenc
       ? {
         reasoning_effort: isGeminiInferenceModel(model)
           ? 'high'
-          : GPT_56_SOL_REASONING_EFFORT,
+          : getGPT56SolReasoningEffort(
+            userInferenceModel,
+            auditContext.effort ||
+              auditContext.inferenceEffort ||
+              auditContext.reasoningEffort ||
+              auditContext.reasoning_effort,
+          ),
       }
       : {}),
   };

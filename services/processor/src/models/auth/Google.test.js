@@ -10,9 +10,7 @@ import { verifyGoogleOAuthState } from './GoogleOAuthState.js';
 
 test('admin Google login intent is preserved in OAuth state', async () => {
   const previousAllowedOrigins = process.env.SAMSAR_GOOGLE_OAUTH_ALLOWED_ORIGINS;
-  const previousTokenSecret = process.env.TOKEN_SECRET;
   process.env.SAMSAR_GOOGLE_OAUTH_ALLOWED_ORIGINS = 'https://admin.example.com';
-  process.env.TOKEN_SECRET = 'test-only-google-login-token-secret-32-bytes';
 
   try {
     const loginUrl = await getGoogleLogin({
@@ -29,11 +27,6 @@ test('admin Google login intent is preserved in OAuth state', async () => {
       delete process.env.SAMSAR_GOOGLE_OAUTH_ALLOWED_ORIGINS;
     } else {
       process.env.SAMSAR_GOOGLE_OAUTH_ALLOWED_ORIGINS = previousAllowedOrigins;
-    }
-    if (previousTokenSecret === undefined) {
-      delete process.env.TOKEN_SECRET;
-    } else {
-      process.env.TOKEN_SECRET = previousTokenSecret;
     }
   }
 });

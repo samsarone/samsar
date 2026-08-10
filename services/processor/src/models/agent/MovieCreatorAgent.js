@@ -24,8 +24,8 @@ import {
   SPEECH_CHARACTER_LIMIT_EXCEEDED_CODE,
 } from '../movie_session/utils/TranscriptUtils.js';
 import {
-  GPT_56_SOL_REASONING_EFFORT,
   getDefaultUserInferenceModel,
+  getReasoningEffortForInferenceModel,
   isGeminiInferenceModel,
   isQwenInferenceModel,
   normalizeInferenceModel,
@@ -237,7 +237,7 @@ export async function extractThemeFromUserPromptAndImageTheme(
   const responseData = await sendSessionThemeMessageRequest(
     messageList,
     effectiveInferenceModel,
-    'high',
+    undefined,
     options,
   );
 
@@ -387,7 +387,10 @@ export async function sendSessionThemeMessageRequest(
   options = {},
 ) {
   const modelName = getModelForUserInferenceModel(userInferenceModel);
-  const effectiveReasoningEffort = getThemeNarrativeReasoningEffort(modelName);
+  const effectiveReasoningEffort = getThemeNarrativeReasoningEffort(
+    modelName,
+    reasoningEffort,
+  );
 
   const ThemeKeywordsExtraction = z.object({
     subject: z.array(z.string()),
@@ -609,7 +612,7 @@ export async function extractGroundedThemeFromUserPrompt(
   const themeData = await sendSessionThemeMessageRequest(
     messageList,
     inferenceModel,
-    'high',
+    undefined,
     options,
   );
   return themeData;
@@ -997,7 +1000,10 @@ export async function sendNarrativePromptMessageRequest(
   options = {},
 ) {
   const modelName = getModelForUserInferenceModel(inferenceModel);
-  const effectiveReasoningEffort = getThemeNarrativeReasoningEffort(modelName);
+  const effectiveReasoningEffort = getThemeNarrativeReasoningEffort(
+    modelName,
+    reasoningEffort,
+  );
 
   const ScreenplayStorylineExtraction = z.object({
     scenes: z.array(z.object({
@@ -1120,11 +1126,11 @@ export async function sendNarrativePromptMessageRequest(
   }
 }
 
-function getThemeNarrativeReasoningEffort(modelName) {
+function getThemeNarrativeReasoningEffort(modelName, requestedEffort = null) {
   if (isGeminiInferenceModel(modelName) || isQwenInferenceModel(modelName)) {
     return GEMINI_THEME_NARRATIVE_REASONING_EFFORT;
   }
-  return GPT_56_SOL_REASONING_EFFORT;
+  return getReasoningEffortForInferenceModel(modelName, requestedEffort);
 }
 
 function buildReasoningRequestOptions(reasoningEffort) {

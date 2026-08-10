@@ -31,6 +31,19 @@ import {
   validateExpressImageModelKey,
 } from './PromptUtils.js';
 import { normalizeAPIKeyUsageContext } from './RequestAuthContext.js';
+import { shouldBypassGenerationCredits } from '../../utils/EnvironmentUtils.js';
+import {
+  isBranchedImageModel,
+  isBranchedInferenceModel,
+  isBranchedVideoModel,
+} from '../../consts/BranchedModelOptions.js';
+import {
+  DEFAULT_INFERENCE_MODEL,
+  INFERENCE_REASONING_EFFORTS,
+} from '../../consts/InferenceModels.js';
+import {
+  resolveEffectiveInferenceSettings,
+} from './RequestModelOverrides.js';
 
 const WORKER_LEASE_MS = 30 * 60 * 1000;
 const RECOVERY_INTERVAL_MS = 15 * 1000;
@@ -131,8 +144,37 @@ export function normalizeTextToInteractiveVideoPayload(payload = {}) {
   if (!isObject(source)) {
     throw buildError('input must be a JSON object.', 400, 'INVALID_REQUEST_PAYLOAD');
   }
+  const sessionId = readTextToInteractiveVideoSessionId(payload);
 
   const singularPayload = normalizeCreateSingleNarrativePayload(payload);
+  const inferenceModelWasProvided =
+    hasOwn(source, 'inference_model') || hasOwn(source, 'inferenceModel');
+  const inferenceModelInput = inferenceModelWasProvided
+    ? readRequiredAlias(
+      source,
+      'inference_model',
+      'inferenceModel',
+      'inference_model',
+      'INVALID_INFERENCE_MODEL',
+    )
+    : DEFAULT_INFERENCE_MODEL;
+  const { inferenceModel, inferenceEffort } = resolveEffectiveInferenceSettings({
+    inference_model: inferenceModelInput,
+    ...(hasOwn(source, 'effort') ? { effort: source.effort } : {}),
+    ...(hasOwn(source, 'reasoning_effort')
+      ? { reasoning_effort: source.reasoning_effort }
+      : {}),
+    ...(hasOwn(source, 'reasoningEffort')
+      ? { reasoningEffort: source.reasoningEffort }
+      : {}),
+  });
+  if (!isBranchedInferenceModel(inferenceModel)) {
+    throw buildError(
+      'inference_model is not supported for branched narrative generation.',
+      400,
+      'INVALID_INFERENCE_MODEL',
+    );
+  }
   const videoModelWasProvided = hasOwn(source, 'video_model') || hasOwn(source, 'videoModel');
   if (!videoModelWasProvided) {
     throw buildError('video_model is required.', 400, 'INVALID_VIDEO_MODEL');
@@ -141,6 +183,13 @@ export function normalizeTextToInteractiveVideoPayload(payload = {}) {
     required: true,
     fallback: null,
   });
+  if (!isBranchedVideoModel(videoModel)) {
+    throw buildError(
+      'video_model is not supported for branched video generation.',
+      400,
+      'INVALID_VIDEO_MODEL',
+    );
+  }
   const imageModelInput = readRequiredAlias(
     source,
     'image_model',
@@ -156,13 +205,20 @@ export function normalizeTextToInteractiveVideoPayload(payload = {}) {
       'INVALID_IMAGE_MODEL',
     );
   }
+  if (!isBranchedImageModel(imageModelValidation.imageModel)) {
+    throw buildError(
+      'image_model is not supported for branched video generation.',
+      400,
+      'INVALID_IMAGE_MODEL',
+    );
+  }
   const numLevels = normalizeNarrativeBranchingLevelAliases(source);
-  const sessionId = readTextToInteractiveVideoSessionId(payload);
 
   return {
     prompt: singularPayload.prompt,
     duration: singularPayload.duration,
-    inferenceModel: singularPayload.inferenceModel,
+    inferenceModel,
+    effort: inferenceEffort,
     imageModel: imageModelValidation.imageModel,
     videoModel,
     numLevels,
@@ -197,6 +253,32 @@ function getErrorStatus(error) {
   }
   const status = Number(error?.statusCode ?? error?.status ?? error?.response?.status);
   return Number.isInteger(status) && status >= 400 && status <= 599 ? status : 500;
+}
+
+async function assertInteractiveVideoCreditAdmission({
+  userId,
+  user,
+  apiKeyUsage,
+}, dependencies = {}) {
+  const {
+    assertAPIKeyLimit = assertAPIKeyUsageLimitForDebit,
+    shouldBypassCredits = shouldBypassGenerationCredits,
+  } = dependencies;
+
+  if (shouldBypassCredits()) {
+    return { creditsBypassed: true };
+  }
+  if (!(Number(user?.generationCredits) > 0)) {
+    throw buildError('Insufficient credits', 402, 'INSUFFICIENT_CREDITS');
+  }
+  if (apiKeyUsage?.apiKeyId) {
+    await assertAPIKeyLimit(
+      userId,
+      ADMISSION_CREDIT_FLOOR,
+      { apiKeyId: apiKeyUsage.apiKeyId },
+    );
+  }
+  return { creditsBypassed: false };
 }
 
 async function ensureIndexes() {
@@ -277,6 +359,8 @@ async function initializeVideoSession(
 ) {
   const acceptedConfig = {
     duration: payload.duration,
+    inferenceModel: payload.inferenceModel,
+    effort: payload.effort,
     imageModel: payload.imageModel,
     videoModel: payload.videoModel,
     numLevels: payload.numLevels,
@@ -308,6 +392,7 @@ async function initializeVideoSession(
       expressGenerativeVideoModel: payload.videoModel,
       expressGenerationImageModel: payload.imageModel,
       expressGenerationInferenceModel: payload.inferenceModel || null,
+      expressGenerationInferenceEffort: payload.effort || null,
       builderRouteType: 'text_to_interactive_video',
       builderStatus: 'QUEUED',
       builderSessionSubType: 'interactive_video_create',
@@ -386,7 +471,9 @@ export async function createTextToInteractiveVideoDraftSession({
   const sessionId = await createBlankSession(userId);
   const defaults = {
     duration: 30,
-    imageModel: 'NANOBANANA2',
+    inferenceModel: DEFAULT_INFERENCE_MODEL,
+    effort: INFERENCE_REASONING_EFFORTS.Inference,
+    imageModel: 'NANOBANANAPRO',
     videoModel: 'COSMOS3SUPERI2V',
     numLevels: 2,
     aspectRatio: DEFAULT_BRANCHED_VIDEO_ASPECT_RATIO,
@@ -405,6 +492,8 @@ export async function createTextToInteractiveVideoDraftSession({
       builderSessionSubType: 'interactive_video_draft',
       totalDuration: defaults.duration,
       aspectRatio: defaults.aspectRatio,
+      expressGenerationInferenceModel: defaults.inferenceModel,
+      expressGenerationInferenceEffort: defaults.effort,
       expressGenerationImageModel: defaults.imageModel,
       expressGenerativeVideoModel: defaults.videoModel,
       interactiveVideoDraftConfig: defaults,
@@ -474,6 +563,14 @@ export async function validateTextToInteractiveVideoSessionInput({
   const mergedPayload = {
     ...source,
     duration: source.duration ?? defaults.duration ?? draftSession.totalDuration,
+    inference_model:
+      source.inference_model ?? source.inferenceModel ??
+      defaults.inferenceModel ?? draftSession.expressGenerationInferenceModel ??
+      DEFAULT_INFERENCE_MODEL,
+    effort:
+      source.effort ?? source.reasoning_effort ?? source.reasoningEffort ??
+      defaults.effort ?? draftSession.expressGenerationInferenceEffort ??
+      INFERENCE_REASONING_EFFORTS.Inference,
     image_model:
       source.image_model ?? source.imageModel ??
       defaults.imageModel ?? draftSession.expressGenerationImageModel,
@@ -553,16 +650,7 @@ export async function createTextToInteractiveVideoRequest({
 
   const user = await User.findById(userId).select('generationCredits').lean();
   if (!user) throw buildError('User not found.', 404, 'USER_NOT_FOUND');
-  if (!(Number(user.generationCredits) > 0)) {
-    throw buildError('Insufficient credits', 402, 'INSUFFICIENT_CREDITS');
-  }
-  if (apiKeyUsage?.apiKeyId) {
-    await assertAPIKeyUsageLimitForDebit(
-      userId,
-      ADMISSION_CREDIT_FLOOR,
-      { apiKeyId: apiKeyUsage.apiKeyId },
-    );
-  }
+  await assertInteractiveVideoCreditAdmission({ userId, user, apiKeyUsage }, dependencies);
 
   const createBlankSession = dependencies.createNewBlankQuickSession ||
     createNewBlankQuickSession;
@@ -703,6 +791,7 @@ async function ensureSingularNarrative(job, workerLeaseId, dependencies) {
           prompt: job.payload.prompt,
           duration: job.payload.duration,
           inference_model: job.payload.inferenceModel,
+          effort: job.payload.effort,
           video_model: job.payload.videoModel,
         },
         authContext: job.apiKeyUsage,
@@ -1132,6 +1221,7 @@ export const __testOnly__ = {
   RETRY_DELAY_MS,
   WORKER_LEASE_MS,
   buildPayloadHash,
+  assertInteractiveVideoCreditAdmission,
   initializeVideoSession,
   isVideoSessionAlreadyScheduled,
   markFailed,

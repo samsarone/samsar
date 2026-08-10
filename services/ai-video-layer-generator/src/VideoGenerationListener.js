@@ -21,7 +21,11 @@ import {
   createTextToVideoPromptFromStartingLayerPrompt,
   getTransitionListForLayerSceneDescriptions,
 } from './utils/OpenAI.js';
-import { normalizeInferenceModel } from './utils/GoogleGemini.js';
+import {
+  GPT_56_SOL_INFERENCE_MODEL,
+  getGPT56SolReasoningEffort,
+  normalizeInferenceModel,
+} from './utils/GoogleGemini.js';
 import axios from 'axios';
 import path from 'path';
 import fs from 'fs-extra';
@@ -1083,6 +1087,7 @@ async function regenerateBaseGenerationPromptForRetry({
   });
   const {
     model: userInferenceModel,
+    effort: inferenceEffort,
     authorization: selectedInferenceModelAuthorization,
   } = await getInferenceSettingsForSession(videoSession, request, fallbackRequest);
   const baseInferenceAuditContext = {
@@ -1094,6 +1099,7 @@ async function regenerateBaseGenerationPromptForRetry({
     isExpressGeneration: videoSession?.isExpressGeneration || videoSession?.isMovieGen,
     requestType: 'narrative_inference',
     source: 'ai_video_retry_inference',
+    inferenceEffort,
     selectedInferenceModelAuthorization,
   };
 
@@ -1169,6 +1175,31 @@ function getRequestInferenceModel(request = {}) {
   );
 }
 
+function getRequestInferenceEffort(request = {}) {
+  return firstNonEmptyString(
+    request.effort,
+    request.inferenceEffort,
+    request.selectedInferenceEffort,
+    request.reasoningEffort,
+    request.reasoning_effort,
+    request.reasoning?.effort,
+    request.expressGenerationInferenceEffort,
+  );
+}
+
+function getLegacyInferenceEffort(model) {
+  const normalized = typeof model === 'string'
+    ? model.trim().toLowerCase().replace(/[_\s]+/g, '-')
+    : '';
+  if (!normalized.startsWith(GPT_56_SOL_INFERENCE_MODEL)) {
+    return '';
+  }
+  if (normalized.includes('xhigh') || normalized.includes('extra-high')) {
+    return 'xhigh';
+  }
+  return normalized.endsWith('-high') ? 'high' : '';
+}
+
 function normalizeInferenceAuthorization(value) {
   const normalized = typeof value === 'string'
     ? value.trim().toLowerCase().replace(/[_\s]+/g, '-')
@@ -1198,10 +1229,18 @@ export async function getInferenceSettingsForSession(
 ) {
   const requestedModel = getRequestInferenceModel(request) ||
     getRequestInferenceModel(fallbackRequest);
+  const requestedEffort = getRequestInferenceEffort(request) ||
+    getRequestInferenceEffort(fallbackRequest);
   const sessionModel = firstNonEmptyString(
     videoSession?.expressGenerationInferenceModel,
     videoSession?.inferenceModel,
     videoSession?.inference_model,
+  );
+  const sessionEffort = firstNonEmptyString(
+    videoSession?.expressGenerationInferenceEffort,
+    videoSession?.inferenceEffort,
+    videoSession?.inference_effort,
+    videoSession?.selectedInferenceEffort,
   );
   const requestedAuthorization = normalizeInferenceAuthorization(
     getRequestInferenceAuthorization(request) ||
@@ -1220,7 +1259,7 @@ export async function getInferenceSettingsForSession(
     if (userId) {
       try {
         userData = await User.findById(userId)
-          .select('selectedInferenceModel selectedInferenceModelAuthorization')
+          .select('selectedInferenceModel selectedInferenceEffort selectedInferenceModelAuthorization')
           .lean();
       } catch {
         userData = null;
@@ -1228,10 +1267,23 @@ export async function getInferenceSettingsForSession(
     }
   }
 
+  const sourceModel = requestedModel || sessionModel || userData?.selectedInferenceModel;
+  const model = normalizeInferenceModel(sourceModel);
+  const effort = model === GPT_56_SOL_INFERENCE_MODEL
+    ? getGPT56SolReasoningEffort(
+      sourceModel,
+      requestedEffort ||
+        getLegacyInferenceEffort(requestedModel) ||
+        sessionEffort ||
+        getLegacyInferenceEffort(sessionModel) ||
+        userData?.selectedInferenceEffort ||
+        getLegacyInferenceEffort(userData?.selectedInferenceModel),
+    )
+    : undefined;
+
   return {
-    model: normalizeInferenceModel(
-      requestedModel || sessionModel || userData?.selectedInferenceModel,
-    ),
+    model,
+    ...(effort ? { effort } : {}),
     authorization: requestedAuthorization ||
       sessionAuthorization ||
       normalizeInferenceAuthorization(userData?.selectedInferenceModelAuthorization),
@@ -1277,6 +1329,7 @@ async function prepareExpressLipSyncPrompt(payload = {}) {
       audioLayerId: context.audioLayerId,
       localRequestId: `${payload.sessionId}:${payload.layerId}:lip_sync_prompt`,
       source: 'express_lip_sync_inference',
+      inferenceEffort: inferenceSettings.effort,
       selectedInferenceModelAuthorization: inferenceSettings.authorization,
     },
   });

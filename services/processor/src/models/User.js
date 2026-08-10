@@ -37,7 +37,9 @@ import {
 } from './Newsletter.js';
 import {
   DEFAULT_INFERENCE_MODEL,
+  GPT_56_SOL_XHIGH_INFERENCE_MODEL,
   normalizeInferenceModel,
+  normalizeInferenceReasoningEffort,
 } from '../consts/InferenceModels.js';
 import { isSetupAdminBootstrapEnabled, isStandaloneEdition } from '../utils/EnvironmentUtils.js';
 
@@ -67,6 +69,36 @@ function normalizeBackingTrackModel(value) {
 
 export function normalizeAssistantModel(value) {
   return normalizeInferenceModel(value);
+}
+
+function getLegacyInferenceEffortFromModel(model) {
+  const normalizedModel = normalizeInferenceModel(model);
+  const modelToken = typeof model === 'string'
+    ? model.trim().toUpperCase().replace(/[^A-Z0-9]+/g, '')
+    : '';
+  return normalizedModel === GPT_56_SOL_XHIGH_INFERENCE_MODEL
+    ? 'xhigh'
+    : modelToken === 'GPT56SOLHIGH' || modelToken === 'GPT56HIGH'
+      ? 'high'
+      : null;
+}
+
+function normalizeUserInferencePreference(model, effort) {
+  const normalizedModel = normalizeInferenceModel(model);
+  const isLegacyXHighModel = normalizedModel === GPT_56_SOL_XHIGH_INFERENCE_MODEL;
+  const explicitEffort = normalizeInferenceReasoningEffort(effort);
+  const legacyModelEffort = getLegacyInferenceEffortFromModel(model);
+  return {
+    model: isLegacyXHighModel ? DEFAULT_INFERENCE_MODEL : normalizedModel,
+    effort: explicitEffort || legacyModelEffort || 'high',
+  };
+}
+
+function getStoredUserInferenceEffort(user) {
+  if (typeof user?.$isDefault === 'function' && user.$isDefault('selectedInferenceEffort')) {
+    return undefined;
+  }
+  return user?.selectedInferenceEffort;
 }
 
 function getCustomAdapterSecretKey() {
@@ -229,9 +261,16 @@ export async function ensureDefaultTextModelsForUser(user) {
   }
 
   let hasChanges = false;
-  const normalizedInferenceModel = normalizeInferenceModel(user.selectedInferenceModel);
-  if (user.selectedInferenceModel !== normalizedInferenceModel) {
-    user.selectedInferenceModel = normalizedInferenceModel;
+  const normalizedInferencePreference = normalizeUserInferencePreference(
+    user.selectedInferenceModel,
+    getStoredUserInferenceEffort(user),
+  );
+  if (user.selectedInferenceModel !== normalizedInferencePreference.model) {
+    user.selectedInferenceModel = normalizedInferencePreference.model;
+    hasChanges = true;
+  }
+  if (user.selectedInferenceEffort !== normalizedInferencePreference.effort) {
+    user.selectedInferenceEffort = normalizedInferencePreference.effort;
     hasChanges = true;
   }
   const normalizedAssistantModel = normalizeAssistantModel(user.selectedAssistantModel);
@@ -958,6 +997,7 @@ export async function updateUserDetails(userId, payload) {
     username,
     contentFilterRating,
     selectedInferenceModel,
+    selectedInferenceEffort,
     selectedInferenceModelAuthorization,
     selectedNotifyOnCompletion,
     selectedAssistantModel,
@@ -987,9 +1027,16 @@ export async function updateUserDetails(userId, payload) {
     : undefined;
 
   let hasChanges = false;
-  const normalizedCurrentInferenceModel = normalizeInferenceModel(user.selectedInferenceModel);
-  if (user.selectedInferenceModel !== normalizedCurrentInferenceModel) {
-    user.selectedInferenceModel = normalizedCurrentInferenceModel;
+  const normalizedCurrentInferencePreference = normalizeUserInferencePreference(
+    user.selectedInferenceModel,
+    getStoredUserInferenceEffort(user),
+  );
+  if (user.selectedInferenceModel !== normalizedCurrentInferencePreference.model) {
+    user.selectedInferenceModel = normalizedCurrentInferencePreference.model;
+    hasChanges = true;
+  }
+  if (user.selectedInferenceEffort !== normalizedCurrentInferencePreference.effort) {
+    user.selectedInferenceEffort = normalizedCurrentInferencePreference.effort;
     hasChanges = true;
   }
   const normalizedCurrentAssistantModel = normalizeAssistantModel(user.selectedAssistantModel);
@@ -1014,12 +1061,37 @@ export async function updateUserDetails(userId, payload) {
   }
 
   // Inference Model
-  if (
-    selectedInferenceModel &&
-    user.selectedInferenceModel !== normalizeInferenceModel(selectedInferenceModel)
-  ) {
-    user.selectedInferenceModel = normalizeInferenceModel(selectedInferenceModel);
-    hasChanges = true;
+  if (selectedInferenceModel) {
+    const selectedModelLegacyEffort = getLegacyInferenceEffortFromModel(
+      selectedInferenceModel,
+    );
+    const normalizedPreference = normalizeUserInferencePreference(
+      selectedInferenceModel,
+      selectedInferenceEffort ?? (
+        selectedModelLegacyEffort ? undefined : user.selectedInferenceEffort
+      ),
+    );
+    if (user.selectedInferenceModel !== normalizedPreference.model) {
+      user.selectedInferenceModel = normalizedPreference.model;
+      hasChanges = true;
+    }
+    if (user.selectedInferenceEffort !== normalizedPreference.effort) {
+      user.selectedInferenceEffort = normalizedPreference.effort;
+      hasChanges = true;
+    }
+  }
+
+  if (selectedInferenceEffort !== undefined) {
+    const normalizedEffort = normalizeInferenceReasoningEffort(selectedInferenceEffort);
+    if (!normalizedEffort) {
+      const error = new Error('selectedInferenceEffort must be one of: high, xhigh.');
+      error.status = 400;
+      throw error;
+    }
+    if (user.selectedInferenceEffort !== normalizedEffort) {
+      user.selectedInferenceEffort = normalizedEffort;
+      hasChanges = true;
+    }
   }
 
   if (

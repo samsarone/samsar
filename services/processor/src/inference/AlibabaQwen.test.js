@@ -13,6 +13,8 @@ import {
 test('builds text-only Qwen requests with qwen3.8-max and thinking enabled', () => {
   const { payload } = buildAlibabaQwenChatRequest({
     model: 'QWEN3.8',
+    effort: 'xhigh',
+    reasoningEffort: 'xhigh',
     messages: [
       { role: 'developer', content: 'Follow the instructions.' },
       { role: 'user', content: 'Write a short scene.' },
@@ -22,6 +24,8 @@ test('builds text-only Qwen requests with qwen3.8-max and thinking enabled', () 
 
   assert.equal(payload.model, 'qwen3.8-max');
   assert.equal(payload.enable_thinking, true);
+  assert.equal(Object.hasOwn(payload, 'effort'), false);
+  assert.equal(Object.hasOwn(payload, 'reasoningEffort'), false);
   assert.equal(payload.messages[0].role, 'system');
   assert.deepEqual(payload.messages[2].content[0], { type: 'text', text: 'Previous scene.' });
   assert.equal(hasQwenVisionInput(payload.messages), false);

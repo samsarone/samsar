@@ -8,13 +8,14 @@ import { getCurrentEnvironment } from './Environment.js';
 import {
   DEFAULT_INFERENCE_MODEL,
   GEMINI_31_PRO_INFERENCE_MODEL,
-  GPT_56_SOL_REASONING_EFFORT,
   KIMI_K3_INFERENCE_MODEL,
   QWEN_38_INFERENCE_MODEL,
   getDefaultUserInferenceModel,
+  getGPT56SolReasoningEffort,
   isGeminiInferenceModel,
   isKimiInferenceModel,
   isQwenInferenceModel,
+  normalizeInferenceModel,
 } from '../inference/InferenceModels.js';
 import { createCompatibleInferenceChatCompletion } from '../OpenAI.js';
 import { withInferenceAuthorization } from '../inference/RequestInferenceModel.js';
@@ -111,7 +112,7 @@ function resolveVisionInferenceModel(userInferenceModel = getDefaultUserInferenc
   }
   return isGeminiInferenceModel(userInferenceModel)
     ? GEMINI_31_PRO_INFERENCE_MODEL
-    : DEFAULT_INFERENCE_MODEL;
+    : normalizeInferenceModel(userInferenceModel || DEFAULT_INFERENCE_MODEL);
 }
 
 function getExternalVisionMaxTokens(inferenceModel, operation) {
@@ -341,7 +342,7 @@ Provide an information-dense, condensed and thorough description in 3000 charact
         ? { externalMaxTokens: getExternalVisionMaxTokens(inferenceModel, 'description') }
         : {}),
       ...(!isGeminiInferenceModel(inferenceModel) && !isQwenInferenceModel(inferenceModel)
-        ? { reasoning_effort: GPT_56_SOL_REASONING_EFFORT }
+        ? { reasoning_effort: getGPT56SolReasoningEffort(userInferenceModel) }
         : {}),
       messages: [
         {
@@ -490,7 +491,7 @@ Return only a single integer between 0 and 100.`;
       ? { externalMaxTokens: getExternalVisionMaxTokens(inferenceModel, 'score') }
       : {}),
     ...(!isGeminiInferenceModel(inferenceModel) && !isQwenInferenceModel(inferenceModel)
-      ? { reasoning_effort: GPT_56_SOL_REASONING_EFFORT }
+      ? { reasoning_effort: getGPT56SolReasoningEffort(userInferenceModel) }
       : {}),
     messages,
   };

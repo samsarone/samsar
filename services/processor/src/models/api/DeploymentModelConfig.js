@@ -439,6 +439,7 @@ function applyStandaloneModelAdapterPreferences(availability = {}) {
 
 export function mergeRuntimeInferenceDeploymentAvailability(value = {}) {
   const gmiCloudModelMappings = readRuntimeGenBlazeModelMappings();
+  const exposeStandaloneProviderCapabilities = isStandaloneEdition();
   const configuredProviders = normalizeStringList(value?.providers);
   const configuredModels = [...new Set(
     normalizeStringList(value?.models).map((model) => (
@@ -581,12 +582,20 @@ export function mergeRuntimeInferenceDeploymentAvailability(value = {}) {
     appendUnique(merged.providers, ['openai']);
     appendUnique(merged.models, ['gpt-5.6-sol']);
     appendUnique(merged.actions, ['chat', 'assistant']);
+    if (exposeStandaloneProviderCapabilities) {
+      appendUnique(merged.models, ['GPTIMAGE2']);
+      appendUnique(merged.actions, ['image']);
+    }
   }
 
   if (hasGoogleInferenceCredential()) {
     appendUnique(merged.providers, ['googleCloud']);
     appendUnique(merged.models, ['gemini-3.1-pro']);
     appendUnique(merged.actions, ['chat', 'assistant']);
+    if (exposeStandaloneProviderCapabilities) {
+      appendUnique(merged.models, ['VEO3.1I2V', 'VEO3.1I2VFAST']);
+      appendUnique(merged.actions, ['video']);
+    }
   }
 
   if (hasEnvCredential('KIMI_K3_API_KEY')) {
@@ -599,12 +608,18 @@ export function mergeRuntimeInferenceDeploymentAvailability(value = {}) {
     appendUnique(merged.providers, ['fal']);
     appendUnique(merged.models, ['WAN2.7PRO', 'HAPPYHORSEI2V', 'SEEDANCE2.0I2V', 'SEEDANCE2.5I2V']);
     appendUnique(merged.actions, ['image', 'video']);
+    if (exposeStandaloneProviderCapabilities) {
+      appendUnique(merged.models, ['NANOBANANAPRO']);
+    }
   }
 
   if (hasEnvCredential('SAMSAR_API_KEY')) {
     appendUnique(merged.providers, ['samsar']);
     appendUnique(merged.models, ['gpt-5.6-sol', 'gemini-3.1-pro', 'QWEN3.8', 'KIMIK3', 'HAPPYHORSEI2V', 'WAN2.7PRO']);
     appendUnique(merged.actions, ['chat', 'assistant', 'image', 'video']);
+    if (exposeStandaloneProviderCapabilities) {
+      appendUnique(merged.models, ['GPTIMAGE2', 'VEO3.1I2V']);
+    }
   }
 
   const runtimeGenBlazeInferenceModels = [
@@ -720,17 +735,30 @@ export function readDeploymentAvailableModels() {
 
 export function filterModelsForDeploymentAvailability(models = [], availableModelConfig = readDeploymentAvailableModels()) {
   if (!availableModelConfig || !Array.isArray(availableModelConfig.models)) {
-    return filterDeploymentScopedImageModels(models, availableModelConfig);
+    if (!isStandaloneEdition()) {
+      return filterDeploymentScopedImageModels(models, availableModelConfig);
+    }
+
+    // A standalone install may have valid runtime credentials even when its
+    // persisted availability file has not been written yet. Discover those
+    // adapters from an empty configuration, while still failing closed below
+    // when neither saved nor runtime availability exists.
+    availableModelConfig = {};
   }
 
   const runtimeAvailability = mergeRuntimeInferenceDeploymentAvailability(availableModelConfig);
   if (runtimeAvailability.models.length === 0) {
+    if (isStandaloneEdition()) {
+      return [];
+    }
     return filterDeploymentScopedImageModels(models, availableModelConfig);
   }
   const available = new Set(runtimeAvailability.models.map(normalizeDeploymentModel));
   return filterDeploymentScopedImageModels(
     models.filter(
-      (model) => available.has(normalizeDeploymentModel(model?.value || model?.key)),
+      (model) => available.has(normalizeDeploymentModel(
+        model?.availabilityModel || model?.value || model?.key,
+      )),
     ),
     availableModelConfig,
   );

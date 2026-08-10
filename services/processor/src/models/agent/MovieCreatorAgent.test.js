@@ -1,10 +1,47 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import OpenAI from 'openai';
 
 import {
   buildCharacterSpeakerMessage,
+  extractGroundedThemeFromUserPrompt,
+  extractThemeFromUserPromptAndImageTheme,
   rewriteNarrativeSpeechItemToFitScene,
 } from './MovieCreatorAgent.js';
+import { extractThemeForImageListAndPrompt } from '../movie_session/ad_creator/AdAgentPrompts.js';
+import { extractNarrativeFromInputPayload } from '../movie_session/image_list_to_video/system/NarrativeBuilder.js';
+
+function forceNativeOpenAIForTest(t) {
+  const overrides = {
+    OPENAI_API_KEY: 'test-openai-key',
+    OPENROUTER_API_KEY: undefined,
+    SAMSAR_API_KEY: undefined,
+    GENBLAZE_API_KEY: undefined,
+    GMI_API_KEY: undefined,
+    SAMSAR_EXTERNAL_INFERENCE_ENABLED: 'false',
+    SAMSAR_FORCE_EXTERNAL_INFERENCE: undefined,
+  };
+  const originalValues = new Map();
+  Object.entries(overrides).forEach(([key, value]) => {
+    originalValues.set(key, Object.prototype.hasOwnProperty.call(process.env, key)
+      ? process.env[key]
+      : undefined);
+    if (value === undefined) {
+      delete process.env[key];
+    } else {
+      process.env[key] = value;
+    }
+  });
+  t.after(() => {
+    originalValues.forEach((value, key) => {
+      if (value === undefined) {
+        delete process.env[key];
+      } else {
+        process.env[key] = value;
+      }
+    });
+  });
+}
 
 test('character visual speaker message includes canonical gender when available', () => {
   assert.equal(
@@ -19,6 +56,63 @@ test('character visual speaker message includes canonical gender when available'
     buildCharacterSpeakerMessage('Narrator', ''),
     'The speaker is: Narrator',
   );
+});
+
+test('theme and narrative callers preserve GPT 5.6 Sol xhigh while canonical Sol defaults high', async (t) => {
+  forceNativeOpenAIForTest(t);
+  const requestBodies = [];
+  const responseJson = JSON.stringify({
+    subject: [],
+    actors: [],
+    places: [],
+    objects: [],
+    setting: [],
+    style: [],
+    general: [],
+  });
+  t.mock.method(OpenAI.prototype, 'post', async (_path, options) => {
+    requestBodies.push(options.body);
+    return {
+      id: `response-${requestBodies.length}`,
+      model: 'gpt-5.6-sol',
+      output_text: responseJson,
+    };
+  });
+
+  await extractGroundedThemeFromUserPrompt(
+    'A grounded technical documentary.',
+    'gpt-5.6-sol-xhigh',
+  );
+  await extractThemeFromUserPromptAndImageTheme(
+    'Continue the reference image.',
+    'cinematic reference',
+    'gpt-5.6-sol-xhigh',
+  );
+  await extractThemeForImageListAndPrompt(
+    'product photography',
+    'Build an ad.',
+    'gpt-5.6-sol-xhigh',
+  );
+  await extractNarrativeFromInputPayload(
+    {},
+    { prompt: 'Connect the frames.', metadata: {}, imageDescriptionList: [] },
+    30,
+    'RUNWAYML',
+    'gpt-5.6-sol-xhigh',
+    1,
+    'English',
+  );
+  await extractGroundedThemeFromUserPrompt(
+    'A standard documentary.',
+    'gpt-5.6-sol',
+  );
+
+  assert.equal(requestBodies.length, 5);
+  requestBodies.slice(0, 4).forEach((body) => {
+    assert.equal(body.model, 'gpt-5.6-sol');
+    assert.deepEqual(body.reasoning, { effort: 'xhigh' });
+  });
+  assert.deepEqual(requestBodies[4].reasoning, { effort: 'high' });
 });
 
 test('retries invalid speech repairs three times with backoff and preserves item metadata', async () => {

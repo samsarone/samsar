@@ -1,15 +1,23 @@
 export const INFERENCE_MODELS = Object.freeze({
   Inference: 'gpt-5.6-sol',
+  BranchedInferenceExtraHigh: 'gpt-5.6-sol-xhigh',
   PublicationMetadata: 'gpt-5.6-luna',
 });
 
 export const INFERENCE_REASONING_EFFORTS = Object.freeze({
   Inference: 'high',
+  BranchedInferenceExtraHigh: 'xhigh',
   PublicationMetadata: 'xhigh',
 });
 
+export const INFERENCE_REASONING_EFFORT_VALUES = Object.freeze([
+  INFERENCE_REASONING_EFFORTS.Inference,
+  INFERENCE_REASONING_EFFORTS.BranchedInferenceExtraHigh,
+]);
+
 export const INFERENCE_MODEL_KEYS = Object.freeze({
   GPT_56_SOL: INFERENCE_MODELS.Inference,
+  GPT_56_SOL_XHIGH: INFERENCE_MODELS.BranchedInferenceExtraHigh,
   GEMINI_31_PRO: 'gemini-3.1-pro',
   QWEN_38: 'QWEN3.8',
   KIMI_K3: 'kimi-k3',
@@ -17,12 +25,14 @@ export const INFERENCE_MODEL_KEYS = Object.freeze({
 
 export const INFERENCE_PROVIDER_MODEL_KEYS = Object.freeze({
   [INFERENCE_MODEL_KEYS.GPT_56_SOL]: INFERENCE_MODELS.Inference,
+  [INFERENCE_MODEL_KEYS.GPT_56_SOL_XHIGH]: INFERENCE_MODELS.Inference,
   [INFERENCE_MODEL_KEYS.GEMINI_31_PRO]: 'gemini-3.1-pro-preview',
   [INFERENCE_MODEL_KEYS.QWEN_38]: 'qwen3.8-max',
   [INFERENCE_MODEL_KEYS.KIMI_K3]: 'kimi-k3',
 });
 
 export const DEFAULT_INFERENCE_MODEL = INFERENCE_MODEL_KEYS.GPT_56_SOL;
+export const GPT_56_SOL_XHIGH_INFERENCE_MODEL = INFERENCE_MODEL_KEYS.GPT_56_SOL_XHIGH;
 export const GPT_56_SOL_REASONING_EFFORT = INFERENCE_REASONING_EFFORTS.Inference;
 export const PUBLICATION_METADATA_INFERENCE_SETTINGS = Object.freeze({
   model: INFERENCE_MODELS.PublicationMetadata,
@@ -54,12 +64,68 @@ export const KIMI_K3_PROVIDER_MODEL =
 
 export const SUPPORTED_INFERENCE_MODEL_VALUES = Object.freeze([
   DEFAULT_INFERENCE_MODEL,
+  GPT_56_SOL_XHIGH_INFERENCE_MODEL,
   GEMINI_31_PRO_INFERENCE_MODEL,
   QWEN_38_INFERENCE_MODEL,
   KIMI_K3_INFERENCE_MODEL,
 ]);
 
+export const INFERENCE_MODEL_OPTIONS = Object.freeze([
+  Object.freeze({
+    label: 'gpt-5.6-sol',
+    value: DEFAULT_INFERENCE_MODEL,
+    providerModel: INFERENCE_MODELS.Inference,
+    availabilityModel: INFERENCE_MODELS.Inference,
+    reasoningEffort: INFERENCE_REASONING_EFFORTS.Inference,
+    isBranchedInferenceModel: true,
+  }),
+  Object.freeze({
+    label: 'GPT 5.6 Sol Extra High',
+    value: GPT_56_SOL_XHIGH_INFERENCE_MODEL,
+    providerModel: INFERENCE_MODELS.Inference,
+    availabilityModel: INFERENCE_MODELS.Inference,
+    reasoningEffort: INFERENCE_REASONING_EFFORTS.BranchedInferenceExtraHigh,
+    isBranchedInferenceModel: true,
+    exposeInCatalog: false,
+  }),
+  Object.freeze({
+    label: 'Gemini 3.1 Pro',
+    value: GEMINI_31_PRO_INFERENCE_MODEL,
+    providerModel: DEFAULT_GEMINI_31_PRO_VERTEX_MODEL,
+    availabilityModel: GEMINI_31_PRO_INFERENCE_MODEL,
+    isBranchedInferenceModel: false,
+  }),
+  Object.freeze({
+    label: 'Qwen 3.8 Max',
+    value: QWEN_38_INFERENCE_MODEL,
+    providerModel: QWEN_38_MAX_MODEL,
+    availabilityModel: QWEN_38_INFERENCE_MODEL,
+    isBranchedInferenceModel: false,
+  }),
+  Object.freeze({
+    label: 'Kimi K3',
+    value: KIMI_K3_INFERENCE_MODEL,
+    providerModel: KIMI_K3_PROVIDER_MODEL,
+    availabilityModel: KIMI_K3_INFERENCE_MODEL,
+    isBranchedInferenceModel: false,
+  }),
+]);
+
 const CONFIGURED_OPENAI_INFERENCE_MODELS = new Set(Object.values(INFERENCE_MODELS));
+
+const GPT_56_SOL_ALIAS_TOKENS = new Set([
+  'GPT56',
+  'GPT56SOL',
+  'GPT56HIGH',
+  'GPT56SOLHIGH',
+]);
+
+const GPT_56_SOL_XHIGH_ALIAS_TOKENS = new Set([
+  'GPT56XHIGH',
+  'GPT56SOLXHIGH',
+  'GPT56EXTRAHIGH',
+  'GPT56SOLEXTRAHIGH',
+]);
 
 const GEMINI_31_PRO_ALIASES = new Set([
   GEMINI_31_PRO_INFERENCE_MODEL,
@@ -137,14 +203,24 @@ function isKimiK3Alias(value) {
     KIMI_K3_ALIAS_TOKENS.has(normalizeAliasToken(value));
 }
 
-export function normalizeInferenceModel(value) {
+export function normalizeSupportedInferenceModel(value) {
   const normalized = normalizeString(value).toLowerCase();
 
   if (!normalized) {
-    return DEFAULT_INFERENCE_MODEL;
+    return null;
   }
 
-  if (normalized === DEFAULT_INFERENCE_MODEL || normalized.startsWith(`${DEFAULT_INFERENCE_MODEL}-`)) {
+  if (
+    normalized === GPT_56_SOL_XHIGH_INFERENCE_MODEL ||
+    GPT_56_SOL_XHIGH_ALIAS_TOKENS.has(normalizeAliasToken(value))
+  ) {
+    return GPT_56_SOL_XHIGH_INFERENCE_MODEL;
+  }
+
+  if (
+    normalized === DEFAULT_INFERENCE_MODEL ||
+    GPT_56_SOL_ALIAS_TOKENS.has(normalizeAliasToken(value))
+  ) {
     return DEFAULT_INFERENCE_MODEL;
   }
 
@@ -158,6 +234,20 @@ export function normalizeInferenceModel(value) {
 
   if (isKimiK3Alias(value)) {
     return KIMI_K3_INFERENCE_MODEL;
+  }
+
+  return null;
+}
+
+export function normalizeInferenceModel(value) {
+  const supportedModel = normalizeSupportedInferenceModel(value);
+  if (supportedModel) {
+    return supportedModel;
+  }
+
+  const normalized = normalizeString(value).toLowerCase();
+  if (normalized.startsWith(`${DEFAULT_INFERENCE_MODEL}-`)) {
+    return DEFAULT_INFERENCE_MODEL;
   }
 
   return DEFAULT_INFERENCE_MODEL;
@@ -174,9 +264,25 @@ export function normalizeOpenAIInferenceModel(value) {
     : normalizeInferenceModel(value);
 }
 
-export function getReasoningEffortForInferenceModel(value) {
+export function normalizeInferenceReasoningEffort(value, fallback = null) {
+  const normalized = normalizeString(value).toLowerCase();
+  return INFERENCE_REASONING_EFFORT_VALUES.includes(normalized)
+    ? normalized
+    : fallback;
+}
+
+export function getReasoningEffortForInferenceModel(value, requestedEffort = null) {
   const model = normalizeOpenAIInferenceModel(value);
-  return model === INFERENCE_MODELS.PublicationMetadata
+  if (model === INFERENCE_MODELS.PublicationMetadata) {
+    return INFERENCE_REASONING_EFFORTS.PublicationMetadata;
+  }
+
+  const normalizedRequestedEffort = normalizeInferenceReasoningEffort(requestedEffort);
+  if (normalizedRequestedEffort) {
+    return normalizedRequestedEffort;
+  }
+
+  return model === GPT_56_SOL_XHIGH_INFERENCE_MODEL
     ? INFERENCE_REASONING_EFFORTS.PublicationMetadata
     : INFERENCE_REASONING_EFFORTS.Inference;
 }
@@ -213,6 +319,11 @@ export function getProviderModelForInferenceModel(
   value,
   { env = process.env } = {},
 ) {
+  const openAIModel = normalizeOpenAIInferenceModel(value);
+  if (isOpenAIInferenceModel(openAIModel)) {
+    return INFERENCE_PROVIDER_MODEL_KEYS[openAIModel] || openAIModel;
+  }
+
   if (isKimiInferenceModel(value)) {
     return KIMI_K3_PROVIDER_MODEL;
   }

@@ -5,6 +5,7 @@ import {
   DEFAULT_INFERENCE_MODEL,
   DEFAULT_GEMINI_31_PRO_VERTEX_MODEL,
   GEMINI_31_PRO_INFERENCE_MODEL,
+  GPT_56_SOL_XHIGH_INFERENCE_MODEL,
   GPT_56_SOL_REASONING_EFFORT,
   INFERENCE_MODEL_KEYS,
   INFERENCE_MODELS,
@@ -35,6 +36,20 @@ test('defaults inference model to GPT 5.6 Sol', () => {
   assert.equal(normalizeInferenceModel('gpt-5.6-sol'), DEFAULT_INFERENCE_MODEL);
   assert.equal(getProviderModelForInferenceModel('gpt-5.6-sol'), 'gpt-5.6-sol');
   assert.equal(GPT_56_SOL_REASONING_EFFORT, 'high');
+});
+
+test('preserves the GPT 5.6 Sol extra-high logical option while routing to the Sol provider model', () => {
+  assert.equal(GPT_56_SOL_XHIGH_INFERENCE_MODEL, 'gpt-5.6-sol-xhigh');
+  for (const alias of [
+    'gpt-5.6-sol-xhigh',
+    'GPT 5.6 Sol XHigh',
+    'GPT 5.6 Sol Extra High',
+  ]) {
+    assert.equal(normalizeInferenceModel(alias), GPT_56_SOL_XHIGH_INFERENCE_MODEL);
+    assert.equal(getReasoningEffortForInferenceModel(alias), 'xhigh');
+    assert.equal(getProviderModelForInferenceModel(alias), 'gpt-5.6-sol');
+  }
+  assert.equal(isOpenAIInferenceModel(GPT_56_SOL_XHIGH_INFERENCE_MODEL), true);
 });
 
 test('configures GPT 5.6 Luna with xhigh reasoning only for publication metadata', () => {

@@ -1,4 +1,5 @@
 export const DEFAULT_INFERENCE_MODEL_VALUE = "gpt-5.6-sol";
+export const EXTRA_HIGH_INFERENCE_MODEL_VALUE = "gpt-5.6-sol-xhigh";
 export const QWEN_INFERENCE_MODEL_VALUE = "QWEN3.8";
 export const KIMI_K3_INFERENCE_MODEL_VALUE = "kimi-k3";
 export const HOSTED_QWEN_INFERENCE_MODEL_VALUE = QWEN_INFERENCE_MODEL_VALUE;
@@ -6,6 +7,19 @@ export const OPENROUTER_QWEN_INFERENCE_MODEL_LABEL =
   "Qwen 3.8 Max";
 export const HOSTED_QWEN_INFERENCE_MODEL_LABEL =
   OPENROUTER_QWEN_INFERENCE_MODEL_LABEL;
+
+const GPT_56_SOL_HIGH_MODEL_TOKENS = new Set([
+  "gpt56",
+  "gpt56sol",
+  "gpt56high",
+  "gpt56solhigh",
+]);
+const GPT_56_SOL_XHIGH_MODEL_TOKENS = new Set([
+  "gpt56xhigh",
+  "gpt56solxhigh",
+  "gpt56extrahigh",
+  "gpt56solextrahigh",
+]);
 
 const DEPLOYMENT_PROVIDER_LABELS = Object.freeze({
   samsar: "Samsar API Key",
@@ -126,10 +140,19 @@ export function hasSubtitleGenerationProvider(payload = {}) {
   return providers.has('openai') || providers.has('samsar');
 }
 
+export function inferGPT56SolEffortFromModelValue(value) {
+  if (typeof value !== "string") return "";
+  const compact = value.trim().toLowerCase().replace(/[^a-z0-9]+/g, "");
+  if (GPT_56_SOL_XHIGH_MODEL_TOKENS.has(compact)) return "xhigh";
+  if (GPT_56_SOL_HIGH_MODEL_TOKENS.has(compact)) return "high";
+  return "";
+}
+
 export function normalizeDeploymentInferenceModelValue(value) {
   if (typeof value !== "string") return "";
 
   const normalized = value.trim().toLowerCase();
+  const compact = normalized.replace(/[^a-z0-9]+/g, "");
   if (
     normalized === KIMI_K3_INFERENCE_MODEL_VALUE ||
     normalized === "kimi k3" ||
@@ -173,20 +196,22 @@ export function normalizeDeploymentInferenceModelValue(value) {
   ) {
     return "gemini-3.1-pro";
   }
-  if (
-    normalized === DEFAULT_INFERENCE_MODEL_VALUE ||
-    normalized.startsWith(`${DEFAULT_INFERENCE_MODEL_VALUE}-`) ||
-    normalized === "gpt-5.6" ||
-    normalized === "gpt 5.6 sol" ||
-    normalized === "gpt56" ||
-    normalized === "gpt56sol"
-  ) {
+  if (inferGPT56SolEffortFromModelValue(compact)) {
     return DEFAULT_INFERENCE_MODEL_VALUE;
   }
   return "";
 }
 
-function extractExplicitDeploymentInferenceModelValues(payload = {}) {
+/**
+ * Maps legacy logical inference choices onto the physical deployment model.
+ * Reasoning effort is stored separately from the canonical GPT 5.6 Sol model.
+ */
+export function getDeploymentInferenceAvailabilityModelValue(value) {
+  const logicalValue = normalizeDeploymentInferenceModelValue(value);
+  return logicalValue;
+}
+
+function getExplicitDeploymentInferenceModelList(payload = {}) {
   const candidates = [
     payload?.deployment?.models,
     payload?.available?.models,
@@ -194,7 +219,11 @@ function extractExplicitDeploymentInferenceModelValues(payload = {}) {
     payload?.available_models,
     payload?.models,
   ];
-  const modelList = candidates.find((candidate) => Array.isArray(candidate)) || [];
+  return candidates.find((candidate) => Array.isArray(candidate)) || null;
+}
+
+function extractExplicitDeploymentInferenceModelValues(payload = {}) {
+  const modelList = getExplicitDeploymentInferenceModelList(payload) || [];
   const seen = new Set();
 
   return modelList
@@ -276,6 +305,11 @@ export function extractDeploymentInferenceModelValues(payload = {}) {
   );
   const providerModels = extractDeploymentProviders(payload).flatMap((provider) => {
     const providerKey = normalizeDeploymentProviderKey(provider);
+    // A modern GMICloud response advertises only catalog-proven routes. Keep
+    // the historical Qwen fallback solely for older provider-only envelopes.
+    if (providerKey === "gmicloud" && getExplicitDeploymentInferenceModelList(payload)) {
+      return [];
+    }
     return DEPLOYMENT_INFERENCE_MODELS_BY_PROVIDER[providerKey] || [];
   });
   const seen = new Set();
@@ -288,12 +322,16 @@ export function extractDeploymentInferenceModelValues(payload = {}) {
 }
 
 export function filterOptionsForDeploymentInferenceModels(options = [], modelValues = []) {
-  const allowedModels = new Set(modelValues.map(normalizeDeploymentInferenceModelValue).filter(Boolean));
+  const allowedModels = new Set(
+    modelValues.map(getDeploymentInferenceAvailabilityModelValue).filter(Boolean),
+  );
   if (allowedModels.size === 0) {
     return [];
   }
 
-  return options.filter((option) => allowedModels.has(normalizeDeploymentInferenceModelValue(option?.value)));
+  return options.filter((option) => (
+    allowedModels.has(getDeploymentInferenceAvailabilityModelValue(option?.value))
+  ));
 }
 
 export function labelOptionsForDeploymentInferenceProviders(options = []) {

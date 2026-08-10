@@ -5,8 +5,8 @@ import { z } from 'zod';
 import { zodResponseFormat } from 'openai/helpers/zod';
 
 import {
-  GPT_56_SOL_REASONING_EFFORT,
   getDefaultUserInferenceModel,
+  getReasoningEffortForInferenceModel,
   isGeminiInferenceModel,
   isQwenInferenceModel,
 } from '../../../consts/InferenceModels.js';
@@ -209,7 +209,7 @@ function normalizeDivergencePath(path) {
 function getReasoningRequestOptions(model) {
   const effort = isGeminiInferenceModel(model) || isQwenInferenceModel(model)
     ? 'high'
-    : GPT_56_SOL_REASONING_EFFORT;
+    : getReasoningEffortForInferenceModel(model);
   return {
     reasoning: { effort },
     reasoning_effort: effort,

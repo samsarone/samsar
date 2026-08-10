@@ -21,8 +21,10 @@ test('narrative requests keep standalone mixed artifacts and durable polling fie
   assert.equal(paths.inferenceModel.instance, 'String');
   assert.deepEqual(paths.inferenceModel.enumValues, [
     'gpt-5.6-sol',
+    'gpt-5.6-sol-xhigh',
     'gemini-3.1-pro',
     'QWEN3.8',
+    'kimi-k3',
   ]);
   assert.equal(paths.themeJson.instance, 'Mixed');
   assert.equal(paths.narrativeJson.instance, 'Mixed');

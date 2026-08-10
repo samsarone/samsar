@@ -12,8 +12,7 @@ import { getCanvasDimensionsForAspectRatio } from './utils/CanvasUtils.js';
 import { addSubtitlesForSessionForAudio } from './utils/TranscriptUtils.js';
 import { getAccentForText } from './ai_video/assistant/OpenAi.js';
 import {
-  resolveRequestInferenceAuthorization,
-  resolveRequestInferenceModel,
+  resolveRequestInferenceSettings,
 } from './ai_utils/RequestInferenceModel.js';
 import { getFramesPerSecondFromValue, resolveFramesPerSecond } from './utils/FpsUtils.js';
 import { recordProviderUsageLog } from './utils/ProviderUsageAudit.js';
@@ -652,14 +651,12 @@ export async function generateTranscriptsForSessionAudioLayers(sessionId) {
 
     const isMovieGen = sessionData.isMovieGen;
     const framesPerSecond = resolveFramesPerSecond(sessionData, userData);
-    const inferenceModel = resolveRequestInferenceModel({
+    const inferenceSettings = resolveRequestInferenceSettings({
       session: sessionData,
       user: userData,
     });
-    const selectedInferenceModelAuthorization = resolveRequestInferenceAuthorization({
-      session: sessionData,
-      user: userData,
-    });
+    const inferenceModel = inferenceSettings.model;
+    const selectedInferenceModelAuthorization = inferenceSettings.authorization;
 
     const sessionLanguageCode = normalizeLanguageCode(sessionData.sessionLanguage || 'EN');
     const languageForFonts = sessionLanguageCode || 'en';
@@ -808,6 +805,7 @@ export async function generateTranscriptsForSessionAudioLayers(sessionId) {
               sessionId,
               audioLayerId,
               inferenceModel,
+              inferenceEffort: inferenceSettings.effort,
               selectedInferenceModelAuthorization,
               jobType: 'Express video',
               isExpressGeneration: sessionData.isExpressGeneration || sessionData.isMovieGen,

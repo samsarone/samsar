@@ -331,6 +331,35 @@ test('express session authorization wins over generic session authorization', as
   });
 });
 
+test('GPT 5.6 Sol effort follows explicit request, legacy alias, and session precedence', async () => {
+  assert.deepEqual(await getInferenceSettingsForSession({
+    inferenceModel: 'gpt-5.6-sol',
+    inferenceEffort: 'xhigh',
+  }), {
+    model: 'gpt-5.6-sol',
+    effort: 'xhigh',
+    authorization: '',
+  });
+  assert.deepEqual(await getInferenceSettingsForSession({}, {
+    inferenceModel: 'gpt-5.6-sol-xhigh',
+  }), {
+    model: 'gpt-5.6-sol',
+    effort: 'xhigh',
+    authorization: '',
+  });
+  assert.deepEqual(await getInferenceSettingsForSession({
+    inferenceModel: 'gpt-5.6-sol-xhigh',
+    inferenceEffort: 'xhigh',
+  }, {
+    inferenceModel: 'gpt-5.6-sol-xhigh',
+    effort: 'high',
+  }), {
+    model: 'gpt-5.6-sol',
+    effort: 'high',
+    authorization: '',
+  });
+});
+
 test('connected audio duration is clamped to the connected scene duration', () => {
   assert.equal(
     resolveConnectedAudioLayerDuration({

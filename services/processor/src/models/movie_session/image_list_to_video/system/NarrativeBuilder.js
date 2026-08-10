@@ -2,10 +2,7 @@
 
 import { sendNarrativePromptMessageRequest } from "../../../agent/MovieCreatorAgent.js";
 import { getSpeechDurationStringForModel } from "../../utils/ModelUtils.js";
-import {
-  GPT_56_SOL_REASONING_EFFORT,
-  normalizeInferenceModel,
-} from "../../../../consts/InferenceModels.js";
+import { normalizeInferenceModel } from "../../../../consts/InferenceModels.js";
 
 
 export async function extractNarrativeFromInputPayload(
@@ -57,17 +54,12 @@ export async function extractNarrativeFromInputPayload(
     },
   ];
 
-  // GPT-5.6 Sol uses the shared quality-first reasoning setting for narrative extraction.
   const effectiveInferenceModel = normalizeInferenceModel(inferenceModel);
-  const shouldUseGPT56SolReasoning = effectiveInferenceModel === 'gpt-5.6-sol';
-  const reasoningEffort = shouldUseGPT56SolReasoning
-    ? GPT_56_SOL_REASONING_EFFORT
-    : undefined;
 
   const resData = await sendNarrativePromptMessageRequest(
     messageList,
     effectiveInferenceModel,
-    reasoningEffort,
+    undefined,
     {
       timeoutMs: process.env.IMAGE_LIST_TO_VIDEO_NARRATIVE_TIMEOUT_MS,
       maxAttempts: process.env.IMAGE_LIST_TO_VIDEO_NARRATIVE_MAX_ATTEMPTS,

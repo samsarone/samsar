@@ -49,6 +49,8 @@ const ENV_KEYS = [
   'OPENROUTER_QWEN_38_MAX_MODEL',
   'OPENROUTER_GEMINI_31_PRO_MODEL',
   'OPENROUTER_GPT_56_SOL_MODEL',
+  'OPENROUTER_GPT_REASONING_EFFORT',
+  'OPENROUTER_QWEN_REASONING_EFFORT',
   'SAMSAR_EXTERNAL_INFERENCE_ENABLED',
   'SAMSAR_FORCE_EXTERNAL_INFERENCE',
   'SAMSAR_GENBLAZE_BASE_URL',
@@ -411,6 +413,7 @@ test('hosted Qwen retry prompts use OpenRouter even when Alibaba is configured',
   ENV_KEYS.forEach((key) => delete process.env[key]);
   process.env.CURRENT_ENV = 'production';
   process.env.OPENROUTER_API_KEY = 'openrouter-test-key';
+  process.env.OPENROUTER_GPT_REASONING_EFFORT = 'high';
   process.env.OPENROUTER_QWEN_MAX_TOKENS = '50000';
   process.env.ALIBABA_API_KEY = 'alibaba-test-key';
 
@@ -520,7 +523,8 @@ test('Qwen OpenRouter applies Qwen 3.8 Max routing with bounded settings', async
   await createOpenRouterChatCompletion({
     model: 'QWEN3.8',
     messages: [{ role: 'user', content: 'hello' }],
-    reasoning: { effort: 'xhigh' },
+    reasoning: { effort: 'low' },
+    effort: 'xhigh',
     max_completion_tokens: 20000,
   });
   await createOpenRouterChatCompletion({
@@ -543,10 +547,20 @@ test('Qwen OpenRouter applies Qwen 3.8 Max routing with bounded settings', async
   await createOpenRouterChatCompletion({
     model: 'gpt-5.6-sol',
     messages: [{ role: 'user', content: 'hello' }],
+    reasoning_effort: 'xhigh',
+  });
+  await createOpenRouterChatCompletion({
+    model: 'gpt-5.6-sol-xhigh',
+    messages: [{ role: 'user', content: 'hello' }],
+  });
+  await createOpenRouterChatCompletion({
+    model: 'gpt-5.6-sol-xhigh',
+    effort: 'high',
+    messages: [{ role: 'user', content: 'hello' }],
   });
 
   assert.equal(payloads[0].model, 'qwen/qwen3.8-max');
-  assert.equal(payloads[0].reasoning.effort, 'high');
+  assert.equal(payloads[0].reasoning.effort, 'low');
   assert.equal(payloads[0].max_tokens, 20000);
   assert.equal(payloads[1].model, 'qwen/qwen3.8-max');
   assert.equal(payloads[1].max_tokens, 131072);
@@ -557,6 +571,10 @@ test('Qwen OpenRouter applies Qwen 3.8 Max routing with bounded settings', async
   assert.deepEqual(payloads[2].plugins, [{ id: 'existing-plugin' }, { id: 'response-healing' }]);
   assert.equal(payloads[3].max_tokens, 65536);
   assert.equal(payloads[4].max_completion_tokens, 128000);
+  assert.equal(payloads[4].reasoning.effort, 'xhigh');
+  assert.equal(payloads[5].model, 'openai/gpt-5.6-sol');
+  assert.equal(payloads[5].reasoning.effort, 'xhigh');
+  assert.equal(payloads[6].reasoning.effort, 'high');
   assert.equal(options[0].maxRetries, 0);
   assert.equal(options[0].signal instanceof AbortSignal, true);
 });

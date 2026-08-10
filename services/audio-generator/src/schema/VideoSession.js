@@ -343,6 +343,10 @@ const videoSessionSchema = new Schema({
     
 
 
+  inferenceModel: String,
+  inferenceEffort: { type: String, enum: ['high', 'xhigh'], default: null },
+  expressGenerationInferenceModel: String,
+  expressGenerationInferenceEffort: { type: String, enum: ['high', 'xhigh'], default: null },
 }, { timestamps: true, strict: false });
 
 // Create a Model

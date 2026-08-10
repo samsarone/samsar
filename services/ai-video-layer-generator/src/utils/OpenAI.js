@@ -8,7 +8,8 @@ import crypto from "crypto";
 import { z } from "zod";
 import { zodResponseFormat } from "openai/helpers/zod";
 import {
-  GPT_56_SOL_REASONING_EFFORT,
+  GPT_56_SOL_INFERENCE_MODEL,
+  getGPT56SolReasoningEffort,
   createGoogleGeminiChatCompletion,
   isGeminiInferenceModel,
   isKimiInferenceModel,
@@ -471,7 +472,12 @@ async function dispatchAssistantMessageRequest(request, provider = '') {
       body: {
         model: modelName,
         input: normalizeMessagesForResponses(providerPayload.messages),
-        reasoning: { effort: GPT_56_SOL_REASONING_EFFORT },
+        reasoning: {
+          effort: getGPT56SolReasoningEffort(
+            request?.model,
+            request?.reasoning?.effort || request?.reasoning_effort,
+          ),
+        },
       },
       maxRetries: 0,
     });
@@ -531,6 +537,15 @@ export async function sendAssistantMessageRequest(messageList, userInferenceMode
 
 
   const modelName = getModelNameForInferenceModel(userInferenceModel);
+  const reasoningEffort = modelName === GPT_56_SOL_INFERENCE_MODEL
+    ? getGPT56SolReasoningEffort(
+      userInferenceModel,
+      auditContext.inferenceEffort ||
+        auditContext.selectedInferenceEffort ||
+        auditContext.reasoningEffort ||
+        auditContext.reasoning_effort,
+    )
+    : undefined;
 
   try {
     const selectedInferenceModelAuthorization =
@@ -540,6 +555,7 @@ export async function sendAssistantMessageRequest(messageList, userInferenceMode
     const basePayload = {
       model: modelName,
       messages: messageList,
+      ...(reasoningEffort ? { reasoning_effort: reasoningEffort } : {}),
       ...(selectedInferenceModelAuthorization
         ? { authorization: selectedInferenceModelAuthorization }
         : {}),

@@ -45,6 +45,8 @@ test.afterEach(restoreEnv);
 test('uses Qwen 3.8 Max for text assistant history and normalizes Responses content', () => {
   const { payload } = buildQwenChatRequest({
     model: 'QWEN3.8',
+    effort: 'xhigh',
+    reasoningEffort: 'xhigh',
     messages: [
       { role: 'developer', content: 'Be concise.' },
       { role: 'assistant', content: [{ type: 'output_text', text: 'Prior reply.' }] },
@@ -54,6 +56,8 @@ test('uses Qwen 3.8 Max for text assistant history and normalizes Responses cont
 
   assert.equal(payload.model, 'qwen3.8-max');
   assert.equal(payload.enable_thinking, true);
+  assert.equal(Object.hasOwn(payload, 'effort'), false);
+  assert.equal(Object.hasOwn(payload, 'reasoningEffort'), false);
   assert.equal(payload.messages[0].role, 'system');
   assert.deepEqual(payload.messages[1].content[0], { type: 'text', text: 'Prior reply.' });
 });

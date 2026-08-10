@@ -1,6 +1,7 @@
 export const GPT_56_SOL_INFERENCE_MODEL = 'gpt-5.6-sol';
 export const DEFAULT_INFERENCE_MODEL = GPT_56_SOL_INFERENCE_MODEL;
 export const GPT_56_SOL_REASONING_EFFORT = 'high';
+export const GPT_56_SOL_XHIGH_REASONING_EFFORT = 'xhigh';
 export const GEMINI_31_PRO_INFERENCE_MODEL = 'gemini-3.1-pro';
 export const DEFAULT_GEMINI_31_PRO_VERTEX_MODEL = 'gemini-3.1-pro-preview';
 export const QWEN_38_INFERENCE_MODEL = 'QWEN3.8';
@@ -52,6 +53,22 @@ function normalizeString(value) {
 
 function normalizeAliasToken(value) {
   return normalizeString(value).replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+}
+
+export function normalizeGPT56SolReasoningEffort(value, fallback = null) {
+  const normalized = normalizeString(value).toLowerCase();
+  return normalized === GPT_56_SOL_REASONING_EFFORT ||
+    normalized === GPT_56_SOL_XHIGH_REASONING_EFFORT
+    ? normalized
+    : fallback;
+}
+
+export function getGPT56SolReasoningEffort(model, requestedEffort = null) {
+  return normalizeGPT56SolReasoningEffort(requestedEffort) ||
+    (normalizeAliasToken(model).includes('XHIGH') ||
+      normalizeAliasToken(model).includes('EXTRAHIGH')
+      ? GPT_56_SOL_XHIGH_REASONING_EFFORT
+      : GPT_56_SOL_REASONING_EFFORT);
 }
 
 export function isQwenInferenceModel(value) {

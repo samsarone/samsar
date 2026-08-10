@@ -1197,7 +1197,9 @@ async function resolveImageInferenceSettings({
       const fetchedSession = await VideoSession.findById(sessionId)
         .select([
           'expressGenerationInferenceModel',
+          'expressGenerationInferenceEffort',
           'inferenceModel',
+          'inferenceEffort',
           'expressGenerationInferenceModelAuthorization',
           'selectedInferenceModelAuthorization',
           'inferenceModelAuthorization',
@@ -1221,7 +1223,7 @@ async function resolveImageInferenceSettings({
     userId
   ) {
     const fetchedUser = await User.findById(userId)
-      .select('selectedInferenceModel selectedInferenceModelAuthorization')
+      .select('selectedInferenceModel selectedInferenceEffort selectedInferenceModelAuthorization')
       .lean() || {};
     resolvedUser = { ...fetchedUser, ...resolvedUser };
   }

@@ -13,6 +13,7 @@ import {
   validateBranchingSourceRequest,
 } from './BranchingNarrativeAPI.js';
 import { calculateNarrativeBilling } from './NarrativeBilling.js';
+import { NARRATIVE_BILLING_POLICIES } from './NarrativeAPI.js';
 
 function asLeanQuery(value) {
   return { lean: async () => value };
@@ -35,6 +36,7 @@ function buildSource(overrides = {}) {
     prompt: 'Make a film',
     duration: 30,
     inferenceModel: 'gpt-5.6-sol',
+    videoGenerationModel: 'COSMOS3SUPERI2V',
     themeJson: { visualStyle: 'cinematic' },
     narrativeJson: { scenes: [{ visual: 'one' }, { visual: 'two' }], sounds: [] },
     movieResourceList: {
@@ -149,6 +151,18 @@ test('accepts legacy create_single sources without narrativeType and rejects non
     () => validateBranchingSourceRequest(buildSource({ generationOutcome: 'FAILED' }), 1),
     (error) => error.code === 'SOURCE_NARRATIVE_GENERATION_INVALID' && error.status === 422,
   );
+  assert.throws(
+    () => validateBranchingSourceRequest(buildSource({ inferenceModel: 'QWEN3.8' }), 1),
+    (error) => error.code === 'SOURCE_INFERENCE_MODEL_NOT_BRANCHABLE' && error.status === 422,
+  );
+  assert.throws(
+    () => validateBranchingSourceRequest(buildSource({ inferenceModel: undefined }), 1),
+    (error) => error.code === 'SOURCE_INFERENCE_MODEL_NOT_BRANCHABLE' && error.status === 422,
+  );
+  assert.throws(
+    () => validateBranchingSourceRequest(buildSource({ videoGenerationModel: 'RUNWAYML' }), 1),
+    (error) => error.code === 'SOURCE_VIDEO_MODEL_NOT_BRANCHABLE' && error.status === 422,
+  );
 });
 
 test('rejects levels that leave no suffix scene to regenerate', () => {
@@ -200,7 +214,7 @@ test('submission scopes the source to its owner and creates an isolated branched
     payload: {
       request_id: sourceRequestId,
       num_levels: 2,
-      video_model: 'RUNWAYML',
+      video_model: 'COSMOS3SUPERI2V',
     },
     dependencies: {
       queueCreateBranchingNarrativeRequest: (requestId) => queued.push(requestId),
@@ -211,8 +225,8 @@ test('submission scopes the source to its owner and creates an isolated branched
   assert.equal(createDocument.requestType, 'create_branching');
   assert.equal(createDocument.narrativeType, 'branched');
   assert.equal(createDocument.numLevels, 2);
-  assert.equal(createDocument.videoGenerationModel, 'RUNWAYML');
-  assert.equal(createDocument.sourceNarrativeSnapshot.videoGenerationModel, 'RUNWAYML');
+  assert.equal(createDocument.videoGenerationModel, 'COSMOS3SUPERI2V');
+  assert.equal(createDocument.sourceNarrativeSnapshot.videoGenerationModel, 'COSMOS3SUPERI2V');
   assert.equal(createDocument.sourceNarrativeRequestId, source._id);
   assert.deepEqual(createDocument.sourceNarrativeSnapshot.movieResourceList, source.movieResourceList);
   assert.notEqual(createDocument.sourceNarrativeSnapshot.movieResourceList, source.movieResourceList);
@@ -222,7 +236,47 @@ test('submission scopes the source to its owner and creates an isolated branched
   assert.equal(result.narrative_type, 'branched');
   assert.equal(result.source_narrative_request_id, sourceRequestId);
   assert.equal(result.num_levels, 2);
-  assert.equal(result.video_model, 'RUNWAYML');
+  assert.equal(result.video_model, 'COSMOS3SUPERI2V');
+});
+
+test('interactive-video branching admission does not require a separate credit balance', async (t) => {
+  setConnectionReadyForTest(t);
+  const userId = '507f191e810c19729de860ea';
+  const sourceRequestId = '507f1f77bcf86cd799439011';
+  const newRequestId = '507f1f77bcf86cd799439014';
+  const source = buildSource({
+    _id: { toString: () => sourceRequestId },
+    narrativeType: 'singular',
+  });
+  let createdDocument = null;
+
+  t.mock.method(GenerationCreditTransaction, 'createIndexes', async () => []);
+  t.mock.method(NarrativeRequest, 'createIndexes', async () => []);
+  t.mock.method(User, 'findById', () => ({
+    select: () => ({ lean: async () => ({ _id: userId, generationCredits: 0 }) }),
+  }));
+  t.mock.method(NarrativeRequest, 'findOne', () => asLeanQuery(source));
+  t.mock.method(NarrativeRequest, 'create', async (document) => {
+    createdDocument = document;
+    return { toObject: () => ({ ...document, _id: newRequestId }) };
+  });
+
+  const result = await createBranchingNarrativeRequest({
+    userId,
+    payload: {
+      narrative_request_id: sourceRequestId,
+      num_levels: 1,
+      video_model: 'COSMOS3SUPERI2V',
+    },
+    billingPolicy: NARRATIVE_BILLING_POLICIES.INCLUDED_IN_INTERACTIVE_VIDEO_RATE,
+    dependencies: { queueCreateBranchingNarrativeRequest: () => true },
+  });
+
+  assert.equal(result.status, 'PENDING');
+  assert.equal(
+    createdDocument.billingPolicy,
+    NARRATIVE_BILLING_POLICIES.INCLUDED_IN_INTERACTIVE_VIDEO_RATE,
+  );
 });
 
 test('branching submission rejects missing sources before checking model consistency', async (t) => {

@@ -1,7 +1,8 @@
 import {
-  GPT_56_SOL_REASONING_EFFORT,
+  GPT_56_SOL_INFERENCE_MODEL,
   createGoogleGeminiChatCompletion,
   getDefaultInferenceModel,
+  getGPT56SolReasoningEffort,
   isGeminiInferenceModel,
   isKimiInferenceModel,
   isQwenInferenceModel,
@@ -340,20 +341,31 @@ function buildResponsesRequest(chatRequest) {
     response_format,
     reasoning,
     reasoning_effort,
+    reasoningEffort,
+    effort,
   } = chatRequest || {};
 
+  const inferenceModel = normalizeInferenceModel(model || getDefaultInferenceModel());
   const body = {
-    model: normalizeInferenceModel(model || getDefaultInferenceModel()),
+    model: typeof inferenceModel === 'string' && inferenceModel.startsWith(GPT_56_SOL_INFERENCE_MODEL)
+      ? GPT_56_SOL_INFERENCE_MODEL
+      : inferenceModel,
     input: normalizeMessagesForResponses(messages),
   };
 
-  const reasoningEffort =
+  const legacyReasoningEffort =
     (reasoning && typeof reasoning === 'object' ? reasoning.effort : undefined) ??
     reasoning_effort;
+  const requestedReasoningEffort = typeof inferenceModel === 'string' &&
+    inferenceModel.startsWith(GPT_56_SOL_INFERENCE_MODEL)
+    ? effort ?? reasoningEffort ?? legacyReasoningEffort
+    : legacyReasoningEffort;
   if (!isGeminiInferenceModel(body.model)) {
-    body.reasoning = { effort: GPT_56_SOL_REASONING_EFFORT };
-  } else if (typeof reasoningEffort === 'string' && reasoningEffort) {
-    body.reasoning = { effort: reasoningEffort };
+    body.reasoning = {
+      effort: getGPT56SolReasoningEffort(inferenceModel, requestedReasoningEffort),
+    };
+  } else if (typeof requestedReasoningEffort === 'string' && requestedReasoningEffort) {
+    body.reasoning = { effort: requestedReasoningEffort };
   }
 
   if (temperature !== undefined) {

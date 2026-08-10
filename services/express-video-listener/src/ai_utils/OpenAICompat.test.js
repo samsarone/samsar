@@ -30,12 +30,14 @@ test('responses dispatch passes maxRetries zero to the SDK', async () => {
   };
 
   await createCompatibleChatCompletion(openaiClient, {
-    model: 'gpt-4.1',
+    model: 'gpt-5.6-sol-xhigh',
     messages: [{ role: 'user', content: 'hello' }],
     maxRetries: 9,
   });
 
   assert.equal(receivedOptions.maxRetries, 0);
+  assert.equal(receivedOptions.body.model, 'gpt-5.6-sol');
+  assert.deepEqual(receivedOptions.body.reasoning, { effort: 'xhigh' });
 });
 
 test('adapter fallback follows preference order after retryable adapter errors', async () => {

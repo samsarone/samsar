@@ -49,7 +49,7 @@ import {
   getSpeakerOptionsFromPayload,
   normalizeBackingTrackModelFromPayload,
   normalizeInferenceModelFromPayload,
-  resolveEffectiveInferenceModel,
+  resolveEffectiveInferenceSettings,
   normalizeTTSModelFromPayload,
   omitCustomTextToSpeechAdapterForTTSModel,
 } from './RequestModelOverrides.js';
@@ -509,12 +509,17 @@ async function requestCreateVideoInternal(userId, payload = {}, webhookUrl, {
   const requestedTTSModel = normalizeTTSModelFromPayload(payload);
   assertDockerBackingTrackModelAvailable(requestedBackingTrackModel);
   assertDockerTTSProviderAvailable(requestedTTSModel);
-  const requestedInferenceModel = normalizeInferenceModelFromPayload(payload);
   const textToVideoUserData = await User.findById(userId)
-    .select('selectedInferenceModel agentVideoModelAuthorization agentImageModelAuthorization backingTrackModelAuthorization selectedInferenceModelAuthorization')
+    .select('selectedInferenceModel selectedInferenceEffort agentVideoModelAuthorization agentImageModelAuthorization backingTrackModelAuthorization selectedInferenceModelAuthorization')
     .lean();
-  const effectiveInferenceModel = requestedInferenceModel ||
-    resolveEffectiveInferenceModel(payload, textToVideoUserData?.selectedInferenceModel);
+  const {
+    inferenceModel: effectiveInferenceModel,
+    inferenceEffort: effectiveInferenceEffort,
+  } = resolveEffectiveInferenceSettings(
+    payload,
+    textToVideoUserData?.selectedInferenceModel,
+    textToVideoUserData?.selectedInferenceEffort,
+  );
   const customAdapters = resolveCustomAdaptersForTTSLanguagePolicy(
     omitCustomTextToSpeechAdapterForTTSModel(
       normalizeCustomModelAdaptersPayload(payload),
@@ -607,6 +612,7 @@ async function requestCreateVideoInternal(userId, payload = {}, webhookUrl, {
     ...(requestedTTSModel ? { tts_model: requestedTTSModel, ttsModel: requestedTTSModel } : {}),
     inference_model: effectiveInferenceModel,
     inferenceModel: effectiveInferenceModel,
+    ...(effectiveInferenceEffort ? { effort: effectiveInferenceEffort } : {}),
     ...(customAdapters ? { custom_adapters: customAdapters } : {}),
     ...(customAdapters ? { customAdapterFallbacks: customModelOverrides.fallbackModels } : {}),
     ...(customAdapters ? { customAdapterOperationUsage: customModelOverrides.operationUsage } : {}),
@@ -646,6 +652,7 @@ async function requestCreateVideoInternal(userId, payload = {}, webhookUrl, {
     backingTrackModel: requestedBackingTrackModel,
     ttsModel: requestedTTSModel,
     inferenceModel: effectiveInferenceModel,
+    inferenceEffort: effectiveInferenceEffort,
     isStepVideoGeneration: isStepVideoGeneration === true,
     stepVideoRoute,
     expressGenerationPricingRateClass: pricingRateClass,
@@ -720,6 +727,7 @@ async function createUnifiedSessionAndUpdateWebhook(userId, payload, webhookUrl,
     ttsModel = null,
     inference_model = null,
     inferenceModel = null,
+    effort = null,
     custom_adapters = null,
     customAdapterFallbacks = null,
     customAdapterOperationUsage = null,
@@ -807,6 +815,7 @@ async function createUnifiedSessionAndUpdateWebhook(userId, payload, webhookUrl,
     footerMetadata: footer_metadata,
     ...(payloadTTSModel ? { ttsModel: payloadTTSModel, tts_model: payloadTTSModel } : {}),
     ...(payloadInferenceModel ? { inference_model: payloadInferenceModel, inferenceModel: payloadInferenceModel } : {}),
+    ...(effort ? { effort } : {}),
     ...(requestSpeakerOptions ? { speakerOptions: requestSpeakerOptions } : {}),
     isStepVideoGeneration: isStepVideoGeneration === true,
     stepVideoRoute,
@@ -1061,10 +1070,17 @@ export async function requestCreateVideoFromImageListAndMetadata(userId, payload
   delete customModelPayload.duration;
   delete customModelPayload.totalDuration;
   const imageListUserData = await User.findById(userId)
-    .select('videoFramesPerSecond speakerOptions selectedInferenceModel agentVideoModelAuthorization agentImageModelAuthorization backingTrackModelAuthorization selectedInferenceModelAuthorization')
+    .select('videoFramesPerSecond speakerOptions selectedInferenceModel selectedInferenceEffort agentVideoModelAuthorization agentImageModelAuthorization backingTrackModelAuthorization selectedInferenceModelAuthorization')
     .lean();
   const imageListFramesPerSecond = resolveFramesPerSecond(imageListUserData?.videoFramesPerSecond);
-  const effectiveInferenceModel = resolveEffectiveInferenceModel(payload, imageListUserData?.selectedInferenceModel);
+  const {
+    inferenceModel: effectiveInferenceModel,
+    inferenceEffort: effectiveInferenceEffort,
+  } = resolveEffectiveInferenceSettings(
+    payload,
+    imageListUserData?.selectedInferenceModel,
+    imageListUserData?.selectedInferenceEffort,
+  );
   const samsarExternalProviderStages = buildDockerSamsarExternalProviderStages({
     routeType: 'image_list_to_video',
     userData: imageListUserData,
@@ -1162,6 +1178,7 @@ export async function requestCreateVideoFromImageListAndMetadata(userId, payload
     ...(requestedTTSModel ? { tts_model: requestedTTSModel, ttsModel: requestedTTSModel } : {}),
     inference_model: effectiveInferenceModel,
     inferenceModel: effectiveInferenceModel,
+    ...(effectiveInferenceEffort ? { effort: effectiveInferenceEffort } : {}),
     ...(requestSpeakerOptions ? { speakerOptions: requestSpeakerOptions } : {}),
     isStepVideoGeneration,
     stepVideoRoute,
@@ -1208,6 +1225,7 @@ export async function requestCreateVideoFromImageListAndMetadata(userId, payload
     backingTrackModel: requestedBackingTrackModel,
     ttsModel: requestedTTSModel,
     inferenceModel: effectiveInferenceModel,
+    inferenceEffort: effectiveInferenceEffort,
     isStepVideoGeneration,
     stepVideoRoute,
     expressGenerationPricingRateClass: pricingRateClass,
@@ -1262,6 +1280,7 @@ export async function processImageListToVideoBuilderSession(sessionId, userId, p
     ttsModel = null,
     inference_model = null,
     inferenceModel = null,
+    effort = null,
     speakerOptions = null,
     custom_adapters = null,
     customAdapterFallbacks = null,
@@ -1355,10 +1374,16 @@ export async function processImageListToVideoBuilderSession(sessionId, userId, p
     normalizedLanguage,
     { allowPropagatedSameAsAudio: true },
   );
-  const builderUserData = await User.findById(userId).select('selectedInferenceModel').lean();
-  const effectiveInferenceModel = resolveEffectiveInferenceModel(
-    { inference_model, inferenceModel },
+  const builderUserData = await User.findById(userId)
+    .select('selectedInferenceModel selectedInferenceEffort')
+    .lean();
+  const {
+    inferenceModel: effectiveInferenceModel,
+    inferenceEffort: effectiveInferenceEffort,
+  } = resolveEffectiveInferenceSettings(
+    { inference_model, inferenceModel, effort },
     builderUserData?.selectedInferenceModel,
+    builderUserData?.selectedInferenceEffort,
   );
   const rawBuilderBackingTrackModel = musicProvider || backingTrackModel || null;
   assertDockerBackingTrackModelAvailable(rawBuilderBackingTrackModel);
@@ -1446,6 +1471,7 @@ export async function processImageListToVideoBuilderSession(sessionId, userId, p
     ...(tts_model || ttsModel ? { tts_model: tts_model || ttsModel, ttsModel: tts_model || ttsModel } : {}),
     inference_model: effectiveInferenceModel,
     inferenceModel: effectiveInferenceModel,
+    ...(effectiveInferenceEffort ? { effort: effectiveInferenceEffort } : {}),
     ...(builderSpeakerOptions ? { speakerOptions: builderSpeakerOptions } : {}),
     isStepVideoGeneration: isStepVideoGeneration === true,
     stepVideoRoute,
@@ -2505,6 +2531,7 @@ async function saveVideoSessionRequestMetadata(sessionId, {
   backingTrackModel,
   ttsModel,
   inferenceModel,
+  inferenceEffort,
   isStepVideoGeneration,
   stepVideoRoute,
   manualStepStages,
@@ -2672,6 +2699,11 @@ async function saveVideoSessionRequestMetadata(sessionId, {
       setPayload.inferenceModel = normalizedInferenceModel;
       setPayload.expressGenerationInferenceModel = normalizedInferenceModel;
     }
+  }
+
+  if (inferenceEffort === 'high' || inferenceEffort === 'xhigh') {
+    setPayload.inferenceEffort = inferenceEffort;
+    setPayload.expressGenerationInferenceEffort = inferenceEffort;
   }
 
   if (isStepVideoGeneration === true) {

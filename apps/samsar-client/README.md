@@ -360,9 +360,8 @@ In Docker deployments, the processor-provided availability response filters the 
 
 Standalone Docker deployments expose `QWENIMAGE3PRO` in Image Studio and
 Express only when `/v1/video/supported_models` reports it. The processor does
-so when validated Alibaba Cloud standard pay-as-you-go credentials are
-configured; requests use provider model ID `qwen-image-3.0-pro`, and Alibaba
-bills the configured account directly.
+so when Alibaba Cloud credentials are configured; requests use provider model
+ID `qwen-image-3.0-pro`, and Alibaba bills the configured account directly.
 
 ### Image Editing
 
@@ -394,9 +393,6 @@ bills the configured account directly.
 ### VidGenie Model Subset
 
 VidGenie intentionally exposes a smaller express-first subset:
-
-In standalone Docker, VidGenie shows I2V only when `NANOBANANAPROEDIT` is
-available through Google Cloud, Fal, GMICloud via GenBlaze, or Samsar-js.
 
 - Image models: `GPTIMAGE2`, `NANOBANANAPRO`, `SEEDREAM`, `WAN2.7PRO`, and standalone `QWENIMAGE3PRO`.
 - Text-to-video video models: `RUNWAYML`, `VEO3.1I2V`, `VEO3.1I2VFAST`, `SEEDANCEI2V`, standalone `SEEDANCE2.0I2V`, `KLINGIMGTOVID3PRO`.

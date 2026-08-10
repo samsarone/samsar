@@ -5,7 +5,9 @@ import { mkdir, writeFile } from "fs/promises";
 
 import OpenAI from "openai";
 import {
+  GPT_56_SOL_INFERENCE_MODEL,
   getDefaultUserInferenceModel,
+  getGPT56SolReasoningEffort,
   isGeminiInferenceModel,
   isKimiInferenceModel,
   isQwenInferenceModel,
@@ -218,6 +220,27 @@ async function createInferenceChatCompletionForProvider(
   }
 
   const openaiClient = dependencyOverrides.openaiClient || openai;
+  const {
+    effort,
+    reasoning,
+    reasoningEffort,
+    reasoning_effort,
+    ...openAIRequest
+  } = providerRequest;
+  const openAIProviderRequest = {
+    ...openAIRequest,
+    model: typeof model === 'string' && model.toLowerCase().startsWith(GPT_56_SOL_INFERENCE_MODEL)
+      ? GPT_56_SOL_INFERENCE_MODEL
+      : model,
+    ...(typeof model === 'string' && model.toLowerCase().startsWith(GPT_56_SOL_INFERENCE_MODEL)
+      ? {
+        reasoning_effort: getGPT56SolReasoningEffort(
+          model,
+          effort || reasoning?.effort || reasoning_effort || reasoningEffort,
+        ),
+      }
+      : {}),
+  };
   // A synchronous inference timeout/reset can happen after the provider has
   // accepted the prompt. Hidden SDK retries could then create duplicate calls.
   const requestOptions = { maxRetries: 0 };
@@ -225,7 +248,7 @@ async function createInferenceChatCompletionForProvider(
   if (Number.isFinite(requestedTimeout) && requestedTimeout > 0) {
     requestOptions.timeout = Math.floor(requestedTimeout);
   }
-  return openaiClient.chat.completions.create(providerRequest, requestOptions);
+  return openaiClient.chat.completions.create(openAIProviderRequest, requestOptions);
 }
 
 export async function createCompatibleInferenceChatCompletion(
@@ -507,6 +530,7 @@ export async function sendAssistantMessageRequest(
   messageList,
   userInferenceModel = getDefaultUserInferenceModel(),
   userInferenceAuthorization,
+  reasoningEffort,
 ) {
 
   try {
@@ -514,6 +538,10 @@ export async function sendAssistantMessageRequest(
     const payload = {
       messages: messageList,
       model: inferenceModel,
+      ...(typeof inferenceModel === 'string' &&
+        inferenceModel.toLowerCase().startsWith(GPT_56_SOL_INFERENCE_MODEL)
+        ? { reasoning_effort: getGPT56SolReasoningEffort(inferenceModel, reasoningEffort) }
+        : {}),
     };
     const routingPayload = withInferenceAuthorization(payload, userInferenceAuthorization);
 

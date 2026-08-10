@@ -164,3 +164,31 @@ test('the OpenRouter adapter rejects direct Kimi K3 dispatch', async () => {
     /only the native Kimi API or Samsar API fallback/,
   );
 });
+
+test('OpenRouter preserves legacy GPT 5.6 Sol effort and lets explicit effort win', async () => {
+  const payloads = [];
+  const client = {
+    chat: {
+      completions: {
+        create: async (payload) => {
+          payloads.push(payload);
+          return { choices: [{ message: { content: 'ok' } }] };
+        },
+      },
+    },
+  };
+
+  await createOpenRouterChatCompletion({
+    model: 'gpt-5.6-sol-xhigh',
+    messages: [{ role: 'user', content: 'hello' }],
+  }, { client });
+  await createOpenRouterChatCompletion({
+    model: 'gpt-5.6-sol-xhigh',
+    effort: 'high',
+    messages: [{ role: 'user', content: 'hello' }],
+  }, { client });
+
+  assert.equal(payloads[0].model, 'openai/gpt-5.6-sol');
+  assert.equal(payloads[0].reasoning.effort, 'xhigh');
+  assert.equal(payloads[1].reasoning.effort, 'high');
+});

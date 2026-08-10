@@ -12,6 +12,8 @@ import { resolveProviderMediaPayload } from '../ai_utils/ProviderMediaPayload.js
 import { deductExternalUserCredits } from '../external/User.js';
 import {
   GPT_56_SOL_REASONING_EFFORT,
+  getProviderModelForInferenceModel,
+  getReasoningEffortForInferenceModel,
   isGeminiInferenceModel,
   isKimiInferenceModel,
   isQwenInferenceModel,
@@ -177,6 +179,7 @@ export async function createAssistantCompletion(userId, payload = {}, { external
     : null;
   const responseRequest = buildResponsesRequest({
     model,
+    inferenceModel: selectedAssistantModel,
     inputMessages: buildResponsesInputMessages({
       systemPrompt,
       sessionMessages,
@@ -284,7 +287,9 @@ function getAssistantSystemPromptForContext({ user, externalUser } = {}) {
 }
 
 function resolveAssistantModelName(user) {
-  return getModelForUserInferenceModel(user?.selectedAssistantModel || DEFAULT_ASSISTANT_MODEL);
+  return getProviderModelForInferenceModel(
+    getModelForUserInferenceModel(user?.selectedAssistantModel || DEFAULT_ASSISTANT_MODEL),
+  );
 }
 
 function normalizeModelAuthorization(value) {
@@ -351,7 +356,13 @@ function buildResponsesInputMessages({
   ];
 }
 
-export function buildResponsesRequest({ model, inputMessages, payload = {}, previousResponseId = null }) {
+export function buildResponsesRequest({
+  model,
+  inferenceModel = model,
+  inputMessages,
+  payload = {},
+  previousResponseId = null,
+}) {
   const body = {
     model,
     input: inputMessages,
@@ -395,7 +406,15 @@ export function buildResponsesRequest({ model, inputMessages, payload = {}, prev
     body.parallel_tool_calls = payload.parallel_tool_calls;
   }
 
-  body.reasoning = { effort: GPT_56_SOL_REASONING_EFFORT };
+  body.reasoning = {
+    effort: getReasoningEffortForInferenceModel(
+      inferenceModel,
+      payload.effort ??
+        payload.reasoning?.effort ??
+        payload.reasoning_effort ??
+        payload.reasoningEffort,
+    ),
+  };
 
   return body;
 }
@@ -505,6 +524,11 @@ async function createAssistantResponse(
       ...(providerRequest.tool_choice !== undefined ? { tool_choice: providerRequest.tool_choice } : {}),
       ...(providerRequest.parallel_tool_calls !== undefined
         ? { parallel_tool_calls: providerRequest.parallel_tool_calls }
+        : {}),
+      ...(!isGeminiInferenceModel(selectedAssistantModel) &&
+        !isKimiInferenceModel(selectedAssistantModel) &&
+        !isQwenInferenceModel(selectedAssistantModel)
+        ? { reasoning_effort: providerRequest.reasoning?.effort || GPT_56_SOL_REASONING_EFFORT }
         : {}),
     });
     return normalizeChatCompletionToResponses(chatResponse);

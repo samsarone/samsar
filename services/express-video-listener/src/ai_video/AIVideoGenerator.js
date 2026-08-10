@@ -42,8 +42,7 @@ import {
 
 } from "./assistant/OpenAi.js";
 import {
-  resolveRequestInferenceAuthorization,
-  resolveRequestInferenceModel,
+  resolveRequestInferenceSettings,
 } from '../ai_utils/RequestInferenceModel.js';
 
 import { updateLayerAiVideoGenerationPrompt } from './utils/SessionUtils.js';
@@ -246,14 +245,12 @@ export async function createGenerativeVideoAnimationsForFrames(sessionId) {
 
   const userData = await User.findById(userId);
 
-  const userInferenceModel = resolveRequestInferenceModel({
+  const inferenceSettings = resolveRequestInferenceSettings({
     session: sessionData,
     user: userData,
   });
-  const selectedInferenceModelAuthorization = resolveRequestInferenceAuthorization({
-    session: sessionData,
-    user: userData,
-  });
+  const userInferenceModel = inferenceSettings.model;
+  const selectedInferenceModelAuthorization = inferenceSettings.authorization;
 
 
 
@@ -280,6 +277,7 @@ export async function createGenerativeVideoAnimationsForFrames(sessionId) {
     isExpressGeneration: sessionData.isExpressGeneration || sessionData.isMovieGen,
     requestType: 'narrative_inference',
     source: 'express_video_inference',
+    inferenceEffort: inferenceSettings.effort,
     selectedInferenceModelAuthorization,
   };
 
@@ -451,7 +449,7 @@ export async function createGenerativeVideoAnimationsForFrames(sessionId) {
 
 
         const promptInferenceModel = userInferenceModel;
-        const promptReasoningEffort = 'high';
+        const promptReasoningEffort = inferenceSettings.effort || 'high';
         textToVideoPrompt = await createTextToVideoPromptFromStartingLayerPrompt(startingPrompt, startingImageDescription,
           promptInferenceModel, useShortForm, isSpeakerTransition, indexData, videoTone, cameraTransitionFromLayer, promptReasoningEffort, layerInferenceAuditContext);
       }
@@ -482,6 +480,7 @@ export async function createGenerativeVideoAnimationsForFrames(sessionId) {
       cameraTransition: cameraTransitionFromLayer,
       videoTone,
       userInferenceModel,
+      inferenceEffort: inferenceSettings.effort,
       selectedInferenceModelAuthorization,
       useShortFormPrompt: useShortForm,
     });
@@ -537,6 +536,7 @@ export async function createGenerativeVideoAnimationsForFrames(sessionId) {
       fallbackStartImages: buildRankedFallbackStartImages(currentLayer),
       promptSeedContext,
       userInferenceModel,
+      inferenceEffort: inferenceSettings.effort,
       selectedInferenceModelAuthorization,
       isAudioVideoLayer,
       isAudioVideoGeneration: isAudioVideoLayer,
