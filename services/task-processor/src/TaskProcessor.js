@@ -11,10 +11,6 @@ import GeneratedMusic from './schema/GeneratedMusic.js';
 import { getDBConnectionString } from './DBString.js';
 
 
-// Resolve ~ to the user's home directory
-const HOME_DIR = os.homedir();
-const CRON_LOG_PATH = path.join(HOME_DIR, 'cronTabs.log');
-const CRON_ERROR_PATH = path.join(HOME_DIR, 'cronTabs.error');
 const DEFAULT_STALE_SESSION_FRAME_CLEANUP_HOURS = 4;
 const DEFAULT_STALE_SESSION_FRAME_CLEANUP_BATCH_SIZE = 64;
 const DEFAULT_INTERMEDIATE_MEDIA_CLEANUP_HOURS = 4;
@@ -47,13 +43,17 @@ const MEDIA_FILE_EXTENSIONS = new Set([
 // Utility function to append info to cron log
 function logInfo(message) {
   const timestamp = new Date().toISOString();
-  fs.appendFileSync(CRON_LOG_PATH, `[${timestamp}] ${message}\n`);
+  const logPath = process.env.TASK_PROCESSOR_CRON_LOG_PATH ||
+    path.join(os.homedir(), 'cronTabs.log');
+  fs.appendFileSync(logPath, `[${timestamp}] ${message}\n`);
 }
 
 // Utility function to append error to cron error log
 function logError(message) {
   const timestamp = new Date().toISOString();
-  fs.appendFileSync(CRON_ERROR_PATH, `[${timestamp}] ${message}\n`);
+  const errorPath = process.env.TASK_PROCESSOR_CRON_ERROR_PATH ||
+    path.join(os.homedir(), 'cronTabs.error');
+  fs.appendFileSync(errorPath, `[${timestamp}] ${message}\n`);
 }
 
 function readPositiveIntegerEnv(name, fallbackValue) {

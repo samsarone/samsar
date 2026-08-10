@@ -10,13 +10,16 @@ import {
 
 import 'dotenv/config';
 import { verifyUserAuth, } from '../models/Auth.js';
+import { requestHasValidRuntimeSecret } from '../utils/RuntimeSecretRequestAuth.js';
 
 const router = express.Router();
 
 
 router.get('/delete_all_rows', async function (req, res) {
-  const secret = req.query.secret;
-  if (secret !== process.env.ADMIN_SECRET) {
+  if (!requestHasValidRuntimeSecret(req, {
+    environmentName: 'ADMIN_SECRET',
+    headerName: 'x-admin-secret',
+  })) {
     res.status(401).send('Unauthorized');
     return;
   } else {

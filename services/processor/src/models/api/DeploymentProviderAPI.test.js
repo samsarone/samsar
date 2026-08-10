@@ -38,13 +38,18 @@ test('validates a Kimi key without sending an inference request', async () => {
   });
 });
 
-test('Alibaba Cloud credentials expose Qwen, Wan2.7 Pro, and native Happy Horse', () => {
+test('Alibaba Cloud credentials expose Qwen inference, Qwen Image, Wan2.7 Pro, and native Happy Horse', () => {
   const available = buildAvailableDeploymentModels({
     alibabaCloud: { ok: true, status: 'valid' },
   });
 
   assert.deepEqual(available.providers, ['alibabaCloud']);
-  assert.deepEqual(available.models, ['HAPPYHORSEI2V', 'QWEN3.8', 'WAN2.7PRO']);
+  assert.deepEqual(available.models, [
+    'HAPPYHORSEI2V',
+    'QWEN3.8',
+    'QWENIMAGE3PRO',
+    'WAN2.7PRO',
+  ]);
   assert.deepEqual(available.actions, ['assistant', 'chat', 'image', 'video']);
 });
 
@@ -162,6 +167,7 @@ test('accepts deployment-friendly Alibaba credential and base URL aliases', asyn
     'https://workspace.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1',
   );
   assert.equal(result.available.models.includes('QWEN3.8'), true);
+  assert.equal(result.available.models.includes('QWENIMAGE3PRO'), true);
   assert.equal(result.available.models.includes('HAPPYHORSEI2V'), true);
   assert.equal(result.available.models.includes('WAN2.7PRO'), true);
 });
@@ -186,6 +192,7 @@ test('accepts Token Plan Alibaba credentials for native deployment', async () =>
   });
   assert.equal(planKey.providers.alibabaCloud.status, 'format_valid');
   assert.equal(planKey.providers.alibabaCloud.keyType, 'plan');
+  assert.equal(planKey.available.models.includes('QWENIMAGE3PRO'), false);
 
   const planEndpoint = await validateDeploymentProviderCredentials({
     alibaba_api_key: 'sk-payg-key',
@@ -194,4 +201,14 @@ test('accepts Token Plan Alibaba credentials for native deployment', async () =>
   assert.equal(planEndpoint.providers.alibabaCloud.status, 'format_valid');
   assert.equal(planEndpoint.providers.alibabaCloud.keyType, 'token_plan');
   assert.equal(planEndpoint.providers.alibabaCloud.endpointType, 'token_plan');
+  assert.equal(planEndpoint.available.models.includes('QWENIMAGE3PRO'), false);
+
+  const codingEndpoint = await validateDeploymentProviderCredentials({
+    alibaba_api_key: 'sk-coding-key',
+    alibaba_api_host: 'coding-intl.dashscope.aliyuncs.com',
+  });
+  assert.equal(codingEndpoint.providers.alibabaCloud.status, 'format_valid');
+  assert.equal(codingEndpoint.providers.alibabaCloud.keyType, 'coding_plan');
+  assert.equal(codingEndpoint.providers.alibabaCloud.endpointType, 'coding_plan');
+  assert.equal(codingEndpoint.available.models.includes('QWENIMAGE3PRO'), false);
 });

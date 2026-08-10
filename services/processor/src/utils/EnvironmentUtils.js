@@ -61,7 +61,9 @@ export function normalizeDeploymentRuntime(value) {
 }
 
 export function getDeploymentRuntime(env = process.env) {
-  const explicitRuntime = normalizeDeploymentRuntime(env?.SAMSAR_RUNTIME);
+  const explicitRuntime = normalizeDeploymentRuntime(
+    env?.SAMSAR_RUNTIME || env?.SAMSAR_DEPLOYMENT_RUNTIME,
+  );
   if (explicitRuntime) {
     return explicitRuntime;
   }

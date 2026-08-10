@@ -5,16 +5,30 @@ mongoose.set('bufferCommands', false);
 mongoose.set('bufferTimeoutMS', 0);
 
 let connectPromise = null;
-let MONGO_CONNECTION_STRING;
+const CONTAINER_RUNTIMES = new Set(['docker', 'container', 'compose', 'kubernetes', 'k8s']);
+const DEPLOYED_ENVIRONMENTS = new Set(['staging', 'docker', 'standalone', 'community']);
 
-if (process.env.MONGO_URL) {
-  MONGO_CONNECTION_STRING = process.env.MONGO_URL;
-} else if (
-  process.env.DATABASE_PROVIDER === 'cosmos' ||
-  (process.env.CURRENT_ENV === 'production' && process.env.SAMSAR_RUNTIME !== 'docker')
-) {
-  const MONGO_USERNAME = process.env.COSMOS_DB_USERNAME;
-  const MONGO_PASSWORD = process.env.COSMOS_DB_PASSWORD;
+const normalizeEnvironmentValue = (value) => (
+  typeof value === 'string' ? value.trim().toLowerCase() : ''
+);
+
+const isProtectedMongoRuntime = (env) => {
+  const runtime = normalizeEnvironmentValue(env.SAMSAR_RUNTIME || env.SAMSAR_DEPLOYMENT_RUNTIME);
+  const currentEnvironment = normalizeEnvironmentValue(env.CURRENT_ENV);
+  const deploymentEdition = normalizeEnvironmentValue(
+    env.SAMSAR_DEPLOYMENT_EDITION || env.SAMSAR_EDITION,
+  );
+  return CONTAINER_RUNTIMES.has(runtime) ||
+    DEPLOYED_ENVIRONMENTS.has(currentEnvironment) ||
+    ['standalone', 'community'].includes(deploymentEdition);
+};
+
+const buildCosmosConnectionString = (env) => {
+  const MONGO_USERNAME = env.COSMOS_DB_USERNAME?.trim();
+  const MONGO_PASSWORD = env.COSMOS_DB_PASSWORD;
+  if (!MONGO_USERNAME || !MONGO_PASSWORD?.trim()) {
+    throw new Error('COSMOS_DB_USERNAME and COSMOS_DB_PASSWORD are required for Cosmos DB');
+  }
   const encodedUsername = encodeURIComponent(MONGO_USERNAME);
   const encodedPassword = encodeURIComponent(MONGO_PASSWORD);
   const DB_NAME = 'SamsarOne';
@@ -30,17 +44,33 @@ if (process.env.MONGO_URL) {
       .map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(value)}`)
       .join('&');
   };
-  MONGO_CONNECTION_STRING = `${MONGO_BASE_CONNECTION_STRING}/${DB_NAME}?${optionsToQueryString(MONGO_OPTIONS)}`;
-} else if (
-  process.env.CURRENT_ENV === 'staging' ||
-  process.env.CURRENT_ENV === 'docker' ||
-  process.env.CURRENT_ENV === 'standalone' ||
-  process.env.SAMSAR_RUNTIME === 'docker'
-) {
-  MONGO_CONNECTION_STRING = 'mongodb://mongo:27017/SamsarOne';
-} else {
-  MONGO_CONNECTION_STRING = `mongodb://localhost:27017/SamsarOne`;
+  return `${MONGO_BASE_CONNECTION_STRING}/${DB_NAME}?${optionsToQueryString(MONGO_OPTIONS)}`;
+};
+
+export function resolveMongoConnectionString(env = process.env) {
+  const configuredMongoUrl = env.MONGO_URL?.trim();
+  if (configuredMongoUrl) {
+    return configuredMongoUrl;
+  }
+
+  if (
+    normalizeEnvironmentValue(env.DATABASE_PROVIDER) === 'cosmos' ||
+    (
+      normalizeEnvironmentValue(env.CURRENT_ENV) === 'production' &&
+      !isProtectedMongoRuntime(env)
+    )
+  ) {
+    return buildCosmosConnectionString(env);
+  }
+
+  if (isProtectedMongoRuntime(env)) {
+    throw new Error('MONGO_URL is required for standalone, staging, and container runtimes');
+  }
+
+  return 'mongodb://localhost:27017/SamsarOne';
 }
+
+const MONGO_CONNECTION_STRING = resolveMongoConnectionString();
 
 const isTransientAuthError = (err) => {
   return err?.code === 18 || err?.errorLabels?.has?.('HandshakeError') || err?.errorLabels?.has?.('ResetPool');

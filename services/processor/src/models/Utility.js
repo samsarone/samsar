@@ -6,6 +6,10 @@ import Fuse from 'fuse.js';
 import { getDBConnectionString , getDatabase} from './DBString.js';
 import { dir } from 'console';
 import * as modelPrices from '../consts/ModelPrices.js';
+import {
+  QWEN_IMAGE_3_PRO_MODEL_KEY,
+  isAlibabaQwenImage3ProAvailable,
+} from '../consts/DockerProviderPriority.js';
 
 const PUBLIC_VIDEO_MODEL_PRICE_EXCLUDED_KEYS = new Set([
   'CUSTOM_IMAGE_TO_VIDEO',
@@ -45,9 +49,12 @@ export function getAspectRatioPostfix(aspectRatio) {
   return ` ar ${normalized}`;
 }
 
-export function getModelPricesList() {
+export function getModelPricesList(env = process.env) {
   const retPayload  = {
-    IMAGE_MODEL_PRICES: modelPrices.IMAGE_MODEL_PRICES,
+    IMAGE_MODEL_PRICES: modelPrices.IMAGE_MODEL_PRICES.filter((model) => (
+      model?.key !== QWEN_IMAGE_3_PRO_MODEL_KEY ||
+      isAlibabaQwenImage3ProAvailable(env)
+    )),
     VIDEO_MODEL_PRICES: modelPrices.VIDEO_MODEL_PRICES.filter((model) => (
       !PUBLIC_VIDEO_MODEL_PRICE_EXCLUDED_KEYS.has(model?.key)
     )),

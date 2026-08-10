@@ -26,6 +26,26 @@ function encryptFixture(value, secret) {
   ].join(':');
 }
 
+function withSecretEnvironment(environment, callback) {
+  const keys = ['CUSTOM_ADAPTER_SECRET_KEY', 'CUSTOM_CREDENTIALS_SECRET', 'TOKEN_SECRET'];
+  const previous = Object.fromEntries(keys.map((key) => [key, process.env[key]]));
+  for (const key of keys) {
+    delete process.env[key];
+  }
+  Object.assign(process.env, environment);
+  try {
+    return callback();
+  } finally {
+    for (const key of keys) {
+      if (previous[key] === undefined) {
+        delete process.env[key];
+      } else {
+        process.env[key] = previous[key];
+      }
+    }
+  }
+}
+
 test('recognizes generic and per-user custom text-to-image model keys', () => {
   assert.equal(isCustomTextToImageModel('CUSTOM_TEXT_TO_IMAGE'), true);
   assert.equal(isCustomTextToImageModel('CUSTOM_TEXT_TO_IMAGE:flux2'), true);
@@ -73,17 +93,48 @@ test('selects only the requested per-user endpoint', () => {
 });
 
 test('decrypts processor-compatible AES-GCM credentials', () => {
-  const previousSecret = process.env.CUSTOM_ADAPTER_SECRET_KEY;
-  process.env.CUSTOM_ADAPTER_SECRET_KEY = 'custom-adapter-test-secret';
-  try {
-    const encrypted = encryptFixture('Bearer private-token', process.env.CUSTOM_ADAPTER_SECRET_KEY);
+  const secret = 'custom-adapter-test-secret-with-32-characters';
+  withSecretEnvironment({ CUSTOM_ADAPTER_SECRET_KEY: secret }, () => {
+    const encrypted = encryptFixture('Bearer private-token', secret);
     assert.equal(decryptCustomAdapterSecret(encrypted), 'Bearer private-token');
-  } finally {
-    if (previousSecret === undefined) {
-      delete process.env.CUSTOM_ADAPTER_SECRET_KEY;
-    } else {
-      process.env.CUSTOM_ADAPTER_SECRET_KEY = previousSecret;
-    }
+  });
+});
+
+test('requires an explicit CUSTOM_ADAPTER_SECRET_KEY instead of legacy fallbacks', () => {
+  const secret = 'legacy-fallback-secret-with-at-least-32-characters';
+  const encrypted = encryptFixture('Bearer private-token', secret);
+
+  for (const environment of [
+    {},
+    { TOKEN_SECRET: secret },
+    { CUSTOM_CREDENTIALS_SECRET: secret },
+  ]) {
+    withSecretEnvironment(environment, () => {
+      assert.throws(
+        () => decryptCustomAdapterSecret(encrypted),
+        /CUSTOM_ADAPTER_SECRET_KEY is required/,
+      );
+    });
+  }
+});
+
+test('rejects weak and known public custom adapter secrets', () => {
+  for (const secret of [
+    'short-secret',
+    'change-me-in-production',
+    'local-development-only-secret',
+    'replace-with-at-least-32-random-characters',
+    'samsar-local-token-secret-change-me',
+    'samsar-local-custom-adapter-secret-change-me',
+    `valid-length-secret-${'x'.repeat(20)}\n`,
+  ]) {
+    const encrypted = encryptFixture('Bearer private-token', secret.trim());
+    withSecretEnvironment({ CUSTOM_ADAPTER_SECRET_KEY: secret }, () => {
+      assert.throws(
+        () => decryptCustomAdapterSecret(encrypted),
+        /must be at least 32 characters/,
+      );
+    });
   }
 });
 

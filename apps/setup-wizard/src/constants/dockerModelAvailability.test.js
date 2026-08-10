@@ -4,6 +4,7 @@ import test from 'node:test';
 import {
   DOCKER_PROVIDER,
   buildDockerAvailableModelsFromEnabledProviders,
+  buildDockerAvailableModelsFromProviderResults,
   buildExpressPipelineAvailability,
   getDockerModelDisplayName,
   orderDockerProviderKeys,
@@ -28,23 +29,62 @@ test('GMICloud is displayed before the Samsar adapter', () => {
   );
 });
 
-test('Alibaba Cloud alone exposes Qwen, Wan2.7 Pro, and native Happy Horse video', () => {
+test('Alibaba Cloud alone exposes Qwen text and image, Wan2.7 Pro, and native Happy Horse video', () => {
   const available = buildDockerAvailableModelsFromEnabledProviders([
     DOCKER_PROVIDER.ALIBABA_CLOUD,
   ]);
 
   assert.deepEqual(available.providers, [DOCKER_PROVIDER.ALIBABA_CLOUD]);
   assert.deepEqual(getAvailableInferenceModels(available), ['QWEN3.8']);
+  assert.equal(available.models.includes('QWENIMAGE3PRO'), true);
   assert.equal(available.models.includes('WAN2.7PRO'), true);
   assert.equal(available.models.includes('HAPPYHORSEI2V'), true);
   assert.deepEqual(available.actions, ['assistant', 'chat', 'image', 'video']);
   assert.equal(available.modelProviders['QWEN3.8'], DOCKER_PROVIDER.ALIBABA_CLOUD);
+  assert.equal(available.modelProviders.QWENIMAGE3PRO, DOCKER_PROVIDER.ALIBABA_CLOUD);
   assert.equal(available.modelProviders['WAN2.7PRO'], DOCKER_PROVIDER.ALIBABA_CLOUD);
   assert.equal(available.modelProviders.HAPPYHORSEI2V, DOCKER_PROVIDER.ALIBABA_CLOUD);
   assert.equal(
     getDockerModelDisplayName('QWEN3.8', DOCKER_PROVIDER.ALIBABA_CLOUD),
     'Qwen 3.8 Max',
   );
+  assert.equal(
+    getDockerModelDisplayName('QWENIMAGE3PRO', DOCKER_PROVIDER.ALIBABA_CLOUD),
+    'Qwen Image 3.0 Pro',
+  );
+});
+
+test('Qwen Image 3.0 Pro supports standard Alibaba PAYG credentials', () => {
+  const credentialTypes = [
+    { keyType: 'pay_as_you_go', endpointType: 'pay_as_you_go' },
+    { keyType: '', endpointType: '' },
+  ];
+
+  for (const metadata of credentialTypes) {
+    const available = buildDockerAvailableModelsFromEnabledProviders(
+      [DOCKER_PROVIDER.ALIBABA_CLOUD],
+      {
+        providerKeyTypes: { [DOCKER_PROVIDER.ALIBABA_CLOUD]: metadata.keyType },
+        providerEndpointTypes: { [DOCKER_PROVIDER.ALIBABA_CLOUD]: metadata.endpointType },
+      },
+    );
+    assert.equal(available.models.includes('QWENIMAGE3PRO'), true, JSON.stringify(metadata));
+  }
+});
+
+test('Qwen Image 3.0 Pro is not advertised for Alibaba subscription-plan credentials', () => {
+  for (const metadata of [
+    { keyType: 'token_plan', endpointType: 'token_plan' },
+    { keyType: 'plan', endpointType: 'pay_as_you_go' },
+    { keyType: 'coding_plan', endpointType: 'coding_plan' },
+  ]) {
+    const available = buildDockerAvailableModelsFromProviderResults({
+      alibabaCloud: { ok: true, ...metadata },
+    });
+
+    assert.equal(available.models.includes('QWENIMAGE3PRO'), false, JSON.stringify(metadata));
+    assert.equal(available.models.includes('QWEN3.8'), true, JSON.stringify(metadata));
+  }
 });
 
 test('Samsar exposes every supported inference model, including Kimi K3', () => {

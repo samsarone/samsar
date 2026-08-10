@@ -15,8 +15,11 @@
     "@azure/identity": "^4.6.0",
     "dotenv": "^16.4.5",
     "google-auth-library": "^9.14.1",
-    "mongoose": "^8.5.1",
+    "mongoose": "^8.22.1",
     "openai": "^4.86.1",
     "samsar-js": "0.48.48"
+  },
+  "overrides": {
+    "form-data": "^4.0.6"
   }
 }

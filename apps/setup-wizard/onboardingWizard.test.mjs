@@ -18,6 +18,7 @@ test('fresh setup wizard renders before provider validation exists', async () =>
     const {
       default: OnboardingWizard,
       buildInfrastructureConfig,
+      getInitialSetupBootstrapToken,
       hydrateBackblazeDataConfig,
     } = await vite.ssrLoadModule(
       '/src/components/OnboardingWizard.jsx',
@@ -47,6 +48,72 @@ test('fresh setup wizard renders before provider validation exists', async () =>
     assert.doesNotThrow(() => {
       renderToStaticMarkup(React.createElement(OnboardingWizard));
     });
+
+    const localInfrastructure = buildInfrastructureConfig({
+      databaseMode: 'local',
+      storageMode: 'local',
+    });
+    assert.equal(localInfrastructure.database.mongoUrl, '');
+    assert.equal(localInfrastructure.storage.accessKeyId, '');
+    assert.equal(localInfrastructure.storage.secretAccessKey, '');
+
+    const localValues = new Map();
+    const sessionValues = new Map();
+    let replacedUrl = '';
+    const bootstrapToken = getInitialSetupBootstrapToken({
+      location: {
+        hash: '#bootstrap=one-time-token',
+        pathname: '/',
+        search: '',
+      },
+      localStorage: {
+        getItem: (key) => localValues.get(key) || null,
+        setItem: (key, value) => localValues.set(key, value),
+      },
+      sessionStorage: {
+        getItem: (key) => sessionValues.get(key) || null,
+        setItem: (key, value) => sessionValues.set(key, value),
+      },
+      history: {
+        replaceState: (_state, _title, url) => {
+          replacedUrl = url;
+        },
+      },
+    });
+    assert.equal(bootstrapToken, 'one-time-token');
+    assert.equal(localValues.get('samsarSetupBootstrapToken'), 'one-time-token');
+    assert.equal(replacedUrl, '/');
+
+    const restoredBootstrapToken = getInitialSetupBootstrapToken({
+      location: { hash: '', pathname: '/', search: '' },
+      localStorage: {
+        getItem: (key) => localValues.get(key) || null,
+        setItem: (key, value) => localValues.set(key, value),
+      },
+      sessionStorage: {
+        getItem: () => null,
+        setItem: () => {},
+      },
+      history: { replaceState: () => {} },
+    });
+    assert.equal(restoredBootstrapToken, 'one-time-token');
+
+    localValues.clear();
+    sessionValues.set('samsarSetupBootstrapToken', 'legacy-session-token');
+    const migratedBootstrapToken = getInitialSetupBootstrapToken({
+      location: { hash: '', pathname: '/', search: '' },
+      localStorage: {
+        getItem: (key) => localValues.get(key) || null,
+        setItem: (key, value) => localValues.set(key, value),
+      },
+      sessionStorage: {
+        getItem: (key) => sessionValues.get(key) || null,
+        setItem: (key, value) => sessionValues.set(key, value),
+      },
+      history: { replaceState: () => {} },
+    });
+    assert.equal(migratedBootstrapToken, 'legacy-session-token');
+    assert.equal(localValues.get('samsarSetupBootstrapToken'), 'legacy-session-token');
 
     const infrastructure = buildInfrastructureConfig({
       storageMode: 'backblazeB2',

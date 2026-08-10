@@ -5,55 +5,74 @@ import * as mongoose from 'mongoose';
 
 let db;
 
+const CONTAINER_RUNTIMES = new Set(['docker', 'container', 'compose', 'kubernetes', 'k8s']);
+const DEPLOYED_ENVIRONMENTS = new Set(['staging', 'docker', 'standalone', 'community']);
 
+const normalizeEnvironmentValue = (value) => (
+  typeof value === 'string' ? value.trim().toLowerCase() : ''
+);
 
-const MONGO_USERNAME = process.env.COSMOS_DB_USERNAME;
-const MONGO_PASSWORD = process.env.COSMOS_DB_PASSWORD;
-
-const encodedUsername = encodeURIComponent(MONGO_USERNAME);
-const encodedPassword = encodeURIComponent(MONGO_PASSWORD);
-const DB_NAME = 'SamsarOne';
-
-const MONGO_BASE_CONNECTION_STRING = `mongodb+srv://${encodedUsername}:${encodedPassword}@samsaroneproduction.global.mongocluster.cosmos.azure.com`;
-const MONGO_OPTIONS = {
-  tls: true,
-  authMechanism: 'SCRAM-SHA-256',
-  retryWrites: false,
-  maxIdleTimeMS: 120000,
+const isProtectedMongoRuntime = (env) => {
+  const runtime = normalizeEnvironmentValue(env.SAMSAR_RUNTIME || env.SAMSAR_DEPLOYMENT_RUNTIME);
+  const currentEnvironment = normalizeEnvironmentValue(env.CURRENT_ENV);
+  const deploymentEdition = normalizeEnvironmentValue(
+    env.SAMSAR_DEPLOYMENT_EDITION || env.SAMSAR_EDITION,
+  );
+  return CONTAINER_RUNTIMES.has(runtime) ||
+    DEPLOYED_ENVIRONMENTS.has(currentEnvironment) ||
+    ['standalone', 'community'].includes(deploymentEdition);
 };
 
-const optionsToQueryString = (options) => {
-  return Object.entries(options)
+const buildCosmosConnectionString = (env) => {
+  const username = env.COSMOS_DB_USERNAME?.trim();
+  const password = env.COSMOS_DB_PASSWORD;
+  if (!username || !password?.trim()) {
+    throw new Error('COSMOS_DB_USERNAME and COSMOS_DB_PASSWORD are required for Cosmos DB');
+  }
+  const encodedUsername = encodeURIComponent(username);
+  const encodedPassword = encodeURIComponent(password);
+  const mongoBaseConnectionString = `mongodb+srv://${encodedUsername}:${encodedPassword}@samsaroneproduction.global.mongocluster.cosmos.azure.com`;
+  const mongoOptions = {
+    tls: true,
+    authMechanism: 'SCRAM-SHA-256',
+    retryWrites: false,
+    maxIdleTimeMS: 120000,
+  };
+  const optionsQueryString = Object.entries(mongoOptions)
     .map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(value)}`)
     .join('&');
+
+  return `${mongoBaseConnectionString}/SamsarOne?${optionsQueryString}`;
 };
 
-const MONGO_CONNECTION_STRING = `${MONGO_BASE_CONNECTION_STRING}/${DB_NAME}?${optionsToQueryString(MONGO_OPTIONS)}`;
+export function resolveMongoConnectionString(env = process.env) {
+  const configuredMongoUrl = env.MONGO_URL?.trim();
+  if (configuredMongoUrl) {
+    return configuredMongoUrl;
+  }
 
+  if (
+    normalizeEnvironmentValue(env.DATABASE_PROVIDER) === 'cosmos' ||
+    (
+      normalizeEnvironmentValue(env.CURRENT_ENV) === 'production' &&
+      !isProtectedMongoRuntime(env)
+    )
+  ) {
+    return buildCosmosConnectionString(env);
+  }
 
+  if (isProtectedMongoRuntime(env)) {
+    throw new Error('MONGO_URL is required for standalone, staging, and container runtimes');
+  }
 
-
+  return 'mongodb://localhost:27017/SamsarGG';
+}
 
 export async function getDBConnectionString() {
   if (db) {
     return db;
   }
-  let connectionString = `mongodb://localhost:27017/SamsarGG`;
-  if (process.env.MONGO_URL) {
-    connectionString = process.env.MONGO_URL;
-  } else if (
-    process.env.DATABASE_PROVIDER === 'cosmos' ||
-    (process.env.CURRENT_ENV === 'production' && process.env.SAMSAR_RUNTIME !== 'docker')
-  ) {
-    connectionString = MONGO_CONNECTION_STRING;
-  } else if (
-    process.env.CURRENT_ENV === 'staging' ||
-    process.env.CURRENT_ENV === 'docker' ||
-    process.env.CURRENT_ENV === 'standalone' ||
-    process.env.SAMSAR_RUNTIME === 'docker'
-  ) {
-    connectionString = `mongodb://mongo:27017/SamsarOne`;
-  }
+  const connectionString = resolveMongoConnectionString();
 
 
   

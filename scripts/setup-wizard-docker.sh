@@ -6,9 +6,11 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 IMAGE_NAME="${SETUP_WIZARD_IMAGE:-samsar-setup-wizard:local}"
 CONTAINER_NAME="${SETUP_WIZARD_CONTAINER_NAME:-samsar-setup-wizard-preview}"
 HOST_PORT="${SETUP_WIZARD_PORT:-8089}"
-HOST_BIND_ADDR="${SETUP_WIZARD_BIND_ADDR:-0.0.0.0}"
-CONTAINER_PORT="${SETUP_WIZARD_CONTAINER_PORT:-80}"
+HOST_BIND_ADDR="${SETUP_WIZARD_BIND_ADDR:-127.0.0.1}"
+CONTAINER_PORT="${SETUP_WIZARD_CONTAINER_PORT:-8080}"
 LOCAL_SETUP_WIZARD_URL="http://localhost:${HOST_PORT}"
+BOOTSTRAP_TOKEN_FILE="${ROOT_DIR}/runtime/secrets/setup-bootstrap.token"
+BOOTSTRAP_TOKEN_CONTAINER_FILE="/run/secrets/samsar-setup-bootstrap-token"
 PUBLIC_IP_TIMEOUT_SECONDS="${SAMSAR_SETUP_PUBLIC_IP_TIMEOUT_SECONDS:-2}"
 READY_TIMEOUT_SECONDS="${SAMSAR_SETUP_READY_TIMEOUT_SECONDS:-30}"
 BOOTSTRAP_ENABLED="${SAMSAR_SETUP_BOOTSTRAP:-1}"
@@ -99,6 +101,35 @@ enabled() {
       return 0
       ;;
   esac
+}
+
+generate_setup_bootstrap_token() {
+  local token
+  if command -v openssl >/dev/null 2>&1; then
+    token="$(openssl rand -hex 32)"
+  elif command -v od >/dev/null 2>&1 && [[ -r /dev/urandom ]]; then
+    token="$(od -An -N32 -tx1 /dev/urandom | tr -d '[:space:]')"
+  else
+    token="$(docker_cli run --rm --network none alpine:3.20 sh -c 'head -c 32 /dev/urandom | od -An -tx1 | tr -d "[:space:]"')"
+  fi
+  [[ "$token" =~ ^[a-f0-9]{64}$ ]] || die 'Unable to generate the setup bootstrap token.'
+  printf '%s' "$token"
+}
+
+write_setup_bootstrap_token() {
+  local token="$1"
+  umask 077
+  mkdir -p "$(dirname "$BOOTSTRAP_TOKEN_FILE")"
+  printf '%s\n' "$token" >"$BOOTSTRAP_TOKEN_FILE"
+  chmod 600 "$BOOTSTRAP_TOKEN_FILE" 2>/dev/null || true
+}
+
+read_setup_bootstrap_token() {
+  local token
+  [[ -r "$BOOTSTRAP_TOKEN_FILE" ]] || return 1
+  token="$(tr -d '[:space:]' <"$BOOTSTRAP_TOKEN_FILE")"
+  [[ "$token" =~ ^[a-f0-9]{64}$ ]] || return 1
+  printf '%s' "$token"
 }
 
 build_provider_environment_forwarding() {
@@ -254,6 +285,7 @@ Environment:
   SAMSAR_SETUP_OPEN_CLOUD_PORT=ask|true|false
   SAMSAR_SETUP_INSTALL_DOCKER=1
   SAMSAR_SETUP_INSTALL_CLOUD_CLI=1
+  SAMSAR_SETUP_ROTATE_BOOTSTRAP_TOKEN=1
   SAMSAR_SETUP_AZURE_NSG_PRIORITY=1000
   SAMSAR_SETUP_YES=1
   SAMSAR_SETUP_MIN_DISK_FREE_GB=<gb>
@@ -1714,6 +1746,10 @@ open_host_tcp_port() {
 }
 
 maybe_open_setup_wizard_host_port() {
+  if [[ "$HOST_BIND_ADDR" == "127.0.0.1" || "$HOST_BIND_ADDR" == "localhost" ]]; then
+    log "Setup wizard is loopback-only; host and cloud firewall changes are unnecessary."
+    return 0
+  fi
   is_linux || return 0
   case "$OPEN_SETUP_PORT_MODE" in
     0|false|FALSE|no|NO|off|OFF)
@@ -1934,18 +1970,23 @@ open_setup_wizard_browser() {
 print_setup_wizard_urls() {
   local ip
   echo
-  echo "Setup wizard URLs:"
-  echo "  Local:   ${LOCAL_SETUP_WIZARD_URL}"
+  echo "Authenticated setup wizard URL:"
+  echo "  Local:   ${LOCAL_SETUP_WIZARD_AUTH_URL}"
+  if [[ "$HOST_BIND_ADDR" == "127.0.0.1" || "$HOST_BIND_ADDR" == "localhost" ]]; then
+    echo "Remote setup: use scripts/setup-wizard-remote.sh, which creates an SSH tunnel."
+    echo
+    return
+  fi
   if [[ -n "$HOST_PRIVATE_IPS" ]]; then
     for ip in $HOST_PRIVATE_IPS; do
-      echo "  Private: http://${ip}:${HOST_PORT}"
+      echo "  Private: http://${ip}:${HOST_PORT}/#bootstrap=${SETUP_BOOTSTRAP_TOKEN}"
     done
   else
     echo "  Private: not detected"
   fi
   if [[ -n "${REACHABLE_HOST_PUBLIC_IPS:-}" ]]; then
     for ip in $REACHABLE_HOST_PUBLIC_IPS; do
-      echo "  Public:  http://${ip}:${HOST_PORT}"
+      echo "  Public:  http://${ip}:${HOST_PORT}/#bootstrap=${SETUP_BOOTSTRAP_TOKEN}"
     done
   else
     echo "  Public:  not available on TCP ${HOST_PORT}"
@@ -1958,6 +1999,15 @@ parse_args "$@"
 bootstrap_host
 maybe_open_setup_wizard_host_port
 build_provider_environment_forwarding
+if ! enabled "${SAMSAR_SETUP_ROTATE_BOOTSTRAP_TOKEN:-0}" &&
+  SETUP_BOOTSTRAP_TOKEN="$(read_setup_bootstrap_token)"; then
+  log "Reusing the existing setup bootstrap token for browser recovery."
+else
+  SETUP_BOOTSTRAP_TOKEN="$(generate_setup_bootstrap_token)"
+  write_setup_bootstrap_token "$SETUP_BOOTSTRAP_TOKEN"
+  log "Created a new setup bootstrap token."
+fi
+LOCAL_SETUP_WIZARD_AUTH_URL="${LOCAL_SETUP_WIZARD_URL}/#bootstrap=${SETUP_BOOTSTRAP_TOKEN}"
 
 HOST_PRIVATE_IPS="$(extract_private_ipv4_addresses "${SAMSAR_SETUP_HOST_PRIVATE_IPS:-$(detect_host_private_ips)}")"
 HOST_PUBLIC_IPS="$(extract_public_ipv4_addresses "${SAMSAR_SETUP_HOST_PUBLIC_IPS:-$(detect_host_public_ips)}")"
@@ -1996,7 +2046,12 @@ echo "Public setup URL will be shown only if TCP ${HOST_PORT} responds on the de
 container_id="$(
 docker_cli run -d \
     --name "$CONTAINER_NAME" \
-    --restart unless-stopped \
+    --restart no \
+    --read-only \
+    --cap-drop ALL \
+    --security-opt no-new-privileges \
+    --tmpfs /tmp:rw,noexec,nosuid,size=64m \
+    --tmpfs /root/.docker:rw,noexec,nosuid,size=64m \
     -p "${HOST_BIND_ADDR}:${HOST_PORT}:${CONTAINER_PORT}" \
     --health-cmd "node -e \"fetch('http://127.0.0.1:${CONTAINER_PORT}/api/setup/health').then((response)=>process.exit(response.ok?0:1)).catch(()=>process.exit(1))\"" \
     --health-interval 15s \
@@ -2005,8 +2060,12 @@ docker_cli run -d \
     --health-start-period 10s \
     --add-host=host.docker.internal:host-gateway \
     -v "${DOCKER_SOCKET_PATH}:/var/run/docker.sock" \
-    -v "$ROOT_DIR:$ROOT_DIR" \
+    -v "$ROOT_DIR:$ROOT_DIR:ro" \
+    -v "$ROOT_DIR/runtime:$ROOT_DIR/runtime" \
+    -v "$BOOTSTRAP_TOKEN_FILE:$BOOTSTRAP_TOKEN_CONTAINER_FILE:ro" \
     -e "SAMSAR_SETUP_ROOT_DIR=$ROOT_DIR" \
+    -e "SAMSAR_SETUP_BOOTSTRAP_TOKEN_FILE=$BOOTSTRAP_TOKEN_CONTAINER_FILE" \
+    -e "PORT=$CONTAINER_PORT" \
     -e "SAMSAR_SETUP_CLIENT_URL=http://localhost:3000" \
     -e "SAMSAR_SETUP_PROCESSOR_PUBLIC_URL=http://localhost:3002" \
     -e "SAMSAR_SETUP_HOST_PRIVATE_IPS=$HOST_PRIVATE_IPS" \
@@ -2028,9 +2087,9 @@ echo "Started ${CONTAINER_NAME} (${container_id})."
 if wait_for_setup_wizard "$LOCAL_SETUP_WIZARD_URL"; then
   REACHABLE_HOST_PUBLIC_IPS="$(detect_reachable_public_setup_ips)"
   print_setup_wizard_urls
-  open_setup_wizard_browser "$LOCAL_SETUP_WIZARD_URL"
+  open_setup_wizard_browser "$LOCAL_SETUP_WIZARD_AUTH_URL"
 else
   REACHABLE_HOST_PUBLIC_IPS=""
   print_setup_wizard_urls
-  echo "Open ${LOCAL_SETUP_WIZARD_URL} after the container finishes starting."
+  echo "Open ${LOCAL_SETUP_WIZARD_AUTH_URL} after the container finishes starting."
 fi

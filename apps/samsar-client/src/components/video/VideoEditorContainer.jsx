@@ -37,6 +37,8 @@ import { drawCanvasTextItem } from '../../utils/canvasText.js';
 import { captureAssistantStageImageData } from '../../utils/assistantFrameCapture.js';
 import { getRenderableImageUrl } from '../../utils/image.jsx';
 import { resolveStudioLayerVideo } from './util/studioVideoLayers.mjs';
+import { IS_STANDALONE_DEPLOYMENT } from '../../utils/environment.jsx';
+import { isImageModelAllowedForDeploymentScope } from '../../utils/imageModelAvailability.mjs';
 import {
   buildSubtitleRegenerationLanguageFields,
   resolveSessionAudioLanguage,
@@ -46,14 +48,22 @@ import {
 
 const DEFAULT_IMAGE_GENERATION_MODEL = IMAGE_GENERAITON_MODEL_TYPES[0].key;
 const ACTIVE_IMAGE_GENERATION_MODEL_KEYS = new Set(
-  IMAGE_GENERAITON_MODEL_TYPES.map((model) => model.key)
+  IMAGE_GENERAITON_MODEL_TYPES
+    .filter((model) =>
+      isImageModelAllowedForDeploymentScope(model, IS_STANDALONE_DEPLOYMENT)
+    )
+    .map((model) => model.key)
 );
 
 function getStoredImageGenerationModel() {
   const defaultModel = localStorage.getItem('defaultModel');
-  return ACTIVE_IMAGE_GENERATION_MODEL_KEYS.has(defaultModel)
+  const resolvedModel = ACTIVE_IMAGE_GENERATION_MODEL_KEYS.has(defaultModel)
     ? defaultModel
     : DEFAULT_IMAGE_GENERATION_MODEL;
+  if (resolvedModel !== defaultModel) {
+    localStorage.setItem('defaultModel', resolvedModel);
+  }
+  return resolvedModel;
 }
 
 const PROCESSOR_API_URL = import.meta.env.VITE_PROCESSOR_API;

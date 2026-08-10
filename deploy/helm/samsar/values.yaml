@@ -7,7 +7,8 @@ runtime:
 
 database:
   provider: local-mongo
-  mongoUrl: mongodb://mongo:27017/SamsarOne
+  # Supply an authenticated URI through a Kubernetes Secret when workloads are added.
+  mongoUrl: ""
 
 storage:
   provider: s3-compatible

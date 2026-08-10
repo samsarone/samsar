@@ -277,8 +277,15 @@ SSH_ARGS+=("${SSH_OPTIONS[@]}")
 REMOTE_COMMAND="$(build_remote_command)"
 log "Starting setup wizard on ${REMOTE_HOST}."
 ssh "${SSH_ARGS[@]}" "$REMOTE_HOST" "bash -lc $(quote_arg "$REMOTE_COMMAND")"
+REMOTE_TOKEN_COMMAND="set -euo pipefail; cd $(remote_cd_expr); cat runtime/secrets/setup-bootstrap.token"
+SETUP_BOOTSTRAP_TOKEN="$(
+  ssh "${SSH_ARGS[@]}" "$REMOTE_HOST" "bash -lc $(quote_arg "$REMOTE_TOKEN_COMMAND")"
+)"
+[[ "$SETUP_BOOTSTRAP_TOKEN" =~ ^[a-f0-9]{64}$ ]] ||
+  die 'Remote setup bootstrap token was missing or invalid.'
 
 LOCAL_URL="http://localhost:${LOCAL_PORT}"
+LOCAL_AUTH_URL="${LOCAL_URL}/#bootstrap=${SETUP_BOOTSTRAP_TOKEN}"
 log "Opening SSH tunnel: ${LOCAL_URL} -> ${REMOTE_HOST}:127.0.0.1:${REMOTE_PORT}"
 ssh \
   -o ExitOnForwardFailure=yes \
@@ -300,8 +307,8 @@ if ! wait_for_local_tunnel "$LOCAL_URL"; then
   die "SSH tunnel opened, but the setup wizard did not respond at ${LOCAL_URL}."
 fi
 
-log "Setup wizard is ready: ${LOCAL_URL}"
-open_browser "$LOCAL_URL"
+log "Setup wizard is ready through the authenticated SSH tunnel."
+open_browser "$LOCAL_AUTH_URL"
 
 if enabled "$CHECK_ONLY"; then
   log "Check-only mode completed; closing tunnel."

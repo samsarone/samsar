@@ -10,6 +10,11 @@ import {
   normalizeModelAdapterProviderKey,
   readModelAdapterPreferences,
 } from './ModelAdapterPreferences.js';
+import {
+  QWEN_IMAGE_3_PRO_MODEL_KEY,
+  isAlibabaQwenImage3ProAvailable,
+  isAlibabaQwenImage3ProCredentialEligible,
+} from '../../consts/DockerProviderPriority.js';
 
 function getDefaultAvailableModelsPath() {
   const configuredPath = process.env.SAMSAR_AVAILABLE_MODELS_FILE ||
@@ -173,6 +178,26 @@ function normalizeDeploymentProvider(value) {
   return normalized;
 }
 
+function getProviderMetadataValue(metadata = {}, provider = '') {
+  const entry = Object.entries(metadata).find(
+    ([candidate]) => normalizeDeploymentProvider(candidate) === provider,
+  );
+  return typeof entry?.[1] === 'string' ? entry[1].trim().toLowerCase() : '';
+}
+
+function isAlibabaQwenImage3ProSavedCredentialEligible(availableModelConfig = {}) {
+  return isAlibabaQwenImage3ProCredentialEligible({
+    keyType: getProviderMetadataValue(
+      normalizeStringMap(availableModelConfig?.providerKeyTypes),
+      'alibabaCloud',
+    ),
+    endpointType: getProviderMetadataValue(
+      normalizeStringMap(availableModelConfig?.providerEndpointTypes),
+      'alibabaCloud',
+    ),
+  });
+}
+
 function normalizeDeploymentModel(value) {
   const normalized = String(value || '').trim().toUpperCase();
   if (['QWEN3.8', 'QWEN3.8-MAX'].includes(normalized)) {
@@ -207,8 +232,9 @@ function isSavedQwenSelectionAuthorized({ providers, models, modelProviders }) {
   return hasQwenModel && availableProviders.has(selectedProvider) && qwenProviders.has(selectedProvider);
 }
 
-function filterWan27WithoutConfiguredProvider(models = []) {
-  if (!isDockerDeploymentRuntime() || hasEnvCredential(
+function filterDeploymentScopedImageModels(models = [], availableModelConfig = null) {
+  let filteredModels = models;
+  if (isDockerDeploymentRuntime() && !hasEnvCredential(
     'ALIBABA_API_KEY',
     'DASHSCOPE_API_KEY',
     'ALIBABA_CLOUD_API_KEY',
@@ -216,11 +242,20 @@ function filterWan27WithoutConfiguredProvider(models = []) {
     'FAL_API_KEY',
     'SAMSAR_API_KEY',
   )) {
-    return models;
+    filteredModels = filteredModels.filter(
+      (model) => String(model?.value || model?.key || '').toUpperCase() !== 'WAN2.7PRO',
+    );
   }
-  return models.filter(
-    (model) => String(model?.value || model?.key || '').toUpperCase() !== 'WAN2.7PRO',
-  );
+
+  if (
+    !isAlibabaQwenImage3ProAvailable() ||
+    !isAlibabaQwenImage3ProSavedCredentialEligible(availableModelConfig)
+  ) {
+    filteredModels = filteredModels.filter(
+      (model) => normalizeDeploymentModel(model?.value || model?.key) !== QWEN_IMAGE_3_PRO_MODEL_KEY,
+    );
+  }
+  return filteredModels;
 }
 
 function appendUnique(target, values) {
@@ -432,6 +467,11 @@ export function mergeRuntimeInferenceDeploymentAvailability(value = {}) {
   );
   const providerKeyTypes = normalizeStringMap(value?.providerKeyTypes);
   const providerEndpointTypes = normalizeStringMap(value?.providerEndpointTypes);
+  const qwenImage3ProAvailable = isAlibabaQwenImage3ProAvailable() &&
+    isAlibabaQwenImage3ProCredentialEligible({
+      keyType: getProviderMetadataValue(providerKeyTypes, 'alibabaCloud'),
+      endpointType: getProviderMetadataValue(providerEndpointTypes, 'alibabaCloud'),
+    });
   const qwenAuthorized = isSavedQwenSelectionAuthorized({
     providers: configuredProviders,
     models: configuredModels,
@@ -493,6 +533,7 @@ export function mergeRuntimeInferenceDeploymentAvailability(value = {}) {
     models: configuredModels.filter(
       (model) => (
         (normalizeDeploymentModel(model) !== 'QWEN3.8' || qwenAuthorized) &&
+        (normalizeDeploymentModel(model) !== QWEN_IMAGE_3_PRO_MODEL_KEY || qwenImage3ProAvailable) &&
         hasAuthorizedSavedModel(model)
       ),
     ),
@@ -513,6 +554,27 @@ export function mergeRuntimeInferenceDeploymentAvailability(value = {}) {
     const endpointType = String(process.env.ALIBABA_API_ENDPOINT_TYPE || '').trim();
     if (keyType) merged.providerKeyTypes.alibabaCloud = keyType;
     if (endpointType) merged.providerEndpointTypes.alibabaCloud = endpointType;
+  }
+
+  if (qwenImage3ProAvailable) {
+    appendUnique(merged.providers, ['alibabaCloud']);
+    appendUnique(merged.models, [QWEN_IMAGE_3_PRO_MODEL_KEY]);
+    appendUnique(merged.actions, ['image']);
+    merged.modelProviders[QWEN_IMAGE_3_PRO_MODEL_KEY] = 'alibabaCloud';
+    merged.modelProviderPriority[QWEN_IMAGE_3_PRO_MODEL_KEY] = ['alibabaCloud'];
+    merged.defaultModelProviderPriority[QWEN_IMAGE_3_PRO_MODEL_KEY] = ['alibabaCloud'];
+  } else {
+    for (const modelMap of [
+      merged.modelProviders,
+      merged.modelProviderPriority,
+      merged.defaultModelProviderPriority,
+    ]) {
+      for (const modelKey of Object.keys(modelMap)) {
+        if (normalizeDeploymentModel(modelKey) === QWEN_IMAGE_3_PRO_MODEL_KEY) {
+          delete modelMap[modelKey];
+        }
+      }
+    }
   }
 
   if (hasEnvCredential('OPENAI_API_KEY')) {
@@ -658,17 +720,18 @@ export function readDeploymentAvailableModels() {
 
 export function filterModelsForDeploymentAvailability(models = [], availableModelConfig = readDeploymentAvailableModels()) {
   if (!availableModelConfig || !Array.isArray(availableModelConfig.models)) {
-    return filterWan27WithoutConfiguredProvider(models);
+    return filterDeploymentScopedImageModels(models, availableModelConfig);
   }
 
   const runtimeAvailability = mergeRuntimeInferenceDeploymentAvailability(availableModelConfig);
   if (runtimeAvailability.models.length === 0) {
-    return filterWan27WithoutConfiguredProvider(models);
+    return filterDeploymentScopedImageModels(models, availableModelConfig);
   }
   const available = new Set(runtimeAvailability.models.map(normalizeDeploymentModel));
-  return filterWan27WithoutConfiguredProvider(
+  return filterDeploymentScopedImageModels(
     models.filter(
       (model) => available.has(normalizeDeploymentModel(model?.value || model?.key)),
     ),
+    availableModelConfig,
   );
 }

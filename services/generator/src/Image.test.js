@@ -308,6 +308,10 @@ test('image generation retries use bounded exponential backoff', () => {
     __testOnly__.getImageGenerationNextAttemptAfter(1, 1000).getTime(),
     1000 + firstDelay,
   );
+  assert.equal(
+    __testOnly__.getImageGenerationNextAttemptAfter(1, 1000, 60000).getTime(),
+    61000,
+  );
 });
 
 test('concurrent schedulers can claim an unlocked ImageGeneration only once', async () => {
@@ -676,6 +680,104 @@ test('production image retries never enable standalone adapter rotation', () => 
   }
 });
 
+test('Qwen Image 3 resolves only to configured Alibaba Cloud in standalone', () => {
+  const environmentKeys = [
+    'CURRENT_ENV',
+    'SAMSAR_DEPLOYMENT_EDITION',
+    'SAMSAR_DOCKER_ADAPTER_ROUTING_ENABLED',
+    'ALIBABA_API_KEY',
+    'DASHSCOPE_API_KEY',
+    'ALIBABA_CLOUD_API_KEY',
+    'QWEN_API_KEY',
+    'ALIBABA_API_KEY_TYPE',
+    'ALIBABA_API_ENDPOINT_TYPE',
+    'FAL_API_KEY',
+    'SAMSAR_API_KEY',
+  ];
+  const previous = Object.fromEntries(
+    environmentKeys.map((key) => [key, process.env[key]]),
+  );
+
+  try {
+    process.env.CURRENT_ENV = 'standalone';
+    process.env.SAMSAR_DEPLOYMENT_EDITION = 'standalone';
+    process.env.SAMSAR_DOCKER_ADAPTER_ROUTING_ENABLED = 'true';
+    for (const key of [
+      'ALIBABA_API_KEY',
+      'DASHSCOPE_API_KEY',
+      'ALIBABA_CLOUD_API_KEY',
+      'QWEN_API_KEY',
+      'ALIBABA_API_KEY_TYPE',
+      'ALIBABA_API_ENDPOINT_TYPE',
+    ]) {
+      delete process.env[key];
+    }
+    process.env.FAL_API_KEY = 'fal-key';
+    process.env.SAMSAR_API_KEY = 'samsar-key';
+    assert.equal(
+      __testOnly__.resolveImageProviderForModel('QWENIMAGE3PRO'),
+      '',
+    );
+
+    process.env.ALIBABA_API_KEY = 'alibaba-key';
+    assert.equal(
+      __testOnly__.resolveImageProviderForModel('QWENIMAGE3PRO', {
+        adapterProviderOverride: 'fal',
+      }),
+      'alibabaCloud',
+    );
+
+    process.env.ALIBABA_API_KEY_TYPE = 'pay_as_you_go';
+    process.env.ALIBABA_API_ENDPOINT_TYPE = 'pay_as_you_go';
+    assert.equal(
+      __testOnly__.resolveImageProviderForModel('QWENIMAGE3PRO'),
+      'alibabaCloud',
+    );
+
+    process.env.ALIBABA_API_KEY_TYPE = 'token_plan';
+    process.env.ALIBABA_API_ENDPOINT_TYPE = 'token_plan';
+    assert.equal(
+      __testOnly__.resolveImageProviderForModel('QWENIMAGE3PRO'),
+      '',
+    );
+
+    process.env.ALIBABA_API_KEY_TYPE = 'plan';
+    process.env.ALIBABA_API_ENDPOINT_TYPE = 'pay_as_you_go';
+    assert.equal(
+      __testOnly__.resolveImageProviderForModel('QWENIMAGE3PRO'),
+      '',
+    );
+
+    process.env.ALIBABA_API_KEY_TYPE = 'coding_plan';
+    assert.equal(
+      __testOnly__.resolveImageProviderForModel('QWENIMAGE3PRO'),
+      '',
+    );
+
+    process.env.ALIBABA_API_KEY_TYPE = 'pay_as_you_go';
+    process.env.ALIBABA_API_ENDPOINT_TYPE = 'token_plan';
+    assert.equal(
+      __testOnly__.resolveImageProviderForModel('QWENIMAGE3PRO'),
+      '',
+    );
+
+    process.env.SAMSAR_DEPLOYMENT_EDITION = 'production';
+    process.env.ALIBABA_API_ENDPOINT_TYPE = 'pay_as_you_go';
+    assert.equal(
+      __testOnly__.resolveImageProviderForModel('QWENIMAGE3PRO', {
+        submittedAdapter: 'alibabaCloud',
+        apiGenerationStatus: 'PENDING',
+      }),
+      '',
+    );
+  } finally {
+    for (const [key, value] of Object.entries(previous)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+});
+
 test('pending production image requests remain pinned to their submitted adapter', () => {
   const previousEdition = process.env.SAMSAR_DEPLOYMENT_EDITION;
   process.env.SAMSAR_DEPLOYMENT_EDITION = 'production';
@@ -866,6 +968,39 @@ test('retryable vision failures return to the normal express image retry path', 
     operationType: 'GENERATE',
     isBatchGeneration: true,
   }, new Error('Unexpected coding error')), false);
+
+  assert.equal(__testOnly__.shouldRetryUnhandledGenerationTask({
+    operationType: 'GENERATE',
+    isBatchGeneration: true,
+  }, {
+    nonPromptProviderFailure: true,
+    preserveExpressImageLayer: true,
+    submissionOutcomeUnknown: true,
+  }), false);
+});
+
+test('persisted ambiguous submission state fails closed even when recovery loses the error flag', () => {
+  assert.equal(
+    __testOnly__.hasUnsafeImageSubmissionOutcome(
+      { image: null, error: 'transport failed' },
+      { submissionOutcomeUnknown: true },
+    ),
+    true,
+  );
+  assert.equal(
+    __testOnly__.hasUnsafeImageSubmissionOutcome(
+      { image: null, submissionOutcomeUnknown: true },
+      { submissionOutcomeUnknown: false },
+    ),
+    true,
+  );
+  assert.equal(
+    __testOnly__.hasUnsafeImageSubmissionOutcome(
+      { image: null, error: 'definitive rejection' },
+      { submissionOutcomeUnknown: false },
+    ),
+    false,
+  );
 });
 
 test('timeline reflow shifts only later layers and their connected audio', () => {

@@ -28,6 +28,10 @@ import {
 } from '../../consts/InferenceModels.js';
 import { createCompatibleChatCompletion } from '../ai_utils/OpenAICompat.js';
 import { isStandaloneEdition } from '../../utils/EnvironmentUtils.js';
+import {
+  QWEN_IMAGE_3_PRO_MODEL_KEY,
+  isAlibabaQwenImage3ProAvailable,
+} from '../../consts/DockerProviderPriority.js';
 
 const OPENAI_MODEL = process.env.IMAGE_SET_PROMPT_MODEL || 'gpt-4o-mini';
 const openaiClient = process.env.OPENAI_API_KEY ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY }) : null;
@@ -153,6 +157,7 @@ const DEFAULT_ROLLUP_IMAGE_TILING_POSITION = Object.freeze({
 
 const DEFAULT_TEXT_TO_IMAGE_MODEL = 'NANOBANANA2';
 const CUSTOM_TEXT_TO_IMAGE_MODEL_PREFIX = 'CUSTOM_TEXT_TO_IMAGE:';
+const QWEN_IMAGE_3_PRO_TEXT_TO_IMAGE_ASPECT_RATIOS = Object.freeze(['1:1', '16:9', '9:16']);
 const WAN_27_PRO_TEXT_TO_IMAGE_MODEL = 'WAN2.7PRO';
 const WAN_27_PRO_TEXT_TO_IMAGE_RESOLUTION = '1K';
 const WAN_27_PRO_TEXT_TO_IMAGE_ASPECT_RATIOS = Object.freeze(['1:1', '16:9', '9:16']);
@@ -161,6 +166,7 @@ const SUPPORTED_TEXT_TO_IMAGE_MODELS = Object.freeze([
   'NANOBANANA2',
   'NANOBANANAPRO',
   'SEEDREAM',
+  QWEN_IMAGE_3_PRO_MODEL_KEY,
   WAN_27_PRO_TEXT_TO_IMAGE_MODEL,
 ]);
 const ROLLUP_FETCH_RETRIES = Number.isFinite(Number(process.env.ROLLUP_FETCH_RETRIES))
@@ -225,6 +231,14 @@ export function normalizeTextToImageRequestOptions(payload = {}) {
   if (!isCustomModel && !SUPPORTED_TEXT_TO_IMAGE_MODELS.includes(model)) {
     throw createBadRequestError(`model must be one of: ${SUPPORTED_TEXT_TO_IMAGE_MODELS.join(', ')}.`);
   }
+  if (
+    model === QWEN_IMAGE_3_PRO_MODEL_KEY &&
+    !isAlibabaQwenImage3ProAvailable()
+  ) {
+    throw createBadRequestError(
+      'Qwen Image 3.0 Pro requires standalone Alibaba Cloud pay-as-you-go credentials.',
+    );
+  }
 
   const requestedAspectRatio = payload.aspect_ratio || payload.aspectRatio;
   const hasRequestedAspectRatio = requestedAspectRatio !== undefined &&
@@ -232,6 +246,18 @@ export function normalizeTextToImageRequestOptions(payload = {}) {
     !(typeof requestedAspectRatio === 'string' && requestedAspectRatio.trim() === '');
   const normalizedRequestedAspectRatio = normalizeAspectRatio(requestedAspectRatio);
   const aspectRatio = normalizedRequestedAspectRatio || '1:1';
+
+  if (model === QWEN_IMAGE_3_PRO_MODEL_KEY) {
+    if (hasRequestedAspectRatio && (
+      !normalizedRequestedAspectRatio ||
+      !QWEN_IMAGE_3_PRO_TEXT_TO_IMAGE_ASPECT_RATIOS.includes(normalizedRequestedAspectRatio)
+    )) {
+      throw createBadRequestError(
+        `Qwen Image 3.0 Pro aspect_ratio must be one of: ${QWEN_IMAGE_3_PRO_TEXT_TO_IMAGE_ASPECT_RATIOS.join(', ')}.`,
+      );
+    }
+    return { model, aspectRatio, resolution: null };
+  }
 
   if (model !== WAN_27_PRO_TEXT_TO_IMAGE_MODEL) {
     return { model, aspectRatio, resolution: null };
@@ -262,6 +288,28 @@ export function normalizeTextToImageRequestOptions(payload = {}) {
     aspectRatio,
     resolution: WAN_27_PRO_TEXT_TO_IMAGE_RESOLUTION,
   };
+}
+
+export function getTextToImageRequestPricing(model, requestedImages = 1) {
+  const normalizedModel = typeof model === 'string' ? model.trim().toUpperCase() : '';
+  const parsedRequestedImages = Number(requestedImages);
+  const outputImages = Number.isFinite(parsedRequestedImages) && parsedRequestedImages > 0
+    ? Math.max(1, Math.floor(parsedRequestedImages))
+    : 1;
+  if (normalizedModel === QWEN_IMAGE_3_PRO_MODEL_KEY) {
+    return {
+      key: 'textToImage',
+      credits: 0,
+      providerBilled: true,
+      distribution: {
+        provider: 'alibabaCloud',
+        providerBilled: true,
+        requestedImages: outputImages,
+        totalCredits: 0,
+      },
+    };
+  }
+  return getTextToImagePricing(outputImages);
 }
 
 /**
@@ -427,7 +475,7 @@ export async function generateTextToImage(payload = {}) {
     ? { ...normalizedMetadata, resolution: normalizedResolution }
     : normalizedMetadata;
   const outputImages = Math.max(1, Math.floor(requestedImages));
-  const pricing = getTextToImagePricing(outputImages);
+  const pricing = getTextToImageRequestPricing(normalizedModel, outputImages);
 
   await getDBConnectionString();
   if (normalizedModel.startsWith(CUSTOM_TEXT_TO_IMAGE_MODEL_PREFIX)) {

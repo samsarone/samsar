@@ -14,6 +14,10 @@ import { useDeploymentModelAvailability } from "../../../../hooks/useDeploymentM
 import { filterOptionsForDeploymentModelValues } from "../../../../utils/deploymentProviders.js";
 import { useUser } from "../../../../contexts/UserContext.jsx";
 import { mergeCustomTextToImageModelDefinitions } from "../../../../utils/customTextToImageAdapters.mjs";
+import {
+  filterImageModelsForDeploymentScope,
+  isProviderBilledImagePricing,
+} from "../../../../utils/imageModelAvailability.mjs";
 
 import { FaCheck, FaQuestionCircle } from "react-icons/fa";
 import { Tooltip } from "react-tooltip";
@@ -48,9 +52,13 @@ export default function OverlayPromptGenerator(props) {
   } = useDeploymentModelAvailability();
   const availableImageModels = useMemo(
     () => {
+      const scopedModels = filterImageModelsForDeploymentScope(
+        IMAGE_GENERAITON_MODEL_TYPES,
+        isStandaloneModelFilteringEnabled,
+      );
       const deploymentModels = isStandaloneModelFilteringEnabled
-        ? filterOptionsForDeploymentModelValues(IMAGE_GENERAITON_MODEL_TYPES, imageModelValues, (model) => model.key)
-        : IMAGE_GENERAITON_MODEL_TYPES;
+        ? filterOptionsForDeploymentModelValues(scopedModels, imageModelValues, (model) => model.key)
+        : scopedModels;
       const modelsWithCustomAdapters = isStandaloneModelFilteringEnabled
         ? mergeCustomTextToImageModelDefinitions(deploymentModels, user?.custom_adapters)
         : deploymentModels;
@@ -189,6 +197,11 @@ export default function OverlayPromptGenerator(props) {
     ? modelPricing.prices.find((price) => price.aspectRatio === aspectRatio)
     : null;
   const modelPrice = priceObj ? priceObj.price : 0;
+  const usesProviderBilling =
+    isStandaloneModelFilteringEnabled && isProviderBilledImagePricing(modelPricing);
+  const modelCostTooltip = usesProviderBilling
+    ? "Billed directly by the configured provider API"
+    : `Currently selected model cost: ${modelPrice} credits`;
   const selectedModelDefinition = availableImageModels.find(
     (model) => model.key === selectedGenerationModel
   );
@@ -237,7 +250,7 @@ export default function OverlayPromptGenerator(props) {
             <span>Model</span>
             <a
               data-tooltip-id="modelCostTooltip"
-              data-tooltip-content={`Currently selected model cost: ${modelPrice} Credits`}
+              data-tooltip-content={modelCostTooltip}
             >
               <FaQuestionCircle className="text-[11px]" />
             </a>

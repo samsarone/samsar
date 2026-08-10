@@ -5,6 +5,7 @@ import {
   getExpressVideoPricingDistributionPerSecond,
 } from './pricing/ExpressVideoPricingDistribution.js';
 import { IS_STANDALONE_DEPLOYMENT } from '../utils/environment.jsx';
+import { QWEN_IMAGE_3_PRO_MODEL_KEY } from '../utils/imageModelAvailability.mjs';
 
 export const COSMOS3_SUPER_MODEL_KEY = 'COSMOS3SUPERI2V';
 const COSMOS3_SUPER_MAX_FRAMES = 189;
@@ -110,6 +111,18 @@ export const IMAGE_MODEL_PRICES = [
       { aspectRatio: '1:1', price: 15 },
       { aspectRatio: '16:9', price: 15 },
       { aspectRatio: '9:16', price: 15 },
+    ],
+  },
+  {
+    key: QWEN_IMAGE_3_PRO_MODEL_KEY,
+    isExpressModel: true,
+    providerBilled: true,
+    prices: [
+      // Zero-valued rows preserve aspect-ratio validation while Alibaba bills
+      // the configured account directly in standalone deployments.
+      { aspectRatio: '1:1', price: 0 },
+      { aspectRatio: '16:9', price: 0 },
+      { aspectRatio: '9:16', price: 0 },
     ],
   },
 ]

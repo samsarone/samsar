@@ -100,7 +100,7 @@ const PROVIDERS = [
     field: 'alibabaApiKey',
     inputType: 'password',
     placeholder: 'Alibaba Cloud Model Studio API key',
-    requiredFor: 'Qwen 3.8 Max inference and vision, Wan image generation, and Happy Horse video.',
+    requiredFor: 'Qwen 3.8 Max inference and vision, Qwen Image 3.0 Pro with standard PAYG access, Wan image generation, and Happy Horse video.',
     pricingUrl: 'https://www.alibabacloud.com/help/en/model-studio/model-pricing',
     keysUrl: 'https://modelstudio.console.alibabacloud.com/',
     credentialLabel: 'API key',
@@ -777,17 +777,6 @@ export function hydrateBackblazeDataConfig(dataConfig = {}, runtimeStorage = {})
   };
 }
 
-function isAlibabaTokenPlanEndpoint(value) {
-  const configured = normalizeText(value);
-  if (!configured) return false;
-  try {
-    const url = new URL(/^[a-z][a-z\d+.-]*:\/\//i.test(configured) ? configured : `https://${configured}`);
-    return url.hostname.toLowerCase().includes('token-plan');
-  } catch {
-    return false;
-  }
-}
-
 function normalizeSecretText(value) {
   return typeof value === 'string' ? value.trim() : '';
 }
@@ -1007,7 +996,7 @@ export function buildInfrastructureConfig(dataConfig = {}) {
       : {
         mode: 'local',
         provider: 'local-mongo',
-        mongoUrl: 'mongodb://mongo:27017/SamsarOne',
+        mongoUrl: '',
       },
     storage: isExternalStorage
       ? {
@@ -1039,8 +1028,8 @@ export function buildInfrastructureConfig(dataConfig = {}) {
         mediaBucketName: 'samsar-resources',
         staticCdnUrl: `${API_BASE_URL}/`,
         secureAssetPrefix: 'assets_v2',
-        accessKeyId: 'samsar',
-        secretAccessKey: 'samsar-local-password',
+        accessKeyId: '',
+        secretAccessKey: '',
         region: 'us-east-1',
         s3Endpoint: 'http://minio:9000',
         s3ForcePathStyle: true,
@@ -2178,10 +2167,64 @@ function getInitialColorMode() {
   return window.localStorage.getItem('colorMode') === 'light' ? 'light' : 'dark';
 }
 
+const SETUP_BOOTSTRAP_STORAGE_KEY = 'samsarSetupBootstrapToken';
+
+function readBrowserStorage(storage, key) {
+  try {
+    return normalizeText(storage?.getItem(key));
+  } catch {
+    return '';
+  }
+}
+
+function writeBrowserStorage(storage, key, value) {
+  try {
+    storage?.setItem(key, value);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function getInitialSetupBootstrapToken(browserWindow = globalThis.window) {
+  if (!browserWindow) {
+    return '';
+  }
+  const fragment = new URLSearchParams(browserWindow.location.hash.replace(/^#/, ''));
+  const fragmentToken = normalizeText(fragment.get('bootstrap'));
+  if (fragmentToken) {
+    if (!writeBrowserStorage(browserWindow.localStorage, SETUP_BOOTSTRAP_STORAGE_KEY, fragmentToken)) {
+      writeBrowserStorage(browserWindow.sessionStorage, SETUP_BOOTSTRAP_STORAGE_KEY, fragmentToken);
+    }
+    browserWindow.history.replaceState(
+      null,
+      '',
+      `${browserWindow.location.pathname}${browserWindow.location.search}`,
+    );
+    return fragmentToken;
+  }
+  const persistentToken = readBrowserStorage(
+    browserWindow.localStorage,
+    SETUP_BOOTSTRAP_STORAGE_KEY,
+  );
+  if (persistentToken) {
+    return persistentToken;
+  }
+  const legacySessionToken = readBrowserStorage(
+    browserWindow.sessionStorage,
+    SETUP_BOOTSTRAP_STORAGE_KEY,
+  );
+  if (legacySessionToken) {
+    writeBrowserStorage(browserWindow.localStorage, SETUP_BOOTSTRAP_STORAGE_KEY, legacySessionToken);
+  }
+  return legacySessionToken;
+}
+
 export default function OnboardingWizard() {
   const wizardShellRef = useRef(null);
   const adminEmailInputRef = useRef(null);
   const [initialWizardState] = useState(buildInitialWizardState);
+  const [setupBootstrapToken] = useState(getInitialSetupBootstrapToken);
   const [step, setStep] = useState(initialWizardState.step);
   const [colorMode, setColorMode] = useState(getInitialColorMode);
   const [credentialSource, setCredentialSource] = useState(initialWizardState.credentialSource);
@@ -2361,6 +2404,9 @@ export default function OnboardingWizard() {
 
   const buildSetupHeaders = (headers = {}, password = setupAuthPassword) => ({
     ...headers,
+    ...(setupBootstrapToken
+      ? { 'x-samsar-setup-bootstrap-token': setupBootstrapToken }
+      : {}),
     ...(password ? { 'x-samsar-setup-admin-password': password } : {}),
   });
 
@@ -3255,7 +3301,7 @@ export default function OnboardingWizard() {
     try {
       const response = await fetch('/api/setup/reverse-proxy/validate', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: buildSetupHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({ reverseProxy: normalizedProxy }),
       });
       const body = await response.json().catch(() => ({}));
@@ -3282,6 +3328,7 @@ export default function OnboardingWizard() {
     try {
       const response = await fetch('/api/setup/reverse-proxy/ip-candidates', {
         cache: 'no-store',
+        headers: buildSetupHeaders(),
       });
       const body = await response.json().catch(() => ({}));
       if (!response.ok || body.ok === false) {
@@ -3597,9 +3644,8 @@ export default function OnboardingWizard() {
     setBrowserExternalAccess(null);
     setIsCheckingBrowserExternalAccess(false);
     setResetError('');
-    setSetupAuthPassword('');
     setSetupAuthError('');
-    setIsSetupAuthenticated(false);
+    setIsSetupAuthenticated(Boolean(setupAuthPassword));
   };
 
   const openResetConfirm = () => {
@@ -3632,7 +3678,13 @@ export default function OnboardingWizard() {
         throw new Error(body?.message || 'Unable to reset local setup.');
       }
       resetLocalWizardState();
-      setInstallStatus({ installed: false, hasRuntimeConfig: false, compose: { total: 0, running: 0, containers: [] } });
+      setInstallStatus({
+        installed: false,
+        hasRuntimeConfig: false,
+        setupAuthRequired: true,
+        setupAuthConfigured: true,
+        compose: { total: 0, running: 0, containers: [] },
+      });
       setMaintenanceRun(null);
       setMaintenanceStartError('');
       setIsResetConfirmOpen(false);
@@ -3863,11 +3915,6 @@ export default function OnboardingWizard() {
                 </section>
               ))}
             </div>
-            {isAlibabaTokenPlanEndpoint(activeCredentials.alibabaApiHost) && (
-              <div className="warning-banner" role="status">
-                Token plan API key is unsuitable for production server
-              </div>
-            )}
             {gmiCloudMediaCatalogWarning && (
               <div className="warning-banner" role="status">
                 {gmiCloudMediaCatalogWarning}

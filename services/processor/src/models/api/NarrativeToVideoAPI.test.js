@@ -196,11 +196,11 @@ test('rejects source prompt or duration overrides and malformed model aliases', 
 
 test('resolves explicit models, then account preferences, then stable express defaults', () => {
   assert.deepEqual(resolveNarrativeToVideoModels({
-    requestedImageModel: 'NANOBANANA2',
+    requestedImageModel: 'GPTIMAGE2',
     requestedVideoModel: 'VEO3.1I2V',
-    user: { agentImageModel: 'GPTIMAGE2', agentVideoModel: 'RUNWAYML' },
+    user: { agentImageModel: 'SEEDREAM', agentVideoModel: 'RUNWAYML' },
   }), {
-    imageModel: 'NANOBANANA2',
+    imageModel: 'GPTIMAGE2',
     videoModel: 'VEO3.1I2V',
   });
 

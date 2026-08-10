@@ -37,17 +37,22 @@ The Linux values are functional compatibility floors; keep Docker on a
 current, vendor-supported patch release.
 `npm run setup-wizard` remains an optional developer alias.
 
-The command prints setup wizard URLs for localhost and detected private IPs,
-and prints a public-IP setup URL only when TCP `8089` responds on that public
-address. It also waits for the wizard to respond and attempts to open
-`http://localhost:8089` in the default browser on hosts with desktop browser
-access. Set `SAMSAR_SETUP_OPEN_BROWSER=0` to skip browser auto-open.
+The command creates a protected bootstrap token, binds the setup wizard to
+loopback, waits for it to respond, and opens an authenticated URL on
+`http://localhost:8089`. The token is retained under `runtime/secrets` and
+reused when the launcher recreates a destroyed setup container, so the same
+browser profile can resume without another unlock stage. Existing session-only
+tokens are migrated automatically. Set `SAMSAR_SETUP_ROTATE_BOOTSTRAP_TOKEN=1` to
+invalidate previous bootstrap URLs and create a new token. For a remote host, use
+`scripts/setup-wizard-remote.sh`; it retrieves the protected token over SSH and
+opens an SSH tunnel. Set `SAMSAR_SETUP_OPEN_BROWSER=0` to skip browser
+auto-open.
 
 ## Wizard Steps
 
 | Step | Screen | What it gathers | Output |
 | --- | --- | --- | --- |
-| 1 | Providers | Optional OpenRouter key, OpenAI API key, Google Cloud service account JSON/base64 JSON, Kimi K3 API key, Alibaba Cloud key/endpoint, FAL key, ElevenLabs key, Runway key, optional Samsar API key | Provider config and model/action availability. |
+| 1 | Providers | Optional OpenRouter key, OpenAI API key, Google Cloud service account JSON/base64 JSON, Kimi K3 API key, Alibaba Cloud key/endpoint (Token Plan or pay-as-you-go), FAL key, ElevenLabs key, Runway key, optional Samsar API key | Provider config and model/action availability, including Qwen Image 3.0 Pro for standalone Alibaba Cloud standard PAYG credentials. |
 | 2 | Services | Processor, setup wizard, image generator, assistant query processor, audio generator, AI video layer generator, video renderer, frames processor, express video listener, logger | Docker service selection and local infrastructure flags. |
 | 3 | Mail and Data | Local vs remote MongoDB, local MinIO vs external S3-compatible storage, static CDN URL, CloudFront signing fields, disabled/SMTP/SES mail | Database, storage, media, and mail config. |
 | 4 | Domain | Optional nginx reverse proxy, public domain/subdomain, public IP, private IP, optional IP detection, optional firewall port opening, and optional Let's Encrypt SSL for validated public domains | Public or intranet access URLs for Studio and the processor API. |
@@ -86,8 +91,8 @@ The wizard labels the available software factory services as:
 
 | Setting | Local default | Remote/external option |
 | --- | --- | --- |
-| Database | `mongodb://mongo:27017/SamsarOne` | A `mongodb://` or `mongodb+srv://` connection string. |
-| Storage | MinIO with bucket `samsar-resources` | S3-compatible bucket, endpoint, region, keys, force-path-style flag, and optional CloudFront signing. |
+| Database | Authenticated local MongoDB with generated root and application passwords | A `mongodb://` or `mongodb+srv://` connection string. |
+| Storage | MinIO with generated credentials and bucket `samsar-resources` | S3-compatible bucket, endpoint, region, keys, force-path-style flag, and optional CloudFront signing. |
 | Browser media | Configured processor API (`http://localhost:3002/` by default) | Public CloudFront/CDN URL when external media publishing is enabled. |
 | Mail | Disabled | SMTP or AWS SES. |
 
@@ -115,7 +120,7 @@ When the wizard starts setup, the server performs these steps:
 | --- | --- |
 | `cleanup` | Clean previous containers. |
 | `config` | Save deployment config under `runtime/config/samsar.config.json`. |
-| `runtime` | Render `runtime/secrets/root.env` and `runtime/config/available-models.json`. |
+| `runtime` | Render `runtime/secrets/root.env`, durable infrastructure credential env files, and `runtime/config/available-models.json`. |
 | `firewall` | Try to open required nginx reverse proxy ports: `80` for non-SSL, `80` and `443` for SSL. |
 | `compose` | Build and start Docker containers. |
 | `proxy` | Start nginx, optionally request Let's Encrypt certificates, and validate configured public or private access. |
@@ -133,6 +138,12 @@ Maintenance runs skip the initial cleanup/config flow and execute runtime render
 | `runtime/config/samsar.config.json` | Main deployment configuration. |
 | `runtime/config/available-models.json` | Enabled providers, models, actions, provider key/endpoint types, and derived audio availability. |
 | `runtime/secrets/root.env` | Docker env file consumed by services, including the shared `KIMI_K3_API_KEY` for inference consumers. |
+| `runtime/secrets/application.env` | Generated application signing and custom-adapter encryption secrets. |
+| `runtime/secrets/mongo.env` | Generated MongoDB root and application credentials; the application account is embedded in the service `MONGO_URL`. |
+| `runtime/secrets/minio.env` | Generated local MinIO administrator credentials. |
+| `runtime/secrets/grafana.env` | Generated Grafana administrator credentials. |
+| `runtime/secrets/setup-bootstrap.token` | Protected launcher token reused when the setup container is recreated; rotate it explicitly with `SAMSAR_SETUP_ROTATE_BOOTSTRAP_TOKEN=1`. |
+| `runtime/secrets/setup-auth.hash` | Durable setup administrator password hash retained across setup reset. |
 | `runtime/secrets/provider.credentials.json` | Mode-`0600` OpenRouter and validated Alibaba provider secrets plus Alibaba key/endpoint type. |
 | `runtime/secrets/mail.credentials.json` | Sanitized and secret mail configuration when SMTP or SES is configured. |
 | `runtime/reverse-proxy/nginx.conf` | Generated nginx config when the reverse proxy feature is enabled or safely disabled. |

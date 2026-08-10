@@ -95,8 +95,8 @@ test('vision entry point advances through the saved standalone adapter order', a
 
   t.mock.method(OpenAI.Chat.Completions.prototype, 'create', async () => {
     attempts.push('openrouter');
-    const error = new Error('OpenRouter unavailable');
-    error.status = 503;
+    const error = new Error('OpenRouter connection refused');
+    error.code = 'ECONNREFUSED';
     throw error;
   });
   t.mock.method(OpenAI.prototype, 'post', async () => {

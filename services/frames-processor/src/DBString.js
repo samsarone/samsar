@@ -1,21 +1,26 @@
 import 'dotenv/config';
 import mongoose from 'mongoose';
 
-import { isDockerRuntime } from './utils/DeploymentEnvironment.js';
+import { isDockerRuntime, isStandaloneEdition } from './utils/DeploymentEnvironment.js';
 
 mongoose.set('bufferCommands', false);
 mongoose.set('bufferTimeoutMS', 0);
 
 let connectPromise = null;
 export function buildMongoConnectionString(env = process.env) {
-  if (env.MONGO_URL) {
-    return env.MONGO_URL;
+  const explicitMongoUrl = typeof env.MONGO_URL === 'string' ? env.MONGO_URL.trim() : '';
+  if (explicitMongoUrl) {
+    return explicitMongoUrl;
   }
 
   if (
     env.DATABASE_PROVIDER === 'cosmos' ||
-    (env.CURRENT_ENV === 'production' && !isDockerRuntime(env))
+    (env.CURRENT_ENV === 'production' && !isDockerRuntime(env) && !isStandaloneEdition(env))
   ) {
+    if (!env.COSMOS_DB_USERNAME || !env.COSMOS_DB_PASSWORD) {
+      throw new Error('Missing COSMOS_DB_USERNAME or COSMOS_DB_PASSWORD for production MongoDB connection');
+    }
+
     const user = encodeURIComponent(env.COSMOS_DB_USERNAME);
     const pass = encodeURIComponent(env.COSMOS_DB_PASSWORD);
     const DB_NAME = 'SamsarOne';
@@ -34,9 +39,12 @@ export function buildMongoConnectionString(env = process.env) {
     env.CURRENT_ENV === 'staging' ||
     env.CURRENT_ENV === 'docker' ||
     env.CURRENT_ENV === 'standalone' ||
-    isDockerRuntime(env)
+    isDockerRuntime(env) ||
+    isStandaloneEdition(env)
   ) {
-    return 'mongodb://mongo:27017/SamsarOne';
+    throw new Error(
+      'MONGO_URL is required for deployed MongoDB connections; refusing the unauthenticated Compose fallback',
+    );
   }
 
   return 'mongodb://localhost:27017/SamsarOne';

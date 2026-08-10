@@ -17,6 +17,10 @@ import { useDeploymentModelAvailability } from "../../../hooks/useDeploymentMode
 import { filterOptionsForDeploymentModelValues } from "../../../utils/deploymentProviders.js";
 import { useUser } from "../../../contexts/UserContext.jsx";
 import { mergeCustomTextToImageModelDefinitions } from "../../../utils/customTextToImageAdapters.mjs";
+import {
+  filterImageModelsForDeploymentScope,
+  isProviderBilledImagePricing,
+} from "../../../utils/imageModelAvailability.mjs";
 
 export default function PromptGenerator(props) {
   const {
@@ -46,9 +50,13 @@ export default function PromptGenerator(props) {
   } = useDeploymentModelAvailability();
   const availableImageModels = useMemo(
     () => {
+      const scopedModels = filterImageModelsForDeploymentScope(
+        IMAGE_GENERAITON_MODEL_TYPES,
+        isStandaloneModelFilteringEnabled,
+      );
       const deploymentModels = isStandaloneModelFilteringEnabled
-        ? filterOptionsForDeploymentModelValues(IMAGE_GENERAITON_MODEL_TYPES, imageModelValues, (model) => model.key)
-        : IMAGE_GENERAITON_MODEL_TYPES;
+        ? filterOptionsForDeploymentModelValues(scopedModels, imageModelValues, (model) => model.key)
+        : scopedModels;
       const modelsWithCustomAdapters = isStandaloneModelFilteringEnabled
         ? mergeCustomTextToImageModelDefinitions(deploymentModels, user?.custom_adapters)
         : deploymentModels;
@@ -169,6 +177,11 @@ export default function PromptGenerator(props) {
     ? pricingInfo.prices.find((price) => price.aspectRatio === aspectRatio)
     : null;
   const modelPrice = priceObj ? priceObj.price : 0;
+  const usesProviderBilling =
+    isStandaloneModelFilteringEnabled && isProviderBilledImagePricing(pricingInfo);
+  const modelCostTooltip = usesProviderBilling
+    ? "Billed directly by the configured provider API"
+    : `Currently selected model cost: ${modelPrice} credits`;
 
   // ------------------------------------------------------------------
   // Handle user selecting a new model from the dropdown
@@ -229,7 +242,7 @@ export default function PromptGenerator(props) {
               Model
               <a
                 data-tooltip-id="modelCostTooltip"
-                data-tooltip-content={`Currently selected model cost: ${modelPrice} credits`}
+                data-tooltip-content={modelCostTooltip}
               >
                 <FaQuestionCircle className="ml-1 mr-1" />
               </a>

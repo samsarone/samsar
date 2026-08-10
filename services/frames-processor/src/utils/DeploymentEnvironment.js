@@ -20,8 +20,11 @@ export function isStandaloneEdition(env = process.env) {
 
 export function isDockerRuntime(env = process.env) {
   const runtime = normalize(env.SAMSAR_RUNTIME || env.SAMSAR_DEPLOYMENT_RUNTIME);
-  if (runtime) return runtime === 'docker';
-  return ['docker', 'standalone', 'staging'].includes(normalize(env.CURRENT_ENV));
+  if (runtime) {
+    return ['docker', 'container', 'compose', 'kubernetes', 'k8s'].includes(runtime);
+  }
+  return ['docker', 'container', 'compose', 'kubernetes', 'k8s', 'standalone', 'staging']
+    .includes(normalize(env.CURRENT_ENV));
 }
 
 export function usesLocalAssetStorage(env = process.env) {

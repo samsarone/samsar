@@ -7,6 +7,10 @@ import ImageBatchGeneration from '../schema/ImageBatchGeneration.js';
 import { IMAGE_EDIT_MODEL_PRICES, IMAGE_MODEL_PRICES } from '../consts/ModelPrices.js';
 import sizeOf from 'image-size';
 import { shouldBypassGenerationCredits } from '../utils/EnvironmentUtils.js';
+import {
+  QWEN_IMAGE_3_PRO_MODEL_KEY,
+  isAlibabaQwenImage3ProAvailable,
+} from '../consts/DockerProviderPriority.js';
 
 import { maybeTriggerAutoRecharge } from './AutoRecharge.js';
 
@@ -28,6 +32,26 @@ function resolveNanoBananaModelAlias(modelKey) {
     return 'GPTIMAGE2EDIT';
   }
   return modelKey;
+}
+
+export function assertImageGenerationModelAvailable(modelKey, env = process.env) {
+  const normalizedModelKey = typeof modelKey === 'string'
+    ? modelKey.trim().toUpperCase()
+    : modelKey;
+  if (
+    normalizedModelKey === QWEN_IMAGE_3_PRO_MODEL_KEY &&
+    !isAlibabaQwenImage3ProAvailable(env)
+  ) {
+    const error = new Error(
+      'Qwen Image 3.0 Pro requires standalone Alibaba Cloud pay-as-you-go credentials.',
+    );
+    error.status = 400;
+    error.statusCode = 400;
+    throw error;
+  }
+  return normalizedModelKey === QWEN_IMAGE_3_PRO_MODEL_KEY
+    ? QWEN_IMAGE_3_PRO_MODEL_KEY
+    : modelKey;
 }
 
 const isDataUrl = (value) => typeof value === 'string' && value.trim().startsWith('data:');
@@ -220,7 +244,9 @@ export async function addImageGeneratorRequest(userId, payload, updateCredits = 
 
 
   const { model, aspectRatio, contentFilterRating = 3, retryOnFailure } = payload;
-  const resolvedModel = resolveNanoBananaModelAlias(model);
+  const resolvedModel = assertImageGenerationModelAvailable(
+    resolveNanoBananaModelAlias(model),
+  );
 
 
   // Find the pricing information for the selected model

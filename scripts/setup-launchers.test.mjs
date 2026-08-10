@@ -33,6 +33,57 @@ test('the host bootstrap installs Docker without installing Node tooling', () =>
   assert.match(launcher, /docker-ce docker-ce-cli containerd\.io docker-buildx-plugin docker-compose-plugin/);
 });
 
+test('the launcher reuses its protected bootstrap token after the container is recreated', {
+  skip: process.platform === 'win32',
+}, () => {
+  const launcher = read('scripts/setup-wizard-docker.sh');
+  const enabledFunction = launcher.slice(
+    launcher.indexOf('enabled() {'),
+    launcher.indexOf('generate_setup_bootstrap_token() {'),
+  );
+  const tokenFunctions = launcher.slice(
+    launcher.indexOf('generate_setup_bootstrap_token() {'),
+    launcher.indexOf('build_provider_environment_forwarding() {'),
+  );
+  const script = `
+set -euo pipefail
+${enabledFunction}
+${tokenFunctions}
+die() { printf '%s\\n' "$*" >&2; exit 1; }
+BOOTSTRAP_TOKEN_FILE="$1/setup-bootstrap.token"
+TOKEN_A='aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+TOKEN_B='bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'
+write_setup_bootstrap_token "$TOKEN_A"
+[[ "$(read_setup_bootstrap_token)" == "$TOKEN_A" ]]
+if ! enabled "\${SAMSAR_SETUP_ROTATE_BOOTSTRAP_TOKEN:-0}" &&
+  SELECTED_TOKEN="$(read_setup_bootstrap_token)"; then
+  :
+else
+  SELECTED_TOKEN="$TOKEN_B"
+  write_setup_bootstrap_token "$SELECTED_TOKEN"
+fi
+[[ "$SELECTED_TOKEN" == "$TOKEN_A" ]]
+[[ "$(read_setup_bootstrap_token)" == "$TOKEN_A" ]]
+SAMSAR_SETUP_ROTATE_BOOTSTRAP_TOKEN=1
+if ! enabled "$SAMSAR_SETUP_ROTATE_BOOTSTRAP_TOKEN" &&
+  SELECTED_TOKEN="$(read_setup_bootstrap_token)"; then
+  exit 1
+else
+  SELECTED_TOKEN="$TOKEN_B"
+  write_setup_bootstrap_token "$SELECTED_TOKEN"
+fi
+[[ "$SELECTED_TOKEN" == "$TOKEN_B" ]]
+[[ "$(read_setup_bootstrap_token)" == "$TOKEN_B" ]]
+`;
+
+  const temporaryDirectory = fs.mkdtempSync(path.join(process.env.TMPDIR || '/tmp', 'samsar-bootstrap-token-'));
+  try {
+    execFileSync('bash', ['-c', script, 'bash', temporaryDirectory]);
+  } finally {
+    fs.rmSync(temporaryDirectory, { recursive: true, force: true });
+  }
+});
+
 test('the Linux launcher enforces compatible Engine and Compose capabilities', () => {
   const launcher = read('scripts/setup-wizard-docker.sh');
   const updateSection = launcher.slice(

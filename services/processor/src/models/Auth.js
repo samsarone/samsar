@@ -1,5 +1,6 @@
 
 import jwt from 'jsonwebtoken';
+import { getTokenSecret } from '../utils/RuntimeSecrets.js';
 
 const DEFAULT_LOGIN_TOKEN_TTL_SECONDS = 10 * 60;
 const DEFAULT_OAUTH_AUTH_TOKEN_TTL_SECONDS = 10 * 24 * 60 * 60;
@@ -45,10 +46,7 @@ const OAUTH_AUTH_TOKEN_TTL_SECONDS = resolveOAuthAuthTokenTtlSeconds();
 
 
 export function generateAuthToken(userId) {
-  const SECRET_KEY = process.env.TOKEN_SECRET;
-  if (!SECRET_KEY || SECRET_KEY.trim().length === 0) {
-    throw new Error('TOKEN_SECRET environment variable must be set to generate auth tokens');
-  }
+  const SECRET_KEY = getTokenSecret();
   const token = jwt.sign({ _id: userId },
     SECRET_KEY,
     { expiresIn: 60 * 60 * 24 * 30 });
@@ -56,10 +54,7 @@ export function generateAuthToken(userId) {
 }
 
 export function generateOAuthAuthToken(userId, claims = {}) {
-  const SECRET_KEY = process.env.TOKEN_SECRET;
-  if (!SECRET_KEY || SECRET_KEY.trim().length === 0) {
-    throw new Error('TOKEN_SECRET environment variable must be set to generate auth tokens');
-  }
+  const SECRET_KEY = getTokenSecret();
 
   const expiresInSeconds = OAUTH_AUTH_TOKEN_TTL_SECONDS;
   const expiryDate = new Date(Date.now() + expiresInSeconds * 1000);
@@ -82,7 +77,7 @@ export function generateOAuthAuthToken(userId, claims = {}) {
 }
 
 export function verifyAuthToken(authToken) {
-  const SECRET_KEY = process.env.TOKEN_SECRET;
+  const SECRET_KEY = getTokenSecret();
   const decoded = jwt.verify(authToken, SECRET_KEY);
   if (decoded?.type) {
     const error = new Error('Non-standard tokens cannot be used as auth tokens');
@@ -96,10 +91,7 @@ export function verifyAuthToken(authToken) {
 }
 
 export function generateExternalAuthToken({ internalUserId, externalUserId, externalIdentityKey = null }) {
-  const SECRET_KEY = process.env.TOKEN_SECRET;
-  if (!SECRET_KEY || SECRET_KEY.trim().length === 0) {
-    throw new Error('TOKEN_SECRET environment variable must be set to generate auth tokens');
-  }
+  const SECRET_KEY = getTokenSecret();
 
   return jwt.sign(
     {
@@ -114,10 +106,7 @@ export function generateExternalAuthToken({ internalUserId, externalUserId, exte
 }
 
 export function generateLoginToken(userId) {
-  const SECRET_KEY = process.env.TOKEN_SECRET;
-  if (!SECRET_KEY || SECRET_KEY.trim().length === 0) {
-    throw new Error('TOKEN_SECRET environment variable must be set to generate login tokens');
-  }
+  const SECRET_KEY = getTokenSecret();
   const token = jwt.sign({ _id: userId, type: 'login' }, SECRET_KEY, {
     expiresIn: LOGIN_TOKEN_TTL_SECONDS,
   });
@@ -129,10 +118,7 @@ export function generateExternalLoginToken({
   externalUserId,
   externalIdentityKey = null,
 }) {
-  const SECRET_KEY = process.env.TOKEN_SECRET;
-  if (!SECRET_KEY || SECRET_KEY.trim().length === 0) {
-    throw new Error('TOKEN_SECRET environment variable must be set to generate login tokens');
-  }
+  const SECRET_KEY = getTokenSecret();
 
   return jwt.sign(
     {
@@ -149,7 +135,7 @@ export function generateExternalLoginToken({
 }
 
 export function verifyLoginToken(loginToken) {
-  const SECRET_KEY = process.env.TOKEN_SECRET;
+  const SECRET_KEY = getTokenSecret();
   const decoded = jwt.verify(loginToken, SECRET_KEY);
   if (!decoded || (decoded.type !== 'login' && decoded.type !== 'external_login')) {
     throw new Error('Invalid login token');
@@ -168,7 +154,7 @@ export function getOAuthAuthTokenTtlSeconds() {
 
 export async function verifyUserAuthentication(reqHeaders) {
   try {
-    const SECRET_KEY = process.env.TOKEN_SECRET;
+    const SECRET_KEY = getTokenSecret();
     const tokenString = reqHeaders.authorization;
     const token = tokenString?.split("Bearer ")[1];
     if (!token) throw new Error("Missing token");
@@ -189,7 +175,7 @@ export async function verifyUserAuthentication(reqHeaders) {
 
 export function verifyUserAuth(reqHeaders) {
   try {
-    const SECRET_KEY = process.env.TOKEN_SECRET;
+    const SECRET_KEY = getTokenSecret();
     const tokenString = reqHeaders.authorization;
     const token = tokenString.split("Bearer ")[1];
     const decoded = jwt.verify(token, SECRET_KEY);
@@ -204,7 +190,7 @@ export function verifyUserAuth(reqHeaders) {
 
 export async function verifyUserAuthAndGetUser(reqHeaders) {
 
-  const SECRET_KEY = process.env.TOKEN_SECRET;
+  const SECRET_KEY = getTokenSecret();
   const tokenString = reqHeaders.authorization;
   if (!tokenString) throw new Error("No token provided");
   const token = tokenString.split("Bearer ")[1];

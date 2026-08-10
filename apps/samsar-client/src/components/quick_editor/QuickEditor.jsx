@@ -56,6 +56,7 @@ import {
   isCustomTextToImageModelKey,
   mergeCustomTextToImageModelDefinitions,
 } from '../../utils/customTextToImageAdapters.mjs';
+import { filterImageModelsForDeploymentScope } from '../../utils/imageModelAvailability.mjs';
 
 import {
   COSMOS3_SUPER_MODEL_KEY,
@@ -338,13 +339,17 @@ export default function QuickEditor() {
 
   // For infinite-zoom we only want certain models in the Image dropdown:
   const imageModelOptions = useMemo(() => {
+    const scopedModels = filterImageModelsForDeploymentScope(
+      IMAGE_GENERAITON_MODEL_TYPES,
+      isStandaloneModelFilteringEnabled,
+    );
     const deploymentModels = isStandaloneModelFilteringEnabled
       ? filterOptionsForDeploymentModelValues(
-          IMAGE_GENERAITON_MODEL_TYPES,
+          scopedModels,
           textToVideoImageModelValues,
           (model) => model.key
         )
-      : IMAGE_GENERAITON_MODEL_TYPES;
+      : scopedModels;
     const modelsWithCustomAdapters = isStandaloneModelFilteringEnabled
       ? mergeCustomTextToImageModelDefinitions(deploymentModels, user?.custom_adapters)
       : deploymentModels;

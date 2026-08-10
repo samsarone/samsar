@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import jwt from 'jsonwebtoken';
 import { normalizeNewsletterPreference } from '../Newsletter.js';
+import { getTokenSecret, validateRuntimeSecret } from '../../utils/RuntimeSecrets.js';
 
 const STATE_PREFIX = 'samsar_oauth_v1.';
 const STATE_ISSUER = 'samsar-processor';
@@ -39,11 +40,18 @@ function getPositiveInteger(value, fallback) {
 }
 
 function getStateSecret(env = process.env) {
-  const secret = env.SAMSAR_OAUTH_STATE_SECRET || env.TOKEN_SECRET;
-  if (typeof secret !== 'string' || secret.trim().length < 32) {
-    throw configurationError('SAMSAR_OAUTH_STATE_SECRET or TOKEN_SECRET must contain at least 32 characters.');
+  try {
+    if (env.SAMSAR_OAUTH_STATE_SECRET) {
+      return validateRuntimeSecret(
+        'SAMSAR_OAUTH_STATE_SECRET',
+        env.SAMSAR_OAUTH_STATE_SECRET,
+      );
+    }
+
+    return getTokenSecret(env);
+  } catch (error) {
+    throw configurationError(error.message);
   }
-  return secret;
 }
 
 function parseHttpUrl(value, label, { allowLoopbackHttp = false } = {}) {

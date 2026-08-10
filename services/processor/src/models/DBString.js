@@ -1,6 +1,9 @@
 import 'dotenv/config';
 import mongoose from 'mongoose';
-import { isContainerRuntime, isProductionEdition } from '../utils/EnvironmentUtils.js';
+import {
+  isContainerRuntime,
+  isStandaloneEdition,
+} from '../utils/EnvironmentUtils.js';
 
 mongoose.set('bufferCommands', false);
 mongoose.set('bufferTimeoutMS', 0);
@@ -13,13 +16,30 @@ export function resolveMongoConnectionString(env = process.env) {
     return explicitMongoUrl;
   }
 
+  const databaseProvider = typeof env?.DATABASE_PROVIDER === 'string'
+    ? env.DATABASE_PROVIDER.trim().toLowerCase()
+    : '';
+  const explicitlyHostedProduction = [
+    env?.SAMSAR_DEPLOYMENT_EDITION,
+    env?.SAMSAR_EDITION,
+    env?.CURRENT_ENV,
+  ].some((value) => typeof value === 'string' && value.trim().toLowerCase() === 'production');
+  const standaloneEdition = isStandaloneEdition(env);
+  const useCosmos = databaseProvider === 'cosmos' || (
+    explicitlyHostedProduction && !standaloneEdition && !isContainerRuntime(env)
+  );
   const mongoUsername = typeof env?.COSMOS_DB_USERNAME === 'string'
     ? env.COSMOS_DB_USERNAME.trim()
     : '';
   const mongoPassword = typeof env?.COSMOS_DB_PASSWORD === 'string'
     ? env.COSMOS_DB_PASSWORD
     : '';
-  if (isProductionEdition(env) && mongoUsername && mongoPassword) {
+  if (useCosmos) {
+    if (!mongoUsername || !mongoPassword.trim()) {
+      throw new Error(
+        'COSMOS_DB_USERNAME and COSMOS_DB_PASSWORD are required when DATABASE_PROVIDER=cosmos or hosted production MongoDB is selected.',
+      );
+    }
     const encodedUsername = encodeURIComponent(mongoUsername);
     const encodedPassword = encodeURIComponent(mongoPassword);
     const databaseName = env?.MONGO_DATABASE || 'SamsarOne';
@@ -36,10 +56,14 @@ export function resolveMongoConnectionString(env = process.env) {
     return `${mongoBaseConnectionString}/${databaseName}?${optionsQuery}`;
   }
 
+  if (isContainerRuntime(env) || standaloneEdition) {
+    throw new Error(
+      'MONGO_URL must be explicitly configured for standalone or container deployments.',
+    );
+  }
+
   const databaseName = env?.MONGO_DATABASE || 'SamsarOne';
-  return isContainerRuntime(env)
-    ? `mongodb://mongo:27017/${databaseName}`
-    : `mongodb://localhost:27017/${databaseName}`;
+  return `mongodb://localhost:27017/${databaseName}`;
 }
 
 const MONGO_CONNECTION_STRING = resolveMongoConnectionString();

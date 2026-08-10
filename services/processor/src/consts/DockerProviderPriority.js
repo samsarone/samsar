@@ -17,7 +17,10 @@ export const DOCKER_PROVIDER = Object.freeze({
   SAMSAR: 'samsar',
 });
 
+export const QWEN_IMAGE_3_PRO_MODEL_KEY = 'QWENIMAGE3PRO';
+
 export const DOCKER_IMAGE_PROVIDER_PRIORITY_BY_MODEL = Object.freeze({
+  [QWEN_IMAGE_3_PRO_MODEL_KEY]: [DOCKER_PROVIDER.ALIBABA_CLOUD],
   'WAN2.7PRO': [DOCKER_PROVIDER.ALIBABA_CLOUD, DOCKER_PROVIDER.FAL, DOCKER_PROVIDER.SAMSAR],
   GPTIMAGE2: [
     DOCKER_PROVIDER.OPENAI,
@@ -162,13 +165,41 @@ export function hasFalCredential() {
   return hasEnvCredential('FAL_API_KEY');
 }
 
-export function hasAlibabaCloudCredential() {
-  return hasEnvCredential(
+export function hasAlibabaCloudCredential(env = process.env) {
+  return [
     'ALIBABA_API_KEY',
     'DASHSCOPE_API_KEY',
     'ALIBABA_CLOUD_API_KEY',
     'QWEN_API_KEY',
-  );
+  ].some((key) => Boolean(normalizeString(env?.[key])));
+}
+
+const ALIBABA_QWEN_IMAGE_3_PRO_KEY_TYPES = new Set([
+  '',
+  'pay_as_you_go',
+]);
+const ALIBABA_QWEN_IMAGE_3_PRO_ENDPOINT_TYPES = new Set([
+  '',
+  'pay_as_you_go',
+]);
+
+export function isAlibabaQwenImage3ProCredentialEligible({
+  keyType = '',
+  endpointType = '',
+} = {}) {
+  return ALIBABA_QWEN_IMAGE_3_PRO_KEY_TYPES.has(normalizeString(keyType).toLowerCase()) &&
+    ALIBABA_QWEN_IMAGE_3_PRO_ENDPOINT_TYPES.has(
+      normalizeString(endpointType).toLowerCase(),
+    );
+}
+
+export function isAlibabaQwenImage3ProAvailable(env = process.env) {
+  return isStandaloneEdition(env) &&
+    hasAlibabaCloudCredential(env) &&
+    isAlibabaQwenImage3ProCredentialEligible({
+      keyType: env?.ALIBABA_API_KEY_TYPE,
+      endpointType: env?.ALIBABA_API_ENDPOINT_TYPE,
+    });
 }
 
 export function hasOpenAICredential() {
@@ -213,6 +244,12 @@ export function isDockerProviderConfigured(provider) {
 export function getDockerImageProviderPriority(model) {
   const normalizedModel = normalizeDockerModelKey(model);
   let defaultPriority;
+  if (
+    normalizedModel === QWEN_IMAGE_3_PRO_MODEL_KEY &&
+    !isAlibabaQwenImage3ProAvailable()
+  ) {
+    return [];
+  }
   if (
     normalizedModel === 'NANOBANANAPRO' &&
     isProductionEdition()

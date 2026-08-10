@@ -78,3 +78,45 @@ test('rejects poll URLs that cannot be bound to a request id', () => {
     /status_url.*\{request_id\}/,
   );
 });
+
+test('requires CUSTOM_ADAPTER_SECRET_KEY instead of falling back to shared secrets', () => {
+  const previous = {
+    CUSTOM_ADAPTER_SECRET_KEY: process.env.CUSTOM_ADAPTER_SECRET_KEY,
+    CUSTOM_CREDENTIALS_SECRET: process.env.CUSTOM_CREDENTIALS_SECRET,
+    TOKEN_SECRET: process.env.TOKEN_SECRET,
+  };
+  delete process.env.CUSTOM_ADAPTER_SECRET_KEY;
+  process.env.CUSTOM_CREDENTIALS_SECRET = 'legacy-custom-credentials-secret-9f8c7b6a';
+  process.env.TOKEN_SECRET = 'shared-token-secret-9f8c7b6a5d4e3f2a1c0b';
+  try {
+    assert.throws(
+      () => normalizeCustomAdaptersPayload({ custom_endpoints: [ENDPOINT] }),
+      /CUSTOM_ADAPTER_SECRET_KEY.*explicitly configured/,
+    );
+  } finally {
+    for (const [name, value] of Object.entries(previous)) {
+      if (value === undefined) {
+        delete process.env[name];
+      } else {
+        process.env[name] = value;
+      }
+    }
+  }
+});
+
+test('rejects a known public custom-adapter secret', () => {
+  const previousSecret = process.env.CUSTOM_ADAPTER_SECRET_KEY;
+  process.env.CUSTOM_ADAPTER_SECRET_KEY = `samsar-local-${'x'.repeat(32)}`;
+  try {
+    assert.throws(
+      () => normalizeCustomAdaptersPayload({ custom_endpoints: [ENDPOINT] }),
+      /CUSTOM_ADAPTER_SECRET_KEY.*known public\/default value/,
+    );
+  } finally {
+    if (previousSecret === undefined) {
+      delete process.env.CUSTOM_ADAPTER_SECRET_KEY;
+    } else {
+      process.env.CUSTOM_ADAPTER_SECRET_KEY = previousSecret;
+    }
+  }
+});

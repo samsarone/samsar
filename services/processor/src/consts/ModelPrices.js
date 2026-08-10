@@ -92,6 +92,18 @@ export const IMAGE_MODEL_PRICES = [
     ],
   },
   {
+    key: 'QWENIMAGE3PRO',
+    name: 'Qwen Image 3.0 Pro',
+    isExpressModel: true,
+    standaloneOnly: true,
+    providerBilled: true,
+    prices: [
+      { aspectRatio: '1:1', price: 0 },
+      { aspectRatio: '16:9', price: 0 },
+      { aspectRatio: '9:16', price: 0 },
+    ],
+  },
+  {
     key: 'WAN2.7PRO',
     name: 'Wan2.7 Pro',
     isExpressModel: true,

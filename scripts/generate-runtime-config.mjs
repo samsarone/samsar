@@ -22,6 +22,16 @@ import {
   readEnvironmentValue,
   serializeEnvironment,
 } from './genblaze-runtime-config.mjs';
+import {
+  buildAuthenticatedMongoUrl,
+  parseEnvironment,
+  readCredentialEnvironment,
+  resolveApplicationCredentials,
+  resolveGrafanaCredentials,
+  resolveMinioCredentials,
+  resolveMongoCredentials,
+  writeCredentialEnvironment,
+} from './infrastructure-credentials.mjs';
 
 const root = path.resolve(new URL('..', import.meta.url).pathname);
 const runtimeConfigDir = path.join(root, 'runtime', 'config');
@@ -31,6 +41,10 @@ const exampleConfigPath = path.join(root, 'samsar.config.example.json');
 const mailSecretsPath = path.join(runtimeSecretsDir, 'mail.credentials.json');
 const providerSecretsPath = path.join(runtimeSecretsDir, 'provider.credentials.json');
 const genblazeEnvPath = path.join(runtimeSecretsDir, 'genblaze.env');
+const applicationEnvPath = path.join(runtimeSecretsDir, 'application.env');
+const mongoEnvPath = path.join(runtimeSecretsDir, 'mongo.env');
+const minioEnvPath = path.join(runtimeSecretsDir, 'minio.env');
+const grafanaEnvPath = path.join(runtimeSecretsDir, 'grafana.env');
 const genblazeModelCatalogPath = path.join(runtimeConfigDir, 'genblaze-model-catalog.json');
 const reverseProxyDir = path.join(root, 'runtime', 'reverse-proxy');
 const reverseProxyNginxPath = path.join(reverseProxyDir, 'nginx.conf');
@@ -66,8 +80,6 @@ const cloudFrontConfig = storageConfig.cloudFront || {};
 const mailConfig = config.mail || {};
 const storageProvider = storageConfig.provider || (isDockerRuntime ? 's3-compatible' : 'aws-s3-cloudfront');
 const isS3CompatibleStorage = storageProvider === 's3-compatible';
-const defaultLocalS3AccessKey = isDockerRuntime && isS3CompatibleStorage ? 'samsar' : '';
-const defaultLocalS3SecretKey = isDockerRuntime && isS3CompatibleStorage ? 'samsar-local-password' : '';
 const backblazeEndpoint = storageBackend === 'backblaze-b2'
   ? parseBackblazeS3Endpoint(storageConfig.s3Endpoint)
   : null;
@@ -80,8 +92,6 @@ const storageBucketName = resolveRuntimeMediaBucketName(storageConfig, {
   dockerRuntime: isDockerRuntime,
 });
 const storageRegion = backblazeEndpoint?.region || storageConfig.region || storageConfig.awsRegion || 'us-east-1';
-const storageAccessKeyId = storageConfig.accessKeyId || storageConfig.awsAccessKeyId || defaultLocalS3AccessKey;
-const storageSecretAccessKey = storageConfig.secretAccessKey || storageConfig.awsSecretAccessKey || defaultLocalS3SecretKey;
 const backblazeCredentialType = storageBackend === 'backblaze-b2'
   ? normalizeString(storageConfig.credentialType)
   : '';
@@ -556,13 +566,17 @@ function buildAvailableModels(providers = {}) {
   const providerNames = Object.entries(providers)
     .filter(([, providerConfig]) => isProviderEnabled(providerConfig))
     .map(([provider]) => provider);
+  const providerKeyTypes = alibabaApiKey ? { alibabaCloud: alibabaKeyType } : {};
+  const providerEndpointTypes = alibabaApiKey ? { alibabaCloud: alibabaEndpointType } : {};
 
   return {
     ...buildDockerAvailableModelsFromEnabledProviders(providerNames, {
       gmiCloudModelMappings,
+      providerKeyTypes,
+      providerEndpointTypes,
     }),
-    providerKeyTypes: alibabaApiKey ? { alibabaCloud: alibabaKeyType } : {},
-    providerEndpointTypes: alibabaApiKey ? { alibabaCloud: alibabaEndpointType } : {},
+    providerKeyTypes,
+    providerEndpointTypes,
     audio: buildDockerAudioAvailability(providers, { gmiCloudModelMappings }),
   };
 }
@@ -578,21 +592,85 @@ try {
   // Best effort; Docker Desktop bind mounts may ignore chmod on some hosts.
 }
 
+const existingRootEnvironment = fs.existsSync(path.join(runtimeSecretsDir, 'root.env'))
+  ? parseEnvironment(fs.readFileSync(path.join(runtimeSecretsDir, 'root.env'), 'utf8'))
+  : {};
+const applicationCredentials = resolveApplicationCredentials({
+  configuredSecurity: config.security || {},
+  existingCredentials: readCredentialEnvironment(applicationEnvPath, [
+    'TOKEN_SECRET',
+    'CUSTOM_ADAPTER_SECRET_KEY',
+    'INTERNAL_SECRET',
+  ]) || {},
+  existingRootEnvironment,
+});
+const mongoCredentials = resolveMongoCredentials({
+  existingCredentials: readCredentialEnvironment(mongoEnvPath, [
+    'MONGO_ROOT_USERNAME',
+    'MONGO_ROOT_PASSWORD',
+    'MONGO_APP_USERNAME',
+    'MONGO_APP_PASSWORD',
+    'MONGO_APP_DATABASE',
+  ]) || {},
+});
+const minioCredentials = resolveMinioCredentials({
+  configuredStorage: storageConfig,
+  existingCredentials: readCredentialEnvironment(minioEnvPath, [
+    'MINIO_ROOT_USER',
+    'MINIO_ROOT_PASSWORD',
+  ]) || {},
+  existingRootEnvironment,
+});
+const grafanaCredentials = resolveGrafanaCredentials({
+  existingCredentials: readCredentialEnvironment(grafanaEnvPath, [
+    'GF_SECURITY_ADMIN_USER',
+    'GF_SECURITY_ADMIN_PASSWORD',
+  ]) || {},
+});
+
+writeCredentialEnvironment(applicationEnvPath, applicationCredentials);
+writeCredentialEnvironment(mongoEnvPath, mongoCredentials);
+writeCredentialEnvironment(minioEnvPath, minioCredentials);
+writeCredentialEnvironment(grafanaEnvPath, grafanaCredentials);
+
+const databaseProvider = databaseConfig.provider || 'local-mongo';
+const isLocalMongo = databaseProvider === 'local-mongo';
+const mongoUrl = isLocalMongo
+  ? buildAuthenticatedMongoUrl({
+    username: mongoCredentials.MONGO_APP_USERNAME,
+    password: mongoCredentials.MONGO_APP_PASSWORD,
+    database: mongoCredentials.MONGO_APP_DATABASE,
+    authSource: 'admin',
+  })
+  : normalizeString(databaseConfig.mongoUrl);
+if (!isLocalMongo && !mongoUrl) {
+  throw new Error('Remote MongoDB configuration requires database.mongoUrl.');
+}
+
+const isLocalMinio = isDockerRuntime && storageBackend === 'minio';
+const storageAccessKeyId = isLocalMinio
+  ? minioCredentials.MINIO_ROOT_USER
+  : storageConfig.accessKeyId || storageConfig.awsAccessKeyId || '';
+const storageSecretAccessKey = isLocalMinio
+  ? minioCredentials.MINIO_ROOT_PASSWORD
+  : storageConfig.secretAccessKey || storageConfig.awsSecretAccessKey || '';
+
 const env = {
   CURRENT_ENV: 'standalone',
   SAMSAR_DEPLOYMENT_EDITION: 'standalone',
   SAMSAR_RUNTIME: 'docker',
   NODE_ENV: config.runtime === 'local' ? 'development' : 'production',
-  TOKEN_SECRET: config.security?.tokenSecret || 'samsar-local-token-secret-change-me',
-  CUSTOM_ADAPTER_SECRET_KEY: config.security?.customAdapterSecret || config.security?.tokenSecret || 'samsar-local-custom-adapter-secret-change-me',
+  TOKEN_SECRET: applicationCredentials.TOKEN_SECRET,
+  CUSTOM_ADAPTER_SECRET_KEY: applicationCredentials.CUSTOM_ADAPTER_SECRET_KEY,
+	  INTERNAL_SECRET: applicationCredentials.INTERNAL_SECRET,
 	  LOGIN_TOKEN_TTL_SECONDS: config.security?.loginTokenTtlSeconds || 3600,
 	  ENABLE_DOCKER_SETUP_LOGIN: config.runtime === 'docker' ? 'true' : 'false',
-	  DATABASE_PROVIDER: databaseConfig.provider || 'local-mongo',
-	  MONGO_URL: databaseConfig.mongoUrl || '',
-	  MONGO_HOSTS: databaseConfig.parsed?.hosts || '',
-	  MONGO_DATABASE: databaseConfig.parsed?.database || '',
-	  MONGO_USERNAME: databaseConfig.parsed?.username || '',
-	  MONGO_AUTH_SOURCE: databaseConfig.parsed?.authSource || '',
+	  DATABASE_PROVIDER: databaseProvider,
+	  MONGO_URL: mongoUrl,
+	  MONGO_HOSTS: isLocalMongo ? 'mongo:27017' : databaseConfig.parsed?.hosts || '',
+	  MONGO_DATABASE: isLocalMongo ? mongoCredentials.MONGO_APP_DATABASE : databaseConfig.parsed?.database || '',
+	  MONGO_USERNAME: isLocalMongo ? mongoCredentials.MONGO_APP_USERNAME : databaseConfig.parsed?.username || '',
+	  MONGO_AUTH_SOURCE: isLocalMongo ? 'admin' : databaseConfig.parsed?.authSource || '',
 	  MONGO_TLS: databaseConfig.parsed?.tls || '',
 	  STORAGE_PROVIDER: storageProvider,
 	  SAMSAR_STORAGE_BACKEND: storageBackend,

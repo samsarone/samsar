@@ -38,6 +38,8 @@ runtime/
 **/*secret*
 **/*credential*
 **/*credentials*
+!scripts/infrastructure-credentials.mjs
+!scripts/infrastructure-credentials.test.mjs
 **/*service-account*.json
 **/*firebase-admin*.json
 **/*token*.json

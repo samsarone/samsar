@@ -276,7 +276,7 @@ test('validates user input against an owned draft and fills omitted values from 
             builderSessionSubType: 'interactive_video_draft',
             interactiveVideoDraftConfig: {
               duration: 30,
-              imageModel: 'NANOBANANA2',
+              imageModel: 'GPTIMAGE2',
               videoModel: 'COSMOS3SUPERI2V',
               numLevels: 2,
               aspectRatio: '16:9',
@@ -291,7 +291,7 @@ test('validates user input against an owned draft and fills omitted values from 
     prompt: 'Use the saved interactive defaults.',
     duration: 30,
     inferenceModel: undefined,
-    imageModel: 'NANOBANANA2',
+    imageModel: 'GPTIMAGE2',
     videoModel: 'COSMOS3SUPERI2V',
     numLevels: 2,
     aspectRatio: '16:9',

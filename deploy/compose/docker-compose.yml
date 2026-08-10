@@ -12,6 +12,11 @@ x-service-env: &service-env
     SAMSAR_ASSETS_ROOT: /assets
     SAMSAR_ASSETS_V2_ROOT: /assets_v2
     SAMSAR_INTERNAL_MEDIA_BASE_URL: ${SAMSAR_INTERNAL_MEDIA_BASE_URL:-http://media-gateway}
+  depends_on:
+    mongo:
+      condition: service_healthy
+      required: false
+  restart: unless-stopped
   volumes:
     - media-assets:/assets
     - media-assets-v2:/assets_v2
@@ -57,7 +62,7 @@ services:
       - "3002:3002"
     depends_on:
       mongo:
-        condition: service_started
+        condition: service_healthy
         required: false
       minio:
         condition: service_started
@@ -173,26 +178,55 @@ services:
     volumes:
       - media-assets-v2:/assets_v2
 
-  mongo:
+  mongo-auth-bootstrap:
     profiles: ["local-mongo"]
-    image: mongo:7
+    image: mongo:7.0.39
+    user: mongodb
+    network_mode: none
+    env_file:
+      - ../../runtime/secrets/mongo.env
+    entrypoint: ["/bin/bash", "/opt/samsar/bootstrap-auth.sh"]
     volumes:
       - mongo-data:/data/db
+      - ./mongo/bootstrap-auth.sh:/opt/samsar/bootstrap-auth.sh:ro
+    restart: "no"
+
+  mongo:
+    profiles: ["local-mongo"]
+    image: mongo:7.0.39
+    command: ["mongod", "--auth", "--bind_ip_all"]
+    env_file:
+      - ../../runtime/secrets/mongo.env
+    volumes:
+      - mongo-data:/data/db
+    depends_on:
+      mongo-auth-bootstrap:
+        condition: service_completed_successfully
     ports:
-      - "27017:27017"
+      - "127.0.0.1:${MONGO_PORT:-27017}:27017"
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          mongosh --quiet --host 127.0.0.1 --username "$${MONGO_APP_USERNAME}"
+          --password "$${MONGO_APP_PASSWORD}" --authenticationDatabase admin
+          --eval 'db.adminCommand({ ping: 1 })' >/dev/null
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
 
   minio:
     profiles: ["minio"]
-    image: minio/minio:latest
+    image: minio/minio:RELEASE.2025-09-07T16-13-09Z
     command: server /data --console-address ":9001"
-    environment:
-      MINIO_ROOT_USER: samsar
-      MINIO_ROOT_PASSWORD: samsar-local-password
+    env_file:
+      - ../../runtime/secrets/minio.env
     volumes:
       - minio-data:/data
     ports:
-      - "9000:9000"
-      - "9001:9001"
+      - "127.0.0.1:${MINIO_API_PORT:-9000}:9000"
+      - "127.0.0.1:${MINIO_CONSOLE_PORT:-9001}:9001"
 
   media-gateway:
     profiles: ["local-media"]
@@ -267,7 +301,7 @@ services:
     image: grafana/loki:2.9.8
     command: -config.file=/etc/loki/local-config.yml
     ports:
-      - "${LOKI_PORT:-4100}:3100"
+      - "127.0.0.1:${LOKI_PORT:-4100}:3100"
     volumes:
       - ./logger/loki-config.yml:/etc/loki/local-config.yml:ro
       - loki-data:/loki
@@ -283,6 +317,12 @@ services:
       - promtail-data:/var/lib/promtail
     depends_on:
       - loki
+    healthcheck:
+      test: ["CMD", "/usr/bin/promtail", "-config.file=/etc/promtail/config.yml", "-check-syntax"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
     restart: unless-stopped
 
   grafana:
@@ -291,16 +331,16 @@ services:
     environment:
       GF_SERVER_DOMAIN: ${GRAFANA_DOMAIN:-localhost}
       GF_SERVER_ROOT_URL: ${GRAFANA_ROOT_URL:-http://localhost:4000/}
-      GF_AUTH_ANONYMOUS_ENABLED: "true"
-      GF_AUTH_ANONYMOUS_ORG_NAME: Main Org.
-      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
-      GF_AUTH_BASIC_ENABLED: "false"
-      GF_AUTH_DISABLE_LOGIN_FORM: "true"
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_AUTH_BASIC_ENABLED: "true"
+      GF_AUTH_DISABLE_LOGIN_FORM: "false"
       GF_USERS_ALLOW_SIGN_UP: "false"
       GF_LOG_MODE: console
       GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /etc/grafana/provisioning/dashboards/docker/docker-logs-overview.json
+    env_file:
+      - ../../runtime/secrets/grafana.env
     ports:
-      - "${GRAFANA_PORT:-4000}:3000"
+      - "127.0.0.1:${GRAFANA_PORT:-4000}:3000"
     volumes:
       - grafana-data:/var/lib/grafana
       - ./logger/grafana/provisioning/datasources:/etc/grafana/provisioning/datasources:ro

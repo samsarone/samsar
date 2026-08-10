@@ -6,6 +6,10 @@ import {
   TEXT_TO_VIDEO_IMAGE_MODEL_KEYS,
   TEXT_TO_VIDEO_VIDEO_MODEL_KEYS,
 } from '../../consts/ExpressVideoModelOptions.js';
+import {
+  QWEN_IMAGE_3_PRO_MODEL_KEY,
+  isAlibabaQwenImage3ProAvailable,
+} from '../../consts/DockerProviderPriority.js';
 import { isStandaloneEdition } from '../../utils/EnvironmentUtils.js';
 
 export const MAX_MOVIE_PROMPT_LENGTH = 4000;
@@ -53,6 +57,15 @@ export function validateExpressImageModelKey(imageModel, options = {}) {
   }
 
   const resolvedImageModel = resolveImageModelAlias(normalizedImageModel);
+  if (
+    resolvedImageModel === QWEN_IMAGE_3_PRO_MODEL_KEY &&
+    !isAlibabaQwenImage3ProAvailable()
+  ) {
+    return {
+      status: false,
+      message: 'Qwen Image 3.0 Pro requires standalone Alibaba Cloud pay-as-you-go credentials',
+    };
+  }
   if (isCustomTextToImageModelKey(resolvedImageModel)) {
     if (!isStandaloneEdition()) {
       return {

@@ -16,6 +16,7 @@ import GeneratedMusic from '../schema/generations/GeneratedMusic.js';
 import GeneratedAIVideo from '../schema/generations/GeneratedAIVideo.js';
 
 import { generateAPIKey } from '../utils/ApiKeyUtils.js';
+import { getCustomAdapterSecret } from '../utils/RuntimeSecrets.js';
 import crypto from 'crypto';
 import bcrypt from 'bcrypt';
 
@@ -69,13 +70,7 @@ export function normalizeAssistantModel(value) {
 }
 
 function getCustomAdapterSecretKey() {
-  const secret =
-    process.env.CUSTOM_ADAPTER_SECRET_KEY ||
-    process.env.CUSTOM_CREDENTIALS_SECRET ||
-    process.env.TOKEN_SECRET;
-  if (!secret || !secret.trim()) {
-    throw new Error('CUSTOM_ADAPTER_SECRET_KEY or TOKEN_SECRET is required to save custom adapter credentials.');
-  }
+  const secret = getCustomAdapterSecret();
   return crypto.createHash('sha256').update(secret).digest();
 }
 

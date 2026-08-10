@@ -7,6 +7,10 @@ import { getHeaders } from '../../utils/web.jsx';
 import { useDeploymentModelAvailability } from '../../hooks/useDeploymentModelAvailability.js';
 import { filterOptionsForDeploymentModelValues } from '../../utils/deploymentProviders.js';
 import { isVideoModelAllowedForDeploymentScope } from '../../utils/videoModelAvailability.mjs';
+import {
+  QWEN_IMAGE_3_PRO_MODEL_KEY,
+  isImageModelAllowedForDeploymentScope,
+} from '../../utils/imageModelAvailability.mjs';
 
 const PROCESSOR_SERVER = import.meta.env.VITE_PROCESSOR_API || 'http://localhost:3002';
 
@@ -27,6 +31,11 @@ const IMAGE_MODELS = [
   { label: 'NanoBanana Pro', value: 'NANOBANANAPRO' },
   { label: 'Seedream', value: 'SEEDREAM' },
   { label: 'Wan2.7 Pro', value: 'WAN2.7PRO' },
+  {
+    label: 'Qwen Image 3.0 Pro',
+    value: QWEN_IMAGE_3_PRO_MODEL_KEY,
+    standaloneOnly: true,
+  },
 ];
 
 const IMAGE_LIST_VIDEO_MODELS = [
@@ -122,11 +131,14 @@ export default function ExternalStudioDashboard() {
     [isStandaloneModelFilteringEnabled, textToVideoVideoModelValues]
   );
   const textImageModels = useMemo(
-    () => (
-      isStandaloneModelFilteringEnabled
-        ? filterOptionsForDeploymentModelValues(IMAGE_MODELS, textToVideoImageModelValues)
-        : IMAGE_MODELS
-    ),
+    () => {
+      const scopedModels = IMAGE_MODELS.filter((model) =>
+        isImageModelAllowedForDeploymentScope(model, isStandaloneModelFilteringEnabled)
+      );
+      return isStandaloneModelFilteringEnabled
+        ? filterOptionsForDeploymentModelValues(scopedModels, textToVideoImageModelValues)
+        : scopedModels;
+    },
     [isStandaloneModelFilteringEnabled, textToVideoImageModelValues]
   );
   const imageListVideoModels = useMemo(
@@ -141,11 +153,14 @@ export default function ExternalStudioDashboard() {
     [imageListToVideoVideoModelValues, isStandaloneModelFilteringEnabled]
   );
   const imageListImageModels = useMemo(
-    () => (
-      isStandaloneModelFilteringEnabled
-        ? filterOptionsForDeploymentModelValues(IMAGE_MODELS, imageListToVideoImageModelValues)
-        : IMAGE_MODELS
-    ),
+    () => {
+      const scopedModels = IMAGE_MODELS.filter((model) =>
+        isImageModelAllowedForDeploymentScope(model, isStandaloneModelFilteringEnabled)
+      );
+      return isStandaloneModelFilteringEnabled
+        ? filterOptionsForDeploymentModelValues(scopedModels, imageListToVideoImageModelValues)
+        : scopedModels;
+    },
     [imageListToVideoImageModelValues, isStandaloneModelFilteringEnabled]
   );
 

@@ -8,6 +8,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 COMPOSE_FILE="${ROOT_DIR}/deploy/compose/docker-compose.yml"
 CONFIG_FILE="${ROOT_DIR}/runtime/config/samsar.config.json"
 ROOT_ENV_FILE="${ROOT_DIR}/runtime/secrets/root.env"
+GRAFANA_ENV_FILE="${ROOT_DIR}/runtime/secrets/grafana.env"
 FONT_DIR="${SAMSAR_DOCKER_FONT_DIR:-${ROOT_DIR}/runtime/fonts}"
 LOKI_PORT="${LOKI_PORT:-4100}"
 GRAFANA_PORT="${GRAFANA_PORT:-4000}"
@@ -255,16 +256,16 @@ validate_logger_files() {
 }
 
 ensure_runtime_env_file() {
-  if [ -f "$ROOT_ENV_FILE" ]; then
+  if [ -s "$ROOT_ENV_FILE" ] && [ -s "$GRAFANA_ENV_FILE" ]; then
     return
   fi
 
   if ! command -v node >/dev/null 2>&1; then
-    log "Missing ${ROOT_ENV_FILE}; run npm run config:render before logger setup."
+    log "Missing runtime credential env files; run npm run config:render before logger setup."
     exit 1
   fi
 
-  log "Rendering runtime env because ${ROOT_ENV_FILE} is missing."
+  log "Rendering runtime credential env files."
   node "${ROOT_DIR}/scripts/generate-runtime-config.mjs"
 }
 
@@ -329,7 +330,11 @@ setup_logger_stack() {
   fi
 
   wait_for_http "Loki" "http://localhost:${LOKI_PORT}/ready" 30 || true
-  wait_for_http "Grafana" "http://localhost:${GRAFANA_PORT}/api/health" 30 || true
+  if wait_for_http "Grafana" "http://localhost:${GRAFANA_PORT}/api/health" 30; then
+    run_compose --profile logger exec -T grafana sh -ec \
+      'grafana cli --homepath /usr/share/grafana admin reset-admin-password "$GF_SECURITY_ADMIN_PASSWORD" >/dev/null'
+    log "Grafana administrator authentication synchronized."
+  fi
   show_loki_labels
 }
 

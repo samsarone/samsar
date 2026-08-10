@@ -1,5 +1,6 @@
 import { ELEVENLABS_TTS } from './ElevenLabs.jsx';
 import { PLAY_SPEAKER_TYPES } from './PlayAI.jsx';
+import { QWEN_IMAGE_3_PRO_MODEL_KEY } from '../utils/imageModelAvailability.mjs';
 
 export const CURRENT_TOOLBAR_VIEW = {
   SHOW_DEFAULT_DISPLAY: 'SHOW_DEFAULT_DISPLAY',
@@ -126,6 +127,14 @@ export const IMAGE_GENERAITON_MODEL_TYPES = [
     name: 'Wan2.7 Pro',
     key: 'WAN2.7PRO',
     isExpressModel: true,
+    supportedAspectRatios: ['1:1', '16:9', '9:16'],
+  },
+  {
+    name: 'Qwen Image 3.0 Pro',
+    key: QWEN_IMAGE_3_PRO_MODEL_KEY,
+    isExpressModel: true,
+    standaloneOnly: true,
+    providerBilled: true,
     supportedAspectRatios: ['1:1', '16:9', '9:16'],
   },
 ];

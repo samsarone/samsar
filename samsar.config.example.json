@@ -2,13 +2,13 @@
   "runtime": "docker",
   "deploymentEdition": "standalone",
   "security": {
-    "tokenSecret": "samsar-local-token-secret-change-me",
-    "customAdapterSecret": "samsar-local-custom-adapter-secret-change-me",
+    "tokenSecret": "",
+    "customAdapterSecret": "",
     "loginTokenTtlSeconds": 3600
   },
   "database": {
     "provider": "local-mongo",
-    "mongoUrl": "mongodb://mongo:27017/SamsarOne"
+    "mongoUrl": ""
   },
   "storage": {
     "mode": "local-minio",
@@ -17,8 +17,8 @@
     "mediaBucketName": "samsar-resources",
     "staticCdnUrl": "http://localhost:3002/",
     "secureAssetPrefix": "assets_v2",
-    "accessKeyId": "samsar",
-    "secretAccessKey": "samsar-local-password",
+    "accessKeyId": "",
+    "secretAccessKey": "",
     "region": "us-east-1",
     "s3Endpoint": "http://minio:9000",
     "s3ForcePathStyle": true,

@@ -137,12 +137,21 @@ const MODERATION_CAPABLE_PROVIDERS = Object.freeze([
   DOCKER_PROVIDER.GOOGLE_CLOUD,
   DOCKER_PROVIDER.SAMSAR,
 ]);
+const ALIBABA_QWEN_IMAGE_KEY_TYPES = new Set([
+  '',
+  'pay_as_you_go',
+]);
+const ALIBABA_QWEN_IMAGE_ENDPOINT_TYPES = new Set([
+  '',
+  'pay_as_you_go',
+]);
 
 export const DOCKER_MODEL_PROVIDER_PRIORITY_BY_MODEL = Object.freeze({
   'gpt-5.6-sol': OPENAI_INFERENCE_GMI_OR_SAMSAR,
   'gemini-3.1-pro': GOOGLE_INFERENCE_GMI_OR_SAMSAR,
   KIMIK3: KIMI_OR_SAMSAR,
   'QWEN3.8': ALIBABA_GMI_OR_SAMSAR,
+  QWENIMAGE3PRO: [DOCKER_PROVIDER.ALIBABA_CLOUD],
   GPTIMAGE2: OPENAI_GMI_SAMSAR_OR_FAL,
   GPTIMAGE2EDIT: OPENAI_GMI_OR_SAMSAR,
   SEEDREAM: GMI_SAMSAR_OR_FAL,
@@ -203,6 +212,7 @@ export const DOCKER_MODEL_ACTIONS_BY_MODEL = Object.freeze({
   'gemini-3.1-pro': ['chat', 'assistant', 'moderation'],
   KIMIK3: ['chat', 'assistant'],
   'QWEN3.8': ['chat', 'assistant'],
+  QWENIMAGE3PRO: ['image'],
   GPTIMAGE2: ['image'],
   GPTIMAGE2EDIT: ['image_edit'],
   SEEDREAM: ['image'],
@@ -250,6 +260,7 @@ export const DOCKER_MODEL_DISPLAY_NAME_BY_MODEL = Object.freeze({
   'gemini-3.1-pro': 'Gemini 3.1 Pro',
   KIMIK3: 'Kimi K3',
   'QWEN3.8': 'Qwen 3.8 Max',
+  QWENIMAGE3PRO: 'Qwen Image 3.0 Pro',
   GPTIMAGE2: 'GPT Image 2',
   GPTIMAGE2EDIT: 'GPT Image 2 Edit',
   SEEDREAM: 'Seedream',
@@ -295,6 +306,7 @@ export const DOCKER_MODEL_DISPLAY_NAME_BY_MODEL = Object.freeze({
 const DOCKER_MODEL_DISPLAY_NAME_BY_PROVIDER = Object.freeze({
   [DOCKER_PROVIDER.ALIBABA_CLOUD]: Object.freeze({
     'QWEN3.8': 'Qwen 3.8 Max',
+    QWENIMAGE3PRO: 'Qwen Image 3.0 Pro',
   }),
   [DOCKER_PROVIDER.OPENROUTER]: Object.freeze({
     'QWEN3.8': 'Qwen 3.8 Max',
@@ -404,6 +416,20 @@ export function normalizeDockerProviderKey(value) {
   return value.trim();
 }
 
+function normalizeAlibabaCredentialType(value) {
+  return typeof value === 'string'
+    ? value.trim().toLowerCase().replace(/[\s-]+/g, '_')
+    : '';
+}
+
+export function isAlibabaQwenImage3ProCredentialEligible({
+  keyType = '',
+  endpointType = '',
+} = {}) {
+  return ALIBABA_QWEN_IMAGE_KEY_TYPES.has(normalizeAlibabaCredentialType(keyType)) &&
+    ALIBABA_QWEN_IMAGE_ENDPOINT_TYPES.has(normalizeAlibabaCredentialType(endpointType));
+}
+
 export function orderDockerProviderKeys(providerKeys = []) {
   return [...new Set(providerKeys.map(normalizeDockerProviderKey).filter(Boolean))]
     .sort((leftProvider, rightProvider) => {
@@ -497,6 +523,15 @@ export function buildDockerAvailableModelsFromEnabledProviders(enabledProviderKe
   const modelProviderPriority = {};
 
   for (const [modelKey, providerPriority] of Object.entries(DOCKER_MODEL_PROVIDER_PRIORITY_BY_MODEL)) {
+    if (
+      modelKey === 'QWENIMAGE3PRO' &&
+      !isAlibabaQwenImage3ProCredentialEligible({
+        keyType: options.providerKeyTypes?.[DOCKER_PROVIDER.ALIBABA_CLOUD],
+        endpointType: options.providerEndpointTypes?.[DOCKER_PROVIDER.ALIBABA_CLOUD],
+      })
+    ) {
+      continue;
+    }
     const gmiCloudRouteEnabled = providers.includes(DOCKER_PROVIDER.GMI_CLOUD) && (
       !hasCredentialScopedGmiCatalog ||
       hasGmiCloudModelRoute(gmiCloudModelMappings, modelKey)
@@ -550,9 +585,24 @@ export function buildDockerAvailableModelsFromProviderResults(providerResults = 
     .filter(([, result]) => Boolean(result?.ok || result === true))
     .map(([provider]) => provider);
   const gmiCloudValidation = providerResults.gmicloud;
-  const options = gmiCloudValidation && typeof gmiCloudValidation === 'object'
-    ? { gmiCloudModelMappings: gmiCloudValidation.modelMappings || {} }
-    : {};
+  const alibabaValidation = providerResults.alibabaCloud?.validation ||
+    providerResults.alibabaCloud;
+  const options = {
+    ...(gmiCloudValidation && typeof gmiCloudValidation === 'object'
+      ? { gmiCloudModelMappings: gmiCloudValidation.modelMappings || {} }
+      : {}),
+    ...(alibabaValidation && typeof alibabaValidation === 'object'
+      ? {
+        providerKeyTypes: {
+          [DOCKER_PROVIDER.ALIBABA_CLOUD]:
+            alibabaValidation.keyType || alibabaValidation.billingMode || '',
+        },
+        providerEndpointTypes: {
+          [DOCKER_PROVIDER.ALIBABA_CLOUD]: alibabaValidation.endpointType || '',
+        },
+      }
+      : {}),
+  };
   return buildDockerAvailableModelsFromEnabledProviders(enabledProviderKeys, options);
 }
 

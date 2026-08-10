@@ -122,6 +122,66 @@ test('Wan2.7 Pro is accepted for both express image stages', () => {
   );
 });
 
+test('Qwen Image 3.0 Pro is a zero-credit, provider-billed standalone Express image model', () => {
+  const envKeys = [
+    'CURRENT_ENV',
+    'SAMSAR_DEPLOYMENT_EDITION',
+    'SAMSAR_RUNTIME',
+    'ALIBABA_API_KEY',
+    'ALIBABA_API_KEY_TYPE',
+    'ALIBABA_API_ENDPOINT_TYPE',
+  ];
+  const originalEnv = Object.fromEntries(envKeys.map((key) => [key, process.env[key]]));
+  try {
+    envKeys.forEach((key) => delete process.env[key]);
+    assert.equal(validateExpressImageModelKey('QWENIMAGE3PRO').status, false);
+
+    process.env.SAMSAR_DEPLOYMENT_EDITION = 'standalone';
+    process.env.SAMSAR_RUNTIME = 'docker';
+    process.env.ALIBABA_API_KEY = 'alibaba-key';
+    assert.deepEqual(validateExpressImageModelKey('QWENIMAGE3PRO'), {
+      status: true,
+      imageModel: 'QWENIMAGE3PRO',
+    });
+    assert.equal(
+      validateMovieInput(buildValidMoviePayload({ image_model: 'QWENIMAGE3PRO' })).status,
+      true,
+    );
+    assert.equal(TEXT_TO_VIDEO_IMAGE_MODEL_KEYS.includes('QWENIMAGE3PRO'), true);
+    assert.equal(IMAGE_LIST_TO_VIDEO_IMAGE_MODEL_KEYS.includes('QWENIMAGE3PRO'), true);
+    const modelType = IMAGE_GENERAITON_MODEL_TYPES.find(
+      (model) => model.key === 'QWENIMAGE3PRO',
+    );
+    assert.equal(modelType?.standaloneOnly, true);
+    assert.equal(modelType?.providerBilled, true);
+    assert.deepEqual(modelType?.supportedAspectRatios, ['1:1', '16:9', '9:16']);
+    const pricing = IMAGE_MODEL_PRICES.find((model) => model.key === 'QWENIMAGE3PRO');
+    assert.equal(pricing?.standaloneOnly, true);
+    assert.equal(pricing?.providerBilled, true);
+    assert.deepEqual(pricing?.prices, [
+      { aspectRatio: '1:1', price: 0 },
+      { aspectRatio: '16:9', price: 0 },
+      { aspectRatio: '9:16', price: 0 },
+    ]);
+
+    process.env.ALIBABA_API_KEY_TYPE = 'token_plan';
+    process.env.ALIBABA_API_ENDPOINT_TYPE = 'token_plan';
+    assert.equal(validateExpressImageModelKey('QWENIMAGE3PRO').status, false);
+
+    process.env.ALIBABA_API_KEY_TYPE = 'plan';
+    process.env.ALIBABA_API_ENDPOINT_TYPE = 'pay_as_you_go';
+    assert.equal(validateExpressImageModelKey('QWENIMAGE3PRO').status, false);
+
+    process.env.ALIBABA_API_KEY_TYPE = 'coding_plan';
+    assert.equal(validateExpressImageModelKey('QWENIMAGE3PRO').status, false);
+  } finally {
+    envKeys.forEach((key) => {
+      if (originalEnv[key] === undefined) delete process.env[key];
+      else process.env[key] = originalEnv[key];
+    });
+  }
+});
+
 test('NanoBanana 2 is excluded from every express image surface', () => {
   assert.deepEqual(validateExpressImageModelKey('NANOBANANA2'), {
     status: false,

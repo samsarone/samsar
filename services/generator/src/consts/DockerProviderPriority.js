@@ -11,7 +11,19 @@ export const DOCKER_ADAPTER_PROVIDER = Object.freeze({
   GMICLOUD: 'gmicloud',
 });
 
+const ALIBABA_QWEN_IMAGE_3_PRO_KEY_TYPES = new Set([
+  '',
+  'pay_as_you_go',
+]);
+const ALIBABA_QWEN_IMAGE_3_PRO_ENDPOINT_TYPES = new Set([
+  '',
+  'pay_as_you_go',
+]);
+
 export const DOCKER_IMAGE_GENERATION_PROVIDER_PRIORITY = Object.freeze({
+  QWENIMAGE3PRO: [
+    DOCKER_ADAPTER_PROVIDER.ALIBABA_CLOUD,
+  ],
   'WAN2.7PRO': [
     DOCKER_ADAPTER_PROVIDER.ALIBABA_CLOUD,
     DOCKER_ADAPTER_PROVIDER.FAL,
@@ -333,6 +345,23 @@ export function hasAlibabaCloudAdapterCredential() {
   );
 }
 
+export function hasAlibabaQwenImage3ProCredential(env = process.env) {
+  const hasApiKey = [
+    'ALIBABA_API_KEY',
+    'DASHSCOPE_API_KEY',
+    'ALIBABA_CLOUD_API_KEY',
+    'QWEN_API_KEY',
+  ].some((key) => Boolean(normalizeString(env?.[key])));
+  if (!hasApiKey) {
+    return false;
+  }
+
+  const keyType = normalizeString(env?.ALIBABA_API_KEY_TYPE).toLowerCase();
+  const endpointType = normalizeString(env?.ALIBABA_API_ENDPOINT_TYPE).toLowerCase();
+  return ALIBABA_QWEN_IMAGE_3_PRO_KEY_TYPES.has(keyType) &&
+    ALIBABA_QWEN_IMAGE_3_PRO_ENDPOINT_TYPES.has(endpointType);
+}
+
 export function hasSamsarAdapterCredential() {
   return hasEnvCredential('SAMSAR_API_KEY');
 }
@@ -374,6 +403,12 @@ export function isAdapterProviderConfigured(provider) {
 
 export function getDockerImageGenerationProviderPriority(model) {
   const normalizedModel = normalizeModelKey(model);
+  if (
+    normalizedModel === 'QWENIMAGE3PRO' &&
+    (!isStandaloneEdition() || !hasAlibabaQwenImage3ProCredential())
+  ) {
+    return [];
+  }
   let defaultPriority;
   if (
     normalizedModel === 'NANOBANANAPRO' &&

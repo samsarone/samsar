@@ -6,6 +6,7 @@ import test from 'node:test';
 
 const ENV_KEYS = [
   'CURRENT_ENV',
+  'MONGO_URL',
   'SAMSAR_DEPLOYMENT_EDITION',
   'SAMSAR_EDITION',
   'SAMSAR_RUNTIME',
@@ -92,6 +93,7 @@ test.beforeEach(() => {
   };
 
   process.env.CURRENT_ENV = 'docker';
+  process.env.MONGO_URL = 'mongodb://test-user:test-password@mongo:27017/SamsarOne?authSource=admin';
   process.env.SAMSAR_MEDIA_DELIVERY_MODE = 'docker-local';
   process.env.MEDIA_DELIVERY_MODE = 'docker-local';
   delete process.env.SAMSAR_EXTERNAL_MEDIA_PUBLISH_ENABLED;

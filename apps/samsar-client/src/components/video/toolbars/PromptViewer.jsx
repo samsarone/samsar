@@ -12,6 +12,10 @@ import { useDeploymentModelAvailability } from '../../../hooks/useDeploymentMode
 import { filterOptionsForDeploymentModelValues } from '../../../utils/deploymentProviders.js';
 import { useUser } from '../../../contexts/UserContext.jsx';
 import { mergeCustomTextToImageModelDefinitions } from '../../../utils/customTextToImageAdapters.mjs';
+import {
+  filterImageModelsForDeploymentScope,
+  isProviderBilledImagePricing,
+} from '../../../utils/imageModelAvailability.mjs';
 
 export default function PromptViewer(props) {
   const {
@@ -39,9 +43,13 @@ export default function PromptViewer(props) {
   } = useDeploymentModelAvailability();
   const availableImageModels = useMemo(
     () => {
+      const scopedModels = filterImageModelsForDeploymentScope(
+        IMAGE_GENERAITON_MODEL_TYPES,
+        isStandaloneModelFilteringEnabled,
+      );
       const deploymentModels = isStandaloneModelFilteringEnabled
-        ? filterOptionsForDeploymentModelValues(IMAGE_GENERAITON_MODEL_TYPES, imageModelValues, (model) => model.key)
-        : IMAGE_GENERAITON_MODEL_TYPES;
+        ? filterOptionsForDeploymentModelValues(scopedModels, imageModelValues, (model) => model.key)
+        : scopedModels;
       const modelsWithCustomAdapters = isStandaloneModelFilteringEnabled
         ? mergeCustomTextToImageModelDefinitions(deploymentModels, user?.custom_adapters)
         : deploymentModels;
@@ -147,6 +155,8 @@ export default function PromptViewer(props) {
     ? modelPricing.prices.find((price) => price.aspectRatio === aspectRatio)
     : null;
   const modelPrice = priceObj ? priceObj.price : 0;
+  const usesProviderBilling =
+    isStandaloneModelFilteringEnabled && isProviderBilledImagePricing(modelPricing);
   const panelClassName = colorMode === 'dark'
     ? 'bg-neutral-800 text-slate-100'
     : 'bg-white/90 text-slate-900 border border-slate-200';
@@ -161,7 +171,11 @@ export default function PromptViewer(props) {
       {/* ───────────── Display Cost & Retry Option ───────────── */}
       <div className="w-full">
         <div className={`text-xs font-semibold ${helperTextClassName}`}>
-          Incurs <span className={creditTextClassName}>{modelPrice} Credits</span>
+          {usesProviderBilling ? (
+            <span className={creditTextClassName}>Billed by the configured provider API</span>
+          ) : (
+            <>Incurs <span className={creditTextClassName}>{modelPrice} Credits</span></>
+          )}
           <label className="ml-2 items-center">
             <input
               type="checkbox"

@@ -21,6 +21,22 @@ let connectPromise = null;
 let connectionEventsBound = false;
 let mongoConnectionString = null;
 
+const normalizeEnvironmentValue = (value) => (
+  typeof value === 'string' ? value.trim().toLowerCase() : ''
+);
+
+const isProtectedMongoRuntime = (env) => {
+  const runtime = normalizeEnvironmentValue(env.SAMSAR_RUNTIME || env.SAMSAR_DEPLOYMENT_RUNTIME);
+  const currentEnvironment = normalizeEnvironmentValue(env.CURRENT_ENV);
+  const edition = normalizeEnvironmentValue(
+    env.SAMSAR_DEPLOYMENT_EDITION || env.SAMSAR_EDITION,
+  );
+  return ['docker', 'container', 'compose', 'kubernetes', 'k8s'].includes(runtime) ||
+    ['staging', 'docker', 'container', 'compose', 'kubernetes', 'k8s', 'standalone', 'community']
+      .includes(currentEnvironment) ||
+    ['standalone', 'community'].includes(edition);
+};
+
 export function optionsToQueryString(options) {
   return Object.entries(options)
     .map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(value)}`)
@@ -28,13 +44,14 @@ export function optionsToQueryString(options) {
 }
 
 export function buildMongoConnectionString(env = process.env) {
-  if (env.MONGO_URL) {
-    return env.MONGO_URL;
+  const explicitMongoUrl = typeof env.MONGO_URL === 'string' ? env.MONGO_URL.trim() : '';
+  if (explicitMongoUrl) {
+    return explicitMongoUrl;
   }
 
   const useCosmos =
-    env.DATABASE_PROVIDER === 'cosmos' ||
-    (env.CURRENT_ENV === 'production' && env.SAMSAR_RUNTIME !== 'docker');
+    normalizeEnvironmentValue(env.DATABASE_PROVIDER) === 'cosmos' ||
+    (normalizeEnvironmentValue(env.CURRENT_ENV) === 'production' && !isProtectedMongoRuntime(env));
 
   if (useCosmos) {
     if (!env.COSMOS_DB_USERNAME || !env.COSMOS_DB_PASSWORD) {
@@ -53,13 +70,10 @@ export function buildMongoConnectionString(env = process.env) {
     return `mongodb+srv://${encodedUsername}:${encodedPassword}@${COSMOS_HOST}/${DB_NAME}?${options}`;
   }
 
-  if (
-    env.CURRENT_ENV === 'staging' ||
-    env.CURRENT_ENV === 'docker' ||
-    env.CURRENT_ENV === 'standalone' ||
-    env.SAMSAR_RUNTIME === 'docker'
-  ) {
-    return `mongodb://mongo:27017/${DB_NAME}`;
+  if (isProtectedMongoRuntime(env)) {
+    throw new Error(
+      'MONGO_URL is required for deployed MongoDB connections; refusing the unauthenticated Compose fallback',
+    );
   }
 
   return `mongodb://localhost:27017/${DB_NAME}`;

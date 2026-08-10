@@ -153,7 +153,7 @@ setup.cmd
 
 `npm run setup-wizard` remains available as a developer convenience, but is not required for installation.
 
-The launcher installs or starts Docker when supported, builds and starts the containerized setup wizard, waits for it to respond, prints the available setup URLs, and tries to open `http://localhost:8089` in the default browser. It prints a public-IP setup URL only when TCP `8089` responds on that public address. Set `SAMSAR_SETUP_OPEN_BROWSER=0` to skip browser auto-open.
+The launcher installs or starts Docker when supported, builds and starts the containerized setup wizard, waits for it to respond, and opens a one-time authenticated URL on `http://localhost:8089`. The wizard binds to loopback by default; use `scripts/setup-wizard-remote.sh` for remote hosts so access travels through an SSH tunnel. Set `SAMSAR_SETUP_OPEN_BROWSER=0` to skip browser auto-open.
 
 Complete the browser flow to write deployment config, render runtime env and model availability, build and start the selected Docker Compose profiles, publish the local media gateway when required, verify the processor API and Studio client, and prepare local login.
 
@@ -164,8 +164,8 @@ Complete the browser flow to write deployment config, render runtime env and mod
 | Studio | `http://localhost:3000` |
 | Processor API | `http://localhost:3002` |
 | Local media through Processor API | `http://localhost:3002/assets_v2/...` |
-| MinIO console (local storage mode) | `http://localhost:9001` |
-| Grafana logs | `http://localhost:4000` |
+| MinIO console (local storage mode) | `http://localhost:9001` (loopback; generated credentials in `runtime/secrets/minio.env`) |
+| Grafana logs | `http://localhost:4000` (loopback; generated credentials in `runtime/secrets/grafana.env`) |
 
 Stop the stack:
 
@@ -311,13 +311,15 @@ The names in code style are the stable Samsar model keys. This is the complete s
 | Capability | Supported models |
 | --- | --- |
 | **Inference** | GPT 5.6 Sol (`gpt-5.6-sol`) · Gemini 3.1 Pro (`gemini-3.1-pro`) · Kimi K3 (`KIMIK3`) · Qwen 3.8 Max (`QWEN3.8`) |
-| **Text → image** | GPT Image 2 (`GPTIMAGE2`) · Seedream (`SEEDREAM`) · Nano Banana 2 (`NANOBANANA2`) · Nano Banana Pro (`NANOBANANAPRO`) · Wan 2.7 Pro (`WAN2.7PRO`) |
+| **Text → image** | GPT Image 2 (`GPTIMAGE2`) · Seedream (`SEEDREAM`) · Nano Banana 2 (`NANOBANANA2`) · Nano Banana Pro (`NANOBANANAPRO`) · Wan 2.7 Pro (`WAN2.7PRO`) · Qwen Image 3.0 Pro (`QWENIMAGE3PRO`) |
 | **Image edit** | GPT Image 2 Edit (`GPTIMAGE2EDIT`) · Nano Banana 2 Edit (`NANOBANANA2EDIT`) · Nano Banana Pro Edit (`NANOBANANAPROEDIT`) · BRIA Eraser (`BRIA_ERASER`) · BRIA GenFill (`BRIA_GENFILL`) |
 | **Text → video** | RunwayML (`RUNWAYML`) · Veo 3.1 (`VEO3.1`) · Veo 3.1 Fast (`VEO3.1FAST`) · Hailuo 02 Pro (`HAILUOPRO`) |
 | **Image / frame → video** | RunwayML (`RUNWAYML`) · Veo 3.1 I2V (`VEO3.1I2V`) · Veo 3.1 Fast I2V (`VEO3.1I2VFAST`) · Veo 3.1 first/last frame (`VEO3.1FLIV`) · Cosmos 3 Super (`COSMOS3SUPERI2V`) · Seedance 1.5 / 2.0 / 2.5 (`SEEDANCEI2V`, `SEEDANCE2.0I2V`, `SEEDANCE2.5I2V`) · Kling 3 Pro / Turbo / 1.6 Pro / 2.1 Master / Pro / Standard (`KLINGIMGTOVID3PRO`, `KLINGIMGTOVIDTURBO`, `KLINGIMGTOVIDPRO`, `KLINGIMGTOVID2.1MASTER`, `KLINGIMGTOVID2.1PRO`, `KLINGIMGTOVID2.1STANDARD`) · Hailuo 02 Pro (`HAILUOPRO`) · Happy Horse 1.1 (`HAPPYHORSEI2V`) |
 | **Speech and music** | OpenAI TTS (`OPENAI_TTS`) · Google TTS (`GOOGLE_TTS`) · ElevenLabs Speech (`ELEVENLABS`) · ElevenLabs Music (`ELEVENLABS_MUSIC`) · Lyria 3 (`LYRIA3`) |
 | **Lip sync** | Sync (`SYNCLIPSYNC`) · LatentSync (`LATENTSYNC`) · Kling (`KLINGLIPSYNC`) · Hummingbird (`HUMMINGBIRDLIPSYNC`) · Creatify (`CREATIFYLIPSYNC`) |
 | **Sound effects** | MMAudio V2 (`MMAUDIOV2`) · Mirelo AI (`MIRELOAI`) |
+
+Standalone exposes `QWENIMAGE3PRO` only with Alibaba Cloud standard pay-as-you-go credentials and bills the configured Alibaba account directly. VidGenie shows its I2V mode only when `NANOBANANAPROEDIT` is available through Google Cloud, Fal, GMICloud via GenBlaze, or Samsar-js.
 
 ### Minimal adapter setup
 
@@ -426,7 +428,7 @@ Validate the rendered Compose configuration:
 npm run docker:config
 ```
 
-`npm run docker:up` renders `runtime/secrets/root.env` and `runtime/config/available-models.json`, then starts the local default profiles. The setup wizard adds the reverse-proxy profile only when nginx access is enabled.
+`npm run docker:up` renders `runtime/secrets/root.env`, durable infrastructure credential env files, and `runtime/config/available-models.json`, then initializes authenticated MongoDB and starts the local default profiles. The setup wizard adds the reverse-proxy profile only when nginx access is enabled.
 
 | Profile | Services |
 | --- | --- |
@@ -539,6 +541,10 @@ Protect it with `chmod 600 runtime/secrets/provider.credentials.json` before ren
 Generated files:
 
 - `runtime/secrets/root.env`: env consumed by Docker services.
+- `runtime/secrets/application.env`: generated application signing and custom-adapter encryption secrets.
+- `runtime/secrets/mongo.env`: generated local MongoDB root and application credentials. Services use the application account through the authenticated `MONGO_URL` in `root.env`.
+- `runtime/secrets/minio.env`: generated local MinIO administrator credentials.
+- `runtime/secrets/grafana.env`: generated Grafana administrator credentials.
 - `runtime/secrets/provider.credentials.json`: setup-wizard-managed provider keys and validated endpoints. Keep it private and mode `0600`.
 - `runtime/config/available-models.json`: model/action availability derived from enabled providers.
 - `runtime/config/model-adapter-preferences.json`: standalone-admin adapter order overrides saved from **Settings → Model Adapters**. Config rendering preserves this file.

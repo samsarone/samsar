@@ -61,6 +61,10 @@ test('SAMSAR_RUNTIME independently controls container behavior', () => {
     getDeploymentRuntime({ CURRENT_ENV: 'community' }),
     DEPLOYMENT_RUNTIME.CONTAINER,
   );
+  assert.equal(
+    getDeploymentRuntime({ SAMSAR_DEPLOYMENT_RUNTIME: 'Kubernetes' }),
+    DEPLOYMENT_RUNTIME.CONTAINER,
+  );
 });
 
 test('mounted asset roots preserve production Compose runtime compatibility', () => {

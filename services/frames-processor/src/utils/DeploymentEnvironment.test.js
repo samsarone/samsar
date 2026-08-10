@@ -30,6 +30,8 @@ test('keeps production edition separate from Docker runtime', () => {
 
 test('explicit runtime overrides the legacy CURRENT_ENV fallback', () => {
   assert.equal(isDockerRuntime({ CURRENT_ENV: 'docker', SAMSAR_RUNTIME: 'host' }), false);
+  assert.equal(isDockerRuntime({ SAMSAR_RUNTIME: ' Kubernetes ' }), true);
+  assert.equal(isDockerRuntime({ SAMSAR_DEPLOYMENT_RUNTIME: 'compose' }), true);
 });
 
 test('production Docker retains production frame-processing capacity defaults', () => {

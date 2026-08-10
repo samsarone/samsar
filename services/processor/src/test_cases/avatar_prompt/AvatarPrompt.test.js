@@ -84,8 +84,31 @@ test('avatar image model defaults to GPT Image 2', () => {
 });
 
 test('avatar image model accepts every configured Express image model', () => {
-  for (const imageModel of EXPRESS_VIDEO_IMAGE_MODEL_KEYS) {
-    assert.equal(__testOnly__.resolveAvatarImageModel({ imageModel }), imageModel);
+  const envKeys = [
+    'CURRENT_ENV',
+    'SAMSAR_DEPLOYMENT_EDITION',
+    'SAMSAR_RUNTIME',
+    'ALIBABA_API_KEY',
+    'ALIBABA_API_KEY_TYPE',
+    'ALIBABA_API_ENDPOINT_TYPE',
+  ];
+  const originalEnv = Object.fromEntries(envKeys.map((key) => [key, process.env[key]]));
+  try {
+    process.env.CURRENT_ENV = 'standalone';
+    process.env.SAMSAR_DEPLOYMENT_EDITION = 'standalone';
+    process.env.SAMSAR_RUNTIME = 'docker';
+    process.env.ALIBABA_API_KEY = 'test-only-alibaba-key';
+    process.env.ALIBABA_API_KEY_TYPE = 'pay_as_you_go';
+    process.env.ALIBABA_API_ENDPOINT_TYPE = 'pay_as_you_go';
+
+    for (const imageModel of EXPRESS_VIDEO_IMAGE_MODEL_KEYS) {
+      assert.equal(__testOnly__.resolveAvatarImageModel({ imageModel }), imageModel);
+    }
+  } finally {
+    for (const key of envKeys) {
+      if (originalEnv[key] === undefined) delete process.env[key];
+      else process.env[key] = originalEnv[key];
+    }
   }
 });
 

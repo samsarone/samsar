@@ -38,6 +38,10 @@ The primary runtime file is `runtime/config/samsar.config.json`. It is copied fr
 | File | Purpose |
 | --- | --- |
 | `runtime/secrets/root.env` | Env file consumed by Docker services. Contains provider keys, DB/storage settings, public URLs, mail settings, and generated setup values. |
+| `runtime/secrets/application.env` | Durable generated application signing and custom-adapter encryption secrets. |
+| `runtime/secrets/mongo.env` | Durable generated local MongoDB root and application credentials. |
+| `runtime/secrets/minio.env` | Durable generated local MinIO administrator credentials. |
+| `runtime/secrets/grafana.env` | Durable generated Grafana administrator credentials. |
 | `runtime/config/available-models.json` | Provider/model/action availability derived from enabled providers. Used by the API to filter public model responses. |
 
 The `runtime/` directory is gitignored because it contains local credentials and generated deployment state.
@@ -48,7 +52,7 @@ Local Docker defaults to:
 
 | Setting | Default |
 | --- | --- |
-| Database | `mongodb://mongo:27017/SamsarOne` |
+| Database | Authenticated MongoDB at `mongo:27017`, using generated application credentials and `authSource=admin` |
 | Object storage | MinIO at `http://minio:9000` |
 | Bucket | `samsar-resources` |
 | Browser media base | `http://localhost:3002/` |
@@ -72,7 +76,7 @@ The processor, generator, audio generator, AI video layer generator, express vid
 
 ## Observability
 
-The logger profile starts Loki, Promtail, and Grafana. Grafana is available on `http://localhost:4000` by default and is configured for anonymous local access in the Compose file.
+The logger profile starts Loki, Promtail, and Grafana. Grafana is available only on loopback at `http://localhost:4000` by default and requires the generated administrator credentials from `runtime/secrets/grafana.env`.
 
 Useful log command:
 

@@ -50,6 +50,7 @@ import {
   handleGoogleNanoBananaRequest,
   shouldUseGoogleNativeNanoBanana,
 } from './providers/GoogleNanoBananaNative.js';
+import { handleAlibabaQwenImage3Request } from './providers/AlibabaQwenImage3.js';
 import { handleAlibabaWan27Request } from './providers/AlibabaWan27.js';
 import { handleFalWan27Request } from './providers/FalWan27.js';
 
@@ -166,8 +167,15 @@ function getImageGenerationRetryDelayMs(nextFailureCount = 1) {
   );
 }
 
-function getImageGenerationNextAttemptAfter(nextFailureCount = 1, now = Date.now()) {
-  return new Date(Number(now) + getImageGenerationRetryDelayMs(nextFailureCount));
+function getImageGenerationNextAttemptAfter(
+  nextFailureCount = 1,
+  now = Date.now(),
+  minimumDelayMs = 0,
+) {
+  const providerDelayMs = Math.max(0, Number(minimumDelayMs) || 0);
+  return new Date(
+    Number(now) + Math.max(getImageGenerationRetryDelayMs(nextFailureCount), providerDelayMs),
+  );
 }
 
 function normalizeString(value) {
@@ -316,6 +324,15 @@ function resolveImageProviderForModel(model, payload = {}) {
   const normalizedModel = normalizeString(model).toUpperCase();
   if (!normalizedModel) {
     return '';
+  }
+  if (normalizedModel === 'QWENIMAGE3PRO') {
+    if (!isStandaloneEdition()) {
+      return '';
+    }
+    const qwenProvider = resolveDockerImageGenerationProvider(normalizedModel);
+    return qwenProvider === DOCKER_ADAPTER_PROVIDER.ALIBABA_CLOUD
+      ? qwenProvider
+      : '';
   }
   const pinnedProvider = getPinnedImageAdapterProvider(payload);
   if (pinnedProvider) {
@@ -644,6 +661,11 @@ function getImageGenerationFailureMessage(imageData, fallback = 'Image generatio
     return imageData.trim();
   }
   return fallback;
+}
+
+function hasUnsafeImageSubmissionOutcome(imageData = {}, latestDoc = {}) {
+  return imageData?.submissionOutcomeUnknown === true ||
+    latestDoc?.submissionOutcomeUnknown === true;
 }
 
 function hasReachedScoreOnlyFilterRelaxation(payload = {}) {
@@ -1526,6 +1548,7 @@ function shouldPreserveExpressImageLayerOnFailure(error) {
 function shouldRetryUnhandledGenerationTask(payload = {}, error) {
   return payload?.operationType === 'GENERATE' &&
     Boolean(payload?.isBatchGeneration || payload?.retryOnFailure) &&
+    error?.submissionOutcomeUnknown !== true &&
     shouldPreserveExpressImageLayerOnFailure(error);
 }
 
@@ -1590,6 +1613,8 @@ async function recoverUnhandledGenerationTask(activeTask, error) {
   const failureData = {
     image: null,
     error: error?.message || 'Unhandled image generation error.',
+    ...(Number(error?.retryAfterMs) > 0 ? { retryAfterMs: Number(error.retryAfterMs) } : {}),
+    ...(error?.submissionOutcomeUnknown === true ? { submissionOutcomeUnknown: true } : {}),
   };
   if (shouldRetryUnhandledGenerationTask(activeTask, error)) {
     await handleNoImageRetryOrFailure(activeTask, failureData);
@@ -1605,6 +1630,9 @@ async function recoverUnhandledGenerationTask(activeTask, error) {
         ? 'image_generation_provider_configuration_error'
         : 'image_generation_unhandled_error',
       pruneLayer: !preserveExpressImageLayer,
+      setFields: error?.submissionOutcomeUnknown === true
+        ? { submissionOutcomeUnknown: true }
+        : {},
     }
   );
 }
@@ -1664,7 +1692,11 @@ async function scheduleImageGenerationRetry(payload = {}, latestDoc, imageData, 
     generationStatus: 'INIT',
     apiGenerationStatus: 'INIT',
     failureRetryCount: nextFailureCount,
-    nextAttemptAfter: getImageGenerationNextAttemptAfter(nextFailureCount),
+    nextAttemptAfter: getImageGenerationNextAttemptAfter(
+      nextFailureCount,
+      Date.now(),
+      imageData?.retryAfterMs,
+    ),
   };
   const adapterRetryState = getImageGenerationAdapterRetryState(
     latestDoc || payload,
@@ -2935,6 +2967,18 @@ async function processPendingGenerationRequet(pendingRequestData) {
     if (imageData) {
       await updateImageInSessionLayer(imageData, pendingRequestData);
     }
+  } else if (model === 'QWENIMAGE3PRO') {
+    const imageData = selectedAdapterProvider === DOCKER_ADAPTER_PROVIDER.ALIBABA_CLOUD
+      ? await handleAlibabaQwenImage3Request(pendingRequestData)
+      : {
+        image: null,
+        error: isStandaloneEdition()
+          ? 'Qwen Image 3.0 Pro requires Alibaba Cloud Model Studio pay-as-you-go credentials.'
+          : 'Qwen Image 3.0 Pro with Alibaba Cloud is available only in standalone deployments.',
+      };
+    if (imageData) {
+      await updateImageInSessionLayer(imageData, pendingRequestData);
+    }
   } else if (model === 'HUNYUAN') {
     const imageData = await handleHunyuanRequest(pendingRequestData);
     if (imageData) {
@@ -3265,7 +3309,7 @@ async function handleNoImageRetryOrFailure(payload, imageData, options = {}) {
     return; // The doc may already have been removed elsewhere
   }
 
-  if (imageData?.submissionOutcomeUnknown === true) {
+  if (hasUnsafeImageSubmissionOutcome(imageData, latestDoc)) {
     await markImageGenerationRequestFailed(payload, imageData, {
       failureRetryCount: normalizeRetryCount(latestDoc.failureRetryCount) + 1,
       message: getImageGenerationFailureMessage(imageData),
@@ -4900,6 +4944,7 @@ export const __testOnly__ = {
   isSafetyRejectionMessage,
   getImageGenerationRetryDelayMs,
   getImageGenerationNextAttemptAfter,
+  hasUnsafeImageSubmissionOutcome,
   buildPendingImageGenerationEligibilityFilter,
   claimPendingImageGenerationRequest,
   persistFinalGeneratedImageForRequest,

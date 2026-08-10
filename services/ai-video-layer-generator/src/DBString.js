@@ -1,41 +1,77 @@
 import 'dotenv/config';
 import mongoose from 'mongoose';
 
+import { isStandaloneEdition } from './utils/Environment.js';
+
 mongoose.set('bufferCommands', false);
 mongoose.set('bufferTimeoutMS', 0);
 
 let connectPromise = null;
-let MONGO_CONNECTION_STRING;
 let connectionEventHandlersAttached = false;
 
-if (process.env.MONGO_URL) {
-  MONGO_CONNECTION_STRING = process.env.MONGO_URL;
-} else if (
-  process.env.DATABASE_PROVIDER === 'cosmos' ||
-  (process.env.CURRENT_ENV === 'production' && process.env.SAMSAR_RUNTIME !== 'docker')
-) {
-  const MONGO_USERNAME = encodeURIComponent(process.env.COSMOS_DB_USERNAME);
-  const MONGO_PASSWORD = encodeURIComponent(process.env.COSMOS_DB_PASSWORD);
-  const DB_NAME = 'SamsarOne';
-  const MONGO_BASE = `mongodb+srv://${MONGO_USERNAME}:${MONGO_PASSWORD}@samsaroneproduction.global.mongocluster.cosmos.azure.com`;
-  const OPTS = {
-    tls: true,
-    authMechanism: 'SCRAM-SHA-256',
-    retryWrites: false,
-    maxIdleTimeMS: 120000,
-  };
-  const qs = Object.entries(OPTS).map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`).join('&');
-  MONGO_CONNECTION_STRING = `${MONGO_BASE}/${DB_NAME}?${qs}`;
-} else if (
-  process.env.CURRENT_ENV === 'staging' ||
-  process.env.CURRENT_ENV === 'docker' ||
-  process.env.CURRENT_ENV === 'standalone' ||
-  process.env.SAMSAR_RUNTIME === 'docker'
-) {
-  MONGO_CONNECTION_STRING = 'mongodb://mongo:27017/SamsarOne';
-} else {
-  MONGO_CONNECTION_STRING = 'mongodb://localhost:27017/SamsarOne';
+function normalizeEnvironmentValue(value) {
+  return typeof value === 'string' ? value.trim().toLowerCase() : '';
 }
+
+function isContainerMongoRuntime(env = process.env) {
+  const runtime = normalizeEnvironmentValue(env.SAMSAR_RUNTIME || env.SAMSAR_DEPLOYMENT_RUNTIME);
+  if (runtime) {
+    return ['docker', 'container', 'compose', 'kubernetes', 'k8s'].includes(runtime);
+  }
+  return ['docker', 'standalone', 'community', 'staging'].includes(
+    normalizeEnvironmentValue(env.CURRENT_ENV),
+  );
+}
+
+export function resolveMongoConnectionString(env = process.env) {
+  const explicitMongoUrl = typeof env.MONGO_URL === 'string' ? env.MONGO_URL.trim() : '';
+  if (explicitMongoUrl) {
+    return explicitMongoUrl;
+  }
+
+  const standaloneEdition = isStandaloneEdition(env);
+  const useCosmos = normalizeEnvironmentValue(env.DATABASE_PROVIDER) === 'cosmos' || (
+    normalizeEnvironmentValue(env.CURRENT_ENV) === 'production' &&
+    !standaloneEdition &&
+    !isContainerMongoRuntime(env)
+  );
+  if (useCosmos) {
+    const mongoUsername = typeof env.COSMOS_DB_USERNAME === 'string'
+      ? env.COSMOS_DB_USERNAME.trim()
+      : '';
+    const mongoPassword = typeof env.COSMOS_DB_PASSWORD === 'string'
+      ? env.COSMOS_DB_PASSWORD
+      : '';
+    if (!mongoUsername || !mongoPassword.trim()) {
+      throw new Error(
+        'COSMOS_DB_USERNAME and COSMOS_DB_PASSWORD are required when DATABASE_PROVIDER=cosmos or hosted production MongoDB is selected.',
+      );
+    }
+
+    const MONGO_USERNAME = encodeURIComponent(mongoUsername);
+    const MONGO_PASSWORD = encodeURIComponent(mongoPassword);
+    const DB_NAME = 'SamsarOne';
+    const MONGO_BASE = `mongodb+srv://${MONGO_USERNAME}:${MONGO_PASSWORD}@samsaroneproduction.global.mongocluster.cosmos.azure.com`;
+    const OPTS = {
+      tls: true,
+      authMechanism: 'SCRAM-SHA-256',
+      retryWrites: false,
+      maxIdleTimeMS: 120000,
+    };
+    const qs = Object.entries(OPTS).map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`).join('&');
+    return `${MONGO_BASE}/${DB_NAME}?${qs}`;
+  }
+
+  if (isContainerMongoRuntime(env) || standaloneEdition) {
+    throw new Error(
+      'MONGO_URL must be explicitly configured for standalone or container deployments.',
+    );
+  }
+
+  return 'mongodb://localhost:27017/SamsarOne';
+}
+
+const MONGO_CONNECTION_STRING = resolveMongoConnectionString();
 
 const TRANSIENT_MONGO_ERROR_NAMES = new Set([
   'MongoNetworkError',

@@ -1,4 +1,4 @@
-import { createReadStream, existsSync } from 'node:fs';
+import { createReadStream, existsSync, readFileSync } from 'node:fs';
 import fs from 'node:fs/promises';
 import http from 'node:http';
 import https from 'node:https';
@@ -86,6 +86,10 @@ const MODEL_ADAPTER_PREFERENCES_PATH = path.join(
 );
 const ROOT_ENV_PATH = path.join(ROOT_DIR, 'runtime', 'secrets', 'root.env');
 const GENBLAZE_ENV_PATH = path.join(ROOT_DIR, 'runtime', 'secrets', 'genblaze.env');
+const APPLICATION_ENV_PATH = path.join(ROOT_DIR, 'runtime', 'secrets', 'application.env');
+const MONGO_ENV_PATH = path.join(ROOT_DIR, 'runtime', 'secrets', 'mongo.env');
+const MINIO_ENV_PATH = path.join(ROOT_DIR, 'runtime', 'secrets', 'minio.env');
+const GRAFANA_ENV_PATH = path.join(ROOT_DIR, 'runtime', 'secrets', 'grafana.env');
 const PROVIDER_SECRETS_PATH = path.join(ROOT_DIR, 'runtime', 'secrets', 'provider.credentials.json');
 const MEDIA_TUNNEL_REFRESH_REQUEST_PATH = path.join(
   ROOT_DIR,
@@ -94,6 +98,7 @@ const MEDIA_TUNNEL_REFRESH_REQUEST_PATH = path.join(
   'media-tunnel-refresh.request.json',
 );
 const MAIL_SECRETS_PATH = path.join(ROOT_DIR, 'runtime', 'secrets', 'mail.credentials.json');
+const SETUP_AUTH_HASH_PATH = path.join(ROOT_DIR, 'runtime', 'secrets', 'setup-auth.hash');
 const ALIBABA_VALIDATION_SCRIPT_PATH = path.join(
   ROOT_DIR,
   'services',
@@ -173,6 +178,12 @@ const ALIBABA_PROVIDER_VALIDATION_TTL_MS = 60 * 60 * 1000;
 const ALL_COMPOSE_PROFILES = ['core', 'workers', 'local-mongo', 'minio', 'local-media', 'logger', 'reverse-proxy', 'genblaze'];
 const ALLOWED_FIREWALL_PORTS = [80, 443, 3000, 3002, 8089];
 const SETUP_PASSWORD_HASH_VERSION = 'scrypt-v1';
+const SETUP_BOOTSTRAP_TOKEN_FILE = normalizeString(
+  process.env.SAMSAR_SETUP_BOOTSTRAP_TOKEN_FILE,
+);
+const SETUP_BOOTSTRAP_TOKEN = SETUP_BOOTSTRAP_TOKEN_FILE
+  ? normalizeString(readFileSync(SETUP_BOOTSTRAP_TOKEN_FILE, 'utf8'))
+  : '';
 
 function getAllowedProviderEnvironmentVariableNames() {
   const customNames = normalizeString(process.env.SAMSAR_SETUP_PROVIDER_ENV_NAMES)
@@ -302,6 +313,50 @@ function runCommandCapture(command, args, options = {}) {
 
 function getComposeArgs(...args) {
   return ['compose', '--env-file', ROOT_ENV_PATH, '-f', COMPOSE_FILE, ...args];
+}
+
+async function prepareLocalMongoAuthentication(run, profiles = []) {
+  if (!profiles.includes('local-mongo')) {
+    return;
+  }
+  appendLog(run, 'Preparing authenticated local MongoDB users.');
+  await runCommand('docker', getComposeArgs('--profile', 'local-mongo', 'stop', 'mongo'), {
+    cwd: ROOT_DIR,
+    run,
+    onOutput: (text) => appendLog(run, text.trim()),
+  });
+  await runCommand('docker', getComposeArgs(
+    '--profile', 'local-mongo', 'rm', '-s', '-f', 'mongo-auth-bootstrap',
+  ), {
+    cwd: ROOT_DIR,
+    run,
+    onOutput: (text) => appendLog(run, text.trim()),
+  });
+  await runCommand('docker', getComposeArgs(
+    '--profile', 'local-mongo',
+    'up', '--no-deps', '--abort-on-container-exit',
+    '--exit-code-from', 'mongo-auth-bootstrap', 'mongo-auth-bootstrap',
+  ), {
+    cwd: ROOT_DIR,
+    run,
+    onOutput: (text) => appendLog(run, text.trim()),
+  });
+}
+
+async function synchronizeGrafanaAdminPassword(run, profiles = []) {
+  if (!profiles.includes('logger')) {
+    return;
+  }
+  await waitForComposeServiceHealthy('grafana');
+  await runCommand('docker', getComposeArgs(
+    '--profile', 'logger',
+    'exec', '-T', 'grafana', 'sh', '-ec',
+    'grafana cli --homepath /usr/share/grafana admin reset-admin-password "$GF_SECURITY_ADMIN_PASSWORD" >/dev/null',
+  ), {
+    cwd: ROOT_DIR,
+    run,
+  });
+  appendLog(run, 'Grafana administrator authentication synchronized.');
 }
 
 async function getComposeServiceHealthStatus(serviceName) {
@@ -864,12 +919,30 @@ function verifySetupWizardPassword(password = '', storedHash = '') {
 
 async function getSetupAuthState() {
   const config = await readJson(CONFIG_PATH).catch(() => null);
-  const passwordHash = normalizeString(config?.security?.setupWizardPasswordHash);
+  const persistedPasswordHash = await fs.readFile(SETUP_AUTH_HASH_PATH, 'utf8').catch(() => '');
+  const passwordHash = normalizeString(
+    config?.security?.setupWizardPasswordHash || persistedPasswordHash,
+  );
   return {
     required: Boolean(passwordHash),
     configured: Boolean(passwordHash),
+    bootstrapRequired: !passwordHash && Boolean(SETUP_BOOTSTRAP_TOKEN),
     passwordHash,
   };
+}
+
+async function persistSetupWizardPasswordHash(passwordHash = '') {
+  const normalizedHash = normalizeString(passwordHash);
+  if (!normalizedHash) {
+    return;
+  }
+  await fs.mkdir(path.dirname(SETUP_AUTH_HASH_PATH), { recursive: true, mode: 0o700 });
+  await fs.writeFile(SETUP_AUTH_HASH_PATH, `${normalizedHash}\n`, { mode: 0o600 });
+  try {
+    await fs.chmod(SETUP_AUTH_HASH_PATH, 0o600);
+  } catch (_) {
+    // Best effort; Docker Desktop bind mounts may ignore chmod on some hosts.
+  }
 }
 
 function getSetupPasswordFromRequest(req) {
@@ -880,18 +953,42 @@ function getSetupPasswordFromRequest(req) {
   return typeof headerValue === 'string' ? headerValue : '';
 }
 
+function getSetupBootstrapTokenFromRequest(req) {
+  const headerValue = req.headers['x-samsar-setup-bootstrap-token'];
+  if (Array.isArray(headerValue)) {
+    return headerValue[0] || '';
+  }
+  return typeof headerValue === 'string' ? headerValue : '';
+}
+
+function verifySetupBootstrapToken(candidate = '') {
+  if (!SETUP_BOOTSTRAP_TOKEN || !candidate) {
+    return false;
+  }
+  const expected = createHash('sha256').update(SETUP_BOOTSTRAP_TOKEN).digest();
+  const actual = createHash('sha256').update(String(candidate)).digest();
+  return timingSafeEqual(expected, actual);
+}
+
+function isSetupRequestAuthenticated(req, authState) {
+  if (authState.passwordHash) {
+    return verifySetupWizardPassword(getSetupPasswordFromRequest(req), authState.passwordHash);
+  }
+  return verifySetupBootstrapToken(getSetupBootstrapTokenFromRequest(req));
+}
+
 async function requireSetupAuth(req, res) {
   const authState = await getSetupAuthState();
-  if (!authState.required) {
-    return true;
-  }
-  if (verifySetupWizardPassword(getSetupPasswordFromRequest(req), authState.passwordHash)) {
+  if (isSetupRequestAuthenticated(req, authState)) {
     return true;
   }
   sendJson(res, 401, {
     ok: false,
-    authRequired: true,
-    message: 'Enter the Docker admin password to manage this setup wizard.',
+    authRequired: authState.required,
+    bootstrapAuthRequired: authState.bootstrapRequired || !authState.passwordHash,
+    message: authState.passwordHash
+      ? 'Enter the Docker admin password to manage this setup wizard.'
+      : 'Open the authenticated setup URL once; this browser will retain access across container recreations.',
   });
   return false;
 }
@@ -917,7 +1014,7 @@ function buildDatabaseConfig(infrastructure = {}) {
 
   return {
     provider: 'local-mongo',
-    mongoUrl: 'mongodb://mongo:27017/SamsarOne',
+    mongoUrl: '',
   };
 }
 
@@ -966,8 +1063,8 @@ function buildStorageConfig(infrastructure = {}) {
     mediaBucketName: 'samsar-resources',
     staticCdnUrl: `${PROCESSOR_PUBLIC_URL.replace(/\/+$/, '')}/`,
     secureAssetPrefix: 'assets_v2',
-    accessKeyId: 'samsar',
-    secretAccessKey: 'samsar-local-password',
+    accessKeyId: '',
+    secretAccessKey: '',
     region: 'us-east-1',
     s3Endpoint: 'http://minio:9000',
     s3ForcePathStyle: true,
@@ -1927,11 +2024,13 @@ async function writeRuntimeConfig(payload) {
   const config = await buildRuntimeConfig(payload);
   await fs.mkdir(path.dirname(CONFIG_PATH), { recursive: true });
   await fs.writeFile(CONFIG_PATH, `${JSON.stringify(config, null, 2)}\n`, { mode: 0o600 });
+  await persistSetupWizardPasswordHash(config.security?.setupWizardPasswordHash);
 }
 
 async function writeExistingRuntimeConfig(config) {
   await fs.mkdir(path.dirname(CONFIG_PATH), { recursive: true });
   await fs.writeFile(CONFIG_PATH, `${JSON.stringify(config, null, 2)}\n`, { mode: 0o600 });
+  await persistSetupWizardPasswordHash(config.security?.setupWizardPasswordHash);
   try {
     await fs.chmod(CONFIG_PATH, 0o600);
   } catch (_) {
@@ -3588,6 +3687,7 @@ async function runSetup(run, payload) {
 
     setStepStatus(run, 'compose', 'running', `Validating Docker build inputs for profiles: ${profiles.join(', ')}`);
     validateDockerBuildInputs(profiles);
+    await prepareLocalMongoAuthentication(run, profiles);
     setStepStatus(run, 'compose', 'running', `Starting Docker Compose profiles: ${nonGenBlazeProfiles.join(', ')}`);
     await runCommand('docker', getComposeArgs(...nonGenBlazeProfileArgs, 'up', '-d', '--build'), {
       cwd: ROOT_DIR,
@@ -3610,6 +3710,7 @@ async function runSetup(run, payload) {
       setStepStatus(run, 'compose', 'running', 'Waiting for the GenBlaze gateway to become healthy.');
       await waitForComposeServiceHealthy('genblaze');
     }
+    await synchronizeGrafanaAdminPassword(run, profiles);
     setStepStatus(run, 'compose', 'complete', 'Docker containers started.');
 
     await ensureReverseProxy(run, profileArgs, reverseProxy);
@@ -3696,6 +3797,7 @@ async function runDockerMaintenance(run) {
 
     setStepStatus(run, 'compose', 'running', `Validating Docker build inputs for profiles: ${profiles.join(', ')}`);
     validateDockerBuildInputs(profiles);
+    await prepareLocalMongoAuthentication(run, profiles);
     setStepStatus(run, 'compose', 'running', 'Rebuilding and restarting Docker containers.');
     await runCommand('docker', getComposeArgs(...nonGenBlazeProfileArgs, 'up', '-d', '--build', '--remove-orphans'), {
       cwd: ROOT_DIR,
@@ -3718,6 +3820,7 @@ async function runDockerMaintenance(run) {
       setStepStatus(run, 'compose', 'running', 'Waiting for the GenBlaze gateway to become healthy.');
       await waitForComposeServiceHealthy('genblaze');
     }
+    await synchronizeGrafanaAdminPassword(run, profiles);
     setStepStatus(run, 'compose', 'complete', 'Docker containers updated and restarted.');
 
     await ensureReverseProxy(run, profileArgs, reverseProxy);
@@ -3756,7 +3859,14 @@ async function ensureComposeEnvFile() {
   } catch (_) {
     // Best effort; Docker Desktop bind mounts may ignore chmod on some hosts.
   }
-  for (const envPath of [ROOT_ENV_PATH, GENBLAZE_ENV_PATH]) {
+  for (const envPath of [
+    ROOT_ENV_PATH,
+    GENBLAZE_ENV_PATH,
+    APPLICATION_ENV_PATH,
+    MONGO_ENV_PATH,
+    MINIO_ENV_PATH,
+    GRAFANA_ENV_PATH,
+  ]) {
     try {
       await fs.access(envPath);
     } catch {
@@ -3944,6 +4054,7 @@ async function getInstallStatus() {
     hasRuntimeConfig: Boolean(config),
     setupAuthRequired: setupAuthState.required,
     setupAuthConfigured: setupAuthState.configured,
+    setupBootstrapAuthRequired: setupAuthState.bootstrapRequired,
     compose,
     readiness: {
       processor: processorReady,
@@ -3983,7 +4094,7 @@ async function handleApi(req, res, pathname) {
   if (req.method === 'GET' && pathname === '/api/setup/install-status') {
     const status = await getInstallStatus();
     const authState = await getSetupAuthState();
-    if (authState.required && !verifySetupWizardPassword(getSetupPasswordFromRequest(req), authState.passwordHash)) {
+    if (!isSetupRequestAuthenticated(req, authState)) {
       status.config = null;
     }
     sendJson(res, 200, status);
@@ -3991,6 +4102,9 @@ async function handleApi(req, res, pathname) {
   }
 
   if (req.method === 'GET' && pathname === '/api/setup/reverse-proxy/ip-candidates') {
+    if (!await requireSetupAuth(req, res)) {
+      return true;
+    }
     try {
       sendJson(res, 200, await discoverReverseProxyIpCandidates());
     } catch (error) {
@@ -4109,12 +4223,13 @@ async function handleApi(req, res, pathname) {
   }
 
   if (req.method === 'POST' && pathname === '/api/setup/mail/validate') {
-    let payload = await readRequestBody(req);
+    if (!await requireSetupAuth(req, res)) {
+      return true;
+    }
+    let payload;
     try {
+      payload = await readRequestBody(req);
       if (usesEnvironmentConfigurationSecrets(payload)) {
-        if (!await requireSetupAuth(req, res)) {
-          return true;
-        }
         const references = pickApplicableConfigurationEnvironmentReferences(
           payload,
           payload.configurationSecretReferences || payload.secretReferences || {},
@@ -4171,6 +4286,9 @@ async function handleApi(req, res, pathname) {
   }
 
   if (req.method === 'POST' && pathname === '/api/setup/reverse-proxy/validate') {
+    if (!await requireSetupAuth(req, res)) {
+      return true;
+    }
     const payload = await readRequestBody(req);
     try {
       const validation = await validateReverseProxyConfig(payload.reverseProxy || payload);
@@ -4183,18 +4301,21 @@ async function handleApi(req, res, pathname) {
 
   if (req.method === 'POST' && pathname === '/api/setup/auth/check') {
     const authState = await getSetupAuthState();
-    if (!authState.required) {
-      sendJson(res, 200, { ok: true, authRequired: false });
-      return true;
-    }
-    if (verifySetupWizardPassword(getSetupPasswordFromRequest(req), authState.passwordHash)) {
-      sendJson(res, 200, { ok: true, authRequired: true });
+    if (isSetupRequestAuthenticated(req, authState)) {
+      sendJson(res, 200, {
+        ok: true,
+        authRequired: authState.required,
+        bootstrapAuthRequired: authState.bootstrapRequired,
+      });
       return true;
     }
     sendJson(res, 401, {
       ok: false,
-      authRequired: true,
-      message: 'Enter the Docker admin password to manage this setup wizard.',
+      authRequired: authState.required,
+      bootstrapAuthRequired: authState.bootstrapRequired || !authState.passwordHash,
+      message: authState.passwordHash
+        ? 'Enter the Docker admin password to manage this setup wizard.'
+        : 'Open the authenticated setup URL once; this browser will retain access across container recreations.',
     });
     return true;
   }
@@ -4395,8 +4516,23 @@ function applyCorsHeaders(req, res) {
   }
   res.setHeader('Access-Control-Allow-Origin', origin);
   res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-Samsar-Setup-Admin-Password');
+  res.setHeader(
+    'Access-Control-Allow-Headers',
+    'Content-Type, X-Samsar-Setup-Admin-Password, X-Samsar-Setup-Bootstrap-Token',
+  );
   res.setHeader('Vary', 'Origin');
+}
+
+function applySecurityHeaders(res) {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('Referrer-Policy', 'no-referrer');
+  res.setHeader(
+    'Content-Security-Policy',
+    "default-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'; " +
+      "object-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; " +
+      "img-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self' https: http:",
+  );
 }
 
 function isPathInside(parent, child) {
@@ -4433,6 +4569,7 @@ async function serveStatic(req, res, pathname) {
 
 const server = http.createServer(async (req, res) => {
   try {
+    applySecurityHeaders(res);
     const requestUrl = new URL(req.url, 'http://localhost');
     if (requestUrl.pathname.startsWith('/api/')) {
       applyCorsHeaders(req, res);

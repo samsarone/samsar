@@ -27,6 +27,7 @@ import {
   isProviderBilledVideoPricing,
   isVideoModelAllowedForDeploymentScope,
 } from '../../utils/videoModelAvailability.mjs';
+import { isImageModelAllowedForDeploymentScope } from '../../utils/imageModelAvailability.mjs';
 
 const API_SERVER = import.meta.env.VITE_PROCESSOR_API;
 
@@ -131,6 +132,9 @@ export default function AdVideoCreator() {
   const expressImageModels = useMemo(() => {
     const models = IMAGE_GENERAITON_MODEL_TYPES
       .filter((m) => {
+        if (!isImageModelAllowedForDeploymentScope(m, isStandaloneModelFilteringEnabled)) {
+          return false;
+        }
         const modelExistsInPricing = IMAGE_MODEL_PRICES.find(
           (imp) => imp.key.toLowerCase() === m.key.toLowerCase()
         );
@@ -308,12 +312,12 @@ export default function AdVideoCreator() {
   // Disable form if not premium or credits too low
   const [isDisabled, setIsDisabled] = useState(false);
   useEffect(() => {
-    if (!user || user.generationCredits < 300) {
+    if (!user || (!isStandaloneModelFilteringEnabled && user.generationCredits < 300)) {
       setIsDisabled(true);
     } else {
       setIsDisabled(false);
     }
-  }, [user]);
+  }, [isStandaloneModelFilteringEnabled, user]);
 
   // Cleanup any polling on unmount
   useEffect(() => {

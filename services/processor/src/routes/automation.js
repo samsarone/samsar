@@ -5,18 +5,9 @@ import {
   ensureAutomationSnapshot,
   incrementAutomationInteractions,
 } from '../models/Automation.js';
+import { requestHasValidRuntimeSecret } from '../utils/RuntimeSecretRequestAuth.js';
 
 const router = express.Router();
-
-const extractSecret = (req) => {
-  if (typeof req.query?.secret === 'string') {
-    return req.query.secret;
-  }
-  if (typeof req.headers['x-internal-secret'] === 'string') {
-    return req.headers['x-internal-secret'];
-  }
-  return null;
-};
 
 const parseCount = (raw) => {
   if (Array.isArray(raw)) {
@@ -52,8 +43,7 @@ const pickRandomRecords = (records, count) => {
 
 router.post('/create_or_return_bots', async (req, res) => {
   try {
-    const secret = extractSecret(req);
-    if (!secret || secret !== process.env.INTERNAL_SECRET) {
+    if (!requestHasValidRuntimeSecret(req)) {
       return res.status(401).json({ error: 'Unauthorized' });
     }
 
@@ -75,8 +65,7 @@ router.post('/create_or_return_bots', async (req, res) => {
 
 router.post('/automation/interactions', async (req, res) => {
   try {
-    const secret = extractSecret(req);
-    if (!secret || secret !== process.env.INTERNAL_SECRET) {
+    if (!requestHasValidRuntimeSecret(req)) {
       return res.status(401).json({ error: 'Unauthorized' });
     }
 

@@ -8,6 +8,7 @@ import ExternalUserRequest from '../../schema/ExternalUserRequest.js';
 import UserPayment from '../../schema/UserPayment.js';
 import VideoSession from '../../schema/VideoSession.js';
 import { generateAPIKeySecret } from '../../utils/ApiKeyUtils.js';
+import { getTokenSecret } from '../../utils/RuntimeSecrets.js';
 import { getDBConnectionString } from '../DBString.js';
 import {
   creditGenerationCredits,
@@ -778,7 +779,7 @@ export async function resolveExternalUserFromAuthToken(authToken) {
 
   let decoded;
   try {
-    const secret = process.env.TOKEN_SECRET;
+    const secret = getTokenSecret();
     decoded = jwt.verify(authToken, secret);
   } catch (error) {
     const authErrorNames = new Set(['JsonWebTokenError', 'TokenExpiredError', 'NotBeforeError']);

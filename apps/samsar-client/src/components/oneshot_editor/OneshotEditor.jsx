@@ -109,6 +109,11 @@ import {
   getCustomTextToImageModelDefinitions,
   isCustomTextToImageModelKey,
 } from '../../utils/customTextToImageAdapters.mjs';
+import {
+  QWEN_IMAGE_3_PRO_MODEL_KEY,
+  isImageModelAllowedForDeploymentScope,
+} from '../../utils/imageModelAvailability.mjs';
+import { isVidgenieImageToVideoModeAvailable } from '../../utils/vidgenieModeAvailability.mjs';
 import useRealtimeTranscription from '../../hooks/useRealtimeTranscription.js';
 import { useDeploymentModelAvailability } from '../../hooks/useDeploymentModelAvailability.js';
 import { useInferenceModelAvailability } from '../../hooks/useInferenceModelAvailability.js';
@@ -193,12 +198,14 @@ const VIDGENIE_IMAGE_MODEL_ORDER = [
   'NANOBANANAPRO',
   'SEEDREAM',
   'WAN2.7PRO',
+  QWEN_IMAGE_3_PRO_MODEL_KEY,
 ];
 const VIDGENIE_IMAGE_MODEL_LABELS = {
   GPTIMAGE2: 'GPT Image 2',
   NANOBANANAPRO: 'NanoBanana Pro',
   SEEDREAM: 'Seedream',
   'WAN2.7PRO': 'Wan2.7 Pro',
+  [QWEN_IMAGE_3_PRO_MODEL_KEY]: 'Qwen Image 3.0 Pro',
 };
 const DEFAULT_VIDEO_GENERATION_MODEL = 'RUNWAYML';
 const VIDGENIE_VIDEO_MODEL_ORDER = [
@@ -2012,6 +2019,9 @@ function validateStageImageModel(
   if (!imageModel || !allowedModelKeys.includes(resolvedImageModel)) {
     return `JSON input.image_model must be one of: ${formatAllowedJsonValues(allowedModelKeys)}.`;
   }
+  if (!isImageModelAllowedForDeploymentScope(imageModel, isStandaloneDeployment)) {
+    return `JSON input.image_model ${resolvedImageModel} is only available in standalone deployments.`;
+  }
   if (!isModelAllowedByDeployment(resolvedImageModel, deploymentModelValues, isStandaloneDeployment)) {
     return getConfiguredModelError('image_model', deploymentModelValues);
   }
@@ -3636,8 +3646,17 @@ export default function OneshotEditor() {
     textToVideoVideoModelValues,
     imageListToVideoImageModelValues,
     imageListToVideoVideoModelValues,
+    imageEditModelValues,
     primaryAdapterByModel,
   } = useDeploymentModelAvailability();
+  const isImageToVideoModeAvailable = useMemo(
+    () => isVidgenieImageToVideoModeAvailable({
+      isStandaloneDeployment: isStandaloneModelFilteringEnabled,
+      imageEditModelValues,
+      primaryAdapterByModel,
+    }),
+    [imageEditModelValues, isStandaloneModelFilteringEnabled, primaryAdapterByModel],
+  );
   const canGenerateSubtitles =
     !isStandaloneModelFilteringEnabled || hasSubtitleGenerationCredentials;
   const subtitleGenerationEnabled = canGenerateSubtitles && enableSubtitles;
@@ -3651,6 +3670,21 @@ export default function OneshotEditor() {
       }));
     }
   }, [canGenerateSubtitles, isDeploymentModelAvailabilityLoading]);
+  useEffect(() => {
+    if (
+      isStandaloneModelFilteringEnabled &&
+      !isDeploymentModelAvailabilityLoading &&
+      !isImageToVideoModeAvailable &&
+      generationMode === 'I2V'
+    ) {
+      setGenerationMode('T2V');
+    }
+  }, [
+    generationMode,
+    isDeploymentModelAvailabilityLoading,
+    isImageToVideoModeAvailable,
+    isStandaloneModelFilteringEnabled,
+  ]);
   const deploymentModelAvailability = useMemo(() => ({
     isStandaloneDeployment: isStandaloneModelFilteringEnabled,
     textToVideoImageModelValues,
@@ -3768,6 +3802,9 @@ export default function OneshotEditor() {
     const availableModelMap = new Map(
       IMAGE_GENERAITON_MODEL_TYPES
         .filter((m) => {
+          if (!isImageModelAllowedForDeploymentScope(m, isStandaloneModelFilteringEnabled)) {
+            return false;
+          }
           const modelPricing = IMAGE_MODEL_PRICES.find(
             (imp) => imp.key.toLowerCase() === m.key.toLowerCase()
           )?.prices || [];
@@ -5825,6 +5862,9 @@ export default function OneshotEditor() {
   const viewInStudio = () => navigate(`/video/${id}`);
 
   const handleGenerationModeChange = (mode) => {
+    if (mode === 'I2V' && !isImageToVideoModeAvailable) {
+      return;
+    }
     setGenerationMode(mode);
     if (isJsonMode) {
       setIsJsonInputDirty(false);
@@ -7257,18 +7297,20 @@ export default function OneshotEditor() {
               >
                 T2V
               </button>
-              <button
-                type="button"
-                disabled={isModeToggleDisabled}
-                onClick={() => handleGenerationModeChange('I2V')}
-                aria-pressed={generationMode === 'I2V'}
-                aria-label={t("vidgenie.titleImageListToVideo")}
-                data-tooltip-id="vidgenie-i2v-mode-tooltip"
-                data-tooltip-content={imageToVideoTooltip}
-                className={`flex-1 rounded-full px-4 py-1.5 text-xs font-semibold transition sm:flex-none ${generationMode === 'I2V' ? toggleActive : toggleInactive}`}
-              >
-                I2V
-              </button>
+              {isImageToVideoModeAvailable && (
+                <button
+                  type="button"
+                  disabled={isModeToggleDisabled}
+                  onClick={() => handleGenerationModeChange('I2V')}
+                  aria-pressed={generationMode === 'I2V'}
+                  aria-label={t("vidgenie.titleImageListToVideo")}
+                  data-tooltip-id="vidgenie-i2v-mode-tooltip"
+                  data-tooltip-content={imageToVideoTooltip}
+                  className={`flex-1 rounded-full px-4 py-1.5 text-xs font-semibold transition sm:flex-none ${generationMode === 'I2V' ? toggleActive : toggleInactive}`}
+                >
+                  I2V
+                </button>
+              )}
             </div>
             <Tooltip
               id="vidgenie-t2v-mode-tooltip"
@@ -7279,15 +7321,17 @@ export default function OneshotEditor() {
               className={modeTooltipClassName}
               classNameArrow="vidgenie-mode-tooltip-arrow"
             />
-            <Tooltip
-              id="vidgenie-i2v-mode-tooltip"
-              place="bottom"
-              offset={10}
-              delayShow={120}
-              opacity={1}
-              className={modeTooltipClassName}
-              classNameArrow="vidgenie-mode-tooltip-arrow"
-            />
+            {isImageToVideoModeAvailable && (
+              <Tooltip
+                id="vidgenie-i2v-mode-tooltip"
+                place="bottom"
+                offset={10}
+                delayShow={120}
+                opacity={1}
+                className={modeTooltipClassName}
+                classNameArrow="vidgenie-mode-tooltip-arrow"
+              />
+            )}
           </div>
 
           <div className="vidgenie-header-actions flex w-full flex-wrap items-center justify-center gap-2 sm:ml-auto sm:w-auto sm:justify-end">

@@ -236,6 +236,7 @@ test('intermediate media cleanup never sweeps final or user resources', async ()
   const oldTime = new Date(Date.now() - 5 * 60 * 60 * 1000);
   const previousRoot = process.env.SAMSAR_ASSETS_V2_ROOT;
   const previousCleanupHours = process.env.INTERMEDIATE_MEDIA_CLEANUP_HOURS;
+  const previousCronLogPath = process.env.TASK_PROCESSOR_CRON_LOG_PATH;
 
   try {
     for (const filePath of [temporaryRender, finalRender, userResource]) {
@@ -246,6 +247,7 @@ test('intermediate media cleanup never sweeps final or user resources', async ()
 
     process.env.SAMSAR_ASSETS_V2_ROOT = assetsV2Root;
     process.env.INTERMEDIATE_MEDIA_CLEANUP_HOURS = '4';
+    process.env.TASK_PROCESSOR_CRON_LOG_PATH = path.join(tempRoot, 'cronTabs.log');
     const counters = await cleanupOldLocalAssetsV2Media();
 
     await assert.rejects(fs.stat(temporaryRender), { code: 'ENOENT' });
@@ -257,6 +259,8 @@ test('intermediate media cleanup never sweeps final or user resources', async ()
     else process.env.SAMSAR_ASSETS_V2_ROOT = previousRoot;
     if (previousCleanupHours === undefined) delete process.env.INTERMEDIATE_MEDIA_CLEANUP_HOURS;
     else process.env.INTERMEDIATE_MEDIA_CLEANUP_HOURS = previousCleanupHours;
+    if (previousCronLogPath === undefined) delete process.env.TASK_PROCESSOR_CRON_LOG_PATH;
+    else process.env.TASK_PROCESSOR_CRON_LOG_PATH = previousCronLogPath;
     await fs.rm(tempRoot, { recursive: true, force: true });
   }
 });

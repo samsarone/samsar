@@ -21,6 +21,7 @@ const AVAILABILITY = Object.freeze({
   providers: ['alibabaCloud', 'gmicloud', 'fal', 'samsar'],
   models: [
     'QWEN3.8',
+    'QWENIMAGE3PRO',
     'WAN2.7PRO',
     'HAPPYHORSEI2V',
     'SEEDANCE2.0I2V',
@@ -29,6 +30,7 @@ const AVAILABILITY = Object.freeze({
   ],
   modelProviderPriority: {
     'QWEN3.8': ['alibabaCloud', 'openrouter', 'samsar'],
+    QWENIMAGE3PRO: ['alibabaCloud'],
     'WAN2.7PRO': ['alibabaCloud', 'fal', 'samsar'],
     HAPPYHORSEI2V: ['alibabaCloud', 'fal', 'samsar'],
     'SEEDANCE2.0I2V': ['gmicloud', 'fal'],
@@ -61,6 +63,18 @@ test('settings expose only installed compatible adapters in stage order', () => 
   const imageToVideo = result.stages.find((stage) => stage.key === 'image_to_video');
 
   assert.deepEqual(inference.models[0].preference, ['samsar', 'alibabaCloud']);
+  assert.deepEqual(
+    textToImage.models.find((model) => model.modelKey === 'QWENIMAGE3PRO'),
+    {
+      modelKey: 'QWENIMAGE3PRO',
+      label: 'Qwen Image 3.0 Pro',
+      availableAdapters: [
+        { key: 'alibabaCloud', label: 'Alibaba Cloud' },
+      ],
+      preference: ['alibabaCloud'],
+      defaultPreference: ['alibabaCloud'],
+    },
+  );
   assert.deepEqual(
     textToImage.models.find((model) => model.modelKey === 'WAN2.7PRO').preference,
     ['fal', 'samsar', 'alibabaCloud'],

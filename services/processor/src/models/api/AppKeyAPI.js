@@ -3,6 +3,7 @@ import bcrypt from 'bcrypt';
 
 import AppKey from '../../schema/AppKey.js';
 import User from '../../schema/User.js';
+import { getTokenSecret, validateRuntimeSecret } from '../../utils/RuntimeSecrets.js';
 import { getDBConnectionString } from '../DBString.js';
 
 export const APP_KEY_PREFIX = 'sapp_';
@@ -61,23 +62,27 @@ function normalizeMetadata(value) {
   }, {});
 }
 
-function getHashSecret() {
-  const secret =
-    process.env.APP_KEY_HASH_SECRET ||
-    process.env.SAMSAR_APP_KEY_HASH_SECRET ||
-    process.env.TOKEN_SECRET;
+export function getAppKeyHashSecret(env = process.env) {
+  try {
+    if (env.APP_KEY_HASH_SECRET) {
+      return validateRuntimeSecret('APP_KEY_HASH_SECRET', env.APP_KEY_HASH_SECRET);
+    }
+    if (env.SAMSAR_APP_KEY_HASH_SECRET) {
+      return validateRuntimeSecret(
+        'SAMSAR_APP_KEY_HASH_SECRET',
+        env.SAMSAR_APP_KEY_HASH_SECRET,
+      );
+    }
 
-  if (!secret || !secret.trim()) {
-    const error = new Error('APP_KEY_HASH_SECRET or TOKEN_SECRET must be configured for app key hashing.');
+    return getTokenSecret(env);
+  } catch (error) {
     error.status = 500;
     throw error;
   }
-
-  return secret;
 }
 
 function hashAppKey(appKey) {
-  return createHmac('sha256', getHashSecret()).update(appKey).digest('hex');
+  return createHmac('sha256', getAppKeyHashSecret()).update(appKey).digest('hex');
 }
 
 function resolveAppKeyTtlDays() {

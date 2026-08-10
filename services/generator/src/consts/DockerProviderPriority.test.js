@@ -10,6 +10,7 @@ import {
   getConfiguredDockerImageGenerationProviders,
   getDockerImageEditProviderPriority,
   getDockerImageGenerationProviderPriority,
+  hasAlibabaQwenImage3ProCredential,
   resolveDockerImageGenerationProvider,
   resolveDockerImageEditProvider,
   resolveGPTImageTwoGenerationProvider,
@@ -29,6 +30,8 @@ const ENV_KEYS = [
   'DASHSCOPE_API_KEY',
   'ALIBABA_CLOUD_API_KEY',
   'QWEN_API_KEY',
+  'ALIBABA_API_KEY_TYPE',
+  'ALIBABA_API_ENDPOINT_TYPE',
   'FAL_API_KEY',
   'GOOGLE_APPLICATION_CREDENTIALS_JSON_B64',
   'OPENAI_API_KEY',
@@ -68,6 +71,105 @@ test('keeps Wan2.7 Pro on adapters that preserve its aspect-ratio contract', () 
     DOCKER_ADAPTER_PROVIDER.FAL,
     DOCKER_ADAPTER_PROVIDER.SAMSAR,
   ]);
+});
+
+test('classifies the exact Alibaba credential modes supported by Qwen Image 3.0 Pro', () => {
+  const supportedKeyTypes = ['', 'pay_as_you_go'];
+  const supportedEndpointTypes = ['', 'pay_as_you_go'];
+
+  for (const keyType of supportedKeyTypes) {
+    for (const endpointType of supportedEndpointTypes) {
+      assert.equal(hasAlibabaQwenImage3ProCredential({
+        ALIBABA_API_KEY: 'alibaba-key',
+        ALIBABA_API_KEY_TYPE: keyType,
+        ALIBABA_API_ENDPOINT_TYPE: endpointType,
+      }), true, `${keyType || 'blank'} key with ${endpointType || 'blank'} endpoint`);
+    }
+  }
+
+  for (const rejectedType of ['token_plan', 'plan', 'coding_plan']) {
+    assert.equal(hasAlibabaQwenImage3ProCredential({
+      ALIBABA_API_KEY: 'alibaba-key',
+      ALIBABA_API_KEY_TYPE: rejectedType,
+      ALIBABA_API_ENDPOINT_TYPE: 'pay_as_you_go',
+    }), false, `${rejectedType} key type`);
+    assert.equal(hasAlibabaQwenImage3ProCredential({
+      ALIBABA_API_KEY: 'alibaba-key',
+      ALIBABA_API_KEY_TYPE: 'pay_as_you_go',
+      ALIBABA_API_ENDPOINT_TYPE: rejectedType,
+    }), false, `${rejectedType} endpoint type`);
+  }
+
+  assert.equal(hasAlibabaQwenImage3ProCredential({
+    ALIBABA_API_KEY_TYPE: 'pay_as_you_go',
+    ALIBABA_API_ENDPOINT_TYPE: 'pay_as_you_go',
+  }), false);
+});
+
+test('offers Qwen Image 3.0 Pro only through standalone Alibaba pay-as-you-go', () => {
+  process.env.CURRENT_ENV = 'standalone';
+  process.env.SAMSAR_DEPLOYMENT_EDITION = 'standalone';
+  clearCredentials();
+
+  assert.deepEqual(getDockerImageGenerationProviderPriority('qwenimage3pro'), []);
+  assert.equal(resolveDockerImageGenerationProvider('QWENIMAGE3PRO'), '');
+
+  process.env.DASHSCOPE_API_KEY = 'alibaba-key';
+  process.env.FAL_API_KEY = 'fal-key';
+  process.env.SAMSAR_API_KEY = 'samsar-key';
+  assert.equal(
+    resolveDockerImageGenerationProvider('QWENIMAGE3PRO'),
+    DOCKER_ADAPTER_PROVIDER.ALIBABA_CLOUD,
+  );
+  assert.equal(
+    resolveNextDockerImageGenerationProvider(
+      'QWENIMAGE3PRO',
+      DOCKER_ADAPTER_PROVIDER.ALIBABA_CLOUD,
+    ),
+    '',
+  );
+
+  process.env.ALIBABA_API_KEY_TYPE = 'pay_as_you_go';
+  process.env.ALIBABA_API_ENDPOINT_TYPE = 'pay_as_you_go';
+  assert.deepEqual(getDockerImageGenerationProviderPriority('QWENIMAGE3PRO'), [
+    DOCKER_ADAPTER_PROVIDER.ALIBABA_CLOUD,
+  ]);
+  assert.equal(
+    resolveDockerImageGenerationProvider('QWENIMAGE3PRO'),
+    DOCKER_ADAPTER_PROVIDER.ALIBABA_CLOUD,
+  );
+
+  process.env.ALIBABA_API_KEY_TYPE = 'token_plan';
+  process.env.ALIBABA_API_ENDPOINT_TYPE = 'token_plan';
+  assert.deepEqual(getDockerImageGenerationProviderPriority('QWENIMAGE3PRO'), []);
+  assert.equal(resolveDockerImageGenerationProvider('QWENIMAGE3PRO'), '');
+
+  process.env.ALIBABA_API_KEY_TYPE = 'plan';
+  process.env.ALIBABA_API_ENDPOINT_TYPE = 'pay_as_you_go';
+  assert.deepEqual(getDockerImageGenerationProviderPriority('QWENIMAGE3PRO'), []);
+  assert.equal(resolveDockerImageGenerationProvider('QWENIMAGE3PRO'), '');
+
+  process.env.ALIBABA_API_KEY_TYPE = 'coding_plan';
+  assert.deepEqual(getDockerImageGenerationProviderPriority('QWENIMAGE3PRO'), []);
+  assert.equal(resolveDockerImageGenerationProvider('QWENIMAGE3PRO'), '');
+
+  process.env.ALIBABA_API_KEY_TYPE = 'pay_as_you_go';
+  process.env.ALIBABA_API_ENDPOINT_TYPE = 'coding_plan';
+  assert.deepEqual(getDockerImageGenerationProviderPriority('QWENIMAGE3PRO'), []);
+  assert.equal(resolveDockerImageGenerationProvider('QWENIMAGE3PRO'), '');
+});
+
+test('does not expose Qwen Image 3.0 Pro through hosted adapter routing', () => {
+  process.env.CURRENT_ENV = 'production';
+  process.env.SAMSAR_DEPLOYMENT_EDITION = 'production';
+  process.env.SAMSAR_DOCKER_ADAPTER_ROUTING_ENABLED = 'true';
+  clearCredentials();
+  process.env.ALIBABA_API_KEY = 'alibaba-key';
+  process.env.FAL_API_KEY = 'fal-key';
+  process.env.SAMSAR_API_KEY = 'samsar-key';
+
+  assert.deepEqual(getDockerImageGenerationProviderPriority('QWENIMAGE3PRO'), []);
+  assert.equal(resolveDockerImageGenerationProvider('QWENIMAGE3PRO'), '');
 });
 
 test('keeps Samsar ahead of Fal for GPT Image 2 when GMICloud is unavailable', () => {

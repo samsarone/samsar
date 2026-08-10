@@ -2,6 +2,7 @@ import crypto from 'crypto';
 import User from '../schema/User.js';
 import { getDBConnectionString } from './DBString.js';
 import { sendNewsletterSubscriptionAdminEmail } from './Mailer.js';
+import { getTokenSecret, validateRuntimeSecret } from '../utils/RuntimeSecrets.js';
 
 const NEWSLETTER_UNSUBSCRIBE_TOKEN_VERSION = 1;
 const NEWSLETTER_ADMIN_EMAIL = process.env.NEWSLETTER_ADMIN_EMAIL || 'roy@samsar.one';
@@ -13,13 +14,15 @@ const UNSUBSCRIBE_REASONS = new Set([
   'other',
 ]);
 
-function getNewsletterSecret() {
-  return (
-    process.env.NEWSLETTER_UNSUBSCRIBE_SECRET ||
-    process.env.TOKEN_SECRET ||
-    process.env.ADMIN_SECRET ||
-    'samsar-newsletter-unsubscribe'
-  );
+export function getNewsletterSecret() {
+  if (process.env.NEWSLETTER_UNSUBSCRIBE_SECRET) {
+    return validateRuntimeSecret(
+      'NEWSLETTER_UNSUBSCRIBE_SECRET',
+      process.env.NEWSLETTER_UNSUBSCRIBE_SECRET,
+    );
+  }
+
+  return getTokenSecret();
 }
 
 function toBase64Url(value) {

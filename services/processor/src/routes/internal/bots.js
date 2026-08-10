@@ -6,28 +6,9 @@ import { ensureBotUser } from '../../models/BotUser.js';
 import { generateAuthToken } from '../../models/Auth.js';
 import { getDBConnectionString } from '../../models/DBString.js';
 import User from '../../schema/User.js';
+import { requestHasValidRuntimeSecret } from '../../utils/RuntimeSecretRequestAuth.js';
 
 const router = express.Router();
-
-const extractSecret = (req) => {
-  if (typeof req.query?.secret === 'string') {
-    return req.query.secret;
-  }
-  if (typeof req.headers['x-internal-secret'] === 'string') {
-    return req.headers['x-internal-secret'];
-  }
-  return null;
-};
-
-const extractBotSecret = (req) => {
-  if (typeof req.query?.botSecret === 'string') {
-    return req.query.botSecret;
-  }
-  if (typeof req.headers['x-bot-auth-secret'] === 'string') {
-    return req.headers['x-bot-auth-secret'];
-  }
-  return null;
-};
 
 const AUTH_KEY_BYTE_LENGTH = 32;
 
@@ -52,8 +33,7 @@ const ensureAuthenticationKey = async (user) => {
 
 router.post('/users', async (req, res) => {
   try {
-    const secret = extractSecret(req);
-    if (!secret || secret !== process.env.INTERNAL_SECRET) {
+    if (!requestHasValidRuntimeSecret(req)) {
       return res.status(401).json({ error: 'Unauthorized' });
     }
 
@@ -84,8 +64,11 @@ router.get('/users', async (req, res) => {
       return res.status(500).json({ error: 'Bot authentication is not configured.' });
     }
 
-    const secret = extractBotSecret(req);
-    if (!secret || secret !== process.env.BOT_USER_AUTH_SECRET) {
+    if (!requestHasValidRuntimeSecret(req, {
+        environmentName: 'BOT_USER_AUTH_SECRET',
+        headerName: 'x-bot-auth-secret',
+        queryName: 'botSecret',
+    })) {
       return res.status(401).json({ error: 'Unauthorized' });
     }
 
@@ -138,8 +121,11 @@ router.post('/authenticate', async (req, res) => {
       return res.status(500).json({ error: 'Bot authentication is not configured.' });
     }
 
-    const secret = extractBotSecret(req);
-    if (!secret || secret !== process.env.BOT_USER_AUTH_SECRET) {
+    if (!requestHasValidRuntimeSecret(req, {
+        environmentName: 'BOT_USER_AUTH_SECRET',
+        headerName: 'x-bot-auth-secret',
+        queryName: 'botSecret',
+    })) {
       return res.status(401).json({ error: 'Unauthorized' });
     }
 

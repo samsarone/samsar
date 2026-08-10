@@ -8,6 +8,7 @@ import {
   DOCKER_PROVIDER,
   getDockerImageProviderPriority,
   getDockerVideoProviderPriority,
+  isAlibabaQwenImage3ProCredentialEligible,
   isDockerProviderRoutingEnabled,
   resolveDockerImageProvider,
   resolveNextDockerImageProvider,
@@ -27,6 +28,8 @@ const ENV_KEYS = [
   'DASHSCOPE_API_KEY',
   'ALIBABA_CLOUD_API_KEY',
   'QWEN_API_KEY',
+  'ALIBABA_API_KEY_TYPE',
+  'ALIBABA_API_ENDPOINT_TYPE',
   'FAL_API_KEY',
   'GOOGLE_APPLICATION_CREDENTIALS_JSON_B64',
   'SAMSAR_API_KEY',
@@ -168,6 +171,71 @@ test('processor and image worker agree on Wan2.7 Pro Docker provider precedence'
     DOCKER_PROVIDER.FAL,
     DOCKER_PROVIDER.SAMSAR,
   ]);
+});
+
+test('Qwen Image 3.0 Pro routes only to eligible standalone Alibaba credentials', () => {
+  clearEnv();
+  process.env.SAMSAR_DEPLOYMENT_EDITION = 'standalone';
+  process.env.SAMSAR_RUNTIME = 'docker';
+  process.env.ALIBABA_API_KEY = 'alibaba-key';
+  process.env.FAL_API_KEY = 'fal-key';
+  process.env.SAMSAR_API_KEY = 'samsar-key';
+
+  assert.deepEqual(getDockerImageProviderPriority('qwenimage3pro'), [
+    DOCKER_PROVIDER.ALIBABA_CLOUD,
+  ]);
+  assert.equal(
+    resolveDockerImageProvider('QWENIMAGE3PRO'),
+    DOCKER_PROVIDER.ALIBABA_CLOUD,
+  );
+
+  delete process.env.ALIBABA_API_KEY;
+  assert.equal(resolveDockerImageProvider('QWENIMAGE3PRO'), '');
+});
+
+test('Qwen Image 3.0 Pro accepts PAYG but rejects Alibaba plan credentials and hosted routing', () => {
+  assert.equal(isAlibabaQwenImage3ProCredentialEligible(), true);
+  assert.equal(isAlibabaQwenImage3ProCredentialEligible({
+    keyType: 'pay_as_you_go',
+    endpointType: 'pay_as_you_go',
+  }), true);
+  assert.equal(isAlibabaQwenImage3ProCredentialEligible({
+    keyType: 'token_plan',
+    endpointType: 'token_plan',
+  }), false);
+  assert.equal(isAlibabaQwenImage3ProCredentialEligible({
+    keyType: 'plan',
+    endpointType: 'pay_as_you_go',
+  }), false);
+  assert.equal(isAlibabaQwenImage3ProCredentialEligible({
+    keyType: 'coding_plan',
+    endpointType: 'pay_as_you_go',
+  }), false);
+  assert.equal(isAlibabaQwenImage3ProCredentialEligible({
+    keyType: 'pay_as_you_go',
+    endpointType: 'coding_plan',
+  }), false);
+
+  clearEnv();
+  process.env.SAMSAR_DEPLOYMENT_EDITION = 'production';
+  process.env.SAMSAR_DOCKER_ADAPTER_ROUTING_ENABLED = 'true';
+  process.env.ALIBABA_API_KEY = 'alibaba-key';
+  assert.deepEqual(getDockerImageProviderPriority('QWENIMAGE3PRO'), []);
+  assert.equal(resolveDockerImageProvider('QWENIMAGE3PRO'), '');
+
+  process.env.SAMSAR_DEPLOYMENT_EDITION = 'standalone';
+  process.env.ALIBABA_API_KEY_TYPE = 'token_plan';
+  process.env.ALIBABA_API_ENDPOINT_TYPE = 'token_plan';
+  assert.deepEqual(getDockerImageProviderPriority('QWENIMAGE3PRO'), []);
+  assert.equal(resolveDockerImageProvider('QWENIMAGE3PRO'), '');
+
+  process.env.ALIBABA_API_KEY_TYPE = 'plan';
+  process.env.ALIBABA_API_ENDPOINT_TYPE = 'pay_as_you_go';
+  assert.equal(resolveDockerImageProvider('QWENIMAGE3PRO'), '');
+
+  process.env.ALIBABA_API_KEY_TYPE = 'pay_as_you_go';
+  process.env.ALIBABA_API_ENDPOINT_TYPE = 'coding_plan';
+  assert.equal(resolveDockerImageProvider('QWENIMAGE3PRO'), '');
 });
 
 test('processor and image worker agree on GPT Image 2 Docker provider precedence', () => {

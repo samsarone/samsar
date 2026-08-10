@@ -219,6 +219,14 @@ export const IMAGE_GENERAITON_MODEL_TYPES = [
     isExpressModel: true,
   },
   {
+    name: 'Qwen Image 3.0 Pro',
+    key: 'QWENIMAGE3PRO',
+    isExpressModel: true,
+    standaloneOnly: true,
+    providerBilled: true,
+    supportedAspectRatios: ['1:1', '16:9', '9:16'],
+  },
+  {
     name: 'Wan2.7 Pro',
     key: 'WAN2.7PRO',
     isExpressModel: true,

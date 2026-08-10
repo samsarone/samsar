@@ -11,6 +11,17 @@ import { isStandaloneEdition } from '../utils/Environment.js';
 const CUSTOM_TEXT_TO_IMAGE_ADAPTER_KEY = 'text_to_image';
 export const CUSTOM_TEXT_TO_IMAGE_MODEL_PREFIX = 'CUSTOM_TEXT_TO_IMAGE:';
 const CUSTOM_ADAPTER_SECRET_PREFIX = 'enc:v1:';
+const CUSTOM_ADAPTER_SECRET_MINIMUM_LENGTH = 32;
+const CUSTOM_ADAPTER_SECRET_CONTROL_CHARACTERS = /[\0\r\n]/;
+const INSECURE_CUSTOM_ADAPTER_SECRETS = new Set([
+  'change-me',
+  'change-me-in-production',
+  'local-development-only-secret',
+  'replace-with-at-least-32-random-characters',
+  'samsar-local-password',
+  'samsar-local-token-secret-change-me',
+  'samsar-local-custom-adapter-secret-change-me',
+]);
 const CUSTOM_TEXT_TO_IMAGE_REQUEST_ID_TOKEN = '{request_id}';
 
 function isPlainObject(value) {
@@ -34,12 +45,19 @@ function getCustomTextToImageAdapterId(model) {
 }
 
 function getCustomAdapterSecretKey() {
-  const secret =
-    process.env.CUSTOM_ADAPTER_SECRET_KEY ||
-    process.env.CUSTOM_CREDENTIALS_SECRET ||
-    process.env.TOKEN_SECRET;
-  if (!secret || !secret.trim()) {
-    throw new Error('CUSTOM_ADAPTER_SECRET_KEY or TOKEN_SECRET is required to use custom adapter credentials.');
+  const rawSecret = process.env.CUSTOM_ADAPTER_SECRET_KEY;
+  const secret = normalizeString(rawSecret);
+  if (!secret) {
+    throw new Error('CUSTOM_ADAPTER_SECRET_KEY is required to use custom adapter credentials.');
+  }
+  if (
+    secret.length < CUSTOM_ADAPTER_SECRET_MINIMUM_LENGTH ||
+    CUSTOM_ADAPTER_SECRET_CONTROL_CHARACTERS.test(rawSecret) ||
+    INSECURE_CUSTOM_ADAPTER_SECRETS.has(secret.toLowerCase())
+  ) {
+    throw new Error(
+      'CUSTOM_ADAPTER_SECRET_KEY must be at least 32 characters, contain no control characters, and not use a known public default.',
+    );
   }
   return crypto.createHash('sha256').update(secret).digest();
 }

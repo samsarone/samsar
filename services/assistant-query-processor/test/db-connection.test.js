@@ -29,10 +29,10 @@ describe('DBConnection helpers', () => {
   });
 
   it('always gives an explicit MONGO_URL precedence over edition defaults', () => {
-    const mongoUrl = 'mongodb://example.test:27017/SamsarOne';
+    const mongoUrl = 'mongodb://samsar-app:secret@example.test:27017/SamsarOne?authSource=admin';
 
     assert.equal(
-      buildMongoConnectionString({ CURRENT_ENV: 'production', MONGO_URL: mongoUrl }),
+      buildMongoConnectionString({ CURRENT_ENV: 'production', MONGO_URL: `  ${mongoUrl}  ` }),
       mongoUrl,
     );
     assert.equal(
@@ -49,15 +49,22 @@ describe('DBConnection helpers', () => {
     );
   });
 
-  it('uses the Compose Mongo service for either Docker edition without an explicit URL', () => {
-    assert.equal(
-      buildMongoConnectionString({ CURRENT_ENV: 'standalone', SAMSAR_RUNTIME: 'docker' }),
-      'mongodb://mongo:27017/SamsarOne',
-    );
-    assert.equal(
-      buildMongoConnectionString({ CURRENT_ENV: 'production', SAMSAR_RUNTIME: 'docker' }),
-      'mongodb://mongo:27017/SamsarOne',
-    );
+  it('fails closed in deployed runtimes without an explicit MONGO_URL', () => {
+    for (const env of [
+      { CURRENT_ENV: 'production', SAMSAR_RUNTIME: 'docker' },
+      { CURRENT_ENV: 'staging' },
+      { CURRENT_ENV: 'docker' },
+      { CURRENT_ENV: 'standalone' },
+      { CURRENT_ENV: 'standalone', MONGO_URL: '   ' },
+      { SAMSAR_RUNTIME: ' Kubernetes ' },
+      { SAMSAR_DEPLOYMENT_RUNTIME: 'compose' },
+      { SAMSAR_DEPLOYMENT_EDITION: 'standalone' },
+    ]) {
+      assert.throws(
+        () => buildMongoConnectionString(env),
+        /MONGO_URL is required for deployed MongoDB connections/,
+      );
+    }
   });
 
   it('falls back to the local development database', () => {

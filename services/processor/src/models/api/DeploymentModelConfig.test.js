@@ -19,6 +19,8 @@ const ENV_KEYS = [
   'DASHSCOPE_API_KEY',
   'ALIBABA_CLOUD_API_KEY',
   'QWEN_API_KEY',
+  'ALIBABA_API_KEY_TYPE',
+  'ALIBABA_API_ENDPOINT_TYPE',
   'FAL_API_KEY',
   'SAMSAR_API_KEY',
   'OPENROUTER_API_KEY',
@@ -58,9 +60,70 @@ test('a raw Alibaba key enables native Qwen and Alibaba media models', () => {
   });
 
   assert.deepEqual(result.providers, ['openai', 'alibabaCloud']);
-  assert.deepEqual(result.models, ['gpt-5.6-sol', 'QWEN3.8', 'HAPPYHORSEI2V', 'WAN2.7PRO']);
+  assert.deepEqual(result.models, [
+    'gpt-5.6-sol',
+    'QWEN3.8',
+    'HAPPYHORSEI2V',
+    'WAN2.7PRO',
+    'QWENIMAGE3PRO',
+  ]);
   assert.deepEqual(result.actions, ['chat', 'assistant', 'image', 'video']);
   assert.equal(result.modelProviders['QWEN3.8'], 'alibabaCloud');
+  assert.equal(result.modelProviders.QWENIMAGE3PRO, 'alibabaCloud');
+  assert.deepEqual(result.modelProviderPriority.QWENIMAGE3PRO, ['alibabaCloud']);
+  assert.deepEqual(result.defaultModelProviderPriority.QWENIMAGE3PRO, ['alibabaCloud']);
+});
+
+test('Qwen Image 3.0 Pro accepts saved PAYG metadata but rejects Alibaba plan metadata', () => {
+  clearEnv();
+  process.env.CURRENT_ENV = 'docker';
+  process.env.ALIBABA_API_KEY = 'test-key';
+  const configured = {
+    providers: ['alibabaCloud'],
+    models: ['QWENIMAGE3PRO'],
+    actions: ['image'],
+    modelProviders: { QWENIMAGE3PRO: 'alibabaCloud' },
+    modelProviderPriority: { QWENIMAGE3PRO: ['alibabaCloud'] },
+  };
+
+  const backwardCompatible = mergeRuntimeInferenceDeploymentAvailability(configured);
+  assert.equal(backwardCompatible.models.includes('QWENIMAGE3PRO'), true);
+  assert.equal(backwardCompatible.modelProviders.QWENIMAGE3PRO, 'alibabaCloud');
+
+  for (const providerMetadata of [
+    { providerKeyTypes: { alibabaCloud: 'pay_as_you_go' } },
+    { providerEndpointTypes: { alibabaCloud: 'pay_as_you_go' } },
+    {
+      providerKeyTypes: { alibabaCloud: 'pay_as_you_go' },
+      providerEndpointTypes: { alibabaCloud: 'pay_as_you_go' },
+    },
+  ]) {
+    const result = mergeRuntimeInferenceDeploymentAvailability({
+      ...configured,
+      ...providerMetadata,
+    });
+    assert.equal(result.models.includes('QWENIMAGE3PRO'), true);
+    assert.equal(result.modelProviders.QWENIMAGE3PRO, 'alibabaCloud');
+    assert.deepEqual(result.modelProviderPriority.QWENIMAGE3PRO, ['alibabaCloud']);
+    assert.deepEqual(result.defaultModelProviderPriority.QWENIMAGE3PRO, ['alibabaCloud']);
+  }
+
+  for (const providerMetadata of [
+    { providerKeyTypes: { alibabaCloud: 'token_plan' } },
+    { providerKeyTypes: { alibabaCloud: 'plan' } },
+    { providerEndpointTypes: { alibabaCloud: 'token_plan' } },
+    { providerKeyTypes: { alibabaCloud: 'coding_plan' } },
+    { providerEndpointTypes: { alibabaCloud: 'coding_plan' } },
+  ]) {
+    const result = mergeRuntimeInferenceDeploymentAvailability({
+      ...configured,
+      ...providerMetadata,
+    });
+    assert.equal(result.models.includes('QWENIMAGE3PRO'), false);
+    assert.equal(result.modelProviders.QWENIMAGE3PRO, undefined);
+    assert.equal(result.modelProviderPriority.QWENIMAGE3PRO, undefined);
+    assert.equal(result.defaultModelProviderPriority.QWENIMAGE3PRO, undefined);
+  }
 });
 
 test('preserves Alibaba plan metadata for Docker clients', () => {
@@ -697,4 +760,57 @@ test('Docker hides Wan2.7 Pro without an Alibaba, FAL, or Samsar credential', ()
 
   process.env.FAL_API_KEY = 'test-key';
   assert.deepEqual(filterModelsForDeploymentAvailability(models, null), models);
+});
+
+test('supported-model filtering exposes Qwen Image 3.0 Pro only for Alibaba PAYG', () => {
+  clearEnv();
+  const models = [
+    { value: 'GPTIMAGE2' },
+    { value: 'QWENIMAGE3PRO' },
+  ];
+  const staleAvailability = {
+    providers: ['alibabaCloud'],
+    models: ['GPTIMAGE2', 'QWENIMAGE3PRO'],
+    actions: ['image'],
+    modelProviders: { QWENIMAGE3PRO: 'alibabaCloud' },
+    modelProviderPriority: { QWENIMAGE3PRO: ['alibabaCloud'] },
+  };
+
+  assert.deepEqual(filterModelsForDeploymentAvailability(models, null), [
+    { value: 'GPTIMAGE2' },
+  ]);
+  assert.deepEqual(
+    filterModelsForDeploymentAvailability(models, staleAvailability),
+    [{ value: 'GPTIMAGE2' }],
+  );
+
+  process.env.SAMSAR_DEPLOYMENT_EDITION = 'standalone';
+  process.env.SAMSAR_RUNTIME = 'docker';
+  process.env.ALIBABA_API_KEY = 'test-key';
+  assert.deepEqual(filterModelsForDeploymentAvailability(models, null), models);
+  assert.deepEqual(
+    filterModelsForDeploymentAvailability(models, staleAvailability),
+    models,
+  );
+
+  const planAvailability = {
+    ...staleAvailability,
+    providerEndpointTypes: { alibabaCloud: 'token_plan' },
+  };
+  assert.deepEqual(
+    filterModelsForDeploymentAvailability(models, planAvailability),
+    [{ value: 'GPTIMAGE2' }],
+  );
+  assert.deepEqual(
+    filterModelsForDeploymentAvailability(
+      [{ value: 'QWENIMAGE3PRO' }],
+      {
+        providers: ['alibabaCloud'],
+        models: ['QWENIMAGE3PRO'],
+        actions: ['image'],
+        providerKeyTypes: { alibabaCloud: 'coding_plan' },
+      },
+    ),
+    [],
+  );
 });

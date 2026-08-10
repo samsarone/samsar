@@ -41,6 +41,8 @@ import {
 } from '../../../../constants/audioProviderAvailability.js';
 import { useDeploymentModelAvailability } from '../../../../hooks/useDeploymentModelAvailability.js';
 import ModelAdapterSelect from '../../../common/ModelAdapterSelect.jsx';
+import { filterOptionsForDeploymentModelValues } from '../../../../utils/deploymentProviders.js';
+import { filterImageModelsForDeploymentScope } from '../../../../utils/imageModelAvailability.mjs';
 
 const PROCESSOR_API_URL = import.meta.env.VITE_PROCESSOR_API;
 const DISPLAY_FRAMES_PER_SECOND = 30;
@@ -57,12 +59,9 @@ const AVATAR_VIDEO_CREDIT_CONVERSION_MULTIPLIER = 2;
 const DEFAULT_ELEVENLABS_AVATAR_SPEAKER = 'N2lVS1w4EtoT3dr4eOWO';
 const DEFAULT_AVATAR_IMAGE_MODEL = 'GPTIMAGE2';
 const AVATAR_IMAGE_MODEL_STORAGE_KEY = 'defaultAvatarImageGenerationModel';
-const AVATAR_IMAGE_MODEL_OPTIONS = IMAGE_GENERAITON_MODEL_TYPES.filter(
+const AVATAR_IMAGE_MODEL_CATALOG = IMAGE_GENERAITON_MODEL_TYPES.filter(
   (model) => model.isExpressModel === true
-).map((model) => ({
-  value: model.key,
-  label: model.name,
-}));
+);
 const AVATAR_VIDEO_AUDIO_SOURCE_SESSION_SPEECH = 'session_speech';
 const AVATAR_VIDEO_AUDIO_SOURCE_HINT_SPEECH = 'hint_speech';
 const AVATAR_VIDEO_AUDIO_SOURCE_OPTIONS = [
@@ -140,19 +139,7 @@ function wait(milliseconds) {
 }
 
 function getInitialAvatarImageModel() {
-  let savedModel = '';
-  try {
-    savedModel = localStorage.getItem(AVATAR_IMAGE_MODEL_STORAGE_KEY) || '';
-  } catch (_error) {
-    savedModel = '';
-  }
-  if (AVATAR_IMAGE_MODEL_OPTIONS.some((model) => model.value === savedModel)) {
-    return savedModel;
-  }
-  if (AVATAR_IMAGE_MODEL_OPTIONS.some((model) => model.value === DEFAULT_AVATAR_IMAGE_MODEL)) {
-    return DEFAULT_AVATAR_IMAGE_MODEL;
-  }
-  return AVATAR_IMAGE_MODEL_OPTIONS[0]?.value || '';
+  return DEFAULT_AVATAR_IMAGE_MODEL;
 }
 
 function getGlobalVideoId(globalVideo = {}) {
@@ -731,12 +718,47 @@ export default function RecordSpeechSection({
   const { audioAvailability } = useAudioProviderAvailability();
   const {
     isStandaloneDeployment,
+    imageModelValues,
     primaryAdapterByModel,
   } = useDeploymentModelAvailability();
+  const avatarImageModelOptions = useMemo(() => {
+    const scopedModels = filterImageModelsForDeploymentScope(
+      AVATAR_IMAGE_MODEL_CATALOG,
+      isStandaloneDeployment,
+    );
+    const availableModels = isStandaloneDeployment
+      ? filterOptionsForDeploymentModelValues(scopedModels, imageModelValues, (model) => model.key)
+      : scopedModels;
+    return availableModels.map((model) => ({
+      value: model.key,
+      label: model.name,
+    }));
+  }, [imageModelValues, isStandaloneDeployment]);
   const availableTtsSpeakerTypes = useMemo(
     () => filterSpeakersForAudioAvailability(combinedTtsSpeakerTypes, audioAvailability),
     [audioAvailability, combinedTtsSpeakerTypes]
   );
+
+  useEffect(() => {
+    setSelectedAvatarImageModel((currentModel) => {
+      let savedModel = '';
+      try {
+        savedModel = localStorage.getItem(AVATAR_IMAGE_MODEL_STORAGE_KEY) || '';
+      } catch (_error) {
+        savedModel = '';
+      }
+      if (avatarImageModelOptions.some((model) => model.value === savedModel)) {
+        return savedModel;
+      }
+      if (avatarImageModelOptions.some((model) => model.value === currentModel)) {
+        return currentModel;
+      }
+      if (avatarImageModelOptions.some((model) => model.value === DEFAULT_AVATAR_IMAGE_MODEL)) {
+        return DEFAULT_AVATAR_IMAGE_MODEL;
+      }
+      return avatarImageModelOptions[0]?.value || '';
+    });
+  }, [avatarImageModelOptions]);
 
   useEffect(() => {
     if (!selectedAvatarImageModel) {
@@ -2815,7 +2837,7 @@ export default function RecordSpeechSection({
               <label className="block">
                 <span className={`mb-1 block text-xs font-semibold ${mutedText}`}>Avatar image model</span>
                 <ModelAdapterSelect
-                  options={AVATAR_IMAGE_MODEL_OPTIONS}
+                  options={avatarImageModelOptions}
                   value={selectedAvatarImageModel}
                   onChange={setSelectedAvatarImageModel}
                   primaryAdapterByModel={primaryAdapterByModel}

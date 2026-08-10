@@ -77,6 +77,7 @@ test('failed Fal Nano Banana polling retains ownership for the shared retry', as
   assert.deepEqual(result, {
     image: null,
     error: 'FAL Nano Banana request failed.',
+    definitiveAdapterFailure: true,
   });
   assert.deepEqual(recorder.updates, [
     {

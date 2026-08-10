@@ -5,6 +5,7 @@ import User from '../../schema/User.js';
 import { getDBConnectionString } from '../DBString.js';
 import { resolveRequestActorFromAuthHeaders } from '../external/User.js';
 import { getAlibabaQwenBaseURL } from '../../inference/AlibabaQwen.js';
+import { isAlibabaQwenImage3ProCredentialEligible } from '../../consts/DockerProviderPriority.js';
 
 const GOOGLE_CLOUD_SCOPE = 'https://www.googleapis.com/auth/cloud-platform';
 const OPENROUTER_KEY_URL = 'https://openrouter.ai/api/v1/key';
@@ -44,8 +45,8 @@ export const DEPLOYMENT_PROVIDER_CAPABILITIES = Object.freeze({
   },
   alibabaCloud: {
     label: 'Alibaba Cloud',
-    requiredFor: ['Qwen 3.8 Max inference', 'Wan2.7 Pro image', 'Happy Horse 1.1 video'],
-    models: ['QWEN3.8', 'WAN2.7PRO', 'HAPPYHORSEI2V'],
+    requiredFor: ['Qwen 3.8 Max inference', 'Qwen Image 3.0 Pro', 'Wan2.7 Pro image', 'Happy Horse 1.1 video'],
+    models: ['QWEN3.8', 'QWENIMAGE3PRO', 'WAN2.7PRO', 'HAPPYHORSEI2V'],
     actions: ['chat', 'assistant', 'image', 'video'],
   },
   fal: {
@@ -121,7 +122,16 @@ export function buildAvailableDeploymentModels(providerStatus = {}) {
     if (!capability) {
       continue;
     }
-    capability.models.forEach((model) => modelSet.add(model));
+    capability.models.forEach((model) => {
+      if (
+        provider === 'alibabaCloud' &&
+        model === 'QWENIMAGE3PRO' &&
+        !isAlibabaQwenImage3ProCredentialEligible(providerStatus[provider])
+      ) {
+        return;
+      }
+      modelSet.add(model);
+    });
     capability.actions.forEach((action) => actionSet.add(action));
   }
 

@@ -121,3 +121,40 @@ test('legacy client OAuth origins are signed and exactly allowlisted', () => {
     /not allowed/,
   );
 });
+
+test('prefers and validates a dedicated Google OAuth state secret', () => {
+  const env = buildEnv({
+    SAMSAR_OAUTH_STATE_SECRET: 'dedicated-oauth-state-secret-9f8c7b6a5d4e',
+    TOKEN_SECRET: `samsar-local-${'x'.repeat(32)}`,
+  });
+  const state = createClientGoogleOAuthState({}, env);
+
+  assert.equal(verifyGoogleOAuthState(state, env).flow, GOOGLE_OAUTH_FLOW.CLIENT);
+});
+
+test('Google OAuth state rejects public secrets in dedicated and fallback paths', () => {
+  assert.throws(
+    () => createClientGoogleOAuthState({}, buildEnv({
+      TOKEN_SECRET: `samsar-local-${'x'.repeat(32)}`,
+    })),
+    /TOKEN_SECRET.*known public\/default value/,
+  );
+
+  assert.throws(
+    () => createClientGoogleOAuthState({}, buildEnv({
+      SAMSAR_OAUTH_STATE_SECRET: 'change-me-in-production',
+    })),
+    /SAMSAR_OAUTH_STATE_SECRET.*known public\/default value/,
+  );
+});
+
+test('Google OAuth state requires an explicit strong fallback secret', () => {
+  assert.throws(
+    () => createClientGoogleOAuthState({}, buildEnv({ TOKEN_SECRET: undefined })),
+    /TOKEN_SECRET.*explicitly configured/,
+  );
+  assert.throws(
+    () => createClientGoogleOAuthState({}, buildEnv({ TOKEN_SECRET: 'short-token-secret' })),
+    /TOKEN_SECRET.*at least 32 bytes/,
+  );
+});

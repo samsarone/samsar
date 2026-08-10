@@ -5,7 +5,7 @@
   "main": "index.js",
   "type": "module",
   "scripts": {
-    "test": "node --test src/AWS.test.js src/consts/DockerProviderPriority.test.js src/music/GoogleLyriaNativeGenerator.test.js src/music/audioUtils.test.js src/speech/GoogleTTS.test.js src/speech/GenBlazeSpeech.test.js src/speech/SpeechRequestDispatcher.test.js src/speech/AvatarVoiceoverSpeech.test.js src/music/ElevenLabsMusicGenerator.test.js src/music/MusicDispatcher.test.js src/external/SamsarExternalAudioAdapter.test.js src/inference/GoogleGemini.test.js src/inference/InferenceModels.test.js src/inference/KimiK3.test.js src/inference/OpenAI.test.js src/inference/Qwen.test.js src/inference/RequestInferenceModel.test.js src/inference/SamsarExternalInferenceAdapter.test.js src/utils/CpuResources.test.js src/utils/FfmpegResources.test.js src/utils/ProviderMediaPayload.test.js src/utils/ProviderMediaUrl.test.js"
+    "test": "node --test"
   },
   "author": "",
   "license": "ISC",
@@ -20,12 +20,16 @@
     "ffprobe-static": "^3.1.0",
     "fluent-ffmpeg": "^2.1.3",
     "google-auth-library": "^9.14.1",
-    "mongoose": "^8.4.1",
+    "mongoose": "^8.22.1",
     "mp3-duration": "^1.1.0",
     "node-fetch": "^2.7.0",
     "openai": "^5.23.2",
     "replicate": "^1.0.1",
     "samsar-js": "0.48.48",
     "uuid": "^9.0.1"
+  },
+  "overrides": {
+    "fast-xml-parser": "^4.5.5",
+    "form-data": "^4.0.6"
   }
 }

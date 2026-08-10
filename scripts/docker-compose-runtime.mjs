@@ -59,6 +59,31 @@ function runDockerCompose(root, rootEnvPath, composeFile, profiles, args) {
   if (result.status !== 0) process.exit(result.status || 1);
 }
 
+function prepareLocalMongoAuthentication(root, rootEnvPath, composeFile, profiles) {
+  if (!profiles.includes('local-mongo')) return;
+
+  runDockerCompose(root, rootEnvPath, composeFile, ['local-mongo'], ['stop', 'mongo']);
+  runDockerCompose(root, rootEnvPath, composeFile, ['local-mongo'], [
+    'rm', '-s', '-f', 'mongo-auth-bootstrap',
+  ]);
+  runDockerCompose(root, rootEnvPath, composeFile, ['local-mongo'], [
+    'up', '--no-deps', '--abort-on-container-exit',
+    '--exit-code-from', 'mongo-auth-bootstrap', 'mongo-auth-bootstrap',
+  ]);
+}
+
+function synchronizeGrafanaAdminPassword(root, rootEnvPath, composeFile, profiles) {
+  if (!profiles.includes('logger')) return;
+  runDockerCompose(root, rootEnvPath, composeFile, ['logger'], [
+    'exec',
+    '-T',
+    'grafana',
+    'sh',
+    '-ec',
+    'grafana cli --homepath /usr/share/grafana admin reset-admin-password "$GF_SECURITY_ADMIN_PASSWORD" >/dev/null',
+  ]);
+}
+
 function main() {
   const action = process.argv[2];
   if (!['config', 'up', 'down'].includes(action)) {
@@ -70,10 +95,21 @@ function main() {
   const exampleConfigPath = path.join(root, 'samsar.config.example.json');
   const rootEnvPath = path.join(root, 'runtime', 'secrets', 'root.env');
   const genblazeEnvPath = path.join(root, 'runtime', 'secrets', 'genblaze.env');
+  const infrastructureEnvPaths = [
+    path.join(root, 'runtime', 'secrets', 'application.env'),
+    path.join(root, 'runtime', 'secrets', 'mongo.env'),
+    path.join(root, 'runtime', 'secrets', 'minio.env'),
+    path.join(root, 'runtime', 'secrets', 'grafana.env'),
+  ];
   const composeFile = path.join(root, 'deploy', 'compose', 'docker-compose.yml');
   fs.mkdirSync(path.dirname(rootEnvPath), { recursive: true, mode: 0o700 });
   if (!fs.existsSync(rootEnvPath)) fs.writeFileSync(rootEnvPath, '', { mode: 0o600 });
   if (!fs.existsSync(genblazeEnvPath)) fs.writeFileSync(genblazeEnvPath, '', { mode: 0o600 });
+  for (const infrastructureEnvPath of infrastructureEnvPaths) {
+    if (!fs.existsSync(infrastructureEnvPath)) {
+      fs.writeFileSync(infrastructureEnvPath, '', { mode: 0o600 });
+    }
+  }
 
   const config = JSON.parse(fs.readFileSync(
     fs.existsSync(configPath) ? configPath : exampleConfigPath,
@@ -89,7 +125,9 @@ function main() {
     : getRuntimeComposeProfiles(config, { genBlazeCatalog });
 
   if (action === 'config') {
-    runDockerCompose(root, rootEnvPath, composeFile, profiles, ['config']);
+    // Resolved Compose output expands env_file values, including credentials.
+    // Validate silently so `npm run docker:config` cannot print secrets.
+    runDockerCompose(root, rootEnvPath, composeFile, profiles, ['config', '--quiet']);
     return;
   }
   if (action === 'down') {
@@ -102,8 +140,12 @@ function main() {
       'rm', '-s', '-f', 'genblaze',
     ]);
   }
+  prepareLocalMongoAuthentication(root, rootEnvPath, composeFile, profiles);
   const genBlazeComposePlan = splitGenBlazeComposeProfiles(profiles);
-  runDockerCompose(root, rootEnvPath, composeFile, genBlazeComposePlan.primaryProfiles, ['up', '-d', '--build']);
+  runDockerCompose(root, rootEnvPath, composeFile, genBlazeComposePlan.primaryProfiles, [
+    'up', '-d', '--build', '--wait', '--wait-timeout', '180',
+  ]);
+  synchronizeGrafanaAdminPassword(root, rootEnvPath, composeFile, profiles);
   if (profiles.includes('reverse-proxy')) {
     runDockerCompose(root, rootEnvPath, composeFile, ['core', 'reverse-proxy'], [
       'up', '-d', '--no-deps', '--force-recreate', 'reverse-proxy',

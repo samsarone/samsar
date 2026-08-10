@@ -159,6 +159,11 @@ test('the example runtime config keeps external access and providers disabled', 
 
   assert.equal(config.runtime, 'docker');
   assert.equal(config.deploymentEdition, 'standalone');
+  assert.equal(config.security.tokenSecret, '');
+  assert.equal(config.security.customAdapterSecret, '');
+  assert.equal(config.database.mongoUrl, '');
+  assert.equal(config.storage.accessKeyId, '');
+  assert.equal(config.storage.secretAccessKey, '');
   assert.equal(config.storage.externalMediaPublishEnabled, false);
   assert.equal(config.localMediaTunnel.enabled, false);
   assert.equal(config.reverseProxy.enabled, false);
@@ -168,6 +173,58 @@ test('the example runtime config keeps external access and providers disabled', 
     assert.equal(provider.enabled, false, `${providerName} must be disabled by default`);
     assert.equal(provider.apiKey || '', '', `${providerName} must not include an API key`);
   }
+});
+
+test('critical local infrastructure services require generated credentials', async () => {
+  const [compose, renderer, runtimeCompose, setupLauncher, setupServer] = await Promise.all([
+    readText('deploy/compose/docker-compose.yml'),
+    readText('scripts/generate-runtime-config.mjs'),
+    readText('scripts/docker-compose-runtime.mjs'),
+    readText('scripts/setup-wizard-docker.sh'),
+    readText('apps/setup-wizard/server.mjs'),
+  ]);
+
+  for (const forbiddenValue of [
+    'samsar-local-password',
+    'samsar-local-token-secret-change-me',
+    'samsar-local-custom-adapter-secret-change-me',
+  ]) {
+    assert.doesNotMatch(compose, new RegExp(forbiddenValue));
+    assert.doesNotMatch(renderer, new RegExp(forbiddenValue));
+  }
+
+  assert.match(compose, /mongo-auth-bootstrap:/);
+  assert.match(
+    compose,
+    /x-service-env:[\s\S]*?depends_on:\s*\n\s+mongo:\s*\n\s+condition: service_healthy\s*\n\s+required: false/,
+  );
+  assert.match(compose, /command: \["mongod", "--auth", "--bind_ip_all"\]/);
+  assert.match(compose, /runtime\/secrets\/mongo\.env/);
+  assert.match(renderer, /INTERNAL_SECRET:\s*applicationCredentials\.INTERNAL_SECRET/);
+  assert.match(
+    renderer,
+    /readCredentialEnvironment\(applicationEnvPath,[\s\S]*?'INTERNAL_SECRET'/,
+  );
+  assert.match(compose, /127\.0\.0\.1:\$\{MONGO_PORT:-27017\}:27017/);
+  assert.match(compose, /runtime\/secrets\/minio\.env/);
+  assert.match(compose, /127\.0\.0\.1:\$\{MINIO_API_PORT:-9000\}:9000/);
+  assert.match(compose, /GF_AUTH_ANONYMOUS_ENABLED: "false"/);
+  assert.match(compose, /runtime\/secrets\/grafana\.env/);
+  assert.match(compose, /127\.0\.0\.1:\$\{GRAFANA_PORT:-4000\}:3000/);
+  assert.match(compose, /127\.0\.0\.1:\$\{LOKI_PORT:-4100\}:3100/);
+  assert.match(
+    compose,
+    /test: \["CMD", "\/usr\/bin\/promtail", "-config\.file=\/etc\/promtail\/config\.yml", "-check-syntax"\]/,
+  );
+  assert.match(runtimeCompose, /\['config', '--quiet'\]/);
+  assert.match(setupLauncher, /SETUP_WIZARD_BIND_ADDR:-127\.0\.0\.1/);
+  assert.match(setupLauncher, /SAMSAR_SETUP_BOOTSTRAP_TOKEN_FILE/);
+  assert.match(setupLauncher, /--restart no/);
+  assert.match(setupLauncher, /--read-only/);
+  assert.match(setupServer, /x-samsar-setup-bootstrap-token/);
+  assert.match(setupServer, /timingSafeEqual\(expected, actual\)/);
+  assert.match(setupServer, /X-Frame-Options', 'DENY'/);
+  assert.match(setupServer, /frame-ancestors 'none'/);
 });
 
 test('Kimi K3 setup renders into the shared backend environment for every inference consumer', async () => {

@@ -355,6 +355,14 @@ In Docker deployments, the processor-provided availability response filters the 
 | Seedream | `SEEDREAM` | Yes |
 | NanoBanana 2 | `NANOBANANA2` | Yes |
 | NanoBanana Pro | `NANOBANANAPRO` | Yes |
+| Wan2.7 Pro | `WAN2.7PRO` | Yes |
+| Qwen Image 3.0 Pro (standalone, provider billed) | `QWENIMAGE3PRO` | Yes |
+
+Standalone Docker deployments expose `QWENIMAGE3PRO` in Image Studio and
+Express only when `/v1/video/supported_models` reports it. The processor does
+so when validated Alibaba Cloud standard pay-as-you-go credentials are
+configured; requests use provider model ID `qwen-image-3.0-pro`, and Alibaba
+bills the configured account directly.
 
 ### Image Editing
 
@@ -387,7 +395,10 @@ In Docker deployments, the processor-provided availability response filters the 
 
 VidGenie intentionally exposes a smaller express-first subset:
 
-- Image models: `GPTIMAGE2`, `NANOBANANAPRO`, `SEEDREAM`.
+In standalone Docker, VidGenie shows I2V only when `NANOBANANAPROEDIT` is
+available through Google Cloud, Fal, GMICloud via GenBlaze, or Samsar-js.
+
+- Image models: `GPTIMAGE2`, `NANOBANANAPRO`, `SEEDREAM`, `WAN2.7PRO`, and standalone `QWENIMAGE3PRO`.
 - Text-to-video video models: `RUNWAYML`, `VEO3.1I2V`, `VEO3.1I2VFAST`, `SEEDANCEI2V`, standalone `SEEDANCE2.0I2V`, `KLINGIMGTOVID3PRO`.
 - Image-list-to-video models: `RUNWAYML`, `VEO3.1I2V`, `VEO3.1I2VFAST`, `SEEDANCEI2V`, standalone `SEEDANCE2.0I2V`, `KLINGIMGTOVID3PRO`.
 - JSON mode validates the supported image/video model keys for the selected workflow.
