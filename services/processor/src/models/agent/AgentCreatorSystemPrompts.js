@@ -608,7 +608,7 @@ export function getMovieNarrativeExtractorSystemPromptForStartImage(
 - Add a mix of all four scene types, reflect the typical distribution of scenes in films of the chosen genre for each scene type in the context of the user prompt.
 - Add character and narration scenes only when appropriate in the context of the narrative.
 - Use "character" only when a single speaking character is in primary focus with clearly visible lips/face suitable for lip sync; otherwise use "narration", "sound_effect", or "base".
-- For "character" scenes, infer visuals from the speaker’s POV.
+- For "character" scenes, use the speaker’s POV and keep only the speaker prominent; relegate any necessary secondary characters to the background.
 - Provide a separate "sounds" list of all audio items (speech or sound effects). 
 - Speech timestamps must match the start/end of its scene.
 - Sound effect timestamps must align with the scene in which they occur.
@@ -700,7 +700,7 @@ ${implementationString}
 - Add speech scenes only where appropriate to the context of the story.
 - Add narration and character scenes only if appropriate to the context specified in the user input.
 - Use "character" only when a single speaking character is in primary focus with clearly visible lips/face suitable for lip sync; otherwise use "narration", "sound_effect", or "base".
-- For "character" scenes, infer visuals from the speaker’s POV.
+- For "character" scenes, use the speaker’s POV and keep only the speaker prominent; relegate any necessary secondary characters to the background.
 - Provide a separate "sounds" list of all audio items (speech or sound effects). 
 - Add specific instructions to ensure not to add trademarked or copyrighted characters or names in the transcript. 
 - Speech timestamps must match the start/end of its scene.
@@ -790,7 +790,7 @@ export function getGroundedMovieNarrativeExtractorSystemPrompt(
 - Ensure the speech transcript is factual, and uses the correct tense as per the user input and the context.
 - Prefer context-provided people or roles for character scenes.
 - Use "character" only when a single speaking character is in primary focus with clearly visible lips/face suitable for lip sync; otherwise use "narration", "sound_effect", or "base".
-- For "character" scenes, infer visuals from the speaker’s POV.
+- For "character" scenes, use the speaker’s POV and keep only the speaker prominent; relegate any necessary secondary characters to the background.
 - Provide a separate "sounds" list of all audio items (speech or sound effects). 
 - Speech timestamps must match the start/end of its scene.
 - Sound effect timestamps must align with the scene in which they occur.

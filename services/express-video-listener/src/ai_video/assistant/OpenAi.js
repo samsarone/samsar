@@ -281,6 +281,10 @@ export async function createTextToVideoPromptFromStartingLayerPrompt(
     userPrompt += `\nCamera transition: ${cameraTransitionLayer}`;
   }
 
+  if (isSpeakerTransition) {
+    systemPrompt += `\nMaintain focus on the most prominent character throughout the scene.`;
+  }
+
 
   const baseMessages = [
     { role: 'developer', content: systemPrompt },
