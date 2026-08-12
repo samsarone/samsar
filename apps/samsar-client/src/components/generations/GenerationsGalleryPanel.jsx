@@ -15,6 +15,8 @@ import {
 
 import { useColorMode } from '../../contexts/ColorMode.jsx';
 import { fitDimensionsToCanvas, getCanvasDimensionsForAspectRatio } from '../../utils/canvas.jsx';
+import { createStudioSession } from '../../utils/studioSessionApi.js';
+import { getStudioSessionId } from '../../utils/studioSessionPolicy.mjs';
 import { getHeaders } from '../../utils/web.jsx';
 
 const PROCESSOR_API = import.meta.env.VITE_PROCESSOR_API || '';
@@ -476,17 +478,16 @@ export default function GenerationsGalleryPanel({
           return;
         }
 
-        const createResponse = await axios.post(
-          `${PROCESSOR_API}/video_sessions/create_video_session`,
-          {
+        const createdSession = await createStudioSession({
+          processorServer: PROCESSOR_API,
+          headers,
+          payload: {
             prompts: [],
             aspectRatio: item.aspectRatio || '16:9',
           },
-          headers
-        );
+        });
 
-        const createdSession = createResponse?.data || {};
-        const sessionId = createdSession?._id?.toString?.() || createdSession?._id;
+        const sessionId = getStudioSessionId(createdSession);
         const layerId = createdSession?.layers?.[0]?._id?.toString?.() || createdSession?.layers?.[0]?._id;
 
         if (!sessionId || !layerId) {

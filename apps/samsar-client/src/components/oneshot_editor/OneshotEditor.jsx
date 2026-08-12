@@ -94,7 +94,10 @@ import {
   getVideoPostProcessingRequestUrls,
   isMissingVideoPostProcessingRoute,
 } from '../../utils/videoPostProcessingApi.mjs';
-import { resolveVideoGenerationErrorMessage } from '../../utils/videoGenerationStatus.mjs';
+import {
+  resolveTerminalVideoGenerationStatus,
+  resolveVideoGenerationErrorMessage,
+} from '../../utils/videoGenerationStatus.mjs';
 import {
   isInteractiveVideoSession,
   isVideoSessionPublished,
@@ -2656,11 +2659,6 @@ function isStepStatusWaitingForApproval(data, activeStepMode) {
   return isStepStatusRequestingProcessNext(data);
 }
 
-function isFailedGenerationStatus(status) {
-  const normalizedStatus = typeof status === 'string' ? status.trim().toUpperCase() : '';
-  return normalizedStatus === 'FAILED' || normalizedStatus === 'ERROR' || normalizedStatus === 'CANCELLED';
-}
-
 function normalizeGenerationStatus(status) {
   return typeof status === 'string' ? status.trim().toUpperCase() : '';
 }
@@ -2840,57 +2838,7 @@ function buildStandaloneAnonymousSessionDetailsFromStatus(data) {
 }
 
 function getDetailedGenerationFailureStatus(data) {
-  if (!isPlainObject(data)) {
-    return '';
-  }
-
-  const topLevelStatus = normalizeGenerationStatus(data.status);
-  if (isCompletedGenerationStatus(topLevelStatus)) {
-    return '';
-  }
-
-  if (data.expressGenerationCancelled) {
-    return 'CANCELLED';
-  }
-  if (data.expressGenerationFailed) {
-    return 'FAILED';
-  }
-
-  const statusCandidates = [
-    data.status,
-    data.step_status,
-    data.stepStatus,
-    data.step?.status,
-    data.expressGenerationStatus?.status,
-  ];
-
-  if (isPlainObject(data.expressGenerationStatus)) {
-    statusCandidates.push(...Object.values(data.expressGenerationStatus));
-  }
-  if (isPlainObject(data.session?.stages)) {
-    statusCandidates.push(...Object.values(data.session.stages));
-  }
-  const layerCollections = [data.session?.layers, data.layers].filter(Array.isArray);
-  layerCollections.forEach((layers) => {
-    layers.forEach((layer) => {
-      statusCandidates.push(
-        layer?.aiVideo?.status,
-        layer?.aiVideoGenerationStatus,
-        layer?.lipSyncVideo?.status,
-        layer?.lipSyncVideoGenerationStatus,
-        layer?.soundEffectVideo?.status,
-        layer?.soundEffectVideoGenerationStatus,
-        layer?.userVideo?.status,
-        layer?.userVideoGenerationStatus,
-        layer?.image?.status,
-        layer?.imageSession?.generationStatus,
-      );
-    });
-  });
-
-  return statusCandidates
-    .map(normalizeGenerationStatus)
-    .find(isFailedGenerationStatus) || '';
+  return resolveTerminalVideoGenerationStatus(data);
 }
 
 function getDetailedGenerationErrorMessage(data, failureStatus = '') {

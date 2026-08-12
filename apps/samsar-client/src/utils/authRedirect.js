@@ -2,6 +2,20 @@ import axios from 'axios';
 import { getDefaultAuthenticatedPath } from './defaultRoutes.js';
 import { appendRouteSearch, resolveAuthenticatedEntryPath } from './vidgenieRouting.js';
 import {
+  extractDeploymentInferenceModelValues,
+  extractDeploymentModelAvailability,
+  fetchDeploymentProviderConfig,
+} from './deploymentProviders.js';
+import {
+  getStandaloneInitialEditorPath,
+  hasConfiguredStandaloneTextToVideoPipeline,
+} from './standaloneInitialRoute.mjs';
+import {
+  createStudioSession,
+  ensureInitialLayerForNewStudioSession,
+} from './studioSessionApi.js';
+import { getStudioSessionId } from './studioSessionPolicy.mjs';
+import {
   consumePostAuthRedirect,
   getHeaders,
   hasAcceptedCookies,
@@ -149,12 +163,12 @@ async function createSignupProjectWithLegacyEndpoint({
     return getCreatedProjectSessionId(data);
   }
 
-  const { data } = await axios.post(
-    `${apiServer}/video_sessions/create_video_session`,
-    { prompts: [] },
+  const session = await createStudioSession({
+    processorServer: apiServer,
     headers,
-  );
-  return getCreatedProjectSessionId(data);
+    payload: { prompts: [] },
+  });
+  return getStudioSessionId(session);
 }
 
 export async function resolvePostSignupDestination({
@@ -192,6 +206,15 @@ export async function resolvePostSignupDestination({
     throw new Error('The new project response did not include a session id.');
   }
 
+  if (editor === 'studio') {
+    await ensureInitialLayerForNewStudioSession({
+      processorServer: apiServer,
+      headers,
+      sessionId,
+      payload: { prompts: [] },
+    });
+  }
+
   storeCreatedProjectSessionId(sessionId);
   return isMobile ? `/vidgenie/${sessionId}` : `/video/${sessionId}`;
 }
@@ -207,9 +230,33 @@ export async function resolvePostAuthDestination({
   const normalizedRedirect = IS_STANDALONE_DEPLOYMENT ? null : sanitizeAuthRedirect(redirect);
   if (normalizedRedirect) return normalizedRedirect;
 
-  const defaultPath = getDefaultAuthenticatedPath(user, { isMobile }) || '/vidgenie';
   const destinationSearch = IS_STANDALONE_DEPLOYMENT ? '' : search;
   const headers = getHeaders();
+  let defaultPath = getDefaultAuthenticatedPath(user, { isMobile }) || '/vidgenie';
+
+  if (
+    IS_STANDALONE_DEPLOYMENT &&
+    !isMobile &&
+    !user?.isExternalUser &&
+    apiServer &&
+    headers
+  ) {
+    try {
+      const deploymentConfig = await fetchDeploymentProviderConfig(apiServer, headers);
+      const modelAvailability = extractDeploymentModelAvailability(deploymentConfig);
+      defaultPath = getStandaloneInitialEditorPath({
+        isStandaloneDeployment: true,
+        hasTextToVideoPipeline: hasConfiguredStandaloneTextToVideoPipeline({
+          inferenceModelValues: extractDeploymentInferenceModelValues(deploymentConfig),
+          textToVideoImageModelValues: modelAvailability.textToVideoImageModelValues,
+          textToVideoVideoModelValues: modelAvailability.textToVideoVideoModelValues,
+        }),
+      });
+    } catch {
+      // Fail closed to Studio while deployment capabilities are unavailable.
+    }
+  }
+
   if (!headers) {
     return appendRouteSearch(defaultPath, destinationSearch);
   }
@@ -222,6 +269,7 @@ export async function resolvePostAuthDestination({
       headers,
       search: destinationSearch,
       createIfMissing,
+      defaultPath,
     });
     return targetPath || appendRouteSearch(defaultPath, destinationSearch);
   } catch {

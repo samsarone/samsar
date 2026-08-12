@@ -24,6 +24,9 @@ import { imageAspectRatioOptions } from '../../constants/ImageAspectRatios.js';
 import { getCanvasDimensionsForAspectRatio } from '../../utils/canvas.jsx';
 import { SUPPORTED_LANGUAGES } from '../../constants/supportedLanguages.js';
 import { buildSubtitleRegenerationLanguageFields } from '../../utils/subtitleRegenerationLanguage.mjs';
+import { createStudioSession } from '../../utils/studioSessionApi.js';
+import { getStudioSessionId } from '../../utils/studioSessionPolicy.mjs';
+import { createBlankVidgenieSession } from '../../utils/vidgenieRouting.js';
 
 
 const PROCESSOR_SERVER = import.meta.env.VITE_PROCESSOR_API;
@@ -460,12 +463,15 @@ export default function TopNav(props) {
     if (normalizedSessionDescription) {
       payload.sessionDescription = normalizedSessionDescription;
     }
-    axios.post(`${PROCESSOR_SERVER}/video_sessions/create_video_session`, payload, headers).then(function (response) {
-      const session = response.data;
-      const sessionId = session._id.toString();
+    createStudioSession({
+      processorServer: PROCESSOR_SERVER,
+      headers,
+      payload,
+    }).then(function (session) {
+      const sessionId = getStudioSessionId(session);
       localStorage.setItem('videoSessionId', sessionId);
 
-      navigate(`/video/${session._id}`);
+      navigate(`/video/${sessionId}`);
 
     });
   };
@@ -573,31 +579,15 @@ export default function TopNav(props) {
 
   const addNewExpressSession = () => {
     const headers = getHeaders();
-    const payload = {
-      prompts: [],
-    };
-    axios.post(`${PROCESSOR_SERVER}/video_sessions/create_video_session`, payload, headers).then(function (response) {
-      const session = response.data;
-      const sessionId = session._id.toString();
-      localStorage.setItem('videoSessionId', sessionId);
-
-      navigate(`/vidgenie/${session._id}`);
-
+    createBlankVidgenieSession(PROCESSOR_SERVER, headers).then(function (sessionId) {
+      if (sessionId) navigate(`/vidgenie/${sessionId}`);
     });
   }
 
   const addNewVidGPTSession = () => {
     const headers = getHeaders();
-    const payload = {
-      prompts: [],
-    };
-    axios.post(`${PROCESSOR_SERVER}/video_sessions/create_video_session`, payload, headers).then(function (response) {
-      const session = response.data;
-      const sessionId = session._id.toString();
-      localStorage.setItem('videoSessionId', sessionId);
-
-      navigate(`/vidgenie/${session._id}`);
-
+    createBlankVidgenieSession(PROCESSOR_SERVER, headers).then(function (sessionId) {
+      if (sessionId) navigate(`/vidgenie/${sessionId}`);
     });
   }
 

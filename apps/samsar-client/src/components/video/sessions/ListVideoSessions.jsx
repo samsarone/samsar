@@ -20,6 +20,9 @@ import {
   isInteractiveVideoSession,
   isVideoSessionPublished,
 } from '../../../utils/videoSessionPresentation.mjs';
+import { createStudioSession } from '../../../utils/studioSessionApi.js';
+import { getStudioSessionId } from '../../../utils/studioSessionPolicy.mjs';
+import { createBlankVidgenieSession } from '../../../utils/vidgenieRouting.js';
 
 import SingleSelect from '../../common/SingleSelect'; // adjust path as needed
 
@@ -490,12 +493,15 @@ export default function ListVideoSessions() {
     const payload = {
       prompts: [],
     };
-    axios.post(`${PROCESSOR_API}/video_sessions/create_video_session`, payload, headers).then(function (response) {
-      const session = response.data;
-      const sessionId = session._id.toString();
+    createStudioSession({
+      processorServer: PROCESSOR_API,
+      headers,
+      payload,
+    }).then(function (session) {
+      const sessionId = getStudioSessionId(session);
       localStorage.setItem('videoSessionId', sessionId);
 
-      navigate(`/video/${session._id}`);
+      navigate(`/video/${sessionId}`);
     });
 
   };
@@ -504,15 +510,8 @@ export default function ListVideoSessions() {
 
   const createNewVidGPTSession = () => {
     const headers = getHeaders();
-    const payload = {
-      prompts: [],
-    };
-    axios.post(`${PROCESSOR_API}/video_sessions/create_video_session`, payload, headers).then(function (response) {
-      const session = response.data;
-      const sessionId = session._id.toString();
-      localStorage.setItem('videoSessionId', sessionId);
-
-      navigate(`/vidgenie/${session._id}`);
+    createBlankVidgenieSession(PROCESSOR_API, headers).then(function (sessionId) {
+      if (sessionId) navigate(`/vidgenie/${sessionId}`);
     });
 
   };

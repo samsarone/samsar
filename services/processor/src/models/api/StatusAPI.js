@@ -798,12 +798,19 @@ export function buildNormalizedBranchingStatus(sessionData = {}, req = null, { d
       ? Math.round((renderUnitsCompleted / renderUnitsTotal) * 1000) / 10
       : 0;
   const expressStatus = normalizeBranchStageStatus(sessionData?.expressGenerationStatus?.status);
+  const hasExplicitGenerationFailureState =
+    typeof sessionData?.expressGenerationFailed === 'boolean';
+  const hasExplicitGenerationCancellationState =
+    typeof sessionData?.expressGenerationCancelled === 'boolean';
+  const sessionCancelled = sessionData?.expressGenerationCancelled === true ||
+    (!hasExplicitGenerationCancellationState && expressStatus === 'CANCELLED');
+  const sessionFailed = sessionData?.expressGenerationFailed === true ||
+    (!hasExplicitGenerationFailureState && expressStatus === 'FAILED');
   const aggregateStatus =
-    sessionData?.expressGenerationCancelled ||
-    expressStatus === 'CANCELLED' ||
+    sessionCancelled ||
     cancelledPaths.length > 0
     ? 'CANCELLED'
-    : sessionData?.expressGenerationFailed || expressStatus === 'FAILED' || failedPaths.length > 0
+    : sessionFailed || failedPaths.length > 0
       ? 'FAILED'
       : sessionData?.expressGenerationPaused || expressStatus === 'PAUSED'
         ? 'PAUSED'
@@ -2405,12 +2412,18 @@ export function buildNormalizedVideoSessionPreview(
     globalVideos,
     resultUrl,
   });
-  const generationFailure = resolveVideoGenerationFailure(sessionData);
-  const generationError = normalizeNonEmptyString(
-    statusPayload.generationError ||
-    statusPayload.expressGenerationError ||
-    generationFailure?.message,
-  );
+  const terminalSessionStatus = ['FAILED', 'CANCELLED', 'CANCELED']
+    .includes(normalizeString(statusPayload.status).toUpperCase());
+  const generationFailure = terminalSessionStatus
+    ? resolveVideoGenerationFailure(sessionData)
+    : null;
+  const generationError = terminalSessionStatus
+    ? normalizeNonEmptyString(
+      statusPayload.generationError ||
+      statusPayload.expressGenerationError ||
+      generationFailure?.message,
+    )
+    : null;
 
   return compactObject({
     id: toObjectIdString(sessionData._id),
@@ -2441,6 +2454,8 @@ export function buildNormalizedVideoSessionPreview(
     ),
     generationType: normalizeNonEmptyString(sessionData.expressGenerationType),
     provider: normalizeNonEmptyString(statusPayload.provider || sessionData.provider),
+    expressGenerationFailed: normalizeBoolean(sessionData.expressGenerationFailed),
+    expressGenerationCancelled: normalizeBoolean(sessionData.expressGenerationCancelled),
     generationError,
     expressGenerationError: generationError,
     error: generationError,
@@ -2503,11 +2518,23 @@ export async function buildVideoStatusResponse({
       stageVideoStatusRaw.includes('TIMEOUT');
     const stageVideoCanceled = stageVideoStatusRaw.includes('CANCEL');
     const generationFailure = resolveVideoGenerationFailure(sessionSnapshot);
-    const expressGenerationCancelled = Boolean(sessionSnapshot?.expressGenerationCancelled);
+    const hasExplicitGenerationFailureState =
+      typeof sessionSnapshot?.expressGenerationFailed === 'boolean';
+    const hasExplicitGenerationCancellationState =
+      typeof sessionSnapshot?.expressGenerationCancelled === 'boolean';
+    const expressGenerationFailed = sessionSnapshot?.expressGenerationFailed === true;
+    const expressGenerationCancelled = sessionSnapshot?.expressGenerationCancelled === true;
     const expressGenerationPaused = Boolean(sessionSnapshot?.expressGenerationPaused);
     const statusRaw = typeof sessionSnapshot?.expressGenerationStatus?.status === 'string'
       ? sessionSnapshot.expressGenerationStatus.status.trim().toUpperCase()
       : '';
+    const statusRawFailed = isTerminalGenerationFailureStatus(statusRaw);
+    const statusRawCanceled = statusRaw.includes('CANCEL');
+    const canUseStatusRaw = Boolean(statusRaw) && (
+      (!statusRawFailed && !statusRawCanceled) ||
+      (statusRawFailed && !hasExplicitGenerationFailureState) ||
+      (statusRawCanceled && !hasExplicitGenerationCancellationState)
+    );
     const normalizedDefaultUrls = Array.isArray(defaultResultUrls)
       ? defaultResultUrls.filter(Boolean)
       : [];
@@ -2544,19 +2571,21 @@ export async function buildVideoStatusResponse({
     let normalizedStatus = isInteractiveDraft
       ? 'INIT'
       : completionUrl ? 'COMPLETED' : 'PENDING';
-    if (!isInteractiveDraft && (expressGenerationCancelled || stageVideoCanceled)) {
+    if (!isInteractiveDraft && (
+      expressGenerationCancelled ||
+      (!hasExplicitGenerationCancellationState && stageVideoCanceled)
+    )) {
       normalizedStatus = 'CANCELLED';
     } else if (!isInteractiveDraft && (
-      sessionSnapshot.expressGenerationFailed ||
-      stageVideoFailed ||
-      generationFailure
+      expressGenerationFailed ||
+      (!hasExplicitGenerationFailureState && stageVideoFailed)
     )) {
       normalizedStatus = 'FAILED';
     } else if (!isInteractiveDraft && expressGenerationPaused) {
       normalizedStatus = 'PAUSED';
     } else if (!isInteractiveDraft && completionUrl && stageVideoCompleted) {
       normalizedStatus = 'COMPLETED';
-    } else if (!isInteractiveDraft && statusRaw) {
+    } else if (!isInteractiveDraft && canUseStatusRaw) {
       normalizedStatus = statusRaw;
     } else if (!isInteractiveDraft && (
       sessionSnapshot.expressGenerationPending ||
@@ -2604,6 +2633,8 @@ export async function buildVideoStatusResponse({
       ...(branchResults.length > 0 ? { branch_results: branchResults } : {}),
       ...(branching ? { branching } : {}),
       expressGenerationStatus: sessionSnapshot?.expressGenerationStatus,
+      ...(hasExplicitGenerationFailureState ? { expressGenerationFailed } : {}),
+      ...(hasExplicitGenerationCancellationState ? { expressGenerationCancelled } : {}),
       expressGenerationPaused,
       expressGenerationCreditCharges,
       express_generation_credit_charges: expressGenerationCreditCharges,

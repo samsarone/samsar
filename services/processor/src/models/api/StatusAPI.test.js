@@ -561,6 +561,19 @@ test('normalized branching status withholds aggregate outputs after a session fa
   assert.equal(status.paths.every((path) => path.result_url), true);
 });
 
+test('normalized branching status ignores a stale failed aggregate when the session did not fail', () => {
+  const fixture = completeBranchStatusFixture();
+  fixture.expressGenerationFailed = false;
+  fixture.expressGenerationCancelled = false;
+  fixture.expressGenerationStatus.status = 'FAILED';
+
+  const status = buildNormalizedBranchingStatus(fixture);
+
+  assert.equal(status.status, 'COMPLETED');
+  assert.equal(status.outputs.ready, true);
+  assert.equal(status.summary.failed_paths, 0);
+});
+
 test('normalized branching status is absent for existing singular sessions', () => {
   assert.equal(buildNormalizedBranchingStatus({
     narrativeType: 'singular',
@@ -626,15 +639,17 @@ test('status projections exclude branch frame lists while detailed status includ
   assert.equal(detailedFields.includes('layers.imageSession.generationError'), true);
 });
 
-test('compact status surfaces the exact terminal AI-video provider error before aggregate failure catches up', async () => {
+test('compact status keeps a failed layer non-terminal while the session is still active', async () => {
   const providerError = 'Provider error: input image may contain a real person';
   const fixture = {
     expressGenerationStatus: {
-      status: 'PENDING',
+      status: 'FAILED',
       ai_video_generation: 'PENDING',
       video_generation: 'INIT',
     },
     expressGenerationPending: true,
+    expressGenerationFailed: false,
+    expressGenerationCancelled: false,
     layers: [{
       _id: 'layer-1',
       aiVideoGenerationStatus: 'FAILED',
@@ -656,7 +671,52 @@ test('compact status surfaces the exact terminal AI-video provider error before 
       sessionId: 'session-provider-failure',
       requestId: 'request-provider-failure',
     });
+    assert.equal(status.status, 'PENDING');
+    assert.equal(status.expressGenerationFailed, false);
+    assert.equal(status.expressGenerationCancelled, false);
+    assert.equal(status.generationError, undefined);
+    assert.equal(status.expressGenerationError, undefined);
+    assert.equal(status.error, undefined);
+    assert.equal(status.message, undefined);
+  } finally {
+    VideoSession.findById = originalFindById;
+  }
+});
+
+test('compact status surfaces the exact provider error when the session itself failed', async () => {
+  const providerError = 'Provider error: input image may contain a real person';
+  const fixture = {
+    expressGenerationStatus: {
+      status: 'FAILED',
+      ai_video_generation: 'FAILED',
+      video_generation: 'INIT',
+    },
+    expressGenerationPending: false,
+    expressGenerationFailed: true,
+    expressGenerationCancelled: false,
+    layers: [{
+      _id: 'layer-1',
+      aiVideoGenerationStatus: 'FAILED',
+      aiVideoGenerationError: providerError,
+    }],
+  };
+  const originalFindById = VideoSession.findById;
+  VideoSession.findById = () => ({
+    select() {
+      return this;
+    },
+    async lean() {
+      return fixture;
+    },
+  });
+
+  try {
+    const status = await buildVideoStatusResponse({
+      sessionId: 'session-terminal-provider-failure',
+      requestId: 'request-terminal-provider-failure',
+    });
     assert.equal(status.status, 'FAILED');
+    assert.equal(status.expressGenerationFailed, true);
     assert.equal(status.generationError, providerError);
     assert.equal(status.expressGenerationError, providerError);
     assert.equal(status.error, providerError);
@@ -962,12 +1022,14 @@ test('buildNormalizedVideoSessionPreview returns minimal preview assets with nor
   assert.equal(Object.prototype.hasOwnProperty.call(preview.layers[0], 'durationOffset'), false);
 });
 
-test('detailed image-list-to-video preview preserves the exact failed provider error', () => {
+test('detailed preview keeps an optional layer error without promoting it to a session error', () => {
   const providerError = 'GenBlaze validation failed: ratio must be adaptive';
   const preview = buildNormalizedVideoSessionPreview({
     _id: 'image-list-session',
     isStepVideoGeneration: true,
     expressStepGeneration: { routeType: 'image_list_to_video' },
+    expressGenerationFailed: false,
+    expressGenerationCancelled: false,
     expressGenerationStatus: {
       status: 'PENDING',
       ai_video_generation: 'PENDING',
@@ -979,9 +1041,11 @@ test('detailed image-list-to-video preview preserves the exact failed provider e
     }],
   }, { request_id: 'image-list-request' });
 
-  assert.equal(preview.generationError, providerError);
-  assert.equal(preview.expressGenerationError, providerError);
-  assert.equal(preview.error, providerError);
+  assert.equal(preview.expressGenerationFailed, false);
+  assert.equal(preview.expressGenerationCancelled, false);
+  assert.equal(preview.generationError, undefined);
+  assert.equal(preview.expressGenerationError, undefined);
+  assert.equal(preview.error, undefined);
   assert.equal(preview.layers[0].aiVideo.status, 'FAILED');
   assert.equal(preview.layers[0].aiVideo.error, providerError);
 });

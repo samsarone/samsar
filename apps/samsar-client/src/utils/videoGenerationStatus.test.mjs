@@ -5,6 +5,7 @@ import {
   buildStudioSessionDetailsFromStatus,
   fetchDetailedVideoGenerationStatus,
   materializeBranchPathPreview,
+  resolveTerminalVideoGenerationStatus,
   resolveVideoGenerationErrorMessage,
 } from './videoGenerationStatus.mjs';
 
@@ -98,6 +99,56 @@ test('client preserves exact image-list provider errors from nested image status
       },
     }],
   }), providerError);
+});
+
+test('optional layer failure does not become a terminal session notification', () => {
+  const status = {
+    status: 'FAILED',
+    expressGenerationFailed: false,
+    expressGenerationCancelled: false,
+    expressGenerationStatus: {
+      status: 'PENDING',
+      sound_effect_generation: 'PENDING',
+      video_generation: 'INIT',
+    },
+    session: {
+      layers: [{
+        soundEffectVideo: {
+          status: 'FAILED',
+          error: 'Optional sound effect provider failed',
+        },
+      }],
+    },
+  };
+
+  assert.equal(resolveTerminalVideoGenerationStatus(status), '');
+  assert.equal(
+    resolveVideoGenerationErrorMessage(status),
+    'Optional sound effect provider failed',
+  );
+});
+
+test('structured legacy status ignores a failed optional layer when the aggregate remains pending', () => {
+  assert.equal(resolveTerminalVideoGenerationStatus({
+    status: 'FAILED',
+    expressGenerationStatus: { status: 'PENDING', sound_effect_generation: 'FAILED' },
+    session: {
+      layers: [{ soundEffectVideo: { status: 'FAILED' } }],
+    },
+  }), '');
+});
+
+test('explicit session failure still produces a terminal notification', () => {
+  assert.equal(resolveTerminalVideoGenerationStatus({
+    status: 'PENDING',
+    expressGenerationFailed: true,
+    expressGenerationStatus: { status: 'PENDING' },
+  }), 'FAILED');
+});
+
+test('legacy terminal status remains supported when no aggregate session state is available', () => {
+  assert.equal(resolveTerminalVideoGenerationStatus({ status: 'FAILED' }), 'FAILED');
+  assert.equal(resolveTerminalVideoGenerationStatus({ status: 'CANCELLED' }), 'CANCELLED');
 });
 
 test('completed compact branched status uses the top-level output manifest without detailed assets', () => {

@@ -150,11 +150,6 @@ function DefaultAuthenticatedRoute({ user, isMobile, search }) {
     }
 
     resolutionStartedRef.current = true;
-    const shouldOpenVidgenie = !user.isExternalUser && (!IS_STANDALONE_DEPLOYMENT || isMobile);
-    if (shouldOpenVidgenie) {
-      void preloadVidgenieEditor().catch(() => undefined);
-    }
-
     const resolveRoute = async () => {
       const resolvedPath = await resolvePostAuthDestination({
         user,
@@ -163,6 +158,9 @@ function DefaultAuthenticatedRoute({ user, isMobile, search }) {
         search,
         createIfMissing: true,
       });
+      if (resolvedPath?.startsWith('/vidgenie')) {
+        void preloadVidgenieEditor().catch(() => undefined);
+      }
       const fallbackPath = IS_STANDALONE_DEPLOYMENT && !isMobile ? '/video' : '/vidgenie';
       setTargetPath(resolvedPath || appendRouteSearch(fallbackPath, search));
     };
@@ -176,7 +174,7 @@ function DefaultAuthenticatedRoute({ user, isMobile, search }) {
 
   return (
     <RouteLoadingScreen
-      label={IS_STANDALONE_DEPLOYMENT && !isMobile ? 'Opening Studio...' : 'Opening VidGenie...'}
+      label={IS_STANDALONE_DEPLOYMENT && !isMobile ? 'Opening workspace...' : 'Opening VidGenie...'}
     />
   );
 }
@@ -309,9 +307,6 @@ export default function Home() {
   const sanitizedRouteSearch = extraProps.toString() ? `?${extraProps.toString()}` : '';
 
   const navigateToDefaultAuthenticatedView = useCallback(async (resolvedUser = user) => {
-    if (resolvedUser?._id && !resolvedUser.isExternalUser && (!IS_STANDALONE_DEPLOYMENT || isMobile)) {
-      void preloadVidgenieEditor().catch(() => undefined);
-    }
     const targetPath = await resolvePostAuthDestination({
       user: resolvedUser,
       isMobile,
@@ -319,6 +314,9 @@ export default function Home() {
       search: sanitizedRouteSearch,
       createIfMissing: true,
     });
+    if (targetPath?.startsWith('/vidgenie')) {
+      void preloadVidgenieEditor().catch(() => undefined);
+    }
     const fallbackPath = IS_STANDALONE_DEPLOYMENT && !isMobile ? '/video' : '/vidgenie';
     navigate(targetPath || appendQueryParams(fallbackPath), { replace: true });
   }, [appendQueryParams, isMobile, navigate, sanitizedRouteSearch, user]);
@@ -347,10 +345,6 @@ export default function Home() {
           return;
         }
 
-        if (!IS_STANDALONE_DEPLOYMENT || isMobile) {
-          void preloadVidgenieEditor().catch(() => undefined);
-        }
-
         const targetPath = await resolvePostAuthDestination({
           user: resolvedUser,
           isMobile,
@@ -359,6 +353,9 @@ export default function Home() {
           createIfMissing: true,
         });
         if (isCancelled) return;
+        if (targetPath?.startsWith('/vidgenie')) {
+          void preloadVidgenieEditor().catch(() => undefined);
+        }
 
         const fallbackPath = IS_STANDALONE_DEPLOYMENT && !isMobile ? '/video' : '/vidgenie';
         navigate(targetPath || fallbackPath, { replace: true });
@@ -494,7 +491,7 @@ export default function Home() {
     return (
       <div className={bodyBGColor}>
         <RouteLoadingScreen
-          label={IS_STANDALONE_DEPLOYMENT && !isMobile ? 'Opening Studio...' : 'Opening VidGenie...'}
+          label={IS_STANDALONE_DEPLOYMENT && !isMobile ? 'Opening workspace...' : 'Opening VidGenie...'}
         />
       </div>
     );

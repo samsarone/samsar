@@ -1,6 +1,9 @@
 import axios from 'axios';
 import { getDefaultAuthenticatedPath } from './defaultRoutes.js';
 import { IS_STANDALONE_DEPLOYMENT } from './environment.jsx';
+import { createBlankVidgenieSession } from './vidgenieSessionApi.js';
+
+export { createBlankVidgenieSession } from './vidgenieSessionApi.js';
 
 const VIDEO_SESSION_STORAGE_KEY = 'videoSessionId';
 
@@ -99,17 +102,6 @@ async function findLatestPendingVidgenieSession(apiServer, headers) {
   return isPendingVidgenieSession(latestSession) ? latestSession : null;
 }
 
-async function createBlankVidgenieSession(apiServer, headers) {
-  if (!apiServer || !headers) return null;
-
-  const { data } = await axios.post(`${apiServer}/vidgenie/create_blank`, {}, headers);
-  const sessionId = normalizeSessionId(data?.sessionId || data?.session_id || data?._id || data?.id);
-  if (sessionId) {
-    storeVidgenieSessionId(sessionId);
-  }
-  return sessionId;
-}
-
 export async function fetchGuestVidgenieSession(apiServer) {
   if (IS_STANDALONE_DEPLOYMENT || !apiServer) return null;
 
@@ -175,8 +167,9 @@ export async function resolveAuthenticatedEntryPath({
   headers,
   search = '',
   createIfMissing = true,
+  defaultPath: requestedDefaultPath,
 } = {}) {
-  const defaultPath = getDefaultAuthenticatedPath(user, { isMobile });
+  const defaultPath = requestedDefaultPath || getDefaultAuthenticatedPath(user, { isMobile });
   if (defaultPath !== '/vidgenie') {
     return appendRouteSearch(defaultPath, search);
   }

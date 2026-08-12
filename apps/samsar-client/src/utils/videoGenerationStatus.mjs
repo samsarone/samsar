@@ -37,6 +37,80 @@ function isFailedStatus(value) {
   return FAILED_STATUSES.has(normalizeStatus(value));
 }
 
+function normalizeTerminalStatus(value) {
+  const normalized = normalizeStatus(value);
+  if (normalized === 'CANCELLED' || normalized === 'CANCELED') {
+    return 'CANCELLED';
+  }
+  return FAILED_STATUSES.has(normalized) ? 'FAILED' : '';
+}
+
+export function resolveTerminalVideoGenerationStatus(data) {
+  if (!isPlainObject(data)) {
+    return '';
+  }
+
+  const topLevelStatus = normalizeStatus(data.status);
+  if (['COMPLETED', 'SUCCESS', 'SUCCEEDED', 'DONE'].includes(topLevelStatus)) {
+    return '';
+  }
+
+  const session = isPlainObject(data.session) ? data.session : {};
+  const cancellationStates = [
+    data.expressGenerationCancelled,
+    session.expressGenerationCancelled,
+  ];
+  const failureStates = [
+    data.expressGenerationFailed,
+    session.expressGenerationFailed,
+  ];
+
+  if (cancellationStates.some((value) => value === true)) {
+    return 'CANCELLED';
+  }
+  if (failureStates.some((value) => value === true)) {
+    return 'FAILED';
+  }
+
+  const hasExplicitCancellationState = cancellationStates
+    .some((value) => typeof value === 'boolean');
+  const hasExplicitFailureState = failureStates
+    .some((value) => typeof value === 'boolean');
+
+  const aggregateStatusObjects = [
+    data.expressGenerationStatus,
+    session.expressGenerationStatus,
+    session.stages,
+  ].filter(isPlainObject);
+  const aggregateFailure = aggregateStatusObjects
+    .map((status) => normalizeTerminalStatus(status.status))
+    .find((status) => (
+      (status === 'CANCELLED' && !hasExplicitCancellationState) ||
+      (status === 'FAILED' && !hasExplicitFailureState)
+    ));
+  if (aggregateFailure) {
+    return aggregateFailure;
+  }
+
+  // Structured responses have enough aggregate state to distinguish a failed
+  // optional layer from a failed session. Only use legacy top-level/step status
+  // when that aggregate state is unavailable.
+  if (aggregateStatusObjects.length > 0) {
+    return '';
+  }
+
+  const legacyFailure = [data.step_status, data.stepStatus, data.step?.status, data.status]
+    .map(normalizeTerminalStatus)
+    .find(Boolean) || '';
+  if (legacyFailure === 'CANCELLED' && hasExplicitCancellationState) {
+    return '';
+  }
+  if (legacyFailure === 'FAILED' && hasExplicitFailureState) {
+    return '';
+  }
+  return legacyFailure;
+}
+
 function getFailedLayerError(layer = {}) {
   const candidates = [
     [layer.aiVideo?.status || layer.aiVideoGenerationStatus, layer.aiVideo?.error || layer.aiVideoGenerationError],

@@ -6,6 +6,14 @@ import { getHeaders, getAuthToken } from '../../utils/web';
 import './home.css';
 import StudioSkeletonLoader from './util/StudioSkeletonLoader.jsx';
 import { IS_STANDALONE_DEPLOYMENT } from '../../utils/environment.jsx';
+import {
+  createStudioSession,
+  fetchStudioSessionDetails,
+} from '../../utils/studioSessionApi.js';
+import {
+  getStudioSessionId,
+  hasInitialStudioLayer,
+} from '../../utils/studioSessionPolicy.mjs';
 
 const API_SERVER = import.meta.env.VITE_PROCESSOR_API;
 const preloadVideoEditor = () => import('./VideoHome.jsx');
@@ -40,13 +48,14 @@ export default function VideoEditorLandingHome() {
 
       const createNewSession = async () => {
         const headers = getHeaders();
-        const res = await axios.post(`${API_SERVER}/video_sessions/create_video_session`, { prompts: [] }, headers);
-        const sessionData = res.data;
-        if (!sessionData?._id) {
-          throw new Error('The Studio session response did not include an id.');
-        }
-        localStorage.setItem('videoSessionId', sessionData._id);
-        navigate(`/video/${sessionData._id}`, { replace: true });
+        const sessionData = await createStudioSession({
+          processorServer: API_SERVER,
+          headers,
+          payload: { prompts: [] },
+        });
+        const sessionId = getStudioSessionId(sessionData);
+        localStorage.setItem('videoSessionId', sessionId);
+        navigate(`/video/${sessionId}`, { replace: true });
       };
 
       if (isGuest) {
@@ -71,12 +80,12 @@ export default function VideoEditorLandingHome() {
       if (videoSessionId) {
         const headers = getHeaders();
         try {
-          const res = await axios.get(
-            `${API_SERVER}/video_sessions/validate_session?sessionId=${videoSessionId}`,
-            headers
-          );
-          const sessionData = res.data;
-          if (sessionData) {
+          const sessionData = await fetchStudioSessionDetails({
+            processorServer: API_SERVER,
+            headers,
+            sessionId: videoSessionId,
+          });
+          if (hasInitialStudioLayer(sessionData)) {
             navigate(`/video/${videoSessionId}`, { replace: true });
             return;
           }
@@ -94,9 +103,10 @@ export default function VideoEditorLandingHome() {
       try {
         const res = await axios.get(`${API_SERVER}/video_sessions/get_session`, headers);
         const sessionData = res.data;
-        if (sessionData?._id) {
-          localStorage.setItem('videoSessionId', sessionData._id);
-          navigate(`/video/${sessionData._id}`, { replace: true });
+        if (hasInitialStudioLayer(sessionData)) {
+          const sessionId = getStudioSessionId(sessionData);
+          localStorage.setItem('videoSessionId', sessionId);
+          navigate(`/video/${sessionId}`, { replace: true });
         } else if (IS_STANDALONE_DEPLOYMENT) {
           shouldCreateStandaloneSession = true;
         } else {

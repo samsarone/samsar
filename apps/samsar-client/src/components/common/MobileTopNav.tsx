@@ -13,6 +13,8 @@ import BrandLogo from './BrandLogo.tsx';
 import { imageAspectRatioOptions } from '../../constants/ImageAspectRatios.js';
 import { getCanvasDimensionsForAspectRatio } from '../../utils/canvas.jsx';
 import { IS_STANDALONE_DEPLOYMENT } from '../../utils/environment.jsx';
+import { createStudioSession } from '../../utils/studioSessionApi.js';
+import { getStudioSessionId } from '../../utils/studioSessionPolicy.mjs';
 
 const PROCESSOR_SERVER = import.meta.env.VITE_PROCESSOR_API;
 const AddSessionDropdown = lazy(() => import('./AddSessionDropdown.jsx'));
@@ -139,11 +141,14 @@ export default function MobileTopNav(props) {
     if (normalizedSessionDescription) {
       payload.sessionDescription = normalizedSessionDescription;
     }
-    axios.post(`${PROCESSOR_SERVER}/video_sessions/create_video_session`, payload, headers).then(function (response) {
-      const session = response.data;
-      const sessionId = session._id.toString();
+    createStudioSession({
+      processorServer: PROCESSOR_SERVER,
+      headers,
+      payload,
+    }).then(function (session) {
+      const sessionId = getStudioSessionId(session);
       localStorage.setItem('videoSessionId', sessionId);
-      navigate(`/video/${session._id}`);
+      navigate(`/video/${sessionId}`);
     });
   };
 
