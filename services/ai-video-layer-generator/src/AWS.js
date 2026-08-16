@@ -10,7 +10,7 @@ import path from 'path';
 import crypto from 'crypto';
 
 
-import { NodeHttpHandler } from "@aws-sdk/node-http-handler";
+import { NodeHttpHandler } from "@smithy/node-http-handler";
 import { Agent } from "https";
 import { resolveDockerLocalPublicAssetBaseUrl } from './consts/DockerDeploymentUrls.js';
 import { resolveFreshManagedProviderMediaUrl } from './utils/ProviderMediaTunnel.js';

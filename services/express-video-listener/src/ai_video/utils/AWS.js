@@ -6,7 +6,7 @@ import {
   createBackblazeNativeClientFromEnv,
   shouldUseBackblazeNativeApi,
 } from '../../utils/BackblazeNativeClient.js';
-import { NodeHttpHandler } from '@aws-sdk/node-http-handler';
+import { NodeHttpHandler } from '@smithy/node-http-handler';
 import fs from 'fs';
 import crypto from 'crypto';
 import path from 'path';

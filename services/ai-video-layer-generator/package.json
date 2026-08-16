@@ -11,12 +11,12 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "@aws-sdk/client-s3": "^3.709.0",
-    "@aws-sdk/lib-storage": "^3.709.0",
-    "@aws-sdk/node-http-handler": "^3.374.0",
+    "@aws-sdk/client-s3": "^3.1111.0",
+    "@aws-sdk/lib-storage": "^3.1111.0",
     "@fal-ai/client": "^1.2.0",
-    "axios": "^1.7.9",
-    "canvas": "^3.1.0",
+    "@smithy/node-http-handler": "^4.11.2",
+    "axios": "^1.19.0",
+    "canvas": "^3.2.3",
     "dayjs": "^1.11.12",
     "dotenv": "^16.4.5",
     "ffmpeg-static": "^5.2.0",
@@ -30,6 +30,12 @@
     "zod": "^3.25.63"
   },
   "overrides": {
-    "fast-xml-parser": "^4.5.5"
+    "@smithy/config-resolver": "^4.7.2",
+    "async": "^3.2.6",
+    "fast-xml-parser": "^5.11.0",
+    "follow-redirects": "^1.16.0",
+    "jws": "^4.0.1",
+    "tar-fs": "^2.1.4",
+    "uuid": "^11.1.1"
   }
 }

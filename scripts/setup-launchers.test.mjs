@@ -323,9 +323,17 @@ test('remote setup also uses the npm-free launcher', () => {
 test('the setup-wizard image owns its Node and Compose dependencies', () => {
   const dockerfile = read('apps/setup-wizard/Dockerfile');
 
-  assert.match(dockerfile, /^FROM node:20 AS builder/m);
-  assert.match(dockerfile, /^FROM node:20-alpine/m);
-  assert.match(dockerfile, /docker-cli-compose/);
+  assert.match(dockerfile, /^FROM node:24 AS builder/m);
+  assert.match(dockerfile, /^FROM docker:29\.6\.2-cli-alpine3\.24 AS docker-cli/m);
+  assert.match(dockerfile, /^FROM docker\/compose-bin:v5\.4\.0 AS compose-cli/m);
+  assert.match(dockerfile, /^FROM node:24-alpine3\.24/m);
+  assert.match(dockerfile, /^RUN apk upgrade --no-cache$/m);
+  assert.match(dockerfile, /COPY --from=docker-cli \/usr\/local\/bin\/docker \/usr\/local\/bin\/docker/);
+  assert.match(dockerfile, /COPY --from=docker-cli \/usr\/local\/libexec\/docker\/cli-plugins\/docker-buildx \/usr\/local\/libexec\/docker\/cli-plugins\/docker-buildx/);
+  assert.match(dockerfile, /COPY --from=compose-cli \/docker-compose \/usr\/local\/libexec\/docker\/cli-plugins\/docker-compose/);
+  assert.doesNotMatch(dockerfile, /apk add[^\n]*(?:docker-cli|docker-cli-compose)/);
+  assert.match(dockerfile, /rm -rf \/usr\/local\/lib\/node_modules\/npm/);
+  assert.match(dockerfile, /rm -f \/usr\/local\/bin\/npm \/usr\/local\/bin\/npx/);
   assert.match(dockerfile, /COPY storageConfig\.mjs \.\/storageConfig\.mjs/);
   assert.match(dockerfile, /CMD \["node", "server\.mjs"\]/);
 });

@@ -83,9 +83,9 @@ export async function embedMessageInPNG(pngPath, message) {
     }
   });
 
-  // Use getBufferAsync to create a PNG buffer
-  const pngBuffer = await image.getBufferAsync(Jimp.MIME_PNG);
+  // Jimp 1.x returns a promise directly from getBuffer.
+  const pngBuffer = await image.getBuffer('image/png');
 
   // Write the buffer to the original file
-  await fsPromises.writeFile(pngPath, pngBuffer);
+  await fs.promises.writeFile(pngPath, pngBuffer);
 }

@@ -8,10 +8,10 @@
     "test": "node --test $(rg --files src -g '*test.js')"
   },
   "dependencies": {
-    "@aws-sdk/client-s3": "^3.733.0",
-    "@aws-sdk/node-http-handler": "^3.374.0",
+    "@aws-sdk/client-s3": "^3.1111.0",
     "@fal-ai/client": "^1.2.1",
-    "axios": "^1.10.0",
+    "@smithy/node-http-handler": "^4.11.2",
+    "axios": "^1.19.0",
     "dayjs": "^1.11.12",
     "dotenv": "^16.4.5",
     "ffmpeg-static": "^5.2.0",
@@ -20,11 +20,17 @@
     "mongoose": "^8.22.1",
     "openai": "^4.89.1",
     "samsar-js": "0.48.48",
-    "sharp": "^0.33.5"
+    "sharp": "^0.35.3"
   },
   "overrides": {
-    "fast-xml-parser": "^4.5.5",
-    "form-data": "^4.0.6"
+    "@smithy/config-resolver": "^4.7.2",
+    "async": "^3.2.6",
+    "fast-xml-parser": "^5.11.0",
+    "follow-redirects": "^1.16.0",
+    "form-data": "^4.0.6",
+    "jws": "^4.0.1",
+    "uuid": "^11.1.1",
+    "ws": "^8.21.3"
   },
   "keywords": [],
   "author": "",

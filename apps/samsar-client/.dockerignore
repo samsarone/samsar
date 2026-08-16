@@ -5,8 +5,8 @@ yarn-debug.log
 yarn-error.log
 
 # Environment files - don't leak secrets into the image
-.env
-.env.production
+.env*
+!.env.example
 
 
 

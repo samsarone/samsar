@@ -1,11 +1,30 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import sharp from 'sharp';
 
 import {
+  getImageDimensionsFromBuffer,
   getTextToImageRequestPricing,
   normalizeTextToImageRequestOptions,
   shouldUsePreferenceAwareImagePromptRouting,
 } from './ImageAPI.js';
+
+test('reads image dimensions asynchronously through sharp metadata', async () => {
+  const buffer = await sharp({
+    create: {
+      width: 320,
+      height: 180,
+      channels: 4,
+      background: { r: 0, g: 0, b: 0, alpha: 1 },
+    },
+  }).png().toBuffer();
+
+  assert.deepEqual(await getImageDimensionsFromBuffer(buffer), {
+    width: 320,
+    height: 180,
+  });
+  await assert.rejects(() => getImageDimensionsFromBuffer(Buffer.from('not an image')));
+});
 
 test('standalone text-to-image requests preserve per-user custom adapter model keys', () => {
   const previousEdition = process.env.SAMSAR_DEPLOYMENT_EDITION;

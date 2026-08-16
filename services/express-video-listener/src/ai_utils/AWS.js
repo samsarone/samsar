@@ -7,7 +7,7 @@ import {
 } from '../utils/BackblazeNativeClient.js';
 import fs from 'fs';
 
-import { NodeHttpHandler } from '@aws-sdk/node-http-handler';
+import { NodeHttpHandler } from '@smithy/node-http-handler';
 import { isStandaloneEdition } from '../utils/EnvironmentUtils.js';
 
 /**

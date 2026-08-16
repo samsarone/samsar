@@ -13,7 +13,6 @@ import {
   getTextToImagePricing,
 } from '../../consts/pricing/ApiPricing.js';
 import fetch from 'node-fetch';
-import sizeOf from 'image-size';
 import OpenAI from 'openai';
 import sharp from 'sharp';
 import { randomUUID } from 'crypto';
@@ -213,6 +212,14 @@ function createBadRequestError(message) {
   error.status = 400;
   error.statusCode = 400;
   return error;
+}
+
+export async function getImageDimensionsFromBuffer(buffer) {
+  const { width, height } = await sharp(buffer).metadata();
+  if (!width || !height) {
+    return null;
+  }
+  return { width, height };
 }
 
 export function normalizeTextToImageRequestOptions(payload = {}) {
@@ -1578,11 +1585,11 @@ async function determineAspectRatioFromImage(imageUrl) {
       timeoutMs: ROLLUP_FETCH_TIMEOUT_MS,
       timeoutMsMax: ROLLUP_FETCH_TIMEOUT_MAX_MS,
     });
-    const { width, height } = sizeOf(buffer);
-
-    if (!width || !height) {
+    const dimensions = await getImageDimensionsFromBuffer(buffer);
+    if (!dimensions) {
       throw new Error('Unable to determine image dimensions.');
     }
+    const { width, height } = dimensions;
 
     const difference = Math.abs(width - height);
 
@@ -2231,11 +2238,7 @@ async function getImageDimensionsFromUrl(imageUrl) {
     if (!buffer) {
       return null;
     }
-    const { width, height } = sizeOf(buffer);
-    if (!width || !height) {
-      return null;
-    }
-    return { width, height };
+    return await getImageDimensionsFromBuffer(buffer);
   } catch {
     return null;
   }

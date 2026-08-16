@@ -5,7 +5,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { uploadTempEditImageToFileSystem } from '../storage/Files.js';
 import ImageBatchGeneration from '../schema/ImageBatchGeneration.js';
 import { IMAGE_EDIT_MODEL_PRICES, IMAGE_MODEL_PRICES } from '../consts/ModelPrices.js';
-import sizeOf from 'image-size';
+import sharp from 'sharp';
 import { shouldBypassGenerationCredits } from '../utils/EnvironmentUtils.js';
 import {
   QWEN_IMAGE_3_PRO_MODEL_KEY,
@@ -495,7 +495,7 @@ export async function addImageEditRequest(userId, payload) {
 
     // Get and log dimensions of the mask image
     try {
-      const maskImageDimensions = sizeOf(localMaskImagePath);
+      const maskImageDimensions = await sharp(localMaskImagePath).metadata();
 
     } catch (err) {
       console.error(`Error getting dimensions for mask image (${maskImage}):`, err);

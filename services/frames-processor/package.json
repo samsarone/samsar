@@ -20,7 +20,7 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "canvas": "^2.11.2",
+    "canvas": "^3.2.3",
     "dotenv": "^16.4.5",
     "mongoose": "^8.22.1",
     "qrcode": "^1.5.4"

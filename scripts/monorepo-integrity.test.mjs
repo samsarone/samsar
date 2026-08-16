@@ -97,17 +97,22 @@ test('every generic Docker service has a synchronized npm lockfile', async () =>
 });
 
 test('Docker dependency installs are immutable and include platform optionals', async () => {
-  const [serviceDockerfile, clientDockerfile, setupWizardDockerfile] = await Promise.all([
+  const [serviceDockerfile, clientDockerfile, setupWizardDockerfile, compose] = await Promise.all([
     readText('Dockerfile'),
     readText('apps/samsar-client/Dockerfile'),
     readText('apps/setup-wizard/Dockerfile'),
+    readText('deploy/compose/docker-compose.yml'),
   ]);
 
+  assert.match(serviceDockerfile, /FROM node:\$\{NODE_VERSION\}-bookworm-slim AS build/);
+  assert.match(serviceDockerfile, /FROM node:\$\{NODE_VERSION\}-bookworm-slim AS runtime/);
   assert.match(serviceDockerfile, /test -f package-lock\.json/);
   assert.match(serviceDockerfile, /npm ci --omit=dev --include=optional/);
   assert.doesNotMatch(serviceDockerfile, /npm install/);
+  assert.match(serviceDockerfile, /rm -rf \/usr\/local\/lib\/node_modules\/npm/);
   assert.match(serviceDockerfile, /FFMPEG_PATH=\/usr\/bin\/ffmpeg/);
   assert.match(serviceDockerfile, /FFPROBE_PATH=\/usr\/bin\/ffprobe/);
+  assert.doesNotMatch(compose, /NODE_VERSION:\s*"20"/);
 
   assert.match(clientDockerfile, /yarn install --frozen-lockfile --non-interactive/);
   assert.doesNotMatch(clientDockerfile, /yarn add/);
@@ -301,6 +306,7 @@ test('Docker Compose support files required by the deployment are present', asyn
     'services/docker-cleanup/Dockerfile',
     'deploy/compose/logger/loki-config.yml',
     'deploy/compose/logger/promtail-config.yml',
+    'deploy/compose/media-gateway/Dockerfile',
     'deploy/compose/media-gateway.conf',
     'deploy/compose/media-tunnel-controller/Dockerfile',
     'deploy/compose/media-tunnel-controller/controller.mjs',
