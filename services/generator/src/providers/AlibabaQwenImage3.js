@@ -1,3 +1,5 @@
+import { Agent, fetch as undiciFetch } from 'undici';
+
 import { getDBConnectionString } from '../DBString.js';
 import ImageGeneration from '../schema/ImageGeneration.js';
 import { isStandaloneEdition } from '../utils/Environment.js';
@@ -9,8 +11,40 @@ import {
 } from './AlibabaCloudImage.js';
 import { buildAlibabaQwenImage3Request } from './QwenImage3Payload.js';
 
+export const MIN_ALIBABA_QWEN_IMAGE_3_TIMEOUT_MS = 6 * 60 * 1000;
+
+let alibabaQwenImage3Dispatcher;
+
 function normalizeString(value) {
   return typeof value === 'string' ? value.trim() : '';
+}
+
+export function getAlibabaQwenImage3TimeoutMs(options = {}) {
+  const env = options.env || process.env;
+  const configuredTimeoutMs = Number(
+    options.timeoutMs ??
+      env?.ALIBABA_QWEN_IMAGE_3_PRO_TIMEOUT_MS ??
+      env?.ALIBABA_IMAGE_GENERATION_TIMEOUT_MS,
+  );
+  return Math.max(
+    MIN_ALIBABA_QWEN_IMAGE_3_TIMEOUT_MS,
+    Number.isFinite(configuredTimeoutMs) && configuredTimeoutMs > 0
+      ? configuredTimeoutMs
+      : MIN_ALIBABA_QWEN_IMAGE_3_TIMEOUT_MS,
+  );
+}
+
+export function getAlibabaQwenImage3Dispatcher() {
+  if (!alibabaQwenImage3Dispatcher) {
+    // Node's default fetch transport stops waiting for response headers after
+    // five minutes. Qwen Image 3.0 Pro is synchronous, so let the model-specific
+    // AbortController own the complete six-minute request deadline instead.
+    alibabaQwenImage3Dispatcher = new Agent({
+      headersTimeout: 0,
+      bodyTimeout: 0,
+    });
+  }
+  return alibabaQwenImage3Dispatcher;
 }
 
 function markAsNonPromptProviderFailure(error) {
@@ -49,6 +83,9 @@ export async function requestAlibabaQwenImage3(payload = {}, options = {}) {
   return requestAlibabaImageGeneration(buildAlibabaQwenImage3Request(payload), {
     ...options,
     providerName: 'Alibaba Qwen Image 3.0 Pro',
+    timeoutMs: getAlibabaQwenImage3TimeoutMs(options),
+    fetchImpl: options.fetchImpl || undiciFetch,
+    dispatcher: options.dispatcher || getAlibabaQwenImage3Dispatcher(),
   });
 }
 

@@ -2,13 +2,27 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+  getAlibabaQwenImage3TimeoutMs,
   handleAlibabaQwenImage3Request,
+  MIN_ALIBABA_QWEN_IMAGE_3_TIMEOUT_MS,
   requestAlibabaQwenImage3,
 } from './AlibabaQwenImage3.js';
 import { isAlibabaImageInfrastructureError } from './AlibabaCloudImage.js';
 
-test('calls the synchronous Alibaba endpoint and extracts the Qwen image URL', async () => {
+test('uses a six-minute minimum timeout only for Alibaba Qwen Image 3.0 Pro', () => {
+  assert.equal(MIN_ALIBABA_QWEN_IMAGE_3_TIMEOUT_MS, 360000);
+  assert.equal(getAlibabaQwenImage3TimeoutMs({ env: {} }), 360000);
+  assert.equal(getAlibabaQwenImage3TimeoutMs({
+    env: { ALIBABA_IMAGE_GENERATION_TIMEOUT_MS: '180000' },
+  }), 360000);
+  assert.equal(getAlibabaQwenImage3TimeoutMs({
+    env: { ALIBABA_QWEN_IMAGE_3_PRO_TIMEOUT_MS: '420000' },
+  }), 420000);
+});
+
+test('calls the synchronous Alibaba endpoint with its Qwen-only dispatcher', async () => {
   let request;
+  const dispatcher = {};
   const result = await requestAlibabaQwenImage3(
     {
       prompt: 'A detailed newspaper front page',
@@ -17,6 +31,7 @@ test('calls the synchronous Alibaba endpoint and extracts the Qwen image URL', a
     },
     {
       env: { DASHSCOPE_API_KEY: 'test-key' },
+      dispatcher,
       fetchImpl: async (...args) => {
         request = args;
         return {
@@ -45,6 +60,7 @@ test('calls the synchronous Alibaba endpoint and extracts the Qwen image URL', a
     'https://dashscope-intl.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation',
   );
   assert.equal(request[1].headers.Authorization, 'Bearer test-key');
+  assert.equal(request[1].dispatcher, dispatcher);
   assert.deepEqual(JSON.parse(request[1].body), {
     model: 'qwen-image-3.0-pro',
     input: {
@@ -66,6 +82,36 @@ test('calls the synchronous Alibaba endpoint and extracts the Qwen image URL', a
     requestId: 'qwen-request-123',
     usage: { width: 1024, height: 1792, image_count: 1 },
   });
+});
+
+test('schedules the synchronous Qwen request abort at six minutes', async (t) => {
+  let scheduledTimeoutMs = null;
+  t.mock.method(globalThis, 'setTimeout', (_callback, timeoutMs) => {
+    scheduledTimeoutMs = timeoutMs;
+    return 1;
+  });
+  t.mock.method(globalThis, 'clearTimeout', () => {});
+
+  await requestAlibabaQwenImage3(
+    { prompt: 'A slow synchronous generation' },
+    {
+      env: { DASHSCOPE_API_KEY: 'test-key' },
+      dispatcher: {},
+      fetchImpl: async () => ({
+        ok: true,
+        status: 200,
+        text: async () => JSON.stringify({
+          output: {
+            choices: [{
+              message: { content: [{ image: 'https://example.com/qwen.png' }] },
+            }],
+          },
+        }),
+      }),
+    },
+  );
+
+  assert.equal(scheduledTimeoutMs, 360000);
 });
 
 test('persists the downloaded Qwen result as a completed Alibaba generation', async () => {

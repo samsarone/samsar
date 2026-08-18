@@ -217,7 +217,8 @@ export async function requestAlibabaImageGeneration(requestBody, options = {}) {
 
   const timeoutMs = Math.max(
     1000,
-    Number(env?.ALIBABA_IMAGE_GENERATION_TIMEOUT_MS) || DEFAULT_ALIBABA_IMAGE_TIMEOUT_MS,
+    Number(options.timeoutMs ?? env?.ALIBABA_IMAGE_GENERATION_TIMEOUT_MS) ||
+      DEFAULT_ALIBABA_IMAGE_TIMEOUT_MS,
   );
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
@@ -235,6 +236,7 @@ export async function requestAlibabaImageGeneration(requestBody, options = {}) {
       },
       body: JSON.stringify(requestBody),
       signal: controller.signal,
+      ...(options.dispatcher ? { dispatcher: options.dispatcher } : {}),
     });
     responseReceived = true;
     const responseBody = await readJsonResponse(response, providerName);
