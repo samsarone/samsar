@@ -1,18 +1,46 @@
 import { Component } from 'react';
+import {
+  APP_ERROR_REVEAL_DELAY_MS,
+  shouldDelayAppErrorDisplay,
+} from '../../utils/appErrorRecovery.mjs';
 import { isPreloadRecoveryPending } from '../../utils/routePreloadRecovery.mjs';
 import RouteLoadingScreen from './RouteLoadingScreen.jsx';
 
 export default class AppErrorBoundary extends Component {
+  appStartedAt = Date.now();
+
+  errorRevealTimer = null;
+
   state = {
     error: null,
+    revealError: false,
   };
 
   static getDerivedStateFromError(error) {
-    return { error };
+    return { error, revealError: false };
   }
 
   componentDidCatch(error, errorInfo) {
     console.error('Samsar client render failed:', error, errorInfo);
+
+    if (!shouldDelayAppErrorDisplay({
+      appStartedAt: this.appStartedAt,
+      errorCaughtAt: Date.now(),
+      preloadRecoveryPending: isPreloadRecoveryPending(),
+    })) {
+      this.setState({ revealError: true });
+      return;
+    }
+
+    this.errorRevealTimer = window.setTimeout(() => {
+      this.setState({ revealError: true });
+    }, APP_ERROR_REVEAL_DELAY_MS);
+  }
+
+  componentWillUnmount() {
+    if (this.errorRevealTimer !== null) {
+      window.clearTimeout(this.errorRevealTimer);
+    }
   }
 
   render() {
@@ -20,7 +48,7 @@ export default class AppErrorBoundary extends Component {
       return this.props.children;
     }
 
-    if (isPreloadRecoveryPending()) {
+    if (!this.state.revealError) {
       return <RouteLoadingScreen label="Opening workspace..." />;
     }
 
