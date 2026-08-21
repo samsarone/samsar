@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import {
   ROUTE_PRELOAD_RECOVERY_KEY,
   installVitePreloadErrorRecovery,
+  isPreloadRecoveryPending,
   shouldReloadAfterPreloadError,
 } from './routePreloadRecovery.mjs';
 
@@ -84,6 +85,7 @@ test('a Vite preload failure refreshes once and records the recovery', () => {
 
   assert.equal(reloadCount, 1);
   assert.equal(prevented, true);
+  assert.equal(isPreloadRecoveryPending(), true);
   assert.equal(storage.getItem(ROUTE_PRELOAD_RECOVERY_KEY), '10000');
 
   uninstall();

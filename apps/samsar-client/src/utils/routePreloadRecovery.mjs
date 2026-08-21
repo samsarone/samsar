@@ -1,6 +1,14 @@
 export const ROUTE_PRELOAD_RECOVERY_KEY = 'samsar:route-preload-recovery';
 export const ROUTE_PRELOAD_RECOVERY_WINDOW_MS = 30_000;
 
+// This flag only lives until the requested page reload. Unlike the timestamp
+// guard in session storage, it cannot hide an unrelated error on the new page.
+let preloadRecoveryPending = false;
+
+export function isPreloadRecoveryPending() {
+  return preloadRecoveryPending;
+}
+
 function readRecoveryTimestamp(storage) {
   try {
     const timestamp = Number(storage?.getItem?.(ROUTE_PRELOAD_RECOVERY_KEY));
@@ -65,6 +73,7 @@ export function installVitePreloadErrorRecovery({
     }
 
     event?.preventDefault?.();
+    preloadRecoveryPending = true;
     markPreloadRecovery(storage, timestamp);
     reload();
   };

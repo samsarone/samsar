@@ -1,4 +1,6 @@
 import { Component } from 'react';
+import { isPreloadRecoveryPending } from '../../utils/routePreloadRecovery.mjs';
+import RouteLoadingScreen from './RouteLoadingScreen.jsx';
 
 export default class AppErrorBoundary extends Component {
   state = {
@@ -16,6 +18,10 @@ export default class AppErrorBoundary extends Component {
   render() {
     if (!this.state.error) {
       return this.props.children;
+    }
+
+    if (isPreloadRecoveryPending()) {
+      return <RouteLoadingScreen label="Opening workspace..." />;
     }
 
     return (
