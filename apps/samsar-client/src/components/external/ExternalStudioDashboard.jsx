@@ -34,7 +34,6 @@ const IMAGE_MODELS = [
   {
     label: 'Qwen Image 3.0 Pro',
     value: QWEN_IMAGE_3_PRO_MODEL_KEY,
-    standaloneOnly: true,
   },
 ];
 

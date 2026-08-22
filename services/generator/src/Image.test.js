@@ -680,7 +680,7 @@ test('production image retries never enable standalone adapter rotation', () => 
   }
 });
 
-test('Qwen Image 3 resolves only to configured Alibaba Cloud in standalone', () => {
+test('Qwen Image 3 resolves only to configured Alibaba Cloud with adapter routing enabled', () => {
   const environmentKeys = [
     'CURRENT_ENV',
     'SAMSAR_DEPLOYMENT_EDITION',
@@ -768,7 +768,7 @@ test('Qwen Image 3 resolves only to configured Alibaba Cloud in standalone', () 
         submittedAdapter: 'alibabaCloud',
         apiGenerationStatus: 'PENDING',
       }),
-      '',
+      'alibabaCloud',
     );
   } finally {
     for (const [key, value] of Object.entries(previous)) {

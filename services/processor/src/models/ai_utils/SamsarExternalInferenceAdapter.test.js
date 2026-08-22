@@ -11,6 +11,7 @@ const ENV_KEYS = [
   'SAMSAR_DEPLOYMENT_EDITION',
   'SAMSAR_EDITION',
   'SAMSAR_RUNTIME',
+  'SAMSAR_DOCKER_ADAPTER_ROUTING_ENABLED',
   'NODE_ENV',
   'SAMSAR_API_KEY',
   'SAMSAR_EXTERNAL_INFERENCE_ENABLED',
@@ -447,17 +448,23 @@ test('OpenRouter maps Qwen text and vision requests to Qwen 3.8 Max', () => {
   }), 'qwen/qwen3.8-max');
 });
 
-test('production Qwen uses OpenRouter even when native Alibaba is configured', () => {
+test('explicitly routed production Qwen uses native Alibaba for text and vision', () => {
   clearProviderEnv();
   process.env.CURRENT_ENV = 'production';
+  process.env.SAMSAR_DOCKER_ADAPTER_ROUTING_ENABLED = 'true';
   process.env.ALIBABA_API_KEY = 'test-alibaba-key';
   process.env.OPENROUTER_API_KEY = 'test-openrouter-key';
 
-  assert.equal(resolveConfiguredInferenceProvider('QWEN3.8'), DOCKER_INFERENCE_PROVIDER.OPENROUTER);
-  assert.equal(shouldUseOpenRouterInference({ model: 'QWEN3.8' }), true);
+  assert.equal(resolveConfiguredInferenceProvider('QWEN3.8'), DOCKER_INFERENCE_PROVIDER.ALIBABA_CLOUD);
+  assert.equal(resolveConfiguredInferenceProvider('QWEN3.8', {
+    messages: [{
+      role: 'user',
+      content: [{ type: 'image_url', image_url: { url: 'https://example.com/frame.png' } }],
+    }],
+  }), DOCKER_INFERENCE_PROVIDER.ALIBABA_CLOUD);
+  assert.equal(shouldUseOpenRouterInference({ model: 'QWEN3.8' }), false);
   assert.equal(shouldUseOpenRouterInference({ model: 'QWEN3.8', authorization: 'openrouter' }), true);
-  assert.equal(shouldUseSamsarExternalInference({ model: 'QWEN3.8' }), true);
-  assert.equal(shouldUseSamsarExternalInference({ model: 'QWEN3.8', authorization: 'deployed' }), true);
+  assert.equal(shouldUseSamsarExternalInference({ model: 'QWEN3.8' }), false);
 });
 
 test('production Qwen selects OpenRouter when its credential is configured', () => {
@@ -470,7 +477,7 @@ test('production Qwen selects OpenRouter when its credential is configured', () 
   assert.equal(shouldUseSamsarExternalInference({ model: 'QWEN3.8' }), true);
 });
 
-test('all hosted Qwen runtimes use OpenRouter-only routing', () => {
+test('hosted Qwen remains OpenRouter-only without explicit native routing', () => {
   for (const environment of ['production', 'external-production', 'staging']) {
     clearProviderEnv();
     process.env.CURRENT_ENV = environment;

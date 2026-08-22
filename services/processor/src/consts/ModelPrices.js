@@ -4,6 +4,10 @@ import {
   EXPRESS_VIDEO_CREDITS_PER_SECOND_BY_MODEL,
   getExpressVideoPricingDistributionPerSecond,
 } from './pricing/ExpressVideoPricingDistribution.js';
+import { isStandaloneEdition } from '../utils/EnvironmentUtils.js';
+
+const IS_STANDALONE_DEPLOYMENT = isStandaloneEdition();
+const QWEN_IMAGE_3_PRO_CREDITS = IS_STANDALONE_DEPLOYMENT ? 0 : 46;
 
 export const COSMOS3_SUPER_MODEL_KEY = 'COSMOS3SUPERI2V';
 export const COSMOS3_SUPER_MAX_FRAMES = 189;
@@ -100,12 +104,11 @@ export const IMAGE_MODEL_PRICES = [
     name: 'Qwen Image 3.0 Pro',
     isExpressModel: true,
     isBranchedImageModel: false,
-    standaloneOnly: true,
-    providerBilled: true,
+    providerBilled: IS_STANDALONE_DEPLOYMENT,
     prices: [
-      { aspectRatio: '1:1', price: 0 },
-      { aspectRatio: '16:9', price: 0 },
-      { aspectRatio: '9:16', price: 0 },
+      { aspectRatio: '1:1', price: QWEN_IMAGE_3_PRO_CREDITS },
+      { aspectRatio: '16:9', price: QWEN_IMAGE_3_PRO_CREDITS },
+      { aspectRatio: '9:16', price: QWEN_IMAGE_3_PRO_CREDITS },
     ],
   },
   {

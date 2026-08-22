@@ -486,14 +486,17 @@ function getInferenceProviderPriority(model, chatRequest = {}) {
   return applySavedInferenceProviderPriority(defaultPriority, model);
 }
 
-function isStandaloneInferenceEdition() {
-  return isStandaloneEdition();
+export function isQwenInferenceAdapterRoutingEnabled() {
+  return isStandaloneEdition() || (
+    isTruthyEnv(process.env.SAMSAR_DOCKER_ADAPTER_ROUTING_ENABLED) &&
+    hasAlibabaCloudNativeCredential()
+  );
 }
 
 function isQwenOpenRouterOnly(model) {
   return isQwenInferenceModel(model) && (
     isTruthyEnv(process.env.SAMSAR_QWEN_OPENROUTER_ONLY) ||
-    !isStandaloneInferenceEdition()
+    !isQwenInferenceAdapterRoutingEnabled()
   );
 }
 

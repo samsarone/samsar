@@ -7,6 +7,7 @@ import sharp from 'sharp';
 import { getCanvasDimensionsForAspectRatio } from '../../utils/CanvasUtils.js';
 import { readLocalMediaBufferIfAvailable } from '../../utils/LocalMediaAsset.js';
 import { normalizeOutroCtaImagePayload } from '../../utils/OutroCtaImagePayload.js';
+import { buildSecureMediaDeliveryUrl } from '../AWS.js';
 
 const MEDIA_DOWNLOAD_TIMEOUT_MS = Number.isFinite(Number(process.env.API_MEDIA_DOWNLOAD_TIMEOUT_MS))
   ? Math.max(1000, Math.floor(Number(process.env.API_MEDIA_DOWNLOAD_TIMEOUT_MS)))
@@ -179,7 +180,11 @@ async function loadImageBuffer(source, options = {}) {
     throw new Error(`Image source must be an http(s) URL or data URL: ${trimmed}`);
   }
 
-  const response = await axios.get(trimmed, {
+  // Async video builders can reach outro generation after an upload URL's
+  // original CloudFront signature has expired. Refresh only Samsar-managed
+  // media URLs; buildSecureMediaDeliveryUrl returns null for third-party URLs.
+  const downloadUrl = buildSecureMediaDeliveryUrl(trimmed) || trimmed;
+  const response = await axios.get(downloadUrl, {
     responseType: 'arraybuffer',
     timeout: MEDIA_DOWNLOAD_TIMEOUT_MS,
   });

@@ -93,11 +93,12 @@ test('rejects non-1K Wan2.7 Pro output resolution', () => {
   );
 });
 
-test('normalizes Qwen Image 3.0 Pro only with standalone Alibaba PAYG credentials', () => {
+test('normalizes Qwen Image 3.0 Pro with standalone or explicitly routed production PAYG credentials', () => {
   const envKeys = [
     'CURRENT_ENV',
     'SAMSAR_DEPLOYMENT_EDITION',
     'SAMSAR_RUNTIME',
+    'SAMSAR_DOCKER_ADAPTER_ROUTING_ENABLED',
     'ALIBABA_API_KEY',
     'ALIBABA_API_KEY_TYPE',
     'ALIBABA_API_ENDPOINT_TYPE',
@@ -107,11 +108,12 @@ test('normalizes Qwen Image 3.0 Pro only with standalone Alibaba PAYG credential
     envKeys.forEach((key) => delete process.env[key]);
     assert.throws(
       () => normalizeTextToImageRequestOptions({ model: 'QWENIMAGE3PRO' }),
-      (error) => error?.status === 400 && /pay-as-you-go credentials/i.test(error.message),
+      (error) => error?.status === 400 && /pay-as-you-go routing/i.test(error.message),
     );
 
-    process.env.SAMSAR_DEPLOYMENT_EDITION = 'standalone';
+    process.env.SAMSAR_DEPLOYMENT_EDITION = 'production';
     process.env.SAMSAR_RUNTIME = 'docker';
+    process.env.SAMSAR_DOCKER_ADAPTER_ROUTING_ENABLED = 'true';
     process.env.ALIBABA_API_KEY = 'alibaba-key';
     assert.deepEqual(normalizeTextToImageRequestOptions({
       model: 'qwenimage3pro',
@@ -132,13 +134,13 @@ test('normalizes Qwen Image 3.0 Pro only with standalone Alibaba PAYG credential
     process.env.ALIBABA_API_ENDPOINT_TYPE = 'token_plan';
     assert.throws(
       () => normalizeTextToImageRequestOptions({ model: 'QWENIMAGE3PRO' }),
-      (error) => error?.status === 400 && /pay-as-you-go credentials/i.test(error.message),
+      (error) => error?.status === 400 && /pay-as-you-go routing/i.test(error.message),
     );
 
     process.env.ALIBABA_API_ENDPOINT_TYPE = 'coding_plan';
     assert.throws(
       () => normalizeTextToImageRequestOptions({ model: 'QWENIMAGE3PRO' }),
-      (error) => error?.status === 400 && /pay-as-you-go credentials/i.test(error.message),
+      (error) => error?.status === 400 && /pay-as-you-go routing/i.test(error.message),
     );
   } finally {
     envKeys.forEach((key) => {
@@ -148,19 +150,12 @@ test('normalizes Qwen Image 3.0 Pro only with standalone Alibaba PAYG credential
   }
 });
 
-test('Qwen Image 3.0 Pro direct API requests are billed by Alibaba, not Samsar credits', () => {
-  assert.deepEqual(getTextToImageRequestPricing('QWENIMAGE3PRO', 3), {
-    key: 'textToImage',
-    credits: 0,
-    providerBilled: true,
-    distribution: {
-      provider: 'alibabaCloud',
-      providerBilled: true,
-      requestedImages: 3,
-      totalCredits: 0,
-    },
-  });
-  assert.equal(getTextToImageRequestPricing('NANOBANANA2', 1).credits > 0, true);
+test('hosted Qwen Image 3.0 Pro direct API pricing matches the existing hosted image path', () => {
+  assert.deepEqual(
+    getTextToImageRequestPricing('QWENIMAGE3PRO', 3),
+    getTextToImageRequestPricing('GPTIMAGE2', 3),
+  );
+  assert.equal(getTextToImageRequestPricing('QWENIMAGE3PRO', 3).credits > 0, true);
 });
 
 test('standalone image prompt inference uses saved adapter routing without changing production OpenAI routing', () => {

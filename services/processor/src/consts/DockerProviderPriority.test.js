@@ -193,7 +193,7 @@ test('Qwen Image 3.0 Pro routes only to eligible standalone Alibaba credentials'
   assert.equal(resolveDockerImageProvider('QWENIMAGE3PRO'), '');
 });
 
-test('Qwen Image 3.0 Pro accepts PAYG but rejects Alibaba plan credentials and hosted routing', () => {
+test('Qwen Image 3.0 Pro accepts explicitly routed production PAYG and rejects plan credentials', () => {
   assert.equal(isAlibabaQwenImage3ProCredentialEligible(), true);
   assert.equal(isAlibabaQwenImage3ProCredentialEligible({
     keyType: 'pay_as_you_go',
@@ -220,6 +220,15 @@ test('Qwen Image 3.0 Pro accepts PAYG but rejects Alibaba plan credentials and h
   process.env.SAMSAR_DEPLOYMENT_EDITION = 'production';
   process.env.SAMSAR_DOCKER_ADAPTER_ROUTING_ENABLED = 'true';
   process.env.ALIBABA_API_KEY = 'alibaba-key';
+  assert.deepEqual(getDockerImageProviderPriority('QWENIMAGE3PRO'), [
+    DOCKER_PROVIDER.ALIBABA_CLOUD,
+  ]);
+  assert.equal(
+    resolveDockerImageProvider('QWENIMAGE3PRO'),
+    DOCKER_PROVIDER.ALIBABA_CLOUD,
+  );
+
+  delete process.env.SAMSAR_DOCKER_ADAPTER_ROUTING_ENABLED;
   assert.deepEqual(getDockerImageProviderPriority('QWENIMAGE3PRO'), []);
   assert.equal(resolveDockerImageProvider('QWENIMAGE3PRO'), '');
 

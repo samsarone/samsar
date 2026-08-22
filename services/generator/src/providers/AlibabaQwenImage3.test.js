@@ -9,15 +9,18 @@ import {
 } from './AlibabaQwenImage3.js';
 import { isAlibabaImageInfrastructureError } from './AlibabaCloudImage.js';
 
-test('uses a six-minute minimum timeout only for Alibaba Qwen Image 3.0 Pro', () => {
-  assert.equal(MIN_ALIBABA_QWEN_IMAGE_3_TIMEOUT_MS, 360000);
-  assert.equal(getAlibabaQwenImage3TimeoutMs({ env: {} }), 360000);
+test('uses a ten-minute minimum timeout only for Alibaba Qwen Image 3.0 Pro', () => {
+  assert.equal(MIN_ALIBABA_QWEN_IMAGE_3_TIMEOUT_MS, 600000);
+  assert.equal(getAlibabaQwenImage3TimeoutMs({ env: {} }), 600000);
   assert.equal(getAlibabaQwenImage3TimeoutMs({
     env: { ALIBABA_IMAGE_GENERATION_TIMEOUT_MS: '180000' },
-  }), 360000);
+  }), 600000);
   assert.equal(getAlibabaQwenImage3TimeoutMs({
     env: { ALIBABA_QWEN_IMAGE_3_PRO_TIMEOUT_MS: '420000' },
-  }), 420000);
+  }), 600000);
+  assert.equal(getAlibabaQwenImage3TimeoutMs({
+    env: { ALIBABA_QWEN_IMAGE_3_PRO_TIMEOUT_MS: '660000' },
+  }), 660000);
 });
 
 test('calls the synchronous Alibaba endpoint with its Qwen-only dispatcher', async () => {
@@ -84,7 +87,7 @@ test('calls the synchronous Alibaba endpoint with its Qwen-only dispatcher', asy
   });
 });
 
-test('schedules the synchronous Qwen request abort at six minutes', async (t) => {
+test('schedules the synchronous Qwen request abort at ten minutes', async (t) => {
   let scheduledTimeoutMs = null;
   t.mock.method(globalThis, 'setTimeout', (_callback, timeoutMs) => {
     scheduledTimeoutMs = timeoutMs;
@@ -111,7 +114,7 @@ test('schedules the synchronous Qwen request abort at six minutes', async (t) =>
     },
   );
 
-  assert.equal(scheduledTimeoutMs, 360000);
+  assert.equal(scheduledTimeoutMs, 600000);
 });
 
 test('persists the downloaded Qwen result as a completed Alibaba generation', async () => {
@@ -406,24 +409,34 @@ test('keeps the unsafe-resubmission marker when accepted-result persistence is u
   assert.equal(persistenceAttempts, 2);
 });
 
-test('does not submit Qwen Image 3 from a hosted deployment', async () => {
+test('submits Qwen Image 3 after hosted routing selects native Alibaba', async () => {
   let submitted = false;
+  const imageGenerationModel = {
+    async findByIdAndUpdate() {},
+    async findOneAndUpdate() {},
+  };
   const result = await handleAlibabaQwenImage3Request({
     _id: 'hosted-image-row',
-    prompt: 'Do not submit this',
+    prompt: 'Submit this through native Alibaba',
     apiGenerationStatus: 'INIT',
   }, {
-    isStandalone: () => false,
+    connect: async () => {},
+    imageGenerationModel,
     requestImage: async () => {
       submitted = true;
-      throw new Error('unexpected request');
+      return {
+        imageUrl: 'https://example.com/hosted-qwen.png',
+        requestId: 'hosted-provider-request',
+      };
     },
+    saveFile: async () => 'hosted-qwen.png',
   });
 
-  assert.equal(submitted, false);
+  assert.equal(submitted, true);
   assert.deepEqual(result, {
-    image: null,
-    error: 'Qwen Image 3.0 Pro with Alibaba Cloud is available only in standalone deployments.',
+    image: 'hosted-qwen.png',
+    provider: 'alibabaCloud',
+    providerRequestId: 'hosted-provider-request',
   });
 });
 

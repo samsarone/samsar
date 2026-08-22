@@ -243,7 +243,7 @@ export function normalizeTextToImageRequestOptions(payload = {}) {
     !isAlibabaQwenImage3ProAvailable()
   ) {
     throw createBadRequestError(
-      'Qwen Image 3.0 Pro requires standalone Alibaba Cloud pay-as-you-go credentials.',
+      'Qwen Image 3.0 Pro requires native Alibaba Cloud pay-as-you-go routing.',
     );
   }
 
@@ -303,7 +303,10 @@ export function getTextToImageRequestPricing(model, requestedImages = 1) {
   const outputImages = Number.isFinite(parsedRequestedImages) && parsedRequestedImages > 0
     ? Math.max(1, Math.floor(parsedRequestedImages))
     : 1;
-  if (normalizedModel === QWEN_IMAGE_3_PRO_MODEL_KEY) {
+  if (
+    normalizedModel === QWEN_IMAGE_3_PRO_MODEL_KEY &&
+    isStandaloneEdition()
+  ) {
     return {
       key: 'textToImage',
       credits: 0,

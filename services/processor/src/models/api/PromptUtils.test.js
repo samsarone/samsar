@@ -122,11 +122,12 @@ test('Wan2.7 Pro is accepted for both express image stages', () => {
   );
 });
 
-test('Qwen Image 3.0 Pro is a zero-credit, provider-billed standalone Express image model', () => {
+test('Qwen Image 3.0 Pro is a hosted Express image model priced like GPT Image 2', () => {
   const envKeys = [
     'CURRENT_ENV',
     'SAMSAR_DEPLOYMENT_EDITION',
     'SAMSAR_RUNTIME',
+    'SAMSAR_DOCKER_ADAPTER_ROUTING_ENABLED',
     'ALIBABA_API_KEY',
     'ALIBABA_API_KEY_TYPE',
     'ALIBABA_API_ENDPOINT_TYPE',
@@ -136,8 +137,9 @@ test('Qwen Image 3.0 Pro is a zero-credit, provider-billed standalone Express im
     envKeys.forEach((key) => delete process.env[key]);
     assert.equal(validateExpressImageModelKey('QWENIMAGE3PRO').status, false);
 
-    process.env.SAMSAR_DEPLOYMENT_EDITION = 'standalone';
+    process.env.SAMSAR_DEPLOYMENT_EDITION = 'production';
     process.env.SAMSAR_RUNTIME = 'docker';
+    process.env.SAMSAR_DOCKER_ADAPTER_ROUTING_ENABLED = 'true';
     process.env.ALIBABA_API_KEY = 'alibaba-key';
     assert.deepEqual(validateExpressImageModelKey('QWENIMAGE3PRO'), {
       status: true,
@@ -152,17 +154,16 @@ test('Qwen Image 3.0 Pro is a zero-credit, provider-billed standalone Express im
     const modelType = IMAGE_GENERAITON_MODEL_TYPES.find(
       (model) => model.key === 'QWENIMAGE3PRO',
     );
-    assert.equal(modelType?.standaloneOnly, true);
-    assert.equal(modelType?.providerBilled, true);
+    assert.equal(modelType?.standaloneOnly, undefined);
+    assert.equal(modelType?.providerBilled, undefined);
     assert.deepEqual(modelType?.supportedAspectRatios, ['1:1', '16:9', '9:16']);
     const pricing = IMAGE_MODEL_PRICES.find((model) => model.key === 'QWENIMAGE3PRO');
-    assert.equal(pricing?.standaloneOnly, true);
-    assert.equal(pricing?.providerBilled, true);
-    assert.deepEqual(pricing?.prices, [
-      { aspectRatio: '1:1', price: 0 },
-      { aspectRatio: '16:9', price: 0 },
-      { aspectRatio: '9:16', price: 0 },
-    ]);
+    assert.equal(pricing?.standaloneOnly, undefined);
+    assert.equal(pricing?.providerBilled, false);
+    assert.deepEqual(
+      pricing?.prices,
+      IMAGE_MODEL_PRICES.find((model) => model.key === 'GPTIMAGE2')?.prices,
+    );
 
     process.env.ALIBABA_API_KEY_TYPE = 'token_plan';
     process.env.ALIBABA_API_ENDPOINT_TYPE = 'token_plan';

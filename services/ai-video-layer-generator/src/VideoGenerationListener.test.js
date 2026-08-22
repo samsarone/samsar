@@ -792,7 +792,7 @@ test('stale base provider polling transient errors are promoted to FAILED', () =
   assert.equal(update.set.transientProviderErrorExhausted, true);
 });
 
-test('hosted Happy Horse uses FAL even when native Alibaba routing is configured', () => {
+test('hosted Happy Horse uses native Alibaba when adapter routing is configured', () => {
   const originalCurrentEnv = process.env.CURRENT_ENV;
   const originalDockerRouting = process.env.SAMSAR_DOCKER_ADAPTER_ROUTING_ENABLED;
   const originalAlibabaApiKey = process.env.ALIBABA_API_KEY;
@@ -803,6 +803,8 @@ test('hosted Happy Horse uses FAL even when native Alibaba routing is configured
     process.env.ALIBABA_API_KEY = 'alibaba-key';
     process.env.FAL_API_KEY = 'fal-key';
 
+    assert.equal(shouldUseAlibabaNativeHappyHorse({ model: 'HAPPYHORSEI2V' }), true);
+    delete process.env.SAMSAR_DOCKER_ADAPTER_ROUTING_ENABLED;
     assert.equal(shouldUseAlibabaNativeHappyHorse({ model: 'HAPPYHORSEI2V' }), false);
   } finally {
     if (originalCurrentEnv === undefined) delete process.env.CURRENT_ENV;

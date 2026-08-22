@@ -106,7 +106,7 @@ test('classifies the exact Alibaba credential modes supported by Qwen Image 3.0 
   }), false);
 });
 
-test('offers Qwen Image 3.0 Pro only through standalone Alibaba pay-as-you-go', () => {
+test('offers Qwen Image 3.0 Pro through explicitly enabled Alibaba pay-as-you-go routing', () => {
   process.env.CURRENT_ENV = 'standalone';
   process.env.SAMSAR_DEPLOYMENT_EDITION = 'standalone';
   clearCredentials();
@@ -159,7 +159,7 @@ test('offers Qwen Image 3.0 Pro only through standalone Alibaba pay-as-you-go', 
   assert.equal(resolveDockerImageGenerationProvider('QWENIMAGE3PRO'), '');
 });
 
-test('does not expose Qwen Image 3.0 Pro through hosted adapter routing', () => {
+test('exposes Qwen Image 3.0 Pro through explicitly enabled hosted adapter routing', () => {
   process.env.CURRENT_ENV = 'production';
   process.env.SAMSAR_DEPLOYMENT_EDITION = 'production';
   process.env.SAMSAR_DOCKER_ADAPTER_ROUTING_ENABLED = 'true';
@@ -168,6 +168,15 @@ test('does not expose Qwen Image 3.0 Pro through hosted adapter routing', () => 
   process.env.FAL_API_KEY = 'fal-key';
   process.env.SAMSAR_API_KEY = 'samsar-key';
 
+  assert.deepEqual(getDockerImageGenerationProviderPriority('QWENIMAGE3PRO'), [
+    DOCKER_ADAPTER_PROVIDER.ALIBABA_CLOUD,
+  ]);
+  assert.equal(
+    resolveDockerImageGenerationProvider('QWENIMAGE3PRO'),
+    DOCKER_ADAPTER_PROVIDER.ALIBABA_CLOUD,
+  );
+
+  delete process.env.SAMSAR_DOCKER_ADAPTER_ROUTING_ENABLED;
   assert.deepEqual(getDockerImageGenerationProviderPriority('QWENIMAGE3PRO'), []);
   assert.equal(resolveDockerImageGenerationProvider('QWENIMAGE3PRO'), '');
 });
@@ -564,7 +573,7 @@ test('selects the first configured Wan2.7 Pro provider in Docker', () => {
   );
 });
 
-test('uses FAL as the hosted Wan2.7 Pro provider even when Alibaba is configured', () => {
+test('uses native Alibaba as the hosted Wan2.7 Pro provider when routing is enabled', () => {
   process.env.CURRENT_ENV = 'production';
   clearCredentials();
   process.env.SAMSAR_DOCKER_ADAPTER_ROUTING_ENABLED = 'true';
@@ -576,8 +585,11 @@ test('uses FAL as the hosted Wan2.7 Pro provider even when Alibaba is configured
   );
   assert.equal(
     resolveWan27ImageGenerationProvider(),
-    DOCKER_ADAPTER_PROVIDER.FAL,
+    DOCKER_ADAPTER_PROVIDER.ALIBABA_CLOUD,
   );
+
+  delete process.env.SAMSAR_DOCKER_ADAPTER_ROUTING_ENABLED;
+  assert.equal(resolveWan27ImageGenerationProvider(), DOCKER_ADAPTER_PROVIDER.FAL);
 });
 
 test('keeps a persisted Fal provider for polling even when Alibaba is now configured', () => {

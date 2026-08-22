@@ -43,7 +43,7 @@ export function assertImageGenerationModelAvailable(modelKey, env = process.env)
     !isAlibabaQwenImage3ProAvailable(env)
   ) {
     const error = new Error(
-      'Qwen Image 3.0 Pro requires standalone Alibaba Cloud pay-as-you-go credentials.',
+      'Qwen Image 3.0 Pro requires native Alibaba Cloud pay-as-you-go routing.',
     );
     error.status = 400;
     error.statusCode = 400;

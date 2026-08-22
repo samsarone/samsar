@@ -121,13 +121,11 @@ export const IMAGE_MODEL_PRICES = [
     key: QWEN_IMAGE_3_PRO_MODEL_KEY,
     isExpressModel: true,
     isBranchedImageModel: false,
-    providerBilled: true,
+    providerBilled: IS_STANDALONE_DEPLOYMENT,
     prices: [
-      // Zero-valued rows preserve aspect-ratio validation while Alibaba bills
-      // the configured account directly in standalone deployments.
-      { aspectRatio: '1:1', price: 0 },
-      { aspectRatio: '16:9', price: 0 },
-      { aspectRatio: '9:16', price: 0 },
+      { aspectRatio: '1:1', price: IS_STANDALONE_DEPLOYMENT ? 0 : 46 },
+      { aspectRatio: '16:9', price: IS_STANDALONE_DEPLOYMENT ? 0 : 46 },
+      { aspectRatio: '9:16', price: IS_STANDALONE_DEPLOYMENT ? 0 : 46 },
     ],
   },
 ]

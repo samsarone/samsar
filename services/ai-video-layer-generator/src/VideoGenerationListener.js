@@ -710,14 +710,9 @@ export function shouldUseAlibabaNativeHappyHorse(payload = {}) {
     return false;
   }
 
-  // The hosted service always uses the FAL adapter for new Happy Horse jobs.
-  // Standalone deployments may opt into native Alibaba with their validated BYOK
-  // configuration. Provider-specific ids above stay sticky so in-flight jobs
-  // continue polling the adapter that created them.
-  if (!isStandaloneEdition()) {
-    return false;
-  }
-
+  // Provider-specific ids above stay sticky so in-flight jobs continue polling
+  // the adapter that created them. New jobs follow the explicitly enabled
+  // adapter routing policy in both standalone and hosted production.
   const dockerProvider = resolveDockerVideoProviderForPayload(payload.model, payload);
   return dockerProvider === DOCKER_VIDEO_PROVIDER.ALIBABA_CLOUD;
 }

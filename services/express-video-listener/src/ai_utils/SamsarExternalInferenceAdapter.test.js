@@ -27,6 +27,7 @@ const ENV_KEYS = [
   'QWEN_API_KEY',
   'SAMSAR_API_KEY',
   'SAMSAR_DEPLOYMENT_EDITION',
+  'SAMSAR_DOCKER_ADAPTER_ROUTING_ENABLED',
   'SAMSAR_EDITION',
   'SAMSAR_EXTERNAL_INFERENCE_ENABLED',
   'SAMSAR_FORCE_EXTERNAL_INFERENCE',
@@ -124,7 +125,7 @@ test('Samsar stays ahead of OpenRouter for Qwen in Docker', () => {
   });
 });
 
-test('hosted and external Qwen always use OpenRouter even with Alibaba credentials', () => {
+test('hosted and external Qwen use OpenRouter without explicit native routing', () => {
   for (const environment of ['production', 'external-production', 'staging']) {
     withEnvironment({
       CURRENT_ENV: environment,
@@ -137,6 +138,28 @@ test('hosted and external Qwen always use OpenRouter even with Alibaba credentia
       assert.equal(shouldUseSamsarExternalInference(request), true);
     });
   }
+});
+
+test('explicitly routed production Qwen uses native Alibaba for text and vision', () => {
+  withEnvironment({
+    CURRENT_ENV: 'production',
+    SAMSAR_DOCKER_ADAPTER_ROUTING_ENABLED: 'true',
+    OPENROUTER_API_KEY: 'openrouter-key',
+    ALIBABA_API_KEY: 'alibaba-key',
+  }, () => {
+    assert.equal(
+      resolveConfiguredInferenceProvider('QWEN3.8'),
+      DOCKER_INFERENCE_PROVIDER.ALIBABA_CLOUD,
+    );
+    assert.equal(
+      resolveConfiguredInferenceProvider('QWEN3.8', {
+        messages: [{ role: 'user', content: [{ type: 'input_image', image_url: 'frame' }] }],
+      }),
+      DOCKER_INFERENCE_PROVIDER.ALIBABA_CLOUD,
+    );
+    assert.equal(shouldUseOpenRouterInference({ model: 'QWEN3.8' }), false);
+    assert.equal(shouldUseSamsarExternalInference({ model: 'QWEN3.8' }), false);
+  });
 });
 
 test('standalone inference adapters follow the saved per-model preference order', (t) => {

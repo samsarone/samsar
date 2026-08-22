@@ -4,13 +4,16 @@ import test from 'node:test';
 import { assertImageGenerationModelAvailable } from './Images.js';
 
 test('Studio queue guard accepts Alibaba PAYG but rejects plan credentials', () => {
-  assert.throws(
-    () => assertImageGenerationModelAvailable('QWENIMAGE3PRO', {
-      SAMSAR_DEPLOYMENT_EDITION: 'production',
-      ALIBABA_API_KEY: 'alibaba-key',
-    }),
-    (error) => error?.status === 400 && /pay-as-you-go credentials/i.test(error.message),
-  );
+  assert.equal(assertImageGenerationModelAvailable('QWENIMAGE3PRO', {
+    SAMSAR_DEPLOYMENT_EDITION: 'production',
+    SAMSAR_DOCKER_ADAPTER_ROUTING_ENABLED: 'true',
+    ALIBABA_API_KEY: 'alibaba-key',
+  }), 'QWENIMAGE3PRO');
+
+  assert.throws(() => assertImageGenerationModelAvailable('QWENIMAGE3PRO', {
+    SAMSAR_DEPLOYMENT_EDITION: 'production',
+    ALIBABA_API_KEY: 'alibaba-key',
+  }), (error) => error?.status === 400 && /pay-as-you-go routing/i.test(error.message));
 
   assert.equal(assertImageGenerationModelAvailable('qwenimage3pro', {
     SAMSAR_DEPLOYMENT_EDITION: 'standalone',
@@ -29,7 +32,7 @@ test('Studio queue guard accepts Alibaba PAYG but rejects plan credentials', () 
         ALIBABA_API_KEY: 'alibaba-key',
         ...planMetadata,
       }),
-      (error) => error?.status === 400 && /pay-as-you-go credentials/i.test(error.message),
+      (error) => error?.status === 400 && /pay-as-you-go routing/i.test(error.message),
     );
   }
 

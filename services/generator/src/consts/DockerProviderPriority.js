@@ -405,7 +405,7 @@ export function getDockerImageGenerationProviderPriority(model) {
   const normalizedModel = normalizeModelKey(model);
   if (
     normalizedModel === 'QWENIMAGE3PRO' &&
-    (!isStandaloneEdition() || !hasAlibabaQwenImage3ProCredential())
+    (!isDockerAdapterRoutingEnabled() || !hasAlibabaQwenImage3ProCredential())
   ) {
     return [];
   }
@@ -551,13 +551,9 @@ export function resolveWan27ImageGenerationProvider(persistedProvider = '') {
     return normalizedPersistedProvider;
   }
 
-  // Production generation uses FAL. Standalone keeps its configured native-first
-  // provider priority through resolveDockerImageGenerationProvider().
-  if (!isStandaloneEdition() && normalizeString(process.env.CURRENT_ENV).toLowerCase() !== 'staging') {
-    return DOCKER_ADAPTER_PROVIDER.FAL;
-  }
-
-  return resolveDockerImageGenerationProvider('WAN2.7PRO') ||
+  return (isDockerAdapterRoutingEnabled()
+    ? resolveDockerImageGenerationProvider('WAN2.7PRO')
+    : '') ||
     DOCKER_ADAPTER_PROVIDER.FAL;
 }
 

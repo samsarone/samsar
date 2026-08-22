@@ -502,14 +502,17 @@ function getInferenceProviderPriority(model, chatRequest = {}) {
   );
 }
 
-function isStandaloneInferenceEdition() {
-  return isStandaloneEdition();
+export function isQwenInferenceAdapterRoutingEnabled() {
+  return isStandaloneEdition() || (
+    isTruthyEnv(process.env.SAMSAR_DOCKER_ADAPTER_ROUTING_ENABLED) &&
+    hasAlibabaQwenNativeCredential()
+  );
 }
 
 function isQwenOpenRouterOnly(model) {
   return isQwenInferenceModel(model) && (
     isTruthyEnv(process.env.SAMSAR_QWEN_OPENROUTER_ONLY) ||
-    !isStandaloneInferenceEdition()
+    !isQwenInferenceAdapterRoutingEnabled()
   );
 }
 
@@ -535,7 +538,13 @@ export function getConfiguredInferenceProviders(model, chatRequest = {}) {
 }
 
 export function shouldUseStandaloneInferenceAdapterFallback(chatRequest = {}) {
-  if (!isStandaloneEdition() || !chatRequest || typeof chatRequest !== 'object') {
+  if (!chatRequest || typeof chatRequest !== 'object') {
+    return false;
+  }
+  const model = getRequestedInferenceModel(chatRequest);
+  const productionQwenRoutingEnabled = isQwenInferenceModel(model) &&
+    isQwenInferenceAdapterRoutingEnabled();
+  if (!isStandaloneEdition() && !productionQwenRoutingEnabled) {
     return false;
   }
   if (

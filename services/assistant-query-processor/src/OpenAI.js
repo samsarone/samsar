@@ -15,6 +15,7 @@ import {
   DOCKER_INFERENCE_PROVIDER,
   createSamsarExternalChatCompletion,
   getConfiguredInferenceProviders,
+  isQwenInferenceAdapterRoutingEnabled,
   resolveConfiguredInferenceProvider,
   shouldUseSamsarExternalInference,
 } from './SamsarExternalInferenceAdapter.js';
@@ -62,7 +63,10 @@ function normalizeAuthorization(value) {
 }
 
 function shouldUseStandaloneInferenceAdapterFallback(options = {}) {
-  if (!isStandaloneEdition()) {
+  const model = options?.model || DEFAULT_INFERENCE_MODEL;
+  const productionQwenRoutingEnabled = isQwenInferenceModel(model) &&
+    isQwenInferenceAdapterRoutingEnabled();
+  if (!isStandaloneEdition() && !productionQwenRoutingEnabled) {
     return false;
   }
   const authorization = normalizeAuthorization(options.authorization);
@@ -295,7 +299,7 @@ export async function sendAssistantCompletionRequest(messageList, inferenceModel
     reasoningEffort: getAssistantReasoningEffort(inferenceModel, baseCompletionOptions),
   };
   const model = getModelNameForInferenceModel(inferenceModel);
-  if (shouldUseStandaloneInferenceAdapterFallback(completionOptions)) {
+  if (shouldUseStandaloneInferenceAdapterFallback({ ...completionOptions, model })) {
     const providers = getConfiguredInferenceProviders(model, {
       ...completionOptions,
       messages: messageList,

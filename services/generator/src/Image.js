@@ -326,9 +326,6 @@ function resolveImageProviderForModel(model, payload = {}) {
     return '';
   }
   if (normalizedModel === 'QWENIMAGE3PRO') {
-    if (!isStandaloneEdition()) {
-      return '';
-    }
     const qwenProvider = resolveDockerImageGenerationProvider(normalizedModel);
     return qwenProvider === DOCKER_ADAPTER_PROVIDER.ALIBABA_CLOUD
       ? qwenProvider
@@ -2974,9 +2971,7 @@ async function processPendingGenerationRequet(pendingRequestData) {
       ? await handleAlibabaQwenImage3Request(pendingRequestData)
       : {
         image: null,
-        error: isStandaloneEdition()
-          ? 'Qwen Image 3.0 Pro requires Alibaba Cloud Model Studio pay-as-you-go credentials.'
-          : 'Qwen Image 3.0 Pro with Alibaba Cloud is available only in standalone deployments.',
+        error: 'Qwen Image 3.0 Pro requires native Alibaba Cloud Model Studio pay-as-you-go routing.',
       };
     if (imageData) {
       await updateImageInSessionLayer(imageData, pendingRequestData);

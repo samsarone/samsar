@@ -143,14 +143,14 @@ function isFalseyEnv(value) {
   return ['0', 'false', 'no', 'off'].includes(normalizeString(value).toLowerCase());
 }
 
-export function isDockerProviderRoutingEnabled() {
-  if (isFalseyEnv(process.env.SAMSAR_DOCKER_ADAPTER_ROUTING_ENABLED)) {
+export function isDockerProviderRoutingEnabled(env = process.env) {
+  if (isFalseyEnv(env?.SAMSAR_DOCKER_ADAPTER_ROUTING_ENABLED)) {
     return false;
   }
-  if (isTruthyEnv(process.env.SAMSAR_DOCKER_ADAPTER_ROUTING_ENABLED)) {
+  if (isTruthyEnv(env?.SAMSAR_DOCKER_ADAPTER_ROUTING_ENABLED)) {
     return true;
   }
-  return isStandaloneEdition();
+  return isStandaloneEdition(env);
 }
 
 export function hasGoogleCloudCredential() {
@@ -194,7 +194,7 @@ export function isAlibabaQwenImage3ProCredentialEligible({
 }
 
 export function isAlibabaQwenImage3ProAvailable(env = process.env) {
-  return isStandaloneEdition(env) &&
+  return isDockerProviderRoutingEnabled(env) &&
     hasAlibabaCloudCredential(env) &&
     isAlibabaQwenImage3ProCredentialEligible({
       keyType: env?.ALIBABA_API_KEY_TYPE,

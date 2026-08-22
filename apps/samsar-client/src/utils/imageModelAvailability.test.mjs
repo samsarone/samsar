@@ -10,6 +10,9 @@ import {
 
 const qwenImageModel = {
   key: QWEN_IMAGE_3_PRO_MODEL_KEY,
+};
+const standaloneOnlyImageModel = {
+  key: 'CUSTOM_STANDALONE_IMAGE',
   standaloneOnly: true,
 };
 
@@ -17,24 +20,31 @@ test('Qwen Image 3 Pro uses the canonical cross-service model key', () => {
   assert.equal(QWEN_IMAGE_3_PRO_MODEL_KEY, 'QWENIMAGE3PRO');
 });
 
-test('standalone-only image models are hidden from hosted model catalogs', () => {
+test('Qwen is hosted while genuinely standalone-only image models remain scoped', () => {
   const hostedModel = { key: 'GPTIMAGE2' };
 
-  assert.equal(isImageModelAllowedForDeploymentScope(qwenImageModel, false), false);
+  assert.equal(isImageModelAllowedForDeploymentScope(qwenImageModel, false), true);
   assert.equal(isImageModelAllowedForDeploymentScope(qwenImageModel, true), true);
+  assert.equal(isImageModelAllowedForDeploymentScope(standaloneOnlyImageModel, false), false);
   assert.deepEqual(
-    filterImageModelsForDeploymentScope([hostedModel, qwenImageModel], false),
-    [hostedModel],
+    filterImageModelsForDeploymentScope(
+      [hostedModel, qwenImageModel, standaloneOnlyImageModel],
+      false,
+    ),
+    [hostedModel, qwenImageModel],
   );
   assert.deepEqual(
-    filterImageModelsForDeploymentScope([hostedModel, qwenImageModel], true),
-    [hostedModel, qwenImageModel],
+    filterImageModelsForDeploymentScope(
+      [hostedModel, qwenImageModel, standaloneOnlyImageModel],
+      true,
+    ),
+    [hostedModel, qwenImageModel, standaloneOnlyImageModel],
   );
 });
 
-test('Qwen Image 3 Pro pricing is recognized as provider billed', () => {
+test('provider-billed image pricing remains available for standalone BYOK catalogs', () => {
   assert.equal(isProviderBilledImagePricing({
-    key: QWEN_IMAGE_3_PRO_MODEL_KEY,
+    key: standaloneOnlyImageModel.key,
     providerBilled: true,
     prices: [
       { aspectRatio: '1:1', price: 0 },

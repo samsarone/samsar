@@ -7,6 +7,7 @@ const ENV_KEYS = [
   'SAMSAR_DEPLOYMENT_EDITION',
   'SAMSAR_EDITION',
   'CURRENT_ENV',
+  'SAMSAR_DOCKER_ADAPTER_ROUTING_ENABLED',
   'SAMSAR_AVAILABLE_MODELS_PATH',
   'OPENAI_API_KEY',
   'OPENROUTER_API_KEY',
@@ -89,6 +90,28 @@ test('supported models exposes additive branched metadata without narrowing prod
     true,
   );
 
+  process.env.SAMSAR_DOCKER_ADAPTER_ROUTING_ENABLED = 'true';
+  process.env.ALIBABA_API_KEY = 'test-alibaba-key';
+  const nativeAlibabaProduction = invokeSupportedModels();
+  const qwenImageModel = nativeAlibabaProduction.body.IMAGE_MODELS.find(
+    (model) => model.value === 'QWENIMAGE3PRO',
+  );
+  assert.equal(qwenImageModel?.basePrice, 46);
+  assert.equal(
+    nativeAlibabaProduction.body.text_to_video.image_models.some(
+      (model) => model.value === 'QWENIMAGE3PRO',
+    ),
+    true,
+  );
+  assert.equal(
+    nativeAlibabaProduction.body.image_list_to_video.image_models.some(
+      (model) => model.value === 'QWENIMAGE3PRO',
+    ),
+    true,
+  );
+
+  delete process.env.SAMSAR_DOCKER_ADAPTER_ROUTING_ENABLED;
+  delete process.env.ALIBABA_API_KEY;
   process.env.SAMSAR_DEPLOYMENT_EDITION = 'standalone';
   const standalone = invokeSupportedModels();
   assert.equal(standalone.statusCode, 200);

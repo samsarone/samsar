@@ -14,6 +14,7 @@ import {
   DOCKER_INFERENCE_PROVIDER,
   createSamsarExternalChatCompletion,
   getConfiguredInferenceProviders,
+  isQwenInferenceAdapterRoutingEnabled,
   resolveConfiguredInferenceProvider,
   shouldUseOpenRouterInference,
   shouldUseSamsarExternalInference,
@@ -114,7 +115,10 @@ function normalizeAuthorization(value) {
 }
 
 function shouldUseStandaloneInferenceAdapterFallback(chatRequest = {}) {
-  if (!isStandaloneEdition()) {
+  const model = chatRequest?.model || getDefaultInferenceModel();
+  const productionQwenRoutingEnabled = isQwenInferenceModel(model) &&
+    isQwenInferenceAdapterRoutingEnabled();
+  if (!isStandaloneEdition() && !productionQwenRoutingEnabled) {
     return false;
   }
   const authorization = normalizeAuthorization(chatRequest?.authorization);

@@ -345,7 +345,7 @@ The client also includes supporting surfaces:
 
 The client-side model inventory lives primarily in `src/constants/Types.ts` and `src/constants/ModelPrices.jsx`.
 
-In Docker deployments, the processor-provided availability response filters the inference selectors. One configured `OPENROUTER_API_KEY` exposes `gpt-5.6-sol`, `gemini-3.1-pro`, and `QWEN3.8` for chat, assistant, and their corresponding vision-input workflows. Provider priority is the model's direct native credential, then OpenRouter, then the Samsar deployed fallback; the client preserves the selected provider provenance when deciding whether a saved model remains authorized. In hosted production, the client exposes Qwen as `QWEN3.8` with the label `Qwen 3.8 Max`; text and vision inference use OpenRouter model `qwen/qwen3.8-max`. Native Alibaba Cloud routing also uses Qwen 3.8 Max for text and vision.
+In Docker deployments, the processor-provided availability response filters the inference selectors. One configured `OPENROUTER_API_KEY` exposes `gpt-5.6-sol`, `gemini-3.1-pro`, and `QWEN3.8` for chat, assistant, and their corresponding vision-input workflows. Provider priority is the model's direct native credential, then OpenRouter, then the Samsar deployed fallback; the client preserves the selected provider provenance when deciding whether a saved model remains authorized. In hosted production, the client exposes Qwen as `QWEN3.8` with the label `Qwen 3.8 Max`. When `SAMSAR_DOCKER_ADAPTER_ROUTING_ENABLED=true` and an Alibaba credential is configured, both text and vision inference use native Alibaba Cloud Qwen 3.8 Max; otherwise they use the OpenRouter model `qwen/qwen3.8-max`.
 
 ### Image Generation
 
@@ -356,12 +356,12 @@ In Docker deployments, the processor-provided availability response filters the 
 | NanoBanana 2 | `NANOBANANA2` | Yes |
 | NanoBanana Pro | `NANOBANANAPRO` | Yes |
 | Wan2.7 Pro | `WAN2.7PRO` | Yes |
-| Qwen Image 3.0 Pro (standalone, provider billed) | `QWENIMAGE3PRO` | Yes |
+| Qwen Image 3.0 Pro | `QWENIMAGE3PRO` | Yes |
 
-Standalone Docker deployments expose `QWENIMAGE3PRO` in Image Studio and
-Express only when `/v1/video/supported_models` reports it. The processor does
-so when Alibaba Cloud credentials are configured; requests use provider model
-ID `qwen-image-3.0-pro`, and Alibaba bills the configured account directly.
+Docker deployments expose `QWENIMAGE3PRO` in Image Studio and Express when
+native Alibaba Cloud pay-as-you-go routing is enabled. Requests use provider
+model ID `qwen-image-3.0-pro`. Standalone installations are billed directly by
+Alibaba; hosted Studio charges the same 46 credits per image as GPT Image 2.
 
 ### Image Editing
 
@@ -394,7 +394,7 @@ ID `qwen-image-3.0-pro`, and Alibaba bills the configured account directly.
 
 VidGenie intentionally exposes a smaller express-first subset:
 
-- Image models: `GPTIMAGE2`, `NANOBANANAPRO`, `SEEDREAM`, `WAN2.7PRO`, and standalone `QWENIMAGE3PRO`.
+- Image models: `GPTIMAGE2`, `NANOBANANAPRO`, `SEEDREAM`, `WAN2.7PRO`, and `QWENIMAGE3PRO`.
 - Text-to-video video models: `RUNWAYML`, `VEO3.1I2V`, `VEO3.1I2VFAST`, `SEEDANCEI2V`, standalone `SEEDANCE2.0I2V`, `KLINGIMGTOVID3PRO`.
 - Image-list-to-video models: `RUNWAYML`, `VEO3.1I2V`, `VEO3.1I2VFAST`, `SEEDANCEI2V`, standalone `SEEDANCE2.0I2V`, `KLINGIMGTOVID3PRO`.
 - JSON mode validates the supported image/video model keys for the selected workflow.

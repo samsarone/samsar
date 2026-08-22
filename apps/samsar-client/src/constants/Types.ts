@@ -138,8 +138,6 @@ export const IMAGE_GENERAITON_MODEL_TYPES = [
     key: QWEN_IMAGE_3_PRO_MODEL_KEY,
     isExpressModel: true,
     isBranchedImageModel: false,
-    standaloneOnly: true,
-    providerBilled: true,
     supportedAspectRatios: ['1:1', '16:9', '9:16'],
   },
 ];

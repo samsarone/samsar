@@ -63,7 +63,7 @@ export function validateExpressImageModelKey(imageModel, options = {}) {
   ) {
     return {
       status: false,
-      message: 'Qwen Image 3.0 Pro requires standalone Alibaba Cloud pay-as-you-go credentials',
+      message: 'Qwen Image 3.0 Pro requires native Alibaba Cloud pay-as-you-go routing',
     };
   }
   if (isCustomTextToImageModelKey(resolvedImageModel)) {

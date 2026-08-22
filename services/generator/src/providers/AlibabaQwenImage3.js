@@ -2,7 +2,6 @@ import { Agent, fetch as undiciFetch } from 'undici';
 
 import { getDBConnectionString } from '../DBString.js';
 import ImageGeneration from '../schema/ImageGeneration.js';
-import { isStandaloneEdition } from '../utils/Environment.js';
 import { saveRemoteFile } from '../utils/FileUtils.js';
 import { isSubmissionOutcomeUnknown } from '../utils/ProviderSubmissionSafety.js';
 import {
@@ -11,7 +10,7 @@ import {
 } from './AlibabaCloudImage.js';
 import { buildAlibabaQwenImage3Request } from './QwenImage3Payload.js';
 
-export const MIN_ALIBABA_QWEN_IMAGE_3_TIMEOUT_MS = 6 * 60 * 1000;
+export const MIN_ALIBABA_QWEN_IMAGE_3_TIMEOUT_MS = 10 * 60 * 1000;
 
 let alibabaQwenImage3Dispatcher;
 
@@ -38,7 +37,7 @@ export function getAlibabaQwenImage3Dispatcher() {
   if (!alibabaQwenImage3Dispatcher) {
     // Node's default fetch transport stops waiting for response headers after
     // five minutes. Qwen Image 3.0 Pro is synchronous, so let the model-specific
-    // AbortController own the complete six-minute request deadline instead.
+    // AbortController own the complete ten-minute request deadline instead.
     alibabaQwenImage3Dispatcher = new Agent({
       headersTimeout: 0,
       bodyTimeout: 0,
@@ -97,14 +96,6 @@ export async function handleAlibabaQwenImage3Request(payload = {}, dependencies 
   }
   if (providerStatus !== 'INIT') {
     return null;
-  }
-
-  const isStandalone = dependencies.isStandalone || isStandaloneEdition;
-  if (!isStandalone()) {
-    return {
-      image: null,
-      error: 'Qwen Image 3.0 Pro with Alibaba Cloud is available only in standalone deployments.',
-    };
   }
 
   const connect = dependencies.connect || getDBConnectionString;

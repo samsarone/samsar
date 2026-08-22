@@ -895,6 +895,14 @@ test('supported-model filtering exposes Qwen Image 3.0 Pro only for Alibaba PAYG
     [{ value: 'GPTIMAGE2' }],
   );
 
+  process.env.SAMSAR_DEPLOYMENT_EDITION = 'production';
+  process.env.SAMSAR_DOCKER_ADAPTER_ROUTING_ENABLED = 'true';
+  process.env.ALIBABA_API_KEY = 'test-key';
+  assert.deepEqual(filterModelsForDeploymentAvailability(models, null), [
+    { value: 'GPTIMAGE2' },
+    { value: 'QWENIMAGE3PRO' },
+  ]);
+
   process.env.SAMSAR_DEPLOYMENT_EDITION = 'standalone';
   process.env.SAMSAR_RUNTIME = 'docker';
   process.env.ALIBABA_API_KEY = 'test-key';
