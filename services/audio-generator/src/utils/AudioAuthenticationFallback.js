@@ -9,6 +9,7 @@ import { isFalAudioAuthenticationRejection } from './FalAudioSubmission.js';
 
 export function canFallbackAfterAudioAuthenticationRejection(payload, error) {
   return isFalAudioAuthenticationRejection(error) &&
+    !(payload.ttsProvider === 'ELEVENLABS' && payload.generationType !== 'music') &&
     isStandaloneEdition() && isInitialDockerAudioRoutingRequest(payload) &&
     !['0', 'false', 'no', 'off'].includes(String(process.env.SAMSAR_EXTERNAL_AUDIO_ENABLED || '').trim().toLowerCase()) &&
     hasSamsarCredential() && payload.submittedAdapter === 'fal' &&

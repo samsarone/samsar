@@ -56,7 +56,7 @@ const AVATAR_VIDEO_BILLING_UNIT_SECONDS = 6;
 const AVATAR_VIDEO_UPFRONT_CREDITS = 2;
 const AVATAR_VIDEO_BASE_CREDITS_PER_UNIT = 2;
 const AVATAR_VIDEO_CREDIT_CONVERSION_MULTIPLIER = 2;
-const DEFAULT_ELEVENLABS_AVATAR_SPEAKER = 'N2lVS1w4EtoT3dr4eOWO';
+const DEFAULT_ELEVENLABS_AVATAR_SPEAKER = 'gOupLcAkjEnguROwi4oS';
 const DEFAULT_AVATAR_IMAGE_MODEL = 'GPTIMAGE2';
 const AVATAR_IMAGE_MODEL_STORAGE_KEY = 'defaultAvatarImageGenerationModel';
 const AVATAR_IMAGE_MODEL_CATALOG = IMAGE_GENERAITON_MODEL_TYPES.filter(
@@ -1484,6 +1484,8 @@ export default function RecordSpeechSection({
         speakerDetails:
           normalizeAvatarTtsProvider(selectedAvatarSpeechSpeakerOption.provider) === 'GOOGLE'
             ? getGoogleTTSVoiceDetails(selectedAvatarSpeechSpeakerOption)
+            : normalizeAvatarTtsProvider(selectedAvatarSpeechSpeakerOption.provider) === 'ELEVENLABS'
+              ? selectedAvatarSpeechSpeakerOption
             : null,
       }, headers);
       applyAvatarVoices(response?.data?.voices);

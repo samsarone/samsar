@@ -58,6 +58,7 @@ export const DOCKER_VIDEO_PROVIDER_PRIORITY_BY_MODEL = Object.freeze({
   ],
   'SEEDANCE2.0I2V': [
     DOCKER_VIDEO_PROVIDER.GMICLOUD,
+    DOCKER_VIDEO_PROVIDER.SAMSAR,
     DOCKER_VIDEO_PROVIDER.FAL,
   ],
   'SEEDANCE2.5I2V': [
@@ -468,6 +469,12 @@ export function getDockerVideoProviderPriority(model, { generationType = '' } = 
     defaultPriority = defaultPriority.filter(
       (provider) => provider !== DOCKER_VIDEO_PROVIDER.GMICLOUD,
     );
+  }
+  if (isStandaloneEdition() && hasSamsarVideoCredential() && defaultPriority.includes(DOCKER_VIDEO_PROVIDER.SAMSAR)) {
+    defaultPriority = [
+      DOCKER_VIDEO_PROVIDER.SAMSAR,
+      ...defaultPriority.filter((provider) => provider !== DOCKER_VIDEO_PROVIDER.SAMSAR),
+    ];
   }
 
   if (normalizedGenerationType === 'sound_effect') {

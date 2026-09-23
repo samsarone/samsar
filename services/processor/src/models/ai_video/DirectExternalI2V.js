@@ -35,7 +35,10 @@ export function buildDirectExternalI2VGenerationDocument(payload = {}) {
     aspectRatio: normalizeString(payload.aspectRatio) || '16:9',
     clipLayerToAiVideo: false,
     usePromptOptimizer: false,
-    generateAudio: false,
+    generateAudio: payload.generateAudio === true || payload.generate_audio === true ||
+      payload.isAudioVideoGeneration === true,
+    isAudioVideoGeneration: payload.generateAudio === true || payload.generate_audio === true ||
+      payload.isAudioVideoGeneration === true,
     duration: Number(payload.duration) || 5,
     framesPerSecond: Number(payload.framesPerSecond) || 24,
     userId: payload.userId?.toString?.() || payload.userId,

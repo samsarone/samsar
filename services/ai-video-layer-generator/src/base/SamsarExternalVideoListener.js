@@ -628,6 +628,8 @@ function buildExternalTextToVideoInput(payload = {}) {
 
 export function buildExternalImageToVideoInput(payload = {}, uploadedStartImageUrl) {
   const clientRequestId = getExternalVideoAttemptId(payload);
+  const generateAudio = payload.isAudioVideoGeneration === true ||
+    payload.generateAudio === true || payload.generate_audio === true;
   return {
     client_request_id: clientRequestId,
     image_url: uploadedStartImageUrl,
@@ -638,6 +640,7 @@ export function buildExternalImageToVideoInput(payload = {}, uploadedStartImageU
     video_model: getExternalVideoModel(payload),
     aspect_ratio: normalizeString(payload.aspectRatio) || '16:9',
     duration: normalizeDuration(payload.duration),
+    generate_audio: generateAudio,
     metadata: {
       source: 'local_docker_ai_video_generator',
       local_request_id: payload?._id?.toString?.() || payload?._id || null,

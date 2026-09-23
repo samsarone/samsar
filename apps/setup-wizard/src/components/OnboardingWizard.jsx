@@ -377,7 +377,7 @@ const CAPABILITY_FAMILIES = {
   elevenlabsSpeech: {
     key: 'elevenlabsSpeech',
     label: 'ElevenLabs Speech',
-    providerKeys: ['elevenlabs', 'fal', 'gmicloud', 'samsar'],
+    providerKeys: ['fal'],
     modelKeys: ['ELEVENLABS'],
   },
   soundEffects: {

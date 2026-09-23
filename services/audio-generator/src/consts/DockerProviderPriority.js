@@ -45,13 +45,10 @@ export const DOCKER_SPEECH_PROVIDER_PRIORITY_BY_TTS_PROVIDER = Object.freeze({
     DOCKER_AUDIO_PROVIDER.GOOGLE_CLOUD,
     DOCKER_AUDIO_PROVIDER.SAMSAR,
   ]),
-  // Samsar's ElevenLabs speaker ids are credential-scoped. A credential-bound
-  // GMICloud model route does not guarantee those voices, so use Samsar-js as
-  // the configured fallback instead of sending these requests to GenBlaze.
+  // Docker exposes ElevenLabs speech through Fal while the direct adapter
+  // remains available for a later rollout.
   ELEVENLABS: Object.freeze([
-    DOCKER_AUDIO_PROVIDER.ELEVENLABS,
     DOCKER_AUDIO_PROVIDER.FAL,
-    DOCKER_AUDIO_PROVIDER.SAMSAR,
   ]),
   PLAYAI: Object.freeze([
     DOCKER_AUDIO_PROVIDER.FAL,
@@ -360,6 +357,11 @@ function resolvePriority(priority, payload = {}, options = {}) {
 
 export function resolveDockerSpeechProvider(ttsProvider, payload = {}) {
   const normalizedTtsProvider = normalizeKey(ttsProvider);
+  if (normalizedTtsProvider === 'ELEVENLABS' &&
+      isStandaloneEdition() && isInitialDockerAudioRoutingRequest(payload) &&
+      payload?.generationMeta?.audioAuthFallback?.to !== DOCKER_AUDIO_PROVIDER.SAMSAR) {
+    return hasFalCredential() ? DOCKER_AUDIO_PROVIDER.FAL : '';
+  }
   const priority = applySavedAudioAdapterPriority(
     DOCKER_SPEECH_PROVIDER_PRIORITY_BY_TTS_PROVIDER[normalizedTtsProvider],
     [payload?.model, normalizedTtsProvider, getGenBlazeSpeechLogicalModel(normalizedTtsProvider)],

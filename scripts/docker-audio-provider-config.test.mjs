@@ -39,7 +39,7 @@ test('GMICloud audio availability is derived only from credential-scoped mapping
     },
   });
   assert.deepEqual(withElevenLabs.providers, ['gmicloud']);
-  assert.deepEqual(withElevenLabs.ttsProviders, ['ELEVENLABS']);
+  assert.deepEqual(withElevenLabs.ttsProviders, []);
 
   const withBothExactRoutes = buildDockerAudioAvailability({
     gmicloud: { enabled: true },
@@ -49,7 +49,17 @@ test('GMICloud audio availability is derived only from credential-scoped mapping
       ELEVENLABS: { audio: { modelId: 'elevenlabs-tts-v3' } },
     },
   });
-  assert.deepEqual(withBothExactRoutes.ttsProviders, ['ELEVENLABS', 'OPENAI']);
+  assert.deepEqual(withBothExactRoutes.ttsProviders, ['OPENAI']);
+
+  const withFal = buildDockerAudioAvailability({
+    fal: { enabled: true },
+    gmicloud: { enabled: true },
+  }, {
+    gmiCloudModelMappings: {
+      ELEVENLABS: { audio: { modelId: 'elevenlabs-tts-v3' } },
+    },
+  });
+  assert.deepEqual(withFal.ttsProviders, ['ELEVENLABS', 'PLAYAI']);
 });
 
 test('GMICloud mappings do not broaden music or sound-effect availability', () => {

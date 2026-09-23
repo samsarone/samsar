@@ -68,7 +68,7 @@ test('dispatcher keeps ElevenLabs speaker ids on Samsar while retaining compatib
   assert.equal(resolveSpeechProvider('PLAYAI', { status: 'INIT' }), 'fal');
 
   process.env.SAMSAR_API_KEY = 'samsar-key';
-  assert.equal(resolveSpeechProvider('ELEVENLABS', { status: 'INIT' }), 'samsar');
+  assert.equal(resolveSpeechProvider('ELEVENLABS', { status: 'INIT' }), '');
 });
 
 test('dispatcher preserves higher-priority native and Fal routes', (t) => {
@@ -81,7 +81,7 @@ test('dispatcher preserves higher-priority native and Fal routes', (t) => {
   assert.equal(resolveSpeechProvider('ELEVENLABS', { status: 'INIT' }), 'fal');
 
   process.env.ELEVENLABS_API_KEY = 'elevenlabs-key';
-  assert.equal(resolveSpeechProvider('ELEVENLABS', { status: 'INIT' }), 'elevenlabs');
+  assert.equal(resolveSpeechProvider('ELEVENLABS', { status: 'INIT' }), 'fal');
 });
 
 test('dispatcher keeps an in-flight GenBlaze request on its submitting adapter', () => {

@@ -22,6 +22,10 @@ export function isSoundEffectLayer(layer = {}) {
     || normalizeType(layer?.layerAiVideoType) === 'sound_effect';
 }
 
+export function shouldRequestAudioVideoLayer(layer = {}, model, audioVideoModels = []) {
+  return isSoundEffectLayer(layer) && audioVideoModels.includes(model);
+}
+
 export function hasReusableBaseAiVideo(layer = {}) {
   return Boolean(
     layer?.hasAiVideoLayer

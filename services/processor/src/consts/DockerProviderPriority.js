@@ -66,9 +66,7 @@ export const DOCKER_VIDEO_PROVIDER_PRIORITY_BY_MODEL = Object.freeze({
   'VEO3.1I2VFAST': [DOCKER_PROVIDER.GOOGLE_CLOUD, DOCKER_PROVIDER.FAL, DOCKER_PROVIDER.SAMSAR],
   RUNWAYML: [DOCKER_PROVIDER.RUNWAY, DOCKER_PROVIDER.SAMSAR],
   HAPPYHORSEI2V: [DOCKER_PROVIDER.ALIBABA_CLOUD, DOCKER_PROVIDER.FAL, DOCKER_PROVIDER.SAMSAR],
-  // GMICloud selection happens in the video worker, but the processor must
-  // keep this provider-billed model off the Samsar external route.
-  'SEEDANCE2.0I2V': [DOCKER_PROVIDER.FAL],
+  'SEEDANCE2.0I2V': [DOCKER_PROVIDER.GMICLOUD, DOCKER_PROVIDER.SAMSAR, DOCKER_PROVIDER.FAL],
   'SEEDANCE2.5I2V': [
     DOCKER_PROVIDER.GMICLOUD,
     DOCKER_PROVIDER.SAMSAR,
@@ -214,27 +212,32 @@ export function hasSamsarCredential() {
   return hasEnvCredential('SAMSAR_API_KEY');
 }
 
-export function hasGmiCloudSeedance25Credential(env = process.env) {
+export function hasGmiCloudSeedanceVideoRoute(model, env = process.env) {
   if (!isTruthyEnv(env.SAMSAR_GENBLAZE_ENABLED)) return false;
   const catalogPath = normalizeString(env.SAMSAR_GENBLAZE_MODEL_CATALOG_PATH);
   if (!catalogPath || !fs.existsSync(catalogPath)) return false;
   try {
     const catalog = JSON.parse(fs.readFileSync(catalogPath, 'utf8'));
+    const expectedModelId = {
+      'SEEDANCE2.0I2V': 'seedance-2-0-260128',
+      'SEEDANCE2.5I2V': 'seedance-2-5-260628',
+    }[normalizeDockerModelKey(model)];
+    if (!expectedModelId) return false;
     const route = catalog?.provider === 'gmicloud'
-      ? catalog?.models?.['SEEDANCE2.5I2V']?.video
+      ? catalog?.models?.[normalizeDockerModelKey(model)]?.video
       : null;
-    return route?.modelId === 'seedance-2-5-260628' &&
+    return route?.modelId === expectedModelId &&
       route?.operation === 'video.generate';
   } catch {
     return false;
   }
 }
 
-export function isDockerProviderConfigured(provider) {
+export function isDockerProviderConfigured(provider, model) {
   if (provider === DOCKER_PROVIDER.ALIBABA_CLOUD) return hasAlibabaCloudCredential();
   if (provider === DOCKER_PROVIDER.GOOGLE_CLOUD) return hasGoogleCloudCredential();
   if (provider === DOCKER_PROVIDER.FAL) return hasFalCredential();
-  if (provider === DOCKER_PROVIDER.GMICLOUD) return hasGmiCloudSeedance25Credential();
+  if (provider === DOCKER_PROVIDER.GMICLOUD) return hasGmiCloudSeedanceVideoRoute(model);
   if (provider === DOCKER_PROVIDER.OPENAI) return hasOpenAICredential();
   if (provider === DOCKER_PROVIDER.RUNWAY) return hasRunwayCredential();
   if (provider === DOCKER_PROVIDER.SAMSAR) return hasSamsarCredential();
@@ -272,7 +275,10 @@ export function getDockerImageProviderPriority(model) {
 export function getDockerVideoProviderPriority(model) {
   const normalizedModel = normalizeDockerModelKey(model);
   let defaultPriority;
-  if (normalizedModel === 'SEEDANCE2.5I2V' && isProductionEdition()) {
+  if (
+    (normalizedModel === 'SEEDANCE2.0I2V' || normalizedModel === 'SEEDANCE2.5I2V') &&
+    isProductionEdition()
+  ) {
     defaultPriority = [DOCKER_PROVIDER.GMICLOUD];
   } else if (DOCKER_VIDEO_PROVIDER_PRIORITY_BY_MODEL[normalizedModel]) {
     defaultPriority = DOCKER_VIDEO_PROVIDER_PRIORITY_BY_MODEL[normalizedModel];
@@ -284,34 +290,40 @@ export function getDockerVideoProviderPriority(model) {
   } else {
     defaultPriority = hasSamsarCredential() ? [DOCKER_PROVIDER.SAMSAR] : [];
   }
+  if (isStandaloneEdition() && hasSamsarCredential() && defaultPriority.includes(DOCKER_PROVIDER.SAMSAR)) {
+    defaultPriority = [
+      DOCKER_PROVIDER.SAMSAR,
+      ...defaultPriority.filter((provider) => provider !== DOCKER_PROVIDER.SAMSAR),
+    ];
+  }
   const savedPriority = readModelAdapterPreferences().modelProviderPriority[
     normalizeModelAdapterModelKey(normalizedModel)
   ];
   return applyModelAdapterPreferenceOrder(defaultPriority, savedPriority);
 }
 
-export function resolveConfiguredDockerProvider(providerPriority = []) {
-  return providerPriority.find(isDockerProviderConfigured) || '';
+export function resolveConfiguredDockerProvider(providerPriority = [], model) {
+  return providerPriority.find((provider) => isDockerProviderConfigured(provider, model)) || '';
 }
 
 export function resolveDockerImageProvider(model) {
   if (!isDockerProviderRoutingEnabled()) return '';
-  return resolveConfiguredDockerProvider(getDockerImageProviderPriority(model));
+  return resolveConfiguredDockerProvider(getDockerImageProviderPriority(model), model);
 }
 
 export function resolveDockerVideoProvider(model) {
   if (!isDockerProviderRoutingEnabled()) return '';
-  return resolveConfiguredDockerProvider(getDockerVideoProviderPriority(model));
+  return resolveConfiguredDockerProvider(getDockerVideoProviderPriority(model), model);
 }
 
 export function getConfiguredDockerImageProviders(model) {
   if (!isDockerProviderRoutingEnabled()) return [];
-  return getDockerImageProviderPriority(model).filter(isDockerProviderConfigured);
+  return getDockerImageProviderPriority(model).filter((provider) => isDockerProviderConfigured(provider, model));
 }
 
 export function getConfiguredDockerVideoProviders(model) {
   if (!isDockerProviderRoutingEnabled()) return [];
-  return getDockerVideoProviderPriority(model).filter(isDockerProviderConfigured);
+  return getDockerVideoProviderPriority(model).filter((provider) => isDockerProviderConfigured(provider, model));
 }
 
 function resolveNextConfiguredProvider(providers, currentProvider) {

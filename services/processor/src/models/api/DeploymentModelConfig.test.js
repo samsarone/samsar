@@ -267,8 +267,9 @@ test('Docker drops Qwen when any saved Alibaba authorization field is missing or
   );
 });
 
-test('Samsar fallback advertises every inference model', () => {
+test('standalone Samsar advertises inference and Seedance video models', () => {
   clearEnv();
+  process.env.SAMSAR_DEPLOYMENT_EDITION = 'standalone';
   process.env.SAMSAR_API_KEY = 'test-key';
 
   const result = mergeRuntimeInferenceDeploymentAvailability({
@@ -284,9 +285,13 @@ test('Samsar fallback advertises every inference model', () => {
     'KIMIK3',
     'HAPPYHORSEI2V',
     'WAN2.7PRO',
+    'GPTIMAGE2',
+    'VEO3.1I2V',
+    'SEEDANCE2.0I2V',
     'SEEDANCE2.5I2V',
   ]);
   assert.deepEqual(result.actions, ['chat', 'assistant', 'image', 'video']);
+  assert.equal(result.modelProviders['SEEDANCE2.0I2V'], 'samsar');
   assert.equal(result.modelProviders['SEEDANCE2.5I2V'], 'samsar');
 });
 
@@ -625,7 +630,7 @@ test('saved GPT Image 2 GMI routes cannot advertise Sunburst or override support
   assert.deepEqual(saved.modelProviderPriority.GPTIMAGE2, ['gmicloud', 'fal']);
 });
 
-test('Seedance 2.5 settings expose GMICloud, Samsar, and Fal in the saved user order', () => {
+test('Seedance 2.0 and 2.5 settings expose exact GMICloud routes and saved adapter order', () => {
   clearEnv();
   process.env.SAMSAR_DEPLOYMENT_EDITION = 'standalone';
   process.env.SAMSAR_RUNTIME = 'container';
@@ -644,6 +649,9 @@ test('Seedance 2.5 settings expose GMICloud, Samsar, and Fal in the saved user o
   fs.writeFileSync(process.env.SAMSAR_GENBLAZE_MODEL_CATALOG_PATH, JSON.stringify({
     provider: 'gmicloud',
     models: {
+      'SEEDANCE2.0I2V': {
+        video: { modelId: 'seedance-2-0-260128', operation: 'video.generate' },
+      },
       'SEEDANCE2.5I2V': {
         video: { modelId: 'seedance-2-5-260628', operation: 'video.generate' },
       },
@@ -657,8 +665,12 @@ test('Seedance 2.5 settings expose GMICloud, Samsar, and Fal in the saved user o
 
   try {
     const result = mergeRuntimeInferenceDeploymentAvailability({});
+    assert.equal(result.models.includes('SEEDANCE2.0I2V'), true);
     assert.equal(result.models.includes('SEEDANCE2.5I2V'), true);
     assert.deepEqual(result.providers, ['fal', 'samsar', 'gmicloud']);
+    assert.equal(result.modelProviders['SEEDANCE2.0I2V'], 'samsar');
+    assert.deepEqual(result.modelProviderPriority['SEEDANCE2.0I2V'], ['samsar', 'gmicloud', 'fal']);
+    assert.deepEqual(result.defaultModelProviderPriority['SEEDANCE2.0I2V'], ['samsar', 'gmicloud', 'fal']);
     assert.equal(result.modelProviders['SEEDANCE2.5I2V'], 'fal');
     assert.deepEqual(result.modelProviderPriority['SEEDANCE2.5I2V'], [
       'fal',
@@ -666,10 +678,40 @@ test('Seedance 2.5 settings expose GMICloud, Samsar, and Fal in the saved user o
       'samsar',
     ]);
     assert.deepEqual(result.defaultModelProviderPriority['SEEDANCE2.5I2V'], [
-      'gmicloud',
       'samsar',
+      'gmicloud',
       'fal',
     ]);
+  } finally {
+    fs.rmSync(tempDirectory, { recursive: true, force: true });
+  }
+});
+
+test('production availability defaults both Seedance versions to GMICloud', () => {
+  clearEnv();
+  process.env.SAMSAR_DEPLOYMENT_EDITION = 'production';
+  process.env.SAMSAR_GENBLAZE_ENABLED = 'true';
+  process.env.FAL_API_KEY = 'test-fal-key';
+  const tempDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'samsar-hosted-seedance-settings-'));
+  process.env.SAMSAR_GENBLAZE_MODEL_CATALOG_PATH = path.join(tempDirectory, 'genblaze-model-catalog.json');
+  fs.writeFileSync(process.env.SAMSAR_GENBLAZE_MODEL_CATALOG_PATH, JSON.stringify({
+    provider: 'gmicloud',
+    models: {
+      'SEEDANCE2.0I2V': {
+        video: { modelId: 'seedance-2-0-260128', operation: 'video.generate' },
+      },
+      'SEEDANCE2.5I2V': {
+        video: { modelId: 'seedance-2-5-260628', operation: 'video.generate' },
+      },
+    },
+  }));
+  try {
+    const result = mergeRuntimeInferenceDeploymentAvailability({});
+    for (const model of ['SEEDANCE2.0I2V', 'SEEDANCE2.5I2V']) {
+      assert.equal(result.models.includes(model), true);
+      assert.equal(result.modelProviders[model], 'gmicloud');
+      assert.equal(result.modelProviderPriority[model][0], 'gmicloud');
+    }
   } finally {
     fs.rmSync(tempDirectory, { recursive: true, force: true });
   }

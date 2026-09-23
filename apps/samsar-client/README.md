@@ -383,7 +383,7 @@ Alibaba; hosted Studio charges the same 46 credits per image as GPT Image 2.5.
 | Hailuo O2 Standard | `HAILUO` | No | Yes | Yes | `16:9` |
 | Hailuo O2 Pro | `HAILUOPRO` | No | Yes | Yes | `16:9` |
 | Seedance 1.5 | `SEEDANCEI2V` | Yes | No | Yes | `16:9`, `9:16` |
-| Seedance 2.0 (standalone) | `SEEDANCE2.0I2V` | Yes | No | Yes | `16:9`, `9:16` |
+| Seedance 2.0 | `SEEDANCE2.0I2V` | Yes | No | Yes | `16:9`, `9:16` |
 | Veo 3.1 Text2Vid | `VEO3.1` | No | Yes | No | `16:9`, `9:16` |
 | Veo 3.1 Fast Text2Vid | `VEO3.1FAST` | No | Yes | No | `16:9`, `9:16` |
 | Veo 3.1 Img2Vid | `VEO3.1I2V` | Yes | No | Yes | `16:9`, `9:16` |
@@ -395,8 +395,8 @@ Alibaba; hosted Studio charges the same 46 credits per image as GPT Image 2.5.
 VidGenie intentionally exposes a smaller express-first subset:
 
 - Image models: `GPTIMAGE2`, `NANOBANANAPRO`, `SEEDREAM`, `WAN2.7PRO`, and `QWENIMAGE3PRO`.
-- Text-to-video video models: `RUNWAYML`, `VEO3.1I2V`, `VEO3.1I2VFAST`, `SEEDANCEI2V`, standalone `SEEDANCE2.0I2V`, `KLINGIMGTOVID3PRO`.
-- Image-list-to-video models: `RUNWAYML`, `VEO3.1I2V`, `VEO3.1I2VFAST`, `SEEDANCEI2V`, standalone `SEEDANCE2.0I2V`, `KLINGIMGTOVID3PRO`.
+- Text-to-video video models: `RUNWAYML`, `VEO3.1I2V`, `VEO3.1I2VFAST`, `SEEDANCEI2V`, `SEEDANCE2.0I2V`, `SEEDANCE2.5I2V`, `KLINGIMGTOVID3PRO`.
+- Image-list-to-video models: `RUNWAYML`, `VEO3.1I2V`, `VEO3.1I2VFAST`, `SEEDANCEI2V`, `SEEDANCE2.0I2V`, `SEEDANCE2.5I2V`, `KLINGIMGTOVID3PRO`.
 - JSON mode validates the supported image/video model keys for the selected workflow.
 - Aspect ratios: `16:9` and `9:16`.
 - Wizard durations: `10`, `30`, `60`, `90`, `120`, and `180` seconds.

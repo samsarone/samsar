@@ -345,12 +345,10 @@ export function getAvailableDockerTTSProviders() {
   if (hasGoogleCloudCredential() || hasSamsarCredential()) {
     providers.push(TTS_PROVIDER_GOOGLE);
   }
-  if (
-    hasElevenLabsCredential() ||
-    hasFalCredential() ||
-    hasSamsarCredential() ||
-    hasCatalogBackedGmiRoute(TTS_PROVIDER_ELEVENLABS, 'ELEVENLABS')
-  ) {
+  if (isStandaloneEdition()
+    ? hasFalCredential()
+    : (hasElevenLabsCredential() || hasFalCredential() || hasSamsarCredential() ||
+      hasCatalogBackedGmiRoute(TTS_PROVIDER_ELEVENLABS, 'ELEVENLABS'))) {
     providers.push(TTS_PROVIDER_ELEVENLABS);
   }
   if (hasFalCredential() || hasSamsarCredential()) {

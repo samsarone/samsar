@@ -47,7 +47,7 @@ test('text-to-video validation accepts the shared express video model list', () 
   assert.equal(validation.status, true);
 });
 
-test('Seedance 2.0 is an express provider-billed model on standalone video surfaces', () => {
+test('Seedance 2.0 is an express model on hosted and standalone video surfaces', () => {
   assert.deepEqual(validateExpressVideoModelKey('SEEDANCE2.0I2V'), {
     status: true,
     videoModel: 'SEEDANCE2.0I2V',
@@ -63,11 +63,11 @@ test('Seedance 2.0 is an express provider-billed model on standalone video surfa
     true,
   );
   const pricing = VIDEO_MODEL_PRICES.find((model) => model.key === 'SEEDANCE2.0I2V');
-  assert.equal(pricing?.providerBilled, true);
+  assert.equal(pricing?.providerBilled, false);
   assert.equal(pricing?.isPerSecondPricing, true);
   assert.deepEqual(pricing?.prices, [
-    { aspectRatio: '16:9', price: 150 },
-    { aspectRatio: '9:16', price: 150 },
+    { aspectRatio: '16:9', price: 40 },
+    { aspectRatio: '9:16', price: 40 },
   ]);
   assert.equal(pricing?.pricingDistribution?.total, 40);
   assert.equal(getExpressVideoCreditsPerSecond('SEEDANCE2.0I2V'), 40);
@@ -89,7 +89,7 @@ test('Seedance 2.5 is accepted by external express video routes', () => {
     true,
   );
   const pricing = VIDEO_MODEL_PRICES.find((model) => model.key === 'SEEDANCE2.5I2V');
-  assert.equal(pricing?.providerBilled, true);
+  assert.equal(pricing?.providerBilled, false);
   assert.equal(pricing?.isPerSecondPricing, true);
   assert.deepEqual(pricing?.units, [5, 10, 15, 20]);
   assert.equal(pricing?.pricingDistribution?.total, 50);

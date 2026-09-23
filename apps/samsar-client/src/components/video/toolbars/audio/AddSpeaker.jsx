@@ -130,7 +130,9 @@ export default function AddSpeaker(props) {
       speakerDetails:
         (speakerType.provider || providerValue) === 'GOOGLE'
           ? getGoogleTTSVoiceDetails(speakerType)
-          : undefined,
+          : (speakerType.provider || providerValue) === 'ELEVENLABS'
+            ? speakerType
+            : undefined,
     };
 
     onAddNewSpeaker(newSpeaker);

@@ -150,6 +150,7 @@ import {
 } from './base/AlibabaHappyHorseI2VListener.js';
 import { normalizeFramesPerSecond, resolveFramesPerSecond } from './utils/FpsUtils.js';
 import {
+  isSoundEffectGenerationForLayer,
   isStaleSoundEffectGenerationForLayer as isStaleSoundEffectGenerationForLayerWithModels,
 } from './utils/SoundEffectGenerationState.js';
 import { recordProviderUsageLog } from './utils/ProviderUsageAudit.js';
@@ -196,11 +197,13 @@ export function getMaxConcurrentGmiCloudVideoRequests(env = process.env) {
 export function isStaleSoundEffectGenerationForLayer({
   model,
   isAudioVideoGeneration = false,
+  generationType = '',
   currentLayer = {},
 } = {}) {
   return isStaleSoundEffectGenerationForLayerWithModels({
     model,
     isAudioVideoGeneration,
+    generationType,
     currentLayer,
     soundEffectModels: SOUND_EFFECT_MODELS,
   });
@@ -580,6 +583,7 @@ export function buildDockerVideoAdapterRetryPlan(
   if (
     !isStandaloneEdition() ||
     definitiveFailure !== true ||
+    request?.dockerAdapterFailoverDisabled === true ||
     request?.submissionOutcomeUnknown === true ||
     !['image_to_video', 'text_to_video'].includes(requestType)
   ) {
@@ -2447,7 +2451,7 @@ async function processVideoGenerationCompletion(payload, localVideoLink) {
   const framesPerSecond = await getSessionFramesPerSecond(sessionData);
   const isLipSyncModel = LIPSYNC_MODELS.includes(model);
   const shouldPreserveLipSyncTimeline = isAudioVideoGeneration && isLipSyncModel;
-  const generatedVideoSourceType = SOUND_EFFECT_MODELS.includes(model) && currentLayer.layerAiVideoType === 'sound_effect'
+  const generatedVideoSourceType = SOUND_EFFECT_MODELS.includes(model) && isSoundEffectGenerationForLayer(currentLayer, payload.generationType)
     ? 'sound_effect'
     : isLipSyncModel
       ? 'lip_sync'
@@ -2858,7 +2862,7 @@ async function markVideoLayerGenerationAsComplete(localVideoLink, payload) {
   let audioSpeechLayers = videoSession.audioLayers.find((layer) => layer.generationType === 'speech');
   let currentLayer = videoSession.layers[currentLayerIndex];
 
-  if (isStaleSoundEffectGenerationForLayer({ model, isAudioVideoGeneration, currentLayer })) {
+  if (isStaleSoundEffectGenerationForLayer({ model, isAudioVideoGeneration, generationType: payload.generationType, currentLayer })) {
     await AIVideoLayerGeneration.findByIdAndDelete(_id);
     return videoSession;
   }
@@ -2898,7 +2902,8 @@ async function markVideoLayerGenerationAsComplete(localVideoLink, payload) {
 
   currentLayer.imageSession.previousActiveItemList = previousActiveItemList;
   currentLayer.processVideoGenerationFailed = false;
-  if (SOUND_EFFECT_MODELS.includes(model) && currentLayer.layerAiVideoType === 'sound_effect') {
+  if (SOUND_EFFECT_MODELS.includes(model) && isSoundEffectGenerationForLayer(currentLayer, payload.generationType)) {
+    currentLayer.layerAiVideoType = 'sound_effect';
     currentLayer.soundEffectGenerationPending = false;
     currentLayer.hasSoundEffect = true;
     currentLayer.aiVideoGenerationPending = false;
@@ -3006,7 +3011,7 @@ async function markVideoLayerGenerationAsComplete(localVideoLink, payload) {
     currentLayer.hasLipSyncVideoLayer = true;
   }
 
-  if (SOUND_EFFECT_MODELS.includes(model) && currentLayer.layerAiVideoType === 'sound_effect') {
+  if (SOUND_EFFECT_MODELS.includes(model) && isSoundEffectGenerationForLayer(currentLayer, payload.generationType)) {
     isSpeechEffectModel = true;
 
     currentLayer.soundEffectGenerationPending = false;
@@ -3150,7 +3155,7 @@ export async function realignAudioVideoLayerToVideoLayer(payload) {
     al => al.connectedLayerId === currentLayer._id.toString()
   );
   if (connectedAudioLayer) {
-	    let generationType = ((SOUND_EFFECT_MODELS.includes(model) && currentLayer.layerAiVideoType === 'sound_effect'))
+	    let generationType = ((SOUND_EFFECT_MODELS.includes(model) && isSoundEffectGenerationForLayer(currentLayer, payload.generationType)))
 	      ? 'sound_effect'
 	      : 'speech';
 
@@ -3213,7 +3218,7 @@ export async function realignAudioVideoLayerToVideoLayer(payload) {
 
   } else {
 
-    let generationType = SOUND_EFFECT_MODELS.includes(model) && currentLayer.layerAiVideoType === 'sound_effect'
+    let generationType = SOUND_EFFECT_MODELS.includes(model) && isSoundEffectGenerationForLayer(currentLayer, payload.generationType)
       ? 'sound_effect'
       : 'speech';
 
@@ -3484,6 +3489,7 @@ async function processVideoGenerationFailed(payload) {
   if (isStaleSoundEffectGenerationForLayer({
     model,
     isAudioVideoGeneration: payload?.isAudioVideoGeneration,
+    generationType: payload?.generationType,
     currentLayer,
   })) {
     await AIVideoLayerGeneration.findByIdAndDelete(payload._id);
@@ -3491,7 +3497,7 @@ async function processVideoGenerationFailed(payload) {
   }
 
   const isLipOrSoundEffectSyncModel = LIPSYNC_MODELS.includes(model) || (
-    SOUND_EFFECT_MODELS.includes(model) && currentLayer.layerAiVideoType === 'sound_effect'
+    SOUND_EFFECT_MODELS.includes(model) && isSoundEffectGenerationForLayer(currentLayer, payload.generationType)
   );
 
   if (isLipOrSoundEffectSyncModel) {
@@ -3565,7 +3571,7 @@ async function processLipSyncGenerationFailed(payload) {
   if (providerTimedOut) {
   }
 
-  if (SOUND_EFFECT_MODELS.includes(model) && currentLayer.layerAiVideoType === 'sound_effect') {
+  if (SOUND_EFFECT_MODELS.includes(model) && isSoundEffectGenerationForLayer(currentLayer, payload.generationType)) {
     currentLayer.hasSoundEffectVideoLayer = false;
     currentLayer.soundEffectGenerationPending = false;
     currentLayer.soundEffectVideoGenerationStatus = 'FAILED';

@@ -4,6 +4,7 @@ import {
   ALL_TTS_SPEAKERS,
   ELEVENLABS_TTS_SPEAKERS,
   OPENAI_TTS_SPEAKERS,
+  TTS_PROVIDER_ELEVENLABS,
   TTS_PROVIDER_GOOGLE,
   normalizeTTSSpeakerGender,
 } from '../../consts/TTSSpeakers.js';
@@ -164,13 +165,13 @@ function pickSpeakerFromPool(pool = [], desiredGender, usedSpeakerIds) {
     return null;
   }
 
-  const unusedSpeaker = matchingSpeakers.find((speaker) => !usedSpeakerIds.has(speaker.value));
-  if (unusedSpeaker) {
-    usedSpeakerIds.add(unusedSpeaker.value);
-    return unusedSpeaker;
-  }
-
-  return matchingSpeakers[0];
+  const unusedSpeakers = matchingSpeakers.filter(
+    (speaker) => !usedSpeakerIds.has(speaker.value)
+  );
+  const candidates = unusedSpeakers.length > 0 ? unusedSpeakers : matchingSpeakers;
+  const chosenSpeaker = candidates[Math.floor(Math.random() * candidates.length)];
+  usedSpeakerIds.add(chosenSpeaker.value);
+  return chosenSpeaker;
 }
 
 function choosePreferredSpeaker(desiredGender, speakerPools, usedSpeakerIds) {
@@ -439,7 +440,7 @@ function assignSpeakersToScenesFromPreferences(movieResourceList, speakerOptions
       if (Array.isArray(assignedSpeaker.languageCodes)) {
         sound.languageCodes = assignedSpeaker.languageCodes;
       }
-      if (assignedSpeaker.provider === TTS_PROVIDER_GOOGLE) {
+      if (assignedSpeaker.provider === TTS_PROVIDER_GOOGLE || assignedSpeaker.provider === TTS_PROVIDER_ELEVENLABS) {
         sound.speakerDetails = assignedSpeaker;
       }
     }

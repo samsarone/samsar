@@ -284,21 +284,33 @@ test('GMICloud exposes only credential-scoped exact speech routes with audio act
     },
   });
 
-  assert.deepEqual(available.models, ['ELEVENLABS', 'OPENAI_TTS']);
+  assert.deepEqual(available.models, ['OPENAI_TTS']);
   assert.deepEqual(available.actions, ['audio']);
   assert.equal(available.modelProviders.OPENAI_TTS, DOCKER_PROVIDER.GMI_CLOUD);
-  assert.equal(available.modelProviders.ELEVENLABS, DOCKER_PROVIDER.GMI_CLOUD);
+  assert.equal(available.modelProviders.ELEVENLABS, undefined);
   assert.deepEqual(available.modelProviderPriority.OPENAI_TTS, [
     DOCKER_PROVIDER.OPENAI,
     DOCKER_PROVIDER.GMI_CLOUD,
     DOCKER_PROVIDER.SAMSAR,
   ]);
-  assert.deepEqual(available.modelProviderPriority.ELEVENLABS, [
-    DOCKER_PROVIDER.ELEVENLABS,
-    DOCKER_PROVIDER.GMI_CLOUD,
+  assert.equal(available.modelProviderPriority.ELEVENLABS, undefined);
+});
+
+test('Docker advertises ElevenLabs speech only through Fal', () => {
+  const available = buildDockerAvailableModelsFromEnabledProviders([
     DOCKER_PROVIDER.SAMSAR,
+    DOCKER_PROVIDER.ELEVENLABS,
     DOCKER_PROVIDER.FAL,
   ]);
+  assert.equal(available.modelProviders.ELEVENLABS, DOCKER_PROVIDER.FAL);
+  assert.deepEqual(available.modelProviderPriority.ELEVENLABS, [DOCKER_PROVIDER.FAL]);
+  assert.equal(
+    buildDockerAvailableModelsFromEnabledProviders([
+      DOCKER_PROVIDER.SAMSAR,
+      DOCKER_PROVIDER.ELEVENLABS,
+    ]).modelProviders.ELEVENLABS,
+    undefined,
+  );
 });
 
 test('Samsar keeps moderation available when OpenRouter owns inference routing', () => {

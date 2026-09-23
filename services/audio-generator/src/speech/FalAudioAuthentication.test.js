@@ -33,7 +33,7 @@ function stubDatabase(t, overrides = {}) {
     _id: 'audio-1', sessionId: 'session-1', audioLayerId: 'layer-1',
     status: 'INIT', rowLocked: true, numRetries: 0,
     generationType: 'speech', ttsProvider: 'ELEVENLABS', model: 'ELEVENLABS',
-    speaker: '9BWtsMINqrJLrRacOk9x', prompt: 'Original narration',
+    speaker: 'gOupLcAkjEnguROwi4oS', prompt: 'Original narration',
     ...overrides,
     async save() {},
   };
@@ -75,11 +75,16 @@ for (const ttsProvider of ['ELEVENLABS', 'PLAYAI', 'music']) {
     t.mock.method(axios, 'post', async () => assert.fail('a healthy request must not use Samsar'));
     await dispatch(state.snapshot());
     assert.equal(submit.mock.callCount(), 1);
+    if (ttsProvider === 'ELEVENLABS') {
+      assert.equal(submit.mock.calls[0].arguments[1].input.voice, 'gOupLcAkjEnguROwi4oS');
+    }
     assert.equal(state.record.submittedAdapter, 'fal');
     assert.equal(state.record.status, 'PENDING');
     assert.equal(state.record.apiRequestId || state.record.generationId, 'fal-accepted');
     assert.equal(state.record.prompt, 'Original narration');
   });
+
+  if (ttsProvider === 'ELEVENLABS') continue;
 
   test(`${ttsProvider}: real dispatcher falls back after a rejected Fal submission and polls Samsar only`, { timeout: 2000 }, async (t) => {
     const music = ttsProvider === 'music';
@@ -115,6 +120,20 @@ for (const ttsProvider of ['ELEVENLABS', 'PLAYAI', 'music']) {
     assert.equal(submit.mock.callCount(), 1);
   });
 }
+
+test('Docker ElevenLabs speech remains on Fal after an authentication rejection', async (t) => {
+  const state = stubDatabase(t);
+  const rejection = Object.assign(new Error('Unauthorized'), { status: 401 });
+  const submit = t.mock.method(fal.queue, 'submit', async () => { throw rejection; });
+  const post = t.mock.method(axios, 'post', async () => assert.fail('ElevenLabs speech must not use Samsar'));
+  await assert.rejects(dispatchSpeechRequest(state.snapshot()), {
+    code: 'SAMSAR_FAL_AUDIO_AUTH_REJECTED',
+  });
+  assert.equal(submit.mock.callCount(), 1);
+  assert.equal(post.mock.callCount(), 0);
+  assert.equal(state.record.submittedAdapter, 'fal');
+  assert.equal(state.record.prompt, 'Original narration');
+});
 
 for (const [name, run] of [['ElevenLabs', processElevenLabsFalSpeechRequest], ['PlayAI', processPlayAISpeechRequest]]) {
   test(`${name}: automatic retries retain narration and never call text generation`, { timeout: 2000 }, async (t) => {

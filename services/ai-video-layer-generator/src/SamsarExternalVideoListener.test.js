@@ -107,6 +107,29 @@ test('a persisted provider selection keeps INIT retries on the selected adapter'
   }
 });
 
+test('standalone Seedance 2.0 reaches Samsar JS with its original model', () => {
+  const envSnapshot = snapshotEnv();
+  try {
+    configureDockerPublicMedia();
+    process.env.SAMSAR_API_KEY = 'samsar-key';
+    process.env.FAL_API_KEY = 'fal-key';
+    process.env.SAMSAR_GENBLAZE_ENABLED = 'false';
+
+    assert.equal(resolveDockerVideoProvider('SEEDANCE2.0I2V'), 'samsar');
+    assert.equal(shouldUseSamsarExternalVideoProvider({
+      model: 'SEEDANCE2.0I2V',
+      status: 'INIT',
+      dockerVideoProvider: 'samsar',
+    }), true);
+    assert.equal(buildExternalImageToVideoInput({
+      model: 'SEEDANCE2.0I2V',
+      prompt: 'Animate the scene',
+    }, 'https://media.example.com/start.png').video_model, 'SEEDANCE2.0I2V');
+  } finally {
+    restoreEnv(envSnapshot);
+  }
+});
+
 test('production Seedance 2.5 external requests stay on the single internal GMICloud path', (t) => {
   const envSnapshot = snapshotEnv();
   const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'samsar-external-seedance-25-'));
@@ -157,6 +180,7 @@ test('Samsar external image-to-video payload includes start image URL compatibil
     originalVideoModel: 'MODEL_A',
     aspectRatio: '9:16',
     duration: 6,
+    isAudioVideoGeneration: true,
   }, startImageUrl);
 
   assert.equal(input.image_url, startImageUrl);
@@ -165,6 +189,7 @@ test('Samsar external image-to-video payload includes start image URL compatibil
   assert.equal(input.startImage, startImageUrl);
   assert.equal(input.video_model, 'MODEL_A');
   assert.equal(input.client_request_id, 'local-generation-id:attempt:1');
+  assert.equal(input.generate_audio, true);
   assert.equal(input.metadata.local_attempt_number, 1);
   assert.equal(Object.hasOwn(input, 'image_model'), false);
   assert.equal(Object.hasOwn(input, 'requires_enhancement'), false);
@@ -172,6 +197,7 @@ test('Samsar external image-to-video payload includes start image URL compatibil
     _id: 'local-generation-id',
     numRetries: 1,
   }), 'local-generation-id:attempt:1');
+  assert.equal(buildExternalImageToVideoInput({ model: 'SEEDANCE2.0I2V' }, startImageUrl).generate_audio, false);
 });
 
 test('Samsar external step image-to-video payload includes start image URL compatibility aliases', () => {

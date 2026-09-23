@@ -13,6 +13,7 @@ import { requestRenderPikaI2VVideo } from './PikaI2VGenerator.js';
 import { requestRenderViduI2VVideo } from './ViduI2VGenerator.js';
 import { requestRenderExpressCustomVideo } from './GenericVideoGenerator.js';
 import { requestRenderSeeDanceVideo } from './SeeDanceGenerator.js';
+import { shouldRequestAudioVideoLayer } from './SoundEffectStage.js';
 import { requestRenderExpressHailuoVideo } from './HailuoListener.js';
 import { requestRenderVeo3I2VVideo } from './Veo3I2VGenerator.js';
 import { requestRenderSora2I2VVideo } from './Sora2Generator.js';
@@ -514,8 +515,11 @@ export async function createGenerativeVideoAnimationsForFrames(sessionId) {
       aiVideoLayerDuration = pickDuration(normalizedVideoModelUnits, target);
     }
 
-    const isAudioVideoLayer = sceneType === 'sound_effect' &&
-      AUDIO_VIDEO_SOUND_EFFECT_MODELS.includes(videoGenerationModel);
+    const isAudioVideoLayer = shouldRequestAudioVideoLayer(
+      currentLayer,
+      videoGenerationModel,
+      AUDIO_VIDEO_SOUND_EFFECT_MODELS,
+    );
 
     let payload = {
       userId: userId,
@@ -645,9 +649,7 @@ export async function setSessionLayerAiVideoGenerationPending(payload) {
       "layers.$.processVideoGenerationFailed": false,
     };
 
-    if (payload.isAudioVideoLayer) {
-      layerUpdate["layers.$.isAudioVideoLayer"] = true;
-    }
+    layerUpdate["layers.$.isAudioVideoLayer"] = payload.isAudioVideoLayer === true;
 
     const sessionDataValue = await VideoSession.findOneAndUpdate(
       { _id: videoSessionId, "layers._id": layerId },

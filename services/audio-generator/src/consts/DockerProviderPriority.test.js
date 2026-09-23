@@ -83,9 +83,7 @@ test('keeps GMICloud for compatible OpenAI speech and keeps ElevenLabs speaker i
     DOCKER_AUDIO_PROVIDER.SAMSAR,
   ]);
   assert.deepEqual(DOCKER_SPEECH_PROVIDER_PRIORITY_BY_TTS_PROVIDER.ELEVENLABS, [
-    DOCKER_AUDIO_PROVIDER.ELEVENLABS,
     DOCKER_AUDIO_PROVIDER.FAL,
-    DOCKER_AUDIO_PROVIDER.SAMSAR,
   ]);
 });
 
@@ -126,7 +124,7 @@ test('does not infer speech support from another modality or unsafe operation', 
   assert.equal(resolveDockerSpeechProvider('ELEVENLABS', { status: 'INIT' }), '');
 });
 
-test('uses native and Fal providers before Samsar and never routes ElevenLabs speaker ids to GMICloud', (t) => {
+test('routes new Docker ElevenLabs speech through Fal only', (t) => {
   clearProviderCredentials();
   installCatalog(t, {
     OPENAI_TTS: { audio: { modelId: 'gpt-4o-mini-tts' } },
@@ -142,13 +140,13 @@ test('uses native and Fal providers before Samsar and never routes ElevenLabs sp
   process.env.FAL_API_KEY = 'fal-key';
   assert.equal(resolveDockerSpeechProvider('ELEVENLABS', { status: 'INIT' }), 'fal');
   process.env.ELEVENLABS_API_KEY = 'elevenlabs-key';
-  assert.equal(resolveDockerSpeechProvider('ELEVENLABS', { status: 'INIT' }), 'elevenlabs');
+  assert.equal(resolveDockerSpeechProvider('ELEVENLABS', { status: 'INIT' }), 'fal');
 
   delete process.env.ELEVENLABS_API_KEY;
   delete process.env.FAL_API_KEY;
-  assert.equal(resolveDockerSpeechProvider('ELEVENLABS', { status: 'INIT' }), 'samsar');
+  assert.equal(resolveDockerSpeechProvider('ELEVENLABS', { status: 'INIT' }), '');
   process.env.SAMSAR_GENBLAZE_ENABLED = 'false';
-  assert.equal(resolveDockerSpeechProvider('ELEVENLABS', { status: 'INIT' }), 'samsar');
+  assert.equal(resolveDockerSpeechProvider('ELEVENLABS', { status: 'INIT' }), '');
 });
 
 test('keeps a submitted GenBlaze speech request on GMICloud while pending', () => {

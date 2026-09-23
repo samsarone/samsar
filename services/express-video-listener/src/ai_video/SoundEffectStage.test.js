@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { assessSoundEffectStage } from './SoundEffectStage.js';
+import { assessSoundEffectStage, shouldRequestAudioVideoLayer } from './SoundEffectStage.js';
 
 function soundEffectLayer(id, overrides = {}) {
   return {
@@ -15,6 +15,13 @@ function soundEffectLayer(id, overrides = {}) {
     ...overrides,
   };
 }
+
+test('Seedance 2.0 recovery retains original sound-effect audio intent after failure', () => {
+  const recoveredLayer = soundEffectLayer('recovered', { layerAiVideoType: 'ai_video' });
+  assert.equal(shouldRequestAudioVideoLayer(recoveredLayer, 'SEEDANCE2.0I2V', ['SEEDANCE2.0I2V']), true);
+  assert.equal(shouldRequestAudioVideoLayer(recoveredLayer, 'SILENT_MODEL', ['SEEDANCE2.0I2V']), false);
+  assert.equal(shouldRequestAudioVideoLayer({ layerAiVideoType: 'ai_video' }, 'SEEDANCE2.0I2V', ['SEEDANCE2.0I2V']), false);
+});
 
 test('sound-effect aggregate falls back after a terminal layer failure', () => {
   const result = assessSoundEffectStage([

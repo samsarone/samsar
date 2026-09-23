@@ -118,7 +118,7 @@ test('Docker preserves PlayAI speech when Fal or Samsar can serve it', () => {
   process.env.SAMSAR_API_KEY = 'samsar-key';
   assert.deepEqual(
     getAvailableDockerTTSProviders(),
-    ['OPENAI', 'GOOGLE', 'ELEVENLABS', 'PLAYAI'],
+    ['OPENAI', 'GOOGLE', 'PLAYAI'],
   );
 });
 
@@ -158,7 +158,7 @@ test('Docker TTS availability includes credential-scoped GenBlaze audio routes',
     },
   }));
 
-  assert.deepEqual(getAvailableDockerTTSProviders(), ['ELEVENLABS']);
+  assert.deepEqual(getAvailableDockerTTSProviders(), []);
 });
 
 test('Docker ignores stale GMICloud TTS availability without its runtime catalog route', (context) => {

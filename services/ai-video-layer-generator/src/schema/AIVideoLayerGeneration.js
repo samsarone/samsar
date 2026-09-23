@@ -93,6 +93,7 @@ const aiVideoLayerGenerationSchema = new Schema({
   submissionOutcomeUnknown: { type: Boolean, default: false },
   dockerVideoProvider: String,
   dockerVideoProviderOverride: String,
+  dockerAdapterFailoverDisabled: { type: Boolean, default: false },
   dockerAdapterAttemptedProviders: [String],
   dockerAdapterFailoverCount: { type: Number, default: 0 },
   dockerAdapterFailoverHistory: [{

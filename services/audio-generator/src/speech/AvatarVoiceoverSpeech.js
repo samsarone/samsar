@@ -43,7 +43,6 @@ const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY || '' });
 const AVATAR_SPEECH_POLL_INTERVAL_MS = 2000;
 const AVATAR_SPEECH_PROVIDER_TIMEOUT_MS = 8 * 60 * 1000;
 const MIN_SILENCE_SECONDS = 0.03;
-const DEFAULT_ELEVENLABS_VOICE_NAME = 'Callum';
 
 function wait(milliseconds) {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
@@ -294,7 +293,7 @@ function resolveElevenLabsSpeaker(payload = {}, speaker = '') {
     || speakerCandidates.includes(candidate.voiceId)
     || speakerCandidates.includes(candidate.name)
     || speakerCandidates.includes(candidate.label)
-  )) || ELEVENLABS_SPEAKERS.find((candidate) => candidate.name === DEFAULT_ELEVENLABS_VOICE_NAME);
+  )) || ELEVENLABS_SPEAKERS[0];
 }
 
 async function generateElevenLabsSpeechFile({ text, speaker, outputPath, payload }) {
@@ -305,7 +304,7 @@ async function generateElevenLabsSpeechFile({ text, speaker, outputPath, payload
     || candidate.voiceId === normalizedSpeaker
     || candidate.name === normalizedSpeaker
     || candidate.label === normalizedSpeaker
-  )) || resolveElevenLabsSpeaker(payload, speaker);
+  )) || (normalizedSpeaker ? null : resolveElevenLabsSpeaker(payload, speaker));
   if (!speakerData) {
     throw new Error(`Unknown ElevenLabs speaker: ${normalizedSpeaker || 'empty'}.`);
   }
@@ -313,7 +312,7 @@ async function generateElevenLabsSpeechFile({ text, speaker, outputPath, payload
   const response = await fal.queue.submit(falLink, {
     input: {
       text,
-      voice: speakerData.name || speakerData.label,
+      voice: speakerData.voiceId,
     },
   });
 

@@ -89,7 +89,8 @@ export function buildDockerAudioAvailability(providers = {}, options = {}) {
 
   return {
     providers: enabledProviders,
-    ttsProviders: uniqueSorted(ttsProviders),
+    ttsProviders: uniqueSorted(ttsProviders).filter((provider) =>
+      provider !== 'ELEVENLABS' || enabledProviders.includes('fal')),
     musicProviders: uniqueSorted(musicProviders),
     soundEffectProviders: uniqueSorted(soundEffectProviders),
     allowAllTtsSpeakers: hasSamsar,

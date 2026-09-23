@@ -122,7 +122,7 @@ test('Sanskrit speaker assignment ignores ElevenLabs-only user preferences', asy
     speakerOptions: {
       allowOpenAI: false,
       allowElevenLabs: true,
-      elevenLabsSpeakers: ['EXAVITQu4vr4xnSDxMaL', 'CwhRBWXzGAHq8TQ4Fs17'],
+      elevenLabsSpeakers: ['OZ0L6eISlOejga3XjDFt', 'gOupLcAkjEnguROwi4oS'],
     },
   });
 
@@ -172,13 +172,16 @@ test('other languages still honor ElevenLabs speaker preferences', async () => {
     speakerOptions: {
       allowOpenAI: false,
       allowElevenLabs: true,
-      elevenLabsSpeakers: ['EXAVITQu4vr4xnSDxMaL', 'CwhRBWXzGAHq8TQ4Fs17'],
+      elevenLabsSpeakers: ['OZ0L6eISlOejga3XjDFt', 'gOupLcAkjEnguROwi4oS'],
     },
   });
 
   const speechSounds = result.sounds.filter((sound) => sound.type === 'speech');
   assert.equal(speechSounds.length, 2);
   assert.ok(speechSounds.every((sound) => sound.provider === 'ELEVENLABS'));
+  assert.ok(speechSounds.every((sound) =>
+    sound.speakerDetails?.voiceId === sound.speaker &&
+    Boolean(sound.speakerDetails?.previewURL)));
 });
 
 test('docker speaker assignment replaces unavailable OpenAI-only preferences with an available provider', async () => {

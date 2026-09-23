@@ -566,6 +566,7 @@ export function buildDirectExternalImageToVideoSession({
   const prompt = getFirstStringValue(payload, ['prompt']);
   const aspectRatio = getFirstStringValue(payload, ['aspect_ratio', 'aspectRatio']) || '16:9';
   const duration = normalizeDurationSeconds(payload.duration, 5);
+  const generateAudio = payload.generate_audio === true || payload.generateAudio === true;
   const framesPerSecond = Number(payload.frames_per_second || payload.framesPerSecond) || 24;
   const now = new Date();
 
@@ -627,6 +628,7 @@ export function buildDirectExternalImageToVideoSession({
       aiVideoGenerationPending: true,
       aiVideoGenerationStatus: 'PENDING',
       hasAiVideoLayer: false,
+      isAudioVideoLayer: generateAudio,
       status: 'pending',
       createdAt: now,
       updatedAt: now,
@@ -694,6 +696,8 @@ export async function requestExternalDirectImageToVideo({
       combineLayers: false,
       clipLayerToAiVideo: false,
       retryOnFail: false,
+      generateAudio: layer?.isAudioVideoLayer === true,
+      isAudioVideoGeneration: layer?.isAudioVideoLayer === true,
       generationType: 'generate',
       samsarExternalProviderStage: 'ai_video_generation',
       samsarExternalVideoRoute: 'direct_image_to_video',

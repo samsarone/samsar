@@ -48,11 +48,7 @@ export async function processElevenLabsFalSpeechRequest(payload) {
   const speaker = payload.speaker;
 
 
-  const speakerData = SPEAKERS.find((s)  => s.value === speaker);
-
-
-
-  const speakerName = speakerData ? speakerData.name : 'Rachel';
+  const speakerData = SPEAKERS.find((s) => s.value === speaker);
 
 
   try {
@@ -89,6 +85,10 @@ export async function processElevenLabsFalSpeechRequest(payload) {
     // INIT: Submit TTS Request
     // -------------
     if (status === 'INIT') {
+      if (!speakerData) {
+        throw new Error(`Unknown ElevenLabs speaker ID: ${speaker || 'empty'}.`);
+      }
+
       // Mark as locked
       audioGenerationRecord.rowLocked = true;
       await audioGenerationRecord.save();
@@ -96,7 +96,7 @@ export async function processElevenLabsFalSpeechRequest(payload) {
       // Queue up the TTS job
       const payloadToFal = {
         text: prompt,
-        voice: speakerName,
+        voice: speakerData.voiceId,
       };
 
       const response = await submitFalAudioRequest(falLink, {

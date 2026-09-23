@@ -638,6 +638,13 @@ def _seedance_2_duration(value: Any) -> int:
     return _rounded_duration(value, minimum=4, maximum=15, name="Seedance 2.0")
 
 
+def _seedance_2_5_duration(value: Any) -> int:
+    # Match the source listeners' five-second tiers, including 20 seconds.
+    _rounded_duration(value, minimum=5, maximum=20, name="Seedance 2.5")
+    numeric = float(value)
+    return min((5, 10, 15, 20), key=lambda duration: abs(duration - numeric))
+
+
 def _seedance_2_aspect_ratio(value: Any) -> str:
     normalized = str(value).strip().lower().replace(" ", "").replace("x", ":")
     normalized = _FAL_ASPECT_RATIO_ALIASES.get(normalized, normalized)
@@ -1025,6 +1032,8 @@ def load_genblaze_bindings() -> GenBlazeBindings:
                     "duration": (
                         _seedance_1_5_duration
                         if contract_key == "seedance-1-5"
+                        else _seedance_2_5_duration
+                        if contract_key == "seedance-2-5"
                         else _seedance_2_duration
                     ),
                     "ratio": (

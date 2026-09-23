@@ -21,4 +21,5 @@ dist_external_verify*/
 coverage/
 test-results/
 playwright-report/
+.vitest-attachments/
 **/__screenshots__/

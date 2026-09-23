@@ -748,8 +748,12 @@ const env = {
     ALIBABA_QWEN_MODEL: alibabaQwenModel,
     ALIBABA_QWEN_TEXT_MODEL: alibabaQwenModel,
 	  FAL_API_KEY: config.providers?.fal?.apiKey || '',
-	  ELEVENLABS_API_TOKEN: config.providers?.elevenlabs?.apiKey || '',
-	  ELEVENLABS_API_KEY: config.providers?.elevenlabs?.apiKey || '',
+	  ...(config.providers?.elevenlabs?.enabled && config.providers.elevenlabs.apiKey
+	    ? {
+	      ELEVENLABS_API_TOKEN: config.providers.elevenlabs.apiKey,
+	      ELEVENLABS_API_KEY: config.providers.elevenlabs.apiKey,
+	    }
+	    : {}),
 	  RUNWAY_API_KEY: config.providers?.runway?.apiKey || '',
   RUNWAYML_API_KEY: config.providers?.runway?.apiKey || '',
   GOOGLE_LYRIA_GEMINI_API_KEY: config.providers?.googleCloud?.lyriaGeminiConfigured ? (providerSecrets.googleCloud?.geminiApiKey || '') : '',

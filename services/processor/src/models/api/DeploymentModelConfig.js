@@ -108,12 +108,18 @@ function hasRuntimeGenBlazeInferenceModel(modelMappings, model) {
     hasRuntimeGenBlazeRoute(modelMappings, model, 'vision');
 }
 
-function hasRuntimeGenBlazeSeedance25Model(modelMappings) {
+function hasRuntimeGenBlazeSeedanceVideoModel(modelMappings, model) {
+  const normalizedModel = normalizeDeploymentModel(model);
+  const expectedModelId = {
+    'SEEDANCE2.0I2V': 'seedance-2-0-260128',
+    'SEEDANCE2.5I2V': 'seedance-2-5-260628',
+  }[normalizedModel];
+  if (!expectedModelId) return false;
   const modelKey = Object.keys(modelMappings || {}).find(
-    (candidate) => normalizeDeploymentModel(candidate) === 'SEEDANCE2.5I2V',
+    (candidate) => normalizeDeploymentModel(candidate) === normalizedModel,
   );
   const route = modelKey ? modelMappings[modelKey]?.video : null;
-  return route?.modelId === 'seedance-2-5-260628' &&
+  return route?.modelId === expectedModelId &&
     route?.operation === 'video.generate';
 }
 
@@ -357,14 +363,15 @@ function mergeRuntimeInferenceProviderSelections(availability) {
   }
 }
 
-function mergeRuntimeSeedance25ProviderSelection(availability, modelMappings) {
-  const model = 'SEEDANCE2.5I2V';
+function mergeRuntimeSeedanceProviderSelection(availability, modelMappings, model) {
   const configured = {
-    gmicloud: hasRuntimeGenBlazeSeedance25Model(modelMappings),
-    samsar: hasEnvCredential('SAMSAR_API_KEY'),
+    gmicloud: hasRuntimeGenBlazeSeedanceVideoModel(modelMappings, model),
+    samsar: isStandaloneEdition() && hasEnvCredential('SAMSAR_API_KEY'),
     fal: hasEnvCredential('FAL_API_KEY'),
   };
-  const canonicalPriority = ['gmicloud', 'samsar', 'fal'];
+  const canonicalPriority = isStandaloneEdition()
+    ? ['samsar', 'gmicloud', 'fal']
+    : ['gmicloud'];
   const availablePriority = canonicalPriority.filter((provider) => configured[provider]);
   if (availablePriority.length === 0) return;
 
@@ -645,7 +652,9 @@ export function mergeRuntimeInferenceDeploymentAvailability(value = {}) {
     appendUnique(merged.actions, ['chat', 'assistant']);
   }
 
-  mergeRuntimeSeedance25ProviderSelection(merged, gmiCloudModelMappings);
+  for (const model of ['SEEDANCE2.0I2V', 'SEEDANCE2.5I2V']) {
+    mergeRuntimeSeedanceProviderSelection(merged, gmiCloudModelMappings, model);
+  }
 
   for (const [model, provider] of Object.entries(merged.modelProviders)) {
     if (normalizeDeploymentProvider(provider) !== 'gmicloud') {

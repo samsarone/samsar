@@ -30,15 +30,15 @@ test('provider-billed models remain listable without Samsar credit prices', () =
   );
 });
 
-test('Seedance 2.0 image-to-video is listable for standalone deployments', () => {
-  const model = { key: 'SEEDANCE2.0I2V', standaloneOnly: true };
+test('Seedance 2.0 image-to-video is listable in hosted and standalone deployments', () => {
+  const model = { key: 'SEEDANCE2.0I2V' };
   const pricingEntry = {
     key: model.key,
     providerBilled: true,
     isPerSecondPricing: true,
     prices: [
-      { aspectRatio: '16:9', price: 150 },
-      { aspectRatio: '9:16', price: 150 },
+      { aspectRatio: '16:9', price: 40 },
+      { aspectRatio: '9:16', price: 40 },
     ],
   };
 
@@ -48,7 +48,8 @@ test('Seedance 2.0 image-to-video is listable for standalone deployments', () =>
     canListVideoModel({ model, pricingEntry, isStandaloneDeployment: true }),
     true,
   );
-  assert.equal(isVideoModelAllowedForDeploymentScope(model, false), false);
+  assert.equal(isVideoModelAllowedForDeploymentScope(model, false), true);
+  assert.equal(canListVideoModel({ model, pricingEntry }), true);
   assert.equal(isVideoModelTemporarilyDisabled('SEEDANCEI2V'), false);
   assert.equal(getExpressVideoCreditsPerSecond(model.key), 40);
 });

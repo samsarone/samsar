@@ -1173,7 +1173,7 @@ def test_seedance_2_5_registry_uses_adaptive_ratio_for_first_frame_generation():
         modality=Modality.VIDEO,
         prompt="move with synchronized ambience",
         params={
-            "duration": 15,
+            "duration": 20,
             "aspect_ratio": "9:16",
             "ratio": "16:9",
             "resolution": "720p",
@@ -1194,7 +1194,7 @@ def test_seedance_2_5_registry_uses_adaptive_ratio_for_first_frame_generation():
                 "model": "seedance-2-5-260628",
                 "payload": {
                     "prompt": "move with synchronized ambience",
-                    "duration": 15,
+                    "duration": 20,
                     "ratio": "adaptive",
                     "resolution": "720p",
                     "generate_audio": True,

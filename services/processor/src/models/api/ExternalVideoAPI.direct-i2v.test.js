@@ -45,6 +45,23 @@ test('direct external I2V session marks image stages complete and only queues AI
   assert.equal(session.layers[0].imageSession.generationStatus, 'COMPLETED');
   assert.equal(session.layers[0].imageSession.editStatus, 'COMPLETED');
   assert.equal(session.layers[0].imageSession.activeSelectedImage, 'https://media.example.com/start.png');
+  assert.equal(session.layers[0].isAudioVideoLayer, false);
   assert.equal(Object.hasOwn(session, 'expressGenerationImageModel'), false);
   assert.equal(Object.hasOwn(session, 'imageModel'), false);
+});
+
+test('direct external Seedance 2.0 session preserves the requested audio contract', () => {
+  const identity = buildDirectExternalImageToVideoIdentity(USER_ID, 'sound-effect:attempt:0');
+  const session = buildDirectExternalImageToVideoSession({
+    userId: USER_ID,
+    identity,
+    payload: {
+      video_model: 'SEEDANCE2.0I2V',
+      prompt: 'Animate the first frame with synchronized ambience',
+      generate_audio: true,
+    },
+    startImage: 'https://media.example.com/start.png',
+  });
+
+  assert.equal(session.layers[0].isAudioVideoLayer, true);
 });

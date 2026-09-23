@@ -493,7 +493,6 @@ export const VIDEO_GENERATION_MODEL_TYPES = [
     isTextToVidModel: false,
     isExpressModel: true,
     isBranchedVideoModel: true,
-    standaloneOnly: true,
     supportedAspectRatios: [
       '16:9', '9:16',
     ]

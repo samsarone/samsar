@@ -122,6 +122,9 @@ export function resolveSpeechProvider(normalizedTtsProvider, payload = {}) {
     return DOCKER_AUDIO_PROVIDER.GOOGLE_CLOUD;
   }
   if (normalizedTtsProvider === 'ELEVENLABS') {
+    if (isStandaloneEdition()) {
+      return '';
+    }
     return shouldUseNativeElevenLabsSpeech()
       ? DOCKER_AUDIO_PROVIDER.ELEVENLABS
       : DOCKER_AUDIO_PROVIDER.FAL;

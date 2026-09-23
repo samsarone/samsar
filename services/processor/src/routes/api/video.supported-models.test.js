@@ -1,4 +1,7 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import test from 'node:test';
 
 import videoRouter from './video.js';
@@ -9,6 +12,8 @@ const ENV_KEYS = [
   'CURRENT_ENV',
   'SAMSAR_DOCKER_ADAPTER_ROUTING_ENABLED',
   'SAMSAR_AVAILABLE_MODELS_PATH',
+  'SAMSAR_GENBLAZE_ENABLED',
+  'SAMSAR_GENBLAZE_MODEL_CATALOG_PATH',
   'OPENAI_API_KEY',
   'OPENROUTER_API_KEY',
   'SAMSAR_API_KEY',
@@ -119,6 +124,41 @@ test('supported models exposes additive branched metadata without narrowing prod
   assert.deepEqual(standalone.body.INFERENCE_MODELS, []);
   assert.deepEqual(standalone.body.IMAGE_MODELS, []);
   assert.deepEqual(standalone.body.VIDEO_MODELS, []);
+});
+
+test('hosted supported models expose both Seedance routes from the GMICloud catalog', (t) => {
+  const original = Object.fromEntries(ENV_KEYS.map((key) => [key, process.env[key]]));
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'samsar-hosted-seedance-catalog-'));
+  t.after(() => {
+    for (const key of ENV_KEYS) {
+      if (original[key] === undefined) delete process.env[key];
+      else process.env[key] = original[key];
+    }
+    fs.rmSync(directory, { recursive: true, force: true });
+  });
+  for (const key of ENV_KEYS) delete process.env[key];
+  process.env.SAMSAR_DEPLOYMENT_EDITION = 'production';
+  process.env.SAMSAR_GENBLAZE_ENABLED = 'true';
+  process.env.SAMSAR_GENBLAZE_MODEL_CATALOG_PATH = path.join(directory, 'genblaze-model-catalog.json');
+  process.env.SAMSAR_AVAILABLE_MODELS_PATH = path.join(directory, 'available-models.json');
+  fs.writeFileSync(process.env.SAMSAR_AVAILABLE_MODELS_PATH, JSON.stringify({
+    providers: [], models: ['RUNWAYML'], actions: ['video'],
+  }));
+  fs.writeFileSync(process.env.SAMSAR_GENBLAZE_MODEL_CATALOG_PATH, JSON.stringify({
+    provider: 'gmicloud',
+    models: {
+      'SEEDANCE2.0I2V': { video: { modelId: 'seedance-2-0-260128', operation: 'video.generate' } },
+      'SEEDANCE2.5I2V': { video: { modelId: 'seedance-2-5-260628', operation: 'video.generate' } },
+    },
+  }));
+
+  const response = invokeSupportedModels();
+  assert.equal(response.statusCode, 200);
+  for (const model of ['SEEDANCE2.0I2V', 'SEEDANCE2.5I2V']) {
+    assert.equal(response.body.text_to_video.video_models.some((item) => item.value === model), true);
+    assert.equal(response.body.image_list_to_video.video_models.some((item) => item.value === model), true);
+    assert.equal(response.body.deployment.modelProviders[model], 'gmicloud');
+  }
 });
 
 test('standalone supported models derives branched options from raw provider credentials', (t) => {

@@ -35,10 +35,23 @@ test('direct external I2V queue document contains one final start image and no i
   assert.equal(document.useStartFrame, true);
   assert.equal(document.useEndFrame, false);
   assert.equal(document.retryOnFail, false);
+  assert.equal(document.generateAudio, false);
+  assert.equal(document.isAudioVideoGeneration, false);
   assert.equal(document.isExternalDirectImageToVideo, true);
   assert.equal(Object.hasOwn(document, 'imageModel'), false);
   assert.equal(Object.hasOwn(document, 'image_model'), false);
   assert.equal(Object.hasOwn(document, 'requiresEnhancement'), false);
+});
+
+test('direct external Seedance 2.0 queue retains the audio request for GMI Cloud', () => {
+  const document = buildDirectExternalI2VGenerationDocument({
+    ...buildPayload(),
+    model: 'SEEDANCE2.0I2V',
+    generateAudio: true,
+  });
+
+  assert.equal(document.generateAudio, true);
+  assert.equal(document.isAudioVideoGeneration, true);
 });
 
 test('repeated direct I2V queue calls converge on one deterministic generation document', async () => {

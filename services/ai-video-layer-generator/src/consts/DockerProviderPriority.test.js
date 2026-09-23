@@ -99,18 +99,17 @@ test('hosted lip sync keeps FAL as the primary adapter', () => {
   ]);
 });
 
-test('Happy Horse resolves each configured Docker fallback in order', () => {
+test('Happy Horse prefers Samsar and retains native fallbacks', () => {
   clearEnv();
   process.env.CURRENT_ENV = 'docker';
   process.env.ALIBABA_API_KEY = 'alibaba-key';
   process.env.FAL_API_KEY = 'fal-key';
   process.env.SAMSAR_API_KEY = 'samsar-key';
-  assert.equal(resolveDockerVideoProvider('HAPPYHORSEI2V'), DOCKER_VIDEO_PROVIDER.ALIBABA_CLOUD);
-
-  delete process.env.ALIBABA_API_KEY;
   assert.equal(resolveDockerVideoProvider('HAPPYHORSEI2V'), DOCKER_VIDEO_PROVIDER.SAMSAR);
 
   delete process.env.SAMSAR_API_KEY;
+  assert.equal(resolveDockerVideoProvider('HAPPYHORSEI2V'), DOCKER_VIDEO_PROVIDER.ALIBABA_CLOUD);
+  delete process.env.ALIBABA_API_KEY;
   assert.equal(resolveDockerVideoProvider('HAPPYHORSEI2V'), DOCKER_VIDEO_PROVIDER.FAL);
 });
 
@@ -170,8 +169,8 @@ test('standalone routing overlays the saved preference and finds each next confi
     DOCKER_VIDEO_PROVIDER.SAMSAR,
   ]);
   assert.deepEqual(getDockerVideoProviderPriority('VEO3.1I2V', { generationType: 'sound_effect' }), [
-    DOCKER_VIDEO_PROVIDER.GOOGLE_CLOUD,
     DOCKER_VIDEO_PROVIDER.SAMSAR,
+    DOCKER_VIDEO_PROVIDER.GOOGLE_CLOUD,
     DOCKER_VIDEO_PROVIDER.FAL,
   ]);
 });
@@ -218,24 +217,25 @@ test('standalone places credential-scoped GMICloud below native providers but ah
   process.env.SAMSAR_API_KEY = 'samsar-key';
   assert.equal(
     resolveDockerVideoProvider('HAPPYHORSEI2V'),
-    DOCKER_VIDEO_PROVIDER.GMICLOUD,
+    DOCKER_VIDEO_PROVIDER.SAMSAR,
   );
   assert.deepEqual(getDockerVideoProviderPriority('SEEDANCEI2V'), [
-    DOCKER_VIDEO_PROVIDER.GMICLOUD,
     DOCKER_VIDEO_PROVIDER.SAMSAR,
+    DOCKER_VIDEO_PROVIDER.GMICLOUD,
     DOCKER_VIDEO_PROVIDER.FAL,
   ]);
   assert.deepEqual(getDockerVideoProviderPriority('SEEDANCE2.0I2V'), [
+    DOCKER_VIDEO_PROVIDER.SAMSAR,
     DOCKER_VIDEO_PROVIDER.GMICLOUD,
     DOCKER_VIDEO_PROVIDER.FAL,
   ]);
   assert.equal(
     resolveDockerVideoProvider('SEEDANCE2.0I2V'),
-    DOCKER_VIDEO_PROVIDER.GMICLOUD,
+    DOCKER_VIDEO_PROVIDER.SAMSAR,
   );
   assert.deepEqual(getDockerVideoProviderPriority('KLINGIMGTOVID3PRO'), [
-    DOCKER_VIDEO_PROVIDER.GMICLOUD,
     DOCKER_VIDEO_PROVIDER.SAMSAR,
+    DOCKER_VIDEO_PROVIDER.GMICLOUD,
     DOCKER_VIDEO_PROVIDER.FAL,
   ]);
   for (const model of [
@@ -248,8 +248,8 @@ test('standalone places credential-scoped GMICloud below native providers but ah
     'HAILUOPRO',
   ]) {
     assert.deepEqual(getDockerVideoProviderPriority(model), [
-      DOCKER_VIDEO_PROVIDER.GMICLOUD,
       DOCKER_VIDEO_PROVIDER.SAMSAR,
+      DOCKER_VIDEO_PROVIDER.GMICLOUD,
       DOCKER_VIDEO_PROVIDER.FAL,
     ], model);
   }

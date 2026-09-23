@@ -684,6 +684,15 @@ test('adapter retry plan refuses ambiguous submissions and hosted production', (
   };
   assert.equal(buildDockerVideoAdapterRetryPlan(ambiguousRequest), null);
 
+  assert.equal(buildDockerVideoAdapterRetryPlan({
+    model: 'SEEDANCE2.0I2V',
+    startImage: 'https://media.example/start.png',
+    dockerVideoProvider: 'samsar',
+    dockerAdapterFailoverDisabled: true,
+    providerFailureDefinitive: true,
+    submissionOutcomeUnknown: false,
+  }), null);
+
   process.env.CURRENT_ENV = 'production';
   process.env.SAMSAR_DEPLOYMENT_EDITION = 'production';
   process.env.SAMSAR_DOCKER_ADAPTER_ROUTING_ENABLED = 'true';
@@ -823,6 +832,7 @@ test('Docker Happy Horse uses native Alibaba only when it wins provider priority
   const originalPreferencesPath = process.env.SAMSAR_MODEL_ADAPTER_PREFERENCES_PATH;
   const originalAlibabaApiKey = process.env.ALIBABA_API_KEY;
   const originalFalApiKey = process.env.FAL_API_KEY;
+  const originalSamsarApiKey = process.env.SAMSAR_API_KEY;
   try {
     process.env.CURRENT_ENV = 'docker';
     process.env.SAMSAR_MODEL_ADAPTER_PREFERENCES_PATH = path.join(
@@ -831,6 +841,9 @@ test('Docker Happy Horse uses native Alibaba only when it wins provider priority
     );
     process.env.ALIBABA_API_KEY = 'alibaba-key';
     process.env.FAL_API_KEY = 'fal-key';
+    process.env.SAMSAR_API_KEY = 'samsar-key';
+    assert.equal(shouldUseAlibabaNativeHappyHorse({ model: 'HAPPYHORSEI2V' }), false);
+    delete process.env.SAMSAR_API_KEY;
     assert.equal(shouldUseAlibabaNativeHappyHorse({ model: 'HAPPYHORSEI2V' }), true);
     assert.equal(shouldUseAlibabaNativeHappyHorse({
       model: 'HAPPYHORSEI2V',
@@ -848,6 +861,8 @@ test('Docker Happy Horse uses native Alibaba only when it wins provider priority
     else process.env.ALIBABA_API_KEY = originalAlibabaApiKey;
     if (originalFalApiKey === undefined) delete process.env.FAL_API_KEY;
     else process.env.FAL_API_KEY = originalFalApiKey;
+    if (originalSamsarApiKey === undefined) delete process.env.SAMSAR_API_KEY;
+    else process.env.SAMSAR_API_KEY = originalSamsarApiKey;
   }
 });
 
