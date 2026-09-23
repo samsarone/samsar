@@ -6,6 +6,7 @@ export const DEFAULT_PROVIDER_ENVIRONMENT_VARIABLE_BY_FIELD = Object.freeze({
   openaiApiKey: 'OPENAI_API_KEY',
   openrouterApiKey: 'OPENROUTER_API_KEY',
   gmiCloudApiKey: 'GMI_API_KEY',
+  googleLyriaGeminiApiKey: 'GOOGLE_LYRIA_GEMINI_API_KEY',
   googleCredentialsJson: 'GOOGLE_APPLICATION_CREDENTIALS_JSON_B64',
   kimiK3ApiKey: 'KIMI_K3_API_KEY',
   alibabaApiKey: 'ALIBABA_API_KEY',
@@ -19,6 +20,8 @@ export const PROVIDER_ENVIRONMENT_VARIABLE_NAMES = Object.freeze([
   ...new Set([
     ...Object.values(DEFAULT_PROVIDER_ENVIRONMENT_VARIABLE_BY_FIELD),
     'GOOGLE_APPLICATION_CREDENTIALS_JSON',
+    'GEMINI_API_KEY',
+    'GOOGLE_API_KEY',
     'DASHSCOPE_API_KEY',
     'DASHSCOPE_BASE_URL',
     'GMICLOUD_API_KEY',

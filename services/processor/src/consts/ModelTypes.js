@@ -109,7 +109,7 @@ export const CURRENT_EDITOR_VIEW = {
 export const IMAGE_GENERAITON_MODEL_TYPES = [
 
   {
-    name: 'GPT Image 2',
+    name: 'GPT Image 2.5',
     key: 'GPTIMAGE2',
     isExpressModel: true,
     isBranchedImageModel: true,
@@ -636,8 +636,8 @@ export const SPEECH_SELECT_TYPES = {
 
 export const ASSISTANT_MODEL_TYPES = [
   {
-    label: 'GPT 5.6 Sol',
-    value: 'gpt-5.6-sol',
+    label: 'GPT 6 Astra',
+    value: 'gpt-6-astra',
   },
   {
     label: 'Gemini 3.1 Pro',
@@ -656,8 +656,8 @@ export const ASSISTANT_MODEL_TYPES = [
 
 export const INFERENCE_MODEL_TYPES = [
   {
-    label: 'gpt-5.6-sol',
-    value: 'gpt-5.6-sol',
+    label: 'gpt-6-astra',
+    value: 'gpt-6-astra',
     isBranchedInferenceModel: true,
   },
   {

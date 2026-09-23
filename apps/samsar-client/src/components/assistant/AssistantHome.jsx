@@ -26,7 +26,7 @@ import {
 } from "../../utils/deploymentProviders.js";
 
 const PROCESSOR_SERVER = import.meta.env.VITE_PROCESSOR_API;
-const DEFAULT_TEXT_MODEL = 'gpt-5.6-sol';
+const DEFAULT_TEXT_MODEL = 'gpt-6-astra';
 const ASSISTANT_SIDEBAR_SAFE_GAP_PX = 24;
 
 function normalizeMessageText(content) {

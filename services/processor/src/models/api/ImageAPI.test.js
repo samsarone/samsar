@@ -161,14 +161,14 @@ test('hosted Qwen Image 3.0 Pro direct API pricing matches the existing hosted i
 test('standalone image prompt inference uses saved adapter routing without changing production OpenAI routing', () => {
   assert.equal(
     shouldUsePreferenceAwareImagePromptRouting(
-      'gpt-5.6-sol',
+      'gpt-6-astra',
       { SAMSAR_DEPLOYMENT_EDITION: 'standalone' },
     ),
     true,
   );
   assert.equal(
     shouldUsePreferenceAwareImagePromptRouting(
-      'gpt-5.6-sol',
+      'gpt-6-astra',
       { SAMSAR_DEPLOYMENT_EDITION: 'production' },
     ),
     false,

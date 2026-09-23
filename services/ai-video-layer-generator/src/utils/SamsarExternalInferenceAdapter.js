@@ -33,11 +33,11 @@ const DEFAULT_OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1';
 const DEFAULT_GENBLAZE_BASE_URL = 'http://genblaze:8080/v1';
 const GENBLAZE_INFERENCE_MODELS = new Set([
   'QWEN3.8',
-  'gpt-5.6-sol',
+  'gpt-6-astra',
   'gemini-3.1-pro',
 ]);
 const GENBLAZE_HIGH_REASONING_MODELS = new Set([
-  'gpt-5.6-sol',
+  'gpt-6-astra',
   'gemini-3.1-pro',
 ]);
 const DEFAULT_MODEL_ADAPTER_PREFERENCES_PATH =
@@ -79,7 +79,7 @@ export const DOCKER_INFERENCE_PROVIDER_PRIORITY_BY_MODEL = Object.freeze({
     DOCKER_INFERENCE_PROVIDER.KIMI,
     DOCKER_INFERENCE_PROVIDER.SAMSAR,
   ]),
-  'gpt-5.6-sol': Object.freeze([
+  'gpt-6-astra': Object.freeze([
     DOCKER_INFERENCE_PROVIDER.OPENAI,
     DOCKER_INFERENCE_PROVIDER.GMICLOUD,
     DOCKER_INFERENCE_PROVIDER.SAMSAR,
@@ -251,6 +251,9 @@ function getOpenRouterReasoningEffort(requestedModel, effort, request = {}) {
 
 function buildOpenRouterRequestPayload(request, requestedModel, openRouterModel, effort) {
   const payload = { ...request, model: openRouterModel };
+  if (requestedModel === 'gpt-6-astra' || requestedModel === 'gpt-6-astra-xhigh') {
+    for (const key of ['temperature', 'top_p', 'top_logprobs', 'logprobs']) delete payload[key];
+  }
   const effectiveEffort = getOpenRouterReasoningEffort(requestedModel, effort, request);
   const completionLimit = getOpenRouterCompletionLimit(requestedModel, request);
   delete payload.max_output_tokens;
@@ -426,8 +429,8 @@ function getCanonicalGenblazeInferenceModel(model) {
     return 'gemini-3.1-pro';
   }
   const normalized = normalizeString(model).toLowerCase();
-  return normalized === 'gpt-5.6-sol' || normalized.startsWith('gpt-5.6-sol-')
-    ? 'gpt-5.6-sol'
+  return normalized === 'gpt-6-astra' || normalized.startsWith('gpt-6-astra-')
+    ? 'gpt-6-astra'
     : '';
 }
 
@@ -486,7 +489,7 @@ function getInferenceProviderPriority(model, chatRequest = {}) {
     defaultPriority = DOCKER_INFERENCE_PROVIDER_PRIORITY_BY_MODEL[KIMI_K3_INFERENCE_MODEL];
   } else {
     const genblazePriority = DOCKER_INFERENCE_PROVIDER_PRIORITY_BY_MODEL[normalizeInferenceModel(model)] ||
-      DOCKER_INFERENCE_PROVIDER_PRIORITY_BY_MODEL['gpt-5.6-sol'];
+      DOCKER_INFERENCE_PROVIDER_PRIORITY_BY_MODEL['gpt-6-astra'];
     defaultPriority = Boolean(getGenblazeClient()) && hasGenblazeModelMapping(model, chatRequest)
       ? genblazePriority
       : [
@@ -774,7 +777,7 @@ export function getOpenRouterModelForInferenceRequest(chatRequest = {}, env = pr
   if (isGeminiInferenceModel(model)) {
     return normalizeString(env?.OPENROUTER_GEMINI_31_PRO_MODEL) || 'google/gemini-3.1-pro-preview';
   }
-  return normalizeString(env?.OPENROUTER_GPT_56_SOL_MODEL) || 'openai/gpt-5.6-sol';
+  return normalizeString(env?.OPENROUTER_GPT_56_SOL_MODEL) || 'openai/gpt-6-astra';
 }
 
 export function shouldUseOpenRouterInference(chatRequest = {}) {
@@ -824,6 +827,13 @@ export async function createGenblazeChatCompletion(chatRequest = {}) {
     timeout, timeoutMs, maxRetries, externalMaxRetries,
     reasoning, reasoning_effort, reasoningEffort, effort: requestEffort, ...request
   } = chatRequest || {};
+  if (requestedModel === 'gpt-6-astra' || requestedModel === 'gpt-6-astra-xhigh') {
+    for (const key of ['temperature', 'top_p', 'top_logprobs', 'logprobs']) delete request[key];
+    if (request.max_tokens !== undefined) {
+      request.max_completion_tokens ??= request.max_tokens;
+      delete request.max_tokens;
+    }
+  }
   const legacyReasoningEffort = normalizeString(
     reasoning_effort || reasoning?.effort,
   ).toLowerCase();

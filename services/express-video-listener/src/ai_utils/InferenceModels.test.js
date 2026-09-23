@@ -34,10 +34,16 @@ test('keeps Qwen out of the OpenAI Responses-only route without changing GPT or 
   assert.equal(isResponsesOnlyModel('QWEN3.8'), false);
   assert.equal(isResponsesOnlyModel('gemini-3.1-pro'), false);
   assert.equal(isResponsesOnlyModel('kimi-k3'), false);
-  assert.equal(isResponsesOnlyModel('gpt-5.6-sol'), true);
+  assert.equal(isResponsesOnlyModel('gpt-6-astra'), true);
 });
 
-test('retains the legacy GPT 5.6 Sol xhigh alias as an internal effort signal', () => {
-  assert.equal(normalizeInferenceModel('gpt-5.6-sol-high'), 'gpt-5.6-sol');
-  assert.equal(normalizeInferenceModel('gpt-5.6-sol-xhigh'), 'gpt-5.6-sol-xhigh');
+test('retains the legacy GPT 6 Astra xhigh alias as an internal effort signal', () => {
+  assert.equal(normalizeInferenceModel('gpt-6-astra-high'), 'gpt-6-astra');
+  assert.equal(normalizeInferenceModel('gpt-6-astra-xhigh'), 'gpt-6-astra-xhigh');
+});
+
+
+test('upgrades saved GPT 5.6 selections to Astra without losing xhigh effort', () => {
+  assert.equal(normalizeInferenceModel('gpt-5.6-sol'), 'gpt-6-astra');
+  assert.equal(normalizeInferenceModel('gpt-5.6-sol-xhigh'), 'gpt-6-astra-xhigh');
 });

@@ -53,15 +53,15 @@ test('normalizes the create_single prompt, duration, and inference model aliases
       input: {
         prompt: 'Deep technical film',
         duration: 30,
-        inferenceModel: 'gpt-5.6-sol',
+        inferenceModel: 'gpt-6-astra',
         reasoningEffort: 'xhigh',
       },
     }),
     {
       prompt: 'Deep technical film',
       duration: 30,
-      inference_model: 'gpt-5.6-sol',
-      inferenceModel: 'gpt-5.6-sol',
+      inference_model: 'gpt-6-astra',
+      inferenceModel: 'gpt-6-astra',
       effort: 'xhigh',
       video_model: 'RUNWAYML',
       videoGenerationModel: 'RUNWAYML',
@@ -115,7 +115,7 @@ test('rejects missing prompts and durations outside the text-to-video range', ()
 test('uses strict text-to-video inference aliases and falls back to the user selection', () => {
   assert.equal(
     resolveNarrativeInferenceModel({ inference_model: 'GPT5.6' }, 'QWEN3.8'),
-    'gpt-5.6-sol',
+    'gpt-6-astra',
   );
   assert.equal(
     resolveNarrativeInferenceModel({ inference_model: 'GEMINI3.1' }, 'QWEN3.8'),
@@ -124,31 +124,31 @@ test('uses strict text-to-video inference aliases and falls back to the user sel
   assert.equal(resolveNarrativeInferenceModel({}, 'QWEN3.8'), 'QWEN3.8');
   assert.equal(
     resolveNarrativeInferenceModel(
-      { inference_model: 'gpt-5.6-sol', effort: 'xhigh' },
-      'gpt-5.6-sol',
+      { inference_model: 'gpt-6-astra', effort: 'xhigh' },
+      'gpt-6-astra',
       'high',
     ),
-    'gpt-5.6-sol-xhigh',
+    'gpt-6-astra-xhigh',
   );
   assert.equal(
     resolveNarrativeInferenceModel(
-      { inference_model: 'gpt-5.6-sol-xhigh' },
-      'gpt-5.6-sol',
+      { inference_model: 'gpt-6-astra-xhigh' },
+      'gpt-6-astra',
       'high',
     ),
-    'gpt-5.6-sol-xhigh',
+    'gpt-6-astra-xhigh',
   );
   assert.equal(
     resolveNarrativeInferenceModel(
-      { inference_model: 'gpt-5.6-sol-high' },
-      'gpt-5.6-sol',
+      { inference_model: 'gpt-6-astra-high' },
+      'gpt-6-astra',
       'xhigh',
     ),
-    'gpt-5.6-sol',
+    'gpt-6-astra',
   );
   assert.equal(
-    resolveNarrativeInferenceModel({}, 'gpt-5.6-sol', 'xhigh'),
-    'gpt-5.6-sol-xhigh',
+    resolveNarrativeInferenceModel({}, 'gpt-6-astra', 'xhigh'),
+    'gpt-6-astra-xhigh',
   );
   assert.throws(
     () => resolveNarrativeInferenceModel({ inference_model: 'unknown-model' }, 'QWEN3.8'),
@@ -156,7 +156,7 @@ test('uses strict text-to-video inference aliases and falls back to the user sel
   );
 });
 
-test('submission persists request and saved GPT 5.6 Sol effort as the worker model', async (t) => {
+test('submission persists request and saved GPT 6 Astra effort as the worker model', async (t) => {
   setConnectionReadyForTest(t);
   const userId = '507f191e810c19729de860ea';
   const createdDocuments = [];
@@ -168,7 +168,7 @@ test('submission persists request and saved GPT 5.6 Sol effort as the worker mod
       lean: async () => ({
         _id: userId,
         generationCredits: 100,
-        selectedInferenceModel: 'gpt-5.6-sol',
+        selectedInferenceModel: 'gpt-6-astra',
         selectedInferenceEffort: 'xhigh',
         speakerOptions: null,
       }),
@@ -195,14 +195,14 @@ test('submission persists request and saved GPT 5.6 Sol effort as the worker mod
     payload: {
       prompt: 'Override the saved effort.',
       duration: 30,
-      inference_model: 'gpt-5.6-sol',
+      inference_model: 'gpt-6-astra',
       effort: 'high',
     },
     dependencies: { queueCreateSingleNarrativeRequest: () => true },
   });
 
-  assert.equal(createdDocuments[0].inferenceModel, 'gpt-5.6-sol-xhigh');
-  assert.equal(createdDocuments[1].inferenceModel, 'gpt-5.6-sol');
+  assert.equal(createdDocuments[0].inferenceModel, 'gpt-6-astra-xhigh');
+  assert.equal(createdDocuments[1].inferenceModel, 'gpt-6-astra');
 });
 
 test('skips full normalization after localized speech repair and preserves enriched sounds', () => {
@@ -388,7 +388,7 @@ test('completed polling payload returns the three requested narrative artifacts'
     status: 'COMPLETED',
     prompt: 'Make a film',
     duration: 30,
-    inferenceModel: 'gpt-5.6-sol',
+    inferenceModel: 'gpt-6-astra',
     themeJson: { style: ['cinematic'] },
     narrativeJson: { scenes: [{ visual: 'raw' }], sounds: [] },
     movieResourceList: { scenes: [{ visual: 'enriched' }], sounds: [] },
@@ -418,7 +418,7 @@ test('branching polling payload exposes its source, level count, and compact tre
     status: 'COMPLETED',
     prompt: 'Make a film',
     duration: 30,
-    inferenceModel: 'gpt-5.6-sol',
+    inferenceModel: 'gpt-6-astra',
     themeJson: {},
     narrativeJson: { scenes: [], sounds: [] },
     movieResourceList: { structureType: 'branched', nodes: [] },
@@ -438,7 +438,7 @@ test('failed polling payload retains billing details and the mapped request erro
     status: 'FAILED',
     prompt: 'Make a film',
     duration: 30,
-    inferenceModel: 'gpt-5.6-sol',
+    inferenceModel: 'gpt-6-astra',
     errorMessage: 'Not enough generation credits.',
     errorCode: 'INSUFFICIENT_CREDITS',
     errorStatus: 402,
@@ -539,7 +539,7 @@ test('polling is scoped to the authenticated user and create_single request type
       status: 'COMPLETED',
       prompt: 'Make a film',
       duration: 30,
-      inferenceModel: 'gpt-5.6-sol',
+      inferenceModel: 'gpt-6-astra',
       themeJson: {},
       narrativeJson: { scenes: [] },
       movieResourceList: { scenes: [] },
@@ -563,7 +563,7 @@ test('a recovered worker reuses persisted artifacts and an existing narrative de
     stage: 'narrative_generation',
     attempt: 1,
     requestKey: 'narrative:create_single:narrative',
-    model: 'gpt-5.6-sol',
+    model: 'gpt-6-astra',
     provider: 'openai',
     usage: {
       inputTokens: 1_000,
@@ -579,7 +579,7 @@ test('a recovered worker reuses persisted artifacts and an existing narrative de
     status: 'PROCESSING',
     prompt: 'Make a film',
     duration: 30,
-    inferenceModel: 'gpt-5.6-sol',
+    inferenceModel: 'gpt-6-astra',
     videoGenerationModel: 'RUNWAYML',
     videoTone: 'grounded',
     themeJson: { style: ['cinematic'] },
@@ -664,7 +664,7 @@ test('an interactive-video singular stage records usage but never debits narrati
     generationOutcome: 'SUCCEEDED',
     prompt: 'Make a film',
     duration: 30,
-    inferenceModel: 'gpt-5.6-sol',
+    inferenceModel: 'gpt-6-astra',
     videoGenerationModel: 'RUNWAYML',
     videoTone: 'grounded',
     themeJson: { style: ['cinematic'] },
@@ -674,7 +674,7 @@ test('an interactive-video singular stage records usage but never debits narrati
     inferenceReceipts: [{
       stage: 'narrative_generation',
       requestKey: 'narrative:create_single:narrative',
-      model: 'gpt-5.6-sol',
+      model: 'gpt-6-astra',
       provider: 'openai',
       usage: { inputTokens: 1_000, outputTokens: 100 },
     }],
@@ -713,7 +713,7 @@ test('a worker fails closed when any persisted inference receipt cannot be bille
     status: 'PROCESSING',
     prompt: 'Make a film',
     duration: 30,
-    inferenceModel: 'gpt-5.6-sol',
+    inferenceModel: 'gpt-6-astra',
     videoGenerationModel: 'RUNWAYML',
     videoTone: 'grounded',
     themeJson: { style: ['cinematic'] },
@@ -722,7 +722,7 @@ test('a worker fails closed when any persisted inference receipt cannot be bille
     inferenceReceipts: [
       {
         stage: 'theme_generation',
-        model: 'gpt-5.6-sol',
+        model: 'gpt-6-astra',
         usage: { inputTokens: 1_000, outputTokens: 100 },
       },
       {
@@ -764,7 +764,7 @@ test('a fresh request with no available credits fails as 402 before inference', 
     status: 'PENDING',
     prompt: 'Make a film',
     duration: 30,
-    inferenceModel: 'gpt-5.6-sol',
+    inferenceModel: 'gpt-6-astra',
     videoGenerationModel: 'RUNWAYML',
     videoTone: 'grounded',
     inferenceReceipts: [],
@@ -815,7 +815,7 @@ test('a generation failure checkpoint is persisted before billing begins', async
     generationOutcome: 'PENDING',
     prompt: 'Make a film',
     duration: 30,
-    inferenceModel: 'gpt-5.6-sol',
+    inferenceModel: 'gpt-6-astra',
     videoGenerationModel: 'RUNWAYML',
     videoTone: 'grounded',
     inferenceReceipts: [],
@@ -877,7 +877,7 @@ test('recovery of a failed generation reuses its billing snapshot without rerunn
     attempt: 1,
     validationAttempt: 1,
     requestKey: 'narrative:create_single:narrative',
-    model: 'gpt-5.6-sol',
+    model: 'gpt-6-astra',
     provider: 'openai',
     usage: {
       inputTokens: 1_000,
@@ -906,7 +906,7 @@ test('recovery of a failed generation reuses its billing snapshot without rerunn
     generationFailureStatus: 502,
     prompt: 'Make a film',
     duration: 30,
-    inferenceModel: 'gpt-5.6-sol',
+    inferenceModel: 'gpt-6-astra',
     videoGenerationModel: 'RUNWAYML',
     videoTone: 'grounded',
     inferenceReceipts,

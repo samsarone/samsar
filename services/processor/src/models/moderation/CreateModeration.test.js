@@ -272,7 +272,7 @@ test("Docker otherwise prefers OpenAI when multiple moderation endpoints are ava
       GOOGLE_CLOUD_PROJECT: "docker-project",
       SAMSAR_API_KEY: "samsar-test-key",
     },
-    inferenceModel: "gpt-5.6-sol",
+    inferenceModel: "gpt-6-astra",
     routeType: "text_to_video",
   }), MODERATION_PROVIDERS.OPENAI);
 });

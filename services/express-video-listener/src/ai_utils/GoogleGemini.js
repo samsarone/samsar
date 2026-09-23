@@ -4,8 +4,8 @@ import { readFile } from 'node:fs/promises';
 
 import { resolveLocalAssetPath } from '../utils/LocalAssetPath.js';
 
-export const GPT_56_SOL_INFERENCE_MODEL = 'gpt-5.6-sol';
-export const GPT_56_SOL_XHIGH_INFERENCE_MODEL = 'gpt-5.6-sol-xhigh';
+export const GPT_56_SOL_INFERENCE_MODEL = 'gpt-6-astra';
+export const GPT_56_SOL_XHIGH_INFERENCE_MODEL = 'gpt-6-astra-xhigh';
 export const GPT_56_SOL_REASONING_EFFORT = 'high';
 export const GPT_56_SOL_XHIGH_REASONING_EFFORT = 'xhigh';
 export const QWEN_38_INFERENCE_MODEL = 'QWEN3.8';
@@ -123,7 +123,8 @@ async function getAccessToken() {
 export function normalizeInferenceModel(value) {
   const normalized = normalizeString(value).toLowerCase();
   if (!normalized) return DEFAULT_INFERENCE_MODEL;
-  if (normalized === DEFAULT_INFERENCE_MODEL || normalized.startsWith(`${DEFAULT_INFERENCE_MODEL}-`)) {
+  if (normalized === DEFAULT_INFERENCE_MODEL || normalized.startsWith(`${DEFAULT_INFERENCE_MODEL}-`) ||
+    normalized === 'gpt-5.6-sol' || normalized.startsWith('gpt-5.6-sol-')) {
     const token = normalizeAliasToken(value);
     return token.includes('XHIGH') || token.includes('EXTRAHIGH')
       ? GPT_56_SOL_XHIGH_INFERENCE_MODEL

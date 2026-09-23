@@ -33,11 +33,11 @@ test('async polling controls are not forwarded to the model provider', () => {
       client_request_id: 'docker-session:theme',
       client_session_id: 'docker-session',
       client_request_key: 'theme',
-      model: 'gpt-5.6-sol',
+      model: 'gpt-6-astra',
     }),
     {
       messages: [{ role: 'user', content: 'hello' }],
-      model: 'gpt-5.6-sol',
+      model: 'gpt-6-astra',
     },
   );
 });
@@ -68,7 +68,7 @@ test('hosted request ids are deterministic for a Docker client request id', () =
 
 test('external chat preserves raw multimodal aliases for adapter-boundary dispatch', async () => {
   const payload = {
-    model: 'gpt-5.6-sol',
+    model: 'gpt-6-astra',
     effort: 'xhigh',
     max_tokens: 16384,
     messages: [{
@@ -96,7 +96,7 @@ test('external chat preserves raw multimodal aliases for adapter-boundary dispat
       capturedPayload = providerPayload;
       return {
         id: 'external-chat-media',
-        model: 'gpt-5.6-sol',
+        model: 'gpt-6-astra',
         choices: [{ message: { role: 'assistant', content: 'described' } }],
         usage: { input_tokens: 10, output_tokens: 2, total_tokens: 12 },
       };

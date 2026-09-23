@@ -6,20 +6,20 @@ import {
   DEFAULT_ASSISTANT_PRICING_MULTIPLIER,
 } from './AssistantBilling.js';
 
-test('bills GPT 5.6 Sol assistant usage at standard context rates', () => {
+test('bills GPT 6 Astra assistant usage at standard context rates', () => {
   const result = calculateAssistantCreditsFromUsage({
-    model: 'gpt-5.6-sol',
+    model: 'gpt-6-astra',
     usage: { input_tokens: 100_000, output_tokens: 100_000 },
     pricingMultiplier: 1,
   });
 
-  assert.equal(result.pricingModel, 'gpt-5.6-sol');
-  assert.equal(result.costUsd, 3.5);
-  assert.equal(result.credits, 350);
+  assert.equal(result.pricingModel, 'gpt-6-astra');
+  assert.equal(result.costUsd, 6);
+  assert.equal(result.credits, 600);
   assert.deepEqual(result.tokenPricingUsdPerMillion, {
-    input: 5,
-    cachedInput: 0.5,
-    output: 30,
+    input: 10,
+    cachedInput: 1,
+    output: 50,
   });
 });
 
@@ -44,15 +44,15 @@ test('bills GPT 5.6 Luna metadata usage with the standard 50 percent markup', ()
   });
 });
 
-test('bills GPT 5.6 Sol assistant usage at long-context rates above 272K input tokens', () => {
+test('bills GPT 6 Astra assistant usage at long-context rates above 272K input tokens', () => {
   const result = calculateAssistantCreditsFromUsage({
-    model: 'gpt-5.6-sol',
+    model: 'gpt-6-astra',
     usage: { input_tokens: 300_000, output_tokens: 100_000 },
     pricingMultiplier: 1,
   });
 
-  assert.equal(result.costUsd, 7.5);
-  assert.equal(result.credits, 750);
+  assert.equal(result.costUsd, 13.5);
+  assert.equal(result.credits, 1350);
   assert.equal(result.tokenPricingUsdPerMillion.longContext, true);
   assert.equal(result.tokenPricingUsdPerMillion.longContextInputThreshold, 272_000);
 });
@@ -91,7 +91,7 @@ test('bills Qwen 3.8 Max cached tokens at the regular input rate', () => {
 
 test('prices provider-qualified OpenRouter model identifiers', () => {
   const gpt = calculateAssistantCreditsFromUsage({
-    model: 'openai/gpt-5.6-sol',
+    model: 'openai/gpt-6-astra',
     usage: { input_tokens: 1_000, output_tokens: 100 },
     pricingMultiplier: 1,
   });
@@ -106,7 +106,7 @@ test('prices provider-qualified OpenRouter model identifiers', () => {
     pricingMultiplier: 1,
   });
 
-  assert.equal(gpt.pricingModel, 'gpt-5.6-sol');
+  assert.equal(gpt.pricingModel, 'gpt-6-astra');
   assert.equal(gemini.pricingModel, 'gemini-3.1-pro');
   assert.equal(qwen.pricingModel, 'qwen3.8-max');
   assert.ok(gpt.credits > 0);

@@ -1,6 +1,11 @@
 import mongoose from 'mongoose';
 import dns from 'node:dns/promises';
 import net from 'node:net';
+import {
+  isPrivateOrLocalHostname,
+  isPrivateOrLocalIpAddress,
+  normalizeNetworkHostname,
+} from '../../utils/PublicNetworkAddress.js';
 
 import VideoSession from '../../schema/VideoSession.js';
 import { getDBConnectionString } from '../DBString.js';
@@ -110,47 +115,8 @@ function buildStepVideoError(message, status = 400) {
   return error;
 }
 
-function isPrivateOrLocalHostname(hostname) {
-  const normalized = normalizeString(hostname).toLowerCase().replace(/^\[|\]$/g, '');
-  if (!normalized) {
-    return true;
-  }
-  return (
-    normalized === 'localhost' ||
-    normalized === '127.0.0.1' ||
-    normalized === '0.0.0.0' ||
-    normalized === '::1' ||
-    normalized.endsWith('.local') ||
-    normalized.startsWith('10.') ||
-    normalized.startsWith('192.168.') ||
-    /^172\.(1[6-9]|2\d|3[0-1])\./.test(normalized) ||
-    /^169\.254\./.test(normalized) ||
-    /^fc[0-9a-f]{2}:/i.test(normalized) ||
-    /^fd[0-9a-f]{2}:/i.test(normalized)
-  );
-}
-
-function isPrivateOrLocalIpAddress(value) {
-  const normalized = normalizeString(value).toLowerCase().replace(/^\[|\]$/g, '');
-  if (!net.isIP(normalized)) {
-    return false;
-  }
-  return (
-    normalized === '127.0.0.1' ||
-    normalized === '0.0.0.0' ||
-    normalized === '::1' ||
-    normalized.startsWith('10.') ||
-    normalized.startsWith('192.168.') ||
-    /^172\.(1[6-9]|2\d|3[0-1])\./.test(normalized) ||
-    /^169\.254\./.test(normalized) ||
-    /^fc[0-9a-f]{2}:/i.test(normalized) ||
-    /^fd[0-9a-f]{2}:/i.test(normalized) ||
-    /^fe80:/i.test(normalized)
-  );
-}
-
 async function assertPublicHostnameResolution(url, mediaLabel) {
-  const { hostname } = new URL(url);
+  const hostname = normalizeNetworkHostname(new URL(url).hostname);
   if (net.isIP(hostname)) {
     if (isPrivateOrLocalIpAddress(hostname)) {
       throw buildStepVideoError(`${mediaLabel} must resolve to a public network address.`);

@@ -7,6 +7,7 @@ import {
   buildFalGPTImageTwoInput,
   getGPTImageTwoOutput,
   GPT_IMAGE_TWO_FAL_ENDPOINT,
+  GPT_IMAGE_TWO_LEGACY_FAL_ENDPOINT,
   normalizeGPTImageTwoResult,
 } from './GPTImageTwoPayload.js';
 import { isSubmissionOutcomeUnknown } from '../utils/ProviderSubmissionSafety.js';
@@ -69,6 +70,7 @@ export async function submitFalGPTImageTwoRequest(payload = {}, dependencies = {
       apiGenerationStatus: 'PENDING',
       apiSubmittedAt: new Date(),
       externalProvider: 'fal',
+      gptImageFalEndpoint: GPT_IMAGE_TWO_FAL_ENDPOINT,
     });
     return null;
   } catch (error) {
@@ -90,12 +92,13 @@ export async function pollFalGPTImageTwoRequest(payload = {}, dependencies = {})
   const saveFile = dependencies.saveFile || saveRemoteFile;
   const logger = dependencies.logger || console;
   const { _id, apiRequestId } = payload;
+  const endpoint = normalizeString(payload.gptImageFalEndpoint) || GPT_IMAGE_TWO_LEGACY_FAL_ENDPOINT;
 
   await connect();
   await imageGenerationModel.findOneAndUpdate({ _id }, { rowLocked: true });
 
   try {
-    const statusResponse = await queueStatus(GPT_IMAGE_TWO_FAL_ENDPOINT, {
+    const statusResponse = await queueStatus(endpoint, {
       requestId: apiRequestId,
       logs: true,
     });
@@ -114,7 +117,7 @@ export async function pollFalGPTImageTwoRequest(payload = {}, dependencies = {})
       return null;
     }
 
-    const result = await queueResult(GPT_IMAGE_TWO_FAL_ENDPOINT, {
+    const result = await queueResult(endpoint, {
       requestId: apiRequestId,
     });
     const images = Array.isArray(result?.data?.images)

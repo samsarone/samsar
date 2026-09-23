@@ -778,6 +778,32 @@ test('Qwen Image 3 resolves only to configured Alibaba Cloud with adapter routin
   }
 });
 
+test('production GPT Image uses OpenAI for new jobs and preserves pending Fal jobs', () => {
+  const previousEdition = process.env.SAMSAR_DEPLOYMENT_EDITION;
+  process.env.SAMSAR_DEPLOYMENT_EDITION = 'production';
+  try {
+    assert.equal(__testOnly__.resolveImageProviderForModel('GPTIMAGE2', {
+      apiGenerationStatus: 'INIT',
+    }), 'openai');
+    assert.equal(__testOnly__.resolveImageEditProviderForModel('GPTIMAGE2EDIT', {
+      apiEditStatus: 'INIT',
+    }), 'openai');
+    assert.equal(__testOnly__.resolveImageProviderForModel('GPTIMAGE2', {
+      apiGenerationStatus: 'PENDING',
+      apiRequestId: 'existing-fal-request',
+      externalProvider: 'fal',
+    }), 'fal');
+    assert.equal(__testOnly__.resolveImageProviderForModel('GPTIMAGE2', {
+      apiGenerationStatus: 'PENDING',
+      apiRequestId: 'existing-fal-request',
+      submittedAdapter: 'fal',
+    }), 'fal');
+  } finally {
+    if (previousEdition === undefined) delete process.env.SAMSAR_DEPLOYMENT_EDITION;
+    else process.env.SAMSAR_DEPLOYMENT_EDITION = previousEdition;
+  }
+});
+
 test('pending production image requests remain pinned to their submitted adapter', () => {
   const previousEdition = process.env.SAMSAR_DEPLOYMENT_EDITION;
   process.env.SAMSAR_DEPLOYMENT_EDITION = 'production';

@@ -18,7 +18,7 @@ export const DOCKER_AUDIO_PROVIDER_CAPABILITIES = Object.freeze({
   },
   fal: {
     ttsProviders: ['ELEVENLABS', 'PLAYAI'],
-    musicProviders: ['ELEVENLABS_MUSIC', 'CASSETTEAI', 'AUDIOCRAFT'],
+    musicProviders: ['ELEVENLABS_MUSIC', 'LYRIA3', 'CASSETTEAI', 'AUDIOCRAFT'],
     soundEffectProviders: ['SDAUDIO'],
   },
   elevenlabs: {
@@ -80,7 +80,9 @@ export function buildDockerAudioAvailability(providers = {}, options = {}) {
     if (!capabilities) {
       continue;
     }
-    ttsProviders.push(...capabilities.ttsProviders);
+    if (!(provider === 'googleCloud' && providers.googleCloud?.musicOnly)) {
+      ttsProviders.push(...capabilities.ttsProviders);
+    }
     musicProviders.push(...capabilities.musicProviders);
     soundEffectProviders.push(...capabilities.soundEffectProviders);
   }

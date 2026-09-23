@@ -61,7 +61,7 @@ const SEEDANCE_MODELS = new Set([
   'SEEDANCE2.5I2V',
 ]);
 const SEEDANCE_ASPECT_RATIOS = new Set(['21:9', '16:9', '4:3', '1:1', '3:4', '9:16']);
-const SEEDANCE_25_DURATION_UNITS = Object.freeze([5, 10, 15]);
+const SEEDANCE_25_DURATION_UNITS = Object.freeze([5, 10, 15, 20]);
 const HAPPY_HORSE_DURATIONS = Object.freeze([5, 10, 15]);
 
 function normalizeString(value) {

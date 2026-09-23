@@ -1,4 +1,5 @@
 import fs from 'fs';
+import { getLyriaGeminiApiKey, usesLyriaGeminiApi } from '../music/GoogleLyriaConfig.js';
 
 import { isStandaloneEdition } from '../util/environmentUtils.js';
 
@@ -61,10 +62,12 @@ export const DOCKER_SPEECH_PROVIDER_PRIORITY_BY_TTS_PROVIDER = Object.freeze({
 export const DOCKER_MUSIC_PROVIDER_PRIORITY_BY_MODEL = Object.freeze({
   LYRIA3: Object.freeze([
     DOCKER_AUDIO_PROVIDER.GOOGLE_CLOUD,
+    DOCKER_AUDIO_PROVIDER.FAL,
     DOCKER_AUDIO_PROVIDER.SAMSAR,
   ]),
   LYRIA2: Object.freeze([
     DOCKER_AUDIO_PROVIDER.GOOGLE_CLOUD,
+    DOCKER_AUDIO_PROVIDER.FAL,
     DOCKER_AUDIO_PROVIDER.SAMSAR,
   ]),
   ELEVENLABS_MUSIC: Object.freeze([
@@ -312,6 +315,13 @@ function resolvePriority(priority, payload = {}, options = {}) {
     return '';
   }
 
+  // A confirmed authentication rejection may have moved this unsubmitted
+  // request to Samsar. Preserve that choice if the worker restarts mid-submit.
+  if (isStandaloneEdition() && submittedAdapter === DOCKER_AUDIO_PROVIDER.SAMSAR &&
+      payload.generationMeta?.audioAuthFallback?.to === DOCKER_AUDIO_PROVIDER.SAMSAR) {
+    return DOCKER_AUDIO_PROVIDER.SAMSAR;
+  }
+
   if (shouldForceSamsarExternalAudioProvider()) {
     return DOCKER_AUDIO_PROVIDER.SAMSAR;
   }
@@ -320,11 +330,24 @@ function resolvePriority(priority, payload = {}, options = {}) {
     return '';
   }
 
+  // Prefer the newer Lyria generation across adapters, even when an older
+  // saved adapter order puts Vertex first. Keep pending jobs on their adapter.
+  if (['LYRIA3', 'LYRIA2'].includes(options.musicModel)) {
+    if (getLyriaGeminiApiKey() && usesLyriaGeminiApi()) return DOCKER_AUDIO_PROVIDER.GOOGLE_CLOUD;
+    if (hasFalCredential()) return DOCKER_AUDIO_PROVIDER.FAL;
+  }
+
   for (const provider of priority || []) {
     if (provider === DOCKER_AUDIO_PROVIDER.GMICLOUD) {
       if (hasGenBlazeSpeechModelMapping(options.ttsProvider)) {
         return provider;
       }
+      continue;
+    }
+    if (provider === DOCKER_AUDIO_PROVIDER.GOOGLE_CLOUD
+      && ['LYRIA3', 'LYRIA2'].includes(options.musicModel)
+      && usesLyriaGeminiApi()) {
+      if (getLyriaGeminiApiKey()) return provider;
       continue;
     }
     if (hasProviderCredential(provider)) {
@@ -350,7 +373,7 @@ export function resolveDockerMusicProvider(model, payload = {}) {
     DOCKER_MUSIC_PROVIDER_PRIORITY_BY_MODEL[normalizedModel],
     [normalizedModel],
   );
-  return resolvePriority(priority, payload);
+  return resolvePriority(priority, payload, { musicModel: normalizedModel });
 }
 
 export function resolveDockerSoundEffectProvider(model, payload = {}) {

@@ -13,16 +13,16 @@ import {
   normalizeInferenceModel,
 } from './InferenceModels.js';
 
-test('uses high reasoning for GPT 5.6 Sol inference aliases', () => {
+test('uses high reasoning for GPT 6 Astra inference aliases', () => {
   assert.equal(GPT_56_SOL_REASONING_EFFORT, 'high');
-  assert.equal(isGPT56SolInferenceModel('gpt-5.6-sol'), true);
+  assert.equal(isGPT56SolInferenceModel('gpt-6-astra'), true);
   assert.equal(isGPT56SolInferenceModel('gpt-5.6'), true);
   assert.equal(isGPT56SolInferenceModel('gpt-4o-mini'), false);
-  assert.equal(normalizeInferenceModel('gpt-5.6-sol-high'), 'gpt-5.6-sol');
-  assert.equal(normalizeInferenceModel('gpt-5.6-sol-xhigh'), 'gpt-5.6-sol-xhigh');
-  assert.equal(getGPT56SolReasoningEffort('gpt-5.6-sol-xhigh'), 'xhigh');
-  assert.equal(getGPT56SolReasoningEffort('gpt-5.6-sol-xhigh', 'high'), 'high');
-  assert.equal(getProviderModelForInferenceModel('gpt-5.6-sol-xhigh'), 'gpt-5.6-sol');
+  assert.equal(normalizeInferenceModel('gpt-6-astra-high'), 'gpt-6-astra');
+  assert.equal(normalizeInferenceModel('gpt-6-astra-xhigh'), 'gpt-6-astra-xhigh');
+  assert.equal(getGPT56SolReasoningEffort('gpt-6-astra-xhigh'), 'xhigh');
+  assert.equal(getGPT56SolReasoningEffort('gpt-6-astra-xhigh', 'high'), 'high');
+  assert.equal(getProviderModelForInferenceModel('gpt-6-astra-xhigh'), 'gpt-6-astra');
 });
 
 test('normalizes Qwen 3.8 aliases to the canonical logical model', () => {
@@ -53,4 +53,10 @@ test('normalizes Kimi K3 aliases to the native provider model', () => {
     assert.equal(isKimiInferenceModel(alias), true);
   }
   assert.equal(getProviderModelForInferenceModel('Kimi K3'), 'kimi-k3');
+});
+
+
+test('upgrades saved GPT 5.6 selections to Astra without losing xhigh effort', () => {
+  assert.equal(normalizeInferenceModel('gpt-5.6-sol'), 'gpt-6-astra');
+  assert.equal(normalizeInferenceModel('gpt-5.6-sol-xhigh'), 'gpt-6-astra-xhigh');
 });

@@ -1,3 +1,4 @@
+import { buildSyncLipSyncInput } from '../utils/SyncLipSyncFace.js';
 import { fal } from "@fal-ai/client";
 const FAL_API_KEY = process.env.FAL_API_KEY;
 
@@ -40,10 +41,7 @@ export async function generateSyncLipSyncLayer(payload) {
   
 
 
-  const inputPayload = {
-    video_url: videoLink,
-    audio_url: audioLink,
-  };
+  const inputPayload = buildSyncLipSyncInput(payload);
 
   if (!videoLink || !audioLink) {
     throw new Error("Missing video or audio link");

@@ -52,7 +52,7 @@ test('Vidgenie Sol metadata generation keeps the baseline GPT 5.6 Luna xhigh req
     return {
       _id: sessionId,
       userId: '507f1f77bcf86cd799439011',
-      expressGenerationInferenceModel: 'gpt-5.6-sol',
+      expressGenerationInferenceModel: 'gpt-6-astra',
       inputPrompt: 'A careful walk through a difficult engineering concept.',
       movieResourceList: {
         scenes: [{ visual: 'An engineer annotates a blueprint.' }],
@@ -67,7 +67,7 @@ test('Vidgenie Sol metadata generation keeps the baseline GPT 5.6 Luna xhigh req
     requestBody = options.body;
     return {
       id: 'publication-meta-response',
-      model: 'gpt-5.6-luna',
+      model: 'gpt-6-astra',
       output_text: JSON.stringify({
         title: 'Blueprint First',
         description: 'An engineer explains how constraints guide a sound design.',
@@ -84,6 +84,6 @@ test('Vidgenie Sol metadata generation keeps the baseline GPT 5.6 Luna xhigh req
     title: 'Blueprint First',
     description: 'An engineer explains how constraints guide a sound design.',
   });
-  assert.equal(requestBody.model, 'gpt-5.6-luna');
+  assert.equal(requestBody.model, 'gpt-6-astra');
   assert.deepEqual(requestBody.reasoning, { effort: 'xhigh' });
 });

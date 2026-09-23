@@ -46,7 +46,7 @@ function getOpenAIClient() {
 }
 
 const RESPONSES_ONLY_MODELS = new Set([
-  'gpt-5.6-sol',
+  'gpt-6-astra',
 ]);
 
 function getAuditHash(value) {
@@ -116,7 +116,7 @@ const textWordCustomAnimations = [
 
 
 export async function createTextToVideoPromptFromLayerPrompt(startingPrompt, startingImageDescription,
-  endingImageDescription, userInferenceModel = 'gpt-5.6-sol', useShortFormPrompt = true, indexData, videoTone = 'grounded', auditContext = {}) {
+  endingImageDescription, userInferenceModel = 'gpt-6-astra', useShortFormPrompt = true, indexData, videoTone = 'grounded', auditContext = {}) {
 
   const { isStartScene, isEndScene } = indexData;
 
@@ -251,7 +251,7 @@ function getMotionContinuityInstruction(indexData = {}) {
 export async function createTextToVideoPromptFromStartingLayerPrompt(
   startingPrompt,
   startingImageDescription,
-  userInferenceModel = 'gpt-5.6-sol',
+  userInferenceModel = 'gpt-6-astra',
   useShortFormPrompt = true,
   isSpeakerTransition = false,
   indexData,
@@ -330,7 +330,7 @@ export async function createTextToVideoPromptFromStartingLayerPrompt(
 
 
 
-export async function getTransitionListForLayerSceneDescriptions(layerSceneDescriptions, userInferenceModel = 'gpt-5.6-sol', auditContext = {}) {
+export async function getTransitionListForLayerSceneDescriptions(layerSceneDescriptions, userInferenceModel = 'gpt-6-astra', auditContext = {}) {
 
   const layerSceneDescriptionsString = layerSceneDescriptions.join('\n\n');
 
@@ -393,7 +393,7 @@ export async function getAccentForText(text, auditContext = {}) {
     const inferenceModel = auditContext.inferenceModel ||
       process.env.USER_INFERENCE_MODEL ||
       process.env.DEFAULT_USER_INFERENCE_MODEL ||
-      'gpt-5.6-sol';
+      'gpt-6-astra';
     const responseData = await sendAssistantMessageRequest(messageList, inferenceModel, auditContext);
 
     return responseData.content;
@@ -438,6 +438,7 @@ async function dispatchAssistantMessageRequest(request, provider = '') {
   }
 
   if (isGeminiInferenceModel(modelName)) {
+    if (request.response_format) throw new Error('Structured speaker selection is not supported by the native Gemini adapter.');
     const response = await createGoogleGeminiChatCompletion(messageList);
     return {
       response,
@@ -476,6 +477,7 @@ async function dispatchAssistantMessageRequest(request, provider = '') {
       body: {
         model: modelName,
         input: normalizeMessagesForResponses(providerPayload.messages),
+        ...(request.response_format?.type === 'json_schema' ? { text: { format: { type: 'json_schema', ...request.response_format.json_schema } } } : {}),
         reasoning: {
           effort: getGPT56SolReasoningEffort(
             request?.model,
@@ -499,6 +501,7 @@ async function dispatchAssistantMessageRequest(request, provider = '') {
   const nativePayload = await normalizeProviderMediaPayload({
     messages: messageList,
     model: modelName,
+    ...(request.response_format ? { response_format: request.response_format } : {}),
   }, normalizeProviderMediaUrl);
   const response = await getOpenAIClient().chat.completions.create(nativePayload, {
     maxRetries: 0,
@@ -537,7 +540,7 @@ async function dispatchStructuredMessageRequest(request, provider = '') {
   );
 }
 
-export async function sendAssistantMessageRequest(messageList, userInferenceModel = 'gpt-5.6-sol', auditContext = {}) {
+export async function sendAssistantMessageRequest(messageList, userInferenceModel = 'gpt-6-astra', auditContext = {}, responseFormat = undefined) {
 
 
   const modelName = getModelNameForInferenceModel(userInferenceModel);
@@ -559,6 +562,7 @@ export async function sendAssistantMessageRequest(messageList, userInferenceMode
     const basePayload = {
       model: modelName,
       messages: messageList,
+      ...(responseFormat ? { response_format: responseFormat } : {}),
       ...(reasoningEffort ? { reasoning_effort: reasoningEffort } : {}),
       ...(selectedInferenceModelAuthorization
         ? { authorization: selectedInferenceModelAuthorization }
@@ -591,7 +595,7 @@ export async function sendAssistantMessageRequest(messageList, userInferenceMode
 
 export async function sendAssistantStructuredMessageRequest(
   messageList,
-  userInferenceModel = 'gpt-5.6-sol',
+  userInferenceModel = 'gpt-6-astra',
   auditContext = {},
 ) {
 
@@ -611,7 +615,7 @@ export async function sendAssistantStructuredMessageRequest(
       model: isQwenInferenceModel(selectedInferenceModel) ||
         isKimiInferenceModel(selectedInferenceModel)
         ? selectedInferenceModel
-        : "gpt-4o-2024-11-20",
+        : "gpt-6-astra",
       response_format: zodResponseFormat(ScreenplayTransitionExtraction, "screenplay_transition_extraction"),
       ...(selectedInferenceModelAuthorization
         ? { authorization: selectedInferenceModelAuthorization }
@@ -648,11 +652,18 @@ function normalizeMessagesForResponses(messages) {
       return message;
     }
 
-    if (message.role === 'system') {
-      return { ...message, role: 'developer' };
+    const normalized = message.role === 'system' ? { ...message, role: 'developer' } : { ...message };
+    if (Array.isArray(message.content)) {
+      normalized.content = message.content.map(part => {
+        if (part.type === 'text') return { type: 'input_text', text: part.text };
+        if (part.type === 'image_url') return {
+          type: 'input_image', image_url: part.image_url.url,
+          ...(part.image_url.detail ? { detail: part.image_url.detail } : {}),
+        };
+        return part;
+      });
     }
-
-    return message;
+    return normalized;
   });
 }
 

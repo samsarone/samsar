@@ -215,7 +215,7 @@ test('GMICloud Seedance 2.5 lets framed generation derive ratio from the first i
       'https://media.example/last.png',
     ],
     params: {
-      duration: 15,
+      duration: 20,
       aspect_ratio: 'adaptive',
       generate_audio: true,
       resolution: '720p',
@@ -439,4 +439,22 @@ test('poll response maps back to the existing listener result shape', async () =
   );
   assert.equal(failed.responseStatus, 'FAILED');
   assert.equal(failed.providerFailureMessage, 'quota exceeded');
+});
+
+
+test('GMICloud Seedance 2.5 supports up to 20 seconds without extending Seedance 2.0', () => {
+  for (const [requested, expected] of [[5, 5], [10, 10], [15, 15], [20, 20], [17.5, 15], [18, 20], [25, 20]]) {
+    const payload = {
+      model: 'SEEDANCE2.5I2V',
+      startImage: 'https://media.example/start.png',
+      duration: requested,
+    };
+    assert.equal(buildGenBlazeVideoRequest(payload).params.duration, expected);
+  }
+  const payload = {
+    model: 'SEEDANCE2.0I2V',
+    startImage: 'https://media.example/start.png',
+    duration: 20,
+  };
+  assert.equal(buildGenBlazeVideoRequest(payload).params.duration, 15);
 });

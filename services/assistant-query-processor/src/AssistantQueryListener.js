@@ -40,7 +40,11 @@ async function processPendingAssistantRequests() {
     const inferenceModel = getAssistantRequestInferenceModel(request.inferenceModel);
 
     // Lock the row to prevent concurrent processing
-    await AssistantQueryGeneration.updateOne({ _id: request._id }, { rowLocked: true });
+    const claim = await AssistantQueryGeneration.updateOne(
+      { _id: request._id, rowLocked: false },
+      { $set: { rowLocked: true } },
+    );
+    if (claim.modifiedCount !== 1) continue;
 
     let sessionData = null;
 

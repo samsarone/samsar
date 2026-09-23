@@ -1568,7 +1568,7 @@ export default function VideoEditorContainer(props) {
   const startMaskGenerationPoll = () => {
     const sessionId = id;
     axios
-      .get(`${PROCESSOR_API_URL}/video_sessions/generate_mask_status?sessionId=${sessionId}`)
+      .get(`${PROCESSOR_API_URL}/video_sessions/generate_mask_status?sessionId=${sessionId}`, getHeaders())
       .then((response) => {
         const maskGeneration = response.data;
         if (maskGeneration.status === 'COMPLETED') {

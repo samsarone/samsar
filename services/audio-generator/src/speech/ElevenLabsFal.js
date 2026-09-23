@@ -5,14 +5,15 @@ import mp3Duration from "mp3-duration";
 
 import { fal } from "@fal-ai/client";
 import { getDBConnectionString } from "../DBString.js";
-import { updateSpeechPrompt } from './OpenAI.js';
 import VideoSession from "../schema/VideoSession.js";
 import AudioGeneration from "../schema/AudioGeneration.js";
+import { markAudioGenerationAsFailed } from '../music/audioUtils.js';
+import { isFalAudioAuthenticationRejection, submitFalAudioRequest } from '../utils/FalAudioSubmission.js';
+import { createSubmissionOutcomeUnknownError, isSubmissionOutcomeUnknownError } from '../utils/ProviderSubmissionSafety.js';
 import { resolveSpeechLayerTimingUpdate } from "./SpeechLayerTiming.js";
 import { getProcessorAssetsV2Path, toAssetsV2RelativePath } from "../utils/AssetPaths.js";
 import { uploadAudioAssetToCDN } from "../AWS.js";
 import {
-  failStandaloneExternalAudioGeneration,
   finalizeStandaloneExternalAudioGeneration,
 } from '../external/StandaloneExternalAudio.js';
 
@@ -37,6 +38,7 @@ function normalizePayload(payload = {}) {
 
 export async function processElevenLabsFalSpeechRequest(payload) {
   payload = normalizePayload(payload);
+  let submissionAccepted = false;
 
   // Helper for sleeping (retry delay, etc.)
   async function delay(ms) {
@@ -97,9 +99,10 @@ export async function processElevenLabsFalSpeechRequest(payload) {
         voice: speakerName,
       };
 
-      const response = await fal.queue.submit(falLink, {
+      const response = await submitFalAudioRequest(falLink, {
         input: payloadToFal,
       });
+      submissionAccepted = true;
 
       
       // Store the request_id from Fal
@@ -361,7 +364,20 @@ export async function processElevenLabsFalSpeechRequest(payload) {
     }
 
   } catch (err) {
-    console.error("Error in processPlayAISpeechRequest:", err);
+    console.error("Error in processElevenLabsFalSpeechRequest:", err);
+
+    if (submissionAccepted) {
+      throw createSubmissionOutcomeUnknownError(
+        new Error('Fal accepted the speech request, but saving its state failed.', { cause: err }),
+        'Fal speech submission',
+      );
+    }
+    if ((payload.status === 'PENDING' && payload.apiRequestId) ||
+        isFalAudioAuthenticationRejection(err) || isSubmissionOutcomeUnknownError(err)) {
+      // The dispatcher handles a rejected key. The worker preserves pending
+      // jobs and stops ambiguous submissions without rewriting the narration.
+      throw err;
+    }
 
     // Attempt a retry if possible
     let audioGenerationRecord = await AudioGeneration.findById(payload._id);
@@ -375,16 +391,9 @@ export async function processElevenLabsFalSpeechRequest(payload) {
 
     // If we haven't exhausted our retries
     if (audioGenerationRecord.numRetries < 3) {
-      // Optionally: update the prompt to add variety / fallback text
-
-      
-      const updatedSpeechPrompt = await updateSpeechPrompt(audioGenerationRecord.prompt, {
-        request: audioGenerationRecord,
-      });
-
+      // An audio retry must not regenerate already-approved narration.
       audioGenerationRecord.numRetries += 1;
       audioGenerationRecord.rowLocked = false;
-      audioGenerationRecord.prompt = updatedSpeechPrompt;
       // Reset generation status
       audioGenerationRecord.status = 'INIT';
       await audioGenerationRecord.save();
@@ -394,8 +403,7 @@ export async function processElevenLabsFalSpeechRequest(payload) {
         { _id: payload.sessionId, "audioLayers._id": payload.audioLayerId },
         {
           $set: {
-            "audioLayers.$.generationStatus": "INIT",
-            "audioLayers.$.prompt": updatedSpeechPrompt
+            "audioLayers.$.generationStatus": "INIT"
           }
         },
         { new: true }
@@ -403,19 +411,8 @@ export async function processElevenLabsFalSpeechRequest(payload) {
       // Return; next pass will handle the new INIT status
     } else {
       // 3+ retries => mark failed
-      console.error("Max retries reached for PlayAI. Marking as FAILED.");
-      await VideoSession.findOneAndUpdate(
-        { _id: payload.sessionId, "audioLayers._id": payload.audioLayerId },
-        { $set: { "audioLayers.$.generationStatus": "FAILED" } },
-        { new: true }
-      );
-      if (await failStandaloneExternalAudioGeneration(
-        audioGenerationRecord,
-        'ElevenLabs Fal speech generation failed.',
-        { deleteAudioGeneration: true }
-      )) {
-        return;
-      }
+      console.error("Max retries reached for ElevenLabs Fal speech. Marking as FAILED.");
+      await markAudioGenerationAsFailed(payload._id, err?.message || 'ElevenLabs Fal speech generation failed.');
       await AudioGeneration.deleteOne({ _id: payload._id });
     }
   }

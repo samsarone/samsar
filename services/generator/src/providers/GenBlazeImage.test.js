@@ -278,3 +278,22 @@ test('returns a structured provider failure while retaining ownership for shared
     },
   ]);
 });
+
+
+test('rejects new GPT Image jobs instead of silently using GMICloud version 2', async () => {
+  const recorder = createModelRecorder();
+  let submitted = false;
+  const result = await handleGenBlazeImageRequest({
+    _id: 'sunburst-request',
+    model: 'GPTIMAGE2',
+    apiGenerationStatus: 'INIT',
+  }, {
+    connect: async () => {},
+    imageGenerationModel: recorder.model,
+    request: async () => { submitted = true; },
+    logger: { error() {} },
+  });
+  assert.equal(submitted, false);
+  assert.equal(result.image, null);
+  assert.match(result.error, /Sunburst.*not verified on GMICloud/);
+});

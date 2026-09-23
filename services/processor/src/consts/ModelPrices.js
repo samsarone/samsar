@@ -288,7 +288,7 @@ export const VIDEO_MODEL_PRICES = [
       { aspectRatio: '9:16', price: 50 },
     ],
     pricingDistribution: getExpressVideoPricingDistributionPerSecond('SEEDANCE2.5I2V'),
-    units: [5, 10, 15],
+    units: [5, 10, 15, 20],
   },
   {
     key: 'VEO3.1',
@@ -441,7 +441,7 @@ export const TTS_TYPES = [
 
 export const ASSISTANT_MODEL_PRICES = [
   {
-    key: "gpt-5.6-sol",
+    key: "gpt-6-astra",
     prices: [
       {
         operationType: "words",

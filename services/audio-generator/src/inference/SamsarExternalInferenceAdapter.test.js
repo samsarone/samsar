@@ -158,7 +158,7 @@ test('hosted inference ignores saved preferences and keeps Qwen OpenRouter-only'
   const preferencePath = path.join(temporaryDirectory, 'model-adapter-preferences.json');
   writeFileSync(preferencePath, JSON.stringify({
     modelProviderPriority: {
-      'gpt-5.6-sol': ['samsar', 'openrouter', 'openai'],
+      'gpt-6-astra': ['samsar', 'openrouter', 'openai'],
       'QWEN3.8': ['samsar', 'alibabaCloud', 'openrouter'],
     },
   }));
@@ -174,7 +174,7 @@ test('hosted inference ignores saved preferences and keeps Qwen OpenRouter-only'
         DASHSCOPE_API_KEY: 'dashscope-key',
       }, () => {
         assert.deepEqual(
-          getConfiguredInferenceProviders('gpt-5.6-sol'),
+          getConfiguredInferenceProviders('gpt-6-astra'),
           [
             DOCKER_INFERENCE_PROVIDER.OPENAI,
             DOCKER_INFERENCE_PROVIDER.OPENROUTER,
@@ -269,7 +269,7 @@ test('Samsar is preferred ahead of OpenRouter for Qwen', () => {
     SAMSAR_API_KEY: 'samsar-key',
   }, () => {
     assert.equal(resolveConfiguredInferenceProvider('QWEN3.8'), DOCKER_INFERENCE_PROVIDER.SAMSAR);
-    for (const model of ['gemini-3.1-pro', 'gpt-5.6-sol']) {
+    for (const model of ['gemini-3.1-pro', 'gpt-6-astra']) {
       assert.equal(resolveConfiguredInferenceProvider(model), DOCKER_INFERENCE_PROVIDER.OPENROUTER);
     }
     assert.equal(getOpenRouterModelForInferenceRequest({
@@ -332,7 +332,7 @@ test('explicit deployed authorization overrides native credentials for every inf
     KIMI_K3_API_KEY: 'kimi-key',
     OPENAI_API_KEY: 'openai-key',
   }, () => {
-    for (const model of ['QWEN3.8', 'gemini-3.1-pro', 'kimi-k3', 'gpt-5.6-sol']) {
+    for (const model of ['QWEN3.8', 'gemini-3.1-pro', 'kimi-k3', 'gpt-6-astra']) {
       assert.equal(shouldUseSamsarExternalInference({
         model,
         authorization: 'deployed',
@@ -347,7 +347,7 @@ test('explicit native authorization preserves Samsar fallback while provider cre
       model: 'QWEN3.8',
       authorization: 'native',
     }), true);
-    for (const model of ['gemini-3.1-pro', 'kimi-k3', 'gpt-5.6-sol']) {
+    for (const model of ['gemini-3.1-pro', 'kimi-k3', 'gpt-6-astra']) {
       assert.equal(shouldUseSamsarExternalInference({
         model,
         authorization: 'native',
@@ -413,7 +413,7 @@ test('Qwen OpenRouter uses Qwen 3.8 Max for text and vision with bounded setting
     messages: [{ role: 'user', content: 'hello' }],
   });
   await createOpenRouterChatCompletion({
-    model: 'gpt-5.6-sol',
+    model: 'gpt-6-astra',
     messages: [{ role: 'user', content: 'hello' }],
   });
 

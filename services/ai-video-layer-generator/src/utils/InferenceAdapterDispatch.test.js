@@ -52,7 +52,7 @@ test.afterEach(resetEnv);
 test('OpenAI prompt dispatch starts with the saved standalone adapter', async (t) => {
   ENV_KEYS.forEach((key) => delete process.env[key]);
   configureStandalonePreferences(t, {
-    'gpt-5.6-sol': ['openrouter', 'openai'],
+    'gpt-6-astra': ['openrouter', 'openai'],
   });
   process.env.OPENAI_API_KEY = 'openai-test-key';
   process.env.OPENROUTER_API_KEY = 'openrouter-test-key';
@@ -72,19 +72,19 @@ test('OpenAI prompt dispatch starts with the saved standalone adapter', async (t
 
   const response = await sendAssistantMessageRequest(
     [{ role: 'user', content: 'Generate a prompt.' }],
-    'gpt-5.6-sol',
+    'gpt-6-astra',
   );
 
   assert.equal(response.content, 'OpenRouter response');
   assert.equal(nativeCalls, 0);
   assert.equal(openRouterPayloads.length, 1);
-  assert.equal(openRouterPayloads[0].model, 'openai/gpt-5.6-sol');
+  assert.equal(openRouterPayloads[0].model, 'openai/gpt-6-astra');
 });
 
 test('OpenAI prompt dispatch advances to the next adapter after a retryable failure', async (t) => {
   ENV_KEYS.forEach((key) => delete process.env[key]);
   configureStandalonePreferences(t, {
-    'gpt-5.6-sol': ['openai', 'openrouter'],
+    'gpt-6-astra': ['openai', 'openrouter'],
   });
   process.env.OPENAI_API_KEY = 'openai-test-key';
   process.env.OPENROUTER_API_KEY = 'openrouter-test-key';
@@ -106,7 +106,7 @@ test('OpenAI prompt dispatch advances to the next adapter after a retryable fail
 
   const response = await sendAssistantMessageRequest(
     [{ role: 'user', content: 'Generate a prompt.' }],
-    'gpt-5.6-sol',
+    'gpt-6-astra',
   );
 
   assert.equal(response.content, 'Fallback response');
@@ -117,7 +117,7 @@ test('OpenAI prompt dispatch advances to the next adapter after a retryable fail
 test('alternate prompt dispatch uses the same ordered retryable fallback', async (t) => {
   ENV_KEYS.forEach((key) => delete process.env[key]);
   configureStandalonePreferences(t, {
-    'gpt-5.6-sol': ['openai', 'openrouter'],
+    'gpt-6-astra': ['openai', 'openrouter'],
   });
   process.env.OPENAI_API_KEY = 'openai-test-key';
   process.env.OPENROUTER_API_KEY = 'openrouter-test-key';
@@ -125,7 +125,7 @@ test('alternate prompt dispatch uses the same ordered retryable fallback', async
   const attemptedModels = [];
   t.mock.method(OpenAI.Chat.Completions.prototype, 'create', async (payload) => {
     attemptedModels.push(payload.model);
-    if (payload.model === 'gpt-4.1-2025-04-14') {
+    if (payload.model === 'gpt-6-astra') {
       const error = new Error('native rate limited before acceptance');
       error.status = 429;
       throw error;
@@ -137,20 +137,20 @@ test('alternate prompt dispatch uses the same ordered retryable fallback', async
 
   const response = await sendAlternatePromptRequest(
     [{ role: 'user', content: 'Rewrite this prompt.' }],
-    'gpt-5.6-sol',
+    'gpt-6-astra',
   );
 
   assert.equal(response.content, 'Alternate fallback');
   assert.deepEqual(attemptedModels, [
-    'gpt-4.1-2025-04-14',
-    'openai/gpt-5.6-sol',
+    'gpt-6-astra',
+    'openai/gpt-6-astra',
   ]);
 });
 
 test('structured prompt dispatch also advances through configured adapters', async (t) => {
   ENV_KEYS.forEach((key) => delete process.env[key]);
   configureStandalonePreferences(t, {
-    'gpt-5.6-sol': ['openai', 'openrouter'],
+    'gpt-6-astra': ['openai', 'openrouter'],
   });
   process.env.OPENAI_API_KEY = 'openai-test-key';
   process.env.OPENROUTER_API_KEY = 'openrouter-test-key';
@@ -158,7 +158,7 @@ test('structured prompt dispatch also advances through configured adapters', asy
   const attemptedModels = [];
   t.mock.method(OpenAI.Chat.Completions.prototype, 'create', async (payload) => {
     attemptedModels.push(payload.model);
-    if (payload.model === 'gpt-4o-2024-11-20') {
+    if (payload.model === 'gpt-6-astra') {
       const error = new Error('native connection refused');
       error.code = 'ECONNREFUSED';
       throw error;
@@ -175,12 +175,12 @@ test('structured prompt dispatch also advances through configured adapters', asy
 
   const response = await sendAssistantStructuredMessageRequest(
     [{ role: 'user', content: 'Should this shot use an end frame?' }],
-    'gpt-5.6-sol',
+    'gpt-6-astra',
   );
 
   assert.deepEqual(response, { useEndFrame: true });
   assert.deepEqual(attemptedModels, [
-    'gpt-4o-2024-11-20',
-    'openai/gpt-5.6-sol',
+    'gpt-6-astra',
+    'openai/gpt-6-astra',
   ]);
 });

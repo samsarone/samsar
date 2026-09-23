@@ -12,7 +12,7 @@ test('aggregates mixed GPT, Gemini, and Qwen inference receipts at 1.5x', () => 
     {
       stage: 'theme_generation',
       attempt: 1,
-      model: 'gpt-5.6-sol',
+      model: 'gpt-6-astra',
       provider: 'openai',
       usage: {
         input_tokens: 100_000,
@@ -48,10 +48,10 @@ test('aggregates mixed GPT, Gemini, and Qwen inference receipts at 1.5x', () => 
   ]);
 
   assert.equal(NARRATIVE_PRICING_MULTIPLIER, 1.5);
-  assert.equal(result.underlyingCostUsd, 1.658);
-  assert.equal(result.costUsd, 1.658);
-  assert.equal(result.underlyingCredits, 165.8);
-  assert.equal(result.credits, 248.7);
+  assert.equal(result.underlyingCostUsd, 2.268);
+  assert.equal(result.costUsd, 2.268);
+  assert.equal(result.underlyingCredits, 226.8);
+  assert.equal(result.credits, 340.2);
   assert.equal(result.pricingMultiplier, 1.5);
   assert.equal(result.creditsPerDollar, 100);
   assert.deepEqual(result.usage, {
@@ -62,11 +62,11 @@ test('aggregates mixed GPT, Gemini, and Qwen inference receipts at 1.5x', () => 
   });
   assert.deepEqual(
     result.receipts.map((receipt) => receipt.underlyingCostUsd),
-    [0.71, 0.398, 0.55],
+    [1.32, 0.398, 0.55],
   );
   assert.deepEqual(
     result.receipts.map((receipt) => receipt.underlyingCredits),
-    [71, 39.8, 55],
+    [132, 39.8, 55],
   );
   assert.deepEqual(result.receipts[1].usage, {
     inputTokens: 100_000,
@@ -78,7 +78,7 @@ test('aggregates mixed GPT, Gemini, and Qwen inference receipts at 1.5x', () => 
 
 test('requires every inference receipt to have usage and a recognized pricing model', () => {
   const billing = calculateNarrativeBilling([
-    { model: 'gpt-5.6-sol', usage: { input_tokens: 10, output_tokens: 2 } },
+    { model: 'gpt-6-astra', usage: { input_tokens: 10, output_tokens: 2 } },
     { model: 'unknown-provider/model', usage: { input_tokens: 10, output_tokens: 2 } },
     { model: 'QWEN3.8', usage: null },
   ]);
@@ -89,7 +89,7 @@ test('requires every inference receipt to have usage and a recognized pricing mo
   assert.match(validation.errors.join(' '), /no billable token usage/);
   assert.deepEqual(validateNarrativeBilling(
     calculateNarrativeBilling([
-      { model: 'gpt-5.6-sol', usage: { input_tokens: 10, output_tokens: 2 } },
+      { model: 'gpt-6-astra', usage: { input_tokens: 10, output_tokens: 2 } },
     ]),
     1,
   ), { valid: true, errors: [] });
@@ -119,7 +119,7 @@ test('retains only safe per-call metadata and returns zero billing for invalid i
       attempt: '3',
       provider: ' openai ',
       response: {
-        model: 'gpt-5.6-sol',
+        model: 'gpt-6-astra',
         usage: { input_tokens: 10, output_tokens: 5 },
         secretPayload: 'must not be retained',
       },
@@ -141,7 +141,7 @@ test('retains only safe per-call metadata and returns zero billing for invalid i
   assert.equal(result.receipts[0].stage, 'narrative_generation');
   assert.equal(result.receipts[0].attempt, 3);
   assert.equal(result.receipts[0].provider, 'openai');
-  assert.equal(result.receipts[0].model, 'gpt-5.6-sol');
+  assert.equal(result.receipts[0].model, 'gpt-6-astra');
   assert.equal('response' in result.receipts[0], false);
   assert.equal('prompt' in result.receipts[0], false);
 
@@ -167,7 +167,7 @@ test('re-prices normalized persisted receipts after an async worker restart', ()
     stage: 'theme_generation',
     validationAttempt: 2,
     requestKey: 'narrative:create_single:theme',
-    model: 'gpt-5.6-sol',
+    model: 'gpt-6-astra',
     usage: {
       input_tokens: 1_000,
       output_tokens: 100,

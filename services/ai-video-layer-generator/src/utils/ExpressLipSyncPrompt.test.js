@@ -2,9 +2,10 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
-  buildFallbackExpressLipSyncPrompt,
   buildExpressLipSyncPromptMessages,
-  normalizeGeneratedExpressLipSyncPrompt,
+  validateSpeakerFaceResponse,
+  shouldPrepareExpressLipSyncFace,
+  SPEAKER_FACE_RESPONSE_FORMAT,
   resolveExpressLipSyncPromptContext,
 } from './ExpressLipSyncPrompt.js';
 
@@ -61,71 +62,30 @@ test('falls back to the connected layer index for legacy speech bindings', () =>
   assert.equal(context.speechText, 'Your order is ready.');
 });
 
-test('fallback prompt uses the explicit prompt arguments to target the named speaker', () => {
-  const prompt = buildFallbackExpressLipSyncPrompt({
-    startingFrameDescription: 'Maya wears blue on the left while Arun is foregrounded.',
-    sceneDescription: 'A discussion at a conference table.',
-    speechItem: {
-      characterName: 'Maya',
-      text: 'We need to reconsider the launch date.',
-    },
-  });
-  const lines = prompt.split('\n');
-
-  assert.equal(lines.length, 7);
-  assert.match(lines[0], /Maya is the character/);
-  assert.match(prompt, /identity anchor/);
-  assert.match(prompt, /camera movement, cuts, reframing, or position changes/);
-  assert.match(prompt, /never switch, share, or distribute/);
+test('face response rejects malformed, out-of-bounds and inconsistent selections', () => {
+  const dimensions = { width: 100, height: 80 };
+  for (const value of ['bad', null, [], {}, {status:'identified',face_box:[0,0,100,80]},
+    {status:'identified',face_box:[20,10,10,30]}, {status:'identified',face_box:[0,0,1.5,3]},
+    {status:'ambiguous',face_box:[0,0,10,10]}, {status:'identified',face_box:null},
+    {status:'identified',face_box:[0,0,10,10],extra:true}]) {
+    assert.equal(validateSpeakerFaceResponse(value, dimensions), null);
+  }
+  assert.deepEqual(validateSpeakerFaceResponse('{"status":"identified","face_box":[1,2,30,40]}', dimensions), {status:'identified',face_box:[1,2,30,40]});
+  assert.deepEqual(validateSpeakerFaceResponse({status:'not_visible',face_box:null}, dimensions), {status:'not_visible',face_box:null});
 });
 
-test('normalizes valid model output and rejects output outside the 5-8 line contract', () => {
-  const valid = [
-    '1. Target Maya.',
-    '2. Match her blue jacket.',
-    '3. Preserve the scene.',
-    '4. Follow the dialogue.',
-    '5. Keep Arun silent.',
-  ].join('\n');
-
-  assert.equal(
-    normalizeGeneratedExpressLipSyncPrompt(valid),
-    [
-      'Target Maya.',
-      'Match her blue jacket.',
-      'Preserve the scene.',
-      'Follow the dialogue.',
-      'Keep Arun silent.',
-    ].join('\n'),
-  );
-  assert.equal(normalizeGeneratedExpressLipSyncPrompt('Only one line.'), '');
+test('face inference is gated to Express Sync only', () => {
+  assert.equal(shouldPrepareExpressLipSyncFace({model:'SYNCLIPSYNC',isExpressGeneration:true}), true);
+  for (const model of ['SYNCLIPSYNC','HUMMINGBIRDLIPSYNC','LATENTSYNC','KLINGLIPSYNC','CREATIFYLIPSYNC']) {
+    assert.equal(shouldPrepareExpressLipSyncFace({model}), false);
+    if (model !== 'SYNCLIPSYNC') assert.equal(shouldPrepareExpressLipSyncFace({model,isExpressGeneration:true}), false);
+  }
 });
 
-test('inference request uses a minimal natural system prompt and a structured input payload', () => {
-  const messages = buildExpressLipSyncPromptMessages({
-    startingFrameDescription: 'Arun is foregrounded; Maya is seated on the left.',
-    sceneDescription: 'Two colleagues talk.',
-    speechItem: {
-      characterName: 'Maya',
-      characterDescription: 'A woman wearing a blue jacket.',
-      text: 'Hello.',
-    },
-  });
-
-  assert.equal(messages[0].content.split('\n').length, 1);
-  assert.match(messages[0].content, /identify the speaker and describe that same character's location/);
-  assert.match(messages[0].content, /starting position as an identity anchor/);
-  assert.match(messages[0].content, /sole lip-sync target throughout the video/);
-  assert.match(messages[0].content, /never switch, share, or distribute/);
-  assert.doesNotMatch(messages[0].content, /\bif\b|\bwhen\b|\botherwise\b/i);
-
-  assert.deepEqual(JSON.parse(messages[1].content), {
-    starting_frame_image_description: 'Arun is foregrounded; Maya is seated on the left.',
-    scene_description: 'Two colleagues talk.',
-    speech_item: {
-      character_name: 'Maya',
-      text: 'Hello.',
-      character_description: 'A woman wearing a blue jacket.',
-    },
-  });
+test('face request includes actual frame, dimensions and strict response schema', () => {
+  const messages = buildExpressLipSyncPromptMessages({speechItem:{characterName:'Maya'}, frame:{width:100,height:80,dataUrl:'data:image/png;base64,example'}});
+  assert.match(messages[0].content, /actual image/);
+  assert.equal(JSON.parse(messages[1].content[0].text).image_width,100);
+  assert.equal(messages[1].content[1].image_url.url,'data:image/png;base64,example');
+  assert.equal(SPEAKER_FACE_RESPONSE_FORMAT.json_schema.strict,true);
 });

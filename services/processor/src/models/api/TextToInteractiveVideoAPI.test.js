@@ -41,7 +41,7 @@ test('normalizes the complete unified payload and requires render model selectio
       prompt: '  Create an interactive river journey.  ',
       duration: 40,
       num_levels: '2',
-      inference_model: 'gpt-5.6-sol',
+      inference_model: 'gpt-6-astra',
       effort: 'xhigh',
       image_model: 'NANOBANANAPRO',
       video_model: 'COSMOS3SUPERI2V',
@@ -49,7 +49,7 @@ test('normalizes the complete unified payload and requires render model selectio
   }), {
     prompt: 'Create an interactive river journey.',
     duration: 40,
-    inferenceModel: 'gpt-5.6-sol-xhigh',
+    inferenceModel: 'gpt-6-astra-xhigh',
     effort: 'xhigh',
     imageModel: 'NANOBANANAPRO',
     videoModel: 'COSMOS3SUPERI2V',
@@ -65,7 +65,7 @@ test('normalizes the complete unified payload and requires render model selectio
     video_model: 'COSMOS3SUPERI2V',
     aspect_ratio: '9:16',
   });
-  assert.equal(defaultInferencePayload.inferenceModel, 'gpt-5.6-sol');
+  assert.equal(defaultInferencePayload.inferenceModel, 'gpt-6-astra');
   assert.equal(defaultInferencePayload.effort, 'high');
   assert.equal(defaultInferencePayload.aspectRatio, '9:16');
 
@@ -79,7 +79,7 @@ test('normalizes the complete unified payload and requires render model selectio
         prompt: 'Create a constrained branched lesson.',
         duration: 40,
         num_levels: 2,
-        inference_model: 'gpt-5.6-sol',
+        inference_model: 'gpt-6-astra',
         image_model: 'GPTIMAGE2',
         video_model: 'COSMOS3SUPERI2V',
         [field]: value,
@@ -93,7 +93,7 @@ test('normalizes the complete unified payload and requires render model selectio
       prompt: 'Create an interactive river journey.',
       duration: 40,
       num_levels: 2,
-      inference_model: 'gpt-5.6-sol',
+      inference_model: 'gpt-6-astra',
       image_model: 'GPTIMAGE2',
     }),
     (error) => error.code === 'INVALID_VIDEO_MODEL' && error.status === 400,
@@ -103,7 +103,7 @@ test('normalizes the complete unified payload and requires render model selectio
       prompt: 'Create an interactive river journey.',
       duration: 40,
       num_levels: 2,
-      inference_model: 'gpt-5.6-sol',
+      inference_model: 'gpt-6-astra',
       video_model: 'COSMOS3SUPERI2V',
     }),
     (error) => error.code === 'INVALID_IMAGE_MODEL' && error.status === 400,
@@ -114,7 +114,7 @@ test('normalizes the complete unified payload and requires render model selectio
       duration: 40,
       num_levels: 1,
       numLevels: 2,
-      inference_model: 'gpt-5.6-sol',
+      inference_model: 'gpt-6-astra',
       image_model: 'GPTIMAGE2',
       video_model: 'COSMOS3SUPERI2V',
     }),
@@ -125,7 +125,7 @@ test('normalizes the complete unified payload and requires render model selectio
       prompt: 'Create an interactive river journey.',
       duration: 40,
       num_levels: 2,
-      inference_model: 'gpt-5.6-sol',
+      inference_model: 'gpt-6-astra',
       image_model: 'GPTIMAGE2',
       video_model: 'COSMOS3SUPERI2V',
       aspectRatio: '1:1',
@@ -137,7 +137,7 @@ test('normalizes the complete unified payload and requires render model selectio
       prompt: 'Create an interactive river journey.',
       duration: 40,
       num_levels: 2,
-      inference_model: 'gpt-5.6-sol',
+      inference_model: 'gpt-6-astra',
       image_model: 'GPTIMAGE2',
       video_model: 'COSMOS3SUPERI2V',
       aspect_ratio: '16:9',
@@ -158,7 +158,7 @@ test('one-step initialization immediately applies default and overridden branch 
       payload: {
         prompt: 'Create an interactive journey.',
         duration: 40,
-        inferenceModel: 'gpt-5.6-sol-xhigh',
+        inferenceModel: 'gpt-6-astra-xhigh',
         effort: 'xhigh',
         imageModel: 'NANOBANANAPRO',
         videoModel: 'COSMOS3SUPERI2V',
@@ -184,7 +184,7 @@ test('one-step initialization immediately applies default and overridden branch 
   assert.equal(sessionUpdates.every((update) => update.$set.narrativeType === 'branched'), true);
   assert.deepEqual(sessionUpdates[0].$set.interactiveVideoDraftConfig, {
     duration: 40,
-    inferenceModel: 'gpt-5.6-sol-xhigh',
+    inferenceModel: 'gpt-6-astra-xhigh',
     effort: 'xhigh',
     imageModel: 'NANOBANANAPRO',
     videoModel: 'COSMOS3SUPERI2V',
@@ -193,7 +193,7 @@ test('one-step initialization immediately applies default and overridden branch 
   });
   assert.deepEqual(sessionUpdates[1].$set.interactiveVideoDraftConfig, {
     duration: 40,
-    inferenceModel: 'gpt-5.6-sol-xhigh',
+    inferenceModel: 'gpt-6-astra-xhigh',
     effort: 'xhigh',
     imageModel: 'NANOBANANAPRO',
     videoModel: 'COSMOS3SUPERI2V',
@@ -323,7 +323,7 @@ test('validates user input against an owned draft and fills omitted values from 
   assert.deepEqual(result.normalizedPayload, {
     prompt: 'Use the saved interactive defaults.',
     duration: 30,
-    inferenceModel: 'gpt-5.6-sol',
+    inferenceModel: 'gpt-6-astra',
     effort: 'high',
     imageModel: 'GPTIMAGE2',
     videoModel: 'COSMOS3SUPERI2V',
@@ -338,7 +338,7 @@ test('rejects conflicting session/request aliases before creating interactive wo
     () => normalizeTextToInteractiveVideoPayload({
       prompt: 'A branching story.',
       duration: 30,
-      inference_model: 'gpt-5.6-sol',
+      inference_model: 'gpt-6-astra',
       image_model: 'GPTIMAGE2',
       video_model: 'COSMOS3SUPERI2V',
       num_levels: 1,
@@ -408,7 +408,7 @@ test('an idempotency-race loser removes only its own blank session', async (t) =
     prompt: 'Create an interactive river journey.',
     duration: 40,
     num_levels: 2,
-    inference_model: 'gpt-5.6-sol-xhigh',
+    inference_model: 'gpt-6-astra-xhigh',
     image_model: 'NANOBANANAPRO',
     video_model: 'COSMOS3SUPERI2V',
   };
@@ -507,7 +507,7 @@ test('durable worker sequences both waived narrative stages before scheduling on
       prompt: 'Create an interactive river journey.',
       duration: 40,
       numLevels: 2,
-      inferenceModel: 'gpt-5.6-sol-xhigh',
+      inferenceModel: 'gpt-6-astra-xhigh',
       imageModel: 'NANOBANANAPRO',
       videoModel: 'COSMOS3SUPERI2V',
       aspectRatio: '9:16',

@@ -100,11 +100,14 @@ const ALIBABA_FAL_OR_SAMSAR = Object.freeze([
   DOCKER_PROVIDER.FAL,
   DOCKER_PROVIDER.SAMSAR,
 ]);
-const OPENAI_GMI_SAMSAR_OR_FAL = Object.freeze([
+const OPENAI_SAMSAR_OR_FAL = Object.freeze([
   DOCKER_PROVIDER.OPENAI,
-  DOCKER_PROVIDER.GMI_CLOUD,
   DOCKER_PROVIDER.SAMSAR,
   DOCKER_PROVIDER.FAL,
+]);
+const OPENAI_OR_SAMSAR = Object.freeze([
+  DOCKER_PROVIDER.OPENAI,
+  DOCKER_PROVIDER.SAMSAR,
 ]);
 const OPENAI_GMI_OR_SAMSAR = Object.freeze([
   DOCKER_PROVIDER.OPENAI,
@@ -152,8 +155,9 @@ export const DOCKER_MODEL_PROVIDER_PRIORITY_BY_MODEL = Object.freeze({
   KIMIK3: KIMI_OR_SAMSAR,
   'QWEN3.8': ALIBABA_GMI_OR_SAMSAR,
   QWENIMAGE3PRO: [DOCKER_PROVIDER.ALIBABA_CLOUD],
-  GPTIMAGE2: OPENAI_GMI_SAMSAR_OR_FAL,
-  GPTIMAGE2EDIT: OPENAI_GMI_OR_SAMSAR,
+  // These stable app keys now target 2.5 Sunburst; legacy GMI routes do not.
+  GPTIMAGE2: OPENAI_SAMSAR_OR_FAL,
+  GPTIMAGE2EDIT: OPENAI_OR_SAMSAR,
   SEEDREAM: GMI_SAMSAR_OR_FAL,
   NANOBANANA2: GOOGLE_GMI_SAMSAR_OR_FAL,
   NANOBANANA2EDIT: GOOGLE_GMI_SAMSAR_OR_FAL,
@@ -180,7 +184,7 @@ export const DOCKER_MODEL_PROVIDER_PRIORITY_BY_MODEL = Object.freeze({
   'KLINGIMGTOVID2.1STANDARD': GMI_SAMSAR_OR_FAL,
   HAILUOPRO: GMI_SAMSAR_OR_FAL,
   HAPPYHORSEI2V: ALIBABA_GMI_SAMSAR_OR_FAL,
-  LYRIA3: GOOGLE_OR_SAMSAR,
+  LYRIA3: Object.freeze([DOCKER_PROVIDER.GOOGLE_CLOUD, DOCKER_PROVIDER.FAL, DOCKER_PROVIDER.SAMSAR]),
   OPENAI_TTS: OPENAI_GMI_OR_SAMSAR,
   GOOGLE_TTS: GOOGLE_OR_SAMSAR,
   ELEVENLABS: ELEVENLABS_GMI_SAMSAR_OR_FAL,
@@ -261,8 +265,8 @@ export const DOCKER_MODEL_DISPLAY_NAME_BY_MODEL = Object.freeze({
   KIMIK3: 'Kimi K3',
   'QWEN3.8': 'Qwen 3.8 Max',
   QWENIMAGE3PRO: 'Qwen Image 3.0 Pro',
-  GPTIMAGE2: 'GPT Image 2',
-  GPTIMAGE2EDIT: 'GPT Image 2 Edit',
+  GPTIMAGE2: 'GPT Image 2.5',
+  GPTIMAGE2EDIT: 'GPT Image 2.5 Edit',
   SEEDREAM: 'Seedream',
   NANOBANANA2: 'Nano Banana 2',
   NANOBANANA2EDIT: 'Nano Banana 2 Edit',
@@ -540,10 +544,13 @@ export function buildDockerAvailableModelsFromEnabledProviders(enabledProviderKe
       LEGACY_MODEL_PROVIDER_PRIORITY_WITHOUT_GMI[modelKey]
       ? LEGACY_MODEL_PROVIDER_PRIORITY_WITHOUT_GMI[modelKey]
       : providerPriority;
-    const effectiveProviderPriority = configuredProviderPriority.filter((providerKey) => (
-      providerKey !== DOCKER_PROVIDER.GMI_CLOUD ||
-      gmiCloudRouteEnabled
+    let effectiveProviderPriority = configuredProviderPriority.filter((providerKey) => (
+      (providerKey !== DOCKER_PROVIDER.GMI_CLOUD || gmiCloudRouteEnabled) &&
+      !(providerKey === DOCKER_PROVIDER.GOOGLE_CLOUD && options.googleMusicOnly && modelKey !== 'LYRIA3')
     ));
+    if (modelKey === 'LYRIA3' && !options.googleLyriaGeminiConfigured) {
+      effectiveProviderPriority = [DOCKER_PROVIDER.FAL, DOCKER_PROVIDER.GOOGLE_CLOUD, DOCKER_PROVIDER.SAMSAR];
+    }
     const provider = effectiveProviderPriority.find((providerKey) => providers.includes(providerKey));
     if (!provider) {
       continue;
@@ -588,6 +595,8 @@ export function buildDockerAvailableModelsFromProviderResults(providerResults = 
   const alibabaValidation = providerResults.alibabaCloud?.validation ||
     providerResults.alibabaCloud;
   const options = {
+    googleMusicOnly: providerResults.googleCloud?.musicOnly === true,
+    googleLyriaGeminiConfigured: providerResults.googleCloud?.lyriaGeminiConfigured === true,
     ...(gmiCloudValidation && typeof gmiCloudValidation === 'object'
       ? { gmiCloudModelMappings: gmiCloudValidation.modelMappings || {} }
       : {}),

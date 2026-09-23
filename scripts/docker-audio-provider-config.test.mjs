@@ -1,6 +1,13 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
+test('Gemini music-only credentials never enable Google speech', () => {
+  const available = buildDockerAudioAvailability({ googleCloud: { enabled: true, musicOnly: true } });
+  assert.deepEqual(available.ttsProviders, []);
+  assert.deepEqual(available.musicProviders, ['LYRIA3']);
+  assert.ok(buildDockerAudioAvailability({ fal: { enabled: true } }).musicProviders.includes('LYRIA3'));
+});
+
 import {
   DOCKER_AUDIO_PROVIDER_ORDER,
   buildDockerAudioAvailability,

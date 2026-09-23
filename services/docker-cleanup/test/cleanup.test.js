@@ -70,7 +70,7 @@ test('cleanup removes stale frame transformations and preserves protected assets
   await assert.rejects(fs.stat(path.join(assetsV2Root, 'ai_video/temp/old-render.png')), { code: 'ENOENT' });
 
   await fs.stat(path.join(assetsV2Root, 'video/frames/recent-session/layer-a/0.png'));
-  await assert.rejects(fs.stat(path.join(assetsV2Root, 'video/output/old-session/final.mp4')), { code: 'ENOENT' });
+  await fs.stat(path.join(assetsV2Root, 'video/output/old-session/final.mp4'));
   await fs.stat(path.join(assetsV2Root, 'video/output/old-session/manifest.json'));
   await fs.stat(path.join(assetsV2Root, 'video/output/recent-session/final.mp4'));
   await fs.stat(path.join(assetsV2Root, 'generations/old-session/generated.png'));
@@ -78,7 +78,7 @@ test('cleanup removes stale frame transformations and preserves protected assets
   await fs.stat(path.join(assetsV2Root, 'user_resources/user-1/ai_videos/old-session/video.mp4'));
 
   assert.equal(counters.deletedDirectories, 3);
-  assert.equal(counters.deletedFiles, 5);
+  assert.equal(counters.deletedFiles, 4);
   assert.equal(counters.errors.length, 0);
 });
 

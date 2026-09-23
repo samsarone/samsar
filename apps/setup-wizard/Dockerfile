@@ -30,6 +30,7 @@ RUN npm ci --omit=dev --include=optional --ignore-scripts --no-audit --no-fund \
 
 COPY --from=builder /app/dist ./dist
 COPY server.mjs ./server.mjs
+COPY falCredentialValidation.mjs ./falCredentialValidation.mjs
 COPY openrouterValidation.mjs ./openrouterValidation.mjs
 COPY gmiCloudValidation.mjs ./gmiCloudValidation.mjs
 COPY genblazeCompose.mjs ./genblazeCompose.mjs

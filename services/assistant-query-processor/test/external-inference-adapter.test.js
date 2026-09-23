@@ -98,7 +98,7 @@ test('standalone inference adapters follow the saved per-model preference order'
   t.after(() => fs.rmSync(temporaryDirectory, { recursive: true, force: true }));
   fs.writeFileSync(preferencePath, JSON.stringify({
     modelProviderPriority: {
-      'gpt-5.6-sol': ['samsar', 'openrouter', 'openai'],
+      'gpt-6-astra': ['samsar', 'openrouter', 'openai'],
     },
   }));
 
@@ -110,7 +110,7 @@ test('standalone inference adapters follow the saved per-model preference order'
     OPENROUTER_API_KEY: 'openrouter-key',
     SAMSAR_API_KEY: 'samsar-key',
   }, () => {
-    assert.deepEqual(getConfiguredInferenceProviders('gpt-5.6-sol'), [
+    assert.deepEqual(getConfiguredInferenceProviders('gpt-6-astra'), [
       DOCKER_INFERENCE_PROVIDER.SAMSAR,
       DOCKER_INFERENCE_PROVIDER.OPENROUTER,
       DOCKER_INFERENCE_PROVIDER.OPENAI,
@@ -124,7 +124,7 @@ test('production inference ignores standalone preference files', (t) => {
   t.after(() => fs.rmSync(temporaryDirectory, { recursive: true, force: true }));
   fs.writeFileSync(preferencePath, JSON.stringify({
     modelProviderPriority: {
-      'gpt-5.6-sol': ['samsar', 'openrouter', 'openai'],
+      'gpt-6-astra': ['samsar', 'openrouter', 'openai'],
       'QWEN3.8': ['alibabaCloud', 'samsar', 'openrouter'],
     },
   }));
@@ -138,7 +138,7 @@ test('production inference ignores standalone preference files', (t) => {
     SAMSAR_API_KEY: 'samsar-key',
     ALIBABA_API_KEY: 'alibaba-key',
   }, () => {
-    assert.deepEqual(getConfiguredInferenceProviders('gpt-5.6-sol'), [
+    assert.deepEqual(getConfiguredInferenceProviders('gpt-6-astra'), [
       DOCKER_INFERENCE_PROVIDER.OPENAI,
       DOCKER_INFERENCE_PROVIDER.OPENROUTER,
       DOCKER_INFERENCE_PROVIDER.SAMSAR,
@@ -191,7 +191,7 @@ test('the OpenRouter adapter rejects direct Kimi K3 dispatch', async () => {
   );
 });
 
-test('OpenRouter preserves legacy GPT 5.6 Sol effort and lets explicit effort win', async () => {
+test('OpenRouter preserves legacy GPT 6 Astra effort and lets explicit effort win', async () => {
   const payloads = [];
   const client = {
     chat: {
@@ -205,16 +205,16 @@ test('OpenRouter preserves legacy GPT 5.6 Sol effort and lets explicit effort wi
   };
 
   await createOpenRouterChatCompletion({
-    model: 'gpt-5.6-sol-xhigh',
+    model: 'gpt-6-astra-xhigh',
     messages: [{ role: 'user', content: 'hello' }],
   }, { client });
   await createOpenRouterChatCompletion({
-    model: 'gpt-5.6-sol-xhigh',
+    model: 'gpt-6-astra-xhigh',
     effort: 'high',
     messages: [{ role: 'user', content: 'hello' }],
   }, { client });
 
-  assert.equal(payloads[0].model, 'openai/gpt-5.6-sol');
+  assert.equal(payloads[0].model, 'openai/gpt-6-astra');
   assert.equal(payloads[0].reasoning.effort, 'xhigh');
   assert.equal(payloads[1].reasoning.effort, 'high');
 });

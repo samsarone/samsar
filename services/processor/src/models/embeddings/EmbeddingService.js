@@ -23,7 +23,7 @@ import { cleanEmbeddingSourceText, stripHtmlToText } from '../../utils/Embedding
 
 const EMBEDDING_MODEL = 'text-embedding-3-large';
 const DEFAULT_VECTOR_INDEX = process.env.COSMOS_VECTOR_INDEX || 'embedding_vector_index';
-const RERANK_MODEL = process.env.OPENAI_RERANK_MODEL || 'gpt-4o-mini';
+const RERANK_MODEL = process.env.OPENAI_RERANK_MODEL || 'gpt-6-astra';
 const MAX_EMBEDDING_INPUT_CHARS = 6000;
 const EMBEDDING_BATCH_SIZE = 50;
 const RERANK_LIMIT = 50;
@@ -4346,7 +4346,7 @@ async function rerankResultsWithLLM(query, results) {
     const response = await openai.chat.completions.create({
       model: RERANK_MODEL,
       messages,
-      temperature: 0,
+      ...(RERANK_MODEL === 'gpt-6-astra' ? {} : { temperature: 0 }),
     });
     const content = response?.choices?.[0]?.message?.content || '';
     const parsedIds = extractJsonArray(content);

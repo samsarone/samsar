@@ -1,6 +1,13 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
+test('optional Gemini key accepts dedicated and standard environment references', () => {
+  for (const name of ['GOOGLE_LYRIA_GEMINI_API_KEY', 'GEMINI_API_KEY', 'GOOGLE_API_KEY']) {
+    const result = resolveProviderEnvironmentReferences({ googleLyriaGeminiApiKey: `$${name}` }, { [name]: 'test-key' });
+    assert.equal(result.credentials.googleLyriaGeminiApiKey, 'test-key');
+  }
+});
+
 import {
   getProviderEnvironmentReferencePlaceholder,
   parseEnvironmentVariableReference,

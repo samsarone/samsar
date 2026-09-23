@@ -59,6 +59,7 @@ export function normalizeElevenLabsMusicPayload(payload = {}) {
     generationMeta: {
       ...currentGenerationMeta,
       providerKey: ELEVENLABS_MUSIC_MODEL,
+      modelId: currentGenerationMeta.modelId || currentGenerationMeta.model_id || 'music_v2_5',
       musicLengthMs,
       forceInstrumental: normalizedIsInstrumental,
       outputFormat: currentGenerationMeta.outputFormat || ELEVENLABS_MUSIC_DEFAULT_OUTPUT_FORMAT,

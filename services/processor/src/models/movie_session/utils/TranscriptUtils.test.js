@@ -62,16 +62,16 @@ test('validateTextToVideoNarrative normalizes legacy none scenes to base', () =>
   assert.equal(result.narrativeJson.sounds[0].sceneIndex, 1);
 });
 
-test('Seedance 2.5 normal scene and audio duration selection uses all three partitions', () => {
+test('Seedance 2.5 normal scene and audio duration selection uses all four partitions', () => {
   const result = validateTextToVideoNarrative({
-    scenes: [4, 4, 4].map((duration, sceneIndex) => ({
+    scenes: [4, 4, 4, 4].map((duration, sceneIndex) => ({
       visual: `Speaking scene ${sceneIndex}`,
       type: 'narration',
       duration,
       startTime: sceneIndex * duration,
       endTime: (sceneIndex + 1) * duration,
     })),
-    sounds: [4, 8, 14].map((duration, sceneIndex) => ({
+    sounds: [4, 8, 14, 19].map((duration, sceneIndex) => ({
       type: 'speech',
       subType: 'narration',
       actor: 'Narrator',
@@ -95,6 +95,7 @@ test('Seedance 2.5 normal scene and audio duration selection uses all three part
       { duration: 5, startTime: 0, endTime: 5 },
       { duration: 10, startTime: 5, endTime: 15 },
       { duration: 15, startTime: 15, endTime: 30 },
+      { duration: 20, startTime: 30, endTime: 50 },
     ],
   );
   assert.deepEqual(
@@ -107,6 +108,7 @@ test('Seedance 2.5 normal scene and audio duration selection uses all three part
       { duration: 4, startTime: 0, endTime: 4 },
       { duration: 8, startTime: 5, endTime: 13 },
       { duration: 14, startTime: 15, endTime: 29 },
+      { duration: 19, startTime: 30, endTime: 49 },
     ],
   );
 });

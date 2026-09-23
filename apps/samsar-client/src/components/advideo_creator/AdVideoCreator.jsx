@@ -470,7 +470,9 @@ export default function AdVideoCreator() {
           if (resData.remoteURL && resData.remoteURL.length > 0) {
             videoActualLink = resData.remoteURL;
           } else if (resData.videoLink) {
-            videoActualLink = `${API_SERVER}/${videoLink}`;
+            videoActualLink = /^https?:\/\//i.test(resData.videoLink)
+              ? resData.videoLink
+              : `${(API_SERVER || '').replace(/\/$/, '')}/${resData.videoLink.replace(/^\//, '')}`;
           }
           setVideoLink(videoActualLink);
         } else if (resData.status === 'FAILED') {

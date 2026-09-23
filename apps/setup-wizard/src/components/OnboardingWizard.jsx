@@ -59,9 +59,10 @@ const PROVIDERS = [
   },
   {
     key: 'googleCloud',
-    title: 'Gemini 3.1',
+    title: 'Google Cloud / Gemini',
     type: 'native',
     field: 'googleCredentialsJson',
+    optionalKeyField: 'googleLyriaGeminiApiKey',
     inputType: 'textarea',
     placeholder: 'Paste service account JSON or base64 JSON',
     requiredFor: 'Gemini inference plus Google image, video, speech, and music models.',
@@ -174,7 +175,7 @@ const PROVIDERS = [
 ];
 const NATIVE_PROVIDERS = PROVIDERS.filter((provider) => provider.type === 'native');
 const STANDARD_NATIVE_PROVIDERS = NATIVE_PROVIDERS.filter(
-  (provider) => provider.key !== 'alibabaCloud' && provider.key !== 'openrouter',
+  (provider) => !['alibabaCloud', 'openrouter', 'fal'].includes(provider.key),
 );
 const PROVIDER_GROUPS = PROVIDER_GROUP_DEFINITIONS.map((group) => ({
   ...group,
@@ -394,7 +395,7 @@ const CAPABILITY_FAMILIES = {
   lyria: {
     key: 'lyria',
     label: 'Lyria',
-    providerKeys: ['googleCloud', 'samsar'],
+    providerKeys: ['googleCloud', 'fal', 'samsar'],
     modelKeys: ['LYRIA3'],
   },
   elevenlabsMusic: {
@@ -528,6 +529,7 @@ const DEFAULT_CREDENTIALS = Object.freeze({
   openrouterApiKey: '',
   gmiCloudApiKey: '',
   googleCredentialsJson: '',
+  googleLyriaGeminiApiKey: '',
   kimiK3ApiKey: '',
   alibabaApiKey: '',
   alibabaApiHost: '',
@@ -1252,7 +1254,7 @@ function sanitizeDeploymentPayloadForDisplay(payload = {}) {
 }
 
 function hasCredentialValue(credentials, provider) {
-  return Boolean(sanitizeCredentialValue(credentials[provider.field]));
+  return Boolean(sanitizeCredentialValue(credentials[provider.field]) || sanitizeCredentialValue(credentials[provider.optionalKeyField]));
 }
 
 function hasAnyCredentialValue(credentials) {
@@ -1268,6 +1270,7 @@ function buildNativeCredentialPayload(credentials) {
   return STANDARD_NATIVE_PROVIDERS
     .reduce((payload, provider) => {
       payload[provider.field] = sanitizedCredentials[provider.field];
+      if (provider.optionalKeyField) payload[provider.optionalKeyField] = sanitizedCredentials[provider.optionalKeyField];
       if (provider.endpointField) {
         payload[provider.endpointField] = sanitizedCredentials[provider.endpointField];
       }
@@ -1307,10 +1310,17 @@ function buildLocalNativeCredentialResult(credentials) {
     .filter((provider) => hasCredentialValue(credentials, provider))
     .forEach((provider) => {
       if (provider.key === 'googleCloud') {
+        if (!sanitizeCredentialValue(credentials.googleCredentialsJson)) {
+          providerResults.googleCloud = providerResult('googleCloud', 'configured', {
+            musicOnly: true, lyriaGeminiConfigured: true, validationMode: 'deferred_processor',
+          });
+          return;
+        }
         try {
           const parsedCredentials = parseJsonOrBase64Json(credentials[provider.field]);
           providerResults[provider.key] = providerResult(provider.key, 'format_valid', {
             validationMode: 'local_format',
+            lyriaGeminiConfigured: Boolean(sanitizeCredentialValue(credentials.googleLyriaGeminiApiKey)),
             projectId: parsedCredentials.project_id || null,
             clientEmail: parsedCredentials.client_email || null,
           });
@@ -1495,7 +1505,7 @@ function buildDeploymentPayload(
       openai: { enabled: Boolean(sanitizedCredentials.openaiApiKey), validation: getProviderStatus(validationResult, 'openai') },
       openrouter: { enabled: Boolean(sanitizedCredentials.openrouterApiKey), validation: getProviderStatus(validationResult, 'openrouter') },
       gmicloud: { enabled: Boolean(sanitizedCredentials.gmiCloudApiKey), validation: getProviderStatus(validationResult, 'gmicloud') },
-      googleCloud: { enabled: Boolean(sanitizedCredentials.googleCredentialsJson), validation: getProviderStatus(validationResult, 'googleCloud') },
+      googleCloud: { enabled: Boolean(sanitizedCredentials.googleCredentialsJson || sanitizedCredentials.googleLyriaGeminiApiKey), musicOnly: !sanitizedCredentials.googleCredentialsJson, lyriaGeminiConfigured: Boolean(sanitizedCredentials.googleLyriaGeminiApiKey), validation: getProviderStatus(validationResult, 'googleCloud') },
       kimi: { enabled: Boolean(sanitizedCredentials.kimiK3ApiKey), validation: getProviderStatus(validationResult, 'kimi') },
       alibabaCloud: { enabled: Boolean(sanitizedCredentials.alibabaApiKey), validation: getProviderStatus(validationResult, 'alibabaCloud') },
       fal: { enabled: Boolean(sanitizedCredentials.falApiKey), validation: getProviderStatus(validationResult, 'fal') },
@@ -1733,6 +1743,7 @@ function formatConfiguredProviderName(key) {
 }
 
 function SetupAuthGate({
+  bootstrapRequired = false,
   password,
   error,
   isUnlocking,
@@ -1744,13 +1755,15 @@ function SetupAuthGate({
       <div className="existing-install-header">
         <div>
           <div className="eyebrow">Protected setup</div>
-          <h2>Unlock setup actions</h2>
-          <p>Enter the Docker admin password to continue this setup or recovery run.</p>
+          <h2>{bootstrapRequired ? 'Open your authenticated setup link' : 'Unlock setup actions'}</h2>
+          <p>{bootstrapRequired
+            ? 'Open the authenticated URL from the setup launcher in another tab of this browser, then retry access here. Your entries in this tab will be preserved. An admin password cannot unlock a fresh installation.'
+            : 'Enter the Docker admin password to continue this setup or recovery run.'}</p>
         </div>
         <span className="setup-status-pill setup-status-starting">Locked</span>
       </div>
       <section className="data-config-card admin-create-card">
-        <div className="data-field-grid single">
+        {!bootstrapRequired && <div className="data-field-grid single">
           <label className="data-field">
             <span>Admin password</span>
             <input
@@ -1760,18 +1773,18 @@ function SetupAuthGate({
               onChange={(event) => onPasswordChange(event.target.value)}
             />
           </label>
-        </div>
+        </div>}
         <div className="existing-install-actions">
           <button
             type="button"
             className="primary-action flow-primary"
             onClick={onUnlock}
-            disabled={isUnlocking || !password}
+            disabled={isUnlocking || (!bootstrapRequired && !password)}
           >
-            {isUnlocking ? 'Unlocking...' : 'Unlock'}
+            {isUnlocking ? 'Checking access...' : bootstrapRequired ? 'Retry access' : 'Unlock'}
           </button>
         </div>
-        {error && <div className="error-banner">{error}</div>}
+        {error && <div className="error-banner" role="alert">{error}</div>}
       </section>
     </section>
   );
@@ -2066,9 +2079,13 @@ async function validateSamsarCredential(credentials) {
   }
 }
 
-async function validateNativeCredentials(credentials) {
+async function validateNativeCredentials(credentials, processorAvailable = true) {
   if (!hasStandardNativeCredentialValue(credentials)) {
     return null;
+  }
+
+  if (!processorAvailable) {
+    return buildLocalNativeCredentialResult(credentials);
   }
 
   try {
@@ -2080,6 +2097,15 @@ async function validateNativeCredentials(credentials) {
     const body = await response.json();
     if (!response.ok) {
       throw new Error(body?.message || 'Credential validation failed.');
+    }
+    if (sanitizeCredentialValue(credentials.googleLyriaGeminiApiKey)) {
+      const google = body.providers?.googleCloud;
+      body.providers = { ...body.providers, googleCloud: {
+        ...(google || providerResult('googleCloud', 'configured', { validationMode: 'deferred_processor' })),
+        musicOnly: !sanitizeCredentialValue(credentials.googleCredentialsJson),
+        lyriaGeminiConfigured: true,
+      } };
+      body.available = buildAvailableFromProviderResults(body.providers);
     }
     return body;
   } catch (error) {
@@ -2125,6 +2151,24 @@ async function validateOpenRouterCredential(credentials, headers = {}) {
   const body = await response.json().catch(() => ({}));
   if (!response.ok) {
     throw new Error(body?.message || 'OpenRouter credential validation failed.');
+  }
+  return body;
+}
+
+async function validateFalCredential(credentials, headers = {}) {
+  const apiKey = credentials.falApiKey.trim();
+  if (!apiKey) return null;
+  const response = await fetch('/api/setup/providers/fal/validate', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...headers },
+    body: JSON.stringify({ falApiKey: apiKey }),
+  });
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(body?.message || 'Fal credential validation failed.');
+  const validation = body?.providers?.fal;
+  if (validation?.status !== 'valid' || validation?.ok !== true ||
+      validation?.validationMode !== 'remote_queue_auth') {
+    throw new Error(validation?.message || 'Fal authentication has not been verified. Retry validation.');
   }
   return body;
 }
@@ -2223,6 +2267,7 @@ export function getInitialSetupBootstrapToken(browserWindow = globalThis.window)
 export default function OnboardingWizard() {
   const wizardShellRef = useRef(null);
   const adminEmailInputRef = useRef(null);
+  const submissionErrorRef = useRef(null);
   const [initialWizardState] = useState(buildInitialWizardState);
   const [setupBootstrapToken] = useState(getInitialSetupBootstrapToken);
   const [step, setStep] = useState(initialWizardState.step);
@@ -2383,6 +2428,7 @@ export default function OnboardingWizard() {
   const sesAccessKeyUsesTemporaryCredentials = configurationSecretSource === CREDENTIAL_SOURCE_ENVIRONMENT ||
     isTemporaryAwsAccessKeyId(mailConfig.sesAccessKeyId);
   const setupAuthRequired = Boolean(installStatus?.setupAuthRequired || installStatus?.config?.security?.setupWizardPasswordConfigured);
+  const setupBootstrapRequired = Boolean(installStatus?.setupBootstrapAuthRequired && !setupAuthRequired);
   const shouldShowExistingInstall = Boolean(installStatus?.installed && !setupRun && !maintenanceRun);
   const isInitialInstallStatusLoading = Boolean(isLoadingInstallStatus && !installStatus && !setupRun && !maintenanceRun);
   const wizardViewKey = isInitialInstallStatusLoading
@@ -2402,16 +2448,24 @@ export default function OnboardingWizard() {
     }));
   };
 
-  const buildSetupHeaders = (headers = {}, password = setupAuthPassword) => ({
-    ...headers,
-    ...(setupBootstrapToken
-      ? { 'x-samsar-setup-bootstrap-token': setupBootstrapToken }
-      : {}),
-    ...(password ? { 'x-samsar-setup-admin-password': password } : {}),
-  });
+  const buildSetupHeaders = (headers = {}, password = setupAuthPassword) => {
+    // A launcher link opened in another tab may have replaced a stale token.
+    const bootstrapToken = getInitialSetupBootstrapToken() || setupBootstrapToken;
+    return {
+      ...headers,
+      ...(bootstrapToken ? { 'x-samsar-setup-bootstrap-token': bootstrapToken } : {}),
+      ...(password ? { 'x-samsar-setup-admin-password': password } : {}),
+    };
+  };
 
   const handleSetupAuthFailure = (body = {}) => {
     setIsSetupAuthenticated(false);
+    setInstallStatus((current) => ({
+      ...current,
+      setupAuthRequired: Boolean(body.authRequired),
+      setupBootstrapAuthRequired: Boolean(body.bootstrapAuthRequired),
+      setupAuthenticated: false,
+    }));
     setSetupAuthError(body?.message || 'Enter the Docker admin password to manage this setup wizard.');
   };
 
@@ -2499,6 +2553,26 @@ export default function OnboardingWizard() {
               onChange={(event) => updateCredential(provider.field, event.target.value)}
             />
           )}
+          {provider.optionalKeyField && (
+            <>
+              <label className="credential-label" htmlFor="google-lyria-gemini-key">
+                {usesEnvironmentReference ? 'Gemini key Bash variable (optional)' : 'Gemini API key for Lyria 3.5 (optional)'}
+              </label>
+              <input
+                id="google-lyria-gemini-key"
+                type={usesEnvironmentReference ? 'text' : 'password'}
+                value={activeCredentials[provider.optionalKeyField]}
+                placeholder={usesEnvironmentReference ? getProviderEnvironmentReferencePlaceholder(provider.optionalKeyField) : 'Gemini authorization API key'}
+                autoComplete="new-password"
+                data-lpignore="true"
+                onChange={(event) => updateCredential(provider.optionalKeyField, event.target.value)}
+              />
+              <small className="provider-endpoint-help">
+                Enables Lyria 3.5 with Gemini paid-tier billing. Without this key, music uses Fal 3.5 when configured, otherwise Vertex Lyria 3. If both support 3.5, Google is preferred.
+                {' '}<a href="https://aistudio.google.com/api-keys" target="_blank" rel="noreferrer">Get Gemini key</a>
+              </small>
+            </>
+          )}
           {provider.endpointField && (
             <>
               <label className="credential-label" htmlFor={`${provider.key}-endpoint`}>
@@ -2542,7 +2616,7 @@ export default function OnboardingWizard() {
   }, [wizardViewKey]);
 
   useEffect(() => {
-    if (step !== 5 || setupRun || shouldShowExistingInstall || maintenanceRun || isInitialInstallStatusLoading) {
+    if (step !== 5 || setupRun || shouldShowExistingInstall || maintenanceRun || isInitialInstallStatusLoading || adminConfigError || setupStartError) {
       return undefined;
     }
 
@@ -2551,7 +2625,14 @@ export default function OnboardingWizard() {
     });
 
     return () => window.cancelAnimationFrame(animationFrameId);
-  }, [isInitialInstallStatusLoading, maintenanceRun, setupRun, shouldShowExistingInstall, step]);
+  }, [adminConfigError, isInitialInstallStatusLoading, maintenanceRun, setupRun, setupStartError, shouldShowExistingInstall, step]);
+
+  useEffect(() => {
+    if (step === 5 && (adminConfigError || setupStartError)) {
+      submissionErrorRef.current?.focus();
+      submissionErrorRef.current?.scrollIntoView?.({ block: 'nearest' });
+    }
+  }, [adminConfigError, setupStartError, step]);
 
   const refreshInstallStatus = async () => {
     setIsLoadingInstallStatus(true);
@@ -2571,9 +2652,12 @@ export default function OnboardingWizard() {
           ? hydrateBackblazeDataConfig(current, body.config.storage)
           : current);
       }
-      if (!body?.setupAuthRequired) {
-        setIsSetupAuthenticated(false);
+      if (typeof body.setupAuthenticated === 'boolean') {
+        setIsSetupAuthenticated(body.setupAuthenticated);
+      }
+      if (body.setupAuthenticated) {
         setSetupAuthError('');
+        setSetupStartError('');
       }
       if (body?.installed && setupRun?.status !== 'running') {
         setSetupRun(null);
@@ -3040,8 +3124,9 @@ export default function OnboardingWizard() {
           await validateSamsarCredential(activeCredentials),
           await validateAlibabaCredential(activeCredentials, buildSetupHeaders({}, setupPassword)),
           await validateOpenRouterCredential(activeCredentials, buildSetupHeaders({}, setupPassword)),
+          await validateFalCredential(activeCredentials, buildSetupHeaders({}, setupPassword)),
           await validateGmiCloudCredential(activeCredentials, buildSetupHeaders({}, setupPassword)),
-          await validateNativeCredentials(activeCredentials),
+          await validateNativeCredentials(activeCredentials, installStatus?.readiness?.processor !== false),
         ]);
       setValidationResult(body);
       const invalidProviders = getInvalidEnteredProviders(activeCredentials, body);
@@ -3362,10 +3447,12 @@ export default function OnboardingWizard() {
       });
       const body = await response.json().catch(() => ({}));
       if (!response.ok || body.ok === false) {
+        if (response.status === 401) handleSetupAuthFailure(body);
         throw new Error(body?.message || 'Unable to unlock setup actions.');
       }
       setIsSetupAuthenticated(true);
       setSetupAuthError('');
+      setSetupStartError('');
       await refreshInstallStatus();
       return body;
     } catch (error) {
@@ -3473,16 +3560,30 @@ export default function OnboardingWizard() {
     setBrowserExternalAccess(null);
     setIsCheckingBrowserExternalAccess(false);
     setSetupAuthPassword(normalizedAdmin.password);
-    setIsSetupAuthenticated(true);
     setSetupAuthError('');
 
     try {
+      // Check access before provider requests or any deployment side effects.
+      const authResponse = await fetch('/api/setup/auth/check', {
+        method: 'POST',
+        headers: buildSetupHeaders({}, requestAuthPassword),
+      });
+      const authBody = await authResponse.json().catch(() => ({}));
+      if (!authResponse.ok || authBody.ok === false) {
+        if (authResponse.status === 401) handleSetupAuthFailure(authBody);
+        throw new Error(authBody.message || 'Unable to verify setup access.');
+      }
+      setIsSetupAuthenticated(true);
       const freshValidationResult = await validateCredentials(requestAuthPassword);
       if (!freshValidationResult) {
+        setStep(1);
+        setMaxStep(1);
         return;
       }
       const mailValidation = mailValidationResult || await validateMailConfiguration();
       if (!mailValidation) {
+        setStep(3);
+        setMaxStep(3);
         return;
       }
       const freshDeploymentPayload = buildDeploymentPayload(
@@ -3767,8 +3868,9 @@ export default function OnboardingWizard() {
             <p>Reading the current runtime configuration and Docker container state.</p>
           </div>
         </section>
-      ) : setupAuthRequired && !isSetupAuthenticated ? (
+      ) : (setupAuthRequired || setupBootstrapRequired) && !isSetupAuthenticated ? (
         <SetupAuthGate
+          bootstrapRequired={setupBootstrapRequired}
           password={setupAuthPassword}
           error={setupAuthError}
           isUnlocking={isUnlockingSetup}
@@ -4799,6 +4901,11 @@ export default function OnboardingWizard() {
 
 	        {step === 5 && (
 	          <>
+              {(adminConfigError || setupStartError) && (
+                <div className="error-banner" role="alert" tabIndex={-1} ref={submissionErrorRef}>
+                  {adminConfigError || setupStartError}
+                </div>
+              )}
 	            <div className="data-config-layout">
 	              <section className="data-config-card admin-create-card">
 	                <div className="data-config-card-header">
@@ -4915,8 +5022,6 @@ export default function OnboardingWizard() {
               </div>
               <textarea className="config-preview" readOnly value={JSON.stringify(displayDeploymentPayload, null, 2)} />
             </section>
-            {adminConfigError && <div className="error-banner">{adminConfigError}</div>}
-            {setupStartError && <div className="error-banner">{setupStartError}</div>}
           </>
         )}
 

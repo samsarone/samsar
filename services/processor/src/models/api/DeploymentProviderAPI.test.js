@@ -9,6 +9,22 @@ import {
   validateOpenRouterKey,
 } from './DeploymentProviderAPI.js';
 
+test('deployment Fal validation checks authentication by default, regardless of the legacy paid-validation flag', async (t) => {
+  const requests = [];
+  t.mock.method(globalThis, 'fetch', async (url, options) => {
+    requests.push({ url, options });
+    return new Response('{}', { status: 401 });
+  });
+  for (const validateFalRemotely of [undefined, false, true]) {
+    const result = await validateDeploymentProviderCredentials({ falApiKey: 'invalid-test-key', validateFalRemotely });
+    assert.equal(result.providers.fal.status, 'invalid');
+    assert.equal(result.providers.fal.ok, false);
+    assert.equal(result.available.providers.includes('fal'), false);
+  }
+  assert.equal(requests.length, 3);
+  assert.ok(requests.every(({ options }) => options.method === 'GET' && options.body === undefined));
+});
+
 test('Kimi credentials expose K3 chat and assistant capability', () => {
   const available = buildAvailableDeploymentModels({
     kimi: { ok: true, status: 'valid' },
@@ -68,7 +84,7 @@ test('Samsar fallback availability includes Qwen 3.8 and media models', () => {
 test('OpenRouter availability exposes all inference models and no media-generation models', () => {
   const available = buildAvailableDeploymentModels({ openrouter: { ok: true, status: 'valid' } });
   assert.deepEqual(available.providers, ['openrouter']);
-  assert.deepEqual(available.models, ['QWEN3.8', 'gemini-3.1-pro', 'gpt-5.6-sol']);
+  assert.deepEqual(available.models, ['QWEN3.8', 'gemini-3.1-pro', 'gpt-6-astra']);
   assert.deepEqual(available.actions, ['assistant', 'chat']);
 });
 

@@ -12,7 +12,7 @@ import { finalizeRemoteAudioGeneration, markAudioGenerationAsFailed } from './au
 import { getSimplifiedBackingTrackPromptForRetry } from './BackingTrackPromptUtils.js';
 import { isDockerRuntime } from '../util/environmentUtils.js';
 
-const DEFAULT_LYRIA_3_MODEL = 'lyria-3-pro-preview';
+import { getLyriaGeminiApiKey, usesLyriaGeminiApi, resolveLyriaModel } from './GoogleLyriaConfig.js';
 const DEFAULT_LYRIA_3_LOCATION = 'global';
 const DEFAULT_LYRIA_RESPONSE_FORMAT = 'mp3';
 const GOOGLE_LYRIA_REQUEST_PREFIX = 'google-native-lyria:';
@@ -60,12 +60,12 @@ export function shouldUseLyriaNative(payloadOrModel) {
   }
 
   if (!payload) {
-    return true;
+    return !usesLyriaGeminiApi() || Boolean(getLyriaGeminiApiKey());
   }
 
   const status = payload.status || 'INIT';
   if (status === 'INIT') {
-    return true;
+    return !usesLyriaGeminiApi() || Boolean(getLyriaGeminiApiKey());
   }
 
   return isGoogleNativeLyriaRequestId(payload.generationId || payload.apiRequestId);
@@ -83,13 +83,6 @@ function resolveGoogleLyriaLocation() {
   );
 }
 
-function resolveGoogleLyriaModel() {
-  return (
-    normalizeString(process.env.GOOGLE_LYRIA_3_MODEL) ||
-    normalizeString(process.env.GOOGLE_LYRIA_MODEL) ||
-    DEFAULT_LYRIA_3_MODEL
-  );
-}
 
 function buildVertexInteractionsUrl({ projectId, location }) {
   const host = location === 'global'
@@ -232,7 +225,7 @@ export function buildLyriaInteractionBody(payload) {
     durationSeconds,
     responseFormat,
     body: {
-      model: resolveGoogleLyriaModel(),
+      model: resolveLyriaModel(),
       input: [
         {
           type: 'text',
@@ -272,7 +265,7 @@ export function buildLyriaGenerateContentBody(payload) {
   return {
     durationSeconds,
     responseFormat,
-    model: resolveGoogleLyriaModel(),
+    model: resolveLyriaModel({ ...process.env, GOOGLE_LYRIA_API_PROVIDER: 'vertex' }),
     body: {
       contents: [
         {
@@ -346,24 +339,48 @@ async function writeRemoteAudioUriToFile(uri, outputPath) {
   await fs.writeFile(outputPath, audioBuffer);
 }
 
-async function requestGoogleLyria3Audio(payload) {
-  const config = getGoogleCloudConfig();
+export async function buildGoogleLyriaRequest(payload, {
+  env = process.env,
+  getConfig = getGoogleCloudConfig,
+  getToken = getGoogleAccessToken,
+} = {}) {
+  if (usesLyriaGeminiApi(env)) {
+    const apiKey = getLyriaGeminiApiKey(env);
+    if (!apiKey) throw new Error('Google Lyria Gemini API requires GOOGLE_LYRIA_GEMINI_API_KEY, GEMINI_API_KEY, or GOOGLE_API_KEY.');
+    const request = buildLyriaInteractionBody(payload);
+    // Follow Gemini's Interactions schema, which infers the response modality.
+    const { response_modalities, ...body } = request.body;
+    body.model = resolveLyriaModel(env);
+    return {
+      url: 'https://generativelanguage.googleapis.com/v1beta/interactions',
+      headers: { 'x-goog-api-key': apiKey, 'Content-Type': 'application/json' },
+      body,
+      responseFormat: request.responseFormat,
+      model: body.model,
+    };
+  }
+
+  const config = getConfig();
   const projectId = normalizeString(config.projectId);
   if (!projectId) {
     throw new Error('Google Lyria requires GOOGLE_CLOUD_PROJECT, GOOGLE_PROJECT_ID, or service account credentials containing project_id.');
   }
-
-  const token = await getGoogleAccessToken(config);
+  const token = await getToken(config);
   const location = resolveGoogleLyriaLocation();
-  const { body, responseFormat, model } = buildLyriaGenerateContentBody(payload);
+  const { body, responseFormat } = buildLyriaGenerateContentBody(payload);
+  const model = resolveLyriaModel(env);
+  return {
+    url: buildVertexGenerateContentUrl({ projectId, location, model }),
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json; charset=utf-8' },
+    body, responseFormat, model,
+  };
+}
 
-  const response = await fetch(buildVertexGenerateContentUrl({ projectId, location, model }), {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json; charset=utf-8',
-    },
-    body: JSON.stringify(body),
+export async function requestGoogleLyria3Audio(payload, dependencies = {}) {
+  const { url, headers, body, responseFormat, model } = await buildGoogleLyriaRequest(payload, dependencies);
+  const requestFetch = dependencies.fetch || fetch;
+  const response = await requestFetch(url, {
+    method: 'POST', headers, body: JSON.stringify(body),
   });
 
   const responseText = await response.text();

@@ -69,6 +69,7 @@ function normalizeGmiAspectRatio(value) {
 
 export function isGenBlazeImageRequestApplicable(payload = {}) {
   if (isGenBlazeImageRequestId(payload.apiRequestId)) return true;
+  if (normalizeModel(payload.model) === 'GPTIMAGE2') return false;
   if (normalizeModel(payload.model) !== 'NANOBANANAPRO') return true;
   const aspectRatio = normalizeGmiAspectRatio(
     payload.aspectRatio || payload.aspect_ratio,
@@ -197,6 +198,9 @@ export async function submitGenBlazeImageRequest(payload = {}, dependencies = {}
   await connect();
   await imageGenerationModel.findByIdAndUpdate(_id, { rowLocked: true });
   try {
+    if (normalizeModel(payload.model) === 'GPTIMAGE2') {
+      throw new Error('GPT Image 2.5 Sunburst is not verified on GMICloud. Use OpenAI or Fal.');
+    }
     const response = await request('/media/requests', {
       method: 'POST',
       body: buildGenBlazeImageRequest(payload),

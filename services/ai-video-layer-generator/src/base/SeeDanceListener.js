@@ -9,7 +9,7 @@ fal.config({
 const SEEDANCE_15_IMAGE_TO_VIDEO_LINK = "fal-ai/bytedance/seedance/v1.5/pro/image-to-video";
 const SEEDANCE_20_IMAGE_TO_VIDEO_LINK = "bytedance/seedance-2.0/image-to-video";
 const SEEDANCE_25_IMAGE_TO_VIDEO_LINK = "bytedance/seedance-2.5/image-to-video";
-const SEEDANCE_25_DURATION_UNITS = Object.freeze([5, 10, 15]);
+const SEEDANCE_25_DURATION_UNITS = Object.freeze([5, 10, 15, 20]);
 
 const SEEDANCE_ALLOWED_ASPECT_RATIOS = new Set([
   "auto",

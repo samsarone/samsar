@@ -5291,8 +5291,22 @@ export async function getSessionDetails(payload) {
 export async function getFrameForSession(payload) {
   await getDBConnectionString();
   const { userId, id, layer } = payload;
-  const session = await Session.findOne({ _id: layer });
-  return session;
+  const videoSession = await requireVideoSessionForStudioAccess(userId, id, payload);
+  const matchingLayer = videoSession.layers.find((candidate) =>
+    candidate._id?.toString() === layer ||
+    (candidate.imageSession?._id || candidate.imageSession)?.toString() === layer
+  );
+  if (!matchingLayer?.imageSession) {
+    const error = new Error('Layer not found');
+    error.statusCode = 404;
+    throw error;
+  }
+  // Current sessions embed image data. Older sessions may reference a separate
+  // document, which must belong to this authorized parent session.
+  if (typeof matchingLayer.imageSession === 'object' && 'activeItemList' in matchingLayer.imageSession) {
+    return matchingLayer.imageSession;
+  }
+  return Session.findOne({ _id: matchingLayer.imageSession._id || matchingLayer.imageSession });
 }
 
 export async function getLayerFrameDownloadForSession(userId, payload = {}) {
@@ -6183,9 +6197,10 @@ export async function updatePendingFramesForSession(id) {
   }
 }
 
-export async function addAudioToSession(id, dataURL) {
+export async function addAudioToSession(userId, payload = {}) {
   await getDBConnectionString();
-  const videoSession = await VideoSession.findOne({ _id: id });
+  const { id, dataURL } = payload;
+  const videoSession = await requireVideoSessionForStudioAccess(userId, id, payload, { markEdited: true });
   const audioFileName = `audio_${id}.mp3`;
   const audioFileBasePath = path.join(resolveProcessorAssetsRoot(), 'video', 'audio', id.toString());
   const audioFilesPath = path.join(audioFileBasePath, audioFileName);
@@ -6884,9 +6899,11 @@ export async function deleteLayerVisualItem(userId, payload) {
 
 
 
-export async function getVideoSessionGenerationStatus(sessionId, layerId) {
+export async function getVideoSessionGenerationStatus(userId, payload = {}) {
   await getDBConnectionString();
-  const session = await VideoSession.findOne({ _id: sessionId }).populate({
+  const { id: sessionId, layerId } = payload;
+  const session = await requireVideoSessionForStudioAccess(userId, sessionId, payload);
+  await session.populate({
     path: 'layers.imageSession',
     model: 'Session' // Ensure the correct model is referenced
   });
@@ -6916,9 +6933,10 @@ export async function getVideoSessionGenerationStatus(sessionId, layerId) {
   }
 }
 
-export async function getVideoSessionEditStatus(sessionId, layerId) {
+export async function getVideoSessionEditStatus(userId, payload = {}) {
   await getDBConnectionString();
-  const session = await VideoSession.findOne({ _id: sessionId });
+  const { id: sessionId, layerId } = payload;
+  const session = await requireVideoSessionForStudioAccess(userId, sessionId, payload);
 
   if (!session) {
     throw new Error("Session not found");
@@ -8915,13 +8933,18 @@ export async function requestGenerateMask(userId, payload) {
   await getDBConnectionString();
   const { sessionId, layerId, maskType } = payload;
 
-  const sessionDataValue = await VideoSession.findOne({ _id: sessionId });
+  const sessionDataValue = await requireVideoSessionForStudioAccess(userId, sessionId, payload, { markEdited: true });
 
   if (!sessionDataValue) {
     throw new Error('VideoSession not found');
   }
 
   let layer = sessionDataValue.layers.find(layer => layer._id.toString() === layerId);
+  if (!layer) {
+    const error = new Error('Layer not found');
+    error.statusCode = 404;
+    throw error;
+  }
 
   const random_string = hat();
   // Generate a new image name and upload the image
@@ -8939,9 +8962,9 @@ export async function requestGenerateMask(userId, payload) {
   await sessionDataValue.save();
 }
 
-export async function getVideoSessionMaskGenerationStatus(sessionId) {
+export async function getVideoSessionMaskGenerationStatus(userId, payload = {}) {
   await getDBConnectionString();
-  const sessionDataValue = await VideoSession.findOne({ _id: sessionId });
+  const sessionDataValue = await requireVideoSessionForStudioAccess(userId, payload.sessionId || payload.id, payload);
   if (sessionDataValue.maskGenerationPending) {
     return {
       status: 'PENDING'

@@ -1,4 +1,4 @@
-function getProviderStatus(error) {
+export function getProviderStatus(error) {
   const visited = new Set();
   let current = error;
   while (current && typeof current === 'object' && !visited.has(current)) {

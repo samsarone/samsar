@@ -8,12 +8,11 @@ The cleanup is intentionally scoped to transient frame/cache paths:
 - `ai_video/frames/<sessionId>`
 - `video/narrator_avatar/frames/<sessionId>`
 - `video/narrator_avatar/joined_frames/<sessionId>`
-- final video files under `video/output`
 - old media files in `ai_video/temp`
 
-It does not clean API generated resources, generated music, user resources,
-outro assets, or AI video generation outputs such as
-`ai_video/generations`.
+It does not clean final video renders under `video/output`, API generated
+resources, generated music, user resources, outro assets, or AI video
+generation outputs such as `ai_video/generations`.
 
 ## Environment
 

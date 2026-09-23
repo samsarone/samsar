@@ -123,7 +123,7 @@ test('submits and polls an opaque image-edit job while preserving Samsar result 
   const calls = [];
   const submitted = await handleGenBlazeImageEditRequest({
     _id: 'edit-row-1',
-    model: 'GPTIMAGE2EDIT',
+    model: 'NANOBANANA2EDIT',
     prompt: 'edit',
     image: 'source.png',
     apiEditStatus: 'INIT',
@@ -149,7 +149,7 @@ test('submits and polls an opaque image-edit job while preserving Samsar result 
 
   const result = await handleGenBlazeImageEditRequest({
     _id: 'edit-row-1',
-    model: 'GPTIMAGE2EDIT',
+    model: 'NANOBANANA2EDIT',
     apiEditStatus: 'PENDING',
     apiRequestId: persisted.apiRequestId,
   }, {
@@ -237,4 +237,23 @@ test('selects GenBlaze only for standalone compatible single-output edits', (t) 
     model: 'GPTIMAGE2EDIT',
     adapterProviderOverride: 'gmicloud',
   }), false);
+});
+
+
+test('rejects new GPT Image jobs instead of silently using GMICloud version 2', async () => {
+  const recorder = createModelRecorder();
+  let submitted = false;
+  const result = await handleGenBlazeImageEditRequest({
+    _id: 'sunburst-request',
+    model: 'GPTIMAGE2EDIT',
+    apiEditStatus: 'INIT',
+  }, {
+    connect: async () => {},
+    imageGenerationModel: recorder.model,
+    request: async () => { submitted = true; },
+    logger: { error() {} },
+  });
+  assert.equal(submitted, false);
+  assert.equal(result.image, null);
+  assert.match(result.error, /Sunburst.*not verified on GMICloud/);
 });

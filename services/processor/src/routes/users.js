@@ -8,6 +8,7 @@ import {
   updateUserAPIKeyLimit,
   updateAppUserPreferences, updateUserPreferredLanguage,
   formatUserClientProfile,
+  formatPublicUserProfile,
   bootstrapDockerAdminUser,
 } from '../models/User.js';
 import { authenticateWithAuthToken, authenticateWithLoginToken, createLoginTokenForUser } from '../models/api/UserAPI.js';
@@ -99,11 +100,12 @@ function verifyDockerSetupSecret(req) {
 }
 
 router.post('/verify', async (req, res) => {
+  setNoStoreAuthHeaders(res);
   try {
     const userData = await verifyUserSession(req.body);
     res.send(formatUserClientProfile(userData, { authToken: userData?.authToken }));
   } catch (e) {
-    res.status(400).send({ error: e.message });
+    res.status(e.statusCode || 400).send({ error: e.message });
   }
 });
 
@@ -146,7 +148,7 @@ router.get('/verify_token', async (req, res) => {
 router.get('/profile', async (req, res) => {
   try {
     const session = await getUserData(req.query.fid);
-    res.send(formatUserClientProfile(session));
+    res.send(formatPublicUserProfile(session));
   } catch (e) {
     res.status(500).send({ error: e.message });
   }
@@ -711,6 +713,7 @@ router.post('/delete_generations', async (req, res) => {
 });
 
 router.post('/forgot_password', async (req, res) => {
+  setNoStoreAuthHeaders(res);
   try {
     const session = await sendForgotPasswordEmail(req.body);
     res.send(session);

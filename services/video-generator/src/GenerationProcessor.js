@@ -1772,10 +1772,15 @@ export async function generatePendingVideoRequests() {
 
     const pendingVideoRequests = await VideoGeneration.find({ rowLocked: false }).sort({ createdAt: -1 });
 
-    for (const videoRequest of pendingVideoRequests) {
+    for (const pendingVideoRequest of pendingVideoRequests) {
       if (isShuttingDown) break;
 
-      await VideoGeneration.findByIdAndUpdate(videoRequest._id, { rowLocked: true });
+      const videoRequest = await VideoGeneration.findOneAndUpdate(
+        { _id: pendingVideoRequest._id, rowLocked: false },
+        { $set: { rowLocked: true } },
+        { new: true },
+      );
+      if (!videoRequest) continue;
 
       const videoSessionId = videoRequest.videoSessionId;
       const isPremium = videoRequest.isPremium;

@@ -1,5 +1,5 @@
-export const DEFAULT_INFERENCE_MODEL_VALUE = "gpt-5.6-sol";
-export const EXTRA_HIGH_INFERENCE_MODEL_VALUE = "gpt-5.6-sol-xhigh";
+export const DEFAULT_INFERENCE_MODEL_VALUE = "gpt-6-astra";
+export const EXTRA_HIGH_INFERENCE_MODEL_VALUE = "gpt-6-astra-xhigh";
 export const QWEN_INFERENCE_MODEL_VALUE = "QWEN3.8";
 export const KIMI_K3_INFERENCE_MODEL_VALUE = "kimi-k3";
 export const HOSTED_QWEN_INFERENCE_MODEL_VALUE = QWEN_INFERENCE_MODEL_VALUE;
@@ -10,15 +10,23 @@ export const HOSTED_QWEN_INFERENCE_MODEL_LABEL =
 
 const GPT_56_SOL_HIGH_MODEL_TOKENS = new Set([
   "gpt56",
+  "gpt6",
   "gpt56sol",
+  "gpt6astra",
   "gpt56high",
+  "gpt6high",
   "gpt56solhigh",
+  "gpt6astrahigh",
 ]);
 const GPT_56_SOL_XHIGH_MODEL_TOKENS = new Set([
   "gpt56xhigh",
+  "gpt6xhigh",
   "gpt56solxhigh",
+  "gpt6astraxhigh",
   "gpt56extrahigh",
+  "gpt6extrahigh",
   "gpt56solextrahigh",
+  "gpt6astraextrahigh",
 ]);
 
 const DEPLOYMENT_PROVIDER_LABELS = Object.freeze({
@@ -34,16 +42,16 @@ const DEPLOYMENT_PROVIDER_LABELS = Object.freeze({
 });
 
 const DEPLOYMENT_INFERENCE_MODELS_BY_PROVIDER = Object.freeze({
-  openai: ["gpt-5.6-sol"],
+  openai: ["gpt-6-astra"],
   googleCloud: ["gemini-3.1-pro"],
   kimi: [KIMI_K3_INFERENCE_MODEL_VALUE],
-  openrouter: ["gpt-5.6-sol", "gemini-3.1-pro", QWEN_INFERENCE_MODEL_VALUE],
+  openrouter: ["gpt-6-astra", "gemini-3.1-pro", QWEN_INFERENCE_MODEL_VALUE],
   gmicloud: [QWEN_INFERENCE_MODEL_VALUE],
   // Alibaba/Qwen requires explicit, validated model provenance below. A
   // provider name by itself is not enough to make Qwen selectable.
   alibabaCloud: [],
   samsar: [
-    "gpt-5.6-sol",
+    "gpt-6-astra",
     "gemini-3.1-pro",
     QWEN_INFERENCE_MODEL_VALUE,
     KIMI_K3_INFERENCE_MODEL_VALUE,
@@ -204,7 +212,7 @@ export function normalizeDeploymentInferenceModelValue(value) {
 
 /**
  * Maps legacy logical inference choices onto the physical deployment model.
- * Reasoning effort is stored separately from the canonical GPT 5.6 Sol model.
+ * Reasoning effort is stored separately from the canonical GPT 6 Astra model.
  */
 export function getDeploymentInferenceAvailabilityModelValue(value) {
   const logicalValue = normalizeDeploymentInferenceModelValue(value);

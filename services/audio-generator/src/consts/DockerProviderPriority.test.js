@@ -20,6 +20,10 @@ const ENV_KEYS = [
   'SAMSAR_GENBLAZE_ENABLED',
   'SAMSAR_GENBLAZE_MODEL_CATALOG_PATH',
   'SAMSAR_MODEL_ADAPTER_PREFERENCES_PATH',
+  'GOOGLE_LYRIA_GEMINI_API_KEY',
+  'GEMINI_API_KEY',
+  'GOOGLE_API_KEY',
+  'GOOGLE_LYRIA_API_PROVIDER',
   'OPENAI_API_KEY',
   'ELEVENLABS_API_KEY',
   'ELEVENLABS_API_TOKEN',
@@ -39,7 +43,11 @@ afterEach(() => {
 
 function clearProviderCredentials() {
   for (const key of [
-    'OPENAI_API_KEY',
+    'GOOGLE_LYRIA_GEMINI_API_KEY',
+  'GEMINI_API_KEY',
+  'GOOGLE_API_KEY',
+  'GOOGLE_LYRIA_API_PROVIDER',
+  'OPENAI_API_KEY',
     'ELEVENLABS_API_KEY',
     'ELEVENLABS_API_TOKEN',
     'FAL_API_KEY',
@@ -220,4 +228,26 @@ test('hosted audio ignores standalone adapter preferences', (t) => {
   process.env.FAL_API_KEY = 'fal-key';
 
   assert.equal(resolveDockerMusicProvider('ELEVENLABS_MUSIC', { status: 'INIT' }), 'elevenlabs');
+});
+
+test('Lyria chooses the highest available version while keeping Vertex-only installs compatible', () => {
+  clearProviderCredentials();
+  process.env.GOOGLE_CLOUD_PROJECT = 'test-project';
+  process.env.K_SERVICE = 'test-service';
+  assert.equal(resolveDockerMusicProvider('LYRIA3', { status: 'INIT' }), 'googleCloud');
+  process.env.FAL_API_KEY = 'test-fal';
+  assert.equal(resolveDockerMusicProvider('LYRIA3', { status: 'INIT' }), 'fal');
+  process.env.GEMINI_API_KEY = 'test-gemini';
+  assert.equal(resolveDockerMusicProvider('LYRIA3', { status: 'INIT' }), 'googleCloud');
+  assert.equal(resolveDockerMusicProvider('LYRIA2', { status: 'INIT' }), 'googleCloud');
+  delete process.env.GEMINI_API_KEY;
+  process.env.GOOGLE_LYRIA_API_PROVIDER = 'vertex';
+  assert.equal(resolveDockerMusicProvider('LYRIA3', { status: 'INIT' }), 'fal');
+  delete process.env.FAL_API_KEY;
+  assert.equal(resolveDockerMusicProvider('LYRIA3', { status: 'INIT' }), 'googleCloud');
+  delete process.env.K_SERVICE;
+  delete process.env.GOOGLE_CLOUD_PROJECT;
+  process.env.GOOGLE_LYRIA_API_PROVIDER = 'gemini';
+  process.env.GEMINI_API_KEY = 'test-gemini';
+  assert.equal(resolveDockerSpeechProvider('GOOGLE', { status: 'INIT' }), '');
 });

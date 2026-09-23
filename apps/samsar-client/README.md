@@ -345,13 +345,13 @@ The client also includes supporting surfaces:
 
 The client-side model inventory lives primarily in `src/constants/Types.ts` and `src/constants/ModelPrices.jsx`.
 
-In Docker deployments, the processor-provided availability response filters the inference selectors. One configured `OPENROUTER_API_KEY` exposes `gpt-5.6-sol`, `gemini-3.1-pro`, and `QWEN3.8` for chat, assistant, and their corresponding vision-input workflows. Provider priority is the model's direct native credential, then OpenRouter, then the Samsar deployed fallback; the client preserves the selected provider provenance when deciding whether a saved model remains authorized. In hosted production, the client exposes Qwen as `QWEN3.8` with the label `Qwen 3.8 Max`. When `SAMSAR_DOCKER_ADAPTER_ROUTING_ENABLED=true` and an Alibaba credential is configured, both text and vision inference use native Alibaba Cloud Qwen 3.8 Max; otherwise they use the OpenRouter model `qwen/qwen3.8-max`.
+In Docker deployments, the processor-provided availability response filters the inference selectors. One configured `OPENROUTER_API_KEY` exposes `gpt-6-astra`, `gemini-3.1-pro`, and `QWEN3.8` for chat, assistant, and their corresponding vision-input workflows. Provider priority is the model's direct native credential, then OpenRouter, then the Samsar deployed fallback; the client preserves the selected provider provenance when deciding whether a saved model remains authorized. In hosted production, the client exposes Qwen as `QWEN3.8` with the label `Qwen 3.8 Max`. When `SAMSAR_DOCKER_ADAPTER_ROUTING_ENABLED=true` and an Alibaba credential is configured, both text and vision inference use native Alibaba Cloud Qwen 3.8 Max; otherwise they use the OpenRouter model `qwen/qwen3.8-max`.
 
 ### Image Generation
 
 | Model | Key | Express |
 | --- | --- | --- |
-| GPT Image 2 | `GPTIMAGE2` | Yes |
+| GPT Image 2.5 | `GPTIMAGE2` | Yes |
 | Seedream | `SEEDREAM` | Yes |
 | NanoBanana 2 | `NANOBANANA2` | Yes |
 | NanoBanana Pro | `NANOBANANAPRO` | Yes |
@@ -361,14 +361,14 @@ In Docker deployments, the processor-provided availability response filters the 
 Docker deployments expose `QWENIMAGE3PRO` in Image Studio and Express when
 native Alibaba Cloud pay-as-you-go routing is enabled. Requests use provider
 model ID `qwen-image-3.0-pro`. Standalone installations are billed directly by
-Alibaba; hosted Studio charges the same 46 credits per image as GPT Image 2.
+Alibaba; hosted Studio charges the same 46 credits per image as GPT Image 2.5.
 
 ### Image Editing
 
 | Model | Key | Edit type |
 | --- | --- | --- |
 | NanoBanana 2 Edit | `NANOBANANA2EDIT` | Prompt edit |
-| GPT Image 2 Edit | `GPTIMAGE2EDIT` | Inpaint |
+| GPT Image 2.5 Edit | `GPTIMAGE2EDIT` | Inpaint |
 
 ### Video Generation
 
@@ -537,3 +537,10 @@ yarn preview
 - Threads: [threads.net/@samsar_one_videos](https://www.threads.net/@samsar_one_videos)
 
 Contributions and pull requests are welcome. If you are new to the codebase, start with VidGenie for the clearest request/response flow, then move into Studio's `VideoHome`, `VideoEditorContainer`, and expanded frame toolbar once you need the full editing model.
+
+## Regression tests
+
+The client has existing Node regression tests, Vitest React tests, and Chromium
+component tests. Run `yarn test:browser:install` once, then `yarn test:ci`.
+See [Testing](docs/TESTING.md) for local commands, scope, and the source-owned
+GitHub Actions template for Samsar monorepo and sync integration.

@@ -83,13 +83,21 @@ const TTS_MODEL_ALIASES = Object.freeze({
 
 const INFERENCE_MODEL_ALIASES = Object.freeze({
   GPT56: DEFAULT_INFERENCE_MODEL,
+  GPT6: DEFAULT_INFERENCE_MODEL,
   GPT56SOL: DEFAULT_INFERENCE_MODEL,
+  GPT6ASTRA: DEFAULT_INFERENCE_MODEL,
   GPT56HIGH: DEFAULT_INFERENCE_MODEL,
+  GPT6HIGH: DEFAULT_INFERENCE_MODEL,
   GPT56SOLHIGH: DEFAULT_INFERENCE_MODEL,
+  GPT6ASTRAHIGH: DEFAULT_INFERENCE_MODEL,
   GPT56XHIGH: GPT_56_SOL_XHIGH_INFERENCE_MODEL,
+  GPT6XHIGH: GPT_56_SOL_XHIGH_INFERENCE_MODEL,
   GPT56SOLXHIGH: GPT_56_SOL_XHIGH_INFERENCE_MODEL,
+  GPT6ASTRAXHIGH: GPT_56_SOL_XHIGH_INFERENCE_MODEL,
   GPT56EXTRAHIGH: GPT_56_SOL_XHIGH_INFERENCE_MODEL,
+  GPT6EXTRAHIGH: GPT_56_SOL_XHIGH_INFERENCE_MODEL,
   GPT56SOLEXTRAHIGH: GPT_56_SOL_XHIGH_INFERENCE_MODEL,
+  GPT6ASTRAEXTRAHIGH: GPT_56_SOL_XHIGH_INFERENCE_MODEL,
   GEMINI31: GEMINI_31_PRO_INFERENCE_MODEL,
   GEMINI31PRO: GEMINI_31_PRO_INFERENCE_MODEL,
   GEMINI31PROPREVIEW: GEMINI_31_PRO_INFERENCE_MODEL,
@@ -227,8 +235,8 @@ export function normalizeInferenceModelFromPayload(payload = {}) {
   const normalizedModel = INFERENCE_MODEL_ALIASES[token];
   if (!normalizedModel) {
     throw makeValidationError(
-      'inference_model must be one of: gpt-5.6-sol, gemini-3.1-pro, QWEN3.8, ' +
-      'kimi-k3. Legacy gpt-5.6-sol-high and gpt-5.6-sol-xhigh aliases are accepted.'
+      'inference_model must be one of: gpt-6-astra, gemini-3.1-pro, QWEN3.8, ' +
+      'kimi-k3. Legacy gpt-6-astra-high and gpt-6-astra-xhigh aliases are accepted.'
     );
   }
 
@@ -269,7 +277,7 @@ export function resolveEffectiveInferenceSettings(
 
   if (requestedEffort && !isGPT56Sol) {
     throw makeValidationError(
-      'effort is only supported when inference_model is gpt-5.6-sol.'
+      'effort is only supported when inference_model is gpt-6-astra.'
     );
   }
 

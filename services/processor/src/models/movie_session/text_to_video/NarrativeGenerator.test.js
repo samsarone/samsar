@@ -94,7 +94,7 @@ test('returns a typed failure after the configured semantic validation attempts'
     generateValidatedTextToVideoNarrative({
       prompt: 'Create a short.',
       duration: 10,
-      inferenceModel: 'gpt-5.6-sol',
+      inferenceModel: 'gpt-6-astra',
       videoTone: 'cinematic',
       maxValidationAttempts: 2,
       dependencies: {
@@ -125,7 +125,7 @@ test('retries until the singular narrative can support the requested branching d
     prompt: 'Create an interactive journey.',
     duration: 30,
     minimumSceneCount: 3,
-    inferenceModel: 'gpt-5.6-sol',
+    inferenceModel: 'gpt-6-astra',
     videoTone: 'cinematic',
     maxValidationAttempts: 2,
     dependencies: {
@@ -733,7 +733,7 @@ test('uses three full narrative-generation attempts by default for pre-speech fa
     generateValidatedTextToVideoNarrative({
       prompt: 'Create a valid narrative.',
       duration: 10,
-      inferenceModel: 'gpt-5.6-sol',
+      inferenceModel: 'gpt-6-astra',
       videoTone: 'cinematic',
       dependencies: {
         extractThemeFromUserPrompt: async () => ({ style: [] }),

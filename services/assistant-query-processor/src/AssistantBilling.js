@@ -3,6 +3,15 @@ const CREDITS_PER_DOLLAR = 100;
 export const DEFAULT_ASSISTANT_PRICING_MULTIPLIER = 1.5;
 
 const TOKEN_PRICING_USD_PER_MILLION = Object.freeze({
+  'gpt-6-astra': {
+    input: 10,
+    cachedInput: 1,
+    output: 50,
+    longContextInput: 20,
+    longContextCachedInput: 2,
+    longContextOutput: 75,
+    longContextInputThreshold: 272_000,
+  },
   'gpt-5.6-sol': {
     input: 5,
     cachedInput: 0.5,
@@ -125,6 +134,10 @@ function resolvePricingModel(model) {
   const normalized = model.trim().toLowerCase();
   if (!normalized) {
     return null;
+  }
+
+  if (normalized.startsWith('gpt-6-astra')) {
+    return 'gpt-6-astra';
   }
 
   if (normalized.startsWith('gpt-5.6-sol')) {

@@ -471,12 +471,13 @@ router.post('/request_generate', async function (req, res) {
 });
 
 router.get('/generate_status', async function (req, res) {
-  const { id, layerId } = req.query;
+  const userId = verifyUserAuth(req.headers);
+  if (!userId) return res.status(401).send('Unauthorized');
   try {
-    const generationStatus = await getVideoSessionGenerationStatus(id, layerId);
+    const generationStatus = await getVideoSessionGenerationStatus(userId, req.query);
     res.send(generationStatus);
   } catch (error) {
-    res.status(400).send('Error getting image generation status');
+    res.status(error.statusCode || error.status || 400).send('Error getting image generation status');
   }
 });
 
@@ -498,12 +499,13 @@ router.post('/request_edit_image', async function (req, res) {
 });
 
 router.get('/edit_status', async function (req, res) {
-  const { id, layerId } = req.query;
+  const userId = verifyUserAuth(req.headers);
+  if (!userId) return res.status(401).send('Unauthorized');
   try {
-    const generationStatus = await getVideoSessionEditStatus(id, layerId);
+    const generationStatus = await getVideoSessionEditStatus(userId, req.query);
     res.send(generationStatus);
   } catch (error) {
-    res.status(400).send('Error getting image edit status');
+    res.status(error.statusCode || error.status || 400).send('Error getting image edit status');
   }
 });
 

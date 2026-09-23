@@ -79,7 +79,7 @@ test('assistant completion retries the next saved adapter after a retryable fail
   });
   fs.writeFileSync(preferencePath, JSON.stringify({
     modelProviderPriority: {
-      'gpt-5.6-sol': ['openai', 'openrouter'],
+      'gpt-6-astra': ['openai', 'openrouter'],
     },
   }));
   Object.assign(process.env, {
@@ -101,14 +101,14 @@ test('assistant completion retries the next saved adapter after a retryable fail
   t.mock.method(OpenAI.Chat.Completions.prototype, 'create', async () => {
     attempts.push('openrouter');
     return {
-      model: 'openai/gpt-5.6-sol',
+      model: 'openai/gpt-6-astra',
       choices: [{ message: { content: 'fallback ok' } }],
     };
   });
 
   const response = await sendAssistantCompletionRequest(
     [{ role: 'user', content: 'hello' }],
-    'gpt-5.6-sol',
+    'gpt-6-astra',
     { authorization: 'native' },
   );
 

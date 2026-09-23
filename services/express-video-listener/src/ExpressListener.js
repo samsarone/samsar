@@ -219,6 +219,17 @@ function getExpressBuilderStatus(sessionData = {}) {
   return normalizeStatusValue(sessionData?.expressGenerationBuilder?.status);
 }
 
+function resolveAudioGenerationFailureMessage(sessionData = {}) {
+  for (const layer of sessionData.audioLayers || []) {
+    if (normalizeStatusValue(layer.generationStatus) !== 'FAILED') continue;
+    for (const value of [layer.generationError, layer.errorMessage, layer.error]) {
+      const message = normalizeOptionalString(value);
+      if (message) return message;
+    }
+  }
+  return normalizeOptionalString(sessionData.expressGenerationError) || 'Audio generation failed';
+}
+
 function isExpressBuilderStillPreparing(sessionData = {}) {
   const builderStatus = getExpressBuilderStatus(sessionData);
   return ACTIVE_EXPRESS_BUILDER_STATUSES.has(builderStatus);
@@ -1217,7 +1228,7 @@ async function checkVideoRenderStatus(session) {
       expressGenerationStatus: failedAudioGenerationStatus,
       expressGenerationPending: false,
       expressGenerationFailed: true,
-      expressGenerationError: 'Audio generation failed'
+      expressGenerationError: resolveAudioGenerationFailureMessage(latestSession)
     }, { new: true });
 
     await processSessionCompletionFailure(sessionId);
@@ -2205,6 +2216,7 @@ async function getTimeout(ms = 1000) {
 }
 
 export const __testOnly__ = {
+  resolveAudioGenerationFailureMessage,
   hasLayerStillVisuals,
   hasGeneratedAiVideoOutput,
   getFailedRequiredAiVideoLayer,

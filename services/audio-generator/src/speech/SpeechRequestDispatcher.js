@@ -22,6 +22,7 @@ import {
 } from '../external/SamsarExternalAudioAdapter.js';
 import { processGenBlazeSpeechRequest } from './GenBlazeSpeech.js';
 import { isStandaloneEdition } from '../util/environmentUtils.js';
+import { withAudioAuthenticationFallback } from '../utils/AudioAuthenticationFallback.js';
 
 function normalizeString(value) {
   return typeof value === 'string' ? value.trim() : '';
@@ -191,23 +192,25 @@ export async function dispatchSpeechRequest(speechRequest) {
     throw new Error(`No configured Docker speech provider for ${normalizedTtsProvider}.`);
   }
 
-  if (provider === DOCKER_AUDIO_PROVIDER.SAMSAR) {
-    await processSamsarExternalSpeechRequest(normalizedSpeechRequest);
-  } else if (provider === DOCKER_AUDIO_PROVIDER.GMICLOUD) {
-    await processGenBlazeSpeechRequest(normalizedSpeechRequest);
-  } else if (normalizedTtsProvider === 'OPENAI') {
-    await processOpenAITTSSpeechRequest(normalizedSpeechRequest);
-  } else if (normalizedTtsProvider === 'PLAYAI') {
-    await processPlayAISpeechRequest(normalizedSpeechRequest);
-  } else if (normalizedTtsProvider === 'GOOGLE') {
-    await processGoogleTTSSpeechRequest(normalizedSpeechRequest);
-  } else if (normalizedTtsProvider === 'ELEVENLABS') {
-    if (provider === DOCKER_AUDIO_PROVIDER.ELEVENLABS) {
-      await processElevenLabsSpeechRequest(normalizedSpeechRequest);
-    } else {
-      await processElevenLabsFalSpeechRequest(normalizedSpeechRequest);
+  return withAudioAuthenticationFallback(normalizedSpeechRequest, async () => {
+    if (provider === DOCKER_AUDIO_PROVIDER.SAMSAR) {
+      await processSamsarExternalSpeechRequest(normalizedSpeechRequest);
+    } else if (provider === DOCKER_AUDIO_PROVIDER.GMICLOUD) {
+      await processGenBlazeSpeechRequest(normalizedSpeechRequest);
+    } else if (normalizedTtsProvider === 'OPENAI') {
+      await processOpenAITTSSpeechRequest(normalizedSpeechRequest);
+    } else if (normalizedTtsProvider === 'PLAYAI') {
+      await processPlayAISpeechRequest(normalizedSpeechRequest);
+    } else if (normalizedTtsProvider === 'GOOGLE') {
+      await processGoogleTTSSpeechRequest(normalizedSpeechRequest);
+    } else if (normalizedTtsProvider === 'ELEVENLABS') {
+      if (provider === DOCKER_AUDIO_PROVIDER.ELEVENLABS) {
+        await processElevenLabsSpeechRequest(normalizedSpeechRequest);
+      } else {
+        await processElevenLabsFalSpeechRequest(normalizedSpeechRequest);
+      }
+    } else if (normalizedTtsProvider === 'CUSTOM_TEXT_TO_SPEECH') {
+      await processCustomTextToSpeechRequest(normalizedSpeechRequest);
     }
-  } else if (normalizedTtsProvider === 'CUSTOM_TEXT_TO_SPEECH') {
-    await processCustomTextToSpeechRequest(normalizedSpeechRequest);
-  }
+  }, processSamsarExternalSpeechRequest);
 }

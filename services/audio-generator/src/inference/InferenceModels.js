@@ -1,5 +1,5 @@
-export const GPT_56_SOL_INFERENCE_MODEL = 'gpt-5.6-sol';
-export const GPT_56_SOL_XHIGH_INFERENCE_MODEL = 'gpt-5.6-sol-xhigh';
+export const GPT_56_SOL_INFERENCE_MODEL = 'gpt-6-astra';
+export const GPT_56_SOL_XHIGH_INFERENCE_MODEL = 'gpt-6-astra-xhigh';
 export const DEFAULT_INFERENCE_MODEL = GPT_56_SOL_INFERENCE_MODEL;
 export const GPT_56_SOL_REASONING_EFFORT = 'high';
 export const GPT_56_SOL_XHIGH_REASONING_EFFORT = 'xhigh';
@@ -71,7 +71,8 @@ export function normalizeInferenceModel(value) {
   if (!normalized) {
     return DEFAULT_INFERENCE_MODEL;
   }
-  if (normalized === DEFAULT_INFERENCE_MODEL || normalized.startsWith(`${DEFAULT_INFERENCE_MODEL}-`)) {
+  if (normalized === DEFAULT_INFERENCE_MODEL || normalized.startsWith(`${DEFAULT_INFERENCE_MODEL}-`) ||
+    normalized === 'gpt-5.6-sol' || normalized.startsWith('gpt-5.6-sol-')) {
     const token = normalizeAliasToken(value);
     return token.includes('XHIGH') || token.includes('EXTRAHIGH')
       ? GPT_56_SOL_XHIGH_INFERENCE_MODEL

@@ -137,9 +137,9 @@ test('GMICloud selection follows the validated text and vision catalog mappings'
       'QWEN3.8': {
         text: { modelId: 'Qwen/Qwen3.8-Max', operation: 'chat.completions' },
       },
-      'gpt-5.6-sol': {
-        text: { modelId: 'gpt-5.6-sol', operation: 'chat.completions' },
-        vision: { modelId: 'gpt-5.6-sol', operation: 'chat.completions' },
+      'gpt-6-astra': {
+        text: { modelId: 'gpt-6-astra', operation: 'chat.completions' },
+        vision: { modelId: 'gpt-6-astra', operation: 'chat.completions' },
       },
       'gemini-3.1-pro': {
         text: { modelId: 'gemini-3.1-pro', operation: 'chat.completions' },
@@ -169,7 +169,7 @@ test('GMICloud selection follows the validated text and vision catalog mappings'
         }),
         DOCKER_INFERENCE_PROVIDER.OPENROUTER,
       );
-      assert.deepEqual(getConfiguredInferenceProviders('gpt-5.6-sol'), [
+      assert.deepEqual(getConfiguredInferenceProviders('gpt-6-astra'), [
         DOCKER_INFERENCE_PROVIDER.GMICLOUD,
         DOCKER_INFERENCE_PROVIDER.OPENROUTER,
       ]);
@@ -179,7 +179,7 @@ test('GMICloud selection follows the validated text and vision catalog mappings'
       ]);
       process.env.SAMSAR_API_KEY = 'samsar-key';
       process.env.OPENAI_API_KEY = 'openai-key';
-      assert.deepEqual(getConfiguredInferenceProviders('gpt-5.6-sol'), [
+      assert.deepEqual(getConfiguredInferenceProviders('gpt-6-astra'), [
         DOCKER_INFERENCE_PROVIDER.OPENAI,
         DOCKER_INFERENCE_PROVIDER.GMICLOUD,
         DOCKER_INFERENCE_PROVIDER.SAMSAR,
@@ -199,7 +199,7 @@ test('GMICloud selection follows the validated text and vision catalog mappings'
       OPENROUTER_API_KEY: 'openrouter-key',
       SAMSAR_API_KEY: 'samsar-key',
     }, () => {
-      assert.deepEqual(getConfiguredInferenceProviders('gpt-5.6-sol'), [
+      assert.deepEqual(getConfiguredInferenceProviders('gpt-6-astra'), [
         DOCKER_INFERENCE_PROVIDER.OPENAI,
         DOCKER_INFERENCE_PROVIDER.OPENROUTER,
         DOCKER_INFERENCE_PROVIDER.SAMSAR,
@@ -221,8 +221,8 @@ test('GMICloud receives reasoning_effort without the unsupported reasoning objec
     version: 1,
     provider: 'gmicloud',
     models: {
-      'gpt-5.6-sol': {
-        text: { modelId: 'gpt-5.6-sol', operation: 'chat.completions' },
+      'gpt-6-astra': {
+        text: { modelId: 'gpt-6-astra', operation: 'chat.completions' },
       },
     },
   }));
@@ -249,7 +249,7 @@ test('GMICloud receives reasoning_effort without the unsupported reasoning objec
   });
 
   await createGenblazeChatCompletion({
-    model: 'gpt-5.6-sol',
+    model: 'gpt-6-astra',
     messages: [{ role: 'user', content: 'hello' }],
     reasoning: { effort: 'medium' },
     effort: 'xhigh',
@@ -270,7 +270,7 @@ test('GPT and Gemini preserve legacy priority when GenBlaze lacks an exact mappi
     OPENROUTER_API_KEY: 'openrouter-key',
     SAMSAR_API_KEY: 'samsar-key',
   }, () => {
-    assert.deepEqual(getConfiguredInferenceProviders('gpt-5.6-sol'), [
+    assert.deepEqual(getConfiguredInferenceProviders('gpt-6-astra'), [
       DOCKER_INFERENCE_PROVIDER.OPENAI,
       DOCKER_INFERENCE_PROVIDER.OPENROUTER,
       DOCKER_INFERENCE_PROVIDER.SAMSAR,
@@ -327,7 +327,7 @@ test('hosted inference ignores saved preferences and keeps Qwen OpenRouter-only'
   const preferencePath = path.join(temporaryDirectory, 'model-adapter-preferences.json');
   writeFileSync(preferencePath, JSON.stringify({
     modelProviderPriority: {
-      'gpt-5.6-sol': ['samsar', 'openrouter', 'openai'],
+      'gpt-6-astra': ['samsar', 'openrouter', 'openai'],
       'QWEN3.8': ['samsar', 'alibabaCloud', 'openrouter'],
     },
   }));
@@ -343,7 +343,7 @@ test('hosted inference ignores saved preferences and keeps Qwen OpenRouter-only'
         DASHSCOPE_API_KEY: 'dashscope-key',
       }, () => {
         assert.deepEqual(
-          getConfiguredInferenceProviders('gpt-5.6-sol'),
+          getConfiguredInferenceProviders('gpt-6-astra'),
           [
             DOCKER_INFERENCE_PROVIDER.OPENAI,
             DOCKER_INFERENCE_PROVIDER.OPENROUTER,
@@ -438,11 +438,11 @@ test('Samsar remains ahead of OpenRouter while native adapters stay first', () =
     SAMSAR_API_KEY: 'samsar-key',
   }, () => {
     assert.equal(resolveConfiguredInferenceProvider('QWEN3.8'), DOCKER_INFERENCE_PROVIDER.SAMSAR);
-    for (const model of ['gemini-3.1-pro', 'gpt-5.6-sol']) {
+    for (const model of ['gemini-3.1-pro', 'gpt-6-astra']) {
       assert.equal(resolveConfiguredInferenceProvider(model), DOCKER_INFERENCE_PROVIDER.OPENROUTER);
     }
     process.env.OPENAI_API_KEY = 'openai-key';
-    assert.equal(resolveConfiguredInferenceProvider('gpt-5.6-sol'), DOCKER_INFERENCE_PROVIDER.OPENAI);
+    assert.equal(resolveConfiguredInferenceProvider('gpt-6-astra'), DOCKER_INFERENCE_PROVIDER.OPENAI);
   });
 });
 
@@ -495,7 +495,7 @@ test('explicit deployed authorization overrides native credentials for every inf
     KIMI_K3_API_KEY: 'kimi-key',
     OPENAI_API_KEY: 'openai-key',
   }, () => {
-    for (const model of ['QWEN3.8', 'gemini-3.1-pro', 'kimi-k3', 'gpt-5.6-sol']) {
+    for (const model of ['QWEN3.8', 'gemini-3.1-pro', 'kimi-k3', 'gpt-6-astra']) {
       assert.equal(shouldUseSamsarExternalInference({
         model,
         authorization: 'deployed',
@@ -513,7 +513,7 @@ test('explicit native authorization preserves Samsar fallback while provider cre
       model: 'QWEN3.8',
       authorization: 'native',
     }), true);
-    for (const model of ['gemini-3.1-pro', 'kimi-k3', 'gpt-5.6-sol']) {
+    for (const model of ['gemini-3.1-pro', 'kimi-k3', 'gpt-6-astra']) {
       assert.equal(shouldUseSamsarExternalInference({
         model,
         authorization: 'native',
@@ -595,7 +595,7 @@ test('Qwen OpenRouter uses Qwen 3.8 Max for text and vision with bounded setting
     messages: [{ role: 'user', content: 'hello' }],
   });
   await createOpenRouterChatCompletion({
-    model: 'gpt-5.6-sol',
+    model: 'gpt-6-astra',
     messages: [{ role: 'user', content: 'hello' }],
   });
 

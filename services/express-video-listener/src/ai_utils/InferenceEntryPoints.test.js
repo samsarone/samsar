@@ -42,7 +42,7 @@ function configurePreferences(t, {
   t.after(() => fs.rmSync(temporaryDirectory, { recursive: true, force: true }));
   fs.writeFileSync(preferencePath, JSON.stringify({
     modelProviderPriority: {
-      'gpt-5.6-sol': providers,
+      'gpt-6-astra': providers,
     },
   }));
   Object.assign(process.env, {
@@ -74,14 +74,14 @@ test('assistant entry point advances from reordered OpenRouter to native OpenAI'
     attempts.push('openai');
     return {
       id: 'native-response',
-      model: 'gpt-5.6-sol',
+      model: 'gpt-6-astra',
       output_text: 'native assistant response',
     };
   });
 
   const response = await sendAssistantMessageRequest(
     [{ role: 'user', content: 'Generate a prompt.' }],
-    'gpt-5.6-sol',
+    'gpt-6-astra',
   );
 
   assert.equal(response.content, 'native assistant response');
@@ -103,14 +103,14 @@ test('vision entry point advances through the saved standalone adapter order', a
     attempts.push('openai');
     return {
       id: 'native-vision-response',
-      model: 'gpt-5.6-sol',
+      model: 'gpt-6-astra',
       output_text: 'native vision description',
     };
   });
 
   const response = await getDescriptionForImage(
     'data:image/png;base64,aW1hZ2U=',
-    'gpt-5.6-sol',
+    'gpt-6-astra',
   );
 
   assert.equal(response, 'native vision description');
@@ -129,7 +129,7 @@ test('assistant and vision entry points ignore standalone preferences in product
     attempts.push('openai');
     return {
       id: `native-${attempts.length}`,
-      model: 'gpt-5.6-sol',
+      model: 'gpt-6-astra',
       output_text: 'production native response',
     };
   });
@@ -138,11 +138,11 @@ test('assistant and vision entry points ignore standalone preferences in product
     configurePreferences(t, { edition });
     const assistantResponse = await sendAssistantMessageRequest(
       [{ role: 'user', content: 'Generate a prompt.' }],
-      'gpt-5.6-sol',
+      'gpt-6-astra',
     );
     const visionResponse = await getDescriptionForImage(
       'data:image/png;base64,aW1hZ2U=',
-      'gpt-5.6-sol',
+      'gpt-6-astra',
     );
 
     assert.equal(assistantResponse.content, 'production native response');

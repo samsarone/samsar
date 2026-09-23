@@ -1,0 +1,76 @@
+name: Client tests
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: client-tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  client:
+    name: Node, Vitest and Chromium regressions
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+
+      # The same workflow works at the source repository root and, after
+      # installation at the monorepo root, against the synced client.
+      - name: Locate client
+        id: client
+        shell: bash
+        run: |
+          if [[ -f apps/samsar-client/package.json ]]; then
+            echo 'path=apps/samsar-client' >> "$GITHUB_OUTPUT"
+          else
+            echo 'path=.' >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+
+      - name: Select Yarn version
+        run: |
+          corepack enable
+          corepack prepare yarn@1.22.22 --activate
+
+      # Installing outside the checkout avoids resolving all monorepo
+      # workspaces. Both layouts use the client's own committed lockfile.
+      - name: Install locked client dependencies
+        env:
+          CLIENT_PATH: ${{ steps.client.outputs.path }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/client-deps"
+          cp "$CLIENT_PATH/package.json" "$CLIENT_PATH/yarn.lock" "$RUNNER_TEMP/client-deps/"
+          yarn --cwd "$RUNNER_TEMP/client-deps" install --frozen-lockfile --non-interactive
+          ln -s "$RUNNER_TEMP/client-deps/node_modules" "$CLIENT_PATH/node_modules"
+
+      - name: Install Chromium and system dependencies
+        working-directory: ${{ steps.client.outputs.path }}
+        run: npm exec --no -- playwright install --with-deps chromium
+
+      - name: Run all client regression tests
+        working-directory: ${{ steps.client.outputs.path }}
+        run: npm run test:ci
+
+      - name: Verify production build
+        working-directory: ${{ steps.client.outputs.path }}
+        run: npm run build
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: client-test-results
+          path: |
+            ${{ steps.client.outputs.path }}/test-results/
+            ${{ steps.client.outputs.path }}/test/**/__screenshots__/
+          if-no-files-found: ignore
+          retention-days: 7

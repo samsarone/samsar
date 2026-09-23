@@ -8,7 +8,7 @@ export async function checkAccuracyForTranscript(payload) {
   const { prompt } = payload;
   
   const response = await client.responses.create({
-      model: "gpt-4o",
+      model: "gpt-6-astra",
       tools: [ { type: "web_search_preview" } ],
       input: prompt,
   });

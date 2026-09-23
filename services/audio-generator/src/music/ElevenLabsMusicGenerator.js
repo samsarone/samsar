@@ -1,3 +1,4 @@
+import { buildFalElevenLabsMusicRequest, resolvePendingFalMusicEndpoint } from './FalMusicModels.js';
 import axios from "axios";
 import { fal } from "@fal-ai/client";
 
@@ -9,6 +10,7 @@ import {
 } from "./ElevenLabsMusicPayload.js";
 import { isStandaloneEdition } from '../util/environmentUtils.js';
 import { createSubmissionOutcomeUnknownError } from '../utils/ProviderSubmissionSafety.js';
+import { submitFalAudioRequest } from '../utils/FalAudioSubmission.js';
 
 export {
   buildElevenLabsMusicInput,
@@ -17,7 +19,6 @@ export {
 } from "./ElevenLabsMusicPayload.js";
 
 const FAL_API_KEY = process.env.FAL_API_KEY;
-const FA_AUDIO_LINK = "fal-ai/elevenlabs/music";
 const ELEVENLABS_MUSIC_STREAM_URL = "https://api.elevenlabs.io/v1/music/stream";
 const ELEVENLABS_MUSIC_DEFAULT_TIMEOUT_MS = 10 * 60 * 1000;
 
@@ -129,9 +130,10 @@ async function retryOrDeleteFailedUpdate(payload, errorMessage) {
 }
 
 export async function requestGenerateElevenLabsMusic(payload) {
+  const { endpoint, input } = buildFalElevenLabsMusicRequest(payload);
   try {
-    const { request_id } = await fal.queue.submit(FA_AUDIO_LINK, {
-      input: buildElevenLabsMusicInput(payload),
+    const { request_id } = await submitFalAudioRequest(endpoint, {
+      input,
     });
 
     return request_id;
@@ -168,9 +170,10 @@ export async function requestGenerateNativeElevenLabsMusic(payload) {
 
 export async function listenToPendingElevenLabsMusicRequest(payload) {
   const { generationId } = payload;
+  const endpoint = resolvePendingFalMusicEndpoint(payload, 'elevenlabs');
 
   try {
-    const responseStatusData = await fal.queue.status(FA_AUDIO_LINK, {
+    const responseStatusData = await fal.queue.status(endpoint, {
       requestId: generationId,
       logs: true,
     });
@@ -178,7 +181,7 @@ export async function listenToPendingElevenLabsMusicRequest(payload) {
     const responseStatus = responseStatusData.status;
 
     if (responseStatus === 'COMPLETED') {
-      const result = await fal.queue.result(FA_AUDIO_LINK, {
+      const result = await fal.queue.result(endpoint, {
         requestId: generationId,
       });
 
@@ -243,6 +246,7 @@ export async function dispatchAndProcessElevenLabsMusicRequest(payload) {
         {
           status: 'PENDING',
           generationId: requestId,
+          'generationMeta.falMusicEndpoint': buildFalElevenLabsMusicRequest(payload).endpoint,
           rowLocked: false,
         }
       );

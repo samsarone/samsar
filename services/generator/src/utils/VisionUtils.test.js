@@ -24,7 +24,7 @@ const silentLogger = {
 test('OpenRouter vision models use operation-specific reasoning-safe output limits', () => {
   assert.equal(__testOnly__.getExternalVisionMaxTokens('QWEN3.8', 'description'), 16384);
   assert.equal(__testOnly__.getExternalVisionMaxTokens('QWEN3.8', 'score'), 8192);
-  assert.equal(__testOnly__.getExternalVisionMaxTokens('gpt-5.6-sol', 'description'), 16384);
+  assert.equal(__testOnly__.getExternalVisionMaxTokens('gpt-6-astra', 'description'), 16384);
   assert.equal(__testOnly__.getExternalVisionMaxTokens('gemini-3.1-pro', 'score'), 8192);
   assert.equal(__testOnly__.getExternalVisionMaxTokens('kimi-k3', 'description'), undefined);
 });
@@ -77,7 +77,7 @@ test('native GPT vision omits external-only completion limits', async (t) => {
   const description = await __testOnly__.getDescriptionForImage(
     'data:image/png;base64,AQID',
     'cinematic',
-    'gpt-5.6-sol',
+    'gpt-6-astra',
     '16:9',
     'cinematic theme',
     'native',
@@ -86,7 +86,7 @@ test('native GPT vision omits external-only completion limits', async (t) => {
     'A cinematic image',
     description,
     'cinematic',
-    'gpt-5.6-sol',
+    'gpt-6-astra',
     '16:9',
     'cinematic theme',
     '',
@@ -97,7 +97,7 @@ test('native GPT vision omits external-only completion limits', async (t) => {
   assert.equal(score, '95');
   assert.equal(payloads.length, 2);
   for (const payload of payloads) {
-    assert.equal(payload.model, 'gpt-5.6-sol');
+    assert.equal(payload.model, 'gpt-6-astra');
     assert.equal(Object.hasOwn(payload, 'externalMaxTokens'), false);
     assert.equal(Object.hasOwn(payload, 'max_tokens'), false);
     assert.equal(Object.hasOwn(payload, 'max_completion_tokens'), false);

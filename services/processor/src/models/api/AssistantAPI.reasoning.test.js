@@ -9,9 +9,9 @@ import {
   shouldUseCompatibleAssistantRouting,
 } from './AssistantAPI.js';
 
-test('forces high reasoning for GPT 5.6 Sol assistant requests', () => {
+test('forces high reasoning for GPT 6 Astra assistant requests', () => {
   const request = buildResponsesRequest({
-    model: 'gpt-5.6-sol',
+    model: 'gpt-6-astra',
     inputMessages: [{ role: 'user', content: 'hello' }],
     payload: { reasoning: { effort: 'low' } },
   });
@@ -21,15 +21,15 @@ test('forces high reasoning for GPT 5.6 Sol assistant requests', () => {
 
 test('assistant requests preserve explicit effort and legacy aliases', () => {
   assert.deepEqual(buildResponsesRequest({
-    model: 'gpt-5.6-sol',
-    inferenceModel: 'gpt-5.6-sol',
+    model: 'gpt-6-astra',
+    inferenceModel: 'gpt-6-astra',
     inputMessages: [{ role: 'user', content: 'hello' }],
     payload: { effort: 'xhigh' },
   }).reasoning, { effort: 'xhigh' });
 
   assert.deepEqual(buildResponsesRequest({
-    model: 'gpt-5.6-sol',
-    inferenceModel: 'gpt-5.6-sol-xhigh',
+    model: 'gpt-6-astra',
+    inferenceModel: 'gpt-6-astra-xhigh',
     inputMessages: [{ role: 'user', content: 'hello' }],
     payload: { effort: 'high' },
   }).reasoning, { effort: 'high' });
@@ -75,7 +75,7 @@ test('assistant completions default to a ten-minute timeout', () => {
 test('standalone assistant requests use preference-aware routing without changing production OpenAI routing', () => {
   assert.equal(
     shouldUseCompatibleAssistantRouting(
-      'gpt-5.6-sol',
+      'gpt-6-astra',
       '',
       { SAMSAR_DEPLOYMENT_EDITION: 'standalone' },
     ),
@@ -83,7 +83,7 @@ test('standalone assistant requests use preference-aware routing without changin
   );
   assert.equal(
     shouldUseCompatibleAssistantRouting(
-      'gpt-5.6-sol',
+      'gpt-6-astra',
       '',
       { SAMSAR_DEPLOYMENT_EDITION: 'production' },
     ),

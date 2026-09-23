@@ -5,6 +5,21 @@ const MAX_DEPTH = 5;
 const MAX_ITEMS = 25;
 const MAX_STRING_LENGTH = 8000;
 
+const REDACTED = '[REDACTED]';
+
+function isSensitiveLogKey(key) {
+  const normalized = key.toLowerCase().replace(/[^a-z0-9]/g, '');
+  return /password|secret|token|apikey|authorization|cookie|credential|signature|privatekey|verificationcode/.test(normalized) ||
+    normalized === 'headervalue';
+}
+
+function redactLogString(value) {
+  return value
+    .replace(/((?:https?|mongodb(?:\+srv)?):\/\/)[^\s/@]+@/gi, '$1[REDACTED]@')
+    .replace(/\bBearer\s+[a-z0-9._~+\/-]+=*/gi, 'Bearer [REDACTED]')
+    .replace(/([?&](?:authToken|access_token|refresh_token|loginToken|api[_-]?key|token|secret|password|code|signature|x-amz-signature|x-amz-credential)=)[^&#\s]*/gi, '$1[REDACTED]');
+}
+
 function getLoggerState() {
   if (!globalThis[LOGGER_STATE_KEY]) {
     globalThis[LOGGER_STATE_KEY] = {
@@ -23,6 +38,8 @@ function truncateString(value, maxLength = MAX_STRING_LENGTH) {
     return value;
   }
 
+  value = redactLogString(value);
+
   if (value.length <= maxLength) {
     return value;
   }
@@ -36,9 +53,12 @@ function tryParseJson(value) {
   }
 
   const trimmed = value.trim();
-  if (!trimmed.startsWith('{') || !trimmed.endsWith('}')) {
+  if (!(trimmed.startsWith('{') && trimmed.endsWith('}')) &&
+      !(trimmed.startsWith('[') && trimmed.endsWith(']'))) {
     return null;
   }
+
+  if (trimmed.length > MAX_STRING_LENGTH) return { omitted: '[Oversized JSON log]' };
 
   try {
     return JSON.parse(trimmed);
@@ -48,11 +68,7 @@ function tryParseJson(value) {
 }
 
 function isErrorLike(value) {
-  if (!value || typeof value !== 'object') {
-    return false;
-  }
-
-  return value instanceof Error || typeof value.message === 'string' || typeof value.stack === 'string';
+  return value instanceof Error;
 }
 
 function sanitizeValue(value, depth = 0, seen = new WeakSet()) {
@@ -61,6 +77,8 @@ function sanitizeValue(value, depth = 0, seen = new WeakSet()) {
   }
 
   if (typeof value === 'string') {
+    const parsed = tryParseJson(value);
+    if (parsed) return depth >= MAX_DEPTH ? '[JSON]' : sanitizeValue(parsed, depth + 1, seen);
     return truncateString(value);
   }
 
@@ -84,12 +102,12 @@ function sanitizeValue(value, depth = 0, seen = new WeakSet()) {
     return value.toISOString();
   }
 
-  if (isErrorLike(value)) {
-    return serializeError(value, depth, seen);
-  }
-
   if (depth >= MAX_DEPTH) {
     return `[${Object.prototype.toString.call(value)}]`;
+  }
+
+  if (isErrorLike(value)) {
+    return serializeError(value, depth, seen);
   }
 
   if (typeof value === 'object') {
@@ -105,7 +123,7 @@ function sanitizeValue(value, depth = 0, seen = new WeakSet()) {
 
     const output = {};
     for (const [key, entry] of Object.entries(value).slice(0, MAX_ITEMS)) {
-      output[key] = sanitizeValue(entry, depth + 1, seen);
+      output[key] = isSensitiveLogKey(key) ? REDACTED : sanitizeValue(entry, depth + 1, seen);
     }
 
     return output;
@@ -157,14 +175,15 @@ function serializeError(error, depth = 0, seen = new WeakSet()) {
 function formatConsoleArgs(args) {
   return truncateString(args.map((arg) => {
     if (arg instanceof Error) {
-      return arg.stack || `${arg.name}: ${arg.message}`;
+      return truncateString(arg.stack || `${arg.name}: ${arg.message}`);
     }
 
     if (typeof arg === 'string') {
-      return arg;
+      const parsed = tryParseJson(arg);
+      return parsed ? JSON.stringify(sanitizeValue(parsed)) : truncateString(arg);
     }
 
-    return util.inspect(arg, {
+    return util.inspect(sanitizeValue(arg), {
       depth: 5,
       breakLength: Infinity,
       maxArrayLength: 20,
@@ -195,7 +214,7 @@ function emitStructuredConsoleEntry(method, level, args, options) {
   const originalMethod = state.originalConsole[method] || state.originalConsole.error;
 
   if (args.length === 1 && isPreformattedStructuredLog(args[0])) {
-    originalMethod(args[0]);
+    originalMethod(JSON.stringify(sanitizeValue(tryParseJson(args[0]))));
     return;
   }
 

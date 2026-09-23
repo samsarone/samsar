@@ -761,7 +761,7 @@ function buildFallbackAssistantContent(outputText) {
 }
 
 function shouldFallbackToChatCompletions(error, model) {
-  if (typeof model === 'string' && model.startsWith('gpt-5')) {
+  if (typeof model === 'string' && (model.startsWith('gpt-5') || model.startsWith('gpt-6'))) {
     return false;
   }
 

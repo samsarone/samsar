@@ -8,7 +8,7 @@ import { createCompatibleChatCompletion } from '../ai_utils/OpenAICompat.js';
 import { getExtractReceiptTemplateQueryPricing } from '../../consts/pricing/ApiPricing.js';
 import ReceiptTemplate from '../../schema/ReceiptTemplate.js';
 
-const RECEIPT_TEMPLATE_MODEL = process.env.RECEIPT_TEMPLATE_MODEL || 'gpt-5.1';
+const RECEIPT_TEMPLATE_MODEL = process.env.RECEIPT_TEMPLATE_MODEL || 'gpt-6-astra';
 const RECEIPT_QUERY_MODEL = process.env.RECEIPT_QUERY_MODEL || RECEIPT_TEMPLATE_MODEL;
 const RECEIPT_QUERY_IMAGE_MAX_WIDTH = Number.isFinite(Number(process.env.RECEIPT_QUERY_IMAGE_MAX_WIDTH))
   ? Math.max(800, Math.floor(Number(process.env.RECEIPT_QUERY_IMAGE_MAX_WIDTH)))

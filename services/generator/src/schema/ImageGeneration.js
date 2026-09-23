@@ -26,6 +26,8 @@ const imageGenerationSchema = new Schema({
   guidanceScale: Number,
   apiGenerationStatus: {type: String, default: "INIT"},
   apiRequestId: String,
+  // Preserve the Fal endpoint across model upgrades for pending GPT Image jobs.
+  gptImageFalEndpoint: String,
   apiSubmittedAt: Date,
   providerResultUrl: String,
   providerSubmissionAccepted: { type: Boolean, default: false },

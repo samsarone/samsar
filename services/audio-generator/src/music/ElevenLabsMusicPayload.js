@@ -1,3 +1,4 @@
+export const ELEVENLABS_MUSIC_DEFAULT_MODEL = 'music_v2_5';
 export const ELEVENLABS_MUSIC_DEFAULT_DURATION_MS = 10000;
 export const ELEVENLABS_MUSIC_DEFAULT_OUTPUT_FORMAT = 'mp3_44100_128';
 
@@ -58,6 +59,6 @@ export function buildElevenLabsMusicInput(payload = {}) {
     music_length_ms: resolveElevenLabsMusicLengthMs(payload),
     force_instrumental: instrumentalOnly,
     output_format: normalizeString(payload.generationMeta?.outputFormat) || ELEVENLABS_MUSIC_DEFAULT_OUTPUT_FORMAT,
-    model_id: normalizeString(payload.generationMeta?.modelId || payload.generationMeta?.model_id) || undefined,
+    model_id: normalizeString(payload.generationMeta?.modelId || payload.generationMeta?.model_id) || ELEVENLABS_MUSIC_DEFAULT_MODEL,
   });
 }

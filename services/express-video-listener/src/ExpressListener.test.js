@@ -3,6 +3,22 @@ import assert from 'node:assert/strict';
 
 import { __testOnly__ } from './ExpressListener.js';
 
+test('audio failure keeps the actionable failed-layer error instead of replacing it with a generic message', () => {
+  const message = 'Fal rejected the audio API key (HTTP 401). Update the Fal credential.';
+  assert.equal(__testOnly__.resolveAudioGenerationFailureMessage({
+    audioLayers: [
+      { generationStatus: 'COMPLETED', generationError: 'stale error' },
+      { generationStatus: 'FAILED', generationType: 'speech' },
+      { generationStatus: 'FAILED', generationType: 'music', generationError: message },
+    ],
+    expressGenerationError: 'Audio generation failed',
+  }), message);
+  assert.equal(__testOnly__.resolveAudioGenerationFailureMessage({
+    expressGenerationError: 'Audio provider timed out',
+  }), 'Audio provider timed out');
+  assert.equal(__testOnly__.resolveAudioGenerationFailureMessage({}), 'Audio generation failed');
+});
+
 test('delete/reflow visual predicate treats activeGeneratedImage as a valid still visual', () => {
   assert.equal(
     __testOnly__.hasLayerStillVisuals({

@@ -5,7 +5,7 @@ import OpenAI from 'openai';
 import { sendAssistantMessageRequest } from './OpenAI.js';
 import { getGPT56SolReasoningEffort } from './GoogleGemini.js';
 
-test('native OpenAI layer inference preserves GPT 5.6 Sol XHigh effort', async (t) => {
+test('native OpenAI layer inference preserves GPT 6 Astra XHigh effort', async (t) => {
   const previous = {
     CURRENT_ENV: process.env.CURRENT_ENV,
     OPENAI_API_KEY: process.env.OPENAI_API_KEY,
@@ -23,12 +23,12 @@ test('native OpenAI layer inference preserves GPT 5.6 Sol XHigh effort', async (
   t.mock.method(OpenAI.prototype, 'post', async (path, options) => {
     assert.equal(path, '/responses');
     capturedBody = options.body;
-    return { model: 'gpt-5.6-sol', output_text: 'ok' };
+    return { model: 'gpt-6-astra', output_text: 'ok' };
   });
 
   const response = await sendAssistantMessageRequest(
     [{ role: 'user', content: 'analyze deeply' }],
-    'gpt-5.6-sol',
+    'gpt-6-astra',
     {
       inferenceEffort: 'xhigh',
       selectedInferenceModelAuthorization: 'native',
@@ -36,12 +36,12 @@ test('native OpenAI layer inference preserves GPT 5.6 Sol XHigh effort', async (
   );
 
   assert.equal(response.content, 'ok');
-  assert.equal(capturedBody.model, 'gpt-5.6-sol');
+  assert.equal(capturedBody.model, 'gpt-6-astra');
   assert.deepEqual(capturedBody.reasoning, { effort: 'xhigh' });
 });
 
 test('legacy Sol suffixes infer effort while explicit effort takes precedence', () => {
-  assert.equal(getGPT56SolReasoningEffort('gpt-5.6-sol-high'), 'high');
-  assert.equal(getGPT56SolReasoningEffort('gpt-5.6-sol-xhigh'), 'xhigh');
-  assert.equal(getGPT56SolReasoningEffort('gpt-5.6-sol-xhigh', 'high'), 'high');
+  assert.equal(getGPT56SolReasoningEffort('gpt-6-astra-high'), 'high');
+  assert.equal(getGPT56SolReasoningEffort('gpt-6-astra-xhigh'), 'xhigh');
+  assert.equal(getGPT56SolReasoningEffort('gpt-6-astra-xhigh', 'high'), 'high');
 });

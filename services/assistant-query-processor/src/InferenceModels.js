@@ -1,4 +1,4 @@
-export const GPT_56_SOL_INFERENCE_MODEL = 'gpt-5.6-sol';
+export const GPT_56_SOL_INFERENCE_MODEL = 'gpt-6-astra';
 export const DEFAULT_INFERENCE_MODEL = GPT_56_SOL_INFERENCE_MODEL;
 export const GPT_56_SOL_REASONING_EFFORT = 'high';
 export const GPT_56_SOL_XHIGH_REASONING_EFFORT = 'xhigh';

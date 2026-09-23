@@ -383,7 +383,6 @@ test('places credential-scoped GMICloud below native providers but ahead of Sams
 
   assert.deepEqual(getDockerImageGenerationProviderPriority('GPTIMAGE2'), [
     DOCKER_ADAPTER_PROVIDER.OPENAI,
-    DOCKER_ADAPTER_PROVIDER.GMICLOUD,
     DOCKER_ADAPTER_PROVIDER.SAMSAR,
     DOCKER_ADAPTER_PROVIDER.FAL,
   ]);
@@ -402,7 +401,7 @@ test('places credential-scoped GMICloud below native providers but ahead of Sams
 
   assert.equal(
     resolveDockerImageGenerationProvider('GPTIMAGE2'),
-    DOCKER_ADAPTER_PROVIDER.GMICLOUD,
+    DOCKER_ADAPTER_PROVIDER.FAL,
   );
   assert.equal(
     resolveDockerImageGenerationProvider('SEEDREAM'),
@@ -428,7 +427,7 @@ test('places credential-scoped GMICloud below native providers but ahead of Sams
   );
 });
 
-test('credential-scoped GMICloud catalog enables only mapped image models', (t) => {
+test('legacy GPT Image 2 GMICloud mappings cannot enable Sunburst generation', (t) => {
   const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'samsar-image-gmi-catalog-'));
   const catalogPath = path.join(temporaryDirectory, 'genblaze-model-catalog.json');
   t.after(() => fs.rmSync(temporaryDirectory, { recursive: true, force: true }));
@@ -447,7 +446,7 @@ test('credential-scoped GMICloud catalog enables only mapped image models', (t) 
 
   assert.equal(
     resolveDockerImageGenerationProvider('GPTIMAGE2'),
-    DOCKER_ADAPTER_PROVIDER.GMICLOUD,
+    '',
   );
   assert.equal(resolveDockerImageGenerationProvider('SEEDREAM'), '');
   assert.equal(
@@ -477,7 +476,6 @@ test('credential-scoped GMICloud edit routes remain below native and Fal but ahe
 
   assert.deepEqual(getDockerImageEditProviderPriority('GPTIMAGE2EDIT'), [
     DOCKER_ADAPTER_PROVIDER.OPENAI,
-    DOCKER_ADAPTER_PROVIDER.GMICLOUD,
     DOCKER_ADAPTER_PROVIDER.SAMSAR,
   ]);
   assert.deepEqual(getDockerImageEditProviderPriority('NANOBANANA2EDIT'), [
@@ -491,7 +489,7 @@ test('credential-scoped GMICloud edit routes remain below native and Fal but ahe
     DOCKER_ADAPTER_PROVIDER.GMICLOUD,
     DOCKER_ADAPTER_PROVIDER.SAMSAR,
   ]);
-  assert.equal(resolveDockerImageEditProvider('GPTIMAGE2EDIT'), DOCKER_ADAPTER_PROVIDER.GMICLOUD);
+  assert.equal(resolveDockerImageEditProvider('GPTIMAGE2EDIT'), '');
   assert.equal(resolveDockerImageEditProvider('NANOBANANAPROEDIT'), '');
   assert.equal(
     getDockerImageEditProviderPriority('NANOBANANAPROEDIT').includes(DOCKER_ADAPTER_PROVIDER.GMICLOUD),
@@ -534,7 +532,7 @@ test('keeps a persisted Fal GPT Image 2 provider while polling', () => {
   );
 });
 
-test('uses Fal for hosted production GPT Image 2 text-to-image generation', () => {
+test('uses OpenAI directly for hosted production GPT Image text-to-image generation', () => {
   process.env.CURRENT_ENV = 'production';
   clearCredentials();
   process.env.SAMSAR_DOCKER_ADAPTER_ROUTING_ENABLED = 'true';
@@ -543,7 +541,7 @@ test('uses Fal for hosted production GPT Image 2 text-to-image generation', () =
 
   assert.equal(
     resolveGPTImageTwoGenerationProvider(),
-    DOCKER_ADAPTER_PROVIDER.FAL,
+    DOCKER_ADAPTER_PROVIDER.OPENAI,
   );
 });
 

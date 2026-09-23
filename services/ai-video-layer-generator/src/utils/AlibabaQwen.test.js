@@ -17,7 +17,7 @@ test('normalizes Qwen aliases to the canonical application setting', () => {
   assert.equal(normalizeInferenceModel('qwen/qwen3.8-max'), 'QWEN3.8');
   assert.equal(isQwenInferenceModel('qwen3.8-max'), true);
   assert.equal(normalizeInferenceModel('Alibaba Cloud Qwen 3.8 Max'), 'QWEN3.8');
-  assert.equal(normalizeInferenceModel('gpt-5.6-sol'), 'gpt-5.6-sol');
+  assert.equal(normalizeInferenceModel('gpt-6-astra'), 'gpt-6-astra');
   assert.equal(normalizeInferenceModel('gemini-3.1-pro'), 'gemini-3.1-pro');
 });
 

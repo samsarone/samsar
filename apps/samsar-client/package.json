@@ -32,7 +32,16 @@
   "scripts": {
     "start": "vite --port 3000",
     "build": "vite build --mode production",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "npm run test:node && npm run test:unit",
+    "test:node": "node scripts/test-node.mjs",
+    "test:unit": "vitest run --config vitest.config.mjs",
+    "test:watch": "vitest --config vitest.config.mjs",
+    "test:browser": "vitest run --config vitest.browser.config.mjs",
+    "test:browser:watch": "vitest --config vitest.browser.config.mjs --browser.headless=false",
+    "test:ci": "npm test && npm run test:browser",
+    "test:sync": "npm run test:ci",
+    "test:browser:install": "playwright install chromium"
   },
   "browserslist": {
     "production": [
@@ -65,13 +74,20 @@
   },
   "devDependencies": {
     "@tailwindcss/vite": "4.3.3",
+    "@testing-library/dom": "10.4.1",
+    "@testing-library/jest-dom": "6.9.1",
+    "@testing-library/react": "16.3.3",
     "@types/node": "20.19.0",
     "@types/react": "18.2.74",
     "@types/react-dom": "18.2.24",
     "@vitejs/plugin-react": "6.0.5",
+    "@vitest/browser-playwright": "4.1.11",
     "esbuild": "0.28.2",
+    "jsdom": "26.1.0",
+    "playwright": "1.58.2",
     "tailwindcss": "4.3.3",
     "typescript": "5.0.4",
-    "vite": "8.2.1"
+    "vite": "8.2.1",
+    "vitest": "4.1.11"
   }
 }

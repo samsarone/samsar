@@ -1,3 +1,4 @@
+import { FAL_LYRIA_MODEL, buildFalLyriaMusicInput, resolvePendingFalMusicEndpoint } from './FalMusicModels.js';
 
 import { finalizeRemoteAudioGeneration, markAudioGenerationAsFailed } from "./audioUtils.js";
 import AudioGeneration from "../schema/AudioGeneration.js";
@@ -94,6 +95,7 @@ export async function dispatchAndProcessLyriaAIMusicRequest(payload) {
       }, {
         status: 'PENDING',
         generationId: requestId,
+        'generationMeta.falMusicEndpoint': FAL_LYRIA_MODEL,
         rowLocked: false,
       });
 
@@ -197,31 +199,14 @@ async function retryOrDeleteFailedUpdate(payload, errorMessage) {
 
 
 
-const FA_AUDIO_LINK = "fal-ai/lyria2";
 
 
 export async function requestGenerateLyriaAiLayer(payload) {
 
-  let { prompt, duration } = payload;
-
-  if (!prompt) {
-    
-    prompt = `Create a beautiful and serene backing track for a generative video composition`;
-  }
-
-  if (!duration) {
-    duration = 10;
-  }
-  if (duration > 180) {
-    duration = 180;
-  }
   try {
 
-    const { request_id } = await fal.queue.submit(FA_AUDIO_LINK, {
-      input: {
-        prompt: prompt,
-        negative_prompt: "vocals",
-      }
+    const { request_id } = await fal.queue.submit(FAL_LYRIA_MODEL, {
+      input: buildFalLyriaMusicInput(payload)
     });
 
 
@@ -343,11 +328,12 @@ async function ensureAudioLength(sourceUrl, wantedSec = 10, sessionId = 'audio')
  */
 export async function listenToPendingLyriaAiRequest(payload) {
   const { generationId, duration = 10 } = payload;
+  const endpoint = resolvePendingFalMusicEndpoint(payload, 'lyria');
 
   // Ask Fal what the job status is
   let responseStatusData;
   try {
-    responseStatusData = await fal.queue.status(FA_AUDIO_LINK, {
+    responseStatusData = await fal.queue.status(endpoint, {
       requestId: generationId,
       logs: true,
     });
@@ -366,7 +352,7 @@ export async function listenToPendingLyriaAiRequest(payload) {
 
     let result;
     try {
-      result = await getFalQueueResultWithRetry(generationId);
+      result = await getFalQueueResultWithRetry(generationId, endpoint);
     } catch (error) {
       console.error("Error fetching result:", error);
       console.error(error);
@@ -377,10 +363,10 @@ export async function listenToPendingLyriaAiRequest(payload) {
       };
     }
 
-    let rawAudioUrl = result.data.audio.url;
+    let rawAudioUrl = typeof result.data.audio === 'string' ? result.data.audio : result.data.audio.url;
 
 
-    if (duration > 30) {
+    if (duration > 0) {
 
 
       const fixedAudioPathOrUrl = await ensureAudioLength(rawAudioUrl, duration, payload.sessionId);
@@ -441,10 +427,10 @@ export async function listenToPendingLyriaAiRequest(payload) {
 }
 
 
-async function getFalQueueResultWithRetry(requestId, maxRetries = 3, baseDelay = 1000) {
+async function getFalQueueResultWithRetry(requestId, endpoint, maxRetries = 3, baseDelay = 1000) {
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
-      const result = await fal.queue.result(FA_AUDIO_LINK, {
+      const result = await fal.queue.result(endpoint, {
         requestId,
       });
       return result;

@@ -230,6 +230,15 @@ function sanitizeCustomAdaptersForClient(customAdapters) {
   return sanitized;
 }
 
+export function formatPublicUserProfile(user) {
+  if (!user) return user;
+  return Object.fromEntries(
+    ['fid', 'username', 'displayName', 'pfpUrl', 'bio']
+      .filter((key) => typeof user[key] === 'string')
+      .map((key) => [key, user[key]]),
+  );
+}
+
 export function formatUserClientProfile(user, extras = {}) {
   if (!user) {
     return user;
@@ -803,24 +812,13 @@ const toComparableSpeakerOptions = (speakerOptions) => {
 };
 
 
-export async function verifyUserSession(payload) {
-
-  await getDBConnectionString();
-
-
-  let userData;
-  let userExists = await User.findOne({ fid: payload.fid });
-  if (!userExists) {
-    const userModel = new User(payload);
-    userData = await userModel.save();
-  } else {
-    userData = userExists;
-  }
-  await ensureDefaultTextModelsForUser(userData);
-  const userId = userData._id.toString();
-  const authToken = generateAuthToken(userId);
-  let returnUserPayload = Object.assign({}, userData._doc, { authToken });
-  return returnUserPayload;
+export async function verifyUserSession() {
+  // A caller-supplied profile is not proof of identity. Keep the legacy entry
+  // point closed until a server-verified identity flow replaces it.
+  const error = new Error('Profile sign-in is no longer supported. Sign in with email or Google.');
+  error.status = 410;
+  error.statusCode = 410;
+  throw error;
 }
 
 

@@ -215,6 +215,13 @@ async function createInferenceChatCompletionForProvider(
         reasoning_effort,
         ...openAIRequest
       } = providerRequest;
+      if (model === GPT_56_SOL_INFERENCE_MODEL || model?.startsWith(`${GPT_56_SOL_INFERENCE_MODEL}-`)) {
+        for (const key of ['temperature', 'top_p', 'top_logprobs', 'logprobs']) delete openAIRequest[key];
+        if (openAIRequest.max_tokens !== undefined) {
+          openAIRequest.max_completion_tokens ??= openAIRequest.max_tokens;
+          delete openAIRequest.max_tokens;
+        }
+      }
       const providerPayload = await normalizeProviderMediaPayload({
         ...openAIRequest,
         model: typeof model === 'string' && model.toLowerCase().startsWith(GPT_56_SOL_INFERENCE_MODEL)
@@ -314,7 +321,7 @@ export async function getAlternatePromptFromPrompt(
 
 export async function sendAssistantMessageRequest(
   messageList,
-  model = "gpt-4o-mini",
+  model = "gpt-6-astra",
   inferenceAuthorization,
   reasoningEffort,
 ) {

@@ -83,6 +83,10 @@ test('settings expose only installed compatible adapters in stage order', () => 
     textToImage.models.find((model) => model.modelKey === 'GPTIMAGE2').preference,
     ['samsar'],
   );
+  assert.equal(
+    textToImage.models.find((model) => model.modelKey === 'GPTIMAGE2').label,
+    'GPT Image 2.5',
+  );
   assert.deepEqual(
     imageToVideo.models.find((model) => model.modelKey === 'HAPPYHORSEI2V').preference,
     ['alibabaCloud', 'fal', 'samsar'],

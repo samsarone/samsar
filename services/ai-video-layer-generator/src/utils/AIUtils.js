@@ -77,7 +77,7 @@ async function dispatchAssistantMessageRequest(request, provider = '') {
 
 export async function getAlternateVideoPrompt(
   prompt,
-  userInferenceModel = process.env.USER_INFERENCE_MODEL || process.env.DEFAULT_USER_INFERENCE_MODEL || 'gpt-5.6-sol',
+  userInferenceModel = process.env.USER_INFERENCE_MODEL || process.env.DEFAULT_USER_INFERENCE_MODEL || 'gpt-6-astra',
   selectedInferenceModelAuthorization = '',
 ) {
 
@@ -121,7 +121,7 @@ export async function getAlternateVideoPrompt(
 
 export async function sendAssistantMessageRequest(
   messageList,
-  userInferenceModel = process.env.USER_INFERENCE_MODEL || process.env.DEFAULT_USER_INFERENCE_MODEL || 'gpt-5.6-sol',
+  userInferenceModel = process.env.USER_INFERENCE_MODEL || process.env.DEFAULT_USER_INFERENCE_MODEL || 'gpt-6-astra',
   selectedInferenceModelAuthorization = '',
 ) {
 
@@ -137,7 +137,7 @@ export async function sendAssistantMessageRequest(
       messages: messageList,
       model: isGeminiModel || isQwenModel || isKimiModel
         ? normalizedInferenceModel
-        : "gpt-4.1-2025-04-14",
+        : "gpt-6-astra",
       ...(selectedInferenceModelAuthorization
         ? { authorization: selectedInferenceModelAuthorization }
         : {}),

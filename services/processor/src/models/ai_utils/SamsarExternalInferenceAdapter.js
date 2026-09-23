@@ -46,11 +46,11 @@ const DEFAULT_OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1';
 const DEFAULT_GENBLAZE_BASE_URL = 'http://genblaze:8080/v1';
 const GENBLAZE_INFERENCE_MODELS = new Set([
   'QWEN3.8',
-  'gpt-5.6-sol',
+  'gpt-6-astra',
   'gemini-3.1-pro',
 ]);
 const GENBLAZE_HIGH_REASONING_MODELS = new Set([
-  'gpt-5.6-sol',
+  'gpt-6-astra',
   'gemini-3.1-pro',
 ]);
 const GOOGLE_NATIVE_CREDENTIAL_KEYS = Object.freeze([
@@ -295,6 +295,9 @@ function buildOpenRouterRequestPayload(request, requestedModel, openRouterModel,
     ...request,
     model: openRouterModel,
   };
+  if (requestedModel === 'gpt-6-astra' || requestedModel === 'gpt-6-astra-xhigh') {
+    for (const key of ['temperature', 'top_p', 'top_logprobs', 'logprobs']) delete payload[key];
+  }
   const effectiveEffort = getOpenRouterReasoningEffort(requestedModel, effort, request);
   if (effectiveEffort) {
     payload.reasoning = { effort: effectiveEffort };
@@ -718,8 +721,8 @@ function getCanonicalGenblazeInferenceModel(model) {
     return 'gemini-3.1-pro';
   }
   const normalized = normalizeString(model).toLowerCase();
-  return normalized === 'gpt-5.6-sol' || normalized.startsWith('gpt-5.6-sol-')
-    ? 'gpt-5.6-sol'
+  return normalized === 'gpt-6-astra' || normalized.startsWith('gpt-6-astra-')
+    ? 'gpt-6-astra'
     : '';
 }
 
@@ -841,7 +844,7 @@ export function getOpenRouterModelForInferenceRequest(chatRequest = {}, env = pr
     return normalizeString(env?.OPENROUTER_GPT_56_LUNA_MODEL) ||
       `openai/${INFERENCE_MODELS.PublicationMetadata}`;
   }
-  return normalizeString(env?.OPENROUTER_GPT_56_SOL_MODEL) || 'openai/gpt-5.6-sol';
+  return normalizeString(env?.OPENROUTER_GPT_56_SOL_MODEL) || 'openai/gpt-6-astra';
 }
 
 export function shouldUseOpenRouterInference(chatRequest = {}) {
@@ -882,6 +885,13 @@ export async function createGenblazeChatCompletion(chatRequest = {}, dependencyO
     externalPolling, externalPollIntervalMs, externalPollTimeoutMs,
     reasoning, reasoning_effort, reasoningEffort, effort: requestEffort, ...request
   } = chatRequest || {};
+  if (requestedModel === 'gpt-6-astra' || requestedModel === 'gpt-6-astra-xhigh') {
+    for (const key of ['temperature', 'top_p', 'top_logprobs', 'logprobs']) delete request[key];
+    if (request.max_tokens !== undefined) {
+      request.max_completion_tokens ??= request.max_tokens;
+      delete request.max_tokens;
+    }
+  }
   const legacyReasoningEffort = normalizeString(
     reasoning_effort || reasoning?.effort,
   ).toLowerCase();

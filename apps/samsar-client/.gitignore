@@ -16,3 +16,9 @@ dist/
 dist_build/
 dist_build*/
 dist_external_verify*/
+
+# Test runner output
+coverage/
+test-results/
+playwright-report/
+**/__screenshots__/

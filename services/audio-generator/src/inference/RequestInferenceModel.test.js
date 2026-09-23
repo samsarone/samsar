@@ -12,7 +12,7 @@ test('request model wins over session and saved user settings', () => {
   assert.equal(resolveRequestInferenceModel({
     request: { inferenceModel: 'QWEN3.8' },
     session: { expressGenerationInferenceModel: 'gemini-3.1-pro' },
-    user: { selectedInferenceModel: 'gpt-5.6-sol' },
+    user: { selectedInferenceModel: 'gpt-6-astra' },
   }), 'QWEN3.8');
 });
 
@@ -22,7 +22,7 @@ test('session generation override wins over saved user setting', () => {
       expressGenerationInferenceModel: 'QWEN3.8',
       inferenceModel: 'gemini-3.1-pro',
     },
-    user: { selectedInferenceModel: 'gpt-5.6-sol' },
+    user: { selectedInferenceModel: 'gpt-6-astra' },
   }), 'QWEN3.8');
 });
 
@@ -35,7 +35,7 @@ test('saved user setting is used when no request or session model exists', () =>
 test('keeps Kimi K3 as the express-generation inference override', () => {
   assert.equal(resolveRequestInferenceModel({
     request: { expressGenerationInferenceModel: 'Kimi K3' },
-    session: { expressGenerationInferenceModel: 'gpt-5.6-sol' },
+    session: { expressGenerationInferenceModel: 'gpt-6-astra' },
   }), 'kimi-k3');
 });
 
@@ -72,16 +72,16 @@ test('inference settings preserve absent authorization for automatic fallback', 
 
 test('inference settings preserve saved effort and explicit legacy override precedence', () => {
   assert.deepEqual(resolveRequestInferenceSettings({
-    session: { inferenceModel: 'gpt-5.6-sol', inferenceEffort: 'xhigh' },
+    session: { inferenceModel: 'gpt-6-astra', inferenceEffort: 'xhigh' },
   }), {
-    model: 'gpt-5.6-sol-xhigh',
+    model: 'gpt-6-astra-xhigh',
     effort: 'xhigh',
     authorization: undefined,
   });
   assert.deepEqual(resolveRequestInferenceSettings({
-    request: { inferenceModel: 'gpt-5.6-sol-xhigh', effort: 'high' },
+    request: { inferenceModel: 'gpt-6-astra-xhigh', effort: 'high' },
   }), {
-    model: 'gpt-5.6-sol',
+    model: 'gpt-6-astra',
     effort: 'high',
     authorization: undefined,
   });

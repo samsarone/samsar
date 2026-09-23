@@ -21,6 +21,7 @@ import {
   dispatchAndProcessSamsarExternalMusicRequest,
 } from '../external/SamsarExternalAudioAdapter.js';
 import { resolveMusicProvider as resolveMusicProviderBase } from './MusicProviderResolver.js';
+import { withAudioAuthenticationFallback } from '../utils/AudioAuthenticationFallback.js';
 
 function normalizeString(value) {
   return typeof value === 'string' ? value.trim() : '';
@@ -89,26 +90,28 @@ export async function dispatchAndProcessMusicRequest(payload) {
     throw new Error(`No configured Docker music provider for ${model}.`);
   }
 
-  if (provider === DOCKER_AUDIO_PROVIDER.SAMSAR) {
-    await dispatchAndProcessSamsarExternalMusicRequest(payload);
-  } else if (model === 'AUDIOCRAFT') {
-    await dispatchAndProcessAudiocraftMusicRequest(payload);
-  } else if (model === 'CASSETTEAI') {
-    await dispatchAndProcessCassetteAIMusicRequest(payload);
-  } else if (model === 'ELEVENLABS_MUSIC') {
-    await dispatchAndProcessElevenLabsMusicRequest({
-      ...toPlainPayload(payload),
-      resolvedMusicProvider: provider,
-    });
-  } else if (model === 'LYRIA3' || model === 'LYRIA2') {
-    if (provider === DOCKER_AUDIO_PROVIDER.GOOGLE_CLOUD || (!provider && shouldUseLyriaNative(payload))) {
-      await dispatchAndProcessLyriaNativeMusicRequest(payload);
+  return withAudioAuthenticationFallback(toPlainPayload(payload), async () => {
+    if (provider === DOCKER_AUDIO_PROVIDER.SAMSAR) {
+      await dispatchAndProcessSamsarExternalMusicRequest(payload);
+    } else if (model === 'AUDIOCRAFT') {
+      await dispatchAndProcessAudiocraftMusicRequest(payload);
+    } else if (model === 'CASSETTEAI') {
+      await dispatchAndProcessCassetteAIMusicRequest(payload);
+    } else if (model === 'ELEVENLABS_MUSIC') {
+      await dispatchAndProcessElevenLabsMusicRequest({
+        ...toPlainPayload(payload),
+        resolvedMusicProvider: provider,
+      });
+    } else if (model === 'LYRIA3' || model === 'LYRIA2') {
+      if (provider === DOCKER_AUDIO_PROVIDER.GOOGLE_CLOUD || (!provider && shouldUseLyriaNative(payload))) {
+        await dispatchAndProcessLyriaNativeMusicRequest(payload);
+      } else {
+        await dispatchAndProcessLyriaAIMusicRequest(payload);
+      }
+    } else if (model === 'CUSTOM_TEXT_TO_MUSIC') {
+      await dispatchAndProcessCustomMusicRequest(payload);
     } else {
-      await dispatchAndProcessLyriaAIMusicRequest(payload);
     }
-  } else if (model === 'CUSTOM_TEXT_TO_MUSIC') {
-    await dispatchAndProcessCustomMusicRequest(payload);
-  } else {
-  }
+  }, dispatchAndProcessSamsarExternalMusicRequest);
  
 }

@@ -305,7 +305,7 @@ test('generates a full child movieResourceList with an exact cloned prefix and i
       path_name: 'Take the river',
       path_description: 'Ada boards the ferry and races downstream.',
     },
-    inferenceModel: 'gpt-5.6-sol-xhigh',
+    inferenceModel: 'gpt-6-astra-xhigh',
     videoGenerationModel: 'COSMOS3SUPERI2V',
     requestKey: 'narrative:create_branching:level-1:path-1:mrl',
     externalRequestContext: { sessionId: 'branch-request-2', userId: 'user-1' },
@@ -313,7 +313,7 @@ test('generates a full child movieResourceList with an exact cloned prefix and i
     dependencies: {
       createCompatibleChatCompletion: async (_client, request) => {
         capturedRequest = request;
-        return completion(JSON.stringify(buildValidSuffix()), 'gpt-5.6-sol');
+        return completion(JSON.stringify(buildValidSuffix()), 'gpt-6-astra');
       },
     },
   });
@@ -338,7 +338,7 @@ test('generates a full child movieResourceList with an exact cloned prefix and i
   assert.equal(receipts[0].pathName, 'Take the river');
   assert.equal(capturedRequest.maxRetries, 0);
   assert.equal(capturedRequest.externalMaxRetries, 0);
-  assert.equal(capturedRequest.model, 'gpt-5.6-sol-xhigh');
+  assert.equal(capturedRequest.model, 'gpt-6-astra-xhigh');
   assert.deepEqual(capturedRequest.reasoning, { effort: 'xhigh' });
   assert.equal(capturedRequest.reasoning_effort, 'xhigh');
   assert.match(
@@ -619,7 +619,7 @@ test('rejects shared-validator normalization that changes an inherited timeline 
       dependencies: {
         createCompatibleChatCompletion: async () => completion(
           JSON.stringify(suffix),
-          'gpt-5.6-sol',
+          'gpt-6-astra',
         ),
       },
     }),
@@ -649,7 +649,7 @@ test('retries when a generated continuation duplicates its completed sibling', a
     dependencies: {
       createCompatibleChatCompletion: async () => completion(
         JSON.stringify(buildValidSuffix()),
-        'gpt-5.6-sol',
+        'gpt-6-astra',
       ),
     },
   });
@@ -657,8 +657,8 @@ test('retries when a generated continuation duplicates its completed sibling', a
   distinctSuffix.scenes[1].visual =
     'The empty ferry remains tied to the pier as Ada turns toward the hidden signal station.';
   const responses = [
-    completion(JSON.stringify(buildValidSuffix()), 'gpt-5.6-sol'),
-    completion(JSON.stringify(distinctSuffix), 'gpt-5.6-sol'),
+    completion(JSON.stringify(buildValidSuffix()), 'gpt-6-astra'),
+    completion(JSON.stringify(distinctSuffix), 'gpt-6-astra'),
   ];
   const receipts = [];
 

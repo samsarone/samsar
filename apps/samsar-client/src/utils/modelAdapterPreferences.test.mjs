@@ -23,8 +23,8 @@ const RESPONSE = {
       label: "Inference",
       models: [
         {
-          modelKey: "gpt-5.6-sol",
-          label: "GPT 5.6 Sol",
+          modelKey: "gpt-6-astra",
+          label: "GPT 6 Astra",
           availableAdapters: [
             { key: "openai", label: "OpenAI" },
             { key: "samsar", label: "Samsar API Key" },
@@ -41,7 +41,7 @@ const RESPONSE = {
       models: [
         {
           modelKey: "GPTIMAGE2",
-          label: "GPT Image 2",
+          label: "GPT Image 2.5",
           availableAdapters: [
             { key: "openai", label: "OpenAI" },
           ],
@@ -114,12 +114,12 @@ test("updates matching model preferences, builds the PUT map, and resets default
   const normalized = normalizeModelAdapterResponse(RESPONSE);
   const changedStages = updateModelAdapterPreference(
     normalized.stages,
-    "gpt-5.6-sol",
+    "gpt-6-astra",
     ["openai", "samsar"],
   );
 
   assert.deepEqual(buildModelProviderPriority(changedStages), {
-    "gpt-5.6-sol": ["openai", "samsar"],
+    "gpt-6-astra": ["openai", "samsar"],
     GPTIMAGE2: ["openai"],
   });
   assert.equal(
@@ -129,7 +129,7 @@ test("updates matching model preferences, builds the PUT map, and resets default
 
   const resetStages = resetModelAdapterPreferences(changedStages);
   assert.deepEqual(buildModelProviderPriority(resetStages), {
-    "gpt-5.6-sol": ["openai", "samsar"],
+    "gpt-6-astra": ["openai", "samsar"],
     GPTIMAGE2: ["openai"],
   });
   assert.equal(

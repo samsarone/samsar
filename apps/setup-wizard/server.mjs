@@ -9,6 +9,7 @@ import path from 'node:path';
 import { createHash, randomBytes, randomUUID, scryptSync, timingSafeEqual } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import nodemailer from 'nodemailer';
+import { validateFalCredential } from './falCredentialValidation.mjs';
 import {
   SESClient,
   GetIdentityVerificationAttributesCommand,
@@ -1722,7 +1723,6 @@ async function validateEnvironmentProviderCredentials(credentials = {}) {
   const configuredProviderFields = [
     ['openai', 'openaiApiKey'],
     ['kimi', 'kimiK3ApiKey'],
-    ['fal', 'falApiKey'],
     ['elevenlabs', 'elevenLabsApiKey'],
     ['runway', 'runwayApiKey'],
   ];
@@ -1733,8 +1733,19 @@ async function validateEnvironmentProviderCredentials(credentials = {}) {
     }
   });
 
+  if (normalizeSecretString(credentials.falApiKey)) {
+    providers.fal = await validateFalCredential(credentials.falApiKey);
+  }
+
   if (normalizeSecretString(credentials.googleCredentialsJson)) {
     providers.googleCloud = validateEnvironmentGoogleCredentials(credentials.googleCredentialsJson);
+  }
+  if (normalizeSecretString(credentials.googleLyriaGeminiApiKey)) {
+    providers.googleCloud = {
+      ...(providers.googleCloud || configuredEnvironmentProviderResult('googleCloud')),
+      musicOnly: !normalizeSecretString(credentials.googleCredentialsJson),
+      lyriaGeminiConfigured: true,
+    };
   }
   if (normalizeSecretString(credentials.samsarApiKey)) {
     providers.samsar = await validateEnvironmentSamsarCredential(credentials.samsarApiKey);
@@ -1860,6 +1871,10 @@ async function writeProviderSecrets(payload = {}) {
     version: 1,
   };
 
+  const geminiApiKey = normalizeSecretString(payload.credentials?.googleLyriaGeminiApiKey);
+  if (geminiApiKey) providerSecrets.googleCloud = { ...providerSecrets.googleCloud, geminiApiKey };
+  else if (providerSecrets.googleCloud) delete providerSecrets.googleCloud.geminiApiKey;
+
   if (alibabaCloud) {
     providerSecrets.alibabaCloud = alibabaCloud;
   } else {
@@ -1980,7 +1995,9 @@ function buildRuntimeConfig(payload) {
           : {},
       },
       googleCloud: {
-        enabled: Boolean(googleCredentials.credentialsJsonB64),
+        enabled: Boolean(googleCredentials.credentialsJsonB64 || normalizeSecretString(credentials.googleLyriaGeminiApiKey)),
+        musicOnly: !googleCredentials.credentialsJsonB64,
+        lyriaGeminiConfigured: Boolean(normalizeSecretString(credentials.googleLyriaGeminiApiKey)),
         projectId: googleCredentials.projectId,
         credentialsJsonB64: googleCredentials.credentialsJsonB64,
       },
@@ -4094,7 +4111,8 @@ async function handleApi(req, res, pathname) {
   if (req.method === 'GET' && pathname === '/api/setup/install-status') {
     const status = await getInstallStatus();
     const authState = await getSetupAuthState();
-    if (!isSetupRequestAuthenticated(req, authState)) {
+    status.setupAuthenticated = isSetupRequestAuthenticated(req, authState);
+    if (!status.setupAuthenticated) {
       status.config = null;
     }
     sendJson(res, 200, status);
@@ -4153,6 +4171,15 @@ async function handleApi(req, res, pathname) {
     } catch (error) {
       sendJson(res, 400, { message: error?.message || 'Unable to resolve configuration environment variables.' });
     }
+    return true;
+  }
+
+  if (req.method === 'POST' && pathname === '/api/setup/providers/fal/validate') {
+    if (!await requireSetupAuth(req, res)) return true;
+    const payload = await readRequestBody(req);
+    const credentials = payload.credentials || payload;
+    const validation = await validateFalCredential(credentials.falApiKey || credentials.fal_api_key);
+    sendJson(res, 200, { providers: { fal: validation } });
     return true;
   }
 
@@ -4360,6 +4387,12 @@ async function handleApi(req, res, pathname) {
         payload.credentials = resolved.credentials;
       }
       payload = resolveConfigurationSecretsForPayload(payload);
+      // Recheck before any cleanup/build: never trust a client-supplied success
+      // flag, an older format-only result, or a key changed after validation.
+      if (normalizeSecretString(payload.credentials?.falApiKey)) {
+        const validation = await validateFalCredential(payload.credentials.falApiKey);
+        if (!validation.ok) throw new Error(validation.message);
+      }
       const infrastructure = payload?.deployment?.infrastructure || {};
       validateDatabaseConfig(infrastructure);
       validateExternalStorageConfig(infrastructure);

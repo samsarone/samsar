@@ -1,3 +1,5 @@
+import { extractSyncStartingFrame } from './utils/SyncLipSyncFace.js';
+import { shouldPrepareExpressLipSyncFace } from './utils/ExpressLipSyncPrompt.js';
 import {
   getDBConnectionString,
   isTransientMongoError,
@@ -1186,7 +1188,7 @@ function getLegacyInferenceEffort(model) {
   const normalized = typeof model === 'string'
     ? model.trim().toLowerCase().replace(/[_\s]+/g, '-')
     : '';
-  if (!normalized.startsWith(GPT_56_SOL_INFERENCE_MODEL)) {
+  if (!normalized.startsWith(GPT_56_SOL_INFERENCE_MODEL) && !normalized.startsWith('gpt-5.6-sol')) {
     return '';
   }
   if (normalized.includes('xhigh') || normalized.includes('extra-high')) {
@@ -1291,70 +1293,37 @@ export async function getInferenceModelForSession(videoSession, request = {}, fa
 }
 
 async function prepareExpressLipSyncPrompt(payload = {}) {
-  if (payload?.lipSyncPromptGenerated === true && normalizeString(payload?.prompt)) {
-    return payload;
+  // Face selection is optional: inference/media failures preserve the existing Sync path.
+  delete payload.lipSyncFaceSelection;
+  try {
+    const sessionData = await VideoSession.findById(payload.sessionId);
+    const context = resolveExpressLipSyncPromptContext(sessionData || {}, payload);
+    if (!context?.speakerName) return payload;
+    const frame = await extractSyncStartingFrame(payload.videoLink);
+    const inferenceSettings = await getInferenceSettingsForSession(sessionData, payload);
+    const result = await createExpressLipSyncPrompt({
+      frame,
+      startingFrameDescription: context.startingFrameDescription,
+      sceneDescription: context.sceneDescription,
+      speechItem: { characterName: context.speakerName, characterDescription: context.speakerDescription, text: context.speechText },
+      userInferenceModel: inferenceSettings.model,
+      auditContext: {
+        userId: payload.userId || sessionData.userId, sessionId: payload.sessionId,
+        layerId: payload.layerId, audioLayerId: context.audioLayerId,
+        localRequestId: `${payload.sessionId}:${payload.layerId}:lip_sync_face`,
+        inferenceEffort: inferenceSettings.effort,
+        selectedInferenceModelAuthorization: inferenceSettings.authorization,
+      },
+    });
+    if (result?.status === 'identified') {
+      payload.lipSyncFaceSelection = { ...result, width: frame.width, height: frame.height, frameNumber: 0, videoLink: payload.videoLink };
+    }
+  } catch (error) {
+    console.warn('[lip_sync][face_selection] continuing without manual selection', { sessionId: payload.sessionId, layerId: payload.layerId, error: error?.message });
   }
-
-  const sessionData = await VideoSession.findById(payload.sessionId);
-  if (!sessionData) {
-    throw new Error(`VideoSession with ID ${payload.sessionId} not found while building lip sync prompt.`);
-  }
-
-  const context = resolveExpressLipSyncPromptContext(sessionData, payload);
-  if (!context) {
-    throw new Error(
-      `Layer ${payload.layerId || 'unknown'} was not found while building the Express lip sync prompt.`,
-    );
-  }
-
-  const inferenceSettings = await getInferenceSettingsForSession(sessionData, payload);
-  const promptResult = await createExpressLipSyncPrompt({
-    startingFrameDescription: context.startingFrameDescription,
-    sceneDescription: context.sceneDescription,
-    speechItem: {
-      characterName: context.speakerName,
-      characterDescription: context.speakerDescription,
-      text: context.speechText,
-    },
-    userInferenceModel: inferenceSettings.model,
-    auditContext: {
-      userId: payload.userId || sessionData.userId,
-      sessionId: payload.sessionId,
-      layerId: payload.layerId,
-      audioLayerId: context.audioLayerId,
-      localRequestId: `${payload.sessionId}:${payload.layerId}:lip_sync_prompt`,
-      source: 'express_lip_sync_inference',
-      inferenceEffort: inferenceSettings.effort,
-      selectedInferenceModelAuthorization: inferenceSettings.authorization,
-    },
-  });
-
-  const generatedAt = new Date();
-  payload.prompt = promptResult.prompt;
-  payload.lipSyncPromptGenerated = true;
-  payload.lipSyncPromptSource = promptResult.source;
-  payload.lipSyncPromptGeneratedAt = generatedAt;
-
   await AIVideoLayerGeneration.findByIdAndUpdate(payload._id, {
-    $set: {
-      prompt: promptResult.prompt,
-      lipSyncPromptGenerated: true,
-      lipSyncPromptSource: promptResult.source,
-      lipSyncPromptGeneratedAt: generatedAt,
-      lipSyncPromptSpeaker: context.speakerName || null,
-      lipSyncPromptAudioLayerId: context.audioLayerId || null,
-    },
+    $set: { lipSyncFaceSelection: payload.lipSyncFaceSelection || null },
   });
-
-  console.log('[lip_sync][prompt_generation] prepared speaker-targeted Express lip sync prompt', {
-    sessionId: payload.sessionId,
-    layerId: payload.layerId,
-    audioLayerId: context.audioLayerId || null,
-    speaker: context.speakerName || null,
-    source: promptResult.source,
-    lineCount: promptResult.prompt.split('\n').filter(Boolean).length,
-  });
-
   return payload;
 }
 
@@ -2034,11 +2003,6 @@ async function generateAIVideoLayer(payload) {
     console.error('RETRYING...' + numRetries);
   }
 
-  // TODO: Re-enable Express lip-sync prompt generation when the selected
-  // lip-sync model supports prompt input.
-  // if (payload.isExpressGeneration === true && LIPSYNC_MODELS.includes(model)) {
-  //   payload = await prepareExpressLipSyncPrompt(payload);
-  // }
 
   const dockerAdapterRequestType = resolveAIVideoRequestType(
     getDockerAdapterRoutingModel(payload),
@@ -2121,6 +2085,10 @@ async function generateAIVideoLayer(payload) {
       payload,
       normalizeProviderMediaUrl,
     );
+  }
+
+  if (shouldPrepareExpressLipSyncFace(payload) && !usesSamsarExternalProvider && !usesGenBlazeProvider) {
+    payload = await prepareExpressLipSyncPrompt(payload);
   }
 
   let generationId;

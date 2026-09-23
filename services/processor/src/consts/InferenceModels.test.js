@@ -27,49 +27,49 @@ import {
   normalizeOpenAIInferenceModel,
 } from './InferenceModels.js';
 
-test('defaults inference model to GPT 5.6 Sol', () => {
-  assert.equal(INFERENCE_MODELS.Inference, 'gpt-5.6-sol');
-  assert.equal(INFERENCE_MODEL_KEYS.GPT_56_SOL, 'gpt-5.6-sol');
-  assert.equal(INFERENCE_PROVIDER_MODEL_KEYS[INFERENCE_MODEL_KEYS.GPT_56_SOL], 'gpt-5.6-sol');
+test('defaults inference model to GPT 6 Astra', () => {
+  assert.equal(INFERENCE_MODELS.Inference, 'gpt-6-astra');
+  assert.equal(INFERENCE_MODEL_KEYS.GPT_56_SOL, 'gpt-6-astra');
+  assert.equal(INFERENCE_PROVIDER_MODEL_KEYS[INFERENCE_MODEL_KEYS.GPT_56_SOL], 'gpt-6-astra');
   assert.equal(normalizeInferenceModel(), DEFAULT_INFERENCE_MODEL);
   assert.equal(normalizeInferenceModel(''), DEFAULT_INFERENCE_MODEL);
-  assert.equal(normalizeInferenceModel('gpt-5.6-sol'), DEFAULT_INFERENCE_MODEL);
-  assert.equal(getProviderModelForInferenceModel('gpt-5.6-sol'), 'gpt-5.6-sol');
+  assert.equal(normalizeInferenceModel('gpt-6-astra'), DEFAULT_INFERENCE_MODEL);
+  assert.equal(getProviderModelForInferenceModel('gpt-6-astra'), 'gpt-6-astra');
   assert.equal(GPT_56_SOL_REASONING_EFFORT, 'high');
 });
 
-test('preserves the GPT 5.6 Sol extra-high logical option while routing to the Sol provider model', () => {
-  assert.equal(GPT_56_SOL_XHIGH_INFERENCE_MODEL, 'gpt-5.6-sol-xhigh');
+test('preserves the GPT 6 Astra extra-high logical option while routing to the Astra provider model', () => {
+  assert.equal(GPT_56_SOL_XHIGH_INFERENCE_MODEL, 'gpt-6-astra-xhigh');
   for (const alias of [
-    'gpt-5.6-sol-xhigh',
-    'GPT 5.6 Sol XHigh',
-    'GPT 5.6 Sol Extra High',
+    'gpt-6-astra-xhigh',
+    'GPT 6 Astra XHigh',
+    'GPT 6 Astra Extra High',
   ]) {
     assert.equal(normalizeInferenceModel(alias), GPT_56_SOL_XHIGH_INFERENCE_MODEL);
     assert.equal(getReasoningEffortForInferenceModel(alias), 'xhigh');
-    assert.equal(getProviderModelForInferenceModel(alias), 'gpt-5.6-sol');
+    assert.equal(getProviderModelForInferenceModel(alias), 'gpt-6-astra');
   }
   assert.equal(isOpenAIInferenceModel(GPT_56_SOL_XHIGH_INFERENCE_MODEL), true);
 });
 
-test('configures GPT 5.6 Luna with xhigh reasoning only for publication metadata', () => {
-  assert.equal(INFERENCE_MODELS.PublicationMetadata, 'gpt-5.6-luna');
+test('keeps publication metadata on Astra with explicit xhigh reasoning', () => {
+  assert.equal(INFERENCE_MODELS.PublicationMetadata, 'gpt-6-astra');
   assert.equal(INFERENCE_REASONING_EFFORTS.PublicationMetadata, 'xhigh');
   assert.deepEqual(PUBLICATION_METADATA_INFERENCE_SETTINGS, {
-    model: 'gpt-5.6-luna',
+    model: 'gpt-6-astra',
     reasoning: { effort: 'xhigh' },
   });
-  assert.equal(normalizeOpenAIInferenceModel('gpt-5.6-luna'), 'gpt-5.6-luna');
-  assert.equal(getReasoningEffortForInferenceModel('gpt-5.6-luna'), 'xhigh');
-  assert.equal(isOpenAIInferenceModel('gpt-5.6-luna'), true);
+  assert.equal(normalizeOpenAIInferenceModel('gpt-6-astra'), 'gpt-6-astra');
+  assert.equal(getReasoningEffortForInferenceModel('gpt-6-astra'), 'high');
+  assert.equal(isOpenAIInferenceModel('gpt-6-astra'), true);
 
-  // Luna is purpose-specific and is not exposed as a general user inference option.
-  assert.equal(normalizeInferenceModel('gpt-5.6-luna'), DEFAULT_INFERENCE_MODEL);
+  // Publication metadata shares the model, while its settings retain xhigh effort.
+  assert.equal(normalizeInferenceModel('gpt-6-astra'), DEFAULT_INFERENCE_MODEL);
 });
 
 test('uses the session inference provider for publication metadata', () => {
-  assert.deepEqual(getPublicationMetadataInferenceSettings('gpt-5.6-sol'), {
-    model: 'gpt-5.6-luna',
+  assert.deepEqual(getPublicationMetadataInferenceSettings('gpt-6-astra'), {
+    model: 'gpt-6-astra',
     reasoning: { effort: 'xhigh' },
   });
   assert.deepEqual(getPublicationMetadataInferenceSettings('gemini-3.1-pro'), {
@@ -151,4 +151,10 @@ test('normalizes Kimi K3 aliases to the native multimodal provider model', () =>
   assert.deepEqual(getPublicationMetadataInferenceSettings('KIMIK3'), {
     model: KIMI_K3_INFERENCE_MODEL,
   });
+});
+
+
+test('upgrades saved GPT 5.6 selections to Astra without losing xhigh effort', () => {
+  assert.equal(normalizeInferenceModel('gpt-5.6-sol'), 'gpt-6-astra');
+  assert.equal(normalizeInferenceModel('gpt-5.6-sol-xhigh'), 'gpt-6-astra-xhigh');
 });

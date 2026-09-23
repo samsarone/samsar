@@ -183,7 +183,7 @@ test('Samsar external inference rebuilds and freshly resolves media inside each 
   };
 
   await createSamsarExternalChatCompletion({
-    model: 'gpt-5.6-sol',
+    model: 'gpt-6-astra',
     authorization: 'deployed',
     messages: imageMessages(),
     maxRetries: 1,
@@ -207,14 +207,14 @@ test('OpenAI Responses disables SDK retries and rebuilds media for each owned re
       bodies.push(request.body);
       options.push(request);
       if (bodies.length === 1) throw retryableFailure();
-      return { model: 'gpt-5.6-sol', output_text: 'ok', output: [] };
+      return { model: 'gpt-6-astra', output_text: 'ok', output: [] };
     },
     chat: { completions: { create: async () => assert.fail('chat fallback was not expected') } },
   };
 
   await sendAssistantOpenAICompletionRequest(
     imageMessages(),
-    'gpt-5.6-sol',
+    'gpt-6-astra',
     'xhigh',
     { maxRetries: 1 },
     {
@@ -269,7 +269,7 @@ test('OpenAI chat fallback expands media arrays and freshly resolves every fallb
 
   await sendAssistantOpenAICompletionRequest(
     messages,
-    'gpt-5.6-sol',
+    'gpt-6-astra',
     'xhigh',
     { maxRetries: 1 },
     {

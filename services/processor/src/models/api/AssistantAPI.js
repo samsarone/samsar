@@ -26,7 +26,7 @@ import {
 } from './AssistantBilling.js';
 import { isStandaloneEdition } from '../../utils/EnvironmentUtils.js';
 
-const DEFAULT_ASSISTANT_MODEL = 'gpt-5.6-sol';
+const DEFAULT_ASSISTANT_MODEL = 'gpt-6-astra';
 const DEFAULT_ASSISTANT_COMPLETION_TIMEOUT_MS = 10 * 60 * 1000;
 const DEFAULT_ASSISTANT_SYSTEM_PROMPT =
   'You are a helpful assistant for Samsar. Respond clearly, accurately, and preserve any multimodal context provided by the user.';
@@ -378,10 +378,10 @@ export function buildResponsesRequest({
     body.max_output_tokens = parsedMaxOutputTokens;
   }
 
-  if (payload.temperature !== undefined) {
+  if (model !== 'gpt-6-astra' && payload.temperature !== undefined) {
     body.temperature = payload.temperature;
   }
-  if (payload.top_p !== undefined) {
+  if (model !== 'gpt-6-astra' && payload.top_p !== undefined) {
     body.top_p = payload.top_p;
   }
   if (payload.text && typeof payload.text === 'object') {
@@ -567,7 +567,7 @@ async function createAssistantResponse(
 }
 
 function shouldFallbackToChatCompletions(error, model) {
-  if (typeof model === 'string' && model.startsWith('gpt-5')) {
+  if (typeof model === 'string' && (model.startsWith('gpt-5') || model.startsWith('gpt-6'))) {
     return false;
   }
 

@@ -20,7 +20,7 @@ test('translateSpeech uses the OpenAI model regardless of the selected inference
   );
 
   assert.equal(translated, 'สวัสดี');
-  assert.equal(capturedRequest.model, 'gpt-5.6-sol');
+  assert.equal(capturedRequest.model, 'gpt-6-astra');
   assert.equal(capturedRequest.messages[1].content, 'Hello there.');
   assert.equal(capturedRequest.response_format.type, 'json_schema');
 });
@@ -70,7 +70,7 @@ test('translateSpeech detects canonical source language and preserves exact same
     sourceLanguage: 'ja',
     translationRequired: false,
   });
-  assert.equal(capturedRequest.model, 'gpt-5.6-sol');
+  assert.equal(capturedRequest.model, 'gpt-6-astra');
   assert.match(capturedRequest.messages[0].content, /sourceLanguage/);
 });
 
@@ -106,7 +106,7 @@ test('translateSpeech returns ordered subtitle mappings and a localized speaker 
     ],
     subtitleSpeakerCharacterName: 'ผู้บรรยาย',
   });
-  assert.equal(capturedRequest.model, 'gpt-5.6-sol');
+  assert.equal(capturedRequest.model, 'gpt-6-astra');
   assert.match(capturedRequest.messages[0].content, /subtitleAlignmentMap/);
   assert.match(capturedRequest.messages[0].content, /subtitleSpeakerCharacterName/);
   assert.deepEqual(JSON.parse(capturedRequest.messages[1].content), {

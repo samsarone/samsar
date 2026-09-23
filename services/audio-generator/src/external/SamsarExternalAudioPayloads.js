@@ -49,6 +49,9 @@ export function buildMusicInputPayload(payload = {}) {
   );
   const generationMeta = {
     ...sourceGenerationMeta,
+    ...(model === 'ELEVENLABS_MUSIC' ? {
+      modelId: normalizeString(sourceGenerationMeta.modelId || sourceGenerationMeta.model_id) || 'music_v2_5',
+    } : {}),
     ...(isBackingTrack ? { isBackingTrack: true } : {}),
   };
 

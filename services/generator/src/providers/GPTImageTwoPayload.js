@@ -1,5 +1,8 @@
-export const GPT_IMAGE_TWO_MODEL = 'gpt-image-2';
-export const GPT_IMAGE_TWO_FAL_ENDPOINT = 'fal-ai/gpt-image-2';
+// Keep the existing GPTIMAGE2 application key while upgrading its upstream model.
+export const GPT_IMAGE_TWO_MODEL = 'gpt-image-2.5-sunburst';
+export const GPT_IMAGE_TWO_FAL_ENDPOINT = 'openai/gpt-image-2.5/sunburst/text-to-image';
+// Requests submitted before the upgrade must still be polled on their original endpoint.
+export const GPT_IMAGE_TWO_LEGACY_FAL_ENDPOINT = 'fal-ai/gpt-image-2';
 export const GPT_IMAGE_TWO_QUALITY = 'high';
 
 const OUTPUT_BY_ASPECT_RATIO = Object.freeze({

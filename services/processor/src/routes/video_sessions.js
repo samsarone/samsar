@@ -230,6 +230,7 @@ router.get('/details', async function (req, res) {
     return;
   }
   const payload = {
+    ...req.query,
     userId,
     id,
     layer,
@@ -518,6 +519,7 @@ router.post('/refresh_session_layers', async function (req, res) {
     return;
   }
   try {
+    await assertEditableRouteAccess(userId, { ...req.body, sessionId: id });
     const updateSessionLayerResponse = await refreshLayersForSession(id);
     res.send(updateSessionLayerResponse);
   } catch (e) {
@@ -535,6 +537,7 @@ router.post('/update_pending_session_frames', async function (req, res) {
     return;
   }
   try {
+    await assertEditableRouteAccess(userId, { ...req.body, sessionId: id });
     const updatePendingSessionFrameResponse = await updatePendingFramesForSession(id);
 
     res.send(updatePendingSessionFrameResponse);
@@ -546,7 +549,6 @@ router.post('/update_pending_session_frames', async function (req, res) {
 
 router.post('/add_audio', async function (req, res) {
   const headers = req.headers;
-  const { id, dataURL } = req.body;
 
   const userId = verifyUserAuth(headers);
   if (!userId) {
@@ -554,7 +556,7 @@ router.post('/add_audio', async function (req, res) {
     return;
   }
   try {
-    const updateSessionFrameResponse = await addAudioToSession(id, dataURL);
+    const updateSessionFrameResponse = await addAudioToSession(userId, req.body);
 
     res.send(updateSessionFrameResponse);
   } catch (e) {
@@ -573,7 +575,7 @@ router.post('/update_layer_frames', async function (req, res) {
     return;
   }
   try {
-
+    await assertEditableRouteAccess(userId, req.body);
     const updateSessionFrameResponse = await updateFramesForLayer(req.body);
 
     res.send(updateSessionFrameResponse);
@@ -699,19 +701,23 @@ router.post('/update_layer', async function (req, res) {
 });
 
 router.get('/generate_status', async function (req, res) {
-  const headers = req.headers;
-  const { id, layerId } = req.query;
-  const generationStatus = await getVideoSessionGenerationStatus(id, layerId);
-
-  res.send(generationStatus);
-
+  const userId = verifyUserAuth(req.headers);
+  if (!userId) return res.status(401).send('Unauthorized');
+  try {
+    res.send(await getVideoSessionGenerationStatus(userId, req.query));
+  } catch (error) {
+    res.status(error.statusCode || error.status || 400).send('Error getting generation status');
+  }
 });
 
 router.get('/edit_status', async function (req, res) {
-  const headers = req.headers;
-  const { id, layerId } = req.query;
-  const generationStatus = await getVideoSessionEditStatus(id, layerId);
-  res.send(generationStatus);
+  const userId = verifyUserAuth(req.headers);
+  if (!userId) return res.status(401).send('Unauthorized');
+  try {
+    res.send(await getVideoSessionEditStatus(userId, req.query));
+  } catch (error) {
+    res.status(error.statusCode || error.status || 400).send('Error getting edit status');
+  }
 });
 
 router.post('/regenerate_subtitles_for_video_session', async function (req, res) {
@@ -1271,14 +1277,22 @@ router.post('/request_generate_mask', async function (req, res) {
     return;
   }
   const payload = req.body;
-  const sessionData = await requestGenerateMask(userId, payload);
-  res.json(sessionData);
+  try {
+    const sessionData = await requestGenerateMask(userId, payload);
+    res.json(sessionData);
+  } catch (error) {
+    res.status(error.statusCode || error.status || 400).send('Error requesting mask generation');
+  }
 });
 
 router.get('/generate_mask_status', async function (req, res) {
-  const sessionId = req.query.sessionId;
-  const sessionData = await getVideoSessionMaskGenerationStatus(sessionId);
-  res.json(sessionData);
+  const userId = verifyUserAuth(req.headers);
+  if (!userId) return res.status(401).send('Unauthorized');
+  try {
+    res.json(await getVideoSessionMaskGenerationStatus(userId, req.query));
+  } catch (error) {
+    res.status(error.statusCode || error.status || 400).send('Error getting mask generation status');
+  }
 });
 
 
@@ -1345,6 +1359,8 @@ router.post('/delete_session', async function (req, res) {
 });
 
 router.post('/segmentation_image', async function (req, res) {
+  const userId = verifyUserAuth(req.headers);
+  if (!userId) return res.status(401).send('Unauthorized');
   const payload = req.body;
   const sessionData = await requestGenerateSegmentationForMask(payload);
   res.json(sessionData);

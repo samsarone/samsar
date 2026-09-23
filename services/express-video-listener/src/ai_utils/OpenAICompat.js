@@ -372,10 +372,10 @@ function buildResponsesRequest(chatRequest) {
     body.reasoning = { effort: requestedReasoningEffort };
   }
 
-  if (temperature !== undefined) {
+  if (body.model !== 'gpt-6-astra' && temperature !== undefined) {
     body.temperature = temperature;
   }
-  if (top_p !== undefined) {
+  if (body.model !== 'gpt-6-astra' && top_p !== undefined) {
     body.top_p = top_p;
   }
   if (user !== undefined) {

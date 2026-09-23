@@ -14,6 +14,7 @@ test('normalizes ElevenLabs backing track music length from requested duration',
     },
   });
 
+  assert.equal(payload.generationMeta.modelId, 'music_v2_5');
   assert.equal(payload.duration, 94.5);
   assert.equal(payload.generationMeta.musicLengthMs, 94500);
   assert.equal(payload.generationMeta.targetDurationSeconds, 94.5);
@@ -44,4 +45,11 @@ test('keeps long backing track duration without capping ElevenLabs provider requ
   assert.equal(payload.duration, 240);
   assert.equal(payload.generationMeta.targetDurationSeconds, 240);
   assert.equal(payload.generationMeta.musicLengthMs, 240000);
+});
+
+test('preserves explicit ElevenLabs music version overrides', () => {
+  const payload = normalizeElevenLabsMusicPayload({
+    model: 'ELEVENLABS_MUSIC', generationMeta: { model_id: 'music_v2' },
+  });
+  assert.equal(payload.generationMeta.modelId, 'music_v2');
 });

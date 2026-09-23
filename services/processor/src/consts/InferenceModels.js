@@ -1,7 +1,7 @@
 export const INFERENCE_MODELS = Object.freeze({
-  Inference: 'gpt-5.6-sol',
-  BranchedInferenceExtraHigh: 'gpt-5.6-sol-xhigh',
-  PublicationMetadata: 'gpt-5.6-luna',
+  Inference: 'gpt-6-astra',
+  BranchedInferenceExtraHigh: 'gpt-6-astra-xhigh',
+  PublicationMetadata: 'gpt-6-astra',
 });
 
 export const INFERENCE_REASONING_EFFORTS = Object.freeze({
@@ -72,7 +72,7 @@ export const SUPPORTED_INFERENCE_MODEL_VALUES = Object.freeze([
 
 export const INFERENCE_MODEL_OPTIONS = Object.freeze([
   Object.freeze({
-    label: 'gpt-5.6-sol',
+    label: 'gpt-6-astra',
     value: DEFAULT_INFERENCE_MODEL,
     providerModel: INFERENCE_MODELS.Inference,
     availabilityModel: INFERENCE_MODELS.Inference,
@@ -80,7 +80,7 @@ export const INFERENCE_MODEL_OPTIONS = Object.freeze([
     isBranchedInferenceModel: true,
   }),
   Object.freeze({
-    label: 'GPT 5.6 Sol Extra High',
+    label: 'GPT 6 Astra Extra High',
     value: GPT_56_SOL_XHIGH_INFERENCE_MODEL,
     providerModel: INFERENCE_MODELS.Inference,
     availabilityModel: INFERENCE_MODELS.Inference,
@@ -115,16 +115,24 @@ const CONFIGURED_OPENAI_INFERENCE_MODELS = new Set(Object.values(INFERENCE_MODEL
 
 const GPT_56_SOL_ALIAS_TOKENS = new Set([
   'GPT56',
+  'GPT6',
   'GPT56SOL',
+  'GPT6ASTRA',
   'GPT56HIGH',
+  'GPT6HIGH',
   'GPT56SOLHIGH',
+  'GPT6ASTRAHIGH',
 ]);
 
 const GPT_56_SOL_XHIGH_ALIAS_TOKENS = new Set([
   'GPT56XHIGH',
+  'GPT6XHIGH',
   'GPT56SOLXHIGH',
+  'GPT6ASTRAXHIGH',
   'GPT56EXTRAHIGH',
+  'GPT6EXTRAHIGH',
   'GPT56SOLEXTRAHIGH',
+  'GPT6ASTRAEXTRAHIGH',
 ]);
 
 const GEMINI_31_PRO_ALIASES = new Set([
@@ -273,10 +281,6 @@ export function normalizeInferenceReasoningEffort(value, fallback = null) {
 
 export function getReasoningEffortForInferenceModel(value, requestedEffort = null) {
   const model = normalizeOpenAIInferenceModel(value);
-  if (model === INFERENCE_MODELS.PublicationMetadata) {
-    return INFERENCE_REASONING_EFFORTS.PublicationMetadata;
-  }
-
   const normalizedRequestedEffort = normalizeInferenceReasoningEffort(requestedEffort);
   if (normalizedRequestedEffort) {
     return normalizedRequestedEffort;

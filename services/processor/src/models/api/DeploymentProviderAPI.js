@@ -6,6 +6,7 @@ import { getDBConnectionString } from '../DBString.js';
 import { resolveRequestActorFromAuthHeaders } from '../external/User.js';
 import { getAlibabaQwenBaseURL } from '../../inference/AlibabaQwen.js';
 import { isAlibabaQwenImage3ProCredentialEligible } from '../../consts/DockerProviderPriority.js';
+import { validateFalCredential } from '../../utils/FalCredentialValidation.js';
 
 const GOOGLE_CLOUD_SCOPE = 'https://www.googleapis.com/auth/cloud-platform';
 const OPENROUTER_KEY_URL = 'https://openrouter.ai/api/v1/key';
@@ -16,19 +17,19 @@ export const DEPLOYMENT_PROVIDER_CAPABILITIES = Object.freeze({
   samsar: {
     label: 'Samsar API Key',
     requiredFor: ['All models', 'All actions', 'moderation'],
-    models: ['gpt-5.6-sol', 'gemini-3.1-pro', 'QWEN3.8', 'KIMIK3', 'GPTIMAGE2', 'WAN2.7PRO', 'RUNWAYML', 'VEO3.1I2V', 'HAPPYHORSEI2V', 'LYRIA3', 'OPENAI_TTS', 'GOOGLE_TTS', 'MMAUDIO', 'LATENT_SYNC'],
+    models: ['gpt-6-astra', 'gemini-3.1-pro', 'QWEN3.8', 'KIMIK3', 'GPTIMAGE2', 'WAN2.7PRO', 'RUNWAYML', 'VEO3.1I2V', 'HAPPYHORSEI2V', 'LYRIA3', 'OPENAI_TTS', 'GOOGLE_TTS', 'MMAUDIO', 'LATENT_SYNC'],
     actions: ['chat', 'assistant', 'moderation', 'image', 'video', 'audio', 'lip_sync', 'sound_effect'],
   },
   openai: {
     label: 'OpenAI',
-    requiredFor: ['GPT 5.6 Sol', 'assistant', 'vision', 'moderation', 'OpenAI image', 'OpenAI TTS'],
-    models: ['gpt-5.6-sol', 'GPTIMAGE2', 'OPENAI_TTS'],
+    requiredFor: ['GPT 6 Astra', 'assistant', 'vision', 'moderation', 'OpenAI image', 'OpenAI TTS'],
+    models: ['gpt-6-astra', 'GPTIMAGE2', 'OPENAI_TTS'],
     actions: ['chat', 'assistant', 'moderation', 'image', 'audio'],
   },
   openrouter: {
     label: 'OpenRouter',
-    requiredFor: ['GPT 5.6 Sol', 'Gemini 3.1 Pro', 'Qwen 3.8 Max text and vision'],
-    models: ['gpt-5.6-sol', 'gemini-3.1-pro', 'QWEN3.8'],
+    requiredFor: ['GPT 6 Astra', 'Gemini 3.1 Pro', 'Qwen 3.8 Max text and vision'],
+    models: ['gpt-6-astra', 'gemini-3.1-pro', 'QWEN3.8'],
     actions: ['chat', 'assistant'],
   },
   kimi: {
@@ -90,14 +91,6 @@ function getAlibabaKeyType(apiKey, baseUrl) {
     return endpointType;
   }
   return normalizeString(apiKey).startsWith('sk-sp-') ? 'plan' : 'pay_as_you_go';
-}
-
-function normalizeBoolean(value) {
-  if (typeof value === 'boolean') {
-    return value;
-  }
-  const normalized = normalizeString(value).toLowerCase();
-  return ['1', 'true', 'yes', 'y', 'on'].includes(normalized);
 }
 
 function providerResult(provider, status, extra = {}) {
@@ -226,7 +219,6 @@ export async function validateDeploymentProviderCredentials(payload = {}) {
   if (normalizeString(payload.falApiKey || payload.fal_api_key)) {
     providerResults.fal = await validateFalKey({
       apiKey: normalizeString(payload.falApiKey || payload.fal_api_key),
-      remoteValidation: normalizeBoolean(payload.validateFalRemotely || payload.validate_fal_remotely),
     });
   }
 
@@ -383,37 +375,8 @@ async function validateRunwayKey(apiKey) {
   }
 }
 
-async function validateFalKey({ apiKey, remoteValidation = false }) {
-  if (!remoteValidation) {
-    return providerResult('fal', 'format_valid', {
-      validationMode: 'format_only',
-      message: 'FAL does not expose a zero-cost key introspection endpoint; remote validation is skipped by default.',
-    });
-  }
-
-  try {
-    const response = await fetch('https://fal.run/fal-ai/flux/schnell', {
-      method: 'POST',
-      headers: {
-        Authorization: `Key ${apiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ prompt: 'credential validation' }),
-    });
-
-    if (!response.ok) {
-      return providerResult('fal', 'invalid', {
-        statusCode: response.status,
-        message: 'FAL rejected the API key.',
-      });
-    }
-
-    return providerResult('fal', 'valid', { validationMode: 'remote_model_request' });
-  } catch (error) {
-    return providerResult('fal', 'error', {
-      message: error?.message || 'Unable to validate FAL API key.',
-    });
-  }
+export async function validateFalKey({ apiKey }, options = {}) {
+  return validateFalCredential(apiKey, options);
 }
 
 async function validateGoogleCloudCredentials({ rawCredentials, isBase64 = false, projectId }) {

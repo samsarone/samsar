@@ -19,7 +19,7 @@ import { isPublicRegistrationEnabled } from '../../utils/EnvironmentUtils.js';
  * Throws an error if invalid.
  */
 function validateAndSanitizeEmailPassword(email, password) {
-  if (!email || !password) {
+  if (typeof email !== 'string' || typeof password !== 'string' || !email || !password) {
     throw new Error('Email and password are required');
   }
 
@@ -45,7 +45,7 @@ function validateAndSanitizeEmailPassword(email, password) {
  */
 function validateAndSanitizeRegistrationData({ email, password, displayName, username, preferredLanguage, isAppUser, subscribeToWeeklyNewsletter, subscribeToNewsletter }) {
   // Basic checks for required fields.
-  if (!email || !password || !username) {
+  if (typeof email !== 'string' || typeof password !== 'string' || typeof username !== 'string' || !email || !password || !username.trim()) {
     throw new Error('Email, password, and username are required');
   }
 
@@ -70,7 +70,7 @@ function validateAndSanitizeRegistrationData({ email, password, displayName, use
   // If everything is good, return sanitized data.
   return {
     email: sanitizedEmail,
-    password: password.trim(),
+    password,
     displayName: displayName?.trim() || '',
     username: username.trim(),
     preferredLanguage: preferredLanguage ? preferredLanguage.toLowerCase() : undefined,
@@ -202,7 +202,7 @@ export async function sendForgotPasswordEmail(payload) {
   const { email } = payload;
 
   // Basic check
-  if (!email) {
+  if (typeof email !== 'string' || !email) {
     throw new Error('Email is required');
   }
 
@@ -222,8 +222,9 @@ export async function sendForgotPasswordEmail(payload) {
 
   // Find the user
   const user = await User.findOne({ email: sanitizedEmail });
+  const response = { message: 'If an account exists for this email, password reset instructions have been sent.' };
   if (!user) {
-    throw new Error('User not found');
+    return response;
   }
 
   // Generate new verification code and expiration
@@ -246,30 +247,26 @@ export async function sendForgotPasswordEmail(payload) {
   await sendForgotPasswordEmailMailer(userData, verificationCode);
 
 
-  return user;
+  // Never return the user document: it contains the reset code and password hash.
+  return response;
 }
 
 
 
 
 export async function resetUserPassword(payload) {
-
-  await getDBConnectionString();
-
-
   const { code, password, email } = payload;
-
-  const user = await User.findOne({ email });
-
-  if (!user) {
-    throw new Error('User not found');
-  }
-
-  if (!user.verificationCode || user.verificationCode !== code) {
+  const sanitizedEmail = validateAndSanitizeEmailPassword(email, password);
+  if (typeof code !== 'string' || !code) {
     throw new Error('Invalid or expired reset code');
   }
-
-  if (user.verificationCodeExpiresAt && dayjs().isAfter(dayjs(user.verificationCodeExpiresAt))) {
+  await getDBConnectionString();
+  const resetFilter = {
+    email: sanitizedEmail,
+    verificationCode: code,
+    verificationCodeExpiresAt: { $gt: new Date() },
+  };
+  if (!await User.exists(resetFilter)) {
     throw new Error('Invalid or expired reset code');
   }
 
@@ -281,11 +278,20 @@ export async function resetUserPassword(payload) {
     throw new Error('Failed to hash password');
   }
 
-  user.password = hashedPassword; // Ensure this is hashed in your schema or middleware
-  user.isEmailVerified = true;
-  user.verificationCode = null;
-  user.verificationCodeExpiresAt = null;
-  await user.save();
+  // Consume the still-valid code atomically. Concurrent submissions and a code
+  // replaced by a newer reset request must not overwrite the password.
+  const result = await User.updateOne({
+    ...resetFilter,
+    verificationCodeExpiresAt: { $gt: new Date() },
+  }, { $set: {
+    password: hashedPassword,
+    isEmailVerified: true,
+    verificationCode: null,
+    verificationCodeExpiresAt: null,
+  } });
+  if (result.modifiedCount !== 1) {
+    throw new Error('Invalid or expired reset code');
+  }
 
   return { message: 'Password reset successfully' };
 }
@@ -294,10 +300,10 @@ export async function resetUserPassword(payload) {
 
 
 export async function updateUserPassword(userId, { currentPassword, newPassword }) {
-
-  
+  if (typeof currentPassword !== 'string' || typeof newPassword !== 'string' || !newPassword.trim()) {
+    throw new Error('Current and new passwords are required');
+  }
   await getDBConnectionString();
-  const currentPasswordHashed = await bcrypt.hash(currentPassword, 10);
 
 
   const user = await User.findOne({ _id: userId });

@@ -11,7 +11,7 @@ test('an explicit request model wins over session and saved user settings', () =
   assert.equal(resolveRequestInferenceModel({
     request: { inferenceModel: 'QWEN3.8' },
     session: { expressGenerationInferenceModel: 'gemini-3.1-pro' },
-    user: { selectedInferenceModel: 'gpt-5.6-sol' },
+    user: { selectedInferenceModel: 'gpt-6-astra' },
   }), 'QWEN3.8');
 });
 
@@ -21,7 +21,7 @@ test('the express session model wins over the account setting and generic sessio
       expressGenerationInferenceModel: 'QWEN3.8',
       inferenceModel: 'gemini-3.1-pro',
     },
-    user: { selectedInferenceModel: 'gpt-5.6-sol' },
+    user: { selectedInferenceModel: 'gpt-6-astra' },
   }), 'QWEN3.8');
 });
 
@@ -29,7 +29,7 @@ test('preserves Kimi K3 from the express request through the canonical model con
   assert.equal(resolveRequestInferenceModel({
     request: { expressGenerationInferenceModel: 'Kimi K3' },
     session: { expressGenerationInferenceModel: 'gemini-3.1-pro' },
-    user: { selectedInferenceModel: 'gpt-5.6-sol' },
+    user: { selectedInferenceModel: 'gpt-6-astra' },
   }), 'kimi-k3');
 });
 
@@ -64,18 +64,18 @@ test('authorization falls back to the account and remains absent when not config
   assert.equal(resolveRequestInferenceAuthorization(), '');
 });
 
-test('separates canonical GPT 5.6 Sol from effort while retaining legacy suffixes', () => {
+test('separates canonical GPT 6 Astra from effort while retaining legacy suffixes', () => {
   assert.deepEqual(resolveRequestInferenceSettings({
-    session: { inferenceModel: 'gpt-5.6-sol', inferenceEffort: 'xhigh' },
+    session: { inferenceModel: 'gpt-6-astra', inferenceEffort: 'xhigh' },
   }), {
-    model: 'gpt-5.6-sol-xhigh',
+    model: 'gpt-6-astra-xhigh',
     effort: 'xhigh',
     authorization: '',
   });
   assert.deepEqual(resolveRequestInferenceSettings({
-    request: { inferenceModel: 'gpt-5.6-sol-xhigh', effort: 'high' },
+    request: { inferenceModel: 'gpt-6-astra-xhigh', effort: 'high' },
   }), {
-    model: 'gpt-5.6-sol',
+    model: 'gpt-6-astra',
     effort: 'high',
     authorization: '',
   });

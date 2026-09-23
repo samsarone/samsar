@@ -20,7 +20,7 @@ test('uses a bounded canonical category taxonomy', () => {
 
 test('uses GPT 5.6 Luna with xhigh reasoning', () => {
   assert.deepEqual(GALLERY_CLASSIFICATION_INFERENCE_SETTINGS, {
-    model: 'gpt-5.6-luna',
+    model: 'gpt-6-astra',
     reasoning: { effort: 'xhigh' },
   });
 });

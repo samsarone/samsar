@@ -22,7 +22,7 @@ test('maps every GPT Image 2 aspect ratio to identical native and Fal dimensions
     };
 
     assert.deepEqual(buildOpenAIGPTImageTwoInput(imageGenerationPayload), {
-      model: 'gpt-image-2',
+      model: 'gpt-image-2.5-sunburst',
       prompt: imageGenerationPayload.prompt,
       size: `${width}x${height}`,
       quality: 'high',

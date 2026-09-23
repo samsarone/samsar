@@ -47,7 +47,7 @@ test('shared text-to-video prompt builder returns the complete selected narrativ
 test('Seedance 2.5 agent resource prompts use every supported scene partition', () => {
   const prompt = getResourceListPrompt('SEEDANCE2.5I2V');
 
-  assert.match(prompt, /duration of each scene can be 5, 10, or 15 seconds/);
+  assert.match(prompt, /duration of each scene can be 5, 10, 15, or 20 seconds/);
   assert.doesNotMatch(prompt, /duration of each scene can be 5 or 10 seconds/);
   assert.doesNotMatch(prompt, /20, 25, or 30/);
 });

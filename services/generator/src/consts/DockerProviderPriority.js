@@ -43,7 +43,8 @@ export const DOCKER_IMAGE_GENERATION_PROVIDER_PRIORITY = Object.freeze({
   ],
   GPTIMAGE2: [
     DOCKER_ADAPTER_PROVIDER.OPENAI,
-    DOCKER_ADAPTER_PROVIDER.GMICLOUD,
+    // GMICloud's documented GPT Image endpoints still target version 2.
+    // Restore this adapter only after a Sunburst contract is verified.
     DOCKER_ADAPTER_PROVIDER.SAMSAR,
     DOCKER_ADAPTER_PROVIDER.FAL,
   ],
@@ -94,7 +95,6 @@ export const DOCKER_IMAGE_EDIT_PROVIDER_PRIORITY = Object.freeze({
   ],
   GPTIMAGE2EDIT: [
     DOCKER_ADAPTER_PROVIDER.OPENAI,
-    DOCKER_ADAPTER_PROVIDER.GMICLOUD,
     DOCKER_ADAPTER_PROVIDER.SAMSAR,
   ],
   GPTIMAGE1EDIT: [
@@ -534,10 +534,10 @@ export function resolveGPTImageTwoGenerationProvider(persistedProvider = '') {
     return normalizedPersistedProvider;
   }
 
-  // Production text-to-image generation uses FAL. Standalone and staging
+  // Production text-to-image generation uses OpenAI directly. Standalone and staging
   // retain their user-supplied adapter priority below.
   if (getDeploymentEdition() === 'production') {
-    return DOCKER_ADAPTER_PROVIDER.FAL;
+    return DOCKER_ADAPTER_PROVIDER.OPENAI;
   }
 
   return resolveDockerImageGenerationProvider('GPTIMAGE2') ||

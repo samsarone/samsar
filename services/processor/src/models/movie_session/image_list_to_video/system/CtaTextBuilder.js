@@ -306,7 +306,7 @@ export async function buildExpressCtaTextPayload({
   imageDescriptionList = [],
   imageListPayload = [],
   scenes = [],
-  inferenceModel = "gpt-5.6-sol",
+  inferenceModel = "gpt-6-astra",
 } = {}) {
   const normalizedCtaUrl = typeof ctaUrl === "string" ? ctaUrl.trim() : "";
   const sceneCount = Array.isArray(scenes) && scenes.length

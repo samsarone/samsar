@@ -88,11 +88,11 @@ const userSchema = new Schema({
 
   userApiKeys: [UserAPIKey],
 
-  selectedInferenceModel: {type: String, default: 'gpt-5.6-sol'},
+  selectedInferenceModel: {type: String, default: 'gpt-6-astra'},
   selectedInferenceEffort: { type: String, enum: ['high', 'xhigh'], default: 'high' },
   selectedInferenceModelAuthorization: { type: String, enum: ['native', 'deployed'], default: 'native' }, // native uses local provider credentials; deployed uses Samsar API key fallback.
 
-  selectedAssistantModel: {type: String, default: 'gpt-5.6-sol'},
+  selectedAssistantModel: {type: String, default: 'gpt-6-astra'},
   selectedAssistantModelAuthorization: { type: String, enum: ['native', 'deployed'], default: 'native' }, // native uses local provider credentials; deployed uses Samsar API key fallback.
 
   selectedNotifyOnCompletion: {type: Boolean, default: false},

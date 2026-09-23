@@ -27,7 +27,7 @@ const TEXT_MODELS = [
 ];
 
 const IMAGE_MODELS = [
-  { label: 'GPT Image 2', value: 'GPTIMAGE2' },
+  { label: 'GPT Image 2.5', value: 'GPTIMAGE2' },
   { label: 'NanoBanana Pro', value: 'NANOBANANAPRO' },
   { label: 'Seedream', value: 'SEEDREAM' },
   { label: 'Wan2.7 Pro', value: 'WAN2.7PRO' },
@@ -50,7 +50,7 @@ const IMAGE_LIST_VIDEO_MODELS = [
 ];
 
 const DURATION_OPTIONS = [10, 30, 60, 90, 120];
-const SEEDANCE_25_DURATION_OPTIONS = [5, 10, 15];
+const SEEDANCE_25_DURATION_OPTIONS = [5, 10, 15, 20];
 const CREDIT_PACKS = [1000, 2500, 5000];
 
 function formatDate(value) {

@@ -68,7 +68,7 @@ function createStatusError(status, message = `status ${status}`) {
 
 test('standalone automatic calls retry configured adapters in saved preference order', async (t) => {
   const preferencePath = createPreferenceFile(t, {
-    'gpt-5.6-sol': ['samsar', 'openai'],
+    'gpt-6-astra': ['samsar', 'openai'],
   });
 
   await withEnvironment({
@@ -80,7 +80,7 @@ test('standalone automatic calls retry configured adapters in saved preference o
   }, async () => {
     const calls = [];
     const response = await createCompatibleInferenceChatCompletion({
-      model: 'gpt-5.6-sol',
+      model: 'gpt-6-astra',
       messages: [{ role: 'user', content: 'hello' }],
     }, {
       createSamsarExternalChatCompletion: async (request) => {
@@ -100,14 +100,14 @@ test('standalone automatic calls retry configured adapters in saved preference o
       },
     });
 
-    assert.deepEqual(calls, ['samsar:deployed', 'openai:gpt-5.6-sol']);
+    assert.deepEqual(calls, ['samsar:deployed', 'openai:gpt-6-astra']);
     assert.equal(response.choices[0].message.content, 'openai fallback');
   });
 });
 
 test('standalone automatic calls dispatch an OpenRouter preference to OpenRouter before fallback', async (t) => {
   const preferencePath = createPreferenceFile(t, {
-    'gpt-5.6-sol': ['openrouter', 'samsar'],
+    'gpt-6-astra': ['openrouter', 'samsar'],
   });
 
   await withEnvironment({
@@ -119,7 +119,7 @@ test('standalone automatic calls dispatch an OpenRouter preference to OpenRouter
   }, async () => {
     const calls = [];
     const response = await createCompatibleInferenceChatCompletion({
-      model: 'gpt-5.6-sol',
+      model: 'gpt-6-astra',
       messages: [{ role: 'user', content: 'hello' }],
     }, {
       createSamsarExternalChatCompletion: async (request) => {
@@ -141,7 +141,7 @@ test('standalone automatic calls dispatch an OpenRouter preference to OpenRouter
 
 test('explicit deployed and OpenRouter authorizations remain pinned', async (t) => {
   const preferencePath = createPreferenceFile(t, {
-    'gpt-5.6-sol': ['openai', 'samsar', 'openrouter'],
+    'gpt-6-astra': ['openai', 'samsar', 'openrouter'],
   });
 
   await withEnvironment({
@@ -156,7 +156,7 @@ test('explicit deployed and OpenRouter authorizations remain pinned', async (t) 
       const calls = [];
       await assert.rejects(
         createCompatibleInferenceChatCompletion({
-          model: 'gpt-5.6-sol',
+          model: 'gpt-6-astra',
           authorization,
           messages: [{ role: 'user', content: 'hello' }],
         }, {
@@ -184,7 +184,7 @@ test('explicit deployed and OpenRouter authorizations remain pinned', async (t) 
 
 test('the external inference bypass remains pinned to the native adapter', async (t) => {
   const preferencePath = createPreferenceFile(t, {
-    'gpt-5.6-sol': ['samsar', 'openai'],
+    'gpt-6-astra': ['samsar', 'openai'],
   });
 
   await withEnvironment({
@@ -196,7 +196,7 @@ test('the external inference bypass remains pinned to the native adapter', async
   }, async () => {
     const calls = [];
     const response = await createCompatibleInferenceChatCompletion({
-      model: 'gpt-5.6-sol',
+      model: 'gpt-6-astra',
       bypassSamsarExternalInference: true,
       messages: [{ role: 'user', content: 'hello' }],
     }, {
@@ -279,7 +279,7 @@ test('external completion limits do not leak into any native inference adapter',
     };
 
     for (const model of [
-      'gpt-5.6-sol',
+      'gpt-6-astra',
       'gemini-3.1-pro',
       'QWEN3.8',
       'kimi-k3',
@@ -304,7 +304,7 @@ test('external completion limits do not leak into any native inference adapter',
 
 test('standalone automatic native GPT vision strips external completion limits', async (t) => {
   const preferencePath = createPreferenceFile(t, {
-    'gpt-5.6-sol': ['openai', 'samsar'],
+    'gpt-6-astra': ['openai', 'samsar'],
   });
 
   await withEnvironment({
@@ -317,7 +317,7 @@ test('standalone automatic native GPT vision strips external completion limits',
   }, async () => {
     let capturedRequest;
     const response = await createCompatibleInferenceChatCompletion({
-      model: 'gpt-5.6-sol',
+      model: 'gpt-6-astra',
       externalMaxTokens: 16384,
       messages: [{
         role: 'user',
@@ -344,7 +344,7 @@ test('standalone automatic native GPT vision strips external completion limits',
     });
 
     assert.equal(response.choices[0].message.content, 'native vision');
-    assert.equal(capturedRequest.model, 'gpt-5.6-sol');
+    assert.equal(capturedRequest.model, 'gpt-6-astra');
     assert.equal(capturedRequest.messages[0].content[0].type, 'image_url');
     assert.equal(Object.hasOwn(capturedRequest, 'externalMaxTokens'), false);
     assert.equal(Object.hasOwn(capturedRequest, 'max_tokens'), false);
@@ -360,7 +360,7 @@ test('external completion limits are materialized only for OpenRouter dispatch',
   }, async () => {
     let capturedRequest;
     await createCompatibleInferenceChatCompletion({
-      model: 'gpt-5.6-sol',
+      model: 'gpt-6-astra',
       authorization: 'openrouter',
       messages: [{ role: 'user', content: 'hello' }],
       externalMaxTokens: 16384,
@@ -383,7 +383,7 @@ test('GMICloud vision receives no OpenRouter completion limit fields', async () 
   }, async () => {
     let capturedRequest;
     await createCompatibleInferenceChatCompletion({
-      model: 'gpt-5.6-sol',
+      model: 'gpt-6-astra',
       authorization: 'gmicloud',
       messages: [{
         role: 'user',
@@ -409,7 +409,7 @@ test('GMICloud vision receives no OpenRouter completion limit fields', async () 
 
 test('non-retryable adapter failures do not advance to the next provider', async (t) => {
   const preferencePath = createPreferenceFile(t, {
-    'gpt-5.6-sol': ['samsar', 'openai'],
+    'gpt-6-astra': ['samsar', 'openai'],
   });
 
   await withEnvironment({
@@ -422,7 +422,7 @@ test('non-retryable adapter failures do not advance to the next provider', async
     const calls = [];
     await assert.rejects(
       createCompatibleInferenceChatCompletion({
-        model: 'gpt-5.6-sol',
+        model: 'gpt-6-astra',
         messages: [{ role: 'user', content: 'hello' }],
       }, {
         createSamsarExternalChatCompletion: async () => {
@@ -448,7 +448,7 @@ test('non-retryable adapter failures do not advance to the next provider', async
 
 test('production calls ignore standalone preferences and do not cross adapters', async (t) => {
   const preferencePath = createPreferenceFile(t, {
-    'gpt-5.6-sol': ['samsar', 'openai'],
+    'gpt-6-astra': ['samsar', 'openai'],
   });
 
   await withEnvironment({
@@ -461,7 +461,7 @@ test('production calls ignore standalone preferences and do not cross adapters',
   }, async () => {
     const calls = [];
     const response = await createCompatibleInferenceChatCompletion({
-      model: 'gpt-5.6-sol',
+      model: 'gpt-6-astra',
       messages: [{ role: 'user', content: 'hello' }],
     }, {
       createSamsarExternalChatCompletion: async () => {
@@ -487,7 +487,7 @@ test('production calls ignore standalone preferences and do not cross adapters',
 
 test('GPT image prompt retries use the shared standalone adapter order', async (t) => {
   const preferencePath = createPreferenceFile(t, {
-    'gpt-5.6-sol': ['samsar', 'openai'],
+    'gpt-6-astra': ['samsar', 'openai'],
   });
 
   await withEnvironment({
@@ -513,7 +513,7 @@ test('GPT image prompt retries use the shared standalone adapter order', async (
       'create',
       async (request, options) => {
         calls.push('openai');
-        assert.equal(request.model, 'gpt-5.6-sol');
+        assert.equal(request.model, 'gpt-6-astra');
         assert.equal(options.maxRetries, 0);
         return createResponse('rewritten image prompt');
       },
@@ -521,7 +521,7 @@ test('GPT image prompt retries use the shared standalone adapter order', async (
 
     const response = await sendGPTImageAssistantMessageRequest(
       [{ role: 'user', content: 'rewrite this image prompt' }],
-      'gpt-5.6-sol',
+      'gpt-6-astra',
     );
 
     assert.deepEqual(calls, ['samsar', 'openai']);

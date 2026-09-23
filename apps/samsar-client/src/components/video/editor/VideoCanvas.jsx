@@ -9,6 +9,7 @@ import DraggableToolbarRectangle from "../toolbars/toolbar_shapes/DraggableToolb
 import DraggableToolbarCircle from "../toolbars/toolbar_shapes/DraggableToolbarCircle.jsx";
 import { generateCursor } from "../util/GenerateSVG.jsx";
 import axios from 'axios';
+import { getHeaders } from '../../../utils/web.jsx';
 import debounce from 'lodash/debounce';
 import VideoUnderlay from '../util/VideoUnderlay.jsx';
 import CanvasToolbar from "./CanvasToolbar.jsx";
@@ -539,11 +540,7 @@ const VideoCanvas = forwardRef((props, ref) => {
         size: segmentation.size,
         bbox: bbox,
       }
-      const response = await axios.post(`${PROCESSOR_API_URL}/video_sessions/segmentation_image`, payload, {
-        headers: {
-          'Content-Type': 'application/json'
-        }
-      });
+      const response = await axios.post(`${PROCESSOR_API_URL}/video_sessions/segmentation_image`, payload, getHeaders());
 
       if (response.data && response.data.mask_image) {
         const base64Image = `data:image/png;base64,${response.data.mask_image}`;

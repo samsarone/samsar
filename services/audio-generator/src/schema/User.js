@@ -18,7 +18,7 @@ const CustomAdapters = new Schema({
 }, { _id: false, strict: false });
 
 const userSchema = new Schema({
-  selectedInferenceModel: { type: String, default: 'gpt-5.6-sol' },
+  selectedInferenceModel: { type: String, default: 'gpt-6-astra' },
   selectedInferenceEffort: { type: String, enum: ['high', 'xhigh'], default: 'high' },
   selectedInferenceModelAuthorization: { type: String, enum: ['native', 'deployed'], default: 'native' },
   selectedAssistantModelAuthorization: { type: String, enum: ['native', 'deployed'], default: 'native' },

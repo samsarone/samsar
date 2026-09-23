@@ -36,7 +36,7 @@ function getLegacyModelEffort(model) {
   const normalized = typeof model === 'string'
     ? model.trim().toLowerCase().replace(/[_\s]+/g, '-')
     : '';
-  if (!normalized.startsWith(GPT_56_SOL_INFERENCE_MODEL)) return '';
+  if (!normalized.startsWith(GPT_56_SOL_INFERENCE_MODEL) && !normalized.startsWith('gpt-5.6-sol')) return '';
   if (normalized.includes('xhigh') || normalized.includes('extra-high')) return 'xhigh';
   return normalized.endsWith('-high') ? 'high' : '';
 }

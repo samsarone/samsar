@@ -61,11 +61,6 @@ export const CLEANUP_TARGETS = Object.freeze([
     mode: 'session-directories',
   },
   {
-    id: 'final-video-renders',
-    relativePath: 'video/output',
-    mode: 'old-video-files',
-  },
-  {
     id: 'ai-video-temp-renders',
     relativePath: 'ai_video/temp',
     mode: 'old-media-files',
@@ -82,6 +77,7 @@ const PROTECTED_PREFIXES = Object.freeze([
   'video/audio',
   'video/outro',
   'video/narrator_avatar/video',
+  'video/output',
 ]);
 
 function log(message, details = undefined) {
