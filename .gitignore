@@ -38,6 +38,13 @@ runtime/
 **/*secret*
 **/*credential*
 **/*credentials*
+!apps/setup-wizard/falCredentialValidation.mjs
+!services/processor/src/utils/FalCredentialValidation.js
+!services/processor/src/utils/FalCredentialValidation.test.js
+!services/processor/src/utils/RuntimeSecretRequestAuth.js
+!services/processor/src/utils/RuntimeSecretRequestAuth.test.js
+!services/processor/src/utils/RuntimeSecrets.js
+!services/processor/src/utils/RuntimeSecrets.test.js
 !scripts/infrastructure-credentials.mjs
 !scripts/infrastructure-credentials.test.mjs
 **/*service-account*.json
