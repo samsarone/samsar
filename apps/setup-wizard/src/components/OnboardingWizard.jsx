@@ -58,6 +58,18 @@ const PROVIDERS = [
     credentialLabel: 'API key',
   },
   {
+    key: 'anthropic',
+    title: 'Anthropic',
+    type: 'native',
+    field: 'anthropicApiKey',
+    inputType: 'password',
+    placeholder: 'Anthropic API key',
+    requiredFor: 'Claude Opus 5.5 inference, vision, and assistant.',
+    pricingUrl: 'https://platform.claude.com/docs/en/about-claude/pricing',
+    keysUrl: 'https://platform.claude.com/settings/keys',
+    credentialLabel: 'API key',
+  },
+  {
     key: 'googleCloud',
     title: 'Google Cloud / Gemini',
     type: 'native',
@@ -89,7 +101,7 @@ const PROVIDERS = [
     field: 'openrouterApiKey',
     inputType: 'password',
     placeholder: 'OpenRouter API key',
-    requiredFor: 'Inference for supported GPT, Gemini, and Qwen 3.8 Max text and vision models.',
+    requiredFor: 'Inference for GPT, Claude Opus 5.5, Gemini, and Qwen 3.8 Max text and vision models.',
     pricingUrl: 'https://openrouter.ai/pricing',
     keysUrl: 'https://openrouter.ai/settings/keys',
     credentialLabel: 'API key',
@@ -212,6 +224,12 @@ const CAPABILITY_FAMILIES = {
     providerKeys: ['openai', 'gmicloud', 'samsar', 'openrouter'],
     modelKeys: ['gpt-5.6-sol'],
   },
+  claude: {
+    key: 'claude',
+    label: 'Claude Opus 5.5',
+    providerKeys: ['anthropic', 'openrouter', 'samsar'],
+    modelKeys: ['claude-opus-5.5'],
+  },
   gemini: {
     key: 'gemini',
     label: 'Gemini',
@@ -235,6 +253,12 @@ const CAPABILITY_FAMILIES = {
     label: 'GPT Assistant',
     providerKeys: ['openai', 'gmicloud', 'samsar', 'openrouter'],
     modelKeys: ['gpt-5.6-sol'],
+  },
+  claudeAssistant: {
+    key: 'claudeAssistant',
+    label: 'Claude Opus 5.5 Assistant',
+    providerKeys: ['anthropic', 'openrouter', 'samsar'],
+    modelKeys: ['claude-opus-5.5'],
   },
   geminiAssistant: {
     key: 'geminiAssistant',
@@ -441,6 +465,7 @@ const SETUP_SERVICE_CATALOG = [
     description: 'Chat, reasoning, and vision inference families available for provider-backed model calls.',
     modelFamilies: [
       CAPABILITY_FAMILIES.gpt56,
+      CAPABILITY_FAMILIES.claude,
       CAPABILITY_FAMILIES.gemini,
       CAPABILITY_FAMILIES.kimiK3,
       CAPABILITY_FAMILIES.qwen,
@@ -453,6 +478,7 @@ const SETUP_SERVICE_CATALOG = [
     description: 'Assistant workflows backed by the configured GPT, Gemini, Kimi, or Qwen provider families.',
     modelFamilies: [
       CAPABILITY_FAMILIES.gptAssistant,
+      CAPABILITY_FAMILIES.claudeAssistant,
       CAPABILITY_FAMILIES.geminiAssistant,
       CAPABILITY_FAMILIES.kimiK3Assistant,
       CAPABILITY_FAMILIES.qwenAssistant,
@@ -526,6 +552,7 @@ const SETUP_SERVICE_CATALOG = [
 const DEFAULT_CREDENTIALS = Object.freeze({
   samsarApiKey: '',
   openaiApiKey: '',
+  anthropicApiKey: '',
   openrouterApiKey: '',
   gmiCloudApiKey: '',
   googleCredentialsJson: '',
@@ -1503,6 +1530,7 @@ function buildDeploymentPayload(
     providers: {
       samsar: { enabled: Boolean(sanitizedCredentials.samsarApiKey), validation: getProviderStatus(validationResult, 'samsar') },
       openai: { enabled: Boolean(sanitizedCredentials.openaiApiKey), validation: getProviderStatus(validationResult, 'openai') },
+      anthropic: { enabled: Boolean(sanitizedCredentials.anthropicApiKey), validation: getProviderStatus(validationResult, 'anthropic') },
       openrouter: { enabled: Boolean(sanitizedCredentials.openrouterApiKey), validation: getProviderStatus(validationResult, 'openrouter') },
       gmicloud: { enabled: Boolean(sanitizedCredentials.gmiCloudApiKey), validation: getProviderStatus(validationResult, 'gmicloud') },
       googleCloud: { enabled: Boolean(sanitizedCredentials.googleCredentialsJson || sanitizedCredentials.googleLyriaGeminiApiKey), musicOnly: !sanitizedCredentials.googleCredentialsJson, lyriaGeminiConfigured: Boolean(sanitizedCredentials.googleLyriaGeminiApiKey), validation: getProviderStatus(validationResult, 'googleCloud') },
@@ -2684,6 +2712,7 @@ export default function OnboardingWizard() {
 	      credentials: {
           ...credentials,
           kimiK3ApiKey: '',
+          anthropicApiKey: '',
           alibabaApiKey: '',
           openrouterApiKey: '',
           gmiCloudApiKey: '',

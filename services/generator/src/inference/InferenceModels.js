@@ -9,6 +9,8 @@ export const QWEN_38_INFERENCE_MODEL = 'QWEN3.8';
 export const DEFAULT_QWEN_38_MAX_MODEL = 'qwen3.8-max';
 export const KIMI_K3_INFERENCE_MODEL = 'kimi-k3';
 export const KIMIK3 = 'KIMIK3';
+export const CLAUDE_OPUS_55_INFERENCE_MODEL = 'claude-opus-5.5';
+export const ANTHROPIC_OPUS_55_PROVIDER_MODEL = 'claude-opus-5-5';
 
 const GEMINI_ALIASES = new Set([
   GEMINI_31_PRO_INFERENCE_MODEL,
@@ -85,6 +87,10 @@ export function isKimiInferenceModel(value) {
 export function normalizeInferenceModel(value) {
   const normalized = normalizeString(value).toLowerCase();
   if (!normalized) return DEFAULT_INFERENCE_MODEL;
+  if (['claude-opus-5.5', 'claude-opus-5-5', 'anthropic/claude-opus-5.5',
+    'claude opus 5.5', 'claude 5.5 opus'].includes(normalized)) {
+    return CLAUDE_OPUS_55_INFERENCE_MODEL;
+  }
   if (normalized === DEFAULT_INFERENCE_MODEL || normalized.startsWith(`${DEFAULT_INFERENCE_MODEL}-`) ||
     normalized === 'gpt-5.6-sol' || normalized.startsWith('gpt-5.6-sol-')) {
     const token = normalizeAliasToken(value);
@@ -130,6 +136,9 @@ export function normalizeGeminiProviderModel(value) {
 }
 
 export function getProviderModelForInferenceModel(value) {
+  if (normalizeInferenceModel(value) === CLAUDE_OPUS_55_INFERENCE_MODEL) {
+    return ANTHROPIC_OPUS_55_PROVIDER_MODEL;
+  }
   if (isGeminiInferenceModel(value)) {
     const normalized = normalizeString(value).toLowerCase();
     if (normalized.startsWith('gemini-') && !GEMINI_ALIASES.has(normalized)) {

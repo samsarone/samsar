@@ -4,6 +4,7 @@ const ENVIRONMENT_VARIABLE_REFERENCE_PATTERN = /^\$(?:([A-Za-z_][A-Za-z0-9_]*)|\
 export const DEFAULT_PROVIDER_ENVIRONMENT_VARIABLE_BY_FIELD = Object.freeze({
   samsarApiKey: 'SAMSAR_API_KEY',
   openaiApiKey: 'OPENAI_API_KEY',
+  anthropicApiKey: 'ANTHROPIC_API_KEY',
   openrouterApiKey: 'OPENROUTER_API_KEY',
   gmiCloudApiKey: 'GMI_API_KEY',
   googleLyriaGeminiApiKey: 'GOOGLE_LYRIA_GEMINI_API_KEY',

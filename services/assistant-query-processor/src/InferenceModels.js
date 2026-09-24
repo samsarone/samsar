@@ -10,6 +10,8 @@ export const ALIBABA_QWEN_MODEL_ENV = 'ALIBABA_QWEN_MODEL';
 export const ALIBABA_QWEN_TEXT_MODEL_ENV = 'ALIBABA_QWEN_TEXT_MODEL';
 export const KIMI_K3_INFERENCE_MODEL = 'kimi-k3';
 export const KIMI_K3_PROVIDER_MODEL = KIMI_K3_INFERENCE_MODEL;
+export const CLAUDE_OPUS_55_INFERENCE_MODEL = 'claude-opus-5.5';
+export const ANTHROPIC_OPUS_55_PROVIDER_MODEL = 'claude-opus-5-5';
 
 const GEMINI_ALIASES = new Set([
   GEMINI_31_PRO_INFERENCE_MODEL,
@@ -88,6 +90,10 @@ export function normalizeInferenceModel(value) {
   if (!normalized) {
     return DEFAULT_INFERENCE_MODEL;
   }
+  if (['claude-opus-5.5', 'claude-opus-5-5', 'anthropic/claude-opus-5.5',
+    'claude opus 5.5', 'claude 5.5 opus'].includes(normalized)) {
+    return CLAUDE_OPUS_55_INFERENCE_MODEL;
+  }
 
   if (normalized === DEFAULT_INFERENCE_MODEL || normalized.startsWith(`${DEFAULT_INFERENCE_MODEL}-`)) {
     return DEFAULT_INFERENCE_MODEL;
@@ -122,6 +128,9 @@ export function normalizeGeminiProviderModel(value) {
 }
 
 export function getProviderModelForInferenceModel(value, { env = process.env } = {}) {
+  if (normalizeInferenceModel(value) === CLAUDE_OPUS_55_INFERENCE_MODEL) {
+    return ANTHROPIC_OPUS_55_PROVIDER_MODEL;
+  }
   if (isQwenInferenceModel(value)) {
     return normalizeString(env?.[ALIBABA_QWEN_MODEL_ENV]) ||
       normalizeString(env?.[ALIBABA_QWEN_TEXT_MODEL_ENV]) ||

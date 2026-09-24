@@ -10,6 +10,7 @@ import {
 import { createAlibabaQwenChatCompletion } from '../../inference/AlibabaQwen.js';
 import { createGoogleGeminiChatCompletion } from '../../inference/GoogleGemini.js';
 import { createKimiK3ChatCompletion } from '../../inference/KimiK3.js';
+import { isClaudeOpus55Model, createAnthropicChatCompletion } from '../../inference/AnthropicChatAdapter.js';
 import {
   DOCKER_INFERENCE_PROVIDER,
   createSamsarExternalChatCompletion,
@@ -22,7 +23,8 @@ import { isStandaloneEdition } from '../../utils/EnvironmentUtils.js';
 
 export function isResponsesOnlyModel(model) {
   const inferenceModel = normalizeOpenAIInferenceModel(model || getDefaultUserInferenceModel());
-  return !isGeminiInferenceModel(inferenceModel) &&
+  return !isClaudeOpus55Model(inferenceModel) &&
+    !isGeminiInferenceModel(inferenceModel) &&
     !isKimiInferenceModel(inferenceModel) &&
     !isQwenInferenceModel(inferenceModel);
 }
@@ -199,6 +201,14 @@ async function createCompatibleChatCompletionForProvider(
   }
 
   const requestOptions = buildRequestOptions({ timeout, maxRetries });
+  if (isClaudeOpus55Model(model)) {
+    const providerPayload = await resolveProviderMediaPayload(request, {
+      resolveMediaUrl: dependencyOverrides.resolveMediaUrl,
+      serviceName: 'samsar_processor_anthropic',
+    });
+    const createClaudeCompletion = dependencyOverrides.createAnthropicChatCompletion || createAnthropicChatCompletion;
+    return createClaudeCompletion({ ...providerPayload, timeout });
+  }
   if (isQwenInferenceModel(model)) {
     return await createAlibabaQwenChatCompletion(
       { ...request, timeout, maxRetries },

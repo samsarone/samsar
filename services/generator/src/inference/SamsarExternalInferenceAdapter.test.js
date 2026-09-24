@@ -23,6 +23,7 @@ import {
 } from './SamsarExternalInferenceAdapter.js';
 
 const ENV_KEYS = [
+  'ANTHROPIC_API_KEY',
   'ALIBABA_CLOUD_API_KEY',
   'ALIBABA_API_KEY',
   'CURRENT_ENV',
@@ -31,6 +32,7 @@ const ENV_KEYS = [
   'KIMI_K3_API_KEY',
   'OPENAI_API_KEY',
   'OPENROUTER_API_KEY',
+  'OPENROUTER_CLAUDE_OPUS_55_MODEL',
   'OPENROUTER_QWEN_38_MAX_MODEL',
   'QWEN_API_KEY',
   'SAMSAR_API_KEY',
@@ -88,6 +90,26 @@ test('Qwen routing prefers a native Alibaba key before Samsar fallback', () => {
       model: 'QWEN3.8',
       authorization: 'native',
     }), false);
+  });
+});
+
+test('Claude uses native Anthropic first in Docker and OpenRouter in hosted deployments', () => {
+  withEnvironment({
+    CURRENT_ENV: 'docker',
+    ANTHROPIC_API_KEY: 'anthropic-key',
+    OPENROUTER_API_KEY: 'openrouter-key',
+  }, () => {
+    assert.deepEqual(getConfiguredInferenceProviders('claude-opus-5.5'), [
+      DOCKER_INFERENCE_PROVIDER.ANTHROPIC,
+      DOCKER_INFERENCE_PROVIDER.OPENROUTER,
+    ]);
+    assert.equal(shouldUseSamsarExternalInference({ model: 'claude-opus-5.5' }), false);
+    assert.equal(getOpenRouterModelForInferenceRequest({ model: 'claude-opus-5.5' }),
+      'anthropic/claude-opus-5.5');
+  });
+  withEnvironment({ CURRENT_ENV: 'production', ANTHROPIC_API_KEY: 'anthropic-key' }, () => {
+    assert.equal(shouldUseOpenRouterInference({ model: 'claude-opus-5.5' }), true);
+    assert.equal(shouldUseSamsarExternalInference({ model: 'claude-opus-5.5' }), true);
   });
 });
 
@@ -614,4 +636,30 @@ test('Qwen OpenRouter uses Qwen 3.8 Max for text and vision with bounded setting
   assert.equal(payloads[4].max_completion_tokens, 128000);
   assert.equal(options[0].maxRetries, 0);
   assert.equal(options[0].signal instanceof AbortSignal, true);
+});
+
+test('Claude OpenRouter preserves vision and selects high reasoning', async (t) => {
+  const previousKey = process.env.OPENROUTER_API_KEY;
+  process.env.OPENROUTER_API_KEY = 'openrouter-key';
+  t.after(() => {
+    if (previousKey === undefined) delete process.env.OPENROUTER_API_KEY;
+    else process.env.OPENROUTER_API_KEY = previousKey;
+  });
+  let sent;
+  t.mock.method(OpenAI.Chat.Completions.prototype, 'create', async (payload) => {
+    sent = payload;
+    return { choices: [{ message: { role: 'assistant', content: 'scene' } }] };
+  });
+  await createOpenRouterChatCompletion({
+    model: 'claude-opus-5.5',
+    messages: [{ role: 'user', content: [{ type: 'image_url',
+      image_url: { url: 'https://example.com/frame.png' } }] }],
+    reasoning: { effort: 'low' },
+    temperature: 0.2,
+  });
+  assert.equal(sent.model, 'anthropic/claude-opus-5.5');
+  assert.equal(sent.reasoning.effort, 'high');
+  assert.equal(sent.max_tokens, 128000);
+  assert.equal(Object.hasOwn(sent, 'temperature'), false);
+  assert.equal(sent.messages[0].content[0].image_url.url, 'https://example.com/frame.png');
 });

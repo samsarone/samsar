@@ -8,6 +8,7 @@ const GEMINI_31_PRO_INFERENCE_MODEL = 'gemini-3.1-pro';
 export const QWEN_38_INFERENCE_MODEL = 'QWEN3.8';
 export const QWEN_38_MAX_MODEL = 'qwen3.8-max';
 export const KIMI_K3_INFERENCE_MODEL = 'kimi-k3';
+export const CLAUDE_OPUS_55_INFERENCE_MODEL = 'claude-opus-5.5';
 const DEFAULT_GEMINI_MODEL = 'gemini-3.1-pro-preview';
 const DEFAULT_GEMINI_LOCATION = 'global';
 const DEFAULT_SCOPES = ['https://www.googleapis.com/auth/cloud-platform'];
@@ -135,6 +136,7 @@ async function getAccessToken() {
 
 export function normalizeInferenceModel(value) {
   const normalized = normalizeString(value).toLowerCase();
+  if (['claude-opus-5.5', 'claude-opus-5-5', 'anthropic/claude-opus-5.5'].includes(normalized)) return CLAUDE_OPUS_55_INFERENCE_MODEL;
   if (!normalized) return DEFAULT_INFERENCE_MODEL;
   if (normalized === DEFAULT_INFERENCE_MODEL || normalized.startsWith(`${DEFAULT_INFERENCE_MODEL}-`)) {
     return DEFAULT_INFERENCE_MODEL;

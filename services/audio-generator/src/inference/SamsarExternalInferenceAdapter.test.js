@@ -22,6 +22,7 @@ import {
 } from './SamsarExternalInferenceAdapter.js';
 
 const ENV_KEYS = [
+  'ANTHROPIC_API_KEY',
   'ALIBABA_CLOUD_API_KEY',
   'ALIBABA_API_KEY',
   'CURRENT_ENV',
@@ -57,6 +58,22 @@ function withEnvironment(overrides, callback) {
     }
   }
 }
+
+test('Claude uses native Anthropic in Docker and OpenRouter in hosted requests', () => {
+  const request = { model: 'claude-opus-5.5', messages: [{ role: 'user', content: 'hello' }] };
+  withEnvironment({ CURRENT_ENV: 'docker', ANTHROPIC_API_KEY: 'anthropic-key',
+    OPENROUTER_API_KEY: 'openrouter-key' }, () => {
+    assert.deepEqual(getConfiguredInferenceProviders(request.model, request), [
+      DOCKER_INFERENCE_PROVIDER.ANTHROPIC, DOCKER_INFERENCE_PROVIDER.OPENROUTER,
+    ]);
+    assert.equal(shouldUseSamsarExternalInference(request), false);
+  });
+  withEnvironment({ CURRENT_ENV: 'production', ANTHROPIC_API_KEY: 'anthropic-key' }, () => {
+    assert.equal(shouldUseOpenRouterInference(request), true);
+    assert.equal(shouldUseSamsarExternalInference(request), true);
+    assert.equal(getOpenRouterModelForInferenceRequest(request), 'anthropic/claude-opus-5.5');
+  });
+});
 
 function createTestGenblazeCatalog() {
   const directory = mkdtempSync(path.join(os.tmpdir(), 'samsar-genblaze-inference-'));

@@ -738,6 +738,7 @@ const env = {
   SAMSAR_AVAILABLE_MODELS_PATH: '/persistent/config/available-models.json',
   SAMSAR_API_KEY: config.providers?.samsar?.apiKey || '',
 	  OPENAI_API_KEY: config.providers?.openai?.apiKey || '',
+  ANTHROPIC_API_KEY: config.providers?.anthropic?.apiKey || '',
 	  OPENROUTER_API_KEY: effectiveProviderConfig.openrouter.apiKey,
 	  OPENROUTER_GEMINI_31_PRO_MODEL: effectiveProviderConfig.openrouter.gemini31ProModel,
 	  KIMI_K3_API_KEY: config.providers?.kimi?.apiKey || '',

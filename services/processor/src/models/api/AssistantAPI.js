@@ -8,6 +8,7 @@ import { getDBConnectionString } from '../DBString.js';
 import { deductGenerationCredits } from '../GenerationCredits.js';
 import { getModelForUserInferenceModel } from '../agent/ModelUtils.js';
 import { createCompatibleChatCompletion } from '../ai_utils/OpenAICompat.js';
+import { isClaudeOpus55Model } from '../../inference/AnthropicChatAdapter.js';
 import { resolveProviderMediaPayload } from '../ai_utils/ProviderMediaPayload.js';
 import { deductExternalUserCredits } from '../external/User.js';
 import {
@@ -171,6 +172,7 @@ export async function createAssistantCompletion(userId, payload = {}, { external
     externalUser: scopedExternalUser,
   });
   const usesOpenAIResponses =
+    !isClaudeOpus55Model(selectedAssistantModel) &&
     !isGeminiInferenceModel(selectedAssistantModel) &&
     !isKimiInferenceModel(selectedAssistantModel) &&
     !isQwenInferenceModel(selectedAssistantModel);
@@ -480,6 +482,7 @@ export function shouldUseCompatibleAssistantRouting(
 ) {
   return (
     isStandaloneEdition(env) ||
+    isClaudeOpus55Model(selectedAssistantModel) ||
     isGeminiInferenceModel(selectedAssistantModel) ||
     isKimiInferenceModel(selectedAssistantModel) ||
     isQwenInferenceModel(selectedAssistantModel) ||

@@ -4,6 +4,7 @@ import path from "path";
 import { mkdir, writeFile } from "fs/promises";
 
 import OpenAI from "openai";
+import { createAnthropicChatCompletion, isClaudeOpus55Model } from './AnthropicChatAdapter.js';
 import {
   GPT_56_SOL_INFERENCE_MODEL,
   getDefaultUserInferenceModel,
@@ -182,6 +183,11 @@ async function createInferenceChatCompletionForProvider(
     ...(timeoutMs !== undefined ? { timeoutMs } : {}),
     ...(maxRetries !== undefined ? { maxRetries } : {}),
   };
+
+  if (isClaudeOpus55Model(model)) {
+    const createClaudeCompletion = dependencyOverrides.createAnthropicChatCompletion || createAnthropicChatCompletion;
+    return createClaudeCompletion(await normalizeProviderMediaPayload(nativeProviderRequest));
+  }
 
   if (isQwenInferenceModel(model)) {
     const createQwenCompletion =

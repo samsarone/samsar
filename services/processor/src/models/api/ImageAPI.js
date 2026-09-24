@@ -26,6 +26,7 @@ import {
   normalizeInferenceModel,
 } from '../../consts/InferenceModels.js';
 import { createCompatibleChatCompletion } from '../ai_utils/OpenAICompat.js';
+import { isClaudeOpus55Model } from '../../inference/AnthropicChatAdapter.js';
 import { isStandaloneEdition } from '../../utils/EnvironmentUtils.js';
 import {
   QWEN_IMAGE_3_PRO_MODEL_KEY,
@@ -70,6 +71,7 @@ export function shouldUsePreferenceAwareImagePromptRouting(
   const normalizedInferenceModel = normalizeInferenceModel(inferenceModel);
   return (
     isStandaloneEdition(env) ||
+    isClaudeOpus55Model(normalizedInferenceModel) ||
     isGeminiInferenceModel(normalizedInferenceModel) ||
     isKimiInferenceModel(normalizedInferenceModel) ||
     isQwenInferenceModel(normalizedInferenceModel)
@@ -1888,6 +1890,7 @@ async function generatePromptForImageSet({
 
   const normalizedInferenceModel = normalizeInferenceModel(inferenceModel);
   const usesSelectedNonOpenAIProvider =
+    isClaudeOpus55Model(normalizedInferenceModel) ||
     isGeminiInferenceModel(normalizedInferenceModel) ||
     isKimiInferenceModel(normalizedInferenceModel) ||
     isQwenInferenceModel(normalizedInferenceModel);

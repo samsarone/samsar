@@ -1,5 +1,6 @@
 export const DOCKER_PROVIDER = Object.freeze({
   OPENAI: 'openai',
+  ANTHROPIC: 'anthropic',
   GOOGLE_CLOUD: 'googleCloud',
   KIMI: 'kimi',
   ALIBABA_CLOUD: 'alibabaCloud',
@@ -13,6 +14,7 @@ export const DOCKER_PROVIDER = Object.freeze({
 
 export const DOCKER_PROVIDER_DISPLAY_ORDER = Object.freeze([
   DOCKER_PROVIDER.OPENAI,
+  DOCKER_PROVIDER.ANTHROPIC,
   DOCKER_PROVIDER.GOOGLE_CLOUD,
   DOCKER_PROVIDER.KIMI,
   DOCKER_PROVIDER.ALIBABA_CLOUD,
@@ -61,6 +63,9 @@ const OPENAI_INFERENCE_GMI_OR_SAMSAR = Object.freeze([
   DOCKER_PROVIDER.GMI_CLOUD,
   DOCKER_PROVIDER.SAMSAR,
   DOCKER_PROVIDER.OPENROUTER,
+]);
+const CLAUDE_INFERENCE_PROVIDERS = Object.freeze([
+  DOCKER_PROVIDER.ANTHROPIC, DOCKER_PROVIDER.OPENROUTER, DOCKER_PROVIDER.SAMSAR,
 ]);
 const GOOGLE_INFERENCE_GMI_OR_SAMSAR = Object.freeze([
   DOCKER_PROVIDER.GOOGLE_CLOUD,
@@ -145,6 +150,7 @@ const ALIBABA_QWEN_IMAGE_ENDPOINT_TYPES = new Set([
 
 export const DOCKER_MODEL_PROVIDER_PRIORITY_BY_MODEL = Object.freeze({
   'gpt-5.6-sol': OPENAI_INFERENCE_GMI_OR_SAMSAR,
+  'claude-opus-5.5': CLAUDE_INFERENCE_PROVIDERS,
   'gemini-3.1-pro': GOOGLE_INFERENCE_GMI_OR_SAMSAR,
   KIMIK3: KIMI_OR_SAMSAR,
   'QWEN3.8': ALIBABA_GMI_OR_SAMSAR,
@@ -207,6 +213,7 @@ const LEGACY_MODEL_PROVIDER_PRIORITY_WITHOUT_GMI = Object.freeze({
 
 export const DOCKER_MODEL_ACTIONS_BY_MODEL = Object.freeze({
   'gpt-5.6-sol': ['chat', 'assistant', 'moderation', 'recommendations', 'search'],
+  'claude-opus-5.5': ['chat', 'assistant'],
   'gemini-3.1-pro': ['chat', 'assistant', 'moderation'],
   KIMIK3: ['chat', 'assistant'],
   'QWEN3.8': ['chat', 'assistant'],
@@ -255,6 +262,7 @@ export const DOCKER_MODEL_ACTIONS_BY_MODEL = Object.freeze({
 
 export const DOCKER_MODEL_DISPLAY_NAME_BY_MODEL = Object.freeze({
   'gpt-5.6-sol': 'GPT 5.6 Sol',
+  'claude-opus-5.5': 'Claude Opus 5.5',
   'gemini-3.1-pro': 'Gemini 3.1 Pro',
   KIMIK3: 'Kimi K3',
   'QWEN3.8': 'Qwen 3.8 Max',
@@ -318,7 +326,7 @@ export const EXPRESS_PIPELINE_REQUIREMENTS = Object.freeze([
   Object.freeze({
     key: 'inference',
     label: 'Inference',
-    modelKeys: Object.freeze(['gpt-5.6-sol', 'gemini-3.1-pro', 'KIMIK3', 'QWEN3.8']),
+    modelKeys: Object.freeze(['gpt-5.6-sol', 'claude-opus-5.5', 'gemini-3.1-pro', 'KIMIK3', 'QWEN3.8']),
   }),
   Object.freeze({
     key: 'imageGeneration',
@@ -398,6 +406,9 @@ export function normalizeDockerProviderKey(value) {
   }
   if (compact === 'openai') {
     return DOCKER_PROVIDER.OPENAI;
+  }
+  if (compact === 'anthropic' || compact === 'claude') {
+    return DOCKER_PROVIDER.ANTHROPIC;
   }
   if (compact === 'openrouter' || compact === 'openrouterai') {
     return DOCKER_PROVIDER.OPENROUTER;

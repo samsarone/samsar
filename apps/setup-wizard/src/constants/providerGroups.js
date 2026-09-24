@@ -3,7 +3,7 @@ export const PROVIDER_GROUP_DEFINITIONS = [
     key: 'inference',
     title: 'Inference',
     description: 'Choose adapters for agent reasoning, text, and vision.',
-    providerKeys: ['openai', 'googleCloud', 'alibabaCloud', 'kimi', 'openrouter'],
+    providerKeys: ['openai', 'anthropic', 'googleCloud', 'alibabaCloud', 'kimi', 'openrouter'],
   },
   {
     key: 'universal',

@@ -7,6 +7,7 @@ import path from 'node:path';
 import {
   buildBaseAiVideoCompletionUpdate,
   buildBaseGenerationFailureMessage,
+  canRetryRejectedGmiCloudSubmission,
   buildDockerVideoAdapterRetryPlan,
   buildTransientProviderErrorUpdate,
   buildBaseGenerationTerminalFailureUpdate,
@@ -517,6 +518,50 @@ test('image-to-video submit 503 is not safe to resubmit because acceptance is am
 
   assert.equal(isTransientProviderError(error), true);
   assert.equal(isSafeProviderSubmissionRetry(error), false);
+});
+
+test('only an explicit GMICloud submit rejection with another scored image can retry', () => {
+  const request = {
+    model: 'SEEDANCE2.0I2V',
+    startImage: 'generations/selected.png',
+    initialStartImageSources: ['generations/selected.png'],
+    fallbackStartImages: [
+      { src: 'generations/selected.png', score: 99 },
+      { src: 'generations/alternate.png', score: 80 },
+    ],
+    retryOnFail: true,
+    dockerVideoProvider: 'gmicloud',
+  };
+  const rejection = {
+    code: 'gmicloud_submit_rejected',
+    response: { status: 400 },
+  };
+
+  assert.equal(canRetryRejectedGmiCloudSubmission(rejection, request), true);
+  assert.equal(canRetryRejectedGmiCloudSubmission(rejection, {
+    ...request,
+    attemptedFallbackStartImageSources: ['generations/alternate.png'],
+  }), false);
+  assert.equal(canRetryRejectedGmiCloudSubmission(rejection, {
+    ...request,
+    fallbackStartImages: [],
+  }), false);
+  assert.equal(canRetryRejectedGmiCloudSubmission(rejection, {
+    ...request,
+    retryOnFail: false,
+  }), false);
+  assert.equal(canRetryRejectedGmiCloudSubmission(rejection, {
+    ...request,
+    dockerVideoProvider: 'fal',
+  }), false);
+  assert.equal(canRetryRejectedGmiCloudSubmission({
+    code: 'server_error',
+    response: { status: 502 },
+  }, request), false);
+  assert.equal(canRetryRejectedGmiCloudSubmission({
+    code: 'invalid_input',
+    response: { status: 400 },
+  }, request), false);
 });
 
 test('nested fetch network failures are treated as transient provider errors', () => {

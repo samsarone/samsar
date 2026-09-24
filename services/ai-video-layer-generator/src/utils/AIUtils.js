@@ -1,4 +1,5 @@
 import OpenAI from "openai";
+import { createAnthropicChatCompletion, isClaudeOpus55Model } from './AnthropicChatAdapter.js';
 import {
   createGoogleGeminiChatCompletion,
   isGeminiInferenceModel,
@@ -44,6 +45,12 @@ async function dispatchAssistantMessageRequest(request, provider = '') {
     (!provider && shouldUseSamsarExternalInference(request))
   ) {
     const response = await createSamsarExternalChatCompletion(request);
+    return response.choices[0].message;
+  }
+
+  if (isClaudeOpus55Model(request?.model)) {
+    const response = await createAnthropicChatCompletion(
+      await normalizeProviderMediaPayload(request, normalizeProviderMediaUrl));
     return response.choices[0].message;
   }
 
@@ -135,7 +142,7 @@ export async function sendAssistantMessageRequest(
       isKimiInferenceModel(normalizedInferenceModel);
     const payload = {
       messages: messageList,
-      model: isGeminiModel || isQwenModel || isKimiModel
+      model: isGeminiModel || isQwenModel || isKimiModel || isClaudeOpus55Model(userInferenceModel)
         ? normalizedInferenceModel
         : "gpt-6-astra",
       ...(selectedInferenceModelAuthorization

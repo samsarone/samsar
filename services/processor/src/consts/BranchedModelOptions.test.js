@@ -14,7 +14,7 @@ import { IMAGE_MODEL_PRICES, VIDEO_MODEL_PRICES } from './ModelPrices.js';
 test('defines the exact branched inference, image, and video capability sets', () => {
   assert.deepEqual(
     BRANCHED_INFERENCE_MODEL_OPTIONS.map((model) => model.value),
-    ['gpt-6-astra', 'gpt-6-astra-xhigh'],
+    ['gpt-6-astra', 'gpt-6-astra-xhigh', 'claude-opus-5.5'],
   );
   assert.deepEqual(BRANCHED_IMAGE_MODEL_KEYS, ['GPTIMAGE2', 'NANOBANANAPRO']);
   assert.deepEqual(BRANCHED_VIDEO_MODEL_KEYS, [
@@ -26,6 +26,7 @@ test('defines the exact branched inference, image, and video capability sets', (
 
   assert.equal(isBranchedInferenceModel('GPT 6 Astra Extra High'), true);
   assert.equal(isBranchedInferenceModel('GPT 6 Astra High'), true);
+  assert.equal(isBranchedInferenceModel('claude-opus-5.5'), true);
   assert.equal(isBranchedInferenceModel(undefined), false);
   assert.equal(isBranchedInferenceModel('definitely-not-a-model'), false);
   assert.equal(isBranchedInferenceModel('QWEN3.8'), false);

@@ -5,6 +5,7 @@ import {
   DEPLOYMENT_PROVIDER_CAPABILITIES,
   buildAvailableDeploymentModels,
   validateDeploymentProviderCredentials,
+  validateAnthropicKey,
   validateKimiK3Key,
   validateOpenRouterKey,
 } from './DeploymentProviderAPI.js';
@@ -33,6 +34,27 @@ test('Kimi credentials expose K3 chat and assistant capability', () => {
   assert.deepEqual(available.providers, ['kimi']);
   assert.deepEqual(available.models, ['KIMIK3']);
   assert.deepEqual(available.actions, ['assistant', 'chat']);
+});
+
+test('Anthropic credentials expose Claude for chat and assistant', () => {
+  const available = buildAvailableDeploymentModels({
+    anthropic: { ok: true, status: 'valid' },
+  });
+  assert.deepEqual(available.providers, ['anthropic']);
+  assert.deepEqual(available.models, ['claude-opus-5.5']);
+  assert.deepEqual(available.actions, ['assistant', 'chat']);
+});
+
+test('Anthropic validation checks access to Claude without an inference request', async () => {
+  let observed;
+  const result = await validateAnthropicKey('anthropic-test-key', { fetchImpl: async (url, options) => {
+    observed = { url, options };
+    return { ok: true, status: 200 };
+  } });
+  assert.equal(result.ok, true);
+  assert.equal(observed.url, 'https://api.anthropic.com/v1/models/claude-opus-5-5');
+  assert.equal(observed.options.headers['x-api-key'], 'anthropic-test-key');
+  assert.equal(observed.options.body, undefined);
 });
 
 test('validates a Kimi key without sending an inference request', async () => {
@@ -84,7 +106,7 @@ test('Samsar fallback availability includes Qwen 3.8 and media models', () => {
 test('OpenRouter availability exposes all inference models and no media-generation models', () => {
   const available = buildAvailableDeploymentModels({ openrouter: { ok: true, status: 'valid' } });
   assert.deepEqual(available.providers, ['openrouter']);
-  assert.deepEqual(available.models, ['QWEN3.8', 'gemini-3.1-pro', 'gpt-6-astra']);
+  assert.deepEqual(available.models, ['QWEN3.8', 'claude-opus-5.5', 'gemini-3.1-pro', 'gpt-6-astra']);
   assert.deepEqual(available.actions, ['assistant', 'chat']);
 });
 

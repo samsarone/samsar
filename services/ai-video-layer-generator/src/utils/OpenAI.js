@@ -3,6 +3,7 @@
 
 
 import OpenAI from "openai";
+import { createAnthropicChatCompletion, isClaudeOpus55Model } from './AnthropicChatAdapter.js';
 import crypto from "crypto";
 
 import { z } from "zod";
@@ -437,6 +438,17 @@ async function dispatchAssistantMessageRequest(request, provider = '') {
     };
   }
 
+  if (isClaudeOpus55Model(modelName)) {
+    const response = await createAnthropicChatCompletion(
+      await normalizeProviderMediaPayload(request, normalizeProviderMediaUrl));
+    return {
+      response,
+      message: response.choices[0].message,
+      provider: DOCKER_INFERENCE_PROVIDER.ANTHROPIC,
+      auditModelName: modelName,
+    };
+  }
+
   if (isGeminiInferenceModel(modelName)) {
     if (request.response_format) throw new Error('Structured speaker selection is not supported by the native Gemini adapter.');
     const response = await createGoogleGeminiChatCompletion(messageList);
@@ -520,6 +532,10 @@ async function dispatchStructuredMessageRequest(request, provider = '') {
     (!provider && shouldUseSamsarExternalInference(request))
   ) {
     return createSamsarExternalChatCompletion(request);
+  }
+  if (isClaudeOpus55Model(request?.model)) {
+    return createAnthropicChatCompletion(
+      await normalizeProviderMediaPayload(request, normalizeProviderMediaUrl));
   }
   if (isQwenInferenceModel(request?.model)) {
     return createAlibabaQwenChatCompletion(request);
@@ -613,7 +629,8 @@ export async function sendAssistantStructuredMessageRequest(
     const payload = {
       messages: messageList,
       model: isQwenInferenceModel(selectedInferenceModel) ||
-        isKimiInferenceModel(selectedInferenceModel)
+        isKimiInferenceModel(selectedInferenceModel) ||
+        isClaudeOpus55Model(selectedInferenceModel)
         ? selectedInferenceModel
         : "gpt-6-astra",
       response_format: zodResponseFormat(ScreenplayTransitionExtraction, "screenplay_transition_extraction"),
