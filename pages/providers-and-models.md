@@ -1,20 +1,38 @@
 # Providers and Models
 
-Provider configuration is driven by `runtime/config/samsar.config.json` or the setup wizard. `npm run config:render` converts enabled providers into runtime env and `runtime/config/available-models.json`.
+Begin with **[hosted Samsar.js](https://docs.samsar.one/)** for managed workflows. Choose a model in the [full matrix](model-matrix.md), read its [API contract](https://docs.samsar.one/), then configure a standalone adapter only when you need it. Native inference and custom model endpoints can lead their own model-specific paths.
+
+For standalone deployments, provider configuration is driven by `runtime/config/samsar.config.json` or the setup wizard. `npm run config:render` converts enabled providers into runtime env and `runtime/config/available-models.json`. The documentation presents Samsar.js first; the runtime follows validated configuration and saved model preferences.
 
 ## Provider Matrix
 
-| Provider | Credential field | Actions | Model families from setup/config logic |
-| --- | --- | --- | --- |
-| Samsar | `providers.samsar.apiKey` -> `SAMSAR_API_KEY` | Chat, assistant, image, video, audio, lip sync, sound effects, moderation, recommendations, search in the setup availability matrix | Universal fallback across `gpt-5.6-sol`, `gemini-3.1-pro`, `KIMIK3`, `QWEN3.8`, `GPTIMAGE2`, `SEEDREAM` (Seedream 5 Pro), `RUNWAYML`, VEO 3.1 I2V, FAL video models including `HAPPYHORSEI2V` (Happy Horse 1.1 I2V), Lyria, ElevenLabs, OpenAI TTS, Google TTS, sound effects, lip sync, NanoBanana. |
-| OpenAI | `providers.openai.apiKey` -> `OPENAI_API_KEY` | Chat, assistant, image, audio, moderation, recommendations, search | `gpt-5.6-sol`, `GPTIMAGE2`, `OPENAI_TTS`. |
-| Google Cloud | `providers.googleCloud.credentialsJsonB64`, `projectId` | Chat, assistant, image, video, audio, moderation | `gemini-3.1-pro`, `VEO3.1I2V`, `VEO3.1I2VFAST`, `LYRIA3`, `GOOGLE_TTS`, `NANOBANANA2`, `NANOBANANAPRO`. |
-| Kimi K3 | `providers.kimi.apiKey` -> `KIMI_K3_API_KEY` | Chat, vision inference, strict structured output, assistant | `KIMIK3`, backed by the exact native `kimi-k3` model at `https://api.moonshot.ai/v1`. |
-| OpenRouter | `runtime/secrets/provider.credentials.json` -> `OPENROUTER_API_KEY` | Chat, vision inference, assistant | `gpt-5.6-sol`, `gemini-3.1-pro`, `QWEN3.8`; each stable selection routes text and media-bearing requests to its corresponding OpenRouter model. The Gemini selection defaults to `google/gemini-3.1-pro-preview` and can be overridden with `providers.openrouter.gemini31ProModel`. |
-| Alibaba Cloud | `runtime/secrets/provider.credentials.json` -> `ALIBABA_API_KEY`, `ALIBABA_API_HOST` | Native Qwen chat, vision inference, and assistant in Docker; image and video routing where supported | `QWEN3.8`, `WAN2.7PRO`, `HAPPYHORSEI2V`. Hosted Qwen inference does not use the native Alibaba adapter. |
-| FAL | `providers.fal.apiKey` -> `FAL_API_KEY` | Image, video, audio, lip sync, sound effects | `SEEDREAM` (Seedream 5 Pro), `NANOBANANA2`, `NANOBANANAPRO`, `VEO3.1I2V`, `VEO3.1I2VFAST`, `COSMOS3SUPERI2V`, `SEEDANCEI2V`, `KLINGIMGTOVID3PRO`, `KLINGIMGTOVIDTURBO`, `HAPPYHORSEI2V` (Happy Horse 1.1 I2V), `ELEVENLABS_MUSIC`, `ELEVENLABS`, `MMAUDIOV2`, `MIRELOAI`, `SYNCLIPSYNC`, `LATENTSYNC`, `KLINGLIPSYNC`, `HUMMINGBIRDLIPSYNC`, `CREATIFYLIPSYNC`. |
-| ElevenLabs | `providers.elevenlabs.apiKey` -> `ELEVENLABS_API_KEY`, `ELEVENLABS_API_TOKEN` | Audio | `ELEVENLABS`, `ELEVENLABS_MUSIC`. |
-| RunwayML | `providers.runway.apiKey` -> `RUNWAY_API_KEY`, `RUNWAYML_API_KEY` | Video | `RUNWAYML`. |
+| Adapter / provider docs | Credential | How it fits |
+| --- | --- | --- |
+| [Samsar.js](https://docs.samsar.one/external-requests) | `SAMSAR_API_KEY` | Call the hosted Samsar service using Samsar credits. The samsar-js client is the common entry point. |
+| [OpenAI](https://platform.openai.com/docs/overview) | `OPENAI_API_KEY` | Native GPT inference, image and speech adapters; also required for local embedding indexes. |
+| [Anthropic](https://platform.claude.com/docs/en/api/overview) | `ANTHROPIC_API_KEY` | Native Claude inference and assistant adapter. |
+| [Google Cloud](https://cloud.google.com/vertex-ai/generative-ai/docs) | `Google service account / configured Google credentials` | Gemini, Nano Banana, Veo, Google speech and Lyria. Music credentials and model access are validated separately. |
+| [Kimi](https://platform.kimi.ai/docs/overview) | `KIMI_K3_API_KEY` | Native Kimi text, vision and structured output; Samsar is the supported alternative. |
+| [Alibaba Cloud](https://www.alibabacloud.com/help/en/model-studio/) | `ALIBABA_API_KEY` | Native Qwen inference in Docker, Qwen Image, Wan and Happy Horse. Qwen Image requires standard pay-as-you-go access. |
+| [GMICloud via GenBlaze](https://docs.gmicloud.ai/) · [GenBlaze source](https://github.com/backblaze-labs/genblaze) | `GMI_API_KEY` | Only exact model and operation mappings validated for your credential are enabled by the local GenBlaze gateway. |
+| [fal](https://fal.ai/docs/documentation) | `FAL_API_KEY` | Supported media, speech, music, lip-sync and sound-effect adapters. |
+| [OpenRouter](https://openrouter.ai/docs/quickstart) | `OPENROUTER_API_KEY` | Supported inference and vision routes. This does not enable image, video or audio generation. |
+| [ElevenLabs](https://elevenlabs.io/docs/overview/intro) | `ELEVENLABS_API_KEY` | Direct music adapter. Speech is enabled through fal in the setup registry; do not assume a direct key enables every speech route. |
+| [Runway](https://docs.dev.runwayml.com/) | `RUNWAY_API_KEY` | Native Runway video adapter. |
+| [Custom endpoint](https://github.com/samsarone/samsar/blob/main/utils/vast-flux2/README.md) | `Adapter URL and server-side authorization` | Register a compatible endpoint in your standalone deployment. Available only after configuration. |
+
+The [per-model matrix](model-matrix.md) is the compatibility reference. A provider key does not enable every model from that provider. The Samsar adapter is not universal: Qwen Image 3.0 Pro and Seedance 2.0 have native/provider-only setup paths, and some Studio catalog entries are not advertised by setup.
+
+<details>
+<summary><strong>Hosted client or standalone Samsar adapter?</strong></summary>
+
+- **Hosted client:** initialize `new SamsarClient({ apiKey: process.env.SAMSAR_API_KEY })`. Requests go to `https://api.samsar.one/v1` by default. Samsar manages its upstream providers.
+- **Standalone with Samsar adapter:** configure `SAMSAR_API_KEY` in the wizard so local workers can call supported hosted generation/inference operations through Samsar.js.
+- **Standalone API client:** set `baseUrl: 'http://localhost:3002/v1'` and use an API credential accepted by your local processor. Provider credentials belong in the local setup configuration.
+
+[External requests API and SDK examples](https://docs.samsar.one/external-requests#samsar-js).
+
+</details>
 
 ## Generated Availability
 
@@ -49,16 +67,18 @@ This preference file is read only when `SAMSAR_DEPLOYMENT_EDITION=standalone`. P
 
 ## Fallback Rules
 
-Inference routing depends on the deployment mode. Docker keeps the configurable native-first fallback chain. Kimi is always native-first with Samsar fallback; hosted Qwen inference is OpenRouter-only.
+Hosted clients continue to call Samsar.js regardless of the upstream provider used internally. Standalone routing is model-specific: it combines native adapters, the Samsar adapter, optional provider routes and saved administrator preferences.
 
-The code uses this fallback in two places:
-
-| Area | Fallback behavior |
+| Area | Runtime behavior |
 | --- | --- |
-| Kimi K3 inference | `KIMIK3` uses `KIMI_K3_API_KEY` first and `SAMSAR_API_KEY` second. OpenRouter is not in this chain. The same selected model follows text, assistant, structured JSON, vision, and Express stages. |
-| Hosted Qwen inference | In `production`, `external-production`, `staging`, and any other non-Docker runtime, `QWEN3.8` always uses `OPENROUTER_API_KEY`. Saved native or deployed authorization and Alibaba credentials do not override this rule. |
-| Docker chat/inference compatibility | GPT, Gemini, and Qwen use their direct provider first, then `OPENROUTER_API_KEY`, then `SAMSAR_API_KEY`. Set `SAMSAR_QWEN_OPENROUTER_ONLY=true` to force Qwen through OpenRouter in Docker as well. |
-| Express video stages | Text-to-image and image-to-video stages can be marked as deployed Samsar provider stages when the Samsar key is present and no native/custom adapter credential is available for the requested model. |
+| Native inference | The model’s native adapter can lead its chain. Use the generated priority and **Settings → Model Adapters** to see the effective order; GMICloud and OpenRouter are supported only for their mapped models. |
+| Kimi K3 | Native Kimi first, Samsar alternative. No OpenRouter fallback. Text, vision and structured output use the same selected model. |
+| Hosted Qwen | Non-Docker hosted runtimes route `QWEN3.8` through OpenRouter internally. Native Alibaba credentials do not override that hosted rule. |
+| Docker Qwen | Native Alibaba is available; `SAMSAR_QWEN_OPENROUTER_ONLY=true` can force the OpenRouter policy. |
+| Qwen Image | `QWENIMAGE3PRO` is native Alibaba only, with standard pay-as-you-go credentials. |
+| Express media | Supported Samsar, native and custom adapters depend on the selected model. An accepted asynchronous job stays pinned to its submitting adapter while polling. |
+| GMICloud / GenBlaze | Exact credential-validated model and operation mappings are required. An approximate model match is not used as a substitute. |
+| GPT Image 2.5 | `GPTIMAGE2` and `GPTIMAGE2EDIT` exclude legacy GenBlaze GPT Image 2 routes. |
 
 Current embedding/search implementation note: although the setup availability matrix includes `search` and `recommendations` for Samsar, `EmbeddingService` calls OpenAI embeddings directly with `text-embedding-3-large` and checks `OPENAI_API_KEY`. URL crawling also requires `FIRECRAWL_API_KEY`.
 
@@ -83,20 +103,17 @@ The adapter policy is shared by the processor, generator, audio generator, AI vi
 
 ## Model Groups Used by Video APIs
 
-Public API keys remain stable when their backing provider model is upgraded. The current version mappings are:
+Public model keys can remain stable when their backing provider version changes: `GPTIMAGE2` → GPT Image 2.5; `SEEDREAM` → Seedream 5 Pro; `HAPPYHORSEI2V` → Happy Horse 1.1 I2V.
 
-| Stable key | Current provider model |
-| --- | --- |
-| `SEEDREAM` | Seedream 5 Pro |
-| `HAPPYHORSEI2V` | Happy Horse 1.1 I2V |
+| Workflow | Selection rule | Reference |
+| --- | --- | --- |
+| Express image generation | Uses the explicit Express image allowlist; Qwen Image additionally requires its native standalone adapter. Nano Banana 2 is in the general image catalog but not the current Express list. | [Image matrix](model-matrix.md#image) |
+| Express motion | Uses the Express video allowlist, filtered for the target deployment. Seedance 2.0 is provider-billed standalone. | [Video matrix](model-matrix.md#video) |
+| Branching narrative | Uses a narrower inference, image and video allowlist. Do not copy every Express model into a branching request. | [Narrative API](https://docs.samsar.one/narrative) · [Branching flags](model-matrix.md) |
+| Speech and music | Express `tts_model` uses `OPENAI`, `GOOGLE`, `ELEVENLABS`; `backingtrack_model` uses `LYRIA3` or `ELEVENLABS_MUSIC`. | [Audio guide](audio-and-performance.md) |
+| Lip sync and video sound | Separate model fields and video-operation routes. These are not interchangeable with an audio-only generation request. | [Lip sync](model-matrix.md#lip-sync) · [Sound](model-matrix.md#sound) |
 
-| Group | Models |
-| --- | --- |
-| Express image models | `GPTIMAGE2`, `NANOBANANA2`, `NANOBANANAPRO`, `SEEDREAM`, `CUSTOM_TEXT_TO_IMAGE`. |
-| Express video models | `RUNWAYML`, `VEO3.1I2V`, `VEO3.1I2VFAST`, `COSMOS3SUPERI2V`, `SEEDANCEI2V`, `KLINGIMGTOVID3PRO`, `KLINGIMGTOVIDTURBO`, `HAPPYHORSEI2V`. |
-| Inference models | `gpt-5.6-sol`, `gemini-3.1-pro`, `KIMIK3`, `QWEN3.8`. |
-| Lip sync models | `SYNCLIPSYNC`, `LATENTSYNC`, `KLINGLIPSYNC`, `HUMMINGBIRDLIPSYNC`, `CREATIFYLIPSYNC`. |
-| Sound effects | `MMAUDIOV2`, `MIRELOAI`. |
+[Discover Express model availability](https://docs.samsar.one/video#get-videosupported_models) with `samsar.getSupportedTextToVideoModels()`. For every setup model, its API link and supported adapters, use the [generated full model matrix](model-matrix.md).
 
 ## Local Verification
 

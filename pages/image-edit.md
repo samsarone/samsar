@@ -2,6 +2,24 @@
 
 The image API supports text-to-image, image enhancement, branding removal, image-list expansion into a generated set, title assignment, rollup banners, and status/listing endpoints. Requests are accepted by the processor and fulfilled by image generation workers.
 
+## Hosted Samsar.js
+
+[Hosted Image API](https://docs.samsar.one/image-api) · [V2 edit routes](https://docs.samsar.one/v2#v2-image-edit-routes) · [Generation matrix](model-matrix.md#image) · [Editing matrix](model-matrix.md#image-edit)
+
+Use hosted Samsar.js for common image operations, then expand into supported deployment adapters when needed.
+
+```js
+import SamsarClient from 'samsar-js';
+const samsar = new SamsarClient({ apiKey: process.env.SAMSAR_API_KEY });
+const job = await samsar.enhanceImage({
+  image_url: 'https://example.com/product.jpg',
+  resolution: '2k',
+});
+console.log(job.data.request_id);
+```
+
+The operation determines which edit contract is used. A general image-generation model key is not interchangeable with an edit-model key. The full matrix distinguishes both, along with native-only Qwen Image and custom endpoints.
+
 ## Docker Services
 
 | Service | Role |
@@ -93,4 +111,4 @@ Optional list query fields include `limit`, `case_type`, `rollup_ready`, and `in
 
 ## Provider Availability
 
-Image routes depend on enabled image providers. The setup wizard maps image generation/editing to OpenAI, Google Cloud, FAL, and Samsar fallback model families. In local Docker, rerun `npm run config:render` after changing providers.
+Hosted image operations start with Samsar.js. For standalone, the [model matrix](model-matrix.md#image-edit) lists the exact Samsar, OpenAI, Google, fal and credential-scoped GenBlaze combinations; native Alibaba additionally supports its specific image models. In local Docker, rerun `npm run config:render` after changing providers and recreate the affected services.

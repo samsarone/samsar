@@ -2,6 +2,28 @@
 
 Text-to-video creates an express video directly from a prompt. The processor validates the prompt, models, duration, subtitles, provider availability, and credits before queuing the video generation pipeline.
 
+## Hosted Samsar.js
+
+[Hosted Video API](https://docs.samsar.one/video#post-videotext_to_video) · [Image model matrix](model-matrix.md#image) · [Video model matrix](model-matrix.md#video) · [Adapter deployment](providers-and-models.md)
+
+Start with `samsar-js` against the hosted API. The same workflow can run through a standalone processor with compatible adapters.
+
+```js
+import SamsarClient from 'samsar-js';
+const samsar = new SamsarClient({ apiKey: process.env.SAMSAR_API_KEY });
+const job = await samsar.createVideoFromText({
+  prompt: 'A welcoming introduction to a boutique hotel.',
+  image_model: 'GPTIMAGE2',
+  video_model: 'RUNWAYML',
+  duration: 30,
+  tts_model: 'OPENAI',
+  backingtrack_model: 'LYRIA3',
+});
+console.log(job.data.request_id);
+```
+
+This creates a planned multi-stage video. The selected `video_model` animates scene images; it does not have to be a raw text-to-video model.
+
 ## Endpoints
 
 | Endpoint | Purpose |
@@ -48,38 +70,26 @@ The route accepts either a raw JSON body or an `input` object:
 
 ## Supported Model Keys
 
-Express image models:
+Choose from the [image matrix](model-matrix.md#image) and [video matrix](model-matrix.md#video). Those tables are generated from the same Express and branching allowlists used by this checkout.
 
-| Model |
-| --- |
-| `GPTIMAGE2` |
-| `NANOBANANAPRO` |
-| `SEEDREAM` (Seedream 5 Pro) |
-| `WAN2.7PRO` |
-| `CUSTOM_TEXT_TO_IMAGE:<adapter-id>` (standalone custom adapter) |
+| Stage | Request field | Where to compare |
+| --- | --- | --- |
+| Planning | `inference_model` | [Inference and vision](model-matrix.md#inference) |
+| Scene images | `image_model` | [Express-capable image models](model-matrix.md#image) |
+| Scene motion | `video_model` | [Express-capable video models](model-matrix.md#video) |
+| Narration | `tts_model` | [Speech values](model-matrix.md#speech) |
+| Backing track | `backingtrack_model` | [Music](model-matrix.md#music) |
 
-Express video models:
+**Native exception:** `QWENIMAGE3PRO` requires standalone Alibaba pay-as-you-go access. **Provider-billed exception:** Seedance 2.0 requires fal or the exact validated GenBlaze route. Named custom image adapters use the returned `CUSTOM_TEXT_TO_IMAGE:<adapter-id>` key.
 
-| Model | Credits per second in current pricing config |
-| --- | --- |
-| `RUNWAYML` | 30 |
-| `VEO3.1I2V` | 60 |
-| `VEO3.1I2VFAST` | 36 |
-| `COSMOS3SUPERI2V` | 20 |
-| `SEEDANCEI2V` | 30 |
-| `KLINGIMGTOVID3PRO` | 36 |
-| `KLINGIMGTOVIDTURBO` | 36 |
-| `HAPPYHORSEI2V` (Happy Horse 1.1 I2V) | 36 |
+Start with the hosted [pricing table](https://docs.samsar.one/pricing#video-models) for managed billing. Provider-billed standalone routes use their own provider account and should not be assigned a fixed Samsar rate from a static table.
 
-Standalone deployments can additionally expose provider-billed `SEEDANCE2.0I2V`
-through FAL and, when the exact route is validated, GMICloud via GenBlaze. It
-does not use the fixed Samsar credits-per-second table above.
-
-Use the runtime endpoint for the current filtered deployment view:
-
-```bash
-curl http://localhost:3002/v1/video/supported_models
+```js
+const available = await samsar.getSupportedTextToVideoModels();
+console.log(available.data);
 ```
+
+For a standalone processor, the same discovery endpoint is `http://localhost:3002/v1/video/supported_models`. It reports the filtered Express view, not the entire Studio catalog.
 
 ## Docker Pipeline
 

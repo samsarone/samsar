@@ -2,6 +2,24 @@
 
 Recommendations use the same embedding templates and semantic-search implementation as search. The recommendation endpoints configure that shared path for reference-item similarity and return compact `{id, score}` matches. This is useful for product recommendations, content similarity, lead matching, related items, and "more like this" flows.
 
+## Hosted Samsar.js
+
+[Hosted similarity API](https://docs.samsar.one/chat-api#post-chatsimilar_to_embedding) · [Embedding matrix](model-matrix.md#embeddings) · [Create an index](search.md)
+
+Start with the hosted client and an existing ready embedding template:
+
+```js
+import SamsarClient from 'samsar-js';
+const samsar = new SamsarClient({ apiKey: process.env.SAMSAR_API_KEY });
+const related = await samsar.similarToEmbedding({
+  template_id: 'YOUR_READY_TEMPLATE_ID',
+  search_json: { description: 'Quiet beachfront stays for a weekend trip' },
+});
+console.log(related.data);
+```
+
+Hosted Samsar manages the embedding infrastructure. If you choose a standalone deployment, follow the local provider requirements below; a generic inference adapter does not replace the embedding model.
+
 ## Docker Services
 
 | Service | Role |

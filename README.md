@@ -61,6 +61,45 @@
 
 ## Quick start
 
+Start with [hosted Studio](https://app.samsar.one) or the **[samsar-js client](https://www.npmjs.com/package/samsar-js)**. One Samsar API key connects your application to managed video, image, audio and inference workflows. Move into the setup wizard below when you want your own deployment and supported provider adapters.
+
+| I want to… | Start here | Then explore |
+| --- | --- | --- |
+| Create in the browser | [Hosted Studio](https://app.samsar.one) | [Visual workflows](#visual-workflows) |
+| Build with an API | [Hosted Samsar.js](https://docs.samsar.one/) | [Video](https://docs.samsar.one/video), [images](https://docs.samsar.one/image-api), [chat](https://docs.samsar.one/chat-api), [audio](https://docs.samsar.one/external-requests#audio) |
+| Compare models and modalities | [Full model matrix](pages/model-matrix.md) | [Provider and adapter guide](pages/providers-and-models.md) |
+| Run my own deployment | Setup steps below | Native inference, Samsar.js and compatible provider adapters |
+
+<details open>
+<summary><strong>First API request with hosted Samsar.js</strong></summary>
+
+```bash
+npm install samsar-js
+```
+
+```js
+import SamsarClient from 'samsar-js';
+
+const samsar = new SamsarClient({ apiKey: process.env.SAMSAR_API_KEY });
+const available = await samsar.getSupportedTextToVideoModels();
+console.log(available.data);
+
+const job = await samsar.createVideoFromText({
+  prompt: 'A cinematic product launch in a sunlit gallery.',
+  image_model: 'GPTIMAGE2',
+  video_model: 'RUNWAYML',
+  duration: 30,
+  aspect_ratio: '16:9',
+});
+console.log(job.data.request_id); // Save this ID and poll for completion.
+```
+
+Get a key from [Samsar](https://app.samsar.one/account/apiKeys), keep it in your server environment, and follow the [status and delivery contract](https://docs.samsar.one/video#get-status). Hosted requests use Samsar credits; see [pricing](https://docs.samsar.one/pricing). No local Docker installation is needed for this path.
+
+</details>
+
+The following steps install a **standalone deployment**.
+
 ### 1. Prepare
 
 - Git.
@@ -248,17 +287,23 @@ The diagrams below show the primary generation and discovery pipelines. Open any
 
 ## Documentation
 
-| Page | Use it for |
-| --- | --- |
-| [Architecture](pages/architecture.md) | Docker service topology, request flow, runtime config, storage, logging, and deployment modes. |
-| [Providers and Models](pages/providers-and-models.md) | Provider credentials, supported model families, fallback behavior, and generated model availability. |
-| [Setup Wizard](pages/setup-wizard.md) | UI-driven setup steps, validation, generated files, and Docker setup lifecycle. |
-| [Search](pages/search.md) | Embedding-backed indexing, semantic search, filters, and status endpoints. |
-| [Recommendations](pages/recommendations.md) | Similarity and recommendation workflows built on embedding templates. |
-| [Text Enhance](pages/text-enhance.md) | Copy enhancement endpoint, inputs, billing headers, and inference routing. |
-| [Image Edit](pages/image-edit.md) | Image enhancement, branding removal, text-to-image, image set expansion, title generation, and status polling. |
-| [Image List to Video](pages/image-list-to-video.md) | Image-list-to-video and ad-style CTA video generation from image URLs plus metadata. |
-| [Text to Video](pages/text-to-video.md) | One-shot prompt-to-video generation, model selection, duration limits, and status flow. |
+Follow a workflow from the hosted Samsar.js API into its local deployment details. Each guide retains its endpoint, input, processing and verification sections.
+
+| Workflow / guide | Hosted API reference | Repository guide |
+| --- | --- | --- |
+| Model matrix | [API overview](https://docs.samsar.one/) · [Models & pricing](https://docs.samsar.one/pricing) | [Every modality, model key and compatible adapter](pages/model-matrix.md) |
+| Providers and Models | [Samsar managed provider API](https://docs.samsar.one/external-requests) | [Credentials, native options and routing](pages/providers-and-models.md) |
+| Text to Video | [Video API](https://docs.samsar.one/video#post-videotext_to_video) | [Models, pipeline and status](pages/text-to-video.md) |
+| Image List to Video | [Image-list API](https://docs.samsar.one/video#post-videoimage_list_to_video) | [Product videos, CTA and narrator settings](pages/image-list-to-video.md) |
+| Image Edit | [Image API](https://docs.samsar.one/image-api) · [V2 edits](https://docs.samsar.one/v2#v2-image-edit-routes) | [Generation, enhancement and edits](pages/image-edit.md) |
+| Speech, music, sound and lip sync | [Audio](https://docs.samsar.one/external-requests#audio) · [Video operations](https://docs.samsar.one/external-requests#video) | [Audio and performance guide](pages/audio-and-performance.md) |
+| Inference and assistants | [Chat](https://docs.samsar.one/chat-api) · [Assistant](https://docs.samsar.one/assistant-api) | [Inference matrix](pages/model-matrix.md#inference) |
+| Narrative and branching | [Narrative API](https://docs.samsar.one/narrative) | [Workflow allowlists](pages/providers-and-models.md#model-groups-used-by-video-apis) |
+| Search | [Index and search](https://docs.samsar.one/chat-api#post-chatcreate_embedding) | [Templates, filters and indexing](pages/search.md) |
+| Recommendations | [Similarity API](https://docs.samsar.one/chat-api#post-chatsimilar_to_embedding) | [Related content and product matching](pages/recommendations.md) |
+| Text Enhance | [Enhance API](https://docs.samsar.one/chat-api#post-chatenhance) | [Inputs, billing and inference](pages/text-enhance.md) |
+| Accounts and delivery | [External users](https://docs.samsar.one/external-users) · [Credits](https://docs.samsar.one/credits) · [Publications](https://docs.samsar.one/publications) | [Architecture](pages/architecture.md) |
+| Setup and operations | [V2 API](https://docs.samsar.one/v2) | [Setup wizard](pages/setup-wizard.md) · [Architecture](pages/architecture.md) |
 
 ## Platform
 
@@ -287,62 +332,56 @@ The diagrams below show the primary generation and discovery pipelines. Open any
 
 ## Adapters, models, and storage
 
-Provider availability is explicit: `npm run config:render` turns validated provider configuration into backend-only environment files and `runtime/config/available-models.json`. The Studio and API expose only models available to the current deployment.
+Start with the **Samsar.js managed adapter** for supported hosted workflows, then add compatible native or provider adapters to a standalone installation. Native inference and custom model endpoints can take precedence for their own models. Documentation order does not change the runtime’s configured routing.
 
 ### Model adapters
 
-<p align="center">
-  <img src="https://img.shields.io/badge/OpenAI-412991?logo=openai&amp;logoColor=white" alt="OpenAI">
-  <img src="https://img.shields.io/badge/Google_Cloud-4285F4?logo=googlecloud&amp;logoColor=white" alt="Google Cloud">
-  <img src="https://img.shields.io/badge/Kimi_K3-111111?logo=moonshot&amp;logoColor=white" alt="Kimi K3">
-  <img src="https://img.shields.io/badge/Alibaba_Cloud-FF6A00?logo=alibabacloud&amp;logoColor=white" alt="Alibaba Cloud">
-  <img src="https://img.shields.io/badge/Samsar--js-111827" alt="Samsar-js">
-  <img src="https://img.shields.io/badge/GMICloud_via_GenBlaze-E21E29?logo=backblaze&amp;logoColor=white" alt="GMICloud via GenBlaze">
-  <img src="https://img.shields.io/badge/Fal-111111" alt="Fal">
-  <img src="https://img.shields.io/badge/OpenRouter-6467F2?logo=openrouter&amp;logoColor=white" alt="OpenRouter">
-  <img src="https://img.shields.io/badge/ElevenLabs-111111?logo=elevenlabs&amp;logoColor=white" alt="ElevenLabs">
-  <img src="https://img.shields.io/badge/RunwayML-111111?logo=runway&amp;logoColor=white" alt="RunwayML">
-</p>
+[Samsar.js](https://www.npmjs.com/package/samsar-js) is the common client and hosted service entry point. Supported deployment options include [OpenAI](https://platform.openai.com/docs/overview), [Anthropic](https://platform.claude.com/docs/en/api/overview), [Google Cloud](https://cloud.google.com/vertex-ai/generative-ai/docs), [Kimi](https://platform.kimi.ai/docs/overview), [Alibaba Cloud](https://www.alibabacloud.com/help/en/model-studio/), [GMICloud](https://docs.gmicloud.ai/) through [GenBlaze](https://github.com/backblaze-labs/genblaze), [fal](https://fal.ai/docs/documentation), [OpenRouter](https://openrouter.ai/docs/quickstart), [ElevenLabs](https://elevenlabs.io/docs/overview/intro), and [Runway](https://docs.dev.runwayml.com/).
 
 ### Supported models by capability
 
-The names in code style are the stable Samsar model keys. This is the complete standalone adapter catalog; GenBlaze enables only the exact routes returned for the configured GMICloud credential.
+The [complete model matrix](pages/model-matrix.md) lists **all 46 model keys in the standalone setup registry**, plus the additional Studio catalog, custom endpoints and managed service models. Each row includes the request key, hosted path, supported adapters, workflow scope and usage notes.
 
-| Capability | Supported models |
-| --- | --- |
-| **Inference** | GPT 5.6 Sol (`gpt-5.6-sol`) · Gemini 3.1 Pro (`gemini-3.1-pro`) · Kimi K3 (`KIMIK3`) · Qwen 3.8 Max (`QWEN3.8`) |
-| **Text → image** | GPT Image 2 (`GPTIMAGE2`) · Seedream (`SEEDREAM`) · Nano Banana 2 (`NANOBANANA2`) · Nano Banana Pro (`NANOBANANAPRO`) · Wan 2.7 Pro (`WAN2.7PRO`) · Qwen Image 3.0 Pro (`QWENIMAGE3PRO`) |
-| **Image edit** | GPT Image 2 Edit (`GPTIMAGE2EDIT`) · Nano Banana 2 Edit (`NANOBANANA2EDIT`) · Nano Banana Pro Edit (`NANOBANANAPROEDIT`) · BRIA Eraser (`BRIA_ERASER`) · BRIA GenFill (`BRIA_GENFILL`) |
-| **Text → video** | RunwayML (`RUNWAYML`) · Veo 3.1 (`VEO3.1`) · Veo 3.1 Fast (`VEO3.1FAST`) · Hailuo 02 Pro (`HAILUOPRO`) |
-| **Image / frame → video** | RunwayML (`RUNWAYML`) · Veo 3.1 I2V (`VEO3.1I2V`) · Veo 3.1 Fast I2V (`VEO3.1I2VFAST`) · Veo 3.1 first/last frame (`VEO3.1FLIV`) · Cosmos 3 Super (`COSMOS3SUPERI2V`) · Seedance 1.5 / 2.0 / 2.5 (`SEEDANCEI2V`, `SEEDANCE2.0I2V`, `SEEDANCE2.5I2V`) · Kling 3 Pro / Turbo / 1.6 Pro / 2.1 Master / Pro / Standard (`KLINGIMGTOVID3PRO`, `KLINGIMGTOVIDTURBO`, `KLINGIMGTOVIDPRO`, `KLINGIMGTOVID2.1MASTER`, `KLINGIMGTOVID2.1PRO`, `KLINGIMGTOVID2.1STANDARD`) · Hailuo 02 Pro (`HAILUOPRO`) · Happy Horse 1.1 (`HAPPYHORSEI2V`) |
-| **Speech and music** | OpenAI TTS (`OPENAI_TTS`) · Google TTS (`GOOGLE_TTS`) · ElevenLabs Speech (`ELEVENLABS`) · ElevenLabs Music (`ELEVENLABS_MUSIC`) · Lyria 3 (`LYRIA3`) |
-| **Lip sync** | Sync (`SYNCLIPSYNC`) · LatentSync (`LATENTSYNC`) · Kling (`KLINGLIPSYNC`) · Hummingbird (`HUMMINGBIRDLIPSYNC`) · Creatify (`CREATIFYLIPSYNC`) |
-| **Sound effects** | MMAudio V2 (`MMAUDIOV2`) · Mirelo AI (`MIRELOAI`) |
+| Modality | Models in the deployment registry | Explore and build |
+| --- | --- | --- |
+| Inference & vision | GPT 6 Astra, Claude Opus 5.5, Gemini 3.1 Pro, Kimi K3, Qwen 3.8 Max | [Matrix](pages/model-matrix.md#inference) · [Hosted chat](https://docs.samsar.one/external-requests#chat) |
+| Image generation | GPT Image 2.5, Seedream 5 Pro, Nano Banana 2 / Pro, Qwen Image 3.0 Pro, Wan 2.7 Pro | [Matrix](pages/model-matrix.md#image) · [Image API](https://docs.samsar.one/image-api) |
+| Image editing | GPT Image 2.5 Edit, Nano Banana 2 / Pro Edit, BRIA Eraser / GenFill | [Matrix](pages/model-matrix.md#image-edit) · [Edit API](https://docs.samsar.one/v2#v2-image-edit-routes) |
+| Video generation | Runway; Veo 3.1 text / fast / I2V / first-last-frame; Cosmos 3; Seedance 1.5 / 2.0 / 2.5; Kling 3 / 1.6 / 2.1 variants; Hailuo; Happy Horse 1.1 | [Every video key](pages/model-matrix.md#video) · [Video API](https://docs.samsar.one/video) |
+| Speech | OpenAI TTS, Google TTS, ElevenLabs | [Matrix and request values](pages/model-matrix.md#speech) · [Audio API](https://docs.samsar.one/external-requests#audio) |
+| Music | Lyria 3, ElevenLabs Music | [Matrix](pages/model-matrix.md#music) · [Audio API](https://docs.samsar.one/external-requests#audio) |
+| Lip sync | Sync, LatentSync, Kling, Hummingbird, Creatify | [Matrix](pages/model-matrix.md#lip-sync) · [Video operations](https://docs.samsar.one/external-requests#video) |
+| Sound effects | MMAudio V2, Mirelo AI; hosted audio also exposes SDAUDIO | [Matrix](pages/model-matrix.md#sound) · [Audio and performance](pages/audio-and-performance.md) |
+| Embeddings & search | Managed OpenAI embeddings (`text-embedding-3-large`) | [Matrix](pages/model-matrix.md#embeddings) · [Search](pages/search.md) |
+| Transcript alignment | Managed Whisper (`whisper-1`) | [Matrix](pages/model-matrix.md#transcription) · [Audio API](https://docs.samsar.one/external-requests#audio) |
 
-Standalone exposes `QWENIMAGE3PRO` only with Alibaba Cloud standard pay-as-you-go credentials and bills the configured Alibaba account directly. VidGenie shows its I2V mode only when `NANOBANANAPROEDIT` is available through Google Cloud, Fal, GMICloud via GenBlaze, or Samsar-js.
+<details>
+<summary><strong>Understand model keys, workflow support and native exceptions</strong></summary>
+
+- **Stable keys:** `GPTIMAGE2` now identifies GPT Image 2.5; `SEEDREAM` maps to Seedream 5 Pro; `HAPPYHORSEI2V` maps to Happy Horse 1.1 I2V. Use Samsar keys rather than an upstream provider ID.
+- **Inference aliases:** current requests use `gpt-6-astra`; older setup files can contain `gpt-5.6-sol`, which the processor normalizes. `KIMIK3` is the setup key; use `kimi-k3` in inference requests.
+- **Workflow scope:** the complete Studio catalog is larger than the Express and branching allowlists. A model listed for image generation is not automatically selectable for an Express scene.
+- **Native-only model:** `QWENIMAGE3PRO` needs Alibaba Cloud standard pay-as-you-go credentials. It is not enabled by a Samsar key or Alibaba Token Plan.
+- **Credential-scoped model routes:** GenBlaze enables only exact validated GMICloud mappings. Legacy GPT Image 2 mappings do not satisfy the GPT Image 2.5 contract.
+- **Speech values:** Express uses `tts_model: 'OPENAI'`, `'GOOGLE'` or `'ELEVENLABS'`, not the setup labels `OPENAI_TTS` and `GOOGLE_TTS`.
+
+</details>
 
 ### Minimal adapter setup
 
-Open **Providers** in `./setup.sh` and add only the credentials you need. The wizard validates them, writes secrets outside browser-visible config, and calculates adapter priority. Per-model ordering can then be changed in **Settings → Model Adapters**.
+For hosted use, create a [Samsar API key](https://app.samsar.one/account/apiKeys) and initialize `samsar-js`. For standalone use, open **Providers** in `./setup.sh`, configure Samsar and any required native/provider keys, and validate them. The wizard writes secrets and computes deployment availability. **Settings → Model Adapters** controls supported per-model preference order.
 
-| Adapter | Credential | Enables |
+| Path / adapter | What you supply | What to expect |
 | --- | --- | --- |
-| [OpenAI](https://platform.openai.com/api-keys) | `OPENAI_API_KEY` | GPT inference, image generation/editing, and TTS. |
-| [Google Cloud](https://console.cloud.google.com/iam-admin/serviceaccounts) | Service account JSON or `GOOGLE_APPLICATION_CREDENTIALS_JSON_B64` | Gemini, Nano Banana, Veo, Lyria, and Google TTS. |
-| [Kimi K3](https://platform.kimi.ai/) | `KIMI_K3_API_KEY` | Native Kimi text, vision, structured output, and assistants. |
-| [Alibaba Cloud](https://modelstudio.console.alibabacloud.com/) | `ALIBABA_API_KEY`; optional `ALIBABA_API_HOST` | Qwen, Wan, and Happy Horse. |
-| [Samsar-js](https://app.samsar.one/account/apiKeys) | `SAMSAR_API_KEY` | Universal fallback across the supported catalog using Samsar credits. |
-| [GMICloud via GenBlaze](https://console.gmicloud.ai/) | `GMI_API_KEY` | The wizard discovers compatible GMICloud models, writes a credential-scoped catalog, and starts the local `genblaze` gateway. Seedance 2.0 and 2.5 require the exact validated `seedance-2-0-260128` and `seedance-2-5-260628` routes. |
-| [Fal](https://fal.ai/dashboard/keys) | `FAL_API_KEY` | Image, edit, video, speech/music, lip sync, and sound effects, including Seedance 2.0 and 2.5 I2V. |
-| [OpenRouter](https://openrouter.ai/settings/keys) | `OPENROUTER_API_KEY` | Supported GPT, Gemini, and Qwen text/vision fallback routes. |
-| [ElevenLabs](https://elevenlabs.io/app/settings/api-keys) | `ELEVENLABS_API_KEY` | Direct speech and music generation. |
-| [RunwayML](https://docs.dev.runwayml.com/guides/setup/) | `RUNWAY_API_KEY` | Direct text-to-video and image-to-video generation. |
+| **Samsar.js** | `SAMSAR_API_KEY` | Managed routes for supported models using Samsar credits. [API reference](https://docs.samsar.one/external-requests). |
+| Native inference | OpenAI, Anthropic, Google, Kimi or Alibaba credentials for the selected model | Native-first paths where supported. [Provider setup](pages/providers-and-models.md#provider-matrix). |
+| Media adapters | Supported Google, OpenAI, Runway, fal, Alibaba or ElevenLabs credentials | Only the models and operations mapped to that adapter. [Per-model matrix](pages/model-matrix.md). |
+| GMICloud through GenBlaze | `GMI_API_KEY` and validated model mappings | Credential-specific inference/media routes through the local gateway. [Gateway details](services/genblaze-gateway/README.md). |
+| Custom model endpoint | Compatible endpoint and authorization | Your own registered adapter, including optional [Vast.ai FLUX.2](utils/vast-flux2/README.md). |
 
-> **Keep credentials private:** Do not commit `runtime/` or copy keys into browser/client-side code. GMICloud and Alibaba credentials are stored in `runtime/secrets/provider.credentials.json`; generated service environment files are mode `0600`.
+`npm run config:render` writes backend environment files and `runtime/config/available-models.json`. Studio and the Express API filter models using the current deployment configuration. Keep credentials in server-side secrets.
 
-Provider precedence, retries, and deployment-specific routing are documented in [Providers and Models](pages/providers-and-models.md).
-
-Seedance 2.5 uses 5-, 10-, or 15-second 720p scene renders. Normal scene and connected-audio timing selects the smallest duration bucket that fits. Standalone submits each layer to exactly one enabled adapter according to **Settings → Model Adapters** priority (GMICloud, Fal, or Samsar-js); hosted production is pinned to GMICloud. Native model audio is enabled only for `sound_effect` AI-video layers.
+See [Providers and Models](pages/providers-and-models.md) for routing and exceptions. Seedance 2.5 uses 5-, 10- or 15-second 720p scene renders; hosted production uses GMICloud internally, while standalone follows the selected supported adapter.
 
 ### Storage adapters
 
@@ -364,7 +403,7 @@ External S3 and B2 publish media for remote model providers. MinIO keeps media l
 
 ## API
 
-All routes below are served by the processor API at `http://localhost:3002` in local Docker. Auth accepts a Samsar API key, auth token, or app key where supported by the route.
+Use **samsar-js** against `https://api.samsar.one/v1` for hosted workflows. The routes below are also served by the standalone processor at `http://localhost:3002`. To target it with the SDK, set `baseUrl: 'http://localhost:3002/v1'` and use credentials accepted by that processor. Auth accepts a Samsar API key, auth token, or app key where supported by the route. See the linked [API reference](https://docs.samsar.one/) for each contract.
 
 The Studio one-shot flow exposes durations up to 3 minutes; the text-to-video API accepts requests from 10 to 240 seconds.
 

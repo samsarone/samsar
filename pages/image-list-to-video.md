@@ -2,6 +2,26 @@
 
 Image-list-to-video creates an express video from existing image URLs plus prompt and metadata. It is also the core API path for ad-style videos with generated CTA/outro/footer assets.
 
+## Hosted Samsar.js
+
+[Hosted image-list API](https://docs.samsar.one/video#post-videoimage_list_to_video) · [Video model matrix](model-matrix.md#video) · [Image edit matrix](model-matrix.md#image-edit) · [Adapter deployment](providers-and-models.md)
+
+Begin with the hosted SDK and public image URLs:
+
+```js
+import SamsarClient from 'samsar-js';
+const samsar = new SamsarClient({ apiKey: process.env.SAMSAR_API_KEY });
+const job = await samsar.createVideoFromImageList({
+  image_urls: ['https://example.com/product-front.jpg', 'https://example.com/product-detail.jpg'],
+  prompt: 'A concise product launch film with a clear final reveal.',
+  video_model: 'RUNWAYML',
+  aspect_ratio: '9:16',
+});
+console.log(job.data.request_id);
+```
+
+Replace the example URLs with reachable images you control. In standalone VidGenie, image-list mode also requires `NANOBANANAPROEDIT` for its edit stage; an I2V model alone is not the whole pipeline.
+
 ## Endpoints
 
 | Endpoint | Purpose |
@@ -57,24 +77,9 @@ The route also accepts `input` wrapping, so both raw payloads and `{ "input": { 
 
 ## Supported Models
 
-Image-list-to-video uses the same express video model keys as text-to-video:
+The [video matrix](model-matrix.md#video) lists every deployment video model and marks its Express/branching scope. Use `samsar.getSupportedTextToVideoModels()` for the target deployment’s current text-to-video and image-list-to-video selections. The [edit matrix](model-matrix.md#image-edit) covers the reference-image editing stage.
 
-| Model | Credits per second in current pricing config |
-| --- | --- |
-| `RUNWAYML` | 30 |
-| `VEO3.1I2V` | 60 |
-| `VEO3.1I2VFAST` | 36 |
-| `COSMOS3SUPERI2V` | 20 |
-| `SEEDANCEI2V` | 30 |
-| `KLINGIMGTOVID3PRO` | 36 |
-| `KLINGIMGTOVIDTURBO` | 36 |
-| `HAPPYHORSEI2V` (Happy Horse 1.1 I2V) | 36 |
-
-Deployment availability still depends on enabled providers. Check:
-
-```bash
-curl http://localhost:3002/v1/video/supported_models
-```
+Samsar.js is the hosted entry point. Native or provider-only standalone choices remain scoped to their validated credentials: Qwen Image requires standard Alibaba pay-as-you-go access; Seedance 2.0 uses fal or its exact validated GenBlaze route. See [pricing](https://docs.samsar.one/pricing) for hosted model rates and [adapter routing](providers-and-models.md) for standalone behavior.
 
 ## Docker Pipeline
 
