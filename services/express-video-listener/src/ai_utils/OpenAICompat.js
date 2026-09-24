@@ -10,6 +10,7 @@ import {
 } from './GoogleGemini.js';
 import { createKimiK3ChatCompletion } from './KimiK3.js';
 import { createQwenChatCompletion } from './Qwen.js';
+import { isClaudeOpus55Model, createAnthropicChatCompletion } from './AnthropicChatAdapter.js';
 import {
   DOCKER_INFERENCE_PROVIDER,
   createSamsarExternalChatCompletion,
@@ -28,7 +29,8 @@ const INFERENCE_ADAPTER_PROVIDER_SYMBOL =
 
 export function isResponsesOnlyModel(model) {
   const inferenceModel = normalizeInferenceModel(model || getDefaultInferenceModel());
-  return !isGeminiInferenceModel(inferenceModel) &&
+  return !isClaudeOpus55Model(inferenceModel) &&
+    !isGeminiInferenceModel(inferenceModel) &&
     !isKimiInferenceModel(inferenceModel) &&
     !isQwenInferenceModel(inferenceModel);
 }
@@ -104,6 +106,9 @@ function resolveInferenceAdapterProvider(chatRequest = {}) {
   }
   if (isGeminiInferenceModel(model)) {
     return DOCKER_INFERENCE_PROVIDER.GOOGLE_CLOUD;
+  }
+  if (isClaudeOpus55Model(model)) {
+    return DOCKER_INFERENCE_PROVIDER.ANTHROPIC;
   }
   return DOCKER_INFERENCE_PROVIDER.OPENAI;
 }
@@ -287,6 +292,11 @@ async function createCompatibleChatCompletionForProvider(
   }
 
   const requestOptions = buildRequestOptions({ timeout });
+  if (isClaudeOpus55Model(model)) {
+    return createAnthropicChatCompletion({
+      ...await normalizeProviderMediaPayload(request, normalizeProviderMediaUrl), timeout,
+    });
+  }
   if (isKimiInferenceModel(model)) {
     return await createKimiK3ChatCompletion({
       ...request,

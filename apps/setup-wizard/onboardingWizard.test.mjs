@@ -30,7 +30,7 @@ test('fresh setup wizard renders before provider validation exists', async () =>
         {
           key: 'inference',
           title: 'Inference',
-          providerKeys: ['openai', 'googleCloud', 'alibabaCloud', 'kimi', 'openrouter'],
+          providerKeys: ['openai', 'anthropic', 'googleCloud', 'alibabaCloud', 'kimi', 'openrouter'],
         },
         {
           key: 'universal',

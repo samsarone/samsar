@@ -1722,6 +1722,7 @@ async function validateEnvironmentProviderCredentials(credentials = {}) {
   const providers = {};
   const configuredProviderFields = [
     ['openai', 'openaiApiKey'],
+    ['anthropic', 'anthropicApiKey'],
     ['kimi', 'kimiK3ApiKey'],
     ['elevenlabs', 'elevenLabsApiKey'],
     ['runway', 'runwayApiKey'],
@@ -1982,6 +1983,10 @@ function buildRuntimeConfig(payload) {
         enabled: Boolean(normalizeString(credentials.openaiApiKey)),
         apiKey: normalizeString(credentials.openaiApiKey),
       },
+      anthropic: {
+        enabled: Boolean(normalizeString(credentials.anthropicApiKey)),
+        apiKey: normalizeString(credentials.anthropicApiKey),
+      },
       openrouter: {
         enabled: Boolean(normalizeString(credentials.openrouterApiKey)),
       },
@@ -2180,6 +2185,7 @@ function hasConfiguredRemoteMediaProvider(credentials = {}) {
   return Boolean(
     hasConfiguredSamsarApiKey(credentials) ||
     normalizeString(credentials.openaiApiKey || credentials?.openai?.apiKey) ||
+    normalizeString(credentials.anthropicApiKey || credentials?.anthropic?.apiKey) ||
     normalizeString(credentials.openrouterApiKey || credentials?.openrouter?.apiKey) ||
     normalizeString(credentials.gmiCloudApiKey || credentials?.gmicloud?.apiKey) ||
     normalizeString(credentials.kimiK3ApiKey || credentials?.kimi?.apiKey) ||
@@ -2289,6 +2295,8 @@ async function shouldPublishRuntimeLocalMediaGateway(config = {}) {
   const hasRuntimeRemoteProvider = Boolean(
     normalizeString(providers.samsar?.apiKey) ||
     providers.openai?.enabled === true ||
+    providers.anthropic?.enabled === true ||
+    normalizeString(providers.anthropic?.apiKey) ||
     normalizeString(providers.openai?.apiKey) ||
     providers.openrouter?.enabled === true ||
     providers.kimi?.enabled === true ||

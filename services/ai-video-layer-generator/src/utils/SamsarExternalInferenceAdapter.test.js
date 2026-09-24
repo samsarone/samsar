@@ -20,6 +20,7 @@ import {
 } from './SamsarExternalInferenceAdapter.js';
 
 const ENV_KEYS = [
+  'ANTHROPIC_API_KEY',
   'CURRENT_ENV',
   'SAMSAR_DEPLOYMENT_EDITION',
   'SAMSAR_EDITION',
@@ -86,6 +87,22 @@ function resetEnv() {
 }
 
 test.afterEach(resetEnv);
+
+test('Claude chooses Anthropic for Docker vision and OpenRouter when hosted', () => {
+  ENV_KEYS.forEach((key) => delete process.env[key]);
+  process.env.CURRENT_ENV = 'docker';
+  process.env.ANTHROPIC_API_KEY = 'anthropic-test-key';
+  process.env.OPENROUTER_API_KEY = 'openrouter-test-key';
+  const request = { model: 'claude-opus-5.5', messages: [{ role: 'user', content: [
+    { type: 'image_url', image_url: { url: 'https://example.com/frame.png' } },
+  ] }] };
+  assert.equal(resolveConfiguredInferenceProvider(request.model, request), DOCKER_INFERENCE_PROVIDER.ANTHROPIC);
+  assert.equal(shouldUseSamsarExternalInference(request), false);
+  process.env.CURRENT_ENV = 'production';
+  assert.equal(shouldUseOpenRouterInference(request), true);
+  assert.equal(shouldUseSamsarExternalInference(request), true);
+  assert.equal(getOpenRouterModelForInferenceRequest(request), 'anthropic/claude-opus-5.5');
+});
 
 test('Qwen uses the Samsar fallback in Docker when no Alibaba key is configured', () => {
   ENV_KEYS.forEach((key) => delete process.env[key]);

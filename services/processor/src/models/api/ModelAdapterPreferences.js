@@ -18,6 +18,7 @@ export const MODEL_ADAPTER_STAGE_DEFINITIONS = Object.freeze([
     label: 'Inference',
     modelKeys: Object.freeze([
       'gpt-6-astra',
+      'claude-opus-5.5',
       'gemini-3.1-pro',
       'KIMIK3',
       'QWEN3.8',
@@ -55,6 +56,7 @@ export const MODEL_ADAPTER_STAGE_DEFINITIONS = Object.freeze([
 
 const MODEL_LABELS = Object.freeze({
   'gpt-6-astra': 'GPT 6 Astra',
+  'claude-opus-5.5': 'Claude Opus 5.5',
   'gemini-3.1-pro': 'Gemini 3.1 Pro',
   KIMIK3: 'Kimi K3',
   'QWEN3.8': 'Qwen 3.8 Max',
@@ -81,6 +83,7 @@ const PROVIDER_LABELS = Object.freeze({
   googleCloud: 'Google Cloud',
   kimi: 'Kimi',
   openai: 'OpenAI',
+  anthropic: 'Anthropic',
   openrouter: 'OpenRouter',
   gmicloud: 'GMICloud via GenBlaze',
   fal: 'FAL',
@@ -104,6 +107,8 @@ const PROVIDER_ALIASES = Object.freeze({
   moonshot: 'kimi',
   moonshotai: 'kimi',
   openai: 'openai',
+  anthropic: 'anthropic',
+  claude: 'anthropic',
   openrouter: 'openrouter',
   openrouterai: 'openrouter',
   fal: 'fal',

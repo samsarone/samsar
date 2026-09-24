@@ -3,6 +3,7 @@ const CREDITS_PER_DOLLAR = 100;
 export const DEFAULT_ASSISTANT_PRICING_MULTIPLIER = 1.5;
 
 const TOKEN_PRICING_USD_PER_MILLION = Object.freeze({
+  'claude-opus-5.5': { input: 0.8374, cachedInput: 0.8374, output: 20.07 },
   'gpt-6-astra': {
     input: 10,
     cachedInput: 1,
@@ -41,9 +42,11 @@ const TOKEN_PRICING_USD_PER_MILLION = Object.freeze({
 export function calculateAssistantCreditsFromUsage({
   model,
   usage,
-  pricingMultiplier = DEFAULT_ASSISTANT_PRICING_MULTIPLIER,
+  pricingMultiplier,
 } = {}) {
   const pricingModel = resolvePricingModel(model);
+  pricingMultiplier ??= pricingModel === 'claude-opus-5.5'
+    ? 1.2 : DEFAULT_ASSISTANT_PRICING_MULTIPLIER;
   const pricing = pricingModel ? TOKEN_PRICING_USD_PER_MILLION[pricingModel] : null;
   const normalizedUsage = normalizeUsage(usage);
 
@@ -134,6 +137,10 @@ function resolvePricingModel(model) {
   const normalized = model.trim().toLowerCase();
   if (!normalized) {
     return null;
+  }
+
+  if (['claude-opus-5.5', 'claude-opus-5-5'].includes(normalized)) {
+    return 'claude-opus-5.5';
   }
 
   if (normalized.startsWith('gpt-6-astra')) {

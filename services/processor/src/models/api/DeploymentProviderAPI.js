@@ -17,7 +17,7 @@ export const DEPLOYMENT_PROVIDER_CAPABILITIES = Object.freeze({
   samsar: {
     label: 'Samsar API Key',
     requiredFor: ['All models', 'All actions', 'moderation'],
-    models: ['gpt-6-astra', 'gemini-3.1-pro', 'QWEN3.8', 'KIMIK3', 'GPTIMAGE2', 'WAN2.7PRO', 'RUNWAYML', 'VEO3.1I2V', 'HAPPYHORSEI2V', 'LYRIA3', 'OPENAI_TTS', 'GOOGLE_TTS', 'MMAUDIO', 'LATENT_SYNC'],
+    models: ['gpt-6-astra', 'claude-opus-5.5', 'gemini-3.1-pro', 'QWEN3.8', 'KIMIK3', 'GPTIMAGE2', 'WAN2.7PRO', 'RUNWAYML', 'VEO3.1I2V', 'HAPPYHORSEI2V', 'LYRIA3', 'OPENAI_TTS', 'GOOGLE_TTS', 'MMAUDIO', 'LATENT_SYNC'],
     actions: ['chat', 'assistant', 'moderation', 'image', 'video', 'audio', 'lip_sync', 'sound_effect'],
   },
   openai: {
@@ -26,10 +26,16 @@ export const DEPLOYMENT_PROVIDER_CAPABILITIES = Object.freeze({
     models: ['gpt-6-astra', 'GPTIMAGE2', 'OPENAI_TTS'],
     actions: ['chat', 'assistant', 'moderation', 'image', 'audio'],
   },
+  anthropic: {
+    label: 'Anthropic',
+    requiredFor: ['Claude Opus 5.5 inference, assistant, and vision'],
+    models: ['claude-opus-5.5'],
+    actions: ['chat', 'assistant'],
+  },
   openrouter: {
     label: 'OpenRouter',
-    requiredFor: ['GPT 6 Astra', 'Gemini 3.1 Pro', 'Qwen 3.8 Max text and vision'],
-    models: ['gpt-6-astra', 'gemini-3.1-pro', 'QWEN3.8'],
+    requiredFor: ['GPT 6 Astra', 'Claude Opus 5.5', 'Gemini 3.1 Pro', 'Qwen 3.8 Max text and vision'],
+    models: ['gpt-6-astra', 'gemini-3.1-pro', 'QWEN3.8', 'claude-opus-5.5'],
     actions: ['chat', 'assistant'],
   },
   kimi: {
@@ -174,6 +180,12 @@ export async function validateDeploymentProviderCredentials(payload = {}) {
     providerResults.openai = await validateOpenAIKey(normalizeString(payload.openaiApiKey || payload.openai_api_key));
   }
 
+  if (normalizeString(payload.anthropicApiKey || payload.anthropic_api_key)) {
+    providerResults.anthropic = await validateAnthropicKey(
+      normalizeString(payload.anthropicApiKey || payload.anthropic_api_key),
+    );
+  }
+
   if (normalizeString(payload.openrouterApiKey || payload.openrouter_api_key)) {
     providerResults.openrouter = await validateOpenRouterKey(
       normalizeString(payload.openrouterApiKey || payload.openrouter_api_key),
@@ -239,6 +251,19 @@ export async function validateDeploymentProviderCredentials(payload = {}) {
     providers: providerResults,
     available: buildAvailableDeploymentModels(providerResults),
   };
+}
+
+export async function validateAnthropicKey(apiKey, { fetchImpl = fetch } = {}) {
+  try {
+    const response = await fetchImpl('https://api.anthropic.com/v1/models/claude-opus-5-5', {
+      method: 'GET',
+      headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
+    });
+    if (!response.ok) return providerResult('anthropic', 'invalid', { message: 'Anthropic could not verify Claude Opus 5.5 access.' });
+    return providerResult('anthropic', 'valid');
+  } catch (error) {
+    return providerResult('anthropic', 'error', { message: error?.message || 'Anthropic validation failed.' });
+  }
 }
 
 async function validateOpenAIKey(apiKey) {

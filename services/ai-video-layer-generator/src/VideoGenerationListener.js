@@ -1376,6 +1376,26 @@ export function isSafeProviderSubmissionRetry(error) {
   );
 }
 
+export function canRetryRejectedGmiCloudSubmission(error, request = {}) {
+  if (
+    error?.code !== 'gmicloud_submit_rejected' ||
+    getProviderErrorStatus(error) !== 400 ||
+    request.retryOnFail !== true ||
+    !isGmiCloudVideoRequest(request) ||
+    resolveAIVideoRequestType(getDockerAdapterRoutingModel(request), request) !== 'image_to_video'
+  ) {
+    return false;
+  }
+
+  return Boolean(selectRankedFallbackImage(request.fallbackStartImages, 0, {
+    excludeSources: [
+      request.startImage,
+      ...(request.initialStartImageSources || []),
+      ...(request.attemptedFallbackStartImageSources || []),
+    ],
+  }));
+}
+
 function getRetryAfterMs(error) {
   const retryAfter = error?.response?.headers?.['retry-after']
     ?? error?.response?.headers?.['Retry-After']
@@ -1897,6 +1917,25 @@ async function generatePendingAiVideoLayerRequests() {
         (requestType === 'text_to_video' && isStandaloneEdition());
       if (protectsAmbiguousSubmission && isSafeProviderSubmissionRetry(e)) {
         await deferTransientProviderError(request, e, 'submit');
+        continue;
+      }
+      if (
+        requestType === 'image_to_video' &&
+        isGmiCloudVideoRequest(request) &&
+        e?.code === 'gmicloud_submit_rejected' &&
+        getProviderErrorStatus(e) === 400
+      ) {
+        await AIVideoLayerGeneration.findByIdAndUpdate(request._id, {
+          status: 'FAILED',
+          rowLocked: false,
+          retryOnFail: canRetryRejectedGmiCloudSubmission(e, request),
+          // Keep this rejection on the saved-image retry path.
+          dockerAdapterFailoverDisabled: true,
+          providerFailureDefinitive: true,
+          submissionOutcomeUnknown: false,
+          lastProviderFailureMessage: e.message,
+          lastProviderFailureDetail: getErrorLogPayload(e),
+        });
         continue;
       }
       if (protectsAmbiguousSubmission) {
@@ -3721,6 +3760,10 @@ async function processBaseGenerationFailed(payload) {
     retryUpdate.attemptedFallbackStartImageSources = attemptedFallbackStartImageSources;
 
     const selectedFilterPass = fallbackPreparation.selection;
+    if (!selectedFilterPass && genDoc.lastProviderFailureDetail?.code === 'gmicloud_submit_rejected') {
+      retryPreparationSucceeded = false;
+      retryPreparationFailureMessage = 'No usable alternate scored image remained for the rejected submission.';
+    }
     let retryPromptCandidate = selectedFilterPass?.pass || null;
     if (selectedFilterPass?.pass) {
       const chosen = selectedFilterPass.pass;

@@ -6,6 +6,19 @@ import {
   DEFAULT_ASSISTANT_PRICING_MULTIPLIER,
 } from './AssistantBilling.js';
 
+test('Claude assistant usage uses its configured model price for native and OpenRouter IDs', () => {
+  for (const model of ['claude-opus-5.5', 'claude-opus-5-5', 'anthropic/claude-opus-5.5']) {
+    const result = calculateAssistantCreditsFromUsage({
+      model,
+      usage: { input_tokens: 1_000_000, output_tokens: 1_000_000 },
+    });
+    assert.equal(result.pricingModel, 'claude-opus-5.5');
+    assert.equal(result.pricingMultiplier, 1.2);
+    assert.equal(result.costUsd, 20.9074);
+    assert.equal(result.credits, 2508.888);
+  }
+});
+
 test('bills GPT 6 Astra assistant usage at standard context rates', () => {
   const result = calculateAssistantCreditsFromUsage({
     model: 'gpt-6-astra',

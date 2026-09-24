@@ -18,6 +18,7 @@ import {
 
 const MODEL_OPTIONS = [
   { label: 'gpt-6-astra', value: 'gpt-6-astra' },
+  { label: 'Claude Opus 5.5', value: 'claude-opus-5.5' },
   { label: 'Gemini 3.1 Pro', value: 'gemini-3.1-pro' },
   { label: 'Qwen 3.8 Max', value: 'QWEN3.8' },
   { label: 'Kimi K3', value: 'kimi-k3' },
@@ -27,10 +28,10 @@ test('hosted inference labels Qwen 3.8 Max for text and vision', () => {
   const hostedOptions = filterHostedInferenceModelOptions(MODEL_OPTIONS);
   assert.deepEqual(
     hostedOptions.map((option) => option.value),
-    ['gpt-6-astra', 'gemini-3.1-pro', 'QWEN3.8', 'kimi-k3'],
+    ['gpt-6-astra', 'claude-opus-5.5', 'gemini-3.1-pro', 'QWEN3.8', 'kimi-k3'],
   );
   assert.equal(
-    hostedOptions[2].label,
+    hostedOptions[3].label,
     'Qwen 3.8 Max',
   );
 });
@@ -49,13 +50,13 @@ test('standalone exposes Qwen only with an explicit model and validated Alibaba 
   assert.equal(
     labelOptionsForDeploymentInferenceProviders(MODEL_OPTIONS, {
       'QWEN3.8': 'alibabaCloud',
-    })[2].label,
+    }).find((option) => option.value === 'QWEN3.8').label,
     'Qwen 3.8 Max',
   );
   assert.equal(
     labelOptionsForDeploymentInferenceProviders(MODEL_OPTIONS, {
       'QWEN3.8': 'alibabaCloud',
-    })[2].value,
+    }).find((option) => option.value === 'QWEN3.8').value,
     'QWEN3.8',
   );
   assert.deepEqual(
@@ -69,7 +70,7 @@ test('standalone exposes Qwen only with an explicit model and validated Alibaba 
       MODEL_OPTIONS,
       { 'QWEN3.8': 'alibabaCloud' },
       { alibabaCloud: 'token_plan' },
-    )[2].label,
+    ).find((option) => option.value === 'QWEN3.8').label,
     'Qwen 3.8 Max',
   );
 
@@ -88,12 +89,12 @@ test('standalone exposes Qwen only with an explicit model and validated Alibaba 
 test('provider fallbacks expose their configured inference models', () => {
   assert.deepEqual(
     extractDeploymentInferenceModelValues({ deployment: { providers: ['samsar'] } }),
-    ['gpt-6-astra', 'gemini-3.1-pro', 'QWEN3.8', 'kimi-k3'],
+    ['gpt-6-astra', 'claude-opus-5.5', 'gemini-3.1-pro', 'QWEN3.8', 'kimi-k3'],
   );
   assert.equal(
     labelOptionsForDeploymentInferenceProviders(MODEL_OPTIONS, {
       'QWEN3.8': 'samsar',
-    })[2].label,
+    }).find((option) => option.value === 'QWEN3.8').label,
     'Qwen 3.8 Max',
   );
   assert.deepEqual(
@@ -111,7 +112,7 @@ test('provider fallbacks expose their configured inference models', () => {
   assert.equal(
     labelOptionsForDeploymentInferenceProviders(MODEL_OPTIONS, {
       'QWEN3.8': 'gmicloud',
-    })[2].label,
+    }).find((option) => option.value === 'QWEN3.8').label,
     'Qwen 3.8 Max',
   );
 });
@@ -183,13 +184,14 @@ test('OpenRouter alone exposes every inference model with validated Qwen provena
   assert.equal(
     labelOptionsForDeploymentInferenceProviders(MODEL_OPTIONS, {
       'QWEN3.8': 'openrouter',
-    })[2].label,
+    }).find((option) => option.value === 'QWEN3.8').label,
     'Qwen 3.8 Max',
   );
   assert.deepEqual(extractDeploymentInferenceModelValues(payload), [
     'gpt-6-astra',
     'gemini-3.1-pro',
     'QWEN3.8',
+    'claude-opus-5.5',
   ]);
 });
 
@@ -217,6 +219,7 @@ test('model preferences resolve against the allowed options without mutating can
   );
   assert.deepEqual(MODEL_OPTIONS.map((option) => option.value), [
     'gpt-6-astra',
+    'claude-opus-5.5',
     'gemini-3.1-pro',
     'QWEN3.8',
     'kimi-k3',

@@ -8,8 +8,37 @@ import OpenAI from 'openai';
 import {
   DOCKER_INFERENCE_PROVIDER,
   createOpenRouterChatCompletion,
+  getConfiguredInferenceProviders,
+  getOpenRouterModelForInferenceRequest,
   resolveConfiguredInferenceProvider,
+  shouldUseOpenRouterInference,
+  shouldUseSamsarExternalInference,
 } from './SamsarExternalInferenceAdapter.js';
+
+test('Claude assistant routing uses Anthropic in Docker and OpenRouter when hosted', (t) => {
+  const keys = ['CURRENT_ENV', 'SAMSAR_DEPLOYMENT_EDITION', 'SAMSAR_EDITION',
+    'SAMSAR_API_KEY', 'ANTHROPIC_API_KEY', 'OPENROUTER_API_KEY'];
+  const previous = Object.fromEntries(keys.map((key) => [key, process.env[key]]));
+  t.after(() => {
+    for (const key of keys) {
+      if (previous[key] === undefined) delete process.env[key];
+      else process.env[key] = previous[key];
+    }
+  });
+  for (const key of keys) delete process.env[key];
+  process.env.CURRENT_ENV = 'docker';
+  process.env.ANTHROPIC_API_KEY = 'anthropic-key';
+  process.env.OPENROUTER_API_KEY = 'openrouter-key';
+  const request = { model: 'claude-opus-5.5', messages: [{ role: 'user', content: 'hello' }] };
+  assert.deepEqual(getConfiguredInferenceProviders(request.model, request), [
+    DOCKER_INFERENCE_PROVIDER.ANTHROPIC, DOCKER_INFERENCE_PROVIDER.OPENROUTER,
+  ]);
+  assert.equal(shouldUseSamsarExternalInference(request), false);
+  process.env.CURRENT_ENV = 'production';
+  assert.equal(shouldUseOpenRouterInference(request), true);
+  assert.equal(shouldUseSamsarExternalInference(request), true);
+  assert.equal(getOpenRouterModelForInferenceRequest(request), 'anthropic/claude-opus-5.5');
+});
 
 test('Qwen uses GMICloud through GenBlaze before Samsar and OpenRouter', (t) => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'samsar-genblaze-inference-'));

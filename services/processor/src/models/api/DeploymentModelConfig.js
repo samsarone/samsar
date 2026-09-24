@@ -303,12 +303,14 @@ function mergeRuntimeInferenceProviderSelections(availability) {
   const gmiCloudModelMappings = readRuntimeGenBlazeModelMappings();
   const priorities = {
     'gpt-6-astra': ['openai', 'gmicloud', 'samsar', 'openrouter'],
+    'claude-opus-5.5': ['anthropic', 'openrouter', 'samsar'],
     'gemini-3.1-pro': ['googleCloud', 'gmicloud', 'samsar', 'openrouter'],
     'QWEN3.8': ['alibabaCloud', 'gmicloud', 'samsar', 'openrouter'],
     KIMIK3: ['kimi', 'samsar'],
   };
   const configured = {
     openai: hasEnvCredential('OPENAI_API_KEY'),
+    anthropic: hasEnvCredential('ANTHROPIC_API_KEY'),
     googleCloud: hasGoogleInferenceCredential(),
     alibabaCloud: hasEnvCredential(
       'ALIBABA_API_KEY',
@@ -591,6 +593,12 @@ export function mergeRuntimeInferenceDeploymentAvailability(value = {}) {
     }
   }
 
+  if (hasEnvCredential('ANTHROPIC_API_KEY')) {
+    appendUnique(merged.providers, ['anthropic']);
+    appendUnique(merged.models, ['claude-opus-5.5']);
+    appendUnique(merged.actions, ['chat', 'assistant']);
+  }
+
   if (hasEnvCredential('OPENAI_API_KEY')) {
     appendUnique(merged.providers, ['openai']);
     appendUnique(merged.models, ['gpt-6-astra']);
@@ -628,7 +636,7 @@ export function mergeRuntimeInferenceDeploymentAvailability(value = {}) {
 
   if (hasEnvCredential('SAMSAR_API_KEY')) {
     appendUnique(merged.providers, ['samsar']);
-    appendUnique(merged.models, ['gpt-6-astra', 'gemini-3.1-pro', 'QWEN3.8', 'KIMIK3', 'HAPPYHORSEI2V', 'WAN2.7PRO']);
+    appendUnique(merged.models, ['gpt-6-astra', 'claude-opus-5.5', 'gemini-3.1-pro', 'QWEN3.8', 'KIMIK3', 'HAPPYHORSEI2V', 'WAN2.7PRO']);
     appendUnique(merged.actions, ['chat', 'assistant', 'image', 'video']);
     if (exposeStandaloneProviderCapabilities) {
       appendUnique(merged.models, ['GPTIMAGE2', 'VEO3.1I2V']);
@@ -648,7 +656,7 @@ export function mergeRuntimeInferenceDeploymentAvailability(value = {}) {
 
   if (hasEnvCredential('OPENROUTER_API_KEY')) {
     appendUnique(merged.providers, ['openrouter']);
-    appendUnique(merged.models, ['gpt-6-astra', 'gemini-3.1-pro', 'QWEN3.8']);
+    appendUnique(merged.models, ['gpt-6-astra', 'claude-opus-5.5', 'gemini-3.1-pro', 'QWEN3.8']);
     appendUnique(merged.actions, ['chat', 'assistant']);
   }
 
@@ -671,6 +679,7 @@ export function mergeRuntimeInferenceDeploymentAvailability(value = {}) {
   }
   const inferenceModels = new Set([
     normalizeDeploymentModel('gpt-6-astra'),
+    normalizeDeploymentModel('claude-opus-5.5'),
     normalizeDeploymentModel('gemini-3.1-pro'),
     normalizeDeploymentModel('QWEN3.8'),
     normalizeDeploymentModel('KIMIK3'),

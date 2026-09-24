@@ -1,5 +1,6 @@
 export const STANDALONE_ADAPTER_KEYS = Object.freeze([
   "openai",
+  "anthropic",
   "googleCloud",
   "kimi",
   "alibabaCloud",
@@ -13,6 +14,7 @@ export const STANDALONE_ADAPTER_KEYS = Object.freeze([
 
 const ADAPTER_PRESENTATIONS = Object.freeze({
   openai: Object.freeze({ label: "OpenAI", mark: "openai", glyph: "O" }),
+  anthropic: Object.freeze({ label: "Anthropic", mark: "glyph", glyph: "A" }),
   googleCloud: Object.freeze({ label: "Google Cloud", mark: "googleCloud", glyph: "G" }),
   kimi: Object.freeze({ label: "Kimi", mark: "glyph", glyph: "K" }),
   alibabaCloud: Object.freeze({ label: "Alibaba Cloud", mark: "alibabaCloud", glyph: "A" }),
@@ -28,6 +30,8 @@ const ADAPTER_PRESENTATIONS = Object.freeze({
 
 const ADAPTER_ALIASES = Object.freeze({
   openai: "openai",
+  anthropic: "anthropic",
+  claude: "anthropic",
   google: "googleCloud",
   googlecloud: "googleCloud",
   gcp: "googleCloud",

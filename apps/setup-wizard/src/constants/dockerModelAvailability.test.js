@@ -26,6 +26,7 @@ import {
 
 const INFERENCE_MODEL_KEYS = Object.freeze([
   'gpt-5.6-sol',
+  'claude-opus-5.5',
   'gemini-3.1-pro',
   'KIMIK3',
   'QWEN3.8',
@@ -107,23 +108,23 @@ test('Samsar exposes every supported inference model, including Kimi K3', () => 
 
   assert.deepEqual(
     getAvailableInferenceModels(available),
-    ['KIMIK3', 'QWEN3.8', 'gemini-3.1-pro', 'gpt-5.6-sol'],
+    ['KIMIK3', 'QWEN3.8', 'claude-opus-5.5', 'gemini-3.1-pro', 'gpt-5.6-sol'],
   );
   for (const model of INFERENCE_MODEL_KEYS) {
     assert.equal(available.modelProviders[model], DOCKER_PROVIDER.SAMSAR);
   }
 });
 
-test('OpenRouter alone exposes GPT, Gemini, and Qwen inference', () => {
+test('OpenRouter alone exposes GPT, Claude, Gemini, and Qwen inference', () => {
   const available = buildDockerAvailableModelsFromEnabledProviders([
     DOCKER_PROVIDER.OPENROUTER,
   ]);
   assert.deepEqual(
     getAvailableInferenceModels(available),
-    ['QWEN3.8', 'gemini-3.1-pro', 'gpt-5.6-sol'],
+    ['QWEN3.8', 'claude-opus-5.5', 'gemini-3.1-pro', 'gpt-5.6-sol'],
   );
   assert.deepEqual(available.actions, ['assistant', 'chat']);
-  for (const model of ['gpt-5.6-sol', 'gemini-3.1-pro', 'QWEN3.8']) {
+  for (const model of ['gpt-5.6-sol', 'claude-opus-5.5', 'gemini-3.1-pro', 'QWEN3.8']) {
     assert.equal(available.modelProviders[model], DOCKER_PROVIDER.OPENROUTER);
   }
   assert.equal(available.modelProviders.KIMIK3, undefined);
@@ -131,6 +132,15 @@ test('OpenRouter alone exposes GPT, Gemini, and Qwen inference', () => {
     getDockerModelDisplayName('QWEN3.8', DOCKER_PROVIDER.OPENROUTER),
     'Qwen 3.8 Max',
   );
+});
+
+test('Anthropic credentials alone enable Claude inference and assistant', () => {
+  const available = buildDockerAvailableModelsFromEnabledProviders([DOCKER_PROVIDER.ANTHROPIC]);
+  assert.deepEqual(getAvailableInferenceModels(available), ['claude-opus-5.5']);
+  assert.deepEqual(available.actions, ['assistant', 'chat']);
+  assert.equal(available.modelProviders['claude-opus-5.5'], DOCKER_PROVIDER.ANTHROPIC);
+  assert.equal(getDockerModelDisplayName('claude-opus-5.5', DOCKER_PROVIDER.ANTHROPIC),
+    'Claude Opus 5.5');
 });
 
 test('GMICloud exposes only credential-scoped compatible mappings', () => {

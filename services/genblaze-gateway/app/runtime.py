@@ -1385,8 +1385,14 @@ class GatewayRuntime:
             error_type="invalid_request_error",
         )
 
-    def _provider_error(self, exc: Exception) -> GatewayError:
-        return GatewayError.from_provider(exc, secret=self.settings.gmi_api_key)
+    def _provider_error(
+        self, exc: Exception, *, explicit_video_submit_rejection: bool = False
+    ) -> GatewayError:
+        return GatewayError.from_provider(
+            exc,
+            secret=self.settings.gmi_api_key,
+            explicit_video_submit_rejection=explicit_video_submit_rejection,
+        )
 
     async def _stage_managed_media_urls(self, payload: Any) -> Any | None:
         if self._media_url_stager is not None:
@@ -1622,7 +1628,10 @@ class GatewayRuntime:
                 active_request = refreshed_request
 
         if active_error is not None:
-            raise self._provider_error(active_error) from active_error
+            raise self._provider_error(
+                active_error,
+                explicit_video_submit_rejection=route.modality == "video",
+            ) from active_error
 
         upstream_id = str(getattr(result, "prediction_id", "") or "").strip()
         if not upstream_id:

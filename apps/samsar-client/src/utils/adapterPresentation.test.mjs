@@ -12,6 +12,7 @@ import {
 test("defines a presentation for every standalone adapter", () => {
   assert.deepEqual(STANDALONE_ADAPTER_KEYS, [
     "openai",
+    "anthropic",
     "googleCloud",
     "kimi",
     "alibabaCloud",
@@ -35,6 +36,7 @@ test("defines a presentation for every standalone adapter", () => {
     ])),
     {
       openai: "OpenAI",
+      anthropic: "Anthropic",
       googleCloud: "Google Cloud",
       kimi: "Kimi",
       alibabaCloud: "Alibaba Cloud",

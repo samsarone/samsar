@@ -281,11 +281,6 @@ export async function createTextToVideoPromptFromStartingLayerPrompt(
     userPrompt += `\nCamera transition: ${cameraTransitionLayer}`;
   }
 
-  if (isSpeakerTransition) {
-    systemPrompt += `\nMaintain focus on the most prominent character throughout the scene.`;
-  }
-
-
   const baseMessages = [
     { role: 'developer', content: systemPrompt },
     { role: 'user', content: userPrompt }
@@ -597,6 +592,9 @@ function getModelNameForInferenceModel(userInferenceModel) {
 }
 
 function getDefaultInferenceProviderForModel(model) {
+  if (model === 'claude-opus-5.5') {
+    return 'anthropic';
+  }
   if (isGeminiInferenceModel(model)) {
     return 'googleCloud';
   }

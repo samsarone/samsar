@@ -1,3 +1,4 @@
+import { isClaudeOpus55Model, OPENROUTER_OPUS_55_MODEL } from './AnthropicChatAdapter.js';
 import fs from 'node:fs';
 
 import SamsarClient from 'samsar-js';
@@ -63,11 +64,17 @@ export const DOCKER_INFERENCE_PROVIDER = Object.freeze({
   GOOGLE_CLOUD: 'googleCloud',
   KIMI: 'kimi',
   OPENAI: 'openai',
+  ANTHROPIC: 'anthropic',
   OPENROUTER: 'openrouter',
   SAMSAR: 'samsar',
   GMICLOUD: 'gmicloud',
 });
 export const DOCKER_INFERENCE_PROVIDER_PRIORITY_BY_MODEL = Object.freeze({
+  'claude-opus-5.5': Object.freeze([
+    DOCKER_INFERENCE_PROVIDER.ANTHROPIC,
+    DOCKER_INFERENCE_PROVIDER.OPENROUTER,
+    DOCKER_INFERENCE_PROVIDER.SAMSAR,
+  ]),
   'QWEN3.8': Object.freeze([
     DOCKER_INFERENCE_PROVIDER.ALIBABA_CLOUD,
     DOCKER_INFERENCE_PROVIDER.GMICLOUD,
@@ -124,7 +131,9 @@ function addOpenRouterResponseHealingPlugin(plugins) {
 }
 
 function getOpenRouterCompletionLimit(requestedModel, request = {}) {
-  const providerLimit = isQwenInferenceModel(requestedModel)
+  const providerLimit = isClaudeOpus55Model(requestedModel)
+    ? 128000
+    : isQwenInferenceModel(requestedModel)
     ? OPENROUTER_QWEN_MAX_COMPLETION_TOKENS
     : isGeminiInferenceModel(requestedModel)
       ? OPENROUTER_GEMINI_MAX_COMPLETION_TOKENS
@@ -165,13 +174,15 @@ function getOpenRouterReasoningEffort(requestedModel, effort, request = {}) {
 
 function buildOpenRouterRequestPayload(request, requestedModel, openRouterModel, effort) {
   const payload = { ...request, model: openRouterModel };
-  if (requestedModel === 'gpt-6-astra' || requestedModel === 'gpt-6-astra-xhigh') {
+  if (requestedModel === 'gpt-6-astra' || requestedModel === 'gpt-6-astra-xhigh' || isClaudeOpus55Model(requestedModel)) {
     for (const key of ['temperature', 'top_p', 'top_logprobs', 'logprobs']) delete payload[key];
   }
-  const effectiveEffort = getOpenRouterReasoningEffort(requestedModel, effort, request);
+  const effectiveEffort = isClaudeOpus55Model(requestedModel)
+    ? 'high'
+    : getOpenRouterReasoningEffort(requestedModel, effort, request);
   const completionLimit = getOpenRouterCompletionLimit(requestedModel, request);
   delete payload.max_output_tokens;
-  if (isQwenInferenceModel(requestedModel) || isGeminiInferenceModel(requestedModel)) {
+  if (isQwenInferenceModel(requestedModel) || isGeminiInferenceModel(requestedModel) || isClaudeOpus55Model(requestedModel)) {
     delete payload.max_completion_tokens;
     payload.max_tokens = completionLimit;
   } else {
@@ -222,6 +233,10 @@ function isFalseyEnv(value) {
 
 function hasEnvCredential(...keys) {
   return keys.some((key) => Boolean(normalizeString(process.env[key])));
+}
+
+function hasAnthropicNativeCredential() {
+  return hasEnvCredential('ANTHROPIC_API_KEY');
 }
 
 function hasOpenAINativeCredential() {
@@ -355,6 +370,9 @@ function hasConfiguredInferenceProvider(provider, model, chatRequest = {}) {
   if (provider === DOCKER_INFERENCE_PROVIDER.KIMI) {
     return hasKimiK3ApiKey();
   }
+  if (provider === DOCKER_INFERENCE_PROVIDER.ANTHROPIC) {
+    return hasAnthropicNativeCredential();
+  }
   if (provider === DOCKER_INFERENCE_PROVIDER.OPENAI) {
     return hasOpenAINativeCredential();
   }
@@ -373,7 +391,12 @@ function hasConfiguredInferenceProvider(provider, model, chatRequest = {}) {
 function getInferenceProviderPriority(model, chatRequest = {}) {
   let defaultPriority;
   let preferenceModelKey;
-  if (isQwenInferenceModel(model)) {
+  if (isClaudeOpus55Model(model)) {
+    defaultPriority = isStandaloneEdition()
+      ? DOCKER_INFERENCE_PROVIDER_PRIORITY_BY_MODEL['claude-opus-5.5']
+      : [DOCKER_INFERENCE_PROVIDER.OPENROUTER, DOCKER_INFERENCE_PROVIDER.ANTHROPIC, DOCKER_INFERENCE_PROVIDER.SAMSAR];
+    preferenceModelKey = 'claude-opus-5.5';
+  } else if (isQwenInferenceModel(model)) {
     defaultPriority = DOCKER_INFERENCE_PROVIDER_PRIORITY_BY_MODEL['QWEN3.8'];
     preferenceModelKey = 'QWEN3.8';
   } else if (isGeminiInferenceModel(model)) {
@@ -453,6 +476,9 @@ function getRequestedInferenceModel(chatRequest = {}) {
 
 export function getOpenRouterModelForInferenceRequest(chatRequest = {}, env = process.env) {
   const model = getRequestedInferenceModel(chatRequest);
+  if (isClaudeOpus55Model(model)) {
+    return normalizeString(env?.OPENROUTER_CLAUDE_OPUS_55_MODEL) || OPENROUTER_OPUS_55_MODEL;
+  }
   if (isQwenInferenceModel(model)) {
     return normalizeString(env?.OPENROUTER_QWEN_38_MAX_MODEL) || 'qwen/qwen3.8-max';
   }
@@ -465,6 +491,7 @@ export function getOpenRouterModelForInferenceRequest(chatRequest = {}, env = pr
 export function shouldUseOpenRouterInference(chatRequest = {}) {
   if (!chatRequest || typeof chatRequest !== 'object') return false;
   const model = getRequestedInferenceModel(chatRequest);
+  if (isClaudeOpus55Model(model) && !isStandaloneEdition()) return true;
   if (isKimiInferenceModel(model)) return false;
   if (isQwenOpenRouterOnly(model)) return true;
   if (isOpenRouterAuthorization(chatRequest.authorization)) return true;
@@ -650,6 +677,7 @@ export function shouldUseSamsarExternalInference(chatRequest = {}) {
     return false;
   }
   const inferenceModel = getRequestedInferenceModel(chatRequest);
+  if (isClaudeOpus55Model(inferenceModel) && !isStandaloneEdition()) return true;
   if (isQwenOpenRouterOnly(inferenceModel)) return true;
   if (chatRequest.bypassSamsarExternalInference || chatRequest.samsarExternalInference === false) {
     return false;

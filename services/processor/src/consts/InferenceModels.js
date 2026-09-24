@@ -21,6 +21,7 @@ export const INFERENCE_MODEL_KEYS = Object.freeze({
   GEMINI_31_PRO: 'gemini-3.1-pro',
   QWEN_38: 'QWEN3.8',
   KIMI_K3: 'kimi-k3',
+  CLAUDE_OPUS_55: 'claude-opus-5.5',
 });
 
 export const INFERENCE_PROVIDER_MODEL_KEYS = Object.freeze({
@@ -29,6 +30,7 @@ export const INFERENCE_PROVIDER_MODEL_KEYS = Object.freeze({
   [INFERENCE_MODEL_KEYS.GEMINI_31_PRO]: 'gemini-3.1-pro-preview',
   [INFERENCE_MODEL_KEYS.QWEN_38]: 'qwen3.8-max',
   [INFERENCE_MODEL_KEYS.KIMI_K3]: 'kimi-k3',
+  [INFERENCE_MODEL_KEYS.CLAUDE_OPUS_55]: 'claude-opus-5-5',
 });
 
 export const DEFAULT_INFERENCE_MODEL = INFERENCE_MODEL_KEYS.GPT_56_SOL;
@@ -59,6 +61,7 @@ export const QWEN_38_MAX_MODEL = INFERENCE_PROVIDER_MODEL_KEYS[QWEN_38_INFERENCE
 export const ALIBABA_QWEN_MODEL_ENV = 'ALIBABA_QWEN_MODEL';
 export const ALIBABA_QWEN_TEXT_MODEL_ENV = 'ALIBABA_QWEN_TEXT_MODEL';
 export const KIMI_K3_INFERENCE_MODEL = INFERENCE_MODEL_KEYS.KIMI_K3;
+export const CLAUDE_OPUS_55_INFERENCE_MODEL = INFERENCE_MODEL_KEYS.CLAUDE_OPUS_55;
 export const KIMI_K3_PROVIDER_MODEL =
   INFERENCE_PROVIDER_MODEL_KEYS[KIMI_K3_INFERENCE_MODEL];
 
@@ -68,6 +71,7 @@ export const SUPPORTED_INFERENCE_MODEL_VALUES = Object.freeze([
   GEMINI_31_PRO_INFERENCE_MODEL,
   QWEN_38_INFERENCE_MODEL,
   KIMI_K3_INFERENCE_MODEL,
+  CLAUDE_OPUS_55_INFERENCE_MODEL,
 ]);
 
 export const INFERENCE_MODEL_OPTIONS = Object.freeze([
@@ -108,6 +112,13 @@ export const INFERENCE_MODEL_OPTIONS = Object.freeze([
     providerModel: KIMI_K3_PROVIDER_MODEL,
     availabilityModel: KIMI_K3_INFERENCE_MODEL,
     isBranchedInferenceModel: false,
+  }),
+  Object.freeze({
+    label: 'Claude Opus 5.5',
+    value: CLAUDE_OPUS_55_INFERENCE_MODEL,
+    providerModel: INFERENCE_PROVIDER_MODEL_KEYS[CLAUDE_OPUS_55_INFERENCE_MODEL],
+    availabilityModel: CLAUDE_OPUS_55_INFERENCE_MODEL,
+    isBranchedInferenceModel: true,
   }),
 ]);
 
@@ -217,6 +228,10 @@ export function normalizeSupportedInferenceModel(value) {
   if (!normalized) {
     return null;
   }
+  if (['claude-opus-5.5', 'claude-opus-5-5', 'anthropic/claude-opus-5.5',
+    'claude opus 5.5', 'claude 5.5 opus'].includes(normalized)) {
+    return CLAUDE_OPUS_55_INFERENCE_MODEL;
+  }
 
   if (
     normalized === GPT_56_SOL_XHIGH_INFERENCE_MODEL ||
@@ -323,6 +338,9 @@ export function getProviderModelForInferenceModel(
   value,
   { env = process.env } = {},
 ) {
+  if (normalizeInferenceModel(value) === CLAUDE_OPUS_55_INFERENCE_MODEL) {
+    return INFERENCE_PROVIDER_MODEL_KEYS[CLAUDE_OPUS_55_INFERENCE_MODEL];
+  }
   const openAIModel = normalizeOpenAIInferenceModel(value);
   if (isOpenAIInferenceModel(openAIModel)) {
     return INFERENCE_PROVIDER_MODEL_KEYS[openAIModel] || openAIModel;

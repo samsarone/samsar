@@ -413,6 +413,33 @@ test('HTTP failures preserve the GenBlaze fallback message, status, and retry he
   );
 });
 
+test('explicit GMICloud submit rejection keeps its code for the retry gate', async () => {
+  await assert.rejects(
+    requestGenBlazeVideo('/media/requests', {
+      env: {
+        SAMSAR_GENBLAZE_ENABLED: 'true',
+        SAMSAR_GENBLAZE_BASE_URL: 'http://genblaze.test/v1',
+      },
+      fetchImpl: async () => ({
+        ok: false,
+        status: 400,
+        headers: {},
+        text: async () => JSON.stringify({
+          error: {
+            message: 'GMICloud submit failed (500): Backend error (400). Please try again.',
+            code: 'gmicloud_submit_rejected',
+          },
+        }),
+      }),
+    }),
+    (error) => {
+      assert.equal(error.status, 400);
+      assert.equal(error.code, 'gmicloud_submit_rejected');
+      return true;
+    },
+  );
+});
+
 test('poll response maps back to the existing listener result shape', async () => {
   const completed = await listenToPendingGenBlazeVideoRequest(
     { generationId: 'genblaze-video:sealed/video-job' },

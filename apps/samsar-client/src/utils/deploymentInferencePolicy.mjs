@@ -32,6 +32,7 @@ const GPT_56_SOL_XHIGH_MODEL_TOKENS = new Set([
 const DEPLOYMENT_PROVIDER_LABELS = Object.freeze({
   samsar: "Samsar API Key",
   openai: "OpenAI",
+  anthropic: "Anthropic",
   openrouter: "OpenRouter",
   gmicloud: "GMICloud via GenBlaze",
   googleCloud: "Google Cloud",
@@ -43,15 +44,17 @@ const DEPLOYMENT_PROVIDER_LABELS = Object.freeze({
 
 const DEPLOYMENT_INFERENCE_MODELS_BY_PROVIDER = Object.freeze({
   openai: ["gpt-6-astra"],
+  anthropic: ["claude-opus-5.5"],
   googleCloud: ["gemini-3.1-pro"],
   kimi: [KIMI_K3_INFERENCE_MODEL_VALUE],
-  openrouter: ["gpt-6-astra", "gemini-3.1-pro", QWEN_INFERENCE_MODEL_VALUE],
+  openrouter: ["gpt-6-astra", "gemini-3.1-pro", QWEN_INFERENCE_MODEL_VALUE, "claude-opus-5.5"],
   gmicloud: [QWEN_INFERENCE_MODEL_VALUE],
   // Alibaba/Qwen requires explicit, validated model provenance below. A
   // provider name by itself is not enough to make Qwen selectable.
   alibabaCloud: [],
   samsar: [
     "gpt-6-astra",
+    "claude-opus-5.5",
     "gemini-3.1-pro",
     QWEN_INFERENCE_MODEL_VALUE,
     KIMI_K3_INFERENCE_MODEL_VALUE,
@@ -82,6 +85,9 @@ export function normalizeDeploymentProviderKey(value) {
   }
   if (compact === "openai") {
     return "openai";
+  }
+  if (compact === "anthropic" || compact === "claude") {
+    return "anthropic";
   }
   if (compact === "openrouter" || compact === "openrouterai") {
     return "openrouter";
@@ -161,6 +167,10 @@ export function normalizeDeploymentInferenceModelValue(value) {
 
   const normalized = value.trim().toLowerCase();
   const compact = normalized.replace(/[^a-z0-9]+/g, "");
+  if (["claude-opus-5.5", "claude-opus-5-5", "anthropic/claude-opus-5.5",
+    "claude opus 5.5", "claude 5.5 opus"].includes(normalized)) {
+    return "claude-opus-5.5";
+  }
   if (
     normalized === KIMI_K3_INFERENCE_MODEL_VALUE ||
     normalized === "kimi k3" ||

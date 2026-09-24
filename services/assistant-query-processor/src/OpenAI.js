@@ -10,6 +10,7 @@ import {
 } from './InferenceModels.js';
 import { createKimiK3ChatCompletion } from './KimiK3.js';
 import { createQwenChatCompletion } from './Qwen.js';
+import { isClaudeOpus55Model, createAnthropicChatCompletion } from './AnthropicChatAdapter.js';
 import { sendAssistantGeminiCompletionRequest } from './GoogleGemini.js';
 import {
   DOCKER_INFERENCE_PROVIDER,
@@ -360,6 +361,24 @@ async function sendAssistantCompletionRequestForProvider(
 
   if (isKimiModel) {
     return await sendAssistantKimiK3CompletionRequest(messageList, model, completionOptions);
+  }
+
+  if (isClaudeOpus55Model(model)) {
+    const response = await createAnthropicChatCompletion({
+      model,
+      messages: messageList,
+      max_tokens: completionOptions.max_tokens || completionOptions.maxTokens,
+      effort: reasoningEffort || 'high',
+      timeout: getRequestTimeoutMs(completionOptions),
+    });
+    const outputText = response?.choices?.[0]?.message?.content || '';
+    return {
+      model,
+      response: normalizeChatCompletionToResponses(response),
+      outputText,
+      outputContent: buildFallbackAssistantContent(outputText),
+      externalProvider: 'anthropic',
+    };
   }
 
   return await sendAssistantOpenAICompletionRequest(

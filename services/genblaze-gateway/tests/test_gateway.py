@@ -19,6 +19,7 @@ from app.catalog import (
     resolve_model,
 )
 from app.config import Settings
+from app.errors import GatewayError
 from app.main import create_app
 from app.media_staging import GMICloudMediaStager
 from app.runtime import (
@@ -1721,6 +1722,84 @@ def test_managed_media_rewriter_covers_video_to_video_urls_without_touching_exte
             ),
         },
     }
+
+
+@pytest.mark.parametrize(
+    "provider_message,provider_code,status_code,response_code",
+    [
+        (
+            "GMICloud submit failed (500): Backend error (400). Please try again.",
+            "server_error",
+            400,
+            "gmicloud_submit_rejected",
+        ),
+        (
+            "GMICloud submit failed (500): Backend error (503). Please try again.",
+            "server_error",
+            502,
+            "server_error",
+        ),
+        (
+            "GMICloud submit failed (500): Backend error (400). Content policy violation.",
+            "content_policy",
+            422,
+            "content_policy",
+        ),
+        (
+            "GMICloud submit failed (400): Invalid image URL.",
+            "invalid_input",
+            400,
+            "invalid_input",
+        ),
+    ],
+)
+def test_video_submit_preserves_definitive_gmicloud_rejection(
+    settings,
+    fake_bindings,
+    tmp_path,
+    provider_message,
+    provider_code,
+    status_code,
+    response_code,
+):
+    class RejectingVideoProvider(FakeVideoProvider):
+        def submit(self, step):
+            raise FakeProviderError(provider_message, error_code=provider_code)
+
+    path = write_catalog(
+        tmp_path,
+        {
+            "SEEDANCE2.0I2V": {
+                "video": {"modelId": "seedance-2-0-260128", "operation": "video.generate"}
+            }
+        },
+    )
+    bindings = replace(fake_bindings[0], video_provider_type=RejectingVideoProvider)
+    with build_client(settings_with_catalog(settings, path), bindings) as client:
+        response = client.post(
+            "/v1/media/requests",
+            json={
+                "model": "SEEDANCE2.0I2V",
+                "modality": "video",
+                "prompt": "move",
+                "input_urls": ["https://example/start.png"],
+                "params": {"resolution": "720P"},
+            },
+        )
+
+    assert response.status_code == status_code
+    assert response.json()["error"]["code"] == response_code
+    assert response.json()["error"]["message"] == provider_message
+
+
+def test_non_video_provider_errors_keep_the_existing_server_error_mapping():
+    error = GatewayError.from_provider(FakeProviderError(
+        "GMICloud submit failed (500): Backend error (400). Please try again.",
+        error_code="server_error",
+    ))
+
+    assert error.status_code == 502
+    assert error.code == "server_error"
 
 
 def test_video_input_contracts_enforce_exact_required_frame_counts(

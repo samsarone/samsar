@@ -72,6 +72,7 @@ const narrativeRequestSchema = new Schema({
     enum: [
       'gpt-6-astra',
       'gpt-6-astra-xhigh',
+      'claude-opus-5.5',
       'gemini-3.1-pro',
       'QWEN3.8',
       'kimi-k3',
