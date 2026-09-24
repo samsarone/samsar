@@ -2,6 +2,8 @@
 
 Samsar is organized as a deployable Docker mono-repo. The top-level `samsar` package is the wrapper that syncs source projects into `apps/*` and `services/*`, renders runtime configuration, and starts the Compose stack.
 
+Start with [hosted Samsar.js](https://docs.samsar.one/) if you want managed workflows. This page describes the standalone architecture used when you deploy those workflows yourself. Follow the [model matrix](model-matrix.md) into [provider configuration](providers-and-models.md) to choose compatible adapters. The client API contract remains documented at [docs.samsar.one](https://docs.samsar.one/v2).
+
 ## Runtime Shape
 
 ![Docker Deployment Architecture](../assets/docker-deployment-architecture.png)
@@ -70,7 +72,7 @@ The Docker reverse proxy controls browser-facing Studio and processor/media URLs
 
 ## Provider Calls
 
-Provider credentials are loaded from `root.env`. In Docker, inference uses the model's native credential first, then OpenRouter, then the configured Samsar deployed fallback. Qwen is the exception in hosted deployments: `production`, `external-production`, `staging`, and other non-Docker runtimes always route `QWEN3.8` through `OPENROUTER_API_KEY`, regardless of saved provider provenance or an available Alibaba credential. Native Alibaba Qwen is allowed only when `CURRENT_ENV=docker`; `SAMSAR_QWEN_OPENROUTER_ONLY=true` can force the hosted rule in Docker.
+Provider credentials are loaded from `root.env`. In standalone Docker, inference uses each model’s compatible provider chain and saved model-adapter preferences. Native inference can take precedence, with Samsar.js and optional mapped providers available according to the model registry. Qwen is the exception in hosted deployments: `production`, `external-production`, `staging`, and other non-Docker runtimes always route `QWEN3.8` through `OPENROUTER_API_KEY`, regardless of saved provider provenance or an available Alibaba credential. Native Alibaba Qwen is allowed only when `CURRENT_ENV=docker`; `SAMSAR_QWEN_OPENROUTER_ONLY=true` can force the hosted rule in Docker.
 
 The processor, generator, audio generator, AI video layer generator, express video listener, and assistant query processor use the same inference-adapter policy. OpenRouter Qwen text and vision requests map to `qwen/qwen3.8-max`; native Alibaba text and vision use `qwen3.8-max`. In Docker, a validated Alibaba Token Plan endpoint sets the shared `ALIBABA_QWEN_MODEL=qwen3.8-max` override. `ALIBABA_QWEN_TEXT_MODEL` is emitted with the same value only for rolling-container compatibility.
 

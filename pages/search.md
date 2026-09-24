@@ -2,6 +2,28 @@
 
 Samsar search is built on reusable embedding templates. A template is created from JSON records, URLs, or cleaned plain text. Queries search against a template and return matched records plus structured filter metadata.
 
+## Hosted Samsar.js
+
+[Hosted search and embeddings](https://docs.samsar.one/chat-api#post-chatcreate_embedding) · [Embedding model matrix](model-matrix.md#embeddings) · [Recommendations](recommendations.md)
+
+Start with Samsar.js for a managed index and query:
+
+```js
+import SamsarClient from 'samsar-js';
+const samsar = new SamsarClient({ apiKey: process.env.SAMSAR_API_KEY });
+const index = await samsar.createEmbedding({
+  name: 'catalog',
+  records: [{ id: 'camera-1', description: 'Compact camera for travel photography' }],
+});
+const results = await samsar.searchAgainstEmbedding({
+  template_id: index.data.template_id,
+  search_term: 'a lightweight travel camera',
+});
+console.log(results.data);
+```
+
+For large or queued ingestion, inspect [embedding status](https://docs.samsar.one/chat-api#get-chatembedding_status) before querying. In your own deployment, the current local embedding implementation requires an OpenAI key; URL crawling additionally requires Firecrawl. Those are local implementation requirements, not extra keys for a hosted Samsar.js caller.
+
 ## Docker Services
 
 | Service | Role |

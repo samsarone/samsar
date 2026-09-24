@@ -48,6 +48,8 @@ invalidate previous bootstrap URLs and create a new token. For a remote host, us
 opens an SSH tunnel. Set `SAMSAR_SETUP_OPEN_BROWSER=0` to skip browser
 auto-open.
 
+For managed workflows, start with [hosted Samsar.js](https://docs.samsar.one/) and a Samsar API key. Use this wizard when you want your own runtime. Compare the [full model matrix](model-matrix.md), then enable the Samsar adapter and any native/provider adapters required by your chosen models. Documentation order does not override the wizard’s validated runtime priority.
+
 ## Wizard Steps
 
 | Step | Screen | What it gathers | Output |
@@ -66,9 +68,9 @@ The wizard presents three provider groups:
 
 | Mode | Providers | Behavior |
 | --- | --- | --- |
-| Inference Router | OpenRouter | One optional key enables the supported GPT 5.6 Sol, Gemini 3.1 Pro, and Qwen 3.8 Max text and vision inference paths. |
+| Inference Router | OpenRouter | One optional key enables the supported GPT, Gemini, Claude and Qwen text and vision inference paths. |
 | Native | OpenAI, Google Cloud, Kimi K3, Alibaba Cloud, FAL, ElevenLabs, RunwayML | Use direct provider credentials for the model families they support. Kimi K3 enables `KIMIK3` inference, assistant, strict structured-output, and vision requests. |
-| Universal fallback | Samsar API key | Enables all configured Samsar model/action families and can cover stages where native credentials are not provided. |
+| Managed Samsar.js adapter | Samsar API key | Enables the supported Samsar model/action families; native-only and credential-scoped exceptions remain separate. |
 
 The provider list mirrors the runtime renderer and writes values that become `OPENROUTER_API_KEY`, `OPENAI_API_KEY`, `GOOGLE_APPLICATION_CREDENTIALS_JSON_B64`, `KIMI_K3_API_KEY`, `ALIBABA_API_KEY`, `FAL_API_KEY`, `ELEVENLABS_API_KEY`, `RUNWAY_API_KEY`, and `SAMSAR_API_KEY` in `runtime/secrets/root.env`. Kimi validation runs through the processor provider-validation API; its browser field is redacted from persisted session state and must be re-entered after a resumed validation. OpenRouter validation checks authenticated key metadata, rejects management-only keys, and binds setup to a one-hour, single-use credential token. OpenRouter and Alibaba values are stored in mode-`0600` `runtime/secrets/provider.credentials.json`; Kimi is stored in the mode-`0600` runtime config. Validation tokens are excluded from persisted browser state and the copyable config preview. All backend Compose services consume the same `root.env`, so one Kimi secret covers the processor and every inference worker.
 
