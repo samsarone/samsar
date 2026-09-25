@@ -944,6 +944,14 @@ export function shouldRetryBaseGeneration({
   videoSession = {},
   model,
 } = {}) {
+  if (isGmiCloudVideoRequest({ ...generation, ...payload }) && (
+    generation.submissionOutcomeUnknown || payload.submissionOutcomeUnknown ||
+    generation.transientProviderErrorExhausted || payload.transientProviderErrorExhausted ||
+    generation.providerPollingTimedOut || payload.providerPollingTimedOut ||
+    generation.providerPollingFailed || payload.providerPollingFailed
+  )) {
+    return false;
+  }
   if (generation.retryOnFail === true || payload.retryOnFail === true) {
     return true;
   }
@@ -1376,6 +1384,13 @@ export function isSafeProviderSubmissionRetry(error) {
   );
 }
 
+export function protectsAmbiguousVideoSubmission(request = {}) {
+  const requestType = resolveAIVideoRequestType(getDockerAdapterRoutingModel(request), request);
+  return request.isExternalDirectImageToVideo === true ||
+    requestType === 'image_to_video' ||
+    (requestType === 'text_to_video' && (isStandaloneEdition() || isGmiCloudVideoRequest(request)));
+}
+
 export function canRetryRejectedGmiCloudSubmission(error, request = {}) {
   if (
     error?.code !== 'gmicloud_submit_rejected' ||
@@ -1455,6 +1470,12 @@ export function buildTransientProviderErrorUpdate(request = {}, error, phase = '
       lastTransientProviderErrorMessage: error?.message || String(error || ''),
       transientProviderErrorPhase: phase,
       transientProviderErrorExhausted: shouldFailRequest,
+      ...(shouldFailRequest && phase === 'poll' &&
+        resolveSubmittedVideoAdapter(request) === DOCKER_VIDEO_PROVIDER.GMICLOUD ? {
+          retryOnFail: false,
+          dockerAdapterFailoverDisabled: true,
+          lastProviderFailureMessage: `GMICloud status checks exhausted: ${error?.message || String(error)}`,
+        } : {}),
       ...(shouldFailRequest && phase === 'submit' ? { retryOnFail: false } : {}),
       providerFailureDefinitive:
         shouldFailRequest &&
@@ -1479,12 +1500,7 @@ function shouldFailRequestAfterTransientProviderError(
   nextTransientErrorCount = 0,
   phase = 'poll',
 ) {
-  const requestType = resolveAIVideoRequestType(request.model, request);
-  const maxErrors = phase === 'submit' &&
-    (
-      requestType === 'image_to_video' ||
-      (requestType === 'text_to_video' && isStandaloneEdition())
-    )
+  const maxErrors = phase === 'submit' && protectsAmbiguousVideoSubmission(request)
     ? MAX_EXPLICIT_I2V_SUBMISSION_REJECTIONS
     : MAX_PROVIDER_TRANSIENT_ERRORS;
   if (nextTransientErrorCount >= maxErrors) {
@@ -1542,6 +1558,13 @@ async function scheduleNextPendingProviderPoll(payload) {
     expireAt: new Date(),
     lastProviderPendingPollAt: new Date(),
   };
+
+  if (resolveSubmittedVideoAdapter(payload) === DOCKER_VIDEO_PROVIDER.GMICLOUD) {
+    // A healthy response ends the consecutive polling-error streak. The
+    // request's original submit time still bounds total pending time.
+    update.transientProviderErrorCount = 0;
+    update.transientProviderErrorExhausted = false;
+  }
 
   if (pollIntervalMs) {
     update.nextAttemptAfter = new Date(Date.now() + pollIntervalMs + Math.floor(Math.random() * PROVIDER_POLL_JITTER_MS));
@@ -1602,6 +1625,8 @@ function isGoogleNativeVeo3Model(model) {
 
 async function fallbackGoogleNativeVeo3Generation(payload, errorMessage) {
   if (
+    resolveSubmittedVideoAdapter(payload) === DOCKER_VIDEO_PROVIDER.GMICLOUD ||
+    isGmiCloudVideoRequest(payload) ||
     !isGoogleNativeVeo3Model(payload?.model) ||
     payload?.googleVeoNativeFallbackUsed === true ||
     !shouldUseGoogleVeo3ForPayload(payload.model, payload)
@@ -1808,7 +1833,7 @@ export async function processPendingAiVideoGenerationRequests() {
   // return;
 }
 
-async function generatePendingAiVideoLayerRequests() {
+export async function generatePendingAiVideoLayerRequests() {
   await getDBConnectionString();
 
   // ------------------------------------------------------------------------
@@ -1857,6 +1882,13 @@ async function generatePendingAiVideoLayerRequests() {
         status: 'FAILED',
         rowLocked: false,
         providerFailureDefinitive: false,
+        ...(resolveSubmittedVideoAdapter(request) === DOCKER_VIDEO_PROVIDER.GMICLOUD ? {
+          retryOnFail: false,
+          dockerAdapterFailoverDisabled: true,
+          providerPollingFailed: true,
+          lastProviderFailureMessage: e?.message || String(e),
+          lastProviderFailureDetail: getErrorLogPayload(e),
+        } : {}),
       });
     }
   }
@@ -1912,9 +1944,7 @@ async function generatePendingAiVideoLayerRequests() {
       }
       console.error('Error while starting a new INIT request:', getErrorLogPayload(e));
       const requestType = resolveAIVideoRequestType(request.model, request);
-      const protectsAmbiguousSubmission =
-        requestType === 'image_to_video' ||
-        (requestType === 'text_to_video' && isStandaloneEdition());
+      const protectsAmbiguousSubmission = protectsAmbiguousVideoSubmission(request);
       if (protectsAmbiguousSubmission && isSafeProviderSubmissionRetry(e)) {
         await deferTransientProviderError(request, e, 'submit');
         continue;
@@ -2235,6 +2265,9 @@ async function generateAIVideoLayer(payload) {
   }
   if (submittedAdapter === DOCKER_VIDEO_PROVIDER.GMICLOUD) {
     generationUpdate.externalProvider = DOCKER_VIDEO_PROVIDER.GMICLOUD;
+    generationUpdate.transientProviderErrorExhausted = false;
+    generationUpdate.providerPollingTimedOut = false;
+    generationUpdate.providerPollingFailed = false;
   }
   if (payload.dockerAdapterFailoverAttempted === true && payload.dockerVideoProviderOverride) {
     const successfulProvider = submittedAdapter;
@@ -2262,7 +2295,7 @@ async function generateAIVideoLayer(payload) {
   });
 }
 
-async function pollForAIVideoCompletion(reqPayload) {
+export async function pollForAIVideoCompletion(reqPayload) {
   let payload = reqPayload.toObject();
   const { model } = payload;
   const submittedAdapter = resolveSubmittedVideoAdapter(payload);
@@ -2400,6 +2433,26 @@ async function pollForAIVideoCompletion(reqPayload) {
     payload.submissionOutcomeUnknown = false;
     await processVideoGenerationFailed(payload);
   } else if (responseStatus === 'PENDING') {
+    const submittedAtMs = new Date(payload.requestSubmitAt || payload.createdAt).getTime();
+    if (submittedAdapter === DOCKER_VIDEO_PROVIDER.GMICLOUD &&
+      Number.isFinite(submittedAtMs) && Date.now() - submittedAtMs > MAX_BASE_PROVIDER_PENDING_MS) {
+      // A still-pending upstream job may eventually finish. Stop waiting
+      // locally without submitting another billable job or switching adapters.
+      await AIVideoLayerGeneration.findByIdAndUpdate(payload._id, {
+        $set: {
+          status: 'FAILED',
+          rowLocked: false,
+          nextAttemptAfter: null,
+          retryOnFail: false,
+          dockerAdapterFailoverDisabled: true,
+          providerFailureDefinitive: false,
+          providerPollingTimedOut: true,
+          lastProviderFailureMessage: 'GMICloud video remained pending beyond the allowed polling time.',
+          expireAt: new Date(),
+        },
+      });
+      return;
+    }
     await scheduleNextPendingProviderPoll(payload);
   }
 }
@@ -3523,9 +3576,9 @@ export async function processVideoGenerationFailed(payload) {
   }
   let currentLayer = videoSession.layers[currentLayerIndex];
 
-  // Direct I2V owns the base-video stage, even when the model also generates
-  // audio. Its failure must reach the status endpoint watched by the caller.
-  if (payload.isExternalDirectImageToVideo === true) {
+  // Base I2V/T2V requests own the AI-video stage, even when the model also
+  // generates audio. Explicit lip-sync/sound-effect requests keep their handler.
+  if (payload.isExternalDirectImageToVideo === true || isGmiCloudVideoRequest(payload)) {
     await processBaseGenerationFailed(payload);
     return;
   }

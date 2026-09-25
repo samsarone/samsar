@@ -5,8 +5,14 @@ import VideoSession from './schema/VideoSession.js';
 import AIVideoLayerGeneration from './schema/AIVideoLayerGeneration.js';
 import { processVideoGenerationFailed } from './VideoGenerationListener.js';
 
+for (const request of [
+  { model: 'SEEDANCE2.0I2V', isExternalDirectImageToVideo: true },
+  ...['VEO3.1', 'VEO3.1FAST', 'HAILUOPRO', 'SEEDANCE2.0I2V', 'KLINGIMGTOVID3PRO'].map(model => ({
+    model, submittedAdapter: 'gmicloud',
+  })),
+]) {
 for (const layerAiVideoType of ['sound_effect', 'ai_video']) {
-  test(`direct audio-enabled I2V failure terminates the base stage (${layerAiVideoType})`, async (t) => {
+  test(`${request.model} audio-enabled failure terminates the base stage (${layerAiVideoType}, direct=${!!request.isExternalDirectImageToVideo})`, async (t) => {
     // Stub persistence only; exercise the real failure dispatch and finalizer.
     Object.defineProperty(mongoose.connection, 'readyState', { configurable: true, value: 1 });
     t.after(() => { delete mongoose.connection.readyState; });
@@ -24,7 +30,7 @@ for (const layerAiVideoType of ['sound_effect', 'ai_video']) {
     const payload = {
       _id: 'failed-job', sessionId: 'session', layerId: 'failed-layer',
       model: 'SEEDANCE2.0I2V', generationType: 'generate',
-      isExternalDirectImageToVideo: true, isAudioVideoGeneration: true,
+      ...request, isAudioVideoGeneration: true,
       retryOnFail: false, numRetries: 0, dockerAdapterFailoverDisabled: true,
       lastProviderFailureMessage: 'GMICloud submit failed (500): Backend error (403). Please try again.',
     };
@@ -58,4 +64,6 @@ for (const layerAiVideoType of ['sound_effect', 'ai_video']) {
     assert.deepEqual(completedLayer, { _id: 'completed-layer', aiVideoGenerationStatus: 'COMPLETED', aiVideoLayer: 'completed.mp4' });
     assert.deepEqual(events, ['layer-failed', 'job-deleted']);
   });
+}
+
 }
