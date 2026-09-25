@@ -3500,7 +3500,7 @@ async function updateNextLayersAudioAndAnimationDurations(payload, durationDiff)
 /**
  * Decides which failure handler to invoke (lip sync vs. base).
  */
-async function processVideoGenerationFailed(payload) {
+export async function processVideoGenerationFailed(payload) {
   await getDBConnectionString();
 
   const { sessionId, layerId } = payload;
@@ -3523,6 +3523,12 @@ async function processVideoGenerationFailed(payload) {
   }
   let currentLayer = videoSession.layers[currentLayerIndex];
 
+  // Direct I2V owns the base-video stage, even when the model also generates
+  // audio. Its failure must reach the status endpoint watched by the caller.
+  if (payload.isExternalDirectImageToVideo === true) {
+    await processBaseGenerationFailed(payload);
+    return;
+  }
 
   const { model } = payload;
   if (isStaleSoundEffectGenerationForLayer({
