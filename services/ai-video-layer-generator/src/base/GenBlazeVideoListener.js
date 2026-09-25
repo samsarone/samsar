@@ -315,14 +315,11 @@ export function buildGenBlazeVideoRequest(payload = {}) {
   };
 }
 
-async function readJson(response) {
-  const body = await response.text();
-  if (!body) return {};
-  try {
-    return JSON.parse(body);
-  } catch {
-    throw new Error('GenBlaze returned an invalid JSON response.');
-  }
+function invalidUpstreamResponse(message) {
+  const error = new Error(message);
+  error.status = 502;
+  error.code = 'invalid_upstream_response';
+  return error;
 }
 
 function getErrorMessage(body, fallback) {
@@ -380,7 +377,17 @@ export async function requestGenBlazeVideo(pathname, options = {}) {
         signal: controller.signal,
       },
     );
-    const responseBody = await readJson(response);
+    const body = await response.text();
+    let responseBody;
+    try {
+      responseBody = JSON.parse(body);
+    } catch {
+      // Preserve HTTP errors (including authentication errors and Retry-After)
+      // even when a proxy returns HTML instead of the gateway's JSON envelope.
+      if (response.ok) {
+        throw invalidUpstreamResponse('GenBlaze returned an invalid JSON response.');
+      }
+    }
     if (!response.ok) {
       const responseHeaders = getResponseHeaders(response.headers);
       const error = new Error(getErrorMessage(
@@ -396,6 +403,9 @@ export async function requestGenBlazeVideo(pathname, options = {}) {
         headers: responseHeaders,
       };
       throw error;
+    }
+    if (!responseBody || typeof responseBody !== 'object' || Array.isArray(responseBody)) {
+      throw invalidUpstreamResponse('GenBlaze returned an invalid response envelope.');
     }
     return responseBody;
   } catch (error) {
@@ -418,7 +428,7 @@ export async function generateGenBlazeVideoLayer(payload = {}, dependencies = {}
   });
   const requestId = normalizeString(response?.request_id);
   if (!requestId) {
-    throw new Error('GenBlaze video submit returned no request id.');
+    throw invalidUpstreamResponse('GenBlaze video submit returned no request id.');
   }
   return `${GENBLAZE_REQUEST_PREFIX}${requestId}`;
 }
@@ -436,14 +446,13 @@ export async function listenToPendingGenBlazeVideoRequest(payload = {}, dependen
   }
   if (status === 'succeeded') {
     const remoteUrl = normalizeString(response?.assets?.[0]?.url);
-    if (!remoteUrl) {
-      return {
-        responseStatus: 'FAILED',
-        providerFailureMessage: 'GMICloud video result returned no video URL.',
-        providerStatus: response,
-      };
+    if (!/^https?:\/\//i.test(remoteUrl)) {
+      throw invalidUpstreamResponse('GMICloud video result returned no valid video URL.');
     }
     return { responseStatus: 'COMPLETED', remoteUrl };
+  }
+  if (status !== 'failed' && status !== 'cancelled') {
+    throw invalidUpstreamResponse(`GMICloud video returned an unexpected status: ${status || '<missing>'}.`);
   }
   return {
     responseStatus: 'FAILED',
