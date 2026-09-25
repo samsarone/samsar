@@ -1,3 +1,4 @@
+import { normalizeStoredGPTImageModelKey } from '../../consts/GPTImageModelKeys.js';
 import fs from 'fs';
 import path from 'path';
 import {
@@ -55,7 +56,7 @@ function normalizeStringListMap(value) {
     Object.entries(value)
       .filter(([key]) => typeof key === 'string' && key.trim())
       .map(([key, item]) => [key.trim(), normalizeStringList(item).filter((provider) => (
-        !['GPTIMAGE2', 'GPTIMAGE2EDIT'].includes(normalizeDeploymentModel(key)) ||
+        !['GPTIMAGE2.5', 'GPTIMAGE2.5EDIT'].includes(normalizeDeploymentModel(key)) ||
         normalizeDeploymentProvider(provider) !== 'gmicloud'
       ))]),
   );
@@ -127,7 +128,7 @@ function hasRuntimeGenBlazeModel(modelMappings, model, env = process.env) {
   const normalizedModel = normalizeDeploymentModel(model);
   // The image worker supports Sunburst through OpenAI, Samsar, and (generation
   // only) Fal. A legacy GMI catalog must not advertise a new Sunburst request.
-  if (['GPTIMAGE2', 'GPTIMAGE2EDIT'].includes(normalizedModel)) return false;
+  if (['GPTIMAGE2.5', 'GPTIMAGE2.5EDIT'].includes(normalizedModel)) return false;
   if (['GPT-6-ASTRA', 'GEMINI-3.1-PRO', 'QWEN3.8'].includes(normalizedModel)) {
     return hasRuntimeGenBlazeInferenceModel(modelMappings, normalizedModel);
   }
@@ -211,7 +212,7 @@ function isAlibabaQwenImage3ProSavedCredentialEligible(availableModelConfig = {}
 }
 
 function normalizeDeploymentModel(value) {
-  const normalized = String(value || '').trim().toUpperCase();
+  const normalized = String(normalizeStoredGPTImageModelKey(value) || '').trim().toUpperCase();
   if (['QWEN3.8', 'QWEN3.8-MAX'].includes(normalized)) {
     return 'QWEN3.8';
   }
@@ -458,18 +459,18 @@ export function mergeRuntimeInferenceDeploymentAvailability(value = {}) {
   const configuredProviders = normalizeStringList(value?.providers);
   const configuredModels = [...new Set(
     normalizeStringList(value?.models).map((model) => (
-      normalizeDeploymentModel(model) === 'QWEN3.8' ? 'QWEN3.8' : model
+      normalizeDeploymentModel(model) === 'QWEN3.8' ? 'QWEN3.8' : normalizeStoredGPTImageModelKey(model)
     )),
   )];
   const modelProviders = Object.fromEntries(
     Object.entries(normalizeStringMap(value?.modelProviders)).map(([model, provider]) => [
-      normalizeDeploymentModel(model) === 'QWEN3.8' ? 'QWEN3.8' : model,
+      normalizeDeploymentModel(model) === 'QWEN3.8' ? 'QWEN3.8' : normalizeStoredGPTImageModelKey(model),
       provider,
     ]),
   );
   const modelProviderPriority = Object.fromEntries(
     Object.entries(normalizeStringListMap(value?.modelProviderPriority)).map(([model, providers]) => [
-      normalizeDeploymentModel(model) === 'QWEN3.8' ? 'QWEN3.8' : model,
+      normalizeDeploymentModel(model) === 'QWEN3.8' ? 'QWEN3.8' : normalizeStoredGPTImageModelKey(model),
       providers,
     ]),
   );
@@ -477,7 +478,7 @@ export function mergeRuntimeInferenceDeploymentAvailability(value = {}) {
     Object.entries(normalizeStringListMap(
       value?.defaultModelProviderPriority || value?.modelProviderPriority,
     )).map(([model, providers]) => [
-      normalizeDeploymentModel(model) === 'QWEN3.8' ? 'QWEN3.8' : model,
+      normalizeDeploymentModel(model) === 'QWEN3.8' ? 'QWEN3.8' : normalizeStoredGPTImageModelKey(model),
       providers,
     ]),
   );
@@ -604,7 +605,7 @@ export function mergeRuntimeInferenceDeploymentAvailability(value = {}) {
     appendUnique(merged.models, ['gpt-6-astra']);
     appendUnique(merged.actions, ['chat', 'assistant']);
     if (exposeStandaloneProviderCapabilities) {
-      appendUnique(merged.models, ['GPTIMAGE2']);
+      appendUnique(merged.models, ['GPTIMAGE2.5']);
       appendUnique(merged.actions, ['image']);
     }
   }
@@ -639,7 +640,7 @@ export function mergeRuntimeInferenceDeploymentAvailability(value = {}) {
     appendUnique(merged.models, ['gpt-6-astra', 'claude-opus-5.5', 'gemini-3.1-pro', 'QWEN3.8', 'KIMIK3', 'HAPPYHORSEI2V', 'WAN2.7PRO']);
     appendUnique(merged.actions, ['chat', 'assistant', 'image', 'video']);
     if (exposeStandaloneProviderCapabilities) {
-      appendUnique(merged.models, ['GPTIMAGE2', 'VEO3.1I2V']);
+      appendUnique(merged.models, ['GPTIMAGE2.5', 'VEO3.1I2V']);
     }
   }
 

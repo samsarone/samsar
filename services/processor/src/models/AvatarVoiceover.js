@@ -75,7 +75,7 @@ const TTS_PROVIDER_PLAYAI = 'PLAYAI';
 const AVATAR_VIDEO_AUDIO_SOURCE_SESSION_SPEECH = 'session_speech';
 const AVATAR_VIDEO_AUDIO_SOURCE_HINT_SPEECH = 'hint_speech';
 const SECURE_ASSET_PREFIX = (process.env.SECURE_ASSET_PREFIX || 'assets_v2').replace(/^\/+|\/+$/g, '');
-export const DEFAULT_AVATAR_IMAGE_MODEL = 'GPTIMAGE2';
+export const DEFAULT_AVATAR_IMAGE_MODEL = 'GPTIMAGE2.5';
 
 export const RUNWAY_AVATAR_VOICE_PRESETS = [
   { presetId: 'victoria', name: 'Victoria' },

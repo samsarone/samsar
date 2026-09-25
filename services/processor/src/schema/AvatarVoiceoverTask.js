@@ -10,7 +10,7 @@ const avatarVoiceoverTaskSchema = new Schema({
 
   prompt: { type: String, default: '' },
   avatarImagePrompt: { type: String, default: '' },
-  imageModel: { type: String, default: 'GPTIMAGE2' },
+  imageModel: { type: String, default: 'GPTIMAGE2.5' },
   imageRequestId: { type: String, default: '' },
   imageStatus: { type: String, default: 'PENDING' },
   imageError: { type: String, default: '' },

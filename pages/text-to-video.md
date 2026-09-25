@@ -13,7 +13,7 @@ import SamsarClient from 'samsar-js';
 const samsar = new SamsarClient({ apiKey: process.env.SAMSAR_API_KEY });
 const job = await samsar.createVideoFromText({
   prompt: 'A welcoming introduction to a boutique hotel.',
-  image_model: 'GPTIMAGE2',
+  image_model: 'GPTIMAGE2.5',
   video_model: 'RUNWAYML',
   duration: 30,
   tts_model: 'OPENAI',

@@ -26,12 +26,12 @@ function createModelRecorder() {
 test('builds exact Samsar-model gateway requests without exposing a GMI credential', () => {
   assert.deepEqual(
     buildGenBlazeImageRequest({
-      model: 'GPTIMAGE2',
+      model: 'GPTIMAGE2.5',
       prompt: 'a lighthouse',
       aspectRatio: '16:9',
     }),
     {
-      model: 'GPTIMAGE2',
+      model: 'GPTIMAGE2.5',
       modality: 'image',
       prompt: 'a lighthouse',
       input_urls: [],
@@ -60,7 +60,7 @@ test('preserves each GPT Image 2 aspect ratio as a GMI-compatible exact size', (
 
   for (const [aspectRatio, size] of cases) {
     const request = buildGenBlazeImageRequest({
-      model: 'GPTIMAGE2',
+      model: 'GPTIMAGE2.5',
       prompt: 'a lighthouse',
       aspect_ratio: aspectRatio,
     });
@@ -182,7 +182,7 @@ test('polls the same job and preserves the existing image result shape', async (
   const result = await handleGenBlazeImageRequest(
     {
       _id: 'image-row-2',
-      model: 'GPTIMAGE2',
+      model: 'GPTIMAGE2.5',
       aspectRatio: '16:9',
       apiGenerationStatus: 'PENDING',
       apiRequestId: 'genblaze-image:sealed/job',
@@ -227,7 +227,7 @@ test('GPT Image 2 polling honors the same snake-case ratio accepted at submissio
   const result = await handleGenBlazeImageRequest(
     {
       _id: 'image-row-snake-case',
-      model: 'GPTIMAGE2',
+      model: 'GPTIMAGE2.5',
       aspect_ratio: '9:16',
       apiGenerationStatus: 'PENDING',
       apiRequestId: 'genblaze-image:snake-case-job',
@@ -285,7 +285,7 @@ test('rejects new GPT Image jobs instead of silently using GMICloud version 2', 
   let submitted = false;
   const result = await handleGenBlazeImageRequest({
     _id: 'sunburst-request',
-    model: 'GPTIMAGE2',
+    model: 'GPTIMAGE2.5',
     apiGenerationStatus: 'INIT',
   }, {
     connect: async () => {},

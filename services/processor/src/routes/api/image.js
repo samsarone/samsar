@@ -830,7 +830,8 @@ async function handleTextToImageRequest(req, res) {
     const payload = {
       prompt: prompt.trim(),
       aspect_ratio: normalizedAspectRatio,
-      model: model || mode,
+      model,
+      mode,
       resolution,
       num_images,
       numImages,

@@ -3,6 +3,19 @@ import assert from 'node:assert/strict';
 
 import { __testOnly__ } from './VideoSessionRerollAPI.js';
 
+test('historical GPTIMAGE2 sessions reroll with the current key and unchanged image pricing', () => {
+  const session = {
+    aspectRatio: '16:9',
+    expressGenerationImageModel: 'GPTIMAGE2',
+    layers: [{ _id: 'layer-1', prompt: 'An anime frame', duration: 0 }],
+  };
+  const historical = __testOnly__.buildQuote(session, [1]);
+  const current = __testOnly__.buildQuote({ ...session, expressGenerationImageModel: 'GPTIMAGE2.5' }, [1]);
+  assert.deepEqual(historical, current);
+  assert.equal(historical.imageModel, 'GPTIMAGE2.5');
+  assert.equal(historical.imageCredits, 46);
+});
+
 test('reroll clone integrity allows matching first and last scene positions', () => {
   const sourceSession = {
     layers: [

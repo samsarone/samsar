@@ -67,7 +67,7 @@ test('native GPT vision omits external-only completion limits', async (t) => {
         choices: [{
           message: {
             role: 'assistant',
-            content: payloads.length === 1 ? 'Native GPT image description.' : '95',
+            content: payloads.length === 1 ? 'Native GPT image description.' : '{"score":95}',
           },
         }],
       };
@@ -94,7 +94,7 @@ test('native GPT vision omits external-only completion limits', async (t) => {
   );
 
   assert.equal(description, 'Native GPT image description.');
-  assert.equal(score, '95');
+  assert.equal(score, 95);
   assert.equal(payloads.length, 2);
   for (const payload of payloads) {
     assert.equal(payload.model, 'gpt-6-astra');
@@ -144,7 +144,7 @@ test('Qwen 3.8 Max drives both native vision description and scoring', async (t)
         choices: [{
           message: {
             role: 'assistant',
-            content: payloads.length === 1 ? 'Qwen image description.' : '94',
+            content: payloads.length === 1 ? 'Qwen image description.' : '{"score":94}',
           },
         }],
       };
@@ -171,7 +171,7 @@ test('Qwen 3.8 Max drives both native vision description and scoring', async (t)
   );
 
   assert.equal(description, 'Qwen image description.');
-  assert.equal(score, '94');
+  assert.equal(score, 94);
   assert.equal(payloads.length, 2);
   for (const payload of payloads) {
     assert.equal(payload.model, 'qwen3.8-max');
@@ -219,7 +219,7 @@ test('Kimi K3 drives both native describe and judge stages in high mode', async 
         choices: [{
           message: {
             role: 'assistant',
-            content: payloads.length === 1 ? 'Detailed image description.' : '93',
+            content: payloads.length === 1 ? 'Detailed image description.' : '{"score":93}',
           },
         }],
       };
@@ -246,7 +246,7 @@ test('Kimi K3 drives both native describe and judge stages in high mode', async 
   );
 
   assert.equal(description, 'Detailed image description.');
-  assert.equal(score, '93');
+  assert.equal(score, 93);
   assert.equal(payloads.length, 2);
   for (const payload of payloads) {
     assert.equal(payload.model, 'kimi-k3');
@@ -296,7 +296,7 @@ test('Kimi K3 describe and judge stages use the Samsar-js fallback without a nat
         choices: [{
           message: {
             role: 'assistant',
-            content: payloads.length === 1 ? 'Fallback image description.' : '88',
+            content: payloads.length === 1 ? 'Fallback image description.' : '{"score":88}',
           },
         }],
       };
@@ -323,7 +323,7 @@ test('Kimi K3 describe and judge stages use the Samsar-js fallback without a nat
   );
 
   assert.equal(description, 'Fallback image description.');
-  assert.equal(score, '88');
+  assert.equal(score, 88);
   assert.equal(payloads.length, 2);
   for (const payload of payloads) {
     assert.equal(payload.model, 'kimi-k3');
@@ -398,7 +398,7 @@ test('vision describe and judge stages advance through the saved adapter order',
         choices: [{
           message: {
             role: 'assistant',
-            content: kimiCalls === 1 ? 'Ordered image description.' : '91',
+            content: kimiCalls === 1 ? 'Ordered image description.' : '{"score":91}',
           },
         }],
       };
@@ -421,7 +421,7 @@ test('vision describe and judge stages advance through the saved adapter order',
   );
 
   assert.equal(description, 'Ordered image description.');
-  assert.equal(score, '91');
+  assert.equal(score, 91);
   assert.deepEqual(calls, ['samsar', 'kimi', 'samsar', 'kimi']);
 });
 
@@ -452,6 +452,108 @@ test('vision inference retries a 429 three times with exponential backoff', asyn
   ]);
   assert.ok(observedDelays[1] >= observedDelays[0]);
   assert.ok(observedDelays[2] >= observedDelays[1]);
+});
+
+function mockClaudeScoring(t, responses) {
+  const environment = {
+    CURRENT_ENV: 'docker',
+    SAMSAR_DEPLOYMENT_EDITION: 'standalone',
+    SAMSAR_EXTERNAL_INFERENCE_ENABLED: 'false',
+    SAMSAR_MODEL_ADAPTER_PREFERENCES_PATH: path.join(os.tmpdir(), `missing-scoring-preferences-${process.pid}.json`),
+    ANTHROPIC_API_KEY: 'test-scoring-key',
+  };
+  const previous = Object.fromEntries(Object.keys(environment).map((key) => [key, process.env[key]]));
+  Object.assign(process.env, environment);
+  t.after(() => {
+    for (const [key, value] of Object.entries(previous)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  });
+  const payloads = [];
+  const delays = [];
+  const errors = [];
+  t.mock.method(console, 'error', (...args) => errors.push(args));
+  t.mock.method(console, 'warn', () => {});
+  t.mock.method(globalThis, 'setTimeout', (callback, delay) => {
+    delays.push(delay);
+    queueMicrotask(callback);
+    return 0;
+  });
+  t.mock.method(globalThis, 'fetch', async (_url, options) => {
+    payloads.push(JSON.parse(options.body));
+    const result = responses[Math.min(payloads.length - 1, responses.length - 1)];
+    if (result instanceof Error) throw result;
+    return new Response(JSON.stringify({
+      content: [{ type: 'text', text: result.text }],
+      stop_reason: result.stopReason || 'end_turn',
+    }), { status: 200 });
+  });
+  return { payloads, delays, errors };
+}
+
+function scoreWithClaude() {
+  return assignScoreForTheImage(
+    'An upright anime frame', 'Existing detailed image description.',
+    'grounded', 'claude-opus-5.5', '16:9', '', '', 'native',
+  );
+}
+
+test('Claude scoring enforces a Zod schema and retries the same description three times', async (t) => {
+  const { payloads, delays, errors } = mockClaudeScoring(t, [
+    { text: 'Score: 72' },
+    { text: '{"score":"72"}' },
+    { text: '{"score":101}' },
+    { text: '{"score":72}' },
+  ]);
+
+  assert.equal(await scoreWithClaude(), 72, JSON.stringify(errors));
+  assert.equal(payloads.length, 4);
+  assert.deepEqual(delays, [1, 2, 3].map(__testOnly__.getVisionInferenceRetryDelayMs));
+  for (const payload of payloads) {
+    assert.deepEqual(payload, payloads[0]);
+    assert.match(payload.messages[0].content[0].text, /Existing detailed image description\./);
+    assert.match(payload.system[0].text, /Return only a JSON object containing "score"/);
+  }
+  const format = payloads[0].output_config.format;
+  assert.equal(format.type, 'json_schema');
+  assert.equal(format.schema.properties.score.type, 'integer');
+  assert.equal(format.schema.additionalProperties, false);
+  assert.deepEqual(format.schema.required, ['score']);
+  assert.equal(Object.hasOwn(format.schema.properties.score, 'minimum'), false);
+  assert.equal(Object.hasOwn(format.schema.properties.score, 'maximum'), false);
+});
+
+test('invalid or incomplete scoring returns zero only after three retries', async (t) => {
+  for (const response of [
+    { text: '' },
+    { text: '72' },
+    { text: '{"score":null}' },
+    { text: '{"score":-1}' },
+    { text: '{"score":72.5}' },
+    { text: '{"score":72,"reason":"extra"}' },
+    { text: '{"score":72}', stopReason: 'max_tokens' },
+    new Error('Provider unavailable'),
+  ]) {
+    await t.test(JSON.stringify(response), async (t) => {
+      const { payloads, delays, errors } = mockClaudeScoring(t, [response]);
+      assert.equal(await scoreWithClaude(), 0);
+      assert.equal(payloads.length, 4);
+      assert.equal(delays.length, 3);
+      assert.match(errors.at(-1)[0], /returning 0 for image regeneration/);
+    });
+  }
+});
+
+test('valid boundary and low scores return immediately for the existing image filter', async (t) => {
+  for (const score of [0, 12, 100]) {
+    await t.test(`score ${score}`, async (t) => {
+      const { payloads, delays } = mockClaudeScoring(t, [{ text: JSON.stringify({ score }) }]);
+      assert.equal(await scoreWithClaude(), score);
+      assert.equal(payloads.length, 1);
+      assert.deepEqual(delays, []);
+    });
+  }
 });
 
 test('vision inference fails immediately for non-retryable authentication errors', async () => {

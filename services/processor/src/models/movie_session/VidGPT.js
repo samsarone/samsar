@@ -1,3 +1,4 @@
+import { normalizeStoredGPTImageModelKey } from '../../consts/GPTImageModelKeys.js';
 import { getDBConnectionString } from "../DBString.js";
 import {
   extractThemeFromUserPrompt,
@@ -43,9 +44,9 @@ import { validateBranchingNarrativeTree } from './branching/BranchingNarrativeTr
 
 function resolveAgentImageModel(modelKey) {
   if (modelKey === 'GPTIMAGE1') {
-    return 'GPTIMAGE2';
+    return 'GPTIMAGE2.5';
   }
-  return modelKey || 'GPTIMAGE2';
+  return normalizeStoredGPTImageModelKey(modelKey) || 'GPTIMAGE2.5';
 }
 
 function normalizeBackingTrackProvider(value) {
@@ -87,7 +88,7 @@ export async function createVidGPTSessionFromNarrativeArtifacts(userId, payload 
     aspectRatio: requestedAspectRatio = null,
     duration = 10,
     videoGenerationModel: requestedVideoGenerationModel = 'RUNWAYML',
-    imageModel = 'GPTIMAGE2',
+    imageModel = 'GPTIMAGE2.5',
     musicProvider,
     videoTone = 'grounded',
     language = 'auto',

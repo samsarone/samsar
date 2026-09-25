@@ -13,6 +13,7 @@ import {
 } from '../consts/DockerProviderPriority.js';
 
 import { maybeTriggerAutoRecharge } from './AutoRecharge.js';
+import { getRetiredGPTImageModelError } from '../consts/GPTImageModelKeys.js';
 
 
 import { uploadFrameLayerImageToCDN, primeCDNCache } from './AWS.js';
@@ -25,11 +26,17 @@ const localAssetsRoot = path.join(pwd, 'assets');
 const localAssetsV2Root = path.join(pwd, 'assets_v2');
 
 function resolveNanoBananaModelAlias(modelKey) {
+  const errorMessage = getRetiredGPTImageModelError(modelKey);
+  if (errorMessage) {
+    const error = new Error(errorMessage);
+    error.status = error.statusCode = 400;
+    throw error;
+  }
   if (modelKey === 'GPTIMAGE1') {
-    return 'GPTIMAGE2';
+    return 'GPTIMAGE2.5';
   }
   if (modelKey === 'GPTIMAGE1EDIT') {
-    return 'GPTIMAGE2EDIT';
+    return 'GPTIMAGE2.5EDIT';
   }
   return modelKey;
 }

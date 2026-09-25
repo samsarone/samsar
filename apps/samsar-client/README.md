@@ -130,7 +130,7 @@ That means image generation can complete first, the preview can be inspected, an
   "input": {
     "session_id": "SESSION_ID",
     "prompt": "A 30 second launch teaser for a new travel app",
-    "image_model": "GPTIMAGE2",
+    "image_model": "GPTIMAGE2.5",
     "video_model": "RUNWAYML",
     "duration": 30,
     "tone": "grounded",
@@ -351,7 +351,7 @@ In Docker deployments, the processor-provided availability response filters the 
 
 | Model | Key | Express |
 | --- | --- | --- |
-| GPT Image 2.5 | `GPTIMAGE2` | Yes |
+| GPTImage 2.5 | `GPTIMAGE2.5` | Yes |
 | Seedream | `SEEDREAM` | Yes |
 | NanoBanana 2 | `NANOBANANA2` | Yes |
 | NanoBanana Pro | `NANOBANANAPRO` | Yes |
@@ -361,14 +361,14 @@ In Docker deployments, the processor-provided availability response filters the 
 Docker deployments expose `QWENIMAGE3PRO` in Image Studio and Express when
 native Alibaba Cloud pay-as-you-go routing is enabled. Requests use provider
 model ID `qwen-image-3.0-pro`. Standalone installations are billed directly by
-Alibaba; hosted Studio charges the same 46 credits per image as GPT Image 2.5.
+Alibaba; hosted Studio charges the same 46 credits per image as GPTImage 2.5.
 
 ### Image Editing
 
 | Model | Key | Edit type |
 | --- | --- | --- |
 | NanoBanana 2 Edit | `NANOBANANA2EDIT` | Prompt edit |
-| GPT Image 2.5 Edit | `GPTIMAGE2EDIT` | Inpaint |
+| GPTImage 2.5 Edit | `GPTIMAGE2.5EDIT` | Inpaint |
 
 ### Video Generation
 
@@ -394,7 +394,7 @@ Alibaba; hosted Studio charges the same 46 credits per image as GPT Image 2.5.
 
 VidGenie intentionally exposes a smaller express-first subset:
 
-- Image models: `GPTIMAGE2`, `NANOBANANAPRO`, `SEEDREAM`, `WAN2.7PRO`, and `QWENIMAGE3PRO`.
+- Image models: `GPTIMAGE2.5`, `NANOBANANAPRO`, `SEEDREAM`, `WAN2.7PRO`, and `QWENIMAGE3PRO`.
 - Text-to-video video models: `RUNWAYML`, `VEO3.1I2V`, `VEO3.1I2VFAST`, `SEEDANCEI2V`, `SEEDANCE2.0I2V`, `SEEDANCE2.5I2V`, `KLINGIMGTOVID3PRO`.
 - Image-list-to-video models: `RUNWAYML`, `VEO3.1I2V`, `VEO3.1I2VFAST`, `SEEDANCEI2V`, `SEEDANCE2.0I2V`, `SEEDANCE2.5I2V`, `KLINGIMGTOVID3PRO`.
 - JSON mode validates the supported image/video model keys for the selected workflow.

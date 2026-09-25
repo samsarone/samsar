@@ -1,4 +1,4 @@
-// Keep the existing GPTIMAGE2 application key while upgrading its upstream model.
+// GPTIMAGE2.5 and GPTIMAGE2.5EDIT use the Sunburst upstream model.
 export const GPT_IMAGE_TWO_MODEL = 'gpt-image-2.5-sunburst';
 export const GPT_IMAGE_TWO_FAL_ENDPOINT = 'openai/gpt-image-2.5/sunburst/text-to-image';
 // Requests submitted before the upgrade must still be polled on their original endpoint.

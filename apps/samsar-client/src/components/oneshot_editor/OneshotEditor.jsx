@@ -120,6 +120,7 @@ import {
 import {
   QWEN_IMAGE_3_PRO_MODEL_KEY,
   isImageModelAllowedForDeploymentScope,
+  normalizeStoredGPTImageModelKey,
 } from '../../utils/imageModelAvailability.mjs';
 import { isVidgenieImageToVideoModeAvailable } from '../../utils/vidgenieModeAvailability.mjs';
 import useRealtimeTranscription from '../../hooks/useRealtimeTranscription.js';
@@ -203,14 +204,14 @@ const VOICE_SESSION_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
 const VOICE_TRANSCRIPTION_WORD_LIMIT = 2000;
 const VIDGENIE_PROMPT_MAX_LENGTH = 4000;
 const VIDGENIE_IMAGE_MODEL_ORDER = [
-  'GPTIMAGE2',
+  'GPTIMAGE2.5',
   'NANOBANANAPRO',
   'SEEDREAM',
   'WAN2.7PRO',
   QWEN_IMAGE_3_PRO_MODEL_KEY,
 ];
 const VIDGENIE_IMAGE_MODEL_LABELS = {
-  GPTIMAGE2: 'GPT Image 2.5',
+  'GPTIMAGE2.5': 'GPTImage 2.5',
   NANOBANANAPRO: 'NanoBanana Pro',
   SEEDREAM: 'Seedream',
   'WAN2.7PRO': 'Wan2.7 Pro',
@@ -1253,7 +1254,7 @@ function imageModelSupportsAspectRatio(modelKey, aspectRatio) {
 }
 
 function getImageCreditsForModel(modelKey, aspectRatio) {
-  const normalizedKey = resolveJsonImageModelAlias(modelKey || '');
+  const normalizedKey = normalizeStoredGPTImageModelKey(modelKey || '');
   const pricing = IMAGE_MODEL_PRICES.find((model) => model.key === normalizedKey);
   const price =
     pricing?.prices?.find((entry) => entry.aspectRatio === aspectRatio)?.price ??

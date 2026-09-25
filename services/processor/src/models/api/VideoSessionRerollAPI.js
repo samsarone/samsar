@@ -1,3 +1,4 @@
+import { normalizeStoredGPTImageModelKey } from '../../consts/GPTImageModelKeys.js';
 import mongoose from 'mongoose';
 import VideoSession from '../../schema/VideoSession.js';
 import ImageGeneration from '../../schema/ImageGeneration.js';
@@ -13,7 +14,7 @@ import { buildMovieResourceListVisualPrompts } from '../movie_session/Transcript
 import { IMAGE_MODEL_PRICES } from '../../consts/ModelPrices.js';
 import { getExpressVideoStageCreditsPerSecond } from '../../consts/pricing/ExpressVideoPricingDistribution.js';
 
-const DEFAULT_IMAGE_MODEL = 'GPTIMAGE2';
+const DEFAULT_IMAGE_MODEL = 'GPTIMAGE2.5';
 const DEFAULT_VIDEO_MODEL = 'RUNWAYML';
 const DEFAULT_IMAGE_CREDITS = 8;
 const REROLL_CREDIT_SOURCE = 'reroll_layers';
@@ -117,7 +118,7 @@ function normalizeLayerIndexes(rawLayerIndexes) {
 }
 
 function getImageCreditsForModel(modelKey, aspectRatio) {
-  const normalizedModel = normalizeModelKey(modelKey) || DEFAULT_IMAGE_MODEL;
+  const normalizedModel = normalizeModelKey(normalizeStoredGPTImageModelKey(modelKey)) || DEFAULT_IMAGE_MODEL;
   const pricing = IMAGE_MODEL_PRICES.find((model) => normalizeModelKey(model.key) === normalizedModel);
   const price =
     pricing?.prices?.find((entry) => entry.aspectRatio === aspectRatio)?.price ??
@@ -306,12 +307,12 @@ function isRerollableLayer(layer = {}) {
 }
 
 function resolveImageModel(sessionData = {}) {
-  return normalizeModelKey(
+  return normalizeStoredGPTImageModelKey(normalizeModelKey(
     sessionData.expressGenerationImageModel ||
     sessionData.imageModel ||
     sessionData.customAdapterFallbacks?.text_to_image ||
     DEFAULT_IMAGE_MODEL,
-  ) || DEFAULT_IMAGE_MODEL;
+  )) || DEFAULT_IMAGE_MODEL;
 }
 
 function resolveVideoModel(sessionData = {}) {
@@ -1018,6 +1019,7 @@ export async function rerollVideoSessionLayersAndQueueGeneration(userId, {
 }
 
 export const __testOnly__ = {
+  buildQuote,
   assertRerollCloneIntegrity,
   getLayerPromptInfo,
   getRerollVisualMovieResourceList,

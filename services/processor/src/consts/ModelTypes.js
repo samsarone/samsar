@@ -109,8 +109,8 @@ export const CURRENT_EDITOR_VIEW = {
 export const IMAGE_GENERAITON_MODEL_TYPES = [
 
   {
-    name: 'GPT Image 2.5',
-    key: 'GPTIMAGE2',
+    name: 'GPTImage 2.5',
+    key: 'GPTIMAGE2.5',
     isExpressModel: true,
     isBranchedImageModel: true,
   },

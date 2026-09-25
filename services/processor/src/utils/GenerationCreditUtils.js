@@ -12,8 +12,10 @@ import {
 } from '../consts/ModelPrices.js';
 
 const MODEL_PRICE_ALIASES = {
-  GPTIMAGE1: 'GPTIMAGE2',
-  GPTIMAGE1EDIT: 'GPTIMAGE2EDIT',
+  GPTIMAGE2: 'GPTIMAGE2.5',
+  GPTIMAGE2EDIT: 'GPTIMAGE2.5EDIT',
+  GPTIMAGE1: 'GPTIMAGE2.5',
+  GPTIMAGE1EDIT: 'GPTIMAGE2.5EDIT',
 };
 
 function resolvePriceModelKey(modelKey) {

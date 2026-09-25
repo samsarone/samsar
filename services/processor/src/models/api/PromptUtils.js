@@ -11,6 +11,7 @@ import {
   isAlibabaQwenImage3ProAvailable,
 } from '../../consts/DockerProviderPriority.js';
 import { isStandaloneEdition } from '../../utils/EnvironmentUtils.js';
+import { getRetiredGPTImageModelError } from '../../consts/GPTImageModelKeys.js';
 
 export const MAX_MOVIE_PROMPT_LENGTH = 4000;
 export const CUSTOM_TEXT_TO_IMAGE_MODEL_PREFIX = 'CUSTOM_TEXT_TO_IMAGE:';
@@ -45,6 +46,8 @@ export function stripDeprecatedVideoModelSubtypeOptions(payload) {
 }
 
 export function validateExpressImageModelKey(imageModel, options = {}) {
+  const retiredModelError = getRetiredGPTImageModelError(imageModel);
+  if (retiredModelError) return { status: false, message: retiredModelError };
   const isRequired = options.required !== false;
   const hasValue = imageModel !== undefined && imageModel !== null && String(imageModel).trim().length > 0;
   const normalizedImageModel = typeof imageModel === 'string' ? imageModel.trim() : imageModel;

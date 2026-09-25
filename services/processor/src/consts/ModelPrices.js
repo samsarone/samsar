@@ -59,7 +59,7 @@ export function getVideoModelDurationUnitsForFramesPerSecond(modelKey, framesPer
 
 export const IMAGE_MODEL_PRICES = [
   {
-    key: 'GPTIMAGE2',
+    key: 'GPTIMAGE2.5',
     isExpressModel: true,
     isBranchedImageModel: true,
     prices: [
@@ -143,7 +143,7 @@ export const IMAGE_EDIT_MODEL_PRICES = [
     ],
   },
   {
-    key: 'GPTIMAGE2EDIT',
+    key: 'GPTIMAGE2.5EDIT',
     prices: [
       { aspectRatio: '1:1', price: 45 },
       { aspectRatio: '16:9', price: 45 },

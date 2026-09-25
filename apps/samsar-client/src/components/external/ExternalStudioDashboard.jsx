@@ -27,7 +27,7 @@ const TEXT_MODELS = [
 ];
 
 const IMAGE_MODELS = [
-  { label: 'GPT Image 2.5', value: 'GPTIMAGE2' },
+  { label: 'GPTImage 2.5', value: 'GPTIMAGE2.5' },
   { label: 'NanoBanana Pro', value: 'NANOBANANAPRO' },
   { label: 'Seedream', value: 'SEEDREAM' },
   { label: 'Wan2.7 Pro', value: 'WAN2.7PRO' },

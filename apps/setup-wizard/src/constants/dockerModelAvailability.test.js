@@ -436,7 +436,7 @@ test('Kimi K3 priority is the native Kimi API, then Samsar', () => {
   }
 });
 
-test('GPT Image 2.5 uses Sunburst adapters and excludes legacy GMI routes', () => {
+test('GPTImage 2.5 uses Sunburst adapters and excludes legacy GMI routes', () => {
   const available = buildDockerAvailableModelsFromEnabledProviders([
     DOCKER_PROVIDER.OPENAI,
     DOCKER_PROVIDER.FAL,
@@ -444,18 +444,18 @@ test('GPT Image 2.5 uses Sunburst adapters and excludes legacy GMI routes', () =
     DOCKER_PROVIDER.GMI_CLOUD,
   ], {
     gmiCloudModelMappings: {
-      GPTIMAGE2: { image: { modelId: 'gpt-image-2-generate' } },
+      'GPTIMAGE2.5': { image: { modelId: 'gpt-image-2-generate' } },
     },
   });
 
-  assert.deepEqual(available.modelProviderPriority.GPTIMAGE2, [
+  assert.deepEqual(available.modelProviderPriority['GPTIMAGE2.5'], [
     DOCKER_PROVIDER.OPENAI,
     DOCKER_PROVIDER.SAMSAR,
     DOCKER_PROVIDER.FAL,
   ]);
-  assert.equal(available.modelProviders.GPTIMAGE2, DOCKER_PROVIDER.OPENAI);
+  assert.equal(available.modelProviders['GPTIMAGE2.5'], DOCKER_PROVIDER.OPENAI);
   assert.equal(
-    resolveDockerModelProvider('GPTIMAGE2', [DOCKER_PROVIDER.GMI_CLOUD, DOCKER_PROVIDER.FAL]),
+    resolveDockerModelProvider('GPTIMAGE2.5', [DOCKER_PROVIDER.GMI_CLOUD, DOCKER_PROVIDER.FAL]),
     DOCKER_PROVIDER.FAL,
   );
 });
@@ -463,15 +463,15 @@ test('GPT Image 2.5 uses Sunburst adapters and excludes legacy GMI routes', () =
 test('legacy GMI GPT Image routes cannot enable Sunburst without a supported adapter', () => {
   const available = buildDockerAvailableModelsFromEnabledProviders([DOCKER_PROVIDER.GMI_CLOUD], {
     gmiCloudModelMappings: {
-      GPTIMAGE2: { image: { modelId: 'gpt-image-2-generate' } },
-      GPTIMAGE2EDIT: { image: { modelId: 'gpt-image-2-edit' } },
+      'GPTIMAGE2.5': { image: { modelId: 'gpt-image-2-generate' } },
+      'GPTIMAGE2.5EDIT': { image: { modelId: 'gpt-image-2-edit' } },
     },
   });
-  for (const key of ['GPTIMAGE2', 'GPTIMAGE2EDIT']) {
+  for (const key of ['GPTIMAGE2.5', 'GPTIMAGE2.5EDIT']) {
     assert.equal(available.models.includes(key), false);
     assert.equal(available.modelProviders[key], undefined);
   }
-  assert.equal(getDockerModelDisplayName('GPTIMAGE2'), 'GPT Image 2.5');
+  assert.equal(getDockerModelDisplayName('GPTIMAGE2.5'), 'GPTImage 2.5');
 });
 
 test('image editing excludes GMI for Sunburst while retaining other verified routes', () => {
@@ -483,14 +483,14 @@ test('image editing excludes GMI for Sunburst while retaining other verified rou
     DOCKER_PROVIDER.GMI_CLOUD,
   ], {
     gmiCloudModelMappings: {
-      GPTIMAGE2EDIT: { image: { modelId: 'gpt-image-2-edit' } },
+      'GPTIMAGE2.5EDIT': { image: { modelId: 'gpt-image-2-edit' } },
       NANOBANANA2EDIT: { image: { modelId: 'gemini-3.1-flash-image' } },
       BRIA_ERASER: { image: { modelId: 'bria-eraser' } },
       BRIA_GENFILL: { image: { modelId: 'bria-genfill' } },
     },
   });
 
-  assert.deepEqual(available.modelProviderPriority.GPTIMAGE2EDIT, [
+  assert.deepEqual(available.modelProviderPriority['GPTIMAGE2.5EDIT'], [
     DOCKER_PROVIDER.OPENAI,
     DOCKER_PROVIDER.SAMSAR,
   ]);
@@ -558,7 +558,7 @@ test('Wan2.7 Pro resolves Alibaba then FAL then Samsar', () => {
 });
 
 test('provider model display names are clean and stable', () => {
-  assert.equal(getDockerModelDisplayName('GPTIMAGE2EDIT'), 'GPT Image 2.5 Edit');
+  assert.equal(getDockerModelDisplayName('GPTIMAGE2.5EDIT'), 'GPTImage 2.5 Edit');
   assert.equal(getDockerModelDisplayName('elevenlabs_music'), 'ElevenLabs Music');
 });
 

@@ -74,7 +74,7 @@ test('supported models exposes additive branched metadata without narrowing prod
     production.body.IMAGE_MODELS
       .filter((model) => model.isBranchedImageModel)
       .map((model) => model.value),
-    ['GPTIMAGE2', 'NANOBANANAPRO'],
+    ['GPTIMAGE2.5', 'NANOBANANAPRO'],
   );
   assert.deepEqual(
     new Set(production.body.VIDEO_MODELS
@@ -187,7 +187,7 @@ test('standalone supported models derives branched options from raw provider cre
     standalone.body.IMAGE_MODELS
       .filter((model) => model.isBranchedImageModel)
       .map((model) => model.value),
-    ['GPTIMAGE2', 'NANOBANANAPRO'],
+    ['GPTIMAGE2.5', 'NANOBANANAPRO'],
   );
   assert.deepEqual(
     standalone.body.VIDEO_MODELS

@@ -62,7 +62,7 @@ export async function submitFalGPTImageTwoRequest(payload = {}, dependencies = {
     });
     const requestId = normalizeString(response?.request_id || response?.requestId);
     if (!requestId) {
-      throw new Error('Fal GPT Image 2 submit returned no request id.');
+      throw new Error('Fal GPTImage 2.5 submit returned no request id.');
     }
 
     await unlockRequest(imageGenerationModel, _id, {
@@ -74,7 +74,7 @@ export async function submitFalGPTImageTwoRequest(payload = {}, dependencies = {
     });
     return null;
   } catch (error) {
-    const message = `Fal GPT Image 2 submission failed: ${error?.message || 'Unknown provider error'}`;
+    const message = `Fal GPTImage 2.5 submission failed: ${error?.message || 'Unknown provider error'}`;
     logger.error('[GPTImageTwoFal] submit failed:', error);
     return {
       image: null,
@@ -107,7 +107,7 @@ export async function pollFalGPTImageTwoRequest(payload = {}, dependencies = {})
     if (status === 'FAILED' || status === 'CANCELLED' || status === 'CANCELED') {
       const message = getFalErrorMessage(
         statusResponse,
-        `Fal GPT Image 2 request ${status.toLowerCase()}.`,
+        `Fal GPTImage 2.5 request ${status.toLowerCase()}.`,
       );
       return { image: null, error: message, definitiveAdapterFailure: true };
     }
@@ -128,7 +128,7 @@ export async function pollFalGPTImageTwoRequest(payload = {}, dependencies = {})
     const generatedImage = images[0];
     const imageUrl = normalizeString(generatedImage?.url);
     if (!imageUrl) {
-      throw new Error('Fal GPT Image 2 result returned no image URL.');
+      throw new Error('Fal GPTImage 2.5 result returned no image URL.');
     }
 
     const imageName = await saveFile(imageUrl);

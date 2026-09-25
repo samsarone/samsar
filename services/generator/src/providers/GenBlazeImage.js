@@ -8,7 +8,7 @@ const DEFAULT_GENBLAZE_BASE_URL = 'http://genblaze:8080/v1';
 const DEFAULT_GENBLAZE_MEDIA_TIMEOUT_MS = 120_000;
 
 export const GENBLAZE_IMAGE_MODELS = new Set([
-  'GPTIMAGE2',
+  'GPTIMAGE2.5',
   'SEEDREAM',
   'NANOBANANA2',
   'NANOBANANAPRO',
@@ -69,7 +69,7 @@ function normalizeGmiAspectRatio(value) {
 
 export function isGenBlazeImageRequestApplicable(payload = {}) {
   if (isGenBlazeImageRequestId(payload.apiRequestId)) return true;
-  if (normalizeModel(payload.model) === 'GPTIMAGE2') return false;
+  if (normalizeModel(payload.model) === 'GPTIMAGE2.5') return false;
   if (normalizeModel(payload.model) !== 'NANOBANANAPRO') return true;
   const aspectRatio = normalizeGmiAspectRatio(
     payload.aspectRatio || payload.aspect_ratio,
@@ -92,7 +92,7 @@ export function buildGenBlazeImageRequest(payload = {}) {
     number_of_images: 1,
   };
 
-  if (model === 'GPTIMAGE2') {
+  if (model === 'GPTIMAGE2.5') {
     const output = getGPTImageTwoOutput(aspectRatio);
     Object.assign(params, {
       aspect_ratio: output.aspectRatio,
@@ -198,8 +198,8 @@ export async function submitGenBlazeImageRequest(payload = {}, dependencies = {}
   await connect();
   await imageGenerationModel.findByIdAndUpdate(_id, { rowLocked: true });
   try {
-    if (normalizeModel(payload.model) === 'GPTIMAGE2') {
-      throw new Error('GPT Image 2.5 Sunburst is not verified on GMICloud. Use OpenAI or Fal.');
+    if (normalizeModel(payload.model) === 'GPTIMAGE2.5') {
+      throw new Error('GPTImage 2.5 Sunburst is not verified on GMICloud. Use OpenAI or Fal.');
     }
     const response = await request('/media/requests', {
       method: 'POST',
@@ -263,7 +263,7 @@ export async function pollGenBlazeImageRequest(payload = {}, dependencies = {}) 
     // Keep the request locked while the caller scores and persists the
     // completed image. The caller owns the final delete or retry unlock.
 
-    if (normalizeModel(payload.model) === 'GPTIMAGE2') {
+    if (normalizeModel(payload.model) === 'GPTIMAGE2.5') {
       const output = getGPTImageTwoOutput(
         payload.aspectRatio || payload.aspect_ratio,
       );

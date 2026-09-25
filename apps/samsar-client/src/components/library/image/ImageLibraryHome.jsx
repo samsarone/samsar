@@ -156,6 +156,7 @@ export default function ImageLibraryHome(props) {
     onGlobalPageChange,
     isGlobalLoading = false,
     globalError = null,
+    showGlobalSessions = true,
     selectImageFromLibrary,
     showStudioBackButton = false,
     onBackToStudio,
@@ -288,14 +289,14 @@ export default function ImageLibraryHome(props) {
         return (
           <div
             key={selectedKey}
-            className={`mb-3 break-inside-avoid overflow-hidden rounded-lg transition-all ${tileSurface} ${
+            className={`library-image-card mb-3 break-inside-avoid overflow-hidden rounded-lg transition-all ${tileSurface} ${
               selectedImage === selectedKey ? selectedTileSurface : ''
             }`}
           >
             <button
               type="button"
               onClick={() => handleImageClick(selectedKey)}
-              className="block w-full bg-transparent p-0 text-left"
+              className="library-image-preview block w-full bg-transparent p-0 text-left"
               title="Focus image"
               aria-label="Focus image"
             >
@@ -356,7 +357,7 @@ export default function ImageLibraryHome(props) {
       return <div className={`text-xs ${helperText}`}>{emptyMessage}</div>;
     }
 
-    return <div className="columns-1 gap-3 sm:columns-2 xl:columns-3 2xl:columns-4">{cards}</div>;
+    return <div className="library-assets-grid columns-1 gap-3 sm:columns-2 xl:columns-3 2xl:columns-4">{cards}</div>;
   };
 
   const page = Number.isFinite(globalPagination.page) ? globalPagination.page : 1;
@@ -394,7 +395,7 @@ export default function ImageLibraryHome(props) {
         )}
       </div>
 
-      <div className={`rounded-xl p-3 mt-3 ${sectionSurface}`}>
+      {showGlobalSessions && <div className={`rounded-xl p-3 mt-3 ${sectionSurface}`}>
         <div className="flex items-center justify-between mb-2">
           <div className="text-sm font-semibold">Global Sessions</div>
           <div className={`text-[11px] ${helperText}`}>{globalAssets.length} items</div>
@@ -433,7 +434,7 @@ export default function ImageLibraryHome(props) {
             Next
           </button>
         </div>
-      </div>
+      </div>}
     </div>
   );
 }

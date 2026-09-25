@@ -12,7 +12,7 @@ import { requestGenBlaze } from './GenBlazeImage.js';
 const GENBLAZE_EDIT_REQUEST_PREFIX = 'genblaze-image-edit:';
 
 export const GENBLAZE_IMAGE_EDIT_MODELS = new Set([
-  'GPTIMAGE2EDIT',
+  'GPTIMAGE2.5EDIT',
   'NANOBANANA2EDIT',
   'NANOBANANAPROEDIT',
   'BRIA_ERASER',
@@ -125,7 +125,7 @@ export async function buildGenBlazeImageEditRequest(payload = {}, dependencies =
   }
 
   const maskReference = getMaskReference(payload);
-  if (maskReference && (model === 'GPTIMAGE2EDIT' || model.startsWith('BRIA_'))) {
+  if (maskReference && (model === 'GPTIMAGE2.5EDIT' || model.startsWith('BRIA_'))) {
     inputUrls.push(await resolveMediaUrl(maskReference));
   } else if (model === 'BRIA_ERASER' || model === 'BRIA_GENFILL') {
     throw new Error(`${model} requires a mask image.`);
@@ -135,7 +135,7 @@ export async function buildGenBlazeImageEditRequest(payload = {}, dependencies =
   let prompt = normalizeString(payload.prompt);
   let params = {};
 
-  if (model === 'GPTIMAGE2EDIT') {
+  if (model === 'GPTIMAGE2.5EDIT') {
     const output = getGPTImageTwoOutput(aspectRatio);
     params = {
       size: output.openAIImageSize,
@@ -189,8 +189,8 @@ export async function submitGenBlazeImageEditRequest(payload = {}, dependencies 
   await connect();
   await imageGenerationModel.findByIdAndUpdate(_id, { rowLocked: true });
   try {
-    if (normalizeModel(payload.model) === 'GPTIMAGE2EDIT') {
-      throw new Error('GPT Image 2.5 Sunburst editing is not verified on GMICloud. Use OpenAI.');
+    if (normalizeModel(payload.model) === 'GPTIMAGE2.5EDIT') {
+      throw new Error('GPTImage 2.5 Sunburst editing is not verified on GMICloud. Use OpenAI.');
     }
     const response = await request('/media/requests', {
       method: 'POST',

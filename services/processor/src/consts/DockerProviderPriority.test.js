@@ -279,7 +279,7 @@ test('Qwen Image 3.0 Pro accepts explicitly routed production PAYG and rejects p
 });
 
 test('processor and image worker agree on GPT Image 2 Docker provider precedence', () => {
-  assert.deepEqual(getDockerImageProviderPriority('GPTIMAGE2'), [
+  assert.deepEqual(getDockerImageProviderPriority('GPTIMAGE2.5'), [
     DOCKER_PROVIDER.OPENAI,
     DOCKER_PROVIDER.FAL,
     DOCKER_PROVIDER.SAMSAR,

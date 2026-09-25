@@ -746,7 +746,7 @@ async function queueNarratorAvatarImageGeneration({
     videoSessionId: sessionId,
     layerId: null,
     prompt,
-    model: 'GPTIMAGE2',
+    model: 'GPTIMAGE2.5',
     aspectRatio: '16:9',
     background_color: 'black',
     backgroundColor: 'black',

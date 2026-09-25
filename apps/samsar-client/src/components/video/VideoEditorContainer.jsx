@@ -27,6 +27,7 @@ import { createLayerBoundImageItem } from './util/layerBoundImageItem.js';
 import { getTextConfigForCanvas } from '../../constants/TextConfig.jsx';
 
 import LibraryHome from '../library/LibraryHome.jsx';
+import VideoEditorWorkspace from './VideoEditorWorkspace.jsx';
 import AuthContainer, { AUTH_DIALOG_OPTIONS } from '../auth/AuthContainer.jsx';
 import { toast } from 'react-toastify';
 
@@ -2936,6 +2937,7 @@ export default function VideoEditorContainer(props) {
             sessionDetails={videoSessionDetails}
             sessionId={id}
             currentLayer={currentLayer}
+            aspectRatio={aspectRatio}
           />
         );
       } else {
@@ -3177,14 +3179,13 @@ export default function VideoEditorContainer(props) {
 
   return (
     <div className={`${mainWorkspaceShell} flex h-full min-h-0`}>
-      <div
-        className={`min-h-0 min-w-0 flex-1 overflow-auto px-6 py-6 text-center ${disabledShellClass}`}
-        aria-disabled={isRenderPending}
+      <VideoEditorWorkspace
+        isLibraryView={currentCanvasAction === TOOLBAR_ACTION_VIEW.SHOW_LIBRARY_DISPLAY}
+        isRenderPending={isRenderPending}
+        className={disabledShellClass}
       >
-        <div className="grid h-max min-h-full w-max min-w-full place-items-center overflow-visible">
-          {viewDisplay}
-        </div>
-      </div>
+        {viewDisplay}
+      </VideoEditorWorkspace>
       {editorToolbarExpanded}
     </div>
   );

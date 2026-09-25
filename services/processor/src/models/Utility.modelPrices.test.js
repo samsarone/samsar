@@ -44,7 +44,7 @@ test('model-prices API exposes Qwen Image 3.0 Pro only for Alibaba PAYG', () => 
 
 test('hosted Qwen Image 3.0 Pro pricing exactly matches GPT Image 2', () => {
   const qwen = IMAGE_MODEL_PRICES.find((model) => model.key === 'QWENIMAGE3PRO');
-  const gptImageTwo = IMAGE_MODEL_PRICES.find((model) => model.key === 'GPTIMAGE2');
+  const gptImageTwo = IMAGE_MODEL_PRICES.find((model) => model.key === 'GPTIMAGE2.5');
   assert.deepEqual(qwen?.prices, gptImageTwo?.prices);
   assert.deepEqual(qwen?.prices, [
     { aspectRatio: '1:1', price: 46 },

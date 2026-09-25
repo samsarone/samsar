@@ -282,7 +282,7 @@ const CAPABILITY_FAMILIES = {
     key: 'openaiImage',
     label: 'OpenAI Image',
     providerKeys: ['openai', 'gmicloud', 'samsar'],
-    modelKeys: ['GPTIMAGE2', 'GPTIMAGE2EDIT'],
+    modelKeys: ['GPTIMAGE2.5', 'GPTIMAGE2.5EDIT'],
   },
   seedream: {
     key: 'seedream',

@@ -69,7 +69,7 @@ export function getVideoModelDurationUnitsForFramesPerSecond(modelKey, framesPer
 
 export const IMAGE_MODEL_PRICES = [
   {
-    key: 'GPTIMAGE2',
+    key: 'GPTIMAGE2.5',
     isExpressModel: true,
     isBranchedImageModel: true,
     prices: [

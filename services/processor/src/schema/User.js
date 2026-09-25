@@ -194,7 +194,7 @@ const userSchema = new Schema({
   agentVideoModel: { type: String, default: 'RUNWAYML'},
   agentVideoModelAuthorization: { type: String, enum: ['native', 'deployed'], default: 'native' }, // native uses local provider credentials; deployed uses Samsar API key fallback.
 
-  agentImageModel: { type: String, default: 'GPTIMAGE2'},
+  agentImageModel: { type: String, default: 'GPTIMAGE2.5'},
   agentImageModelAuthorization: { type: String, enum: ['native', 'deployed'], default: 'native' }, // native uses local provider credentials; deployed uses Samsar API key fallback.
 
   agentSoundEffectModel: { type: String, default: 'MIRELOAI'},

@@ -26,7 +26,7 @@ const AVAILABILITY = Object.freeze({
     'HAPPYHORSEI2V',
     'SEEDANCE2.0I2V',
     'SEEDANCE2.5I2V',
-    'GPTIMAGE2',
+    'GPTIMAGE2.5',
   ],
   modelProviderPriority: {
     'QWEN3.8': ['alibabaCloud', 'openrouter', 'samsar'],
@@ -35,7 +35,7 @@ const AVAILABILITY = Object.freeze({
     HAPPYHORSEI2V: ['alibabaCloud', 'fal', 'samsar'],
     'SEEDANCE2.0I2V': ['gmicloud', 'fal'],
     'SEEDANCE2.5I2V': ['gmicloud', 'samsar', 'fal'],
-    GPTIMAGE2: ['openai', 'samsar'],
+    'GPTIMAGE2.5': ['openai', 'samsar'],
   },
 });
 
@@ -80,12 +80,12 @@ test('settings expose only installed compatible adapters in stage order', () => 
     ['fal', 'samsar', 'alibabaCloud'],
   );
   assert.deepEqual(
-    textToImage.models.find((model) => model.modelKey === 'GPTIMAGE2').preference,
+    textToImage.models.find((model) => model.modelKey === 'GPTIMAGE2.5').preference,
     ['samsar'],
   );
   assert.equal(
-    textToImage.models.find((model) => model.modelKey === 'GPTIMAGE2').label,
-    'GPT Image 2.5',
+    textToImage.models.find((model) => model.modelKey === 'GPTIMAGE2.5').label,
+    'GPTImage 2.5',
   );
   assert.deepEqual(
     imageToVideo.models.find((model) => model.modelKey === 'HAPPYHORSEI2V').preference,

@@ -79,8 +79,8 @@ function configureIsolatedAvatarAudioAvailability(context, {
 }
 
 test('avatar image model defaults to GPT Image 2', () => {
-  assert.equal(__testOnly__.resolveAvatarImageModel({}), 'GPTIMAGE2');
-  assert.equal(__testOnly__.resolveAvatarImageModel({ imageModel: '  ' }), 'GPTIMAGE2');
+  assert.equal(__testOnly__.resolveAvatarImageModel({}), 'GPTIMAGE2.5');
+  assert.equal(__testOnly__.resolveAvatarImageModel({ imageModel: '  ' }), 'GPTIMAGE2.5');
 });
 
 test('avatar image model accepts every configured Express image model', () => {

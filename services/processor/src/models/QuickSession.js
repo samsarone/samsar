@@ -1,3 +1,4 @@
+import { normalizeStoredGPTImageModelKey } from '../consts/GPTImageModelKeys.js';
 import { getDBConnectionString } from "./DBString.js";
 import VideoSession from '../schema/VideoSession.js';
 import VideoGeneration from "../schema/VideoGeneration.js";
@@ -666,7 +667,7 @@ export async function createQuickSession(userId, payload) {
         videoSessionId: sessionId,
         layerId: layer._id.toString(),
         prompt: promptText,
-        model: imageModel ? imageModel : 'DALLE3',
+        model: normalizeStoredGPTImageModelKey(imageModel) || 'DALLE3',
         userId: userId,
         isBaseGeneration: true,
         isBatchGeneration: true,

@@ -1,5 +1,6 @@
 
 import 'dotenv/config';
+import { normalizeStoredGPTImageModelKey } from './consts/GPTImageModelKeys.js';
 import { getImageFromText, getEditImageFromText } from './Dispatcher.js';
 import { getDBConnectionString } from './DBString.js';
 import ImageGeneration from './schema/ImageGeneration.js';
@@ -346,7 +347,7 @@ function resolveImageProviderForModel(model, payload = {}) {
       payload,
     );
   }
-  if (normalizedModel === 'GPTIMAGE2') {
+  if (normalizedModel === 'GPTIMAGE2.5') {
     return resolveApplicableImageGenerationProvider(
       normalizedModel,
       resolveGPTImageTwoGenerationProvider(payload?.externalProvider),
@@ -363,7 +364,7 @@ function resolveImageProviderForModel(model, payload = {}) {
     );
   }
 
-  if (normalizedModel === 'DALLE3' || normalizedModel === 'GPTIMAGE2' || normalizedModel === 'GPTIMAGE1') {
+  if (normalizedModel === 'DALLE3' || normalizedModel === 'GPTIMAGE2.5' || normalizedModel === 'GPTIMAGE1') {
     return 'openai';
   }
   if (normalizedModel === 'IMAGEN3' || normalizedModel === 'IMAGEN3FLASH') {
@@ -459,7 +460,7 @@ function resolveImageEditProviderForModel(model, payload = {}) {
   if (dockerProvider) {
     return dockerProvider;
   }
-  if (normalizedModel === 'GPTIMAGE2EDIT' || normalizedModel === 'GPTIMAGE1EDIT') {
+  if (normalizedModel === 'GPTIMAGE2.5EDIT' || normalizedModel === 'GPTIMAGE1EDIT') {
     return DOCKER_ADAPTER_PROVIDER.OPENAI;
   }
   if (normalizedModel === 'CUSTOM_IMAGE_EDIT') {
@@ -2788,6 +2789,7 @@ export async function processPendingImageRequests() {
 }
 
 async function processPendingGenerationRequet(pendingRequestData) {
+  pendingRequestData.model = normalizeStoredGPTImageModelKey(pendingRequestData.model);
   const { model } = pendingRequestData;
 
   if (isProviderPendingTimedOut(pendingRequestData)) {
@@ -2927,8 +2929,8 @@ async function processPendingGenerationRequet(pendingRequestData) {
     if (imageData) {
       await updateImageInSessionLayer(imageData, pendingRequestData);
     }
-  } else if (model === 'GPTIMAGE2' || model === 'GPTIMAGE1') {
-    const shouldUseFal = model === 'GPTIMAGE2' &&
+  } else if (model === 'GPTIMAGE2.5' || model === 'GPTIMAGE1') {
+    const shouldUseFal = model === 'GPTIMAGE2.5' &&
       selectedAdapterProvider === DOCKER_ADAPTER_PROVIDER.FAL;
     const imageData = shouldUseFal
       ? await handleFalGPTImageTwoRequest(pendingRequestData)
@@ -3978,6 +3980,7 @@ async function scheduleImageEditAdapterRetry(
 }
 
 async function processUpscaleRequest(pendingRequestData) {
+  pendingRequestData.model = normalizeStoredGPTImageModelKey(pendingRequestData.model);
   await getDBConnectionString();
 
   try {
@@ -4417,6 +4420,7 @@ async function finalizeUpscaleFailure(payload, errorMessage = 'Upscale request f
 }
 
 async function processEditRequest(pendingRequestData) {
+  pendingRequestData.model = normalizeStoredGPTImageModelKey(pendingRequestData.model);
   await getDBConnectionString();
   const requestId = pendingRequestData._id;
 

@@ -1,3 +1,4 @@
+import { normalizeStoredGPTImageModelKey } from './GPTImageModelKeys.js';
 import fs from 'node:fs';
 
 import { getDeploymentEdition, isStandaloneEdition } from '../utils/Environment.js';
@@ -41,7 +42,7 @@ export const DOCKER_IMAGE_GENERATION_PROVIDER_PRIORITY = Object.freeze({
     DOCKER_ADAPTER_PROVIDER.SAMSAR,
     DOCKER_ADAPTER_PROVIDER.FAL,
   ],
-  GPTIMAGE2: [
+  'GPTIMAGE2.5': [
     DOCKER_ADAPTER_PROVIDER.OPENAI,
     // GMICloud's documented GPT Image endpoints still target version 2.
     // Restore this adapter only after a Sunburst contract is verified.
@@ -93,7 +94,7 @@ export const DOCKER_IMAGE_EDIT_PROVIDER_PRIORITY = Object.freeze({
     DOCKER_ADAPTER_PROVIDER.FAL,
     DOCKER_ADAPTER_PROVIDER.SAMSAR,
   ],
-  GPTIMAGE2EDIT: [
+  'GPTIMAGE2.5EDIT': [
     DOCKER_ADAPTER_PROVIDER.OPENAI,
     DOCKER_ADAPTER_PROVIDER.SAMSAR,
   ],
@@ -173,7 +174,7 @@ const IMAGE_EDIT_PREFERENCE_MODEL_KEYS = Object.freeze({
   NANOBANANA2EDIT: 'NANOBANANA2',
   NANOBANANAPROEDIT: 'NANOBANANAPRO',
   NANOBANANAEDIT: 'NANOBANANA2',
-  GPTIMAGE2EDIT: 'GPTIMAGE2',
+  'GPTIMAGE2.5EDIT': 'GPTIMAGE2.5',
   GPTIMAGE1EDIT: 'GPTIMAGE1',
 });
 
@@ -265,6 +266,8 @@ function findSavedModelAdapterPriority(priorityMap, modelKeys = []) {
   for (const normalizedModelKey of normalizedModelKeys) {
     const matchingEntry = Object.entries(priorityMap).find(
       ([modelKey]) => normalizeModelKey(modelKey) === normalizedModelKey,
+    ) || Object.entries(priorityMap).find(
+      ([modelKey]) => normalizeModelKey(normalizeStoredGPTImageModelKey(modelKey)) === normalizedModelKey,
     );
     if (matchingEntry) {
       return uniqueAdapterProviders(matchingEntry[1]);
@@ -540,7 +543,7 @@ export function resolveGPTImageTwoGenerationProvider(persistedProvider = '') {
     return DOCKER_ADAPTER_PROVIDER.OPENAI;
   }
 
-  return resolveDockerImageGenerationProvider('GPTIMAGE2') ||
+  return resolveDockerImageGenerationProvider('GPTIMAGE2.5') ||
     DOCKER_ADAPTER_PROVIDER.OPENAI;
 }
 
