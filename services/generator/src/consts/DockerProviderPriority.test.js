@@ -183,7 +183,7 @@ test('exposes Qwen Image 3.0 Pro through explicitly enabled hosted adapter routi
 
 test('keeps Samsar ahead of Fal for GPT Image 2 when GMICloud is unavailable', () => {
   process.env.CURRENT_ENV = 'docker';
-  assert.deepEqual(getDockerImageGenerationProviderPriority('gptimage2'), [
+  assert.deepEqual(getDockerImageGenerationProviderPriority('gptimage2.5'), [
     DOCKER_ADAPTER_PROVIDER.OPENAI,
     DOCKER_ADAPTER_PROVIDER.SAMSAR,
     DOCKER_ADAPTER_PROVIDER.FAL,
@@ -369,7 +369,7 @@ test('places credential-scoped GMICloud below native providers but ahead of Sams
     version: 1,
     provider: 'gmicloud',
     models: {
-      GPTIMAGE2: { image: { modelId: 'gpt-image-2-generate' } },
+      'GPTIMAGE2.5': { image: { modelId: 'gpt-image-2-generate' } },
       NANOBANANA2: { image: { modelId: 'gemini-3.1-flash-image' } },
       NANOBANANAPRO: { image: { modelId: 'gemini-3-pro-image' } },
       SEEDREAM: { image: { modelId: 'seedream-5.0-pro' } },
@@ -381,7 +381,7 @@ test('places credential-scoped GMICloud below native providers but ahead of Sams
   process.env.SAMSAR_GENBLAZE_MODEL_CATALOG_PATH = catalogPath;
   process.env.FAL_API_KEY = 'fal-key';
 
-  assert.deepEqual(getDockerImageGenerationProviderPriority('GPTIMAGE2'), [
+  assert.deepEqual(getDockerImageGenerationProviderPriority('GPTIMAGE2.5'), [
     DOCKER_ADAPTER_PROVIDER.OPENAI,
     DOCKER_ADAPTER_PROVIDER.SAMSAR,
     DOCKER_ADAPTER_PROVIDER.FAL,
@@ -400,7 +400,7 @@ test('places credential-scoped GMICloud below native providers but ahead of Sams
   ]);
 
   assert.equal(
-    resolveDockerImageGenerationProvider('GPTIMAGE2'),
+    resolveDockerImageGenerationProvider('GPTIMAGE2.5'),
     DOCKER_ADAPTER_PROVIDER.FAL,
   );
   assert.equal(
@@ -414,7 +414,7 @@ test('places credential-scoped GMICloud below native providers but ahead of Sams
   );
   process.env.OPENAI_API_KEY = 'openai-key';
   assert.equal(
-    resolveDockerImageGenerationProvider('GPTIMAGE2'),
+    resolveDockerImageGenerationProvider('GPTIMAGE2.5'),
     DOCKER_ADAPTER_PROVIDER.OPENAI,
   );
   assert.equal(
@@ -435,7 +435,7 @@ test('legacy GPT Image 2 GMICloud mappings cannot enable Sunburst generation', (
     version: 1,
     provider: 'gmicloud',
     models: {
-      GPTIMAGE2: { image: { modelId: 'gpt-image-2-generate' } },
+      'GPTIMAGE2.5': { image: { modelId: 'gpt-image-2-generate' } },
     },
   }));
 
@@ -445,7 +445,7 @@ test('legacy GPT Image 2 GMICloud mappings cannot enable Sunburst generation', (
   process.env.SAMSAR_GENBLAZE_MODEL_CATALOG_PATH = catalogPath;
 
   assert.equal(
-    resolveDockerImageGenerationProvider('GPTIMAGE2'),
+    resolveDockerImageGenerationProvider('GPTIMAGE2.5'),
     '',
   );
   assert.equal(resolveDockerImageGenerationProvider('SEEDREAM'), '');
@@ -463,7 +463,7 @@ test('credential-scoped GMICloud edit routes remain below native and Fal but ahe
     version: 1,
     provider: 'gmicloud',
     models: {
-      GPTIMAGE2EDIT: { image: { modelId: 'gpt-image-2-edit' } },
+      'GPTIMAGE2.5EDIT': { image: { modelId: 'gpt-image-2-edit' } },
       NANOBANANA2EDIT: { image: { modelId: 'gemini-3.1-flash-image' } },
       BRIA_ERASER: { image: { modelId: 'bria-eraser' } },
     },
@@ -474,7 +474,7 @@ test('credential-scoped GMICloud edit routes remain below native and Fal but ahe
   process.env.SAMSAR_GENBLAZE_ENABLED = 'true';
   process.env.SAMSAR_GENBLAZE_MODEL_CATALOG_PATH = catalogPath;
 
-  assert.deepEqual(getDockerImageEditProviderPriority('GPTIMAGE2EDIT'), [
+  assert.deepEqual(getDockerImageEditProviderPriority('GPTIMAGE2.5EDIT'), [
     DOCKER_ADAPTER_PROVIDER.OPENAI,
     DOCKER_ADAPTER_PROVIDER.SAMSAR,
   ]);
@@ -489,7 +489,7 @@ test('credential-scoped GMICloud edit routes remain below native and Fal but ahe
     DOCKER_ADAPTER_PROVIDER.GMICLOUD,
     DOCKER_ADAPTER_PROVIDER.SAMSAR,
   ]);
-  assert.equal(resolveDockerImageEditProvider('GPTIMAGE2EDIT'), '');
+  assert.equal(resolveDockerImageEditProvider('GPTIMAGE2.5EDIT'), '');
   assert.equal(resolveDockerImageEditProvider('NANOBANANAPROEDIT'), '');
   assert.equal(
     getDockerImageEditProviderPriority('NANOBANANAPROEDIT').includes(DOCKER_ADAPTER_PROVIDER.GMICLOUD),
@@ -504,19 +504,19 @@ test('uses Samsar before Fal as the GPT Image 2 fallback when native OpenAI is u
   process.env.SAMSAR_API_KEY = 'samsar-key';
 
   assert.equal(
-    resolveDockerImageGenerationProvider('GPTIMAGE2'),
+    resolveDockerImageGenerationProvider('GPTIMAGE2.5'),
     DOCKER_ADAPTER_PROVIDER.SAMSAR,
   );
 
   delete process.env.SAMSAR_API_KEY;
   assert.equal(
-    resolveDockerImageGenerationProvider('GPTIMAGE2'),
+    resolveDockerImageGenerationProvider('GPTIMAGE2.5'),
     DOCKER_ADAPTER_PROVIDER.FAL,
   );
 
   process.env.OPENAI_API_KEY = 'openai-key';
   assert.equal(
-    resolveDockerImageGenerationProvider('GPTIMAGE2'),
+    resolveDockerImageGenerationProvider('GPTIMAGE2.5'),
     DOCKER_ADAPTER_PROVIDER.OPENAI,
   );
 });
@@ -555,6 +555,25 @@ test('keeps user-supplied GPT Image 2 adapter priority in Docker', () => {
     resolveGPTImageTwoGenerationProvider(),
     DOCKER_ADAPTER_PROVIDER.OPENAI,
   );
+});
+
+test('preserves historical GPT Image adapter preferences under the versioned key', (t) => {
+  process.env.CURRENT_ENV = 'docker';
+  process.env.SAMSAR_DEPLOYMENT_EDITION = 'standalone';
+  clearCredentials();
+  process.env.OPENAI_API_KEY = 'test-openai-key';
+  process.env.FAL_API_KEY = 'test-fal-key';
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'gpt-image-preferences-'));
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  process.env.SAMSAR_MODEL_ADAPTER_PREFERENCES_PATH = path.join(directory, 'preferences.json');
+  fs.writeFileSync(process.env.SAMSAR_MODEL_ADAPTER_PREFERENCES_PATH, JSON.stringify({
+    modelProviderPriority: { GPTIMAGE2: ['fal', 'openai'] },
+  }));
+  assert.equal(resolveDockerImageGenerationProvider('GPTIMAGE2.5'), 'fal');
+  fs.writeFileSync(process.env.SAMSAR_MODEL_ADAPTER_PREFERENCES_PATH, JSON.stringify({
+    modelProviderPriority: { GPTIMAGE2: ['fal', 'openai'], 'GPTIMAGE2.5': ['openai', 'fal'] },
+  }));
+  assert.equal(resolveDockerImageGenerationProvider('GPTIMAGE2.5'), 'openai');
 });
 
 test('selects the first configured Wan2.7 Pro provider in Docker', () => {

@@ -286,7 +286,7 @@ test('standalone Samsar advertises inference and Seedance video models', () => {
     'KIMIK3',
     'HAPPYHORSEI2V',
     'WAN2.7PRO',
-    'GPTIMAGE2',
+    'GPTIMAGE2.5',
     'VEO3.1I2V',
     'SEEDANCE2.0I2V',
     'SEEDANCE2.5I2V',
@@ -335,7 +335,7 @@ test('standalone raw provider credentials expose declared branched media capabil
   };
 
   const openai = mergeForStandalone({ OPENAI_API_KEY: 'test-openai-key' });
-  assert.deepEqual(openai.models, ['gpt-6-astra', 'GPTIMAGE2']);
+  assert.deepEqual(openai.models, ['gpt-6-astra', 'GPTIMAGE2.5']);
   assert.deepEqual(openai.actions, ['chat', 'assistant', 'image']);
 
   const google = mergeForStandalone({
@@ -353,7 +353,7 @@ test('standalone raw provider credentials expose declared branched media capabil
   assert.equal(fal.models.includes('SEEDANCE2.0I2V'), true);
 
   const samsar = mergeForStandalone({ SAMSAR_API_KEY: 'test-samsar-key' });
-  assert.equal(samsar.models.includes('GPTIMAGE2'), true);
+  assert.equal(samsar.models.includes('GPTIMAGE2.5'), true);
   assert.equal(samsar.models.includes('VEO3.1I2V'), true);
   assert.equal(samsar.models.includes('VEO3.1I2VFAST'), false);
 });
@@ -524,7 +524,7 @@ test('GMICloud and FAL availability is a union with shared-model adapter prefere
   fs.writeFileSync(process.env.SAMSAR_GENBLAZE_MODEL_CATALOG_PATH, JSON.stringify({
     provider: 'gmicloud',
     models: {
-      GPTIMAGE2: {
+      'GPTIMAGE2.5': {
         image: { modelId: 'gpt-image-2-generate', operation: 'image.generate' },
       },
       SEEDREAM: {
@@ -537,7 +537,7 @@ test('GMICloud and FAL availability is a union with shared-model adapter prefere
   }));
   fs.writeFileSync(process.env.SAMSAR_MODEL_ADAPTER_PREFERENCES_PATH, JSON.stringify({
     modelProviderPriority: {
-      GPTIMAGE2: ['fal', 'gmicloud'],
+      'GPTIMAGE2.5': ['fal', 'gmicloud'],
       SEEDANCEI2V: ['gmicloud', 'fal'],
     },
   }));
@@ -546,7 +546,7 @@ test('GMICloud and FAL availability is a union with shared-model adapter prefere
     const result = mergeRuntimeInferenceDeploymentAvailability({
       providers: ['gmicloud', 'fal'],
       models: [
-        'GPTIMAGE2',
+        'GPTIMAGE2.5',
         'SEEDREAM',
         'WAN2.7PRO',
         'SEEDANCEI2V',
@@ -554,14 +554,14 @@ test('GMICloud and FAL availability is a union with shared-model adapter prefere
       ],
       actions: ['image', 'video'],
       modelProviders: {
-        GPTIMAGE2: 'gmicloud',
+        'GPTIMAGE2.5': 'gmicloud',
         SEEDREAM: 'gmicloud',
         'WAN2.7PRO': 'fal',
         SEEDANCEI2V: 'gmicloud',
         COSMOS3SUPERI2V: 'fal',
       },
       modelProviderPriority: {
-        GPTIMAGE2: ['gmicloud', 'fal'],
+        'GPTIMAGE2.5': ['gmicloud', 'fal'],
         SEEDREAM: ['gmicloud', 'fal'],
         'WAN2.7PRO': ['fal'],
         SEEDANCEI2V: ['gmicloud', 'fal'],
@@ -570,7 +570,7 @@ test('GMICloud and FAL availability is a union with shared-model adapter prefere
     });
 
     assert.deepEqual(result.models, [
-      'GPTIMAGE2',
+      'GPTIMAGE2.5',
       'SEEDREAM',
       'WAN2.7PRO',
       'SEEDANCEI2V',
@@ -580,12 +580,12 @@ test('GMICloud and FAL availability is a union with shared-model adapter prefere
       'SEEDANCE2.5I2V',
       'NANOBANANAPRO',
     ]);
-    assert.equal(result.modelProviders.GPTIMAGE2, 'fal');
+    assert.equal(result.modelProviders["GPTIMAGE2.5"], 'fal');
     assert.equal(result.modelProviders.SEEDREAM, 'gmicloud');
     assert.equal(result.modelProviders.SEEDANCEI2V, 'gmicloud');
     assert.equal(result.modelProviders['WAN2.7PRO'], 'fal');
     assert.equal(result.modelProviders.COSMOS3SUPERI2V, 'fal');
-    assert.deepEqual(result.modelProviderPriority.GPTIMAGE2, ['fal']);
+    assert.deepEqual(result.modelProviderPriority["GPTIMAGE2.5"], ['fal']);
     assert.deepEqual(result.modelProviderPriority.SEEDANCEI2V, ['gmicloud', 'fal']);
   } finally {
     fs.rmSync(tempDirectory, { recursive: true, force: true });
@@ -604,32 +604,40 @@ test('saved GPT Image 2 GMI routes cannot advertise Sunburst or override support
   fs.writeFileSync(process.env.SAMSAR_GENBLAZE_MODEL_CATALOG_PATH, JSON.stringify({
     provider: 'gmicloud',
     models: {
-      GPTIMAGE2: { image: { modelId: 'gpt-image-2-generate', operation: 'image.generate' } },
-      GPTIMAGE2EDIT: { image: { modelId: 'gpt-image-2-edit', operation: 'image.edit' } },
+      'GPTIMAGE2.5': { image: { modelId: 'gpt-image-2-generate', operation: 'image.generate' } },
+      'GPTIMAGE2.5EDIT': { image: { modelId: 'gpt-image-2-edit', operation: 'image.edit' } },
     },
   }));
   fs.writeFileSync(process.env.SAMSAR_MODEL_ADAPTER_PREFERENCES_PATH, JSON.stringify({
-    modelProviderPriority: { GPTIMAGE2: ['gmicloud', 'fal'], GPTIMAGE2EDIT: ['gmicloud', 'openai'] },
+    modelProviderPriority: { 'GPTIMAGE2.5': ['gmicloud', 'fal'], 'GPTIMAGE2.5EDIT': ['gmicloud', 'openai'] },
   }));
   const saved = {
     providers: ['gmicloud'],
-    models: ['GPTIMAGE2', 'GPTIMAGE2EDIT'],
+    models: ['GPTIMAGE2.5', 'GPTIMAGE2.5EDIT'],
     actions: ['image', 'image_edit'],
-    modelProviders: { GPTIMAGE2: 'gmicloud', GPTIMAGE2EDIT: 'gmicloud' },
-    modelProviderPriority: { GPTIMAGE2: ['gmicloud', 'fal'], GPTIMAGE2EDIT: ['gmicloud', 'openai'] },
+    modelProviders: { 'GPTIMAGE2.5': 'gmicloud', 'GPTIMAGE2.5EDIT': 'gmicloud' },
+    modelProviderPriority: { 'GPTIMAGE2.5': ['gmicloud', 'fal'], 'GPTIMAGE2.5EDIT': ['gmicloud', 'openai'] },
   };
   const legacyOnly = mergeRuntimeInferenceDeploymentAvailability(saved);
   assert.deepEqual(legacyOnly.models, []);
-  assert.equal(legacyOnly.modelProviders.GPTIMAGE2, undefined);
-  assert.equal(legacyOnly.modelProviders.GPTIMAGE2EDIT, undefined);
+  assert.equal(legacyOnly.modelProviders["GPTIMAGE2.5"], undefined);
+  assert.equal(legacyOnly.modelProviders["GPTIMAGE2.5EDIT"], undefined);
 
   const fallback = mergeRuntimeInferenceDeploymentAvailability({ ...saved, providers: ['gmicloud', 'openai', 'fal'] });
-  assert.deepEqual(fallback.models, ['GPTIMAGE2', 'GPTIMAGE2EDIT']);
-  assert.equal(fallback.modelProviders.GPTIMAGE2, 'fal');
-  assert.equal(fallback.modelProviders.GPTIMAGE2EDIT, 'openai');
-  assert.deepEqual(fallback.modelProviderPriority.GPTIMAGE2, ['fal']);
-  assert.deepEqual(fallback.modelProviderPriority.GPTIMAGE2EDIT, ['openai']);
-  assert.deepEqual(saved.modelProviderPriority.GPTIMAGE2, ['gmicloud', 'fal']);
+  assert.deepEqual(fallback.models, ['GPTIMAGE2.5', 'GPTIMAGE2.5EDIT']);
+  assert.equal(fallback.modelProviders["GPTIMAGE2.5"], 'fal');
+  assert.equal(fallback.modelProviders["GPTIMAGE2.5EDIT"], 'openai');
+  assert.deepEqual(fallback.modelProviderPriority["GPTIMAGE2.5"], ['fal']);
+  assert.deepEqual(fallback.modelProviderPriority["GPTIMAGE2.5EDIT"], ['openai']);
+  assert.deepEqual(saved.modelProviderPriority["GPTIMAGE2.5"], ['gmicloud', 'fal']);
+
+  const historicalSaved = JSON.parse(JSON.stringify(saved).replaceAll('GPTIMAGE2.5', 'GPTIMAGE2'));
+  const historicalFallback = mergeRuntimeInferenceDeploymentAvailability({
+    ...historicalSaved, providers: ['gmicloud', 'openai', 'fal'],
+  });
+  assert.deepEqual(historicalFallback.models, fallback.models);
+  assert.deepEqual(historicalFallback.modelProviders, fallback.modelProviders);
+  assert.deepEqual(historicalFallback.modelProviderPriority, fallback.modelProviderPriority);
 });
 
 test('Seedance 2.0 and 2.5 settings expose exact GMICloud routes and saved adapter order', () => {
@@ -738,15 +746,15 @@ test('an unavailable preferred GMICloud route falls back without removing the FA
   try {
     const result = mergeRuntimeInferenceDeploymentAvailability({
       providers: ['gmicloud', 'fal'],
-      models: ['GPTIMAGE2'],
+      models: ['GPTIMAGE2.5'],
       actions: ['image'],
-      modelProviders: { GPTIMAGE2: 'gmicloud' },
-      modelProviderPriority: { GPTIMAGE2: ['gmicloud', 'fal'] },
+      modelProviders: { 'GPTIMAGE2.5': 'gmicloud' },
+      modelProviderPriority: { 'GPTIMAGE2.5': ['gmicloud', 'fal'] },
     });
 
-    assert.equal(result.models.includes('GPTIMAGE2'), true);
-    assert.equal(result.modelProviders.GPTIMAGE2, 'fal');
-    assert.deepEqual(result.modelProviderPriority.GPTIMAGE2, ['fal']);
+    assert.equal(result.models.includes('GPTIMAGE2.5'), true);
+    assert.equal(result.modelProviders["GPTIMAGE2.5"], 'fal');
+    assert.deepEqual(result.modelProviderPriority["GPTIMAGE2.5"], ['fal']);
   } finally {
     fs.rmSync(tempDirectory, { recursive: true, force: true });
   }
@@ -804,19 +812,19 @@ test('runtime FAL availability supplements a stale saved image model filter', ()
 
   const models = filterModelsForDeploymentAvailability(
     [
-      { value: 'GPTIMAGE2' },
+      { value: 'GPTIMAGE2.5' },
       { value: 'WAN2.7PRO' },
       { value: 'HAPPYHORSEI2V' },
     ],
     {
       providers: ['openai'],
-      models: ['GPTIMAGE2'],
+      models: ['GPTIMAGE2.5'],
       actions: ['image'],
     },
   );
 
   assert.deepEqual(models, [
-    { value: 'GPTIMAGE2' },
+    { value: 'GPTIMAGE2.5' },
     { value: 'WAN2.7PRO' },
     { value: 'HAPPYHORSEI2V' },
   ]);
@@ -847,7 +855,7 @@ test('branched GPT reasoning variants share the physical deployment availability
 
 test('missing availability fails closed only for standalone deployments', () => {
   clearEnv();
-  const models = [{ value: 'GPTIMAGE2' }];
+  const models = [{ value: 'GPTIMAGE2.5' }];
   assert.deepEqual(filterModelsForDeploymentAvailability(models, null), models);
 
   process.env.SAMSAR_DEPLOYMENT_EDITION = 'standalone';
@@ -939,16 +947,16 @@ test('Docker hides Wan2.7 Pro without an Alibaba, FAL, or Samsar credential', ()
   clearEnv();
   process.env.CURRENT_ENV = 'docker';
   const models = [
-    { value: 'GPTIMAGE2' },
+    { value: 'GPTIMAGE2.5' },
     { value: 'WAN2.7PRO' },
   ];
 
   assert.deepEqual(filterModelsForDeploymentAvailability(models, null), []);
   assert.deepEqual(filterModelsForDeploymentAvailability(models, { models: [] }), []);
   assert.deepEqual(filterModelsForDeploymentAvailability(models, {
-    models: ['GPTIMAGE2', 'WAN2.7PRO'],
+    models: ['GPTIMAGE2.5', 'WAN2.7PRO'],
   }), [
-    { value: 'GPTIMAGE2' },
+    { value: 'GPTIMAGE2.5' },
   ]);
 
   process.env.FAL_API_KEY = 'test-key';
@@ -960,30 +968,30 @@ test('Docker hides Wan2.7 Pro without an Alibaba, FAL, or Samsar credential', ()
 test('supported-model filtering exposes Qwen Image 3.0 Pro only for Alibaba PAYG', () => {
   clearEnv();
   const models = [
-    { value: 'GPTIMAGE2' },
+    { value: 'GPTIMAGE2.5' },
     { value: 'QWENIMAGE3PRO' },
   ];
   const staleAvailability = {
     providers: ['alibabaCloud'],
-    models: ['GPTIMAGE2', 'QWENIMAGE3PRO'],
+    models: ['GPTIMAGE2.5', 'QWENIMAGE3PRO'],
     actions: ['image'],
     modelProviders: { QWENIMAGE3PRO: 'alibabaCloud' },
     modelProviderPriority: { QWENIMAGE3PRO: ['alibabaCloud'] },
   };
 
   assert.deepEqual(filterModelsForDeploymentAvailability(models, null), [
-    { value: 'GPTIMAGE2' },
+    { value: 'GPTIMAGE2.5' },
   ]);
   assert.deepEqual(
     filterModelsForDeploymentAvailability(models, staleAvailability),
-    [{ value: 'GPTIMAGE2' }],
+    [{ value: 'GPTIMAGE2.5' }],
   );
 
   process.env.SAMSAR_DEPLOYMENT_EDITION = 'production';
   process.env.SAMSAR_DOCKER_ADAPTER_ROUTING_ENABLED = 'true';
   process.env.ALIBABA_API_KEY = 'test-key';
   assert.deepEqual(filterModelsForDeploymentAvailability(models, null), [
-    { value: 'GPTIMAGE2' },
+    { value: 'GPTIMAGE2.5' },
     { value: 'QWENIMAGE3PRO' },
   ]);
 
@@ -1004,7 +1012,7 @@ test('supported-model filtering exposes Qwen Image 3.0 Pro only for Alibaba PAYG
   };
   assert.deepEqual(
     filterModelsForDeploymentAvailability(models, planAvailability),
-    [{ value: 'GPTIMAGE2' }],
+    [{ value: 'GPTIMAGE2.5' }],
   );
   assert.deepEqual(
     filterModelsForDeploymentAvailability(

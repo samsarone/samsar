@@ -1,0 +1,53 @@
+.library-home {
+  /* Fill columns even for a single result; never stretch one asset across the workspace. */
+  --studio-library-grid-columns: repeat(auto-fill, minmax(min(100%, 220px), 1fr));
+  text-align: left;
+}
+
+.library-home .library-assets-grid {
+  display: grid;
+  grid-template-columns: var(--studio-library-grid-columns);
+  align-items: start;
+  gap: 12px;
+}
+
+.library-home .library-image-card,
+.library-home .library-video-card {
+  min-width: 0;
+  margin-bottom: 0;
+  overflow-wrap: anywhere;
+}
+
+.library-home .library-audio-grid {
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr));
+}
+
+.library-home .library-video-actions {
+  flex-wrap: wrap;
+}
+
+.library-home .library-image-preview,
+.library-home .library-video-preview {
+  position: relative;
+  width: 100%;
+  aspect-ratio: var(--studio-library-aspect-ratio);
+  overflow: hidden;
+}
+
+.library-home .library-image-preview > img,
+.library-home .library-video-frame {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.library-home .library-video-frame > img,
+.library-home .library-video-frame > video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}

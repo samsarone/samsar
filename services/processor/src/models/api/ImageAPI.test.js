@@ -6,8 +6,31 @@ import {
   getImageDimensionsFromBuffer,
   getTextToImageRequestPricing,
   normalizeTextToImageRequestOptions,
+  generateTextToImage,
   shouldUsePreferenceAwareImagePromptRouting,
 } from './ImageAPI.js';
+
+test('GPTImage 2.5 uses the versioned generation key', () => {
+  for (const key of ['GPTIMAGE2.5', 'gptimage2.5', ' GPTIMAGE2.5 ']) {
+    assert.deepEqual(normalizeTextToImageRequestOptions({ model: key }), {
+      model: 'GPTIMAGE2.5', aspectRatio: '1:1', resolution: null,
+    });
+  }
+});
+
+test('retired GPT Image keys are rejected before charging or queuing', async () => {
+  for (const key of ['GPTIMAGE2', 'gptimage2', ' GPTIMAGE2 ', 'GPTIMAGE2EDIT']) {
+    for (const field of ['model', 'mode']) {
+      const input = { [field]: key };
+      assert.throws(() => normalizeTextToImageRequestOptions(input),
+        (error) => error.status === 400 && /^Invalid model:/.test(error.message));
+      await assert.rejects(generateTextToImage({ ...input, userId: 'test-user', prompt: 'A tree' }),
+        (error) => error.status === 400 && /^Invalid model:/.test(error.message));
+    }
+  }
+  assert.throws(() => normalizeTextToImageRequestOptions({ model: 'GPTIMAGE2.5', mode: 'GPTIMAGE2' }),
+    /Invalid model: GPTIMAGE2/);
+});
 
 test('reads image dimensions asynchronously through sharp metadata', async () => {
   const buffer = await sharp({
@@ -153,7 +176,7 @@ test('normalizes Qwen Image 3.0 Pro with standalone or explicitly routed product
 test('hosted Qwen Image 3.0 Pro direct API pricing matches the existing hosted image path', () => {
   assert.deepEqual(
     getTextToImageRequestPricing('QWENIMAGE3PRO', 3),
-    getTextToImageRequestPricing('GPTIMAGE2', 3),
+    getTextToImageRequestPricing('GPTIMAGE2.5', 3),
   );
   assert.equal(getTextToImageRequestPricing('QWENIMAGE3PRO', 3).credits > 0, true);
 });

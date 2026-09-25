@@ -22,7 +22,7 @@ test('submits the normalized ImageGeneration payload to the Fal Sunburst endpoin
   const submissions = [];
   const result = await submitFalGPTImageTwoRequest({
     _id: 'generation-1',
-    model: 'GPTIMAGE2',
+    model: 'GPTIMAGE2.5',
     prompt: 'A cinematic product launch stage',
     aspectRatio: '16:9',
   }, {
@@ -65,7 +65,7 @@ test('normalizes a Fal result to the native GPT Image 2 response contract', asyn
   const result = await pollFalGPTImageTwoRequest({
     _id: 'generation-2',
     apiRequestId: 'fal-request-2',
-    model: 'GPTIMAGE2',
+    model: 'GPTIMAGE2.5',
     aspectRatio: '9:16',
   }, {
     connect: async () => {},
@@ -104,7 +104,7 @@ test('returns Fal provider failures to the shared retry pipeline without termina
   const result = await pollFalGPTImageTwoRequest({
     _id: 'generation-3',
     apiRequestId: 'fal-request-3',
-    model: 'GPTIMAGE2',
+    model: 'GPTIMAGE2.5',
   }, {
     connect: async () => {},
     imageGenerationModel: createImageGenerationModel(updates),
@@ -135,7 +135,7 @@ test('keeps a rate-limited poll pinned to the existing Fal request', async () =>
   const result = await pollFalGPTImageTwoRequest({
     _id: 'generation-4',
     apiRequestId: 'fal-request-4',
-    model: 'GPTIMAGE2',
+    model: 'GPTIMAGE2.5',
   }, {
     connect: async () => {},
     imageGenerationModel: createImageGenerationModel(updates),

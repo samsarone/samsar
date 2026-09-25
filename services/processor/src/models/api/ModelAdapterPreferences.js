@@ -1,3 +1,4 @@
+import { normalizeStoredGPTImageModelKey } from '../../consts/GPTImageModelKeys.js';
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -28,7 +29,7 @@ export const MODEL_ADAPTER_STAGE_DEFINITIONS = Object.freeze([
     key: MODEL_ADAPTER_STAGE.TEXT_TO_IMAGE,
     label: 'Text to image',
     modelKeys: Object.freeze([
-      'GPTIMAGE2',
+      'GPTIMAGE2.5',
       'SEEDREAM',
       'NANOBANANA2',
       'NANOBANANAPRO',
@@ -60,7 +61,7 @@ const MODEL_LABELS = Object.freeze({
   'gemini-3.1-pro': 'Gemini 3.1 Pro',
   KIMIK3: 'Kimi K3',
   'QWEN3.8': 'Qwen 3.8 Max',
-  GPTIMAGE2: 'GPT Image 2.5',
+  'GPTIMAGE2.5': 'GPTImage 2.5',
   SEEDREAM: 'Seedream',
   NANOBANANA2: 'Nano Banana 2',
   NANOBANANAPRO: 'Nano Banana Pro',
@@ -139,7 +140,7 @@ function normalizeModelToken(value) {
 }
 
 export function normalizeModelAdapterModelKey(value) {
-  const token = normalizeModelToken(value);
+  const token = normalizeModelToken(normalizeStoredGPTImageModelKey(value));
   if (['GPT56SOL', 'GPT56'].includes(token)) return 'gpt-6-astra';
   if (KIMI_MODEL_TOKENS.has(token)) {
     return 'KIMIK3';

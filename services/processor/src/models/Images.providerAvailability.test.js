@@ -40,9 +40,9 @@ test('Studio queue guard accepts Alibaba PAYG but rejects plan credentials', () 
 
 test('Studio queue guard leaves other image models unchanged', () => {
   assert.equal(
-    assertImageGenerationModelAvailable('GPTIMAGE2', {
+    assertImageGenerationModelAvailable('GPTIMAGE2.5', {
       SAMSAR_DEPLOYMENT_EDITION: 'production',
     }),
-    'GPTIMAGE2',
+    'GPTIMAGE2.5',
   );
 });

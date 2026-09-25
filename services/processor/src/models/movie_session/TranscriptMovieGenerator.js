@@ -1,3 +1,4 @@
+import { normalizeStoredGPTImageModelKey } from '../../consts/GPTImageModelKeys.js';
 import VideoSession from "../../schema/VideoSession.js";
 import { getCanvasDimensionsForAspectRatio } from "../../utils/CanvasUtils.js";
 import {
@@ -1971,7 +1972,7 @@ async function requestQuickMovieGenerationInternal(userId, payload, {
       originalImagePrompt: promptSeed,
       sourcePrompt: promptSeed,
       originalPrompt: promptSeed,
-      model: imageModel ? imageModel : 'DALLE3',
+      model: normalizeStoredGPTImageModelKey(imageModel) || 'DALLE3',
       userId: userId,
       inferenceModel: userInferenceModel,
       expressGenerationInferenceModel: userInferenceModel,

@@ -6,7 +6,15 @@ import {
   filterImageModelsForDeploymentScope,
   isImageModelAllowedForDeploymentScope,
   isProviderBilledImagePricing,
+  normalizeStoredGPTImageModelKey,
 } from './imageModelAvailability.mjs';
+
+test('historical image selections resolve to versioned keys for reroll pricing', () => {
+  assert.equal(normalizeStoredGPTImageModelKey('GPTIMAGE2'), 'GPTIMAGE2.5');
+  assert.equal(normalizeStoredGPTImageModelKey('GPTIMAGE2EDIT'), 'GPTIMAGE2.5EDIT');
+  assert.equal(normalizeStoredGPTImageModelKey('GPTIMAGE2.5'), 'GPTIMAGE2.5');
+  assert.equal(normalizeStoredGPTImageModelKey('NANOBANANAPRO'), 'NANOBANANAPRO');
+});
 
 const qwenImageModel = {
   key: QWEN_IMAGE_3_PRO_MODEL_KEY,
@@ -21,7 +29,7 @@ test('Qwen Image 3 Pro uses the canonical cross-service model key', () => {
 });
 
 test('Qwen is hosted while genuinely standalone-only image models remain scoped', () => {
-  const hostedModel = { key: 'GPTIMAGE2' };
+  const hostedModel = { key: 'GPTIMAGE2.5' };
 
   assert.equal(isImageModelAllowedForDeploymentScope(qwenImageModel, false), true);
   assert.equal(isImageModelAllowedForDeploymentScope(qwenImageModel, true), true);

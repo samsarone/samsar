@@ -1,3 +1,4 @@
+import { normalizeStoredGPTImageModelKey } from '../../../consts/GPTImageModelKeys.js';
 import { getDBConnectionString } from "../../DBString.js";
 
 import User from "../../../schema/User.js";
@@ -38,7 +39,7 @@ export async function createAdMakerSession(userId, payload) {
 
   const userData = await User.findById(userId);
 
-  const imageModel = userData.agentImageModel || 'GPTIMAGE2';
+  const imageModel = normalizeStoredGPTImageModelKey(userData.agentImageModel) || 'GPTIMAGE2.5';
   const videoGenerationModel = userData.agentVideoModel || 'RUNWAYML';
 
   const musicProvider = normalizeBackingTrackProvider(userData.backingTrackModel || 'ELEVENLABS_MUSIC');

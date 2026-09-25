@@ -334,8 +334,8 @@ export default function VideoLibraryHome(props) {
 
     return (
       <div
-        className="grid items-start gap-4"
-        style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 240px), 1fr))' }}
+        className="library-assets-grid grid items-start gap-4"
+        style={{ gridTemplateColumns: 'var(--studio-library-grid-columns, repeat(auto-fit, minmax(min(100%, 240px), 1fr)))' }}
       >
         {items.map((item, index) => {
           const itemKey = getTrimKey(item) || `${sectionKey}-${index}`;
@@ -353,8 +353,8 @@ export default function VideoLibraryHome(props) {
           const isPreviewing = previewingVideoId === itemKey;
 
           return (
-            <div key={`${sectionKey}-${itemKey}-${index}`} className={`rounded-2xl p-3 shadow-sm ${cardSurface}`}>
-              <div className="relative overflow-hidden rounded-xl bg-slate-950">
+            <div key={`${sectionKey}-${itemKey}-${index}`} className={`library-video-card rounded-2xl p-3 shadow-sm ${cardSurface}`}>
+              <div className="library-video-preview relative overflow-hidden rounded-xl bg-slate-950">
                 {isPreviewing && canPlayFullVideo ? (
                   <video
                     ref={(node) => {
@@ -362,7 +362,7 @@ export default function VideoLibraryHome(props) {
                     }}
                     src={videoUrl}
                     poster={displayThumbnailUrl || undefined}
-                    className="w-full rounded-xl bg-black object-cover"
+                    className="library-video-frame w-full rounded-xl bg-black object-cover"
                     style={{ aspectRatio: mediaAspectRatio }}
                     preload="metadata"
                     controls
@@ -379,7 +379,7 @@ export default function VideoLibraryHome(props) {
                 ) : displayThumbnailUrl ? (
                   <button
                     type="button"
-                    className="group relative block w-full overflow-hidden rounded-xl"
+                    className="library-video-frame group relative block w-full overflow-hidden rounded-xl"
                     style={{ aspectRatio: mediaAspectRatio }}
                     onClick={() => handlePreviewToggle(itemKey)}
                     disabled={!canPlayFullVideo}
@@ -400,7 +400,7 @@ export default function VideoLibraryHome(props) {
                 ) : displayPreviewVideoUrl ? (
                   <button
                     type="button"
-                    className="group relative block w-full overflow-hidden rounded-xl"
+                    className="library-video-frame group relative block w-full overflow-hidden rounded-xl"
                     style={{ aspectRatio: mediaAspectRatio }}
                     onClick={() => handlePreviewToggle(itemKey)}
                     disabled={!canPlayFullVideo}
@@ -425,7 +425,7 @@ export default function VideoLibraryHome(props) {
                 ) : (
                   <button
                     type="button"
-                    className="flex w-full items-center justify-center rounded-xl bg-slate-900/70 text-slate-200"
+                    className="library-video-frame flex w-full items-center justify-center rounded-xl bg-slate-900/70 text-slate-200"
                     style={{ aspectRatio: mediaAspectRatio }}
                     onClick={() => handlePreviewToggle(itemKey)}
                     disabled={!canPlayFullVideo}
@@ -471,7 +471,7 @@ export default function VideoLibraryHome(props) {
                 )}
               </div>
 
-              <div className="mt-3 flex items-center justify-between gap-2">
+              <div className="library-video-actions mt-3 flex items-center justify-between gap-2">
                 <button
                   type="button"
                   className={`inline-flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold transition ${actionButtonSurface}`}

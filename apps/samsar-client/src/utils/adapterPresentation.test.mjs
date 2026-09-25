@@ -64,16 +64,16 @@ test("extracts the effective provider map before considering priority fallbacks"
     deployment: {
       providers: ["fal", "gmicloud"],
       modelProviders: {
-        GPTIMAGE2: "gmicloud",
+        'GPTIMAGE2.5': "gmicloud",
       },
       modelProviderPriority: {
-        GPTIMAGE2: ["openai", "gmicloud", "fal"],
+        'GPTIMAGE2.5': ["openai", "gmicloud", "fal"],
         SEEDREAM: ["openai", "fal"],
       },
     },
   });
 
-  assert.equal(result.GPTIMAGE2, "gmicloud");
+  assert.equal(getPrimaryAdapterKeyForModel("GPTIMAGE2.5", result), "gmicloud");
   assert.equal(result.SEEDREAM, "fal");
 });
 

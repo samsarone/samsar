@@ -40,8 +40,8 @@ const RESPONSE = {
       label: "Text to image",
       models: [
         {
-          modelKey: "GPTIMAGE2",
-          label: "GPT Image 2.5",
+          modelKey: "GPTIMAGE2.5",
+          label: "GPTImage 2.5",
           availableAdapters: [
             { key: "openai", label: "OpenAI" },
           ],
@@ -120,7 +120,7 @@ test("updates matching model preferences, builds the PUT map, and resets default
 
   assert.deepEqual(buildModelProviderPriority(changedStages), {
     "gpt-6-astra": ["openai", "samsar"],
-    GPTIMAGE2: ["openai"],
+    'GPTIMAGE2.5': ["openai"],
   });
   assert.equal(
     areModelAdapterPreferencesEqual(changedStages, normalized.stages),
@@ -130,7 +130,7 @@ test("updates matching model preferences, builds the PUT map, and resets default
   const resetStages = resetModelAdapterPreferences(changedStages);
   assert.deepEqual(buildModelProviderPriority(resetStages), {
     "gpt-6-astra": ["openai", "samsar"],
-    GPTIMAGE2: ["openai"],
+    'GPTIMAGE2.5': ["openai"],
   });
   assert.equal(
     areModelAdapterPreferencesEqual(resetStages, changedStages),

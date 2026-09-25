@@ -16,7 +16,7 @@ test('defines the exact branched inference, image, and video capability sets', (
     BRANCHED_INFERENCE_MODEL_OPTIONS.map((model) => model.value),
     ['gpt-6-astra', 'gpt-6-astra-xhigh', 'claude-opus-5.5'],
   );
-  assert.deepEqual(BRANCHED_IMAGE_MODEL_KEYS, ['GPTIMAGE2', 'NANOBANANAPRO']);
+  assert.deepEqual(BRANCHED_IMAGE_MODEL_KEYS, ['GPTIMAGE2.5', 'NANOBANANAPRO']);
   assert.deepEqual(BRANCHED_VIDEO_MODEL_KEYS, [
     'SEEDANCE2.0I2V',
     'VEO3.1I2V',
@@ -30,7 +30,7 @@ test('defines the exact branched inference, image, and video capability sets', (
   assert.equal(isBranchedInferenceModel(undefined), false);
   assert.equal(isBranchedInferenceModel('definitely-not-a-model'), false);
   assert.equal(isBranchedInferenceModel('QWEN3.8'), false);
-  assert.equal(isBranchedImageModel('GPTIMAGE2'), true);
+  assert.equal(isBranchedImageModel('GPTIMAGE2.5'), true);
   assert.equal(isBranchedImageModel('SEEDREAM'), false);
   assert.equal(isBranchedVideoModel('VEO3.1I2VFAST'), true);
   assert.equal(isBranchedVideoModel('RUNWAYML'), false);

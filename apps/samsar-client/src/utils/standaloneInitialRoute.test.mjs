@@ -8,7 +8,7 @@ import {
 
 const completePipeline = {
   inferenceModelValues: ['gpt-6-astra'],
-  textToVideoImageModelValues: ['GPTIMAGE2'],
+  textToVideoImageModelValues: ['GPTIMAGE2.5'],
   textToVideoVideoModelValues: ['SEEDANCE2.0I2V'],
 };
 

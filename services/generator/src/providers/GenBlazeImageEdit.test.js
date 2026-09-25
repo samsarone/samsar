@@ -30,12 +30,12 @@ const PUBLIC_URL_DEPENDENCIES = {
 
 test('builds GPT Image 2 edit with a required source and optional mask', async () => {
   assert.deepEqual(await buildGenBlazeImageEditRequest({
-    model: 'GPTIMAGE2EDIT',
+    model: 'GPTIMAGE2.5EDIT',
     prompt: 'paint a rainbow',
     image: 'source.png',
     aspectRatio: '16:9',
   }, PUBLIC_URL_DEPENDENCIES), {
-    model: 'GPTIMAGE2EDIT',
+    model: 'GPTIMAGE2.5EDIT',
     modality: 'image',
     prompt: 'paint a rainbow',
     input_urls: ['https://public.example/source.png'],
@@ -47,7 +47,7 @@ test('builds GPT Image 2 edit with a required source and optional mask', async (
   });
 
   const withMask = await buildGenBlazeImageEditRequest({
-    model: 'GPTIMAGE2EDIT',
+    model: 'GPTIMAGE2.5EDIT',
     prompt: 'replace the sky',
     image: 'source.png',
     maskImage: 'mask.png',
@@ -180,7 +180,7 @@ test('failed GenBlaze edits retain ownership until shared failover is persisted'
   const recorder = createModelRecorder();
   const result = await handleGenBlazeImageEditRequest({
     _id: 'edit-row-failed',
-    model: 'GPTIMAGE2EDIT',
+    model: 'GPTIMAGE2.5EDIT',
     apiEditStatus: 'PENDING',
     apiRequestId: 'genblaze-image-edit:failed-job',
   }, {
@@ -234,7 +234,7 @@ test('selects GenBlaze only for standalone compatible single-output edits', (t) 
 
   process.env.SAMSAR_DEPLOYMENT_EDITION = 'production';
   assert.equal(shouldUseGenBlazeImageEditProvider({
-    model: 'GPTIMAGE2EDIT',
+    model: 'GPTIMAGE2.5EDIT',
     adapterProviderOverride: 'gmicloud',
   }), false);
 });
@@ -245,7 +245,7 @@ test('rejects new GPT Image jobs instead of silently using GMICloud version 2', 
   let submitted = false;
   const result = await handleGenBlazeImageEditRequest({
     _id: 'sunburst-request',
-    model: 'GPTIMAGE2EDIT',
+    model: 'GPTIMAGE2.5EDIT',
     apiEditStatus: 'INIT',
   }, {
     connect: async () => {},

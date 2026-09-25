@@ -1,6 +1,8 @@
 /********************************************
  * Vision Utils
  ********************************************/
+import { z } from 'zod';
+import { zodResponseFormat } from 'openai/helpers/zod';
 import { getDBConnectionString } from "../DBString.js";
 import VideoSession from "../schema/VideoSession.js";
 import { getAccessibleMediaUrlForProvider } from './MediaReferenceUtils.js';
@@ -35,6 +37,10 @@ const VISION_INFERENCE_RETRY_MAX_DELAY_MS = Math.max(
 );
 const VISION_DESCRIPTION_MAX_TOKENS = 16384;
 const VISION_SCORE_MAX_TOKENS = 8192;
+const ImageScore = z.object({
+  score: z.number().int().describe('Image quality score from 0 to 100'),
+}).strict();
+const ImageScoreValue = z.number().int().min(0).max(100);
 
 function normalizeNonNegativeInteger(value, fallback) {
   const parsed = Number(value);
@@ -469,7 +475,7 @@ ${groundedDeductionRules}- The image contains partial nudity or NSFW content.
 - If description style conflicts with Theme, score near zero.
 - The image does not visually cover the canvas because of black borders, empty margins, or letterboxing.
 - The image description says or clearly implies the visual content is rotated, sideways, upside down, turned 90 degrees, or only upright after rotating the image. Apply a severe deduction for this issue and return a score from 0 to 5.
-Return only a single integer between 0 and 100.`;
+Return only a JSON object containing "score", a single integer between 0 and 100.`;
 
   const messages = [
     {
@@ -487,6 +493,7 @@ Return only a single integer between 0 and 100.`;
     model: inferenceModel,
     externalMaxRetries: 0,
     maxRetries: 0,
+    response_format: zodResponseFormat(ImageScore, 'image_score'),
     ...(!isKimiInferenceModel(inferenceModel)
       ? { externalMaxTokens: getExternalVisionMaxTokens(inferenceModel, 'score') }
       : {}),
@@ -496,19 +503,31 @@ Return only a single integer between 0 and 100.`;
     messages,
   };
   const routingPayload = withInferenceAuthorization(inferencePayload, inferenceAuthorization);
-  const response = await runVisionInferenceWithRetry(
-    () => createCompatibleInferenceChatCompletion(routingPayload),
-    {
-      operationName: 'image score',
+  try {
+    return await runVisionInferenceWithRetry(
+      async () => {
+        const response = await createCompatibleInferenceChatCompletion(routingPayload);
+        const choice = response?.choices?.[0];
+        const message = choice?.message;
+        if (message?.refusal || (choice?.finish_reason && choice.finish_reason !== 'stop')) {
+          throw new Error('Image scoring response was refused or incomplete.');
+        }
+        const result = ImageScore.parse(message?.parsed ?? JSON.parse(message?.content || ''));
+        return ImageScoreValue.parse(result.score);
+      },
+      {
+        operationName: 'image score',
+        model: inferencePayload.model,
+        maxRetries: 3,
+      },
+    );
+  } catch (error) {
+    console.error('[vision_scoring] image score failed; returning 0 for image regeneration', {
       model: inferencePayload.model,
-    },
-  );
-
-
-
-  const responsePayload = response.choices[0].message.content;
-
-  return responsePayload;
+      error: getErrorMessage(error),
+    });
+    return 0;
+  }
 }
 
 export const __testOnly__ = {

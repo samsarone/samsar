@@ -2,7 +2,7 @@ import { EXPRESS_VIDEO_CREDITS_PER_SECOND_BY_MODEL } from './pricing/ExpressVide
 import { isVideoModelTemporarilyDisabled } from './VideoModelAvailability.js';
 
 export const EXPRESS_VIDEO_IMAGE_MODEL_KEYS = Object.freeze([
-  'GPTIMAGE2',
+  'GPTIMAGE2.5',
   'NANOBANANAPRO',
   'SEEDREAM',
   'QWENIMAGE3PRO',

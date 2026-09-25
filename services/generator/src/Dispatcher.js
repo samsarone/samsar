@@ -56,7 +56,7 @@ export async function getEditImageFromText(payload) {
     const editResponse = await handleBriaEditRequest(payload);
     return editResponse;
 
-  } else if (model === 'GPTIMAGE2EDIT' || model === 'GPTIMAGE1EDIT') {
+  } else if (model === 'GPTIMAGE2.5EDIT' || model === 'GPTIMAGE1EDIT') {
     const editResponse = await getImage2OutpaintImageFromApi(payload);
     return editResponse;
   } else if (

@@ -28,6 +28,7 @@ import {
 import { createCompatibleChatCompletion } from '../ai_utils/OpenAICompat.js';
 import { isClaudeOpus55Model } from '../../inference/AnthropicChatAdapter.js';
 import { isStandaloneEdition } from '../../utils/EnvironmentUtils.js';
+import { getRetiredGPTImageModelError } from '../../consts/GPTImageModelKeys.js';
 import {
   QWEN_IMAGE_3_PRO_MODEL_KEY,
   isAlibabaQwenImage3ProAvailable,
@@ -163,7 +164,7 @@ const WAN_27_PRO_TEXT_TO_IMAGE_MODEL = 'WAN2.7PRO';
 const WAN_27_PRO_TEXT_TO_IMAGE_RESOLUTION = '1K';
 const WAN_27_PRO_TEXT_TO_IMAGE_ASPECT_RATIOS = Object.freeze(['1:1', '16:9', '9:16']);
 const SUPPORTED_TEXT_TO_IMAGE_MODELS = Object.freeze([
-  'GPTIMAGE2',
+  'GPTIMAGE2.5',
   'NANOBANANA2',
   'NANOBANANAPRO',
   'SEEDREAM',
@@ -225,6 +226,10 @@ export async function getImageDimensionsFromBuffer(buffer) {
 }
 
 export function normalizeTextToImageRequestOptions(payload = {}) {
+  for (const value of [payload.model, payload.mode]) {
+    const errorMessage = getRetiredGPTImageModelError(value);
+    if (errorMessage) throw createBadRequestError(errorMessage);
+  }
   const modelValue = payload.model || payload.mode;
   const rawModel = typeof modelValue === 'string' ? modelValue.trim() : '';
   const isCustomModel = rawModel.startsWith(CUSTOM_TEXT_TO_IMAGE_MODEL_PREFIX) &&

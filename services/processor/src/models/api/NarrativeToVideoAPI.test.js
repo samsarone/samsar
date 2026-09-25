@@ -123,12 +123,12 @@ test('normalizes the canonical and camel narrative request id with optional mode
   assert.deepEqual(normalizeNarrativeToVideoPayload({
     input: {
       sessionId: SOURCE_ID,
-      imageModel: 'GPTIMAGE2',
+      imageModel: 'GPTIMAGE2.5',
       video_model: 'RUNWAYML',
     },
   }), {
     sourceRequestId: SOURCE_ID,
-    imageModel: 'GPTIMAGE2',
+    imageModel: 'GPTIMAGE2.5',
     videoModel: 'RUNWAYML',
   });
 });
@@ -196,11 +196,11 @@ test('rejects source prompt or duration overrides and malformed model aliases', 
 
 test('resolves explicit models, then account preferences, then stable express defaults', () => {
   assert.deepEqual(resolveNarrativeToVideoModels({
-    requestedImageModel: 'GPTIMAGE2',
+    requestedImageModel: 'GPTIMAGE2.5',
     requestedVideoModel: 'VEO3.1I2V',
     user: { agentImageModel: 'SEEDREAM', agentVideoModel: 'RUNWAYML' },
   }), {
-    imageModel: 'GPTIMAGE2',
+    imageModel: 'GPTIMAGE2.5',
     videoModel: 'VEO3.1I2V',
   });
 
@@ -224,14 +224,14 @@ test('resolves explicit models, then account preferences, then stable express de
     sourceVideoModel: 'COSMOS3SUPERI2V',
     user: { agentImageModel: 'SEEDREAM', agentVideoModel: 'RUNWAYML' },
   }), {
-    imageModel: 'GPTIMAGE2',
+    imageModel: 'GPTIMAGE2.5',
     videoModel: 'COSMOS3SUPERI2V',
   });
   assert.deepEqual(resolveNarrativeToVideoModels({
     branched: true,
     user: { agentImageModel: 'SEEDREAM', agentVideoModel: 'RUNWAYML' },
   }), {
-    imageModel: 'GPTIMAGE2',
+    imageModel: 'GPTIMAGE2.5',
     videoModel: 'COSMOS3SUPERI2V',
   });
   assert.throws(
@@ -245,7 +245,7 @@ test('resolves explicit models, then account preferences, then stable express de
   assert.throws(
     () => resolveNarrativeToVideoModels({
       branched: true,
-      requestedImageModel: 'GPTIMAGE2',
+      requestedImageModel: 'GPTIMAGE2.5',
       requestedVideoModel: 'RUNWAYML',
     }),
     (error) => error.code === 'INVALID_BRANCHED_VIDEO_MODEL' && error.status === 400,
@@ -254,7 +254,7 @@ test('resolves explicit models, then account preferences, then stable express de
   assert.deepEqual(resolveNarrativeToVideoModels({
     user: { agentImageModel: 'REMOVED_IMAGE_MODEL', agentVideoModel: 'REMOVED_VIDEO_MODEL' },
   }), {
-    imageModel: 'GPTIMAGE2',
+    imageModel: 'GPTIMAGE2.5',
     videoModel: 'RUNWAYML',
   });
 
@@ -364,7 +364,7 @@ test('branched submission preserves the tree and forwards branching metadata', a
     select: () => ({
       lean: async () => ({
         _id: USER_ID,
-        agentImageModel: 'GPTIMAGE2',
+        agentImageModel: 'GPTIMAGE2.5',
         agentVideoModel: 'RUNWAYML',
       }),
     }),
@@ -452,7 +452,7 @@ test('submission scopes the source to its owner and sends isolated prepared arti
     userId: USER_ID,
     payload: {
       narrative_request_id: SOURCE_ID,
-      image_model: 'GPTIMAGE2',
+      image_model: 'GPTIMAGE2.5',
       videoModel: 'RUNWAYML',
       // The new branched-only field remains ignored for a singular source,
       // preserving this endpoint's existing linear behavior.
@@ -495,7 +495,7 @@ test('submission scopes the source to its owner and sends isolated prepared arti
     duration: source.duration,
     inferenceModel: source.inferenceModel,
     videoTone: source.videoTone,
-    imageModel: 'GPTIMAGE2',
+    imageModel: 'GPTIMAGE2.5',
     videoModel: 'RUNWAYML',
     aspectRatio: '1:1',
     requestType: 'API',
@@ -519,7 +519,7 @@ test('submission returns not found for an unowned source without starting the vi
     select: () => ({
       lean: async () => ({
         _id: USER_ID,
-        agentImageModel: 'GPTIMAGE2',
+        agentImageModel: 'GPTIMAGE2.5',
         agentVideoModel: 'RUNWAYML',
       }),
     }),
@@ -551,7 +551,7 @@ test('submission rejects a render model that differs from the speech-aware sourc
     select: () => ({
       lean: async () => ({
         _id: USER_ID,
-        agentImageModel: 'GPTIMAGE2',
+        agentImageModel: 'GPTIMAGE2.5',
         agentVideoModel: 'RUNWAYML',
       }),
     }),

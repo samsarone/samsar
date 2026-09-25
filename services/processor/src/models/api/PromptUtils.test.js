@@ -23,12 +23,25 @@ import {
 function buildValidMoviePayload(overrides = {}) {
   return {
     prompt: 'A cinematic sunrise over a glass city.',
-    image_model: 'GPTIMAGE2',
+    image_model: 'GPTIMAGE2.5',
     video_model: 'RUNWAYML',
     duration: 10,
     ...overrides,
   };
 }
+
+test('video APIs accept GPTIMAGE2.5 and reject the retired GPTIMAGE2 key', () => {
+  assert.deepEqual(validateExpressImageModelKey('GPTIMAGE2.5'), {
+    status: true, imageModel: 'GPTIMAGE2.5',
+  });
+  for (const key of ['GPTIMAGE2', 'gptimage2', ' GPTIMAGE2 ', 'GPTIMAGE2EDIT']) {
+    const result = validateMovieInput(buildValidMoviePayload({ image_model: key }));
+    assert.equal(result.status, false);
+    assert.match(result.message, /^Invalid model:/);
+  }
+  assert.equal(TEXT_TO_VIDEO_IMAGE_MODEL_KEYS.includes('GPTIMAGE2'), false);
+  assert.equal(IMAGE_LIST_TO_VIDEO_IMAGE_MODEL_KEYS.includes('GPTIMAGE2'), false);
+});
 
 test('text-to-video validation ignores removed video_model_sub_type payload values', () => {
   const validation = validateMovieInput(buildValidMoviePayload({
@@ -162,7 +175,7 @@ test('Qwen Image 3.0 Pro is a hosted Express image model priced like GPT Image 2
     assert.equal(pricing?.providerBilled, false);
     assert.deepEqual(
       pricing?.prices,
-      IMAGE_MODEL_PRICES.find((model) => model.key === 'GPTIMAGE2')?.prices,
+      IMAGE_MODEL_PRICES.find((model) => model.key === 'GPTIMAGE2.5')?.prices,
     );
 
     process.env.ALIBABA_API_KEY_TYPE = 'token_plan';

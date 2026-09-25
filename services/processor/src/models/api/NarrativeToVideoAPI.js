@@ -1,3 +1,4 @@
+import { getRetiredGPTImageModelError, normalizeStoredGPTImageModelKey } from '../../consts/GPTImageModelKeys.js';
 import mongoose from 'mongoose';
 
 import {
@@ -23,7 +24,7 @@ import {
   isBranchedVideoModel,
 } from '../../consts/BranchedModelOptions.js';
 
-const DEFAULT_IMAGE_MODEL = 'GPTIMAGE2';
+const DEFAULT_IMAGE_MODEL = 'GPTIMAGE2.5';
 const DEFAULT_VIDEO_MODEL = 'RUNWAYML';
 const DEFAULT_BRANCHED_VIDEO_MODEL = 'COSMOS3SUPERI2V';
 const NARRATIVE_ASPECT_RATIO = '1:1';
@@ -206,6 +207,8 @@ export function resolveNarrativeToVideoModels({
   user = {},
   branched = false,
 } = {}) {
+  const retiredModelError = getRetiredGPTImageModelError(requestedImageModel);
+  if (retiredModelError) throw buildError(retiredModelError, 400, 'INVALID_IMAGE_MODEL');
   assertProvidedModelIsValid(
     requestedImageModel,
     isValidExpressImageModel,
@@ -233,7 +236,7 @@ export function resolveNarrativeToVideoModels({
     'INVALID_VIDEO_MODEL',
   );
 
-  const userImageModel = normalizeString(user?.agentImageModel);
+  const userImageModel = normalizeStoredGPTImageModelKey(normalizeString(user?.agentImageModel));
   const userVideoModel = normalizeString(user?.agentVideoModel);
   const normalizedSourceVideoModel = normalizeString(sourceVideoModel);
   const imageModel = requestedImageModel || (

@@ -782,18 +782,18 @@ test('production GPT Image uses OpenAI for new jobs and preserves pending Fal jo
   const previousEdition = process.env.SAMSAR_DEPLOYMENT_EDITION;
   process.env.SAMSAR_DEPLOYMENT_EDITION = 'production';
   try {
-    assert.equal(__testOnly__.resolveImageProviderForModel('GPTIMAGE2', {
+    assert.equal(__testOnly__.resolveImageProviderForModel('GPTIMAGE2.5', {
       apiGenerationStatus: 'INIT',
     }), 'openai');
-    assert.equal(__testOnly__.resolveImageEditProviderForModel('GPTIMAGE2EDIT', {
+    assert.equal(__testOnly__.resolveImageEditProviderForModel('GPTIMAGE2.5EDIT', {
       apiEditStatus: 'INIT',
     }), 'openai');
-    assert.equal(__testOnly__.resolveImageProviderForModel('GPTIMAGE2', {
+    assert.equal(__testOnly__.resolveImageProviderForModel('GPTIMAGE2.5', {
       apiGenerationStatus: 'PENDING',
       apiRequestId: 'existing-fal-request',
       externalProvider: 'fal',
     }), 'fal');
-    assert.equal(__testOnly__.resolveImageProviderForModel('GPTIMAGE2', {
+    assert.equal(__testOnly__.resolveImageProviderForModel('GPTIMAGE2.5', {
       apiGenerationStatus: 'PENDING',
       apiRequestId: 'existing-fal-request',
       submittedAdapter: 'fal',

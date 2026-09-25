@@ -157,7 +157,7 @@ test('standalone preflight bypasses balance and API-key limit admission', async 
     routeType: 'text_to_video',
     durationSeconds: 15,
     videoModel: 'RUNWAYML',
-    imageModel: 'GPTIMAGE2',
+    imageModel: 'GPTIMAGE2.5',
     expressGenerationType: 'TEXT_TO_VIDEO',
     expressCtaGeneration: true,
   }, {
@@ -198,7 +198,7 @@ test('hosted preflight still checks balance and API-key admission', async (t) =>
     routeType: 'text_to_video',
     durationSeconds: 10,
     videoModel: 'RUNWAYML',
-    imageModel: 'GPTIMAGE2',
+    imageModel: 'GPTIMAGE2.5',
     expressGenerationType: 'TEXT_TO_VIDEO',
   }, {
     resolveCreditBalance: async (userId) => {
@@ -519,7 +519,7 @@ test('preflight estimates retain all stages when exclusions are not provided', (
   const input = {
     durationSeconds: 30,
     videoModel: 'RUNWAYML',
-    imageModel: 'GPTIMAGE2',
+    imageModel: 'GPTIMAGE2.5',
     backingTrackModel: 'ELEVENLABS_MUSIC',
     expressGenerationType: 'TEXT_TO_VIDEO',
     expressCtaGeneration: true,
@@ -539,7 +539,7 @@ test('preflight estimates exclude narrative inference from stages and total cred
   const input = {
     durationSeconds: 30,
     videoModel: 'RUNWAYML',
-    imageModel: 'GPTIMAGE2',
+    imageModel: 'GPTIMAGE2.5',
     backingTrackModel: 'ELEVENLABS_MUSIC',
     expressGenerationType: 'TEXT_TO_VIDEO',
     expressCtaGeneration: true,

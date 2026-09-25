@@ -1250,7 +1250,7 @@ export async function requestImageListToVideGeneration(userId, payload) {
       videoSessionId: sessionId,
       layerId: null,
       prompt: narratorAvatarImagePrompt,
-      model: 'GPTIMAGE2',
+      model: 'GPTIMAGE2.5',
       inferenceModel: userInferenceModel,
       expressGenerationInferenceModel: userInferenceModel,
       aspectRatio: '16:9',

@@ -1041,7 +1041,7 @@ export default function MusicLibraryHome({
     }
 
     return (
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+      <div className="library-audio-grid grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
         {paginatedProjectItems.map((item) => renderAudioCard(item))}
       </div>
     );

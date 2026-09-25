@@ -1,9 +1,10 @@
-# GPT Image 2.5 Sunburst adapters
+# GPTImage 2.5 Sunburst adapters
 
-The existing `GPTIMAGE2` and `GPTIMAGE2EDIT` application identifiers now use
-GPT Image 2.5 Sunburst. Legacy `GPTIMAGE1`/`GPTIMAGE1EDIT` native handlers share
-the same upstream model. Application identifiers stay stable for existing API
-clients and saved requests.
+Use `GPTIMAGE2.5` for generation and `GPTIMAGE2.5EDIT` for editing.
+The retired `GPTIMAGE2` and `GPTIMAGE2EDIT` keys return an HTTP 400 Invalid model
+validation error for new API requests. Saved sessions and queued jobs can still
+be read using their historical keys. Legacy `GPTIMAGE1`/`GPTIMAGE1EDIT` native
+handlers share the same upstream model.
 
 | Adapter | New requests |
 | --- | --- |
