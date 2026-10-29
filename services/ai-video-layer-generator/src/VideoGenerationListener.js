@@ -2372,6 +2372,7 @@ export async function pollForAIVideoCompletion(reqPayload) {
   if (LIPSYNC_MODELS.includes(model)) {
     if (shouldFailStaleLipSyncProviderPoll(payload)) {
       payload.retryOnFail = false;
+      payload.lastProviderFailureMessage = `${model} did not finish within the 10-minute lip-sync limit.`;
       await processVideoGenerationFailed(payload);
       return;
     }
@@ -2510,13 +2511,8 @@ export async function pollForAIVideoCompletion(reqPayload) {
 }
 
 export function shouldFailStaleLipSyncProviderPoll(payload = {}, now = Date.now()) {
-  // A submitted Sync lip-sync job may finish after a transient FAL outage or
-  // while a hosted Samsar request awaits its completed provider output/billing.
-  // Both accepted provider IDs must remain pollable.
-  if (payload.model === 'SYNCLIPSYNC' &&
-      [DOCKER_VIDEO_PROVIDER.FAL, DOCKER_VIDEO_PROVIDER.SAMSAR].includes(
-        resolveSubmittedVideoAdapter(payload)) &&
-      payload.generationId) return false;
+  // Preserve accepted IDs during transient outages, but bound the wait for
+  // every lip-sync provider. Expiry disables retries and retains the base video.
   const submittedAt = payload.requestSubmitAt || payload.createdAt;
   const ageMs = submittedAt ? now - new Date(submittedAt).getTime() : 0;
   return ageMs > MAX_LIPSYNC_PROVIDER_PENDING_MS;
