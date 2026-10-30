@@ -80,6 +80,7 @@ services/processor/scripts/rewind_session_to_motion_approval.js
 services/processor/scripts/subscribe_verified_users_to_weekly_newsletter.js
 services/processor/scripts/unstall_image_list_to_video_session.js
 services/processor/scripts/unsubscribe_legacy_weekly_newsletter_users.js
+services/ai-video-layer-generator/scripts/recover-fal-sync-lipsync.mjs
 
 # retired commercial licensing code
 **/src/license/
