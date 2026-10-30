@@ -46,6 +46,48 @@ test('Sync lip sync retries a completed FAL job when result fetch times out', as
   assert.equal(resultCalls, 2);
 });
 
+test('Sync lip sync fails a completed request with a structured terminal 504 result', async (t) => {
+  t.mock.method(console, 'error', () => {});
+  const body = {
+    detail: [{
+      loc: ['body'],
+      msg: 'Downstream service unavailable',
+      type: 'downstream_service_unavailable',
+      input: null,
+    }],
+  };
+  const result = await listenToPendingSyncLipSyncRequests(request, {
+    connect,
+    queue: {
+      status: async () => ({ status: 'COMPLETED' }),
+      result: async () => {
+        throw Object.assign(new Error('Internal Server Error'), { status: 504, body });
+      },
+    },
+  });
+
+  assert.equal(result.responseStatus, 'FAILED');
+  assert.equal(result.providerFailureMessage, 'Downstream service unavailable');
+  assert.deepEqual(result.providerStatus, { status: 504, ...body });
+});
+
+test('a structured gateway error during status polling preserves the accepted request', async (t) => {
+  t.mock.method(console, 'error', () => {});
+  const result = await listenToPendingSyncLipSyncRequests(request, {
+    connect,
+    queue: {
+      status: async () => {
+        throw Object.assign(new Error('Gateway Timeout'), {
+          status: 504,
+          body: { detail: [{ type: 'gateway_timeout', msg: 'Please retry' }] },
+        });
+      },
+      result: async () => { assert.fail('status polling has not completed'); },
+    },
+  });
+  assert.deepEqual(result, { responseStatus: 'PENDING' });
+});
+
 test('Sync lip sync retains definitive provider failures', async (t) => {
   t.mock.method(console, 'error', () => {});
   const providerFailed = await listenToPendingSyncLipSyncRequests(request, {

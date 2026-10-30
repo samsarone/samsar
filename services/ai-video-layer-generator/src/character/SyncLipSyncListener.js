@@ -107,6 +107,7 @@ export async function listenToPendingSyncLipSyncRequests(payload, dependencies =
 
     const { generationId, model } = payload;
     const queue = dependencies.queue || fal.queue;
+    let providerCompleted = false;
 
 
     try {
@@ -125,7 +126,7 @@ export async function listenToPendingSyncLipSyncRequests(payload, dependencies =
   
   
       if (responseStatus === 'COMPLETED') {
-  
+        providerCompleted = true;
   
   
         const result = await queue.result(FAL_VIDEO_LINK, {
@@ -169,6 +170,24 @@ export async function listenToPendingSyncLipSyncRequests(payload, dependencies =
         model,
         error: summarizeProviderError(error),
       });
+
+      const body = error?.body || error?.response?.data || error?.data;
+      const resultErrors = Array.isArray(body?.detail)
+        ? body.detail.filter((detail) => typeof detail?.type === 'string' && typeof detail?.msg === 'string')
+        : [];
+      // FAL marks execution complete even when its result is a model failure.
+      // A structured error from that result is final, including HTTP 5xx errors;
+      // retrying retrieval cannot make the failed execution produce a video.
+      if (providerCompleted && resultErrors.length) {
+        return {
+          responseStatus: 'FAILED',
+          providerFailureMessage: resultErrors.map((detail) => detail.msg).join('; '),
+          providerStatus: {
+            status: error?.status || error?.statusCode || error?.response?.status || null,
+            ...body,
+          },
+        };
+      }
 
       // A queue status/result timeout says nothing about the accepted FAL job.
       // Keep its provider request ID and poll again instead of submitting twice.

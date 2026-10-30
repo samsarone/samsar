@@ -57,17 +57,17 @@ test('base AI-video completion marks the generated media as available', () => {
   });
 });
 
-test('accepted FAL and hosted Sync lip sync survive the generic ten-minute poll cutoff', () => {
+test('accepted lip-sync requests have a bounded wait without resubmitting while still pending', () => {
   const submittedAt = new Date('2026-10-22T18:00:00Z');
   const now = new Date('2026-10-22T18:20:00Z').getTime();
-  assert.equal(shouldFailStaleLipSyncProviderPoll({
-    model: 'SYNCLIPSYNC', submittedAdapter: 'fal',
-    generationId: 'accepted-fal-request', requestSubmitAt: submittedAt,
-  }, now), false);
-  assert.equal(shouldFailStaleLipSyncProviderPoll({
-    model: 'SYNCLIPSYNC', submittedAdapter: 'samsar',
-    generationId: 'samsar-external-video:accepted-hosted-request', requestSubmitAt: submittedAt,
-  }, now), false);
+  for (const submittedAdapter of ['fal', 'samsar']) {
+    const request = {
+      model: 'SYNCLIPSYNC', submittedAdapter,
+      generationId: 'accepted-request', requestSubmitAt: submittedAt,
+    };
+    assert.equal(shouldFailStaleLipSyncProviderPoll(request, submittedAt.getTime() + 9 * 60_000), false);
+    assert.equal(shouldFailStaleLipSyncProviderPoll(request, now), true);
+  }
   assert.equal(shouldFailStaleLipSyncProviderPoll({
     model: 'SYNCLIPSYNC', submittedAdapter: 'fal', requestSubmitAt: submittedAt,
   }, now), true);
