@@ -7,11 +7,14 @@ import { ColorModeProvider } from '../../src/contexts/ColorMode.jsx';
 import { NavCanvasControlProvider } from '../../src/contexts/NavCanvasControlContext.jsx';
 import '../../src/index.css';
 
-const boundary = vi.hoisted(() => ({ toolbar: null }));
+const boundary = vi.hoisted(() => ({
+  toolbar: null, navigate: vi.fn(), params: { id: 'layout' },
+  location: { pathname: '/video/layout', search: '' }, user: { _id: 'owner' },
+}));
 vi.mock('axios', () => ({ default: { get: vi.fn(), post: vi.fn() } }));
-vi.mock('react-router-dom', () => ({ useParams: () => ({ id: 'layout' }), useNavigate: () => vi.fn(), useLocation: () => ({ pathname: '/video/layout', search: '' }) }));
-vi.mock('../../src/utils/web.jsx', () => ({ getHeaders: () => ({ headers: { Authorization: 'test' } }) }));
-vi.mock('../../src/contexts/UserContext.jsx', () => ({ useUser: () => ({ user: { _id: 'owner' } }) }));
+vi.mock('react-router-dom', async (importOriginal) => ({ ...await importOriginal(), useParams: () => boundary.params, useNavigate: () => boundary.navigate, useLocation: () => boundary.location }));
+vi.mock('../../src/utils/web.jsx', async (importOriginal) => ({ ...await importOriginal(), getHeaders: () => ({ headers: { Authorization: 'test' } }) }));
+vi.mock('../../src/contexts/UserContext.jsx', () => ({ useUser: () => ({ user: boundary.user }) }));
 vi.mock('../../src/components/common/CommonContainer.tsx', () => ({ default: p => <div>{p.children}</div> }));
 vi.mock('../../src/components/video/toolbars/frame_toolbar/index.jsx', () => ({ default: () => null }));
 vi.mock('../../src/components/video/toolbars/frame_toolbar/FrameToolbarHorizontal.jsx', () => ({ default: () => <div data-testid="timeline" style={{ height: 120 }} /> }));

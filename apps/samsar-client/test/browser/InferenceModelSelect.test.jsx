@@ -18,7 +18,8 @@ it('selects Sol and Fable with High and XHigh without changing Astra defaults', 
   await expect.element(page.getByLabelText('Selected model')).toHaveTextContent('gpt-6-astra');
   await page.getByRole('combobox', { name: 'Assistant model', exact: true }).selectOptions('gpt-6.1-sol');
   await expect.element(page.getByLabelText('Selected model')).toHaveTextContent('gpt-6.1-sol');
-  await page.getByRole('combobox', { name: 'Reasoning effort', exact: true }).click();
+  // react-select's combobox input is deliberately offscreen; use its visible control.
+  await page.getByText('H', { exact: true }).click();
   await userEvent.keyboard('{End}{Enter}');
   await expect.element(page.getByLabelText('Selected model')).toHaveTextContent('gpt-6.1-sol-xhigh');
   await page.getByRole('combobox', { name: 'Assistant model', exact: true }).selectOptions('claude-fable-5.1');

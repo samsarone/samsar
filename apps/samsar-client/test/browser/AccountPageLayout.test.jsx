@@ -15,7 +15,8 @@ const fixture = vi.hoisted(() => ({
 }));
 
 vi.mock('axios', () => ({ default: { get: vi.fn(), post: vi.fn() } }));
-vi.mock('react-router-dom', () => ({
+vi.mock('react-router-dom', async (importOriginal) => ({
+  ...await importOriginal(),
   useNavigate: () => vi.fn(),
   useLocation: () => ({ pathname: fixture.pathname }),
 }));
@@ -23,8 +24,8 @@ vi.mock('../../src/contexts/ColorMode.jsx', () => ({ useColorMode: () => ({ colo
 vi.mock('../../src/contexts/UserContext.jsx', () => ({
   useUser: () => ({ user: fixture.user }),
 }));
-vi.mock('../../src/utils/environment.jsx', () => ({ get IS_STANDALONE_DEPLOYMENT() { return fixture.standalone; } }));
-vi.mock('../../src/utils/web.jsx', () => ({ getHeaders: () => ({ headers: { Authorization: 'test' } }) }));
+vi.mock('../../src/utils/environment.jsx', async (importOriginal) => ({ ...await importOriginal(), get IS_STANDALONE_DEPLOYMENT() { return fixture.standalone; } }));
+vi.mock('../../src/utils/web.jsx', async (importOriginal) => ({ ...await importOriginal(), getHeaders: () => ({ headers: { Authorization: 'test' } }) }));
 vi.mock('../../src/hooks/useDeploymentModelAvailability.js', () => ({ useDeploymentModelAvailability: () => ({ primaryAdapterByModel: {} }) }));
 vi.mock('../../src/hooks/useInferenceModelAvailability.js', () => ({ useInferenceModelAvailability: () => ({}) }));
 vi.mock('../../src/components/common/TopNav.tsx', () => ({ default: () => <div className="fixed top-0 h-14">Top navigation</div> }));

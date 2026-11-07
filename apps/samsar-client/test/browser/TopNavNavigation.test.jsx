@@ -68,7 +68,8 @@ it('supports keyboard selection, Escape, and outside-click dismissal', async () 
   await expect.element(page.getByLabelText('Current route')).toHaveTextContent('/video');
   await expect.element(page.getByRole('dialog')).not.toBeInTheDocument();
   await expectDestinations();
-  await page.getByLabelText('Current route').click();
+  // The modal menu makes the route output inert; click the outside surface instead.
+  await page.elementLocator(document.body).click({ position: { x: 10, y: 700 } });
   await expect.element(page.getByRole('menu')).not.toBeInTheDocument();
 });
 

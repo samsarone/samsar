@@ -83,8 +83,8 @@ describe('password reset', () => {
   });
 
   it.each([
-    [{ response: { data: { error: 'Reset token expired' } } }, 'Reset token expired', true],
-    [{ response: { data: { message: 'Invalid reset link' } } }, 'Invalid reset link', true],
+    [{ response: { data: { error: 'Reset token expired' } } }, 'Reset code is missing or invalid', true],
+    [{ response: { data: { message: 'Invalid reset link' } } }, 'Reset code is missing or invalid', true],
     [new Error('offline'), 'Something went wrong', false],
   ])('renders actionable request errors and re-enables the form', async (error, message, resendAvailable) => {
     axios.post.mockRejectedValue(error);
@@ -128,18 +128,18 @@ describe('password reset', () => {
 
   it('changes language through the real select and persists the preference', async () => {
     mount();
-    await page.getByRole('combobox').selectOptions('es');
-    await expect.element(page.getByRole('heading', { name: 'Restablece tu contraseña' })).toBeVisible();
-    await expect.element(page.getByRole('button', { name: 'Restablecer contraseña', exact: true })).toBeVisible();
-    expect(localStorage.getItem('preferredLanguage')).toBe('es');
-    await page.getByRole('combobox').selectOptions('fr');
-    await expect.element(page.getByRole('heading', { name: 'Réinitialisez votre mot de passe' })).toBeVisible();
+    await page.getByRole('combobox').selectOptions('ja');
+    await expect.element(page.getByRole('heading', { name: 'パスワードを再設定' })).toBeVisible();
+    await expect.element(page.getByRole('button', { name: 'パスワードを再設定', exact: true })).toBeVisible();
+    expect(localStorage.getItem('preferredLanguage')).toBe('ja');
+    await page.getByRole('combobox').selectOptions('th');
+    await expect.element(page.getByRole('heading', { name: 'รีเซ็ตรหัสผ่านของคุณ' })).toBeVisible();
   });
 
-  it('falls back to English copy for supported languages without a page translation', async () => {
-    mount('?email=jane%40example.com&code=reset-code&lang=ja');
+  it('falls back to English for unsupported reset-link languages', async () => {
+    mount('?email=jane%40example.com&code=reset-code&lang=fr');
     await expect.element(page.getByRole('heading', { name: 'Reset your password' })).toBeVisible();
-    expect(localStorage.getItem('preferredLanguage')).toBe('ja');
+    expect(localStorage.getItem('preferredLanguage')).toBe('en');
   });
 
   it('provides accessible names for the reset-password inputs', async () => {
