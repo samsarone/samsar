@@ -11,6 +11,7 @@ const session = vi.hoisted(() => ({
   },
 }));
 
+vi.mock('../../src/components/assistant/WorkspaceAssistant.jsx', () => ({ default: () => null }));
 vi.mock('axios', () => ({ default: { get: vi.fn(), post: vi.fn() } }));
 vi.mock('../../src/components/common/CommonContainer.tsx', () => ({ default: ({ children, openAudioActions }) => <><button onClick={openAudioActions}>Audio actions</button>{children}</> }));
 vi.mock('../../src/contexts/AlertDialogContext.jsx', () => ({ useAlertDialog: () => session }));

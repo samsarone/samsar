@@ -45,21 +45,6 @@ The route accepts a Samsar API key, user auth token, or app key where supported 
 | `language` | No | Language code. Defaults to auto behavior when omitted. |
 | `maxwords` or `maxWords` | No | Positive integer up to 1500. Defaults to 800. The generated target range is roughly 62.5-75 percent of this cap. |
 
-Example:
-
-```json
-{
-  "message": "Launch discount for a new skincare product",
-  "metadata": {
-    "audience": "busy professionals",
-    "tone": "premium but direct",
-    "offer": "20 percent launch discount"
-  },
-  "language": "en",
-  "maxwords": 120
-}
-```
-
 Response:
 
 ```json
@@ -91,4 +76,4 @@ Credit headers:
 | --- | --- |
 | `processor` | Route, auth, credits, prompt construction, provider call, session persistence. |
 | `mongo` | User, credit, and API chat state. |
-| Provider | OpenAI, Google Cloud, OpenRouter, Docker-only native Alibaba Qwen, or the Samsar fallback depending on model, deployment mode, and credentials. |
+| Provider | Compatible configured adapter for the selected model; see [provider routing](providers-and-models.md). |

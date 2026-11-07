@@ -11,7 +11,17 @@ export const normalizeUiLanguage = (value) => {
 export const getInitialUiLanguage = () => {
   let saved;
   try { saved = globalThis.localStorage?.getItem('preferredLanguage'); } catch { /* Storage may be disabled. */ }
-  return normalizeUiLanguage(saved || globalThis.navigator?.language || 'en');
+  if (saved) return normalizeUiLanguage(saved);
+
+  // Match browser preferences in order; only use English as a fallback after
+  // checking for supported languages. Explicit saved choices always win.
+  const browser = globalThis.navigator;
+  const locales = browser?.languages?.length ? browser.languages : [browser?.language];
+  for (const locale of locales) {
+    const language = resolveLanguageCode(locale, null);
+    if (language && language !== 'auto') return language;
+  }
+  return 'en';
 };
 
 let currentLanguage = getInitialUiLanguage();

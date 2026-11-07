@@ -1,0 +1,9 @@
+.models/
+.cache/
+.venv/
+releases/
+release/
+snapshot/vectors.f32
+.release-*/
+__pycache__/
+*.tmp

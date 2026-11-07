@@ -130,6 +130,41 @@ test('external moderation rejects the whole response if any returned result is u
   });
 });
 
+test('external moderation applies the relaxed cutoff without rewriting provider flags or scores', async () => {
+  for (const [score, safe] of [[0, true], [0.94, true], [0.99, false]]) {
+    const nativeResponse = {
+      id: 'modr-scored-flag',
+      results: [moderationResult({
+        flagged: true,
+        categories: { violence: true },
+        categoryScores: { violence: score },
+      })],
+    };
+    const originalResponse = structuredClone(nativeResponse);
+    const result = await createExternalModeration({
+      userId: 'user-1',
+      payload: { input: 'A cinematic action scene' },
+      moderationCall: async () => nativeResponse,
+    });
+
+    assert.equal(result.response.decision.safe, safe);
+    if (safe) {
+      assert.deepEqual(result.response.decision, { safe: true, reason: 'passed' });
+    } else {
+      assert.deepEqual(result.response.decision, {
+        safe: false,
+        reason: 'flagged',
+        categories: ['violence'],
+      });
+    }
+    assert.strictEqual(result.response.results, nativeResponse.results);
+    assert.deepEqual(nativeResponse, originalResponse);
+    assert.equal(result.response.results[0].flagged, true);
+    assert.equal(result.response.results[0].categories.violence, true);
+    assert.equal(result.response.results[0].category_scores.violence, score);
+  }
+});
+
 test('external moderation treats malformed or incomplete native responses as upstream failures', async () => {
   for (const { input, response } of [
     { input: 'hello', response: null },

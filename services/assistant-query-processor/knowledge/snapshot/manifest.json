@@ -1,0 +1,193 @@
+{
+  "schema_version": 1,
+  "corpus_version": "172583f6b368116bac3e7527bf3e245701360ab26bb90d53872f72b47c45f0d9",
+  "built_at": "2026-11-07T06:57:46.250660+00:00",
+  "documents": 228,
+  "chunks": 1833,
+  "sources": 81,
+  "production_manifest_sha256": "1d2959b32db3790ff9e8b2d6f23b4d52c1dabb1a97df1ed847e997ea86898b81",
+  "documentation_export_sha256": "9fd13d80704961776d561314d1436eb1aebfb9404aafd5a3d974c9bb5423f634",
+  "production_projects": [
+    {
+      "project": "samsar_client",
+      "path": "apps/studio",
+      "commit": "d4e9a9247a995e53b3d7b9376fb7be3a0f28488e",
+      "branch": "master",
+      "tree": "dirty (261 paths)"
+    },
+    {
+      "project": "landing",
+      "path": "apps/landing",
+      "commit": "e9bc3e4923352d1f57d4a85df3c7f4a2e1adc787",
+      "branch": "master",
+      "tree": "clean"
+    },
+    {
+      "project": "samsar-docs",
+      "path": "apps/docs",
+      "commit": "8b594ecf094edfbb86ed0f083bf1064ffad90568",
+      "branch": "develop",
+      "tree": "dirty (42 paths)"
+    },
+    {
+      "project": "samsar-gallery",
+      "path": "apps/gallery",
+      "commit": "b79c90bedc6b0be168f5d3794d89532e288edf29",
+      "branch": "main",
+      "tree": "dirty (1 paths)"
+    },
+    {
+      "project": "TMochiLearn",
+      "path": "apps/tmochi-learn",
+      "commit": "6f2678c460fbe96e5d187d8e632cce30c6fb71b8",
+      "branch": "agent/constrain-models-and-improve-chosen-path-playback",
+      "tree": "clean"
+    },
+    {
+      "project": "kashmerelabs_landing",
+      "path": "apps/kashmerelabs-landing",
+      "commit": "no-commit",
+      "branch": "main",
+      "tree": "dirty (14 paths)"
+    },
+    {
+      "project": "samsar_admin",
+      "path": "apps/admin",
+      "commit": "not-a-git-repository",
+      "branch": "n/a",
+      "tree": "unversioned"
+    },
+    {
+      "project": "samsar_blog",
+      "path": "apps/blog",
+      "commit": "66d56a64d31b3f0416af1284bd585d6d5da30cde",
+      "branch": "main",
+      "tree": "clean"
+    },
+    {
+      "project": "samsar_processor",
+      "path": "services/processor",
+      "commit": "5123e6318be46d4f616e07b5938d1dce8f0c8a68",
+      "branch": "master",
+      "tree": "dirty (244 paths)"
+    },
+    {
+      "project": "samsar_generator",
+      "path": "services/generator",
+      "commit": "f879a2a2c7cded6003425783dd3dc76669e2f6f3",
+      "branch": "master",
+      "tree": "dirty (63 paths)"
+    },
+    {
+      "project": "samsar_audio_generator",
+      "path": "services/audio-generator",
+      "commit": "b011d54d74bdaa15a4495d98be9af8dddaa990a8",
+      "branch": "master",
+      "tree": "dirty (28 paths)"
+    },
+    {
+      "project": "samsar_frames_processor",
+      "path": "services/frames-processor",
+      "commit": "4390df5be5af7b159c306e0a1fb76820fdbcf55f",
+      "branch": "master",
+      "tree": "dirty (8 paths)"
+    },
+    {
+      "project": "samsar_video_generator",
+      "path": "services/video-generator",
+      "commit": "5cc725e53f0ee801b57daf120c9cec95cd36a4b3",
+      "branch": "master",
+      "tree": "dirty (6 paths)"
+    },
+    {
+      "project": "samsar_ai_video_layer_generator",
+      "path": "services/ai-video-layer-generator",
+      "commit": "ba33683320e607b833a21ea49fc1bb282fd0ece3",
+      "branch": "master",
+      "tree": "dirty (69 paths)"
+    },
+    {
+      "project": "samsar_express_video_listener",
+      "path": "services/express-video-listener",
+      "commit": "12dc0e4c3465376397e042188ddafb5841fbdde6",
+      "branch": "master",
+      "tree": "dirty (50 paths)"
+    },
+    {
+      "project": "samsar_assistant_query_processor",
+      "path": "services/assistant-query-processor",
+      "commit": "c95f035da5465e0a04ae47f8590f255c8c49551b",
+      "branch": "master",
+      "tree": "dirty (48 paths)"
+    },
+    {
+      "project": "samsar_task_processor",
+      "path": "services/task-processor",
+      "commit": "11caed74bdea749942d1e750a9a7fa3178e106ac",
+      "branch": "master",
+      "tree": "dirty (7 paths)"
+    },
+    {
+      "project": "samsar_mail_processor",
+      "path": "services/mail-processor",
+      "commit": "1ce8b716237dda7becfdcac8e166a670433eef4a",
+      "branch": "master",
+      "tree": "clean"
+    },
+    {
+      "project": "samsar_audio_utils",
+      "path": "services/audio-utils",
+      "commit": "4343d2caca6a6070189f82c7395756248e4f3eed",
+      "branch": "master",
+      "tree": "clean"
+    },
+    {
+      "project": "samsar-automator",
+      "path": "services/automator",
+      "commit": "not-a-git-repository",
+      "branch": "n/a",
+      "tree": "unversioned"
+    },
+    {
+      "project": "Docker-Cleanup",
+      "path": "services/docker-cleanup",
+      "commit": "not-a-git-repository",
+      "branch": "n/a",
+      "tree": "unversioned"
+    },
+    {
+      "project": "samsar/services/genblaze-gateway",
+      "path": "services/genblaze-gateway",
+      "commit": "70d4a7dcfefa3d10aa46dcb3ac0d8d54e0069601",
+      "branch": "develop",
+      "tree": "dirty (16 paths)"
+    }
+  ],
+  "model": {
+    "provider": "local",
+    "model": "tfidf-bm25",
+    "revision": "samsar-assistant-tfidf-bm25-v1",
+    "document_prefix": "passage: ",
+    "normalize": true,
+    "network_at_runtime": false
+  },
+  "chunking": "conservative_utf8_430",
+  "embedding_status": "not_built",
+  "audience_default": "public",
+  "historical_default": false,
+  "source_precedence": [
+    "reviewed production code",
+    "current docs",
+    "monorepo docs",
+    "creative guidance",
+    "historical blog"
+  ],
+  "exclusions": [
+    "secrets and env files",
+    "customer sessions and assets",
+    "vendor/framework internals",
+    "retired projects",
+    "unreviewed raw source code",
+    "page-specific system prompts"
+  ]
+}

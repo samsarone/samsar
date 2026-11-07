@@ -29,7 +29,7 @@ GPT Astra/Sol and Claude Opus/Fable support High and XHigh at the same per-token
 | --- | --- |
 | Session assistant completion: `/v1/assistant/completion` and `/v2/assistant/completion` | Published token prices for the selected route. |
 | External-user session assistant: `/v1/external_users/assistant/completion` | Same token prices, using the billing account for that identity. |
-| Public `/v2/external/chat`, `/v2/external/chat/completions`, `/v2/external/assistant`, and `/v2/external/assistant/completions` | Same token prices for synchronous and queued SDK requests. |
+| Public `/v2/external/chat`, `/v2/external/chat/completions`, `/v2/external/assistant`, and `/v2/external/assistant/completions` | Same token prices for JSON, streaming, and queued requests. |
 | Hosted Studio queued assistant worker | Same published token prices. |
 | Standalone Studio queued assistant worker | Existing local-credit waiver; native providers or a hosted Samsar adapter can still bill their own accounts. |
 | Production agent pipeline inference | Existing flat stage pricing, regardless of adapter. |
@@ -63,6 +63,12 @@ The SDK sends `Idempotency-Key`. Queued external submissions also accept `client
 - Requests awaiting billing confirmation or completion after a timeout can remain pending. Continue checking the existing request using the same key.
 
 Default public queue-status retention is 24 hours. Requests still awaiting completion can remain pending beyond that period.
+
+## Streaming and Conversation Reset
+
+The public external chat/assistant completion routes accept `stream: true` when polling mode is off. They emit named SSE events: `request`, cumulative-text `snapshot`, `completed`, and `error`. The `completed` event carries the response and settled credit receipt. Reconnect with the same request key; a dropped connection does not cancel provider work. The synchronous `/v1/assistant/completion` session API remains a separate JSON contract. See the [streaming API contract](https://docs.samsar.one/external-requests#streaming-completion).
+
+The Studio popup submits queued work through `/assistants/submit_assistant_query` and receives snapshots from `/assistants/assistant_query_stream`; `/assistants/assistant_query_status` remains available for polling. Clearing the conversation removes its messages, invalidates pending replies, and prevents stale workers from repopulating the cleared history. Project media remains intact. Usage already incurred can still settle, and accounting records are retained; clearing chat is not a refund.
 
 ## Paid Tools and Pending Requests
 

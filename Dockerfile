@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1.7
 # Generic service Dockerfile used by Compose/Kubernetes builds after project sync.
 # SERVICE_PATH should point at one synced app/service directory.
 ARG NODE_VERSION=24
@@ -24,6 +25,10 @@ RUN apt-get update \
 
 ARG SERVICE_PATH
 COPY ${SERVICE_PATH}/ ./
+# Built-in Node only: direct Docker builds and Compose targets both get the index.
+RUN --network=none if [ "$SERVICE_PATH" = "services/assistant-query-processor" ]; then \
+    node knowledge/index.mjs build && node knowledge/verify_artifact.mjs \
+    && rm -rf knowledge/snapshot knowledge/sources knowledge/__pycache__; fi
 RUN test -f package-lock.json \
   || (echo "Missing ${SERVICE_PATH}/package-lock.json. Commit the service lockfile before building." >&2; exit 1)
 RUN npm ci --omit=dev --include=optional --no-audit --no-fund
@@ -55,3 +60,9 @@ ENV NODE_ENV=production \
     FFMPEG_PATH=/usr/bin/ffmpeg \
     FFPROBE_PATH=/usr/bin/ffprobe
 CMD ["node", "index.js"]
+
+# Only the existing assistant image gets the locally built static index.
+FROM runtime AS assistant-runtime
+
+# Preserve the original default build for every other application service.
+FROM runtime AS application

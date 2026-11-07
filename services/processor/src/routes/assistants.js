@@ -1,3 +1,4 @@
+import { openAssistantWorkspace } from '../models/AssistantWorkspace.js';
 import { serveAssistantSnapshots } from '../utils/ServerSentEvents.js';
 
 import express from 'express';
@@ -20,6 +21,13 @@ import 'dotenv/config';
 const router = express.Router();
 
 
+router.post('/workspace', async (req, res) => {
+  const userId = verifyUserAuth(req.headers);
+  if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+  try { res.json(await openAssistantWorkspace(userId, req.body)); }
+  catch (error) { res.status(error.status || 500).json({ error: error.message }); }
+});
+
 router.post('/submit_assistant_query', async function(req, res) {
   const payload = { ...req.body, client_request_id: req.body?.client_request_id || req.get('Idempotency-Key') };
   const userId = verifyUserAuth(req.headers);
@@ -29,7 +37,7 @@ router.post('/submit_assistant_query', async function(req, res) {
   }
   try {
     const response = await createAssistantQueryRequest(userId, payload);
-    await logSharedSessionEditOperation(userId, payload, {
+    if (!payload.workspace) await logSharedSessionEditOperation(userId, payload, {
       operation: 'submit_assistant_query',
       category: 'generation',
       route: '/assistants/submit_assistant_query',
@@ -47,15 +55,17 @@ router.post('/submit_assistant_query', async function(req, res) {
 
 
 router.get('/assistant_query_status', async function(req, res) {
-  const sessionId = req.query.id;
-
-  
   try {
-  const sessionQueryResponse = await getAssistantQueryGenerationStatus(sessionId);
-  res.send(sessionQueryResponse);
-  } catch (e) {
-    console.error(e);
-    res.status(500).send({ error: e });
+    if (req.query.include_messages === 'true') {
+      const userId = verifyUserAuth(req.headers);
+      if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+      const snapshot = await getAssistantStreamSnapshot(userId, req.query);
+      return res.json({ status: snapshot.sessionMessageGenerationPending ? 'PENDING' : 'COMPLETED', sessionDetails: snapshot });
+    }
+    // Preserve the existing REST response for callers that do not opt in.
+    res.send(await getAssistantQueryGenerationStatus(req.query.id));
+  } catch (error) {
+    res.status(error.status || error.statusCode || 500).send({ error: error.message });
   }
 });
 
@@ -87,7 +97,7 @@ router.post('/apply_scene_action', async function(req, res) {
 
   try {
     const response = await applySceneActionToSessionLayer(userId, payload);
-    await logSharedSessionEditOperation(userId, payload, {
+    if (!payload.workspace) await logSharedSessionEditOperation(userId, payload, {
       operation: 'apply_scene_action',
       category: 'update',
       route: '/assistants/apply_scene_action',
@@ -108,7 +118,7 @@ router.post('/delete_session_message', async function(req, res) {
 
   try {
     const response = await deleteAssistantSessionMessage(userId, payload);
-    await logSharedSessionEditOperation(userId, payload, {
+    if (!payload.workspace) await logSharedSessionEditOperation(userId, payload, {
       operation: 'delete_assistant_session_message',
       category: 'update',
       route: '/assistants/delete_session_message',
@@ -131,7 +141,7 @@ router.post('/reset_session_messages', async function(req, res) {
 
   try {
     const response = await resetAssistantSessionMessages(userId, payload);
-    await logSharedSessionEditOperation(userId, payload, {
+    if (!payload.workspace) await logSharedSessionEditOperation(userId, payload, {
       operation: 'reset_assistant_session_messages',
       category: 'update',
       route: '/assistants/reset_session_messages',

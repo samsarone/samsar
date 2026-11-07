@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { useEffect, useState } from 'react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, expect, it, vi } from 'vitest';
 import axios from 'axios';
 import AssistantHome from '../../src/components/assistant/AssistantHome.jsx';
@@ -7,7 +7,8 @@ import { useAssistantRequestGuard } from '../../src/hooks/useAssistantRequestGua
 
 const mocks = vi.hoisted(() => ({
   user: { _id: 'owner' },
-  options: [{ value: 'gpt-6-astra', label: 'GPT 6 Astra' }],
+  options: [{ value: 'gpt-6-astra', label: 'GPT 6 Astra High' },
+    { value: 'gpt-6-astra-xhigh', label: 'GPT 6 Astra XHigh' }],
 }));
 
 vi.mock('axios', () => ({ default: { post: vi.fn() } }));
@@ -29,10 +30,16 @@ beforeEach(() => {
   if (!Element.prototype.scrollIntoView) Element.prototype.scrollIntoView = vi.fn();
 });
 
-export function Conversation({ id = 'session-a', initialMessages = history, pending = false, ...props }) {
+export function Conversation({ id = 'session-a', initialMessages = history, pending = false, subscribe = false, ...props }) {
   const [messages, setMessages] = useState(initialMessages);
   const [generating, setGenerating] = useState(pending);
   const guard = useAssistantRequestGuard(id);
+  useEffect(() => {
+    if (subscribe) guard.subscribe({ url: '/assistant-stream', onSnapshot: snapshot => {
+      setMessages(snapshot.sessionMessages);
+      setGenerating(snapshot.sessionMessageGenerationPending);
+    } });
+  }, [guard, subscribe]);
   return <AssistantHome sessionId={id} sessionMessages={messages} isAssistantQueryGenerating={generating}
     onSessionMessagesChange={setMessages} onAssistantQueryGeneratingChange={setGenerating}
     onSessionCleared={guard.invalidate} submitAssistantQuery={vi.fn()} {...props} />;
@@ -42,14 +49,54 @@ function open() { fireEvent.click(screen.getByRole('button', { name: 'Assistant'
 function requestClear() { fireEvent.click(screen.getByRole('button', { name: 'Clear session', exact: true })); }
 function confirmClear() { fireEvent.click(screen.getByRole('button', { name: 'Clear messages', exact: true })); }
 
-it('keeps model controls collapsed and exposes an explicit clear action', () => {
+it('uses the selected model as the header picker and retains an accessible clear action', async () => {
   render(<Conversation />);
   open();
-  expect(screen.queryByRole('combobox')).not.toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'Clear session', exact: true })).toBeEnabled();
-  fireEvent.click(screen.getByRole('button', { name: 'Assistant model settings' }));
-  expect(screen.getByRole('combobox', { name: 'Assistant model', exact: true })).toBeInTheDocument();
+  const modelPicker = screen.getByRole('combobox', { name: 'Assistant model', exact: true });
+  const header = modelPicker.closest('header');
+  expect(header).not.toBeNull();
+  expect(within(header).queryByText('Assistant', { exact: true })).not.toBeInTheDocument();
+  expect(screen.getAllByRole('combobox')).toHaveLength(1);
+  expect(modelPicker.closest('form')).toBeNull();
   expect(screen.queryByText('Get help with prompts, captions, titles, descriptions, or edits.')).not.toBeInTheDocument();
+  fireEvent.keyDown(modelPicker, { key: 'ArrowDown' });
+  fireEvent.click(screen.getByRole('option', { name: 'GPT 6 Astra XHigh' }));
+  await waitFor(() => expect(axios.post).toHaveBeenCalledWith(expect.stringContaining('/users/update'),
+    { selectedAssistantModel: 'gpt-6-astra-xhigh' }, { headers: { Authorization: 'test-auth' } }));
+  expect(within(header).getByText('GPT 6 Astra XHigh')).toBeInTheDocument();
+});
+
+it('shows successive SSE chunks in the popup before the response stream closes', async () => {
+  let controller;
+  const body = new ReadableStream({ start(value) { controller = value; } });
+  const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(body, {
+    headers: { 'content-type': 'text/event-stream' },
+  }));
+  const user = { id: 'live', role: 'user', content: 'Live question' };
+  const send = (event, data) => controller.enqueue(new TextEncoder().encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`));
+  const snapshot = (text, sequence) => ({ sessionMessages: [user], assistantSessionVersion: 1,
+    sessionMessageGenerationPending: true, assistantStream: { queryId: 'live', text, sequence, status: 'streaming' } });
+  try {
+    render(<Conversation initialMessages={[user]} pending subscribe />);
+    open();
+    await act(async () => send('snapshot', snapshot('First words', 1)));
+    await waitFor(() => expect(screen.getByText('First words')).toBeInTheDocument());
+    expect(screen.getByRole('button', { name: 'Send', exact: true })).toBeDisabled();
+    await act(async () => send('snapshot', snapshot('First words continue', 2)));
+    await waitFor(() => expect(screen.getByText('First words continue')).toBeInTheDocument());
+    expect(screen.queryByText('First words', { exact: true })).not.toBeInTheDocument();
+    await act(async () => {
+      send('snapshot', { ...snapshot('', 3), sessionMessageGenerationPending: false,
+        sessionMessages: [user, { id: 'live', role: 'assistant', content: 'Final reply' }],
+        assistantStream: { queryId: 'live', sequence: 3, status: 'completed' } });
+      send('settled', {});
+    });
+    await waitFor(() => expect(screen.getAllByText('Final reply')).toHaveLength(1));
+    expect(screen.queryByText('First words continue')).not.toBeInTheDocument();
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'Next question' } });
+    expect(screen.getByRole('button', { name: 'Send', exact: true })).toBeEnabled();
+  } finally { controller.close(); fetchMock.mockRestore(); }
 });
 
 it('confirms before clearing and allows cancellation without a server request', () => {
@@ -132,4 +179,23 @@ it('invalidates polling responses and timers on clear, navigation and unmount', 
   const navigated = guard.capture();
   unmount();
   expect(guard.isCurrent(navigated)).toBe(false);
+});
+
+
+it('renders retrieved public documentation citations safely without interpreting arbitrary markup', () => {
+  render(<Conversation initialMessages={[{ id: 'cited', role: 'assistant', content: '[Audio reference](https://docs.samsar.one/audio) **Current guidance** [Unsafe](javascript:alert(1))' }]} />);
+  open();
+  expect(screen.getByRole('link', { name: 'Audio reference' })).toHaveAttribute('href', 'https://docs.samsar.one/audio');
+  expect(screen.getByRole('link')).toHaveAttribute('rel', 'noopener noreferrer');
+  expect(screen.getAllByRole('link')).toHaveLength(1);
+  expect(screen.getByText('Current guidance')).toBeInTheDocument();
+});
+
+it('preserves server line breaks, empty paragraphs and indentation around formatted text', () => {
+  const content = '**Story idea**\n\nA fox enters the forest.\n  - Follow the lanterns.\n\n\n[Guide](https://docs.samsar.one/video)\n';
+  render(<Conversation initialMessages={[{ id: 'formatted', role: 'assistant', content }]} />);
+  open();
+  const body = screen.getByText('Story idea').parentElement;
+  expect(body.textContent).toBe('Story idea\n\nA fox enters the forest.\n  - Follow the lanterns.\n\n\nGuide\n');
+  expect(within(body).getByRole('link', { name: 'Guide' })).toHaveAttribute('href', 'https://docs.samsar.one/video');
 });

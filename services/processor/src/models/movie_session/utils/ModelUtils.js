@@ -25,12 +25,12 @@ function formatSpeechPromptDurationSeconds(durationSeconds) {
   return formatVideoDurationSeconds(Math.floor(durationSeconds));
 }
 
-export function getSpeechCharacterLimitsForModel(
-  model,
-  languageString,
-  framesPerSecond = undefined,
-) {
-  const modelUnits = getVideoModelDurationUnitsForFramesPerSecond(model, framesPerSecond);
+// Exact speaking time, without rounding up to a video model's duration bucket.
+export function getSpeechCharacterBudget(durationSeconds, languageString) {
+  const duration = Number(durationSeconds);
+  if (!Number.isFinite(duration) || duration <= 0) {
+    throw new TypeError('Speech duration must be a positive finite number.');
+  }
   const normalizedLanguage = typeof languageString === 'string'
     ? languageString.trim().toLowerCase()
     : '';
@@ -38,22 +38,29 @@ export function getSpeechCharacterLimitsForModel(
     ? 4
     : 5;
 
-  return modelUnits.map((durationSeconds) => {
-    const originalMaxCharacters = Math.ceil(durationSeconds * charactersPerSecond);
-    const maxCharacters = Math.ceil(
-      originalMaxCharacters +
-        (originalMaxCharacters * TEXT_TO_VIDEO_SPEECH_CHARACTER_BOUNDARY_INCREASE_RATIO),
-    );
-    return {
-      durationSeconds,
-      originalMaxCharacters,
-      maxCharacters,
-      validationMaxCharacters: Math.floor(
-        maxCharacters + (maxCharacters * TEXT_TO_VIDEO_SPEECH_CHARACTER_OVERSHOOT_RATIO),
-      ),
-      overshootRatio: TEXT_TO_VIDEO_SPEECH_CHARACTER_OVERSHOOT_RATIO,
-    };
-  });
+  const originalMaxCharacters = Math.ceil(duration * charactersPerSecond);
+  const maxCharacters = Math.ceil(
+    originalMaxCharacters +
+      (originalMaxCharacters * TEXT_TO_VIDEO_SPEECH_CHARACTER_BOUNDARY_INCREASE_RATIO),
+  );
+  return {
+    durationSeconds: duration,
+    originalMaxCharacters,
+    maxCharacters,
+    validationMaxCharacters: Math.floor(
+      maxCharacters + (maxCharacters * TEXT_TO_VIDEO_SPEECH_CHARACTER_OVERSHOOT_RATIO),
+    ),
+    overshootRatio: TEXT_TO_VIDEO_SPEECH_CHARACTER_OVERSHOOT_RATIO,
+  };
+}
+
+export function getSpeechCharacterLimitsForModel(
+  model,
+  languageString,
+  framesPerSecond = undefined,
+) {
+  return getVideoModelDurationUnitsForFramesPerSecond(model, framesPerSecond)
+    .map((durationSeconds) => getSpeechCharacterBudget(durationSeconds, languageString));
 }
 
 export function getMaxSpeechCharacterLimitForModel(

@@ -12,12 +12,15 @@ export function openServerSentEvents(res) {
   const send = (event, value, id) => {
     if (closed || res.destroyed || res.writableEnded) return false;
     if (res.writableLength > 1024 * 1024) { res.destroy(); close(); return false; }
-    try { res.write(`${id ? `id: ${id}\n` : ''}event: ${event}\ndata: ${JSON.stringify(value)}\n\n`); }
+    try {
+      res.write(`${id ? `id: ${id}\n` : ''}event: ${event}\ndata: ${JSON.stringify(value)}\n\n`);
+      res.flush?.(); // Flush compression middleware as well as the HTTP headers.
+    }
     catch { close(); return false; }
     return true;
   };
   heartbeat = setInterval(() => {
-    if (!closed && !res.writableNeedDrain) { try { res.write(': heartbeat\n\n'); } catch { close(); } }
+    if (!closed && !res.writableNeedDrain) { try { res.write(': heartbeat\n\n'); res.flush?.(); } catch { close(); } }
   }, 10000);
   heartbeat.unref?.();
   return { send, get closed() { return closed; }, end() { close(); if (!res.writableEnded && !res.destroyed) res.end(); } };

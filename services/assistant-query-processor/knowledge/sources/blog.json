@@ -1,0 +1,164 @@
+{
+  "schema_version": 1,
+  "retrieved_at": "2026-11-07",
+  "collection_urls": [
+    "https://samsar.one/blog/",
+    "https://samsar.one/blog/page/2/"
+  ],
+  "scope": "20 articles listed across both public blog index pages at capture time. Historical summaries are excluded from default retrieval. Evergreen passages are reviewed editorial syntheses, not verbatim instructions or current product guarantees.",
+  "articles": [
+    {
+      "title": "GPT Image 2 is here- We tried giving it some of the hardest battles",
+      "url": "https://samsar.one/blog/gpt-image-2-is-here-we-tried-giving-it-some-of-the-hardest-battles/",
+      "published_at": "22 Apr 2026",
+      "summary": "A historical launch demonstration of GPT Image 2 in Vidgenie. Technical examples include differentiable physics, the Langlands program and causal inference, combining image generation with video animation. The article emphasizes readable text, precise labels and specific visual instructions. Model versions and model recommendations are those of the publication date, not the current catalog.",
+      "evergreen_guidance": "For technical explainers, name the concept and learning objective, define the visual relationships, and supply exact short labels. Keep text stable and inside safe margins. Specify restrained motion for diagrams and avoid invented equations or decorative visuals that misrepresent the topic. Review scientific claims and rendered labels before publication.",
+      "retrieval": "Public blog article read through web retrieval; summary reviewed 2026-11-07."
+    },
+    {
+      "title": "What's new with Samsar Omni agent",
+      "url": "https://samsar.one/blog/whats-new-with-samsar-omni-agent/",
+      "published_at": "21 Apr 2026",
+      "summary": "An April 2026 overview of agent workflow improvements, configurable inference, image and video models, voices, subtitles, image-list marketing videos, branding, translation and joining videos. Prices, supported-language counts and model defaults in this article are historical; use current documentation and reviewed implementation for those details.",
+      "evergreen_guidance": "For image-list marketing videos, preserve the supplied product or activity identity and use listing metadata to guide the narrative. Describe restrained camera movement, plausible object motion and what must remain unchanged, including existing text and logos. Review CTA readability and the final link destination before publishing.",
+      "retrieval": "Public blog article read through web retrieval; summary reviewed 2026-11-07."
+    },
+    {
+      "title": "The Agent is now in Public Beta",
+      "url": "https://samsar.one/blog/the-agent-is-live-in-public-beta/",
+      "published_at": "31 Mar 2025",
+      "summary": "The March 2025 public beta announcement describes prompt-driven video creation through the API and then-named VidGPT creator, with subsequent scene edits in Studio. Its duration limits, success-rate claims, model lists, aspect-ratio recommendations and promotions describe the beta release.",
+      "evergreen_guidance": "A useful creation workflow is to describe the story, visual style and cinematic intent first, generate an initial video, then review individual scenes in Studio. Refine weak scenes and pacing before producing the final export.",
+      "retrieval": "Public blog article read through web retrieval; summary reviewed 2026-11-07."
+    },
+    {
+      "title": "Our Full-Stack Video Creation Agent API is Now Live",
+      "url": "https://samsar.one/blog/our-movie-creator-agent-api-is-now-in-ga-2/",
+      "published_at": "2 Mar 2025",
+      "summary": "The March 2025 public alpha announcement presents end-to-end movie creation with configurable inference, image and video models, progress polling and optional completion notifications. It describes editing the generated result in Studio. Endpoint spellings, plan requirements, timing estimates and model guidance are historical; current API contracts take precedence.",
+      "retrieval": "Public blog article read through web retrieval; summary reviewed 2026-11-07."
+    },
+    {
+      "title": "Text-to-Movie in one-shot with generative agentic pipelines",
+      "url": "https://samsar.one/blog/one-shot-movie-creation-with-lipsync-2/",
+      "published_at": "27 Jan 2025",
+      "summary": "The January 2025 introduction explains the top-down agent concept: a user idea becomes a narrative and scene structure, scene images, animation, speech and a composed video. It describes iterative image quality checks and editing the first render at scene, image, audio and text levels. Exact retry counts, providers and render limits belong to the original release.",
+      "evergreen_guidance": "Plan a coherent narrative before refining individual shots. Keep character descriptions and visual themes consistent across scenes. After the first render, review continuity, narration, scene transitions and audio, then edit the specific assets that need improvement.",
+      "retrieval": "Public blog article read through web retrieval; summary reviewed 2026-11-07."
+    },
+    {
+      "title": "SeeDance 2.5 is now configurable in the prompt-to-visualize anything framework",
+      "url": "https://samsar.one/blog/seedance-2-5-is-now-configurable-in-the-prompt-to-visualize-anything-framework/",
+      "published_at": "8 Aug 2026",
+      "summary": "The August 2026 release announces configurable Seedance 2.5 in the text-to-video framework. It is historical evidence of the integration and demonstrations at publication time, not an authority for current model routing, availability, duration limits or charges.",
+      "retrieval": "Public blog article read through web retrieval; summary reviewed 2026-11-07."
+    },
+    {
+      "title": "Generative Documentaries from Extinct Worlds",
+      "url": "https://samsar.one/blog/generative-documentaries-from-extinct-worlds/",
+      "published_at": "6 Aug 2026",
+      "summary": "This showcase uses generated prehistoric documentary scenes, including marine predators, Titanoboa, mammoths and Ophthalmosaurus. It demonstrates controlling whether the video stays in a prehistoric setting, includes narration, or alternates between modern presenter scenes and reconstructed past scenes. Model selections and quality judgments are historical.",
+      "evergreen_guidance": "For prehistoric documentary ideas, specify the period, environment, animal and a single observable event. State whether the film uses narration, character dialogue or only natural sound, and whether it remains entirely in the past. Editorial review should distinguish fossil-supported facts from speculative reconstruction.",
+      "retrieval": "Public blog article read through web retrieval; summary reviewed 2026-11-07."
+    },
+    {
+      "title": "BackBlaze B2 cloud and GenBlaze adapter are now configurable in Samsar.",
+      "url": "https://samsar.one/blog/backblaze-b2-cloud-and-genblaze-adapter-are-now-configurable-in-samsar/",
+      "published_at": "3 Aug 2026",
+      "summary": "The August 2026 integration report describes Backblaze B2 storage and the GenBlaze adapter through GMI Cloud, configuration via the setup wizard, adapter fallbacks and integration challenges. Statements about public buckets, provider concurrency, Seedance availability and supported model coverage describe that release and must not be treated as current deployment requirements.",
+      "retrieval": "Public blog article read through web retrieval; summary reviewed 2026-11-07."
+    },
+    {
+      "title": "Bring myths to life with Samsar",
+      "url": "https://samsar.one/blog/bring-myths-to-life-with-samsar/",
+      "published_at": "2 Aug 2026",
+      "summary": "This article presents Journey to the West demonstrations and compares how selected inference models interpreted the same mythological setting. It encourages iterating on ideas and prompts before rendering. Its model preferences and performance observations are subjective historical demonstrations, not guarantees of textual accuracy.",
+      "evergreen_guidance": "For mythological videos, identify the source tradition, episode, key characters and intended emotional arc. State whether the treatment is faithful adaptation or creative interpretation. Add the setting, visual style, key actions and desired ending; review generated dialogue and events against the source when fidelity matters.",
+      "retrieval": "Public blog article read through web retrieval; summary reviewed 2026-11-07."
+    },
+    {
+      "title": "On-Demand Dynamic Ed-Tech with the Samsar Framework",
+      "url": "https://samsar.one/blog/on-demand-dynamic-ed-tech-with-the-samsar-framework/",
+      "published_at": "31 Jul 2026",
+      "summary": "This educational showcase illustrates water cycles, Earth's magnetic field, printing history and continental motion. It discusses post-processing by subject experts and generating metadata for distribution. Claims of perfect model accuracy, quoted prices and model recommendations are historical marketing claims, not validated guarantees.",
+      "evergreen_guidance": "An educational brief should define the learner, topic, learning objective and ordered visual explanation. Keep on-screen terminology and narration consistent. Have a subject expert review factual claims, diagrams and captions before distribution, and use Studio to correct individual scenes.",
+      "retrieval": "Public blog article read through web retrieval; summary reviewed 2026-11-07."
+    },
+    {
+      "title": "The AI Food Video Challenge",
+      "url": "https://samsar.one/blog/the-ai-food-video-challenge/",
+      "published_at": "31 Jul 2026",
+      "summary": "A cooking-video comparison demonstrates recipe sequences and regional settings using different inference models with a shared video model. It discusses narrative adherence, initial-frame descriptions, physics and correcting individual animation issues. Rendering times, model versions and provider selections reflect the demonstration date.",
+      "evergreen_guidance": "For cooking or craft videos, provide the ingredients or materials, ordered actions, setting and intended visual style. Describe object placement and interactions clearly so the animation follows the process. Review continuity between steps and rerender a scene when objects, tools or actions are inconsistent.",
+      "retrieval": "Public blog article read through web retrieval; summary reviewed 2026-11-07."
+    },
+    {
+      "title": "Deploy Sandboxed Generative API servers with Model Composable Payload",
+      "url": "https://samsar.one/blog/deploy-sandboxed-generative-api-servers-with-model-composable-payload/",
+      "published_at": "30 Jul 2026",
+      "summary": "This article explains the model-composable deployment concept: high-level video workflows and lower-level generation APIs can be served from a self-hosted installation with configured adapters. It discusses native, third-party and Samsar API configuration and custom integrations. Fixed model counts and setup-screen positions are historical; current setup documentation and code define supported configuration.",
+      "retrieval": "Public blog article read through web retrieval; summary reviewed 2026-11-07."
+    },
+    {
+      "title": "Comparing the Inference Engines",
+      "url": "https://samsar.one/blog/comparing-the-inference-engines/",
+      "published_at": "29 Jul 2026",
+      "summary": "This historical comparison uses poetry recitation to discuss narrative fidelity, structured outputs, creativity and vision judgments across inference engines. The observations are anecdotal, model-version-specific demonstrations. They should not establish a current ranking, current pricing or guaranteed behavior.",
+      "evergreen_guidance": "When exact narration matters, provide the required lines explicitly and state whether additions or paraphrases are allowed. Review the generated transcript before rendering. For dialogue and lip-sync shots, keep the intended speaker visually clear and avoid camera changes that make the speaking subject ambiguous.",
+      "retrieval": "Public blog article read through web retrieval; summary reviewed 2026-11-07."
+    },
+    {
+      "title": "QWEN 3.7 Inference and Native Alibaba Cloud integration is here",
+      "url": "https://samsar.one/blog/qwen-3-8-inference-and-native-alibaba-cloud-integration-is-here/",
+      "published_at": "20 Jul 2026",
+      "summary": "This Alibaba Cloud integration post describes native and intermediary adapter options and Qwen, Happy Horse and WAN demonstrations. It includes a correction distinguishing Qwen token-plan availability from production API availability. The title, URL and model mentions differ, so current model IDs and availability must be resolved from code and current docs.",
+      "retrieval": "Public blog article read through web retrieval; summary reviewed 2026-11-07."
+    },
+    {
+      "title": "The Samsar project is now generally available, open-source under MIT license",
+      "url": "https://samsar.one/blog/the-samsar-project-is-now-generally-available-open-source-under-mit-license/",
+      "published_at": "11 Jul 2026",
+      "summary": "The July 2026 announcement presents the Samsar project as an MIT-licensed open-source video framework with deployable agent, editor and API functionality. Its release-specific model lists and deployment descriptions are background material; current repository documentation defines installation details.",
+      "retrieval": "Public blog article read through web retrieval; summary reviewed 2026-11-07."
+    },
+    {
+      "title": "Ed-Tech content with Samsar T2V agent",
+      "url": "https://samsar.one/blog/ed-tech-content-with-samsar-t2v-agent/",
+      "published_at": "2 Jun 2026",
+      "summary": "This educational-content showcase describes using text-to-video for technical learning material and illustrates the importance of aligning narrative, diagrams and animation. Model choices and performance claims are historical examples.",
+      "evergreen_guidance": "For educational prompts, ask for one clearly scoped concept at a time, with an ordered explanation and concise readable labels. Specify the tone and intended audience. Verify diagrams, equations and narration and correct inaccuracies before sharing the video.",
+      "retrieval": "Public blog article read through web retrieval; summary reviewed 2026-11-07."
+    },
+    {
+      "title": "Increased quality, faster renders and more model options with the Samsar the One Text/Image-List to Video Agent",
+      "url": "https://samsar.one/blog/i-quality-faster-render-more-model-options-narrator-avatar-with-the-samsar-the-one-text-image-list-to-video-agent/",
+      "published_at": "24 May 2026",
+      "summary": "The May 2026 release describes live previews, configurable agent models, narrator avatars, branding and CTA options, and Studio post-processing. It contains a historical pricing table, model defaults and timing estimates; current code and documentation supersede those values.",
+      "evergreen_guidance": "Review previews for narrative direction, pacing, narration and scene flow. Choose voice style to match the content. After generation, inspect branding, CTA legibility and scene transitions, then make targeted Studio edits before the final render.",
+      "retrieval": "Public blog article read through web retrieval; summary reviewed 2026-11-07."
+    },
+    {
+      "title": "Managed APIs for deploying SoTA Search and Recommendation systems with minimal configuration requirements",
+      "url": "https://samsar.one/blog/managed-apis-for-deploying-sota-search-and-recommendation-systems-with-minimal-configuration-requirements/",
+      "published_at": "23 Apr 2026",
+      "summary": "This April 2026 article introduces managed search and recommendation APIs, including creation and update of document embeddings, URL ingestion, similarity retrieval and optional downstream augmentation. It describes an OpenAI-backed service. That existing commercial API is separate from the assistant's new static local knowledge base and does not imply an OpenAI dependency for assistant retrieval.",
+      "retrieval": "Public blog article read through web retrieval; summary reviewed 2026-11-07."
+    },
+    {
+      "title": "Add Lip-Sync to Generative Scenes in SamsarOne Studio",
+      "url": "https://samsar.one/blog/n-lip-sync-to-generative-video-projects-with-samsarone-studio/",
+      "published_at": "8 Feb 2025",
+      "summary": "The February 2025 lip-sync guide explains the sequence of speaker image, animated base video, speech layer and lip-sync generation. Its default model, UI labels and promotional credits are historical. The enduring prerequisites are a clearly visible speaking subject and speech timing contained within the scene.",
+      "evergreen_guidance": "For lip-sync, keep the intended speaker's mouth visible throughout the spoken segment. Create or select a base video, add the corresponding speech, and align the speech inside the scene boundaries before generating lip-sync. Review the result for speaker identity, mouth visibility and synchronization before final composition.",
+      "retrieval": "Public blog article read through web retrieval; summary reviewed 2026-11-07."
+    },
+    {
+      "title": "Consistency in generative-video projects",
+      "url": "https://samsar.one/blog/character-theme-consistency-in-generative-video-projects-2/",
+      "published_at": "15 Jan 2025",
+      "summary": "This January 2025 guide compares prompt-based consistency with fine-tuned models and LoRA. It discusses defining characters, places, settings and style across scenes and describes the Studio controls of that release. Model preferences and exact tab names are historical.",
+      "evergreen_guidance": "Maintain a reusable description of each character's distinguishing features, clothing and proportions, together with the setting and visual style. Change only the attributes required by the scene. Start from consistent scene images before animation, and review identity and style continuity across the sequence.",
+      "retrieval": "Public blog article read through web retrieval; summary reviewed 2026-11-07."
+    }
+  ]
+}

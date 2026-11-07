@@ -28,8 +28,8 @@ const MAX_MODERATION_RETRY_DELAY_MS = 10_000;
 const DEFAULT_EXTERNAL_MODERATION_TIMEOUT_BUFFER_MS = 5_000;
 const DEFAULT_SAMSAR_EXTERNAL_MODERATION_REQUEST_TIMEOUT_MS = 130_000;
 const MAX_SAMSAR_EXTERNAL_MODERATION_REQUEST_TIMEOUT_MS = 130_000;
-const DEFAULT_MODERATION_REJECT_SCORE_THRESHOLD = 0.65;
-const DEFAULT_NARRATIVE_VIOLENCE_REJECT_SCORE_THRESHOLD = 0.9;
+const DEFAULT_MODERATION_REJECT_SCORE_THRESHOLD = 0.95;
+const DEFAULT_NARRATIVE_VIOLENCE_REJECT_SCORE_THRESHOLD = 0.99;
 const OPENAI_MODERATION_REJECT_SCORE_THRESHOLD = parseModerationScoreThreshold(
   process.env.OPENAI_MODERATION_REJECT_SCORE_THRESHOLD ||
   process.env.MODERATION_REJECT_SCORE_THRESHOLD,
@@ -123,8 +123,17 @@ function isBroadViolenceCategory(category) {
 }
 
 function getCategoryScore(categoryScores, category) {
-  const normalizedScore = Number(categoryScores?.[category]);
-  return Number.isFinite(normalizedScore) ? normalizedScore : null;
+  const value = categoryScores?.[category];
+  if (
+    typeof value !== "number" &&
+    (typeof value !== "string" || !value.trim())
+  ) {
+    return null;
+  }
+  const normalizedScore = Number(value);
+  return Number.isFinite(normalizedScore) && normalizedScore >= 0 && normalizedScore <= 1
+    ? normalizedScore
+    : null;
 }
 
 function shouldRelaxNarrativeViolence(options = {}) {
@@ -923,10 +932,6 @@ export function getModerationDecision(moderationResult, options = {}) {
     .filter(([, flagged]) => flagged === true)
     .map(([category]) => category);
   const blockingFlaggedCategories = flaggedCategories.filter((category) => {
-    if (!shouldRelaxNarrativeViolence(options) || !isBroadViolenceCategory(category)) {
-      return true;
-    }
-
     const score = getCategoryScore(categoryScores, category);
     return score === null || score >= getCategoryRejectScoreThreshold(category, options);
   });
@@ -942,15 +947,11 @@ export function getModerationDecision(moderationResult, options = {}) {
   }
 
   const highScoreCategories = Object
-    .entries(categoryScores)
-    .filter(([, score]) => {
-      const normalizedScore = Number(score);
-      return Number.isFinite(normalizedScore);
-    })
-    .filter(([category, score]) => (
-      Number(score) >= getCategoryRejectScoreThreshold(category, options)
-    ))
-    .map(([category]) => category);
+    .keys(categoryScores)
+    .filter((category) => {
+      const score = getCategoryScore(categoryScores, category);
+      return score !== null && score >= getCategoryRejectScoreThreshold(category, options);
+    });
 
   if (highScoreCategories.length > 0) {
     const thresholds = highScoreCategories.map((category) => (
@@ -1048,11 +1049,33 @@ export async function getModerationForNarrative(requestData, options = {}) {
       moderationContext: "narrative",
     });
     if (sessionId) {
+      const categoryNamesByResult = moderation.results.map((result) => (
+        [...new Set([
+          ...Object.keys(result.categories),
+          ...Object.keys(result.category_scores),
+        ])]
+      ));
       console.info("[moderation] request_complete", {
         sessionId,
         provider,
         safe: decision.safe,
         reason: decision.reason,
+        providerFlagged: moderation.results.map((result) => result.flagged),
+        flaggedCategories: moderation.results.map((result) => (
+          Object.keys(result.categories).filter((category) => result.categories[category] === true)
+        )),
+        categoryScores: moderation.results.map((result, index) => Object.fromEntries(
+          categoryNamesByResult[index].map((category) => [
+            category,
+            getCategoryScore(result.category_scores, category),
+          ]),
+        )),
+        categoryThresholds: categoryNamesByResult.map((categories) => Object.fromEntries(
+          categories.map((category) => [
+            category,
+            getCategoryRejectScoreThreshold(category, { provider, moderationContext: "narrative" }),
+          ]),
+        )),
         durationMs: Date.now() - startedAt,
       });
     }

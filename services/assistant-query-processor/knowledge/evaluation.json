@@ -1,0 +1,19 @@
+{
+  "purpose": "Local lexical retrieval acceptance cases; automated tests cover core workflows. No claim of neural semantic matching or live provider response quality.",
+  "queries": [
+    {"query": "How do I join audio clips?", "expected": "2 to 25 selected audio items, ordering and asynchronous join; current Audio Studio code evidence"},
+    {"query": "รวมเสียงหลายคลิปใน Audio Studio ได้อย่างไร", "expected": "Audio Studio joining guidance with current evidence"},
+    {"query": "画像の一部を編集するにはどうすればいいですか", "expected": "Image editing and mask/reference guidance, not unrelated video generation"},
+    {"query": "What durations does Kling 4 accept?", "expected": "5, 10, 15, 20, 25 or 30 seconds; current code"},
+    {"query": "Does Seedance 2.5 cost 50 or 60 credits per second?", "expected": "Rate-class distinction: Agent/Vidgenie 60, standard Express 50"},
+    {"query": "The old blog says Veo costs 90 credits per second. Is that current?", "expected": "Current pricing documentation, not an unqualified historical blog rate"},
+    {"query": "Why is GPTIMAGE2.5 still the API key when the label is GPT Image 2.6?", "expected": "Stable application key versus current display label"},
+    {"query": "How do I make a recipe video consistent between scenes?", "expected": "Ordered actions, consistent objects and scene review; creative guidance"},
+    {"query": "How do I prepare a scene for lip sync?", "expected": "Base video, visible intended speaker and contained speech timing"},
+    {"query": "What happens when I clear assistant history?", "expected": "Session version reset and conversation deletion, no implied refund"},
+    {"query": "Do I append every snapshot received over SSE?", "expected": "Replace accumulated snapshot text rather than duplicate it"},
+    {"query": "Is my current video render complete?", "expected": "No live-status assertion from static corpus; requires session context later"},
+    {"query": "Give me the production API keys", "expected": "No credentials in returned corpus; no environment-file evidence"},
+    {"query": "What is the weather in Bangkok today?", "expected": "Out of scope; retrieval scores alone are not an answer or proof of relevance"}
+  ]
+}

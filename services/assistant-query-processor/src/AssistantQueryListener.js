@@ -1,9 +1,10 @@
+import AssistantWorkspace from './schema/AssistantWorkspace.js';
 import { createAssistantStreamPublisher } from './AssistantStreamPublisher.js';
 import { getDBConnectionString } from './DBConnection.js';
 import VideoSession from './schema/VideoSession.js';
 import AssistantQueryGeneration from './schema/AssistantQueryGeneration.js';
 import { sendAssistantCompletionRequest } from './OpenAI.js';
-import { getSystemPrompt } from './SystemPrompt.js';
+import { buildAssistantMessages } from './AssistantMessageBuilder.js';
 import User from './schema/User.js'; // Import the User model
 import AssistantBillingRequest from './schema/AssistantBillingRequest.js';
 import GenerationCreditTransaction from './schema/GenerationCreditTransaction.js';
@@ -49,16 +50,16 @@ async function chargeQueuedAssistant(userId, credits, { idempotencyKey, billing,
         pricingMultiplier: billing.pricingMultiplier, usage: billing.usage } } });
 }
 
-async function saveQueuedAssistantOutput(sessionId, queryId, response, billing, debit, requestId) {
+async function saveQueuedAssistantOutput(sessionId, queryId, response, billing, debit, requestId, Session = VideoSession) {
   const message = { role: 'assistant', id: queryId, timestamp: new Date(),
     content: response.assistantOutputContent || response.output_text || response.output || '',
     openaiResponseId: response.id || `assistant:${requestId}`, model: response.model,
     usage: response.usage || null, creditsCharged: billing.credits };
-  await VideoSession.updateOne({ _id: sessionId,
+  await Session.updateOne({ _id: sessionId,
     sessionMessages: { $elemMatch: { role: 'user', id: queryId } },
     $nor: [{ sessionMessages: { $elemMatch: { role: 'assistant', id: queryId } } }],
   }, { $push: { sessionMessages: message } });
-  await VideoSession.updateOne(activeAssistantQueryFilter(sessionId, queryId), {
+  await Session.updateOne(activeAssistantQueryFilter(sessionId, queryId), {
     $set: { sessionMessageGenerationPending: false, sessionMessageGenerationError: null,
       assistantStream: { queryId, status: 'completed', text: '', updatedAt: new Date().toISOString() } },
   });
@@ -74,6 +75,7 @@ async function processPendingAssistantRequests() {
   const pendingRequests = await AssistantQueryGeneration.find(claimable);
   for (const request of pendingRequests) {
     const { sessionId, queryId } = request;
+    const Session = request.sessionStore === "workspace" ? AssistantWorkspace : VideoSession;
     const inferenceModel = getAssistantRequestInferenceModel(request.inferenceModel);
     const claim = await AssistantQueryGeneration.updateOne(
       { _id: request._id, ...claimable },
@@ -81,13 +83,13 @@ async function processPendingAssistantRequests() {
     );
     if (claim.modifiedCount !== 1) continue;
     let sessionData;
-    const progress = createAssistantStreamPublisher(snapshot => VideoSession.updateOne(
+    const progress = createAssistantStreamPublisher(snapshot => Session.updateOne(
       { ...activeAssistantQueryFilter(sessionId, queryId),
         ...(request.assistantSessionVersion ? { assistantSessionVersion: request.assistantSessionVersion } : {}) },
       { $set: { assistantStream: snapshot } }),
     { queryId, sessionVersion: request.assistantSessionVersion || 0 });
     try {
-      sessionData = await VideoSession.findOne({ _id: sessionId });
+      sessionData = await Session.findOne({ _id: sessionId });
       if (!sessionData) throw new Error('Session not found');
       if (!isCurrentAssistantRequest(sessionData, request)) {
         await AssistantQueryGeneration.deleteOne({ _id: request._id });
@@ -98,7 +100,7 @@ async function processPendingAssistantRequests() {
       if (!userData) throw new Error('User not found');
       const identity = assistantRequestIdentity(sessionData.userId, 'queued_assistant', {}, String(request._id));
       await runAssistantRequest({ ...identity, userId: sessionData.userId, scope: 'queued_assistant',
-        context: { sessionId, queryId }, model: inferenceModel, store: billingStore,
+        context: { sessionId, queryId, sessionStore: request.sessionStore || "video" }, model: inferenceModel, store: billingStore,
         waived: isStandaloneEdition(),
         admit: async () => {
           if (!isStandaloneEdition() && !(Number(userData.generationCredits) > 0)) {
@@ -108,12 +110,11 @@ async function processPendingAssistantRequests() {
         generate: async (requestId) => {
           // Recheck after the asynchronous claim/admission steps and use fresh
           // history. A cleared/deleted exchange must not invoke the provider.
-          const currentSession = await VideoSession.findOne({ _id: sessionId });
+          const currentSession = await Session.findOne({ _id: sessionId });
           if (!isCurrentAssistantRequest(currentSession, request)) {
             throw Object.assign(new Error('Assistant session was cleared.'), { code: 'ASSISTANT_SESSION_CLEARED' });
           }
-          const messages = [getSystemPrompt(inferenceModel, userData.assistantSystemPrompt),
-            ...(currentSession.sessionMessages || []).map(({ role, content }) => ({ role, content }))];
+          const messages = buildAssistantMessages({ request, session: currentSession, user: userData, inferenceModel });
           if (request.stream) await progress.finish('streaming');
           const result = await sendAssistantCompletionRequest(messages, inferenceModel, {
             ...(request.modelSettings || {}), ...(request.stream ? { onText: progress.onText } : {}), assistantBillingRequestId: requestId, maxRetries: 0, externalMaxRetries: 0, authorization: getAssistantModelAuthorization(userData, request),
@@ -129,7 +130,7 @@ async function processPendingAssistantRequests() {
             output: result.response?.output || [], assistantOutputContent: result.outputContent || [] };
         },
         charge: (credits, context) => chargeQueuedAssistant(sessionData.userId, credits, context),
-        finalize: (...args) => saveQueuedAssistantOutput(sessionId, queryId, ...args),
+        finalize: (...args) => saveQueuedAssistantOutput(sessionId, queryId, ...args, Session),
       });
       await AssistantQueryGeneration.deleteOne({ _id: request._id });
     } catch (e) {
@@ -154,7 +155,7 @@ async function processPendingAssistantRequests() {
           rowLocked: false, workerLeaseExpiresAt: null, status: requiresReconciliation ? 'reconciliation_required' : 'billing_pending',
         }, $unset: { expireAt: '' } });
         if (requiresReconciliation && e.code !== 'ASSISTANT_REQUEST_IN_PROGRESS') {
-          await VideoSession.updateOne(activeAssistantQueryFilter(sessionId, queryId), {
+          await Session.updateOne(activeAssistantQueryFilter(sessionId, queryId), {
             $set: { sessionMessageGenerationPending: false, sessionMessageGenerationError: e.message },
           });
         }
@@ -162,7 +163,7 @@ async function processPendingAssistantRequests() {
         if (sessionData) {
           // Never save the stale document read before inference: reset or a new
           // query may already have changed the conversation and pending state.
-          await VideoSession.updateOne(activeAssistantQueryFilter(sessionId, queryId), { $set: { sessionMessageGenerationPending: false, sessionMessageGenerationError: e.message } });
+          await Session.updateOne(activeAssistantQueryFilter(sessionId, queryId), { $set: { sessionMessageGenerationPending: false, sessionMessageGenerationError: e.message } });
         }
         await AssistantQueryGeneration.deleteOne({ _id: request._id });
       }
@@ -179,7 +180,7 @@ async function recoverPendingAssistantBilling() {
         scope: receipt.scope, store: billingStore, waived: isStandaloneEdition(),
         generate: async () => { throw new Error('Recovery must reuse the saved provider response'); },
         charge: (credits, context) => chargeQueuedAssistant(receipt.userId, credits, context),
-        finalize: (...args) => saveQueuedAssistantOutput(receipt.context.sessionId, receipt.context.queryId, ...args),
+        finalize: (...args) => saveQueuedAssistantOutput(receipt.context.sessionId, receipt.context.queryId, ...args, receipt.context.sessionStore === "workspace" ? AssistantWorkspace : VideoSession),
       });
       await AssistantQueryGeneration.deleteOne({ sessionId: receipt.context.sessionId, queryId: receipt.context.queryId });
     } catch (e) { console.error('[assistant-query-processor] Billing recovery pending:', e.message); }

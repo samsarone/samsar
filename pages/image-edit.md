@@ -28,10 +28,10 @@ Generation, enhancement and image edits use the [final image token and output pr
 
 | Service | Role |
 | --- | --- |
-| `processor` | Auth, validation, credit charge, ImageGeneration record creation, status and listing. |
+| `processor` | Auth, validation, credit admission, ImageGeneration record creation, status and listing. |
 | `generator` | Picks up image generation/edit sessions and calls configured image providers. |
 | `mongo` | Image session, global session, user, and credit state. |
-| `minio` and `media-gateway` | Local storage and public media URLs. |
+| `minio` and `media-gateway` | Local storage and the internal origin used for provider media access; browser assets are served through the processor. |
 
 ## Main Endpoints
 

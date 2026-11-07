@@ -3,7 +3,9 @@
 The setup wizard is the browser-driven local Docker setup path. Node.js and
 npm run inside its Docker image and are not required on the host.
 
-Start it from the `samsar` mono-repo root on Linux, macOS, or WSL:
+## Launch
+
+Start it from the `samsar` monorepo root on Linux, macOS, or WSL:
 
 ```bash
 ./setup.sh
@@ -37,6 +39,8 @@ The Linux values are functional compatibility floors; keep Docker on a
 current, vendor-supported patch release.
 `npm run setup-wizard` remains an optional developer alias.
 
+## Existing installations and updates
+
 With Node.js and npm available on the host, `npm run deploy` or
 `npm run docker:up` starts this same wizard before application image builds.
 `npm run docker:restart` also starts the wizard first, and `npm run sync:restart`
@@ -57,6 +61,8 @@ replacing each other's containers. The same recovery applies to the media gatewa
 reverse proxy, and processor restart during account recovery. The wizard also
 prevents setup and update/restart operations from running at the same time. Other
 deployment errors remain visible in the setup log.
+
+## Local access
 
 Local MongoDB uses `mongo:27017` between containers and an automatically allocated
 loopback port for host access. This lets setup coexist with a host MongoDB already
@@ -87,7 +93,7 @@ For managed workflows, start with [hosted Samsar.js](https://docs.samsar.one/) a
 
 | Step | Screen | What it gathers | Output |
 | --- | --- | --- | --- |
-| 1 | Providers | Optional OpenRouter key, OpenAI API key, Google Cloud service account JSON/base64 JSON, Kimi K3 API key, Alibaba Cloud key/endpoint (Token Plan or pay-as-you-go), FAL key, ElevenLabs key, Runway key, optional Samsar API key | Provider config and model/action availability, including Qwen Image 3.0 Pro for standalone Alibaba Cloud standard PAYG credentials. |
+| 1 | Providers | Samsar API key first; optional OpenAI, Anthropic, Google Cloud, Alibaba Cloud, Kimi, OpenRouter, GMICloud, fal, ElevenLabs, and Runway credentials | Provider config and model/action availability, including Qwen Image 3.0 Pro for standalone Alibaba Cloud standard PAYG credentials. |
 | 2 | Services | Processor, setup wizard, image generator, assistant query processor, audio generator, AI video layer generator, video renderer, frames processor, express video listener, logger | Docker service selection and local infrastructure flags. |
 | 3 | Mail and Data | Local vs remote MongoDB, local MinIO vs external S3-compatible storage, static CDN URL, CloudFront signing fields, disabled/SMTP/SES mail | Database, storage, media, and mail config. |
 | 4 | Domain | Optional nginx reverse proxy, public domain/subdomain, public IP, private IP, optional IP detection, optional firewall port opening, and optional Let's Encrypt SSL for validated public domains | Public or intranet access URLs for Studio and the processor API. |
@@ -97,15 +103,16 @@ For managed workflows, start with [hosted Samsar.js](https://docs.samsar.one/) a
 
 At the top of Providers, **Enter values** remains the default and shows the existing credential fields. **Bash environment** switches those fields to variable references such as `$OPENAI_API_KEY` or `${OPENAI_API_KEY}`. The launcher forwards the standard provider variable names into the isolated setup service; the service resolves and validates them without returning raw values to the browser. To use a custom exported name, include it in `SAMSAR_SETUP_PROVIDER_ENV_NAMES` before launching, for example `SAMSAR_SETUP_PROVIDER_ENV_NAMES=LIVE_DEMO_KEY ./setup.sh`, then enter `$LIVE_DEMO_KEY` for the matching provider.
 
-The wizard presents three provider groups:
+The wizard presents the Samsar API key first, followed by **Or add model or adapter keys to enable specific capabilities**. Model lists appear in per-provider tooltips, and each provider has a link to obtain credentials. **Continue** is highlighted when the entered provider combination covers the required capabilities; validation still runs when continuing.
 
 | Mode | Providers | Behavior |
 | --- | --- | --- |
-| Inference Router | OpenRouter | One optional key enables the supported GPT, Gemini, Claude and Qwen text and vision inference paths. |
-| Native | OpenAI, Google Cloud, Kimi K3, Alibaba Cloud, FAL, ElevenLabs, RunwayML | Use direct provider credentials for the model families they support. Kimi K3 enables `KIMIK3` inference, assistant, strict structured-output, and vision requests. |
-| Managed Samsar.js adapter | Samsar API key | Enables the supported Samsar model/action families; native-only and credential-scoped exceptions remain separate. |
+| Samsar API key | Samsar | Enables supported managed model/action families. Native-only and credential-scoped exceptions remain separate. |
+| Inference | OpenAI, Anthropic, Google Cloud, Alibaba Cloud, Kimi, OpenRouter | Agent reasoning, text, and vision; Google and Alibaba also enable their supported media capabilities. |
+| GMICloud | GenBlaze gateway | Exposes exact model/operation mappings validated for the credential. |
+| Media | fal, ElevenLabs, Runway | Dedicated image, video, speech, music, lip-sync, and sound-effect adapters. |
 
-The provider list mirrors the runtime renderer and writes values that become `OPENROUTER_API_KEY`, `OPENAI_API_KEY`, `GOOGLE_APPLICATION_CREDENTIALS_JSON_B64`, `KIMI_K3_API_KEY`, `ALIBABA_API_KEY`, `FAL_API_KEY`, `ELEVENLABS_API_KEY`, `RUNWAY_API_KEY`, and `SAMSAR_API_KEY` in `runtime/secrets/root.env`. Kimi validation runs through the processor provider-validation API; its browser field is redacted from persisted session state and must be re-entered after a resumed validation. OpenRouter validation checks authenticated key metadata, rejects management-only keys, and binds setup to a one-hour, single-use credential token. OpenRouter and Alibaba values are stored in mode-`0600` `runtime/secrets/provider.credentials.json`; Kimi is stored in the mode-`0600` runtime config. Validation tokens are excluded from persisted browser state and the copyable config preview. All backend Compose services consume the same `root.env`, so one Kimi secret covers the processor and every inference worker.
+The provider list mirrors the runtime renderer and writes values that become `SAMSAR_API_KEY`, `OPENROUTER_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GMI_API_KEY`, `GOOGLE_APPLICATION_CREDENTIALS_JSON_B64`, `KIMI_K3_API_KEY`, `ALIBABA_API_KEY`, `FAL_API_KEY`, `ELEVENLABS_API_KEY`, `RUNWAY_API_KEY` in `runtime/secrets/root.env`. Kimi validation runs through the processor provider-validation API; its browser field is redacted from persisted session state and must be re-entered after a resumed validation. OpenRouter validation checks authenticated key metadata, rejects management-only keys, and binds setup to a one-hour, single-use credential token. OpenRouter and Alibaba values are stored in mode-`0600` `runtime/secrets/provider.credentials.json`; Kimi is stored in the mode-`0600` runtime config. Validation tokens are excluded from persisted browser state and the copyable config preview. All backend Compose services consume the same `root.env`, so one Kimi secret covers the processor and every inference worker.
 
 For Kimi requests, the provider order is native Kimi followed by Samsar. The exact native model is `kimi-k3` for both inference and vision, and all Kimi requests use high reasoning. OpenRouter is not part of the Kimi fallback chain.
 

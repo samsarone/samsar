@@ -70,3 +70,33 @@ it('a delayed partial snapshot cannot replace the final reply already received t
   expect(result.current.acceptSession({ ...snapshot, assistantStream: { queryId: 'q', status: 'streaming' } })).toBe(false);
   expect(result.current.acceptSession({ ...snapshot, assistantStream: { queryId: 'next', status: 'queued' } })).toBe(true);
 });
+
+it('polling renders successive pending text, preserves history and ignores stale SSE snapshots', () => {
+  const { result } = renderHook(() => useAssistantRequestGuard('session'));
+  const user = { id: 'q', role: 'user', content: 'Question' };
+  let messages = [user];
+  const setMessages = update => { messages = typeof update === 'function' ? update(messages) : update; };
+  const pending = (text, sequence) => ({ status: 'PENDING', assistantSessionVersion: 1,
+    assistantStream: { queryId: 'q', text, sequence, status: 'streaming' } });
+  expect(result.current.applyStatus(pending('First', 1), setMessages)).toBe(false);
+  expect(messages.map(message => message.content)).toEqual(['Question', 'First']);
+  result.current.applyStatus(pending('First sentence', 2), setMessages);
+  expect(messages.map(message => message.content)).toEqual(['Question', 'First sentence']);
+  expect(result.current.acceptSession(pending('First', 1))).toBe(false);
+  const final = { ...user, role: 'assistant', content: 'Final answer' };
+  expect(result.current.applyStatus({ status: 'COMPLETED', sessionDetails: {
+    assistantSessionVersion: 1, sessionMessages: [user, final], assistantStream: { queryId: 'q', status: 'completed' },
+  } }, setMessages)).toBe(true);
+  expect(messages).toEqual([user, final]);
+});
+
+it('keeps transient polling failures retryable but stops delivery on lost access', () => {
+  const { result } = renderHook(() => useAssistantRequestGuard('session'));
+  const token = result.current.capture();
+  for (const error of [new Error('Offline'), { response: { status: 503 } }, { response: { status: 429 } }]) {
+    expect(result.current.stopOnAccessError(error)).toBe(false);
+    expect(result.current.isCurrent(token)).toBe(true);
+  }
+  expect(result.current.stopOnAccessError({ response: { status: 403 } })).toBe(true);
+  expect(result.current.isCurrent(token)).toBe(false);
+});

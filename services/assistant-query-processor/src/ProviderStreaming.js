@@ -86,7 +86,12 @@ export async function createStreamingResponses(client, payload, options, onText)
   const stream = await client.post('/responses', { body: { ...payload, stream: true }, ...options, stream: true, maxRetries: 0 });
   let text = '', completed;
   try {
-    for await (const event of stream) {
+    for await (const chunk of stream) {
+      // Older SDKs wrap named SSE events from low-level post() in { event, data }.
+      // Newer SDKs and typed Responses streams yield the event payload directly.
+      const event = !chunk?.type && typeof chunk?.event === 'string' && chunk.data && typeof chunk.data === 'object'
+        ? { ...chunk.data, type: chunk.data.type || chunk.event }
+        : chunk;
       if (['error', 'response.failed'].includes(event.type)) throw new Error(event.error?.message || event.response?.error?.message || 'Provider response failed.');
       if (event.type === 'response.output_text.delta' || event.type === 'response.refusal.delta') {
         text += event.delta || '';

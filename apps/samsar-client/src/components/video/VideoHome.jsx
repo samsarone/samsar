@@ -1,3 +1,5 @@
+import { studioAssistantView } from '../../utils/assistantContext.js';
+import { getUiLanguage } from '../../utils/localization.js';
 import { useAssistantRequestGuard } from '../../hooks/useAssistantRequestGuard.js';
 import { useUiLanguage } from '../../hooks/useUiLanguage.js';
 import { translateText as uiText } from '../../utils/localization.js';
@@ -781,6 +783,7 @@ export default function VideoHome() {
     setVisualReadiness(previous => previous.layerId === layerId && previous.identity === identity && previous.ready === ready
       ? previous : { layerId, identity, ready });
   }, []);
+  const [assistantToolView, setAssistantToolView] = useState('');
   const [currentEditorView, setCurrentEditorView] = useState(CURRENT_EDITOR_VIEW.VIEW);
   const [downloadVideoDisplay, setDownloadVideoDisplay] = useState(false);
   const [renderedVideoPath, setRenderedVideoPath] = useState(null);
@@ -3967,17 +3970,17 @@ export default function VideoHome() {
     });
 
     const timer = assistantRequestGuard.setInterval(() => {
-      axios.get(`${PROCESSOR_API_URL}/assistants/assistant_query_status?id=${id}`, headers).then((dataRes) => {
+      axios.get(`${PROCESSOR_API_URL}/assistants/assistant_query_status?id=${encodeURIComponent(id)}&include_messages=true`, headers).then((dataRes) => {
         if (!assistantRequestGuard.isCurrent(requestToken)) return;
         const assistantQueryData = dataRes.data;
-        const assistantQueryStatus = assistantQueryData.status;
-        if (assistantQueryStatus === 'COMPLETED') {
-          const sessionData = assistantQueryData.sessionDetails;
+        if (assistantRequestGuard.applyStatus(assistantQueryData, setSessionMessages)) {
           clearInterval(timer);
 
-          if (assistantRequestGuard.acceptSession(sessionData)) setSessionMessages(assistantRequestGuard.messages(sessionData));
           setIsAssistantQueryGenerating(false);
         }
+      }).catch(error => {
+        if (!assistantRequestGuard.isCurrent(requestToken)) return;
+        if (assistantRequestGuard.stopOnAccessError(error)) setIsAssistantQueryGenerating(false);
       });
     }, 1000);
 
@@ -4000,6 +4003,9 @@ export default function VideoHome() {
       query: query,
       stream: true, client_request_id: crypto.randomUUID(), assistantSessionVersion: requestToken.serverVersion,
       frameImage: options?.frameImage || null,
+      assistantContext: { version: 1, page: 'video',
+        view: downloadVideoDisplay ? 'export' : studioAssistantView(assistantToolView),
+        selectedLayerId: String(currentLayer?._id || currentLayer?.id || ''), locale: getUiLanguage() },
     }, headers).then((response) => {
       if (!assistantRequestGuard.isCurrent(requestToken)) return;
       const assistantResponse = response.data;
@@ -4319,6 +4325,7 @@ export default function VideoHome() {
   const editorContainerDisplay = (
     <div className='h-full min-h-0'>
       <VideoEditorContainer
+        onAssistantViewChange={setAssistantToolView}
         selectedLayerIndex={selectedLayerIndex}
         layers={layers}
         currentLayerSeek={currentLayerSeek}
