@@ -1400,17 +1400,17 @@ export default function QuickEditor() {
     });
     const timer = assistantRequestGuard.setInterval(() => {
       axios
-        .get(`${PROCESSOR_API_URL}/assistants/assistant_query_status?id=${id}`, headers)
+        .get(`${PROCESSOR_API_URL}/assistants/assistant_query_status?id=${encodeURIComponent(id)}&include_messages=true`, headers)
         .then((dataRes) => {
           if (!assistantRequestGuard.isCurrent(requestToken)) return;
           const assistantQueryData = dataRes.data;
-          const assistantQueryStatus = assistantQueryData.status;
-          if (assistantQueryStatus === 'COMPLETED') {
-            const sessionData = assistantQueryData.sessionDetails;
+          if (assistantRequestGuard.applyStatus(assistantQueryData, setSessionMessages)) {
             clearInterval(timer);
-            if (assistantRequestGuard.acceptSession(sessionData)) setSessionMessages(assistantRequestGuard.messages(sessionData));
             setIsAssistantQueryGenerating(false);
           }
+        }).catch(error => {
+          if (!assistantRequestGuard.isCurrent(requestToken)) return;
+          if (assistantRequestGuard.stopOnAccessError(error)) setIsAssistantQueryGenerating(false);
         });
     }, 1000);
   };

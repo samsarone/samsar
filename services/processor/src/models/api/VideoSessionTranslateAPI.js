@@ -19,6 +19,7 @@ import { assertSubtitleGenerationAvailable } from '../../consts/DockerAudioAvail
 import { translateTextContent } from '../OpenAI.js';
 import { translateSpeech } from '../agent/AudioCreatorAgent.js';
 import { resolveEffectiveInferenceSettings } from './RequestModelOverrides.js';
+import { validateTranslatedSpeech } from '../movie_session/TranslatedSpeechValidation.js';
 import {
   applySubtitleLanguageSelectionForRerun,
   backfillTranslatedSubtitleMetadataForRerun,
@@ -604,6 +605,7 @@ function resetTimelineDurationsFromMovieResourceList(sessionData = {}) {
 
   let durationOffset = 0;
   const layerIndexById = new Map();
+  const previousLayerOffsets = layers.map((layer) => Number(layer?.durationOffset) || 0);
   layers.forEach((layer, idx) => {
     const layerId = layer?._id?.toString?.() ?? layer?._id ?? null;
     if (layerId) {
@@ -634,6 +636,7 @@ function resetTimelineDurationsFromMovieResourceList(sessionData = {}) {
   const speechSounds = sounds.filter((sound) => sound && typeof sound === 'object' && sound.type !== 'sound_effect');
 
   const audioLayers = Array.isArray(sessionData.audioLayers) ? sessionData.audioLayers : [];
+  const speechOrdinalByLayer = new Map();
   let speechLayerFallbackIndex = 0;
   audioLayers.forEach((audioLayer) => {
     if (!audioLayer || typeof audioLayer !== 'object') {
@@ -644,11 +647,10 @@ function resetTimelineDurationsFromMovieResourceList(sessionData = {}) {
     }
 
     const connectedLayerId = audioLayer.connectedLayerId?.toString?.() ?? audioLayer.connectedLayerId ?? null;
-    const connectedLayerIndex = typeof audioLayer.connectedLayerIndex === 'number'
-      ? audioLayer.connectedLayerIndex
-      : connectedLayerId
-        ? layerIndexById.get(connectedLayerId.toString())
-        : undefined;
+    // IDs survive reorders; the index is only a legacy fallback.
+    const connectedLayerIndex = connectedLayerId && layerIndexById.has(connectedLayerId.toString())
+      ? layerIndexById.get(connectedLayerId.toString())
+      : typeof audioLayer.connectedLayerIndex === 'number' ? audioLayer.connectedLayerIndex : undefined;
 
     const resolvedLayerIndex = typeof connectedLayerIndex === 'number'
       ? connectedLayerIndex
@@ -658,17 +660,29 @@ function resetTimelineDurationsFromMovieResourceList(sessionData = {}) {
       return;
     }
 
-    const soundIndex = typeof audioLayer.connectedLayerIndex === 'number' ? audioLayer.connectedLayerIndex : resolvedLayerIndex;
-    const sound = speechSounds[soundIndex];
-
-    const duration = normalizePositiveNumber(sound?.duration)
-      ?? normalizePositiveNumber(connectedLayer.duration)
-      ?? defaultSceneDuration;
+    const sourceSceneIndex = Number(connectedLayer.sourceSceneRef?.sceneIndex ?? resolvedLayerIndex);
+    const sourceSounds = connectedLayer.sourceSceneRef?.sounds;
+    const sceneSounds = Array.isArray(sourceSounds)
+      ? sourceSounds.filter((sound) => sound && sound.type !== 'sound_effect')
+      : speechSounds.filter((sound) => Number(sound.sceneIndex) === sourceSceneIndex);
+    const ordinal = speechOrdinalByLayer.get(resolvedLayerIndex) || 0;
+    speechOrdinalByLayer.set(resolvedLayerIndex, ordinal + 1);
+    const originalText = getSpeechTextFromAudioLayer(audioLayer);
+    const textMatches = sceneSounds.filter((sound) => typeof sound.audio === 'string' && sound.audio.trim() === originalText);
+    const sound = textMatches.length === 1 ? textMatches[0] : sceneSounds[ordinal];
+    const sourceStart = Number(audioLayer.startTime);
+    const offset = audioLayer.startTime != null && Number.isFinite(sourceStart)
+      ? Math.max(0, sourceStart - previousLayerOffsets[resolvedLayerIndex])
+      : Math.max(0, Number(audioLayer.connectedLayerStartTimeOffset) || 0);
+    const availableDuration = connectedLayer.duration - offset;
+    const duration = Math.min(availableDuration, normalizePositiveNumber(sound?.duration) ?? availableDuration);
 
     audioLayer.duration = duration;
-    audioLayer.connectedLayerStartTimeOffset = 0;
-    audioLayer.startTime = connectedLayer.durationOffset;
-    audioLayer.endTime = connectedLayer.durationOffset + duration;
+    audioLayer.connectedLayerId = connectedLayer._id.toString();
+    audioLayer.connectedLayerIndex = resolvedLayerIndex;
+    audioLayer.connectedLayerStartTimeOffset = offset;
+    audioLayer.startTime = connectedLayer.durationOffset + offset;
+    audioLayer.endTime = audioLayer.startTime + duration;
 
     speechLayerFallbackIndex += 1;
   });
@@ -1248,7 +1262,7 @@ function prepareSessionForTranslate({
     audioLayer.remoteAudioData = [];
     audioLayer.selectedLocalAudioLink = null;
     audioLayer.selectedRemoteAudioLink = null;
-    audioLayer.connectedLayerStartTimeOffset = 0;
+    audioLayer.connectedLayerStartTimeOffset ??= 0;
     audioLayer.previousAudioData = null;
     // Ensure the audio generator marks this as the chosen variant so lip sync can run.
     audioLayer.defaultSelected = true;
@@ -1575,6 +1589,7 @@ async function processTranslateVideoSessionJob({
 }, {
   translateTextContent: translateTextImpl = translateTextContent,
   copyTranslateSessionAssets: copyAssets = copyTranslateSessionAssets,
+  rewriteSpeechItem,
 } = {}) {
   await getDBConnectionString();
 
@@ -1628,21 +1643,33 @@ async function processTranslateVideoSessionJob({
   delete clonedSession.createdAt;
   delete clonedSession.updatedAt;
 
-  await copyAssets({
-    originalSessionData,
-    oldSessionId,
-    newSessionId,
-  });
-
-  rewriteV2SessionAssetReferences(clonedSession, oldSessionId, newSessionId);
   regenerateLayerAndAudioLayerIds(clonedSession);
   resetTimelineDurationsFromMovieResourceList(clonedSession);
+
+  const validatedSpeech = await validateTranslatedSpeech({
+    session: clonedSession,
+    originalTexts: originalSpeechTextList,
+    translatedTexts: translatedSpeechTextList,
+    targetLanguage: translationLanguageName,
+    inferenceModel,
+    inferenceEffort,
+    sessionId: newSessionId,
+  }, { rewriteSpeechItem });
+  clonedSession.audioLayers.filter(isSpeechAudioLayer).forEach((audioLayer, index) => {
+    audioLayer.generationMeta = {
+      ...(audioLayer.generationMeta || {}),
+      translationValidation: validatedSpeech.validation[index],
+    };
+  });
+
+  await copyAssets({ originalSessionData, oldSessionId, newSessionId });
+  rewriteV2SessionAssetReferences(clonedSession, oldSessionId, newSessionId);
 
   if (webhookUrl) {
     clonedSession.externalWebhook = webhookUrl;
   }
 
-  applyTranslatedSpeechTextToSession(clonedSession, translatedSpeechTextList);
+  applyTranslatedSpeechTextToSession(clonedSession, validatedSpeech.texts);
   applyTranslatedSpeakerNamesToSession(clonedSession, translatedSpeakerNameList);
   stripTextItemsFromActiveItemLists(clonedSession);
 
@@ -1718,6 +1745,7 @@ async function processTranslateVideoSessionJob({
 export const __testOnly__ = {
   processTranslateVideoSessionJob,
   translateSpeechTextList,
+  resetTimelineDurationsFromMovieResourceList,
   clonePostProcessingSessionAssets,
   copyTranslateSessionAssets,
   prepareSessionForSubtitleAddition,

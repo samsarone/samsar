@@ -1,5 +1,5 @@
 import { useUiLanguage } from '../../hooks/useUiLanguage.js';
-import { translateText as uiText, normalizeUiLanguage } from '../../utils/localization.js';
+import { translateText as uiText } from '../../utils/localization.js';
 import { useEffect, useMemo, useRef, useState } from "react";
 import { FaChevronDown, FaChevronRight, FaPause, FaPlay } from "react-icons/fa";
 import { useLocation, useNavigate } from "react-router-dom";
@@ -12,7 +12,7 @@ import { useUser } from "../../contexts/UserContext.jsx";
 import { useLocalization } from "../../contexts/LocalizationContext.jsx";
 import { useAlertDialog } from "../../contexts/AlertDialogContext.jsx";
 import { getHeaders } from "../../utils/web.jsx";
-import { SUPPORTED_LANGUAGES, resolveLanguageCode } from "../../constants/supportedLanguages.js";
+import { SUPPORTED_LANGUAGES } from "../../constants/supportedLanguages.js";
 import {
   getFontOptionsForLanguage,
   mergeFontPreferencesWithDefaults,
@@ -295,7 +295,7 @@ export default function SettingsPanelContent(props) {
   const { colorMode } = useColorMode();
   const { openAlertDialog, closeAlertDialog } = useAlertDialog();
   const { user } = useUser();
-  const { t, setLanguage } = useLocalization();
+  const { t, setLanguage, language: preferredLanguage } = useLocalization();
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -311,7 +311,6 @@ export default function SettingsPanelContent(props) {
     resolveSettingsTabFromPath(location.pathname)
   );
   const [username, setUsername] = useState(user.username || "");
-  const [preferredLanguage, setPreferredLanguage] = useState(normalizeUiLanguage(user.preferredLanguage));
   const [backingTrackModel, setBackingTrackModel] = useState(
     normalizeBackingTrackModelValue(user.backingTrackModel)
   );
@@ -367,7 +366,6 @@ export default function SettingsPanelContent(props) {
     if (!user) return;
 
     setUsername(user.username || "");
-    setPreferredLanguage(normalizeUiLanguage(user.preferredLanguage));
     setBackingTrackModel(normalizeBackingTrackModelValue(user.backingTrackModel));
     setFontPreferences(mergeFontPreferencesWithDefaults(user.fontPreferences));
     setSpeakerOptions(normalizeSpeakerOptionsState(user.speakerOptions));
@@ -691,15 +689,13 @@ export default function SettingsPanelContent(props) {
                 />
               </div>
               <div>
-                <label className={`block text-sm mb-1 ${secondaryTextColor}`}>
+                <label htmlFor="settings-preferred-language" className={`block text-sm mb-1 ${secondaryTextColor}`}>
                   {t("account.preferredLanguageLabel")}
                 </label>
                 <select
+                  id="settings-preferred-language"
                   value={preferredLanguage}
-                  onChange={(e) => {
-                    setPreferredLanguage(e.target.value);
-                    setLanguage(e.target.value);
-                  }}
+                  onChange={(e) => setLanguage(e.target.value)}
                   className={formInputClasses}
                 >
                   {SUPPORTED_LANGUAGES.map((lang) => (

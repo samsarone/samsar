@@ -204,6 +204,10 @@ export async function updateRuntimeServices(profiles, { runCompose, captureCompo
 export async function startRuntimeServices(profiles, { restart = false, runCompose }) {
   // Finish every image build before stopping or replacing running services.
   if (restart) await runCompose(profiles, ['build']);
+  else if (profiles.includes('workers')) {
+    // The local knowledge index build must succeed before any database bootstrap or container change.
+    await runCompose(profiles, ['build', 'assistant-query-processor']);
+  }
 
   if (!profiles.includes('genblaze')) {
     await runCompose(['genblaze'], ['rm', '-s', '-f', 'genblaze']);

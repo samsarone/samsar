@@ -1,3 +1,6 @@
+import AssistantWorkspace from '../schema/AssistantWorkspace.js';
+import { assertAssistantWorkspaceAccess } from './AssistantWorkspace.js';
+import { normalizeAssistantContext } from '../utils/AssistantContext.js';
 import { createHash } from 'node:crypto';
 import VideoSession from '../schema/VideoSession.js';
 import AssistantQueryGeneration from '../schema/AssistantQueryGeneration.js';
@@ -149,13 +152,15 @@ export async function createAssistantQueryRequest(userId, payload) {
   const normalizedQuery = normalizeAssistantQueryText(query);
   const userMessageContent = buildAssistantUserMessageContent(normalizedQuery, frameImage);
   const modelSettings = buildAssistantModelSettings(payload);
+  const assistantContext = normalizeAssistantContext(payload.assistantContext);
 
 
 
   const sessionId = id;
   await getDBConnectionString();
 
-  let sessionData = await assertVideoSessionEditableAccess(userId, {
+  const Session = payload.workspace ? AssistantWorkspace : VideoSession;
+  let sessionData = await assertAssistantConversationAccess(userId, {
     ...payload,
     sessionId,
   });
@@ -168,7 +173,7 @@ export async function createAssistantQueryRequest(userId, payload) {
     throw Object.assign(new Error('Assistant session was cleared. Please send your message again.'), { status: 409 });
   }
 
-  if (isSceneActionsCommand(normalizedQuery)) {
+  if (!payload.workspace && isSceneActionsCommand(normalizedQuery)) {
     return appendSceneActionsCommandResponse(sessionData, userMessageContent);
   }
 
@@ -179,7 +184,7 @@ export async function createAssistantQueryRequest(userId, payload) {
   const assistantSessionVersion = sessionData.assistantSessionVersion || 0;
   const messageId = clientRequestId ? createHash('sha256')
     .update(`${userId}:${sessionId}:${assistantSessionVersion}:${clientRequestId}`).digest('hex').slice(0, 32) : hat();
-  const requestFingerprint = createHash('sha256').update(JSON.stringify({ query: normalizedQuery, frameImage, modelSettings })).digest('hex');
+  const requestFingerprint = createHash('sha256').update(JSON.stringify({ query: normalizedQuery, frameImage, modelSettings, ...(assistantContext ? { assistantContext } : {}), ...(payload.workspace ? { workspace: payload.workspace } : {}) })).digest('hex');
   const previous = sessionData.sessionMessages?.find(message => message.role === 'user' && message.id === messageId);
   if (previous) {
     if (previous.requestFingerprint !== requestFingerprint) throw Object.assign(new Error('Request key was already used for a different message.'), { status: 409 });
@@ -205,9 +210,9 @@ export async function createAssistantQueryRequest(userId, payload) {
 
 
   const timestamp = new Date();
-  const assistantRequest = { inferenceModel: userAssistantModel, stream: payload.stream === true, modelSettings };
+  const assistantRequest = { inferenceModel: userAssistantModel, stream: payload.stream === true, modelSettings, ...(assistantContext ? { assistantContext } : {}), ...(payload.workspace ? { sessionStore: "workspace" } : {}) };
   // Append atomically: an older submit must never restore cleared history.
-  const appended = await VideoSession.updateOne({
+  const appended = await Session.updateOne({
     _id: sessionId,
     ...assistantVersionFilter(assistantSessionVersion),
     $nor: [{ sessionMessages: { $elemMatch: { role: 'user', id: messageId } } }],
@@ -217,7 +222,7 @@ export async function createAssistantQueryRequest(userId, payload) {
       assistantStream: { queryId: messageId, sessionVersion: assistantSessionVersion, status: 'queued', text: '', sequence: 0 } },
   });
   if (!appended.matchedCount) {
-    const current = await VideoSession.findOne({ _id: sessionId });
+    const current = await Session.findOne({ _id: sessionId });
     const duplicate = current?.sessionMessages?.find(message => message.role === 'user' && message.id === messageId);
     if (duplicate?.requestFingerprint === requestFingerprint) {
       if (current.sessionMessageGenerationPending && duplicate.assistantRequest) await saveAssistantQueueMessage({
@@ -232,7 +237,7 @@ export async function createAssistantQueryRequest(userId, payload) {
     ...assistantRequest, query: normalizedQuery, sessionId, queryId: messageId, assistantSessionVersion,
   });
   // Reset can happen between appending the message and saving the queue row.
-  if (!await VideoSession.exists({ _id: sessionId, ...assistantVersionFilter(assistantSessionVersion) })) {
+  if (!await Session.exists({ _id: sessionId, ...assistantVersionFilter(assistantSessionVersion) })) {
     await AssistantQueryGeneration.deleteOne({ _id: newAssistantQueryGeneration._id });
   }
   return newAssistantQueryGeneration;
@@ -297,7 +302,8 @@ export async function deleteAssistantSessionMessage(userId, payload = {}) {
     throw new Error('Message ID is required');
   }
 
-  const sessionData = await assertVideoSessionEditableAccess(userId, payload);
+  const Session = payload.workspace ? AssistantWorkspace : VideoSession;
+  const sessionData = await assertAssistantConversationAccess(userId, payload);
   if (!sessionData) {
     throw new Error('Session not found');
   }
@@ -311,7 +317,7 @@ export async function deleteAssistantSessionMessage(userId, payload = {}) {
     await AssistantQueryGeneration.exists({ sessionId, status: { $ne: 'reconciliation_required' } })
   );
 
-  const updatedSession = await VideoSession.findOneAndUpdate(
+  const updatedSession = await Session.findOneAndUpdate(
     { _id: sessionId, ...assistantVersionFilter(sessionData.assistantSessionVersion || 0) },
     {
       $pull: { sessionMessages: { id: String(messageId) } },
@@ -344,14 +350,15 @@ export async function resetAssistantSessionMessages(userId, payload = {}) {
     throw new Error('Invalid session ID format');
   }
 
-  const sessionData = await assertVideoSessionEditableAccess(userId, payload);
+  const Session = payload.workspace ? AssistantWorkspace : VideoSession;
+  const sessionData = await assertAssistantConversationAccess(userId, payload);
   if (!sessionData) {
     throw new Error('Session not found');
   }
 
   // Invalidate active workers before removing old queue rows. New requests use
   // the incremented version and survive cleanup even when submitted concurrently.
-  const updatedSession = await VideoSession.findOneAndUpdate(
+  const updatedSession = await Session.findOneAndUpdate(
     { _id: sessionId },
     {
       $set: {
@@ -393,7 +400,7 @@ export async function getAssistantStreamSnapshot(userId, payload = {}) {
     throw Object.assign(new Error('Invalid session ID.'), { status: 400 });
   }
   // Recheck shared-edit access on each snapshot, including after reconnects.
-  const session = await assertVideoSessionEditableAccess(userId, payload, { markEdited: false });
+  const session = await assertAssistantConversationAccess(userId, payload, { markEdited: false });
   return {
     sessionId: String(session._id),
     assistantSessionVersion: session.assistantSessionVersion || 0,
@@ -419,4 +426,9 @@ function stripAssistantStreamMedia(content) {
   if (!content || typeof content !== 'object') return content;
   if (['image_url', 'input_image'].includes(content.type)) return { type: content.type };
   return { ...content, ...(content.content ? { content: stripAssistantStreamMedia(content.content) } : {}) };
+}
+
+async function assertAssistantConversationAccess(userId, payload, options) {
+  if (payload.workspace) return assertAssistantWorkspaceAccess(userId, payload);
+  return assertVideoSessionEditableAccess(userId, payload, options);
 }

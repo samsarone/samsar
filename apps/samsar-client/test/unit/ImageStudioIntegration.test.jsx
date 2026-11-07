@@ -91,6 +91,41 @@ async function loaded() {
 }
 
 describe('image studio integration', () => {
+  it('streams assistant progress through polling after SSE and temporary status failures', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('{}', { status: 404 }));
+    if (!Element.prototype.scrollIntoView) Element.prototype.scrollIntoView = vi.fn();
+    let polls = 0;
+    const user = { id: 'q', role: 'user', content: 'Suggest a prompt' };
+    axios.get.mockImplementation(async url => {
+      if (!url.includes('/assistant_query_status')) return { data: loadedProject };
+      expect(url).toContain('include_messages=true');
+      if (++polls <= 3) throw new Error('Temporary network failure');
+      const complete = polls >= 6;
+      return { data: { status: complete ? 'COMPLETED' : 'PENDING', sessionDetails: {
+        assistantSessionVersion: 0, sessionMessageGenerationPending: !complete,
+        sessionMessages: complete ? [user, { id: 'q', role: 'assistant', content: 'Finished suggestion' }] : [user],
+        assistantStream: { queryId: 'q', sequence: polls, status: complete ? 'completed' : 'streaming',
+          text: polls === 4 ? 'Live suggestion' : 'Live suggestion continues' },
+      } } };
+    });
+    mount(); await loaded();
+    fireEvent.click(screen.getByRole('button', { name: 'Assistant', exact: true }));
+    fireEvent.change(screen.getByRole('textbox', { name: 'Message assistant' }), { target: { value: user.content } });
+    vi.useFakeTimers();
+    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Send', exact: true })));
+    expect(requests('/assistants/submit_assistant_query')[0][1].stream).toBe(true);
+    expect(requests('/assistants/submit_assistant_query')[0][1].assistantContext).toMatchObject({ version: 1, page: 'image' });
+    await act(async () => vi.advanceTimersByTimeAsync(4000));
+    expect(screen.getByText('Live suggestion')).toBeInTheDocument();
+    await act(async () => vi.advanceTimersByTimeAsync(1000));
+    expect(screen.getByText('Live suggestion continues')).toBeInTheDocument();
+    expect(screen.queryByText('Live suggestion', { exact: true })).not.toBeInTheDocument();
+    await act(async () => vi.advanceTimersByTimeAsync(1000));
+    expect(screen.getAllByText('Finished suggestion')).toHaveLength(1);
+    await act(async () => vi.advanceTimersByTimeAsync(3000));
+    expect(polls).toBe(6);
+  });
+
   it('hydrates the project and canvas while retaining the real toolbar and navigation', async () => {
     mount();
     await loaded();

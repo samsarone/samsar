@@ -1,10 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { Stream } from 'openai/streaming';
 import { readSSE, collectChatStream, createStreamingChatCompletion, createStreamingResponses,
   collectAnthropicStream, collectGeminiStream, requestSamsarStream } from './ProviderStreaming.js';
 const usage = { prompt_tokens: 10, completion_tokens: 4, prompt_tokens_details: { cached_tokens: 3 } };
 async function* events(values) { for (const value of values) yield value; }
 function body(values) { return new Response(values.map(value => `data: ${JSON.stringify(value)}\r\n\r\n`).join('')).body; }
+function responsesSSE(values) {
+  const response = new Response(values.map(value => `event: ${value.type}\ndata: ${JSON.stringify(value)}\n\n`).join(''));
+  return Stream.fromSSEResponse(response, new AbortController());
+}
 const chunks = [
   { id: 'one', model: 'gpt-6-astra', choices: [{ index: 0, delta: { content: 'Hello' } }] },
   { choices: [{ index: 0, delta: { content: ' world' }, finish_reason: 'stop' }] },
@@ -59,6 +64,45 @@ test('Responses streaming keeps full final usage, reasoning and output metadata'
   } };
   assert.equal(await createStreamingResponses(client, {}, {}, text => texts.push(text)), final);
   assert.deepEqual(texts, ['Hi']);
+});
+test('Responses streaming consumes named SSE envelopes from the installed OpenAI SDK', async () => {
+  const final = { id: 'r', model: 'model', status: 'completed',
+    usage: { input_tokens: 7, input_tokens_details: { cached_tokens: 2 }, output_tokens: 8, output_tokens_details: { reasoning_tokens: 5 } },
+    output: [{ type: 'message', content: [{ type: 'output_text', text: 'Hi there', annotations: [] }] }] };
+  const texts = [];
+  const client = { post: async () => responsesSSE([
+    { type: 'response.created', response: { id: 'r' } },
+    { type: 'response.output_text.delta', response_id: 'r', delta: 'Hi' },
+    { type: 'response.output_text.delta', response_id: 'r', delta: ' there' },
+    { type: 'response.completed', response: final },
+  ]) };
+  const result = await createStreamingResponses(client, {}, {}, (text, metadata) => texts.push({ text, metadata }));
+  assert.deepEqual(result, { ...final, output_text: 'Hi there' });
+  assert.deepEqual(texts, [
+    { text: 'Hi', metadata: { providerResponseId: 'r' } },
+    { text: 'Hi there', metadata: { providerResponseId: 'r' } },
+  ]);
+});
+test('Responses named SSE retains incomplete final responses and their usage receipts', async () => {
+  const final = { id: 'incomplete', status: 'incomplete', incomplete_details: { reason: 'max_output_tokens' },
+    usage: { input_tokens: 7, output_tokens: 8 }, output: [] };
+  const result = await createStreamingResponses({ post: async () => responsesSSE([
+    { type: 'response.incomplete', response: final },
+  ]) }, {}, {}, () => {});
+  assert.deepEqual(result, final);
+});
+test('Responses named SSE preserves provider failures and rejects truncated streams without retry', async () => {
+  for (const input of [
+    [{ type: 'response.failed', response: { error: { message: 'Provider overloaded' } } }],
+    [{ type: 'response.output_text.delta', delta: 'Partial' }],
+  ]) {
+    let calls = 0;
+    await assert.rejects(createStreamingResponses({ post: async () => { calls++; return responsesSSE(input); } }, {}, {}, () => {}), {
+      message: input[0].type === 'response.failed' ? 'Provider overloaded' : 'Provider stream ended without a final response.',
+      code: 'ASSISTANT_STREAM_INTERRUPTED', retryable: false,
+    });
+    assert.equal(calls, 1);
+  }
 });
 test('SSE parser handles fragmented UTF-8, comments, CRLF and multi-line data', async () => {
   const bytes = new TextEncoder().encode(': heartbeat\r\nevent: sample\r\ndata: {"text":\r\ndata: "你好"}\r\n\r\n');

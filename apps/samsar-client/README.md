@@ -43,7 +43,7 @@ For advanced users, the same flow exposes:
 
 ## Languages
 
-English, Thai, and Japanese are the supported UI languages, including login, registration, password recovery, account pages, and all creation editors. Unsupported saved preferences fall back to English. See [localization maintenance and verification](docs/localization.md) for adding copy and running `npm run test:i18n`.
+English, Thai, and Japanese are the supported UI languages, including login, registration, password recovery, account pages, and all creation editors. On a first visit, the UI selects the first supported language from the browser's language preferences, falling back to English. Saved browser and account choices take priority over automatic detection. Unsupported saved preferences fall back to English. See [localization maintenance and verification](docs/localization.md) for adding copy and running `npm run test:i18n`.
 
 ## Product Tour
 
@@ -71,7 +71,7 @@ Key VidGenie features:
 - **Direct Studio handoff** with `View in Studio`.
 - **Publishing and unpublishing** after a successful render.
 - **Assistant panel** attached to the current session.
-- Assistant replies stream into the panel through authenticated SSE, with existing REST polling retained as a fallback. Model controls are collapsed by default; **Clear session** deletes assistant history and resets its conversation version without deleting project media. Clearing or navigating discards stale replies, and interrupted partial responses are labelled. The expanded history and composer share a centered column.
+- Assistant replies stream into the panel through authenticated SSE, with authenticated REST snapshots also rendering partial replies if SSE is unavailable. Both transports update the same reply and reject stale sequences. The selected model is a compact header dropdown, including High/XHigh choices where supported; the **Clear session** icon deletes assistant history and resets its conversation version without deleting project media. Clearing or navigating discards stale replies, and interrupted partial responses are labelled. The expanded history and composer share a centered column.
 - **Advanced options** for tone, narrator handling, metadata, CTA outros, footer metadata, and custom adapters.
 
 #### VidGenie Advanced Options

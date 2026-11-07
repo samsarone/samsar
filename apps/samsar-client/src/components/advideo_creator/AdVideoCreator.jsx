@@ -65,7 +65,6 @@ export default function AdVideoCreator() {
   const pollIntervalRef = useRef(null);
   const pollErrorCountRef = useRef(0);
   const assistantPollRef = useRef(null);
-  const assistantErrorCountRef = useRef(0);
 
   useState([]);
   useState('');
@@ -373,30 +372,22 @@ export default function AdVideoCreator() {
     if (assistantPollRef.current) {
       clearInterval(assistantPollRef.current);
     }
-    assistantErrorCountRef.current = 0;
 
     assistantPollRef.current = assistantRequestGuard.setInterval(() => {
       axios
-        .get(`${PROCESSOR_API_URL}/assistants/assistant_query_status?id=${id}`, headers)
+        .get(`${PROCESSOR_API_URL}/assistants/assistant_query_status?id=${encodeURIComponent(id)}&include_messages=true`, headers)
         .then((dataRes) => {
           if (!assistantRequestGuard.isCurrent(requestToken)) return;
-          assistantErrorCountRef.current = 0;
           const assistantQueryData = dataRes.data;
-          const assistantQueryStatus = assistantQueryData.status;
-          if (assistantQueryStatus === 'COMPLETED') {
+          if (assistantRequestGuard.applyStatus(assistantQueryData, setSessionMessages)) {
             clearInterval(assistantPollRef.current);
-            if (assistantRequestGuard.acceptSession(assistantQueryData.sessionDetails)) setSessionMessages(assistantRequestGuard.messages(assistantQueryData.sessionDetails));
             setIsAssistantQueryGenerating(false);
           }
         })
-        .catch(() => {
+        .catch(error => {
           if (!assistantRequestGuard.isCurrent(requestToken)) return;
-
-          assistantErrorCountRef.current += 1;
-          if (assistantErrorCountRef.current >= 3) {
-            clearInterval(assistantPollRef.current);
-            setIsAssistantQueryGenerating(false);
-          }
+          // Network/server failures remain retryable; generation may still be running.
+          if (assistantRequestGuard.stopOnAccessError(error)) setIsAssistantQueryGenerating(false);
         });
     }, 1000);
   };

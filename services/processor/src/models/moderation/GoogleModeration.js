@@ -63,11 +63,17 @@ function normalizeString(value) {
 }
 
 function normalizeNumber(value, fallback = 0) {
-  const parsed = Number(value);
-  if (!Number.isFinite(parsed)) {
+  if (
+    (typeof value !== 'number' && typeof value !== 'string') ||
+    (typeof value === 'string' && !value.trim())
+  ) {
     return fallback;
   }
-  return Math.min(1, Math.max(0, parsed));
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < 0 || parsed > 1) {
+    return fallback;
+  }
+  return parsed;
 }
 
 function normalizeCategoryName(name) {

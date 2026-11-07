@@ -1,3 +1,5 @@
+import { vidgenieAssistantContext } from '../../utils/assistantContext.js';
+import { getUiLanguage } from '../../utils/localization.js';
 import { normalizeKlingModelKey } from '../../utils/KlingModel.mjs';
 import { useAssistantRequestGuard } from '../../hooks/useAssistantRequestGuard.js';
 import { useUiLanguage } from '../../hooks/useUiLanguage.js';
@@ -3092,7 +3094,6 @@ export default function OneshotEditor() {
   const activeRequestStepModeRef = useRef(GENERATION_STEP_MODE_ONE_STEP);
   const assistantPollRef = useRef(null);   // assistant poll (setInterval)
   const pollErrorCountRef = useRef(0);
-  const assistantErrorCountRef = useRef(0);
 
   const pollTimeoutRef = useRef(null);
   const assistantTimeoutRef = useRef(null);
@@ -4214,7 +4215,6 @@ export default function OneshotEditor() {
     assistantTimeoutRef.current = null;
 
     pollErrorCountRef.current = 0;
-    assistantErrorCountRef.current = 0;
     pollDelayRef.current = DEFAULT_POLL;
     assistantDelayRef.current = DEFAULT_POLL;
 
@@ -5087,29 +5087,22 @@ export default function OneshotEditor() {
       },
     });
     if (assistantPollRef.current) clearInterval(assistantPollRef.current);
-    assistantErrorCountRef.current = 0;
 
     assistantPollRef.current = assistantRequestGuard.setInterval(() => {
       axios
-        .get(`${PROCESSOR_API_URL}/assistants/assistant_query_status?id=${id}`, headers)
+        .get(`${PROCESSOR_API_URL}/assistants/assistant_query_status?id=${encodeURIComponent(id)}&include_messages=true`, headers)
         .then((res) => {
           if (!assistantRequestGuard.isCurrent(requestToken)) return;
-          assistantErrorCountRef.current = 0;
           const data = res.data;
-          if (data.status === 'COMPLETED') {
+          if (assistantRequestGuard.applyStatus(data, setSessionMessages)) {
             clearInterval(assistantPollRef.current);
-            if (assistantRequestGuard.acceptSession(data.sessionDetails)) setSessionMessages(assistantRequestGuard.messages(data.sessionDetails));
             setIsAssistantQueryGenerating(false);
           }
         })
-        .catch(() => {
+        .catch(error => {
           if (!assistantRequestGuard.isCurrent(requestToken)) return;
-
-          assistantErrorCountRef.current += 1;
-          if (assistantErrorCountRef.current >= 3) {
-            clearInterval(assistantPollRef.current);
-            setIsAssistantQueryGenerating(false);
-          }
+          // Network/server failures remain retryable; generation may still be running.
+          if (assistantRequestGuard.stopOnAccessError(error)) setIsAssistantQueryGenerating(false);
         });
     }, 1000);
   };
@@ -5129,7 +5122,13 @@ export default function OneshotEditor() {
     axios
       .post(
         `${PROCESSOR_API_URL}/assistants/submit_assistant_query`,
-        { id, query, stream: true, client_request_id: crypto.randomUUID(), assistantSessionVersion: requestToken.serverVersion },
+        { id, query, stream: true, client_request_id: crypto.randomUUID(), assistantSessionVersion: requestToken.serverVersion,
+          assistantContext: vidgenieAssistantContext({ mode: generationMode, draft: promptText,
+            pending: isGenerationPending || isSubmitting, review: isGenerationWaitingForApproval,
+            complete: showResultDisplay && Boolean(videoLink), error: Boolean(errorMessage),
+            hasReferenceImage: imageListItems.some(item => Boolean(item.imageUrl || item.image_url || item.url)), locale: getUiLanguage(),
+            selectedImageModel: selectedImageModel?.value, selectedVideoModel: selectedVideoModel?.value }),
+        },
         headers
       )
       .then(() => {

@@ -25,7 +25,9 @@ Subscribe with authenticated `fetch` to `GET /assistants/assistant_query_stream?
 | `reconnect` | Reopen the GET connection; the next snapshot contains current state. |
 | `error` | Stream failure, with `message`, `code` and HTTP-style `status`. Authentication/access failures must stop reconnecting. |
 
-Snapshots are read every 750 ms and changed snapshots are sent. Worker writes coalesce at approximately 300 ms, with one storage write in flight. Connections rotate after 30 seconds, and heartbeats are sent every 10 seconds. Event IDs identify the conversation version, query and snapshot sequence; reconnects replay current state rather than maintaining a delta log. Existing `GET /assistants/assistant_query_status` remains available, and the client keeps it as a compatibility fallback.
+Snapshots are read every 750 ms and changed snapshots are sent. The worker publishes the first text immediately, then coalesces writes at approximately 300 ms with one storage write in flight. A trailing timer flushes buffered text even when the provider pauses. Connections rotate after 30 seconds, and heartbeats are sent every 10 seconds. Event IDs identify the conversation version, query and snapshot sequence; reconnects replay current state rather than maintaining a delta log.
+
+The client also polls `GET /assistants/assistant_query_status?id=SESSION_ID&include_messages=true` with authorization. This opt-in returns `{status, sessionDetails}` with the same lightweight conversation snapshot while pending or complete, so live text still appears if SSE is buffered or unavailable. Without `include_messages=true`, the legacy REST contract is unchanged. Both transports replace the same provisional reply; lower sequences and late partials after completion cannot overwrite newer text. Temporary network/server failures keep polling active; access failures cancel delivery, as do clearing or leaving the session.
 
 `POST /assistants/reset_session_messages` clears assistant history and visible partial output, removes old queued requests, and increments the conversation version. In-flight replies cannot restore cleared history. Already-incurred provider usage still settles once. Pending billing receipts remain available until settlement; completed queued receipts retain accounting metadata without a second copy of conversation content. Clearing does not delete project layers or media.
 
@@ -67,7 +69,7 @@ When the provider never supplies an authoritative final usage receipt, exact aut
 
 ## Proxy and verification
 
-SSE responses send `Content-Type: text/event-stream`, `Cache-Control: no-cache, no-transform`, and `X-Accel-Buffering: no`. Nginx must honor that header; if an upstream proxy overrides it, disable response buffering/caching for these routes. Keep idle timeouts above the heartbeat interval, and allow an external stream to remain open for the provider request timeout. No infrastructure configuration is deployed by this source change.
+SSE responses send `Content-Type: text/event-stream`, `Cache-Control: no-cache, no-transform`, and `X-Accel-Buffering: no`, and flush compression middleware after each event. Disable response buffering/caching at every proxy hop for these routes: an inner Nginx can consume `X-Accel-Buffering` before an outer proxy sees it. Keep idle timeouts above the heartbeat interval, and allow an external stream to remain open for the provider request timeout. No infrastructure configuration is deployed by this source change.
 
 Relevant checks:
 
@@ -75,7 +77,7 @@ Relevant checks:
 # samsar_processor
 npm run build
 npm run test:assistant-billing
-node --test src/inference/ProviderStreaming*.test.js src/models/Assistant.session.test.js src/models/SceneActions.session.test.js src/utils/ServerSentEvents.test.js src/models/api/ExternalChatStreaming.test.js
+node --test src/inference/ProviderStreaming*.test.js src/models/Assistant.session.test.js src/models/SceneActions.session.test.js src/utils/ServerSentEvents.test.js src/routes/assistants.streaming.test.js src/models/api/ExternalChatStreaming.test.js
 
 # samsar_assistant_query_processor
 npm test

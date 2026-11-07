@@ -39,7 +39,7 @@ Replace the example URLs with reachable images you control. In standalone VidGen
 
 | Field | Meaning |
 | --- | --- |
-| `image_urls` | Non-empty array. Entries can be strings or objects containing `image_url`, `imageUrl`, `url`, `src`, `enhanced_url`, or `enhancedUrl`. |
+| `image_urls` | Non-empty array of fetchable URLs. Entries can be strings or objects containing `image_url`, `imageUrl`, `url`, `src`, `enhanced_url`, or `enhancedUrl`. |
 
 `video_model` is optional. It defaults to `RUNWAYML` and, when provided, must be one of the configured image-list express video keys.
 
@@ -93,11 +93,3 @@ Samsar.js is the hosted entry point. Native or provider-only standalone choices 
 8. The listener finalizes stage billing, settlement, status, and the optional terminal webhook. `processor` serves local Docker outputs from the mounted volume under its configured `/assets_v2/...` URL (default `http://localhost:3002/assets_v2/...`).
 
 The standard and `v2` alias routes share this full pipeline. The external-user route wraps the same pipeline with an external request/public ID. Step mode also uses the same builder and can pause before configured manual stages. The direct `/v2/external/video/image_to_video` and `/v2/external/video/direct_image_to_video` aliases are intentionally separate: they accept one image and queue only the direct AI-video clip path.
-
-## Validation Notes
-
-- `image_urls` must be non-empty and fetchable.
-- `aspect_ratio` falls back to `16:9` unless `9:16` is provided.
-- `generate_outro_image`, `add_outro_animation`, and `add_footer_animation` must be booleans when provided.
-- `cta_url` must be HTTP or HTTPS.
-- If an external-user signal is present, the route delegates to the external-user handler and returns external request IDs.

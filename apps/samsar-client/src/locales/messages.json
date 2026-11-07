@@ -11883,5 +11883,15 @@
     "en": "Unauthorized",
     "th": "ไม่มีสิทธิ์เข้าถึง โปรดเข้าสู่ระบบ",
     "ja": "アクセス権がありません。ログインしてください。"
+  },
+  "Unable to load. Please try again.": {
+    "en": "Unable to load. Please try again.",
+    "th": "ไม่สามารถโหลดได้ โปรดลองอีกครั้ง",
+    "ja": "読み込めませんでした。もう一度お試しください。"
+  },
+  "Unable to send message. Please try again.": {
+    "en": "Unable to send message. Please try again.",
+    "th": "ไม่สามารถส่งข้อความได้ โปรดลองอีกครั้ง",
+    "ja": "メッセージを送信できませんでした。もう一度お試しください。"
   }
 }

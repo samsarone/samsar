@@ -11,6 +11,72 @@ import {
 import { extractThemeForImageListAndPrompt } from '../movie_session/ad_creator/AdAgentPrompts.js';
 import { extractNarrativeFromInputPayload } from '../movie_session/image_list_to_video/system/NarrativeBuilder.js';
 
+for (const model of ['gpt-6-astra', 'gpt-6.1-sol', 'claude-opus-5.5', 'claude-fable-5.1']) {
+  for (const effort of ['high', 'xhigh']) {
+    test(`translated speech repair uses ${model}/${effort} and retains source meaning instructions across retries`, async () => {
+      const requests = [];
+      const attempts = [];
+      const scene = { visual: 'Marie visits Paris.', duration: 10 };
+      const speechItem = { type: 'speech', sceneIndex: 0, audio: 'x'.repeat(58) };
+      const translationContext = {
+        originalText: 'Marie will not leave Paris until 2027.',
+        translatedText: speechItem.audio, targetLanguage: 'French', durationSeconds: 10,
+        currentCharacters: 58, maxCharacters: 57,
+      };
+      const result = await rewriteNarrativeSpeechItemToFitScene({
+        movieResourceList: { scenes: [scene], sounds: [speechItem] }, scene, speechItem,
+        maxCharacters: 57, inferenceModel: model,
+        options: {
+          sceneIndex: 0, soundIndex: 0, translationContext, reasoningEffort: effort,
+          onRepairAttempt: (attempt) => attempts.push(attempt),
+          dependencies: { openaiClient: {}, sleep: async () => {},
+            createCompatibleChatCompletion: async (_client, request) => {
+              requests.push(request);
+              const content = requests.length === 1 ? 'x'.repeat(58)
+                : requests.length === 2 ? '{"audio":"Bonjour"}' : 'Marie ne quittera Paris qu’en 2027.';
+              return { choices: [{ message: { content } }] };
+            },
+          },
+        },
+      });
+      assert.equal(result, 'Marie ne quittera Paris qu’en 2027.');
+      assert.deepEqual(attempts, [1, 2, 3]);
+      requests.forEach((request) => {
+        assert.equal(request.model, model);
+        assert.equal(request.reasoning_effort, effort);
+        assert.match(request.messages[0].content, /at most 57 Unicode characters/);
+        assert.match(request.messages[0].content, /proper nouns/);
+        assert.match(request.messages[0].content, /numbers, facts, negation/);
+        assert.deepEqual(JSON.parse(request.messages[1].content).translationContext, translationContext);
+      });
+      const previous = JSON.parse(requests[1].messages[1].content).previousAttempt;
+      assert.equal(previous.characterCount, 58);
+      assert.equal(previous.maxCharacters, 57);
+      assert.match(previous.validationError, /58 characters/);
+      assert.match(JSON.parse(requests[2].messages[1].content).previousAttempt.validationError, /not JSON/);
+    });
+  }
+}
+
+test('translated speech repair rejects empty, multiline and Markdown responses within three attempts', async () => {
+  const scene = { duration: 10 };
+  const speechItem = { type: 'speech', sceneIndex: 0, audio: 'x'.repeat(58) };
+  const outputs = ['', 'Bonjour.\nAu revoir.', '```text\nBonjour\n```'];
+  let attempts = 0;
+  await assert.rejects(rewriteNarrativeSpeechItemToFitScene({
+    scene, speechItem, movieResourceList: { scenes: [scene], sounds: [speechItem] },
+    maxCharacters: 57, inferenceModel: 'gpt-6-astra',
+    options: {
+      sceneIndex: 0, soundIndex: 0, maxAttempts: 99,
+      translationContext: { targetLanguage: 'French', originalText: 'Hello' },
+      dependencies: { openaiClient: {}, sleep: async () => {},
+        createCompatibleChatCompletion: async () => ({ choices: [{ message: { content: outputs[attempts++] } }] }),
+      },
+    },
+  }), /without Markdown/);
+  assert.equal(attempts, 3);
+});
+
 function forceNativeOpenAIForTest(t) {
   const overrides = {
     OPENAI_API_KEY: 'test-openai-key',

@@ -28,7 +28,9 @@ export async function readAssistantSSE(response, onEvent, signal) {
 }
 
 export function assistantMessagesFromSnapshot(snapshot) {
-  const messages = snapshot.sessionMessages || [];
+  // Polling may merge server progress with UI state containing the previous
+  // provisional reply. Replace that reply, while preserving saved messages.
+  const messages = (snapshot.sessionMessages || []).filter(message => !message.assistantStreamStatus);
   const stream = snapshot.assistantStream;
   if ((!stream?.text && stream?.status !== 'interrupted') || messages.some(message => message.role === 'assistant' && message.id === stream.queryId)) return messages;
   return [...messages, { id: stream.queryId, role: 'assistant', content: stream.text || '',

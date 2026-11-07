@@ -3,11 +3,24 @@ import { useEffect, useRef } from 'react';
 
 // Discard replies already in flight when a conversation is cleared or changed.
 export function useAssistantRequestGuard(sessionId) {
-  const state = useRef({ sessionId, version: 0, serverVersion: 0, completedQueryId: null, streamController: null, timers: new Set() });
+  const state = useRef({ sessionId, version: 0, serverVersion: 0, completedQueryId: null, latestStream: null, streamController: null, timers: new Set() });
   const guard = useRef(null);
   if (!guard.current) {
     guard.current = {
       messages: assistantMessagesFromSnapshot,
+      stopOnAccessError: (error) => {
+        if (![400, 401, 403, 404].includes(error?.response?.status)) return false;
+        guard.current.invalidate();
+        return true;
+      },
+      applyStatus: (response, setMessages) => {
+        const snapshot = response.sessionDetails || response;
+        if (!snapshot.sessionMessages && !snapshot.assistantStream) return false;
+        if (!guard.current.acceptSession(snapshot)) return false;
+        setMessages(previous => assistantMessagesFromSnapshot({ ...snapshot,
+          sessionMessages: snapshot.sessionMessages || previous }));
+        return response.status === 'COMPLETED';
+      },
       beginRequest: () => { guard.current.invalidate(); return guard.current.capture(); },
       capture: () => ({ sessionId: state.current.sessionId, version: state.current.version, serverVersion: state.current.serverVersion }),
       isCurrent: (token) => token.sessionId === state.current.sessionId && token.version === state.current.version,
@@ -17,7 +30,16 @@ export function useAssistantRequestGuard(sessionId) {
         const stream = session?.assistantStream;
         if (version === state.current.serverVersion && stream?.queryId &&
             stream.queryId === state.current.completedQueryId && stream.status !== 'completed') return false;
-        if (version > state.current.serverVersion) state.current.completedQueryId = null;
+        if (version > state.current.serverVersion) {
+          state.current.completedQueryId = null;
+          state.current.latestStream = null;
+        }
+        const latest = state.current.latestStream;
+        if (stream?.queryId === latest?.queryId && Number.isFinite(stream?.sequence) &&
+            stream.sequence < latest.sequence && stream.status !== 'completed') return false;
+        if (stream?.queryId && Number.isFinite(stream.sequence)) {
+          state.current.latestStream = { queryId: stream.queryId, sequence: stream.sequence };
+        }
         if (stream?.status === 'completed') state.current.completedQueryId = stream.queryId;
         state.current.serverVersion = version;
         return true;
@@ -25,7 +47,11 @@ export function useAssistantRequestGuard(sessionId) {
       invalidate: (session) => {
         state.current.version += 1;
         state.current.streamController?.abort();
-        if (session) state.current.serverVersion = session.assistantSessionVersion || 0;
+        if (session) {
+          state.current.serverVersion = session.assistantSessionVersion || 0;
+          state.current.completedQueryId = null;
+          state.current.latestStream = null;
+        }
         state.current.timers.forEach(clearInterval);
         state.current.timers.clear();
       },
@@ -78,6 +104,7 @@ export function useAssistantRequestGuard(sessionId) {
     state.current.sessionId = sessionId;
     state.current.serverVersion = 0;
     state.current.completedQueryId = null;
+    state.current.latestStream = null;
   }
   useEffect(() => () => guard.current.invalidate(), []);
   return guard.current;

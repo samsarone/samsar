@@ -30,7 +30,7 @@ For large or queued ingestion, inspect [embedding status](https://docs.samsar.on
 | --- | --- |
 | `processor` | Auth, input validation, embedding creation, search, filtering, credit headers, and status endpoints. |
 | `mongo` | Stores embedding templates, records, status, user state, and credit state. |
-| Provider | The current embedding implementation requires `OPENAI_API_KEY`; URL crawling also requires `FIRECRAWL_API_KEY`. |
+| Provider | OpenAI embeds template content and search queries; Firecrawl supplies URL ingestion. |
 
 ## Create an Index
 
@@ -104,6 +104,7 @@ Response shape:
 ## Operational Notes
 
 - Search runs inside the processor API and depends on MongoDB state.
-- The setup provider matrix lists `search` under OpenAI and Samsar, but the current embedding code calls OpenAI embeddings directly with `text-embedding-3-large`. Set `OPENAI_API_KEY` before expecting search to work in Docker.
-- URL indexing uses Firecrawl-backed crawling and requires `FIRECRAWL_API_KEY`.
+- Template search uses `text-embedding-3-large`. The separate `/v2/external/embeddings` vector endpoint uses `text-embedding-3-small` at 1536 dimensions; its output cannot be mixed into a large-model template index.
+- The processor attempts indexed `$vectorSearch`; if unavailable, it loads the matching template records and scores cosine similarity in memory. Verify index support for the deployment before relying on this path for a large corpus.
+- Optional reranking uses `OPENAI_RERANK_MODEL` (default `gpt-6-astra`), independently of the selected assistant model.
 - Credit usage is returned in `x-credits-charged` and `x-credits-remaining` headers where the route charges credits.

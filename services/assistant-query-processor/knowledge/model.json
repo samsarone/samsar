@@ -1,0 +1,8 @@
+{
+  "provider": "local",
+  "model": "tfidf-bm25",
+  "revision": "samsar-assistant-tfidf-bm25-v1",
+  "document_prefix": "passage: ",
+  "normalize": true,
+  "network_at_runtime": false
+}

@@ -8,14 +8,13 @@ import {
   MdCloseFullscreen,
   MdDeleteOutline,
   MdOpenInFull,
-  MdTune,
 } from 'react-icons/md';
 import { FaCopy } from 'react-icons/fa';
 
 import { useColorMode } from '../../contexts/ColorMode.jsx';
 import { useUser } from "../../contexts/UserContext.jsx";
 import CommonButton from '../common/CommonButton.tsx';
-import InferenceModelSelect from "../common/InferenceModelSelect.jsx";
+import ModelAdapterSelect from "../common/ModelAdapterSelect.jsx";
 import { ASSISTANT_MODEL_TYPES } from "../../constants/Types.ts";
 import { getHeaders } from "../../utils/web.jsx";
 import { useDeploymentModelAvailability } from "../../hooks/useDeploymentModelAvailability.js";
@@ -92,38 +91,31 @@ function hasMessageImageAttachment(content) {
 }
 
 function renderMessageContent(messageText) {
-  return messageText.split('\n').map((line, lineIndex) => {
-    const parts = [];
-    const boldPattern = /\*\*(.*?)\*\*/g;
-    let lastIndex = 0;
-    let match;
+  const parts = [];
+  const boldPattern = /\*\*(.*?)\*\*|\[([^\]\n]+)\]\((https:\/\/[^\s)]+)\)/g;
+  let lastIndex = 0;
+  let match;
 
-    while ((match = boldPattern.exec(line)) !== null) {
-      if (match.index > lastIndex) {
-        parts.push(line.slice(lastIndex, match.index));
-      }
-      parts.push(
-        <strong key={`bold-${lineIndex}-${match.index}`} className="font-semibold">
-          {match[1]}
-        </strong>
-      );
-      lastIndex = match.index + match[0].length;
+  while ((match = boldPattern.exec(messageText)) !== null) {
+    if (match.index > lastIndex) {
+      parts.push(messageText.slice(lastIndex, match.index));
     }
-
-    if (lastIndex < line.length) {
-      parts.push(line.slice(lastIndex));
+    if (match[1] !== undefined) {
+      parts.push(<strong key={`bold-${match.index}`} className="font-semibold">{match[1]}</strong>);
+    } else {
+      let allowed = false;
+      try { allowed = ['docs.samsar.one', 'samsar.one'].includes(new URL(match[3]).hostname); } catch { /* Render invalid links as text. */ }
+      parts.push(allowed ? <a key={`source-${match.index}`} href={match[3]} target="_blank" rel="noopener noreferrer" className="underline">{match[2]}</a> : match[0]);
     }
+    lastIndex = match.index + match[0].length;
+  }
 
-    if (parts.length === 0) {
-      parts.push('');
-    }
+  if (lastIndex < messageText.length) {
+    parts.push(messageText.slice(lastIndex));
+  }
 
-    return (
-      <span key={`line-${lineIndex}`} className="block">
-        {parts}
-      </span>
-    );
-  });
+  // Keep literal newlines and indentation for the message's whitespace-pre-wrap.
+  return parts;
 }
 
 export default function AssistantHome(props) {
@@ -133,6 +125,8 @@ export default function AssistantHome(props) {
     sessionMessages = [],
     isAssistantQueryGenerating = false,
     sessionId,
+    workspace,
+    onOpen,
     onSessionMessagesChange,
     onSessionDetailsChange,
     onAssistantQueryGeneratingChange,
@@ -162,7 +156,6 @@ export default function AssistantHome(props) {
   const panelRef = useRef(null);
   const [isOpen, setIsOpen] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
-  const [showModelSettings, setShowModelSettings] = useState(false);
   const activeSessionRef = useRef(sessionId);
   activeSessionRef.current = sessionId;
   const interactionVersionRef = useRef(0);
@@ -303,7 +296,7 @@ export default function AssistantHome(props) {
       }
       const response = await axios.post(
         `${PROCESSOR_SERVER}/assistants/delete_session_message`,
-        { id: sessionId, messageId },
+        { id: sessionId, messageId, ...(workspace ? { workspace } : {}) },
         headers
       );
       onSessionMessagesChange?.(response?.data?.sessionDetails?.sessionMessages || []);
@@ -362,7 +355,7 @@ export default function AssistantHome(props) {
       if (!headers) throw new Error(uiText("Sign in to clear the assistant session."));
       const response = await axios.post(
         `${PROCESSOR_SERVER}/assistants/reset_session_messages`,
-        { id: sessionId },
+        { id: sessionId, ...(workspace ? { workspace } : {}) },
         headers
       );
       if (activeSessionRef.current !== clearingSessionId) return;
@@ -496,7 +489,7 @@ export default function AssistantHome(props) {
   const launcherShell =
     `border border-line-strong bg-surface text-fg ${colorMode === 'dark' ? 'shadow-[0_18px_38px_rgba(0,0,0,0.45)]' : 'shadow-[0_16px_34px_rgba(15,23,42,0.18)]'}`;
   const panelShell =
-    'border border-line bg-surface-sunken text-fg';
+    'border border-line bg-surface-sunken text-left text-fg';
   const subtleText = "text-fg-tertiary";
   const headerButtonShell =
     `border border-line text-fg-secondary ${colorMode === 'dark' ? 'bg-[#181b24] hover:bg-[#292d3a]' : 'bg-slate-100 hover:bg-slate-200'}`;
@@ -529,7 +522,7 @@ export default function AssistantHome(props) {
       <button
         ref={launcherRef}
         type="button"
-        onClick={() => setIsOpen((current) => !current)}
+        onClick={() => { if (!isOpen) onOpen?.(); setIsOpen((current) => !current); }}
         className={`group inline-flex items-center gap-3 rounded-full px-4 py-3 transition ${launcherShell}`}
       >
         <span className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-[#ff4655] to-[#f6c453] text-[#080a10] shadow-[0_10px_24px_rgba(255,70,85,0.22)]">
@@ -549,45 +542,66 @@ export default function AssistantHome(props) {
           <div
             className={`flex ${isExpanded || hasConversationActivity || shouldShowWelcomeOptions ? 'h-full' : ''} flex-col overflow-hidden rounded-3xl shadow-[0_28px_80px_rgba(15,23,42,0.3)] ${panelShell}`}
           >
-            <div className="flex shrink-0 items-center justify-between gap-2 border-b border-line px-4 py-3">
-              <div className="min-w-0">
-                <div className="text-sm font-semibold">{uiText("Assistant")}</div>
-              </div>
+            <header className="shrink-0 border-b border-line px-4 py-2.5">
+              <div className="flex items-center justify-between gap-2">
+                <div className="min-w-0 flex-1" title={assistantModel?.label}>
+                  <ModelAdapterSelect
+                    aria-label={uiText("Assistant model")}
+                    options={assistantModelOptions}
+                    value={assistantModel}
+                    onChange={handleAssistantModelChange}
+                    primaryAdapterByModel={primaryAdapterByModel}
+                    isStandaloneDeployment={isStandaloneDeployment}
+                    isDisabled={isAssistantModelUnavailable || isResetting}
+                    isSearchable={false}
+                    compactLayout
+                    truncateLabels
+                    placeholder={isAssistantModelUnavailable ? uiText("No model configured") : undefined}
+                    styles={{
+                      control: () => ({ backgroundColor: 'transparent', borderWidth: 0, fontSize: 14, cursor: 'pointer' }),
+                      singleValue: () => ({ fontWeight: 600 }),
+                      valueContainer: () => ({ paddingLeft: 0 }),
+                      menu: () => ({ width: 'max(100%, min(20rem, calc(100vw - 2rem)))' }),
+                    }}
+                  />
+                </div>
 
-              <div className="flex shrink-0 items-center gap-1">
-                <button
-                  type="button"
-                  onClick={handleResetRequest}
-                  disabled={(!onResetMessages && !sessionId) || isResetting || Boolean(applyingSceneActionId) || Boolean(deletingMessageId)}
-                  className={`inline-flex h-8 items-center justify-center gap-1 rounded-lg px-2 text-xs transition disabled:opacity-50 ${headerButtonShell}`}
-                >
-                  <MdDeleteOutline className="text-[16px]" />
-                  <span>{uiText("Clear session")}</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setIsExpanded((current) => !current)}
-                  className={`inline-flex h-9 w-9 items-center justify-center rounded-full transition ${headerButtonShell}`}
-                  aria-label={isExpanded ? uiText("Switch to condensed view") : uiText("Expand assistant")}
-                  title={isExpanded ? uiText("Switch to condensed view") : uiText("Expand assistant")}
-                >
-                  {isExpanded ? (
-                    <MdCloseFullscreen className="text-[18px]" />
-                  ) : (
-                    <MdOpenInFull className="text-[18px]" />
-                  )}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setIsOpen(false)}
-                  className={`inline-flex h-9 w-9 items-center justify-center rounded-full transition ${headerButtonShell}`}
-                  aria-label={uiText("Collapse assistant")}
-                  title={uiText("Collapse assistant")}
-                >
-                  <span aria-hidden="true" className="block h-0.5 w-3.5 rounded-full bg-current" />
-                </button>
+                <div className="flex shrink-0 items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={handleResetRequest}
+                    disabled={(!onResetMessages && !sessionId) || isResetting || Boolean(applyingSceneActionId) || Boolean(deletingMessageId)}
+                    className={`inline-flex h-8 w-8 items-center justify-center rounded-lg transition disabled:opacity-50 ${headerButtonShell}`}
+                    aria-label={uiText("Clear session")}
+                    title={uiText("Clear session")}
+                  >
+                    <MdDeleteOutline className="text-[16px]" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setIsExpanded((current) => !current)}
+                    className={`inline-flex h-8 w-8 items-center justify-center rounded-lg transition ${headerButtonShell}`}
+                    aria-label={isExpanded ? uiText("Switch to condensed view") : uiText("Expand assistant")}
+                    title={isExpanded ? uiText("Switch to condensed view") : uiText("Expand assistant")}
+                  >
+                    {isExpanded ? (
+                      <MdCloseFullscreen className="text-[18px]" />
+                    ) : (
+                      <MdOpenInFull className="text-[18px]" />
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setIsOpen(false)}
+                    className={`inline-flex h-8 w-8 items-center justify-center rounded-lg transition ${headerButtonShell}`}
+                    aria-label={uiText("Collapse assistant")}
+                    title={uiText("Collapse assistant")}
+                  >
+                    <span aria-hidden="true" className="block h-0.5 w-3.5 rounded-full bg-current" />
+                  </button>
+                </div>
               </div>
-            </div>
+            </header>
 
             {shouldShowConversationArea ? (
               <div role="log" aria-label={uiText("Assistant conversation")} className="mx-auto box-border min-h-0 w-full max-w-3xl flex-1 overflow-y-auto px-4 py-4">
@@ -613,7 +627,7 @@ export default function AssistantHome(props) {
                               <button
                                 type="button"
                                 onClick={() => copyToClipboard(message.normalizedText)}
-                                className={`inline-flex items-center gap-1 rounded-full px-2 py-1 transition ${headerButtonShell}`}
+                                className="inline-flex h-7 w-7 items-center justify-center rounded-md text-fg-tertiary transition hover:bg-surface-hover hover:text-fg"
                                 aria-label={uiText("Copy message")}
                                 title={uiText("Copy message")}
                               >
@@ -624,7 +638,7 @@ export default function AssistantHome(props) {
                                   type="button"
                                   onClick={() => handleDeleteMessage(message.id)}
                                   disabled={deletingMessageId === message.id || isResetting || isResetConfirmVisible}
-                                  className={`inline-flex items-center gap-1 rounded-full px-2 py-1 transition disabled:opacity-50 ${headerButtonShell}`}
+                                  className="inline-flex h-7 w-7 items-center justify-center rounded-md text-fg-tertiary transition hover:bg-surface-hover hover:text-fg disabled:opacity-50"
                                   aria-label={uiText("Delete this exchange")}
                                   title={uiText("Delete this exchange")}
                                 >
@@ -729,30 +743,6 @@ export default function AssistantHome(props) {
               {isStandaloneDeployment && !isInferenceModelAvailabilityLoading && !hasConfiguredInferenceModels ? (
                 <div className="mb-3 rounded-2xl border border-amber-400/30 bg-amber-400/10 px-3 py-2 text-xs font-medium text-amber-600 dark:text-amber-200">{uiText("Configure OpenAI, Google Cloud, Alibaba Cloud, OpenRouter, or a Samsar API key in setup to use the assistant.")}</div>
               ) : null}
-              <button
-                type="button"
-                onClick={() => setShowModelSettings(current => !current)}
-                aria-expanded={showModelSettings}
-                aria-label={uiText("Assistant model settings")}
-                className="mb-2 flex max-w-full items-center gap-1.5 text-xs text-fg-tertiary hover:text-fg"
-              >
-                <MdTune className="shrink-0 text-base" />
-                <span className="truncate">{assistantModel?.label || uiText("Assistant model")}</span>
-              </button>
-              {showModelSettings && (
-                <div className="mb-3">
-                  <InferenceModelSelect
-                    groupByFamily={false}
-                    options={assistantModelOptions}
-                    value={assistantModel}
-                    onChange={handleAssistantModelChange}
-                    primaryAdapterByModel={primaryAdapterByModel}
-                    isStandaloneDeployment={isStandaloneDeployment}
-                    isDisabled={isAssistantModelUnavailable || isResetting}
-                    placeholder={isAssistantModelUnavailable ? uiText("No model configured") : undefined}
-                  />
-                </div>
-              )}
               <TextareaAutosize
                 value={userInput}
                 onChange={(event) => setUserInput(event.target.value)}

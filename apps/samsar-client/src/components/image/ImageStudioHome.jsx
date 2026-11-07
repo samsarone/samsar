@@ -1,3 +1,4 @@
+import { studioAssistantView } from '../../utils/assistantContext.js';
 import { useAssistantRequestGuard } from '../../hooks/useAssistantRequestGuard.js';
 import { useUiLanguage } from '../../hooks/useUiLanguage.js';
 import { translateText as uiText, getUiLanguage } from '../../utils/localization.js';
@@ -420,7 +421,6 @@ export default function ImageStudioHome() {
   const generationPollIntervalRef = useRef(null);
   const outpaintPollIntervalRef = useRef(null);
   const assistantPollRef = useRef(null);
-  const assistantErrorCountRef = useRef(0);
   const currentLayerRef = useRef(null);
   const activeItemListRef = useRef([]);
   const previousSyncedLayerIdRef = useRef(null);
@@ -597,7 +597,6 @@ export default function ImageStudioHome() {
       clearInterval(assistantPollRef.current);
       assistantPollRef.current = null;
     }
-    assistantErrorCountRef.current = 0;
   }, []);
 
   useEffect(() => {
@@ -625,24 +624,19 @@ export default function ImageStudioHome() {
     stopAssistantQueryPoll();
     assistantPollRef.current = assistantRequestGuard.setInterval(() => {
       axios
-        .get(`${PROCESSOR_API_URL}/assistants/assistant_query_status?id=${id}`, headers)
+        .get(`${PROCESSOR_API_URL}/assistants/assistant_query_status?id=${encodeURIComponent(id)}&include_messages=true`, headers)
         .then((dataRes) => {
           if (!assistantRequestGuard.isCurrent(requestToken)) return;
-          assistantErrorCountRef.current = 0;
           const assistantQueryData = dataRes.data;
-          if (assistantQueryData.status === 'COMPLETED') {
+          if (assistantRequestGuard.applyStatus(assistantQueryData, setSessionMessages)) {
             stopAssistantQueryPoll();
-            if (assistantRequestGuard.acceptSession(assistantQueryData?.sessionDetails)) setSessionMessages(assistantRequestGuard.messages(assistantQueryData?.sessionDetails));
             setIsAssistantQueryGenerating(false);
           }
         })
-        .catch(() => {
+        .catch(error => {
           if (!assistantRequestGuard.isCurrent(requestToken)) return;
-          assistantErrorCountRef.current += 1;
-          if (assistantErrorCountRef.current >= 3) {
-            stopAssistantQueryPoll();
-            setIsAssistantQueryGenerating(false);
-          }
+          // Network/server failures remain retryable; generation may still be running.
+          if (assistantRequestGuard.stopOnAccessError(error)) setIsAssistantQueryGenerating(false);
         });
     }, 1000);
   }, [id, stopAssistantQueryPoll]);
@@ -682,6 +676,9 @@ export default function ImageStudioHome() {
           query: normalizedQuery,
           stream: true, client_request_id: crypto.randomUUID(), assistantSessionVersion: requestToken.serverVersion,
           frameImage: options?.frameImage || null,
+          assistantContext: { version: 1, page: 'image', view: studioAssistantView(currentView, 'image'),
+            selectedModel: currentView.includes('EDIT') ? selectedEditModel : selectedGenerationModel,
+            draft: promptText.slice(0, 4000), selectedLayerId: String(currentLayer?._id || ''), locale: getUiLanguage() },
         },
         headers
       )
@@ -693,7 +690,7 @@ export default function ImageStudioHome() {
         if (!assistantRequestGuard.isCurrent(requestToken)) return;
         setIsAssistantQueryGenerating(false);
       });
-  }, [id, startAssistantQueryPoll]);
+  }, [id, startAssistantQueryPoll, currentView, promptText, currentLayer?._id, selectedEditModel, selectedGenerationModel]);
 
   useEffect(() => {
     setGlobalLibraryImages([]);

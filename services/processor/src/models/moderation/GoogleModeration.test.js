@@ -135,6 +135,44 @@ test('normalizeGoogleModerationResponse flags Vertex prompt filter blocks', () =
   assert.equal(normalized.google.promptFeedback.blockReason, 'PROHIBITED_CONTENT');
 });
 
+test('Gemini flagged categories retain conservative scores when provider scores are unusable', () => {
+  const invalidScores = [
+    undefined, null, '', '  ', false, true, [], [0], [0.2], {},
+    Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY,
+    'Infinity', 'not-a-score', -0.1, 1.1,
+  ];
+
+  for (const score of invalidScores) {
+    for (const categories of [
+      [{ name: 'violence', flagged: true, score }],
+      { violence: { flagged: true, score } },
+    ]) {
+      const normalized = normalizeGeminiModerationPayload({ flagged: true, categories });
+      assert.equal(normalized.results[0].categories.violence, true);
+      assert.equal(normalized.results[0].category_scores.violence, 1);
+    }
+  }
+});
+
+test('Gemini category normalization preserves valid zero and numeric string scores', () => {
+  for (const [score, expected] of [[0, 0], ['0', 0], [' 0.24 ', 0.24], [1, 1]]) {
+    for (const categories of [
+      [{ name: 'violence', flagged: true, score }],
+      { violence: { flagged: true, score } },
+    ]) {
+      const normalized = normalizeGeminiModerationPayload({ flagged: true, categories });
+      assert.equal(normalized.results[0].categories.violence, true);
+      assert.equal(normalized.results[0].category_scores.violence, expected);
+    }
+  }
+
+  const normalized = normalizeGeminiModerationPayload({
+    flagged: false,
+    categories: [{ name: 'violence', flagged: false, score: false }],
+  });
+  assert.equal(normalized.results[0].category_scores.violence, 0);
+});
+
 test('normalizeGoogleModerationResponse includes Gemini response metadata', () => {
   const normalized = normalizeGoogleModerationResponse({
     responseId: 'response-id',

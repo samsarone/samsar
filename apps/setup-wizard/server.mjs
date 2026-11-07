@@ -3744,6 +3744,9 @@ async function runSetup(run, payload) {
 
     setStepStatus(run, 'compose', 'running', `Validating Docker build inputs for profiles: ${profiles.join(', ')}`);
     validateDockerBuildInputs(profiles);
+    if (profiles.includes('workers')) {
+      await runComposeStartup(run, [...nonGenBlazeProfileArgs, 'build', 'assistant-query-processor']);
+    }
     await prepareLocalMongoAuthentication(run, profiles);
     setStepStatus(run, 'compose', 'running', `Starting Docker Compose profiles: ${nonGenBlazeProfiles.join(', ')}`);
     await runComposeStartup(run, [
@@ -3847,6 +3850,9 @@ async function runDockerMaintenance(run) {
 
     setStepStatus(run, 'compose', 'running', `Validating Docker build inputs for profiles: ${profiles.join(', ')}`);
     validateDockerBuildInputs(profiles);
+    if (profiles.includes('workers')) {
+      await runComposeStartup(run, [...nonGenBlazeProfileArgs, 'build', 'assistant-query-processor']);
+    }
     await prepareLocalMongoAuthentication(run, profiles);
     setStepStatus(run, 'compose', 'running', 'Rebuilding and restarting Docker containers.');
     await runComposeStartup(run, [

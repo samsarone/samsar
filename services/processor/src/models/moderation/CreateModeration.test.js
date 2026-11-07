@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import test from "node:test";
 
 process.env.OPENAI_MODERATION_REJECT_SCORE_THRESHOLD = "0.65";
 process.env.GOOGLE_MODERATION_REJECT_SCORE_THRESHOLD = "0.7";
+process.env.NARRATIVE_VIOLENCE_REJECT_SCORE_THRESHOLD = "0.9";
 
 const {
   MODERATION_PROVIDERS,
@@ -30,6 +32,152 @@ test("getModerationDecision rejects flagged moderation results", () => {
     categories: { violence: true },
     category_scores: { violence: 0.99 },
   }), {
+    safe: false,
+    reason: "flagged",
+    categories: ["violence"],
+  });
+});
+
+const MODERATION_CATEGORIES = [
+  "sexual",
+  "sexual/minors",
+  "harassment",
+  "harassment/threatening",
+  "hate",
+  "hate/threatening",
+  "illicit",
+  "illicit/violent",
+  "self-harm",
+  "self-harm/intent",
+  "self-harm/instructions",
+  "violence",
+  "violence/graphic",
+  "custom_category",
+];
+
+function evaluateThresholdEnvironment(env = {}) {
+  const moduleUrl = new URL("./CreateModeration.js", import.meta.url).href;
+  const script = `
+    const { getModerationDecision } = await import(${JSON.stringify(moduleUrl)});
+    const categories = ${JSON.stringify(MODERATION_CATEGORIES)};
+    const results = [];
+    for (const provider of ['openai', 'google', 'samsar']) {
+      for (const moderationContext of [undefined, 'narrative']) {
+        for (const category of categories) {
+          for (const score of [0.3, 0.734931806, 0.94, 0.95, 0.989, 0.99]) {
+            for (const flagged of [false, true]) {
+              results.push({ provider, moderationContext, category, score, flagged,
+                decision: getModerationDecision({ flagged, categories: { [category]: flagged },
+                  category_scores: { [category]: score } }, { provider, moderationContext }) });
+            }
+          }
+        }
+      }
+    }
+    const replay = getModerationDecision({ flagged: true,
+      categories: { violence: true, 'violence/graphic': true },
+      category_scores: { violence: 0.734931806, 'violence/graphic': 0.415131319 } },
+      { provider: 'openai', moderationContext: 'narrative' });
+    console.log(JSON.stringify({ results, replay }));
+  `;
+  const execution = spawnSync(process.execPath, ["--input-type=module", "-e", script], {
+    encoding: "utf8",
+    timeout: 20_000,
+    maxBuffer: 2 * 1024 * 1024,
+    env: {
+      ...process.env,
+      MODERATION_REJECT_SCORE_THRESHOLD: "",
+      OPENAI_MODERATION_REJECT_SCORE_THRESHOLD: "",
+      GOOGLE_MODERATION_REJECT_SCORE_THRESHOLD: "",
+      NARRATIVE_VIOLENCE_REJECT_SCORE_THRESHOLD: "",
+      ...env,
+    },
+  });
+  assert.equal(execution.status, 0, execution.stderr || execution.error?.message);
+  return JSON.parse(execution.stdout);
+}
+
+test("default moderation cutoffs use scores across every category and provider", () => {
+  const { results, replay } = evaluateThresholdEnvironment();
+  for (const { provider, moderationContext, category, score, flagged, decision } of results) {
+    const threshold = moderationContext === "narrative" && category === "violence" ? 0.99 : 0.95;
+    assert.equal(decision.safe, score < threshold,
+      JSON.stringify({ provider, moderationContext, category, score, flagged }));
+    if (!decision.safe) assert.deepEqual(decision.categories, [category]);
+  }
+  assert.equal(replay.safe, true);
+});
+
+test("general and provider-specific moderation overrides retain precedence", () => {
+  const { results } = evaluateThresholdEnvironment({
+    MODERATION_REJECT_SCORE_THRESHOLD: "0.8",
+    OPENAI_MODERATION_REJECT_SCORE_THRESHOLD: "0.95",
+    NARRATIVE_VIOLENCE_REJECT_SCORE_THRESHOLD: "0.99",
+  });
+  for (const { provider, moderationContext, category, score, flagged, decision } of results) {
+    const threshold = moderationContext === "narrative" && category === "violence"
+      ? 0.99
+      : provider === "google" ? 0.8 : 0.95;
+    assert.equal(decision.safe, score < threshold,
+      JSON.stringify({ provider, moderationContext, category, score, flagged }));
+  }
+});
+
+test("configured score cutoffs apply to flags in every category", () => {
+  for (const category of MODERATION_CATEGORIES) {
+    for (const [provider, threshold] of [
+      [MODERATION_PROVIDERS.OPENAI, 0.65],
+      [MODERATION_PROVIDERS.GOOGLE, 0.7],
+      [MODERATION_PROVIDERS.SAMSAR, 0.65],
+    ]) {
+      for (const score of [0, "0", 0.415131319, String(threshold - 0.001), threshold, 0.99]) {
+        const decision = getModerationDecision({
+          flagged: true,
+          categories: { [category]: true },
+          category_scores: { [category]: score },
+        }, { provider });
+        assert.equal(decision.safe, Number(score) < threshold, `${provider}: ${category}: ${score}`);
+      }
+    }
+  }
+});
+
+test("flagged categories with unusable scores remain rejected", () => {
+  const invalidScores = [undefined, null, "", " ", true, false, [], [0.1], {}, NaN, Infinity, -Infinity, -0.1, 1.1, "invalid"];
+  for (const category of MODERATION_CATEGORIES) {
+    for (const score of invalidScores) {
+      for (const moderationContext of [undefined, "narrative"]) {
+        const decision = getModerationDecision({
+          flagged: true,
+          categories: { [category]: true },
+          category_scores: { [category]: score },
+        }, { provider: MODERATION_PROVIDERS.OPENAI, moderationContext });
+        assert.deepEqual(decision, { safe: false, reason: "flagged", categories: [category] },
+          `${category}: ${String(score)}`);
+      }
+    }
+  }
+});
+
+test("uncategorized provider flags still reject despite low category scores", () => {
+  assert.deepEqual(getModerationDecision({
+    flagged: true,
+    categories: { violence: false },
+    category_scores: { violence: 0.2 },
+  }), { safe: false, reason: "flagged", categories: [] });
+});
+
+test("the saved session scores pass narrative moderation with configured cutoffs", () => {
+  const result = {
+    flagged: true,
+    categories: { violence: true, "violence/graphic": true },
+    category_scores: { violence: 0.734931806, "violence/graphic": 0.415131319 },
+  };
+  assert.equal(getModerationDecision(result, {
+    provider: MODERATION_PROVIDERS.OPENAI,
+    moderationContext: "narrative",
+  }).safe, true);
+  assert.deepEqual(getModerationDecision(result, { provider: MODERATION_PROVIDERS.OPENAI }), {
     safe: false,
     reason: "flagged",
     categories: ["violence"],
@@ -724,6 +872,37 @@ test("getModerationForNarrative rejects only an explicit unsafe moderation resul
     }),
   });
   assert.equal(safe, false);
+});
+
+test("narrative moderation logs category scores and effective cutoffs without prompt or credentials", async (t) => {
+  const logs = [];
+  t.mock.method(console, "info", (...args) => logs.push(args));
+  const privatePrompt = "private prompt that must not appear in moderation logs";
+  const apiKey = "private-observation-api-key";
+  for (const [score, expectedSafe] of [[0.415131319, true], [0.95, false], [null, false]]) {
+    const safe = await getModerationForNarrative(privatePrompt, {
+      sessionId: "observation-session",
+      env: { CURRENT_ENV: "production", OPENAI_API_KEY: apiKey },
+      moderationCall: async () => ({ results: [{
+        flagged: true,
+        categories: { violence: true, "violence/graphic": true },
+        category_scores: { violence: 0.734931806, "violence/graphic": score },
+      }] }),
+    });
+    assert.equal(safe, expectedSafe);
+    const [label, event] = logs.at(-1);
+    assert.equal(label, "[moderation] request_complete");
+    assert.equal(event.sessionId, "observation-session");
+    assert.equal(event.provider, "openai");
+    assert.equal(event.safe, expectedSafe);
+    assert.deepEqual(event.providerFlagged, [true]);
+    assert.deepEqual(event.flaggedCategories, [["violence", "violence/graphic"]]);
+    assert.deepEqual(event.categoryScores, [{ violence: 0.734931806, "violence/graphic": score }]);
+    assert.deepEqual(event.categoryThresholds, [{ violence: 0.9, "violence/graphic": 0.65 }]);
+  }
+  const serializedLogs = JSON.stringify(logs);
+  assert.equal(serializedLogs.includes(privatePrompt), false);
+  assert.equal(serializedLogs.includes(apiKey), false);
 });
 
 test("getModerationForNarrative propagates receipt observer failures without retrying", async (t) => {

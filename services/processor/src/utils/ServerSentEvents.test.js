@@ -56,3 +56,16 @@ test('bounded streams explicitly request reconnect and retain latest snapshot id
   assert.equal(res.frames.filter(frame => frame.includes('event: snapshot')).length, 1);
   assert.match(res.frames.at(-1), /event: reconnect/);
 });
+
+test('flushes each snapshot while the response remains open', () => {
+  const res = new Response();
+  let flushed = '';
+  res.flush = () => { flushed = res.frames.join(''); };
+  const stream = openServerSentEvents(res);
+  stream.send('snapshot', { text: 'First words' });
+  assert.match(flushed, /First words/);
+  assert.ok(!res.writableEnded);
+  stream.send('snapshot', { text: 'First words continue' });
+  assert.match(flushed, /First words continue/);
+  stream.end();
+});

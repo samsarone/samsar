@@ -8,7 +8,7 @@ Start with [hosted Samsar.js](https://docs.samsar.one/) if you want managed work
 
 ![Docker Deployment Architecture](../assets/docker-deployment-architecture.png)
 
-The default Docker deployment keeps the Studio client, processor API, workers, local infrastructure, and optional logging inside the Compose runtime. The client UI calls the processor over REST; the processor and workers consume the rendered runtime config, persist state through MongoDB, write media through the configured object storage adapter, and call only the external providers enabled by the user.
+The default Docker deployment keeps the Studio client, processor API, workers, local infrastructure, and optional logging inside the Compose runtime. The client uses REST and assistant SSE streams; the processor and workers consume rendered configuration, persist state through MongoDB, and write media through the configured object storage adapter.
 
 ## Compose Profiles
 
@@ -29,7 +29,7 @@ The default Docker deployment keeps the Studio client, processor API, workers, l
 3. The processor writes session/request state to MongoDB and stores media in MinIO or the configured external S3-compatible store.
 4. Workers pick up queued work through MongoDB-backed state and provider-specific task records.
 5. Media outputs are written to Docker volumes and served to browsers through the configured processor API (`http://localhost:3002` by default), or through its optional reverse proxy URL. The internal `media-gateway` is used only as the origin for provider tunnels.
-6. Clients poll status endpoints or receive webhook callbacks when provided by the request.
+6. Clients poll status endpoints, subscribe to supported assistant SSE streams, or receive webhook callbacks where provided by the operation.
 
 ## Runtime Config
 

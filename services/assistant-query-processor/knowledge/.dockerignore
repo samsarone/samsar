@@ -1,0 +1,9 @@
+**
+!Dockerfile
+!index.mjs
+!snapshot/
+!snapshot/manifest.json
+!snapshot/sources.json
+!snapshot/chunks.jsonl
+!snapshot/documents.jsonl
+!snapshot/knowledge-base.md

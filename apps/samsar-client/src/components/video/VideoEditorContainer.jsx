@@ -429,6 +429,7 @@ export default function VideoEditorContainer(props) {
   const [editMasklines, setEditMaskLines] = useState([]);
   const [currentView, setCurrentView] = useState(CURRENT_TOOLBAR_VIEW.SHOW_DEFAULT_DISPLAY);
   const [rightPanelView, setRightPanelView] = useState(CURRENT_TOOLBAR_VIEW.SHOW_DEFAULT_DISPLAY);
+  useEffect(() => { props.onAssistantViewChange?.(rightPanelView); }, [rightPanelView, props.onAssistantViewChange]);
   const [isRightPanelExpanded, setIsRightPanelExpanded] = useState(false);
   const [currentCanvasAction, setCurrentCanvasAction] = useState(TOOLBAR_ACTION_VIEW.SHOW_DEFAULT_DISPLAY);
 

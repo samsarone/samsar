@@ -2,10 +2,24 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+  getSpeechCharacterBudget,
   getSpeechCharacterLimitForDuration,
   getSpeechCharacterLimitsForModel,
   getSpeechDurationStringForModel,
 } from './ModelUtils.js';
+
+test('exact speaking budgets retain narrative language rates and 30 percent tolerance', () => {
+  assert.equal(getSpeechCharacterBudget(10, 'English').validationMaxCharacters, 71);
+  for (const language of ['French', 'Thai', 'Japanese', 'Chinese']) {
+    assert.equal(getSpeechCharacterBudget(10, language).maxCharacters, 44);
+    assert.equal(getSpeechCharacterBudget(10, language).validationMaxCharacters, 57);
+  }
+  assert.equal(getSpeechCharacterBudget(2.5, 'English').validationMaxCharacters, 19);
+  assert.equal(getSpeechCharacterBudget(2.5, 'Thai').validationMaxCharacters, 14);
+  for (const duration of [0, -1, NaN, Infinity, undefined, null]) {
+    assert.throws(() => getSpeechCharacterBudget(duration, 'English'), TypeError);
+  }
+});
 
 test('uses unified prompt and validation character boundaries for every model duration', () => {
   const limits = getSpeechCharacterLimitsForModel('HAPPYHORSEI2V', 'English');

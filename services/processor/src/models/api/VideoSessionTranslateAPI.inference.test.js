@@ -5,6 +5,7 @@ import mongoose from 'mongoose';
 import User from '../../schema/User.js';
 import VideoSession from '../../schema/VideoSession.js';
 import AudioGeneration from '../../schema/AudioGeneration.js';
+import { rewriteNarrativeSpeechItemToFitScene } from '../agent/MovieCreatorAgent.js';
 
 function mockSession(t, preferences = {}) {
   const source = {
@@ -155,4 +156,104 @@ test('every translation batch uses the selected translator', async () => {
   });
   assert.deepEqual(batches, [12, 1]);
   assert.deepEqual(result, texts.map((text) => `French ${text}`));
+});
+
+test('translation validates and repairs before queuing TTS, saving the same accepted text and metadata', async (t) => {
+  const source = mockSession(t);
+  const before = structuredClone(source);
+  let saved;
+  const queued = [];
+  const events = [];
+  t.mock.method(VideoSession, 'updateOne', async (_query, update) => { saved = update.$set; });
+  t.mock.method(AudioGeneration.prototype, 'save', async function () { events.push('TTS'); queued.push(this.toObject()); });
+  await __testOnly__.processTranslateVideoSessionJob({
+    oldSessionId: 'source-session', userId: 'owner', newSessionId: 'translated',
+    normalizedLanguageCode: 'FR', inferenceModel: 'claude-fable-5.1', inferenceEffort: 'xhigh',
+    enableSubtitles: true,
+  }, {
+    copyTranslateSessionAssets: async () => { events.push('copy'); },
+    translateTextContent: async (texts) => texts.map((text) => text === 'Hello.' ? 'x'.repeat(29) : 'Narrateur'),
+    rewriteSpeechItem: async (request) => {
+      events.push('repair');
+      assert.equal(request.maxCharacters, 28); // 5s French: 22 prompt characters + 30% tolerance.
+      assert.equal(request.options.reasoningEffort, 'xhigh');
+      assert.equal(request.options.translationContext.originalText, 'Hello.');
+      request.options.onRepairAttempt(1);
+      return 'Bonjour.';
+    },
+  });
+  assert.deepEqual(events, ['repair', 'copy', 'TTS']);
+  const speech = saved.audioLayers[0];
+  assert.equal(speech.prompt, 'Bonjour.');
+  assert.equal(speech.speechText, 'Bonjour.');
+  assert.equal(speech.transcriptText, 'Bonjour.');
+  assert.equal(queued[0].prompt, 'Bonjour.');
+  assert.equal(queued[0].generationMeta.translationValidation.maxCharacters, 28);
+  assert.equal(speech.generationMeta.translationValidation.attempts, 1);
+  assert.equal(speech.addSubtitles, true);
+  assert.deepEqual(source, before);
+});
+
+test('exhausted speech repair queues no TTS jobs, even when an earlier item passed validation', async (t) => {
+  const source = mockSession(t);
+  source.layers.push({ ...structuredClone(source.layers[0]), _id: 'scene2', durationOffset: 5 });
+  source.movieResourceList.scenes.push({ duration: 5, visual: 'Another speaker' });
+  source.movieResourceList.sounds.push({ type: 'speech', sceneIndex: 1, duration: 5, audio: 'Goodbye.' });
+  source.audioLayers.push({ ...structuredClone(source.audioLayers[0]), _id: 'audio2',
+    connectedLayerId: 'scene2', connectedLayerIndex: 1, prompt: 'Goodbye.', startTime: 5, endTime: 10 });
+  const queued = t.mock.method(AudioGeneration.prototype, 'save', async () => {});
+  const saved = t.mock.method(VideoSession, 'updateOne', async () => {});
+  let attempts = 0;
+  await assert.rejects(__testOnly__.processTranslateVideoSessionJob({
+    oldSessionId: 'source-session', userId: 'owner', newSessionId: 'translated',
+    normalizedLanguageCode: 'FR', inferenceModel: 'gpt-6-astra', inferenceEffort: 'high',
+  }, {
+    copyTranslateSessionAssets: async () => assert.fail('Do not copy assets after failed validation'),
+    translateTextContent: async (texts) => texts.map((text) => text === 'Goodbye.' ? 'x'.repeat(29) : 'Bonjour.'),
+    rewriteSpeechItem: (request) => rewriteNarrativeSpeechItemToFitScene({
+      ...request, options: { ...request.options, dependencies: {
+        openaiClient: {}, sleep: async () => {},
+        createCompatibleChatCompletion: async () => {
+          attempts += 1;
+          return { choices: [{ message: { content: 'x'.repeat(29) } }] };
+        },
+      } },
+    }),
+  }), { code: 'TRANSLATED_SPEECH_VALIDATION_FAILED', attempts: 3, speechIndex: 1 });
+  assert.equal(attempts, 3);
+  assert.equal(queued.mock.callCount(), 0);
+  assert.equal(saved.mock.callCount(), 0);
+});
+
+test('translation timing matches sounds by scene and preserves multiple speech offsets before validation', () => {
+  const session = {
+    movieResourceList: { scenes: [{ duration: 5 }, { duration: 10 }], sounds: [
+      { type: 'speech', sceneIndex: 1, audio: 'First', duration: 3 },
+      { type: 'speech', sceneIndex: 1, audio: 'Second', duration: 2.5 },
+    ] },
+    layers: [{ _id: 'silent', duration: 9, durationOffset: 0 }, { _id: 'speaking', duration: 12, durationOffset: 9 }],
+    audioLayers: [
+      { generationType: 'speech', connectedLayerId: 'speaking', connectedLayerIndex: 0, prompt: 'First', startTime: 9 },
+      { generationType: 'speech', connectedLayerId: 'speaking', prompt: 'Second', startTime: 16.5 },
+    ],
+  };
+  __testOnly__.resetTimelineDurationsFromMovieResourceList(session);
+  assert.deepEqual(session.audioLayers.map(({ duration, startTime, endTime }) => ({ duration, startTime, endTime })), [
+    { duration: 3, startTime: 5, endTime: 8 },
+    { duration: 2.5, startTime: 12.5, endTime: 15 },
+  ]);
+  __testOnly__.prepareSessionForTranslate({ clonedSession: session, normalizedLanguageCode: 'FR', enableSubtitles: false });
+  assert.equal(session.audioLayers[1].connectedLayerStartTimeOffset, 7.5);
+});
+
+test('translation timing uses the connected scene snapshot when joined source indexes overlap', () => {
+  const session = {
+    movieResourceList: { scenes: [{ duration: 10 }], sounds: [{ type: 'speech', sceneIndex: 0, duration: 10 }] },
+    layers: [{ _id: 'joined', duration: 10, durationOffset: 0, sourceSceneRef: {
+      sceneIndex: 0, sounds: [{ type: 'speech', sceneIndex: 0, duration: 2.5, audio: 'Hello' }],
+    } }],
+    audioLayers: [{ generationType: 'speech', connectedLayerId: 'joined', prompt: 'Hello', startTime: 0 }],
+  };
+  __testOnly__.resetTimelineDurationsFromMovieResourceList(session);
+  assert.equal(session.audioLayers[0].duration, 2.5);
 });

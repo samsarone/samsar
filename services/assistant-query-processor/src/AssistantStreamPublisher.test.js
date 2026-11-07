@@ -26,3 +26,32 @@ test('recovery preserves partial text and advances snapshot sequence', async () 
   assert.equal(snapshots[0].text, 'Partial');
   assert.equal(snapshots[0].sequence, 8);
 });
+
+test('first text and a trailing chunk publish while the provider is still running', async () => {
+  const snapshots = [];
+  const publisher = createAssistantStreamPublisher(snapshot => snapshots.push(snapshot), { queryId: 'q', intervalMs: 20 });
+  await publisher.finish('streaming');
+  await publisher.onText('First');
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(snapshots.at(-1).text, 'First');
+  await publisher.onText('First sentence');
+  // No more provider events and no finish call: the buffered text must flush.
+  await new Promise(resolve => setTimeout(resolve, 35));
+  assert.equal(snapshots.at(-1).text, 'First sentence');
+  assert.equal(snapshots.at(-1).status, 'streaming');
+  await publisher.finish('billing_pending');
+});
+
+test('finishing flushes pending text once and cancels trailing progress writes', async () => {
+  const snapshots = [];
+  const publisher = createAssistantStreamPublisher(snapshot => snapshots.push(snapshot), { queryId: 'q', intervalMs: 20 });
+  await publisher.onText('First');
+  await new Promise(resolve => setImmediate(resolve));
+  await publisher.onText('Last');
+  await publisher.finish('interrupted');
+  await publisher.onText('Late callback');
+  await new Promise(resolve => setTimeout(resolve, 35));
+  assert.equal(snapshots.length, 2);
+  assert.equal(snapshots.at(-1).text, 'Last');
+  assert.equal(snapshots.at(-1).status, 'interrupted');
+});

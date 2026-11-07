@@ -92,6 +92,8 @@ Hosted clients continue to call Samsar.js regardless of the upstream provider us
 | Qwen Image | `QWENIMAGE3PRO` is native Alibaba only, with standard pay-as-you-go credentials. |
 | Express media | Supported Samsar, native and custom adapters depend on the selected model. An accepted asynchronous job stays pinned to its submitting adapter while polling. |
 | GMICloud / GenBlaze | Exact credential-validated model and operation mappings are required. An approximate model match is not used as a substitute. |
+| Claude | Native Anthropic is preferred when `ANTHROPIC_API_KEY` is configured, including hosted production. Explicit routing and standalone saved preferences still apply. |
+| Kling 4 | Use `KLINGIMGTOVID4` or `KLINGTXTTOVID4`; 720p, no native audio, and 5–30 seconds in five-second steps. Old 3 Pro/Turbo keys normalize for new requests; accepted jobs keep their saved endpoint. |
 | GPTImage 2.6 | `GPTIMAGE2.5` and `GPTIMAGE2.5EDIT` exclude legacy GenBlaze GPT Image 2 routes. |
 
 Current embedding/search implementation note: although the setup availability matrix includes `search` and `recommendations` for Samsar, `EmbeddingService` calls OpenAI embeddings directly with `text-embedding-3-large` and checks `OPENAI_API_KEY`. URL crawling also requires `FIRECRAWL_API_KEY`.
@@ -111,7 +113,7 @@ The runtime renderer writes `KIMI_K3_API_KEY` once into mode-`0600` `runtime/sec
 | Text only | `qwen/qwen3.8-max` |
 | Contains image or video input | `qwen/qwen3.8-max` |
 
-`OPENROUTER_QWEN_38_MAX_MODEL` overrides that mapping. Native Alibaba routing uses `qwen3.8-max` for text and vision, including Docker installations configured with a Token Plan endpoint; the renderer writes that shared selection as `ALIBABA_QWEN_MODEL`. OpenRouter requests explicitly use high reasoning for Qwen and Gemini and `xhigh` for GPT, with a 65,536-token completion allowance and a 10-minute minimum timeout.
+`OPENROUTER_QWEN_38_MAX_MODEL` overrides that mapping. Native Alibaba routing uses `qwen3.8-max` for text and vision, including Docker installations configured with a Token Plan endpoint; the renderer writes that shared selection as `ALIBABA_QWEN_MODEL`. GPT and Claude requests preserve the selected `high` or `xhigh` effort. Qwen and Gemini use their adapter reasoning settings. Completion limits and timeouts are model-specific; Qwen has a 10-minute minimum timeout.
 
 Billed assistant requests disable hidden SDK retries and recover settlement from the saved response. An ambiguous timeout or reset is retained for reconciliation instead of automatically dispatching another billable call. Other inference callers retain their configured adapter retry policies. Payment-required and insufficient-credit failures do not trigger provider retries. See [Assistant billing and retries](assistant-billing.md#retries-and-settlement).
 
@@ -119,7 +121,7 @@ The adapter policy is shared by the processor, generator, audio generator, AI vi
 
 ## Model Groups Used by Video APIs
 
-Use the stable keys `GPTIMAGE2.5` for GPTImage 2.6 Sunburst (High) and `GPTIMAGE2.5EDIT` for editing. OpenAI generation and editing use `gpt-image-2.6-sunburst`; fal generation uses `openai/gpt-image-2.6/sunburst/text-to-image`. The request keys, Studio price tables and billing markup are unchanged. Queued 2.5 jobs keep their submitted model or endpoint. Retired `GPTIMAGE2` and `GPTIMAGE2EDIT` keys are rejected for new requests. Other model keys remain stable: `SEEDREAM` → Seedream 5 Pro; `HAPPYHORSEI2V` → Happy Horse 1.1 I2V.
+Use the stable keys `GPTIMAGE2.5` for GPTImage 2.6 Sunburst (High) and `GPTIMAGE2.5EDIT` for editing. OpenAI generation and editing use `gpt-image-2.6-sunburst`; fal generation uses `openai/gpt-image-2.6/sunburst/text-to-image`. The request keys and Studio price tables are unchanged. Queued 2.5 jobs keep their submitted model or endpoint. Retired `GPTIMAGE2` and `GPTIMAGE2EDIT` keys are rejected for new requests. Other model keys remain stable: `SEEDREAM` → Seedream 5 Pro; `HAPPYHORSEI2V` → Happy Horse 1.1 I2V.
 
 | Workflow | Selection rule | Reference |
 | --- | --- | --- |

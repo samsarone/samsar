@@ -68,6 +68,8 @@ The route accepts either a raw JSON body or an `input` object:
 | `webhookUrl` | Best-effort terminal success/failure callback URL. |
 | External-user fields | If external-user request signals are present, the route delegates to the external-user handler. |
 
+Deprecated `video_model_sub_type` and `videoModelSubType` fields are stripped before validation.
+
 ## Supported Model Keys
 
 Choose from the [image matrix](model-matrix.md#image) and [video matrix](model-matrix.md#video). Those tables are generated from the same Express and branching allowlists used by this checkout.
@@ -117,11 +119,3 @@ Final local Docker media links usually resolve under:
 ```text
 http://localhost:3002/assets_v2/video/output/<session-id>/<file>.mp4
 ```
-
-## Validation Notes
-
-- `prompt` is required and capped at 4000 characters.
-- `duration` must be between 10 and 240 seconds.
-- `image_model` must be an express image model.
-- `video_model` must be an express video model.
-- Deprecated `video_model_sub_type` and `videoModelSubType` request fields are stripped before validation.

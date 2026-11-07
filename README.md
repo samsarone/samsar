@@ -317,7 +317,7 @@ Follow a workflow from the hosted Samsar.js API into its local deployment detail
 | Image List to Video | [Image-list API](https://docs.samsar.one/video#post-videoimage_list_to_video) | [Product videos, CTA and narrator settings](pages/image-list-to-video.md) |
 | Image Edit | [Image API](https://docs.samsar.one/image-api) · [V2 edits](https://docs.samsar.one/v2#v2-image-edit-routes) | [Generation, enhancement and edits](pages/image-edit.md) |
 | Speech, music, sound and lip sync | [Audio](https://docs.samsar.one/external-requests#audio) · [Video operations](https://docs.samsar.one/external-requests#video) | [Audio and performance guide](pages/audio-and-performance.md) |
-| Inference and assistants | [Chat](https://docs.samsar.one/chat-api) · [Assistant](https://docs.samsar.one/assistant-api) | [Inference matrix](pages/model-matrix.md#inference) · [Billing and retries](pages/assistant-billing.md) |
+| Inference and assistants | [Chat](https://docs.samsar.one/chat-api) · [Assistant](https://docs.samsar.one/assistant-api) | [Inference matrix](pages/model-matrix.md#inference) · [Billing and retries](pages/assistant-billing.md) · [Context and local knowledge](pages/assistant-knowledge.md) |
 | Narrative and branching | [Narrative API](https://docs.samsar.one/narrative) | [Workflow allowlists](pages/providers-and-models.md#model-groups-used-by-video-apis) |
 | Search | [Index and search](https://docs.samsar.one/chat-api#post-chatcreate_embedding) | [Templates, filters and indexing](pages/search.md) |
 | Recommendations | [Similarity API](https://docs.samsar.one/chat-api#post-chatsimilar_to_embedding) | [Related content and product matching](pages/recommendations.md) |
@@ -367,7 +367,7 @@ The [complete model matrix](pages/model-matrix.md) lists **all 46 model keys in 
 | Inference & vision | GPT 6 Astra / 6.1 Sol, Claude Opus 5.5 / Fable 5.1, Gemini 4 Argon, Kimi K3, Qwen 3.8 Max | [Matrix](pages/model-matrix.md#inference) · [Hosted chat](https://docs.samsar.one/external-requests#chat) |
 | Image generation | GPTImage 2.6, Seedream 5 Pro, Nano Banana 2 / Pro, Qwen Image 3.0 Pro, Wan 2.7 Pro | [Matrix](pages/model-matrix.md#image) · [Image API](https://docs.samsar.one/image-api) |
 | Image editing | GPTImage 2.6 Edit, Nano Banana 2 / Pro Edit, BRIA Eraser / GenFill | [Matrix](pages/model-matrix.md#image-edit) · [Edit API](https://docs.samsar.one/v2#v2-image-edit-routes) |
-| Video generation | Runway; Veo 3.1 text / fast / I2V / first-last-frame; Cosmos 3; Seedance 1.5 / 2.0 / 2.5; Kling 3 / 1.6 / 2.1 variants; Hailuo; Happy Horse 1.1 | [Every video key](pages/model-matrix.md#video) · [Video API](https://docs.samsar.one/video) |
+| Video generation | Runway; Veo 3.1 text / fast / I2V / first-last-frame; Cosmos 3; Seedance 1.5 / 2.0 / 2.5; Kling 4; legacy 1.6 / 2.1 variants; Hailuo; Happy Horse 1.1 | [Every video key](pages/model-matrix.md#video) · [Video API](https://docs.samsar.one/video) |
 | Speech | OpenAI TTS, Google TTS, ElevenLabs | [Matrix and request values](pages/model-matrix.md#speech) · [Audio API](https://docs.samsar.one/external-requests#audio) |
 | Music | Lyria 3, ElevenLabs Music | [Matrix](pages/model-matrix.md#music) · [Audio API](https://docs.samsar.one/external-requests#audio) |
 | Lip sync | Sync, LatentSync, Kling, Hummingbird, Creatify | [Matrix](pages/model-matrix.md#lip-sync) · [Video operations](https://docs.samsar.one/external-requests#video) |
@@ -379,7 +379,7 @@ The [complete model matrix](pages/model-matrix.md) lists **all 46 model keys in 
 <summary><strong>Understand model keys, workflow support and native exceptions</strong></summary>
 
 - **Model keys:** `GPTIMAGE2.5` and `GPTIMAGE2.5EDIT` retain their spelling for compatibility and now select GPTImage 2.6 Sunburst (High); retired `GPTIMAGE2` requests return an Invalid model validation error; `SEEDREAM` maps to Seedream 5 Pro; `HAPPYHORSEI2V` maps to Happy Horse 1.1 I2V. Use Samsar keys rather than an upstream provider ID.
-- **GPT Image providers:** OpenAI generation and editing use `gpt-image-2.6-sunburst`; fal generation uses `openai/gpt-image-2.6/sunburst/text-to-image`. Quality remains `high`, with the same image dimensions, Studio price tables and billing markup. Previously submitted jobs retain their original provider model or endpoint.
+- **GPT Image providers:** OpenAI generation and editing use `gpt-image-2.6-sunburst`; fal generation uses `openai/gpt-image-2.6/sunburst/text-to-image`. Quality remains `high`, with the same image dimensions and Studio prices. Previously submitted jobs retain their original provider model or endpoint.
 - **GPT and Claude choices:** use `gpt-6-astra`, `gpt-6.1-sol`, `claude-opus-5.5`, or `claude-fable-5.1` with `effort: "high"` or `effort: "xhigh"` for inference and vision. Defaults remain Astra and High. Native and OpenRouter credentials enable both models in their family. Older `gpt-5.6-sol` aliases normalize to Astra. `KIMIK3` is the setup key; use `kimi-k3` in inference requests.
 - **Workflow scope:** the complete Studio catalog is larger than the Express and branching allowlists. A model listed for image generation is not automatically selectable for an Express scene.
 - **Native-only model:** `QWENIMAGE3PRO` needs Alibaba Cloud standard pay-as-you-go credentials. It is not enabled by a Samsar key or Alibaba Token Plan.
@@ -446,75 +446,17 @@ The Studio one-shot flow exposes durations up to 3 minutes; the text-to-video AP
 
 ### Image billing
 
-Studio image calls, edits, external image endpoints, and rerolls are charged on completion using the [final image token and output prices](https://docs.samsar.one/pricing#image-models). Production agent pipelines retain their flat stage pricing. Standalone Docker waives local image debits; calls through Samsar.js are charged by the hosted image endpoint. See [Image billing and retries](pages/image-billing.md) for status receipts, request keys, and regression checks.
+Image generation, edits, enhancements, and image sets settle on completion for the selected model, adapter, and configuration. Poll status for `creditsCharged`, `remainingCredits`, and `billingStatus`. Production agent pipelines retain fixed stage prices; standalone calls through Samsar.js receive one hosted charge.
 
-#### Final image token prices
-
-Credits per one million tokens on the named native adapter. Generation and the listed edit keys share these rates. A dash means that token category is not offered on that route.
-
-| Model | Adapter | Token category | Input | Cached input | Output |
-| --- | --- | --- | --- | --- | --- |
-| `GPTIMAGE2.5 / GPTIMAGE2.5EDIT` | OpenAI | Text tokens | 600 | — | — |
-| `GPTIMAGE2.5 / GPTIMAGE2.5EDIT` | OpenAI | Image tokens | 960 | — | 3,600 |
-| `NANOBANANA2 / NANOBANANA2EDIT` | Google global | Text tokens | 60 | 6 | 360 |
-| `NANOBANANA2 / NANOBANANA2EDIT` | Google global | Image tokens | 60 | 6 | 7,200 |
-| `NANOBANANA2 / NANOBANANA2EDIT` | Google regional | Text tokens | 66 | 6.6 | 396 |
-| `NANOBANANA2 / NANOBANANA2EDIT` | Google regional | Image tokens | 66 | 6.6 | 7,920 |
-| `NANOBANANAPRO / NANOBANANAPROEDIT` | Google global | Text tokens | 240 | 24 | 1,440 |
-| `NANOBANANAPRO / NANOBANANAPROEDIT` | Google global | Image tokens | 240 | 24 | 14,400 |
-| `NANOBANANAPRO / NANOBANANAPROEDIT` | Google regional | Text tokens | 264 | 26.4 | 1,584 |
-| `NANOBANANAPRO / NANOBANANAPROEDIT` | Google regional | Image tokens | 264 | 26.4 | 15,840 |
-
-Text output includes reasoning tokens when reported. The direct OpenAI Images API has no cached-input price.
-
-#### Final output image prices
-
-Credits per generated image on the listed native adapter and configuration.
-
-| Model | Adapter | Configuration | Credits / output image |
-| --- | --- | --- | --- |
-| `DALLE3` | OpenAI | Standard · 1024×1024 | 4.8 |
-| `DALLE3` | OpenAI | Standard · 1792×1024 or 1024×1792 | 9.6 |
-| `IMAGEN3` | Google | Standard generation | 4.8 |
-| `IMAGEN3FLASH` | Google | Fast generation | 2.4 |
-| `WAN2.7PRO` | Alibaba international | 1K | 9 |
-| `QWENIMAGE3PRO` | Alibaba international | 1K | 4.8 |
-| `QWENIMAGE3PRO` | Alibaba international | 2K | 9 |
-| `WAN2.7PRO` | Alibaba China / global | 1K | 8.25132 |
-| `QWENIMAGE3PRO` | Alibaba China / global | 1K | 4.1256 |
-| `QWENIMAGE3PRO` | Alibaba China / global | 2K | 8.25132 |
-
-Supported Fal image routes have separate checked-in [final model-call rates](https://docs.samsar.one/pricing#image-models) and do not require a runtime provider pricing lookup. Other adapter routes have configuration-specific final charges in their completion receipts; their prices should not be inferred from another adapter's table.
-
+The detailed tables live in [Image billing and retries](pages/image-billing.md) and the [public image price reference](https://docs.samsar.one/pricing#image-models).
 
 ### Video model billing
 
-Studio AI-video calls, lip-sync and sound-effect layers, direct hosted video endpoints and scene rerolls are charged on completion at the [final model-call output prices](https://docs.samsar.one/pricing#video-model-calls). Production agent pipelines keep their fixed stage prices. Standalone model adapters waive local debits and use the hosted direct endpoints through Samsar.js. See [Video model billing and retries](pages/video-model-billing.md) for endpoint scope, receipts, provider configuration and regression coverage.
+Studio clips, scene rerolls, lip sync, and video sound effects settle each completed model call. Full video workflows use their own fixed rates; for Seedance 2.5, Agent/Vidgenie uses 60 credits/sec and the standard Express rate class uses 50 credits/sec.
 
-#### Final AI-video output prices
+Kling 4 uses `KLINGIMGTOVID4` or `KLINGTXTTOVID4`: 720p, no native audio, and 5–30-second clips in five-second steps. Its direct model-call rate is 18.84 credits/sec; the fixed workflow rate remains 36 credits/sec. Older 3 Pro/Turbo request keys normalize to Kling 4 for new submissions; accepted jobs retain their saved endpoint.
 
-These prices apply to individual model calls on the named native adapter. Per-second prices refer to generated output before scene trimming or padding. Multiple completed outputs are billable individually. Supported Fal routes have separate checked-in [final model-call rates](https://docs.samsar.one/pricing#video-model-calls), including a 20% markup over the provider base price; the worker does not fetch a provider price while completing them.
-
-| Model | Adapter | Configuration | Unit | Credits |
-| --- | --- | --- | --- | --- |
-| `RUNWAYML` | Runway | Gen-4.5 | second | 14.4 |
-| `VEO3.1 / VEO3.1I2V` | Google Cloud | 720p / 1080p, video | second | 24 |
-| `VEO3.1 / VEO3.1I2V` | Google Cloud | 720p / 1080p, video + audio | second | 48 |
-| `VEO3.1FAST / VEO3.1I2VFAST` | Google Cloud | 720p, video | second | 9.6 |
-| `VEO3.1FAST / VEO3.1I2VFAST` | Google Cloud | 720p, video + audio | second | 12 |
-| `VEO3.1FAST / VEO3.1I2VFAST` | Google Cloud | 1080p, video | second | 12 |
-| `VEO3.1FAST / VEO3.1I2VFAST` | Google Cloud | 1080p, video + audio | second | 14.4 |
-| `HAPPYHORSEI2V` | Alibaba international | Happy Horse 1.1, 720p | second | 16.8 |
-| `HAPPYHORSEI2V` | Alibaba China / global | Happy Horse 1.1, 720p | second | 14.85228 |
-| `HAILUOPRO` | MiniMax | Hailuo 02, 768p, 6 seconds | clip | 33.6 |
-| `HAILUOPRO` | MiniMax | Hailuo 02, 768p, 10 seconds | clip | 67.2 |
-
-#### Fal-backed lip-sync pricing
-
-Verified Fal rates have a 20% markup at 100 credits per USD. Final hosted rates are `SYNCLIPSYNC` 16 credits per measured output second, `LATENTSYNC` 24 credits per video through 40 output seconds or 0.6 credits per output second above 40 seconds, `KLINGLIPSYNC` 1.68 credits per input-video second rounded up to five-second blocks, and `CREATIFYLIPSYNC` 2 credits per measured output second. Fal publishes Creatify as $1 per video minute without naming the duration basis; output duration is Samsar's billing inference. Fal's Kling pricing callout and explanatory prose conflict; Samsar follows the callout's per-input-second unit. See [the provider sources and billing details](pages/video-model-billing.md#fal-backed-lip-sync-pricing).
-
-`HUMMINGBIRDLIPSYNC` uses a historical fallback of 15 credits per requested second because a current Fal price cannot be verified. This is not a verified Fal price plus markup. Hosted video sound effects use 0.12 credits per submitted audio second for `MMAUDIOV2` and 1.2 credits per submitted second per sample for `MIRELOAI`, including the 20% adapter markup. Mirelo's sample multiplier is inferred from related Fal models; its SFX1.6 page does not state the multiplier explicitly. New calls request one sample; older calls used Fal's two-sample default. Other Fal or GMICloud AI-video calls have configuration-specific final charges in their completion receipts. Billing confirmation may remain pending after generation. Audio-only sound effects use their separate [audio endpoint prices](https://docs.samsar.one/external-requests#audio).
-
+See [Video model billing and retries](pages/video-model-billing.md) for configuration-specific prices, duration units, receipts, and recovery, or [compare all workflow and model-call prices](https://docs.samsar.one/pricing).
 
 ### Assistant billing
 

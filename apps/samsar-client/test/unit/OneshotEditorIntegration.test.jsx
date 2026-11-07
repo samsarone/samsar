@@ -18,7 +18,7 @@ vi.mock('../../src/contexts/AlertDialogContext.jsx', () => ({ useAlertDialog: ()
 vi.mock('react-tooltip', () => ({ Tooltip: () => null }));
 vi.mock('react-toastify', () => ({ ToastContainer: () => null, toast: { error: vi.fn(), success: vi.fn(), info: vi.fn() } }));
 vi.mock('../../src/components/auth/AuthContainer.jsx', () => ({ default: () => <div>Login dialog</div>, AUTH_DIALOG_OPTIONS: {} }));
-vi.mock('../../src/components/assistant/AssistantHome.jsx', () => ({ default: () => <aside aria-label="Assistant panel" /> }));
+vi.mock('../../src/components/assistant/AssistantHome.jsx', () => ({ default: ({ submitAssistantQuery }) => <aside aria-label="Assistant panel"><button onClick={() => submitAssistantQuery("Improve this idea")}>Ask assistant</button></aside> }));
 vi.mock('../../src/components/video/advanced/VideoEditAdvancedDialog.jsx', () => ({ default: () => <div>Advanced edit dialog</div> }));
 vi.mock('../../src/components/video/toolbars/frame_toolbar/PublishOptionsDialog.jsx', () => ({ default: () => <div>Publish options</div> }));
 vi.mock('../../src/components/oneshot_editor/VidgenieSkeletonLoader.jsx', () => ({ default: () => <div role="status">Loading project</div> }));
@@ -376,4 +376,17 @@ it('migrates a saved Kling selection to v4 while retaining the 36-credit agent r
   const submission = axios.post.mock.calls.find(([url]) => url.includes('/video/'));
   expect(submission).toBeDefined();
   expect(JSON.stringify(submission[1])).toContain('KLINGIMGTOVID4');
+});
+
+
+describe('Vidgenie assistant context', () => {
+  it('sends the initial view and current draft without generation settings or asset URLs', async () => {
+    await mountEditor();
+    fireEvent.change(promptInput(), { target: { value: 'A traveler returns home' } });
+    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Ask assistant' })));
+    const call = axios.post.mock.calls.find(([url]) => url.includes('/assistants/submit_assistant_query'));
+    expect(call[1].assistantContext).toMatchObject({ version: 1, page: 'vidgenie', view: 'initial', mode: 'T2V', draft: 'A traveler returns home' });
+    expect(call[1].stream).toBe(true);
+    expect(call[1].assistantContext).not.toHaveProperty('aspectRatio');
+  });
 });

@@ -149,6 +149,7 @@ services:
     build:
       context: ../..
       dockerfile: Dockerfile
+      target: assistant-runtime
       args:
         NODE_VERSION: "24"
         SERVICE_PATH: services/assistant-query-processor

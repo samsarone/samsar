@@ -1,3 +1,4 @@
+import { buildAssistantMessages } from './AssistantMessageBuilder.js';
 import { createAssistantStreamPublisher } from './AssistantStreamPublisher.js';
 import assert from 'node:assert/strict';
 import test from 'node:test';
@@ -57,11 +58,13 @@ function harness({ standalone = false } = {}) {
       return { response: { id: 'provider-response', model: 'gpt-6-astra', usage: { input_tokens: 1000, output_tokens: 100, cost: 999 },
         samsarBilling: { adapter: 'openrouter', costUsd: 0.025 } }, outputText: 'Hello', outputContent: ['Hello'] };
     },
+    buildAssistantMessages,
     getSystemPrompt: () => ({ role: 'system', content: 'System' }),
     isStandaloneEdition: () => standalone,
     isGeminiInferenceModel: () => false, isKimiK3InferenceModel: () => false,
     normalizeInferenceModel: () => 'gpt-6-astra', console: { error() {} },
   });
+  context.AssistantWorkspace = context.VideoSession;
   vm.runInContext(source, context);
   const processPending = () => vm.runInContext('processPendingAssistantRequests()', context);
   const recover = () => vm.runInContext('recoverPendingAssistantBilling()', context);
@@ -256,4 +259,21 @@ test('streamed completion and a ledger retry keep one final reply and one debit'
   assert.equal(h.state.deliveries, 1);
   assert.equal(h.account.debits, 1);
   assert.equal(h.state.providerCalls, 1);
+});
+
+
+test('contextual streamed workspace calls retain one provider invocation and one charge', async () => {
+  const h = harness();
+  h.state.jobs[0].assistantContext = { version: 1, page: 'audio', view: 'join' };
+  h.state.jobs[0].sessionStore = 'workspace';
+  h.state.jobs[0].query = 'Join audio clips';
+  h.state.jobs[0].stream = true;
+  let captured;
+  const original = h.context.sendAssistantCompletionRequest;
+  h.context.sendAssistantCompletionRequest = async (messages, ...args) => { captured = messages; return original(messages, ...args); };
+  await h.processPending();
+  assert.match(captured[0].content, /Audio Studio/);
+  assert.equal(h.state.providerCalls, 1);
+  assert.equal(h.account.debits, 1);
+  assert.equal(h.state.deliveries, 1);
 });

@@ -18,6 +18,11 @@ const { IMAGE_GENERAITON_MODEL_TYPES, IMAGE_EDIT_MODEL_TYPES, VIDEO_GENERATION_M
 const { INFERENCE_MODEL_OPTIONS } = inferenceModels;
 const { EXPRESS_VIDEO_IMAGE_MODEL_KEYS, EXPRESS_VIDEO_VIDEO_MODEL_KEYS } = expressModels;
 const { BRANCHED_IMAGE_MODEL_KEYS, BRANCHED_VIDEO_MODEL_KEYS } = branchedModels;
+const { KLING_V4_DURATION_SECONDS } = await import(new URL('src/utils/KlingModel.js', processorRoot));
+const mediaLabels = new Map([
+  ...IMAGE_GENERAITON_MODEL_TYPES, ...IMAGE_EDIT_MODEL_TYPES,
+  ...VIDEO_GENERATION_MODEL_TYPES, ...MUSIC_PROVIDERS,
+].map(row => [row.key, row.name]));
 
 export const providers = {
   samsar: { label: 'Samsar.js', url: 'https://docs.samsar.one/external-requests', credential: 'SAMSAR_API_KEY', note: 'Call the hosted Samsar service using Samsar credits. The samsar-js client is the common entry point.' },
@@ -70,6 +75,10 @@ const notes = {
   'SEEDANCE2.0I2V': 'Standalone provider-billed I2V. Exact GenBlaze route: seedance-2-0-260128. No Samsar adapter in the setup catalog.',
   'SEEDANCE2.5I2V': '5, 10 or 15 second 720p scene buckets. Exact GenBlaze route: seedance-2-5-260628. Hosted worker uses GMICloud internally.',
   HAPPYHORSEI2V: 'Stable key currently maps to Happy Horse 1.1 I2V.',
+  KLINGIMGTOVID4: `Kling 4 I2V: 720p, no native audio, ${KLING_V4_DURATION_SECONDS.join(', ')} second clips. Check the target deployment for adapter availability.`,
+  KLINGTXTTOVID4: `Kling 4 T2V: 720p, no native audio, ${KLING_V4_DURATION_SECONDS.join(', ')} second clips. Direct clip generation; not an Express scene-motion selection.`,
+  KLINGIMGTOVID3PRO: 'Legacy setup/request alias: new requests normalize to KLINGIMGTOVID4. Previously submitted jobs retain their saved endpoint. Registry adapters shown here do not guarantee Kling 4 availability.',
+  KLINGIMGTOVIDTURBO: 'Legacy setup/request alias: new requests normalize to KLINGIMGTOVID4. Previously submitted jobs retain their saved endpoint. Registry adapters shown here do not guarantee Kling 4 availability.',
   ELEVENLABS: 'Hosted audio accepts ELEVENLABS. The standalone setup registry enables this speech model through fal only.',
   OPENAI_TTS: 'Use OPENAI in the Express tts_model field. GenBlaze speech is conditional on an exact gpt-4o-mini-tts mapping.',
   GOOGLE_TTS: 'Use GOOGLE in the Express tts_model field.',
@@ -95,7 +104,7 @@ export const models = Object.entries(providerMap).map(([setupKey, adapters]) => 
   const option = inference.get(key);
   return {
     key, setupKey, requestKey: option?.value || ({ KIMIK3: 'kimi-k3', OPENAI_TTS: 'OPENAI', GOOGLE_TTS: 'GOOGLE' })[key] || key,
-    label: ({ 'gpt-6-astra': 'GPT 6 Astra', SEEDREAM: 'Seedream 5 Pro', SEEDANCEI2V: 'Seedance 1.5 I2V', HAPPYHORSEI2V: 'Happy Horse 1.1 I2V' })[key] || getDockerModelDisplayName(setupKey),
+    label: ({ 'gpt-6-astra': 'GPT 6 Astra', SEEDREAM: 'Seedream 5 Pro', SEEDANCEI2V: 'Seedance 1.5 I2V', HAPPYHORSEI2V: 'Happy Horse 1.1 I2V', HAILUOPRO: 'Hailuo 02 Pro', KLINGIMGTOVID3PRO: 'Kling 4 I2V (legacy 3 Pro key)', KLINGIMGTOVIDTURBO: 'Kling 4 I2V (legacy Turbo key)' })[key] || mediaLabels.get(key) || getDockerModelDisplayName(setupKey),
     modality, adapters: ordered, runtimePriority: adapters, nativeAdapter: nativeAdapter || null,
     hosted: adapters.includes('samsar') || key === 'ELEVENLABS',
     scope: 'deployment',
@@ -125,7 +134,7 @@ for (const [modality, entries] of [['image', IMAGE_GENERAITON_MODEL_TYPES], ['im
       adapters: [], hosted: false, scope: 'studio',
       express: modality === 'image' ? EXPRESS_VIDEO_IMAGE_MODEL_KEYS.includes(entry.key) : modality === 'video' ? EXPRESS_VIDEO_VIDEO_MODEL_KEYS.includes(entry.key) : false,
       branching: modality === 'image' ? BRANCHED_IMAGE_MODEL_KEYS.includes(entry.key) : modality === 'video' ? BRANCHED_VIDEO_MODEL_KEYS.includes(entry.key) : false,
-      note: 'Listed in the Studio source catalog, outside the standalone setup matrix. Workflow scope follows the source allowlists; adapter availability depends on the target deployment.',
+      note: notes[entry.key] || 'Listed in the Studio source catalog, outside the standalone setup matrix. Workflow scope follows the source allowlists; adapter availability depends on the target deployment.',
     });
   }
 }

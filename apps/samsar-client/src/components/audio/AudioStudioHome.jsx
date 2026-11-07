@@ -1,3 +1,5 @@
+import WorkspaceAssistant from '../assistant/WorkspaceAssistant.jsx';
+import { getUiLanguage } from '../../utils/localization.js';
 import { useUiLanguage } from '../../hooks/useUiLanguage.js';
 import { translateText as uiText, formatUiStatus } from '../../utils/localization.js';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -1175,6 +1177,10 @@ export default function AudioStudioHome() {
           )}
         </aside>
       </div>
+      {user?._id && <WorkspaceAssistant key={user._id} ownerId={user._id} context={{ version: 1, page: 'audio',
+        view: activeAction === 'join' ? 'join' : 'generate', draft: prompt.slice(0, 4000),
+        selectedItemType: activeAction === 'join' ? joinType : generationType,
+        selectedCount: selectedJoinItems.length, selectedModel: generationType === 'music' ? musicModel : generationType === 'sound_effect' ? soundEffectModel : undefined, locale: getUiLanguage() }} />}
     </CommonContainer>
   );
 }

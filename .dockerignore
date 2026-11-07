@@ -31,6 +31,12 @@ runtime/
 **/assets_v2/
 **/uploads/
 **/generated/
+# Local model caches and built releases never enter the build context.
+**/.models/
+**/.venv/
+**/knowledge/release/
+**/knowledge/releases/
+**/knowledge/snapshot/vectors.f32
 Resources/
 **/*.mp3
 **/*.mp4

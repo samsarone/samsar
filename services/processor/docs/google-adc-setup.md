@@ -18,20 +18,25 @@ GOOGLE_CLOUD_SCOPES=https://www.googleapis.com/auth/cloud-platform
 
 ## Google Moderation
 
-OpenAI remains the default moderation provider. In docker deployments, when the available-models config selects only Google Cloud, moderation routes through the Google Vertex OpenAI-compatible moderation endpoint instead.
+OpenAI remains the default moderation provider. Google inference can route moderation through the Gemini classifier on Vertex AI; standalone deployments select from their configured moderation credentials. The Google classifier uses Gemini 4 Argon by default and normalizes its response to the shared moderation result shape.
 
 Optional overrides:
 
 ```sh
 SAMSAR_MODERATION_PROVIDER=google
-GOOGLE_MODERATION_MODEL=omni-moderation-latest
+GOOGLE_MODERATION_MODEL=gemini-4-argon
 GOOGLE_MODERATION_LOCATION=global
 GOOGLE_MODERATION_TIMEOUT_MS=30000
-OPENAI_MODERATION_REJECT_SCORE_THRESHOLD=0.65
-GOOGLE_MODERATION_REJECT_SCORE_THRESHOLD=0.65
+OPENAI_MODERATION_REJECT_SCORE_THRESHOLD=0.95
+GOOGLE_MODERATION_REJECT_SCORE_THRESHOLD=0.95
+NARRATIVE_VIOLENCE_REJECT_SCORE_THRESHOLD=0.99
 ```
 
 Use `SAMSAR_MODERATION_PROVIDER=openai` to force the existing OpenAI moderation path.
+
+OpenAI and Google moderation reject category scores at or above `0.95` by default. Broad `violence` in narrative moderation uses a more permissive `0.99` cutoff; other narrative categories retain the general cutoff. Provider-specific variables override `MODERATION_REJECT_SCORE_THRESHOLD`; the narrative violence variable overrides its separate default. Thresholds are read when the processor starts.
+
+The processor applies these numerical cutoffs even when a provider marks a category as flagged. A flag with a valid score below its cutoff can pass; provider flags and scores remain unchanged in the external API response, and `decision` reports the processor's outcome. If any result is rejected, the whole response is rejected. Flagged categories with missing or unusable scores, uncategorized flags, and Vertex prompt-filter blocks still reject conservatively. Gemini normalization preserves valid zero scores and numeric strings, while invalid values such as null, empty strings, booleans, arrays, non-finite numbers, or values outside `0`–`1` use a score of `1` for a flagged category.
 
 ## Local Development
 

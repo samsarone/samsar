@@ -4,7 +4,7 @@ Studio image generation, edits, enhancements, external image endpoints, and rero
 
 Production agent pipelines retain their flat stage pricing. Standalone Docker does not debit local image credits. When its image adapter uses Samsar.js, each hosted image request is billed by the hosted image endpoint; the local worker does not add another debit.
 
-### Final image token prices
+## Final image token prices
 
 Credits per one million tokens on the named native adapter. Generation and the listed edit keys share these rates. A dash means that token category is not offered on that route.
 
@@ -23,7 +23,7 @@ Credits per one million tokens on the named native adapter. Generation and the l
 
 Text output includes reasoning tokens when reported. The direct OpenAI Images API has no cached-input price.
 
-### Final output image prices
+## Final output image prices
 
 Credits per generated image on the listed native adapter and configuration.
 
@@ -40,7 +40,7 @@ Credits per generated image on the listed native adapter and configuration.
 | `QWENIMAGE3PRO` | Alibaba China / global | 1K | 4.1256 |
 | `QWENIMAGE3PRO` | Alibaba China / global | 2K | 8.25132 |
 
-Supported Fal image models have separate checked-in [final model-call rates](https://docs.samsar.one/pricing#image-models), including a 20% markup over their verified provider base price. A hosted direct adapter-billed worker seals the selected tariff before the paid call. Several Fal image model/configuration routes lack verified billing units or tariffs and stop before provider submission under that billing policy; this does not disable those model keys on other adapters or fixed-price production agent work. Other adapter routes have configuration-specific final charges in their completion receipts; their prices should not be inferred from another adapter's table.
+Supported Fal image models have separate [final model-call rates](https://docs.samsar.one/pricing#image-models). Some model/configuration routes lack verified tariffs and stop before a new paid submission; this does not disable those keys on other adapters or fixed-price agent workflows. Other adapter routes report their configuration-specific charge in the completion receipt.
 
 ## Completion receipts
 

@@ -1,3 +1,4 @@
+import { normalizeAssistantContext } from '../utils/AssistantContext.js';
 import { createHash } from 'node:crypto';
 import assert from 'node:assert/strict';
 import test from 'node:test';
@@ -28,7 +29,7 @@ function harness() {
     }
   }
   const context = vm.createContext({
-    createHash,
+    createHash, normalizeAssistantContext,
     getDBConnectionString: async () => {},
     assertVideoSessionEditableAccess: async (userId) => {
       if (userId !== 'owner') throw Object.assign(new Error('Not editable'), { status: 404 });
@@ -61,6 +62,11 @@ function harness() {
     normalizeInferenceModel: () => 'gpt-6-astra', shouldBypassGenerationCredits: () => false,
     isSceneActionsCommand: () => false, hat: () => 'new-query', console,
   });
+  context.AssistantWorkspace = context.VideoSession;
+  context.assertAssistantWorkspaceAccess = async (userId, payload) => {
+    if (userId !== 'owner' || payload.workspace !== 'audio') throw Object.assign(new Error('Not editable'), { status: 404 });
+    return structuredClone(session);
+  };
   vm.runInContext(source, context);
   return { session, state, context, clear: userId => context.resetAssistantSessionMessages(userId || 'owner', { id }),
     submit: () => context.createAssistantQueryRequest('owner', { id, query: 'Hello' }) };
@@ -166,4 +172,31 @@ test('stream snapshots enforce edit access and omit large image bytes and privat
   assert.equal(snapshot.sessionMessages[0].content[1].image_url, undefined);
   assert.equal(snapshot.sessionMessages[0].assistantRequest, undefined);
   assert.match(h.session.sessionMessages[0].content[1].image_url, /private/);
+});
+
+
+test('context is bounded, persisted per query and included in replay identity', async () => {
+  const h = harness();
+  const payload = { id, query: 'Improve', client_request_id: 'context', assistantContext: {
+    version: 1, page: 'vidgenie', view: 'initial', mode: 'I2V', draft: 'A lost traveler', apiKey: 'must-not-persist',
+  } };
+  const request = await h.context.createAssistantQueryRequest('owner', payload);
+  assert.equal(request.assistantContext.mode, 'I2V');
+  assert.equal(request.assistantContext.apiKey, undefined);
+  await h.context.createAssistantQueryRequest('owner', payload);
+  assert.equal(h.state.jobs.filter(job => job.query === 'Improve').length, 1);
+  await assert.rejects(h.context.createAssistantQueryRequest('owner', { ...payload,
+    assistantContext: { ...payload.assistantContext, view: 'complete' } }), { status: 409 });
+});
+
+test('audio workspace uses the same queue and clear semantics with explicit storage scope', async () => {
+  const h = harness();
+  const request = await h.context.createAssistantQueryRequest('owner', { id, workspace: 'audio', query: 'Join audio',
+    assistantContext: { version: 1, page: 'audio', view: 'join' } });
+  assert.equal(request.sessionStore, 'workspace');
+  assert.equal(request.assistantContext.page, 'audio');
+  await assert.rejects(h.context.getAssistantStreamSnapshot('other-user', { id, workspace: 'audio' }), { status: 404 });
+  const cleared = await h.context.resetAssistantSessionMessages('owner', { id, workspace: 'audio' });
+  assert.equal(cleared.sessionDetails.sessionMessages.length, 0);
+  assert.deepEqual(h.session.layers, ['existing-layer']);
 });

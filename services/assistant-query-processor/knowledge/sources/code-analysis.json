@@ -1,0 +1,325 @@
+{
+  "schema_version": 1,
+  "reviewed_at": "2026-11-07",
+  "policy": "Reviewed claims with exact file hashes and evidence anchors. Changed evidence must be reviewed before rebuilding; never automatically accept a new hash.",
+  "entries": [
+    {
+      "title": "Vidgenie assistant context in the current client",
+      "audience": "operator",
+      "text": "Vidgenie currently submits the session ID, user query, stream flag, client request ID and assistant session version. This submission does not attach a frame image or explicit page/view/render-state metadata. The existing client therefore does not establish the proposed pre-render versus post-render RAG context contract. This is an observed integration gap, not a deployed feature.",
+      "evidence": [
+        {
+          "path": "apps/studio/src/components/oneshot_editor/OneshotEditor.jsx",
+          "reviewed_sha256": "d222838ca25dde7590d2f3a682729ff8c19c03f2d56ebce26974f5b2eee8b2ab",
+          "anchor": "const submitAssistantQuery = (query) =>"
+        }
+      ]
+    },
+    {
+      "title": "Video Studio assistant frame attachment",
+      "text": "Video Studio can submit an optional frameImage with an assistant query. The image is request context, not proof that the assistant can see the complete timeline or automatically perform edits. The submission also carries stream, client_request_id and assistantSessionVersion.",
+      "evidence": [
+        {
+          "path": "apps/studio/src/components/video/VideoHome.jsx",
+          "reviewed_sha256": "cab9355b2b2e241d7fd3e980f6b53f8770b727459bfd8691c180e94bdca764b2",
+          "anchor": "frameImage: options?.frameImage || null"
+        }
+      ]
+    },
+    {
+      "title": "Image Studio assistant canvas context",
+      "text": "Image Studio can capture the current canvas as a PNG with a maximum dimension of 1536 pixels and attach it as frameImage to an assistant request. Canvas images are transient request context and must not become part of the shared documentation corpus.",
+      "evidence": [
+        {
+          "path": "apps/studio/src/components/image/ImageStudioHome.jsx",
+          "reviewed_sha256": "812bd34b6b0793a7786763dd380c577cb4f8625e5fe1a4ed0d99e964576e329b",
+          "anchor": "const getAssistantFrameImageData = useCallback"
+        }
+      ]
+    },
+    {
+      "title": "Image Studio edit request and mask",
+      "text": "The reviewed Image Studio edit handler exports the base canvas and submits a prompt, session and layer IDs, aspect ratio and edit parameters to /image_sessions/request_edit_image. It currently sends model NANOBANANA2EDIT. If the selected edit mode is inpaint, it also exports maskImage. Multiple visible image inputs are deduplicated and supplied as image_urls. These are the observed handler behaviors, not a promise that every backend model accepts every edit field.",
+      "evidence": [
+        {
+          "path": "apps/studio/src/components/image/ImageStudioHome.jsx",
+          "reviewed_sha256": "812bd34b6b0793a7786763dd380c577cb4f8625e5fe1a4ed0d99e964576e329b",
+          "anchor": "const submitOutpaintRequest = async"
+        }
+      ]
+    },
+    {
+      "title": "Audio Studio generation modes",
+      "text": "Audio Studio supports music, speech and sound-effect generation. Music requests include the prompt, model, duration and instrumental choice. Speech uses the entered script and selected voice/provider. Sound-effect requests include prompt, model and duration. The client submits /audio/studio/generate and tracks the returned request ID until completion, refreshing the corresponding library.",
+      "evidence": [
+        {
+          "path": "apps/studio/src/components/audio/AudioStudioHome.jsx",
+          "reviewed_sha256": "93f62d5bb1db1b0c78f898e2ba7fe1142361044e5bd049911f3b076222056b7f",
+          "anchor": "const handleGenerate = async"
+        }
+      ]
+    },
+    {
+      "title": "Joining audio items in Audio Studio",
+      "text": "Audio Studio joins between 2 and 25 selected audio items. The user can reorder the selected items before submitting, choose the audio library type, add a title and enable fadeAudioAtEnds. The request goes to /audio/join, and status is read from /audio/join/status using the returned request ID. The client preserves the pending request ID so it can resume status checks after a reload. Joining is an asynchronous operation, not an instant timeline edit.",
+      "evidence": [
+        {
+          "path": "apps/studio/src/components/audio/AudioStudioHome.jsx",
+          "reviewed_sha256": "93f62d5bb1db1b0c78f898e2ba7fe1142361044e5bd049911f3b076222056b7f",
+          "anchor": "const handleJoin = async"
+        },
+        {
+          "path": "services/processor/src/models/audio/AudioStudio.js",
+          "reviewed_sha256": "32b48c3ca067ef99eca2f46e6669903b1adc48c67071097d2e85022fa2edeae5",
+          "anchor": "const MAX_JOIN_AUDIO_ITEMS = 25"
+        }
+      ]
+    },
+    {
+      "title": "Current Audio Studio assistant integration boundary",
+      "audience": "operator",
+      "text": "The reviewed AudioStudioHome implements generation, library browsing and audio joining. It does not import or mount AssistantHome and does not submit assistant queries. An Audio Studio assistant is therefore a future integration task; this corpus must not imply that the same popup is already wired into all four editors.",
+      "evidence": [
+        {
+          "path": "apps/studio/src/components/audio/AudioStudioHome.jsx",
+          "reviewed_sha256": "93f62d5bb1db1b0c78f898e2ba7fe1142361044e5bd049911f3b076222056b7f",
+          "anchor": "const handleGenerate = async"
+        }
+      ]
+    },
+    {
+      "title": "Shared assistant prompt and retrieval boundary",
+      "audience": "operator",
+      "text": "The current assistant query processor builds its message list from getSystemPrompt, history and request content. SystemPrompt.js supplies a shared creative assistant prompt, with a user custom prompt override when provided. There is no static knowledge retrieval step in this reviewed message assembly. The knowledge corpus and local index are preparation for a later processor-side or separate retrieval layer; they do not introduce page-specific prompts or change the listener.",
+      "evidence": [
+        {
+          "path": "services/assistant-query-processor/src/AssistantQueryListener.js",
+          "reviewed_sha256": "2efe64f30d64f8811eb521e77e0a7f4f72649ce5fc9715f99c9af22481b4c4ec",
+          "anchor": "const messages = [getSystemPrompt"
+        },
+        {
+          "path": "services/assistant-query-processor/src/SystemPrompt.js",
+          "reviewed_sha256": "c8f4babd6582bf641879786bb76e679e543dd135256b523ecf6443aa61214684",
+          "anchor": "export function getSystemPrompt"
+        }
+      ]
+    },
+    {
+      "title": "Clearing assistant history",
+      "text": "The assistant reset route is /assistants/reset_session_messages. Resetting advances the session version and clears prior assistant conversation state, preventing replies from older versions from reappearing in the current session. Billing receipts retain accounting information while old conversational content is removed. Clearing chat history does not imply refunding previously completed inference.",
+      "evidence": [
+        {
+          "path": "services/processor/src/routes/assistants.js",
+          "reviewed_sha256": "508bb141153621108969a03642077b2542235273c81b1bfa9c2faded2eae87ad",
+          "anchor": "router.post('/reset_session_messages'"
+        },
+        {
+          "path": "services/processor/src/models/Assistant.js",
+          "reviewed_sha256": "a3d351bb2efd2caa9368ef261e8a736bdb1de1273f7ae658aba590605ae1fad0",
+          "anchor": "$inc: { assistantSessionVersion: 1 }"
+        }
+      ]
+    },
+    {
+      "title": "Assistant streaming and reconnection",
+      "text": "External assistant streaming uses server-sent events named request, snapshot, completed and error. A snapshot contains the accumulated response text, so consumers should replace the displayed text rather than append the entire snapshot repeatedly. Generation and settlement can continue after the connection closes. Reconnecting with the same request key retrieves the existing request instead of intentionally starting a new billable generation.",
+      "evidence": [
+        {
+          "path": "services/processor/src/models/api/ExternalChatStreaming.js",
+          "reviewed_sha256": "6e57f46a92d99f32488661a3bddf4dee3f0739b36cd4b156b10489c0a61a5f1d",
+          "anchor": "export async function serveExternalChatStream"
+        }
+      ]
+    },
+    {
+      "title": "Assistant REST polling versus SSE",
+      "text": "The external chat API retains ordinary JSON completion and asynchronous polling options. stream: true selects SSE. Combining streaming with explicit asynchronous polling is rejected; choose one transport for a request. Request correlation and idempotency are part of the processor contract and remain separate from knowledge retrieval.",
+      "evidence": [
+        {
+          "path": "services/processor/src/models/api/ExternalChatAPI.js",
+          "reviewed_sha256": "1f7c513c637fa8f0126969a71d889bcfc1454f73ff3150f7cf1e1fc1d9f0367e",
+          "anchor": "export function isExternalChatPollingRequested"
+        }
+      ]
+    },
+    {
+      "title": "Agent and standard Express pricing are distinct",
+      "text": "Agent/Vidgenie uses fixed workflow pricing, distinct from individual Studio or external generation charges. In the reviewed rate table, Seedance 2.5 costs 60 credits per second for Agent/Vidgenie and 50 credits per second for the standard Express rate class. Kling 4 agent video remains 36 credits per second. Optional additions and individual operations need their own pricing scope; do not quote a workflow rate as a standalone model generation rate.",
+      "evidence": [
+        {
+          "path": "services/processor/src/consts/pricing/ExpressVideoPricingDistribution.js",
+          "reviewed_sha256": "27306f0c6c84a11f128b6befa6645d812ae787415e986bff49641333824e5ffa",
+          "anchor": "'SEEDANCE2.5I2V': 60"
+        },
+        {
+          "path": "services/processor/src/models/api/StepVideoAPI.js",
+          "reviewed_sha256": "e6669a916dbf81981d79b96b41ff1cb7ce06b55e0486e766c7acdf96b8b4aec7",
+          "anchor": "pricingRateClass: 'vidgenie'"
+        }
+      ]
+    },
+    {
+      "title": "Kling 4 model keys, durations and Studio rate",
+      "text": "The current public Kling keys are KLINGIMGTOVID4 and KLINGTXTTOVID4. Allowed durations are 5, 10, 15, 20, 25 or 30 seconds, at the configured 720p resolution. The Studio rate constant is 18.84 credits per second. Legacy Kling 3 Pro and Turbo request aliases normalize to the v4 keys. This is separate from the fixed Agent/Vidgenie workflow rate.",
+      "evidence": [
+        {
+          "path": "services/processor/src/utils/KlingModel.js",
+          "reviewed_sha256": "d04d941d847da3b27153594e664342d6b9ae451346b352eb0a8c5a19b22f2f91",
+          "anchor": "export const KLING_V4_IMAGE_MODEL"
+        }
+      ]
+    },
+    {
+      "title": "Current inference catalog versus provider availability",
+      "text": "The reviewed inference catalog includes GPT 6 Astra, GPT 6.1 Sol, Claude Opus 5.5, Claude Fable 5.1, Gemini 4 Argon, Qwen 3.8 and Kimi K3. GPT and Claude reasoning options include high and xhigh. A model being present in the application catalog is not evidence that a particular installation has credentials or provider access for it; availability must come from the runtime configuration.",
+      "evidence": [
+        {
+          "path": "services/processor/src/consts/InferenceModels.js",
+          "reviewed_sha256": "fbdd0942c09b99ad1e139e8681c54a4bdb78cad934d4756845433fb213e3bb1d",
+          "anchor": "export const INFERENCE_MODEL_KEYS"
+        },
+        {
+          "path": "services/processor/src/consts/InferenceModels.js",
+          "reviewed_sha256": "fbdd0942c09b99ad1e139e8681c54a4bdb78cad934d4756845433fb213e3bb1d",
+          "anchor": "label: 'GPT 6.1 Sol XHigh'"
+        }
+      ]
+    },
+    {
+      "title": "GPT Image stable application keys",
+      "text": "The public image catalog retains the stable application key GPTIMAGE2.5 while displaying the newer GPT Image 2.6 model label. Labels and request keys serve different purposes. Use the documented supported key for API requests; do not invent a new key solely from a newer display label.",
+      "evidence": [
+        {
+          "path": "services/processor/src/consts/ModelTypes.js",
+          "reviewed_sha256": "d05699557c1f641a3bf0b4dfe1d7ca2e2b96c0cfd793ad3cafc00e91b71623c5",
+          "anchor": "key: 'GPTIMAGE2.5'"
+        }
+      ]
+    },
+    {
+      "title": "Video retranslation order and inference settings",
+      "text": "Video retranslation translates speech text before the new speech is synthesized. The request resolves effective inference model and reasoning settings, and passes those settings into the translation step. Retranslation is a distinct operation from generating an entirely new video and requires review of translated speech timing against the original scene boundaries.",
+      "evidence": [
+        {
+          "path": "services/processor/src/models/api/VideoSessionTranslateAPI.js",
+          "reviewed_sha256": "e9f9dc9ae1cf369c48ad6f0260f02a715af5bc2fd0092cf0b57c936cdcb2017e",
+          "anchor": "const inferenceSettings = resolveEffectiveInferenceSettings"
+        },
+        {
+          "path": "services/processor/src/models/api/VideoSessionTranslateAPI.js",
+          "reviewed_sha256": "e9f9dc9ae1cf369c48ad6f0260f02a715af5bc2fd0092cf0b57c936cdcb2017e",
+          "anchor": "const translatedSpeechTextList = await translateSpeechTextList"
+        }
+      ]
+    },
+    {
+      "title": "Existing managed embeddings API is separate",
+      "text": "The processor's managed EmbeddingService currently uses text-embedding-3-large and contains search, similarity and reranking behavior for customer data. That existing paid API is separate from this static assistant corpus. Its model, storage and charges must not be reused as an assumed requirement for the assistant knowledge index, whose embedding and query design is local-only.",
+      "evidence": [
+        {
+          "path": "services/processor/src/models/embeddings/EmbeddingService.js",
+          "reviewed_sha256": "6408f7b417f4a4aedc07e2da189c312fa672f507117267839e88c1157e441b1c",
+          "anchor": "const EMBEDDING_MODEL = 'text-embedding-3-large'"
+        }
+      ]
+    },
+    {
+      "title": "Scene timing uses the selected frame rate",
+      "text": "Frame-clock helpers convert scene times into integer frame boundaries using the supplied frame rate. They quantize absolute start and end times rather than accumulating rounded scene durations. The helpers default to 24 fps when no rate is supplied; an assistant must not assume that every project is universally 30 fps. Timing advice should use the session's actual frame rate.",
+      "evidence": [
+        {
+          "path": "services/frames-processor/src/utils/FrameClock.js",
+          "reviewed_sha256": "29270b856282d098d28cb5db4ad17bf0492f5249299b34aca321425b2de0cb07",
+          "anchor": "export function getLayerFrameRange"
+        },
+        {
+          "path": "services/video-generator/src/utils/FrameClock.js",
+          "reviewed_sha256": "29270b856282d098d28cb5db4ad17bf0492f5249299b34aca321425b2de0cb07",
+          "anchor": "export function getLayerFrameRange"
+        }
+      ]
+    },
+    {
+      "title": "Speech bound to a scene versus independent Studio speech",
+      "text": "Speech generated for an Express scene can be positioned relative to its connected visual layer. When the speech is shorter than that scene, the timing helper centers it inside the scene. Independent Studio speech marked unbound remains on its own timeline start time and removes connected-layer bindings. Do not assume that all speech automatically fits within a scene: the helper records the actual synthesized duration.",
+      "evidence": [
+        {
+          "path": "services/audio-generator/src/speech/SpeechLayerTiming.js",
+          "reviewed_sha256": "657ecf095ed5de86845848b275b588424dd981374319e29a9af21e0d8310e950",
+          "anchor": "export function resolveSpeechLayerTimingUpdate"
+        }
+      ]
+    },
+    {
+      "title": "Image generation billing scopes",
+      "text": "Image generation distinguishes standalone, adapter-priced, pipeline and legacy billing modes. The image pricing helper applies the current 1.2 pricing multiplier to validated adapter usage or tariff data. Pipeline charges and already-paid legacy jobs have distinct handling, so an individual image rate must not be added again to a fixed workflow price without checking the operation's billing mode.",
+      "evidence": [
+        {
+          "path": "services/generator/src/billing/ImagePricing.js",
+          "reviewed_sha256": "6b6b69382252682e6070330976a64a5dc23f06231ade5cb539ff4b615b9d0d5c",
+          "anchor": "export function imageBillingMode"
+        }
+      ]
+    },
+    {
+      "title": "Express video orchestration and stage status",
+      "text": "The Express listener coordinates persisted image, audio, AI video, lip-sync, sound-effect, frame and final-video stages. A preview or a completed scene does not mean the final video is complete. Troubleshooting should identify the session stage and its recorded status rather than infer completion from a single asset. Static documentation contains no live session status.",
+      "evidence": [
+        {
+          "path": "services/express-video-listener/src/ExpressListener.js",
+          "reviewed_sha256": "b06a850f37865b455e561c1844277cb26e33b9c253d5e9fd58b54f04e0efd170",
+          "anchor": "export async function listenToPendingGenerations"
+        }
+      ]
+    },
+    {
+      "title": "Lip-sync fallback is distinct from base-video failure",
+      "text": "The reviewed Express listener assesses lip-sync completion and has a fallback path for failed or missing lip-sync results when usable base video exists. It can continue with lip-sync skipped, recording that state. Missing base video is handled separately and can fail the stage. Advice to retry an entire generation is inappropriate without first checking which assets and stage results already exist.",
+      "evidence": [
+        {
+          "path": "services/express-video-listener/src/ExpressListener.js",
+          "reviewed_sha256": "b06a850f37865b455e561c1844277cb26e33b9c253d5e9fd58b54f04e0efd170",
+          "anchor": "lipSyncFallback.state === 'NO_BASE_VIDEO'"
+        },
+        {
+          "path": "services/express-video-listener/src/ExpressListener.js",
+          "reviewed_sha256": "b06a850f37865b455e561c1844277cb26e33b9c253d5e9fd58b54f04e0efd170",
+          "anchor": "lipSyncFallback.state === 'FALLBACK'"
+        }
+      ]
+    },
+    {
+      "title": "Final video composition and frame validation",
+      "text": "The final video generator composes the session's visual frames and selected audio using the session frame rate or its configured fallback. It validates the expected frame sequence and checks the rendered frame count. Scene previews and intermediate clips are separate from the completed final composition. After editing visual or audio layers, the final rendered video must be regenerated to include those changes.",
+      "evidence": [
+        {
+          "path": "services/video-generator/src/GenerationProcessor.js",
+          "reviewed_sha256": "fd7155f9b34d1ce07711b8c512cedb03498f33a5008db516e3775d56aeebbdcb",
+          "anchor": "Incomplete final frame sequence:"
+        },
+        {
+          "path": "services/video-generator/src/GenerationProcessor.js",
+          "reviewed_sha256": "fd7155f9b34d1ce07711b8c512cedb03498f33a5008db516e3775d56aeebbdcb",
+          "anchor": "Final video frame mismatch:"
+        }
+      ]
+    },
+    {
+      "title": "Video generation tariff snapshots",
+      "audience": "operator",
+      "text": "The AI video layer generator records a tariff version and submission configuration for eligible adapter-priced requests. Duration, resolution and model identity affect the tariff record. These snapshots support settlement against the accepted configuration and must not be reconstructed from a generic current marketing price after a provider job has been accepted.",
+      "evidence": [
+        {
+          "path": "services/ai-video-layer-generator/src/billing/FalVideoTariffs.js",
+          "reviewed_sha256": "7304315392b3a6eedf79721a63c5767e5a4c0c32cef4fbaafb89d7d662b96695",
+          "anchor": "export async function sealFalVideoSubmissionReceipt"
+        },
+        {
+          "path": "services/ai-video-layer-generator/src/billing/FalVideoTariffs.js",
+          "reviewed_sha256": "7304315392b3a6eedf79721a63c5767e5a4c0c32cef4fbaafb89d7d662b96695",
+          "anchor": "export function buildFalVideoSubmissionReceipt"
+        }
+      ]
+    }
+  ]
+}

@@ -3,6 +3,8 @@ import { Schema, model } from 'mongoose';
 // 2. Create a Schema corresponding to the document interface.
 const assistantQueryGenerationSchema = new Schema({
   query: String,
+  assistantContext: { type: Object, default: null },
+  sessionStore: { type: String, enum: ["video", "workspace"], default: "video" },
   stream: { type: Boolean, default: false },
   sessionId: String,
   queryId: String,

@@ -31,7 +31,7 @@ for (const modality of catalog.modalities) {
   }
   if (studio.length) {
     lines.push('', '<details>', `<summary>Additional ${modality.label.toLowerCase()} entries in the Studio source catalog (${studio.length})</summary>`, '',
-      'These entries are outside the standalone setup registry. Check the target Studio and its configured provider before using them. Workflow scope below follows the source Express and branching allowlists.', '', '| Model | Catalog key | Workflow scope |', '| --- | --- | --- |',
+      'Outside the standalone setup registry; check target deployment availability. Workflow badges follow the source allowlists.', '', '| Model | Catalog key | Workflow scope |', '| --- | --- | --- |',
       ...studio.map(row => `| ${escape(row.label)} | \`${row.key}\` | ${[row.express ? 'Express' : null, row.branching ? 'Branching' : null].filter(Boolean).join(' · ') || 'Studio'} |`), '', '</details>');
   }
   lines.push('');
