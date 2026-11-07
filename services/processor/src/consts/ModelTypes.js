@@ -109,7 +109,7 @@ export const CURRENT_EDITOR_VIEW = {
 export const IMAGE_GENERAITON_MODEL_TYPES = [
 
   {
-    name: 'GPTImage 2.5',
+    name: 'GPTImage 2.6',
     key: 'GPTIMAGE2.5',
     isExpressModel: true,
     isBranchedImageModel: true,
@@ -304,19 +304,8 @@ export const VIDEO_GENERATION_MODEL_TYPES = [
   },
 
   {
-    name: 'Kling 3 Pro Img2Vid',
-    key: 'KLINGIMGTOVID3PRO',
-    isExpressModel: true,
-    isBranchedVideoModel: false,
-    isImgToVidModel: true,
-    isTextToVidModel: true,
-    supportedAspectRatios: [
-      '16:9', '9:16', '1:1',
-    ]
-  },
-  {
-    name: 'Kling 3 Turbo Img2Vid',
-    key: 'KLINGIMGTOVIDTURBO',
+    name: 'Kling 4 Img2Vid',
+    key: 'KLINGIMGTOVID4',
     isExpressModel: true,
     isBranchedVideoModel: false,
     isImgToVidModel: true,
@@ -337,8 +326,8 @@ export const VIDEO_GENERATION_MODEL_TYPES = [
     ]
   },
   {
-    name: 'Kling 3 Pro Text2Vid',
-    key: 'KLINGTXTTOVID3PRO',
+    name: 'Kling 4 Text2Vid',
+    key: 'KLINGTXTTOVID4',
     isExpressModel: false,
     isImgToVidModel: false,
     isTextToVidModel: true,
@@ -635,6 +624,8 @@ export const SPEECH_SELECT_TYPES = {
 
 export const ASSISTANT_MODEL_TYPES = [
   { label: 'Claude Opus 5.5', value: 'claude-opus-5.5' },
+  { label: 'Claude Fable 5.1', value: 'claude-fable-5.1' },
+  { label: 'GPT 6.1 Sol', value: 'gpt-6.1-sol' },
   {
     label: 'GPT 6 Astra',
     value: 'gpt-6-astra',
@@ -656,8 +647,10 @@ export const ASSISTANT_MODEL_TYPES = [
 
 export const INFERENCE_MODEL_TYPES = [
   { label: 'Claude Opus 5.5', value: 'claude-opus-5.5', isBranchedInferenceModel: true },
+  { label: 'Claude Fable 5.1', value: 'claude-fable-5.1', isBranchedInferenceModel: true },
+  { label: 'GPT 6.1 Sol', value: 'gpt-6.1-sol', isBranchedInferenceModel: true },
   {
-    label: 'GPT 6 Astra High',
+    label: 'GPT 6 Astra',
     value: 'gpt-6-astra',
     isBranchedInferenceModel: true,
   },

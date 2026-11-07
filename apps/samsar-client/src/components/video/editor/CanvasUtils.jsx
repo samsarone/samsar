@@ -1,3 +1,4 @@
+import { useUiLanguage } from '../../../hooks/useUiLanguage.js';
 import { useStudioFrameRate } from '../StudioFrameRateContext.jsx';
 import ResizableImage from "../../editor/ResizableImage.tsx";
 import ResizableText from "../text_display/ResizableText.jsx";
@@ -87,6 +88,7 @@ export function isItemVisibleAtDisplayFrame(item, currentRelativeFrame, framesPe
 }
 
 export function ActiveRenderItem(props) {
+  useUiLanguage();
   const displayFramesPerSecond = useStudioFrameRate();
   const {
     item,

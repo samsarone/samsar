@@ -1,3 +1,5 @@
+import { normalizeKlingModelKey } from '../../utils/KlingModel.js';
+import { normalizeReasoningModel, getReasoningModelBase } from '../../inference/ReasoningModels.js';
 import { normalizeStoredGPTImageModelKey } from '../../consts/GPTImageModelKeys.js';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -20,6 +22,8 @@ export const MODEL_ADAPTER_STAGE_DEFINITIONS = Object.freeze([
     modelKeys: Object.freeze([
       'gpt-6-astra',
       'claude-opus-5.5',
+      'claude-fable-5.1',
+      'gpt-6.1-sol',
       'gemini-4-argon',
       'KIMIK3',
       'QWEN3.8',
@@ -48,8 +52,7 @@ export const MODEL_ADAPTER_STAGE_DEFINITIONS = Object.freeze([
       'SEEDANCEI2V',
       'SEEDANCE2.0I2V',
       'SEEDANCE2.5I2V',
-      'KLINGIMGTOVID3PRO',
-      'KLINGIMGTOVIDTURBO',
+      'KLINGIMGTOVID4',
       'HAPPYHORSEI2V',
     ]),
   }),
@@ -58,10 +61,12 @@ export const MODEL_ADAPTER_STAGE_DEFINITIONS = Object.freeze([
 const MODEL_LABELS = Object.freeze({
   'gpt-6-astra': 'GPT 6 Astra',
   'claude-opus-5.5': 'Claude Opus 5.5',
+  'claude-fable-5.1': 'Claude Fable 5.1',
+  'gpt-6.1-sol': 'GPT 6.1 Sol',
   'gemini-4-argon': 'Gemini 4 Argon',
   KIMIK3: 'Kimi K3',
   'QWEN3.8': 'Qwen 3.8 Max',
-  'GPTIMAGE2.5': 'GPTImage 2.5',
+  'GPTIMAGE2.5': 'GPTImage 2.6',
   SEEDREAM: 'Seedream',
   NANOBANANA2: 'Nano Banana 2',
   NANOBANANAPRO: 'Nano Banana Pro',
@@ -74,8 +79,7 @@ const MODEL_LABELS = Object.freeze({
   SEEDANCEI2V: 'Seedance Image to Video',
   'SEEDANCE2.0I2V': 'Seedance 2.0 Image to Video',
   'SEEDANCE2.5I2V': 'Seedance 2.5 Image to Video',
-  KLINGIMGTOVID3PRO: 'Kling 3 Pro Image to Video',
-  KLINGIMGTOVIDTURBO: 'Kling Turbo Image to Video',
+  KLINGIMGTOVID4: 'Kling 4 Image to Video',
   HAPPYHORSEI2V: 'Happy Horse Image to Video',
 });
 
@@ -140,9 +144,11 @@ function normalizeModelToken(value) {
 }
 
 export function normalizeModelAdapterModelKey(value) {
+  if (typeof value === 'string' && value.toUpperCase().startsWith('KLING')) return normalizeKlingModelKey(value);
+  if (normalizeReasoningModel(value)) return getReasoningModelBase(value);
   const token = normalizeModelToken(normalizeStoredGPTImageModelKey(value));
   if (['GEMINI4', 'GEMINI4ARGON', 'GOOGLEGEMINI4', 'GOOGLEGEMINI4ARGON'].includes(token)) return 'gemini-4-argon';
-  if (['GPT61SOL', 'GPT6ASTRA', 'GPT6', 'GPT56SOL', 'GPT56'].includes(token)) return 'gpt-6-astra';
+  if (['GPT6ASTRA', 'GPT6', 'GPT56SOL', 'GPT56'].includes(token)) return 'gpt-6-astra';
   if (KIMI_MODEL_TOKENS.has(token)) {
     return 'KIMIK3';
   }

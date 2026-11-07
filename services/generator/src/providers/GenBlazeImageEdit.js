@@ -191,7 +191,7 @@ export async function submitGenBlazeImageEditRequest(payload = {}, dependencies 
   await imageGenerationModel.findByIdAndUpdate(_id, { rowLocked: true });
   try {
     if (normalizeModel(payload.model) === 'GPTIMAGE2.5EDIT') {
-      throw new Error('GPTImage 2.5 Sunburst editing is not verified on GMICloud. Use OpenAI.');
+      throw new Error('GPTImage 2.6 Sunburst editing is not verified on GMICloud. Use OpenAI.');
     }
     const response = await request('/media/requests', {
       method: 'POST',

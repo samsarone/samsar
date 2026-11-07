@@ -1,10 +1,35 @@
+import { translateText as uiText } from '../../utils/localization.js';
+import { useUiLanguage } from '../../hooks/useUiLanguage.js';
 
 import Select from 'react-select';
 import { useColorMode } from '../../contexts/ColorMode';
 
 const MENU_Z_INDEX = 11050; // Keep dropdown above modals like AlertDialog
 
+export const localizedSelectMessages = {
+  guidance: ({ context, isInitialFocus }) => {
+    if (context === 'menu') return uiText('Use Up and Down to choose an option, Enter to select, and Escape to close.');
+    if (context === 'input' && isInitialFocus) return uiText('Press Down to open the menu. Type to search.');
+    if (context === 'value') return uiText('Use Left and Right to focus a value. Press Backspace to remove it.');
+    return '';
+  },
+  onChange: ({ action, label = '', labels = [], isDisabled }) => {
+    if (action === 'clear') return uiText('All selected options cleared.');
+    if (['deselect-option', 'pop-value', 'remove-value'].includes(action)) return uiText('{label} deselected.', { label });
+    if (isDisabled) return uiText('{label} is unavailable. Choose another option.', { label });
+    return uiText('{label} selected.', { label: action === 'initial-input-focus' ? labels.join(', ') : label });
+  },
+  onFocus: ({ label, focused, options = [], selectValue = [], context }) => {
+    const values = context === 'value' ? selectValue : options;
+    return uiText('{label}, {position} of {count}.', { label, position: values.indexOf(focused) + 1, count: values.length });
+  },
+  onFilter: ({ inputValue, resultsMessage }) => inputValue
+    ? uiText('{results} for {query}.', { results: resultsMessage, query: inputValue })
+    : resultsMessage,
+};
+
 export default function SingleSelect(props) {
+  useUiLanguage();
   const {
     options,
     value,
@@ -22,7 +47,9 @@ export default function SingleSelect(props) {
   } = props;
 
   const { colorMode } = useColorMode();
-
+  // Refresh labels on a saved selection without changing its submitted value.
+  const flatOptions = (options || []).flatMap((option) => option.options || [option]);
+  const currentValue = flatOptions.find((option) => option.value === value?.value) || value;
 
   // Styles for select and dropdowns
   const formSelectBgColor = colorMode === 'dark' ? '#181b24' : '#f3f4f6';
@@ -160,15 +187,20 @@ export default function SingleSelect(props) {
 
   return (
     <Select
+      aria-label={props['aria-label']}
       name={name}
       className={className}
       isSearchable={isSearchable}
-      placeholder={placeholder}
+      placeholder={placeholder ?? uiText("Select...")}
+      noOptionsMessage={() => uiText("No options")}
+      loadingMessage={() => uiText("Loading...")}
+      ariaLiveMessages={localizedSelectMessages}
+      screenReaderStatus={({ count }) => uiText('{count} options available', { count })}
       menuPortalTarget={typeof document !== 'undefined' ? document.body : undefined}
       menuPosition="fixed"
       styles={mergedStyles}
       options={options}
-      value={value}
+      value={currentValue}
       onChange={onChange}
       isDisabled={isDisabled}
       classNamePrefix={classNamePrefix}

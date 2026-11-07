@@ -1,3 +1,5 @@
+import { useUiLanguage } from '../../../../hooks/useUiLanguage.js';
+import { translateText as uiText } from '../../../../utils/localization.js';
 import { useEffect, useMemo, useState } from 'react';
 import TextareaAutosize from 'react-textarea-autosize';
 import SingleSelect from '../../../common/SingleSelect.jsx';
@@ -70,6 +72,7 @@ function normalizeMovieGenSpeakers(speakers = []) {
 }
 
 export default function MovieSpeechProviderSelect(props) {
+  const uiLanguage = useUiLanguage();
   const {
     movieGenSpeakers,
     updateMovieGenSpeakers,
@@ -176,7 +179,7 @@ export default function MovieSpeechProviderSelect(props) {
       || speakerOptions.find((option) => option.speaker === speakerValue && option.provider === providerValue)
       || null
     );
-  }, [speakerOptions, speakerType]);
+  }, [uiLanguage, speakerOptions, speakerType]);
 
   // Submit handle
   const createSubmitGenerateSpeechRequest = (evt) => {
@@ -228,13 +231,13 @@ export default function MovieSpeechProviderSelect(props) {
     <div className="w-full">
       {/* Header row with Add Speaker button */}
       <div className={headerRowClass}>
-        <label className={`text-sm font-bold ${text2Color}`}>Speakers</label>
+        <label className={`text-sm font-bold ${text2Color}`}>{uiText("Speakers")}</label>
         <CommonButton
           type="button"
           onClick={handleAddSpeakerClick}
           extraClasses={addSpeakerButtonClass}
         >
-          {showAddSpeakerForm ? 'Back' : 'Add Speaker'}
+          {showAddSpeakerForm ? uiText("Back") : uiText("Add Speaker")}
         </CommonButton>
       </div>
 
@@ -252,9 +255,7 @@ export default function MovieSpeechProviderSelect(props) {
         />
       ) : noSpeakersYet ? (
         // If no speakers are defined yet, simply show a message
-        <div className={`text-sm italic ${text2Color}`}>
-          Add a speaker
-        </div>
+        <div className={`text-sm italic ${text2Color}`}>{uiText("Add a speaker")}</div>
       ) : (
         // Otherwise, show the actual speech generation form
         <form
@@ -266,7 +267,7 @@ export default function MovieSpeechProviderSelect(props) {
           <div className="mb-2">
             <SingleSelect
               name="movieSpeaker"
-              placeholder="Select speaker..."
+              placeholder={uiText("Select speaker...")}
               options={speakerOptions}
               value={
                 selectedSpeakerOption
@@ -280,7 +281,7 @@ export default function MovieSpeechProviderSelect(props) {
           {/* Prompt textarea */}
           <TextareaAutosize
             name="promptText"
-            placeholder="Enter speech prompt text here"
+            placeholder={uiText("Enter speech prompt text here")}
             className={`w-full h-20 ${bgColor} ${text2Color} p-1 rounded border-2 border-gray-500`}
             minRows={3}
           />
@@ -291,9 +292,7 @@ export default function MovieSpeechProviderSelect(props) {
               type="submit"
               isPending={audioGenerationPending}
               extraClasses={isSidebarPanel ? 'w-full whitespace-normal text-center leading-tight' : ''}
-            >
-              Generate
-            </CommonButton>
+            >{uiText("Generate")}</CommonButton>
           </div>
         </form>
       )}

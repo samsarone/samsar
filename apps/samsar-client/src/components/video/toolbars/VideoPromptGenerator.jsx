@@ -1,3 +1,6 @@
+import { normalizeKlingModelKey, isKlingV4Model } from '../../../utils/KlingModel.mjs';
+import { useUiLanguage } from '../../../hooks/useUiLanguage.js';
+import { translateText as uiText } from '../../../utils/localization.js';
 import { useMemo, useState, useEffect } from "react";
 import CommonButton from "../../common/CommonButton.tsx";
 import ModelAdapterSelect from "../../common/ModelAdapterSelect.jsx";
@@ -21,8 +24,6 @@ import { filterOptionsForDeploymentModelValues } from "../../../utils/deployment
 import { isProviderBilledVideoPricing } from "../../../utils/videoModelAvailability.mjs";
 
 const NATIVE_AUDIO_VIDEO_MODELS = new Set([
-  "KLINGIMGTOVID3PRO",
-  "KLINGTXTTOVID3PRO",
   "VEO3.1",
   "VEO3.1FAST",
   "VEO3.1I2V",
@@ -33,6 +34,7 @@ const NATIVE_AUDIO_VIDEO_MODELS = new Set([
 ]);
 
 export default function VideoPromptGenerator(props) {
+  useUiLanguage();
   const {
     videoPromptText,
     setVideoPromptText,
@@ -69,13 +71,9 @@ export default function VideoPromptGenerator(props) {
 
   const { colorMode } = useColorMode();
   const selectShell =
-    colorMode === "dark"
-      ? "bg-slate-900/60 text-slate-100 border border-white/10"
-      : "bg-white text-slate-900 border border-slate-200 shadow-sm";
+    `text-fg border ${colorMode === "dark" ? 'bg-slate-900/60 border-white/10' : 'bg-white border-slate-200 shadow-sm'}`;
   const textareaShell =
-    colorMode === "dark"
-      ? "bg-slate-900/60 text-slate-100 border border-white/10"
-      : "bg-white text-slate-900 border border-slate-200 shadow-sm";
+    `text-fg border ${colorMode === "dark" ? 'bg-slate-900/60 border-white/10' : 'bg-white border-slate-200 shadow-sm'}`;
 
   const {
     isStandaloneDeployment: isStandaloneModelFilteringEnabled,
@@ -171,7 +169,12 @@ export default function VideoPromptGenerator(props) {
   useEffect(() => {
     if (availableModelKeys.length === 0) return;
 
-    const storedModel = localStorage.getItem("defaultVideoModel");
+    const storedModel = normalizeKlingModelKey(localStorage.getItem("defaultVideoModel"));
+    const currentModel = normalizeKlingModelKey(selectedVideoGenerationModel);
+    if (currentModel !== selectedVideoGenerationModel && availableModelKeys.includes(currentModel)) {
+      setSelectedVideoGenerationModel(currentModel);
+      return;
+    }
     const fallbackModel =
       storedModel && availableModelKeys.includes(storedModel)
         ? storedModel
@@ -417,12 +420,14 @@ export default function VideoPromptGenerator(props) {
             {isProviderBilled ? (
               <span className="text-blue-300">
                 {modelPricing?.key === 'HUMMINGBIRDLIPSYNC'
-                  ? '15 credits per requested second (unverified-price fallback)'
-                  : 'Model-specific charge on completion'}
+                  ? uiText("15 credits per requested second (unverified-price fallback)")
+                  : uiText("Model-specific charge on completion")}
               </span>
             ) : (
               <>
-                <span className="text-blue-300">Charged on completion</span>
+                <span className="text-blue-300">{isKlingV4Model(selectedVideoGenerationModel)
+                  ? `${Math.round(modelPrice * 10000) / 10000} ${uiText("Credits")} · 720p`
+                  : uiText("Charged on completion")}</span>
               </>
             )}
           </div>
@@ -440,7 +445,7 @@ export default function VideoPromptGenerator(props) {
                   onChange={handleStartFrameChange}
                   className="form-checkbox h-4 w-4 text-blue-600"
                 />
-                <span className="ml-2 text-xs">Start frame</span>
+                <span className="ml-2 text-xs">{uiText("Start frame")}</span>
               </label>
 
             </>
@@ -456,7 +461,7 @@ export default function VideoPromptGenerator(props) {
                 onChange={(e) => submitOptimizePromptToggle(e.target.checked)}
                 className="form-checkbox h-4 w-4 text-blue-600"
               />
-              <span className="ml-2 text-xs">Optimize Prompt</span>
+              <span className="ml-2 text-xs">{uiText("Optimize Prompt")}</span>
             </label>
           )}
 
@@ -468,16 +473,17 @@ export default function VideoPromptGenerator(props) {
                 onChange={handleGenerateAudioChange}
                 className="form-checkbox h-4 w-4 text-blue-600"
               />
-              <span className="ml-2 text-xs">Generate audio</span>
+              <span className="ml-2 text-xs">{uiText("Generate audio")}</span>
             </label>
           )}
         </div>
 
         {/* Model Select */}
         <div className={videoFieldClass}>
-          <div className={videoFieldLabelClass}>Model</div>
+          <div className={videoFieldLabelClass}>{uiText("Model")}</div>
           <div className="flex w-full items-center mt-1">
           <ModelAdapterSelect
+            aria-label={uiText("Video model")}
             options={availableModels}
             value={selectedVideoGenerationModel}
             onChange={setSelectedModelDisplay}
@@ -494,17 +500,16 @@ export default function VideoPromptGenerator(props) {
         {/* Duration Select (if pricing info) */}
         {modelPricing?.units && (
           <div className={videoFieldClass}>
-            <div className={videoFieldLabelClass}>Duration</div>
+            <div className={videoFieldLabelClass}>{uiText("Duration")}</div>
             <div className="flex w-full items-center mt-1">
               <select
+                aria-label={uiText("Duration")}
                 onChange={handleDurationChange}
                 className={`${selectShell} w-full rounded-md px-3 py-2 bg-transparent`}
                 value={selectedDuration || ""}
               >
                 {modelPricing.units.map((unit) => (
-                  <option key={unit} value={unit}>
-                    {formatVideoDurationLabel(unit)} seconds
-                  </option>
+                  <option key={unit} value={unit}>{uiText("{value0} seconds", { value0: formatVideoDurationLabel(unit) })}</option>
                 ))}
               </select>
             </div>
@@ -515,7 +520,7 @@ export default function VideoPromptGenerator(props) {
 
         {selectedVideoGenerationModel.startsWith("PIXVERSE") ? (
           <div className={videoFieldClass}>
-            <div className={videoFieldLabelClass}>Pixverse Style</div>
+            <div className={videoFieldLabelClass}>{uiText("Pixverse Style")}</div>
             <div className="flex w-full items-center mt-1">
               <select
                 value={selectedModelSubType}
@@ -532,7 +537,7 @@ export default function VideoPromptGenerator(props) {
           </div>
         ) : selectedModelDef?.modelSubTypes?.length > 0 ? (
           <div className={videoFieldClass}>
-            <div className={videoFieldLabelClass}>Scene Type</div>
+            <div className={videoFieldLabelClass}>{uiText("Scene Type")}</div>
             <div className="flex w-full items-center mt-1">
               <select
                 value={selectedModelSubType}
@@ -554,7 +559,7 @@ export default function VideoPromptGenerator(props) {
       {selectedVideoGenerationModel !== "SDVIDEO" && (
         <TextareaAutosize
           onChange={(evt) => setVideoPromptText(evt.target.value)}
-          placeholder="Add prompt text here"
+          placeholder={uiText("Add prompt text here")}
           className={`${textareaShell} w-full m-auto rounded-xl px-3 py-3 bg-transparent`}
           minRows={3}
           value={videoPromptText}
@@ -562,9 +567,7 @@ export default function VideoPromptGenerator(props) {
       )}
 
       {requiresImageButNone && (
-        <div className="mt-1 mb-1 text-center text-xs text-blue-400">
-          Please generate an image first to use this model.
-        </div>
+        <div className="mt-1 mb-1 text-center text-xs text-blue-400">{uiText("Please generate an image first to use this model.")}</div>
       )}
 
       <div className={actionRowClass}>
@@ -574,9 +577,7 @@ export default function VideoPromptGenerator(props) {
           isPending={aiVideoGenerationPending}
           isDisabled={requiresImageButNone || !hasAvailableModels}
           extraClasses={actionButtonClass}
-        >
-          Submit
-        </CommonButton>
+        >{uiText("Submit")}</CommonButton>
       </div>
 
       {errorDisplay}

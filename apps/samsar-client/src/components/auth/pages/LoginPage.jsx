@@ -1,3 +1,4 @@
+import { useUiLanguage } from '../../../hooks/useUiLanguage.js';
 
 import { useUser } from '../../../contexts/UserContext.jsx';
 import { useNavigate, useLocation } from 'react-router-dom';
@@ -16,6 +17,7 @@ import { IS_STANDALONE_DEPLOYMENT } from '../../../utils/environment.jsx';
 const PROCESSOR_SERVER = import.meta.env.VITE_PROCESSOR_API;
 
 export default function LoginPage() {
+  useUiLanguage();
   const { setUser } = useUser();
   const navigate = useNavigate();
   const location = useLocation();

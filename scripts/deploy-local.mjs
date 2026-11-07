@@ -5,8 +5,8 @@ import { fileURLToPath } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const action = process.argv[2] || 'up';
-if (!['up', 'restart'].includes(action)) {
-  console.error('Usage: node scripts/deploy-local.mjs <up|restart>');
+if (!['up', 'restart', 'update'].includes(action)) {
+  console.error('Usage: node scripts/deploy-local.mjs <up|restart|update>');
   process.exit(1);
 }
 
@@ -17,6 +17,7 @@ function run(command, args) {
 }
 
 // The control UI must be available before long-running application image builds.
+process.env.SAMSAR_SETUP_REUSE_UNCHANGED = action === 'update' ? '1' : '0';
 console.log('[deploy] Starting the setup wizard before application services.');
 if (process.platform === 'win32') {
   run('powershell.exe', ['-NoProfile', '-File', path.join(root, 'setup.ps1')]);

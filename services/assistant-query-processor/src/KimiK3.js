@@ -1,3 +1,4 @@
+import { createStreamingChatCompletion } from './ProviderStreaming.js';
 import OpenAI, { toFile } from 'openai';
 
 import { runExternalInferenceWithRetry } from './ExternalInferenceRetry.js';
@@ -485,11 +486,11 @@ export async function createKimiK3ChatCompletion(
           client,
         });
       try {
-        return await client.chat.completions.create(payload, {
+        return await createStreamingChatCompletion(client, payload, {
           ...requestOptions,
           maxRetries: 0,
           signal,
-        });
+        }, chatRequest.onText);
       } finally {
         await deleteUploadedFiles(client, uploadedFileIds);
       }

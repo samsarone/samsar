@@ -1,3 +1,4 @@
+import { normalizeKlingModelKey, isKlingV4Model, validateKlingV4Duration } from '../utils/KlingModel.js';
 
 
 
@@ -11,10 +12,11 @@ import { buildRetryableImageToVideoQueuePayload } from './utils/AIVideoQueuePayl
 
 
 export async function requestRenderKlingVideo(payload) {
+  payload = { ...payload, model: normalizeKlingModelKey(payload.model) };
 
   const { videoSessionId, layerId, prompt, combineLayers, useStartFrame,
     aspectRatio, model, clipLayerToAiVideo, userId, duration } = payload;
-  const generateAudio = payload.generateAudio === true || payload.generate_audio === true;
+  const generateAudio = !isKlingV4Model(model) && (payload.generateAudio === true || payload.generate_audio === true);
 
 
   await getDBConnectionString();
@@ -82,7 +84,7 @@ export async function requestRenderKlingVideo(payload) {
   aiVideoRenderPayload.aspectRatio = aspectRatio;
   aiVideoRenderPayload.clipLayerToAiVideo = clipLayerToAiVideo;
   aiVideoRenderPayload.userId = userId;
-  aiVideoRenderPayload.duration = duration;
+  aiVideoRenderPayload.duration = isKlingV4Model(model) ? validateKlingV4Duration(requestDuration) : requestDuration;
   aiVideoRenderPayload.generateAudio = generateAudio;
   aiVideoRenderPayload.retryOnFail = true;
 

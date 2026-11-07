@@ -1,3 +1,4 @@
+import { getVideoTimeline, buildVideoAudioFilter } from '../../utils/VideoTimeline.js';
 import { frameCountToSeconds, buildFrameExtractionFilter } from '../../utils/FrameClock.js';
 import fs from 'fs-extra';
 import path from 'path';
@@ -377,10 +378,12 @@ export async function normalizeVideoAssetToMp4WithoutAudio(
         .inputOptions(threadOptions.inputOptions)
         .noAudio()
         .videoCodec('libx264')
+        .videoFilters('setpts=PTS-STARTPTS')
         .outputOptions([
           ...threadOptions.outputOptions,
           '-preset', 'veryfast',
           '-pix_fmt', 'yuv420p',
+          '-fps_mode', 'passthrough',
           '-movflags', '+faststart',
         ])
         .on('end', resolve)
@@ -400,7 +403,8 @@ export async function extractAudioFromVideoIfPresent(
     prefix = 'audio',
     namespace = 'ai_video',
     trimUploadedAudioEdgeSilence = false,
-    preserveVideoTimeline = false,
+    preserveVideoTimeline = true,
+    framesPerSecond = 24,
   } = {}
 ) {
   const metadata = await getVideoMetadata(videoPath);
@@ -421,7 +425,7 @@ export async function extractAudioFromVideoIfPresent(
   const outputPath = path.join(outputFolder, `${prefix}_${Date.now()}.mp3`);
   await extractAudio(videoPath, outputPath, {
     preserveVideoTimeline,
-    durationSeconds: Number(metadata?.format?.duration),
+    framesPerSecond,
   });
 
   let leadingSilenceTrimSeconds = 0;
@@ -550,7 +554,7 @@ export async function processVideoAsFramesAndAudio(
     );
 
 
-    await extractAudio(videoPath, audioPath);
+    await extractAudio(videoPath, audioPath, { framesPerSecond: effectiveFramesPerSecond });
 
     const frameSummary = await getExtractedFrameSummary(tempFramesOutputFolder, effectiveFramesPerSecond);
     await publishTemporaryFrameOutputFolder(tempFramesOutputFolder, framesOutputFolder);
@@ -718,7 +722,7 @@ function extractFrames(
       newFrameWidth,
       newFrameHeight,
       preserveAspectRatio
-    ), { roundEndTimestamp: true });
+    ));
 
     const outputOptions = [
       '-start_number', '0',
@@ -783,14 +787,15 @@ function extractSingleFrame(
   }));
 }
 
-function extractAudio(
+export async function extractAudio(
   videoPath,
   outputPath,
   {
-    preserveVideoTimeline = false,
-    durationSeconds = 0,
+    preserveVideoTimeline = true,
+    framesPerSecond = 24,
   } = {}
 ) {
+  const timeline = preserveVideoTimeline ? await getVideoTimeline(videoPath, framesPerSecond) : null;
   return withProcessorFfmpegResources((threadOptions) => new Promise((resolve, reject) => {
     const command = ffmpeg(videoPath)
       .inputOptions(threadOptions.inputOptions)
@@ -799,17 +804,7 @@ function extractAudio(
       .audioBitrate('192k');      // optional: adjust as needed
 
     if (preserveVideoTimeline) {
-      // Audio-only outputs normally rebase the first audio packet to zero.
-      // Materialize any timestamp gap as silence, then pad to the video length.
-      const audioFilters = ['aresample=async=1:first_pts=0'];
-      const targetDurationSeconds = Number(durationSeconds);
-
-      if (Number.isFinite(targetDurationSeconds) && targetDurationSeconds > 0) {
-        audioFilters.push('apad');
-        command.duration(targetDurationSeconds);
-      }
-
-      command.audioFilters(audioFilters);
+      command.inputOptions(['-copyts']).audioFilters(buildVideoAudioFilter(timeline));
     }
 
     command

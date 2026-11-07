@@ -171,7 +171,7 @@ describe('account registration', () => {
     mount(<Register {...handlers} />);
     await fillCredentials();
     await page.getByRole('button', { name: 'Create account', exact: true }).click();
-    await expect.element(page.getByRole('alert')).toHaveTextContent('Email already exists.');
+    await expect.element(page.getByRole('alert')).toHaveTextContent('An account with this email already exists. Please log in.');
     await page.getByRole('button', { name: 'Register with Google' }).click();
     await expect.element(page.getByRole('alert')).not.toBeInTheDocument();
     expect(handlers.registerWithGoogle).toHaveBeenCalledWith({ subscribeToWeeklyNewsletter: false });
@@ -196,7 +196,7 @@ describe('password recovery email', () => {
     mount(<ForgotPassword setCurrentLoginView={vi.fn()} />);
     await page.getByPlaceholder('Email', { exact: true }).fill('jane@example.com');
     await page.getByRole('button', { name: 'Reset Password' }).click();
-    expect(axios.post).toHaveBeenCalledWith(expect.stringMatching(/\/users\/forgot_password$/), { email: 'jane@example.com' });
+    expect(axios.post).toHaveBeenCalledWith(expect.stringMatching(/\/users\/forgot_password$/), { email: 'jane@example.com', language: 'en' });
     await expect.element(page.getByText('Check your email for password reset instructions.')).not.toBeInTheDocument();
     finish({ data: {} });
     await expect.element(page.getByText('Check your email for password reset instructions.')).toBeVisible();

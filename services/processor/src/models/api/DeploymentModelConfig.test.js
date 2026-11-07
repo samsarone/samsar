@@ -295,7 +295,9 @@ test('standalone Samsar advertises inference and Seedance video models', () => {
   assert.deepEqual(result.providers, ['samsar']);
   assert.deepEqual(result.models, [
     'gpt-6-astra',
+    'gpt-6.1-sol',
     'claude-opus-5.5',
+    'claude-fable-5.1',
     'gemini-4-argon',
     'QWEN3.8',
     'KIMIK3',
@@ -305,6 +307,8 @@ test('standalone Samsar advertises inference and Seedance video models', () => {
     'VEO3.1I2V',
     'SEEDANCE2.0I2V',
     'SEEDANCE2.5I2V',
+    'KLINGIMGTOVID4',
+    'KLINGTXTTOVID4',
   ]);
   assert.deepEqual(result.actions, ['chat', 'assistant', 'image', 'video']);
   assert.equal(result.modelProviders['SEEDANCE2.0I2V'], 'samsar');
@@ -331,11 +335,13 @@ test('OpenRouter runtime credentials advertise all inference models without medi
 
   const result = mergeRuntimeInferenceDeploymentAvailability({});
   assert.deepEqual(result.providers, ['openrouter']);
-  assert.deepEqual(result.models, ['gpt-6-astra', 'claude-opus-5.5', 'gemini-4-argon', 'QWEN3.8']);
+  assert.deepEqual(result.models, ['gpt-6-astra', 'gpt-6.1-sol', 'claude-opus-5.5', 'claude-fable-5.1', 'gemini-4-argon', 'QWEN3.8']);
   assert.deepEqual(result.actions, ['chat', 'assistant']);
   assert.deepEqual(result.modelProviders, {
     'gpt-6-astra': 'openrouter',
+    'gpt-6.1-sol': 'openrouter',
     'claude-opus-5.5': 'openrouter',
+    'claude-fable-5.1': 'openrouter',
     'gemini-4-argon': 'openrouter',
     'QWEN3.8': 'openrouter',
   });
@@ -350,7 +356,7 @@ test('standalone raw provider credentials expose declared branched media capabil
   };
 
   const openai = mergeForStandalone({ OPENAI_API_KEY: 'test-openai-key' });
-  assert.deepEqual(openai.models, ['gpt-6-astra', 'GPTIMAGE2.5']);
+  assert.deepEqual(openai.models, ['gpt-6-astra', 'gpt-6.1-sol', 'GPTIMAGE2.5']);
   assert.deepEqual(openai.actions, ['chat', 'assistant', 'image']);
 
   const google = mergeForStandalone({
@@ -641,6 +647,8 @@ test('GMICloud and FAL availability is a union with shared-model adapter prefere
       'SEEDANCE2.0I2V',
       'SEEDANCE2.5I2V',
       'NANOBANANAPRO',
+      'KLINGIMGTOVID4',
+      'KLINGTXTTOVID4',
     ]);
     assert.equal(result.modelProviders["GPTIMAGE2.5"], 'fal');
     assert.equal(result.modelProviders.SEEDREAM, 'gmicloud');
@@ -841,7 +849,7 @@ test('FAL runtime enrichment exposes Wan2.7 Pro, Happy Horse, and Seedance media
   const result = mergeRuntimeInferenceDeploymentAvailability({});
 
   assert.deepEqual(result.providers, ['fal']);
-  assert.deepEqual(result.models, ['WAN2.7PRO', 'HAPPYHORSEI2V', 'SEEDANCE2.0I2V', 'SEEDANCE2.5I2V']);
+  assert.deepEqual(result.models, ['WAN2.7PRO', 'HAPPYHORSEI2V', 'SEEDANCE2.0I2V', 'SEEDANCE2.5I2V', 'KLINGIMGTOVID4', 'KLINGTXTTOVID4']);
   assert.deepEqual(result.actions, ['image', 'video']);
 });
 
@@ -1088,4 +1096,22 @@ test('supported-model filtering exposes Qwen Image 3.0 Pro only for Alibaba PAYG
     ),
     [],
   );
+});
+
+
+test('Kling 4 is discovered from fal credentials without reusing a GMI v3 route', () => {
+  clearEnv();
+  process.env.CURRENT_ENV = 'docker';
+  process.env.FAL_API_KEY = 'test-key';
+  const result = mergeRuntimeInferenceDeploymentAvailability({
+    providers: ['fal', 'gmicloud'], models: ['KLINGIMGTOVID3PRO'],
+    modelProviders: { KLINGIMGTOVID3PRO: 'gmicloud' },
+  });
+  assert.ok(result.models.includes('KLINGIMGTOVID4'));
+  assert.equal(result.modelProviders.KLINGIMGTOVID4, 'fal');
+  assert.deepEqual(result.modelProviderPriority.KLINGIMGTOVID4, ['fal']);
+  delete process.env.FAL_API_KEY;
+  assert.ok(!mergeRuntimeInferenceDeploymentAvailability({
+    providers: ['gmicloud'], models: ['KLINGIMGTOVID3PRO'],
+  }).models.includes('KLINGIMGTOVID4'));
 });

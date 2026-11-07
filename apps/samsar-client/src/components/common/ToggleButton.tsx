@@ -1,9 +1,12 @@
+import { useUiLanguage } from '../../hooks/useUiLanguage.js';
+import { translateText as uiText } from '../../utils/localization.js';
 import { useEffect, useState } from 'react';
 import { useColorMode } from '../../contexts/ColorMode';
 
 import './toggleButton.css'; // Make sure to import the CSS file
 
 function ToggleButton() {
+  useUiLanguage();
   const [colorMode, setColorMode] = useState('dark');
 
   const { toggleColorMode } = useColorMode();
@@ -39,9 +42,7 @@ function ToggleButton() {
           <div className="toggle-circle"></div>
         </div>
       </div>
-      <div className='text-xs block'>
-        {currentMode} Mode
-      </div>
+      <div className='text-xs block'>{uiText("{value0} Mode", { value0: currentMode })}</div>
     </div>
 
   );

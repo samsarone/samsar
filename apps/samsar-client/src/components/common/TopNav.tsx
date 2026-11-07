@@ -1,3 +1,6 @@
+import { getUiLocale, formatUiNumber } from '../../utils/localization.js';
+import { useUiLanguage } from '../../hooks/useUiLanguage.js';
+import { translateText as uiText } from '../../utils/localization.js';
 import React, { Suspense, lazy, useEffect, useContext, useCallback, useState } from 'react';
 import axios from 'axios';
 import { useUser } from '../../contexts/UserContext';
@@ -41,10 +44,14 @@ const AUTH_DIALOG_OPTIONS = {
   hideBorder: true,
   hideCloseButton: true,
 };
-const dialogFallback = <div className="p-6 text-sm">Loading...</div>;
-const creditsNumberFormatter = new Intl.NumberFormat('en-US', {
+function DialogFallback() {
+  useUiLanguage();
+  return <div className="p-6 text-sm">{uiText("Loading...")}</div>;
+}
+const dialogFallback = <DialogFallback />;
+const creditsNumberFormatter = { format: (value) => formatUiNumber(value, {
   maximumFractionDigits: 2,
-});
+}) };
 
 function formatCredits(value) {
   const numericValue = Number(value);
@@ -52,6 +59,7 @@ function formatCredits(value) {
 }
 
 function RegenerateSubtitlesDialog({ onClose, onRegenerate, t }) {
+  useUiLanguage();
   const [subtitleLanguage, setSubtitleLanguage] = useState('');
 
   return (
@@ -63,19 +71,18 @@ function RegenerateSubtitlesDialog({ onClose, onRegenerate, t }) {
         <div className="text-lg font-bold">{t("studio.actions.regenerateSubtitlesTitle")}</div>
         <div className="text-sm">{t("studio.actions.realignLayers")}</div>
         <label className="mx-auto mt-3 block max-w-xs text-left">
-          <span className="mb-1 block text-xs font-medium opacity-75">
-            Subtitle language <span className="font-normal">(optional)</span>
+          <span className="mb-1 block text-xs font-medium opacity-75">{uiText("Subtitle language")}<span className="font-normal">{uiText("(optional)")}</span>
           </span>
           <select
             value={subtitleLanguage}
             onChange={(event) => setSubtitleLanguage(event.target.value)}
-            aria-label="Subtitle regeneration language"
+            aria-label={uiText("Subtitle regeneration language")}
             className="w-full rounded-md border border-slate-500/30 bg-transparent px-2.5 py-1.5 text-sm outline-none"
           >
-            <option value="">Same as current audio</option>
+            <option value="">{uiText("Same as current audio")}</option>
             {SUPPORTED_LANGUAGES.map((language) => (
               <option key={language.code} value={language.code}>
-                {language.name}
+                {uiText(language.name)}
               </option>
             ))}
           </select>
@@ -89,6 +96,7 @@ function RegenerateSubtitlesDialog({ onClose, onRegenerate, t }) {
 }
 
 export default function TopNav(props) {
+  useUiLanguage();
   const {
     isVideoPreviewPlaying,
     setIsVideoPreviewPlaying,
@@ -115,6 +123,7 @@ export default function TopNav(props) {
     isImportedSession,
     onRequestEditSession,
     openAuthDialog,
+    openAudioActions,
   } = props;
   const { colorMode } = useColorMode();
   const { t } = useLocalization();
@@ -126,6 +135,7 @@ export default function TopNav(props) {
     location.pathname.includes('/iamge/') ||
     location.pathname.includes('/image_sessions');
   const isAudioEditor = location.pathname.startsWith('/audio/studio');
+  const isStudioEditor = location.pathname === '/video' || location.pathname.startsWith('/video/');
   const isVideoEditor = location.pathname.includes('/video/') || location.pathname.includes('/vidgenie/') || location.pathname.includes('/vidgpt/') || location.pathname.includes('/adcreator/');
   const isGenerationWorkspace =
     isImageEditor ||
@@ -150,9 +160,7 @@ export default function TopNav(props) {
   const resolvedSessionId = sessionIdOverride || navSessionId;
 
   const navShell =
-    colorMode === 'dark'
-      ? 'border-b border-[#3a4050] bg-[#12141c]/92 text-slate-100 shadow-[0_12px_36px_rgba(0,0,0,0.34)] backdrop-blur-xl'
-      : 'bg-gradient-to-r from-[#e9edf7] via-[#dfe7f5] to-[#eef3fb] text-slate-900 border-b border-[#d7deef]';
+    `border-b text-fg ${colorMode === 'dark' ? 'border-[#3a4050] bg-[#12141c]/92 shadow-[0_12px_36px_rgba(0,0,0,0.34)] backdrop-blur-xl' : 'bg-gradient-to-r from-[#e9edf7] via-[#dfe7f5] to-[#eef3fb] border-[#d7deef]'}`;
 
   const resetSession = () => {
     closeAlertDialog();
@@ -324,7 +332,7 @@ export default function TopNav(props) {
     if (navigator?.clipboard?.writeText) {
       navigator.clipboard.writeText(shareUrl).catch(() => {});
     }
-    toast.success('Share link copied', { position: 'bottom-center' });
+    toast.success(uiText("Share link copied"), { position: 'bottom-center' });
   }, []);
 
   const createShareUrl = useCallback((mode: 'read_only' | 'editable') => {
@@ -333,12 +341,12 @@ export default function TopNav(props) {
       if (navigator?.clipboard?.writeText) {
         navigator.clipboard.writeText(shareUrl).catch(() => {});
       }
-      toast.success('Share link copied', { position: 'bottom-center' });
+      toast.success(uiText("Share link copied"), { position: 'bottom-center' });
       return;
     }
 
     if (!resolvedSessionId) {
-      toast.error('Session is not ready to share.', { position: 'bottom-center' });
+      toast.error(uiText("Session is not ready to share."), { position: 'bottom-center' });
       return;
     }
 
@@ -353,13 +361,13 @@ export default function TopNav(props) {
       .then((response) => {
         const sharePath = response?.data?.shareUrl || response?.data?.share_url;
         if (!sharePath) {
-          throw new Error('Missing share URL.');
+          throw new Error(uiText("Missing share URL."));
         }
 
         copyShareUrlToClipboard(sharePath);
       })
       .catch((error) => {
-        toast.error(error?.response?.data?.error || 'Unable to create share link.', {
+        toast.error(error?.response?.data?.error || uiText("Unable to create share link."), {
           position: 'bottom-center',
         });
       });
@@ -367,19 +375,15 @@ export default function TopNav(props) {
 
   const openShareOptionsDialog = useCallback(() => {
     const optionButtonClassName =
-      colorMode === 'dark'
-        ? 'w-full rounded-lg border border-[#667188] bg-[#20232e] px-3 py-2 text-left transition hover:border-[#f6c453]/60 hover:bg-[#292d3a]'
-        : 'w-full rounded-lg border border-slate-200 bg-white px-4 py-3 text-left transition hover:border-slate-300 hover:bg-slate-50';
-    const secondaryTextClassName = colorMode === 'dark' ? 'text-slate-400' : 'text-slate-500';
+      `w-full rounded-lg border border-line-control bg-surface-raised text-left transition ${colorMode === 'dark' ? 'px-3 py-2 hover:border-[#f6c453]/60 hover:bg-[#292d3a]' : 'px-4 py-3 hover:border-slate-300 hover:bg-slate-50'}`;
+    const secondaryTextClassName = 'text-fg-muted';
 
     openAlertDialog(
       <div className="relative w-full">
         <FaTimes className="absolute right-0 top-0 cursor-pointer" onClick={closeAlertDialog} />
         <div className="pr-8">
-          <div className="text-base font-semibold">Share session</div>
-          <div className={`mt-1 text-sm ${secondaryTextClassName}`}>
-            Choose how this session link can be used.
-          </div>
+          <div className="text-base font-semibold">{uiText("Share session")}</div>
+          <div className={`mt-1 text-sm ${secondaryTextClassName}`}>{uiText("Choose how this session link can be used.")}</div>
         </div>
         <div className="mt-5 flex flex-col gap-3">
           <button
@@ -390,8 +394,8 @@ export default function TopNav(props) {
               createShareUrl('read_only');
             }}
           >
-            <div className="text-sm font-semibold">Read only</div>
-            <div className={`mt-1 text-xs ${secondaryTextClassName}`}>Anyone with the link can view.</div>
+            <div className="text-sm font-semibold">{uiText("Read only")}</div>
+            <div className={`mt-1 text-xs ${secondaryTextClassName}`}>{uiText("Anyone with the link can view.")}</div>
           </button>
           <button
             type="button"
@@ -401,8 +405,8 @@ export default function TopNav(props) {
               createShareUrl('editable');
             }}
           >
-            <div className="text-sm font-semibold">Editable link</div>
-            <div className={`mt-1 text-xs ${secondaryTextClassName}`}>Authenticated users can edit this session.</div>
+            <div className="text-sm font-semibold">{uiText("Editable link")}</div>
+            <div className={`mt-1 text-xs ${secondaryTextClassName}`}>{uiText("Authenticated users can edit this session.")}</div>
           </button>
         </div>
       </div>,
@@ -414,8 +418,7 @@ export default function TopNav(props) {
         fullBleed: false,
       }
     );
-  }, [
-    closeAlertDialog,
+  }, [closeAlertDialog,
     colorMode,
     createShareUrl,
     isEditableShareView,
@@ -613,7 +616,7 @@ export default function TopNav(props) {
   if (user && user._id && !isReadOnlyShareView) {
     if (!IS_STANDALONE_DEPLOYMENT) {
       if (user.isPremiumUser) {
-        let premiumUserType = 'Premium';
+        let premiumUserType = uiText('Premium');
         if (user.premiumUserType) {
           premiumUserType = user.premiumUserType;
         }
@@ -655,9 +658,7 @@ export default function TopNav(props) {
       <button
         className={`
           inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold transition-all duration-200 ease-out hover:-translate-y-[1px] active:translate-y-0
-          ${colorMode === 'dark'
-            ? 'border border-[#667188] bg-[#20232e] text-slate-100 shadow-[0_8px_20px_rgba(0,0,0,0.28)] hover:border-[#ff4655]/60 hover:bg-[#292d3a] hover:text-[#ffe5e8] hover:shadow-[0_12px_26px_rgba(255,70,85,0.16)]'
-            : 'border border-slate-200 text-slate-900 bg-white/80 hover:bg-white hover:text-slate-900'}
+          border border-line-control text-fg ${colorMode === 'dark' ? 'bg-[#20232e] shadow-[0_8px_20px_rgba(0,0,0,0.28)] hover:border-[#ff4655]/60 hover:bg-[#292d3a] hover:text-[#ffe5e8] hover:shadow-[0_12px_26px_rgba(255,70,85,0.16)]' : 'bg-white/80 hover:bg-white hover:text-slate-900'}
         `}
         type="button"
         onClick={showLoginDialog}
@@ -709,11 +710,12 @@ export default function TopNav(props) {
     betaOptionVisible = true;
   }
 
-  if (user && user._id && !isAudioEditor) {
+  if (user && user._id) {
     addSessionButton = (
       <div className="inline-flex items-center">
         <Suspense fallback={<div className="h-11 w-[118px]" />}>
           <AddSessionDropdown
+            key={location.pathname}
             createNewSession={isImageEditor ? createNewImageSession : createNewSession}
             gotoViewSessionsPage={gotoViewSessionsPage}
             addNewExpressSession={addNewExpressSession}
@@ -724,10 +726,11 @@ export default function TopNav(props) {
             aspectRatioOptions={isImageEditor ? imageAspectRatioOptions : undefined}
             aspectRatioStorageKey={isImageEditor ? 'defaultImageAspectRatio' : 'defaultAspectRatio'}
             useImageProjectModal={isImageEditor}
-            switchEditorLabel={isImageEditor ? 'Video Editor' : (isVideoEditor ? 'Image Editor' : null)}
-            onSwitchEditor={isImageEditor ? openVideoEditor : (isVideoEditor ? openImageEditor : null)}
-            additionalEditorActions={[{ label: 'Audio Studio', onSelect: openAudioEditor }]}
-            showVideoOptions={!isImageEditor}
+            openVideoEditor={openVideoEditor}
+            openImageEditor={openImageEditor}
+            openAudioEditor={openAudioEditor}
+            projectActionLabel={isImageEditor ? uiText("New image project") : (isAudioEditor && openAudioActions ? uiText("Audio actions") : (isStudioEditor && !isReadOnlyShareView ? uiText("New Studio project") : null))}
+            onProjectAction={isAudioEditor ? openAudioActions : undefined}
           />
         </Suspense>
       </div>
@@ -736,10 +739,8 @@ export default function TopNav(props) {
 
   let userCreditsDisplay = <span />;
   if (user && user._id && !IS_STANDALONE_DEPLOYMENT) {
-    const creditsButtonClass = colorMode === 'dark'
-      ? 'border border-[#667188] bg-black/15 text-slate-100 hover:border-[#f6c453]/60 hover:bg-[#20232e]'
-      : 'border border-slate-200 bg-white/75 text-slate-900 hover:border-slate-300 hover:bg-white';
-    const creditsLabelClass = colorMode === 'dark' ? 'text-slate-400' : 'text-slate-500';
+    const creditsButtonClass = `border border-line-control text-fg ${colorMode === 'dark' ? 'bg-black/15 hover:border-[#f6c453]/60 hover:bg-[#20232e]' : 'bg-white/75 hover:border-slate-300 hover:bg-white'}`;
+    const creditsLabelClass = 'text-fg-muted';
     const formattedCredits = formatCredits(userCredits);
     const showLowCreditCue = isGenerationWorkspace && hasInsufficientGenerationCredits(user);
     const cueClasses = colorMode === 'dark'
@@ -754,18 +755,16 @@ export default function TopNav(props) {
         {showLowCreditCue ? (
           <div
             className={`pointer-events-none absolute right-0 top-full z-[1300] mt-2 w-max rounded-lg border px-3 py-2 text-xs font-semibold leading-none animate-bounce motion-reduce:animate-none ${cueClasses}`}
-          >
-            Add credits to generate
-            <span className={`absolute right-6 top-[-5px] h-3 w-3 rotate-45 border-l border-t ${cuePointerClasses}`} />
+          >{uiText("Add credits to generate")}<span className={`absolute right-6 top-[-5px] h-3 w-3 rotate-45 border-l border-t ${cuePointerClasses}`} />
           </div>
         ) : null}
         <button
           type="button"
           onClick={gotoCreditsBilling}
           className={`inline-flex h-10 items-center gap-2 whitespace-nowrap rounded-lg px-3 text-xs font-semibold leading-none transition-colors ${creditsButtonClass}`}
-          aria-label={`Open billing. Current balance ${formattedCredits} credits`}
+          aria-label={uiText("Open billing. Current balance {value0} credits", { value0: formattedCredits })}
         >
-          <span className={creditsLabelClass}>Credits remaining</span>
+          <span className={creditsLabelClass}>{uiText("Credits remaining")}</span>
           <span>{formattedCredits}</span>
         </button>
       </div>
@@ -809,20 +808,12 @@ export default function TopNav(props) {
 
   let controlbarView: React.ReactNode = null;
   if (isAudioEditor) {
-    const editorShortcutClass = colorMode === 'dark'
-      ? 'border border-[#4a5265] bg-[#20232e] text-slate-100 hover:border-[#f6c453]/60 hover:bg-[#292d3a]'
-      : 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-50';
+    const editorShortcutClass = `border border-line-strong bg-surface-raised text-fg-body ${colorMode === 'dark' ? 'hover:border-[#f6c453]/60 hover:bg-[#292d3a]' : 'hover:bg-slate-50'}`;
     controlbarView = (
       <div className="flex items-center gap-2">
-        <button type="button" className={`hidden min-h-9 rounded-full px-3 text-xs font-semibold sm:inline-flex sm:items-center ${editorShortcutClass}`} onClick={openVideoEditor}>
-          Video Editor
-        </button>
-        <button type="button" className={`hidden min-h-9 rounded-full px-3 text-xs font-semibold md:inline-flex md:items-center ${editorShortcutClass}`} onClick={openImageEditor}>
-          Image Editor
-        </button>
-        <div className="inline-flex min-h-9 items-center rounded-full border border-[#f6c453]/60 bg-[#f6c453]/15 px-3 text-xs font-semibold text-[#f6c453]">
-          Audio Studio
-        </div>
+        <button type="button" className={`hidden min-h-9 rounded-full px-3 text-xs font-semibold sm:inline-flex sm:items-center ${editorShortcutClass}`} onClick={openVideoEditor}>{uiText("Video Editor")}</button>
+        <button type="button" className={`hidden min-h-9 rounded-full px-3 text-xs font-semibold md:inline-flex md:items-center ${editorShortcutClass}`} onClick={openImageEditor}>{uiText("Image Editor")}</button>
+        <div className="inline-flex min-h-9 items-center rounded-full border border-[#f6c453]/60 bg-[#f6c453]/15 px-3 text-xs font-semibold text-[#f6c453]">{uiText("Audio Studio")}</div>
       </div>
     );
   } else if (location.pathname.includes('/video/') || isImageEditor) {
@@ -866,9 +857,7 @@ export default function TopNav(props) {
       />
     );
   } else if (isGenerationsView) {
-    const galleryShortcutActive = colorMode === 'dark'
-      ? 'border border-[#667188] bg-[#20232e] text-slate-100 hover:bg-[#292d3a] hover:border-[#f6c453]/60'
-      : 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-100 hover:border-slate-300';
+    const galleryShortcutActive = `border border-line-control bg-surface-raised text-fg-body hover:bg-surface-hover ${colorMode === 'dark' ? 'hover:border-[#f6c453]/60' : 'hover:border-slate-300'}`;
     const galleryShortcutGroup = colorMode === 'dark'
       ? 'rounded-full bg-black/10 px-1.5 py-1.5 shadow-[0_12px_24px_rgba(0,0,0,0.22)]'
       : 'rounded-full bg-white/80 px-1.5 py-1.5 backdrop-blur';
@@ -878,30 +867,22 @@ export default function TopNav(props) {
           type="button"
           className={`inline-flex min-h-10 items-center justify-center rounded-full px-3 py-1.5 text-xs font-semibold transition lg:min-h-[38px] lg:px-4 lg:py-2 lg:text-sm ${galleryShortcutActive}`}
           onClick={openVideoEditor}
-        >
-          Video Editor
-        </button>
+        >{uiText("Video Editor")}</button>
         <button
           type="button"
           className={`inline-flex min-h-10 items-center justify-center rounded-full px-3 py-1.5 text-xs font-semibold transition lg:min-h-[38px] lg:px-4 lg:py-2 lg:text-sm ${galleryShortcutActive}`}
           onClick={openImageEditor}
-        >
-          Image Editor
-        </button>
+        >{uiText("Image Editor")}</button>
         <button
           type="button"
           className={`inline-flex min-h-10 items-center justify-center rounded-full px-3 py-1.5 text-xs font-semibold transition lg:min-h-[38px] lg:px-4 lg:py-2 lg:text-sm ${galleryShortcutActive}`}
           onClick={openAudioEditor}
-        >
-          Audio Studio
-        </button>
+        >{uiText("Audio Studio")}</button>
         <button
           type="button"
           className={`inline-flex min-h-10 items-center justify-center rounded-full px-3 py-1.5 text-xs font-semibold transition lg:min-h-[38px] lg:px-4 lg:py-2 lg:text-sm ${galleryShortcutActive}`}
           onClick={openStudioWorkspace}
-        >
-          VidGenie
-        </button>
+        >{uiText("VidGenie")}</button>
       </div>
     );
   } else if (location.pathname.includes('/vidgenie/')) {

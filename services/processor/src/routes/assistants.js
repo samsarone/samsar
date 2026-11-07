@@ -1,9 +1,11 @@
+import { serveAssistantSnapshots } from '../utils/ServerSentEvents.js';
 
 import express from 'express';
 import {
   createAssistantQueryRequest,
   deleteAssistantSessionMessage,
   getAssistantQueryGenerationStatus,
+  getAssistantStreamSnapshot,
   resetAssistantSessionMessages,
 } from '../models/Assistant.js';
 import {
@@ -19,7 +21,7 @@ const router = express.Router();
 
 
 router.post('/submit_assistant_query', async function(req, res) {
-  const payload = req.body;
+  const payload = { ...req.body, client_request_id: req.body?.client_request_id || req.get('Idempotency-Key') };
   const userId = verifyUserAuth(req.headers);
   if (!userId) {
     res.status(401).send({ error: 'Unauthorized' });
@@ -38,7 +40,7 @@ router.post('/submit_assistant_query', async function(req, res) {
       res.status(402).send({ error: error.message });
       return;
     }
-    res.status(500).send({ error: error.message || 'Internal Server Error' });
+    res.status(error?.statusCode || error?.status || 500).send({ error: error.message || 'Internal Server Error' });
   }
 });
 
@@ -54,6 +56,16 @@ router.get('/assistant_query_status', async function(req, res) {
   } catch (e) {
     console.error(e);
     res.status(500).send({ error: e });
+  }
+});
+
+router.get('/assistant_query_stream', async (req, res) => {
+  const userId = verifyUserAuth(req.headers);
+  if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+  try {
+    await serveAssistantSnapshots(res, () => getAssistantStreamSnapshot(userId, req.query));
+  } catch (error) {
+    if (!res.headersSent) res.status(error.status || error.statusCode || 500).json({ error: error.message });
   }
 });
 
@@ -103,7 +115,7 @@ router.post('/delete_session_message', async function(req, res) {
     });
     res.json(response);
   } catch (error) {
-    res.status(error?.message === 'Unauthorized' ? 403 : 500).send({
+    res.status(error?.statusCode || error?.status || (error?.message === 'Unauthorized' ? 403 : 500)).send({
       error: error?.message || 'Internal Server Error',
     });
   }
@@ -126,7 +138,7 @@ router.post('/reset_session_messages', async function(req, res) {
     });
     res.json(response);
   } catch (error) {
-    res.status(error?.message === 'Unauthorized' ? 403 : 500).send({
+    res.status(error?.statusCode || error?.status || (error?.message === 'Unauthorized' ? 403 : 500)).send({
       error: error?.message || 'Internal Server Error',
     });
   }

@@ -1,3 +1,4 @@
+import { useUiLanguage } from '../../hooks/useUiLanguage.js';
 import { forwardRef, useEffect, useState, useRef } from "react";
 import { Stage, Layer, Group, Line } from 'react-konva';
 import { CURRENT_TOOLBAR_VIEW } from '../../constants/Types.ts';
@@ -15,6 +16,7 @@ import SimpleImage from "./items/SimpleImage.jsx";
 
 const SELECTABLE_TYPES = ['SHOW_DEFAULT_DISPLAY', 'SHOW_CURSOR_SELECT_DISPLAY'];
 const SMSCanvas = forwardRef((props: any, ref: any) => {
+  useUiLanguage();
   const { activeItemList, setActiveItemList, currentView, editBrushWidth,
     editMasklines, setEditMaskLines, currentCanvasAction,
     setSelectedId, selectedId, buttonPositions, setButtonPositions,

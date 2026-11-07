@@ -1,8 +1,11 @@
+import { useUiLanguage } from '../../../../hooks/useUiLanguage.js';
+import { translateText as uiText } from '../../../../utils/localization.js';
 
 import SecondaryButton from '../../../common/SecondaryButton.tsx';
 
 
 export default function VideoAiVideoOptionsViewer(props) {
+  useUiLanguage();
   const {
     currentLayer,           // you likely already pass this in from your parent
     onDeleteLayer,          // prop to handle Delete
@@ -29,9 +32,7 @@ export default function VideoAiVideoOptionsViewer(props) {
         <SecondaryButton
           onClick={handleDeleteLayer}
           className={isSidebarPanel ? 'w-full whitespace-normal text-center leading-tight' : ''}
-        >
-          Delete Layer
-        </SecondaryButton>
+        >{uiText("Delete Layer")}</SecondaryButton>
       </div>
 
     </div>

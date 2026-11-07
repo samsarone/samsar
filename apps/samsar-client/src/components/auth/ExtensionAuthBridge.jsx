@@ -1,3 +1,5 @@
+import { useUiLanguage } from '../../hooks/useUiLanguage.js';
+import { translateText as uiText } from '../../utils/localization.js';
 import { useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
 import { useLocation } from 'react-router-dom';
@@ -49,6 +51,7 @@ function extractLoginToken(payload) {
 }
 
 export default function ExtensionAuthBridge() {
+  useUiLanguage();
   const location = useLocation();
   const [phase, setPhase] = useState('loading');
   const [errorMessage, setErrorMessage] = useState('');
@@ -68,7 +71,7 @@ export default function ExtensionAuthBridge() {
 
     if (!redirectUri) {
       setPhase('error');
-      setErrorMessage('This extension sign-in request is missing a valid redirect URI.');
+      setErrorMessage(uiText("This extension sign-in request is missing a valid redirect URI."));
       return () => {
         cancelled = true;
       };
@@ -96,7 +99,7 @@ export default function ExtensionAuthBridge() {
         const loginToken = extractLoginToken(response?.data);
 
         if (!loginToken) {
-          throw new Error('Samsar could not create an extension login token.');
+          throw new Error(uiText("Samsar could not create an extension login token."));
         }
 
         const nextRedirectUrl = new URL(redirectUri.toString());
@@ -111,12 +114,12 @@ export default function ExtensionAuthBridge() {
         const message =
           error?.response?.data?.message
           || error?.message
-          || 'Unable to connect this extension to Samsar One.';
+          || uiText("Unable to connect this extension to Samsar One.");
 
         if (status === 401 || status === 403) {
           clearAuthData();
           setPhase('login');
-          setErrorMessage('Your Samsar session expired. Sign in again to continue.');
+          setErrorMessage(uiText("Your Samsar session expired. Sign in again to continue."));
           return;
         }
 
@@ -149,9 +152,9 @@ export default function ExtensionAuthBridge() {
     return (
       <div className="min-h-screen flex items-center justify-center px-4 py-8">
         <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 text-center shadow-sm">
-          <h1 className="text-lg font-semibold text-slate-900">Extension sign-in unavailable</h1>
+          <h1 className="text-lg font-semibold text-slate-900">{uiText("Extension sign-in unavailable")}</h1>
           <p className="mt-3 text-sm text-slate-600">
-            {errorMessage || 'Unable to connect this extension to Samsar One right now.'}
+            {errorMessage || uiText("Unable to connect this extension to Samsar One right now.")}
           </p>
         </div>
       </div>
@@ -164,10 +167,8 @@ export default function ExtensionAuthBridge() {
         <div className="flex flex-col items-center justify-center gap-4 py-10 text-center">
           <div className="h-10 w-10 animate-spin rounded-full border-4 border-slate-200 border-t-slate-900" />
           <div>
-            <h1 className="text-lg font-semibold text-slate-900">Connecting your extension</h1>
-            <p className="mt-2 text-sm text-slate-600">
-              Using your current Samsar One session to finish sign-in.
-            </p>
+            <h1 className="text-lg font-semibold text-slate-900">{uiText("Connecting your extension")}</h1>
+            <p className="mt-2 text-sm text-slate-600">{uiText("Using your current Samsar One session to finish sign-in.")}</p>
           </div>
         </div>
       </div>

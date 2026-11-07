@@ -4,13 +4,20 @@ import {
   DOCKER_MODEL_ACTIONS_BY_MODEL as actions,
   getDockerModelDisplayName,
 } from '../apps/setup-wizard/src/constants/dockerModelAvailability.js';
-import {
-  IMAGE_GENERAITON_MODEL_TYPES, IMAGE_EDIT_MODEL_TYPES, VIDEO_GENERATION_MODEL_TYPES,
-  MUSIC_PROVIDERS,
-} from '../services/processor/src/consts/ModelTypes.js';
-import { INFERENCE_MODEL_OPTIONS } from '../services/processor/src/consts/InferenceModels.js';
-import { EXPRESS_VIDEO_IMAGE_MODEL_KEYS, EXPRESS_VIDEO_VIDEO_MODEL_KEYS } from '../services/processor/src/consts/ExpressVideoModelOptions.js';
-import { BRANCHED_IMAGE_MODEL_KEYS, BRANCHED_VIDEO_MODEL_KEYS } from '../services/processor/src/consts/BranchedModelOptions.js';
+import path from 'node:path';
+import { pathToFileURL } from 'node:url';
+
+// Parent-workspace builds can read live source catalogs before snapshots are synced.
+const processorRoot = process.env.SAMSAR_SOURCE_ROOT
+  ? pathToFileURL(path.resolve(process.env.SAMSAR_SOURCE_ROOT, 'samsar_processor') + path.sep)
+  : new URL('../services/processor/', import.meta.url);
+const [modelTypes, inferenceModels, expressModels, branchedModels] = await Promise.all([
+  'ModelTypes.js', 'InferenceModels.js', 'ExpressVideoModelOptions.js', 'BranchedModelOptions.js',
+].map(file => import(new URL(`src/consts/${file}`, processorRoot))));
+const { IMAGE_GENERAITON_MODEL_TYPES, IMAGE_EDIT_MODEL_TYPES, VIDEO_GENERATION_MODEL_TYPES, MUSIC_PROVIDERS } = modelTypes;
+const { INFERENCE_MODEL_OPTIONS } = inferenceModels;
+const { EXPRESS_VIDEO_IMAGE_MODEL_KEYS, EXPRESS_VIDEO_VIDEO_MODEL_KEYS } = expressModels;
+const { BRANCHED_IMAGE_MODEL_KEYS, BRANCHED_VIDEO_MODEL_KEYS } = branchedModels;
 
 export const providers = {
   samsar: { label: 'Samsar.js', url: 'https://docs.samsar.one/external-requests', credential: 'SAMSAR_API_KEY', note: 'Call the hosted Samsar service using Samsar credits. The samsar-js client is the common entry point.' },
@@ -41,13 +48,16 @@ export const modalities = [
 ];
 
 const inference = new Map(INFERENCE_MODEL_OPTIONS.filter(row => row.exposeInCatalog !== false).map(row => [row.availabilityModel, row]));
-const native = { 'gpt-6-astra': 'openai', 'claude-opus-5.5': 'anthropic', 'gemini-4-argon': 'googleCloud', KIMIK3: 'kimi', 'QWEN3.8': 'alibabaCloud' };
+const native = { 'gpt-6-astra': 'openai', 'gpt-6.1-sol': 'openai', 'claude-opus-5.5': 'anthropic', 'claude-fable-5.1': 'anthropic', 'gemini-4-argon': 'googleCloud', KIMIK3: 'kimi', 'QWEN3.8': 'alibabaCloud' };
 const notes = {
-  'gpt-6-astra': 'Current public key. Older setup files may contain gpt-5.6-sol or gpt-6.1-sol; the processor normalizes that alias. GenBlaze still requires an exact validated mapping.',
+  'gpt-6-astra': 'Default GPT model. Supports high and xhigh effort. Legacy gpt-5.6-sol choices still normalize to Astra; GPT 6.1 Sol is a separate choice. GenBlaze requires an exact validated mapping.',
+  'gpt-6.1-sol': 'Supports text inference and vision with high or xhigh effort. Native OpenAI, OpenRouter, and Samsar adapters.',
+  'claude-opus-5.5': 'Supports text inference and vision with high or xhigh effort. Native Anthropic, OpenRouter, and Samsar adapters.',
+  'claude-fable-5.1': 'Supports text inference and vision with high or xhigh effort. Native Anthropic uses claude-fable-5-1; OpenRouter uses anthropic/claude-fable-5.1.',
   KIMIK3: 'Setup key KIMIK3; inference requests use kimi-k3. Native Kimi first, then Samsar; OpenRouter is not in this chain.',
   'QWEN3.8': 'Native Alibaba is a Docker option. Hosted Qwen uses OpenRouter internally; callers still use Samsar.js.',
-  'GPTIMAGE2.5': 'Versioned Samsar key for GPTImage 2.5. Legacy GenBlaze GPT Image 2 routes are excluded from this model.',
-  'GPTIMAGE2.5EDIT': 'Versioned Samsar key for GPTImage 2.5 editing. Legacy GenBlaze routes are excluded.',
+  'GPTIMAGE2.5': 'Stable Samsar key for GPTImage 2.6 Sunburst. Legacy GenBlaze GPT Image 2 routes are excluded from this model.',
+  'GPTIMAGE2.5EDIT': 'Stable Samsar key for GPTImage 2.6 Sunburst editing. Legacy GenBlaze routes are excluded.',
   QWENIMAGE3PRO: 'Standalone native adapter only. Requires Alibaba standard pay-as-you-go credentials; Token Plan credentials do not enable it.',
   SEEDREAM: 'Stable key currently maps to Seedream 5 Pro.',
   NANOBANANA2: 'Image generation catalog model; not in the current Express image allowlist.',
@@ -95,12 +105,28 @@ export const models = Object.entries(providerMap).map(([setupKey, adapters]) => 
   };
 });
 
-models.push({ key: 'gpt-6-astra-xhigh', requestKey: 'gpt-6-astra-xhigh', label: 'GPT 6 Astra · extra high reasoning', modality: 'inference', adapters: ['openai', 'samsar', 'openrouter'], nativeAdapter: 'openai', hosted: true, scope: 'option', express: false, branching: true, note: 'Reasoning option on GPT 6 Astra, not a separate provider model. Omitted from the normal runtime catalog.' });
+for (const option of INFERENCE_MODEL_OPTIONS.filter(row => row.exposeInCatalog === false && row.reasoningEffort === 'xhigh')) {
+  const base = models.find(row => row.key === option.availabilityModel);
+  if (!base) continue;
+  models.push({
+    key: option.value, requestKey: option.value, label: `${base.label} · extra high reasoning`,
+    modality: 'inference', adapters: base.adapters.filter(adapter => adapter !== 'gmicloud'),
+    nativeAdapter: base.nativeAdapter, hosted: base.hosted, scope: 'option', express: false,
+    branching: Boolean(option.isBranchedInferenceModel),
+    note: `Reasoning option on ${base.label}; providers receive the base model with xhigh effort. Omitted from the normal runtime catalog.`,
+  });
+}
 
 for (const [modality, entries] of [['image', IMAGE_GENERAITON_MODEL_TYPES], ['image-edit', IMAGE_EDIT_MODEL_TYPES], ['video', VIDEO_GENERATION_MODEL_TYPES], ['music', MUSIC_PROVIDERS]]) {
   for (const entry of entries) {
     if (models.some(row => row.key === entry.key) || entry.key.startsWith('CUSTOM_')) continue;
-    models.push({ key: entry.key, requestKey: entry.key, label: entry.name, modality, adapters: [], hosted: false, scope: 'studio', express: false, branching: false, note: 'Listed in the Studio source catalog, outside the standalone setup matrix. Presence here does not promise a live hosted route, Express support or deployment availability.' });
+    models.push({
+      key: entry.key, requestKey: entry.key, label: entry.name, modality,
+      adapters: [], hosted: false, scope: 'studio',
+      express: modality === 'image' ? EXPRESS_VIDEO_IMAGE_MODEL_KEYS.includes(entry.key) : modality === 'video' ? EXPRESS_VIDEO_VIDEO_MODEL_KEYS.includes(entry.key) : false,
+      branching: modality === 'image' ? BRANCHED_IMAGE_MODEL_KEYS.includes(entry.key) : modality === 'video' ? BRANCHED_VIDEO_MODEL_KEYS.includes(entry.key) : false,
+      note: 'Listed in the Studio source catalog, outside the standalone setup matrix. Workflow scope follows the source allowlists; adapter availability depends on the target deployment.',
+    });
   }
 }
 

@@ -1,3 +1,5 @@
+import { useUiLanguage } from '../../../hooks/useUiLanguage.js';
+import { translateText as uiText } from '../../../utils/localization.js';
 import { useMemo, useState } from 'react';
 import { useColorMode } from '../../../contexts/ColorMode.jsx';
 import SecondaryButton from '../../common/SecondaryButton.tsx';
@@ -149,6 +151,7 @@ const resolveAssetFilename = (asset, fallbackUrl) => {
 };
 
 export default function ImageLibraryHome(props) {
+  useUiLanguage();
   const {
     generationImages = [],
     globalGenerationImages = [],
@@ -196,7 +199,7 @@ export default function ImageLibraryHome(props) {
     try {
       const response = await fetch(previewLink, { mode: 'cors', credentials: 'omit' });
       if (!response.ok) {
-        throw new Error('Download request failed');
+        throw new Error(uiText("Download request failed"));
       }
       const blob = await response.blob();
       const objectUrl = URL.createObjectURL(blob);
@@ -238,38 +241,24 @@ export default function ImageLibraryHome(props) {
   };
 
   const panelSurface =
-    colorMode === 'dark'
-      ? 'bg-[#181b24] text-slate-100 border border-[#3a4050]'
-      : 'bg-white text-slate-900 border border-slate-200';
+    'bg-surface text-fg border border-line';
   const sectionSurface =
-    colorMode === 'dark'
-      ? 'bg-[#12141c] border border-[#3a4050]'
-      : 'bg-slate-50 border border-slate-200';
+    `border border-line ${colorMode === 'dark' ? 'bg-[#12141c]' : 'bg-slate-50'}`;
   const tileSurface =
-    colorMode === 'dark'
-      ? 'bg-[#20232e] border border-[#3a4050] hover:border-rose-300/40'
-      : 'bg-white border border-slate-200 hover:border-rose-300';
+    `bg-surface-raised border border-line ${colorMode === 'dark' ? 'hover:border-rose-300/40' : 'hover:border-rose-300'}`;
   const selectedTileSurface =
     colorMode === 'dark'
       ? 'border-[#ff4655]/70 bg-[#ff4655]/10'
       : 'border-sky-400 bg-sky-50';
   const actionButton =
-    colorMode === 'dark'
-      ? 'border border-[#2b3853] bg-[#181b24] text-slate-200 hover:bg-[#17233a] disabled:opacity-50'
-      : 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-100 disabled:opacity-50';
+    `border bg-surface text-fg-secondary disabled:opacity-50 ${colorMode === 'dark' ? 'border-[#2b3853] hover:bg-[#17233a]' : 'border-slate-200 hover:bg-slate-100'}`;
   const paginationButton =
-    colorMode === 'dark'
-      ? 'bg-[#20232e] border border-[#3a4050] text-slate-200 hover:bg-[#292d3a] disabled:opacity-50'
-      : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 disabled:opacity-50';
-  const helperText = colorMode === 'dark' ? 'text-slate-400' : 'text-slate-500';
+    'bg-surface-raised border border-line text-fg-secondary hover:bg-surface-hover disabled:opacity-50';
+  const helperText = "text-fg-muted";
   const backButtonStyle =
-    colorMode === 'dark'
-      ? 'bg-[#20232e] border border-[#3a4050] text-slate-100 hover:bg-[#292d3a]'
-      : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100';
+    'bg-surface-raised border border-line text-fg-body hover:bg-surface-hover';
   const headerSurface =
-    colorMode === 'dark'
-      ? 'bg-[#181b24]/95 border-b border-[#3a4050]'
-      : 'bg-white/95 border-b border-slate-200';
+    `border-b border-line ${colorMode === 'dark' ? 'bg-[#181b24]/95' : 'bg-white/95'}`;
 
   const renderAssetsGrid = (assets, sectionKey, emptyMessage) => {
     const cards = assets
@@ -297,12 +286,12 @@ export default function ImageLibraryHome(props) {
               type="button"
               onClick={() => handleImageClick(selectedKey)}
               className="library-image-preview block w-full bg-transparent p-0 text-left"
-              title="Focus image"
-              aria-label="Focus image"
+              title={uiText("Focus image")}
+              aria-label={uiText("Focus image")}
             >
               <img
                 src={previewLink}
-                alt="library asset"
+                alt={uiText("library asset")}
                 width={assetWidth}
                 height={assetHeight}
                 style={assetAspectRatio ? { aspectRatio: `${assetAspectRatio}` } : undefined}
@@ -314,8 +303,8 @@ export default function ImageLibraryHome(props) {
                 type="button"
                 onClick={() => handleView(previewLink)}
                 className={`inline-flex h-8 w-8 items-center justify-center rounded-md text-xs transition ${actionButton}`}
-                title="View"
-                aria-label="View image"
+                title={uiText("View")}
+                aria-label={uiText("View image")}
               >
                 <FaEye />
               </button>
@@ -324,8 +313,8 @@ export default function ImageLibraryHome(props) {
                 onClick={() => void handleDownload({ previewLink, asset, selectedKey })}
                 disabled={downloadingImageKey === selectedKey}
                 className={`inline-flex h-8 w-8 items-center justify-center rounded-md text-xs transition ${actionButton}`}
-                title="Download"
-                aria-label="Download image"
+                title={uiText("Download")}
+                aria-label={uiText("Download image")}
               >
                 <FaDownload />
               </button>
@@ -341,11 +330,11 @@ export default function ImageLibraryHome(props) {
                 }}
                 disabled={isSelectingImage}
                 className="h-8 justify-center gap-1.5 px-2 text-xs"
-                title="Select"
-                aria-label="Select image"
+                title={uiText("Select")}
+                aria-label={uiText("Select image")}
               >
-                <FaPlus className="text-[10px]" />
-                <span>{isSelectingImage ? 'Adding...' : 'Select'}</span>
+                <FaPlus className="text-micro" />
+                <span>{isSelectingImage ? uiText("Adding...") : uiText("Select")}</span>
               </SecondaryButton>
             </div>
           </div>
@@ -375,44 +364,40 @@ export default function ImageLibraryHome(props) {
             className={`inline-flex items-center gap-2 text-sm px-3 py-2 rounded-md transition ${backButtonStyle}`}
           >
             <FaChevronLeft className="text-xs" />
-            <span>Back to Studio</span>
+            <span>{uiText("Back to Studio")}</span>
           </button>
-          <div className="text-sm font-semibold">Image Library</div>
+          <div className="text-sm font-semibold">{uiText("Image Library")}</div>
         </div>
       )}
 
       <div className={`rounded-xl p-3 ${sectionSurface}`}>
         <div className="mb-2 flex items-center justify-between gap-3">
-          <div className="text-sm font-semibold">Current Session</div>
-          <div className={`text-[11px] ${helperText}`}>
-            {currentSessionAssets.length} items
-          </div>
+          <div className="text-sm font-semibold">{uiText("Current Session")}</div>
+          <div className={`text-caption ${helperText}`}>{uiText("{value0} items", { value0: currentSessionAssets.length })}</div>
         </div>
         {renderAssetsGrid(
           currentSessionAssets,
           'current-session',
-          'No generated or edited assets yet in this session.'
+          uiText("No generated or edited assets yet in this session.")
         )}
       </div>
 
       {showGlobalSessions && <div className={`rounded-xl p-3 mt-3 ${sectionSurface}`}>
         <div className="flex items-center justify-between mb-2">
-          <div className="text-sm font-semibold">Global Sessions</div>
-          <div className={`text-[11px] ${helperText}`}>{globalAssets.length} items</div>
+          <div className="text-sm font-semibold">{uiText("Global Sessions")}</div>
+          <div className={`text-caption ${helperText}`}>{uiText("{value0} items", { value0: globalAssets.length })}</div>
         </div>
-        <div className={`mb-2 text-[11px] ${helperText}`}>
-          Page {page} of {Math.max(1, totalPages)}
-        </div>
+        <div className={`mb-2 text-caption ${helperText}`}>{uiText("Page {value0} of {value1}", { value0: page, value1: Math.max(1, totalPages) })}</div>
 
         {isGlobalLoading ? (
-          <div className={`text-xs ${helperText}`}>Loading assets...</div>
+          <div className={`text-xs ${helperText}`}>{uiText("Loading assets...")}</div>
         ) : globalError ? (
           <div className="text-xs text-rose-500">{globalError}</div>
         ) : (
           renderAssetsGrid(
             globalAssets,
             'global-session',
-            'No assets found in other sessions.'
+            uiText("No assets found in other sessions.")
           )
         )}
 
@@ -422,17 +407,13 @@ export default function ImageLibraryHome(props) {
             className={`text-xs px-2 py-1 rounded-md transition ${paginationButton}`}
             disabled={isGlobalLoading || !hasPreviousPage}
             onClick={() => onGlobalPageChange?.(Math.max(1, page - 1))}
-          >
-            Previous
-          </button>
+          >{uiText("Previous")}</button>
           <button
             type="button"
             className={`text-xs px-2 py-1 rounded-md transition ${paginationButton}`}
             disabled={isGlobalLoading || !hasNextPage}
             onClick={() => onGlobalPageChange?.(page + 1)}
-          >
-            Next
-          </button>
+          >{uiText("Next")}</button>
         </div>
       </div>}
     </div>

@@ -1,3 +1,5 @@
+import { useUiLanguage } from '../../hooks/useUiLanguage.js';
+import { translateText as uiText } from '../../utils/localization.js';
 import { useState } from 'react';
 import axios from 'axios';
 import { useUser } from '../../contexts/UserContext.jsx';
@@ -8,6 +10,7 @@ import { useAlertDialog } from '../../contexts/AlertDialogContext.jsx';
 const PROCESSOR_SERVER = import.meta.env.VITE_PROCESSOR_API;
 
 export default function UpgradePlan() {
+  useUiLanguage();
   const { user } = useUser();
   const { closeAlertDialog } = useAlertDialog();
 
@@ -53,7 +56,7 @@ export default function UpgradePlan() {
       }
     } catch  {
       
-      setErrorMessage('Failed to upgrade the plan. Please try again.');
+      setErrorMessage(uiText("Failed to upgrade the plan. Please try again."));
 
       // Close the blank tab if there’s an error
       if (upgradeWindow && !upgradeWindow.closed) {
@@ -73,22 +76,20 @@ export default function UpgradePlan() {
       />
 
       <div className="text-center mb-6">
-        <h1 className="text-3xl font-bold">Upgrade to Creators Plan</h1>
-        <p className="mt-2 text-gray-300">
-          Priced at $49.99/month.
-        </p>
+        <h1 className="text-3xl font-bold">{uiText("Upgrade to Creators Plan")}</h1>
+        <p className="mt-2 text-gray-300">{uiText("Priced at $49.99/month.")}</p>
       </div>
 
       <div className="bg-gray-800 rounded-lg p-6 mb-6">
-        <h2 className="text-2xl font-semibold mb-4">What’s included:</h2>
+        <h2 className="text-2xl font-semibold mb-4">{uiText("What’s included:")}</h2>
         <ul className="list-disc list-inside space-y-2">
-          <li>5,000 credits per month</li>
-          <li>Access to all models</li>
-          <li>Full generative workflow suite</li>
-          <li>Free Cloud storage for renders up to 50GB</li>
-          <li>Priority support</li>
-          <li>No watermarks</li>
-          <li>Discord support</li>
+          <li>{uiText("5,000 credits per month")}</li>
+          <li>{uiText("Access to all models")}</li>
+          <li>{uiText("Full generative workflow suite")}</li>
+          <li>{uiText("Free Cloud storage for renders up to 50GB")}</li>
+          <li>{uiText("Priority support")}</li>
+          <li>{uiText("No watermarks")}</li>
+          <li>{uiText("Discord support")}</li>
         </ul>
       </div>
 
@@ -103,7 +104,7 @@ export default function UpgradePlan() {
         disabled={isLoading}
         className="w-full py-3 bg-blue-600 hover:bg-blue-700 rounded-md font-semibold text-white disabled:opacity-50"
       >
-        {isLoading ? 'Processing...' : 'Upgrade to Creators Plan'}
+        {isLoading ? uiText("Processing...") : uiText("Upgrade to Creators Plan")}
       </button>
     </div>
   );

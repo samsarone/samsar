@@ -1,3 +1,5 @@
+import { useUiLanguage } from '../../../hooks/useUiLanguage.js';
+import { translateText as uiText } from '../../../utils/localization.js';
 import { useStudioFrameRate } from '../StudioFrameRateContext.jsx';
 import { useState, useRef } from 'react';
 import ReactSlider from 'react-slider';
@@ -5,6 +7,7 @@ import { FaGripLines } from 'react-icons/fa6';
 import './audioLevelsTrackSlider.css';
 
 export default function AudioLevelsTrackSlider(props) {
+  useUiLanguage();
   const DISPLAY_FRAMES_PER_SECOND = useStudioFrameRate();
   const { totalDuration, min = 0, max = totalDuration * DISPLAY_FRAMES_PER_SECOND } = props; // Adjust as per your time units (frames or seconds)
 
@@ -123,9 +126,7 @@ export default function AudioLevelsTrackSlider(props) {
       />
       {selectedThumbIndex !== null && (
         <div className="thumb-popup">
-          <label>
-            Volume:
-            <input
+          <label>{uiText("Volume:")}<input
               type="number"
               value={selectedThumb.volume}
               onChange={handleVolumeChange}
@@ -134,8 +135,8 @@ export default function AudioLevelsTrackSlider(props) {
               max="1"
             />
           </label>
-          <button onClick={handleSave}>Save</button>
-          <button onClick={handleDeleteThumb}>Delete</button>
+          <button onClick={handleSave}>{uiText("Save")}</button>
+          <button onClick={handleDeleteThumb}>{uiText("Delete")}</button>
         </div>
       )}
     </div>

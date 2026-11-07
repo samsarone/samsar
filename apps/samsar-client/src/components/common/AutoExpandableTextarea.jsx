@@ -1,7 +1,9 @@
+import { useUiLanguage } from '../../hooks/useUiLanguage.js';
 
 import TextareaAutosize from 'react-textarea-autosize';
 
 export default function AutoExpandableTextarea(props) {
+  useUiLanguage();
   const {
     minRows = 3,
     maxRows = 10,

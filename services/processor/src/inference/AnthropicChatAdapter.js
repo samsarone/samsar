@@ -1,4 +1,9 @@
+import { collectAnthropicStream } from './ProviderStreaming.js';
+import { inlineAnthropicVisionImages } from './AnthropicVisionImages.js';
+import { isClaudeModel, getClaudeProviderModel, getReasoningModelBase, resolveInferenceEffort } from './ReasoningModels.js';
 // Translates the internal OpenAI chat contract to Anthropic Messages and back.
+export { isClaudeModel };
+export const CLAUDE_FABLE_51_MODEL = 'claude-fable-5.1';
 export const CLAUDE_OPUS_55_MODEL = 'claude-opus-5.5';
 export const ANTHROPIC_OPUS_55_MODEL = 'claude-opus-5-5';
 export const OPENROUTER_OPUS_55_MODEL = 'anthropic/claude-opus-5.5';
@@ -65,10 +70,10 @@ export function toAnthropicMessages(request = {}) {
     ? Math.min(Math.floor(requestedLimit), MAX_TOKENS) : DEFAULT_MAX_TOKENS;
   const requestedEffort = String(request.effort || request.reasoning?.effort ||
     request.reasoning_effort || request.reasoningEffort || '').toLowerCase();
-  const effort = ['low', 'medium'].includes(requestedEffort)
-    ? requestedEffort : 'high';
+  const effort = ['low', 'medium', 'high', 'xhigh'].includes(requestedEffort)
+    ? requestedEffort : resolveInferenceEffort(request.model);
   const body = {
-    model: ANTHROPIC_OPUS_55_MODEL,
+    model: getClaudeProviderModel(request.model),
     max_tokens,
     output_config: { effort },
     ...(system.length ? { system } : {}),
@@ -93,7 +98,7 @@ export function toAnthropicMessages(request = {}) {
   return body;
 }
 
-export function fromAnthropicMessage(response) {
+export function fromAnthropicMessage(response, requestedModel = CLAUDE_OPUS_55_MODEL) {
   const text = (response.content || []).filter((block) => block.type === 'text')
     .map((block) => block.text).join('\n');
   const tool_calls = (response.content || []).filter((block) => block.type === 'tool_use')
@@ -108,19 +113,19 @@ export function fromAnthropicMessage(response) {
     id: response.id,
     object: 'chat.completion',
     created: Math.floor(Date.now() / 1000),
-    model: CLAUDE_OPUS_55_MODEL,
+    model: getReasoningModelBase(response.model || requestedModel),
     choices: [{ index: 0, message: { role: 'assistant', content: text,
       ...(tool_calls.length ? { tool_calls, anthropic_content: response.content } : {}) },
       finish_reason: response.stop_reason === 'tool_use' ? 'tool_calls'
         : response.stop_reason === 'max_tokens' ? 'length' : 'stop' }],
-    usage: {
+    usage: response.usage?.input_tokens != null && response.usage?.output_tokens != null ? {
       anthropic_usage: response.usage,
       prompt_tokens: promptTokens,
       completion_tokens: completionTokens,
       total_tokens: promptTokens + completionTokens,
       prompt_tokens_details: { cached_tokens: response.usage?.cache_read_input_tokens || 0 },
       completion_tokens_details: { reasoning_tokens: response.usage?.output_tokens_details?.thinking_tokens || 0 },
-    },
+    } : null,
   };
 }
 
@@ -131,17 +136,20 @@ export async function createAnthropicChatCompletion(request = {}, {
   if (!apiKey) throw new Error('ANTHROPIC_API_KEY is required for native Claude inference.');
   const timeoutMs = Number(request.timeout ?? request.timeoutMs) || 600000;
   const endpoint = String(env.ANTHROPIC_BASE_URL || 'https://api.anthropic.com').replace(/\/+$/, '');
+  const body = await inlineAnthropicVisionImages(toAnthropicMessages(request), { env });
   const response = await fetchImpl(`${endpoint}/v1/messages`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
-    body: JSON.stringify(toAnthropicMessages(request)),
+    body: JSON.stringify({ ...body, ...(request.onText ? { stream: true } : {}) }),
     signal: AbortSignal.timeout(timeoutMs),
   });
-  const payload = await response.json();
+  const payload = response.ok && request.onText
+    ? await collectAnthropicStream(response.body, request.onText)
+    : await response.json();
   if (!response.ok) {
     const error = new Error(payload?.error?.message || `Anthropic inference failed (${response.status}).`);
     error.status = response.status;
     throw error;
   }
-  return fromAnthropicMessage(payload);
+  return fromAnthropicMessage(payload, request.model);
 }

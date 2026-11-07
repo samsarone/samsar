@@ -1,3 +1,5 @@
+import { useUiLanguage } from '../../../hooks/useUiLanguage.js';
+import { translateText as uiText } from '../../../utils/localization.js';
 
 import { useColorMode } from '../../../contexts/ColorMode.jsx';
 import { FaCheck } from 'react-icons/fa6';
@@ -6,6 +8,7 @@ import { MdOutlineRefresh } from "react-icons/md";
 
 
 export default function PaintToolbar(props) {
+  useUiLanguage();
   const {
     pos,
     addPaintImage,
@@ -44,13 +47,9 @@ export default function PaintToolbar(props) {
 
       <div className={`grid grid-cols-2 w-full text-center ${isImageStudio ? 'gap-2 text-sm font-medium' : ''}`}>
         <div className={isImageStudio ? 'rounded-xl px-3 py-2 bg-white/5 cursor-pointer' : 'cursor-pointer'} onClick={() => resetPaintImage()}>
-          <MdOutlineRefresh className={`inline-flex ${iconColor} ${isImageStudio ? 'text-lg' : ''}`} />
-          Reset
-        </div>
+          <MdOutlineRefresh className={`inline-flex ${iconColor} ${isImageStudio ? 'text-lg' : ''}`} />{uiText("Reset")}</div>
         <div className={isImageStudio ? 'rounded-xl px-3 py-2 bg-white/5 cursor-pointer' : 'cursor-pointer'} onClick={() => addPaintImage()}>
-          <FaCheck className={`inline-flex ${iconColor} ${isImageStudio ? 'text-lg' : ''}`}  />
-          Apply
-        </div>
+          <FaCheck className={`inline-flex ${iconColor} ${isImageStudio ? 'text-lg' : ''}`}  />{uiText("Apply")}</div>
       </div>
     </div>
   );

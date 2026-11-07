@@ -1,3 +1,5 @@
+import { useUiLanguage } from '../../../hooks/useUiLanguage.js';
+import { translateText as uiText } from '../../../utils/localization.js';
 import { useEffect, useRef, useState } from 'react';
 import { useStudioFrameRate } from '../StudioFrameRateContext.jsx';
 import { getStudioMediaIdentity } from './studioMediaIdentity.mjs';
@@ -25,6 +27,7 @@ function getInactiveSlotIndex(activeSlotIndex) {
 }
 
 export default function VideoUnderlay(props) {
+  useUiLanguage();
   const {
     aiVideoLayer,
     currentLayerSeek = 0,
@@ -346,7 +349,7 @@ export default function VideoUnderlay(props) {
 
       {isVideoReady === false && currentVideoSrc && (
         <div className="absolute top-0 left-0 w-full h-full flex items-center justify-center bg-black bg-opacity-50">
-          <div className="text-white">Loading video...</div>
+          <div className="text-white">{uiText("Loading video...")}</div>
         </div>
       )}
     </div>

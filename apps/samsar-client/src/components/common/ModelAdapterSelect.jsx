@@ -1,3 +1,5 @@
+import { useUiLanguage } from '../../hooks/useUiLanguage.js';
+import { translateText as uiText } from '../../utils/localization.js';
 import { useId, useMemo } from "react";
 import { createPortal } from "react-dom";
 import { Tooltip } from "react-tooltip";
@@ -34,6 +36,7 @@ export default function ModelAdapterSelect({
   isSearchable,
   ...selectProps
 }) {
+  const uiLanguage = useUiLanguage();
   const reactId = useId();
   const tooltipId = `adapter-icon-${reactId.replace(/:/g, "")}`;
   const normalizedOptions = useMemo(
@@ -42,7 +45,7 @@ export default function ModelAdapterSelect({
       value: getOptionValue(option),
       label: getOptionLabel(option),
     })),
-    [options],
+    [uiLanguage, options],
   );
   const selectedOption = valueMode === "value"
     ? normalizedOptions.find((option) => option.value === value) || null
@@ -60,6 +63,7 @@ export default function ModelAdapterSelect({
   if (!isStandaloneDeployment && hostedControl === "native") {
     return (
       <select
+        aria-label={selectProps['aria-label']}
         value={selectedOption?.value || ""}
         onChange={(event) => {
           const option = normalizedOptions.find(
@@ -92,7 +96,7 @@ export default function ModelAdapterSelect({
       !explicitAdapterKey && !mappedAdapterKey && fallbackAdapterKey
         ? option.fallbackAdapterLabel
         : isCustomAdapter
-          ? `${option.label} custom adapter`
+          ? uiText("{value0} custom adapter", { value0: option.label })
           : undefined
     );
 

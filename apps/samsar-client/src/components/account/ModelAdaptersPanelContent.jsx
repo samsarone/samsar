@@ -1,3 +1,6 @@
+import { getUiLocale, formatUiNumber } from '../../utils/localization.js';
+import { useUiLanguage } from '../../hooks/useUiLanguage.js';
+import { translateText as uiText } from '../../utils/localization.js';
 import { useEffect, useMemo, useState } from "react";
 import { DragDropContext, Draggable, Droppable } from "react-beautiful-dnd";
 import { FaExclamationTriangle, FaGripLines } from "react-icons/fa";
@@ -29,10 +32,11 @@ function formatUpdatedAt(updatedAt) {
     return "";
   }
   const date = new Date(updatedAt);
-  return Number.isNaN(date.getTime()) ? "" : date.toLocaleString();
+  return Number.isNaN(date.getTime()) ? "" : date.toLocaleString(getUiLocale());
 }
 
 function ProviderAdapterPriorityEditor({ enabled = false }) {
+  const uiLanguage = useUiLanguage();
   const { colorMode } = useColorMode();
   const {
     stages: serverStages,
@@ -71,15 +75,13 @@ function ProviderAdapterPriorityEditor({ enabled = false }) {
   const secondaryTextColor =
     colorMode === "dark" ? "text-slate-400" : "text-slate-600";
   const borderColor =
-    colorMode === "dark" ? "border-[#3a4050]" : "border-slate-200";
+    'border-line';
   const stageSurface =
     colorMode === "dark" ? "bg-[#151720]" : "bg-slate-50";
   const modelSurface =
-    colorMode === "dark" ? "bg-[#181b24]" : "bg-white";
+    'bg-surface';
   const adapterSurface =
-    colorMode === "dark"
-      ? "bg-[#20232e] hover:bg-[#292d3a]"
-      : "bg-slate-50 hover:bg-slate-100";
+    'bg-surface-muted hover:bg-surface-hover';
   const draggingSurface =
     colorMode === "dark"
       ? "bg-[#292d3a] border-rose-400/50 shadow-[0_10px_28px_rgba(0,0,0,0.35)]"
@@ -89,9 +91,7 @@ function ProviderAdapterPriorityEditor({ enabled = false }) {
       ? "bg-emerald-400/10 text-emerald-200 border-emerald-400/30"
       : "bg-emerald-50 text-emerald-700 border-emerald-200";
   const fallbackBadge =
-    colorMode === "dark"
-      ? "bg-slate-700/40 text-slate-300 border-slate-600"
-      : "bg-slate-100 text-slate-600 border-slate-200";
+    `text-fg-tertiary ${colorMode === "dark" ? 'bg-slate-700/40 border-slate-600' : 'bg-slate-100 border-slate-200'}`;
 
   const handleDragEnd = (modelKey, result) => {
     if (!result.destination) {
@@ -124,14 +124,14 @@ function ProviderAdapterPriorityEditor({ enabled = false }) {
       const savedData = await savePreferences(draftStages);
       setSavedStages(savedData.stages);
       setDraftStages(savedData.stages);
-      toast.success("Model adapter preferences saved.", {
+      toast.success(uiText("Model adapter preferences saved."), {
         position: "bottom-center",
       });
     } catch (saveError) {
       toast.error(
         getErrorMessage(
           saveError,
-          "Unable to save model adapter preferences.",
+          uiText("Unable to save model adapter preferences."),
         ),
         { position: "bottom-center" },
       );
@@ -140,7 +140,7 @@ function ProviderAdapterPriorityEditor({ enabled = false }) {
 
   const handleReset = () => {
     setDraftStages(defaultStages);
-    toast.info("Default adapter order restored. Save to apply it.", {
+    toast.info(uiText("Default adapter order restored. Save to apply it."), {
       position: "bottom-center",
     });
   };
@@ -157,10 +157,8 @@ function ProviderAdapterPriorityEditor({ enabled = false }) {
     return (
       <div className="space-y-4" aria-live="polite" aria-busy="true">
         <div>
-          <h3 className="text-lg font-semibold">Model Adapters</h3>
-          <p className={`text-sm ${secondaryTextColor}`}>
-            Loading adapters configured for this installation...
-          </p>
+          <h3 className="text-lg font-semibold">{uiText("Model Adapters")}</h3>
+          <p className={`text-sm ${secondaryTextColor}`}>{uiText("Loading adapters configured for this installation...")}</p>
         </div>
         {[0, 1, 2].map((item) => (
           <div
@@ -192,20 +190,18 @@ function ProviderAdapterPriorityEditor({ enabled = false }) {
         <div className="flex items-start gap-3">
           <FaExclamationTriangle className="mt-1 shrink-0 text-amber-500" />
           <div className="min-w-0 flex-1">
-            <h3 className="font-semibold">Unable to load model adapters</h3>
+            <h3 className="font-semibold">{uiText("Unable to load model adapters")}</h3>
             <p className={`mt-1 text-sm ${secondaryTextColor}`}>
               {getErrorMessage(
                 error,
-                "The adapter configuration could not be loaded.",
+                uiText("The adapter configuration could not be loaded."),
               )}
             </p>
             <SecondaryButton
               type="button"
               onClick={handleRetry}
               className="mt-4 !m-0"
-            >
-              Try Again
-            </SecondaryButton>
+            >{uiText("Try Again")}</SecondaryButton>
           </div>
         </div>
       </div>
@@ -215,11 +211,8 @@ function ProviderAdapterPriorityEditor({ enabled = false }) {
   if (modelCount === 0) {
     return (
       <div className={`rounded-xl border ${borderColor} ${stageSurface} p-5`}>
-        <h3 className="font-semibold">No model adapters available</h3>
-        <p className={`mt-1 text-sm ${secondaryTextColor}`}>
-          Configure an inference, image, or video provider in the standalone
-          setup wizard to make its supported models available here.
-        </p>
+        <h3 className="font-semibold">{uiText("No model adapters available")}</h3>
+        <p className={`mt-1 text-sm ${secondaryTextColor}`}>{uiText("Configure an inference, image, or video provider in the standalone setup wizard to make its supported models available here.")}</p>
       </div>
     );
   }
@@ -228,17 +221,10 @@ function ProviderAdapterPriorityEditor({ enabled = false }) {
     <div className="space-y-5">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div className="min-w-0">
-          <h3 className="text-lg font-semibold">Model Adapters</h3>
-          <p className={`mt-1 max-w-3xl text-sm ${secondaryTextColor}`}>
-            Drag installed adapters into the order they should be attempted.
-            The first adapter is used initially; later adapters are tried in
-            order when Text to Video, Image List to Video, or Studio retries a
-            supported model.
-          </p>
+          <h3 className="text-lg font-semibold">{uiText("Model Adapters")}</h3>
+          <p className={`mt-1 max-w-3xl text-sm ${secondaryTextColor}`}>{uiText("Drag installed adapters into the order they should be attempted. The first adapter is used initially; later adapters are tried in order when Text to Video, Image List to Video, or Studio retries a supported model.")}</p>
           {formatUpdatedAt(updatedAt) ? (
-            <p className={`mt-2 text-xs ${secondaryTextColor}`}>
-              Last saved {formatUpdatedAt(updatedAt)}
-            </p>
+            <p className={`mt-2 text-xs ${secondaryTextColor}`}>{uiText("Last saved {value0}", { value0: formatUpdatedAt(updatedAt) })}</p>
           ) : null}
         </div>
 
@@ -248,18 +234,14 @@ function ProviderAdapterPriorityEditor({ enabled = false }) {
             onClick={handleReset}
             disabled={isSaving || !differsFromDefaults}
             className="w-full sm:w-auto"
-          >
-            Reset to Defaults
-          </SecondaryButton>
+          >{uiText("Reset to Defaults")}</SecondaryButton>
           <SecondaryButton
             type="button"
             onClick={handleSave}
             isPending={isSaving}
             disabled={!hasUnsavedChanges}
             className="w-full sm:w-auto"
-          >
-            Save Preference Order
-          </SecondaryButton>
+          >{uiText("Save Preference Order")}</SecondaryButton>
         </div>
       </div>
 
@@ -276,7 +258,7 @@ function ProviderAdapterPriorityEditor({ enabled = false }) {
           <p className="text-sm">
             {getErrorMessage(
               error,
-              "The latest model adapter request did not complete.",
+              uiText("The latest model adapter request did not complete."),
             )}
           </p>
         </div>
@@ -290,19 +272,14 @@ function ProviderAdapterPriorityEditor({ enabled = false }) {
           <div className="mb-4 flex items-center justify-between gap-3">
             <div>
               <h4 className="font-semibold">{stage.label}</h4>
-              <p className={`text-xs ${secondaryTextColor}`}>
-                {stage.models.length} available model
-                {stage.models.length === 1 ? "" : "s"}
-              </p>
+              <p className={`text-xs ${secondaryTextColor}`}>{uiText("{value0} available model {value1}", { value0: stage.models.length, value1: stage.models.length === 1 ? "" : (uiLanguage === "en" ? "s" : "") })}</p>
             </div>
           </div>
 
           {stage.models.length === 0 ? (
             <div
               className={`rounded-lg border border-dashed ${borderColor} p-4 text-sm ${secondaryTextColor}`}
-            >
-              No models are available for this stage.
-            </div>
+            >{uiText("No models are available for this stage.")}</div>
           ) : (
             <div className="grid gap-4 xl:grid-cols-2">
               {stage.models.map((model) => (
@@ -322,9 +299,7 @@ function ProviderAdapterPriorityEditor({ enabled = false }) {
                   {model.availableAdapters.length === 0 ? (
                     <div
                       className={`rounded-lg border border-dashed ${borderColor} p-3 text-sm ${secondaryTextColor}`}
-                    >
-                      No configured adapter is currently available.
-                    </div>
+                    >{uiText("No configured adapter is currently available.")}</div>
                   ) : (
                     <DragDropContext
                       onDragEnd={(result) =>
@@ -385,7 +360,7 @@ function ProviderAdapterPriorityEditor({ enabled = false }) {
                                             ? "cursor-default opacity-40"
                                             : "cursor-grab active:cursor-grabbing"
                                         }`}
-                                        aria-label={`Move ${adapter.label} for ${model.label}`}
+                                        aria-label={uiText("Move {value0} for {value1}", { value0: adapter.label, value1: model.label })}
                                         disabled={dragDisabled}
                                       >
                                         <FaGripLines />
@@ -401,15 +376,15 @@ function ProviderAdapterPriorityEditor({ enabled = false }) {
                                         </div>
                                       </div>
                                       <span
-                                        className={`shrink-0 rounded-full border px-2 py-1 text-[11px] font-semibold ${
+                                        className={`shrink-0 rounded-full border px-2 py-1 text-caption font-semibold ${
                                           index === 0
                                             ? primaryBadge
                                             : fallbackBadge
                                         }`}
                                       >
                                         {index === 0
-                                          ? "Primary"
-                                          : `Fallback ${index}`}
+                                          ? uiText("Primary")
+                                          : uiText("Fallback {value0}", { value0: index })}
                                       </span>
                                     </div>
                                   )}
@@ -430,12 +405,12 @@ function ProviderAdapterPriorityEditor({ enabled = false }) {
       ))}
 
       <div
-        className={`sticky bottom-0 flex flex-col gap-3 rounded-xl border ${borderColor} ${modelSurface} p-3 shadow-lg sm:flex-row sm:items-center sm:justify-between`}
+        className={`flex flex-col gap-3 rounded-xl border ${borderColor} ${modelSurface} p-3 shadow-lg sm:flex-row sm:items-center sm:justify-between`}
       >
         <p className={`text-sm ${secondaryTextColor}`} aria-live="polite">
           {hasUnsavedChanges
-            ? "You have unsaved adapter order changes."
-            : "Adapter preference order is up to date."}
+            ? uiText("You have unsaved adapter order changes.")
+            : uiText("Adapter preference order is up to date.")}
         </p>
         <SecondaryButton
           type="button"
@@ -443,9 +418,7 @@ function ProviderAdapterPriorityEditor({ enabled = false }) {
           isPending={isSaving}
           disabled={!hasUnsavedChanges}
           className="w-full sm:w-auto"
-        >
-          Save Preference Order
-        </SecondaryButton>
+        >{uiText("Save Preference Order")}</SecondaryButton>
       </div>
     </div>
   );
@@ -455,6 +428,7 @@ export default function ModelAdaptersPanelContent({
   enabled = false,
   preferencesEnabled = false,
 }) {
+  useUiLanguage();
   if (!enabled) {
     return null;
   }

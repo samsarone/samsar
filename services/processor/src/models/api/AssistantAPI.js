@@ -1,3 +1,4 @@
+import { isGPTModel } from '../../inference/ReasoningModels.js';
 import { normalizeAssistantResponseUsage } from './AssistantBilling.js';
 import mongoose from 'mongoose';
 import OpenAI from 'openai';
@@ -8,7 +9,7 @@ import User from '../../schema/User.js';
 import { getDBConnectionString } from '../DBString.js';
 import { getModelForUserInferenceModel } from '../agent/ModelUtils.js';
 import { createCompatibleChatCompletion } from '../ai_utils/OpenAICompat.js';
-import { isClaudeOpus55Model } from '../../inference/AnthropicChatAdapter.js';
+import { isClaudeModel } from '../../inference/AnthropicChatAdapter.js';
 import { resolveProviderMediaPayload } from '../ai_utils/ProviderMediaPayload.js';
 import {
   GPT_56_SOL_REASONING_EFFORT,
@@ -165,7 +166,7 @@ export async function createAssistantCompletion(userId, payload = {}, { external
       }
       if (!sessionMessages.length) throw buildError('Session has no messages to complete.', 400);
       const systemPrompt = getAssistantSystemPromptForContext({ user, externalUser: scopedExternalUser });
-      const usesOpenAIResponses = !isClaudeOpus55Model(selectedAssistantModel) &&
+      const usesOpenAIResponses = !isClaudeModel(selectedAssistantModel) &&
         !isGeminiInferenceModel(selectedAssistantModel) && !isKimiInferenceModel(selectedAssistantModel) &&
         !isQwenInferenceModel(selectedAssistantModel);
       const previousResponseId = usesOpenAIResponses
@@ -299,10 +300,10 @@ export function buildResponsesRequest({
     body.max_output_tokens = parsedMaxOutputTokens;
   }
 
-  if (model !== 'gpt-6-astra' && payload.temperature !== undefined) {
+  if (!isGPTModel(model) && payload.temperature !== undefined) {
     body.temperature = payload.temperature;
   }
-  if (model !== 'gpt-6-astra' && payload.top_p !== undefined) {
+  if (!isGPTModel(model) && payload.top_p !== undefined) {
     body.top_p = payload.top_p;
   }
   if (payload.text && typeof payload.text === 'object') {
@@ -401,7 +402,7 @@ export function shouldUseCompatibleAssistantRouting(
 ) {
   return (
     isStandaloneEdition(env) ||
-    isClaudeOpus55Model(selectedAssistantModel) ||
+    isClaudeModel(selectedAssistantModel) ||
     isGeminiInferenceModel(selectedAssistantModel) ||
     isKimiInferenceModel(selectedAssistantModel) ||
     isQwenInferenceModel(selectedAssistantModel) ||

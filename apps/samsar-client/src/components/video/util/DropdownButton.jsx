@@ -1,16 +1,19 @@
+import { useUiLanguage } from '../../../hooks/useUiLanguage.js';
+import { translateText as uiText } from '../../../utils/localization.js';
 import { useState, useEffect, useId, useRef } from 'react';
 import { FaChevronDown, FaPlus } from 'react-icons/fa';
 import { useColorMode } from '../../../contexts/ColorMode';
 import FloatingPanel from '../../common/FloatingPanel';
 
 function DropdownButton(props) {
+  useUiLanguage();
   const {
     addLayerToComposition, // function to add a layer with the chosen position
     copyCurrentLayerBelow,
     showBatchLayerDialog,
     compact = false,
     iconOnly = false,
-    buttonLabel = 'Layer',
+    buttonLabel = uiText("Layer"),
     menuAlign = 'right',
     fullWidth = false,
     fitMenuToTrigger = false,
@@ -26,41 +29,31 @@ function DropdownButton(props) {
 
   // Container & hover colors separated
   const triggerSurfaceClassName =
-    colorMode === 'dark'
-      ? 'bg-[#20232e]/88 text-slate-100 border border-[#667188] shadow-[0_14px_36px_rgba(0,0,0,0.32)] backdrop-blur-xl hover:border-[#ff4655]/60 hover:bg-[#292d3a] focus-visible:ring-2 focus-visible:ring-[#ffe0a3]/70'
-      : 'bg-white/92 text-slate-800 border border-slate-200 shadow-sm backdrop-blur-md hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-blue-400/50';
+    `border border-line-control focus-visible:ring-2 ${colorMode === 'dark' ? 'bg-[#20232e]/88 text-slate-100 shadow-[0_14px_36px_rgba(0,0,0,0.32)] backdrop-blur-xl hover:border-[#ff4655]/60 hover:bg-[#292d3a] focus-visible:ring-[#ffe0a3]/70' : 'bg-white/92 text-slate-800 shadow-sm backdrop-blur-md hover:bg-slate-50 focus-visible:ring-blue-400/50'}`;
   const menuSurfaceClassName =
-    colorMode === 'dark'
-      ? 'bg-[#181b24]/96 border border-[#3a4050] text-slate-100 shadow-[0_22px_52px_rgba(0,0,0,0.40)] backdrop-blur-xl'
-      : 'bg-white/96 border border-slate-200 text-slate-700 shadow-[0_18px_38px_rgba(15,23,42,0.16)] backdrop-blur-xl';
+    `border border-line text-fg-body backdrop-blur-xl ${colorMode === 'dark' ? 'bg-[#181b24]/96 shadow-[0_22px_52px_rgba(0,0,0,0.40)]' : 'bg-white/96 shadow-[0_18px_38px_rgba(15,23,42,0.16)]'}`;
   const sectionLabelClassName =
-    colorMode === 'dark'
-      ? 'text-slate-400'
-      : 'text-slate-500';
+    'text-fg-muted';
   const actionItemClassName =
-    colorMode === 'dark'
-      ? 'text-slate-200 hover:bg-[#292d3a]'
-      : 'text-slate-700 hover:bg-slate-100';
+    'text-fg-secondary hover:bg-surface-hover';
   const addOptionClassName =
-    colorMode === 'dark'
-      ? 'bg-[#20232e]/80 text-slate-100 hover:bg-[#292d3a]'
-      : 'bg-white/90 text-slate-700 hover:bg-slate-50';
+    `text-fg-body ${colorMode === 'dark' ? 'bg-[#20232e]/80 hover:bg-[#292d3a]' : 'bg-white/90 hover:bg-slate-50'}`;
   const defaultOptionClassName =
     colorMode === 'dark'
       ? 'bg-[#ff4655]/14 text-[#ffd4d8]'
       : 'bg-sky-50 text-sky-700';
   const triggerSizeClassName = iconOnly
-    ? (compact ? 'h-[34px] w-[34px] px-0 text-[11px]' : 'h-10 w-10 px-0 text-sm')
-    : (compact ? 'min-h-[34px] px-2.5 text-[11px]' : 'min-h-9 px-3 py-1.5 text-xs');
+    ? (compact ? 'h-[34px] w-[34px] px-0 text-caption' : 'h-10 w-10 px-0 text-sm')
+    : (compact ? 'min-h-[34px] px-2.5 text-caption' : 'min-h-9 px-3 py-1.5 text-xs');
   const iconClassName = iconOnly
-    ? (compact ? 'text-[11px]' : 'text-sm')
-    : (compact ? 'shrink-0 text-[11px]' : 'shrink-0 text-sm');
+    ? (compact ? 'text-caption' : 'text-sm')
+    : (compact ? 'shrink-0 text-caption' : 'shrink-0 text-sm');
   const rootWidthClassName = fullWidth ? 'w-full' : '';
 
   const addOptions = [
-    { value: 'below', label: 'Below current' },
-    { value: 'end', label: 'At end' },
-    { value: 'beginning', label: 'At beginning' },
+    { value: 'below', label: uiText("Below current") },
+    { value: 'end', label: uiText("At end") },
+    { value: 'beginning', label: uiText("At beginning") },
   ];
 
   useEffect(() => {
@@ -135,7 +128,7 @@ function DropdownButton(props) {
               <FaPlus className={iconClassName} />
               <span>{buttonLabel}</span>
             </span>
-            <FaChevronDown className="shrink-0 text-[10px] opacity-80" />
+            <FaChevronDown className="shrink-0 text-micro opacity-80" />
           </>
         )}
       </button>
@@ -146,11 +139,9 @@ function DropdownButton(props) {
           anchorRef={rootRef} panelRef={menuRef} align={menuAlign} fitToAnchor={fitMenuToTrigger}
           className={`rounded-2xl p-1.5 ${menuSurfaceClassName}`}
         >
-          <div id={menuId} className="space-y-2" role="menu" aria-orientation="vertical" aria-label={`${buttonLabel} actions`}>
+          <div id={menuId} className="space-y-2" role="menu" aria-orientation="vertical" aria-label={uiText("{value0} actions", { value0: buttonLabel })}>
             <div className="px-2 pt-0.5" role="presentation">
-              <div className={`text-[9px] font-semibold uppercase tracking-[0.16em] ${sectionLabelClassName}`}>
-                Add Layer
-              </div>
+              <div className={`text-micro font-semibold uppercase tracking-[0.16em] ${sectionLabelClassName}`}>{uiText("Add Layer")}</div>
             </div>
 
             <div className="space-y-1" role="presentation">
@@ -161,7 +152,7 @@ function DropdownButton(props) {
                   <button
                     type="button"
                     key={option.value}
-                    className={`flex w-full items-center justify-between rounded-xl px-2.5 py-1.5 text-left text-[11px] leading-tight transition ${addOptionClassName} ${isDefault ? defaultOptionClassName : ''}`}
+                    className={`flex w-full items-center justify-between rounded-xl px-2.5 py-1.5 text-left text-caption leading-tight transition ${addOptionClassName} ${isDefault ? defaultOptionClassName : ''}`}
                     onClick={() => handleAddLayerClick(option.value)}
                     role="menuitem"
                   >
@@ -177,11 +168,9 @@ function DropdownButton(props) {
               <button
                 type="button"
                 onClick={copyCurrentLayer}
-                className={`block w-full rounded-xl px-2.5 py-1.5 text-left text-[11px] transition ${actionItemClassName}`}
+                className={`block w-full rounded-xl px-2.5 py-1.5 text-left text-caption transition ${actionItemClassName}`}
                 role="menuitem"
-              >
-                Copy current
-              </button>
+              >{uiText("Copy current")}</button>
 
               <button
                 type="button"
@@ -189,11 +178,9 @@ function DropdownButton(props) {
                   showBatchLayerDialog();
                   setIsOpen(false);
                 }}
-                className={`block w-full rounded-xl px-2.5 py-1.5 text-left text-[11px] transition ${actionItemClassName}`}
+                className={`block w-full rounded-xl px-2.5 py-1.5 text-left text-caption transition ${actionItemClassName}`}
                 role="menuitem"
-              >
-                Add Batch
-              </button>
+              >{uiText("Add Batch")}</button>
             </div>
           </div>
         </FloatingPanel>

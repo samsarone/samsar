@@ -15,7 +15,7 @@ test('every supported Fal video tariff identifies its exact endpoint and a dated
   for (const [model, tariff] of Object.entries(FAL_VIDEO_TARIFFS)) {
     assert.ok(tariff.endpoint, model);
     assert.equal(tariff.source, `https://fal.ai/models/${tariff.endpoint}`);
-    assert.equal(tariff.verifiedOn, model === 'MAGIDISTILLED' ? '2026-10-24' : '2026-10-23');
+    assert.equal(tariff.verifiedOn, model.endsWith('TOVID4') ? '2026-11-07' : model === 'MAGIDISTILLED' ? '2026-10-24' : '2026-10-23');
   }
 });
 
@@ -67,7 +67,7 @@ test('hosted adapter seals before submit; pipeline, lip sync, and standalone byp
   };
   await sealFalVideoSubmissionReceipt(hosted, 'fal', persist,
     { SAMSAR_DEPLOYMENT_EDITION: 'production' });
-  assert.equal(hosted.videoBillingNativeReceipt.falVideoTariffVersion, '2026-10-24');
+  assert.equal(hosted.videoBillingNativeReceipt.falVideoTariffVersion, '2026-11-07');
   events.push('submit');
   assert.deepEqual(events, ['persist', 'submit']);
 
@@ -125,7 +125,7 @@ test('Seedance token rates are sealed before submit and use only completed media
 test('Magi bills the exact listener provider defaults while preserving dated snapshots', () => {
   assert.equal(FAL_VIDEO_TARIFF_VERSIONS['2026-10-23'].MAGIDISTILLED, undefined);
   const receipt = buildFalVideoSubmissionReceipt({ model: 'MAGIDISTILLED', duration: 8, framesPerSecond: 30 });
-  assert.equal(receipt.falVideoTariffVersion, '2026-10-24');
+  assert.equal(receipt.falVideoTariffVersion, '2026-11-07');
   assert.equal(receipt.submittedConfig.numFrames, 96);
   assert.equal(receipt.submittedConfig.duration, 4);
   assert.equal(calculateVideoCallCredits({ ...receipt, costUsd: 999 }).credits, 38.4);

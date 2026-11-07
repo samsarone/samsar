@@ -1,3 +1,4 @@
+import { useUiLanguage } from '../../hooks/useUiLanguage.js';
 import { useEffect } from 'react';
 import axios from 'axios';
 import { useNavigate, useLocation } from 'react-router-dom';
@@ -16,6 +17,7 @@ import {
 const PROCESSOR_SERVER = import.meta.env.VITE_PROCESSOR_API || 'http://localhost:3002';
 
 export default function VerificationHome() {
+  useUiLanguage();
   const navigate = useNavigate();
   const location = useLocation();
   const isMobile = useMediaQuery({ query: '(max-width: 767px)' });

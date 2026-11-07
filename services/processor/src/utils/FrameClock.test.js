@@ -33,7 +33,7 @@ test('P2P invalid and zero durations never request negative frames', () => {
   assert.equal(getLayerFrameRange({duration: 0}, 24).frameCount, 0);
 });
 
-test('P2P API end rounding is explicit and retains the legacy two-argument worker contract', () => {
-  assert.match(buildFrameExtractionFilter(24, 'scale=32:32'), /eof_action=pass/);
-  assert.match(buildFrameExtractionFilter(24, 'scale=32:32', { roundEndTimestamp: true }), /eof_action=round/);
+test('all callers round the end timestamp to the nearest frame', () => {
+  assert.match(buildFrameExtractionFilter(24, 'scale=32:32'), /eof_action=round/);
+  assert.equal(buildFrameExtractionFilter(24), 'setpts=PTS-STARTPTS,fps=24:start_time=0:round=near:eof_action=round');
 });

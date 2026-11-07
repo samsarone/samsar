@@ -1,3 +1,4 @@
+import { translateText as uiText } from "./localization.js";
 export const CUSTOM_TEXT_TO_IMAGE_MODEL_PREFIX = "CUSTOM_TEXT_TO_IMAGE:";
 export const CUSTOM_TEXT_TO_IMAGE_OPERATION = "text_to_image";
 export const CUSTOM_TEXT_TO_IMAGE_REQUEST_ID_TOKEN = "{request_id}";
@@ -107,7 +108,7 @@ export function normalizeCustomTextToImageAdapters(customAdapters) {
       return createEmptyCustomTextToImageAdapter({
         id,
         model_key: buildCustomTextToImageModelKey(id),
-        name: normalizeString(endpoint.name) || `Custom image model ${index + 1}`,
+        name: normalizeString(endpoint.name) || uiText("Custom image model {value0}", { value0: index + 1 }),
         generate_url: generateUrl,
         status_url: normalizeString(endpoint.status_url ?? endpoint.statusUrl) || inferredUrls.statusUrl,
         result_url: normalizeString(endpoint.result_url ?? endpoint.resultUrl) || inferredUrls.resultUrl,
@@ -120,24 +121,24 @@ export function normalizeCustomTextToImageAdapters(customAdapters) {
 }
 
 export function validateCustomTextToImageAdapter(adapter, index = 0) {
-  const label = normalizeString(adapter?.name) || `Model ${index + 1}`;
+  const label = normalizeString(adapter?.name) || uiText("Model {value0}", { value0: index + 1 });
   if (!normalizeString(adapter?.name)) {
-    return `A model name is required for ${label}.`;
+    return uiText("A model name is required for {value0}.", { value0: label });
   }
   if (!normalizeHttpUrl(adapter?.generate_url)) {
-    return `${label} needs a valid HTTP or HTTPS generate URL.`;
+    return uiText("{value0} needs a valid HTTP or HTTPS generate URL.", { value0: label });
   }
 
   for (const [field, fieldLabel] of [
-    ["status_url", "status/poll URL"],
-    ["result_url", "result URL"],
+    ["status_url", uiText("status/poll URL")],
+    ["result_url", uiText("result URL")],
   ]) {
     const value = normalizeString(adapter?.[field]);
     if (!normalizeHttpUrl(value, { allowRequestIdToken: true })) {
-      return `${label} needs a valid HTTP or HTTPS ${fieldLabel}.`;
+      return uiText("{value0} needs a valid HTTP or HTTPS {value1}.", { value0: label, value1: fieldLabel });
     }
     if (!value.includes(CUSTOM_TEXT_TO_IMAGE_REQUEST_ID_TOKEN)) {
-      return `${label} ${fieldLabel} must include ${CUSTOM_TEXT_TO_IMAGE_REQUEST_ID_TOKEN}.`;
+      return uiText("{value0} {value1} must include {value2}.", { value0: label, value1: fieldLabel, value2: CUSTOM_TEXT_TO_IMAGE_REQUEST_ID_TOKEN });
     }
   }
 
@@ -146,10 +147,10 @@ export function validateCustomTextToImageAdapter(adapter, index = 0) {
     normalizeString(adapter?.header_value) || adapter?.has_header_value === true,
   );
   if (hasHeaderValue && !headerKey) {
-    return `${label} needs an authentication header key.`;
+    return uiText("{value0} needs an authentication header key.", { value0: label });
   }
   if (headerKey && !/^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/.test(headerKey)) {
-    return `${label} has an invalid authentication header key.`;
+    return uiText("{value0} has an invalid authentication header key.", { value0: label });
   }
 
   return "";

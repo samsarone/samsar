@@ -1,3 +1,4 @@
+import { collectGeminiStream } from './ProviderStreaming.js';
 import { getGoogleAccessToken, getGoogleCloudConfig } from './GoogleADC.js';
 import {
   DEFAULT_GEMINI_4_ARGON_VERTEX_MODEL,
@@ -352,12 +353,15 @@ function buildGenerationConfig(options = {}, model = '') {
 }
 
 function normalizeGeminiUsage(usageMetadata) {
-  if (!usageMetadata || typeof usageMetadata !== 'object') {
+  if (!usageMetadata || typeof usageMetadata !== 'object' || usageMetadata.promptTokenCount == null ||
+      (usageMetadata.candidatesTokenCount == null && usageMetadata.totalTokenCount == null)) {
     return null;
   }
 
   const promptTokens = Number(usageMetadata.promptTokenCount) || 0;
-  const completionTokens = (Number(usageMetadata.candidatesTokenCount) || 0) + (Number(usageMetadata.thoughtsTokenCount) || 0);
+  const completionTokens = usageMetadata.candidatesTokenCount == null
+    ? Number(usageMetadata.totalTokenCount) - promptTokens
+    : Number(usageMetadata.candidatesTokenCount) + (Number(usageMetadata.thoughtsTokenCount) || 0);
   const totalTokens = Number(usageMetadata.totalTokenCount) || promptTokens + completionTokens;
   const cachedTokens = Number(usageMetadata.cachedContentTokenCount) || 0;
   const reasoningTokens = Number(usageMetadata.thoughtsTokenCount) || 0;
@@ -463,7 +467,7 @@ export async function sendAssistantGeminiCompletionRequest(
         ...(generationConfig ? { generationConfig } : {}),
       };
       const token = await getAccessToken(config);
-      const response = await fetchImpl(buildVertexGenerateContentUrl({ projectId, location, model }), {
+      const response = await fetchImpl(buildVertexGenerateContentUrl({ projectId, location, model }).replace(':generateContent', options.onText ? ':streamGenerateContent?alt=sse' : ':generateContent'), {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${token}`,
@@ -472,6 +476,7 @@ export async function sendAssistantGeminiCompletionRequest(
         body: JSON.stringify(requestBody),
         signal,
       });
+      if (response.ok && options.onText) return collectGeminiStream(response.body, options.onText);
       const responseText = await response.text();
       const payload = responseText ? JSON.parse(responseText) : {};
       if (!response.ok) {

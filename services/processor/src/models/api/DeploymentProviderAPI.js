@@ -17,25 +17,25 @@ export const DEPLOYMENT_PROVIDER_CAPABILITIES = Object.freeze({
   samsar: {
     label: 'Samsar API Key',
     requiredFor: ['All models', 'All actions', 'moderation'],
-    models: ['gpt-6-astra', 'claude-opus-5.5', 'gemini-4-argon', 'QWEN3.8', 'KIMIK3', 'GPTIMAGE2.5', 'WAN2.7PRO', 'RUNWAYML', 'VEO3.1I2V', 'HAPPYHORSEI2V', 'LYRIA3', 'OPENAI_TTS', 'GOOGLE_TTS', 'MMAUDIO', 'LATENT_SYNC'],
+    models: ['gpt-6-astra', 'gpt-6.1-sol', 'claude-opus-5.5', 'claude-fable-5.1', 'gemini-4-argon', 'QWEN3.8', 'KIMIK3', 'GPTIMAGE2.5', 'WAN2.7PRO', 'RUNWAYML', 'VEO3.1I2V', 'HAPPYHORSEI2V', 'LYRIA3', 'OPENAI_TTS', 'GOOGLE_TTS', 'MMAUDIO', 'LATENT_SYNC'],
     actions: ['chat', 'assistant', 'moderation', 'image', 'video', 'audio', 'lip_sync', 'sound_effect'],
   },
   openai: {
     label: 'OpenAI',
     requiredFor: ['GPT 6 Astra', 'assistant', 'vision', 'moderation', 'OpenAI image', 'OpenAI TTS'],
-    models: ['gpt-6-astra', 'GPTIMAGE2.5', 'OPENAI_TTS'],
+    models: ['gpt-6-astra', 'gpt-6.1-sol', 'GPTIMAGE2.5', 'OPENAI_TTS'],
     actions: ['chat', 'assistant', 'moderation', 'image', 'audio'],
   },
   anthropic: {
     label: 'Anthropic',
     requiredFor: ['Claude Opus 5.5 inference, assistant, and vision'],
-    models: ['claude-opus-5.5'],
+    models: ['claude-opus-5.5', 'claude-fable-5.1'],
     actions: ['chat', 'assistant'],
   },
   openrouter: {
     label: 'OpenRouter',
     requiredFor: ['GPT 6 Astra', 'Claude Opus 5.5', 'Gemini 4 Argon', 'Qwen 3.8 Max text and vision'],
-    models: ['gpt-6-astra', 'gemini-4-argon', 'QWEN3.8', 'claude-opus-5.5'],
+    models: ['gpt-6-astra', 'gpt-6.1-sol', 'gemini-4-argon', 'QWEN3.8', 'claude-opus-5.5', 'claude-fable-5.1'],
     actions: ['chat', 'assistant'],
   },
   kimi: {

@@ -1,3 +1,4 @@
+import { translateText as uiText } from "./localization.js";
 import axios from 'axios';
 
 import {
@@ -30,7 +31,7 @@ async function addInitialLayerToNewStudioSession({
   );
   const sessionWithLayer = addLayerResponse?.data?.session;
   if (!hasInitialStudioLayer(sessionWithLayer)) {
-    throw new Error('The new Studio session did not include its initial layer.');
+    throw new Error(uiText("The new Studio session did not include its initial layer."));
   }
   return sessionWithLayer;
 }
@@ -45,7 +46,7 @@ export async function ensureInitialLayerForNewStudioSession({
 } = {}) {
   const sessionId = requestedSessionId || getStudioSessionId(session);
   if (!sessionId) {
-    throw new Error('The Studio session response did not include an id.');
+    throw new Error(uiText("The Studio session response did not include an id."));
   }
   if (hasInitialStudioLayer(session)) {
     return session;
@@ -71,7 +72,7 @@ export async function ensureInitialLayerForNewStudioSession({
     return persistedSession;
   }
   if (!shouldAddInitialLayerToNewStudioSession(persistedSession)) {
-    throw new Error('The new Studio session details did not include a layers array.');
+    throw new Error(uiText("The new Studio session details did not include a layers array."));
   }
   return addInitialLayerToNewStudioSession({
     processorServer,

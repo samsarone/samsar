@@ -216,7 +216,7 @@ test('resolves explicit models, then account preferences, then stable express de
     user: { agentImageModel: 'SEEDREAM', agentVideoModel: 'KLINGIMGTOVIDTURBO' },
   }), {
     imageModel: 'SEEDREAM',
-    videoModel: 'KLINGIMGTOVIDTURBO',
+    videoModel: 'KLINGIMGTOVID4',
   });
 
   assert.deepEqual(resolveNarrativeToVideoModels({

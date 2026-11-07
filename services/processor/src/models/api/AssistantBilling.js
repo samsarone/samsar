@@ -1,3 +1,4 @@
+import { getReasoningModelBase } from '../../inference/ReasoningModels.js';
 import { GENERATION_PRICING_MULTIPLIER, GENERATION_CREDITS_PER_USD } from '../../consts/pricing/GenerationPricingPolicy.js';
 
 const TOKENS_PER_MILLION = 1_000_000;
@@ -12,6 +13,7 @@ const GEMINI_4_ARGON_STANDARD_PRICING = Object.freeze({
 });
 
 const TOKEN_PRICING_USD_PER_MILLION = Object.freeze({
+  'claude-fable-5.1': { input: 10, cachedInput: 0.25, output: 50, cacheWrite: 12.5, cacheWriteHour: 20 },
   'claude-opus-5.5': { input: 4, cachedInput: 0.2, output: 20, cacheWrite: 5, cacheWriteHour: 8 },
   'gpt-6.1-sol': {
     input: 2,
@@ -267,6 +269,8 @@ function billingError(message, code) {
 }
 
 function resolvePricingModel(model) {
+  const reasoningModel = getReasoningModelBase(model);
+  if (TOKEN_PRICING_USD_PER_MILLION[reasoningModel]) return reasoningModel;
   if (typeof model !== 'string') {
     return null;
   }

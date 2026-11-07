@@ -1,3 +1,4 @@
+import { useUiLanguage } from '../../../hooks/useUiLanguage.js';
 import { useStudioFrameRate } from '../StudioFrameRateContext.jsx';
 import VideoCanvas from "./VideoCanvas";
 import { forwardRef, useCallback, useContext, useEffect, useState, useRef } from "react";
@@ -200,6 +201,7 @@ function shouldIgnoreCanvasNudgeShortcut(target) {
 }
 
 const VideoCanvasContainer = forwardRef((props, ref) => {
+  useUiLanguage();
   const DISPLAY_FRAMES_PER_SECOND = useStudioFrameRate();
   const { sessionDetails, activeItemList, setActiveItemList, currentView,
     setCurrentView, editBrushWidth, editMasklines, setEditMaskLines, currentCanvasAction,
@@ -679,8 +681,7 @@ const VideoCanvasContainer = forwardRef((props, ref) => {
     setActiveItemList(nextActiveItemList);
     updateSessionActiveItemList(nextActiveItemList);
     return true;
-  }, [
-    activeItemList,
+  }, [activeItemList,
     selectedId,
     selectedLayerType,
     setActiveItemList,

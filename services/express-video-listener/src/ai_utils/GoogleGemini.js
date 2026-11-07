@@ -1,3 +1,4 @@
+import { normalizeReasoningModel, resolveInferenceEffort } from './ReasoningModels.js';
 import { GoogleAuth } from 'google-auth-library';
 import fs from 'node:fs';
 import { readFile } from 'node:fs/promises';
@@ -128,9 +129,11 @@ async function getAccessToken() {
 }
 
 export function normalizeInferenceModel(value) {
+  const reasoningModel = normalizeReasoningModel(value);
+  if (reasoningModel) return reasoningModel;
   const gptToken = typeof value === 'string' ? value.replace(/[^a-zA-Z0-9]/g, '').toUpperCase() : '';
-  // Saved Sol choices migrate to Astra without losing explicit effort.
-  if (/^GPT(?:61SOL|6ASTRA|56SOL|56|6)(?:HIGH|XHIGH|EXTRAHIGH)?$/.test(gptToken)) {
+  // Legacy GPT selections retain Astra compatibility.
+  if (/^GPT(?:6ASTRA|56SOL|56|6)(?:HIGH|XHIGH|EXTRAHIGH)?$/.test(gptToken)) {
     return /(?:XHIGH|EXTRAHIGH)$/.test(gptToken)
       ? GPT_56_SOL_XHIGH_INFERENCE_MODEL
       : DEFAULT_INFERENCE_MODEL;
@@ -164,6 +167,7 @@ export function normalizeInferenceModel(value) {
 }
 
 export function getGPT56SolReasoningEffort(model, requestedEffort = null) {
+  if (normalizeReasoningModel(model)) return resolveInferenceEffort(model, requestedEffort);
   const normalizedEffort = normalizeString(requestedEffort).toLowerCase();
   if (normalizedEffort === 'high' || normalizedEffort === 'xhigh') {
     return normalizedEffort;

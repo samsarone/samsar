@@ -59,6 +59,16 @@ test('recovery rejects guessed, duplicate, or unsafe image associations', () => 
   );
 });
 
+test('recovery preserves completed promptless outros while requiring prompts for unfinished images', () => {
+  const completedOutro = { _id: 'eeeeeeeeeeeeeeeeeeeeeeee', imageSession: { generationStatus: 'COMPLETED' } };
+  const withOutro = { layers: [...session.layers, completedOutro] };
+  const manifest = { layers: [...validManifest.layers, { index: 2, layerId: completedOutro._id, savedImage: null }] };
+  assert.doesNotThrow(() => assertManifestLayerMapping(manifest, withOutro));
+  assert.throws(() => assertManifestLayerMapping(manifest, {
+    layers: [...session.layers, { ...completedOutro, imageSession: { generationStatus: 'PENDING' } }],
+  }), /Original image prompt is missing/);
+});
+
 test('apply requires a reviewed dry-run hash and a backup destination', () => {
   const base = ['0123456789abcdef01234567', '--manifest=/tmp/reviewed.json'];
   assert.deepEqual(parseArgs(base), {

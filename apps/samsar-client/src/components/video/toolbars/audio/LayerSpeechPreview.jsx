@@ -1,9 +1,12 @@
+import { useUiLanguage } from '../../../../hooks/useUiLanguage.js';
+import { translateText as uiText } from '../../../../utils/localization.js';
 
 import SecondaryButton from '../../../common/SecondaryButton.tsx';
 import { FaArrowLeft, FaCheck } from 'react-icons/fa';
 import SpeechSelectToolbar from './SpeechSelectToolbar';
 
 export default function LayerSpeechPreview(props) {
+  useUiLanguage();
   const {
     audioLayers,
     onAddAll,
@@ -19,11 +22,9 @@ export default function LayerSpeechPreview(props) {
       {/* Header with "Back" and "Add All" buttons */}
       <div className="flex justify-between items-center mb-2">
         <SecondaryButton onClick={onBack} className={compactButtonClass}>
-          <FaArrowLeft className="inline mr-1" /> Back
-        </SecondaryButton>
+          <FaArrowLeft className="inline mr-1" />{uiText("Back")}</SecondaryButton>
         <SecondaryButton onClick={onAddAll} className={compactButtonClass}>
-          <FaCheck className="inline mr-1" /> Add All
-        </SecondaryButton>
+          <FaCheck className="inline mr-1" />{uiText("Add All")}</SecondaryButton>
       </div>
 
       {/* Display each audio layer using SpeechSelectToolbar */}

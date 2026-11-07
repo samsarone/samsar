@@ -133,9 +133,9 @@ describe('localized editor strings', () => {
 
   it('uses the signed-in user preference ahead of the saved browser preference', () => {
     localStorage.setItem('preferredLanguage', 'th');
-    session.user = { preferredLanguage: 'es' };
+    session.user = { preferredLanguage: 'en' };
     const { result, rerender } = renderHook(useLocalization, { wrapper: LocalizationProvider });
-    expect(result.current.language).toBe('es');
+    expect(result.current.language).toBe('en');
     session.user = { preferredLanguage: 'ja' };
     rerender();
     expect(result.current.language).toBe('ja');

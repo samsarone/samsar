@@ -71,7 +71,7 @@ function withEnvironment(overrides, callback) {
   }
 }
 
-test('Claude vision follows native Anthropic in Docker and OpenRouter when hosted', () => {
+test('Claude prefers native Anthropic in standalone and production', () => {
   const request = { model: 'claude-opus-5.5', messages: [{ role: 'user', content: [
     { type: 'image_url', image_url: { url: 'https://example.com/frame.png' } },
   ] }] };
@@ -82,8 +82,8 @@ test('Claude vision follows native Anthropic in Docker and OpenRouter when hoste
   });
   withEnvironment({ CURRENT_ENV: 'production', ANTHROPIC_API_KEY: 'anthropic-key',
     OPENROUTER_API_KEY: 'openrouter-key' }, () => {
-    assert.equal(shouldUseOpenRouterInference(request), true);
-    assert.equal(shouldUseSamsarExternalInference(request), true);
+    assert.equal(shouldUseOpenRouterInference(request), false);
+    assert.equal(shouldUseSamsarExternalInference(request), false);
     assert.equal(getOpenRouterModelForInferenceRequest(request), 'anthropic/claude-opus-5.5');
   });
 });

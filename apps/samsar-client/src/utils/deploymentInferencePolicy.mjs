@@ -1,3 +1,5 @@
+import { translateText as uiText } from "./localization.js";
+import { parseReasoningModelChoice } from './inferenceModelChoices.mjs';
 export const DEFAULT_INFERENCE_MODEL_VALUE = "gpt-6-astra";
 export const EXTRA_HIGH_INFERENCE_MODEL_VALUE = "gpt-6-astra-xhigh";
 export const QWEN_INFERENCE_MODEL_VALUE = "QWEN3.8";
@@ -30,7 +32,7 @@ const GPT_56_SOL_XHIGH_MODEL_TOKENS = new Set([
 ]);
 
 const DEPLOYMENT_PROVIDER_LABELS = Object.freeze({
-  samsar: "Samsar API Key",
+  get samsar() { return uiText("Samsar API Key"); },
   openai: "OpenAI",
   anthropic: "Anthropic",
   openrouter: "OpenRouter",
@@ -43,11 +45,11 @@ const DEPLOYMENT_PROVIDER_LABELS = Object.freeze({
 });
 
 const DEPLOYMENT_INFERENCE_MODELS_BY_PROVIDER = Object.freeze({
-  openai: ["gpt-6-astra"],
-  anthropic: ["claude-opus-5.5"],
+  openai: ["gpt-6-astra", "gpt-6.1-sol"],
+  anthropic: ["claude-opus-5.5", "claude-fable-5.1"],
   googleCloud: ["gemini-4-argon"],
   kimi: [KIMI_K3_INFERENCE_MODEL_VALUE],
-  openrouter: ["gpt-6-astra", "gemini-4-argon", QWEN_INFERENCE_MODEL_VALUE, "claude-opus-5.5"],
+  openrouter: ["gpt-6-astra", "gemini-4-argon", QWEN_INFERENCE_MODEL_VALUE, "claude-opus-5.5", "claude-fable-5.1", "gpt-6.1-sol"],
   gmicloud: [QWEN_INFERENCE_MODEL_VALUE],
   // Alibaba/Qwen requires explicit, validated model provenance below. A
   // provider name by itself is not enough to make Qwen selectable.
@@ -55,6 +57,8 @@ const DEPLOYMENT_INFERENCE_MODELS_BY_PROVIDER = Object.freeze({
   samsar: [
     "gpt-6-astra",
     "claude-opus-5.5",
+    "claude-fable-5.1",
+    "gpt-6.1-sol",
     "gemini-4-argon",
     QWEN_INFERENCE_MODEL_VALUE,
     KIMI_K3_INFERENCE_MODEL_VALUE,
@@ -123,7 +127,7 @@ export function formatDeploymentProviderLabel(value) {
     .trim()
     .replace(/[_-]+/g, " ")
     .replace(/\s+/g, " ")
-    .replace(/\b\w/g, (letter) => letter.toUpperCase()) || "Unknown provider";
+    .replace(/\b\w/g, (letter) => letter.toUpperCase()) || uiText("Unknown provider");
 }
 
 export function extractDeploymentProviders(payload = {}) {
@@ -155,6 +159,8 @@ export function hasSubtitleGenerationProvider(payload = {}) {
 }
 
 export function inferGPT56SolEffortFromModelValue(value) {
+  const choice = parseReasoningModelChoice(value);
+  if (choice) return choice.effort;
   if (typeof value !== "string") return "";
   const compact = value.trim().toLowerCase().replace(/[^a-z0-9]+/g, "");
   if (GPT_56_SOL_XHIGH_MODEL_TOKENS.has(compact)) return "xhigh";
@@ -163,6 +169,8 @@ export function inferGPT56SolEffortFromModelValue(value) {
 }
 
 export function normalizeDeploymentInferenceModelValue(value) {
+  const choice = parseReasoningModelChoice(value);
+  if (choice) return choice.model;
   if (typeof value !== "string") return "";
 
   const normalized = value.trim().toLowerCase();
@@ -371,7 +379,10 @@ export function resolveAllowedInferenceModelOption(
 
   const normalizedValue = normalizeDeploymentInferenceModelValue(value);
   const normalizedFallback = normalizeDeploymentInferenceModelValue(fallbackValue);
+  const choice = parseReasoningModelChoice(value);
+  const exactValue = choice ? choice.model + (choice.effort === 'xhigh' ? '-xhigh' : '') : value;
   return (
+    modelOptions.find((option) => option.value === exactValue) ||
     modelOptions.find(
       (option) => normalizeDeploymentInferenceModelValue(option?.value) === normalizedValue,
     ) ||

@@ -114,6 +114,17 @@ export function extendSessionTimelineToEndTime(sessionData, targetEndTime) {
     };
   }
 
+  const hasVideoSource = ['aiVideoLayer', 'userVideoLayer', 'lipSyncVideoLayer', 'soundEffectVideoLayer']
+    .some(field => Boolean(lastLayer[field]));
+  if (hasVideoSource) {
+    // Recorded/custom speech can extend the final output, but cannot add source
+    // motion frames. The final renderer handles this explicit audio-only tail.
+    const alreadyExtended = Number(sessionData.totalDuration) >= resolvedTargetEndTime;
+    sessionData.totalDuration = resolvedTargetEndTime;
+    return { extended: !alreadyExtended, currentEndTime, targetEndTime: resolvedTargetEndTime,
+      totalDuration: resolvedTargetEndTime, extendedLayerId: null, extendedLayerIndex: null };
+  }
+
   lastLayer.duration = nextDuration;
   lastLayer.frameGenerationPending = true;
   sessionData.frameGenerationPending = true;

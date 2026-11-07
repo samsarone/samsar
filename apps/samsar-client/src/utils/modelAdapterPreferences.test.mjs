@@ -41,7 +41,7 @@ const RESPONSE = {
       models: [
         {
           modelKey: "GPTIMAGE2.5",
-          label: "GPTImage 2.5",
+          label: "GPTImage 2.6",
           availableAdapters: [
             { key: "openai", label: "OpenAI" },
           ],

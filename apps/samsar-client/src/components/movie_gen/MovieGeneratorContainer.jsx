@@ -1,9 +1,11 @@
+import { useUiLanguage } from '../../hooks/useUiLanguage.js';
 
 import OverflowContainer from '../common/OverflowContainer.tsx';
 
 import MovieGenerator from './MovieGenerator.jsx';
 
 export default function OneshotEditorContainer() {
+  useUiLanguage();
 
   return (
     <div className='bg-gray-900'>

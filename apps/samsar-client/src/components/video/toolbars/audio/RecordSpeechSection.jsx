@@ -1,3 +1,5 @@
+import { useUiLanguage } from '../../../../hooks/useUiLanguage.js';
+import { translateText as uiText, formatUiStatus } from '../../../../utils/localization.js';
 import { useStudioFrameRate } from '../../StudioFrameRateContext.jsx';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
@@ -65,15 +67,15 @@ const AVATAR_IMAGE_MODEL_CATALOG = IMAGE_GENERAITON_MODEL_TYPES.filter(
 const AVATAR_VIDEO_AUDIO_SOURCE_SESSION_SPEECH = 'session_speech';
 const AVATAR_VIDEO_AUDIO_SOURCE_HINT_SPEECH = 'hint_speech';
 const AVATAR_VIDEO_AUDIO_SOURCE_OPTIONS = [
-  { value: AVATAR_VIDEO_AUDIO_SOURCE_SESSION_SPEECH, label: 'Generated speech lip sync' },
-  { value: AVATAR_VIDEO_AUDIO_SOURCE_HINT_SPEECH, label: 'Text hints avatar speech' },
+  { value: AVATAR_VIDEO_AUDIO_SOURCE_SESSION_SPEECH, get label() { return uiText("Generated speech lip sync"); } },
+  { value: AVATAR_VIDEO_AUDIO_SOURCE_HINT_SPEECH, get label() { return uiText("Text hints avatar speech"); } },
 ];
 const AVATAR_TTS_PROVIDER_OPTIONS = [
-  { value: 'OPENAI', label: 'OpenAI', adapterModelKey: 'OPENAI_TTS' },
-  { value: 'ELEVENLABS', label: 'ElevenLabs', adapterModelKey: 'ELEVENLABS' },
-  { value: 'PLAYAI', label: 'Play.ht', adapterModelKey: 'PLAYAI' },
-  { value: 'GOOGLE', label: 'Google TTS', adapterModelKey: 'GOOGLE_TTS' },
-  { value: 'CUSTOM_TEXT_TO_SPEECH', label: 'Custom TTS', adapterKey: 'custom' },
+  { value: 'OPENAI', get label() { return uiText("OpenAI"); }, adapterModelKey: 'OPENAI_TTS' },
+  { value: 'ELEVENLABS', get label() { return uiText("ElevenLabs"); }, adapterModelKey: 'ELEVENLABS' },
+  { value: 'PLAYAI', get label() { return uiText("Play.ht"); }, adapterModelKey: 'PLAYAI' },
+  { value: 'GOOGLE', get label() { return uiText("Google TTS"); }, adapterModelKey: 'GOOGLE_TTS' },
+  { value: 'CUSTOM_TEXT_TO_SPEECH', get label() { return uiText("Custom TTS"); }, adapterKey: 'custom' },
 ];
 
 const RECORDER_MIME_TYPES = [
@@ -179,6 +181,7 @@ function AvatarImage({
   className,
   onUnavailable,
 }) {
+  useUiLanguage();
   if (!src) {
     return null;
   }
@@ -271,42 +274,42 @@ function getAvatarTaskStatusLabel(task = {}) {
   const avatarVideoStatus = normalizeAvatarTaskStatus(task?.avatarVideoStatus);
 
   if (status === 'FAILED') {
-    return 'Failed';
+    return uiText("Failed");
   }
   if (status === 'REJECTED') {
-    return 'Rejected';
+    return uiText("Rejected");
   }
   if (status === 'ACCEPTED') {
-    return 'Accepted';
+    return uiText("Accepted");
   }
   if (status === 'SAVED') {
-    return 'Saved';
+    return uiText("Saved");
   }
   if (status === 'VIDEO_COMPLETED') {
-    return 'Video ready';
+    return uiText("Video ready");
   }
   if (status === 'VIDEO_PROCESSING' || ['PENDING', 'RUNNING', 'THROTTLED'].includes(avatarVideoStatus)) {
-    return 'Generating video';
+    return uiText("Generating video");
   }
   if (status === 'SPEECH_READY' || avatarSpeechStatus === 'COMPLETED') {
-    return 'Speech ready';
+    return uiText("Speech ready");
   }
   if (status === 'SPEECH_PROCESSING' || ['INIT', 'PENDING', 'PROCESSING'].includes(avatarSpeechStatus)) {
-    return 'Generating speech';
+    return uiText("Generating speech");
   }
   if (status === 'AVATAR_READY' || runwayAvatarStatus === 'READY') {
-    return 'Avatar ready';
+    return uiText("Avatar ready");
   }
   if (status === 'AVATAR_PROCESSING' || runwayAvatarStatus === 'PROCESSING') {
-    return 'Creating avatar';
+    return uiText("Creating avatar");
   }
   if (status === 'IMAGE_COMPLETED' || imageStatus === 'COMPLETED') {
-    return 'Image ready';
+    return uiText("Image ready");
   }
   if (status === 'IMAGE_PENDING' || imageStatus === 'PENDING') {
-    return 'Generating image';
+    return uiText("Generating image");
   }
-  return status ? status.toLowerCase().replace(/_/g, ' ') : 'Draft';
+  return status ? formatUiStatus(status) : uiText("Draft");
 }
 
 function estimateAvatarVideoCreditCost(durationSeconds = 1) {
@@ -344,8 +347,8 @@ async function pollGlobalVideoProcessing({
   sessionId,
   globalVideo,
   headers,
-  failureMessage = 'Unable to process recorded facecam.',
-  timeoutMessage = 'Facecam was uploaded, but processing is still running. Please try again in a moment.',
+  failureMessage = uiText("Unable to process recorded facecam."),
+  timeoutMessage = uiText("Facecam was uploaded, but processing is still running. Please try again in a moment."),
 }) {
   const globalVideoId = getGlobalVideoId(globalVideo);
   if (!sessionId || !globalVideoId) {
@@ -430,7 +433,7 @@ function readBlobAsDataUrl(blob) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(reader.result);
-    reader.onerror = () => reject(new Error('Unable to read recorded audio.'));
+    reader.onerror = () => reject(new Error(uiText("Unable to read recorded audio.")));
     reader.readAsDataURL(blob);
   });
 }
@@ -658,6 +661,7 @@ export default function RecordSpeechSection({
   onSetAvatarHints,
   isCollapsedSidebarView = false,
 }) {
+  const uiLanguage = useUiLanguage();
   const [microphones, setMicrophones] = useState([]);
   const [selectedMicId, setSelectedMicId] = useState('');
   const [micVolume, setMicVolume] = useState(100);
@@ -734,7 +738,7 @@ export default function RecordSpeechSection({
       value: model.key,
       label: model.name,
     }));
-  }, [imageModelValues, isStandaloneDeployment]);
+  }, [uiLanguage, imageModelValues, isStandaloneDeployment]);
   const availableTtsSpeakerTypes = useMemo(
     () => filterSpeakersForAudioAvailability(combinedTtsSpeakerTypes, audioAvailability),
     [audioAvailability, combinedTtsSpeakerTypes]
@@ -805,9 +809,9 @@ export default function RecordSpeechSection({
   const lastTranscriptDebugBucketRef = useRef(null);
   const lastTranscriptDebugCueRef = useRef('');
 
-  const borderColor = colorMode === 'dark' ? 'border-[#3a4050]' : 'border-slate-200';
+  const borderColor = 'border-line';
   const panelBg = colorMode === 'dark' ? 'bg-[#151720]' : 'bg-slate-50';
-  const mutedText = colorMode === 'dark' ? 'text-slate-400' : 'text-slate-600';
+  const mutedText = colorMode === 'dark' ? "text-slate-400" : "text-slate-600";
   const sliderAccent = colorMode === 'dark' ? '#f87171' : '#2563eb';
   const currentLayerStartTime = resolveLayerStartTime(currentLayer);
   const currentPreviewTime = Math.max(0, (Number(currentLayerSeek) || 0) / DISPLAY_FRAMES_PER_SECOND);
@@ -831,12 +835,12 @@ export default function RecordSpeechSection({
     : recordingSeconds;
   const selectedMicLabel = useMemo(() => {
     const selectedMic = microphones.find((device) => device.deviceId === selectedMicId);
-    return selectedMic?.label || 'Default microphone';
-  }, [microphones, selectedMicId]);
+    return selectedMic?.label || uiText("Default microphone");
+  }, [uiLanguage, microphones, selectedMicId]);
   const selectedCameraLabel = useMemo(() => {
     const selectedCamera = cameraDevices.find((device) => device.deviceId === selectedCameraId);
-    return selectedCamera?.label || 'Default camera';
-  }, [cameraDevices, selectedCameraId]);
+    return selectedCamera?.label || uiText("Default camera");
+  }, [uiLanguage, cameraDevices, selectedCameraId]);
   const speechHintCues = useMemo(() => normalizeTimelineHints(
     sessionDetails?.timelineHints || sessionDetails?.hints || []
   ), [sessionDetails?.hints, sessionDetails?.timelineHints]);
@@ -848,8 +852,7 @@ export default function RecordSpeechSection({
   const sessionDuration = useMemo(() => resolveSessionDuration(
     sessionDetails,
     latestHintEndTime
-  ), [
-    latestHintEndTime,
+  ), [latestHintEndTime,
     sessionDetails,
   ]);
   const generatedSpeechAudioSummary = useMemo(
@@ -971,28 +974,28 @@ export default function RecordSpeechSection({
     [avatarVideoPricingDurationSeconds]
   );
   const avatarVideoCostTooltip = [
-    `${avatarVideoCreditEstimate.upfrontCredits} credits upfront, then ${avatarVideoCreditEstimate.creditsPerBillingUnit} credits per ${AVATAR_VIDEO_BILLING_UNIT_SECONDS} seconds.`,
-    `Timed usage is about ${avatarVideoCreditEstimate.creditsPerSecond.toFixed(2)} credits/sec and rounds up to the next ${AVATAR_VIDEO_BILLING_UNIT_SECONDS}-second block.`,
-    `Estimated total: ${avatarVideoCreditEstimate.creditsToCharge} credits for ${Math.ceil(avatarVideoCreditEstimate.durationSeconds)}s.`,
+    uiText("{value0} credits upfront, then {value1} credits per {value2} seconds.", { value0: avatarVideoCreditEstimate.upfrontCredits, value1: avatarVideoCreditEstimate.creditsPerBillingUnit, value2: AVATAR_VIDEO_BILLING_UNIT_SECONDS }),
+    uiText("Timed usage is about {value0} credits/sec and rounds up to the next {value1}-second block.", { value0: avatarVideoCreditEstimate.creditsPerSecond.toFixed(2), value1: AVATAR_VIDEO_BILLING_UNIT_SECONDS }),
+    uiText("Estimated total: {value0} credits for {value1}s.", { value0: avatarVideoCreditEstimate.creditsToCharge, value1: Math.ceil(avatarVideoCreditEstimate.durationSeconds) }),
   ].join(' ');
   const avatarVideoDisabledReason = !avatarImageReady
     ? ''
     : !runwayAvatarReady && avatarGenerationStarted
-      ? 'Avatar is still preparing.'
+      ? uiText("Avatar is still preparing.")
       : usesSessionSpeechForAvatarVideo && !generatedSpeechAudioSummary.hasAudio
-        ? 'Generated session speech is not ready.'
+        ? uiText("Generated session speech is not ready.")
       : usesHintSpeechForAvatarVideo && !avatarSpeechReady
         ? ['INIT', 'PENDING', 'PROCESSING'].includes(selectedAvatarSpeechStatus)
-          ? 'Speech is still generating.'
-          : 'Generate speech from hints before creating the video.'
+          ? uiText("Speech is still generating.")
+          : uiText("Generate speech from hints before creating the video.")
       : usesHintSpeechForAvatarVideo && speechHintCues.length === 0
-        ? 'Timeline hints unavailable.'
+        ? uiText("Timeline hints unavailable.")
         : '';
   const avatarVideoActionLabel = !runwayAvatarReady
     ? avatarGenerationStarted
-      ? 'Preparing avatar and video'
-      : 'Generate avatar video'
-    : 'Generate avatar video';
+      ? uiText("Preparing avatar and video")
+      : uiText("Generate avatar video")
+    : uiText("Generate avatar video");
   const avatarVideoReady = Boolean(selectedAvatarVideoUrl)
     || ['VIDEO_COMPLETED', 'SAVED', 'ACCEPTED'].includes(selectedAvatarStatus);
   const avatarVideoTerminal = ['FAILED', 'CANCELLED'].includes(selectedAvatarVideoStatus)
@@ -1023,18 +1026,18 @@ export default function RecordSpeechSection({
     || isAvatarRejecting;
   const avatarSpeechProviderOptions = useMemo(
     () => filterTtsProviderOptionsForAudioAvailability(AVATAR_TTS_PROVIDER_OPTIONS, audioAvailability),
-    [audioAvailability]
+    [uiLanguage, audioAvailability]
   );
   const avatarSpeechSpeakerOptions = useMemo(() => {
     return getAvatarSpeechSpeakerOptions(selectedAvatarSpeechProvider, availableTtsSpeakerTypes);
-  }, [selectedAvatarSpeechProvider, availableTtsSpeakerTypes]);
+  }, [uiLanguage, selectedAvatarSpeechProvider, availableTtsSpeakerTypes]);
   const selectedAvatarSpeechSpeakerOption = useMemo(() => (
     avatarSpeechSpeakerOptions.find((option) => option.value === selectedAvatarSpeechSpeaker) || null
   ), [avatarSpeechSpeakerOptions, selectedAvatarSpeechSpeaker]);
   const selectedAvatarSpeechSpeakerLabel = useMemo(() => {
     const speaker = selectedAvatarSpeechSpeakerOption;
     return speaker?.label || speaker?.name || selectedAvatarSpeechSpeaker;
-  }, [selectedAvatarSpeechSpeaker, selectedAvatarSpeechSpeakerOption]);
+  }, [uiLanguage, selectedAvatarSpeechSpeaker, selectedAvatarSpeechSpeakerOption]);
   const selectedAvatarTaskError = selectedAvatarStatus === 'FAILED'
     ? (
       selectedAvatarTask?.imageError
@@ -1088,8 +1091,7 @@ export default function RecordSpeechSection({
     }
 
     return activeCue;
-  }, [
-    hintTimelineTime,
+  }, [hintTimelineTime,
     hintsEnabled,
     speechHintCues,
   ]);
@@ -1132,8 +1134,7 @@ export default function RecordSpeechSection({
       progressPercent: calculateHintProgressPercent(intervalStartTime, targetStartTime, resolvedTime),
       remainingSeconds: Math.max(0, targetStartTime - resolvedTime),
     };
-  }, [
-    currentLayerStartTime,
+  }, [currentLayerStartTime,
     hintTimelineTime,
     hintsEnabled,
     recordingPreviewStartSeconds,
@@ -1233,7 +1234,7 @@ export default function RecordSpeechSection({
 
     const headers = getHeaders();
     if (!headers) {
-      setAvatarError('You must be logged in to use avatar voiceover.');
+      setAvatarError(uiText("You must be logged in to use avatar voiceover."));
       return;
     }
 
@@ -1275,7 +1276,7 @@ export default function RecordSpeechSection({
         return getAvatarTaskId(tasks[0]) || '';
       });
     } catch (error) {
-      setAvatarError(error?.response?.data?.error || 'Unable to load avatar voiceover tasks.');
+      setAvatarError(error?.response?.data?.error || uiText("Unable to load avatar voiceover tasks."));
     } finally {
       if (!silent) {
         setIsAvatarTasksLoading(false);
@@ -1286,7 +1287,7 @@ export default function RecordSpeechSection({
   const loadUserRunwayAvatars = async ({ silent = false } = {}) => {
     const headers = getHeaders();
     if (!headers) {
-      setAvatarError('You must be logged in to use avatar voiceover.');
+      setAvatarError(uiText("You must be logged in to use avatar voiceover."));
       return;
     }
 
@@ -1300,7 +1301,7 @@ export default function RecordSpeechSection({
       setUserRunwayAvatars(avatars);
       applyAvatarVoices(response?.data?.voices);
     } catch (error) {
-      setAvatarError(error?.response?.data?.error || 'Unable to load saved avatars.');
+      setAvatarError(error?.response?.data?.error || uiText("Unable to load saved avatars."));
     } finally {
       if (!silent) {
         setIsUserRunwayAvatarsLoading(false);
@@ -1334,19 +1335,19 @@ export default function RecordSpeechSection({
 
   const handleGenerateAvatarImage = async () => {
     if (!sessionDetails?._id) {
-      setAvatarError('Open a video session before generating an avatar image.');
+      setAvatarError(uiText("Open a video session before generating an avatar image."));
       return;
     }
 
     const prompt = avatarPrompt.trim();
     if (!prompt) {
-      setAvatarError('Describe the avatar image first.');
+      setAvatarError(uiText("Describe the avatar image first."));
       return;
     }
 
     const headers = getHeaders();
     if (!headers) {
-      setAvatarError('You must be logged in to generate an avatar image.');
+      setAvatarError(uiText("You must be logged in to generate an avatar image."));
       return;
     }
 
@@ -1360,12 +1361,12 @@ export default function RecordSpeechSection({
       }, headers);
       applyAvatarVoices(response?.data?.voices);
       mergeAvatarTask(response?.data?.task);
-      toast.success('Avatar image generation started.', {
+      toast.success(uiText("Avatar image generation started."), {
         position: 'bottom-center',
         className: 'custom-toast',
       });
     } catch (error) {
-      setAvatarError(error?.response?.data?.error || 'Unable to generate avatar image.');
+      setAvatarError(error?.response?.data?.error || uiText("Unable to generate avatar image."));
     } finally {
       setIsAvatarImageGenerating(false);
     }
@@ -1373,13 +1374,13 @@ export default function RecordSpeechSection({
 
   const handleCreateRunwayAvatar = async ({ silent = false, autoGenerateVideo = false } = {}) => {
     if (!selectedAvatarTaskIdValue || !avatarImageReady) {
-      setAvatarError('Generate or select an avatar image first.');
+      setAvatarError(uiText("Generate or select an avatar image first."));
       return null;
     }
 
     const headers = getHeaders();
     if (!headers) {
-      setAvatarError('You must be logged in to create an avatar.');
+      setAvatarError(uiText("You must be logged in to create an avatar."));
       return null;
     }
 
@@ -1396,14 +1397,14 @@ export default function RecordSpeechSection({
       mergeAvatarTask(response?.data?.task);
       loadUserRunwayAvatars({ silent: true }).catch(() => {});
       if (!silent) {
-        toast.success('Avatar generation started.', {
+        toast.success(uiText("Avatar generation started."), {
           position: 'bottom-center',
           className: 'custom-toast',
         });
       }
       return response?.data?.task || null;
     } catch (error) {
-      setAvatarError(error?.response?.data?.error || 'Unable to create avatar.');
+      setAvatarError(error?.response?.data?.error || uiText("Unable to create avatar."));
       return null;
     } finally {
       setIsRunwayAvatarCreating(false);
@@ -1412,20 +1413,20 @@ export default function RecordSpeechSection({
 
   const handleSelectUserRunwayAvatar = async (avatarTask) => {
     if (!sessionDetails?._id) {
-      setAvatarError('Open a video session before selecting an avatar.');
+      setAvatarError(uiText("Open a video session before selecting an avatar."));
       return;
     }
 
     const sourceTaskId = getAvatarTaskId(avatarTask);
     const runwayAvatarId = avatarTask?.runwayAvatarId;
     if (!sourceTaskId && !runwayAvatarId) {
-      setAvatarError('Choose an avatar first.');
+      setAvatarError(uiText("Choose an avatar first."));
       return;
     }
 
     const headers = getHeaders();
     if (!headers) {
-      setAvatarError('You must be logged in to select an avatar.');
+      setAvatarError(uiText("You must be logged in to select an avatar."));
       return;
     }
 
@@ -1439,12 +1440,12 @@ export default function RecordSpeechSection({
       }, headers);
       applyAvatarVoices(response?.data?.voices);
       mergeAvatarTask(response?.data?.task);
-      toast.success('Avatar selected for this session.', {
+      toast.success(uiText("Avatar selected for this session."), {
         position: 'bottom-center',
         className: 'custom-toast',
       });
     } catch (error) {
-      setAvatarError(error?.response?.data?.error || 'Unable to select avatar.');
+      setAvatarError(error?.response?.data?.error || uiText("Unable to select avatar."));
     } finally {
       setIsUserRunwayAvatarSelecting(false);
     }
@@ -1452,21 +1453,21 @@ export default function RecordSpeechSection({
 
   const handleGenerateAvatarSpeechFromHints = async () => {
     if (!selectedAvatarTaskIdValue) {
-      setAvatarError('Generate or select an avatar image first.');
+      setAvatarError(uiText("Generate or select an avatar image first."));
       return;
     }
     if (speechHintCues.length === 0) {
-      setAvatarError('Timeline hints are required before generating avatar speech.');
+      setAvatarError(uiText("Timeline hints are required before generating avatar speech."));
       return;
     }
     if (!selectedAvatarSpeechSpeakerOption) {
-      setAvatarError('Choose a speaker before generating avatar speech.');
+      setAvatarError(uiText("Choose a speaker before generating avatar speech."));
       return;
     }
 
     const headers = getHeaders();
     if (!headers) {
-      setAvatarError('You must be logged in to generate avatar speech.');
+      setAvatarError(uiText("You must be logged in to generate avatar speech."));
       return;
     }
 
@@ -1491,12 +1492,12 @@ export default function RecordSpeechSection({
       }, headers);
       applyAvatarVoices(response?.data?.voices);
       mergeAvatarTask(response?.data?.task);
-      toast.success('Avatar speech generation started.', {
+      toast.success(uiText("Avatar speech generation started."), {
         position: 'bottom-center',
         className: 'custom-toast',
       });
     } catch (error) {
-      setAvatarError(error?.response?.data?.error || 'Unable to generate avatar speech.');
+      setAvatarError(error?.response?.data?.error || uiText("Unable to generate avatar speech."));
     } finally {
       setIsAvatarSpeechGenerating(false);
     }
@@ -1504,24 +1505,24 @@ export default function RecordSpeechSection({
 
   const handleGenerateAvatarVideoFromHints = async () => {
     if (!selectedAvatarTaskIdValue || !avatarImageReady) {
-      setAvatarError('Generate or select an avatar image first.');
+      setAvatarError(uiText("Generate or select an avatar image first."));
       return;
     }
     if (usesHintSpeechForAvatarVideo && speechHintCues.length === 0) {
-      setAvatarError('Timeline hints are required before generating avatar video.');
+      setAvatarError(uiText("Timeline hints are required before generating avatar video."));
       return;
     }
     if (usesHintSpeechForAvatarVideo && !avatarSpeechReady) {
-      setAvatarError('Generate speech from hints before generating avatar video.');
+      setAvatarError(uiText("Generate speech from hints before generating avatar video."));
       return;
     }
     if (usesSessionSpeechForAvatarVideo && !generatedSpeechAudioSummary.hasAudio) {
-      setAvatarError('Generated session speech is not ready.');
+      setAvatarError(uiText("Generated session speech is not ready."));
       return;
     }
     if (!runwayAvatarReady) {
       if (avatarGenerationStarted || avatarTaskBusy) {
-        setAvatarError('Avatar is still preparing.');
+        setAvatarError(uiText("Avatar is still preparing."));
         return;
       }
 
@@ -1539,7 +1540,7 @@ export default function RecordSpeechSection({
         setAvatarError(
           preparedTask?.avatarVideoError
           || preparedTask?.errorMessage
-          || 'Unable to start avatar video generation.'
+          || uiText("Unable to start avatar video generation.")
         );
         return;
       }
@@ -1549,8 +1550,8 @@ export default function RecordSpeechSection({
         || ['PENDING', 'PROCESSING', 'RUNNING'].includes(preparedVideoStatus);
       toast.success(
         preparedVideoStarted
-          ? 'Avatar video generation started.'
-          : 'Avatar is being prepared. Lip sync will start automatically when it is ready.',
+          ? uiText("Avatar video generation started.")
+          : uiText("Avatar is being prepared. Lip sync will start automatically when it is ready."),
         {
           position: 'bottom-center',
           className: 'custom-toast',
@@ -1561,7 +1562,7 @@ export default function RecordSpeechSection({
 
     const headers = getHeaders();
     if (!headers) {
-      setAvatarError('You must be logged in to generate an avatar video.');
+      setAvatarError(uiText("You must be logged in to generate an avatar video."));
       return;
     }
 
@@ -1574,12 +1575,12 @@ export default function RecordSpeechSection({
       }, headers);
       applyAvatarVoices(response?.data?.voices);
       mergeAvatarTask(response?.data?.task);
-      toast.success('Avatar video generation started.', {
+      toast.success(uiText("Avatar video generation started."), {
         position: 'bottom-center',
         className: 'custom-toast',
       });
     } catch (error) {
-      setAvatarError(error?.response?.data?.error || 'Unable to generate avatar video.');
+      setAvatarError(error?.response?.data?.error || uiText("Unable to generate avatar video."));
     } finally {
       setIsAvatarVideoGenerating(false);
     }
@@ -1587,13 +1588,13 @@ export default function RecordSpeechSection({
 
   const handleAcceptAvatarVideo = async () => {
     if (!selectedAvatarTaskIdValue || !avatarVideoReady) {
-      setAvatarError('Generate an avatar video before accepting it.');
+      setAvatarError(uiText("Generate an avatar video before accepting it."));
       return;
     }
 
     const headers = getHeaders();
     if (!headers) {
-      setAvatarError('You must be logged in to accept avatar video.');
+      setAvatarError(uiText("You must be logged in to accept avatar video."));
       return;
     }
 
@@ -1617,20 +1618,20 @@ export default function RecordSpeechSection({
           sessionId: sessionDetails?._id?.toString?.() || nextSessionDetails?._id?.toString?.(),
           globalVideo: acceptedGlobalVideo,
           headers,
-          failureMessage: 'Unable to process avatar video for the session.',
-          timeoutMessage: 'Avatar video was added, but processing is still running. Please try again in a moment.',
+          failureMessage: uiText("Unable to process avatar video for the session."),
+          timeoutMessage: uiText("Avatar video was added, but processing is still running. Please try again in a moment."),
         });
         nextSessionDetails = mergeGlobalVideoIntoSessionDetails(nextSessionDetails || sessionDetails, acceptedGlobalVideo);
         if (nextSessionDetails && typeof onAvatarVoiceoverSessionChange === 'function') {
           onAvatarVoiceoverSessionChange(nextSessionDetails);
         }
       }
-      toast.success('Avatar voiceover added to the session.', {
+      toast.success(uiText("Avatar voiceover added to the session."), {
         position: 'bottom-center',
         className: 'custom-toast',
       });
     } catch (error) {
-      setAvatarError(error?.response?.data?.error || 'Unable to accept avatar video.');
+      setAvatarError(error?.response?.data?.error || uiText("Unable to accept avatar video."));
     } finally {
       setIsAvatarVideoAccepting(false);
     }
@@ -1638,13 +1639,13 @@ export default function RecordSpeechSection({
 
   const handleSaveAvatarVideoToLibrary = async () => {
     if (!selectedAvatarTaskIdValue || !avatarVideoReady) {
-      setAvatarError('Generate an avatar video before saving it.');
+      setAvatarError(uiText("Generate an avatar video before saving it."));
       return;
     }
 
     const headers = getHeaders();
     if (!headers) {
-      setAvatarError('You must be logged in to save avatar video.');
+      setAvatarError(uiText("You must be logged in to save avatar video."));
       return;
     }
 
@@ -1655,12 +1656,12 @@ export default function RecordSpeechSection({
         taskId: selectedAvatarTaskIdValue,
       }, headers);
       mergeAvatarTask(response?.data?.task);
-      toast.success('Avatar video saved to library.', {
+      toast.success(uiText("Avatar video saved to library."), {
         position: 'bottom-center',
         className: 'custom-toast',
       });
     } catch (error) {
-      setAvatarError(error?.response?.data?.error || 'Unable to save avatar video.');
+      setAvatarError(error?.response?.data?.error || uiText("Unable to save avatar video."));
     } finally {
       setIsAvatarVideoSaving(false);
     }
@@ -1673,7 +1674,7 @@ export default function RecordSpeechSection({
 
     const headers = getHeaders();
     if (!headers) {
-      setAvatarError('You must be logged in to reject avatar video.');
+      setAvatarError(uiText("You must be logged in to reject avatar video."));
       return;
     }
 
@@ -1685,7 +1686,7 @@ export default function RecordSpeechSection({
       }, headers);
       mergeAvatarTask(response?.data?.task);
     } catch (error) {
-      setAvatarError(error?.response?.data?.error || 'Unable to reject avatar video.');
+      setAvatarError(error?.response?.data?.error || uiText("Unable to reject avatar video."));
     } finally {
       setIsAvatarRejecting(false);
     }
@@ -1963,7 +1964,7 @@ export default function RecordSpeechSection({
       };
 
       recorder.onerror = (event) => {
-        setFacecamError(event?.error?.message || event?.message || 'Unable to record facecam.');
+        setFacecamError(event?.error?.message || event?.message || uiText("Unable to record facecam."));
       };
 
       recorder.onstop = async () => {
@@ -2211,7 +2212,7 @@ export default function RecordSpeechSection({
       updateLevel();
       return true;
     } catch (error) {
-      setRecorderError(error?.message || 'Unable to start microphone recording.');
+      setRecorderError(error?.message || uiText("Unable to start microphone recording."));
       if (shouldRecordFacecam) {
         await stopFacecamRecording({ discard: true });
       }
@@ -2286,7 +2287,7 @@ export default function RecordSpeechSection({
 
     const headers = getHeaders();
     if (!headers) {
-      setRecorderError('You must be logged in to save recorded speech.');
+      setRecorderError(uiText("You must be logged in to save recorded speech."));
       return null;
     }
 
@@ -2302,7 +2303,7 @@ export default function RecordSpeechSection({
         fileName: `recorded-speech.${extension}`,
         generationType: 'recorded_speech',
         libraryType: 'speech',
-        title: 'Recorded speech',
+        title: uiText("Recorded speech"),
         speakerCharacterName: 'Recorded speech',
         addTranscription: false,
         volume: Number(micVolume) || 100,
@@ -2314,7 +2315,7 @@ export default function RecordSpeechSection({
       }
       return uploadedItem;
     } catch (error) {
-      setRecorderError(error?.response?.data?.error || 'Unable to save recorded speech.');
+      setRecorderError(error?.response?.data?.error || uiText("Unable to save recorded speech."));
       return null;
     } finally {
       setIsUploadPending(false);
@@ -2334,7 +2335,7 @@ export default function RecordSpeechSection({
       }
     }
 
-    toast.success('Recorded speech added to library.', {
+    toast.success(uiText("Recorded speech added to library."), {
       position: 'bottom-center',
       className: 'custom-toast',
     });
@@ -2356,7 +2357,7 @@ export default function RecordSpeechSection({
 
     const headers = getHeaders();
     if (!headers?.headers) {
-      setRecorderError('You must be logged in to save recorded facecam.');
+      setRecorderError(uiText("You must be logged in to save recorded facecam."));
       return null;
     }
 
@@ -2401,7 +2402,7 @@ export default function RecordSpeechSection({
             duration,
             framesPerSecond: facecamFramesPerSecond,
             shapeOverlay: facecamShapeOverlay,
-            title: 'Recorded facecam',
+            title: uiText("Recorded facecam"),
           },
         }
       );
@@ -2424,10 +2425,10 @@ export default function RecordSpeechSection({
       const statusCode = error?.response?.status;
       const serverError = error?.response?.data?.error || error?.response?.data?.message;
       setFacecamError(
-        (statusCode === 504 ? 'Facecam processing timed out. Please try again.' : '')
+        (statusCode === 504 ? uiText("Facecam processing timed out. Please try again.") : '')
         || serverError
         || error?.message
-        || 'Unable to save recorded facecam.'
+        || uiText("Unable to save recorded facecam.")
       );
       return null;
     } finally {
@@ -2437,7 +2438,7 @@ export default function RecordSpeechSection({
 
   const handleAddToSession = async () => {
     if (typeof requestAddAudioLayerFromLibrary !== 'function') {
-      setRecorderError('Unable to add recorded speech to this session.');
+      setRecorderError(uiText("Unable to add recorded speech to this session."));
       return;
     }
 
@@ -2672,14 +2673,12 @@ export default function RecordSpeechSection({
   const hintsIconButtonClass = `inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border text-xs shadow-sm transition disabled:cursor-not-allowed disabled:opacity-50 ${
     hintsEnabled
       ? 'border-amber-400 bg-amber-500 text-slate-950 hover:bg-amber-400'
-      : colorMode === 'dark'
-        ? 'border-[#273956] bg-[#20232e] text-slate-100 hover:bg-[#172642]'
-        : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
+      : `bg-surface-raised text-fg-body ${colorMode === 'dark' ? 'border-[#273956] hover:bg-[#172642]' : 'border-slate-200 hover:bg-slate-50'}`
   }`;
   const secondaryIconButtonClass = colorMode === 'dark'
     ? `${iconButtonBaseClass} border-[#273956] bg-[#20232e] text-slate-100 hover:bg-[#172642]`
     : `${iconButtonBaseClass} border-slate-200 bg-white text-slate-700 hover:bg-slate-50`;
-  const resultIconButtonBaseClass = 'inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border text-[11px] shadow-sm transition disabled:cursor-not-allowed disabled:opacity-50';
+  const resultIconButtonBaseClass = 'inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border text-caption shadow-sm transition disabled:cursor-not-allowed disabled:opacity-50';
   const resultPrimaryIconButtonClass = `${resultIconButtonBaseClass} border-blue-500 bg-blue-600 text-white hover:bg-blue-500`;
   const resultSecondaryIconButtonClass = colorMode === 'dark'
     ? `${resultIconButtonBaseClass} border-[#273956] bg-[#20232e] text-slate-100 hover:bg-[#172642]`
@@ -2698,16 +2697,14 @@ export default function RecordSpeechSection({
     ? `${avatarTextButtonBaseClass} border-[#273956] bg-[#20232e] text-slate-100 hover:bg-[#172642]`
     : `${avatarTextButtonBaseClass} border-slate-200 bg-white text-slate-700 hover:bg-slate-50`;
   const avatarDangerButtonClass = `${avatarTextButtonBaseClass} border-red-500/60 bg-red-600 text-white hover:bg-red-500`;
-  const avatarThumbnailButtonClass = colorMode === 'dark'
-    ? 'relative aspect-square overflow-hidden rounded-lg border border-[#273956] bg-[#20232e] transition disabled:cursor-not-allowed disabled:opacity-50'
-    : 'relative aspect-square overflow-hidden rounded-lg border border-slate-200 bg-white transition disabled:cursor-not-allowed disabled:opacity-50';
+  const avatarThumbnailButtonClass = `relative aspect-square overflow-hidden rounded-lg border bg-surface-raised transition disabled:cursor-not-allowed disabled:opacity-50 ${colorMode === 'dark' ? 'border-[#273956]' : 'border-slate-200'}`;
   const avatarThumbnailSelectedClass = colorMode === 'dark'
     ? '!border-[#ff4655] bg-[#ff4655]/10'
     : '!border-blue-500 bg-blue-50';
-  const recordButtonLabel = shouldRecordFacecam ? 'Record audio and video' : 'Record audio';
-  const stopButtonLabel = 'Stop recording';
+  const recordButtonLabel = shouldRecordFacecam ? uiText("Record audio and video") : uiText("Record audio");
+  const stopButtonLabel = uiText("Stop recording");
   const teleprompterCue = activeTranscriptCue;
-  const teleprompterCueText = teleprompterCue?.text || 'Hints are ready';
+  const teleprompterCueText = teleprompterCue?.text || uiText("Hints are ready");
   const nextHintTimeLabel = hintProgressWindow ? formatRecordingTime(hintProgressWindow.remainingSeconds) : '--:--';
   const handleHintsToggleClick = () => {
     const nextHintsEnabled = !hintsEnabled;
@@ -2740,7 +2737,7 @@ export default function RecordSpeechSection({
         <div className="overflow-hidden rounded-2xl border border-white/15 bg-black/80 px-4 py-4 text-white shadow-2xl backdrop-blur-md sm:px-7 sm:py-5">
           {hintProgressWindow && (
             <div className="mb-4">
-              <div className="h-1.5 overflow-hidden rounded-full bg-white/15" aria-label="Progress until next hint">
+              <div className="h-1.5 overflow-hidden rounded-full bg-white/15" aria-label={uiText("Progress until next hint")}>
                 <div
                   className="h-full rounded-full bg-amber-300"
                   style={{ width: `${hintProgressWindow.progressPercent}%` }}
@@ -2758,14 +2755,12 @@ export default function RecordSpeechSection({
 
           <div className="mt-4 flex items-end justify-between gap-4 text-left text-xs font-semibold uppercase text-white/65">
             <div>
-              <div className="text-[10px] tracking-wide text-white/45">Next text</div>
+              <div className="text-micro tracking-wide text-white/45">{uiText("Next text")}</div>
               <div className="text-lg text-amber-100 tabular-nums">{nextHintTimeLabel}</div>
             </div>
             <div className="text-right">
-              <div className="text-[10px] tracking-wide text-white/45">Global</div>
-              <div className="text-xs tabular-nums text-white/75">
-                {formatRecordingTime(hintTimelineTime)} · {formatRecordingTime(globalRemainingSeconds)} left
-              </div>
+              <div className="text-micro tracking-wide text-white/45">{uiText("Global")}</div>
+              <div className="text-xs tabular-nums text-white/75">{uiText("{value0} · {value1} left", { value0: formatRecordingTime(hintTimelineTime), value1: formatRecordingTime(globalRemainingSeconds) })}</div>
             </div>
           </div>
         </div>
@@ -2785,20 +2780,20 @@ export default function RecordSpeechSection({
       <div className="grid gap-3">
         {isCollapsedSidebarView ? (
           <label className="block">
-            <span className={`mb-1 block text-xs font-semibold ${mutedText}`}>Mode</span>
+            <span className={`mb-1 block text-xs font-semibold ${mutedText}`}>{uiText("Mode")}</span>
             <select
               value={facecamVoiceoverMode}
               onChange={(event) => handleFacecamVoiceoverModeChange(event.target.value)}
               disabled={isRecording || isStartingRecording}
               className={`w-full rounded-lg ${bgColor} ${text2Color} px-2 py-2 text-xs font-semibold`}
-              aria-label="Facecam and voiceover mode"
+              aria-label={uiText("Facecam and voiceover mode")}
             >
-              <option value="avatar_voiceover">Voiceover with avatar</option>
-              <option value="recording_facecam">Recording with facecam</option>
+              <option value="avatar_voiceover">{uiText("Voiceover with avatar")}</option>
+              <option value="recording_facecam">{uiText("Recording with facecam")}</option>
             </select>
           </label>
         ) : (
-          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2" role="tablist" aria-label="Facecam and voiceover mode">
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2" role="tablist" aria-label={uiText("Facecam and voiceover mode")}>
             <button
               type="button"
               role="tab"
@@ -2808,7 +2803,7 @@ export default function RecordSpeechSection({
               className={facecamVoiceoverMode === 'avatar_voiceover' ? selectedModeButtonClass : unselectedModeButtonClass}
             >
               <FaUserCircle aria-hidden="true" />
-              <span>Voiceover with avatar</span>
+              <span>{uiText("Voiceover with avatar")}</span>
             </button>
             <button
               type="button"
@@ -2819,7 +2814,7 @@ export default function RecordSpeechSection({
               className={isRecordingFacecamMode ? selectedModeButtonClass : unselectedModeButtonClass}
             >
               <FaVideo aria-hidden="true" />
-              <span>Recording with facecam</span>
+              <span>{uiText("Recording with facecam")}</span>
             </button>
           </div>
         )}
@@ -2828,17 +2823,17 @@ export default function RecordSpeechSection({
           <>
             <div className="grid gap-2">
               <label className="block">
-                <span className={`mb-1 block text-xs font-semibold ${mutedText}`}>Avatar prompt</span>
+                <span className={`mb-1 block text-xs font-semibold ${mutedText}`}>{uiText("Avatar prompt")}</span>
                 <textarea
                   value={avatarPrompt}
                   onChange={(event) => setAvatarPrompt(event.target.value)}
                   rows={3}
                   className={`w-full resize-none rounded-lg ${bgColor} ${text2Color} px-3 py-2 text-sm`}
-                  placeholder="Professional presenter with warm studio lighting"
+                  placeholder={uiText("Professional presenter with warm studio lighting")}
                 />
               </label>
               <label className="block">
-                <span className={`mb-1 block text-xs font-semibold ${mutedText}`}>Avatar image model</span>
+                <span className={`mb-1 block text-xs font-semibold ${mutedText}`}>{uiText("Avatar image model")}</span>
                 <ModelAdapterSelect
                   options={avatarImageModelOptions}
                   value={selectedAvatarImageModel}
@@ -2860,26 +2855,24 @@ export default function RecordSpeechSection({
                 className={`${avatarPrimaryButtonClass} w-full`}
               >
                 {isAvatarImageGenerating ? <FaSyncAlt className="animate-spin" aria-hidden="true" /> : <FaImage aria-hidden="true" />}
-                <span>{generatedAvatarTasks.length ? 'Generate another avatar image' : 'Generate avatar image'}</span>
+                <span>{generatedAvatarTasks.length ? uiText("Generate another avatar image") : uiText("Generate avatar image")}</span>
               </button>
             </div>
 
             {isAvatarTasksLoading && (
-              <div className={`rounded-lg border ${borderColor} px-3 py-2 text-xs ${mutedText}`}>
-                Loading avatar voiceovers.
-              </div>
+              <div className={`rounded-lg border ${borderColor} px-3 py-2 text-xs ${mutedText}`}>{uiText("Loading avatar voiceovers.")}</div>
             )}
 
             {selectedAvatarImagePending && (
               <div className={`flex items-center gap-2 rounded-lg border ${borderColor} px-3 py-2 text-xs ${mutedText}`}>
                 <FaSyncAlt className="shrink-0 animate-spin" aria-hidden="true" />
-                <span>Generating avatar image.</span>
+                <span>{uiText("Generating avatar image.")}</span>
               </div>
             )}
 
             {generatedAvatarTasks.length > 0 && (
               <div className="grid gap-2">
-                <div className={`text-xs font-semibold ${mutedText}`}>Generated avatars</div>
+                <div className={`text-xs font-semibold ${mutedText}`}>{uiText("Generated avatars")}</div>
                 <div className="grid grid-cols-3 gap-2">
                   {generatedAvatarTasks.map((task) => {
                     const taskId = getAvatarTaskId(task);
@@ -2892,7 +2885,7 @@ export default function RecordSpeechSection({
                         onClick={() => setSelectedAvatarTaskId(taskId)}
                         className={`${avatarThumbnailButtonClass} ${isSelectedTask ? avatarThumbnailSelectedClass : ''}`}
                         title={getAvatarTaskStatusLabel(task)}
-                        aria-label={`Select avatar image: ${getAvatarTaskStatusLabel(task)}`}
+                        aria-label={uiText("Select avatar image: {value0}", { value0: getAvatarTaskStatusLabel(task) })}
                       >
                         <AvatarImage
                           src={imageUrl}
@@ -2911,7 +2904,7 @@ export default function RecordSpeechSection({
                 <div className={`flex items-center justify-between gap-2 px-3 py-2 text-xs ${mutedText}`}>
                   <span className="inline-flex min-w-0 items-center gap-2 truncate">
                     <FaUserCircle className="shrink-0" aria-hidden="true" />
-                    <span className="truncate">Avatar preview</span>
+                    <span className="truncate">{uiText("Avatar preview")}</span>
                   </span>
                   <span className="shrink-0">{selectedAvatarStatusLabel}</span>
                 </div>
@@ -2929,7 +2922,7 @@ export default function RecordSpeechSection({
                       <FaUserCircle className="text-4xl" aria-hidden="true" />
                     )}
                     <span className="px-4 text-center text-xs font-semibold">
-                      {selectedAvatarImagePending ? 'Generating image' : 'No image yet'}
+                      {selectedAvatarImagePending ? uiText("Generating image") : uiText("No image yet")}
                     </span>
                   </div>
                 )}
@@ -2938,7 +2931,7 @@ export default function RecordSpeechSection({
 
             {avatarImageReady && (
               <div className="grid gap-2">
-                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2" role="tablist" aria-label="Avatar audio source">
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2" role="tablist" aria-label={uiText("Avatar audio source")}>
                   {AVATAR_VIDEO_AUDIO_SOURCE_OPTIONS.map((audioSourceOption) => {
                     const isSelectedAudioSource = avatarVideoAudioSource === audioSourceOption.value;
                     const Icon = audioSourceOption.value === AVATAR_VIDEO_AUDIO_SOURCE_SESSION_SPEECH
@@ -2962,9 +2955,7 @@ export default function RecordSpeechSection({
                 </div>
 
                 {usesSessionSpeechForAvatarVideo && generatedSpeechAudioSummary.hasAudio && (
-                  <div className={`rounded-lg border ${borderColor} px-3 py-2 text-xs ${mutedText}`}>
-                    Using {generatedSpeechAudioSummary.count} generated speech layer{generatedSpeechAudioSummary.count === 1 ? '' : 's'} for lip sync.
-                  </div>
+                  <div className={`rounded-lg border ${borderColor} px-3 py-2 text-xs ${mutedText}`}>{uiText("Using {value0} generated speech layer{value1} for lip sync.", { value0: generatedSpeechAudioSummary.count, value1: generatedSpeechAudioSummary.count === 1 ? '' : (uiLanguage === "en" ? "s" : "") })}</div>
                 )}
 
                 {usesHintSpeechForAvatarVideo && (
@@ -2976,13 +2967,13 @@ export default function RecordSpeechSection({
                       className={`${avatarSecondaryButtonClass} w-full`}
                     >
                       <FaLightbulb aria-hidden="true" />
-                      <span>Set hints</span>
+                      <span>{uiText("Set hints")}</span>
                     </button>
                   ) : (
                     <>
                       <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                         <label className="block">
-                          <span className={`mb-1 block text-xs font-semibold ${mutedText}`}>Speech provider</span>
+                          <span className={`mb-1 block text-xs font-semibold ${mutedText}`}>{uiText("Speech provider")}</span>
                           <ModelAdapterSelect
                             options={avatarSpeechProviderOptions}
                             value={selectedAvatarSpeechProvider}
@@ -2998,7 +2989,7 @@ export default function RecordSpeechSection({
                           />
                         </label>
                         <label className="block">
-                          <span className={`mb-1 block text-xs font-semibold ${mutedText}`}>Speaker</span>
+                          <span className={`mb-1 block text-xs font-semibold ${mutedText}`}>{uiText("Speaker")}</span>
                           <select
                             value={selectedAvatarSpeechSpeaker}
                             onChange={(event) => handleAvatarSpeechSpeakerChange(event.target.value)}
@@ -3022,14 +3013,14 @@ export default function RecordSpeechSection({
                         {isAvatarSpeechGenerating || ['INIT', 'PENDING', 'PROCESSING'].includes(selectedAvatarSpeechStatus)
                           ? <FaSyncAlt className="animate-spin" aria-hidden="true" />
                           : <FaMicrophone aria-hidden="true" />}
-                        <span>{avatarSpeechReady ? 'Generate speech again' : 'Generate speech from hints'}</span>
+                        <span>{avatarSpeechReady ? uiText("Generate speech again") : uiText("Generate speech from hints")}</span>
                       </button>
                       {selectedAvatarSpeechAudioUrl && (
                         <div className={`overflow-hidden rounded-lg border ${borderColor}`}>
                           <div className={`flex items-center justify-between gap-2 px-3 py-2 text-xs ${mutedText}`}>
                             <span className="inline-flex min-w-0 items-center gap-2 truncate">
                               <FaMicrophone className="shrink-0" aria-hidden="true" />
-                              <span className="truncate">Speech preview</span>
+                              <span className="truncate">{uiText("Speech preview")}</span>
                             </span>
                             <span className="shrink-0">{selectedAvatarTask?.speechSpeakerName || selectedAvatarSpeechSpeakerLabel}</span>
                           </div>
@@ -3047,16 +3038,15 @@ export default function RecordSpeechSection({
                 {(usesSessionSpeechForAvatarVideo || speechHintCues.length > 0) && (
                   <>
                     <div className={`flex items-center justify-between gap-3 rounded-lg border ${borderColor} px-3 py-2 text-xs ${mutedText}`}>
-                      <span>Avatar video cost</span>
+                      <span>{uiText("Avatar video cost")}</span>
                       <span className={`inline-flex items-center gap-1 font-semibold ${text2Color}`}>
-                        {avatarVideoCreditEstimate.creditsToCharge} credits
-                        <span
+                        {avatarVideoCreditEstimate.creditsToCharge}{uiText("credits")}<span
                           className="inline-flex cursor-help items-center"
                           data-tooltip-id="avatarVideoCostTooltip"
                           data-tooltip-content={avatarVideoCostTooltip}
-                          aria-label="Avatar video credit calculation"
+                          aria-label={uiText("Avatar video credit calculation")}
                         >
-                          <FaQuestionCircle className="text-[11px]" aria-hidden="true" />
+                          <FaQuestionCircle className="text-caption" aria-hidden="true" />
                         </span>
                       </span>
                       <Tooltip id="avatarVideoCostTooltip" place="top" effect="solid" />
@@ -3085,18 +3075,18 @@ export default function RecordSpeechSection({
 
             {(isUserRunwayAvatarsLoading || reusableRunwayAvatars.length > 0) && (
               <div className="grid gap-2">
-                <div className={`text-xs font-semibold ${mutedText}`}>Previously generated RunwayML avatars</div>
+                <div className={`text-xs font-semibold ${mutedText}`}>{uiText("Previously generated RunwayML avatars")}</div>
                 {isUserRunwayAvatarsLoading ? (
                   <div className={`flex items-center gap-2 rounded-lg border ${borderColor} px-3 py-2 text-xs ${mutedText}`}>
                     <FaSyncAlt className="shrink-0 animate-spin" aria-hidden="true" />
-                    <span>Loading saved avatars.</span>
+                    <span>{uiText("Loading saved avatars.")}</span>
                   </div>
                 ) : (
                   <div className="grid grid-cols-3 gap-2">
                     {reusableRunwayAvatars.map((task) => {
                       const taskId = getAvatarTaskId(task);
                       const imageUrl = normalizeProcessorAssetUrl(task.avatarImageUrl || task.avatarImage);
-                      const label = task.avatarName || task.voicePresetName || task.runwayAvatarId || 'RunwayML avatar';
+                      const label = task.avatarName || task.voicePresetName || task.runwayAvatarId || uiText("RunwayML avatar");
                       return (
                         <button
                           key={`${task.runwayAvatarId || taskId}-reusable`}
@@ -3104,8 +3094,8 @@ export default function RecordSpeechSection({
                           onClick={() => handleSelectUserRunwayAvatar(task)}
                           disabled={avatarAnyActionPending || isUserRunwayAvatarSelecting}
                           className={avatarThumbnailButtonClass}
-                          title={`Use ${label}`}
-                          aria-label={`Use previously generated avatar: ${label}`}
+                          title={uiText("Use {value0}", { value0: label })}
+                          aria-label={uiText("Use previously generated avatar: {value0}", { value0: label })}
                         >
                           <AvatarImage
                             src={imageUrl}
@@ -3125,7 +3115,7 @@ export default function RecordSpeechSection({
                 <div className={`flex items-center justify-between gap-2 px-3 py-2 text-xs ${mutedText}`}>
                   <span className="inline-flex min-w-0 items-center gap-2 truncate">
                     <FaVideo className="shrink-0" aria-hidden="true" />
-                    <span className="truncate">Avatar video</span>
+                    <span className="truncate">{uiText("Avatar video")}</span>
                   </span>
                   <span className="shrink-0">{selectedAvatarStatusLabel}</span>
                 </div>
@@ -3147,7 +3137,7 @@ export default function RecordSpeechSection({
                   className={`${avatarPrimaryButtonClass} w-full`}
                 >
                   {isAvatarVideoAccepting ? <FaSyncAlt className="animate-spin" aria-hidden="true" /> : <FaCheck aria-hidden="true" />}
-                  <span>{acceptedAvatarVideoNeedsRepair ? 'Retry accept' : 'Accept'}</span>
+                  <span>{acceptedAvatarVideoNeedsRepair ? uiText("Retry accept") : uiText("Accept")}</span>
                 </button>
                 <button
                   type="button"
@@ -3156,7 +3146,7 @@ export default function RecordSpeechSection({
                   className={`${avatarSecondaryButtonClass} w-full`}
                 >
                   {isAvatarVideoSaving ? <FaSyncAlt className="animate-spin" aria-hidden="true" /> : <FaSave aria-hidden="true" />}
-                  <span>Save</span>
+                  <span>{uiText("Save")}</span>
                 </button>
                 <button
                   type="button"
@@ -3165,7 +3155,7 @@ export default function RecordSpeechSection({
                   className={`${avatarDangerButtonClass} w-full`}
                 >
                   {isAvatarRejecting ? <FaSyncAlt className="animate-spin" aria-hidden="true" /> : <FaTrash aria-hidden="true" />}
-                  <span>Reject</span>
+                  <span>{uiText("Reject")}</span>
                 </button>
               </div>
             )}
@@ -3181,7 +3171,7 @@ export default function RecordSpeechSection({
         {isRecordingFacecamMode && (
           <>
             <label className="block">
-              <span className={`mb-1 block text-xs font-semibold ${mutedText}`}>Microphone</span>
+              <span className={`mb-1 block text-xs font-semibold ${mutedText}`}>{uiText("Microphone")}</span>
               <select
                 value={selectedMicId}
                 onChange={(event) => setSelectedMicId(event.target.value)}
@@ -3189,32 +3179,32 @@ export default function RecordSpeechSection({
                 className={`w-full rounded-lg ${bgColor} ${text2Color} px-3 py-2 text-sm`}
               >
                 {microphones.length === 0 ? (
-                  <option value="">Default microphone</option>
+                  <option value="">{uiText("Default microphone")}</option>
                 ) : microphones.map((device, index) => (
                   <option key={device.deviceId || index} value={device.deviceId}>
-                    {device.label || `Microphone ${index + 1}`}
+                    {device.label || uiText("Microphone {value0}", { value0: index + 1 })}
                   </option>
                 ))}
               </select>
             </label>
 
             <label className="block">
-              <span className={`mb-1 block text-xs font-semibold ${mutedText}`}>Record</span>
+              <span className={`mb-1 block text-xs font-semibold ${mutedText}`}>{uiText("Record")}</span>
               <select
                 value={normalizedRecordMode}
                 onChange={(event) => setRecordMode(event.target.value)}
                 disabled={isRecording || isStartingRecording}
                 className={`w-full rounded-lg ${bgColor} ${text2Color} px-3 py-2 text-sm`}
               >
-                <option value="audio">Audio</option>
-                <option value="audio_video">Audio & Video</option>
+                <option value="audio">{uiText("Audio")}</option>
+                <option value="audio_video">{uiText("Audio & Video")}</option>
               </select>
             </label>
 
             {shouldRecordFacecam && (
               <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                 <label className="block">
-                  <span className={`mb-1 block text-xs font-semibold ${mutedText}`}>Camera</span>
+                  <span className={`mb-1 block text-xs font-semibold ${mutedText}`}>{uiText("Camera")}</span>
                   <select
                     value={selectedCameraId}
                     onChange={(event) => setSelectedCameraId(event.target.value)}
@@ -3222,27 +3212,27 @@ export default function RecordSpeechSection({
                     className={`w-full rounded-lg ${bgColor} ${text2Color} px-3 py-2 text-sm`}
                   >
                     {cameraDevices.length === 0 ? (
-                      <option value="">Default camera</option>
+                      <option value="">{uiText("Default camera")}</option>
                     ) : cameraDevices.map((device, index) => (
                       <option key={device.deviceId || index} value={device.deviceId}>
-                        {device.label || `Camera ${index + 1}`}
+                        {device.label || uiText("Camera {value0}", { value0: index + 1 })}
                       </option>
                     ))}
                   </select>
                 </label>
 
                 <label className="block">
-                  <span className={`mb-1 block text-xs font-semibold ${mutedText}`}>Shape</span>
+                  <span className={`mb-1 block text-xs font-semibold ${mutedText}`}>{uiText("Shape")}</span>
                   <select
                     value={facecamShapeOverlay}
                     onChange={(event) => setFacecamShapeOverlay(event.target.value)}
                     disabled={isRecording}
                     className={`w-full rounded-lg ${bgColor} ${text2Color} px-3 py-2 text-sm`}
                   >
-                    <option value="circle">Circle</option>
-                    <option value="oval">Oval</option>
-                    <option value="rectangle">Rectangle</option>
-                    <option value="rounded_rectangle">Rounded rectangle</option>
+                    <option value="circle">{uiText("Circle")}</option>
+                    <option value="oval">{uiText("Oval")}</option>
+                    <option value="rectangle">{uiText("Rectangle")}</option>
+                    <option value="rounded_rectangle">{uiText("Rounded rectangle")}</option>
                   </select>
                 </label>
               </div>
@@ -3250,7 +3240,7 @@ export default function RecordSpeechSection({
 
             <label className="block">
               <span className={`mb-1 flex items-center justify-between text-xs font-semibold ${mutedText}`}>
-                <span>Volume</span>
+                <span>{uiText("Volume")}</span>
                 <span>{micVolume}%</span>
               </span>
               <input
@@ -3276,7 +3266,7 @@ export default function RecordSpeechSection({
                 <div className={`flex items-center justify-between gap-2 px-3 py-2 text-xs ${mutedText}`}>
                   <span className="inline-flex items-center gap-2">
                     <FaVideo aria-hidden="true" />
-                    {isFacecamRecording ? selectedCameraLabel : 'Camera preview'}
+                    {isFacecamRecording ? selectedCameraLabel : uiText("Camera preview")}
                   </span>
                   <span>{hasFacecamRecording ? formatRecordingTime(facecamDuration || resolvedRecordingDuration) : ''}</span>
                 </div>
@@ -3298,8 +3288,8 @@ export default function RecordSpeechSection({
                 onClick={handleStartRecordingClick}
                 disabled={!canUseRecorder || isRecording || isStartingRecording}
                 className={shouldRecordFacecam ? recordAudioVideoButtonClass : recordPrimaryButtonClass}
-                title={isStartingRecording ? 'Starting recording' : recordButtonLabel}
-                aria-label={isStartingRecording ? 'Starting recording' : recordButtonLabel}
+                title={isStartingRecording ? uiText("Starting recording") : recordButtonLabel}
+                aria-label={isStartingRecording ? uiText("Starting recording") : recordButtonLabel}
               >
                 {shouldRecordFacecam ? <FaCircle aria-hidden="true" /> : <FaMicrophone aria-hidden="true" />}
               </button>
@@ -3317,8 +3307,8 @@ export default function RecordSpeechSection({
                 type="button"
                 onClick={handleHintsToggleClick}
                 className={hintsIconButtonClass}
-                title={hintsEnabled ? 'Hide hints' : 'Show hints'}
-                aria-label={hintsEnabled ? 'Hide hints' : 'Show hints'}
+                title={hintsEnabled ? uiText("Hide hints") : uiText("Show hints")}
+                aria-label={hintsEnabled ? uiText("Hide hints") : uiText("Show hints")}
               >
                 <FaLightbulb aria-hidden="true" />
               </button>
@@ -3326,14 +3316,10 @@ export default function RecordSpeechSection({
 
             {hasRecording && (
               <div className="grid gap-2">
-                <div className={`flex h-8 items-center justify-between gap-2 rounded-lg border px-3 text-xs ${
-                  colorMode === 'dark'
-                    ? 'border-[#273956] bg-[#20232e] text-slate-100'
-                    : 'border-slate-200 bg-white text-slate-700'
-                }`}>
+                <div className={`flex h-8 items-center justify-between gap-2 rounded-lg border px-3 text-xs bg-surface-raised text-fg-body ${colorMode === 'dark' ? 'border-[#273956]' : 'border-slate-200'}`}>
                   <span className="inline-flex min-w-0 items-center gap-2 truncate">
                     <FaMicrophone className="shrink-0" aria-hidden="true" />
-                    <span className="truncate">Audio preview</span>
+                    <span className="truncate">{uiText("Audio preview")}</span>
                   </span>
                   <span className="shrink-0 tabular-nums">{formatRecordingTime(resolvedRecordingDuration)}</span>
                 </div>
@@ -3343,8 +3329,8 @@ export default function RecordSpeechSection({
                     type="button"
                     onClick={togglePreviewPlayback}
                     className={resultSecondaryIconButtonClass}
-                    title={isPlayingPreview ? 'Pause preview' : 'Play preview'}
-                    aria-label={isPlayingPreview ? 'Pause preview' : 'Play preview'}
+                    title={isPlayingPreview ? uiText("Pause preview") : uiText("Play preview")}
+                    aria-label={isPlayingPreview ? uiText("Pause preview") : uiText("Play preview")}
                   >
                     {isPlayingPreview ? <FaPause aria-hidden="true" /> : <FaPlay aria-hidden="true" />}
                   </button>
@@ -3353,8 +3339,8 @@ export default function RecordSpeechSection({
                     onClick={handleAddToSession}
                     disabled={isUploadPending || !hasCurrentLayer}
                     className={resultPrimaryIconButtonClass}
-                    title="Add to session"
-                    aria-label="Add to session"
+                    title={uiText("Add to session")}
+                    aria-label={uiText("Add to session")}
                   >
                     <FaPlus aria-hidden="true" />
                   </button>
@@ -3363,8 +3349,8 @@ export default function RecordSpeechSection({
                     onClick={handleAddToLibrary}
                     disabled={isUploadPending || libraryActionComplete}
                     className={resultSecondaryIconButtonClass}
-                    title={libraryActionComplete ? 'Already in library' : 'Add to library'}
-                    aria-label={libraryActionComplete ? 'Already in library' : 'Add to library'}
+                    title={libraryActionComplete ? uiText("Already in library") : uiText("Add to library")}
+                    aria-label={libraryActionComplete ? uiText("Already in library") : uiText("Add to library")}
                   >
                     <FaHome aria-hidden="true" />
                   </button>
@@ -3373,8 +3359,8 @@ export default function RecordSpeechSection({
                     onClick={handleDeleteRecording}
                     disabled={isUploadPending}
                     className={resultDangerIconButtonClass}
-                    title="Remove and delete recording"
-                    aria-label="Remove and delete recording"
+                    title={uiText("Remove and delete recording")}
+                    aria-label={uiText("Remove and delete recording")}
                   >
                     <FaTimesCircle aria-hidden="true" />
                   </button>
@@ -3395,21 +3381,15 @@ export default function RecordSpeechSection({
             )}
 
             {!canUseRecorder && (
-              <div className={`rounded-lg border ${borderColor} px-3 py-2 text-xs ${mutedText}`}>
-                Recording is unavailable in this browser.
-              </div>
+              <div className={`rounded-lg border ${borderColor} px-3 py-2 text-xs ${mutedText}`}>{uiText("Recording is unavailable in this browser.")}</div>
             )}
 
             {canUseRecorder && microphones.length === 0 && (
-              <div className={`text-xs ${mutedText}`}>
-                Using {selectedMicLabel}.
-              </div>
+              <div className={`text-xs ${mutedText}`}>{uiText("Using {value0}.", { value0: selectedMicLabel })}</div>
             )}
 
             {canUseRecorder && shouldRecordFacecam && cameraDevices.length === 0 && (
-              <div className={`text-xs ${mutedText}`}>
-                Using {selectedCameraLabel}.
-              </div>
+              <div className={`text-xs ${mutedText}`}>{uiText("Using {value0}.", { value0: selectedCameraLabel })}</div>
             )}
           </>
         )}

@@ -325,7 +325,7 @@ function resolveNarratorAvatarFramePath(narratorAvatarOverlay = {}, elapsedTime)
       const endTime = Number.isFinite(Number(segment?.endTime))
         ? Number(segment.endTime)
         : startTime;
-      return elapsedSeconds >= startTime && elapsedSeconds <= endTime;
+      return elapsedSeconds >= startTime && elapsedSeconds < endTime;
     });
     if (!activeOverlay) {
       return null;
@@ -340,7 +340,8 @@ function resolveNarratorAvatarFramePath(narratorAvatarOverlay = {}, elapsedTime)
   const overlayFramesPerSecond = getFramesPerSecondFromValue(activeOverlay.framesPerSecond);
   const frameIndex = Math.max(0, Math.round(localElapsedSeconds * overlayFramesPerSecond));
   const framePath = path.join(activeOverlay.framesDir, `${frameIndex}.png`);
-  return resolveExistingOrNearestFramePath(framePath);
+  if (Number.isFinite(activeOverlay.frameCount) && frameIndex >= activeOverlay.frameCount) return null;
+  return fs.existsSync(framePath) ? framePath : null;
 }
 
 function drawImageCover(ctx, image, rect) {
@@ -388,7 +389,7 @@ function getNarratorAvatarDrawRect(narratorAvatarOverlay = {}, footerOverlay, ca
       const endTime = Number.isFinite(Number(segment?.endTime))
         ? Number(segment.endTime)
         : startTime;
-      return elapsedSeconds >= startTime && elapsedSeconds <= endTime;
+      return elapsedSeconds >= startTime && elapsedSeconds < endTime;
     }) || narratorAvatarOverlay
     : narratorAvatarOverlay;
   const sourceWidth = Number(activeOverlay.width) || Number(narratorAvatarOverlay.width) || Math.round(canvasWidth * 0.28);
@@ -734,12 +735,13 @@ async function generateFrames(generationId, layer, sessionId, startFrame, endFra
   canvasDimensions, applyAudioVisualizer = false, visualizerData, totalVideoDuration, globalVideos = [], narratorAvatarOverlay = null,
   frameOutputNamespace) {
 
-  const { imageSession, duration, durationOffset, _id, hasAiVideoLayer, aiVideoLayer,
+  const { imageSession, duration, durationOffset: sourceDurationOffset, _id, hasAiVideoLayer, aiVideoLayer,
     hasLipSyncVideoLayer,
     hasSoundEffectVideoLayer,
     hasUserVideoLayer,
   } = layer;
 
+  const durationOffset = Math.round((Number(sourceDurationOffset) || 0) * framesPerSecond) / framesPerSecond;
   let processAiVideoLayer = false;
 
   if (hasAiVideoLayer || hasLipSyncVideoLayer || hasSoundEffectVideoLayer || hasUserVideoLayer) {
@@ -795,7 +797,7 @@ async function generateFrames(generationId, layer, sessionId, startFrame, endFra
         blankCtx.clearRect(0, 0, canvasDimensions.width, canvasDimensions.height);
         blankCtx.fillStyle = '#1f2937';
         blankCtx.fillRect(0, 0, canvasDimensions.width, canvasDimensions.height);
-        const elapsedTime = frame * frameDuration + durationOffset * 1000;
+        const elapsedTime = (frame + Math.round(durationOffset * framesPerSecond)) * frameDuration;
         if (footerOverlay) {
           drawFooterOverlay(blankCtx, footerOverlay, canvasDimensions, elapsedTime, duration, durationOffset);
         }
@@ -920,7 +922,7 @@ async function generateFrames(generationId, layer, sessionId, startFrame, endFra
 
     const totalAudioFrames = visualizerData[0].length; // Assuming visualizerData is an array of arrays [frequencyBins][audioFrames]
     for (let frame = startFrame; frame < endFrame; frame++) {
-      const elapsedTime = frame * frameDuration + durationOffset * 1000;
+      const elapsedTime = (frame + Math.round(durationOffset * framesPerSecond)) * frameDuration;
       const audioFrameIndex = getAudioFrameIndex(elapsedTime, totalVideoDuration, totalAudioFrames);
       audioFrameIndices.push(audioFrameIndex);
     }
@@ -965,7 +967,7 @@ async function generateFrames(generationId, layer, sessionId, startFrame, endFra
       // No need to check for file existence here since errors are handled inside processFrameAtIndex
     } catch (error) {
       console.error(`Unexpected error processing frame ${frame} for layer ${layer._id} in session ${sessionId}:`, error);
-      // Optionally handle unexpected errors here
+      throw error;
     }
   }
 
@@ -1007,7 +1009,7 @@ async function processFrameAtIndex(
 
 
   try {
-    const elapsedTime = frame * frameDuration + durationOffset * 1000;
+    const elapsedTime = (frame + Math.round(durationOffset * framesPerSecond)) * frameDuration;
 
     const activeItemList = layer.imageSession.activeItemList;
     const { clipStart, clipStartFrames, clipEnd, clipEndFrames } = layer;
@@ -1031,62 +1033,19 @@ async function processFrameAtIndex(
         : 0;
       const effectiveFrame = frame + clipStartFrameOffset;
 
-      // Decide if we skip the frame due to clipEnd
-      let skipFrame = false;
-      if (clipEnd && clipEndFrames && clipEndFrames > 0) {
-
-
-        // If the current frame is at or beyond the threshold, skip drawing video
-        const skipThreshold = layer.endFrame - clipEndFrames;
-        if (frame >= skipThreshold) {
-          skipFrame = true;
-        }
+      // An absent or undecodable video frame is a failed render, never a still
+      // or a blank frame that can pass the parent's completeness check.
+      const videoFramePath = path.join(videoImageFolderPath, `${effectiveFrame}.png`);
+      if (!fs.existsSync(videoFramePath)) throw new Error(`Missing source video frame: ${videoFramePath}`);
+      let videoFrameImage;
+      try {
+        videoFrameImage = await loadImage(videoFramePath);
+      } catch (error) {
+        // Force extraction from the source video on the parent's next retry.
+        fs.rmSync(path.join(videoImageFolderPath, '.source.json'), { force: true });
+        throw error;
       }
-
-      if (!skipFrame) {
-        // Attempt to load the corresponding AI video frame
-        const baseVideoFramePath = path.join(videoImageFolderPath, `${effectiveFrame}.png`);
-        const resolvedBaseVideoFramePath = prefersAudioVideoFrames
-          ? resolveExistingOrTailFramePath(baseVideoFramePath)
-          : resolveExistingOrNearestFramePath(baseVideoFramePath);
-        if (resolvedBaseVideoFramePath) {
-          const videoFrameImage = await loadImage(resolvedBaseVideoFramePath);
-          ctx.drawImage(videoFrameImage, 0, 0, canvasDimensions.width, canvasDimensions.height);
-        } else {
-          // check if we have active item list image
-          const activeItemListImage = activeItemList.find(item => item.type === 'image');
-          if (activeItemListImage) {
-
-
-              const buffer = canvas.toBuffer('image/png');
-              const imgName = `/${frameNameSpace}/${frame}.png`;
-              framesList.push(imgName);
-              fs.writeFileSync(path.join(frameFileBasePath, `${frame}.png`), buffer);
-
-
-          } else {
-
-            ctx.fillStyle = 'black';
-            ctx.fillRect(0, 0, canvasDimensions.width, canvasDimensions.height);
-          }
-
-        }
-      } else {
-
-
-        // check if we have active item list image
-        const activeItemListImage = activeItemList.find(item => item.type === 'image');
-        if (activeItemListImage) {
-
-          const buffer = canvas.toBuffer('image/png');
-          const imgName = `/${frameNameSpace}/${frame}.png`;
-          framesList.push(imgName);
-          fs.writeFileSync(path.join(frameFileBasePath, `${frame}.png`), buffer);
-        } else {
-          ctx.fillStyle = 'black';
-          ctx.fillRect(0, 0, canvasDimensions.width, canvasDimensions.height);
-        }
-      }
+      ctx.drawImage(videoFrameImage, 0, 0, canvasDimensions.width, canvasDimensions.height);
     }
 
     // Now render the layer's items (images, shapes, text, etc.) on top
@@ -1129,27 +1088,8 @@ async function processFrameAtIndex(
 
   } catch (error) {
     console.error(`Error processing frame ${frame}:`, error);
-    console.warn('Falling back to a blank frame for this index.');
-
-    // Fallback: create and save a blank frame if there's any error
-    ctx.clearRect(0, 0, canvasDimensions.width, canvasDimensions.height);
-    ctx.fillStyle = 'black';
-    ctx.fillRect(0, 0, canvasDimensions.width, canvasDimensions.height);
-    const elapsedTime = frame * frameDuration + durationOffset * 1000;
-    if (footerOverlay) {
-      drawFooterOverlay(ctx, footerOverlay, canvasDimensions, elapsedTime, duration, durationOffset);
-    }
-    await drawGlobalVideoOverlays(ctx, globalVideos, elapsedTime, canvasDimensions, sessionId);
-    await drawNarratorAvatarOverlay(ctx, narratorAvatarOverlay, footerOverlay, canvasDimensions, elapsedTime, sessionId);
-
-    const buffer = canvas.toBuffer('image/png');
-    const imageName = `/${frameNameSpace}/${frame}.png`;
-    framesList.push(imageName);
-
-    if (!fs.existsSync(frameFileBasePath)) {
-      fs.mkdirSync(frameFileBasePath, { recursive: true });
-    }
-    fs.writeFileSync(path.join(frameFileBasePath, `${frame}.png`), buffer);
+    // Let the existing bounded worker retry/failure path handle corrupt media.
+    throw error;
   }
 }
 

@@ -1,3 +1,4 @@
+import { translateText as uiText } from '../utils/localization.js';
 import { IS_STANDALONE_DEPLOYMENT } from "../utils/environment.jsx";
 
 export const DEFAULT_AUDIO_AVAILABILITY = Object.freeze({
@@ -14,7 +15,7 @@ export const STANDALONE_AUDIO_PROVIDER_LABELS = Object.freeze({
   ELEVENLABS: "ElevenLabs",
   GOOGLE: "Google TTS",
   PLAYAI: "PlayAI",
-  CUSTOM_TEXT_TO_SPEECH: "Custom TTS",
+  get CUSTOM_TEXT_TO_SPEECH() { return uiText("Custom TTS"); },
 });
 
 export const STANDALONE_MUSIC_PROVIDER_LABELS = Object.freeze({
@@ -22,8 +23,8 @@ export const STANDALONE_MUSIC_PROVIDER_LABELS = Object.freeze({
   CASSETTEAI: "CassetteAI",
   LYRIA2: "Lyria 2",
   LYRIA3: "Lyria 3",
-  ELEVENLABS_MUSIC: "ElevenLabs Music",
-  CUSTOM_TEXT_TO_MUSIC: "Custom Text to Music",
+  get ELEVENLABS_MUSIC() { return uiText("ElevenLabs Music"); },
+  get CUSTOM_TEXT_TO_MUSIC() { return uiText("Custom Text to Music"); },
 });
 
 function normalizeProvider(value) {

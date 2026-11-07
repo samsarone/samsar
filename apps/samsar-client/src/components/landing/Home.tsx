@@ -1,3 +1,5 @@
+import { useUiLanguage } from '../../hooks/useUiLanguage.js';
+import { translateText as uiText } from '../../utils/localization.js';
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, Routes, Route, useLocation, Navigate, useParams } from 'react-router-dom';
 import { useMediaQuery } from 'react-responsive';
@@ -99,7 +101,8 @@ function getRouteLoadingFallback(pathname, isMobile) {
   return <RouteLoadingScreen />;
 }
 
-function RouteLoadingScreen({ label = 'Loading...' }) {
+function RouteLoadingScreen({ label = uiText("Loading...") }) {
+  useUiLanguage();
   const { colorMode } = useColorMode();
   const isDark = colorMode === 'dark';
 
@@ -125,6 +128,7 @@ function RouteLoadingScreen({ label = 'Loading...' }) {
 }
 
 function SharedVideoDesktopOnlyMessage() {
+  useUiLanguage();
   const { colorMode } = useColorMode();
   const isDark = colorMode === 'dark';
 
@@ -136,26 +140,27 @@ function SharedVideoDesktopOnlyMessage() {
           : 'bg-[#f7f9fc] text-slate-800'
       }`}
     >
-      <p className="text-center text-sm font-medium">
-        Open link on desktop to edit.
-      </p>
+      <p className="text-center text-sm font-medium">{uiText("Open link on desktop to edit.")}</p>
     </div>
   );
 }
 
 function VidgenieRouteRedirect() {
+  useUiLanguage();
   const { id } = useParams();
   const { search } = useLocation();
   return <Navigate to={appendRouteSearch(id ? `/vidgenie/${id}` : '/vidgenie', getSanitizedRouteSearch(search))} replace />;
 }
 
 function MobileStudioSessionRedirect() {
+  useUiLanguage();
   const { id } = useParams();
   const { search } = useLocation();
   return <Navigate to={appendRouteSearch(id ? `/vidgenie/${id}` : '/vidgenie', getSanitizedRouteSearch(search))} replace />;
 }
 
 function DefaultAuthenticatedRoute({ user, isMobile, search }) {
+  useUiLanguage();
   const [destination, setDestination] = useState(null);
   const resolutionRef = useRef(null);
   const resolutionKey = JSON.stringify([user?._id, Boolean(user?.isExternalUser), isMobile, search]);
@@ -195,12 +200,13 @@ function DefaultAuthenticatedRoute({ user, isMobile, search }) {
 
   return (
     <RouteLoadingScreen
-      label={IS_STANDALONE_DEPLOYMENT && !isMobile ? 'Opening workspace...' : 'Opening VidGenie...'}
+      label={IS_STANDALONE_DEPLOYMENT && !isMobile ? uiText("Opening workspace...") : uiText("Opening VidGenie...")}
     />
   );
 }
 
 export default function Home() {
+  useUiLanguage();
   const { user, getUserAPI, resetUser, userFetching, userInitiated } = useUser();
   const navigate = useNavigate();
   const location = useLocation(); 
@@ -585,14 +591,14 @@ export default function Home() {
     return (
       <div className={bodyBGColor}>
         <RouteLoadingScreen
-          label={IS_STANDALONE_DEPLOYMENT && !isMobile ? 'Opening workspace...' : 'Opening VidGenie...'}
+          label={IS_STANDALONE_DEPLOYMENT && !isMobile ? uiText("Opening workspace...") : uiText("Opening VidGenie...")}
         />
       </div>
     );
   }
 
   if (hasPendingLoginToken) {
-    return <div className={bodyBGColor}><RouteLoadingScreen label="Signing in..." /></div>;
+    return <div className={bodyBGColor}><RouteLoadingScreen label={uiText("Signing in...")} /></div>;
   }
 
   if (shouldRequireStandaloneLogin) {

@@ -1,3 +1,4 @@
+import { useUiLanguage } from '../../../../../hooks/useUiLanguage.js';
 import { useState, useEffect, useCallback } from 'react';
 import ReactSlider from 'react-slider';
 import { FaDiamond } from 'react-icons/fa6';
@@ -20,6 +21,7 @@ function addStyleValueOffset(styleValue, offsetPixels) {
 }
 
 export default function TextAnimationTrackDisplay(props) {
+  useUiLanguage();
   const {
     selectedFrameRange,
     selectedAnimation,

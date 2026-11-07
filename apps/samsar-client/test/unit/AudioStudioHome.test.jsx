@@ -4,6 +4,7 @@ import axios from 'axios';
 
 const session = vi.hoisted(() => ({
   user: { _id: 'audio-user' }, getUserAPI: vi.fn(), colorMode: 'dark',
+  openAlertDialog: vi.fn(), closeAlertDialog: vi.fn(),
   availability: {
     audioAvailability: { ttsProviders: ['OPENAI'], musicProviders: ['ELEVENLABS_MUSIC'], soundEffectProviders: ['SDAUDIO'] },
     isLoading: false,
@@ -11,7 +12,8 @@ const session = vi.hoisted(() => ({
 }));
 
 vi.mock('axios', () => ({ default: { get: vi.fn(), post: vi.fn() } }));
-vi.mock('../../src/components/common/CommonContainer.tsx', () => ({ default: ({ children }) => <>{children}</> }));
+vi.mock('../../src/components/common/CommonContainer.tsx', () => ({ default: ({ children, openAudioActions }) => <><button onClick={openAudioActions}>Audio actions</button>{children}</> }));
+vi.mock('../../src/contexts/AlertDialogContext.jsx', () => ({ useAlertDialog: () => session }));
 vi.mock('../../src/contexts/UserContext.jsx', () => ({ useUser: () => session }));
 vi.mock('../../src/contexts/ColorMode.jsx', () => ({ useColorMode: () => ({ colorMode: session.colorMode }) }));
 vi.mock('../../src/hooks/useAudioProviderAvailability.js', () => ({ useAudioProviderAvailability: () => session.availability }));
@@ -71,6 +73,34 @@ beforeEach(() => {
 });
 
 describe('Audio Studio library integration', () => {
+  it('opens the audio picker only on request and selects sound effects without generating', async () => {
+    await mount();
+    expect(session.openAlertDialog).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Audio actions' }));
+    render(session.openAlertDialog.mock.calls[0][0]);
+    const dialog = screen.getByRole('dialog', { name: 'Audio actions' });
+    expect(within(dialog).getAllByRole('button').map((button) => button.textContent)).toEqual([
+      'Generate music', 'Generate speech', 'Generate sound effects', 'Join audio',
+    ]);
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Generate sound effects' }));
+    await tick();
+    expect(screen.getByLabelText('Audio type')).toHaveValue('sound_effect');
+    expect(session.closeAlertDialog).toHaveBeenCalledOnce();
+    expect(axios.post).not.toHaveBeenCalled();
+  });
+
+  it('opens the existing join workspace from the audio picker', async () => {
+    await mount();
+    fireEvent.click(screen.getByRole('button', { name: 'Audio actions' }));
+    render(session.openAlertDialog.mock.calls[0][0]);
+    fireEvent.click(within(screen.getByRole('dialog', { name: 'Audio actions' })).getByRole('button', { name: 'Join audio' }));
+    await tick();
+    expect(screen.queryByLabelText('Audio type')).not.toBeInTheDocument();
+    expect(screen.getByRole('tablist', { name: 'Audio categories' })).toBeInTheDocument();
+    expect(session.closeAlertDialog).toHaveBeenCalledOnce();
+    expect(axios.post).not.toHaveBeenCalled();
+  });
+
   it('loads the authenticated first page and disables empty generation', async () => {
     await mount();
     expect(axios.get).toHaveBeenCalledWith(expect.stringMatching(/\/audio\/studio\/library$/), {

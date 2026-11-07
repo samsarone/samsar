@@ -1,3 +1,5 @@
+import { useUiLanguage } from '../../../hooks/useUiLanguage.js';
+import { translateText as uiText } from '../../../utils/localization.js';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import axios from 'axios';
 import {
@@ -83,10 +85,10 @@ function getProjectName(sessionDetails) {
 
   const sessionId = sessionDetails?._id?.toString?.() || '';
   if (sessionId) {
-    return `Project ${sessionId.slice(-6)}`;
+    return uiText("Project {value0}", { value0: sessionId.slice(-6) });
   }
 
-  return 'Current Project';
+  return uiText("Current Project");
 }
 
 function getDisplayTitle(item, libraryType) {
@@ -99,14 +101,14 @@ function getDisplayTitle(item, libraryType) {
     && (!promptText || title.toLowerCase() !== promptText.toLowerCase());
 
   if (libraryType === AUDIO_TYPE_SPEECH) {
-    return (hasDistinctTitle ? title : '') || speakerCharacterName || 'Speech';
+    return (hasDistinctTitle ? title : '') || speakerCharacterName || uiText("Speech");
   }
 
   if (libraryType === AUDIO_TYPE_MUSIC) {
-    return (hasDistinctTitle ? title : '') || 'Music';
+    return (hasDistinctTitle ? title : '') || uiText("Music");
   }
 
-  return (hasDistinctTitle ? title : '') || 'Sound Effect';
+  return (hasDistinctTitle ? title : '') || uiText("Sound Effect");
 }
 
 function getPromptText(item = {}) {
@@ -218,7 +220,7 @@ function groupAudioItemsByProjectForDisplay(items = []) {
     const projectId = normalizeSessionId(item?.projectId) || normalizeSessionId(item?.sessionId) || 'unknown_project';
     const projectName = typeof item?.projectName === 'string' && item.projectName.trim()
       ? item.projectName.trim()
-      : 'Untitled Project';
+      : uiText("Untitled Project");
     const group = groupsByProjectId.get(projectId) || {
       projectId,
       projectName,
@@ -308,7 +310,7 @@ function mapGeneratedMusicToProjectLibraryItem(generatedMusic, projectName, fall
     _id: `generated_music:${generatedMusic?._id?.toString?.() || generatedMusic?._id || audioPath}`,
     sessionId,
     projectId: sessionId,
-    projectName: projectName || 'Current Project',
+    projectName: projectName || uiText("Current Project"),
     libraryType,
     title: getDisplayTitle(generatedMusicItem, libraryType),
     description: typeof generatedMusic?.description === 'string' ? generatedMusic.description : '',
@@ -378,18 +380,18 @@ function formatTime(time) {
 
 function getAudioTypeLabel(audioType) {
   if (audioType === AUDIO_TYPE_SPEECH) {
-    return 'Speech';
+    return uiText("Speech");
   }
 
   if (audioType === AUDIO_TYPE_SOUND_EFFECT) {
-    return 'Sound Effect';
+    return uiText("Sound Effect");
   }
 
-  return 'Music';
+  return uiText("Music");
 }
 
 function getScopeLabel(scope) {
-  return scope === LIBRARY_SCOPE_GLOBAL ? 'Global' : 'Project';
+  return scope === LIBRARY_SCOPE_GLOBAL ? uiText("Global") : uiText("Project");
 }
 
 export default function MusicLibraryHome({
@@ -399,6 +401,7 @@ export default function MusicLibraryHome({
   sessionId,
   currentLayer,
 }) {
+  useUiLanguage();
   const [globalArtifacts, setGlobalArtifacts] = useState(EMPTY_GLOBAL_ARTIFACTS);
   const [projectGeneratedMusicItems, setProjectGeneratedMusicItems] = useState([]);
   const [selectedScope, setSelectedScope] = useState(LIBRARY_SCOPE_PROJECT);
@@ -420,14 +423,12 @@ export default function MusicLibraryHome({
   const { colorMode } = useColorMode();
   const currentProjectName = getProjectName(sessionDetails);
 
-  const textColor = colorMode === 'dark' ? 'text-slate-100' : 'text-slate-900';
-  const borderColor = colorMode === 'dark' ? 'border-[#3a4050]' : 'border-slate-200';
-  const cardBg = colorMode === 'dark' ? 'bg-[#181b24]' : 'bg-white';
+  const textColor = 'text-fg';
+  const borderColor = 'border-line';
+  const cardBg = 'bg-surface';
   const headerBg = colorMode === 'dark' ? 'bg-[#151720]' : 'bg-slate-50';
-  const mutedText = colorMode === 'dark' ? 'text-slate-400' : 'text-slate-600';
-  const surfaceButton = colorMode === 'dark'
-    ? 'bg-[#151720] hover:bg-[#181b24]'
-    : 'bg-white hover:bg-slate-100';
+  const mutedText = colorMode === 'dark' ? "text-slate-400" : "text-slate-600";
+  const surfaceButton = `bg-surface-sunken ${colorMode === 'dark' ? 'hover:bg-[#181b24]' : 'hover:bg-slate-100'}`;
   const activeButton = 'bg-gradient-to-r from-blue-500 to-blue-600 text-white';
   const selectButtonBg = 'bg-gradient-to-r from-blue-500 to-blue-600 text-white hover:opacity-90';
   const tagBg = colorMode === 'dark' ? 'bg-[#151720]' : 'bg-slate-100';
@@ -473,7 +474,7 @@ export default function MusicLibraryHome({
     } catch {
       setGlobalArtifacts(EMPTY_GLOBAL_ARTIFACTS);
       setProjectGeneratedMusicItems([]);
-      setGlobalLibraryError('Unable to load global audio artefacts.');
+      setGlobalLibraryError(uiText("Unable to load global audio artefacts."));
     } finally {
       setIsGlobalLibraryLoading(false);
     }
@@ -572,7 +573,7 @@ export default function MusicLibraryHome({
   const readFileAsDataUrl = (file) => new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(reader.result);
-    reader.onerror = () => reject(new Error('Unable to read the selected MP3 file.'));
+    reader.onerror = () => reject(new Error(uiText("Unable to read the selected MP3 file.")));
     reader.readAsDataURL(file);
   });
 
@@ -583,12 +584,12 @@ export default function MusicLibraryHome({
 
     const isMp3File = file.type === 'audio/mpeg' || /\.mp3$/i.test(file.name || '');
     if (!isMp3File) {
-      setAudioUploadError('Only MP3 files are supported.');
+      setAudioUploadError(uiText("Only MP3 files are supported."));
       return;
     }
 
     if (!(sessionEndTime > 0)) {
-      setAudioUploadError('Unable to determine the current video session duration.');
+      setAudioUploadError(uiText("Unable to determine the current video session duration."));
       return;
     }
 
@@ -599,7 +600,7 @@ export default function MusicLibraryHome({
       const dataURL = await readFileAsDataUrl(file);
       const headers = getHeaders();
       if (!headers) {
-        setAudioUploadError('You must be logged in to upload audio.');
+        setAudioUploadError(uiText("You must be logged in to upload audio."));
         setIsAudioUploadPending(false);
         return;
       }
@@ -622,7 +623,7 @@ export default function MusicLibraryHome({
       await fetchLibraryData();
     } catch (error) {
       setAudioUploadError(
-        error?.response?.data?.error || 'Unable to upload the selected MP3 file.'
+        error?.response?.data?.error || uiText("Unable to upload the selected MP3 file.")
       );
     } finally {
       setIsAudioUploadPending(false);
@@ -822,21 +823,19 @@ export default function MusicLibraryHome({
         onClick={handlePreviousAudioPage}
         disabled={normalizedAudioPage <= 1}
         className={`inline-flex h-10 w-10 items-center justify-center border-r ${borderColor} ${surfaceButton} disabled:cursor-not-allowed disabled:opacity-50`}
-        aria-label="Previous audio page"
-        title="Previous audio page"
+        aria-label={uiText("Previous audio page")}
+        title={uiText("Previous audio page")}
       >
         <FaChevronLeft className="text-xs" />
       </button>
-      <span className={`flex h-10 min-w-0 flex-1 items-center justify-center px-3 text-xs font-semibold sm:flex-none ${headerBg}`}>
-        Page {normalizedAudioPage} of {totalAudioPages}
-      </span>
+      <span className={`flex h-10 min-w-0 flex-1 items-center justify-center px-3 text-xs font-semibold sm:flex-none ${headerBg}`}>{uiText("Page {value0} of {value1}", { value0: normalizedAudioPage, value1: totalAudioPages })}</span>
       <button
         type="button"
         onClick={handleNextAudioPage}
         disabled={normalizedAudioPage >= totalAudioPages}
         className={`inline-flex h-10 w-10 items-center justify-center border-l ${borderColor} ${surfaceButton} disabled:cursor-not-allowed disabled:opacity-50`}
-        aria-label="Next audio page"
-        title="Next audio page"
+        aria-label={uiText("Next audio page")}
+        title={uiText("Next audio page")}
       >
         <FaChevronRight className="text-xs" />
       </button>
@@ -905,8 +904,8 @@ export default function MusicLibraryHome({
               className={`shrink-0 px-3 py-2 rounded-full border ${borderColor} ${surfaceButton} disabled:cursor-not-allowed disabled:opacity-50`}
               onClick={() => handleAddSpeechToCurrentLayer(item)}
               disabled={!hasCurrentLayer}
-              title={hasCurrentLayer ? 'Add speech to current layer' : 'Select a layer before adding speech'}
-              aria-label={hasCurrentLayer ? 'Add speech to current layer' : 'Select a layer before adding speech'}
+              title={hasCurrentLayer ? uiText("Add speech to current layer") : uiText("Select a layer before adding speech")}
+              aria-label={hasCurrentLayer ? uiText("Add speech to current layer") : uiText("Select a layer before adding speech")}
             >
               <FaCheck className={iconColor} />
             </button>
@@ -928,9 +927,7 @@ export default function MusicLibraryHome({
         {promptText && (
           <div className={`mt-3 rounded-lg border ${borderColor} ${headerBg} p-3`}>
             <div className="mb-2 flex items-center justify-between gap-2">
-              <span className={`text-xs font-semibold uppercase tracking-wide ${mutedText}`}>
-                Prompt
-              </span>
+              <span className={`text-xs font-semibold uppercase tracking-wide ${mutedText}`}>{uiText("Prompt")}</span>
               <button
                 type="button"
                 className={`inline-flex items-center gap-1 text-xs font-semibold ${mutedText}`}
@@ -938,14 +935,10 @@ export default function MusicLibraryHome({
               >
                 {copiedPromptId === item._id ? (
                   <>
-                    <FaCheck />
-                    Copied
-                  </>
+                    <FaCheck />{uiText("Copied")}</>
                 ) : (
                   <>
-                    <FaCopy />
-                    Copy
-                  </>
+                    <FaCopy />{uiText("Copy")}</>
                 )}
               </button>
             </div>
@@ -972,7 +965,7 @@ export default function MusicLibraryHome({
           <div className="relative z-20">
             <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-3">
               <label className="block">
-                <span className={`mb-1 block text-xs font-semibold ${mutedText}`}>Start</span>
+                <span className={`mb-1 block text-xs font-semibold ${mutedText}`}>{uiText("Start")}</span>
                 <input
                   type="number"
                   min="0"
@@ -984,7 +977,7 @@ export default function MusicLibraryHome({
               </label>
 
               <label className="block">
-                <span className={`mb-1 block text-xs font-semibold ${mutedText}`}>Duration</span>
+                <span className={`mb-1 block text-xs font-semibold ${mutedText}`}>{uiText("Duration")}</span>
                 <input
                   type="number"
                   min="0.1"
@@ -997,7 +990,7 @@ export default function MusicLibraryHome({
               </label>
 
               <div className="block">
-                <span className={`mb-1 block text-xs font-semibold ${mutedText}`}>End</span>
+                <span className={`mb-1 block text-xs font-semibold ${mutedText}`}>{uiText("End")}</span>
                 <div className={`w-full rounded-lg border ${borderColor} ${headerBg} px-3 py-2 text-sm`}>
                   {formatTimelineValue(validatedAddConfig.endTime)}
                 </div>
@@ -1011,7 +1004,7 @@ export default function MusicLibraryHome({
                   checked={addConfig.loopOverEntireSession}
                   onChange={(e) => updateAddConfig(item, 'loopOverEntireSession', e.target.checked)}
                 />
-                <span>Loop over entire session</span>
+                <span>{uiText("Loop over entire session")}</span>
               </label>
             )}
 
@@ -1019,13 +1012,11 @@ export default function MusicLibraryHome({
               className={`relative z-30 mt-4 w-full ${selectButtonBg} px-3 py-2 rounded-lg font-semibold shadow-lg disabled:cursor-not-allowed disabled:opacity-60`}
               onClick={() => handleAddToProject(item)}
               disabled={!validatedAddConfig.isValid}
-            >
-              Add To Project
-            </button>
+            >{uiText("Add To Project")}</button>
           </div>
         )}
         {hideSelectButton && (
-          <p className={`mt-3 text-xs ${mutedText}`}>Click play to preview and download.</p>
+          <p className={`mt-3 text-xs ${mutedText}`}>{uiText("Click play to preview and download.")}</p>
         )}
       </div>
     );
@@ -1034,9 +1025,7 @@ export default function MusicLibraryHome({
   const renderProjectContent = () => {
     if (filteredProjectItems.length === 0) {
       return (
-        <div className={`rounded-2xl border ${borderColor} ${cardBg} p-6 text-sm ${mutedText}`}>
-          No {getAudioTypeLabel(selectedAudioType).toLowerCase()} artefacts found in this project.
-        </div>
+        <div className={`rounded-2xl border ${borderColor} ${cardBg} p-6 text-sm ${mutedText}`}>{uiText("No {value0} artefacts found in this project.", { value0: getAudioTypeLabel(selectedAudioType).toLowerCase() })}</div>
       );
     }
 
@@ -1050,9 +1039,7 @@ export default function MusicLibraryHome({
   const renderGlobalContent = () => {
     if (isGlobalLibraryLoading) {
       return (
-        <div className={`rounded-2xl border ${borderColor} ${cardBg} p-6 text-sm ${mutedText}`}>
-          Loading global audio artefacts...
-        </div>
+        <div className={`rounded-2xl border ${borderColor} ${cardBg} p-6 text-sm ${mutedText}`}>{uiText("Loading global audio artefacts...")}</div>
       );
     }
 
@@ -1066,9 +1053,7 @@ export default function MusicLibraryHome({
 
     if (filteredGlobalItems.length === 0) {
       return (
-        <div className={`rounded-2xl border ${borderColor} ${cardBg} p-6 text-sm ${mutedText}`}>
-          No global {getAudioTypeLabel(selectedAudioType).toLowerCase()} artefacts found.
-        </div>
+        <div className={`rounded-2xl border ${borderColor} ${cardBg} p-6 text-sm ${mutedText}`}>{uiText("No global {value0} artefacts found.", { value0: getAudioTypeLabel(selectedAudioType).toLowerCase() })}</div>
       );
     }
 
@@ -1080,7 +1065,7 @@ export default function MusicLibraryHome({
               <div>
                 <h2 className="text-lg font-semibold">{group.projectName}</h2>
                 <p className={`text-xs ${mutedText}`}>
-                  {group.items.length} {group.items.length === 1 ? 'track' : 'tracks'}
+                  {group.items.length} {group.items.length === 1 ? uiText("track") : uiText("tracks")}
                 </p>
               </div>
             </div>
@@ -1103,10 +1088,8 @@ export default function MusicLibraryHome({
       <div className={`rounded-2xl border ${borderColor} ${cardBg} p-4 shadow-sm`}>
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <div>
-            <h2 className="text-lg font-semibold">Upload MP3</h2>
-            <p className={`mt-1 text-sm ${mutedText}`}>
-              MP3 only. Maximum duration: {formatTimelineValue(sessionEndTime)} seconds.
-            </p>
+            <h2 className="text-lg font-semibold">{uiText("Upload MP3")}</h2>
+            <p className={`mt-1 text-sm ${mutedText}`}>{uiText("MP3 only. Maximum duration: {value0} seconds.", { value0: formatTimelineValue(sessionEndTime) })}</p>
           </div>
 
           <div className="flex items-center gap-3">
@@ -1124,7 +1107,7 @@ export default function MusicLibraryHome({
               className={`inline-flex w-full items-center justify-center gap-2 rounded-lg px-4 py-2 font-semibold sm:w-auto ${selectButtonBg} disabled:cursor-not-allowed disabled:opacity-60`}
             >
               <FaUpload />
-              {isAudioUploadPending ? 'Uploading...' : 'Upload MP3'}
+              {isAudioUploadPending ? uiText("Uploading...") : uiText("Upload MP3")}
             </button>
           </div>
         </div>
@@ -1145,17 +1128,15 @@ export default function MusicLibraryHome({
           <div className="flex min-w-0 flex-col gap-3">
             <div className="flex min-w-0 flex-col gap-3 lg:flex-row lg:items-center">
               <div className="min-w-0 shrink-0">
-                <h1 className="text-lg font-bold">Audio Library</h1>
-                <p className={`mt-0.5 text-xs ${mutedText}`}>
-                  {getScopeLabel(selectedScope)} {getAudioTypeLabel(selectedAudioType)} artefacts - {activeAudioItems.length} items
-                </p>
+                <h1 className="text-lg font-bold">{uiText("Audio Library")}</h1>
+                <p className={`mt-0.5 text-xs ${mutedText}`}>{uiText("{value0} {value1} artefacts - {value2} items", { value0: getScopeLabel(selectedScope), value1: getAudioTypeLabel(selectedAudioType), value2: activeAudioItems.length })}</p>
               </div>
 
               <div className={`flex h-10 min-w-0 flex-1 items-center gap-2 rounded-lg border ${borderColor} ${surfaceButton} px-3`}>
                 <FaSearch className={`shrink-0 text-sm ${mutedText}`} />
                 <input
                   type="text"
-                  placeholder="Search audio"
+                  placeholder={uiText("Search audio")}
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                   className="w-full min-w-0 bg-transparent text-sm focus:outline-none"

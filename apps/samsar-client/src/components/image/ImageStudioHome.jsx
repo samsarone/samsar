@@ -1,3 +1,6 @@
+import { useAssistantRequestGuard } from '../../hooks/useAssistantRequestGuard.js';
+import { useUiLanguage } from '../../hooks/useUiLanguage.js';
+import { translateText as uiText, getUiLanguage } from '../../utils/localization.js';
 import { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import axios from 'axios';
 import { useParams } from 'react-router-dom';
@@ -85,6 +88,7 @@ function EditImageProjectDialogContent({
   onClose,
   onSave,
 }) {
+  const uiLanguage = useUiLanguage();
   const normalizedCurrentCanvasDimensions = useMemo(
     () => normalizeCanvasDimensions(canvasDimensions, aspectRatio || '1:1'),
     [aspectRatio, canvasDimensions]
@@ -114,15 +118,15 @@ function EditImageProjectDialogContent({
           label: `${option.label} - ${dimensions.width} x ${dimensions.height}`,
         };
       }),
-    [aspectRatioOptions]
+    [uiLanguage, aspectRatioOptions]
   );
 
   const projectCanvasOptions = useMemo(
     () => [
       ...aspectRatioOptionsWithResolution,
-      { value: CUSTOM_CANVAS_OPTION_VALUE, label: 'Custom' },
+      { value: CUSTOM_CANVAS_OPTION_VALUE, label: uiText("Custom") },
     ],
-    [aspectRatioOptionsWithResolution]
+    [uiLanguage, aspectRatioOptionsWithResolution]
   );
 
   const selectedCanvasDimensions = useMemo(
@@ -137,8 +141,7 @@ function EditImageProjectDialogContent({
               : normalizedCurrentCanvasDimensions.height,
           }
         : getCanvasDimensionsForAspectRatio(selectedCanvasOption),
-    [
-      customCanvasHeight,
+    [customCanvasHeight,
       customCanvasWidth,
       normalizedCurrentCanvasDimensions.height,
       normalizedCurrentCanvasDimensions.width,
@@ -163,15 +166,15 @@ function EditImageProjectDialogContent({
     const parsedHeight = Number(customCanvasHeight);
 
     if (!Number.isFinite(parsedWidth) || !Number.isFinite(parsedHeight)) {
-      return 'Enter both width and height.';
+      return uiText("Enter both width and height.");
     }
 
     if (parsedWidth < MIN_CANVAS_DIMENSION || parsedHeight < MIN_CANVAS_DIMENSION) {
-      return `Canvas dimensions must be at least ${MIN_CANVAS_DIMENSION}px.`;
+      return uiText("Canvas dimensions must be at least {value0}px.", { value0: MIN_CANVAS_DIMENSION });
     }
 
     if (parsedWidth > MAX_CANVAS_DIMENSION || parsedHeight > MAX_CANVAS_DIMENSION) {
-      return `Canvas dimensions must be ${MAX_CANVAS_DIMENSION}px or smaller.`;
+      return uiText("Canvas dimensions must be {value0}px or smaller.", { value0: MAX_CANVAS_DIMENSION });
     }
 
     return null;
@@ -191,13 +194,9 @@ function EditImageProjectDialogContent({
   }, [aspectRatio, aspectRatioOptions, selectedCanvasDimensions, selectedCanvasOption]);
 
   const dialogSurface =
-    colorMode === 'dark'
-      ? 'bg-[#181b24] text-slate-100 border border-[#3a4050]'
-      : 'bg-white text-slate-900 border border-slate-200';
+    'bg-surface text-fg border border-line';
   const dialogInputSurface =
-    colorMode === 'dark'
-      ? 'bg-[#151720] border-[#667188] text-slate-100 focus:border-[#f6c453] focus:ring-[#f6c453]/30'
-      : 'bg-white border-slate-300 text-slate-900';
+    `bg-surface-sunken text-fg ${colorMode === 'dark' ? 'border-[#667188] focus:border-[#f6c453] focus:ring-[#f6c453]/30' : 'border-slate-300'}`;
   const dialogSecondaryButton =
     colorMode === 'dark'
       ? 'border border-[#3a4050] bg-[#20232e] text-slate-100 hover:bg-[#292d3a]'
@@ -206,7 +205,7 @@ function EditImageProjectDialogContent({
     colorMode === 'dark'
       ? 'bg-[#ff4655] text-white hover:bg-[#ff6470]'
       : 'bg-rose-500 text-white hover:bg-rose-600';
-  const dialogSubtleText = colorMode === 'dark' ? 'text-slate-300' : 'text-slate-600';
+  const dialogSubtleText = "text-fg-tertiary";
 
   const handleSubmit = async (event) => {
     event.preventDefault();
@@ -228,14 +227,12 @@ function EditImageProjectDialogContent({
     <div className={`relative w-full max-w-md rounded-2xl p-6 shadow-[0_20px_46px_rgba(0,0,0,0.5)] ${dialogSurface}`}>
       <FaTimes className="absolute top-3 right-3 cursor-pointer" onClick={onClose} />
       <form onSubmit={handleSubmit}>
-        <div className="text-lg font-semibold">Edit project</div>
-        <div className={`mt-1 text-sm ${dialogSubtleText}`}>
-          Update your project parameters.
-        </div>
+        <div className="text-lg font-semibold">{uiText("Edit project")}</div>
+        <div className={`mt-1 text-sm ${dialogSubtleText}`}>{uiText("Update your project parameters.")}</div>
 
         <div className="mt-5 space-y-4">
           <div>
-            <label className="block text-sm font-medium mb-2">Canvas preset</label>
+            <label className="block text-sm font-medium mb-2">{uiText("Canvas preset")}</label>
             <SingleSelect
               options={projectCanvasOptions}
               onChange={(selectedOption) => {
@@ -250,9 +247,7 @@ function EditImageProjectDialogContent({
           {selectedCanvasOption === CUSTOM_CANVAS_OPTION_VALUE && (
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="block text-sm font-medium mb-2" htmlFor="edit-project-canvas-width">
-                  Width
-                </label>
+                <label className="block text-sm font-medium mb-2" htmlFor="edit-project-canvas-width">{uiText("Width")}</label>
                 <input
                   id="edit-project-canvas-width"
                   type="number"
@@ -266,9 +261,7 @@ function EditImageProjectDialogContent({
               </div>
 
               <div>
-                <label className="block text-sm font-medium mb-2" htmlFor="edit-project-canvas-height">
-                  Height
-                </label>
+                <label className="block text-sm font-medium mb-2" htmlFor="edit-project-canvas-height">{uiText("Height")}</label>
                 <input
                   id="edit-project-canvas-height"
                   type="number"
@@ -284,16 +277,10 @@ function EditImageProjectDialogContent({
           )}
 
           <div className={`rounded-lg border px-3 py-3 text-sm ${dialogInputSurface}`}>
-            <div className="text-xs font-semibold uppercase tracking-wide opacity-70">
-              Canvas resolution
-            </div>
-            <div className="mt-1 font-semibold">
-              {selectedCanvasDimensions.width} x {selectedCanvasDimensions.height} px
-            </div>
+            <div className="text-xs font-semibold uppercase tracking-wide opacity-70">{uiText("Canvas resolution")}</div>
+            <div className="mt-1 font-semibold">{uiText("{value0} x {value1} px", { value0: selectedCanvasDimensions.width, value1: selectedCanvasDimensions.height })}</div>
             {selectedCanvasOption === CUSTOM_CANVAS_OPTION_VALUE && (
-              <div className="mt-1 text-xs opacity-80">
-                Custom ratio {getSimplifiedAspectRatioLabel(selectedCanvasDimensions)}. Default model ratio stays at {resolvedAspectRatio}.
-              </div>
+              <div className="mt-1 text-xs opacity-80">{uiText("Custom ratio {value0}. Default model ratio stays at {value1}.", { value0: getSimplifiedAspectRatioLabel(selectedCanvasDimensions), value1: resolvedAspectRatio })}</div>
             )}
             {validationMessage && (
               <div className="mt-2 text-xs text-rose-500">{validationMessage}</div>
@@ -307,15 +294,13 @@ function EditImageProjectDialogContent({
             onClick={onClose}
             disabled={isSaving}
             className={`px-3 py-2 rounded-md text-sm transition disabled:opacity-60 ${dialogSecondaryButton}`}
-          >
-            Cancel
-          </button>
+          >{uiText("Cancel")}</button>
           <button
             type="submit"
             disabled={isSaving || Boolean(validationMessage)}
             className={`px-4 py-2 rounded-md text-sm font-semibold transition disabled:opacity-60 ${dialogPrimaryButton}`}
           >
-            {isSaving ? 'Saving...' : 'Save changes'}
+            {isSaving ? uiText("Saving...") : uiText("Save changes")}
           </button>
         </div>
       </form>
@@ -324,6 +309,7 @@ function EditImageProjectDialogContent({
 }
 
 export default function ImageStudioHome() {
+  useUiLanguage();
   const {
     setZoomCanvasIn,
     setZoomCanvasOut,
@@ -388,6 +374,7 @@ export default function ImageStudioHome() {
   const [isGenerationPending, setIsGenerationPending] = useState(false);
   const [isOutpaintPending, setIsOutpaintPending] = useState(false);
   const [isAssistantQueryGenerating, setIsAssistantQueryGenerating] = useState(false);
+  const assistantRequestGuard = useAssistantRequestGuard(id);
   const [generationError, setGenerationError] = useState(null);
   const [outpaintError, setOutpaintError] = useState(null);
 
@@ -580,7 +567,7 @@ export default function ImageStudioHome() {
       .then((response) => {
         const session = response.data;
         setSessionDetails(session);
-        setSessionMessages(session?.sessionMessages || []);
+        if (assistantRequestGuard.acceptSession(session)) setSessionMessages(assistantRequestGuard.messages(session));
         setAspectRatio(session?.aspectRatio || '1:1');
         setGenerationImages(session?.generations || []);
         const firstLayer = session?.layers?.[0] || null;
@@ -596,8 +583,7 @@ export default function ImageStudioHome() {
       .catch(() => {
         toast.error(
           <div>
-            <FaTimes /> Unable to load image session.
-          </div>,
+            <FaTimes />{uiText("Unable to load image session.")}</div>,
           {
             position: 'bottom-center',
             className: 'custom-toast',
@@ -621,26 +607,37 @@ export default function ImageStudioHome() {
   }, [stopAssistantQueryPoll]);
 
   const startAssistantQueryPoll = useCallback(() => {
+    const requestToken = assistantRequestGuard.capture();
     const headers = getHeaders();
     if (!headers) {
       showLoginDialog();
       return;
     }
+    assistantRequestGuard.subscribe({
+      url: `${PROCESSOR_API_URL}/assistants/assistant_query_stream?id=${encodeURIComponent(id)}`,
+      headers: headers.headers,
+      onSnapshot: snapshot => {
+        setSessionMessages(snapshot.sessionMessages);
+        if (!snapshot.sessionMessageGenerationPending) setIsAssistantQueryGenerating(false);
+      },
+    });
 
     stopAssistantQueryPoll();
-    assistantPollRef.current = setInterval(() => {
+    assistantPollRef.current = assistantRequestGuard.setInterval(() => {
       axios
         .get(`${PROCESSOR_API_URL}/assistants/assistant_query_status?id=${id}`, headers)
         .then((dataRes) => {
+          if (!assistantRequestGuard.isCurrent(requestToken)) return;
           assistantErrorCountRef.current = 0;
           const assistantQueryData = dataRes.data;
           if (assistantQueryData.status === 'COMPLETED') {
             stopAssistantQueryPoll();
-            setSessionMessages(assistantQueryData?.sessionDetails?.sessionMessages || []);
+            if (assistantRequestGuard.acceptSession(assistantQueryData?.sessionDetails)) setSessionMessages(assistantRequestGuard.messages(assistantQueryData?.sessionDetails));
             setIsAssistantQueryGenerating(false);
           }
         })
         .catch(() => {
+          if (!assistantRequestGuard.isCurrent(requestToken)) return;
           assistantErrorCountRef.current += 1;
           if (assistantErrorCountRef.current >= 3) {
             stopAssistantQueryPoll();
@@ -669,6 +666,7 @@ export default function ImageStudioHome() {
     const normalizedQuery = `${query || ''}`.trim();
     if (!normalizedQuery) return;
 
+    const requestToken = assistantRequestGuard.beginRequest();
     const headers = getHeaders();
     if (!headers) {
       showLoginDialog();
@@ -682,14 +680,17 @@ export default function ImageStudioHome() {
         {
           id,
           query: normalizedQuery,
+          stream: true, client_request_id: crypto.randomUUID(), assistantSessionVersion: requestToken.serverVersion,
           frameImage: options?.frameImage || null,
         },
         headers
       )
       .then(() => {
+        if (!assistantRequestGuard.isCurrent(requestToken)) return;
         startAssistantQueryPoll();
       })
       .catch(() => {
+        if (!assistantRequestGuard.isCurrent(requestToken)) return;
         setIsAssistantQueryGenerating(false);
       });
   }, [id, startAssistantQueryPoll]);
@@ -810,8 +811,7 @@ export default function ImageStudioHome() {
     const nextItemList = undoActiveItemList();
     syncSelectionWithItemList(nextItemList);
     updateSessionLayerActiveItemList(nextItemList);
-  }, [
-    canUndo,
+  }, [canUndo,
     isHistoryInteractionBlocked,
     syncSelectionWithItemList,
     undoActiveItemList,
@@ -826,8 +826,7 @@ export default function ImageStudioHome() {
     const nextItemList = redoActiveItemList();
     syncSelectionWithItemList(nextItemList);
     updateSessionLayerActiveItemList(nextItemList);
-  }, [
-    canRedo,
+  }, [canRedo,
     isHistoryInteractionBlocked,
     redoActiveItemList,
     syncSelectionWithItemList,
@@ -986,7 +985,7 @@ export default function ImageStudioHome() {
       }
       toast.success(
         <div>
-          <FaCheck className="inline-flex mr-2" />{` ${addedCount} image${addedCount > 1 ? 's' : ''} uploaded.`}
+          <FaCheck className="inline-flex mr-2" />{uiText(" {value0} image{value1} uploaded.", { value0: addedCount, value1: addedCount > 1 && getUiLanguage() === 'en' ? 's' : '' })}
         </div>,
         {
           position: 'bottom-center',
@@ -1010,7 +1009,7 @@ export default function ImageStudioHome() {
     (source) =>
       new Promise((resolve, reject) => {
         if (!source) {
-          reject(new Error('Missing image source'));
+          reject(new Error(uiText("Missing image source")));
           return;
         }
 
@@ -1033,7 +1032,7 @@ export default function ImageStudioHome() {
             y: placement.y,
           });
         };
-        img.onerror = () => reject(new Error('Unable to read image'));
+        img.onerror = () => reject(new Error(uiText("Unable to read image")));
         img.src = getRenderableImageSource(source);
       }),
     [getRenderableImageSource, resolvedCanvasDimensions]
@@ -1075,8 +1074,7 @@ export default function ImageStudioHome() {
       if (!validFiles.length) {
         toast.error(
           <div>
-            <FaTimes /> Please drop a supported image file.
-          </div>,
+            <FaTimes />{uiText("Please drop a supported image file.")}</div>,
           {
             position: 'bottom-center',
             className: 'custom-toast',
@@ -1093,7 +1091,7 @@ export default function ImageStudioHome() {
               new Promise((resolve, reject) => {
                 const reader = new FileReader();
                 reader.onload = (event) => resolve(event.target?.result);
-                reader.onerror = () => reject(new Error('Upload failed.'));
+                reader.onerror = () => reject(new Error(uiText("Upload failed.")));
                 reader.readAsDataURL(file);
               })
           )
@@ -1103,7 +1101,7 @@ export default function ImageStudioHome() {
           dataUrls.filter(Boolean).map((dataUrl) => resolveDroppedImagePlacement(dataUrl))
         );
         if (!placements.length) {
-          throw new Error('No placements available');
+          throw new Error(uiText("No placements available"));
         }
 
         setUploadURL(placements.length === 1 ? placements[0] : placements, {
@@ -1112,8 +1110,7 @@ export default function ImageStudioHome() {
       } catch  {
         toast.error(
           <div>
-            <FaTimes /> Upload failed. Please try another image.
-          </div>,
+            <FaTimes />{uiText("Upload failed. Please try another image.")}</div>,
           {
             position: 'bottom-center',
             className: 'custom-toast',
@@ -1214,8 +1211,7 @@ export default function ImageStudioHome() {
 
         toast.success(
           <div>
-            <FaCheck className="inline-flex mr-2" /> Image added from library.
-          </div>,
+            <FaCheck className="inline-flex mr-2" />{uiText("Image added from library.")}</div>,
           {
             position: 'bottom-center',
             className: 'custom-toast',
@@ -1224,8 +1220,7 @@ export default function ImageStudioHome() {
       } catch (_) {
         toast.error(
           <div>
-            <FaTimes /> Unable to add image from library.
-          </div>,
+            <FaTimes />{uiText("Unable to add image from library.")}</div>,
           {
             position: 'bottom-center',
             className: 'custom-toast',
@@ -1283,7 +1278,7 @@ export default function ImageStudioHome() {
           hasPreviousPage: Boolean(pagination.hasPreviousPage),
         });
       } catch (error) {
-        setGlobalLibraryError(error?.message || 'Unable to load global library assets.');
+        setGlobalLibraryError(error?.message || uiText("Unable to load global library assets."));
       } finally {
         setIsGlobalLibraryLoading(false);
       }
@@ -1323,8 +1318,7 @@ export default function ImageStudioHome() {
         startGenerationPoll();
         toast.success(
           <div>
-            <FaCheck className="inline-flex mr-2" /> Generation request submitted.
-          </div>,
+            <FaCheck className="inline-flex mr-2" />{uiText("Generation request submitted.")}</div>,
           {
             position: 'bottom-center',
             className: 'custom-toast',
@@ -1336,8 +1330,7 @@ export default function ImageStudioHome() {
         setGenerationError(error.message);
         toast.error(
           <div>
-            <FaTimes /> Generation request failed.
-          </div>,
+            <FaTimes />{uiText("Generation request failed.")}</div>,
           {
             position: 'bottom-center',
             className: 'custom-toast',
@@ -1464,8 +1457,7 @@ export default function ImageStudioHome() {
         if (safeWidth > maxWidth || safeHeight > maxHeight) {
           toast.error(
             <div>
-              <FaTimes /> Max custom resolution is 4× the canvas size.
-            </div>,
+              <FaTimes />{uiText("Max custom resolution is 4× the canvas size.")}</div>,
             {
               position: 'bottom-center',
               className: 'custom-toast',
@@ -1543,8 +1535,7 @@ export default function ImageStudioHome() {
     setSelectedId(combinedItem.id);
     setCurrentCanvasAction(TOOLBAR_ACTION_VIEW.SHOW_DEFAULT_DISPLAY);
     setCurrentView(CURRENT_TOOLBAR_VIEW.SHOW_DEFAULT_DISPLAY);
-  }, [
-    createImageStudioImageItem,
+  }, [createImageStudioImageItem,
     resolvedCanvasDimensions.height,
     resolvedCanvasDimensions.width,
     updateSessionLayerActiveItemList,
@@ -1671,8 +1662,7 @@ export default function ImageStudioHome() {
         startOutpaintPoll();
         toast.success(
           <div>
-            <FaCheck className="inline-flex mr-2" /> Edit request submitted.
-          </div>,
+            <FaCheck className="inline-flex mr-2" />{uiText("Edit request submitted.")}</div>,
           {
             position: 'bottom-center',
             className: 'custom-toast',
@@ -1683,8 +1673,7 @@ export default function ImageStudioHome() {
         setOutpaintError(error.message);
         toast.error(
           <div>
-            <FaTimes /> Edit request failed.
-          </div>,
+            <FaTimes />{uiText("Edit request failed.")}</div>,
           {
             position: 'bottom-center',
             className: 'custom-toast',
@@ -1749,11 +1738,10 @@ export default function ImageStudioHome() {
 
     if (pollStatus.status === 'FAILED') {
       setIsGenerationPending(false);
-      setGenerationError(pollStatus.generationError || 'Generation failed.');
+      setGenerationError(pollStatus.generationError || uiText("Generation failed."));
       toast.error(
         <div>
-          <FaTimes /> Generation failed.
-        </div>,
+          <FaTimes />{uiText("Generation failed.")}</div>,
         {
           position: 'bottom-center',
           className: 'custom-toast',
@@ -1821,8 +1809,7 @@ export default function ImageStudioHome() {
       updateSessionLayerActiveItemList(newItemList);
       toast.success(
         <div>
-          <FaCheck className="inline-flex mr-2" /> Edit complete.
-        </div>,
+          <FaCheck className="inline-flex mr-2" />{uiText("Edit complete.")}</div>,
         {
           position: 'bottom-center',
           className: 'custom-toast',
@@ -1834,11 +1821,10 @@ export default function ImageStudioHome() {
 
     if (pollStatusDataResponse.status === 'FAILED') {
       setIsOutpaintPending(false);
-      setOutpaintError('Edit failed.');
+      setOutpaintError(uiText("Edit failed."));
       toast.error(
         <div>
-          <FaTimes /> Edit failed.
-        </div>,
+          <FaTimes />{uiText("Edit failed.")}</div>,
         {
           position: 'bottom-center',
           className: 'custom-toast',
@@ -1915,8 +1901,7 @@ export default function ImageStudioHome() {
       localStorage.setItem('defaultImageAspectRatio', previousAspectRatio);
       toast.error(
         <div>
-          <FaTimes /> Unable to update project settings.
-        </div>,
+          <FaTimes />{uiText("Unable to update project settings.")}</div>,
         {
           position: 'bottom-center',
           className: 'custom-toast',
@@ -1937,8 +1922,7 @@ export default function ImageStudioHome() {
         onSave={handleProjectSettingsChange}
       />
     );
-  }, [
-    aspectRatio,
+  }, [aspectRatio,
     closeAlertDialog,
     colorMode,
     handleProjectSettingsChange,
@@ -2034,9 +2018,7 @@ export default function ImageStudioHome() {
   let viewDisplay = <span />;
   if (!currentLayer || !sessionDetails) {
     viewDisplay = (
-      <div className="w-full h-[80vh] flex items-center justify-center text-sm">
-        Loading image session...
-      </div>
+      <div className="w-full h-[80vh] flex items-center justify-center text-sm">{uiText("Loading image session...")}</div>
     );
   } else if (currentLayer.imageSession?.generationStatus === 'PENDING') {
     viewDisplay = <LoadingImage />;
@@ -2109,9 +2091,7 @@ export default function ImageStudioHome() {
                     ? 'border-[#f6c453]/70 bg-[#f6c453]/10 text-[#ffe0a3]'
                     : 'border-rose-400/70 bg-rose-400/10 text-rose-500'
                 }`}
-              >
-                Drop image to upload
-              </div>
+              >{uiText("Drop image to upload")}</div>
             )}
             <VideoCanvasContainer
               ref={canvasRef}
@@ -2203,13 +2183,9 @@ export default function ImageStudioHome() {
   }
 
   const mainWorkspaceShell =
-    colorMode === 'dark'
-      ? 'bg-[#0c0d12] text-slate-100'
-      : 'bg-gradient-to-br from-[#e9edf7] via-[#eef3fb] to-white text-slate-900';
+    `text-fg ${colorMode === 'dark' ? 'bg-[#0c0d12]' : 'bg-gradient-to-br from-[#e9edf7] via-[#eef3fb] to-white'}`;
   const toolbarShell =
-    colorMode === 'dark'
-      ? 'bg-[#181b24] border-l border-[#3a4050] shadow-[0_1px_0_rgba(255,255,255,0.04)]'
-      : 'bg-white border-l border-slate-200';
+    `bg-surface border-l border-line ${colorMode === 'dark' ? 'shadow-[0_1px_0_rgba(255,255,255,0.04)]' : ''}`;
   const imageStudioRightPanelWidth = 'clamp(360px, 24vw, 460px)';
   const canvasViewportLayout = isCanvasStudioDisplay
     ? 'flex items-start justify-center overflow-auto'
@@ -2292,6 +2268,7 @@ export default function ImageStudioHome() {
           />
           <AssistantHome
             submitAssistantQuery={submitAssistantQuery}
+            onSessionCleared={assistantRequestGuard.invalidate}
             sessionId={id}
             sessionMessages={sessionMessages}
             onSessionMessagesChange={setSessionMessages}

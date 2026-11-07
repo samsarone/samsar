@@ -1,3 +1,6 @@
+import { useAssistantRequestGuard } from '../../hooks/useAssistantRequestGuard.js';
+import { useUiLanguage } from '../../hooks/useUiLanguage.js';
+import { translateText as uiText } from '../../utils/localization.js';
 import { useState, useEffect, useRef, useMemo } from 'react';
 import TextareaAutosize from 'react-textarea-autosize';
 import CommonButton from '../common/CommonButton.tsx';
@@ -34,6 +37,7 @@ const API_SERVER = import.meta.env.VITE_PROCESSOR_API;
 const PROCESSOR_API_URL = API_SERVER;
 
 export default function AdVideoCreator() {
+  const uiLanguage = useUiLanguage();
   const { user } = useUser();
   const { colorMode } = useColorMode();
   const { id } = useParams();
@@ -48,6 +52,7 @@ export default function AdVideoCreator() {
   // Assistant / Chatbot states
   const [sessionMessages, setSessionMessages] = useState([]);
   const [isAssistantQueryGenerating, setIsAssistantQueryGenerating] = useState(false);
+  const assistantRequestGuard = useAssistantRequestGuard(id);
 
   // Generation states
   const [isGenerationPending, setIsGenerationPending] = useState(false);
@@ -111,8 +116,8 @@ export default function AdVideoCreator() {
 
   // Aspect Ratio
   const aspectRatioOptions = [
-    { label: '16:9 (Landscape)', value: '16:9' },
-    { label: '9:16 (Portrait)', value: '9:16' },
+    { label: uiText("16:9 (Landscape)"), value: '16:9' },
+    { label: uiText("9:16 (Portrait)"), value: '9:16' },
   ];
 
   const [selectedAspectRatioOption, setSelectedAspectRatioOption] = useState(() => {
@@ -152,7 +157,7 @@ export default function AdVideoCreator() {
     return isStandaloneModelFilteringEnabled
       ? filterOptionsForDeploymentModelValues(models, textToVideoImageModelValues)
       : models;
-  }, [
+  }, [uiLanguage,
     isStandaloneModelFilteringEnabled,
     selectedAspectRatioOption.value,
     textToVideoImageModelValues,
@@ -175,7 +180,7 @@ export default function AdVideoCreator() {
     return isStandaloneModelFilteringEnabled
       ? filterOptionsForDeploymentModelValues(models, textToVideoVideoModelValues)
       : models;
-  }, [
+  }, [uiLanguage,
     isStandaloneModelFilteringEnabled,
     selectedAspectRatioOption,
     textToVideoVideoModelValues,
@@ -183,10 +188,10 @@ export default function AdVideoCreator() {
 
   // Duration options
   const durationOptions = [
-    { label: '30 Secs', value: 30 },
-    { label: '1 Minute', value: 60 },
-    { label: '1.5 Minutes', value: 90 },
-    { label: '2 Minutes', value: 120 },
+    { label: uiText("30 Secs"), value: 30 },
+    { label: uiText("1 Minute"), value: 60 },
+    { label: uiText("1.5 Minutes"), value: 90 },
+    { label: uiText("2 Minutes"), value: 120 },
   ];
 
   // Track the selected IMAGE model
@@ -351,30 +356,41 @@ export default function AdVideoCreator() {
 
 
   const startAssistantQueryPoll = () => {
+    const requestToken = assistantRequestGuard.capture();
     const headers = getHeaders();
     if (!headers) {
       showLoginDialog();
       return;
     }
+    assistantRequestGuard.subscribe({
+      url: `${PROCESSOR_API_URL}/assistants/assistant_query_stream?id=${encodeURIComponent(id)}`,
+      headers: headers.headers,
+      onSnapshot: snapshot => {
+        setSessionMessages(snapshot.sessionMessages);
+        if (!snapshot.sessionMessageGenerationPending) setIsAssistantQueryGenerating(false);
+      },
+    });
     if (assistantPollRef.current) {
       clearInterval(assistantPollRef.current);
     }
     assistantErrorCountRef.current = 0;
 
-    assistantPollRef.current = setInterval(() => {
+    assistantPollRef.current = assistantRequestGuard.setInterval(() => {
       axios
         .get(`${PROCESSOR_API_URL}/assistants/assistant_query_status?id=${id}`, headers)
         .then((dataRes) => {
+          if (!assistantRequestGuard.isCurrent(requestToken)) return;
           assistantErrorCountRef.current = 0;
           const assistantQueryData = dataRes.data;
           const assistantQueryStatus = assistantQueryData.status;
           if (assistantQueryStatus === 'COMPLETED') {
             clearInterval(assistantPollRef.current);
-            setSessionMessages(assistantQueryData.sessionDetails.sessionMessages);
+            if (assistantRequestGuard.acceptSession(assistantQueryData.sessionDetails)) setSessionMessages(assistantRequestGuard.messages(assistantQueryData.sessionDetails));
             setIsAssistantQueryGenerating(false);
           }
         })
         .catch(() => {
+          if (!assistantRequestGuard.isCurrent(requestToken)) return;
 
           assistantErrorCountRef.current += 1;
           if (assistantErrorCountRef.current >= 3) {
@@ -386,24 +402,26 @@ export default function AdVideoCreator() {
   };
 
   const submitAssistantQuery = (query) => {
+    const requestToken = assistantRequestGuard.beginRequest();
     const headers = getHeaders();
     if (!headers) {
       showLoginDialog();
       return;
     }
-    setSessionMessages([]);
     setIsAssistantQueryGenerating(true);
 
     axios
       .post(
         `${PROCESSOR_API_URL}/assistants/submit_assistant_query`,
-        { id, query },
+        { id, query, stream: true, client_request_id: crypto.randomUUID(), assistantSessionVersion: requestToken.serverVersion },
         headers
       )
       .then(() => {
+        if (!assistantRequestGuard.isCurrent(requestToken)) return;
         startAssistantQueryPoll();
       })
       .catch(() => {
+        if (!assistantRequestGuard.isCurrent(requestToken)) return;
 
         setIsAssistantQueryGenerating(false);
       });
@@ -440,7 +458,7 @@ export default function AdVideoCreator() {
         setExpressGenerationStatus(response.expressGenerationStatus);
       }
       if (response.sessionMessages) {
-        setSessionMessages(response.sessionMessages);
+        if (assistantRequestGuard.acceptSession(response)) setSessionMessages(assistantRequestGuard.messages(response));
       }
     } catch  {
 
@@ -480,7 +498,7 @@ export default function AdVideoCreator() {
           clearInterval(pollIntervalRef.current);
           setIsGenerationPending(false);
           setErrorMessage({
-            error: `Video generation failed. ${errorMessage}`,
+            error: uiText("Video generation failed. {value0}", { value0: errorMessage }),
           });
         }
       } catch  {
@@ -491,7 +509,7 @@ export default function AdVideoCreator() {
           clearInterval(pollIntervalRef.current);
           setIsGenerationPending(false);
           setErrorMessage({
-            error: 'An unexpected error occurred while checking status (multiple retries failed).',
+            error: uiText("An unexpected error occurred while checking status (multiple retries failed)."),
           });
         }
       }
@@ -501,12 +519,12 @@ export default function AdVideoCreator() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!promptText.trim()) {
-      setErrorMessage({ error: 'Please enter some text before submitting.' });
+      setErrorMessage({ error: uiText("Please enter some text before submitting.") });
       return;
     }
     if (!id) return;
     if (!selectedImageModel?.value || !selectedVideoModel?.value) {
-      setErrorMessage({ error: 'No configured standalone model is available for ad video generation.' });
+      setErrorMessage({ error: uiText("No configured standalone model is available for ad video generation.") });
       return;
     }
 
@@ -534,7 +552,7 @@ export default function AdVideoCreator() {
       pollGenerationStatus();
     } catch  {
 
-      setErrorMessage({ error: 'An unexpected error occurred.' });
+      setErrorMessage({ error: uiText("An unexpected error occurred.") });
       setIsGenerationPending(false);
     } finally {
       setIsSubmitting(false);
@@ -598,18 +616,18 @@ export default function AdVideoCreator() {
         onClick={togglePricingDetailsDisplay}
       >
         {usesProviderBilling
-          ? 'Provider billed by configured adapter'
-          : `${creditsPerSecondVideo} Credits / second of video`}
+          ? uiText("Provider billed by configured adapter")
+          : uiText("{value0} Credits / second of video", { value0: creditsPerSecondVideo })}
         <FaChevronCircleDown className="inline-flex ml-1 mt-1" />
       </div>
       {pricingDetailsDisplay && (
         <div className="mt-1 text-sm w-full text-right">
           {usesProviderBilling ? (
-            <div>Video usage is billed by the configured adapter.</div>
+            <div>{uiText("Video usage is billed by the configured adapter.")}</div>
           ) : (
             <>
-              <div>The total price will be shown at completion.</div>
-              <div>For example, a 60s video will cost {60 * creditsPerSecondVideo} credits.</div>
+              <div>{uiText("The total price will be shown at completion.")}</div>
+              <div>{uiText("For example, a 60s video will cost {value0} credits.", { value0: 60 * creditsPerSecondVideo })}</div>
             </>
           )}
         </div>
@@ -634,11 +652,7 @@ export default function AdVideoCreator() {
               : 'flex items-center text-lg font-bold text-black pl-2 mt-[-6px] space-x-2'
           }
         >
-          <span>AdVideo Creator
-
-            <span className='text-sm text-gray-400 ml-2'>
-              Add all the product photos, and then enter a prompt for the ad.
-            </span>
+          <span>{uiText("AdVideo Creator")}<span className='text-sm text-gray-400 ml-2'>{uiText("Add all the product photos, and then enter a prompt for the ad.")}</span>
           </span>
 
           {/* Button to trigger multiple image uploads */}
@@ -647,8 +661,8 @@ export default function AdVideoCreator() {
             onClick={() => fileInputRef.current?.click()}
             title={
               uploadedImageFiles && uploadedImageFiles.length
-                ? 'Add or change images'
-                : 'Upload starter images'
+                ? uiText("Add or change images")
+                : uiText("Upload starter images")
             }
             className="p-0 leading-none cursor-pointer"
           >
@@ -680,9 +694,7 @@ export default function AdVideoCreator() {
                   ? "text-white text-xs mt-1"
                   : "text-black text-xs mt-1"
               }
-            >
-              Aspect Ratio
-            </p>
+            >{uiText("Aspect Ratio")}</p>
           </div>
 
           {/* Duration */}
@@ -699,15 +711,13 @@ export default function AdVideoCreator() {
                   ? "text-white text-xs mt-1"
                   : "text-black text-xs mt-1"
               }
-            >
-              Default Duration
-            </p>
+            >{uiText("Default Duration")}</p>
           </div>
 
           {/* Show "Render pending" if pending */}
           {renderState === 'pending' && (
             <div className="flex items-center space-x-2">
-              <span>Render pending</span>
+              <span>{uiText("Render pending")}</span>
               <FaSpinner className="animate-spin" />
             </div>
           )}
@@ -720,22 +730,16 @@ export default function AdVideoCreator() {
                   href={videoLink}
                   download={`Rendition_${dateNowStr}.mp4`}
                   className="text-xs underline mt-2 mb-1 ml-2"
-                >
-                  Download Video
-                </a>
+                >{uiText("Download Video")}</a>
               </button>
               <button
                 className="bg-blue-600 px-3 py-1 rounded text-white"
                 onClick={viewInStudio}
-              >
-                View in Studio
-              </button>
+              >{uiText("View in Studio")}</button>
               <button
                 className="bg-blue-600 px-3 py-1 rounded text-white"
                 onClick={handleRenderAgain}
-              >
-                Render Again
-              </button>
+              >{uiText("Render Again")}</button>
             </div>
           )}
         </div>
@@ -767,7 +771,7 @@ export default function AdVideoCreator() {
             <img
               key={idx}
               src={src}
-              alt={`starter‑${idx + 1}`}
+              alt={uiText("starter‑{value0}", { value0: idx + 1 })}
               className="max-h-40 rounded shadow"
             />
           ))}
@@ -785,7 +789,7 @@ export default function AdVideoCreator() {
               ? "w-full bg-gray-950 text-white pl-4 pt-4 p-2 rounded mt-4"
               : "w-full bg-gray-50 text-black pl-4 pt-4 p-2 rounded mt-4"
           }
-          placeholder={`Enter a topic for your story-video, e.g.:\n"A 1-minute journey through the cosmos"`}
+          placeholder={uiText("Enter a topic for your story-video, e.g.:\n\"A 1-minute journey through the cosmos\"", {  })}
           name="promptText"
           value={promptText}
           onChange={(e) => setPromptText(e.target.value)}
@@ -796,7 +800,7 @@ export default function AdVideoCreator() {
               type="submit"
               isDisabled={isFormDisabled || isSubmitting}
             >
-              {isSubmitting ? 'Submitting...' : 'Submit'}
+              {isSubmitting ? uiText("Submitting...") : uiText("Submit")}
             </CommonButton>
           </div>
 
@@ -816,6 +820,7 @@ export default function AdVideoCreator() {
       {/* AssistantHome */}
       <AssistantHome
         submitAssistantQuery={submitAssistantQuery}
+        onSessionCleared={assistantRequestGuard.invalidate}
         sessionId={id}
         sessionMessages={sessionMessages}
         onSessionMessagesChange={setSessionMessages}

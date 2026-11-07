@@ -1,7 +1,10 @@
+import { useUiLanguage } from '../../hooks/useUiLanguage.js';
 export default function VideoEditorWorkspace({ isLibraryView, isRenderPending, className = '', children }) {
+  useUiLanguage();
   // The canvas can exceed the viewport at its current zoom. The library must fit it.
   return (
     <div
+      data-studio-workspace
       className={`min-h-0 min-w-0 flex-1 px-6 py-6 text-center ${isLibraryView ? 'overflow-hidden' : 'overflow-auto'} ${className}`}
       aria-disabled={isRenderPending}
     >

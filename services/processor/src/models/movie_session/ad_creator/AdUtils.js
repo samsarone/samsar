@@ -5,6 +5,8 @@ import { zodResponseFormat } from "openai/helpers/zod";
 import { createCompatibleChatCompletion } from "../../ai_utils/OpenAICompat.js";
 import { getModelForUserInferenceModel } from "../../agent/ModelUtils.js";
 import { getAccessibleVisionImageUrl } from "../../ai_utils/VisionMediaUrl.js";
+import { isClaudeModel } from '../../../inference/AnthropicChatAdapter.js';
+import { usesLocalAnthropicVisionImages } from '../../../inference/AnthropicVisionImages.js';
 import {
   getDefaultUserInferenceModel,
   isGeminiInferenceModel,
@@ -34,7 +36,8 @@ function isRetryableVisionError(error) {
 }
 
 async function getProviderImageReference(sourceReference, model, dependencies) {
-  return isGeminiInferenceModel(model)
+  return isGeminiInferenceModel(model) ||
+    (isClaudeModel(model) && usesLocalAnthropicVisionImages())
     ? sourceReference
     : dependencies.resolveImageUrl(sourceReference);
 }

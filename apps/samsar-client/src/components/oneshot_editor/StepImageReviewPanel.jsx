@@ -1,3 +1,5 @@
+import { useUiLanguage } from '../../hooks/useUiLanguage.js';
+import { translateText as uiText } from '../../utils/localization.js';
 import { useEffect, useMemo, useState } from 'react';
 import { FaCheck, FaImage, FaRedo, FaSpinner } from 'react-icons/fa';
 
@@ -129,7 +131,7 @@ function buildReviewScenes(sessionPreview) {
       return {
         index: sceneIndex,
         id: normalizeString(layer.id) || normalizeString(layer.layer_id),
-        title: `Scene ${sceneIndex + 1}`,
+        title: uiText("Scene {value0}", { value0: sceneIndex + 1 }),
         prompt: fallbackPrompt,
         status: normalizeString(layer.image?.status),
         items: normalizedItems,
@@ -171,6 +173,7 @@ export default function StepImageReviewPanel({
   onSelectImage,
   onRegenerateImage,
 }) {
+  const uiLanguage = useUiLanguage();
   const scenes = useMemo(() => buildReviewScenes(sessionPreview), [sessionPreview]);
   const [selectedSceneIndex, setSelectedSceneIndex] = useState(0);
   const [promptDrafts, setPromptDrafts] = useState({});
@@ -194,7 +197,7 @@ export default function StepImageReviewPanel({
   const tileClass = isDark
     ? 'border-white/10 bg-[#181b24]'
     : 'border-slate-200 bg-white';
-  const mutedText = isDark ? 'text-slate-400' : 'text-slate-500';
+  const mutedText = isDark ? "text-slate-400" : "text-slate-500";
   const inputClass = isDark
     ? 'border-[#4a5265] bg-[#20232e] text-slate-100 focus:border-[#f6c453] focus:ring-2 focus:ring-[#f6c453]/25'
     : 'border-slate-200 bg-white text-slate-900 focus:border-indigo-500';
@@ -255,7 +258,7 @@ export default function StepImageReviewPanel({
             alt={`${selectedScene.title} ${primary ? 'primary' : 'alternate'}`}
             className="h-full w-full object-contain"
           />
-          <div className={`absolute left-2 top-2 rounded-full px-2 py-1 text-[11px] font-semibold ${
+          <div className={`absolute left-2 top-2 rounded-full px-2 py-1 text-caption font-semibold ${
             primary
               ? isDark
                 ? 'bg-[#f6c453] text-[#111318]'
@@ -264,7 +267,7 @@ export default function StepImageReviewPanel({
                 ? 'bg-[#2b303b] text-[#ffe0a3] ring-1 ring-[#f6c453]/25'
                 : 'bg-amber-500 text-white'
           }`}>
-            {primary ? 'Primary' : 'Alternate'}
+            {primary ? uiText("Primary") : uiText("Alternate")}
           </div>
         </div>
         <div className="space-y-2 p-3">
@@ -285,20 +288,14 @@ export default function StepImageReviewPanel({
                     ? 'bg-[#f6c453] text-[#111318] hover:bg-[#ffe0a3] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#fff1c8]/70'
                     : 'bg-indigo-600 text-white hover:bg-indigo-500'
                 }`}
-              >
-                {busyKey === selectKey ? <FaSpinner className="animate-spin" /> : <FaCheck />}
-                Use as primary
-              </button>
+              >{uiText("{value0} Use as primary", { value0: busyKey === selectKey ? <FaSpinner className="animate-spin" /> : <FaCheck /> })}</button>
             )}
             <button
               type="button"
               onClick={() => handleRegenerate(item)}
               disabled={Boolean(busyKey) || !prompt.trim()}
               className={`inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-xs font-semibold transition disabled:cursor-not-allowed disabled:opacity-60 ${quietButton}`}
-            >
-              {busyKey === generateKey ? <FaSpinner className="animate-spin" /> : <FaRedo />}
-              Generate
-            </button>
+            >{uiText("{value0} Generate", { value0: busyKey === generateKey ? <FaSpinner className="animate-spin" /> : <FaRedo /> })}</button>
           </div>
         </div>
       </div>
@@ -309,12 +306,8 @@ export default function StepImageReviewPanel({
     <div className={`mt-4 rounded-xl border p-3 ${shellClass}`}>
       <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2 text-sm font-semibold">
-          <FaImage className={isDark ? 'text-[#f6c453]' : 'text-indigo-600'} />
-          Image review
-        </div>
-        <div className={`text-xs ${mutedText}`}>
-          {selectedScene.items.length} image{selectedScene.items.length === 1 ? '' : 's'}
-        </div>
+          <FaImage className={isDark ? 'text-[#f6c453]' : 'text-indigo-600'} />{uiText("Image review")}</div>
+        <div className={`text-xs ${mutedText}`}>{uiText("{value0} image{value1}", { value0: selectedScene.items.length, value1: selectedScene.items.length === 1 ? '' : (uiLanguage === "en" ? "s" : "") })}</div>
       </div>
 
       <div className="mb-3 flex gap-2 overflow-x-auto pb-1">
@@ -342,7 +335,7 @@ export default function StepImageReviewPanel({
       <div className="grid gap-3 lg:grid-cols-[minmax(0,1.1fr)_minmax(280px,0.9fr)]">
         {renderImageTile(primaryItem, { primary: true })}
         <div className="space-y-3">
-          <div className={`text-xs font-semibold uppercase tracking-wide ${mutedText}`}>Alternates</div>
+          <div className={`text-xs font-semibold uppercase tracking-wide ${mutedText}`}>{uiText("Alternates")}</div>
           {secondaryItems.length ? (
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1">
               {secondaryItems.map((item) => (
@@ -352,9 +345,7 @@ export default function StepImageReviewPanel({
               ))}
             </div>
           ) : (
-            <div className={`rounded-xl border border-dashed p-4 text-sm ${mutedText} ${isDark ? 'border-white/10' : 'border-slate-300'}`}>
-              No alternate images yet.
-            </div>
+            <div className={`rounded-xl border border-dashed p-4 text-sm ${mutedText} ${isDark ? 'border-white/10' : 'border-slate-300'}`}>{uiText("No alternate images yet.")}</div>
           )}
         </div>
       </div>

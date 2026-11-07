@@ -1626,6 +1626,7 @@ async function requestQuickMovieGenerationInternal(userId, payload, {
 
       outroActiveItemList.push(...createOutroCtaTextItems({
         canvasDimensions,
+        centerContentBounds: generatedOutroComposition.center.contentBounds,
         ctaTextTop,
         ctaTextBottom,
         startIndex: outroActiveItemList.length,
@@ -1642,6 +1643,7 @@ async function requestQuickMovieGenerationInternal(userId, payload, {
         width: generatedOutroComposition.qr.width,
         height: generatedOutroComposition.qr.height,
         src: generatedOutroComposition.qr.src,
+        outroContentBounds: generatedOutroComposition.center.contentBounds,
         is_base_image: false,
         animations: [],
       });

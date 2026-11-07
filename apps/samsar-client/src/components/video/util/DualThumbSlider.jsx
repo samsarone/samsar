@@ -1,3 +1,4 @@
+import { useUiLanguage } from '../../../hooks/useUiLanguage.js';
 // DualThumbSlider.js
 import { useEffect, useMemo, useState } from 'react';
 import ReactSlider from 'react-slider';
@@ -17,6 +18,7 @@ export default function DualThumbSlider({
   sliderValueToValue,
   disabled = false,
 }) {
+  useUiLanguage();
   const resolvedSliderMin = Number.isFinite(Number(sliderMin)) ? Number(sliderMin) : min;
   const resolvedSliderMax = Number.isFinite(Number(sliderMax)) ? Number(sliderMax) : max;
   const toSliderValue = (domainValue) => (
@@ -108,8 +110,7 @@ export default function DualThumbSlider({
       if (renderedSliderSpan === 0) return resolvedSliderMin;
       return Math.min(Math.max(val, resolvedSliderMin), safeSliderMax);
     });
-  }, [
-    renderedSliderSpan,
+  }, [renderedSliderSpan,
     resolvedSliderMin,
     safeSliderMax,
     sliderValues,

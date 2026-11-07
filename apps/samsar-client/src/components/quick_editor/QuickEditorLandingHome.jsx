@@ -1,3 +1,4 @@
+import { useUiLanguage } from '../../hooks/useUiLanguage.js';
 import { useEffect, useRef } from 'react';
 import { useUser } from '../../contexts/UserContext';
 import axios from 'axios';
@@ -10,6 +11,7 @@ import { IS_STANDALONE_DEPLOYMENT } from '../../utils/environment.jsx';
 const API_SERVER = import.meta.env.VITE_PROCESSOR_API;
 
 export default function QuickEditorLandingHome() {
+  useUiLanguage();
 
   const { user, userFetching, userInitiated } = useUser();
   const navigate = useNavigate();

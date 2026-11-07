@@ -21,7 +21,8 @@ import {
   normalizeInferenceModel,
 } from '../../consts/InferenceModels.js';
 import { createCompatibleChatCompletion } from '../ai_utils/OpenAICompat.js';
-import { isClaudeOpus55Model } from '../../inference/AnthropicChatAdapter.js';
+import { getReasoningModelBase, isGPTModel } from '../../inference/ReasoningModels.js';
+import { isClaudeModel } from '../../inference/AnthropicChatAdapter.js';
 import { isStandaloneEdition } from '../../utils/EnvironmentUtils.js';
 import { getRetiredGPTImageModelError } from '../../consts/GPTImageModelKeys.js';
 import {
@@ -67,7 +68,8 @@ export function shouldUsePreferenceAwareImagePromptRouting(
   const normalizedInferenceModel = normalizeInferenceModel(inferenceModel);
   return (
     isStandaloneEdition(env) ||
-    isClaudeOpus55Model(normalizedInferenceModel) ||
+    getReasoningModelBase(normalizedInferenceModel) === 'gpt-6.1-sol' ||
+    isClaudeModel(normalizedInferenceModel) ||
     isGeminiInferenceModel(normalizedInferenceModel) ||
     isKimiInferenceModel(normalizedInferenceModel) ||
     isQwenInferenceModel(normalizedInferenceModel)
@@ -1862,8 +1864,9 @@ async function generatePromptForImageSet({
     : fallbackPrompt;
 
   const normalizedInferenceModel = normalizeInferenceModel(inferenceModel);
-  const usesSelectedNonOpenAIProvider =
-    isClaudeOpus55Model(normalizedInferenceModel) ||
+  const usesSelectedModel =
+    getReasoningModelBase(normalizedInferenceModel) === 'gpt-6.1-sol' ||
+    isClaudeModel(normalizedInferenceModel) ||
     isGeminiInferenceModel(normalizedInferenceModel) ||
     isKimiInferenceModel(normalizedInferenceModel) ||
     isQwenInferenceModel(normalizedInferenceModel);
@@ -1877,13 +1880,14 @@ async function generatePromptForImageSet({
 
 
   try {
+    const model = usesSelectedModel ? normalizedInferenceModel : OPENAI_MODEL;
     const completionPayload = {
-      model: usesSelectedNonOpenAIProvider ? normalizedInferenceModel : OPENAI_MODEL,
+      model,
       messages: [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: parts.join('\n') },
       ],
-      ...(!usesSelectedNonOpenAIProvider && OPENAI_MODEL === 'gpt-6-astra' ? {} : { temperature: 0.8 }),
+      ...(isGPTModel(model) ? {} : { temperature: 0.8 }),
     };
     const completion = usesPreferenceAwareRouting
       ? await createCompatibleChatCompletion(openaiClient, completionPayload)

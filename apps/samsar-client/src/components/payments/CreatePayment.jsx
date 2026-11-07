@@ -1,3 +1,5 @@
+import { useUiLanguage } from '../../hooks/useUiLanguage.js';
+import { translateText as uiText } from '../../utils/localization.js';
 import { useEffect, useState } from 'react';
 import OverflowContainer from '../common/OverflowContainer.tsx';
 import UpgradePlan from './UpgradePlan.tsx';
@@ -15,6 +17,7 @@ import 'react-toastify/dist/ReactToastify.css';
 const PROCESSOR_SERVER = import.meta.env.VITE_PROCESSOR_API;
 
 export default function CreatePayment() {
+  useUiLanguage();
   const [selectedTab, setSelectedTab] = useState('upgradePlan');
   const { colorMode } = useColorMode();
   const { getUserAPI } = useUser();
@@ -56,12 +59,12 @@ export default function CreatePayment() {
       .then(function () {
 
 
-        toast.success("Coupon applied successfully!", { position: "bottom-center" });
+        toast.success(uiText("Coupon applied successfully!"), { position: "bottom-center" });
         getUserAPI();
       })
       .catch(function () {
         
-        toast.error("Failed to apply coupon", { position: "bottom-center" });
+        toast.error(uiText("Failed to apply coupon"), { position: "bottom-center" });
       });
   };
 
@@ -69,7 +72,7 @@ export default function CreatePayment() {
     const purchaseAmountRequest = parseInt(amountToPurchase, 10);
 
     if (Number.isNaN(purchaseAmountRequest) || purchaseAmountRequest <= 0) {
-      toast.error("Select a valid amount to purchase.", { position: "bottom-center" });
+      toast.error(uiText("Select a valid amount to purchase."), { position: "bottom-center" });
       return;
     }
 
@@ -83,14 +86,14 @@ export default function CreatePayment() {
         const { url } = res.data;
         if (url) {
           window.open(url, "_blank", "noopener,noreferrer");
-          toast.success("Redirecting to checkout…", { position: "bottom-center" });
+          toast.success(uiText("Redirecting to checkout…"), { position: "bottom-center" });
         } else {
-          toast.error("Failed to generate payment URL", { position: "bottom-center" });
+          toast.error(uiText("Failed to generate payment URL"), { position: "bottom-center" });
         }
       })
       .catch(() => {
         
-        toast.error("Payment process failed. Please try again.", { position: "bottom-center" });
+        toast.error(uiText("Payment process failed. Please try again."), { position: "bottom-center" });
       });
   };
 
@@ -125,16 +128,12 @@ export default function CreatePayment() {
                 type="button"
                 onClick={() => setSelectedTab('upgradePlan')}
                 className={getButtonClass(selectedTab === 'upgradePlan')}
-              >
-                Plan
-              </button>
+              >{uiText("Plan")}</button>
               <button
                 type="button"
                 onClick={() => setSelectedTab('purchaseCredits')}
                 className={getButtonClass(selectedTab === 'purchaseCredits')}
-              >
-                Credits
-              </button>
+              >{uiText("Credits")}</button>
             </div>
 
             <a
@@ -142,9 +141,7 @@ export default function CreatePayment() {
               target="_blank"
               rel="noopener noreferrer"
               className={`text-sm font-medium underline-offset-4 hover:underline ${pricingLinkClasses}`}
-            >
-              Pricing
-            </a>
+            >{uiText("Pricing")}</a>
           </div>
 
           {/* Content section with a modern card look */}

@@ -1,3 +1,5 @@
+import { useUiLanguage } from '../../hooks/useUiLanguage.js';
+import { translateText as uiText } from '../../utils/localization.js';
 import { Fragment } from "react";
 import { Menu, Transition } from "@headlessui/react";
 import { FaSpinner } from "react-icons/fa6";
@@ -26,6 +28,7 @@ export default function CommonDropdownButton({
   allowAnonymous = false,
   compact = false,
 }) {
+  useUiLanguage();
   // Access user context & color mode to replicate CommonButton logic
   const { user } = useUser();
   const { colorMode } = useColorMode();
@@ -61,8 +64,8 @@ export default function CommonDropdownButton({
     ? "min-h-[34px] px-3 py-1 text-xs"
     : "min-h-11 px-3 py-1.5 text-sm sm:min-h-[38px]";
   const menuButtonSizeClasses = compact
-    ? "min-h-[34px] px-2 text-[10px]"
-    : "min-h-11 px-2 text-[11px] sm:min-h-[38px]";
+    ? "min-h-[34px] px-2 text-micro"
+    : "min-h-11 px-2 text-caption sm:min-h-[38px]";
 
   return (
     <Menu as="div" className="relative z-[260] inline-block text-left">
@@ -96,7 +99,7 @@ export default function CommonDropdownButton({
         {/* Chevron (right) portion of the split-button */}
         <Menu.Button
           disabled={isBtnDisabled}
-          aria-label={`${typeof mainLabel === "string" ? mainLabel : "Action"} options`}
+          aria-label={uiText("{value0} options", { value0: typeof mainLabel === "string" ? mainLabel : "Action" })}
           className={`
             inline-flex items-center justify-center
             rounded-r-lg

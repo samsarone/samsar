@@ -1,3 +1,5 @@
+import { useUiLanguage } from '../../hooks/useUiLanguage.js';
+import { translateText as uiText } from '../../utils/localization.js';
 import { useStudioFrameRate } from './StudioFrameRateContext.jsx';
 import { useEffect, useMemo, useState, useRef, useCallback } from 'react';
 import axios from 'axios';
@@ -100,6 +102,7 @@ function getContentDispositionFileName(contentDisposition) {
 }
 
 export default function VideoEditorContainer(props) {
+  useUiLanguage();
   const DISPLAY_FRAMES_PER_SECOND = useStudioFrameRate();
   const {
     selectedLayerId,
@@ -127,6 +130,7 @@ export default function VideoEditorContainer(props) {
     displayZoomType,
     toggleStageZoom,
     stageZoomScale,
+    onCanvasViewportChange,
     zoomCanvasIn,
     zoomCanvasOut,
     resetCanvasZoom,
@@ -615,13 +619,13 @@ export default function VideoEditorContainer(props) {
         return;
       }
       if (layerHasAnyVideoArtefact(currentLayer)) {
-        throw new Error('Remove the existing or pending video artefact before uploading a new video.');
+        throw new Error(uiText("Remove the existing or pending video artefact before uploading a new video."));
       }
 
       const headers = getHeaders();
       if (!headers) {
         showLoginDialog();
-        throw new Error('Unauthorized');
+        throw new Error(uiText('Unauthorized'));
       }
 
       const requestUrl = `${PROCESSOR_API_URL}/video_sessions/upload_user_video_layer_chunk`;
@@ -642,7 +646,7 @@ export default function VideoEditorContainer(props) {
         totalFileSize: file.size,
         uploadedBytes: 0,
         progressPercent: 0,
-        message: 'Uploading video to server.',
+        message: uiText("Uploading video to server."),
       }, {
         frameGenerationPending: true,
       });
@@ -674,7 +678,7 @@ export default function VideoEditorContainer(props) {
             totalFileSize: file.size,
             uploadedBytes: chunkStart,
             progressPercent: file.size > 0 ? Math.round((chunkStart / file.size) * 100) : 0,
-            message: 'Uploading video to server.',
+            message: uiText("Uploading video to server."),
           }, {
             frameGenerationPending: true,
           });
@@ -706,8 +710,8 @@ export default function VideoEditorContainer(props) {
               uploadedBytes: chunkEnd,
               progressPercent: file.size > 0 ? Math.round((chunkEnd / file.size) * 100) : 0,
               message: isLastChunk
-                ? 'Upload complete. Waiting for server processing.'
-                : 'Uploading video to server.',
+                ? uiText("Upload complete. Waiting for server processing.")
+                : uiText("Uploading video to server."),
             }, {
               frameGenerationPending: true,
             });
@@ -721,7 +725,7 @@ export default function VideoEditorContainer(props) {
           && response?.data?.status !== 'PENDING'
           && response?.data?.complete !== true
         ) {
-          throw new Error('Video upload did not complete successfully.');
+          throw new Error(uiText("Video upload did not complete successfully."));
         }
 
         const { session, layer, audioLayers: updatedAudioLayers, task: responseTask } = response.data;
@@ -749,7 +753,7 @@ export default function VideoEditorContainer(props) {
             totalFileSize: file.size,
             uploadedBytes: file.size,
             progressPercent: 100,
-            message: 'Upload complete. Processing video on server.',
+            message: uiText("Upload complete. Processing video on server."),
           }, {
             frameGenerationPending: true,
             userVideoGenerationPending: true,
@@ -761,8 +765,7 @@ export default function VideoEditorContainer(props) {
 
         toast.success(
           <div>
-            <FaCheck className='inline-flex mr-2' /> Uploaded video processing started
-          </div>,
+            <FaCheck className='inline-flex mr-2' />{uiText("Uploaded video processing started")}</div>,
           {
             position: 'bottom-center',
             className: 'custom-toast',
@@ -784,30 +787,28 @@ export default function VideoEditorContainer(props) {
         if (statusCode === 413) {
           toast.error(
             <div>
-              <FaTimes className='inline-flex mr-2' /> A video upload chunk exceeded the server request limit. Please retry the upload.
-            </div>,
+              <FaTimes className='inline-flex mr-2' />{uiText("A video upload chunk exceeded the server request limit. Please retry the upload.")}</div>,
             {
               position: 'bottom-center',
               className: 'custom-toast',
             }
           );
-          throw new Error('A video upload chunk exceeded the server request limit. Please retry the upload.');
+          throw new Error(uiText("A video upload chunk exceeded the server request limit. Please retry the upload."));
         }
 
         toast.error(
           <div>
-            <FaTimes className='inline-flex mr-2' /> {serverError || 'Video upload failed.'}
+            <FaTimes className='inline-flex mr-2' /> {serverError || uiText("Video upload failed.")}
           </div>,
           {
             position: 'bottom-center',
             className: 'custom-toast',
           }
         );
-        throw new Error(serverError || 'Video upload failed.');
+        throw new Error(serverError || uiText("Video upload failed."));
       }
     },
-    [
-      closeAlertDialog,
+    [closeAlertDialog,
       currentLayer,
       id,
       layerHasAnyVideoArtefact,
@@ -1414,8 +1415,7 @@ export default function VideoEditorContainer(props) {
       } catch  {
         toast.error(
           <div>
-            <FaTimes /> Unable to download current video frame
-          </div>,
+            <FaTimes />{uiText("Unable to download current video frame")}</div>,
           {
             position: 'bottom-center',
             className: 'custom-toast',
@@ -2278,8 +2278,7 @@ export default function VideoEditorContainer(props) {
     if (layerHasUploadedOrPendingUserVideo(currentLayer)) {
       toast.error(
         <div>
-          <FaTimes /> Remove the uploaded or pending video before requesting lip sync.
-        </div>,
+          <FaTimes />{uiText("Remove the uploaded or pending video before requesting lip sync.")}</div>,
         {
           position: 'bottom-center',
           className: 'custom-toast',
@@ -2294,8 +2293,7 @@ export default function VideoEditorContainer(props) {
     ) {
       toast.error(
         <div>
-          <FaTimes /> Wait for the pending video task to finish before requesting lip sync.
-        </div>,
+          <FaTimes />{uiText("Wait for the pending video task to finish before requesting lip sync.")}</div>,
         {
           position: 'bottom-center',
           className: 'custom-toast',
@@ -2306,8 +2304,7 @@ export default function VideoEditorContainer(props) {
     if (!currentLayer?.aiVideoLayer && !currentLayer?.aiVideoRemoteLink) {
       toast.error(
         <div>
-          <FaTimes /> Generate an AI video for this layer before requesting lip sync.
-        </div>,
+          <FaTimes />{uiText("Generate an AI video for this layer before requesting lip sync.")}</div>,
         {
           position: 'bottom-center',
           className: 'custom-toast',
@@ -2502,7 +2499,7 @@ export default function VideoEditorContainer(props) {
         toast.error(
           <div>
             <FaTimes className='inline-flex mr-2' />
-            {error?.response?.data?.error || 'Unable to add the selected video.'}
+            {error?.response?.data?.error || uiText("Unable to add the selected video.")}
           </div>,
           {
             position: 'bottom-center',
@@ -2759,8 +2756,7 @@ export default function VideoEditorContainer(props) {
       if (aiVideoPollType === 'user_video') {
         toast.success(
           <div>
-            <FaCheck className='inline-flex mr-2' /> Uploaded video added to layer
-          </div>,
+            <FaCheck className='inline-flex mr-2' />{uiText("Uploaded video added to layer")}</div>,
           {
             position: 'bottom-center',
             className: 'custom-toast',
@@ -2793,8 +2789,7 @@ export default function VideoEditorContainer(props) {
     if (layerHasAnyVideoArtefact(currentLayer)) {
       toast.error(
         <div>
-          <FaTimes /> Remove the uploaded or pending video before generating AI video.
-        </div>,
+          <FaTimes />{uiText("Remove the uploaded or pending video before generating AI video.")}</div>,
         {
           position: 'bottom-center',
           className: 'custom-toast',
@@ -2869,8 +2864,7 @@ export default function VideoEditorContainer(props) {
     if (layerHasAnyVideoArtefact(currentLayer)) {
       toast.error(
         <div>
-          <FaTimes /> Remove the uploaded or pending video before generating synced sound effects.
-        </div>,
+          <FaTimes />{uiText("Remove the uploaded or pending video before generating synced sound effects.")}</div>,
         {
           position: 'bottom-center',
           className: 'custom-toast',
@@ -3039,6 +3033,7 @@ export default function VideoEditorContainer(props) {
               isAIVideoGenerationPending={isAIVideoGenerationPending}
               toggleStageZoom={toggleStageZoom}
               stageZoomScale={stageZoomScale}
+              onCanvasViewportChange={onCanvasViewportChange}
               requestRegenerateSubtitles={requestRegenerateSubtitles}
               displayZoomType={displayZoomType}
               aiVideoLayer={currentVideoLayerState.url}
@@ -3212,9 +3207,7 @@ export default function VideoEditorContainer(props) {
 
 
   const mainWorkspaceShell =
-    colorMode === 'dark'
-      ? 'bg-[#0c0d12] text-slate-100'
-      : 'bg-gradient-to-br from-[#e9edf7] via-[#eef3fb] to-white text-slate-900';
+    `text-fg ${colorMode === 'dark' ? 'bg-[#0c0d12]' : 'bg-gradient-to-br from-[#e9edf7] via-[#eef3fb] to-white'}`;
 
   return (
     <div className={`${mainWorkspaceShell} flex h-full min-h-0`}>

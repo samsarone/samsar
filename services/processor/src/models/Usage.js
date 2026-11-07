@@ -49,11 +49,13 @@ function isDockerUsageMode() {
 }
 
 function normalizePaging({ page = 1, pageSize = 25 } = {}) {
-  const parsedPage = Number.parseInt(page, 10);
-  const parsedPageSize = Number.parseInt(pageSize, 10);
-
-  const safePage = Number.isNaN(parsedPage) || parsedPage < 1 ? 1 : parsedPage;
-  const boundedPageSize = Number.isNaN(parsedPageSize) || parsedPageSize < 1 ? 25 : Math.min(parsedPageSize, 100);
+  const positiveInteger = (value, fallback) => {
+    const parsed = typeof value === 'string' || typeof value === 'number' ? Number(value) : NaN;
+    return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : fallback;
+  };
+  const parsedPage = positiveInteger(page, 1);
+  const boundedPageSize = Math.min(positiveInteger(pageSize, 25), 100);
+  const safePage = Number.isSafeInteger((parsedPage - 1) * boundedPageSize) ? parsedPage : 1;
   const skip = (safePage - 1) * boundedPageSize;
 
   return {
@@ -199,7 +201,7 @@ async function getUserProviderUsageLogs(userId, options = {}) {
 
   const [items, totalItems] = await Promise.all([
     ProviderUsageLog.find(usageQuery)
-      .sort({ createdAt: -1 })
+      .sort({ createdAt: -1, _id: -1 })
       .skip(skip)
       .limit(boundedPageSize)
       .lean(),
@@ -283,7 +285,7 @@ async function getUserHostedUsageLogs(userId, options = {}) {
     ],
   };
 
-  const expressionPipeline = [
+  const groupKeyPipeline = [
     { $match: usageQuery },
     {
       $addFields: {
@@ -312,7 +314,10 @@ async function getUserHostedUsageLogs(userId, options = {}) {
         },
       },
     },
-    { $sort: { createdAt: 1 } },
+  ];
+
+  const itemsPipeline = [
+    ...groupKeyPipeline,
     {
       $group: {
         _id: '$usageGroupKey',
@@ -337,13 +342,15 @@ async function getUserHostedUsageLogs(userId, options = {}) {
 
   const [items, totalResult] = await Promise.all([
     GenerationCreditTransaction.aggregate([
-      ...expressionPipeline,
+      ...itemsPipeline,
       { $sort: { latestCreatedAt: -1, _id: -1 } },
       { $skip: skip },
       { $limit: boundedPageSize },
     ]),
     GenerationCreditTransaction.aggregate([
-      ...expressionPipeline,
+      ...groupKeyPipeline,
+      // Counting pages only needs task identities, not every stage's metadata.
+      { $group: { _id: '$usageGroupKey' } },
       { $count: 'totalItems' },
     ]),
   ]);

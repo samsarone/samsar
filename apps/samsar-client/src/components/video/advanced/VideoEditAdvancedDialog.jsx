@@ -1,3 +1,5 @@
+import { useUiLanguage } from '../../../hooks/useUiLanguage.js';
+import { translateText as uiText } from '../../../utils/localization.js';
 import { useState } from 'react';
 import axios from 'axios';
 import { FaCopy, FaDownload, FaSpinner, FaTimes } from 'react-icons/fa';
@@ -16,7 +18,7 @@ function getErrorMessage(error) {
     error?.response?.data?.message ||
     error?.response?.data?.error ||
     error?.message ||
-    'Unable to complete this advanced action.'
+    uiText("Unable to complete this advanced action.")
   );
 }
 
@@ -38,6 +40,7 @@ export default function VideoEditAdvancedDialog({
   onClose,
   onRequestAccepted,
 }) {
+  useUiLanguage();
   const { colorMode } = useColorMode();
   const resolvedSessionId = normalizeSessionId(sessionId || currentSession?._id || currentSession?.id);
   const [pendingAction, setPendingAction] = useState(null);
@@ -46,25 +49,15 @@ export default function VideoEditAdvancedDialog({
   const isDownloadingTranscript = pendingAction === 'download_transcript';
   const isDownloadingHints = pendingAction === 'download_hints';
 
-  const surfaceClass = colorMode === 'dark'
-    ? 'bg-[#181b24] text-slate-100 border border-[#3a4050]'
-    : 'bg-white text-slate-900 border border-slate-200';
-  const mutedClass = colorMode === 'dark' ? 'text-slate-400' : 'text-slate-500';
-  const cardClass = colorMode === 'dark'
-    ? 'border-[#3a4050] bg-[#12141c]'
-    : 'border-slate-200 bg-slate-50';
+  const surfaceClass = 'bg-surface text-fg border border-line';
+  const mutedClass = 'text-fg-muted';
+  const cardClass = `border-line ${colorMode === 'dark' ? 'bg-[#12141c]' : 'bg-slate-50'}`;
   const iconClass = colorMode === 'dark'
     ? 'bg-[#f6c453]/14 text-[#ffe0a3]'
     : 'bg-sky-100 text-sky-700';
-  const secondaryButtonClass = colorMode === 'dark'
-    ? 'border border-[#667188] bg-[#20232e] text-slate-100 hover:bg-[#292d3a]'
-    : 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-50';
-  const primaryButtonClass = colorMode === 'dark'
-    ? 'bg-[#ff4655] text-[#080a10] hover:bg-[#ff6572]'
-    : 'bg-blue-600 text-white hover:bg-blue-700';
-  const optionButtonClass = colorMode === 'dark'
-    ? 'border border-[#667188] bg-[#20232e] text-slate-100 hover:bg-[#292d3a]'
-    : 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-50';
+  const secondaryButtonClass = `border border-line-control bg-surface-raised text-fg-body ${colorMode === 'dark' ? 'hover:bg-[#292d3a]' : 'hover:bg-slate-50'}`;
+  const primaryButtonClass = `text-on-accent ${colorMode === 'dark' ? 'bg-[#ff4655] hover:bg-[#ff6572]' : 'bg-blue-600 hover:bg-blue-700'}`;
+  const optionButtonClass = `border border-line-control bg-surface-raised text-fg-body ${colorMode === 'dark' ? 'hover:bg-[#292d3a]' : 'hover:bg-slate-50'}`;
 
   const getLatestSessionDetails = async () => {
     if (!resolvedSessionId) {
@@ -86,12 +79,12 @@ export default function VideoEditAdvancedDialog({
   const submitCopySession = async () => {
     const headers = getHeaders();
     if (!headers) {
-      setErrorMessage('Sign in before copying this session.');
+      setErrorMessage(uiText("Sign in before copying this session."));
       return;
     }
 
     if (!resolvedSessionId) {
-      setErrorMessage('Session id is required.');
+      setErrorMessage(uiText("Session id is required."));
       return;
     }
 
@@ -113,7 +106,7 @@ export default function VideoEditAdvancedDialog({
       );
 
       if (!nextSessionId) {
-        throw new Error('Copy completed without a new session id.');
+        throw new Error(uiText("Copy completed without a new session id."));
       }
 
       if (typeof onRequestAccepted === 'function') {
@@ -134,7 +127,7 @@ export default function VideoEditAdvancedDialog({
 
   const downloadTranscript = async () => {
     if (!resolvedSessionId && !currentSession) {
-      setErrorMessage('Session details are not available.');
+      setErrorMessage(uiText("Session details are not available."));
       return;
     }
 
@@ -146,7 +139,7 @@ export default function VideoEditAdvancedDialog({
       const transcriptText = buildTranscriptText(sessionDetails);
 
       if (!transcriptText) {
-        setErrorMessage('No subtitle transcript is available for this session.');
+        setErrorMessage(uiText("No subtitle transcript is available for this session."));
         return;
       }
 
@@ -164,7 +157,7 @@ export default function VideoEditAdvancedDialog({
 
   const downloadHints = async () => {
     if (!resolvedSessionId && !currentSession) {
-      setErrorMessage('Session details are not available.');
+      setErrorMessage(uiText("Session details are not available."));
       return;
     }
 
@@ -176,7 +169,7 @@ export default function VideoEditAdvancedDialog({
       const hintsText = buildHintsText(sessionDetails);
 
       if (!hintsText) {
-        setErrorMessage('No hints are available for this session.');
+        setErrorMessage(uiText("No hints are available for this session."));
         return;
       }
 
@@ -223,39 +216,39 @@ export default function VideoEditAdvancedDialog({
         type="button"
         className={`absolute right-4 top-4 rounded-full p-2 ${secondaryButtonClass}`}
         onClick={onClose}
-        aria-label="Close"
+        aria-label={uiText("Close")}
       >
         <FaTimes />
       </button>
 
       <div className="pr-12">
-        <h2 className="text-lg font-semibold">Advanced options</h2>
-        <div className={`mt-1 truncate text-xs ${mutedClass}`}>Session {resolvedSessionId || '-'}</div>
+        <h2 className="text-lg font-semibold">{uiText("Advanced options")}</h2>
+        <div className={`mt-1 truncate text-xs ${mutedClass}`}>{uiText("Session {value0}", { value0: resolvedSessionId || '-' })}</div>
       </div>
 
       <div className="mt-5 grid gap-3">
         {renderOption({
           icon: <FaCopy />,
-          title: 'Deep clone session',
-          description: 'Creates a new editable session with copied timeline data and assets.',
-          buttonLabel: 'Clone',
+          title: uiText("Deep clone session"),
+          description: uiText("Creates a new editable session with copied timeline data and assets."),
+          buttonLabel: uiText('Clone'),
           onClick: submitCopySession,
           isPending: isCopyingSession,
           primary: true,
         })}
         {renderOption({
           icon: <FaDownload />,
-          title: 'Download transcripts',
-          description: 'Downloads the available subtitle transcript with timeline timestamps.',
-          buttonLabel: 'Download',
+          title: uiText("Download transcripts"),
+          description: uiText("Downloads the available subtitle transcript with timeline timestamps."),
+          buttonLabel: uiText('Download'),
           onClick: downloadTranscript,
           isPending: isDownloadingTranscript,
         })}
         {renderOption({
           icon: <FaDownload />,
-          title: 'Download hints',
-          description: 'Downloads the available speech hints with timeline timestamps.',
-          buttonLabel: 'Download',
+          title: uiText("Download hints"),
+          description: uiText("Downloads the available speech hints with timeline timestamps."),
+          buttonLabel: uiText('Download'),
           onClick: downloadHints,
           isPending: isDownloadingHints,
         })}
@@ -272,9 +265,7 @@ export default function VideoEditAdvancedDialog({
           type="button"
           className={`rounded-lg px-4 py-2 text-sm font-semibold transition ${secondaryButtonClass}`}
           onClick={onClose}
-        >
-          Close
-        </button>
+        >{uiText("Close")}</button>
       </div>
     </div>
   );

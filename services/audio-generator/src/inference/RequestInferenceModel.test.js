@@ -86,3 +86,15 @@ test('inference settings preserve saved effort and explicit legacy override prec
     authorization: undefined,
   });
 });
+
+for (const model of ['gpt-6-astra', 'gpt-6.1-sol', 'claude-opus-5.5', 'claude-fable-5.1']) {
+  test(`${model} retains queued model and effort ahead of changed user preferences`, () => {
+    assert.deepEqual(resolveRequestInferenceSettings({
+      request: { inferenceModel: model, inferenceEffort: 'xhigh' },
+      user: { selectedInferenceModel: 'gpt-6-astra', selectedInferenceEffort: 'high' },
+    }), { model: `${model}-xhigh`, effort: 'xhigh', authorization: undefined });
+    assert.deepEqual(resolveRequestInferenceSettings({
+      request: { inferenceModel: `${model}-xhigh`, effort: 'high' },
+    }), { model, effort: 'high', authorization: undefined });
+  });
+}

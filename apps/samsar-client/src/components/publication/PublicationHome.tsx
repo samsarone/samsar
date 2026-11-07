@@ -1,3 +1,5 @@
+import { useUiLanguage } from '../../hooks/useUiLanguage.js';
+import { translateText as uiText } from '../../utils/localization.js';
 import { useEffect, useState } from "react";
 import OverflowContainer from "../common/OverflowContainer.tsx";
 import { getHeaders } from "../../utils/web";
@@ -8,6 +10,7 @@ const API_SERVER = import.meta.env.VITE_PROCESSOR_API;
 
 
 export default function PublicationHome() {
+  useUiLanguage();
 
   const { id } = useParams();
   const [, setPublicationData] = useState({});
@@ -38,13 +41,11 @@ export default function PublicationHome() {
   return (
     <OverflowContainer>
       <div className="mt-[60px]">
-        <h1>Publication Home</h1>
+        <h1>{uiText("Publication Home")}</h1>
         <form onSubmit={handleSubmitBurn}>
           <input type="text" name="burnAmount" className="bg-slate-200 w-64 block" />
           <div>
-            <CommonButton type="submit">
-              Burn
-            </CommonButton>
+            <CommonButton type="submit">{uiText("Burn")}</CommonButton>
           </div>
         </form>
       </div>

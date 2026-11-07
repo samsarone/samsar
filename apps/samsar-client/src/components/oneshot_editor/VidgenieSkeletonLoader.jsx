@@ -1,7 +1,10 @@
+import { useUiLanguage } from '../../hooks/useUiLanguage.js';
+import { translateText as uiText } from '../../utils/localization.js';
 
 import { useColorMode } from '../../contexts/ColorMode.jsx';
 
 export default function VidgenieSkeletonLoader() {
+  useUiLanguage();
   const { colorMode } = useColorMode();
   const isDark = colorMode === 'dark';
 
@@ -23,9 +26,9 @@ export default function VidgenieSkeletonLoader() {
       }`}
       role="status"
       aria-busy="true"
-      aria-label="Loading VidGenie"
+      aria-label={uiText("Loading VidGenie")}
     >
-      <span className="sr-only">Loading VidGenie</span>
+      <span className="sr-only">{uiText("Loading VidGenie")}</span>
       <div className="mx-auto max-w-screen-xl min-w-0 space-y-5 px-4 py-6 sm:px-6">
         <div className={`${surface} theme-skeleton-pulse flex min-w-0 flex-col gap-3 rounded-2xl px-5 py-4 sm:flex-row sm:items-center sm:justify-between`}>
           <div className="flex min-w-0 items-center gap-3">

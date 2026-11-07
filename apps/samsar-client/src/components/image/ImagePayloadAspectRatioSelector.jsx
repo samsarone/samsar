@@ -1,3 +1,5 @@
+import { useUiLanguage } from '../../hooks/useUiLanguage.js';
+import { translateText as uiText } from '../../utils/localization.js';
 import { useMemo } from 'react';
 import { useColorMode } from '../../contexts/ColorMode.jsx';
 import {
@@ -6,8 +8,9 @@ import {
 } from '../../utils/canvas.jsx';
 
 export default function ImagePayloadAspectRatioSelector(props) {
+  useUiLanguage();
   const {
-    label = 'Generation ratio',
+    label = uiText("Generation ratio"),
     name,
     value,
     onChange,
@@ -31,15 +34,11 @@ export default function ImagePayloadAspectRatioSelector(props) {
   );
 
   const cardSurface =
-    colorMode === 'dark'
-      ? 'bg-[#20232e] border border-[#3a4050] text-slate-100'
-      : 'bg-rose-50 border border-rose-200 text-slate-900';
-  const subtleText = colorMode === 'dark' ? 'text-slate-300' : 'text-slate-600';
-  const eyebrowText = colorMode === 'dark' ? 'text-slate-400' : 'text-rose-600';
+    `border text-fg ${colorMode === 'dark' ? 'bg-[#20232e] border-[#3a4050]' : 'bg-rose-50 border-rose-200'}`;
+  const subtleText = "text-fg-tertiary";
+  const eyebrowText = colorMode === 'dark' ? "text-slate-400" : "text-rose-600";
   const selectShell =
-    colorMode === 'dark'
-      ? 'bg-[#151720] text-slate-100 border border-[#667188] focus:border-[#f6c453] focus:outline-none focus:ring-2 focus:ring-[#f6c453]/20'
-      : 'bg-white text-slate-900 border border-rose-200 shadow-sm';
+    `bg-surface-sunken text-fg border ${colorMode === 'dark' ? 'border-[#667188] focus:border-[#f6c453] focus:outline-none focus:ring-2 focus:ring-[#f6c453]/20' : 'border-rose-200 shadow-sm'}`;
   const cardPaddingClass = isImageStudio ? 'rounded-2xl px-4 py-3' : 'rounded-lg px-3 py-2';
   const layoutClassName = compactInline
     ? isImageStudio
@@ -49,21 +48,21 @@ export default function ImagePayloadAspectRatioSelector(props) {
     ? 'grid grid-cols-[auto,1fr,auto] items-center gap-4'
     : 'grid grid-cols-[auto,1fr,auto] items-center gap-3';
   const labelClass = isImageStudio
-    ? `text-[11px] font-semibold uppercase tracking-[0.22em] ${eyebrowText}`
-    : `text-[10px] font-semibold uppercase tracking-[0.18em] ${eyebrowText}`;
+    ? `text-caption font-semibold uppercase tracking-[0.22em] ${eyebrowText}`
+    : `text-micro font-semibold uppercase tracking-[0.18em] ${eyebrowText}`;
   const helperClass = isImageStudio
-    ? `min-w-0 truncate text-[13px] ${subtleText}`
-    : `min-w-0 truncate text-[11px] ${subtleText}`;
+    ? `min-w-0 truncate text-label ${subtleText}`
+    : `min-w-0 truncate text-caption ${subtleText}`;
   const selectClass = isImageStudio
     ? `${selectShell} min-w-[170px] rounded-xl px-4 py-2.5 text-sm font-medium`
     : `${selectShell} min-w-[150px] rounded-lg px-3 py-2 text-sm font-medium`;
 
-  const canvasResolutionLabel = `${normalizedCanvasDimensions.width} x ${normalizedCanvasDimensions.height} px`;
+  const canvasResolutionLabel = uiText("{value0} x {value1} px", { value0: normalizedCanvasDimensions.width, value1: normalizedCanvasDimensions.height });
   const helperText = matchingCanvasAspectRatioOption
     ? matchingCanvasAspectRatioOption.value === value
-      ? `Canvas ${canvasResolutionLabel}`
-      : `Canvas ${canvasResolutionLabel}, preset ${matchingCanvasAspectRatioOption.label}`
-    : `Custom canvas ${canvasResolutionLabel}`;
+      ? uiText("Canvas {value0}", { value0: canvasResolutionLabel })
+      : uiText("Canvas {value0}, preset {value1}", { value0: canvasResolutionLabel, value1: matchingCanvasAspectRatioOption.label })
+    : uiText("Custom canvas {value0}", { value0: canvasResolutionLabel });
 
   return (
     <div className={`${cardPaddingClass} ${cardSurface}`}>

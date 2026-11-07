@@ -1,3 +1,5 @@
+import { useUiLanguage } from '../../../hooks/useUiLanguage.js';
+import { translateText as uiText } from '../../../utils/localization.js';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import axios from 'axios';
 import {
@@ -138,6 +140,7 @@ function getItemSearchText(item = {}) {
 }
 
 export default function VideoLibraryHome(props) {
+  useUiLanguage();
   const {
     sessionId,
     hideSelectButton = false,
@@ -157,33 +160,21 @@ export default function VideoLibraryHome(props) {
   const [failedMediaByKey, setFailedMediaByKey] = useState({});
   const videoRefs = useRef({});
 
-  const panelSurface = colorMode === 'dark'
-    ? 'bg-[#181b24] text-slate-100 border border-[#3a4050]'
-    : 'bg-white text-slate-900 border border-slate-200';
-  const sectionSurface = colorMode === 'dark'
-    ? 'bg-[#12141c] border border-[#3a4050]'
-    : 'bg-slate-50 border border-slate-200';
-  const cardSurface = colorMode === 'dark'
-    ? 'bg-[#20232e] border border-[#3a4050]'
-    : 'bg-white border border-slate-200';
-  const mutedText = colorMode === 'dark' ? 'text-slate-400' : 'text-slate-500';
-  const pillSurface = colorMode === 'dark'
-    ? 'bg-slate-900/70 text-slate-200 border border-slate-700/60'
-    : 'bg-slate-100 text-slate-700 border border-slate-200';
-  const actionButtonSurface = colorMode === 'dark'
-    ? 'bg-[#292d3a] text-slate-100 hover:bg-[#1b2745] border border-[#31405e]'
-    : 'bg-white text-slate-700 hover:bg-slate-100 border border-slate-200';
+  const panelSurface = 'bg-surface text-fg border border-line';
+  const sectionSurface = `border border-line ${colorMode === 'dark' ? 'bg-[#12141c]' : 'bg-slate-50'}`;
+  const cardSurface = 'bg-surface-raised border border-line';
+  const mutedText = "text-fg-muted";
+  const pillSurface = `text-fg-secondary border ${colorMode === 'dark' ? 'bg-slate-900/70 border-slate-700/60' : 'bg-slate-100 border-slate-200'}`;
+  const actionButtonSurface = `text-fg-body border ${colorMode === 'dark' ? 'bg-[#292d3a] hover:bg-[#1b2745] border-[#31405e]' : 'bg-white hover:bg-slate-100 border-slate-200'}`;
   const selectButtonSurface = colorMode === 'dark'
     ? 'bg-gradient-to-r from-cyan-500 via-sky-500 to-indigo-500 text-white'
     : 'bg-gradient-to-r from-sky-500 via-blue-500 to-indigo-500 text-white';
-  const inputSurface = colorMode === 'dark'
-    ? 'bg-[#20232e] border border-[#3a4050] text-slate-100 placeholder:text-[#8b96aa]'
-    : 'bg-white border border-slate-200 text-slate-700 placeholder:text-slate-400';
+  const inputSurface = `bg-surface-raised border border-line text-fg-body ${colorMode === 'dark' ? 'placeholder:text-[#8b96aa]' : 'placeholder:text-slate-400'}`;
 
   const fetchLibraryData = async () => {
     const headers = getHeaders();
     if (!headers) {
-      setErrorMessage('Log in to browse the video library.');
+      setErrorMessage(uiText("Log in to browse the video library."));
       return;
     }
 
@@ -206,7 +197,7 @@ export default function VideoLibraryHome(props) {
         globalItems: Array.isArray(response?.data?.globalItems) ? response.data.globalItems : [],
       });
     } catch (error) {
-      setErrorMessage(error?.response?.data?.error || 'Unable to load the video library.');
+      setErrorMessage(error?.response?.data?.error || uiText("Unable to load the video library."));
     } finally {
       setIsLoading(false);
     }
@@ -386,7 +377,7 @@ export default function VideoLibraryHome(props) {
                   >
                     <img
                       src={displayThumbnailUrl}
-                      alt={item?.title || item?.sourceLabel || 'Video preview'}
+                      alt={item?.title || item?.sourceLabel || uiText("Video preview")}
                       className="h-full w-full object-cover transition duration-200 group-hover:scale-[1.02]"
                       onError={() => markMediaFailed(thumbnailMediaKey)}
                     />
@@ -431,7 +422,7 @@ export default function VideoLibraryHome(props) {
                     disabled={!canPlayFullVideo}
                   >
                     <FaVideo className="mr-2" />
-                    {canPlayFullVideo ? 'Preview video' : 'Preview unavailable'}
+                    {canPlayFullVideo ? uiText("Preview video") : uiText("Preview unavailable")}
                   </button>
                 )}
 
@@ -442,28 +433,28 @@ export default function VideoLibraryHome(props) {
                   disabled={!canPlayFullVideo}
                 >
                   {isPreviewing ? <FaPause /> : <FaPlay />}
-                  {isPreviewing ? 'Hide' : 'Preview'}
+                  {isPreviewing ? uiText("Hide") : uiText("Preview")}
                 </button>
               </div>
 
               <div className="mt-3 flex flex-wrap items-center gap-2">
-                <span className={`rounded-full px-2 py-1 text-[11px] font-semibold ${pillSurface}`}>
-                  {item?.sourceLabel || 'Video'}
+                <span className={`rounded-full px-2 py-1 text-caption font-semibold ${pillSurface}`}>
+                  {item?.sourceLabel || uiText("Video")}
                 </span>
                 {durationLabel && (
-                  <span className={`rounded-full px-2 py-1 text-[11px] font-semibold ${pillSurface}`}>
+                  <span className={`rounded-full px-2 py-1 text-caption font-semibold ${pillSurface}`}>
                     {durationLabel}
                   </span>
                 )}
                 {item?.projectName && (
-                  <span className={`rounded-full px-2 py-1 text-[11px] ${pillSurface}`}>
+                  <span className={`rounded-full px-2 py-1 text-caption ${pillSurface}`}>
                     {item.projectName}
                   </span>
                 )}
               </div>
 
               <div className="mt-3">
-                <div className="text-sm font-semibold">{item?.title || 'Untitled video'}</div>
+                <div className="text-sm font-semibold">{item?.title || uiText("Untitled video")}</div>
                 {item?.prompt && (
                   <div className={`mt-1 line-clamp-3 text-xs ${mutedText}`}>
                     {item.prompt}
@@ -477,31 +468,25 @@ export default function VideoLibraryHome(props) {
                   className={`inline-flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold transition ${actionButtonSurface}`}
                   onClick={() => handleDownload(item)}
                 >
-                  <FaDownload />
-                  Download
-                </button>
+                  <FaDownload />{uiText("Download")}</button>
 
                 {!hideSelectButton && (
                   <div className="ml-auto flex items-center gap-2">
                     {item?.sourceType === 'ai_video' && (
-                      <label className={`inline-flex items-center gap-2 text-[11px] ${mutedText}`}>
+                      <label className={`inline-flex items-center gap-2 text-caption ${mutedText}`}>
                         <input
                           type="checkbox"
                           className="h-4 w-4 accent-sky-500"
                           checked={Boolean(trimByVideoId[itemKey])}
                           onChange={() => handleTrimToggle(itemKey)}
-                        />
-                        Trim
-                      </label>
+                        />{uiText("Trim")}</label>
                     )}
                     <button
                       type="button"
                       disabled={isSelectButtonDisabled}
                       className={`rounded-lg px-3 py-2 text-xs font-semibold shadow transition disabled:opacity-60 ${selectButtonSurface}`}
                       onClick={() => handleSelect(item)}
-                    >
-                      Select
-                    </button>
+                    >{uiText("Select")}</button>
                   </div>
                 )}
               </div>
@@ -522,7 +507,7 @@ export default function VideoLibraryHome(props) {
               type="text"
               value={searchTerm}
               onChange={handleSearchChange}
-              placeholder="Search AI, uploaded, or synced videos"
+              placeholder={uiText("Search AI, uploaded, or synced videos")}
               className="w-full bg-transparent text-sm focus:outline-none"
             />
           </div>
@@ -533,9 +518,7 @@ export default function VideoLibraryHome(props) {
             className={`inline-flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold transition ${actionButtonSurface}`}
             disabled={isLoading}
           >
-            <FaRedo className={isLoading ? 'animate-spin' : ''} />
-            Refresh
-          </button>
+            <FaRedo className={isLoading ? 'animate-spin' : ''} />{uiText("Refresh")}</button>
         </div>
 
         {errorMessage && (
@@ -546,38 +529,30 @@ export default function VideoLibraryHome(props) {
       <div className={`rounded-2xl p-3 ${sectionSurface}`}>
         <div className="mb-3 flex items-center justify-between">
           <div>
-            <div className="text-sm font-semibold">Current Project</div>
-            <div className={`text-xs ${mutedText}`}>
-              AI videos, uploaded takes, lip-sync and sound-effect layers from this studio session.
-            </div>
+            <div className="text-sm font-semibold">{uiText("Current Project")}</div>
+            <div className={`text-xs ${mutedText}`}>{uiText("AI videos, uploaded takes, lip-sync and sound-effect layers from this studio session.")}</div>
           </div>
-          <div className={`text-[11px] ${mutedText}`}>
-            {filteredProjectItems.length} items
-          </div>
+          <div className={`text-caption ${mutedText}`}>{uiText("{value0} items", { value0: filteredProjectItems.length })}</div>
         </div>
         {renderVideoGrid(
           filteredProjectItems,
           'project',
-          'No project videos available yet.'
+          uiText("No project videos available yet.")
         )}
       </div>
 
       <div className={`mt-3 rounded-2xl p-3 ${sectionSurface}`}>
         <div className="mb-3 flex items-center justify-between">
           <div>
-            <div className="text-sm font-semibold">Other Sessions</div>
-            <div className={`text-xs ${mutedText}`}>
-              Reuse videos generated or uploaded in your other projects.
-            </div>
+            <div className="text-sm font-semibold">{uiText("Other Sessions")}</div>
+            <div className={`text-xs ${mutedText}`}>{uiText("Reuse videos generated or uploaded in your other projects.")}</div>
           </div>
-          <div className={`text-[11px] ${mutedText}`}>
-            {filteredGlobalItems.length} items
-          </div>
+          <div className={`text-caption ${mutedText}`}>{uiText("{value0} items", { value0: filteredGlobalItems.length })}</div>
         </div>
         {renderVideoGrid(
           filteredGlobalItems,
           'global',
-          'No reusable videos found in other sessions.'
+          uiText("No reusable videos found in other sessions.")
         )}
       </div>
     </div>

@@ -1,9 +1,12 @@
+import { useUiLanguage } from '../../../hooks/useUiLanguage.js';
+import { translateText as uiText } from '../../../utils/localization.js';
 import { useState, useCallback } from 'react';
 import { useAlertDialog } from '../../../contexts/AlertDialogContext';
 import { STAGE_DIMENSIONS } from '../../../constants/Image.jsx';
 import { getCanvasDimensionsForAspectRatio } from '../../../utils/canvas.jsx';
 
 export default function UploadImageDialog({ setUploadURL, aspectRatio }) {
+  useUiLanguage();
   const [image, setImage] = useState(null);
   const [uploadStatus, setUploadStatus] = useState('');
   useAlertDialog();
@@ -32,20 +35,20 @@ export default function UploadImageDialog({ setUploadURL, aspectRatio }) {
   // Handle file processing
   const processFile = (file) => {
     if (!file) {
-      setUploadStatus('Please upload an image file.');
+      setUploadStatus(uiText("Please upload an image file."));
       return;
     }
     const fileName = file.name ? file.name.toLowerCase() : '';
     const isHeicFile = fileName.endsWith('.heic') || fileName.endsWith('.heif');
     const isImageFile = Boolean(file.type && file.type.startsWith('image/')) || isHeicFile;
     if (!isImageFile) {
-      setUploadStatus('Please upload an image file.');
+      setUploadStatus(uiText("Please upload an image file."));
       return;
     }
     const reader = new FileReader();
     reader.onload = (e) => {
       setImage(e.target.result);
-      setUploadStatus('Upload successful!');
+      setUploadStatus(uiText("Upload successful!"));
     };
     reader.readAsDataURL(file);
   };
@@ -106,14 +109,10 @@ export default function UploadImageDialog({ setUploadURL, aspectRatio }) {
       {uploadStatus && <p>{uploadStatus}</p>}
       {image && (
         <div className='m-auto text-center'>
-          <div>
-            Preview
-          </div>  
-          <img src={image} alt="Preview" style={{ maxWidth: '300px', margin: 'auto'  }} />
+          <div>{uiText("Preview")}</div>
+          <img src={image} alt={uiText("Preview")} style={{ maxWidth: '300px', margin: 'auto'  }} />
 
-          <button onClick={handleAddToCanvas} className="mt-4 py-2 px-4 bg-blue-500 text-white rounded hover:bg-blue-600">
-            Add To Canvas
-          </button>
+          <button onClick={handleAddToCanvas} className="mt-4 py-2 px-4 bg-blue-500 text-white rounded hover:bg-blue-600">{uiText("Add To Canvas")}</button>
 
         </div>
       )}

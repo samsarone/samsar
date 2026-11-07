@@ -1,3 +1,5 @@
+import { useUiLanguage } from '../../../../hooks/useUiLanguage.js';
+import { translateText as uiText } from '../../../../utils/localization.js';
 import { useEffect, useRef, useState } from "react";
 import SecondaryButton from "../../../common/SecondaryButton.tsx";
 import { SUPPORTED_LANGUAGES } from '../../../../constants/supportedLanguages.js';
@@ -25,6 +27,7 @@ const AudioOptionsDialog = ({
   isUpdateLayerPending = false,
   closeDialog,
 }) => {
+  useUiLanguage();
   const { colorMode } = useColorMode();
   const [localApplyAudioDucking, setLocalApplyAudioDucking] = useState(Boolean(applyAudioDucking));
   const [localRegenerateFramesBeforeRender, setLocalRegenerateFramesBeforeRender] = useState(
@@ -150,13 +153,12 @@ const AudioOptionsDialog = ({
                 onChange={handleSessionSubtitlesChange}
                 disabled={!sessionSubtitlesEnabled && typeof regenerateVideoSessionSubtitles !== 'function'}
               />
-              <span>Session subtitles</span>
+              <span>{uiText("Session subtitles")}</span>
             </label>
           </div>
           <div className="mb-4 mt-4">
             <label className="block text-left">
-              <span className="mb-1 block text-xs font-medium opacity-75">
-                Subtitle language <span className="font-normal">(optional)</span>
+              <span className="mb-1 block text-xs font-medium opacity-75">{uiText("Subtitle language")}<span className="font-normal">{uiText("(optional)")}</span>
               </span>
               <select
                 value={subtitleLanguage}
@@ -165,37 +167,29 @@ const AudioOptionsDialog = ({
                   setSubtitleLanguage(event.target.value);
                 }}
                 className="w-full rounded-md border border-slate-500/30 bg-transparent px-2.5 py-1.5 text-sm outline-none"
-                aria-label="Subtitle regeneration language"
+                aria-label={uiText("Subtitle regeneration language")}
               >
-                <option value="">Same as audio</option>
+                <option value="">{uiText("Same as audio")}</option>
                 {SUPPORTED_LANGUAGES.map((language) => (
                   <option key={language.code} value={language.code}>
-                    {language.name}
+                    {uiText(language.name)}
                   </option>
                 ))}
               </select>
               {useTranslatedSubtitleRegeneration ? (
-                <span className="mt-1 block text-xs opacity-70">
-                  Subtitle text will be translated while the original audio stays unchanged.
-                </span>
+                <span className="mt-1 block text-xs opacity-70">{uiText("Subtitle text will be translated while the original audio stays unchanged.")}</span>
               ) : null}
             </label>
           </div>
           <div className="mb-4 mt-4">
-            <SecondaryButton onClick={handleRegenerateSubs}>
-              Generate / regenerate subtitles
-            </SecondaryButton>
+            <SecondaryButton onClick={handleRegenerateSubs}>{uiText("Generate / regenerate subtitles")}</SecondaryButton>
           </div>
         </>
       ) : null}
       {typeof removeAllSubtitles === 'function' && (
         <div className="mb-4">
-          <SecondaryButton onClick={handleRemoveAllSubtitles}>
-            Remove all subtitles
-          </SecondaryButton>
-          <div className="mt-1 text-xs opacity-75">
-            Removes generated subtitle transcript items and queues frames for regeneration.
-          </div>
+          <SecondaryButton onClick={handleRemoveAllSubtitles}>{uiText("Remove all subtitles")}</SecondaryButton>
+          <div className="mt-1 text-xs opacity-75">{uiText("Removes generated subtitle transcript items and queues frames for regeneration.")}</div>
         </div>
       )}
       <div className="mb-4">
@@ -203,13 +197,11 @@ const AudioOptionsDialog = ({
           type="button"
           onClick={handleRealignLayers}
           className={`text-sm font-semibold underline underline-offset-4 ${colorMode === 'dark' ? 'text-[#ffe0a3] hover:text-[#f6c453]' : 'text-blue-500 hover:text-blue-400'}`}
-        >
-          Realign layers
-        </button>
+        >{uiText("Realign layers")}</button>
       </div>
 
       <div className="mt-5 border-t border-slate-500/25 pt-4 text-left">
-        <div className="text-sm font-semibold">Additional render options</div>
+        <div className="text-sm font-semibold">{uiText("Additional render options")}</div>
         <div className="mt-3 grid gap-3">
           <label className="flex items-start gap-2 text-sm">
             <input
@@ -219,10 +211,8 @@ const AudioOptionsDialog = ({
               onChange={handleAudioDuckingChange}
             />
             <span>
-              <span className="block font-medium">Apply audio ducking</span>
-              <span className="mt-1 block text-xs opacity-75">
-                Lower music automatically while speech or sound effects are playing during render.
-              </span>
+              <span className="block font-medium">{uiText("Apply audio ducking")}</span>
+              <span className="mt-1 block text-xs opacity-75">{uiText("Lower music automatically while speech or sound effects are playing during render.")}</span>
             </span>
           </label>
 
@@ -234,10 +224,8 @@ const AudioOptionsDialog = ({
               onChange={handleRegenerateFramesBeforeRenderChange}
             />
             <span>
-              <span className="block font-medium">Regenerate frames before render</span>
-              <span className="mt-1 block text-xs opacity-75">
-                Apply the regenerate frames step to every layer before the next video render.
-              </span>
+              <span className="block font-medium">{uiText("Regenerate frames before render")}</span>
+              <span className="mt-1 block text-xs opacity-75">{uiText("Apply the regenerate frames step to every layer before the next video render.")}</span>
             </span>
           </label>
         </div>
@@ -247,14 +235,12 @@ const AudioOptionsDialog = ({
             type="button"
             onClick={handleRender}
             disabled={isRenderActionDisabled}
-            className={`inline-flex min-h-[40px] min-w-24 items-center justify-center rounded-lg px-6 py-2 text-sm font-bold shadow-[0_8px_18px_rgba(3,12,28,0.22)] transition-all duration-200 ease-out hover:-translate-y-[1px] hover:shadow-[0_10px_18px_rgba(15,23,42,0.14)] disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0 ${colorMode === 'dark' ? 'bg-[#ff4655] text-[#080a10] hover:bg-[#ff6572]' : 'bg-gradient-to-r from-blue-500 to-blue-600 text-white'}`}
+            className={`inline-flex min-h-[40px] min-w-24 items-center justify-center rounded-lg px-6 py-2 text-sm font-bold shadow-[0_8px_18px_rgba(3,12,28,0.22)] transition-all duration-200 ease-out hover:-translate-y-[1px] hover:shadow-[0_10px_18px_rgba(15,23,42,0.14)] disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0 text-on-accent ${colorMode === 'dark' ? 'bg-[#ff4655] hover:bg-[#ff6572]' : 'bg-gradient-to-r from-blue-500 to-blue-600'}`}
           >
-            {isDialogRenderPending || isVideoGenerating || isRenderPending ? 'Rendering...' : 'Render'}
+            {isDialogRenderPending || isVideoGenerating || isRenderPending ? uiText("Rendering...") : uiText("Render")}
           </button>
           {isRenderPending || isVideoGenerating ? (
-            <div className="mt-2 text-xs opacity-75">
-              Render is already running for this session.
-            </div>
+            <div className="mt-2 text-xs opacity-75">{uiText("Render is already running for this session.")}</div>
           ) : null}
         </div>
       </div>

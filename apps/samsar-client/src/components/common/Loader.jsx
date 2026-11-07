@@ -1,7 +1,10 @@
+import { useUiLanguage } from '../../hooks/useUiLanguage.js';
+import { translateText as uiText } from '../../utils/localization.js';
 
 import "./Loader.css";
 
-export default function Loader({ label = "Loading…" }) {
+export default function Loader({ label = uiText("Loading…") }) {
+  useUiLanguage();
   return (
     <div className="loader-wrap">
       <div className="loader-center">

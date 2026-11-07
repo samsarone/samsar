@@ -1,7 +1,10 @@
+import { useUiLanguage } from '../../../hooks/useUiLanguage.js';
+import { translateText as uiText } from '../../../utils/localization.js';
 import { useState } from 'react';
 import CommonButton from '../../common/CommonButton.tsx';
 
 export default function AddAudioDialog(props) {
+  useUiLanguage();
   const [file, setFile] = useState(null);
 
   const handleFileChange = (event) => {
@@ -48,11 +51,9 @@ export default function AddAudioDialog(props) {
           justifyContent: 'center',
           marginTop: '20px',
         }}
-      >
-        Drag and drop MP3 files here
-      </div>
-      {file && <p>Selected file: {file.name}</p>}
-      <CommonButton onClick={handleSubmit}>Submit</CommonButton>
+      >{uiText("Drag and drop MP3 files here")}</div>
+      {file && <p>{uiText("Selected file: {value0}", { value0: file.name })}</p>}
+      <CommonButton onClick={handleSubmit}>{uiText("Submit")}</CommonButton>
     </div>
   );
 }

@@ -1,3 +1,4 @@
+import { useUiLanguage } from '../../../../../hooks/useUiLanguage.js';
 import { useStudioFrameRate } from '../../../StudioFrameRateContext.jsx';
 import { useCallback, useMemo, useRef } from 'react';
 import { FaGripLines } from 'react-icons/fa6';
@@ -24,6 +25,7 @@ export default function HintTrackDisplay({
   setHintTrackDisplayAsSelected,
   viewportGeometry = null,
 }) {
+  useUiLanguage();
   const { colorMode } = useColorMode();
   const DISPLAY_FRAMES_PER_SECOND = useStudioFrameRate();
   const railRef = useRef(null);
@@ -162,8 +164,7 @@ export default function HintTrackDisplay({
 
     document.addEventListener('mousemove', handleMouseMove);
     document.addEventListener('mouseup', handleMouseUp);
-  }, [
-    endFrame,
+  }, [endFrame,
     frameFromClientY,
     selectHint,
     startFrame,

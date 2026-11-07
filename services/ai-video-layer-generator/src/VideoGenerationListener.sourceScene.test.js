@@ -139,3 +139,12 @@ test('P2P: ordinary speech alignment keeps centering, duration, volume and exist
   assert.equal(saved.volume, 43);
   assert.equal(saved.fadeOnEdges, false);
 });
+
+test('sound-effect delivery preserves an existing speech track and adds its own audio',async()=>{
+ const speech={_id:'speech',generationType:'speech',connectedLayerId:'layer-1',startTime:15.2,endTime:19.2,duration:4,
+   selectedLocalAudioLink:'/original-speech.mp3',volume:70};
+ const original=structuredClone(speech);const f=fixture({audio:[speech]});
+ await realignAudioVideoLayerToVideoLayer(payload,f.dependencies);
+ assert.deepEqual(speech,original);assert.equal(f.session.audioLayers.length,2);
+ assert.equal(f.session.audioLayers[1].generationType,'sound_effect');assert.equal(f.session.audioLayers[1].duration,10);
+});

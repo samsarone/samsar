@@ -1,3 +1,5 @@
+import { useUiLanguage } from '../../hooks/useUiLanguage.js';
+import { translateText as uiText } from '../../utils/localization.js';
 import { useContext } from 'react';
 import { FaUpload, FaChevronDown, FaPencilAlt, FaEraser, FaUndo, FaRedo } from 'react-icons/fa';
 import { LuCombine } from 'react-icons/lu';
@@ -17,6 +19,7 @@ import {
 import { imageAspectRatioOptions } from '../../constants/ImageAspectRatios.js';
 
 export default function ImageEditorToolbar(props) {
+  useUiLanguage();
   const {
     currentViewDisplay,
     setCurrentViewDisplay,
@@ -94,10 +97,8 @@ export default function ImageEditorToolbar(props) {
   };
 
   const panelSurface =
-    colorMode === 'dark'
-      ? 'bg-[#181b24] border border-[#3a4050] text-slate-100'
-      : 'bg-white border border-slate-200 text-slate-900';
-  const textColor = colorMode === 'dark' ? 'text-slate-100' : 'text-slate-900';
+    'bg-surface border border-line text-fg';
+  const textColor = 'text-fg';
   const pillSelected =
     colorMode === 'dark'
       ? 'bg-[#f6c453]/15 border border-[#f6c453]/40 text-[#ffe0a3]'
@@ -107,45 +108,31 @@ export default function ImageEditorToolbar(props) {
       ? 'bg-[#20232e] border border-[#3a4050] text-slate-200'
       : 'bg-gray-200 border border-transparent text-gray-600';
   const secondaryButton =
-    colorMode === 'dark'
-      ? 'bg-[#20232e] text-slate-200 hover:bg-[#292d3a] border border-[#3a4050]'
-      : 'bg-slate-100 text-slate-700 hover:bg-slate-200 border border-slate-200';
+    `text-fg-secondary border border-line ${colorMode === 'dark' ? 'bg-[#20232e] hover:bg-[#292d3a]' : 'bg-slate-100 hover:bg-slate-200'}`;
   const downloadLink =
     colorMode === 'dark'
       ? 'text-slate-300 hover:text-[#ffe0a3]'
       : 'text-slate-500 hover:text-rose-600';
   const advancedButton =
-    colorMode === 'dark'
-      ? 'bg-[#20232e] text-slate-300 hover:text-[#ffe0a3] border border-[#3a4050]'
-      : 'bg-slate-100 text-slate-600 hover:text-rose-600 border border-slate-200';
-  const sectionButtonClass = `w-full rounded-2xl px-4 py-2.5 text-[15px] font-medium transition flex items-center justify-between ${
+    `text-fg-tertiary border border-line ${colorMode === 'dark' ? 'bg-[#20232e] hover:text-[#ffe0a3]' : 'bg-slate-100 hover:text-rose-600'}`;
+  const sectionButtonClass = `w-full rounded-2xl px-4 py-2.5 text-lead font-medium transition flex items-center justify-between ${
     colorMode === 'dark' ? 'shadow-[0_10px_22px_rgba(0,0,0,0.22)]' : ''
   }`;
   const actionIconClass = 'text-[30px] m-auto cursor-pointer';
-  const actionLabelClass = 'mt-2 text-[13px] font-medium tracking-tight';
+  const actionLabelClass = 'mt-2 text-label font-medium tracking-tight';
   const actionTileActive =
     colorMode === 'dark'
       ? 'bg-[#f6c453]/15 border-[#f6c453]/40 text-[#ffe0a3]'
       : 'bg-rose-50 border-rose-200 text-rose-700';
   const actionTileInactive =
-    colorMode === 'dark'
-      ? 'bg-[#20232e] border-[#3a4050] text-slate-200 hover:bg-[#292d3a]'
-      : 'bg-slate-100 border-slate-200 text-slate-700 hover:bg-white';
+    `border-line text-fg-secondary ${colorMode === 'dark' ? 'bg-[#20232e] hover:bg-[#292d3a]' : 'bg-slate-100 hover:bg-white'}`;
   const sliderAccentColor = colorMode === 'dark' ? '#f6c453' : '#f97316';
   const sliderTrackColor = colorMode === 'dark' ? '#3a4050' : '#d7deef';
   const colorInputClass =
-    colorMode === 'dark'
-      ? 'w-full h-11 rounded-xl border border-[#3a4050] bg-[#20232e] p-1'
-      : 'w-full h-11 rounded-xl border border-slate-200 bg-white p-1';
+    'w-full h-11 rounded-xl border border-line bg-surface-raised p-1';
   const subtleText =
-    colorMode === 'dark'
-      ? 'text-slate-400'
-      : 'text-slate-500';
-  const historyButtonClass = `${
-    colorMode === 'dark'
-      ? 'bg-[#20232e] text-slate-100 border border-[#3a4050] hover:bg-[#292d3a] disabled:bg-[#181b24] disabled:text-slate-500'
-      : 'bg-white text-slate-800 border border-slate-200 hover:bg-slate-50 disabled:bg-slate-100 disabled:text-slate-400'
-  } flex items-center justify-center gap-2 rounded-xl px-3 py-2.5 text-sm font-medium transition disabled:cursor-not-allowed`;
+    "text-fg-muted";
+  const historyButtonClass = `bg-surface-raised border border-line ${colorMode === 'dark' ? 'text-slate-100 hover:bg-[#292d3a] disabled:bg-[#181b24] disabled:text-slate-500' : 'text-slate-800 hover:bg-slate-50 disabled:bg-slate-100 disabled:text-slate-400'} flex items-center justify-center gap-2 rounded-xl px-3 py-2.5 text-sm font-medium transition disabled:cursor-not-allowed`;
 
   const isSelected = (view) => currentViewDisplay === view;
   const isCanvasActionSelected = (action) => currentCanvasAction === action;
@@ -165,9 +152,7 @@ export default function ImageEditorToolbar(props) {
     }
   };
   const aspectRatioSurface =
-    colorMode === 'dark'
-      ? 'bg-[#20232e] border border-[#3a4050]'
-      : 'bg-slate-50 border border-slate-200';
+    'bg-surface-muted border border-line';
   const normalizedCanvasDimensions = normalizeCanvasDimensions(canvasDimensions, aspectRatioLabel);
   const matchingCanvasAspectRatioOption = findAspectRatioOptionForCanvasDimensions(
     normalizedCanvasDimensions,
@@ -175,7 +160,7 @@ export default function ImageEditorToolbar(props) {
   );
   const canvasLabel = matchingCanvasAspectRatioOption
     ? matchingCanvasAspectRatioOption.label
-    : `Custom (${getSimplifiedAspectRatioLabel(normalizedCanvasDimensions)})`;
+    : uiText("Custom ({value0})", { value0: getSimplifiedAspectRatioLabel(normalizedCanvasDimensions) });
 
   const getSliderStyle = (value, min, max) => {
     const safeValue = Number.isFinite(Number(value))
@@ -194,7 +179,7 @@ export default function ImageEditorToolbar(props) {
 
   const toolbarSections = [
     {
-      label: 'Generate Image',
+      label: uiText("Generate Image"),
       view: CURRENT_TOOLBAR_VIEW.SHOW_GENERATE_DISPLAY,
       content: (
       <PromptGenerator
@@ -213,7 +198,7 @@ export default function ImageEditorToolbar(props) {
       ),
     },
     {
-      label: 'Edit Image',
+      label: uiText("Edit Image"),
       view: CURRENT_TOOLBAR_VIEW.SHOW_EDIT_DISPLAY,
       content: (
       <ImageEditGenerator
@@ -236,7 +221,7 @@ export default function ImageEditorToolbar(props) {
       ),
     },
     {
-      label: 'Actions',
+      label: uiText("Actions"),
       view: CURRENT_TOOLBAR_VIEW.SHOW_ACTIONS_DISPLAY,
       content: (
       <div className="space-y-4">
@@ -247,7 +232,7 @@ export default function ImageEditorToolbar(props) {
             onClick={() => setCurrentCanvasAction?.(TOOLBAR_ACTION_VIEW.SHOW_PENCIL_DISPLAY)}
           >
             <FaPencilAlt className={actionIconClass} />
-            <div className={actionLabelClass}>Pencil</div>
+            <div className={actionLabelClass}>{uiText("Pencil")}</div>
           </button>
           <button
             type="button"
@@ -255,7 +240,7 @@ export default function ImageEditorToolbar(props) {
             onClick={() => setCurrentCanvasAction?.(TOOLBAR_ACTION_VIEW.SHOW_ERASER_DISPLAY)}
           >
             <FaEraser className={actionIconClass} />
-            <div className={actionLabelClass}>Magic Eraser</div>
+            <div className={actionLabelClass}>{uiText("Magic Eraser")}</div>
           </button>
           <button
             type="button"
@@ -263,17 +248,15 @@ export default function ImageEditorToolbar(props) {
             onClick={() => onCombineCurrentLayerItems?.()}
           >
             <LuCombine className={actionIconClass} />
-            <div className={actionLabelClass}>Combine</div>
+            <div className={actionLabelClass}>{uiText("Combine")}</div>
           </button>
         </div>
 
         <div className={`${aspectRatioSurface} rounded-2xl px-4 py-4`}>
           <div className="flex items-start justify-between gap-3">
             <div>
-              <div className="text-sm font-semibold">Undo / Redo</div>
-              <div className={`mt-1 text-xs ${subtleText}`}>
-                Undo up to {historyLimit} recent canvas changes across the current canvas state, including add, delete, and reorder actions.
-              </div>
+              <div className="text-sm font-semibold">{uiText("Undo / Redo")}</div>
+              <div className={`mt-1 text-xs ${subtleText}`}>{uiText("Undo up to {value0} recent canvas changes across the current canvas state, including add, delete, and reorder actions.", { value0: historyLimit })}</div>
             </div>
             <div className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold ${secondaryButton}`}>
               {undoHistoryCount}/{historyLimit}
@@ -288,7 +271,7 @@ export default function ImageEditorToolbar(props) {
               onClick={() => onUndoHistory?.()}
             >
               <FaUndo />
-              <span>Undo</span>
+              <span>{uiText("Undo")}</span>
             </button>
             <button
               type="button"
@@ -297,20 +280,20 @@ export default function ImageEditorToolbar(props) {
               onClick={() => onRedoHistory?.()}
             >
               <FaRedo />
-              <span>Redo</span>
+              <span>{uiText("Redo")}</span>
             </button>
           </div>
 
           <div className={`mt-3 text-xs ${subtleText}`}>
             {isHistoryInteractionBlocked
-              ? 'Finish the current pencil or eraser action before using history.'
-              : `Use Ctrl/Cmd+Z to undo and Ctrl/Cmd+Shift+Z or Ctrl/Cmd+Y to redo. Available now: ${undoHistoryCount} undo, ${redoHistoryCount} redo.`}
+              ? uiText("Finish the current pencil or eraser action before using history.")
+              : uiText("Use Ctrl/Cmd+Z to undo and Ctrl/Cmd+Shift+Z or Ctrl/Cmd+Y to redo. Available now: {value0} undo, {value1} redo.", { value0: undoHistoryCount, value1: redoHistoryCount })}
           </div>
         </div>
 
         {currentCanvasAction === TOOLBAR_ACTION_VIEW.SHOW_PENCIL_DISPLAY && (
           <div className={`${aspectRatioSurface} rounded-2xl px-4 py-4`}>
-            <label className="block text-sm font-semibold mb-2">Pencil width</label>
+            <label className="block text-sm font-semibold mb-2">{uiText("Pencil width")}</label>
             <input
               type="range"
               min="1"
@@ -320,7 +303,7 @@ export default function ImageEditorToolbar(props) {
               onChange={(event) => setPencilWidth(event.target.value)}
               style={getSliderStyle(pencilWidth, 1, 50)}
             />
-            <label className="block text-sm font-semibold mt-4 mb-2">Pencil color</label>
+            <label className="block text-sm font-semibold mt-4 mb-2">{uiText("Pencil color")}</label>
             <input
               type="color"
               value={pencilColor}
@@ -332,7 +315,7 @@ export default function ImageEditorToolbar(props) {
 
         {currentCanvasAction === TOOLBAR_ACTION_VIEW.SHOW_ERASER_DISPLAY && (
           <div className={`${aspectRatioSurface} rounded-2xl px-4 py-4`}>
-            <label className="block text-sm font-semibold mb-2">Eraser width</label>
+            <label className="block text-sm font-semibold mb-2">{uiText("Eraser width")}</label>
             <input
               type="range"
               min="1"
@@ -348,7 +331,7 @@ export default function ImageEditorToolbar(props) {
                 onClick={toggleEraserGridSnap}
                 className={`${secondaryButton} mt-4 w-full rounded-xl px-3 py-2 text-sm font-medium transition`}
               >
-                {snapEraserToGrid ? 'Snap Eraser: On' : 'Snap Eraser: Off'}
+                {snapEraserToGrid ? uiText("Snap Eraser: On") : uiText("Snap Eraser: Off")}
               </button>
             )}
           </div>
@@ -358,7 +341,7 @@ export default function ImageEditorToolbar(props) {
       ),
     },
     {
-      label: 'Add Text',
+      label: uiText("Add Text"),
       view: CURRENT_TOOLBAR_VIEW.SHOW_ADD_TEXT_DISPLAY,
       content: (
       <AddText
@@ -372,7 +355,7 @@ export default function ImageEditorToolbar(props) {
       ),
     },
     {
-      label: 'Upload/Library',
+      label: uiText("Upload/Library"),
       view: CURRENT_TOOLBAR_VIEW.SHOW_UPLOAD_DISPLAY,
       content: (
       <div className="m-auto grid grid-cols-2 gap-3 text-center">
@@ -382,7 +365,7 @@ export default function ImageEditorToolbar(props) {
           onClick={showUploadAction}
         >
           <FaUpload className={actionIconClass} />
-          <div className={actionLabelClass}>Upload</div>
+          <div className={actionLabelClass}>{uiText("Upload")}</div>
         </button>
         <button
           type="button"
@@ -390,7 +373,7 @@ export default function ImageEditorToolbar(props) {
           onClick={onShowLibrary}
         >
           <TbLibraryPhoto className={actionIconClass} />
-          <div className={actionLabelClass}>Library</div>
+          <div className={actionLabelClass}>{uiText("Library")}</div>
         </button>
       </div>
       ),
@@ -405,21 +388,15 @@ export default function ImageEditorToolbar(props) {
       <div className={`${panelSurface} min-h-full rounded-[22px] p-4 flex flex-col gap-4`}>
         <div className={`${aspectRatioSurface} rounded-2xl px-4 py-3 flex items-center justify-between gap-3`}>
           <div>
-            <div className={`text-[11px] uppercase tracking-[0.22em] ${colorMode === 'dark' ? 'text-slate-400' : 'text-slate-500'}`}>
-              Canvas
-            </div>
+            <div className={`text-caption uppercase tracking-[0.22em] text-fg-muted`}>{uiText("Canvas")}</div>
             <div className={`text-sm font-semibold ${textColor}`}>{canvasLabel}</div>
-            <div className={`text-[13px] ${colorMode === 'dark' ? 'text-slate-400' : 'text-slate-500'}`}>
-              {normalizedCanvasDimensions.width} x {normalizedCanvasDimensions.height} px
-            </div>
+            <div className={`text-label text-fg-muted`}>{uiText("{value0} x {value1} px", { value0: normalizedCanvasDimensions.width, value1: normalizedCanvasDimensions.height })}</div>
           </div>
           <button
             type="button"
             className={`rounded-xl px-3.5 py-2 text-sm font-medium ${secondaryButton}`}
             onClick={() => onEditProject?.()}
-          >
-            Edit
-          </button>
+          >{uiText("Edit")}</button>
         </div>
 
         <div className="flex flex-col gap-3">
@@ -456,15 +433,11 @@ export default function ImageEditorToolbar(props) {
           <button
             className={`text-sm font-medium ${downloadLink}`}
             onClick={onDownloadSimple}
-          >
-            Download image
-          </button>
+          >{uiText("Download image")}</button>
           <button
             className={`rounded-xl px-3.5 py-2 text-sm font-medium ${advancedButton}`}
             onClick={onDownloadAdvanced}
-          >
-            Advanced
-          </button>
+          >{uiText("Advanced")}</button>
         </div>
       </div>
     </div>

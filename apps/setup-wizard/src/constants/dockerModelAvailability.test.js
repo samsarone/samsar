@@ -15,6 +15,7 @@ test('Lyria availability chooses Gemini 3.5, then Fal 3.5, then Vertex 3', () =>
 });
 
 import {
+  getCanonicalDockerModelKey,
   getDockerModelProviderPriority,
   DOCKER_PROVIDER,
   buildDockerAvailableModelsFromEnabledProviders,
@@ -27,7 +28,9 @@ import {
 
 const INFERENCE_MODEL_KEYS = Object.freeze([
   'gpt-6-astra',
+  'gpt-6.1-sol',
   'claude-opus-5.5',
+  'claude-fable-5.1',
   'gemini-4-argon',
   'KIMIK3',
   'QWEN3.8',
@@ -109,7 +112,7 @@ test('Samsar exposes every supported inference model, including Kimi K3', () => 
 
   assert.deepEqual(
     getAvailableInferenceModels(available),
-    ['KIMIK3', 'QWEN3.8', 'claude-opus-5.5', 'gemini-4-argon', 'gpt-6-astra'],
+    ['KIMIK3', 'QWEN3.8', 'claude-fable-5.1', 'claude-opus-5.5', 'gemini-4-argon', 'gpt-6-astra', 'gpt-6.1-sol'],
   );
   for (const model of INFERENCE_MODEL_KEYS) {
     assert.equal(available.modelProviders[model], DOCKER_PROVIDER.SAMSAR);
@@ -122,7 +125,7 @@ test('OpenRouter alone exposes GPT, Claude, Gemini, and Qwen inference', () => {
   ]);
   assert.deepEqual(
     getAvailableInferenceModels(available),
-    ['QWEN3.8', 'claude-opus-5.5', 'gemini-4-argon', 'gpt-6-astra'],
+    ['QWEN3.8', 'claude-fable-5.1', 'claude-opus-5.5', 'gemini-4-argon', 'gpt-6-astra', 'gpt-6.1-sol'],
   );
   assert.deepEqual(available.actions, ['assistant', 'chat']);
   for (const model of ['gpt-6-astra', 'claude-opus-5.5', 'gemini-4-argon', 'QWEN3.8']) {
@@ -137,7 +140,7 @@ test('OpenRouter alone exposes GPT, Claude, Gemini, and Qwen inference', () => {
 
 test('Anthropic credentials alone enable Claude inference and assistant', () => {
   const available = buildDockerAvailableModelsFromEnabledProviders([DOCKER_PROVIDER.ANTHROPIC]);
-  assert.deepEqual(getAvailableInferenceModels(available), ['claude-opus-5.5']);
+  assert.deepEqual(getAvailableInferenceModels(available), ['claude-fable-5.1', 'claude-opus-5.5']);
   assert.deepEqual(available.actions, ['assistant', 'chat']);
   assert.equal(available.modelProviders['claude-opus-5.5'], DOCKER_PROVIDER.ANTHROPIC);
   assert.equal(getDockerModelDisplayName('claude-opus-5.5', DOCKER_PROVIDER.ANTHROPIC),
@@ -437,7 +440,7 @@ test('Kimi K3 priority is the native Kimi API, then Samsar', () => {
   }
 });
 
-test('GPTImage 2.5 uses Sunburst adapters and excludes legacy GMI routes', () => {
+test('GPTImage 2.6 uses Sunburst adapters and excludes legacy GMI routes', () => {
   const available = buildDockerAvailableModelsFromEnabledProviders([
     DOCKER_PROVIDER.OPENAI,
     DOCKER_PROVIDER.FAL,
@@ -472,7 +475,7 @@ test('legacy GMI GPT Image routes cannot enable Sunburst without a supported ada
     assert.equal(available.models.includes(key), false);
     assert.equal(available.modelProviders[key], undefined);
   }
-  assert.equal(getDockerModelDisplayName('GPTIMAGE2.5'), 'GPTImage 2.5');
+  assert.equal(getDockerModelDisplayName('GPTIMAGE2.5'), 'GPTImage 2.6');
 });
 
 test('image editing excludes GMI for Sunburst while retaining other verified routes', () => {
@@ -559,7 +562,7 @@ test('Wan2.7 Pro resolves Alibaba then FAL then Samsar', () => {
 });
 
 test('provider model display names are clean and stable', () => {
-  assert.equal(getDockerModelDisplayName('GPTIMAGE2.5EDIT'), 'GPTImage 2.5 Edit');
+  assert.equal(getDockerModelDisplayName('GPTIMAGE2.5EDIT'), 'GPTImage 2.6 Edit');
   assert.equal(getDockerModelDisplayName('elevenlabs_music'), 'ElevenLabs Music');
 });
 
@@ -611,9 +614,34 @@ test('an inference-only config reports every missing Express media type', () => 
 });
 
 
-test('legacy GPT selections resolve to the Sol 6.1 setup catalog', () => {
+test('legacy GPT 5.6 selections retain the Astra setup catalog', () => {
   for (const model of ['gpt-6-astra', 'gpt-5.6-sol', 'gpt-6-astra']) {
     assert.deepEqual(getDockerModelProviderPriority(model), getDockerModelProviderPriority('gpt-6-astra'));
     assert.ok(getDockerModelProviderPriority(model).includes('openai'));
+  }
+});
+
+for (const [model, native, aliases] of [
+  ['gpt-6.1-sol', DOCKER_PROVIDER.OPENAI, ['GPT 6.1 Sol', 'openai/gpt-6.1-sol-xhigh']],
+  ['claude-fable-5.1', DOCKER_PROVIDER.ANTHROPIC, ['claude-fable-5-1', 'anthropic/claude-fable-5.1-xhigh']],
+  ['claude-opus-5.5', DOCKER_PROVIDER.ANTHROPIC, ['claude-opus-5-5', 'Claude Opus 5.5 Extra High']],
+]) {
+  test(`${model} stays distinct in setup, native routing, and remote fallback`, () => {
+    for (const alias of [model, ...aliases]) {
+      assert.equal(getCanonicalDockerModelKey(alias), model);
+      assert.deepEqual(getDockerModelProviderPriority(alias), [native, 'openrouter', 'samsar']);
+    }
+    const available = buildDockerAvailableModelsFromEnabledProviders([native, 'openrouter', 'samsar']);
+    assert.equal(available.modelProviders[model], native);
+    assert.equal(resolveDockerModelProvider(model, ['openrouter', 'samsar']), 'openrouter');
+    const gmiOnly = buildDockerAvailableModelsFromEnabledProviders(['gmicloud']);
+    assert.equal(gmiOnly.models.includes(model), false);
+  });
+}
+
+test('all GPT and Claude choices satisfy setup inference readiness', () => {
+  for (const model of ['gpt-6-astra', 'gpt-6.1-sol', 'claude-opus-5.5', 'claude-fable-5.1']) {
+    const status = buildExpressPipelineAvailability({ models: [model], actions: ['chat', 'assistant'] });
+    assert.equal(status.requirements.find((item) => item.key === 'inference').isAvailable, true);
   }
 });

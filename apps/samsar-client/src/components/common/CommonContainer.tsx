@@ -1,3 +1,4 @@
+import { useUiLanguage } from '../../hooks/useUiLanguage.js';
 import { useEffect } from "react";
 import TopNav from "./TopNav.tsx";
 import { AlertDialog } from "./AlertDialog.tsx";
@@ -5,6 +6,7 @@ import { useColorMode } from "../../contexts/ColorMode.jsx";
 
 
 export default function CommonContainer(props) {
+  useUiLanguage();
   const {
     children,
     isVideoPreviewPlaying,
@@ -34,6 +36,7 @@ export default function CommonContainer(props) {
     isImportedSession,
     onRequestEditSession,
     openAuthDialog,
+    openAudioActions,
   } = props;
   const { colorMode } = useColorMode();
 
@@ -120,6 +123,7 @@ export default function CommonContainer(props) {
         isImportedSession={isImportedSession}
         onRequestEditSession={onRequestEditSession}
         openAuthDialog={openAuthDialog}
+        openAudioActions={openAudioActions}
       />
       <div>
         <AlertDialog />

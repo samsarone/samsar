@@ -64,11 +64,16 @@ test('supported models exposes additive branched metadata without narrowing prod
   const production = invokeSupportedModels();
   assert.equal(production.statusCode, 200);
   assert.equal(production.body.deployment.edition, 'production');
+  const kling = production.body.VIDEO_MODELS.find(model => model.value === 'KLINGIMGTOVID4');
+  assert.equal(kling?.label, 'Kling 4 Img2Vid');
+  assert.equal(kling?.basePrice, 36);
+  assert.equal(kling?.pricingDistribution.total, 36);
+  assert.equal(production.body.VIDEO_MODELS.some(model => ['KLINGIMGTOVID3PRO', 'KLINGIMGTOVIDTURBO'].includes(model.value)), false);
   assert.deepEqual(
     production.body.INFERENCE_MODELS
       .filter((model) => model.isBranchedInferenceModel)
       .map((model) => model.value),
-    ['gpt-6-astra', 'claude-opus-5.5'],
+    ['gpt-6-astra', 'claude-opus-5.5', 'gpt-6.1-sol', 'claude-fable-5.1'],
   );
   assert.deepEqual(
     production.body.IMAGE_MODELS
@@ -181,7 +186,7 @@ test('standalone supported models derives branched options from raw provider cre
     standalone.body.INFERENCE_MODELS
       .filter((model) => model.isBranchedInferenceModel)
       .map((model) => model.value),
-    ['gpt-6-astra'],
+    ['gpt-6-astra', 'gpt-6.1-sol'],
   );
   assert.deepEqual(
     standalone.body.IMAGE_MODELS

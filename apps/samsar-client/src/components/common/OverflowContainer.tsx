@@ -1,3 +1,4 @@
+import { useUiLanguage } from '../../hooks/useUiLanguage.js';
 
 import { useMediaQuery } from 'react-responsive';
 import TopNav from "./TopNav.tsx";
@@ -14,7 +15,8 @@ import { createBlankVidgenieSession } from '../../utils/vidgenieRouting.js';
 const PROCESSOR_SERVER = import.meta.env.VITE_PROCESSOR_API;
 
 export default function OverflowContainer(props) {
-  const { children } = props;
+  useUiLanguage();
+  const { children, bounded = false } = props;
 
   const navigate = useNavigate();
 
@@ -37,11 +39,10 @@ export default function OverflowContainer(props) {
 
   const isMobile = useMediaQuery({ maxWidth: 767 });
 
-  // This shell grows with its content, so the document owns page scrolling.
-  // workspace-scroll contains overscroll for bounded panels and would trap
-  // wheel/touch input here even though the shell has no internal scroll range.
+  // Pages normally scroll with the document. Bounded account panels own their
+  // scrolling and must fit the viewport without the document's bottom padding.
   return (
-    <div className='workspace-page min-h-[100dvh] pb-8' >
+    <div className={`workspace-page ${bounded ? 'h-[100dvh] overflow-hidden' : 'min-h-[100dvh] pb-8'}`} >
       {isMobile ? (
         <MobileTopNav
           resetCurrentSession={resetCurrentSession}

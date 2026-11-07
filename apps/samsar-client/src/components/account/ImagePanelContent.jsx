@@ -1,3 +1,5 @@
+import { useUiLanguage } from '../../hooks/useUiLanguage.js';
+import { translateText as uiText } from '../../utils/localization.js';
 import { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import { getHeaders } from '../../utils/web';
@@ -45,6 +47,7 @@ function resolveImageAssetUrl(image = {}) {
 }
 
 export default function ImagePanelContent() {
+  useUiLanguage();
   const [images, setImages] = useState([]);
   const [pagination, setPagination] = useState({
     page: 1,
@@ -59,10 +62,10 @@ export default function ImagePanelContent() {
   const { openAlertDialog } = useAlertDialog();
   const { colorMode } = useColorMode();
 
-  const textColor = colorMode === "dark" ? "text-slate-100" : "text-slate-900";
+  const textColor = 'text-fg';
   const secondaryTextColor = colorMode === "dark" ? "text-slate-400" : "text-slate-600";
-  const cardBgColor = colorMode === "dark" ? "bg-[#181b24]" : "bg-white";
-  const borderColor = colorMode === "dark" ? "border-[#3a4050]" : "border-slate-200";
+  const cardBgColor = 'bg-surface';
+  const borderColor = 'border-line';
   const mutedBg = colorMode === "dark" ? "bg-[#151720]" : "bg-slate-50";
 
   const fetchImages = useCallback(
@@ -113,7 +116,7 @@ export default function ImagePanelContent() {
           hasNextPage: false,
           hasPreviousPage: false,
         }));
-        setError('Unable to load your images right now.');
+        setError(uiText("Unable to load your images right now."));
       } finally {
         setIsLoading(false);
       }
@@ -134,9 +137,7 @@ export default function ImagePanelContent() {
             href={imageUrl || '#'}
             download
             className="inline-flex items-center rounded-lg bg-gradient-to-r from-blue-500 to-blue-600 px-4 py-2 text-sm font-semibold text-white shadow hover:opacity-90"
-          >
-            Download image
-          </a>
+          >{uiText("Download image")}</a>
         </div>
 
         <img
@@ -164,12 +165,10 @@ export default function ImagePanelContent() {
       <div className={`rounded-lg border ${borderColor} ${cardBgColor} p-3 shadow-sm sm:p-4`}>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {isLoading && (
-            <div className={`col-span-full text-center text-sm ${secondaryTextColor}`}>Loading images…</div>
+            <div className={`col-span-full text-center text-sm ${secondaryTextColor}`}>{uiText("Loading images…")}</div>
           )}
           {!isLoading && images.length === 0 && (
-            <div className={`col-span-full text-center text-sm ${secondaryTextColor}`}>
-              No images found yet.
-            </div>
+            <div className={`col-span-full text-center text-sm ${secondaryTextColor}`}>{uiText("No images found yet.")}</div>
           )}
           {images.map((image) => {
             const imageUrl = resolveImageAssetUrl(image);
@@ -195,26 +194,20 @@ export default function ImagePanelContent() {
         </div>
       </div>
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <span className={`text-sm ${secondaryTextColor}`}>
-          Page {pagination.page} of {Math.max(pagination.totalPages, 1)} • {pagination.totalItems} total
-        </span>
+        <span className={`text-sm ${secondaryTextColor}`}>{uiText("Page {value0} of {value1} • {value2} total", { value0: pagination.page, value1: Math.max(pagination.totalPages, 1), value2: pagination.totalItems })}</span>
         <div className="grid grid-cols-2 gap-2 sm:flex">
           <SecondaryButton
             disabled={!pagination.hasPreviousPage && pagination.page <= 1}
             onClick={() => handlePageChange(pagination.page - 1)}
             extraClasses="px-4 py-2"
             className="w-full sm:w-auto"
-          >
-            Previous
-          </SecondaryButton>
+          >{uiText("Previous")}</SecondaryButton>
           <SecondaryButton
             disabled={!pagination.hasNextPage && pagination.page >= pagination.totalPages}
             onClick={() => handlePageChange(pagination.page + 1)}
             extraClasses="px-4 py-2"
             className="w-full sm:w-auto"
-          >
-            Next
-          </SecondaryButton>
+          >{uiText("Next")}</SecondaryButton>
         </div>
       </div>
     </div>

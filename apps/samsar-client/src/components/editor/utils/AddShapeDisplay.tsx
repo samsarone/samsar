@@ -1,3 +1,5 @@
+import { useUiLanguage } from '../../../hooks/useUiLanguage.js';
+import { translateText as uiText } from '../../../utils/localization.js';
 import { useMemo, useState } from 'react';
 import { FaRegCircle, FaSlidersH } from "react-icons/fa";
 import { MdOutlineRectangle } from "react-icons/md";
@@ -11,10 +13,10 @@ import { getCanvasDimensionsForAspectRatio } from '../../../utils/canvas.jsx';
 const SHAPE_PREFERENCES_STORAGE_KEY = 'samsarStudioShapePreferences';
 
 const SHAPE_DEFINITIONS = [
-  { key: 'rectangle', label: 'Rectangle' },
-  { key: 'circle', label: 'Circle' },
-  { key: 'polygon', label: 'Polygon' },
-  { key: 'dialog', label: 'Dialog' },
+  { key: 'rectangle', get label() { return uiText("Rectangle"); } },
+  { key: 'circle', get label() { return uiText("Circle"); } },
+  { key: 'polygon', get label() { return uiText("Polygon"); } },
+  { key: 'dialog', get label() { return uiText("Dialog"); } },
 ];
 
 const SHAPE_FIELD_KEYS = {
@@ -271,10 +273,9 @@ function ShapePreferencesFields({
   isExpandedView,
   colorMode,
 }) {
-  const subtleTextColor = colorMode === 'dark' ? 'text-slate-300' : 'text-slate-600';
-  const inputSurface = colorMode === 'dark'
-    ? 'bg-[#20232e] border border-[#24314d] text-slate-100'
-    : 'bg-slate-50 border border-slate-200 text-slate-900';
+  useUiLanguage();
+  const subtleTextColor = 'text-fg-tertiary';
+  const inputSurface = `bg-surface-muted border text-fg ${colorMode === 'dark' ? 'border-[#24314d]' : 'border-slate-200'}`;
   const gridClass = isExpandedView
     ? 'grid grid-cols-2 gap-3'
     : 'grid grid-cols-1 gap-3 md:grid-cols-2';
@@ -314,33 +315,33 @@ function ShapePreferencesFields({
       <>
         {renderNumberField({ label: 'X', fieldKey: 'x' })}
         {renderNumberField({ label: 'Y', fieldKey: 'y' })}
-        {renderNumberField({ label: 'Width', fieldKey: 'width', min: 1 })}
-        {renderNumberField({ label: 'Height', fieldKey: 'height', min: 1 })}
+        {renderNumberField({ label: uiText("Width"), fieldKey: 'width', min: 1 })}
+        {renderNumberField({ label: uiText("Height"), fieldKey: 'height', min: 1 })}
       </>
     ),
     circle: (
       <>
-        {renderNumberField({ label: 'Center X', fieldKey: 'x' })}
-        {renderNumberField({ label: 'Center Y', fieldKey: 'y' })}
-        {renderNumberField({ label: 'Radius', fieldKey: 'radius', min: 1 })}
+        {renderNumberField({ label: uiText("Center X"), fieldKey: 'x' })}
+        {renderNumberField({ label: uiText("Center Y"), fieldKey: 'y' })}
+        {renderNumberField({ label: uiText("Radius"), fieldKey: 'radius', min: 1 })}
       </>
     ),
     polygon: (
       <>
-        {renderNumberField({ label: 'Center X', fieldKey: 'x' })}
-        {renderNumberField({ label: 'Center Y', fieldKey: 'y' })}
-        {renderNumberField({ label: 'Radius', fieldKey: 'radius', min: 1 })}
-        {renderNumberField({ label: 'Sides', fieldKey: 'sides', min: 3, max: 12 })}
+        {renderNumberField({ label: uiText("Center X"), fieldKey: 'x' })}
+        {renderNumberField({ label: uiText("Center Y"), fieldKey: 'y' })}
+        {renderNumberField({ label: uiText("Radius"), fieldKey: 'radius', min: 1 })}
+        {renderNumberField({ label: uiText("Sides"), fieldKey: 'sides', min: 3, max: 12 })}
       </>
     ),
     dialog: (
       <>
-        {renderNumberField({ label: 'Center X', fieldKey: 'x' })}
-        {renderNumberField({ label: 'Center Y', fieldKey: 'y' })}
-        {renderNumberField({ label: 'Width', fieldKey: 'width', min: 1 })}
-        {renderNumberField({ label: 'Height', fieldKey: 'height', min: 1 })}
-        {renderNumberField({ label: 'Pointer X', fieldKey: 'pointerX' })}
-        {renderNumberField({ label: 'Pointer Y', fieldKey: 'pointerY' })}
+        {renderNumberField({ label: uiText("Center X"), fieldKey: 'x' })}
+        {renderNumberField({ label: uiText("Center Y"), fieldKey: 'y' })}
+        {renderNumberField({ label: uiText("Width"), fieldKey: 'width', min: 1 })}
+        {renderNumberField({ label: uiText("Height"), fieldKey: 'height', min: 1 })}
+        {renderNumberField({ label: uiText("Pointer X"), fieldKey: 'pointerX' })}
+        {renderNumberField({ label: uiText("Pointer Y"), fieldKey: 'pointerY' })}
       </>
     ),
   };
@@ -348,9 +349,9 @@ function ShapePreferencesFields({
   return (
     <>
       <div className={gridClass}>
-        {renderColorField({ label: 'Fill', fieldKey: 'fillColor' })}
-        {renderColorField({ label: 'Stroke', fieldKey: 'strokeColor' })}
-        {renderNumberField({ label: 'Stroke Width', fieldKey: 'strokeWidth', min: 0 })}
+        {renderColorField({ label: uiText("Fill"), fieldKey: 'fillColor' })}
+        {renderColorField({ label: uiText("Stroke"), fieldKey: 'strokeColor' })}
+        {renderNumberField({ label: uiText("Stroke Width"), fieldKey: 'strokeWidth', min: 0 })}
         {shapeSpecificFields[selectedShapeKey]}
       </div>
 
@@ -361,7 +362,7 @@ function ShapePreferencesFields({
           onChange={(event) => updatePreferences({ fillCanvas: event.target.checked })}
           className="h-4 w-4 rounded border-slate-400"
         />
-        <span>Fill canvas</span>
+        <span>{uiText("Fill canvas")}</span>
       </label>
     </>
   );
@@ -378,11 +379,10 @@ function ShapeOptionsDialogContent({
   onPreferencesChange,
   onApply,
 }) {
+  useUiLanguage();
   const [draftPreferences, setDraftPreferences] = useState(initialPreferences);
-  const mutedClass = colorMode === 'dark' ? 'text-slate-400' : 'text-slate-500';
-  const secondaryButtonClass = colorMode === 'dark'
-    ? 'border border-[#273956] bg-[#20232e] text-slate-100 hover:bg-[#172642]'
-    : 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-50';
+  const mutedClass = 'text-fg-muted';
+  const secondaryButtonClass = `border bg-surface-raised text-fg-body ${colorMode === 'dark' ? 'border-[#273956] hover:bg-[#172642]' : 'border-slate-200 hover:bg-slate-50'}`;
 
   const updateDraftPreferences = (preferenceChanges, options = {}) => {
     setDraftPreferences((previousPreferences) => {
@@ -412,9 +412,9 @@ function ShapeOptionsDialogContent({
 
   return (
     <CanvasActionOptionsDialog
-      title="Shape options"
-      subtitle={`${selectedShapeLabel} on ${canvasDimensions.width} x ${canvasDimensions.height} canvas`}
-      badge="Canvas action"
+      title={uiText("Shape options")}
+      subtitle={uiText("{value0} on {value1} x {value2} canvas", { value0: selectedShapeLabel, value1: canvasDimensions.width, value2: canvasDimensions.height })}
+      badge={uiText("Canvas action")}
       onClose={onClose}
       footer={(
         <>
@@ -422,22 +422,16 @@ function ShapeOptionsDialogContent({
             type="button"
             onClick={onClose}
             className={`rounded-lg px-4 py-2 text-sm font-semibold transition ${secondaryButtonClass}`}
-          >
-            Cancel
-          </button>
+          >{uiText("Cancel")}</button>
           <button
             type="button"
             onClick={() => onApply(draftPreferences)}
             className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-500"
-          >
-            Apply
-          </button>
+          >{uiText("Apply")}</button>
         </>
       )}
     >
-      <div className={`mb-4 text-xs ${mutedClass}`}>
-        Changes are saved for this shape and reused the next time it is selected.
-      </div>
+      <div className={`mb-4 text-xs ${mutedClass}`}>{uiText("Changes are saved for this shape and reused the next time it is selected.")}</div>
       <ShapePreferencesFields
         selectedShapeKey={selectedShapeKey}
         preferences={draftPreferences}
@@ -450,6 +444,7 @@ function ShapeOptionsDialogContent({
 }
 
 export default function AddShapeDisplay(props: any) {
+  useUiLanguage();
   const {
     setSelectedShape,
     setStrokeColor,
@@ -496,23 +491,15 @@ export default function AddShapeDisplay(props: any) {
     (shapeDefinition) => shapeDefinition.key === selectedShapeKey
   );
 
-  const textColor = colorMode === 'dark' ? 'text-slate-100' : 'text-slate-900';
-  const subtleTextColor = colorMode === 'dark' ? 'text-slate-300' : 'text-slate-600';
-  const panelSurface = colorMode === 'dark'
-    ? 'bg-[#181b24] border border-[#3a4050]'
-    : 'bg-white border border-slate-200';
-  const compactSurface = colorMode === 'dark'
-    ? 'bg-[#20232e] border border-[#24314d]'
-    : 'bg-slate-50 border border-slate-200';
+  const textColor = 'text-fg';
+  const subtleTextColor = 'text-fg-tertiary';
+  const panelSurface = 'bg-surface border border-line';
+  const compactSurface = `bg-surface-muted border ${colorMode === 'dark' ? 'border-[#24314d]' : 'border-slate-200'}`;
   const activePillClass = colorMode === 'dark'
     ? 'bg-rose-500/20 border-rose-400/40 text-rose-100'
     : 'bg-rose-50 border-rose-200 text-rose-700';
-  const inactivePillClass = colorMode === 'dark'
-    ? 'bg-[#20232e] border-[#24314d] text-slate-200 hover:bg-[#18243c]'
-    : 'bg-slate-100 border-slate-200 text-slate-700 hover:bg-white';
-  const secondaryButtonClass = colorMode === 'dark'
-    ? 'border border-[#273956] bg-[#20232e] text-slate-100 hover:bg-[#172642]'
-    : 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-50';
+  const inactivePillClass = `text-fg-secondary ${colorMode === 'dark' ? 'bg-[#20232e] border-[#24314d] hover:bg-[#18243c]' : 'bg-slate-100 border-slate-200 hover:bg-white'}`;
+  const secondaryButtonClass = `border bg-surface-raised text-fg-body ${colorMode === 'dark' ? 'border-[#273956] hover:bg-[#172642]' : 'border-slate-200 hover:bg-slate-50'}`;
 
   const syncParentColorState = (preferences) => {
     if (typeof setFillColor === 'function') {
@@ -661,19 +648,17 @@ export default function AddShapeDisplay(props: any) {
       {!isExpandedView ? (
         <>
           <div className="mb-3">
-            <label className={`mb-1 block text-xs font-semibold uppercase tracking-[0.08em] ${subtleTextColor}`}>
-              Shape
-            </label>
+            <label className={`mb-1 block text-xs font-semibold uppercase tracking-[0.08em] ${subtleTextColor}`}>{uiText("Shape")}</label>
             <SingleSelect
               name="shapeType"
-              placeholder="Select shape..."
+              placeholder={uiText("Select shape...")}
               options={SHAPE_DEFINITIONS.map((shapeDefinition) => ({
                 value: shapeDefinition.key,
                 label: shapeDefinition.label,
               }))}
               value={{
                 value: selectedShapeOption?.key || 'rectangle',
-                label: selectedShapeOption?.label || 'Rectangle',
+                label: selectedShapeOption?.label || uiText('Rectangle'),
               }}
               onChange={(selectedOption) => handleShapeChange(selectedOption?.value || 'rectangle')}
               isSearchable={false}
@@ -686,9 +671,9 @@ export default function AddShapeDisplay(props: any) {
               {renderShapeIcon(selectedShapeKey)}
               <div className="min-w-0">
                 <div className="truncate text-sm font-semibold">
-                  {selectedShapeOption?.label || 'Rectangle'}
+                  {selectedShapeOption?.label || uiText("Rectangle")}
                 </div>
-                <div className={`text-[11px] ${subtleTextColor}`}>
+                <div className={`text-caption ${subtleTextColor}`}>
                   {canvasDimensions.width} x {canvasDimensions.height}
                 </div>
               </div>
@@ -699,16 +684,12 @@ export default function AddShapeDisplay(props: any) {
               onClick={showOptionsDialog}
               className={`mb-2 flex w-full items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold transition ${secondaryButtonClass}`}
             >
-              <FaSlidersH />
-              Options
-            </button>
+              <FaSlidersH />{uiText("Options")}</button>
             <button
               type="button"
               onClick={handleApplyShape}
               className="w-full rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white transition hover:bg-blue-500"
-            >
-              Apply
-            </button>
+            >{uiText("Apply")}</button>
           </div>
         </>
       ) : (
@@ -735,8 +716,8 @@ export default function AddShapeDisplay(props: any) {
             <div className="mb-3 flex items-center gap-2">
               {renderShapeIcon(selectedShapeKey)}
               <div className="min-w-0">
-                <div className="text-sm font-semibold">{selectedShapeOption?.label || 'Rectangle'}</div>
-                <div className={`text-[11px] ${subtleTextColor}`}>
+                <div className="text-sm font-semibold">{selectedShapeOption?.label || uiText("Rectangle")}</div>
+                <div className={`text-caption ${subtleTextColor}`}>
                   {canvasDimensions.width} x {canvasDimensions.height}
                 </div>
               </div>
@@ -754,9 +735,7 @@ export default function AddShapeDisplay(props: any) {
               type="button"
               onClick={handleApplyShape}
               className="mt-4 w-full rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-500"
-            >
-              Apply
-            </button>
+            >{uiText("Apply")}</button>
           </div>
         </>
       )}

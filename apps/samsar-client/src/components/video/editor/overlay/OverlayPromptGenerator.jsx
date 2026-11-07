@@ -1,3 +1,5 @@
+import { useUiLanguage } from '../../../../hooks/useUiLanguage.js';
+import { translateText as uiText } from '../../../../utils/localization.js';
 import { useEffect, useMemo, useState } from "react";
 import CommonButton from "../../../common/CommonButton.tsx";
 import ModelAdapterSelect from "../../../common/ModelAdapterSelect.jsx";
@@ -24,6 +26,7 @@ import { Tooltip } from "react-tooltip";
 import "react-tooltip/dist/react-tooltip.css";
 
 export default function OverlayPromptGenerator(props) {
+  const uiLanguage = useUiLanguage();
   const {
     promptText,
     setPromptText,
@@ -66,25 +69,19 @@ export default function OverlayPromptGenerator(props) {
         imageGenerationModelSupportsAspectRatio(model, aspectRatio)
       );
     },
-    [aspectRatio, imageModelValues, isStandaloneModelFilteringEnabled, user?.custom_adapters]
+    [uiLanguage, aspectRatio, imageModelValues, isStandaloneModelFilteringEnabled, user?.custom_adapters]
   );
 
   const isPortraitLayout = layoutMode === "portrait";
   const isImageStudioPrompt = editorVariant === "imageStudio";
   const selectShell =
-    colorMode === "dark"
-      ? "bg-[#151720] text-slate-100 border border-[#667188] focus:border-[#f6c453] focus:outline-none focus:ring-2 focus:ring-[#f6c453]/20"
-      : "bg-slate-50 text-slate-900 border border-slate-200 shadow-sm";
+    `text-fg border border-line-control ${colorMode === "dark" ? 'bg-[#151720] focus:border-[#f6c453] focus:outline-none focus:ring-2 focus:ring-[#f6c453]/20' : 'bg-slate-50 shadow-sm'}`;
   const textareaShell =
-    colorMode === "dark"
-      ? "bg-[#151720] text-slate-100 border border-[#667188] focus:border-[#f6c453] focus:outline-none focus:ring-2 focus:ring-[#f6c453]/20"
-      : "bg-slate-50 text-slate-900 border border-slate-200 shadow-sm";
+    `text-fg border border-line-control ${colorMode === "dark" ? 'bg-[#151720] focus:border-[#f6c453] focus:outline-none focus:ring-2 focus:ring-[#f6c453]/20' : 'bg-slate-50 shadow-sm'}`;
   const checkboxText =
     colorMode === "dark" ? "text-slate-200" : "text-slate-600";
   const fieldLabelClassName =
-    colorMode === "dark"
-      ? "text-xs font-semibold text-slate-200"
-      : "text-xs font-semibold text-slate-700";
+    'text-xs font-semibold text-fg-secondary';
   const controlGroupClassName = isPortraitLayout && !isImageStudioPrompt
     ? "flex w-full min-w-0 flex-col items-stretch gap-1.5"
     : isImageStudioPrompt
@@ -108,17 +105,13 @@ export default function OverlayPromptGenerator(props) {
     ? "flex flex-wrap items-center gap-3"
     : "ml-auto flex flex-wrap items-center gap-2";
   const optionChipBase =
-    colorMode === "dark"
-      ? "bg-[#20232e] border border-[#4a5265] text-slate-300 hover:bg-[#292d3a]"
-      : "bg-slate-50 border border-slate-200 text-slate-600 hover:bg-white";
+    `bg-surface-muted border border-line-strong text-fg-tertiary ${colorMode === "dark" ? 'hover:bg-[#292d3a]' : 'hover:bg-white'}`;
   const optionChipActive =
     colorMode === "dark"
       ? "bg-[#f6c453]/14 border border-[#f6c453]/55 text-[#fff1c8]"
       : "bg-slate-100 border border-slate-300 text-slate-900";
   const optionIndicatorBase =
-    colorMode === "dark"
-      ? "border-[#667188] bg-[#151720] text-slate-200"
-      : "border-slate-300 bg-white text-slate-700";
+    `bg-surface-sunken text-fg-secondary ${colorMode === "dark" ? 'border-[#667188]' : 'border-slate-300'}`;
   const optionIndicatorActive =
     colorMode === "dark"
       ? "border-[#f6c453] bg-[#f6c453] text-[#101117]"
@@ -135,7 +128,7 @@ export default function OverlayPromptGenerator(props) {
     : fieldLabelClassName;
   const checkboxChipClassName = isImageStudioPrompt
     ? "inline-flex cursor-pointer items-center gap-2 rounded-full px-3 py-2 text-xs font-medium transition-colors duration-150"
-    : "inline-flex cursor-pointer items-center gap-2 rounded-full px-2.5 py-1.5 text-[11px] font-medium transition-colors duration-150";
+    : "inline-flex cursor-pointer items-center gap-2 rounded-full px-2.5 py-1.5 text-caption font-medium transition-colors duration-150";
   const promptTextareaMaxRows = isImageStudioPrompt
     ? 7
     : isPortraitLayout
@@ -196,8 +189,8 @@ export default function OverlayPromptGenerator(props) {
   const usesProviderBilling =
     isStandaloneModelFilteringEnabled && isProviderBilledImagePricing(modelPricing);
   const modelCostTooltip = usesProviderBilling
-    ? "Billed directly by the configured provider API"
-    : "Usage-based image pricing; charged when each model call completes";
+    ? uiText("Billed directly by the configured provider API")
+    : uiText("Usage-based image pricing; charged when each model call completes");
   const selectedModelDefinition = availableImageModels.find(
     (model) => model.key === selectedGenerationModel
   );
@@ -243,12 +236,12 @@ export default function OverlayPromptGenerator(props) {
           <div
             className={`${labelClassName} flex shrink-0 items-center gap-1 whitespace-nowrap`}
           >
-            <span>Model</span>
+            <span>{uiText("Model")}</span>
             <a
               data-tooltip-id="modelCostTooltip"
               data-tooltip-content={modelCostTooltip}
             >
-              <FaQuestionCircle className="text-[11px]" />
+              <FaQuestionCircle className="text-caption" />
             </a>
             <Tooltip id="modelCostTooltip" place="right" effect="solid" />
           </div>
@@ -275,9 +268,7 @@ export default function OverlayPromptGenerator(props) {
 
         {selectedModelDefinition?.imageStyles?.length ? (
           <div className={selectControlGroupClassName}>
-            <div className={`${labelClassName} shrink-0 whitespace-nowrap`}>
-              Style
-            </div>
+            <div className={`${labelClassName} shrink-0 whitespace-nowrap`}>{uiText("Style")}</div>
             <select
               onChange={handleImageStyleChange}
               value={selectedImageStyle || ""}
@@ -311,13 +302,11 @@ export default function OverlayPromptGenerator(props) {
             >
               {retryOnFailure ? <FaCheck /> : null}
             </span>
-            <span className="flex items-center gap-1">
-              Retry
-              <a
+            <span className="flex items-center gap-1">{uiText("Retry")}<a
                 data-tooltip-id="retryOnFailTooltip"
-                data-tooltip-content="Retry generation if it fails up to 3 times with prompt variants"
+                data-tooltip-content={uiText("Retry generation if it fails up to 3 times with prompt variants")}
               >
-                <FaQuestionCircle className="text-[10px] opacity-70" />
+                <FaQuestionCircle className="text-micro opacity-70" />
               </a>
               <Tooltip id="retryOnFailTooltip" place="right" effect="solid" />
             </span>
@@ -341,13 +330,11 @@ export default function OverlayPromptGenerator(props) {
             >
               {isCharacterImage ? <FaCheck /> : null}
             </span>
-            <span className="flex items-center gap-1">
-              Speaker scene
-              <a
+            <span className="flex items-center gap-1">{uiText("Speaker scene")}<a
                 data-tooltip-id="characterImageTooltip"
-                data-tooltip-content="Generate an image from the POV of the main character in the prompt."
+                data-tooltip-content={uiText("Generate an image from the POV of the main character in the prompt.")}
               >
-                <FaQuestionCircle className="text-[10px] opacity-70" />
+                <FaQuestionCircle className="text-micro opacity-70" />
               </a>
               <Tooltip id="characterImageTooltip" place="right" effect="solid" />
             </span>
@@ -358,7 +345,7 @@ export default function OverlayPromptGenerator(props) {
       {showAspectRatioSelector ? (
         <div className="w-full shrink-0">
           <ImagePayloadAspectRatioSelector
-            label="Generation ratio"
+            label={uiText("Generation ratio")}
             value={aspectRatio}
             onChange={setAspectRatio}
             options={imageAspectRatioOptions}
@@ -370,7 +357,7 @@ export default function OverlayPromptGenerator(props) {
 
       <TextareaAutosize
         onChange={(event) => setPromptText(event.target.value)}
-        placeholder="Describe your prompt to generate an image"
+        placeholder={uiText("Describe your prompt to generate an image")}
         className={`${textareaShell} min-h-[5rem] w-full flex-1 resize-none overflow-y-auto ${isImageStudioPrompt ? "rounded-2xl px-4 py-3.5 text-sm leading-6" : "rounded-lg px-3 py-2"}`}
         minRows={isImageStudioPrompt ? 4 : isPortraitLayout ? 2 : 2}
         maxRows={promptTextareaMaxRows}
@@ -392,9 +379,7 @@ export default function OverlayPromptGenerator(props) {
               ? "w-full"
               : "min-w-[140px]"
           }
-        >
-          Submit
-        </CommonButton>
+        >{uiText("Submit")}</CommonButton>
       </div>
 
       {errorDisplay}

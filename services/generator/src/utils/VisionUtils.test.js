@@ -21,6 +21,40 @@ const silentLogger = {
   warn() {},
 };
 
+test('local Docker native Claude describes mounted images without a tunnel request', async (t) => {
+  const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+j2ioAAAAASUVORK5CYII=', 'base64');
+  const directory = mkdtempSync(path.join(os.tmpdir(), 'samsar-local-claude-vision-'));
+  writeFileSync(path.join(directory, 'frame.png'), png);
+  const overrides = {
+    CURRENT_ENV: 'standalone', SAMSAR_RUNTIME: 'docker', SAMSAR_DEPLOYMENT_EDITION: 'standalone',
+    SAMSAR_MEDIA_DELIVERY_MODE: 'docker-local', SAMSAR_ASSETS_V2_ROOT: directory,
+    ANTHROPIC_API_KEY: 'test-only', OPENROUTER_API_KEY: '', SAMSAR_API_KEY: '',
+    SAMSAR_FORCE_EXTERNAL_INFERENCE: '', SAMSAR_EXTERNAL_INFERENCE_ENABLED: '',
+  };
+  const previous = Object.fromEntries(Object.keys(overrides).map(key => [key, process.env[key]]));
+  Object.assign(process.env, overrides);
+  t.after(() => {
+    for (const [key, value] of Object.entries(previous)) {
+      if (value === undefined) delete process.env[key]; else process.env[key] = value;
+    }
+    rmSync(directory, { recursive: true, force: true });
+  });
+  const requests = [];
+  t.mock.method(globalThis, 'fetch', async (url, options) => {
+    assert.equal(url, 'https://api.anthropic.com/v1/messages', 'local vision must not contact a tunnel or signer');
+    const body = JSON.parse(options.body);
+    requests.push(body);
+    assert.deepEqual(body.messages[0].content[1].source, {
+      type: 'base64', media_type: 'image/png', data: png.toString('base64'),
+    });
+    return new Response(JSON.stringify({ content: [{ type: 'text', text: 'A local frame.' }] }));
+  });
+  for (const model of ['claude-fable-5.1-xhigh', 'claude-opus-5.5']) {
+    assert.equal(await __testOnly__.getDescriptionForImage('/assets_v2/frame.png', 'cinematic', model, '16:9', '', 'native'), 'A local frame.');
+  }
+  assert.equal(requests.length, 2);
+});
+
 test('OpenRouter vision models use operation-specific reasoning-safe output limits', () => {
   assert.equal(__testOnly__.getExternalVisionMaxTokens('QWEN3.8', 'description'), 16384);
   assert.equal(__testOnly__.getExternalVisionMaxTokens('QWEN3.8', 'score'), 8192);

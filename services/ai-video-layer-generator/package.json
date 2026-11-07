@@ -7,7 +7,7 @@
   "scripts": {
     "build": "node --check index.js && rg --files -0 -g \"*.js\" src | xargs -0 -n 50 node --check",
     "test": "node --test $(rg --files src -g '*test.js')",
-    "test:frame-drift": "node --test src/utils/FrameClock.test.js src/utils/GenerationHelper.frameDrift.test.js src/FrameDrift.test.js"
+    "test:frame-drift": "node --test src/utils/FrameClock.test.js src/utils/GenerationHelper.frameDrift.test.js src/FrameDrift.test.js src/ExactVideoTrim.test.js src/DerivativeFrameBudget.test.js src/VideoGenerationListener.test.js src/VideoGenerationListener.sourceScene.test.js src/utils/VideoTimeline.test.js src/sound_effect/FalSoundEffectPricing.test.js"
   },
   "author": "",
   "license": "ISC",

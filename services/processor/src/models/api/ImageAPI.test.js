@@ -215,3 +215,11 @@ test('standalone image prompt inference uses saved adapter routing without chang
     true,
   );
 });
+
+test('Sol image prompt routing uses the selected model adapter in production', () => {
+  for (const model of ['gpt-6.1-sol', 'gpt-6.1-sol-xhigh']) {
+    assert.equal(shouldUsePreferenceAwareImagePromptRouting(model, {
+      SAMSAR_DEPLOYMENT_EDITION: 'production',
+    }), true);
+  }
+});

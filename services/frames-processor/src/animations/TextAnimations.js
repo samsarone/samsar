@@ -211,13 +211,14 @@ function renderExactText(ctx, text, config) {
     width,
     height,
     lineHeight = 1,  // Default lineHeight to 1 if not provided
-    autoWrap
+    autoWrap,
+    preserveLineBreaks = false,
   } = config;
 
   // Split text by newline
   let lines = text.split('\n');
 
-  if (autoWrap) {
+  if (autoWrap && !preserveLineBreaks) {
     const maxWidth = 600;
     // Wrap each line if it exceeds max width
     // flatMap is used in case wrapped lines increase line count

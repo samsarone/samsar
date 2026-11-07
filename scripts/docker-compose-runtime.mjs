@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { createHash } from 'node:crypto';
 import {
   GENBLAZE_FINAL_UP_ARGS,
   hasValidatedGenBlazeRuntimeCatalog,
@@ -19,6 +20,40 @@ export const ALL_RUNTIME_COMPOSE_PROFILES = Object.freeze([
   'reverse-proxy',
   'genblaze',
 ]);
+
+// Compose tracks bind-mount paths, not their contents. Include startup-only
+// configuration in service labels so changed catalogs/logger/bootstrap files
+// recreate their consumers, while unchanged files keep stable config hashes.
+export function getRuntimeContentOverride(root) {
+  const filesByService = {
+    'mongo-auth-bootstrap': ['deploy/compose/mongo/bootstrap-auth.sh'],
+    genblaze: ['runtime/config/genblaze-model-catalog.json'],
+    'media-gateway': ['deploy/compose/media-gateway.conf'],
+    'reverse-proxy': ['runtime/reverse-proxy/nginx.conf'],
+    loki: ['deploy/compose/logger/loki-config.yml'],
+    promtail: ['deploy/compose/logger/promtail-config.yml'],
+    grafana: ['deploy/compose/logger/grafana/provisioning'],
+  };
+  const services = {};
+  for (const [service, paths] of Object.entries(filesByService)) {
+    const hash = createHash('sha256');
+    let count = 0;
+    const visit = relative => {
+      const file = path.join(root, relative);
+      if (!fs.existsSync(file)) return;
+      const stat = fs.lstatSync(file);
+      if (stat.isDirectory()) {
+        for (const entry of fs.readdirSync(file).sort()) visit(path.join(relative, entry));
+      } else if (stat.isFile()) {
+        hash.update(relative).update('\0').update(fs.readFileSync(file)).update('\0');
+        count += 1;
+      }
+    };
+    paths.forEach(visit);
+    if (count) services[service] = { labels: { 'samsar.runtime-content': hash.digest('hex') } };
+  }
+  return { services };
+}
 
 export function getRuntimeComposeProfiles(config = {}, { genBlazeCatalog } = {}) {
   const services = config.services || {};
@@ -109,6 +144,63 @@ async function synchronizeGrafanaAdminPassword(runCompose, profiles) {
   ]);
 }
 
+// Do not restart the one-shot bootstrap job alongside a running mongod: both
+// mount the same database. Reuse a completed job only with matching credentials
+// and Compose configuration; otherwise use the existing offline migration.
+export async function canReuseMongoBootstrap({ captureCompose, inspectBootstrap }) {
+  const ids = (await captureCompose(['local-mongo'], ['ps', '--all', '--quiet', 'mongo-auth-bootstrap'])).trim().split(/\s+/).filter(Boolean);
+  if (ids.length !== 1) return false;
+  const hashOutput = (await captureCompose(['local-mongo'], ['config', '--hash', 'mongo-auth-bootstrap'])).trim();
+  const hash = hashOutput.split(/\s+/).at(-1);
+  if (!/^[a-f0-9]{64}$/.test(hash || '')) throw new Error('Unable to read the MongoDB bootstrap configuration hash.');
+  return (await inspectBootstrap(ids[0])).trim() === `exited 0 ${hash}`;
+}
+
+// Explicit dependency groups keep Compose from rerunning the completed MongoDB
+// bootstrap when --no-deps is used. Each group is healthy before its dependents
+// start. GenBlaze still starts last, after the processor and media tunnel.
+export function getIncrementalServiceGroups(services) {
+  const pending = new Set(Object.keys(services).filter(name => name !== 'mongo-auth-bootstrap'));
+  const groups = [];
+  while (pending.size) {
+    const ready = [...pending].filter(name => {
+      if (name === 'genblaze' && pending.size > 1) return false;
+      const dependencies = services[name].depends_on || {};
+      return (Array.isArray(dependencies) ? dependencies : Object.keys(dependencies))
+        .every(dependency => !pending.has(dependency));
+    });
+    if (!ready.length) throw new Error('Cannot order the configured Docker services: cyclic dependencies.');
+    groups.push(ready);
+    ready.forEach(name => pending.delete(name));
+  }
+  return groups;
+}
+
+export async function updateRuntimeServices(profiles, { runCompose, captureCompose, inspectBootstrap }) {
+  // BuildKit reuses unchanged layers/images. No running container is touched if
+  // a changed image fails to build.
+  await runCompose(profiles, ['build']);
+  const { services } = JSON.parse(await captureCompose(profiles, ['config', '--format', 'json']));
+  const groups = getIncrementalServiceGroups(services);
+  if (!profiles.includes('genblaze')) {
+    await runCompose(['genblaze'], ['rm', '-s', '-f', 'genblaze']);
+  }
+  if (profiles.includes('local-mongo') && !await canReuseMongoBootstrap({ captureCompose, inspectBootstrap })) {
+    await prepareLocalMongoAuthentication(runCompose, profiles);
+  }
+  for (const group of groups) {
+    await runCompose(profiles, [
+      'up', '-d', '--no-build', '--no-deps', '--remove-orphans', '--wait', '--wait-timeout', '180', ...group,
+    ]);
+  }
+  await synchronizeGrafanaAdminPassword(runCompose, profiles);
+  if (profiles.includes('reverse-proxy')) {
+    // Reload bind-mounted nginx config and re-resolve recreated upstreams
+    // without unnecessarily replacing the proxy container.
+    await runCompose(profiles, ['exec', '-T', 'reverse-proxy', 'sh', '-ec', 'nginx -t && nginx -s reload']);
+  }
+}
+
 export async function startRuntimeServices(profiles, { restart = false, runCompose }) {
   // Finish every image build before stopping or replacing running services.
   if (restart) await runCompose(profiles, ['build']);
@@ -136,8 +228,8 @@ export async function startRuntimeServices(profiles, { restart = false, runCompo
 
 async function main() {
   const action = process.argv[2];
-  if (!['config', 'up', 'restart', 'down'].includes(action)) {
-    throw new Error('Usage: node scripts/docker-compose-runtime.mjs <config|up|restart|down>');
+  if (!['config', 'up', 'restart', 'update', 'down'].includes(action)) {
+    throw new Error('Usage: node scripts/docker-compose-runtime.mjs <config|up|restart|update|down>');
   }
 
   const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -182,6 +274,31 @@ async function main() {
   }
   if (action === 'down') {
     await runDockerCompose(root, rootEnvPath, composeFile, profiles, ['down', '--remove-orphans']);
+    return;
+  }
+
+  if (action === 'update') {
+    const contentOverride = getRuntimeContentOverride(root);
+    const overrideArgs = [];
+    if (Object.keys(contentOverride.services).length) {
+      const overridePath = path.join(root, 'runtime', 'config', 'compose.bind-content.json');
+      fs.mkdirSync(path.dirname(overridePath), { recursive: true, mode: 0o700 });
+      fs.writeFileSync(overridePath, JSON.stringify(contentOverride), { mode: 0o600 });
+      overrideArgs.push('-f', overridePath);
+    }
+    const composeArgs = (selected, args) => [
+      'compose', '--env-file', rootEnvPath, '-f', composeFile, ...overrideArgs,
+      ...selected.flatMap(profile => ['--profile', profile]), ...args,
+    ];
+    await updateRuntimeServices(profiles, {
+      // A conflict must not silently turn an incremental update into a forced
+      // recreation of the entire stack through the legacy recovery helper.
+      runCompose: (selected, args) => executeDocker('docker', composeArgs(selected, args), root),
+      captureCompose: (selected, args) => executeDocker('docker', composeArgs(selected, args), root, { capture: true }),
+      inspectBootstrap: id => executeDocker('docker', [
+        'inspect', '--format', '{{.State.Status}} {{.State.ExitCode}} {{index .Config.Labels "com.docker.compose.config-hash"}}', id,
+      ], root, { capture: true }),
+    });
     return;
   }
 

@@ -102,7 +102,7 @@ describe('recovery email validation and request guards', () => {
     const { form } = mountRecovery();
     fireEvent.change(screen.getByLabelText('Email', { exact: true }), { target: { value: 'Jane@Example.COM' } });
     act(() => { fireEvent.submit(form); fireEvent.submit(form); });
-    expect(boundary.post).toHaveBeenCalledExactlyOnceWith(expect.stringMatching(/\/users\/forgot_password$/), { email: 'jane@example.com' });
+    expect(boundary.post).toHaveBeenCalledExactlyOnceWith(expect.stringMatching(/\/users\/forgot_password$/), { email: 'jane@example.com', language: 'en' });
     expect(screen.getByRole('button', { name: 'Reset Password' })).toBeDisabled();
     await act(async () => request.resolve({ data: {} }));
     expect(screen.getByText('Check your email for password reset instructions.')).toBeVisible();

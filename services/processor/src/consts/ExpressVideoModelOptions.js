@@ -1,3 +1,4 @@
+import { normalizeKlingModelKey } from '../utils/KlingModel.js';
 import { EXPRESS_VIDEO_CREDITS_PER_SECOND_BY_MODEL } from './pricing/ExpressVideoPricingDistribution.js';
 import { isVideoModelTemporarilyDisabled } from './VideoModelAvailability.js';
 
@@ -16,7 +17,7 @@ export const STANDALONE_PROVIDER_BILLED_EXPRESS_VIDEO_MODEL_KEYS = Object.freeze
 
 export const EXPRESS_VIDEO_VIDEO_MODEL_KEYS = Object.freeze([
   ...new Set([
-    ...Object.keys(EXPRESS_VIDEO_CREDITS_PER_SECOND_BY_MODEL),
+    ...Object.keys(EXPRESS_VIDEO_CREDITS_PER_SECOND_BY_MODEL).map(normalizeKlingModelKey),
     ...STANDALONE_PROVIDER_BILLED_EXPRESS_VIDEO_MODEL_KEYS,
   ]),
 ].filter((modelKey) => !isVideoModelTemporarilyDisabled(modelKey)));

@@ -459,6 +459,32 @@ async function renderTileBuffer({ imageBuffer, width, height }) {
     .toBuffer();
 }
 
+async function cropTransparentImagePadding(sourceBuffer) {
+  const oriented = await sharp(sourceBuffer, { failOn: 'none' }).rotate().png().toBuffer();
+  const metadata = await sharp(oriented).metadata();
+  if (!metadata.hasAlpha) return oriented;
+
+  // Inspect alpha only: never trim opaque white/black margins or image content.
+  const { data, info } = await sharp(oriented).extractChannel('alpha').raw()
+    .toBuffer({ resolveWithObject: true });
+  let left = info.width;
+  let top = info.height;
+  let right = -1;
+  let bottom = -1;
+  for (let y = 0; y < info.height; y += 1) {
+    for (let x = 0; x < info.width; x += 1) {
+      if (data[y * info.width + x] === 0) continue;
+      left = Math.min(left, x);
+      right = Math.max(right, x);
+      top = Math.min(top, y);
+      bottom = Math.max(bottom, y);
+    }
+  }
+  if (right < left || bottom < top) return oriented;
+  return sharp(oriented).extract({ left, top, width: right - left + 1, height: bottom - top + 1 })
+    .png().toBuffer();
+}
+
 async function renderCenterPanelBuffer({
   ctaUrl,
   outroCtaImage = null,
@@ -479,13 +505,14 @@ async function renderCenterPanelBuffer({
   let centerLeft = qrFrameX;
   let centerTop = qrFrameY;
   let centerType = 'qr';
+  let contentWidth = qrFrameSize;
+  let contentHeight = qrFrameSize;
 
   if (normalizedOutroCtaImage) {
     const sourceBuffer = await loadImageBuffer(normalizedOutroCtaImage.source, {
       assetsV2Root: assetsRoot,
     });
-    centerBuffer = await sharp(sourceBuffer, { failOn: 'none' })
-      .rotate()
+    centerBuffer = await sharp(await cropTransparentImagePadding(sourceBuffer))
       .resize(qrFrameSize, qrFrameSize, {
         fit: 'inside',
         withoutEnlargement: false,
@@ -493,8 +520,10 @@ async function renderCenterPanelBuffer({
       .png()
       .toBuffer();
     const centerMetadata = await sharp(centerBuffer).metadata();
-    centerLeft = qrFrameX + Math.max(0, Math.round((qrFrameSize - (centerMetadata.width || qrFrameSize)) / 2));
-    centerTop = qrFrameY + Math.max(0, Math.round((qrFrameSize - (centerMetadata.height || qrFrameSize)) / 2));
+    contentWidth = centerMetadata.width || qrFrameSize;
+    contentHeight = centerMetadata.height || qrFrameSize;
+    centerLeft = qrFrameX + Math.max(0, Math.round((qrFrameSize - contentWidth) / 2));
+    centerTop = qrFrameY + Math.max(0, Math.round((qrFrameSize - contentHeight) / 2));
     centerType = 'cta_image';
   } else {
     centerBuffer = await QRCode.toBuffer(ctaUrl, {
@@ -519,6 +548,7 @@ async function renderCenterPanelBuffer({
 
   return {
     buffer,
+    contentBounds: { x: centerLeft, y: centerTop, width: contentWidth, height: contentHeight },
     focusArea: {
       x: qrFrameX,
       y: qrFrameY,
@@ -624,6 +654,11 @@ export async function generateOutroCompositionAssetsFromImageList({
     width: layout.centerSize,
     height: layout.centerSize,
     type: centerPanel.centerType,
+    contentBounds: {
+      ...centerPanel.contentBounds,
+      x: layout.centerX + centerPanel.contentBounds.x,
+      y: layout.centerY + centerPanel.contentBounds.y,
+    },
   };
 
   return {

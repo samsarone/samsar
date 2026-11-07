@@ -1,3 +1,4 @@
+import { useUiLanguage } from '../../../../hooks/useUiLanguage.js';
 // src/components/util/RangeOverlaySlider.js
 import { useCallback, useEffect, useState, useRef } from 'react';
 import ReactSlider from 'react-slider';
@@ -22,6 +23,7 @@ export default function RangeOverlaySlider({
   onDragAmountChange, // Add this prop
   onBeforeChange, onAfterChange 
 }) {
+  useUiLanguage();
   const [sliderValues, setSliderValues] = useState(value);
   const [initialValue, setInitialValue] = useState(null);
   const sliderRef = useRef(null);

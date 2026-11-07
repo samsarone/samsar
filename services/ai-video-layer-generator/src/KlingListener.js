@@ -1,4 +1,5 @@
 import { fal } from "@fal-ai/client";
+import { isKlingV4Model, validateKlingV4Duration } from './utils/KlingModel.js';
 const FAL_API_KEY = process.env.FAL_API_KEY;
 
 fal.config({
@@ -6,7 +7,22 @@ fal.config({
 });
 
 
-export async function generateKlingVideoLayer(payload) {
+export function buildKlingInputPayload(payload) {
+  if (isKlingV4Model(payload.model)) {
+    const input = {
+      prompt: payload.prompt,
+      duration: validateKlingV4Duration(payload.duration ?? 5),
+      resolution: '720p',
+    };
+    if (payload.model === 'KLINGIMGTOVID4') {
+      if (!payload.startImage) throw new Error('Kling 4 image-to-video requires a starting image.');
+      input.start_image_url = payload.startImage;
+      if (payload.endImage) input.end_image_url = payload.endImage;
+    } else if (['16:9', '9:16', '1:1', '21:9'].includes(payload.aspectRatio)) {
+      input.aspect_ratio = payload.aspectRatio;
+    }
+    return input;
+  }
 
   const { startImage , generationId, prompt, aspectRatio, model, duration = 5} = payload;
 
@@ -36,10 +52,13 @@ export async function generateKlingVideoLayer(payload) {
     }
   }
 
-const KLING_VIDEO_LINK = getKlingVideLinkForModel(model);
+  return inputPayload;
+}
 
-  const { request_id } = await fal.queue.submit(KLING_VIDEO_LINK, {
-    input: inputPayload,
+export async function generateKlingVideoLayer(payload, dependencies = {}) {
+  const client = dependencies.fal || fal;
+  const { request_id } = await client.queue.submit(getKlingVideoEndpoint(payload.model), {
+    input: buildKlingInputPayload(payload),
   });
 
 
@@ -47,15 +66,16 @@ const KLING_VIDEO_LINK = getKlingVideLinkForModel(model);
 }
 
 
-export async function listenToPendingKlingVideoRequest(payload) {
+export async function listenToPendingKlingVideoRequest(payload, dependencies = {}) {
+  const client = dependencies.fal || fal;
 
   const { generationId, model } = payload;
 
 
-  const KLING_VIDEO_LINK = getKlingVideLinkForModel(model);
+  const KLING_VIDEO_LINK = getKlingVideoEndpoint(model);
 
 
-  const responseStatusData = await fal.queue.status(KLING_VIDEO_LINK, {
+  const responseStatusData = await client.queue.status(KLING_VIDEO_LINK, {
     requestId: generationId,
     logs: true,
   });
@@ -66,7 +86,7 @@ export async function listenToPendingKlingVideoRequest(payload) {
 
   if (responseStatus === 'COMPLETED') {
 
-    const result = await fal.queue.result(KLING_VIDEO_LINK, {
+    const result = await client.queue.result(KLING_VIDEO_LINK, {
       requestId: generationId
     });
 
@@ -88,7 +108,9 @@ export async function listenToPendingKlingVideoRequest(payload) {
 
 }
 
-function getKlingVideLinkForModel(model) {
+export function getKlingVideoEndpoint(model) {
+  if (model === 'KLINGIMGTOVID4') return 'kling/v4/image-to-video';
+  if (model === 'KLINGTXTTOVID4') return 'kling/v4/text-to-video';
 
 
   if (model === 'KLINGTXTTOVIDSTANDARD') {

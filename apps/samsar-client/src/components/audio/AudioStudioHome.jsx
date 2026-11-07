@@ -1,3 +1,5 @@
+import { useUiLanguage } from '../../hooks/useUiLanguage.js';
+import { translateText as uiText, formatUiStatus } from '../../utils/localization.js';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import axios from 'axios';
 import {
@@ -17,6 +19,7 @@ import { MdAudiotrack, MdGraphicEq } from 'react-icons/md';
 import CommonContainer from '../common/CommonContainer.tsx';
 import { useColorMode } from '../../contexts/ColorMode.jsx';
 import { useUser } from '../../contexts/UserContext.jsx';
+import { useAlertDialog } from '../../contexts/AlertDialogContext.jsx';
 import { getHeaders } from '../../utils/web.jsx';
 import { MUSIC_PROVIDERS, TTS_COMBINED_SPEAKER_TYPES } from '../../constants/Types.ts';
 import { useAudioProviderAvailability } from '../../hooks/useAudioProviderAvailability.js';
@@ -43,14 +46,14 @@ const AUDIO_JOIN_POLL_INTERVAL_MS = 1500;
 const AUDIO_LIBRARY_PAGE_SIZE = 18;
 
 const AUDIO_TYPES = [
-  { value: AUDIO_TYPE_MUSIC, label: AUDIO_TYPE_LABELS[AUDIO_TYPE_MUSIC], icon: FaMusic },
-  { value: AUDIO_TYPE_SPEECH, label: AUDIO_TYPE_LABELS[AUDIO_TYPE_SPEECH], icon: MdAudiotrack },
-  { value: AUDIO_TYPE_SOUND_EFFECT, label: AUDIO_TYPE_LABELS[AUDIO_TYPE_SOUND_EFFECT], icon: FaWaveSquare },
+  { value: AUDIO_TYPE_MUSIC, get label() { return AUDIO_TYPE_LABELS[AUDIO_TYPE_MUSIC]; }, icon: FaMusic },
+  { value: AUDIO_TYPE_SPEECH, get label() { return AUDIO_TYPE_LABELS[AUDIO_TYPE_SPEECH]; }, icon: MdAudiotrack },
+  { value: AUDIO_TYPE_SOUND_EFFECT, get label() { return AUDIO_TYPE_LABELS[AUDIO_TYPE_SOUND_EFFECT]; }, icon: FaWaveSquare },
 ];
 
 const SOUND_EFFECT_MODELS = [
-  { value: 'SDAUDIO', label: 'Stable Audio' },
-  { value: 'CUSTOM_TEXT_TO_SOUND_EFFECT', label: 'Custom Sound Effect' },
+  { value: 'SDAUDIO', get label() { return uiText("Stable Audio"); } },
+  { value: 'CUSTOM_TEXT_TO_SOUND_EFFECT', get label() { return uiText("Custom Sound Effect"); } },
 ];
 
 function getApiErrorMessage(error, fallback) {
@@ -61,7 +64,7 @@ function getAudioItemTitle(item) {
   const title = typeof item?.title === 'string' ? item.title.trim() : '';
   const prompt = typeof item?.prompt === 'string' ? item.prompt.trim() : '';
   const description = typeof item?.description === 'string' ? item.description.trim() : '';
-  return title || prompt || description || AUDIO_TYPE_LABELS[item?.libraryType] || 'Audio item';
+  return title || prompt || description || AUDIO_TYPE_LABELS[item?.libraryType] || uiText("Audio item");
 }
 
 function getAudioItemDescription(item) {
@@ -73,6 +76,7 @@ function getAudioItemDescription(item) {
 }
 
 function AudioStudioPlayer({ item, className = '', unavailableClassName = '' }) {
+  useUiLanguage();
   const audioUrls = useMemo(
     () => resolveAudioStudioUrls(item, PROCESSOR_API),
     [item]
@@ -87,7 +91,7 @@ function AudioStudioPlayer({ item, className = '', unavailableClassName = '' }) 
   }, [audioUrlKey]);
 
   if (audioUrls.length === 0 || unavailable) {
-    return <div className={unavailableClassName}>Preview unavailable</div>;
+    return <div className={unavailableClassName}>{uiText("Preview unavailable")}</div>;
   }
   const resolvedSourceIndex = Math.min(sourceIndex, audioUrls.length - 1);
 
@@ -106,15 +110,14 @@ function AudioStudioPlayer({ item, className = '', unavailableClassName = '' }) 
           setUnavailable(true);
         }
       }}
-    >
-      Your browser does not support audio playback.
-    </audio>
+    >{uiText("Your browser does not support audio playback.")}</audio>
   );
 }
 
 function AudioTypeTabs({ value, onChange, counts, buttonClassName }) {
+  useUiLanguage();
   return (
-    <div className="flex flex-wrap items-center gap-2" role="tablist" aria-label="Audio categories">
+    <div className="flex flex-wrap items-center gap-2" role="tablist" aria-label={uiText("Audio categories")}>
       {AUDIO_TYPES.map((audioType) => {
         const Icon = audioType.icon;
         const active = value === audioType.value;
@@ -132,7 +135,7 @@ function AudioTypeTabs({ value, onChange, counts, buttonClassName }) {
             <Icon className="shrink-0" />
             <span>{audioType.label}</span>
             {counts ? (
-              <span className={`rounded-full px-1.5 py-0.5 text-[10px] ${active ? 'bg-[#f6c453]/15' : 'bg-black/10'}`}>
+              <span className={`rounded-full px-1.5 py-0.5 text-micro ${active ? 'bg-[#f6c453]/15' : 'bg-black/10'}`}>
                 {counts[audioType.value] || 0}
               </span>
             ) : null}
@@ -151,13 +154,14 @@ function AudioLibraryCard({
   onSelect,
   selectable = false,
 }) {
+  useUiLanguage();
   const itemId = getAudioStudioItemId(item);
   const title = getAudioItemTitle(item);
   const description = getAudioItemDescription(item);
   const cardClass = isDark
     ? 'border-[#3a4050] bg-[#181b24] shadow-[0_14px_34px_rgba(0,0,0,0.25)]'
     : 'border-slate-200 bg-white shadow-[0_14px_30px_rgba(15,23,42,0.08)]';
-  const mutedText = isDark ? 'text-slate-400' : 'text-slate-500';
+  const mutedText = isDark ? "text-slate-400" : "text-slate-500";
 
   return (
     <article
@@ -185,7 +189,7 @@ function AudioLibraryCard({
           className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ${
             isSelected ? 'bg-[#f6c453] text-[#111319]' : isDark ? 'bg-[#252936] text-[#ff7a84]' : 'bg-rose-50 text-rose-600'
           }`}
-          aria-label={selectable ? `${isSelected ? 'Remove' : 'Select'} ${title}` : `View ${title}`}
+          aria-label={selectable ? `${isSelected ? uiText('Remove') : uiText('Select')} ${title}` : uiText("View {value0}", { value0: title })}
         >
           {selectable && isSelected ? <FaCheck /> : <MdGraphicEq className="text-xl" />}
         </button>
@@ -193,8 +197,8 @@ function AudioLibraryCard({
           <div className="flex items-start justify-between gap-2">
             <div className="min-w-0">
               <h3 className="truncate text-sm font-semibold" title={title}>{title}</h3>
-              <div className={`mt-1 flex flex-wrap items-center gap-2 text-[11px] ${mutedText}`}>
-                <span>{item.projectName || 'Audio Studio'}</span>
+              <div className={`mt-1 flex flex-wrap items-center gap-2 text-caption ${mutedText}`}>
+                <span>{item.projectName || uiText("Audio Studio")}</span>
                 <span aria-hidden="true">•</span>
                 <span>{formatAudioStudioDuration(item.duration)}</span>
               </div>
@@ -215,15 +219,17 @@ function AudioLibraryCard({
         className="mt-4 h-9 w-full"
         unavailableClassName={`mt-4 rounded-lg px-3 py-2 text-xs ${mutedText}`}
       />
-      <span className="sr-only">Audio library item {itemId}</span>
+      <span className="sr-only">{uiText("Audio library item {value0}", { value0: itemId })}</span>
     </article>
   );
 }
 
 export default function AudioStudioHome() {
+  useUiLanguage();
   const { colorMode } = useColorMode();
   const isDark = colorMode === 'dark';
   const { user, getUserAPI } = useUser();
+  const { openAlertDialog, closeAlertDialog } = useAlertDialog();
   const { audioAvailability, isLoading: isAudioAvailabilityLoading } = useAudioProviderAvailability();
 
   const [activeAction, setActiveAction] = useState('generate');
@@ -281,7 +287,7 @@ export default function AudioStudioHome() {
   const inputClass = isDark
     ? 'border-[#4a5265] bg-[#11131a] text-slate-100 placeholder:text-slate-500 focus:border-[#f6c453] focus:ring-[#f6c453]/20'
     : 'border-slate-300 bg-white text-slate-900 placeholder:text-slate-400 focus:border-rose-400 focus:ring-rose-300/30';
-  const mutedText = isDark ? 'text-slate-400' : 'text-slate-500';
+  const mutedText = isDark ? "text-slate-400" : "text-slate-500";
   const neutralButton = isDark
     ? 'border border-[#4a5265] bg-[#20232e] text-slate-200 hover:border-[#f6c453]/60 hover:bg-[#292d3a]'
     : 'border border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50';
@@ -364,7 +370,7 @@ export default function AudioStudioHome() {
       return items;
     } catch (error) {
       if (libraryRequestRef.current !== requestNumber) return [];
-      setLibraryError(getApiErrorMessage(error, 'Unable to load your audio library.'));
+      setLibraryError(getApiErrorMessage(error, uiText("Unable to load your audio library.")));
       return [];
     } finally {
       if (libraryRequestRef.current === requestNumber) {
@@ -414,7 +420,7 @@ export default function AudioStudioHome() {
       if (['COMPLETED', 'SUCCEEDED', 'SUCCESS', 'DONE'].includes(status)) {
         localStorage.removeItem(PENDING_AUDIO_STUDIO_REQUEST_KEY);
         setGenerationPending(false);
-        setGenerationStatus('Audio ready');
+        setGenerationStatus("Audio ready");
         const completedType = response.data?.item?.libraryType || generationType;
         if (response.data?.item) {
           setSelectedItem(response.data.item);
@@ -434,7 +440,7 @@ export default function AudioStudioHome() {
       if (['FAILED', 'ERROR', 'CANCELLED'].includes(status)) {
         localStorage.removeItem(PENDING_AUDIO_STUDIO_REQUEST_KEY);
         setGenerationPending(false);
-        setGenerationError(response.data?.error || response.data?.message || 'Audio generation failed.');
+        setGenerationError(response.data?.error || response.data?.message || uiText("Audio generation failed."));
         return;
       }
 
@@ -448,7 +454,7 @@ export default function AudioStudioHome() {
       if (statusCode === 404 || statusCode === 401) {
         localStorage.removeItem(PENDING_AUDIO_STUDIO_REQUEST_KEY);
         setGenerationPending(false);
-        setGenerationError(getApiErrorMessage(error, 'The audio generation request is no longer available.'));
+        setGenerationError(getApiErrorMessage(error, uiText("The audio generation request is no longer available.")));
         return;
       }
       generationPollTimerRef.current = window.setTimeout(
@@ -462,7 +468,7 @@ export default function AudioStudioHome() {
     const pendingRequestId = localStorage.getItem(PENDING_AUDIO_STUDIO_REQUEST_KEY);
     if (!pendingRequestId || !user?._id) return;
     setGenerationPending(true);
-    setGenerationStatus('Checking your audio…');
+    setGenerationStatus("Checking your audio…");
     void checkGenerationStatus(pendingRequestId);
   }, [checkGenerationStatus, user?._id]);
 
@@ -485,14 +491,14 @@ export default function AudioStudioHome() {
         localStorage.removeItem(PENDING_AUDIO_JOIN_REQUEST_KEY);
         activeJoinRequestRef.current = '';
         setJoinPending(false);
-        setJoinStatus('Joined audio ready');
+        setJoinStatus("Joined audio ready");
         const item = response.data?.item;
         const completedType = item?.libraryType || joinType;
         if (item) setSelectedItem(item);
         setSelectedJoinItems([]);
         setJoinTitle('');
         setFadeAudioAtEnds(false);
-        setJoinSuccess(`Joined ${response.data?.joinedItemCount || 0} audio items.`);
+        setJoinSuccess(uiText("Joined {value0} audio items.", { value0: response.data?.joinedItemCount || 0 }));
         setSearchTerm('');
         setLibraryType(completedType);
         setActiveAction('generate');
@@ -511,7 +517,7 @@ export default function AudioStudioHome() {
         activeJoinRequestRef.current = '';
         setJoinPending(false);
         setJoinStatus('');
-        setJoinError(response.data?.error || response.data?.message || 'Audio join failed.');
+        setJoinError(response.data?.error || response.data?.message || uiText("Audio join failed."));
         return;
       }
 
@@ -527,7 +533,7 @@ export default function AudioStudioHome() {
         activeJoinRequestRef.current = '';
         setJoinPending(false);
         setJoinStatus('');
-        setJoinError(getApiErrorMessage(error, 'The audio join request is no longer available.'));
+        setJoinError(getApiErrorMessage(error, uiText("The audio join request is no longer available.")));
         return;
       }
       joinPollTimerRef.current = window.setTimeout(
@@ -542,7 +548,7 @@ export default function AudioStudioHome() {
     if (!pendingRequestId || !user?._id || activeJoinRequestRef.current === pendingRequestId) return;
     activeJoinRequestRef.current = pendingRequestId;
     setJoinPending(true);
-    setJoinStatus('Checking joined audio…');
+    setJoinStatus("Checking joined audio…");
     void checkJoinStatus(pendingRequestId);
   }, [checkJoinStatus, user?._id]);
 
@@ -561,7 +567,7 @@ export default function AudioStudioHome() {
     event.preventDefault();
     if (!prompt.trim() || generationPending) return;
     setGenerationError('');
-    setGenerationStatus('Submitting generation…');
+    setGenerationStatus("Submitting generation…");
     setGenerationPending(true);
 
     const payload = {
@@ -596,10 +602,10 @@ export default function AudioStudioHome() {
         getHeaders()
       );
       const requestId = response.data?.request_id || response.data?.requestId;
-      if (!requestId) throw new Error('The audio generation response did not include a request id.');
+      if (!requestId) throw new Error(uiText("The audio generation response did not include a request id."));
       localStorage.setItem(PENDING_AUDIO_STUDIO_REQUEST_KEY, requestId);
       if (!mountedRef.current) return;
-      setGenerationStatus('Generating your audio…');
+      setGenerationStatus("Generating your audio…");
       setLibraryType(generationType);
       await getUserAPI();
       void checkGenerationStatus(requestId);
@@ -607,7 +613,7 @@ export default function AudioStudioHome() {
       if (!mountedRef.current) return;
       setGenerationPending(false);
       setGenerationStatus('');
-      setGenerationError(getApiErrorMessage(error, 'Unable to request audio generation.'));
+      setGenerationError(getApiErrorMessage(error, uiText("Unable to request audio generation.")));
     }
   };
 
@@ -670,17 +676,17 @@ export default function AudioStudioHome() {
         getHeaders()
       );
       const requestId = response.data?.requestId || response.data?.request_id;
-      if (!requestId) throw new Error('The audio join response did not include a request id.');
+      if (!requestId) throw new Error(uiText("The audio join response did not include a request id."));
       localStorage.setItem(PENDING_AUDIO_JOIN_REQUEST_KEY, requestId);
       if (!mountedRef.current) return;
       activeJoinRequestRef.current = requestId;
-      setJoinStatus('Join queued…');
+      setJoinStatus("Join queued…");
       void checkJoinStatus(requestId);
     } catch (error) {
       if (!mountedRef.current) return;
       setJoinPending(false);
       setJoinStatus('');
-      setJoinError(getApiErrorMessage(error, 'Unable to join the selected audio items.'));
+      setJoinError(getApiErrorMessage(error, uiText("Unable to join the selected audio items.")));
     }
   };
 
@@ -690,42 +696,73 @@ export default function AudioStudioHome() {
       ? availableSpeakers.length === 0
       : availableSoundEffectModels.length === 0;
 
+  const openAudioActions = () => {
+    openAlertDialog(
+      <div role="dialog" aria-label={uiText("Audio actions")}>
+        <h2 className="text-lg font-semibold">{uiText("Audio actions")}</h2>
+        <div className="mt-4 flex flex-col gap-2">
+          {AUDIO_TYPES.map((audioType) => (
+            <button
+              key={audioType.value}
+              type="button"
+              className={`${neutralButton} rounded-lg px-4 py-3 text-left text-sm`}
+              onClick={() => {
+                setActiveAction('generate');
+                setGenerationType(audioType.value);
+                setDuration(audioType.value === AUDIO_TYPE_SOUND_EFFECT ? 5 : 30);
+                setGenerationError('');
+                closeAlertDialog();
+              }}
+            >{uiText("Generate {value0}", { value0: audioType.label.toLowerCase() })}</button>
+          ))}
+          <button
+            type="button"
+            className={`${neutralButton} rounded-lg px-4 py-3 text-left text-sm`}
+            onClick={() => {
+              setActiveAction('join');
+              closeAlertDialog();
+            }}
+          >{uiText("Join audio")}</button>
+        </div>
+      </div>,
+      undefined,
+      false,
+      { centerContent: true, containerClassName: 'w-full max-w-[420px]' }
+    );
+  };
+
   return (
-    <CommonContainer>
+    <CommonContainer openAudioActions={openAudioActions}>
       <div className={`${surfaceClass} workspace-page grid h-[100dvh] grid-cols-1 overflow-hidden pt-[var(--app-nav-height)] lg:grid-cols-[minmax(0,1fr)_minmax(290px,18%)]`}>
         <main className="workspace-scroll min-h-0 overflow-y-auto px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
           {activeAction === 'generate' ? (
             <div className="mx-auto max-w-6xl">
               <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
                 <div>
-                  <div className="text-xs font-semibold uppercase tracking-[0.24em] text-[#ff6572]">Audio canvas</div>
-                  <h1 className="mt-2 text-2xl font-semibold sm:text-3xl">Generate, preview, and organize audio</h1>
-                  <p className={`mt-2 max-w-2xl text-sm ${mutedText}`}>
-                    New audio appears here when generation completes. Browse your library by audio type and preview any item in place.
-                  </p>
+                  <div className="text-xs font-semibold uppercase tracking-[0.24em] text-[#ff6572]">{uiText("Audio canvas")}</div>
+                  <h1 className="mt-2 text-2xl font-semibold sm:text-3xl">{uiText("Generate, preview, and organize audio")}</h1>
+                  <p className={`mt-2 max-w-2xl text-sm ${mutedText}`}>{uiText("New audio appears here when generation completes. Browse your library by audio type and preview any item in place.")}</p>
                 </div>
                 <button
                   type="button"
                   onClick={() => void fetchLibrary()}
                   className={`${neutralButton} inline-flex min-h-10 items-center justify-center gap-2 rounded-lg px-3 text-xs font-semibold`}
                 >
-                  <FaSyncAlt className={libraryLoading ? 'animate-spin' : ''} />
-                  Refresh library
-                </button>
+                  <FaSyncAlt className={libraryLoading ? 'animate-spin' : ''} />{uiText("Refresh library")}</button>
               </div>
 
               {generationPending ? (
                 <div className={`mt-6 flex items-center gap-3 rounded-2xl border p-4 ${panelClass}`} role="status">
                   <div className="h-9 w-9 animate-spin rounded-full border-2 border-[#ff6572] border-t-transparent" />
                   <div>
-                    <div className="text-sm font-semibold">{generationStatus || 'Generating your audio…'}</div>
-                    <div className={`mt-1 text-xs ${mutedText}`}>You can leave this view; polling resumes when you return.</div>
+                    <div className="text-sm font-semibold">{generationStatus || uiText("Generating your audio…")}</div>
+                    <div className={`mt-1 text-xs ${mutedText}`}>{uiText("You can leave this view; polling resumes when you return.")}</div>
                   </div>
                 </div>
               ) : null}
 
               {selectedItem ? (
-                <section className={`mt-6 app-panel overflow-hidden rounded-3xl border ${panelClass}`} aria-label="Selected audio preview">
+                <section className={`mt-6 app-panel overflow-hidden rounded-3xl border ${panelClass}`} aria-label={uiText("Selected audio preview")}>
                   <div className="grid gap-0 md:grid-cols-[minmax(0,1fr)_260px]">
                     <div className="p-6 sm:p-8">
                       <div className="flex items-center gap-3">
@@ -734,7 +771,7 @@ export default function AudioStudioHome() {
                         </div>
                         <div className="min-w-0">
                           <div className={`text-xs font-semibold uppercase tracking-wider ${mutedText}`}>
-                            {AUDIO_TYPE_LABELS[selectedItem.libraryType] || 'Audio'}
+                            {AUDIO_TYPE_LABELS[selectedItem.libraryType] || uiText("Audio")}
                           </div>
                           <h2 className="mt-1 truncate text-xl font-semibold">{getAudioItemTitle(selectedItem)}</h2>
                         </div>
@@ -752,15 +789,15 @@ export default function AudioStudioHome() {
                     </div>
                     <div className={`flex flex-col justify-between border-t p-6 md:border-l md:border-t-0 ${isDark ? 'border-[#3a4050] bg-black/10' : 'border-slate-200 bg-slate-50'}`}>
                       <div>
-                        <div className={`text-xs font-semibold uppercase tracking-wider ${mutedText}`}>Details</div>
+                        <div className={`text-xs font-semibold uppercase tracking-wider ${mutedText}`}>{uiText("Details")}</div>
                         <dl className="mt-4 space-y-3 text-sm">
                           <div className="flex items-center justify-between gap-3">
-                            <dt className={mutedText}>Duration</dt>
+                            <dt className={mutedText}>{uiText("Duration")}</dt>
                             <dd className="font-semibold">{formatAudioStudioDuration(selectedItem.duration)}</dd>
                           </div>
                           <div className="flex items-center justify-between gap-3">
-                            <dt className={mutedText}>Source</dt>
-                            <dd className="truncate font-semibold">{selectedItem.projectName || 'Audio Studio'}</dd>
+                            <dt className={mutedText}>{uiText("Source")}</dt>
+                            <dd className="truncate font-semibold">{selectedItem.projectName || uiText("Audio Studio")}</dd>
                           </div>
                         </dl>
                       </div>
@@ -772,14 +809,13 @@ export default function AudioStudioHome() {
                         }}
                         className={`${neutralButton} mt-6 inline-flex min-h-10 items-center justify-center gap-2 rounded-lg px-3 text-xs font-semibold`}
                       >
-                        <FaLink /> Use in Join Audio
-                      </button>
+                        <FaLink />{uiText("Use in Join Audio")}</button>
                     </div>
                   </div>
                 </section>
               ) : null}
 
-              <section className="mt-8" aria-label="Audio library">
+              <section className="mt-8" aria-label={uiText("Audio library")}>
                 <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
                   <AudioTypeTabs
                     value={libraryType}
@@ -788,13 +824,13 @@ export default function AudioStudioHome() {
                     buttonClassName={neutralButton}
                   />
                   <label className="relative block w-full xl:max-w-xs">
-                    <span className="sr-only">Search audio library</span>
+                    <span className="sr-only">{uiText("Search audio library")}</span>
                     <FaSearch className={`pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-xs ${mutedText}`} />
                     <input
                       type="search"
                       value={searchTerm}
                       onChange={(event) => setSearchTerm(event.target.value)}
-                      placeholder="Search your audio"
+                      placeholder={uiText("Search your audio")}
                       className={`${inputClass} h-10 w-full rounded-xl border pl-9 pr-3 text-sm outline-none focus:ring-2`}
                     />
                   </label>
@@ -825,18 +861,15 @@ export default function AudioStudioHome() {
                           disabled={libraryLoadingMore}
                           onClick={() => void fetchLibrary({ page: libraryPage + 1, append: true })}
                           className={`${neutralButton} inline-flex min-h-10 items-center justify-center gap-2 rounded-lg px-4 text-xs font-semibold disabled:opacity-55`}
-                        >
-                          {libraryLoadingMore ? <FaSyncAlt className="animate-spin" /> : null}
-                          Load more ({libraryItems.length} of {libraryTotalItems})
-                        </button>
+                        >{uiText("{value0} Load more ({value1} of {value2})", { value0: libraryLoadingMore ? <FaSyncAlt className="animate-spin" /> : null, value1: libraryItems.length, value2: libraryTotalItems })}</button>
                       </div>
                     ) : null}
                   </>
                 ) : (
                   <div className={`mt-6 rounded-2xl border border-dashed p-10 text-center ${panelClass}`}>
                     <MdGraphicEq className={`mx-auto text-4xl ${mutedText}`} />
-                    <div className="mt-4 text-sm font-semibold">No {AUDIO_TYPE_LABELS[libraryType].toLowerCase()} yet</div>
-                    <div className={`mt-2 text-xs ${mutedText}`}>Use Generate audio to create the first item in this category.</div>
+                    <div className="mt-4 text-sm font-semibold">{uiText("No {value0} yet", { value0: AUDIO_TYPE_LABELS[libraryType].toLowerCase() })}</div>
+                    <div className={`mt-2 text-xs ${mutedText}`}>{uiText("Use Generate audio to create the first item in this category.")}</div>
                   </div>
                 )}
               </section>
@@ -844,11 +877,9 @@ export default function AudioStudioHome() {
           ) : (
             <div className="mx-auto max-w-6xl">
               <div>
-                <div className="text-xs font-semibold uppercase tracking-[0.24em] text-[#ff6572]">Join Audio</div>
-                <h1 className="mt-2 text-2xl font-semibold sm:text-3xl">Build one longer MP3</h1>
-                <p className={`mt-2 max-w-2xl text-sm ${mutedText}`}>
-                  Pick two or more items from one category. Numbered badges show the exact order used in the joined track.
-                </p>
+                <div className="text-xs font-semibold uppercase tracking-[0.24em] text-[#ff6572]">{uiText("Join Audio")}</div>
+                <h1 className="mt-2 text-2xl font-semibold sm:text-3xl">{uiText("Build one longer MP3")}</h1>
+                <p className={`mt-2 max-w-2xl text-sm ${mutedText}`}>{uiText("Pick two or more items from one category. Numbered badges show the exact order used in the joined track.")}</p>
               </div>
 
               <div className="mt-6 flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
@@ -859,13 +890,13 @@ export default function AudioStudioHome() {
                   buttonClassName={neutralButton}
                 />
                 <label className="relative block w-full xl:max-w-xs">
-                  <span className="sr-only">Search join audio library</span>
+                  <span className="sr-only">{uiText("Search join audio library")}</span>
                   <FaSearch className={`pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-xs ${mutedText}`} />
                   <input
                     type="search"
                     value={searchTerm}
                     onChange={(event) => setSearchTerm(event.target.value)}
-                    placeholder="Search this category"
+                    placeholder={uiText("Search this category")}
                     className={`${inputClass} h-10 w-full rounded-xl border pl-9 pr-3 text-sm outline-none focus:ring-2`}
                   />
                 </label>
@@ -897,25 +928,22 @@ export default function AudioStudioHome() {
                         disabled={libraryLoadingMore}
                         onClick={() => void fetchLibrary({ page: libraryPage + 1, append: true })}
                         className={`${neutralButton} inline-flex min-h-10 items-center justify-center gap-2 rounded-lg px-4 text-xs font-semibold disabled:opacity-55`}
-                      >
-                        {libraryLoadingMore ? <FaSyncAlt className="animate-spin" /> : null}
-                        Load more ({libraryItems.length} of {libraryTotalItems})
-                      </button>
+                      >{uiText("{value0} Load more ({value1} of {value2})", { value0: libraryLoadingMore ? <FaSyncAlt className="animate-spin" /> : null, value1: libraryItems.length, value2: libraryTotalItems })}</button>
                     </div>
                   ) : null}
                 </>
               ) : (
                 <div className={`mt-6 rounded-2xl border border-dashed p-10 text-center ${panelClass}`}>
                   <FaLink className={`mx-auto text-3xl ${mutedText}`} />
-                  <div className="mt-4 text-sm font-semibold">No matching audio to join</div>
-                  <div className={`mt-2 text-xs ${mutedText}`}>Generate or upload more {AUDIO_TYPE_LABELS[joinType].toLowerCase()} first.</div>
+                  <div className="mt-4 text-sm font-semibold">{uiText("No matching audio to join")}</div>
+                  <div className={`mt-2 text-xs ${mutedText}`}>{uiText("Generate or upload more {value0} first.", { value0: AUDIO_TYPE_LABELS[joinType].toLowerCase() })}</div>
                 </div>
               )}
             </div>
           )}
         </main>
 
-        <aside className={`app-panel workspace-scroll min-h-0 overflow-y-auto border-t p-4 lg:border-l lg:border-t-0 lg:p-5 ${panelClass}`} aria-label="Audio Studio actions">
+        <aside className={`app-panel workspace-scroll min-h-0 overflow-y-auto border-t p-4 lg:border-l lg:border-t-0 lg:p-5 ${panelClass}`} aria-label={uiText("Audio Studio actions")}>
           <div className="grid grid-cols-2 gap-2 lg:grid-cols-1">
             <button
               type="button"
@@ -926,9 +954,7 @@ export default function AudioStudioHome() {
                   : neutralButton
               }`}
             >
-              <MdGraphicEq className="text-xl" />
-              Generate audio
-            </button>
+              <MdGraphicEq className="text-xl" />{uiText("Generate audio")}</button>
             <button
               type="button"
               onClick={() => setActiveAction('join')}
@@ -938,17 +964,15 @@ export default function AudioStudioHome() {
                   : neutralButton
               }`}
             >
-              <FaLink className="text-base" />
-              Join Audio
-            </button>
+              <FaLink className="text-base" />{uiText("Join Audio")}</button>
           </div>
 
           {activeAction === 'generate' ? (
             <form className="mt-6" onSubmit={handleGenerate}>
-              <div className="text-sm font-semibold">Generate audio</div>
-              <p className={`mt-1 text-xs leading-5 ${mutedText}`}>Choose a type, describe the result, then keep this panel open while it is queued.</p>
+              <div className="text-sm font-semibold">{uiText("Generate audio")}</div>
+              <p className={`mt-1 text-xs leading-5 ${mutedText}`}>{uiText("Choose a type, describe the result, then keep this panel open while it is queued.")}</p>
 
-              <label className="mt-5 block text-xs font-semibold" htmlFor="audio-generation-type">Audio type</label>
+              <label className="mt-5 block text-xs font-semibold" htmlFor="audio-generation-type">{uiText("Audio type")}</label>
               <select
                 id="audio-generation-type"
                 value={generationType}
@@ -963,7 +987,7 @@ export default function AudioStudioHome() {
               </select>
 
               <label className="mt-4 block text-xs font-semibold" htmlFor="audio-generation-prompt">
-                {generationType === AUDIO_TYPE_SPEECH ? 'Script' : 'Prompt'}
+                {generationType === AUDIO_TYPE_SPEECH ? uiText("Script") : uiText("Prompt")}
               </label>
               <textarea
                 id="audio-generation-prompt"
@@ -972,27 +996,27 @@ export default function AudioStudioHome() {
                 value={prompt}
                 onChange={(event) => setPrompt(event.target.value)}
                 placeholder={generationType === AUDIO_TYPE_SPEECH
-                  ? 'Enter the words to speak…'
+                  ? uiText("Enter the words to speak…")
                   : generationType === AUDIO_TYPE_MUSIC
-                    ? 'Warm cinematic strings with a gentle pulse…'
-                    : 'A wooden door closing in a quiet room…'}
+                    ? uiText("Warm cinematic strings with a gentle pulse…")
+                    : uiText("A wooden door closing in a quiet room…")}
                 className={`${inputClass} mt-2 w-full resize-y rounded-lg border px-3 py-2 text-sm leading-5 outline-none focus:ring-2`}
               />
 
-              <label className="mt-4 block text-xs font-semibold" htmlFor="audio-generation-title">Title <span className={mutedText}>(optional)</span></label>
+              <label className="mt-4 block text-xs font-semibold" htmlFor="audio-generation-title">{uiText("Title")} <span className={mutedText}>{uiText("(optional)")}</span></label>
               <input
                 id="audio-generation-title"
                 type="text"
                 maxLength={120}
                 value={generationTitle}
                 onChange={(event) => setGenerationTitle(event.target.value)}
-                placeholder="Name this audio"
+                placeholder={uiText("Name this audio")}
                 className={`${inputClass} mt-2 h-10 w-full rounded-lg border px-3 text-sm outline-none focus:ring-2`}
               />
 
               {generationType === AUDIO_TYPE_MUSIC ? (
                 <>
-                  <label className="mt-4 block text-xs font-semibold" htmlFor="audio-music-model">Provider</label>
+                  <label className="mt-4 block text-xs font-semibold" htmlFor="audio-music-model">{uiText("Provider")}</label>
                   <select
                     id="audio-music-model"
                     value={musicModel}
@@ -1003,15 +1027,13 @@ export default function AudioStudioHome() {
                     {availableMusicProviders.map((provider) => <option key={provider.key} value={provider.key}>{provider.name}</option>)}
                   </select>
                   <label className={`mt-4 flex cursor-pointer items-center gap-2 text-xs ${mutedText}`}>
-                    <input type="checkbox" checked={isInstrumental} onChange={(event) => setIsInstrumental(event.target.checked)} className="h-4 w-4 accent-[#ff4655]" />
-                    Instrumental track
-                  </label>
+                    <input type="checkbox" checked={isInstrumental} onChange={(event) => setIsInstrumental(event.target.checked)} className="h-4 w-4 accent-[#ff4655]" />{uiText("Instrumental track")}</label>
                 </>
               ) : null}
 
               {generationType === AUDIO_TYPE_SPEECH ? (
                 <>
-                  <label className="mt-4 block text-xs font-semibold" htmlFor="audio-speech-voice">Voice</label>
+                  <label className="mt-4 block text-xs font-semibold" htmlFor="audio-speech-voice">{uiText("Voice")}</label>
                   <select
                     id="audio-speech-voice"
                     value={speakerValue}
@@ -1028,7 +1050,7 @@ export default function AudioStudioHome() {
 
               {generationType === AUDIO_TYPE_SOUND_EFFECT ? (
                 <>
-                  <label className="mt-4 block text-xs font-semibold" htmlFor="audio-sound-model">Provider</label>
+                  <label className="mt-4 block text-xs font-semibold" htmlFor="audio-sound-model">{uiText("Provider")}</label>
                   <select
                     id="audio-sound-model"
                     value={soundEffectModel}
@@ -1042,8 +1064,7 @@ export default function AudioStudioHome() {
               ) : null}
 
               {generationType !== AUDIO_TYPE_SPEECH ? (
-                <label className="mt-4 block text-xs font-semibold" htmlFor="audio-generation-duration">
-                  Duration <span className={mutedText}>({duration}s)</span>
+                <label className="mt-4 block text-xs font-semibold" htmlFor="audio-generation-duration">{uiText("Duration")}<span className={mutedText}>({duration}s)</span>
                   <input
                     id="audio-generation-duration"
                     type="range"
@@ -1058,40 +1079,38 @@ export default function AudioStudioHome() {
               ) : null}
 
               {providerUnavailable && !isAudioAvailabilityLoading ? (
-                <div className="mt-4 rounded-lg border border-amber-400/25 bg-amber-400/10 p-3 text-xs text-amber-300">
-                  No provider for this audio type is configured on this deployment.
-                </div>
+                <div className="mt-4 rounded-lg border border-amber-400/25 bg-amber-400/10 p-3 text-xs text-amber-300">{uiText("No provider for this audio type is configured on this deployment.")}</div>
               ) : null}
               {generationError ? <div className="mt-4 rounded-lg border border-red-400/30 bg-red-500/10 p-3 text-xs status-error">{generationError}</div> : null}
-              {generationStatus && !generationError ? <div className={`mt-4 text-xs ${mutedText}`}>{generationStatus}</div> : null}
+              {generationStatus && !generationError ? <div className={`mt-4 text-xs ${mutedText}`}>{/^[A-Z_]+$/.test(generationStatus) ? formatUiStatus(generationStatus) : uiText(generationStatus)}</div> : null}
 
               <button
                 type="submit"
                 disabled={!prompt.trim() || generationPending || providerUnavailable || isAudioAvailabilityLoading}
                 className={`${actionButton} mt-5 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl px-4 text-sm font-semibold`}
               >
-                {generationPending ? <><FaSyncAlt className="animate-spin" /> Generating…</> : <><MdGraphicEq className="text-lg" /> Generate audio</>}
+                {generationPending ? <><FaSyncAlt className="animate-spin" /> {uiText("Generating…")}</> : <><MdGraphicEq className="text-lg" /> {uiText("Generate audio")}</>}
               </button>
             </form>
           ) : (
             <form className="mt-6" onSubmit={handleJoin}>
-              <div className="text-sm font-semibold">Join selected audio</div>
-              <p className={`mt-1 text-xs leading-5 ${mutedText}`}>The list below is the final playback order. This action does not consume credits.</p>
+              <div className="text-sm font-semibold">{uiText("Join selected audio")}</div>
+              <p className={`mt-1 text-xs leading-5 ${mutedText}`}>{uiText("The list below is the final playback order. This action does not consume credits.")}</p>
 
-              <label className="mt-5 block text-xs font-semibold" htmlFor="joined-audio-title">Output title <span className={mutedText}>(optional)</span></label>
+              <label className="mt-5 block text-xs font-semibold" htmlFor="joined-audio-title">{uiText("Output title")} <span className={mutedText}>{uiText("(optional)")}</span></label>
               <input
                 id="joined-audio-title"
                 type="text"
                 maxLength={120}
                 value={joinTitle}
                 onChange={(event) => setJoinTitle(event.target.value)}
-                placeholder={`Joined ${AUDIO_TYPE_LABELS[joinType]}`}
+                placeholder={uiText("Joined {value0}", { value0: AUDIO_TYPE_LABELS[joinType] })}
                 className={`${inputClass} mt-2 h-10 w-full rounded-lg border px-3 text-sm outline-none focus:ring-2`}
               />
 
               <div className="mt-5 flex items-center justify-between gap-3">
-                <div className="text-xs font-semibold">Playback order</div>
-                <div className={`text-[11px] ${mutedText}`}>{selectedJoinItems.length}/25 selected</div>
+                <div className="text-xs font-semibold">{uiText("Playback order")}</div>
+                <div className={`text-caption ${mutedText}`}>{uiText("{value0}/25 selected", { value0: selectedJoinItems.length })}</div>
               </div>
 
               {selectedJoinItems.length > 0 ? (
@@ -1101,21 +1120,19 @@ export default function AudioStudioHome() {
                     return (
                       <li key={itemId} className={`flex items-center gap-2 rounded-lg border p-2 ${isDark ? 'border-[#3a4050] bg-[#11131a]' : 'border-slate-200 bg-slate-50'}`}>
                         <FaGripVertical className={`shrink-0 ${mutedText}`} />
-                        <span className="flex h-6 min-w-6 items-center justify-center rounded-full bg-[#f6c453] text-[11px] font-bold text-[#111319]">{index + 1}</span>
+                        <span className="flex h-6 min-w-6 items-center justify-center rounded-full bg-[#f6c453] text-caption font-bold text-[#111319]">{index + 1}</span>
                         <span className="min-w-0 flex-1 truncate text-xs font-semibold">{getAudioItemTitle(item)}</span>
                         <div className="flex items-center gap-1">
-                          <button type="button" disabled={index === 0} onClick={() => moveJoinSelection(itemId, -1)} className={`${neutralButton} flex h-7 w-7 items-center justify-center rounded-md disabled:opacity-30`} aria-label={`Move ${getAudioItemTitle(item)} earlier`}><FaArrowUp className="text-[10px]" /></button>
-                          <button type="button" disabled={index === selectedJoinItems.length - 1} onClick={() => moveJoinSelection(itemId, 1)} className={`${neutralButton} flex h-7 w-7 items-center justify-center rounded-md disabled:opacity-30`} aria-label={`Move ${getAudioItemTitle(item)} later`}><FaArrowDown className="text-[10px]" /></button>
-                          <button type="button" onClick={() => toggleJoinSelection(item)} className={`${neutralButton} flex h-7 w-7 items-center justify-center rounded-md`} aria-label={`Remove ${getAudioItemTitle(item)}`}><FaTimes className="text-[10px]" /></button>
+                          <button type="button" disabled={index === 0} onClick={() => moveJoinSelection(itemId, -1)} className={`${neutralButton} flex h-7 w-7 items-center justify-center rounded-md disabled:opacity-30`} aria-label={uiText("Move {value0} earlier", { value0: getAudioItemTitle(item) })}><FaArrowUp className="text-micro" /></button>
+                          <button type="button" disabled={index === selectedJoinItems.length - 1} onClick={() => moveJoinSelection(itemId, 1)} className={`${neutralButton} flex h-7 w-7 items-center justify-center rounded-md disabled:opacity-30`} aria-label={uiText("Move {value0} later", { value0: getAudioItemTitle(item) })}><FaArrowDown className="text-micro" /></button>
+                          <button type="button" onClick={() => toggleJoinSelection(item)} className={`${neutralButton} flex h-7 w-7 items-center justify-center rounded-md`} aria-label={uiText("Remove {value0}", { value0: getAudioItemTitle(item) })}><FaTimes className="text-micro" /></button>
                         </div>
                       </li>
                     );
                   })}
                 </ol>
               ) : (
-                <div className={`mt-3 rounded-xl border border-dashed p-5 text-center text-xs ${isDark ? 'border-[#4a5265]' : 'border-slate-300'} ${mutedText}`}>
-                  Select audio cards in the center view.
-                </div>
+                <div className={`mt-3 rounded-xl border border-dashed p-5 text-center text-xs ${isDark ? 'border-[#4a5265]' : 'border-slate-300'} ${mutedText}`}>{uiText("Select audio cards in the center view.")}</div>
               )}
 
               {selectedJoinItems.length > 0 ? (
@@ -1128,17 +1145,15 @@ export default function AudioStudioHome() {
                     className="mt-0.5 h-4 w-4 shrink-0 accent-[#ff4655]"
                   />
                   <span>
-                    <span className="block font-semibold">Fade audio at ends</span>
-                    <span className={`mt-1 block leading-5 ${mutedText}`}>
-                      Softly fades each selected clip in and out for smoother joins.
-                    </span>
+                    <span className="block font-semibold">{uiText("Fade audio at ends")}</span>
+                    <span className={`mt-1 block leading-5 ${mutedText}`}>{uiText("Softly fades each selected clip in and out for smoother joins.")}</span>
                   </span>
                 </label>
               ) : null}
 
               {joinError ? <div className="mt-4 rounded-lg border border-red-400/30 bg-red-500/10 p-3 text-xs status-error">{joinError}</div> : null}
               {joinSuccess ? <div className="mt-4 rounded-lg border border-emerald-400/30 bg-emerald-500/10 p-3 text-xs status-success">{joinSuccess}</div> : null}
-              {joinPending && joinStatus ? <div className={`mt-4 text-xs ${mutedText}`}>{joinStatus}</div> : null}
+              {joinPending && joinStatus ? <div className={`mt-4 text-xs ${mutedText}`}>{uiText(joinStatus)}</div> : null}
 
               {selectedJoinIds.length > 0 ? (
                 <>
@@ -1147,16 +1162,15 @@ export default function AudioStudioHome() {
                     disabled={selectedJoinIds.length < 2 || joinPending}
                     className={`${actionButton} mt-5 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl px-4 text-sm font-semibold`}
                   >
-                    {joinPending ? <><FaSyncAlt className="animate-spin" /> Joining…</> : <><FaLink /> Submit join</>}
+                    {joinPending ? <><FaSyncAlt className="animate-spin" /> {uiText("Joining…")}</> : <><FaLink /> {uiText("Submit join")}</>}
                   </button>
                   {selectedJoinIds.length === 1 ? (
-                    <div className={`mt-2 text-center text-[11px] ${mutedText}`}>Select one more audio item to submit.</div>
+                    <div className={`mt-2 text-center text-caption ${mutedText}`}>{uiText("Select one more audio item to submit.")}</div>
                   ) : null}
                 </>
               ) : null}
-              <div className={`mt-3 flex items-center justify-center gap-2 text-[11px] ${mutedText}`}>
-                <FaCheck className="text-emerald-400" /> Authenticated · Unmetered
-              </div>
+              <div className={`mt-3 flex items-center justify-center gap-2 text-caption ${mutedText}`}>
+                <FaCheck className="text-emerald-400" />{uiText("Authenticated · Unmetered")}</div>
             </form>
           )}
         </aside>

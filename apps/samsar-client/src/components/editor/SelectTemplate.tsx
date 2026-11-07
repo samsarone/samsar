@@ -1,3 +1,5 @@
+import { useUiLanguage } from '../../hooks/useUiLanguage.js';
+import { translateText as uiText } from '../../utils/localization.js';
 import { useEffect, useState } from 'react';
 import { FaChevronLeft, FaChevronRight } from 'react-icons/fa';
 import SearchBox from './utils/SearchBox.tsx';
@@ -8,6 +10,7 @@ const API_SERVER = import.meta.env.VITE_PROCESSOR_API;
 
 
 export default function SelectTemplate(props) {
+  useUiLanguage();
   const { getRemoteTemplateData, templateOptionList, addImageToCanvas, resetCurrentView,
     currentPage, setCurrentPage, submitSearch
    } = props;
@@ -38,7 +41,7 @@ export default function SelectTemplate(props) {
           <div className=''>
             <div className='w-90px text-left float-left pl-2 cursor-pointer ' onClick={() => resetCurrentView()} >
               <FaChevronLeft className='inline-flex align-baseline' />
-              <div className='text-2xl inline-flex'>Templates</div>
+              <div className='text-2xl inline-flex'>{uiText("Templates")}</div>
             </div>
 
           </div>
@@ -50,13 +53,13 @@ export default function SelectTemplate(props) {
           <div className=''>
             <div className='inline-flex cursor-pointer bg-gray-200 rounded-md p-2 h-[30px] align-top' onClick={() => handlePageChange(currentPage - 1)} >
               <FaChevronLeft />
-              <div className='inline-flex text-sm font-bold mb-1'>Prev</div>
+              <div className='inline-flex text-sm font-bold mb-1'>{uiText("Prev")}</div>
             </div>
             <div className='inline-flex mt-1'>
-              <span className="mx-2">{`Page ${currentPage} of ${totalPages}`}</span>
+              <span className="mx-2">{uiText("Page {value0} of {value1}", { value0: currentPage, value1: totalPages })}</span>
             </div>
             <div className='inline-flex cursor-pointer bg-gray-200 rounded-md p-2 h-[30px] align-top' onClick={() => handlePageChange(currentPage + 1)}>
-              <div className=' inline-flex text-sm font-bold mb-1'>Next</div>
+              <div className=' inline-flex text-sm font-bold mb-1'>{uiText("Next")}</div>
               <FaChevronRight />
             </div>
 
@@ -70,7 +73,7 @@ export default function SelectTemplate(props) {
             <div key={`${index}_template_item_${currentPage}`}
               className='px-1 mb-4 w-1/4 cursor-pointer'
               onClick={() => addImageToCanvas(templateOption)}>
-              <img alt={`Template ${index}`}
+              <img alt={uiText("Template {value0}", { value0: index })}
                 src={`${API_SERVER}/templates/mm_final/${encodeURI(templateOption)}`}
                 className='w-full rounded-lg'
                 loading="lazy" />

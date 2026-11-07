@@ -463,7 +463,7 @@ test('connected audio duration is clamped to the connected scene duration', () =
   );
 });
 
-test('lip-sync completion shrinks to materially shorter extracted frame duration', () => {
+test('lip-sync completion cannot shorten the source scene timeline', () => {
   assert.equal(
     resolveCompletedLayerDuration({
       currentLayerDuration: 4.87,
@@ -473,7 +473,7 @@ test('lip-sync completion shrinks to materially shorter extracted frame duration
       model: 'SYNCLIPSYNC',
       isAudioVideoGeneration: true,
     }),
-    97 / 24,
+    4.87,
   );
 });
 
@@ -1064,3 +1064,14 @@ test('non-Mongo application errors are not treated as transient DB errors', () =
 
   assert.equal(isTransientMongoError(error), false);
 });
+
+for (const model of ['gpt-6-astra', 'gpt-6.1-sol', 'claude-opus-5.5', 'claude-fable-5.1']) {
+  test(`${model} keeps explicit and persisted effort for video vision retries`, async () => {
+    assert.deepEqual(await getInferenceSettingsForSession({
+      inferenceModel: model, inferenceEffort: 'xhigh',
+    }), { model, effort: 'xhigh', authorization: '' });
+    assert.deepEqual(await getInferenceSettingsForSession({}, {
+      inferenceModel: `${model}-xhigh`, effort: 'high',
+    }), { model, effort: 'high', authorization: '' });
+  });
+}

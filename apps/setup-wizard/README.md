@@ -10,11 +10,16 @@ The wizard collects provider credentials, selects services, configures mail and 
 
 ## Inference Providers
 
-Step 1 presents native OpenAI, Gemini, Kimi K3, and Alibaba inference providers alongside the optional OpenRouter and Samsar fallback providers. OpenRouter enables these supported inference selections through one credential:
+Step 1 presents the Samsar API key first for access to supported models using Samsar credits. Below it, “Or add model or adapter keys to enable specific capabilities” introduces the inference, GMICloud, and media options. Inference options include native OpenAI, Anthropic, Gemini, Kimi K3, and Alibaba alongside OpenRouter.
+
+Provider cards use a shared neutral style, a **Get API key** action, and a **Models** tooltip that opens on hover, keyboard focus, or click. The tooltip uses the setup catalog and credential-specific validation results; GMICloud models appear after discovery. Category links jump to and expand the relevant group. **Continue** is highlighted when the entered combination covers inference, images, video, speech, music, lip sync, and sound effects. This is a capability preview; clicking Continue still validates the credentials before proceeding.
+
+OpenRouter enables these supported inference selections through one credential:
 
 | Stable model | OpenRouter coverage |
 | --- | --- |
-| `gpt-6-astra` | Text, assistant, and corresponding vision-input calls. |
+| `gpt-6-astra`, `gpt-6.1-sol` | Text, assistant, and corresponding vision-input calls; High or XHigh effort. |
+| `claude-opus-5.5`, `claude-fable-5.1` | Native Anthropic, OpenRouter, or Samsar text, assistant, and vision calls; High or XHigh effort. |
 | `gemini-4-argon` | Text, assistant, and corresponding vision-input calls; defaults to OpenRouter model `google/gemini-4-argon`. |
 | `QWEN3.8` | Qwen 3.8 Max text, assistant, and vision inference through Alibaba Cloud, OpenRouter, GMICloud, or Samsar. |
 
@@ -24,7 +29,7 @@ Gemini 4 Argon is configured automatically when OpenRouter, Samsar API, or nativ
 
 For the local Docker runtime configured by this wizard, GPT, Gemini, and Qwen provider priority is direct native credential, OpenRouter, then the Samsar universal fallback. Kimi priority is the native Kimi API, then Samsar. Set `SAMSAR_QWEN_OPENROUTER_ONLY=true` to force Docker Qwen requests through OpenRouter. Hosted production and external-production always apply that OpenRouter-only Qwen policy; a saved native or deployed authorization cannot override it. Other provider keys continue to enable their media, audio, and direct inference families independently.
 
-OpenRouter inference defaults to high reasoning for Qwen and Gemini and `xhigh` for GPT, with a 65,536-token completion allowance and a 10-minute minimum request timeout. Kimi K3 always uses high reasoning. Retry behavior depends on the caller: billed assistant requests disable hidden SDK retries and retain ambiguous provider outcomes for reconciliation; other inference callers use their configured retry policies.
+OpenRouter inference defaults to high reasoning; GPT Astra/Sol and Claude Opus/Fable also accept `xhigh`, with a 65,536-token completion allowance and a 10-minute minimum request timeout. Kimi K3 always uses high reasoning. Retry behavior depends on the caller: billed assistant requests disable hidden SDK retries and retain ambiguous provider outcomes for reconciliation; other inference callers use their configured retry policies.
 
 ### Assistant billing
 

@@ -18,6 +18,7 @@ import { normalizeInferenceModel } from '../../consts/InferenceModels.js';
 import { assertSubtitleGenerationAvailable } from '../../consts/DockerAudioAvailability.js';
 import { translateTextContent } from '../OpenAI.js';
 import { translateSpeech } from '../agent/AudioCreatorAgent.js';
+import { resolveEffectiveInferenceSettings } from './RequestModelOverrides.js';
 import {
   applySubtitleLanguageSelectionForRerun,
   backfillTranslatedSubtitleMetadataForRerun,
@@ -375,14 +376,14 @@ function getOptionalBooleanPayloadValue(payload = {}, keys = [], fieldName, defa
   return defaultValue;
 }
 
-async function localizeOverlayText(originalText, languageCode) {
+async function localizeOverlayText(originalText, languageCode, translateText = translateTextContent) {
   const text = typeof originalText === 'string' ? originalText.trim() : '';
   if (!text) {
     return null;
   }
 
   const languageName = getLanguageStringFromLanguageCode(languageCode) || languageCode;
-  const translated = await translateTextContent([text], languageName);
+  const translated = await translateText([text], languageName);
   const localized = Array.isArray(translated) && typeof translated[0] === 'string'
     ? translated[0].trim()
     : '';
@@ -697,7 +698,7 @@ function getSpeakerNameFromAudioLayer(audioLayer = {}) {
   return getFirstNonEmptyString(audioLayer.speakerCharacterName) || '';
 }
 
-async function translateSpeechTextList(speechTextList, translationLanguageName) {
+async function translateSpeechTextList(speechTextList, translationLanguageName, translateText = translateTextContent) {
   const normalizedLanguageName = typeof translationLanguageName === 'string' && translationLanguageName.trim()
     ? translationLanguageName.trim()
     : 'English';
@@ -712,14 +713,14 @@ async function translateSpeechTextList(speechTextList, translationLanguageName) 
   for (let start = 0; start < entries.length; start += batchSize) {
     const batch = entries.slice(start, start + batchSize);
     const batchTexts = batch.map((entry) => entry.text);
-    let batchTranslations = await translateTextContent(batchTexts, normalizedLanguageName);
+    let batchTranslations = await translateText(batchTexts, normalizedLanguageName);
 
     if (!Array.isArray(batchTranslations) || batchTranslations.length !== batchTexts.length) {
       batchTranslations = [];
       for (let i = 0; i < batchTexts.length; i += 1) {
         const line = batchTexts[i];
         try {
-          const single = await translateTextContent([line], normalizedLanguageName);
+          const single = await translateText([line], normalizedLanguageName);
           batchTranslations.push(Array.isArray(single) && single[0] ? single[0] : line);
         } catch {
           batchTranslations.push(line);
@@ -842,6 +843,7 @@ function replaceOutroCtaTextItems(outroLayer, outroMetadata, aspectRatio = '16:9
   });
   const ctaItems = createOutroCtaTextItems({
     canvasDimensions,
+    centerContentBounds: existingWithoutCtaText.find((item) => item?.outroContentBounds)?.outroContentBounds,
     ctaTextTop: outroMetadata?.topText || null,
     ctaTextBottom: outroMetadata?.bottomText || null,
     startIndex: existingWithoutCtaText.length,
@@ -860,6 +862,7 @@ function replaceOutroCtaTextItems(outroLayer, outroMetadata, aspectRatio = '16:9
 async function localizeOutroImageMetadataForSession({
   clonedSession,
   normalizedLanguageCode,
+  translateText = translateTextContent,
 }) {
   const outroMetadata = resolveOutroImageMetadataFromSession(clonedSession);
   if (!outroMetadata) {
@@ -869,11 +872,11 @@ async function localizeOutroImageMetadataForSession({
   let changed = false;
   const nextMetadata = { ...outroMetadata };
   if (outroMetadata.topText) {
-    nextMetadata.topText = await localizeOverlayText(outroMetadata.topText, normalizedLanguageCode);
+    nextMetadata.topText = await localizeOverlayText(outroMetadata.topText, normalizedLanguageCode, translateText);
     changed = changed || nextMetadata.topText !== outroMetadata.topText;
   }
   if (outroMetadata.bottomText) {
-    nextMetadata.bottomText = await localizeOverlayText(outroMetadata.bottomText, normalizedLanguageCode);
+    nextMetadata.bottomText = await localizeOverlayText(outroMetadata.bottomText, normalizedLanguageCode, translateText);
     changed = changed || nextMetadata.bottomText !== outroMetadata.bottomText;
   }
 
@@ -905,6 +908,7 @@ async function localizeOutroImageMetadataForSession({
 async function localizeFooterMetadataForSession({
   clonedSession,
   normalizedLanguageCode,
+  translateText = translateTextContent,
 }) {
   const layers = Array.isArray(clonedSession.layers) ? clonedSession.layers : [];
   if (!layers.some((layer) => layer?.addFooterAnimation === true)) {
@@ -921,7 +925,7 @@ async function localizeFooterMetadataForSession({
       return null;
     }
     if (!localizedTextCache.has(normalized)) {
-      localizedTextCache.set(normalized, await localizeOverlayText(normalized, normalizedLanguageCode));
+      localizedTextCache.set(normalized, await localizeOverlayText(normalized, normalizedLanguageCode, translateText));
     }
     return localizedTextCache.get(normalized);
   };
@@ -1566,7 +1570,12 @@ async function processTranslateVideoSessionJob({
   translateOutro,
   translateFooter,
   webhookUrl,
-}) {
+  inferenceModel,
+  inferenceEffort,
+}, {
+  translateTextContent: translateTextImpl = translateTextContent,
+  copyTranslateSessionAssets: copyAssets = copyTranslateSessionAssets,
+} = {}) {
   await getDBConnectionString();
 
   const originalSessionDoc = await VideoSession.findOne({ _id: oldSessionId, userId: userId.toString() });
@@ -1589,10 +1598,13 @@ async function processTranslateVideoSessionJob({
   const originalSpeechTextList = originalSpeechLayers.map(getSpeechTextFromAudioLayer);
   const originalSpeakerNameList = originalSpeechLayers.map(getSpeakerNameFromAudioLayer);
   const translationLanguageName = getLanguageStringFromLanguageCode(normalizedLanguageCode) || normalizedLanguageCode;
-  const translatedSpeechTextList = await translateSpeechTextList(originalSpeechTextList, translationLanguageName);
+  const translateText = (texts, language) => translateTextImpl(
+    texts, language, inferenceModel, { reasoningEffort: inferenceEffort },
+  );
+  const translatedSpeechTextList = await translateSpeechTextList(originalSpeechTextList, translationLanguageName, translateText);
   let translatedSpeakerNameList = originalSpeakerNameList;
   try {
-    translatedSpeakerNameList = await translateSpeechTextList(originalSpeakerNameList, translationLanguageName);
+    translatedSpeakerNameList = await translateSpeechTextList(originalSpeakerNameList, translationLanguageName, translateText);
   } catch (error) {
     console.error('[api][video][translate_video] failed to translate speaker names; using originals', {
       newSessionId,
@@ -1606,13 +1618,17 @@ async function processTranslateVideoSessionJob({
   // `{ buffer: Uint8Array(...) }` shapes which Mongoose cannot cast back when saving.
   // JSON serialization converts ObjectIds to hex strings which Mongoose can cast.
   const clonedSession = JSON.parse(JSON.stringify(originalSessionData));
+  clonedSession.inferenceModel = inferenceModel;
+  clonedSession.inferenceEffort = inferenceEffort;
+  clonedSession.expressGenerationInferenceModel = inferenceModel;
+  clonedSession.expressGenerationInferenceEffort = inferenceEffort;
 
   delete clonedSession._id;
   delete clonedSession.__v;
   delete clonedSession.createdAt;
   delete clonedSession.updatedAt;
 
-  await copyTranslateSessionAssets({
+  await copyAssets({
     originalSessionData,
     oldSessionId,
     newSessionId,
@@ -1634,12 +1650,14 @@ async function processTranslateVideoSessionJob({
     await localizeOutroImageMetadataForSession({
       clonedSession,
       normalizedLanguageCode,
+      translateText,
     });
   }
   if (translateFooter === true) {
     await localizeFooterMetadataForSession({
       clonedSession,
       normalizedLanguageCode,
+      translateText,
     });
   }
 
@@ -1698,6 +1716,8 @@ async function processTranslateVideoSessionJob({
 }
 
 export const __testOnly__ = {
+  processTranslateVideoSessionJob,
+  translateSpeechTextList,
   clonePostProcessingSessionAssets,
   copyTranslateSessionAssets,
   prepareSessionForSubtitleAddition,
@@ -1707,7 +1727,6 @@ export const __testOnly__ = {
 };
 
 export async function translateVideoSessionAndQueueGeneration(userId, payload = {}) {
-  assertSubtitleGenerationAvailable();
   const {
     oldSessionId,
     originalSessionData,
@@ -1718,7 +1737,12 @@ export async function translateVideoSessionAndQueueGeneration(userId, payload = 
     durationSeconds,
     billableSeconds,
     creditsToCharge,
+    inferenceModel,
+    inferenceEffort,
   } = await getTranslateVideoBillingPreview(userId, payload);
+  if (enableSubtitles) {
+    assertSubtitleGenerationAvailable();
+  }
   const webhookUrl = typeof payload.webhookUrl === 'string' && payload.webhookUrl.trim()
     ? payload.webhookUrl.trim()
     : null;
@@ -1742,6 +1766,10 @@ export async function translateVideoSessionAndQueueGeneration(userId, payload = 
 
   const newSessionId = await createNewBlankVideoSession(userId, {
     aspectRatio: originalSessionData?.aspectRatio || '16:9',
+    inferenceModel,
+    inferenceEffort,
+    expressGenerationInferenceModel: inferenceModel,
+    expressGenerationInferenceEffort: inferenceEffort,
     enableSubtitles,
     hasSubtitles: enableSubtitles,
     has_subtitles: enableSubtitles,
@@ -1782,6 +1810,8 @@ export async function translateVideoSessionAndQueueGeneration(userId, payload = 
     translateOutro,
     translateFooter,
     webhookUrl,
+    inferenceModel,
+    inferenceEffort,
   }).catch(async (error) => {
     const message = error?.message || 'Failed to translate video session.';
     console.error('[api][video][translate_video] async job failed', {
@@ -1903,9 +1933,18 @@ export async function getTranslateVideoBillingPreview(userId, payload = {}) {
     throw error;
   }
 
+  const inferenceUser = await User.findById(userId)
+    .select('selectedInferenceModel selectedInferenceEffort')
+    .lean();
+  const inferenceSettings = resolveEffectiveInferenceSettings(
+    payload,
+    inferenceUser?.selectedInferenceModel,
+    inferenceUser?.selectedInferenceEffort,
+  );
   const creditsToCharge = TRANSLATE_VIDEO_CREDITS_PER_SECOND * billableSeconds;
 
   return {
+    ...inferenceSettings,
     oldSessionId,
     originalSessionData,
     normalizedLanguageCode,

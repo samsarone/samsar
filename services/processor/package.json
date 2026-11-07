@@ -17,7 +17,7 @@
     "test:outro-footer-layout": "node --test src/test_cases/outro_footer_layout/*.test.js",
     "google:auth:check": "node scripts/check_google_adc.js",
     "generate:font-samples": "node src/utils/SupportedFontSamples.js --generate",
-    "test:frame-drift": "node --test src/utils/FrameClock.test.js src/models/VideoSession.frameDrift.test.js src/models/video/FrameDrift.test.js src/models/video/SourceFrameRate.f2p.test.js",
+    "test:frame-drift": "node --test src/utils/FrameClock.test.js src/models/VideoSession.frameDrift.test.js src/models/VideoSession.videoFrameBudget.test.js src/models/video/FrameDrift.test.js src/models/video/SourceFrameRate.f2p.test.js src/utils/VideoTimeline.test.js src/models/video/VideoProcessor.test.js src/models/video/SessionTimelineExtension.test.js src/models/api/VideoSessionJoinAPI*.test.js",
     "test:video-billing": "node --test src/models/ai_video/DirectExternalI2V.test.js src/models/ai_video/VideoRequestBilling.test.js src/models/api/ExternalVideoAPI.direct-i2v.test.js src/models/api/VideoModelStatusBilling.test.js src/models/api/VideoSessionRerollAPI.test.js src/models/api/StatusAPI.test.js src/models/ExpressVideoStageBilling.test.js src/routes/api/v2.test.js"
   },
   "engines": {

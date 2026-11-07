@@ -3,6 +3,7 @@
 
 
 import OpenAI from "openai";
+import { isClaudeModel } from '../../ai_utils/ReasoningModels.js';
 import crypto from "crypto";
 
 const API_KEY = process.env.OPENAI_API_KEY;
@@ -592,7 +593,7 @@ function getModelNameForInferenceModel(userInferenceModel) {
 }
 
 function getDefaultInferenceProviderForModel(model) {
-  if (model === 'claude-opus-5.5') {
+  if (isClaudeModel(model)) {
     return 'anthropic';
   }
   if (isGeminiInferenceModel(model)) {

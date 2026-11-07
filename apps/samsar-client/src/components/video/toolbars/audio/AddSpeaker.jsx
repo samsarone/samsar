@@ -1,3 +1,5 @@
+import { useUiLanguage } from '../../../../hooks/useUiLanguage.js';
+import { translateText as uiText } from '../../../../utils/localization.js';
 import { useEffect, useMemo, useState } from 'react';
 import CommonButton from '../../../common/CommonButton.tsx';
 import ModelAdapterSelect from '../../../common/ModelAdapterSelect.jsx';
@@ -8,14 +10,15 @@ import { useDeploymentModelAvailability } from '../../../../hooks/useDeploymentM
 import { filterTtsProviderOptionsForAudioAvailability } from '../../../../constants/audioProviderAvailability.js';
 
 const TTS_PROVIDER_OPTIONS = [
-  { value: 'OPENAI', label: 'OpenAI', adapterModelKey: 'OPENAI_TTS' },
-  { value: 'ELEVENLABS', label: 'ElevenLabs', adapterModelKey: 'ELEVENLABS' },
-  { value: 'PLAYAI', label: 'Play.ht', adapterModelKey: 'PLAYAI' },
-  { value: 'GOOGLE', label: 'Google TTS', adapterModelKey: 'GOOGLE_TTS' },
-  { value: 'CUSTOM_TEXT_TO_SPEECH', label: 'Custom TTS', adapterKey: 'custom' },
+  { value: 'OPENAI', get label() { return uiText("OpenAI"); }, adapterModelKey: 'OPENAI_TTS' },
+  { value: 'ELEVENLABS', get label() { return uiText("ElevenLabs"); }, adapterModelKey: 'ELEVENLABS' },
+  { value: 'PLAYAI', get label() { return uiText("Play.ht"); }, adapterModelKey: 'PLAYAI' },
+  { value: 'GOOGLE', get label() { return uiText("Google TTS"); }, adapterModelKey: 'GOOGLE_TTS' },
+  { value: 'CUSTOM_TEXT_TO_SPEECH', get label() { return uiText("Custom TTS"); }, adapterKey: 'custom' },
 ];
 
 export default function AddSpeaker(props) {
+  const uiLanguage = useUiLanguage();
   const {
     onAddNewSpeaker,
     onCancel,
@@ -43,7 +46,7 @@ export default function AddSpeaker(props) {
   } = useDeploymentModelAvailability();
   const availableTtsProviderOptions = useMemo(
     () => filterTtsProviderOptionsForAudioAvailability(TTS_PROVIDER_OPTIONS, audioAvailability),
-    [audioAvailability]
+    [uiLanguage, audioAvailability]
   );
 
 
@@ -52,7 +55,7 @@ export default function AddSpeaker(props) {
   const panelClass = isSidebarPanel
     ? `mt-3 rounded-lg ${bgColor} p-3 ${text2Color}`
     : `mt-3 rounded-lg border p-3 ${bgColor} ${text2Color}`;
-  const fieldLabelClass = `mb-1 block text-[11px] font-semibold uppercase tracking-[0.08em] ${text2Color}`;
+  const fieldLabelClass = `mb-1 block text-caption font-semibold uppercase tracking-[0.08em] ${text2Color}`;
   const inputClass = `w-full rounded-lg ${bgColor} ${text2Color} px-3 py-2 text-sm leading-5 placeholder:text-slate-400 focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-400/20`;
   const sidebarButtonClass = isSidebarPanel
     ? '!m-0 !min-h-[38px] !w-full !px-4 !py-2 text-xs'
@@ -95,22 +98,22 @@ export default function AddSpeaker(props) {
 
   const handleSave = async () => {
     if (!providerValue) {
-      setError('Please select a TTS Provider.');
+      setError(uiText("Please select a TTS Provider."));
       return;
     }
     if (!speakerType) {
-      setError('Please select a speaker/voice.');
+      setError(uiText("Please select a speaker/voice."));
       return;
     }
 
     const normalizedSpeakerName = speakerName.trim() || (isGoogleProvider ? getSelectedSpeakerDisplayName().trim() : '');
 
     if (!normalizedSpeakerName) {
-      setError('Please enter a speaker name.');
+      setError(uiText("Please enter a speaker name."));
       return;
     }
     if (existingSpeakers.some(s => s.toLowerCase() === normalizedSpeakerName.toLowerCase())) {
-      setError('Speaker name already exists.');
+      setError(uiText("Speaker name already exists."));
       return;
     }
 
@@ -145,19 +148,19 @@ export default function AddSpeaker(props) {
       {error && <div className="text-red-500 text-xs mt-1 mb-2">{error}</div>}
 
       <div className="mb-3">
-        <label className={fieldLabelClass}>Speaker name</label>
+        <label className={fieldLabelClass}>{uiText("Speaker name")}</label>
         <input
           type="text"
           className={inputClass}
           value={speakerName}
           onChange={(e) => setSpeakerName(e.target.value)}
-          placeholder="Character name"
+          placeholder={uiText("Character name")}
         />
 
       </div>
 
       <div className="mb-3">
-        <label className={fieldLabelClass}>Provider</label>
+        <label className={fieldLabelClass}>{uiText("Provider")}</label>
         <ModelAdapterSelect
           name="ttsProvider"
           options={availableTtsProviderOptions}
@@ -171,10 +174,10 @@ export default function AddSpeaker(props) {
       </div>
 
       <div className="mb-2">
-        <label className={fieldLabelClass}>Voice</label>
+        <label className={fieldLabelClass}>{uiText("Voice")}</label>
         <SpeechProviderSelect
           name="speakerVoice"
-          placeholder={`Select ${ttsProvider?.label || 'provider'} voice...`}
+          placeholder={uiText("Select {value0} voice...", { value0: ttsProvider?.label || 'provider' })}
           speakerType={speakerType}
           onSpeakerChange={handleSpeakerChange}
           playMusicPreviewForSpeaker={playMusicPreviewForSpeaker}
@@ -192,16 +195,12 @@ export default function AddSpeaker(props) {
           type="button"
           onClick={onCancel}
           extraClasses={sidebarButtonClass}
-        >
-          Back
-        </CommonButton>
+        >{uiText("Back")}</CommonButton>
         <CommonButton
           type="button"
           onClick={handleSave}
           extraClasses={sidebarButtonClass}
-        >
-          Save
-        </CommonButton>
+        >{uiText("Save")}</CommonButton>
       </div>
     </div>
   );

@@ -1,3 +1,4 @@
+import { normalizeKlingModelKey } from '../utils/KlingModel.js';
 
 import { getDBConnectionString } from "../DBString.js";
 import VideoSession from "../schema/VideoSession.js";
@@ -243,7 +244,7 @@ export async function createGenerativeVideoAnimationsForFrames(sessionId) {
     videoTone,
   } = sessionData;
 
-  const videoGenerationModel = expressGenerativeVideoModel; // can be LUMA, RUNWAYML, etc.
+  const videoGenerationModel = normalizeKlingModelKey(expressGenerativeVideoModel); // can be LUMA, RUNWAYML, etc.
 
   const userData = await User.findById(userId);
 
@@ -569,7 +570,7 @@ export async function createGenerativeVideoAnimationsForFrames(sessionId) {
         await requestRenderLumaVideo(payload);
       } else if (videoGenerationModel === 'RUNWAYML') {
         await requestRenderRunwayVideo(payload);
-      } else if (videoGenerationModel === 'KLINGIMGTOVID3PRO' || videoGenerationModel === 'KLINGIMGTOVIDTURBO') {
+      } else if (videoGenerationModel === 'KLINGIMGTOVID4') {
         await requestRenderKlingVideo(payload);
       } else if (videoGenerationModel === 'SKYREELSI2V') {
         await requestRenderSkyreelsVideo(payload);

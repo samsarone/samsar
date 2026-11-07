@@ -1,3 +1,4 @@
+import { normalizeKlingModelKey, isKlingV4Model, validateKlingV4Duration } from '../../utils/KlingModel.js';
 import AIVideoLayerGeneration from '../../schema/AIVideoLayerGeneration.js';
 import { prepareVideoRequestBilling } from './VideoRequestBilling.js';
 import { requestRenderLumaVideo } from './Luma.js';
@@ -144,6 +145,13 @@ async function assertLayerCanQueueAiVideoGeneration(payload = {}) {
 }
 
 export async function requestGenerateCustomAIVideo(userId, payload) {
+  payload = { ...payload, model: normalizeKlingModelKey(payload?.model) };
+  if (isKlingV4Model(payload.model)) {
+    payload.duration = validateKlingV4Duration(payload.duration ?? 5);
+    payload.generateAudio = false;
+    payload.generate_audio = false;
+    payload.isAudioVideoGeneration = false;
+  }
 
   assertVideoModelEnabled(payload?.model);
 

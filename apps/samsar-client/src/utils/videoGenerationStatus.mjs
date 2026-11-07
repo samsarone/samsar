@@ -1,3 +1,4 @@
+import { translateText as uiText } from "./localization.js";
 import { deduplicatedGet } from './deduplicatedGet.mjs';
 
 const PENDING_STATUSES = new Set(['PENDING', 'IN_PROGRESS', 'RUNNING', 'PROCESSING', 'INIT']);
@@ -439,7 +440,7 @@ export async function fetchDetailedVideoGenerationStatus({
   headers,
 }) {
   if (!axiosClient || !apiServer || !requestId) {
-    throw new Error('Video generation status request is missing required parameters.');
+    throw new Error(uiText("Video generation status request is missing required parameters."));
   }
 
   const normalizedApiServer = apiServer.replace(/\/+$/, '');

@@ -1,3 +1,5 @@
+import { useUiLanguage } from '../../../../hooks/useUiLanguage.js';
+import { translateText as uiText } from '../../../../utils/localization.js';
 import { useEffect, useState } from "react";
 import { FaTimes } from "react-icons/fa";
 
@@ -6,6 +8,7 @@ import OverlayPromptGenerator from "./OverlayPromptGenerator";
 import OverlayPromptGenerateVideo from "./OverlayPromptGenerateVideo";
 
 export default function VideoCanvasOverlay(props) {
+  useUiLanguage();
   const {
     activeItemList,
     onCloseOverlay,
@@ -112,37 +115,29 @@ export default function VideoCanvasOverlay(props) {
 
   if (!activeItemList || activeItemList.length === 0) {
     const overlaySurface =
-      colorMode === "dark"
-        ? "bg-[#181b24] text-slate-100 border border-[#3a4050] shadow-[0_28px_70px_rgba(0,0,0,0.46)]"
-        : "bg-white text-slate-900 border border-slate-200 shadow-[0_24px_60px_rgba(15,23,42,0.18)]";
+      `bg-surface text-fg border border-line ${colorMode === "dark" ? 'shadow-[0_28px_70px_rgba(0,0,0,0.46)]' : 'shadow-[0_24px_60px_rgba(15,23,42,0.18)]'}`;
     const videoOverlayBackdrop =
-      colorMode === "dark"
-        ? "bg-[#181b24] text-slate-100"
-        : "bg-white text-slate-900";
+      'bg-surface text-fg';
     const tabBase =
-      colorMode === "dark"
-        ? "bg-[#20232e] text-slate-300 border border-[#4a5265] hover:bg-[#292d3a] hover:text-white"
-        : "bg-slate-100 text-slate-600 border border-slate-200 hover:text-slate-900";
+      `text-fg-tertiary border border-line-strong ${colorMode === "dark" ? 'bg-[#20232e] hover:bg-[#292d3a] hover:text-white' : 'bg-slate-100 hover:text-slate-900'}`;
     const tabActive =
       colorMode === "dark"
         ? "bg-[#f6c453] text-[#101117] border border-[#ffe0a3]/70 shadow-[0_8px_20px_rgba(246,196,83,0.16)]"
         : "bg-indigo-600 text-white border border-indigo-600 shadow-sm";
     const closeButtonColor =
-      colorMode === "dark"
-        ? "bg-[#20232e] text-slate-200 border border-[#4a5265] hover:bg-[#292d3a]"
-        : "bg-slate-100 text-slate-700 border border-slate-200 hover:bg-slate-200";
-    const subText = colorMode === "dark" ? "text-slate-300" : "text-slate-600";
+      `text-fg-secondary border border-line-strong ${colorMode === "dark" ? 'bg-[#20232e] hover:bg-[#292d3a]' : 'bg-slate-100 hover:bg-slate-200'}`;
+    const subText = "text-fg-tertiary";
     const headerTextLayout = isImageStudioOverlay
       ? "min-w-0 flex flex-wrap items-baseline gap-x-2 gap-y-1"
       : isPortraitCanvas
       ? "min-w-0 flex flex-col gap-0.5"
       : "min-w-0 flex flex-wrap items-baseline gap-x-2 gap-y-0.5";
     const overlayTitle = isImageStudioOverlay
-      ? "Start this canvas"
-      : "Start this frame";
+      ? uiText("Start this canvas")
+      : uiText("Start this frame");
     const overlaySubtitle = isImageStudioOverlay
-      ? "Generate the first image directly on the Image Studio canvas."
-      : "Generate media directly on canvas";
+      ? uiText("Generate the first image directly on the Image Studio canvas.")
+      : uiText("Generate media directly on canvas");
     return (
       <div
         data-studio-blank-overlay
@@ -186,10 +181,10 @@ export default function VideoCanvasOverlay(props) {
               type="button"
               onClick={onCloseOverlay}
               className={`inline-flex shrink-0 items-center gap-2 rounded-full ${isImageStudioOverlay ? "px-4 py-2 text-sm" : "px-3 py-1.5 text-xs"} font-semibold transition-colors duration-150 ${closeButtonColor}`}
-              aria-label="Close overlay"
+              aria-label={uiText("Close overlay")}
             >
               <FaTimes size={isImageStudioOverlay ? 14 : 12} />
-              <span>Close</span>
+              <span>{uiText("Close")}</span>
             </button>
           </div>
 
@@ -199,16 +194,12 @@ export default function VideoCanvasOverlay(props) {
                 type="button"
                 className={`w-full whitespace-nowrap rounded-full px-3 py-2 text-xs font-semibold text-center transition-colors duration-150 ${selectedTab === "image" ? tabActive : tabBase}`}
                 onClick={() => setSelectedTab("image")}
-              >
-                Generate Image
-              </button>
+              >{uiText("Generate Image")}</button>
               <button
                 type="button"
                 className={`w-full whitespace-nowrap rounded-full px-3 py-2 text-xs font-semibold text-center transition-colors duration-150 ${selectedTab === "video" ? tabActive : tabBase}`}
                 onClick={() => setSelectedTab("video")}
-              >
-                Generate Video
-              </button>
+              >{uiText("Generate Video")}</button>
             </div>
           ) : null}
 

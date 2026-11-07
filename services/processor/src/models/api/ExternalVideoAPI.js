@@ -1,3 +1,4 @@
+import { normalizeKlingModelKey, isKlingV4Model, validateKlingV4Duration } from '../../utils/KlingModel.js';
 import { imageSubmissionIdentity } from './ImageRequestBilling.js';
 import mongoose from 'mongoose';
 import { createHash } from 'node:crypto';
@@ -566,15 +567,17 @@ export function buildDirectExternalImageToVideoSession({
   payload,
   startImage,
 }) {
-  const model = getFirstStringValue(payload, ['video_model', 'videoModel', 'model']);
+  const model = normalizeKlingModelKey(getFirstStringValue(payload, ['video_model', 'videoModel', 'model']));
   if (!model) {
     throw buildExternalVideoError('video_model is required for direct image-to-video.');
   }
 
   const prompt = getFirstStringValue(payload, ['prompt']);
   const aspectRatio = getFirstStringValue(payload, ['aspect_ratio', 'aspectRatio']) || '16:9';
-  const duration = normalizeDurationSeconds(payload.duration, 5);
-  const generateAudio = payload.generate_audio === true || payload.generateAudio === true;
+  const duration = isKlingV4Model(model)
+    ? validateKlingV4Duration(payload.duration ?? 5)
+    : normalizeDurationSeconds(payload.duration, 5);
+  const generateAudio = !isKlingV4Model(model) && (payload.generate_audio === true || payload.generateAudio === true);
   const framesPerSecond = Number(payload.frames_per_second || payload.framesPerSecond) || 24;
   const now = new Date();
 
@@ -654,7 +657,7 @@ export async function requestExternalDirectImageToVideo({
 }) {
   const normalizedPayload = textToVideo ? { ...payload } : await validateExternalImageToVideoPublicUrls(payload);
   const startImage = textToVideo ? '' : getValidatedDirectStartImage(normalizedPayload);
-  if (textToVideo && !['VEO3.1', 'VEO3.1FAST', 'HAILUOPRO'].includes(getFirstStringValue(payload, ['video_model', 'videoModel', 'model']))) {
+  if (textToVideo && !['VEO3.1', 'VEO3.1FAST', 'HAILUOPRO', 'KLINGTXTTOVID4'].includes(normalizeKlingModelKey(getFirstStringValue(payload, ['video_model', 'videoModel', 'model'])))) {
     throw buildExternalVideoError('Unsupported direct text-to-video model.');
   }
   const identity = buildDirectExternalImageToVideoIdentity(

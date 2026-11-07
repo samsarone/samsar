@@ -16,9 +16,11 @@ test('missing, negative, non-finite and malformed charges are never treated as f
 });
 
 test('native OpenAI image billing uses actual text and image token usage', () => {
-  const result = calculateImageCallCredits({ adapter: 'openai', model: 'gpt-image-2.5-sunburst',
-    usage: { input_tokens: 300, input_tokens_details: { text_tokens: 100, image_tokens: 200 }, output_tokens: 1000 } });
-  assert.equal(result.credits, 3.852);
+  for (const model of ['gpt-image-2.5-sunburst', 'gpt-image-2.6-sunburst']) {
+    const result = calculateImageCallCredits({ adapter: 'openai', model,
+      usage: { input_tokens: 300, input_tokens_details: { text_tokens: 100, image_tokens: 200 }, output_tokens: 1000 } });
+    assert.equal(result.credits, 3.852);
+  }
 });
 
 test('native Google distinguishes image output, text output, reasoning and cached input', () => {

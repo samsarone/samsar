@@ -1,5 +1,7 @@
+import { createHash } from 'node:crypto';
 import VideoSession from '../schema/VideoSession.js';
 import AssistantQueryGeneration from '../schema/AssistantQueryGeneration.js';
+import AssistantBillingRequest from '../schema/AssistantBillingRequest.js';
 import User from '../schema/User.js';
 import { getDBConnectionString } from './DBString.js';
 import { assertVideoSessionEditableAccess } from './VideoSession.js';
@@ -161,8 +163,31 @@ export async function createAssistantQueryRequest(userId, payload) {
     throw new Error('Session not found');
   }
 
+  if (payload.assistantSessionVersion !== undefined &&
+    payload.assistantSessionVersion !== (sessionData.assistantSessionVersion || 0)) {
+    throw Object.assign(new Error('Assistant session was cleared. Please send your message again.'), { status: 409 });
+  }
+
   if (isSceneActionsCommand(normalizedQuery)) {
     return appendSceneActionsCommandResponse(sessionData, userMessageContent);
+  }
+
+  const clientRequestId = payload.client_request_id || payload.clientRequestId;
+  if (clientRequestId && (typeof clientRequestId !== 'string' || clientRequestId.length > 512)) {
+    throw Object.assign(new Error('Invalid assistant request key.'), { status: 400 });
+  }
+  const assistantSessionVersion = sessionData.assistantSessionVersion || 0;
+  const messageId = clientRequestId ? createHash('sha256')
+    .update(`${userId}:${sessionId}:${assistantSessionVersion}:${clientRequestId}`).digest('hex').slice(0, 32) : hat();
+  const requestFingerprint = createHash('sha256').update(JSON.stringify({ query: normalizedQuery, frameImage, modelSettings })).digest('hex');
+  const previous = sessionData.sessionMessages?.find(message => message.role === 'user' && message.id === messageId);
+  if (previous) {
+    if (previous.requestFingerprint !== requestFingerprint) throw Object.assign(new Error('Request key was already used for a different message.'), { status: 409 });
+    const hasReply = sessionData.sessionMessages.some(message => message.role === 'assistant' && message.id === messageId);
+    if (!hasReply && sessionData.sessionMessageGenerationPending && previous.assistantRequest) {
+      await saveAssistantQueueMessage({ ...previous.assistantRequest, sessionId, queryId: messageId, assistantSessionVersion, query: normalizedQuery });
+    }
+    return { queryId: messageId, status: !hasReply && sessionData.sessionMessageGenerationPending ? 'PENDING' : 'COMPLETED', sessionDetails: sessionData };
   }
 
   const userData = await User.findOne({ _id:
@@ -179,48 +204,37 @@ export async function createAssistantQueryRequest(userId, payload) {
   }
 
 
-  let sessionMessages = sessionData.sessionMessages;
-  
-  const messageId = hat();
   const timestamp = new Date();
-  if (!sessionMessages || sessionMessages.length === 0) {
-    sessionMessages = [
-      {
-        role: 'user',
-        content: userMessageContent,
-        id: messageId,
-        timestamp,
-      }
-    ]
-  } else {
-    sessionMessages.push({
-      role: 'user',
-      content: userMessageContent,
-      id: messageId,
-      timestamp,
-    });
-  
+  const assistantRequest = { inferenceModel: userAssistantModel, stream: payload.stream === true, modelSettings };
+  // Append atomically: an older submit must never restore cleared history.
+  const appended = await VideoSession.updateOne({
+    _id: sessionId,
+    ...assistantVersionFilter(assistantSessionVersion),
+    $nor: [{ sessionMessages: { $elemMatch: { role: 'user', id: messageId } } }],
+  }, {
+    $push: { sessionMessages: { role: 'user', content: userMessageContent, id: messageId, timestamp, requestFingerprint, assistantRequest } },
+    $set: { sessionMessageGenerationPending: true, sessionMessageGenerationError: null,
+      assistantStream: { queryId: messageId, sessionVersion: assistantSessionVersion, status: 'queued', text: '', sequence: 0 } },
+  });
+  if (!appended.matchedCount) {
+    const current = await VideoSession.findOne({ _id: sessionId });
+    const duplicate = current?.sessionMessages?.find(message => message.role === 'user' && message.id === messageId);
+    if (duplicate?.requestFingerprint === requestFingerprint) {
+      if (current.sessionMessageGenerationPending && duplicate.assistantRequest) await saveAssistantQueueMessage({
+        ...duplicate.assistantRequest, sessionId, queryId: messageId, assistantSessionVersion, query: normalizedQuery,
+      });
+      return { queryId: messageId, status: current.sessionMessageGenerationPending ? 'PENDING' : 'COMPLETED', sessionDetails: current };
+    }
+    throw Object.assign(new Error('Assistant session was cleared. Please send your message again.'), { status: 409 });
   }
 
-  await VideoSession.updateOne({
-    _id: sessionId
-  }, {
-    sessionMessages,
-    sessionMessageGenerationPending: true,
-    sessionMessageGenerationError: null,
+  const newAssistantQueryGeneration = await saveAssistantQueueMessage({
+    ...assistantRequest, query: normalizedQuery, sessionId, queryId: messageId, assistantSessionVersion,
   });
-
-  const newAssistantQueryGeneration = new AssistantQueryGeneration({
-    query: normalizedQuery,
-    sessionId: sessionId,
-    queryId: messageId,
-    status: 'pending',
-    inferenceModel: userAssistantModel,
-    ...(modelSettings ? { modelSettings } : {}),
-  });
-
-  
-  await newAssistantQueryGeneration.save();
+  // Reset can happen between appending the message and saving the queue row.
+  if (!await VideoSession.exists({ _id: sessionId, ...assistantVersionFilter(assistantSessionVersion) })) {
+    await AssistantQueryGeneration.deleteOne({ _id: newAssistantQueryGeneration._id });
+  }
   return newAssistantQueryGeneration;
 
 }
@@ -254,7 +268,9 @@ export async function getAssistantQueryGenerationStatus(sessionId) {
 
   if (sessionQueryResponse.sessionMessageGenerationPending) {
     return {
-      status: 'PENDING'
+      status: 'PENDING',
+      assistantStream: sessionQueryResponse.assistantStream || null,
+      assistantSessionVersion: sessionQueryResponse.assistantSessionVersion || 0
     }
   } else {
     return {
@@ -286,31 +302,30 @@ export async function deleteAssistantSessionMessage(userId, payload = {}) {
     throw new Error('Session not found');
   }
 
-  const sessionMessages = Array.isArray(sessionData.sessionMessages)
-    ? sessionData.sessionMessages
-    : [];
-  const nextSessionMessages = sessionMessages.filter(
-    (message) => String(message?.id || '') !== String(messageId)
-  );
-
   await AssistantQueryGeneration.deleteMany({
     sessionId,
     queryId: String(messageId),
   });
 
   const hasPendingRequests = Boolean(
-    await AssistantQueryGeneration.exists({ sessionId })
+    await AssistantQueryGeneration.exists({ sessionId, status: { $ne: 'reconciliation_required' } })
   );
 
   const updatedSession = await VideoSession.findOneAndUpdate(
-    { _id: sessionId },
+    { _id: sessionId, ...assistantVersionFilter(sessionData.assistantSessionVersion || 0) },
     {
-      sessionMessages: nextSessionMessages,
-      sessionMessageGenerationPending: hasPendingRequests,
-      sessionMessageGenerationError: null,
+      $pull: { sessionMessages: { id: String(messageId) } },
+      $set: {
+        ...(sessionData.assistantStream?.queryId === String(messageId) ? { assistantStream: null } : {}),
+        sessionMessageGenerationPending: hasPendingRequests,
+        sessionMessageGenerationError: null,
+      },
     },
     { new: true }
   );
+  if (!updatedSession) {
+    throw Object.assign(new Error('Assistant session was cleared. Please refresh the conversation.'), { status: 409 });
+  }
 
   return {
     sessionDetails: updatedSession,
@@ -334,19 +349,74 @@ export async function resetAssistantSessionMessages(userId, payload = {}) {
     throw new Error('Session not found');
   }
 
-  await AssistantQueryGeneration.deleteMany({ sessionId });
-
+  // Invalidate active workers before removing old queue rows. New requests use
+  // the incremented version and survive cleanup even when submitted concurrently.
   const updatedSession = await VideoSession.findOneAndUpdate(
     { _id: sessionId },
     {
-      sessionMessages: [],
-      sessionMessageGenerationPending: false,
-      sessionMessageGenerationError: null,
+      $set: {
+        sessionMessages: [],
+        assistantStream: null,
+        sessionMessageGenerationPending: false,
+        sessionMessageGenerationError: null,
+      },
+      $inc: { assistantSessionVersion: 1 },
     },
     { new: true }
   );
+  await AssistantQueryGeneration.deleteMany({
+    sessionId,
+    $or: [
+      { assistantSessionVersion: { $lt: updatedSession.assistantSessionVersion } },
+      { assistantSessionVersion: { $exists: false } },
+    ],
+  });
 
+  // Older workers kept completed replies in billing receipts as well. Keep
+  // usage/debit records, but remove those duplicate conversation payloads.
+  await AssistantBillingRequest.updateMany({
+    scope: 'queued_assistant', 'context.sessionId': sessionId, status: 'COMPLETED',
+  }, { $unset: { providerResponse: '', result: '', errorMessage: '' } });
+
+  return { sessionDetails: updatedSession };
+}
+
+function assistantVersionFilter(version) {
+  return version === 0
+    ? { $or: [{ assistantSessionVersion: 0 }, { assistantSessionVersion: { $exists: false } }] }
+    : { assistantSessionVersion: version };
+}
+
+
+export async function getAssistantStreamSnapshot(userId, payload = {}) {
+  if (!/^[a-f0-9]{24}$/i.test(payload.id || '')) {
+    throw Object.assign(new Error('Invalid session ID.'), { status: 400 });
+  }
+  // Recheck shared-edit access on each snapshot, including after reconnects.
+  const session = await assertVideoSessionEditableAccess(userId, payload, { markEdited: false });
   return {
-    sessionDetails: updatedSession,
+    sessionId: String(session._id),
+    assistantSessionVersion: session.assistantSessionVersion || 0,
+    // Streaming history needs attachment markers, never repeated base64 image bytes.
+    sessionMessages: (session.sessionMessages || []).map(({ assistantRequest, ...message }) => ({
+      ...message, content: stripAssistantStreamMedia(message.content),
+    })),
+    sessionMessageGenerationPending: Boolean(session.sessionMessageGenerationPending),
+    sessionMessageGenerationError: session.sessionMessageGenerationError || null,
+    assistantStream: session.assistantStream || null,
   };
+}
+
+
+async function saveAssistantQueueMessage(data) {
+  const request = new AssistantQueryGeneration({ ...data, _id: data.queryId.slice(0, 24), status: 'pending' });
+  try { await request.save(); } catch (error) { if (error.code !== 11000) throw error; }
+  return request;
+}
+
+function stripAssistantStreamMedia(content) {
+  if (Array.isArray(content)) return content.map(stripAssistantStreamMedia);
+  if (!content || typeof content !== 'object') return content;
+  if (['image_url', 'input_image'].includes(content.type)) return { type: content.type };
+  return { ...content, ...(content.content ? { content: stripAssistantStreamMedia(content.content) } : {}) };
 }

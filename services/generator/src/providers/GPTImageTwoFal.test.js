@@ -37,7 +37,7 @@ test('submits the normalized ImageGeneration payload to the Fal Sunburst endpoin
 
   assert.equal(result, null);
   assert.deepEqual(submissions, [[
-    'openai/gpt-image-2.5/sunburst/text-to-image',
+    'openai/gpt-image-2.6/sunburst/text-to-image',
     {
       input: {
         prompt: 'A cinematic product launch stage',
@@ -55,7 +55,7 @@ test('submits the normalized ImageGeneration payload to the Fal Sunburst endpoin
   assert.equal(updates[1].args[1].apiRequestId, 'fal-request-1');
   assert.equal(updates[1].args[1].apiGenerationStatus, 'PENDING');
   assert.equal(updates[1].args[1].externalProvider, 'fal');
-  assert.equal(updates[1].args[1].gptImageFalEndpoint, 'openai/gpt-image-2.5/sunburst/text-to-image');
+  assert.equal(updates[1].args[1].gptImageFalEndpoint, 'openai/gpt-image-2.6/sunburst/text-to-image');
   assert.equal(updates[1].args[1].rowLocked, false);
   assert.ok(updates[1].args[1].apiSubmittedAt instanceof Date);
 });
@@ -154,7 +154,7 @@ test('keeps a rate-limited poll pinned to the existing Fal request', async () =>
   });
 });
 
-for (const endpoint of [undefined, 'openai/gpt-image-2.5/sunburst/text-to-image']) {
+for (const endpoint of [undefined, 'openai/gpt-image-2.5/sunburst/text-to-image', 'openai/gpt-image-2.6/sunburst/text-to-image']) {
   test(`polls GPT Image on its submitted endpoint (${endpoint || 'legacy'})`, async () => {
     const expectedEndpoint = endpoint || 'fal-ai/gpt-image-2';
     const calls = [];

@@ -1,3 +1,5 @@
+import { useUiLanguage } from '../../hooks/useUiLanguage.js';
+import { translateText as uiText } from '../../utils/localization.js';
 import {
   SiAlibabacloud,
   SiGooglecloud,
@@ -29,6 +31,7 @@ export default function AdapterIcon({
   tooltipId,
   className = "",
 }) {
+  useUiLanguage();
   const { colorMode } = useColorMode();
   const presentation = getAdapterPresentation(adapterKey, {
     label: adapterLabel,
@@ -38,7 +41,7 @@ export default function AdapterIcon({
   const Mark = MARK_COMPONENTS[presentation.mark];
   const accessibleLabel = /\badapter$/i.test(presentation.label)
     ? presentation.label
-    : `${presentation.label} adapter`;
+    : uiText("{value0} adapter", { value0: presentation.label });
   const surfaceClassName = colorMode === "dark"
     ? "border-[#667188]/80 bg-[#20232e] text-[#f6c453] shadow-[0_4px_12px_rgba(0,0,0,0.22)] hover:border-[#f6c453]/65 hover:bg-[#292d3a] hover:text-[#ffe0a3] focus:outline-none focus:ring-2 focus:ring-[#f6c453]/55"
     : "border-slate-300 bg-slate-100 text-slate-700 shadow-sm hover:border-slate-400 hover:bg-white hover:text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-400/70";
@@ -58,7 +61,7 @@ export default function AdapterIcon({
         <Mark className="h-[13px] w-[13px]" aria-hidden="true" />
       ) : (
         <span
-          className={`font-black leading-none ${presentation.glyph.length > 1 ? "text-[8px] tracking-[-0.08em]" : "text-[11px]"}`}
+          className={`font-black leading-none ${presentation.glyph.length > 1 ? "text-[8px] tracking-[-0.08em]" : "text-caption"}`}
           aria-hidden="true"
         >
           {presentation.glyph}

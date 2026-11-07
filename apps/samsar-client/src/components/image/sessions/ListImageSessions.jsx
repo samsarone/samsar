@@ -1,3 +1,5 @@
+import { useUiLanguage } from '../../../hooks/useUiLanguage.js';
+import { translateText as uiText } from '../../../utils/localization.js';
 import { useEffect, useState } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
@@ -10,11 +12,12 @@ import { imageAspectRatioOptions } from '../../../constants/ImageAspectRatios.js
 const PROCESSOR_API = import.meta.env.VITE_PROCESSOR_API;
 
 const aspectRatioFilterOptions = [
-  { value: 'All', label: 'All' },
+  { value: 'All', get label() { return uiText("All"); } },
   ...imageAspectRatioOptions,
 ];
 
 export default function ListImageSessions() {
+  useUiLanguage();
   const [sessionList, setSessionList] = useState([]);
   const [page, setPage] = useState(1);
   const [limit] = useState(30);
@@ -31,17 +34,11 @@ export default function ListImageSessions() {
   const { colorMode } = useColorMode();
 
   const containerSurface =
-    colorMode === 'dark'
-      ? 'bg-[#0c0d12] text-slate-100'
-      : 'bg-[#f7f9fc] text-slate-900';
+    `text-fg ${colorMode === 'dark' ? 'bg-[#0c0d12]' : 'bg-[#f7f9fc]'}`;
   const cardSurface =
-    colorMode === 'dark'
-      ? 'bg-[#181b24] border border-[#3a4050] shadow-[0_14px_36px_rgba(0,0,0,0.35)]'
-      : 'bg-white border border-slate-200 shadow-sm';
+    `bg-surface border border-line ${colorMode === 'dark' ? 'shadow-[0_14px_36px_rgba(0,0,0,0.35)]' : 'shadow-sm'}`;
   const paginationButtonClass =
-    colorMode === 'dark'
-      ? 'bg-[#20232e] hover:bg-[#292d3a] text-slate-100 border border-[#3a4050]'
-      : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 shadow-sm';
+    `bg-surface-raised hover:bg-surface-hover text-fg-body border border-line ${colorMode === 'dark' ? '' : 'shadow-sm'}`;
 
   useEffect(() => {
     const storedAspectRatio = localStorage.getItem('defaultImageSessionSelectAspectRatio');
@@ -179,9 +176,7 @@ export default function ListImageSessions() {
   };
 
   const bannerSurface =
-    colorMode === 'dark'
-      ? 'bg-[#101828] border border-rose-400/30 text-slate-100'
-      : 'bg-white border border-rose-200 text-slate-900';
+    `border text-fg ${colorMode === 'dark' ? 'bg-[#101828] border-rose-400/30' : 'bg-white border-rose-200'}`;
   const bannerSubtle =
     colorMode === 'dark' ? 'text-slate-300' : 'text-slate-500';
   const bannerButton =
@@ -193,13 +188,9 @@ export default function ListImageSessions() {
       ? 'border border-slate-700 text-slate-200 hover:bg-slate-800'
       : 'border border-slate-200 text-slate-600 hover:bg-slate-100';
   const dialogSurface =
-    colorMode === 'dark'
-      ? 'bg-[#0f172a] text-slate-100 border border-[#3a4050]'
-      : 'bg-white text-slate-900 border border-slate-200';
+    `text-fg border border-line ${colorMode === 'dark' ? 'bg-[#0f172a]' : 'bg-white'}`;
   const dialogInputSurface =
-    colorMode === 'dark'
-      ? 'bg-slate-900 border-slate-700 text-slate-100 placeholder-slate-400'
-      : 'bg-white border-slate-300 text-slate-900 placeholder-slate-500';
+    `text-fg ${colorMode === 'dark' ? 'bg-slate-900 border-slate-700 placeholder-slate-400' : 'bg-white border-slate-300 placeholder-slate-500'}`;
   const dialogSecondaryButton =
     colorMode === 'dark'
       ? 'bg-[#17253f] text-slate-100 hover:bg-[#1c3153]'
@@ -208,7 +199,7 @@ export default function ListImageSessions() {
     colorMode === 'dark'
       ? 'bg-rose-500 text-white hover:bg-rose-400'
       : 'bg-rose-500 text-white hover:bg-rose-600';
-  const dialogSubtleText = colorMode === 'dark' ? 'text-slate-300' : 'text-slate-600';
+  const dialogSubtleText = "text-fg-tertiary";
 
   return (
     <OverflowContainer>
@@ -218,30 +209,24 @@ export default function ListImageSessions() {
             <div className={`mb-6 rounded-lg p-4 shadow-sm sm:p-5 ${bannerSurface}`}>
               <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
                 <div>
-                  <div className="text-base font-semibold">Welcome to Image Studio</div>
-                  <div className={`text-sm mt-1 ${bannerSubtle}`}>
-                    Add credits to start generating and editing images.
-                  </div>
+                  <div className="text-base font-semibold">{uiText("Welcome to Image Studio")}</div>
+                  <div className={`text-sm mt-1 ${bannerSubtle}`}>{uiText("Add credits to start generating and editing images.")}</div>
                 </div>
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
                   <button
                     onClick={handleAddCredits}
                     className={`min-h-[40px] px-4 py-2 rounded-md text-sm font-semibold transition ${bannerButton}`}
-                  >
-                    Add credits
-                  </button>
+                  >{uiText("Add credits")}</button>
                   <button
                     onClick={dismissAddCreditsBanner}
                     className={`min-h-[40px] px-4 py-2 rounded-md text-sm font-medium transition ${bannerGhost}`}
-                  >
-                    Dismiss
-                  </button>
+                  >{uiText("Dismiss")}</button>
                 </div>
               </div>
             </div>
           )}
           <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
-            <div className="text-lg font-semibold">Image Sessions</div>
+            <div className="text-lg font-semibold">{uiText("Image Sessions")}</div>
             <div className="grid w-full grid-cols-1 gap-3 sm:w-auto sm:grid-cols-[minmax(160px,220px)_auto]">
               <div className="min-w-0">
                 <SingleSelect
@@ -253,31 +238,23 @@ export default function ListImageSessions() {
               <button
                 onClick={openCreateDialog}
                 className="min-h-[40px] rounded-md bg-rose-500 px-4 py-2 text-sm font-medium text-white hover:bg-rose-600"
-              >
-                New Image Session
-              </button>
+              >{uiText("New Image Session")}</button>
             </div>
           </div>
 
           <div className="mb-4 flex flex-wrap items-center justify-between gap-3 text-sm">
-            <div>
-              Page {page} of {totalPages}
-            </div>
+            <div>{uiText("Page {value0} of {value1}", { value0: page, value1: totalPages })}</div>
             <div className="flex gap-2">
               <button
                 onClick={handlePrevPage}
                 disabled={page <= 1}
                 className={`min-h-[36px] rounded-md px-3 py-1.5 transition disabled:cursor-not-allowed disabled:opacity-50 ${paginationButtonClass}`}
-              >
-                Prev
-              </button>
+              >{uiText("Prev")}</button>
               <button
                 onClick={handleNextPage}
                 disabled={page >= totalPages}
                 className={`min-h-[36px] rounded-md px-3 py-1.5 transition disabled:cursor-not-allowed disabled:opacity-50 ${paginationButtonClass}`}
-              >
-                Next
-              </button>
+              >{uiText("Next")}</button>
             </div>
           </div>
 
@@ -308,13 +285,11 @@ export default function ListImageSessions() {
                           event.currentTarget.style.display = 'none';
                         }}
                         className="h-full w-full object-cover"
-                        alt={`Session ${index + 1}`}
+                        alt={uiText("Session {value0}", { value0: index + 1 })}
                       />
                     )}
                   </div>
-                  <div className="px-4 py-3 text-xs text-slate-500">
-                    Tap to open in Image Studio
-                  </div>
+                  <div className="px-4 py-3 text-xs text-slate-500">{uiText("Tap to open in Image Studio")}</div>
                 </div>
               );
             })}
@@ -325,22 +300,18 @@ export default function ListImageSessions() {
         <div className="fixed inset-0 z-[11060] flex items-center justify-center p-3 sm:p-4">
           <button
             type="button"
-            aria-label="Close create image session dialog"
+            aria-label={uiText("Close create image session dialog")}
             className="absolute inset-0 bg-black/60"
             onClick={closeCreateDialog}
           />
           <div className={`relative z-10 max-h-[calc(100dvh-1.5rem)] w-full max-w-md overflow-y-auto rounded-xl p-4 shadow-[0_20px_46px_rgba(0,0,0,0.5)] sm:p-6 ${dialogSurface}`}>
             <form onSubmit={handleCreateSessionSubmit}>
-              <div className="text-lg font-semibold">Create new Image session</div>
-              <div className={`mt-1 text-sm ${dialogSubtleText}`}>
-                Choose a canvas and optional background layer.
-              </div>
+              <div className="text-lg font-semibold">{uiText("Create new Image session")}</div>
+              <div className={`mt-1 text-sm ${dialogSubtleText}`}>{uiText("Choose a canvas and optional background layer.")}</div>
 
               <div className="mt-5 space-y-4">
                 <div>
-                  <label className="block text-sm font-medium mb-2">
-                    Aspect ratio
-                  </label>
+                  <label className="block text-sm font-medium mb-2">{uiText("Aspect ratio")}</label>
                   <SingleSelect
                     options={createAspectRatioOptions}
                     onChange={(selectedOption) => {
@@ -358,15 +329,11 @@ export default function ListImageSessions() {
                     type="checkbox"
                     checked={addBackgroundLayer}
                     onChange={(event) => setAddBackgroundLayer(event.target.checked)}
-                  />
-                  Add background layer
-                </label>
+                  />{uiText("Add background layer")}</label>
 
                 {addBackgroundLayer && (
                   <div>
-                    <label className="block text-sm font-medium mb-2">
-                      Background color
-                    </label>
+                    <label className="block text-sm font-medium mb-2">{uiText("Background color")}</label>
                     <div className={`flex items-center gap-3 rounded-lg border px-3 py-2 ${dialogInputSurface}`}>
                       <input
                         type="color"
@@ -386,15 +353,13 @@ export default function ListImageSessions() {
                   onClick={closeCreateDialog}
                   disabled={isCreatePending}
                   className={`min-h-[40px] px-3 py-2 rounded-md text-sm transition disabled:opacity-60 ${dialogSecondaryButton}`}
-                >
-                  Cancel
-                </button>
+                >{uiText("Cancel")}</button>
                 <button
                   type="submit"
                   disabled={isCreatePending}
                   className={`min-h-[40px] px-4 py-2 rounded-md text-sm font-semibold transition disabled:opacity-60 ${dialogPrimaryButton}`}
                 >
-                  {isCreatePending ? 'Creating...' : 'Create session'}
+                  {isCreatePending ? uiText("Creating...") : uiText("Create session")}
                 </button>
               </div>
             </form>

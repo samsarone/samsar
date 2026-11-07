@@ -31,12 +31,17 @@ Plan scenes, understand images, write copy and build assistants.
 
 | Model / request key | Hosted path | Supported deployment adapters | Workflow scope | Notes |
 | --- | --- | --- | --- | --- |
-| GPT 6 Astra · `gpt-6-astra` | [Samsar.js](https://docs.samsar.one/external-requests#chat) | [OpenAI](https://platform.openai.com/docs/overview) · [Samsar.js](https://docs.samsar.one/external-requests) · [GMICloud via GenBlaze](https://docs.gmicloud.ai/) · [OpenRouter](https://openrouter.ai/docs/quickstart) | Branching | Current public key. Older setup files may contain gpt-5.6-sol or gpt-6.1-sol; the processor normalizes that alias. GenBlaze still requires an exact validated mapping. |
-| Claude Opus 5.5 · `claude-opus-5.5` | [Samsar.js](https://docs.samsar.one/external-requests#chat) | [Anthropic](https://platform.claude.com/docs/en/api/overview) · [Samsar.js](https://docs.samsar.one/external-requests) · [OpenRouter](https://openrouter.ai/docs/quickstart) | Branching | Enable a supported adapter and check the target deployment before selecting this model. |
+| GPT 6 Astra · `gpt-6-astra` | [Samsar.js](https://docs.samsar.one/external-requests#chat) | [OpenAI](https://platform.openai.com/docs/overview) · [Samsar.js](https://docs.samsar.one/external-requests) · [GMICloud via GenBlaze](https://docs.gmicloud.ai/) · [OpenRouter](https://openrouter.ai/docs/quickstart) | Branching | Default GPT model. Supports high and xhigh effort. Legacy gpt-5.6-sol choices still normalize to Astra; GPT 6.1 Sol is a separate choice. GenBlaze requires an exact validated mapping. |
+| GPT 6.1 Sol · `gpt-6.1-sol` | [Samsar.js](https://docs.samsar.one/external-requests#chat) | [OpenAI](https://platform.openai.com/docs/overview) · [Samsar.js](https://docs.samsar.one/external-requests) · [OpenRouter](https://openrouter.ai/docs/quickstart) | Branching | Supports text inference and vision with high or xhigh effort. Native OpenAI, OpenRouter, and Samsar adapters. |
+| Claude Opus 5.5 · `claude-opus-5.5` | [Samsar.js](https://docs.samsar.one/external-requests#chat) | [Anthropic](https://platform.claude.com/docs/en/api/overview) · [Samsar.js](https://docs.samsar.one/external-requests) · [OpenRouter](https://openrouter.ai/docs/quickstart) | Branching | Supports text inference and vision with high or xhigh effort. Native Anthropic, OpenRouter, and Samsar adapters. |
+| Claude Fable 5.1 · `claude-fable-5.1` | [Samsar.js](https://docs.samsar.one/external-requests#chat) | [Anthropic](https://platform.claude.com/docs/en/api/overview) · [Samsar.js](https://docs.samsar.one/external-requests) · [OpenRouter](https://openrouter.ai/docs/quickstart) | Branching | Supports text inference and vision with high or xhigh effort. Native Anthropic uses claude-fable-5-1; OpenRouter uses anthropic/claude-fable-5.1. |
 | Gemini 4 Argon · `gemini-4-argon` | [Samsar.js](https://docs.samsar.one/external-requests#chat) | [Google Cloud](https://cloud.google.com/vertex-ai/generative-ai/docs) · [Samsar.js](https://docs.samsar.one/external-requests) · [GMICloud via GenBlaze](https://docs.gmicloud.ai/) · [OpenRouter](https://openrouter.ai/docs/quickstart) | Modality API / Studio | Enable a supported adapter and check the target deployment before selecting this model. |
 | Kimi K3 · `kimi-k3` (setup: `KIMIK3`) | [Samsar.js](https://docs.samsar.one/external-requests#chat) | [Kimi](https://platform.kimi.ai/docs/overview) · [Samsar.js](https://docs.samsar.one/external-requests) | Modality API / Studio | Setup key KIMIK3; inference requests use kimi-k3. Native Kimi first, then Samsar; OpenRouter is not in this chain. |
 | Qwen 3.8 Max · `QWEN3.8` | [Samsar.js](https://docs.samsar.one/external-requests#chat) | [Alibaba Cloud](https://www.alibabacloud.com/help/en/model-studio/) · [Samsar.js](https://docs.samsar.one/external-requests) · [GMICloud via GenBlaze](https://docs.gmicloud.ai/) · [OpenRouter](https://openrouter.ai/docs/quickstart) | Modality API / Studio | Native Alibaba is a Docker option. Hosted Qwen uses OpenRouter internally; callers still use Samsar.js. |
-| GPT 6 Astra · extra high reasoning · `gpt-6-astra-xhigh` | [Samsar.js](https://docs.samsar.one/external-requests#chat) | [OpenAI](https://platform.openai.com/docs/overview) · [Samsar.js](https://docs.samsar.one/external-requests) · [OpenRouter](https://openrouter.ai/docs/quickstart) | Branching | Reasoning option on GPT 6 Astra, not a separate provider model. Omitted from the normal runtime catalog. |
+| GPT 6 Astra · extra high reasoning · `gpt-6-astra-xhigh` | [Samsar.js](https://docs.samsar.one/external-requests#chat) | [OpenAI](https://platform.openai.com/docs/overview) · [Samsar.js](https://docs.samsar.one/external-requests) · [OpenRouter](https://openrouter.ai/docs/quickstart) | Branching | Reasoning option on GPT 6 Astra; providers receive the base model with xhigh effort. Omitted from the normal runtime catalog. |
+| GPT 6.1 Sol · extra high reasoning · `gpt-6.1-sol-xhigh` | [Samsar.js](https://docs.samsar.one/external-requests#chat) | [OpenAI](https://platform.openai.com/docs/overview) · [Samsar.js](https://docs.samsar.one/external-requests) · [OpenRouter](https://openrouter.ai/docs/quickstart) | Branching | Reasoning option on GPT 6.1 Sol; providers receive the base model with xhigh effort. Omitted from the normal runtime catalog. |
+| Claude Fable 5.1 · extra high reasoning · `claude-fable-5.1-xhigh` | [Samsar.js](https://docs.samsar.one/external-requests#chat) | [Anthropic](https://platform.claude.com/docs/en/api/overview) · [Samsar.js](https://docs.samsar.one/external-requests) · [OpenRouter](https://openrouter.ai/docs/quickstart) | Branching | Reasoning option on Claude Fable 5.1; providers receive the base model with xhigh effort. Omitted from the normal runtime catalog. |
+| Claude Opus 5.5 · extra high reasoning · `claude-opus-5.5-xhigh` | [Samsar.js](https://docs.samsar.one/external-requests#chat) | [Anthropic](https://platform.claude.com/docs/en/api/overview) · [Samsar.js](https://docs.samsar.one/external-requests) · [OpenRouter](https://openrouter.ai/docs/quickstart) | Branching | Reasoning option on Claude Opus 5.5; providers receive the base model with xhigh effort. Omitted from the normal runtime catalog. |
 
 <a id="image"></a>
 
@@ -49,7 +54,7 @@ Create scene images, illustrations and reusable visual assets.
 | Model / request key | Hosted path | Supported deployment adapters | Workflow scope | Notes |
 | --- | --- | --- | --- | --- |
 | Qwen Image 3.0 Pro · `QWENIMAGE3PRO` | Deployment only | [Alibaba Cloud](https://www.alibabacloud.com/help/en/model-studio/) | Express | Standalone native adapter only. Requires Alibaba standard pay-as-you-go credentials; Token Plan credentials do not enable it. |
-| GPTImage 2.5 · `GPTIMAGE2.5` | [Samsar.js](https://docs.samsar.one/image-api#post-imagetext_to_image) | [Samsar.js](https://docs.samsar.one/external-requests) · [OpenAI](https://platform.openai.com/docs/overview) · [fal](https://fal.ai/docs/documentation) | Express · Branching | Versioned Samsar key for GPTImage 2.5. Legacy GenBlaze GPT Image 2 routes are excluded from this model. |
+| GPTImage 2.6 · `GPTIMAGE2.5` | [Samsar.js](https://docs.samsar.one/image-api#post-imagetext_to_image) | [Samsar.js](https://docs.samsar.one/external-requests) · [OpenAI](https://platform.openai.com/docs/overview) · [fal](https://fal.ai/docs/documentation) | Express · Branching | Stable Samsar key for GPTImage 2.6 Sunburst. Legacy GenBlaze GPT Image 2 routes are excluded from this model. |
 | Seedream 5 Pro · `SEEDREAM` | [Samsar.js](https://docs.samsar.one/image-api#post-imagetext_to_image) | [Samsar.js](https://docs.samsar.one/external-requests) · [GMICloud via GenBlaze](https://docs.gmicloud.ai/) · [fal](https://fal.ai/docs/documentation) | Express | Stable key currently maps to Seedream 5 Pro. |
 | Nano Banana 2 · `NANOBANANA2` | [Samsar.js](https://docs.samsar.one/image-api#post-imagetext_to_image) | [Samsar.js](https://docs.samsar.one/external-requests) · [Google Cloud](https://cloud.google.com/vertex-ai/generative-ai/docs) · [GMICloud via GenBlaze](https://docs.gmicloud.ai/) · [fal](https://fal.ai/docs/documentation) | Modality API / Studio | Image generation catalog model; not in the current Express image allowlist. |
 | Nano Banana Pro · `NANOBANANAPRO` | [Samsar.js](https://docs.samsar.one/image-api#post-imagetext_to_image) | [Samsar.js](https://docs.samsar.one/external-requests) · [Google Cloud](https://cloud.google.com/vertex-ai/generative-ai/docs) · [GMICloud via GenBlaze](https://docs.gmicloud.ai/) · [fal](https://fal.ai/docs/documentation) | Express · Branching | Enable a supported adapter and check the target deployment before selecting this model. |
@@ -59,27 +64,27 @@ Create scene images, illustrations and reusable visual assets.
 <details>
 <summary>Additional image generation entries in the Studio source catalog (17)</summary>
 
-These entries are outside the standalone setup registry. Check the target Studio and its configured provider before using them. They are not added to the Express or branching allowlist by appearing here.
+These entries are outside the standalone setup registry. Check the target Studio and its configured provider before using them. Workflow scope below follows the source Express and branching allowlists.
 
-| Model | Catalog key |
-| --- | --- |
-| F-Lite | `FLITE` |
-| Google Imagen3 | `IMAGEN3` |
-| Flux-1.1 Pro | `FLUX1.1PRO` |
-| Dall-E 3 | `DALLE3` |
-| Flux-1 Pro | `FLUX1PRO` |
-| Flux 1.1 Ultra | `FLUX1.1ULTRA` |
-| Flux-1 Dev | `FLUX1DEV` |
-| Recraft V3 | `RECRAFTV3` |
-| Stable Diffusion V3.5 | `SDV3.5` |
-| Sana 4.5B | `SANA4.5B` |
-| Sana Sprint | `SANASPRINT` |
-| Recraft 20B | `RECRAFT20B` |
-| Lumalabs Photon | `PHOTON` |
-| Lumalabs Photon Flash | `PHOTONFLASH` |
-| Lumina V2 | `LUMINAV2` |
-| Ideogram V3 | `IDEOGRAMV3` |
-| HiDream I1 | `HIDREAMI1` |
+| Model | Catalog key | Workflow scope |
+| --- | --- | --- |
+| F-Lite | `FLITE` | Studio |
+| Google Imagen3 | `IMAGEN3` | Studio |
+| Flux-1.1 Pro | `FLUX1.1PRO` | Studio |
+| Dall-E 3 | `DALLE3` | Studio |
+| Flux-1 Pro | `FLUX1PRO` | Studio |
+| Flux 1.1 Ultra | `FLUX1.1ULTRA` | Studio |
+| Flux-1 Dev | `FLUX1DEV` | Studio |
+| Recraft V3 | `RECRAFTV3` | Studio |
+| Stable Diffusion V3.5 | `SDV3.5` | Studio |
+| Sana 4.5B | `SANA4.5B` | Studio |
+| Sana Sprint | `SANASPRINT` | Studio |
+| Recraft 20B | `RECRAFT20B` | Studio |
+| Lumalabs Photon | `PHOTON` | Studio |
+| Lumalabs Photon Flash | `PHOTONFLASH` | Studio |
+| Lumina V2 | `LUMINAV2` | Studio |
+| Ideogram V3 | `IDEOGRAMV3` | Studio |
+| HiDream I1 | `HIDREAMI1` | Studio |
 
 </details>
 
@@ -93,7 +98,7 @@ Edit reference images, remove objects and fill selected regions.
 
 | Model / request key | Hosted path | Supported deployment adapters | Workflow scope | Notes |
 | --- | --- | --- | --- | --- |
-| GPTImage 2.5 Edit · `GPTIMAGE2.5EDIT` | [Samsar.js](https://docs.samsar.one/v2#v2-image-edit-routes) | [Samsar.js](https://docs.samsar.one/external-requests) · [OpenAI](https://platform.openai.com/docs/overview) | Modality API / Studio | Versioned Samsar key for GPTImage 2.5 editing. Legacy GenBlaze routes are excluded. |
+| GPTImage 2.6 Edit · `GPTIMAGE2.5EDIT` | [Samsar.js](https://docs.samsar.one/v2#v2-image-edit-routes) | [Samsar.js](https://docs.samsar.one/external-requests) · [OpenAI](https://platform.openai.com/docs/overview) | Modality API / Studio | Stable Samsar key for GPTImage 2.6 Sunburst editing. Legacy GenBlaze routes are excluded. |
 | Nano Banana 2 Edit · `NANOBANANA2EDIT` | [Samsar.js](https://docs.samsar.one/v2#v2-image-edit-routes) | [Samsar.js](https://docs.samsar.one/external-requests) · [Google Cloud](https://cloud.google.com/vertex-ai/generative-ai/docs) · [GMICloud via GenBlaze](https://docs.gmicloud.ai/) · [fal](https://fal.ai/docs/documentation) | Modality API / Studio | Used by image enhancement and branding removal. Multi-output image-set jobs bypass GenBlaze. |
 | Nano Banana Pro Edit · `NANOBANANAPROEDIT` | [Samsar.js](https://docs.samsar.one/v2#v2-image-edit-routes) | [Samsar.js](https://docs.samsar.one/external-requests) · [Google Cloud](https://cloud.google.com/vertex-ai/generative-ai/docs) · [GMICloud via GenBlaze](https://docs.gmicloud.ai/) · [fal](https://fal.ai/docs/documentation) | Modality API / Studio | Required by VidGenie image-list mode. Multi-output image-set jobs bypass GenBlaze. |
 | BRIA Eraser · `BRIA_ERASER` | [Samsar.js](https://docs.samsar.one/v2#v2-image-edit-routes) | [Samsar.js](https://docs.samsar.one/external-requests) · [GMICloud via GenBlaze](https://docs.gmicloud.ai/) · [fal](https://fal.ai/docs/documentation) | Modality API / Studio | Enable a supported adapter and check the target deployment before selecting this model. |
@@ -102,13 +107,13 @@ Edit reference images, remove objects and fill selected regions.
 <details>
 <summary>Additional image editing entries in the Studio source catalog (3)</summary>
 
-These entries are outside the standalone setup registry. Check the target Studio and its configured provider before using them. They are not added to the Express or branching allowlist by appearing here.
+These entries are outside the standalone setup registry. Check the target Studio and its configured provider before using them. Workflow scope below follows the source Express and branching allowlists.
 
-| Model | Catalog key |
-| --- | --- |
-| Flux-1 Pro Fill | `FLUX1PROFILL` |
-| Flux-1.1 Pro Ultra Redux | `FLUX1.1PROULTRAREDUX` |
-| Flux-1.1 Pro Redux | `FLUX1.1PROREDUX` |
+| Model | Catalog key | Workflow scope |
+| --- | --- | --- |
+| Flux-1 Pro Fill | `FLUX1PROFILL` | Studio |
+| Flux-1.1 Pro Ultra Redux | `FLUX1.1PROULTRAREDUX` | Studio |
+| Flux-1.1 Pro Redux | `FLUX1.1PROREDUX` | Studio |
 
 </details>
 
@@ -132,8 +137,8 @@ Generate motion from text, an image or first and last frames.
 | Seedance 1.5 I2V · `SEEDANCEI2V` | [Samsar.js](https://docs.samsar.one/external-requests#video) | [Samsar.js](https://docs.samsar.one/external-requests) · [GMICloud via GenBlaze](https://docs.gmicloud.ai/) · [fal](https://fal.ai/docs/documentation) | Express | Enable a supported adapter and check the target deployment before selecting this model. |
 | Seedance 2.0 Image to Video · `SEEDANCE2.0I2V` | Deployment only | [GMICloud via GenBlaze](https://docs.gmicloud.ai/) · [fal](https://fal.ai/docs/documentation) | Express · Branching | Standalone provider-billed I2V. Exact GenBlaze route: seedance-2-0-260128. No Samsar adapter in the setup catalog. |
 | Seedance 2.5 Image to Video · `SEEDANCE2.5I2V` | [Samsar.js](https://docs.samsar.one/external-requests#video) | [Samsar.js](https://docs.samsar.one/external-requests) · [GMICloud via GenBlaze](https://docs.gmicloud.ai/) · [fal](https://fal.ai/docs/documentation) | Express | 5, 10 or 15 second 720p scene buckets. Exact GenBlaze route: seedance-2-5-260628. Hosted worker uses GMICloud internally. |
-| Kling 3 Pro Image to Video · `KLINGIMGTOVID3PRO` | [Samsar.js](https://docs.samsar.one/external-requests#video) | [Samsar.js](https://docs.samsar.one/external-requests) · [GMICloud via GenBlaze](https://docs.gmicloud.ai/) · [fal](https://fal.ai/docs/documentation) | Express | Enable a supported adapter and check the target deployment before selecting this model. |
-| Kling Turbo Image to Video · `KLINGIMGTOVIDTURBO` | [Samsar.js](https://docs.samsar.one/external-requests#video) | [Samsar.js](https://docs.samsar.one/external-requests) · [GMICloud via GenBlaze](https://docs.gmicloud.ai/) · [fal](https://fal.ai/docs/documentation) | Express | Enable a supported adapter and check the target deployment before selecting this model. |
+| Kling 3 Pro Image to Video · `KLINGIMGTOVID3PRO` | [Samsar.js](https://docs.samsar.one/external-requests#video) | [Samsar.js](https://docs.samsar.one/external-requests) · [GMICloud via GenBlaze](https://docs.gmicloud.ai/) · [fal](https://fal.ai/docs/documentation) | Modality API / Studio | Enable a supported adapter and check the target deployment before selecting this model. |
+| Kling Turbo Image to Video · `KLINGIMGTOVIDTURBO` | [Samsar.js](https://docs.samsar.one/external-requests#video) | [Samsar.js](https://docs.samsar.one/external-requests) · [GMICloud via GenBlaze](https://docs.gmicloud.ai/) · [fal](https://fal.ai/docs/documentation) | Modality API / Studio | Enable a supported adapter and check the target deployment before selecting this model. |
 | Kling 1.6 Pro Image to Video · `KLINGIMGTOVIDPRO` | [Samsar.js](https://docs.samsar.one/external-requests#video) | [Samsar.js](https://docs.samsar.one/external-requests) · [GMICloud via GenBlaze](https://docs.gmicloud.ai/) · [fal](https://fal.ai/docs/documentation) | Modality API / Studio | Enable a supported adapter and check the target deployment before selecting this model. |
 | Kling 2.1 Master Image to Video · `KLINGIMGTOVID2.1MASTER` | [Samsar.js](https://docs.samsar.one/external-requests#video) | [Samsar.js](https://docs.samsar.one/external-requests) · [GMICloud via GenBlaze](https://docs.gmicloud.ai/) · [fal](https://fal.ai/docs/documentation) | Modality API / Studio | Enable a supported adapter and check the target deployment before selecting this model. |
 | Kling 2.1 Pro Image to Video · `KLINGIMGTOVID2.1PRO` | [Samsar.js](https://docs.samsar.one/external-requests#video) | [Samsar.js](https://docs.samsar.one/external-requests) · [GMICloud via GenBlaze](https://docs.gmicloud.ai/) · [fal](https://fal.ai/docs/documentation) | Modality API / Studio | Enable a supported adapter and check the target deployment before selecting this model. |
@@ -143,23 +148,24 @@ Generate motion from text, an image or first and last frames.
 | Custom video endpoint · `CUSTOM_IMAGE_TO_VIDEO` | Deployment only | [Custom endpoint](https://github.com/samsarone/samsar/blob/main/utils/vast-flux2/README.md) | Custom endpoint | Requires a compatible standalone image-to-video adapter and its configured authorization. |
 
 <details>
-<summary>Additional video generation entries in the Studio source catalog (11)</summary>
+<summary>Additional video generation entries in the Studio source catalog (12)</summary>
 
-These entries are outside the standalone setup registry. Check the target Studio and its configured provider before using them. They are not added to the Express or branching allowlist by appearing here.
+These entries are outside the standalone setup registry. Check the target Studio and its configured provider before using them. Workflow scope below follows the source Express and branching allowlists.
 
-| Model | Catalog key |
-| --- | --- |
-| Kling 3 Pro Text2Vid | `KLINGTXTTOVID3PRO` |
-| SD Video | `SDVIDEO` |
-| Haiper 2.0 | `HAIPER2.0` |
-| Skyreels-i2v | `SKYREELSI2V` |
-| Veo2 | `VEO` |
-| Veo2 Img2Vid | `VEOI2V` |
-| PixVerseV4.5 | `PIXVERSEI2V` |
-| PixVerseV4.5 Fast | `PIXVERSEI2VFAST` |
-| Pika2.2 I2V | `PIKA2.2I2V` |
-| Magi Distilled | `MAGIDISTILLED` |
-| Vidu Img2Vid | `VIDUI2V` |
+| Model | Catalog key | Workflow scope |
+| --- | --- | --- |
+| Kling 4 Img2Vid | `KLINGIMGTOVID4` | Express |
+| Kling 4 Text2Vid | `KLINGTXTTOVID4` | Studio |
+| SD Video | `SDVIDEO` | Studio |
+| Haiper 2.0 | `HAIPER2.0` | Studio |
+| Skyreels-i2v | `SKYREELSI2V` | Studio |
+| Veo2 | `VEO` | Studio |
+| Veo2 Img2Vid | `VEOI2V` | Studio |
+| PixVerseV4.5 | `PIXVERSEI2V` | Studio |
+| PixVerseV4.5 Fast | `PIXVERSEI2VFAST` | Studio |
+| Pika2.2 I2V | `PIKA2.2I2V` | Studio |
+| Magi Distilled | `MAGIDISTILLED` | Studio |
+| Vidu Img2Vid | `VIDUI2V` | Studio |
 
 </details>
 
@@ -195,12 +201,12 @@ Generate a backing track for your video or an audio asset.
 <details>
 <summary>Additional music entries in the Studio source catalog (2)</summary>
 
-These entries are outside the standalone setup registry. Check the target Studio and its configured provider before using them. They are not added to the Express or branching allowlist by appearing here.
+These entries are outside the standalone setup registry. Check the target Studio and its configured provider before using them. Workflow scope below follows the source Express and branching allowlists.
 
-| Model | Catalog key |
-| --- | --- |
-| AudioCraft | `AUDIOCRAFT` |
-| Cassette AI | `CASSETTEAI` |
+| Model | Catalog key | Workflow scope |
+| --- | --- | --- |
+| AudioCraft | `AUDIOCRAFT` | Studio |
+| Cassette AI | `CASSETTEAI` | Studio |
 
 </details>
 
@@ -268,7 +274,7 @@ curl http://localhost:3002/v1/video/supported_models
 
 This endpoint describes Express workflows; it is not the complete Studio or audio catalog. Review `runtime/config/available-models.json` and **Settings → Model Adapters** for your local installation. GenBlaze routes additionally depend on the exact validated credential catalog.
 
-The stable setup key `KIMIK3` is submitted as `kimi-k3` in inference requests. Older setup records may use `gpt-5.6-sol` or `gpt-6.1-sol`; both normalize to `gpt-6-astra` with high reasoning by default. Stable media keys can retain their spelling when the underlying provider model is upgraded.
+The stable setup key `KIMIK3` is submitted as `kimi-k3` in inference requests. Legacy `gpt-5.6-sol` records normalize to `gpt-6-astra`. GPT 6.1 Sol and Claude Fable 5.1 are independent choices alongside Astra and Opus. All four support `effort: "high"` or `effort: "xhigh"`; defaults remain Astra and High. Stable media keys can retain their spelling when the underlying provider model is upgraded.
 
 ## Catalog maintenance
 
@@ -279,4 +285,4 @@ node scripts/generate-model-docs.mjs
 node scripts/generate-model-docs.mjs --check
 ```
 
-Maintainers working in the parent workspace can also refresh the docs website snapshot with `node scripts/generate-model-docs.mjs --docs-site ../samsar-docs`. The docs website builds from that committed snapshot and does not require a sibling checkout.
+Maintainers working in the parent workspace can also refresh the docs website snapshot with `SAMSAR_SOURCE_ROOT=.. node scripts/generate-model-docs.mjs --docs-site ../samsar-docs`. The docs website builds from that committed snapshot and does not require a sibling checkout.

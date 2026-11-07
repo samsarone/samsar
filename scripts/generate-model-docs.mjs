@@ -31,8 +31,8 @@ for (const modality of catalog.modalities) {
   }
   if (studio.length) {
     lines.push('', '<details>', `<summary>Additional ${modality.label.toLowerCase()} entries in the Studio source catalog (${studio.length})</summary>`, '',
-      'These entries are outside the standalone setup registry. Check the target Studio and its configured provider before using them. They are not added to the Express or branching allowlist by appearing here.', '', '| Model | Catalog key |', '| --- | --- |',
-      ...studio.map(row => `| ${escape(row.label)} | \`${row.key}\` |`), '', '</details>');
+      'These entries are outside the standalone setup registry. Check the target Studio and its configured provider before using them. Workflow scope below follows the source Express and branching allowlists.', '', '| Model | Catalog key | Workflow scope |', '| --- | --- | --- |',
+      ...studio.map(row => `| ${escape(row.label)} | \`${row.key}\` | ${[row.express ? 'Express' : null, row.branching ? 'Branching' : null].filter(Boolean).join(' · ') || 'Studio'} |`), '', '</details>');
   }
   lines.push('');
 }
@@ -40,11 +40,11 @@ lines.push('## Check your deployment', '',
   'For hosted Express workflows, inspect `await samsar.getSupportedTextToVideoModels()`. For a standalone installation, query the same route on your processor:', '',
   '```bash', 'curl http://localhost:3002/v1/video/supported_models', '```', '',
   'This endpoint describes Express workflows; it is not the complete Studio or audio catalog. Review `runtime/config/available-models.json` and **Settings → Model Adapters** for your local installation. GenBlaze routes additionally depend on the exact validated credential catalog.', '',
-  'The stable setup key `KIMIK3` is submitted as `kimi-k3` in inference requests. Older setup records may use `gpt-5.6-sol` or `gpt-6.1-sol`; both normalize to `gpt-6-astra` with high reasoning by default. Stable media keys can retain their spelling when the underlying provider model is upgraded.', '',
+  'The stable setup key `KIMIK3` is submitted as `kimi-k3` in inference requests. Legacy `gpt-5.6-sol` records normalize to `gpt-6-astra`. GPT 6.1 Sol and Claude Fable 5.1 are independent choices alongside Astra and Opus. All four support `effort: "high"` or `effort: "xhigh"`; defaults remain Astra and High. Stable media keys can retain their spelling when the underlying provider model is upgraded.', '',
   '## Catalog maintenance', '',
   'This page is generated from the setup registry, processor model catalogs, Express allowlist and branching allowlist, with explanations in `docs/model-catalog.mjs`. It does not query providers or submit paid jobs.', '',
   '```bash', 'node scripts/generate-model-docs.mjs', 'node scripts/generate-model-docs.mjs --check', '```', '',
-  'Maintainers working in the parent workspace can also refresh the docs website snapshot with `node scripts/generate-model-docs.mjs --docs-site ../samsar-docs`. The docs website builds from that committed snapshot and does not require a sibling checkout.', '');
+  'Maintainers working in the parent workspace can also refresh the docs website snapshot with `SAMSAR_SOURCE_ROOT=.. node scripts/generate-model-docs.mjs --docs-site ../samsar-docs`. The docs website builds from that committed snapshot and does not require a sibling checkout.', '');
 
 const outputs = [[path.join(root, 'pages/model-matrix.md'), lines.join('\n')]];
 if (docsRoot) outputs.push([path.join(docsRoot, 'src/constants/modelCatalog.json'), JSON.stringify(catalog, null, 2) + '\n']);

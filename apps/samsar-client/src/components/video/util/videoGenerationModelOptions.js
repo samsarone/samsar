@@ -1,3 +1,4 @@
+import { normalizeKlingModelKey } from '../../../utils/KlingModel.mjs';
 import { VIDEO_GENERATION_MODEL_TYPES } from "../../../constants/Types.ts";
 import { VIDEO_MODEL_PRICES } from "../../../constants/ModelPrices.jsx";
 import { canListVideoModel } from "../../../utils/videoModelAvailability.mjs";
@@ -159,6 +160,7 @@ export const getVideoGenerationModelDropdownData = ({
 };
 
 export const getVideoGenerationModelMeta = (modelKey) => {
+  modelKey = normalizeKlingModelKey(modelKey);
   const modelDef = VIDEO_GENERATION_MODEL_TYPES.find((model) => model.key === modelKey);
   const pricing = VIDEO_MODEL_PRICES.find((entry) => entry.key === modelKey);
   const capabilities = getModelCapabilities(modelDef, pricing);

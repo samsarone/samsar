@@ -1,3 +1,5 @@
+import { useUiLanguage } from '../../../hooks/useUiLanguage.js';
+import { translateText as uiText } from '../../../utils/localization.js';
 import { useEffect, useMemo } from "react";
 import CommonButton from "../../common/CommonButton.tsx";
 import { IMAGE_EDIT_MODEL_TYPES } from "../../../constants/Types.ts";
@@ -11,6 +13,7 @@ import { useDeploymentModelAvailability } from "../../../hooks/useDeploymentMode
 import { filterOptionsForDeploymentModelValues } from "../../../utils/deploymentProviders.js";
 
 export default function ImageEditGenerator(props) {
+  const uiLanguage = useUiLanguage();
   const { promptText, setPromptText, submitOutpaintRequest,
     selectedEditModel, setSelectedEditModel,
     selectedEditModelValue,
@@ -37,7 +40,7 @@ export default function ImageEditGenerator(props) {
         ? filterOptionsForDeploymentModelValues(IMAGE_EDIT_MODEL_TYPES, imageEditModelValues, (model) => model.key)
         : IMAGE_EDIT_MODEL_TYPES
     ),
-    [imageEditModelValues, isStandaloneModelFilteringEnabled]
+    [uiLanguage, imageEditModelValues, isStandaloneModelFilteringEnabled]
   );
 
   useEffect(() => {
@@ -54,9 +57,7 @@ export default function ImageEditGenerator(props) {
   let editOptionsDisplay = <span />;
 
   const inputShell =
-    colorMode === "dark"
-      ? "bg-[#151720] text-slate-100 border border-[#667188] focus:border-[#f6c453] focus:outline-none focus:ring-2 focus:ring-[#f6c453]/20"
-      : "bg-white text-slate-900 border border-slate-200 shadow-sm";
+    `bg-surface-sunken text-fg border border-line-control ${colorMode === "dark" ? 'focus:border-[#f6c453] focus:outline-none focus:ring-2 focus:ring-[#f6c453]/20' : 'shadow-sm'}`;
   const modelLabelClass = isImageStudio ? "text-sm font-semibold" : "text-xs font-bold";
   const selectClass = isImageStudio
     ? `${inputShell} inline-flex min-h-[44px] w-full rounded-xl px-4 py-2.5 text-sm bg-transparent`
@@ -101,22 +102,16 @@ export default function ImageEditGenerator(props) {
     editOptionsDisplay = (<div className={editOptionsGridClass} style={editOptionsGridStyle}>
       <div>
         <input type="text" className={`${inputShell} w-full rounded-xl ${isImageStudio ? "px-3.5 py-2.5 text-sm" : "px-3 py-2"}`} name="guidanceScale" defaultValue={5} />
-        <div className={isImageStudio ? "mt-1 text-sm" : "text-xs "}>
-          Guidance
-        </div>
+        <div className={isImageStudio ? "mt-1 text-sm" : "text-xs "}>{uiText("Guidance")}</div>
       </div>
       <div>
         <input type="text" className={`${inputShell} w-full rounded-xl ${isImageStudio ? "px-3.5 py-2.5 text-sm" : "px-3 py-2"}`} name="numInferenceSteps" defaultValue={30} />
-        <div className={isImageStudio ? "mt-1 text-sm" : "text-xs"}>
-          Inference
-        </div>
+        <div className={isImageStudio ? "mt-1 text-sm" : "text-xs"}>{uiText("Inference")}</div>
       </div>
       <div>
 
         <input type="text" className={`${inputShell} w-full rounded-xl ${isImageStudio ? "px-3.5 py-2.5 text-sm" : "px-3 py-2"}`} name="strength" defaultValue={0.99} />
-        <div className={isImageStudio ? "mt-1 text-sm" : "text-xs"}>
-          Strength
-        </div>
+        <div className={isImageStudio ? "mt-1 text-sm" : "text-xs"}>{uiText("Strength")}</div>
       </div>
 
     </div>);
@@ -150,7 +145,7 @@ export default function ImageEditGenerator(props) {
       <form onSubmit={submitOutpaintRequest}>
         <div className="mb-3">
           <ImagePayloadAspectRatioSelector
-            label="Edit ratio"
+            label={uiText("Edit ratio")}
             name="aspectRatio"
             value={aspectRatio}
             onChange={setAspectRatio}
@@ -163,9 +158,7 @@ export default function ImageEditGenerator(props) {
         <div className={`w-full ${isImageStudio ? "space-y-3" : "mt-2 mb-2"}`}>
           {showModelSelector && (
             <div className={modelFieldClass}>
-              <div className={modelLabelClass}>
-                Model
-              </div>
+              <div className={modelLabelClass}>{uiText("Model")}</div>
               <ModelAdapterSelect
                 options={availableEditModels}
                 value={selectedEditModel}
@@ -200,9 +193,7 @@ export default function ImageEditGenerator(props) {
 
         {promptTextArea}
         <div className={isImageStudio ? "pt-3 text-center" : isSidebarExpanded ? "pt-4 flex justify-end" : isSidebarCollapsed ? "pt-3" : "text-center"}>
-          <CommonButton type="submit" isPending={isOutpaintPending} isDisabled={!hasAvailableSelectedEditModel} extraClasses={buttonExtraClass}>
-            Submit
-          </CommonButton>
+          <CommonButton type="submit" isPending={isOutpaintPending} isDisabled={!hasAvailableSelectedEditModel} extraClasses={buttonExtraClass}>{uiText("Submit")}</CommonButton>
         </div>
       </form>
       {errorDisplay}

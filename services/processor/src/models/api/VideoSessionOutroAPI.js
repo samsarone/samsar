@@ -649,6 +649,7 @@ function buildOutroLayerActiveItemList({
 
     activeItemList.push(...createOutroCtaTextItems({
       canvasDimensions,
+      centerContentBounds: generatedOutroComposition.center.contentBounds,
       ctaTextTop,
       ctaTextBottom,
       startIndex: activeItemList.length,
@@ -665,6 +666,7 @@ function buildOutroLayerActiveItemList({
       width: generatedOutroComposition.qr.width,
       height: generatedOutroComposition.qr.height,
       src: generatedOutroComposition.qr.src,
+      outroContentBounds: generatedOutroComposition.center.contentBounds,
       is_base_image: false,
       animations: [],
     });

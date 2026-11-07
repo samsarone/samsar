@@ -41,6 +41,10 @@ For advanced users, the same flow exposes:
 4. Scene-level and layer-level post-processing in Studio.
 5. Render cancellation, frame regeneration, checkpoint restarts, publish, download, and clone workflows.
 
+## Languages
+
+English, Thai, and Japanese are the supported UI languages, including login, registration, password recovery, account pages, and all creation editors. Unsupported saved preferences fall back to English. See [localization maintenance and verification](docs/localization.md) for adding copy and running `npm run test:i18n`.
+
 ## Product Tour
 
 ### VidGenie
@@ -67,6 +71,7 @@ Key VidGenie features:
 - **Direct Studio handoff** with `View in Studio`.
 - **Publishing and unpublishing** after a successful render.
 - **Assistant panel** attached to the current session.
+- Assistant replies stream into the panel through authenticated SSE, with existing REST polling retained as a fallback. Model controls are collapsed by default; **Clear session** deletes assistant history and resets its conversation version without deleting project media. Clearing or navigating discards stale replies, and interrupted partial responses are labelled. The expanded history and composer share a centered column.
 - **Advanced options** for tone, narrator handling, metadata, CTA outros, footer metadata, and custom adapters.
 
 #### VidGenie Advanced Options
@@ -138,7 +143,7 @@ That means image generation can complete first, the preview can be inspected, an
     "language": "en",
     "font_key": "Poppins",
     "enable_subtitles": true,
-    "subtitle_language": "es"
+    "subtitle_language": "ja"
   },
   "auto_render_full_video": true,
   "manual_step_stages": []
@@ -173,7 +178,7 @@ Accepted `T2V` JSON fields include `prompt`, `image_model`, `video_model`, `dura
     "language": "en",
     "font_key": "Poppins",
     "enable_subtitles": true,
-    "subtitle_language": "es",
+    "subtitle_language": "ja",
     "limit_single_narrator": false,
     "add_narrator_avatar": false,
     "metadata": {
@@ -351,7 +356,7 @@ In Docker deployments, the processor-provided availability response filters the 
 
 | Model | Key | Express |
 | --- | --- | --- |
-| GPTImage 2.5 | `GPTIMAGE2.5` | Yes |
+| GPTImage 2.6 | `GPTIMAGE2.5` | Yes |
 | Seedream | `SEEDREAM` | Yes |
 | NanoBanana 2 | `NANOBANANA2` | Yes |
 | NanoBanana Pro | `NANOBANANAPRO` | Yes |
@@ -361,14 +366,14 @@ In Docker deployments, the processor-provided availability response filters the 
 Docker deployments expose `QWENIMAGE3PRO` in Image Studio and Express when
 native Alibaba Cloud pay-as-you-go routing is enabled. Requests use provider
 model ID `qwen-image-3.0-pro`. Standalone installations are billed directly by
-Alibaba; hosted Studio charges the same 46 credits per image as GPTImage 2.5.
+Alibaba; hosted Studio charges the same 46 credits per image as GPTImage 2.6.
 
 ### Image Editing
 
 | Model | Key | Edit type |
 | --- | --- | --- |
 | NanoBanana 2 Edit | `NANOBANANA2EDIT` | Prompt edit |
-| GPTImage 2.5 Edit | `GPTIMAGE2.5EDIT` | Inpaint |
+| GPTImage 2.6 Edit | `GPTIMAGE2.5EDIT` | Inpaint |
 
 ### Video Generation
 
@@ -378,8 +383,8 @@ Alibaba; hosted Studio charges the same 46 credits per image as GPTImage 2.5.
 | Sora 2 | `SORA2` | No | Yes | Yes | `16:9`, `9:16` |
 | Sora 2 Pro | `SORA2PRO` | No | Yes | Yes | `16:9`, `9:16` |
 | Custom Image to Video | `CUSTOM_IMAGE_TO_VIDEO` | Yes | No | Yes | `1:1`, `16:9`, `9:16` |
-| Kling 3 Pro Img2Vid | `KLINGIMGTOVID3PRO` | Yes | No | Yes | `1:1`, `16:9`, `9:16` |
-| Kling 3 Pro Text2Vid | `KLINGTXTTOVID3PRO` | No | Yes | No | `1:1`, `16:9`, `9:16` |
+| Kling 4 Img2Vid | `KLINGIMGTOVID4` | Yes | No | Yes | `1:1`, `16:9`, `9:16` |
+| Kling 4 Text2Vid | `KLINGTXTTOVID4` | No | Yes | No | `1:1`, `16:9`, `9:16` |
 | Hailuo O2 Standard | `HAILUO` | No | Yes | Yes | `16:9` |
 | Hailuo O2 Pro | `HAILUOPRO` | No | Yes | Yes | `16:9` |
 | Seedance 1.5 | `SEEDANCEI2V` | Yes | No | Yes | `16:9`, `9:16` |
@@ -395,8 +400,8 @@ Alibaba; hosted Studio charges the same 46 credits per image as GPTImage 2.5.
 VidGenie intentionally exposes a smaller express-first subset:
 
 - Image models: `GPTIMAGE2.5`, `NANOBANANAPRO`, `SEEDREAM`, `WAN2.7PRO`, and `QWENIMAGE3PRO`.
-- Text-to-video video models: `RUNWAYML`, `VEO3.1I2V`, `VEO3.1I2VFAST`, `SEEDANCEI2V`, `SEEDANCE2.0I2V`, `SEEDANCE2.5I2V`, `KLINGIMGTOVID3PRO`.
-- Image-list-to-video models: `RUNWAYML`, `VEO3.1I2V`, `VEO3.1I2VFAST`, `SEEDANCEI2V`, `SEEDANCE2.0I2V`, `SEEDANCE2.5I2V`, `KLINGIMGTOVID3PRO`.
+- Text-to-video video models: `RUNWAYML`, `VEO3.1I2V`, `VEO3.1I2VFAST`, `SEEDANCEI2V`, `SEEDANCE2.0I2V`, `SEEDANCE2.5I2V`, `KLINGIMGTOVID4`.
+- Image-list-to-video models: `RUNWAYML`, `VEO3.1I2V`, `VEO3.1I2VFAST`, `SEEDANCEI2V`, `SEEDANCE2.0I2V`, `SEEDANCE2.5I2V`, `KLINGIMGTOVID4`.
 - JSON mode validates the supported image/video model keys for the selected workflow.
 - Aspect ratios: `16:9` and `9:16`.
 - Wizard durations: `10`, `30`, `60`, `90`, `120`, and `180` seconds.
@@ -422,7 +427,7 @@ Express video pricing is calculated per second:
 | --- | ---: |
 | `RUNWAYML` | 30 |
 | `SEEDANCEI2V` | 30 |
-| `KLINGIMGTOVID3PRO` | 36 |
+| `KLINGIMGTOVID4` | 36 |
 | `VEO3.1I2VFAST` | 36 |
 | `VEO3.1I2V` | 60 |
 
@@ -438,6 +443,10 @@ Each express video second includes fixed pipeline components:
 | Effects and lip sync | 2 |
 
 The remaining credits are attributed to the selected video model.
+
+### Kling 4 Video Billing
+
+Kling 4 image-to-video (`KLINGIMGTOVID4`) and text-to-video (`KLINGTXTTOVID4`) use fal at 720p. Studio generation and rerolls cost **18.84 credits per generated second**, charged on completion. The hosted agent workflow remains **36 credits per second**. Both the Studio duration picker and agent scene planner use **5, 10, 15, 20, 25, or 30 seconds** per clip. Kling 4 has no native-audio control in Studio; agent speech, music, and effects continue through their existing stages. Old Kling 3 Pro/Turbo selections are accepted as aliases for new requests; already submitted v3 jobs retain their original endpoints and billing receipts.
 
 ### Image Billing
 
@@ -487,7 +496,7 @@ Reuse a stable SDK `idempotencyKey` or `client_request_id` for retries. Complete
 | Audio tools | `src/components/video/toolbars/audio/*`, `src/components/video/util/audioPreviewDucking.js` |
 | Image Studio | `src/components/image/ImageStudioHome.jsx`, `src/components/image/ImageEditorToolbar.jsx` |
 | Models and prices | `src/constants/Types.ts`, `src/constants/ModelPrices.jsx` |
-| Languages and localization | `src/constants/supportedLanguages.js`, `src/constants/translations.js`, `src/contexts/LocalizationContext.jsx` |
+| Languages and localization | `src/constants/supportedLanguages.js`, `src/locales/messages.json`, `src/contexts/LocalizationContext.jsx` |
 
 ## Local Development
 

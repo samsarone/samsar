@@ -1,3 +1,5 @@
+import { useUiLanguage } from '../../hooks/useUiLanguage.js';
+import { translateText as uiText } from '../../utils/localization.js';
 import { Suspense, lazy } from 'react';
 import axios from 'axios';
 import { useUser } from '../../contexts/UserContext';
@@ -27,10 +29,15 @@ const AUTH_DIALOG_OPTIONS = {
   hideBorder: true,
   hideCloseButton: true,
 };
-const dialogFallback = <div className="p-6 text-sm">Loading...</div>;
+function DialogFallback() {
+  useUiLanguage();
+  return <div className="p-6 text-sm">{uiText("Loading...")}</div>;
+}
+const dialogFallback = <DialogFallback />;
 
 export default function MobileTopNav(props) {
-  const { addNewVidGPTSession } = props;
+  useUiLanguage();
+  const { addNewVidGPTSession, openAudioActions } = props;
   const { colorMode } = useColorMode();
   const { openAlertDialog, closeAlertDialog } = useAlertDialog();
   const location = useLocation();
@@ -39,12 +46,12 @@ export default function MobileTopNav(props) {
     location.pathname.includes('/iamge/') ||
     location.pathname.includes('/image_sessions');
   const isVideoEditor = location.pathname.includes('/video/') || location.pathname.includes('/vidgenie/') || location.pathname.includes('/vidgpt/') || location.pathname.includes('/adcreator/');
+  const isStudioEditor = location.pathname === '/video' || location.pathname.startsWith('/video/');
+  const isAudioEditor = location.pathname.startsWith('/audio/studio');
   const isGenerationsView = location.pathname.startsWith('/generations');
 
   const navShell =
-    colorMode === 'dark'
-      ? 'border-b border-[#3a4050] bg-[#12141c]/94 text-slate-100 shadow-[0_10px_28px_rgba(0,0,0,0.32)] backdrop-blur-xl'
-      : 'bg-gradient-to-r from-[#e9edf7] via-[#dfe7f5] to-[#eef3fb] text-slate-900 border-b border-[#d7deef]';
+    `border-b text-fg ${colorMode === 'dark' ? 'border-[#3a4050] bg-[#12141c]/94 shadow-[0_10px_28px_rgba(0,0,0,0.32)] backdrop-blur-xl' : 'bg-gradient-to-r from-[#e9edf7] via-[#dfe7f5] to-[#eef3fb] border-[#d7deef]'}`;
 
   const resetSession = () => {
     closeAlertDialog();
@@ -57,25 +64,21 @@ export default function MobileTopNav(props) {
 
   const alertDialogComponent = (
     <div>
-      <div>This will reset your current session. Are you sure you want to proceed?</div>
+      <div>{uiText("This will reset your current session. Are you sure you want to proceed?")}</div>
       <div className="mt-4 mb-4 m-auto">
         <div className="inline-flex ml-2 mr-2">
           <CommonButton
             onClick={() => {
               resetSession();
             }}
-          >
-            Yes
-          </CommonButton>
+          >{uiText("Yes")}</CommonButton>
         </div>
         <div className="inline-flex ml-2 mr-2">
           <CommonButton
             onClick={() => {
               closeAlertDialog();
             }}
-          >
-            No
-          </CommonButton>
+          >{uiText("No")}</CommonButton>
         </div>
       </div>
     </div>
@@ -225,7 +228,7 @@ export default function MobileTopNav(props) {
       navigate(`/image/studio/${storedSessionId}`);
       return;
     }
-    createNewImageSession();
+    createNewImageSession(localStorage.getItem('defaultImageAspectRatio') || '1:1');
   };
 
   const openVideoEditor = () => {
@@ -234,7 +237,11 @@ export default function MobileTopNav(props) {
       navigate('/video');
       return;
     }
-    createNewSession();
+    createNewSession(localStorage.getItem('defaultAspectRatio') || '1:1');
+  };
+
+  const openAudioEditor = () => {
+    navigate('/audio/studio');
   };
 
   const openStudioWorkspace = () => {
@@ -246,35 +253,6 @@ export default function MobileTopNav(props) {
     addNewVidGPTSession();
   };
 
-  const createNewSessionDialog = (sessionConfig = '1:1') => {
-    openAlertDialog(
-      <div>
-        <div>This will reset your current session. Are you sure you want to proceed?</div>
-        <div className="mt-4 mb-4 m-auto">
-          <div className="inline-flex ml-2 mr-2">
-            <CommonButton
-              onClick={() => {
-                closeAlertDialog();
-                createNewSession(sessionConfig);
-              }}
-            >
-              Yes
-            </CommonButton>
-          </div>
-          <div className="inline-flex ml-2 mr-2">
-            <CommonButton
-              onClick={() => {
-                closeAlertDialog();
-              }}
-            >
-              No
-            </CommonButton>
-          </div>
-        </div>
-      </div>
-    );
-  };
-
   let userTierDisplay = null;
 
   if (user && user._id) {
@@ -282,14 +260,12 @@ export default function MobileTopNav(props) {
       if (user.isPremiumUser) {
         userTierDisplay = (
           <div className="text-[#ffe5e8]">
-            <FaStar className="inline-flex text-[#f6c453]" /> Premium
-          </div>
+            <FaStar className="inline-flex text-[#f6c453]" />{uiText("Premium")}</div>
         );
       } else {
         userTierDisplay = (
           <div className="text-slate-400">
-            <FaStar className="inline-flex text-slate-500" /> Upgrade
-          </div>
+            <FaStar className="inline-flex text-slate-500" />{uiText("Upgrade")}</div>
         );
       }
     }
@@ -309,9 +285,7 @@ export default function MobileTopNav(props) {
       </div>
     );
   } else {
-    const loginButtonClass = colorMode === 'dark'
-      ? 'm-auto inline-flex min-h-11 min-w-16 items-center justify-center gap-1.5 rounded-lg border border-[#667188] bg-[#20232e] px-4 py-1.5 text-center text-sm font-semibold text-slate-100 shadow-[0_8px_20px_rgba(0,0,0,0.28)] transition-all duration-200 ease-out hover:-translate-y-[1px] hover:border-[#ff4655]/60 hover:bg-[#292d3a] hover:text-[#ffe5e8] hover:shadow-[0_12px_26px_rgba(255,70,85,0.16)] active:translate-y-0'
-      : 'm-auto inline-flex min-h-11 min-w-16 items-center justify-center gap-1.5 rounded-lg border border-slate-200 bg-white/80 px-4 py-1.5 text-center text-sm font-semibold text-slate-900 transition-all duration-200 ease-out hover:-translate-y-[1px] hover:bg-white active:translate-y-0';
+    const loginButtonClass = `m-auto inline-flex min-h-11 min-w-16 items-center justify-center gap-1.5 rounded-lg border border-line-control px-4 py-1.5 text-center text-sm font-semibold text-fg transition-all duration-200 ease-out hover:-translate-y-[1px] active:translate-y-0 ${colorMode === 'dark' ? 'bg-[#20232e] shadow-[0_8px_20px_rgba(0,0,0,0.28)] hover:border-[#ff4655]/60 hover:bg-[#292d3a] hover:text-[#ffe5e8] hover:shadow-[0_12px_26px_rgba(255,70,85,0.16)]' : 'bg-white/80 hover:bg-white'}`;
 
     userProfile = (
       <div className="mt-1 flex justify-end">
@@ -319,8 +293,7 @@ export default function MobileTopNav(props) {
           className={loginButtonClass}
           onClick={showLoginDialog}
         >
-          <IoMdLogIn className="inline-flex" /> Login
-        </button>
+          <IoMdLogIn className="inline-flex" />{uiText("Login")}</button>
       </div>
     );
   }
@@ -346,17 +319,19 @@ export default function MobileTopNav(props) {
       <div className="">
         <Suspense fallback={<div className="h-11 w-[118px]" />}>
           <AddSessionDropdown
-            createNewSession={isImageEditor ? createNewImageSession : createNewSessionDialog}
+            key={location.pathname}
+            createNewSession={isImageEditor ? createNewImageSession : createNewSession}
             gotoViewSessionsPage={gotoViewSessionsPage}
             addNewVidGPTSession={addNewVidGPTSession}
             aspectRatioOptions={isImageEditor ? imageAspectRatioOptions : undefined}
             aspectRatioStorageKey={isImageEditor ? 'defaultImageAspectRatio' : 'defaultAspectRatio'}
             useImageProjectModal={isImageEditor}
-            switchEditorLabel={isImageEditor ? 'Video Editor' : (isVideoEditor ? 'Image Editor' : null)}
-            onSwitchEditor={isImageEditor ? openVideoEditor : (isVideoEditor ? openImageEditor : null)}
-            showStudioOption={false}
-            showVideoOptions={!isImageEditor}
-            compact={isGenerationsView}
+            openVideoEditor={openVideoEditor}
+            openImageEditor={openImageEditor}
+            openAudioEditor={openAudioEditor}
+            projectActionLabel={isImageEditor ? uiText("New image project") : (isAudioEditor && openAudioActions ? uiText("Audio actions") : (isStudioEditor ? uiText("New Studio project") : null))}
+            onProjectAction={isAudioEditor ? openAudioActions : undefined}
+            compact
           />
         </Suspense>
       </div>
@@ -393,34 +368,19 @@ export default function MobileTopNav(props) {
           }`}>
             <button
               type="button"
-              className={`${colorMode === 'dark'
-                ? 'border border-[#667188] bg-[#20232e] text-slate-100 hover:bg-[#292d3a] hover:border-[#f6c453]/60'
-                : 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-100 hover:border-slate-300'
-              } inline-flex min-h-11 min-w-0 items-center justify-center rounded-full px-2 py-1.5 text-[11px] font-semibold transition sm:text-xs`}
+              className={`border border-line-control bg-surface-raised text-fg-body hover:bg-surface-hover ${colorMode === 'dark' ? 'hover:border-[#f6c453]/60' : 'hover:border-slate-300'} inline-flex min-h-11 min-w-0 items-center justify-center rounded-full px-2 py-1.5 text-caption font-semibold transition sm:text-xs`}
               onClick={openVideoEditor}
-            >
-              Video Editor
-            </button>
+            >{uiText("Video Editor")}</button>
             <button
               type="button"
-              className={`${colorMode === 'dark'
-                ? 'border border-[#667188] bg-[#20232e] text-slate-100 hover:bg-[#292d3a] hover:border-[#f6c453]/60'
-                : 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-100 hover:border-slate-300'
-              } inline-flex min-h-11 min-w-0 items-center justify-center rounded-full px-2 py-1.5 text-[11px] font-semibold transition sm:text-xs`}
+              className={`border border-line-control bg-surface-raised text-fg-body hover:bg-surface-hover ${colorMode === 'dark' ? 'hover:border-[#f6c453]/60' : 'hover:border-slate-300'} inline-flex min-h-11 min-w-0 items-center justify-center rounded-full px-2 py-1.5 text-caption font-semibold transition sm:text-xs`}
               onClick={openImageEditor}
-            >
-              Image Editor
-            </button>
+            >{uiText("Image Editor")}</button>
             <button
               type="button"
-              className={`${colorMode === 'dark'
-                ? 'border border-[#667188] bg-[#20232e] text-slate-100 hover:bg-[#292d3a] hover:border-[#f6c453]/60'
-                : 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-100 hover:border-slate-300'
-              } inline-flex min-h-11 min-w-0 items-center justify-center rounded-full px-2 py-1.5 text-[11px] font-semibold transition sm:text-xs`}
+              className={`border border-line-control bg-surface-raised text-fg-body hover:bg-surface-hover ${colorMode === 'dark' ? 'hover:border-[#f6c453]/60' : 'hover:border-slate-300'} inline-flex min-h-11 min-w-0 items-center justify-center rounded-full px-2 py-1.5 text-caption font-semibold transition sm:text-xs`}
               onClick={openStudioWorkspace}
-            >
-              VidGenie
-            </button>
+            >{uiText("VidGenie")}</button>
           </div>
         )}
       </div>

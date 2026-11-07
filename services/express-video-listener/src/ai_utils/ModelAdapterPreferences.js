@@ -1,3 +1,4 @@
+import { normalizeReasoningModel, getReasoningModelBase } from './ReasoningModels.js';
 import fs from 'node:fs';
 
 import { isStandaloneEdition } from '../utils/EnvironmentUtils.js';
@@ -10,7 +11,7 @@ const MODEL_KEY_BY_TOKEN = Object.freeze({
   GEMINI4ARGON: 'gemini-4-argon',
   GOOGLEGEMINI4ARGON: 'gemini-4-argon',
   GPT56SOL: 'gpt-6-astra',
-  GPT61SOL: 'gpt-6-astra',
+  GPT61SOL: 'gpt-6.1-sol',
   GPT6ASTRA: 'gpt-6-astra',
   CLAUDEOPUS55: 'claude-opus-5.5',
   ANTHROPICCLAUDEOPUS55: 'claude-opus-5.5',
@@ -54,6 +55,7 @@ function normalizeToken(value) {
 }
 
 export function normalizeModelAdapterModelKey(value) {
+  if (normalizeReasoningModel(value)) return getReasoningModelBase(value);
   const normalized = normalizeString(value);
   return MODEL_KEY_BY_TOKEN[normalizeToken(normalized)] || normalized;
 }

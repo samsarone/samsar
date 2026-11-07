@@ -15,7 +15,7 @@ const googleUsage = { promptTokenCount: 1000, cachedContentTokenCount: 200,
 
 test('F2P: sealed native token tariffs override a provider cost and apply 20% once', async () => {
   for (const [submittedAdapter, model, receipt, expected] of [
-    ['openai', 'GPTIMAGE2.5', { model: 'gpt-image-2.5-sunburst', usage: openaiUsage }, 3.852],
+    ['openai', 'GPTIMAGE2.5', { model: 'gpt-image-2.6-sunburst', usage: openaiUsage }, 3.852],
     ['googleCloud', 'NANOBANANA2', { calls: [{ adapter: 'googleCloud',
       model: 'gemini-3.1-flash-image', region: 'global', usage: googleUsage, costUsd: 0 }] }, 8.178],
   ]) {
@@ -46,6 +46,29 @@ test('F2P: verified GMI image tariffs do not require a reported cost or pricing 
     }
   } finally {
     globalThis.fetch = priorFetch;
+  }
+});
+
+test('Sunburst 2.6 keeps the rates and markup while old 2.5 receipts retain their tariff', async () => {
+  for (const model of ['GPTIMAGE2.5', 'GPTIMAGE2.5EDIT', 'GPTIMAGE1', 'GPTIMAGE1EDIT']) {
+    const payload = { model, submittedAdapter: 'openai', imageBillingPolicy: 'adapter' };
+    const current = createImageAdapterTariffSnapshot(payload);
+    const legacyReceipt = { adapter: 'openai', model: 'gpt-image-2.5-sunburst', usage: openaiUsage };
+    const legacy = createImageAdapterTariffSnapshot(payload, { receipt: legacyReceipt });
+    assert.equal(current.providerModel, 'gpt-image-2.6-sunburst');
+    assert.equal(current.version, 3);
+    assert.equal(current.verifiedOn, '2026-11-07');
+    assert.equal(legacy.version, 1);
+    assert.deepEqual(current.rates, legacy.rates);
+    for (const [snapshot, receipt] of [[legacy, legacyReceipt],
+      [current, { ...legacyReceipt, model: current.providerModel }]]) {
+      const priced = await resolveImageAdapterReceipt(receipt, { imageAdapterTariffSnapshot: snapshot });
+      assert.equal(calculateImageCallCredits(priced).credits, 3.852);
+    }
+    assert.equal(await sealImageAdapterSubmission({ ...payload, imageAdapterTariffSnapshot: legacy }, {
+      env: production,
+      imageGenerationModel: { updateOne: async () => { throw new Error('must not reseal a queued request'); } },
+    }), legacy);
   }
 });
 
@@ -87,7 +110,7 @@ test('new hosted submissions persist one immutable tariff before dispatch, with 
   const payload = { _id: 'job', model: 'GPTIMAGE1EDIT', submittedAdapter: 'openai', imageBillingPolicy: 'adapter' };
   const snapshot = await sealImageAdapterSubmission(payload, { env: production, imageGenerationModel });
   assert.deepEqual(writes[0], [{ _id: 'job' }, { $set: { imageAdapterTariffSnapshot: snapshot } }]);
-  assert.equal(snapshot.providerModel, 'gpt-image-2.5-sunburst');
+  assert.equal(snapshot.providerModel, 'gpt-image-2.6-sunburst');
   assert.deepEqual(await sealImageAdapterSubmission(payload, { env: production, imageGenerationModel }), snapshot);
   assert.equal(writes.length, 1);
   const gmi = { _id: 'alias', model: 'SEEDREAM', submittedAdapter: 'genblaze', imageBillingPolicy: 'adapter' };

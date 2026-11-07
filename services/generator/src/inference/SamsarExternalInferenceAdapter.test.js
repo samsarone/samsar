@@ -93,7 +93,7 @@ test('Qwen routing prefers a native Alibaba key before Samsar fallback', () => {
   });
 });
 
-test('Claude uses native Anthropic first in Docker and OpenRouter in hosted deployments', () => {
+test('Claude prefers native Anthropic in standalone and production', () => {
   withEnvironment({
     CURRENT_ENV: 'docker',
     ANTHROPIC_API_KEY: 'anthropic-key',
@@ -108,8 +108,8 @@ test('Claude uses native Anthropic first in Docker and OpenRouter in hosted depl
       'anthropic/claude-opus-5.5');
   });
   withEnvironment({ CURRENT_ENV: 'production', ANTHROPIC_API_KEY: 'anthropic-key' }, () => {
-    assert.equal(shouldUseOpenRouterInference({ model: 'claude-opus-5.5' }), true);
-    assert.equal(shouldUseSamsarExternalInference({ model: 'claude-opus-5.5' }), true);
+    assert.equal(shouldUseOpenRouterInference({ model: 'claude-opus-5.5' }), false);
+    assert.equal(shouldUseSamsarExternalInference({ model: 'claude-opus-5.5' }), false);
   });
 });
 

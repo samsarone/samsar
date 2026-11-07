@@ -6,7 +6,7 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import test from 'node:test';
 
-const root = process.env.SAMSAR_SOURCE_ROOT || fileURLToPath(new URL('..', import.meta.url));
+const root = path.resolve(process.env.SAMSAR_SOURCE_ROOT || fileURLToPath(new URL('..', import.meta.url)));
 const services = [
   ['processor', 'src/consts/InferenceModels.js', 'src/models/ai_utils/SamsarExternalInferenceAdapter.js'],
   ['generator', 'src/inference/InferenceModels.js', 'src/inference/SamsarExternalInferenceAdapter.js'],
@@ -29,9 +29,9 @@ function servicePath(name, file) {
 }
 
 for (const [name, modelsFile, adapterFile] of services) {
-  test(`${name}: defaults and saved Sol choices select Astra with the same reasoning effort`, async () => {
+  test(`${name}: defaults stay on Astra while Sol and Claude choices remain distinct`, async () => {
     const models = await import(pathToFileURL(servicePath(name, modelsFile)));
-    for (const alias of [undefined, 'gpt-6-astra', 'GPT 6 Astra High', 'gpt-6.1-sol', 'GPT 6.1 Sol High']) {
+    for (const alias of [undefined, 'gpt-6-astra', 'GPT 6 Astra High', 'gpt-5.6-sol']) {
       assert.equal(models.normalizeInferenceModel(alias), 'gpt-6-astra', String(alias));
     }
     for (const alias of ['gpt-6.1-sol-xhigh', 'GPT 6.1 Sol Extra High', 'gpt-6-astra-xhigh']) {
@@ -39,7 +39,7 @@ for (const [name, modelsFile, adapterFile] of services) {
       assert.equal(effort(alias), 'xhigh', alias);
       assert.equal(effort(alias, 'high'), 'high', alias);
     }
-    for (const model of ['gemini-4-argon', 'QWEN3.8', 'kimi-k3', 'claude-opus-5.5']) {
+    for (const model of ['gpt-6.1-sol', 'claude-fable-5.1', 'gemini-4-argon', 'QWEN3.8', 'kimi-k3', 'claude-opus-5.5']) {
       assert.equal(models.normalizeInferenceModel(model), model);
     }
   });
@@ -76,7 +76,7 @@ for (const [name, modelsFile, adapterFile] of services) {
       const messages = [{ role: 'user', content: vision
         ? [{ type: 'image_url', image_url: { url: 'data:image/png;base64,QUJD' } }]
         : 'Plan this.' }];
-      await adapter.createGenblazeChatCompletion({ model: 'gpt-6.1-sol-xhigh', messages, temperature: 0.5, max_tokens: 100, maxRetries: 0 });
+      await adapter.createGenblazeChatCompletion({ model: 'gpt-6-astra-xhigh', messages, temperature: 0.5, max_tokens: 100, maxRetries: 0 });
       assert.equal(captured.model, 'gpt-6-astra');
       assert.equal(captured.reasoning_effort, 'xhigh');
       assert.equal(captured.temperature, undefined);
@@ -84,7 +84,7 @@ for (const [name, modelsFile, adapterFile] of services) {
       assert.deepEqual(captured.messages, messages);
     });
 
-    test(`${name}: native ${vision ? 'vision' : 'text'} sends Astra for a saved Sol selection`, async (t) => {
+    test(`${name}: native ${vision ? 'vision' : 'text'} preserves the selected Sol model`, async (t) => {
       const overrides = { CURRENT_ENV: 'production', OPENAI_API_KEY: 'astra-native-test-key', MONGO_URL: 'mongodb://127.0.0.1/astra-test' };
       const previous = Object.fromEntries(Object.keys(overrides).map((key) => [key, process.env[key]]));
       Object.assign(process.env, overrides);
@@ -101,8 +101,8 @@ for (const [name, modelsFile, adapterFile] of services) {
       const post = async (url, options) => {
         captured = options.body;
         return url === '/responses'
-          ? { model: 'gpt-6-astra', output_text: 'seen' }
-          : { model: 'gpt-6-astra', choices: [{ message: { role: 'assistant', content: 'seen' } }] };
+          ? { model: 'gpt-6.1-sol', output_text: 'seen' }
+          : { model: 'gpt-6.1-sol', choices: [{ message: { role: 'assistant', content: 'seen' } }] };
       };
       t.mock.method(OpenAI.prototype, 'post', post);
       const adapter = await import(pathToFileURL(nativePath));
@@ -122,13 +122,13 @@ for (const [name, modelsFile, adapterFile] of services) {
       } else {
         await adapter.sendAssistantMessageRequest(messages, request.model, { authorization: 'native' });
       }
-      assert.equal(captured.model, 'gpt-6-astra');
+      assert.equal(captured.model, 'gpt-6.1-sol');
       assert.equal(captured.reasoning?.effort || captured.reasoning_effort, 'xhigh');
       if (vision) assert.ok(JSON.stringify(captured).includes('data:image/png;base64,QUJD'));
       assert.deepEqual(messages, before);
     });
 
-    test(`${name}: OpenRouter ${vision ? 'vision' : 'text'} sends Astra and preserves xhigh`, async (t) => {
+    test(`${name}: OpenRouter ${vision ? 'vision' : 'text'} preserves the selected Sol model and xhigh`, async (t) => {
       const previous = process.env.OPENROUTER_API_KEY;
       process.env.OPENROUTER_API_KEY = 'astra-migration-test-key';
       t.after(() => {
@@ -142,7 +142,7 @@ for (const [name, modelsFile, adapterFile] of services) {
       t.mock.method(OpenAI.prototype, 'post', async (url, options) => {
         assert.equal(url, '/chat/completions');
         captured = options.body;
-        return { model: 'openai/gpt-6-astra', choices: [{ message: { content: 'seen' } }] };
+        return { model: 'openai/gpt-6.1-sol', choices: [{ message: { content: 'seen' } }] };
       });
       const adapter = await import(pathToFileURL(adapterPath));
       assert.equal(adapter.getOpenRouterModelForInferenceRequest({ model: 'gpt-6-astra' }, {
@@ -156,7 +156,7 @@ for (const [name, modelsFile, adapterFile] of services) {
       await adapter.createOpenRouterChatCompletion({
         model: 'gpt-6.1-sol-xhigh', messages, maxRetries: 0, externalMaxRetries: 0,
       });
-      assert.equal(captured.model, 'openai/gpt-6-astra');
+      assert.equal(captured.model, 'openai/gpt-6.1-sol');
       assert.equal(captured.reasoning.effort, 'xhigh');
       assert.deepEqual(captured.messages, messages);
       assert.deepEqual(messages, before);

@@ -1,8 +1,10 @@
+import { useUiLanguage } from '../../../hooks/useUiLanguage.js';
 import { useEffect, useRef } from "react";
 import { RegularPolygon, Group, Transformer } from 'react-konva';
 import { INIT_DIMENSIONS } from '../utils/ShapeUtils';
 
 export default function ResizablePolygon(props) {
+  useUiLanguage();
   const transformerRef = useRef();
   const polygonRef = useRef();
   const { config, isSelected, onSelect, id, updateToolbarButtonPosition, updateTargetActiveLayerConfig

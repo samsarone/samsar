@@ -1,8 +1,10 @@
+import { useUiLanguage } from '../../../hooks/useUiLanguage.js';
 import { useEffect, useRef } from 'react';
 import { Circle, Group, Transformer } from 'react-konva';
 import { INIT_DIMENSIONS } from '../utils/ShapeUtils';
 
 export default function ResizableCircle(props) {
+  useUiLanguage();
   const { config, isSelected, onSelect, id, updateToolbarButtonPosition, updateTargetActiveLayerConfig } = props;
   const circleRef = useRef(null);
   const transformerCircleRef = useRef(null);

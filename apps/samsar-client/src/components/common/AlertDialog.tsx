@@ -1,9 +1,12 @@
+import { useUiLanguage } from '../../hooks/useUiLanguage.js';
+import { translateText as uiText } from '../../utils/localization.js';
 
 import { FaTimes } from 'react-icons/fa';
 import { useAlertDialog } from '../../contexts/AlertDialogContext';
 import { useColorMode } from '../../contexts/ColorMode';
 
 export function AlertDialog() {
+  useUiLanguage();
   const { isAlertDialogOpen, alertDialogContent, closeAlertDialog, useXL, dialogOptions } = useAlertDialog();
   const { colorMode } = useColorMode();
 
@@ -13,7 +16,7 @@ export function AlertDialog() {
   const isTransparentShell = Boolean(dialogOptions?.transparentShell);
   let bgColor = colorMode === 'dark' ? 'border-[#3a4050] bg-[#181b24] text-[#f4f6fb]' : 'bg-neutral-100 text-neutral-900';
   if (isAuthSurface) {
-    bgColor = colorMode === 'dark' ? 'border-[#3a4050] bg-[#181b24] text-slate-100' : 'bg-white text-slate-900';
+    bgColor = `bg-surface text-fg ${colorMode === 'dark' ? 'border-[#3a4050]' : ''}`;
   }
   if (isTransparentShell) {
     bgColor = 'bg-transparent';
@@ -52,12 +55,8 @@ export function AlertDialog() {
         {!dialogOptions?.hideCloseButton && (
           <button
             type="button"
-            aria-label="Close dialog"
-            className={`absolute right-3 top-3 z-10 inline-flex h-9 w-9 items-center justify-center rounded-full transition focus:outline-none focus:ring-2 ${
-              colorMode === 'dark'
-                ? 'text-slate-400 hover:bg-white/5 hover:text-slate-100 focus:ring-[#f6c453]/70'
-                : 'text-slate-500 hover:bg-slate-200/70 hover:text-slate-900 focus:ring-slate-300'
-            }`}
+            aria-label={uiText("Close dialog")}
+            className={`absolute right-3 top-3 z-10 inline-flex h-9 w-9 items-center justify-center rounded-full transition focus:outline-none focus:ring-2 text-fg-muted ${colorMode === 'dark' ? 'hover:bg-white/5 hover:text-slate-100 focus:ring-[#f6c453]/70' : 'hover:bg-slate-200/70 hover:text-slate-900 focus:ring-slate-300'}`}
             onClick={closeAlertDialog}
           >
             <FaTimes className="text-sm" />

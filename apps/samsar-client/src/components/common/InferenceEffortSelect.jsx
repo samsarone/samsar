@@ -1,3 +1,5 @@
+import { translateText as uiText } from '../../utils/localization.js';
+import { useUiLanguage } from '../../hooks/useUiLanguage.js';
 import SingleSelect from './SingleSelect.jsx';
 import { INFERENCE_EFFORT_OPTIONS } from '../../constants/Types.ts';
 import { inferGPT56SolEffortFromModelValue } from '../../utils/deploymentInferencePolicy.mjs';
@@ -16,7 +18,8 @@ export function inferSavedInferenceEffort(user = {}) {
     DEFAULT_INFERENCE_EFFORT;
 }
 
-export default function InferenceEffortSelect({ value, onChange, ...props }) {
+export default function InferenceEffortSelect({ value, onChange, compactLabels = false, ...props }) {
+  const uiLanguage = useUiLanguage();
   return (
     <SingleSelect
       options={INFERENCE_EFFORT_OPTIONS}
@@ -25,7 +28,11 @@ export default function InferenceEffortSelect({ value, onChange, ...props }) {
       isSearchable={false}
       formatOptionLabel={(option, meta) => (
         <div className="flex min-w-0 items-center justify-between gap-2">
-          <span>{option.label}</span>
+          <span title={compactLabels ? option.label : undefined}>
+            {compactLabels && meta.context === 'value'
+              ? uiLanguage === 'en' ? option.value === 'xhigh' ? 'XH' : 'H' : option.label
+              : option.label}
+          </span>
           {meta.context === 'menu' && (
             <span
               aria-label={`${option.label}: ${option.description}`}

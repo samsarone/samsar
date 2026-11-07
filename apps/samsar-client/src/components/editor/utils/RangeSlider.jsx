@@ -1,7 +1,10 @@
+import { useUiLanguage } from '../../../hooks/useUiLanguage.js';
+import { translateText as uiText } from '../../../utils/localization.js';
 
 import { useColorMode } from '../../../contexts/ColorMode.jsx';
 
 function RangeSlider(props) {
+  useUiLanguage();
   const { editBrushWidth, setEditBrushWidth, sizeVariant = 'default' } = props;
 
   const { colorMode } = useColorMode();
@@ -38,9 +41,7 @@ function RangeSlider(props) {
           transition: 'background 0.25s ease',
         }}
       />
-      <div className={`${isImageStudio ? 'text-sm mt-3' : 'text-xs mt-2'} text-center font-bold text-slate-500 dark:text-slate-300`}>
-        Brush width
-      </div>
+      <div className={`${isImageStudio ? 'text-sm mt-3' : 'text-xs mt-2'} text-center font-bold text-slate-500 dark:text-slate-300`}>{uiText("Brush width")}</div>
     </div>
   );
 }

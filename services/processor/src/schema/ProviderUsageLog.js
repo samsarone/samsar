@@ -25,6 +25,7 @@ const ProviderUsageLogSchema = new mongoose.Schema({
 });
 
 ProviderUsageLogSchema.index({ userId: 1, createdAt: -1 });
+ProviderUsageLogSchema.index({ userId: 1, createdAt: -1, _id: -1 });
 ProviderUsageLogSchema.index({ sessionId: 1, createdAt: -1 });
 
 export default mongoose.models.ProviderUsageLog ||

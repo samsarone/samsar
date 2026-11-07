@@ -1,3 +1,4 @@
+import { translateText as uiText } from '../utils/localization.js';
 import { useEffect, useState } from 'react';
 import axios from 'axios';
 import { getHeaders } from '../utils/web.jsx';
@@ -67,10 +68,10 @@ function normalizeProcessorUrl(path = '') {
 function normalizeGoogleSpeakerGender(rawGender = '') {
   const normalized = typeof rawGender === 'string' ? rawGender.trim().toLowerCase() : '';
   if (normalized === 'm' || normalized === 'male') {
-    return { code: 'M', label: 'Male' };
+    return { code: 'M', label: uiText("Male") };
   }
   if (normalized === 'f' || normalized === 'female') {
-    return { code: 'F', label: 'Female' };
+    return { code: 'F', label: uiText("Female") };
   }
   if (normalized) {
     return {
@@ -78,7 +79,7 @@ function normalizeGoogleSpeakerGender(rawGender = '') {
       label: normalized.replace(/\b\w/g, (char) => char.toUpperCase()),
     };
   }
-  return { code: null, label: 'Unspecified' };
+  return { code: null, label: uiText("Unspecified") };
 }
 
 function getGoogleTTSVoiceType(voiceName = '') {
@@ -270,7 +271,7 @@ export function mergeGoogleTTSSpeakers(baseSpeakers = [], googleSpeakers = []) {
 export async function fetchGoogleTTSPreviewBlobUrl(speaker = {}) {
   const normalizedSpeaker = normalizeGoogleTTSSpeaker(speaker);
   if (!normalizedSpeaker.previewURL) {
-    throw new Error('Google TTS preview URL is unavailable.');
+    throw new Error(uiText("Google TTS preview URL is unavailable."));
   }
 
   const response = await axios.get(normalizedSpeaker.previewURL, {

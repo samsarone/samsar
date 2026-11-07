@@ -1,3 +1,4 @@
+import { useUiLanguage } from '../../../hooks/useUiLanguage.js';
 import { useStudioFrameRate } from '../StudioFrameRateContext.jsx';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { frameToViewportValue } from './viewportGeometry.js';
@@ -99,6 +100,7 @@ const TimeRuler = ({
   visibleEndTime,
   viewportGeometry = null,
 }) => {
+  useUiLanguage();
   const rulerRef = useRef(null);
   const [rulerHeight, setRulerHeight] = useState(0);
 

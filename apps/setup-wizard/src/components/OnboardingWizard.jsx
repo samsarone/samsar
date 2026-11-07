@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import SamsarClient from 'samsar-js';
+import ProviderModelsTooltip from './ProviderModelsTooltip.jsx';
 import {
-  buildDockerAvailableModelsFromEnabledProviders,
   buildDockerAvailableModelsFromProviderResults,
   buildExpressPipelineAvailability,
   getDockerModelDisplayName,
@@ -52,7 +52,7 @@ const PROVIDERS = [
     field: 'openaiApiKey',
     inputType: 'password',
     placeholder: 'OpenAI API key',
-    requiredFor: 'GPT inference and assistants, GPT Image generation and editing, and OpenAI text-to-speech.',
+    requiredFor: 'Inference, images, and speech.',
     pricingUrl: 'https://developers.openai.com/api/docs/pricing',
     keysUrl: 'https://platform.openai.com/api-keys',
     credentialLabel: 'API key',
@@ -64,7 +64,7 @@ const PROVIDERS = [
     field: 'anthropicApiKey',
     inputType: 'password',
     placeholder: 'Anthropic API key',
-    requiredFor: 'Claude Opus 5.5 inference, vision, and assistant.',
+    requiredFor: 'Claude inference, vision, and assistants.',
     pricingUrl: 'https://platform.claude.com/docs/en/about-claude/pricing',
     keysUrl: 'https://platform.claude.com/settings/keys',
     credentialLabel: 'API key',
@@ -77,7 +77,7 @@ const PROVIDERS = [
     optionalKeyField: 'googleLyriaGeminiApiKey',
     inputType: 'textarea',
     placeholder: 'Paste service account JSON or base64 JSON',
-    requiredFor: 'Gemini inference plus Google image, video, speech, and music models.',
+    requiredFor: 'Gemini inference, images, video, speech, and music.',
     pricingUrl: 'https://cloud.google.com/gemini-enterprise-agent-platform/generative-ai/pricing',
     keysUrl: 'https://console.cloud.google.com/iam-admin/serviceaccounts',
     credentialLabel: 'Service account JSON',
@@ -89,7 +89,7 @@ const PROVIDERS = [
     field: 'kimiK3ApiKey',
     inputType: 'password',
     placeholder: 'Kimi API key',
-    requiredFor: 'Native Kimi K3 text, strict structured-output, assistant, and latest vision inference with high reasoning.',
+    requiredFor: 'Kimi inference, vision, and assistants.',
     pricingUrl: 'https://platform.kimi.ai/docs/pricing/chat-k3',
     keysUrl: 'https://platform.kimi.ai/',
     credentialLabel: 'API key',
@@ -101,7 +101,7 @@ const PROVIDERS = [
     field: 'openrouterApiKey',
     inputType: 'password',
     placeholder: 'OpenRouter API key',
-    requiredFor: 'Inference for GPT, Claude Opus 5.5, Gemini, and Qwen 3.8 Max text and vision models.',
+    requiredFor: 'Multiple inference and vision models with one key.',
     pricingUrl: 'https://openrouter.ai/pricing',
     keysUrl: 'https://openrouter.ai/settings/keys',
     credentialLabel: 'API key',
@@ -113,7 +113,7 @@ const PROVIDERS = [
     field: 'alibabaApiKey',
     inputType: 'password',
     placeholder: 'Alibaba Cloud Model Studio API key',
-    requiredFor: 'Qwen 3.8 Max inference and vision, Qwen Image 3.0 Pro with standard PAYG access, Wan image generation, and Happy Horse video.',
+    requiredFor: 'Qwen inference, images, and video.',
     pricingUrl: 'https://www.alibabacloud.com/help/en/model-studio/model-pricing',
     keysUrl: 'https://modelstudio.console.alibabacloud.com/',
     credentialLabel: 'API key',
@@ -129,7 +129,7 @@ const PROVIDERS = [
     field: 'falApiKey',
     inputType: 'password',
     placeholder: 'FAL API key',
-    requiredFor: 'Broad media access for image, video, speech, music, lip sync, and sound effects.',
+    requiredFor: 'Images, video, audio, and lip sync.',
     pricingUrl: 'https://fal.ai/pricing',
     keysUrl: 'https://fal.ai/dashboard/keys',
     credentialLabel: 'API key',
@@ -141,7 +141,7 @@ const PROVIDERS = [
     field: 'elevenLabsApiKey',
     inputType: 'password',
     placeholder: 'ElevenLabs API key',
-    requiredFor: 'Direct speech and backing-track music generation.',
+    requiredFor: 'Speech and music.',
     pricingUrl: 'https://elevenlabs.io/pricing',
     keysUrl: 'https://elevenlabs.io/app/settings/api-keys',
     credentialLabel: 'API key',
@@ -153,7 +153,7 @@ const PROVIDERS = [
     field: 'runwayApiKey',
     inputType: 'password',
     placeholder: 'Runway API key',
-    requiredFor: 'Runway video generation and image-to-video.',
+    requiredFor: 'Video generation.',
     pricingUrl: 'https://docs.dev.runwayml.com/guides/pricing/',
     keysUrl: 'https://docs.dev.runwayml.com/guides/setup/',
     credentialLabel: 'API key',
@@ -165,24 +165,22 @@ const PROVIDERS = [
     field: 'gmiCloudApiKey',
     inputType: 'password',
     placeholder: 'GMICloud API key',
-    requiredFor: 'Compatible GPT, Gemini, Qwen, image, video, and speech models discovered for this GMICloud credential and routed through the local GenBlaze gateway.',
+    requiredFor: 'Inference and media through the local GenBlaze gateway.',
     pricingUrl: 'https://www.gmicloud.ai/pricing',
     keysUrl: 'https://console.gmicloud.ai/',
     credentialLabel: 'GMICloud API key',
-    badge: 'Local GenBlaze gateway',
   },
   {
     key: 'samsar',
-    title: 'Samsar-js',
+    title: 'Samsar API',
     type: 'samsar',
     field: 'samsarApiKey',
     inputType: 'password',
     placeholder: 'sk_live_...',
-    requiredFor: 'Universal access to every model using Samsar credits.',
+    requiredFor: 'Inference and media using Samsar credits.',
     pricingUrl: 'https://docs.samsar.one/pricing',
     keysUrl: 'https://app.samsar.one/account/apiKeys',
     credentialLabel: 'API key',
-    badge: 'All model access',
   },
 ];
 const NATIVE_PROVIDERS = PROVIDERS.filter((provider) => provider.type === 'native');
@@ -193,17 +191,22 @@ const PROVIDER_GROUPS = PROVIDER_GROUP_DEFINITIONS.map((group) => ({
   ...group,
   providers: group.providerKeys.map((providerKey) => PROVIDERS.find((provider) => provider.key === providerKey)),
 }));
-const PROVIDER_MODELS_BY_KEY = Object.fromEntries(PROVIDERS.map((provider) => [
-  provider.key,
-  (provider.key === 'gmicloud'
-    ? []
-    : buildDockerAvailableModelsFromEnabledProviders([provider.key]).models)
-    .map((modelKey) => ({
-      modelKey,
-      label: getDockerModelDisplayName(modelKey, provider.key),
-    }))
-    .sort((leftModel, rightModel) => leftModel.label.localeCompare(rightModel.label)),
-]));
+
+// Preview the same credential-scoped catalog used after validation. GMICloud
+// requires discovery; a music-only Google key must not imply Gemini access.
+function getProviderPreviewResult(providerKey, credentials, validationResult) {
+  const validated = getProviderStatus(validationResult, providerKey);
+  if (validated) return validated;
+  return {
+    ok: true,
+    ...(providerKey === 'gmicloud' ? { modelMappings: {} } : {}),
+    ...(providerKey === 'googleCloud' ? {
+      musicOnly: Boolean(sanitizeCredentialValue(credentials.googleLyriaGeminiApiKey)) &&
+        !sanitizeCredentialValue(credentials.googleCredentialsJson),
+      lyriaGeminiConfigured: Boolean(sanitizeCredentialValue(credentials.googleLyriaGeminiApiKey)),
+    } : {}),
+  };
+}
 
 const SERVICES = [
   { key: 'processor', label: 'Processor API', required: true },
@@ -220,15 +223,15 @@ const LOGGER_SERVICE_KEY = 'logger';
 const CAPABILITY_FAMILIES = {
   gpt56: {
     key: 'gpt56',
-    label: 'GPT 6 Astra',
+    label: 'GPT Astra / Sol',
     providerKeys: ['openai', 'gmicloud', 'samsar', 'openrouter'],
-    modelKeys: ['gpt-6-astra'],
+    modelKeys: ['gpt-6-astra', 'gpt-6.1-sol'],
   },
   claude: {
     key: 'claude',
-    label: 'Claude Opus 5.5',
+    label: 'Claude Opus / Fable',
     providerKeys: ['anthropic', 'openrouter', 'samsar'],
-    modelKeys: ['claude-opus-5.5'],
+    modelKeys: ['claude-opus-5.5', 'claude-fable-5.1'],
   },
   gemini: {
     key: 'gemini',
@@ -252,13 +255,13 @@ const CAPABILITY_FAMILIES = {
     key: 'gptAssistant',
     label: 'GPT Assistant',
     providerKeys: ['openai', 'gmicloud', 'samsar', 'openrouter'],
-    modelKeys: ['gpt-6-astra'],
+    modelKeys: ['gpt-6-astra', 'gpt-6.1-sol'],
   },
   claudeAssistant: {
     key: 'claudeAssistant',
-    label: 'Claude Opus 5.5 Assistant',
+    label: 'Claude Opus / Fable Assistant',
     providerKeys: ['anthropic', 'openrouter', 'samsar'],
-    modelKeys: ['claude-opus-5.5'],
+    modelKeys: ['claude-opus-5.5', 'claude-fable-5.1'],
   },
   geminiAssistant: {
     key: 'geminiAssistant',
@@ -2059,9 +2062,9 @@ function ExpressPipelineWarningDialog({ missingRequirements, onReviewProviders, 
             {missingRequirements.map((requirement) => <li key={requirement.key}>{requirement.label}</li>)}
           </ul>
           <p>
-            Optionally add a Samsar-js key by getting credits and enabling an API key{' '}
+            Optionally add a Samsar API key by getting credits and enabling an API key{' '}
             <a href="https://app.samsar.one" target="_blank" rel="noreferrer">here</a>
-            {' '}to enable access to all models.
+            {' '}to enable access to supported models.
           </p>
         </div>
         <div className="reset-dialog-actions express-warning-actions">
@@ -2236,25 +2239,33 @@ function getInitialColorMode() {
   if (typeof window === 'undefined') {
     return 'dark';
   }
-  return window.localStorage.getItem('colorMode') === 'light' ? 'light' : 'dark';
+  return readBrowserStorage(window, 'localStorage', 'colorMode') === 'light' ? 'light' : 'dark';
 }
 
 const SETUP_BOOTSTRAP_STORAGE_KEY = 'samsarSetupBootstrapToken';
 
-function readBrowserStorage(storage, key) {
+function readBrowserStorage(browserWindow, storageName, key) {
   try {
-    return normalizeText(storage?.getItem(key));
+    return normalizeText(browserWindow?.[storageName]?.getItem(key));
   } catch {
     return '';
   }
 }
 
-function writeBrowserStorage(storage, key, value) {
+function writeBrowserStorage(browserWindow, storageName, key, value) {
   try {
-    storage?.setItem(key, value);
+    const storage = browserWindow?.[storageName];
+    if (!storage) return false;
+    storage.setItem(key, value);
     return true;
   } catch {
     return false;
+  }
+}
+
+function persistSetupBootstrapToken(token, browserWindow = globalThis.window) {
+  if (!writeBrowserStorage(browserWindow, 'localStorage', SETUP_BOOTSTRAP_STORAGE_KEY, token)) {
+    writeBrowserStorage(browserWindow, 'sessionStorage', SETUP_BOOTSTRAP_STORAGE_KEY, token);
   }
 }
 
@@ -2265,9 +2276,7 @@ export function getInitialSetupBootstrapToken(browserWindow = globalThis.window)
   const fragment = new URLSearchParams(browserWindow.location.hash.replace(/^#/, ''));
   const fragmentToken = normalizeText(fragment.get('bootstrap'));
   if (fragmentToken) {
-    if (!writeBrowserStorage(browserWindow.localStorage, SETUP_BOOTSTRAP_STORAGE_KEY, fragmentToken)) {
-      writeBrowserStorage(browserWindow.sessionStorage, SETUP_BOOTSTRAP_STORAGE_KEY, fragmentToken);
-    }
+    persistSetupBootstrapToken(fragmentToken, browserWindow);
     browserWindow.history.replaceState(
       null,
       '',
@@ -2276,18 +2285,20 @@ export function getInitialSetupBootstrapToken(browserWindow = globalThis.window)
     return fragmentToken;
   }
   const persistentToken = readBrowserStorage(
-    browserWindow.localStorage,
+    browserWindow,
+    'localStorage',
     SETUP_BOOTSTRAP_STORAGE_KEY,
   );
   if (persistentToken) {
     return persistentToken;
   }
   const legacySessionToken = readBrowserStorage(
-    browserWindow.sessionStorage,
+    browserWindow,
+    'sessionStorage',
     SETUP_BOOTSTRAP_STORAGE_KEY,
   );
   if (legacySessionToken) {
-    writeBrowserStorage(browserWindow.localStorage, SETUP_BOOTSTRAP_STORAGE_KEY, legacySessionToken);
+    writeBrowserStorage(browserWindow, 'localStorage', SETUP_BOOTSTRAP_STORAGE_KEY, legacySessionToken);
   }
   return legacySessionToken;
 }
@@ -2297,7 +2308,11 @@ export default function OnboardingWizard() {
   const adminEmailInputRef = useRef(null);
   const submissionErrorRef = useRef(null);
   const [initialWizardState] = useState(buildInitialWizardState);
-  const [setupBootstrapToken] = useState(getInitialSetupBootstrapToken);
+  const setupBootstrapAccessRef = useRef(null);
+  if (!setupBootstrapAccessRef.current) {
+    const token = getInitialSetupBootstrapToken();
+    setupBootstrapAccessRef.current = { token, storedToken: token };
+  }
   const [step, setStep] = useState(initialWizardState.step);
   const [colorMode, setColorMode] = useState(getInitialColorMode);
   const [credentialSource, setCredentialSource] = useState(initialWizardState.credentialSource);
@@ -2356,8 +2371,9 @@ export default function OnboardingWizard() {
   const [maintenanceStartError, setMaintenanceStartError] = useState('');
   const [expressWarningMissingRequirements, setExpressWarningMissingRequirements] = useState([]);
   const [providerDrawersOpen, setProviderDrawersOpen] = useState({
+    samsar: true,
     inference: true,
-    universal: true,
+    gmicloud: true,
     media: true,
   });
   const activeCredentials = useMemo(
@@ -2404,21 +2420,18 @@ export default function OnboardingWizard() {
     [activeCredentials],
   );
   const enteredProviderAvailability = useMemo(
-    () => buildDockerAvailableModelsFromEnabledProviders(
-      enteredProviderKeys,
-      enteredProviderKeys.includes('gmicloud')
-        ? {
-          gmiCloudModelMappings:
-            getProviderStatus(validationResult, 'gmicloud')?.modelMappings || {},
-        }
-        : {},
-    ),
-    [enteredProviderKeys, validationResult],
+    () => buildDockerAvailableModelsFromProviderResults(Object.fromEntries(
+      enteredProviderKeys.map((key) => [key, getProviderPreviewResult(key, activeCredentials, validationResult)]),
+    )),
+    [activeCredentials, enteredProviderKeys, validationResult],
   );
   const expressPipelineAvailability = useMemo(
     () => buildExpressPipelineAvailability(validationResult?.available || enteredProviderAvailability),
     [enteredProviderAvailability, validationResult],
   );
+  const providerCapabilitiesCovered = enteredProviderKeys.length > 0 &&
+    expressPipelineAvailability.isReady && !validationError;
+  const highlightProviderContinue = providerCapabilitiesCovered && !isValidating;
   const availableSetupServiceCount = setupServiceAvailability.filter((service) => service.isAvailable).length;
   const activeStep = STEPS.find((item) => item.id === step) || STEPS[0];
   const normalizedReverseProxyConfig = normalizeReverseProxyConfig(reverseProxyConfig);
@@ -2478,7 +2491,13 @@ export default function OnboardingWizard() {
 
   const buildSetupHeaders = (headers = {}, password = setupAuthPassword) => {
     // A launcher link opened in another tab may have replaced a stale token.
-    const bootstrapToken = getInitialSetupBootstrapToken() || setupBootstrapToken;
+    const storedToken = getInitialSetupBootstrapToken();
+    const access = setupBootstrapAccessRef.current;
+    if (storedToken && storedToken !== access.storedToken) {
+      access.token = storedToken;
+      access.storedToken = storedToken;
+    }
+    const bootstrapToken = access.token;
     return {
       ...headers,
       ...(bootstrapToken ? { 'x-samsar-setup-bootstrap-token': bootstrapToken } : {}),
@@ -2498,60 +2517,42 @@ export default function OnboardingWizard() {
   };
 
   const renderProviderRow = (provider) => {
-    const isSamsarProvider = provider.type === 'samsar';
     const usesEnvironmentReference = credentialSource === CREDENTIAL_SOURCE_ENVIRONMENT;
     const providerValidation = getProviderStatus(validationResult, provider.key);
-    const validatedGmiCloudModels = provider.key === 'gmicloud' && providerValidation?.ok === true
-      ? Object.entries(providerValidation.modelMappings || {}).map(([modelKey, routes]) => {
-        const upstreamModels = [...new Set(Object.values(routes || {})
-          .map((route) => route?.modelId)
-          .filter(Boolean))];
-        return {
-          modelKey,
-          label: upstreamModels.length
-            ? `${getDockerModelDisplayName(modelKey, provider.key)} (${upstreamModels.join(' / ')})`
-            : getDockerModelDisplayName(modelKey, provider.key),
-        };
-      }).sort((leftModel, rightModel) => leftModel.label.localeCompare(rightModel.label))
-      : null;
     const awaitingGmiCloudDiscovery = provider.key === 'gmicloud' && providerValidation?.ok !== true;
-    const providerModels = provider.key === 'gmicloud'
-      ? (validatedGmiCloudModels || [])
-      : (PROVIDER_MODELS_BY_KEY[provider.key] || []);
-    const rowClassName = [
-      'provider-row',
-      isSamsarProvider ? 'provider-row-featured' : 'provider-row-native',
-    ].filter(Boolean).join(' ');
+    const previewResult = getProviderPreviewResult(provider.key, activeCredentials, validationResult);
+    const providerModels = buildDockerAvailableModelsFromProviderResults({
+      [provider.key]: previewResult,
+    }).models.map((modelKey) => ({
+      modelKey,
+      label: modelKey === 'LYRIA3' && (provider.key === 'fal' ||
+        (provider.key === 'googleCloud' && previewResult.lyriaGeminiConfigured))
+        ? 'Lyria 3.5'
+        : getDockerModelDisplayName(modelKey, provider.key),
+    })).sort((left, right) => left.label.localeCompare(right.label));
 
     return (
-      <section className={rowClassName} key={provider.key}>
+      <section className="provider-row" key={provider.key} aria-label={provider.title}>
         <div className="provider-meta">
           <div className="provider-heading">
             <label className="provider-title" htmlFor={`${provider.key}-credential`}>
               {provider.title}
             </label>
-            <a className="provider-key-link" href={provider.keysUrl} target="_blank" rel="noreferrer">
-              Get key
-            </a>
+            <span className="provider-subtext">{provider.requiredFor}</span>
           </div>
-          <span className="provider-subtext">{provider.requiredFor}</span>
           <div className="provider-meta-actions">
-            {provider.badge && <span className="provider-badge">{provider.badge}</span>}
             <a className="provider-pricing-link" href={provider.pricingUrl} target="_blank" rel="noreferrer">
               Pricing
             </a>
-          </div>
-          <div className="provider-model-access">
-            <span className="provider-model-access-label">
-              {awaitingGmiCloudDiscovery
-                ? 'Validate the key to discover exact compatible models'
-                : `Enables ${providerModels.length} ${providerModels.length === 1 ? 'model' : 'models'}`}
-            </span>
-            <div className="provider-model-list" aria-label={`${provider.title} enabled models`}>
-              {providerModels.map((model) => (
-                <span className="provider-model-chip" key={model.modelKey}>{model.label}</span>
-              ))}
-            </div>
+            <a className="provider-key-link" href={provider.keysUrl} target="_blank" rel="noreferrer" aria-label={`Get API key for ${provider.title}`}>
+              Get API key <span aria-hidden="true">↗</span>
+            </a>
+            <ProviderModelsTooltip
+              provider={provider}
+              models={providerModels}
+              awaitingDiscovery={awaitingGmiCloudDiscovery}
+              invalid={providerValidation?.ok === false}
+            />
           </div>
         </div>
         <div className="provider-control">
@@ -2596,7 +2597,7 @@ export default function OnboardingWizard() {
                 onChange={(event) => updateCredential(provider.optionalKeyField, event.target.value)}
               />
               <small className="provider-endpoint-help">
-                Enables Lyria 3.5 with Gemini paid-tier billing. Without this key, music uses Fal 3.5 when configured, otherwise Vertex Lyria 3. If both support 3.5, Google is preferred.
+                Enables Lyria 3.5 with Gemini paid-tier billing.
                 {' '}<a href="https://aistudio.google.com/api-keys" target="_blank" rel="noreferrer">Get Gemini key</a>
               </small>
             </>
@@ -2631,7 +2632,7 @@ export default function OnboardingWizard() {
   useEffect(() => {
     document.body.classList.remove('theme-dark', 'theme-light');
     document.body.classList.add(colorMode === 'dark' ? 'theme-dark' : 'theme-light');
-    window.localStorage.setItem('colorMode', colorMode);
+    writeBrowserStorage(window, 'localStorage', 'colorMode', colorMode);
   }, [colorMode]);
 
   useEffect(() => {
@@ -2665,13 +2666,35 @@ export default function OnboardingWizard() {
   const refreshInstallStatus = async () => {
     setIsLoadingInstallStatus(true);
     try {
-      const response = await fetch('/api/setup/install-status', {
+      let response = await fetch('/api/setup/install-status', {
         cache: 'no-store',
         headers: buildSetupHeaders(),
       });
-      const body = await response.json().catch(() => ({}));
+      let body = await response.json().catch(() => ({}));
       if (!response.ok) {
         throw new Error(body?.message || 'Unable to read local installation status.');
+      }
+      if (!body.setupAuthenticated && body.setupBootstrapAuthRequired && body.setupLocalBootstrapAvailable) {
+        try {
+          const bootstrapResponse = await fetch('/api/setup/auth/bootstrap', { cache: 'no-store' });
+          const bootstrap = await bootstrapResponse.json().catch(() => ({}));
+          const token = normalizeText(bootstrap.bootstrapToken);
+          if (bootstrapResponse.ok && bootstrap.ok !== false && token) {
+            persistSetupBootstrapToken(token);
+            setupBootstrapAccessRef.current = {
+              token,
+              storedToken: getInitialSetupBootstrapToken(),
+            };
+            response = await fetch('/api/setup/install-status', {
+              cache: 'no-store',
+              headers: buildSetupHeaders(),
+            });
+            const authenticatedStatus = await response.json().catch(() => ({}));
+            if (response.ok) body = authenticatedStatus;
+          }
+        } catch {
+          // Keep the authentication gate available if local bootstrap is unavailable.
+        }
       }
       setInstallStatus(body);
       setInstallActionError('');
@@ -3469,6 +3492,10 @@ export default function OnboardingWizard() {
     setIsUnlockingSetup(true);
     setSetupAuthError('');
     try {
+      if (installStatus?.setupLocalBootstrapAvailable && !setupAuthRequired) {
+        const status = await refreshInstallStatus();
+        if (status?.setupAuthenticated) return { ok: true };
+      }
       const response = await fetch('/api/setup/auth/check', {
         method: 'POST',
         headers: buildSetupHeaders({ 'Content-Type': 'application/json' }),
@@ -3972,11 +3999,11 @@ export default function OnboardingWizard() {
       ) : (
       <section className="wizard-panel">
         <div className="panel-header">
-          <h2>{step === 1 ? 'Add optional provider configurations to enable specific models.' : activeStep.label}</h2>
+          <h2>{step === 1 ? 'Connect your AI providers' : activeStep.label}</h2>
 	          <p>
                 {step === 1 && (credentialSource === CREDENTIAL_SOURCE_ENVIRONMENT
                   ? 'Choose adapters and reference exported Bash variables without placing raw credentials in the browser.'
-                  : 'Choose only the adapters you need. Each provider shows every model its credential enables.')}
+                  : 'Use a Samsar API key or connect your preferred providers directly.')}
 	            {step === 2 && 'Available services are derived from the credentials validated in Providers.'}
 	            {step === 3 && (configurationSecretSource === CREDENTIAL_SOURCE_ENVIRONMENT
                   ? 'Choose data and mail options while keeping secret values in the host Bash environment.'
@@ -4018,43 +4045,56 @@ export default function OnboardingWizard() {
                 </button>
               </div>
             </section>
+            <nav className="provider-category-nav" aria-label="Provider categories">
+              {PROVIDER_GROUPS.map((group) => (
+                <a
+                  key={group.key}
+                  href={`#provider-group-${group.key}`}
+                  onClick={() => setProviderDrawersOpen((current) => ({ ...current, [group.key]: true }))}
+                >
+                  {group.title}
+                </a>
+              ))}
+            </nav>
             <div className="provider-list">
               {PROVIDER_GROUPS.map((group) => (
-                <section
-                  className={`provider-drawer ${group.featured ? 'provider-drawer-featured' : ''}`}
-                  key={group.key}
-                >
-                  <button
-                    type="button"
-                    className="provider-drawer-header"
-                    aria-expanded={providerDrawersOpen[group.key]}
-                    onClick={() => toggleProviderDrawer(group.key)}
-                  >
-                    <span>
-                      <strong>{group.title}</strong>
-                      <small>{group.description}</small>
-                    </span>
-                    <span className="provider-drawer-toggle" aria-hidden="true">
-                      {providerDrawersOpen[group.key] ? '-' : '+'}
-                    </span>
-                  </button>
-                  {providerDrawersOpen[group.key] && (
-                    <div className="provider-drawer-body">
-                      {group.providers.map(renderProviderRow)}
+                <Fragment key={group.key}>
+                  {group.key === 'inference' && (
+                    <div className="provider-alternatives-heading">
+                      <h3>Or add model or adapter keys to enable specific capabilities</h3>
+                      <p>Connect providers directly for inference, image, video, speech, music, and more.</p>
                     </div>
                   )}
-                </section>
+                  <section
+                    className={`provider-drawer ${group.featured ? 'provider-drawer-featured' : ''}`}
+                    id={`provider-group-${group.key}`}
+                  >
+                    <button
+                      type="button"
+                      className="provider-drawer-header"
+                      aria-expanded={providerDrawersOpen[group.key]}
+                      onClick={() => toggleProviderDrawer(group.key)}
+                    >
+                      <span>
+                        <strong>{group.title}</strong>
+                        <small>{group.description}</small>
+                      </span>
+                      <span className="provider-drawer-toggle" aria-hidden="true">
+                        {providerDrawersOpen[group.key] ? '-' : '+'}
+                      </span>
+                    </button>
+                    {providerDrawersOpen[group.key] && (
+                      <div className="provider-drawer-body">
+                        {group.providers.map(renderProviderRow)}
+                      </div>
+                    )}
+                  </section>
+                </Fragment>
               ))}
             </div>
             {gmiCloudMediaCatalogWarning && (
               <div className="warning-banner" role="status">
                 {gmiCloudMediaCatalogWarning}
-              </div>
-            )}
-            {enteredProviderKeys.length > 0 && expressPipelineAvailability.isReady && (
-              <div className="success-banner express-readiness-banner" role="status">
-                <strong>Express pipeline ready.</strong>
-                <span>You have enabled the minimum model set for Express generation and the agent.</span>
               </div>
             )}
             {validationError && <div className="error-banner">{validationError}</div>}
@@ -5054,12 +5094,21 @@ export default function OnboardingWizard() {
           </>
         )}
 
-        <footer className="wizard-flow-actions">
-          <button type="button" className="secondary-action" onClick={() => goToStep(step - 1)} disabled={step === 1}>
-            Back
-          </button>
+        <footer className={`wizard-flow-actions ${step === 1 ? 'provider-flow-actions' : ''}`}>
           {step === 1 && (
-            <button type="button" className="primary-action flow-primary" onClick={continueFromProviders} disabled={isValidating}>
+            <div className="provider-readiness" id="provider-readiness" role="status">
+              <strong>{providerCapabilitiesCovered ? 'All capabilities covered' : 'Add keys for the capabilities you need'}</strong>
+              <small>{providerCapabilitiesCovered ? 'Continue to check your keys and review services.' : 'You can continue with a partial setup.'}</small>
+            </div>
+          )}
+          {step > 1 && (
+            <button type="button" className="secondary-action" onClick={() => goToStep(step - 1)}>
+              Back
+            </button>
+          )}
+          {step === 1 && (
+            <button type="button" className={`primary-action flow-primary provider-continue ${highlightProviderContinue ? 'is-ready' : ''}`} onClick={continueFromProviders} disabled={isValidating} aria-describedby="provider-readiness">
+              {highlightProviderContinue && <span aria-hidden="true">✓ </span>}
               {isValidating ? 'Validating credentials...' : 'Continue'}
             </button>
           )}

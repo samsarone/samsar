@@ -3,8 +3,10 @@ import { Schema, model } from 'mongoose';
 // 2. Create a Schema corresponding to the document interface.
 const assistantQueryGenerationSchema = new Schema({
   query: String,
+  stream: { type: Boolean, default: false },
   sessionId: String,
   queryId: String,
+  assistantSessionVersion: { type: Number, default: 0 },
   status: {
     type: String,
     default: 'pending'

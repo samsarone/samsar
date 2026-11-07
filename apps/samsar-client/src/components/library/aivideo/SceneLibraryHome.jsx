@@ -1,3 +1,5 @@
+import { useUiLanguage } from '../../../hooks/useUiLanguage.js';
+import { translateText as uiText } from '../../../utils/localization.js';
 import { useEffect, useState, useRef } from 'react';
 import axios from 'axios';
 import { FaPlay, FaPause, FaDownload } from 'react-icons/fa';
@@ -24,6 +26,7 @@ function resolveMediaUrl(value) {
 }
 
 export default function SceneLibraryHome(props) {
+  useUiLanguage();
   const { hideSelectButton, onSelectVideo, isSelectButtonDisabled } = props;
   const [libraryData, setLibraryData] = useState([]);
   const [currentPage, setCurrentPage] = useState(1);
@@ -37,14 +40,12 @@ export default function SceneLibraryHome(props) {
   const itemsPerPage = 12; // Adjust as needed
 
   // Palette aligned with account page styling
-  const textColor = colorMode === 'dark' ? 'text-slate-100' : 'text-slate-900';
-  const borderColor = colorMode === 'dark' ? 'border-[#3a4050]' : 'border-slate-200';
-  const cardBg = colorMode === 'dark' ? 'bg-[#181b24]' : 'bg-white';
+  const textColor = 'text-fg';
+  const borderColor = 'border-line';
+  const cardBg = 'bg-surface';
   const headerBg = colorMode === 'dark' ? 'bg-[#151720]' : 'bg-slate-50';
-  const mutedText = colorMode === 'dark' ? 'text-slate-400' : 'text-slate-600';
-  const surfaceButton = colorMode === 'dark'
-    ? 'bg-[#151720] hover:bg-[#181b24]'
-    : 'bg-white hover:bg-slate-100';
+  const mutedText = colorMode === 'dark' ? "text-slate-400" : "text-slate-600";
+  const surfaceButton = `bg-surface-sunken ${colorMode === 'dark' ? 'hover:bg-[#181b24]' : 'hover:bg-slate-100'}`;
   const iconColor = colorMode === 'dark' ? 'text-slate-100' : 'text-slate-800';
   const selectButtonGradient = 'bg-gradient-to-r from-blue-500 to-blue-600 text-white hover:opacity-90';
 
@@ -136,24 +137,18 @@ export default function SceneLibraryHome(props) {
               onClick={handlePrevPage}
               disabled={currentPage === 1}
               className={`shrink-0 px-3 py-2 text-sm font-semibold border-r ${borderColor} ${surfaceButton} disabled:opacity-50 disabled:cursor-not-allowed`}
-            >
-              Prev
-            </button>
-            <span className={`min-w-0 flex-1 px-3 py-2 text-center text-sm sm:flex-none sm:px-4 ${headerBg}`}>
-              Page {currentPage} of {totalPages}
-            </span>
+            >{uiText("Prev")}</button>
+            <span className={`min-w-0 flex-1 px-3 py-2 text-center text-sm sm:flex-none sm:px-4 ${headerBg}`}>{uiText("Page {value0} of {value1}", { value0: currentPage, value1: totalPages })}</span>
             <button
               onClick={handleNextPage}
               disabled={currentPage === totalPages}
               className={`shrink-0 px-3 py-2 text-sm font-semibold border-l ${borderColor} ${surfaceButton} disabled:opacity-50 disabled:cursor-not-allowed`}
-            >
-              Next
-            </button>
+            >{uiText("Next")}</button>
           </div>
 
           <input
             type="text"
-            placeholder="Search"
+            placeholder={uiText("Search")}
             value={searchTerm}
             onChange={handleSearchChange}
             className={`w-full px-3 py-2 text-sm rounded-lg border sm:w-64 ${borderColor} ${surfaceButton} focus:outline-none`}
@@ -195,7 +190,7 @@ export default function SceneLibraryHome(props) {
               ) : item?.thumbnailPath ? (
                 <img
                   src={resolveMediaUrl(item.thumbnailPath) || ''}
-                  alt={item.description || 'Video preview'}
+                  alt={item.description || uiText("Video preview")}
                   className="w-full h-48 object-cover rounded-lg cursor-pointer"
                   onClick={() => handlePlayPause(item._id)}
                 />
@@ -204,9 +199,7 @@ export default function SceneLibraryHome(props) {
                   type="button"
                   className="flex h-48 w-full items-center justify-center rounded-lg bg-slate-950/70 text-sm text-slate-200"
                   onClick={() => handlePlayPause(item._id)}
-                >
-                  Preview unavailable
-                </button>
+                >{uiText("Preview unavailable")}</button>
               )}
               <button
                 className={`absolute bottom-2 right-2 px-3 py-2 rounded-full border ${borderColor} ${surfaceButton}`}
@@ -221,15 +214,11 @@ export default function SceneLibraryHome(props) {
             </div>
             {/* Description */}
             <h2 className="mt-3 break-words text-lg font-semibold">
-              {item.description || 'No Description'}
+              {item.description || uiText("No Description")}
             </h2>
             {/* Model and Prompt */}
-            <p className={`break-words text-sm ${mutedText}`}>
-              Model: {item.model || 'Unknown'}
-            </p>
-            <p className={`break-words text-sm ${mutedText}`}>
-              Prompt: {item.prompt || 'No Prompt'}
-            </p>
+            <p className={`break-words text-sm ${mutedText}`}>{uiText("Model: {value0}", { value0: item.model || uiText("Unknown") })}</p>
+            <p className={`break-words text-sm ${mutedText}`}>{uiText("Prompt: {value0}", { value0: item.prompt || uiText("No Prompt") })}</p>
 
             {/* Download and Select Buttons */}
             <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
@@ -248,16 +237,12 @@ export default function SceneLibraryHome(props) {
                       checked={trimScenes[item._id] || false}
                       onChange={() => handleTrimChange(item._id)}
                       className="h-4 w-4 accent-blue-500"
-                    />
-                    Trim
-                  </label>
+                    />{uiText("Trim")}</label>
                   <button
                     className={`${selectButtonGradient} px-4 py-2 rounded-lg font-semibold shadow`}
                     onClick={() => handleSelect(item)}
                     disabled={isSelectButtonDisabled}
-                  >
-                    Select
-                  </button>
+                  >{uiText("Select")}</button>
                 </div>
               )}
             </div>

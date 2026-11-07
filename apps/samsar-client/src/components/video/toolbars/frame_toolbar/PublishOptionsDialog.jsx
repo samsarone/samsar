@@ -1,3 +1,5 @@
+import { useUiLanguage } from '../../../../hooks/useUiLanguage.js';
+import { translateText as uiText } from '../../../../utils/localization.js';
 // PublishOptionsDialog.js
 import { useState } from 'react';
 import axios from 'axios';
@@ -7,6 +9,7 @@ import { useColorMode } from '../../../../contexts/ColorMode.jsx';
 const PROCESSOR_API_URL = import.meta.env.VITE_PROCESSOR_API;
 
 export default function PublishOptionsDialog(props) {
+  useUiLanguage();
   const {
     onSubmit,
     onClose,
@@ -59,45 +62,31 @@ export default function PublishOptionsDialog(props) {
     onSubmit({ title, description, id: extraProps.sessionId });
   };
 
-  const labelClassName = colorMode === 'dark' ? 'text-slate-200' : 'text-slate-700';
-  const fieldClassName = colorMode === 'dark'
-    ? 'border-[#667188] bg-[#20232e] text-slate-100 placeholder:text-slate-500 focus:border-[#f6c453] focus:ring-[#f6c453]/24'
-    : 'border-slate-300 bg-white text-slate-900 placeholder:text-slate-400 focus:border-sky-500 focus:ring-sky-500/20';
-  const cancelButtonClassName = colorMode === 'dark'
-    ? 'border border-[#2a3a57] bg-[#20232e] text-slate-100 hover:bg-[#292d3a]'
-    : 'border border-slate-300 bg-white text-slate-700 hover:bg-slate-50';
-  const primaryButtonClassName = colorMode === 'dark'
-    ? 'bg-[#ff4655] text-[#080a10] hover:bg-[#ff6572] focus:ring-[#ffe0a3]/65'
-    : 'bg-rose-500 text-white hover:bg-rose-400 focus:ring-rose-400/40';
+  const labelClassName = 'text-fg-secondary';
+  const fieldClassName = `bg-surface-raised text-fg ${colorMode === 'dark' ? 'border-[#667188] placeholder:text-slate-500 focus:border-[#f6c453] focus:ring-[#f6c453]/24' : 'border-slate-300 placeholder:text-slate-400 focus:border-sky-500 focus:ring-sky-500/20'}`;
+  const cancelButtonClassName = `border bg-surface-raised text-fg-body ${colorMode === 'dark' ? 'border-[#2a3a57] hover:bg-[#292d3a]' : 'border-slate-300 hover:bg-slate-50'}`;
+  const primaryButtonClassName = `text-on-accent ${colorMode === 'dark' ? 'bg-[#ff4655] hover:bg-[#ff6572] focus:ring-[#ffe0a3]/65' : 'bg-rose-500 hover:bg-rose-400 focus:ring-rose-400/40'}`;
 
   return (
     <div className="w-full text-left">
       <div className={`flex items-start justify-between gap-4 border-b pb-4 pr-10 ${colorMode === 'dark' ? 'border-[#243452]' : 'border-slate-200'}`}>
         <div>
-          <p className={`text-[11px] font-semibold uppercase tracking-[0.18em] ${colorMode === 'dark' ? 'text-cyan-300' : 'text-sky-600'}`}>
-            Gallery publication
-          </p>
-          <h2 className={`mt-1 text-xl font-semibold ${colorMode === 'dark' ? 'text-slate-100' : 'text-slate-900'}`}>
-            {isRepublish ? 'Republish video' : 'Publish video'}
+          <p className={`text-caption font-semibold uppercase tracking-[0.18em] ${colorMode === 'dark' ? 'text-cyan-300' : 'text-sky-600'}`}>{uiText("Gallery publication")}</p>
+          <h2 className={`mt-1 text-xl font-semibold text-fg`}>
+            {isRepublish ? uiText("Republish video") : uiText("Publish video")}
           </h2>
-          <p className={`mt-1 text-sm ${colorMode === 'dark' ? 'text-slate-400' : 'text-slate-500'}`}>
-            Add the details viewers will see in the public gallery.
-          </p>
+          <p className={`mt-1 text-sm text-fg-muted`}>{uiText("Add the details viewers will see in the public gallery.")}</p>
         </div>
         <button
           type="button"
           onClick={generateMeta}
           className={`shrink-0 rounded-lg px-3 py-2 text-sm font-medium transition focus:outline-none focus:ring-2 ${primaryButtonClassName}`}
-        >
-          Generate metadata
-        </button>
+        >{uiText("Generate metadata")}</button>
       </div>
 
       <form onSubmit={handleSubmit} className="mt-5 space-y-4">
         <div className="space-y-1.5">
-          <label htmlFor="publish-title" className={`block text-sm font-medium ${labelClassName}`}>
-            Title
-          </label>
+          <label htmlFor="publish-title" className={`block text-sm font-medium ${labelClassName}`}>{uiText("Title")}</label>
           <input
             id="publish-title"
             type="text"
@@ -108,9 +97,7 @@ export default function PublishOptionsDialog(props) {
         </div>
 
         <div className="space-y-1.5">
-          <label htmlFor="publish-description" className={`block text-sm font-medium ${labelClassName}`}>
-            Description
-          </label>
+          <label htmlFor="publish-description" className={`block text-sm font-medium ${labelClassName}`}>{uiText("Description")}</label>
           <textarea
             id="publish-description"
             value={description}
@@ -125,14 +112,12 @@ export default function PublishOptionsDialog(props) {
             type="button"
             onClick={onClose}
             className={`rounded-lg px-4 py-2 text-sm font-medium transition focus:outline-none focus:ring-2 ${cancelButtonClassName}`}
-          >
-            Cancel
-          </button>
+          >{uiText("Cancel")}</button>
           <button
             type="submit"
             className={`rounded-lg px-4 py-2 text-sm font-medium transition focus:outline-none focus:ring-2 ${primaryButtonClassName}`}
           >
-            {isRepublish ? 'Republish' : 'Publish'}
+            {isRepublish ? uiText("Republish") : uiText("Publish")}
           </button>
         </div>
       </form>

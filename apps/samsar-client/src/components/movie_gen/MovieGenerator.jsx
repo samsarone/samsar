@@ -1,3 +1,5 @@
+import { useUiLanguage } from '../../hooks/useUiLanguage.js';
+import { translateText as uiText } from '../../utils/localization.js';
 import { useState, useEffect, useRef } from 'react';
 import TextareaAutosize from 'react-textarea-autosize';
 import CommonButton from '../common/CommonButton.tsx';
@@ -43,6 +45,7 @@ const API_SERVER = import.meta.env.VITE_PROCESSOR_API;
 
 // Move Typewriter component outside of OneshotEditor
 function Typewriter({ text, delay = 100 }) {
+  useUiLanguage();
   const [displayedText, setDisplayedText] = useState('');
   const hasAnimatedRef = useRef(false);
 
@@ -67,6 +70,7 @@ function Typewriter({ text, delay = 100 }) {
 }
 
 export default function MovieGenerator() {
+  useUiLanguage();
   const [promptText, setPromptText] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isGenerationPending, setIsGenerationPending] = useState(false);
@@ -162,7 +166,7 @@ export default function MovieGenerator() {
     e.preventDefault();
 
     if (!promptText.trim()) {
-      alert('Please enter theme text before submitting.');
+      alert(uiText("Please enter theme text before submitting."));
       return;
     }
 
@@ -221,14 +225,14 @@ export default function MovieGenerator() {
             error: resData.expressGenerationError ||
               resData.message ||
               resData.error ||
-              'Video generation failed.',
+              uiText("Video generation failed."),
           });
         }
       } catch  {
 
         clearInterval(interval);
         setIsGenerationPending(false);
-        setErrorMessage({ error: 'An unexpected error occurred while fetching status.' });
+        setErrorMessage({ error: uiText("An unexpected error occurred while fetching status.") });
       }
     }, 5000); // Poll every 5 seconds
   };
@@ -277,11 +281,11 @@ export default function MovieGenerator() {
 
     return (
       <div className="p-4">
-        <h2 className="text-xl font-bold mb-4">Video Options</h2>
+        <h2 className="text-xl font-bold mb-4">{uiText("Video Options")}</h2>
         <div className="flex mb-4">
           {/* Duration Column */}
           <div className="w-1/2 pr-2">
-            <h3 className="font-semibold mb-2">Duration</h3>
+            <h3 className="font-semibold mb-2">{uiText("Duration")}</h3>
             <div className="mb-2">
               <label className="inline-flex items-center">
                 <input
@@ -291,7 +295,7 @@ export default function MovieGenerator() {
                   onChange={() => setDuration('30')}
                   className="form-radio"
                 />
-                <span className="ml-2">30 seconds</span>
+                <span className="ml-2">{uiText("30 seconds")}</span>
               </label>
             </div>
             <div className="mb-2">
@@ -303,7 +307,7 @@ export default function MovieGenerator() {
                   onChange={() => setDuration('60')}
                   className="form-radio"
                 />
-                <span className="ml-2">60 seconds</span>
+                <span className="ml-2">{uiText("60 seconds")}</span>
               </label>
             </div>
             <div className="mb-2">
@@ -315,13 +319,13 @@ export default function MovieGenerator() {
                   onChange={() => setDuration('120')}
                   className="form-radio"
                 />
-                <span className="ml-2">2 minutes</span>
+                <span className="ml-2">{uiText("2 minutes")}</span>
               </label>
             </div>
           </div>
           {/* Aspect Ratio Column */}
           <div className="w-1/2 pl-2">
-            <h3 className="font-semibold mb-2">Aspect Ratio</h3>
+            <h3 className="font-semibold mb-2">{uiText("Aspect Ratio")}</h3>
             <div className="mb-2">
               <label className="inline-flex items-center">
                 <input
@@ -331,7 +335,7 @@ export default function MovieGenerator() {
                   onChange={() => setAspectRatio('16:9')}
                   className="form-radio"
                 />
-                <span className="ml-2">16:9 (Landscape)</span>
+                <span className="ml-2">{uiText("16:9 (Landscape)")}</span>
               </label>
             </div>
             <div className="mb-2">
@@ -343,13 +347,13 @@ export default function MovieGenerator() {
                   onChange={() => setAspectRatio('9:16')}
                   className="form-radio"
                 />
-                <span className="ml-2">9:16 (Portrait)</span>
+                <span className="ml-2">{uiText("9:16 (Portrait)")}</span>
               </label>
             </div>
           </div>
         </div>
         <div className="text-right">
-          <CommonButton onClick={handleSubmit}>Submit</CommonButton>
+          <CommonButton onClick={handleSubmit}>{uiText("Submit")}</CommonButton>
         </div>
       </div>
     );
@@ -358,9 +362,7 @@ export default function MovieGenerator() {
   let premiumUsersOnlyMessage = <span />;
   if (user && !user.isPremiumUser) {
     premiumUsersOnlyMessage = (
-      <div className="text-xs mt-1 text-red-500">
-        This feature is only available to premium users.
-      </div>
+      <div className="text-xs mt-1 text-red-500">{uiText("This feature is only available to premium users.")}</div>
     );
   }
 
@@ -375,8 +377,8 @@ export default function MovieGenerator() {
   if (pricingDetailsDisplay) {
     pricingDetailsMessage = (
       <div className='block mt-1'>
-        <div>The price is calculated as 150 credits per 10 seconds of video.</div>
-        <div>For example, a 1 minute video will consume 900 credits.</div>
+        <div>{uiText("The price is calculated as 150 credits per 10 seconds of video.")}</div>
+        <div>{uiText("For example, a 1 minute video will consume 900 credits.")}</div>
         {premiumUsersOnlyMessage}
       </div>
     )
@@ -388,12 +390,11 @@ export default function MovieGenerator() {
         <div
           className={`text-2xl block transform transition-transform duration-500 ease-out ${animateHeading ? '-translate-y-4' : ''
             }`}
-        >
-          Movie Generator By SamsarOne <span className='text-xs'>Alpha</span>
+        >{uiText("Movie Generator By SamsarOne")}<span className='text-xs'>{uiText("Alpha")}</span>
         </div>
         {showSubheading && (
           <div className="text-sm block mt-[-10px]">
-            <Typewriter text="Create movies from a Transcript" delay={50} />
+            <Typewriter text={uiText("Create movies from a Transcript")} delay={50} />
             <FaCog className="inline-block ml-2 hover:text-neutral-200 cursor-pointer" onClick={showVideoGPTOptionsDialog} />
           </div>
         )}
@@ -403,8 +404,7 @@ export default function MovieGenerator() {
           minRows={8}
           maxRows={20}
           className="w-full bg-gray-950 text-white pl-4 pt-4 p-2 rounded"
-          placeholder="Enter a topic on which you'd like a story-video.
-          For example: 'A 1 minute long journey through the cosmos' or 'A story in 6 lines on day in the life of a robot'."
+          placeholder={uiText("Enter a topic on which you'd like a story-video.\n          For example: 'A 1 minute long journey through the cosmos' or 'A story in 6 lines on day in the life of a robot'.")}
           name="promptText"
           value={promptText}
           onChange={(e) => setPromptText(e.target.value)}
@@ -416,7 +416,7 @@ export default function MovieGenerator() {
           {/* Centered Submit Button */}
           <div className="flex justify-center">
             <CommonButton type="submit" isDisabled={isSubmitting || isDisabled}>
-              {isSubmitting ? 'Submitting...' : 'Submit'}
+              {isSubmitting ? uiText("Submitting...") : uiText("Submit")}
             </CommonButton>
           </div>
           {/* Pricing Preview positioned to the right on medium and larger screens */}
@@ -425,9 +425,7 @@ export default function MovieGenerator() {
           <div className="md:absolute md:right-0 top-0 text-white p-2 bg-gray-900 rounded text-center mt-4 md:mt-0 w-full md:w-auto">
             <div className='relative'>
               {/* Updated Flex Container */}
-              <div className="flex justify-end font-bold text-sm text-neutral-100 cursor-pointer" onClick={togglePricingDetailsDisplay} >
-                Pricing will be shown at completion
-                <FaChevronCircleDown
+              <div className="flex justify-end font-bold text-sm text-neutral-100 cursor-pointer" onClick={togglePricingDetailsDisplay} >{uiText("Pricing will be shown at completion")}<FaChevronCircleDown
                   className='inline-flex ml-2  mt-1'
 
                 />
@@ -447,7 +445,7 @@ export default function MovieGenerator() {
 
       <div className="mt-4 text-neutral-100">
   <div className="flex items-center mb-2">
-    <span className="font-bold text-lg">Examples</span>
+    <span className="font-bold text-lg">{uiText("Examples")}</span>
     <FaChevronCircleDown className="ml-2" />
   </div>
   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -463,9 +461,7 @@ export default function MovieGenerator() {
           className="w-full rounded-md border border-neutral-700"
           controls
           src={item.url}
-        >
-          Your browser does not support the video tag.
-        </video>
+        >{uiText("Your browser does not support the video tag.")}</video>
       </div>
     ))}
   </div>

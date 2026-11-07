@@ -1,3 +1,5 @@
+import { useUiLanguage } from '../../../hooks/useUiLanguage.js';
+import { translateText as uiText } from '../../../utils/localization.js';
 // VideoEditorToolbar.js
 import { useContext, useState, useRef, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
@@ -66,8 +68,8 @@ import { resolveStudioVideoToolbarMode } from '../util/studioVideoLayers.mjs';
 import { hasActionableStudioLayer } from '../util/studioSceneLifecycle.mjs';
 
 const SOUND_EFFECT_MODEL_OPTIONS = [
-  { value: 'SDAUDIO', label: 'Stable Audio' },
-  { value: 'CUSTOM_TEXT_TO_SOUND_EFFECT', label: 'Custom Sound Effect', adapterKey: 'custom' },
+  { value: 'SDAUDIO', get label() { return uiText("Stable Audio"); } },
+  { value: 'CUSTOM_TEXT_TO_SOUND_EFFECT', get label() { return uiText("Custom Sound Effect"); }, adapterKey: 'custom' },
 ];
 
 function resolveSpeakerProvider(speaker = {}) {
@@ -135,10 +137,9 @@ function resolveSessionSubtitlesEnabled(sessionDetails = {}) {
 }
 
 function StudioLayerUnavailableState({ colorMode, isLoading }) {
-  const surfaceClassName = colorMode === 'dark'
-    ? 'border-[#4a5265] bg-[#151720] text-slate-200'
-    : 'border-slate-300 bg-slate-50 text-slate-700';
-  const detailClassName = colorMode === 'dark' ? 'text-slate-400' : 'text-slate-500';
+  useUiLanguage();
+  const surfaceClassName = `text-fg-secondary ${colorMode === 'dark' ? 'border-[#4a5265] bg-[#151720]' : 'border-slate-300 bg-slate-50'}`;
+  const detailClassName = 'text-fg-muted';
 
   return (
     <div
@@ -147,18 +148,19 @@ function StudioLayerUnavailableState({ colorMode, isLoading }) {
       aria-live="polite"
     >
       <div className="text-sm font-semibold">
-        {isLoading ? 'Loading scene…' : 'No scene selected'}
+        {isLoading ? uiText("Loading scene…") : uiText("No scene selected")}
       </div>
       <div className={`mt-1 text-xs leading-5 ${detailClassName}`}>
         {isLoading
-          ? 'Generation tools will be available when the scene finishes loading.'
-          : 'Add or select a scene before using generation tools.'}
+          ? uiText("Generation tools will be available when the scene finishes loading.")
+          : uiText("Add or select a scene before using generation tools.")}
       </div>
     </div>
   );
 }
 
 export default function VideoEditorToolbar(props) {
+  useUiLanguage();
   const {
     sessionDetails,
     addTextBoxToCanvas,
@@ -267,7 +269,7 @@ export default function VideoEditorToolbar(props) {
   // Duration state for AUDIOCRAFT
   const [musicDuration, setMusicDuration] = useState(10);
 
-  const [ttsProvider, setTtsProvider] = useState({ value: 'OPENAI', label: 'OpenAI' });
+  const [ttsProvider, setTtsProvider] = useState({ value: 'OPENAI', label: uiText("OpenAI") });
 
 
   const [speakerType, setSpeakerType] = useState(null);
@@ -594,27 +596,27 @@ export default function VideoEditorToolbar(props) {
               <div>
                 <input
                   type='text'
-                  placeholder='Start Fade'
+                  placeholder={uiText("Start Fade")}
                   name="startFade"
                   defaultValue={startFade}
                   className='w-full'
                 />
-                <div>Start Fade</div>
+                <div>{uiText("Start Fade")}</div>
               </div>
               <div>
                 <input
                   type='text'
-                  placeholder='End Fade'
+                  placeholder={uiText("End Fade")}
                   name="endFade"
                   defaultValue={endFade}
                   className='w-full'
                 />
-                <div>End Fade</div>
+                <div>{uiText("End Fade")}</div>
                 <input type="hidden" name="type" value="fade" />
               </div>
             </div>
             <div className='m-auto text-center'>
-              <SecondaryButton type="submit">Apply</SecondaryButton>
+              <SecondaryButton type="submit">{uiText("Apply")}</SecondaryButton>
             </div>
           </form>
         </div>
@@ -649,46 +651,46 @@ export default function VideoEditorToolbar(props) {
                 <input
                   type='text'
                   name="startX"
-                  placeholder='Start X'
+                  placeholder={uiText("Start X")}
                   defaultValue={startX}
                   className='w-full'
                 />
-                <div>Start X</div>
+                <div>{uiText("Start X")}</div>
               </div>
               <div>
                 <input
                   type='text'
                   name="startY"
-                  placeholder='Start Y'
+                  placeholder={uiText("Start Y")}
                   defaultValue={startY}
                   className='w-full'
                 />
-                <div>Start Y</div>
+                <div>{uiText("Start Y")}</div>
               </div>
               <div>
                 <input
                   type='text'
-                  placeholder='End X'
+                  placeholder={uiText("End X")}
                   name="endX"
                   defaultValue={endX}
                   className='w-full'
                 />
-                <div>End X</div>
+                <div>{uiText("End X")}</div>
               </div>
               <div>
                 <input
                   type='text'
-                  placeholder='End Y'
+                  placeholder={uiText("End Y")}
                   name='endY'
                   defaultValue={endY}
                   className='w-full'
                 />
-                <div>End Y</div>
+                <div>{uiText("End Y")}</div>
               </div>
             </div>
             <input type="hidden" name="type" value="slide" />
             <div className='m-auto text-center'>
-              <SecondaryButton type="submit">Apply</SecondaryButton>
+              <SecondaryButton type="submit">{uiText("Apply")}</SecondaryButton>
             </div>
           </form>
         </div>
@@ -710,27 +712,27 @@ export default function VideoEditorToolbar(props) {
               <div>
                 <input
                   type='text'
-                  placeholder='Start Scale'
+                  placeholder={uiText("Start Scale")}
                   name="startScale"
                   defaultValue={startScale}
                   className='w-full'
                 />
-                <div>Start Scale</div>
+                <div>{uiText("Start Scale")}</div>
               </div>
               <div>
                 <input
                   type='text'
-                  placeholder='End Scale'
+                  placeholder={uiText("End Scale")}
                   name="endScale"
                   defaultValue={endScale}
                   className='w-full'
                 />
-                <div>End Scale</div>
+                <div>{uiText("End Scale")}</div>
               </div>
             </div>
             <input type="hidden" name="type" value="zoom" />
             <div className='m-auto text-center'>
-              <SecondaryButton type="submit">Apply</SecondaryButton>
+              <SecondaryButton type="submit">{uiText("Apply")}</SecondaryButton>
             </div>
           </form>
         </div>
@@ -752,15 +754,15 @@ export default function VideoEditorToolbar(props) {
                   type='text'
                   name="startRotate"
                   defaultValue={startRotate}
-                  placeholder='Rotations / second'
+                  placeholder={uiText("Rotations / second")}
                   className='w-full'
                 />
-                <div>Rotations/second</div>
+                <div>{uiText("Rotations/second")}</div>
               </div>
             </div>
             <input type="hidden" name="type" value="rotate" />
             <div className='m-auto text-center'>
-              <SecondaryButton type="submit">Apply</SecondaryButton>
+              <SecondaryButton type="submit">{uiText("Apply")}</SecondaryButton>
             </div>
           </form>
         </div>
@@ -863,8 +865,7 @@ export default function VideoEditorToolbar(props) {
     if (isNaN(secondsTotal) || secondsTotal < 2 || secondsTotal > 40) {
       toast.error(
         <div>
-          <FaTimes className="inline-flex mr-2" /> Please enter a duration between 2 and 40 seconds.
-        </div>,
+          <FaTimes className="inline-flex mr-2" />{uiText("Please enter a duration between 2 and 40 seconds.")}</div>,
         {
           position: "bottom-center",
           className: "custom-toast",
@@ -904,18 +905,14 @@ export default function VideoEditorToolbar(props) {
   }
 
   const panelSurface =
-    colorMode === 'dark'
-      ? 'bg-[#181b24] border border-[#3a4050] text-slate-100 shadow-[0_12px_30px_rgba(0,0,0,0.35)]'
-      : 'bg-white border border-slate-200 text-slate-900';
+    `bg-surface border border-line text-fg ${colorMode === 'dark' ? 'shadow-[0_12px_30px_rgba(0,0,0,0.35)]' : ''}`;
   const inputSurface =
-    colorMode === 'dark'
-      ? 'bg-[#20232e] border border-[#667188]'
-      : 'bg-white border border-slate-200';
+    'bg-surface-raised border border-line-control';
   const interactiveTile =
     colorMode === 'dark'
       ? 'bg-[#f6c453]/14 border border-[#f6c453]/45 text-[#fff1c8]'
       : 'bg-rose-50 border border-rose-200 text-rose-700';
-  const textInnerColor = colorMode === 'dark' ? 'text-slate-100' : 'text-slate-900';
+  const textInnerColor = 'text-fg';
   const text2Color = colorMode === 'dark' ? 'text-slate-100' : 'text-neutral-900';
   const formSelectBgColor = colorMode === 'dark' ? '#181b24' : '#f8fafc';
   const formSelectTextColor = colorMode === 'dark' ? '#e2e8f0' : '#0f172a';
@@ -923,7 +920,7 @@ export default function VideoEditorToolbar(props) {
   const formSelectHoverColor = colorMode === 'dark' ? '#292d3a' : '#2563EB';
   const sliderAccent = colorMode === 'dark' ? '#ff4655' : '#2563eb';
   const sliderTrack = colorMode === 'dark' ? '#3a4050' : '#e2e8f0';
-  const compactFieldLabelClass = `block mb-1 text-[11px] font-semibold uppercase tracking-[0.08em] ${text2Color}`;
+  const compactFieldLabelClass = `block mb-1 text-caption font-semibold uppercase tracking-[0.08em] ${text2Color}`;
   const compactInputClass = `w-full rounded-lg ${inputSurface} ${text2Color} px-3 py-2 text-sm leading-5 ${colorMode === 'dark' ? 'shadow-sm focus:border-[#f6c453] focus:ring-[#f6c453]/20' : 'focus:border-blue-400 focus:ring-blue-400/20'} transition-colors duration-200 placeholder:text-slate-400 focus:outline-none focus:ring-2`;
   const compactNumericInputClass = `${compactInputClass} min-w-0 text-center text-base font-semibold tabular-nums`;
   const compactTextareaClass = `${compactInputClass} min-h-[96px]`;
@@ -932,8 +929,8 @@ export default function VideoEditorToolbar(props) {
     gridTemplateColumns: 'repeat(auto-fit, minmax(96px, 1fr))',
   };
   const compactActionLabelClass = isExpandedView
-    ? 'w-full whitespace-normal break-words text-center text-[11px] font-medium leading-tight tracking-tight'
-    : 'w-full overflow-hidden text-ellipsis whitespace-nowrap text-center text-[11px] font-medium leading-tight tracking-tight';
+    ? 'w-full whitespace-normal break-words text-center text-caption font-medium leading-tight tracking-tight'
+    : 'w-full overflow-hidden text-ellipsis whitespace-nowrap text-center text-caption font-medium leading-tight tracking-tight';
   const compactActionTileClass = (isActive = false) =>
     [
       `flex ${isExpandedView ? 'min-h-[64px]' : 'min-h-[58px]'} w-full min-w-0 flex-col items-center justify-center gap-1 rounded-lg px-2 py-2 text-center transition-all duration-200`,
@@ -970,13 +967,13 @@ export default function VideoEditorToolbar(props) {
         {renderToolbarActionTile({
           key: 'upload',
           icon: <FaUpload />,
-          label: 'Upload',
+          label: uiText("Upload"),
           onClick: showUploadAction,
         })}
         {renderToolbarActionTile({
           key: 'library',
           icon: <TbLibraryPhoto />,
-          label: 'Library',
+          label: uiText("Library"),
           onClick: showLibraryAction,
         })}
       </div>
@@ -999,10 +996,10 @@ export default function VideoEditorToolbar(props) {
 
   let animateOptionsDisplay = <span />;
   const animationOptions = [
-    { value: 'fade', label: 'Fade' },
-    { value: 'slide', label: 'Slide' },
-    { value: 'zoom', label: 'Zoom' },
-    { value: 'rotate', label: 'Rotate' }
+    { value: 'fade', label: uiText("Fade") },
+    { value: 'slide', label: uiText("Slide") },
+    { value: 'zoom', label: uiText("Zoom") },
+    { value: 'rotate', label: uiText("Rotate") }
   ];
 
   const setAnimateAllLayersSelectedFunc = () => {
@@ -1015,13 +1012,9 @@ export default function VideoEditorToolbar(props) {
         <div className={`${text2Color} pl-2`}>
           <div>
             <div className='block mb-4 text-xs mt-2'>
-              <SecondaryButton onClick={setAnimateAllLayersSelectedFunc}>
-                Animate all layers
-              </SecondaryButton>
+              <SecondaryButton onClick={setAnimateAllLayersSelectedFunc}>{uiText("Animate all layers")}</SecondaryButton>
             </div>
-            <div className='block mt-4'>
-              Please select a layer to animate.
-            </div>
+            <div className='block mt-4'>{uiText("Please select a layer to animate.")}</div>
           </div>
         </div>
       );
@@ -1032,9 +1025,7 @@ export default function VideoEditorToolbar(props) {
       }
 
       animateOptionsDisplay = (
-        <div>
-          Select animation
-          <div>
+        <div>{uiText("Select animation")}<div>
             <Select
               options={animationOptions}
               onChange={handleAnimationChange}
@@ -1084,7 +1075,7 @@ export default function VideoEditorToolbar(props) {
   const submitGenerateMusic = (evt) => {
     evt.preventDefault();
     if (!currentMusicProvider) {
-      toast.error('No music provider is configured for this deployment.', {
+      toast.error(uiText("No music provider is configured for this deployment."), {
         position: 'bottom-center',
       });
       return;
@@ -1102,8 +1093,7 @@ export default function VideoEditorToolbar(props) {
     ) {
       toast.error(
         <div>
-          <FaTimes className="inline-flex mr-2" /> Duration must be between {musicDurationMin} and {musicDurationMax} seconds.
-        </div>,
+          <FaTimes className="inline-flex mr-2" /> {uiText("Duration must be between")} {musicDurationMin} {uiText("and")} {musicDurationMax}{uiText("seconds.")}</div>,
         {
           position: "bottom-center",
           className: "custom-toast",
@@ -1203,17 +1193,17 @@ export default function VideoEditorToolbar(props) {
     const audioActionOptions = [
       {
         value: TOOLBAR_ACTION_VIEW.SHOW_SPEECH_GENERATE_DISPLAY,
-        label: 'Speech',
+        label: uiText("Speech"),
         icon: <RiSpeakLine />,
       },
       {
         value: TOOLBAR_ACTION_VIEW.SHOW_MUSIC_GENERATE_DISPLAY,
-        label: 'Music',
+        label: uiText("Music"),
         icon: <FaMusic />,
       },
       {
         value: TOOLBAR_ACTION_VIEW.SHOW_SOUND_GENERATE_DISPLAY,
-        label: 'Effects',
+        label: uiText("Effects"),
         icon: <AiOutlineSound />,
       },
     ];
@@ -1228,12 +1218,10 @@ export default function VideoEditorToolbar(props) {
 
     audioOptionsDisplay = isCollapsedSidebarView ? (
       <div className="mb-3">
-        <label className={compactFieldLabelClass} htmlFor="audioGenerateType">
-          Type
-        </label>
+        <label className={compactFieldLabelClass} htmlFor="audioGenerateType">{uiText("Type")}</label>
         <SingleSelect
           name="audioGenerateType"
-          placeholder="Select audio type..."
+          placeholder={uiText("Select audio type...")}
           options={audioActionOptions.map(({ value, label }) => ({ value, label }))}
           value={
             selectedAudioActionOption
@@ -1269,9 +1257,7 @@ export default function VideoEditorToolbar(props) {
 
             <div className={musicProviderRowClass}>
               <div className="min-w-0 flex-1">
-                <label className={compactFieldLabelClass} htmlFor="musicProvider">
-                  Provider
-                </label>
+                <label className={compactFieldLabelClass} htmlFor="musicProvider">{uiText("Provider")}</label>
                 <ModelAdapterSelect
                   name="musicProvider"
                   options={availableMusicProviders.map(provider => ({
@@ -1283,7 +1269,7 @@ export default function VideoEditorToolbar(props) {
                       : undefined,
                     fallbackAdapterKey: provider.key === 'AUDIOCRAFT' ? 'native' : undefined,
                     fallbackAdapterLabel: provider.key === 'AUDIOCRAFT'
-                      ? 'AudioCraft native adapter'
+                      ? uiText("AudioCraft native adapter")
                       : undefined,
                   }))}
                   value={currentMusicProvider
@@ -1296,7 +1282,7 @@ export default function VideoEditorToolbar(props) {
                         : undefined,
                       fallbackAdapterKey: currentMusicProvider.key === 'AUDIOCRAFT' ? 'native' : undefined,
                       fallbackAdapterLabel: currentMusicProvider.key === 'AUDIOCRAFT'
-                        ? 'AudioCraft native adapter'
+                        ? uiText("AudioCraft native adapter")
                         : undefined,
                     }
                     : null}
@@ -1307,9 +1293,7 @@ export default function VideoEditorToolbar(props) {
                 />
               </div>
               <div className={musicDurationFieldClass}>
-                <label className={compactFieldLabelClass} htmlFor="musicDuration">
-                  Duration
-                </label>
+                <label className={compactFieldLabelClass} htmlFor="musicDuration">{uiText("Duration")}</label>
                 <input
                   type="number"
                   id="musicDuration"
@@ -1321,23 +1305,21 @@ export default function VideoEditorToolbar(props) {
                   onChange={(e) => setMusicDuration(e.target.value)}
                   className={compactNumericInputClass}
                 />
-                <div className={`mt-1 text-[11px] ${text2Color} opacity-70 text-center`}>
-                  {musicDurationMin}-{musicDurationMax} sec
-                </div>
+                <div className={`mt-1 text-caption ${text2Color} opacity-70 text-center`}>{uiText("{value0}-{value1} sec", { value0: musicDurationMin, value1: musicDurationMax })}</div>
               </div>
             </div>
 
 
             <TextareaAutosize
               name="promptText"
-              placeholder="Add prompt text here"
+              placeholder={uiText("Add prompt text here")}
               className={compactTextareaClass}
               minRows={3}
             />
             {supportsMusicLyrics && !isInstrumental && (
               <TextareaAutosize
                 name="lyricsText"
-                placeholder="Optional lyrics for the vocal track"
+                placeholder={uiText("Optional lyrics for the vocal track")}
                 value={musicLyrics}
                 onChange={(e) => setMusicLyrics(e.target.value)}
                 className={`${compactTextareaClass} mt-2`}
@@ -1353,16 +1335,14 @@ export default function VideoEditorToolbar(props) {
                   onChange={(e) => setIsInstrumental(e.target.checked)}
                   disabled={musicProviderLocksInstrumental}
                 />
-                <div className={`inline-flex text-xs ${text2Color} ml-1`}>Instr</div>
+                <div className={`inline-flex text-xs ${text2Color} ml-1`}>{uiText("Instr")}</div>
               </div>
               <div className={musicGenerateButtonWrapClass}>
                 <SecondaryButton
                   type="submit"
                   isPending={audioGenerationPending}
                   className="w-full px-4 py-2.5 text-sm"
-                >
-                  Generate
-                </SecondaryButton>
+                >{uiText("Generate")}</SecondaryButton>
               </div>
             </div>
           </form>
@@ -1465,9 +1445,7 @@ export default function VideoEditorToolbar(props) {
         <div className="transition-all duration-300 ease-in-out">
           <form name="audioGenerateForm" className="w-full" onSubmit={submitGenerateSound}>
             <div className="mb-2">
-              <label className={`text-xs ${text2Color}`} htmlFor="soundEffectModel">
-                Provider
-              </label>
+              <label className={`text-xs ${text2Color}`} htmlFor="soundEffectModel">{uiText("Provider")}</label>
               <ModelAdapterSelect
                 name="soundEffectModel"
                 options={SOUND_EFFECT_MODEL_OPTIONS}
@@ -1482,9 +1460,7 @@ export default function VideoEditorToolbar(props) {
               />
             </div>
             <div className="mb-2">
-              <label className={`text-xs ${text2Color}`} htmlFor="secondsTotal">
-                Duration (seconds):
-              </label>
+              <label className={`text-xs ${text2Color}`} htmlFor="secondsTotal">{uiText("Duration (seconds):")}</label>
               <input
                 type="number"
                 name="secondsTotal"
@@ -1496,15 +1472,13 @@ export default function VideoEditorToolbar(props) {
             </div>
             <TextareaAutosize
               name="promptText"
-              placeholder="Add prompt text here"
+              placeholder={uiText("Add prompt text here")}
               className={`w-full h-24 ${inputSurface} ${text2Color} rounded-md px-3 py-2 bg-transparent`}
               minRows={3}
             />
             <div className="flex flex-row">
               <div className="basis-full m-auto">
-                <SecondaryButton type="submit" isPending={audioGenerationPending}>
-                  Generate
-                </SecondaryButton>
+                <SecondaryButton type="submit" isPending={audioGenerationPending}>{uiText("Generate")}</SecondaryButton>
               </div>
             </div>
           </form>
@@ -1519,7 +1493,7 @@ export default function VideoEditorToolbar(props) {
     if (currentCanvasAction === TOOLBAR_ACTION_VIEW.SHOW_PENCIL_DISPLAY) {
       actionsSubOptionsDisplay = (
         <div className={`mt-2 rounded ${colorMode === 'dark' ? 'shadow-lg' : ''}`}>
-          <label className="block mb-2">Width:</label>
+          <label className="block mb-2">{uiText("Width:")}</label>
           <input
             type="range"
             min="1"
@@ -1529,7 +1503,7 @@ export default function VideoEditorToolbar(props) {
             onChange={(e) => setPencilWidth(e.target.value)}
             style={getSliderStyle(Number(pencilWidth), 1, 50)}
           />
-          <label className="block mt-2 mb-2">Color:</label>
+          <label className="block mt-2 mb-2">{uiText("Color:")}</label>
           <input
             type="color"
             value={pencilColor}
@@ -1540,7 +1514,7 @@ export default function VideoEditorToolbar(props) {
     } else if (currentCanvasAction === TOOLBAR_ACTION_VIEW.SHOW_ERASER_DISPLAY) {
       actionsSubOptionsDisplay = (
         <div className={`mt-2 rounded ${colorMode === 'dark' ? 'shadow-lg' : ''}`}>
-          <label className="block mb-2">Width:</label>
+          <label className="block mb-2">{uiText("Width:")}</label>
           <input
             type="range"
             min="1"
@@ -1556,7 +1530,7 @@ export default function VideoEditorToolbar(props) {
               onClick={toggleEraserGridSnap}
               className={`mt-3 w-full rounded-md border px-3 py-2 text-xs font-medium transition ${snapEraserToGrid ? interactiveTile : inputSurface} ${text2Color}`}
             >
-              {snapEraserToGrid ? 'Snap Eraser: On' : 'Snap Eraser: Off'}
+              {snapEraserToGrid ? uiText("Snap Eraser: On") : uiText("Snap Eraser: Off")}
             </button>
           )}
         </div>
@@ -1568,7 +1542,7 @@ export default function VideoEditorToolbar(props) {
           {renderToolbarActionTile({
             key: 'pencil',
             icon: <FaPencilAlt />,
-            label: 'Pencil',
+            label: uiText("Pencil"),
             onClick: () => setCurrentCanvasAction(TOOLBAR_ACTION_VIEW.SHOW_PENCIL_DISPLAY),
             isActive: currentCanvasAction === TOOLBAR_ACTION_VIEW.SHOW_PENCIL_DISPLAY,
             ariaPressed: currentCanvasAction === TOOLBAR_ACTION_VIEW.SHOW_PENCIL_DISPLAY,
@@ -1576,7 +1550,7 @@ export default function VideoEditorToolbar(props) {
           {renderToolbarActionTile({
             key: 'eraser',
             icon: <FaEraser />,
-            label: 'Eraser',
+            label: uiText("Eraser"),
             onClick: () => setCurrentCanvasAction(TOOLBAR_ACTION_VIEW.SHOW_ERASER_DISPLAY),
             isActive: currentCanvasAction === TOOLBAR_ACTION_VIEW.SHOW_ERASER_DISPLAY,
             ariaPressed: currentCanvasAction === TOOLBAR_ACTION_VIEW.SHOW_ERASER_DISPLAY,
@@ -1584,7 +1558,7 @@ export default function VideoEditorToolbar(props) {
           {renderToolbarActionTile({
             key: 'combine',
             icon: <LuCombine />,
-            label: 'Combine',
+            label: uiText("Combine"),
             onClick: combineCurrentLayerItems,
           })}
         </div>
@@ -1601,7 +1575,7 @@ export default function VideoEditorToolbar(props) {
         {renderToolbarActionTile({
           key: 'select-layer',
           icon: <FaCrosshairs />,
-          label: 'Select Layer',
+          label: uiText("Select Layer"),
           onClick: () => setCurrentCanvasAction(TOOLBAR_ACTION_VIEW.SHOW_SELECT_LAYER_DISPLAY),
           isActive: currentCanvasAction === TOOLBAR_ACTION_VIEW.SHOW_SELECT_LAYER_DISPLAY,
           ariaPressed: currentCanvasAction === TOOLBAR_ACTION_VIEW.SHOW_SELECT_LAYER_DISPLAY,
@@ -1609,7 +1583,7 @@ export default function VideoEditorToolbar(props) {
         {renderToolbarActionTile({
           key: 'select-shape',
           icon: <PiSelectionAll />,
-          label: 'Select Shape',
+          label: uiText("Select Shape"),
           onClick: () => setCurrentCanvasAction(TOOLBAR_ACTION_VIEW.SHOW_SELECT_SHAPE_DISPLAY),
           isActive: currentCanvasAction === TOOLBAR_ACTION_VIEW.SHOW_SELECT_SHAPE_DISPLAY,
           ariaPressed: currentCanvasAction === TOOLBAR_ACTION_VIEW.SHOW_SELECT_SHAPE_DISPLAY,
@@ -1627,13 +1601,13 @@ export default function VideoEditorToolbar(props) {
             {renderToolbarActionTile({
               key: 'select-rectangle',
               icon: <MdOutlineRectangle />,
-              label: 'Rectangle',
+              label: uiText("Rectangle"),
               onClick: () => setSelectedLayerSelectShape('rectangle'),
             })}
             {renderToolbarActionTile({
               key: 'select-circle',
               icon: <FaRegCircle />,
-              label: 'Circle',
+              label: uiText("Circle"),
               onClick: () => setSelectedLayerSelectShape('circle'),
             })}
           </div>
@@ -1741,7 +1715,7 @@ export default function VideoEditorToolbar(props) {
   if (showToggleCollapseToolbar) {
     collapseButton = (
       <div className={`${text2Color} flex ml-2 cursor-pointer`} onClick={onToggleDisplay}>
-        <div className="inline-flex">Collapse</div>
+        <div className="inline-flex">{uiText("Collapse")}</div>
         <FaChevronCircleRight className='inline-flex mt-1 ml-2' />
       </div>
     );
@@ -1749,8 +1723,8 @@ export default function VideoEditorToolbar(props) {
 
   const bgPillSelected = colorMode === 'dark' ? 'bg-[#f6c453]/16 border border-[#f6c453]/45' : 'bg-rose-100 border border-rose-200';
   const bgPillUnselected = colorMode === 'dark' ? 'bg-[#20232e] border border-[#3a4050]' : 'bg-gray-200 border border-transparent';
-  const textPillSelected = colorMode === 'dark' ? 'text-[#fff1c8]' : 'text-rose-700';
-  const textPillUnselected = colorMode === 'dark' ? 'text-slate-200' : 'text-gray-600';
+  const textPillSelected = colorMode === 'dark' ? "text-[#fff1c8]" : "text-rose-700";
+  const textPillUnselected = colorMode === 'dark' ? "text-slate-200" : "text-gray-600";
 
   const recordingFacecamDisplay = (
     <div className={textInnerColor}>
@@ -1781,7 +1755,7 @@ export default function VideoEditorToolbar(props) {
 
   const layerToolbarList = [
     {
-      label: 'Defaults',
+      label: uiText("Defaults"),
       icon: null,
       view: CURRENT_TOOLBAR_VIEW.SHOW_SET_DEFAULTS_DISPLAY,
       onClick: () => toggleCurrentViewDisplay(CURRENT_TOOLBAR_VIEW.SHOW_SET_DEFAULTS_DISPLAY),
@@ -1789,7 +1763,7 @@ export default function VideoEditorToolbar(props) {
       content: <div className={textInnerColor}>{defaultsOptionDisplay}</div>
     },
     {
-      label: 'Generate Image',
+      label: uiText("Generate Image"),
       icon: null,
       view: CURRENT_TOOLBAR_VIEW.SHOW_GENERATE_DISPLAY,
       onClick: () => toggleCurrentViewDisplay(CURRENT_TOOLBAR_VIEW.SHOW_GENERATE_DISPLAY),
@@ -1797,7 +1771,7 @@ export default function VideoEditorToolbar(props) {
       content: generateDisplay
     },
     {
-      label: 'Edit Image',
+      label: uiText("Edit Image"),
       icon: null,
       view: CURRENT_TOOLBAR_VIEW.SHOW_EDIT_DISPLAY,
       onClick: () => toggleCurrentViewDisplay(CURRENT_TOOLBAR_VIEW.SHOW_EDIT_DISPLAY),
@@ -1805,7 +1779,7 @@ export default function VideoEditorToolbar(props) {
       content: editDisplay
     },
     {
-      label: 'Generate Video',
+      label: uiText("Generate Video"),
       icon: null,
       view: CURRENT_TOOLBAR_VIEW.SHOW_GENERATE_VIDEO_DISPLAY,
       onClick: () => toggleCurrentViewDisplay(CURRENT_TOOLBAR_VIEW.SHOW_GENERATE_VIDEO_DISPLAY),
@@ -1813,7 +1787,7 @@ export default function VideoEditorToolbar(props) {
       content: generateVideoDisplay
     },
     {
-      label: 'Generate Audio',
+      label: uiText("Generate Audio"),
       icon: null,
       view: CURRENT_TOOLBAR_VIEW.SHOW_AUDIO_DISPLAY,
       onClick: () => toggleCurrentViewDisplay(CURRENT_TOOLBAR_VIEW.SHOW_AUDIO_DISPLAY),
@@ -1827,7 +1801,7 @@ export default function VideoEditorToolbar(props) {
       )
     },
     {
-      label: 'Facecam & Voiceover',
+      label: uiText("Facecam & Voiceover"),
       icon: null,
       view: CURRENT_TOOLBAR_VIEW.SHOW_RECORDING_FACECAM_DISPLAY,
       onClick: () => toggleCurrentViewDisplay(CURRENT_TOOLBAR_VIEW.SHOW_RECORDING_FACECAM_DISPLAY),
@@ -1836,7 +1810,7 @@ export default function VideoEditorToolbar(props) {
       content: recordingFacecamDisplay
     },
     {
-      label: 'Actions',
+      label: uiText("Actions"),
       icon: null,
       view: CURRENT_TOOLBAR_VIEW.SHOW_ACTIONS_DISPLAY,
       onClick: () => toggleCurrentViewDisplay(CURRENT_TOOLBAR_VIEW.SHOW_ACTIONS_DISPLAY),
@@ -1844,7 +1818,7 @@ export default function VideoEditorToolbar(props) {
       content: actionsOptionsDisplay
     },
     {
-      label: 'Select',
+      label: uiText("Select"),
       icon: null,
       view: CURRENT_TOOLBAR_VIEW.SHOW_SELECT_DISPLAY,
       onClick: () => toggleCurrentViewDisplay(CURRENT_TOOLBAR_VIEW.SHOW_SELECT_DISPLAY),
@@ -1858,7 +1832,7 @@ export default function VideoEditorToolbar(props) {
       showOverflow: true,
     },
     {
-      label: 'Animate',
+      label: uiText("Animate"),
       icon: null,
       view: CURRENT_TOOLBAR_VIEW.SHOW_ANIMATE_DISPLAY,
       onClick: () => toggleCurrentViewDisplay(CURRENT_TOOLBAR_VIEW.SHOW_ANIMATE_DISPLAY),
@@ -1867,7 +1841,7 @@ export default function VideoEditorToolbar(props) {
       showOverflow: true,
     },
     {
-      label: 'Upload/Library',
+      label: uiText("Upload/Library"),
       icon: null,
       view: CURRENT_TOOLBAR_VIEW.SHOW_UPLOAD_DISPLAY,
       onClick: () => toggleCurrentViewDisplay(CURRENT_TOOLBAR_VIEW.SHOW_UPLOAD_DISPLAY),
@@ -1875,7 +1849,7 @@ export default function VideoEditorToolbar(props) {
       content: uploadDisplay
     },
     {
-      label: 'Text',
+      label: uiText("Text"),
       icon: null,
       view: CURRENT_TOOLBAR_VIEW.SHOW_ADD_TEXT_DISPLAY,
       onClick: () => toggleCurrentViewDisplay(CURRENT_TOOLBAR_VIEW.SHOW_ADD_TEXT_DISPLAY),
@@ -1883,7 +1857,7 @@ export default function VideoEditorToolbar(props) {
       content: addTextDisplay
     },
     {
-      label: 'Shape',
+      label: uiText("Shape"),
       icon: null,
       view: CURRENT_TOOLBAR_VIEW.SHOW_ADD_SHAPE_DISPLAY,
       onClick: () => toggleCurrentViewDisplay(CURRENT_TOOLBAR_VIEW.SHOW_ADD_SHAPE_DISPLAY),
@@ -1891,7 +1865,7 @@ export default function VideoEditorToolbar(props) {
       content: addShapeDisplay
     },
     {
-      label: 'Layers',
+      label: uiText("Layers"),
       icon: null,
       view: CURRENT_TOOLBAR_VIEW.SHOW_LAYERS_DISPLAY,
       onClick: () => toggleCurrentViewDisplay(CURRENT_TOOLBAR_VIEW.SHOW_LAYERS_DISPLAY),
@@ -1913,7 +1887,7 @@ export default function VideoEditorToolbar(props) {
   const toolbarListTopMarginClass = isExpandedView ? 'mt-[56px]' : 'mt-4';
   const toolbarItemButtonClass = isExpandedView
     ? 'pt-1 pb-1 pl-2 pr-2 text-lg font-bold'
-    : 'px-1.5 py-1.5 text-[13px] font-semibold';
+    : 'px-1.5 py-1.5 text-label font-semibold';
   const toolbarItemIconClass = isExpandedView ? 'inline-flex ml-4' : 'inline-flex ml-1.5';
   const toolbarItemChevronClass = isExpandedView ? 'inline-flex mr-4 text-sm' : 'inline-flex mr-1.5 text-xs';
   const toolbarItemBodyClass = isExpandedView ? 'pt-1 pl-2 pr-2' : 'pt-1 px-1.5';
@@ -1922,7 +1896,7 @@ export default function VideoEditorToolbar(props) {
   let expandButtonLabel = (
     <div className='relative w-full cursor-pointer pb-1 block'>
       <FaChevronLeft className='inline-block ml-1 mr-1 text-xs font-bold mt-[-2px]' />
-      <div className='inline-block'>Expand</div>
+      <div className='inline-block'>{uiText("Expand")}</div>
     </div>
   );
 
@@ -1930,7 +1904,7 @@ export default function VideoEditorToolbar(props) {
     expandButtonLabel = (
       <div className='relative w-full cursor-pointer pb-1 block'>
         <FaChevronRight className='inline-block ml-1 mr-1 text-xs font-bold mt-[-2px]' />
-        <div className='inline-block'>Collapse</div>
+        <div className='inline-block'>{uiText("Collapse")}</div>
       </div>
     );
   }
@@ -1949,14 +1923,12 @@ export default function VideoEditorToolbar(props) {
     >
       <div>
         <div
-            className={`sticky top-0 z-10 rounded-xl transition-colors duration-200 ${stickyHeaderPaddingClass} ${colorMode === 'dark'
-              ? 'bg-[#20232e] border border-[#3a4050] shadow-[0_12px_32px_rgba(0,0,0,0.35)]'
-            : 'bg-white/95 border border-slate-200'}`}
+            className={`sticky top-0 z-10 rounded-xl transition-colors duration-200 ${stickyHeaderPaddingClass} border border-line ${colorMode === 'dark' ? 'bg-[#20232e] shadow-[0_12px_32px_rgba(0,0,0,0.35)]' : 'bg-white/95'}`}
         >
           {collapseButton}
           <div
             onClick={showEditorExpandedView}
-            className={`m-auto text-center ${isExpandedView ? 'text-sm' : 'text-[13px]'} font-medium ${colorMode === 'dark' ? 'text-slate-100' : 'text-slate-700'}`}
+            className={`m-auto text-center ${isExpandedView ? 'text-sm' : 'text-label'} font-medium text-fg-body`}
           >
             {expandButtonLabel}
           </div>
@@ -1981,14 +1953,16 @@ export default function VideoEditorToolbar(props) {
                 className={`text-left ${isSelected ? 'mt-1' : 'mt-4'
                   } transition-colors duration-300`}
               >
-                <div
-                  className={`${toolbarItemButtonClass} m-auto cursor-pointer flex justify-between items-center ${getSelectedClass(
+                <button
+                  type="button"
+                  aria-expanded={isSelected}
+                  className={`${toolbarItemButtonClass} m-auto w-full cursor-pointer flex justify-between items-center gap-1 text-left ${getSelectedClass(
                     item.view
-                  )} rounded transition-colors duration-300`}
+                  )} rounded transition-colors duration-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus/80`}
                   onClick={item.onClick}
                 >
                   {item.icon && (
-                    <div
+                    <span
                       className={toolbarItemIconClass}
                       onClick={(e) => {
                         e.stopPropagation();
@@ -1996,11 +1970,14 @@ export default function VideoEditorToolbar(props) {
                       }}
                     >
                       {item.icon}
-                    </div>
+                    </span>
                   )}
-                  <div className="flex-grow text-center">{item.label}</div>
-                  <FaChevronDown className={toolbarItemChevronClass} />
-                </div>
+                  <span className={`min-w-0 flex-grow text-left leading-snug ${isExpandedView ? "pl-2" : "pl-0.5"}`}>{item.label}</span>
+                  <FaChevronDown
+                    aria-hidden="true"
+                    className={`${toolbarItemChevronClass} shrink-0 transition-transform duration-150 ${isSelected ? 'rotate-180' : ''}`}
+                  />
+                </button>
                 <div
                   className={`${toolbarItemBodyMarginClass} ${toolbarItemBodyClass} ${toolbarItemBodyOverflowClass} ${toolbarItemBodyPointerClass} transition-all duration-500 ${isSelected ? 'h-auto opacity-100' : 'max-h-0 opacity-0'
                     }`}

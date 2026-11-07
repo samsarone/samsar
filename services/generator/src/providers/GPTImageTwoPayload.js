@@ -1,6 +1,6 @@
-// GPTIMAGE2.5 and GPTIMAGE2.5EDIT use the Sunburst upstream model.
-export const GPT_IMAGE_TWO_MODEL = 'gpt-image-2.5-sunburst';
-export const GPT_IMAGE_TWO_FAL_ENDPOINT = 'openai/gpt-image-2.5/sunburst/text-to-image';
+// Keep the Samsar request keys GPTIMAGE2.5/GPTIMAGE2.5EDIT stable for saved sessions.
+export const GPT_IMAGE_TWO_MODEL = 'gpt-image-2.6-sunburst';
+export const GPT_IMAGE_TWO_FAL_ENDPOINT = 'openai/gpt-image-2.6/sunburst/text-to-image';
 // Requests submitted before the upgrade must still be polled on their original endpoint.
 export const GPT_IMAGE_TWO_LEGACY_FAL_ENDPOINT = 'fal-ai/gpt-image-2';
 export const GPT_IMAGE_TWO_QUALITY = 'high';
@@ -33,9 +33,12 @@ export function getGPTImageTwoOutput(aspectRatio = '1:1') {
 
 export function buildOpenAIGPTImageTwoInput(payload = {}) {
   const output = getGPTImageTwoOutput(payload.aspectRatio);
+  // A previously sealed job must retry with the model recorded in its tariff.
+  const submittedModel = payload.imageAdapterTariffSnapshot?.adapter === 'openai'
+    ? payload.imageAdapterTariffSnapshot.providerModel : undefined;
 
   return {
-    model: GPT_IMAGE_TWO_MODEL,
+    model: submittedModel === 'gpt-image-2.5-sunburst' ? submittedModel : GPT_IMAGE_TWO_MODEL,
     prompt: payload.prompt,
     size: output.openAIImageSize,
     quality: GPT_IMAGE_TWO_QUALITY,

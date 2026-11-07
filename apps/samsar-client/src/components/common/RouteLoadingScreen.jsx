@@ -1,6 +1,9 @@
+import { useUiLanguage } from '../../hooks/useUiLanguage.js';
+import { translateText as uiText } from '../../utils/localization.js';
 import { useColorMode } from '../../contexts/ColorMode.jsx';
 
-export default function RouteLoadingScreen({ label = 'Loading...' }) {
+export default function RouteLoadingScreen({ label = uiText("Loading...") }) {
+  useUiLanguage();
   const { colorMode } = useColorMode();
   const isDark = colorMode === 'dark';
 

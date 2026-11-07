@@ -1,3 +1,5 @@
+import { useUiLanguage } from '../../hooks/useUiLanguage.js';
+import { translateText as uiText, translateAuthError } from '../../utils/localization.js';
 import { useEffect, useState } from 'react';
 import Login from './Login.tsx';
 import Register from './Register.tsx';
@@ -32,6 +34,7 @@ export const AUTH_DIALOG_OPTIONS = {
 };
 
 export default function AuthContainer(props) {
+  useUiLanguage();
   const { initView, redirectTo } = props;
 
   const [error, setError] = useState('');
@@ -94,7 +97,7 @@ export default function AuthContainer(props) {
       });
       navigate(destination, { replace: true });
     } catch  {
-      setError('Unable to open your workspace.');
+      setError(uiText("Unable to open your workspace."));
     }
   };
 
@@ -117,7 +120,7 @@ export default function AuthContainer(props) {
       })
       .catch(() => {
         
-        setError('Unable to verify user profile.');
+        setError(uiText("Unable to verify user profile."));
       });
   };
 
@@ -131,7 +134,7 @@ export default function AuthContainer(props) {
       userData = data;
     } catch (error) {
       const serverMessage = error.response?.data?.message || error.response?.data?.error;
-      onError(serverMessage || 'Unable to register user at this time. Please try again.');
+      onError(serverMessage || uiText("Unable to register user at this time. Please try again."));
       return;
     }
 
@@ -144,7 +147,7 @@ export default function AuthContainer(props) {
       await navigateAfterSignup();
       closeAlertDialog();
     } catch {
-      const message = 'Your account was created, but a new project could not be opened.';
+      const message = uiText("Your account was created, but a new project could not be opened.");
       setError(message);
       onError(message);
     }
@@ -208,7 +211,7 @@ export default function AuthContainer(props) {
         {/* If you'd like to display container-level errors */}
         {error && (
           <div className="mb-3 text-center text-red-500">
-            {error}
+            {translateAuthError(error)}
           </div>
         )}
 

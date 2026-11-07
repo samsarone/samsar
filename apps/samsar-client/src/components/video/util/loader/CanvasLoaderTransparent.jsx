@@ -1,7 +1,9 @@
+import { useUiLanguage } from '../../../../hooks/useUiLanguage.js';
 
 import './canvasLoader.css';
 
 export default function CanvasLoaderTransparent() {
+  useUiLanguage();
   return (
     <div className=" flex items-center justify-center min-h-screen">
       <div className="text-center">

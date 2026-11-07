@@ -85,7 +85,7 @@ test('settings expose only installed compatible adapters in stage order', () => 
   );
   assert.equal(
     textToImage.models.find((model) => model.modelKey === 'GPTIMAGE2.5').label,
-    'GPTImage 2.5',
+    'GPTImage 2.6',
   );
   assert.deepEqual(
     imageToVideo.models.find((model) => model.modelKey === 'HAPPYHORSEI2V').preference,

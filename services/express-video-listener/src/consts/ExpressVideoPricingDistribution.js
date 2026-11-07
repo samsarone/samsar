@@ -34,6 +34,8 @@ export const EXPRESS_VIDEO_CREDITS_PER_SECOND_BY_MODEL = Object.freeze({
   SEEDANCEI2V: 30,
   'SEEDANCE2.0I2V': 40,
   'SEEDANCE2.5I2V': 50,
+  KLINGIMGTOVID4: 36,
+  // Historical session aliases retain their fixed workflow rate.
   KLINGIMGTOVID3PRO: 36,
   KLINGIMGTOVIDTURBO: 36,
   HAPPYHORSEI2V: 36,

@@ -1,3 +1,4 @@
+import { getReasoningModelBase } from '../inference/ReasoningModels.js';
 
 import { generateAuthToken, verifyAuthToken } from './Auth.js';
 import 'dotenv/config';
@@ -76,7 +77,7 @@ function getLegacyInferenceEffortFromModel(model) {
   const modelToken = typeof model === 'string'
     ? model.trim().toUpperCase().replace(/[^A-Z0-9]+/g, '')
     : '';
-  return normalizedModel === GPT_56_SOL_XHIGH_INFERENCE_MODEL
+  return normalizedModel.endsWith('-xhigh')
     ? 'xhigh'
     : modelToken === 'GPT56SOLHIGH' || modelToken === 'GPT56HIGH'
       ? 'high'
@@ -85,11 +86,11 @@ function getLegacyInferenceEffortFromModel(model) {
 
 function normalizeUserInferencePreference(model, effort) {
   const normalizedModel = normalizeInferenceModel(model);
-  const isLegacyXHighModel = normalizedModel === GPT_56_SOL_XHIGH_INFERENCE_MODEL;
+  const isLegacyXHighModel = normalizedModel.endsWith('-xhigh');
   const explicitEffort = normalizeInferenceReasoningEffort(effort);
   const legacyModelEffort = getLegacyInferenceEffortFromModel(model);
   return {
-    model: isLegacyXHighModel ? DEFAULT_INFERENCE_MODEL : normalizedModel,
+    model: getReasoningModelBase(normalizedModel),
     effort: explicitEffort || legacyModelEffort || 'high',
   };
 }

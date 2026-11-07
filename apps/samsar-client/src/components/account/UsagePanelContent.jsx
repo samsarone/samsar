@@ -1,6 +1,10 @@
-import { Fragment, useEffect, useMemo, useState } from "react";
+import { formatUiStatus } from '../../utils/localization.js';
+import { getUiLocale, formatUiNumber, formatUiDate } from '../../utils/localization.js';
+import { useUiLanguage } from '../../hooks/useUiLanguage.js';
+import { translateText as uiText } from '../../utils/localization.js';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import axios from "axios";
-import dayjs from "dayjs";
+
 import { FaBolt, FaClock, FaDatabase, FaPlug, FaSync } from "react-icons/fa";
 import { toast } from "react-toastify";
 
@@ -16,29 +20,29 @@ import {
 } from "../../utils/deploymentProviders.js";
 
 const PROCESSOR_SERVER = import.meta.env.VITE_PROCESSOR_API;
-const numberFormatter = new Intl.NumberFormat("en-US");
+const numberFormatter = { format: formatUiNumber };
 
 const SOURCE_LABELS = {
-  chat_enhance: "Chat Enhance",
-  image_update_set: "Image list to set",
-  image_remove_branding: "Image text removal",
-  image_enhance: "Image upscale",
-  image_list_to_video: "Image list to video",
-  text_to_image: "Text to image",
-  image_to_video: "Image to video",
-  text_to_video: "Text to video",
-  text_to_speech: "Text to speech",
-  text_to_music: "Text to music",
-  text_to_sound_effect: "Text to sound effect",
-  lip_sync: "Lip sync",
-  transcription: "Transcription",
-  narrative_inference: "Narrative inference",
-  vision_inference: "Vision inference",
-  subtitle_accent_inference: "Subtitle accent inference",
+  get chat_enhance() { return uiText("Chat Enhance"); },
+  get image_update_set() { return uiText("Image list to set"); },
+  get image_remove_branding() { return uiText("Image text removal"); },
+  get image_enhance() { return uiText("Image upscale"); },
+  get image_list_to_video() { return uiText("Image list to video"); },
+  get text_to_image() { return uiText("Text to image"); },
+  get image_to_video() { return uiText("Image to video"); },
+  get text_to_video() { return uiText("Text to video"); },
+  get text_to_speech() { return uiText("Text to speech"); },
+  get text_to_music() { return uiText("Text to music"); },
+  get text_to_sound_effect() { return uiText("Text to sound effect"); },
+  get lip_sync() { return uiText("Lip sync"); },
+  get transcription() { return uiText("Transcription"); },
+  get narrative_inference() { return uiText("Narrative inference"); },
+  get vision_inference() { return uiText("Vision inference"); },
+  get subtitle_accent_inference() { return uiText("Subtitle accent inference"); },
 };
 
 const formatSourceLabel = (source) => {
-  if (!source) return "Unknown";
+  if (!source) return uiText("Unknown");
   if (SOURCE_LABELS[source]) return SOURCE_LABELS[source];
   return source
     .split("_")
@@ -50,17 +54,17 @@ const formatMetadataSummary = (metadata) => {
   if (!metadata || typeof metadata !== "object") return "—";
   const parts = [];
 
-  if (metadata.duration) parts.push(`Duration: ${metadata.duration}s`);
-  if (metadata.durationSeconds) parts.push(`Duration: ${metadata.durationSeconds}s`);
-  if (metadata.stageCount) parts.push(`${metadata.stageCount} stages`);
-  if (metadata.imageCount) parts.push(`Images: ${metadata.imageCount}`);
-  if (metadata.targetImageCount) parts.push(`Targets: ${metadata.targetImageCount}`);
-  if (metadata.aspectRatio) parts.push(`Aspect ratio: ${metadata.aspectRatio}`);
-  if (metadata.resolution) parts.push(`Resolution: ${metadata.resolution}`);
-  if (metadata.sessionId) parts.push(`Session: ${metadata.sessionId}`);
-  if (metadata.videoGenerationModel) parts.push(`Model: ${metadata.videoGenerationModel}`);
-  if (metadata.pricing?.model) parts.push(`Model: ${metadata.pricing.model}`);
-  if (metadata.pricing?.mode) parts.push(`Mode: ${metadata.pricing.mode}`);
+  if (metadata.duration) parts.push(uiText("Duration: {duration}s", { duration: metadata.duration }));
+  if (metadata.durationSeconds) parts.push(uiText("Duration: {duration}s", { duration: metadata.durationSeconds }));
+  if (metadata.stageCount) parts.push(uiText("{count} stages", { count: metadata.stageCount }));
+  if (metadata.imageCount) parts.push(uiText("Images: {value0}", { value0: metadata.imageCount }));
+  if (metadata.targetImageCount) parts.push(uiText("Targets: {value0}", { value0: metadata.targetImageCount }));
+  if (metadata.aspectRatio) parts.push(uiText("Aspect ratio: {value0}", { value0: metadata.aspectRatio }));
+  if (metadata.resolution) parts.push(uiText("Resolution: {value0}", { value0: metadata.resolution }));
+  if (metadata.sessionId) parts.push(uiText("Session: {value0}", { value0: metadata.sessionId }));
+  if (metadata.videoGenerationModel) parts.push(uiText("Model: {value0}", { value0: metadata.videoGenerationModel }));
+  if (metadata.pricing?.model) parts.push(uiText("Model: {value0}", { value0: metadata.pricing.model }));
+  if (metadata.pricing?.mode) parts.push(uiText("Mode: {value0}", { value0: metadata.pricing.mode }));
 
   return parts.length > 0 ? parts.join(" • ") : "—";
 };
@@ -90,7 +94,7 @@ const formatStandaloneModelJob = (item = {}) => {
 
 const formatStandaloneStatus = (item = {}) => {
   const metadata = item.metadata && typeof item.metadata === "object" ? item.metadata : {};
-  return item.status || metadata.status || "requested";
+  return formatUiStatus(item.status || metadata.status || "requested");
 };
 
 const getUsageSubRows = (item = {}) => (
@@ -119,8 +123,7 @@ const formatStageLabel = (item = {}) => {
 
 const formatDate = (value) => {
   if (!value) return "—";
-  const parsed = dayjs(value);
-  return parsed.isValid() ? parsed.format("MMM D, YYYY h:mm A") : value;
+  return formatUiDate(value, { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' });
 };
 
 const PROVIDER_METADATA_KEYS = [
@@ -161,7 +164,36 @@ const resolveUsageProviderValue = (item = {}) => {
   ]);
 };
 
+function UsagePagination({ pagination, itemCount, loading, onPageChange, label }) {
+  useUiLanguage();
+  const { page, pageSize, totalItems = 0, totalPages, hasNextPage, hasPreviousPage } = pagination;
+  const firstItem = itemCount ? (page - 1) * pageSize + 1 : 0;
+  const lastItem = itemCount ? firstItem + itemCount - 1 : 0;
+
+  return (
+    <nav aria-label={label} className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <div className="text-sm text-fg-muted" aria-live="polite">
+        <p>{uiText("Showing {value0}–{value1} of {value2}", { value0: numberFormatter.format(firstItem), value1: numberFormatter.format(lastItem), value2: numberFormatter.format(totalItems) })}</p>
+        <p>{uiText("Page {value0} of {value1}", { value0: page, value1: totalPages || 1 })}</p>
+      </div>
+      <div className="grid grid-cols-2 gap-2 sm:flex">
+        <SecondaryButton
+          onClick={() => onPageChange(page - 1)}
+          disabled={loading || !hasPreviousPage}
+          className="w-full sm:w-auto"
+        >{uiText("Previous")}</SecondaryButton>
+        <SecondaryButton
+          onClick={() => onPageChange(page + 1)}
+          disabled={loading || !hasNextPage}
+          className="w-full sm:w-auto"
+        >{uiText("Next")}</SecondaryButton>
+      </div>
+    </nav>
+  );
+}
+
 export default function UsagePanelContent() {
+  const uiLanguage = useUiLanguage();
   const { colorMode } = useColorMode();
   const isStandaloneDeployment = IS_STANDALONE_DEPLOYMENT;
 
@@ -169,47 +201,60 @@ export default function UsagePanelContent() {
   const [pagination, setPagination] = useState({
     page: 1,
     pageSize: 25,
+    totalItems: 0,
     totalPages: 1,
     hasNextPage: false,
     hasPreviousPage: false,
   });
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const usageRequestRef = useRef(null);
   const [deploymentProviders, setDeploymentProviders] = useState([]);
   const [isLoadingDeploymentProviders, setIsLoadingDeploymentProviders] = useState(false);
   const [deploymentProviderError, setDeploymentProviderError] = useState("");
 
-  const textColor = colorMode === "dark" ? "text-slate-100" : "text-slate-900";
-  const secondaryTextColor = colorMode === "dark" ? "text-slate-400" : "text-slate-500";
-  const cardBgColor = colorMode === "dark" ? "bg-[#181b24]" : "bg-white";
-  const borderColor = colorMode === "dark" ? "border-[#3a4050]" : "border-slate-200";
-  const mutedBg = colorMode === "dark" ? "bg-[#20232e]" : "bg-slate-50";
+  const textColor = 'text-fg';
+  const secondaryTextColor = 'text-fg-muted';
+  const cardBgColor = 'bg-surface';
+  const borderColor = 'border-line';
+  const mutedBg = 'bg-surface-muted';
   const headerBg = colorMode === "dark" ? "bg-[#151720]" : "bg-slate-100";
 
-  const fetchUsageLogs = async (pageToLoad = 1) => {
+  const fetchUsageLogs = useCallback(async (pageToLoad = 1, pageSize = 25) => {
+    usageRequestRef.current?.abort();
+    const controller = new AbortController();
+    usageRequestRef.current = controller;
     setLoading(true);
+    setError("");
     try {
       const headers = getHeaders() || {};
       const response = await axios.get(`${PROCESSOR_SERVER}/users/usage/logs`, {
         ...headers,
-        params: { page: pageToLoad, pageSize: pagination.pageSize },
+        params: { page: pageToLoad, pageSize },
+        signal: controller.signal,
       });
 
+      if (controller.signal.aborted) return;
       setUsageLogs(response.data?.items || []);
       setPagination((prev) => ({
         ...prev,
+        page: pageToLoad,
+        pageSize,
         ...(response.data?.pagination || {}),
       }));
     } catch  {
-      toast.error("Failed to load usage logs", { position: "bottom-center" });
+      if (controller.signal.aborted) return;
+      setError(uiText("Unable to load usage logs. Please try again."));
+      toast.error(uiText("Failed to load usage logs"), { position: "bottom-center" });
     } finally {
-      setLoading(false);
+      if (!controller.signal.aborted) setLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     fetchUsageLogs(1);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    return () => usageRequestRef.current?.abort();
+  }, [fetchUsageLogs]);
 
   useEffect(() => {
     if (!isStandaloneDeployment) return;
@@ -225,7 +270,7 @@ export default function UsagePanelContent() {
       })
       .catch(() => {
         if (isCancelled) return;
-        setDeploymentProviderError("Unable to load enabled providers.");
+        setDeploymentProviderError(uiText("Unable to load enabled providers."));
       })
       .finally(() => {
         if (!isCancelled) {
@@ -248,15 +293,13 @@ export default function UsagePanelContent() {
   );
 
   const lastActivity = usageLogs[0]?.createdAt;
-  const disablePrev = loading || !pagination.hasPreviousPage;
-  const disableNext = loading || !pagination.hasNextPage;
   const enabledProviderRows = useMemo(() => (
     deploymentProviders.map((provider) => ({
       key: normalizeDeploymentProviderKey(provider),
       raw: provider,
       label: formatDeploymentProviderLabel(provider),
     }))
-  ), [deploymentProviders]);
+  ), [uiLanguage, deploymentProviders]);
   const providerCallStats = useMemo(() => {
     const stats = new Map();
 
@@ -297,7 +340,7 @@ export default function UsagePanelContent() {
       stats.set("unknown", {
         key: "unknown",
         raw: "",
-        label: "Unknown provider",
+        label: uiText("Unknown provider"),
         count: unrecordedProviderCount,
         isConfigured: false,
       });
@@ -309,32 +352,30 @@ export default function UsagePanelContent() {
       }
       return left.label.localeCompare(right.label);
     });
-  }, [enabledProviderRows, usageLogs]);
+  }, [uiLanguage, enabledProviderRows, usageLogs]);
 
   const goToPage = (pageToLoad) => {
-    if (pageToLoad < 1) return;
-    fetchUsageLogs(pageToLoad);
+    if (loading || pageToLoad < 1 || pageToLoad > (pagination.totalPages || 1)) return;
+    fetchUsageLogs(pageToLoad, pagination.pageSize);
   };
 
   return (
     <div className={`flex min-w-0 flex-col gap-5 sm:gap-6 ${textColor}`}>
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <h2 className="text-2xl font-bold">Usage</h2>
+          <h2 className="text-2xl font-bold">{uiText("Usage")}</h2>
           <p className={`text-sm ${secondaryTextColor}`}>
             {isStandaloneDeployment
-              ? "Track generative requests by request type and provider."
-              : "Track API calls, task totals, and stage-level credit distribution."}
+              ? uiText("Track generative requests by request type and provider.")
+              : uiText("Track API calls, task totals, and stage-level credit distribution.")}
           </p>
         </div>
         <SecondaryButton
-          onClick={() => fetchUsageLogs(pagination.page)}
+          onClick={() => fetchUsageLogs(pagination.page, pagination.pageSize)}
           isPending={loading}
           className="w-full sm:w-auto"
         >
-          <FaSync className={`mr-2 ${loading ? "animate-spin" : ""}`} />
-          Refresh
-        </SecondaryButton>
+          <FaSync className={`mr-2 ${loading ? "animate-spin" : ""}`} />{uiText("Refresh")}</SecondaryButton>
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -345,9 +386,7 @@ export default function UsagePanelContent() {
                 <FaBolt />
               </div>
               <div>
-                <p className={`text-xs uppercase tracking-wide ${secondaryTextColor}`}>
-                  Credits consumed (page)
-                </p>
+                <p className={`text-xs uppercase tracking-wide ${secondaryTextColor}`}>{uiText("Credits consumed (page)")}</p>
                 <p className="text-2xl font-bold">
                   {numberFormatter.format(Math.round(totalCreditsUsed))}
                 </p>
@@ -362,9 +401,7 @@ export default function UsagePanelContent() {
               <FaDatabase />
             </div>
             <div>
-              <p className={`text-xs uppercase tracking-wide ${secondaryTextColor}`}>
-                API calls (page)
-              </p>
+              <p className={`text-xs uppercase tracking-wide ${secondaryTextColor}`}>{uiText("API calls (page)")}</p>
               <p className="text-2xl font-bold">{usageLogs.length}</p>
             </div>
           </div>
@@ -377,9 +414,7 @@ export default function UsagePanelContent() {
                 <FaPlug />
               </div>
               <div>
-                <p className={`text-xs uppercase tracking-wide ${secondaryTextColor}`}>
-                  Enabled providers
-                </p>
+                <p className={`text-xs uppercase tracking-wide ${secondaryTextColor}`}>{uiText("Enabled providers")}</p>
                 <p className="text-2xl font-bold">{enabledProviderRows.length}</p>
               </div>
             </div>
@@ -392,11 +427,9 @@ export default function UsagePanelContent() {
               <FaClock />
             </div>
             <div>
-              <p className={`text-xs uppercase tracking-wide ${secondaryTextColor}`}>
-                Last activity
-              </p>
+              <p className={`text-xs uppercase tracking-wide ${secondaryTextColor}`}>{uiText("Last activity")}</p>
               <p className="text-base font-semibold">
-                {lastActivity ? formatDate(lastActivity) : "No usage yet"}
+                {lastActivity ? formatDate(lastActivity) : uiText("No usage yet")}
               </p>
             </div>
           </div>
@@ -407,15 +440,13 @@ export default function UsagePanelContent() {
         <div className={`min-w-0 rounded-lg border ${borderColor} ${cardBgColor} overflow-hidden`}>
           <div className={`flex flex-col gap-2 px-4 py-3 border-b sm:flex-row sm:items-center sm:justify-between ${borderColor} ${headerBg}`}>
             <div>
-              <p className="text-lg font-semibold">API calls by provider</p>
-              <p className={`text-xs ${secondaryTextColor}`}>
-                Counts are for generative requests on the current usage-log page.
-              </p>
+              <p className="text-lg font-semibold">{uiText("API calls by provider")}</p>
+              <p className={`text-xs ${secondaryTextColor}`}>{uiText("Counts are for generative requests on the current usage-log page.")}</p>
             </div>
             {isLoadingDeploymentProviders && (
               <div className="flex items-center gap-2 text-sm">
                 <FaSync className="animate-spin" />
-                <span>Loading providers...</span>
+                <span>{uiText("Loading providers...")}</span>
               </div>
             )}
           </div>
@@ -428,10 +459,8 @@ export default function UsagePanelContent() {
 
           {providerCallStats.length === 0 ? (
             <div className="p-6 text-center">
-              <p className="text-lg font-semibold">No provider usage yet</p>
-              <p className={`text-sm ${secondaryTextColor}`}>
-                Generative requests will be grouped by provider when usage is recorded.
-              </p>
+              <p className="text-lg font-semibold">{uiText("No provider usage yet")}</p>
+              <p className={`text-sm ${secondaryTextColor}`}>{uiText("Generative requests will be grouped by provider when usage is recorded.")}</p>
             </div>
           ) : (
             <div className="grid gap-3 p-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -441,7 +470,7 @@ export default function UsagePanelContent() {
                     <div className="min-w-0">
                       <p className="truncate text-sm font-semibold">{provider.label}</p>
                       <p className={`truncate text-xs ${secondaryTextColor}`}>
-                        {provider.isConfigured ? "Enabled provider" : "Observed in usage"}
+                        {provider.isConfigured ? uiText("Enabled provider") : uiText("Observed in usage")}
                       </p>
                     </div>
                     <p className="shrink-0 text-2xl font-bold">{numberFormatter.format(provider.count)}</p>
@@ -453,31 +482,50 @@ export default function UsagePanelContent() {
         </div>
       )}
 
-      <div className={`min-w-0 rounded-lg border ${borderColor} ${cardBgColor} overflow-hidden`}>
+      {error && <p role="alert" className="text-sm text-red-500">{error}</p>}
+
+      <label className={`flex items-center gap-2 text-sm ${secondaryTextColor}`}>{uiText("Rows per page")}<select
+          value={pagination.pageSize}
+          disabled={loading}
+          onChange={(event) => fetchUsageLogs(1, Number(event.target.value))}
+          className={`app-field rounded-lg border ${borderColor} px-3 py-2 disabled:opacity-50`}
+        >
+          {[10, 25, 50, 100].map((size) => <option key={size} value={size}>{size}</option>)}
+        </select>
+      </label>
+      <UsagePagination
+        label={uiText("Usage pagination above table")}
+        pagination={pagination}
+        itemCount={usageLogs.length}
+        loading={loading}
+        onPageChange={goToPage}
+      />
+
+      <div aria-busy={loading} className={`min-w-0 rounded-lg border ${borderColor} ${cardBgColor} overflow-hidden`}>
         <div className={`flex flex-col gap-2 px-4 py-3 border-b sm:flex-row sm:items-center sm:justify-between ${borderColor} ${headerBg}`}>
           <div>
-            <p className="text-lg font-semibold">Usage log</p>
+            <p className="text-lg font-semibold">{uiText("Usage log")}</p>
             <p className={`text-xs ${secondaryTextColor}`}>
               {isStandaloneDeployment
-                ? `Showing generative request audit logs (page ${pagination.page || 1}) with ${pagination.pageSize} per page.`
-                : `Showing API charges and grouped task stage charges (page ${pagination.page || 1}) with ${pagination.pageSize} per page.`}
+                ? uiText("Showing generative request audit logs (page {value0}) with {value1} per page.", { value0: pagination.page || 1, value1: pagination.pageSize })
+                : uiText("Showing API charges and grouped task stage charges (page {value0}) with {value1} per page.", { value0: pagination.page || 1, value1: pagination.pageSize })}
             </p>
           </div>
           {loading && (
             <div className="flex items-center gap-2 text-sm">
               <FaSync className="animate-spin" />
-              <span>Loading...</span>
+              <span>{uiText("Loading...")}</span>
             </div>
           )}
         </div>
 
-        {usageLogs.length === 0 && !loading ? (
+        {usageLogs.length === 0 && !loading && !error ? (
           <div className="p-6 text-center">
-            <p className="text-lg font-semibold">No usage yet</p>
+            <p className="text-lg font-semibold">{uiText("No usage yet")}</p>
             <p className={`text-sm ${secondaryTextColor}`}>
               {isStandaloneDeployment
-                ? "Generative requests will appear here with request type and provider details."
-                : "Calls you make with your API key will appear here with credit details."}
+                ? uiText("Generative requests will appear here with request type and provider details.")
+                : uiText("Calls you make with your API key will appear here with credit details.")}
             </p>
           </div>
         ) : (
@@ -486,19 +534,19 @@ export default function UsagePanelContent() {
               <thead className={headerBg}>
                 {isStandaloneDeployment ? (
                   <tr>
-                    <th className="px-4 py-3 text-left">Request type</th>
-                    <th className="px-4 py-3 text-left">Provider</th>
-                    <th className="px-4 py-3 text-left">Model / job</th>
-                    <th className="px-4 py-3 text-left">Status</th>
-                    <th className="px-4 py-3 text-left">Time</th>
+                    <th className="px-4 py-3 text-left">{uiText("Request type")}</th>
+                    <th className="px-4 py-3 text-left">{uiText("Provider")}</th>
+                    <th className="px-4 py-3 text-left">{uiText("Model / job")}</th>
+                    <th className="px-4 py-3 text-left">{uiText("Status")}</th>
+                    <th className="px-4 py-3 text-left">{uiText("Time")}</th>
                   </tr>
                 ) : (
                   <tr>
-                    <th className="px-4 py-3 text-left">Endpoint</th>
-                    <th className="px-4 py-3 text-left">Credits consumed</th>
-                    <th className="px-4 py-3 text-left">Details</th>
-                    <th className="px-4 py-3 text-left">Balance</th>
-                    <th className="px-4 py-3 text-left">Time</th>
+                    <th className="px-4 py-3 text-left">{uiText("Endpoint")}</th>
+                    <th className="px-4 py-3 text-left">{uiText("Credits consumed")}</th>
+                    <th className="px-4 py-3 text-left">{uiText("Details")}</th>
+                    <th className="px-4 py-3 text-left">{uiText("Balance")}</th>
+                    <th className="px-4 py-3 text-left">{uiText("Time")}</th>
                   </tr>
                 )}
               </thead>
@@ -507,7 +555,7 @@ export default function UsagePanelContent() {
                   const providerValue = resolveUsageProviderValue(item);
                   const providerLabel = providerValue
                     ? formatDeploymentProviderLabel(providerValue)
-                    : "Unknown provider";
+                    : uiText("Unknown provider");
                   const requestTypeLabel = formatSourceLabel(getUsageRequestType(item));
                   const subRows = getUsageSubRows(item);
 
@@ -537,9 +585,7 @@ export default function UsagePanelContent() {
                             <td className="px-4 py-3 font-medium">
                               {formatSourceLabel(item.source)}
                               {subRows.length > 0 && (
-                                <span className={`ml-2 text-xs font-normal ${secondaryTextColor}`}>
-                                  grouped
-                                </span>
+                                <span className={`ml-2 text-xs font-normal ${secondaryTextColor}`}>{uiText("grouped")}</span>
                               )}
                             </td>
                             <td className="px-4 py-3">
@@ -569,7 +615,7 @@ export default function UsagePanelContent() {
                           }`}
                         >
                           <td className="px-4 py-2 pl-8">
-                            <div className="text-xs uppercase tracking-wide text-slate-400">Stage</div>
+                            <div className="text-xs uppercase tracking-wide text-slate-400">{uiText("Stage")}</div>
                             <div className="font-medium">{formatStageLabel(subRow)}</div>
                           </td>
                           <td className="px-4 py-2">
@@ -599,35 +645,13 @@ export default function UsagePanelContent() {
         )}
       </div>
 
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <p className={`text-sm ${secondaryTextColor}`}>
-          Page {pagination.page} of {pagination.totalPages || 1}
-        </p>
-        <div className="grid grid-cols-2 gap-2 sm:flex">
-          <SecondaryButton
-            onClick={() => {
-              if (disablePrev) return;
-              goToPage((pagination.page || 1) - 1);
-            }}
-            extraClasses={disablePrev ? "opacity-50 pointer-events-none" : ""}
-            className="w-full sm:w-auto"
-            isPending={loading && pagination.hasPreviousPage}
-          >
-            Previous
-          </SecondaryButton>
-          <SecondaryButton
-            onClick={() => {
-              if (disableNext) return;
-              goToPage((pagination.page || 1) + 1);
-            }}
-            extraClasses={disableNext ? "opacity-50 pointer-events-none" : ""}
-            className="w-full sm:w-auto"
-            isPending={loading && pagination.hasNextPage}
-          >
-            Next
-          </SecondaryButton>
-        </div>
-      </div>
+      <UsagePagination
+        label={uiText("Usage pagination below table")}
+        pagination={pagination}
+        itemCount={usageLogs.length}
+        loading={loading}
+        onPageChange={goToPage}
+      />
     </div>
   );
 }

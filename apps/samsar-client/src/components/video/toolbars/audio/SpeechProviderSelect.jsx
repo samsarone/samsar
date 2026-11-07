@@ -1,3 +1,5 @@
+import { useUiLanguage } from '../../../../hooks/useUiLanguage.js';
+import { translateText as uiText } from '../../../../utils/localization.js';
 // components/common/SpeechProviderSelect.js
 import { useMemo } from 'react';
 import Select, { components } from 'react-select';
@@ -11,9 +13,10 @@ import { useAudioProviderAvailability } from '../../../../hooks/useAudioProvider
 import { filterSpeakersForAudioAvailability } from '../../../../constants/audioProviderAvailability.js';
 
 export default function SpeechProviderSelect(props) {
+  useUiLanguage();
   const {
     name,
-    placeholder = 'Select voice...',
+    placeholder = uiText("Select voice..."),
     speakerType,
     onSpeakerChange,
     playMusicPreviewForSpeaker,
@@ -108,7 +111,7 @@ export default function SpeechProviderSelect(props) {
             <span
               className="ml-1.5 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded border border-slate-400/40 text-[9px]"
               onClick={(evt) => data.onClick(evt)}
-              aria-label={isCurrentPreview ? 'Pause preview' : 'Play preview'}
+              aria-label={isCurrentPreview ? uiText("Pause preview") : uiText("Play preview")}
             >
               {data.icon}
             </span>
@@ -143,12 +146,12 @@ export default function SpeechProviderSelect(props) {
         options={speakerOptions}
         noOptionsMessage={() => {
           if (isGoogleProviderSelected && isLoading) {
-            return 'Loading Google voices...';
+            return uiText("Loading Google voices...");
           }
           if (isGoogleProviderSelected && error) {
-            return 'Google voices are unavailable.';
+            return uiText("Google voices are unavailable.");
           }
-          return 'No voices available.';
+          return uiText("No voices available.");
         }}
         menuPortalTarget={typeof document !== 'undefined' ? document.body : undefined}
         menuPosition="fixed"

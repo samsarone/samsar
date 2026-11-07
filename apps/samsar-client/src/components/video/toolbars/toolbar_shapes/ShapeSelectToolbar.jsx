@@ -1,9 +1,12 @@
+import { useUiLanguage } from '../../../../hooks/useUiLanguage.js';
+import { translateText as uiText } from '../../../../utils/localization.js';
 
 import { FaCheck } from 'react-icons/fa6';
 
 import { MdOutlineRefresh } from "react-icons/md";
 
 const ShapeSelectToolbar = ({ pos, onResetShape,  onCopyShape, onReplaceShape, editorVariant = 'videoStudio' }) => {
+  useUiLanguage();
   const isImageStudio = editorVariant === 'imageStudio';
   return (
     <div
@@ -21,17 +24,11 @@ const ShapeSelectToolbar = ({ pos, onResetShape,  onCopyShape, onReplaceShape, e
     >
       <div className={`grid grid-cols-3 w-full text-center ${isImageStudio ? 'gap-2 text-sm font-medium' : ''}`}>
         <button onClick={onResetShape} style={{ margin: isImageStudio ? '0' : '0 5px' }} className={isImageStudio ? 'rounded-xl bg-white/5 px-3 py-2' : ''}>
-        <MdOutlineRefresh className={`inline-flex ${isImageStudio ? 'text-lg' : ''}`} />
-          Reset
-        </button>
+        <MdOutlineRefresh className={`inline-flex ${isImageStudio ? 'text-lg' : ''}`} />{uiText("Reset")}</button>
         <button onClick={onCopyShape} style={{ margin: isImageStudio ? '0' : '0 5px' }} className={isImageStudio ? 'rounded-xl bg-white/5 px-3 py-2' : ''}>
-        <FaCheck className={`inline-flex ${isImageStudio ? 'text-lg' : ''}`} />
-         Copy
-        </button>
+        <FaCheck className={`inline-flex ${isImageStudio ? 'text-lg' : ''}`} />{uiText("Copy")}</button>
         <button onClick={onReplaceShape} style={{ margin: isImageStudio ? '0' : '0 5px' }} className={isImageStudio ? 'rounded-xl bg-white/5 px-3 py-2' : ''}>
-        <FaCheck className={`inline-flex ${isImageStudio ? 'text-lg' : ''}`} />
-         Replace
-        </button>
+        <FaCheck className={`inline-flex ${isImageStudio ? 'text-lg' : ''}`} />{uiText("Replace")}</button>
 
       </div>
     </div>

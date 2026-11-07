@@ -1,3 +1,4 @@
+import { normalizeKlingModelKey, KLING_V4_DURATION_SECONDS } from '../utils/KlingModel.js';
 // ModelPrices.js
 
 import {
@@ -22,7 +23,7 @@ export function getCosmos3SuperMaxDurationSeconds(framesPerSecond = DEFAULT_COSM
 }
 
 export function getVideoModelDurationUnitsForFramesPerSecond(modelKey, framesPerSecond) {
-  const modelType = VIDEO_MODEL_PRICES.find((model) => model.key === modelKey);
+  const modelType = VIDEO_MODEL_PRICES.find((model) => model.key === normalizeKlingModelKey(modelKey));
   const rawUnits = Array.isArray(modelType?.baseUnits) && modelType.baseUnits.length > 0
     ? modelType.baseUnits
     : modelType?.units;
@@ -148,17 +149,17 @@ export const VIDEO_MODEL_PRICES = [
     units: [5, 10],
   },
   {
-    key: 'KLINGIMGTOVID3PRO',
+    key: 'KLINGIMGTOVID4',
     isExpressModel: true,
     isImageToVideoModel: true,
     isTextToVideoModel: false,
     prices: [
-      { aspectRatio: '1:1', price: EXPRESS_VIDEO_CREDITS_PER_SECOND_BY_MODEL.KLINGIMGTOVID3PRO },
-      { aspectRatio: '16:9', price: EXPRESS_VIDEO_CREDITS_PER_SECOND_BY_MODEL.KLINGIMGTOVID3PRO },
-      { aspectRatio: '9:16', price: EXPRESS_VIDEO_CREDITS_PER_SECOND_BY_MODEL.KLINGIMGTOVID3PRO },
+      { aspectRatio: '1:1', price: EXPRESS_VIDEO_CREDITS_PER_SECOND_BY_MODEL.KLINGIMGTOVID4 },
+      { aspectRatio: '16:9', price: EXPRESS_VIDEO_CREDITS_PER_SECOND_BY_MODEL.KLINGIMGTOVID4 },
+      { aspectRatio: '9:16', price: EXPRESS_VIDEO_CREDITS_PER_SECOND_BY_MODEL.KLINGIMGTOVID4 },
     ],
-    pricingDistribution: getExpressVideoPricingDistributionPerSecond('KLINGIMGTOVID3PRO'),
-    units: [5, 10],
+    pricingDistribution: getExpressVideoPricingDistributionPerSecond('KLINGIMGTOVID4'),
+    units: [...KLING_V4_DURATION_SECONDS],
   },
   {
     key: 'HAPPYHORSEI2V',

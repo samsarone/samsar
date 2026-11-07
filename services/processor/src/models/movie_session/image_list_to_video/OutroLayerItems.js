@@ -1,3 +1,8 @@
+import { createCanvas } from 'canvas';
+
+const OUTRO_FONT_FAMILY = 'Poppins, Montserrat, Arial, sans-serif';
+let textMeasureContext;
+
 function clampNumber(value, min, max) {
   return Math.min(Math.max(value, min), max);
 }
@@ -22,42 +27,16 @@ function normalizeOutroCtaText(value, maxLength = 180) {
   return trimmed.length > maxLength ? trimmed.slice(0, maxLength) : trimmed;
 }
 
-function estimateTextUnits(value) {
-  return Array.from(String(value || '')).reduce((total, char) => {
-    if (char === ' ') {
-      return total + 0.35;
-    }
-    return total + (char.charCodeAt(0) > 127 ? 1 : 0.58);
-  }, 0);
-}
-
-function truncateByUnits(value, maxUnits) {
-  const chars = Array.from(String(value || ''));
-  let total = 0;
-  let output = '';
-  for (const char of chars) {
-    const units = char === ' ' ? 0.35 : (char.charCodeAt(0) > 127 ? 1 : 0.58);
-    if (total + units > maxUnits) {
-      break;
-    }
-    output += char;
-    total += units;
-  }
-  return output.length < value.length ? `${output.replace(/\s+$/g, '')}...` : output;
-}
-
-function splitTokenByUnits(value, maxUnits) {
-  const chars = Array.from(String(value || ''));
-  let total = 0;
+function splitTokenToWidth(value, maxWidth, measure) {
+  const chars = Array.from(new Intl.Segmenter(undefined, { granularity: 'grapheme' })
+    .segment(value), ({ segment }) => segment);
   let output = '';
   let consumedCount = 0;
   for (const char of chars) {
-    const units = char === ' ' ? 0.35 : (char.charCodeAt(0) > 127 ? 1 : 0.58);
-    if (total + units > maxUnits) {
+    if (measure(output + char) > maxWidth) {
       break;
     }
     output += char;
-    total += units;
     consumedCount += 1;
   }
 
@@ -73,7 +52,11 @@ function wrapOutroText(value, maxWidth, fontSize, maxLines) {
     return [];
   }
 
-  const maxUnits = Math.max(4, maxWidth / Math.max(1, fontSize));
+  textMeasureContext ??= createCanvas(1, 1).getContext('2d');
+  textMeasureContext.font = `bold ${fontSize}px ${OUTRO_FONT_FAMILY}`;
+  const measure = (value) => textMeasureContext.measureText(value).width;
+  // Leave a little horizontal room for stroke and font fallback differences.
+  const availableWidth = maxWidth * 0.94;
   const words = text.split(/\s+/).filter(Boolean);
   const safeMaxLines = Math.max(1, Math.floor(Number(maxLines) || 1));
   if (words.length === 0) {
@@ -86,14 +69,17 @@ function wrapOutroText(value, maxWidth, fontSize, maxLines) {
     const isLastLine = lines.length === safeMaxLines - 1;
 
     if (isLastLine) {
-      lines.push(truncateByUnits(words.join(' '), maxUnits));
+      const remaining = words.join(' ');
+      lines.push(measure(remaining) <= availableWidth
+        ? remaining
+        : `${splitTokenToWidth(remaining, availableWidth - measure('...'), measure).head}...`);
       break;
     }
 
     let current = '';
     while (words.length > 0) {
       const candidate = current ? `${current} ${words[0]}` : words[0];
-      if (estimateTextUnits(candidate) > maxUnits) {
+      if (measure(candidate) > availableWidth) {
         break;
       }
       current = candidate;
@@ -107,7 +93,7 @@ function wrapOutroText(value, maxWidth, fontSize, maxLines) {
 
     const remainingLineCount = safeMaxLines - lines.length;
     if (remainingLineCount > 1) {
-      const { head, tail } = splitTokenByUnits(words[0], maxUnits);
+      const { head, tail } = splitTokenToWidth(words[0], availableWidth, measure);
       if (head) {
         lines.push(head);
         if (tail) {
@@ -119,7 +105,7 @@ function wrapOutroText(value, maxWidth, fontSize, maxLines) {
       }
     }
 
-    lines.push(truncateByUnits(words.shift(), maxUnits));
+    lines.push(`${splitTokenToWidth(words.shift(), availableWidth - measure('...'), measure).head}...`);
   }
 
   return lines;
@@ -148,10 +134,12 @@ function getGeneratedOutroCenterBounds(canvasDimensions) {
     maxCenterSize,
   );
   const centerY = padding + Math.round((availableHeight - centerSize) / 2);
+  const centerInset = Math.max(Math.round(referenceSide * (22 / 1024)), Math.round(centerSize * 0.055));
+  const scanPadding = Math.max(16, Math.round(Math.min(centerInset * 0.72, centerSize * 0.04)));
 
   return {
-    top: centerY,
-    bottom: centerY + centerSize,
+    top: centerY + scanPadding,
+    bottom: centerY + centerSize - scanPadding,
   };
 }
 
@@ -212,6 +200,7 @@ function createTextItem({
   maxLines,
   fontEmphasis,
   maxWidthRatio,
+  centerContentBounds,
 }) {
   const referenceSide = Math.min(canvasDimensions.width, canvasDimensions.height);
   const maxWidth = Math.round(canvasDimensions.width * maxWidthRatio);
@@ -223,21 +212,25 @@ function createTextItem({
   const lineHeight = placement === 'top' ? 1.08 : 1.12;
   const textBlockHeight = Math.round(lines.length * fontSize * lineHeight);
   const desiredEdgePadding = getDesiredOutroEdgePadding(canvasDimensions, placement, lines.length);
-  const centerBounds = getGeneratedOutroCenterBounds(canvasDimensions);
-  const centerGap = Math.round(clampNumber(referenceSide * 0.009, 8, 14));
+  const validContentBounds = centerContentBounds &&
+    Number.isFinite(centerContentBounds.y) && Number.isFinite(centerContentBounds.height) &&
+    centerContentBounds.y >= 0 && centerContentBounds.height > 0 &&
+    centerContentBounds.y + centerContentBounds.height <= canvasDimensions.height;
+  const centerBounds = validContentBounds
+    ? { top: centerContentBounds.y, bottom: centerContentBounds.y + centerContentBounds.height }
+    : getGeneratedOutroCenterBounds(canvasDimensions);
   const isPortrait = canvasDimensions.height > canvasDimensions.width;
-  const lowerCenterGap = Math.round(clampNumber(referenceSide * 0.052, 44, 70));
-  const edgePadding = placement === 'top'
-    ? Math.min(desiredEdgePadding, Math.max(0, centerBounds.top - centerGap - textBlockHeight))
-    : Math.min(desiredEdgePadding, Math.max(0, canvasDimensions.height - centerBounds.bottom - centerGap - textBlockHeight));
-  const y = placement === 'top'
-    ? edgePadding + textBlockHeight / 2
-    : isPortrait
-      ? Math.min(
-        canvasDimensions.height - edgePadding - textBlockHeight / 2,
-        centerBounds.bottom + lowerCenterGap + textBlockHeight / 2,
-      )
-      : canvasDimensions.height - edgePadding - textBlockHeight / 2;
+  const centerGap = Math.round(referenceSide * (isPortrait ? 0.116 : 0.078));
+  const safeEdge = Math.round(referenceSide * (isPortrait ? 0.073 : 0.03125));
+  // Portrait is a centered image/text group. Landscape retains its familiar
+  // edge spacing, but brings text closer to short images and lowers the footer.
+  const top = placement === 'top'
+    ? Math.max(isPortrait ? safeEdge : desiredEdgePadding, centerBounds.top - centerGap - textBlockHeight)
+    : Math.min(
+      canvasDimensions.height - Math.max(safeEdge, isPortrait ? safeEdge : desiredEdgePadding - referenceSide * 0.016) - textBlockHeight,
+      centerBounds.bottom + centerGap,
+    );
+  const y = top + textBlockHeight / 2;
 
   return {
     id,
@@ -256,13 +249,19 @@ function createTextItem({
       width: maxWidth,
       height: textBlockHeight,
       fontSize,
-      fontFamily: 'Poppins, Montserrat, Arial, sans-serif',
+      fontFamily: OUTRO_FONT_FAMILY,
       fillColor: '#f8fafc',
-      strokeColor: 'rgba(2, 6, 23, 0.86)',
+      strokeColor: '#020617',
       strokeWidth: Math.max(4, Math.round(fontSize * 0.11)),
       textAlign: 'center',
       fontEmphasis,
       lineHeight,
+      autoWrap: false,
+      preserveLineBreaks: true,
+      shadowColor: 'rgba(0, 0, 0, 0.62)',
+      shadowBlur: Math.round(referenceSide * 0.014),
+      shadowOffsetX: 0,
+      shadowOffsetY: Math.max(2, Math.round(referenceSide * 0.006)),
       textShadow: {
         color: 'rgba(0, 0, 0, 0.62)',
         blur: Math.round(referenceSide * 0.014),
@@ -278,6 +277,7 @@ export function createOutroCtaTextItems({
   ctaTextTop = null,
   ctaTextBottom = null,
   startIndex = 0,
+  centerContentBounds = null,
 } = {}) {
   const referenceSide = Math.min(canvasDimensions.width, canvasDimensions.height);
   const isLandscape = canvasDimensions.width > canvasDimensions.height;
@@ -295,6 +295,7 @@ export function createOutroCtaTextItems({
     maxLines: 2,
     fontEmphasis: 'bold',
     maxWidthRatio: textMaxWidthRatio,
+    centerContentBounds,
   });
   if (topItem) {
     items.push(topItem);
@@ -309,6 +310,7 @@ export function createOutroCtaTextItems({
     maxLines: 2,
     fontEmphasis: 'bold',
     maxWidthRatio: textMaxWidthRatio,
+    centerContentBounds,
   });
   if (bottomItem) {
     items.push(bottomItem);

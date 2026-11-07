@@ -1,3 +1,5 @@
+import { GPT_IMAGE_TWO_MODEL } from '../providers/GPTImageTwoPayload.js';
+
 // Verified once from the provider's published standard prices. Runtime image
 // billing uses this catalog and completed-call usage; it never fetches prices.
 // Keep each version immutable so a saved completion retains its submitted rate.
@@ -50,13 +52,22 @@ export const IMAGE_ADAPTER_TARIFFS_V1 = freeze({
   'gmicloud:bria-genfill': { adapter: 'gmicloud', unit: 'images',
     rates: { output: 0.04 }, source: `${GMI_SOURCE}bria-genfill` },
 });
-export const IMAGE_ADAPTER_TARIFFS = IMAGE_ADAPTER_TARIFFS_V1;
+// V3 adds Sunburst 2.6 at the same published rates. V1/V2 receipts remain valid.
+export const IMAGE_ADAPTER_TARIFFS = freeze({
+  ...IMAGE_ADAPTER_TARIFFS_V1,
+  'openai:gpt-image-2.6-sunburst': { adapter: 'openai', unit: 'million_tokens',
+    rates: { textInput: 5, imageInput: 8, imageOutput: 30 }, source: OPENAI_SOURCE,
+    verifiedOn: '2026-11-07' },
+});
 // V2 changes only GMI Nano2's missing-usage settlement policy. The provider's
 // normal response may include money but omit token modality usage. Keep that
 // previous successful path without inferring its approximate model-card cost.
 // Existing v1 seals retain their original strict usage requirement.
-const TARIFFS_BY_VERSION = freeze({ 1: IMAGE_ADAPTER_TARIFFS_V1, 2: IMAGE_ADAPTER_TARIFFS_V1 });
+const TARIFFS_BY_VERSION = freeze({
+  1: IMAGE_ADAPTER_TARIFFS_V1, 2: IMAGE_ADAPTER_TARIFFS_V1, 3: IMAGE_ADAPTER_TARIFFS,
+});
 const GMI_NANO2_TARIFF_ID = 'gmicloud:gemini-3.1-flash-image';
+const OPENAI_SUNBURST_26_TARIFF_ID = 'openai:gpt-image-2.6-sunburst';
 
 function pending(message) {
   return Object.assign(new Error(message), { code: 'IMAGE_BILLING_PENDING', imageBillingPending: true });
@@ -121,8 +132,8 @@ function gmiInputImageCount(payload) {
 
 function tariffIdForProviderModel(adapter, providerModel) {
   if (adapter === 'openai') {
-    const match = /^gpt-image-2\.5-(sunburst|flare)(?:-|$)/.exec(providerModel || '');
-    if (match) return `openai:gpt-image-2.5-${match[1]}`;
+    const match = /^(gpt-image-2\.[56]-(?:sunburst|flare))(?:-|$)/.exec(providerModel || '');
+    if (match) return `openai:${match[1]}`;
   }
   if (adapter === 'googleCloud') {
     if (/^gemini-3\.1-flash-image(?:-|$)/.test(providerModel || '')) return 'googleCloud:gemini-3.1-flash-image';
@@ -142,7 +153,7 @@ export function createImageAdapterTariffSnapshot(payload = {}, { env = process.e
   let config = {};
   if (adapter === 'openai') {
     if (['GPTIMAGE2.5', 'GPTIMAGE2.5EDIT', 'GPTIMAGE1', 'GPTIMAGE1EDIT'].includes(model)) {
-      providerModel = receipt?.model || 'gpt-image-2.5-sunburst';
+      providerModel = receipt?.model || GPT_IMAGE_TWO_MODEL;
     }
   } else if (adapter === 'googleCloud') {
     if (['NANOBANANA2', 'NANOBANANAPRO', 'NANOBANANA2EDIT', 'NANOBANANAPROEDIT', 'NANOBANANAEDIT'].includes(model)) {
@@ -185,13 +196,15 @@ export function createImageAdapterTariffSnapshot(payload = {}, { env = process.e
   if (!tariff || tariff.adapter !== adapter) {
     throw unavailable(`Image adapter ${adapter || '(missing)'} model ${model || '(missing)'} has no verified fixed tariff.`);
   }
-  return { version: tariffId === GMI_NANO2_TARIFF_ID ? 2 : 1, adapter, model, providerModel, tariffId, unit: tariff.unit,
-    rates: { ...tariff.rates }, config, verifiedOn: VERIFIED_ON, source: tariff.source };
+  const version = tariffId === GMI_NANO2_TARIFF_ID ? 2 : tariffId === OPENAI_SUNBURST_26_TARIFF_ID ? 3 : 1;
+  return { version, adapter, model, providerModel, tariffId, unit: tariff.unit,
+    rates: { ...tariff.rates }, config, verifiedOn: tariff.verifiedOn || VERIFIED_ON, source: tariff.source };
 }
 
 export function assertImageAdapterTariffSnapshot(snapshot) {
   const tariff = TARIFFS_BY_VERSION[snapshot?.version]?.[snapshot?.tariffId];
   if (!tariff || snapshot.version === 2 && snapshot.tariffId !== GMI_NANO2_TARIFF_ID ||
+      snapshot.version === 3 && snapshot.tariffId !== OPENAI_SUNBURST_26_TARIFF_ID ||
       snapshot.adapter !== tariff.adapter || snapshot.unit !== tariff.unit ||
       tariffIdForProviderModel(snapshot.adapter, snapshot.providerModel) !== snapshot.tariffId ||
       Object.keys(snapshot.rates || {}).length !== Object.keys(tariff.rates).length ||

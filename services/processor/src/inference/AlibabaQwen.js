@@ -1,3 +1,4 @@
+import { createStreamingChatCompletion } from './ProviderStreaming.js';
 import OpenAI from 'openai';
 
 import {
@@ -375,8 +376,8 @@ export async function createAlibabaQwenChatCompletion(chatRequest = {}, dependen
     resolveMediaUrl: dependencyOverrides.resolveMediaUrl,
     serviceName: 'samsar_processor_alibaba_qwen',
   });
-  return await getAlibabaQwenClient().chat.completions.create(providerPayload, {
+  return await createStreamingChatCompletion(dependencyOverrides.client || getAlibabaQwenClient(), providerPayload, {
     ...requestOptions,
     maxRetries: 0,
-  });
+  }, chatRequest.onText);
 }

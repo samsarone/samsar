@@ -1,3 +1,5 @@
+import { useUiLanguage } from '../../hooks/useUiLanguage.js';
+import { translateText as uiText } from '../../utils/localization.js';
 import { useMemo, useState } from 'react';
 import { useColorMode } from '../../contexts/ColorMode.jsx';
 
@@ -21,6 +23,7 @@ export default function ImageDownloadDialog({
   onDownload,
   onClose,
 }) {
+  useUiLanguage();
   const { colorMode } = useColorMode();
   const [scale, setScale] = useState(1);
   const [customWidth, setCustomWidth] = useState(baseWidth);
@@ -31,22 +34,16 @@ export default function ImageDownloadDialog({
   const ratio = useMemo(() => parseAspectRatio(ratioValue), [ratioValue]);
 
   const surface =
-    colorMode === 'dark'
-      ? 'bg-[#181b24] border border-[#3a4050] text-slate-100'
-      : 'bg-white border border-slate-200 text-slate-900';
-  const mutedText = colorMode === 'dark' ? 'text-slate-400' : 'text-slate-500';
+    'bg-surface border border-line text-fg';
+  const mutedText = "text-fg-muted";
   const inputClass =
-    colorMode === 'dark'
-      ? 'bg-[#20232e] border border-[#3a4050] text-slate-100'
-      : 'bg-white border border-slate-200 text-slate-900';
+    'bg-surface-raised border border-line text-fg';
   const primaryButton =
     colorMode === 'dark'
       ? 'bg-rose-500 text-white hover:bg-rose-400'
       : 'bg-rose-500 text-white hover:bg-rose-600';
   const secondaryButton =
-    colorMode === 'dark'
-      ? 'bg-[#20232e] text-slate-200 hover:bg-[#292d3a] border border-[#3a4050]'
-      : 'bg-slate-100 text-slate-700 hover:bg-slate-200 border border-slate-200';
+    `text-fg-secondary border border-line ${colorMode === 'dark' ? 'bg-[#20232e] hover:bg-[#292d3a]' : 'bg-slate-100 hover:bg-slate-200'}`;
 
   const handleWidthChange = (event) => {
     const value = parseInt(event.target.value || '0', 10);
@@ -80,14 +77,12 @@ export default function ImageDownloadDialog({
   return (
     <div className={`rounded-xl p-4 ${surface}`}>
       <div className="flex items-center justify-between mb-4">
-        <div className="text-lg font-semibold">Advanced Download</div>
-        <button className={`text-sm ${mutedText}`} onClick={onClose}>
-          Close
-        </button>
+        <div className="text-lg font-semibold">{uiText("Advanced Download")}</div>
+        <button className={`text-sm ${mutedText}`} onClick={onClose}>{uiText("Close")}</button>
       </div>
 
       <div className="mb-5">
-        <div className="text-sm font-semibold mb-2">Scale (keeps current aspect ratio)</div>
+        <div className="text-sm font-semibold mb-2">{uiText("Scale (keeps current aspect ratio)")}</div>
         <div className="flex gap-2 mb-2">
           {scaleOptions.map((option) => (
             <button
@@ -95,9 +90,7 @@ export default function ImageDownloadDialog({
               className={`px-3 py-1 rounded-md text-sm border ${
                 scale === option
                   ? 'border-rose-400 text-rose-400'
-                  : colorMode === 'dark'
-                    ? 'border-[#3a4050] text-slate-300'
-                    : 'border-slate-200 text-slate-600'
+                  : 'border-line text-fg-tertiary'
               }`}
               onClick={() => setScale(option)}
             >
@@ -105,22 +98,18 @@ export default function ImageDownloadDialog({
             </button>
           ))}
         </div>
-        <div className={`text-xs ${mutedText}`}>
-          Output: {baseWidth * scale} × {baseHeight * scale}px
-        </div>
+        <div className={`text-xs ${mutedText}`}>{uiText("Output: {value0} × {value1}px", { value0: baseWidth * scale, value1: baseHeight * scale })}</div>
         <button
           className={`mt-3 w-full rounded-md px-3 py-2 text-sm ${primaryButton}`}
           onClick={() => onDownload?.({ mode: 'scale', scale })}
-        >
-          Download Scaled Image
-        </button>
+        >{uiText("Download Scaled Image")}</button>
       </div>
 
       <div className="border-t border-slate-200/20 pt-4">
-        <div className="text-sm font-semibold mb-2">Custom resolution (cropped)</div>
+        <div className="text-sm font-semibold mb-2">{uiText("Custom resolution (cropped)")}</div>
         <div className="grid grid-cols-2 gap-2 mb-3">
           <div className="flex flex-col gap-1">
-            <label className={`text-xs ${mutedText}`}>Width</label>
+            <label className={`text-xs ${mutedText}`}>{uiText("Width")}</label>
             <input
               type="number"
               min="1"
@@ -130,7 +119,7 @@ export default function ImageDownloadDialog({
             />
           </div>
           <div className="flex flex-col gap-1">
-            <label className={`text-xs ${mutedText}`}>Height</label>
+            <label className={`text-xs ${mutedText}`}>{uiText("Height")}</label>
             <input
               type="number"
               min="1"
@@ -157,13 +146,9 @@ export default function ImageDownloadDialog({
               type="checkbox"
               checked={lockRatio}
               onChange={(event) => setLockRatio(event.target.checked)}
-            />
-            Lock ratio
-          </label>
+            />{uiText("Lock ratio")}</label>
         </div>
-        <div className={`text-xs ${mutedText}`}>
-          Custom size crops the canvas to fit the new resolution.
-        </div>
+        <div className={`text-xs ${mutedText}`}>{uiText("Custom size crops the canvas to fit the new resolution.")}</div>
         <button
           className={`mt-3 w-full rounded-md px-3 py-2 text-sm ${secondaryButton}`}
           disabled={!customValid}
@@ -175,9 +160,7 @@ export default function ImageDownloadDialog({
               crop: true,
             })
           }
-        >
-          Download Custom Image
-        </button>
+        >{uiText("Download Custom Image")}</button>
       </div>
     </div>
   );

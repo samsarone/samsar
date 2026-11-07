@@ -1,5 +1,7 @@
+import { useUiLanguage } from '../../../hooks/useUiLanguage.js';
+import { translateText as uiText } from '../../../utils/localization.js';
 import { useStudioFrameRate } from '../StudioFrameRateContext.jsx';
-import { forwardRef, useCallback, useEffect, useState, useRef, useContext } from "react";
+import { forwardRef, useCallback, useEffect, useLayoutEffect, useState, useRef, useContext } from "react";
 import { createPortal } from 'react-dom';
 import { Stage, Layer, Group, Line, Image as KonvaImage, Rect } from 'react-konva';
 
@@ -51,15 +53,15 @@ const PROCESSOR_API_URL = import.meta.env.VITE_PROCESSOR_API;
 function getVideoTypeLabel(type) {
   switch (type) {
     case 'lip_sync':
-      return 'Lip Synced video';
+      return uiText("Lip Synced video");
     case 'sound_effect':
-      return 'Sound Effect video';
+      return uiText("Sound Effect video");
     case 'ai_video':
-      return 'Base AI Video';
+      return uiText("Base AI Video");
     case 'user_video':
-      return 'Uploaded Video';
+      return uiText("Uploaded Video");
     default:
-      return 'Video Layer';
+      return uiText("Video Layer");
   }
 }
 
@@ -100,6 +102,7 @@ function canDragCanvasItems({
 }
 
 const VideoCanvas = forwardRef((props, ref) => {
+  useUiLanguage();
   const FPS = useStudioFrameRate();
   const {
     activeItemList, setActiveItemList, currentView, editBrushWidth, editMasklines, currentCanvasAction,
@@ -115,7 +118,7 @@ const VideoCanvas = forwardRef((props, ref) => {
     paintToolbarVisible, isDrawing, shapeSet, showPencil, pencilLines, overlayImage, shapeSelectToolbarVisible,
     shapeSelectToolbarPosition, enableSegmentationMask, segmentationData, isExpressGeneration, currentLayerSeek, isVideoPreviewPlaying, removeVideoLayer, aspectRatio, isAIVideoGenerationPending,
     canvasDimensions: canvasDimensionsProp,
-    toggleStageZoom, stageZoomScale, displayZoomType, requestRegenerateSubtitles, aiVideoLayer,
+    toggleStageZoom, stageZoomScale, displayZoomType, onCanvasViewportChange, requestRegenerateSubtitles, aiVideoLayer,
     nextAiVideoLayer, nextAiVideoLayerType,
     requestRegenerateAnimations, removeSelectedItem, requestRealignLayers, totalDuration,
     updateTargetTextActiveLayerConfig, createTextLayer, updateTargetImageActiveLayerConfig,
@@ -178,6 +181,34 @@ const VideoCanvas = forwardRef((props, ref) => {
 
   const [canvasDimensions, setCanvasDimensions] = useState({ width: 1024, height: 1024 });
   const canvasFrameRef = useRef(null);
+
+  useLayoutEffect(() => {
+    const shell = canvasFrameRef.current?.parentElement;
+    const workspace = shell?.closest('[data-studio-workspace]');
+    if (!workspace || !onCanvasViewportChange) return undefined;
+
+    const updateViewport = () => {
+      const bounds = workspace.getBoundingClientRect();
+      const workspaceStyle = getComputedStyle(workspace);
+      const shellStyle = getComputedStyle(shell);
+      const inset = (style, axis) => (axis === 'width'
+        ? ['paddingLeft', 'paddingRight', 'borderLeftWidth', 'borderRightWidth']
+        : ['paddingTop', 'paddingBottom', 'borderTopWidth', 'borderBottomWidth']
+      ).reduce((sum, key) => sum + (parseFloat(style[key]) || 0), 0);
+      // Measure the viewport independently of the current zoom and scrollbars,
+      // reserving the real workspace padding and canvas surface chrome.
+      const width = bounds.width - inset(workspaceStyle, 'width') - inset(shellStyle, 'width');
+      const height = bounds.height - inset(workspaceStyle, 'height') - inset(shellStyle, 'height');
+      if (width > 0 && height > 0) onCanvasViewportChange({ width, height });
+    };
+
+    updateViewport();
+    const observer = new ResizeObserver(updateViewport);
+    observer.observe(workspace, { box: 'border-box' });
+    observer.observe(shell, { box: 'border-box' });
+    return () => observer.disconnect();
+  }, [onCanvasViewportChange]);
+
   const [videoLayerControlPosition, setVideoLayerControlPosition] = useState(null);
   const [readyVideoLayerSrc, setReadyVideoLayerSrc] = useState('');
   const normalizedVideoLayerSrc = typeof aiVideoLayer === 'string' ? aiVideoLayer.trim() : '';
@@ -864,18 +895,14 @@ const VideoCanvas = forwardRef((props, ref) => {
     stageZoomScale,
   ]);
 
-  const videoLayerControlClassName = colorMode === 'dark'
-    ? 'border border-[#3a4050] bg-[#181b24]/95 text-slate-100 shadow-[0_10px_28px_rgba(0,0,0,0.35)]'
-    : 'border border-slate-200 bg-white/95 text-slate-800';
+  const videoLayerControlClassName = `border border-line ${colorMode === 'dark' ? 'bg-[#181b24]/95 text-slate-100 shadow-[0_10px_28px_rgba(0,0,0,0.35)]' : 'bg-white/95 text-slate-800'}`;
   const videoLayerRemoveButtonClassName = colorMode === 'dark'
     ? 'bg-rose-500/15 text-rose-100 hover:bg-rose-500/25 hover:text-white'
     : 'bg-rose-50 text-rose-700 hover:bg-rose-100';
   const videoLayerTypePillClassName = colorMode === 'dark'
     ? 'border border-[#e45a26]/30 bg-[#e45a26]/20 text-orange-100'
     : 'border border-orange-200 bg-orange-50 text-orange-700';
-  const maskActionClassName = colorMode === 'dark'
-    ? 'bg-[#20232e] text-slate-100 border border-[#3a4050] shadow-[0_10px_28px_rgba(0,0,0,0.35)]'
-    : 'bg-white text-slate-800 border border-slate-200';
+  const maskActionClassName = `bg-surface-raised border border-line ${colorMode === 'dark' ? 'text-slate-100 shadow-[0_10px_28px_rgba(0,0,0,0.35)]' : 'text-slate-800'}`;
 
   const videoLayerRemoveControl = aiVideoLayer ? (
     <div
@@ -890,11 +917,11 @@ const VideoCanvas = forwardRef((props, ref) => {
         type="button"
         className={`inline-flex min-h-8 shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold transition ${videoLayerRemoveButtonClassName}`}
         onClick={handleRemoveVideoLayerClick}
-        aria-label="Remove video from layer"
-        title="Remove video from layer"
+        aria-label={uiText("Remove video from layer")}
+        title={uiText("Remove video from layer")}
       >
-        <FaTimes className="text-[11px]" aria-hidden="true" />
-        <span>Remove from layer</span>
+        <FaTimes className="text-caption" aria-hidden="true" />
+        <span>{uiText("Remove from layer")}</span>
       </button>
       <span className={`min-w-0 truncate rounded-full px-2.5 py-1 text-xs font-semibold ${videoLayerTypePillClassName}`}>
         {getVideoTypeLabel(aiVideoLayerType)}
@@ -1112,14 +1139,14 @@ const VideoCanvas = forwardRef((props, ref) => {
     || activeUserVideoUploadTask?.status === 'PROCESSING'
   );
   const pendingVideoTaskTitle = activeUserVideoUploadTask?.status === 'UPLOADING'
-    ? `Uploading video${Number.isFinite(activeUserVideoUploadTask?.progressPercent) ? ` (${activeUserVideoUploadTask.progressPercent}%)` : ''}`
+    ? uiText("Uploading video{value0}", { value0: Number.isFinite(activeUserVideoUploadTask?.progressPercent) ? ` (${activeUserVideoUploadTask.progressPercent}%)` : '' })
     : isUserVideoUploadActive
-      ? 'Processing uploaded video'
-      : 'Processing video task';
+      ? uiText("Processing uploaded video")
+      : uiText("Processing video task");
   const pendingVideoTaskSubtitle = activeUserVideoUploadTask?.message
     || (isUserVideoUploadActive
-      ? 'The server is normalizing the uploaded video for this layer.'
-      : 'This can take a few minutes.');
+      ? uiText("The server is normalizing the uploaded video for this layer.")
+      : uiText("This can take a few minutes."));
   const canvasSurfaceClassName =
     colorMode === 'dark'
       ? 'bg-[#181b24] border border-[#3a4050] shadow-[0_16px_34px_rgba(2,6,23,0.18)]'
@@ -1133,14 +1160,15 @@ const VideoCanvas = forwardRef((props, ref) => {
     <div
       className={`${canvasShellClassName} ${textColor} overflow-visible`}
       style={{
-        display: 'inline-block',
+        display: editorVariant === 'imageStudio' ? 'inline-block' : 'block',
+        width: editorVariant === 'imageStudio' ? undefined : 'max-content',
         boxSizing: 'border-box',
       }}
     >
       {canvasInternalLoading}
       <div
         ref={canvasFrameRef}
-        className="relative z-[40] inline-block overflow-visible"
+        className={`relative z-[40] overflow-visible ${editorVariant === 'imageStudio' ? 'inline-block' : 'block'}`}
         style={{
           width: `${canvasDimensions.width}px`,
           height: `${canvasDimensions.height}px`,
@@ -1272,8 +1300,8 @@ const VideoCanvas = forwardRef((props, ref) => {
       />
       {showAddRemoveMaskedItemButton && (
         <div className={`fixed bottom-4 left-1/2 transform -translate-x-1/2 p-2 rounded-lg z-50 ${maskActionClassName}`}>
-          <button className="mr-4" onClick={handleAddButtonClick}>Add</button>
-          <button onClick={handleRemoveButtonClick}>Remove</button>
+          <button className="mr-4" onClick={handleAddButtonClick}>{uiText("Add")}</button>
+          <button onClick={handleRemoveButtonClick}>{uiText("Remove")}</button>
         </div>
       )}
       {isAIVideoGenerationPending && (

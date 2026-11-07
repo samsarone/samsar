@@ -1,3 +1,6 @@
+import { getUiLocale, formatUiNumber } from '../../utils/localization.js';
+import { useUiLanguage } from '../../hooks/useUiLanguage.js';
+import { translateText as uiText } from '../../utils/localization.js';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
@@ -86,7 +89,7 @@ function formatGalleryTimestamp(value) {
   }
 
   try {
-    return new Date(parsedDate).toLocaleString([], {
+    return new Date(parsedDate).toLocaleString(getUiLocale(), {
       month: 'short',
       day: 'numeric',
       year: 'numeric',
@@ -161,7 +164,7 @@ function resolveGalleryCardTitle(item) {
     return item.sourceLabel.trim();
   }
 
-  return item?.mediaType === 'video' ? 'Untitled video' : 'Untitled image';
+  return item?.mediaType === 'video' ? uiText("Untitled video") : uiText("Untitled image");
 }
 
 function resolvePromptSnippet(item) {
@@ -179,7 +182,7 @@ function resolvePromptSnippet(item) {
 function loadImageDimensions(imageUrl) {
   return new Promise((resolve, reject) => {
     if (!imageUrl) {
-      reject(new Error('Missing image URL'));
+      reject(new Error(uiText("Missing image URL")));
       return;
     }
 
@@ -189,7 +192,7 @@ function loadImageDimensions(imageUrl) {
     }
 
     image.onload = () => resolve({ width: image.width, height: image.height });
-    image.onerror = () => reject(new Error('Unable to read the selected image.'));
+    image.onerror = () => reject(new Error(uiText("Unable to read the selected image.")));
     image.src = imageUrl;
   });
 }
@@ -215,13 +218,14 @@ async function writeTextToClipboard(text) {
 }
 
 export default function GenerationsGalleryPanel({
-  title = 'Generations',
-  subtitle = 'A unified wall of your image and video generations.',
+  title = uiText("Generations"),
+  subtitle = uiText("A unified wall of your image and video generations."),
   embedded = false,
   onSelectImage,
   onSelectVideo,
   isSelectButtonDisabled = false,
 }) {
+  useUiLanguage();
   const navigate = useNavigate();
   const { colorMode } = useColorMode();
   const [galleryItems, setGalleryItems] = useState([]);
@@ -256,7 +260,7 @@ export default function GenerationsGalleryPanel({
           hasNextPage: false,
           hasPreviousPage: false,
         }));
-        setErrorMessage('Log in to browse your generations.');
+        setErrorMessage(uiText("Log in to browse your generations."));
         return;
       }
 
@@ -295,7 +299,7 @@ export default function GenerationsGalleryPanel({
           hasNextPage: false,
           hasPreviousPage: false,
         }));
-        setErrorMessage(error?.response?.data?.error || 'Unable to load the generations gallery.');
+        setErrorMessage(error?.response?.data?.error || uiText("Unable to load the generations gallery."));
       } finally {
         setIsLoading(false);
       }
@@ -353,31 +357,17 @@ export default function GenerationsGalleryPanel({
     : colorMode === 'dark'
       ? 'min-h-screen bg-[#0c0d12]'
       : 'min-h-screen bg-[#f4f6fb]';
-  const panelSurface = colorMode === 'dark'
-    ? 'border border-[#3a4050] bg-[#151720] text-slate-100'
-    : 'border border-slate-200 bg-white text-slate-900';
-  const headerSurface = colorMode === 'dark'
-    ? 'border border-[#3a4050] bg-[#181b24]'
-    : 'border border-slate-200 bg-white';
-  const tileSurface = colorMode === 'dark'
-    ? 'border border-[#3a4050] bg-[#181b24] shadow-[0_18px_35px_rgba(0,0,0,0.24)]'
-    : 'border border-slate-200 bg-white shadow-[0_14px_28px_rgba(15,23,42,0.08)]';
-  const inputSurface = colorMode === 'dark'
-    ? 'bg-[#181b24] border border-[#3a4050] text-slate-100 placeholder:text-[#8b96aa]'
-    : 'bg-slate-50 border border-slate-200 text-slate-700 placeholder:text-slate-400';
-  const mutedText = colorMode === 'dark' ? 'text-slate-400' : 'text-slate-500';
-  const pillSurface = colorMode === 'dark'
-    ? 'border border-white/10 bg-black/45 text-slate-100'
-    : 'border border-slate-200 bg-white/90 text-slate-700';
-  const actionSurface = colorMode === 'dark'
-    ? 'border border-[#4a5265] bg-[#20232e] text-slate-100 hover:bg-[#292d3a]'
-    : 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-100';
+  const panelSurface = 'border border-line bg-surface-sunken text-fg';
+  const headerSurface = 'border border-line bg-surface';
+  const tileSurface = `border border-line bg-surface ${colorMode === 'dark' ? 'shadow-[0_18px_35px_rgba(0,0,0,0.24)]' : 'shadow-[0_14px_28px_rgba(15,23,42,0.08)]'}`;
+  const inputSurface = `border border-line text-fg-body ${colorMode === 'dark' ? 'bg-[#181b24] placeholder:text-[#8b96aa]' : 'bg-slate-50 placeholder:text-slate-400'}`;
+  const mutedText = "text-fg-muted";
+  const pillSurface = `border text-fg-body ${colorMode === 'dark' ? 'border-white/10 bg-black/45' : 'border-slate-200 bg-white/90'}`;
+  const actionSurface = 'border border-line-strong bg-surface-raised text-fg-body hover:bg-surface-hover';
   const primaryActionSurface = colorMode === 'dark'
     ? 'bg-gradient-to-r from-[#ff4655] to-[#ff6b4a] text-white shadow-[0_10px_24px_rgba(255,70,85,0.2)]'
     : 'bg-gradient-to-r from-sky-500 via-blue-500 to-indigo-500 text-white';
-  const modalSurface = colorMode === 'dark'
-    ? 'border border-[#4a5265] bg-[#151720] text-slate-100'
-    : 'border border-slate-200 bg-white text-slate-900';
+  const modalSurface = 'border border-line-strong bg-surface-sunken text-fg';
   const subtleIconButton = colorMode === 'dark'
     ? 'border border-white/10 bg-white/5 text-slate-300 hover:bg-white/10 hover:text-white'
     : 'border border-slate-200 bg-white text-slate-500 hover:bg-slate-100 hover:text-slate-700';
@@ -449,7 +439,7 @@ export default function GenerationsGalleryPanel({
         setCopiedItemId((currentValue) => (currentValue === (item?._id || null) ? null : currentValue));
       }, 1600);
     } catch  {
-      setStudioErrorMessage('Unable to copy the prompt.');
+      setStudioErrorMessage(uiText("Unable to copy the prompt."));
     }
   }, []);
 
@@ -460,7 +450,7 @@ export default function GenerationsGalleryPanel({
 
     const headers = getHeaders();
     if (!headers) {
-      setStudioErrorMessage('Log in to open this generation in studio.');
+      setStudioErrorMessage(uiText("Log in to open this generation in studio."));
       navigate('/login');
       return;
     }
@@ -491,7 +481,7 @@ export default function GenerationsGalleryPanel({
         const layerId = createdSession?.layers?.[0]?._id?.toString?.() || createdSession?.layers?.[0]?._id;
 
         if (!sessionId || !layerId) {
-          throw new Error('Unable to create a video session.');
+          throw new Error(uiText("Unable to create a video session."));
         }
 
         if (item.sourceType === 'ai_video') {
@@ -546,7 +536,7 @@ export default function GenerationsGalleryPanel({
         const resolvedCanvasDimensions = createdSession?.canvasDimensions || canvasDimensions;
 
         if (!sessionId || !layerId) {
-          throw new Error('Unable to create an image session.');
+          throw new Error(uiText("Unable to create an image session."));
         }
 
         const imageSourcePath = item.assetPath || item.url;
@@ -579,7 +569,7 @@ export default function GenerationsGalleryPanel({
         setActiveItem(null);
       }
     } catch (error) {
-      setStudioErrorMessage(error?.response?.data?.error || error?.message || 'Unable to open this generation in studio.');
+      setStudioErrorMessage(error?.response?.data?.error || error?.message || uiText("Unable to open this generation in studio."));
     } finally {
       setIsOpenStudioPending(false);
     }
@@ -598,9 +588,7 @@ export default function GenerationsGalleryPanel({
           <div className={`sticky ${embedded ? 'top-0' : 'top-[124px] md:top-[56px]'} z-10 rounded-t-[30px] border-b px-4 py-4 backdrop-blur md:px-6 ${headerSurface}`}>
             <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
               <div className="min-w-0">
-                <div className={`text-[11px] font-semibold uppercase tracking-[0.3em] ${colorMode === 'dark' ? 'text-[#f6c453]' : 'text-sky-500'}`}>
-                  Internal Gallery
-                </div>
+                <div className={`text-caption font-semibold uppercase tracking-[0.3em] ${colorMode === 'dark' ? 'text-[#f6c453]' : 'text-sky-500'}`}>{uiText("Internal Gallery")}</div>
                 <h1 className={`mt-1 font-semibold ${embedded ? 'text-xl' : 'text-2xl md:text-3xl'}`}>
                   {title}
                 </h1>
@@ -616,24 +604,20 @@ export default function GenerationsGalleryPanel({
                     type="text"
                     value={searchTerm}
                     onChange={(event) => setSearchTerm(event.target.value)}
-                    placeholder="Search prompts, models, projects, and render types"
+                    placeholder={uiText("Search prompts, models, projects, and render types")}
                     className="w-full bg-transparent text-sm focus:outline-none"
                   />
                 </div>
 
                 <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div className={`text-xs ${mutedText}`}>
-                    {pagination.totalItems} items
-                  </div>
+                  <div className={`text-xs ${mutedText}`}>{uiText("{value0} items", { value0: pagination.totalItems })}</div>
                   <button
                     type="button"
                     className={`inline-flex items-center gap-2 rounded-full px-4 py-2 text-xs font-semibold transition ${actionSurface}`}
                     onClick={handleRefresh}
                     disabled={isLoading}
                   >
-                    <FaRedo className={isLoading ? 'animate-spin' : ''} />
-                    Refresh
-                  </button>
+                    <FaRedo className={isLoading ? 'animate-spin' : ''} />{uiText("Refresh")}</button>
                 </div>
               </div>
             </div>
@@ -645,15 +629,13 @@ export default function GenerationsGalleryPanel({
 
           <div className="px-4 pb-5 pt-4 md:px-6">
             {isLoading && (
-              <div className={`py-12 text-center text-sm ${mutedText}`}>Loading generations…</div>
+              <div className={`py-12 text-center text-sm ${mutedText}`}>{uiText("Loading generations…")}</div>
             )}
 
             {!isLoading && !galleryItems.length && (
               <div className={`rounded-[26px] border border-dashed px-6 py-12 text-center ${tileSurface}`}>
-                <div className="text-lg font-semibold">No generations yet</div>
-                <div className={`mt-2 text-sm ${mutedText}`}>
-                  Your images, AI videos, and completed renders will collect here automatically.
-                </div>
+                <div className="text-lg font-semibold">{uiText("No generations yet")}</div>
+                <div className={`mt-2 text-sm ${mutedText}`}>{uiText("Your images, AI videos, and completed renders will collect here automatically.")}</div>
               </div>
             )}
 
@@ -711,9 +693,7 @@ export default function GenerationsGalleryPanel({
                                 onError={() => markMediaFailed(previewVideoMediaKey)}
                               />
                             ) : (
-                              <div className="flex h-full w-full items-center justify-center bg-slate-950 text-sm text-slate-300">
-                                Video preview unavailable
-                              </div>
+                              <div className="flex h-full w-full items-center justify-center bg-slate-950 text-sm text-slate-300">{uiText("Video preview unavailable")}</div>
                             )
                           ) : (
                             <img
@@ -724,11 +704,11 @@ export default function GenerationsGalleryPanel({
                           )}
 
                           <div className="absolute left-3 top-3 flex flex-wrap gap-2">
-                            <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${pillSurface}`}>
-                              {item?.sourceLabel || (isVideo ? 'Video' : 'Image')}
+                            <span className={`rounded-full px-2.5 py-1 text-caption font-semibold ${pillSurface}`}>
+                              {item?.sourceLabel || (isVideo ? uiText("Video") : uiText("Image"))}
                             </span>
                             {durationLabel && (
-                              <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${pillSurface}`}>
+                              <span className={`rounded-full px-2.5 py-1 text-caption font-semibold ${pillSurface}`}>
                                 {durationLabel}
                               </span>
                             )}
@@ -736,11 +716,11 @@ export default function GenerationsGalleryPanel({
 
                           {isVideo && item?.isPublished && (
                             <span
-                              title="Published to gallery"
-                              aria-label="Published to gallery"
+                              title={uiText("Published to gallery")}
+                              aria-label={uiText("Published to gallery")}
                               className="pointer-events-none absolute right-3 top-3 inline-flex h-7 w-7 items-center justify-center rounded-full border border-emerald-200/70 bg-emerald-400 text-slate-950 shadow-lg"
                             >
-                              <FaCheck className="text-[11px]" />
+                              <FaCheck className="text-caption" />
                             </span>
                           )}
 
@@ -753,13 +733,13 @@ export default function GenerationsGalleryPanel({
                           )}
                         </div>
 
-                        <div className={`border-t p-4 ${colorMode === 'dark' ? 'border-[#3a4050]' : 'border-slate-200'}`}>
+                        <div className={`border-t p-4 border-line`}>
                           <div className="flex items-center justify-between gap-3">
                             <div className="min-w-0 flex-1 truncate text-sm font-semibold">
                               {titleLabel}
                             </div>
                             {item?.model && (
-                              <span className={`max-w-[46%] shrink-0 truncate rounded-full px-2.5 py-1 text-[11px] font-semibold ${pillSurface}`}>
+                              <span className={`max-w-[46%] shrink-0 truncate rounded-full px-2.5 py-1 text-caption font-semibold ${pillSurface}`}>
                                 {item.model}
                               </span>
                             )}
@@ -767,16 +747,16 @@ export default function GenerationsGalleryPanel({
 
                           <div className="mt-2 flex items-center gap-3">
                             <div className={`min-w-0 flex-1 truncate text-xs leading-5 ${mutedText}`}>
-                              {promptSnippet || createdAtLabel || 'No prompt captured'}
+                              {promptSnippet || createdAtLabel || uiText("No prompt captured")}
                             </div>
                             {promptSnippet && (
                               <button
                                 type="button"
                                 className={`inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition ${subtleIconButton}`}
                                 onClick={(event) => void handleCopyPrompt(event, item)}
-                                aria-label="Copy prompt"
+                                aria-label={uiText("Copy prompt")}
                               >
-                                {isPromptCopied ? <FaCheck className="text-[11px]" /> : <FaCopy className="text-[11px]" />}
+                                {isPromptCopied ? <FaCheck className="text-caption" /> : <FaCopy className="text-caption" />}
                               </button>
                             )}
                           </div>
@@ -789,26 +769,20 @@ export default function GenerationsGalleryPanel({
             )}
 
             <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-              <div className={`text-xs ${mutedText}`}>
-                Page {pagination.page} of {Math.max(1, pagination.totalPages)}
-              </div>
+              <div className={`text-xs ${mutedText}`}>{uiText("Page {value0} of {value1}", { value0: pagination.page, value1: Math.max(1, pagination.totalPages) })}</div>
               <div className="flex items-center gap-2">
                 <button
                   type="button"
                   className={`rounded-full px-4 py-2 text-xs font-semibold transition ${actionSurface}`}
                   disabled={!pagination.hasPreviousPage || isLoading}
                   onClick={() => void fetchGallery(Math.max(1, pagination.page - 1), searchTerm)}
-                >
-                  Previous
-                </button>
+                >{uiText("Previous")}</button>
                 <button
                   type="button"
                   className={`rounded-full px-4 py-2 text-xs font-semibold transition ${actionSurface}`}
                   disabled={!pagination.hasNextPage || isLoading}
                   onClick={() => void fetchGallery(pagination.page + 1, searchTerm)}
-                >
-                  Next
-                </button>
+                >{uiText("Next")}</button>
               </div>
             </div>
           </div>
@@ -820,7 +794,7 @@ export default function GenerationsGalleryPanel({
           <button
             type="button"
             className="absolute inset-0"
-            aria-label="Close preview"
+            aria-label={uiText("Close preview")}
             onClick={() => setActiveItem(null)}
           />
 
@@ -853,7 +827,7 @@ export default function GenerationsGalleryPanel({
             </div>
 
             <div className="w-full border-t border-white/10 p-5 md:w-[380px] md:border-l md:border-t-0">
-              <div className={`text-[11px] font-semibold uppercase tracking-[0.25em] ${mutedText}`}>
+              <div className={`text-caption font-semibold uppercase tracking-[0.25em] ${mutedText}`}>
                 {activeItem.sourceLabel || activeItem.mediaType}
               </div>
               <div className="mt-2 text-xl font-semibold">
@@ -870,7 +844,7 @@ export default function GenerationsGalleryPanel({
                       type="button"
                       className={`inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full transition ${subtleIconButton}`}
                       onClick={(event) => void handleCopyPrompt(event, activeItem)}
-                      aria-label="Copy prompt"
+                      aria-label={uiText("Copy prompt")}
                     >
                       {copiedItemId === activeItem?._id ? <FaCheck className="text-[12px]" /> : <FaCopy className="text-[12px]" />}
                     </button>
@@ -880,22 +854,22 @@ export default function GenerationsGalleryPanel({
 
               <div className="mt-4 flex flex-wrap gap-2">
                 {activeItem.model && (
-                  <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${actionSurface}`}>
+                  <span className={`rounded-full px-2.5 py-1 text-caption font-semibold ${actionSurface}`}>
                     {activeItem.model}
                   </span>
                 )}
                 {formatDuration(activeItem.duration) && (
-                  <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${actionSurface}`}>
+                  <span className={`rounded-full px-2.5 py-1 text-caption font-semibold ${actionSurface}`}>
                     {formatDuration(activeItem.duration)}
                   </span>
                 )}
                 {activeItem.aspectRatio && (
-                  <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${actionSurface}`}>
+                  <span className={`rounded-full px-2.5 py-1 text-caption font-semibold ${actionSurface}`}>
                     {activeItem.aspectRatio}
                   </span>
                 )}
                 {formatGalleryTimestamp(activeItem.createdAt || activeItem.updatedAt) && (
-                  <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${actionSurface}`}>
+                  <span className={`rounded-full px-2.5 py-1 text-caption font-semibold ${actionSurface}`}>
                     {formatGalleryTimestamp(activeItem.createdAt || activeItem.updatedAt)}
                   </span>
                 )}
@@ -914,12 +888,12 @@ export default function GenerationsGalleryPanel({
                 >
                   {isOpenStudioPending ? <FaSpinner className="animate-spin" /> : <FaExternalLinkAlt />}
                   {isOpenStudioPending
-                    ? 'Opening...'
+                    ? uiText("Opening...")
                     : activeItem.mediaType === 'image'
-                      ? 'Open in Image Studio'
+                      ? uiText("Open in Image Studio")
                       : activeItem.sourceType === 'final_render'
-                        ? 'Open Session'
-                        : 'Open in Video Studio'}
+                        ? uiText("Open Session")
+                        : uiText("Open in Video Studio")}
                 </button>
 
                 <button
@@ -927,9 +901,7 @@ export default function GenerationsGalleryPanel({
                   className={`inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold transition ${actionSurface}`}
                   onClick={() => handleDownload(activeItem)}
                 >
-                  <FaDownload />
-                  Download
-                </button>
+                  <FaDownload />{uiText("Download")}</button>
 
                 {canSelectActiveItem && (
                   <button
@@ -939,10 +911,10 @@ export default function GenerationsGalleryPanel({
                     onClick={() => void handleSelectActiveItem()}
                   >
                     {isSelectPending
-                      ? 'Adding...'
+                      ? uiText("Adding...")
                       : activeItem.mediaType === 'video'
-                        ? 'Use Video'
-                        : 'Add Image'}
+                        ? uiText("Use Video")
+                        : uiText("Add Image")}
                   </button>
                 )}
               </div>

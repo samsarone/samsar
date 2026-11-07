@@ -1,4 +1,5 @@
-import { frameCountToSeconds, secondsToFrameCount } from '../utils/FrameClock.js';
+import { getVideoTimeline } from '../utils/VideoTimeline.js';
+import { frameCountToSeconds, secondsToFrameCount, getLayerFrameRange } from '../utils/FrameClock.js';
 import { captureSessionSceneReferences, resolveLayerSourceSceneReference } from './video/SceneIdentity.js';
 import { getDBConnectionString } from "./DBString.js";
 import VideoSession from "../schema/VideoSession.js";
@@ -4533,7 +4534,8 @@ async function finalizeUserVideoLayerUpload({
     throw new Error(`Uploaded video must be ${USER_VIDEO_MAX_DURATION_SECONDS} seconds or shorter.`);
   }
 
-  const normalizedDuration = Math.floor(rawDuration * 100) / 100;
+  const uploadFramesPerSecond = getSessionFramesPerSecondWithLog(sessionDataValue, 'VideoSession.videoUpload');
+  const { duration: normalizedDuration } = await getVideoTimeline(uploadedVideoPath, uploadFramesPerSecond);
   const normalizedVideoPath = await normalizeVideoAssetToMp4WithoutAudio(uploadedVideoPath, {
     sessionId,
     layerId,
@@ -4547,6 +4549,7 @@ async function finalizeUserVideoLayerUpload({
     sessionId,
     layerId,
     prefix: 'user_video',
+    framesPerSecond: uploadFramesPerSecond,
     preserveVideoTimeline: true,
   });
 
@@ -11775,6 +11778,16 @@ export async function addAiVideoLayerToSession(userId, payload) {
     'VideoSession.handleAiVideoCompletion'
   );
 
+  // Validate before replacing any cached frames belonging to the current scene.
+  if (isLipSyncModel || isSoundEffectModel) {
+    const sourceTimeline = await getVideoTimeline(videoPath, framesPerSecond);
+    const required = getLayerFrameRange(layer, framesPerSecond).frameCount
+      + (layer.clipStart ? Math.max(0, Number(layer.clipStartFrames) || 0) : 0);
+    if (sourceTimeline.frameCount < required) {
+      throw new Error(`The selected derivative is incomplete: expected ${required} frames, received ${sourceTimeline.frameCount}. The scene was not changed.`);
+    }
+  }
+
   let videoOriginalDuration;
 
   if (isAudioVideoModel) {
@@ -11841,17 +11854,11 @@ export async function addAiVideoLayerToSession(userId, payload) {
   const requestedDuration = layer.duration;
   const frameSafeVideoDuration = getFrameSafeDurationSecondsFromFrameCount(frameCount, framesPerSecond)
     ?? (Number.isFinite(Number(frameDuration)) && Number(frameDuration) > 0 ? Number(frameDuration) : null);
-  const shouldShrinkAudioVideoLayerToOutput = Boolean(
-    (isLipSyncModel || isSoundEffectModel)
-    && Number.isFinite(frameSafeVideoDuration)
-    && frameSafeVideoDuration > 0
-    && frameSafeVideoDuration < requestedDuration - (0.5 / framesPerSecond)
-  );
-
-  if (shouldShrinkAudioVideoLayerToOutput) {
-    layer.duration = frameSafeVideoDuration;
-    duration = frameSafeVideoDuration;
-    videoOriginalDuration = frameSafeVideoDuration;
+  const isTimelineDerivative = isLipSyncModel || isSoundEffectModel;
+  const requiredFrameCount = getLayerFrameRange(layer, framesPerSecond).frameCount
+    + (layer.clipStart ? Math.max(0, Number(layer.clipStartFrames) || 0) : 0);
+  if (isTimelineDerivative && frameCount < requiredFrameCount) {
+    throw new Error(`The selected derivative is incomplete: expected ${requiredFrameCount} frames, received ${frameCount}. The scene was not changed.`);
   }
 
   layer.aiVideoFrameGenerationPending = false;
@@ -11866,64 +11873,20 @@ export async function addAiVideoLayerToSession(userId, payload) {
     layer.aiLayerEndFrame = getRelativeAssetPathFromAbsolute(lastFrame);
   }
 
-  // Handle case where AI video duration is less than layer's duration
-  if (!shouldShrinkAudioVideoLayerToOutput && duration < requestedDuration) {
-    // AI video is shorter than layer duration
-
-    const paddingFramesPerSecond = getSessionFramesPerSecondWithLog(
-      sessionDataValue,
-      'VideoSession.applyAiVideoPadding'
-    );
-    const totalFramesInVideo = Math.round(duration * paddingFramesPerSecond);
-    const frameOffset = totalFramesInVideo;
-    const frameDuration = Math.round((requestedDuration - duration) * paddingFramesPerSecond);
-
-    const lastFrameRelativePath = getRelativeAssetPathFromAbsolute(lastFrame)
-      || path.relative(path.join(process.cwd(), 'assets'), lastFrame);
-
-    // Create new image item
-    const newImageItem = {
-      type: 'image',
-      src: lastFrameRelativePath.startsWith('/')
-        ? lastFrameRelativePath.replace(/\\/g, '/')
-        : `/${lastFrameRelativePath.replace(/\\/g, '/')}`,
-      x: 0,
-      y: 0,
-      width: canvasDimensions.width,
-      height: canvasDimensions.height,
-      id: `item_last_frame_${layer._id.toString()}`,
-      isAiVideoPaddingFrame: true,
-      config: {
-        frameRate: paddingFramesPerSecond,
-        isAiVideoPaddingFrame: true,
-        frameDuration: frameDuration,
-        frameOffset: frameOffset,
-      },
-      animations: [], // No animations for the static image
-    };
-
-    if (!layer.imageSession.activeItemList) {
-      layer.imageSession.activeItemList = [];
-    }
-    layer.imageSession.activeItemList.push(newImageItem);
-
-    layer.frameGenerationPending = true;
-
-    // Keep layer.duration as requestedDuration
-  } else if (duration > requestedDuration) {
-    // AI video is longer than layer duration
-    // Optionally, implement trimming logic if necessary
-
-    if (!trimScene) {
-      // If trimScene is not set, keep the layer duration as requestedDuration
-      layer.duration = videoOriginalDuration;
-      layer.frameGenerationPending = true;
-    }
-
+  if (!isTimelineDerivative) {
+    // A replacement base asset starts on its own source clock.
+    layer.clipStart = false;
+    layer.clipEnd = false;
+    layer.clipStartFrames = 0;
+    layer.clipEndFrames = 0;
+    layer.startFrame = 0;
+    layer.endFrame = frameCount;
   }
 
-  // The layer's duration remains as requestedDuration
-
+  if (!isTimelineDerivative && (duration < requestedDuration || (duration > requestedDuration && !trimScene))) {
+    layer.duration = frameSafeVideoDuration || videoOriginalDuration;
+    layer.frameGenerationPending = true;
+  }
 
   // Save the updated session data
   await sessionDataValue.save();
@@ -12432,17 +12395,11 @@ export async function addVideoFromLibraryToSession(userId, payload) {
     throw new Error('The selected video asset could not be found on the processor.');
   }
 
-  const sourceVideoMetadata = await getVideoMetadata(absoluteSourceVideoPath);
-  const sourceDuration = Number(sourceVideoMetadata?.format?.duration);
-  if (!Number.isFinite(sourceDuration) || sourceDuration <= 0) {
-    throw new Error('Unable to read the selected library video.');
-  }
-
+  const sourceFramesPerSecond = getSessionFramesPerSecondWithLog(sessionDataValue, 'VideoSession.libraryImport');
   const normalizedVideoPath = await normalizeVideoAssetToMp4WithoutAudio(absoluteSourceVideoPath, {
-    sessionId,
-    layerId,
-    prefix: 'library_video',
+    sessionId, layerId, prefix: 'library_video',
   });
+  const { duration: sourceDuration } = await getVideoTimeline(normalizedVideoPath, sourceFramesPerSecond);
   const {
     audioPath: extractedAudioPath,
     leadingSilenceTrimSeconds = 0,
@@ -12451,6 +12408,7 @@ export async function addVideoFromLibraryToSession(userId, payload) {
     sessionId,
     layerId,
     prefix: 'library_video',
+    framesPerSecond: sourceFramesPerSecond,
     trimUploadedAudioEdgeSilence: false,
   });
 
@@ -12496,7 +12454,7 @@ export async function addVideoFromLibraryToSession(userId, payload) {
   layer.aiVideoFrameGenerationPending = false;
   layer.initFramesGenerated = false;
   layer.frameGenerationPending = true;
-  layer.duration = Math.floor(sourceDuration * 100) / 100;
+  layer.duration = sourceDuration;
   layer.frames = [];
   layer.clipStart = false;
   layer.clipEnd = false;
@@ -12704,11 +12662,12 @@ async function applyQueuedVideoLayerEditTask(taskId) {
         sessionId,
         layerId,
         prefix: 'video_edit',
+        framesPerSecond: getSessionFramesPerSecondWithLog(sessionDataValue, 'VideoSession.videoEditAudio'),
         trimUploadedAudioEdgeSilence: false,
       }));
     }
-    const editedVideoMetadata = await getVideoMetadata(renderedEditedVideoPath);
-    const editedVideoDuration = Math.floor((Number(editedVideoMetadata?.format?.duration) || 0) * 100) / 100;
+    const { duration: editedVideoDuration } = await getVideoTimeline(normalizedVideoPath,
+      getSessionFramesPerSecondWithLog(sessionDataValue, 'VideoSession.videoEdit'));
     if (!Number.isFinite(editedVideoDuration) || editedVideoDuration <= 0) {
       throw new Error('Unable to read the edited video duration.');
     }

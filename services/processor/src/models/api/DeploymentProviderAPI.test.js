@@ -41,7 +41,7 @@ test('Anthropic credentials expose Claude for chat and assistant', () => {
     anthropic: { ok: true, status: 'valid' },
   });
   assert.deepEqual(available.providers, ['anthropic']);
-  assert.deepEqual(available.models, ['claude-opus-5.5']);
+  assert.deepEqual(available.models, ['claude-fable-5.1', 'claude-opus-5.5']);
   assert.deepEqual(available.actions, ['assistant', 'chat']);
 });
 
@@ -106,7 +106,7 @@ test('Samsar fallback availability includes Qwen 3.8 and media models', () => {
 test('OpenRouter availability exposes all inference models and no media-generation models', () => {
   const available = buildAvailableDeploymentModels({ openrouter: { ok: true, status: 'valid' } });
   assert.deepEqual(available.providers, ['openrouter']);
-  assert.deepEqual(available.models, ['QWEN3.8', 'claude-opus-5.5', 'gemini-4-argon', 'gpt-6-astra']);
+  assert.deepEqual(available.models, ['QWEN3.8', 'claude-fable-5.1', 'claude-opus-5.5', 'gemini-4-argon', 'gpt-6-astra', 'gpt-6.1-sol']);
   assert.deepEqual(available.actions, ['assistant', 'chat']);
 });
 

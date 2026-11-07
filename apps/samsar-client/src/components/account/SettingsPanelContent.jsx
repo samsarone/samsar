@@ -1,3 +1,5 @@
+import { useUiLanguage } from '../../hooks/useUiLanguage.js';
+import { translateText as uiText, normalizeUiLanguage } from '../../utils/localization.js';
 import { useEffect, useMemo, useRef, useState } from "react";
 import { FaChevronDown, FaChevronRight, FaPause, FaPlay } from "react-icons/fa";
 import { useLocation, useNavigate } from "react-router-dom";
@@ -10,7 +12,7 @@ import { useUser } from "../../contexts/UserContext.jsx";
 import { useLocalization } from "../../contexts/LocalizationContext.jsx";
 import { useAlertDialog } from "../../contexts/AlertDialogContext.jsx";
 import { getHeaders } from "../../utils/web.jsx";
-import { SUPPORTED_LANGUAGES } from "../../constants/supportedLanguages.js";
+import { SUPPORTED_LANGUAGES, resolveLanguageCode } from "../../constants/supportedLanguages.js";
 import {
   getFontOptionsForLanguage,
   mergeFontPreferencesWithDefaults,
@@ -31,9 +33,9 @@ import {
 } from "../../constants/audioProviderAvailability.js";
 
 const BACKING_TRACK_MODEL_OPTIONS = [
-  { value: "ELEVENLABS_MUSIC", label: "ElevenLabs" },
-  { value: "LYRIA3", label: "Lyria 3" },
-  { value: "CUSTOM_TEXT_TO_MUSIC", label: "Custom Text to Music" },
+  { value: "ELEVENLABS_MUSIC", get label() { return uiText("ElevenLabs"); } },
+  { value: "LYRIA3", get label() { return uiText("Lyria 3"); } },
+  { value: "CUSTOM_TEXT_TO_MUSIC", get label() { return uiText("Custom Text to Music"); } },
 ];
 
 function normalizeBackingTrackModelValue(value) {
@@ -41,11 +43,11 @@ function normalizeBackingTrackModelValue(value) {
 }
 
 const SETTINGS_TABS = [
-  { key: "general", label: "General" },
-  { key: "fonts", label: "Fonts" },
-  { key: "agent", label: "Agent" },
-  { key: "security", label: "Security" },
-  { key: "danger", label: "Danger" },
+  { key: "general", get label() { return uiText("General"); } },
+  { key: "fonts", get label() { return uiText("Fonts"); } },
+  { key: "agent", get label() { return uiText("Agent"); } },
+  { key: "security", get label() { return uiText("Security"); } },
+  { key: "danger", get label() { return uiText("Danger"); } },
 ];
 
 const CUSTOM_ADAPTER_FIELDS = [
@@ -65,12 +67,12 @@ const CUSTOM_ADAPTER_FIELDS = [
   "text_to_sound_effect_authorization",
 ];
 const CUSTOM_ENDPOINT_OPERATION_OPTIONS = [
-  { key: "image_to_video", label: "Image to video" },
-  { key: "text_to_image", label: "Text to image" },
-  { key: "text_to_video", label: "Text to video" },
-  { key: "text_to_speech", label: "Text to speech" },
-  { key: "text_to_music", label: "Text to music" },
-  { key: "text_to_sound_effect", label: "Text to sound effect" },
+  { key: "image_to_video", get label() { return uiText("Image to video"); } },
+  { key: "text_to_image", get label() { return uiText("Text to image"); } },
+  { key: "text_to_video", get label() { return uiText("Text to video"); } },
+  { key: "text_to_speech", get label() { return uiText("Text to speech"); } },
+  { key: "text_to_music", get label() { return uiText("Text to music"); } },
+  { key: "text_to_sound_effect", get label() { return uiText("Text to sound effect"); } },
 ];
 const CUSTOM_ENDPOINT_OPERATION_KEYS = new Set(
   CUSTOM_ENDPOINT_OPERATION_OPTIONS.map((option) => option.key)
@@ -226,19 +228,19 @@ function buildCustomAdaptersPayload(customAdapters) {
 
     const operation = typeof row.operation === "string" ? row.operation.trim() : "";
     if (!CUSTOM_ENDPOINT_OPERATION_KEYS.has(operation)) {
-      return { error: `Endpoint ${index + 1} has an unsupported operation.` };
+      return { error: uiText("Endpoint {value0} has an unsupported operation.", { value0: index + 1 }) };
     }
 
     const baseUrl = row.base_url?.trim();
     const endpoint = row.endpoint?.trim();
     if (!baseUrl) {
-      return { error: `Base URL is required for endpoint ${index + 1}.` };
+      return { error: uiText("Base URL is required for endpoint {value0}.", { value0: index + 1 }) };
     }
     if (!endpoint) {
-      return { error: `Model endpoint is required for endpoint ${index + 1}.` };
+      return { error: uiText("Model endpoint is required for endpoint {value0}.", { value0: index + 1 }) };
     }
     if (!row.api_key?.trim() && row.has_api_key !== true) {
-      return { error: `API key is required for endpoint ${index + 1}.` };
+      return { error: uiText("API key is required for endpoint {value0}.", { value0: index + 1 }) };
     }
 
     customEndpoints.push({
@@ -275,13 +277,14 @@ function buildCustomAdaptersPayload(customAdapters) {
   }
 
   if (!payload.base_url) {
-    return { error: "Base URL is required for custom configuration." };
+    return { error: uiText("Base URL is required for custom configuration.") };
   }
 
   return { customAdapters: payload };
 }
 
 export default function SettingsPanelContent(props) {
+  const uiLanguage = useUiLanguage();
   const {
     logoutUser,
     updateUserDetails,
@@ -296,19 +299,19 @@ export default function SettingsPanelContent(props) {
   const navigate = useNavigate();
   const location = useLocation();
 
-  const textColor = colorMode === "dark" ? "text-slate-100" : "text-slate-900";
+  const textColor = 'text-fg';
   const cardBgColor = "app-panel";
   const secondaryTextColor = colorMode === "dark" ? "text-slate-400" : "text-slate-600";
-  const borderColor = colorMode === "dark" ? "border-[#3a4050]" : "border-slate-200";
+  const borderColor = 'border-line';
   const inputBgColor = "app-field";
-  const mutedBg = colorMode === "dark" ? "bg-[#20232e]" : "bg-slate-50";
+  const mutedBg = 'bg-surface-muted';
   const PROCESSOR_SERVER = import.meta.env.VITE_PROCESSOR_API;
 
   const [activeTab, setActiveTab] = useState(() =>
     resolveSettingsTabFromPath(location.pathname)
   );
   const [username, setUsername] = useState(user.username || "");
-  const [preferredLanguage, setPreferredLanguage] = useState(user.preferredLanguage || "en");
+  const [preferredLanguage, setPreferredLanguage] = useState(normalizeUiLanguage(user.preferredLanguage));
   const [backingTrackModel, setBackingTrackModel] = useState(
     normalizeBackingTrackModelValue(user.backingTrackModel)
   );
@@ -341,7 +344,7 @@ export default function SettingsPanelContent(props) {
       BACKING_TRACK_MODEL_OPTIONS.map((option) => ({ ...option, key: option.value, name: option.label })),
       audioAvailability
     ).map((option) => ({ value: option.value, label: option.label })),
-    [audioAvailability]
+    [uiLanguage, audioAvailability]
   );
   const speakerGroups = useMemo(() => (
     filterSpeakerGroupsForAudioAvailability(AGENT_SPEAKER_GROUPS.map((group) => (
@@ -364,7 +367,7 @@ export default function SettingsPanelContent(props) {
     if (!user) return;
 
     setUsername(user.username || "");
-    setPreferredLanguage(user.preferredLanguage || "en");
+    setPreferredLanguage(normalizeUiLanguage(user.preferredLanguage));
     setBackingTrackModel(normalizeBackingTrackModelValue(user.backingTrackModel));
     setFontPreferences(mergeFontPreferencesWithDefaults(user.fontPreferences));
     setSpeakerOptions(normalizeSpeakerOptionsState(user.speakerOptions));
@@ -404,7 +407,7 @@ export default function SettingsPanelContent(props) {
 
   const toggleSpeakerPreview = async (speaker) => {
     if (!speaker?.previewURL && !speaker?.previewRequiresAuth) {
-      toast.error("Preview unavailable for this speaker.", {
+      toast.error(uiText("Preview unavailable for this speaker."), {
         position: "bottom-center",
       });
       return;
@@ -446,7 +449,7 @@ export default function SettingsPanelContent(props) {
         audioPreviewObjectUrlRef.current = null;
       }
       setCurrentlyPlayingSpeaker(null);
-      toast.error("Unable to play speaker preview.", {
+      toast.error(uiText("Unable to play speaker preview."), {
         position: "bottom-center",
       });
     }
@@ -657,10 +660,8 @@ export default function SettingsPanelContent(props) {
     <div className={`min-w-0 rounded-lg shadow-sm border ${borderColor} ${cardBgColor} ${textColor} p-4 space-y-5 sm:p-6 sm:space-y-6`}>
       <div className="space-y-3">
         <div>
-          <h2 className="text-xl font-semibold">Settings</h2>
-          <p className={`text-sm ${secondaryTextColor}`}>
-            Manage your workspace defaults, agent voices, and account security.
-          </p>
+          <h2 className="text-xl font-semibold">{uiText("Settings")}</h2>
+          <p className={`text-sm ${secondaryTextColor}`}>{uiText("Manage your workspace defaults, agent voices, and account security.")}</p>
         </div>
         <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1 sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0 sm:pb-0">
           {SETTINGS_TABS.map((tab) => (
@@ -681,7 +682,7 @@ export default function SettingsPanelContent(props) {
             <h3 className="text-lg font-semibold">{t("account.updateSettingsTitle")}</h3>
             <div className="grid grid-cols-1 md:grid-cols-3 w-full gap-4">
               <div>
-                <label className={`block text-sm mb-1 ${secondaryTextColor}`}>Username</label>
+                <label className={`block text-sm mb-1 ${secondaryTextColor}`}>{uiText("Username")}</label>
                 <input
                   type="text"
                   value={username}
@@ -709,9 +710,7 @@ export default function SettingsPanelContent(props) {
                 </select>
               </div>
               <div>
-                <label className={`block text-sm mb-1 ${secondaryTextColor}`}>
-                  Express backing track
-                </label>
+                <label className={`block text-sm mb-1 ${secondaryTextColor}`}>{uiText("Express backing track")}</label>
                 <select
                   value={backingTrackModel}
                   onChange={(e) => setBackingTrackModel(e.target.value)}
@@ -738,7 +737,7 @@ export default function SettingsPanelContent(props) {
         <form onSubmit={handleUpdateCustomAdapters}>
           <div className="space-y-4">
             <div>
-              <h3 className="text-lg font-semibold">Custom FAL-compatible endpoints</h3>
+              <h3 className="text-lg font-semibold">{uiText("Custom FAL-compatible endpoints")}</h3>
             </div>
             <div className="space-y-4">
               {(Array.isArray(customAdapters.custom_endpoints)
@@ -751,23 +750,21 @@ export default function SettingsPanelContent(props) {
                 >
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                     <div>
-                      <div className="text-sm font-semibold">Endpoint {index + 1}</div>
+                      <div className="text-sm font-semibold">{uiText("Endpoint {value0}", { value0: index + 1 })}</div>
                     </div>
                     <button
                       type="button"
                       onClick={() => handleRemoveCustomEndpoint(index)}
                       className={`rounded px-3 py-2 text-sm border sm:py-1 ${borderColor} ${inputBgColor}`}
-                    >
-                      Remove
-                    </button>
+                    >{uiText("Remove")}</button>
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 w-full gap-4">
                     <div>
-                      <label className={`block text-sm mb-1 ${secondaryTextColor}`}>Name</label>
+                      <label className={`block text-sm mb-1 ${secondaryTextColor}`}>{uiText("Name")}</label>
                       <input
                         type="text"
                         value={endpoint.name}
-                        placeholder="Happy Horse 1.1"
+                        placeholder={uiText("Happy Horse 1.1")}
                         onChange={(e) =>
                           handleCustomEndpointFieldChange(index, "name", e.target.value)
                         }
@@ -775,9 +772,7 @@ export default function SettingsPanelContent(props) {
                       />
                     </div>
                     <div>
-                      <label className={`block text-sm mb-1 ${secondaryTextColor}`}>
-                        Pipeline stage
-                      </label>
+                      <label className={`block text-sm mb-1 ${secondaryTextColor}`}>{uiText("Pipeline stage")}</label>
                       <select
                         value={endpoint.operation}
                         onChange={(e) =>
@@ -793,9 +788,7 @@ export default function SettingsPanelContent(props) {
                       </select>
                     </div>
                     <div>
-                      <label className={`block text-sm mb-1 ${secondaryTextColor}`}>
-                        FAL base URL
-                      </label>
+                      <label className={`block text-sm mb-1 ${secondaryTextColor}`}>{uiText("FAL base URL")}</label>
                       <input
                         type="url"
                         value={endpoint.base_url}
@@ -807,11 +800,11 @@ export default function SettingsPanelContent(props) {
                       />
                     </div>
                     <div>
-                      <label className={`block text-sm mb-1 ${secondaryTextColor}`}>API key</label>
+                      <label className={`block text-sm mb-1 ${secondaryTextColor}`}>{uiText("API key")}</label>
                       <input
                         type="password"
                         value={endpoint.api_key}
-                        placeholder={endpoint.has_api_key ? "Saved on server" : ""}
+                        placeholder={endpoint.has_api_key ? uiText("Saved on server") : ""}
                         onChange={(e) =>
                           handleCustomEndpointFieldChange(index, "api_key", e.target.value)
                         }
@@ -820,9 +813,7 @@ export default function SettingsPanelContent(props) {
                       />
                     </div>
                     <div className="md:col-span-2">
-                      <label className={`block text-sm mb-1 ${secondaryTextColor}`}>
-                        Model endpoint
-                      </label>
+                      <label className={`block text-sm mb-1 ${secondaryTextColor}`}>{uiText("Model endpoint")}</label>
                       <input
                         type="text"
                         value={endpoint.endpoint}
@@ -838,13 +829,9 @@ export default function SettingsPanelContent(props) {
               ))}
             </div>
             <div className="grid gap-3 sm:flex sm:flex-wrap">
-              <SecondaryButton type="button" onClick={handleAddCustomEndpoint} className="w-full sm:w-auto">
-                Add Endpoint
-              </SecondaryButton>
-              <SecondaryButton type="submit" className="w-full sm:w-auto">Save Custom Configuration</SecondaryButton>
-              <SecondaryButton type="button" onClick={handleClearCustomAdapters} className="w-full sm:w-auto">
-                Clear Configuration
-              </SecondaryButton>
+              <SecondaryButton type="button" onClick={handleAddCustomEndpoint} className="w-full sm:w-auto">{uiText("Add Endpoint")}</SecondaryButton>
+              <SecondaryButton type="submit" className="w-full sm:w-auto">{uiText("Save Custom Configuration")}</SecondaryButton>
+              <SecondaryButton type="button" onClick={handleClearCustomAdapters} className="w-full sm:w-auto">{uiText("Clear Configuration")}</SecondaryButton>
             </div>
           </div>
         </form>
@@ -853,10 +840,8 @@ export default function SettingsPanelContent(props) {
       {activeTab === "fonts" && (
         <form onSubmit={handleUpdateFontPreferences}>
           <div className="space-y-4">
-            <h3 className="text-lg font-semibold">Express Generation Fonts</h3>
-            <p className={`text-sm ${secondaryTextColor}`}>
-              Set the default subtitle and narrator fonts for each language.
-            </p>
+            <h3 className="text-lg font-semibold">{uiText("Express Generation Fonts")}</h3>
+            <p className={`text-sm ${secondaryTextColor}`}>{uiText("Set the default subtitle and narrator fonts for each language.")}</p>
             <div className="space-y-3">
               {SUPPORTED_LANGUAGES.map((language) => {
                 const fontOptions = getFontOptionsForLanguage(language.code);
@@ -868,12 +853,10 @@ export default function SettingsPanelContent(props) {
                   >
                     <div>
                       <div className="text-sm font-semibold">{language.nativeName}</div>
-                      <div className={`text-xs ${secondaryTextColor}`}>{language.name}</div>
+                      <div className={`text-xs ${secondaryTextColor}`}>{uiText(language.name)}</div>
                     </div>
                     <div>
-                      <label className={`block text-sm mb-1 ${secondaryTextColor}`}>
-                        Subtitle font
-                      </label>
+                      <label className={`block text-sm mb-1 ${secondaryTextColor}`}>{uiText("Subtitle font")}</label>
                       <select
                         value={preferences.expressGenerationTextFont || fontOptions[0]}
                         onChange={(e) =>
@@ -893,9 +876,7 @@ export default function SettingsPanelContent(props) {
                       </select>
                     </div>
                     <div>
-                      <label className={`block text-sm mb-1 ${secondaryTextColor}`}>
-                        Narrator font
-                      </label>
+                      <label className={`block text-sm mb-1 ${secondaryTextColor}`}>{uiText("Narrator font")}</label>
                       <select
                         value={preferences.expressGenerationSpeakerFont || fontOptions[0]}
                         onChange={(e) =>
@@ -919,7 +900,7 @@ export default function SettingsPanelContent(props) {
               })}
             </div>
             <div className="block">
-              <SecondaryButton type="submit" className="w-full sm:w-auto">Save Font Preferences</SecondaryButton>
+              <SecondaryButton type="submit" className="w-full sm:w-auto">{uiText("Save Font Preferences")}</SecondaryButton>
             </div>
           </div>
         </form>
@@ -929,11 +910,8 @@ export default function SettingsPanelContent(props) {
         <form onSubmit={handleUpdateSpeakerOptions}>
           <div className="space-y-4">
             <div>
-              <h3 className="text-lg font-semibold">Speakers</h3>
-              <p className={`text-sm ${secondaryTextColor}`}>
-                Choose fallback TTS providers and preferred voices for agent-created speech.
-                Sanskrit and Latin continue to use the legacy OpenAI speaker assignment.
-              </p>
+              <h3 className="text-lg font-semibold">{uiText("Speakers")}</h3>
+              <p className={`text-sm ${secondaryTextColor}`}>{uiText("Choose fallback TTS providers and preferred voices for agent-created speech.")}</p>
             </div>
 
             <div className="space-y-3">
@@ -962,7 +940,7 @@ export default function SettingsPanelContent(props) {
             </div>
 
             <div className="block">
-              <SecondaryButton type="submit" className="w-full sm:w-auto">Save Speaker Preferences</SecondaryButton>
+              <SecondaryButton type="submit" className="w-full sm:w-auto">{uiText("Save Speaker Preferences")}</SecondaryButton>
             </div>
           </div>
         </form>
@@ -1039,14 +1017,13 @@ export default function SettingsPanelContent(props) {
 }
 
 function SettingsTabButton({ label, isActive, onClick, colorMode }) {
+  useUiLanguage();
   const activeClasses =
     colorMode === "dark"
       ? "bg-[#292d3a] text-rose-200 border border-rose-400/40"
       : "bg-rose-50 text-rose-700 border border-rose-100";
   const idleClasses =
-    colorMode === "dark"
-      ? "bg-[#151720] text-slate-300 border border-[#3a4050] hover:bg-[#292d3a]"
-      : "bg-white text-slate-600 border border-slate-200 hover:bg-slate-50";
+    `bg-surface-sunken text-fg-tertiary border border-line ${colorMode === "dark" ? 'hover:bg-[#292d3a]' : 'hover:bg-slate-50'}`;
 
   return (
     <button
@@ -1076,6 +1053,7 @@ function SpeakerProviderCard({
   onToggleSpeaker,
   onTogglePreview,
 }) {
+  const uiLanguage = useUiLanguage();
   const selectedSpeakers = Array.isArray(speakerOptions?.[group.selectionKey])
     ? speakerOptions[group.selectionKey]
     : [];
@@ -1083,10 +1061,10 @@ function SpeakerProviderCard({
   const speakers = Array.isArray(group.speakers) ? group.speakers : [];
   const isUsingGoogleCache = source === "cache" || source === "client-cache";
   const emptyStateText = isLoading
-    ? "Loading Google voices..."
+    ? uiText("Loading Google voices...")
     : error
-      ? "Google voices are unavailable. Check processor Google credentials and try again."
-      : "No speakers are available for this provider.";
+      ? uiText("Google voices are unavailable. Check processor Google credentials and try again.")
+      : uiText("No speakers are available for this provider.");
 
   return (
     <div className={`rounded-xl border ${borderColor} ${mutedBg} p-4 space-y-3`}>
@@ -1100,26 +1078,18 @@ function SpeakerProviderCard({
           />
           <div>
             <div className="text-sm font-semibold">{group.label}</div>
-            <div className={`text-xs ${secondaryTextColor}`}>
-              Limit fallback speaker assignment to this provider when individual selections are
-              exhausted.
-            </div>
-            <div className={`text-xs ${secondaryTextColor} mt-1`}>
-              {selectedSpeakers.length} preferred speaker{selectedSpeakers.length === 1 ? "" : "s"} selected
-              {isUsingGoogleCache ? " | Google cache" : ""}
-            </div>
+            <div className={`text-xs ${secondaryTextColor}`}>{uiText("Limit fallback speaker assignment to this provider when individual selections are exhausted.")}</div>
+            <div className={`text-xs ${secondaryTextColor} mt-1`}>{uiText("{value0} preferred speaker{value1} selected {value2}", { value0: selectedSpeakers.length, value1: selectedSpeakers.length === 1 ? "" : (uiLanguage === "en" ? "s" : ""), value2: isUsingGoogleCache ? uiText(" | Google cache") : "" })}</div>
           </div>
         </div>
 
         <button
           type="button"
           onClick={onToggleExpand}
-          className={`inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm border ${borderColor} ${
-            colorMode === "dark" ? "bg-[#151720] hover:bg-[#292d3a]" : "bg-white hover:bg-slate-50"
-          }`}
+          className={`inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm border ${borderColor} bg-surface-sunken ${colorMode === "dark" ? 'hover:bg-[#292d3a]' : 'hover:bg-slate-50'}`}
         >
           {isExpanded ? <FaChevronDown /> : <FaChevronRight />}
-          {isExpanded ? "Hide Speakers" : "Choose Speakers"}
+          {isExpanded ? uiText("Hide Speakers") : uiText("Choose Speakers")}
         </button>
       </div>
 
@@ -1127,9 +1097,7 @@ function SpeakerProviderCard({
         <div className="grid gap-2">
           {speakers.length === 0 && (
             <div
-              className={`rounded-lg border ${borderColor} px-3 py-3 text-sm ${secondaryTextColor} ${
-                colorMode === "dark" ? "bg-[#151720]" : "bg-white"
-              }`}
+              className={`rounded-lg border ${borderColor} px-3 py-3 text-sm ${secondaryTextColor} bg-surface-sunken`}
             >
               {emptyStateText}
             </div>
@@ -1143,9 +1111,7 @@ function SpeakerProviderCard({
             return (
               <div
                 key={`${speaker.provider}:${speaker.value}`}
-                className={`rounded-lg border ${borderColor} px-3 py-3 ${
-                  colorMode === "dark" ? "bg-[#151720]" : "bg-white"
-                }`}
+                className={`rounded-lg border ${borderColor} px-3 py-3 bg-surface-sunken`}
               >
                 <div className="flex items-center gap-3">
                   <input
@@ -1169,7 +1135,7 @@ function SpeakerProviderCard({
                     className={`inline-flex h-9 w-9 items-center justify-center rounded-full border ${borderColor} ${
                       colorMode === "dark" ? "bg-[#292d3a] hover:bg-[#1d2b49]" : "bg-slate-50 hover:bg-slate-100"
                     }`}
-                    aria-label={isPlaying ? `Pause ${speaker.label}` : `Play ${speaker.label}`}
+                    aria-label={isPlaying ? uiText("Pause {value0}", { value0: speaker.label }) : uiText("Play {value0}", { value0: speaker.label })}
                   >
                     {isPlaying ? <FaPause /> : <FaPlay />}
                   </button>
@@ -1187,11 +1153,12 @@ function DangerConfirmDialog({
   title,
   description,
   confirmLabel,
-  cancelLabel = "Cancel",
+  cancelLabel = uiText("Cancel"),
   onConfirm,
   onCancel,
   colorMode,
 }) {
+  useUiLanguage();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const isMountedRef = useRef(true);
 
@@ -1202,9 +1169,7 @@ function DangerConfirmDialog({
   }, []);
 
   const surfaceClasses =
-    colorMode === "dark"
-      ? "bg-[#181b24] text-slate-100 border border-[#3a4050]"
-      : "bg-white text-slate-900 border border-slate-200";
+    'bg-surface text-fg border border-line';
   const mutedText = colorMode === "dark" ? "text-slate-400" : "text-slate-600";
   const iconBg =
     colorMode === "dark"
@@ -1243,11 +1208,7 @@ function DangerConfirmDialog({
       </div>
       <div className="mt-6 flex justify-end gap-3">
         <button
-          className={`px-4 py-2 rounded-lg border ${mutedText} ${
-            colorMode === "dark"
-              ? "border-[#3a4050] hover:bg-[#151720]"
-              : "border-slate-200 hover:bg-slate-50"
-          }`}
+          className={`px-4 py-2 rounded-lg border ${mutedText} border-line ${colorMode === "dark" ? 'hover:bg-[#151720]' : 'hover:bg-slate-50'}`}
           onClick={onCancel}
           disabled={isSubmitting}
         >
@@ -1258,7 +1219,7 @@ function DangerConfirmDialog({
           onClick={handleConfirm}
           disabled={isSubmitting}
         >
-          {isSubmitting ? "Working..." : confirmLabel}
+          {isSubmitting ? uiText("Working...") : confirmLabel}
         </button>
       </div>
     </div>

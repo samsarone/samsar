@@ -1,3 +1,5 @@
+import { useUiLanguage } from '../../../../hooks/useUiLanguage.js';
+import { translateText as uiText } from '../../../../utils/localization.js';
 import { useState } from 'react';
 import SecondaryButton from '../../../common/SecondaryButton.tsx';
 import ModelAdapterSelect from '../../../common/ModelAdapterSelect.jsx';
@@ -5,6 +7,7 @@ import { useColorMode } from '../../../../contexts/ColorMode.jsx';
 import { useDeploymentModelAvailability } from '../../../../hooks/useDeploymentModelAvailability.js';
 
 export default function VideoAiVideoOptionsViewer(props) {
+  useUiLanguage();
   const {
     currentLayer,
     removeVideoLayer,
@@ -28,24 +31,22 @@ export default function VideoAiVideoOptionsViewer(props) {
     isStandaloneDeployment,
     primaryAdapterByModel,
   } = useDeploymentModelAvailability();
-  const soundEffectPromptClassName = colorMode === 'dark'
-    ? 'w-full text-sm p-1 bg-[#20232e] text-slate-100 border border-[#3a4050] rounded'
-    : 'w-full text-sm p-1 bg-white text-slate-900 border border-slate-200 rounded placeholder:text-slate-400';
+  const soundEffectPromptClassName = `w-full text-sm p-1 bg-surface-raised text-fg border border-line rounded ${colorMode === 'dark' ? '' : 'placeholder:text-slate-400'}`;
 
   // Lip sync options
   const lipSyncOptions = [
-    { label: 'HummingBird Lip Sync', value: 'HUMMINGBIRDLIPSYNC' },
-    { label: 'Latent Sync', value: 'LATENTSYNC' },
-    { label: 'Sync Lip Sync', value: 'SYNCLIPSYNC' },
-    { label: 'Kling Lip Sync', value: 'KLINGLIPSYNC' },
-    {label: 'Creatify Lip Sync', value: 'CREATIFYLIPSYNC' }
+    { label: uiText("HummingBird Lip Sync"), value: 'HUMMINGBIRDLIPSYNC' },
+    { label: uiText("Latent Sync"), value: 'LATENTSYNC' },
+    { label: uiText("Sync Lip Sync"), value: 'SYNCLIPSYNC' },
+    { label: uiText("Kling Lip Sync"), value: 'KLINGLIPSYNC' },
+    {label: uiText("Creatify Lip Sync"), value: 'CREATIFYLIPSYNC' }
   ];
   const [selectedLipSyncOption, setSelectedLipSyncOption] = useState(lipSyncOptions[0]);
 
   // NEW: Sound effect options + selection
   const soundEffectOptions = [
-    { label: 'MMAudio V2', value: 'MMAUDIOV2' },
-    { label: 'Mirelo AI', value: 'MIRELOAI' }
+    { label: uiText("MMAudio V2"), value: 'MMAUDIOV2' },
+    { label: uiText("Mirelo AI"), value: 'MIRELOAI' }
   ];
   const [selectedSoundEffectOption, setSelectedSoundEffectOption] = useState(soundEffectOptions[0]);
   const currentUploadTask = currentLayer?.userVideoUploadTask || null;
@@ -56,10 +57,10 @@ export default function VideoAiVideoOptionsViewer(props) {
   );
   const isUserUploadedVideo = Boolean(currentLayer?.hasUserVideoLayer || currentLayer?.userVideoLayer);
   const uploadStatusLabel = currentUploadTask?.status === 'UPLOADING'
-    ? `Uploading video${Number.isFinite(currentUploadTask?.progressPercent) ? ` (${currentUploadTask.progressPercent}%)` : ''}`
-    : 'Uploaded video is being processed for this layer.';
+    ? uiText("Uploading video{value0}", { value0: Number.isFinite(currentUploadTask?.progressPercent) ? ` (${currentUploadTask.progressPercent}%)` : '' })
+    : uiText("Uploaded video is being processed for this layer.");
   const uploadStatusMessage = currentUploadTask?.message
-    || 'The editor will refresh automatically when the background task finishes.';
+    || uiText("The editor will refresh automatically when the background task finishes.");
 
   const handleDeleteLayer = () => {
     if (removeVideoLayer) {
@@ -92,7 +93,7 @@ export default function VideoAiVideoOptionsViewer(props) {
 
   const lipSyncOptionViewer = currentLayerHasSpeechLayer ? (
     <div className="mb-4 flex flex-col items-center">
-      <div className="text-sm mb-2">Lip Sync</div>
+      <div className="text-sm mb-2">{uiText("Lip Sync")}</div>
       <div className={selectShellClass}>
         <ModelAdapterSelect
           options={lipSyncOptions}
@@ -106,14 +107,12 @@ export default function VideoAiVideoOptionsViewer(props) {
           truncateLabels={isSidebarCollapsed}
         />
       </div>
-      <SecondaryButton onClick={handleRequestLipSync} className={buttonExtraClass}>
-        Request Lip Sync
-      </SecondaryButton>
+      <SecondaryButton onClick={handleRequestLipSync} className={buttonExtraClass}>{uiText("Request Lip Sync")}</SecondaryButton>
     </div>
   ) : (
     <div className="mb-2 text-sm">
-      <p>Create a speech layer</p>
-      <p>to generate lipsync</p>
+      <p>{uiText("Create a speech layer")}</p>
+      <p>{uiText("to generate lipsync")}</p>
     </div>
   );
 
@@ -130,9 +129,7 @@ export default function VideoAiVideoOptionsViewer(props) {
           <SecondaryButton
             onClick={handleDeleteLayer}
             extraClasses={`bg-red-500 hover:bg-red-600 ${buttonExtraClass}`.trim()}
-          >
-            Cancel Upload
-          </SecondaryButton>
+          >{uiText("Cancel Upload")}</SecondaryButton>
         </div>
       </div>
     );
@@ -141,19 +138,13 @@ export default function VideoAiVideoOptionsViewer(props) {
   if (isUserUploadedVideo) {
     return (
       <div className="flex flex-col items-center justify-center mt-2 mx-auto">
-        <div className="mb-3 text-sm text-center">
-          Uploaded videos are fixed layer video artefacts.
-        </div>
-        <div className="mb-2 text-xs text-center opacity-80">
-          Remove the video to switch this layer back to AI generation.
-        </div>
+        <div className="mb-3 text-sm text-center">{uiText("Uploaded videos are fixed layer video artefacts.")}</div>
+        <div className="mb-2 text-xs text-center opacity-80">{uiText("Remove the video to switch this layer back to AI generation.")}</div>
         <div className="mt-4 mb-2">
           <SecondaryButton
             onClick={handleDeleteLayer}
             extraClasses={`bg-red-500 hover:bg-red-600 ${buttonExtraClass}`.trim()}
-          >
-            Delete Video Layer
-          </SecondaryButton>
+          >{uiText("Delete Video Layer")}</SecondaryButton>
         </div>
       </div>
     );
@@ -166,7 +157,7 @@ export default function VideoAiVideoOptionsViewer(props) {
 
       {/* Sound Effect Section */}
       <div className="mt-2 mb-2 flex flex-col items-center">
-        <div className="text-sm mb-2">Sound Effect</div>
+        <div className="text-sm mb-2">{uiText("Sound Effect")}</div>
 
         {/* NEW: Sound effect model select */}
         <div className={selectShellClass}>
@@ -183,24 +174,20 @@ export default function VideoAiVideoOptionsViewer(props) {
           />
         </div>
 
-        <SecondaryButton onClick={handleRequestSoundEffect} className={buttonExtraClass}>
-          Request Sound Effect
-        </SecondaryButton>
+        <SecondaryButton onClick={handleRequestSoundEffect} className={buttonExtraClass}>{uiText("Request Sound Effect")}</SecondaryButton>
 
         {showSoundEffectPrompt && (
           <div className="flex flex-col items-center mt-2 w-full">
             <textarea
               className={soundEffectPromptClassName}
-              placeholder="Enter prompt for effect"
+              placeholder={uiText("Enter prompt for effect")}
               value={soundEffectPrompt}
               onChange={(e) => setSoundEffectPrompt(e.target.value)}
             />
             <SecondaryButton
               onClick={handleSoundEffectSubmit}
               extraClasses={`mt-2 ${buttonExtraClass}`.trim()}
-            >
-              Submit
-            </SecondaryButton>
+            >{uiText("Submit")}</SecondaryButton>
           </div>
         )}
       </div>
@@ -210,9 +197,7 @@ export default function VideoAiVideoOptionsViewer(props) {
         <SecondaryButton
           onClick={handleDeleteLayer}
           extraClasses={`bg-red-500 hover:bg-red-600 ${buttonExtraClass}`.trim()}
-        >
-          Delete Video Layer
-        </SecondaryButton>
+        >{uiText("Delete Video Layer")}</SecondaryButton>
       </div>
     </div>
   );
