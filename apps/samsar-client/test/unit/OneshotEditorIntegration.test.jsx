@@ -170,6 +170,28 @@ describe('VidGenie project loading and wizard requests', () => {
 });
 
 describe('VidGenie generation lifecycle', () => {
+  it.each([
+    ['claude-fable-5.1', 'xhigh'],
+    ['gpt-6.1-sol', 'high'],
+    ['gemini-4-argon', null],
+  ])('retranslation submits the selected %s model and applicable effort', async (model, effort) => {
+    harness.user.selectedInferenceModel = 'gpt-6-astra';
+    harness.session = {
+      ...harness.session, isExpressGeneration: true,
+      videoLink: 'https://media.example/final.mp4',
+      inferenceModel: model, inferenceEffort: effort,
+    };
+    harness.status = { status: 'COMPLETED', videoLink: harness.session.videoLink };
+    await mountEditor();
+    fireEvent.click(screen.getByRole('button', { name: 'Retranslate', exact: true }));
+    fireEvent.change(screen.getByLabelText('Retranslation language'), { target: { value: 'ja' } });
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Retranslate video' })); });
+    const call = axios.post.mock.calls.find(([url]) => url.endsWith('/retranslate_video'));
+    expect(call).toBeDefined();
+    expect(call[1].input.inference_model).toBe(model);
+    expect(call[1].input.effort).toBe(effort ?? undefined);
+  });
+
   it('shows completed results and keeps the original request collapsed until expanded', async () => {
     harness.session = { ...harness.session, generationType: 'TEXT_TO_VIDEO', inputPrompt: 'Original saved prompt', videoLink: 'https://media.example/final.mp4', isExpressGeneration: true };
     harness.status = { status: 'COMPLETED', videoLink: 'https://media.example/final.mp4' };
@@ -332,4 +354,26 @@ describe('VidGenie image-list requests and JSON editor validation', () => {
     expect(payload.endpoint).toBeUndefined();
     expect(payload.input).toMatchObject({ aspect_ratio: '9:16', enable_subtitles: true, subtitle_language: 'th', session_id: 'project-1' });
   });
+});
+
+it.each(['gpt-6-astra', 'gpt-6.1-sol', 'claude-opus-5.5', 'claude-fable-5.1'].flatMap((model) =>
+  ['high', 'xhigh'].map((effort) => [model, effort])
+))('submits saved %s / %s through the Vidgenie wizard', async (model, effort) => {
+  harness.user.selectedInferenceModel = model;
+  harness.user.selectedInferenceEffort = effort;
+  await mountEditor();
+  await submitPrompt();
+  expect(axios.post.mock.calls[0][1].input).toMatchObject({ inference_model: model, effort });
+});
+
+
+it('migrates a saved Kling selection to v4 while retaining the 36-credit agent rate', async () => {
+  localStorage.setItem('defaultVIdGPTVideoGenerationModel', 'KLINGIMGTOVID3PRO');
+  await mountEditor();
+  expect(screen.getByText('36 Credits / second of video')).toBeVisible();
+  expect(screen.getByText('Kling 4')).toBeVisible();
+  await submitPrompt();
+  const submission = axios.post.mock.calls.find(([url]) => url.includes('/video/'));
+  expect(submission).toBeDefined();
+  expect(JSON.stringify(submission[1])).toContain('KLINGIMGTOVID4');
 });

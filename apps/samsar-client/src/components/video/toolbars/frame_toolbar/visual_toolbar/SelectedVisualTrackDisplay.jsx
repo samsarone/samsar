@@ -1,8 +1,11 @@
+import { useUiLanguage } from '../../../../../hooks/useUiLanguage.js';
+import { translateText as uiText } from '../../../../../utils/localization.js';
 
 import { FaTimes } from 'react-icons/fa';
 import { useColorMode } from '../../../../../contexts/ColorMode.jsx';
 
 export default function SelectedVisualTrackDisplay(props) {
+  useUiLanguage();
   const {
     selectedVisualTrack,
     onDelete,
@@ -24,21 +27,19 @@ export default function SelectedVisualTrackDisplay(props) {
   let statusLabel = '';
   let statusClassName = 'text-neutral-400';
   if (selectedVisualTrack.isSaving) {
-    statusLabel = 'Saving...';
+    statusLabel = uiText('Saving...');
     statusClassName = 'status-muted';
   } else if (selectedVisualTrack.saveError) {
-    statusLabel = 'Save failed';
+    statusLabel = uiText("Save failed");
     statusClassName = 'status-error';
   } else if (selectedVisualTrack.isDirty) {
-    statusLabel = 'Unsaved';
+    statusLabel = uiText('Unsaved');
     statusClassName = 'status-warning';
   }
 
-  const metaChipClassName = colorMode === 'dark'
-    ? 'bg-slate-900/70 border border-slate-700/70 text-slate-200'
-    : 'bg-slate-100 border border-slate-200 text-slate-700';
+  const metaChipClassName = `border text-fg-secondary ${colorMode === 'dark' ? 'bg-slate-900/70 border-slate-700/70' : 'bg-slate-100 border-slate-200'}`;
   const headingClassName = colorMode === 'dark' ? 'text-slate-100' : 'text-slate-800';
-  const subTextClassName = colorMode === 'dark' ? 'text-slate-400' : 'text-slate-500';
+  const subTextClassName = 'text-fg-muted';
   const deleteButtonClassName = colorMode === 'dark'
     ? 'bg-red-800 hover:bg-red-700'
     : 'bg-red-600 hover:bg-red-500';
@@ -49,28 +50,26 @@ export default function SelectedVisualTrackDisplay(props) {
   return (
     <div className="flex w-full flex-wrap items-center gap-2 text-xs">
       <div className="flex min-w-[132px] flex-col justify-center">
-        <span className="uppercase font-bold tracking-[0.12em] status-success text-[10px]">
+        <span className="uppercase font-bold tracking-[0.12em] status-success text-micro">
           {selectedVisualTrack.assetLabel}
         </span>
         <span className={`font-medium ${headingClassName}`}>
           {selectedVisualTrack.id}
         </span>
-        <span className={subTextClassName}>
-          Layer {selectedVisualTrack.layerIndex + 1}
-        </span>
+        <span className={subTextClassName}>{uiText("Layer {value0}", { value0: selectedVisualTrack.layerIndex + 1 })}</span>
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
         <div className={`flex min-w-[58px] flex-col rounded-md px-2 py-1 ${metaChipClassName}`}>
-          <span className="font-semibold uppercase text-[10px] tracking-[0.08em]">Start</span>
+          <span className="font-semibold uppercase text-micro tracking-[0.08em]">{uiText("Start")}</span>
           <span>{startTime}s</span>
         </div>
         <div className={`flex min-w-[58px] flex-col rounded-md px-2 py-1 ${metaChipClassName}`}>
-          <span className="font-semibold uppercase text-[10px] tracking-[0.08em]">End</span>
+          <span className="font-semibold uppercase text-micro tracking-[0.08em]">{uiText("End")}</span>
           <span>{endTime}s</span>
         </div>
         <div className={`flex min-w-[68px] flex-col rounded-md px-2 py-1 ${metaChipClassName}`}>
-          <span className="font-semibold uppercase text-[10px] tracking-[0.08em]">Duration</span>
+          <span className="font-semibold uppercase text-micro tracking-[0.08em]">{uiText("Duration")}</span>
           <span>{durationTime}s</span>
         </div>
       </div>
@@ -87,9 +86,7 @@ export default function SelectedVisualTrackDisplay(props) {
           className={`${saveButtonClassName} text-white px-3 py-1 rounded-md inline-flex items-center gap-1 disabled:opacity-60`}
           onClick={() => onSave?.(selectedVisualTrack)}
           disabled={!selectedVisualTrack.isDirty || selectedVisualTrack.isSaving}
-        >
-          Update
-        </button>
+        >{uiText("Update")}</button>
 
         <button
           type="button"
@@ -97,9 +94,7 @@ export default function SelectedVisualTrackDisplay(props) {
           onClick={() => onDelete?.(selectedVisualTrack)}
           disabled={selectedVisualTrack.isSaving}
         >
-          <FaTimes />
-          Delete
-        </button>
+          <FaTimes />{uiText("Delete")}</button>
       </div>
     </div>
   );

@@ -4,6 +4,8 @@ import { zodResponseFormat } from "openai/helpers/zod";
 
 import { getFunctionCallParamsForModel , getModelForUserInferenceModel} from './agent/ModelUtils.js';
 import { createCompatibleChatCompletion } from "./ai_utils/OpenAICompat.js";
+import { getDefaultUserInferenceModel, getReasoningEffortForInferenceModel } from '../consts/InferenceModels.js';
+import { supportsInferenceEffort } from '../inference/ReasoningModels.js';
 
 const API_KEY = process.env.OPENAI_API_KEY;
 
@@ -566,7 +568,12 @@ RULES → plain text only, no lists, no headings, no code fences, no brand names
 
 
 
-export async function translateTextContent(textList, translationLanguage) {
+export async function translateTextContent(
+  textList,
+  translationLanguage,
+  inferenceModel = getDefaultUserInferenceModel(),
+  options = {},
+) {
   const systemPrompt = `
   You are a creative assistant for a generative AI tool that can generate speech from text prompts.
   Your task is to provide a translated version of the text to the ${translationLanguage} language.
@@ -581,7 +588,7 @@ export async function translateTextContent(textList, translationLanguage) {
     { role: 'user', content: userPrompt }
   ];
 
-  const response = await sendAssistantMessageRequest(messageList);
+  const response = await sendAssistantMessageRequest(messageList, inferenceModel, options);
 
   const responseList = response.content.split('\n');
   const filteredData = responseList.map((prompt) => prompt.trim()).filter(Boolean);
@@ -686,16 +693,23 @@ export async function getBannerTextForSession(textList) {
 
 }
 
-export async function sendAssistantMessageRequest(messageList, userInferenceModel = 'gpt-6-astra') {
+export async function sendAssistantMessageRequest(messageList, userInferenceModel = 'gpt-6-astra', options = {}) {
 
 
 
   const modelName = getModelForUserInferenceModel(userInferenceModel);
 
   let baseFunctionCallParams = getFunctionCallParamsForModel(modelName, messageList);
+  if (supportsInferenceEffort(modelName) && options.reasoningEffort != null) {
+    baseFunctionCallParams.reasoning_effort = getReasoningEffortForInferenceModel(
+      modelName,
+      options.reasoningEffort,
+    );
+  }
 
   try {
-    const response = await createCompatibleChatCompletion(openai, baseFunctionCallParams);
+    const createCompletion = options.createChatCompletion || createCompatibleChatCompletion;
+    const response = await createCompletion(openai, baseFunctionCallParams);
     return response.choices[0].message;
   } catch (error) {
     let errorString = 'An error occurred while sending the message. Please try again with a different message.'

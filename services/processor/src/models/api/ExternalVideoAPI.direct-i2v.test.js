@@ -81,3 +81,21 @@ test('direct text-to-video status resolves the generated clip and final charge',
   assert.equal(status.credits_charged, 57.6);
   assert.equal(status.billingStatus, 'COMPLETED');
 });
+
+
+test('direct Kling requests use v4, preserve 30-second clips and suppress native audio', () => {
+  const identity = buildDirectExternalImageToVideoIdentity(USER_ID, 'kling:attempt:0');
+  for (const model of ['KLINGIMGTOVID4', 'KLINGIMGTOVID3PRO', 'KLINGIMGTOVIDTURBO']) {
+    const session = buildDirectExternalImageToVideoSession({
+      userId: USER_ID, identity, startImage: 'https://media.example.com/start.png',
+      payload: { video_model: model, duration: 30, generate_audio: true },
+    });
+    assert.equal(session.expressGenerativeVideoModel, 'KLINGIMGTOVID4');
+    assert.equal(session.layers[0].duration, 30);
+    assert.equal(session.layers[0].isAudioVideoLayer, false);
+  }
+  assert.throws(() => buildDirectExternalImageToVideoSession({
+    userId: USER_ID, identity, startImage: 'https://media.example.com/start.png',
+    payload: { video_model: 'KLINGIMGTOVID4', duration: 7 },
+  }), error => error.status === 400 && error.code === 'KLING_V4_INVALID_DURATION');
+});

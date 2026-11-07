@@ -1,7 +1,10 @@
+import { useUiLanguage } from '../../../../hooks/useUiLanguage.js';
+import { translateText as uiText } from '../../../../utils/localization.js';
 
 import { FaTimes, FaPlus, FaTrash } from 'react-icons/fa';
 
 export default function DefaultsUIEditor(props) {
+  useUiLanguage();
   const {
     editorData,
     setEditorData,
@@ -11,7 +14,7 @@ export default function DefaultsUIEditor(props) {
   } = props;
 
   if (!editorData) {
-    return <div className={`${text2Color}`}>No data available</div>;
+    return <div className={`${text2Color}`}>{uiText("No data available")}</div>;
   }
 
   const isDark = colorMode === 'dark';
@@ -130,8 +133,7 @@ export default function DefaultsUIEditor(props) {
             className={`flex items-center px-2 py-1 rounded ${addButtonClassName}`}
             onClick={() => addStringItem(key)}
           >
-            <FaPlus className="mr-1" /> Add
-          </button>
+            <FaPlus className="mr-1" />{uiText("Add")}</button>
         </div>
       </div>
     );
@@ -148,7 +150,7 @@ export default function DefaultsUIEditor(props) {
               <input
                 type="text"
                 className={objectNameInputClassName}
-                placeholder="Name"
+                placeholder={uiText("Name")}
                 value={obj.name}
                 onChange={(e) => updateObjectName(key, i, e.target.value)}
               />
@@ -158,7 +160,7 @@ export default function DefaultsUIEditor(props) {
               />
             </div>
             <div className="mb-2">
-              <div className={`font-semibold text-sm mb-1 ${keywordLabelClassName}`}>Keywords:</div>
+              <div className={`font-semibold text-sm mb-1 ${keywordLabelClassName}`}>{uiText("Keywords:")}</div>
               <div className="flex flex-wrap gap-2">
                 {obj.keywords.map((kw, kwIndex) => (
                   <div key={kwIndex} className={`flex items-center px-2 py-1 rounded ${chipClassName}`}>
@@ -179,8 +181,7 @@ export default function DefaultsUIEditor(props) {
                   className={`flex items-center px-2 py-1 rounded ${addButtonClassName}`}
                   onClick={() => addKeywordToObject(key, i)}
                 >
-                  <FaPlus className="mr-1" /> Add Keyword
-                </button>
+                  <FaPlus className="mr-1" />{uiText("Add Keyword")}</button>
               </div>
             </div>
           </div>
@@ -190,7 +191,7 @@ export default function DefaultsUIEditor(props) {
           className={`flex items-center px-2 py-1 rounded ${addButtonClassName}`}
           onClick={() => addObjectItem(key)}
         >
-          <FaPlus className="mr-1" /> Add {key.slice(0, -1)}
+          <FaPlus className="mr-1" /> {uiText("Add")} {key.slice(0, -1)}
         </button>
       </div>
     );

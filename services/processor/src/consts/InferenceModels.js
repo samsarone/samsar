@@ -1,3 +1,4 @@
+import { normalizeReasoningModel, getReasoningModelBase, isGPTModel, isClaudeModel, resolveInferenceEffort } from '../inference/ReasoningModels.js';
 export const INFERENCE_MODELS = Object.freeze({
   Inference: 'gpt-6-astra',
   BranchedInferenceExtraHigh: 'gpt-6-astra-xhigh',
@@ -22,6 +23,8 @@ export const INFERENCE_MODEL_KEYS = Object.freeze({
   QWEN_38: 'QWEN3.8',
   KIMI_K3: 'kimi-k3',
   CLAUDE_OPUS_55: 'claude-opus-5.5',
+  CLAUDE_FABLE_51: 'claude-fable-5.1',
+  GPT_61_SOL: 'gpt-6.1-sol',
 });
 
 export const INFERENCE_PROVIDER_MODEL_KEYS = Object.freeze({
@@ -31,6 +34,8 @@ export const INFERENCE_PROVIDER_MODEL_KEYS = Object.freeze({
   [INFERENCE_MODEL_KEYS.QWEN_38]: 'qwen3.8-max',
   [INFERENCE_MODEL_KEYS.KIMI_K3]: 'kimi-k3',
   [INFERENCE_MODEL_KEYS.CLAUDE_OPUS_55]: 'claude-opus-5-5',
+  [INFERENCE_MODEL_KEYS.CLAUDE_FABLE_51]: 'claude-fable-5-1',
+  [INFERENCE_MODEL_KEYS.GPT_61_SOL]: 'gpt-6.1-sol',
 });
 
 export const DEFAULT_INFERENCE_MODEL = INFERENCE_MODEL_KEYS.GPT_56_SOL;
@@ -50,7 +55,9 @@ export function getPublicationMetadataInferenceSettings(value) {
     return { model: inferenceModel };
   }
 
-  return PUBLICATION_METADATA_INFERENCE_SETTINGS;
+  return getReasoningModelBase(inferenceModel) === 'gpt-6.1-sol'
+    ? { model: 'gpt-6.1-sol', reasoning: { effort: INFERENCE_REASONING_EFFORTS.PublicationMetadata } }
+    : PUBLICATION_METADATA_INFERENCE_SETTINGS;
 }
 
 export const GEMINI_4_ARGON_INFERENCE_MODEL = INFERENCE_MODEL_KEYS.GEMINI_4_ARGON;
@@ -72,6 +79,11 @@ export const SUPPORTED_INFERENCE_MODEL_VALUES = Object.freeze([
   QWEN_38_INFERENCE_MODEL,
   KIMI_K3_INFERENCE_MODEL,
   CLAUDE_OPUS_55_INFERENCE_MODEL,
+  'claude-opus-5.5-xhigh',
+  'claude-fable-5.1',
+  'claude-fable-5.1-xhigh',
+  'gpt-6.1-sol',
+  'gpt-6.1-sol-xhigh',
 ]);
 
 export const INFERENCE_MODEL_OPTIONS = Object.freeze([
@@ -120,6 +132,21 @@ export const INFERENCE_MODEL_OPTIONS = Object.freeze([
     availabilityModel: CLAUDE_OPUS_55_INFERENCE_MODEL,
     isBranchedInferenceModel: true,
   }),
+  Object.freeze({ label: 'GPT 6.1 Sol High', value: 'gpt-6.1-sol',
+    providerModel: 'gpt-6.1-sol', availabilityModel: 'gpt-6.1-sol', reasoningEffort: 'high',
+    isBranchedInferenceModel: true, }),
+  Object.freeze({ label: 'GPT 6.1 Sol XHigh', value: 'gpt-6.1-sol-xhigh',
+    providerModel: 'gpt-6.1-sol', availabilityModel: 'gpt-6.1-sol', reasoningEffort: 'xhigh',
+    isBranchedInferenceModel: true, exposeInCatalog: false, }),
+  Object.freeze({ label: 'Claude Fable 5.1 High', value: 'claude-fable-5.1',
+    providerModel: 'claude-fable-5-1', availabilityModel: 'claude-fable-5.1', reasoningEffort: 'high',
+    isBranchedInferenceModel: true, }),
+  Object.freeze({ label: 'Claude Fable 5.1 XHigh', value: 'claude-fable-5.1-xhigh',
+    providerModel: 'claude-fable-5-1', availabilityModel: 'claude-fable-5.1', reasoningEffort: 'xhigh',
+    isBranchedInferenceModel: true, exposeInCatalog: false, }),
+  Object.freeze({ label: 'Claude Opus 5.5 XHigh', value: 'claude-opus-5.5-xhigh',
+    providerModel: 'claude-opus-5-5', availabilityModel: 'claude-opus-5.5', reasoningEffort: 'xhigh',
+    isBranchedInferenceModel: true, exposeInCatalog: false, }),
 ]);
 
 const CONFIGURED_OPENAI_INFERENCE_MODELS = new Set(Object.values(INFERENCE_MODELS));
@@ -129,12 +156,10 @@ const GPT_56_SOL_ALIAS_TOKENS = new Set([
   'GPT6',
   'GPT56SOL',
   'GPT6ASTRA',
-  'GPT61SOL',
   'GPT56HIGH',
   'GPT6HIGH',
   'GPT56SOLHIGH',
   'GPT6ASTRAHIGH',
-  'GPT61SOLHIGH',
 ]);
 
 const GPT_56_SOL_XHIGH_ALIAS_TOKENS = new Set([
@@ -142,12 +167,10 @@ const GPT_56_SOL_XHIGH_ALIAS_TOKENS = new Set([
   'GPT6XHIGH',
   'GPT56SOLXHIGH',
   'GPT6ASTRAXHIGH',
-  'GPT61SOLXHIGH',
   'GPT56EXTRAHIGH',
   'GPT6EXTRAHIGH',
   'GPT56SOLEXTRAHIGH',
   'GPT6ASTRAEXTRAHIGH',
-  'GPT61SOLEXTRAHIGH',
 ]);
 
 const GEMINI_4_ARGON_ALIASES = new Set([
@@ -222,6 +245,8 @@ function isKimiK3Alias(value) {
 }
 
 export function normalizeSupportedInferenceModel(value) {
+  const reasoningModel = normalizeReasoningModel(value);
+  if (reasoningModel) return reasoningModel;
   const normalized = normalizeString(value).toLowerCase();
 
   if (!normalized) {
@@ -276,6 +301,7 @@ export function normalizeInferenceModel(value) {
 }
 
 export function isOpenAIInferenceModel(value) {
+  if (isGPTModel(value)) return true;
   return CONFIGURED_OPENAI_INFERENCE_MODELS.has(normalizeString(value).toLowerCase());
 }
 
@@ -294,6 +320,7 @@ export function normalizeInferenceReasoningEffort(value, fallback = null) {
 }
 
 export function getReasoningEffortForInferenceModel(value, requestedEffort = null) {
+  if (normalizeReasoningModel(value)) return resolveInferenceEffort(value, requestedEffort);
   const model = normalizeOpenAIInferenceModel(value);
   const normalizedRequestedEffort = normalizeInferenceReasoningEffort(requestedEffort);
   if (normalizedRequestedEffort) {
@@ -341,6 +368,8 @@ export function getProviderModelForInferenceModel(
   value,
   { env = process.env } = {},
 ) {
+  if (isGPTModel(value)) return getReasoningModelBase(value);
+  if (isClaudeModel(value)) return getReasoningModelBase(value).replace(/(\d)\.(\d)/, '$1-$2');
   if (normalizeInferenceModel(value) === CLAUDE_OPUS_55_INFERENCE_MODEL) {
     return INFERENCE_PROVIDER_MODEL_KEYS[CLAUDE_OPUS_55_INFERENCE_MODEL];
   }

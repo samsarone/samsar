@@ -149,7 +149,10 @@ describe('Vidgenie container authentication and project entry integration', () =
     expect(loader.className).toContain(color === 'dark' ? 'text-slate-100' : 'text-slate-900');
     await act(async () => request.resolve({ data: guest() }));
     const editor = await screen.findByRole('region', { name: 'Project editor' });
-    expect(editor.closest('main').parentElement.className).toContain(color === 'dark' ? 'text-slate-100' : 'text-slate-900');
+    // The project shell's foreground now comes from the theme token; its background stays theme-specific.
+    const shellClassName = editor.closest('main').parentElement.className;
+    expect(shellClassName).toContain('text-fg');
+    expect(shellClassName).toContain(color === 'dark' ? 'bg-[#0c0d12]' : 'from-[#e9edf7]');
   });
 
   it('keeps an existing authenticated project mounted during background profile refresh', async () => {

@@ -14,6 +14,7 @@ export async function recoverAssistantBilling(dependencies = {}) {
     scope: { $in: ['assistant_completion', 'external_chat'] },
     status: { $in: ['BILLING_PENDING', 'PROCESSING'] },
     providerResponse: { $ne: null },
+    errorCode: { $nin: ['ASSISTANT_BILLING_USAGE_REQUIRED', 'ASSISTANT_BILLING_INVALID_USAGE', 'ASSISTANT_BILLING_TOOL_COST_REQUIRED'] },
     $or: [{ leaseUntil: null }, { leaseUntil: { $lte: new Date() } }],
   }).limit(25).lean();
   const results = [];

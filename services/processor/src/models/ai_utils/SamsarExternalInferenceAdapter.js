@@ -1,5 +1,8 @@
+import { createStreamingChatCompletion, requestSamsarStream } from '../../inference/ProviderStreaming.js';
+import { supportsInferenceEffort } from '../../inference/ReasoningModels.js';
+import { isGPTModel, getReasoningModelBase, resolveInferenceEffort, getClaudeOpenRouterModel } from '../../inference/ReasoningModels.js';
 import { randomUUID } from 'node:crypto';
-import { isClaudeOpus55Model, OPENROUTER_OPUS_55_MODEL } from '../../inference/AnthropicChatAdapter.js';
+import { isClaudeModel } from '../../inference/AnthropicChatAdapter.js';
 import fs from 'node:fs';
 
 import SamsarClient from 'samsar-js';
@@ -231,7 +234,7 @@ function getExternalInferenceRetryDelayMs(retryNumber, error) {
 }
 
 function getOpenRouterCompletionLimit(requestedModel, request = {}) {
-  const providerLimit = isClaudeOpus55Model(requestedModel)
+  const providerLimit = isClaudeModel(requestedModel)
     ? 128000
     : isQwenInferenceModel(requestedModel)
     ? OPENROUTER_QWEN_MAX_COMPLETION_TOKENS
@@ -305,11 +308,11 @@ function buildOpenRouterRequestPayload(request, requestedModel, openRouterModel,
     ...request,
     model: openRouterModel,
   };
-  if (requestedModel === 'gpt-6-astra' || requestedModel === 'gpt-6-astra-xhigh' || isClaudeOpus55Model(requestedModel)) {
+  if (isGPTModel(requestedModel) || isClaudeModel(requestedModel)) {
     for (const key of ['temperature', 'top_p', 'top_logprobs', 'logprobs']) delete payload[key];
   }
-  const effectiveEffort = isClaudeOpus55Model(requestedModel)
-    ? 'high'
+  const effectiveEffort = isClaudeModel(requestedModel)
+    ? resolveInferenceEffort(requestedModel, effort)
     : getOpenRouterReasoningEffort(requestedModel, effort, request);
   if (effectiveEffort) {
     payload.reasoning = { effort: effectiveEffort };
@@ -786,10 +789,8 @@ function hasConfiguredInferenceProvider(provider, model, chatRequest = {}) {
 
 function getInferenceProviderPriority(model, chatRequest = {}) {
   let defaultPriority;
-  if (isClaudeOpus55Model(model)) {
-    defaultPriority = isStandaloneEdition()
-      ? DOCKER_INFERENCE_PROVIDER_PRIORITY_BY_MODEL['claude-opus-5.5']
-      : [DOCKER_INFERENCE_PROVIDER.OPENROUTER, DOCKER_INFERENCE_PROVIDER.ANTHROPIC, DOCKER_INFERENCE_PROVIDER.SAMSAR];
+  if (isClaudeModel(model)) {
+    defaultPriority = DOCKER_INFERENCE_PROVIDER_PRIORITY_BY_MODEL['claude-opus-5.5'];
   } else if (isQwenInferenceModel(model)) {
     defaultPriority = DOCKER_INFERENCE_PROVIDER_PRIORITY_BY_MODEL[QWEN_38_INFERENCE_MODEL];
   } else if (isGeminiInferenceModel(model)) {
@@ -857,8 +858,11 @@ export function getConfiguredInferenceProviders(model, chatRequest = {}) {
 
 export function getOpenRouterModelForInferenceRequest(chatRequest = {}, env = process.env) {
   const model = getRequestedInferenceModel(chatRequest);
-  if (isClaudeOpus55Model(model)) {
-    return normalizeString(env?.OPENROUTER_CLAUDE_OPUS_55_MODEL) || OPENROUTER_OPUS_55_MODEL;
+  if (getReasoningModelBase(model) === 'gpt-6.1-sol') {
+    return normalizeString(env?.OPENROUTER_GPT_61_SOL_MODEL) || 'openai/gpt-6.1-sol';
+  }
+  if (isClaudeModel(model)) {
+    return getClaudeOpenRouterModel(model, env);
   }
   if (isQwenInferenceModel(model)) {
     return normalizeString(env?.OPENROUTER_QWEN_38_MAX_MODEL) || 'qwen/qwen3.8-max';
@@ -876,7 +880,6 @@ export function getOpenRouterModelForInferenceRequest(chatRequest = {}, env = pr
 export function shouldUseOpenRouterInference(chatRequest = {}) {
   if (!chatRequest || typeof chatRequest !== 'object') return false;
   const model = getRequestedInferenceModel(chatRequest);
-  if (isClaudeOpus55Model(model) && !isStandaloneEdition()) return true;
   if (isKimiInferenceModel(model)) return false;
   if (isQwenOpenRouterOnly(model)) return true;
   if (isOpenRouterAuthorization(chatRequest.authorization)) return true;
@@ -913,7 +916,7 @@ export async function createGenblazeChatCompletion(chatRequest = {}, dependencyO
     externalPolling, externalPollIntervalMs, externalPollTimeoutMs,
     reasoning, reasoning_effort, reasoningEffort, effort: requestEffort, ...request
   } = chatRequest || {};
-  if (requestedModel === 'gpt-6-astra' || requestedModel === 'gpt-6-astra-xhigh') {
+  if (isGPTModel(requestedModel)) {
     for (const key of ['temperature', 'top_p', 'top_logprobs', 'logprobs']) delete request[key];
     if (request.max_tokens !== undefined) {
       request.max_completion_tokens ??= request.max_tokens;
@@ -931,7 +934,7 @@ export async function createGenblazeChatCompletion(chatRequest = {}, dependencyO
     DEFAULT_EXTERNAL_INFERENCE_TIMEOUT_MS,
   );
   const completion = await runExternalInferenceWithRetry(
-    async ({ signal }) => client.chat.completions.create(
+    async ({ signal }) => createStreamingChatCompletion(client,
       await resolveProviderMediaPayload({
         ...request,
         model,
@@ -989,10 +992,10 @@ export async function createOpenRouterChatCompletion(chatRequest = {}, dependenc
   } = chatRequest || {};
   const requestedModel = getRequestedInferenceModel(chatRequest);
   const legacyReasoningEffort = reasoning?.effort || reasoning_effort;
-  const explicitEffort = isOpenAIInferenceModel(requestedModel) || isClaudeOpus55Model(requestedModel)
+  const explicitEffort = isOpenAIInferenceModel(requestedModel) || isClaudeModel(requestedModel)
     ? requestedEffort || reasoningEffort || legacyReasoningEffort
     : legacyReasoningEffort;
-  const effort = isClaudeOpus55Model(requestedModel) ? (explicitEffort || 'high')
+  const effort = isClaudeModel(requestedModel) ? resolveInferenceEffort(requestedModel, explicitEffort)
     : isOpenAIInferenceModel(requestedModel)
     ? getReasoningEffortForInferenceModel(requestedModel, explicitEffort)
     : explicitEffort;
@@ -1032,7 +1035,7 @@ export async function createOpenRouterChatCompletion(chatRequest = {}, dependenc
         resolveMediaUrl: dependencyOverrides.resolveMediaUrl,
         serviceName: 'samsar_processor_openrouter',
       });
-      const completion = await client.chat.completions.create(providerPayload, {
+      const completion = await createStreamingChatCompletion(client, providerPayload, {
         timeout: requestTimeout,
         // The adapter owns retry timing so the SDK cannot multiply attempts.
         maxRetries: 0,
@@ -1085,7 +1088,6 @@ export function shouldUseSamsarExternalInference(chatRequest = {}) {
     return false;
   }
   const inferenceModel = getRequestedInferenceModel(chatRequest);
-  if (isClaudeOpus55Model(inferenceModel) && !isStandaloneEdition()) return true;
   if (isQwenOpenRouterOnly(inferenceModel)) return true;
   if (chatRequest.bypassSamsarExternalInference || chatRequest.samsarExternalInference === false) {
     return Boolean(chatRequest.assistantBillingRequestId) &&
@@ -1144,8 +1146,8 @@ export async function createSamsarExternalChatCompletion(chatRequest = {}, depen
   );
   const requestPayload = {
     ...payload,
-    model,
-    ...(isOpenAIInferenceModel(model)
+    model: getReasoningModelBase(model),
+    ...(supportsInferenceEffort(model)
       ? {
         reasoning_effort: getReasoningEffortForInferenceModel(
           model,
@@ -1156,7 +1158,7 @@ export async function createSamsarExternalChatCompletion(chatRequest = {}, depen
         ? { reasoning_effort: getReasoningEffortForInferenceModel(model) }
       : {}),
   };
-  const usePolling = externalPolling === true;
+  const usePolling = externalPolling === true && !chatRequest.onText;
   const pollingTimeoutMs = normalizePositiveInteger(
     externalPollTimeoutMs,
     requestTimeout,
@@ -1167,7 +1169,11 @@ export async function createSamsarExternalChatCompletion(chatRequest = {}, depen
   });
   const idempotencyKey = assistantBillingRequestId || randomUUID();
   const response = await runExternalInferenceWithRetry(
-    async ({ signal }) => usePolling
+    async ({ signal }) => chatRequest.onText ? requestSamsarStream({
+      url: `${normalizeBaseUrl(process.env.SAMSAR_JS_API_URL || process.env.SAMSAR_API_URL).replace(/\/v[12]$/, '')}/v2/external/chat/completions`,
+      headers: { Authorization: `Bearer ${normalizeString(process.env.SAMSAR_API_KEY)}`, 'Idempotency-Key': idempotencyKey },
+      payload: await resolveAttemptPayload(requestPayload), signal, onText: chatRequest.onText, fetchImpl: dependencyOverrides.fetchImpl || fetch,
+    }) : usePolling
       ? createAndPollSamsarExternalChatCompletion(client, requestPayload, {
         signal,
         timeoutMs: pollingTimeoutMs,

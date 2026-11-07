@@ -13,7 +13,12 @@ const FA_MM_VIDEO_LINK = "fal-ai/mmaudio-v2";
 export async function generateSoundEffectSyncedMMVideo(payload, dependencies = {}) {
 
   const { videoLink , prompt} = payload;
-  const requestedSeconds = 8; // Fal's existing default when duration is omitted.
+  const sceneSeconds = Number(payload.duration);
+  if (!Number.isFinite(sceneSeconds) || sceneSeconds <= 0 || sceneSeconds > 30) {
+    throw new Error('MMAudio requires a source scene duration greater than zero and at most 30 seconds.');
+  }
+  // Fal accepts 1–30 seconds. Completion clips sub-second scenes on their frame grid.
+  const requestedSeconds = Math.max(1, sceneSeconds);
   await prepareFalSoundEffectSubmission(payload, requestedSeconds, 1, dependencies);
 
 

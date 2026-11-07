@@ -1,3 +1,4 @@
+import { useUiLanguage } from '../../../hooks/useUiLanguage.js';
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { Group, Rect, Text, Transformer } from 'react-konva';
 
@@ -37,6 +38,7 @@ function buildShapeState(config = {}) {
     shadowOffsetY: config.shadowOffsetY ?? 0,
     rotationAngle: config.rotationAngle ?? 0,
     autoWrap: config.autoWrap !== false,
+    preserveLineBreaks: config.preserveLineBreaks === true,
     capitalizeLetters: Boolean(config.capitalizeLetters),
     lineHeight: config.lineHeight ?? 1.2,
     letterSpacing: config.letterSpacing ?? 0,
@@ -67,6 +69,7 @@ function areShapeStatesEqual(currentState, nextState) {
     currentState.shadowOffsetY === nextState.shadowOffsetY &&
     currentState.rotationAngle === nextState.rotationAngle &&
     currentState.autoWrap === nextState.autoWrap &&
+    currentState.preserveLineBreaks === nextState.preserveLineBreaks &&
     currentState.capitalizeLetters === nextState.capitalizeLetters &&
     currentState.lineHeight === nextState.lineHeight &&
     currentState.letterSpacing === nextState.letterSpacing
@@ -84,6 +87,7 @@ const ResizableText = ({
   id,
   isDraggable = true,
 }) => {
+  useUiLanguage();
   const [shapeState, setShapeState] = useState(() => buildShapeState(config));
   const groupRef = useRef(null);
   const textRef = useRef(null);
@@ -137,6 +141,7 @@ const ResizableText = ({
     config?.shadowOffsetY,
     config?.rotationAngle,
     config?.autoWrap,
+    config?.preserveLineBreaks,
     config?.capitalizeLetters,
     config?.lineHeight,
     config?.letterSpacing,
@@ -155,7 +160,7 @@ const ResizableText = ({
 
   useEffect(() => {
     if (!textRef.current) return;
-    if (shapeState.autoWrap) {
+    if (shapeState.autoWrap || shapeState.preserveLineBreaks) {
       previousMeasuredSizeRef.current = {
         width: shapeState.width,
         height: shapeState.height,
@@ -192,6 +197,7 @@ const ResizableText = ({
     shapeState.strokeWidth,
     shapeState.fillColor,
     shapeState.autoWrap,
+    shapeState.preserveLineBreaks,
     shapeState.lineHeight,
     shapeState.letterSpacing,
   ]);
@@ -391,11 +397,11 @@ const ResizableText = ({
             shadowOffsetX={shapeState.shadowOffsetX}
             shadowOffsetY={shapeState.shadowOffsetY}
             rotation={shapeState.rotationAngle}
-            wrap={shapeState.autoWrap ? 'word' : 'none'}
+            wrap={shapeState.autoWrap && !shapeState.preserveLineBreaks ? 'word' : 'none'}
             lineHeight={shapeState.lineHeight}
             letterSpacing={shapeState.letterSpacing}
-            width={shapeState.autoWrap ? shapeState.width : undefined}
-            height={shapeState.autoWrap ? shapeState.height : undefined}
+            width={shapeState.autoWrap || shapeState.preserveLineBreaks ? shapeState.width : undefined}
+            height={shapeState.autoWrap || shapeState.preserveLineBreaks ? shapeState.height : undefined}
             listening={false}
           />
         ) : null}
@@ -416,11 +422,11 @@ const ResizableText = ({
           shadowOffsetX={shapeState.shadowOffsetX}
           shadowOffsetY={shapeState.shadowOffsetY}
           rotation={shapeState.rotationAngle}
-          wrap={shapeState.autoWrap ? 'word' : 'none'}
+          wrap={shapeState.autoWrap && !shapeState.preserveLineBreaks ? 'word' : 'none'}
           lineHeight={shapeState.lineHeight}
           letterSpacing={shapeState.letterSpacing}
-          width={shapeState.autoWrap ? shapeState.width : undefined}
-          height={shapeState.autoWrap ? shapeState.height : undefined}
+          width={shapeState.autoWrap || shapeState.preserveLineBreaks ? shapeState.width : undefined}
+          height={shapeState.autoWrap || shapeState.preserveLineBreaks ? shapeState.height : undefined}
           ref={textRef}
           listening={false}
         />

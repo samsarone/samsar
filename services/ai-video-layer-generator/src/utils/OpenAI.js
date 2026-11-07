@@ -1,9 +1,12 @@
+import { createSolResponsesCompletion } from './OpenAIResponsesAdapter.js';
+import { isGPTModel, supportsInferenceEffort, getReasoningModelBase, resolveInferenceEffort } from './ReasoningModels.js';
 
 
 
 
 import OpenAI from "openai";
-import { createAnthropicChatCompletion, isClaudeOpus55Model } from './AnthropicChatAdapter.js';
+import { createAnthropicChatCompletion, isClaudeModel } from './AnthropicChatAdapter.js';
+import { usesLocalAnthropicVisionImages } from './AnthropicVisionImages.js';
 import crypto from "crypto";
 
 import { z } from "zod";
@@ -46,9 +49,6 @@ function getOpenAIClient() {
   return openaiClient;
 }
 
-const RESPONSES_ONLY_MODELS = new Set([
-  'gpt-6-astra',
-]);
 
 function getAuditHash(value) {
   try {
@@ -438,9 +438,10 @@ async function dispatchAssistantMessageRequest(request, provider = '') {
     };
   }
 
-  if (isClaudeOpus55Model(modelName)) {
-    const response = await createAnthropicChatCompletion(
-      await normalizeProviderMediaPayload(request, normalizeProviderMediaUrl));
+  if (isClaudeModel(modelName)) {
+    const response = await createAnthropicChatCompletion(usesLocalAnthropicVisionImages()
+      ? request
+      : await normalizeProviderMediaPayload(request, normalizeProviderMediaUrl));
     return {
       response,
       message: response.choices[0].message,
@@ -480,14 +481,14 @@ async function dispatchAssistantMessageRequest(request, provider = '') {
     };
   }
 
-  if (RESPONSES_ONLY_MODELS.has(modelName)) {
+  if (isGPTModel(modelName)) {
     const providerPayload = await normalizeProviderMediaPayload(
       { messages: messageList },
       normalizeProviderMediaUrl,
     );
     const response = await getOpenAIClient().post('/responses', {
       body: {
-        model: modelName,
+        model: getReasoningModelBase(modelName),
         input: normalizeMessagesForResponses(providerPayload.messages),
         ...(request.response_format?.type === 'json_schema' ? { text: { format: { type: 'json_schema', ...request.response_format.json_schema } } } : {}),
         reasoning: {
@@ -533,9 +534,10 @@ async function dispatchStructuredMessageRequest(request, provider = '') {
   ) {
     return createSamsarExternalChatCompletion(request);
   }
-  if (isClaudeOpus55Model(request?.model)) {
-    return createAnthropicChatCompletion(
-      await normalizeProviderMediaPayload(request, normalizeProviderMediaUrl));
+  if (isClaudeModel(request?.model)) {
+    return createAnthropicChatCompletion(usesLocalAnthropicVisionImages()
+      ? request
+      : await normalizeProviderMediaPayload(request, normalizeProviderMediaUrl));
   }
   if (isQwenInferenceModel(request?.model)) {
     return createAlibabaQwenChatCompletion(request);
@@ -550,20 +552,24 @@ async function dispatchStructuredMessageRequest(request, provider = '') {
     samsarExternalInference: _samsarExternalInference,
     ...nativePayload
   } = request || {};
-  return getOpenAIClient().chat.completions.create(
-    await normalizeProviderMediaPayload(nativePayload, normalizeProviderMediaUrl),
-    { maxRetries: 0 },
-  );
+  const providerPayload = await normalizeProviderMediaPayload(nativePayload, normalizeProviderMediaUrl);
+  if (getReasoningModelBase(request.model) === 'gpt-6.1-sol') {
+    return createSolResponsesCompletion(getOpenAIClient(), providerPayload, { maxRetries: 0 });
+  }
+  return getOpenAIClient().chat.completions.create({
+    ...providerPayload,
+    ...(isGPTModel(request.model) ? { model: getReasoningModelBase(request.model) } : {}),
+  }, { maxRetries: 0 });
 }
 
 export async function sendAssistantMessageRequest(messageList, userInferenceModel = 'gpt-6-astra', auditContext = {}, responseFormat = undefined) {
 
 
   const modelName = getModelNameForInferenceModel(userInferenceModel);
-  const reasoningEffort = modelName === GPT_56_SOL_INFERENCE_MODEL
+  const reasoningEffort = supportsInferenceEffort(modelName)
     ? getGPT56SolReasoningEffort(
       userInferenceModel,
-      auditContext.inferenceEffort ||
+      auditContext.effort || auditContext.inferenceEffort ||
         auditContext.selectedInferenceEffort ||
         auditContext.reasoningEffort ||
         auditContext.reasoning_effort,
@@ -630,10 +636,15 @@ export async function sendAssistantStructuredMessageRequest(
       messages: messageList,
       model: isQwenInferenceModel(selectedInferenceModel) ||
         isKimiInferenceModel(selectedInferenceModel) ||
-        isClaudeOpus55Model(selectedInferenceModel)
+        isClaudeModel(selectedInferenceModel) || isGPTModel(selectedInferenceModel)
         ? selectedInferenceModel
         : "gpt-6-astra",
       response_format: zodResponseFormat(ScreenplayTransitionExtraction, "screenplay_transition_extraction"),
+      ...(supportsInferenceEffort(selectedInferenceModel) ? {
+        reasoning_effort: resolveInferenceEffort(selectedInferenceModel,
+          auditContext.effort || auditContext.inferenceEffort || auditContext.selectedInferenceEffort ||
+          auditContext.reasoningEffort || auditContext.reasoning_effort),
+      } : {}),
       ...(selectedInferenceModelAuthorization
         ? { authorization: selectedInferenceModelAuthorization }
         : {}),

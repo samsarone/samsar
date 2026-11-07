@@ -31,14 +31,8 @@ const openai = new OpenAI({ apiKey: API_KEY || '' });
 
 export async function handleGPTImageTwoRequest(payload) {
 
-  const {
-    prompt,
-    aspectRatio = '1:1',
-    retryCount = 0
-  } = payload;
-
   try {
-    const inputPayload = buildOpenAIGPTImageTwoInput({ prompt, aspectRatio });
+    const inputPayload = buildOpenAIGPTImageTwoInput(payload);
 
     const image = await openai.images.generate(inputPayload, { maxRetries: 0 });
 
@@ -127,7 +121,7 @@ function getImageMimeTypeFromPath(filePath) {
 
 export async function getImage2OutpaintImageFromApi(payload) {
 
-  const { maskImage, prompt, aspectRatio } = payload;
+  const { maskImage, prompt } = payload;
 
 
   const imageUrl = payload.image;
@@ -139,7 +133,7 @@ export async function getImage2OutpaintImageFromApi(payload) {
 
 
 
-  const nativeRequest = buildOpenAIGPTImageTwoInput({ prompt, aspectRatio });
+  const nativeRequest = buildOpenAIGPTImageTwoInput(payload);
 
   const inputPayload = {
     image: imageUrlLocalFile,

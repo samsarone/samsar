@@ -2072,6 +2072,12 @@ export async function generatePendingVideoRequests() {
           ? branchRenderContext.duration
           : resolvedTimelineDuration;
 
+        const visualEndFrame = sessionLayers.reduce((end, layer) =>
+          Math.max(end, getLayerFrameRange(layer, frameRate).endFrame), 0);
+        if (visualEndFrame > 0 && visualEndFrame !== numFilesInOutputPath) {
+          throw new Error(`Non-contiguous visual timeline: expected ${visualEndFrame} frames, assembled ${numFilesInOutputPath}.`);
+        }
+
         const totalDurationInFrames = Math.max(1, secondsToFrameCount(totalDuration, frameRate));
 
         if (numFilesInOutputPath > totalDurationInFrames) {
@@ -2252,6 +2258,8 @@ export async function generatePendingVideoRequests() {
         const payload = {
           duration: frameCountToSeconds(totalDurationInFrames, frameRate),
           frameCount: totalDurationInFrames,
+          // Explicit audio-only timeline extensions may hold the last visual.
+          allowVideoTailPadding: totalDurationInFrames > visualEndFrame,
           framePath: frameOutputPath,
           audioList: selectedAudioPayload,
           outputPath,
@@ -2518,6 +2526,7 @@ function resolveLocalOutroImagePath(outroImagePath) {
 function renderAndSaveVideoOnce(payload) {
   const {
     duration: requestedDuration,
+    allowVideoTailPadding = false,
     framePath,
     audioList,
     outputPath,
@@ -2538,6 +2547,18 @@ function renderAndSaveVideoOnce(payload) {
   const frameRate = normalizeFramesPerSecond(framesPerSecond) ?? DEFAULT_FRAMES_PER_SECOND;
   const frameCount = Math.max(1, secondsToFrameCount(requestedDuration, frameRate));
   const duration = frameCountToSeconds(frameCount, frameRate);
+  const inputFrameNames = fs.readdirSync(framePath).filter(name => /^\d+\.png$/.test(name));
+  if (!inputFrameNames.length || (!allowVideoTailPadding && inputFrameNames.length < frameCount)) {
+    return Promise.reject(new Error(`Incomplete final frame sequence: expected ${frameCount}, received ${inputFrameNames.length}.`));
+  }
+  for (let index = 0; index < Math.min(frameCount, inputFrameNames.length); index += 1) {
+    const sourceFrame = `${framePath}/${index}.png`;
+    if (!fs.existsSync(sourceFrame) || fs.statSync(sourceFrame).size === 0) {
+      return Promise.reject(new Error(`Missing or empty final frame ${index}.`));
+    }
+  }
+  const tailPaddingFilter = allowVideoTailPadding
+    ? `tpad=stop_mode=clone:stop_duration=${formatFFmpegNumber(duration)},` : '';
   const ffmpegThreads = resolveFinalRenderFfmpegThreads();
   const ffmpegThreadValue = `${ffmpegThreads}`;
   const ffmpegInputThreadValue = '1';
@@ -2888,7 +2909,7 @@ function renderAndSaveVideoOnce(payload) {
       const baseDuration = duration;
       const xfadeOffset = Math.max(baseDuration - outroFadeDuration, 0);
       filterParts.push(
-        `[0:v]format=yuv420p,tpad=stop_mode=clone:stop_duration=${formatFFmpegNumber(baseDuration)},` +
+        `[0:v]format=yuv420p,${tailPaddingFilter}` +
         `trim=duration=${formatFFmpegNumber(baseDuration)},setpts=PTS-STARTPTS[basev]`
       );
       filterParts.push(`[1:v]loop=loop=-1:size=1:start=0,format=rgba,trim=duration=${outroDuration},setpts=PTS-STARTPTS[outroloop]`);
@@ -2896,7 +2917,7 @@ function renderAndSaveVideoOnce(payload) {
       filterParts.push(`[basevscaled][outroscaled]xfade=transition=fade:duration=${outroFadeDuration}:offset=${xfadeOffset}[${videoStreamLabel}]`);
     } else {
       filterParts.push(
-        `[0:v]tpad=stop_mode=clone:stop_duration=${formatFFmpegNumber(duration)},` +
+        `[0:v]${tailPaddingFilter}` +
         `trim=end_frame=${frameCount},setpts=N/(${frameRate}*TB)[${videoStreamLabel}]`
       );
     }
@@ -2939,7 +2960,18 @@ function renderAndSaveVideoOnce(payload) {
         reject(err);
       })
       .on('end', () => {
-        resolve(outputPath);
+        // FFmpeg can finish successfully after a truncated/corrupt image input.
+        // Verify decoded output before allowing it to be published.
+        ffmpeg.ffprobe(outputPath, ['-count_frames'], (error, metadata) => {
+          if (error) return reject(error);
+          const video = metadata.streams?.find(stream => stream.codec_type === 'video');
+          if (Number(video?.nb_read_frames) !== frameCount
+              || !Number.isFinite(Number(video?.duration))
+              || Math.abs(Number(video?.duration) - duration) > 1 / (frameRate * 1000)) {
+            return reject(new Error(`Final video frame mismatch: expected ${frameCount}, received ${video?.nb_read_frames}.`));
+          }
+          resolve(outputPath);
+        });
       })
       .save(outputPath);
   });

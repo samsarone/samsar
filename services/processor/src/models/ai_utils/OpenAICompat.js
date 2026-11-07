@@ -1,3 +1,6 @@
+import { isAssistantProviderOutcomeUncertain } from '../api/AssistantRequestBilling.js';
+import { createStreamingChatCompletion, createStreamingResponses } from '../../inference/ProviderStreaming.js';
+import { isGPTModel } from '../../inference/ReasoningModels.js';
 import {
   getReasoningEffortForInferenceModel,
   getDefaultUserInferenceModel,
@@ -10,7 +13,8 @@ import {
 import { createAlibabaQwenChatCompletion } from '../../inference/AlibabaQwen.js';
 import { createGoogleGeminiChatCompletion } from '../../inference/GoogleGemini.js';
 import { createKimiK3ChatCompletion } from '../../inference/KimiK3.js';
-import { isClaudeOpus55Model, createAnthropicChatCompletion } from '../../inference/AnthropicChatAdapter.js';
+import { isClaudeModel, createAnthropicChatCompletion } from '../../inference/AnthropicChatAdapter.js';
+import { usesLocalAnthropicVisionImages } from '../../inference/AnthropicVisionImages.js';
 import {
   DOCKER_INFERENCE_PROVIDER,
   createSamsarExternalChatCompletion,
@@ -23,7 +27,7 @@ import { isStandaloneEdition } from '../../utils/EnvironmentUtils.js';
 
 export function isResponsesOnlyModel(model) {
   const inferenceModel = normalizeOpenAIInferenceModel(model || getDefaultUserInferenceModel());
-  return !isClaudeOpus55Model(inferenceModel) &&
+  return !isClaudeModel(inferenceModel) &&
     !isGeminiInferenceModel(inferenceModel) &&
     !isKimiInferenceModel(inferenceModel) &&
     !isQwenInferenceModel(inferenceModel);
@@ -45,7 +49,10 @@ export async function createCompatibleChatCompletion(
               openaiClient,
               buildProviderPinnedChatRequest(chatRequest, provider),
               dependencyOverrides,
-            ),
+            ).catch(error => {
+              if (chatRequest.assistantBillingRequestId && isAssistantProviderOutcomeUncertain(error)) error.retryable = false;
+              throw error;
+            }),
         );
       }
     }
@@ -130,6 +137,7 @@ export function buildProviderPinnedChatRequest(chatRequest, provider) {
 }
 
 export function isRetryableInferenceAdapterError(error) {
+  if (error?.retryable === false || error?.cause?.retryable === false) return false;
   const status = Number(
     error?.status ??
     error?.statusCode ??
@@ -202,11 +210,13 @@ async function createCompatibleChatCompletionForProvider(
   }
 
   const requestOptions = buildRequestOptions({ timeout, maxRetries });
-  if (isClaudeOpus55Model(model)) {
-    const providerPayload = await resolveProviderMediaPayload(request, {
-      resolveMediaUrl: dependencyOverrides.resolveMediaUrl,
-      serviceName: 'samsar_processor_anthropic',
-    });
+  if (isClaudeModel(model)) {
+    const providerPayload = usesLocalAnthropicVisionImages()
+      ? request
+      : await resolveProviderMediaPayload(request, {
+        resolveMediaUrl: dependencyOverrides.resolveMediaUrl,
+        serviceName: 'samsar_processor_anthropic',
+      });
     const createClaudeCompletion = dependencyOverrides.createAnthropicChatCompletion || createAnthropicChatCompletion;
     return createClaudeCompletion({ ...providerPayload, timeout });
   }
@@ -234,7 +244,7 @@ async function createCompatibleChatCompletionForProvider(
       resolveMediaUrl: dependencyOverrides.resolveMediaUrl,
       serviceName: 'samsar_processor_openai_chat',
     });
-    return await openaiClient.chat.completions.create(providerPayload, requestOptions);
+    return await createStreamingChatCompletion(openaiClient, providerPayload, requestOptions, request.onText);
   }
 
   const responsesRequest = buildResponsesRequest(request);
@@ -242,10 +252,7 @@ async function createCompatibleChatCompletionForProvider(
     resolveMediaUrl: dependencyOverrides.resolveMediaUrl,
     serviceName: 'samsar_processor_openai_responses',
   });
-  const responsesResponse = await openaiClient.post('/responses', {
-    body: providerPayload,
-    ...requestOptions,
-  });
+  const responsesResponse = await createStreamingResponses(openaiClient, providerPayload, requestOptions, request.onText);
   const outputText = extractResponsesOutputText(responsesResponse);
 
   return normalizeResponsesToChatCompletion(responsesResponse, outputText);
@@ -300,10 +307,10 @@ function buildResponsesRequest(chatRequest) {
     body.reasoning = { effort: requestedReasoningEffort };
   }
 
-  if (body.model !== 'gpt-6-astra' && temperature !== undefined) {
+  if (!isGPTModel(body.model) && temperature !== undefined) {
     body.temperature = temperature;
   }
-  if (body.model !== 'gpt-6-astra' && top_p !== undefined) {
+  if (!isGPTModel(body.model) && top_p !== undefined) {
     body.top_p = top_p;
   }
   if (user !== undefined) {

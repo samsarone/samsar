@@ -1,8 +1,10 @@
+import { useUiLanguage } from '../../../hooks/useUiLanguage.js';
 import { useRef, useEffect } from 'react';
 import { Rect, Group, Transformer } from 'react-konva';
 import { INIT_DIMENSIONS } from '../utils/ShapeUtils';
 
 export default function ResizableRectangle(props) {
+  useUiLanguage();
   const { config, isSelected, onSelect, id, updateToolbarButtonPosition, updateTargetActiveLayerConfig
    } = props;
   const rectangleTransformerRef = useRef();

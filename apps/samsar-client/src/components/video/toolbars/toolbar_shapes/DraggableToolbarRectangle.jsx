@@ -1,7 +1,9 @@
+import { useUiLanguage } from '../../../../hooks/useUiLanguage.js';
 import { useRef, useEffect } from 'react';
 import { Rect, Transformer } from 'react-konva';
 
 const DraggableToolbarRectangle = (props) => {
+  useUiLanguage();
   const { shapeProps, setShapeProps, isDrawing, id, shapeSet, transformerRef } = props;
 
   const shapeRef = useRef();

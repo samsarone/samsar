@@ -1,3 +1,5 @@
+import { useUiLanguage } from '../../hooks/useUiLanguage.js';
+import { translateText as uiText } from '../../utils/localization.js';
 import { getStudioMediaIdentity } from '../video/util/studioMediaIdentity.mjs';
 // ProgressIndicator.jsx
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -58,17 +60,17 @@ const STAGE_ORDER = [
 ];
 
 const STAGE_LABELS = {
-  prompt_generation: 'Generating prompt',
-  image_generation: 'Generating images',
-  speech_generation: 'Generating speech',
-  music_generation: 'Generating music',
-  audio_generation: 'Generating audio',
-  ai_video_generation: 'Generating video clips',
-  lip_sync_generation: 'Generating lip sync',
-  sound_effect_generation: 'Generating sound effects',
-  narrator_avatar_generation: 'Generating narrator avatar',
-  frame_generation: 'Rendering frames',
-  video_generation: 'Rendering final video',
+  get prompt_generation() { return uiText("Generating prompt"); },
+  get image_generation() { return uiText("Generating images"); },
+  get speech_generation() { return uiText("Generating speech"); },
+  get music_generation() { return uiText("Generating music"); },
+  get audio_generation() { return uiText("Generating audio"); },
+  get ai_video_generation() { return uiText("Generating video clips"); },
+  get lip_sync_generation() { return uiText("Generating lip sync"); },
+  get sound_effect_generation() { return uiText("Generating sound effects"); },
+  get narrator_avatar_generation() { return uiText("Generating narrator avatar"); },
+  get frame_generation() { return uiText("Rendering frames"); },
+  get video_generation() { return uiText("Rendering final video"); },
 };
 
 function normalizeNumber(value, fallback = null) {
@@ -155,7 +157,7 @@ function getStageLabel(stage, t) {
     frame_generation: t('progress.generatingFrames'),
     video_generation: t('progress.finalVideoGeneration'),
   };
-  return translationMap[stage] || STAGE_LABELS[stage] || stage.replace(/_/g, ' ');
+  return translationMap[stage] || STAGE_LABELS[stage] || uiText('Processing');
 }
 
 function getCurrentStep(status, t, generationStatusDetails) {
@@ -164,7 +166,8 @@ function getCurrentStep(status, t, generationStatusDetails) {
     generationStatusDetails?.step?.current_step_label ||
     generationStatusDetails?.session?.currentStage;
   if (explicitLabel && !STAGE_ORDER.includes(explicitLabel)) {
-    return explicitLabel;
+    const stage = generationStatusDetails?.current_step || generationStatusDetails?.step?.current_step;
+    return stage && STAGE_ORDER.includes(stage) ? getStageLabel(stage, t) : uiText(explicitLabel);
   }
 
   const explicitStage =
@@ -410,7 +413,7 @@ function buildVisualSegments(sessionPreview, rawSessionDetails) {
         asset,
         index,
         keyPrefix: 'layer',
-        title: layer.prompt || layer.videoGenerationPrompt || layer.image?.prompt || layer.imageSession?.prompt || `Scene ${index + 1}`,
+        title: layer.prompt || layer.videoGenerationPrompt || layer.image?.prompt || layer.imageSession?.prompt || uiText("Scene {value0}", { value0: index + 1 }),
         startTime,
         endTime,
       });
@@ -432,7 +435,7 @@ function buildVisualSegments(sessionPreview, rawSessionDetails) {
         },
         index,
         keyPrefix: 'global-video',
-        title: video.title || `Video ${index + 1}`,
+        title: video.title || uiText("Video {value0}", { value0: index + 1 }),
         startTime,
         endTime,
       });
@@ -894,6 +897,7 @@ function preloadPreviewVisualSegment(segment) {
 }
 
 export default function ProgressIndicator(props) {
+  useUiLanguage();
   const {
     isGenerationPending,
     isGenerationPaused = false,
@@ -1059,7 +1063,7 @@ export default function ProgressIndicator(props) {
       ? 'min(56dvh, 520px)'
       : 'min(44dvh, 360px)',
   };
-  const previewPlaybackButtonLabel = isPreviewPlaying ? 'Pause preview' : 'Play preview';
+  const previewPlaybackButtonLabel = isPreviewPlaying ? uiText("Pause preview") : uiText("Play preview");
 
   useEffect(() => {
     if (!sessionPreviewIdentity) return;
@@ -1170,8 +1174,7 @@ export default function ProgressIndicator(props) {
       primeInactive: shouldPlay,
     });
     setIsPreviewPlaying(shouldPlay);
-  }, [
-    isPreviewPlaying,
+  }, [isPreviewPlaying,
     previewTime,
     syncActiveAudioElements,
     syncActiveVideoElement,
@@ -1189,8 +1192,7 @@ export default function ProgressIndicator(props) {
       forceAudioUnlocked: true,
       primeInactive: isPreviewPlaying && !shouldMute,
     });
-  }, [
-    isActiveVisualReady,
+  }, [isActiveVisualReady,
     isPreviewPlaying,
     isPreviewAudioEffectivelyMuted,
     previewAudioVolume,
@@ -1363,16 +1365,14 @@ export default function ProgressIndicator(props) {
   const pendingPreviewActualLink = normalizeAssetUrl(pendingPreviewVideoLink);
 
   const panelShell =
-    colorMode === 'dark'
-      ? 'bg-[#181b24] text-slate-100 border border-[#3a4050] shadow-[0_10px_28px_rgba(0,0,0,0.35)]'
-      : 'bg-white/95 text-slate-900 border border-[#d7deef] shadow-sm';
+    `text-fg border ${colorMode === 'dark' ? 'bg-[#181b24] border-[#3a4050] shadow-[0_10px_28px_rgba(0,0,0,0.35)]' : 'bg-white/95 border-[#d7deef] shadow-sm'}`;
   const progressTrack = colorMode === 'dark' ? 'bg-[#3a4050]' : 'bg-slate-200';
-  const mutedText = colorMode === 'dark' ? 'text-slate-400' : 'text-slate-500';
+  const mutedText = "text-fg-muted";
   const timelineTrack = colorMode === 'dark' ? 'bg-[#151720]' : 'bg-slate-100';
   const errorPanel =
     colorMode === 'dark'
-      ? 'bg-rose-900/50 text-rose-100 border border-rose-700/60'
-      : 'bg-red-50 text-red-700 border border-red-200';
+      ? "bg-rose-900/50 text-rose-100 border border-rose-700/60"
+      : "bg-red-50 text-red-700 border border-red-200";
   const waitingPanel =
     colorMode === 'dark'
       ? 'border-amber-300/20 bg-amber-300/10 text-amber-100'
@@ -1404,7 +1404,7 @@ export default function ProgressIndicator(props) {
             />
           </div>
           <div className="min-w-0 break-words text-sm sm:whitespace-nowrap">
-            {Math.round(progressPercentage)}% - {isGenerationPaused ? `Paused - ${currentStep || 'Preparing generation'}` : (currentStep || 'Preparing generation')}
+            {Math.round(progressPercentage)}% - {isGenerationPaused ? uiText("Paused - {value0}", { value0: currentStep || uiText("Preparing generation") }) : (currentStep || uiText("Preparing generation"))}
           </div>
         </div>
       ) : expressGenerationStatus === null && !videoLink && !hasTimelinePreview && !pendingPreviewActualLink ? (
@@ -1417,10 +1417,8 @@ export default function ProgressIndicator(props) {
         <div className={`mt-4 rounded-xl border p-3 ${waitingPanel}`}>
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <div className="text-sm font-semibold">Images are ready for review</div>
-              <p className="mt-1 text-xs opacity-80">
-                Continue when the preview is ready to move into image-to-video generation.
-              </p>
+              <div className="text-sm font-semibold">{uiText("Images are ready for review")}</div>
+              <p className="mt-1 text-xs opacity-80">{uiText("Continue when the preview is ready to move into image-to-video generation.")}</p>
             </div>
             <button
               type="button"
@@ -1429,7 +1427,7 @@ export default function ProgressIndicator(props) {
               className="inline-flex items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-60"
             >
               {isProcessingNextStep ? <FaSpinner className="animate-spin" /> : <FaStepForward />}
-              {isProcessingNextStep ? 'Continuing...' : 'Generate video'}
+              {isProcessingNextStep ? uiText("Continuing...") : uiText("Generate video")}
             </button>
           </div>
         </div>
@@ -1447,10 +1445,8 @@ export default function ProgressIndicator(props) {
       {pendingPreviewActualLink && isGenerationPending && !videoLink && (
         <div className="vidgenie-preview-section mt-5">
           <div className="vidgenie-preview-header mb-3 text-left">
-            <div className="text-sm font-semibold">Current render preview</div>
-            <div className={`mt-0.5 break-words text-xs ${mutedText}`}>
-              Your post-processing changes are still rendering. This preview remains on the previous version until the new video is ready.
-            </div>
+            <div className="text-sm font-semibold">{uiText("Current render preview")}</div>
+            <div className={`mt-0.5 break-words text-xs ${mutedText}`}>{uiText("Your post-processing changes are still rendering. This preview remains on the previous version until the new video is ready.")}</div>
           </div>
           <div
             className={`vidgenie-preview-frame ${isPortraitPreview ? 'vidgenie-preview-frame-portrait' : 'vidgenie-preview-frame-landscape'} mx-auto overflow-hidden rounded-xl ${timelineTrack} ring-1 ${colorMode === 'dark' ? 'ring-white/10' : 'ring-slate-200'}`}
@@ -1474,7 +1470,7 @@ export default function ProgressIndicator(props) {
         <div className="vidgenie-preview-section mt-5">
           <div className="vidgenie-preview-header mb-3 flex flex-wrap items-center justify-between gap-2 text-left">
             <div className="min-w-0">
-              <div className="text-sm font-semibold">Timeline preview</div>
+              <div className="text-sm font-semibold">{uiText("Timeline preview")}</div>
               <div className={`mt-0.5 break-words text-xs ${mutedText}`}>
                 {sessionPreview?.previewStage ? getStageLabel(sessionPreview.previewStage, t) : currentStep}
               </div>
@@ -1508,29 +1504,23 @@ export default function ProgressIndicator(props) {
                   />
                   {!isActiveVisualReady && (
                     <div className={`absolute inset-0 flex items-center justify-center gap-2 text-sm ${mutedText}`}>
-                      <FaSpinner className="animate-spin" />
-                      Loading preview media
-                    </div>
+                      <FaSpinner className="animate-spin" />{uiText("Loading preview media")}</div>
                   )}
                 </div>
               ) : isActiveVisualReady ? (
                 <img
                   src={activeVisualSourceUrl}
-                  alt={activeVisualSegment.title || 'Generated preview'}
+                  alt={activeVisualSegment.title || uiText("Generated preview")}
                   onLoad={handleActiveImageReady}
                   onError={handleActiveImageReady}
                   className="h-full w-full object-contain"
                 />
               ) : (
                 <div className={`flex h-full w-full items-center justify-center gap-2 text-sm ${mutedText}`}>
-                  <FaSpinner className="animate-spin" />
-                  Loading preview media
-                </div>
+                  <FaSpinner className="animate-spin" />{uiText("Loading preview media")}</div>
               )
             ) : (
-              <div className={`flex h-full w-full items-center justify-center text-sm ${mutedText}`}>
-                Waiting for preview assets
-              </div>
+              <div className={`flex h-full w-full items-center justify-center text-sm ${mutedText}`}>{uiText("Waiting for preview assets")}</div>
             )}
           </div>
 
@@ -1556,7 +1546,7 @@ export default function ProgressIndicator(props) {
               value={Math.min(previewTime, Math.max(0.1, timelineDuration))}
               onChange={(event) => setPreviewTime(Number(event.target.value))}
               className="min-w-[160px] flex-1"
-              aria-label="Preview timeline"
+              aria-label={uiText("Preview timeline")}
             />
             {hasPreviewAudio && (
               <div className="flex shrink-0 items-center gap-2">
@@ -1570,13 +1560,13 @@ export default function ProgressIndicator(props) {
                   }`}
                   aria-label={
                     isPreviewAudioEffectivelyMuted
-                      ? 'Unmute preview audio'
-                      : 'Mute preview audio'
+                      ? uiText("Unmute preview audio")
+                      : uiText("Mute preview audio")
                   }
                   title={
                     isPreviewAudioEffectivelyMuted
-                      ? 'Unmute preview audio'
-                      : 'Mute preview audio'
+                      ? uiText("Unmute preview audio")
+                      : uiText("Mute preview audio")
                   }
                 >
                   {isPreviewAudioEffectivelyMuted ? <FaVolumeMute /> : <FaVolumeUp />}
@@ -1589,9 +1579,9 @@ export default function ProgressIndicator(props) {
                   value={isPreviewAudioEffectivelyMuted ? 0 : previewAudioVolume}
                   onChange={handlePreviewAudioVolumeChange}
                   className="w-24 sm:w-28"
-                  aria-label="Preview audio volume"
+                  aria-label={uiText("Preview audio volume")}
                 />
-                <span className={`w-9 text-right text-[11px] tabular-nums ${mutedText}`}>
+                <span className={`w-9 text-right text-caption tabular-nums ${mutedText}`}>
                   {Math.round((isPreviewAudioEffectivelyMuted ? 0 : previewAudioVolume) * 100)}%
                 </span>
               </div>
@@ -1601,7 +1591,7 @@ export default function ProgressIndicator(props) {
           <div className="vidgenie-timeline-group mt-3 space-y-2">
             {visualSegments.length > 0 && (
               <div>
-                <div className={`mb-1 text-[11px] font-semibold uppercase tracking-wide ${mutedText}`}>Visuals</div>
+                <div className={`mb-1 text-caption font-semibold uppercase tracking-wide ${mutedText}`}>{uiText("Visuals")}</div>
                 <div className="vidgenie-timeline-scroller overflow-x-auto pb-1">
                   <div
                     className={`vidgenie-timeline-strip relative h-9 w-full overflow-hidden rounded-lg ${timelineTrack}`}
@@ -1615,7 +1605,7 @@ export default function ProgressIndicator(props) {
                           ref={enableScrollableLayerTimeline
                             ? (element) => registerTimelineSegmentRef('visual', segment.key, element)
                             : null}
-                          className={`absolute top-1 h-7 rounded-md px-2 text-[11px] font-semibold leading-7 text-white transition-shadow ${
+                          className={`absolute top-1 h-7 rounded-md px-2 text-caption font-semibold leading-7 text-white transition-shadow ${
                             isActive
                               ? 'bg-indigo-400 ring-2 ring-white/80 shadow-sm'
                               : 'bg-indigo-500/80'
@@ -1623,7 +1613,7 @@ export default function ProgressIndicator(props) {
                           style={getTimelineSegmentStyle(segment, timelineDuration, enableScrollableLayerTimeline)}
                           title={segment.title}
                         >
-                          <span className="block truncate">{segment.type === 'video' ? 'Video' : 'Image'}</span>
+                          <span className="block truncate">{segment.type === 'video' ? uiText("Video") : uiText("Image")}</span>
                         </div>
                       );
                     })}
@@ -1633,7 +1623,7 @@ export default function ProgressIndicator(props) {
             )}
             {audioSegments.length > 0 && (
               <div>
-                <div className={`mb-1 text-[11px] font-semibold uppercase tracking-wide ${mutedText}`}>Audio</div>
+                <div className={`mb-1 text-caption font-semibold uppercase tracking-wide ${mutedText}`}>{uiText("Audio")}</div>
                 <div className="vidgenie-timeline-scroller overflow-x-auto pb-1">
                   <div
                     className={`vidgenie-timeline-strip relative h-9 w-full overflow-hidden rounded-lg ${timelineTrack}`}
@@ -1647,7 +1637,7 @@ export default function ProgressIndicator(props) {
                           ref={enableScrollableLayerTimeline
                             ? (element) => registerTimelineSegmentRef('audio', segment.key, element)
                             : null}
-                          className={`absolute top-1 h-7 rounded-md px-2 text-[11px] font-semibold leading-7 text-white transition-shadow ${
+                          className={`absolute top-1 h-7 rounded-md px-2 text-caption font-semibold leading-7 text-white transition-shadow ${
                             isSpeechAudio(segment) ? 'bg-emerald-500/80' : 'bg-cyan-500/80'
                           } ${
                             isActive ? 'ring-2 ring-white/80 shadow-sm' : ''
@@ -1655,7 +1645,7 @@ export default function ProgressIndicator(props) {
                           style={getTimelineSegmentStyle(segment, timelineDuration, enableScrollableLayerTimeline)}
                           title={segment.title}
                         >
-                          <span className="block truncate">{isSpeechAudio(segment) ? 'Speech' : 'Audio'}</span>
+                          <span className="block truncate">{isSpeechAudio(segment) ? uiText("Speech") : uiText("Audio")}</span>
                         </div>
                       );
                     })}

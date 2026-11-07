@@ -1,5 +1,8 @@
 import OpenAI from "openai";
-import { createAnthropicChatCompletion, isClaudeOpus55Model } from './AnthropicChatAdapter.js';
+import { isGPTModel, getReasoningModelBase, resolveInferenceEffort } from './ReasoningModels.js';
+import { createSolResponsesCompletion } from './OpenAIResponsesAdapter.js';
+import { createAnthropicChatCompletion, isClaudeModel } from './AnthropicChatAdapter.js';
+import { usesLocalAnthropicVisionImages } from './AnthropicVisionImages.js';
 import {
   createGoogleGeminiChatCompletion,
   isGeminiInferenceModel,
@@ -48,9 +51,10 @@ async function dispatchAssistantMessageRequest(request, provider = '') {
     return response.choices[0].message;
   }
 
-  if (isClaudeOpus55Model(request?.model)) {
-    const response = await createAnthropicChatCompletion(
-      await normalizeProviderMediaPayload(request, normalizeProviderMediaUrl));
+  if (isClaudeModel(request?.model)) {
+    const response = await createAnthropicChatCompletion(usesLocalAnthropicVisionImages()
+      ? request
+      : await normalizeProviderMediaPayload(request, normalizeProviderMediaUrl));
     return response.choices[0].message;
   }
 
@@ -72,10 +76,16 @@ async function dispatchAssistantMessageRequest(request, provider = '') {
     samsarExternalInference: _samsarExternalInference,
     ...nativePayload
   } = request || {};
-  const response = await getOpenAIClient().chat.completions.create(
-    await normalizeProviderMediaPayload(nativePayload, normalizeProviderMediaUrl),
-    { maxRetries: 0 },
-  );
+  const providerPayload = await normalizeProviderMediaPayload(nativePayload, normalizeProviderMediaUrl);
+  const response = getReasoningModelBase(request.model) === 'gpt-6.1-sol'
+    ? await createSolResponsesCompletion(getOpenAIClient(), providerPayload, { maxRetries: 0 })
+    : await getOpenAIClient().chat.completions.create({
+      ...providerPayload,
+      ...(isGPTModel(request.model) ? {
+        model: getReasoningModelBase(request.model),
+        reasoning_effort: resolveInferenceEffort(request.model, request.reasoning_effort),
+      } : {}),
+    }, { maxRetries: 0 });
   return response.choices[0].message;
 }
 
@@ -142,7 +152,7 @@ export async function sendAssistantMessageRequest(
       isKimiInferenceModel(normalizedInferenceModel);
     const payload = {
       messages: messageList,
-      model: isGeminiModel || isQwenModel || isKimiModel || isClaudeOpus55Model(userInferenceModel)
+      model: isGeminiModel || isQwenModel || isKimiModel || isClaudeModel(userInferenceModel) || isGPTModel(userInferenceModel)
         ? normalizedInferenceModel
         : "gpt-6-astra",
       ...(selectedInferenceModelAuthorization

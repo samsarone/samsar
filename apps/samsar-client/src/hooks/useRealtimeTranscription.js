@@ -1,3 +1,4 @@
+import { translateText as uiText } from '../utils/localization.js';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import axios from 'axios';
 import { getHeaders } from '../utils/web.jsx';
@@ -237,7 +238,7 @@ function useRealtimeTranscription({
 
     if (payload.type === 'error') {
       const message =
-        payload?.error?.message || 'Unexpected error from realtime session.';
+        payload?.error?.message || uiText("Unexpected error from realtime session.");
       setError(message);
       onError?.(message);
       stopTranscription();
@@ -336,7 +337,7 @@ function useRealtimeTranscription({
 
   const requestEphemeralToken = useCallback(async () => {
     if (!transcriptEndpoint) {
-      throw new Error('Missing transcription endpoint.');
+      throw new Error(uiText("Missing transcription endpoint."));
     }
     const candidateHeaders = transcriptHeaders ?? getHeaders();
     const authHeader =
@@ -345,7 +346,7 @@ function useRealtimeTranscription({
       candidateHeaders?.Authorization ||
       candidateHeaders?.authorization;
     if (!authHeader) {
-      throw new Error('Authentication required before using voice input.');
+      throw new Error(uiText("Authentication required before using voice input."));
     }
     const requestConfig = candidateHeaders?.headers
       ? candidateHeaders
@@ -353,7 +354,7 @@ function useRealtimeTranscription({
     const { data } = await axios.get(transcriptEndpoint, requestConfig);
     const { token, model, url } = resolveEphemeralKey(data);
     if (!token) {
-      throw new Error('Ephemeral token response missing credentials.');
+      throw new Error(uiText("Ephemeral token response missing credentials."));
     }
     const realtimeModel = model || data?.session?.model || preferredModel;
     const targetUrl =
@@ -371,7 +372,7 @@ function useRealtimeTranscription({
     if (!mountedRef.current) return;
     if (!isSupported) {
       const message =
-        'This device does not support microphone capture in the browser.';
+        uiText("This device does not support microphone capture in the browser.");
       setError(message);
       onError?.(message);
       return;
@@ -458,7 +459,7 @@ function useRealtimeTranscription({
 
       if (!response.ok) {
         throw new Error(
-          `Realtime handshake failed with status ${response.status}`
+          uiText("Realtime handshake failed with status {value0}", { value0: response.status })
         );
       }
 
@@ -517,7 +518,7 @@ function useRealtimeTranscription({
       if (!isCurrentSession()) return;
       const message =
         err?.message ||
-        'Unable to start realtime transcription session.';
+        uiText("Unable to start realtime transcription session.");
       cleanupSession();
       if (mountedRef.current) {
         setIsInitializing(false);

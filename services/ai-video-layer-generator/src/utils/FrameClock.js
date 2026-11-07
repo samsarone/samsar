@@ -27,6 +27,6 @@ export function getLayerFrameRange(layer = {}, framesPerSecond = 24) {
 export function buildFrameExtractionFilter(framesPerSecond, scaleFilter) {
   const rate = Number(framesPerSecond);
   if (!Number.isFinite(rate) || rate <= 0) throw new RangeError('A positive frame rate is required');
-  // Reset source timestamps once; preserve the last frame and avoid a second output resample.
-  return `setpts=PTS-STARTPTS,fps=${rate}:start_time=0:round=near:eof_action=pass,${scaleFilter}`;
+  // The EOF uses the same nearest-frame boundary as duration metadata everywhere.
+  return `setpts=PTS-STARTPTS,fps=${rate}:start_time=0:round=near:eof_action=round${scaleFilter ? `,${scaleFilter}` : ''}`;
 }

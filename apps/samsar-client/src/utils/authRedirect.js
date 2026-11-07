@@ -1,3 +1,4 @@
+import { translateText as uiText } from "./localization.js";
 import axios from 'axios';
 import { getDefaultAuthenticatedPath } from './defaultRoutes.js';
 import { appendRouteSearch, resolveAuthenticatedEntryPath } from './vidgenieRouting.js';
@@ -205,7 +206,7 @@ export async function resolvePostSignupDestination({
   }
 
   if (!sessionId) {
-    throw new Error('The new project response did not include a session id.');
+    throw new Error(uiText("The new project response did not include a session id."));
   }
 
   if (editor === 'studio') {

@@ -1,3 +1,5 @@
+import { useUiLanguage } from '../../../hooks/useUiLanguage.js';
+import { translateText as uiText } from '../../../utils/localization.js';
 import { useEffect, useMemo, useState } from 'react';
 import SecondaryButton from '../../common/SecondaryButton.tsx';
 import TextareaAutosize from 'react-textarea-autosize';
@@ -18,6 +20,7 @@ import {
 } from '../../../utils/imageModelAvailability.mjs';
 
 export default function PromptViewer(props) {
+  const uiLanguage = useUiLanguage();
   const {
     currentDefaultPrompt,
     submitGenerateRecreateRequest,
@@ -57,7 +60,7 @@ export default function PromptViewer(props) {
         imageGenerationModelSupportsAspectRatio(model, aspectRatio)
       );
     },
-    [aspectRatio, imageModelValues, isStandaloneModelFilteringEnabled, user?.custom_adapters]
+    [uiLanguage, aspectRatio, imageModelValues, isStandaloneModelFilteringEnabled, user?.custom_adapters]
   );
 
   // ─────────────────────────────────────────────────────────
@@ -153,14 +156,10 @@ export default function PromptViewer(props) {
   const modelPricing = IMAGE_MODEL_PRICES.find((m) => m.key === selectedModel);
   const usesProviderBilling =
     isStandaloneModelFilteringEnabled && isProviderBilledImagePricing(modelPricing);
-  const panelClassName = colorMode === 'dark'
-    ? 'bg-neutral-800 text-slate-100'
-    : 'bg-white/90 text-slate-900 border border-slate-200';
+  const panelClassName = `text-fg ${colorMode === 'dark' ? 'bg-neutral-800' : 'bg-white/90 border border-slate-200'}`;
   const helperTextClassName = colorMode === 'dark' ? 'text-gray-300' : 'text-slate-600';
   const creditTextClassName = colorMode === 'dark' ? 'text-[#ffe0a3]' : 'text-blue-700';
-  const fieldClassName = colorMode === 'dark'
-    ? 'border-[#667188] bg-[#151720] text-[#fafafa] focus:border-[#f6c453] focus:outline-none focus:ring-2 focus:ring-[#f6c453]/20'
-    : 'border-slate-200 bg-white text-slate-900 placeholder:text-slate-400';
+  const fieldClassName = `border-line-control bg-surface-sunken ${colorMode === 'dark' ? 'text-[#fafafa] focus:border-[#f6c453] focus:outline-none focus:ring-2 focus:ring-[#f6c453]/20' : 'text-slate-900 placeholder:text-slate-400'}`;
 
   return (
     <div className={`flex flex-col items-center space-y-2 p-2 rounded-lg ${panelClassName}`}>
@@ -168,9 +167,9 @@ export default function PromptViewer(props) {
       <div className="w-full">
         <div className={`text-xs font-semibold ${helperTextClassName}`}>
           {usesProviderBilling ? (
-            <span className={creditTextClassName}>Billed by the configured provider API</span>
+            <span className={creditTextClassName}>{uiText("Billed by the configured provider API")}</span>
           ) : (
-            <span className={creditTextClassName}>Image calls are charged on completion</span>
+            <span className={creditTextClassName}>{uiText("Image calls are charged on completion")}</span>
           )}
           <label className="ml-2 items-center">
             <input
@@ -179,7 +178,7 @@ export default function PromptViewer(props) {
               checked={retryOnFailure}
               onChange={(e) => setRetryOnFailure(e.target.checked)}
             />
-            <span className="ml-1 text-xs font-semibold">Retry on fail</span>
+            <span className="ml-1 text-xs font-semibold">{uiText("Retry on fail")}</span>
           </label>
         </div>
       </div>
@@ -187,7 +186,7 @@ export default function PromptViewer(props) {
       {/* ───────────── Model Selection ───────────── */}
       <div className="flex w-full mt-2 mb-2">
         <div className="inline-flex w-[25%]">
-          <div className="text-xs font-bold">Model</div>
+          <div className="text-xs font-bold">{uiText("Model")}</div>
         </div>
         <ModelAdapterSelect
           options={availableImageModels}
@@ -211,7 +210,7 @@ export default function PromptViewer(props) {
           return (
             <div className="flex w-full mt-2 mb-2">
               <div className="inline-flex w-[25%]">
-                <div className="text-xs font-bold">Image Style</div>
+                <div className="text-xs font-bold">{uiText("Image Style")}</div>
               </div>
               <select
                 onChange={handleImageStyleChange}
@@ -246,17 +245,13 @@ export default function PromptViewer(props) {
           className="px-4 py-2"
           onClick={handleSubmit}
           isPending={isGenerationPending}
-        >
-          Regenerate
-        </SecondaryButton>
+        >{uiText("Regenerate")}</SecondaryButton>
 
         <SecondaryButton
           className="px-4 py-2"
           onClick={showCreateNewPrompt}
           isPending={isGenerationPending}
-        >
-          New
-        </SecondaryButton>
+        >{uiText("New")}</SecondaryButton>
       </div>
     </div>
   );

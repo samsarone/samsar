@@ -1,3 +1,5 @@
+import { useUiLanguage } from '../../../hooks/useUiLanguage.js';
+import { translateText as uiText } from '../../../utils/localization.js';
 import { useState, useEffect } from 'react';
 import { FaChevronCircleDown, FaChevronCircleUp, FaTimesCircle } from 'react-icons/fa';
 import Konva from 'konva';
@@ -5,20 +7,21 @@ import Select from 'react-select';
 import { GiHorizontalFlip, GiVerticalFlip } from "react-icons/gi";
 
 const filters = [
-  { label: 'Blur', value: Konva.Filters.Blur, min: 0, max: 20, step: 1 },
-  { label: 'Brighten', value: Konva.Filters.Brighten, min: -1, max: 1, step: 0.01 },
-  { label: 'Contrast', value: Konva.Filters.Contrast, min: -1, max: 1, step: 0.01 },
-  { label: 'Grayscale', value: Konva.Filters.Grayscale, min: 0, max: 1, step: 1 },
-  { label: 'HSL', value: Konva.Filters.HSL, min: -1, max: 1, step: 0.01 },
-  { label: 'Invert', value: Konva.Filters.Invert, min: 0, max: 1, step: 1 },
-  { label: 'Pixelate', value: Konva.Filters.Pixelate, min: 1, max: 20, step: 1 },
-  { label: 'Posterize', value: Konva.Filters.Posterize, min: 1, max: 20, step: 1 },
-  { label: 'Sepia', value: Konva.Filters.Sepia, min: 0, max: 1, step: 1 },
-  { label: 'Solarize', value: Konva.Filters.Solarize, min: 0, max: 1, step: 1 },
-  { label: 'RGBA', value: Konva.Filters.RGBA, min: 0, max: 1, step: 0.01 }
+  { get label() { return uiText("Blur"); }, value: Konva.Filters.Blur, min: 0, max: 20, step: 1 },
+  { get label() { return uiText("Brighten"); }, value: Konva.Filters.Brighten, min: -1, max: 1, step: 0.01 },
+  { get label() { return uiText("Contrast"); }, value: Konva.Filters.Contrast, min: -1, max: 1, step: 0.01 },
+  { get label() { return uiText("Grayscale"); }, value: Konva.Filters.Grayscale, min: 0, max: 1, step: 1 },
+  { get label() { return uiText("HSL"); }, value: Konva.Filters.HSL, min: -1, max: 1, step: 0.01 },
+  { get label() { return uiText("Invert"); }, value: Konva.Filters.Invert, min: 0, max: 1, step: 1 },
+  { get label() { return uiText("Pixelate"); }, value: Konva.Filters.Pixelate, min: 1, max: 20, step: 1 },
+  { get label() { return uiText("Posterize"); }, value: Konva.Filters.Posterize, min: 1, max: 20, step: 1 },
+  { get label() { return uiText("Sepia"); }, value: Konva.Filters.Sepia, min: 0, max: 1, step: 1 },
+  { get label() { return uiText("Solarize"); }, value: Konva.Filters.Solarize, min: 0, max: 1, step: 1 },
+  { get label() { return uiText("RGBA"); }, value: Konva.Filters.RGBA, min: 0, max: 1, step: 0.01 }
 ];
 
 export default function ImageToolbar(props) {
+  useUiLanguage();
   const { pos, moveItem, index, applyFilter, removeItem, colorMode, flipImageVertical,
     flipImageHorizontal, itemId, applyFinalFilter, updateTargetActiveLayerConfig,
     editorVariant = 'videoStudio',
@@ -95,12 +98,10 @@ export default function ImageToolbar(props) {
   };
 
   const iconColor = colorMode === 'dark' ? 'text-neutral-200' : 'text-slate-600';
-  const fieldShell = colorMode === 'dark'
-    ? 'bg-slate-900/60 text-slate-100 border border-white/10'
-    : 'bg-white text-slate-900 border border-slate-200 shadow-sm';
+  const fieldShell = `text-fg border ${colorMode === 'dark' ? 'bg-slate-900/60 border-white/10' : 'bg-white border-slate-200 shadow-sm'}`;
   const accentColor = colorMode === 'dark' ? '#6366f1' : '#2563eb';
   const trackColor = colorMode === 'dark' ? '#1f2937' : '#e2e8f0';
-  const inputClassName = `${fieldShell} w-full ${isImageStudio ? 'rounded-xl px-3 py-2 text-[15px]' : 'rounded-md px-2 py-1 text-sm'}`;
+  const inputClassName = `${fieldShell} w-full ${isImageStudio ? 'rounded-xl px-3 py-2 text-lead' : 'rounded-md px-2 py-1 text-sm'}`;
   const labelClassName = isImageStudio ? 'mt-1 text-sm text-center' : 'text-xs text-center';
   const iconClassName = isImageStudio ? 'mt-2 text-[26px] cursor-hover' : 'mt-2 text-xl cursor-hover';
 
@@ -213,7 +214,7 @@ export default function ImageToolbar(props) {
           <Select
             options={filters}
             onChange={handleFilterChange}
-            placeholder="Filter"
+            placeholder={uiText("Filter")}
             styles={{
               control: (provided, state) => ({
                 ...provided,

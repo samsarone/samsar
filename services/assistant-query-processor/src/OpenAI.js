@@ -1,3 +1,5 @@
+import { createStreamingChatCompletion, createStreamingResponses } from './ProviderStreaming.js';
+import { getReasoningModelBase } from './ReasoningModels.js';
 import { normalizeAssistantResponseUsage } from './AssistantBilling.js';
 import { isAssistantProviderOutcomeUncertain } from './AssistantRequestBilling.js';
 import OpenAI from "openai";
@@ -12,7 +14,7 @@ import {
 } from './InferenceModels.js';
 import { createKimiK3ChatCompletion } from './KimiK3.js';
 import { createQwenChatCompletion } from './Qwen.js';
-import { isClaudeOpus55Model, createAnthropicChatCompletion } from './AnthropicChatAdapter.js';
+import { isClaudeModel, createAnthropicChatCompletion } from './AnthropicChatAdapter.js';
 import { sendAssistantGeminiCompletionRequest } from './GoogleGemini.js';
 import {
   DOCKER_INFERENCE_PROVIDER,
@@ -33,7 +35,7 @@ const openai = new OpenAI({ apiKey: API_KEY || '' });
 const DEFAULT_ASSISTANT_QUERY_TIMEOUT_MS = 10 * 60 * 1000;
 
 function getModelNameForInferenceModel(inferenceModel) {
-  return normalizeInferenceModel(inferenceModel || DEFAULT_INFERENCE_MODEL);
+  return getReasoningModelBase(normalizeInferenceModel(inferenceModel || DEFAULT_INFERENCE_MODEL));
 }
 
 
@@ -243,6 +245,7 @@ export async function runInferenceAdapterFallback(
 
 function getCompatibleChatRequestOptions(options = {}) {
   const supportedFields = [
+    'onText',
     'response_format',
     'tools',
     'tool_choice',
@@ -369,13 +372,14 @@ async function sendAssistantCompletionRequestForProvider(
     return await sendAssistantKimiK3CompletionRequest(messageList, model, completionOptions);
   }
 
-  if (isClaudeOpus55Model(model)) {
+  if (isClaudeModel(model)) {
     const response = await createAnthropicChatCompletion({
       model,
       messages: messageList,
       max_tokens: completionOptions.max_tokens || completionOptions.maxTokens,
       effort: reasoningEffort || 'high',
       timeout: getRequestTimeoutMs(completionOptions),
+      onText: completionOptions.onText,
     });
     const outputText = response?.choices?.[0]?.message?.content || '';
     return {
@@ -508,12 +512,11 @@ export async function sendAssistantOpenAICompletionRequest(
             resolveMediaUrl: dependencyOverrides.resolveMediaUrl,
             serviceName: 'samsar_assistant_query_processor_openai_responses',
           });
-          return client.post('/responses', {
-            body,
+          return createStreamingResponses(client, body, {
             timeout: timeoutMs,
             maxRetries: 0,
             signal,
-          });
+          }, options.onText);
         },
         {
           provider: 'openai-responses',
@@ -545,11 +548,11 @@ export async function sendAssistantOpenAICompletionRequest(
             resolveMediaUrl: dependencyOverrides.resolveMediaUrl,
             serviceName: 'samsar_assistant_query_processor_openai_chat',
           });
-          return client.chat.completions.create(payload, {
+          return createStreamingChatCompletion(client, payload, {
             timeout: timeoutMs,
             maxRetries: 0,
             signal,
-          });
+          }, options.onText);
         },
         {
           provider: 'openai-chat',

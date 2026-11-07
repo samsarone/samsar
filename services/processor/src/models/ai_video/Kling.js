@@ -1,3 +1,4 @@
+import { normalizeKlingModelKey, isKlingV4Model, validateKlingV4Duration } from '../../utils/KlingModel.js';
 import { videoQueueBillingFields } from './VideoRequestBilling.js';
 
 
@@ -11,10 +12,11 @@ import { uploadFrameLayerImageToCDN, primeCDNCache } from '../AWS.js';
 
 
 export async function requestRenderKlingVideo(payload) {
+  payload = { ...payload, model: normalizeKlingModelKey(payload.model) };
 
   const { videoSessionId, currentLayerId, prompt, combineLayers, useStartFrame,
     useEndFrame, aspectRatio, model , clipLayerToAiVideo, userId , duration = 5 } = payload;
-  const generateAudio = payload.generateAudio === true || payload.generate_audio === true;
+  const generateAudio = !isKlingV4Model(model) && (payload.generateAudio === true || payload.generate_audio === true);
 
 
 
@@ -69,7 +71,7 @@ export async function requestRenderKlingVideo(payload) {
   aiVideoRenderPayload.aspectRatio = aspectRatio;
   aiVideoRenderPayload.clipLayerToAiVideo = clipLayerToAiVideo;
   aiVideoRenderPayload.userId = userId;
-  aiVideoRenderPayload.duration = duration;
+  aiVideoRenderPayload.duration = isKlingV4Model(model) ? validateKlingV4Duration(duration) : duration;
   aiVideoRenderPayload.generateAudio = generateAudio;
 
 
@@ -91,8 +93,8 @@ export async function requestRenderKlingVideo(payload) {
 
 function getModelNameFromModelType(modelType, startFrame) {
 
-  if (modelType === 'KLINGTXTTOVID3PRO') {
-    return 'KLINGTXTTOVID3PRO';
+  if (modelType === 'KLINGTXTTOVID4') {
+    return 'KLINGTXTTOVID4';
   }
 
   if (startFrame && startFrame.length > 0) {
@@ -100,8 +102,8 @@ function getModelNameFromModelType(modelType, startFrame) {
       return 'KLINGIMGTOVIDSTANDARD';
     } else if (modelType === 'KLINGIMGTOVIDPRO') {
       return 'KLINGIMGTOVIDPRO';
-    } else if (modelType === 'KLINGIMGTOVID3PRO' || modelType === 'KLINGIMGTOVIDTURBO') {
-      return 'KLINGIMGTOVID3PRO';
+    } else if (modelType === 'KLINGIMGTOVID4') {
+      return 'KLINGIMGTOVID4';
     } else if (modelType === 'KLINGIMGTOVIDPROMASTER') {
       return 'KLINGIMGTOVIDPROMASTER';
     } else if (modelType === 'KLINGIMGTOVID2.1STANDARD') {
@@ -119,12 +121,10 @@ function getModelNameFromModelType(modelType, startFrame) {
     } else if (modelType === 'KLINGIMGTOVIDPRO') {
       return 'KLINGTXTTOVIDPRO';
     } else if (
-      modelType === 'KLINGIMGTOVID3PRO' ||
-      modelType === 'KLINGTXTTOVID3PRO' ||
-      modelType === 'KLINGIMGTOVIDTURBO' ||
-      modelType === 'KLINGTXTTOVIDTURBO'
+      modelType === 'KLINGIMGTOVID4' ||
+      modelType === 'KLINGTXTTOVID4'
     ) {
-      return 'KLINGTXTTOVID3PRO';
+      return 'KLINGTXTTOVID4';
     }
 
   }

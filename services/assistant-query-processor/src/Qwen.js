@@ -1,3 +1,4 @@
+import { createStreamingChatCompletion } from './ProviderStreaming.js';
 import OpenAI from 'openai';
 
 import {
@@ -290,12 +291,12 @@ export async function createQwenChatCompletion(chatRequest = {}, dependencyOverr
         serviceName: 'samsar_assistant_query_processor_qwen',
       });
       const { payload, requestOptions } = buildQwenChatRequest(providerRequest);
-      return client.chat.completions.create(payload, {
+      return createStreamingChatCompletion(client, payload, {
         ...requestOptions,
         // This retry loop owns each attempt so media URLs can be refreshed.
         maxRetries: 0,
         signal,
-      });
+      }, chatRequest.onText);
     },
     {
       provider: 'alibaba-qwen',

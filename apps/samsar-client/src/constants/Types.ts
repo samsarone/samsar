@@ -1,3 +1,4 @@
+import { translateText as uiText } from '../utils/localization.js';
 import { ELEVENLABS_TTS } from './ElevenLabs.jsx';
 import { PLAY_SPEAKER_TYPES } from './PlayAI.jsx';
 import { QWEN_IMAGE_3_PRO_MODEL_KEY } from '../utils/imageModelAvailability.mjs';
@@ -104,7 +105,7 @@ export const CURRENT_EDITOR_VIEW = {
 
 export const IMAGE_GENERAITON_MODEL_TYPES = [
   {
-    name: 'GPTImage 2.5',
+    name: 'GPTImage 2.6',
     key: 'GPTIMAGE2.5',
     isExpressModel: true,
     isBranchedImageModel: true,
@@ -189,7 +190,7 @@ export const VIDEO_GENERATION_MODEL_TYPES = [
     ]
   },
   {
-    name: 'Custom Image to Video',
+    get name() { return uiText('Custom Image to Video'); },
     key: 'CUSTOM_IMAGE_TO_VIDEO',
     isExpressModel: true,
     isBranchedVideoModel: false,
@@ -201,8 +202,8 @@ export const VIDEO_GENERATION_MODEL_TYPES = [
     ]
   },
   {
-    name: 'Kling 3 Pro Img2Vid',
-    key: 'KLINGIMGTOVID3PRO',
+    name: 'Kling 4 Img2Vid',
+    key: 'KLINGIMGTOVID4',
     isExpressModel: true,
     isBranchedVideoModel: false,
     isImageToVideoModel: true,
@@ -223,8 +224,8 @@ export const VIDEO_GENERATION_MODEL_TYPES = [
     ]
   },
   {
-    name: 'Kling 3 Pro Text2Vid',
-    key: 'KLINGTXTTOVID3PRO',
+    name: 'Kling 4 Text2Vid',
+    key: 'KLINGTXTTOVID4',
     isExpressModel: false,
     isImageToVideoModel: false,
     isTextToVideoModel: true,
@@ -371,7 +372,7 @@ export const IMAGE_EDIT_MODEL_TYPES = [
     isPromptEnabled: true
   },
   {
-    name: 'GPTImage 2.5 Edit',
+    name: 'GPTImage 2.6 Edit',
     key: 'GPTIMAGE2.5EDIT',
     editType: 'inpaint',
     isPromptEnabled: true,
@@ -382,48 +383,57 @@ export const IMAGE_EDIT_MODEL_TYPES = [
 
 
 export const ASSISTANT_MODEL_TYPES = [
-  { label: 'Claude Opus 5.5', value: 'claude-opus-5.5' },
+  { get label() { return uiText("Claude Opus 5.5 High"); }, value: 'claude-opus-5.5' },
+  { get label() { return uiText("Claude Fable 5.1 High"); }, value: 'claude-fable-5.1' },
+  { get label() { return uiText("GPT 6.1 Sol High"); }, value: 'gpt-6.1-sol' },
   {
-    label: 'GPT 6 Astra High',
+    get label() { return uiText("GPT 6 Astra High"); },
     value: 'gpt-6-astra',
   },
   {
-    label: 'Gemini 4 Argon',
+    get label() { return uiText("Gemini 4 Argon"); },
     value: 'gemini-4-argon',
   },
   {
-    label: 'Qwen 3.8 Max',
+    get label() { return uiText("Qwen 3.8 Max"); },
     value: 'QWEN3.8',
   },
   {
-    label: 'Kimi K3',
+    get label() { return uiText("Kimi K3"); },
     value: 'kimi-k3',
   },
 
 
+  { get label() { return uiText("Claude Fable 5.1 XHigh"); }, value: 'claude-fable-5.1-xhigh' },
+  { get label() { return uiText("Claude Opus 5.5 XHigh"); }, value: 'claude-opus-5.5-xhigh' },
+  { get label() { return uiText("GPT 6.1 Sol XHigh"); }, value: 'gpt-6.1-sol-xhigh' },
+  { get label() { return uiText("GPT 6 Astra XHigh"); }, value: 'gpt-6-astra-xhigh' },
 ];
 
+
 export const INFERENCE_MODEL_TYPES = [
-  { label: 'Claude Opus 5.5', value: 'claude-opus-5.5', isBranchedInferenceModel: true },
+  { get label() { return uiText("Claude Opus 5.5"); }, value: 'claude-opus-5.5', isBranchedInferenceModel: true },
+  { get label() { return uiText("Claude Fable 5.1"); }, value: 'claude-fable-5.1', isBranchedInferenceModel: true },
+  { get label() { return uiText("GPT 6.1 Sol"); }, value: 'gpt-6.1-sol', isBranchedInferenceModel: true },
 
 
   {
-    label: 'GPT 6 Astra High',
+    get label() { return uiText("GPT 6 Astra"); },
     value: 'gpt-6-astra',
     isBranchedInferenceModel: true,
   },
   {
-    label: 'Gemini 4 Argon',
+    get label() { return uiText("Gemini 4 Argon"); },
     value: 'gemini-4-argon',
     isBranchedInferenceModel: false,
   },
   {
-    label: 'Qwen 3.8 Max',
+    get label() { return uiText("Qwen 3.8 Max"); },
     value: 'QWEN3.8',
     isBranchedInferenceModel: false,
   },
   {
-    label: 'Kimi K3',
+    get label() { return uiText("Kimi K3"); },
     value: 'kimi-k3',
     isBranchedInferenceModel: false,
   },
@@ -433,14 +443,14 @@ export const INFERENCE_MODEL_TYPES = [
 
 export const INFERENCE_EFFORT_OPTIONS = [
   {
-    label: 'high',
+    get label() { return uiText("high"); },
     value: 'high',
-    description: 'Faster and recommended for most use cases.',
+    get description() { return uiText("Faster and recommended for most use cases."); },
   },
   {
-    label: 'xhigh',
+    get label() { return uiText("xhigh"); },
     value: 'xhigh',
-    description: 'Deeper analysis for technical concepts; slower inference.',
+    get description() { return uiText("Deeper analysis for technical concepts; slower inference."); },
   },
 ];
 
@@ -461,51 +471,51 @@ export const PIXVERRSE_VIDEO_STYLES = [
 export const OPENAI_SPEAKER_TYPES = [
   {
     value: 'alloy',
-    label: 'Alloy',
+    get label() { return uiText("Alloy"); },
     provider: 'OPENAI',
     "Gender": "F",
     previewURL: "https://cdn.openai.com/API/docs/audio/alloy.wav"
   },
   {
     value: 'echo',
-    label: 'Echo',
+    get label() { return uiText("Echo"); },
     provider: 'OPENAI',
     "Gender": "M",
     previewURL: "https://cdn.openai.com/API/docs/audio/echo.wav"
   },
   {
-    value: 'fable', label: 'Fable', provider: 'OPENAI',
+    value: 'fable', get label() { return uiText("Fable"); }, provider: 'OPENAI',
     "Gender": "M",
     previewURL: "https://cdn.openai.com/API/docs/audio/fable.wav"
   },
   {
-    value: 'onyx', label: 'Onyx', provider: 'OPENAI',
+    value: 'onyx', get label() { return uiText("Onyx"); }, provider: 'OPENAI',
     "Gender": "M",
     previewURL: "https://cdn.openai.com/API/docs/audio/onyx.wav"
   },
   {
-    value: 'nova', label: 'Nova', provider: 'OPENAI',
+    value: 'nova', get label() { return uiText("Nova"); }, provider: 'OPENAI',
     "Gender": "F",
     previewURL: "https://cdn.openai.com/API/docs/audio/nova.wav"
   },
   {
-    value: 'shimmer', label: 'Shimmer', provider: 'OPENAI',
+    value: 'shimmer', get label() { return uiText("Shimmer"); }, provider: 'OPENAI',
     "Gender": "F",
     previewURL: "https://cdn.openai.com/API/docs/audio/shimmer.wav"
   },
 
   {
-    value: 'ash', label: 'Ash', provider: 'OPENAI',
+    value: 'ash', get label() { return uiText("Ash"); }, provider: 'OPENAI',
     "Gender": "M",
     previewURL: "https://cdn.openai.com/API/docs/audio/ash.wav"
   },
   {
-    value: 'coral', label: 'Coral', provider: 'OPENAI',
+    value: 'coral', get label() { return uiText("Coral"); }, provider: 'OPENAI',
     "Gender": "F",
     previewURL: "https://cdn.openai.com/API/docs/audio/coral.wav"
   },
   {
-    value: 'sage', label: 'Sage', provider: 'OPENAI',
+    value: 'sage', get label() { return uiText("Sage"); }, provider: 'OPENAI',
     "Gender": "F",
     previewURL: "https://cdn.openai.com/API/docs/audio/sage.wav"
   },
@@ -542,7 +552,7 @@ export const MUSIC_PROVIDERS = [
     locksInstrumental: false,
   },
   {
-    name: 'ElevenLabs Music',
+    get name() { return uiText('ElevenLabs Music'); },
     key: 'ELEVENLABS_MUSIC',
     minDurationSeconds: 3,
     maxDurationSeconds: 600,
@@ -550,7 +560,7 @@ export const MUSIC_PROVIDERS = [
     locksInstrumental: false,
   },
   {
-    name: 'Custom Text to Music',
+    get name() { return uiText('Custom Text to Music'); },
     key: 'CUSTOM_TEXT_TO_MUSIC',
     minDurationSeconds: 1,
     maxDurationSeconds: 600,
@@ -565,7 +575,7 @@ export const MUSIC_PROVIDERS = [
 const CUSTOM_TTS_SPEAKER_TYPES = [
   {
     value: 'custom',
-    label: 'Custom Voice',
+    get label() { return uiText("Custom Voice"); },
     provider: 'CUSTOM_TEXT_TO_SPEECH',
     Gender: null,
   },

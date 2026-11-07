@@ -187,6 +187,8 @@ const SETUP_BOOTSTRAP_TOKEN_FILE = normalizeString(
 const SETUP_BOOTSTRAP_TOKEN = SETUP_BOOTSTRAP_TOKEN_FILE
   ? normalizeString(readFileSync(SETUP_BOOTSTRAP_TOKEN_FILE, 'utf8'))
   : '';
+const LOCAL_SETUP_BOOTSTRAP_ENABLED = !SETUP_REMOTE_INSTALL &&
+  ['127.0.0.1', '::1', 'localhost'].includes(normalizeString(process.env.SAMSAR_SETUP_BIND_ADDR));
 
 function getAllowedProviderEnvironmentVariableNames() {
   const customNames = normalizeString(process.env.SAMSAR_SETUP_PROVIDER_ENV_NAMES)
@@ -993,6 +995,29 @@ function isSetupRequestAuthenticated(req, authState) {
     return verifySetupWizardPassword(getSetupPasswordFromRequest(req), authState.passwordHash);
   }
   return verifySetupBootstrapToken(getSetupBootstrapTokenFromRequest(req));
+}
+
+function canBootstrapLocalSetup(req, authState) {
+  if (!LOCAL_SETUP_BOOTSTRAP_ENABLED || authState.passwordHash || !SETUP_BOOTSTRAP_TOKEN) {
+    return false;
+  }
+
+  // Docker forwards local connections through its bridge, so the launcher must
+  // explicitly attest the host binding. Never trust forwarded host headers.
+  const host = req.headers.host;
+  if (typeof host !== 'string' || !/^(localhost|127\.0\.0\.1|\[::1\])(?::\d{1,5})?$/i.test(host)) {
+    return false;
+  }
+  const fetchSite = req.headers['sec-fetch-site'];
+  if (fetchSite && !['same-origin', 'none'].includes(fetchSite)) {
+    return false;
+  }
+  try {
+    const origin = new URL(`http://${host}`).origin;
+    return !req.headers.origin || req.headers.origin === origin;
+  } catch {
+    return false;
+  }
 }
 
 async function requireSetupAuth(req, res) {
@@ -4109,9 +4134,21 @@ async function handleApi(req, res, pathname) {
     return true;
   }
 
+  if (req.method === 'GET' && pathname === '/api/setup/auth/bootstrap') {
+    const authState = await getSetupAuthState();
+    if (!canBootstrapLocalSetup(req, authState)) {
+      sendJson(res, 403, { ok: false, message: 'Automatic setup access is only available for a fresh local installation.' });
+      return true;
+    }
+    res.setHeader('Cross-Origin-Resource-Policy', 'same-origin');
+    sendJson(res, 200, { ok: true, bootstrapToken: SETUP_BOOTSTRAP_TOKEN });
+    return true;
+  }
+
   if (req.method === 'GET' && pathname === '/api/setup/install-status') {
     const status = await getInstallStatus();
     const authState = await getSetupAuthState();
+    status.setupLocalBootstrapAvailable = canBootstrapLocalSetup(req, authState);
     status.setupAuthenticated = isSetupRequestAuthenticated(req, authState);
     if (!status.setupAuthenticated) {
       status.config = null;
@@ -4617,7 +4654,9 @@ const server = http.createServer(async (req, res) => {
     applySecurityHeaders(res);
     const requestUrl = new URL(req.url, 'http://localhost');
     if (requestUrl.pathname.startsWith('/api/')) {
-      applyCorsHeaders(req, res);
+      if (requestUrl.pathname !== '/api/setup/auth/bootstrap') {
+        applyCorsHeaders(req, res);
+      }
       if (req.method === 'OPTIONS') {
         res.writeHead(204);
         res.end();

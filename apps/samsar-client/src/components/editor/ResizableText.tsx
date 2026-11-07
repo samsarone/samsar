@@ -1,3 +1,4 @@
+import { useUiLanguage } from '../../hooks/useUiLanguage.js';
 import { useRef, useEffect, useState } from 'react';
 import { Text, Transformer, Group } from 'react-konva';
 
@@ -12,6 +13,7 @@ const ResizableText = ({
   stageZoomScale,
   ...props
 }) => {
+  useUiLanguage();
 
 
   

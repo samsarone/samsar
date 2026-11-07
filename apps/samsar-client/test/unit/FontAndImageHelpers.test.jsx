@@ -14,8 +14,8 @@ describe('language resolution and font selection', () => {
   });
 
   it.each([
-    [' English ', 'en'], ['Español', 'es'], ['日本語', 'ja'], ['JP', 'ja'],
-    ['cn', 'zh'], ['zh_CN', 'zh'], ['en-US', 'en'], ['বাংলা', 'bn'], ['AUTO', 'auto'],
+    [' English ', 'en'], ['Español', 'auto'], ['日本語', 'ja'], ['JP', 'ja'],
+    ['cn', 'auto'], ['zh_CN', 'auto'], ['en-US', 'en'], ['বাংলা', 'auto'], ['ไทย', 'th'], ['th-TH', 'th'], ['AUTO', 'auto'],
     ['', 'auto'], [null, 'auto'], ['Klingon', 'auto'],
   ])('resolves locale or display name %j into %s', (source, expected) => {
     expect(resolveLanguageCode(source)).toBe(expected);

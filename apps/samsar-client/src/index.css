@@ -1,10 +1,156 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
-
 @import "tailwindcss";
 
-@custom-variant dark (&:where(.theme-dark, .theme-dark *));
+/* Dark mode is driven by ColorModeProvider, which sets `.dark` on <html> (also set
+   pre-paint by index.html) and `.theme-dark` on <body>. Match either. */
+@custom-variant dark (&:where(.dark, .dark *, .theme-dark, .theme-dark *));
+
+/* ---------------------------------------------------------------------------
+   Typefaces (self-hosted, SIL OFL — see src/fonts/LICENSE-*.txt)
+   Inter is metrically close to the previous system UI stack (SF Pro / Segoe UI),
+   so layouts keep their rhythm while rendering consistently on every OS.
+   --------------------------------------------------------------------------- */
+@font-face {
+  font-family: 'Inter Variable';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 900;
+  src: url('./fonts/inter-latin-opsz-normal.woff2') format('woff2-variations');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: 'Inter Variable';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 900;
+  src: url('./fonts/inter-latin-ext-opsz-normal.woff2') format('woff2-variations');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
+@font-face {
+  font-family: 'Inter Variable';
+  font-style: italic;
+  font-display: swap;
+  font-weight: 100 900;
+  src: url('./fonts/inter-latin-opsz-italic.woff2') format('woff2-variations');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: 'JetBrains Mono Variable';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 800;
+  src: url('./fonts/jetbrains-mono-latin-wght-normal.woff2') format('woff2-variations');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+/* ---------------------------------------------------------------------------
+   Design tokens
+   Every color token below has a light value here and a dark value in the
+   `:root.dark, .theme-dark` block further down, so a single class such as
+   `bg-surface` or `text-fg-muted` follows the active theme without a
+   `colorMode === 'dark' ? … : …` check in the component.
+   --------------------------------------------------------------------------- */
+@theme {
+  /* Type families. Non-Latin scripts (ja, zh, th, hi, bn …) fall through to the
+     platform fonts after Inter, exactly as before. */
+  --font-sans: 'Inter Variable', 'Inter', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+    'Segoe UI', 'Roboto', 'Helvetica Neue', 'Noto Sans', Arial, sans-serif, 'Apple Color Emoji',
+    'Segoe UI Emoji', 'Segoe UI Symbol';
+  --font-mono: 'JetBrains Mono Variable', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+    'Liberation Mono', 'Courier New', monospace;
+
+  /* Type scale. Tailwind's xs (12) / sm (14) / base (16) / lg (18) / xl (20) …
+     remain; these fill the dense-UI steps that were previously one-off
+     `text-[Npx]` values. They set font-size only (line-height is inherited),
+     matching the arbitrary values they replace. */
+  --text-micro: 0.625rem;   /* 10px – uppercase micro labels, badges   */
+  --text-caption: 0.6875rem; /* 11px – helper text, meta, dense chrome  */
+  --text-label: 0.8125rem;  /* 13px – compact control labels           */
+  --text-lead: 0.9375rem;     /* 15px – emphasized body in dense panels  */
+
+  /* Surfaces (light values) */
+  --color-canvas: #d9e2f0;
+  --color-surface: #f3f6fb;
+  --color-surface-raised: #f3f6fb;
+  --color-surface-sunken: #f3f6fb;
+  --color-surface-muted: #e6ebf5;
+  --color-surface-hover: var(--color-slate-100);
+
+  /* Lines */
+  --color-line: #cbd6e6;
+  --color-line-strong: #cbd6e6;
+  --color-line-control: #cbd6e6;
+
+  /* Foreground */
+  --color-fg: var(--color-slate-900);
+  --color-fg-body: #3a4050;
+  --color-fg-secondary: #3a4050;
+  --color-fg-tertiary: var(--color-slate-600);
+  --color-fg-muted: var(--color-slate-500);
+
+  /* Brand / interaction */
+  --color-accent: var(--color-blue-600);
+  --color-accent-strong: var(--color-blue-700);
+  --color-accent-from: var(--color-blue-500);
+  --color-accent-to: var(--color-blue-600);
+  --color-accent-hover-from: var(--color-blue-600);
+  --color-accent-hover-to: var(--color-blue-700);
+  --color-on-accent: #ffffff;
+  --color-control-border: #cbd6e6;
+  --color-control-fg: #3a4050;
+  --color-control-fg-hover: var(--color-slate-900);
+  --color-danger-from: var(--color-rose-600);
+  --color-danger-to: var(--color-rose-700);
+  --color-on-danger: #ffffff;
+  --color-highlight: #b45309;
+  --color-highlight-soft: #92400e;
+  --color-focus: #0369a1;
+  --color-danger: #be123c;
+  --color-success: #047857;
+  --color-warning: #92400e;
+}
+
+:root.dark,
+.theme-dark {
+  --color-canvas: #0c0d12;
+  --color-surface: #181b24;
+  --color-surface-raised: #20232e;
+  --color-surface-sunken: #151720;
+  --color-surface-muted: #20232e;
+  --color-surface-hover: #292d3a;
+
+  --color-line: #3a4050;
+  --color-line-strong: #4a5265;
+  --color-line-control: #667188;
+
+  --color-fg: #f4f6fb;
+  --color-fg-body: #f4f6fb;
+  --color-fg-secondary: #b6bfd0;
+  --color-fg-tertiary: #a8b2c5;
+  --color-fg-muted: #8b96aa;
+
+  --color-accent: #ff4655;
+  --color-accent-strong: #ff6572;
+  --color-accent-from: #ff4655;
+  --color-accent-to: #ff6b4a;
+  --color-accent-hover-from: #ff6572;
+  --color-accent-hover-to: #ff8066;
+  --color-on-accent: #080a10;
+  --color-control-border: #667188;
+  --color-control-fg: #b6bfd0;
+  --color-control-fg-hover: #f4f6fb;
+  --color-danger-from: #e11d48;
+  --color-danger-to: #be123c;
+  --color-on-danger: #fff1f2;
+  --color-highlight: #f6c453;
+  --color-highlight-soft: #ffe0a3;
+  --color-focus: #ffe0a3;
+  --color-danger: #fda4af;
+  --color-success: #6ee7b7;
+  --color-warning: #fcd34d;
+}
 
 :root {
   --app-nav-height: 56px;
@@ -79,9 +225,8 @@ body {
   margin: 0;
   background-color: var(--surface-light);
   color: #0f172a;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
-    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
-    sans-serif;
+  font-family: var(--font-sans);
+  font-optical-sizing: auto;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
@@ -198,9 +343,11 @@ body .material-surface-light {
   box-shadow: 0 12px 24px rgba(15, 23, 42, 0.08);
 }
 
-code {
-  font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
-    monospace;
+code,
+kbd,
+samp,
+pre {
+  font-family: var(--font-mono);
 }
 
 @keyframes purchase-credits-prompt-enter {
@@ -288,6 +435,27 @@ body.theme-dark .from-amber-400 {
   --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to) !important;
 }
 body.theme-dark .to-orange-400 { --tw-gradient-to: var(--accent-secondary) var(--tw-gradient-to-position) !important; }
+
+/* Token parity with the legacy overrides above/below.
+   The theme tokens replaced class pairs such as `bg-[#181b24]` / `bg-white`. Where the
+   legacy class was force-recoloured with !important (e.g. `.bg-white` in light mode,
+   `.text-slate-100` in dark mode), the token carries the same !important weight in that
+   theme only, so it wins or loses against neighbouring classes exactly as before.
+   Retire these together with the legacy overrides. */
+body.theme-dark .text-fg { color: var(--color-fg) !important; }
+body.theme-dark .text-fg-body { color: var(--color-fg-body) !important; }
+body.theme-dark .text-fg-secondary { color: var(--color-fg-secondary) !important; }
+body.theme-dark .text-fg-tertiary { color: var(--color-fg-tertiary) !important; }
+body.theme-dark .text-fg-muted { color: var(--color-fg-muted) !important; }
+body.theme-light .bg-surface { background-color: var(--color-surface) !important; }
+body.theme-light .bg-surface-raised { background-color: var(--color-surface-raised) !important; }
+body.theme-light .bg-surface-sunken { background-color: var(--color-surface-sunken) !important; }
+body.theme-light .bg-surface-muted { background-color: var(--color-surface-muted) !important; }
+body.theme-light .border-line { border-color: var(--color-line) !important; }
+body.theme-light .border-line-strong { border-color: var(--color-line-strong) !important; }
+body.theme-light .border-line-control { border-color: var(--color-line-control) !important; }
+body.theme-light .text-fg-body { color: var(--color-fg-body) !important; }
+body.theme-light .text-fg-secondary { color: var(--color-fg-secondary) !important; }
 
 /* Light mode soft tints */
 body.theme-light .bg-white { background-color: #f3f6fb !important; }

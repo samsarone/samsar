@@ -1,7 +1,9 @@
+import { useUiLanguage } from '../../../../hooks/useUiLanguage.js';
 import { useRef, useEffect } from 'react';
 import { Circle, Transformer } from 'react-konva';
 
 const DraggableToolbarCircle = ({ shapeProps, setShapeProps, isDrawing, id, shapeSet }) => {
+  useUiLanguage();
   const shapeRef = useRef();
   const transformerRef = useRef();
 

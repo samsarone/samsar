@@ -1,6 +1,7 @@
+import { translateText as uiText } from '../utils/localization.js';
 export const PLAY_SPEAKER_TYPES = [
   {
-    "label": "Angelo",
+    get "label"() { return uiText("Angelo"); },
     "accent": "us",
     "gender": "m",
     "age": "young",
@@ -11,7 +12,7 @@ export const PLAY_SPEAKER_TYPES = [
     "previewURL": "https://peregrine-samples.s3.us-east-1.amazonaws.com/parrot-samples/Angelo_Sample.wav"
   },
   {
-    "label": "Deedee",
+    get "label"() { return uiText("Deedee"); },
     "accent": "us african american",
     "gender": "f",
     "age": "middle",
@@ -23,7 +24,7 @@ export const PLAY_SPEAKER_TYPES = [
   },
 
   {
-    "label": "Jennifer",
+    get "label"() { return uiText("Jennifer"); },
     "accent": "british (yorkshire)",
     "gender": "f",
     "age": "middle",
@@ -36,7 +37,7 @@ export const PLAY_SPEAKER_TYPES = [
 
 
   {
-    "label": "Briggs",
+    get "label"() { return uiText("Briggs"); },
     "gender": "m",
     "style": "conversational",
     "voice name": "dialog briggs",
@@ -47,7 +48,7 @@ export const PLAY_SPEAKER_TYPES = [
 
 
   {
-    "label": "Samara",
+    get "label"() { return uiText("Samara"); },
     "gender": "f",
     "style": "conversational",
     "voice name": "dialog samara",
@@ -58,7 +59,7 @@ export const PLAY_SPEAKER_TYPES = [
 
 
   {
-    "label": "Aaliyah",
+    get "label"() { return uiText("Aaliyah"); },
     "gender": "f",
     "style": "conversational",
     "voice name": "dialog aaliyah",
@@ -68,7 +69,7 @@ export const PLAY_SPEAKER_TYPES = [
   },
 
   {
-    "label": "Arsenio",
+    get "label"() { return uiText("Arsenio"); },
     "accent": "us african american",
     "gender": "m",
     "age": "middle",
@@ -80,7 +81,7 @@ export const PLAY_SPEAKER_TYPES = [
   },
 
   {
-    "label": "Timo",
+    get "label"() { return uiText("Timo"); },
     "accent": "us",
     "gender": "m",
     "age": "middle",
@@ -91,7 +92,7 @@ export const PLAY_SPEAKER_TYPES = [
     "previewURL": "https://peregrine-samples.s3.us-east-1.amazonaws.com/parrot-samples/Timo_Sample.wav"
   },
   {
-    "label": "Dexter",
+    get "label"() { return uiText("Dexter"); },
     "accent": "us",
     "gender": "m",
     "age": "middle",
@@ -102,7 +103,7 @@ export const PLAY_SPEAKER_TYPES = [
     "previewURL": "https://peregrine-samples.s3.us-east-1.amazonaws.com/parrot-samples/Dexter_Sample.wav"
   },
   {
-    "label": "Briggs",
+    get "label"() { return uiText("Briggs"); },
     "accent": "us southern (oklahoma)",
     "gender": "m",
     "age": "old",
@@ -114,7 +115,7 @@ export const PLAY_SPEAKER_TYPES = [
   },
 
   {
-    "label": "Nia",
+    get "label"() { return uiText("Nia"); },
     "accent": "us",
     "gender": "f",
     "age": "young",
@@ -125,7 +126,7 @@ export const PLAY_SPEAKER_TYPES = [
     "previewURL": "https://peregrine-samples.s3.us-east-1.amazonaws.com/parrot-samples/Nia_Sample.wav"
   },
   {
-    "label": "Inara",
+    get "label"() { return uiText("Inara"); },
     "accent": "us african american",
     "gender": "f",
     "age": "middle",

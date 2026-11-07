@@ -21,6 +21,8 @@ import {
 } from '../inference/InferenceModels.js';
 import { createCompatibleInferenceChatCompletion } from '../OpenAI.js';
 import { withInferenceAuthorization } from '../inference/RequestInferenceModel.js';
+import { isClaudeModel } from '../inference/AnthropicChatAdapter.js';
+import { usesLocalAnthropicVisionImages } from '../inference/AnthropicVisionImages.js';
 
 const IMAGE_ACCESSIBILITY_TIMEOUT_MS = 2500;
 const VISION_INFERENCE_MAX_RETRIES = normalizeNonNegativeInteger(
@@ -372,12 +374,15 @@ Provide an information-dense, condensed and thorough description in 3000 charact
 
   const response = await runVisionInferenceWithRetry(
     async () => {
-      const accessibleUrl = await getAccessibleMediaUrlForProvider(activeImageRemoteLink, {
-        preferDataUrl: false,
-        preferInternalDockerUrl: false,
-        mediaKind: 'image',
-      });
-      const providerImageUrl = await resolveVisionImageUrl(accessibleUrl);
+      // Local Claude media is resolved after adapter selection: native reads
+      // mounted bytes; OpenRouter and production retain public-URL delivery.
+      const providerImageUrl = isClaudeModel(inferenceModel) && usesLocalAnthropicVisionImages()
+        ? activeImageRemoteLink
+        : await resolveVisionImageUrl(await getAccessibleMediaUrlForProvider(activeImageRemoteLink, {
+          preferDataUrl: false,
+          preferInternalDockerUrl: false,
+          mediaKind: 'image',
+        }));
       const activePayload = {
         ...buildActivePayload(providerImageUrl),
         externalMaxRetries: 0,

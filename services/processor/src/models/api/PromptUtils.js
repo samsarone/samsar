@@ -1,3 +1,4 @@
+import { normalizeKlingModelKey } from '../../utils/KlingModel.js';
 import {
   IMAGE_GENERAITON_MODEL_TYPES,
   VIDEO_GENERATION_MODEL_TYPES,
@@ -114,9 +115,7 @@ export function validateExpressVideoModelKey(videoModel, options = {}) {
   const isRequired = options.required !== false;
   const hasValue = videoModel !== undefined && videoModel !== null &&
     String(videoModel).trim().length > 0;
-  const normalizedVideoModel = typeof videoModel === 'string'
-    ? videoModel.trim()
-    : videoModel;
+  const normalizedVideoModel = normalizeKlingModelKey(videoModel);
 
   if (!hasValue && !isRequired) {
     return {
@@ -280,7 +279,7 @@ export function validateNarrativeInput(payload) {
       };
     }
 
-    const videoGenerationModelExists = VIDEO_GENERATION_MODEL_TYPES.find(model => model.key === video_model);
+    const videoGenerationModelExists = VIDEO_GENERATION_MODEL_TYPES.find(model => model.key === normalizeKlingModelKey(video_model));
 
     if (!videoGenerationModelExists) {
       return {

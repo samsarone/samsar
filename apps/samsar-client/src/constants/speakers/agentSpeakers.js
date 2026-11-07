@@ -1,3 +1,4 @@
+import { translateText as uiText } from '../../utils/localization.js';
 import { OPENAI_SPEAKER_TYPES } from "../Types.ts";
 import { ELEVENLABS_TTS } from "../ElevenLabs.jsx";
 
@@ -7,20 +8,20 @@ const GOOGLE_PROVIDER = "GOOGLE";
 
 function normalizeSpeakerGender(rawGender = "") {
   if (typeof rawGender !== "string") {
-    return { code: null, label: "Unspecified" };
+    return { code: null, label: uiText("Unspecified") };
   }
 
   const normalized = rawGender.trim().toLowerCase();
   if (!normalized) {
-    return { code: null, label: "Unspecified" };
+    return { code: null, label: uiText("Unspecified") };
   }
 
   if (normalized === "m" || normalized === "male" || normalized === "man") {
-    return { code: "M", label: "Male" };
+    return { code: "M", label: uiText("Male") };
   }
 
   if (normalized === "f" || normalized === "female" || normalized === "woman") {
-    return { code: "F", label: "Female" };
+    return { code: "F", label: uiText("Female") };
   }
 
   return {
@@ -54,21 +55,21 @@ const ELEVENLABS_AGENT_SPEAKERS = ELEVENLABS_TTS.map((speaker) =>
 export const AGENT_SPEAKER_GROUPS = [
   {
     key: OPENAI_PROVIDER,
-    label: "OpenAI TTS",
+    get label() { return uiText("OpenAI TTS"); },
     allowKey: "allowOpenAI",
     selectionKey: "openAISpeakers",
     speakers: OPENAI_AGENT_SPEAKERS,
   },
   {
     key: ELEVENLABS_PROVIDER,
-    label: "ElevenLabs TTS",
+    get label() { return uiText("ElevenLabs TTS"); },
     allowKey: "allowElevenLabs",
     selectionKey: "elevenLabsSpeakers",
     speakers: ELEVENLABS_AGENT_SPEAKERS,
   },
   {
     key: GOOGLE_PROVIDER,
-    label: "Google TTS",
+    get label() { return uiText("Google TTS"); },
     allowKey: "allowGoogle",
     selectionKey: "googleSpeakers",
     speakers: [],

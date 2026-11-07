@@ -62,7 +62,9 @@ export function assertManifestLayerMapping(manifest, session) {
       throw new Error(`Manifest layer index/ID mismatch: ${entry.index} / ${entry.layerId}`);
     }
     seenLayers.add(layerId);
-    if (!sourcePrompt(layer)) throw new Error(`Original image prompt is missing for layer ${entry.index}.`);
+    if (layer.imageSession?.generationStatus !== 'COMPLETED' && !sourcePrompt(layer)) {
+      throw new Error(`Original image prompt is missing for layer ${entry.index}.`);
+    }
     if (entry.savedImage) {
       if (!IMAGE_NAME.test(entry.savedImage) || !OBJECT_ID.test(entry.requestId || '') ||
           seenRequests.has(entry.requestId) || seenFiles.has(entry.savedImage)) {
@@ -295,7 +297,8 @@ async function applyPlan(plan, backupDir) {
   const { resumeSavedImageAtVision } = await import('../../src/Image.js');
   for (const item of plan.plannedLayers.filter((candidate) => candidate.image)) {
     const latestSession = await VideoSession.findById(sessionId).lean();
-    const latestLayer = latestSession.layers[item.entry.index];
+    const latestLayer = latestSession.layers.find((layer) => layer._id.toString() === item.entry.layerId);
+    if (!latestLayer) throw new Error(`Saved-image layer is no longer present: ${item.entry.layerId}`);
     if (latestLayer.imageSession?.generationStatus === 'COMPLETED') continue;
     const request = await ImageGeneration.findById(item.entry.requestId).lean();
     if (!request) throw new Error(`Saved-image request disappeared for layer ${item.entry.index}.`);
@@ -310,7 +313,7 @@ async function applyPlan(plan, backupDir) {
       layerId: item.entry.layerId,
     });
     const after = await VideoSession.findById(sessionId).lean();
-    const state = after.layers[item.entry.index]?.imageSession?.generationStatus;
+    const state = after.layers.find((layer) => layer._id.toString() === item.entry.layerId)?.imageSession?.generationStatus;
     const afterRequest = await ImageGeneration.findById(item.entry.requestId).lean();
     if (state !== 'COMPLETED' && !(afterRequest && afterRequest.rowLocked === false)) {
       throw new Error(`Layer ${item.entry.index} neither completed nor entered normal quality retry.`);
@@ -327,7 +330,7 @@ async function applyPlan(plan, backupDir) {
   await VideoSession.updateOne({ _id: sessionId }, {
     $set: { 'visionRecovery.phase': 'NORMAL_IMAGE_PIPELINE_QUEUED' },
   });
-  console.log(`Released ${plan.plannedLayers.filter((item) => !item.image).length} layers without saved PNGs to the normal image generation queue.`);
+  console.log(`Released ${plan.plannedLayers.filter((item) => !item.image && item.layer.imageSession?.generationStatus !== 'COMPLETED').length} layers without saved PNGs to the normal image generation queue.`);
   console.log('Express listener can now advance the existing step session after image, audio, and later stages complete.');
 }
 

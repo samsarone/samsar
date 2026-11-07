@@ -1,3 +1,4 @@
+import { useUiLanguage } from '../../../hooks/useUiLanguage.js';
 import { useContext, useEffect, useMemo, useRef, useState } from 'react';
 import axios from 'axios';
 import { useColorMode } from '../../../contexts/ColorMode.jsx';
@@ -346,6 +347,7 @@ export default function AudioTrackWaveformOverlay({
   viewportGeometry = null,
   trackStartTimeSeconds = 0,
 }) {
+  useUiLanguage();
   const fps = useStudioFrameRate();
   const pool = useContext(StudioMediaContext);
   const localAudioBuffers = useRef(new Map());

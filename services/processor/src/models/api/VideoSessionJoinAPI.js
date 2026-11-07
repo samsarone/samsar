@@ -1,3 +1,4 @@
+import { getLayerFrameRange, secondsToFrameCount } from '../../utils/FrameClock.js';
 import { Types } from 'mongoose';
 import OpenAI from 'openai';
 
@@ -16,7 +17,6 @@ const DEFAULT_FRAMES_PER_SECOND = 24;
 const VALID_FRAMES_PER_SECOND = new Set([16, 24, 30]);
 const SCENE_BLEND_BOUNDARY_SECONDS = 0.5;
 const OUTRO_BLEND_FADE_SECONDS = 1;
-const FRAME_ROUNDING_EPSILON = 1e-9;
 const JOIN_VIDEO_TITLE_MODEL = process.env.JOIN_VIDEO_TITLE_MODEL || 'gpt-6-astra';
 const openai = process.env.OPENAI_API_KEY ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY }) : null;
 
@@ -214,17 +214,6 @@ function frameCountToSeconds(frameCount, framesPerSecond) {
     return 0;
   }
   return frames / fps;
-}
-
-function floorSecondsToFrameCount(seconds, framesPerSecond, { minimumFrames = 0 } = {}) {
-  const fps = resolveFramesPerSecond(framesPerSecond);
-  const value = Number(seconds);
-  if (!Number.isFinite(value) || value <= 0) {
-    return Math.max(0, minimumFrames);
-  }
-
-  const floored = Math.floor((value * fps) + FRAME_ROUNDING_EPSILON);
-  return Math.max(floored, Math.max(0, minimumFrames));
 }
 
 function isAudioLayerType(audioLayer, type) {
@@ -723,13 +712,10 @@ function resolveRenderedFrameCountFromLayer(layer, fps) {
 
 function normalizeCharacterLipSyncDurationForJoin({
   layer,
-  framesPerSecond,
 }) {
   if (!isCharacterLipSyncLayer(layer)) {
     return;
   }
-
-  const fps = resolveFramesPerSecond(framesPerSecond);
 
   const imageSession = layer?.imageSession;
   if (imageSession && Array.isArray(imageSession.activeItemList)) {
@@ -738,49 +724,29 @@ function normalizeCharacterLipSyncDurationForJoin({
     );
   }
 
-  const duration = normalizePositiveNumber(layer.duration);
-  if (!duration) {
-    return;
+  // Old lip-sync padding stored a clip-end flag without a source end boundary.
+  // Only that malformed legacy marker is discarded; real source trims survive.
+  if (layer.clipEnd && !(Number(layer.endFrame) > Number(layer.clipEndFrames))) {
+    layer.clipEnd = false;
+    layer.clipEndFrames = 0;
   }
-
-  const totalFrames = Math.max(1, Math.floor(duration * fps));
-  layer.startFrame = 0;
-  layer.endFrame = totalFrames;
-
-  // Clear stale clip-end markers for joined lip-sync layers to avoid
-  // tail still-frame fallback in frame rendering.
-  layer.clipEnd = false;
-  layer.clipEndFrames = 0;
+  // Source clip markers still refer to the original video, which is reused.
 }
 
-function normalizeAiBackedLayerDurationForJoin({
-  layer,
-  framesPerSecond,
-}) {
-  if (!isAiBackedLayer(layer)) {
-    return;
-  }
-
+function normalizeAiBackedLayerDurationForJoin({ layer, framesPerSecond, sourceFramesPerSecond, frameCount }) {
+  if (!isAiBackedLayer(layer)) return frameCount;
+  const sourceFps = resolveFramesPerSecond(sourceFramesPerSecond);
   const fps = resolveFramesPerSecond(framesPerSecond);
-  const renderedFrameCount = resolveRenderedFrameCountFromLayer(layer, fps);
-  const currentDurationFrames = floorSecondsToFrameCount(layer.duration, fps, { minimumFrames: 1 });
-
-  let targetFrameCount = currentDurationFrames;
-  if (renderedFrameCount > 0) {
-    // Never request more frames than the source AI render has.
-    targetFrameCount = Math.max(1, Math.min(currentDurationFrames, renderedFrameCount));
-  }
-
-  layer.duration = frameCountToSeconds(targetFrameCount, fps);
-  layer.startFrame = 0;
-  layer.endFrame = targetFrameCount;
-
-  // Joined sessions re-render from already-clipped source videos; stale clip ranges
-  // can force end-of-scene stills, so clear them for AI-backed layers.
-  layer.clipStart = false;
-  layer.clipStartFrames = 0;
-  layer.clipEnd = false;
-  layer.clipEndFrames = 0;
+  const sourceCount = resolveRenderedFrameCountFromLayer(layer, sourceFps);
+  const hasSourceBounds = Number.isFinite(parseFrameIndexFromPath(layer?.aiLayerEndFrame));
+  // Composited layer.frames are already clipped; extracted source bounds are not.
+  const sourceClipCount = hasSourceBounds
+    ? (layer.clipStart ? Number(layer.clipStartFrames) || 0 : 0)
+      + (layer.clipEnd ? Number(layer.clipEndFrames) || 0 : 0)
+    : 0;
+  const available = secondsToFrameCount(Math.max(0, sourceCount - sourceClipCount) / sourceFps, fps);
+  if (sourceCount > 0 && available <= 0) throw new Error('Joined video has no frames inside its source clip range.');
+  return available > 0 ? Math.min(frameCount, available) : frameCount;
 }
 
 function prepareAudioLayerForJoin(audioLayer) {
@@ -913,35 +879,28 @@ function buildJoinedLayersAndAudioLayers(sessionDataList = [], options = {}) {
       }
 
       const baseOffset = normalizedOffsets[idx] ?? 0;
-      const baseOffsetFrames = floorSecondsToFrameCount(baseOffset, sessionFramesPerSecond, { minimumFrames: 0 });
-
-      normalizeCharacterLipSyncDurationForJoin({
-        layer,
-        framesPerSecond: sessionFramesPerSecond,
+      const originalFrameCount = getLayerFrameRange({ duration: layer.duration, durationOffset: baseOffset }, sessionFramesPerSecond).frameCount;
+      normalizeCharacterLipSyncDurationForJoin({ layer });
+      const layerDurationFrames = normalizeAiBackedLayerDurationForJoin({
+        layer, framesPerSecond: sessionFramesPerSecond,
+        sourceFramesPerSecond: sessionData.framesPerSecond,
+        frameCount: Math.max(1, originalFrameCount),
       });
-      normalizeAiBackedLayerDurationForJoin({
-        layer,
-        framesPerSecond: sessionFramesPerSecond,
-      });
-
-      const layerDurationFrames = floorSecondsToFrameCount(
-        layer.duration,
-        sessionFramesPerSecond,
-        { minimumFrames: 1 },
-      );
-
+      // The final renderer concatenates scenes: rebuild the same contiguous clock
+      // here, including when a stale scene duration is capped to available media.
       layer.duration = frameCountToSeconds(layerDurationFrames, sessionFramesPerSecond);
-      layer.durationOffset = frameCountToSeconds(
-        baseOffsetFrames + sessionOffsetFrames,
-        sessionFramesPerSecond,
-      );
-      layer.startFrame = 0;
-      layer.endFrame = layerDurationFrames;
-
-      const layerEndFrame = baseOffsetFrames + layerDurationFrames;
-      if (layerEndFrame > sessionMaxEndFrame) {
-        sessionMaxEndFrame = layerEndFrame;
+      layer.durationOffset = frameCountToSeconds(sessionMaxEndFrame + sessionOffsetFrames, sessionFramesPerSecond);
+      const sourceFps = resolveFramesPerSecond(sessionData.framesPerSecond);
+      for (const field of ['clipStartFrames', 'clipEndFrames', 'startFrame', 'endFrame']) {
+        if (Number.isFinite(Number(layer[field]))) {
+          layer[field] = secondsToFrameCount(Number(layer[field]) / sourceFps, sessionFramesPerSecond);
+        }
       }
+      if (!layer.clipStart && !layer.clipEnd) {
+        layer.startFrame = 0;
+        layer.endFrame = layerDurationFrames;
+      }
+      sessionMaxEndFrame += layerDurationFrames;
 
       prepareLayerForJoin(layer);
 
@@ -954,11 +913,7 @@ function buildJoinedLayersAndAudioLayers(sessionDataList = [], options = {}) {
       }
     });
 
-    const fallbackSessionDurationFrames = floorSecondsToFrameCount(
-      sessionDuration,
-      sessionFramesPerSecond,
-      { minimumFrames: 1 },
-    );
+    const fallbackSessionDurationFrames = Math.max(1, secondsToFrameCount(sessionDuration, sessionFramesPerSecond));
     const effectiveSessionDurationFrames = sessionMaxEndFrame > 0
       ? sessionMaxEndFrame
       : fallbackSessionDurationFrames;

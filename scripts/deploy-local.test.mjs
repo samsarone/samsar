@@ -15,6 +15,7 @@ function fixture(t, { configured = true, wizardStatus = 0, runtimeStatus = 0, re
   fs.mkdirSync(path.join(root, 'scripts'));
   const pkg = JSON.parse(fs.readFileSync(path.join(sourceRoot, 'package.json'), 'utf8'));
   pkg.scripts.sync = 'node scripts/sync-fixture.mjs';
+  pkg.scripts['docker:update'] = 'node scripts/deploy-local.mjs update';
   fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ name: 'deployment-fixture', private: true, type: 'module', scripts: pkg.scripts }));
   const entry = path.join(sourceRoot, 'scripts/deploy-local.mjs');
   if (fs.existsSync(entry)) fs.copyFileSync(entry, path.join(root, 'scripts/deploy-local.mjs'));
@@ -30,6 +31,7 @@ function fixture(t, { configured = true, wizardStatus = 0, runtimeStatus = 0, re
   fs.writeFileSync(path.join(root, 'scripts/setup-wizard-docker.sh'), `#!/usr/bin/env bash
 set -eu
 printf 'wizard\\n' >> "$SAMSAR_DEPLOY_TEST_EVENTS"
+printf '%s' "$SAMSAR_SETUP_REUSE_UNCHANGED" > "$SAMSAR_DEPLOY_TEST_READY.reuse"
 if [[ "${wizardStatus}" != 0 ]]; then exit ${wizardStatus}; fi
 printf ready > "$SAMSAR_DEPLOY_TEST_READY"
 ${configureInWizard ? "mkdir -p runtime/config\nprintf '{}' > runtime/config/samsar.config.json" : ''}
@@ -44,16 +46,18 @@ ${configureInWizard ? "mkdir -p runtime/config\nprintf '{}' > runtime/config/sam
       });
       assert.ifError(result.error);
       return { ...result, events: fs.existsSync(path.join(root, 'events')) ? fs.readFileSync(path.join(root, 'events'), 'utf8').trim().split('\n') : [],
-        wizardReady: fs.existsSync(path.join(root, 'wizard-ready')) };
+        wizardReady: fs.existsSync(path.join(root, 'wizard-ready')),
+        reuseWizard: fs.readFileSync(path.join(root, 'wizard-ready.reuse'), 'utf8') };
     },
   };
 }
 
-for (const [command, action] of [['docker:up', 'up'], ['docker:restart', 'restart']]) {
+for (const [command, action] of [['docker:up', 'up'], ['docker:restart', 'restart'], ['docker:update', 'update']]) {
   test(`F2P: ${command} starts the wizard before rendering config or building the runtime`, posixOnly, t => {
     const result = fixture(t).run(command);
     assert.equal(result.status, 0, result.stderr);
     assert.deepEqual(result.events, ['wizard', 'render', `runtime:${action}`]);
+    assert.equal(result.reuseWizard, action === 'update' ? '1' : '0');
   });
   test(`F2P: fresh ${command} leaves configuration to the ready wizard`, posixOnly, t => {
     const project = fixture(t, { configured: false });

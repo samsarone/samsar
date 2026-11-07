@@ -78,3 +78,12 @@ test('custom speech detection includes recorded and custom speech metadata', () 
   assert.equal(isCustomSpeechAudioLayer({ generationMeta: { uploadType: 'recorded_speech' } }), true);
   assert.equal(isCustomSpeechAudioLayer({ generationType: 'speech' }), false);
 });
+
+test('recorded speech extends the output without demanding nonexistent motion from a video source',()=>{
+ const session={layers:[{_id:'video',aiVideoLayer:'/source.mp4',duration:2,durationOffset:0}],
+   audioLayers:[{generationType:'recorded_speech',isEnabled:true,startTime:0,endTime:3,duration:3}]};
+ const result=extendSessionTimelineToCustomSpeechEnd(session);
+ assert.equal(result.extended,true);assert.equal(session.totalDuration,3);
+ assert.equal(session.layers[0].duration,2);assert.equal(session.layers[0].frameGenerationPending,undefined);
+ assert.equal(extendSessionTimelineToCustomSpeechEnd(session).extended,false);
+});

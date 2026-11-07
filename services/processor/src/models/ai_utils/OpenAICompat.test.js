@@ -10,6 +10,43 @@ import {
   runInferenceAdapterFallback,
 } from './OpenAICompat.js';
 
+for (const mediaMode of ['docker-local', 's3-cloudfront']) {
+  test(`native Claude preserves the ${mediaMode} media route`, async (t) => {
+    const overrides = {
+      CURRENT_ENV: 'docker', SAMSAR_RUNTIME: 'docker', SAMSAR_DEPLOYMENT_EDITION: 'standalone',
+      SAMSAR_MEDIA_DELIVERY_MODE: mediaMode,
+    };
+    const previous = Object.fromEntries(Object.keys(overrides).map((key) => [key, process.env[key]]));
+    Object.assign(process.env, overrides);
+    t.after(() => {
+      for (const [key, value] of Object.entries(previous)) {
+        if (value === undefined) delete process.env[key];
+        else process.env[key] = value;
+      }
+    });
+    const source = '/assets_v2/generations/session/frame.png';
+    let resolveCount = 0;
+    let captured;
+    await createCompatibleChatCompletion({}, {
+      model: 'claude-fable-5.1', bypassSamsarExternalInference: true,
+      messages: [{ role: 'user', content: [{ type: 'image_url', image_url: { url: source } }] }],
+    }, {
+      resolveMediaUrl: async (value) => {
+        assert.equal(value, source);
+        resolveCount += 1;
+        return 'https://cdn.example/frame.png';
+      },
+      createAnthropicChatCompletion: async (request) => {
+        captured = request;
+        return { choices: [{ message: { content: 'seen' } }] };
+      },
+    });
+    assert.equal(resolveCount, mediaMode === 'docker-local' ? 0 : 1);
+    assert.equal(captured.messages[0].content[0].image_url.url,
+      mediaMode === 'docker-local' ? source : 'https://cdn.example/frame.png');
+  });
+}
+
 test('forces high reasoning for GPT 6 Astra Responses requests', async () => {
   let capturedPath;
   let capturedBody;

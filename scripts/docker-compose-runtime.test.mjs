@@ -14,7 +14,7 @@ import {
 
 const sourceRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
-function cliFixture(t, failure) {
+function cliFixture(t, failure, action = 'up') {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'samsar-compose-recovery-'));
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
   for (const relative of ['scripts', 'apps/setup-wizard', 'deploy/compose', 'runtime/config', 'bin']) {
@@ -41,17 +41,17 @@ if (args[0] === 'inspect') {
     'com.docker.compose.project.working_dir': ${JSON.stringify(path.join(directory, 'deploy', 'compose'))},
   }));
 } else if (args.includes('config')) {
-  console.log('processor\\nclient');
+  console.log(args.includes('--format') ? JSON.stringify({ services: { processor: {}, client: {} } }) : 'processor\\nclient');
 } else if (args.includes('up')) {
   const marker = ${JSON.stringify(path.join(directory, 'attempted'))};
-  if (!fs.existsSync(marker)) {
+  if (${Boolean(failure)} && !fs.existsSync(marker)) {
     fs.writeFileSync(marker, 'yes');
     console.error(${JSON.stringify(errorMessage)});
     process.exit(37);
   }
 }
 `, { mode: 0o755 });
-  const result = spawnSync(process.execPath, ['scripts/docker-compose-runtime.mjs', 'up'], {
+  const result = spawnSync(process.execPath, ['scripts/docker-compose-runtime.mjs', action], {
     cwd: directory, encoding: 'utf8', timeout: 15000,
     env: { ...process.env, PATH: `${path.join(directory, 'bin')}${path.delimiter}${process.env.PATH}` },
   });
@@ -61,6 +61,18 @@ if (args[0] === 'inspect') {
     events: fs.readFileSync(eventsPath, 'utf8').trim().split('\n').map((line) => JSON.parse(line)),
   };
 }
+
+test('the incremental CLI builds cached images and starts services without force-recreate', {
+  skip: process.platform === 'win32',
+}, t => {
+  const result = cliFixture(t, null, 'update');
+  assert.equal(result.status, 0, result.stderr);
+  assert.ok(result.events[0].includes('build'));
+  const up = result.events.find(args => args.includes('up'));
+  assert.ok(up.includes('--no-build') && up.includes('--no-deps'));
+  assert.ok(!up.includes('--force-recreate'));
+  assert.deepEqual(up.slice(-2), ['processor', 'client']);
+});
 
 test('F2P: the real CLI recovers a stale container from the nested Compose directory', {
   skip: process.platform === 'win32',

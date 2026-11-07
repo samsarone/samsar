@@ -1,3 +1,5 @@
+import { useUiLanguage } from '../../../../hooks/useUiLanguage.js';
+import { translateText as uiText } from '../../../../utils/localization.js';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import TextareaAutosize from 'react-textarea-autosize';
 import { FaCheck, FaEye, FaEyeSlash, FaSlidersH, FaTrash } from 'react-icons/fa';
@@ -111,6 +113,7 @@ function EditTextOptionsDialog({
   onSubmit,
   onDelete,
 }) {
+  useUiLanguage();
   const [dialogDraft, setDialogDraft] = useState(() => buildTextStyleDraft(initialDraft));
 
   const handleDialogDraftChange = (nextDraft) => {
@@ -121,9 +124,9 @@ function EditTextOptionsDialog({
 
   return (
     <CanvasActionOptionsDialog
-      title="Text options"
-      subtitle="Update text content, wrap behavior, bounding box, typography, and advanced layout."
-      badge="Selected text"
+      title={uiText("Text options")}
+      subtitle={uiText("Update text content, wrap behavior, bounding box, typography, and advanced layout.")}
+      badge={uiText("Selected text")}
       onClose={onClose}
       maxWidth="820px"
     >
@@ -132,14 +135,14 @@ function EditTextOptionsDialog({
           value={dialogDraft}
           onChange={handleDialogDraftChange}
           onSubmit={() => onSubmit(dialogDraft)}
-          submitLabel="Update"
+          submitLabel={uiText("Update")}
           submitDisabled={!`${dialogDraft.text || ''}`.trim()}
           editorVariant={editorVariant}
-          header="Text"
+          header={uiText("Text")}
           density="comfortable"
           layerActions={[
             {
-              label: 'Delete',
+              label: uiText("Delete"),
               icon: 'trash',
               intent: 'danger',
               onClick: onDelete,
@@ -152,6 +155,7 @@ function EditTextOptionsDialog({
 }
 
 export default function TextToolbar(props) {
+  useUiLanguage();
   const {
     pos,
     removeItem,
@@ -229,8 +233,7 @@ export default function TextToolbar(props) {
         closeAlertDialog();
       }
     },
-    [
-      activeTextItem,
+    [activeTextItem,
       closeAlertDialog,
       draft,
       itemId,
@@ -254,22 +257,14 @@ export default function TextToolbar(props) {
   }
 
   const toolbarSurface =
-    colorMode === 'dark'
-      ? 'bg-[#181b24] border border-[#3a4050] text-slate-100 shadow-[0_18px_42px_rgba(2,6,23,0.45)]'
-      : 'bg-white border border-slate-200 text-slate-900 shadow-[0_18px_36px_rgba(15,23,42,0.16)]';
+    `bg-surface border border-line text-fg ${colorMode === 'dark' ? 'shadow-[0_18px_42px_rgba(2,6,23,0.45)]' : 'shadow-[0_18px_36px_rgba(15,23,42,0.16)]'}`;
   const fieldSurface =
-    colorMode === 'dark'
-      ? 'bg-[#20232e] border border-[#3a4050] text-slate-100'
-      : 'bg-slate-50 border border-slate-200 text-slate-900';
-  const mutedText = colorMode === 'dark' ? 'text-slate-400' : 'text-slate-500';
+    'bg-surface-muted border border-line text-fg';
+  const mutedText = "text-fg-muted";
   const actionButtonClass =
-    colorMode === 'dark'
-      ? 'bg-[#ff4655] text-[#080a10] hover:bg-[#ff6572] disabled:bg-[#20232e] disabled:text-slate-500'
-      : 'bg-rose-500 text-white hover:bg-rose-600 disabled:bg-slate-200 disabled:text-slate-400';
+    `text-on-accent ${colorMode === 'dark' ? 'bg-[#ff4655] hover:bg-[#ff6572] disabled:bg-[#20232e] disabled:text-slate-500' : 'bg-rose-500 hover:bg-rose-600 disabled:bg-slate-200 disabled:text-slate-400'}`;
   const secondaryButtonClass =
-    colorMode === 'dark'
-      ? 'border border-[#667188] bg-[#20232e] text-slate-100 hover:bg-[#292d3a]'
-      : 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-50';
+    `border border-line-control bg-surface-raised text-fg-body ${colorMode === 'dark' ? 'hover:bg-[#292d3a]' : 'hover:bg-slate-50'}`;
   const deleteButtonClass =
     colorMode === 'dark'
       ? 'bg-rose-500/12 border border-rose-400/30 text-rose-100 hover:bg-rose-500/18'
@@ -317,8 +312,8 @@ export default function TextToolbar(props) {
           top: hiddenTogglePlacement.top,
           zIndex: 100,
         }}
-        title="Show text toolbar"
-        aria-label="Show text toolbar"
+        title={uiText("Show text toolbar")}
+        aria-label={uiText("Show text toolbar")}
       >
         <FaEye />
       </button>
@@ -341,11 +336,9 @@ export default function TextToolbar(props) {
     >
       <div className="mb-2 flex items-center justify-between gap-2">
         <div>
-          <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
-            Text
-          </div>
-          <div className={`mt-0.5 text-[11px] ${mutedText}`}>
-            {draft.autoWrap ? 'Wrap on' : 'Wrap off'} · {draft.width} x {draft.height}
+          <div className="text-caption font-semibold uppercase tracking-[0.18em] text-slate-400">{uiText("Text")}</div>
+          <div className={`mt-0.5 text-caption ${mutedText}`}>
+            {draft.autoWrap ? uiText("Wrap on") : uiText("Wrap off")} · {draft.width} x {draft.height}
           </div>
         </div>
       </div>
@@ -355,17 +348,17 @@ export default function TextToolbar(props) {
         value={draft.text || ''}
         onChange={(event) => updateDraft({ text: event.target.value })}
         className={`mb-3 min-h-[76px] w-full resize-none rounded-xl px-3 py-2 text-sm shadow-sm focus:outline-none focus:ring-2 ${colorMode === 'dark' ? 'focus:border-[#f6c453] focus:ring-[#f6c453]/20' : 'focus:ring-blue-400/20'} ${fieldSurface}`}
-        placeholder="Edit text"
+        placeholder={uiText("Edit text")}
       />
 
       <button
         type="button"
         onClick={() => updateDraft({ autoWrap: !draft.autoWrap })}
         className={`mb-2 flex h-9 w-full items-center justify-between rounded-xl px-3 text-sm font-semibold transition ${wrapButtonClass}`}
-        title="Toggle word wrap"
+        title={uiText("Toggle word wrap")}
       >
-        <span>Word Wrap</span>
-        <span className="text-xs">{draft.autoWrap ? 'On' : 'Off'}</span>
+        <span>{uiText("Word Wrap")}</span>
+        <span className="text-xs">{draft.autoWrap ? uiText("On") : uiText("Off")}</span>
       </button>
 
       <div className="grid grid-cols-[40px_minmax(0,1fr)_minmax(0,1fr)_40px] gap-2">
@@ -373,8 +366,8 @@ export default function TextToolbar(props) {
           type="button"
           onClick={() => setIsToolbarHidden(true)}
           className={`inline-flex h-10 items-center justify-center rounded-xl text-sm transition ${secondaryButtonClass}`}
-          title="Hide text toolbar"
-          aria-label="Hide text toolbar"
+          title={uiText("Hide text toolbar")}
+          aria-label={uiText("Hide text toolbar")}
         >
           <FaEyeSlash />
         </button>
@@ -382,27 +375,27 @@ export default function TextToolbar(props) {
           type="button"
           onClick={showTextOptionsDialog}
           className={`inline-flex h-10 items-center justify-center gap-2 rounded-xl px-3 text-sm font-semibold transition ${secondaryButtonClass}`}
-          title="Text options"
+          title={uiText("Text options")}
         >
           <FaSlidersH />
-          <span>Options</span>
+          <span>{uiText("Options")}</span>
         </button>
         <button
           type="button"
           onClick={() => commitDraft()}
           disabled={!isDirty || !`${draft.text || ''}`.trim()}
           className={`inline-flex h-10 items-center justify-center gap-2 rounded-xl px-3 text-sm font-semibold transition ${actionButtonClass}`}
-          title="Update text"
+          title={uiText("Update text")}
         >
           <FaCheck />
-          <span>Update</span>
+          <span>{uiText("Update")}</span>
         </button>
         <button
           type="button"
           onClick={handleDelete}
           className={`inline-flex h-10 items-center justify-center rounded-xl text-sm transition ${deleteButtonClass}`}
-          title="Delete text"
-          aria-label="Delete text"
+          title={uiText("Delete text")}
+          aria-label={uiText("Delete text")}
         >
           <FaTrash />
         </button>

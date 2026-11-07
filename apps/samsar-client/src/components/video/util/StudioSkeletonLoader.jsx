@@ -1,8 +1,11 @@
+import { useUiLanguage } from '../../../hooks/useUiLanguage.js';
+import { translateText as uiText } from '../../../utils/localization.js';
 
 import CommonContainer from '../../common/CommonContainer.tsx';
 import { useColorMode } from '../../../contexts/ColorMode.jsx';
 
 export default function StudioSkeletonLoader() {
+  useUiLanguage();
   const { colorMode } = useColorMode();
   const isDark = colorMode === 'dark';
 
@@ -35,9 +38,9 @@ export default function StudioSkeletonLoader() {
         style={{ paddingTop: `${studioTopInsetPx}px` }}
         role="status"
         aria-busy="true"
-        aria-label="Loading Studio"
+        aria-label={uiText("Loading Studio")}
       >
-        <span className="sr-only">Loading Studio</span>
+        <span className="sr-only">{uiText("Loading Studio")}</span>
         <div className="theme-skeleton-pulse grid h-full min-h-0 grid-rows-[minmax(0,1fr)_auto] gap-4 overflow-hidden">
           <div className="flex min-h-0 gap-4 overflow-hidden">
             <div className="shrink-0" style={{ width: reservedLeftRailWidth }} />

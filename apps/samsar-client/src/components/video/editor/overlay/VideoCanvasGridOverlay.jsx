@@ -1,7 +1,9 @@
+import { useUiLanguage } from '../../../../hooks/useUiLanguage.js';
 
 import { useColorMode } from '../../../../contexts/ColorMode';
 
 export default function VideoCanvasGridOverlay(props) {
+  useUiLanguage();
   const { canvasDimensions, granularityMultiplier = 1 } = props;
   const { colorMode } = useColorMode();
   const { width, height } = canvasDimensions;

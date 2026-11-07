@@ -6,6 +6,15 @@ import { afterEach, vi } from 'vitest';
 if (globalThis.jsdom) {
   vi.stubGlobal('localStorage', globalThis.jsdom.window.localStorage);
   vi.stubGlobal('sessionStorage', globalThis.jsdom.window.sessionStorage);
+  // Anchored menus observe their trigger size. jsdom has no layout engine;
+  // positioning is covered separately by the Chromium browser suite.
+  if (!globalThis.ResizeObserver) {
+    vi.stubGlobal('ResizeObserver', class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    });
+  }
 }
 
 afterEach(() => {

@@ -1,3 +1,5 @@
+import { useUiLanguage } from '../../hooks/useUiLanguage.js';
+import { translateText as uiText } from '../../utils/localization.js';
 import React from 'react';
 import TextareaAutosize from 'react-textarea-autosize';
 import {
@@ -17,23 +19,23 @@ import CommonButton from './CommonButton.tsx';
 import SingleSelect from './SingleSelect.jsx';
 
 const TEXT_FONT_OPTIONS = [
-  { value: 'Arial', label: 'Arial' },
-  { value: 'Verdana', label: 'Verdana' },
-  { value: 'Helvetica', label: 'Helvetica' },
-  { value: 'Times New Roman', label: 'Times New Roman' },
-  { value: 'Georgia', label: 'Georgia' },
-  { value: 'Courier New', label: 'Courier New' },
-  { value: 'Comic Sans MS', label: 'Comic Sans MS' },
-  { value: 'Impact', label: 'Impact' },
-  { value: 'Tahoma', label: 'Tahoma' },
-  { value: 'Trebuchet MS', label: 'Trebuchet MS' },
-  { value: 'Lucida Console', label: 'Lucida Console' },
-  { value: 'Gill Sans', label: 'Gill Sans' },
-  { value: 'Palatino', label: 'Palatino' },
-  { value: 'Garamond', label: 'Garamond' },
-  { value: 'Arial Black', label: 'Arial Black' },
-  { value: 'Sans-Serif', label: 'Sans-Serif' },
-  { value: 'Serif', label: 'Serif' },
+  { value: 'Arial', get label() { return uiText("Arial"); } },
+  { value: 'Verdana', get label() { return uiText("Verdana"); } },
+  { value: 'Helvetica', get label() { return uiText("Helvetica"); } },
+  { value: 'Times New Roman', get label() { return uiText("Times New Roman"); } },
+  { value: 'Georgia', get label() { return uiText("Georgia"); } },
+  { value: 'Courier New', get label() { return uiText("Courier New"); } },
+  { value: 'Comic Sans MS', get label() { return uiText("Comic Sans MS"); } },
+  { value: 'Impact', get label() { return uiText("Impact"); } },
+  { value: 'Tahoma', get label() { return uiText("Tahoma"); } },
+  { value: 'Trebuchet MS', get label() { return uiText("Trebuchet MS"); } },
+  { value: 'Lucida Console', get label() { return uiText("Lucida Console"); } },
+  { value: 'Gill Sans', get label() { return uiText("Gill Sans"); } },
+  { value: 'Palatino', get label() { return uiText("Palatino"); } },
+  { value: 'Garamond', get label() { return uiText("Garamond"); } },
+  { value: 'Arial Black', get label() { return uiText("Arial Black"); } },
+  { value: 'Sans-Serif', get label() { return uiText("Sans-Serif"); } },
+  { value: 'Serif', get label() { return uiText("Serif"); } },
 ];
 
 const TEXT_STYLE_STORAGE_KEYS = {
@@ -386,6 +388,7 @@ export function persistTextStyleConfig(value, storage) {
 }
 
 function IconToggleButton({ active, onClick, children, title, className = '' }) {
+  useUiLanguage();
   return (
     <button
       type="button"
@@ -399,6 +402,7 @@ function IconToggleButton({ active, onClick, children, title, className = '' }) 
 }
 
 function ActionButton({ onClick, icon, label, className = '' }) {
+  useUiLanguage();
   return (
     <button
       type="button"
@@ -412,15 +416,16 @@ function ActionButton({ onClick, icon, label, className = '' }) {
 }
 
 export default function TextStylePanel(props) {
+  useUiLanguage();
   const {
     value,
     onChange,
     onSubmit,
-    submitLabel = 'Add text',
+    submitLabel = uiText("Add text"),
     submitDisabled = false,
     showSubmitButton = true,
     editorVariant = 'videoStudio',
-    header = 'Text',
+    header = uiText('Text'),
     helperText = null,
     layerActions = [],
     density = 'comfortable',
@@ -438,32 +443,24 @@ export default function TextStylePanel(props) {
   }, [advancedInitiallyOpen]);
 
   const fieldSurface =
-    colorMode === 'dark'
-      ? 'bg-[#20232e] border border-[#3a4050] text-slate-100'
-      : 'bg-white border border-slate-200 text-slate-900';
+    'bg-surface-raised border border-line text-fg';
   const cardSurface =
-    colorMode === 'dark'
-      ? 'bg-[#181b24] border border-[#3a4050] text-slate-100'
-      : 'bg-slate-50 border border-slate-200 text-slate-900';
-  const mutedText = colorMode === 'dark' ? 'text-slate-400' : 'text-slate-500';
+    `border border-line text-fg ${colorMode === 'dark' ? 'bg-[#181b24]' : 'bg-slate-50'}`;
+  const mutedText = "text-fg-muted";
   const activeToggle =
     colorMode === 'dark'
       ? 'bg-[#f6c453] text-[#101117] shadow-[0_10px_24px_rgba(246,196,83,0.18)]'
       : 'bg-rose-500 text-white shadow-sm';
   const inactiveToggle =
-    colorMode === 'dark'
-      ? 'bg-[#20232e] border-[#3a4050] text-slate-200 hover:bg-[#292d3a]'
-      : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-100';
+    'bg-surface-raised border-line text-fg-secondary hover:bg-surface-hover';
   const destructiveAction =
     colorMode === 'dark'
       ? 'bg-rose-500/12 border-rose-400/35 text-rose-100 hover:bg-rose-500/18'
       : 'bg-rose-50 border-rose-200 text-rose-700 hover:bg-rose-100';
   const neutralAction =
-    colorMode === 'dark'
-      ? 'bg-[#20232e] border-[#3a4050] text-slate-200 hover:bg-[#292d3a]'
-      : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-100';
+    'bg-surface-raised border-line text-fg-secondary hover:bg-surface-hover';
   const inputClassName = `w-full rounded-xl px-3 ${isCompact ? 'py-2' : 'py-2.5'} text-sm shadow-sm focus:outline-none focus:ring-2 ${colorMode === 'dark' ? 'focus:border-[#f6c453] focus:ring-[#f6c453]/20' : 'focus:ring-blue-400/20'} ${fieldSurface}`;
-  const sectionTitleClass = `${isCompact ? 'mb-1' : 'mb-2'} text-[11px] font-semibold uppercase tracking-[0.18em] ${mutedText}`;
+  const sectionTitleClass = `${isCompact ? 'mb-1' : 'mb-2'} text-caption font-semibold uppercase tracking-[0.18em] ${mutedText}`;
 
   const updateDraft = (changes) => {
     if (typeof onChange !== 'function') return;
@@ -486,27 +483,27 @@ export default function TextStylePanel(props) {
     {
       key: 'bold',
       active: draft.bold,
-      title: 'Bold',
+      title: uiText("Bold"),
       icon: <FaBold />,
     },
     {
       key: 'italic',
       active: draft.italic,
-      title: 'Italic',
+      title: uiText("Italic"),
       icon: <FaItalic />,
     },
     {
       key: 'underline',
       active: draft.underline,
-      title: 'Underline',
+      title: uiText("Underline"),
       icon: <FaUnderline />,
     },
   ];
 
   const alignmentButtons = [
-    { key: 'left', icon: <FaAlignLeft />, title: 'Align left' },
-    { key: 'center', icon: <FaAlignCenter />, title: 'Align center' },
-    { key: 'right', icon: <FaAlignRight />, title: 'Align right' },
+    { key: 'left', icon: <FaAlignLeft />, title: uiText("Align left") },
+    { key: 'center', icon: <FaAlignCenter />, title: uiText("Align center") },
+    { key: 'right', icon: <FaAlignRight />, title: uiText("Align right") },
   ];
 
   const safeFillColor = getSafeColorValue(draft.fillColor, '#ffffff');
@@ -514,21 +511,21 @@ export default function TextStylePanel(props) {
   const advancedNumberFields = [
     {
       field: 'width',
-      label: 'Box Width',
+      label: uiText("Box Width"),
       min: 24,
       max: 4096,
       fallback: DEFAULT_TEXT_STYLE_DRAFT.width,
     },
     {
       field: 'height',
-      label: 'Box Height',
+      label: uiText("Box Height"),
       min: 24,
       max: 4096,
       fallback: DEFAULT_TEXT_STYLE_DRAFT.height,
     },
     {
       field: 'letterSpacing',
-      label: 'Letter Space',
+      label: uiText("Letter Space"),
       min: -20,
       max: 100,
       fallback: DEFAULT_TEXT_STYLE_DRAFT.letterSpacing,
@@ -536,7 +533,7 @@ export default function TextStylePanel(props) {
     },
     {
       field: 'rotationAngle',
-      label: 'Rotation',
+      label: uiText("Rotation"),
       min: -360,
       max: 360,
       fallback: DEFAULT_TEXT_STYLE_DRAFT.rotationAngle,
@@ -544,7 +541,7 @@ export default function TextStylePanel(props) {
     },
     {
       field: 'shadowBlur',
-      label: 'Shadow Blur',
+      label: uiText("Shadow Blur"),
       min: 0,
       max: 100,
       fallback: DEFAULT_TEXT_STYLE_DRAFT.shadowBlur,
@@ -552,7 +549,7 @@ export default function TextStylePanel(props) {
     },
     {
       field: 'shadowOffsetX',
-      label: 'Shadow X',
+      label: uiText("Shadow X"),
       min: -200,
       max: 200,
       fallback: DEFAULT_TEXT_STYLE_DRAFT.shadowOffsetX,
@@ -560,7 +557,7 @@ export default function TextStylePanel(props) {
     },
     {
       field: 'shadowOffsetY',
-      label: 'Shadow Y',
+      label: uiText("Shadow Y"),
       min: -200,
       max: 200,
       fallback: DEFAULT_TEXT_STYLE_DRAFT.shadowOffsetY,
@@ -576,19 +573,19 @@ export default function TextStylePanel(props) {
       </div>
 
       <div>
-        <div className={sectionTitleClass}>Content</div>
+        <div className={sectionTitleClass}>{uiText("Content")}</div>
         <TextareaAutosize
           minRows={isCompact ? 2 : isImageStudio ? 4 : 3}
           value={draft.text}
           onChange={(event) => updateDraft({ text: event.target.value })}
-          placeholder="Enter text"
+          placeholder={uiText("Enter text")}
           className={`${inputClassName} ${isCompact ? 'min-h-[72px]' : 'min-h-[96px]'} resize-none`}
         />
       </div>
 
       <div className={`grid grid-cols-[minmax(0,1fr)_110px] ${isCompact ? 'gap-2' : 'gap-3'}`}>
         <div>
-          <div className={sectionTitleClass}>Font</div>
+          <div className={sectionTitleClass}>{uiText("Font")}</div>
           <SingleSelect
             value={TEXT_FONT_OPTIONS.find((option) => option.value === draft.fontFamily) || TEXT_FONT_OPTIONS[0]}
             onChange={(option) => updateDraft({ fontFamily: option?.value || DEFAULT_TEXT_STYLE_DRAFT.fontFamily })}
@@ -596,7 +593,7 @@ export default function TextStylePanel(props) {
           />
         </div>
         <div>
-          <div className={sectionTitleClass}>Size</div>
+          <div className={sectionTitleClass}>{uiText("Size")}</div>
           <input
             type="number"
             min="1"
@@ -610,7 +607,7 @@ export default function TextStylePanel(props) {
 
       <div className={`grid grid-cols-2 ${isCompact ? 'gap-2' : 'gap-3'}`}>
         <div className={`${cardSurface} rounded-2xl ${isCompact ? 'p-2.5' : 'p-3'}`}>
-          <div className={sectionTitleClass}>Text Color</div>
+          <div className={sectionTitleClass}>{uiText("Text Color")}</div>
           <div className="flex items-center gap-3">
             <input
               type="color"
@@ -625,7 +622,7 @@ export default function TextStylePanel(props) {
         </div>
 
         <div className={`${cardSurface} rounded-2xl ${isCompact ? 'p-2.5' : 'p-3'}`}>
-          <div className={sectionTitleClass}>Outline</div>
+          <div className={sectionTitleClass}>{uiText("Outline")}</div>
           <div className="flex items-center gap-3">
             <input
               type="color"
@@ -640,7 +637,7 @@ export default function TextStylePanel(props) {
             />
             <div className="flex min-w-0 flex-1 items-center gap-2">
               <div className={`min-w-0 flex-1 rounded-xl px-3 py-2 text-sm font-medium ${fieldSurface}`}>
-                {draft.strokeWidth > 0 ? safeStrokeColor.toUpperCase() : 'Off'}
+                {draft.strokeWidth > 0 ? safeStrokeColor.toUpperCase() : uiText("Off")}
               </div>
               <input
                 type="number"
@@ -657,7 +654,7 @@ export default function TextStylePanel(props) {
 
       <div className={`grid grid-cols-2 ${isCompact ? 'gap-2' : 'gap-3'}`}>
         <div>
-          <div className={sectionTitleClass}>Style</div>
+          <div className={sectionTitleClass}>{uiText("Style")}</div>
           <div className="grid grid-cols-3 gap-2">
             {styleButtons.map((button) => (
               <IconToggleButton
@@ -674,7 +671,7 @@ export default function TextStylePanel(props) {
         </div>
 
         <div>
-          <div className={sectionTitleClass}>Align</div>
+          <div className={sectionTitleClass}>{uiText("Align")}</div>
           <div className="grid grid-cols-3 gap-2">
             {alignmentButtons.map((button) => (
               <IconToggleButton
@@ -693,7 +690,7 @@ export default function TextStylePanel(props) {
 
       <div className={`grid ${isCompact ? 'grid-cols-1' : 'grid-cols-2'} ${isCompact ? 'gap-2' : 'gap-3'}`}>
         <div>
-          <div className={sectionTitleClass}>Line Height</div>
+          <div className={sectionTitleClass}>{uiText("Line Height")}</div>
           <input
             type="number"
             min="0.6"
@@ -706,14 +703,14 @@ export default function TextStylePanel(props) {
         </div>
 
         <div>
-          <div className={sectionTitleClass}>Wrap</div>
+          <div className={sectionTitleClass}>{uiText("Wrap")}</div>
           <button
             type="button"
             onClick={() => updateDraft({ autoWrap: !draft.autoWrap })}
             className={`flex min-h-[42px] w-full items-center justify-between gap-3 rounded-xl border px-3 py-2 text-sm font-semibold transition ${draft.autoWrap ? activeToggle : inactiveToggle}`}
           >
-            <span>Word Wrap</span>
-            <span className="text-xs">{draft.autoWrap ? 'On' : 'Off'}</span>
+            <span>{uiText("Word Wrap")}</span>
+            <span className="text-xs">{draft.autoWrap ? uiText("On") : uiText("Off")}</span>
           </button>
         </div>
       </div>
@@ -723,9 +720,7 @@ export default function TextStylePanel(props) {
         onToggle={(event) => setIsAdvancedOpen(event.currentTarget.open)}
         className={`${cardSurface} rounded-2xl ${isCompact ? 'p-2.5' : 'p-3'}`}
       >
-        <summary className={`cursor-pointer list-none text-[11px] font-semibold uppercase tracking-[0.18em] ${mutedText}`}>
-          Advanced Layout
-        </summary>
+        <summary className={`cursor-pointer list-none text-caption font-semibold uppercase tracking-[0.18em] ${mutedText}`}>{uiText("Advanced Layout")}</summary>
         <div className={`mt-3 grid max-h-[min(38vh,360px)] overflow-y-auto pr-1 ${isCompact ? 'grid-cols-2' : 'grid-cols-3'} ${isCompact ? 'gap-2' : 'gap-3'}`}>
           {advancedNumberFields.map((fieldConfig) => (
             <div key={fieldConfig.field}>
@@ -754,14 +749,14 @@ export default function TextStylePanel(props) {
           ))}
 
           <div>
-            <div className={sectionTitleClass}>Uppercase</div>
+            <div className={sectionTitleClass}>{uiText("Uppercase")}</div>
             <button
               type="button"
               onClick={() => updateDraft({ capitalizeLetters: !draft.capitalizeLetters })}
               className={`flex min-h-[42px] w-full items-center justify-between gap-3 rounded-xl border px-3 py-2 text-sm font-semibold transition ${draft.capitalizeLetters ? activeToggle : inactiveToggle}`}
             >
-              <span>Caps</span>
-              <span className="text-xs">{draft.capitalizeLetters ? 'On' : 'Off'}</span>
+              <span>{uiText("Caps")}</span>
+              <span className="text-xs">{draft.capitalizeLetters ? uiText("On") : uiText("Off")}</span>
             </button>
           </div>
         </div>
@@ -769,7 +764,7 @@ export default function TextStylePanel(props) {
 
       {!isCompact ? (
         <div className={`${cardSurface} rounded-2xl ${isCompact ? 'p-2.5' : 'p-3'}`}>
-          <div className={sectionTitleClass}>Preview</div>
+          <div className={sectionTitleClass}>{uiText("Preview")}</div>
           <div
             className={`rounded-xl px-3 py-3 text-sm ${fieldSurface}`}
             style={{
@@ -792,14 +787,14 @@ export default function TextStylePanel(props) {
               overflowX: draft.autoWrap ? 'hidden' : 'auto',
             }}
           >
-            {draft.text || 'Sample text'}
+            {draft.text || uiText("Sample text")}
           </div>
         </div>
       ) : null}
 
       {layerActions.length > 0 ? (
         <div>
-          <div className={sectionTitleClass}>Layer Actions</div>
+          <div className={sectionTitleClass}>{uiText("Layer Actions")}</div>
           <div className={`grid gap-2 ${layerActions.length >= 3 ? 'grid-cols-3' : 'grid-cols-2'}`}>
             {layerActions.map((action) => (
               <ActionButton

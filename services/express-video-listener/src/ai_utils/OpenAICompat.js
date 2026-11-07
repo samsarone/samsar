@@ -1,3 +1,4 @@
+import { isGPTModel, getReasoningModelBase } from './ReasoningModels.js';
 import {
   GPT_56_SOL_INFERENCE_MODEL,
   createGoogleGeminiChatCompletion,
@@ -10,7 +11,8 @@ import {
 } from './GoogleGemini.js';
 import { createKimiK3ChatCompletion } from './KimiK3.js';
 import { createQwenChatCompletion } from './Qwen.js';
-import { isClaudeOpus55Model, createAnthropicChatCompletion } from './AnthropicChatAdapter.js';
+import { isClaudeModel, createAnthropicChatCompletion } from './AnthropicChatAdapter.js';
+import { usesLocalAnthropicVisionImages } from './AnthropicVisionImages.js';
 import {
   DOCKER_INFERENCE_PROVIDER,
   createSamsarExternalChatCompletion,
@@ -29,7 +31,7 @@ const INFERENCE_ADAPTER_PROVIDER_SYMBOL =
 
 export function isResponsesOnlyModel(model) {
   const inferenceModel = normalizeInferenceModel(model || getDefaultInferenceModel());
-  return !isClaudeOpus55Model(inferenceModel) &&
+  return !isClaudeModel(inferenceModel) &&
     !isGeminiInferenceModel(inferenceModel) &&
     !isKimiInferenceModel(inferenceModel) &&
     !isQwenInferenceModel(inferenceModel);
@@ -107,7 +109,7 @@ function resolveInferenceAdapterProvider(chatRequest = {}) {
   if (isGeminiInferenceModel(model)) {
     return DOCKER_INFERENCE_PROVIDER.GOOGLE_CLOUD;
   }
-  if (isClaudeOpus55Model(model)) {
+  if (isClaudeModel(model)) {
     return DOCKER_INFERENCE_PROVIDER.ANTHROPIC;
   }
   return DOCKER_INFERENCE_PROVIDER.OPENAI;
@@ -292,9 +294,12 @@ async function createCompatibleChatCompletionForProvider(
   }
 
   const requestOptions = buildRequestOptions({ timeout });
-  if (isClaudeOpus55Model(model)) {
+  if (isClaudeModel(model)) {
     return createAnthropicChatCompletion({
-      ...await normalizeProviderMediaPayload(request, normalizeProviderMediaUrl), timeout,
+      ...(usesLocalAnthropicVisionImages()
+        ? request
+        : await normalizeProviderMediaPayload(request, normalizeProviderMediaUrl)),
+      timeout,
     });
   }
   if (isKimiInferenceModel(model)) {
@@ -361,8 +366,8 @@ function buildResponsesRequest(chatRequest) {
 
   const inferenceModel = normalizeInferenceModel(model || getDefaultInferenceModel());
   const body = {
-    model: typeof inferenceModel === 'string' && inferenceModel.startsWith(GPT_56_SOL_INFERENCE_MODEL)
-      ? GPT_56_SOL_INFERENCE_MODEL
+    model: typeof inferenceModel === 'string' && isGPTModel(inferenceModel)
+      ? getReasoningModelBase(inferenceModel)
       : inferenceModel,
     input: normalizeMessagesForResponses(messages),
   };
@@ -371,7 +376,7 @@ function buildResponsesRequest(chatRequest) {
     (reasoning && typeof reasoning === 'object' ? reasoning.effort : undefined) ??
     reasoning_effort;
   const requestedReasoningEffort = typeof inferenceModel === 'string' &&
-    inferenceModel.startsWith(GPT_56_SOL_INFERENCE_MODEL)
+    isGPTModel(inferenceModel)
     ? effort ?? reasoningEffort ?? legacyReasoningEffort
     : legacyReasoningEffort;
   if (!isGeminiInferenceModel(body.model)) {
@@ -382,10 +387,10 @@ function buildResponsesRequest(chatRequest) {
     body.reasoning = { effort: requestedReasoningEffort };
   }
 
-  if (body.model !== 'gpt-6-astra' && temperature !== undefined) {
+  if (!isGPTModel(body.model) && temperature !== undefined) {
     body.temperature = temperature;
   }
-  if (body.model !== 'gpt-6-astra' && top_p !== undefined) {
+  if (!isGPTModel(body.model) && top_p !== undefined) {
     body.top_p = top_p;
   }
   if (user !== undefined) {

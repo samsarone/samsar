@@ -46,7 +46,8 @@
     "test:browser:install": "playwright install --only-shell chromium",
     "test:frame-drift": "node --test src/components/video/util/frameDrift.test.mjs && vitest run --config vitest.config.mjs test/unit/StudioFrameRate.test.jsx",
     "test:studio-f2p": "node scripts/test-studio-f2p.mjs",
-    "test:studio-f2p:unit": "node scripts/test-studio-f2p.mjs --unit"
+    "test:studio-f2p:unit": "node scripts/test-studio-f2p.mjs --unit",
+    "test:i18n": "node scripts/check-localization.mjs"
   },
   "browserslist": {
     "production": [

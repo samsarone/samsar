@@ -1739,6 +1739,10 @@ router.post('/translate_video', validateAPIKeyAndUserId, async function (req, re
     const response = await translateVideoSessionAndQueueGeneration(req.userId, {
       videoSessionId: sessionId,
       language: languageCode,
+      ...((requestPayload.inference_model ?? requestPayload.inferenceModel) !== undefined
+        ? { inference_model: requestPayload.inference_model ?? requestPayload.inferenceModel }
+        : {}),
+      ...copyInferenceEffortOverrides(requestPayload),
       enable_subtitles: enableSubtitlesOption.value,
       translate_outro: translateOutroOption.value,
       translate_footer: translateFooterOption.value,

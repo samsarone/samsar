@@ -626,7 +626,7 @@ function persistBranchThumbnailFrame({ sessionId, renderPathId, sourceFramePath 
   return thumbnailPath;
 }
 
-function getFrameSourceIdentity({ sourceType, normalizedVideoPath, videoPath, framesPerSecond, canvasDimensions, preserveAspectRatio }) {
+function getFrameSourceIdentity({ sourceType, normalizedVideoPath, videoPath, framesPerSecond, canvasDimensions, preserveAspectRatio, fitMode }) {
   const identity = {
     sourceType: sourceType || null,
     normalizedVideoPath: normalizedVideoPath || null,
@@ -635,7 +635,8 @@ function getFrameSourceIdentity({ sourceType, normalizedVideoPath, videoPath, fr
     width: canvasDimensions?.width,
     height: canvasDimensions?.height,
     preserveAspectRatio: Boolean(preserveAspectRatio),
-    frameClockVersion: 1,
+    fitMode: fitMode || (preserveAspectRatio ? 'contain' : 'stretch'),
+    frameClockVersion: 2,
     sourceSize: null,
     sourceMtimeMs: null,
   };
@@ -688,6 +689,7 @@ function isFrameSourceManifestCurrent(manifest, sourceIdentity) {
     manifest.width === sourceIdentity.width &&
     manifest.height === sourceIdentity.height &&
     manifest.preserveAspectRatio === sourceIdentity.preserveAspectRatio &&
+    manifest.fitMode === sourceIdentity.fitMode &&
     manifest.sourceType === sourceIdentity.sourceType &&
     manifest.normalizedVideoPath === sourceIdentity.normalizedVideoPath &&
     manifest.sourceSize === sourceIdentity.sourceSize &&
@@ -1081,52 +1083,18 @@ async function finalizeBranchPathFrames(
   }
 }
 
-function getMaxNumericPngFrameIndex(dirPath) {
+// A maximum filename cannot prove that the middle of a sequence exists.
+function getCompleteFrameCount(dirPath) {
   try {
-    const files = fs.readdirSync(dirPath);
-    let maxIndex = -1;
-
-    for (const file of files) {
-      if (!file.endsWith('.png')) {
-        continue;
-      }
-      const base = file.slice(0, -'.png'.length);
-      const parsed = Number.parseInt(base, 10);
-      if (Number.isFinite(parsed) && parsed > maxIndex) {
-        maxIndex = parsed;
-      }
+    const names = fs.readdirSync(dirPath).filter(name => /^\d+\.png$/.test(name));
+    if (!names.length) return 0;
+    for (let index = 0; index < names.length; index += 1) {
+      const stat = fs.statSync(path.join(dirPath, `${index}.png`));
+      if (!stat.isFile() || stat.size === 0) return 0;
     }
-
-    return maxIndex;
+    return names.length;
   } catch {
-    return -1;
-  }
-}
-
-function padAiVideoFrames(aiFramesDir, lastFrameIndex, requiredFrameCount, options = {}) {
-  if (options?.skipStillFramePadding) {
-    return;
-  }
-  if (!Number.isFinite(lastFrameIndex) || lastFrameIndex < 0) {
-    return;
-  }
-  if (!Number.isFinite(requiredFrameCount) || requiredFrameCount <= 0) {
-    return;
-  }
-  if (lastFrameIndex >= requiredFrameCount - 1) {
-    return;
-  }
-
-  const src = path.join(aiFramesDir, `${lastFrameIndex}.png`);
-  if (!fs.existsSync(src)) {
-    return;
-  }
-
-  for (let i = lastFrameIndex + 1; i < requiredFrameCount; i += 1) {
-    const dest = path.join(aiFramesDir, `${i}.png`);
-    if (!fs.existsSync(dest)) {
-      fs.copyFileSync(src, dest);
-    }
+    return 0;
   }
 }
 
@@ -1305,29 +1273,11 @@ async function ensureAiVideoFramesAvailable({
     preserveAspectRatio: preserveUserVideoAspectRatio,
   });
 
-  const ensureFramesIfPresent = (dirPath, options = {}) => {
-    const existingMaxIndex = getMaxNumericPngFrameIndex(dirPath);
-    if (existingMaxIndex < 0) {
-      return false;
-    }
+  const ensureFramesIfPresent = (dirPath) => {
+    const count = getCompleteFrameCount(dirPath);
     const manifest = readFrameSourceManifest(dirPath);
-    if (!isFrameSourceManifestCurrent(manifest, sourceIdentity)) {
-      console.warn('[frames_processor] Ignoring stale extracted AI video frame cache', {
-        sessionId,
-        layerId,
-        sourceType,
-        framesDir: dirPath,
-        cachedSource: manifest?.normalizedVideoPath || null,
-        currentSource: sourceIdentity.normalizedVideoPath,
-      });
-      fs.rmSync(dirPath, { recursive: true, force: true });
-      return false;
-    }
-    if (existingMaxIndex < effectiveRequiredFrameCount - 1) {
-      padAiVideoFrames(dirPath, existingMaxIndex, effectiveRequiredFrameCount, options);
-      writeFrameSourceManifest(dirPath, sourceIdentity);
-    }
-    return true;
+    return count >= effectiveRequiredFrameCount && manifest?.frameCount === count
+      && isFrameSourceManifestCurrent(manifest, sourceIdentity);
   };
 
   let aiFramesDir = baseAiFramesDir;
@@ -1388,20 +1338,14 @@ async function ensureAiVideoFramesAvailable({
     throw error;
   }
 
-  const maxIndexAfter = getMaxNumericPngFrameIndex(aiFramesDir);
-  if (maxIndexAfter < 0) {
+  const frameCount = getCompleteFrameCount(aiFramesDir);
+  if (frameCount < effectiveRequiredFrameCount) {
     throw new FatalFrameGenerationError(
-      `No ${sourceType} frames extracted for layer ${layerId} in session ${sessionId}.`,
+      `Incomplete ${sourceType} video for layer ${layerId}: expected ${effectiveRequiredFrameCount} frames, received ${frameCount}.`,
       { sessionId, layerId, sourceType, videoPath }
     );
   }
-
-  if (maxIndexAfter < effectiveRequiredFrameCount - 1) {
-    padAiVideoFrames(aiFramesDir, maxIndexAfter, effectiveRequiredFrameCount, {
-      skipStillFramePadding: prefersAudioVideoFrames,
-    });
-  }
-  writeFrameSourceManifest(aiFramesDir, sourceIdentity);
+  writeFrameSourceManifest(aiFramesDir, { ...sourceIdentity, frameCount });
 }
 
 async function ensureSharedAiVideoFramesAvailable(options = {}) {
@@ -1412,7 +1356,7 @@ async function ensureSharedAiVideoFramesAvailable(options = {}) {
   if (existingPreparation) {
     await existingPreparation;
     // A shorter path may have prepared the shared source first. Re-run the
-    // inexpensive completeness check so a longer path can pad if necessary.
+    // completeness check so a longer path cannot silently reuse a short source.
     return ensureAiVideoFramesAvailable(options);
   }
 
@@ -1438,6 +1382,30 @@ function getNarratorAvatarOverlayDimensions(canvasDimensions = {}) {
     width = Math.round(height * 16 / 9);
   }
   return { width, height };
+}
+
+async function ensureOverlayFrameCache({ videoPath, normalizedVideoPath, framesDir, framesPerSecond, canvasDimensions }) {
+  const identity = getFrameSourceIdentity({ sourceType: 'narrator_avatar', videoPath, normalizedVideoPath,
+    framesPerSecond, canvasDimensions, fitMode: 'contain' });
+  const cachedCount = getCompleteFrameCount(framesDir);
+  const manifest = readFrameSourceManifest(framesDir);
+  if (cachedCount > 0 && manifest?.frameCount === cachedCount && isFrameSourceManifestCurrent(manifest, identity)) {
+    return cachedCount;
+  }
+  fs.mkdirSync(path.dirname(framesDir), { recursive: true });
+  const temporaryDir = fs.mkdtempSync(`${framesDir}.tmp-`);
+  try {
+    await extractAiVideoFramesWithFfmpeg({ videoPath, aiFramesDir: temporaryDir, canvasDimensions,
+      framesPerSecond, fitMode: 'contain' });
+    const frameCount = getCompleteFrameCount(temporaryDir);
+    if (!frameCount) throw new Error('Avatar extraction produced an incomplete frame sequence.');
+    writeFrameSourceManifest(temporaryDir, { ...identity, frameCount });
+    fs.rmSync(framesDir, { recursive: true, force: true });
+    fs.renameSync(temporaryDir, framesDir);
+    return frameCount;
+  } finally {
+    fs.rmSync(temporaryDir, { recursive: true, force: true });
+  }
 }
 
 async function ensureNarratorAvatarFramesAvailable({
@@ -1479,64 +1447,16 @@ async function ensureNarratorAvatarFramesAvailable({
 
   const overlayDimensions = getNarratorAvatarOverlayDimensions(canvasDimensions);
   const framesDir = path.join(assetsRoot, 'video', 'narrator_avatar', 'frames', `${sessionId}`, `${layerId}`);
-  const existingMaxIndex = getMaxNumericPngFrameIndex(framesDir);
-  const effectiveRequiredFrameCount = Math.max(1, requiredFrameCount);
-  if (existingMaxIndex >= effectiveRequiredFrameCount - 1) {
-    return {
-      enabled: true,
-      framesDir,
+  try {
+    const frameCount = await ensureOverlayFrameCache({ videoPath, normalizedVideoPath, framesDir,
+      framesPerSecond, canvasDimensions: overlayDimensions });
+    return { enabled: true, framesDir, frameCount,
       framesPerSecond: getFramesPerSecondFromValue(framesPerSecond),
-      width: overlayDimensions.width,
-      height: overlayDimensions.height,
-    };
-  }
-
-  try {
-    fs.rmSync(framesDir, { recursive: true, force: true });
-  } catch {
-    // ignore
-  }
-  fs.mkdirSync(framesDir, { recursive: true });
-
-  console.log('[frames_processor] Extracting narrator avatar video frames via ffmpeg', {
-    sessionId,
-    layerId,
-    videoPath,
-    framesDir,
-  });
-
-  try {
-    await extractAiVideoFramesWithFfmpeg({
-      videoPath,
-      aiFramesDir: framesDir,
-      canvasDimensions: overlayDimensions,
-      framesPerSecond,
-      fitMode: 'contain',
-    });
+      width: overlayDimensions.width, height: overlayDimensions.height };
   } catch (error) {
-    console.error('[frames_processor] Failed to extract narrator avatar frames; continuing without overlay', {
-      sessionId,
-      layerId,
-      error: error?.message || error,
-    });
+    console.error('[frames_processor] Failed to extract narrator avatar; skipping overlay', { sessionId, layerId, error: error.message });
     return null;
   }
-
-  const maxIndexAfter = getMaxNumericPngFrameIndex(framesDir);
-  if (maxIndexAfter < 0) {
-    return null;
-  }
-  if (maxIndexAfter < effectiveRequiredFrameCount - 1) {
-    padAiVideoFrames(framesDir, maxIndexAfter, effectiveRequiredFrameCount);
-  }
-
-  return {
-    enabled: true,
-    framesDir,
-    framesPerSecond: getFramesPerSecondFromValue(framesPerSecond),
-    width: overlayDimensions.width,
-    height: overlayDimensions.height,
-  };
 }
 
 async function ensureJoinedNarratorAvatarFramesAvailable({
@@ -1589,7 +1509,6 @@ async function ensureJoinedNarratorAvatarFramesAvailable({
     }
 
     const segmentFramesPerSecond = getFramesPerSecondFromValue(sourceOverlay?.framesPerSecond || framesPerSecond);
-    const requiredFrameCount = Math.max(1, secondsToFrameCount(duration, segmentFramesPerSecond));
     const framesDir = path.join(
       assetsRoot,
       'video',
@@ -1599,54 +1518,19 @@ async function ensureJoinedNarratorAvatarFramesAvailable({
       `${layerId}`,
       `${index}`,
     );
-    const existingMaxIndex = getMaxNumericPngFrameIndex(framesDir);
-
-    if (existingMaxIndex < requiredFrameCount - 1) {
-      try {
-        fs.rmSync(framesDir, { recursive: true, force: true });
-      } catch {
-        // ignore
-      }
-      fs.mkdirSync(framesDir, { recursive: true });
-
-      console.log('[frames_processor] Extracting joined narrator avatar segment frames via ffmpeg', {
-        sessionId,
-        layerId,
-        videoPath,
-        framesDir,
-        startTime,
-        endTime,
-      });
-
-      try {
-        await extractAiVideoFramesWithFfmpeg({
-          videoPath,
-          aiFramesDir: framesDir,
-          canvasDimensions: overlayDimensions,
-          framesPerSecond: segmentFramesPerSecond,
-          fitMode: 'contain',
-        });
-      } catch (error) {
-        console.error('[frames_processor] Failed to extract joined narrator avatar frames; skipping segment', {
-          sessionId,
-          layerId,
-          error: error?.message || error,
-        });
-        continue;
-      }
-
-      const maxIndexAfter = getMaxNumericPngFrameIndex(framesDir);
-      if (maxIndexAfter < 0) {
-        continue;
-      }
-      if (maxIndexAfter < requiredFrameCount - 1) {
-        padAiVideoFrames(framesDir, maxIndexAfter, requiredFrameCount);
-      }
+    let frameCount;
+    try {
+      frameCount = await ensureOverlayFrameCache({ videoPath, normalizedVideoPath: assetPath, framesDir,
+        framesPerSecond: segmentFramesPerSecond, canvasDimensions: overlayDimensions });
+    } catch (error) {
+      console.error('[frames_processor] Failed to extract joined avatar; skipping segment', { sessionId, layerId, error: error.message });
+      continue;
     }
 
     segments.push({
       startTime,
-      endTime,
+      endTime: Math.min(endTime, startTime + frameCount / segmentFramesPerSecond),
+      frameCount,
       framesDir,
       framesPerSecond: segmentFramesPerSecond,
       width: overlayDimensions.width,

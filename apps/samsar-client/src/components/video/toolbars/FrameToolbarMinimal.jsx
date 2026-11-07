@@ -1,7 +1,9 @@
+import { useUiLanguage } from '../../../hooks/useUiLanguage.js';
 
 import { useColorMode } from '../../../contexts/ColorMode.jsx';
 import { FaChevronCircleRight } from 'react-icons/fa';
 export default function FrameToolbarMinimal(props) {
+  useUiLanguage();
 
   const { onToggleDisplay } = props;
 
@@ -9,11 +11,7 @@ export default function FrameToolbarMinimal(props) {
 
   return (
     <div
-      className={`h-full m-auto fixed top-0 overflow-y-auto pl-1 w-[2%] pr-0 transition-colors duration-200 ${
-        colorMode === 'dark'
-          ? 'bg-[#181b24] border-r border-[#3a4050] text-slate-100 shadow-[0_10px_28px_rgba(0,0,0,0.35)]'
-          : 'bg-white border-r border-slate-200 text-slate-700'
-      }`}
+      className={`h-full m-auto fixed top-0 overflow-y-auto pl-1 w-[2%] pr-0 transition-colors duration-200 bg-surface border-r border-line text-fg-body ${colorMode === 'dark' ? 'shadow-[0_10px_28px_rgba(0,0,0,0.35)]' : ''}`}
     >
       <div className='mt-[80px]'>
         <FaChevronCircleRight

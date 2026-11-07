@@ -1,3 +1,9 @@
+import { normalizeKlingModelKey } from '../../utils/KlingModel.mjs';
+import { useAssistantRequestGuard } from '../../hooks/useAssistantRequestGuard.js';
+import { useUiLanguage } from '../../hooks/useUiLanguage.js';
+import { translateText as uiText } from '../../utils/localization.js';
+import InferenceModelSelect from '../common/InferenceModelSelect.jsx';
+import { supportsInferenceEffort } from '../../utils/inferenceModelChoices.mjs';
 
 import {
   Suspense,
@@ -150,6 +156,7 @@ const LazyAceEditor = lazy(async () => {
 });
 
 function JsonAceEditor({ height = '520px', ...props }) {
+  useUiLanguage();
   return (
     <Suspense
       fallback={(
@@ -157,9 +164,7 @@ function JsonAceEditor({ height = '520px', ...props }) {
           className="flex items-center justify-center bg-[#272822] text-sm text-slate-300"
           style={{ height }}
           role="status"
-        >
-          Loading JSON editor...
-        </div>
+        >{uiText("Loading JSON editor...")}</div>
       )}
     >
       <LazyAceEditor {...props} height={height} />
@@ -213,7 +218,7 @@ const VIDGENIE_IMAGE_MODEL_ORDER = [
   QWEN_IMAGE_3_PRO_MODEL_KEY,
 ];
 const VIDGENIE_IMAGE_MODEL_LABELS = {
-  'GPTIMAGE2.5': 'GPTImage 2.5',
+  'GPTIMAGE2.5': 'GPTImage 2.6',
   NANOBANANAPRO: 'NanoBanana Pro',
   SEEDREAM: 'Seedream',
   'WAN2.7PRO': 'Wan2.7 Pro',
@@ -228,18 +233,18 @@ const VIDGENIE_VIDEO_MODEL_ORDER = [
   'SEEDANCEI2V',
   'SEEDANCE2.0I2V',
   'SEEDANCE2.5I2V',
-  'KLINGIMGTOVID3PRO',
+  'KLINGIMGTOVID4',
   'HAPPYHORSEI2V',
 ];
 const VIDGENIE_VIDEO_MODEL_LABELS = {
-  RUNWAYML: 'RunwayML Gen 4.5 (Default)',
+  get RUNWAYML() { return uiText("RunwayML Gen 4.5 (Default)"); },
   'VEO3.1I2V': 'VEO3.1 I2V',
   'VEO3.1I2VFAST': 'VEO3.1 I2V Fast',
   COSMOS3SUPERI2V: 'Nvidia Cosmos 3',
   SEEDANCEI2V: 'Seedance 1.5',
   'SEEDANCE2.0I2V': 'Seedance 2.0',
   'SEEDANCE2.5I2V': 'Seedance 2.5',
-  KLINGIMGTOVID3PRO: 'Kling 3 Pro',
+  KLINGIMGTOVID4: 'Kling 4',
   HAPPYHORSEI2V: 'Happy Horse 1.1 I2V',
 };
 const VIDGENIE_TEXT_VIDEO_MODEL_STORAGE_KEY = 'defaultVIdGPTVideoGenerationModel';
@@ -252,7 +257,7 @@ const VIDGENIE_IMAGE_LIST_VIDEO_MODEL_ORDER = [
   'SEEDANCEI2V',
   'SEEDANCE2.0I2V',
   'SEEDANCE2.5I2V',
-  'KLINGIMGTOVID3PRO',
+  'KLINGIMGTOVID4',
   'HAPPYHORSEI2V',
 ];
 const TEXT_TO_VIDEO_IMAGE_MODEL_KEYS = VIDGENIE_IMAGE_MODEL_ORDER;
@@ -265,7 +270,7 @@ const TEXT_TO_VIDEO_VIDEO_MODEL_KEYS = [
   'SEEDANCEI2V',
   'SEEDANCE2.0I2V',
   'SEEDANCE2.5I2V',
-  'KLINGIMGTOVID3PRO',
+  'KLINGIMGTOVID4',
   'HAPPYHORSEI2V',
   'CUSTOM_IMAGE_TO_VIDEO',
 ];
@@ -277,7 +282,7 @@ const IMAGE_LIST_TO_VIDEO_VIDEO_MODEL_KEYS = [
   'SEEDANCEI2V',
   'SEEDANCE2.0I2V',
   'SEEDANCE2.5I2V',
-  'KLINGIMGTOVID3PRO',
+  'KLINGIMGTOVID4',
   'HAPPYHORSEI2V',
   'CUSTOM_IMAGE_TO_VIDEO',
 ];
@@ -292,8 +297,8 @@ const STEP_IMAGE_GENERATION_TIMEOUT_MS = 180_000;
 const OUTRO_CTA_TYPE_QR = 'qr';
 const OUTRO_CTA_TYPE_IMAGE = 'image';
 const OUTRO_CTA_TYPE_OPTIONS = [
-  { value: OUTRO_CTA_TYPE_QR, label: 'URL QR code' },
-  { value: OUTRO_CTA_TYPE_IMAGE, label: 'CTA image' },
+  { value: OUTRO_CTA_TYPE_QR, get label() { return uiText("URL QR code"); } },
+  { value: OUTRO_CTA_TYPE_IMAGE, get label() { return uiText("CTA image"); } },
 ];
 const DEFAULT_ADVANCED_OPTIONS = Object.freeze({
   generate_outro_image: false,
@@ -356,14 +361,14 @@ const DEFAULT_POST_PROCESSING_FORM = Object.freeze({
   rerollLayerIndexes: [],
 });
 const POST_PROCESSING_ACTIONS = Object.freeze([
-  { key: 'retranslate', label: 'Retranslate', icon: FaLanguage },
-  { key: 'avatar', label: 'Avatar', icon: FaUserCircle },
-  { key: 'subtitles', label: 'Subtitles', icon: FaClosedCaptioning },
-  { key: 'generated_outro', label: 'Outro CTA', icon: FaImage },
-  { key: 'footer_cta', label: 'Footer CTA', icon: FaLink },
-  { key: 'reroll_layers', label: 'Reroll scenes', icon: FaRedo },
-  { key: 'clone_render', label: 'Clone', icon: FaClone },
-  { key: 'advanced_edits', label: 'Edits', icon: FaCog },
+  { key: 'retranslate', get label() { return uiText("Retranslate"); }, icon: FaLanguage },
+  { key: 'avatar', get label() { return uiText("Avatar"); }, icon: FaUserCircle },
+  { key: 'subtitles', get label() { return uiText("Subtitles"); }, icon: FaClosedCaptioning },
+  { key: 'generated_outro', get label() { return uiText("Outro CTA"); }, icon: FaImage },
+  { key: 'footer_cta', get label() { return uiText("Footer CTA"); }, icon: FaLink },
+  { key: 'reroll_layers', get label() { return uiText("Reroll scenes"); }, icon: FaRedo },
+  { key: 'clone_render', get label() { return uiText("Clone"); }, icon: FaClone },
+  { key: 'advanced_edits', get label() { return uiText("Edits"); }, icon: FaCog },
 ]);
 const INITIAL_EXPRESS_GENERATION_STATUS = Object.freeze({
   prompt_generation: 'PENDING',
@@ -380,23 +385,23 @@ const INITIAL_EXPRESS_GENERATION_STATUS = Object.freeze({
 const VIDGENIE_STEP_MODE_OPTIONS = [
   {
     value: GENERATION_STEP_MODE_ONE_STEP,
-    label: '1-step',
-    description: 'Render the full video automatically.',
+    get label() { return uiText("1-step"); },
+    get description() { return uiText("Render the full video automatically."); },
   },
   {
     value: GENERATION_STEP_MODE_TWO_STEP,
-    label: '2-step',
-    description: 'Review images before video generation.',
+    get label() { return uiText("2-step"); },
+    get description() { return uiText("Review images before video generation."); },
   },
 ];
 
 const CUSTOM_ADAPTER_OPERATION_OPTIONS = [
-  { key: 'text_to_image', label: 'Text to image' },
-  { key: 'text_to_video', label: 'Text to video' },
-  { key: 'image_to_video', label: 'Image to video' },
-  { key: 'text_to_speech', label: 'Text to speech' },
-  { key: 'text_to_music', label: 'Text to music' },
-  { key: 'text_to_sound_effect', label: 'Text to sound effect' },
+  { key: 'text_to_image', get label() { return uiText("Text to image"); } },
+  { key: 'text_to_video', get label() { return uiText("Text to video"); } },
+  { key: 'image_to_video', get label() { return uiText("Image to video"); } },
+  { key: 'text_to_speech', get label() { return uiText("Text to speech"); } },
+  { key: 'text_to_music', get label() { return uiText("Text to music"); } },
+  { key: 'text_to_sound_effect', get label() { return uiText("Text to sound effect"); } },
 ];
 
 function hasTextValue(value) {
@@ -432,9 +437,9 @@ function readFileAsDataUrl(file) {
         resolve(reader.result);
         return;
       }
-      reject(new Error('Could not read image file.'));
+      reject(new Error(uiText("Could not read image file.")));
     };
-    reader.onerror = () => reject(new Error('Could not read image file.'));
+    reader.onerror = () => reject(new Error(uiText("Could not read image file.")));
     reader.readAsDataURL(file);
   });
 }
@@ -444,7 +449,7 @@ function formatAllowedJsonValues(values) {
 }
 
 function findDefaultVideoModelOption(options = [], savedValue = '') {
-  const saved = savedValue ? options.find((model) => model.value === savedValue) : null;
+  const saved = savedValue ? options.find((model) => model.value === normalizeKlingModelKey(savedValue)) : null;
   if (saved) return saved;
 
   return (
@@ -709,11 +714,11 @@ function validateOutroCtaImagePayload(value) {
     return null;
   }
   if (typeof value !== 'string' && !isPlainObject(value)) {
-    return 'JSON input.outro_cta_image must be a string or object when provided.';
+    return uiText("JSON input.outro_cta_image must be a string or object when provided.");
   }
   const middleImage = getOutroCtaImageMiddleImage(value);
   if (typeof middleImage !== 'string' || middleImage.trim().length === 0) {
-    return 'JSON input.outro_cta_image.middle_image is required when provided.';
+    return uiText("JSON input.outro_cta_image.middle_image is required when provided.");
   }
   const trimmedMiddleImage = middleImage.trim();
   if (!isHttpUrl(trimmedMiddleImage) && !trimmedMiddleImage.startsWith('data:image/')) {
@@ -1078,6 +1083,7 @@ function RerollScenePreviewTile({
   onToggleSelect,
   onTogglePlayback,
 }) {
+  useUiLanguage();
   const videoRef = useRef(null);
   const [currentVideoUrl, setCurrentVideoUrl] = useState(item.videoUrl || '');
   const [currentVisualUrl, setCurrentVisualUrl] = useState(item.visualUrl || '');
@@ -1189,7 +1195,7 @@ function RerollScenePreviewTile({
             playsInline
             loop
             muted
-            aria-label={`Scene ${item.layerIndex} video preview`}
+            aria-label={uiText("Scene {value0} video preview", { value0: item.layerIndex })}
             onError={handleVideoError}
             onLoadedMetadata={handleVideoLoadedMetadata}
             onLoadedData={() => setVideoLoadFailed(false)}
@@ -1199,21 +1205,19 @@ function RerollScenePreviewTile({
         {currentVisualUrl && !isPlaying ? (
           <img
             src={currentVisualUrl}
-            alt={`Scene ${item.layerIndex}`}
+            alt={uiText("Scene {value0}", { value0: item.layerIndex })}
             loading="eager"
             onError={handleImageError}
             className="absolute inset-0 h-full w-full object-cover"
           />
         ) : null}
-        <span className="absolute left-1.5 top-1.5 rounded bg-black/65 px-1.5 py-0.5 text-[11px] font-semibold text-white">
-          Scene {item.layerIndex}
-        </span>
+        <span className="absolute left-1.5 top-1.5 rounded bg-black/65 px-1.5 py-0.5 text-caption font-semibold text-white">{uiText("Scene {value0}", { value0: item.layerIndex })}</span>
         {canAttemptPlayback ? (
           <button
             type="button"
             disabled={isDisabled}
-            aria-label={`${isPlaying ? 'Pause' : 'Play'} scene ${item.layerIndex} preview`}
-            title={`${isPlaying ? 'Pause' : 'Play'} scene preview`}
+            aria-label={uiText("{value0} scene {value1} preview", { value0: isPlaying ? 'Pause' : 'Play', value1: item.layerIndex })}
+            title={uiText("{value0} scene preview", { value0: isPlaying ? 'Pause' : 'Play' })}
             onClick={handlePlaybackClick}
             className={`
               absolute bottom-1.5 right-1.5 inline-flex h-7 w-7 items-center justify-center rounded-full
@@ -1239,7 +1243,7 @@ function RerollScenePreviewTile({
         ) : null}
       </div>
       <div className="mt-2 flex items-center justify-between gap-2">
-        <span className="truncate font-semibold">Scene {item.layerIndex}</span>
+        <span className="truncate font-semibold">{uiText("Scene {value0}", { value0: item.layerIndex })}</span>
         <span className={mutedText}>{item.duration ? `${item.duration}s` : ''}</span>
       </div>
       {item.promptPreview ? (
@@ -1253,7 +1257,7 @@ function getJsonModelByKey(modelTypes, modelKey) {
   if (typeof modelKey !== 'string') {
     return null;
   }
-  const normalizedKey = modelKey.trim();
+  const normalizedKey = normalizeKlingModelKey(modelKey);
   return modelTypes.find((model) => model.key === normalizedKey) || null;
 }
 
@@ -1341,7 +1345,7 @@ function buildDefaultJsonModeInput({
 }) {
   const normalizedAspectRatio = aspectRatio === '9:16' ? '9:16' : '16:9';
   const normalizedLanguage = language || 'en';
-  const normalizedVideoModel = videoModel || '';
+  const normalizedVideoModel = normalizeKlingModelKey(videoModel || '');
   const languageFields = buildVidgenieLanguageFields({
     audioLanguage: normalizedLanguage,
     enableSubtitles,
@@ -1354,12 +1358,12 @@ function buildDefaultJsonModeInput({
         image_urls: [
           {
             image_url: 'https://cdn.example.com/frame-1.png',
-            title: 'Opening frame',
+            title: uiText("Opening frame"),
             image_text: 'Describe what should drive the first scene.',
           },
           {
             image_url: 'https://cdn.example.com/frame-2.png',
-            title: 'Second frame',
+            title: uiText("Second frame"),
             image_text: 'Describe what should drive the second scene.',
           },
         ],
@@ -1373,7 +1377,7 @@ function buildDefaultJsonModeInput({
         ...languageFields,
         font_key: 'Poppins',
         inference_model: normalizeInferenceModelKey(inferenceModel),
-        ...(normalizeInferenceModelKey(inferenceModel) === DEFAULT_INFERENCE_MODEL
+        ...(supportsInferenceEffort(normalizeInferenceModelKey(inferenceModel))
           ? { effort: normalizeInferenceEffort(inferenceEffort) }
           : {}),
         limit_single_narrator: false,
@@ -1382,11 +1386,11 @@ function buildDefaultJsonModeInput({
         footer_metadata: [
           {
             url: 'https://example.com',
-            title: 'Learn more',
+            title: uiText("Learn more"),
           },
           {
             url: 'https://example.com',
-            title: 'Get started',
+            title: uiText("Get started"),
           },
         ],
         generate_outro_image: true,
@@ -1410,7 +1414,7 @@ function buildDefaultJsonModeInput({
       ...languageFields,
       font_key: 'Poppins',
       inference_model: normalizeInferenceModelKey(inferenceModel),
-      ...(normalizeInferenceModelKey(inferenceModel) === DEFAULT_INFERENCE_MODEL
+      ...(supportsInferenceEffort(normalizeInferenceModelKey(inferenceModel))
         ? { effort: normalizeInferenceEffort(inferenceEffort) }
         : {}),
     },
@@ -1794,19 +1798,19 @@ function getJsonParseErrorDetails(rawJson, error) {
   if (/^(const|let|var)\s/.test(trimmed) || /^await\s/.test(trimmed) || /samsar\.\w+\(/.test(trimmed)) {
     return {
       ...location,
-      error: 'JSON mode accepts raw JSON only. Paste the request body object, not JavaScript or SDK code. JSON needs double-quoted keys and strings, and no const/await/function call wrapper.',
+      error: uiText("JSON mode accepts raw JSON only. Paste the request body object, not JavaScript or SDK code. JSON needs double-quoted keys and strings, and no const/await/function call wrapper."),
     };
   }
   if (error?.message?.includes('Expected property name') || /[{,]\s*[A-Za-z_$][\w$-]*\s*:/.test(trimmed)) {
     return {
       ...location,
-      error: 'Invalid JSON: property names must be wrapped in double quotes. Use "image_urls": instead of image_urls:.',
+      error: uiText("Invalid JSON: property names must be wrapped in double quotes. Use \"image_urls\": instead of image_urls:."),
     };
   }
 
   return {
     ...location,
-    error: `Invalid JSON: ${error.message}`,
+    error: uiText("Invalid JSON: {value0}", { value0: error.message }),
   };
 }
 
@@ -1840,7 +1844,7 @@ function normalizeJsonEndpoint(value, selectedMode = 'T2V') {
 
   if (rawEndpoint) {
     return {
-      error: 'JSON endpoint must be text_to_video, image_list_to_video, image_to_video, or a matching /v2/video/step route.',
+      error: uiText("JSON endpoint must be text_to_video, image_list_to_video, image_to_video, or a matching /v2/video/step route."),
     };
   }
 
@@ -1862,7 +1866,7 @@ function validateJsonSessionId(payload, input, currentSessionId) {
   const mismatchedSessionId = sessionIds.find((value) => value.trim() !== currentSessionId);
   if (mismatchedSessionId) {
     return {
-      error: 'JSON session_id must match the current Vidgenie session.',
+      error: uiText("JSON session_id must match the current Vidgenie session."),
     };
   }
 
@@ -1888,7 +1892,7 @@ function hasJsonImageUrlValue(item) {
 
 function validateCommonJsonInput(input, inferenceModelOptions = INFERENCE_MODEL_TYPES) {
   if (!isPlainObject(input)) {
-    return 'JSON input must be an object.';
+    return uiText("JSON input must be an object.");
   }
 
   const aspectRatio = input.aspect_ratio || '16:9';
@@ -1897,40 +1901,40 @@ function validateCommonJsonInput(input, inferenceModelOptions = INFERENCE_MODEL_
     input.aspect_ratio !== undefined &&
     !JSON_MODE_ASPECT_RATIOS.includes(input.aspect_ratio)
   ) {
-    return `JSON input.aspect_ratio must be one of: ${formatAllowedJsonValues(JSON_MODE_ASPECT_RATIOS)}.`;
+    return uiText("JSON input.aspect_ratio must be one of: {value0}.", { value0: formatAllowedJsonValues(JSON_MODE_ASPECT_RATIOS) });
   }
 
   if (input.language !== undefined) {
     if (typeof input.language !== 'string') {
-      return 'JSON input.language must be a string when provided.';
+      return uiText("JSON input.language must be a string when provided.");
     }
     const normalizedLanguage = resolveLanguageCode(input.language, '');
     if (!normalizedLanguage) {
       const languageValues = ['auto', ...SUPPORTED_LANGUAGES.map((lang) => lang.code)];
-      return `JSON input.language must be one of: ${formatAllowedJsonValues(languageValues)}.`;
+      return uiText("JSON input.language must be one of: {value0}.", { value0: formatAllowedJsonValues(languageValues) });
     }
     input.language = normalizedLanguage;
   }
 
   if (input.font_key !== undefined && typeof input.font_key !== 'string') {
-    return 'JSON input.font_key must be a string when provided.';
+    return uiText("JSON input.font_key must be a string when provided.");
   }
 
   if (
     input.enable_subtitles !== undefined &&
     typeof input.enable_subtitles !== 'boolean'
   ) {
-    return 'JSON input.enable_subtitles must be a boolean when provided.';
+    return uiText("JSON input.enable_subtitles must be a boolean when provided.");
   }
 
   if (input.subtitle_language !== undefined) {
     if (typeof input.subtitle_language !== 'string') {
-      return 'JSON input.subtitle_language must be a string when provided.';
+      return uiText("JSON input.subtitle_language must be a string when provided.");
     }
     const normalizedSubtitleLanguage = resolveLanguageCode(input.subtitle_language, '');
     if (!normalizedSubtitleLanguage || normalizedSubtitleLanguage === 'auto') {
       const subtitleLanguageValues = SUPPORTED_LANGUAGES.map((lang) => lang.code);
-      return `JSON input.subtitle_language must be one of: ${formatAllowedJsonValues(subtitleLanguageValues)}.`;
+      return uiText("JSON input.subtitle_language must be one of: {value0}.", { value0: formatAllowedJsonValues(subtitleLanguageValues) });
     }
     input.subtitle_language = normalizedSubtitleLanguage;
   }
@@ -1939,39 +1943,39 @@ function validateCommonJsonInput(input, inferenceModelOptions = INFERENCE_MODEL_
     input.add_outro_animation !== undefined &&
     typeof input.add_outro_animation !== 'boolean'
   ) {
-    return 'JSON input.add_outro_animation must be a boolean when provided.';
+    return uiText("JSON input.add_outro_animation must be a boolean when provided.");
   }
 
   if (
     input.add_outro_focus_area !== undefined &&
     typeof input.add_outro_focus_area !== 'boolean'
   ) {
-    return 'JSON input.add_outro_focus_area must be a boolean when provided.';
+    return uiText("JSON input.add_outro_focus_area must be a boolean when provided.");
   }
 
   if (
     input.generate_outro_image !== undefined &&
     typeof input.generate_outro_image !== 'boolean'
   ) {
-    return 'JSON input.generate_outro_image must be a boolean when provided.';
+    return uiText("JSON input.generate_outro_image must be a boolean when provided.");
   }
 
   if (
     input.add_footer_animation !== undefined &&
     typeof input.add_footer_animation !== 'boolean'
   ) {
-    return 'JSON input.add_footer_animation must be a boolean when provided.';
+    return uiText("JSON input.add_footer_animation must be a boolean when provided.");
   }
 
   if (
     input.footer_metadata !== undefined &&
     !Array.isArray(input.footer_metadata)
   ) {
-    return 'JSON input.footer_metadata must be an array when provided.';
+    return uiText("JSON input.footer_metadata must be an array when provided.");
   }
 
   if (input.cta_url !== undefined && typeof input.cta_url !== 'string') {
-    return 'JSON input.cta_url must be a string when provided.';
+    return uiText("JSON input.cta_url must be a string when provided.");
   }
 
   const outroCtaImageError = validateOutroCtaImagePayload(input.outro_cta_image);
@@ -1984,7 +1988,7 @@ function validateCommonJsonInput(input, inferenceModelOptions = INFERENCE_MODEL_
     (typeof input.cta_url !== 'string' || input.cta_url.trim().length === 0) &&
     !hasOutroCtaImagePayload(input.outro_cta_image)
   ) {
-    return 'JSON input.cta_url or input.outro_cta_image is required when generate_outro_image is true.';
+    return uiText("JSON input.cta_url or input.outro_cta_image is required when generate_outro_image is true.");
   }
 
   if (hasTextValue(input.cta_url) && !isHttpUrl(input.cta_url)) {
@@ -1992,15 +1996,15 @@ function validateCommonJsonInput(input, inferenceModelOptions = INFERENCE_MODEL_
   }
 
   if (input.cta_text_top !== undefined && typeof input.cta_text_top !== 'string') {
-    return 'JSON input.cta_text_top must be a string when provided.';
+    return uiText("JSON input.cta_text_top must be a string when provided.");
   }
 
   if (input.cta_text_bottom !== undefined && typeof input.cta_text_bottom !== 'string') {
-    return 'JSON input.cta_text_bottom must be a string when provided.';
+    return uiText("JSON input.cta_text_bottom must be a string when provided.");
   }
 
   if (input.cta_logo !== undefined && typeof input.cta_logo !== 'string') {
-    return 'JSON input.cta_logo must be a string when provided.';
+    return uiText("JSON input.cta_logo must be a string when provided.");
   }
 
   if (Array.isArray(input.footer_metadata)) {
@@ -2020,17 +2024,17 @@ function validateCommonJsonInput(input, inferenceModelOptions = INFERENCE_MODEL_
   }
 
   if (input.add_footer_animation === true && (!Array.isArray(input.footer_metadata) || input.footer_metadata.length === 0)) {
-    return 'JSON input.footer_metadata must include at least one item when add_footer_animation is true.';
+    return uiText("JSON input.footer_metadata must include at least one item when add_footer_animation is true.");
   }
 
   const modelImpliedEffort = inferGPT56SolEffortFromModelValue(input.inference_model);
   if (input.inference_model !== undefined) {
     if (typeof input.inference_model !== 'string') {
-      return 'JSON input.inference_model must be a string when provided.';
+      return uiText("JSON input.inference_model must be a string when provided.");
     }
     if (!isSupportedInferenceModelKey(input.inference_model, inferenceModelOptions)) {
       const allowedModels = inferenceModelOptions.map((option) => option.value).join(', ');
-      return `JSON input.inference_model must be one of: ${allowedModels || 'no configured models'}.`;
+      return uiText("JSON input.inference_model must be one of: {value0}.", { value0: allowedModels || 'no configured models' });
     }
     input.inference_model = normalizeInferenceModelKey(input.inference_model);
     input.inferenceModel = input.inference_model;
@@ -2038,32 +2042,32 @@ function validateCommonJsonInput(input, inferenceModelOptions = INFERENCE_MODEL_
 
   if (input.effort !== undefined) {
     if (input.effort !== 'high' && input.effort !== 'xhigh') {
-      return 'JSON input.effort must be one of: high, xhigh.';
+      return uiText("JSON input.effort must be one of: high, xhigh.");
     }
-    if (input.inference_model !== DEFAULT_INFERENCE_MODEL) {
-      return 'JSON input.effort is only supported with gpt-6-astra.';
+    if (!supportsInferenceEffort(input.inference_model)) {
+      return uiText("JSON input.effort is only supported with GPT and Claude models.");
     }
-  } else if (input.inference_model === DEFAULT_INFERENCE_MODEL) {
+  } else if (supportsInferenceEffort(input.inference_model)) {
     input.effort = modelImpliedEffort || 'high';
   }
 
   if (input.add_outro_focus_area === true && input.add_outro_animation !== true) {
-    return 'JSON input.add_outro_focus_area requires add_outro_animation to be true.';
+    return uiText("JSON input.add_outro_focus_area requires add_outro_animation to be true.");
   }
 
   if (input.outro_focust_area !== undefined) {
     if (!isPlainObject(input.outro_focust_area)) {
-      return 'JSON input.outro_focust_area must be an object when provided.';
+      return uiText("JSON input.outro_focust_area must be an object when provided.");
     }
     for (const key of ['x', 'y', 'width', 'height']) {
       if (!Number.isFinite(Number(input.outro_focust_area[key]))) {
-        return `JSON input.outro_focust_area.${key} must be a finite number.`;
+        return uiText("JSON input.outro_focust_area.{value0} must be a finite number.", { value0: key });
       }
     }
   }
 
   if (aspectRatio && !JSON_MODE_ASPECT_RATIOS.includes(aspectRatio)) {
-    return `JSON input.aspect_ratio must be one of: ${formatAllowedJsonValues(JSON_MODE_ASPECT_RATIOS)}.`;
+    return uiText("JSON input.aspect_ratio must be one of: {value0}.", { value0: formatAllowedJsonValues(JSON_MODE_ASPECT_RATIOS) });
   }
 
   return null;
@@ -2077,7 +2081,7 @@ function isModelAllowedByDeployment(modelKey, modelValues = [], isStandaloneDepl
 
 function getConfiguredModelError(fieldName, modelValues = []) {
   const allowedModels = formatAllowedJsonValues(modelValues);
-  return `JSON input.${fieldName} must be one of the configured standalone models: ${allowedModels || 'none'}.`;
+  return uiText("JSON input.{value0} must be one of the configured standalone models: {value1}.", { value0: fieldName, value1: allowedModels || 'none' });
 }
 
 function validateStageImageModel(
@@ -2091,25 +2095,25 @@ function validateStageImageModel(
   }
 ) {
   if (typeof input.image_model !== 'string' || input.image_model.trim().length === 0) {
-    return required ? `JSON input.image_model is required for ${stageName}.` : null;
+    return required ? uiText("JSON input.image_model is required for {value0}.", { value0: stageName }) : null;
   }
 
   const resolvedImageModel = resolveJsonImageModelAlias(input.image_model.trim());
   const imageModel = getJsonModelByKey(IMAGE_GENERAITON_MODEL_TYPES, resolvedImageModel);
   if (!imageModel || !allowedModelKeys.includes(resolvedImageModel)) {
-    return `JSON input.image_model must be one of: ${formatAllowedJsonValues(allowedModelKeys)}.`;
+    return uiText("JSON input.image_model must be one of: {value0}.", { value0: formatAllowedJsonValues(allowedModelKeys) });
   }
   if (!isImageModelAllowedForDeploymentScope(imageModel, isStandaloneDeployment)) {
-    return `JSON input.image_model ${resolvedImageModel} is only available in standalone deployments.`;
+    return uiText("JSON input.image_model {value0} is only available in standalone deployments.", { value0: resolvedImageModel });
   }
   if (!isModelAllowedByDeployment(resolvedImageModel, deploymentModelValues, isStandaloneDeployment)) {
     return getConfiguredModelError('image_model', deploymentModelValues);
   }
   if (imageModel.isExpressModel !== true) {
-    return 'JSON input.image_model must be an express model.';
+    return uiText("JSON input.image_model must be an express model.");
   }
   if (!imageModelSupportsAspectRatio(resolvedImageModel, input.aspect_ratio || '16:9')) {
-    return `JSON input.image_model ${resolvedImageModel} does not support aspect_ratio ${input.aspect_ratio || '16:9'}.`;
+    return uiText("JSON input.image_model {value0} does not support aspect_ratio {value1}.", { value0: resolvedImageModel, value1: input.aspect_ratio || '16:9' });
   }
 
   return null;
@@ -2127,11 +2131,11 @@ function validateTextToVideoJsonInput(
   const textToVideoVideoModelValues = deploymentModelAvailability?.textToVideoVideoModelValues || [];
 
   if (typeof input.prompt !== 'string' || input.prompt.trim().length === 0) {
-    return 'JSON input.prompt is required for text_to_video.';
+    return uiText("JSON input.prompt is required for text_to_video.");
   }
 
   if (input.prompt.trim().length > VIDGENIE_PROMPT_MAX_LENGTH) {
-    return `JSON input.prompt must be ${VIDGENIE_PROMPT_MAX_LENGTH} characters or fewer.`;
+    return uiText("JSON input.prompt must be {value0} characters or fewer.", { value0: VIDGENIE_PROMPT_MAX_LENGTH });
   }
 
   const imageModelError = validateStageImageModel(input, {
@@ -2143,41 +2147,41 @@ function validateTextToVideoJsonInput(
   if (imageModelError) return imageModelError;
 
   if (typeof input.video_model !== 'string' || input.video_model.trim().length === 0) {
-    return 'JSON input.video_model is required for text_to_video.';
+    return uiText("JSON input.video_model is required for text_to_video.");
   }
 
-  const videoModelKey = input.video_model.trim();
+  const videoModelKey = normalizeKlingModelKey(input.video_model);
   const videoModel = getJsonModelByKey(VIDEO_GENERATION_MODEL_TYPES, videoModelKey);
   if (!videoModel || !TEXT_TO_VIDEO_VIDEO_MODEL_KEYS.includes(videoModelKey)) {
-    return `JSON input.video_model must be one of: ${formatAllowedJsonValues(TEXT_TO_VIDEO_VIDEO_MODEL_KEYS)}.`;
+    return uiText("JSON input.video_model must be one of: {value0}.", { value0: formatAllowedJsonValues(TEXT_TO_VIDEO_VIDEO_MODEL_KEYS) });
   }
   if (!isVideoModelAllowedForDeploymentScope(videoModel, isStandaloneDeployment)) {
-    return `JSON input.video_model ${videoModelKey} is only available in standalone deployments.`;
+    return uiText("JSON input.video_model {value0} is only available in standalone deployments.", { value0: videoModelKey });
   }
   if (!isModelAllowedByDeployment(videoModelKey, textToVideoVideoModelValues, isStandaloneDeployment)) {
     return getConfiguredModelError('video_model', textToVideoVideoModelValues);
   }
   if (videoModel.isExpressModel !== true) {
-    return 'JSON input.video_model must be an express model.';
+    return uiText("JSON input.video_model must be an express model.");
   }
   if (!videoModelSupportsAspectRatio(videoModelKey, input.aspect_ratio || '16:9')) {
-    return `JSON input.video_model ${videoModelKey} does not support aspect_ratio ${input.aspect_ratio || '16:9'}.`;
+    return uiText("JSON input.video_model {value0} does not support aspect_ratio {value1}.", { value0: videoModelKey, value1: input.aspect_ratio || '16:9' });
   }
 
   if (
     input.video_model_sub_type !== undefined &&
     !JSON_MODE_VIDEO_MODEL_SUB_TYPES.includes(input.video_model_sub_type)
   ) {
-    return `JSON input.video_model_sub_type must be one of: ${formatAllowedJsonValues(JSON_MODE_VIDEO_MODEL_SUB_TYPES)}.`;
+    return uiText("JSON input.video_model_sub_type must be one of: {value0}.", { value0: formatAllowedJsonValues(JSON_MODE_VIDEO_MODEL_SUB_TYPES) });
   }
 
   const durationValue = Number(input.duration);
   if (!Number.isFinite(durationValue)) {
-    return 'JSON input.duration is required for text_to_video.';
+    return uiText("JSON input.duration is required for text_to_video.");
   }
 
   if (durationValue < 10 || durationValue > 240) {
-    return 'JSON input.duration must be between 10 and 240 seconds.';
+    return uiText("JSON input.duration must be between 10 and 240 seconds.");
   }
 
   return null;
@@ -2204,39 +2208,39 @@ function validateImageListToVideoJsonInput(
   if (imageModelError) return imageModelError;
 
   if (!Array.isArray(input.image_urls) || input.image_urls.length === 0) {
-    return 'JSON input.image_urls must be a non-empty array for image_list_to_video.';
+    return uiText("JSON input.image_urls must be a non-empty array for image_list_to_video.");
   }
 
   if (input.image_urls.some((item) => !hasJsonImageUrlValue(item))) {
-    return 'JSON input.image_urls entries must be non-empty URL strings or objects with image_url, imageUrl, url, src, enhanced_url, or enhancedUrl.';
+    return uiText("JSON input.image_urls entries must be non-empty URL strings or objects with image_url, imageUrl, url, src, enhanced_url, or enhancedUrl.");
   }
 
   if (input.metadata !== undefined && !isPlainObject(input.metadata)) {
-    return 'JSON input.metadata must be an object when provided.';
+    return uiText("JSON input.metadata must be an object when provided.");
   }
 
   if (input.prompt !== undefined && typeof input.prompt !== 'string') {
-    return 'JSON input.prompt must be a string when provided.';
+    return uiText("JSON input.prompt must be a string when provided.");
   }
 
   if (input.video_model !== undefined && typeof input.video_model !== 'string') {
-    return 'JSON input.video_model must be a string when provided.';
+    return uiText("JSON input.video_model must be a string when provided.");
   }
 
   if (hasTextValue(input.video_model)) {
-    const videoModelKey = input.video_model.trim();
+    const videoModelKey = normalizeKlingModelKey(input.video_model);
     const videoModel = getJsonModelByKey(VIDEO_GENERATION_MODEL_TYPES, videoModelKey);
     if (!videoModel || !IMAGE_LIST_TO_VIDEO_VIDEO_MODEL_KEYS.includes(videoModelKey)) {
-      return `JSON input.video_model must be one of: ${formatAllowedJsonValues(IMAGE_LIST_TO_VIDEO_VIDEO_MODEL_KEYS)}.`;
+      return uiText("JSON input.video_model must be one of: {value0}.", { value0: formatAllowedJsonValues(IMAGE_LIST_TO_VIDEO_VIDEO_MODEL_KEYS) });
     }
     if (!isModelAllowedByDeployment(videoModelKey, imageListToVideoVideoModelValues, isStandaloneDeployment)) {
       return getConfiguredModelError('video_model', imageListToVideoVideoModelValues);
     }
     if (!isVideoModelAllowedForDeploymentScope(videoModel, isStandaloneDeployment)) {
-      return `JSON input.video_model ${videoModelKey} is only available in standalone deployments.`;
+      return uiText("JSON input.video_model {value0} is only available in standalone deployments.", { value0: videoModelKey });
     }
     if (!videoModelSupportsAspectRatio(videoModelKey, input.aspect_ratio || '16:9')) {
-      return `JSON input.video_model ${videoModelKey} does not support aspect_ratio ${input.aspect_ratio || '16:9'}.`;
+      return uiText("JSON input.video_model {value0} does not support aspect_ratio {value1}.", { value0: videoModelKey, value1: input.aspect_ratio || '16:9' });
     }
   }
 
@@ -2245,21 +2249,21 @@ function validateImageListToVideoJsonInput(
     Array.isArray(input.footer_metadata) &&
     input.footer_metadata.length < input.image_urls.length
   ) {
-    return 'JSON input.footer_metadata must include one item for each image when add_footer_animation is true.';
+    return uiText("JSON input.footer_metadata must include one item for each image when add_footer_animation is true.");
   }
 
   if (
     input.limit_single_narrator !== undefined &&
     typeof input.limit_single_narrator !== 'boolean'
   ) {
-    return 'JSON input.limit_single_narrator must be a boolean when provided.';
+    return uiText("JSON input.limit_single_narrator must be a boolean when provided.");
   }
 
   if (
     input.add_narrator_avatar !== undefined &&
     typeof input.add_narrator_avatar !== 'boolean'
   ) {
-    return 'JSON input.add_narrator_avatar must be a boolean when provided.';
+    return uiText("JSON input.add_narrator_avatar must be a boolean when provided.");
   }
 
   return null;
@@ -2273,7 +2277,7 @@ function buildJsonModeRequest(
   deploymentModelAvailability = {}
 ) {
   if (!hasTextValue(rawJson)) {
-    return { error: 'JSON input is required.' };
+    return { error: uiText("JSON input is required.") };
   }
 
   const parsedInput = parseJsonOrRepair(rawJson);
@@ -2283,7 +2287,7 @@ function buildJsonModeRequest(
   const parsed = parsedInput.value;
 
   if (!isPlainObject(parsed)) {
-    return { error: 'JSON input must be an object.' };
+    return { error: uiText("JSON input must be an object.") };
   }
 
   const payload = cloneJsonValue(parsed);
@@ -2458,11 +2462,11 @@ function buildAdvancedRequestConfiguration({
   const inferenceModelValue = selectedInferenceModel?.value || selectedInferenceModel;
   if (!isSupportedInferenceModelKey(inferenceModelValue, inferenceModelOptions)) {
     const allowedLabels = inferenceModelOptions.map((option) => option.label).join(', ');
-    return { error: `Inference model must be one of: ${allowedLabels || 'no configured models'}.` };
+    return { error: uiText("Inference model must be one of: {value0}.", { value0: allowedLabels || 'no configured models' }) };
   }
   input.inference_model = normalizeInferenceModelKey(inferenceModelValue);
   input.inferenceModel = input.inference_model;
-  if (input.inference_model === DEFAULT_INFERENCE_MODEL) {
+  if (supportsInferenceEffort(input.inference_model)) {
     input.effort = normalizeInferenceEffort(
       selectedInferenceEffort?.value || selectedInferenceEffort,
     );
@@ -2483,10 +2487,10 @@ function buildAdvancedRequestConfiguration({
     if (outroCtaType === OUTRO_CTA_TYPE_IMAGE) {
       const middleImageUrl = advancedOptions.outro_cta_image_url?.trim() || '';
       if (!middleImageUrl) {
-        return { error: 'CTA image URL or upload is required when CTA image outro is enabled.' };
+        return { error: uiText("CTA image URL or upload is required when CTA image outro is enabled.") };
       }
       if (!isHttpUrl(middleImageUrl)) {
-        return { error: 'CTA image URL must be a valid http or https URL.' };
+        return { error: uiText("CTA image URL must be a valid http or https URL.") };
       }
 
       const outroCtaImage = {
@@ -2501,7 +2505,7 @@ function buildAdvancedRequestConfiguration({
       input.outro_cta_image = outroCtaImage;
     } else {
       if (!hasTextValue(advancedOptions.cta_url)) {
-        return { error: 'CTA URL is required when generated QR outro is enabled.' };
+        return { error: uiText("CTA URL is required when generated QR outro is enabled.") };
       }
       input.cta_url = advancedOptions.cta_url.trim();
       if (hasTextValue(advancedOptions.cta_text_top)) {
@@ -2864,11 +2868,12 @@ function getDetailedGenerationErrorMessage(data, failureStatus = '') {
   }
 
   return normalizeGenerationStatus(failureStatus) === 'CANCELLED'
-    ? 'Video generation was cancelled.'
-    : 'Video generation failed.';
+    ? uiText("Video generation was cancelled.")
+    : uiText("Video generation failed.");
 }
 
 export default function OneshotEditor() {
+  const uiLanguage = useUiLanguage();
   // ─────────────────────────────────────────────────────────
   //  Context / Router hooks
   // ─────────────────────────────────────────────────────────
@@ -2903,6 +2908,7 @@ export default function OneshotEditor() {
   }
   const currentPollRequestIdRef = useRef(null);
   const pollRunRef = useRef(0);
+  const sessionRunRef = useRef(0);
   const hasResolvedSessionAuth = userInitiated && (!userFetching || Boolean(user?._id));
   const activeRequestIdRef = useRef(null);
   const postProcessingPollActionRef = useRef('');
@@ -2947,20 +2953,16 @@ export default function OneshotEditor() {
 
   // ✨ UI tokens for light/dark surfaces
   const surfaceCard =
-    colorMode === 'dark'
-      ? 'bg-[#181b24]/96 text-slate-100 border border-[#3a4050] shadow-[0_20px_56px_rgba(0,0,0,0.32)] backdrop-blur-xl'
-      : 'bg-white text-slate-900 border border-slate-200 shadow-sm';
+    `text-fg border border-line ${colorMode === 'dark' ? 'bg-[#181b24]/96 shadow-[0_20px_56px_rgba(0,0,0,0.32)] backdrop-blur-xl' : 'bg-white shadow-sm'}`;
 
   const controlShell =
-    colorMode === 'dark'
-      ? 'bg-[#20232e]'
-      : 'bg-white';
+    'bg-surface-raised';
   const borderedControlShell =
     colorMode === 'dark'
       ? `${controlShell} ring-1 ring-[#667188] hover:ring-[#ff4655]/60`
       : `${controlShell} ring-1 ring-slate-200 hover:ring-slate-300 shadow-sm`;
 
-  const mutedText = colorMode === 'dark' ? 'text-slate-400' : 'text-slate-500';
+  const mutedText = "text-fg-muted";
 
   useEffect(() => {
     activeSessionIdRef.current = id;
@@ -3100,6 +3102,7 @@ export default function OneshotEditor() {
   // ─────────────────────────────────────────────────────────
   const [sessionMessages, setSessionMessages] = useState([]);
   const [isAssistantQueryGenerating, setIsAssistantQueryGenerating] = useState(false);
+  const assistantRequestGuard = useAssistantRequestGuard(id);
 
   // ─────────────────────────────────────────────────────────
   //  Generation state
@@ -3494,8 +3497,7 @@ export default function OneshotEditor() {
       stopVoiceTranscription();
     }
     stopBrowserRecognition();
-  }, [
-    clearVoiceSessionTimeout,
+  }, [clearVoiceSessionTimeout,
     isVoiceInitializing,
     isVoiceRecording,
     stopBrowserRecognition,
@@ -3563,8 +3565,7 @@ export default function OneshotEditor() {
     }
 
     startVoiceTranscription();
-  }, [
-    isVoiceBusy,
+  }, [isVoiceBusy,
     stopAllVoiceCapture,
     user,
     showLoginDialog,
@@ -3620,11 +3621,11 @@ export default function OneshotEditor() {
     return [
       { label: autoLabel, value: 'auto' },
       ...SUPPORTED_LANGUAGES.map((lang) => ({
-        label: lang.name,
+        label: uiText(lang.name),
         value: lang.code,
       })),
     ];
-  }, [t]);
+  }, [uiLanguage, t]);
 
   const subtitleLanguageOptions = useMemo(() => [
     {
@@ -3632,10 +3633,10 @@ export default function OneshotEditor() {
       value: '',
     },
     ...SUPPORTED_LANGUAGES.map((lang) => ({
-      label: lang.name,
+      label: uiText(lang.name),
       value: lang.code,
     })),
-  ], [t]);
+  ], [uiLanguage, t]);
 
   const defaultLanguageOption = useMemo(() => {
     const match = languageOptions.find((opt) => opt.value === language);
@@ -3732,8 +3733,7 @@ export default function OneshotEditor() {
     textToVideoVideoModelValues,
     imageListToVideoImageModelValues,
     imageListToVideoVideoModelValues,
-  }), [
-    imageListToVideoImageModelValues,
+  }), [imageListToVideoImageModelValues,
     imageListToVideoVideoModelValues,
     isStandaloneModelFilteringEnabled,
     textToVideoImageModelValues,
@@ -3829,7 +3829,7 @@ export default function OneshotEditor() {
       { label: t("vidgenie.aspectRatioLandscape"), value: '16:9' },
       { label: t("vidgenie.aspectRatioPortrait"), value: '9:16' },
     ],
-    [t]
+    [uiLanguage, t]
   );
   const [selectedAspectRatioOption, setSelectedAspectRatioOption] = useState(() => {
     const stored = localStorage.getItem('defaultVidGPTAspectRatio');
@@ -3894,7 +3894,7 @@ export default function OneshotEditor() {
         imageStyles: model.imageStyles,
       }));
     return [...configuredModels, ...customModels];
-  }, [
+  }, [uiLanguage,
     generationMode,
     isStandaloneModelFilteringEnabled,
     selectedAspectRatioOption.value,
@@ -3981,7 +3981,7 @@ export default function OneshotEditor() {
     return isStandaloneModelFilteringEnabled
       ? filterOptionsForDeploymentModelValues(orderedModels, textToVideoVideoModelValues)
       : orderedModels;
-  }, [
+  }, [uiLanguage,
     isStandaloneModelFilteringEnabled,
     selectedAspectRatioOption.value,
     textToVideoVideoModelValues,
@@ -4013,7 +4013,7 @@ export default function OneshotEditor() {
     return isStandaloneModelFilteringEnabled
       ? filterOptionsForDeploymentModelValues(orderedModels, imageListToVideoVideoModelValues)
       : orderedModels;
-  }, [
+  }, [uiLanguage,
     imageListToVideoVideoModelValues,
     isStandaloneModelFilteringEnabled,
     selectedAspectRatioOption.value,
@@ -4029,7 +4029,7 @@ export default function OneshotEditor() {
 
     setSelectedVideoModel((prev) => {
       if (prev?.value) {
-        const existing = expressVideoModels.find((m) => m.value === prev.value);
+        const existing = expressVideoModels.find((m) => m.value === normalizeKlingModelKey(prev.value));
         if (existing) return existing;
       }
 
@@ -4043,7 +4043,7 @@ export default function OneshotEditor() {
 
     setSelectedVideoModel((prev) => {
       if (prev?.value) {
-        const existing = imageListVideoModels.find((m) => m.value === prev.value);
+        const existing = imageListVideoModels.find((m) => m.value === normalizeKlingModelKey(prev.value));
         if (existing) return existing;
       }
 
@@ -4083,7 +4083,7 @@ export default function OneshotEditor() {
       { label: t("vidgenie.duration120"), value: 120 },
       { label: t("vidgenie.duration180"), value: 180 },
     ],
-    [t]
+    [uiLanguage, t]
   );
   const [selectedDurationOption, setSelectedDurationOption] = useState(() => {
     const saved = parseInt(localStorage.getItem('defaultVidGPTDuration') || '', 10);
@@ -4199,6 +4199,9 @@ export default function OneshotEditor() {
   // ─────────────────────────────────────────────────────────
 
   useEffect(() => {
+    // A response belongs to this route/auth lifecycle, even if the user later
+    // returns to the same session ID. Invalidate pending work on cleanup too.
+    const sessionRun = ++sessionRunRef.current;
     // Abort ALL polling
     if (pollIntervalRef.current) clearTimeout(pollIntervalRef.current);
     if (assistantPollRef.current) clearInterval(assistantPollRef.current);
@@ -4224,6 +4227,7 @@ export default function OneshotEditor() {
       // getSessionDetails may start polling itself. Preserve that timer instead
       // of clearing it when this route-load continuation observes the active id.
       getSessionDetails().then((data) => {
+        if (sessionRunRef.current !== sessionRun) return;
         const usePostProcessingPoll = shouldUsePostProcessingStatusPolling(id);
         const shouldPoll = Boolean(
           user?._id &&
@@ -4254,6 +4258,9 @@ export default function OneshotEditor() {
         }
       });
     }
+    return () => {
+      sessionRunRef.current += 1;
+    };
   }, [id, user?._id, hasResolvedSessionAuth]);
 
   // ─────────────────────────────────────────────────────────
@@ -4402,14 +4409,14 @@ export default function OneshotEditor() {
         fallbackVideoUrl: latestVideoUrl,
       }));
 
-      toast.success('Video published successfully.', {
+      toast.success(uiText("Video published successfully."), {
         position: 'bottom-center',
         autoClose: 3000,
         hideProgressBar: true,
         className: 'custom-toast',
       });
     } catch (error) {
-      toast.error(error?.response?.data?.error || 'Unable to publish video.', {
+      toast.error(error?.response?.data?.error || uiText("Unable to publish video."), {
         position: 'bottom-center',
         autoClose: 5000,
         hideProgressBar: true,
@@ -4446,7 +4453,7 @@ export default function OneshotEditor() {
       return;
     }
 
-    const confirmation = window.confirm('Are you sure you want to unpublish this video?');
+    const confirmation = window.confirm(uiText("Are you sure you want to unpublish this video?"));
     if (!confirmation) {
       return;
     }
@@ -4545,7 +4552,9 @@ export default function OneshotEditor() {
   };
 
   const refreshDetailedGenerationStatus = async (requestId, headers) => {
+    const sessionRun = sessionRunRef.current;
     const data = await fetchDetailedGenerationStatus(requestId, headers);
+    if (sessionRunRef.current !== sessionRun) return null;
     if (data?.expressGenerationStatus) {
       setExpressGenerationStatus(data.expressGenerationStatus);
     }
@@ -4577,6 +4586,7 @@ export default function OneshotEditor() {
       try {
         const headers = getHeaders();
         const data = await fetchPostProcessingGenerationStatus(requestId, headers);
+        if (currentPollRequestIdRef.current !== requestId || pollRunRef.current !== pollRun) return;
 
         pollDelayRef.current = DEFAULT_POLL;
         if (data?.expressGenerationStatus) {
@@ -4646,6 +4656,7 @@ export default function OneshotEditor() {
           setErrorMessage({ error: getDetailedGenerationErrorMessage(data, failureStatus) });
         }
       } catch (err) {
+        if (currentPollRequestIdRef.current !== requestId || pollRunRef.current !== pollRun) return;
         const failureStatus = getDetailedGenerationFailureStatus(err?.response?.data);
         if (failureStatus) {
           continuePolling = false;
@@ -4688,11 +4699,11 @@ export default function OneshotEditor() {
         return data;
       }
       if (normalizedStatus === 'FAILED' || normalizedStatus === 'ERROR') {
-        throw new Error(data?.generationError || 'Image generation failed.');
+        throw new Error(data?.generationError || uiText("Image generation failed."));
       }
       await wait(STEP_IMAGE_GENERATION_POLL_MS);
     }
-    throw new Error('Image generation timed out.');
+    throw new Error(uiText("Image generation timed out."));
   };
 
   const handleSelectStepImage = async ({ scene, activeItemList }) => {
@@ -4732,7 +4743,7 @@ export default function OneshotEditor() {
       return;
     }
     if (!selectedImageModel?.value) {
-      setErrorMessage({ error: 'Please select an available image model before regenerating this scene.' });
+      setErrorMessage({ error: uiText("Please select an available image model before regenerating this scene.") });
       return;
     }
 
@@ -4804,6 +4815,7 @@ export default function OneshotEditor() {
       try {
         const headers = getHeaders();
         const data = await fetchDetailedGenerationStatus(requestId, headers);
+        if (currentPollRequestIdRef.current !== requestId || pollRunRef.current !== pollRun) return;
 
         pollDelayRef.current = DEFAULT_POLL;
         if (data?.expressGenerationStatus) {
@@ -4873,6 +4885,7 @@ export default function OneshotEditor() {
           setErrorMessage({ error: getDetailedGenerationErrorMessage(data, failureStatus) });
         }
       } catch (err) {
+        if (currentPollRequestIdRef.current !== requestId || pollRunRef.current !== pollRun) return;
         const failureStatus = getDetailedGenerationFailureStatus(err?.response?.data);
         if (failureStatus) {
           continuePolling = false;
@@ -4947,7 +4960,7 @@ export default function OneshotEditor() {
         : current);
     } catch (err) {
       const apiMessage = err?.response?.data?.message || err?.message;
-      setErrorMessage({ error: apiMessage || 'Unable to pause render.' });
+      setErrorMessage({ error: apiMessage || uiText("Unable to pause render.") });
     } finally {
       setIsRenderPauseResumePending(false);
     }
@@ -5000,7 +5013,7 @@ export default function OneshotEditor() {
       pollGenerationStatus(requestId, true);
     } catch (err) {
       const apiMessage = err?.response?.data?.message || err?.message;
-      setErrorMessage({ error: apiMessage || 'Unable to resume render.' });
+      setErrorMessage({ error: apiMessage || uiText("Unable to resume render.") });
     } finally {
       setIsRenderPauseResumePending(false);
     }
@@ -5028,12 +5041,11 @@ export default function OneshotEditor() {
       pollGenerationStatus(requestId, true);
     } catch (error) {
       const apiMessage = error?.response?.data?.message || error?.message;
-      setErrorMessage({ error: apiMessage || 'Unable to continue video generation.' });
+      setErrorMessage({ error: apiMessage || uiText("Unable to continue video generation.") });
     } finally {
       setIsProcessingNextStep(false);
     }
-  }, [
-    activeRequestId,
+  }, [activeRequestId,
     id,
     isProcessingNextStep,
     showLoginDialog,
@@ -5060,27 +5072,38 @@ export default function OneshotEditor() {
   //  Assistant-query poller
   // ─────────────────────────────────────────────────────────
   const startAssistantQueryPoll = () => {
+    const requestToken = assistantRequestGuard.capture();
     const headers = getHeaders();
     if (!headers) {
       showLoginDialog();
       return;
     }
+    assistantRequestGuard.subscribe({
+      url: `${PROCESSOR_API_URL}/assistants/assistant_query_stream?id=${encodeURIComponent(id)}`,
+      headers: headers.headers,
+      onSnapshot: snapshot => {
+        setSessionMessages(snapshot.sessionMessages);
+        if (!snapshot.sessionMessageGenerationPending) setIsAssistantQueryGenerating(false);
+      },
+    });
     if (assistantPollRef.current) clearInterval(assistantPollRef.current);
     assistantErrorCountRef.current = 0;
 
-    assistantPollRef.current = setInterval(() => {
+    assistantPollRef.current = assistantRequestGuard.setInterval(() => {
       axios
         .get(`${PROCESSOR_API_URL}/assistants/assistant_query_status?id=${id}`, headers)
         .then((res) => {
+          if (!assistantRequestGuard.isCurrent(requestToken)) return;
           assistantErrorCountRef.current = 0;
           const data = res.data;
           if (data.status === 'COMPLETED') {
             clearInterval(assistantPollRef.current);
-            setSessionMessages(data.sessionDetails.sessionMessages);
+            if (assistantRequestGuard.acceptSession(data.sessionDetails)) setSessionMessages(assistantRequestGuard.messages(data.sessionDetails));
             setIsAssistantQueryGenerating(false);
           }
         })
         .catch(() => {
+          if (!assistantRequestGuard.isCurrent(requestToken)) return;
 
           assistantErrorCountRef.current += 1;
           if (assistantErrorCountRef.current >= 3) {
@@ -5095,22 +5118,26 @@ export default function OneshotEditor() {
   //  Submit assistant query
   // ─────────────────────────────────────────────────────────
   const submitAssistantQuery = (query) => {
+    const requestToken = assistantRequestGuard.beginRequest();
     const headers = getHeaders();
     if (!headers) {
       showLoginDialog();
       return;
     }
-    setSessionMessages([]);
     setIsAssistantQueryGenerating(true);
 
     axios
       .post(
         `${PROCESSOR_API_URL}/assistants/submit_assistant_query`,
-        { id, query },
+        { id, query, stream: true, client_request_id: crypto.randomUUID(), assistantSessionVersion: requestToken.serverVersion },
         headers
       )
-      .then(() => startAssistantQueryPoll())
+      .then(() => {
+        if (!assistantRequestGuard.isCurrent(requestToken)) return;
+        startAssistantQueryPoll();
+      })
       .catch(() => {
+        if (!assistantRequestGuard.isCurrent(requestToken)) return;
 
         setIsAssistantQueryGenerating(false);
       });
@@ -5125,6 +5152,8 @@ export default function OneshotEditor() {
   //  Fetch session details
   // ─────────────────────────────────────────────────────────
   const getSessionDetails = async () => {
+    const sessionRun = sessionRunRef.current;
+    const isCurrentSession = () => sessionRunRef.current === sessionRun;
 
     try {
       setSessionLoadFailed(false);
@@ -5133,6 +5162,7 @@ export default function OneshotEditor() {
       let headers = user?._id ? getHeaders() : null;
       if (!headers && !canUseAnonymousStandaloneStatus && user?._id) {
         await getUserAPI();
+        if (!isCurrentSession()) return null;
         headers = getHeaders();
       }
 
@@ -5148,8 +5178,10 @@ export default function OneshotEditor() {
             headers
           );
         } catch (sessionDetailsError) {
+          if (!isCurrentSession()) return null;
           if (sessionDetailsError?.response?.status === 401) {
             await getUserAPI();
+            if (!isCurrentSession()) return null;
             headers = getHeaders();
             if (headers) {
               try {
@@ -5164,8 +5196,10 @@ export default function OneshotEditor() {
           }
 
           if (!sessionResponse) {
+            if (!isCurrentSession()) return null;
             try {
               const statusData = await fetchDetailedGenerationStatus(id, headers);
+              if (!isCurrentSession()) return null;
               const fallbackSession = buildStandaloneAnonymousSessionDetailsFromStatus(statusData);
               if (isPlainObject(fallbackSession) && (
                 isPlainObject(fallbackSession.session) ||
@@ -5185,6 +5219,7 @@ export default function OneshotEditor() {
         data = data || sessionResponse?.data;
       } else if (canUseAnonymousStandaloneStatus) {
         const statusData = await fetchDetailedGenerationStatus(id);
+        if (!isCurrentSession()) return null;
         if (statusData?.expressGenerationStatus) {
           setExpressGenerationStatus(statusData.expressGenerationStatus);
         }
@@ -5197,6 +5232,7 @@ export default function OneshotEditor() {
         data = sessionResponse.data;
       }
 
+      if (!isCurrentSession()) return null;
       if (!data) {
         setSessionLoadFailed(true);
         return null;
@@ -5283,6 +5319,7 @@ export default function OneshotEditor() {
           if (headers && !usePostProcessingPoll) {
             refreshDetailedGenerationStatus(id, headers)
               .then((statusData) => {
+                if (!isCurrentSession()) return;
                 const detailedFailureStatus = getDetailedGenerationFailureStatus(statusData);
                 if (detailedFailureStatus) {
                   setErrorMessage({
@@ -5338,6 +5375,7 @@ export default function OneshotEditor() {
         if (headers && !usePostProcessingPoll) {
           refreshDetailedGenerationStatus(id, headers)
             .then((statusData) => {
+              if (!isCurrentSession()) return;
               const detailedFailureStatus = getDetailedGenerationFailureStatus(statusData);
               if (detailedFailureStatus) {
                 setErrorMessage({
@@ -5349,11 +5387,12 @@ export default function OneshotEditor() {
         }
       }
 
-      if (data.sessionMessages) setSessionMessages(data.sessionMessages);
+      if (data.sessionMessages && assistantRequestGuard.acceptSession(data)) setSessionMessages(assistantRequestGuard.messages(data));
       return data;
     } catch (error) {
+      if (!isCurrentSession()) return null;
       const apiMessage = error?.response?.data?.error || error?.response?.data?.message;
-      setSessionLoadError(apiMessage || 'The project could not be loaded. Please try again.');
+      setSessionLoadError(apiMessage || uiText("The project could not be loaded. Please try again."));
       setSessionLoadFailed(true);
       return null;
     }
@@ -5488,7 +5527,7 @@ export default function OneshotEditor() {
       return;
     }
     if (!file.type?.startsWith('image/')) {
-      setImageUploadError('Upload an image file.');
+      setImageUploadError(uiText("Upload an image file."));
       return;
     }
     if (!user) {
@@ -5514,7 +5553,7 @@ export default function OneshotEditor() {
         ? data.image_urls.find((url) => typeof url === 'string' && url.trim())
         : '';
       if (!uploadedUrl) {
-        throw new Error('Upload did not return an image URL.');
+        throw new Error(uiText("Upload did not return an image URL."));
       }
       setImageListItems((current) =>
         current.map((item, itemIndex) =>
@@ -5528,7 +5567,7 @@ export default function OneshotEditor() {
       );
     } catch (err) {
       const apiMessage = err?.response?.data?.message || err?.message;
-      setImageUploadError(apiMessage || 'Image upload failed.');
+      setImageUploadError(apiMessage || uiText("Image upload failed."));
     } finally {
       setUploadingImageIndex(null);
     }
@@ -5552,7 +5591,7 @@ export default function OneshotEditor() {
       uploadImageListFile(index, file).catch(() => undefined);
       return;
     }
-    setImageUploadError('Drop an image file.');
+    setImageUploadError(uiText("Drop an image file."));
   }, [uploadImageListFile]);
 
   const uploadOutroCtaImageFile = useCallback(async (file, target = 'advanced') => {
@@ -5560,7 +5599,7 @@ export default function OneshotEditor() {
       return;
     }
     if (!file.type?.startsWith('image/')) {
-      setOutroCtaImageUploadError('Upload an image file.');
+      setOutroCtaImageUploadError(uiText("Upload an image file."));
       return;
     }
     if (!user) {
@@ -5575,18 +5614,21 @@ export default function OneshotEditor() {
 
     setUploadingOutroCtaImage(true);
     setOutroCtaImageUploadError('');
+    const sessionRun = sessionRunRef.current;
     try {
       const imageDataUrl = await readFileAsDataUrl(file);
+      if (sessionRunRef.current !== sessionRun) return;
       const { data } = await axios.post(
         `${VIDEO_API_BASE}/upload_image_data`,
         { input: { image_data: [imageDataUrl] } },
         headers
       );
+      if (sessionRunRef.current !== sessionRun) return;
       const uploadedUrl = Array.isArray(data?.image_urls)
         ? data.image_urls.find((url) => typeof url === 'string' && url.trim())
         : '';
       if (!uploadedUrl) {
-        throw new Error('Upload did not return an image URL.');
+        throw new Error(uiText("Upload did not return an image URL."));
       }
       if (target === 'post_processing') {
         setPostProcessingForm((current) => ({
@@ -5601,10 +5643,11 @@ export default function OneshotEditor() {
         updateAdvancedOption('outro_cta_image_url', uploadedUrl.trim());
       }
     } catch (err) {
+      if (sessionRunRef.current !== sessionRun) return;
       const apiMessage = err?.response?.data?.message || err?.message;
-      setOutroCtaImageUploadError(apiMessage || 'CTA image upload failed.');
+      setOutroCtaImageUploadError(apiMessage || uiText("CTA image upload failed."));
     } finally {
-      setUploadingOutroCtaImage(false);
+      if (sessionRunRef.current === sessionRun) setUploadingOutroCtaImage(false);
     }
   }, [showLoginDialog, updateAdvancedOption, uploadingOutroCtaImage, user]);
 
@@ -5621,6 +5664,7 @@ export default function OneshotEditor() {
   // ─────────────────────────────────────────────────────────
   const handleSubmit = async (e) => {
     e.preventDefault();
+    const sessionRun = sessionRunRef.current;
 
     const submittedGenerationStepMode = normalizeGenerationStepMode(generationStepMode);
 
@@ -5640,7 +5684,7 @@ export default function OneshotEditor() {
 
     if (isJsonMode) {
       if (isStandaloneModelFilteringEnabled && isDeploymentModelAvailabilityLoading) {
-        setJsonValidationMessage('Standalone model availability is still loading.');
+        setJsonValidationMessage(uiText("Standalone model availability is still loading."));
         setErrorMessage(null);
         setShowResultDisplay(false);
         return;
@@ -5687,7 +5731,7 @@ export default function OneshotEditor() {
         );
         const requestId = data?.request_id || data?.session_id || data?.sessionID;
         if (!requestId) {
-          throw new Error('Missing request id in response.');
+          throw new Error(uiText("Missing request id in response."));
         }
         setActiveRequestId(requestId);
         activeRequestIdRef.current = requestId;
@@ -5695,7 +5739,7 @@ export default function OneshotEditor() {
         pollGenerationStatus(requestId);
       } catch (err) {
         const apiMessage = err?.response?.data?.message || err?.message;
-        setErrorMessage({ error: apiMessage || 'An unexpected error occurred.' });
+        setErrorMessage({ error: apiMessage || uiText("An unexpected error occurred.") });
         setIsGenerationPending(false);
         setIsGenerationWaitingForApproval(false);
       } finally {
@@ -5717,7 +5761,7 @@ export default function OneshotEditor() {
       return;
     }
     if (isTextToVideo && !trimmedPromptText) {
-      setErrorMessage({ error: 'Please enter some text before submitting.' });
+      setErrorMessage({ error: uiText("Please enter some text before submitting.") });
       return;
     }
     const normalizedImageListItems = imageListItems
@@ -5729,26 +5773,26 @@ export default function OneshotEditor() {
 
     const invalidImageUrl = normalizedImageListItems.find((item) => !isHttpUrl(item.image_url));
     if (!isTextToVideo && normalizedImageListItems.length === 0) {
-      setErrorMessage({ error: 'Please add at least one image URL or upload an image.' });
+      setErrorMessage({ error: uiText("Please add at least one image URL or upload an image.") });
       return;
     }
     if (!isTextToVideo && invalidImageUrl) {
-      setErrorMessage({ error: 'Image URLs must be valid http(s) URLs.' });
+      setErrorMessage({ error: uiText("Image URLs must be valid http(s) URLs.") });
       return;
     }
     if (isStandaloneModelFilteringEnabled && isDeploymentModelAvailabilityLoading) {
-      setErrorMessage({ error: 'Standalone model availability is still loading.' });
+      setErrorMessage({ error: uiText("Standalone model availability is still loading.") });
       return;
     }
     if (
       !selectedImageModel?.value ||
       !stageImageModels.some((model) => model.value === selectedImageModel.value)
     ) {
-      setErrorMessage({ error: 'Please select an available image model before submitting.' });
+      setErrorMessage({ error: uiText("Please select an available image model before submitting.") });
       return;
     }
     if (isTextToVideo && !selectedVideoModel?.value) {
-      setErrorMessage({ error: 'Please select a video model before submitting.' });
+      setErrorMessage({ error: uiText("Please select a video model before submitting.") });
       return;
     }
     const advancedRequestConfiguration = buildAdvancedRequestConfiguration({
@@ -5844,22 +5888,23 @@ export default function OneshotEditor() {
         ? `${VIDEO_STEP_API_BASE}/text_to_video`
         : `${VIDEO_STEP_API_BASE}/image_to_video`;
       const { data } = await axios.post(endpoint, payload, headers);
+      if (sessionRunRef.current !== sessionRun) return;
       const requestId = data?.request_id || data?.session_id || data?.sessionID;
       if (!requestId) {
-        throw new Error('Missing request id in response.');
+        throw new Error(uiText("Missing request id in response."));
       }
       setActiveRequestId(requestId);
       activeRequestIdRef.current = requestId;
       persistRequestStepMode([requestId, id], submittedGenerationStepMode);
       pollGenerationStatus(requestId);
     } catch (err) {
-
+      if (sessionRunRef.current !== sessionRun) return;
       const apiMessage = err?.response?.data?.message;
-      setErrorMessage({ error: apiMessage || 'An unexpected error occurred.' });
+      setErrorMessage({ error: apiMessage || uiText("An unexpected error occurred.") });
       setIsGenerationPending(false);
       setIsGenerationWaitingForApproval(false);
     } finally {
-      setIsSubmitting(false);
+      if (sessionRunRef.current === sessionRun) setIsSubmitting(false);
     }
   };
 
@@ -6033,7 +6078,7 @@ export default function OneshotEditor() {
     setIsRerollPreviewRefreshing(true);
     refreshDetailedGenerationStatus(requestId, headers)
       .catch(() => {
-        setPostProcessingError('Unable to refresh scene previews. You can still reroll using the available scene list.');
+        setPostProcessingError(uiText("Unable to refresh scene previews. You can still reroll using the available scene list."));
       })
       .finally(() => {
         setIsRerollPreviewRefreshing(false);
@@ -6062,6 +6107,7 @@ export default function OneshotEditor() {
   }, []);
 
   const submitPostProcessingOperation = useCallback(async (actionKey) => {
+    const sessionRun = sessionRunRef.current;
     if (!user) {
       showLoginDialog();
       return;
@@ -6080,13 +6126,13 @@ export default function OneshotEditor() {
     const hasExistingOutro = currentRenderHasOutro;
     let endpoint = '';
     let payload = { videoSessionId: id };
-    let successLabel = 'Post-processing';
+    let successLabel = uiText("Post-processing");
 
     try {
       if (actionKey === 'retranslate') {
         const languageCode = resolveLanguageCode(postProcessingForm.translationLanguage, '');
         if (!languageCode || languageCode === 'auto') {
-          throw new Error('Choose a target language for retranslation.');
+          throw new Error(uiText("Choose a target language for retranslation."));
         }
 
         payload = {
@@ -6096,12 +6142,16 @@ export default function OneshotEditor() {
             postProcessingForm.translationEnableSubtitles === true,
           translate_outro: postProcessingForm.translationTranslateOutro !== false,
           translate_footer: postProcessingForm.translationTranslateFooter !== false,
+          inference_model: normalizeInferenceModelKey(selectedInferenceModel?.value || user?.selectedInferenceModel),
+          ...(supportsInferenceEffort(selectedInferenceModel?.value || user?.selectedInferenceModel)
+            ? { effort: normalizeInferenceEffort(selectedInferenceEffort?.value || inferSavedInferenceEffort(user)) }
+            : {}),
         };
         endpoint = 'retranslate_video';
-        successLabel = 'Retranslation';
+        successLabel = uiText('Retranslation');
       } else if (actionKey === 'add_subtitles') {
         if (!canGenerateSubtitles) {
-          throw new Error('OpenAI or Samsar configuration is required to generate subtitles.');
+          throw new Error(uiText("OpenAI or Samsar configuration is required to generate subtitles."));
         }
         payload = {
           ...payload,
@@ -6111,28 +6161,28 @@ export default function OneshotEditor() {
           }),
         };
         endpoint = 'add_subtitles';
-        successLabel = 'Subtitle regeneration';
+        successLabel = uiText("Subtitle regeneration");
       } else if (actionKey === 'remove_subtitles') {
-        const shouldRemove = window.confirm('Remove subtitles and render a new version?');
+        const shouldRemove = window.confirm(uiText("Remove subtitles and render a new version?"));
         if (!shouldRemove) {
           return;
         }
 
         endpoint = 'remove_subtitles';
-        successLabel = 'Subtitle removal';
+        successLabel = uiText("Subtitle removal");
       } else if (actionKey === 'regenerate_avatar') {
         const shouldRegenerateAvatar = window.confirm(
-          'Generate a fresh narrator avatar and render a new version?'
+          uiText("Generate a fresh narrator avatar and render a new version?")
         );
         if (!shouldRegenerateAvatar) {
           return;
         }
 
         endpoint = 'regenerate_avatar';
-        successLabel = 'Narrator avatar regeneration';
+        successLabel = uiText("Narrator avatar regeneration");
       } else if (actionKey === 'clone_render') {
         endpoint = 'clone';
-        successLabel = 'Clone render';
+        successLabel = uiText("Clone render");
       } else if (actionKey === 'generated_outro') {
         const outroCtaType =
           postProcessingForm.outroCtaType === OUTRO_CTA_TYPE_IMAGE
@@ -6150,10 +6200,10 @@ export default function OneshotEditor() {
         if (outroCtaType === OUTRO_CTA_TYPE_IMAGE) {
           const middleImageUrl = postProcessingForm.outroCtaImageUrl.trim();
           if (!middleImageUrl) {
-            throw new Error('CTA image URL or upload is required.');
+            throw new Error(uiText("CTA image URL or upload is required."));
           }
           if (!isHttpUrl(middleImageUrl)) {
-            throw new Error('Enter a valid CTA image URL.');
+            throw new Error(uiText("Enter a valid CTA image URL."));
           }
 
           const outroCtaImage = {
@@ -6165,7 +6215,7 @@ export default function OneshotEditor() {
         } else {
           const ctaUrl = postProcessingForm.ctaUrl.trim();
           if (!isHttpUrl(ctaUrl)) {
-            throw new Error('Enter a valid outro CTA URL.');
+            throw new Error(uiText("Enter a valid outro CTA URL."));
           }
           payload.cta_url = ctaUrl;
           if (ctaTextTop) payload.cta_text_top = ctaTextTop;
@@ -6174,16 +6224,16 @@ export default function OneshotEditor() {
         }
 
         endpoint = hasExistingOutro ? 'update_outro_image' : 'add_outro_image';
-        successLabel = hasExistingOutro ? 'Outro CTA update' : 'Outro CTA add';
+        successLabel = hasExistingOutro ? uiText("Outro CTA update") : uiText("Outro CTA add");
       } else if (actionKey === 'footer_cta') {
         const ctaText = postProcessingForm.footerCtaText.trim();
         const ctaLogo = postProcessingForm.footerCtaLogo.trim();
         const ctaUrl = postProcessingForm.footerCtaUrl.trim();
         if (!ctaText && !ctaLogo && !ctaUrl) {
-          throw new Error('Add footer text, logo, or URL.');
+          throw new Error(uiText("Add footer text, logo, or URL."));
         }
         if (ctaUrl && !isHttpUrl(ctaUrl)) {
-          throw new Error('Enter a valid footer URL.');
+          throw new Error(uiText("Enter a valid footer URL."));
         }
 
         payload = { ...payload };
@@ -6192,9 +6242,9 @@ export default function OneshotEditor() {
         if (ctaUrl) payload.cta_url = ctaUrl;
 
         endpoint = 'update_footer_image';
-        successLabel = 'Footer update';
+        successLabel = uiText("Footer update");
       } else if (actionKey === 'remove_footer') {
-        const shouldRemove = window.confirm('Remove the footer CTA and render a new version?');
+        const shouldRemove = window.confirm(uiText("Remove the footer CTA and render a new version?"));
         if (!shouldRemove) {
           return;
         }
@@ -6204,10 +6254,10 @@ export default function OneshotEditor() {
           remove_footer: true,
         };
         endpoint = 'update_footer_image';
-        successLabel = 'Footer removal';
+        successLabel = uiText("Footer removal");
       } else if (actionKey === 'reroll_layers') {
         if (!rerollLayerIndexes.length) {
-          throw new Error('Select at least one scene to reroll.');
+          throw new Error(uiText("Select at least one scene to reroll."));
         }
 
         payload = {
@@ -6215,7 +6265,7 @@ export default function OneshotEditor() {
           layer_indexes: rerollLayerIndexes,
         };
         endpoint = 'reroll-layers';
-        successLabel = 'Scene reroll';
+        successLabel = uiText("Scene reroll");
       } else {
         return;
       }
@@ -6235,6 +6285,7 @@ export default function OneshotEditor() {
       try {
         response = await axios.post(primaryUrl, requestBody, headers);
       } catch (requestError) {
+        if (sessionRunRef.current !== sessionRun) return;
         const supportsLegacyVideoRoute =
           endpoint === 'add_subtitles' || endpoint === 'remove_subtitles';
         if (
@@ -6245,16 +6296,17 @@ export default function OneshotEditor() {
         }
         response = await axios.post(legacyUrl, requestBody, headers);
       }
+      if (sessionRunRef.current !== sessionRun) return;
       const { data } = response;
 
       const nextSessionId = data?.sessionID || data?.session_id || data?.sessionId || data?.request_id;
       const nextRequestId = data?.request_id || data?.session_id || data?.sessionID || nextSessionId;
       if (!nextRequestId) {
-        throw new Error('Post-processing did not return a request id.');
+        throw new Error(uiText("Post-processing did not return a request id."));
       }
 
       postProcessingPollActionRef.current = actionKey;
-      setPostProcessingMessage(`${successLabel} queued.`);
+      setPostProcessingMessage(uiText("{value0} queued.", { value0: successLabel }));
       if (actionKey === 'generated_outro') {
         setCurrentRenderGeneratedOutro(true);
       }
@@ -6266,18 +6318,20 @@ export default function OneshotEditor() {
         pollMode: 'status',
       });
     } catch (error) {
+      if (sessionRunRef.current !== sessionRun) return;
       const apiMessage = error?.response?.data?.message || error?.message;
-      setPostProcessingError(apiMessage || 'Unable to start post-processing.');
+      setPostProcessingError(apiMessage || uiText("Unable to start post-processing."));
     } finally {
-      setPostProcessingPendingAction('');
+      if (sessionRunRef.current === sessionRun) setPostProcessingPendingAction('');
     }
-  }, [
-    getUserAPI,
+  }, [getUserAPI,
     handleAdvancedVideoEditAccepted,
     id,
     postProcessingAudioLanguage,
     postProcessingForm,
     postProcessingPendingAction,
+    selectedInferenceModel,
+    selectedInferenceEffort,
     rerollLayerIndexes,
     currentRenderHasOutro,
     canGenerateSubtitles,
@@ -6369,8 +6423,7 @@ export default function OneshotEditor() {
       inferenceModel: selectedInferenceModel?.value || inferenceModelOptions[0]?.value || user?.selectedInferenceModel || DEFAULT_INFERENCE_MODEL,
       inferenceEffort: selectedInferenceEffort?.value || inferSavedInferenceEffort(user),
     })
-  ), [
-    subtitleGenerationEnabled,
+  ), [subtitleGenerationEnabled,
     generationMode,
     jsonModeLanguageValue,
     jsonModeSubtitleLanguageValue,
@@ -6442,9 +6495,9 @@ export default function OneshotEditor() {
     }
     try {
       await navigator.clipboard.writeText(jsonRequestDisplayText);
-      setJsonCopyStatus('Copied');
+      setJsonCopyStatus(uiText('Copied'));
     } catch {
-      setJsonCopyStatus('Copy failed');
+      setJsonCopyStatus(uiText("Copy failed"));
     }
   }, [jsonRequestDisplayText]);
 
@@ -6470,8 +6523,7 @@ export default function OneshotEditor() {
         text: jsonEditorErrorMessage,
       },
     ];
-  }, [
-    jsonEditorErrorMessage,
+  }, [jsonEditorErrorMessage,
     jsonModeValidation.column,
     jsonModeValidation.row,
   ]);
@@ -6524,10 +6576,10 @@ export default function OneshotEditor() {
     isStandaloneInferenceUnavailable;
   const standaloneInferenceUnavailableMessage = isStandaloneInferenceModelFilteringEnabled
     ? isInferenceModelAvailabilityLoading
-      ? 'Loading configured inference models...'
+      ? uiText("Loading configured inference models...")
       : hasConfiguredInferenceModels
         ? ''
-        : 'Configure OpenAI, Google Cloud, Alibaba Cloud, OpenRouter, or a Samsar API key in setup to enable VidGenie inference.'
+        : uiText("Configure OpenAI, Google Cloud, Alibaba Cloud, OpenRouter, or a Samsar API key in setup to enable VidGenie inference.")
     : '';
   const isInteractiveVideo = isInteractiveVideoSession(sessionDetails) ||
     isInteractiveVideoSession(generationStatusDetails);
@@ -6560,8 +6612,7 @@ export default function OneshotEditor() {
     imageModel: rerollEstimateImageModel,
     videoModel: rerollEstimateVideoModel,
     aspectRatio: rerollEstimateAspectRatio,
-  }), [
-    rerollCandidateLayers,
+  }), [rerollCandidateLayers,
     rerollEstimateAspectRatio,
     rerollEstimateImageModel,
     rerollEstimateVideoModel,
@@ -6576,16 +6627,14 @@ export default function OneshotEditor() {
       <div className={`grid ${IS_STANDALONE_DEPLOYMENT ? 'grid-cols-2' : 'grid-cols-3'} gap-2 sm:flex sm:flex-row sm:justify-center ${extraClasses}`}>
         <PrimaryPublicButton
           tone="amber"
-          extraClasses="w-full min-w-0 px-1.5 py-2 text-[11px] sm:w-auto sm:px-4 sm:text-sm rounded-xl shadow-sm transition active:scale-[0.98]"
+          extraClasses="w-full min-w-0 px-1.5 py-2 text-caption sm:w-auto sm:px-4 sm:text-sm rounded-xl shadow-sm transition active:scale-[0.98]"
           onClick={viewInStudio}
           isDisabled={isGuestPreview}
-        >
-          View&nbsp;in&nbsp;Studio
-        </PrimaryPublicButton>
+        >{uiText("View in Studio")}</PrimaryPublicButton>
         {!IS_STANDALONE_DEPLOYMENT && (
           <PrimaryPublicButton
-            tone="mint"
-            extraClasses="w-full min-w-0 px-1.5 py-2 text-[11px] sm:w-auto sm:px-4 sm:text-sm rounded-xl shadow-sm transition active:scale-[0.98]"
+            tone="neutral"
+            extraClasses="w-full min-w-0 px-1.5 py-2 text-caption sm:w-auto sm:px-4 sm:text-sm rounded-xl shadow-sm transition active:scale-[0.98]"
             onClick={
               isCompletedSessionPublished
                 ? handleUnpublishClick
@@ -6607,12 +6656,12 @@ export default function OneshotEditor() {
         )}
         <PrimaryPublicButton
           tone="neutral"
-          extraClasses="w-full min-w-0 px-1.5 py-2 text-[11px] sm:w-auto sm:px-4 sm:text-sm rounded-xl shadow-sm transition active:scale-[0.98]"
+          extraClasses="w-full min-w-0 px-1.5 py-2 text-caption sm:w-auto sm:px-4 sm:text-sm rounded-xl shadow-sm transition active:scale-[0.98]"
           onClick={handleDownloadVideo}
           isPending={isDownloadingVideo}
           isDisabled={isGuestPreview || !videoLink}
         >
-          {isDownloadingVideo ? 'Downloading' : t("common.download")}
+          {isDownloadingVideo ? uiText("Downloading") : t("common.download")}
         </PrimaryPublicButton>
       </div>
     );
@@ -6625,25 +6674,17 @@ export default function OneshotEditor() {
     const hasExistingOutro = currentRenderHasOutro;
     const isAnyPostProcessingPending = Boolean(postProcessingPendingAction);
     const panelClass =
-      colorMode === 'dark'
-        ? 'bg-[#151720] text-slate-100 ring-white/10'
-        : 'bg-white text-slate-900 ring-slate-200';
+      `bg-surface-sunken text-fg ${colorMode === 'dark' ? 'ring-white/10' : 'ring-slate-200'}`;
     const inputClass =
-      colorMode === 'dark'
-        ? 'border-[#667188] bg-[#20232e] text-slate-100 placeholder:text-[#8b96aa] focus:border-[#f6c453] focus:ring-[#f6c453]/24'
-        : 'border-slate-200 bg-white text-slate-900 placeholder:text-slate-400 focus:border-blue-400';
+      `border-line-control bg-surface-raised text-fg ${colorMode === 'dark' ? 'placeholder:text-[#8b96aa] focus:border-[#f6c453] focus:ring-[#f6c453]/24' : 'placeholder:text-slate-400 focus:border-blue-400'}`;
     const subtleButtonClass =
-      colorMode === 'dark'
-        ? 'border-white/10 text-slate-100 hover:border-white/20 hover:bg-white/5'
-        : 'border-slate-200 text-slate-700 hover:border-slate-300 hover:bg-slate-50';
+      `text-fg-body ${colorMode === 'dark' ? 'border-white/10 hover:border-white/20 hover:bg-white/5' : 'border-slate-200 hover:border-slate-300 hover:bg-slate-50'}`;
     const activeActionClass =
       colorMode === 'dark'
         ? 'bg-[#ff4655]/16 text-[#ffd4d8] ring-[#ff4655]/35'
         : 'bg-blue-50 text-blue-700 ring-blue-200';
     const inactiveActionClass =
-      colorMode === 'dark'
-        ? 'text-slate-300 ring-white/10 hover:bg-white/5'
-        : 'text-slate-600 ring-slate-200 hover:bg-slate-50';
+      `text-fg-tertiary ${colorMode === 'dark' ? 'ring-white/10 hover:bg-white/5' : 'ring-slate-200 hover:bg-slate-50'}`;
     const submitButtonClass =
       'inline-flex min-h-[38px] items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-60';
     const primarySubmitClass =
@@ -6688,7 +6729,7 @@ export default function OneshotEditor() {
     return (
       <div className={`mx-auto w-full ${panelWidthClass} rounded-xl p-3 ring-1 ${panelClass} ${extraClasses}`}>
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="text-sm font-semibold">Post-processing</div>
+          <div className="text-sm font-semibold">{uiText("Post-processing")}</div>
           <div className="flex flex-wrap items-center gap-2">
             {POST_PROCESSING_ACTIONS
               .filter((action) => canGenerateSubtitles || action.key !== 'subtitles')
@@ -6727,13 +6768,13 @@ export default function OneshotEditor() {
                     updatePostProcessingFormField('translationLanguage', event.target.value)
                   }
                   disabled={isAnyPostProcessingPending}
-                  aria-label="Retranslation language"
+                  aria-label={uiText("Retranslation language")}
                   className={fieldClass}
                 >
-                  <option value="">Choose target language</option>
+                  <option value="">{uiText("Choose target language")}</option>
                   {SUPPORTED_LANGUAGES.map((languageOption) => (
                     <option key={languageOption.code} value={languageOption.code}>
-                      {languageOption.name}
+                      {uiText(languageOption.name)}
                     </option>
                   ))}
                 </select>
@@ -6742,10 +6783,7 @@ export default function OneshotEditor() {
                   onClick={() => submitPostProcessingOperation('retranslate')}
                   disabled={isAnyPostProcessingPending || !postProcessingForm.translationLanguage}
                   className={primarySubmitClass}
-                >
-                  {isRetranslatePending ? <FaSpinner className="h-3.5 w-3.5 animate-spin" aria-hidden="true" /> : <FaLanguage className="h-3.5 w-3.5" aria-hidden="true" />}
-                  Retranslate video
-                </button>
+                >{uiText("{value0} Retranslate video", { value0: isRetranslatePending ? <FaSpinner className="h-3.5 w-3.5 animate-spin" aria-hidden="true" /> : <FaLanguage className="h-3.5 w-3.5" aria-hidden="true" /> })}</button>
               </div>
               <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
                 {canGenerateSubtitles ? (
@@ -6759,7 +6797,7 @@ export default function OneshotEditor() {
                       disabled={isAnyPostProcessingPending}
                       className={checkboxClass}
                     />
-                    <span>Add translated subtitles</span>
+                    <span>{uiText("Add translated subtitles")}</span>
                   </label>
                 ) : null}
                 <label className={`flex items-start gap-2 rounded-lg px-3 py-2 text-sm ring-1 ${inactiveActionClass}`}>
@@ -6772,7 +6810,7 @@ export default function OneshotEditor() {
                     disabled={isAnyPostProcessingPending}
                     className={checkboxClass}
                   />
-                  <span>Translate outro</span>
+                  <span>{uiText("Translate outro")}</span>
                 </label>
                 <label className={`flex items-start gap-2 rounded-lg px-3 py-2 text-sm ring-1 ${inactiveActionClass}`}>
                   <input
@@ -6784,7 +6822,7 @@ export default function OneshotEditor() {
                     disabled={isAnyPostProcessingPending}
                     className={checkboxClass}
                   />
-                  <span>Translate footer</span>
+                  <span>{uiText("Translate footer")}</span>
                 </label>
               </div>
             </div>
@@ -6797,10 +6835,7 @@ export default function OneshotEditor() {
                 onClick={() => submitPostProcessingOperation('regenerate_avatar')}
                 disabled={isAnyPostProcessingPending}
                 className={primarySubmitClass}
-              >
-                {isAvatarPending ? <FaSpinner className="h-3.5 w-3.5 animate-spin" aria-hidden="true" /> : <FaUserCircle className="h-3.5 w-3.5" aria-hidden="true" />}
-                Regenerate narrator avatar
-              </button>
+              >{uiText("{value0} Regenerate narrator avatar", { value0: isAvatarPending ? <FaSpinner className="h-3.5 w-3.5 animate-spin" aria-hidden="true" /> : <FaUserCircle className="h-3.5 w-3.5" aria-hidden="true" /> })}</button>
             </div>
           )}
 
@@ -6808,8 +6843,7 @@ export default function OneshotEditor() {
             <div className="space-y-2">
               <div className="flex flex-wrap items-end gap-2">
                 <label className="min-w-[190px] flex-1 sm:max-w-xs">
-                  <span className={`mb-1 block text-[11px] font-medium ${mutedText}`}>
-                    Subtitle language <span className="font-normal opacity-75">(optional)</span>
+                  <span className={`mb-1 block text-caption font-medium ${mutedText}`}>{uiText("Subtitle language")}<span className="font-normal opacity-75">{uiText("(optional)")}</span>
                   </span>
                   <select
                     value={postProcessingForm.subtitleLanguage}
@@ -6817,13 +6851,13 @@ export default function OneshotEditor() {
                       updatePostProcessingFormField('subtitleLanguage', event.target.value)
                     }
                     disabled={isAnyPostProcessingPending}
-                    aria-label="Subtitle regeneration language"
+                    aria-label={uiText("Subtitle regeneration language")}
                     className={`${fieldClass} !min-h-[36px] !py-1.5`}
                   >
-                    <option value="">Same as audio</option>
+                    <option value="">{uiText("Same as audio")}</option>
                     {SUPPORTED_LANGUAGES.map((languageOption) => (
                       <option key={languageOption.code} value={languageOption.code}>
-                        {languageOption.name}
+                        {uiText(languageOption.name)}
                       </option>
                     ))}
                   </select>
@@ -6833,24 +6867,16 @@ export default function OneshotEditor() {
                   onClick={() => submitPostProcessingOperation('add_subtitles')}
                   disabled={isAnyPostProcessingPending}
                   className={primarySubmitClass}
-                >
-                  {isAddSubtitlesPending ? <FaSpinner className="h-3.5 w-3.5 animate-spin" aria-hidden="true" /> : <FaClosedCaptioning className="h-3.5 w-3.5" aria-hidden="true" />}
-                  Generate / regenerate subtitles
-                </button>
+                >{uiText("{value0} Generate / regenerate subtitles", { value0: isAddSubtitlesPending ? <FaSpinner className="h-3.5 w-3.5 animate-spin" aria-hidden="true" /> : <FaClosedCaptioning className="h-3.5 w-3.5" aria-hidden="true" /> })}</button>
                 <button
                   type="button"
                   onClick={() => submitPostProcessingOperation('remove_subtitles')}
                   disabled={isAnyPostProcessingPending}
                   className={dangerSubmitClass}
-                >
-                  {isRemoveSubtitlesPending ? <FaSpinner className="h-3.5 w-3.5 animate-spin" aria-hidden="true" /> : <FaTrash className="h-3.5 w-3.5" aria-hidden="true" />}
-                  Remove subtitles
-                </button>
+                >{uiText("{value0} Remove subtitles", { value0: isRemoveSubtitlesPending ? <FaSpinner className="h-3.5 w-3.5 animate-spin" aria-hidden="true" /> : <FaTrash className="h-3.5 w-3.5" aria-hidden="true" /> })}</button>
               </div>
               {useTranslatedSubtitleRegeneration ? (
-                <p className={`text-xs ${mutedText}`}>
-                  Audio stays unchanged; subtitle text will be translated and aligned to the original speech.
-                </p>
+                <p className={`text-xs ${mutedText}`}>{uiText("Audio stays unchanged; subtitle text will be translated and aligned to the original speech.")}</p>
               ) : null}
             </div>
           )}
@@ -6865,7 +6891,7 @@ export default function OneshotEditor() {
                 }}
                 disabled={isAnyPostProcessingPending}
                 className={fieldClass}
-                aria-label="Outro CTA type"
+                aria-label={uiText("Outro CTA type")}
               >
                 {OUTRO_CTA_TYPE_OPTIONS.map((option) => (
                   <option key={option.value} value={option.value}>
@@ -6879,16 +6905,16 @@ export default function OneshotEditor() {
                   type="text"
                   value={postProcessingForm.ctaTextTop}
                   onChange={(event) => updatePostProcessingFormField('ctaTextTop', event.target.value)}
-                  placeholder="Top text"
-                  aria-label="Outro top text"
+                  placeholder={uiText("Top text")}
+                  aria-label={uiText("Outro top text")}
                   className={fieldClass}
                 />
                 <input
                   type="text"
                   value={postProcessingForm.ctaTextBottom}
                   onChange={(event) => updatePostProcessingFormField('ctaTextBottom', event.target.value)}
-                  placeholder="Bottom text"
-                  aria-label="Outro bottom text"
+                  placeholder={uiText("Bottom text")}
+                  aria-label={uiText("Outro bottom text")}
                   className={fieldClass}
                 />
                 {postProcessingForm.outroCtaType === OUTRO_CTA_TYPE_IMAGE ? (
@@ -6901,8 +6927,8 @@ export default function OneshotEditor() {
                           updatePostProcessingFormField('outroCtaImageUrl', event.target.value);
                           setOutroCtaImageUploadError('');
                         }}
-                        placeholder="CTA / logo URL"
-                        aria-label="CTA image URL"
+                        placeholder={uiText("CTA / logo URL")}
+                        aria-label={uiText("CTA image URL")}
                         disabled={isAnyPostProcessingPending || uploadingOutroCtaImage}
                         className={`${fieldClass} flex-1`}
                       />
@@ -6925,11 +6951,11 @@ export default function OneshotEditor() {
                         ) : (
                           <FaUpload className="h-3.5 w-3.5" aria-hidden="true" />
                         )}
-                        {uploadingOutroCtaImage ? 'Uploading...' : 'Upload image'}
+                        {uploadingOutroCtaImage ? uiText("Uploading...") : uiText("Upload image")}
                       </label>
                     </div>
                     {outroCtaImageUploadError ? (
-                      <p className="mt-1 text-[11px] text-rose-500">
+                      <p className="mt-1 text-caption text-rose-500">
                         {outroCtaImageUploadError}
                       </p>
                     ) : null}
@@ -6939,8 +6965,8 @@ export default function OneshotEditor() {
                     type="url"
                     value={postProcessingForm.ctaUrl}
                     onChange={(event) => updatePostProcessingFormField('ctaUrl', event.target.value)}
-                    placeholder="Outro CTA URL"
-                    aria-label="Outro CTA URL"
+                    placeholder={uiText("Outro CTA URL")}
+                    aria-label={uiText("Outro CTA URL")}
                     className={fieldClass}
                   />
                 )}
@@ -6952,7 +6978,7 @@ export default function OneshotEditor() {
                 className={primarySubmitClass}
               >
                 {isGeneratedOutroPending ? <FaSpinner className="h-3.5 w-3.5 animate-spin" aria-hidden="true" /> : null}
-                {hasExistingOutro ? 'Update outro CTA' : 'Add outro CTA'}
+                {hasExistingOutro ? uiText("Update outro CTA") : uiText("Add outro CTA")}
               </button>
             </div>
           )}
@@ -6964,24 +6990,24 @@ export default function OneshotEditor() {
                   type="text"
                   value={postProcessingForm.footerCtaText}
                   onChange={(event) => updatePostProcessingFormField('footerCtaText', event.target.value)}
-                  placeholder="Footer text"
-                  aria-label="Footer CTA text"
+                  placeholder={uiText("Footer text")}
+                  aria-label={uiText("Footer CTA text")}
                   className={fieldClass}
                 />
                 <input
                   type="url"
                   value={postProcessingForm.footerCtaUrl}
                   onChange={(event) => updatePostProcessingFormField('footerCtaUrl', event.target.value)}
-                  placeholder="Footer URL"
-                  aria-label="Footer CTA URL"
+                  placeholder={uiText("Footer URL")}
+                  aria-label={uiText("Footer CTA URL")}
                   className={fieldClass}
                 />
                 <input
                   type="url"
                   value={postProcessingForm.footerCtaLogo}
                   onChange={(event) => updatePostProcessingFormField('footerCtaLogo', event.target.value)}
-                  placeholder="Footer logo URL"
-                  aria-label="Footer CTA logo URL"
+                  placeholder={uiText("Footer logo URL")}
+                  aria-label={uiText("Footer CTA logo URL")}
                   className={fieldClass}
                 />
               </div>
@@ -6991,19 +7017,13 @@ export default function OneshotEditor() {
                   onClick={() => submitPostProcessingOperation('footer_cta')}
                   disabled={isAnyPostProcessingPending}
                   className={primarySubmitClass}
-                >
-                  {isFooterPending ? <FaSpinner className="h-3.5 w-3.5 animate-spin" aria-hidden="true" /> : null}
-                  Update footer
-                </button>
+                >{uiText("{value0} Update footer", { value0: isFooterPending ? <FaSpinner className="h-3.5 w-3.5 animate-spin" aria-hidden="true" /> : null })}</button>
                 <button
                   type="button"
                   onClick={() => submitPostProcessingOperation('remove_footer')}
                   disabled={isAnyPostProcessingPending}
                   className={dangerSubmitClass}
-                >
-                  {isRemoveFooterPending ? <FaSpinner className="h-3.5 w-3.5 animate-spin" aria-hidden="true" /> : <FaTrash className="h-3.5 w-3.5" aria-hidden="true" />}
-                  Remove footer
-                </button>
+                >{uiText("{value0} Remove footer", { value0: isRemoveFooterPending ? <FaSpinner className="h-3.5 w-3.5 animate-spin" aria-hidden="true" /> : <FaTrash className="h-3.5 w-3.5" aria-hidden="true" /> })}</button>
               </div>
             </div>
           )}
@@ -7015,9 +7035,7 @@ export default function OneshotEditor() {
               disabled={isAnyPostProcessingPending}
               className={secondarySubmitClass}
             >
-              <FaCog className="h-3.5 w-3.5" aria-hidden="true" />
-              Open advanced edits
-            </button>
+              <FaCog className="h-3.5 w-3.5" aria-hidden="true" />{uiText("Open advanced edits")}</button>
           )}
 
           {postProcessingAction === 'clone_render' && (
@@ -7027,22 +7045,15 @@ export default function OneshotEditor() {
                 onClick={() => submitPostProcessingOperation('clone_render')}
                 disabled={isAnyPostProcessingPending}
                 className={secondarySubmitClass}
-              >
-                {isClonePending ? <FaSpinner className="h-3.5 w-3.5 animate-spin" aria-hidden="true" /> : <FaClone className="h-3.5 w-3.5" aria-hidden="true" />}
-                Clone render
-              </button>
+              >{uiText("{value0} Clone render", { value0: isClonePending ? <FaSpinner className="h-3.5 w-3.5 animate-spin" aria-hidden="true" /> : <FaClone className="h-3.5 w-3.5" aria-hidden="true" /> })}</button>
             </div>
           )}
 
           {postProcessingAction === 'reroll_layers' && (
             <div className="space-y-3">
               {isRerollPreviewRefreshing ? (
-                <div className={`flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold ${
-                  colorMode === 'dark' ? 'bg-white/[0.04] text-slate-300' : 'bg-slate-50 text-slate-600'
-                }`}>
-                  <FaSpinner className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
-                  Refreshing scene previews
-                </div>
+                <div className={`flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold text-fg-tertiary ${colorMode === 'dark' ? 'bg-white/[0.04]' : 'bg-slate-50'}`}>
+                  <FaSpinner className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />{uiText("Refreshing scene previews")}</div>
               ) : null}
               {rerollCandidateLayers.length ? (
                 <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
@@ -7066,20 +7077,16 @@ export default function OneshotEditor() {
                   })}
                 </div>
               ) : (
-                <div className={`rounded-lg px-3 py-2 text-sm ${mutedText}`}>
-                  No rerollable scenes found.
-                </div>
+                <div className={`rounded-lg px-3 py-2 text-sm ${mutedText}`}>{uiText("No rerollable scenes found.")}</div>
               )}
 
               <div className={`rounded-lg px-3 py-2 text-sm font-semibold ${
                 colorMode === 'dark' ? 'bg-white/[0.04] text-slate-100' : 'bg-slate-50 text-slate-800'
               }`}>
                 {hasRerollQuote ? (
-                  <span>
-                    Image, AI video, lip-sync and sound-effect model calls are charged individually on completion.
-                  </span>
+                  <span>{uiText("Image, AI video, lip-sync and sound-effect model calls are charged individually on completion.")}</span>
                 ) : (
-                  <span className={mutedText}>Select scenes to estimate credits.</span>
+                  <span className={mutedText}>{uiText("Select scenes to estimate credits.")}</span>
                 )}
               </div>
 
@@ -7088,10 +7095,7 @@ export default function OneshotEditor() {
                 onClick={() => submitPostProcessingOperation('reroll_layers')}
                 disabled={isRerollSubmitDisabled}
                 className={primarySubmitClass}
-              >
-                {isRerollPending ? <FaSpinner className="h-3.5 w-3.5 animate-spin" aria-hidden="true" /> : <FaRedo className="h-3.5 w-3.5" aria-hidden="true" />}
-                Reroll selected scenes
-              </button>
+              >{uiText("{value0} Reroll selected scenes", { value0: isRerollPending ? <FaSpinner className="h-3.5 w-3.5 animate-spin" aria-hidden="true" /> : <FaRedo className="h-3.5 w-3.5" aria-hidden="true" /> })}</button>
             </div>
           )}
         </div>
@@ -7125,9 +7129,7 @@ export default function OneshotEditor() {
       ? 'bg-[#f6c453] text-[#101117] shadow-[0_6px_18px_rgba(246,196,83,0.18)]'
       : 'bg-indigo-600 text-white shadow';
   const toggleInactive =
-    colorMode === 'dark'
-      ? 'text-slate-300 hover:text-white hover:bg-white/5'
-      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100';
+    `text-fg-tertiary ${colorMode === 'dark' ? 'hover:text-white hover:bg-white/5' : 'hover:text-slate-900 hover:bg-slate-100'}`;
   const modeTooltipClassName = `vidgenie-mode-tooltip ${
     colorMode === 'dark'
       ? 'vidgenie-mode-tooltip--dark'
@@ -7149,19 +7151,13 @@ export default function OneshotEditor() {
       : 'bg-white text-slate-900 ring-slate-200';
   const advancedInputClasses = `
     w-full rounded-lg px-3 py-2 text-sm outline-none ring-1 transition
-    ${colorMode === 'dark'
-      ? 'bg-[#151720] text-slate-100 ring-[#667188] focus:ring-[#f6c453]/55 placeholder:text-[#8b96aa]'
-      : 'bg-white text-slate-900 ring-slate-200 focus:ring-indigo-500/50 placeholder:text-slate-400'
-    }
+    bg-surface-sunken text-fg ${colorMode === 'dark' ? 'ring-[#667188] focus:ring-[#f6c453]/55 placeholder:text-[#8b96aa]' : 'ring-slate-200 focus:ring-indigo-500/50 placeholder:text-slate-400'}
   `;
   const advancedCompactSelectClasses = `
     h-8 w-36 shrink-0 rounded-lg px-2 text-xs outline-none ring-1 transition sm:w-48
-    ${colorMode === 'dark'
-      ? 'bg-[#151720] text-slate-100 ring-[#667188] focus:ring-[#f6c453]/55'
-      : 'bg-white text-slate-900 ring-slate-200 focus:ring-indigo-500/50'
-    }
+    bg-surface-sunken text-fg ${colorMode === 'dark' ? 'ring-[#667188] focus:ring-[#f6c453]/55' : 'ring-slate-200 focus:ring-indigo-500/50'}
   `;
-  const advancedLabelClasses = `block text-[11px] font-medium mb-1 ${mutedText}`;
+  const advancedLabelClasses = `block text-caption font-medium mb-1 ${mutedText}`;
   const advancedSectionBorder = colorMode === 'dark' ? 'border-white/10' : 'border-slate-200';
   const advancedRowBg = colorMode === 'dark' ? 'bg-white/[0.03]' : 'bg-slate-50';
   const choiceInputClasses = colorMode === 'dark'
@@ -7176,13 +7172,9 @@ export default function OneshotEditor() {
       ? 'bg-[#ff4655]/14 text-[#ffe5e8]'
       : 'bg-white text-slate-900 shadow-sm';
   const stepModeInactiveClasses =
-    colorMode === 'dark'
-      ? 'text-slate-400 hover:bg-white/[0.06] hover:text-slate-200'
-      : 'text-slate-500 hover:bg-white hover:text-slate-800';
+    `text-fg-muted ${colorMode === 'dark' ? 'hover:bg-white/[0.06] hover:text-slate-200' : 'hover:bg-white hover:text-slate-800'}`;
   const secondaryActionClasses =
-    colorMode === 'dark'
-      ? 'bg-white/[0.03] text-slate-200 ring-[#667188] hover:bg-white/[0.06] hover:ring-[#f6c453]/55'
-      : 'bg-slate-50 text-slate-700 ring-slate-200 hover:bg-white';
+    `text-fg-secondary ${colorMode === 'dark' ? 'bg-white/[0.03] ring-[#667188] hover:bg-white/[0.06] hover:ring-[#f6c453]/55' : 'bg-slate-50 ring-slate-200 hover:bg-white'}`;
   const headerTitle = isJsonMode
     ? generationMode === 'I2V'
       ? t("vidgenie.titleJsonImageListMode", {}, "JSON image-list video request")
@@ -7224,7 +7216,7 @@ export default function OneshotEditor() {
         <div
           className={`grid w-full grid-cols-2 items-center gap-1 rounded-xl p-1 text-sm ring-1 sm:inline-flex sm:w-auto ${stepModeShell}`}
           role="radiogroup"
-          aria-label="Generation steps"
+          aria-label={uiText("Generation steps")}
         >
           {VIDGENIE_STEP_MODE_OPTIONS.map((option) => {
             const isSelected = generationStepMode === option.value;
@@ -7265,7 +7257,7 @@ export default function OneshotEditor() {
               ${isFormDisabled ? 'cursor-not-allowed opacity-60' : ''}
             `}
           >
-            <span>Advanced</span>
+            <span>{uiText("Advanced")}</span>
             {isAdvancedOpen ? (
               <FaChevronDown className="h-3 w-3" aria-hidden="true" />
             ) : (
@@ -7279,23 +7271,19 @@ export default function OneshotEditor() {
   if (!sessionDetails) {
     if (sessionLoadFailed) {
       return (
-        <div className={`mx-auto mt-6 w-full max-w-lg rounded-2xl border p-6 text-center ${
-          colorMode === 'dark'
-            ? 'border-white/10 bg-[#181b24] text-slate-100'
-            : 'border-slate-200 bg-white text-slate-900'
-        }`}>
-          <h1 className="text-xl font-semibold">Unable to open this VidGenie project</h1>
+        <div className={`mx-auto mt-6 w-full max-w-lg rounded-2xl border p-6 text-center bg-surface text-fg ${colorMode === 'dark' ? 'border-white/10' : 'border-slate-200'}`}>
+          <h1 className="text-xl font-semibold">{uiText("Unable to open this VidGenie project")}</h1>
           <p className={`mt-2 text-sm ${mutedText}`}>
             {isGuestPreview
-              ? 'This sample is no longer available. Log in to create in your own workspace.'
-              : sessionLoadError || 'The project could not be loaded. Please try again.'}
+              ? uiText("This sample is no longer available. Log in to create in your own workspace.")
+              : sessionLoadError || uiText("The project could not be loaded. Please try again.")}
           </p>
           <button
             type="button"
             onClick={isGuestPreview ? showLoginDialog : () => void getSessionDetails()}
             className="mt-5 inline-flex min-h-10 items-center justify-center rounded-xl bg-blue-600 px-5 py-2 text-sm font-semibold text-white transition hover:bg-blue-700"
           >
-            {isGuestPreview ? 'Log in to create' : 'Try again'}
+            {isGuestPreview ? uiText("Log in to create") : uiText("Try again")}
           </button>
         </div>
       );
@@ -7318,22 +7306,14 @@ export default function OneshotEditor() {
           role="status"
         >
           <div className="min-w-0">
-            <div className="text-sm font-semibold">Sample VidGenie project</div>
-            <p className={`mt-0.5 text-xs ${colorMode === 'dark' ? 'text-[#ffe0a3]' : 'text-blue-800'}`}>
-              You can preview this project. Log in to create videos in your own workspace.
-            </p>
+            <div className="text-sm font-semibold">{uiText("Sample VidGenie project")}</div>
+            <p className={`mt-0.5 text-xs ${colorMode === 'dark' ? 'text-[#ffe0a3]' : 'text-blue-800'}`}>{uiText("You can preview this project. Log in to create videos in your own workspace.")}</p>
           </div>
           <button
             type="button"
             onClick={showLoginDialog}
-            className={`inline-flex min-h-10 w-auto shrink-0 self-center items-center justify-center rounded-xl px-5 py-2 text-sm font-semibold transition sm:self-auto ${
-              colorMode === 'dark'
-                ? 'bg-[#ff4655] text-[#080a10] hover:bg-[#ff6572]'
-                : 'bg-blue-600 text-white hover:bg-blue-700'
-            }`}
-          >
-            Log in to create
-          </button>
+            className={`inline-flex min-h-10 w-auto shrink-0 self-center items-center justify-center rounded-xl px-5 py-2 text-sm font-semibold transition sm:self-auto text-on-accent ${colorMode === 'dark' ? 'bg-[#ff4655] hover:bg-[#ff6572]' : 'bg-blue-600 hover:bg-blue-700'}`}
+          >{uiText("Log in to create")}</button>
         </div>
       )}
       {/* ───────── HEADER ───────── */}
@@ -7403,10 +7383,7 @@ export default function OneshotEditor() {
             <div
               className={`
                 vidgenie-pricing-pill px-3 py-1.5 rounded-full text-center transition
-                ${colorMode === 'dark'
-                  ? 'bg-[#20232e] text-slate-100 ring-1 ring-[#3a4050]'
-                  : 'bg-white text-slate-900 ring-1 ring-slate-200'
-                }
+                bg-surface-raised text-fg ring-1 ${colorMode === 'dark' ? 'ring-[#3a4050]' : 'ring-slate-200'}
               `}
             >
               {pricingInfoDisplay}
@@ -7419,9 +7396,7 @@ export default function OneshotEditor() {
                     ? 'bg-sky-400/12 text-sky-200 ring-1 ring-sky-300/25'
                     : 'bg-sky-50 text-sky-700 ring-1 ring-sky-200'
                 }`}
-              >
-                Interactive video
-              </span>
+              >{uiText("Interactive video")}</span>
             )}
 
             {sessionDetails?.isExpressGeneration && (
@@ -7435,9 +7410,7 @@ export default function OneshotEditor() {
                         : 'bg-cyan-50 text-cyan-700 ring-1 ring-cyan-200'
                       }
                     `}
-                  >
-                    Express
-                  </span>
+                  >{uiText("Express")}</span>
                 )}
                 {sessionInferenceModelLabel && (
                   <span
@@ -7448,22 +7421,17 @@ export default function OneshotEditor() {
                         : 'bg-violet-50 text-violet-700 ring-1 ring-violet-200'
                       }
                     `}
-                  >
-                    Inference: {sessionInferenceModelLabel}
-                  </span>
+                  >{uiText("Inference: {value0}", { value0: sessionInferenceModelLabel })}</span>
                 )}
                 <button
                   type="button"
                   onClick={openAdvancedVideoEditDialog}
                   disabled={isGuestPreview}
-                  title="Advanced video edits"
-                  aria-label="Advanced video edits"
+                  title={uiText("Advanced video edits")}
+                  aria-label={uiText("Advanced video edits")}
                   className={`
                     inline-flex h-9 w-9 items-center justify-center rounded-full transition
-                    ${colorMode === 'dark'
-                      ? 'border border-white/10 text-slate-100 hover:border-white/20 hover:bg-white/5'
-                      : 'border border-slate-200 text-slate-700 hover:border-slate-300 hover:bg-slate-50'
-                    }
+                    border text-fg-body ${colorMode === 'dark' ? 'border-white/10 hover:border-white/20 hover:bg-white/5' : 'border-slate-200 hover:border-slate-300 hover:bg-slate-50'}
                     ${isGuestPreview ? 'cursor-not-allowed opacity-50' : ''}
                   `}
                 >
@@ -7527,10 +7495,7 @@ export default function OneshotEditor() {
                     : t("common.pause", {}, "Pause render")}
                   className={`
                     inline-flex h-8 w-8 items-center justify-center rounded-full transition
-                    ${colorMode === 'dark'
-                      ? 'border border-white/10 text-slate-100 hover:border-white/20 hover:bg-white/5'
-                      : 'border border-slate-200 text-slate-700 hover:border-slate-300 hover:bg-slate-50'
-                    }
+                    border text-fg-body ${colorMode === 'dark' ? 'border-white/10 hover:border-white/20 hover:bg-white/5' : 'border-slate-200 hover:border-slate-300 hover:bg-slate-50'}
                     ${isRenderPauseResumePending ? 'cursor-not-allowed opacity-60' : 'active:scale-[0.98]'}
                   `}
                 >
@@ -7563,10 +7528,8 @@ export default function OneshotEditor() {
               className="flex w-full items-center justify-between gap-3 text-left"
             >
               <span className="min-w-0">
-                <span className="block text-sm font-semibold">Original request</span>
-                <span className={`mt-0.5 block text-xs ${mutedText}`}>
-                  Prompt, source images, settings
-                </span>
+                <span className="block text-sm font-semibold">{uiText("Original request")}</span>
+                <span className={`mt-0.5 block text-xs ${mutedText}`}>{uiText("Prompt, source images, settings")}</span>
               </span>
               {isCompletedRequestExpanded ? (
                 <FaChevronDown className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
@@ -7583,7 +7546,7 @@ export default function OneshotEditor() {
         <div className="vidgenie-options-section w-full mt-4">
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
             {/* Aspect Ratio */}
-            <div className="group w-full">
+            <div className="group flex w-full flex-col-reverse">
               <div className={`relative z-10 w-full rounded-lg p-0 transition-transform duration-200 group-hover:translate-y-[-1px] group-hover:z-50 focus-within:z-50 ${controlShell}`}>
                 <SingleSelect
                   value={selectedAspectRatioOption}
@@ -7594,11 +7557,11 @@ export default function OneshotEditor() {
                   className="w-full"
                 />
               </div>
-              <p className={`text-[11px] mt-1 ${mutedText}`}>{t("vidgenie.aspectRatio")}</p>
+              <p className={`mb-1.5 pl-1 text-left text-caption font-medium ${mutedText}`}>{t("vidgenie.aspectRatio")}</p>
             </div>
 
             {/* Image Model */}
-            <div className="group w-full">
+            <div className="group flex w-full flex-col-reverse">
               <div className={`relative z-10 w-full rounded-lg p-0 transition-transform duration-200 group-hover:translate-y-[-1px] group-hover:z-50 focus-within:z-50 ${controlShell}`}>
                 <ModelAdapterSelect
                   value={selectedImageModel}
@@ -7611,7 +7574,7 @@ export default function OneshotEditor() {
                   className="w-full"
                 />
               </div>
-              <p className={`text-[11px] mt-1 ${mutedText}`}>{t("vidgenie.imageModel")}</p>
+              <p className={`mb-1.5 pl-1 text-left text-caption font-medium ${mutedText}`}>{t("vidgenie.imageModel")}</p>
             </div>
 
             {/* Image Style (conditional) */}
@@ -7621,7 +7584,7 @@ export default function OneshotEditor() {
               );
               if (modelCfg?.imageStyles) {
                 return (
-                  <div className="group w-full">
+                  <div className="group flex w-full flex-col-reverse">
                     <div className={`relative z-10 w-full rounded-lg p-0 transition-transform duration-200 group-hover:translate-y-[-1px] group-hover:z-50 focus-within:z-50 ${controlShell}`}>
                       <SingleSelect
                         value={selectedImageStyle}
@@ -7632,7 +7595,7 @@ export default function OneshotEditor() {
                         className="w-full"
                       />
                     </div>
-                    <p className={`text-[11px] mt-1 ${mutedText}`}>{t("vidgenie.imageStyle")}</p>
+                    <p className={`mb-1.5 pl-1 text-left text-caption font-medium ${mutedText}`}>{t("vidgenie.imageStyle")}</p>
                   </div>
                 );
               }
@@ -7642,7 +7605,7 @@ export default function OneshotEditor() {
             {generationMode === 'T2V' && (
               <>
                 {/* Video Model */}
-                <div className="group w-full">
+                <div className="group flex w-full flex-col-reverse">
                   <div className={`relative z-10 w-full rounded-lg p-0 transition-transform duration-200 group-hover:translate-y-[-1px] group-hover:z-50 focus-within:z-50 ${controlShell}`}>
                     <ModelAdapterSelect
                       value={selectedVideoModel}
@@ -7655,12 +7618,12 @@ export default function OneshotEditor() {
                       className="w-full"
                     />
                   </div>
-                  <p className={`text-[11px] mt-1 ${mutedText}`}>{t("vidgenie.videoModel")}</p>
+                  <p className={`mb-1.5 pl-1 text-left text-caption font-medium ${mutedText}`}>{t("vidgenie.videoModel")}</p>
                 </div>
 
                 {/* Pixverse Style */}
                 {selectedVideoModel?.value?.startsWith('PIXVERSE') && selectedVideoModelSubType && (
-                  <div className="group w-full">
+                  <div className="group flex w-full flex-col-reverse">
                     <div className={`relative z-10 w-full rounded-lg p-0 transition-transform duration-200 group-hover:translate-y-[-1px] group-hover:z-50 focus-within:z-50 ${controlShell}`}>
                       <SingleSelect
                         value={selectedVideoModelSubType}
@@ -7671,13 +7634,13 @@ export default function OneshotEditor() {
                         className="w-full"
                       />
                   </div>
-                    <p className={`text-[11px] mt-1 ${mutedText}`}>{t("vidgenie.pixverseStyle")}</p>
+                    <p className={`mb-1.5 pl-1 text-left text-caption font-medium ${mutedText}`}>{t("vidgenie.pixverseStyle")}</p>
                   </div>
                 )}
 
                 {/* Generic Sub-type */}
                 {selectedVideoModel?.modelSubTypes?.length && selectedVideoModelSubType && (
-                  <div className="group w-full">
+                  <div className="group flex w-full flex-col-reverse">
                     <div className={`relative z-10 w-full rounded-lg p-0 transition-transform duration-200 group-hover:translate-y-[-1px] group-hover:z-50 focus-within:z-50 ${controlShell}`}>
                       <SingleSelect
                         value={selectedVideoModelSubType}
@@ -7688,14 +7651,14 @@ export default function OneshotEditor() {
                         className="w-full"
                       />
                   </div>
-                    <p className={`text-[11px] mt-1 ${mutedText}`}>{t("vidgenie.videoSubType")}</p>
+                    <p className={`mb-1.5 pl-1 text-left text-caption font-medium ${mutedText}`}>{t("vidgenie.videoSubType")}</p>
                   </div>
                 )}
               </>
             )}
 
             {generationMode === 'I2V' && (
-              <div className="group w-full">
+              <div className="group flex w-full flex-col-reverse">
                 <div className={`relative z-10 w-full rounded-lg p-0 transition-transform duration-200 group-hover:translate-y-[-1px] group-hover:z-50 focus-within:z-50 ${controlShell}`}>
                   <ModelAdapterSelect
                     value={selectedVideoModel}
@@ -7709,13 +7672,13 @@ export default function OneshotEditor() {
                     className="w-full"
                   />
                 </div>
-                <p className={`text-[11px] mt-1 ${mutedText}`}>{t("vidgenie.videoModel")}</p>
+                <p className={`mb-1.5 pl-1 text-left text-caption font-medium ${mutedText}`}>{t("vidgenie.videoModel")}</p>
               </div>
             )}
 
             {/* Duration */}
             {generationMode === 'T2V' && (
-              <div className="group w-full">
+              <div className="group flex w-full flex-col-reverse">
                 <div className={`relative z-10 w-full rounded-lg p-0 transition-transform duration-200 group-hover:translate-y-[-1px] group-hover:z-50 focus-within:z-50 ${controlShell}`}>
                   <SingleSelect
                     value={selectedDurationOption}
@@ -7726,12 +7689,12 @@ export default function OneshotEditor() {
                     className="w-full"
                   />
                 </div>
-                <p className={`text-[11px] mt-1 ${mutedText}`}>{t("vidgenie.maxDuration")}</p>
+                <p className={`mb-1.5 pl-1 text-left text-caption font-medium ${mutedText}`}>{t("vidgenie.maxDuration")}</p>
               </div>
             )}
 
             {/* Audio language */}
-            <div className="group w-full">
+            <div className="group flex w-full flex-col-reverse">
               <div className={`relative z-10 w-full rounded-lg p-0 transition-transform duration-200 group-hover:translate-y-[-1px] group-hover:z-50 focus-within:z-50 ${controlShell}`}>
                 <SingleSelect
                   value={selectedLanguageOption}
@@ -7742,13 +7705,13 @@ export default function OneshotEditor() {
                   className="w-full"
                 />
               </div>
-              <p className={`text-[11px] mt-1 ${mutedText}`}>
+              <p className={`mb-1.5 pl-1 text-left text-caption font-medium ${mutedText}`}>
                 {t("vidgenie.audioLanguage", {}, "Audio language")}
               </p>
             </div>
 
             {canGenerateSubtitles && (
-              <div className="group w-full">
+              <div className="group w-full self-end">
                 <label
                   htmlFor="vidgenie-enable-subtitles"
                   className={`relative z-10 flex h-[34px] w-full items-center justify-between gap-3 rounded-lg px-3 transition-transform duration-200 group-hover:translate-y-[-1px] focus-within:z-50 ${borderedControlShell} ${
@@ -7815,13 +7778,13 @@ export default function OneshotEditor() {
               )}
 
               <div className={`grid grid-cols-1 gap-3 ${
-                selectedInferenceModel?.value === DEFAULT_INFERENCE_MODEL
-                  ? 'sm:grid-cols-[minmax(0,7fr)_minmax(7.5rem,3fr)]'
+                supportsInferenceEffort(selectedInferenceModel?.value)
+                  ? 'sm:grid-cols-[minmax(0,3fr)_minmax(7.5rem,1fr)]'
                   : ''
               }`}>
                 <div className="min-w-0">
-                  <label className={advancedLabelClasses}>Inference model</label>
-                  <ModelAdapterSelect
+                  <label className={advancedLabelClasses}>{uiText("Inference model")}</label>
+                  <InferenceModelSelect
                     value={selectedInferenceModel || inferenceModelOptions[0] || null}
                     onChange={setSelectedInferenceModel}
                     options={inferenceModelOptions}
@@ -7834,19 +7797,19 @@ export default function OneshotEditor() {
                     className="w-full"
                   />
                   {isStandaloneInferenceModelFilteringEnabled ? (
-                    <p className={`mt-1 text-[11px] ${mutedText}`}>
+                    <p className={`mt-1 text-caption ${mutedText}`}>
                       {isInferenceModelAvailabilityLoading
-                        ? 'Loading configured model options...'
+                        ? uiText("Loading configured model options...")
                         : hasConfiguredInferenceModels
-                          ? 'Only models supported by your configured standalone providers are shown.'
-                          : 'No inference model is configured for this standalone installation.'}
+                          ? uiText("Only models supported by your configured standalone providers are shown.")
+                          : uiText("No inference model is configured for this standalone installation.")}
                     </p>
                   ) : null}
                 </div>
 
-                {selectedInferenceModel?.value === DEFAULT_INFERENCE_MODEL && (
+                {supportsInferenceEffort(selectedInferenceModel?.value) && (
                   <div className="min-w-0">
-                    <label className={advancedLabelClasses}>Inference effort</label>
+                    <label className={advancedLabelClasses}>{uiText("Inference effort")}</label>
                     <InferenceEffortSelect
                       value={selectedInferenceEffort}
                       onChange={setSelectedInferenceEffort}
@@ -7871,7 +7834,7 @@ export default function OneshotEditor() {
                         disabled={isFormDisabled}
                         className={choiceInputClasses}
                       />
-                      <span className="text-sm font-medium">Add narrator avatar</span>
+                      <span className="text-sm font-medium">{uiText("Add narrator avatar")}</span>
                     </label>
                   </div>
 
@@ -7879,9 +7842,7 @@ export default function OneshotEditor() {
               )}
 
               <div className={`border-t ${advancedSectionBorder} pt-4 space-y-3`}>
-                <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  Outro image
-                </div>
+                <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">{uiText("Outro image")}</div>
                 <label className={`flex items-start gap-3 rounded-xl px-3 py-3 ${advancedRowBg}`}>
                   <input
                     type="checkbox"
@@ -7892,12 +7853,12 @@ export default function OneshotEditor() {
                     disabled={isFormDisabled}
                     className={choiceInputClasses}
                   />
-                  <span className="text-sm font-medium">Generate CTA outro</span>
+                  <span className="text-sm font-medium">{uiText("Generate CTA outro")}</span>
                 </label>
                 {advancedOptions.generate_outro_image && (
                   <div className="space-y-3">
                     <div>
-                      <label className={advancedLabelClasses}>Outro CTA</label>
+                      <label className={advancedLabelClasses}>{uiText("Outro CTA")}</label>
                       <select
                         value={advancedOptions.outro_cta_type || OUTRO_CTA_TYPE_QR}
                         onChange={(event) => {
@@ -7918,7 +7879,7 @@ export default function OneshotEditor() {
                     {advancedOptions.outro_cta_type === OUTRO_CTA_TYPE_IMAGE ? (
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                         <div>
-                          <label className={advancedLabelClasses}>Top text</label>
+                          <label className={advancedLabelClasses}>{uiText("Top text")}</label>
                           <input
                             type="text"
                             value={advancedOptions.cta_text_top}
@@ -7927,11 +7888,11 @@ export default function OneshotEditor() {
                             }
                             disabled={isFormDisabled}
                             className={advancedInputClasses}
-                            placeholder="Shop the drop"
+                            placeholder={uiText("Shop the drop")}
                           />
                         </div>
                         <div>
-                          <label className={advancedLabelClasses}>Bottom text</label>
+                          <label className={advancedLabelClasses}>{uiText("Bottom text")}</label>
                           <input
                             type="text"
                             value={advancedOptions.cta_text_bottom}
@@ -7940,11 +7901,11 @@ export default function OneshotEditor() {
                             }
                             disabled={isFormDisabled}
                             className={advancedInputClasses}
-                            placeholder="Limited availability"
+                            placeholder={uiText("Limited availability")}
                           />
                         </div>
                         <div className="md:col-span-2">
-                          <label className={advancedLabelClasses}>CTA / logo URL</label>
+                          <label className={advancedLabelClasses}>{uiText("CTA / logo URL")}</label>
                           <div className="flex flex-col gap-2 sm:flex-row">
                             <input
                               type="url"
@@ -7960,9 +7921,7 @@ export default function OneshotEditor() {
                             <label
                               className={`
                                 inline-flex items-center justify-center gap-2 rounded-xl px-3 py-2 text-sm font-semibold
-                                ${colorMode === 'dark'
-                                  ? 'bg-slate-800 text-slate-100 ring-1 ring-slate-700 hover:bg-slate-700'
-                                  : 'bg-white text-slate-700 ring-1 ring-slate-200 hover:bg-slate-50'}
+                                text-fg-body ring-1 ${colorMode === 'dark' ? 'bg-slate-800 ring-slate-700 hover:bg-slate-700' : 'bg-white ring-slate-200 hover:bg-slate-50'}
                                 ${isFormDisabled || uploadingOutroCtaImage ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'}
                               `}
                             >
@@ -7978,25 +7937,23 @@ export default function OneshotEditor() {
                               ) : (
                                 <FaUpload className="text-xs" />
                               )}
-                              {uploadingOutroCtaImage ? 'Uploading...' : 'Upload image'}
+                              {uploadingOutroCtaImage ? uiText("Uploading...") : uiText("Upload image")}
                             </label>
                           </div>
                           {outroCtaImageUploadError ? (
-                            <p className="mt-1 text-[11px] text-rose-500">
+                            <p className="mt-1 text-caption text-rose-500">
                               {outroCtaImageUploadError}
                             </p>
                           ) : null}
                           {hasTextValue(advancedOptions.outro_cta_image_url) ? (
-                            <p className={`mt-1 text-[11px] ${mutedText}`}>
-                              This image will replace the QR code in the outro center area.
-                            </p>
+                            <p className={`mt-1 text-caption ${mutedText}`}>{uiText("This image will replace the QR code in the outro center area.")}</p>
                           ) : null}
                         </div>
                       </div>
                     ) : (
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                         <div>
-                          <label className={advancedLabelClasses}>CTA URL</label>
+                          <label className={advancedLabelClasses}>{uiText("CTA URL")}</label>
                           <input
                             type="url"
                             value={advancedOptions.cta_url}
@@ -8007,7 +7964,7 @@ export default function OneshotEditor() {
                           />
                         </div>
                         <div>
-                          <label className={advancedLabelClasses}>CTA top text</label>
+                          <label className={advancedLabelClasses}>{uiText("CTA top text")}</label>
                           <input
                             type="text"
                             value={advancedOptions.cta_text_top}
@@ -8019,7 +7976,7 @@ export default function OneshotEditor() {
                           />
                         </div>
                         <div>
-                          <label className={advancedLabelClasses}>CTA bottom text</label>
+                          <label className={advancedLabelClasses}>{uiText("CTA bottom text")}</label>
                           <input
                             type="text"
                             value={advancedOptions.cta_text_bottom}
@@ -8031,7 +7988,7 @@ export default function OneshotEditor() {
                           />
                         </div>
                         <div>
-                          <label className={advancedLabelClasses}>CTA logo URL</label>
+                          <label className={advancedLabelClasses}>{uiText("CTA logo URL")}</label>
                           <input
                             type="url"
                             value={advancedOptions.cta_logo}
@@ -8048,9 +8005,7 @@ export default function OneshotEditor() {
 
               {availableCustomAdapterEndpoints.length > 0 && (
                 <div className={`border-t ${advancedSectionBorder} pt-4 space-y-3`}>
-                  <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                    Custom Endpoint
-                  </div>
+                  <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">{uiText("Custom Endpoint")}</div>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                     {availableCustomAdapterEndpoints.map((endpoint) => (
                       <label
@@ -8067,10 +8022,10 @@ export default function OneshotEditor() {
                         />
                         <span className="min-w-0">
                           <span className="block text-sm font-medium">{endpoint.name}</span>
-                          <span className={`block text-[11px] ${mutedText}`}>
+                          <span className={`block text-caption ${mutedText}`}>
                             {endpoint.operationLabel}
                           </span>
-                          <span className={`block truncate text-[11px] ${mutedText}`}>
+                          <span className={`block truncate text-caption ${mutedText}`}>
                             {endpoint.endpoint}
                           </span>
                         </span>
@@ -8158,17 +8113,11 @@ export default function OneshotEditor() {
       {shouldShowOriginalRequestInputs && (
       <form onSubmit={handleSubmit}>
         {isJsonMode && shouldCollapseJsonEditorForProgress ? (
-          <div className={`mt-4 rounded-2xl p-4 ring-1 transition ${
-            colorMode === 'dark'
-              ? 'bg-[#151720] text-slate-100 ring-white/10'
-              : 'bg-white text-slate-900 ring-slate-200'
-          }`}>
+          <div className={`mt-4 rounded-2xl p-4 ring-1 transition bg-surface-sunken text-fg ${colorMode === 'dark' ? 'ring-white/10' : 'ring-slate-200'}`}>
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div>
-                <div className="text-sm font-semibold">JSON request hidden during render</div>
-                <p className={`mt-1 text-xs ${mutedText}`}>
-                  Progress stays visible. Expand this panel only when you need to inspect or copy the submitted request.
-                </p>
+                <div className="text-sm font-semibold">{uiText("JSON request hidden during render")}</div>
+                <p className={`mt-1 text-xs ${mutedText}`}>{uiText("Progress stays visible. Expand this panel only when you need to inspect or copy the submitted request.")}</p>
               </div>
               <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
                 <button
@@ -8180,7 +8129,7 @@ export default function OneshotEditor() {
                       : 'border border-slate-200 hover:bg-slate-50'
                   }`}
                 >
-                  {isJsonRequestExpanded ? 'Hide JSON' : 'View JSON'}
+                  {isJsonRequestExpanded ? uiText("Hide JSON") : uiText("View JSON")}
                 </button>
                 <button
                   type="button"
@@ -8191,7 +8140,7 @@ export default function OneshotEditor() {
                       : 'border border-slate-200 hover:bg-slate-50'
                   }`}
                 >
-                  {jsonCopyStatus || 'Copy JSON'}
+                  {uiText(jsonCopyStatus) || uiText("Copy JSON")}
                 </button>
               </div>
             </div>
@@ -8272,7 +8221,7 @@ export default function OneshotEditor() {
             {jsonEditorErrorMessage ? (
               <div className="mt-2 rounded-lg border border-red-500/20 bg-red-500/10 p-3 text-sm font-medium text-red-500">
                 {Number.isFinite(jsonModeValidation.row) && Number.isFinite(jsonModeValidation.column)
-                  ? `Line ${jsonModeValidation.row + 1}, column ${jsonModeValidation.column + 1}: `
+                  ? uiText("Line {value0}, column {value1}: ", { value0: jsonModeValidation.row + 1, value1: jsonModeValidation.column + 1 })
                   : ''}
                 {jsonEditorErrorMessage}
               </div>
@@ -8281,9 +8230,7 @@ export default function OneshotEditor() {
                 colorMode === 'dark'
                   ? 'border-emerald-400/20 bg-emerald-400/10 text-emerald-200'
                   : 'border-emerald-500/20 bg-emerald-500/10 text-emerald-700'
-              }`}>
-                Valid JSON for {generationMode === 'I2V' ? 'image-list to video' : 'text to video'}.
-              </div>
+              }`}>{uiText("Valid JSON for {value0}.", { value0: generationMode === 'I2V' ? uiText("image-list to video") : uiText("text to video") })}</div>
             )}
             {jsonValidationMessage && jsonValidationMessage !== jsonEditorErrorMessage && (
               <div className="mt-2 rounded-lg border border-red-500/20 bg-red-500/10 p-3 text-sm font-medium text-red-500">
@@ -8303,10 +8250,7 @@ export default function OneshotEditor() {
                   vidgenie-prompt-textarea
                   w-full pl-4 pt-4 pr-16 p-2 rounded-2xl resize-none placeholder:opacity-60
                   focus:outline-none focus:ring-2 ring-1 transition
-                  ${colorMode === 'dark'
-                    ? 'bg-[#151720] text-white ring-[#4a5265] focus:ring-[#f6c453]/55'
-                    : 'bg-white text-slate-900 ring-slate-200 focus:ring-indigo-500/50'
-                  }
+                  bg-surface-sunken ${colorMode === 'dark' ? 'text-white ring-[#4a5265] focus:ring-[#f6c453]/55' : 'text-slate-900 ring-slate-200 focus:ring-indigo-500/50'}
                   ${isVoiceBusy ? 'opacity-95' : ''}
                 `}
                 placeholder={t("vidgenie.promptPlaceholder")}
@@ -8376,10 +8320,8 @@ export default function OneshotEditor() {
             <div className={`rounded-lg ring-1 p-3 transition ${imagePickerShell}`}>
               <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                 <div>
-                  <div className="text-sm font-semibold">Image scenes</div>
-                  <div className={`mt-0.5 text-[11px] ${mutedText}`}>
-                    Paste public URLs or upload local images to create URLs.
-                  </div>
+                  <div className="text-sm font-semibold">{uiText("Image scenes")}</div>
+                  <div className={`mt-0.5 text-caption ${mutedText}`}>{uiText("Paste public URLs or upload local images to create URLs.")}</div>
                 </div>
                 <button
                   type="button"
@@ -8393,9 +8335,7 @@ export default function OneshotEditor() {
                     }
                   `}
                 >
-                  <FaPlus className="text-xs" />
-                  Add image
-                </button>
+                  <FaPlus className="text-xs" />{uiText("Add image")}</button>
               </div>
 
               {imageUploadError && (
@@ -8420,14 +8360,14 @@ export default function OneshotEditor() {
                       `}
                     >
                       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-                        <div className="text-sm font-medium">Image {index + 1}</div>
+                        <div className="text-sm font-medium">{uiText("Image {value0}", { value0: index + 1 })}</div>
                         <div className="flex items-center gap-1">
                           <button
                             type="button"
                             onClick={() => moveImageListItem(index, index - 1)}
                             disabled={isFormDisabled || uploadingImageIndex !== null || index === 0}
-                            title="Move image up"
-                            aria-label="Move image up"
+                            title={uiText("Move image up")}
+                            aria-label={uiText("Move image up")}
                             className={`
                               inline-flex h-8 w-8 items-center justify-center rounded-lg transition
                               ${colorMode === 'dark'
@@ -8442,8 +8382,8 @@ export default function OneshotEditor() {
                             type="button"
                             onClick={() => moveImageListItem(index, index + 1)}
                             disabled={isFormDisabled || uploadingImageIndex !== null || index === imageListItems.length - 1}
-                            title="Move image down"
-                            aria-label="Move image down"
+                            title={uiText("Move image down")}
+                            aria-label={uiText("Move image down")}
                             className={`
                               inline-flex h-8 w-8 items-center justify-center rounded-lg transition
                               ${colorMode === 'dark'
@@ -8458,8 +8398,8 @@ export default function OneshotEditor() {
                             type="button"
                             onClick={() => removeImageListItem(index)}
                             disabled={isFormDisabled || uploadingImageIndex !== null}
-                            title="Remove image"
-                            aria-label="Remove image"
+                            title={uiText("Remove image")}
+                            aria-label={uiText("Remove image")}
                             className={`
                               inline-flex h-8 w-8 items-center justify-center rounded-lg transition
                               ${colorMode === 'dark'
@@ -8486,7 +8426,7 @@ export default function OneshotEditor() {
                           {imageUrl ? (
                             <img
                               src={imageUrl}
-                              alt={`Image ${index + 1}`}
+                              alt={uiText("Image {value0}", { value0: index + 1 })}
                               className="h-full w-full object-cover"
                             />
                           ) : (
@@ -8497,9 +8437,7 @@ export default function OneshotEditor() {
                         <div className="min-w-0 space-y-2">
                           <div className="grid grid-cols-1 gap-2 md:grid-cols-[minmax(0,1fr)_auto]">
                             <div>
-                              <label className={`mb-1 block text-[11px] font-medium ${mutedText}`}>
-                                Image URL
-                              </label>
+                              <label className={`mb-1 block text-caption font-medium ${mutedText}`}>{uiText("Image URL")}</label>
                               <input
                                 type="url"
                                 value={item.image_url}
@@ -8548,13 +8486,11 @@ export default function OneshotEditor() {
                               ) : (
                                 <FaUpload className="text-xs" />
                               )}
-                              {isUploadingThisImage ? 'Uploading...' : 'Upload to URL'}
+                              {isUploadingThisImage ? uiText("Uploading...") : uiText("Upload to URL")}
                             </label>
                           </div>
                           <div>
-                            <label className={`mb-1 block text-[11px] font-medium ${mutedText}`}>
-                              Image description
-                            </label>
+                            <label className={`mb-1 block text-caption font-medium ${mutedText}`}>{uiText("Image description")}</label>
                             <TextareaAutosize
                               minRows={2}
                               maxRows={5}
@@ -8562,7 +8498,7 @@ export default function OneshotEditor() {
                               onChange={(event) => updateImageListItem(index, { image_text: event.target.value })}
                               disabled={isFormDisabled}
                               className={advancedInputClasses}
-                              placeholder="What is in this image and what matters for this scene"
+                              placeholder={uiText("What is in this image and what matters for this scene")}
                             />
                           </div>
                         </div>
@@ -8573,9 +8509,7 @@ export default function OneshotEditor() {
               </div>
             </div>
             <div className="space-y-2">
-              <label className={`block text-sm font-semibold ${colorMode === 'dark' ? 'text-slate-100' : 'text-slate-900'}`}>
-                Video styling prompt
-              </label>
+              <label className={`block text-sm font-semibold text-fg`}>{uiText("Video styling prompt")}</label>
               <TextareaAutosize
                 minRows={4}
                 maxRows={12}
@@ -8584,10 +8518,7 @@ export default function OneshotEditor() {
                   vidgenie-prompt-textarea
                   w-full pl-4 pt-4 pr-4 p-2 rounded-2xl resize-none placeholder:opacity-60
                   focus:outline-none focus:ring-2 ring-1 transition
-                  ${colorMode === 'dark'
-                    ? 'bg-[#151720] text-white ring-[#4a5265] focus:ring-[#f6c453]/55'
-                    : 'bg-white text-slate-900 ring-slate-200 focus:ring-indigo-500/50'
-                  }
+                  bg-surface-sunken ${colorMode === 'dark' ? 'text-white ring-[#4a5265] focus:ring-[#f6c453]/55' : 'text-slate-900 ring-slate-200 focus:ring-indigo-500/50'}
                 `}
                 placeholder={t(
                   "vidgenie.imageListPromptPlaceholder",
@@ -8611,13 +8542,10 @@ export default function OneshotEditor() {
 
       {/* ───────── Assistant Chat ───────── */}
       {shouldShowOriginalRequestInputs && (
-      <div className={`vidgenie-assistant-anchor mt-6 rounded-2xl p-3 sm:p-4 ring-1 transition-shadow hover:shadow-sm ${
-        colorMode === 'dark'
-          ? 'bg-[#181b24] text-slate-100 ring-[#3a4050]'
-          : 'bg-white text-slate-900 ring-slate-200'
-      }`}>
+      <div className={`vidgenie-assistant-anchor mt-6 rounded-2xl p-3 sm:p-4 ring-1 transition-shadow hover:shadow-sm bg-surface text-fg ${colorMode === 'dark' ? 'ring-[#3a4050]' : 'ring-slate-200'}`}>
         <AssistantHome
           submitAssistantQuery={submitAssistantQuery}
+          onSessionCleared={assistantRequestGuard.invalidate}
           sessionId={id}
           sessionMessages={sessionMessages}
           onSessionMessagesChange={setSessionMessages}

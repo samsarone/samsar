@@ -1,3 +1,5 @@
+import { useUiLanguage } from '../../../hooks/useUiLanguage.js';
+import { translateText as uiText } from '../../../utils/localization.js';
 import { useStudioFrameRate } from '../StudioFrameRateContext.jsx';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import ReactSlider from 'react-slider';
@@ -50,6 +52,7 @@ function resolveAudioTrackUrl(audioTrack = {}) {
 }
 
 const AudioTrackSlider = (props) => {
+  useUiLanguage();
   const DISPLAY_FRAMES_PER_SECOND = useStudioFrameRate();
   const { audioTrack, onUpdate, selectedFrameRange, isStartVisible, isEndVisible,
     setAudioRangeSliderDisplayAsSelected, 
@@ -363,7 +366,7 @@ const AudioTrackSlider = (props) => {
         ref={sliderContainerRef}
         className={`timeline-layer-range-shell ${audioTrack.isDisplaySelected ? 'timeline-layer-range-shell--selected' : ''}`}
         onClick={audioRangeSliderClicked}
-        title={isLocked ? 'Audio layer locked — select it to unlock' : undefined}
+        title={isLocked ? uiText("Audio layer locked — select it to unlock") : undefined}
       >
         <div className={`timeline-layer-range-surface ${railSurfaceClassName}`}>
           <ReactSlider

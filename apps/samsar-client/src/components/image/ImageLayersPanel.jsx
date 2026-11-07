@@ -1,3 +1,5 @@
+import { useUiLanguage } from '../../hooks/useUiLanguage.js';
+import { translateText as uiText } from '../../utils/localization.js';
 import { useMemo, useState } from 'react';
 import {
   FaChevronDown,
@@ -42,30 +44,31 @@ const normalizeItemsAndSelection = (items, selectedId) => {
 
 const getLayerLabel = (item, index) => {
   if (item?.type === 'shape' && (item?.config?.fixed || item?.subType === 'background')) {
-    return 'Background';
+    return uiText("Background");
   }
 
   if (item?.type === 'text') {
     const text = typeof item?.text === 'string' ? item.text.trim() : '';
     if (text) {
-      return `Text: ${text.slice(0, 26)}${text.length > 26 ? '...' : ''}`;
+      return uiText("Text: {value0}{value1}", { value0: text.slice(0, 26), value1: text.length > 26 ? '...' : '' });
     }
-    return `Text ${index + 1}`;
+    return uiText("Text {value0}", { value0: index + 1 });
   }
 
   if (item?.type === 'image') {
-    return `Image ${index + 1}`;
+    return uiText("Image {value0}", { value0: index + 1 });
   }
 
   if (item?.type === 'shape') {
-    const shapeType = item?.shape || 'Shape';
+    const shapeType = item?.shape || uiText('Shape');
     return `${shapeType.charAt(0).toUpperCase()}${shapeType.slice(1)} ${index + 1}`;
   }
 
-  return `Layer ${index + 1}`;
+  return uiText("Layer {value0}", { value0: index + 1 });
 };
 
 export default function ImageLayersPanel(props) {
+  useUiLanguage();
   const {
     activeItemList,
     setActiveItemList,
@@ -90,17 +93,13 @@ export default function ImageLayersPanel(props) {
   );
 
   const cardSurface =
-    colorMode === 'dark'
-      ? 'bg-[#181b24] border border-[#3a4050] text-slate-100'
-      : 'bg-white border border-slate-200 text-slate-900';
+    'bg-surface border border-line text-fg';
   const listBackground =
     colorMode === 'dark'
       ? 'bg-[#151720]'
       : 'bg-slate-50';
   const rowBase =
-    colorMode === 'dark'
-      ? 'bg-[#20232e] border border-[#3a4050] hover:bg-[#292d3a]'
-      : 'bg-white border border-slate-200 hover:bg-slate-100';
+    'bg-surface-raised border border-line hover:bg-surface-hover';
   const rowSelected =
     colorMode === 'dark'
       ? '!border-[#f6c453]/70 bg-[#f6c453]/10'
@@ -110,13 +109,9 @@ export default function ImageLayersPanel(props) {
       ? 'text-slate-300 hover:text-[#ffe0a3]'
       : 'text-slate-500 hover:text-rose-600';
   const emptyState =
-    colorMode === 'dark'
-      ? 'text-slate-400'
-      : 'text-slate-500';
+    'text-fg-muted';
   const subtleText =
-    colorMode === 'dark'
-      ? 'text-slate-300'
-      : 'text-slate-600';
+    "text-fg-tertiary";
   const panelPaddingClass = isImageStudio ? 'mt-5 rounded-[22px] p-4' : 'mt-4 rounded-xl p-3';
   const headerLabelClass = isImageStudio ? 'text-base font-semibold' : 'text-sm font-semibold';
   const countBadgeClass = isImageStudio
@@ -125,7 +120,7 @@ export default function ImageLayersPanel(props) {
   const emptyStateClass = isImageStudio ? `text-sm text-center py-4 ${emptyState}` : `text-xs text-center py-3 ${emptyState}`;
   const rowClassName = isImageStudio ? 'rounded-xl px-3 py-3 transition' : 'rounded-lg px-2 py-2 transition';
   const itemTitleClass = isImageStudio ? 'text-sm font-medium truncate' : 'text-xs font-medium truncate';
-  const itemTypeClass = isImageStudio ? `text-xs uppercase tracking-[0.18em] ${subtleText}` : `text-[11px] uppercase tracking-wide ${subtleText}`;
+  const itemTypeClass = isImageStudio ? `text-xs uppercase tracking-[0.18em] ${subtleText}` : `text-caption uppercase tracking-wide ${subtleText}`;
 
   const applyUpdatedItems = (nextItems, nextSelectedId = null) => {
     setActiveItemList(nextItems);
@@ -161,7 +156,7 @@ export default function ImageLayersPanel(props) {
       >
         <div className="flex items-center gap-2">
           <FaLayerGroup className={isImageStudio ? 'text-base' : 'text-sm'} />
-          <div className={headerLabelClass}>Layers</div>
+          <div className={headerLabelClass}>{uiText("Layers")}</div>
           <div className={countBadgeClass}>
             {items.length}
           </div>
@@ -174,9 +169,7 @@ export default function ImageLayersPanel(props) {
       {!isCollapsed && (
         <div className={`mt-3 rounded-2xl p-3 ${listBackground}`}>
           {items.length === 0 ? (
-            <div className={emptyStateClass}>
-              No layers yet.
-            </div>
+            <div className={emptyStateClass}>{uiText("No layers yet.")}</div>
           ) : (
             <DragDropContext onDragEnd={handleDragEnd}>
               <Droppable droppableId="image-editor-layers-panel">
@@ -211,7 +204,7 @@ export default function ImageLayersPanel(props) {
                                 <div
                                   className={`cursor-grab active:cursor-grabbing ${iconButton}`}
                                   {...dragProvided.dragHandleProps}
-                                  aria-label="Reorder layer"
+                                  aria-label={uiText("Reorder layer")}
                                 >
                                   <FaGripLines />
                                 </div>
@@ -221,7 +214,7 @@ export default function ImageLayersPanel(props) {
                                     {getLayerLabel(item, actualIndex)}
                                   </div>
                                   <div className={itemTypeClass}>
-                                    {item?.type || 'item'}
+                                    {item?.type || uiText("item")}
                                   </div>
                                 </div>
 
@@ -232,8 +225,8 @@ export default function ImageLayersPanel(props) {
                                     onToggleItemVisibility(currentItemId);
                                   }}
                                   className={iconButton}
-                                  aria-label={isHidden ? 'Show layer' : 'Hide layer'}
-                                  title={isHidden ? 'Show layer' : 'Hide layer'}
+                                  aria-label={isHidden ? uiText("Show layer") : uiText("Hide layer")}
+                                  title={isHidden ? uiText("Show layer") : uiText("Hide layer")}
                                 >
                                   {isHidden ? <FaEyeSlash /> : <FaEye />}
                                 </button>
@@ -245,8 +238,8 @@ export default function ImageLayersPanel(props) {
                                     handleDelete(currentItemId);
                                   }}
                                   className={iconButton}
-                                  aria-label="Delete layer"
-                                  title="Delete layer"
+                                  aria-label={uiText("Delete layer")}
+                                  title={uiText("Delete layer")}
                                 >
                                   <FaTrash />
                                 </button>

@@ -22,7 +22,7 @@ export function assistantRequestIdentity(userId, scope, payload = {}, idempotenc
   for (const field of ['async', 'async_mode', 'asyncMode', 'poll', 'polling', 'response_mode', 'responseMode',
     'client_request_id', 'clientRequestId', 'client_session_id', 'clientSessionId',
     'internal_session_id', 'internalSessionId', 'client_request_key', 'clientRequestKey',
-    'timeout', 'timeoutMs']) delete fingerprintPayload[field];
+    'timeout', 'timeoutMs', 'stream', 'stream_options']) delete fingerprintPayload[field];
   return { id, fingerprint: createHash('sha256').update(JSON.stringify(canonical(fingerprintPayload))).digest('hex') };
 }
 
@@ -33,7 +33,7 @@ export function isAssistantProviderOutcomeUncertain(error) {
     const status = Number(cause.status ?? cause.statusCode ?? cause.response?.status);
     if (status === 408 || status === 504) return true;
     if (['ETIMEDOUT', 'ECONNRESET', 'ECONNABORTED', 'UND_ERR_HEADERS_TIMEOUT', 'UND_ERR_SOCKET',
-      'EXTERNAL_INFERENCE_TIMEOUT'].includes(cause.code)) return true;
+      'EXTERNAL_INFERENCE_TIMEOUT', 'ASSISTANT_STREAM_INTERRUPTED'].includes(cause.code)) return true;
     if (/timeout|timed out|fetch failed|socket hang up|network error/i.test(`${cause.name || ''} ${cause.message || ''}`)) return true;
   }
   return false;
@@ -51,10 +51,17 @@ export function createMongoAssistantRequestStore(Model) {
       }
     },
     get: id => Model.findById(id).lean(),
+    // A late original provider can still hand off its one receipt after losing
+    // the lease. It cannot overwrite a saved result or perform settlement.
+    retainResponse: (id, providerResponse) => Model.updateOne({ _id: id, dispatchStarted: true,
+      providerResponse: null, status: { $nin: ['COMPLETED', 'FAILED'] } },
+    { $set: { providerResponse } }),
     claim: (id, leaseMs) => Model.findOneAndUpdate({ _id: id, status: { $nin: ['COMPLETED', 'FAILED'] },
       $or: [{ leaseUntil: null }, { leaseUntil: { $lte: new Date() } }] },
-    { $set: { leaseUntil: new Date(Date.now() + leaseMs), status: 'PROCESSING' } }, { new: true }).lean(),
-    save: (id, fields) => Model.findOneAndUpdate({ _id: id, status: { $ne: 'COMPLETED' } },
+    { $set: { leaseUntil: new Date(Date.now() + leaseMs), leaseToken: randomUUID(), status: 'PROCESSING' } }, { new: true }).lean(),
+    renew: (id, leaseToken, leaseMs) => Model.updateOne({ _id: id, leaseToken, status: { $nin: ['COMPLETED', 'FAILED'] } },
+      { $set: { leaseUntil: new Date(Date.now() + leaseMs) } }),
+    save: (id, fields, leaseToken) => Model.findOneAndUpdate({ _id: id, status: { $ne: 'COMPLETED' }, ...(leaseToken ? { leaseToken } : {}) },
       { $set: fields }, { new: true }).lean(),
   };
 }
@@ -77,6 +84,15 @@ export async function runAssistantRequest({ id, fingerprint, userId, scope, stor
     if (latest?.status === 'FAILED') throw error(latest.errorMessage, latest.errorCode, latest.errorStatus || 502);
     throw error('Assistant request is already processing. Retry with the same request key.', 'ASSISTANT_REQUEST_IN_PROGRESS');
   }
+  const save = async (fields) => {
+    const saved = await store.save(id, fields, receipt.leaseToken);
+    if (!saved) throw error('Assistant request ownership changed. Retry with the same key.', 'ASSISTANT_REQUEST_IN_PROGRESS');
+    return saved;
+  };
+  const heartbeat = store.renew && receipt.leaseToken ? setInterval(() => {
+    Promise.resolve(store.renew(id, receipt.leaseToken, leaseMs)).catch(() => {});
+  }, Math.max(1000, Math.min(30000, Math.floor(leaseMs / 3)))) : null;
+  heartbeat?.unref?.();
   let response = receipt.providerResponse;
   let generating = false;
   let dispatched = Boolean(receipt.dispatchStarted);
@@ -88,33 +104,39 @@ export async function runAssistantRequest({ id, fingerprint, userId, scope, stor
       if (receipt.dispatchStarted) throw error('The provider outcome needs reconciliation; inference was not repeated.', 'ASSISTANT_PROVIDER_OUTCOME_UNKNOWN', 503);
       if (!waived && model) assertAssistantTariffAvailable(model);
       await admit();
-      await store.save(id, { dispatchStarted: true });
+      await save({ dispatchStarted: true });
       dispatched = true;
       generating = true;
       response = await generate(id);
       providerReturned = true;
       generating = false;
-      await store.save(id, { providerResponse: response, status: 'BILLING_PENDING' });
+      await save({ providerResponse: response, status: 'BILLING_PENDING' });
     }
     const billing = receipt.billing || calculateAssistantRequestBilling(response, {
       model, waived, pricingTimestampMs: receipt.pricingTimestampMs,
     });
-    await store.save(id, { billing });
+    await save({ billing });
     const debit = billing.credits > 0
       ? await charge(billing.credits, { idempotencyKey: `assistant:${id}`, billing, response, requestContext: receipt.context || context })
       : { remainingCredits: null, creditsCharged: 0 };
     const result = finalize
       ? await finalize(response, billing, debit, id)
       : { response, creditsCharged: billing.credits, remainingCredits: debit.remainingCredits ?? null };
-    await store.save(id, { status: 'COMPLETED', result, leaseUntil: null, errorMessage: null, errorCode: null });
+    await save({ status: 'COMPLETED', result, leaseUntil: null, errorMessage: null, errorCode: null });
     return result;
   } catch (e) {
+    if (e.code === 'ASSISTANT_REQUEST_IN_PROGRESS') {
+      if (response && store.retainResponse) await store.retainResponse(id, response);
+      throw e;
+    }
     const uncertain = (providerReturned && !response) || e.code === 'ASSISTANT_PROVIDER_OUTCOME_UNKNOWN' ||
       (generating && isAssistantProviderOutcomeUncertain(e));
-    await store.save(id, { status: response || uncertain ? 'BILLING_PENDING' : dispatched ? 'FAILED' : 'PENDING',
+    await save({ ...(response ? { providerResponse: response } : {}), status: response || uncertain ? 'BILLING_PENDING' : dispatched ? 'FAILED' : 'PENDING',
       leaseUntil: null, errorMessage: e.message, errorCode: e.code || 'ASSISTANT_REQUEST_FAILED',
       errorStatus: e.statusCode || e.status || 502 });
     throw e;
+  } finally {
+    if (heartbeat) clearInterval(heartbeat);
   }
 }
 

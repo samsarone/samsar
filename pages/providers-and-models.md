@@ -92,7 +92,7 @@ Hosted clients continue to call Samsar.js regardless of the upstream provider us
 | Qwen Image | `QWENIMAGE3PRO` is native Alibaba only, with standard pay-as-you-go credentials. |
 | Express media | Supported Samsar, native and custom adapters depend on the selected model. An accepted asynchronous job stays pinned to its submitting adapter while polling. |
 | GMICloud / GenBlaze | Exact credential-validated model and operation mappings are required. An approximate model match is not used as a substitute. |
-| GPTImage 2.5 | `GPTIMAGE2.5` and `GPTIMAGE2.5EDIT` exclude legacy GenBlaze GPT Image 2 routes. |
+| GPTImage 2.6 | `GPTIMAGE2.5` and `GPTIMAGE2.5EDIT` exclude legacy GenBlaze GPT Image 2 routes. |
 
 Current embedding/search implementation note: although the setup availability matrix includes `search` and `recommendations` for Samsar, `EmbeddingService` calls OpenAI embeddings directly with `text-embedding-3-large` and checks `OPENAI_API_KEY`. URL crawling also requires `FIRECRAWL_API_KEY`.
 
@@ -119,7 +119,7 @@ The adapter policy is shared by the processor, generator, audio generator, AI vi
 
 ## Model Groups Used by Video APIs
 
-Use `GPTIMAGE2.5` for GPTImage 2.5 and `GPTIMAGE2.5EDIT` for editing. Retired `GPTIMAGE2` and `GPTIMAGE2EDIT` keys are rejected for new requests. Other model keys remain stable: `SEEDREAM` → Seedream 5 Pro; `HAPPYHORSEI2V` → Happy Horse 1.1 I2V.
+Use the stable keys `GPTIMAGE2.5` for GPTImage 2.6 Sunburst (High) and `GPTIMAGE2.5EDIT` for editing. OpenAI generation and editing use `gpt-image-2.6-sunburst`; fal generation uses `openai/gpt-image-2.6/sunburst/text-to-image`. The request keys, Studio price tables and billing markup are unchanged. Queued 2.5 jobs keep their submitted model or endpoint. Retired `GPTIMAGE2` and `GPTIMAGE2EDIT` keys are rejected for new requests. Other model keys remain stable: `SEEDREAM` → Seedream 5 Pro; `HAPPYHORSEI2V` → Happy Horse 1.1 I2V.
 
 | Workflow | Selection rule | Reference |
 | --- | --- | --- |

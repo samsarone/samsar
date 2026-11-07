@@ -1,3 +1,4 @@
+import { createAssistantStreamPublisher } from './AssistantStreamPublisher.js';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import fs from 'node:fs';
@@ -14,13 +15,13 @@ function harness({ standalone = false } = {}) {
   const state = { providerCalls: 0, deliveries: 0, jobs: [{ _id: 'job', sessionId: 'session', queryId: 'query', rowLocked: false }] };
   const session = { userId: 'user', sessionMessages: [{ role: 'user', id: 'query', content: 'Hello' }], async save() {} };
   const context = vm.createContext({
-    assistantRequestIdentity, runAssistantRequest, debitAssistantOwnerOnce,
+    assistantRequestIdentity, runAssistantRequest, debitAssistantOwnerOnce, createAssistantStreamPublisher,
     AssistantBillingRequest: { find: () => ({ limit: () => ({ lean: async () => [...store.records.values()]
       .filter(r => r.providerResponse && r.status !== 'COMPLETED') }) }) },
     createMongoAssistantRequestStore: () => store,
     GenerationCreditTransaction: account.Ledger,
     AssistantQueryGeneration: {
-      find: async () => structuredClone(state.jobs.filter(j => !j.rowLocked || Number(j.workerLeaseExpiresAt) <= Date.now())),
+      find: async () => structuredClone(state.jobs.filter(j => j.status !== 'reconciliation_required' && (!j.rowLocked || Number(j.workerLeaseExpiresAt) <= Date.now()))),
       updateOne: async (filter, update) => {
         const job = state.jobs.find(j => j._id === filter._id);
         if (!job) return { modifiedCount: 0 };
@@ -33,7 +34,11 @@ function harness({ standalone = false } = {}) {
     },
     VideoSession: {
       findOne: async () => session,
-      updateOne: async (_query, update) => {
+      updateOne: async (query, update) => {
+        const requiredMessage = query.sessionMessages?.$elemMatch;
+        if (requiredMessage && !session.sessionMessages.some(m => m.role === requiredMessage.role && m.id === requiredMessage.id)) {
+          return { modifiedCount: 0 };
+        }
         const message = update.$push?.sessionMessages;
         if (message && !session.sessionMessages.some(m => m.role === 'assistant' && m.id === message.id)) {
           state.deliveries++;
@@ -135,4 +140,120 @@ test('standalone queued assistants retain their no-local-debit policy', async ()
   assert.equal(h.state.providerCalls, 1);
   assert.equal(h.account.debits, 0);
   assert.equal(h.state.deliveries, 1);
+});
+
+
+test('cleared queue work is discarded before provider invocation', async () => {
+  const h = harness();
+  h.session.sessionMessages = [];
+  h.session.assistantSessionVersion = 1;
+  await h.processPending();
+  assert.equal(h.state.providerCalls, 0);
+  assert.equal(h.account.debits, 0);
+  assert.equal(h.state.jobs.length, 0);
+});
+
+test('clear while provider runs drops its reply and keeps the new request pending', async () => {
+  const h = harness();
+  const generate = h.context.sendAssistantCompletionRequest;
+  h.context.sendAssistantCompletionRequest = async (...args) => {
+    const response = await generate(...args);
+    h.session.sessionMessages = [{ id: 'new-query', role: 'user', content: 'New conversation' }];
+    h.session.assistantSessionVersion = 1;
+    h.session.sessionMessageGenerationPending = true;
+    h.state.jobs = [];
+    return response;
+  };
+  await h.processPending();
+  assert.equal(h.state.deliveries, 0);
+  assert.equal(h.session.sessionMessages.length, 1);
+  assert.equal(h.session.sessionMessageGenerationPending, true);
+  assert.equal(h.account.debits, 1); // Completed provider work still settles once.
+  const receipt = [...h.store.records.values()][0];
+  assert.equal(receipt.providerResponse, null);
+  assert.equal(receipt.result.response, undefined);
+});
+
+test('provider failure after clear cannot restore old messages or overwrite new pending state', async () => {
+  const h = harness();
+  h.context.sendAssistantCompletionRequest = async () => {
+    h.session.sessionMessages = [{ id: 'new-query', role: 'user', content: 'New conversation' }];
+    h.session.assistantSessionVersion = 1;
+    h.session.sessionMessageGenerationPending = true;
+    h.session.sessionMessageGenerationError = null;
+    throw new Error('Old provider failed');
+  };
+  await h.processPending();
+  assert.equal(h.session.sessionMessageGenerationPending, true);
+  assert.equal(h.session.sessionMessageGenerationError, null);
+  assert.equal(h.state.deliveries, 0);
+});
+
+test('clear during worker admission is rechecked before dispatch', async () => {
+  const h = harness();
+  const findUser = h.context.User.findOne;
+  h.context.User.findOne = (...args) => {
+    h.session.sessionMessages = [];
+    h.session.assistantSessionVersion = 1;
+    return findUser(...args);
+  };
+  await h.processPending();
+  assert.equal(h.state.providerCalls, 0);
+  assert.equal(h.account.debits, 0);
+});
+
+test('billing recovery after clear settles without resurrecting conversation content', async () => {
+  const h = harness();
+  const insert = h.account.Ledger.updateOne;
+  h.account.Ledger.updateOne = async () => { throw new Error('outage'); };
+  await h.processPending();
+  h.session.sessionMessages = [];
+  h.session.assistantSessionVersion = 1;
+  h.session.sessionMessageGenerationPending = false;
+  h.state.jobs = [];
+  h.account.Ledger.updateOne = insert;
+  await h.recover();
+  assert.equal(h.state.providerCalls, 1);
+  assert.equal(h.account.debits, 1);
+  assert.equal(h.state.deliveries, 0);
+  assert.equal(h.session.sessionMessages.length, 0);
+  assert.equal([...h.store.records.values()][0].providerResponse, null);
+});
+
+
+test('streamed partial replies survive interruption without entering conversation history or charging an estimate', async () => {
+  const h = harness(); h.state.jobs[0].stream = true;
+  let calls = 0;
+  h.context.sendAssistantCompletionRequest = async (_messages, _model, options) => {
+    calls++;
+    await options.onText('Partial answer');
+    throw Object.assign(new Error('Provider stream ended'), { code: 'ASSISTANT_STREAM_INTERRUPTED' });
+  };
+  await h.processPending();
+  assert.equal(h.session.assistantStream.text, 'Partial answer');
+  assert.equal(h.session.assistantStream.status, 'interrupted');
+  assert.equal(h.session.sessionMessageGenerationPending, false);
+  assert.equal(h.session.sessionMessages.filter(message => message.role === 'assistant').length, 0);
+  assert.equal(h.state.jobs[0].status, 'reconciliation_required');
+  await h.processPending();
+  assert.equal(calls, 1);
+  assert.equal(h.account.debits, 0);
+});
+
+test('streamed completion and a ledger retry keep one final reply and one debit', async () => {
+  const h = harness(); h.state.jobs[0].stream = true;
+  const provider = h.context.sendAssistantCompletionRequest;
+  h.context.sendAssistantCompletionRequest = async (...args) => {
+    await args[2].onText('Hel'); await args[2].onText('Hello'); return provider(...args);
+  };
+  const insert = h.account.Ledger.updateOne; let failures = 0;
+  h.account.Ledger.updateOne = (...args) => { if (!failures++) throw new Error('Ledger unavailable'); return insert(...args); };
+  await h.processPending();
+  assert.equal(h.session.assistantStream.text, 'Hello');
+  assert.equal(h.session.assistantStream.status, 'billing_pending');
+  await h.processPending();
+  assert.equal(h.session.assistantStream.status, 'completed');
+  assert.equal(h.state.deliveries, 1);
+  assert.equal(h.account.debits, 1);
+  assert.equal(h.state.providerCalls, 1);
 });

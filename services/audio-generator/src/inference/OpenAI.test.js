@@ -8,12 +8,13 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 
-import { createCompatibleInferenceChatCompletion } from './OpenAI.js';
+import { createCompatibleInferenceChatCompletion, sendAssistantMessageRequest } from './OpenAI.js';
 
 const ENV_KEYS = [
   'CURRENT_ENV',
   'DASHSCOPE_API_KEY',
   'OPENAI_API_KEY',
+  'ANTHROPIC_API_KEY',
   'OPENAI_INFERENCE_MAX_RETRIES',
   'OPENROUTER_API_KEY',
   'SAMSAR_API_KEY',
@@ -324,3 +325,59 @@ test('production calls ignore standalone preferences and do not cross adapters',
     assert.equal(response.choices[0].message.content, 'production');
   });
 });
+
+for (const effort of ['high', 'xhigh']) {
+  test(`native Sol ${effort} uses Responses for vision and round-trips tool calls`, async () => {
+    await withEnvironment({ OPENAI_API_KEY: 'test-only', SAMSAR_DEPLOYMENT_EDITION: 'production' }, async () => {
+      let sent;
+      const result = await createCompatibleInferenceChatCompletion({
+        authorization: 'native', model: 'gpt-6.1-sol', effort, temperature: 0.5, max_tokens: 200,
+        messages: [
+          { role: 'system', content: 'Describe the image' },
+          { role: 'user', content: [{ type: 'image_url', image_url: { url: 'https://example.com/frame.png' } }] },
+          { role: 'assistant', tool_calls: [{ id: 'call-1', type: 'function', function: { name: 'lookup', arguments: '{}' } }] },
+          { role: 'tool', tool_call_id: 'call-1', content: 'Found' },
+        ],
+        tools: [{ type: 'function', function: { name: 'lookup', parameters: { type: 'object', properties: {} } } }],
+      }, { openaiClient: {
+        post: async (url, options) => {
+          assert.equal(url, '/responses');
+          assert.equal(options.maxRetries, 0);
+          sent = options.body;
+          return { model: 'gpt-6.1-sol', status: 'completed', output: [{ type: 'function_call', call_id: 'call-2', name: 'lookup', arguments: '{}' }], usage: { input_tokens: 20, output_tokens: 10, input_tokens_details: { cached_tokens: 5 } } };
+        },
+      } });
+      assert.equal(sent.model, 'gpt-6.1-sol');
+      assert.equal(sent.reasoning.effort, effort);
+      assert.equal(sent.max_output_tokens, 200);
+      assert.equal(sent.temperature, undefined);
+      assert.equal(sent.input[0].role, 'developer');
+      assert.equal(sent.input[1].content[0].image_url, 'https://example.com/frame.png');
+      assert.equal(sent.input[2].call_id, 'call-1');
+      assert.deepEqual(sent.input[3], { type: 'function_call_output', call_id: 'call-1', output: 'Found' });
+      assert.equal(sent.tools[0].name, 'lookup');
+      assert.equal(result.choices[0].message.tool_calls[0].id, 'call-2');
+      assert.equal(result.choices[0].finish_reason, 'tool_calls');
+      assert.equal(result.usage.prompt_tokens, 20);
+      assert.equal(result.usage.prompt_tokens_details.cached_tokens, 5);
+    });
+  });
+}
+
+for (const model of ['claude-opus-5.5', 'claude-fable-5.1']) {
+  test(`speech prompt entry point forwards explicit ${model} effort`, async (t) => {
+    await withEnvironment({ CURRENT_ENV: 'docker', SAMSAR_DEPLOYMENT_EDITION: 'standalone', ANTHROPIC_API_KEY: 'test-only' }, async () => {
+      let sent;
+      t.mock.method(globalThis, 'fetch', async (_url, options) => {
+        sent = JSON.parse(options.body);
+        return new Response(JSON.stringify({ model: sent.model, content: [{ type: 'text', text: 'ok' }] }));
+      });
+      for (const effort of ['high', 'xhigh']) {
+        await sendAssistantMessageRequest([{ role: 'user', content: 'Plan speech.' }],
+          model + (effort === 'high' ? '-xhigh' : ''), 'native', effort);
+        assert.equal(sent.model, model.replace(/(\d)\.(\d)/, '$1-$2'));
+        assert.equal(sent.output_config.effort, effort);
+      }
+    });
+  });
+}

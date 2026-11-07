@@ -1,3 +1,5 @@
+import { useUiLanguage } from '../../../../hooks/useUiLanguage.js';
+import { translateText as uiText } from '../../../../utils/localization.js';
 import { buildTimelineViewportGeometry } from '../../util/timelineViewport.mjs';
 import { getLayerDisplayFrameRanges } from '../../util/studioPreviewTimeline.mjs';
 import { useStudioFrameRate } from '../../StudioFrameRateContext.jsx';
@@ -105,9 +107,9 @@ const GRID_STEP_FRAMES = [
 const SCENE_POPUP_WIDTH = 150;
 const SCENE_POPUP_GAP = 10;
 const SCENE_TRANSITION_PRESET_OPTIONS = [
-  { value: 'none', label: 'None' },
-  { value: 'fade', label: 'Fade' },
-  { value: 'dissolve', label: 'Dissolve' },
+  { value: 'none', get label() { return uiText("None"); } },
+  { value: 'fade', get label() { return uiText("Fade"); } },
+  { value: 'dissolve', get label() { return uiText("Dissolve"); } },
 ];
 
 function resolveAudioTrackId(audioTrack) {
@@ -169,7 +171,7 @@ function getLayerLabelById(layers = [], layerId) {
   }
 
   const layerIndex = layers.findIndex((layer) => resolveLayerId(layer)?.toString() === layerId.toString());
-  return layerIndex >= 0 ? `Scene ${layerIndex + 1}` : '';
+  return layerIndex >= 0 ? uiText("Scene {value0}", { value0: layerIndex + 1 }) : '';
 }
 
 function sanitizeAudioTrackText(value) {
@@ -181,20 +183,20 @@ function formatAudioTrackTypeLabel(value) {
 
   switch (normalizedType) {
     case 'music':
-      return 'Music';
+      return uiText("Music");
     case 'speech':
-      return 'Speech';
+      return uiText("Speech");
     case 'sound_effect':
-      return 'Sound Effect';
+      return uiText("Sound Effect");
     case 'lip_sync':
-      return 'Lip Sync';
+      return uiText("Lip Sync");
     case 'background_music':
-      return 'Background Music';
+      return uiText("Background Music");
     case 'user_video':
-      return 'User Video';
+      return uiText("User Video");
     default:
       if (!normalizedType) {
-        return 'Audio';
+        return uiText("Audio");
       }
 
       return normalizedType
@@ -229,7 +231,7 @@ function getAudioTrackDisplayTitle(audioTrack = {}) {
   }
 
   if (normalizedType === 'music') {
-    return (hasDistinctTitle ? title : '') || 'Music';
+    return (hasDistinctTitle ? title : '') || uiText("Music");
   }
 
   return (hasDistinctTitle ? title : '') || typeLabel;
@@ -435,16 +437,16 @@ function isVisualLayerItem(item) {
 
 function getVisualTrackAssetLabel(item) {
   if (!item) {
-    return 'Visual';
+    return uiText("Visual");
   }
   if (item.type === 'image') {
-    return item.is_base_image ? 'Base image' : 'Image';
+    return item.is_base_image ? uiText("Base image") : uiText("Image");
   }
   if (item.type === 'shape') {
     const shapeName = item.shape ? `${item.shape}` : 'shape';
-    return `${shapeName} shape`;
+    return uiText("{value0} shape", { value0: shapeName });
   }
-  return 'Visual';
+  return uiText("Visual");
 }
 
 function buildVisualTrackDisplayList(layers, displayFramesPerSecond, sourceFramesPerSecond = displayFramesPerSecond) {
@@ -530,7 +532,7 @@ function getVideoTrackSourceMeta(layer = {}) {
   if (layer?.lipSyncVideoLayer || layer?.hasLipSyncVideoLayer) {
     return {
       sourceType: 'lip_sync',
-      assetLabel: 'Lip sync video',
+      assetLabel: uiText("Lip sync video"),
       shortLabel: 'LS',
     };
   }
@@ -538,7 +540,7 @@ function getVideoTrackSourceMeta(layer = {}) {
   if (layer?.soundEffectVideoLayer || layer?.hasSoundEffectVideoLayer) {
     return {
       sourceType: 'sound_effect',
-      assetLabel: 'Sound FX video',
+      assetLabel: uiText("Sound FX video"),
       shortLabel: 'FX',
     };
   }
@@ -546,7 +548,7 @@ function getVideoTrackSourceMeta(layer = {}) {
   if (layer?.userVideoLayer || layer?.hasUserVideoLayer || layer?.userVideoGenerationPending) {
     return {
       sourceType: 'user_video',
-      assetLabel: 'Uploaded video',
+      assetLabel: uiText("Uploaded video"),
       shortLabel: 'UP',
     };
   }
@@ -554,7 +556,7 @@ function getVideoTrackSourceMeta(layer = {}) {
   if (layer?.aiVideoLayer || layer?.hasAiVideoLayer || layer?.aiVideoGenerationPending) {
     return {
       sourceType: 'ai_video',
-      assetLabel: 'AI video',
+      assetLabel: uiText("AI video"),
       shortLabel: 'AI',
     };
   }
@@ -665,7 +667,7 @@ function buildGlobalVideoTrackDisplayList(globalVideos, displayFramesPerSecond =
       _id: globalVideoId,
       id: globalVideoId,
       trackKey: `global_video_${globalVideoId}`,
-      assetLabel: globalVideo?.title || 'Global video',
+      assetLabel: globalVideo?.title || uiText("Global video"),
       shortLabel: 'GV',
       startTime: startFrame / displayFramesPerSecond,
       endTime: endFrame / displayFramesPerSecond,
@@ -965,6 +967,7 @@ function areVideoEditToolsEqual(leftTool, rightTool) {
 }
 
 export default function FrameToolbar(props) {
+  const uiLanguage = useUiLanguage();
   const DISPLAY_FRAMES_PER_SECOND = useStudioFrameRate();
   const {
     layers,
@@ -1050,17 +1053,13 @@ export default function FrameToolbar(props) {
   const { colorMode } = useColorMode();
 
   const bgColor =
-    colorMode === 'light'
-      ? 'bg-white/72 text-slate-900 border border-slate-200/90 backdrop-blur-md'
-      : 'bg-[#181b24]/72 text-slate-100 border border-[#3a4050]/90 shadow-[0_10px_28px_rgba(0,0,0,0.35)] backdrop-blur-md';
+    `text-fg border backdrop-blur-md ${colorMode === 'light' ? 'bg-white/72 border-slate-200/90' : 'bg-[#181b24]/72 border-[#3a4050]/90 shadow-[0_10px_28px_rgba(0,0,0,0.35)]'}`;
   const bg2Color =
     colorMode === 'light'
       ? 'bg-white/60 border border-slate-200/90 backdrop-blur-md'
       : 'bg-[#20232e]/60 border border-[#3a4050]/90 backdrop-blur-md';
   let bg3Color =
-    colorMode === 'light'
-      ? 'bg-slate-50 border border-slate-200'
-      : 'bg-[#0f172a] border border-[#3a4050]';
+    `border border-line ${colorMode === 'light' ? 'bg-slate-50' : 'bg-[#0f172a]'}`;
   const panelShellSurface =
     colorMode === 'light'
       ? 'bg-white/68 backdrop-blur-md'
@@ -1242,8 +1241,7 @@ export default function FrameToolbar(props) {
       displayStart,
       displayEnd,
     };
-  }, [
-    clipEndValue,
+  }, [clipEndValue,
     clipStartValue,
     persistedClipEndDisplayFrames,
     persistedClipStartDisplayFrames,
@@ -1731,14 +1729,14 @@ export default function FrameToolbar(props) {
   );
   const selectedAudioTrackTypeLabel = useMemo(
     () => formatAudioTrackTypeLabel(selectedAudioTrack?.generationType),
-    [selectedAudioTrack]
+    [uiLanguage, selectedAudioTrack]
   );
   const shouldShowSelectedAudioTrackTypeLabel = useMemo(() => {
     const normalizedDisplayTitle = sanitizeAudioTrackText(selectedAudioTrackDisplayTitle).toLowerCase();
     const normalizedTypeLabel = sanitizeAudioTrackText(selectedAudioTrackTypeLabel).toLowerCase();
 
     return Boolean(normalizedTypeLabel && normalizedTypeLabel !== normalizedDisplayTitle);
-  }, [selectedAudioTrackDisplayTitle, selectedAudioTrackTypeLabel]);
+  }, [uiLanguage, selectedAudioTrackDisplayTitle, selectedAudioTrackTypeLabel]);
   const selectedAudioTrackMetadata = useMemo(() => {
     if (!selectedAudioTrack) {
       return [];
@@ -1750,15 +1748,15 @@ export default function FrameToolbar(props) {
     const ttsProvider = sanitizeAudioTrackText(selectedAudioTrack?.ttsProvider);
 
     if (speakerName) {
-      metadataItems.push({ label: 'Voice', value: speakerName });
+      metadataItems.push({ label: uiText("Voice"), value: speakerName });
     }
 
     if (ttsProvider) {
-      metadataItems.push({ label: 'Provider', value: ttsProvider });
+      metadataItems.push({ label: uiText("Provider"), value: ttsProvider });
     }
 
     return metadataItems;
-  }, [selectedAudioTrack]);
+  }, [uiLanguage, selectedAudioTrack]);
   const selectedAudioTrackIsSpeech = useMemo(
     () => isSpeechAudioTrack(selectedAudioTrack),
     [selectedAudioTrack]
@@ -1774,14 +1772,14 @@ export default function FrameToolbar(props) {
     }
 
     if (!selectedAudioTrackIsBound) {
-      return 'Unbound timeline speech';
+      return uiText("Unbound timeline speech");
     }
 
     const connectedLayerLabel = getLayerLabelById(layers, selectedAudioTrackConnectedLayerId);
     return connectedLayerLabel
-      ? `Bound to ${connectedLayerLabel}`
-      : 'Bound to a scene';
-  }, [
+      ? uiText("Bound to {value0}", { value0: connectedLayerLabel })
+      : uiText("Bound to a scene");
+  }, [uiLanguage,
     layers,
     selectedAudioTrackConnectedLayerId,
     selectedAudioTrackIsBound,
@@ -2287,8 +2285,7 @@ export default function FrameToolbar(props) {
 
   const timelineDisplayFrameRange = useMemo(
     () => normalizeTimelineFrameRange(selectedFrameRange, totalDurationInFrames),
-    [
-      normalizeTimelineFrameRange,
+    [normalizeTimelineFrameRange,
       selectedFrameRange,
       totalDurationInFrames,
     ],
@@ -3000,7 +2997,7 @@ export default function FrameToolbar(props) {
         buildGlobalVideoTrackDisplayList(officialGlobalVideos, DISPLAY_FRAMES_PER_SECOND)
       );
     } else {
-      alert("Failed to update global videos.");
+      alert(uiText("Failed to update global videos."));
     }
   };
 
@@ -3111,16 +3108,16 @@ export default function FrameToolbar(props) {
     hintsToSave,
     {
       selectedHintId: nextSelectedHintId = selectedHintId,
-      pendingMessage = 'Saving hints...',
-      successMessage = 'Hints saved.',
-      failureMessage = 'Unable to save hints.',
+      pendingMessage = uiText("Saving hints..."),
+      successMessage = uiText("Hints saved."),
+      failureMessage = uiText("Unable to save hints."),
     } = {},
   ) => {
     if (typeof updateSessionHints !== 'function') {
       replaceHintDrafts(hintsToSave, {
         dirty: true,
         selectedHintId: nextSelectedHintId,
-        statusMessage: 'Hints changed locally. Save to persist.',
+        statusMessage: uiText("Hints changed locally. Save to persist."),
       });
       return { success: false };
     }
@@ -3266,7 +3263,7 @@ export default function FrameToolbar(props) {
     const transcriptRows = buildSpeechTranscriptHintRows(sessionForImport);
 
     if (!transcriptRows.length) {
-      setHintsStatusMessage('No speech transcript cues are available to import.');
+      setHintsStatusMessage(uiText("No speech transcript cues are available to import."));
       return;
     }
 
@@ -3281,9 +3278,9 @@ export default function FrameToolbar(props) {
 
     await persistTimelineHints(importedHints, {
       selectedHintId: null,
-      pendingMessage: `Importing ${importedHints.length} speech transcript hint${importedHints.length === 1 ? '' : 's'}...`,
-      successMessage: `Imported ${importedHints.length} speech transcript hint${importedHints.length === 1 ? '' : 's'}.`,
-      failureMessage: 'Unable to import speech transcript hints.',
+      pendingMessage: uiText("Importing {count} speech transcript hints...", { count: importedHints.length }),
+      successMessage: uiText("Imported {count} speech transcript hints.", { count: importedHints.length }),
+      failureMessage: uiText("Unable to import speech transcript hints."),
     });
   };
 
@@ -3295,23 +3292,23 @@ export default function FrameToolbar(props) {
     }
 
     try {
-      setHintsStatusMessage(`Importing ${file.name}...`);
+      setHintsStatusMessage(uiText("Importing {value0}...", { value0: file.name }));
       const rawText = await file.text();
       const uploadedHints = extractHintsFromUploadedFile(rawText);
 
       if (!uploadedHints.length) {
-        setHintsStatusMessage('No timestamped hints found in the selected file.');
+        setHintsStatusMessage(uiText("No timestamped hints found in the selected file."));
         return;
       }
 
       await persistTimelineHints(uploadedHints, {
         selectedHintId: null,
-        pendingMessage: `Importing ${uploadedHints.length} hint${uploadedHints.length === 1 ? '' : 's'} from ${file.name}...`,
-        successMessage: `Imported ${uploadedHints.length} hint${uploadedHints.length === 1 ? '' : 's'} from ${file.name}.`,
-        failureMessage: 'Unable to import hints file.',
+        pendingMessage: uiText("Importing {count} hints from {file}...", { count: uploadedHints.length, file: file.name }),
+        successMessage: uiText("Imported {count} hints from {file}.", { count: uploadedHints.length, file: file.name }),
+        failureMessage: uiText("Unable to import hints file."),
       });
     } catch (error) {
-      setHintsStatusMessage(error?.message || 'Unable to import hints file.');
+      setHintsStatusMessage(error?.message || uiText("Unable to import hints file."));
     } finally {
       if (input) {
         input.value = '';
@@ -3322,11 +3319,11 @@ export default function FrameToolbar(props) {
   const addHintFromSelectedLayer = async () => {
     const text = newHintText.trim();
     if (!text) {
-      setHintsStatusMessage('Enter hint text before adding.');
+      setHintsStatusMessage(uiText("Enter hint text before adding."));
       return;
     }
     if (!selectedHintLayerData) {
-      setHintsStatusMessage('Select a layer before adding a hint.');
+      setHintsStatusMessage(uiText("Select a layer before adding a hint."));
       return;
     }
 
@@ -3350,7 +3347,7 @@ export default function FrameToolbar(props) {
         : Number(selectedHintLayerData.duration) || 1,
     );
     const hintLayerId = resolveLayerId(selectedHintLayerData);
-    const hintId = `hint_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    const hintId = uiText("hint_{value0}_{value1}", { value0: Date.now(), value1: Math.random().toString(36).slice(2, 8) });
     const nextHint = {
       id: hintId,
       text,
@@ -3362,9 +3359,9 @@ export default function FrameToolbar(props) {
 
     const saveResult = await persistTimelineHints([...timelineHintsDraft, nextHint], {
       selectedHintId: null,
-      pendingMessage: 'Adding hint...',
-      successMessage: 'Hint added.',
-      failureMessage: 'Unable to add hint.',
+      pendingMessage: uiText('Adding hint...'),
+      successMessage: uiText('Hint added.'),
+      failureMessage: uiText("Unable to add hint."),
     });
 
     if (saveResult.success) {
@@ -3375,21 +3372,21 @@ export default function FrameToolbar(props) {
   const deleteSelectedHint = async () => {
     const targetHintId = selectedHintTrack?.id || selectedHintId;
     if (!targetHintId) {
-      setHintsStatusMessage('Select a hint before removing it.');
+      setHintsStatusMessage(uiText("Select a hint before removing it."));
       return;
     }
 
     const nextHints = timelineHintsDraft.filter((hint) => hint.id?.toString?.() !== targetHintId.toString());
     if (nextHints.length === timelineHintsDraft.length) {
-      setHintsStatusMessage('Unable to find the selected hint.');
+      setHintsStatusMessage(uiText("Unable to find the selected hint."));
       return;
     }
 
     await persistTimelineHints(nextHints, {
       selectedHintId: null,
-      pendingMessage: 'Removing hint...',
-      successMessage: 'Hint removed.',
-      failureMessage: 'Unable to remove hint.',
+      pendingMessage: uiText('Removing hint...'),
+      successMessage: uiText('Hint removed.'),
+      failureMessage: uiText("Unable to remove hint."),
     });
   };
 
@@ -3403,14 +3400,14 @@ export default function FrameToolbar(props) {
     replaceHintDrafts([], {
       dirty: false,
       selectedHintId: null,
-      statusMessage: 'Removing all hints...',
+      statusMessage: uiText("Removing all hints..."),
     });
 
     if (typeof updateSessionHints !== 'function') {
       replaceHintDrafts([], {
         dirty: true,
         selectedHintId: null,
-        statusMessage: 'All hints removed locally. Save to persist.',
+        statusMessage: uiText("All hints removed locally. Save to persist."),
       });
       return;
     }
@@ -3419,19 +3416,19 @@ export default function FrameToolbar(props) {
     try {
       const response = await updateSessionHints([]);
       if (!response?.success) {
-        throw response?.error || new Error('Unable to remove hints.');
+        throw response?.error || new Error(uiText("Unable to remove hints."));
       }
 
       replaceHintDrafts(response.serverHints || [], {
         dirty: false,
         selectedHintId: null,
-        statusMessage: 'All hints removed.',
+        statusMessage: uiText("All hints removed."),
       });
     } catch (error) {
       replaceHintDrafts(previousHints, {
         dirty: previousHintsDirty,
         selectedHintId,
-        statusMessage: error?.message || 'Unable to remove hints.',
+        statusMessage: error?.message || uiText("Unable to remove hints."),
       });
     } finally {
       setIsSavingHints(false);
@@ -3440,7 +3437,7 @@ export default function FrameToolbar(props) {
 
   const saveTimelineHints = async () => {
     if (typeof updateSessionHints !== 'function') {
-      setHintsStatusMessage('Unable to save hints in this session.');
+      setHintsStatusMessage(uiText("Unable to save hints in this session."));
       return;
     }
 
@@ -3451,7 +3448,7 @@ export default function FrameToolbar(props) {
       const hintsToSave = getPersistableHints();
       const response = await updateSessionHints(hintsToSave);
       if (!response?.success) {
-        throw response?.error || new Error('Unable to save hints.');
+        throw response?.error || new Error(uiText("Unable to save hints."));
       }
 
       const serverHints = Array.isArray(response.serverHints)
@@ -3460,10 +3457,10 @@ export default function FrameToolbar(props) {
       replaceHintDrafts(serverHints, {
         dirty: false,
         selectedHintId,
-        statusMessage: 'Hints saved.',
+        statusMessage: uiText("Hints saved."),
       });
     } catch (error) {
-      setHintsStatusMessage(error?.message || 'Unable to save hints.');
+      setHintsStatusMessage(error?.message || uiText("Unable to save hints."));
     } finally {
       setIsSavingHints(false);
     }
@@ -3858,7 +3855,7 @@ export default function FrameToolbar(props) {
         : { success: true, serverGlobalAudioLayers: globalAudioTracks };
 
       if (!normalResponse?.success || !globalResponse?.success) {
-        throw normalResponse?.error || globalResponse?.error || new Error('Unable to save audio layer changes.');
+        throw normalResponse?.error || globalResponse?.error || new Error(uiText("Unable to save audio layer changes."));
       }
 
       const officialLayers = Array.isArray(normalResponse.serverLayers)
@@ -3872,7 +3869,7 @@ export default function FrameToolbar(props) {
         ...officialGlobalLayers.map((layer) => buildAudioTrackDisplayItem(layer, true, selectedTrackId)),
       ]);
       setAudioSaveState('saved');
-      toast.success('Audio layer changes saved.', {
+      toast.success(uiText("Audio layer changes saved."), {
         position: 'bottom-center',
         className: 'custom-toast',
       });
@@ -3883,7 +3880,7 @@ export default function FrameToolbar(props) {
     } catch (error) {
       pendingSelectedAudioLayerIdRef.current = null;
       setAudioSaveState('error');
-      toast.error(error?.message || 'Unable to save audio layer changes.', {
+      toast.error(error?.message || uiText("Unable to save audio layer changes."), {
         position: 'bottom-center',
         className: 'custom-toast',
       });
@@ -3936,48 +3933,36 @@ export default function FrameToolbar(props) {
     const manualVolumeAdjustmentEnabled = Boolean(selectedAudioTrack?.manualVolumeAdjustmentEnabled);
     const selectedPointLabel = selectedAudioVolumePoint
       ? (selectedAudioVolumePoint.kind === 'start'
-        ? 'Start'
+        ? uiText("Start")
         : selectedAudioVolumePoint.kind === 'end'
-        ? 'End'
-          : 'Point')
-      : 'Point';
+        ? uiText("End")
+          : uiText("Point"))
+      : uiText("Point");
     const audioToolbarSurface =
-      colorMode === 'light'
-        ? 'bg-white/72 border border-slate-200 backdrop-blur-md'
-        : 'bg-[#151720]/68 border border-[#3a4050] backdrop-blur-md';
+      `border border-line backdrop-blur-md ${colorMode === 'light' ? 'bg-white/72' : 'bg-[#151720]/68'}`;
     const compactInputClassName =
-      colorMode === 'light'
-        ? 'h-8 w-[56px] rounded-lg border border-slate-200 bg-white/88 px-2 py-1 text-[11px] text-slate-700'
-        : 'h-8 w-[56px] rounded-lg border border-[#3a4050] bg-[#20232e]/82 px-2 py-1 text-[11px] text-slate-100';
+      `h-8 w-[56px] rounded-lg border border-line px-2 py-1 text-caption text-fg-body ${colorMode === 'light' ? 'bg-white/88' : 'bg-[#20232e]/82'}`;
     const updateButtonClassName = audioSaveState === 'saved'
-      ? (colorMode === 'light'
-        ? 'bg-emerald-600 text-white hover:bg-emerald-500'
-        : 'bg-emerald-400 text-[#080a10] hover:bg-emerald-300')
+      ? (`text-on-accent ${colorMode === 'light' ? 'bg-emerald-600 hover:bg-emerald-500' : 'bg-emerald-400 hover:bg-emerald-300'}`)
       : audioSaveState === 'error'
         ? (colorMode === 'light'
           ? 'bg-rose-600 text-white hover:bg-rose-500'
           : 'bg-rose-400 text-[#1f0707] hover:bg-rose-300')
-        : (colorMode === 'light'
-          ? 'bg-sky-600 text-white hover:bg-sky-500'
-          : 'bg-cyan-400 text-[#080a10] hover:bg-cyan-300');
+        : (`text-on-accent ${colorMode === 'light' ? 'bg-sky-600 hover:bg-sky-500' : 'bg-cyan-400 hover:bg-cyan-300'}`);
     const removeButtonClassName =
       colorMode === 'light'
         ? 'border border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100'
         : 'border border-rose-500/40 bg-rose-500/10 text-rose-200 hover:bg-rose-500/18';
     const duplicateButtonClassName =
-      colorMode === 'light'
-        ? 'border border-slate-200 bg-white/90 text-slate-700 hover:bg-slate-100'
-        : 'border border-[#2a3953] bg-[#20232e]/82 text-slate-100 hover:bg-[#17223a]';
+      `border text-fg-body ${colorMode === 'light' ? 'border-slate-200 bg-white/90 hover:bg-slate-100' : 'border-[#2a3953] bg-[#20232e]/82 hover:bg-[#17223a]'}`;
     const advancedButtonClassName = showSelectedAudioExtraOptionsToolbar
       ? (colorMode === 'light'
         ? 'border border-indigo-200 bg-indigo-50 text-indigo-700'
         : 'border border-cyan-500/40 bg-cyan-500/12 text-cyan-200')
       : duplicateButtonClassName;
     const secondarySurfaceClassName =
-      colorMode === 'light'
-        ? 'border border-slate-200 bg-slate-50/90 text-slate-700'
-        : 'border border-[#253248] bg-[#0f172a]/82 text-slate-100';
-    const pillBaseClassName = 'inline-flex h-6 items-center justify-center rounded-md px-1.5 text-[9px] font-semibold uppercase tracking-[0.08em] transition';
+      `border text-fg-body ${colorMode === 'light' ? 'border-slate-200 bg-slate-50/90' : 'border-[#253248] bg-[#0f172a]/82'}`;
+    const pillBaseClassName = 'inline-flex h-6 items-center justify-center rounded-md px-1.5 text-micro font-semibold uppercase tracking-[0.08em] transition';
     const activePillClassName =
       colorMode === 'light'
         ? 'border border-sky-200 bg-sky-50 text-sky-700'
@@ -3994,49 +3979,39 @@ export default function FrameToolbar(props) {
               : 'bg-amber-300 shadow-[0_0_10px_rgba(252,211,77,0.45)]')
             : (colorMode === 'light' ? 'bg-slate-300' : 'bg-slate-600');
     const audioStatusTitle = isSavingAudioLayers
-      ? 'Saving audio layer changes…'
+      ? uiText("Saving audio layer changes…")
       : audioSaveState === 'saved'
-        ? 'Audio layer changes saved'
+        ? uiText("Audio layer changes saved")
         : audioSaveState === 'error'
-          ? 'Audio layer update failed'
+          ? uiText("Audio layer update failed")
           : dirtyCount > 0
-            ? `${dirtyCount} audio update${dirtyCount === 1 ? '' : 's'} pending`
-            : `${audioLayerView === 'global' ? 'Global' : 'Layer'} audio workspace`;
+            ? uiText("{value0} audio update{value1} pending", { value0: dirtyCount, value1: dirtyCount === 1 ? '' : (uiLanguage === "en" ? "s" : "") })
+            : uiText("{value0} audio workspace", { value0: audioLayerView === 'global' ? 'Global' : 'Layer' });
     const audioUpdateButtonTitle = isSavingAudioLayers
-      ? 'Saving audio layer changes…'
+      ? uiText("Saving audio layer changes…")
       : audioSaveState === 'saved'
-        ? 'Audio layer changes saved'
+        ? uiText("Audio layer changes saved")
         : audioSaveState === 'error'
-          ? 'Audio layer update failed. Try again.'
+          ? uiText("Audio layer update failed. Try again.")
           : dirtyCount > 0
-            ? 'Save audio layer changes'
-            : 'Audio layers are up to date';
+            ? uiText("Save audio layer changes")
+            : uiText("Audio layers are up to date");
     const metadataLabelClassName =
-      colorMode === 'light'
-        ? 'text-[9px] font-semibold uppercase tracking-[0.16em] text-slate-500'
-        : 'text-[9px] font-semibold uppercase tracking-[0.16em] text-slate-400';
+      'text-micro font-semibold uppercase tracking-[0.16em] text-fg-muted';
     const metadataValueClassName =
-      colorMode === 'light'
-        ? 'text-xs text-slate-700'
-        : 'text-xs text-slate-200';
+      'text-xs text-fg-secondary';
     const promptPreviewClassName =
       colorMode === 'light'
         ? 'border border-slate-200 bg-white/90 hover:bg-slate-50'
         : 'border border-[#2a3953] bg-[#20232e]/82 hover:bg-[#17223a]';
     const promptCopyButtonClassName =
-      colorMode === 'light'
-        ? 'border border-slate-200 bg-white/90 text-slate-700 hover:bg-slate-100'
-        : 'border border-[#2a3953] bg-[#20232e]/82 text-slate-100 hover:bg-[#17223a]';
+      `border text-fg-body ${colorMode === 'light' ? 'border-slate-200 bg-white/90 hover:bg-slate-100' : 'border-[#2a3953] bg-[#20232e]/82 hover:bg-[#17223a]'}`;
     const inlineInputClassName =
-      colorMode === 'light'
-        ? 'h-4 min-w-0 bg-transparent px-0 text-right text-[10px] font-semibold text-slate-700 outline-none disabled:cursor-not-allowed disabled:opacity-50'
-        : 'h-4 min-w-0 bg-transparent px-0 text-right text-[10px] font-semibold text-slate-100 outline-none disabled:cursor-not-allowed disabled:opacity-50';
+      'h-4 min-w-0 bg-transparent px-0 text-right text-micro font-semibold text-fg-body outline-none disabled:cursor-not-allowed disabled:opacity-50';
     const audioTileClassName = `inline-flex h-6 min-w-0 items-center gap-1 rounded-md px-1 ${secondarySurfaceClassName}`;
     const audioTileLabelClassName = `${metadataLabelClassName} shrink-0`;
     const audioTileIconClassName =
-      colorMode === 'light'
-        ? 'shrink-0 text-[10px] text-slate-500'
-        : 'shrink-0 text-[10px] text-slate-400';
+      'shrink-0 text-micro text-fg-muted';
     const audioTileValueClassName = `${metadataValueClassName} min-w-0 truncate`;
     const compactPromptCopyButtonClassName =
       promptCopyState === 'copied'
@@ -4058,21 +4033,15 @@ export default function FrameToolbar(props) {
               className={audioViewButtonClassName('layer')}
               onClick={() => setAudioLayerView('layer')}
               aria-pressed={audioLayerView === 'layer'}
-            >
-              Layer audio
-            </button>
+            >{uiText("Layer audio")}</button>
             <button
               type="button"
               className={audioViewButtonClassName('global')}
               onClick={() => setAudioLayerView('global')}
               aria-pressed={audioLayerView === 'global'}
-            >
-              Global audio
-            </button>
+            >{uiText("Global audio")}</button>
           </div>
-          <div className={`${metadataLabelClassName} shrink-0`}>
-            {visibleAudioTrackListDisplay.length} track{visibleAudioTrackListDisplay.length === 1 ? '' : 's'}
-          </div>
+          <div className={`${metadataLabelClassName} shrink-0`}>{uiText("{value0} track{value1}", { value0: visibleAudioTrackListDisplay.length, value1: visibleAudioTrackListDisplay.length === 1 ? '' : (uiLanguage === "en" ? "s" : "") })}</div>
         </div>
         <div className='grid min-w-0 grid-cols-[minmax(0,1fr)_64px_64px_50px_32px_22px_22px_22px_22px_22px] items-center gap-1 overflow-hidden'>
           <div
@@ -4091,7 +4060,7 @@ export default function FrameToolbar(props) {
 
           {selectedAudioTrack ? (
             <>
-              <label className={audioTileClassName} title="Start time">
+              <label className={audioTileClassName} title={uiText("Start time")}>
                 <FaPlay className={audioTileIconClassName} aria-hidden="true" />
                 <input
                   type="text"
@@ -4100,11 +4069,11 @@ export default function FrameToolbar(props) {
                   className={`${inlineInputClassName} w-[38px]`}
                   onChange={(e) => handleStartTimeChangeHandler(e, selectedAudioTrack._id)}
                   disabled={Boolean(selectedAudioTrack.isTimelineLocked)}
-                  aria-label="Start time"
+                  aria-label={uiText("Start time")}
                 />
               </label>
 
-              <label className={audioTileClassName} title="End time">
+              <label className={audioTileClassName} title={uiText("End time")}>
                 <FaStop className={audioTileIconClassName} aria-hidden="true" />
                 <input
                   type="text"
@@ -4113,11 +4082,11 @@ export default function FrameToolbar(props) {
                   className={`${inlineInputClassName} w-[38px]`}
                   onChange={(e) => handleEndTimeChangeHandler(e, selectedAudioTrack._id)}
                   disabled={Boolean(selectedAudioTrack.isTimelineLocked)}
-                  aria-label="End time"
+                  aria-label={uiText("End time")}
                 />
               </label>
 
-              <label className={audioTileClassName} title="Layer volume">
+              <label className={audioTileClassName} title={uiText("Layer volume")}>
                 <FaVolumeUp className={audioTileIconClassName} aria-hidden="true" />
                 <input
                   type="text"
@@ -4125,19 +4094,19 @@ export default function FrameToolbar(props) {
                   value={formatAudioTrackNumber(selectedAudioTrack.volume, 0)}
                   className={`${inlineInputClassName} w-[28px]`}
                   onChange={(e) => handleVolumeChangeHandler(e, selectedAudioTrack._id)}
-                  aria-label="Layer volume"
+                  aria-label={uiText("Layer volume")}
                 />
               </label>
 
               <button
                 type="button"
                 onClick={toggleSelectedAudioAdvancedOptions}
-                title={showSelectedAudioExtraOptionsToolbar ? 'Hide extra audio details' : 'View more audio details'}
-                aria-label={showSelectedAudioExtraOptionsToolbar ? 'Hide extra audio details' : 'View more audio details'}
+                title={showSelectedAudioExtraOptionsToolbar ? uiText("Hide extra audio details") : uiText("View more audio details")}
+                aria-label={showSelectedAudioExtraOptionsToolbar ? uiText("Hide extra audio details") : uiText("View more audio details")}
                 disabled={!hasAudioLayers}
-                className={`inline-flex h-6 shrink-0 items-center justify-center rounded-md px-1 text-[9px] font-semibold uppercase tracking-[0.08em] transition disabled:opacity-50 ${advancedButtonClassName}`}
+                className={`inline-flex h-6 shrink-0 items-center justify-center rounded-md px-1 text-micro font-semibold uppercase tracking-[0.08em] transition disabled:opacity-50 ${advancedButtonClassName}`}
               >
-                {showSelectedAudioExtraOptionsToolbar ? 'Less' : 'More'}
+                {showSelectedAudioExtraOptionsToolbar ? uiText("Less") : uiText("More")}
               </button>
             </>
           ) : null}
@@ -4148,11 +4117,11 @@ export default function FrameToolbar(props) {
               onClick={toggleSelectedAudioTrackLock}
               disabled={isSavingAudioLayers}
               title={selectedAudioTrack.isTimelineLocked
-                ? 'Unlock audio layer'
-                : 'Lock audio layer to prevent timing changes'}
+                ? uiText("Unlock audio layer")
+                : uiText("Lock audio layer to prevent timing changes")}
               aria-label={selectedAudioTrack.isTimelineLocked
-                ? 'Unlock audio layer'
-                : 'Lock audio layer'}
+                ? uiText("Unlock audio layer")
+                : uiText("Lock audio layer")}
               aria-pressed={Boolean(selectedAudioTrack.isTimelineLocked)}
               className={`inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-[9px] transition disabled:cursor-not-allowed disabled:opacity-50 ${
                 selectedAudioTrack.isTimelineLocked ? activePillClassName : duplicateButtonClassName
@@ -4167,8 +4136,8 @@ export default function FrameToolbar(props) {
               type="button"
               onClick={duplicateSelectedAudioTrack}
               disabled={!canDuplicateSelectedAudioTrack || isDuplicatingAudioTrack}
-              title="Duplicate audio layer"
-              aria-label="Duplicate audio layer"
+              title={uiText("Duplicate audio layer")}
+              aria-label={uiText("Duplicate audio layer")}
               className={`inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-[9px] transition disabled:opacity-50 ${duplicateButtonClassName}`}
             >
               <FaCopy />
@@ -4181,9 +4150,9 @@ export default function FrameToolbar(props) {
               onClick={resetSelectedAudioTrackChanges}
               disabled={!selectedAudioTrack.isDirty || isSavingAudioLayers}
               title={selectedAudioTrack.isDirty
-                ? 'Reset unsaved audio layer changes'
-                : 'No unsaved audio layer changes'}
-              aria-label="Reset unsaved audio layer changes"
+                ? uiText("Reset unsaved audio layer changes")
+                : uiText("No unsaved audio layer changes")}
+              aria-label={uiText("Reset unsaved audio layer changes")}
               className={`inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-[9px] transition disabled:cursor-not-allowed disabled:opacity-35 ${duplicateButtonClassName}`}
             >
               <FaRedo />
@@ -4204,8 +4173,8 @@ export default function FrameToolbar(props) {
           {selectedAudioTrack ? (
             <button
               type="button"
-              title="Remove audio layer"
-              aria-label="Remove audio layer"
+              title={uiText("Remove audio layer")}
+              aria-label={uiText("Remove audio layer")}
               className={`inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-[9px] transition ${removeButtonClassName}`}
               onClick={removeSelectedAudioTrack}
             >
@@ -4221,22 +4190,22 @@ export default function FrameToolbar(props) {
                 className={audioTileClassName}
                 title={selectedAudioTrackTypeLabel}
               >
-                <span className={audioTileLabelClassName}>Type</span>
+                <span className={audioTileLabelClassName}>{uiText("Type")}</span>
                 <span className={audioTileValueClassName}>{selectedAudioTrackTypeLabel}</span>
               </div>
             ) : (
               <div className={audioTileClassName} title={audioStatusTitle}>
-                <span className={audioTileLabelClassName}>State</span>
+                <span className={audioTileLabelClassName}>{uiText("State")}</span>
                 <span className={audioTileValueClassName}>
                   {isSavingAudioLayers
-                    ? 'Saving'
+                    ? uiText("Saving")
                     : audioSaveState === 'saved'
-                      ? 'Saved'
+                      ? uiText("Saved")
                       : audioSaveState === 'error'
-                        ? 'Failed'
+                        ? uiText("Failed")
                         : dirtyCount > 0
-                          ? 'Dirty'
-                          : 'Ready'}
+                          ? uiText("Dirty")
+                          : uiText("Ready")}
                 </span>
               </div>
             )}
@@ -4246,33 +4215,29 @@ export default function FrameToolbar(props) {
                 className={`inline-flex h-7 min-w-0 items-center overflow-hidden rounded-md ${secondarySurfaceClassName}`}
                 title={selectedAudioTrackBindingLabel}
               >
-                <span className={`${audioTileLabelClassName} px-1.5`}>Link</span>
+                <span className={`${audioTileLabelClassName} px-1.5`}>{uiText("Link")}</span>
                 <button
                   type="button"
                   onClick={() => handleSelectedAudioBindingChange(false)}
-                  className={`inline-flex h-full min-w-0 flex-1 items-center justify-center px-1 text-[9px] font-semibold uppercase tracking-[0.08em] transition ${
+                  className={`inline-flex h-full min-w-0 flex-1 items-center justify-center px-1 text-micro font-semibold uppercase tracking-[0.08em] transition ${
                     !selectedAudioTrackIsBound ? activePillClassName : ''
                   }`}
                   aria-pressed={!selectedAudioTrackIsBound}
-                >
-                  Off
-                </button>
+                >{uiText("Off")}</button>
                 <button
                   type="button"
                   onClick={() => handleSelectedAudioBindingChange(true)}
                   disabled={!selectedLayerData}
-                  className={`inline-flex h-full min-w-0 flex-1 items-center justify-center px-1 text-[9px] font-semibold uppercase tracking-[0.08em] transition disabled:cursor-not-allowed disabled:opacity-50 ${
+                  className={`inline-flex h-full min-w-0 flex-1 items-center justify-center px-1 text-micro font-semibold uppercase tracking-[0.08em] transition disabled:cursor-not-allowed disabled:opacity-50 ${
                     selectedAudioTrackIsBound ? activePillClassName : ''
                   }`}
                   aria-pressed={selectedAudioTrackIsBound}
-                >
-                  On
-                </button>
+                >{uiText("On")}</button>
               </div>
             ) : (
-              <div className={audioTileClassName} title="Unlinked audio layer">
-                <span className={audioTileLabelClassName}>Link</span>
-                <span className={audioTileValueClassName}>Free</span>
+              <div className={audioTileClassName} title={uiText("Unlinked audio layer")}>
+                <span className={audioTileLabelClassName}>{uiText("Link")}</span>
+                <span className={audioTileValueClassName}>{uiText("Free")}</span>
               </div>
             )}
 
@@ -4285,23 +4250,23 @@ export default function FrameToolbar(props) {
                   className={`inline-flex h-7 min-w-0 items-center gap-1 overflow-hidden rounded-md px-1.5 text-left transition ${promptPreviewClassName}`}
                   title={selectedAudioTrackPrompt}
                 >
-                  <span className={`${audioTileLabelClassName} shrink-0`}>Prompt</span>
-                  <span className='min-w-0 flex-1 truncate text-[10px]'>
+                  <span className={`${audioTileLabelClassName} shrink-0`}>{uiText("Prompt")}</span>
+                  <span className='min-w-0 flex-1 truncate text-micro'>
                     {selectedAudioTrackPrompt}
                   </span>
                 </button>
                 <button
                   type="button"
                   onClick={copyPromptToClipboard}
-                  className={`inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-[10px] transition ${compactPromptCopyButtonClassName}`}
+                  className={`inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-micro transition ${compactPromptCopyButtonClassName}`}
                   title={
                     promptCopyState === 'copied'
-                      ? 'Prompt copied'
+                      ? uiText("Prompt copied")
                       : promptCopyState === 'failed'
-                        ? 'Copy failed'
-                        : 'Copy prompt'
+                        ? uiText("Copy failed")
+                        : uiText("Copy prompt")
                   }
-                  aria-label="Copy prompt"
+                  aria-label={uiText("Copy prompt")}
                 >
                   {promptCopyState === 'copied' ? (
                     <FaCheck />
@@ -4315,10 +4280,10 @@ export default function FrameToolbar(props) {
             ) : (
               <div className={audioTileClassName}>
                 <span className={audioTileLabelClassName}>
-                  {primaryAudioMetadataItem?.label || 'Prompt'}
+                  {primaryAudioMetadataItem?.label || uiText("Prompt")}
                 </span>
                 <span className={audioTileValueClassName}>
-                  {primaryAudioMetadataItem?.value || 'None'}
+                  {primaryAudioMetadataItem?.value || uiText("None")}
                 </span>
               </div>
             )}
@@ -4329,18 +4294,16 @@ export default function FrameToolbar(props) {
           <div className='pb-[2px]'>
             <div className='flex min-w-0 flex-wrap items-center gap-1.5'>
               <label
-                className={`inline-flex h-8 shrink-0 items-center gap-1 rounded-lg px-2 text-[10px] font-semibold uppercase tracking-[0.1em] ${
+                className={`inline-flex h-8 shrink-0 items-center gap-1 rounded-lg px-2 text-micro font-semibold uppercase tracking-[0.1em] ${
                   showVerticalWaveform ? activePillClassName : secondarySurfaceClassName
                 }`}
-                title="Show waveform lanes beside enabled audio layers"
+                title={uiText("Show waveform lanes beside enabled audio layers")}
               >
                 <input
                   type="checkbox"
                   checked={showVerticalWaveform}
                   onChange={handleSelectedAudioVisualizerToggle}
-                />
-                Wave
-              </label>
+                />{uiText("Wave")}</label>
 
               {showVerticalWaveform ? (
                 <>
@@ -4348,16 +4311,12 @@ export default function FrameToolbar(props) {
                     type="button"
                     className={`${pillBaseClassName} ${selectedAudioVisualizationMode === 'waveform' ? activePillClassName : secondarySurfaceClassName}`}
                     onClick={() => setSelectedAudioVisualizationMode('waveform')}
-                  >
-                    Wave
-                  </button>
+                  >{uiText("Wave")}</button>
                   <button
                     type="button"
                     className={`${pillBaseClassName} ${selectedAudioVisualizationMode === 'spectrogram' ? activePillClassName : secondarySurfaceClassName}`}
                     onClick={() => setSelectedAudioVisualizationMode('spectrogram')}
-                  >
-                    Spec
-                  </button>
+                  >{uiText("Spec")}</button>
                   {visibleAudioTrackListDisplay.map((audioTrack, index) => {
                     const trackId = resolveAudioTrackId(audioTrack);
                     if (!trackId) {
@@ -4370,10 +4329,10 @@ export default function FrameToolbar(props) {
                     return (
                       <label
                         key={`audio-waveform-toggle-${trackId}`}
-                        className={`inline-flex h-8 shrink-0 items-center gap-1 rounded-lg px-2 text-[10px] font-semibold uppercase tracking-[0.1em] ${
+                        className={`inline-flex h-8 shrink-0 items-center gap-1 rounded-lg px-2 text-micro font-semibold uppercase tracking-[0.1em] ${
                           isActive ? activePillClassName : secondarySurfaceClassName
                         }`}
-                        title={`Show waveform for layer ${index + 1}`}
+                        title={uiText("Show waveform for layer {value0}", { value0: index + 1 })}
                       >
                         <input
                           type="checkbox"
@@ -4389,23 +4348,21 @@ export default function FrameToolbar(props) {
 
               {selectedAudioTrack ? (
                 <label
-                  className={`inline-flex h-8 shrink-0 items-center gap-1 rounded-lg px-2 text-[10px] font-semibold uppercase tracking-[0.1em] ${
+                  className={`inline-flex h-8 shrink-0 items-center gap-1 rounded-lg px-2 text-micro font-semibold uppercase tracking-[0.1em] ${
                     manualVolumeAdjustmentEnabled ? activePillClassName : secondarySurfaceClassName
                   }`}
-                  title="Edit per-point volume automation for the selected audio layer"
+                  title={uiText("Edit per-point volume automation for the selected audio layer")}
                 >
                   <input
                     type="checkbox"
                     checked={manualVolumeAdjustmentEnabled}
                     onChange={handleSelectedAudioManualVolumeToggle}
-                  />
-                  Points
-                </label>
+                  />{uiText("Points")}</label>
               ) : null}
 
               {selectedAudioTrack && manualVolumeAdjustmentEnabled ? (
                 <>
-                  <div className={`inline-flex h-8 shrink-0 items-center rounded-lg px-2 text-[10px] font-semibold uppercase tracking-[0.12em] ${secondarySurfaceClassName}`}>
+                  <div className={`inline-flex h-8 shrink-0 items-center rounded-lg px-2 text-micro font-semibold uppercase tracking-[0.12em] ${secondarySurfaceClassName}`}>
                     {selectedPointLabel}
                   </div>
                   <input
@@ -4413,24 +4370,20 @@ export default function FrameToolbar(props) {
                     value={selectedAudioVolumePoint?.volume ?? selectedAudioTrack.volume}
                     className={compactInputClassName}
                     onChange={(e) => handleSelectedAudioVolumePointChange(e.target.value)}
-                    title="Selected fade point volume"
-                    aria-label="Selected fade point volume"
+                    title={uiText("Selected fade point volume")}
+                    aria-label={uiText("Selected fade point volume")}
                   />
                   <button
                     type="button"
-                    className={`inline-flex h-8 shrink-0 items-center justify-center rounded-lg px-2 text-[10px] font-semibold uppercase tracking-[0.12em] ${secondarySurfaceClassName}`}
+                    className={`inline-flex h-8 shrink-0 items-center justify-center rounded-lg px-2 text-micro font-semibold uppercase tracking-[0.12em] ${secondarySurfaceClassName}`}
                     onClick={resetSelectedAudioVolumeAutomation}
-                  >
-                    Reset
-                  </button>
+                  >{uiText("Reset")}</button>
                   {!selectedAudioVolumePoint?.fixed ? (
                     <button
                       type="button"
-                      className={`inline-flex h-8 shrink-0 items-center justify-center rounded-lg px-2 text-[10px] font-semibold uppercase tracking-[0.12em] ${secondarySurfaceClassName}`}
+                      className={`inline-flex h-8 shrink-0 items-center justify-center rounded-lg px-2 text-micro font-semibold uppercase tracking-[0.12em] ${secondarySurfaceClassName}`}
                       onClick={handleSelectedAudioVolumePointDelete}
-                    >
-                      Delete
-                    </button>
+                    >{uiText("Delete")}</button>
                   ) : null}
                 </>
               ) : null}
@@ -4702,8 +4655,7 @@ export default function FrameToolbar(props) {
     }
 
     return buildGridLineFrames(viewRangeStart, viewRangeEnd, majorGridStepFrames);
-  }, [
-    displayedLayerViewportGeometry,
+  }, [displayedLayerViewportGeometry,
     hasDisplayedLayerViewportGeometry,
     hasUsableFrameRange,
     majorGridStepFrames,
@@ -4736,8 +4688,7 @@ export default function FrameToolbar(props) {
           )
           : clampPercent(((frame - safeViewRange[0]) / viewFrameSpan) * 100)
       ));
-  }, [
-    displayedLayerViewportGeometry,
+  }, [displayedLayerViewportGeometry,
     displayedLayerViewportTotalPixels,
     hasDisplayedLayerViewportGeometry,
     hasUsableFrameRange,
@@ -4757,8 +4708,7 @@ export default function FrameToolbar(props) {
         )
         : clampPercent(((frame - safeViewRange[0]) / viewFrameSpan) * 100)
     ))
-  ), [
-    displayedLayerViewportGeometry,
+  ), [displayedLayerViewportGeometry,
     displayedLayerViewportTotalPixels,
     hasDisplayedLayerViewportGeometry,
     majorGridLineFrames,
@@ -4821,8 +4771,7 @@ export default function FrameToolbar(props) {
           )
           : clampPercent(((snapPoint.frame - safeViewRange[0]) / viewFrameSpan) * 100),
       }))
-  ), [
-    displayedLayerViewportGeometry,
+  ), [displayedLayerViewportGeometry,
     displayedLayerViewportTotalPixels,
     gridSnapPoints,
     hasDisplayedLayerViewportGeometry,
@@ -5181,7 +5130,7 @@ export default function FrameToolbar(props) {
     ) {
       return {
         success: false,
-        error: 'Choose a video action first.',
+        error: uiText("Choose a video action first."),
       };
     }
 
@@ -5217,14 +5166,14 @@ export default function FrameToolbar(props) {
     if (!selectedVideoTrack || selectedVideoTrack.videoEditPending) {
       return {
         success: false,
-        error: 'Wait for the current video update to finish before applying another change.',
+        error: uiText("Wait for the current video update to finish before applying another change."),
       };
     }
 
     if (!selectedVideoActiveTool) {
       return {
         success: false,
-        error: 'Choose a video action first.',
+        error: uiText("Choose a video action first."),
       };
     }
 
@@ -5321,14 +5270,14 @@ export default function FrameToolbar(props) {
     if (!selectedVideoTrack || selectedVideoTrack.videoEditPending) {
       return {
         success: false,
-        error: 'Wait for the current video update to finish before staging another change.',
+        error: uiText("Wait for the current video update to finish before staging another change."),
       };
     }
 
     if (!selectedVideoActiveTool) {
       return {
         success: false,
-        error: 'Choose a video action first.',
+        error: uiText("Choose a video action first."),
       };
     }
 
@@ -5336,7 +5285,7 @@ export default function FrameToolbar(props) {
     if (endFrame <= startFrame) {
       return {
         success: false,
-        error: 'Select a valid range first.',
+        error: uiText("Select a valid range first."),
       };
     }
     const { startTime, endTime } = getVideoEditOperationTimesFromFrames({
@@ -5372,7 +5321,7 @@ export default function FrameToolbar(props) {
     if (overlapsExistingOperation) {
       return {
         success: false,
-        error: 'Staged video changes cannot overlap. Adjust the range or clear an existing staged change.',
+        error: uiText("Staged video changes cannot overlap. Adjust the range or clear an existing staged change."),
       };
     }
 
@@ -5432,7 +5381,7 @@ export default function FrameToolbar(props) {
     ) {
       return {
         success: false,
-        error: 'Add at least one staged video change before clicking Apply.',
+        error: uiText("Add at least one staged video change before clicking Apply."),
       };
     }
 
@@ -5539,7 +5488,7 @@ export default function FrameToolbar(props) {
             persistedEndFrame: response?.success ? resolvedEndFrame : track.persistedEndFrame,
             isDirty: response?.success ? false : track.isDirty,
             isSaving: false,
-            saveError: response?.success ? null : 'Failed to save changes',
+            saveError: response?.success ? null : uiText("Failed to save changes"),
           }
           : track
       )
@@ -5581,7 +5530,7 @@ export default function FrameToolbar(props) {
           ? {
             ...track,
             isSaving: false,
-            saveError: 'Failed to delete item',
+            saveError: uiText("Failed to delete item"),
           }
           : track
       )
@@ -5665,12 +5614,10 @@ export default function FrameToolbar(props) {
 
   const renderAudioTrackRail = (audioTrackNodes) => {
     const shouldShowRailControl = isAudioTrackRailOverflowing || isAudioTrackRailExpanded;
-    const railButtonClassName = colorMode === 'dark'
-      ? 'border border-[#2a3953] bg-[#0f172a]/92 text-slate-100 shadow-[0_10px_22px_rgba(0,0,0,0.28)] hover:bg-[#292d3a]'
-      : 'border border-slate-200 bg-white/95 text-slate-700 shadow-[0_10px_22px_rgba(15,23,42,0.12)] hover:bg-slate-50';
+    const railButtonClassName = `border text-fg-body ${colorMode === 'dark' ? 'border-[#2a3953] bg-[#0f172a]/92 shadow-[0_10px_22px_rgba(0,0,0,0.28)] hover:bg-[#292d3a]' : 'border-slate-200 bg-white/95 shadow-[0_10px_22px_rgba(15,23,42,0.12)] hover:bg-slate-50'}`;
     const railControlLabel = isAudioTrackRailExpanded
-      ? 'Collapse audio lanes'
-      : 'Expand audio lanes';
+      ? uiText("Collapse audio lanes")
+      : uiText("Expand audio lanes");
 
     return (
       <div
@@ -5694,7 +5641,7 @@ export default function FrameToolbar(props) {
         {shouldShowRailControl ? (
           <button
             type="button"
-            className={`audio-track-rail__expand-button inline-flex h-7 w-7 items-center justify-center rounded-lg text-[10px] transition ${railButtonClassName}`}
+            className={`audio-track-rail__expand-button inline-flex h-7 w-7 items-center justify-center rounded-lg text-micro transition ${railButtonClassName}`}
             onClick={() => setIsAudioTrackRailExpanded((previousValue) => !previousValue)}
             aria-label={railControlLabel}
             title={railControlLabel}
@@ -5715,9 +5662,7 @@ export default function FrameToolbar(props) {
 
     if (visibleGlobalVideoTracks.length === 0) {
       return (
-        <div className="flex items-start px-3 py-4 text-[11px] text-slate-400">
-          No global videos in the visible range.
-        </div>
+        <div className="flex items-start px-3 py-4 text-caption text-slate-400">{uiText("No global videos in the visible range.")}</div>
       );
     }
 
@@ -5756,19 +5701,17 @@ export default function FrameToolbar(props) {
   const showSelectedGlobalVideoTrack = () => {
     if (!selectedGlobalVideoTrack) {
       return (
-        <div className="px-3 py-3 text-[11px] text-slate-400">
-          Select a global video track to edit placement, shape, or timing.
-        </div>
+        <div className="px-3 py-3 text-caption text-slate-400">{uiText("Select a global video track to edit placement, shape, or timing.")}</div>
       );
     }
 
     const inputClassName = 'app-field h-8 w-20 rounded-md border px-2 text-xs';
-    const labelClassName = 'status-muted flex flex-col gap-1 text-[10px] uppercase tracking-wide';
+    const labelClassName = 'status-muted flex flex-col gap-1 text-micro uppercase tracking-wide';
 
     return (
       <div className="flex flex-wrap items-end gap-2 px-2 py-2 text-xs">
         <label className={labelClassName}>
-          <span>Start</span>
+          <span>{uiText("Start")}</span>
           <input
             type="number"
             step="0.1"
@@ -5778,7 +5721,7 @@ export default function FrameToolbar(props) {
           />
         </label>
         <label className={labelClassName}>
-          <span>End</span>
+          <span>{uiText("End")}</span>
           <input
             type="number"
             step="0.1"
@@ -5806,7 +5749,7 @@ export default function FrameToolbar(props) {
           />
         </label>
         <label className={labelClassName}>
-          <span>Width</span>
+          <span>{uiText("Width")}</span>
           <input
             type="number"
             min="1"
@@ -5816,7 +5759,7 @@ export default function FrameToolbar(props) {
           />
         </label>
         <label className={labelClassName}>
-          <span>Height</span>
+          <span>{uiText("Height")}</span>
           <input
             type="number"
             min="1"
@@ -5826,16 +5769,16 @@ export default function FrameToolbar(props) {
           />
         </label>
         <label className={labelClassName}>
-          <span>Shape</span>
+          <span>{uiText("Shape")}</span>
           <select
             value={selectedGlobalVideoTrack.shape_overlay || 'circle'}
             onChange={(event) => updateSelectedGlobalVideoShape(event.target.value)}
             className="app-field h-8 rounded-md border px-2 text-xs"
           >
-            <option value="circle">Circle</option>
-            <option value="oval">Oval</option>
-            <option value="rectangle">Rectangle</option>
-            <option value="rounded_rectangle">Rounded rectangle</option>
+            <option value="circle">{uiText("Circle")}</option>
+            <option value="oval">{uiText("Oval")}</option>
+            <option value="rectangle">{uiText("Rectangle")}</option>
+            <option value="rounded_rectangle">{uiText("Rounded rectangle")}</option>
           </select>
         </label>
         <button
@@ -5843,17 +5786,13 @@ export default function FrameToolbar(props) {
           onClick={() => onUpdateAllGlobalVideos()}
           disabled={!globalVideoDirtyCount || typeof updateGlobalVideos !== 'function'}
           className="inline-flex h-8 items-center rounded-md border border-cyan-500/50 px-3 text-xs font-semibold status-success disabled:opacity-50"
-        >
-          Save
-        </button>
+        >{uiText("Save")}</button>
         <button
           type="button"
           onClick={removeSelectedGlobalVideoTrack}
           disabled={typeof updateGlobalVideos !== 'function'}
           className="inline-flex h-8 items-center rounded-md border border-red-500/50 px-3 text-xs font-semibold status-error disabled:opacity-50"
-        >
-          Remove
-        </button>
+        >{uiText("Remove")}</button>
       </div>
     );
   };
@@ -5867,9 +5806,7 @@ export default function FrameToolbar(props) {
 
     if (visibleHintTracks.length === 0) {
       return (
-        <div className="flex items-start px-3 py-4 text-[11px] text-slate-400">
-          No hints in the visible range.
-        </div>
+        <div className="flex items-start px-3 py-4 text-caption text-slate-400">{uiText("No hints in the visible range.")}</div>
       );
     }
 
@@ -5900,12 +5837,8 @@ export default function FrameToolbar(props) {
     const fullHintInputClassName = colorMode === 'light'
       ? 'h-8 rounded-md border border-slate-300 bg-white/80 px-2 text-xs normal-case tracking-normal text-slate-700'
       : 'h-8 rounded-md border border-slate-500/40 bg-transparent px-2 text-xs normal-case tracking-normal';
-    const labelClassName = colorMode === 'light'
-      ? 'flex flex-col gap-1 text-[10px] uppercase tracking-wide text-slate-500'
-      : 'flex flex-col gap-1 text-[10px] uppercase tracking-wide text-slate-400';
-    const toolbarButtonClassName = colorMode === 'light'
-      ? 'inline-flex h-8 items-center gap-1 rounded-md border border-slate-300 bg-white/80 px-3 text-xs font-semibold text-slate-700 disabled:opacity-50'
-      : 'inline-flex h-8 items-center gap-1 rounded-md border border-slate-500/40 px-3 text-xs font-semibold text-slate-200 disabled:opacity-50';
+    const labelClassName = 'flex flex-col gap-1 text-micro uppercase tracking-wide text-fg-muted';
+    const toolbarButtonClassName = `inline-flex h-8 items-center gap-1 rounded-md border px-3 text-xs font-semibold text-fg-secondary disabled:opacity-50 ${colorMode === 'light' ? 'border-slate-300 bg-white/80' : 'border-slate-500/40'}`;
     const addHintButtonClassName = colorMode === 'light'
       ? 'inline-flex h-8 items-center gap-1 rounded-md border border-sky-200 bg-sky-50 px-3 text-xs font-semibold text-sky-700 disabled:opacity-50'
       : 'inline-flex h-8 items-center gap-1 rounded-md border border-cyan-500/50 px-3 text-xs font-semibold status-success disabled:opacity-50';
@@ -5918,13 +5851,11 @@ export default function FrameToolbar(props) {
     const addHintPanelClassName = colorMode === 'light'
       ? 'flex min-w-[260px] flex-1 items-end gap-2 rounded-md border border-slate-200 bg-white/70 px-2 py-2'
       : 'flex min-w-[260px] flex-1 items-end gap-2 rounded-md border border-slate-500/30 px-2 py-2';
-    const addHintTextareaClassName = colorMode === 'light'
-      ? 'min-h-[42px] rounded-md border border-slate-300 bg-white/80 px-2 py-1 text-xs normal-case tracking-normal text-slate-700'
-      : 'min-h-[42px] rounded-md border border-slate-500/40 bg-transparent px-2 py-1 text-xs normal-case tracking-normal text-slate-100';
-    const hintMutedTextClassName = colorMode === 'light' ? 'text-slate-500' : 'text-slate-400';
+    const addHintTextareaClassName = `min-h-[42px] rounded-md border px-2 py-1 text-xs normal-case tracking-normal text-fg-body ${colorMode === 'light' ? 'border-slate-300 bg-white/80' : 'border-slate-500/40 bg-transparent'}`;
+    const hintMutedTextClassName = 'text-fg-muted';
     const selectedLayerLabel = selectedHintLayerData && selectedHintLayerIndex >= 0
-      ? `Scene ${selectedHintLayerIndex + 1}`
-      : 'No scene selected';
+      ? uiText("Scene {value0}", { value0: selectedHintLayerIndex + 1 })
+      : uiText("No scene selected");
 
     return (
       <div className="flex flex-wrap items-end gap-2 px-2 py-2 text-xs">
@@ -5941,18 +5872,14 @@ export default function FrameToolbar(props) {
           disabled={isSavingHints}
           className={toolbarButtonClassName}
         >
-          <FaUpload aria-hidden="true" />
-          Upload hints file
-        </button>
+          <FaUpload aria-hidden="true" />{uiText("Upload hints file")}</button>
         <button
           type="button"
           onClick={importHintsFromTranscripts}
           disabled={isSavingHints}
           className={toolbarButtonClassName}
         >
-          <FaDownload aria-hidden="true" />
-          Import speech transcript hints
-        </button>
+          <FaDownload aria-hidden="true" />{uiText("Import speech transcript hints")}</button>
         <button
           type="button"
           onClick={() => {
@@ -5966,33 +5893,27 @@ export default function FrameToolbar(props) {
           className={addHintButtonClassName}
           title={selectedLayerLabel}
         >
-          <FaPlus aria-hidden="true" />
-          Add hint
-        </button>
+          <FaPlus aria-hidden="true" />{uiText("Add hint")}</button>
         <button
           type="button"
           onClick={saveTimelineHints}
           disabled={!hintsDirty || isSavingHints || typeof updateSessionHints !== 'function'}
           className={saveHintButtonClassName}
         >
-          {isSavingHints ? 'Saving' : 'Save'}
+          {isSavingHints ? uiText("Saving") : uiText("Save")}
         </button>
         <button
           type="button"
           onClick={deleteSelectedHint}
           disabled={isSavingHints || (!selectedHintTrack && !selectedHintId)}
           className={dangerHintButtonClassName}
-        >
-          Remove selected
-        </button>
+        >{uiText("Remove selected")}</button>
         <button
           type="button"
           onClick={removeAllHints}
           disabled={timelineHintsDraft.length === 0 || isSavingHints}
           className={dangerHintButtonClassName}
-        >
-          Remove all hints
-        </button>
+        >{uiText("Remove all hints")}</button>
 
         {showAddHintForm && (
           <div className={addHintPanelClassName}>
@@ -6003,7 +5924,7 @@ export default function FrameToolbar(props) {
                 value={newHintText}
                 onChange={(event) => setNewHintText(event.target.value)}
                 className={addHintTextareaClassName}
-                placeholder="Hint text"
+                placeholder={uiText("Hint text")}
               />
             </label>
             <button
@@ -6011,16 +5932,14 @@ export default function FrameToolbar(props) {
               onClick={addHintFromSelectedLayer}
               disabled={isSavingHints}
               className={addHintButtonClassName}
-            >
-              Add
-            </button>
+            >{uiText("Add")}</button>
           </div>
         )}
 
         {selectedHintTrack ? (
           <>
             <label className={`${labelClassName} min-w-[220px] flex-1`}>
-              <span>Hint</span>
+              <span>{uiText("Hint")}</span>
               <input
                 type="text"
                 value={selectedHintTrack.text || ''}
@@ -6029,7 +5948,7 @@ export default function FrameToolbar(props) {
               />
             </label>
             <label className={labelClassName}>
-              <span>Start</span>
+              <span>{uiText("Start")}</span>
               <input
                 type="number"
                 step="0.1"
@@ -6039,7 +5958,7 @@ export default function FrameToolbar(props) {
               />
             </label>
             <label className={labelClassName}>
-              <span>End</span>
+              <span>{uiText("End")}</span>
               <input
                 type="number"
                 step="0.1"
@@ -6049,7 +5968,7 @@ export default function FrameToolbar(props) {
               />
             </label>
             <label className={labelClassName}>
-              <span>Duration</span>
+              <span>{uiText("Duration")}</span>
               <input
                 type="number"
                 step="0.1"
@@ -6060,15 +5979,13 @@ export default function FrameToolbar(props) {
             </label>
           </>
         ) : (
-          <div className={`inline-flex h-8 items-center gap-2 text-[11px] ${hintMutedTextClassName}`}>
-            <FaLightbulb aria-hidden="true" />
-            Select a hint track to edit text or timing.
-          </div>
+          <div className={`inline-flex h-8 items-center gap-2 text-caption ${hintMutedTextClassName}`}>
+            <FaLightbulb aria-hidden="true" />{uiText("Select a hint track to edit text or timing.")}</div>
         )}
 
         {hintsStatusMessage ? (
-          <div className={`inline-flex h-8 items-center text-[11px] ${hintMutedTextClassName}`}>
-            {hintsStatusMessage}
+          <div className={`inline-flex h-8 items-center text-caption ${hintMutedTextClassName}`}>
+            {uiText(hintsStatusMessage)}
           </div>
         ) : null}
       </div>
@@ -6142,9 +6059,7 @@ export default function FrameToolbar(props) {
 
     if (visibleVisualTracks.length === 0) {
       return (
-        <div className="flex items-start px-3 py-4 text-[11px] text-slate-400">
-          No image or shape items in the visible range.
-        </div>
+        <div className="flex items-start px-3 py-4 text-caption text-slate-400">{uiText("No image or shape items in the visible range.")}</div>
       );
     }
 
@@ -6173,9 +6088,7 @@ export default function FrameToolbar(props) {
   const showAddedVideoTracks = () => {
     if (visibleVideoTracks.length === 0) {
       return (
-        <div className="flex items-start px-3 py-4 text-[11px] text-slate-400">
-          No video layers in the visible range.
-        </div>
+        <div className="flex items-start px-3 py-4 text-caption text-slate-400">{uiText("No video layers in the visible range.")}</div>
       );
     }
 
@@ -6274,9 +6187,7 @@ export default function FrameToolbar(props) {
 
     if (textItemLayers.length === 0) {
       return (
-        <div className="flex items-start px-3 py-4 text-[11px] text-slate-400">
-          No text items in the visible range.
-        </div>
+        <div className="flex items-start px-3 py-4 text-caption text-slate-400">{uiText("No text items in the visible range.")}</div>
       );
     }
 
@@ -6564,22 +6475,18 @@ export default function FrameToolbar(props) {
   }
 
   const collapsedToggleSurface =
-    colorMode === 'dark'
-      ? 'bg-[#20232e]/78 text-slate-100 border border-[#3a4050]/90 shadow-[0_10px_28px_rgba(0,0,0,0.35)] backdrop-blur-md'
-      : 'bg-white/80 text-slate-700 border border-slate-200 backdrop-blur-md';
+    `text-fg-body border backdrop-blur-md ${colorMode === 'dark' ? 'bg-[#20232e]/78 border-[#3a4050]/90 shadow-[0_10px_28px_rgba(0,0,0,0.35)]' : 'bg-white/80 border-slate-200'}`;
   const expandedToggleSurface =
-    colorMode === 'dark'
-      ? 'bg-[#181b24]/78 text-slate-100 border border-[#3a4050]/90 shadow-[0_12px_32px_rgba(0,0,0,0.4)] backdrop-blur-md'
-      : 'bg-white/80 text-slate-700 border border-slate-200 backdrop-blur-md';
+    `text-fg-body border backdrop-blur-md ${colorMode === 'dark' ? 'bg-[#181b24]/78 border-[#3a4050]/90 shadow-[0_12px_32px_rgba(0,0,0,0.4)]' : 'bg-white/80 border-slate-200'}`;
   let expandButtonLabel = (
     <button
       type="button"
       onClick={toggleShowExpandedTrackView}
       className={`inline-flex h-[40px] w-[24px] shrink-0 items-center justify-center rounded-lg text-xs font-semibold transition-colors duration-150 ${collapsedToggleSurface}`}
-      aria-label="Expand toolbar"
-      title="Expand toolbar"
+      aria-label={uiText("Expand toolbar")}
+      title={uiText("Expand toolbar")}
     >
-      <FaChevronRight className='text-[11px]' />
+      <FaChevronRight className='text-caption' />
     </button>
   );
 
@@ -6617,17 +6524,15 @@ export default function FrameToolbar(props) {
       <button
         type="button"
         onClick={toggleShowExpandedTrackView}
-        className={`inline-flex max-w-full shrink-0 items-center gap-1 whitespace-nowrap rounded-lg px-3 py-1.5 text-[11px] font-semibold transition-colors duration-150 ${expandedToggleSurface}`}
+        className={`inline-flex max-w-full shrink-0 items-center gap-1 whitespace-nowrap rounded-lg px-3 py-1.5 text-caption font-semibold transition-colors duration-150 ${expandedToggleSurface}`}
       >
-        <FaChevronLeft className='text-[11px]' />
-        <span>Collapse</span>
+        <FaChevronLeft className='text-caption' />
+        <span>{uiText("Collapse")}</span>
       </button>
     );
   }
 
-  const sceneCardClassName = colorMode === 'dark'
-    ? 'bg-[#0f172a]/70 border border-[#3a4050]/90 text-slate-100'
-    : 'bg-white/70 border border-slate-200/90 text-slate-700';
+  const sceneCardClassName = `border text-fg-body ${colorMode === 'dark' ? 'bg-[#0f172a]/70 border-[#3a4050]/90' : 'bg-white/70 border-slate-200/90'}`;
   const panelSectionClassName = colorMode === 'dark'
     ? 'bg-[#20232e]/58 border border-[#3a4050]/90'
     : 'bg-white/58 border border-slate-200/90';
@@ -6640,10 +6545,10 @@ export default function FrameToolbar(props) {
     } ${showUpdateLayerPortal
       ? (colorMode === 'dark' ? 'text-cyan-100' : 'text-sky-600')
       : (colorMode === 'dark' ? 'text-slate-500' : 'text-slate-400')
-    } inline-flex h-[34px] w-[26px] shrink-0 items-center justify-center rounded-lg text-[11px] ${colorMode === 'dark' ? 'shadow-sm' : ''} transition-colors duration-150`;
+    } inline-flex h-[34px] w-[26px] shrink-0 items-center justify-center rounded-lg text-caption ${colorMode === 'dark' ? 'shadow-sm' : ''} transition-colors duration-150`;
   const gridToggleClassName = colorMode === 'dark'
-    ? 'inline-flex items-center gap-2 rounded-full border border-slate-700/80 bg-slate-950/65 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-200 shadow-[0_12px_28px_rgba(2,6,23,0.34)] backdrop-blur-md transition hover:border-cyan-400/30'
-    : 'inline-flex items-center gap-2 rounded-full border border-slate-200/90 bg-white/85 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-600 backdrop-blur-md transition hover:border-sky-300/70';
+    ? 'inline-flex items-center gap-2 rounded-full border border-slate-700/80 bg-slate-950/65 px-3 py-1.5 text-micro font-semibold uppercase tracking-[0.16em] text-slate-200 shadow-[0_12px_28px_rgba(2,6,23,0.34)] backdrop-blur-md transition hover:border-cyan-400/30'
+    : 'inline-flex items-center gap-2 rounded-full border border-slate-200/90 bg-white/85 px-3 py-1.5 text-micro font-semibold uppercase tracking-[0.16em] text-slate-600 backdrop-blur-md transition hover:border-sky-300/70';
   const gridToggleInputClassName = colorMode === 'dark'
     ? 'h-4 w-4 rounded border-slate-600 bg-slate-900/90 text-cyan-400 focus:ring-2 focus:ring-cyan-400/35 focus:ring-offset-0'
     : 'h-4 w-4 rounded border-slate-300 bg-white text-sky-500 focus:ring-2 focus:ring-sky-400/35 focus:ring-offset-0';
@@ -6652,7 +6557,7 @@ export default function FrameToolbar(props) {
       addLayerToComposition={addLayerToComposition}
       copyCurrentLayerBelow={copyCurrentLayerBelow}
       showBatchLayerDialog={showBatchLayerDialog}
-      buttonLabel="Layer"
+      buttonLabel={uiText("Layer")}
       compact={true}
       iconOnly={!isExpandedToolbarView}
       menuAlign={isExpandedToolbarView ? 'right' : 'left'}
@@ -6673,9 +6578,9 @@ export default function FrameToolbar(props) {
         type="button"
         className={sceneQuickEditorToggleClassName}
         onClick={toggleViewSceneUpdate}
-        aria-label={showUpdateLayerPortal ? 'Hide scene quick editor' : 'Show scene quick editor'}
+        aria-label={showUpdateLayerPortal ? uiText("Hide scene quick editor") : uiText("Show scene quick editor")}
         aria-pressed={showUpdateLayerPortal}
-        title={showUpdateLayerPortal ? 'Hide scene quick editor' : 'Show scene quick editor'}
+        title={showUpdateLayerPortal ? uiText("Hide scene quick editor") : uiText("Show scene quick editor")}
       >
         <FaEye />
       </button>
@@ -6694,11 +6599,11 @@ export default function FrameToolbar(props) {
     showGridsView = (
       <button
         type="button"
-        className={`${gridToggleClassName} h-7 w-7 justify-center rounded-lg !px-0 !py-0 text-[11px]`}
+        className={`${gridToggleClassName} h-7 w-7 justify-center rounded-lg !px-0 !py-0 text-caption`}
         onClick={() => setIsGridVisible(!isGridVisible)}
-        aria-label={isGridVisible ? 'Hide timeline grid' : 'Show timeline grid'}
+        aria-label={isGridVisible ? uiText("Hide timeline grid") : uiText("Show timeline grid")}
         aria-pressed={isGridVisible}
-        title={isGridVisible ? 'Hide timeline grid' : 'Show timeline grid'}
+        title={isGridVisible ? uiText("Hide timeline grid") : uiText("Show timeline grid")}
       >
         <FaThLarge />
       </button>
@@ -6775,8 +6680,7 @@ export default function FrameToolbar(props) {
           download={`Rendition_${dateNowStr}.mp4`}
           className='text-xs underline'
         >
-          <FaDownload className='inline-flex' /> Previous
-        </a>
+          <FaDownload className='inline-flex' />{uiText("Previous")}</a>
       </SecondaryButton>
     );
   }
@@ -6826,7 +6730,7 @@ export default function FrameToolbar(props) {
 
   const additionalOptionsDropdownItems = [
     {
-      label: showVerticalWaveform ? 'Hide Layer Waveforms' : 'Show Layer Waveforms',
+      label: showVerticalWaveform ? uiText("Hide Layer Waveforms") : uiText("Show Layer Waveforms"),
       onClick: () => setShowVerticalWaveform(!showVerticalWaveform),
     },
   ];
@@ -6836,14 +6740,13 @@ export default function FrameToolbar(props) {
       <SecondaryButton onClick={submitRegenerateFrames} extraClasses='!m-0 !px-2 !py-1 text-xs'>
         <div>
           {' '}
-          <FaRedo className='inline-flex' /> frames
-        </div>
+          <FaRedo className='inline-flex' />{uiText("frames")}</div>
       </SecondaryButton>
 
       {prevDownloadLink}
 
       <CommonDropdownButton
-        mainLabel="Additional Options"
+        mainLabel={uiText("Additional Options")}
         onMainClick={showAdditionOptionsDialog}
         isPending={false}
         isDisabled={false}
@@ -6855,28 +6758,14 @@ export default function FrameToolbar(props) {
     </div>
   );
 
-  const settingsStatLabelClassName = colorMode === 'dark'
-    ? 'text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400'
-    : 'text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500';
-  const settingsStatValueClassName = colorMode === 'dark'
-    ? 'mt-1 text-sm font-semibold text-slate-100'
-    : 'mt-1 text-sm font-semibold text-slate-900';
-  const settingsHintClassName = colorMode === 'dark'
-    ? 'text-[11px] text-slate-400'
-    : 'text-[11px] text-slate-500';
-  const settingsToggleRowClassName = colorMode === 'dark'
-    ? 'flex items-center justify-between gap-3 rounded-xl border border-[#24324a] bg-[#0f172a]/70 px-3 py-2 text-sm text-slate-100'
-    : 'flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white/85 px-3 py-2 text-sm text-slate-700';
-  const settingsPillBaseClassName = 'inline-flex items-center rounded-full px-3 py-1 text-[11px] font-semibold transition';
-  const settingsPillActiveClassName = colorMode === 'dark'
-    ? 'bg-cyan-400 text-[#080a10]'
-    : 'bg-sky-500 text-white';
-  const settingsPillIdleClassName = colorMode === 'dark'
-    ? 'bg-[#20232e] text-slate-300 hover:bg-[#292d3a]'
-    : 'bg-slate-100 text-slate-600 hover:bg-slate-200';
-  const settingsActionButtonClasses = colorMode === 'dark'
-    ? 'inline-flex items-center justify-center rounded-xl border border-[#2a3953] bg-[#20232e]/82 px-3 py-2 text-xs font-semibold text-slate-100 transition hover:bg-[#17223a]'
-    : 'inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white/90 px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-100';
+  const settingsStatLabelClassName = 'text-micro font-semibold uppercase tracking-[0.18em] text-fg-muted';
+  const settingsStatValueClassName = 'mt-1 text-sm font-semibold text-fg';
+  const settingsHintClassName = 'text-caption text-fg-muted';
+  const settingsToggleRowClassName = `flex items-center justify-between gap-3 rounded-xl border px-3 py-2 text-sm text-fg-body ${colorMode === 'dark' ? 'border-[#24324a] bg-[#0f172a]/70' : 'border-slate-200 bg-white/85'}`;
+  const settingsPillBaseClassName = 'inline-flex items-center rounded-full px-3 py-1 text-caption font-semibold transition';
+  const settingsPillActiveClassName = `text-on-accent ${colorMode === 'dark' ? 'bg-cyan-400' : 'bg-sky-500'}`;
+  const settingsPillIdleClassName = `text-fg-tertiary ${colorMode === 'dark' ? 'bg-[#20232e] hover:bg-[#292d3a]' : 'bg-slate-100 hover:bg-slate-200'}`;
+  const settingsActionButtonClasses = `inline-flex items-center justify-center rounded-xl border px-3 py-2 text-xs font-semibold text-fg-body transition ${colorMode === 'dark' ? 'border-[#2a3953] bg-[#20232e]/82 hover:bg-[#17223a]' : 'border-slate-200 bg-white/90 hover:bg-slate-100'}`;
   const settingsCancelRenderButtonClasses = colorMode === 'dark'
     ? 'inline-flex items-center justify-center gap-2 rounded-xl border border-rose-400/45 bg-rose-500/12 px-3 py-2 text-xs font-semibold text-rose-100 transition hover:bg-rose-500/20'
     : 'inline-flex items-center justify-center gap-2 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700 transition hover:bg-rose-100';
@@ -6885,8 +6774,8 @@ export default function FrameToolbar(props) {
     ? 'border border-[#24324a] bg-[#08111d]/95 text-slate-100 shadow-[0_18px_45px_rgba(0,0,0,0.45)]'
     : 'border border-slate-200 bg-white/98 text-slate-800';
   const selectedSceneLabel = selectedLayerIndex >= 0
-    ? `Scene ${selectedLayerIndex + 1}`
-    : 'No scene selected';
+    ? uiText("Scene {value0}", { value0: selectedLayerIndex + 1 })
+    : uiText("No scene selected");
   const activeSceneTransitionPreset = SCENE_TRANSITION_PRESET_OPTIONS.some(
     (option) => option.value === sceneTransitionPreset
   )
@@ -6894,32 +6783,32 @@ export default function FrameToolbar(props) {
     : 'none';
   const settingsViewRangeLabel = hasUsableFrameRange
     ? `${displayFramesToSeconds(safeViewRange[0]).toFixed(1)}s - ${displayFramesToSeconds(safeViewRange[1]).toFixed(1)}s`
-    : 'Unavailable';
+    : uiText("Unavailable");
   const sessionSyncStatus = isRenderPending
-    ? 'Rendering'
+    ? uiText('Rendering')
     : isUpdateLayerPending
-      ? 'Updating'
+      ? uiText('Updating')
       : hasPendingSceneChanges
-        ? 'Pending changes'
-        : 'Ready';
+        ? uiText('Pending changes')
+        : uiText('Ready');
   const settingsTrackViewDisplay = (
     <div className='text-track-container overflow-x-hidden'>
       <div className='workspace-scroll flex h-full min-h-0 w-full min-w-0 flex-col gap-3 overflow-y-auto px-3 py-3'>
         <div className='grid min-w-0 grid-cols-2 gap-3 xl:grid-cols-4'>
           <div className={settingsSummaryCardClassName}>
-            <div className={settingsStatLabelClassName}>Scene</div>
+            <div className={settingsStatLabelClassName}>{uiText("Scene")}</div>
             <div className={settingsStatValueClassName}>{selectedSceneLabel}</div>
           </div>
           <div className={settingsSummaryCardClassName}>
-            <div className={settingsStatLabelClassName}>Scenes Total</div>
+            <div className={settingsStatLabelClassName}>{uiText("Scenes Total")}</div>
             <div className={settingsStatValueClassName}>{layers.length}</div>
           </div>
           <div className={settingsSummaryCardClassName}>
-            <div className={settingsStatLabelClassName}>Timeline</div>
+            <div className={settingsStatLabelClassName}>{uiText("Timeline")}</div>
             <div className={settingsStatValueClassName}>{totalDuration.toFixed(1)}s</div>
           </div>
           <div className={settingsSummaryCardClassName}>
-            <div className={settingsStatLabelClassName}>Status</div>
+            <div className={settingsStatLabelClassName}>{uiText("Status")}</div>
             <div className={settingsStatValueClassName}>{sessionSyncStatus}</div>
             {canCancelPendingRender ? (
               <button
@@ -6927,9 +6816,7 @@ export default function FrameToolbar(props) {
                 className={`mt-2 w-full ${settingsCancelRenderButtonClasses}`}
                 onClick={cancelPendingRender}
               >
-                <FaTimes className='text-[11px]' />
-                Cancel render
-              </button>
+                <FaTimes className='text-caption' />{uiText("Cancel render")}</button>
             ) : null}
           </div>
         </div>
@@ -6938,19 +6825,17 @@ export default function FrameToolbar(props) {
           <div className={`${settingsSummaryCardClassName} min-w-0`}>
             <div className='flex flex-wrap items-start justify-between gap-2'>
               <div>
-                <div className={settingsStatLabelClassName}>Workspace</div>
-                <div className={settingsStatValueClassName}>Editor Options</div>
+                <div className={settingsStatLabelClassName}>{uiText("Workspace")}</div>
+                <div className={settingsStatValueClassName}>{uiText("Editor Options")}</div>
               </div>
-              <div className={settingsHintClassName}>
-                View range {settingsViewRangeLabel}
-              </div>
+              <div className={settingsHintClassName}>{uiText("View range {value0}", { value0: settingsViewRangeLabel })}</div>
             </div>
 
             <div className='mt-3 grid min-w-0 gap-2'>
               <div className={settingsToggleRowClassName}>
                 <div>
-                  <div>Scene transitions</div>
-                  <div className={settingsHintClassName}>Centered across each scene cut during render.</div>
+                  <div>{uiText("Scene transitions")}</div>
+                  <div className={settingsHintClassName}>{uiText("Centered across each scene cut during render.")}</div>
                 </div>
                 <div className='flex flex-wrap items-center justify-end gap-2'>
                   {SCENE_TRANSITION_PRESET_OPTIONS.map((option) => (
@@ -6968,8 +6853,8 @@ export default function FrameToolbar(props) {
 
               <label className={settingsToggleRowClassName}>
                 <div>
-                  <div>Timeline grid</div>
-                  <div className={settingsHintClassName}>Add timing guides behind the layer lanes.</div>
+                  <div>{uiText("Timeline grid")}</div>
+                  <div className={settingsHintClassName}>{uiText("Add timing guides behind the layer lanes.")}</div>
                 </div>
                 <input
                   type="checkbox"
@@ -6981,8 +6866,8 @@ export default function FrameToolbar(props) {
 
               <label className={settingsToggleRowClassName}>
                 <div>
-                  <div>Scene quick editor</div>
-                  <div className={settingsHintClassName}>Open inline scene controls beside the selected scene.</div>
+                  <div>{uiText("Scene quick editor")}</div>
+                  <div className={settingsHintClassName}>{uiText("Open inline scene controls beside the selected scene.")}</div>
                 </div>
                 <input
                   type="checkbox"
@@ -6994,8 +6879,8 @@ export default function FrameToolbar(props) {
 
               <label className={settingsToggleRowClassName}>
                 <div>
-                  <div>Show layer waveforms</div>
-                  <div className={settingsHintClassName}>Display a waveform or spectral strip beside each enabled audio layer.</div>
+                  <div>{uiText("Show layer waveforms")}</div>
+                  <div className={settingsHintClassName}>{uiText("Display a waveform or spectral strip beside each enabled audio layer.")}</div>
                 </div>
                 <input
                   type="checkbox"
@@ -7013,8 +6898,8 @@ export default function FrameToolbar(props) {
 
               <label className={settingsToggleRowClassName}>
                 <div>
-                  <div>Enable audio ducking</div>
-                  <div className={settingsHintClassName}>Lower music and background layers under speech or narration.</div>
+                  <div>{uiText("Enable audio ducking")}</div>
+                  <div className={settingsHintClassName}>{uiText("Lower music and background layers under speech or narration.")}</div>
                 </div>
                 <input
                   type="checkbox"
@@ -7026,8 +6911,8 @@ export default function FrameToolbar(props) {
 
               <label className={settingsToggleRowClassName}>
                 <div>
-                  <div>Regenerate frames before render</div>
-                  <div className={settingsHintClassName}>Refresh every layer's frames before queueing the next video render.</div>
+                  <div>{uiText("Regenerate frames before render")}</div>
+                  <div className={settingsHintClassName}>{uiText("Refresh every layer's frames before queueing the next video render.")}</div>
                 </div>
                 <input
                   type="checkbox"
@@ -7040,79 +6925,68 @@ export default function FrameToolbar(props) {
 
             {showVerticalWaveform ? (
               <div className='mt-3 flex flex-wrap items-center gap-2'>
-                <span className={settingsHintClassName}>Waveform style</span>
+                <span className={settingsHintClassName}>{uiText("Waveform style")}</span>
                 <button
                   type="button"
                   className={`${settingsPillBaseClassName} ${selectedAudioVisualizationMode === 'waveform' ? settingsPillActiveClassName : settingsPillIdleClassName}`}
                   onClick={() => setSelectedAudioVisualizationMode('waveform')}
-                >
-                  Waveform
-                </button>
+                >{uiText("Waveform")}</button>
                 <button
                   type="button"
                   className={`${settingsPillBaseClassName} ${selectedAudioVisualizationMode === 'spectrogram' ? settingsPillActiveClassName : settingsPillIdleClassName}`}
                   onClick={() => setSelectedAudioVisualizationMode('spectrogram')}
-                >
-                  Spectrogram
-                </button>
+                >{uiText("Spectrogram")}</button>
               </div>
             ) : null}
 
             {showVerticalWaveform && !selectedAudioTrack ? (
-              <div className='mt-3 rounded-xl border border-dashed border-slate-400/30 px-3 py-2 text-[11px] text-slate-400'>
-                Waveform lanes appear beside each enabled audio layer in the Audio tab.
-              </div>
+              <div className='mt-3 rounded-xl border border-dashed border-slate-400/30 px-3 py-2 text-caption text-slate-400'>{uiText("Waveform lanes appear beside each enabled audio layer in the Audio tab.")}</div>
             ) : null}
           </div>
 
           <div className={`${settingsSummaryCardClassName} min-w-0`}>
-            <div className={settingsStatLabelClassName}>Legacy Actions</div>
-            <div className={settingsStatValueClassName}>Session Harnesses</div>
+            <div className={settingsStatLabelClassName}>{uiText("Legacy Actions")}</div>
+            <div className={settingsStatValueClassName}>{uiText("Session Harnesses")}</div>
 
             <div className='mt-3 flex flex-wrap gap-2'>
               <SecondaryButton onClick={submitRegenerateFrames} extraClasses='!m-0 !px-3 !py-2 text-xs'>
                 <div>
-                  <FaRedo className='inline-flex' /> Regenerate Frames
-                </div>
+                  <FaRedo className='inline-flex' />{uiText("Regenerate Frames")}</div>
               </SecondaryButton>
 
               <button
                 type="button"
                 className={settingsActionButtonClasses}
                 onClick={showAdditionOptionsDialog}
-              >
-                Audio Options
-              </button>
+              >{uiText("Audio Options")}</button>
 
               {canUseDownloadLink ? (
                 <button
                   type="button"
                   className={settingsActionButtonClasses}
                   onClick={submitDownloadVideo}
-                >
-                  Download Render
-                </button>
+                >{uiText("Download Render")}</button>
               ) : null}
             </div>
 
             <div className='mt-4 grid gap-2'>
               <div className={settingsToggleRowClassName}>
-                <span>Default scene duration</span>
+                <span>{uiText("Default scene duration")}</span>
                 <span className='font-semibold'>{defaultSceneDuration || 0}s</span>
               </div>
               <div className={settingsToggleRowClassName}>
-                <span>Scene transition</span>
+                <span>{uiText("Scene transition")}</span>
                 <span className='font-semibold'>
-                  {SCENE_TRANSITION_PRESET_OPTIONS.find((option) => option.value === activeSceneTransitionPreset)?.label || 'None'}
+                  {SCENE_TRANSITION_PRESET_OPTIONS.find((option) => option.value === activeSceneTransitionPreset)?.label || uiText("None")}
                 </span>
               </div>
               <div className={settingsToggleRowClassName}>
-                <span>Timeline FPS</span>
+                <span>{uiText("Timeline FPS")}</span>
                 <span className='font-semibold'>{framesPerSecond}</span>
               </div>
               <div className={settingsToggleRowClassName}>
-                <span>Current render</span>
-                <span className='font-semibold'>{hasExistingRender ? 'Available' : 'Not rendered yet'}</span>
+                <span>{uiText("Current render")}</span>
+                <span className='font-semibold'>{hasExistingRender ? uiText("Available") : uiText("Not rendered yet")}</span>
               </div>
             </div>
           </div>
@@ -7129,12 +7003,12 @@ export default function FrameToolbar(props) {
     if (currentLayerActionSuperView === 'SETTINGS') {
       expandedTopRowActionDisplay = (
         <div className='flex max-w-full flex-wrap items-center justify-end gap-1.5'>
-          <div className={`inline-flex items-center gap-1 rounded-xl px-2 py-1.5 text-[11px] font-bold ${sceneCardClassName}`}>
-            <span>Scenes</span>
+          <div className={`inline-flex items-center gap-1 rounded-xl px-2 py-1.5 text-caption font-bold ${sceneCardClassName}`}>
+            <span>{uiText("Scenes")}</span>
             <button
               type="button"
               className={sceneButtonClassName}
-              aria-label="Previous scene"
+              aria-label={uiText("Previous scene")}
               onClick={canGoPrev ? handlePrevClick : undefined}
               disabled={!canGoPrev}
             >
@@ -7143,7 +7017,7 @@ export default function FrameToolbar(props) {
             <button
               type="button"
               className={sceneButtonClassName}
-              aria-label="Next scene"
+              aria-label={uiText("Next scene")}
               onClick={canGoNext ? handleNextClick : undefined}
               disabled={!canGoNext}
             >
@@ -7222,7 +7096,7 @@ export default function FrameToolbar(props) {
   if (isExpandedToolbarView) {
     // Define the base class name for the tab buttons
     const baseTabClassName =
-      'inline-flex items-center justify-center rounded-lg px-2 py-1 text-[10px] font-semibold cursor-pointer expanded-menu-item transition-colors duration-150';
+      'inline-flex items-center justify-center rounded-lg px-2 py-1 text-micro font-semibold cursor-pointer expanded-menu-item transition-colors duration-150';
     const inactiveTabClassName = colorMode === 'light'
       ? 'bg-slate-100 text-slate-600 border border-slate-200 hover:bg-slate-200'
       : 'bg-gray-700/80 text-gray-300';
@@ -7287,26 +7161,26 @@ export default function FrameToolbar(props) {
       <div className="flex flex-wrap items-center justify-start gap-1.5">
         {/* Audio Tab */}
         <div {...getLayerActionTabProps('AUDIO', audioTabClassName)}>
-          <div>Audio</div>
+          <div>{uiText("Audio")}</div>
         </div>
         <div {...getLayerActionTabProps('VIDEO', videoTabClassName)}>
-          <div>Video</div>
+          <div>{uiText("Video")}</div>
         </div>
         <div {...getLayerActionTabProps('GLOBAL_VIDEO', globalVideoTabClassName)}>
-          <div>Global videos</div>
+          <div>{uiText("Global videos")}</div>
         </div>
         <div {...getLayerActionTabProps('IMAGE', imageTabClassName)}>
-          <div>Image</div>
+          <div>{uiText("Image")}</div>
         </div>
         {/* Text Tab */}
         <div {...getLayerActionTabProps('TEXT', textTabClassName)}>
-          <div>Text</div>
+          <div>{uiText("Text")}</div>
         </div>
         <div {...getLayerActionTabProps('HINTS', hintsTabClassName)}>
-          <div>Hints</div>
+          <div>{uiText("Hints")}</div>
         </div>
         <div {...getLayerActionTabProps('SETTINGS', settingsTabClassName)}>
-          <div>Settings</div>
+          <div>{uiText("Settings")}</div>
         </div>
       </div>
     );
@@ -7402,7 +7276,7 @@ export default function FrameToolbar(props) {
                       type="button"
                       className='action-view-grid-snap-button pointer-events-auto'
                       onClick={() => seekToGridSnapPoint(snapPoint.frame)}
-                      title={`Jump to ${formatGridSnapPointLabel(snapPoint.frame)}`}
+                      title={uiText("Jump to {value0}", { value0: formatGridSnapPointLabel(snapPoint.frame) })}
                     >
                       <span className='action-view-grid-snap-dot' />
                       <span>{formatGridSnapPointLabel(snapPoint.frame)}</span>
@@ -7414,8 +7288,8 @@ export default function FrameToolbar(props) {
                         event.stopPropagation();
                         removeGridSnapPoint(snapPoint.id);
                       }}
-                      aria-label={`Remove saved point ${formatGridSnapPointLabel(snapPoint.frame)}`}
-                      title='Remove saved point'
+                      aria-label={uiText("Remove saved point {value0}", { value0: formatGridSnapPointLabel(snapPoint.frame) })}
+                      title={uiText("Remove saved point")}
                     >
                       <FaTimes className='text-[8px]' />
                     </button>
@@ -7543,9 +7417,7 @@ export default function FrameToolbar(props) {
                     onClick={onUpdateDuration}
                   className={`px-4 py-2 mt-1 text-xs rounded m-auto ${colorMode === 'light' ? 'bg-sky-600 text-white border border-sky-600 hover:bg-sky-500' : 'bg-[#20232e] text-slate-100 border border-[#3a4050]'} ${durationChanged ? 'highlight' : ''
                       }`}
-                  >
-                    Update
-                  </button>
+                  >{uiText("Update")}</button>
                 </div>
               )}
               <div className='mt-auto absolute bottom-1 left-0 right-0'>
@@ -7553,13 +7425,11 @@ export default function FrameToolbar(props) {
                   type="button"
                   onClick={() => removeLayer(openPopupLayerIndex)}
                   disabled={!canRemoveScene || isRenderPending}
-                  title={canRemoveScene ? 'Remove scene' : 'A project must keep at least one scene'}
+                  title={canRemoveScene ? uiText("Remove scene") : uiText("A project must keep at least one scene")}
                   className={`px-3 py-1 text-xs rounded w-[80px] disabled:cursor-not-allowed disabled:opacity-50 ${colorMode === 'light' ? 'bg-rose-600 text-white hover:bg-rose-500' : 'bg-red-900 text-neutral-100 hover:bg-red-800'}`}
                 >
                   <div className='flex m-auto'>
-                    <div className='inline-flex'>
-                      Remove
-                    </div>
+                    <div className='inline-flex'>{uiText("Remove")}</div>
 
                     <FaTimes className='inline-flex mt-1' />
                   </div>
@@ -7585,7 +7455,7 @@ export default function FrameToolbar(props) {
           >
             <div className='flex items-start justify-between gap-3'>
               <div className='min-w-0 flex-1'>
-                <div className={settingsStatLabelClassName}>Prompt</div>
+                <div className={settingsStatLabelClassName}>{uiText("Prompt")}</div>
                 <div className='mt-1 truncate text-sm font-semibold' title={selectedAudioTrackDisplayTitle}>
                   {selectedAudioTrackDisplayTitle}
                 </div>
@@ -7595,12 +7465,12 @@ export default function FrameToolbar(props) {
                 onClick={copyPromptToClipboard}
                 className={settingsActionButtonClasses}
               >
-                <FaCopy className='mr-1 text-[11px]' />
+                <FaCopy className='mr-1 text-caption' />
                 {promptCopyState === 'copied'
-                  ? 'Copied'
+                  ? uiText("Copied")
                   : promptCopyState === 'failed'
-                    ? 'Retry'
-                    : 'Copy prompt'}
+                    ? uiText("Retry")
+                    : uiText("Copy prompt")}
               </button>
             </div>
             <div className='mt-3 max-h-[260px] overflow-y-auto whitespace-pre-wrap break-words text-sm leading-6'>

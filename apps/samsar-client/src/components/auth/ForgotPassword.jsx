@@ -1,3 +1,6 @@
+import { useUiLanguage } from '../../hooks/useUiLanguage.js';
+import { translateText as uiText } from '../../utils/localization.js';
+import LanguageSelect from '../common/LanguageSelect.jsx';
 import { useRef, useState } from 'react';
 import { useColorMode } from '../../contexts/ColorMode.jsx';
 import axios from 'axios';
@@ -5,6 +8,7 @@ import axios from 'axios';
 const PROCESSOR_SERVER = import.meta.env.VITE_PROCESSOR_API;
 
 export default function ForgotPassword(props) {
+  const uiLanguage = useUiLanguage();
   const { setCurrentLoginView } = props;
   const { colorMode } = useColorMode();
   const [error, setError] = useState(null);
@@ -20,7 +24,7 @@ export default function ForgotPassword(props) {
     if (submittingRef.current) return;
     const email = e.currentTarget.elements.namedItem('email').value.trim().toLowerCase();
     if (!email) {
-      setError('Email is required.');
+      setError("Email is required.");
       setSuccess(null);
       return;
     }
@@ -30,10 +34,10 @@ export default function ForgotPassword(props) {
     setError(null);
     setSuccess(null);
     try {
-      await axios.post(`${PROCESSOR_SERVER}/users/forgot_password`, { email });
-      setSuccess('Check your email for password reset instructions.');
+      await axios.post(`${PROCESSOR_SERVER}/users/forgot_password`, { email, language: uiLanguage });
+      setSuccess("Check your email for password reset instructions.");
     } catch {
-      setError('Failed to send reset email. Please try again.');
+      setError("Failed to send reset email. Please try again.");
     } finally {
       submittingRef.current = false;
       setIsSubmitting(false);
@@ -42,15 +46,14 @@ export default function ForgotPassword(props) {
 
   return (
     <div className="w-[300px] m-auto mt-8">
-      <div className="text-center font-bold text-2xl mb-4">Forgot Password</div>
-      {error && <div className="text-red-500 text-center mb-4">{error}</div>}
-      {success && <div className="text-blue-500 text-center mb-4">{success}</div>}
-      <p className="text-neutral-500 text-center mb-6">
-        Enter your email address below to reset your password.
-      </p>
+      <LanguageSelect className="mb-4" />
+      <div className="text-center font-bold text-2xl mb-4">{uiText("Forgot Password")}</div>
+      {error && <div className="text-red-500 text-center mb-4">{uiText(error)}</div>}
+      {success && <div className="text-blue-500 text-center mb-4">{uiText(success)}</div>}
+      <p className="text-neutral-500 text-center mb-6">{uiText("Enter your email address below to reset your password.")}</p>
       <form onSubmit={handleForgotPassword} className="w-full">
         <div className="form-group">
-          <label htmlFor="forgot-password-email" className="text-xs text-left font-bold pl-1">Email</label>
+          <label htmlFor="forgot-password-email" className="text-xs text-left font-bold pl-1">{uiText("Email")}</label>
           <input
             id="forgot-password-email"
             type="email"
@@ -58,7 +61,7 @@ export default function ForgotPassword(props) {
             autoComplete="email"
             required
             className={`form-control mb-4 mt-2 rounded-lg p-1 pl-4 h-[45px] w-full ${formBgColor} ${formTextColor}`}
-            placeholder="Email"
+            placeholder={uiText("Email")}
           />
         </div>
         <button
@@ -66,14 +69,10 @@ export default function ForgotPassword(props) {
           disabled={isSubmitting}
           aria-busy={isSubmitting || undefined}
           className="w-full bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 rounded-lg"
-        >
-          Reset Password
-        </button>
+        >{uiText("Reset Password")}</button>
       </form>
       <div className="mt-4 text-center text-xs text-neutral-500">
-        <a href="#" onClick={(event) => { event.preventDefault(); setCurrentLoginView('login'); }}>
-          Back to Login
-        </a>
+        <a href="#" onClick={(event) => { event.preventDefault(); setCurrentLoginView('login'); }}>{uiText("Back to Login")}</a>
       </div>
     </div>
   );

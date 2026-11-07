@@ -28,6 +28,37 @@ beforeEach(() => {
 });
 async function mount() { render(<NavCanvasControlProvider><VideoHome /></NavCanvasControlProvider>); await waitFor(() => expect(boundary.frame).toBeTruthy()); }
 
+it.each([
+  ['16:9', 800, 600, 800 / 1792],
+  ['9:16', 800, 600, 600 / 1792],
+  ['1:1', 800, 600, 600 / 1024],
+])('fits a %s session to the measured workspace', async (aspectRatio, width, height, scale) => {
+  axios.get.mockResolvedValue({ data: { ...initial(), aspectRatio } });
+  await mount();
+  await act(async () => { boundary.editor.onCanvasViewportChange({ width, height }); });
+  expect(boundary.editor.displayZoomType).toBe('fit');
+  expect(boundary.editor.stageZoomScale).toBeCloseTo(scale);
+  expect(boundary.editor.canvasZoomPercent).toBe(100);
+});
+
+it('updates Fit on resize, preserves manual zoom, and resets against the latest workspace', async () => {
+  await mount();
+  await act(async () => { boundary.editor.onCanvasViewportChange({ width: 896, height: 600 }); });
+  expect(boundary.editor.stageZoomScale).toBe(0.5);
+  await act(async () => { boundary.editor.onCanvasViewportChange({ width: 448, height: 400 }); });
+  expect(boundary.editor.stageZoomScale).toBe(0.25);
+  await act(async () => { boundary.editor.zoomCanvasIn(); });
+  expect(boundary.editor.displayZoomType).toBe('manual');
+  expect(boundary.editor.stageZoomScale).toBe(0.3125);
+  expect(boundary.editor.canvasZoomPercent).toBe(125);
+  await act(async () => { boundary.editor.onCanvasViewportChange({ width: 896, height: 600 }); });
+  expect(boundary.editor.stageZoomScale).toBe(0.3125);
+  await act(async () => { boundary.editor.resetCanvasZoom(); });
+  expect(boundary.editor.displayZoomType).toBe('fit');
+  expect(boundary.editor.stageZoomScale).toBe(0.5);
+  expect(boundary.editor.canvasZoomPercent).toBe(100);
+});
+
 it('F2P: reorder adopts the processor audio placements and complete session snapshot', async () => {
   const updated = { ...initial(), layers: [layer('two'), layer('one', 2)], audioLayers: [
     { _id: 'speech', generationType: 'speech', isEnabled: true, startTime: 2, duration: 2, url: '/speech.wav' },

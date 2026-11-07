@@ -134,6 +134,12 @@ services/generator/image_*.png
 **/*.gz
 **/*.rar
 
+# Self-hosted UI fonts required by the distributed client.
+!apps/samsar-client/src/fonts/inter-latin-opsz-normal.woff2
+!apps/samsar-client/src/fonts/inter-latin-ext-opsz-normal.woff2
+!apps/samsar-client/src/fonts/inter-latin-opsz-italic.woff2
+!apps/samsar-client/src/fonts/jetbrains-mono-latin-wght-normal.woff2
+
 # Browser icon required by the Docker-distributed client.
 !apps/samsar-client/public/
 apps/samsar-client/public/*
@@ -151,6 +157,7 @@ apps/samsar-client/public/*
 # local tool output
 .turbo/
 .nx/
+**/.ui-refresh/
 
 # Local package-manager and session recovery artifacts
 /package-lock.json

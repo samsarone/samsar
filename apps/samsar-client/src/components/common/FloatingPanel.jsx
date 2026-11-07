@@ -1,8 +1,10 @@
+import { useUiLanguage } from '../../hooks/useUiLanguage.js';
 import { useLayoutEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 
 // Keep anchored controls reachable inside the editor's nested scroll containers.
 export default function FloatingPanel({ anchorRef, panelRef, align = 'right', fitToAnchor = false, children, className = '' }) {
+  useUiLanguage();
   const [position, setPosition] = useState(null);
 
   useLayoutEffect(() => {

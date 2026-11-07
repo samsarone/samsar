@@ -1,3 +1,5 @@
+import { useUiLanguage } from '../../../hooks/useUiLanguage.js';
+import { translateText as uiText } from '../../../utils/localization.js';
 
 import { FaTimes, FaEye } from 'react-icons/fa';
 import { useColorMode } from '../../../contexts/ColorMode';
@@ -6,6 +8,7 @@ import { DragDropContext, Droppable, Draggable } from "react-beautiful-dnd";
 const grid = 8;
 
 const LayersDisplay = (props) => {
+  useUiLanguage();
   const { 
     activeItemList, 
     setActiveItemList,
@@ -112,7 +115,7 @@ const LayersDisplay = (props) => {
                         whiteSpace: 'nowrap'
                       }}
                     >
-                      {`item ${item.id} - ${item.type}`}
+                      {uiText("item {value0} - {value1}", { value0: item.id, value1: item.type })}
                     </div>
                     <button
                       type="button"
@@ -120,8 +123,8 @@ const LayersDisplay = (props) => {
                         e.stopPropagation();
                         hideItemInLayer(item.id);
                       }}
-                      aria-label="Toggle layer visibility"
-                      title="Toggle layer visibility"
+                      aria-label={uiText("Toggle layer visibility")}
+                      title={uiText("Toggle layer visibility")}
                       style={{
                         color: textColor,
                         flex: '0 0 24px',
@@ -140,8 +143,8 @@ const LayersDisplay = (props) => {
                         e.stopPropagation();
                         deleteItem(item.id);
                       }}
-                      aria-label="Delete layer"
-                      title="Delete layer"
+                      aria-label={uiText("Delete layer")}
+                      title={uiText("Delete layer")}
                       style={{
                         color: textColor,
                         flex: '0 0 24px',

@@ -452,7 +452,7 @@ export async function appendSceneActionsCommandResponse(sessionData, userMessage
   sessionData.sessionMessageGenerationPending = false;
   sessionData.sessionMessageGenerationError = null;
 
-  await sessionData.save();
+  await saveAssistantSceneActionSession(sessionData);
 
   return {
     status: 'COMPLETED',
@@ -543,7 +543,7 @@ export async function applySceneActionToSessionLayer(userId, payload = {}) {
 
   await FrameGeneration.deleteMany({ sessionId, layerId, rowLocked: false });
   await ensureUnlockedFrameGeneration(sessionId, layerId);
-  const updatedSession = await sessionData.save();
+  const updatedSession = await saveAssistantSceneActionSession(sessionData);
   const sessionPayload = stripHeavySessionFields(updatedSession);
   const updatedLayer = sessionPayload.layers.find(
     (sessionLayer) => sessionLayer?._id?.toString?.() === layerId.toString()
@@ -557,4 +557,23 @@ export async function applySceneActionToSessionLayer(userId, payload = {}) {
       label: action.label,
     },
   };
+}
+
+
+// Scene commands also write assistant history, without going through the worker.
+// Apply the version to Mongoose's atomic save predicate so a concurrent clear
+// cannot be undone by a document read before that clear.
+async function saveAssistantSceneActionSession(sessionData) {
+  const version = sessionData.assistantSessionVersion || 0;
+  sessionData.$where = { ...sessionData.$where, ...(version === 0
+    ? { $or: [{ assistantSessionVersion: 0 }, { assistantSessionVersion: { $exists: false } }] }
+    : { assistantSessionVersion: version }) };
+  try {
+    return await sessionData.save();
+  } catch (error) {
+    if (['VersionError', 'DocumentNotFoundError'].includes(error.name)) {
+      throw Object.assign(new Error('Assistant session changed. Please try again.'), { status: 409 });
+    }
+    throw error;
+  }
 }

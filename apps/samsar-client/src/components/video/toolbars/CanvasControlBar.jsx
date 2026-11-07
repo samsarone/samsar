@@ -1,3 +1,5 @@
+import { useUiLanguage } from '../../../hooks/useUiLanguage.js';
+import { translateText as uiText } from '../../../utils/localization.js';
 
 import RenderActionButton from "./RenderActionButton.jsx";
 import { useNavigate } from "react-router-dom";
@@ -12,6 +14,7 @@ import { NavCanvasControlContext } from "../../../contexts/NavCanvasControlConte
 import { useContext } from "react";
 
 export default function CanvasControlBar(props) {
+  useUiLanguage();
   const {
     downloadCurrentFrame,
     isExpressGeneration,
@@ -77,45 +80,33 @@ export default function CanvasControlBar(props) {
    isVideoPreviewPlaying ? setIsVideoPreviewPlaying(false) : setIsVideoPreviewPlaying(true);
   }
 
-  const sectionSurfaceClassName = colorMode === 'dark'
-    ? 'inline-flex items-center gap-1.5 rounded-2xl border border-[#3a4050] bg-[#181b24]/86 px-2 py-1.5 shadow-[0_10px_24px_rgba(0,0,0,0.26)] backdrop-blur-xl'
-    : 'inline-flex items-center gap-1.5 rounded-2xl border border-slate-200 bg-white/82 px-2 py-1.5 backdrop-blur-md';
-  const metricSurfaceClassName = colorMode === 'dark'
-    ? 'inline-flex items-stretch divide-x divide-[#3a4050] overflow-hidden rounded-2xl border border-[#3a4050] bg-[#181b24]/86 shadow-[0_10px_24px_rgba(0,0,0,0.26)] backdrop-blur-xl'
-    : 'inline-flex items-stretch divide-x divide-slate-200 overflow-hidden rounded-2xl border border-slate-200 bg-white/82 backdrop-blur-md';
+  const sectionSurfaceClassName = `inline-flex items-center gap-1.5 rounded-2xl border border-line px-2 py-1.5 ${colorMode === 'dark' ? 'bg-[#181b24]/86 shadow-[0_10px_24px_rgba(0,0,0,0.26)] backdrop-blur-xl' : 'bg-white/82 backdrop-blur-md'}`;
+  const metricSurfaceClassName = `inline-flex items-stretch divide-x overflow-hidden rounded-2xl border border-line ${colorMode === 'dark' ? 'divide-[#3a4050] bg-[#181b24]/86 shadow-[0_10px_24px_rgba(0,0,0,0.26)] backdrop-blur-xl' : 'divide-slate-200 bg-white/82 backdrop-blur-md'}`;
   const metricValueClassName = colorMode === 'dark'
     ? 'text-xs font-semibold text-slate-100'
     : 'text-xs font-semibold text-slate-800';
-  const metricLabelClassName = colorMode === 'dark'
-    ? 'text-[10px] uppercase tracking-[0.16em] text-slate-400'
-    : 'text-[10px] uppercase tracking-[0.16em] text-slate-500';
-  const zoomReadoutClassName = colorMode === 'dark'
-    ? 'inline-flex items-center gap-1 rounded-xl bg-[#20232e] px-2 py-1 text-[11px] font-semibold text-slate-200'
-    : 'inline-flex items-center gap-1 rounded-xl bg-slate-100 px-2 py-1 text-[11px] font-semibold text-slate-700';
-  const iconButtonClassName = colorMode === 'dark'
-    ? 'inline-flex h-8 w-8 items-center justify-center rounded-xl text-slate-200 transition hover:bg-[#292d3a] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#f6c453]/65 disabled:cursor-not-allowed disabled:opacity-40'
-    : 'inline-flex h-8 w-8 items-center justify-center rounded-xl text-slate-600 transition hover:bg-slate-100 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-40';
+  const metricLabelClassName = 'text-micro uppercase tracking-[0.16em] text-fg-muted';
+  const zoomReadoutClassName = `inline-flex items-center gap-1 rounded-xl px-2 py-1 text-caption font-semibold text-fg-secondary ${colorMode === 'dark' ? 'bg-[#20232e]' : 'bg-slate-100'}`;
+  const iconButtonClassName = `inline-flex h-8 w-8 items-center justify-center rounded-xl transition hover:bg-surface-hover disabled:cursor-not-allowed disabled:opacity-40 ${colorMode === 'dark' ? 'text-slate-200 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#f6c453]/65' : 'text-slate-600 hover:text-slate-900'}`;
   const activeIconButtonClassName = colorMode === 'dark'
     ? 'bg-[#ff4655]/18 text-[#ffd4d8]'
     : 'bg-sky-50 text-sky-700';
   const expressBadgeClassName = colorMode === 'dark'
-    ? 'inline-flex items-center rounded-xl bg-cyan-400/12 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-cyan-200 ring-1 ring-cyan-300/25'
-    : 'inline-flex items-center rounded-xl bg-cyan-50 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-cyan-700 ring-1 ring-cyan-200';
+    ? 'inline-flex items-center rounded-xl bg-cyan-400/12 px-2.5 py-1 text-caption font-semibold uppercase tracking-[0.12em] text-cyan-200 ring-1 ring-cyan-300/25'
+    : 'inline-flex items-center rounded-xl bg-cyan-50 px-2.5 py-1 text-caption font-semibold uppercase tracking-[0.12em] text-cyan-700 ring-1 ring-cyan-200';
   const interactiveVideoBadgeClassName = colorMode === 'dark'
-    ? 'inline-flex items-center rounded-xl bg-sky-400/12 px-2.5 py-1 text-[11px] font-semibold text-sky-200 ring-1 ring-sky-300/25'
-    : 'inline-flex items-center rounded-xl bg-sky-50 px-2.5 py-1 text-[11px] font-semibold text-sky-700 ring-1 ring-sky-200';
+    ? 'inline-flex items-center rounded-xl bg-sky-400/12 px-2.5 py-1 text-caption font-semibold text-sky-200 ring-1 ring-sky-300/25'
+    : 'inline-flex items-center rounded-xl bg-sky-50 px-2.5 py-1 text-caption font-semibold text-sky-700 ring-1 ring-sky-200';
   const readOnlyBadgeClassName = colorMode === 'dark'
-    ? 'inline-flex items-center gap-1 rounded-xl bg-amber-300/12 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-amber-100 ring-1 ring-amber-200/25'
-    : 'inline-flex items-center gap-1 rounded-xl bg-amber-50 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-amber-700 ring-1 ring-amber-200';
+    ? 'inline-flex items-center gap-1 rounded-xl bg-amber-300/12 px-2.5 py-1 text-caption font-semibold uppercase tracking-[0.12em] text-amber-100 ring-1 ring-amber-200/25'
+    : 'inline-flex items-center gap-1 rounded-xl bg-amber-50 px-2.5 py-1 text-caption font-semibold uppercase tracking-[0.12em] text-amber-700 ring-1 ring-amber-200';
   const importedBadgeClassName = colorMode === 'dark'
-    ? 'inline-flex items-center rounded-xl bg-emerald-300/12 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-emerald-100 ring-1 ring-emerald-200/25'
-    : 'inline-flex items-center rounded-xl bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-emerald-700 ring-1 ring-emerald-200';
+    ? 'inline-flex items-center rounded-xl bg-emerald-300/12 px-2.5 py-1 text-caption font-semibold uppercase tracking-[0.12em] text-emerald-100 ring-1 ring-emerald-200/25'
+    : 'inline-flex items-center rounded-xl bg-emerald-50 px-2.5 py-1 text-caption font-semibold uppercase tracking-[0.12em] text-emerald-700 ring-1 ring-emerald-200';
   const publishedBadgeClassName = colorMode === 'dark'
-    ? 'inline-flex items-center rounded-xl bg-violet-300/12 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-violet-100 ring-1 ring-violet-200/25'
-    : 'inline-flex items-center rounded-xl bg-violet-50 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-violet-700 ring-1 ring-violet-200';
-  const viewInVidgenieButtonClassName = colorMode === 'dark'
-    ? 'inline-flex h-8 items-center rounded-xl px-2.5 text-[11px] font-semibold text-slate-200 transition hover:bg-[#292d3a] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#f6c453]/65'
-    : 'inline-flex h-8 items-center rounded-xl px-2.5 text-[11px] font-semibold text-slate-600 transition hover:bg-slate-100 hover:text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400/50';
+    ? 'inline-flex items-center rounded-xl bg-violet-300/12 px-2.5 py-1 text-caption font-semibold uppercase tracking-[0.12em] text-violet-100 ring-1 ring-violet-200/25'
+    : 'inline-flex items-center rounded-xl bg-violet-50 px-2.5 py-1 text-caption font-semibold uppercase tracking-[0.12em] text-violet-700 ring-1 ring-violet-200';
+  const viewInVidgenieButtonClassName = `inline-flex h-8 items-center rounded-xl px-2.5 text-caption font-semibold transition hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 ${colorMode === 'dark' ? 'text-slate-200 hover:text-white focus-visible:ring-[#f6c453]/65' : 'text-slate-600 hover:text-slate-900 focus-visible:ring-sky-400/50'}`;
 
   const viewSessionInVidgenie = () => {
     if (!sessionId) {
@@ -197,22 +188,20 @@ export default function CanvasControlBar(props) {
     expressGenerationLink = (
       <div className={sectionSurfaceClassName}>
         {isInteractiveVideo ? (
-          <span className={interactiveVideoBadgeClassName}>Interactive video</span>
+          <span className={interactiveVideoBadgeClassName}>{uiText("Interactive video")}</span>
         ) : (
-          isExpressGeneration && <span className={expressBadgeClassName}>Express</span>
+          isExpressGeneration && <span className={expressBadgeClassName}>{uiText("Express")}</span>
         )}
         {isExpressGeneration && sessionId && (
           <button
             type="button"
             className={`${viewInVidgenieButtonClassName} pending-allow-action`}
             onClick={viewSessionInVidgenie}
-          >
-            View in Vidgenie
-          </button>
+          >{uiText("View in Vidgenie")}</button>
         )}
         {typeof openAdvancedVideoEditDialog === 'function' && (
-          <IconActionButton title="Advanced options" onClick={openAdvancedVideoEditDialog}>
-            <FaCog className="text-[13px]" />
+          <IconActionButton title={uiText("Advanced options")} onClick={openAdvancedVideoEditDialog}>
+            <FaCog className="text-label" />
           </IconActionButton>
         )}
       </div>
@@ -221,22 +210,20 @@ export default function CanvasControlBar(props) {
   const readOnlyControlDisplay = !isImageStudio && isReadOnlyMode && (
     <div className={sectionSurfaceClassName}>
       <span className={readOnlyBadgeClassName}>
-        <FaLock className="text-[10px]" />
-        View only
-      </span>
-      <IconActionButton title="Create editable copy" onClick={onRequestEditSession}>
-        <FaEdit className="text-[13px]" />
+        <FaLock className="text-micro" />{uiText("View only")}</span>
+      <IconActionButton title={uiText("Create editable copy")} onClick={onRequestEditSession}>
+        <FaEdit className="text-label" />
       </IconActionButton>
     </div>
   );
   const importedControlDisplay = !isImageStudio && !isReadOnlyMode && isImportedSession && (
     <div className={sectionSurfaceClassName}>
-      <span className={importedBadgeClassName}>Imported</span>
+      <span className={importedBadgeClassName}>{uiText("Imported")}</span>
     </div>
   );
   const publishedControlDisplay = !isImageStudio && isSessionPublished && (
     <div className={sectionSurfaceClassName}>
-      <span className={publishedBadgeClassName} title="Published to gallery">Published</span>
+      <span className={publishedBadgeClassName} title={uiText("Published to gallery")}>{uiText("Published")}</span>
     </div>
   );
   const disabledShellClass = isRenderPending ? "pending-disabled-shell" : "";
@@ -256,17 +243,17 @@ export default function CanvasControlBar(props) {
 
         {!isImageStudio && (
           <div className={sectionSurfaceClassName}>
-            <IconActionButton title="Download current frame" onClick={downloadCurrentFrame}>
-              <FaDownload className="text-[13px]" />
+            <IconActionButton title={uiText("Download current frame")} onClick={downloadCurrentFrame}>
+              <FaDownload className="text-label" />
             </IconActionButton>
             {typeof onCreateShareUrl === 'function' && (
               <IconActionButton
-                title="Share session"
+                title={uiText("Share session")}
                 onClick={onCreateShareUrl}
                 allowDuringPending
                 triggerOnPointerDown
               >
-                <FiShare2 className="text-[15px]" />
+                <FiShare2 className="text-lead" />
               </IconActionButton>
             )}
           </div>
@@ -274,11 +261,11 @@ export default function CanvasControlBar(props) {
 
         <div className={sectionSurfaceClassName}>
           <IconActionButton
-            title={showCanvasNavigationGrid ? 'Hide canvas grid' : 'Show canvas grid'}
+            title={showCanvasNavigationGrid ? uiText("Hide canvas grid") : uiText("Show canvas grid")}
             onClick={toggleShowCanvasNavigationGrid}
             isActive={showCanvasNavigationGrid}
           >
-            <IoMdGrid className="text-[15px]" />
+            <IoMdGrid className="text-lead" />
           </IconActionButton>
           {showCanvasNavigationGrid && (
             <div className="w-[78px] min-w-[78px] text-xs">
@@ -294,17 +281,17 @@ export default function CanvasControlBar(props) {
         </div>
 
         <div className={sectionSurfaceClassName}>
-          <div className={zoomReadoutClassName} title={`Zoom ${canvasZoomPercent}%`}>
-            <FaSearch className="text-[11px] opacity-75" />
+          <div className={zoomReadoutClassName} title={uiText("Zoom {value0}%", { value0: canvasZoomPercent })}>
+            <FaSearch className="text-caption opacity-75" />
             <span>{canvasZoomPercent}%</span>
           </div>
-          <IconActionButton title="Zoom out" onClick={zoomCanvasOut} disabled={!canZoomOutCanvas}>
+          <IconActionButton title={uiText("Zoom out")} onClick={zoomCanvasOut} disabled={!canZoomOutCanvas}>
             <FaSearchMinus className="text-[12px]" />
           </IconActionButton>
-          <IconActionButton title="Reset zoom" onClick={resetCanvasZoom}>
+          <IconActionButton title={uiText("Reset zoom")} onClick={resetCanvasZoom}>
             <FaUndo className="text-[12px]" />
           </IconActionButton>
-          <IconActionButton title="Zoom in" onClick={zoomCanvasIn} disabled={!canZoomInCanvas}>
+          <IconActionButton title={uiText("Zoom in")} onClick={zoomCanvasIn} disabled={!canZoomInCanvas}>
             <FaSearchPlus className="text-[12px]" />
           </IconActionButton>
         </div>
@@ -315,7 +302,7 @@ export default function CanvasControlBar(props) {
               title={isVideoPreviewPlaying ? t("common.pause") : t("common.play")}
               onClick={showPlayPause}
             >
-              {isVideoPreviewPlaying ? <FaPause className="text-[13px]" /> : <FaPlay className="text-[13px] translate-x-[1px]" />}
+              {isVideoPreviewPlaying ? <FaPause className="text-label" /> : <FaPlay className="text-label translate-x-[1px]" />}
             </IconActionButton>
             <RenderActionButton
               compact={true}

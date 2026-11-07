@@ -1,3 +1,5 @@
+import { useUiLanguage } from '../../../../hooks/useUiLanguage.js';
+import { translateText as uiText } from '../../../../utils/localization.js';
 import { useEffect, useState } from 'react';
 import TextareaAutosize from 'react-textarea-autosize';
 import { FaSlidersH } from 'react-icons/fa';
@@ -24,6 +26,7 @@ function TextOptionsDialogContent({
   onDraftChange,
   onSubmit,
 }) {
+  useUiLanguage();
   const [dialogDraft, setDialogDraft] = useState(() => buildTextStyleDraft(initialDraft));
 
   const handleDialogDraftChange = (nextDraft) => {
@@ -34,9 +37,9 @@ function TextOptionsDialogContent({
 
   return (
     <CanvasActionOptionsDialog
-      title="Text options"
-      subtitle="Text style preferences are saved and reused for new text layers."
-      badge="Canvas action"
+      title={uiText("Text options")}
+      subtitle={uiText("Text style preferences are saved and reused for new text layers.")}
+      badge={uiText("Canvas action")}
       onClose={onClose}
       maxWidth="820px"
     >
@@ -44,10 +47,10 @@ function TextOptionsDialogContent({
         value={dialogDraft}
         onChange={handleDialogDraftChange}
         onSubmit={() => onSubmit(dialogDraft)}
-        submitLabel="Add"
+        submitLabel={uiText("Add")}
         submitDisabled={!`${dialogDraft.text || ''}`.trim()}
         editorVariant={editorVariant}
-        header="Text"
+        header={uiText("Text")}
         density="comfortable"
       />
     </CanvasActionOptionsDialog>
@@ -55,6 +58,7 @@ function TextOptionsDialogContent({
 }
 
 export default function AddText(props) {
+  useUiLanguage();
   const {
     setAddText,
     submitAddText,
@@ -131,34 +135,26 @@ export default function AddText(props) {
   };
 
   const fieldSurface =
-    colorMode === 'dark'
-      ? 'bg-[#20232e] border border-[#3a4050] text-slate-100'
-      : 'bg-white border border-slate-200 text-slate-900';
+    'bg-surface-raised border border-line text-fg';
   const compactSurface =
-    colorMode === 'dark'
-      ? 'bg-[#20232e] border border-[#24314d] text-slate-100'
-      : 'bg-slate-50 border border-slate-200 text-slate-900';
-  const mutedText = colorMode === 'dark' ? 'text-slate-400' : 'text-slate-500';
-  const secondaryButtonClass = colorMode === 'dark'
-    ? 'border border-[#273956] bg-[#20232e] text-slate-100 hover:bg-[#172642]'
-    : 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-50';
+    `bg-surface-muted border text-fg ${colorMode === 'dark' ? 'border-[#24314d]' : 'border-slate-200'}`;
+  const mutedText = "text-fg-muted";
+  const secondaryButtonClass = `border bg-surface-raised text-fg-body ${colorMode === 'dark' ? 'border-[#273956] hover:bg-[#172642]' : 'border-slate-200 hover:bg-slate-50'}`;
 
   if (!isExpandedView) {
     return (
       <div className="p-2">
         <div className={`rounded-xl p-3 ${compactSurface}`}>
           <div className="mb-3">
-            <div className="text-sm font-semibold">Text</div>
-            <div className={`mt-1 text-[11px] ${mutedText}`}>
-              Uses saved style preferences
-            </div>
+            <div className="text-sm font-semibold">{uiText("Text")}</div>
+            <div className={`mt-1 text-caption ${mutedText}`}>{uiText("Uses saved style preferences")}</div>
           </div>
 
           <TextareaAutosize
             minRows={2}
             value={draft.text}
             onChange={(event) => handleDraftChange({ ...draft, text: event.target.value })}
-            placeholder="Enter text"
+            placeholder={uiText("Enter text")}
             className={`mb-3 min-h-[72px] w-full resize-none rounded-xl px-3 py-2 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-400/20 ${fieldSurface}`}
           />
 
@@ -167,17 +163,13 @@ export default function AddText(props) {
             onClick={showTextOptionsDialog}
             className={`mb-2 flex w-full items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold transition ${secondaryButtonClass}`}
           >
-            <FaSlidersH />
-            Options
-          </button>
+            <FaSlidersH />{uiText("Options")}</button>
           <button
             type="button"
             onClick={() => handleSubmit()}
             disabled={!`${draft.text || ''}`.trim()}
             className="w-full rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:bg-slate-500"
-          >
-            Add
-          </button>
+          >{uiText("Add")}</button>
         </div>
       </div>
     );
@@ -188,10 +180,10 @@ export default function AddText(props) {
       value={draft}
       onChange={handleDraftChange}
       onSubmit={() => handleSubmit()}
-      submitLabel="Add"
+      submitLabel={uiText("Add")}
       submitDisabled={!`${draft.text || ''}`.trim()}
       editorVariant={editorVariant}
-      header="Text"
+      header={uiText("Text")}
       density="comfortable"
     />
   );

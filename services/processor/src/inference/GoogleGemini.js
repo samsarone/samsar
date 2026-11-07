@@ -1,3 +1,4 @@
+import { collectGeminiStream } from './ProviderStreaming.js';
 import fetch from 'node-fetch';
 
 import { getGoogleAccessToken, getGoogleCloudConfig } from './GoogleADC.js';
@@ -451,7 +452,8 @@ function normalizeGeminiFinishReason(finishReason) {
 }
 
 export function normalizeGeminiUsage(usageMetadata) {
-  if (!usageMetadata || typeof usageMetadata !== 'object') {
+  if (!usageMetadata || typeof usageMetadata !== 'object' || usageMetadata.promptTokenCount == null ||
+      (usageMetadata.candidatesTokenCount == null && usageMetadata.totalTokenCount == null)) {
     return null;
   }
 
@@ -459,7 +461,9 @@ export function normalizeGeminiUsage(usageMetadata) {
   const reasoningTokens = Number(usageMetadata.thoughtsTokenCount) || 0;
   // Vertex reports visible candidate tokens and thinking tokens separately,
   // but both are billed at the model's output-token rate.
-  const completionTokens = (Number(usageMetadata.candidatesTokenCount) || 0) + reasoningTokens;
+  const completionTokens = usageMetadata.candidatesTokenCount == null
+    ? Number(usageMetadata.totalTokenCount) - promptTokens
+    : Number(usageMetadata.candidatesTokenCount) + reasoningTokens;
   const totalTokens = Number(usageMetadata.totalTokenCount) || promptTokens + completionTokens;
   const cachedTokens = Number(usageMetadata.cachedContentTokenCount) || 0;
 
@@ -525,12 +529,12 @@ export async function createGoogleGeminiChatCompletion(chatRequest = {}, depende
     : await getGoogleAccessToken(config);
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), getGeminiTimeoutMs(chatRequest));
-  let response;
+  let response, streamedPayload;
   try {
     const fetchImpl = typeof dependencyOverrides.fetch === 'function'
       ? dependencyOverrides.fetch
       : fetch;
-    response = await fetchImpl(buildVertexGenerateContentUrl({ projectId, location, model }), {
+    response = await fetchImpl(buildVertexGenerateContentUrl({ projectId, location, model }).replace(':generateContent', chatRequest.onText ? ':streamGenerateContent?alt=sse' : ':generateContent'), {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${token}`,
@@ -539,12 +543,13 @@ export async function createGoogleGeminiChatCompletion(chatRequest = {}, depende
       body: JSON.stringify(requestBody),
       signal: controller.signal,
     });
+    if (response.ok && chatRequest.onText) streamedPayload = await collectGeminiStream(response.body, chatRequest.onText);
   } finally {
     clearTimeout(timeoutId);
   }
 
-  const responseText = await response.text();
-  const responsePayload = responseText ? JSON.parse(responseText) : {};
+  const responseText = streamedPayload ? null : await response.text();
+  const responsePayload = streamedPayload || (responseText ? JSON.parse(responseText) : {});
 
   if (!response.ok) {
     const error = new Error(

@@ -560,7 +560,8 @@ test('VisionUtils resolves and rebuilds its image payload on every provider retr
   assert.notEqual(payloads[0], payloads[1]);
 });
 
-test('VisionUtils keeps the canonical mounted reference for native Gemini inlineData', async () => {
+for (const model of ['gemini-4-argon', 'claude-fable-5.1']) {
+test(`VisionUtils keeps the canonical mounted reference for native ${model} inline images`, async () => {
   const { getDescriptionForImageToCreateImageList } = await import('./VisionUtils.js');
   const sourceReference = 'http://localhost:3002/assets_v2/generations/session-id/frame.png';
   let resolverCalled = false;
@@ -568,11 +569,11 @@ test('VisionUtils keeps the canonical mounted reference for native Gemini inline
 
   const result = await getDescriptionForImageToCreateImageList(
     sourceReference,
-    'gemini-4-argon',
+    model,
     {
       resolveImageUrl: async () => {
         resolverCalled = true;
-        throw new Error('Native Gemini must not create a public media tunnel.');
+        throw new Error('Native inline images must not create a public media tunnel.');
       },
       createCompletion: async (_client, payload) => {
         capturedPayload = payload;
@@ -584,6 +585,29 @@ test('VisionUtils keeps the canonical mounted reference for native Gemini inline
   assert.equal(result, 'inline description');
   assert.equal(resolverCalled, false);
   assert.equal(capturedPayload.messages[0].content[1].image_url.url, sourceReference);
+});
+}
+
+test('VisionUtils keeps public image resolution for Claude in S3 mode', async () => {
+  process.env.SAMSAR_MEDIA_DELIVERY_MODE = 's3-cloudfront';
+  process.env.MEDIA_DELIVERY_MODE = 's3-cloudfront';
+  const { getDescriptionForImageToCreateImageList } = await import('./VisionUtils.js');
+  const sourceReference = '/assets_v2/generations/session-id/frame.png';
+  const publicUrl = 'https://cdn.example/assets_v2/generations/session-id/frame.png';
+  let resolverCalls = 0;
+  const result = await getDescriptionForImageToCreateImageList(sourceReference, 'claude-fable-5.1', {
+    resolveImageUrl: async (value) => {
+      assert.equal(value, sourceReference);
+      resolverCalls += 1;
+      return publicUrl;
+    },
+    createCompletion: async (_client, payload) => {
+      assert.equal(payload.messages[0].content[1].image_url.url, publicUrl);
+      return { choices: [{ message: { content: 'remote description' } }] };
+    },
+  });
+  assert.equal(result, 'remote description');
+  assert.equal(resolverCalls, 1);
 });
 
 test('AdUtils refreshes every image and rebuilds the list payload on provider retry', async (t) => {
@@ -623,7 +647,8 @@ test('AdUtils refreshes every image and rebuilds the list payload on provider re
   assert.notEqual(payloads[0], payloads[1]);
 });
 
-test('AdUtils keeps mounted image references canonical for native Gemini inlineData', async () => {
+for (const model of ['gemini-4-argon', 'claude-fable-5.1']) {
+test(`AdUtils keeps mounted image references canonical for native ${model} inline images`, async () => {
   const { processThemesFromStartImages } = await import('../movie_session/ad_creator/AdUtils.js');
   const sourceReferences = [
     'http://localhost:3002/assets_v2/generations/session-id/one.png',
@@ -632,10 +657,10 @@ test('AdUtils keeps mounted image references canonical for native Gemini inlineD
   let resolverCalled = false;
   let capturedPayload;
 
-  const result = await processThemesFromStartImages(sourceReferences, 'gemini-4-argon', {
+  const result = await processThemesFromStartImages(sourceReferences, model, {
     resolveImageUrl: async () => {
       resolverCalled = true;
-      throw new Error('Native Gemini must not create a public media tunnel.');
+      throw new Error('Native inline images must not create a public media tunnel.');
     },
     createCompletion: async (_client, payload) => {
       capturedPayload = payload;
@@ -650,3 +675,4 @@ test('AdUtils keeps mounted image references canonical for native Gemini inlineD
     sourceReferences,
   );
 });
+}

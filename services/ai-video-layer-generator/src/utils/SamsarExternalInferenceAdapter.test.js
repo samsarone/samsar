@@ -88,7 +88,7 @@ function resetEnv() {
 
 test.afterEach(resetEnv);
 
-test('Claude chooses Anthropic for Docker vision and OpenRouter when hosted', () => {
+test('Claude prefers native Anthropic in standalone and production', () => {
   ENV_KEYS.forEach((key) => delete process.env[key]);
   process.env.CURRENT_ENV = 'docker';
   process.env.ANTHROPIC_API_KEY = 'anthropic-test-key';
@@ -99,8 +99,8 @@ test('Claude chooses Anthropic for Docker vision and OpenRouter when hosted', ()
   assert.equal(resolveConfiguredInferenceProvider(request.model, request), DOCKER_INFERENCE_PROVIDER.ANTHROPIC);
   assert.equal(shouldUseSamsarExternalInference(request), false);
   process.env.CURRENT_ENV = 'production';
-  assert.equal(shouldUseOpenRouterInference(request), true);
-  assert.equal(shouldUseSamsarExternalInference(request), true);
+  assert.equal(shouldUseOpenRouterInference(request), false);
+  assert.equal(shouldUseSamsarExternalInference(request), false);
   assert.equal(getOpenRouterModelForInferenceRequest(request), 'anthropic/claude-opus-5.5');
 });
 

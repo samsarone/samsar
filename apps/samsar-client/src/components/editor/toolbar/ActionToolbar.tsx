@@ -1,8 +1,11 @@
+import { useUiLanguage } from '../../../hooks/useUiLanguage.js';
+import { translateText as uiText } from '../../../utils/localization.js';
 
 import { FaPencilAlt, FaEraser, FaUpload, FaSave, FaCrosshairs } from "react-icons/fa";
 import { useColorMode } from "../../../contexts/ColorMode.jsx";
 
 export default function ActionToolbar(props) {
+  useUiLanguage();
   const { showSaveAction, showUploadAction,
 
     pencilWidth,
@@ -24,14 +27,10 @@ export default function ActionToolbar(props) {
 
 
   const baseShell =
-    colorMode === 'dark'
-      ? 'bg-[#181b24] border-[#3a4050] text-slate-100 shadow-[0_14px_36px_rgba(0,0,0,0.35)]'
-      : 'bg-white text-slate-900 border border-[#d7deef] shadow-sm';
+    `bg-surface text-fg ${colorMode === 'dark' ? 'border-[#3a4050] shadow-[0_14px_36px_rgba(0,0,0,0.35)]' : 'border border-[#d7deef] shadow-sm'}`;
 
   const optionShell =
-    colorMode === 'dark'
-      ? 'bg-[#20232e] border border-[#3a4050]'
-      : 'bg-white border border-[#d7deef] shadow-sm';
+    `bg-surface-raised border ${colorMode === 'dark' ? 'border-[#3a4050]' : 'border-[#d7deef] shadow-sm'}`;
 
   const optionSelected =
     colorMode === 'dark'
@@ -83,27 +82,23 @@ export default function ActionToolbar(props) {
         <div className=" mt-[80px]">
           <div className={`text-center m-auto align-center mt-4 mb-4 pt-2 pb-2 rounded-lg transition-colors duration-150 ${cursorSelectOptionVisible ? optionSelected : optionShell}`}>
             <FaCrosshairs className="text-2xl m-auto cursor-pointer" onClick={toggleCursorSelectOptions} />
-            <div className="text-[10px] tracking-tight m-auto text-center">
-              Select
-            </div>
+            <div className="text-micro tracking-tight m-auto text-center">{uiText("Select")}</div>
           </div>
 
 
           <div className={`text-center m-auto align-center mt-4 mb-4 pt-2 pb-2 rounded-lg transition-colors duration-150 ${pencilOptionsVisible ? optionSelected : optionShell}`}>
             <FaPencilAlt className="text-2xl m-auto cursor-pointer" onClick={togglePencilOptions} />
-            <div className="text-[10px] tracking-tight m-auto text-center">
-              Pencil
-            </div>
+            <div className="text-micro tracking-tight m-auto text-center">{uiText("Pencil")}</div>
             {pencilOptionsVisible && (
               <div className="static mt-2 rounded-lg p-3 space-y-2 bg-black/10 dark:bg-white/10">
-                <label className="block mb-2">Width:</label>
+                <label className="block mb-2">{uiText("Width:")}</label>
                 <input type="range" min="1" max="50"
                   className="w-full appearance-none rounded-full"
                   value={pencilWidth}
                   onChange={(e) => setPencilWidth(e.target.value)}
                   style={getSliderStyle(Number(pencilWidth), 1, 50)}
                 />
-                <label className="block mt-2 mb-2">Color:</label>
+                <label className="block mt-2 mb-2">{uiText("Color:")}</label>
                 <input type="color" value={pencilColor} onChange={(e) => setPencilColor(e.target.value)} />
               </div>
             )}
@@ -111,12 +106,10 @@ export default function ActionToolbar(props) {
 
           <div className={`text-center m-auto align-center mt-4 mb-4 pt-2 pb-2 rounded-lg transition-colors duration-150 ${eraserOptionsVisible ? optionSelected : optionShell}`}>
             <FaEraser className="text-2xl m-auto cursor-pointer" onClick={toggleEraserOptions} />
-            <div className="text-[10px] tracking-tight m-auto text-center">
-              Magic Eraser
-            </div>
+            <div className="text-micro tracking-tight m-auto text-center">{uiText("Magic Eraser")}</div>
             {eraserOptionsVisible && (
               <div className="static mt-2 rounded-lg p-3 bg-black/10 dark:bg-white/10">
-                <label className="block mb-2">Width:</label>
+                <label className="block mb-2">{uiText("Width:")}</label>
                 <input
                   type="range"
                   min="1"
@@ -136,17 +129,13 @@ export default function ActionToolbar(props) {
       <div>
         <div className="text-center m-auto align-center mt-4 mb-4">
           <FaUpload className="text-2xl m-auto cursor-pointer" onClick={() => showUploadAction()} />
-          <div className="text-[12px] tracking-tight m-auto text-center">
-            Upload
-          </div>
+          <div className="text-[12px] tracking-tight m-auto text-center">{uiText("Upload")}</div>
         </div>
       </div>
       <div>
         <div className="text-center m-auto align-center mt-4 mb-4">
           <FaSave className="text-2xl m-auto cursor-pointer" onClick={() => showSaveAction()} />
-          <div className="text-[12px] tracking-tight m-auto text-center">
-            Save
-          </div>
+          <div className="text-[12px] tracking-tight m-auto text-center">{uiText("Save")}</div>
         </div>
       </div>
     </div>

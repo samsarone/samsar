@@ -1,4 +1,5 @@
-import { isClaudeOpus55Model, OPENROUTER_OPUS_55_MODEL } from './AnthropicChatAdapter.js';
+import { supportsInferenceEffort, isGPTModel, getReasoningModelBase, resolveInferenceEffort, getClaudeOpenRouterModel } from './ReasoningModels.js';
+import { isClaudeModel } from './AnthropicChatAdapter.js';
 import fs from 'node:fs';
 import SamsarClient from 'samsar-js';
 import OpenAI from 'openai';
@@ -143,7 +144,7 @@ function uniqueInferenceProviders(values = []) {
 
 function normalizeInferencePreferenceModelKey(model) {
   const normalizedModel = normalizeString(model).toLowerCase();
-  if (isClaudeOpus55Model(model)) return 'claude-opus-5.5';
+  if (isClaudeModel(model)) return 'claude-opus-5.5';
   if (isQwenInferenceModel(model)) {
     return QWEN_38_INFERENCE_MODEL;
   }
@@ -221,7 +222,7 @@ function addOpenRouterResponseHealingPlugin(plugins) {
 }
 
 function getOpenRouterCompletionLimit(requestedModel, request = {}) {
-  const providerLimit = isClaudeOpus55Model(requestedModel)
+  const providerLimit = isClaudeModel(requestedModel)
     ? 128000
     : isQwenInferenceModel(requestedModel)
     ? OPENROUTER_QWEN_MAX_COMPLETION_TOKENS
@@ -240,7 +241,7 @@ function getOpenRouterReasoningEffort(requestedModel, effort, request = {}) {
       isOpenRouterStructuredOutputRequest(request)) return 'high';
   const normalizedEffort = normalizeString(effort).toLowerCase();
   if (
-    requestedModel === GPT_56_SOL_INFERENCE_MODEL &&
+    isGPTModel(requestedModel) &&
     ['low', 'medium', 'high', 'xhigh', 'max'].includes(normalizedEffort)
   ) {
     return normalizedEffort;
@@ -264,15 +265,15 @@ function getOpenRouterReasoningEffort(requestedModel, effort, request = {}) {
 
 function buildOpenRouterRequestPayload(request, requestedModel, openRouterModel, effort) {
   const payload = { ...request, model: openRouterModel };
-  if (requestedModel === 'gpt-6-astra' || requestedModel === 'gpt-6-astra-xhigh' || isClaudeOpus55Model(requestedModel)) {
+  if (isGPTModel(requestedModel) || isClaudeModel(requestedModel)) {
     for (const key of ['temperature', 'top_p', 'top_logprobs', 'logprobs']) delete payload[key];
   }
-  const effectiveEffort = isClaudeOpus55Model(requestedModel)
-    ? 'high'
+  const effectiveEffort = isClaudeModel(requestedModel)
+    ? resolveInferenceEffort(requestedModel, effort)
     : getOpenRouterReasoningEffort(requestedModel, effort, request);
   const completionLimit = getOpenRouterCompletionLimit(requestedModel, request);
   delete payload.max_output_tokens;
-  if (isQwenInferenceModel(requestedModel) || isGeminiInferenceModel(requestedModel) || isClaudeOpus55Model(requestedModel)) {
+  if (isQwenInferenceModel(requestedModel) || isGeminiInferenceModel(requestedModel) || isClaudeModel(requestedModel)) {
     delete payload.max_completion_tokens;
     payload.max_tokens = completionLimit;
   } else {
@@ -497,10 +498,8 @@ function hasConfiguredInferenceProvider(provider, model, chatRequest = {}) {
 
 function getInferenceProviderPriority(model, chatRequest = {}) {
   let defaultPriority;
-  if (isClaudeOpus55Model(model)) {
-    defaultPriority = isStandaloneEdition()
-      ? DOCKER_INFERENCE_PROVIDER_PRIORITY_BY_MODEL['claude-opus-5.5']
-      : [DOCKER_INFERENCE_PROVIDER.OPENROUTER, DOCKER_INFERENCE_PROVIDER.ANTHROPIC, DOCKER_INFERENCE_PROVIDER.SAMSAR];
+  if (isClaudeModel(model)) {
+    defaultPriority = DOCKER_INFERENCE_PROVIDER_PRIORITY_BY_MODEL['claude-opus-5.5'];
   } else if (isQwenInferenceModel(model)) {
     defaultPriority = DOCKER_INFERENCE_PROVIDER_PRIORITY_BY_MODEL[QWEN_38_INFERENCE_MODEL];
   } else if (isGeminiInferenceModel(model)) {
@@ -799,8 +798,11 @@ function getRequestedInferenceModel(chatRequest = {}) {
 
 export function getOpenRouterModelForInferenceRequest(chatRequest = {}, env = process.env) {
   const model = getRequestedInferenceModel(chatRequest);
-  if (isClaudeOpus55Model(model)) {
-    return normalizeString(env?.OPENROUTER_CLAUDE_OPUS_55_MODEL) || OPENROUTER_OPUS_55_MODEL;
+  if (getReasoningModelBase(model) === 'gpt-6.1-sol') {
+    return normalizeString(env?.OPENROUTER_GPT_61_SOL_MODEL) || 'openai/gpt-6.1-sol';
+  }
+  if (isClaudeModel(model)) {
+    return getClaudeOpenRouterModel(model, env);
   }
   if (isQwenInferenceModel(model)) {
     return normalizeString(env?.OPENROUTER_QWEN_38_MAX_MODEL) || 'qwen/qwen3.8-max';
@@ -820,7 +822,6 @@ export function shouldUseOpenRouterInference(chatRequest = {}) {
     return false;
   }
   const model = getRequestedInferenceModel(chatRequest);
-  if (isClaudeOpus55Model(model) && !isStandaloneEdition()) return true;
   if (isKimiInferenceModel(model)) {
     return false;
   }
@@ -829,10 +830,6 @@ export function shouldUseOpenRouterInference(chatRequest = {}) {
   }
   if (isOpenRouterAuthorization(chatRequest.authorization)) {
     return true;
-  }
-  if (isClaudeOpus55Model(model) && !isStandaloneEdition() &&
-      isDeployedAuthorization(chatRequest.authorization)) {
-    return hasOpenRouterCredential();
   }
   if (isDeployedAuthorization(chatRequest.authorization)) {
     return false;
@@ -868,7 +865,7 @@ export async function createGenblazeChatCompletion(chatRequest = {}) {
     timeout, timeoutMs, maxRetries, externalMaxRetries,
     reasoning, reasoning_effort, reasoningEffort, effort: requestEffort, ...request
   } = chatRequest || {};
-  if (requestedModel === 'gpt-6-astra' || requestedModel === 'gpt-6-astra-xhigh') {
+  if (isGPTModel(requestedModel)) {
     for (const key of ['temperature', 'top_p', 'top_logprobs', 'logprobs']) delete request[key];
     if (request.max_tokens !== undefined) {
       request.max_completion_tokens ??= request.max_tokens;
@@ -888,7 +885,7 @@ export async function createGenblazeChatCompletion(chatRequest = {}) {
       await normalizeProviderMediaPayload({
         ...request,
         model,
-        ...(model === GPT_56_SOL_INFERENCE_MODEL
+        ...(supportsInferenceEffort(model)
           ? {
             reasoning_effort: getGPT56SolReasoningEffort(
               chatRequest.model,
@@ -936,10 +933,10 @@ export async function createOpenRouterChatCompletion(chatRequest = {}) {
   } = chatRequest || {};
   const requestedModel = getRequestedInferenceModel(chatRequest);
   const legacyReasoningEffort = reasoning?.effort || reasoning_effort;
-  const explicitEffort = requestedModel === GPT_56_SOL_INFERENCE_MODEL
+  const explicitEffort = supportsInferenceEffort(requestedModel)
     ? requestedEffort || reasoningEffort || legacyReasoningEffort
     : legacyReasoningEffort;
-  const effort = requestedModel === GPT_56_SOL_INFERENCE_MODEL
+  const effort = supportsInferenceEffort(requestedModel)
     ? getGPT56SolReasoningEffort(chatRequest.model, explicitEffort)
     : explicitEffort;
   const qwenRequest = isQwenInferenceModel(requestedModel);
@@ -1013,10 +1010,7 @@ export function shouldUseSamsarExternalInference(chatRequest = {}) {
     return false;
   }
   const inferenceModel = getRequestedInferenceModel(chatRequest);
-  if (isClaudeOpus55Model(inferenceModel) && !isStandaloneEdition()) return true;
   if (isQwenOpenRouterOnly(inferenceModel)) return true;
-  if (isClaudeOpus55Model(inferenceModel) && !isStandaloneEdition() &&
-      isDeployedAuthorization(chatRequest.authorization) && hasOpenRouterCredential()) return true;
   if (chatRequest.bypassSamsarExternalInference || chatRequest.samsarExternalInference === false) {
     return false;
   }
@@ -1068,8 +1062,8 @@ export async function createSamsarExternalChatCompletion(chatRequest = {}) {
   ) || DEFAULT_EXTERNAL_INFERENCE_TIMEOUT_MS;
   const rawRequestPayload = {
     ...payload,
-    model,
-    ...(model === GPT_56_SOL_INFERENCE_MODEL
+    model: getReasoningModelBase(model),
+    ...(supportsInferenceEffort(model)
       ? {
         reasoning_effort: getGPT56SolReasoningEffort(
           payload.model,

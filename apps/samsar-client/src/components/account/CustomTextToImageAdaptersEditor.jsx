@@ -1,3 +1,5 @@
+import { useUiLanguage } from '../../hooks/useUiLanguage.js';
+import { translateText as uiText } from '../../utils/localization.js';
 import { useEffect, useMemo, useState } from "react";
 import axios from "axios";
 import { toast } from "react-toastify";
@@ -74,6 +76,7 @@ function buildCustomAdaptersUpdate(currentCustomAdapters, adapters) {
 }
 
 export default function CustomTextToImageAdaptersEditor() {
+  useUiLanguage();
   const { colorMode } = useColorMode();
   const { user, setUser, getUserAPI } = useUser();
   const [adapters, setAdapters] = useState(() =>
@@ -85,9 +88,9 @@ export default function CustomTextToImageAdaptersEditor() {
     setAdapters(normalizeCustomTextToImageAdapters(user?.custom_adapters));
   }, [user?.custom_adapters]);
 
-  const borderColor = colorMode === "dark" ? "border-[#3a4050]" : "border-slate-200";
+  const borderColor = 'border-line';
   const surface = colorMode === "dark" ? "bg-[#151720]" : "bg-slate-50";
-  const inputSurface = colorMode === "dark" ? "bg-[#181b24] text-slate-100" : "bg-white text-slate-900";
+  const inputSurface = 'bg-surface text-fg';
   const secondaryText = colorMode === "dark" ? "text-slate-400" : "text-slate-600";
   const inputClasses = `w-full rounded-lg border ${borderColor} ${inputSurface} px-3 py-2 text-sm`;
 
@@ -147,10 +150,10 @@ export default function CustomTextToImageAdaptersEditor() {
         setUser(response.data);
       }
       await getUserAPI();
-      toast.success("Custom image models saved.", { position: "bottom-center" });
+      toast.success(uiText("Custom image models saved."), { position: "bottom-center" });
     } catch (error) {
       toast.error(
-        getErrorMessage(error, "Unable to save custom image models."),
+        getErrorMessage(error, uiText("Unable to save custom image models.")),
         { position: "bottom-center" },
       );
     } finally {
@@ -162,54 +165,44 @@ export default function CustomTextToImageAdaptersEditor() {
     <section className={`rounded-xl border ${borderColor} ${surface} p-4 sm:p-5`}>
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <h3 className="text-lg font-semibold">Custom text-to-image models</h3>
-          <p className={`mt-1 max-w-3xl text-sm ${secondaryText}`}>
-            Add asynchronous image APIs for this user. Saved models appear in
-            Studio and VidGenie. Authentication values are encrypted and are
-            never returned to the browser.
-          </p>
+          <h3 className="text-lg font-semibold">{uiText("Custom text-to-image models")}</h3>
+          <p className={`mt-1 max-w-3xl text-sm ${secondaryText}`}>{uiText("Add asynchronous image APIs for this user. Saved models appear in Studio and VidGenie. Authentication values are encrypted and are never returned to the browser.")}</p>
         </div>
-        <SecondaryButton type="button" onClick={addAdapter} className="w-full sm:w-auto">
-          Add model
-        </SecondaryButton>
+        <SecondaryButton type="button" onClick={addAdapter} className="w-full sm:w-auto">{uiText("Add model")}</SecondaryButton>
       </div>
 
       {adapters.length === 0 ? (
-        <div className={`mt-4 rounded-lg border border-dashed ${borderColor} p-4 text-sm ${secondaryText}`}>
-          No custom text-to-image models are configured for this user.
-        </div>
+        <div className={`mt-4 rounded-lg border border-dashed ${borderColor} p-4 text-sm ${secondaryText}`}>{uiText("No custom text-to-image models are configured for this user.")}</div>
       ) : (
         <div className="mt-5 space-y-4">
           {adapters.map((adapter, index) => (
             <div key={adapter.id} className={`rounded-xl border ${borderColor} p-4`}>
               <div className="mb-4 flex items-center justify-between gap-3">
                 <div>
-                  <div className="font-semibold">{adapter.name || `Model ${index + 1}`}</div>
+                  <div className="font-semibold">{adapter.name || uiText("Model {value0}", { value0: index + 1 })}</div>
                   <div className={`break-all text-xs ${secondaryText}`}>{adapter.model_key}</div>
                 </div>
                 <button
                   type="button"
                   onClick={() => removeAdapter(index)}
                   className={`rounded-lg border ${borderColor} px-3 py-2 text-sm`}
-                >
-                  Remove
-                </button>
+                >{uiText("Remove")}</button>
               </div>
 
               <div className="grid gap-4 lg:grid-cols-2">
                 <label className="block">
-                  <span className={`mb-1 block text-sm ${secondaryText}`}>Model name</span>
+                  <span className={`mb-1 block text-sm ${secondaryText}`}>{uiText("Model name")}</span>
                   <input
                     type="text"
                     value={adapter.name}
                     onChange={(event) => updateAdapter(index, "name", event.target.value)}
-                    placeholder="FLUX.2 Klein 4B"
+                    placeholder={uiText("FLUX.2 Klein 4B")}
                     className={inputClasses}
                   />
                 </label>
 
                 <label className="block lg:col-span-2">
-                  <span className={`mb-1 block text-sm ${secondaryText}`}>Generate URL</span>
+                  <span className={`mb-1 block text-sm ${secondaryText}`}>{uiText("Generate URL")}</span>
                   <input
                     type="url"
                     value={adapter.generate_url}
@@ -220,7 +213,7 @@ export default function CustomTextToImageAdaptersEditor() {
                 </label>
 
                 <label className="block">
-                  <span className={`mb-1 block text-sm ${secondaryText}`}>Status / poll URL</span>
+                  <span className={`mb-1 block text-sm ${secondaryText}`}>{uiText("Status / poll URL")}</span>
                   <input
                     type="text"
                     value={adapter.status_url}
@@ -231,7 +224,7 @@ export default function CustomTextToImageAdaptersEditor() {
                 </label>
 
                 <label className="block">
-                  <span className={`mb-1 block text-sm ${secondaryText}`}>Result URL</span>
+                  <span className={`mb-1 block text-sm ${secondaryText}`}>{uiText("Result URL")}</span>
                   <input
                     type="text"
                     value={adapter.result_url}
@@ -242,23 +235,23 @@ export default function CustomTextToImageAdaptersEditor() {
                 </label>
 
                 <label className="block">
-                  <span className={`mb-1 block text-sm ${secondaryText}`}>Authentication header</span>
+                  <span className={`mb-1 block text-sm ${secondaryText}`}>{uiText("Authentication header")}</span>
                   <input
                     type="text"
                     value={adapter.header_key}
                     onChange={(event) => updateAdapter(index, "header_key", event.target.value)}
-                    placeholder="Authorization"
+                    placeholder={uiText("Authorization")}
                     className={inputClasses}
                   />
                 </label>
 
                 <label className="block">
-                  <span className={`mb-1 block text-sm ${secondaryText}`}>Header value</span>
+                  <span className={`mb-1 block text-sm ${secondaryText}`}>{uiText("Header value")}</span>
                   <input
                     type="password"
                     value={adapter.header_value}
                     onChange={(event) => updateAdapter(index, "header_value", event.target.value)}
-                    placeholder={adapter.has_header_value ? "Saved securely — enter to replace" : "Bearer …"}
+                    placeholder={adapter.has_header_value ? uiText("Saved securely — enter to replace") : uiText("Bearer …")}
                     autoComplete="new-password"
                     className={inputClasses}
                   />
@@ -270,18 +263,14 @@ export default function CustomTextToImageAdaptersEditor() {
       )}
 
       <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <p className={`text-xs ${secondaryText}`}>
-          Status and result URLs use <code>{"{request_id}"}</code> as the request identifier placeholder.
-          {hasSavedAdapters ? " Existing credentials remain unchanged when the value is left blank." : ""}
+        <p className={`text-xs ${secondaryText}`}>{uiText("Status and result URLs use")}<code>{"{request_id}"}</code>{uiText("as the request identifier placeholder.")}{hasSavedAdapters ? uiText(" Existing credentials remain unchanged when the value is left blank.") : ""}
         </p>
         <SecondaryButton
           type="button"
           onClick={saveAdapters}
           isPending={isSaving}
           className="w-full sm:w-auto"
-        >
-          Save custom models
-        </SecondaryButton>
+        >{uiText("Save custom models")}</SecondaryButton>
       </div>
     </section>
   );

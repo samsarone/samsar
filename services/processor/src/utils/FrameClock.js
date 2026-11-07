@@ -24,11 +24,9 @@ export function getLayerFrameRange(layer = {}, framesPerSecond = 24) {
   return { startFrame, endFrame, frameCount: endFrame - startFrame };
 }
 
-export function buildFrameExtractionFilter(framesPerSecond, scaleFilter, { roundEndTimestamp = false } = {}) {
+export function buildFrameExtractionFilter(framesPerSecond, scaleFilter) {
   const rate = Number(framesPerSecond);
   if (!Number.isFinite(rate) || rate <= 0) throw new RangeError('A positive frame rate is required');
-  // API imports opt into the same nearest-frame end boundary as the client.
-  // Preserve the legacy default for callers with their own final-frame budget.
-  const eofAction = roundEndTimestamp ? 'round' : 'pass';
-  return `setpts=PTS-STARTPTS,fps=${rate}:start_time=0:round=near:eof_action=${eofAction},${scaleFilter}`;
+  // The EOF uses the same nearest-frame boundary as duration metadata everywhere.
+  return `setpts=PTS-STARTPTS,fps=${rate}:start_time=0:round=near:eof_action=round${scaleFilter ? `,${scaleFilter}` : ''}`;
 }

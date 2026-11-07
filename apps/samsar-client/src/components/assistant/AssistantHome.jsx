@@ -1,21 +1,21 @@
+import { useUiLanguage } from '../../hooks/useUiLanguage.js';
+import { translateText as uiText, formatUiDate } from '../../utils/localization.js';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import axios from 'axios';
-import dayjs from 'dayjs';
 import TextareaAutosize from 'react-textarea-autosize';
 import {
   MdChatBubbleOutline,
   MdCloseFullscreen,
   MdDeleteOutline,
-  MdMinimize,
   MdOpenInFull,
-  MdRefresh,
+  MdTune,
 } from 'react-icons/md';
 import { FaCopy } from 'react-icons/fa';
 
 import { useColorMode } from '../../contexts/ColorMode.jsx';
 import { useUser } from "../../contexts/UserContext.jsx";
 import CommonButton from '../common/CommonButton.tsx';
-import ModelAdapterSelect from "../common/ModelAdapterSelect.jsx";
+import InferenceModelSelect from "../common/InferenceModelSelect.jsx";
 import { ASSISTANT_MODEL_TYPES } from "../../constants/Types.ts";
 import { getHeaders } from "../../utils/web.jsx";
 import { useDeploymentModelAvailability } from "../../hooks/useDeploymentModelAvailability.js";
@@ -127,6 +127,7 @@ function renderMessageContent(messageText) {
 }
 
 export default function AssistantHome(props) {
+  useUiLanguage();
   const {
     submitAssistantQuery,
     sessionMessages = [],
@@ -137,6 +138,7 @@ export default function AssistantHome(props) {
     onAssistantQueryGeneratingChange,
     onDeleteMessage,
     onResetMessages,
+    onSessionCleared,
     getFrameImageData,
     currentLayerId,
     onSceneActionApplied,
@@ -160,6 +162,10 @@ export default function AssistantHome(props) {
   const panelRef = useRef(null);
   const [isOpen, setIsOpen] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
+  const [showModelSettings, setShowModelSettings] = useState(false);
+  const activeSessionRef = useRef(sessionId);
+  activeSessionRef.current = sessionId;
+  const interactionVersionRef = useRef(0);
   const [userInput, setUserInput] = useState('');
   const [assistantModel, setAssistantModel] = useState(
     ASSISTANT_MODEL_TYPES.find((model) => model.value === DEFAULT_TEXT_MODEL) || ASSISTANT_MODEL_TYPES[0]
@@ -246,7 +252,9 @@ export default function AssistantHome(props) {
   const handleSubmit = async (event) => {
     event.preventDefault();
     const normalizedInput = userInput.trim();
-    if (!normalizedInput || isAssistantQueryGenerating || isPreparingFrameImage || isAssistantModelUnavailable) return;
+    if (!normalizedInput || isAssistantQueryGenerating || isPreparingFrameImage || isAssistantModelUnavailable || isResetting || isResetConfirmVisible) return;
+    const interactionVersion = interactionVersionRef.current;
+    const submittedSessionId = sessionId;
 
     let requestOptions;
     if (includeFrameImage && typeof getFrameImageData === 'function') {
@@ -254,18 +262,21 @@ export default function AssistantHome(props) {
         setIsPreparingFrameImage(true);
         const frameImage = await getFrameImageData();
         if (!frameImage?.dataUrl) {
-          window.alert('Unable to capture the current frame image.');
+          window.alert(uiText("Unable to capture the current frame image."));
           return;
         }
         requestOptions = { frameImage };
       } catch  {
-        window.alert('Unable to capture the current frame image.');
+        window.alert(uiText("Unable to capture the current frame image."));
         return;
       } finally {
-        setIsPreparingFrameImage(false);
+        if (interactionVersion === interactionVersionRef.current && submittedSessionId === activeSessionRef.current) {
+          setIsPreparingFrameImage(false);
+        }
       }
     }
 
+    if (interactionVersion !== interactionVersionRef.current || submittedSessionId !== activeSessionRef.current) return;
     submitAssistantQuery(normalizedInput, requestOptions);
     setUserInput('');
     setIsOpen(true);
@@ -273,7 +284,7 @@ export default function AssistantHome(props) {
 
   const handleDeleteMessage = async (messageId) => {
     if (!messageId) return;
-    const confirmed = window.confirm('Delete this assistant exchange from the current session?');
+    const confirmed = window.confirm(uiText("Delete this assistant exchange from the current session?"));
     if (!confirmed) return;
 
     try {
@@ -287,7 +298,7 @@ export default function AssistantHome(props) {
 
       const headers = getHeaders();
       if (!headers) {
-        setResetError('Sign in to reset the assistant session.');
+        setResetError(uiText("Sign in to reset the assistant session."));
         return;
       }
       const response = await axios.post(
@@ -303,6 +314,11 @@ export default function AssistantHome(props) {
   };
 
   const applyResetSessionState = (sessionDetails) => {
+    interactionVersionRef.current += 1;
+    onSessionCleared?.(sessionDetails);
+    setUserInput('');
+    setIncludeFrameImage(false);
+    setIsPreparingFrameImage(false);
     const nextMessages = Array.isArray(sessionDetails?.sessionMessages)
       ? sessionDetails.sessionMessages
       : [];
@@ -329,29 +345,34 @@ export default function AssistantHome(props) {
   const handleResetMessages = async () => {
     if (!onResetMessages && !sessionId) return;
 
+    const clearingSessionId = sessionId;
     try {
       setIsResetting(true);
       setResetError('');
       if (onResetMessages) {
         const resetResponse = await onResetMessages();
         const sessionDetails = resetResponse?.data?.sessionDetails || resetResponse?.sessionDetails || null;
+        if (activeSessionRef.current !== clearingSessionId) return;
         applyResetSessionState(sessionDetails);
         setIsResetConfirmVisible(false);
         return;
       }
 
       const headers = getHeaders();
-      if (!headers) return;
+      if (!headers) throw new Error(uiText("Sign in to clear the assistant session."));
       const response = await axios.post(
         `${PROCESSOR_SERVER}/assistants/reset_session_messages`,
         { id: sessionId },
         headers
       );
+      if (activeSessionRef.current !== clearingSessionId) return;
       applyResetSessionState(response?.data?.sessionDetails || null);
       setUserInput('');
       setIsResetConfirmVisible(false);
     } catch (error) {
-      setResetError(error?.response?.data?.error || 'Unable to reset the assistant session.');
+      if (activeSessionRef.current === clearingSessionId) {
+        setResetError(error?.response?.data?.error || error?.message || uiText("Unable to clear the assistant session."));
+      }
     } finally {
       setIsResetting(false);
     }
@@ -388,7 +409,7 @@ export default function AssistantHome(props) {
       onAssistantQueryGeneratingChange?.(false);
       onSceneActionApplied?.(responseData);
     } catch (error) {
-      window.alert(error?.response?.data?.error || 'Unable to apply scene action.');
+      window.alert(error?.response?.data?.error || uiText("Unable to apply scene action."));
     } finally {
       setApplyingSceneActionId(null);
     }
@@ -473,34 +494,18 @@ export default function AssistantHome(props) {
   }, [hasConversationActivity, isExpanded, isOpen, userInput]);
 
   const launcherShell =
-    colorMode === 'dark'
-      ? 'border border-[#4a5265] bg-[#181b24] text-slate-100 shadow-[0_18px_38px_rgba(0,0,0,0.45)]'
-      : 'border border-slate-200 bg-white text-slate-900 shadow-[0_16px_34px_rgba(15,23,42,0.18)]';
+    `border border-line-strong bg-surface text-fg ${colorMode === 'dark' ? 'shadow-[0_18px_38px_rgba(0,0,0,0.45)]' : 'shadow-[0_16px_34px_rgba(15,23,42,0.18)]'}`;
   const panelShell =
-    colorMode === 'dark'
-      ? 'border border-[#3a4050] bg-[#151720] text-slate-100'
-      : 'border border-slate-200 bg-white text-slate-900';
-  const subtleText = colorMode === 'dark' ? 'text-slate-300' : 'text-slate-600';
+    'border border-line bg-surface-sunken text-fg';
+  const subtleText = "text-fg-tertiary";
   const headerButtonShell =
-    colorMode === 'dark'
-      ? 'border border-[#3a4050] bg-[#181b24] text-slate-200 hover:bg-[#292d3a]'
-      : 'border border-slate-200 bg-slate-100 text-slate-700 hover:bg-slate-200';
+    `border border-line text-fg-secondary ${colorMode === 'dark' ? 'bg-[#181b24] hover:bg-[#292d3a]' : 'bg-slate-100 hover:bg-slate-200'}`;
   const inputShell =
-    colorMode === 'dark'
-      ? 'border border-[#667188] bg-[#181b24] text-slate-100 focus:border-[#f6c453] focus:ring-2 focus:ring-[#f6c453]/20'
-      : 'border border-slate-200 bg-slate-50 text-slate-900';
-  const emptyStateShell =
-    colorMode === 'dark'
-      ? 'border border-dashed border-[#3a4050] bg-[#0c0d12]/70 text-slate-400'
-      : 'border border-dashed border-slate-200 bg-slate-50 text-slate-500';
+    `border border-line-control text-fg ${colorMode === 'dark' ? 'bg-[#181b24] focus:border-[#f6c453] focus:ring-2 focus:ring-[#f6c453]/20' : 'bg-slate-50'}`;
   const resetConfirmShell =
-    colorMode === 'dark'
-      ? 'border border-[#3a4050] bg-[#181b24] text-slate-100'
-      : 'border border-slate-200 bg-slate-50 text-slate-900';
+    `border border-line text-fg ${colorMode === 'dark' ? 'bg-[#181b24]' : 'bg-slate-50'}`;
   const resetConfirmButtonShell =
-    colorMode === 'dark'
-      ? 'border border-[#4a5265] bg-[#20232e] text-slate-100 hover:bg-[#292d3a]'
-      : 'border border-slate-200 bg-white text-slate-800 hover:bg-slate-100';
+    `border border-line-strong bg-surface-raised hover:bg-surface-hover ${colorMode === 'dark' ? 'text-slate-100' : 'text-slate-800'}`;
   const panelDimensions = isExpanded
     ? 'fixed inset-4 md:inset-6'
     : hasConversationActivity || shouldShowWelcomeOptions
@@ -508,21 +513,16 @@ export default function AssistantHome(props) {
     : 'fixed bottom-20 right-4 w-[min(92vw,420px)]';
   const assistantOverlayZIndex = 2000;
   const canIncludeFrameImage = typeof getFrameImageData === 'function';
-  const assistantInputPlaceholder = canIncludeFrameImage
-    ? 'Ask about this session...\nUse Include frame image for visual feedback.'
-    : 'Ask about this session...';
-  const welcomeOptionList = [
-    {
-      title: 'Ask about the session',
-      description: 'Get help with prompts, captions, titles, descriptions, or edits.',
-    },
-    ...(canIncludeFrameImage
-      ? [{
-        title: 'Include frame image',
-        description: 'Attach the current frame when you need visual feedback.',
-      }]
-      : []),
-  ];
+  const assistantInputPlaceholder = uiText("Ask about this session...");
+
+  useEffect(() => {
+    interactionVersionRef.current += 1;
+    setUserInput('');
+    setIncludeFrameImage(false);
+    setIsPreparingFrameImage(false);
+    setIsResetConfirmVisible(false);
+    setResetError('');
+  }, [sessionId]);
 
   return (
     <div className="fixed bottom-4 right-4 z-40" style={{ zIndex: assistantOverlayZIndex }}>
@@ -536,50 +536,40 @@ export default function AssistantHome(props) {
           <MdChatBubbleOutline className="text-[22px]" />
         </span>
         <span className="flex flex-col items-start leading-none">
-          <span className="text-sm font-semibold">Assistant</span>
+          <span className="text-sm font-semibold">{uiText("Assistant")}</span>
         </span>
       </button>
 
       {isOpen ? (
         <div
           ref={panelRef}
-          className={`${panelDimensions} ${isExpanded ? 'right-4 bottom-4' : ''}`}
+          className={panelDimensions}
           style={{ zIndex: assistantOverlayZIndex }}
         >
           <div
             className={`flex ${isExpanded || hasConversationActivity || shouldShowWelcomeOptions ? 'h-full' : ''} flex-col overflow-hidden rounded-3xl shadow-[0_28px_80px_rgba(15,23,42,0.3)] ${panelShell}`}
           >
-            <div className="flex items-start justify-between gap-4 border-b border-slate-200/10 px-4 py-4">
+            <div className="flex shrink-0 items-center justify-between gap-2 border-b border-line px-4 py-3">
               <div className="min-w-0">
-                <div className="text-sm font-semibold">Assistant</div>
+                <div className="text-sm font-semibold">{uiText("Assistant")}</div>
               </div>
 
-              <div className="flex shrink-0 items-center gap-2">
-                <div className="hidden w-40 md:block">
-                  <ModelAdapterSelect
-                    options={assistantModelOptions}
-                    value={assistantModel}
-                    onChange={handleAssistantModelChange}
-                    primaryAdapterByModel={primaryAdapterByModel}
-                    isStandaloneDeployment={isStandaloneDeployment}
-                    isDisabled={isAssistantModelUnavailable}
-                    placeholder={isAssistantModelUnavailable ? "No model configured" : undefined}
-                  />
-                </div>
+              <div className="flex shrink-0 items-center gap-1">
                 <button
                   type="button"
                   onClick={handleResetRequest}
-                  disabled={(!onResetMessages && !sessionId) || isResetting}
-                  className={`inline-flex h-9 w-9 items-center justify-center rounded-full transition disabled:opacity-50 ${headerButtonShell}`}
-                  title="Start a new assistant session"
+                  disabled={(!onResetMessages && !sessionId) || isResetting || Boolean(applyingSceneActionId) || Boolean(deletingMessageId)}
+                  className={`inline-flex h-8 items-center justify-center gap-1 rounded-lg px-2 text-xs transition disabled:opacity-50 ${headerButtonShell}`}
                 >
-                  <MdRefresh className="text-[18px]" />
+                  <MdDeleteOutline className="text-[16px]" />
+                  <span>{uiText("Clear session")}</span>
                 </button>
                 <button
                   type="button"
                   onClick={() => setIsExpanded((current) => !current)}
                   className={`inline-flex h-9 w-9 items-center justify-center rounded-full transition ${headerButtonShell}`}
-                  title={isExpanded ? 'Switch to condensed view' : 'Expand assistant'}
+                  aria-label={isExpanded ? uiText("Switch to condensed view") : uiText("Expand assistant")}
+                  title={isExpanded ? uiText("Switch to condensed view") : uiText("Expand assistant")}
                 >
                   {isExpanded ? (
                     <MdCloseFullscreen className="text-[18px]" />
@@ -591,38 +581,23 @@ export default function AssistantHome(props) {
                   type="button"
                   onClick={() => setIsOpen(false)}
                   className={`inline-flex h-9 w-9 items-center justify-center rounded-full transition ${headerButtonShell}`}
-                  title="Collapse assistant"
+                  aria-label={uiText("Collapse assistant")}
+                  title={uiText("Collapse assistant")}
                 >
-                  <MdMinimize className="text-[18px]" />
+                  <span aria-hidden="true" className="block h-0.5 w-3.5 rounded-full bg-current" />
                 </button>
               </div>
             </div>
 
-            <div className="px-4 pt-3 md:hidden">
-              <ModelAdapterSelect
-                options={assistantModelOptions}
-                value={assistantModel}
-                onChange={handleAssistantModelChange}
-                primaryAdapterByModel={primaryAdapterByModel}
-                isStandaloneDeployment={isStandaloneDeployment}
-                isDisabled={isAssistantModelUnavailable}
-                placeholder={isAssistantModelUnavailable ? "No model configured" : undefined}
-              />
-            </div>
-
             {shouldShowConversationArea ? (
-              <div className="flex-1 overflow-y-auto px-4 py-4">
+              <div role="log" aria-label={uiText("Assistant conversation")} className="mx-auto box-border min-h-0 w-full max-w-3xl flex-1 overflow-y-auto px-4 py-4">
                 {messageList.length > 0 ? (
                 <div className="space-y-3">
                   {messageList.map((message) => {
                     const isUserMessage = message.role === 'user';
                     const bubbleShell = isUserMessage
-                      ? colorMode === 'dark'
-                        ? 'border border-[#4a5265] bg-[#20232e]'
-                        : 'border border-slate-200 bg-slate-50'
-                      : colorMode === 'dark'
-                      ? 'border border-[#3a4050] bg-[#0c0d12]'
-                      : 'border border-slate-200 bg-white';
+                      ? 'border border-line-strong bg-surface-muted'
+                      : `border border-line ${colorMode === 'dark' ? 'bg-[#0c0d12]' : 'bg-white'}`;
 
                     return (
                       <div
@@ -630,33 +605,30 @@ export default function AssistantHome(props) {
                         className={`flex ${isUserMessage ? 'justify-end' : 'justify-start'}`}
                       >
                         <div className={`w-full max-w-[92%] rounded-2xl px-3 py-3 ${bubbleShell}`}>
-                          <div className="mb-2 flex items-center justify-between gap-3 text-[11px]">
-                            <div className="font-semibold uppercase tracking-[0.12em] text-slate-400">
-                              {isUserMessage ? 'User' : 'Assistant'}
+                          <div className="mb-1 flex items-center justify-between gap-2 text-caption">
+                            <div className="font-medium text-fg-tertiary" title={message.timestamp ? formatUiDate(message.timestamp, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : undefined}>
+                              {isUserMessage ? uiText("User") : uiText("Assistant")}
                             </div>
                             <div className="flex items-center gap-1.5">
-                              <span className={subtleText}>
-                                {message.timestamp ? dayjs(message.timestamp).format('MMM D, h:mm A') : ''}
-                              </span>
                               <button
                                 type="button"
                                 onClick={() => copyToClipboard(message.normalizedText)}
                                 className={`inline-flex items-center gap-1 rounded-full px-2 py-1 transition ${headerButtonShell}`}
-                                title="Copy message"
+                                aria-label={uiText("Copy message")}
+                                title={uiText("Copy message")}
                               >
-                                <FaCopy className="text-[11px]" />
-                                <span>Copy</span>
+                                <FaCopy className="text-caption" />
                               </button>
                               {onDeleteMessage || sessionId ? (
                                 <button
                                   type="button"
                                   onClick={() => handleDeleteMessage(message.id)}
-                                  disabled={deletingMessageId === message.id}
+                                  disabled={deletingMessageId === message.id || isResetting || isResetConfirmVisible}
                                   className={`inline-flex items-center gap-1 rounded-full px-2 py-1 transition disabled:opacity-50 ${headerButtonShell}`}
-                                  title="Delete this exchange"
+                                  aria-label={uiText("Delete this exchange")}
+                                  title={uiText("Delete this exchange")}
                                 >
                                   <MdDeleteOutline className="text-[14px]" />
-                                  <span>Delete</span>
                                 </button>
                               ) : null}
                             </div>
@@ -664,19 +636,16 @@ export default function AssistantHome(props) {
                           {isUserMessage && message.hasImageAttachment ? (
                             <div className="mb-2">
                               <span
-                                className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium ${
-                                  colorMode === 'dark'
-                                    ? 'border-[#4a5265] bg-[#20232e] text-slate-300'
-                                    : 'border-slate-200 bg-white text-slate-500'
-                                }`}
-                              >
-                                Frame image
-                              </span>
+                                className={`inline-flex items-center rounded-full border px-2 py-0.5 text-caption font-medium border-line-strong bg-surface-raised ${colorMode === 'dark' ? 'text-slate-300' : 'text-slate-500'}`}
+                              >{uiText("Frame image")}</span>
                             </div>
                           ) : null}
                           <div className="text-sm leading-6 break-words whitespace-pre-wrap">
                             {renderMessageContent(message.normalizedText)}
                           </div>
+                          {message.assistantStreamStatus === 'interrupted' ? (
+                            <div role="status" className="mt-2 text-xs text-fg-tertiary">{uiText("Response interrupted")}</div>
+                          ) : null}
                           {message.sceneActions.length > 0 ? (
                             <div className="mt-3 grid gap-2">
                               {message.sceneActions.map((action) => {
@@ -686,15 +655,11 @@ export default function AssistantHome(props) {
                                     key={action.id}
                                     type="button"
                                     onClick={() => handleSceneActionClick(action.id)}
-                                    disabled={!currentLayerId || Boolean(applyingSceneActionId)}
-                                    className={`rounded-xl border px-3 py-2 text-left text-xs transition disabled:cursor-not-allowed disabled:opacity-50 ${
-                                      colorMode === 'dark'
-                                        ? 'border-[#3a4050] bg-[#20232e] hover:border-[#f6c453]/50 hover:bg-[#292d3a]'
-                                        : 'border-slate-200 bg-slate-50 hover:bg-slate-100'
-                                    }`}
-                                    title={!currentLayerId ? 'Select a layer before applying a scene action' : action.description}
+                                    disabled={!currentLayerId || Boolean(applyingSceneActionId) || isResetting || isResetConfirmVisible}
+                                    className={`rounded-xl border px-3 py-2 text-left text-xs transition disabled:cursor-not-allowed disabled:opacity-50 border-line bg-surface-muted hover:bg-surface-hover ${colorMode === 'dark' ? 'hover:border-[#f6c453]/50' : ''}`}
+                                    title={!currentLayerId ? uiText("Select a layer before applying a scene action") : action.description}
                                   >
-                                    <span className="block font-semibold">{isApplying ? 'Applying...' : action.label}</span>
+                                    <span className="block font-semibold">{isApplying ? uiText("Applying...") : action.label}</span>
                                     <span className={subtleText}>{action.description}</span>
                                   </button>
                                 );
@@ -708,17 +673,13 @@ export default function AssistantHome(props) {
                                 onClick={onUndoCanvasHistory}
                                 disabled={!canUndoCanvasHistory}
                                 className={`rounded-full px-3 py-1.5 text-xs font-medium transition disabled:cursor-not-allowed disabled:opacity-50 ${headerButtonShell}`}
-                              >
-                                Undo
-                              </button>
+                              >{uiText("Undo")}</button>
                               <button
                                 type="button"
                                 onClick={onRedoCanvasHistory}
                                 disabled={!canRedoCanvasHistory}
                                 className={`rounded-full px-3 py-1.5 text-xs font-medium transition disabled:cursor-not-allowed disabled:opacity-50 ${headerButtonShell}`}
-                              >
-                                Redo
-                              </button>
+                              >{uiText("Redo")}</button>
                             </div>
                           ) : null}
                         </div>
@@ -728,74 +689,22 @@ export default function AssistantHome(props) {
                   <div ref={messagesEndRef} />
                 </div>
               ) : (
-                  <div className={`flex h-full min-h-[88px] flex-col items-stretch justify-center rounded-2xl p-3 ${emptyStateShell}`}>
-                    {isAssistantQueryGenerating || isPreparingFrameImage ? (
-                      <div className="flex items-center justify-center gap-2">
-                        <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-[#ff4655]" />
-                        <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-[#f6c453] [animation-delay:120ms]" />
-                        <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-[#f97316] [animation-delay:240ms]" />
-                      </div>
-                    ) : (
-                      <div className="grid gap-2">
-                        <div className="mb-1 text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">
-                          Assistant options
-                        </div>
-                        {welcomeOptionList.map((option) => {
-                          const content = (
-                            <>
-                              <span className="block text-sm font-semibold">{option.title}</span>
-                              <span className={`block text-xs leading-5 ${subtleText}`}>{option.description}</span>
-                            </>
-                          );
-
-                          if (option.onClick) {
-                            return (
-                              <button
-                                key={option.title}
-                                type="button"
-                                onClick={option.onClick}
-                                className={`rounded-xl border px-3 py-2 text-left transition ${
-                                  colorMode === 'dark'
-                                    ? 'border-[#3a4050] bg-[#20232e] hover:border-[#f6c453]/50 hover:bg-[#292d3a]'
-                                    : 'border-slate-200 bg-white hover:bg-slate-100'
-                                }`}
-                              >
-                                {content}
-                              </button>
-                            );
-                          }
-
-                          return (
-                            <div
-                              key={option.title}
-                              className={`rounded-xl border px-3 py-2 ${
-                                colorMode === 'dark'
-                                  ? 'border-[#3a4050] bg-[#181b24]'
-                                  : 'border-slate-200 bg-white'
-                              }`}
-                            >
-                              {content}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
+                  <div className="flex h-full min-h-[64px] items-center justify-center px-4 text-center text-sm text-fg-tertiary">
+                    {isAssistantQueryGenerating ? uiText("Thinking...") : uiText("How can I help with your session?")}
                   </div>
                 )}
               </div>
             ) : null}
 
-            <form onSubmit={handleSubmit} className="border-t border-slate-200/10 px-4 py-4">
+            <form onSubmit={handleSubmit} className="mx-auto box-border max-h-[65%] w-full max-w-3xl shrink-0 overflow-y-auto border-t border-line px-4 py-3">
               {isResetConfirmVisible ? (
-                <div className={`mb-3 rounded-2xl px-3 py-3 text-sm ${resetConfirmShell}`}>
+                <div role="alertdialog" aria-label={uiText("Clear assistant session?")} className={`mb-3 rounded-xl px-3 py-3 text-sm ${resetConfirmShell}`}>
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                     <div className="min-w-0">
-                      <div className="font-semibold">Reset assistant session?</div>
-                      <div className={`mt-1 text-xs leading-5 ${subtleText}`}>
-                        This clears the assistant conversation history for this session.
-                      </div>
+                      <div className="font-semibold">{uiText("Clear assistant session?")}</div>
+                      <div className={`mt-1 text-xs leading-5 ${subtleText}`}>{uiText("Delete all assistant messages and stop pending replies? Your project stays unchanged.")}</div>
                       {resetError ? (
-                        <div className="mt-2 text-xs font-medium text-red-500">{resetError}</div>
+                        <div role="alert" className="mt-2 text-xs font-medium text-red-500">{resetError}</div>
                       ) : null}
                     </div>
                     <div className="flex shrink-0 items-center gap-2">
@@ -805,25 +714,45 @@ export default function AssistantHome(props) {
                         disabled={isResetting}
                         className={`inline-flex h-9 min-w-[56px] items-center justify-center rounded-full px-4 text-xs font-semibold transition disabled:cursor-not-allowed disabled:opacity-50 ${resetConfirmButtonShell}`}
                       >
-                        {isResetting ? 'Resetting' : 'Yes'}
+                        {isResetting ? uiText("Clearing...") : uiText("Clear messages")}
                       </button>
                       <button
                         type="button"
                         onClick={handleCancelReset}
                         disabled={isResetting}
                         className={`inline-flex h-9 min-w-[52px] items-center justify-center rounded-full px-4 text-xs font-semibold transition disabled:cursor-not-allowed disabled:opacity-50 ${resetConfirmButtonShell}`}
-                      >
-                        No
-                      </button>
+                      >{uiText("Cancel")}</button>
                     </div>
                   </div>
                 </div>
               ) : null}
               {isStandaloneDeployment && !isInferenceModelAvailabilityLoading && !hasConfiguredInferenceModels ? (
-                <div className="mb-3 rounded-2xl border border-amber-400/30 bg-amber-400/10 px-3 py-2 text-xs font-medium text-amber-600 dark:text-amber-200">
-                  Configure OpenAI, Google Cloud, Alibaba Cloud, OpenRouter, or a Samsar API key in setup to use the assistant.
-                </div>
+                <div className="mb-3 rounded-2xl border border-amber-400/30 bg-amber-400/10 px-3 py-2 text-xs font-medium text-amber-600 dark:text-amber-200">{uiText("Configure OpenAI, Google Cloud, Alibaba Cloud, OpenRouter, or a Samsar API key in setup to use the assistant.")}</div>
               ) : null}
+              <button
+                type="button"
+                onClick={() => setShowModelSettings(current => !current)}
+                aria-expanded={showModelSettings}
+                aria-label={uiText("Assistant model settings")}
+                className="mb-2 flex max-w-full items-center gap-1.5 text-xs text-fg-tertiary hover:text-fg"
+              >
+                <MdTune className="shrink-0 text-base" />
+                <span className="truncate">{assistantModel?.label || uiText("Assistant model")}</span>
+              </button>
+              {showModelSettings && (
+                <div className="mb-3">
+                  <InferenceModelSelect
+                    groupByFamily={false}
+                    options={assistantModelOptions}
+                    value={assistantModel}
+                    onChange={handleAssistantModelChange}
+                    primaryAdapterByModel={primaryAdapterByModel}
+                    isStandaloneDeployment={isStandaloneDeployment}
+                    isDisabled={isAssistantModelUnavailable || isResetting}
+                    placeholder={isAssistantModelUnavailable ? uiText("No model configured") : undefined}
+                  />
+                </div>
+              )}
               <TextareaAutosize
                 value={userInput}
                 onChange={(event) => setUserInput(event.target.value)}
@@ -834,39 +763,35 @@ export default function AssistantHome(props) {
                   }
                 }}
                 className={`mb-3 w-full resize-none rounded-2xl px-3 py-3 focus:outline-none ${inputShell}`}
-                minRows={3}
-                maxRows={10}
+                minRows={2}
+                maxRows={5}
+                aria-label={uiText("Message assistant")}
+                disabled={isResetting || isResetConfirmVisible}
                 placeholder={assistantInputPlaceholder}
               />
               <div className="flex items-center justify-between gap-3">
                 <div className="min-w-0">
                   {canIncludeFrameImage ? (
                     <label
-                      className={`inline-flex cursor-pointer items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-medium transition ${
-                        colorMode === 'dark'
-                          ? 'border-[#3a4050] bg-[#181b24] text-slate-200 hover:border-[#f6c453]/50'
-                          : 'border-slate-200 bg-slate-50 text-slate-700'
-                      }`}
+                      className={`inline-flex cursor-pointer items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-medium transition border-line text-fg-secondary ${colorMode === 'dark' ? 'bg-[#181b24] hover:border-[#f6c453]/50' : 'bg-slate-50'}`}
                     >
                       <input
                         type="checkbox"
                         checked={includeFrameImage}
                         onChange={(event) => setIncludeFrameImage(event.target.checked)}
-                        disabled={isAssistantQueryGenerating || isPreparingFrameImage}
+                        disabled={isAssistantQueryGenerating || isPreparingFrameImage || isResetting || isResetConfirmVisible}
                         className="h-3.5 w-3.5 rounded border-slate-300 accent-[#ff4655]"
                       />
-                      <span>Include frame image</span>
+                      <span>{uiText("Include frame image")}</span>
                     </label>
                   ) : null}
                 </div>
                 <CommonButton
                   type="submit"
                   isPending={isAssistantQueryGenerating || isPreparingFrameImage}
-                  isDisabled={isAssistantModelUnavailable}
-                  extraClasses="min-w-[120px]"
-                >
-                  Send
-                </CommonButton>
+                  isDisabled={isAssistantModelUnavailable || isResetting || isResetConfirmVisible || !userInput.trim()}
+                  extraClasses="!m-0 min-w-[72px] shrink-0"
+                >{uiText("Send")}</CommonButton>
               </div>
             </form>
           </div>

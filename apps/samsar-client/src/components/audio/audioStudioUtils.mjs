@@ -1,11 +1,12 @@
+import { translateText as uiText } from '../../utils/localization.js';
 export const AUDIO_TYPE_MUSIC = 'music';
 export const AUDIO_TYPE_SPEECH = 'speech';
 export const AUDIO_TYPE_SOUND_EFFECT = 'sound_effect';
 
 export const AUDIO_TYPE_LABELS = Object.freeze({
-  [AUDIO_TYPE_MUSIC]: 'Music',
-  [AUDIO_TYPE_SPEECH]: 'Speech',
-  [AUDIO_TYPE_SOUND_EFFECT]: 'Sound effects',
+  get [AUDIO_TYPE_MUSIC]() { return uiText("Music"); },
+  get [AUDIO_TYPE_SPEECH]() { return uiText("Speech"); },
+  get [AUDIO_TYPE_SOUND_EFFECT]() { return uiText("Sound effects"); },
 });
 
 export function normalizeAudioLibraryType(value) {

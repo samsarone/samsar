@@ -1,3 +1,4 @@
+import { normalizeReasoningModel, supportsInferenceEffort, withInferenceEffort } from '../../inference/ReasoningModels.js';
 import {
   DEFAULT_INFERENCE_MODEL,
   GEMINI_4_ARGON_INFERENCE_MODEL,
@@ -85,23 +86,23 @@ const INFERENCE_MODEL_ALIASES = Object.freeze({
   GPT56: DEFAULT_INFERENCE_MODEL,
   GPT6: DEFAULT_INFERENCE_MODEL,
   GPT56SOL: DEFAULT_INFERENCE_MODEL,
-  GPT61SOL: DEFAULT_INFERENCE_MODEL,
+  GPT61SOL: 'gpt-6.1-sol',
   GPT6ASTRA: DEFAULT_INFERENCE_MODEL,
   GPT56HIGH: DEFAULT_INFERENCE_MODEL,
   GPT6HIGH: DEFAULT_INFERENCE_MODEL,
   GPT56SOLHIGH: DEFAULT_INFERENCE_MODEL,
   GPT6ASTRAHIGH: DEFAULT_INFERENCE_MODEL,
-  GPT61SOLHIGH: DEFAULT_INFERENCE_MODEL,
+  GPT61SOLHIGH: 'gpt-6.1-sol',
   GPT56XHIGH: GPT_56_SOL_XHIGH_INFERENCE_MODEL,
   GPT6XHIGH: GPT_56_SOL_XHIGH_INFERENCE_MODEL,
   GPT56SOLXHIGH: GPT_56_SOL_XHIGH_INFERENCE_MODEL,
   GPT6ASTRAXHIGH: GPT_56_SOL_XHIGH_INFERENCE_MODEL,
-  GPT61SOLXHIGH: GPT_56_SOL_XHIGH_INFERENCE_MODEL,
+  GPT61SOLXHIGH: 'gpt-6.1-sol-xhigh',
   GPT56EXTRAHIGH: GPT_56_SOL_XHIGH_INFERENCE_MODEL,
   GPT6EXTRAHIGH: GPT_56_SOL_XHIGH_INFERENCE_MODEL,
   GPT56SOLEXTRAHIGH: GPT_56_SOL_XHIGH_INFERENCE_MODEL,
   GPT6ASTRAEXTRAHIGH: GPT_56_SOL_XHIGH_INFERENCE_MODEL,
-  GPT61SOLEXTRAHIGH: GPT_56_SOL_XHIGH_INFERENCE_MODEL,
+  GPT61SOLEXTRAHIGH: 'gpt-6.1-sol-xhigh',
   GEMINI4: GEMINI_4_ARGON_INFERENCE_MODEL,
   GOOGLEGEMINI4: GEMINI_4_ARGON_INFERENCE_MODEL,
   GEMINI4ARGON: GEMINI_4_ARGON_INFERENCE_MODEL,
@@ -235,11 +236,12 @@ export function normalizeInferenceModelFromPayload(payload = {}) {
     return null;
   }
 
-  const normalizedModel = INFERENCE_MODEL_ALIASES[token];
+  const normalizedModel = normalizeReasoningModel(value) || INFERENCE_MODEL_ALIASES[token];
   if (!normalizedModel) {
     throw makeValidationError(
-      'inference_model must be one of: gpt-6-astra, gemini-4-argon, QWEN3.8, ' +
-      'kimi-k3. Legacy gpt-6-astra-high and gpt-6-astra-xhigh aliases are accepted.'
+      'inference_model must be one of: gpt-6-astra, gpt-6.1-sol, claude-opus-5.5, ' +
+      'claude-fable-5.1, gemini-4-argon, QWEN3.8, kimi-k3. ' +
+      'GPT and Claude models accept high and xhigh effort.'
     );
   }
 
@@ -275,12 +277,11 @@ export function resolveEffectiveInferenceSettings(
   const selectedInferenceModel = normalizeInferenceModel(userSelectedInferenceModel);
   const baseInferenceModel = requestedInferenceModel || selectedInferenceModel;
   const requestedEffort = normalizeInferenceEffortFromPayload(payload);
-  const isGPT56Sol = baseInferenceModel === DEFAULT_INFERENCE_MODEL ||
-    baseInferenceModel === GPT_56_SOL_XHIGH_INFERENCE_MODEL;
+  const isGPT56Sol = supportsInferenceEffort(baseInferenceModel);
 
   if (requestedEffort && !isGPT56Sol) {
     throw makeValidationError(
-      'effort is only supported when inference_model is gpt-6-astra.'
+      'effort is only supported for GPT Astra, GPT Sol, Claude Opus, and Claude Fable.'
     );
   }
 
@@ -288,7 +289,7 @@ export function resolveEffectiveInferenceSettings(
     return { inferenceModel: baseInferenceModel, inferenceEffort: null };
   }
 
-  const legacyModelEffort = baseInferenceModel === GPT_56_SOL_XHIGH_INFERENCE_MODEL
+  const legacyModelEffort = baseInferenceModel.endsWith('-xhigh')
     ? INFERENCE_REASONING_EFFORTS.BranchedInferenceExtraHigh
     : null;
   const savedEffort = requestedInferenceModel
@@ -300,9 +301,7 @@ export function resolveEffectiveInferenceSettings(
   return {
     // Keep the legacy internal identifier so existing queues and workers infer
     // XHigh without requiring every persisted job shape to change at once.
-    inferenceModel: inferenceEffort === INFERENCE_REASONING_EFFORTS.BranchedInferenceExtraHigh
-      ? GPT_56_SOL_XHIGH_INFERENCE_MODEL
-      : DEFAULT_INFERENCE_MODEL,
+    inferenceModel: withInferenceEffort(baseInferenceModel, inferenceEffort),
     inferenceEffort,
   };
 }

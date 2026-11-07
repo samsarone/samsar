@@ -15,7 +15,7 @@ import {
   shouldUseSamsarExternalInference,
 } from './SamsarExternalInferenceAdapter.js';
 
-test('Claude assistant routing uses Anthropic in Docker and OpenRouter when hosted', (t) => {
+test('Claude prefers native Anthropic in standalone and production', (t) => {
   const keys = ['CURRENT_ENV', 'SAMSAR_DEPLOYMENT_EDITION', 'SAMSAR_EDITION',
     'SAMSAR_API_KEY', 'ANTHROPIC_API_KEY', 'OPENROUTER_API_KEY'];
   const previous = Object.fromEntries(keys.map((key) => [key, process.env[key]]));
@@ -35,8 +35,8 @@ test('Claude assistant routing uses Anthropic in Docker and OpenRouter when host
   ]);
   assert.equal(shouldUseSamsarExternalInference(request), false);
   process.env.CURRENT_ENV = 'production';
-  assert.equal(shouldUseOpenRouterInference(request), true);
-  assert.equal(shouldUseSamsarExternalInference(request), true);
+  assert.equal(shouldUseOpenRouterInference(request), false);
+  assert.equal(shouldUseSamsarExternalInference(request), false);
   assert.equal(getOpenRouterModelForInferenceRequest(request), 'anthropic/claude-opus-5.5');
 });
 

@@ -1,3 +1,4 @@
+import { useUiLanguage } from '../../hooks/useUiLanguage.js';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
@@ -25,6 +26,7 @@ const getAspectRatioValue = (ratio) => {
 };
 
 export default function ImageStudioLandingHome() {
+  useUiLanguage();
   const { user, userFetching, userInitiated } = useUser();
   const { openAlertDialog } = useAlertDialog();
   const { colorMode } = useColorMode();
@@ -112,21 +114,15 @@ export default function ImageStudioLandingHome() {
   const aspectRatioStyle = useMemo(() => getAspectRatioValue(aspectRatio), [aspectRatio]);
 
   const mainWorkspaceShell =
-    colorMode === 'dark'
-      ? 'bg-[#0c0d12] text-slate-100'
-      : 'bg-gradient-to-br from-[#e9edf7] via-[#eef3fb] to-white text-slate-900';
+    `text-fg ${colorMode === 'dark' ? 'bg-[#0c0d12]' : 'bg-gradient-to-br from-[#e9edf7] via-[#eef3fb] to-white'}`;
   const toolbarShell =
-    colorMode === 'dark'
-      ? 'bg-[#181b24] border-l border-[#3a4050] shadow-[0_1px_0_rgba(255,255,255,0.04)]'
-      : 'bg-white border-l border-slate-200';
+    `bg-surface border-l border-line ${colorMode === 'dark' ? 'shadow-[0_1px_0_rgba(255,255,255,0.04)]' : ''}`;
   const canvasSurface =
     colorMode === 'dark'
       ? 'bg-[#181b24] border border-[#3a4050] shadow-[0_20px_50px_rgba(0,0,0,0.55)]'
       : 'bg-[#f1f5f9] border border-slate-300';
   const placeholderSurface =
-    colorMode === 'dark'
-      ? 'bg-gradient-to-br from-[#081426] via-[#0e2238] to-[#10253a] border border-[#4a5265]'
-      : 'bg-gradient-to-br from-white via-[#f1f5f9] to-[#e2e8f0] border border-slate-200';
+    `bg-gradient-to-br border border-line-strong ${colorMode === 'dark' ? 'from-[#081426] via-[#0e2238] to-[#10253a]' : 'from-white via-[#f1f5f9] to-[#e2e8f0]'}`;
   const accentSurface =
     colorMode === 'dark'
       ? 'bg-gradient-to-r from-[#ff4655]/20 to-[#f6c453]/20 border border-[#f6c453]/35'

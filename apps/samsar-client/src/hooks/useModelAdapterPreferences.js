@@ -1,3 +1,4 @@
+import { translateText as uiText } from "../utils/localization.js";
 import { useCallback, useEffect, useRef, useState } from "react";
 import axios from "axios";
 
@@ -107,7 +108,7 @@ export function useModelAdapterPreferences({ enabled = false } = {}) {
 
   const savePreferences = useCallback(async (stages) => {
     if (!enabled) {
-      throw new Error("Model adapter settings are unavailable.");
+      throw new Error(uiText("Model adapter settings are unavailable."));
     }
 
     const revision = ++saveRevisionRef.current;

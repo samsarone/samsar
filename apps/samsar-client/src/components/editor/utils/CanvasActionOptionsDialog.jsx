@@ -1,3 +1,5 @@
+import { useUiLanguage } from '../../../hooks/useUiLanguage.js';
+import { translateText as uiText } from '../../../utils/localization.js';
 
 import { FaTimes } from 'react-icons/fa';
 import { useColorMode } from '../../../contexts/ColorMode.jsx';
@@ -11,15 +13,12 @@ export default function CanvasActionOptionsDialog({
   onClose,
   maxWidth = '760px',
 }) {
+  useUiLanguage();
   const { colorMode } = useColorMode();
 
-  const surfaceClass = colorMode === 'dark'
-    ? 'bg-[#181b24] text-slate-100 border border-[#3a4050]'
-    : 'bg-white text-slate-900 border border-slate-200';
-  const mutedClass = colorMode === 'dark' ? 'text-slate-400' : 'text-slate-500';
-  const secondaryButtonClass = colorMode === 'dark'
-    ? 'border border-[#667188] bg-[#20232e] text-slate-100 hover:bg-[#292d3a]'
-    : 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-50';
+  const surfaceClass = 'bg-surface text-fg border border-line';
+  const mutedClass = 'text-fg-muted';
+  const secondaryButtonClass = `border border-line-control bg-surface-raised text-fg-body ${colorMode === 'dark' ? 'hover:bg-[#292d3a]' : 'hover:bg-slate-50'}`;
   const badgeClass = colorMode === 'dark'
     ? 'bg-[#f6c453]/14 text-[#ffe0a3]'
     : 'bg-blue-50 text-blue-700';
@@ -33,7 +32,7 @@ export default function CanvasActionOptionsDialog({
         type="button"
         className={`absolute right-4 top-4 rounded-full p-2 ${secondaryButtonClass}`}
         onClick={onClose}
-        aria-label="Close"
+        aria-label={uiText("Close")}
       >
         <FaTimes />
       </button>

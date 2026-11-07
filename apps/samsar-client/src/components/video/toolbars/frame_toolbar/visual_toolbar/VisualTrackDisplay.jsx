@@ -1,3 +1,4 @@
+import { useUiLanguage } from '../../../../../hooks/useUiLanguage.js';
 import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import ReactSlider from 'react-slider';
 import { FaGripLines } from 'react-icons/fa6';
@@ -65,6 +66,7 @@ function addStyleValueOffset(styleValue, offsetPixels) {
 }
 
 export default function VisualTrackDisplay(props) {
+  useUiLanguage();
   const {
     visualTrackItem,
     onUpdate,
@@ -109,8 +111,7 @@ export default function VisualTrackDisplay(props) {
     );
 
     return [clampedStart, clampedEnd];
-  }, [
-    frameToSliderValue,
+  }, [frameToSliderValue,
     max,
     min,
     visualTrackItem.endFrame,

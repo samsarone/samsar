@@ -1150,6 +1150,7 @@ export async function requestImageListToVideGeneration(userId, payload) {
 
       outroActiveItemList.push(...createOutroCtaTextItems({
         canvasDimensions,
+        centerContentBounds: generatedOutroComposition.center.contentBounds,
         ctaTextTop: outroCtaTextTop,
         ctaTextBottom: outroCtaTextBottom,
         startIndex: outroActiveItemList.length,
@@ -1166,6 +1167,7 @@ export async function requestImageListToVideGeneration(userId, payload) {
         width: generatedOutroComposition.qr.width,
         height: generatedOutroComposition.qr.height,
         src: generatedOutroComposition.qr.src,
+        outroContentBounds: generatedOutroComposition.center.contentBounds,
         is_base_image: false,
         animations: [],
       });

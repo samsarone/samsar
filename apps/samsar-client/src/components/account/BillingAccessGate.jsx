@@ -1,3 +1,5 @@
+import { useUiLanguage } from '../../hooks/useUiLanguage.js';
+import { translateText as uiText } from '../../utils/localization.js';
 import { useCallback, useEffect, useState } from "react";
 import { useLocation } from "react-router-dom";
 
@@ -7,6 +9,7 @@ import AuthContainer, { AUTH_DIALOG_OPTIONS } from "../auth/AuthContainer.jsx";
 import { IS_STANDALONE_DEPLOYMENT } from "../../utils/environment.jsx";
 
 export default function BillingAccessGate() {
+  useUiLanguage();
   const { openAlertDialog } = useAlertDialog();
   const { colorMode } = useColorMode();
   const location = useLocation();
@@ -53,27 +56,21 @@ export default function BillingAccessGate() {
         <div className={`rounded-2xl border ${borderColor} ${cardBg} p-6 shadow-sm`}>
           <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
             <div>
-              <h1 className="text-2xl font-semibold">Billing</h1>
-              <p className={`text-sm ${subtleText}`}>
-                Sign in to manage credits, payment methods, and billing history.
-              </p>
+              <h1 className="text-2xl font-semibold">{uiText("Billing")}</h1>
+              <p className={`text-sm ${subtleText}`}>{uiText("Sign in to manage credits, payment methods, and billing history.")}</p>
             </div>
             <div className="flex flex-wrap gap-3">
               <button
                 type="button"
                 onClick={openLoginDialog}
                 className={`px-4 py-2 rounded-lg font-semibold ${primaryButton}`}
-              >
-                Log in
-              </button>
+              >{uiText("Log in")}</button>
               {!IS_STANDALONE_DEPLOYMENT && (
                 <button
                   type="button"
                   onClick={openRegisterDialog}
                   className={`px-4 py-2 rounded-lg font-semibold ${secondaryButton}`}
-                >
-                  Create account
-                </button>
+                >{uiText("Create account")}</button>
               )}
             </div>
           </div>

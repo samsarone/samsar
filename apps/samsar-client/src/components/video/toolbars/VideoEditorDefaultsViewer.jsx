@@ -1,3 +1,5 @@
+import { useUiLanguage } from '../../../hooks/useUiLanguage.js';
+import { translateText as uiText } from '../../../utils/localization.js';
 import { useEffect, useState } from 'react';
 import ace from 'ace-builds';
 import AceEditor from 'react-ace';
@@ -17,6 +19,7 @@ import 'ace-builds/src-noconflict/ext-beautify';
 ace.config.set('useWorker', false);
 
 export default function VideoEditorDefaultsViewer(props) {
+  useUiLanguage();
   const {
     parentJsonTheme,
     basicTextTheme,
@@ -85,16 +88,14 @@ export default function VideoEditorDefaultsViewer(props) {
           setEditorData({});
         }
       } catch {
-        alert("Unable to parse JSON for UI view. Reverting to JSON view.");
+        alert(uiText("Unable to parse JSON for UI view. Reverting to JSON view."));
         setUiViewMode('json');
       }
     }
   }, [themeJson, themeType, uiViewMode]);
 
   const bgColor =
-    colorMode === 'light'
-      ? 'bg-white text-slate-900 border border-slate-200'
-      : 'bg-[#181b24] text-slate-100 border border-[#3a4050] shadow-[0_14px_36px_rgba(0,0,0,0.35)]';
+    `bg-surface text-fg border border-line ${colorMode === 'light' ? '' : 'shadow-[0_14px_36px_rgba(0,0,0,0.35)]'}`;
   const buttonBgcolor =
     colorMode === 'light'
       ? 'bg-slate-100 text-slate-900 border border-slate-200'
@@ -186,7 +187,7 @@ export default function VideoEditorDefaultsViewer(props) {
         setUiViewMode('ui');
         localStorage.setItem('defaultUserThemeUIVideoMode', 'ui');
       } catch {
-        alert("JSON is invalid, please fix before switching to UI mode.");
+        alert(uiText("JSON is invalid, please fix before switching to UI mode."));
       }
     } else {
       // User switching to JSON mode
@@ -205,7 +206,7 @@ export default function VideoEditorDefaultsViewer(props) {
     // Advanced mode: show autoresize text box without duration box
     themeDisplayBody = (
       <TextareaAutosize
-        placeholder="Add custom theme text here..."
+        placeholder={uiText("Add custom theme text here...")}
         name="advancedTextTheme"
         minRows={3}
         className={`w-full mt-2 ${bgColor} ${text2Color} p-2`}
@@ -215,7 +216,7 @@ export default function VideoEditorDefaultsViewer(props) {
   } else if (themeType === 'derivedJson' || themeType === 'parentJson') {
     let expandPanelButton = <span />;
     if (isExpandedView) {
-      let toggleExpandPanelLabel = isEditorPanelExpanded ? 'Collapse' : 'Expand';
+      let toggleExpandPanelLabel = isEditorPanelExpanded ? uiText("Collapse") : uiText("Expand");
       expandPanelButton = (
         <div className={`inline-flex pl-2 pr-2 cursor-pointer rounded m-auto text-center ${compactControlButtonClassName}`} onClick={toggleExpandPanel}>
           <MdExpand className='m-auto mt-1 mb-1 mr-1'/> {toggleExpandPanelLabel}
@@ -223,7 +224,7 @@ export default function VideoEditorDefaultsViewer(props) {
       );
     }
 
-    const title = themeType === 'parentJson' ? 'Parent Theme' : 'Derived Theme';
+    const title = themeType === 'parentJson' ? uiText("Parent Theme") : uiText("Derived Theme");
     themeDisplayBody = (
       <>
         <div className="flex justify-between items-center mt-1 mb-1">
@@ -238,14 +239,13 @@ export default function VideoEditorDefaultsViewer(props) {
               type="button"
               onClick={handleReset}
             >
-              <FaRedo className='inline-flex mr-1 mt-1 pt-1 text-xs'/> Reset
-            </div>
+              <FaRedo className='inline-flex mr-1 mt-1 pt-1 text-xs'/>{uiText("Reset")}</div>
             <button
               type="button"
               className={`px-2 py-1 rounded ${buttonBgcolor}`}
               onClick={handleViewToggle}
             >
-              {uiViewMode === 'json' ? 'UI View' : 'JSON View'}
+              {uiViewMode === 'json' ? uiText("UI View") : uiText("JSON View")}
             </button>
           </div>
         </div>
@@ -262,9 +262,7 @@ export default function VideoEditorDefaultsViewer(props) {
             colorMode={colorMode}
           />
         ) : uiViewMode === 'ui' && !editorData ? (
-          <div className={`${text2Color} p-2 text-sm`}>
-            No data available for UI editing.
-          </div>
+          <div className={`${text2Color} p-2 text-sm`}>{uiText("No data available for UI editing.")}</div>
         ) : (
           <AceEditor
             mode="json"
@@ -296,15 +294,13 @@ export default function VideoEditorDefaultsViewer(props) {
     themeDisplayBody = (
       <>
         <TextareaAutosize
-          placeholder="Project theme"
+          placeholder={uiText("Project theme")}
           name="basicTextTheme"
           minRows={3}
           className={`w-full mt-2 ${bgColor} ${text2Color} p-2`}
           defaultValue={basicTextTheme}
         />
-        <div className={`text-xs ${text2Color} mb-2 ml-2`}>
-          Theme keywords
-        </div>
+        <div className={`text-xs ${text2Color} mb-2 ml-2`}>{uiText("Theme keywords")}</div>
       </>
     );
   }
@@ -318,16 +314,12 @@ export default function VideoEditorDefaultsViewer(props) {
               type="button"
               className={`mr-2 px-4 py-2 rounded ${getThemeTypeButtonClassName(themeType === 'basic')}`}
               onClick={() => setThemeType('basic')}
-            >
-              Basic
-            </button>
+            >{uiText("Basic")}</button>
             <button
               type="button"
               className={`px-4 py-2 rounded ${getThemeTypeButtonClassName(themeType === 'advanced')}`}
               onClick={() => setThemeType('advanced')}
-            >
-              Advanced
-            </button>
+            >{uiText("Advanced")}</button>
           </div>
         )}
         {themeDisplayBody}
@@ -335,22 +327,18 @@ export default function VideoEditorDefaultsViewer(props) {
           <>
             <input
               type="text"
-              placeholder="Scene duration"
+              placeholder={uiText("Scene duration")}
               name="defaultSceneDuration"
               className={`w-full mt-2 ${bgColor} ${text2Color} p-1 pl-2 h-[30px]`}
               defaultValue={defaultSceneDuration}
               required
             />
-            <div className={`text-xs ${text2Color} mb-2 ml-2`}>
-              Default scene duration
-            </div>
+            <div className={`text-xs ${text2Color} mb-2 ml-2`}>{uiText("Default scene duration")}</div>
           </>
         )}
         <div className={`${isExpandedView ? 'm-auto text-center mb-4' : ''}`}>
           <CommonButton type="submit" className={buttonBgcolor} 
-          isPending={isUpdateDefaultsPending} >
-            Save
-          </CommonButton>
+          isPending={isUpdateDefaultsPending} >{uiText("Save")}</CommonButton>
         </div>
       </form>
     </div>

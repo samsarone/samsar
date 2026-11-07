@@ -1,3 +1,5 @@
+import { normalizeKlingModelKey } from './KlingModel.js';
+import { getExpressVideoCreditsPerSecondForRateClass } from '../consts/pricing/ExpressVideoPricingDistribution.js';
 // In GenerationCreditUtils.js
 
 import {
@@ -100,10 +102,12 @@ export function getCreditsRequiredForQuickVideo(payload) {
 
   // Add video credits if generative video is required
   if (generativeVideoRequired && videoGenerationModel) {
-    const videoPricePerUnit = getPriceFromModelPrices(VIDEO_MODEL_PRICES, {
-      modelKey: videoGenerationModel,
+    const normalizedVideoModel = normalizeKlingModelKey(videoGenerationModel);
+    // Quick workflow estimates retain their fixed rates independently of Studio tariffs.
+    const videoPricePerUnit = getExpressVideoCreditsPerSecondForRateClass(normalizedVideoModel, 'agent') ?? (getPriceFromModelPrices(VIDEO_MODEL_PRICES, {
+      modelKey: normalizedVideoModel,
       aspectRatio,
-    }) || 90; // Default to 90 credits per unit if not found
+    }) || 90); // Default to 90 credits per unit if not found
 
 
     let totalVideoCredits = 0;

@@ -1,3 +1,4 @@
+import { normalizeKlingModelKey } from '../../utils/KlingModel.js';
 import { getRetiredGPTImageModelError, normalizeStoredGPTImageModelKey } from '../../consts/GPTImageModelKeys.js';
 import mongoose from 'mongoose';
 
@@ -182,7 +183,7 @@ export function normalizeNarrativeToVideoPayload(payload = {}) {
   return {
     sourceRequestId,
     imageModel: readOptionalModelAlias(source, 'image_model', 'imageModel', 'image model'),
-    videoModel: readOptionalModelAlias(source, 'video_model', 'videoModel', 'video model'),
+    videoModel: normalizeKlingModelKey(readOptionalModelAlias(source, 'video_model', 'videoModel', 'video model')),
   };
 }
 
@@ -207,6 +208,7 @@ export function resolveNarrativeToVideoModels({
   user = {},
   branched = false,
 } = {}) {
+  requestedVideoModel = normalizeKlingModelKey(requestedVideoModel);
   const retiredModelError = getRetiredGPTImageModelError(requestedImageModel);
   if (retiredModelError) throw buildError(retiredModelError, 400, 'INVALID_IMAGE_MODEL');
   assertProvidedModelIsValid(
@@ -237,8 +239,8 @@ export function resolveNarrativeToVideoModels({
   );
 
   const userImageModel = normalizeStoredGPTImageModelKey(normalizeString(user?.agentImageModel));
-  const userVideoModel = normalizeString(user?.agentVideoModel);
-  const normalizedSourceVideoModel = normalizeString(sourceVideoModel);
+  const userVideoModel = normalizeKlingModelKey(user?.agentVideoModel);
+  const normalizedSourceVideoModel = normalizeKlingModelKey(sourceVideoModel);
   const imageModel = requestedImageModel || (
     isValidExpressImageModel(userImageModel) && (!branched || isBranchedImageModel(userImageModel))
       ? userImageModel
@@ -413,7 +415,7 @@ export async function createVideoFromNarrativeRequest({
   if (!source) {
     validateNarrativeToVideoSourceRequest(source);
   }
-  const sourceVideoModel = normalizeString(source.videoGenerationModel) || DEFAULT_VIDEO_MODEL;
+  const sourceVideoModel = normalizeKlingModelKey(source.videoGenerationModel) || DEFAULT_VIDEO_MODEL;
   const narrativeType = source.narrativeType || 'singular';
   if (
     normalizedPayload.videoModel &&

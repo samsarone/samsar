@@ -1,3 +1,5 @@
+import { useUiLanguage } from '../../hooks/useUiLanguage.js';
+import { translateText as uiText } from '../../utils/localization.js';
 import { useId, useState } from 'react';
 import ImageLibraryHome from './image/ImageLibraryHome';
 import MusicLibraryHome from './audio/MusicLibraryHome';
@@ -9,6 +11,7 @@ import './library.css';
 const LIBRARY_TABS = ['Image', 'Audio', 'Video'];
 
 export default function LibraryHome(props) {
+  useUiLanguage();
   const { resetImageLibrary, onSelectVideo, isSelectButtonDisabled } = props;
   const [selectedOption, setSelectedOption] = useState('Image');
   const tabId = useId();
@@ -55,27 +58,19 @@ export default function LibraryHome(props) {
   };
 
   const headings = {
-    Image: 'Image Library',
-    Audio: 'Audio Library',
-    Video: 'Video Library',
+    Image: uiText("Image Library"),
+    Audio: uiText("Audio Library"),
+    Video: uiText("Video Library"),
   };
 
-  const panelSurface = colorMode === 'dark'
-    ? 'border border-[#3a4050] bg-[#0c0d12] text-slate-100'
-    : 'border border-slate-200 bg-slate-50 text-slate-900';
-  const toolbarSurface = colorMode === 'dark'
-    ? 'border-b border-[#3a4050] bg-[#151720]/95'
-    : 'border-b border-slate-200 bg-white/95';
-  const backButtonSurface = colorMode === 'dark'
-    ? 'border border-[#4a5265] bg-[#20232e] text-slate-100 hover:bg-[#292d3a]'
-    : 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-100';
-  const inactiveTabSurface = colorMode === 'dark'
-    ? 'border border-[#3a4050] bg-[#181b24] text-slate-300 hover:bg-[#292d3a]'
-    : 'border border-slate-200 bg-white text-slate-600 hover:bg-slate-100';
+  const panelSurface = `border border-line text-fg ${colorMode === 'dark' ? 'bg-[#0c0d12]' : 'bg-slate-50'}`;
+  const toolbarSurface = `border-b border-line ${colorMode === 'dark' ? 'bg-[#151720]/95' : 'bg-white/95'}`;
+  const backButtonSurface = 'border border-line-strong bg-surface-raised text-fg-body hover:bg-surface-hover';
+  const inactiveTabSurface = 'border border-line bg-surface text-fg-tertiary hover:bg-surface-hover';
   const activeTabSurface = colorMode === 'dark'
     ? 'border border-[#f6c453]/60 bg-[#f6c453] text-[#0c0d12] shadow-[0_8px_20px_rgba(246,196,83,0.2)]'
     : 'border border-sky-300 bg-gradient-to-r from-sky-500 via-blue-500 to-indigo-500 text-white shadow';
-  const mutedText = colorMode === 'dark' ? 'text-slate-400' : 'text-slate-500';
+  const mutedText = "text-fg-muted";
   const loadingOverlay = colorMode === 'dark'
     ? 'bg-black bg-opacity-50 text-white'
     : 'bg-slate-100/75 text-slate-700';
@@ -93,25 +88,23 @@ export default function LibraryHome(props) {
               onClick={handleBack}
               className={`inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold transition ${backButtonSurface}`}
             >
-              <FaChevronCircleLeft className="text-base" />
-              Back
-            </button>
+              <FaChevronCircleLeft className="text-base" />{uiText("Back")}</button>
 
             <div className="min-w-0">
-              <div className="text-lg font-semibold">Library</div>
+              <div className="text-lg font-semibold">{uiText("Library")}</div>
               <div className={`text-xs ${mutedText}`}>
                 {headings[selectedOption]}
               </div>
             </div>
           </div>
 
-          <div role="tablist" aria-label="Session library" className="flex min-w-0 flex-wrap items-center gap-2">
+          <div role="tablist" aria-label={uiText("Session library")} className="flex min-w-0 flex-wrap items-center gap-2">
             {LIBRARY_TABS.map((option) => (
               <button
                 key={option}
                 type="button"
                 role="tab"
-                id={`${tabId}-${option}`}
+                id={`${tabId}-${uiText(option)}`}
                 aria-selected={selectedOption === option}
                 aria-controls={`${tabId}-panel`}
                 tabIndex={selectedOption === option ? 0 : -1}
@@ -121,7 +114,7 @@ export default function LibraryHome(props) {
                   selectedOption === option ? activeTabSurface : inactiveTabSurface
                 }`}
               >
-                {option}
+                {uiText(option)}
               </button>
             ))}
           </div>
@@ -137,7 +130,7 @@ export default function LibraryHome(props) {
         {renderContent()}
 
         {isLoading && (
-          <div role="status" aria-label="Adding library item" className={`absolute inset-0 z-50 flex items-center justify-center opacity-70 ${loadingOverlay}`}>
+          <div role="status" aria-label={uiText("Adding library item")} className={`absolute inset-0 z-50 flex items-center justify-center opacity-70 ${loadingOverlay}`}>
             <FaSpinner className="text-4xl animate-spin" />
           </div>
         )}

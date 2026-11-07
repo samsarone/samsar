@@ -28,14 +28,19 @@ test('fresh setup wizard renders before provider validation exists', async () =>
       PROVIDER_GROUP_DEFINITIONS.map(({ key, title, providerKeys }) => ({ key, title, providerKeys })),
       [
         {
+          key: 'samsar',
+          title: 'Samsar API key',
+          providerKeys: ['samsar'],
+        },
+        {
           key: 'inference',
           title: 'Inference',
           providerKeys: ['openai', 'anthropic', 'googleCloud', 'alibabaCloud', 'kimi', 'openrouter'],
         },
         {
-          key: 'universal',
-          title: 'Universal adapters',
-          providerKeys: ['gmicloud', 'samsar'],
+          key: 'gmicloud',
+          title: 'GMICloud',
+          providerKeys: ['gmicloud'],
         },
         {
           key: 'media',

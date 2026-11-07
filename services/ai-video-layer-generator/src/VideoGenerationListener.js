@@ -1,7 +1,9 @@
+import { getVideoTimeline } from './utils/VideoTimeline.js';
+import { supportsInferenceEffort, getReasoningModelBase } from './utils/ReasoningModels.js';
 import { attachLocalVideoBillingResult, billCompletedVideo, recoverVideoBillingRequests } from './billing/VideoRequestBilling.js';
 import { sealFalVideoSubmissionReceipt } from './billing/FalVideoTariffs.js';
 import { completeVideoOutput } from './billing/VideoCompletion.js';
-import { frameCountToSeconds, secondsToFrameCount } from './utils/FrameClock.js';
+import { frameCountToSeconds, secondsToFrameCount, getLayerFrameRange } from './utils/FrameClock.js';
 import { extractSyncStartingFrame } from './utils/SyncLipSyncFace.js';
 import { shouldPrepareExpressLipSyncFace } from './utils/ExpressLipSyncPrompt.js';
 import { getSourceSceneMetadata } from './utils/SourceSceneMetadata.js';
@@ -17,7 +19,7 @@ import AIVideoLayerGeneration from './schema/AIVideoLayerGeneration.js';
 import VideoSession from './schema/VideoSession.js';
 import User from './schema/User.js';
 import {
-  processVideoAsFrames, downloadVideoFromRemote, getVideoDuration,
+  processVideoAsFrames, downloadVideoFromRemote, prepareTimelineDerivative,
   downloadVideoFromRemoteBlob,
   processVideoAsFramesAndAudio,
   clipVideoToDuration,
@@ -816,28 +818,10 @@ export function resolveCompletedLayerDuration({
     ?? (Number.isFinite(Number(generatedFrameDuration)) && Number(generatedFrameDuration) > 0
       ? Number(generatedFrameDuration) : null);
 
-  if (
-    isAudioVideoGeneration &&
-    LIPSYNC_MODELS.includes(model) &&
-    Number.isFinite(currentDuration) &&
-    currentDuration > 0
-  ) {
-    const shrinkCandidate = Number.isFinite(frameSafeGeneratedDuration) && frameSafeGeneratedDuration > 0
-      ? frameSafeGeneratedDuration
-      : generatedDuration;
-    const safeFramesPerSecond = Number(framesPerSecond);
-    const shrinkThreshold = Number.isFinite(safeFramesPerSecond) && safeFramesPerSecond > 0
-      ? 0.5 / safeFramesPerSecond
-      : 0.02;
-
-    if (
-      Number.isFinite(shrinkCandidate) &&
-      shrinkCandidate > 0 &&
-      shrinkCandidate < currentDuration - shrinkThreshold
-    ) {
-      return shrinkCandidate;
-    }
-
+  if (isAudioVideoGeneration && (LIPSYNC_MODELS.includes(model) || SOUND_EFFECT_MODELS.includes(model))
+      && Number.isFinite(currentDuration) && currentDuration > 0) {
+    // Completion validates coverage before this point; derivatives never move
+    // scene boundaries or recenter connected speech.
     return currentDuration;
   }
 
@@ -1212,7 +1196,7 @@ function getLegacyInferenceEffort(model) {
   const normalized = typeof model === 'string'
     ? model.trim().toLowerCase().replace(/[_\s]+/g, '-')
     : '';
-  if (!normalized.startsWith(GPT_56_SOL_INFERENCE_MODEL) && !normalized.startsWith('gpt-5.6-sol') && !normalized.startsWith('gpt-6-astra')) {
+  if (!supportsInferenceEffort(model) && !normalized.startsWith(GPT_56_SOL_INFERENCE_MODEL) && !normalized.startsWith('gpt-5.6-sol') && !normalized.startsWith('gpt-6-astra')) {
     return '';
   }
   if (normalized.includes('xhigh') || normalized.includes('extra-high')) {
@@ -1290,7 +1274,7 @@ export async function getInferenceSettingsForSession(
 
   const sourceModel = requestedModel || sessionModel || userData?.selectedInferenceModel;
   const model = normalizeInferenceModel(sourceModel);
-  const effort = model === GPT_56_SOL_INFERENCE_MODEL
+  const effort = supportsInferenceEffort(model)
     ? getGPT56SolReasoningEffort(
       sourceModel,
       requestedEffort ||
@@ -1303,7 +1287,7 @@ export async function getInferenceSettingsForSession(
     : undefined;
 
   return {
-    model,
+    model: getReasoningModelBase(model),
     ...(effort ? { effort } : {}),
     authorization: requestedAuthorization ||
       sessionAuthorization ||
@@ -2633,68 +2617,29 @@ async function processVideoGenerationCompletion(payload, localVideoLink) {
       ? 'lip_sync'
       : 'ai_video';
 
+  const isTimelineDerivative = generatedVideoSourceType === 'lip_sync' || generatedVideoSourceType === 'sound_effect';
+  const requiredFrameCount = getLayerFrameRange(currentLayer, framesPerSecond).frameCount
+    + (currentLayer.clipStart ? Math.max(0, Number(currentLayer.clipStartFrames) || 0) : 0);
+  if (isTimelineDerivative) {
+    try {
+      await prepareTimelineDerivative(localVideoLink, requiredFrameCount, framesPerSecond);
+    } catch (error) {
+      if (error.code !== 'VIDEO_FRAME_BUDGET_MISMATCH') throw error;
+      await processLipSyncGenerationFailed({ ...payload, retryOnFail: false,
+        lastProviderFailureDetail: error.message, providerFailureMessage: error.message });
+      return null;
+    }
+  } else if (isAudioVideoGeneration && clipLayerToAiVideo) {
+    // Base generation may legitimately establish a shorter scene. Only
+    // derivatives are required to cover an already-established timeline.
+    const sourceTimeline = await getVideoTimeline(localVideoLink, framesPerSecond);
+    if (sourceTimeline.frameCount > requiredFrameCount) {
+      await clipVideoToDuration(localVideoLink, requiredFrameCount / framesPerSecond, framesPerSecond);
+    }
+  }
+
 
   if (isAudioVideoGeneration && !shouldPreserveLipSyncTimeline) {
-
-
-    if (clipLayerToAiVideo) {
-      let clipTargetSeconds = Number.isFinite(currentLayerDuration) && currentLayerDuration > 0
-        ? currentLayerDuration
-        : null;
-
-      const baseVideoPath = currentLayer?.aiVideoLayer;
-      if (typeof baseVideoPath === 'string' && baseVideoPath.length > 0 && !baseVideoPath.startsWith('http')) {
-        try {
-          const pwd = process.cwd();
-          const isAssetsV2Path = baseVideoPath.includes('/assets_v2/')
-            || baseVideoPath.replace(/^\/+/, '').startsWith('assets_v2/');
-          const baseVideoRelativeToAssets = baseVideoPath.includes('/assets_v2/')
-            ? baseVideoPath.split('/assets_v2/')[1]
-            : baseVideoPath.includes('/assets/')
-              ? baseVideoPath.split('/assets/')[1]
-              : baseVideoPath.replace(/^\//, '').replace(/^assets_v2\//, '').replace(/^assets\//, '');
-          const assetsRoots = [
-            usesLocalAssetStorage()
-              ? '/assets_v2'
-              : path.join(pwd, '../', 'samsar_processor', 'assets_v2'),
-            ...(isAssetsV2Path ? [] : [
-              usesLocalAssetStorage()
-                ? '/assets'
-                : path.join(pwd, '../', 'samsar_processor', 'assets'),
-            ]),
-          ];
-          const baseVideoAbsolutePath = assetsRoots
-            .map((assetsRoot) => path.join(assetsRoot, baseVideoRelativeToAssets))
-            .find((candidatePath) => fs.existsSync(candidatePath));
-
-          if (baseVideoAbsolutePath && fs.existsSync(baseVideoAbsolutePath)) {
-            const baseDuration = await getVideoDuration(baseVideoAbsolutePath);
-            if (Number.isFinite(baseDuration) && baseDuration > 0) {
-              clipTargetSeconds = baseDuration;
-            }
-          }
-        } catch (err) {
-          console.error('Failed to resolve base AI video duration for clipping; falling back to layer duration', {
-            sessionId,
-            layerId: payload.layerId,
-            error: err?.message || err,
-          });
-        }
-      }
-
-      if (Number.isFinite(clipTargetSeconds) && clipTargetSeconds > 0) {
-        try {
-          await clipVideoToDuration(localVideoLink, clipTargetSeconds);
-        } catch (err) {
-          console.error('Failed to clip audio-video layer to base duration; continuing with original output', {
-            sessionId,
-            layerId: payload.layerId,
-            clipTargetSeconds,
-            error: err?.message || err,
-          });
-        }
-      }
-    }
 
 
     // 3. Now proceed exactly as before
@@ -2735,6 +2680,11 @@ async function processVideoGenerationCompletion(payload, localVideoLink) {
     frameCount = videoFrameResponse.frameCount;
     frameDuration = videoFrameResponse.frameDuration;
 
+  }
+  if (isTimelineDerivative && frameCount < requiredFrameCount) {
+    await processLipSyncGenerationFailed({ ...payload, retryOnFail: false,
+      providerFailureMessage: `Incomplete derivative: expected ${requiredFrameCount} frames, received ${frameCount}.` });
+    return null;
   }
   const localVideoPath = toProcessorAssetPath(localVideoLink);
 
@@ -3034,6 +2984,8 @@ async function markVideoLayerGenerationAsComplete(localVideoLink, payload) {
 
   const isLipSyncModel = LIPSYNC_MODELS.includes(model);
   const shouldPreserveLipSyncTimeline = isAudioVideoGeneration && isLipSyncModel;
+  const shouldPreserveSourceTimeline = isAudioVideoGeneration && (isLipSyncModel
+    || (SOUND_EFFECT_MODELS.includes(model) && isSoundEffectGenerationForLayer(videoSession.layers[currentLayerIndex], payload.generationType)));
 
   let audioSpeechLayers = videoSession.audioLayers.find((layer) => layer.generationType === 'speech');
   let currentLayer = videoSession.layers[currentLayerIndex];
@@ -3118,7 +3070,12 @@ async function markVideoLayerGenerationAsComplete(localVideoLink, payload) {
 
 
 
-  if (shouldPreserveLipSyncTimeline) {
+  if (shouldPreserveSourceTimeline) {
+    // The derivative's end was physically trimmed; only its start trim remains.
+    currentLayer.clipEnd = false;
+    currentLayer.clipEndFrames = 0;
+    currentLayer.startFrame = 0;
+    currentLayer.endFrame = generatedFrameCount;
     const oldDuration = currentLayer.duration;
     currentLayer.duration = resolveCompletedLayerDuration({
       currentLayerDuration: currentLayer.duration,
@@ -3225,7 +3182,7 @@ async function markVideoLayerGenerationAsComplete(localVideoLink, payload) {
 
     await realignAudioVideoLayerToVideoLayer(payload);
   }
-  if (videoSession.isVidGPTGen || videoSession.isExpressGeneration) {
+  if (!shouldPreserveSourceTimeline && (videoSession.isVidGPTGen || videoSession.isExpressGeneration)) {
 
 
 
@@ -3328,9 +3285,12 @@ export async function realignAudioVideoLayerToVideoLayer(payload, dependencies =
   if (currentLayerIndex < 0) return;
 
   let currentLayer = videoSession.layers[currentLayerIndex];
-  // 5) Replace any existing audio layer for this connectedLayer
+  const completedAudioType = SOUND_EFFECT_MODELS.includes(model) && isSoundEffectGenerationForLayer(currentLayer, payload.generationType)
+    ? 'sound_effect' : 'speech';
+  // A sound-effect derivative must not overwrite a connected speech track.
   let connectedAudioLayer = videoSession.audioLayers.find(
     al => al.connectedLayerId === currentLayer._id.toString()
+      && (!al.generationType || al.generationType === completedAudioType)
   );
   if (connectedAudioLayer) {
 	    let generationType = ((SOUND_EFFECT_MODELS.includes(model) && isSoundEffectGenerationForLayer(currentLayer, payload.generationType)))
@@ -3766,6 +3726,8 @@ async function processLipSyncGenerationFailed(payload) {
 
   if (SOUND_EFFECT_MODELS.includes(model) && isSoundEffectGenerationForLayer(currentLayer, payload.generationType)) {
     currentLayer.hasSoundEffectVideoLayer = false;
+    currentLayer.soundEffectVideoLayer = null;
+    currentLayer.soundEffectRemoteLink = null;
     currentLayer.soundEffectGenerationPending = false;
     currentLayer.soundEffectVideoGenerationStatus = 'FAILED';
     currentLayer.soundEffectVideoGenerationError = failureMessage;
@@ -3774,6 +3736,8 @@ async function processLipSyncGenerationFailed(payload) {
   } else if (LIPSYNC_MODELS.includes(model)) {
 
     currentLayer.hasLipSyncVideoLayer = false;
+    currentLayer.lipSyncVideoLayer = null;
+    currentLayer.lipSyncRemoteLink = null;
     currentLayer.lipSyncGenerationPending = false;
     currentLayer.lipSyncVideoGenerationStatus = 'FAILED';
     currentLayer.lipSyncVideoGenerationError = failureMessage;

@@ -1,3 +1,4 @@
+import { serveExternalChatStream } from '../../models/api/ExternalChatStreaming.js';
 import express from 'express';
 
 import audioApiRouter from '../api/audio.js';
@@ -92,6 +93,9 @@ router.get('/api_key/validate', async (req, res) => {
 
 async function handleExternalChatCompletion(req, res) {
   try {
+    if (req.body?.stream === true && !isExternalChatPollingRequested(req.body || {})) {
+      return await serveExternalChatStream(req, res);
+    }
     if (isExternalChatPollingRequested(req.body || {})) {
       const request = await createExternalChatCompletionRequest({
         userId: req.userId,

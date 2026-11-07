@@ -1,9 +1,11 @@
+import { useUiLanguage } from '../../hooks/useUiLanguage.js';
 
 import OverflowContainer from '../common/OverflowContainer.tsx';
 import { useColorMode } from '../../contexts/ColorMode.jsx';
 import QuickEditor from './QuickEditor';
 
 export default function QuickEditorHome() {
+  useUiLanguage();
 
 
   const { colorMode } = useColorMode();

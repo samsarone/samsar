@@ -1,3 +1,5 @@
+import AssistantBillingRequest from '../../schema/AssistantBillingRequest.js';
+import { createAssistantStreamPublisher } from '../../inference/AssistantStreamPublisher.js';
 import OpenAI from 'openai';
 import mongoose from 'mongoose';
 import { createHash } from 'crypto';
@@ -125,16 +127,15 @@ function getRequestedModel(payload = {}) {
 }
 
 export async function createExternalChatCompletion(
-  { userId, payload = {}, idempotencyKey, apiKeyUsage = getCurrentAPIKeyUsageContext() } = {},
+  { userId, payload = {}, idempotencyKey, onText, apiKeyUsage = getCurrentAPIKeyUsageContext() } = {},
   dependencyOverrides = {},
 ) {
   if (!userId) {
     throw buildError('User ID is required.', 401);
   }
   const completionPayload = stripExternalChatAsyncControlFields(payload);
-  if (completionPayload.stream === true) {
-    throw buildError('stream=true is not supported for this endpoint yet.', 400);
-  }
+  delete completionPayload.stream;
+  delete completionPayload.stream_options;
 
   const messages = normalizeMessages(completionPayload.messages);
   const model = getRequestedModel(completionPayload);
@@ -158,8 +159,19 @@ export async function createExternalChatCompletion(
     store: dependencyOverrides.store || assistantBillingStore, leaseMs: timeout + 60000,
     context: { apiKeyUsage },
     admit: () => (dependencyOverrides.admit || admitAssistantRequest)(userId, null, { apiKeyUsage }),
-    generate: requestId => createCompletion(openai, { ...providerPayload,
-      assistantBillingRequestId: requestId, maxRetries: 0, externalMaxRetries: 0 }, dependencyOverrides),
+    generate: async requestId => {
+      const publisher = createAssistantStreamPublisher(async snapshot => {
+        try {
+          await (dependencyOverrides.writeProgress || ((id, state) => AssistantBillingRequest.updateOne(
+            { _id: id, status: { $ne: 'COMPLETED' } }, { $set: { streamState: state } })))(requestId, snapshot);
+        } finally { await onText?.(snapshot.text, snapshot); }
+      }, { queryId: requestId });
+      const response = await createCompletion(openai, { ...providerPayload,
+        ...(payload.stream === true ? { onText: publisher.onText } : {}),
+        assistantBillingRequestId: requestId, maxRetries: 0, externalMaxRetries: 0 }, dependencyOverrides);
+      if (payload.stream === true) await publisher.finish('billing_pending');
+      return response;
+    },
     charge: (credits, context) => dependencyOverrides.deductCredits
       ? dependencyOverrides.deductCredits(userId, credits, { ...context, source: 'external_chat_completion',
         metadata: { category: 'external_chat', pricingMultiplier: context.billing.pricingMultiplier, costUsd: context.billing.costUsd } })

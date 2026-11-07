@@ -59,7 +59,7 @@ function withEnvironment(overrides, callback) {
   }
 }
 
-test('Claude uses native Anthropic in Docker and OpenRouter in hosted requests', () => {
+test('Claude prefers native Anthropic in standalone and production', () => {
   const request = { model: 'claude-opus-5.5', messages: [{ role: 'user', content: 'hello' }] };
   withEnvironment({ CURRENT_ENV: 'docker', ANTHROPIC_API_KEY: 'anthropic-key',
     OPENROUTER_API_KEY: 'openrouter-key' }, () => {
@@ -69,8 +69,8 @@ test('Claude uses native Anthropic in Docker and OpenRouter in hosted requests',
     assert.equal(shouldUseSamsarExternalInference(request), false);
   });
   withEnvironment({ CURRENT_ENV: 'production', ANTHROPIC_API_KEY: 'anthropic-key' }, () => {
-    assert.equal(shouldUseOpenRouterInference(request), true);
-    assert.equal(shouldUseSamsarExternalInference(request), true);
+    assert.equal(shouldUseOpenRouterInference(request), false);
+    assert.equal(shouldUseSamsarExternalInference(request), false);
     assert.equal(getOpenRouterModelForInferenceRequest(request), 'anthropic/claude-opus-5.5');
   });
 });

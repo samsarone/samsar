@@ -1,3 +1,5 @@
+import { useUiLanguage } from '../../../hooks/useUiLanguage.js';
+import { translateText as uiText } from '../../../utils/localization.js';
 
 import { FaTimes } from 'react-icons/fa';
 import { useState } from 'react';
@@ -10,6 +12,7 @@ import { useAlertDialog } from '../../../contexts/AlertDialogContext.jsx';
 import PublishOptionsDialog from './frame_toolbar/PublishOptionsDialog.jsx';
 
 export default function RenderActionButton(props) {
+  useUiLanguage();
   const {
     sessionId,
     submitRenderVideo,
@@ -48,7 +51,7 @@ export default function RenderActionButton(props) {
     && renderCompletedThisSession
     && hasExistingRender
   );
-  const dropdownMainLabel = shouldDownloadOnMain ? 'Download' : 'Render';
+  const dropdownMainLabel = shouldDownloadOnMain ? uiText("Download") : uiText("Render");
   const isRenderActionDisabled = Boolean(isUpdateLayerPending || isRenderPending);
   const shouldShowRenderPendingSpinner = Boolean(isVideoGenerating);
 
@@ -58,9 +61,7 @@ export default function RenderActionButton(props) {
   const pendingButtonClasses = isVideoGenerating ? '!pl-4 !pr-4' : '';
   const renderButtonExtraClasses = `${compactButtonClasses} ${pendingButtonClasses} ${extraClasses}`.trim();
   const cancelButtonSizeClasses = compact ? 'h-[34px] px-2.5 text-sm' : 'px-2 py-2';
-  const cancelButtonClasses = colorMode === 'light'
-    ? 'border border-slate-300 bg-white text-slate-700 hover:bg-slate-100'
-    : 'border border-[#31405e] bg-[#20232e] text-slate-200 hover:bg-[#292d3a]';
+  const cancelButtonClasses = `border bg-surface-raised text-fg-secondary hover:bg-surface-hover ${colorMode === 'light' ? 'border-slate-300' : 'border-[#31405e]'}`;
   const cancelButtonShadow = colorMode === 'dark' ? 'shadow-[0_6px_14px_rgba(3,12,28,0.2)]' : '';
 
   const submitDownloadVideo = () => {
@@ -117,23 +118,23 @@ export default function RenderActionButton(props) {
   const dropdownItems = [];
   if (shouldDownloadOnMain) {
     dropdownItems.push({
-      label: 'Render again',
+      label: uiText("Render again"),
       onClick: submitRenderVideo,
     });
   } else if (canUseDownloadLink) {
     dropdownItems.push({
-      label: 'Download',
+      label: uiText("Download"),
       onClick: submitDownloadVideo,
     });
   }
 
   if (isSessionPublished) {
     dropdownItems.push({
-      label: 'Republish',
+      label: uiText("Republish"),
       onClick: showPublishOptionsDialog,
     });
     dropdownItems.push({
-      label: 'Unpublish',
+      label: uiText("Unpublish"),
       onClick: () => {
         setPublishDraft(null);
         if (typeof unpublishVideoSession === 'function') {
@@ -143,7 +144,7 @@ export default function RenderActionButton(props) {
     });
   } else if (typeof publishVideoSession === 'function') {
     dropdownItems.push({
-      label: 'Publish',
+      label: uiText("Publish"),
       onClick: showPublishOptionsDialog,
     });
   }
@@ -156,15 +157,13 @@ export default function RenderActionButton(props) {
           isPending={shouldShowRenderPendingSpinner}
           isDisabled={true}
           extraClasses={renderButtonExtraClasses}
-        >
-          Render
-        </CommonButton>
+        >{uiText("Render")}</CommonButton>
         <button
           type="button"
           onClick={cancelPendingRender}
           className={`inline-flex items-center justify-center rounded-lg transition-all duration-200 ease-out hover:-translate-y-[1px] active:translate-y-0 ${cancelButtonSizeClasses} ${cancelButtonClasses} ${cancelButtonShadow}`}
-          title="Cancel render"
-          aria-label="Cancel render"
+          title={uiText("Cancel render")}
+          aria-label={uiText("Cancel render")}
         >
           <FaTimes />
         </button>
@@ -179,9 +178,7 @@ export default function RenderActionButton(props) {
         isPending={shouldShowRenderPendingSpinner}
         isDisabled={isRenderActionDisabled}
         extraClasses={renderButtonExtraClasses}
-      >
-        Download
-      </PublicPrimaryButton>
+      >{uiText("Download")}</PublicPrimaryButton>
     );
   }
 
@@ -207,8 +204,6 @@ export default function RenderActionButton(props) {
       isPending={shouldShowRenderPendingSpinner}
       isDisabled={isRenderActionDisabled}
       extraClasses={renderButtonExtraClasses}
-    >
-      Render
-    </CommonButton>
+    >{uiText("Render")}</CommonButton>
   );
 }

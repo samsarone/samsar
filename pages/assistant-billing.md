@@ -10,7 +10,10 @@ All prices are **credits per one million tokens**. Each row applies to the speci
 | --- | --- | --- | ---: | ---: | ---: |
 | `gpt-6-astra` | OpenAI | ≤ 272k input tokens | 1,200 | 120 | 6,000 |
 | `gpt-6-astra` | OpenAI | > 272k input tokens | 2,400 | 240 | 9,000 |
+| `gpt-6.1-sol` | OpenAI | ≤ 272k input tokens | 240 | 12 | 1,200 |
+| `gpt-6.1-sol` | OpenAI | > 272k input tokens | 480 | 24 | 1,800 |
 | `claude-opus-5.5` | Anthropic | Standard | 480 | 24 | 2,400 |
+| `claude-fable-5.1` | Anthropic / OpenRouter | Standard | 1,200 | 30 | 6,000 |
 | `gemini-4-argon` | Google global | Through Nov 30, 2026 | 240 | 12 | 1,200 |
 | `gemini-4-argon` | Google global | From Dec 1, 2026 | 480 | 24 | 2,400 |
 | `gemini-4-argon` | Google regional | Through Nov 30, 2026 | 264 | 13.2 | 1,320 |
@@ -18,7 +21,7 @@ All prices are **credits per one million tokens**. Each row applies to the speci
 | `QWEN3.8` | Alibaba international | Standard | 240 | 30 | 720 |
 | `kimi-k3` | Moonshot | Standard | 360 | 36 | 1,800 |
 
-Other adapter routes may have different final prices. Credit receipts report the final charge for a completed request. See the [public pricing reference](https://docs.samsar.one/pricing) for the shared assistant and external-chat rate tables.
+GPT Astra/Sol and Claude Opus/Fable support High and XHigh at the same per-token rates. Charges follow actual token usage. Other adapter routes may have different final prices. Credit receipts report the final charge for a completed request. See the [public pricing reference](https://docs.samsar.one/pricing) for the shared assistant and external-chat rate tables.
 
 ## Scope
 

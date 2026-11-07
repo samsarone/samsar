@@ -1,11 +1,14 @@
+import { useUiLanguage } from '../../hooks/useUiLanguage.js';
+import { translateText as uiText } from '../../utils/localization.js';
 
 import { useColorMode } from '../../contexts/ColorMode.jsx';
 
 export default function MinimalTaskSkeleton({
-  title = 'Processing task',
-  subtitle = 'This can take a few minutes.',
+  title = uiText("Processing task"),
+  subtitle = uiText("This can take a few minutes."),
   className = '',
 }) {
+  useUiLanguage();
   const { colorMode } = useColorMode();
   const isDark = colorMode === 'dark';
 
@@ -14,7 +17,7 @@ export default function MinimalTaskSkeleton({
     : 'border border-slate-200 bg-white/95 text-slate-800 shadow-[0_18px_48px_rgba(15,23,42,0.12)]';
   const block = isDark ? 'bg-slate-700/70' : 'bg-slate-200';
   const line = isDark ? 'bg-slate-600/70' : 'bg-slate-200';
-  const mutedText = isDark ? 'text-slate-400' : 'text-slate-500';
+  const mutedText = isDark ? "text-slate-400" : "text-slate-500";
 
   return (
     <div className={`w-full max-w-xs rounded-2xl px-4 py-4 animate-pulse ${shell} ${className}`}>

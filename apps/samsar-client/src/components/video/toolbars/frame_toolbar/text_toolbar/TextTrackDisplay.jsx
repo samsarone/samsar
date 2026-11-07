@@ -1,3 +1,4 @@
+import { useUiLanguage } from '../../../../../hooks/useUiLanguage.js';
 import { useStudioFrameRate } from '../../../StudioFrameRateContext.jsx';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import ReactSlider from 'react-slider';
@@ -22,6 +23,7 @@ function addStyleValueOffset(styleValue, offsetPixels) {
 }
 
 const TextTrackDisplay = (props) => {
+  useUiLanguage();
   const DISPLAY_FRAMES_PER_SECOND = useStudioFrameRate();
   const {
     textItemLayer,

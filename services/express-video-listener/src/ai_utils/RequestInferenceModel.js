@@ -1,3 +1,4 @@
+import { supportsInferenceEffort, withInferenceEffort } from './ReasoningModels.js';
 import {
   GPT_56_SOL_INFERENCE_MODEL,
   GPT_56_SOL_XHIGH_INFERENCE_MODEL,
@@ -36,7 +37,7 @@ function getLegacyModelEffort(model) {
   const normalized = typeof model === 'string'
     ? model.trim().toLowerCase().replace(/[_\s]+/g, '-')
     : '';
-  if (!normalized.startsWith(GPT_56_SOL_INFERENCE_MODEL) && !normalized.startsWith('gpt-5.6-sol') && !normalized.startsWith('gpt-6-astra')) return '';
+  if (!supportsInferenceEffort(model) && !normalized.startsWith(GPT_56_SOL_INFERENCE_MODEL) && !normalized.startsWith('gpt-5.6-sol') && !normalized.startsWith('gpt-6-astra')) return '';
   if (normalized.includes('xhigh') || normalized.includes('extra-high')) return 'xhigh';
   return normalized.endsWith('-high') ? 'high' : '';
 }
@@ -124,8 +125,7 @@ export function resolveRequestInferenceEffort({
   const sourceModel = requestedModel || sessionModel || userModel || fallback;
   const normalizedModel = normalizeInferenceModel(sourceModel);
   if (
-    normalizedModel !== GPT_56_SOL_INFERENCE_MODEL &&
-    normalizedModel !== GPT_56_SOL_XHIGH_INFERENCE_MODEL
+    !supportsInferenceEffort(normalizedModel)
   ) {
     return undefined;
   }
@@ -150,11 +150,7 @@ export function resolveRequestInferenceSettings(context = {}) {
   const effort = resolveRequestInferenceEffort(context);
   const model = resolveRequestInferenceModel(context);
   return {
-    model: effort === 'xhigh' && (
-      model === GPT_56_SOL_INFERENCE_MODEL || model === GPT_56_SOL_XHIGH_INFERENCE_MODEL
-    ) ? GPT_56_SOL_XHIGH_INFERENCE_MODEL : model === GPT_56_SOL_XHIGH_INFERENCE_MODEL
-      ? GPT_56_SOL_INFERENCE_MODEL
-      : model,
+    model: withInferenceEffort(model, effort),
     ...(effort ? { effort } : {}),
     authorization: resolveRequestInferenceAuthorization(context),
   };

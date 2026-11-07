@@ -1,3 +1,5 @@
+import { subscribeUiLanguage } from '../../utils/localization.js';
+import { translateText as uiText } from '../../utils/localization.js';
 import { Component } from 'react';
 import {
   APP_ERROR_REVEAL_DELAY_MS,
@@ -37,7 +39,12 @@ export default class AppErrorBoundary extends Component {
     }, APP_ERROR_REVEAL_DELAY_MS);
   }
 
+  componentDidMount() {
+    this.unsubscribeLanguage = subscribeUiLanguage(() => this.forceUpdate());
+  }
+
   componentWillUnmount() {
+    this.unsubscribeLanguage?.();
     if (this.errorRevealTimer !== null) {
       window.clearTimeout(this.errorRevealTimer);
     }
@@ -49,24 +56,19 @@ export default class AppErrorBoundary extends Component {
     }
 
     if (!this.state.revealError) {
-      return <RouteLoadingScreen label="Opening workspace..." />;
+      return <RouteLoadingScreen label={uiText("Opening workspace...")} />;
     }
 
     return (
       <main className="flex min-h-screen items-center justify-center bg-[#0c0d12] px-6 text-slate-100">
         <section className="w-full max-w-md rounded-2xl border border-slate-700 bg-[#181b24] p-7 text-center shadow-2xl">
-          <h1 className="text-xl font-semibold">We couldn&apos;t open this page</h1>
-          <p className="mt-3 text-sm leading-6 text-slate-300">
-            The app may have been updated while this page was open. Reload to
-            reconnect and continue.
-          </p>
+          <h1 className="text-xl font-semibold">{uiText("We couldn't open this page")}</h1>
+          <p className="mt-3 text-sm leading-6 text-slate-300">{uiText("The app may have been updated while this page was open. Reload to reconnect and continue.")}</p>
           <button
             type="button"
             onClick={() => window.location.reload()}
             className="mt-6 rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-500"
-          >
-            Reload page
-          </button>
+          >{uiText("Reload page")}</button>
         </section>
       </main>
     );

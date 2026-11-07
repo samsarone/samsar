@@ -1,3 +1,6 @@
+import { getUiLocale, formatUiNumber } from '../../utils/localization.js';
+import { useUiLanguage } from '../../hooks/useUiLanguage.js';
+import { translateText as uiText } from '../../utils/localization.js';
 // src/components/account/APIKeysPanelContent.js
 
 import { useState, useEffect } from 'react';
@@ -12,16 +15,16 @@ import { useUser } from '../../contexts/UserContext.jsx';
 const PROCESSOR_SERVER = import.meta.env.VITE_PROCESSOR_API;
 
 const API_KEY_EXPIRY_OPTIONS = [
-  { label: '7 days', value: '7' },
-  { label: '90 days', value: '90' },
-  { label: '365 days', value: '365' },
-  { label: 'Never', value: 'never' },
+  { get label() { return uiText("7 days"); }, value: '7' },
+  { get label() { return uiText("90 days"); }, value: '90' },
+  { get label() { return uiText("365 days"); }, value: '365' },
+  { get label() { return uiText("Never"); }, value: 'never' },
 ];
 
 const API_KEY_LIMIT_OPTIONS = [
-  { label: 'No limit', value: 'none' },
-  { label: 'Monthly', value: 'monthly' },
-  { label: 'Total', value: 'total' },
+  { get label() { return uiText("No limit"); }, value: 'none' },
+  { get label() { return uiText("Monthly"); }, value: 'monthly' },
+  { get label() { return uiText("Total"); }, value: 'total' },
 ];
 
 const getExpiryDateFromSelection = (selection) => {
@@ -60,7 +63,7 @@ const buildUsageLimitPayload = (usageLimitPeriod, usageLimit) => {
 
   const numericLimit = Number(usageLimit);
   if (!Number.isFinite(numericLimit) || numericLimit <= 0) {
-    throw new Error('Enter a positive credit limit.');
+    throw new Error(uiText("Enter a positive credit limit."));
   }
 
   return {
@@ -70,13 +73,14 @@ const buildUsageLimitPayload = (usageLimitPeriod, usageLimit) => {
 };
 
 export default function APIKeysPanelContent({ onAPIKeyPresenceChange }) {
+  useUiLanguage();
   const { colorMode } = useColorMode();
   const { user } = useUser();
 
   const textColor = colorMode === 'dark' ? 'text-neutral-100' : 'text-neutral-800';
   const secondaryTextColor = colorMode === 'dark' ? 'text-neutral-400' : 'text-neutral-500';
-  const cardBgColor = colorMode === 'dark' ? 'bg-[#181b24]' : 'bg-white';
-  const borderColor = colorMode === 'dark' ? 'border-[#3a4050]' : 'border-slate-200';
+  const cardBgColor = 'bg-surface';
+  const borderColor = 'border-line';
   const headerBg = colorMode === 'dark' ? 'bg-[#151720]' : 'bg-slate-50';
 
   const [apiKeys, setApiKeys] = useState([]);
@@ -108,7 +112,7 @@ export default function APIKeysPanelContent({ onAPIKeyPresenceChange }) {
       onAPIKeyPresenceChange?.(apiKeyResponse.length > 0);
     } catch  {
       
-      toast.error('Failed to fetch API keys', {
+      toast.error(uiText("Failed to fetch API keys"), {
         position: 'bottom-center',
       });
     } finally {
@@ -131,12 +135,12 @@ export default function APIKeysPanelContent({ onAPIKeyPresenceChange }) {
         ...prevDrafts,
         [newKey._id]: getLimitDraftFromKey(newKey),
       }));
-      toast.success('API key created successfully!', {
+      toast.success(uiText("API key created successfully!"), {
         position: 'bottom-center',
       });
     } catch (error) {
       
-      toast.error(error?.response?.data?.error || error?.message || 'Failed to create API key', {
+      toast.error(error?.response?.data?.error || error?.message || uiText("Failed to create API key"), {
         position: 'bottom-center',
       });
     }
@@ -165,11 +169,11 @@ export default function APIKeysPanelContent({ onAPIKeyPresenceChange }) {
         ...prevDrafts,
         [keyId]: getLimitDraftFromKey(updatedKey),
       }));
-      toast.success('API key limit updated!', {
+      toast.success(uiText("API key limit updated!"), {
         position: 'bottom-center',
       });
     } catch (error) {
-      toast.error(error?.response?.data?.error || error?.message || 'Failed to update API key limit', {
+      toast.error(error?.response?.data?.error || error?.message || uiText("Failed to update API key limit"), {
         position: 'bottom-center',
       });
     } finally {
@@ -184,12 +188,12 @@ export default function APIKeysPanelContent({ onAPIKeyPresenceChange }) {
       const remainingKeys = apiKeys.filter((key) => key._id !== keyId);
       setApiKeys(remainingKeys);
       onAPIKeyPresenceChange?.(remainingKeys.length > 0);
-      toast.success('API key deleted successfully!', {
+      toast.success(uiText("API key deleted successfully!"), {
         position: 'bottom-center',
       });
     } catch  {
       
-      toast.error('Failed to delete API key', {
+      toast.error(uiText("Failed to delete API key"), {
         position: 'bottom-center',
       });
     }
@@ -219,7 +223,7 @@ export default function APIKeysPanelContent({ onAPIKeyPresenceChange }) {
       return '0';
     }
 
-    return numericValue.toLocaleString(undefined, {
+    return numericValue.toLocaleString(getUiLocale(), {
       maximumFractionDigits: 4,
     });
   };
@@ -233,24 +237,22 @@ export default function APIKeysPanelContent({ onAPIKeyPresenceChange }) {
       return `${formatCredits(used)} / ${formatCredits(keyItem.usageLimit)} credits`;
     }
 
-    return `Monthly ${formatCredits(usage.monthlyCreditsUsed)} · Total ${formatCredits(usage.totalCreditsUsed)}`;
+    return uiText("Monthly {value0} · Total {value1}", { value0: formatCredits(usage.monthlyCreditsUsed), value1: formatCredits(usage.totalCreditsUsed) });
   };
 
   return (
     <div className={`flex min-w-0 flex-col flex-grow gap-4 ${textColor}`}>
       <ToastContainer />
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <h2 className="text-2xl font-bold">API Keys</h2>
+        <h2 className="text-2xl font-bold">{uiText("API Keys")}</h2>
         <div className="grid w-full gap-3 sm:w-auto sm:grid-cols-2 lg:flex lg:items-center lg:flex-wrap">
           <div className="flex min-w-0 flex-col gap-1 sm:flex-row sm:items-center sm:gap-2">
-            <label htmlFor="api-key-expiry" className={`text-sm ${secondaryTextColor}`}>
-              Expiry
-            </label>
+            <label htmlFor="api-key-expiry" className={`text-sm ${secondaryTextColor}`}>{uiText("Expiry")}</label>
             <select
               id="api-key-expiry"
               value={selectedExpiry}
               onChange={(e) => setSelectedExpiry(e.target.value)}
-              className={`w-full border ${borderColor} rounded px-3 py-2 sm:w-auto ${colorMode === 'dark' ? 'bg-[#181b24]' : 'bg-white'} ${textColor}`}
+              className={`w-full border ${borderColor} rounded px-3 py-2 sm:w-auto bg-surface ${textColor}`}
             >
               {API_KEY_EXPIRY_OPTIONS.map((option) => (
                 <option key={option.value} value={option.value}>
@@ -260,14 +262,12 @@ export default function APIKeysPanelContent({ onAPIKeyPresenceChange }) {
             </select>
           </div>
           <div className="grid min-w-0 grid-cols-1 gap-1 sm:col-span-2 sm:grid-cols-[auto_minmax(120px,1fr)_minmax(110px,0.6fr)] sm:items-center sm:gap-2 lg:col-span-1">
-            <label htmlFor="api-key-limit-period" className={`text-sm ${secondaryTextColor}`}>
-              Limit
-            </label>
+            <label htmlFor="api-key-limit-period" className={`text-sm ${secondaryTextColor}`}>{uiText("Limit")}</label>
             <select
               id="api-key-limit-period"
               value={selectedLimitPeriod}
               onChange={(e) => setSelectedLimitPeriod(e.target.value)}
-              className={`w-full border ${borderColor} rounded px-3 py-2 ${colorMode === 'dark' ? 'bg-[#181b24]' : 'bg-white'} ${textColor}`}
+              className={`w-full border ${borderColor} rounded px-3 py-2 bg-surface ${textColor}`}
             >
               {API_KEY_LIMIT_OPTIONS.map((option) => (
                 <option key={option.value} value={option.value}>
@@ -282,33 +282,33 @@ export default function APIKeysPanelContent({ onAPIKeyPresenceChange }) {
               value={selectedUsageLimit}
               disabled={selectedLimitPeriod === 'none'}
               onChange={(e) => setSelectedUsageLimit(e.target.value)}
-              placeholder="Credits"
-              className={`w-full border ${borderColor} rounded px-3 py-2 disabled:opacity-50 ${colorMode === 'dark' ? 'bg-[#181b24]' : 'bg-white'} ${textColor}`}
+              placeholder={uiText("Credits")}
+              className={`w-full border ${borderColor} rounded px-3 py-2 disabled:opacity-50 bg-surface ${textColor}`}
             />
           </div>
-          <SecondaryButton onClick={handleCreateKey} className="w-full sm:w-auto">Create Key</SecondaryButton>
+          <SecondaryButton onClick={handleCreateKey} className="w-full sm:w-auto">{uiText("Create Key")}</SecondaryButton>
         </div>
       </div>
       {loading ? (
-        <p className={secondaryTextColor}>Loading...</p>
+        <p className={secondaryTextColor}>{uiText("Loading...")}</p>
       ) : apiKeys.length === 0 ? (
-        <p className={`text-lg ${secondaryTextColor}`}>No API keys found.</p>
+        <p className={`text-lg ${secondaryTextColor}`}>{uiText("No API keys found.")}</p>
       ) : (
         <div className={`min-w-0 rounded-2xl border ${borderColor} ${cardBgColor} overflow-hidden shadow-sm`}>
           <div className={`flex flex-col gap-1 px-4 py-3 border-b sm:flex-row sm:items-center sm:justify-between ${borderColor} ${headerBg}`}>
-            <p className="text-lg font-semibold">Manage your API keys</p>
-            <p className={`text-sm ${secondaryTextColor}`}>Store and rotate keys securely.</p>
+            <p className="text-lg font-semibold">{uiText("Manage your API keys")}</p>
+            <p className={`text-sm ${secondaryTextColor}`}>{uiText("Store and rotate keys securely.")}</p>
           </div>
           <div className="max-w-full overflow-x-auto">
             <table className="min-w-[900px] text-sm">
               <thead className={headerBg}>
                 <tr>
-                  <th className="px-4 py-3 text-left font-semibold">Index</th>
-                  <th className="px-4 py-3 text-left font-semibold">Key</th>
-                  <th className="px-4 py-3 text-left font-semibold">Created At</th>
-                  <th className="px-4 py-3 text-left font-semibold">Expires At</th>
-                  <th className="px-4 py-3 text-left font-semibold">Usage Limit</th>
-                  <th className="px-4 py-3 text-left font-semibold">Actions</th>
+                  <th className="px-4 py-3 text-left font-semibold">{uiText("Index")}</th>
+                  <th className="px-4 py-3 text-left font-semibold">{uiText("Key")}</th>
+                  <th className="px-4 py-3 text-left font-semibold">{uiText("Created At")}</th>
+                  <th className="px-4 py-3 text-left font-semibold">{uiText("Expires At")}</th>
+                  <th className="px-4 py-3 text-left font-semibold">{uiText("Usage Limit")}</th>
+                  <th className="px-4 py-3 text-left font-semibold">{uiText("Actions")}</th>
                 </tr>
               </thead>
               <tbody>
@@ -333,17 +333,17 @@ export default function APIKeysPanelContent({ onAPIKeyPresenceChange }) {
                             onClick={() => toggleShowKey(keyItem._id)}
                             className={`rounded-md px-2 py-1 text-xs font-semibold border ${borderColor} ${colorMode === 'dark' ? 'hover:bg-[#181b24]' : 'hover:bg-slate-100'}`}
                           >
-                            {showKey[keyItem._id] ? 'Hide' : 'Show'}
+                            {showKey[keyItem._id] ? uiText("Hide") : uiText("Show")}
                           </button>
                         </div>
                       </td>
                       <td className={`px-4 py-3 ${secondaryTextColor}`}>
-                        {new Date(keyItem.createdAt).toLocaleString()}
+                        {new Date(keyItem.createdAt).toLocaleString(getUiLocale())}
                       </td>
                       <td className={`px-4 py-3 ${secondaryTextColor}`}>
                         {keyItem.expiresAt
-                          ? new Date(keyItem.expiresAt).toLocaleString()
-                          : 'Never'}
+                          ? new Date(keyItem.expiresAt).toLocaleString(getUiLocale())
+                          : uiText("Never")}
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex min-w-[220px] flex-col gap-2">
@@ -351,7 +351,7 @@ export default function APIKeysPanelContent({ onAPIKeyPresenceChange }) {
                             <select
                               value={limitDrafts[keyItem._id]?.usageLimitPeriod || 'none'}
                               onChange={(e) => handleLimitDraftChange(keyItem._id, 'usageLimitPeriod', e.target.value)}
-                              className={`border ${borderColor} rounded px-2 py-1 ${colorMode === 'dark' ? 'bg-[#181b24]' : 'bg-white'} ${textColor}`}
+                              className={`border ${borderColor} rounded px-2 py-1 bg-surface ${textColor}`}
                             >
                               {API_KEY_LIMIT_OPTIONS.map((option) => (
                                 <option key={option.value} value={option.value}>
@@ -366,13 +366,13 @@ export default function APIKeysPanelContent({ onAPIKeyPresenceChange }) {
                               value={limitDrafts[keyItem._id]?.usageLimit || ''}
                               disabled={(limitDrafts[keyItem._id]?.usageLimitPeriod || 'none') === 'none'}
                               onChange={(e) => handleLimitDraftChange(keyItem._id, 'usageLimit', e.target.value)}
-                              placeholder="Credits"
-                              className={`w-24 min-w-0 border ${borderColor} rounded px-2 py-1 disabled:opacity-50 ${colorMode === 'dark' ? 'bg-[#181b24]' : 'bg-white'} ${textColor}`}
+                              placeholder={uiText("Credits")}
+                              className={`w-24 min-w-0 border ${borderColor} rounded px-2 py-1 disabled:opacity-50 bg-surface ${textColor}`}
                             />
                             <button
                               type="button"
-                              aria-label="Save API key limit"
-                              title="Save API key limit"
+                              aria-label={uiText("Save API key limit")}
+                              title={uiText("Save API key limit")}
                               disabled={savingLimitKeyId === keyItem._id}
                               onClick={() => handleSaveKeyLimit(keyItem._id)}
                               className={`rounded-md p-2 border ${borderColor} disabled:opacity-50 ${colorMode === 'dark' ? 'hover:bg-[#181b24]' : 'hover:bg-slate-100'}`}

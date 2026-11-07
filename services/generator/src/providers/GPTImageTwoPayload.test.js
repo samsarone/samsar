@@ -22,7 +22,7 @@ test('maps every GPT Image 2 aspect ratio to identical native and Fal dimensions
     };
 
     assert.deepEqual(buildOpenAIGPTImageTwoInput(imageGenerationPayload), {
-      model: 'gpt-image-2.5-sunburst',
+      model: 'gpt-image-2.6-sunburst',
       prompt: imageGenerationPayload.prompt,
       size: `${width}x${height}`,
       quality: 'high',
@@ -54,6 +54,18 @@ test('keeps the native square default for unsupported or missing aspect ratios',
   );
 });
 
+test('a queued native request keeps the provider model sealed before the upgrade', () => {
+  const request = buildOpenAIGPTImageTwoInput({
+    prompt: 'A product diagram',
+    imageAdapterTariffSnapshot: { adapter: 'openai', providerModel: 'gpt-image-2.5-sunburst' },
+  });
+  assert.equal(request.model, 'gpt-image-2.5-sunburst');
+  assert.equal(request.quality, 'high');
+  assert.equal(buildOpenAIGPTImageTwoInput({
+    imageAdapterTariffSnapshot: { adapter: 'gmicloud', providerModel: 'gpt-image-2.5-sunburst' },
+  }).model, 'gpt-image-2.6-sunburst');
+});
+
 test('normalizes native and Fal results to one shared response contract', () => {
   assert.deepEqual(normalizeGPTImageTwoResult({
     image: 'generation.png',
@@ -69,7 +81,7 @@ test('normalizes native and Fal results to one shared response contract', () => 
 
 
 test('native image usage survives output normalization for completion billing', () => {
-  const imageBillingReceipt = { adapter: 'openai', model: 'gpt-image-2.5-sunburst',
+  const imageBillingReceipt = { adapter: 'openai', model: 'gpt-image-2.6-sunburst',
     usage: { input_tokens: 10, input_tokens_details: { text_tokens: 10, image_tokens: 0 }, output_tokens: 1000 } };
   const output = normalizeGPTImageTwoResult({ image: 'generated.png', width: 1024, height: 1024, imageBillingReceipt });
   assert.deepEqual(output.imageBillingReceipt, imageBillingReceipt);

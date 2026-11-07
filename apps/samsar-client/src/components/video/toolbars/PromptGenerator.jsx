@@ -1,3 +1,5 @@
+import { useUiLanguage } from '../../../hooks/useUiLanguage.js';
+import { translateText as uiText } from '../../../utils/localization.js';
 import { useMemo, useState, useEffect } from "react";
 import CommonButton from "../../common/CommonButton.tsx";
 import {
@@ -23,6 +25,7 @@ import {
 } from "../../../utils/imageModelAvailability.mjs";
 
 export default function PromptGenerator(props) {
+  const uiLanguage = useUiLanguage();
   const {
     promptText,
     setPromptText,
@@ -64,7 +67,7 @@ export default function PromptGenerator(props) {
         imageGenerationModelSupportsAspectRatio(model, aspectRatio)
       );
     },
-    [aspectRatio, imageModelValues, isStandaloneModelFilteringEnabled, user?.custom_adapters]
+    [uiLanguage, aspectRatio, imageModelValues, isStandaloneModelFilteringEnabled, user?.custom_adapters]
   );
 
 
@@ -120,13 +123,9 @@ export default function PromptGenerator(props) {
   // UI style helpers
   // ------------------------------------------------------------------
   const selectShell =
-    colorMode === "dark"
-      ? "bg-[#151720] text-slate-100 border border-[#667188] focus:border-[#f6c453] focus:outline-none focus:ring-2 focus:ring-[#f6c453]/20"
-      : "bg-white text-slate-900 border border-slate-200 shadow-sm";
+    `bg-surface-sunken text-fg border border-line-control ${colorMode === "dark" ? 'focus:border-[#f6c453] focus:outline-none focus:ring-2 focus:ring-[#f6c453]/20' : 'shadow-sm'}`;
   const textareaShell =
-    colorMode === "dark"
-      ? "bg-[#151720] text-slate-100 border border-[#667188] focus:border-[#f6c453] focus:outline-none focus:ring-2 focus:ring-[#f6c453]/20"
-      : "bg-white text-slate-900 border border-slate-200 shadow-sm";
+    `bg-surface-sunken text-fg border border-line-control ${colorMode === "dark" ? 'focus:border-[#f6c453] focus:outline-none focus:ring-2 focus:ring-[#f6c453]/20' : 'shadow-sm'}`;
   const fieldRowClass = isImageStudio
     ? "flex w-full items-center gap-4 py-1"
     : isSidebarExpanded
@@ -176,8 +175,8 @@ export default function PromptGenerator(props) {
   const usesProviderBilling =
     isStandaloneModelFilteringEnabled && isProviderBilledImagePricing(pricingInfo);
   const modelCostTooltip = usesProviderBilling
-    ? "Billed directly by the configured provider API"
-    : "Usage-based image pricing; charged when each model call completes";
+    ? uiText("Billed directly by the configured provider API")
+    : uiText("Usage-based image pricing; charged when each model call completes");
 
   // ------------------------------------------------------------------
   // Handle user selecting a new model from the dropdown
@@ -234,9 +233,7 @@ export default function PromptGenerator(props) {
       {showModelSelector && (
         <div className={fieldRowClass}>
           <div className={fieldLabelWrapClass}>
-            <div className={fieldLabelClass}>
-              Model
-              <a
+            <div className={fieldLabelClass}>{uiText("Model")}<a
                 data-tooltip-id="modelCostTooltip"
                 data-tooltip-content={modelCostTooltip}
               >
@@ -280,7 +277,7 @@ export default function PromptGenerator(props) {
             return (
               <div className={fieldRowClass}>
                 <div className={fieldLabelWrapClass}>
-                  <div className={isImageStudio ? "text-sm font-semibold" : "text-xs font-bold"}>Image Style</div>
+                  <div className={isImageStudio ? "text-sm font-semibold" : "text-xs font-bold"}>{uiText("Image Style")}</div>
                 </div>
                 <select
                   onChange={handleImageStyleChange}
@@ -302,7 +299,7 @@ export default function PromptGenerator(props) {
       {/* ------------------ Retry on Failure & Character Image ------------------ */}
       <div className="mb-3">
         <ImagePayloadAspectRatioSelector
-          label="Generation ratio"
+          label={uiText("Generation ratio")}
           value={aspectRatio}
           onChange={setAspectRatio}
           options={imageAspectRatioOptions}
@@ -320,17 +317,13 @@ export default function PromptGenerator(props) {
               checked={retryOnFailure}
               onChange={(e) => setRetryOnFailure(e.target.checked)}
             />
-            <span className={optionLabelClass}>
-              Fail Retry
-              <a
+            <span className={optionLabelClass}>{uiText("Fail Retry")}<a
                 data-tooltip-id="retryOnFailTooltip"
-                data-tooltip-content="Retry generation if it fails"
+                data-tooltip-content={uiText("Retry generation if it fails")}
               >
                 <FaQuestionCircle className="ml-1 inline-flex" />
               </a>
-              <Tooltip id="retryOnFailTooltip" place="right" effect="solid">
-                Retry generation if it fails
-              </Tooltip>
+              <Tooltip id="retryOnFailTooltip" place="right" effect="solid">{uiText("Retry generation if it fails")}</Tooltip>
             </span>
           </label>
 
@@ -341,17 +334,13 @@ export default function PromptGenerator(props) {
               checked={isCharacterImage}
               onChange={(e) => setIsCharacterImage(e.target.checked)}
             />
-            <span className={optionLabelClass}>
-              Speaker
-              <a
+            <span className={optionLabelClass}>{uiText("Speaker")}<a
                 data-tooltip-id="characterImageTooltip"
-                data-tooltip-content="Generate an image of a character speaking the prompt"
+                data-tooltip-content={uiText("Generate an image of a character speaking the prompt")}
               >
                 <FaQuestionCircle className="ml-1 inline-flex" />
               </a>
-              <Tooltip id="characterImageTooltip" place="right" effect="solid">
-                Generate an image of a character speaking the prompt
-              </Tooltip>
+              <Tooltip id="characterImageTooltip" place="right" effect="solid">{uiText("Generate an image of a character speaking the prompt")}</Tooltip>
             </span>
           </label>
         </div>
@@ -360,7 +349,7 @@ export default function PromptGenerator(props) {
       {/* ------------------ Prompt Textarea ------------------ */}
       <AutoExpandableTextarea
         onChange={(evt) => setPromptText(evt.target.value)}
-        placeholder="Add prompt text here"
+        placeholder={uiText("Add prompt text here")}
         className={`${textareaShell} w-full m-auto rounded-2xl bg-transparent ${isImageStudio ? "px-4 py-3.5 text-sm" : "px-3 py-3"}`}
         minRows={isImageStudio ? 5 : 4}
         maxRows={10}
@@ -369,9 +358,7 @@ export default function PromptGenerator(props) {
 
       {/* ------------------ Submit Button ------------------ */}
       <div className={buttonContainerClass}>
-          <CommonButton onClick={handleSubmit} isPending={isGenerationPending} extraClasses={buttonExtraClass}>
-            Submit
-          </CommonButton>
+          <CommonButton onClick={handleSubmit} isPending={isGenerationPending} extraClasses={buttonExtraClass}>{uiText("Submit")}</CommonButton>
       </div>
 
       {errorDisplay}

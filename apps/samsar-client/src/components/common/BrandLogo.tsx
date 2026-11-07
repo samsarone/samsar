@@ -1,3 +1,4 @@
+import { useUiLanguage } from '../../hooks/useUiLanguage.js';
 
 import { useColorMode } from '../../contexts/ColorMode.jsx';
 import { useLocalization } from '../../contexts/LocalizationContext.jsx';
@@ -8,6 +9,7 @@ type BrandLogoProps = {
 };
 
 export default function BrandLogo({ onClick, className = '' }: BrandLogoProps) {
+  useUiLanguage();
   const { colorMode } = useColorMode();
   const { t } = useLocalization();
   const isDark = colorMode === 'dark';
@@ -27,14 +29,14 @@ export default function BrandLogo({ onClick, className = '' }: BrandLogoProps) {
       aria-label={ariaLabel}
     >
       <span
-        className={`text-[11px] sm:text-[12px] font-black uppercase tracking-[0.18em] ${
+        className={`text-caption sm:text-[12px] font-black uppercase tracking-[0.18em] ${
           isDark ? 'text-[#f4f6fb]' : 'text-[#0f1a2f]'
         }`}
       >
         {brandName}
       </span>
       <span
-        className={`text-[11px] sm:text-[12px] font-black uppercase tracking-[0.18em] ${
+        className={`text-caption sm:text-[12px] font-black uppercase tracking-[0.18em] ${
           isDark ? 'text-[#ff7f8a]' : 'text-[#ff6b3b]'
         }`}
       >

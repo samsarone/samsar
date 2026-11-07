@@ -1,3 +1,4 @@
+import { useUiLanguage } from '../../hooks/useUiLanguage.js';
 import { useEffect, useState, useRef, useCallback } from 'react';
 import axios from 'axios';
 import { useParams } from 'react-router-dom';
@@ -24,6 +25,7 @@ const PROCESSOR_API_URL = import.meta.env.VITE_PROCESSOR_API;
 
 
 export default function EditorHome(props) {
+  useUiLanguage();
   let { id } = useParams();
 
   const resetSession = () => {

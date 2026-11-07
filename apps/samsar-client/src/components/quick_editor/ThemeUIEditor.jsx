@@ -1,3 +1,5 @@
+import { useUiLanguage } from '../../hooks/useUiLanguage.js';
+import { translateText as uiText } from '../../utils/localization.js';
 
 import { FaTimes, FaPlus, FaTrash } from 'react-icons/fa';
 
@@ -14,8 +16,9 @@ import { FaTimes, FaPlus, FaTrash } from 'react-icons/fa';
  * }
  */
 export default function ThemeUIEditor({ editorData, setEditorData }) {
+  useUiLanguage();
   if (!editorData) {
-    return <div className="text-neutral-100">No data available to edit</div>;
+    return <div className="text-neutral-100">{uiText("No data available to edit")}</div>;
   }
 
   // Helpers for arrays of strings
@@ -122,8 +125,7 @@ export default function ThemeUIEditor({ editorData, setEditorData }) {
             className="flex items-center px-2 py-1 bg-gray-700 text-white rounded hover:bg-gray-600"
             onClick={() => addStringItem(key)}
           >
-            <FaPlus className="mr-1" /> Add
-          </button>
+            <FaPlus className="mr-1" />{uiText("Add")}</button>
         </div>
       </div>
     );
@@ -147,7 +149,7 @@ export default function ThemeUIEditor({ editorData, setEditorData }) {
               <input
                 type="text"
                 className="bg-neutral-800 text-white p-1 rounded w-full"
-                placeholder="Name"
+                placeholder={uiText("Name")}
                 value={obj.name}
                 onChange={(e) => updateObjectName(key, i, e.target.value)}
               />
@@ -158,9 +160,7 @@ export default function ThemeUIEditor({ editorData, setEditorData }) {
             </div>
 
             <div className="mb-2">
-              <div className="font-semibold text-xs text-neutral-400 mb-1">
-                Keywords:
-              </div>
+              <div className="font-semibold text-xs text-neutral-400 mb-1">{uiText("Keywords:")}</div>
               <div className="flex flex-wrap gap-2">
                 {obj.keywords.map((kw, kwIndex) => (
                   <div
@@ -186,8 +186,7 @@ export default function ThemeUIEditor({ editorData, setEditorData }) {
                   className="flex items-center px-2 py-1 bg-gray-700 text-white rounded hover:bg-gray-600"
                   onClick={() => addKeywordToObject(key, i)}
                 >
-                  <FaPlus className="mr-1" /> Add Keyword
-                </button>
+                  <FaPlus className="mr-1" />{uiText("Add Keyword")}</button>
               </div>
             </div>
           </div>
@@ -197,7 +196,7 @@ export default function ThemeUIEditor({ editorData, setEditorData }) {
           className="flex items-center px-2 py-1 bg-gray-700 text-white rounded hover:bg-gray-600"
           onClick={() => addObjectItem(key)}
         >
-          <FaPlus className="mr-1" /> Add {key.slice(0, -1)}
+          <FaPlus className="mr-1" /> {uiText("Add")} {key.slice(0, -1)}
         </button>
       </div>
     );

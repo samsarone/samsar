@@ -1,3 +1,5 @@
+import { useUiLanguage } from '../../../../../hooks/useUiLanguage.js';
+import { translateText as uiText } from '../../../../../utils/localization.js';
 import { useStudioFrameRate } from '../../../StudioFrameRateContext.jsx';
 import { useEffect, useMemo, useState } from 'react';
 import { FaBolt, FaCheck, FaCut, FaPlus, FaTimes } from 'react-icons/fa';
@@ -11,11 +13,11 @@ const DISPLAY_FRAMES_PER_SECOND = 30;
 
 function getToolLabel(activeTool) {
   if (!activeTool) {
-    return 'Choose action';
+    return uiText("Choose action");
   }
 
   if (activeTool.type === 'REMOVE') {
-    return 'Clip';
+    return uiText("Clip");
   }
 
   return `${activeTool.speedMultiplier || DEFAULT_SPEED_MULTIPLIER}x`;
@@ -29,7 +31,7 @@ function formatFrameRange(rangeFrames = [], framesPerSecond = DISPLAY_FRAMES_PER
   const startSeconds = Math.max(0, Number(rangeFrames[0]) || 0) / framesPerSecond;
   const endSeconds = Math.max(startSeconds, Number(rangeFrames[1]) || 0) / framesPerSecond;
 
-  return `${startSeconds.toFixed(1)}s to ${endSeconds.toFixed(1)}s`;
+  return uiText("{value0}s to {value1}s", { value0: startSeconds.toFixed(1), value1: endSeconds.toFixed(1) });
 }
 
 
@@ -43,13 +45,12 @@ function ActionButton({
   colorMode,
   disabled = false,
 }) {
+  useUiLanguage();
   const surfaceClassName = isActive
     ? (colorMode === 'dark'
       ? 'bg-cyan-500/22 border-cyan-300/55 text-cyan-100 shadow-[0_0_18px_rgba(34,211,238,0.18)]'
       : 'bg-sky-100 border-sky-400/55 text-sky-700')
-    : (colorMode === 'dark'
-      ? 'bg-[#20232e]/72 border-[#3a4050] text-slate-300 hover:bg-[#292d3a]'
-      : 'bg-white/80 border-slate-200 text-slate-600 hover:bg-slate-100');
+    : (`border-line text-fg-tertiary hover:bg-surface-hover ${colorMode === 'dark' ? 'bg-[#20232e]/72' : 'bg-white/80'}`);
 
   return (
     <button
@@ -58,7 +59,7 @@ function ActionButton({
       aria-label={ariaLabel || title}
       disabled={disabled}
       onClick={onClick}
-      className={`inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border text-[11px] transition disabled:opacity-50 ${surfaceClassName}`}
+      className={`inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border text-caption transition disabled:opacity-50 ${surfaceClassName}`}
     >
       <span className="inline-flex items-center justify-center">{children}</span>
     </button>
@@ -66,6 +67,7 @@ function ActionButton({
 }
 
 export default function SelectedVideoTrackDisplay(props) {
+  const uiLanguage = useUiLanguage();
   const displayFramesPerSecond = useStudioFrameRate();
   const {
     selectedVideoTrack,
@@ -101,19 +103,19 @@ export default function SelectedVideoTrackDisplay(props) {
       return feedbackMessage;
     }
     if (selectedVideoTrack?.videoEditPending) {
-      return selectedVideoTrack.videoEditTaskMessage || 'Processing';
+      return selectedVideoTrack.videoEditTaskMessage || uiText('Processing');
     }
     if (selectedVideoTrack?.videoEditStatus === 'FAILED') {
-      return selectedVideoTrack.videoEditError || 'Edit failed';
+      return selectedVideoTrack.videoEditError || uiText("Edit failed");
     }
     if (draftOperations.length > 0) {
-      return `${draftOperations.length} staged change${draftOperations.length === 1 ? '' : 's'} ready to apply.`;
+      return uiText("{count} staged changes ready to apply.", { count: draftOperations.length });
     }
     if (!activeTool) {
-      return 'Choose an action.';
+      return uiText("Choose an action.");
     }
-    return `Selection ready for ${getToolLabel(activeTool)} on ${formatFrameRange(selectedRangeFrames, displayFramesPerSecond)}.`;
-  }, [
+    return uiText("Selection ready for {value0} on {value1}.", { value0: getToolLabel(activeTool), value1: formatFrameRange(selectedRangeFrames, displayFramesPerSecond) });
+  }, [uiLanguage,
     displayFramesPerSecond,
     activeTool,
     draftOperations.length,
@@ -137,24 +139,16 @@ export default function SelectedVideoTrackDisplay(props) {
             ? (colorMode === 'dark' ? 'bg-sky-300 shadow-[0_0_10px_rgba(125,211,252,0.45)]' : 'bg-sky-500 shadow-[0_0_8px_rgba(14,165,233,0.35)]')
             : (colorMode === 'dark' ? 'bg-slate-600' : 'bg-slate-300');
 
-  const toolbarSurfaceClassName = colorMode === 'dark'
-    ? 'bg-[#151720]/68 border border-[#3a4050] backdrop-blur-md'
-    : 'bg-white/72 border border-slate-200 backdrop-blur-md';
-  const inputSurfaceClassName = colorMode === 'dark'
-    ? 'bg-[#20232e]/82 border border-[#3a4050] text-slate-100'
-    : 'bg-white/88 border border-slate-200 text-slate-700';
-  const secondaryButtonClassName = colorMode === 'dark'
-    ? 'border border-[#31405e] bg-[#20232e]/78 text-slate-200 hover:bg-[#292d3a]'
-    : 'border border-slate-200 bg-white/85 text-slate-700 hover:bg-slate-100';
+  const toolbarSurfaceClassName = `border border-line backdrop-blur-md ${colorMode === 'dark' ? 'bg-[#151720]/68' : 'bg-white/72'}`;
+  const inputSurfaceClassName = `border border-line text-fg-body ${colorMode === 'dark' ? 'bg-[#20232e]/82' : 'bg-white/88'}`;
+  const secondaryButtonClassName = `border text-fg-secondary hover:bg-surface-hover ${colorMode === 'dark' ? 'border-[#31405e] bg-[#20232e]/78' : 'border-slate-200 bg-white/85'}`;
   const destructiveButtonClassName = colorMode === 'dark'
     ? 'border border-rose-500/40 bg-rose-500/10 text-rose-200 hover:bg-rose-500/18'
     : 'border border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100';
-  const primaryButtonClassName = colorMode === 'dark'
-    ? 'bg-cyan-400 text-[#080a10] hover:bg-cyan-300'
-    : 'bg-sky-600 text-white hover:bg-sky-500';
+  const primaryButtonClassName = `text-on-accent ${colorMode === 'dark' ? 'bg-cyan-400 hover:bg-cyan-300' : 'bg-sky-600 hover:bg-sky-500'}`;
   const showClearDrafts = draftOperations.length > 0;
 
-  const applyButtonTitle = showClearDrafts ? 'Apply staged edits' : 'Apply current edit';
+  const applyButtonTitle = showClearDrafts ? uiText("Apply staged edits") : uiText("Apply current edit");
   const canApplyCurrentSelection = Boolean(activeTool);
   const canApplyAnyEdit = showClearDrafts || canApplyCurrentSelection;
 
@@ -164,10 +158,10 @@ export default function SelectedVideoTrackDisplay(props) {
       return;
     }
     if (response?.success === false) {
-      setFeedbackMessage(response.error || 'Unable to stage this selection.');
+      setFeedbackMessage(response.error || uiText("Unable to stage this selection."));
       return;
     }
-    setFeedbackMessage('Selection staged. Click Apply when ready.');
+    setFeedbackMessage(uiText("Selection staged. Click Apply when ready."));
   };
 
   const handleApplyClick = async () => {
@@ -179,7 +173,7 @@ export default function SelectedVideoTrackDisplay(props) {
       return;
     }
     if (response?.success === false) {
-      setFeedbackMessage(response.error || 'Unable to apply this edit.');
+      setFeedbackMessage(response.error || uiText("Unable to apply this edit."));
       return;
     }
     setFeedbackMessage('');
@@ -202,7 +196,7 @@ export default function SelectedVideoTrackDisplay(props) {
             type: 'SPEED',
             speedMultiplier: resolvedSpeedMultiplier,
           })}
-          title="Fast edit"
+          title={uiText("Fast edit")}
         >
           <FaBolt />
         </ActionButton>
@@ -215,7 +209,7 @@ export default function SelectedVideoTrackDisplay(props) {
             type: 'REMOVE',
             speedMultiplier: 1,
           })}
-          title="Clip edit"
+          title={uiText("Clip edit")}
         >
           <FaCut />
         </ActionButton>
@@ -231,7 +225,7 @@ export default function SelectedVideoTrackDisplay(props) {
               disabled={isBusy}
               onChange={(event) => onSpeedMultiplierChange?.(Number(event.target.value))}
               className="h-1.5 w-[108px] cursor-pointer accent-cyan-400"
-              title="Speed multiplier"
+              title={uiText("Speed multiplier")}
             />
             <input
               type="number"
@@ -241,19 +235,19 @@ export default function SelectedVideoTrackDisplay(props) {
               value={resolvedSpeedMultiplier}
               disabled={isBusy}
               onChange={(event) => onSpeedMultiplierChange?.(Number(event.target.value))}
-              className={`h-8 w-[68px] rounded-lg px-2 py-1 text-[11px] ${inputSurfaceClassName}`}
-              title="Speed multiplier"
+              className={`h-8 w-[68px] rounded-lg px-2 py-1 text-caption ${inputSurfaceClassName}`}
+              title={uiText("Speed multiplier")}
             />
           </>
         )}
 
         <button
           type="button"
-          title="Stage edit"
-          aria-label="Stage edit"
+          title={uiText("Stage edit")}
+          aria-label={uiText("Stage edit")}
           disabled={isBusy || !activeTool}
           onClick={handleAddDraftClick}
-          className={`inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-[11px] transition disabled:opacity-50 ${secondaryButtonClassName}`}
+          className={`inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-caption transition disabled:opacity-50 ${secondaryButtonClassName}`}
         >
           <FaPlus />
         </button>
@@ -264,7 +258,7 @@ export default function SelectedVideoTrackDisplay(props) {
           aria-label={applyButtonTitle}
           disabled={isBusy || !canApplyAnyEdit}
           onClick={handleApplyClick}
-          className={`inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-[11px] transition disabled:opacity-50 ${primaryButtonClassName}`}
+          className={`inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-caption transition disabled:opacity-50 ${primaryButtonClassName}`}
         >
           <FaCheck />
         </button>
@@ -272,11 +266,11 @@ export default function SelectedVideoTrackDisplay(props) {
         {showClearDrafts ? (
           <button
             type="button"
-            title="Clear staged edits"
-            aria-label="Clear staged edits"
+            title={uiText("Clear staged edits")}
+            aria-label={uiText("Clear staged edits")}
             disabled={isBusy}
             onClick={onClearDrafts}
-            className={`inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-[11px] transition disabled:opacity-50 ${destructiveButtonClassName}`}
+            className={`inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-caption transition disabled:opacity-50 ${destructiveButtonClassName}`}
           >
             <FaTimes />
           </button>

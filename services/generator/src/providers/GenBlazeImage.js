@@ -200,7 +200,7 @@ export async function submitGenBlazeImageRequest(payload = {}, dependencies = {}
   await imageGenerationModel.findByIdAndUpdate(_id, { rowLocked: true });
   try {
     if (normalizeModel(payload.model) === 'GPTIMAGE2.5') {
-      throw new Error('GPTImage 2.5 Sunburst is not verified on GMICloud. Use OpenAI or Fal.');
+      throw new Error('GPTImage 2.6 Sunburst is not verified on GMICloud. Use OpenAI or Fal.');
     }
     const response = await request('/media/requests', {
       method: 'POST',

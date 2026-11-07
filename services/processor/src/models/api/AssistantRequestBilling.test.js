@@ -267,3 +267,68 @@ test('P2P: historical sealed billing is reused without applying the new tariff o
   assert.equal(h.providerCalls, 0);
   assert.equal(h.account.debits, 1);
 });
+
+
+test('REST and streaming share billing identity while transport flags do not change a request', () => {
+  const payload = { model: 'gpt-6-astra', messages: [{ role: 'user', content: 'hello' }] };
+  assert.deepEqual(assistantRequestIdentity('user', 'assistant', payload, 'key'),
+    assistantRequestIdentity('user', 'assistant', { ...payload, stream: true, stream_options: { include_usage: true } }, 'key'));
+});
+
+test('a truncated provider stream is retained for reconciliation and never dispatched twice', async () => {
+  const h = harness(); let calls = 0;
+  h.options.generate = async () => { calls++; throw Object.assign(new Error('Connection ended'), { code: 'ASSISTANT_STREAM_INTERRUPTED' }); };
+  await assert.rejects(runAssistantRequest(h.options), { code: 'ASSISTANT_STREAM_INTERRUPTED' });
+  assert.equal(h.store.records.get(h.options.id).status, 'BILLING_PENDING');
+  await assert.rejects(runAssistantRequest(h.options), { code: 'ASSISTANT_PROVIDER_OUTCOME_UNKNOWN' });
+  assert.equal(calls, 1);
+  assert.equal(h.account.debits, 0);
+});
+
+test('stream usage settles cached input and inclusive reasoning output once with the existing 20 percent markup', async () => {
+  const h = harness();
+  h.options.generate = async () => ({ model: 'gpt-6-astra', usage: {
+    prompt_tokens: 1000, completion_tokens: 100,
+    prompt_tokens_details: { cached_tokens: 200 }, completion_tokens_details: { reasoning_tokens: 75 },
+  } });
+  const result = await runAssistantRequest(h.options);
+  // Astra tariffs: $10 uncached / $1 cached / $50 output per million.
+  assert.equal(result.creditsCharged, 1.584);
+  assert.deepEqual(await runAssistantRequest(h.options), result);
+  assert.equal(h.account.debits, 1);
+});
+
+test('lost receipt ownership prevents dispatch and debit by the old worker', async () => {
+  const h = harness();
+  h.store.save = async () => null;
+  await assert.rejects(runAssistantRequest(h.options), { code: 'ASSISTANT_REQUEST_IN_PROGRESS' });
+  assert.equal(h.providerCalls, 0);
+  assert.equal(h.account.debits, 0);
+});
+
+test('a transient usage-persistence failure still retains the response and recovers without another inference', async () => {
+  const h = harness(); const save = h.store.save; let failed = false;
+  h.store.save = async (id, fields) => {
+    if (fields.providerResponse && !failed) { failed = true; throw new Error('Receipt unavailable'); }
+    return save(id, fields);
+  };
+  await assert.rejects(runAssistantRequest(h.options), /Receipt unavailable/);
+  assert.ok(h.store.records.get(h.options.id).providerResponse);
+  await runAssistantRequest(h.options);
+  assert.equal(h.providerCalls, 1);
+  assert.equal(h.account.debits, 1);
+});
+
+
+test('an original provider finishing after lease loss retains its receipt for the new owner', async () => {
+  const h = harness(); const save = h.store.save; let saves = 0;
+  h.store.save = (...args) => ++saves === 2 ? null : save(...args);
+  h.store.retainResponse = async (id, providerResponse) => { h.store.records.get(id).providerResponse = providerResponse; };
+  await assert.rejects(runAssistantRequest(h.options), { code: 'ASSISTANT_REQUEST_IN_PROGRESS' });
+  assert.ok(h.store.records.get(h.options.id).providerResponse);
+  assert.equal(h.account.debits, 0);
+  h.store.records.get(h.options.id).leaseUntil = null;
+  await runAssistantRequest(h.options);
+  assert.equal(h.providerCalls, 1);
+  assert.equal(h.account.debits, 1);
+});

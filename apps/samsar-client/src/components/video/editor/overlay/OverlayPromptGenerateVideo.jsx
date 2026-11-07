@@ -1,3 +1,6 @@
+import { normalizeKlingModelKey } from '../../../../utils/KlingModel.mjs';
+import { useUiLanguage } from '../../../../hooks/useUiLanguage.js';
+import { translateText as uiText } from '../../../../utils/localization.js';
 import { useEffect, useMemo, useState } from "react";
 import { FaQuestionCircle } from "react-icons/fa";
 import CommonButton from "../../../common/CommonButton.tsx";
@@ -20,8 +23,6 @@ import { isProviderBilledVideoPricing } from "../../../../utils/videoModelAvaila
 import "react-tooltip/dist/react-tooltip.css";
 
 const NATIVE_AUDIO_VIDEO_MODELS = new Set([
-  "KLINGIMGTOVID3PRO",
-  "KLINGTXTTOVID3PRO",
   "VEO3.1",
   "VEO3.1FAST",
   "VEO3.1I2V",
@@ -32,6 +33,7 @@ const NATIVE_AUDIO_VIDEO_MODELS = new Set([
 ]);
 
 export default function OverlayPromptGenerateVideo(props) {
+  useUiLanguage();
   const {
     videoPromptText,
     setVideoPromptText,
@@ -51,25 +53,17 @@ export default function OverlayPromptGenerateVideo(props) {
   const isPortraitLayout = layoutMode === "portrait";
   const isLandscapeLayout = layoutMode === "landscape";
   const selectShell =
-    colorMode === "dark"
-      ? "bg-[#151720] text-slate-100 border border-[#667188] focus:border-[#f6c453] focus:outline-none focus:ring-2 focus:ring-[#f6c453]/20"
-      : "bg-slate-50 text-slate-900 border border-slate-200 shadow-sm";
+    `text-fg border border-line-control ${colorMode === "dark" ? 'bg-[#151720] focus:border-[#f6c453] focus:outline-none focus:ring-2 focus:ring-[#f6c453]/20' : 'bg-slate-50 shadow-sm'}`;
   const textareaShell =
-    colorMode === "dark"
-      ? "bg-[#151720] text-slate-100 border border-[#667188] focus:border-[#f6c453] focus:outline-none focus:ring-2 focus:ring-[#f6c453]/20"
-      : "bg-slate-50 text-slate-900 border border-slate-200 shadow-sm";
+    `text-fg border border-line-control ${colorMode === "dark" ? 'bg-[#151720] focus:border-[#f6c453] focus:outline-none focus:ring-2 focus:ring-[#f6c453]/20' : 'bg-slate-50 shadow-sm'}`;
   const chipShell =
-    colorMode === "dark"
-      ? "bg-[#20232e] border border-[#4a5265] text-slate-300 hover:bg-[#292d3a]"
-      : "bg-slate-50 border border-slate-200 text-slate-600 hover:bg-white";
+    `bg-surface-muted border border-line-strong text-fg-tertiary ${colorMode === "dark" ? 'hover:bg-[#292d3a]' : 'hover:bg-white'}`;
   const activeChipShell =
     colorMode === "dark"
       ? "bg-[#f6c453]/14 border-[#f6c453]/55 text-[#fff1c8]"
       : "bg-indigo-50 border-indigo-200 text-indigo-700";
   const fieldLabelClassName =
-    colorMode === "dark"
-      ? "text-xs font-semibold text-slate-200"
-      : "text-xs font-semibold text-slate-700";
+    'text-xs font-semibold text-fg-secondary';
   const fieldLayoutClassName = isLandscapeLayout
     ? "grid w-full grid-cols-3 gap-3"
     : "flex w-full flex-col gap-3";
@@ -152,7 +146,12 @@ export default function OverlayPromptGenerateVideo(props) {
   useEffect(() => {
     if (availableModelKeys.length === 0) return;
 
-    const storedModel = localStorage.getItem("defaultVideoModel");
+    const storedModel = normalizeKlingModelKey(localStorage.getItem("defaultVideoModel"));
+    const currentModel = normalizeKlingModelKey(selectedVideoGenerationModel);
+    if (currentModel !== selectedVideoGenerationModel && availableModelKeys.includes(currentModel)) {
+      setSelectedVideoGenerationModel(currentModel);
+      return;
+    }
     const fallbackModel =
       storedModel && availableModelKeys.includes(storedModel)
         ? storedModel
@@ -359,18 +358,18 @@ export default function OverlayPromptGenerateVideo(props) {
       <div className={`shrink-0 ${fieldLayoutClassName}`}>
         <div className={controlGroupClassName}>
           <div className={`${fieldLabelClassName} flex items-center gap-1`}>
-            <span>Model</span>
+            <span>{uiText("Model")}</span>
             <a
               data-tooltip-id="videoModelCostTooltip"
               data-tooltip-content={
                 isProviderBilled
                   ? pricingForSelectedModel?.key === 'HUMMINGBIRDLIPSYNC'
-                    ? '15 credits per requested second (unverified-price fallback)'
-                    : 'Model-specific charge on completion'
-                  : `Currently selected model cost: ${modelPrice} Credits`
+                    ? uiText("15 credits per requested second (unverified-price fallback)")
+                    : uiText("Model-specific charge on completion")
+                  : uiText("Currently selected model cost: {value0} Credits", { value0: modelPrice })
               }
             >
-              <FaQuestionCircle className="text-[11px]" />
+              <FaQuestionCircle className="text-caption" />
             </a>
             <Tooltip id="videoModelCostTooltip" place="right" effect="solid" />
           </div>
@@ -389,7 +388,7 @@ export default function OverlayPromptGenerateVideo(props) {
 
         {selectedModelDef?.modelSubTypes?.length > 0 ? (
           <div className={controlGroupClassName}>
-            <div className={fieldLabelClassName}>Scene Type</div>
+            <div className={fieldLabelClassName}>{uiText("Scene Type")}</div>
             <select
               value={selectedModelSubType}
               onChange={handleModelSubTypeChange}
@@ -406,7 +405,7 @@ export default function OverlayPromptGenerateVideo(props) {
 
         {pricingForSelectedModel?.units ? (
           <div className={controlGroupClassName}>
-            <div className={fieldLabelClassName}>Duration</div>
+            <div className={fieldLabelClassName}>{uiText("Duration")}</div>
             <select
               onChange={handleDurationChange}
               className={`${selectShell} w-full rounded-md px-2.5 py-2`}
@@ -441,7 +440,7 @@ export default function OverlayPromptGenerateVideo(props) {
               checked={useStartFrame}
               onChange={handleStartFrameChange}
             />
-            <span>Use start frame</span>
+            <span>{uiText("Use start frame")}</span>
           </label>
         ) : null}
 
@@ -459,7 +458,7 @@ export default function OverlayPromptGenerateVideo(props) {
               checked={useEndFrame}
               onChange={handleEndFrameChange}
             />
-            <span>Use end frame</span>
+            <span>{uiText("Use end frame")}</span>
           </label>
         ) : null}
 
@@ -477,7 +476,7 @@ export default function OverlayPromptGenerateVideo(props) {
               checked={combineLayers}
               onChange={handleCombineLayersChange}
             />
-            <span>Combine layers</span>
+            <span>{uiText("Combine layers")}</span>
           </label>
         ) : null}
 
@@ -495,7 +494,7 @@ export default function OverlayPromptGenerateVideo(props) {
               checked={clipLayerToAiVideo}
               onChange={handleClipLayerChange}
             />
-            <span>Clip to AI video</span>
+            <span>{uiText("Clip to AI video")}</span>
           </label>
         ) : null}
 
@@ -516,7 +515,7 @@ export default function OverlayPromptGenerateVideo(props) {
                 handleOptimizePromptChange(event.target.checked)
               }
             />
-            <span>Optimize prompt</span>
+            <span>{uiText("Optimize prompt")}</span>
           </label>
         ) : null}
 
@@ -534,7 +533,7 @@ export default function OverlayPromptGenerateVideo(props) {
               checked={generateAudio}
               onChange={handleGenerateAudioChange}
             />
-            <span>Generate audio</span>
+            <span>{uiText("Generate audio")}</span>
           </label>
         ) : null}
       </div>
@@ -542,7 +541,7 @@ export default function OverlayPromptGenerateVideo(props) {
       {selectedVideoGenerationModel !== "SDVIDEO" ? (
         <TextareaAutosize
           onChange={(event) => setVideoPromptText(event.target.value)}
-          placeholder="Describe the motion, pacing, and cinematic details you want..."
+          placeholder={uiText("Describe the motion, pacing, and cinematic details you want...")}
           className={`${textareaShell} min-h-[5rem] w-full flex-1 resize-none overflow-y-auto rounded-lg px-3 py-2`}
           minRows={isPortraitLayout ? 2 : 2}
           maxRows={promptTextareaMaxRows}
@@ -560,9 +559,7 @@ export default function OverlayPromptGenerateVideo(props) {
           isPending={aiVideoGenerationPending}
           isDisabled={!hasAvailableModels}
           extraClasses={isPortraitLayout ? "w-full" : "min-w-[140px]"}
-        >
-          Submit
-        </CommonButton>
+        >{uiText("Submit")}</CommonButton>
       </div>
 
       {errorDisplay}

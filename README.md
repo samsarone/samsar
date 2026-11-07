@@ -364,9 +364,9 @@ The [complete model matrix](pages/model-matrix.md) lists **all 46 model keys in 
 
 | Modality | Models in the deployment registry | Explore and build |
 | --- | --- | --- |
-| Inference & vision | GPT 6 Astra, Claude Opus 5.5, Gemini 4 Argon, Kimi K3, Qwen 3.8 Max | [Matrix](pages/model-matrix.md#inference) · [Hosted chat](https://docs.samsar.one/external-requests#chat) |
-| Image generation | GPTImage 2.5, Seedream 5 Pro, Nano Banana 2 / Pro, Qwen Image 3.0 Pro, Wan 2.7 Pro | [Matrix](pages/model-matrix.md#image) · [Image API](https://docs.samsar.one/image-api) |
-| Image editing | GPTImage 2.5 Edit, Nano Banana 2 / Pro Edit, BRIA Eraser / GenFill | [Matrix](pages/model-matrix.md#image-edit) · [Edit API](https://docs.samsar.one/v2#v2-image-edit-routes) |
+| Inference & vision | GPT 6 Astra / 6.1 Sol, Claude Opus 5.5 / Fable 5.1, Gemini 4 Argon, Kimi K3, Qwen 3.8 Max | [Matrix](pages/model-matrix.md#inference) · [Hosted chat](https://docs.samsar.one/external-requests#chat) |
+| Image generation | GPTImage 2.6, Seedream 5 Pro, Nano Banana 2 / Pro, Qwen Image 3.0 Pro, Wan 2.7 Pro | [Matrix](pages/model-matrix.md#image) · [Image API](https://docs.samsar.one/image-api) |
+| Image editing | GPTImage 2.6 Edit, Nano Banana 2 / Pro Edit, BRIA Eraser / GenFill | [Matrix](pages/model-matrix.md#image-edit) · [Edit API](https://docs.samsar.one/v2#v2-image-edit-routes) |
 | Video generation | Runway; Veo 3.1 text / fast / I2V / first-last-frame; Cosmos 3; Seedance 1.5 / 2.0 / 2.5; Kling 3 / 1.6 / 2.1 variants; Hailuo; Happy Horse 1.1 | [Every video key](pages/model-matrix.md#video) · [Video API](https://docs.samsar.one/video) |
 | Speech | OpenAI TTS, Google TTS, ElevenLabs | [Matrix and request values](pages/model-matrix.md#speech) · [Audio API](https://docs.samsar.one/external-requests#audio) |
 | Music | Lyria 3, ElevenLabs Music | [Matrix](pages/model-matrix.md#music) · [Audio API](https://docs.samsar.one/external-requests#audio) |
@@ -378,11 +378,12 @@ The [complete model matrix](pages/model-matrix.md) lists **all 46 model keys in 
 <details>
 <summary><strong>Understand model keys, workflow support and native exceptions</strong></summary>
 
-- **Model keys:** `GPTIMAGE2.5` identifies GPTImage 2.5; retired `GPTIMAGE2` requests return an Invalid model validation error; `SEEDREAM` maps to Seedream 5 Pro; `HAPPYHORSEI2V` maps to Happy Horse 1.1 I2V. Use Samsar keys rather than an upstream provider ID.
-- **Inference aliases:** current requests use `gpt-6-astra`; older setup files can contain `gpt-5.6-sol`, which the processor normalizes. `KIMIK3` is the setup key; use `kimi-k3` in inference requests.
+- **Model keys:** `GPTIMAGE2.5` and `GPTIMAGE2.5EDIT` retain their spelling for compatibility and now select GPTImage 2.6 Sunburst (High); retired `GPTIMAGE2` requests return an Invalid model validation error; `SEEDREAM` maps to Seedream 5 Pro; `HAPPYHORSEI2V` maps to Happy Horse 1.1 I2V. Use Samsar keys rather than an upstream provider ID.
+- **GPT Image providers:** OpenAI generation and editing use `gpt-image-2.6-sunburst`; fal generation uses `openai/gpt-image-2.6/sunburst/text-to-image`. Quality remains `high`, with the same image dimensions, Studio price tables and billing markup. Previously submitted jobs retain their original provider model or endpoint.
+- **GPT and Claude choices:** use `gpt-6-astra`, `gpt-6.1-sol`, `claude-opus-5.5`, or `claude-fable-5.1` with `effort: "high"` or `effort: "xhigh"` for inference and vision. Defaults remain Astra and High. Native and OpenRouter credentials enable both models in their family. Older `gpt-5.6-sol` aliases normalize to Astra. `KIMIK3` is the setup key; use `kimi-k3` in inference requests.
 - **Workflow scope:** the complete Studio catalog is larger than the Express and branching allowlists. A model listed for image generation is not automatically selectable for an Express scene.
 - **Native-only model:** `QWENIMAGE3PRO` needs Alibaba Cloud standard pay-as-you-go credentials. It is not enabled by a Samsar key or Alibaba Token Plan.
-- **Credential-scoped model routes:** GenBlaze enables only exact validated GMICloud mappings. Legacy GPT Image 2 mappings do not satisfy the GPTImage 2.5 contract.
+- **Credential-scoped model routes:** GenBlaze enables only exact validated GMICloud mappings. Legacy GPT Image 2 mappings do not satisfy the GPTImage 2.6 contract.
 - **Speech values:** Express uses `tts_model: 'OPENAI'`, `'GOOGLE'` or `'ELEVENLABS'`, not the setup labels `OPENAI_TTS` and `GOOGLE_TTS`.
 
 </details>

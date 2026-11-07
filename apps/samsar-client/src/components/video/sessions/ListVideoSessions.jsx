@@ -1,3 +1,5 @@
+import { useUiLanguage } from '../../../hooks/useUiLanguage.js';
+import { translateText as uiText } from '../../../utils/localization.js';
 import { useEffect, useRef, useState } from 'react';
 import axios from 'axios';
 import { getHeaders } from '../../../utils/web';
@@ -30,19 +32,19 @@ const PROCESSOR_API = import.meta.env.VITE_PROCESSOR_API;
 
 // Options for the filters
 const renderTypeOptions = [
-  { value: 'All', label: 'All' },
-  { value: 'Rendered', label: 'Rendered' },
-  { value: 'Pending', label: 'Pending' },
+  { value: 'All', get label() { return uiText("All"); } },
+  { value: 'Rendered', get label() { return uiText("Rendered"); } },
+  { value: 'Pending', get label() { return uiText("Pending"); } },
 ];
 
 const publishedStatusOptions = [
-  { value: 'All', label: 'All' },
-  { value: 'Published', label: 'Published' },
-  { value: 'Unpublished', label: 'Unpublished' },
+  { value: 'All', get label() { return uiText("All"); } },
+  { value: 'Published', get label() { return uiText("Published"); } },
+  { value: 'Unpublished', get label() { return uiText("Unpublished"); } },
 ];
 
 const aspectRatioOptions = [
-  { value: 'All', label: 'All' },
+  { value: 'All', get label() { return uiText("All"); } },
   { value: '16:9', label: '16:9' },
   { value: '19:6', label: '19:6' },
   { value: '9:16', label: '9:16' },
@@ -151,20 +153,19 @@ const resolveSessionPreviewImage = (session = {}, failedPreviewSources = new Set
 };
 
 function DeleteVideoSessionDialog({ session, onDeleted, onClose, colorMode }) {
+  useUiLanguage();
   const [deleteArtifacts, setDeleteArtifacts] = useState(true);
   const [isDeleting, setIsDeleting] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
 
   const sessionIdentifier = session?.id ?? session?._id;
-  const sessionName = normalizeSessionText(session?.sessionName) || session?.name || 'this session';
-  const dialogTextClass = colorMode === 'dark' ? 'text-slate-200' : 'text-slate-700';
-  const subtleTextClass = colorMode === 'dark' ? 'text-slate-400' : 'text-slate-500';
+  const sessionName = normalizeSessionText(session?.sessionName) || session?.name || uiText("this session");
+  const dialogTextClass = 'text-fg-secondary';
+  const subtleTextClass = 'text-fg-muted';
   const checkboxClass = colorMode === 'dark'
     ? 'border-slate-600 bg-slate-900 text-rose-500'
     : 'border-slate-300 bg-white text-rose-600';
-  const secondaryButtonClass = colorMode === 'dark'
-    ? 'border border-slate-700 bg-slate-900 text-slate-100 hover:bg-slate-800'
-    : 'border border-slate-300 bg-white text-slate-700 hover:bg-slate-50';
+  const secondaryButtonClass = `border text-fg-body ${colorMode === 'dark' ? 'border-slate-700 bg-slate-900 hover:bg-slate-800' : 'border-slate-300 bg-white hover:bg-slate-50'}`;
 
   const handleConfirmDelete = async () => {
     if (!sessionIdentifier || isDeleting) {
@@ -189,7 +190,7 @@ function DeleteVideoSessionDialog({ session, onDeleted, onClose, colorMode }) {
       setErrorMessage(
         error?.response?.data?.error ||
         error?.message ||
-        'Unable to delete session.'
+        uiText("Unable to delete session.")
       );
     } finally {
       setIsDeleting(false);
@@ -198,10 +199,8 @@ function DeleteVideoSessionDialog({ session, onDeleted, onClose, colorMode }) {
 
   return (
     <div className="w-full text-left">
-      <div className="pr-8 text-lg font-semibold">Delete session?</div>
-      <div className={`mt-2 text-sm leading-5 ${dialogTextClass}`}>
-        This will permanently delete {sessionName}.
-      </div>
+      <div className="pr-8 text-lg font-semibold">{uiText("Delete session?")}</div>
+      <div className={`mt-2 text-sm leading-5 ${dialogTextClass}`}>{uiText("This will permanently delete {value0}.", { value0: sessionName })}</div>
 
       <label className={`mt-5 flex cursor-pointer items-center gap-3 text-sm ${dialogTextClass}`}>
         <input
@@ -211,7 +210,7 @@ function DeleteVideoSessionDialog({ session, onDeleted, onClose, colorMode }) {
           disabled={isDeleting}
           className={`h-4 w-4 rounded focus:ring-rose-500 ${checkboxClass}`}
         />
-        <span>Delete session artifacts</span>
+        <span>{uiText("Delete session artifacts")}</span>
       </label>
 
       {errorMessage && (
@@ -226,27 +225,24 @@ function DeleteVideoSessionDialog({ session, onDeleted, onClose, colorMode }) {
           onClick={onClose}
           disabled={isDeleting}
           className={`min-h-[38px] rounded-md px-4 py-2 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${secondaryButtonClass}`}
-        >
-          No
-        </button>
+        >{uiText("No")}</button>
         <button
           type="button"
           onClick={handleConfirmDelete}
           disabled={isDeleting}
           className="min-h-[38px] rounded-md bg-rose-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-rose-700 disabled:cursor-not-allowed disabled:opacity-60"
         >
-          {isDeleting ? 'Deleting' : 'Yes'}
+          {isDeleting ? uiText("Deleting") : uiText("Yes")}
         </button>
       </div>
 
-      <div className={`mt-3 text-xs ${subtleTextClass}`}>
-        This action cannot be undone.
-      </div>
+      <div className={`mt-3 text-xs ${subtleTextClass}`}>{uiText("This action cannot be undone.")}</div>
     </div>
   );
 }
 
 export default function ListVideoSessions() {
+  useUiLanguage();
   const [sessionList, setSessionList] = useState([]);
   const [page, setPage] = useState(1);
   const [limit] = useState(30); // Show 30 items per page by default
@@ -274,21 +270,15 @@ export default function ListVideoSessions() {
   const { colorMode } = useColorMode();
   const { openAlertDialog, closeAlertDialog } = useAlertDialog();
   const containerSurface =
-    colorMode === 'dark'
-      ? 'bg-[#0c0d12] text-slate-100'
-      : 'bg-[#f7f9fc] text-slate-900';
+    `text-fg ${colorMode === 'dark' ? 'bg-[#0c0d12]' : 'bg-[#f7f9fc]'}`;
   const cardSurface =
-    colorMode === 'dark'
-      ? 'bg-[#181b24] border border-[#3a4050] shadow-[0_14px_36px_rgba(0,0,0,0.35)]'
-      : 'bg-white border border-slate-200 shadow-sm';
+    `bg-surface border border-line ${colorMode === 'dark' ? 'shadow-[0_14px_36px_rgba(0,0,0,0.35)]' : 'shadow-sm'}`;
   const resetButtonClass =
     colorMode === 'dark'
       ? 'bg-rose-500/90 hover:bg-rose-500 text-white'
       : 'bg-rose-500 hover:bg-rose-600 text-white';
   const paginationButtonClass =
-    colorMode === 'dark'
-      ? 'bg-[#20232e] hover:bg-[#292d3a] text-slate-100 border border-[#3a4050]'
-      : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 shadow-sm';
+    `bg-surface-raised hover:bg-surface-hover text-fg-body border border-line ${colorMode === 'dark' ? '' : 'shadow-sm'}`;
 
   // Fetch sessions whenever pagination or a filter changes. Filters are read
   // during initial state creation so the first request is the same request
@@ -572,15 +562,11 @@ export default function ListVideoSessions() {
   let projectsLabelDisplay = null;
   if (sessionList.length > 0 || isLoading || listError) {
     projectsLabelDisplay = (
-      <div className="mx-auto mb-3 w-full max-w-[1600px] text-left text-lg font-bold">
-        My Projects
-      </div>
+      <div className="mx-auto mb-3 w-full max-w-[1600px] text-left text-lg font-bold">{uiText("My Projects")}</div>
     );
   } else {
     projectsLabelDisplay = (
-      <div className="mx-auto mb-3 w-full max-w-[1600px] text-left text-lg font-bold">
-        Looks like you don't have any projects yet. Get started by creating a new project.
-      </div>
+      <div className="mx-auto mb-3 w-full max-w-[1600px] text-left text-lg font-bold">{uiText("Looks like you don't have any projects yet. Get started by creating a new project.")}</div>
     );
   }
 
@@ -593,9 +579,7 @@ export default function ListVideoSessions() {
           <div className="grid w-full grid-cols-1 gap-3 sm:grid-cols-2 lg:w-auto lg:grid-cols-[repeat(3,minmax(0,180px))_auto]">
             {/* Render Type Filter */}
             <div className="min-w-0">
-              <label className="mb-1 block text-xs font-medium text-slate-500" htmlFor="project-render-filter">
-                Render status
-              </label>
+              <label className="mb-1 block text-xs font-medium text-slate-500" htmlFor="project-render-filter">{uiText("Render status")}</label>
               <SingleSelect
                 options={renderTypeOptions}
                 value={renderTypeOptions.find((o) => o.value === renderType)}
@@ -608,9 +592,7 @@ export default function ListVideoSessions() {
 
             {/* Aspect Ratio Filter */}
             <div className="min-w-0">
-              <label className="mb-1 block text-xs font-medium text-slate-500" htmlFor="project-aspect-ratio-filter">
-                Aspect ratio
-              </label>
+              <label className="mb-1 block text-xs font-medium text-slate-500" htmlFor="project-aspect-ratio-filter">{uiText("Aspect ratio")}</label>
               <SingleSelect
                 options={aspectRatioOptions}
                 value={aspectRatioOptions.find((o) => o.value === aspectRatio)}
@@ -623,9 +605,7 @@ export default function ListVideoSessions() {
 
             {/* Published Status Filter */}
             <div className="min-w-0">
-              <label className="mb-1 block text-xs font-medium text-slate-500" htmlFor="project-published-filter">
-                Publication
-              </label>
+              <label className="mb-1 block text-xs font-medium text-slate-500" htmlFor="project-published-filter">{uiText("Publication")}</label>
               <SingleSelect
                 options={publishedStatusOptions}
                 value={publishedStatusOptions.find((o) => o.value === publishedStatus)}
@@ -640,33 +620,23 @@ export default function ListVideoSessions() {
             <button
               onClick={handleResetFilters}
               className={`min-h-[40px] rounded-md px-4 py-2 text-sm font-medium transition-colors duration-150 ${resetButtonClass}`}
-            >
-              Reset
-            </button>
+            >{uiText("Reset")}</button>
           </div>
 
           {/* Pagination controls */}
           <div className="flex flex-wrap items-center justify-center gap-3 text-sm">
-            <span className="text-xs text-slate-500">
-              Showing {sessionList.length} of {totalSessions} projects
-            </span>
+            <span className="text-xs text-slate-500">{uiText("Showing {value0} of {value1} projects", { value0: sessionList.length, value1: totalSessions })}</span>
             <button
               onClick={handlePrevPage}
               disabled={page <= 1}
               className={`min-h-[40px] rounded-md px-4 py-2 font-medium transition-all duration-150 disabled:cursor-not-allowed disabled:opacity-50 ${paginationButtonClass}`}
-            >
-              Prev
-            </button>
-            <span className="min-w-[96px] text-center">
-              Page {page} of {totalPages}
-            </span>
+            >{uiText("Prev")}</button>
+            <span className="min-w-[96px] text-center">{uiText("Page {value0} of {value1}", { value0: page, value1: totalPages })}</span>
             <button
               onClick={handleNextPage}
               disabled={page >= totalPages}
               className={`min-h-[40px] rounded-md px-4 py-2 font-medium transition-all duration-150 disabled:cursor-not-allowed disabled:opacity-50 ${paginationButtonClass}`}
-            >
-              Next
-            </button>
+            >{uiText("Next")}</button>
           </div>
         </div>
 
@@ -681,9 +651,7 @@ export default function ListVideoSessions() {
             <span
               className="h-5 w-5 shrink-0 animate-spin rounded-full border-2 border-sky-500 border-t-transparent"
               aria-hidden="true"
-            />
-            Loading your projects...
-          </div>
+            />{uiText("Loading your projects...")}</div>
         )}
 
         {listError && (
@@ -700,9 +668,7 @@ export default function ListVideoSessions() {
               type="button"
               onClick={retrySessionList}
               className="min-h-[38px] shrink-0 rounded-lg bg-rose-600 px-4 py-2 font-semibold text-white transition-colors hover:bg-rose-500"
-            >
-              Try again
-            </button>
+            >{uiText("Try again")}</button>
           </div>
         )}
 
@@ -716,7 +682,7 @@ export default function ListVideoSessions() {
             const sessionDisplayName =
               sessionName ||
               normalizeSessionText(session.name) ||
-              'Untitled project';
+              uiText("Untitled project");
             const sessionDisplayDescription = truncateSessionDescription(sessionDescription);
             const sessionPreview = resolveSessionPreviewImage(
               session,
@@ -739,8 +705,8 @@ export default function ListVideoSessions() {
                 {!isImportedSession && (
                   <button
                     type="button"
-                    aria-label="Delete session"
-                    title="Delete session"
+                    aria-label={uiText("Delete session")}
+                    title={uiText("Delete session")}
                     onClick={(event) => openDeleteSessionDialog(event, session)}
                     className={`absolute right-2 top-2 z-10 flex h-7 w-7 items-center justify-center rounded-full text-xs transition-colors ${
                       colorMode === 'dark'
@@ -767,59 +733,47 @@ export default function ListVideoSessions() {
                   </div>
                   <div className="flex shrink-0 flex-row flex-nowrap items-center gap-1">
                     <span
-                      title={`Aspect ratio ${sessionAspectRatio}`}
-                      className={`whitespace-nowrap rounded-full px-2 py-0.5 text-[10px] font-semibold tabular-nums tracking-wide ${
-                        colorMode === 'dark'
-                          ? 'bg-slate-700/70 text-slate-200 ring-1 ring-slate-500/40'
-                          : 'bg-slate-100 text-slate-700 ring-1 ring-slate-200'
-                      }`}
+                      title={uiText("Aspect ratio {value0}", { value0: sessionAspectRatio })}
+                      className={`whitespace-nowrap rounded-full px-2 py-0.5 text-micro font-semibold tabular-nums tracking-wide text-fg-secondary ring-1 ${colorMode === 'dark' ? 'bg-slate-700/70 ring-slate-500/40' : 'bg-slate-100 ring-slate-200'}`}
                     >
                       {sessionAspectRatio}
                     </span>
                     {isImportedSession && (
                       <span
-                        className={`whitespace-nowrap rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
+                        className={`whitespace-nowrap rounded-full px-2 py-0.5 text-micro font-semibold uppercase tracking-wide ${
                           colorMode === 'dark'
                             ? 'bg-emerald-400/12 text-emerald-200 ring-1 ring-emerald-300/25'
                             : 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200'
                         }`}
-                      >
-                        Imported
-                      </span>
+                      >{uiText("Imported")}</span>
                     )}
                     {isInteractiveVideo && (
                       <span
-                        className={`whitespace-nowrap rounded-full px-2 py-0.5 text-[10px] font-semibold tracking-wide ${
+                        className={`whitespace-nowrap rounded-full px-2 py-0.5 text-micro font-semibold tracking-wide ${
                           colorMode === 'dark'
                             ? 'bg-sky-400/12 text-sky-200 ring-1 ring-sky-300/25'
                             : 'bg-sky-50 text-sky-700 ring-1 ring-sky-200'
                         }`}
-                      >
-                        Interactive video
-                      </span>
+                      >{uiText("Interactive video")}</span>
                     )}
                     {isExpressSession && !isInteractiveVideo && (
                       <span
-                        className={`whitespace-nowrap rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
+                        className={`whitespace-nowrap rounded-full px-2 py-0.5 text-micro font-semibold uppercase tracking-wide ${
                           colorMode === 'dark'
                             ? 'bg-cyan-400/12 text-cyan-200 ring-1 ring-cyan-300/25'
                             : 'bg-cyan-50 text-cyan-700 ring-1 ring-cyan-200'
                         }`}
-                      >
-                        Express
-                      </span>
+                      >{uiText("Express")}</span>
                     )}
                     {isPublishedSession && (
                       <span
-                        title="Published to gallery"
-                        className={`whitespace-nowrap rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
+                        title={uiText("Published to gallery")}
+                        className={`whitespace-nowrap rounded-full px-2 py-0.5 text-micro font-semibold uppercase tracking-wide ${
                           colorMode === 'dark'
                             ? 'bg-violet-400/12 text-violet-200 ring-1 ring-violet-300/25'
                             : 'bg-violet-50 text-violet-700 ring-1 ring-violet-200'
                         }`}
-                      >
-                        Published
-                      </span>
+                      >{uiText("Published")}</span>
                     )}
                   </div>
                 </div>
@@ -829,26 +783,22 @@ export default function ListVideoSessions() {
                       src={sessionPreview.src}
                       onError={() => handleSessionPreviewImageError(sessionPreview.src)}
                       className="h-full w-full object-cover"
-                      alt={`Session ${index + 1}`}
+                      alt={uiText("Session {value0}", { value0: index + 1 })}
                     />
                   )}
                   {sessionPreview.isPlaceholder && (
                     <div className="pointer-events-none absolute inset-x-0 top-[calc(50%+1.25rem)] z-[1] flex justify-center px-4">
                       <span
-                        className={`rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] ${
+                        className={`rounded-full px-3 py-1 text-caption font-semibold uppercase tracking-[0.18em] ${
                           colorMode === 'dark'
                             ? 'bg-slate-950/55 text-slate-200 ring-1 ring-white/10'
                             : 'bg-white/75 text-slate-600 ring-1 ring-slate-200/80'
                         }`}
-                      >
-                        Missing thumbnail
-                      </span>
+                      >{uiText("Missing thumbnail")}</span>
                     </div>
                   )}
                 </div>
-                <div className="px-4 py-3 text-xs text-slate-500">
-                  Tap to open in Studio
-                </div>
+                <div className="px-4 py-3 text-xs text-slate-500">{uiText("Tap to open in Studio")}</div>
               </div>
             );
           })}

@@ -1,3 +1,5 @@
+import { useUiLanguage } from '../../hooks/useUiLanguage.js';
+import { translateText as uiText } from '../../utils/localization.js';
 import { useRef, useEffect, useState } from "react";
 import { Image, Transformer, Group, Text } from 'react-konva';
 import { useStudioImage } from '../video/util/useStudioImage.jsx';
@@ -37,6 +39,7 @@ export default function ResizableImage({
   aspectRatio,
   ...props
 }) {
+  useUiLanguage();
   const { isDraggable, x, y } = props;
   let imageSrc;
   const baseStageDimensions = getStageDimensions(aspectRatio);
@@ -191,10 +194,10 @@ export default function ResizableImage({
   return (
     <Group id={`group_${id}`}>
       {status === 'loading' && (
-        <Text text="Loading..." /> // Or display a spinner or placeholder
+        <Text text={uiText("Loading...")} /> // Or display a spinner or placeholder
       )}
       {status === 'failed' && (
-        <Text text="Failed to load image" fill="red" />
+        <Text text={uiText("Failed to load image")} fill="red" />
       )}
       {status === 'loaded' && img && (
         <Image

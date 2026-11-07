@@ -1,7 +1,9 @@
+import { useUiLanguage } from '../../../hooks/useUiLanguage.js';
 import { useState, useEffect } from 'react';
 import { FaChevronCircleDown, FaChevronCircleUp, FaTimesCircle } from 'react-icons/fa';
 
 export default function ShapeToolbar(props) {
+  useUiLanguage();
   const { pos, moveItem, index, removeItem, colorMode, itemId, updateTargetActiveLayerConfig,
     activeItemList,
     editorVariant = 'videoStudio',
@@ -81,7 +83,7 @@ export default function ShapeToolbar(props) {
 
   const bgColor = colorMode === 'dark' ? `bg-[#20232e]` : `bg-neutral-300`;
   const textColor = colorMode === 'dark' ? `text-slate-100` : `text-black`;
-  const inputClassName = `w-full ${isImageStudio ? 'rounded-xl px-3 py-2 text-[15px]' : 'rounded-sm p-1 pr-0 text-sm'} ${bgColor} ${textColor}`;
+  const inputClassName = `w-full ${isImageStudio ? 'rounded-xl px-3 py-2 text-lead' : 'rounded-sm p-1 pr-0 text-sm'} ${bgColor} ${textColor}`;
   const labelClassName = isImageStudio ? 'mt-1 text-sm text-center' : 'text-xs text-center';
   const iconClassName = isImageStudio ? 'mt-2 text-[26px] cursor-hover' : 'mt-2 text-xl cursor-hover';
 

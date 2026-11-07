@@ -1,3 +1,5 @@
+import { useUiLanguage } from '../../hooks/useUiLanguage.js';
+import { translateText as uiText } from '../../utils/localization.js';
 import { useState, useEffect } from 'react';
 import AceEditor from 'react-ace';
 import axios from 'axios';
@@ -16,6 +18,7 @@ import ThemeUIEditor from './ThemeUIEditor.jsx';
 const PROCESSOR_API_URL = import.meta.env.VITE_PROCESSOR_API;
 
 export default function ThemeViewer(props) {
+  useUiLanguage();
   const {
     sessionId,
     aspectRatio,
@@ -86,7 +89,7 @@ export default function ThemeViewer(props) {
       setErrorMessage(null);
       setErrorState(false);
     } catch  {
-      setErrorMessage('Invalid JSON format');
+      setErrorMessage(uiText("Invalid JSON format"));
       setErrorState(true);
     }
   };
@@ -98,7 +101,7 @@ export default function ThemeViewer(props) {
       setErrorMessage(null);
       setErrorState(false);
     } catch  {
-      setErrorMessage('Invalid JSON format');
+      setErrorMessage(uiText("Invalid JSON format"));
       setErrorState(true);
     }
   };
@@ -128,7 +131,7 @@ export default function ThemeViewer(props) {
       } else {
         cleaned = cleanJsonTheme(parentJsonTheme);
       }
-      if (!cleaned) throw new Error('Invalid JSON format for parent theme.');
+      if (!cleaned) throw new Error(uiText("Invalid JSON format for parent theme."));
 
       const payload = {
         sessionId,
@@ -137,7 +140,7 @@ export default function ThemeViewer(props) {
       await axios.post(`${PROCESSOR_API_URL}/quick_session/update_primary_json`, payload, headers);
     } catch  {
       
-      setErrorMessage('Failed to update parent theme.');
+      setErrorMessage(uiText("Failed to update parent theme."));
       setErrorState(true);
     }
     setParentJsonSubmitting(false);
@@ -167,7 +170,7 @@ export default function ThemeViewer(props) {
       } else {
         cleaned = cleanJsonTheme(derivedJsonTheme);
       }
-      if (!cleaned) throw new Error('Invalid JSON format for derived theme.');
+      if (!cleaned) throw new Error(uiText("Invalid JSON format for derived theme."));
 
       const payload = {
         sessionId,
@@ -176,7 +179,7 @@ export default function ThemeViewer(props) {
       await axios.post(`${PROCESSOR_API_URL}/quick_session/update_derived_json`, payload, headers);
     } catch  {
       
-      setErrorMessage('Failed to update derived theme.');
+      setErrorMessage(uiText("Failed to update derived theme."));
       setErrorState(true);
     }
     setDerivedJsonSubmitting(false);
@@ -201,7 +204,7 @@ export default function ThemeViewer(props) {
       // Must have a valid parent
       const parentCleaned = cleanJsonTheme(parentJsonTheme);
       if (!parentCleaned) {
-        throw new Error('Invalid JSON format for parent theme.');
+        throw new Error(uiText("Invalid JSON format for parent theme."));
       }
 
       const payload = {
@@ -226,7 +229,7 @@ export default function ThemeViewer(props) {
       }
     } catch  {
       
-      setErrorMessage('Failed to set derived theme.');
+      setErrorMessage(uiText("Failed to set derived theme."));
       setErrorState(true);
     }
 
@@ -277,18 +280,14 @@ export default function ThemeViewer(props) {
             evt.stopPropagation();
             setThemeType('basic');
           }}
-        >
-          Basic
-        </div>
+        >{uiText("Basic")}</div>
         <div
           className={getButtonClasses('custom')}
           onClick={(evt) => {
             evt.stopPropagation();
             setThemeType('custom');
           }}
-        >
-          Custom
-        </div>
+        >{uiText("Custom")}</div>
       </>
     );
   } else if (parentJsonTheme && !derivedJsonTheme) {
@@ -301,18 +300,14 @@ export default function ThemeViewer(props) {
             evt.stopPropagation();
             setThemeType('parentJson');
           }}
-        >
-          Parent JSON
-        </div>
+        >{uiText("Parent JSON")}</div>
         <div
           className={getButtonClasses('addDerivedJson')}
           onClick={(evt) => {
             evt.stopPropagation();
             setThemeType('addDerivedJson');
           }}
-        >
-          Add Derived
-        </div>
+        >{uiText("Add Derived")}</div>
       </>
     );
   } else if (parentJsonTheme && derivedJsonTheme) {
@@ -325,18 +320,14 @@ export default function ThemeViewer(props) {
             evt.stopPropagation();
             setThemeType('derivedParentJson');
           }}
-        >
-          Parent JSON
-        </div>
+        >{uiText("Parent JSON")}</div>
         <div
           className={getButtonClasses('derivedJson')}
           onClick={(evt) => {
             evt.stopPropagation();
             setThemeType('derivedJson');
           }}
-        >
-          Derived JSON
-        </div>
+        >{uiText("Derived JSON")}</div>
       </>
     );
   }
@@ -389,14 +380,12 @@ export default function ThemeViewer(props) {
     if (themeType === 'basic') {
       return (
         <div className="p-2 bg-gray-950 rounded mt-2 text-neutral-100">
-          <label className="block text-xs text-left pl-2 pb-1">
-            Basic keywords or short text:
-          </label>
+          <label className="block text-xs text-left pl-2 pb-1">{uiText("Basic keywords or short text:")}</label>
           <TextareaAutosize
             minRows={2}
             maxRows={5}
             className="w-full bg-gray-950 text-white p-2 rounded"
-            placeholder='e.g. "rustic, watercolor, vibrant"'
+            placeholder={uiText("e.g. \"rustic, watercolor, vibrant\"")}
             value={basicTextTheme}
             onChange={(e) => setBasicTextTheme(e.target.value)}
           />
@@ -407,14 +396,12 @@ export default function ThemeViewer(props) {
     if (themeType === 'custom') {
       return (
         <div className="p-2 bg-gray-950 rounded mt-2 text-neutral-100">
-          <label className="block text-xs text-left pl-2 pb-1">
-            Custom theme text (override defaults):
-          </label>
+          <label className="block text-xs text-left pl-2 pb-1">{uiText("Custom theme text (override defaults):")}</label>
           <TextareaAutosize
             minRows={6}
             maxRows={10}
             className="w-full bg-gray-950 text-white p-2 rounded"
-            placeholder="Enter your custom theme base text..."
+            placeholder={uiText("Enter your custom theme base text...")}
             value={customThemeText}
             onChange={(e) => setCustomThemeText(e.target.value)}
           />
@@ -422,9 +409,7 @@ export default function ThemeViewer(props) {
             onClick={submitCustomTheme}
             isPending={parentJsonSubmitting}
             extraClasses="mt-2"
-          >
-            Apply Custom Theme
-          </SecondaryButton>
+          >{uiText("Apply Custom Theme")}</SecondaryButton>
         </div>
       );
     }
@@ -433,14 +418,12 @@ export default function ThemeViewer(props) {
       // “Add Derived” from text
       return (
         <div className="p-2 bg-gray-950 rounded mt-2 text-neutral-100">
-          <label className="block text-xs text-left pl-2 pb-1">
-            Enter text to generate derived theme:
-          </label>
+          <label className="block text-xs text-left pl-2 pb-1">{uiText("Enter text to generate derived theme:")}</label>
           <TextareaAutosize
             minRows={6}
             maxRows={10}
             className="w-full bg-gray-950 text-white p-2 rounded"
-            placeholder="Enter derived theme text..."
+            placeholder={uiText("Enter derived theme text...")}
             value={derivedTextTheme}
             onChange={(e) => setDerivedTextTheme(e.target.value)}
           />
@@ -448,9 +431,7 @@ export default function ThemeViewer(props) {
             onClick={submitDerivedJsonTheme}
             isPending={derivedJsonSubmitting}
             extraClasses="mt-2"
-          >
-            Apply Derived Theme
-          </SecondaryButton>
+          >{uiText("Apply Derived Theme")}</SecondaryButton>
         </div>
       );
     }
@@ -477,8 +458,8 @@ export default function ThemeViewer(props) {
         <div className="p-2 bg-gray-950 rounded mt-2 text-neutral-100">
           <label className="block text-xs text-left pl-2 pb-1">
             {isParent
-              ? 'Enter JSON for parent theme'
-              : 'Enter JSON for derived theme'}
+              ? uiText("Enter JSON for parent theme")
+              : uiText("Enter JSON for derived theme")}
           </label>
           <AceEditor
             mode="json"
@@ -520,7 +501,7 @@ export default function ThemeViewer(props) {
               className="flex items-center cursor-pointer"
 
             >
-              <span className="font-semibold">Theme Settings</span>
+              <span className="font-semibold">{uiText("Theme Settings")}</span>
             </div>
             <div className="flex flex-wrap items-center justify-center mt-2">
               {topLevelButtons}
@@ -533,7 +514,7 @@ export default function ThemeViewer(props) {
                 ml-2"
                   onClick={handleViewToggle}
                 >
-                  {uiViewMode === 'json' ? 'Wizard View' : 'JSON View'}
+                  {uiViewMode === 'json' ? uiText("Wizard View") : uiText("JSON View")}
                 </div>
               )}
             </div>
@@ -547,24 +528,18 @@ export default function ThemeViewer(props) {
                     <SecondaryButton
                       onClick={updatePrimaryJsonTheme}
                       isPending={parentJsonSubmitting}
-                    >
-                      Update Parent JSON
-                    </SecondaryButton>
+                    >{uiText("Update Parent JSON")}</SecondaryButton>
                   )}
                   {isDerived && (
                     <>
                       <div
                         className="inline-block bg-gray-700 text-white py-1 px-2 rounded cursor-pointer"
                         onClick={resetDerivedJson}
-                      >
-                        Reset Derived
-                      </div>
+                      >{uiText("Reset Derived")}</div>
                       <SecondaryButton
                         onClick={updateDerivedJsonTheme}
                         isPending={derivedJsonSubmitting}
-                      >
-                        Update Derived JSON
-                      </SecondaryButton>
+                      >{uiText("Update Derived JSON")}</SecondaryButton>
                     </>
                   )}
 

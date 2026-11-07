@@ -1,4 +1,5 @@
-import { frameCountToSeconds, buildFrameExtractionFilter } from './utils/FrameClock.js';
+import { getVideoTimeline, probeMedia, buildVideoAudioFilter } from './utils/VideoTimeline.js';
+import { frameCountToSeconds, secondsToFrameCount, buildFrameExtractionFilter } from './utils/FrameClock.js';
 import fs from 'fs-extra';
 import path from 'path';
 import axios from 'axios';
@@ -11,15 +12,13 @@ import { resolveCpuCeiling } from './utils/CpuResources.js';
 import { getFramesPerSecondFromValue } from './utils/FpsUtils.js';
 import { usesLocalAssetStorage } from './utils/Environment.js';
 
-// utils/FFmpegUtils.js  (new file)
-import { spawn } from 'child_process';
 
 
 
 const pipeline = promisify(stream.pipeline);
 
-if (ffmpegPath) {
-  ffmpeg.setFfmpegPath(ffmpegPath);
+if (process.env.FFMPEG_PATH || ffmpegPath) {
+  ffmpeg.setFfmpegPath(process.env.FFMPEG_PATH || ffmpegPath);
 }
 
 function resolveAiVideoFfmpegThreads() {
@@ -439,7 +438,7 @@ export async function processVideoAsFramesAndAudio(
     );
 
     // 2) Extract audio
-    await extractAudio(videoPath, audioPath);
+    await extractAudio(videoPath, audioPath, effectiveFramesPerSecond);
 
     // 3) Determine frame count
     const files = await fs.readdir(framesOutputFolder);
@@ -513,79 +512,74 @@ function extractFrames(videoPath, outputFolder, newFrameWidth, newFrameHeight, f
   });
 }
 
-function extractAudio(videoPath, outputPath) {
+export async function extractAudio(videoPath, outputPath, framesPerSecond = 24) {
+  const timeline = await getVideoTimeline(videoPath, framesPerSecond);
   const ffmpegThreadValue = `${resolveAiVideoFfmpegThreads()}`;
   return new Promise((resolve, reject) => {
     ffmpeg(videoPath)
-      .inputOptions([
-        '-threads', ffmpegThreadValue,
-      ])
-      .noVideo()
-      .audioCodec('libmp3lame')  // re-encode the audio to MP3
-      .audioBitrate('192k')      // optional: adjust as needed
-      .outputOptions([
-        '-threads', ffmpegThreadValue,
-      ])
-      .on('end', resolve)
-      .on('error', reject)
-      .save(outputPath);
+      .inputOptions(['-threads', ffmpegThreadValue, '-copyts'])
+      .noVideo().audioCodec('libmp3lame').audioBitrate('192k')
+      .audioFilters(buildVideoAudioFilter(timeline))
+      .outputOptions(['-threads', ffmpegThreadValue])
+      .on('end', resolve).on('error', reject).save(outputPath);
   });
 }
 
-
-
-
-/**
- * Trim video in-place (fast, stream-copy) so its duration == targetDuration (sec).
- * Returns the absolute path of the NEW file that replaces the original one.
- */
-export async function clipVideoToDuration(inputPath, targetDuration) {
-  if (!fs.existsSync(inputPath)) {
-    throw new Error(`clipVideoToDuration: ${inputPath} does not exist`);
+export async function prepareTimelineDerivative(videoPath, requiredFrameCount, framesPerSecond) {
+  const timeline = await getVideoTimeline(videoPath, framesPerSecond);
+  if (timeline.frameCount < requiredFrameCount) {
+    throw Object.assign(new Error(`Incomplete derivative: expected ${requiredFrameCount} frames, received ${timeline.frameCount}.`),
+      { code: 'VIDEO_FRAME_BUDGET_MISMATCH' });
   }
+  if (timeline.frameCount > requiredFrameCount) {
+    await clipVideoToDuration(videoPath, requiredFrameCount / framesPerSecond, framesPerSecond);
+  }
+}
 
-  // Work in the same folder; add _trim suffix
+/** Trim on decoded frame boundaries, verifying the result before replacing input. */
+export async function clipVideoToDuration(inputPath, targetDuration, framesPerSecond = 24) {
+  if (!fs.existsSync(inputPath)) throw new Error(`clipVideoToDuration: ${inputPath} does not exist`);
+  const count = secondsToFrameCount(targetDuration, framesPerSecond);
+  if (count < 1) throw new Error('Trim requires at least one video frame.');
+  const timeline = await getVideoTimeline(inputPath, framesPerSecond);
+  const duration = frameCountToSeconds(count, framesPerSecond);
+  if (timeline.frameCount < count) throw new Error(`Short video: expected ${count} frames, received ${timeline.frameCount}.`);
   const { dir, name, ext } = path.parse(inputPath);
-  const outputPath = path.join(dir, `${name}_trim${ext}`);
-
-  // Fast-copy (-c copy) so re-encode ≈ instant
-  await new Promise((res, rej) => {
-    const ff = spawn('ffmpeg', [
-      '-y',                      // overwrite
-      '-i', inputPath,
-      '-t', targetDuration,      // set new length
-      '-c', 'copy',
-      outputPath,
-    ]);
-
-    let stderr = '';
-
-    ff.stderr.on('data', chunk => {
-      stderr += chunk.toString();
-      if (stderr.length > 8000) {
-        stderr = stderr.slice(-8000);
+  const temporaryDir = await fs.mkdtemp(path.join(dir, `${name}-trim-`));
+  const outputPath = path.join(temporaryDir, `output${ext}`);
+  const isWebm = ext.toLowerCase() === '.webm';
+  try {
+    await new Promise((resolve, reject) => {
+      const threadCount = String(resolveAiVideoFfmpegThreads());
+      const videoFilter = `${buildFrameExtractionFilter(framesPerSecond)},trim=end_frame=${count},setpts=N/(${framesPerSecond}*TB)`;
+      const command = ffmpeg(inputPath, { timeout: Math.max(300, Math.ceil(duration * 20)) })
+        .inputOptions(['-copyts', '-threads', threadCount])
+        .videoCodec(isWebm ? 'libvpx-vp9' : 'libx264')
+        .outputOptions(['-pix_fmt', 'yuv420p', '-fps_mode', 'passthrough',
+          '-threads', threadCount, '-filter_complex_threads', threadCount]).duration(duration);
+      if (timeline.hasAudio) {
+        // A shared graph keeps A/V scheduling on one clock. Independent simple
+        // filters can deadlock when both streams are rebased and trimmed.
+        command.complexFilter([
+          `[0:v:0]${videoFilter}[trimv]`,
+          `[0:a:0]${buildVideoAudioFilter({ ...timeline, duration })}[trima]`,
+        ], ['trimv', 'trima']).audioCodec(isWebm ? 'libopus' : 'aac');
+      } else {
+        command.videoFilters(videoFilter).noAudio();
       }
+      command.on('end', resolve).on('error', reject).save(outputPath);
     });
-
-    ff.on('error', rej);
-    ff.on('close', code => {
-      if (code === 0) {
-        res();
-        return;
-      }
-
-      const stderrSummary = stderr.trim();
-      rej(new Error(
-        stderrSummary
-          ? `ffmpeg trim exited with ${code}: ${stderrSummary}`
-          : `ffmpeg trim exited with ${code}`
-      ));
-    });
-  });
-
-  // Replace original atomically
-  await fs.move(outputPath, inputPath, { overwrite: true });
-  return inputPath;
+    const metadata = await probeMedia(outputPath, ['-count_frames']);
+    const encoded = metadata.streams.find(stream => stream.codec_type === 'video');
+    if (Number(encoded?.nb_read_frames) !== count) {
+      throw Object.assign(new Error(`Trim frame count mismatch: expected ${count}, received ${encoded?.nb_read_frames}.`),
+        { code: 'VIDEO_FRAME_BUDGET_MISMATCH' });
+    }
+    await fs.rename(outputPath, inputPath);
+    return inputPath;
+  } finally {
+    await fs.remove(temporaryDir);
+  }
 }
 
 export async function createThumbnailVideoPreview(inputPath, options = {}) {

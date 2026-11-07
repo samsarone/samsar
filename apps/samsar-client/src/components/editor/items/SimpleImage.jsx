@@ -1,8 +1,10 @@
+import { useUiLanguage } from '../../../hooks/useUiLanguage.js';
 import { useRef } from "react";
 import { Image } from 'react-konva';
 import { useImage } from 'react-konva-utils';
 
 export default function SimpleImage({ image, isSelected, onSelect, onUnselect, updateToolbarButtonPosition, ...props }) {
+  useUiLanguage();
 
   const [img] = useImage(image.src, "anonymous");
   useRef();

@@ -1,3 +1,4 @@
+import { translateText as uiText } from "./localization.js";
 export const STANDALONE_ADAPTER_KEYS = Object.freeze([
   "openai",
   "anthropic",
@@ -24,8 +25,8 @@ const ADAPTER_PRESENTATIONS = Object.freeze({
   openrouter: Object.freeze({ label: "OpenRouter", mark: "openrouter", glyph: "R" }),
   elevenlabs: Object.freeze({ label: "ElevenLabs", mark: "glyph", glyph: "11" }),
   runway: Object.freeze({ label: "RunwayML", mark: "glyph", glyph: "R" }),
-  native: Object.freeze({ label: "Native adapter", mark: "native", glyph: "N" }),
-  custom: Object.freeze({ label: "Custom adapter", mark: "custom", glyph: "C" }),
+  native: Object.freeze({ get label() { return uiText("Native adapter"); }, mark: "native", glyph: "N" }),
+  custom: Object.freeze({ get label() { return uiText("Custom adapter"); }, mark: "custom", glyph: "C" }),
 });
 
 const ADAPTER_ALIASES = Object.freeze({
@@ -98,7 +99,7 @@ function formatUnknownAdapterLabel(value) {
     .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
     .replace(/[_-]+/g, " ")
     .replace(/\s+/g, " ")
-    .replace(/\b\w/g, (letter) => letter.toUpperCase()) || "Unknown adapter";
+    .replace(/\b\w/g, (letter) => letter.toUpperCase()) || uiText("Unknown adapter");
 }
 
 function getFallbackGlyph(value) {

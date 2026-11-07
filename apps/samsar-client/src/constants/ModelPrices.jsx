@@ -1,3 +1,4 @@
+import { normalizeKlingModelKey, KLING_V4_DURATION_SECONDS, KLING_V4_STUDIO_CREDITS_PER_SECOND } from '../utils/KlingModel.mjs';
 // ModelPrices.js
 
 import {
@@ -46,7 +47,7 @@ export function formatVideoDurationLabel(durationSeconds) {
 }
 
 export function getVideoModelDurationUnitsForFramesPerSecond(modelKey, framesPerSecond) {
-  const modelType = VIDEO_MODEL_PRICES.find((model) => model.key === modelKey);
+  const modelType = VIDEO_MODEL_PRICES.find((model) => model.key === normalizeKlingModelKey(modelKey));
   const rawUnits = Array.isArray(modelType?.baseUnits) && modelType.baseUnits.length > 0
     ? modelType.baseUnits
     : modelType?.units;
@@ -177,18 +178,20 @@ export const VIDEO_MODEL_PRICES = [
     units: [5, 10],
   },
   {
-    key: 'KLINGIMGTOVID3PRO',
+    key: 'KLINGIMGTOVID4',
+    name: 'Kling 4 Img2Vid',
     isExpressModel: true,
     isBranchedVideoModel: false,
     isImageToVideoModel: true,
     isTextToVideoModel: false,
+    isPerSecondPricing: true,
     prices: [
-      { aspectRatio: '1:1', price: EXPRESS_VIDEO_CREDITS_PER_SECOND_BY_MODEL.KLINGIMGTOVID3PRO },
-      { aspectRatio: '16:9', price: EXPRESS_VIDEO_CREDITS_PER_SECOND_BY_MODEL.KLINGIMGTOVID3PRO },
-      { aspectRatio: '9:16', price: EXPRESS_VIDEO_CREDITS_PER_SECOND_BY_MODEL.KLINGIMGTOVID3PRO },
+      { aspectRatio: '1:1', price: KLING_V4_STUDIO_CREDITS_PER_SECOND },
+      { aspectRatio: '16:9', price: KLING_V4_STUDIO_CREDITS_PER_SECOND },
+      { aspectRatio: '9:16', price: KLING_V4_STUDIO_CREDITS_PER_SECOND },
     ],
-    pricingDistribution: getExpressVideoPricingDistributionPerSecond('KLINGIMGTOVID3PRO'),
-    units: [5, 10],
+    pricingDistribution: getExpressVideoPricingDistributionPerSecond('KLINGIMGTOVID4'),
+    units: [...KLING_V4_DURATION_SECONDS],
   },
   {
     key: 'HAPPYHORSEI2V',
@@ -206,16 +209,17 @@ export const VIDEO_MODEL_PRICES = [
     units: [5, 10, 15],
   },
   {
-    key: 'KLINGTXTTOVID3PRO',
+    key: 'KLINGTXTTOVID4',
     isExpressModel: false,
     isImageToVideoModel: false,
     isTextToVideoModel: true,
+    isPerSecondPricing: true,
     prices: [
-      { aspectRatio: '1:1', price: 60 },
-      { aspectRatio: '16:9', price: 60 },
-      { aspectRatio: '9:16', price: 60 },
+      { aspectRatio: '1:1', price: KLING_V4_STUDIO_CREDITS_PER_SECOND },
+      { aspectRatio: '16:9', price: KLING_V4_STUDIO_CREDITS_PER_SECOND },
+      { aspectRatio: '9:16', price: KLING_V4_STUDIO_CREDITS_PER_SECOND },
     ],
-    units: [5, 10, 15],
+    units: [...KLING_V4_DURATION_SECONDS],
   },
   {
     key: 'HAILUO',

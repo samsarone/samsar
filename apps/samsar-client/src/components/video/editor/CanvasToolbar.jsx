@@ -1,3 +1,4 @@
+import { useUiLanguage } from '../../../hooks/useUiLanguage.js';
 
 
 import { FaChevronCircleDown, FaChevronCircleUp } from 'react-icons/fa';
@@ -10,6 +11,7 @@ import ShapeSelectToolbar from '../toolbars/toolbar_shapes/ShapeSelectToolbar.js
 
 
 export default function CanvasToolbar(props) {
+  useUiLanguage();
 
   const {
     buttonPositions,

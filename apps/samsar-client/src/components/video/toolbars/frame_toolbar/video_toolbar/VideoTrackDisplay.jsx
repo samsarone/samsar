@@ -1,3 +1,5 @@
+import { useUiLanguage } from '../../../../../hooks/useUiLanguage.js';
+import { translateText as uiText } from '../../../../../utils/localization.js';
 import { useMemo } from 'react';
 import ReactSlider from 'react-slider';
 import { useColorMode } from '../../../../../contexts/ColorMode.jsx';
@@ -64,6 +66,7 @@ const VIDEO_DIAMOND_THUMB_SIZE = 16;
 
 
 export default function VideoTrackDisplay(props) {
+  useUiLanguage();
   const {
     videoTrackItem,
     selectedFrameRange,
@@ -168,7 +171,7 @@ export default function VideoTrackDisplay(props) {
       type="button"
       className={`timeline-layer-range-shell border-0 bg-transparent transition ${selectedRing}`}
       onClick={handleSelect}
-      title={`${videoTrackItem.assetLabel} on layer ${videoTrackItem.layerIndex + 1}`}
+      title={uiText("{value0} on layer {value1}", { value0: videoTrackItem.assetLabel, value1: videoTrackItem.layerIndex + 1 })}
     >
       <div className={`timeline-layer-range-surface ${railSurface}`}>
         <div
@@ -294,7 +297,7 @@ export default function VideoTrackDisplay(props) {
         })}
 
         <div className="pointer-events-none absolute left-1/2 top-2 z-[4] -translate-x-1/2">
-          <div className={`rounded-full px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-[0.16em] ${labelClassName}`}>
+          <div className={`rounded-full px-1.5 py-0.5 text-micro font-semibold uppercase tracking-[0.16em] ${labelClassName}`}>
             {videoTrackItem.shortLabel}
           </div>
         </div>

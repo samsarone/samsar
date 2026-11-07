@@ -515,3 +515,15 @@ test('staging keeps its legacy available-models provider selection', (t) => {
 
   assert.equal(resolveDockerVideoProvider('HAPPYHORSEI2V'), DOCKER_VIDEO_PROVIDER.FAL);
 });
+
+
+test('Kling 4 uses fal and never routes to the legacy GMI Kling model', () => {
+  clearEnv();
+  process.env.CURRENT_ENV = 'test';
+  process.env.FAL_API_KEY = 'test-key';
+  process.env.SAMSAR_HOSTED_GENBLAZE_VIDEO_ENABLED = 'true';
+  for (const model of ['KLINGIMGTOVID4', 'KLINGTXTTOVID4']) {
+    assert.deepEqual(getDockerVideoProviderPriority(model), [DOCKER_VIDEO_PROVIDER.FAL, DOCKER_VIDEO_PROVIDER.SAMSAR]);
+    assert.ok(!getConfiguredDockerVideoProviders(model).includes(DOCKER_VIDEO_PROVIDER.GMICLOUD));
+  }
+});

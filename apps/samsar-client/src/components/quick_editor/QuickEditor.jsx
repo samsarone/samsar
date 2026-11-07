@@ -1,3 +1,7 @@
+import { normalizeKlingModelKey } from '../../utils/KlingModel.mjs';
+import { useAssistantRequestGuard } from '../../hooks/useAssistantRequestGuard.js';
+import { useUiLanguage } from '../../hooks/useUiLanguage.js';
+import { translateText as uiText } from '../../utils/localization.js';
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { FaPlay, FaPause, FaArrowRight, FaChevronDown } from 'react-icons/fa6';
 import { useUser } from '../../contexts/UserContext.jsx';
@@ -81,9 +85,9 @@ const aspectRatioOptions = [
 
 // Define music options
 const addMusicOptions = [
-  { value: 'autogen', label: 'Autogenerate new track' },
-  { value: 'selectLibrary', label: 'Select from Library' },
-  { value: 'autoSelectLibrary', label: 'Autoselect from Library' },
+  { value: 'autogen', get label() { return uiText("Autogenerate new track"); } },
+  { value: 'selectLibrary', get label() { return uiText("Select from Library"); } },
+  { value: 'autoSelectLibrary', get label() { return uiText("Autoselect from Library"); } },
 ];
 
 const PROCESSOR_API_URL = import.meta.env.VITE_PROCESSOR_API;
@@ -101,15 +105,16 @@ function pickDuration(units, target) {
 }
 
 export default function QuickEditor() {
+  const uiLanguage = useUiLanguage();
   const { id } = useParams();
   const { openAlertDialog, closeAlertDialog } = useAlertDialog();
   const navigate = useNavigate();
   const { user } = useUser();
 
   // State variables
-  const [videoType, setVideoType] = useState({ value: 'Slideshow', label: 'Narrative' });
-  const [animation, setAnimation] = useState({ value: 'preset_short_animation', label: 'Preset Short Animation' });
-  const [duration, setDuration] = useState({ value: 'auto', label: 'Auto' });
+  const [videoType, setVideoType] = useState({ value: 'Slideshow', label: uiText("Narrative") });
+  const [animation, setAnimation] = useState({ value: 'preset_short_animation', label: uiText("Preset Short Animation") });
+  const [duration, setDuration] = useState({ value: 'auto', label: uiText("Auto") });
   const [customDuration, setCustomDuration] = useState('');
   const [sessionDetails, setSessionDetails] = useState(null);
   const [isGenerationPending, setIsGenerationPending] = useState(false);
@@ -123,6 +128,7 @@ export default function QuickEditor() {
   const [sessionMessages, setSessionMessages] = useState([]);
   useState(false);
   const [isAssistantQueryGenerating, setIsAssistantQueryGenerating] = useState(false);
+  const assistantRequestGuard = useAssistantRequestGuard(id);
   useState(false);
 
   const { colorMode } = useColorMode();
@@ -161,13 +167,13 @@ export default function QuickEditor() {
   });
 
   const [promptList, setPromptList] = useState('');
-  const [speechLanguage] = useState({ value: 'eng', label: 'English' });
-  const [subtitlesLanguage] = useState({ value: 'eng', label: 'English' });
+  const [speechLanguage] = useState({ value: 'eng', label: uiText("English") });
+  const [subtitlesLanguage] = useState({ value: 'eng', label: uiText("English") });
   const [errorState, setErrorState] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [creditsPreview, setCreditsPreview] = useState(0);
   const [showCreditsBreakdown, setShowCreditsBreakdown] = useState(false);
-  const [sceneCutoffType, setSceneCutoffType] = useState({ value: 'auto', label: 'Auto' });
+  const [sceneCutoffType, setSceneCutoffType] = useState({ value: 'auto', label: uiText("Auto") });
 
   const [customThemeText, setCustomThemeText] = useState('');
   useState('');
@@ -181,24 +187,24 @@ export default function QuickEditor() {
   const [addSubtitlesRequired, setAddSubtitlesRequired] = useState(true);
   const [addTranscriptionsRequired, setAddTranscriptionsRequired] = useState(true);
 
-  const [speechStyle] = useState({ value: 'Narrative', label: 'Narrative' });
+  const [speechStyle] = useState({ value: uiText("Narrative"), label: uiText("Narrative") });
 
   const subtitleFontOptions = [
-    { value: 'Arial', label: 'Arial' },
-    { value: 'Times New Roman', label: 'Times New Roman' },
-    { value: 'Roboto', label: 'Roboto' },
-    { value: 'Neonderthaw', label: 'Neonderthaw ' },
-    { value: 'Monoton', label: 'Monoton ' },
-    { value: 'Bungee Outline', label: 'Bungee Outline ' },
-    { value: 'Orbitron', label: 'Orbitron ' },
-    { value: 'Rampart One', label: 'Rampart One ' },
+    { value: 'Arial', label: uiText("Arial") },
+    { value: 'Times New Roman', label: uiText("Times New Roman") },
+    { value: 'Roboto', label: uiText("Roboto") },
+    { value: 'Neonderthaw', label: uiText("Neonderthaw ") },
+    { value: 'Monoton', label: uiText("Monoton ") },
+    { value: 'Bungee Outline', label: uiText("Bungee Outline ") },
+    { value: 'Orbitron', label: uiText("Orbitron ") },
+    { value: 'Rampart One', label: uiText("Rampart One ") },
   ];
 
-  const [wordAnimation, setWordAnimation] = useState({ value: 'system_preset', label: 'System preset (Default)' });
+  const [wordAnimation, setWordAnimation] = useState({ value: 'system_preset', label: uiText("System preset (Default)") });
   const wordAnimationOptions = [
-    { value: 'none', label: 'No Animation' },
-    { value: 'highlight', label: 'Highlight current word' },
-    { value: 'system_preset', label: 'System preset (Default)' },
+    { value: 'none', label: uiText("No Animation") },
+    { value: 'highlight', label: uiText("Highlight current word") },
+    { value: 'system_preset', label: uiText("System preset (Default)") },
   ];
 
   const [selectedMusicProvider, setSelectedMusicProvider] = useState(() => {
@@ -239,7 +245,7 @@ export default function QuickEditor() {
         }
         // If any existing assistant messages:
         if (data.sessionMessages) {
-          setSessionMessages(data.sessionMessages);
+          if (assistantRequestGuard.acceptSession(data)) setSessionMessages(assistantRequestGuard.messages(data));
         }
 
         // If there's a parent theme or derived theme, load them into state:
@@ -369,7 +375,7 @@ export default function QuickEditor() {
           label: model.name,
         }));
     }
-  }, [isStandaloneModelFilteringEnabled, textToVideoImageModelValues, user?.custom_adapters, videoType]);
+  }, [uiLanguage, isStandaloneModelFilteringEnabled, textToVideoImageModelValues, user?.custom_adapters, videoType]);
 
   const [selectedImageModel, setSelectedImageModel] = useState(() => {
     const defaultModel = localStorage.getItem('defaultModel');
@@ -505,7 +511,7 @@ export default function QuickEditor() {
         )
         : deploymentScopedModels;
     }
-  }, [
+  }, [uiLanguage,
     isStandaloneModelFilteringEnabled,
     textToVideoVideoModelValues,
     videoType,
@@ -515,9 +521,14 @@ export default function QuickEditor() {
     setSelectedVideoGenerationModel((current) => {
       if (!current) return current;
       const currentModel = videoGenerationModelOptions.find(
-        (model) => model.key === current.value
+        (model) => model.key === normalizeKlingModelKey(current.value)
       );
-      if (currentModel) return current;
+      if (currentModel) {
+        if (currentModel.key === current.value) return current;
+        const migrated = { value: currentModel.key, label: currentModel.name };
+        localStorage.setItem('defaultSelectedGenerativeModel', JSON.stringify(migrated));
+        return migrated;
+      }
 
       const fallbackModel = videoGenerationModelOptions[0];
       if (!fallbackModel) {
@@ -539,12 +550,12 @@ export default function QuickEditor() {
 
   const durationOptionsForSelectedVideoModel = useMemo(() => {
     const defaultDurationOptions = [
-      { label: 'Auto', value: 'auto' },
-      { label: '2 Seconds', value: '2' },
-      { label: '5 Seconds', value: '5' },
-      { label: '10 Seconds', value: '10' },
-      { label: '20 Seconds', value: '20' },
-      { label: 'Custom', value: 'custom' },
+      { label: uiText("Auto"), value: 'auto' },
+      { label: uiText("2 Seconds"), value: '2' },
+      { label: uiText("5 Seconds"), value: '5' },
+      { label: uiText("10 Seconds"), value: '10' },
+      { label: uiText("20 Seconds"), value: '20' },
+      { label: uiText("Custom"), value: 'custom' },
     ];
 
     if (
@@ -560,13 +571,13 @@ export default function QuickEditor() {
       user?.videoFramesPerSecond,
     );
     return [
-      { label: 'Auto', value: 'auto' },
+      { label: uiText("Auto"), value: 'auto' },
       ...units.map((unit) => ({
-        label: `${formatVideoDurationLabel(unit)} Seconds`,
+        label: uiText("{value0} Seconds", { value0: formatVideoDurationLabel(unit) }),
         value: String(unit),
       })),
     ];
-  }, [selectedVideoGenerationModel?.value, user?.videoFramesPerSecond]);
+  }, [uiLanguage, selectedVideoGenerationModel?.value, user?.videoFramesPerSecond]);
 
   useEffect(() => {
     const hasSelectedDuration = durationOptionsForSelectedVideoModel.some(
@@ -648,7 +659,7 @@ export default function QuickEditor() {
   // Filter speaker dropdown
   const speakerOptions = useMemo(() => {
     let filteredSpeakers;
-    if (speechStyle.value === 'Narrative') {
+    if (speechStyle.value === uiText("Narrative")) {
       filteredSpeakers = deploymentSpeakerTypes;
     } else if (speechStyle.value === 'Conversational') {
       filteredSpeakers = deploymentSpeakerTypes.filter(
@@ -671,7 +682,7 @@ export default function QuickEditor() {
         onClick: handleIconClick,
       };
     });
-  }, [speechStyle, currentlyPlayingSpeaker, deploymentSpeakerTypes]);
+  }, [uiLanguage, speechStyle, currentlyPlayingSpeaker, deploymentSpeakerTypes]);
 
   const playMusicPreviewForSpeaker = async (evt, speaker) => {
     evt.stopPropagation();
@@ -725,7 +736,7 @@ export default function QuickEditor() {
           setVideoLink(sessionData.videoLink);
         }
         if (sessionData.sessionMessages) {
-          setSessionMessages(sessionData.sessionMessages);
+          if (assistantRequestGuard.acceptSession(sessionData)) setSessionMessages(assistantRequestGuard.messages(sessionData));
         }
         if (sessionData.videoGenerationPending) {
           startQuickGenerationPoll();
@@ -809,7 +820,7 @@ export default function QuickEditor() {
       setIsGenerationPending(false);
       setShowResultDisplay(false);
       setErrorState(true);
-      setErrorMessage('No music provider is configured for this deployment.');
+      setErrorMessage(uiText("No music provider is configured for this deployment."));
       return;
     }
 
@@ -817,7 +828,7 @@ export default function QuickEditor() {
       setIsGenerationPending(false);
       setShowResultDisplay(false);
       setErrorState(true);
-      setErrorMessage('No speech provider is configured for this deployment.');
+      setErrorMessage(uiText("No speech provider is configured for this deployment."));
       return;
     }
 
@@ -972,14 +983,14 @@ export default function QuickEditor() {
     // If user changes to infinitezoom, default animation etc.
     if (selectedOption.value === 'Infinitezoom') {
       setAnimationOptions(INFINITE_ZOOM_ANIMATION_OPTIONS);
-      setAnimation({ value: 'zoom_in', label: 'Zoom In' });
+      setAnimation({ value: 'zoom_in', label: uiText("Zoom In") });
       setSpeechRequired(false);
       setNormalizeSpeech(false);
       setAddSubtitlesRequired(false);
       setAddTranscriptionsRequired(false);
     } else {
       setAnimationOptions(ANIMATION_OPTIONS);
-      setAnimation({ value: 'preset_short_animation', label: 'Preset Short Animation' });
+      setAnimation({ value: 'preset_short_animation', label: uiText("Preset Short Animation") });
       setSpeechRequired(true);
       setNormalizeSpeech(true);
       setAddSubtitlesRequired(true);
@@ -1245,7 +1256,7 @@ export default function QuickEditor() {
         const videoPriceObj = videoModelPricing
           ? videoModelPricing.prices.find((price) => price.aspectRatio === aspectRatioValue)
           : null;
-        const videoPricePerUnit = videoPriceObj ? videoPriceObj.price : 90;
+        const videoPricePerUnit = videoModelPricing?.pricingDistribution?.total ?? videoPriceObj?.price ?? 90;
 
         lineItems.forEach((line) => {
           const lineLength = line.length;
@@ -1323,9 +1334,7 @@ export default function QuickEditor() {
   if (sessionDetails && sessionDetails.videoLink) {
     const oldElement = (
       <div className='flex justify-center text-xs underline hover:text-neutral-600'>
-        <a href={`${PROCESSOR_API_URL}/${sessionDetails.videoLink}`} download className={`${textColor} underline`}>
-          Download previous render
-        </a>
+        <a href={`${PROCESSOR_API_URL}/${sessionDetails.videoLink}`} download className={`${textColor} underline`}>{uiText("Download previous render")}</a>
       </div>
     );
     downloadPreviousRenderLinkWithBtn = (
@@ -1342,9 +1351,7 @@ export default function QuickEditor() {
   let viewInStudioLinkWithBtn = null;
   if (videoLink) {
     viewInStudioLinkWithBtn = (
-      <SecondaryButton onClick={viewInStudio} className="text-xs">
-        View in Studio
-      </SecondaryButton>
+      <SecondaryButton onClick={viewInStudio} className="text-xs">{uiText("View in Studio")}</SecondaryButton>
     );
   }
 
@@ -1361,7 +1368,7 @@ export default function QuickEditor() {
           minRows={2}
           maxRows={5}
           className={`w-full ${bgGray1Color} ${textColor} p-2 rounded`}
-          placeholder="Add custom banner text here (max 10 words), leave empty to auto-generate"
+          placeholder={uiText("Add custom banner text here (max 10 words), leave empty to auto-generate")}
           name="bannerText"
           value={bannerText}
           onChange={(e) => setBannerText(e.target.value)}
@@ -1377,21 +1384,31 @@ export default function QuickEditor() {
 
   // Assistant logic
   const startAssistantQueryPoll = () => {
+    const requestToken = assistantRequestGuard.capture();
     const headers = getHeaders();
     if (!headers) {
       showLoginDialog();
       return;
     }
-    const timer = setInterval(() => {
+    assistantRequestGuard.subscribe({
+      url: `${PROCESSOR_API_URL}/assistants/assistant_query_stream?id=${encodeURIComponent(id)}`,
+      headers: headers.headers,
+      onSnapshot: snapshot => {
+        setSessionMessages(snapshot.sessionMessages);
+        if (!snapshot.sessionMessageGenerationPending) setIsAssistantQueryGenerating(false);
+      },
+    });
+    const timer = assistantRequestGuard.setInterval(() => {
       axios
         .get(`${PROCESSOR_API_URL}/assistants/assistant_query_status?id=${id}`, headers)
         .then((dataRes) => {
+          if (!assistantRequestGuard.isCurrent(requestToken)) return;
           const assistantQueryData = dataRes.data;
           const assistantQueryStatus = assistantQueryData.status;
           if (assistantQueryStatus === 'COMPLETED') {
             const sessionData = assistantQueryData.sessionDetails;
             clearInterval(timer);
-            setSessionMessages(sessionData.sessionMessages);
+            if (assistantRequestGuard.acceptSession(sessionData)) setSessionMessages(assistantRequestGuard.messages(sessionData));
             setIsAssistantQueryGenerating(false);
           }
         });
@@ -1399,19 +1416,21 @@ export default function QuickEditor() {
   };
 
   const submitAssistantQuery = (query) => {
+    const requestToken = assistantRequestGuard.beginRequest();
     const headers = getHeaders();
     if (!headers) {
       showLoginDialog();
       return;
     }
-    setSessionMessages([]);
     setIsAssistantQueryGenerating(true);
     axios
-      .post(`${PROCESSOR_API_URL}/assistants/submit_assistant_query`, { id: id, query: query }, headers)
+      .post(`${PROCESSOR_API_URL}/assistants/submit_assistant_query`, { id: id, query: query, stream: true, client_request_id: crypto.randomUUID(), assistantSessionVersion: requestToken.serverVersion }, headers)
       .then(() => {
+        if (!assistantRequestGuard.isCurrent(requestToken)) return;
         startAssistantQueryPoll();
       })
       .catch(function () {
+        if (!assistantRequestGuard.isCurrent(requestToken)) return;
         setIsAssistantQueryGenerating(false);
       });
   };
@@ -1442,7 +1461,7 @@ export default function QuickEditor() {
 
       {/* --- TOP BAR / HEADING BAR --- */}
       <div className={`flex justify-between items-center p-2 ${bgNeutral2Color} ${textColor} pt-8 mt-8 rounded-md shadow-md relative`}>
-        <h2 className={`text-lg font-bold  ${textColor} pl-2`}>Express Editor</h2>
+        <h2 className={`text-lg font-bold  ${textColor} pl-2`}>{uiText("Express Editor")}</h2>
         <div className="flex items-center space-x-2 mr-2">
           {/* Credits summary & toggle */}
           <div className="relative">
@@ -1452,8 +1471,8 @@ export default function QuickEditor() {
             >
               <span className="font-bold text-sm text-neutral-100">
                 {bypassesSamsarCreditPricing
-                  ? 'Uses configured provider APIs'
-                  : `Incurs ${creditsPreview} credits`}
+                  ? uiText("Uses configured provider APIs")
+                  : uiText("Incurs {value0} credits", { value0: creditsPreview })}
               </span>
               {!bypassesSamsarCreditPricing && (
                 <FaChevronDown
@@ -1466,13 +1485,13 @@ export default function QuickEditor() {
                 className={`absolute top-full right-0 ${textColor} ${bgGray2Color} p-2 rounded shadow-md mt-2 z-10`}
                 ref={creditsDropdownRef}
               >
-                {creditsBreakdown.images > 0 && <p>{creditsBreakdown.images} credits for images</p>}
-                {creditsBreakdown.speech > 0 && <p>{creditsBreakdown.speech} credits for speech</p>}
-                {creditsBreakdown.translation > 0 && <p>{creditsBreakdown.translation} credits for translation</p>}
-                {creditsBreakdown.music > 0 && <p>{creditsBreakdown.music} credits for music</p>}
-                {creditsBreakdown.video > 0 && <p>{creditsBreakdown.video} credits for generative video</p>}
-                {creditsBreakdown.prompt > 0 && <p>{creditsBreakdown.prompt} credits for prompt enhancement</p>}
-                {creditsBreakdown.theme > 0 && <p>{creditsBreakdown.theme} credits for theming</p>}
+                {creditsBreakdown.images > 0 && <p>{uiText("{value0} credits for images", { value0: creditsBreakdown.images })}</p>}
+                {creditsBreakdown.speech > 0 && <p>{uiText("{value0} credits for speech", { value0: creditsBreakdown.speech })}</p>}
+                {creditsBreakdown.translation > 0 && <p>{uiText("{value0} credits for translation", { value0: creditsBreakdown.translation })}</p>}
+                {creditsBreakdown.music > 0 && <p>{uiText("{value0} credits for music", { value0: creditsBreakdown.music })}</p>}
+                {creditsBreakdown.video > 0 && <p>{uiText("{value0} credits for generative video", { value0: creditsBreakdown.video })}</p>}
+                {creditsBreakdown.prompt > 0 && <p>{uiText("{value0} credits for prompt enhancement", { value0: creditsBreakdown.prompt })}</p>}
+                {creditsBreakdown.theme > 0 && <p>{uiText("{value0} credits for theming", { value0: creditsBreakdown.theme })}</p>}
               </div>
             )}
           </div>
@@ -1505,7 +1524,7 @@ export default function QuickEditor() {
               <div className="grid grid-cols-4 items-center gap-2 w-full">
                 {/* Aspect Ratio */}
                 <div className='block p-2'>
-                  <label className="whitespace-nowrap block text-xs text-left pl-2 pb-1">Aspect Ratio:</label>
+                  <label className="whitespace-nowrap block text-xs text-left pl-2 pb-1">{uiText("Aspect Ratio:")}</label>
                   <SingleSelect
                     value={aspectRatio}
                     onChange={handleAspectRatioChange}
@@ -1516,13 +1535,13 @@ export default function QuickEditor() {
 
                 {/* Video Type */}
                 <div className='block p-2'>
-                  <label className="whitespace-nowrap block text-xs text-left pl-2 pb-1">Type:</label>
+                  <label className="whitespace-nowrap block text-xs text-left pl-2 pb-1">{uiText("Type:")}</label>
                   <SingleSelect
                     value={videoType}
                     onChange={handleVideoTypeChange}
                     options={[
-                      { value: 'Slideshow', label: 'Narrative' },
-                      { value: 'Infinitezoom', label: 'Infinite Zoom' },
+                      { value: 'Slideshow', label: uiText("Narrative") },
+                      { value: 'Infinitezoom', label: uiText("Infinite Zoom") },
                     ]}
                     className="w-24"
                   />
@@ -1530,7 +1549,7 @@ export default function QuickEditor() {
 
                 {/* Image Model */}
                 <div className='block p-2'>
-                  <label className="whitespace-nowrap block text-xs text-left pl-2 pb-1">Image Model:</label>
+                  <label className="whitespace-nowrap block text-xs text-left pl-2 pb-1">{uiText("Image Model:")}</label>
                   <SingleSelect
                     value={selectedImageModel}
                     onChange={handleSelectedImageModelChange}
@@ -1547,9 +1566,7 @@ export default function QuickEditor() {
                     selectedImageModel.value === 'IDEOGRAMV2'
                   ) && (
                     <div className="block p-2">
-                      <label className="whitespace-nowrap block text-xs text-left pl-2 pb-1">
-                        Image Style:
-                      </label>
+                      <label className="whitespace-nowrap block text-xs text-left pl-2 pb-1">{uiText("Image Style:")}</label>
                       <SingleSelect
                         value={selectedImageStyle}
                         onChange={handleImageStyleChange}
@@ -1572,9 +1589,7 @@ export default function QuickEditor() {
                 {/* Speaker => hide if speechRequired is false */}
                 {speechRequired && (
                   <div className='block p-2'>
-                    <label className={`whitespace-nowrap block text-xs text-left pl-2 pb-1 ${textColor}`}>
-                      Speaker
-                    </label>
+                    <label className={`whitespace-nowrap block text-xs text-left pl-2 pb-1 ${textColor}`}>{uiText("Speaker")}</label>
                     <CombinedAudioSelect
                       speakerType={speakerType}
                       onSpeakerChange={handleSpeakerChange}
@@ -1592,7 +1607,7 @@ export default function QuickEditor() {
             <div className="flex items-center w-full border-b-2 border-neutral-500 p-2 pl-4">
               <div className="flex items-center space-x-4 w-full">
                 <div className="flex items-center">
-                  <label className={`${textColor} text-left pr-2`}>Add Generative Video:</label>
+                  <label className={`${textColor} text-left pr-2`}>{uiText("Add Generative Video:")}</label>
                   <input
                     type="checkbox"
                     className="custom-checkbox form-checkbox h-5 w-5 text-gray-600"
@@ -1634,9 +1649,7 @@ export default function QuickEditor() {
                 {generativeVideoRequired && (
                   <>
                     <div className="flex items-center">
-                      <label className={`${textColor} text-left pr-2`}>
-                        Select Video Generation Model:
-                      </label>
+                      <label className={`${textColor} text-left pr-2`}>{uiText("Select Video Generation Model:")}</label>
                       <SingleSelect
                         value={selectedVideoGenerationModel}
                         onChange={(option) => {
@@ -1660,7 +1673,7 @@ export default function QuickEditor() {
                             (m) => m.key === selectedVideoGenerationModel.value && m.isTransitionModel
                           ) && (
                             <>
-                              <label className={`${textColor} text-left pr-2`}>Use End Frame:</label>
+                              <label className={`${textColor} text-left pr-2`}>{uiText("Use End Frame:")}</label>
                               <input
                                 type="checkbox"
                                 className="custom-checkbox form-checkbox h-5 w-5 text-gray-600"
@@ -1690,8 +1703,7 @@ export default function QuickEditor() {
               <div
                 className={`${textColor} cursor-pointer mt-2 pt-1 pb-1 text-left pl-4 font-semibold`}
                 onClick={toggleAdvancedToolbar}
-              >
-                Advanced Options <FaChevronDown className='inline-flex mb-1 ml-2' />
+              >{uiText("Advanced Options")}<FaChevronDown className='inline-flex mb-1 ml-2' />
               </div>
 
               <div className={`advanced-options ${advancedToolbarVisible}`}>
@@ -1704,7 +1716,7 @@ export default function QuickEditor() {
                 >
                   {/* Animation */}
                   <div>
-                    <label className="whitespace-nowrap block text-xs text-left pl-2 pb-1">Animation:</label>
+                    <label className="whitespace-nowrap block text-xs text-left pl-2 pb-1">{uiText("Animation:")}</label>
                     <SingleSelect
                       value={animation}
                       onChange={handleAnimationChange}
@@ -1715,9 +1727,7 @@ export default function QuickEditor() {
 
                   {/* Duration */}
                   <div>
-                    <label className="whitespace-nowrap block text-xs text-left pl-2 pb-1">
-                      Duration/Scene:
-                    </label>
+                    <label className="whitespace-nowrap block text-xs text-left pl-2 pb-1">{uiText("Duration/Scene:")}</label>
                     <SingleSelect
                       value={duration}
                       onChange={handleDurationChange}
@@ -1730,22 +1740,20 @@ export default function QuickEditor() {
                         value={customDuration}
                         onChange={(e) => setCustomDuration(e.target.value)}
                         className={`w-full mt-2 p-2 rounded border-2 border-neutral-500 ${bgNeutral2Color} ${textColor}`}
-                        placeholder="Enter custom duration"
+                        placeholder={uiText("Enter custom duration")}
                       />
                     )}
                   </div>
 
                   {/* Scene Cutoff */}
                   <div>
-                    <label className="whitespace-nowrap block text-xs text-left pl-2 pb-1">
-                      Scene Cutoff:
-                    </label>
+                    <label className="whitespace-nowrap block text-xs text-left pl-2 pb-1">{uiText("Scene Cutoff:")}</label>
                     <SingleSelect
                       value={sceneCutoffType}
                       onChange={handleSceneCutoffTypeChange}
                       options={[
-                        { label: 'Auto', value: 'auto' },
-                        { label: '1 Scene/line', value: 'scene_per_line' },
+                        { label: uiText("Auto"), value: 'auto' },
+                        { label: uiText("1 Scene/line"), value: 'scene_per_line' },
                       ]}
                       className="w-full"
                     />
@@ -1756,7 +1764,7 @@ export default function QuickEditor() {
                 <div className={`mt-2 mb-2 p-2 ${bgNeutral2Color} border-b-2 border-neutral-500`}>
                   <div className={`basis-full flex items-center ${textColor} font-bold text-sm cursor-pointer`}>
                     <div className='flex' onClick={toggleDetails}>
-                      <div className='inline-flex'>Music & Speech</div>
+                      <div className='inline-flex'>{uiText("Music & Speech")}</div>
                       <FaChevronDown className='inline-flex mt-[2px] ml-1 cursor-pointer' />
                     </div>
                   </div>
@@ -1767,7 +1775,7 @@ export default function QuickEditor() {
 
                       {/* --- MUSIC CHECKBOX --- */}
                       <div className='p-2'>
-                        <div className='text-xs mb-1'>Music</div>
+                        <div className='text-xs mb-1'>{uiText("Music")}</div>
                         <input
                           type="checkbox"
                           className="custom-checkbox form-checkbox h-5 w-5 text-gray-600"
@@ -1781,14 +1789,10 @@ export default function QuickEditor() {
                       {musicRequired && (
                         <>
                           {selectedMusicTrack && (
-                            <div className='mt-2 text-sm text-neutral-300 ml-2'>
-                              Selected Music Track: {selectedMusicTrack.name}
-                            </div>
+                            <div className='mt-2 text-sm text-neutral-300 ml-2'>{uiText("Selected Music Track: {value0}", { value0: selectedMusicTrack.name })}</div>
                           )}
                           <div className='ml-2'>
-                            <label className={`whitespace-nowrap block text-xs text-left pl-2 pb-1 ${textColor}`}>
-                              Music Selection:
-                            </label>
+                            <label className={`whitespace-nowrap block text-xs text-left pl-2 pb-1 ${textColor}`}>{uiText("Music Selection:")}</label>
                             <SingleSelect
                               value={selectedMusicOption}
                               onChange={handleMusicOptionChange}
@@ -1801,15 +1805,11 @@ export default function QuickEditor() {
                               className={`${bgGray4Color} ${textColor} p-1 rounded ml-2`}
                               onClick={handleRemoveSelectedMusicTrack}
                               type="button"
-                            >
-                              Remove Track
-                            </button>
+                            >{uiText("Remove Track")}</button>
                           )}
                           {/* Music Provider */}
                           <div className='w-1/3 ml-4 p-2'>
-                            <label className={`whitespace-nowrap block text-xs text-left pl-2 pb-1 ${textColor}`}>
-                              Music Provider:
-                            </label>
+                            <label className={`whitespace-nowrap block text-xs text-left pl-2 pb-1 ${textColor}`}>{uiText("Music Provider:")}</label>
                             <SingleSelect
                               value={selectedMusicProvider}
                               onChange={handleMusicProviderChange}
@@ -1825,7 +1825,7 @@ export default function QuickEditor() {
 
                       {/* --- SPEECH CHECKBOX --- */}
                       <div className='p-2 ml-4'>
-                        <div className='text-xs mb-1'>Speech</div>
+                        <div className='text-xs mb-1'>{uiText("Speech")}</div>
                         <input
                           type="checkbox"
                           className="custom-checkbox form-checkbox h-5 w-5 text-gray-600"
@@ -1840,7 +1840,7 @@ export default function QuickEditor() {
                         <>
                           <div className='p-2'>
                             <div>
-                              <div className='text-xs mb-1'>Normalize</div>
+                              <div className='text-xs mb-1'>{uiText("Normalize")}</div>
                               <input
                                 type="checkbox"
                                 name="speechNormalizationRequired"
@@ -1853,7 +1853,7 @@ export default function QuickEditor() {
 
                           <div className='p-2'>
                             <div>
-                              <div className='text-xs mb-1'>Subtitles</div>
+                              <div className='text-xs mb-1'>{uiText("Subtitles")}</div>
                               <input
                                 type="checkbox"
                                 name="addSubtitlesRequired"
@@ -1866,7 +1866,7 @@ export default function QuickEditor() {
 
                           <div className='p-2'>
                             <div>
-                              <div className='text-xs mb-1'>Transcriptions</div>
+                              <div className='text-xs mb-1'>{uiText("Transcriptions")}</div>
                               <input
                                 type="checkbox"
                                 name="addTranscriptionsRequired"
@@ -1889,7 +1889,7 @@ export default function QuickEditor() {
                   <div className={`mt-2 mb-2 p-2 ${bgNeutral2Color} border-b-2 border-neutral-500`}>
                     <div className={`basis-full flex items-center ${textColor} font-bold text-sm cursor-pointer`}>
                       <div className='flex' onClick={toggleDetails}>
-                        <div className='inline-flex'>Subtitle & Transcription</div>
+                        <div className='inline-flex'>{uiText("Subtitle & Transcription")}</div>
                         <FaChevronDown className='inline-flex mt-[2px] ml-1 cursor-pointer' />
                       </div>
                     </div>
@@ -1899,9 +1899,7 @@ export default function QuickEditor() {
 
                           <div className="flex items-center space-x-4 w-full p-2">
                             <div className='w-1/3'>
-                              <label className={`whitespace-nowrap block text-xs text-left pl-2 pb-1 ${textColor}`}>
-                                Subtitles Font:
-                              </label>
+                              <label className={`whitespace-nowrap block text-xs text-left pl-2 pb-1 ${textColor}`}>{uiText("Subtitles Font:")}</label>
                               <SingleSelect
                                 value={subtitleFont}
                                 onChange={updateSubtitleFont}
@@ -1910,9 +1908,7 @@ export default function QuickEditor() {
                               />
                             </div>
                             <div className='w-1/3'>
-                              <label className={`whitespace-nowrap block text-xs text-left pl-2 pb-1 ${textColor}`}>
-                                Word Animation:
-                              </label>
+                              <label className={`whitespace-nowrap block text-xs text-left pl-2 pb-1 ${textColor}`}>{uiText("Word Animation:")}</label>
                               <SingleSelect
                                 value={wordAnimation}
                                 onChange={(option) => setWordAnimation(option)}
@@ -1932,8 +1928,7 @@ export default function QuickEditor() {
                   className={`mt-2 mb-2 p-2 text-left ${bgNeutral2Color} ${textColor} h-[40px]
                      cursor-pointer border-b-2 border-neutral-500`}
                 >
-                  <div className='inline-flex w-[84%]' onClick={toggleThemeFunc}>
-                    Theme <FaChevronDown className='inline-flex ml-2 mt-1' />
+                  <div className='inline-flex w-[84%]' onClick={toggleThemeFunc}>{uiText("Theme")}<FaChevronDown className='inline-flex ml-2 mt-1' />
                   </div>
                 </div>
 
@@ -1967,11 +1962,10 @@ export default function QuickEditor() {
                   className={`p-2 border-b-2 border-neutral-500 ${bgNeutral2Color} ${textColor} cursor-pointer text-left`}
                 >
                   <div className='inline-flex w-full items-center'>
-                    <div className='flex-1'>
-                      Banner <FaArrowRight className='inline-flex ml-2' />
+                    <div className='flex-1'>{uiText("Banner")}<FaArrowRight className='inline-flex ml-2' />
                     </div>
                     <div className='flex items-center'>
-                      <label className='mr-2'>Add Banner</label>
+                      <label className='mr-2'>{uiText("Add Banner")}</label>
                       <input
                         type='checkbox'
                         className="custom-checkbox form-checkbox h-5 w-5 text-gray-600"
@@ -1994,21 +1988,19 @@ export default function QuickEditor() {
           <div className={`${bgGray2Color}`}>
             <div className={`font-semibold  pl-4 text-left mt-1 ${bgStone1Color} ${textColor}
             pt-1 pb-1`}>
-              <div className='pl-1 ml-1'>
-                Narrative Lines -
-              </div>
+              <div className='pl-1 ml-1'>{uiText("Narrative Lines -")}</div>
             </div>
             <TextareaAutosize
               minRows={5}
               maxRows={20}
               className={`w-full ${bgGray1Color} ${textColor} p-4 rounded mx-auto`}
-              placeholder="Type your narrative here. One line per scene. Do not enter prompts, just the narrative text."
+              placeholder={uiText("Type your narrative here. One line per scene. Do not enter prompts, just the narrative text.")}
               name="promptList"
               value={promptList}
               onChange={handlePromptListChange}
             />
             <div className='relative mt-4'>
-              <CommonButton type="submit">Submit</CommonButton>
+              <CommonButton type="submit">{uiText("Submit")}</CommonButton>
             </div>
           </div>
         </div>
@@ -2016,6 +2008,7 @@ export default function QuickEditor() {
 
       <AssistantHome
         submitAssistantQuery={submitAssistantQuery}
+        onSessionCleared={assistantRequestGuard.invalidate}
         sessionId={id}
         sessionMessages={sessionMessages}
         onSessionMessagesChange={setSessionMessages}

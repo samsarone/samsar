@@ -8,6 +8,8 @@ const schema = new mongoose.Schema({
   fingerprint: String,
   status: { type: String, default: 'PENDING', index: true },
   leaseUntil: Date,
+  leaseToken: String,
+  streamState: mongoose.Schema.Types.Mixed,
   dispatchStarted: Boolean,
   pricingTimestampMs: Number,
   providerResponse: mongoose.Schema.Types.Mixed,

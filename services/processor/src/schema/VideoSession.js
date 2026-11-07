@@ -355,6 +355,8 @@ const videoSessionSchema = new Schema({
   sessionType: { type: String, default: 'video' },
 
   sessionMessages: [Object],
+  assistantStream: { type: Object, default: null },
+  assistantSessionVersion: { type: Number, default: 0 },
   sessionMessageGenerationPending: { type: Boolean, default: false },
   sessionMessageGenerationError: { type: String, default: null },
 

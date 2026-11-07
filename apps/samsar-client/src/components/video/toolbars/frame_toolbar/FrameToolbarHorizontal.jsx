@@ -1,3 +1,5 @@
+import { useUiLanguage } from '../../../../hooks/useUiLanguage.js';
+import { translateText as uiText } from '../../../../utils/localization.js';
 import { useStudioFrameRate } from '../../StudioFrameRateContext.jsx';
 import { useRef, useEffect, useState, useMemo } from "react";
 import { DragDropContext, Droppable, Draggable } from "react-beautiful-dnd";
@@ -20,6 +22,7 @@ export default function FrameToolbarHorizontal({
   onLayersOrderChange,
   isRenderPending,
 }) {
+  useUiLanguage();
   const fps = useStudioFrameRate();
   const totalFrames = Math.max(1, Math.round(totalDuration * fps));
   const safeTotalDuration = Math.max(totalDuration || 0, 0.001);
@@ -159,11 +162,7 @@ export default function FrameToolbarHorizontal({
 
   return (
     <div
-      className={`${
-        colorMode === "dark"
-          ? "bg-[#181b24] text-slate-100 border border-[#3a4050] shadow-[0_14px_36px_rgba(0,0,0,0.32)]"
-          : "bg-white/90 text-slate-800 border border-slate-200 backdrop-blur-sm"
-      } app-panel w-full overflow-hidden`}
+      className={`border border-line ${colorMode === "dark" ? 'bg-[#181b24] text-slate-100 shadow-[0_14px_36px_rgba(0,0,0,0.32)]' : 'bg-white/90 text-slate-800 backdrop-blur-sm'} app-panel w-full overflow-hidden`}
       aria-disabled={isRenderPending}
     >
       <div>
@@ -211,7 +210,7 @@ export default function FrameToolbarHorizontal({
               );
             }}
           />
-          <div className={`text-[10px] font-medium ${colorMode === "dark" ? "text-slate-400" : "text-slate-500"}`}>
+          <div className={`text-micro font-medium text-fg-muted`}>
             {(currentLayerSeek / fps).toFixed(2)}s / {totalDuration.toFixed(2)}s
           </div>
         </div>
@@ -220,13 +219,9 @@ export default function FrameToolbarHorizontal({
           <div className="relative flex-1 min-w-0">
             {canScrollLeft && (
               <button
-                className={`absolute left-1 top-1/2 z-10 -translate-y-1/2 rounded-full p-2 transition-colors duration-150 ${
-                  colorMode === "dark"
-                    ? "bg-[#20232e] text-slate-100 border border-[#3a4050] hover:bg-[#292d3a]"
-                    : "bg-white text-slate-600 border border-slate-200 hover:bg-slate-50"
-                } ${colorMode === "dark" ? "shadow-sm" : ""}`}
+                className={`absolute left-1 top-1/2 z-10 -translate-y-1/2 rounded-full p-2 transition-colors duration-150 bg-surface-raised border border-line ${colorMode === "dark" ? 'text-slate-100 hover:bg-[#292d3a]' : 'text-slate-600 hover:bg-slate-50'} ${colorMode === "dark" ? "shadow-sm" : ""}`}
                 onClick={() => scrollByAmount(-1)}
-                aria-label="Scroll left"
+                aria-label={uiText("Scroll left")}
               >
                 <FaChevronLeft />
               </button>
@@ -234,13 +229,9 @@ export default function FrameToolbarHorizontal({
 
             {canScrollRight && (
               <button
-                className={`absolute right-1 top-1/2 z-10 -translate-y-1/2 rounded-full p-2 transition-colors duration-150 ${
-                  colorMode === "dark"
-                    ? "bg-[#20232e] text-slate-100 border border-[#3a4050] hover:bg-[#292d3a]"
-                    : "bg-white text-slate-600 border border-slate-200 hover:bg-slate-50"
-                } ${colorMode === "dark" ? "shadow-sm" : ""}`}
+                className={`absolute right-1 top-1/2 z-10 -translate-y-1/2 rounded-full p-2 transition-colors duration-150 bg-surface-raised border border-line ${colorMode === "dark" ? 'text-slate-100 hover:bg-[#292d3a]' : 'text-slate-600 hover:bg-slate-50'} ${colorMode === "dark" ? "shadow-sm" : ""}`}
                 onClick={() => scrollByAmount(1)}
-                aria-label="Scroll right"
+                aria-label={uiText("Scroll right")}
               >
                 <FaChevronRight />
               </button>
@@ -290,9 +281,7 @@ export default function FrameToolbarHorizontal({
                                       ? colorMode === "dark"
                                         ? "border-[#f6c453]/60 bg-[#f6c453]/16 shadow-[0_6px_20px_rgba(246,196,83,0.18)]"
                                         : "border-amber-300 bg-amber-50"
-                                      : colorMode === "dark"
-                                        ? "border-[#3a4050] bg-[#20232e] hover:border-[#f6c453]/35"
-                                        : "border-slate-200 bg-slate-100 hover:border-slate-300"
+                                      : `border-line ${colorMode === "dark" ? 'bg-[#20232e] hover:border-[#f6c453]/35' : 'bg-slate-100 hover:border-slate-300'}`
                                   } cursor-pointer flex items-center justify-center select-none overflow-hidden box-border`}
                                   style={{
                                     position: 'absolute',
@@ -311,7 +300,7 @@ export default function FrameToolbarHorizontal({
                                   }}
                                   data-layer-id={layer._id} // helpful for debugging
                                 >
-                                  <div className="min-w-0 overflow-hidden px-1 text-center text-[10px] leading-tight">
+                                  <div className="min-w-0 overflow-hidden px-1 text-center text-micro leading-tight">
                                     <div className="truncate font-semibold">{i + 1}</div>
                                     {showDurationLabel && (
                                       <div className={`truncate ${colorMode === "dark" ? "text-slate-200/90" : "text-slate-600"}`}>
@@ -349,6 +338,7 @@ export default function FrameToolbarHorizontal({
 }
 
 function Playhead({ currentFrame, totalFrames, trackWidth }) {
+  useUiLanguage();
   const cursor = Math.max(0, Math.min(totalFrames, Number(currentFrame) || 0)) / totalFrames * trackWidth;
   return (
     <div

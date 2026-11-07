@@ -1,9 +1,11 @@
+import { useUiLanguage } from '../../hooks/useUiLanguage.js';
 
 import { FaSpinner } from "react-icons/fa6";
 import { useUser } from "../../contexts/UserContext";
 import { useColorMode } from "../../contexts/ColorMode";
 
 export default function LoginButton(props) {
+  useUiLanguage();
   const { children, onClick, isPending, extraClasses, type = 'button' } = props;
   useUser();
   const { colorMode } = useColorMode();

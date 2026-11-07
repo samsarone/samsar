@@ -38,10 +38,12 @@ function getGeneratedOutroCenterBoundsForTest(canvasDimensions) {
     maxCenterSize,
   );
   const centerY = padding + Math.round((availableHeight - centerSize) / 2);
+  const inset = Math.max(22, Math.round(centerSize * 0.055));
+  const scanPadding = Math.max(16, Math.round(Math.min(inset * 0.72, centerSize * 0.04)));
 
   return {
-    top: centerY,
-    bottom: centerY + centerSize,
+    top: centerY + scanPadding,
+    bottom: centerY + centerSize - scanPadding,
   };
 }
 
@@ -261,19 +263,19 @@ test('generated outro CTA text offsets away from edges and truncates after two l
   assert.equal(landscapeItems.length, 2);
   assert.equal(landscapeItems[0].text.split('\n').length, 2);
   assert.equal(landscapeItems[1].text.split('\n').length, 2);
-  assert.match(landscapeItems[0].text.split('\n')[1], /bonus upgrades\.\.\.$/);
-  assert.match(landscapeItems[1].text.split('\n')[1], /support included before/);
+  assert.match(landscapeItems[0].text.split('\n')[1], /\.\.\.$/);
+  assert.match(landscapeItems[1].text, /^Book today/);
 
   const landscapeTopEdges = getTextBlockEdges(landscapeItems[0]);
   const landscapeBottomEdges = getTextBlockEdges(landscapeItems[1]);
   assert.ok(
-    landscapeTopEdges.top >= 41 && landscapeTopEdges.top <= 48,
-    'two-line 16:9 header should sit between the old high placement and the lowered layout',
+    landscapeTopEdges.top >= 41 && landscapeTopEdges.top <= 49,
+    'two-line 16:9 header should retain a safe margin',
   );
   assert.ok(
-    landscapeDimensions.height - landscapeBottomEdges.bottom >= 46 &&
-      landscapeDimensions.height - landscapeBottomEdges.bottom <= 53,
-    'two-line 16:9 footer should sit between the old low placement and the raised layout',
+    landscapeDimensions.height - landscapeBottomEdges.bottom >= 31 &&
+      landscapeDimensions.height - landscapeBottomEdges.bottom <= 40,
+    'two-line 16:9 footer should sit slightly lower while retaining a safe margin',
   );
 
   const portraitDimensions = getCanvasDimensionsForAspectRatio('9:16');
@@ -291,16 +293,16 @@ test('generated outro CTA text offsets away from edges and truncates after two l
   const portraitCenterBounds = getGeneratedOutroCenterBoundsForTest(portraitDimensions);
   const portraitFooterGap = portraitBottomEdges.top - portraitCenterBounds.bottom;
   assert.ok(
-    portraitTopEdges.top >= 160 && portraitTopEdges.top <= 190,
-    'two-line 9:16 header should stay lower than the old layout without matching the lowered placement',
+    portraitTopEdges.top >= 75 && portraitTopEdges.bottom < portraitCenterBounds.top,
+    'two-line 9:16 header should stay inside the canvas and clear the visible center image',
   );
   assert.ok(
-    portraitFooterGap >= 48,
-    'two-line 9:16 footer should move slightly lower below the center image',
+    portraitFooterGap >= 110,
+    'two-line 9:16 footer should have more breathing room below the visible center image',
   );
   assert.ok(
-    portraitFooterGap <= 70,
-    'two-line 9:16 footer should stay close to the center image instead of the bottom edge',
+    Math.abs(portraitFooterGap - (portraitCenterBounds.top - portraitTopEdges.bottom)) <= 1,
+    'portrait headline and footer should have balanced gaps around the visible center image',
   );
 });
 

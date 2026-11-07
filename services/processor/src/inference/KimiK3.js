@@ -1,3 +1,4 @@
+import { createStreamingChatCompletion } from './ProviderStreaming.js';
 import OpenAI, { toFile } from 'openai';
 
 import { resolveProviderMediaPayload } from '../models/ai_utils/ProviderMediaPayload.js';
@@ -426,7 +427,7 @@ export async function createKimiK3ChatCompletion(
   const { client, payload, requestOptions, uploadedFileIds } =
     await buildKimiK3ChatRequest(chatRequest, dependencyOverrides);
   try {
-    return await client.chat.completions.create(payload, requestOptions);
+    return await createStreamingChatCompletion(client, payload, requestOptions, chatRequest.onText);
   } finally {
     await Promise.allSettled(
       uploadedFileIds.map((fileId) => client.files.delete(fileId)),

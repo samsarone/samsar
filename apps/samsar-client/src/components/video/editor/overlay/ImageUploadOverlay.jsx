@@ -1,9 +1,12 @@
+import { useUiLanguage } from '../../../../hooks/useUiLanguage.js';
+import { translateText as uiText } from '../../../../utils/localization.js';
 import { useEffect, useState } from "react";
 import { FaUpload } from "react-icons/fa";
 import { TbLibraryPhoto } from "react-icons/tb";
 import { useColorMode } from "../../../../contexts/ColorMode";
 
 export default function ImageUploadOverlay(props) {
+  useUiLanguage();
   const { aspectRatio, canvasDimensions, onUpload, onOpenLibrary, activeTab } = props;
   const { colorMode } = useColorMode();
 
@@ -21,22 +24,16 @@ export default function ImageUploadOverlay(props) {
   }
 
   const overlaySurface =
-    colorMode === "dark"
-      ? "bg-[#181b24]/95 text-slate-100 border border-[#3a4050] shadow-[0_20px_60px_rgba(0,0,0,0.55)]"
-      : "bg-white/90 text-slate-900 border border-slate-200 shadow-xl shadow-slate-200/60";
+    `text-fg border border-line ${colorMode === "dark" ? 'bg-[#181b24]/95 shadow-[0_20px_60px_rgba(0,0,0,0.55)]' : 'bg-white/90 shadow-xl shadow-slate-200/60'}`;
   const buttonShell =
-    colorMode === "dark"
-      ? "bg-[#20232e] text-slate-100 border border-[#3a4050] hover:bg-[#292d3a]"
-      : "bg-slate-100 text-slate-700 border border-slate-200 hover:bg-white";
+    `text-fg-body border border-line ${colorMode === "dark" ? 'bg-[#20232e] hover:bg-[#292d3a]' : 'bg-slate-100 hover:bg-white'}`;
   const tabBase =
-    colorMode === "dark"
-      ? "bg-[#20232e] text-slate-300 border border-[#3a4050] hover:text-white"
-      : "bg-slate-100 text-slate-600 border border-slate-200 hover:text-slate-900";
+    `text-fg-tertiary border border-line ${colorMode === "dark" ? 'bg-[#20232e] hover:text-white' : 'bg-slate-100 hover:text-slate-900'}`;
   const tabActive =
     colorMode === "dark"
       ? "bg-[#f6c453]/14 text-[#fff1c8] border border-[#f6c453]/55 shadow-sm"
       : "bg-indigo-500/10 text-indigo-600 border border-indigo-200 shadow-sm";
-  const subText = colorMode === "dark" ? "text-slate-300" : "text-slate-600";
+  const subText = "text-fg-tertiary";
 
   const handleUpload = () => {
     setSelectedTab("upload");
@@ -65,26 +62,20 @@ export default function ImageUploadOverlay(props) {
         opacity-50 hover:opacity-80 focus-within:opacity-100 transition-opacity duration-150
       `}
     >
-      <div className="text-sm font-semibold">No image in this frame</div>
-      <div className={`text-xs text-center mt-1 ${subText}`}>
-        Upload an image or pick one from the library to start editing.
-      </div>
+      <div className="text-sm font-semibold">{uiText("No image in this frame")}</div>
+      <div className={`text-xs text-center mt-1 ${subText}`}>{uiText("Upload an image or pick one from the library to start editing.")}</div>
 
       <div className="flex space-x-2 mt-3">
         <button
           type="button"
           onClick={handleUpload}
           className={`px-3 py-1 text-xs rounded-full transition-colors duration-150 ${selectedTab === "upload" ? tabActive : tabBase}`}
-        >
-          Upload image
-        </button>
+        >{uiText("Upload image")}</button>
         <button
           type="button"
           onClick={handleOpenLibrary}
           className={`px-3 py-1 text-xs rounded-full transition-colors duration-150 ${selectedTab === "library" ? tabActive : tabBase}`}
-        >
-          Library
-        </button>
+        >{uiText("Library")}</button>
       </div>
 
       <div className="flex items-center justify-center gap-3 mt-3">
@@ -94,7 +85,7 @@ export default function ImageUploadOverlay(props) {
           className={`flex flex-col items-center justify-center gap-1 px-4 py-2 rounded-lg text-xs transition-colors duration-150 ${buttonShell}`}
         >
           <FaUpload className="text-lg" />
-          <span>Upload</span>
+          <span>{uiText("Upload")}</span>
         </button>
         <button
           type="button"
@@ -102,7 +93,7 @@ export default function ImageUploadOverlay(props) {
           className={`flex flex-col items-center justify-center gap-1 px-4 py-2 rounded-lg text-xs transition-colors duration-150 ${buttonShell}`}
         >
           <TbLibraryPhoto className="text-lg" />
-          <span>Library</span>
+          <span>{uiText("Library")}</span>
         </button>
       </div>
     </div>

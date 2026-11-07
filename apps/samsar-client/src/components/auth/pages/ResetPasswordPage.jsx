@@ -1,3 +1,6 @@
+import { useUiLanguage } from '../../../hooks/useUiLanguage.js';
+import { translateText as uiText, translateAuthError } from '../../../utils/localization.js';
+import { useLocalization } from '../../../contexts/LocalizationContext.jsx';
 // src/components/auth/ResetPasswordPage.jsx
 import { useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
@@ -8,89 +11,10 @@ import { useColorMode } from '../../../contexts/ColorMode.jsx';
 
 const PROCESSOR_SERVER = import.meta.env.VITE_PROCESSOR_API;
 
-const translations = {
-  en: {
-    title: 'Reset your password',
-    emailLabel: 'Email',
-    passwordLabel: 'New password',
-    confirmPasswordLabel: 'Confirm new password',
-    submit: 'Reset password',
-    submitting: 'Submitting...',
-    success: 'Password updated! Redirecting to login...',
-    errors: {
-      email: 'Email is required',
-      password: 'New password is required',
-      mismatch: 'Passwords do not match',
-      code: 'Reset code is missing or invalid',
-      generic: 'Something went wrong',
-    },
-    remember: 'Remembered your password?',
-    login: 'Log in',
-    language: 'Language',
-    resendTitle: 'Need a new reset link?',
-    resendBody: 'If your link expired or is incorrect, request another email.',
-    resendButton: 'Send new reset email',
-    resendSuccess: 'If this email exists, a new reset link has been sent.',
-    resendError: 'Unable to send reset email. Please try again.',
-  },
-  es: {
-    title: 'Restablece tu contraseña',
-    emailLabel: 'Correo electrónico',
-    passwordLabel: 'Nueva contraseña',
-    confirmPasswordLabel: 'Confirmar contraseña',
-    submit: 'Restablecer contraseña',
-    submitting: 'Enviando...',
-    success: '¡Contraseña actualizada! Redirigiendo al inicio...',
-    errors: {
-      email: 'El correo es obligatorio',
-      password: 'La nueva contraseña es obligatoria',
-      mismatch: 'Las contraseñas no coinciden',
-      code: 'El enlace de restablecimiento no es válido',
-      generic: 'Ha ocurrido un error',
-    },
-    remember: '¿Recordaste tu contraseña?',
-    login: 'Iniciar sesión',
-    language: 'Idioma',
-    resendTitle: '¿Necesitas un nuevo enlace?',
-    resendBody: 'Si el enlace venció o es incorrecto, solicita otro correo.',
-    resendButton: 'Enviar nuevo correo',
-    resendSuccess: 'Si el correo existe, se envió un nuevo enlace.',
-    resendError: 'No se pudo enviar el correo. Inténtalo nuevamente.',
-  },
-  fr: {
-    title: 'Réinitialisez votre mot de passe',
-    emailLabel: 'E-mail',
-    passwordLabel: 'Nouveau mot de passe',
-    confirmPasswordLabel: 'Confirmer le mot de passe',
-    submit: 'Réinitialiser le mot de passe',
-    submitting: 'Envoi...',
-    success: 'Mot de passe mis à jour ! Redirection...',
-    errors: {
-      email: "L'e-mail est requis",
-      password: 'Le nouveau mot de passe est requis',
-      mismatch: 'Les mots de passe ne correspondent pas',
-      code: 'Le lien de réinitialisation est invalide',
-      generic: 'Une erreur est survenue',
-    },
-    remember: 'Vous vous souvenez de votre mot de passe ?',
-    login: 'Se connecter',
-    language: 'Langue',
-    resendTitle: "Besoin d'un nouveau lien ?",
-    resendBody: 'Si le lien a expiré ou est incorrect, demandez un nouvel e-mail.',
-    resendButton: 'Envoyer un nouvel e-mail',
-    resendSuccess: 'Si cet e-mail existe, un nouveau lien a été envoyé.',
-    resendError: "Impossible d'envoyer l'e-mail. Réessayez.",
-  },
-};
 
-const getInitialLanguage = (urlLang) => {
-  const saved = typeof window !== 'undefined' ? localStorage.getItem('preferredLanguage') : null;
-  const browser = typeof navigator !== 'undefined' && navigator.language ? navigator.language.split('-')[0] : null;
-  const resolved = resolveLanguageCode(urlLang || saved || browser || 'en', 'en');
-  return resolved === 'auto' ? 'en' : resolved;
-};
 
 export default function ResetPasswordPage() {
+  useUiLanguage();
   const navigate  = useNavigate();
   const location  = useLocation();
   const { colorMode } = useColorMode();
@@ -108,11 +32,34 @@ export default function ResetPasswordPage() {
   const [submitting,      setSubmitting]      = useState(false);
   const [error,           setError]           = useState(null);
   const [success,         setSuccess]         = useState(false);
-  const [language,        setLanguage]        = useState(() => getInitialLanguage(urlLang));
+  const { language, setLanguage } = useLocalization();
   const [allowResend,     setAllowResend]     = useState(!urlCode);
   const [resendStatus,    setResendStatus]    = useState(null);
 
-  const copy = useMemo(() => translations[language] || translations.en, [language]);
+  const copy = {
+  "title": uiText("Reset your password"),
+  "emailLabel": uiText("Email"),
+  "passwordLabel": uiText("New password"),
+  "confirmPasswordLabel": uiText("Confirm new password"),
+  "submit": uiText("Reset password"),
+  "submitting": uiText("Submitting..."),
+  "success": uiText("Password updated! Redirecting to login..."),
+  "errors": {
+    "email": uiText("Email is required"),
+    "password": uiText("New password is required"),
+    "mismatch": uiText("Passwords do not match"),
+    "code": uiText("Reset code is missing or invalid"),
+    "generic": uiText("Something went wrong")
+  },
+  "remember": uiText("Remembered your password?"),
+  "login": uiText("Log in"),
+  "language": uiText("Language"),
+  "resendTitle": uiText("Need a new reset link?"),
+  "resendBody": uiText("If your link expired or is incorrect, request another email."),
+  "resendButton": uiText("Send new reset email"),
+  "resendSuccess": uiText("If this email exists, a new reset link has been sent."),
+  "resendError": uiText("Unable to send reset email. Please try again.")
+};
   const isLight = colorMode === 'light';
   const panelClass = isLight
     ? 'bg-[#f8fafc] text-slate-900 border border-slate-200 rounded-lg p-6 max-w-md w-full'
@@ -130,16 +77,14 @@ export default function ResetPasswordPage() {
   const resendBodyClass = isLight ? 'text-sm text-slate-600 mb-2' : 'text-sm text-gray-300 mb-2';
 
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('preferredLanguage', language);
-    }
-  }, [language]);
+    if (urlLang) setLanguage(resolveLanguageCode(urlLang, 'en'));
+  }, [urlLang, setLanguage]);
 
   useEffect(() => {
     if (!urlCode) {
-      setError(copy.errors.code);
+      setError("Reset code is missing or invalid");
     }
-  }, [urlCode, copy.errors.code]);
+  }, [urlCode]);
 
   /* ——— form submit ——— */
   const handleSubmit = async (e) => {
@@ -149,10 +94,10 @@ export default function ResetPasswordPage() {
     setAllowResend(false);
 
     // minimal checks
-    if (!email)                     { setError(copy.errors.email); setAllowResend(true); return; }
-    if (!password)                  { setError(copy.errors.password); setAllowResend(true); return; }
-    if (password !== confirmPassword) { setError(copy.errors.mismatch); return; }
-    if (!urlCode)                   { setError(copy.errors.code); setAllowResend(true); return; }
+    if (!email)                     { setError("Email is required"); setAllowResend(true); return; }
+    if (!password)                  { setError("New password is required"); setAllowResend(true); return; }
+    if (password !== confirmPassword) { setError("Passwords do not match"); return; }
+    if (!urlCode)                   { setError("Reset code is missing or invalid"); setAllowResend(true); return; }
 
     try {
       setSubmitting(true);
@@ -165,7 +110,7 @@ export default function ResetPasswordPage() {
       setSuccess(true);
       setTimeout(() => navigate('/login'), 2000);
     } catch (err) {
-      const msg = err?.response?.data?.error || err?.response?.data?.message || copy.errors.generic;
+      const msg = err?.response?.data?.error || err?.response?.data?.message || 'Something went wrong';
       setError(msg);
       const lowered = msg?.toString().toLowerCase() || '';
       if (lowered.includes('expired') || lowered.includes('invalid') || lowered.includes('token')) {
@@ -177,7 +122,7 @@ export default function ResetPasswordPage() {
 
   const requestNewLink = async () => {
     if (!email) {
-      setError(copy.errors.email);
+      setError("Email is required");
       return;
     }
 
@@ -203,7 +148,7 @@ export default function ResetPasswordPage() {
 
           {error && (
             <div className={errorClass}>
-              {error}
+              {translateAuthError(error)}
             </div>
           )}
 

@@ -1,3 +1,6 @@
+import { useAssistantRequestGuard } from '../../hooks/useAssistantRequestGuard.js';
+import { useUiLanguage } from '../../hooks/useUiLanguage.js';
+import { translateText as uiText } from '../../utils/localization.js';
 import { resolveStudioLayerVideo } from './util/studioVideoLayers.mjs';
 import { getRenderableImageUrl } from '../../utils/image.jsx';
 import { StudioFrameRateContext, resolveStudioFramesPerSecond } from './StudioFrameRateContext.jsx';
@@ -69,7 +72,6 @@ const VIDEO_CANVAS_ZOOM_MODE_STORAGE_KEY = 'videoCanvasZoomMode';
 const VIDEO_CANVAS_ZOOM_SCALE_STORAGE_KEY = 'videoCanvasZoomScale';
 const CANVAS_ZOOM_STEP_RATIO = 0.25;
 const MIN_CANVAS_ZOOM_RATIO = 0.5;
-const PORTRAIT_CANVAS_INITIAL_ZOOM_RATIO = 0.5;
 const MAX_CANVAS_ZOOM_RATIO = 4;
 const ADVANCED_VIDEO_EDIT_PENDING_SESSION_KEY = 'advancedVideoEditPendingSession';
 const SHARE_COPY_AFTER_AUTH_KEY = 'studioShareCopyAfterAuth';
@@ -121,8 +123,8 @@ function updateSharedSessionDocumentMetadata(sessionDetails) {
     return;
   }
 
-  const title = sessionDetails?.sessionName || sessionDetails?.publishedTitle || 'Samsar One Studio Session';
-  const description = sessionDetails?.publishedDescription || 'View this read-only Samsar One studio session.';
+  const title = sessionDetails?.sessionName || sessionDetails?.publishedTitle || uiText("Samsar One Studio Session");
+  const description = sessionDetails?.publishedDescription || uiText("View this read-only Samsar One studio session.");
   const ogImageUrl = sessionDetails?.ogImageUrl || sessionDetails?.og_image_url || sessionDetails?.shareOgImageUrl;
   const pageUrl = window.location.href;
 
@@ -576,15 +578,6 @@ function clampCanvasZoomScale(nextScale, fitZoomScale = 1) {
   return Math.min(Math.max(Number(nextScale) || safeBaseScale, minScale), maxScale);
 }
 
-function isPortraitAspectRatio(aspectRatio) {
-  if (typeof aspectRatio !== 'string') {
-    return false;
-  }
-
-  const [width, height] = aspectRatio.split(':').map((value) => Number(value));
-  return Number.isFinite(width) && Number.isFinite(height) && width > 0 && height > width;
-}
-
 function normalizeSceneTransitionPreset(value) {
   if (typeof value !== 'string') {
     return DEFAULT_SCENE_TRANSITION_PRESET;
@@ -761,6 +754,7 @@ function mergePreviewAudioLayers(sessionAudioLayers, workingAudioLayers) {
 }
 
 export default function VideoHome() {
+  useUiLanguage();
   const {
     setZoomCanvasIn,
     setZoomCanvasOut,
@@ -813,6 +807,12 @@ export default function VideoHome() {
   const [polling, setPolling] = useState(false); // New state variable to track polling status
   const [displayZoomType, setDisplayZoomType] = useState('fit'); // fit or manual
   const [stageZoomScale, setStageZoomScale] = useState(1);
+  const [canvasViewport, setCanvasViewport] = useState(null);
+  const handleCanvasViewportChange = useCallback(({ width, height }) => {
+    setCanvasViewport(previous => (
+      previous?.width === width && previous?.height === height ? previous : { width, height }
+    ));
+  }, []);
 
   const [sessionMetadata, setSessionMetadata] = useState(null);
 
@@ -859,6 +859,7 @@ export default function VideoHome() {
   const isEditableShareView = Boolean(editableShareToken);
   const isSharedSessionView = isReadOnlyShareView || isEditableShareView;
   const id = isSharedSessionView ? (sharedSessionId || routeSessionId) : routeSessionId;
+  const assistantRequestGuard = useAssistantRequestGuard(id);
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -1178,7 +1179,7 @@ export default function VideoHome() {
     }
 
     try {
-      toast.info('Creating an editable copy...', {
+      toast.info(uiText("Creating an editable copy..."), {
         position: 'bottom-center',
         className: 'custom-toast',
       });
@@ -1190,7 +1191,7 @@ export default function VideoHome() {
       const nextSessionId = resolveCopiedSessionId(response?.data);
 
       if (!nextSessionId) {
-        throw new Error('Copy completed without a session id.');
+        throw new Error(uiText("Copy completed without a session id."));
       }
 
       sessionStorage.removeItem(SHARE_COPY_AFTER_AUTH_KEY);
@@ -1199,7 +1200,7 @@ export default function VideoHome() {
       navigate(`/video/${nextSessionId}`, { replace: true });
       return true;
     } catch (error) {
-      toast.error(error?.response?.data?.error || 'Unable to create an editable copy.', {
+      toast.error(error?.response?.data?.error || uiText("Unable to create an editable copy."), {
         position: 'bottom-center',
         className: 'custom-toast',
       });
@@ -1232,8 +1233,7 @@ export default function VideoHome() {
 
     void copySharedSessionForEditing();
     return false;
-  }, [
-    copySharedSessionForEditing,
+  }, [copySharedSessionForEditing,
     getCurrentShareRedirectPath,
     isEditableShareView,
     isReadOnlyShareView,
@@ -1254,7 +1254,7 @@ export default function VideoHome() {
     }
 
     try {
-      toast.info('Creating an editable copy...', {
+      toast.info(uiText("Creating an editable copy..."), {
         position: 'bottom-center',
         className: 'custom-toast',
       });
@@ -1266,7 +1266,7 @@ export default function VideoHome() {
       const nextSessionId = resolveCopiedSessionId(response?.data);
 
       if (!nextSessionId) {
-        throw new Error('Copy completed without a session id.');
+        throw new Error(uiText("Copy completed without a session id."));
       }
 
       sessionStorage.removeItem(GUEST_SAMPLE_COPY_AFTER_AUTH_KEY);
@@ -1275,14 +1275,13 @@ export default function VideoHome() {
       navigate(`/video/${nextSessionId}`, { replace: true });
       return true;
     } catch (error) {
-      toast.error(error?.response?.data?.error || 'Unable to create an editable copy.', {
+      toast.error(error?.response?.data?.error || uiText("Unable to create an editable copy."), {
         position: 'bottom-center',
         className: 'custom-toast',
       });
       return false;
     }
-  }, [
-    getCurrentShareRedirectPath,
+  }, [getCurrentShareRedirectPath,
     isGuestSampleView,
     navigate,
     routeSessionId,
@@ -1305,8 +1304,7 @@ export default function VideoHome() {
     }
 
     return true;
-  }, [
-    copyGuestSampleSessionForEditing,
+  }, [copyGuestSampleSessionForEditing,
     isGuestSampleView,
     isSharedSessionView,
     requestEditableSharedSession,
@@ -1408,31 +1406,17 @@ export default function VideoHome() {
   }, [id, isSharedSessionView]);
 
 
-  const getFitZoomScale = (nextAspectRatio = aspectRatio) => {
-    if (nextAspectRatio === '1:1') {
-      return 1;
-    } else if (nextAspectRatio === '16:9') {
-      return 0.56;
-    } else if (nextAspectRatio === '9:16') {
-      return 0.7;
-    } else {
-      return 1;
-    }
-  }
+  const getFitZoomScale = useCallback((nextAspectRatio = aspectRatio) => {
+    if (!canvasViewport) return 1;
+    const dimensions = getCanvasDimensionsForAspectRatio(nextAspectRatio);
+    return Math.min(canvasViewport.width / dimensions.width, canvasViewport.height / dimensions.height);
+  }, [aspectRatio, canvasViewport]);
 
   const applyInitialCanvasZoomForAspectRatio = (nextAspectRatio) => {
     const fitZoomScale = getFitZoomScale(nextAspectRatio);
 
-    if (!isPortraitAspectRatio(nextAspectRatio)) {
-      setDisplayZoomType('fit');
-      setStageZoomScale(fitZoomScale);
-      return;
-    }
-
-    setDisplayZoomType('manual');
-    setStageZoomScale(
-      clampCanvasZoomScale(fitZoomScale * PORTRAIT_CANVAS_INITIAL_ZOOM_RATIO, fitZoomScale)
-    );
+    setDisplayZoomType('fit');
+    setStageZoomScale(fitZoomScale);
   };
 
   useEffect(() => {
@@ -1440,7 +1424,7 @@ export default function VideoHome() {
     if (displayZoomType === 'fit') {
       setStageZoomScale(fitZoomScale);
     }
-  }, [aspectRatio, displayZoomType]);
+  }, [getFitZoomScale, displayZoomType]);
 
   useEffect(() => {
     localStorage.setItem(
@@ -1455,20 +1439,20 @@ export default function VideoHome() {
     const stepSize = fitZoomScale * CANVAS_ZOOM_STEP_RATIO;
     setDisplayZoomType('manual');
     setStageZoomScale((prevScale) => clampCanvasZoomScale(prevScale + stepSize, fitZoomScale));
-  }, [aspectRatio]);
+  }, [getFitZoomScale]);
 
   const zoomCanvasOut = useCallback(() => {
     const fitZoomScale = getFitZoomScale();
     const stepSize = fitZoomScale * CANVAS_ZOOM_STEP_RATIO;
     setDisplayZoomType('manual');
     setStageZoomScale((prevScale) => clampCanvasZoomScale(prevScale - stepSize, fitZoomScale));
-  }, [aspectRatio]);
+  }, [getFitZoomScale]);
 
   const resetCanvasZoom = useCallback(() => {
     const fitZoomScale = getFitZoomScale();
     setDisplayZoomType('fit');
     setStageZoomScale(fitZoomScale);
-  }, [aspectRatio]);
+  }, [getFitZoomScale]);
 
   const toggleStageZoom = resetCanvasZoom;
   const fitZoomScale = getFitZoomScale();
@@ -1696,13 +1680,13 @@ export default function VideoHome() {
       setTotalDuration(resolveTimelineDuration(layers, sessionDetails));
       setIsLayerGenerationPending(hasPendingFrameOrLayerGeneration(sessionDetails));
       setGenerationImages(sessionDetails.generations);
-      setSessionMessages(sessionDetails.sessionMessages);
+      if (assistantRequestGuard.acceptSession(sessionDetails)) setSessionMessages(assistantRequestGuard.messages(sessionDetails));
     }).catch(function (err) {
       if (isCancelled) {
         return;
       }
       if (isReadOnlyShareView) {
-        toast.error('This shared session link is unavailable.', {
+        toast.error(uiText("This shared session link is unavailable."), {
           position: 'bottom-center',
           className: 'custom-toast',
         });
@@ -1713,7 +1697,7 @@ export default function VideoHome() {
           showLoginDialogRef.current?.({ redirectTo: getCurrentShareRedirectPath() });
           return;
         }
-        toast.error(err?.response?.data?.error || 'This editable shared session link is unavailable.', {
+        toast.error(err?.response?.data?.error || uiText("This editable shared session link is unavailable."), {
           position: 'bottom-center',
           className: 'custom-toast',
         });
@@ -1735,7 +1719,7 @@ export default function VideoHome() {
 
         }
       }
-      toast.error(err?.response?.data?.error || 'Unable to open this session.', {
+      toast.error(err?.response?.data?.error || uiText("Unable to open this session."), {
         position: 'bottom-center',
         className: 'custom-toast',
       });
@@ -1926,7 +1910,7 @@ export default function VideoHome() {
       setIsCanvasDirty(true);
       return data;
     } catch (error) {
-      if (sessionIdRef.current === requestSessionId) toast.error(error?.response?.data?.error || 'Unable to reorder scenes.');
+      if (sessionIdRef.current === requestSessionId) toast.error(error?.response?.data?.error || uiText("Unable to reorder scenes."));
       return null;
     } finally {
       if (sessionIdRef.current === requestSessionId) setCanvasProcessLoading(false);
@@ -2055,7 +2039,7 @@ export default function VideoHome() {
           if (!sessionData) {
             stopRenderPollAfterFailureLimit(
               timer,
-              'Unable to confirm render status after several attempts. Refresh the session before trying again.'
+              uiText("Unable to confirm render status after several attempts. Refresh the session before trying again.")
             );
             return;
           }
@@ -2097,7 +2081,7 @@ export default function VideoHome() {
         } catch {
           stopRenderPollAfterFailureLimit(
             timer,
-            'Unable to confirm render status after several attempts. Refresh the session before trying again.'
+            uiText("Unable to confirm render status after several attempts. Refresh the session before trying again.")
           );
         } finally {
           isStatusRequestInFlight = false;
@@ -2175,7 +2159,7 @@ export default function VideoHome() {
         if (!renderStatus) {
           stopRenderPollAfterFailureLimit(
             timer,
-            'Unable to confirm render status after several attempts. Refresh the session before trying again.'
+            uiText("Unable to confirm render status after several attempts. Refresh the session before trying again.")
           );
           return;
         }
@@ -2183,7 +2167,7 @@ export default function VideoHome() {
         if (renderStatus === 'IDLE' && shouldForceAdvancedVideoEditPolling(id)) {
           const didStopPolling = stopRenderPollAfterFailureLimit(
             timer,
-            'Render status stayed unavailable after several attempts. Refresh the session before trying again.'
+            uiText("Render status stayed unavailable after several attempts. Refresh the session before trying again.")
           );
           if (didStopPolling) {
             return;
@@ -2216,7 +2200,7 @@ export default function VideoHome() {
 
         if (renderStatus === 'FAILED') {
           clearAdvancedVideoEditPendingSession(id);
-          toast.error(renderData.generationError || sessionData?.generationError || 'Video render failed.', {
+          toast.error(renderData.generationError || sessionData?.generationError || uiText("Video render failed."), {
             position: "bottom-center",
             className: "custom-toast",
           });
@@ -2236,7 +2220,7 @@ export default function VideoHome() {
       } catch {
         stopRenderPollAfterFailureLimit(
           timer,
-          'Unable to confirm render status after several attempts. Refresh the session before trying again.'
+          uiText("Unable to confirm render status after several attempts. Refresh the session before trying again.")
         );
       } finally {
         isStatusRequestInFlight = false;
@@ -2304,8 +2288,7 @@ export default function VideoHome() {
 
       toast.success(
         <div>
-          <FaCheck className='inline-flex mr-2' /> Video edit queued
-        </div>,
+          <FaCheck className='inline-flex mr-2' />{uiText("Video edit queued")}</div>,
         {
           position: "bottom-center",
           className: "custom-toast",
@@ -2318,7 +2301,7 @@ export default function VideoHome() {
         layer: updatedLayer,
       };
     } catch (error) {
-      toast.error(error?.response?.data?.error || 'Unable to queue the video edit.', {
+      toast.error(error?.response?.data?.error || uiText("Unable to queue the video edit."), {
         position: "bottom-center",
         className: "custom-toast",
       });
@@ -2350,7 +2333,7 @@ export default function VideoHome() {
     }
 
     if (isUpdateLayerPending) {
-      toast.error('Please wait for the scene update to finish before rendering.', {
+      toast.error(uiText("Please wait for the scene update to finish before rendering."), {
         position: "bottom-center",
         className: "custom-toast",
       });
@@ -2361,7 +2344,7 @@ export default function VideoHome() {
       layers,
       audioLayers,
     })) {
-      toast.error('Wait for the current layer processing to finish before rendering.', {
+      toast.error(uiText("Wait for the current layer processing to finish before rendering."), {
         position: "bottom-center",
         className: "custom-toast",
       });
@@ -2396,7 +2379,7 @@ export default function VideoHome() {
         await requestFrameRegenerationForRender(headers);
       } catch (error) {
         setIsVideoGenerating(false);
-        toast.error(error?.response?.data?.error || 'Failed to regenerate frames before render', {
+        toast.error(error?.response?.data?.error || uiText("Failed to regenerate frames before render"), {
           position: "bottom-center",
           className: "custom-toast",
         });
@@ -2411,7 +2394,7 @@ export default function VideoHome() {
       return true;
     } catch (error) {
       setIsVideoGenerating(false);
-      toast.error(error?.response?.data?.error || 'Failed to request video render', {
+      toast.error(error?.response?.data?.error || uiText("Failed to request video render"), {
         position: "bottom-center",
         className: "custom-toast",
       });
@@ -2447,7 +2430,7 @@ export default function VideoHome() {
             };
           });
         }
-        toast.success("Render cancelled", {
+        toast.success(uiText("Render cancelled"), {
           position: "bottom-center",
           className: "custom-toast",
         });
@@ -2652,7 +2635,7 @@ export default function VideoHome() {
         setIsCanvasDirty(true);
       }
 
-      toast.success('Audio layer duplicated', {
+      toast.success(uiText("Audio layer duplicated"), {
         position: 'bottom-center',
         className: 'custom-toast',
       });
@@ -2662,7 +2645,7 @@ export default function VideoHome() {
         duplicatedAudioLayerId: duplicatedAudioLayer?._id?.toString?.() || duplicatedAudioLayer?._id || null,
       };
     } catch (error) {
-      toast.error('Unable to duplicate audio layer', {
+      toast.error(uiText("Unable to duplicate audio layer"), {
         position: 'bottom-center',
         className: 'custom-toast',
       });
@@ -2974,7 +2957,7 @@ export default function VideoHome() {
       setLayers(updatedLayers);
       setIsLayerGenerationPending(hasPendingFrameOrLayerGeneration(sessionData));
       if (Array.isArray(sessionData.sessionMessages)) {
-        setSessionMessages(sessionData.sessionMessages);
+        if (assistantRequestGuard.acceptSession(sessionData)) setSessionMessages(assistantRequestGuard.messages(sessionData));
       }
     }
 
@@ -3026,7 +3009,7 @@ export default function VideoHome() {
         data: response.data,
       };
     } catch (error) {
-      toast.error('Failed to update image or shape timing');
+      toast.error(uiText("Failed to update image or shape timing"));
       return {
         success: false,
         error,
@@ -3060,7 +3043,7 @@ export default function VideoHome() {
         data: response.data,
       };
     } catch (error) {
-      toast.error('Failed to delete image or shape item');
+      toast.error(uiText("Failed to delete image or shape item"));
       return {
         success: false,
         error,
@@ -3386,7 +3369,7 @@ export default function VideoHome() {
       const insertedLayer = newLayerIndex >= 0 ? newLayers[newLayerIndex] : newLayer;
 
       if (!updatedSessionDetails || !newLayerId || !insertedLayer || newLayerIndex < 0) {
-        throw new Error('The add-layer response did not include the inserted layer.');
+        throw new Error(uiText("The add-layer response did not include the inserted layer."));
       }
 
       pendingLayerInsertionIdsRef.current.add(newLayerId);
@@ -3430,7 +3413,7 @@ export default function VideoHome() {
       setIsCanvasDirty(true);
       return session;
     } catch (error) {
-      if (sessionIdRef.current === requestSessionId) toast.error(error?.response?.data?.error || 'Unable to copy scene.');
+      if (sessionIdRef.current === requestSessionId) toast.error(error?.response?.data?.error || uiText("Unable to copy scene."));
       return null;
     }
   };
@@ -3449,7 +3432,7 @@ export default function VideoHome() {
       setIsCanvasDirty(true);
       return data;
     } catch (error) {
-      if (sessionIdRef.current === requestSessionId) toast.error(error?.response?.data?.error || 'Unable to save scene changes.');
+      if (sessionIdRef.current === requestSessionId) toast.error(error?.response?.data?.error || uiText("Unable to save scene changes."));
       return null;
     } finally {
       if (sessionIdRef.current === requestSessionId) setIsUpdateLayerPending(false);
@@ -3461,7 +3444,7 @@ export default function VideoHome() {
       return;
     }
     if (!canRemoveStudioScene(layers)) {
-      toast.info('A project must keep at least one scene.', {
+      toast.info(uiText("A project must keep at least one scene."), {
         position: 'bottom-center',
         className: 'custom-toast',
       });
@@ -3600,7 +3583,7 @@ export default function VideoHome() {
             fallbackVideoUrl: resolveLatestSessionVideoUrl(prevDetails),
           });
         });
-        toast.success('Video published successfully.', {
+        toast.success(uiText("Video published successfully."), {
           position: 'bottom-center',
           autoClose: 3000,
           hideProgressBar: true,
@@ -3608,7 +3591,7 @@ export default function VideoHome() {
         });
       })
       .catch((error) => {
-        toast.error(error?.response?.data?.error || 'Unable to publish video.', {
+        toast.error(error?.response?.data?.error || uiText("Unable to publish video."), {
           position: 'bottom-center',
           autoClose: 5000,
           hideProgressBar: true,
@@ -3623,7 +3606,7 @@ export default function VideoHome() {
     }
 
     if (isUpdateLayerPending) {
-      toast.error('Please wait for the scene update to finish before restarting the render pipeline.', {
+      toast.error(uiText("Please wait for the scene update to finish before restarting the render pipeline."), {
         position: "bottom-center",
         className: "custom-toast",
       });
@@ -3654,12 +3637,12 @@ export default function VideoHome() {
       setIsVideoGenerating(true);
       startVideoRenderPoll();
 
-      toast.success('Express pipeline restarted.', {
+      toast.success(uiText("Express pipeline restarted."), {
         position: "bottom-center",
         className: "custom-toast",
       });
     }).catch((error) => {
-      toast.error(error?.response?.data?.error || 'Unable to restart the express pipeline.', {
+      toast.error(error?.response?.data?.error || uiText("Unable to restart the express pipeline."), {
         position: "bottom-center",
         className: "custom-toast",
       });
@@ -3685,7 +3668,7 @@ export default function VideoHome() {
           expressGenerationCancelled: true,
         };
       });
-      toast.success('Render cancelled', {
+      toast.success(uiText("Render cancelled"), {
         position: 'bottom-center',
         className: 'custom-toast',
       });
@@ -3696,7 +3679,7 @@ export default function VideoHome() {
       if (nextSessionId && nextSessionId !== id) {
         localStorage.setItem('sessionId', nextSessionId);
         localStorage.setItem('videoSessionId', nextSessionId);
-        toast.success('Session copied', {
+        toast.success(uiText("Session copied"), {
           position: 'bottom-center',
           className: 'custom-toast',
         });
@@ -3704,7 +3687,7 @@ export default function VideoHome() {
         return;
       }
 
-      toast.success('Session copied', {
+      toast.success(uiText("Session copied"), {
         position: 'bottom-center',
         className: 'custom-toast',
       });
@@ -3763,7 +3746,7 @@ export default function VideoHome() {
       return;
     }
 
-    const confirmation = window.confirm('Are you sure you want to unpublish this video?');
+    const confirmation = window.confirm(uiText("Are you sure you want to unpublish this video?"));
     if (!confirmation) {
       return;
     }
@@ -3968,21 +3951,31 @@ export default function VideoHome() {
 
 
   const startAssistantQueryPoll = () => {
+    const requestToken = assistantRequestGuard.capture();
     const headers = getHeaders();
     if (!headers) {
       showLoginDialog();
       return;
     }
+    assistantRequestGuard.subscribe({
+      url: `${PROCESSOR_API_URL}/assistants/assistant_query_stream?id=${encodeURIComponent(id)}`,
+      headers: headers.headers,
+      onSnapshot: snapshot => {
+        setSessionMessages(snapshot.sessionMessages);
+        if (!snapshot.sessionMessageGenerationPending) setIsAssistantQueryGenerating(false);
+      },
+    });
 
-    const timer = setInterval(() => {
+    const timer = assistantRequestGuard.setInterval(() => {
       axios.get(`${PROCESSOR_API_URL}/assistants/assistant_query_status?id=${id}`, headers).then((dataRes) => {
+        if (!assistantRequestGuard.isCurrent(requestToken)) return;
         const assistantQueryData = dataRes.data;
         const assistantQueryStatus = assistantQueryData.status;
         if (assistantQueryStatus === 'COMPLETED') {
           const sessionData = assistantQueryData.sessionDetails;
           clearInterval(timer);
 
-          setSessionMessages(sessionData.sessionMessages);
+          if (assistantRequestGuard.acceptSession(sessionData)) setSessionMessages(assistantRequestGuard.messages(sessionData));
           setIsAssistantQueryGenerating(false);
         }
       });
@@ -3995,6 +3988,7 @@ export default function VideoHome() {
       return;
     }
 
+    const requestToken = assistantRequestGuard.beginRequest();
     const headers = getHeaders();
     if (!headers) {
       showLoginDialog();
@@ -4004,16 +3998,19 @@ export default function VideoHome() {
     axios.post(`${PROCESSOR_API_URL}/assistants/submit_assistant_query`, {
       id: id,
       query: query,
+      stream: true, client_request_id: crypto.randomUUID(), assistantSessionVersion: requestToken.serverVersion,
       frameImage: options?.frameImage || null,
     }, headers).then((response) => {
+      if (!assistantRequestGuard.isCurrent(requestToken)) return;
       const assistantResponse = response.data;
       if (assistantResponse?.status === 'COMPLETED' && assistantResponse?.sessionDetails) {
-        setSessionMessages(assistantResponse.sessionDetails.sessionMessages || []);
+        if (assistantRequestGuard.acceptSession(assistantResponse.sessionDetails)) setSessionMessages(assistantRequestGuard.messages(assistantResponse.sessionDetails));
         setIsAssistantQueryGenerating(false);
         return;
       }
       startAssistantQueryPoll();
     }).catch(function () {
+      if (!assistantRequestGuard.isCurrent(requestToken)) return;
       setIsAssistantQueryGenerating(false);
     });
   }
@@ -4184,15 +4181,14 @@ export default function VideoHome() {
       setIsCanvasDirty(true);
       toast.success(
         <div>
-          <FaCheck className='inline-flex mr-2' /> Removed all subtitles. Frames will regenerate on next render.
-        </div>,
+          <FaCheck className='inline-flex mr-2' />{uiText("Removed all subtitles. Frames will regenerate on next render.")}</div>,
         {
           position: "bottom-center",
           className: "custom-toast",
         }
       );
     }).catch((error) => {
-      toast.error(error?.response?.data?.error || 'Failed to remove subtitles');
+      toast.error(error?.response?.data?.error || uiText("Failed to remove subtitles"));
     });
   };
 
@@ -4215,7 +4211,7 @@ export default function VideoHome() {
       stopLayerPolling();
       setIsLayerGenerationPending(false);
     }).catch((error) => {
-      toast.error(error?.response?.data?.error || 'Failed to request frame regeneration');
+      toast.error(error?.response?.data?.error || uiText("Failed to request frame regeneration"));
     });
   }
 
@@ -4355,6 +4351,7 @@ export default function VideoHome() {
         displayZoomType={displayZoomType}
         toggleStageZoom={toggleStageZoom}
         stageZoomScale={stageZoomScale}
+        onCanvasViewportChange={handleCanvasViewportChange}
         zoomCanvasIn={zoomCanvasIn}
         zoomCanvasOut={zoomCanvasOut}
         resetCanvasZoom={resetCanvasZoom}
@@ -4398,8 +4395,8 @@ export default function VideoHome() {
   );
 
   const showEditableLoginPrompt = isEditableShareView && !getHeaders();
-  const sharedViewPromptLabel = isReadOnlyShareView ? 'View only' : 'Editable link';
-  const sharedViewPromptAction = isReadOnlyShareView ? 'Edit a copy' : 'Log in to edit';
+  const sharedViewPromptLabel = isReadOnlyShareView ? uiText("View only") : uiText("Editable link");
+  const sharedViewPromptAction = isReadOnlyShareView ? uiText("Edit a copy") : uiText("Log in to edit");
   const sharedViewPromptClassName = colorMode === 'dark'
     ? 'border-[#263650] bg-[#0a1526]/95 text-slate-100 shadow-[0_12px_30px_rgba(0,0,0,0.34)]'
     : 'border-slate-200 bg-white/95 text-slate-800 shadow-[0_12px_30px_rgba(15,23,42,0.14)]';
@@ -4556,6 +4553,7 @@ export default function VideoHome() {
             </div>
             <AssistantHome
               submitAssistantQuery={submitAssistantQuery}
+              onSessionCleared={assistantRequestGuard.invalidate}
               sessionId={id}
               sessionMessages={sessionMessages}
               onSessionMessagesChange={setSessionMessages}

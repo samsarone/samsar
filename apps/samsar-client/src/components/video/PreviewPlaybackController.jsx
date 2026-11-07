@@ -1,3 +1,4 @@
+import { useUiLanguage } from '../../hooks/useUiLanguage.js';
 import { getStudioMediaIdentity } from './util/studioMediaIdentity.mjs';
 import { useStudioFrameRate } from './StudioFrameRateContext.jsx';
 import { useCallback, useEffect, useRef, useMemo } from 'react';
@@ -49,6 +50,7 @@ function resolvePreviewFramesPerSecond(value) {
 }
 
 export default function PreviewPlaybackController(props) {
+  useUiLanguage();
   const DISPLAY_FRAMES_PER_SECOND = useStudioFrameRate();
   const {
     applyAudioDucking = true,
@@ -197,8 +199,7 @@ export default function PreviewPlaybackController(props) {
       const nextGain = getMusicDuckingVolumeAtTime(previewTime, audioEntry.duckingWindows);
       setPreviewDuckGain(audioEntry, nextGain);
     });
-  }, [
-    applyAudioDucking,
+  }, [applyAudioDucking,
     setPreviewBaseGain,
     setPreviewDuckGain,
   ]);

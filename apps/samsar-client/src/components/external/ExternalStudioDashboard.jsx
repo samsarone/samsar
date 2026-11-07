@@ -1,3 +1,6 @@
+import { getUiLocale, formatUiNumber } from '../../utils/localization.js';
+import { useUiLanguage } from '../../hooks/useUiLanguage.js';
+import { translateText as uiText } from '../../utils/localization.js';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
@@ -15,38 +18,38 @@ import {
 const PROCESSOR_SERVER = import.meta.env.VITE_PROCESSOR_API || 'http://localhost:3002';
 
 const TEXT_MODELS = [
-  { label: 'RunwayML Gen 4.5', value: 'RUNWAYML' },
-  { label: 'Veo 3.1', value: 'VEO3.1I2V' },
-  { label: 'Veo 3.1 Fast', value: 'VEO3.1I2VFAST' },
-  { label: 'Nvidia Cosmos 3', value: 'COSMOS3SUPERI2V' },
-  { label: 'Seedance 1.5', value: 'SEEDANCEI2V' },
-  { label: 'Seedance 2.0', value: 'SEEDANCE2.0I2V' },
-  { label: 'Seedance 2.5', value: 'SEEDANCE2.5I2V' },
-  { label: 'Kling Pro', value: 'KLINGIMGTOVID3PRO' },
-  { label: 'Custom Image to Video', value: 'CUSTOM_IMAGE_TO_VIDEO' },
+  { get label() { return uiText("RunwayML Gen 4.5"); }, value: 'RUNWAYML' },
+  { get label() { return uiText("Veo 3.1"); }, value: 'VEO3.1I2V' },
+  { get label() { return uiText("Veo 3.1 Fast"); }, value: 'VEO3.1I2VFAST' },
+  { get label() { return uiText("Nvidia Cosmos 3"); }, value: 'COSMOS3SUPERI2V' },
+  { get label() { return uiText("Seedance 1.5"); }, value: 'SEEDANCEI2V' },
+  { get label() { return uiText("Seedance 2.0"); }, value: 'SEEDANCE2.0I2V' },
+  { get label() { return uiText("Seedance 2.5"); }, value: 'SEEDANCE2.5I2V' },
+  { get label() { return uiText("Kling 4"); }, value: 'KLINGIMGTOVID4' },
+  { get label() { return uiText("Custom Image to Video"); }, value: 'CUSTOM_IMAGE_TO_VIDEO' },
 ];
 
 const IMAGE_MODELS = [
-  { label: 'GPTImage 2.5', value: 'GPTIMAGE2.5' },
-  { label: 'NanoBanana Pro', value: 'NANOBANANAPRO' },
-  { label: 'Seedream', value: 'SEEDREAM' },
-  { label: 'Wan2.7 Pro', value: 'WAN2.7PRO' },
+  { get label() { return uiText("GPTImage 2.6"); }, value: 'GPTIMAGE2.5' },
+  { get label() { return uiText("NanoBanana Pro"); }, value: 'NANOBANANAPRO' },
+  { get label() { return uiText("Seedream"); }, value: 'SEEDREAM' },
+  { get label() { return uiText("Wan2.7 Pro"); }, value: 'WAN2.7PRO' },
   {
-    label: 'Qwen Image 3.0 Pro',
+    get label() { return uiText("Qwen Image 3.0 Pro"); },
     value: QWEN_IMAGE_3_PRO_MODEL_KEY,
   },
 ];
 
 const IMAGE_LIST_VIDEO_MODELS = [
-  { label: 'Veo 3.1', value: 'VEO3.1I2V' },
-  { label: 'Veo 3.1 Fast', value: 'VEO3.1I2VFAST' },
-  { label: 'Nvidia Cosmos 3', value: 'COSMOS3SUPERI2V' },
-  { label: 'Seedance 1.5', value: 'SEEDANCEI2V' },
-  { label: 'Seedance 2.0', value: 'SEEDANCE2.0I2V' },
-  { label: 'Seedance 2.5', value: 'SEEDANCE2.5I2V' },
-  { label: 'Kling Pro', value: 'KLINGIMGTOVID3PRO' },
-  { label: 'RunwayML Gen 4.5', value: 'RUNWAYML' },
-  { label: 'Custom Image to Video', value: 'CUSTOM_IMAGE_TO_VIDEO' },
+  { get label() { return uiText("Veo 3.1"); }, value: 'VEO3.1I2V' },
+  { get label() { return uiText("Veo 3.1 Fast"); }, value: 'VEO3.1I2VFAST' },
+  { get label() { return uiText("Nvidia Cosmos 3"); }, value: 'COSMOS3SUPERI2V' },
+  { get label() { return uiText("Seedance 1.5"); }, value: 'SEEDANCEI2V' },
+  { get label() { return uiText("Seedance 2.0"); }, value: 'SEEDANCE2.0I2V' },
+  { get label() { return uiText("Seedance 2.5"); }, value: 'SEEDANCE2.5I2V' },
+  { get label() { return uiText("Kling 4"); }, value: 'KLINGIMGTOVID4' },
+  { get label() { return uiText("RunwayML Gen 4.5"); }, value: 'RUNWAYML' },
+  { get label() { return uiText("Custom Image to Video"); }, value: 'CUSTOM_IMAGE_TO_VIDEO' },
 ];
 
 const DURATION_OPTIONS = [10, 30, 60, 90, 120];
@@ -54,9 +57,9 @@ const SEEDANCE_25_DURATION_OPTIONS = [5, 10, 15, 20];
 const CREDIT_PACKS = [1000, 2500, 5000];
 
 function formatDate(value) {
-  if (!value) return 'Just now';
+  if (!value) return uiText("Just now");
   try {
-    return new Date(value).toLocaleString();
+    return new Date(value).toLocaleString(getUiLocale());
   } catch {
     return value;
   }
@@ -65,7 +68,7 @@ function formatDate(value) {
 function formatCredits(value) {
   const numericValue = Number(value);
   if (!Number.isFinite(numericValue)) return '0';
-  return numericValue.toLocaleString();
+  return numericValue.toLocaleString(getUiLocale());
 }
 
 function getDurationOptionsForModel(model) {
@@ -76,12 +79,13 @@ function toDataUrl(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(reader.result);
-    reader.onerror = () => reject(new Error(`Failed to read ${file.name}`));
+    reader.onerror = () => reject(new Error(uiText("Failed to read {value0}", { value0: file.name })));
     reader.readAsDataURL(file);
   });
 }
 
 export default function ExternalStudioDashboard() {
+  useUiLanguage();
   const navigate = useNavigate();
   const { user, userFetching, resetUser } = useUser();
   const [credits, setCredits] = useState(null);
@@ -225,7 +229,7 @@ export default function ExternalStudioDashboard() {
   const callExternalApi = useCallback(async (config) => {
     const headers = getHeaders();
     if (!headers) {
-      throw new Error('Please sign in again.');
+      throw new Error(uiText("Please sign in again."));
     }
 
     const response = await axios({
@@ -262,7 +266,7 @@ export default function ExternalStudioDashboard() {
     } catch (error) {
       setNotice({
         tone: 'error',
-        message: error?.response?.data?.message || error.message || 'Failed to load external dashboard.',
+        message: error?.response?.data?.message || error.message || uiText("Failed to load external dashboard."),
       });
     } finally {
       setLoading(false);
@@ -327,13 +331,13 @@ export default function ExternalStudioDashboard() {
 
       setNotice({
         tone: 'success',
-        message: `Opened checkout for ${formatCredits(response?.credits)} credits.`,
+        message: uiText("Opened checkout for {value0} credits.", { value0: formatCredits(response?.credits) }),
       });
       await loadDashboard();
     } catch (error) {
       setNotice({
         tone: 'error',
-        message: error?.response?.data?.message || error.message || 'Failed to create recharge session.',
+        message: error?.response?.data?.message || error.message || uiText("Failed to create recharge session."),
       });
     }
   }
@@ -359,14 +363,14 @@ export default function ExternalStudioDashboard() {
       });
       setNotice({
         tone: 'success',
-        message: 'Text-to-video request submitted.',
+        message: uiText("Text-to-video request submitted."),
       });
       setTextForm((current) => ({ ...current, prompt: '' }));
       await loadDashboard();
     } catch (error) {
       setNotice({
         tone: 'error',
-        message: error?.response?.data?.message || error.message || 'Failed to submit text-to-video request.',
+        message: error?.response?.data?.message || error.message || uiText("Failed to submit text-to-video request."),
       });
     } finally {
       setSubmittingMode(null);
@@ -410,7 +414,7 @@ export default function ExternalStudioDashboard() {
 
       setNotice({
         tone: 'success',
-        message: 'Image-list-to-video request submitted.',
+        message: uiText("Image-list-to-video request submitted."),
       });
       setImageFiles([]);
       setImageForm((current) => ({ ...current, prompt: '' }));
@@ -418,7 +422,7 @@ export default function ExternalStudioDashboard() {
     } catch (error) {
       setNotice({
         tone: 'error',
-        message: error?.response?.data?.message || error.message || 'Failed to submit image-list-to-video request.',
+        message: error?.response?.data?.message || error.message || uiText("Failed to submit image-list-to-video request."),
       });
     } finally {
       setSubmittingMode(null);
@@ -439,13 +443,13 @@ export default function ExternalStudioDashboard() {
       });
       setNotice({
         tone: 'success',
-        message: 'Video published.',
+        message: uiText("Video published."),
       });
       await loadDashboard();
     } catch (error) {
       setNotice({
         tone: 'error',
-        message: error?.response?.data?.message || error.message || 'Failed to publish video.',
+        message: error?.response?.data?.message || error.message || uiText("Failed to publish video."),
       });
     }
   }
@@ -464,13 +468,13 @@ export default function ExternalStudioDashboard() {
       });
       setNotice({
         tone: 'success',
-        message: 'Video archived.',
+        message: uiText("Video archived."),
       });
       await loadDashboard();
     } catch (error) {
       setNotice({
         tone: 'error',
-        message: error?.response?.data?.message || error.message || 'Failed to archive video.',
+        message: error?.response?.data?.message || error.message || uiText("Failed to archive video."),
       });
     }
   }
@@ -481,7 +485,7 @@ export default function ExternalStudioDashboard() {
   }
 
   if (loading) {
-    return <div className="p-10 text-center text-slate-500">Loading external studio…</div>;
+    return <div className="p-10 text-center text-slate-500">{uiText("Loading external studio…")}</div>;
   }
 
   if (!user?.isExternalUser) {
@@ -493,13 +497,11 @@ export default function ExternalStudioDashboard() {
       <div className="mx-auto max-w-6xl">
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div>
-            <div className="text-xs uppercase tracking-[0.25em] text-emerald-300/80">External Studio</div>
+            <div className="text-xs uppercase tracking-[0.25em] text-emerald-300/80">{uiText("External Studio")}</div>
             <h1 className="mt-2 text-4xl font-semibold tracking-[-0.04em] text-white">
-              {user.displayName || user.username || 'External user'}
+              {user.displayName || user.username || uiText("External user")}
             </h1>
-            <p className="mt-2 max-w-2xl text-sm text-slate-400">
-              Manage credits, generate videos, and review library items linked to this external account.
-            </p>
+            <p className="mt-2 max-w-2xl text-sm text-slate-400">{uiText("Manage credits, generate videos, and review library items linked to this external account.")}</p>
           </div>
 
           <div className="flex flex-wrap items-center justify-end gap-3">
@@ -507,12 +509,10 @@ export default function ExternalStudioDashboard() {
               type="button"
               onClick={handleLogout}
               className="rounded-full border border-white/15 bg-white/5 px-5 py-3 text-sm font-semibold text-slate-200 transition hover:bg-white/10"
-            >
-              Logout
-            </button>
+            >{uiText("Logout")}</button>
 
             <div className="rounded-3xl border border-white/10 bg-white/5 px-5 py-4">
-              <div className="text-xs uppercase tracking-[0.2em] text-slate-400">Credits</div>
+              <div className="text-xs uppercase tracking-[0.2em] text-slate-400">{uiText("Credits")}</div>
               <div className="mt-2 text-3xl font-semibold text-white">
                 {formatCredits(credits?.remainingCredits ?? user.generationCredits ?? 0)}
               </div>
@@ -535,12 +535,12 @@ export default function ExternalStudioDashboard() {
         <div className="mt-8 grid gap-6 lg:grid-cols-[minmax(0,1.1fr)_minmax(320px,0.9fr)]">
           <div className="space-y-6">
             <section className="rounded-3xl border border-white/10 bg-white/5 p-6">
-              <h2 className="text-xl font-semibold text-white">Text to video</h2>
+              <h2 className="text-xl font-semibold text-white">{uiText("Text to video")}</h2>
               <div className="mt-4 space-y-4">
                 <textarea
                   value={textForm.prompt}
                   onChange={(event) => setTextForm((current) => ({ ...current, prompt: event.target.value }))}
-                  placeholder="Describe the video you want to create."
+                  placeholder={uiText("Describe the video you want to create.")}
                   className="min-h-36 w-full rounded-2xl border border-white/10 bg-[#0c1528] px-4 py-3 text-sm text-white outline-none"
                 />
                 <div className="grid gap-4 md:grid-cols-3">
@@ -568,7 +568,7 @@ export default function ExternalStudioDashboard() {
                     className="rounded-2xl border border-white/10 bg-[#0c1528] px-4 py-3 text-sm text-white"
                   >
                     {getDurationOptionsForModel(textForm.video_model).map((duration) => (
-                      <option key={duration} value={String(duration)}>{duration} seconds</option>
+                      <option key={duration} value={String(duration)}>{uiText("{value0} seconds", { value0: duration })}</option>
                     ))}
                   </select>
                 </div>
@@ -580,9 +580,7 @@ export default function ExternalStudioDashboard() {
                       onChange={(event) =>
                         setTextForm((current) => ({ ...current, enable_subtitles: event.target.checked }))
                       }
-                    />
-                    Enable subtitles
-                  </label>
+                    />{uiText("Enable subtitles")}</label>
                 ) : null}
                 <button
                   type="button"
@@ -590,13 +588,13 @@ export default function ExternalStudioDashboard() {
                   disabled={submittingMode === 'text' || !textForm.prompt.trim() || !isTextVideoModelAvailable || !isTextImageModelAvailable}
                   className="rounded-full bg-emerald-400 px-5 py-3 text-sm font-semibold text-slate-950 disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  {submittingMode === 'text' ? 'Submitting…' : 'Generate text video'}
+                  {submittingMode === 'text' ? uiText("Submitting…") : uiText("Generate text video")}
                 </button>
               </div>
             </section>
 
             <section className="rounded-3xl border border-white/10 bg-white/5 p-6">
-              <h2 className="text-xl font-semibold text-white">Image list to video</h2>
+              <h2 className="text-xl font-semibold text-white">{uiText("Image list to video")}</h2>
               <div className="mt-4 space-y-4">
                 <input
                   type="file"
@@ -606,12 +604,12 @@ export default function ExternalStudioDashboard() {
                   className="block w-full text-sm text-slate-300"
                 />
                 <div className="text-xs text-slate-500">
-                  {imageFiles.length ? `${imageFiles.length} image(s) selected` : 'Upload ordered image frames'}
+                  {imageFiles.length ? uiText("{value0} image(s) selected", { value0: imageFiles.length }) : uiText("Upload ordered image frames")}
                 </div>
                 <textarea
                   value={imageForm.prompt}
                   onChange={(event) => setImageForm((current) => ({ ...current, prompt: event.target.value }))}
-                  placeholder="Optional prompt to guide motion and pacing."
+                  placeholder={uiText("Optional prompt to guide motion and pacing.")}
                   className="min-h-28 w-full rounded-2xl border border-white/10 bg-[#0c1528] px-4 py-3 text-sm text-white outline-none"
                 />
                 <div className="grid gap-4 md:grid-cols-3">
@@ -639,7 +637,7 @@ export default function ExternalStudioDashboard() {
                     className="rounded-2xl border border-white/10 bg-[#0c1528] px-4 py-3 text-sm text-white"
                   >
                     {getDurationOptionsForModel(imageForm.video_model).map((duration) => (
-                      <option key={duration} value={String(duration)}>{duration} seconds</option>
+                      <option key={duration} value={String(duration)}>{uiText("{value0} seconds", { value0: duration })}</option>
                     ))}
                   </select>
                 </div>
@@ -651,9 +649,7 @@ export default function ExternalStudioDashboard() {
                       onChange={(event) =>
                         setImageForm((current) => ({ ...current, enable_subtitles: event.target.checked }))
                       }
-                    />
-                    Enable subtitles
-                  </label>
+                    />{uiText("Enable subtitles")}</label>
                 ) : null}
                 <button
                   type="button"
@@ -661,7 +657,7 @@ export default function ExternalStudioDashboard() {
                   disabled={submittingMode === 'image' || imageFiles.length === 0 || !isImageListVideoModelAvailable || !isImageListImageModelAvailable}
                   className="rounded-full bg-emerald-400 px-5 py-3 text-sm font-semibold text-slate-950 disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  {submittingMode === 'image' ? 'Submitting…' : 'Generate image-list video'}
+                  {submittingMode === 'image' ? uiText("Submitting…") : uiText("Generate image-list video")}
                 </button>
               </div>
             </section>
@@ -669,7 +665,7 @@ export default function ExternalStudioDashboard() {
 
           <div className="space-y-6">
             <section className="rounded-3xl border border-white/10 bg-white/5 p-6">
-              <h2 className="text-xl font-semibold text-white">Top up credits</h2>
+              <h2 className="text-xl font-semibold text-white">{uiText("Top up credits")}</h2>
               <div className="mt-4 space-y-4">
                 <select
                   value={rechargeCredits}
@@ -677,38 +673,30 @@ export default function ExternalStudioDashboard() {
                   className="w-full rounded-2xl border border-white/10 bg-[#0c1528] px-4 py-3 text-sm text-white"
                 >
                   {CREDIT_PACKS.map((creditsOption) => (
-                    <option key={creditsOption} value={String(creditsOption)}>
-                      {formatCredits(creditsOption)} credits
-                    </option>
+                    <option key={creditsOption} value={String(creditsOption)}>{uiText("{value0} credits", { value0: formatCredits(creditsOption) })}</option>
                   ))}
                 </select>
                 <button
                   type="button"
                   onClick={() => void handleRecharge()}
                   className="rounded-full border border-white/10 bg-white/10 px-5 py-3 text-sm font-semibold text-white"
-                >
-                  Open checkout
-                </button>
+                >{uiText("Open checkout")}</button>
               </div>
             </section>
 
             <section className="rounded-3xl border border-white/10 bg-white/5 p-6">
               <div className="flex items-center justify-between gap-4">
-                <h2 className="text-xl font-semibold text-white">Your videos</h2>
+                <h2 className="text-xl font-semibold text-white">{uiText("Your videos")}</h2>
                 <button
                   type="button"
                   onClick={() => void loadDashboard()}
                   className="rounded-full border border-white/10 bg-white/10 px-4 py-2 text-xs font-semibold text-white"
-                >
-                  Refresh
-                </button>
+                >{uiText("Refresh")}</button>
               </div>
 
               <div className="mt-4 space-y-4">
                 {requests.length === 0 ? (
-                  <div className="rounded-2xl border border-dashed border-white/10 px-4 py-8 text-sm text-slate-400">
-                    No external videos yet.
-                  </div>
+                  <div className="rounded-2xl border border-dashed border-white/10 px-4 py-8 text-sm text-slate-400">{uiText("No external videos yet.")}</div>
                 ) : (
                   requests.map((item) => (
                     <div key={item.request_id} className="rounded-2xl border border-white/10 bg-[#0c1528] p-4">
@@ -734,26 +722,20 @@ export default function ExternalStudioDashboard() {
                             target="_blank"
                             rel="noreferrer"
                             className="rounded-full border border-white/10 bg-white/10 px-3 py-2 text-xs font-semibold text-white"
-                          >
-                            Open
-                          </a>
+                          >{uiText("Open")}</a>
                         ) : null}
                         {!item.is_published && item.video_url ? (
                           <button
                             type="button"
                             onClick={() => void handlePublish(item.request_id)}
                             className="rounded-full border border-white/10 bg-white/10 px-3 py-2 text-xs font-semibold text-white"
-                          >
-                            Publish
-                          </button>
+                          >{uiText("Publish")}</button>
                         ) : null}
                         <button
                           type="button"
                           onClick={() => void handleArchive(item.request_id)}
                           className="rounded-full border border-white/10 bg-white/10 px-3 py-2 text-xs font-semibold text-white"
-                        >
-                          Archive
-                        </button>
+                        >{uiText("Archive")}</button>
                       </div>
                     </div>
                   ))

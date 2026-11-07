@@ -64,6 +64,9 @@ const OPENAI_INFERENCE_GMI_OR_SAMSAR = Object.freeze([
   DOCKER_PROVIDER.SAMSAR,
   DOCKER_PROVIDER.OPENROUTER,
 ]);
+const OPENAI_INFERENCE_PROVIDERS = Object.freeze([
+  DOCKER_PROVIDER.OPENAI, DOCKER_PROVIDER.OPENROUTER, DOCKER_PROVIDER.SAMSAR,
+]);
 const CLAUDE_INFERENCE_PROVIDERS = Object.freeze([
   DOCKER_PROVIDER.ANTHROPIC, DOCKER_PROVIDER.OPENROUTER, DOCKER_PROVIDER.SAMSAR,
 ]);
@@ -150,12 +153,14 @@ const ALIBABA_QWEN_IMAGE_ENDPOINT_TYPES = new Set([
 
 export const DOCKER_MODEL_PROVIDER_PRIORITY_BY_MODEL = Object.freeze({
   'gpt-6-astra': OPENAI_INFERENCE_GMI_OR_SAMSAR,
+  'gpt-6.1-sol': OPENAI_INFERENCE_PROVIDERS,
   'claude-opus-5.5': CLAUDE_INFERENCE_PROVIDERS,
+  'claude-fable-5.1': CLAUDE_INFERENCE_PROVIDERS,
   'gemini-4-argon': GOOGLE_INFERENCE_GMI_OR_SAMSAR,
   KIMIK3: KIMI_OR_SAMSAR,
   'QWEN3.8': ALIBABA_GMI_OR_SAMSAR,
   QWENIMAGE3PRO: [DOCKER_PROVIDER.ALIBABA_CLOUD],
-  // These stable app keys now target 2.5 Sunburst; legacy GMI routes do not.
+  // These stable app keys now target 2.6 Sunburst; legacy GMI routes do not.
   'GPTIMAGE2.5': OPENAI_SAMSAR_OR_FAL,
   'GPTIMAGE2.5EDIT': OPENAI_OR_SAMSAR,
   SEEDREAM: GMI_SAMSAR_OR_FAL,
@@ -214,6 +219,8 @@ const LEGACY_MODEL_PROVIDER_PRIORITY_WITHOUT_GMI = Object.freeze({
 export const DOCKER_MODEL_ACTIONS_BY_MODEL = Object.freeze({
   'gpt-6-astra': ['chat', 'assistant', 'moderation', 'recommendations', 'search'],
   'claude-opus-5.5': ['chat', 'assistant'],
+  'claude-fable-5.1': ['chat', 'assistant'],
+  'gpt-6.1-sol': ['chat', 'assistant'],
   'gemini-4-argon': ['chat', 'assistant', 'moderation'],
   KIMIK3: ['chat', 'assistant'],
   'QWEN3.8': ['chat', 'assistant'],
@@ -262,13 +269,15 @@ export const DOCKER_MODEL_ACTIONS_BY_MODEL = Object.freeze({
 
 export const DOCKER_MODEL_DISPLAY_NAME_BY_MODEL = Object.freeze({
   'gpt-6-astra': 'GPT 6 Astra High',
+  'gpt-6.1-sol': 'GPT 6.1 Sol',
+  'claude-fable-5.1': 'Claude Fable 5.1',
   'claude-opus-5.5': 'Claude Opus 5.5',
   'gemini-4-argon': 'Gemini 4 Argon',
   KIMIK3: 'Kimi K3',
   'QWEN3.8': 'Qwen 3.8 Max',
   QWENIMAGE3PRO: 'Qwen Image 3.0 Pro',
-  'GPTIMAGE2.5': 'GPTImage 2.5',
-  'GPTIMAGE2.5EDIT': 'GPTImage 2.5 Edit',
+  'GPTIMAGE2.5': 'GPTImage 2.6',
+  'GPTIMAGE2.5EDIT': 'GPTImage 2.6 Edit',
   SEEDREAM: 'Seedream',
   NANOBANANA2: 'Nano Banana 2',
   NANOBANANA2EDIT: 'Nano Banana 2 Edit',
@@ -326,7 +335,7 @@ export const EXPRESS_PIPELINE_REQUIREMENTS = Object.freeze([
   Object.freeze({
     key: 'inference',
     label: 'Inference',
-    modelKeys: Object.freeze(['gpt-6-astra', 'claude-opus-5.5', 'gemini-4-argon', 'KIMIK3', 'QWEN3.8']),
+    modelKeys: Object.freeze(['gpt-6-astra', 'gpt-6.1-sol', 'claude-opus-5.5', 'claude-fable-5.1', 'gemini-4-argon', 'KIMIK3', 'QWEN3.8']),
   }),
   Object.freeze({
     key: 'imageGeneration',
@@ -454,7 +463,12 @@ export function getCanonicalDockerModelKey(modelKey) {
   const normalizedModelKey = normalizeDockerModelKey(modelKey);
   const compactModelKey = normalizedModelKey.replace(/[^A-Z0-9]/g, '');
   if (['GEMINI4', 'GEMINI4ARGON', 'GOOGLEGEMINI4', 'GOOGLEGEMINI4ARGON'].includes(compactModelKey)) return 'gemini-4-argon';
-  if (['GPT61SOL', 'GPT6ASTRA', 'GPT56SOL'].includes(compactModelKey)) return 'gpt-6-astra';
+  const reasoningToken = compactModelKey.replace(/^(?:OPENAI|ANTHROPIC)/, '')
+    .replace(/(?:EXTRAHIGH|XHIGH|HIGH)$/, '');
+  if (reasoningToken === 'GPT61SOL') return 'gpt-6.1-sol';
+  if (reasoningToken === 'CLAUDEFABLE51') return 'claude-fable-5.1';
+  if (['CLAUDEOPUS55', 'CLAUDE55OPUS'].includes(reasoningToken)) return 'claude-opus-5.5';
+  if (['GPT6ASTRA', 'GPT56SOL'].includes(reasoningToken)) return 'gpt-6-astra';
   if (NORMALIZED_KIMI_K3_MODEL_ALIASES.has(compactModelKey)) {
     return 'KIMIK3';
   }

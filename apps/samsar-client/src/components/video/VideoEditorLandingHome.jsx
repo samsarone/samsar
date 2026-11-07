@@ -1,3 +1,5 @@
+import { useUiLanguage } from '../../hooks/useUiLanguage.js';
+import { translateText as uiText } from '../../utils/localization.js';
 import { useEffect, useRef, useState } from 'react';
 import { useUser } from '../../contexts/UserContext';
 import axios from 'axios';
@@ -19,6 +21,7 @@ const API_SERVER = import.meta.env.VITE_PROCESSOR_API;
 const preloadVideoEditor = () => import('./VideoHome.jsx');
 
 export default function VideoEditorLandingHome() {
+  useUiLanguage();
 
   const { user, userFetching, userInitiated } = useUser();
   const navigate = useNavigate();
@@ -122,7 +125,7 @@ export default function VideoEditorLandingHome() {
     };
 
     void run().catch(() => {
-      setRouteError('Unable to open Studio. Check the server connection and try again.');
+      setRouteError(uiText("Unable to open Studio. Check the server connection and try again."));
     });
   }, [userInitiated, userFetching, user, navigate]);
 
@@ -130,15 +133,13 @@ export default function VideoEditorLandingHome() {
     return (
       <div className="flex min-h-screen items-center justify-center bg-[#0c0d12] px-6 text-slate-100">
         <div className="max-w-md text-center">
-          <h1 className="text-xl font-semibold">Studio is unavailable</h1>
+          <h1 className="text-xl font-semibold">{uiText("Studio is unavailable")}</h1>
           <p className="mt-2 text-sm text-slate-300">{routeError}</p>
           <button
             type="button"
             onClick={() => window.location.reload()}
             className="mt-5 rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-blue-700"
-          >
-            Try again
-          </button>
+          >{uiText("Try again")}</button>
         </div>
       </div>
     );

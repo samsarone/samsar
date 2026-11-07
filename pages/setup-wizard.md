@@ -76,7 +76,10 @@ tokens are migrated automatically. Set `SAMSAR_SETUP_ROTATE_BOOTSTRAP_TOKEN=1` t
 invalidate previous bootstrap URLs and create a new token. For a remote host, use
 `scripts/setup-wizard-remote.sh`; it retrieves the protected token over SSH and
 opens an SSH tunnel. Set `SAMSAR_SETUP_OPEN_BROWSER=0` to skip browser
-auto-open.
+auto-open. On a fresh local installation, opening `http://localhost:8089` directly
+also initializes browser access automatically, without a password or special
+URL. This only applies to the launcher's loopback binding before an admin
+password is configured; remote setups still use the authenticated launch link.
 
 For managed workflows, start with [hosted Samsar.js](https://docs.samsar.one/) and a Samsar API key. Use this wizard when you want your own runtime. Compare the [full model matrix](model-matrix.md), then enable the Samsar adapter and any native/provider adapters required by your chosen models. Documentation order does not override the wizard’s validated runtime priority.
 

@@ -1,3 +1,5 @@
+import { useUiLanguage } from '../../../../hooks/useUiLanguage.js';
+import { translateText as uiText } from '../../../../utils/localization.js';
 // SpeechSelectToolbar.jsx
 import { useEffect, useState } from 'react';
 import SecondaryButton from '../../../common/SecondaryButton.tsx';
@@ -47,6 +49,7 @@ function resolveSessionSubtitlesEnabled(sessionDetails = {}) {
 }
 
 export default function SpeechSelectToolbar(props) {
+  useUiLanguage();
   const {
     audioLayer,
     submitAddTrackToProject,
@@ -68,9 +71,7 @@ export default function SpeechSelectToolbar(props) {
   const { colorMode } = useColorMode();
 
   const panelSurface =
-    colorMode === 'dark'
-      ? 'bg-[#181b24] text-slate-100 border border-[#3a4050] shadow-[0_10px_28px_rgba(0,0,0,0.35)]'
-      : 'bg-white text-slate-900 border border-slate-200 shadow-sm';
+    `bg-surface text-fg border border-line ${colorMode === 'dark' ? 'shadow-[0_10px_28px_rgba(0,0,0,0.35)]' : 'shadow-sm'}`;
   const compactButtonClass = '!m-0 !min-w-0 !rounded-md !px-2 !py-1 text-xs leading-tight';
   const audioUrl = `${PROCESSOR_API_URL}/${audioLayer.localAudioLinks[0]}`;
 
@@ -101,19 +102,15 @@ export default function SpeechSelectToolbar(props) {
     <div className={`${panelSurface} p-3 rounded-xl space-y-3`}>
       <div>
         <audio controls className="h-8 w-full">
-          <source src={audioUrl} type="audio/mpeg" />
-          Your browser does not support the audio element.
-        </audio>
+          <source src={audioUrl} type="audio/mpeg" />{uiText("Your browser does not support the audio element.")}</audio>
       </div>
 
       <div className="pt-1 flex justify-end gap-2">
-        <SecondaryButton onClick={handleAccept} className={compactButtonClass}>Accept</SecondaryButton>
+        <SecondaryButton onClick={handleAccept} className={compactButtonClass}>{uiText("Accept")}</SecondaryButton>
         <SecondaryButton
           onClick={() => setCurrentCanvasAction(TOOLBAR_ACTION_VIEW.SHOW_DEFAULT_DISPLAY)}
           className={compactButtonClass}
-        >
-          Reject
-        </SecondaryButton>
+        >{uiText("Reject")}</SecondaryButton>
       </div>
     </div>
   );

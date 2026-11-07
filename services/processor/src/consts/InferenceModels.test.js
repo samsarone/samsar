@@ -164,9 +164,9 @@ test('upgrades saved GPT 5.6 selections to GPT 6 Astra without losing xhigh effo
 });
 
 
-test('migrates saved Sol selections to GPT 6 Astra and preserves explicit xhigh', () => {
+test('keeps Sol and Astra distinct and preserves explicit xhigh', () => {
   for (const alias of ['gpt-6-astra', 'GPT 6 Astra High', 'gpt-6.1-sol', 'GPT 6.1 Sol High']) {
-    assert.equal(normalizeInferenceModel(alias), 'gpt-6-astra');
+    assert.equal(normalizeInferenceModel(alias), alias.toLowerCase().includes('6.1') ? 'gpt-6.1-sol' : 'gpt-6-astra');
     assert.equal(getReasoningEffortForInferenceModel(alias), 'high');
   }
   for (const alias of ['gpt-6-astra-xhigh', 'GPT 6 Astra Extra High', 'gpt-6.1-sol-xhigh']) {

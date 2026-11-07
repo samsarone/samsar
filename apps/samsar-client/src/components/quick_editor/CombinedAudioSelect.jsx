@@ -1,7 +1,9 @@
+import { useUiLanguage } from '../../hooks/useUiLanguage.js';
 
 import Select, { components } from 'react-select';
 
 export default function CombinedAudioSelect(props) {
+  useUiLanguage();
   const {
     speakerType,
     onSpeakerChange,

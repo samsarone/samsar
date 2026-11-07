@@ -1,3 +1,4 @@
+import { useUiLanguage } from '../../hooks/useUiLanguage.js';
 import {useEffect} from 'react';
 import OverflowContainer from '../common/OverflowContainer.tsx';
 import { useColorMode } from '../../contexts/ColorMode.jsx';
@@ -12,6 +13,7 @@ const API_SERVER = import.meta.env.VITE_PROCESSOR_API;
 
 
 export default function AdVideoCreatorContainer() {
+  useUiLanguage();
 
 
   const { id } = useParams();

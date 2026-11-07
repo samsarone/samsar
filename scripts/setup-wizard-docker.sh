@@ -2036,19 +2036,13 @@ existing_container_id="$(
   docker_cli ps -aq --filter "name=^/${CONTAINER_NAME}$"
 )"
 
-if [[ -n "$existing_container_id" ]]; then
-  echo "Replacing existing container ${CONTAINER_NAME}..."
-  docker_cli rm -f "$CONTAINER_NAME" >/dev/null
-fi
-
 echo "Starting ${CONTAINER_NAME} on host port ${HOST_PORT}..."
 if [[ -n "$HOST_PRIVATE_IPS" ]]; then
   echo "Detected host private IP candidates: ${HOST_PRIVATE_IPS}"
 fi
 echo "Setup wizard bind address: ${HOST_BIND_ADDR}:${HOST_PORT}"
 echo "Public setup URL will be shown only if TCP ${HOST_PORT} responds on the detected public IP."
-container_id="$(
-docker_cli run -d \
+WIZARD_RUN_ARGS=(
     --name "$CONTAINER_NAME" \
     --restart no \
     --read-only \
@@ -2068,6 +2062,7 @@ docker_cli run -d \
     -v "$ROOT_DIR/runtime:$ROOT_DIR/runtime" \
     -v "$BOOTSTRAP_TOKEN_FILE:$BOOTSTRAP_TOKEN_CONTAINER_FILE:ro" \
     -e "SAMSAR_SETUP_ROOT_DIR=$ROOT_DIR" \
+    -e "SAMSAR_SETUP_BIND_ADDR=$HOST_BIND_ADDR" \
     -e "SAMSAR_SETUP_BOOTSTRAP_TOKEN_FILE=$BOOTSTRAP_TOKEN_CONTAINER_FILE" \
     -e "PORT=$CONTAINER_PORT" \
     -e "SAMSAR_SETUP_CLIENT_URL=http://localhost:3000" \
@@ -2083,9 +2078,33 @@ docker_cli run -d \
     -e "SAMSAR_MEDIA_TUNNEL_PROVIDER=${SAMSAR_MEDIA_TUNNEL_PROVIDER:-}" \
     -e "SAMSAR_CLOUDFLARED_PROTOCOL=${SAMSAR_CLOUDFLARED_PROTOCOL:-}" \
     -e "ZROK_ENABLE_TOKEN=${ZROK_ENABLE_TOKEN:-}" \
-    ${PROVIDER_ENV_DOCKER_ARGS[@]+"${PROVIDER_ENV_DOCKER_ARGS[@]}"} \
-    "$IMAGE_NAME"
-)"
+    ${PROVIDER_ENV_DOCKER_ARGS[@]+"${PROVIDER_ENV_DOCKER_ARGS[@]}"}
+)
+
+# Hash desired launch settings (including provider env and bootstrap token)
+# without printing secrets. An image/config change still replaces the wizard.
+wizard_config_hash=""
+if command -v sha256sum >/dev/null 2>&1; then
+  wizard_config_hash="$(printf '%s\0' "$SETUP_BOOTSTRAP_TOKEN" "${WIZARD_RUN_ARGS[@]}" | sha256sum | awk '{print $1}')"
+elif command -v shasum >/dev/null 2>&1; then
+  wizard_config_hash="$(printf '%s\0' "$SETUP_BOOTSTRAP_TOKEN" "${WIZARD_RUN_ARGS[@]}" | shasum -a 256 | awk '{print $1}')"
+fi
+container_id=""
+if enabled "${SAMSAR_SETUP_REUSE_UNCHANGED:-0}" && [[ -n "$existing_container_id" && -n "$wizard_config_hash" ]]; then
+  desired_image_id="$(docker_cli image inspect --format '{{.Id}}' "$IMAGE_NAME")"
+  existing_signature="$(docker_cli inspect --format '{{.Image}} {{index .Config.Labels "samsar.setup.config-hash"}} {{.State.Running}} {{if .State.Health}}{{.State.Health.Status}}{{end}}' "$existing_container_id")"
+  if [[ "$existing_signature" == "$desired_image_id $wizard_config_hash true healthy" ]]; then
+    container_id="$existing_container_id"
+    echo "Reusing unchanged container ${CONTAINER_NAME}."
+  fi
+fi
+if [[ -z "$container_id" ]]; then
+  if [[ -n "$existing_container_id" ]]; then
+    echo "Replacing existing container ${CONTAINER_NAME}..."
+    docker_cli rm -f "$CONTAINER_NAME" >/dev/null
+  fi
+  container_id="$(docker_cli run -d --label "samsar.setup.config-hash=$wizard_config_hash" "${WIZARD_RUN_ARGS[@]}" "$IMAGE_NAME")"
+fi
 
 echo "Started ${CONTAINER_NAME} (${container_id})."
 if wait_for_setup_wizard "$LOCAL_SETUP_WIZARD_URL"; then

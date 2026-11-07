@@ -1,3 +1,5 @@
+import { useUiLanguage } from '../../../hooks/useUiLanguage.js';
+import { translateText as uiText } from '../../../utils/localization.js';
 
 import { useColorMode } from '../../../contexts/ColorMode.jsx';
 import { FaCheck } from 'react-icons/fa6';
@@ -7,6 +9,7 @@ import { MdOutlineRefresh } from "react-icons/md";
 
 
 export default function EraserToolbar(props) {
+  useUiLanguage();
   const {
     pos,
     replaceEraserImage,
@@ -51,7 +54,7 @@ export default function EraserToolbar(props) {
     zIndex: 1000,
     backdropFilter: 'blur(6px)',
   };
-  const historyMetaClass = colorMode === 'dark' ? 'text-slate-400' : 'text-slate-500';
+  const historyMetaClass = 'text-fg-muted';
   const baseActionClass = isImageStudio
     ? 'rounded-xl px-3 py-2 bg-white/5 cursor-pointer transition'
     : 'rounded-lg px-3 py-2 cursor-pointer transition';
@@ -59,9 +62,7 @@ export default function EraserToolbar(props) {
 
   return (
     <div key={pos.id} style={panelStyles}>
-      <div className={`w-full text-center text-xs ${historyMetaClass}`}>
-        Magic eraser history: {eraserUndoCount}/{eraserHistoryLimit} undo, {eraserRedoCount} redo
-      </div>
+      <div className={`w-full text-center text-xs ${historyMetaClass}`}>{uiText("Magic eraser history: {value0}/{value1} undo, {value2} redo", { value0: eraserUndoCount, value1: eraserHistoryLimit, value2: eraserRedoCount })}</div>
       <div className={`grid grid-cols-2 w-full text-center ${isImageStudio ? 'gap-2 text-sm font-medium' : 'gap-2'}`}>
         <button
           type="button"
@@ -69,28 +70,20 @@ export default function EraserToolbar(props) {
           disabled={!canUndoEraserStroke}
           onClick={() => undoEraserStroke?.()}
         >
-          <FaUndo className={`inline-flex ${isImageStudio ? 'text-lg' : ''} ${iconColor}`} />
-          Undo
-        </button>
+          <FaUndo className={`inline-flex ${isImageStudio ? 'text-lg' : ''} ${iconColor}`} />{uiText("Undo")}</button>
         <button
           type="button"
           className={`${baseActionClass} ${canRedoEraserStroke ? '' : disabledActionClass}`}
           disabled={!canRedoEraserStroke}
           onClick={() => redoEraserStroke?.()}
         >
-          <FaRedo className={`inline-flex ${isImageStudio ? 'text-lg' : ''} ${iconColor}`} />
-          Redo
-        </button>
+          <FaRedo className={`inline-flex ${isImageStudio ? 'text-lg' : ''} ${iconColor}`} />{uiText("Redo")}</button>
       </div>
       <div className={`grid grid-cols-2 w-full text-center ${isImageStudio ? 'text-sm font-medium gap-2' : 'gap-2'}`}>
         <button type="button" className={baseActionClass} onClick={() => resetEraserImage()}>
-          <MdOutlineRefresh className={`inline-flex ${isImageStudio ? 'text-lg' : ''} ${iconColor}`} />
-          Reset
-        </button>
+          <MdOutlineRefresh className={`inline-flex ${isImageStudio ? 'text-lg' : ''} ${iconColor}`} />{uiText("Reset")}</button>
         <button type="button" className={baseActionClass} onClick={() => replaceEraserImage()}>
-          <FaCheck className={`inline-flex ${isImageStudio ? 'text-lg' : ''} ${iconColor}`} />
-          Replace
-        </button>
+          <FaCheck className={`inline-flex ${isImageStudio ? 'text-lg' : ''} ${iconColor}`} />{uiText("Replace")}</button>
       </div>
     </div>
   );

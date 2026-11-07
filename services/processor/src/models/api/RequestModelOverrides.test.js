@@ -101,11 +101,11 @@ test('normalizes request inference model aliases', () => {
 test('rejects unsupported request inference model aliases', () => {
   assert.throws(
     () => normalizeInferenceModelFromPayload({ inference_model: 'gpt-5' }),
-    /Legacy gpt-6-astra-high and gpt-6-astra-xhigh aliases are accepted/,
+    /GPT and Claude models accept high and xhigh effort/,
   );
   assert.throws(
     () => normalizeInferenceModelFromPayload({ inference_model: 'claude' }),
-    /Legacy gpt-6-astra-high and gpt-6-astra-xhigh aliases are accepted/,
+    /GPT and Claude models accept high and xhigh effort/,
   );
 });
 
@@ -138,7 +138,7 @@ test('resolves canonical GPT 6 Astra plus explicit effort and legacy suffixes', 
       inference_model: 'gemini-4-argon',
       effort: 'xhigh',
     }),
-    /effort is only supported when inference_model is gpt-6-astra/,
+    /effort is only supported for GPT Astra, GPT Sol, Claude Opus, and Claude Fable/,
   );
 });
 
@@ -326,3 +326,13 @@ test('request TTS model suppresses custom text-to-speech adapter only', () => {
     null,
   );
 });
+
+for (const model of ['gpt-6-astra', 'gpt-6.1-sol', 'claude-opus-5.5', 'claude-fable-5.1']) {
+  test(`${model} supports both effort levels at request ingestion`, () => {
+    for (const effort of ['high', 'xhigh']) {
+      assert.deepEqual(resolveEffectiveInferenceSettings({ inference_model: model, effort }), {
+        inferenceModel: model + (effort === 'xhigh' ? '-xhigh' : ''), inferenceEffort: effort,
+      });
+    }
+  });
+}

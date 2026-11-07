@@ -1,3 +1,5 @@
+import { useUiLanguage } from '../../../hooks/useUiLanguage.js';
+import { translateText as uiText } from '../../../utils/localization.js';
 
 import axios from 'axios';
 import { Navigate, useNavigate, useLocation } from 'react-router-dom';
@@ -18,6 +20,7 @@ import { IS_STANDALONE_DEPLOYMENT } from '../../../utils/environment.jsx';
 const PROCESSOR_SERVER = import.meta.env.VITE_PROCESSOR_API;
 
 export default function RegisterPage() {
+  useUiLanguage();
   const { setUser } = useUser();
   const navigate = useNavigate();
   const location = useLocation();
@@ -69,7 +72,7 @@ export default function RegisterPage() {
       userData = response.data;
     } catch (error) {
       const serverMessage = error.response?.data?.message || error.response?.data?.error;
-      onError(serverMessage || 'Unable to register user at this time. Please try again.');
+      onError(serverMessage || uiText("Unable to register user at this time. Please try again."));
       return;
     }
 
@@ -83,7 +86,7 @@ export default function RegisterPage() {
     try {
       await navigateAfterSignup();
     } catch {
-      onError('Your account was created, but a new project could not be opened.');
+      onError(uiText("Your account was created, but a new project could not be opened."));
     }
   };
 

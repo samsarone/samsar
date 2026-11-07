@@ -1,3 +1,5 @@
+import { createSolResponsesCompletion } from './inference/OpenAIResponsesAdapter.js';
+import { isGPTModel, getReasoningModelBase, supportsInferenceEffort } from './inference/ReasoningModels.js';
 import { checkpointImageResult } from './billing/ImageResultCheckpoint.js';
 import 'dotenv/config';
 import * as fs from 'fs';
@@ -5,7 +7,8 @@ import path from "path";
 import { mkdir, writeFile } from "fs/promises";
 
 import OpenAI from "openai";
-import { isClaudeOpus55Model, createAnthropicChatCompletion } from './inference/AnthropicChatAdapter.js';
+import { isClaudeModel, createAnthropicChatCompletion } from './inference/AnthropicChatAdapter.js';
+import { usesLocalAnthropicVisionImages } from './inference/AnthropicVisionImages.js';
 import { getAccessibleMediaUrlForProvider } from './utils/MediaReferenceUtils.js';
 import { normalizeProviderMediaPayload } from './utils/ProviderMediaPayload.js';
 import {
@@ -214,12 +217,14 @@ async function createInferenceChatCompletionForProvider(
     ...(maxRetries !== undefined ? { maxRetries } : {}),
   };
 
-  if (isClaudeOpus55Model(model)) {
+  if (isClaudeModel(model)) {
     const createClaudeCompletion = dependencyOverrides.createAnthropicChatCompletion || createAnthropicChatCompletion;
-    return createClaudeCompletion(await normalizeProviderMediaPayload(
-      nativeProviderRequest,
-      (value, { mediaKind }) => getAccessibleMediaUrlForProvider(value, { mediaKind }),
-    ));
+    return createClaudeCompletion(usesLocalAnthropicVisionImages()
+      ? nativeProviderRequest
+      : await normalizeProviderMediaPayload(
+        nativeProviderRequest,
+        (value, { mediaKind }) => getAccessibleMediaUrlForProvider(value, { mediaKind }),
+      ));
   }
 
   if (isQwenInferenceModel(model)) {
@@ -249,7 +254,7 @@ async function createInferenceChatCompletionForProvider(
     reasoning_effort,
     ...openAIRequest
   } = providerRequest;
-  if (model === GPT_56_SOL_INFERENCE_MODEL || model?.startsWith(`${GPT_56_SOL_INFERENCE_MODEL}-`)) {
+  if (isGPTModel(model)) {
     for (const key of ['temperature', 'top_p', 'top_logprobs', 'logprobs']) delete openAIRequest[key];
     if (openAIRequest.max_tokens !== undefined) {
       openAIRequest.max_completion_tokens ??= openAIRequest.max_tokens;
@@ -258,10 +263,10 @@ async function createInferenceChatCompletionForProvider(
   }
   const openAIProviderRequest = {
     ...openAIRequest,
-    model: typeof model === 'string' && model.toLowerCase().startsWith(GPT_56_SOL_INFERENCE_MODEL)
-      ? GPT_56_SOL_INFERENCE_MODEL
+    model: typeof model === 'string' && isGPTModel(model)
+      ? getReasoningModelBase(model)
       : model,
-    ...(typeof model === 'string' && model.toLowerCase().startsWith(GPT_56_SOL_INFERENCE_MODEL)
+    ...(typeof model === 'string' && isGPTModel(model)
       ? {
         reasoning_effort: getGPT56SolReasoningEffort(
           model,
@@ -276,6 +281,9 @@ async function createInferenceChatCompletionForProvider(
   const requestedTimeout = Number(timeout ?? timeoutMs);
   if (Number.isFinite(requestedTimeout) && requestedTimeout > 0) {
     requestOptions.timeout = Math.floor(requestedTimeout);
+  }
+  if (getReasoningModelBase(model) === 'gpt-6.1-sol') {
+    return createSolResponsesCompletion(openaiClient, openAIProviderRequest, requestOptions);
   }
   return openaiClient.chat.completions.create(openAIProviderRequest, requestOptions);
 }
@@ -568,8 +576,7 @@ export async function sendAssistantMessageRequest(
     const payload = {
       messages: messageList,
       model: inferenceModel,
-      ...(typeof inferenceModel === 'string' &&
-        inferenceModel.toLowerCase().startsWith(GPT_56_SOL_INFERENCE_MODEL)
+      ...(supportsInferenceEffort(inferenceModel)
         ? { reasoning_effort: getGPT56SolReasoningEffort(inferenceModel, reasoningEffort) }
         : {}),
     };

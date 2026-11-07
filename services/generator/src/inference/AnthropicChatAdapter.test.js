@@ -66,7 +66,7 @@ test('native Claude translates vision, tools, structured output, and usage to th
   assert.equal(continuation.messages[1].content[0].tool_use_id, 'tool_test');
 });
 
-test('native Claude keeps signed image URLs and caps unsupported effort values at high', () => {
+test('native Claude keeps signed image URLs and preserves xhigh effort', () => {
   const body = toAnthropicMessages({
     model: 'anthropic/claude-opus-5.5', reasoning: { effort: 'xhigh' },
     messages: [{ role: 'user', content: [
@@ -76,5 +76,5 @@ test('native Claude keeps signed image URLs and caps unsupported effort values a
   assert.deepEqual(body.messages[0].content[0], {
     type: 'image', source: { type: 'url', url: 'https://example.com/frame.png' },
   });
-  assert.equal(body.output_config.effort, 'high');
+  assert.equal(body.output_config.effort, 'xhigh');
 });

@@ -1,3 +1,5 @@
+import { useUiLanguage } from '../../../../../hooks/useUiLanguage.js';
+import { translateText as uiText } from '../../../../../utils/localization.js';
 import { useStudioFrameRate } from '../../../StudioFrameRateContext.jsx';
 import { useEffect, useState } from 'react';
 import SecondaryButton from '../../../../common/SecondaryButton.tsx';
@@ -6,14 +8,15 @@ import { FaRegCircleStop } from "react-icons/fa6";
 import SingleSelect from '../../../../common/SingleSelect.jsx';
 
 const TEXT_ANIMATION_OPTIONS = [
-  { label: 'Typewriter', value: 'typewriter' },
-  { label: 'Fade In', value: 'fade-in' },
-  { label: 'Fade Out', value: 'fade-out' },
-  { label: 'Slide In', value: 'slide-in' },
-  { label: 'Slide Out', value: 'slide-out' },
+  { get label() { return uiText("Typewriter"); }, value: 'typewriter' },
+  { get label() { return uiText("Fade In"); }, value: 'fade-in' },
+  { get label() { return uiText("Fade Out"); }, value: 'fade-out' },
+  { get label() { return uiText("Slide In"); }, value: 'slide-in' },
+  { get label() { return uiText("Slide Out"); }, value: 'slide-out' },
 ];
 
 export default function SelectedTextToolbarDisplay(props) {
+  useUiLanguage();
   const DISPLAY_FRAMES_PER_SECOND = useStudioFrameRate();
   const {
     handleStartTimeChange,
@@ -111,8 +114,7 @@ export default function SelectedTextToolbarDisplay(props) {
                 }
               }}
             >
-              <FaChevronCircleLeft className='inline-flex mr-1' /> Back
-            </button>
+              <FaChevronCircleLeft className='inline-flex mr-1' />{uiText("Back")}</button>
 
             {/* Start Time Input */}
             <div className="flex items-center gap-1">
@@ -142,8 +144,7 @@ export default function SelectedTextToolbarDisplay(props) {
 
             {/* Save Button */}
             <SecondaryButton type="submit">
-              <FaCheck className='inline-flex' /> Save
-            </SecondaryButton>
+              <FaCheck className='inline-flex' />{uiText("Save")}</SecondaryButton>
 
             {/* Remove Effect Button */}
             <button
@@ -191,22 +192,17 @@ export default function SelectedTextToolbarDisplay(props) {
 
             {/* Update (Save) Button */}
             <SecondaryButton type="submit">
-              <FaCheck className='inline-flex' /> Save
-            </SecondaryButton>
+              <FaCheck className='inline-flex' />{uiText("Save")}</SecondaryButton>
 
             {/* Remove Text Layer Button */}
 
 
             {/* Animations Toggle */}
-            <SecondaryButton type="button" onClick={() => setShowTextTrackAnimations(!showTextTrackAnimations)}>
-              {showTextTrackAnimations ? <FaEyeSlash className='inline-flex' /> : <FaEye className='inline-flex' />}
-              Effects
-            </SecondaryButton>
+            <SecondaryButton type="button" onClick={() => setShowTextTrackAnimations(!showTextTrackAnimations)}>{uiText("{value0} Effects", { value0: showTextTrackAnimations ? <FaEyeSlash className='inline-flex' /> : <FaEye className='inline-flex' /> })}</SecondaryButton>
 
             {/* Add Animation Button */}
             <SecondaryButton type="button" onClick={handleAddAnimationClick}>
-              <FaPlus className='inline-flex' /> Effect
-            </SecondaryButton>
+              <FaPlus className='inline-flex' />{uiText("Effect")}</SecondaryButton>
 
 
             <button
@@ -279,8 +275,7 @@ export default function SelectedTextToolbarDisplay(props) {
           <SecondaryButton type="button" onClick={handleAnimationSave} extraClasses='ml-0 mr-0'>
             <div className='flex'>
             <FaCheck className='inline-flex mr-1 mt-1'/> 
-            <div className='inline-flex '>
-            Add</div>
+            <div className='inline-flex '>{uiText("Add")}</div>
             </div>
           </SecondaryButton>
 

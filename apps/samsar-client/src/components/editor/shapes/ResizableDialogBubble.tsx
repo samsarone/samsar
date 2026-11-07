@@ -1,3 +1,4 @@
+import { useUiLanguage } from '../../../hooks/useUiLanguage.js';
 import { useRef, useEffect, useState } from 'react';
 import { Ellipse, Transformer, Group, Shape } from 'react-konva';
 
@@ -9,6 +10,7 @@ const ResizableDialogBubble = ({
   id,
   config,
 }) => {
+  useUiLanguage();
   const shapeRef = useRef();
   const transformerRef = useRef();
   const pointerRef = useRef();

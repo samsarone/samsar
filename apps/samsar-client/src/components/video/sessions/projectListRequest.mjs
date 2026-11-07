@@ -1,3 +1,4 @@
+import { translateText as uiText } from "../../../utils/localization.js";
 export const PROJECT_LIST_RETRY_DELAYS_MS = [400, 1_200];
 
 export function shouldRetryProjectListRequest(error) {
@@ -12,7 +13,7 @@ export function shouldRetryProjectListRequest(error) {
 export function getProjectListErrorMessage(error) {
   const status = Number(error?.response?.status);
   if (status === 401 || status === 403) {
-    return 'Your session expired. Sign in again, then retry.';
+    return uiText("Your session expired. Sign in again, then retry.");
   }
 
   const responseMessage = error?.response?.data?.error;
@@ -20,5 +21,5 @@ export function getProjectListErrorMessage(error) {
     return responseMessage.trim();
   }
 
-  return 'We could not load your projects. Check your connection and try again.';
+  return uiText("We could not load your projects. Check your connection and try again.");
 }
