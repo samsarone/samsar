@@ -65,7 +65,7 @@ it('plays, pauses and resumes with the toolbar and Space, retaining the preloade
   fireEvent.keyDown(window, { code: 'Space', key: ' ' });
   await waitFor(() => expect(boundary.timeline.currentLayerSeek).toBeGreaterThan(pausedFrame));
   await waitFor(() => expect(activeVideo(container)).toBe(nextVideo), { timeout: 4000 });
-  expect(nextVideo.paused).toBe(false);
+  await waitFor(() => expect(nextVideo.paused).toBe(false));
   fireEvent.keyDown(window, { code: 'Space', key: ' ' });
   await waitFor(() => expect(nextVideo.paused).toBe(true));
 });
