@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="318" viewBox="0 0 1200 318" role="img" aria-labelledby="title desc">
+<title id="title">Standalone architecture</title>
+<desc id="desc">Studio and SDK clients call the processor. Workers consume MongoDB-backed jobs and call model providers. The processor also calls providers directly for inference and embeddings. Services share state and media storage.</desc>
+<defs>
+<marker id="arrow" viewBox="0 0 8 8" refX="8" refY="4" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0L8 4L0 8Z" fill="#9198a1"/></marker>
+</defs>
+<rect width="1200" height="318" rx="12" fill="#0d1117"/>
+<g font-family="-apple-system, BlinkMacSystemFont, Segoe UI, Helvetica, Arial, sans-serif">
+<rect x="12" y="22" width="271.5" height="188" rx="10" fill="#151b23" stroke="#3d444d"/>
+<text x="28" y="49" font-size="12" font-weight="650" fill="#79c0ff" text-anchor="start">INTERFACE</text>
+<text x="28" y="81" font-size="23" font-weight="650" fill="#f0f6fc" text-anchor="start">Studio + SDK</text>
+<text x="28" y="111" font-size="16" font-weight="400" fill="#f0f6fc" text-anchor="start">Create, edit, automate</text>
+<text x="28" y="134" font-size="16" font-weight="400" fill="#f0f6fc" text-anchor="start">Poll status or stream</text>
+<text x="28" y="157" font-size="16" font-weight="400" fill="#f0f6fc" text-anchor="start">Preview and download</text>
+<path d="M28 173 H267.5" stroke="#3d444d"/>
+<text x="28" y="196" font-size="14" font-weight="400" fill="#b1bac4" text-anchor="start">Browser / API client</text>
+<path d="M283.5 120 H313.5" fill="none" stroke="#9198a1" stroke-width="1.6" marker-start="url(#arrow)" marker-end="url(#arrow)"/>
+<rect x="313.5" y="22" width="271.5" height="188" rx="10" fill="#151b23" stroke="#3d444d"/>
+<text x="329.5" y="49" font-size="12" font-weight="650" fill="#d2a8ff" text-anchor="start">CONTROL</text>
+<text x="329.5" y="81" font-size="23" font-weight="650" fill="#f0f6fc" text-anchor="start">Processor API</text>
+<text x="329.5" y="111" font-size="16" font-weight="400" fill="#f0f6fc" text-anchor="start">Auth, credits, validation</text>
+<text x="329.5" y="134" font-size="16" font-weight="400" fill="#f0f6fc" text-anchor="start">Sessions and job state</text>
+<text x="329.5" y="157" font-size="16" font-weight="400" fill="#f0f6fc" text-anchor="start">Search and assistants</text>
+<path d="M329.5 173 H569" stroke="#3d444d"/>
+<text x="329.5" y="196" font-size="14" font-weight="400" fill="#b1bac4" text-anchor="start">processor</text>
+<path d="M585 120 H615" fill="none" stroke="#9198a1" stroke-width="1.6" marker-start="url(#arrow)" marker-end="url(#arrow)"/>
+<rect x="615" y="22" width="271.5" height="188" rx="10" fill="#151b23" stroke="#3d444d"/>
+<text x="631" y="49" font-size="12" font-weight="650" fill="#7ee787" text-anchor="start">EXECUTION</text>
+<text x="631" y="81" font-size="23" font-weight="650" fill="#f0f6fc" text-anchor="start">Workers</text>
+<text x="631" y="111" font-size="16" font-weight="400" fill="#f0f6fc" text-anchor="start">Workflow coordination</text>
+<text x="631" y="134" font-size="16" font-weight="400" fill="#f0f6fc" text-anchor="start">Image, audio and video</text>
+<text x="631" y="157" font-size="16" font-weight="400" fill="#f0f6fc" text-anchor="start">Frames and final render</text>
+<path d="M631 173 H870.5" stroke="#3d444d"/>
+<text x="631" y="196" font-size="14" font-weight="400" fill="#b1bac4" text-anchor="start">services/*</text>
+<path d="M886.5 120 H916.5" fill="none" stroke="#9198a1" stroke-width="1.6" marker-start="url(#arrow)" marker-end="url(#arrow)"/>
+<rect x="916.5" y="22" width="271.5" height="188" rx="10" fill="#151b23" stroke="#3d444d"/>
+<text x="932.5" y="49" font-size="12" font-weight="650" fill="#e3b341" text-anchor="start">MODELS</text>
+<text x="932.5" y="81" font-size="23" font-weight="650" fill="#f0f6fc" text-anchor="start">Providers</text>
+<text x="932.5" y="111" font-size="16" font-weight="400" fill="#f0f6fc" text-anchor="start">Samsar managed API</text>
+<text x="932.5" y="134" font-size="16" font-weight="400" fill="#f0f6fc" text-anchor="start">Native / partner APIs</text>
+<text x="932.5" y="157" font-size="16" font-weight="400" fill="#f0f6fc" text-anchor="start">Custom model endpoints</text>
+<path d="M932.5 173 H1172" stroke="#3d444d"/>
+<text x="932.5" y="196" font-size="14" font-weight="400" fill="#b1bac4" text-anchor="start">Configured adapters</text>
+<path d="M449.25 210 V246 H1052.25 V210" fill="none" stroke="#9198a1" stroke-width="1.6" stroke-dasharray="5 4" marker-end="url(#arrow)"/>
+<text x="750.75" y="238" font-size="15" font-weight="400" fill="#b1bac4" text-anchor="middle">Direct inference + embeddings</text>
+<text x="16" y="298" font-size="16" font-weight="400" fill="#b1bac4" text-anchor="start">Shared: MongoDB state · Media volumes + object storage · Optional Loki / Grafana logs</text>
+</g>
+</svg>

@@ -83,13 +83,26 @@ Samsar.js is the hosted entry point. Native or provider-only standalone choices 
 
 ## Docker Pipeline
 
+### Sources and plan
+
 1. `processor` authenticates and validates image URLs, provider availability, credits, model keys, aspect ratio, CTA/footer/narrator options, and request aliases.
 2. Before returning, it downloads each input, inspects orientation and target coverage, center-crops only when the source can cover the target, uploads the prepared copy, and persists a durable builder job.
 3. The async builder describes the prepared images on a best-effort basis, moderates the prompt, extracts a theme, and generates plus validates the narrative in up to five total attempts. Optional CTA copy retries once before deterministic fallback text is used.
-4. It builds supplied-image scene layers plus any requested outro, footer, or narrator-avatar assets, then queues image readiness/enhancement work, speech, and one backing-music track. The initial audio path does not create sound effects.
-5. `express-video-listener` joins the image, speech, and music gates and queues eligible motion layers; generated terminal outro layers skip AI-video generation.
-6. `ai-video-layer-generator` handles provider motion and lip-sync work. The listener then runs reflow, conditional lip sync, sound-effect check/fallback, optional narrator avatar, and nonblocking transcript generation in order.
-7. `frames-processor` creates linear or branch-path frame manifests, after which `video-generator` mixes enabled audio, renders with FFmpeg, uploads the final output, and persists its URL.
-8. The listener finalizes stage billing, settlement, status, and the optional terminal webhook. `processor` serves local Docker outputs from the mounted volume under its configured `/assets_v2/...` URL (default `http://localhost:3002/assets_v2/...`).
+
+### Parallel media
+
+The builder creates supplied-image scene layers plus any requested outro, footer, or narrator-avatar assets, then queues image readiness/enhancement work, speech, and one backing-music track in parallel. The initial audio path does not create sound effects.
+
+`express-video-listener` joins the image, speech, and music gates before queuing eligible motion layers. Generated terminal outro layers skip AI-video generation.
+
+### Motion and finishing
+
+`ai-video-layer-generator` handles provider motion, lip sync, and sound effects. After base motion and reflow, the listener coordinates optional finishing work using the [same dependency and fallback rules as text-to-video](text-to-video.md#motion-and-finishing). Independent provider waits can overlap in automatic sessions; explicit step boundaries and final composition dependencies remain enforced.
+
+### Render and delivery
+
+1. `frames-processor` creates linear or branch-path frame manifests after the required media is ready.
+2. `video-generator` mixes enabled audio, renders with FFmpeg, uploads the final output, and persists its URL.
+3. The listener finalizes stage billing, settlement, status, and the optional terminal webhook. `processor` serves local Docker outputs from the mounted volume under its configured `/assets_v2/...` URL (default `http://localhost:3002/assets_v2/...`).
 
 The standard and `v2` alias routes share this full pipeline. The external-user route wraps the same pipeline with an external request/public ID. Step mode also uses the same builder and can pause before configured manual stages. The direct `/v2/external/video/image_to_video` and `/v2/external/video/direct_image_to_video` aliases are intentionally separate: they accept one image and queue only the direct AI-video clip path.

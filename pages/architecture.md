@@ -6,9 +6,14 @@ Start with [hosted Samsar.js](https://docs.samsar.one/) if you want managed work
 
 ## Runtime Shape
 
-![Docker Deployment Architecture](../assets/docker-deployment-architecture.png)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="../docs/readme-diagrams/architecture-dark.svg">
+  <img src="../docs/readme-diagrams/architecture.svg" alt="Studio and SDK call the processor; workers consume MongoDB-backed jobs and call providers. Direct inference and embeddings also run through the processor. State and media storage are shared." width="1200">
+</picture>
 
 The default Docker deployment keeps the Studio client, processor API, workers, local infrastructure, and optional logging inside the Compose runtime. The client uses REST and assistant SSE streams; the processor and workers consume rendered configuration, persist state through MongoDB, and write media through the configured object storage adapter.
+
+The main row shows service responsibilities, not a queue hop for every request. Search and direct inference can call providers from the processor. Media generation uses MongoDB-backed jobs picked up by workers; a separate message broker is not required. See [video workflows](../README.md#visual-workflows) for stage dependencies and [operations](operations.md) for setup, storage choices, and media access.
 
 ## Compose Profiles
 
@@ -18,7 +23,8 @@ The default Docker deployment keeps the Studio client, processor API, workers, l
 | `workers` | `generator`, `audio-generator`, `frames-processor`, `video-generator`, `ai-video-layer-generator`, `express-video-listener`, `assistant-query-processor`, `task-processor` | Async media and assistant work. |
 | `local-mongo` | `mongo` | Local MongoDB for users, sessions, requests, credits, embeddings, and status records. |
 | `minio` | `minio` | Local S3-compatible media bucket. |
-| `local-media` | `media-gateway` | Nginx gateway for `/assets` and `/assets_v2`. |
+| `local-media` | `media-gateway`, `media-tunnel-controller` | Nginx media origin and managed provider tunnel for `/assets` and `/assets_v2`. |
+| `genblaze` | `genblaze` | Optional GMICloud gateway, enabled only with validated provider credentials. |
 | `logger` | `loki`, `promtail`, `grafana` | Local container log collection and dashboarding. |
 | `reverse-proxy` | `reverse-proxy` | Optional public or intranet nginx entrypoint for Studio and the processor API on ports `80` and `443`. |
 
@@ -28,7 +34,7 @@ The default Docker deployment keeps the Studio client, processor API, workers, l
 2. The processor validates auth, credits, request shape, and model availability.
 3. The processor writes session/request state to MongoDB and stores media in MinIO or the configured external S3-compatible store.
 4. Workers pick up queued work through MongoDB-backed state and provider-specific task records.
-5. Media outputs are written to Docker volumes and served to browsers through the configured processor API (`http://localhost:3002` by default), or through its optional reverse proxy URL. The internal `media-gateway` is used only as the origin for provider tunnels.
+5. Media outputs are written to Docker volumes and/or the configured object store. Local media is served to browsers through the processor API (`http://localhost:3002` by default), or its optional reverse proxy URL; externally published media uses the configured CDN. The internal `media-gateway` is the origin for provider tunnels.
 6. Clients poll status endpoints, subscribe to supported assistant SSE streams, or receive webhook callbacks where provided by the operation.
 
 ## Runtime Config

@@ -95,14 +95,28 @@ For a standalone processor, the same discovery endpoint is `http://localhost:300
 
 ## Docker Pipeline
 
+### Request and plan
+
 1. `processor` validates request shape, auth, credits, models, providers, and duration, then persists a durable builder job for a new or reused session.
 2. The builder moderates the prompt, generates the theme once, and generates plus validates the narrative in up to three total attempts. A targeted repair path rewrites oversized speech items when possible.
-3. The completed plan is persisted as scene and audio layers. `generator` scene-image jobs run in parallel with `audio-generator` speech jobs and one backing-track job; initial audio generation does not include sound effects.
-4. `express-video-listener` joins the image, speech, and music gates, charges completed stages, handles configured step-mode pauses, and queues eligible image-to-video work.
-5. `ai-video-layer-generator` submits and polls motion, lip-sync, and later sound-effect jobs. After base motion, the listener runs reflow, conditional lip sync, optional sound effects, optional narrator avatar, and best-effort transcript generation in order.
-6. `frames-processor` renders linear layers or branch-path entries into frame manifests.
-7. `video-generator` composes frames and enabled audio with FFmpeg, uploads the result, and persists the final URL.
-8. The listener charges the final pipeline stage, settles the receipt or external request, records the terminal status, and sends the optional terminal webhook. The result is served by the local media gateway or external storage/CDN configuration.
+
+### Parallel media
+
+The completed plan is persisted as scene and audio layers. `generator` scene-image jobs run in parallel with `audio-generator` speech jobs and one backing-track job. Initial audio generation does not include sound effects.
+
+`express-video-listener` joins the image, speech, and music gates, charges completed stages, handles configured step-mode pauses, and queues eligible image-to-video work. Motion waits for all three initial media gates.
+
+### Motion and finishing
+
+`ai-video-layer-generator` submits and polls motion, lip-sync, and sound-effect jobs. After base motion and timeline reflow, the listener coordinates optional lip sync, sound effects, narrator avatar, and transcript generation.
+
+Automatic sessions can overlap independent lip-sync and sound-effect provider waits when layer dependencies allow. Transcript alignment can overlap narrator-avatar generation, but composited frames wait for the finished avatar. Step sessions retain their explicit stage boundaries; `EXPRESS_PIPELINE_PARALLEL_STAGES=false` also disables these overlaps. Transcript failure is nonblocking; eligible lip-sync or sound-effect failures can retain usable base video under the stage fallback rules.
+
+### Render and delivery
+
+1. `frames-processor` renders linear layers or branch-path entries into frame manifests after required media and timeline dependencies settle.
+2. `video-generator` composes frames and enabled audio with FFmpeg, uploads the result, and persists the final URL.
+3. The listener charges the final pipeline stage, settles the receipt or external request, records terminal status, and sends the optional terminal webhook. Local browser media is served through the processor or reverse proxy; external publishing uses the configured storage/CDN.
 
 ## Status
 
