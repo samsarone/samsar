@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { buildSoundEffectGenerationPayload, generateSoundEffectsForLayer } from './SoundEffects.js';
+import { buildActiveSoundEffectRequestQuery, buildSoundEffectGenerationPayload, generateSoundEffectsForLayer } from './SoundEffects.js';
 import VideoSession from '../schema/VideoSession.js';
 import AIVideoLayerGeneration from '../schema/AIVideoLayerGeneration.js';
 import User from '../schema/User.js';
@@ -13,7 +13,11 @@ for (const model of ['MIRELOAI', 'MMAUDIOV2']) {
     t.mock.method(User, 'findById', async () => ({ agentSoundEffectModel: model }));
     t.mock.method(VideoSession, 'findById', () => ({ lean: async () => session.toObject() }));
     t.mock.method(VideoSession, 'updateOne', async () => ({}));
-    t.mock.method(AIVideoLayerGeneration, 'findOne', () => ({ sort: async () => null }));
+    t.mock.method(AIVideoLayerGeneration, 'findOne', filter => {
+      assert.deepEqual(filter.$or[0], { generationType: 'sound_effect' });
+      assert.equal(filter.layerId, 'layer-1');
+      return { sort: async () => null };
+    });
     t.mock.method(AIVideoLayerGeneration, 'create', async payload =>
       AIVideoLayerGeneration.hydrate(new AIVideoLayerGeneration(payload).toObject()));
     t.mock.method(console, 'log', () => {});
@@ -30,6 +34,25 @@ for (const model of ['MIRELOAI', 'MMAUDIOV2']) {
     assert.equal(result.generationType, 'sound_effect');
   });
 }
+
+test('sound-effect lookup admits legacy dedicated jobs without reusing other operations', () => {
+  const filter = buildActiveSoundEffectRequestQuery('session', 'layer');
+  const matches = request => filter.$or.some(branch => (
+    typeof branch.generationType === 'string'
+      ? request.generationType === branch.generationType
+      : branch.model.$in.includes(request.model) && branch.generationType.$in.includes(request.generationType ?? null)
+  ));
+  for (const request of [
+    { model: 'MIRELOAI', generationType: 'generate' },
+    { model: 'MMAUDIOV2' },
+    { model: 'CUSTOM', generationType: 'sound_effect' },
+  ]) assert.equal(matches(request), true);
+  for (const request of [
+    { model: 'SYNCLIPSYNC', generationType: 'lip_sync' },
+    { model: 'SEEDANCE2.0I2V', generationType: 'generate' },
+    { model: 'MIRELOAI', generationType: 'lip_sync' },
+  ]) assert.equal(matches(request), false);
+});
 
 test('sound-effect queue explicitly identifies its route and provider stage', () => {
   const payload = buildSoundEffectGenerationPayload({

@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { rememberSessionLoadingLayout } from './sessionLoadingLayout.js';
 
 const VIDEO_SESSION_STORAGE_KEY = 'videoSessionId';
 
@@ -36,6 +37,7 @@ export async function createBlankVidgenieSession(apiServer, headers, httpClient 
   const sessionId = normalizeSessionId(data?.sessionId || data?.session_id || data?._id || data?.id);
   if (sessionId) {
     storeVidgenieSessionId(sessionId);
+    rememberSessionLoadingLayout({ _id: sessionId });
   }
   return sessionId;
 }

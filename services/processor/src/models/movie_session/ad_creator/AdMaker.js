@@ -1,3 +1,4 @@
+import { refundLegacyProvisionalCredits } from '../../LegacyProvisionalRefund.js';
 import { normalizeStoredGPTImageModelKey } from '../../../consts/GPTImageModelKeys.js';
 import { getDBConnectionString } from "../../DBString.js";
 
@@ -13,7 +14,6 @@ import VideoSession from "../../../schema/VideoSession.js";
 import { processImgToVidGPT } from '../Img2VidGPT.js';
 import { uploadImageDataUrlToCDN } from "../../AWS.js";
 import { extractThemeForImageListAndPrompt , createNarrativeForImageListAndPrompt } from './AdAgentPrompts.js';
-import { creditGenerationCredits } from "../../GenerationCredits.js";
 import { normalizeInferenceModel } from "../../../consts/InferenceModels.js";
 
 
@@ -170,23 +170,9 @@ async function processSessionCompletionFailure(sessionId) {
   const sessionData = await VideoSession.findOne({ _id: sessionId });
 
   // return user credits
-  if (sessionData.provisionalCredits) {
-    // return the user session provisional credits back to the user
-    const userId = sessionData.userId;
-    const creditsToRefund = Number(sessionData.provisionalCredits) || 0;
-    if (creditsToRefund > 0) {
-      await creditGenerationCredits(userId, creditsToRefund, {
-        source: 'video_generation_refund',
-        metadata: {
-          sessionId,
-          reason: 'prompt_generation_failed',
-        },
-      });
-    }
+  if (!sessionData) return;
+  await refundLegacyProvisionalCredits(sessionId);
 
-    // update provisional credits to 0
-    await VideoSession.findByIdAndUpdate(sessionId, { provisionalCredits: 0 });
-  }
   if (sessionData.externalWebhook) {
     // send POST request to externalWebhook
 

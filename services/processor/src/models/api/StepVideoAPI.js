@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import { withMediaDeliveryUrlCache } from '../AWS.js';
 import dns from 'node:dns/promises';
 import net from 'node:net';
 import {
@@ -313,16 +314,18 @@ async function maybeFinalizeStandaloneExternalStageSession(sessionData = {}) {
   return (await VideoSession.findById(sessionData._id).lean()) || sessionData;
 }
 
-async function loadOwnedStepSession(userId, sessionId) {
+async function loadOwnedStepSession(userId, sessionId, { omitFrames = false } = {}) {
   if (!sessionId || !mongoose.Types.ObjectId.isValid(sessionId)) {
     return null;
   }
 
   await getDBConnectionString();
-  return VideoSession.findOne({
+  const query = VideoSession.findOne({
     _id: sessionId,
     userId: userId?.toString?.() || userId,
-  }).lean();
+  });
+  if (omitFrames) query.select('-layers.frames');
+  return query.lean();
 }
 
 function getStepState(sessionData = {}) {
@@ -629,24 +632,27 @@ function normalizeStepStatus(sessionData = {}, stepState = {}, baseStatus = {}) 
   return sessionData.isStepVideoGeneration ? 'INIT' : 'PENDING';
 }
 
-export async function buildStepVideoStatus({ userId, sessionId, req }) {
-  let sessionData = await loadOwnedStepSession(userId, sessionId);
-  if (!sessionData) {
-    return null;
-  }
+async function loadStepVideoStatusContext({ userId, sessionId, req }) {
+  let sessionData = await loadOwnedStepSession(userId, sessionId, { omitFrames: true });
+  if (!sessionData) return null;
+  // Keep the existing standalone stage reconciliation before taking the snapshot.
   sessionData = await maybeFinalizeStandaloneExternalStageSession(sessionData);
-
-  const stepState = getStepState(sessionData);
-  if (!stepState) {
-    return null;
-  }
-
+  if (!getStepState(sessionData)) return null;
   const baseStatus = await buildVideoStatusResponse({
-    sessionId,
-    requestId: sessionId,
-    provider: null,
-    req,
+    sessionId, requestId: sessionId, provider: null, req, sessionSnapshot: sessionData,
   });
+  return { sessionData, baseStatus };
+}
+
+export function buildStepVideoStatus(options) {
+  return withMediaDeliveryUrlCache(async () => {
+    const context = await loadStepVideoStatusContext(options);
+    return context ? buildStepVideoStatusFromSnapshot({ ...options, ...context }) : null;
+  });
+}
+
+function buildStepVideoStatusFromSnapshot({ sessionId, req, sessionData, baseStatus }) {
+  const stepState = getStepState(sessionData);
   const finalVideoCompleted = isFinalVideoGenerationCompleted(sessionData, baseStatus || {});
   const status = normalizeStepStatus(sessionData, stepState, baseStatus || {});
   const finalVideoResultUrl = finalVideoCompleted
@@ -752,17 +758,22 @@ export async function buildStepVideoStatus({ userId, sessionId, req }) {
   };
 }
 
-export async function buildStepVideoDetailedStatus({ userId, sessionId, req }) {
-  const stepStatus = await buildStepVideoStatus({ userId, sessionId, req });
-  if (!stepStatus) {
-    return null;
-  }
+export function buildStepVideoDetailedStatus(options) {
+  return withMediaDeliveryUrlCache(() => buildStepVideoDetailedStatusFromSnapshot(options));
+}
+
+async function buildStepVideoDetailedStatusFromSnapshot({ userId, sessionId, req }) {
+  const context = await loadStepVideoStatusContext({ userId, sessionId, req });
+  if (!context) return null;
+  const stepStatus = buildStepVideoStatusFromSnapshot({ sessionId, req, ...context });
 
   const detailedStatus = await buildVideoStatusDetailedResponse({
     sessionId,
     requestId: sessionId,
     provider: null,
     req,
+    sessionSnapshot: context.sessionData,
+    baseStatus: context.baseStatus,
   });
   if (!detailedStatus) {
     return stepStatus;

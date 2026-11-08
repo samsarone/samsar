@@ -20,7 +20,7 @@ export default function MinimalTaskSkeleton({
   const mutedText = isDark ? "text-slate-400" : "text-slate-500";
 
   return (
-    <div className={`w-full max-w-xs rounded-2xl px-4 py-4 animate-pulse ${shell} ${className}`}>
+    <div role="status" aria-busy="true" aria-label={title} className={`w-full max-w-xs rounded-2xl px-4 py-4 theme-skeleton-pulse ${shell} ${className}`}>
       <div className="flex items-center gap-3">
         <div className={`h-10 w-10 rounded-xl ${block}`} />
         <div className="min-w-0 flex-1">

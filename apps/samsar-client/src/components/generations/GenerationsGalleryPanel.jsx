@@ -1,3 +1,4 @@
+import { ProjectCardsSkeleton } from '../common/PageSkeletonLoader.jsx';
 import { getUiLocale, formatUiNumber } from '../../utils/localization.js';
 import { useUiLanguage } from '../../hooks/useUiLanguage.js';
 import { translateText as uiText } from '../../utils/localization.js';
@@ -629,7 +630,7 @@ export default function GenerationsGalleryPanel({
 
           <div className="px-4 pb-5 pt-4 md:px-6">
             {isLoading && (
-              <div className={`py-12 text-center text-sm ${mutedText}`}>{uiText("Loading generations…")}</div>
+              <ProjectCardsSkeleton label={uiText("Loading generations…")} gallery />
             )}
 
             {!isLoading && !galleryItems.length && (

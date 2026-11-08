@@ -1791,14 +1791,15 @@ async function requestQuickMovieGenerationInternal(userId, payload, {
     : buildInitialExpressVideoCreditCharges(totalTimelineDuration);
 
 
+  const hasHostedBilling = Boolean((await VideoSession.findById(sessionId).select('hostedAgentBilling').lean())?.hostedAgentBilling);
   await VideoSession.updateOne({ _id: sessionId }, {
     $set: {
       layers: newSessionLayers,
       audioLayers: audioLayers,
       generationStatus: 'PENDING',
       outpaintStatus: 'INIT',
-      expressGenerationPending: true,
-      videoGenerationPending: true,
+      ...(hasHostedBilling ? {} : { expressGenerationPending: true }),
+      ...(hasHostedBilling ? {} : { videoGenerationPending: true }),
       isExpressGeneration: true,
       setAutoDurationPerScene: false,
       'expressGenerationStatus': expressGenerationStatus,
@@ -1880,7 +1881,7 @@ async function requestQuickMovieGenerationInternal(userId, payload, {
       ...(branchedBillingStageDurations
         ? { expressGenerationBillingStageDurations: branchedBillingStageDurations }
         : {}),
-      expressGenerationCreditCharges: initialCreditCharges,
+      ...(hasHostedBilling ? {} : { expressGenerationCreditCharges: initialCreditCharges }),
       ...(isStepVideoGeneration
         ? {
           isStepVideoGeneration: true,
@@ -1924,6 +1925,13 @@ async function requestQuickMovieGenerationInternal(userId, payload, {
 
     },
   });
+  if (hasHostedBilling) {
+    await VideoSession.updateOne({ _id: sessionId, 'hostedAgentBilling.state': 'ACTIVE',
+      'hostedAgentBilling.pendingOperation': null, expressGenerationPaused: { $ne: true },
+      expressGenerationFailed: { $ne: true }, expressGenerationCancelled: { $ne: true },
+    }, { $set: { expressGenerationPending: true, videoGenerationPending: true } });
+  }
+
 
   if (!usePreparedNarrativeArtifacts) {
     const inferenceChargeResult = await chargeExpressVideoStageCredits({

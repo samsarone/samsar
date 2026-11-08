@@ -1,3 +1,4 @@
+import PageSkeletonLoader from '../common/PageSkeletonLoader.jsx';
 import { useUiLanguage } from '../../hooks/useUiLanguage.js';
 import { translateText as uiText } from '../../utils/localization.js';
 import InferenceModelSelect from '../common/InferenceModelSelect.jsx';
@@ -269,14 +270,8 @@ export default function UserAccount() {
   }, [user?._id]);
 
   if (!user) {
+    if (!userInitiated || userFetching) return <PageSkeletonLoader page="account" />;
     if (displayPanel === "billing") {
-      if (!userInitiated || userFetching) {
-        return (
-          <OverflowContainer>
-            <div className="pt-[var(--app-nav-height)] min-h-[100dvh]" />
-          </OverflowContainer>
-        );
-      }
       return (
         <OverflowContainer>
           <BillingAccessGate />

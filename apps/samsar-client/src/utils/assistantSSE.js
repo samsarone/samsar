@@ -4,6 +4,16 @@ export async function readAssistantSSE(response, onEvent, signal) {
     throw new Error('Assistant streaming is not supported by this server.');
   }
   const reader = response.body.getReader();
+  // Aborting fetch does not always release a reader supplied by a proxy or a
+  // custom transport. Wake a blocked read explicitly on navigation/timeout.
+  let cancelled = false;
+  const cancel = () => {
+    if (cancelled) return;
+    cancelled = true;
+    void reader.cancel().catch(() => {});
+  };
+  signal?.addEventListener('abort', cancel, { once: true });
+  if (signal?.aborted) cancel();
   const decoder = new TextDecoder();
   let buffer = '';
   try {
@@ -22,9 +32,14 @@ export async function readAssistantSSE(response, onEvent, signal) {
           if (line.startsWith('data:')) data.push(line.slice(5).trimStart());
         }
         if (data.length && !signal?.aborted) await onEvent(name, JSON.parse(data.join('\n')));
+        if (['settled', 'reconnect', 'error'].includes(name)) return;
       }
     }
-  } finally { await reader.cancel().catch(() => {}); reader.releaseLock(); }
+  } finally {
+    signal?.removeEventListener('abort', cancel);
+    cancel();
+    reader.releaseLock();
+  }
 }
 
 export function assistantMessagesFromSnapshot(snapshot) {

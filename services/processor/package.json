@@ -18,7 +18,10 @@
     "google:auth:check": "node scripts/check_google_adc.js",
     "generate:font-samples": "node src/utils/SupportedFontSamples.js --generate",
     "test:frame-drift": "node --test src/utils/FrameClock.test.js src/models/VideoSession.frameDrift.test.js src/models/VideoSession.videoFrameBudget.test.js src/models/video/FrameDrift.test.js src/models/video/SourceFrameRate.f2p.test.js src/utils/VideoTimeline.test.js src/models/video/VideoProcessor.test.js src/models/video/SessionTimelineExtension.test.js src/models/api/VideoSessionJoinAPI*.test.js",
-    "test:video-billing": "node --test src/models/ai_video/DirectExternalI2V.test.js src/models/ai_video/VideoRequestBilling.test.js src/models/api/ExternalVideoAPI.direct-i2v.test.js src/models/api/VideoModelStatusBilling.test.js src/models/api/VideoSessionRerollAPI.test.js src/models/api/StatusAPI.test.js src/models/ExpressVideoStageBilling.test.js src/routes/api/v2.test.js"
+    "test:video-billing": "node --test src/models/ai_video/DirectExternalI2V.test.js src/models/ai_video/VideoRequestBilling.test.js src/models/api/ExternalVideoAPI.direct-i2v.test.js src/models/api/VideoModelStatusBilling.test.js src/models/api/VideoSessionRerollAPI.test.js src/models/api/StatusAPI.test.js src/models/ExpressVideoStageBilling.test.js src/routes/api/v2.test.js",
+    "test:hosted-agent-billing": "node --test src/billing/*.test.js src/models/api/VideoSessionCancelAPI.test.js src/models/ExpressVideoStageBilling.test.js src/models/ExpressVideoStepState.test.js src/models/api/StatusAPI.test.js src/consts/pricing/ExpressVideoPricingDistribution.test.js src/models/api/VideoSessionCloneAPI.test.js src/models/api/VideoSessionJoinAPI.test.js src/models/api/MovieAPI.hostedBilling.test.js",
+    "test:billing-boundaries": "node --test src/models/api/PostProcessingBilling.test.js src/models/api/VideoSessionTranslateAPI*.test.js src/models/api/VideoSessionCloneAPI.test.js src/models/api/VideoSessionJoinAPI.test.js src/models/api/VideoSessionRerollAPI.test.js src/models/external/User.billingMode.test.js src/models/RefundRecovery.test.js",
+    "report:hosted-agent-billing": "node scripts/report-hosted-agent-billing.mjs"
   },
   "engines": {
     "node": ">=24 <25"

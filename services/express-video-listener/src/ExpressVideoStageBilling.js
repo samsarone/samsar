@@ -5,6 +5,7 @@ import ExternalUser from './schema/ExternalUser.js';
 import ExternalUserRequest from './schema/ExternalUserRequest.js';
 import GenerationCreditTransaction from './schema/GenerationCreditTransaction.js';
 import { shouldBypassGenerationCredits } from './utils/EnvironmentUtils.js';
+import { completeHostedAgentStage } from './HostedAgentBilling.js';
 import {
   EXPRESS_VIDEO_FIXED_PRICING_COMPONENTS_PER_SECOND,
   getExpressVideoStageCreditsPerSecond,
@@ -55,6 +56,7 @@ const DEFAULT_BILLING_DEPENDENCIES = Object.freeze({
   ExternalUser,
   ExternalUserRequest,
   GenerationCreditTransaction,
+  completeHostedAgentStage,
   shouldBypassGenerationCredits,
 });
 
@@ -261,7 +263,11 @@ export function resolveExpressVideoStageCreditsPerSecond(sessionData = {}, stage
     sessionData.expressGenerationNarrativeReused === true
       ? EXPRESS_VIDEO_FIXED_PRICING_COMPONENTS_PER_SECOND.inference
       : 0;
-  return getExpressVideoStageCreditsPerSecond(normalizedStageKey, videoModel) +
+  return getExpressVideoStageCreditsPerSecond(
+    normalizedStageKey,
+    videoModel,
+    sessionData.expressGenerationPricingRateClass,
+  ) +
     reusedNarrativeRenderAllocation;
 }
 
@@ -466,8 +472,18 @@ export async function chargeExpressVideoStageCredits({ sessionId, stageKey }, de
     return { ok: false, stageKey: normalizedStageKey, error: 'Session not found.' };
   }
 
+
+
+  if (sessionData.postProcessingBilling?.version === 1) {
+    return { ok: true, stageKey: normalizedStageKey, creditsCharged: 0, postProcessingBilled: true };
+  }
+
   if (sessionData.videoBillingPolicy === 'adapter' && ['ai_video_generation', 'lip_sync_generation', 'sound_effect_generation'].includes(normalizedStageKey)) {
     return { ok: true, stageKey: normalizedStageKey, creditsCharged: 0, adapterBilled: true };
+  }
+
+  if (sessionData.hostedAgentBilling?.version === 2 && !dependencies.shouldBypassGenerationCredits()) {
+    return dependencies.completeHostedAgentStage(sessionId, normalizedStageKey);
   }
 
   const existingStage = sessionData.expressGenerationCreditCharges?.stages?.[normalizedStageKey];

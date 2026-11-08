@@ -1,5 +1,6 @@
 import { getDBConnectionString } from './DBString.js';
 import VideoSession from './schema/VideoSession.js';
+import { controlHostedAgentBilling } from './HostedAgentBilling.js';
 
 export const EXPRESS_STEP_VIDEO_STAGES = Object.freeze([
   'prompt_generation',
@@ -118,7 +119,7 @@ export async function pauseExpressStepAfterCompletedStage(sessionId, stageKey, {
 
   await getDBConnectionString();
   const sessionData = await VideoSession.findById(sessionId)
-    .select('expressGenerationStatus expressStepGeneration')
+    .select('expressGenerationStatus expressStepGeneration hostedAgentBilling')
     .lean();
   const expressGenerationStatus = sessionData?.expressGenerationStatus || {};
   const manualStepStages = normalizeExpressStepStageList(
@@ -179,7 +180,18 @@ export async function pauseExpressStepAfterCompletedStage(sessionId, stageKey, {
     setPayload.expressGenerationPending = true;
   }
 
-  const session = await VideoSession.findByIdAndUpdate(sessionId, { $set: setPayload }, { new: true });
+  let session;
+  if (shouldPauseForNextStep && sessionData?.hostedAgentBilling?.version === 2) {
+    await controlHostedAgentBilling(sessionId, 'PAUSED', setPayload);
+    session = await VideoSession.findById(sessionId);
+  } else {
+    session = await VideoSession.findOneAndUpdate({ _id: sessionId,
+      ...(sessionData?.hostedAgentBilling?.version === 2 ? {
+        'hostedAgentBilling.state': 'ACTIVE',
+        'hostedAgentBilling.controlRevision': sessionData.hostedAgentBilling.controlRevision,
+      } : {}),
+    }, { $set: setPayload }, { new: true });
+  }
   return {
     session,
     paused: shouldPauseForNextStep,

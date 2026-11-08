@@ -69,7 +69,8 @@ it('uses the selected model as the header picker and retains an accessible clear
 
 it('shows successive SSE chunks in the popup before the response stream closes', async () => {
   let controller;
-  const body = new ReadableStream({ start(value) { controller = value; } });
+  let cancelled = false;
+  const body = new ReadableStream({ start(value) { controller = value; }, cancel() { cancelled = true; } });
   const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(body, {
     headers: { 'content-type': 'text/event-stream' },
   }));
@@ -96,7 +97,23 @@ it('shows successive SSE chunks in the popup before the response stream closes',
     expect(screen.queryByText('First words continue')).not.toBeInTheDocument();
     fireEvent.change(screen.getByRole('textbox'), { target: { value: 'Next question' } });
     expect(screen.getByRole('button', { name: 'Send', exact: true })).toBeEnabled();
-  } finally { controller.close(); fetchMock.mockRestore(); }
+    expect(cancelled).toBe(true);
+  } finally { if (!cancelled) controller.close(); fetchMock.mockRestore(); }
+});
+
+it('offers recovery without spinning or sending a second message after delivery fails', () => {
+  const retry = vi.fn(), submit = vi.fn();
+  render(<Conversation deliveryError={{ message: 'Unable to load. Please try again.', retryable: true }}
+    onRetryDelivery={retry} submitAssistantQuery={submit} />);
+  open();
+  expect(screen.getByRole('alert')).toHaveTextContent('Unable to load');
+  fireEvent.change(screen.getByRole('textbox'), { target: { value: 'Another question' } });
+  expect(screen.getByRole('button', { name: 'Send', exact: true })).toBeDisabled();
+  fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' });
+  expect(submit).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('button', { name: 'Retry', exact: true }));
+  expect(retry).toHaveBeenCalledTimes(1);
+  expect(screen.getByText('Old reply')).toBeInTheDocument();
 });
 
 it('confirms before clearing and allows cancellation without a server request', () => {

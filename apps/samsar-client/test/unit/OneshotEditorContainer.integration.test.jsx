@@ -295,7 +295,9 @@ describe('Vidgenie entry failures, retries, and stale work', () => {
   });
 
   it('exposes a preload function that resolves the same lazy editor boundary', async () => {
-    const preloaded = await preloadOneshotEditor();
+    const loading = preloadOneshotEditor();
+    expect(preloadOneshotEditor()).toBe(loading);
+    const preloaded = await loading;
     expect(typeof preloaded.default).toBe('function');
     mount({ path: '/vidgenie/preloaded' });
     expect(await screen.findByText('Project: preloaded')).toBeVisible();

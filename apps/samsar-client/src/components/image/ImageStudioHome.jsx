@@ -44,6 +44,7 @@ import useUndoRedoState from '../../hooks/useUndoRedoState.js';
 import CommonContainer from '../common/CommonContainer.tsx';
 import AuthContainer, { AUTH_DIALOG_OPTIONS } from '../auth/AuthContainer.jsx';
 import LoadingImage from '../video/util/LoadingImage.jsx';
+import { ImageCanvasSkeleton } from '../common/PageSkeletonLoader.jsx';
 import LoadingImageBase from '../video/util/LoadingImageBase.jsx';
 import VideoCanvasContainer from '../video/editor/VideoCanvasContainer.jsx';
 import ImageLibraryHome from '../library/image/ImageLibraryHome.jsx';
@@ -420,7 +421,6 @@ export default function ImageStudioHome() {
 
   const generationPollIntervalRef = useRef(null);
   const outpaintPollIntervalRef = useRef(null);
-  const assistantPollRef = useRef(null);
   const currentLayerRef = useRef(null);
   const activeItemListRef = useRef([]);
   const previousSyncedLayerIdRef = useRef(null);
@@ -592,54 +592,25 @@ export default function ImageStudioHome() {
       });
   }, [id, syncActiveItemList]);
 
-  const stopAssistantQueryPoll = useCallback(() => {
-    if (assistantPollRef.current) {
-      clearInterval(assistantPollRef.current);
-      assistantPollRef.current = null;
-    }
-  }, []);
-
-  useEffect(() => {
-    return () => {
-      stopAssistantQueryPoll();
-    };
-  }, [stopAssistantQueryPoll]);
-
   const startAssistantQueryPoll = useCallback(() => {
-    const requestToken = assistantRequestGuard.capture();
     const headers = getHeaders();
     if (!headers) {
+      setIsAssistantQueryGenerating(false);
       showLoginDialog();
       return;
     }
-    assistantRequestGuard.subscribe({
+    assistantRequestGuard.watch({
       url: `${PROCESSOR_API_URL}/assistants/assistant_query_stream?id=${encodeURIComponent(id)}`,
+      statusUrl: `${PROCESSOR_API_URL}/assistants/assistant_query_status?id=${encodeURIComponent(id)}&include_messages=true`,
       headers: headers.headers,
       onSnapshot: snapshot => {
         setSessionMessages(snapshot.sessionMessages);
-        if (!snapshot.sessionMessageGenerationPending) setIsAssistantQueryGenerating(false);
+        setIsAssistantQueryGenerating(Boolean(snapshot.sessionMessageGenerationPending));
       },
+      onStart: () => setIsAssistantQueryGenerating(true),
+      onError: () => setIsAssistantQueryGenerating(false),
     });
-
-    stopAssistantQueryPoll();
-    assistantPollRef.current = assistantRequestGuard.setInterval(() => {
-      axios
-        .get(`${PROCESSOR_API_URL}/assistants/assistant_query_status?id=${encodeURIComponent(id)}&include_messages=true`, headers)
-        .then((dataRes) => {
-          if (!assistantRequestGuard.isCurrent(requestToken)) return;
-          const assistantQueryData = dataRes.data;
-          if (assistantRequestGuard.applyStatus(assistantQueryData, setSessionMessages)) {
-            stopAssistantQueryPoll();
-            setIsAssistantQueryGenerating(false);
-          }
-        })
-        .catch(error => {
-          if (!assistantRequestGuard.isCurrent(requestToken)) return;
-          // Network/server failures remain retryable; generation may still be running.
-          if (assistantRequestGuard.stopOnAccessError(error)) setIsAssistantQueryGenerating(false);
-        });
-    }, 1000);
-  }, [id, stopAssistantQueryPoll]);
+  }, [id]);
 
   const getAssistantFrameImageData = useCallback(async () => {
     const dataUrl = await captureAssistantStageImageData(canvasRef, {
@@ -668,28 +639,32 @@ export default function ImageStudioHome() {
     }
 
     setIsAssistantQueryGenerating(true);
-    axios
-      .post(
-        `${PROCESSOR_API_URL}/assistants/submit_assistant_query`,
-        {
-          id,
-          query: normalizedQuery,
-          stream: true, client_request_id: crypto.randomUUID(), assistantSessionVersion: requestToken.serverVersion,
-          frameImage: options?.frameImage || null,
-          assistantContext: { version: 1, page: 'image', view: studioAssistantView(currentView, 'image'),
-            selectedModel: currentView.includes('EDIT') ? selectedEditModel : selectedGenerationModel,
-            draft: promptText.slice(0, 4000), selectedLayerId: String(currentLayer?._id || ''), locale: getUiLanguage() },
-        },
-        headers
-      )
-      .then(() => {
+    void assistantRequestGuard.submit({
+      url: `${PROCESSOR_API_URL}/assistants/submit_assistant_query`,
+      payload: {
+        id,
+        query: normalizedQuery,
+        stream: true, client_request_id: crypto.randomUUID(), assistantSessionVersion: requestToken.serverVersion,
+        frameImage: options?.frameImage || null,
+        assistantContext: { version: 1, page: 'image', view: studioAssistantView(currentView, 'image'),
+          selectedModel: currentView.includes('EDIT') ? selectedEditModel : selectedGenerationModel,
+          draft: promptText.slice(0, 4000), selectedLayerId: String(currentLayer?._id || ''), locale: getUiLanguage() },
+      },
+      headers: headers.headers,
+      onResponse: response => {
         if (!assistantRequestGuard.isCurrent(requestToken)) return;
+        if (response.data?.status === 'COMPLETED' && response.data?.sessionDetails) {
+          if (assistantRequestGuard.acceptSession(response.data.sessionDetails)) {
+            setSessionMessages(assistantRequestGuard.messages(response.data.sessionDetails));
+          }
+          setIsAssistantQueryGenerating(false);
+          return;
+        }
         startAssistantQueryPoll();
-      })
-      .catch(() => {
-        if (!assistantRequestGuard.isCurrent(requestToken)) return;
-        setIsAssistantQueryGenerating(false);
-      });
+      },
+      onStart: () => setIsAssistantQueryGenerating(true),
+      onError: () => setIsAssistantQueryGenerating(false),
+    });
   }, [id, startAssistantQueryPoll, currentView, promptText, currentLayer?._id, selectedEditModel, selectedGenerationModel]);
 
   useEffect(() => {
@@ -2015,7 +1990,7 @@ export default function ImageStudioHome() {
   let viewDisplay = <span />;
   if (!currentLayer || !sessionDetails) {
     viewDisplay = (
-      <div className="w-full h-[80vh] flex items-center justify-center text-sm">{uiText("Loading image session...")}</div>
+      <ImageCanvasSkeleton />
     );
   } else if (currentLayer.imageSession?.generationStatus === 'PENDING') {
     viewDisplay = <LoadingImage />;
@@ -2266,6 +2241,8 @@ export default function ImageStudioHome() {
           <AssistantHome
             submitAssistantQuery={submitAssistantQuery}
             onSessionCleared={assistantRequestGuard.invalidate}
+            deliveryError={assistantRequestGuard.error}
+            onRetryDelivery={assistantRequestGuard.retry}
             sessionId={id}
             sessionMessages={sessionMessages}
             onSessionMessagesChange={setSessionMessages}

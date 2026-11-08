@@ -79,6 +79,8 @@ const userSchema = new Schema({
   premiumUserAdded: Date,
   premiumUserCreditsLastUpdated: Date,
   generationCredits: { type: Number, default: 0 },
+  creditOperationMarkers: { type: Schema.Types.Mixed, default: undefined, select: false },
+  hostedAgentCreditMutations: { type: Schema.Types.Mixed, default: undefined, select: false },
 
   premiumUserType: String, // premium professionaL or enterprise. Deprecated
 

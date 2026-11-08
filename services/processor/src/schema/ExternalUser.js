@@ -19,6 +19,7 @@ const externalUserSchema = new Schema({
   userType: { type: String, default: null, index: true },
   browserInstallation: { type: Object, default: null },
   metadata: { type: Object, default: {} },
+  creditOperationMarkers: { type: Schema.Types.Mixed, default: undefined, select: false },
   generationCredits: { type: Number, default: 0 },
   assistantSystemPrompt: { type: String, default: null },
   externalApiKey: { type: String, default: null, index: true, unique: true, sparse: true },

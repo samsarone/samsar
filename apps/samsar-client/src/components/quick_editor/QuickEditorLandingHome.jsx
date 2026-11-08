@@ -4,7 +4,7 @@ import { useUser } from '../../contexts/UserContext';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
 import { getHeaders, getAuthToken } from '../../utils/web';
-import StudioSkeletonLoader from '../video/util/StudioSkeletonLoader.jsx';
+import PageSkeletonLoader from '../common/PageSkeletonLoader.jsx';
 import { IS_STANDALONE_DEPLOYMENT } from '../../utils/environment.jsx';
 
 
@@ -71,6 +71,6 @@ export default function QuickEditorLandingHome() {
   }, [userInitiated, userFetching, user, navigate]);
 
   return (
-    <StudioSkeletonLoader />
+    <PageSkeletonLoader page="quick" />
   );
 }

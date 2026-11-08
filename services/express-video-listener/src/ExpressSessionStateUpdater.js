@@ -1,8 +1,11 @@
+import { postProcessingReceipt } from './billing/PostProcessingBilling.js';
 import { getDBConnectionString } from "./DBString.js";
 import axios from 'axios';
 import ExternalUser from "./schema/ExternalUser.js";
 import ExternalUserRequest from "./schema/ExternalUserRequest.js";
 import VideoSession from "./schema/VideoSession.js";
+import GenerationCreditTransaction from './schema/GenerationCreditTransaction.js';
+import { settleHostedAgentBilling } from './HostedAgentBilling.js';
 import {
   buildBranchDeliveryFields,
   getDefaultBranchResult,
@@ -11,6 +14,20 @@ import {
 } from './utils/BranchRenderPaths.js';
 
 const API_SERVER = process.env.API_SERVER;
+
+async function ownPostProcessingSettlement(session, status) {
+  if (session.postProcessingBilling?.version !== 1) return null;
+  const billing = { ...session.postProcessingBilling, status };
+  if (billing.mode === 'adapter') {
+    const debits = await GenerationCreditTransaction.find({ userId: session.userId,
+      'metadata.sessionId': String(session._id), direction: 'debit',
+      source: { $in: ['image_model_completion', 'video_model_completion'] },
+    }).select('amount').lean();
+    billing.creditsCharged = Math.round(debits.reduce((sum, item) => sum + Number(item.amount), 0) * 10000) / 10000;
+    billing.refundLimit = billing.creditsCharged;
+  }
+  return { billing, receipt: postProcessingReceipt(billing, status) };
+}
 
 function normalizeExternalString(value) {
   if (typeof value !== 'string') {
@@ -148,38 +165,12 @@ async function syncExternalRequestSettlement({
   }
 
   const now = new Date();
-  const normalizedRefundTarget = Number.isFinite(Number(creditsRefunded))
-    ? Math.max(0, Number(creditsRefunded))
-    : 0;
-  const currentRefund = Number(requestRecord.creditsRefunded) || 0;
-  const refundDelta = Math.max(0, normalizedRefundTarget - currentRefund);
-
-  let externalUser = null;
-  if (refundDelta > 0) {
-    externalUser = await ExternalUser.findByIdAndUpdate(
-      sessionData.externalRequestUserId,
-      {
-        $inc: {
-          generationCredits: refundDelta,
-          totalCreditsRefunded: refundDelta,
-        },
-        $set: {
-          lastActivityAt: now,
-        },
-      },
-      { new: true },
-    );
-  } else {
-    externalUser = await ExternalUser.findByIdAndUpdate(
-      sessionData.externalRequestUserId,
-      {
-        $set: {
-          lastActivityAt: now,
-        },
-      },
-      { new: true },
-    );
-  }
+  // External refunds are owned by the processor's durable request settlement.
+  // This callback only synchronizes delivery metadata.
+  if (Number(creditsRefunded) > 0) throw new Error('Use external request refund settlement.');
+  const externalUser = await ExternalUser.findByIdAndUpdate(sessionData.externalRequestUserId, {
+    $set: { lastActivityAt: now },
+  }, { new: true });
 
   const branchedSession = isBranchedVideoSession(sessionData);
   const resolvedResultUrl = status === 'COMPLETED'
@@ -209,7 +200,6 @@ async function syncExternalRequestSettlement({
       $set: {
         status,
         resultUrl: resolvedResultUrl,
-        creditsRefunded: Math.max(currentRefund, normalizedRefundTarget),
         remainingCreditsSnapshot:
           externalUser?.generationCredits === undefined || externalUser?.generationCredits === null
             ? requestRecord.remainingCreditsSnapshot ?? null
@@ -239,15 +229,26 @@ export async function processSessionCompletionSuccess(sessionId) {
     return { ok: false, deferred: true, reason: 'BRANCH_OUTPUTS_NOT_READY' };
   }
 
+  const settlement = await settleHostedAgentBilling(sessionId, 'COMPLETED');
+  if (!settlement.ok) return { ok: false, reason: 'BILLING_TERMINAL_STATE' };
+  if (!settlement.legacy) {
+    const fresh = await VideoSession.findById(sessionId).lean();
+    sessionData.expressGenerationCreditCharges = fresh.expressGenerationCreditCharges;
+    sessionData.sessionReceipt = fresh.sessionReceipt;
+  }
+
   const existingReceipt = sessionData.sessionReceipt || {};
   const stageCharges = sessionData.expressGenerationCreditCharges || {};
   const totalCharged = Number(stageCharges.totalCharged) || 0;
   const finalizedAt = new Date();
+  const postProcessing = await ownPostProcessingSettlement(sessionData, 'COMPLETED');
 
   await VideoSession.findByIdAndUpdate(sessionId, {
     $set: {
       provisionalCredits: 0,
-      sessionReceipt: {
+      ...(postProcessing ? { postProcessingBilling: postProcessing.billing } : {}),
+      sessionReceipt: postProcessing
+        ? { ...postProcessing.receipt, finalizedAt } : {
         ...existingReceipt,
         stageBilling: true,
         status: 'COMPLETED',
@@ -301,6 +302,9 @@ export async function processSessionCompletionFailure(sessionId) {
 
   await getDBConnectionString();
 
+  const settlement = await settleHostedAgentBilling(sessionId, 'FAILED');
+  if (!settlement.ok) return { ok: false, reason: 'BILLING_TERMINAL_STATE' };
+
   const sessionData = await VideoSession.findOne({ _id: sessionId });
   if (!sessionData) {
     return;
@@ -310,11 +314,14 @@ export async function processSessionCompletionFailure(sessionId) {
   const stageCharges = sessionData.expressGenerationCreditCharges || {};
   const totalCharged = Number(stageCharges.totalCharged) || 0;
   const failedAt = new Date();
+  const postProcessing = await ownPostProcessingSettlement(sessionData, 'FAILED');
 
   await VideoSession.findByIdAndUpdate(sessionId, {
     $set: {
       provisionalCredits: 0,
-      sessionReceipt: {
+      ...(postProcessing ? { postProcessingBilling: postProcessing.billing } : {}),
+      sessionReceipt: postProcessing
+        ? { ...postProcessing.receipt, failedAt } : {
         ...existingReceipt,
         stageBilling: true,
         status: 'FAILED',

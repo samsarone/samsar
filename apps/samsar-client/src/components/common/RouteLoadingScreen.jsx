@@ -1,29 +1,17 @@
 import { useUiLanguage } from '../../hooks/useUiLanguage.js';
 import { translateText as uiText } from '../../utils/localization.js';
-import { useColorMode } from '../../contexts/ColorMode.jsx';
+import { SkeletonBlock, SkeletonPage, SkeletonStatus } from './LoadingSkeleton.jsx';
 
+// For routes whose destination is not known yet, reserve only shared chrome.
 export default function RouteLoadingScreen({ label = uiText("Loading...") }) {
   useUiLanguage();
-  const { colorMode } = useColorMode();
-  const isDark = colorMode === 'dark';
-
-  return (
-    <div
-      className={`flex min-h-screen items-center justify-center ${
-        isDark
-          ? 'bg-[#0c0d12] text-slate-100'
-          : 'bg-[#f7f9fc] text-slate-700'
-      }`}
-    >
-      <div className="flex flex-col items-center gap-4">
-        <div
-          className={`h-10 w-10 animate-spin rounded-full border-4 border-t-transparent ${
-            isDark ? 'border-cyan-300/70' : 'border-sky-500/70'
-          }`}
-          aria-hidden="true"
-        />
-        <p className="text-sm font-medium">{label}</p>
+  return <SkeletonPage>
+    <SkeletonStatus label={label} className="mx-auto w-full max-w-6xl px-4 pt-[calc(var(--app-nav-height)+var(--workspace-inset))]">
+      <div className="space-y-5 rounded-2xl border border-line bg-surface p-6">
+        <SkeletonBlock className="h-6 w-44 max-w-full" />
+        <SkeletonBlock className="h-3 w-2/3" />
+        <SkeletonBlock className="h-24 w-full" />
       </div>
-    </div>
-  );
+    </SkeletonStatus>
+  </SkeletonPage>;
 }

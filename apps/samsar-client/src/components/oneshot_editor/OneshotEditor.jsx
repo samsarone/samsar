@@ -1,3 +1,8 @@
+import { canFallbackToVideoStatus, getTimelineVideoRevision } from '../../utils/sessionLoadingPolicy.mjs';
+import { VIDGENIE_EDITOR_CLASS, VIDGENIE_CARD_CLASS } from './vidgenieLayout.js';
+import ExpressPostProcessingPanel from './ExpressPostProcessingPanel.jsx';
+import { buildExpressPostProcessingRequest, createDefaultPostProcessingForm, sessionHasOutroImage } from './expressPostProcessing.js';
+import { normalizeRerollLayerIndexes, getRerollCandidateLayers, getRerollLocalCreditEstimate } from './RerollScenePreview.jsx';
 import { vidgenieAssistantContext } from '../../utils/assistantContext.js';
 import { getUiLanguage } from '../../utils/localization.js';
 import { normalizeKlingModelKey } from '../../utils/KlingModel.mjs';
@@ -21,7 +26,6 @@ import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { Tooltip } from 'react-tooltip';
 import { resolveVidgenieLoadedProjectView } from './vidgenieProjectViewState.mjs';
 import { createVidgenieDownloadFilename } from './vidgenieDownloadFilename.mjs';
-import { resolvePrivateMediaUrl } from '../../utils/privateMediaUrl.mjs';
 import {
   VIDGENIE_POLL_ACTION,
   resolveVidgeniePollAction,
@@ -45,10 +49,6 @@ import {
   FaPlay,
   FaRedo,
   FaCheck,
-  FaLanguage,
-  FaClosedCaptioning,
-  FaUserCircle,
-  FaClone,
 } from 'react-icons/fa';
 import axios from 'axios';
 import { deduplicatedGet } from '../../utils/deduplicatedGet.mjs';
@@ -71,6 +71,7 @@ import AssistantHome from '../assistant/AssistantHome.jsx';
 import PrimaryPublicButton from '../common/buttons/PrimaryPublicButton.tsx';
 import PublishOptionsDialog from '../video/toolbars/frame_toolbar/PublishOptionsDialog.jsx';
 import VidgenieSkeletonLoader from './VidgenieSkeletonLoader.jsx';
+import { rememberSessionLoadingLayout } from '../../utils/sessionLoadingLayout.js';
 import VideoEditAdvancedDialog from '../video/advanced/VideoEditAdvancedDialog.jsx';
 import { PURCHASE_CREDITS_ROUTE } from '../account/PurchaseCreditsPromptDialog.jsx';
 
@@ -96,7 +97,6 @@ import {
 } from './vidgenieSubtitleLanguage.mjs';
 import {
   buildSubtitleRegenerationLanguageFields,
-  isTranslatedSubtitleRegeneration,
   resolveSessionAudioLanguage,
   resolveSubtitleRegenerationDefault,
 } from '../../utils/subtitleRegenerationLanguage.mjs';
@@ -184,20 +184,6 @@ const VIDEO_API_BASE = `${API_SERVER}/v2`;
 const VIDEO_STATUS_ENDPOINT = `${API_SERVER}/v2/status`;
 const VIDEO_STATUS_DETAILED_ENDPOINT = `${API_SERVER}/v2/status_detailed`;
 const VIDEO_STEP_API_BASE = `${VIDEO_API_BASE}/video/step`;
-const STATIC_ASSET_BASE_URL = (
-  CDN_URI ||
-  'https://static.samsar.one'
-).replace(/\/+$/, '');
-const USER_RESOURCES_PREFIX = 'user_resources/';
-const DIRECT_PROCESSOR_ASSET_PREFIXES = [
-  'assets_v2/',
-  'assets/',
-  'generations/',
-  'intermediates/',
-  'temp_images/',
-  'video/',
-  'ai_video/',
-];
 const ADVANCED_VIDEO_EDIT_PENDING_SESSION_KEY = 'advancedVideoEditPendingSession';
 const POST_PROCESSING_PENDING_SESSION_KEY = 'vidgeniePostProcessingPendingSession';
 const VIDGENIE_REQUEST_STEP_MODE_STORAGE_PREFIX = 'vidgenieRequestStepMode';
@@ -345,33 +331,6 @@ function readPersistedAdvancedOptions() {
     return options;
   }, { ...DEFAULT_ADVANCED_OPTIONS });
 }
-const DEFAULT_POST_PROCESSING_FORM = Object.freeze({
-  outroCtaType: OUTRO_CTA_TYPE_QR,
-  ctaUrl: '',
-  ctaTextTop: '',
-  ctaTextBottom: '',
-  ctaLogo: '',
-  outroCtaImageUrl: '',
-  footerCtaText: '',
-  footerCtaLogo: '',
-  footerCtaUrl: '',
-  translationLanguage: '',
-  translationEnableSubtitles: true,
-  translationTranslateOutro: true,
-  translationTranslateFooter: true,
-  subtitleLanguage: '',
-  rerollLayerIndexes: [],
-});
-const POST_PROCESSING_ACTIONS = Object.freeze([
-  { key: 'retranslate', get label() { return uiText("Retranslate"); }, icon: FaLanguage },
-  { key: 'avatar', get label() { return uiText("Avatar"); }, icon: FaUserCircle },
-  { key: 'subtitles', get label() { return uiText("Subtitles"); }, icon: FaClosedCaptioning },
-  { key: 'generated_outro', get label() { return uiText("Outro CTA"); }, icon: FaImage },
-  { key: 'footer_cta', get label() { return uiText("Footer CTA"); }, icon: FaLink },
-  { key: 'reroll_layers', get label() { return uiText("Reroll scenes"); }, icon: FaRedo },
-  { key: 'clone_render', get label() { return uiText("Clone"); }, icon: FaClone },
-  { key: 'advanced_edits', get label() { return uiText("Edits"); }, icon: FaCog },
-]);
 const INITIAL_EXPRESS_GENERATION_STATUS = Object.freeze({
   prompt_generation: 'PENDING',
   image_generation: 'PENDING',
@@ -498,12 +457,6 @@ function isSupportedInferenceModelKey(value, options = INFERENCE_MODEL_TYPES) {
   ));
 }
 
-function getInferenceModelDisplayLabel(value, options = INFERENCE_MODEL_TYPES) {
-  const normalizedValue = normalizeInferenceModelKey(value);
-  return getInferenceModelOption(normalizedValue, DEFAULT_INFERENCE_MODEL, options)?.label ||
-    normalizedValue;
-}
-
 function normalizeModeToken(value) {
   return typeof value === 'string'
     ? value.trim().toLowerCase().replace(/[\s-]+/g, '_')
@@ -624,6 +577,23 @@ function resolveInferenceModelFromSession(session) {
   return rawValue ? normalizeInferenceModelKey(rawValue) : '';
 }
 
+function resolveSavedSessionSetting(session, keys) {
+  if (!isPlainObject(session)) return '';
+  const nestedValue = resolveSavedSessionSetting(session.session, keys);
+  return nestedValue || keys
+    .map((key) => session[key])
+    .find((value) => typeof value === 'string' && value.trim())?.trim() || '';
+}
+
+function getSavedSessionModelOption(value, options, definitions = [], labels = {}) {
+  if (!value) return null;
+  const model = options.find((option) => option.value === value)
+    || definitions.find((option) => (option.value || option.key) === value);
+  // Historical models may no longer be selectable on this deployment. Keep
+  // their recorded key visible instead of substituting a generation default.
+  return { ...model, value, label: labels[value] || model?.label || model?.name || value };
+}
+
 function normalizeInferenceEffort(value, fallback = 'high') {
   return value === 'xhigh' || value === 'high' ? value : fallback;
 }
@@ -729,28 +699,6 @@ function validateOutroCtaImagePayload(value) {
   return null;
 }
 
-function sessionHasOutroImage(session) {
-  if (!session || typeof session !== 'object') {
-    return false;
-  }
-
-  if (session.hasOutroImage === true) {
-    return true;
-  }
-
-  if (hasTextValue(session.outroImageURL) || hasTextValue(session.outroImageUrl)) {
-    return true;
-  }
-
-  if (isPlainObject(session.outroImageMetadata)) {
-    return true;
-  }
-
-  return Array.isArray(session.layers) && session.layers.some((layer) =>
-    isPlainObject(layer?.outroImageMetadata)
-  );
-}
-
 function payloadRequestsGeneratedOutro(payload) {
   if (!isPlainObject(payload)) {
     return false;
@@ -785,475 +733,6 @@ function payloadRequestsGeneratedOutro(payload) {
   });
 }
 
-function createDefaultPostProcessingForm() {
-  return cloneJsonValue(DEFAULT_POST_PROCESSING_FORM);
-}
-
-function normalizeRerollLayerIndexes(value) {
-  const source = Array.isArray(value)
-    ? value
-    : typeof value === 'string'
-      ? value.split(',')
-      : [];
-  const indexes = source
-    .map((item) => Number(item))
-    .filter((item) => Number.isInteger(item) && item >= 1);
-  return [...new Set(indexes)].sort((a, b) => a - b);
-}
-
-function normalizeRerollLayerType(layer) {
-  const value = layer?.layerBaseAiImageType || layer?.layerAiVideoType;
-  return typeof value === 'string' ? value.trim().toLowerCase() : '';
-}
-
-function looksLikeStudioVideoRoute(value) {
-  return typeof value === 'string' && /^\/?video\/[a-f0-9]{24}$/i.test(value.trim());
-}
-
-function isDirectProcessorAssetPath(value) {
-  return DIRECT_PROCESSOR_ASSET_PREFIXES.some((prefix) => value.startsWith(prefix));
-}
-
-function isRemoteUserResourcePath(value) {
-  return value.startsWith('assets_v2/user_resources/') ||
-    value.startsWith(USER_RESOURCES_PREFIX);
-}
-
-function buildProcessorAssetUrl(relativePath) {
-  const normalizedPath = String(relativePath || '').replace(/^\/+/, '');
-  return PROCESSOR_API_URL ? `${PROCESSOR_API_URL}/${normalizedPath}` : `/${normalizedPath}`;
-}
-
-function hasExpiredCloudFrontSignature(url) {
-  const expires = Number(url.searchParams.get('Expires'));
-  return Number.isFinite(expires) && expires > 0 && expires * 1000 <= Date.now() + 60_000;
-}
-
-function getProcessorAssetFallbackUrl(url) {
-  if (typeof url !== 'string') return '';
-  const trimmed = url.trim();
-  if (!trimmed) return '';
-  const privateMediaUrl = resolvePrivateMediaUrl(trimmed, {
-    processorApiUrl: PROCESSOR_API_URL,
-    staticCdnUrl: STATIC_ASSET_BASE_URL,
-  });
-  if (privateMediaUrl) return privateMediaUrl;
-
-  const relativePath = trimmed.replace(/^\/+/, '');
-  if (isDirectProcessorAssetPath(relativePath) && !isRemoteUserResourcePath(relativePath)) {
-    return buildProcessorAssetUrl(relativePath);
-  }
-
-  if (!/^https?:\/\//i.test(trimmed)) {
-    return '';
-  }
-
-  try {
-    const parsedUrl = new URL(trimmed);
-    const pathname = decodeURIComponent(parsedUrl.pathname).replace(/^\/+/, '');
-    return isDirectProcessorAssetPath(pathname) && !isRemoteUserResourcePath(pathname)
-      ? buildProcessorAssetUrl(`${pathname}${parsedUrl.search}${parsedUrl.hash}`)
-      : '';
-  } catch {
-    return '';
-  }
-}
-
-function normalizeRerollAssetUrl(url) {
-  if (typeof url !== 'string') return '';
-  const trimmed = url.trim();
-  if (!trimmed) return '';
-  if (looksLikeStudioVideoRoute(trimmed)) return '';
-  if (trimmed.startsWith('data:') || trimmed.startsWith('blob:')) {
-    return trimmed;
-  }
-  const privateMediaUrl = resolvePrivateMediaUrl(trimmed, {
-    processorApiUrl: PROCESSOR_API_URL,
-    staticCdnUrl: STATIC_ASSET_BASE_URL,
-  });
-  if (privateMediaUrl) return privateMediaUrl;
-
-  const relativePath = trimmed.replace(/^\/+/, '');
-  if (isRemoteUserResourcePath(relativePath)) {
-    return `${STATIC_ASSET_BASE_URL}/${relativePath}`;
-  }
-  if (/^https?:\/\//i.test(trimmed) || trimmed.startsWith('data:') || trimmed.startsWith('blob:')) {
-    try {
-      const parsedUrl = new URL(trimmed);
-      const pathname = decodeURIComponent(parsedUrl.pathname).replace(/^\/+/, '');
-      if (isRemoteUserResourcePath(pathname)) {
-        return `${STATIC_ASSET_BASE_URL}/${pathname}${parsedUrl.search || ''}`;
-      }
-      if (
-        isDirectProcessorAssetPath(pathname) &&
-        !isRemoteUserResourcePath(pathname) &&
-        hasExpiredCloudFrontSignature(parsedUrl)
-      ) {
-        return buildProcessorAssetUrl(pathname);
-      }
-    } catch {
-      return trimmed;
-    }
-    return trimmed;
-  }
-  if (isDirectProcessorAssetPath(relativePath)) {
-    return buildProcessorAssetUrl(relativePath);
-  }
-  return `${PROCESSOR_API_URL}/${relativePath}`;
-}
-
-function getRerollAssetUrlPair(values = []) {
-  for (const value of values) {
-    const url = normalizeRerollAssetUrl(value);
-    if (!url) continue;
-    const fallbackUrl = getProcessorAssetFallbackUrl(value) || getProcessorAssetFallbackUrl(url);
-    return {
-      url,
-      fallbackUrl: fallbackUrl && fallbackUrl !== url ? fallbackUrl : '',
-    };
-  }
-  return { url: '', fallbackUrl: '' };
-}
-
-function isRerollCandidateLayer(layer) {
-  const layerType = normalizeRerollLayerType(layer);
-  return Boolean(
-    layer &&
-    layer.skipAiVideoGeneration !== true &&
-    layerType !== 'none' &&
-    layerType !== 'outro'
-  );
-}
-
-function getRawItemAssetUrl(item) {
-  if (!item || typeof item !== 'object') return '';
-  return (
-    item.url ||
-    item.previewUrl ||
-    item.preview_url ||
-    item.signedUrl ||
-    item.signed_url ||
-    item.displayUrl ||
-    item.display_url ||
-    item.src ||
-    item.imageUrl ||
-    item.image_url ||
-    item.rawUrl ||
-    item.raw_url ||
-    item.enhanced_url ||
-    item.enhancedUrl ||
-    item.assetPath ||
-    item.path ||
-    (typeof item.image === 'string' && item.image.includes('/') ? item.image : '')
-  );
-}
-
-function getLayerVisualUrl(layer) {
-  const detailedItemUrl = Array.isArray(layer?.image?.items)
-    ? layer.image.items.find((item) => item?.isPrimary)?.url || layer.image.items[0]?.url
-    : '';
-  const rawActiveItems = Array.isArray(layer?.imageSession?.activeItemList)
-    ? layer.imageSession.activeItemList
-    : [];
-  const rawBaseItem = rawActiveItems.find((item) => item?.is_base_image === true) ||
-    rawActiveItems.find((item) => item?.type === 'image') ||
-    rawActiveItems[0] ||
-    null;
-  const frameImages = layer?.frameImages || {};
-  const candidates = [
-    frameImages.startFrameUrl,
-    frameImages.startFrame,
-    frameImages.aiLayerStartFrame,
-    frameImages.baseLayerStartFrame,
-    frameImages.aiVideoThumbnailPath,
-    frameImages.thumbnailPath,
-    layer?.aiLayerStartFrame,
-    layer?.baseLayerStartFrame,
-    layer?.aiVideoThumbnailPath,
-    layer?.thumbnailPath,
-    layer?.preview?.type !== 'video' ? layer?.preview?.url : '',
-    layer?.image?.url,
-    detailedItemUrl,
-    getRawItemAssetUrl(rawBaseItem),
-    layer?.imageSession?.activeImageRemoteLink,
-    layer?.imageSession?.activeGeneratedImage,
-    layer?.imageSession?.activeEditedImage,
-    layer?.imageSession?.activeSelectedImage,
-    layer?.thumbnailPath,
-    layer?.aiVideoThumbnailPath,
-  ];
-  return getRerollAssetUrlPair(candidates);
-}
-
-function getLayerPreviewVideoUrlPair(layer) {
-  const candidates = [
-    layer?.lipSyncVideo?.url,
-    layer?.soundEffectVideo?.url,
-    layer?.userVideo?.url,
-    layer?.aiVideo?.url,
-    layer?.preview?.type === 'video' ? layer?.preview?.url : '',
-    layer?.lipSyncRemoteLink,
-    layer?.soundEffectRemoteLink,
-    layer?.userVideoRemoteLink,
-    layer?.aiVideoRemoteLink,
-    layer?.lipSyncVideoLayer,
-    layer?.soundEffectVideoLayer,
-    layer?.userVideoLayer,
-    layer?.aiVideoLayer,
-  ];
-  return getRerollAssetUrlPair(candidates);
-}
-
-function getRerollPromptPreview(layer) {
-  const prompt =
-    layer?.originalImagePrompt ||
-    layer?.sourcePrompt ||
-    layer?.originalPrompt ||
-    layer?.imageSession?.originalImagePrompt ||
-    layer?.imageSession?.sourcePrompt ||
-    layer?.imageSession?.originalPrompt ||
-    layer?.image?.prompt ||
-    layer?.imageSession?.prompt ||
-    layer?.prompt ||
-    '';
-  return typeof prompt === 'string' ? prompt.trim().slice(0, 80) : '';
-}
-
-function getRerollCandidateLayers(session) {
-  const layers = Array.isArray(session?.layers) ? session.layers : [];
-  return layers
-    .map((layer, index) => {
-      const visualUrlPair = getLayerVisualUrl(layer);
-      const videoUrlPair = getLayerPreviewVideoUrlPair(layer);
-      return {
-        layer,
-        layerIndex: index + 1,
-        layerId: layer?._id || layer?.id || `${index + 1}`,
-        duration: Number(layer?.duration) || 0,
-        promptPreview: getRerollPromptPreview(layer),
-        visualUrl: visualUrlPair.url,
-        visualFallbackUrl: visualUrlPair.fallbackUrl,
-        videoUrl: videoUrlPair.url,
-        videoFallbackUrl: videoUrlPair.fallbackUrl,
-      };
-    })
-    .filter((item) => isRerollCandidateLayer(item.layer));
-}
-
-function getRerollLocalCreditEstimate({
-  layerIndexes,
-  candidateLayers,
-  imageModel,
-  videoModel,
-  aspectRatio,
-}) {
-  const selectedIndexes = normalizeRerollLayerIndexes(layerIndexes);
-  if (!selectedIndexes.length) {
-    return null;
-  }
-
-  const selectedIndexSet = new Set(selectedIndexes);
-  const selectedLayers = candidateLayers.filter((item) => selectedIndexSet.has(item.layerIndex));
-  if (!selectedLayers.length) {
-    return null;
-  }
-
-  const imageCreditsPerLayer = 0; // Image-model calls settle separately on completion.
-  const videoStageCreditsPerSecond =
-    0; // Model calls settle individually when completed.
-  const durationSeconds = selectedLayers.reduce((total, item) => total + (Number(item.duration) || 0), 0);
-  const imageCredits = Math.ceil(imageCreditsPerLayer * selectedLayers.length);
-  const aiVideoCredits = Math.ceil(Math.max(0, durationSeconds * videoStageCreditsPerSecond));
-
-  return {
-    totalCredits: imageCredits + aiVideoCredits,
-    imageCredits,
-    aiVideoCredits,
-    imageBilling: 'ON_COMPLETION',
-  };
-}
-
-function RerollScenePreviewTile({
-  item,
-  isSelected,
-  isPlaying,
-  isDisabled,
-  colorMode,
-  mutedText,
-  activeActionClass,
-  inactiveActionClass,
-  onToggleSelect,
-  onTogglePlayback,
-}) {
-  useUiLanguage();
-  const videoRef = useRef(null);
-  const [currentVideoUrl, setCurrentVideoUrl] = useState(item.videoUrl || '');
-  const [currentVisualUrl, setCurrentVisualUrl] = useState(item.visualUrl || '');
-  const [videoLoadFailed, setVideoLoadFailed] = useState(false);
-
-  useEffect(() => {
-    setCurrentVideoUrl(item.videoUrl || '');
-    setCurrentVisualUrl(item.visualUrl || '');
-    setVideoLoadFailed(false);
-  }, [item.videoFallbackUrl, item.videoUrl, item.visualFallbackUrl, item.visualUrl]);
-
-  useEffect(() => {
-    const video = videoRef.current;
-    if (!video) return;
-    if (isPlaying && currentVideoUrl && !videoLoadFailed) {
-      const playPromise = video.play();
-      if (playPromise?.catch) playPromise.catch(() => undefined);
-    } else {
-      video.pause();
-    }
-  }, [currentVideoUrl, isPlaying, videoLoadFailed]);
-
-  const handleVideoError = () => {
-    if (item.videoFallbackUrl && currentVideoUrl !== item.videoFallbackUrl) {
-      setCurrentVideoUrl(item.videoFallbackUrl);
-      setVideoLoadFailed(false);
-      return;
-    }
-    setVideoLoadFailed(true);
-    if (isPlaying) {
-      onTogglePlayback(null);
-    }
-  };
-
-  const handleImageError = () => {
-    if (item.visualFallbackUrl && currentVisualUrl !== item.visualFallbackUrl) {
-      setCurrentVisualUrl(item.visualFallbackUrl);
-      return;
-    }
-    setCurrentVisualUrl('');
-  };
-
-  const handleVideoLoadedMetadata = () => {
-    const video = videoRef.current;
-    if (!video || isPlaying || !Number.isFinite(video.duration) || video.duration <= 0) return;
-
-    // Fetch a real frame without eagerly downloading every scene video in full.
-    video.currentTime = Math.min(0.1, video.duration / 2);
-  };
-
-  const handlePlaybackClick = (event) => {
-    event.preventDefault();
-    event.stopPropagation();
-    if (isDisabled || !currentVideoUrl || videoLoadFailed) return;
-
-    const video = videoRef.current;
-    if (isPlaying) {
-      video?.pause();
-      onTogglePlayback(null);
-      return;
-    }
-
-    onTogglePlayback(item.layerId);
-  };
-
-  const handleSelect = () => {
-    if (!isDisabled) {
-      onToggleSelect(item.layerIndex);
-    }
-  };
-
-  const handleSelectKeyDown = (event) => {
-    if (event.target !== event.currentTarget) return;
-    if (event.key === 'Enter' || event.key === ' ') {
-      event.preventDefault();
-      handleSelect();
-    }
-  };
-
-  const canAttemptPlayback = Boolean(currentVideoUrl) && !videoLoadFailed;
-
-  return (
-    <div
-      role="button"
-      tabIndex={isDisabled ? -1 : 0}
-      onClick={handleSelect}
-      onKeyDown={handleSelectKeyDown}
-      aria-pressed={isSelected}
-      aria-disabled={isDisabled}
-      className={`
-        min-h-[146px] rounded-lg p-1.5 text-left text-xs ring-1 transition
-        ${isSelected ? activeActionClass : inactiveActionClass}
-        ${isDisabled ? 'cursor-not-allowed opacity-50' : 'active:scale-[0.99]'}
-      `}
-    >
-      <div className={`relative aspect-video w-full overflow-hidden rounded-md ${
-        colorMode === 'dark' ? 'bg-slate-900' : 'bg-slate-100'
-      }`}>
-        {!currentVisualUrl && !canAttemptPlayback ? (
-          <div className={`flex h-full w-full items-center justify-center ${mutedText}`}>
-            <FaImage className="h-5 w-5" aria-hidden="true" />
-          </div>
-        ) : null}
-        {canAttemptPlayback ? (
-          <video
-            ref={videoRef}
-            src={currentVideoUrl}
-            preload="metadata"
-            playsInline
-            loop
-            muted
-            aria-label={uiText("Scene {value0} video preview", { value0: item.layerIndex })}
-            onError={handleVideoError}
-            onLoadedMetadata={handleVideoLoadedMetadata}
-            onLoadedData={() => setVideoLoadFailed(false)}
-            className="absolute inset-0 h-full w-full object-cover"
-          />
-        ) : null}
-        {currentVisualUrl && !isPlaying ? (
-          <img
-            src={currentVisualUrl}
-            alt={uiText("Scene {value0}", { value0: item.layerIndex })}
-            loading="eager"
-            onError={handleImageError}
-            className="absolute inset-0 h-full w-full object-cover"
-          />
-        ) : null}
-        <span className="absolute left-1.5 top-1.5 rounded bg-black/65 px-1.5 py-0.5 text-caption font-semibold text-white">{uiText("Scene {value0}", { value0: item.layerIndex })}</span>
-        {canAttemptPlayback ? (
-          <button
-            type="button"
-            disabled={isDisabled}
-            aria-label={uiText("{value0} scene {value1} preview", { value0: isPlaying ? 'Pause' : 'Play', value1: item.layerIndex })}
-            title={uiText("{value0} scene preview", { value0: isPlaying ? 'Pause' : 'Play' })}
-            onClick={handlePlaybackClick}
-            className={`
-              absolute bottom-1.5 right-1.5 inline-flex h-7 w-7 items-center justify-center rounded-full
-              bg-black/70 text-white shadow transition hover:bg-black/85
-              ${isDisabled ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'}
-            `}
-          >
-            {isPlaying ? (
-              <FaPause className="h-3 w-3" aria-hidden="true" />
-            ) : (
-              <FaPlay className="h-3 w-3 translate-x-px" aria-hidden="true" />
-            )}
-          </button>
-        ) : null}
-        {isSelected ? (
-          <span className={`absolute right-1.5 top-1.5 inline-flex h-5 w-5 items-center justify-center rounded-full shadow ${
-            colorMode === 'dark'
-              ? 'bg-[#f6c453] text-[#111318] shadow-[0_0_0_2px_rgba(246,196,83,0.18)]'
-              : 'bg-cyan-300 text-slate-950'
-          }`}>
-            <FaCheck className="h-3 w-3" aria-hidden="true" />
-          </span>
-        ) : null}
-      </div>
-      <div className="mt-2 flex items-center justify-between gap-2">
-        <span className="truncate font-semibold">{uiText("Scene {value0}", { value0: item.layerIndex })}</span>
-        <span className={mutedText}>{item.duration ? `${item.duration}s` : ''}</span>
-      </div>
-      {item.promptPreview ? (
-        <div className={`mt-1 truncate ${mutedText}`}>{item.promptPreview}</div>
-      ) : null}
-    </div>
-  );
-}
 
 function getJsonModelByKey(modelTypes, modelKey) {
   if (typeof modelKey !== 'string') {
@@ -3066,8 +2545,8 @@ export default function OneshotEditor() {
   const [, setIsOnline] = useState(navigator.onLine);
   const [, setPollDelay] = useState(DEFAULT_POLL);
   const pollDelayRef = useRef(DEFAULT_POLL);
-  const assistantDelayRef = useRef(DEFAULT_POLL);
   const lastTimelinePreviewSessionRefreshRef = useRef(0);
+  const timelinePreviewRevisionRef = useRef('');
 
   useEffect(() => {
     const onLine = () => {
@@ -3092,11 +2571,9 @@ export default function OneshotEditor() {
   // ─────────────────────────────────────────────────────────
   const pollIntervalRef = useRef(null);   // generation poll (setTimeout)
   const activeRequestStepModeRef = useRef(GENERATION_STEP_MODE_ONE_STEP);
-  const assistantPollRef = useRef(null);   // assistant poll (setInterval)
   const pollErrorCountRef = useRef(0);
 
   const pollTimeoutRef = useRef(null);
-  const assistantTimeoutRef = useRef(null);
 
   // ─────────────────────────────────────────────────────────
   //  Assistant / Chatbot state
@@ -3151,7 +2628,6 @@ export default function OneshotEditor() {
       ) {
         lastWakePoll.current = Date.now();
         pollGenerationStatus(activeRequestIdRef.current, true); // Restart fresh
-        startAssistantQueryPoll(true);  // Optional: restart assistant poll
       }
     };
     document.addEventListener('visibilitychange', handleVisibility);
@@ -4189,9 +3665,7 @@ export default function OneshotEditor() {
     return () => {
       pollRunRef.current += 1;
       if (pollIntervalRef.current) clearTimeout(pollIntervalRef.current);
-      if (assistantPollRef.current) clearInterval(assistantPollRef.current);
       if (pollTimeoutRef.current) clearTimeout(pollTimeoutRef.current);
-      if (assistantTimeoutRef.current) clearTimeout(assistantTimeoutRef.current);
     };
   }, []);
 
@@ -4205,18 +3679,15 @@ export default function OneshotEditor() {
     const sessionRun = ++sessionRunRef.current;
     // Abort ALL polling
     if (pollIntervalRef.current) clearTimeout(pollIntervalRef.current);
-    if (assistantPollRef.current) clearInterval(assistantPollRef.current);
     if (pollTimeoutRef.current) clearTimeout(pollTimeoutRef.current);
-    if (assistantTimeoutRef.current) clearTimeout(assistantTimeoutRef.current);
 
     pollIntervalRef.current = null;
-    assistantPollRef.current = null;
     pollTimeoutRef.current = null;
-    assistantTimeoutRef.current = null;
 
     pollErrorCountRef.current = 0;
     pollDelayRef.current = DEFAULT_POLL;
-    assistantDelayRef.current = DEFAULT_POLL;
+    lastTimelinePreviewSessionRefreshRef.current = 0;
+    timelinePreviewRevisionRef.current = '';
 
     resetForm();
     setPostProcessingPreviewVideoLink(getPostProcessingPreviewVideoLink(id));
@@ -4230,8 +3701,7 @@ export default function OneshotEditor() {
         if (sessionRunRef.current !== sessionRun) return;
         const usePostProcessingPoll = shouldUsePostProcessingStatusPolling(id);
         const shouldPoll = Boolean(
-          user?._id &&
-          getHeaders() &&
+          ((user?._id && getHeaders()) || (!user?._id && isStandaloneDeployment)) &&
           isSessionGenerationPending(
             data,
             shouldForceAdvancedVideoEditPolling(id) || usePostProcessingPoll,
@@ -4251,9 +3721,7 @@ export default function OneshotEditor() {
           }
         } else if (pollAction === VIDGENIE_POLL_ACTION.STOP) {
           if (pollIntervalRef.current) clearTimeout(pollIntervalRef.current);
-          if (assistantPollRef.current) clearInterval(assistantPollRef.current);
           pollIntervalRef.current = null;
-          assistantPollRef.current = null;
           currentPollRequestIdRef.current = null;
         }
       });
@@ -4508,35 +3976,24 @@ export default function OneshotEditor() {
     return data;
   };
 
-  const statusDetailsHasTimelineVideo = (data) => {
-    const sessionPreview = data?.session || {};
-    const layers = Array.isArray(sessionPreview.layers) ? sessionPreview.layers : [];
-    const globalVideos = Array.isArray(sessionPreview.globalVideos) ? sessionPreview.globalVideos : [];
-
-    return (
-      globalVideos.some((video) => Boolean(video?.url)) ||
-      layers.some((layer) => Boolean(
-        layer?.aiVideo?.url ||
-        layer?.lipSyncVideo?.url ||
-        layer?.soundEffectVideo?.url ||
-        layer?.userVideo?.url ||
-        (layer?.preview?.type === 'video' && layer?.preview?.url)
-      ))
-    );
-  };
-
-  const maybeRefreshSessionDetailsForTimelinePreview = (data) => {
-    if (!statusDetailsHasTimelineVideo(data)) {
+  const maybeRefreshSessionDetailsForTimelinePreview = (data, refreshSessionDetails = true) => {
+    const revision = getTimelineVideoRevision(data);
+    if (!revision) return;
+    if (!refreshSessionDetails) {
+      timelinePreviewRevisionRef.current = revision;
       return;
     }
-
+    if (revision === timelinePreviewRevisionRef.current) return;
     const now = Date.now();
-    if (now - lastTimelinePreviewSessionRefreshRef.current < TIMELINE_PREVIEW_SESSION_REFRESH_MS) {
-      return;
-    }
-
+    if (now - lastTimelinePreviewSessionRefreshRef.current < TIMELINE_PREVIEW_SESSION_REFRESH_MS) return;
+    timelinePreviewRevisionRef.current = revision;
     lastTimelinePreviewSessionRefreshRef.current = now;
-    getSessionDetails().catch(() => undefined);
+    const sessionRun = sessionRunRef.current;
+    getSessionDetails().then((session) => {
+      if (!session && sessionRunRef.current === sessionRun && timelinePreviewRevisionRef.current === revision) {
+        timelinePreviewRevisionRef.current = '';
+      }
+    });
   };
 
   const fetchPostProcessingGenerationStatus = async (requestId, headers) => {
@@ -4551,7 +4008,7 @@ export default function OneshotEditor() {
     }
   };
 
-  const refreshDetailedGenerationStatus = async (requestId, headers) => {
+  const refreshDetailedGenerationStatus = async (requestId, headers, refreshSessionDetails = true) => {
     const sessionRun = sessionRunRef.current;
     const data = await fetchDetailedGenerationStatus(requestId, headers);
     if (sessionRunRef.current !== sessionRun) return null;
@@ -4559,7 +4016,7 @@ export default function OneshotEditor() {
       setExpressGenerationStatus(data.expressGenerationStatus);
     }
     setGenerationStatusDetails(data);
-    maybeRefreshSessionDetailsForTimelinePreview(data);
+    maybeRefreshSessionDetailsForTimelinePreview(data, refreshSessionDetails);
     return data;
   };
 
@@ -5072,44 +4529,25 @@ export default function OneshotEditor() {
   //  Assistant-query poller
   // ─────────────────────────────────────────────────────────
   const startAssistantQueryPoll = () => {
-    const requestToken = assistantRequestGuard.capture();
     const headers = getHeaders();
     if (!headers) {
+      setIsAssistantQueryGenerating(false);
       showLoginDialog();
       return;
     }
-    assistantRequestGuard.subscribe({
+    assistantRequestGuard.watch({
       url: `${PROCESSOR_API_URL}/assistants/assistant_query_stream?id=${encodeURIComponent(id)}`,
+      statusUrl: `${PROCESSOR_API_URL}/assistants/assistant_query_status?id=${encodeURIComponent(id)}&include_messages=true`,
       headers: headers.headers,
       onSnapshot: snapshot => {
         setSessionMessages(snapshot.sessionMessages);
-        if (!snapshot.sessionMessageGenerationPending) setIsAssistantQueryGenerating(false);
+        setIsAssistantQueryGenerating(Boolean(snapshot.sessionMessageGenerationPending));
       },
+      onStart: () => setIsAssistantQueryGenerating(true),
+      onError: () => setIsAssistantQueryGenerating(false),
     });
-    if (assistantPollRef.current) clearInterval(assistantPollRef.current);
-
-    assistantPollRef.current = assistantRequestGuard.setInterval(() => {
-      axios
-        .get(`${PROCESSOR_API_URL}/assistants/assistant_query_status?id=${encodeURIComponent(id)}&include_messages=true`, headers)
-        .then((res) => {
-          if (!assistantRequestGuard.isCurrent(requestToken)) return;
-          const data = res.data;
-          if (assistantRequestGuard.applyStatus(data, setSessionMessages)) {
-            clearInterval(assistantPollRef.current);
-            setIsAssistantQueryGenerating(false);
-          }
-        })
-        .catch(error => {
-          if (!assistantRequestGuard.isCurrent(requestToken)) return;
-          // Network/server failures remain retryable; generation may still be running.
-          if (assistantRequestGuard.stopOnAccessError(error)) setIsAssistantQueryGenerating(false);
-        });
-    }, 1000);
   };
 
-  // ─────────────────────────────────────────────────────────
-  //  Submit assistant query
-  // ─────────────────────────────────────────────────────────
   const submitAssistantQuery = (query) => {
     const requestToken = assistantRequestGuard.beginRequest();
     const headers = getHeaders();
@@ -5119,27 +4557,30 @@ export default function OneshotEditor() {
     }
     setIsAssistantQueryGenerating(true);
 
-    axios
-      .post(
-        `${PROCESSOR_API_URL}/assistants/submit_assistant_query`,
-        { id, query, stream: true, client_request_id: crypto.randomUUID(), assistantSessionVersion: requestToken.serverVersion,
+    void assistantRequestGuard.submit({
+      url: `${PROCESSOR_API_URL}/assistants/submit_assistant_query`,
+      payload: { id, query, stream: true, client_request_id: crypto.randomUUID(), assistantSessionVersion: requestToken.serverVersion,
           assistantContext: vidgenieAssistantContext({ mode: generationMode, draft: promptText,
             pending: isGenerationPending || isSubmitting, review: isGenerationWaitingForApproval,
             complete: showResultDisplay && Boolean(videoLink), error: Boolean(errorMessage),
             hasReferenceImage: imageListItems.some(item => Boolean(item.imageUrl || item.image_url || item.url)), locale: getUiLanguage(),
             selectedImageModel: selectedImageModel?.value, selectedVideoModel: selectedVideoModel?.value }),
         },
-        headers
-      )
-      .then(() => {
+      headers: headers.headers,
+      onResponse: response => {
         if (!assistantRequestGuard.isCurrent(requestToken)) return;
+        if (response.data?.status === 'COMPLETED' && response.data?.sessionDetails) {
+          if (assistantRequestGuard.acceptSession(response.data.sessionDetails)) {
+            setSessionMessages(assistantRequestGuard.messages(response.data.sessionDetails));
+          }
+          setIsAssistantQueryGenerating(false);
+          return;
+        }
         startAssistantQueryPoll();
-      })
-      .catch(() => {
-        if (!assistantRequestGuard.isCurrent(requestToken)) return;
-
-        setIsAssistantQueryGenerating(false);
-      });
+      },
+      onStart: () => setIsAssistantQueryGenerating(true),
+      onError: () => setIsAssistantQueryGenerating(false),
+    });
   };
 
   // Placeholder: fetchSessionImageLayers
@@ -5157,7 +4598,7 @@ export default function OneshotEditor() {
     try {
       setSessionLoadFailed(false);
       setSessionLoadError('');
-      const canUseAnonymousStandaloneStatus = isStandaloneDeployment;
+      const canUseAnonymousStandaloneStatus = isStandaloneDeployment && !user?._id;
       let headers = user?._id ? getHeaders() : null;
       if (!headers && !canUseAnonymousStandaloneStatus && user?._id) {
         await getUserAPI();
@@ -5188,13 +4629,15 @@ export default function OneshotEditor() {
                   `${API_SERVER}/video_sessions/session_details?id=${encodeURIComponent(id)}&cacheBust=${Date.now()}`,
                   headers
                 );
-              } catch {
-                sessionResponse = null;
+              } catch (retryError) {
+                if (!canFallbackToVideoStatus(retryError)) throw retryError;
+                sessionDetailsError = retryError;
               }
             }
           }
 
           if (!sessionResponse) {
+            if (!canFallbackToVideoStatus(sessionDetailsError)) throw sessionDetailsError;
             if (!isCurrentSession()) return null;
             try {
               const statusData = await fetchDetailedGenerationStatus(id, headers);
@@ -5274,7 +4717,7 @@ export default function OneshotEditor() {
           setShowResultDisplay(true);
           setExpressGenerationStatus(data.expressGenerationStatus);
           if (headers && !usePostProcessingPoll) {
-            refreshDetailedGenerationStatus(id, headers).catch(() => undefined);
+            refreshDetailedGenerationStatus(id, headers, false).catch(() => undefined);
           }
         } else if (hasPendingGeneration) {
           setIsPaused(false);
@@ -5287,7 +4730,7 @@ export default function OneshotEditor() {
             }
           } else {
             if (headers) {
-              refreshDetailedGenerationStatus(id, headers).catch(() => undefined);
+              refreshDetailedGenerationStatus(id, headers, false).catch(() => undefined);
             }
             if (headers && isCurrentSessionRequest) {
               pollGenerationStatus(id);
@@ -5299,9 +4742,6 @@ export default function OneshotEditor() {
           setIsGenerationPending(false);
           setShowResultDisplay(true);
           setExpressGenerationStatus(data.expressGenerationStatus);
-          if (headers && !usePostProcessingPoll) {
-            refreshDetailedGenerationStatus(id, headers).catch(() => undefined);
-          }
           clearAdvancedVideoEditPendingSession(id);
           clearPostProcessingPendingSession(id);
         } else if (loadedProjectView.showResultDisplay) {
@@ -5316,7 +4756,7 @@ export default function OneshotEditor() {
             });
           }
           if (headers && !usePostProcessingPoll) {
-            refreshDetailedGenerationStatus(id, headers)
+            refreshDetailedGenerationStatus(id, headers, false)
               .then((statusData) => {
                 if (!isCurrentSession()) return;
                 const detailedFailureStatus = getDetailedGenerationFailureStatus(statusData);
@@ -5337,7 +4777,7 @@ export default function OneshotEditor() {
         if (usePostProcessingPoll) {
           pollPostProcessingStatus(id);
         } else {
-          refreshDetailedGenerationStatus(id, headers).catch(() => undefined);
+          refreshDetailedGenerationStatus(id, headers, false).catch(() => undefined);
           pollGenerationStatus(id);
         }
       } else if (hasPausedGeneration) {
@@ -5347,7 +4787,7 @@ export default function OneshotEditor() {
         setShowResultDisplay(true);
         setExpressGenerationStatus(data.expressGenerationStatus);
         if (headers && !usePostProcessingPoll) {
-          refreshDetailedGenerationStatus(id, headers).catch(() => undefined);
+          refreshDetailedGenerationStatus(id, headers, false).catch(() => undefined);
         }
       } else if (!hasPendingGeneration && latestVideoUrl) {
         setVideoLink(latestVideoUrl);
@@ -5355,9 +4795,6 @@ export default function OneshotEditor() {
         setIsGenerationPending(false);
         setShowResultDisplay(true);
         setExpressGenerationStatus(data.expressGenerationStatus);
-        if (headers && !usePostProcessingPoll) {
-          refreshDetailedGenerationStatus(id, headers).catch(() => undefined);
-        }
         clearAdvancedVideoEditPendingSession(id);
         clearPostProcessingPendingSession(id);
       } else if (loadedProjectView.showResultDisplay) {
@@ -5372,7 +4809,7 @@ export default function OneshotEditor() {
           });
         }
         if (headers && !usePostProcessingPoll) {
-          refreshDetailedGenerationStatus(id, headers)
+          refreshDetailedGenerationStatus(id, headers, false)
             .then((statusData) => {
               if (!isCurrentSession()) return;
               const detailedFailureStatus = getDetailedGenerationFailureStatus(statusData);
@@ -5396,69 +4833,6 @@ export default function OneshotEditor() {
       return null;
     }
   };
-
-  useEffect(() => {
-    if (!isStandaloneDeployment || !id) {
-      return undefined;
-    }
-
-    let didCancel = false;
-
-    const hydrateStandaloneAnonymousPreview = async () => {
-      try {
-        const statusData = await fetchDetailedGenerationStatus(id);
-        if (didCancel) {
-          return;
-        }
-
-        if (statusData?.expressGenerationStatus) {
-          setExpressGenerationStatus(statusData.expressGenerationStatus);
-        }
-        setGenerationStatusDetails(statusData);
-
-        const data = buildStandaloneAnonymousSessionDetailsFromStatus(statusData);
-        setSessionDetails(data);
-
-        const latestVideoUrl = getNormalizedLatestVideoUrl(data);
-        const hasPausedGeneration = Boolean(data?.expressGenerationPaused);
-        const hasPendingGeneration = isSessionGenerationPending(data);
-
-        if (hasPausedGeneration) {
-          setIsPaused(true);
-          setIsGenerationPending(false);
-          setIsGenerationWaitingForApproval(false);
-          setShowResultDisplay(true);
-          return;
-        }
-
-        if (hasPendingGeneration) {
-          setIsPaused(false);
-          setIsGenerationPending(true);
-          setIsGenerationWaitingForApproval(false);
-          setShowResultDisplay(true);
-          if (!activeRequestIdRef.current) {
-            pollGenerationStatus(id, true);
-          }
-          return;
-        }
-
-        if (latestVideoUrl) {
-          setVideoLink(latestVideoUrl);
-          setIsPaused(false);
-          setIsGenerationPending(false);
-          setShowResultDisplay(true);
-        }
-      } catch {
-        // Standalone anonymous preview is best-effort; the basic status poll still drives progress text.
-      }
-    };
-
-    hydrateStandaloneAnonymousPreview();
-
-    return () => {
-      didCancel = true;
-    };
-  }, [id, isStandaloneDeployment]);
 
   async function refreshLatestVideoLink() {
     const latestSessionDetails = await getSessionDetails();
@@ -6075,7 +5449,7 @@ export default function OneshotEditor() {
     }
 
     setIsRerollPreviewRefreshing(true);
-    refreshDetailedGenerationStatus(requestId, headers)
+    refreshDetailedGenerationStatus(requestId, headers, false)
       .catch(() => {
         setPostProcessingError(uiText("Unable to refresh scene previews. You can still reroll using the available scene list."));
       })
@@ -6122,152 +5496,15 @@ export default function OneshotEditor() {
       return;
     }
 
-    const hasExistingOutro = currentRenderHasOutro;
-    let endpoint = '';
-    let payload = { videoSessionId: id };
-    let successLabel = uiText("Post-processing");
-
     try {
-      if (actionKey === 'retranslate') {
-        const languageCode = resolveLanguageCode(postProcessingForm.translationLanguage, '');
-        if (!languageCode || languageCode === 'auto') {
-          throw new Error(uiText("Choose a target language for retranslation."));
-        }
-
-        payload = {
-          ...payload,
-          language: languageCode,
-          enable_subtitles: canGenerateSubtitles &&
-            postProcessingForm.translationEnableSubtitles === true,
-          translate_outro: postProcessingForm.translationTranslateOutro !== false,
-          translate_footer: postProcessingForm.translationTranslateFooter !== false,
-          inference_model: normalizeInferenceModelKey(selectedInferenceModel?.value || user?.selectedInferenceModel),
-          ...(supportsInferenceEffort(selectedInferenceModel?.value || user?.selectedInferenceModel)
-            ? { effort: normalizeInferenceEffort(selectedInferenceEffort?.value || inferSavedInferenceEffort(user)) }
-            : {}),
-        };
-        endpoint = 'retranslate_video';
-        successLabel = uiText('Retranslation');
-      } else if (actionKey === 'add_subtitles') {
-        if (!canGenerateSubtitles) {
-          throw new Error(uiText("OpenAI or Samsar configuration is required to generate subtitles."));
-        }
-        payload = {
-          ...payload,
-          ...buildSubtitleRegenerationLanguageFields({
-            selectedLanguage: postProcessingForm.subtitleLanguage,
-            audioLanguage: postProcessingAudioLanguage,
-          }),
-        };
-        endpoint = 'add_subtitles';
-        successLabel = uiText("Subtitle regeneration");
-      } else if (actionKey === 'remove_subtitles') {
-        const shouldRemove = window.confirm(uiText("Remove subtitles and render a new version?"));
-        if (!shouldRemove) {
-          return;
-        }
-
-        endpoint = 'remove_subtitles';
-        successLabel = uiText("Subtitle removal");
-      } else if (actionKey === 'regenerate_avatar') {
-        const shouldRegenerateAvatar = window.confirm(
-          uiText("Generate a fresh narrator avatar and render a new version?")
-        );
-        if (!shouldRegenerateAvatar) {
-          return;
-        }
-
-        endpoint = 'regenerate_avatar';
-        successLabel = uiText("Narrator avatar regeneration");
-      } else if (actionKey === 'clone_render') {
-        endpoint = 'clone';
-        successLabel = uiText("Clone render");
-      } else if (actionKey === 'generated_outro') {
-        const outroCtaType =
-          postProcessingForm.outroCtaType === OUTRO_CTA_TYPE_IMAGE
-            ? OUTRO_CTA_TYPE_IMAGE
-            : OUTRO_CTA_TYPE_QR;
-        const ctaTextTop = postProcessingForm.ctaTextTop.trim();
-        const ctaTextBottom = postProcessingForm.ctaTextBottom.trim();
-        const ctaLogo = postProcessingForm.ctaLogo.trim();
-
-        payload = {
-          ...payload,
-          generate_outro_image: true,
-        };
-
-        if (outroCtaType === OUTRO_CTA_TYPE_IMAGE) {
-          const middleImageUrl = postProcessingForm.outroCtaImageUrl.trim();
-          if (!middleImageUrl) {
-            throw new Error(uiText("CTA image URL or upload is required."));
-          }
-          if (!isHttpUrl(middleImageUrl)) {
-            throw new Error(uiText("Enter a valid CTA image URL."));
-          }
-
-          const outroCtaImage = {
-            middle_image: { url: middleImageUrl },
-          };
-          if (ctaTextTop) outroCtaImage.top_text = ctaTextTop;
-          if (ctaTextBottom) outroCtaImage.bottom_text = ctaTextBottom;
-          payload.outro_cta_image = outroCtaImage;
-        } else {
-          const ctaUrl = postProcessingForm.ctaUrl.trim();
-          if (!isHttpUrl(ctaUrl)) {
-            throw new Error(uiText("Enter a valid outro CTA URL."));
-          }
-          payload.cta_url = ctaUrl;
-          if (ctaTextTop) payload.cta_text_top = ctaTextTop;
-          if (ctaTextBottom) payload.cta_text_bottom = ctaTextBottom;
-          if (ctaLogo) payload.cta_logo = ctaLogo;
-        }
-
-        endpoint = hasExistingOutro ? 'update_outro_image' : 'add_outro_image';
-        successLabel = hasExistingOutro ? uiText("Outro CTA update") : uiText("Outro CTA add");
-      } else if (actionKey === 'footer_cta') {
-        const ctaText = postProcessingForm.footerCtaText.trim();
-        const ctaLogo = postProcessingForm.footerCtaLogo.trim();
-        const ctaUrl = postProcessingForm.footerCtaUrl.trim();
-        if (!ctaText && !ctaLogo && !ctaUrl) {
-          throw new Error(uiText("Add footer text, logo, or URL."));
-        }
-        if (ctaUrl && !isHttpUrl(ctaUrl)) {
-          throw new Error(uiText("Enter a valid footer URL."));
-        }
-
-        payload = { ...payload };
-        if (ctaText) payload.cta_text = ctaText;
-        if (ctaLogo) payload.cta_logo = ctaLogo;
-        if (ctaUrl) payload.cta_url = ctaUrl;
-
-        endpoint = 'update_footer_image';
-        successLabel = uiText("Footer update");
-      } else if (actionKey === 'remove_footer') {
-        const shouldRemove = window.confirm(uiText("Remove the footer CTA and render a new version?"));
-        if (!shouldRemove) {
-          return;
-        }
-
-        payload = {
-          ...payload,
-          remove_footer: true,
-        };
-        endpoint = 'update_footer_image';
-        successLabel = uiText("Footer removal");
-      } else if (actionKey === 'reroll_layers') {
-        if (!rerollLayerIndexes.length) {
-          throw new Error(uiText("Select at least one scene to reroll."));
-        }
-
-        payload = {
-          ...payload,
-          layer_indexes: rerollLayerIndexes,
-        };
-        endpoint = 'reroll-layers';
-        successLabel = uiText("Scene reroll");
-      } else {
-        return;
-      }
+      const operation = buildExpressPostProcessingRequest({
+        actionKey, id, postProcessingForm, currentRenderHasOutro, canGenerateSubtitles,
+        postProcessingAudioLanguage, rerollLayerIndexes,
+        inferenceModel: selectedInferenceModel?.value || user?.selectedInferenceModel,
+        inferenceEffort: selectedInferenceEffort?.value || inferSavedInferenceEffort(user),
+      });
+      if (!operation) return;
+      const { endpoint, payload, successLabel } = operation;
 
       setPostProcessingPendingAction(actionKey);
       setPostProcessingError('');
@@ -6536,13 +5773,57 @@ export default function OneshotEditor() {
     if (videoLink) return 'complete';
     return 'idle';
   }, [isGenerationPending, isGenerationWaitingForApproval, isPaused, videoLink]);
+  useEffect(() => {
+    // Save only layout metadata for this exact project; live state always wins.
+    const loadedId = String(sessionDetails?._id?.$oid || sessionDetails?._id || sessionDetails?.id || '');
+    if (!loadedId || loadedId !== String(id)) return;
+    rememberSessionLoadingLayout(sessionDetails, {
+      variant: renderState === 'complete' ? 'completed' : renderState === 'idle' ? 'init' : 'pending',
+      aspectRatio: sessionDetails.aspectRatio,
+    });
+  }, [id, renderState, sessionDetails]);
   const sessionInferenceModelKey = useMemo(
     () => resolveInferenceModelFromSession(sessionDetails),
     [sessionDetails],
   );
   const sessionInferenceModelLabel = sessionInferenceModelKey
-    ? getInferenceModelDisplayLabel(sessionInferenceModelKey, inferenceModelOptions)
+    ? getSavedSessionModelOption(sessionInferenceModelKey, inferenceModelOptions, INFERENCE_MODEL_TYPES).label
     : '';
+  // Completed requests are a record of this session, independent of the
+  // editable defaults used for a new request. Do not persist these display
+  // values into the user's image/video generation preferences.
+  const completedRequestSession = renderState === 'complete' ? sessionDetails : null;
+  const requestImageModel = getSavedSessionModelOption(
+    resolveSavedSessionSetting(completedRequestSession, ['expressGenerationImageModel', 'imageModel', 'image_model']),
+    stageImageModels,
+    IMAGE_GENERAITON_MODEL_TYPES,
+    VIDGENIE_IMAGE_MODEL_LABELS,
+  ) || selectedImageModel;
+  const requestVideoModel = getSavedSessionModelOption(
+    resolveSavedSessionSetting(completedRequestSession, ['expressGenerativeVideoModel', 'videoGenerationModel', 'videoModel', 'video_model']),
+    generationMode === 'I2V' ? imageListVideoModels : expressVideoModels,
+    VIDEO_GENERATION_MODEL_TYPES,
+    VIDGENIE_VIDEO_MODEL_LABELS,
+  ) || selectedVideoModel;
+  const requestImageStyle = completedRequestSession
+    ? getSavedSessionModelOption(resolveSavedSessionSetting(completedRequestSession, ['imageStyle', 'expressGenerationImageStyle', 'image_style']), [])
+    : selectedImageStyle;
+  const requestVideoModelSubType = completedRequestSession
+    ? getSavedSessionModelOption(resolveSavedSessionSetting(completedRequestSession, ['expressGenerativeVideoModelSubType', 'videoGenerationModelSubType', 'videoModelSubType', 'video_model_sub_type']), [])
+    : selectedVideoModelSubType;
+  const requestInferenceModel = getSavedSessionModelOption(
+    completedRequestSession ? sessionInferenceModelKey : '',
+    inferenceModelOptions,
+    INFERENCE_MODEL_TYPES,
+  ) || selectedInferenceModel;
+  const requestInferenceModelOptions = completedRequestSession && requestInferenceModel
+    && !inferenceModelOptions.some((option) => option.value === requestInferenceModel.value)
+    ? [...inferenceModelOptions, requestInferenceModel]
+    : inferenceModelOptions;
+  const savedInferenceEffort = resolveInferenceEffortFromSession(completedRequestSession);
+  const requestInferenceEffort = savedInferenceEffort
+    ? getInferenceEffortOption(savedInferenceEffort)
+    : selectedInferenceEffort;
   const shouldCollapseOriginalRequest = renderState === 'complete' && Boolean(videoLink);
   const shouldShowOriginalRequestInputs =
     !shouldCollapseOriginalRequest || isCompletedRequestExpanded;
@@ -6666,455 +5947,33 @@ export default function OneshotEditor() {
     );
   };
   const renderCompletedPostProcessingControls = (extraClasses = '') => {
-    if (isGuestPreview || renderState !== 'complete' || !videoLink) {
-      return null;
-    }
-
-    const hasExistingOutro = currentRenderHasOutro;
-    const isAnyPostProcessingPending = Boolean(postProcessingPendingAction);
-    const panelClass =
-      `bg-surface-sunken text-fg ${colorMode === 'dark' ? 'ring-white/10' : 'ring-slate-200'}`;
-    const inputClass =
-      `border-line-control bg-surface-raised text-fg ${colorMode === 'dark' ? 'placeholder:text-[#8b96aa] focus:border-[#f6c453] focus:ring-[#f6c453]/24' : 'placeholder:text-slate-400 focus:border-blue-400'}`;
-    const subtleButtonClass =
-      `text-fg-body ${colorMode === 'dark' ? 'border-white/10 hover:border-white/20 hover:bg-white/5' : 'border-slate-200 hover:border-slate-300 hover:bg-slate-50'}`;
-    const activeActionClass =
-      colorMode === 'dark'
-        ? 'bg-[#ff4655]/16 text-[#ffd4d8] ring-[#ff4655]/35'
-        : 'bg-blue-50 text-blue-700 ring-blue-200';
-    const inactiveActionClass =
-      `text-fg-tertiary ${colorMode === 'dark' ? 'ring-white/10 hover:bg-white/5' : 'ring-slate-200 hover:bg-slate-50'}`;
-    const submitButtonClass =
-      'inline-flex min-h-[38px] items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-60';
-    const primarySubmitClass =
-      colorMode === 'dark'
-        ? `${submitButtonClass} bg-[#ff4655] text-[#080a10] hover:bg-[#ff6572] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#ffe0a3]/75`
-        : `${submitButtonClass} bg-blue-600 text-white hover:bg-blue-700`;
-    const secondarySubmitClass = `${submitButtonClass} border ${subtleButtonClass}`;
-    const dangerSubmitClass =
-      colorMode === 'dark'
-        ? `${submitButtonClass} border border-rose-300/30 text-rose-100 hover:bg-rose-400/10`
-        : `${submitButtonClass} border border-rose-200 text-rose-700 hover:bg-rose-50`;
-    const fieldClass = `min-h-[40px] w-full rounded-lg border px-3 py-2 text-sm outline-none transition ${inputClass}`;
-    const checkboxClass = colorMode === 'dark'
-      ? 'mt-0.5 h-4 w-4 rounded border-[#6f6450] bg-[#20232e] text-[#f6c453] focus:ring-[#f6c453]/45 focus:ring-offset-[#151720]'
-      : 'mt-0.5 h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500';
-    const isGeneratedOutroPending = postProcessingPendingAction === 'generated_outro';
-    const isFooterPending = postProcessingPendingAction === 'footer_cta';
-    const isRemoveFooterPending = postProcessingPendingAction === 'remove_footer';
-    const isRetranslatePending = postProcessingPendingAction === 'retranslate';
-    const isAddSubtitlesPending = postProcessingPendingAction === 'add_subtitles';
-    const isRemoveSubtitlesPending = postProcessingPendingAction === 'remove_subtitles';
-    const isAvatarPending = postProcessingPendingAction === 'regenerate_avatar';
-    const isClonePending = postProcessingPendingAction === 'clone_render';
-    const isRerollPending = postProcessingPendingAction === 'reroll_layers';
-    const rerollQuoteTotalCredits = Number(rerollLocalCreditEstimate?.totalCredits);
-    const rerollQuoteVideoCredits = Number(rerollLocalCreditEstimate?.aiVideoCredits);
-    const hasRerollQuote = Number.isFinite(rerollQuoteTotalCredits);
-    const isRerollSubmitDisabled =
-      isAnyPostProcessingPending ||
-      isRerollPreviewRefreshing ||
-      !rerollLayerIndexes.length;
-    const useTranslatedSubtitleRegeneration = isTranslatedSubtitleRegeneration({
-      selectedLanguage: postProcessingForm.subtitleLanguage,
-      audioLanguage: postProcessingAudioLanguage,
-    });
-
-    const panelWidthClass =
-      postProcessingAction === 'reroll_layers' || postProcessingAction === 'retranslate'
-        ? 'max-w-5xl'
-        : 'max-w-3xl';
-
-    return (
-      <div className={`mx-auto w-full ${panelWidthClass} rounded-xl p-3 ring-1 ${panelClass} ${extraClasses}`}>
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="text-sm font-semibold">{uiText("Post-processing")}</div>
-          <div className="flex flex-wrap items-center gap-2">
-            {POST_PROCESSING_ACTIONS
-              .filter((action) => canGenerateSubtitles || action.key !== 'subtitles')
-              .map((action) => {
-                const Icon = action.icon;
-                const isActive = postProcessingAction === action.key;
-                const isDisabled = isAnyPostProcessingPending;
-                return (
-                  <button
-                    key={action.key}
-                    type="button"
-                    onClick={() => selectPostProcessingAction(action.key)}
-                    disabled={isDisabled}
-                    title={action.label}
-                    className={`
-                      inline-flex min-h-[34px] items-center gap-2 rounded-full px-3 py-1.5 text-xs font-semibold ring-1 transition
-                      ${isActive ? activeActionClass : inactiveActionClass}
-                      ${isDisabled ? 'cursor-not-allowed opacity-50' : 'active:scale-[0.98]'}
-                    `}
-                  >
-                    <Icon className="h-3.5 w-3.5" aria-hidden="true" />
-                    <span>{action.label}</span>
-                  </button>
-                );
-              })}
-          </div>
-        </div>
-
-        <div className="mt-3">
-          {postProcessingAction === 'retranslate' && (
-            <div className="space-y-3">
-              <div className="grid grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
-                <select
-                  value={postProcessingForm.translationLanguage}
-                  onChange={(event) =>
-                    updatePostProcessingFormField('translationLanguage', event.target.value)
-                  }
-                  disabled={isAnyPostProcessingPending}
-                  aria-label={uiText("Retranslation language")}
-                  className={fieldClass}
-                >
-                  <option value="">{uiText("Choose target language")}</option>
-                  {SUPPORTED_LANGUAGES.map((languageOption) => (
-                    <option key={languageOption.code} value={languageOption.code}>
-                      {uiText(languageOption.name)}
-                    </option>
-                  ))}
-                </select>
-                <button
-                  type="button"
-                  onClick={() => submitPostProcessingOperation('retranslate')}
-                  disabled={isAnyPostProcessingPending || !postProcessingForm.translationLanguage}
-                  className={primarySubmitClass}
-                >{uiText("{value0} Retranslate video", { value0: isRetranslatePending ? <FaSpinner className="h-3.5 w-3.5 animate-spin" aria-hidden="true" /> : <FaLanguage className="h-3.5 w-3.5" aria-hidden="true" /> })}</button>
-              </div>
-              <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-                {canGenerateSubtitles ? (
-                  <label className={`flex items-start gap-2 rounded-lg px-3 py-2 text-sm ring-1 ${inactiveActionClass}`}>
-                    <input
-                      type="checkbox"
-                      checked={postProcessingForm.translationEnableSubtitles}
-                      onChange={(event) =>
-                        updatePostProcessingFormField('translationEnableSubtitles', event.target.checked)
-                      }
-                      disabled={isAnyPostProcessingPending}
-                      className={checkboxClass}
-                    />
-                    <span>{uiText("Add translated subtitles")}</span>
-                  </label>
-                ) : null}
-                <label className={`flex items-start gap-2 rounded-lg px-3 py-2 text-sm ring-1 ${inactiveActionClass}`}>
-                  <input
-                    type="checkbox"
-                    checked={postProcessingForm.translationTranslateOutro}
-                    onChange={(event) =>
-                      updatePostProcessingFormField('translationTranslateOutro', event.target.checked)
-                    }
-                    disabled={isAnyPostProcessingPending}
-                    className={checkboxClass}
-                  />
-                  <span>{uiText("Translate outro")}</span>
-                </label>
-                <label className={`flex items-start gap-2 rounded-lg px-3 py-2 text-sm ring-1 ${inactiveActionClass}`}>
-                  <input
-                    type="checkbox"
-                    checked={postProcessingForm.translationTranslateFooter}
-                    onChange={(event) =>
-                      updatePostProcessingFormField('translationTranslateFooter', event.target.checked)
-                    }
-                    disabled={isAnyPostProcessingPending}
-                    className={checkboxClass}
-                  />
-                  <span>{uiText("Translate footer")}</span>
-                </label>
-              </div>
-            </div>
-          )}
-
-          {postProcessingAction === 'avatar' && (
-            <div className="flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                onClick={() => submitPostProcessingOperation('regenerate_avatar')}
-                disabled={isAnyPostProcessingPending}
-                className={primarySubmitClass}
-              >{uiText("{value0} Regenerate narrator avatar", { value0: isAvatarPending ? <FaSpinner className="h-3.5 w-3.5 animate-spin" aria-hidden="true" /> : <FaUserCircle className="h-3.5 w-3.5" aria-hidden="true" /> })}</button>
-            </div>
-          )}
-
-          {postProcessingAction === 'subtitles' && canGenerateSubtitles && (
-            <div className="space-y-2">
-              <div className="flex flex-wrap items-end gap-2">
-                <label className="min-w-[190px] flex-1 sm:max-w-xs">
-                  <span className={`mb-1 block text-caption font-medium ${mutedText}`}>{uiText("Subtitle language")}<span className="font-normal opacity-75">{uiText("(optional)")}</span>
-                  </span>
-                  <select
-                    value={postProcessingForm.subtitleLanguage}
-                    onChange={(event) =>
-                      updatePostProcessingFormField('subtitleLanguage', event.target.value)
-                    }
-                    disabled={isAnyPostProcessingPending}
-                    aria-label={uiText("Subtitle regeneration language")}
-                    className={`${fieldClass} !min-h-[36px] !py-1.5`}
-                  >
-                    <option value="">{uiText("Same as audio")}</option>
-                    {SUPPORTED_LANGUAGES.map((languageOption) => (
-                      <option key={languageOption.code} value={languageOption.code}>
-                        {uiText(languageOption.name)}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <button
-                  type="button"
-                  onClick={() => submitPostProcessingOperation('add_subtitles')}
-                  disabled={isAnyPostProcessingPending}
-                  className={primarySubmitClass}
-                >{uiText("{value0} Generate / regenerate subtitles", { value0: isAddSubtitlesPending ? <FaSpinner className="h-3.5 w-3.5 animate-spin" aria-hidden="true" /> : <FaClosedCaptioning className="h-3.5 w-3.5" aria-hidden="true" /> })}</button>
-                <button
-                  type="button"
-                  onClick={() => submitPostProcessingOperation('remove_subtitles')}
-                  disabled={isAnyPostProcessingPending}
-                  className={dangerSubmitClass}
-                >{uiText("{value0} Remove subtitles", { value0: isRemoveSubtitlesPending ? <FaSpinner className="h-3.5 w-3.5 animate-spin" aria-hidden="true" /> : <FaTrash className="h-3.5 w-3.5" aria-hidden="true" /> })}</button>
-              </div>
-              {useTranslatedSubtitleRegeneration ? (
-                <p className={`text-xs ${mutedText}`}>{uiText("Audio stays unchanged; subtitle text will be translated and aligned to the original speech.")}</p>
-              ) : null}
-            </div>
-          )}
-
-          {postProcessingAction === 'generated_outro' && (
-            <div className="space-y-3">
-              <select
-                value={postProcessingForm.outroCtaType || OUTRO_CTA_TYPE_QR}
-                onChange={(event) => {
-                  updatePostProcessingFormField('outroCtaType', event.target.value);
-                  setOutroCtaImageUploadError('');
-                }}
-                disabled={isAnyPostProcessingPending}
-                className={fieldClass}
-                aria-label={uiText("Outro CTA type")}
-              >
-                {OUTRO_CTA_TYPE_OPTIONS.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-
-              <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-                <input
-                  type="text"
-                  value={postProcessingForm.ctaTextTop}
-                  onChange={(event) => updatePostProcessingFormField('ctaTextTop', event.target.value)}
-                  placeholder={uiText("Top text")}
-                  aria-label={uiText("Outro top text")}
-                  className={fieldClass}
-                />
-                <input
-                  type="text"
-                  value={postProcessingForm.ctaTextBottom}
-                  onChange={(event) => updatePostProcessingFormField('ctaTextBottom', event.target.value)}
-                  placeholder={uiText("Bottom text")}
-                  aria-label={uiText("Outro bottom text")}
-                  className={fieldClass}
-                />
-                {postProcessingForm.outroCtaType === OUTRO_CTA_TYPE_IMAGE ? (
-                  <div className="sm:col-span-3">
-                    <div className="flex flex-col gap-2 sm:flex-row">
-                      <input
-                        type="url"
-                        value={postProcessingForm.outroCtaImageUrl}
-                        onChange={(event) => {
-                          updatePostProcessingFormField('outroCtaImageUrl', event.target.value);
-                          setOutroCtaImageUploadError('');
-                        }}
-                        placeholder={uiText("CTA / logo URL")}
-                        aria-label={uiText("CTA image URL")}
-                        disabled={isAnyPostProcessingPending || uploadingOutroCtaImage}
-                        className={`${fieldClass} flex-1`}
-                      />
-                      <label
-                        className={`
-                          inline-flex min-h-[40px] items-center justify-center gap-2 rounded-lg border px-3 py-2 text-sm font-semibold transition
-                          ${subtleButtonClass}
-                          ${isAnyPostProcessingPending || uploadingOutroCtaImage ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'}
-                        `}
-                      >
-                        <input
-                          type="file"
-                          accept="image/*,image/heic,image/heif,.heic,.heif"
-                          onChange={(event) => handleOutroCtaImageUploadInput(event, 'post_processing')}
-                          disabled={isAnyPostProcessingPending || uploadingOutroCtaImage}
-                          className="sr-only"
-                        />
-                        {uploadingOutroCtaImage ? (
-                          <FaSpinner className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
-                        ) : (
-                          <FaUpload className="h-3.5 w-3.5" aria-hidden="true" />
-                        )}
-                        {uploadingOutroCtaImage ? uiText("Uploading...") : uiText("Upload image")}
-                      </label>
-                    </div>
-                    {outroCtaImageUploadError ? (
-                      <p className="mt-1 text-caption text-rose-500">
-                        {outroCtaImageUploadError}
-                      </p>
-                    ) : null}
-                  </div>
-                ) : (
-                  <input
-                    type="url"
-                    value={postProcessingForm.ctaUrl}
-                    onChange={(event) => updatePostProcessingFormField('ctaUrl', event.target.value)}
-                    placeholder={uiText("Outro CTA URL")}
-                    aria-label={uiText("Outro CTA URL")}
-                    className={fieldClass}
-                  />
-                )}
-              </div>
-              <button
-                type="button"
-                onClick={() => submitPostProcessingOperation('generated_outro')}
-                disabled={isAnyPostProcessingPending}
-                className={primarySubmitClass}
-              >
-                {isGeneratedOutroPending ? <FaSpinner className="h-3.5 w-3.5 animate-spin" aria-hidden="true" /> : null}
-                {hasExistingOutro ? uiText("Update outro CTA") : uiText("Add outro CTA")}
-              </button>
-            </div>
-          )}
-
-          {postProcessingAction === 'footer_cta' && (
-            <div className="space-y-3">
-              <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-                <input
-                  type="text"
-                  value={postProcessingForm.footerCtaText}
-                  onChange={(event) => updatePostProcessingFormField('footerCtaText', event.target.value)}
-                  placeholder={uiText("Footer text")}
-                  aria-label={uiText("Footer CTA text")}
-                  className={fieldClass}
-                />
-                <input
-                  type="url"
-                  value={postProcessingForm.footerCtaUrl}
-                  onChange={(event) => updatePostProcessingFormField('footerCtaUrl', event.target.value)}
-                  placeholder={uiText("Footer URL")}
-                  aria-label={uiText("Footer CTA URL")}
-                  className={fieldClass}
-                />
-                <input
-                  type="url"
-                  value={postProcessingForm.footerCtaLogo}
-                  onChange={(event) => updatePostProcessingFormField('footerCtaLogo', event.target.value)}
-                  placeholder={uiText("Footer logo URL")}
-                  aria-label={uiText("Footer CTA logo URL")}
-                  className={fieldClass}
-                />
-              </div>
-              <div className="flex flex-wrap items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => submitPostProcessingOperation('footer_cta')}
-                  disabled={isAnyPostProcessingPending}
-                  className={primarySubmitClass}
-                >{uiText("{value0} Update footer", { value0: isFooterPending ? <FaSpinner className="h-3.5 w-3.5 animate-spin" aria-hidden="true" /> : null })}</button>
-                <button
-                  type="button"
-                  onClick={() => submitPostProcessingOperation('remove_footer')}
-                  disabled={isAnyPostProcessingPending}
-                  className={dangerSubmitClass}
-                >{uiText("{value0} Remove footer", { value0: isRemoveFooterPending ? <FaSpinner className="h-3.5 w-3.5 animate-spin" aria-hidden="true" /> : <FaTrash className="h-3.5 w-3.5" aria-hidden="true" /> })}</button>
-              </div>
-            </div>
-          )}
-
-          {postProcessingAction === 'advanced_edits' && (
-            <button
-              type="button"
-              onClick={openAdvancedVideoEditDialog}
-              disabled={isAnyPostProcessingPending}
-              className={secondarySubmitClass}
-            >
-              <FaCog className="h-3.5 w-3.5" aria-hidden="true" />{uiText("Open advanced edits")}</button>
-          )}
-
-          {postProcessingAction === 'clone_render' && (
-            <div className="flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                onClick={() => submitPostProcessingOperation('clone_render')}
-                disabled={isAnyPostProcessingPending}
-                className={secondarySubmitClass}
-              >{uiText("{value0} Clone render", { value0: isClonePending ? <FaSpinner className="h-3.5 w-3.5 animate-spin" aria-hidden="true" /> : <FaClone className="h-3.5 w-3.5" aria-hidden="true" /> })}</button>
-            </div>
-          )}
-
-          {postProcessingAction === 'reroll_layers' && (
-            <div className="space-y-3">
-              {isRerollPreviewRefreshing ? (
-                <div className={`flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold text-fg-tertiary ${colorMode === 'dark' ? 'bg-white/[0.04]' : 'bg-slate-50'}`}>
-                  <FaSpinner className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />{uiText("Refreshing scene previews")}</div>
-              ) : null}
-              {rerollCandidateLayers.length ? (
-                <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-                  {rerollCandidateLayers.map((item) => {
-                    const isSelected = rerollLayerIndexes.includes(item.layerIndex);
-                    return (
-                      <RerollScenePreviewTile
-                        key={item.layerId}
-                        item={item}
-                        isSelected={isSelected}
-                        isPlaying={playingRerollLayerId === item.layerId}
-                        isDisabled={isAnyPostProcessingPending}
-                        colorMode={colorMode}
-                        mutedText={mutedText}
-                        activeActionClass={activeActionClass}
-                        inactiveActionClass={inactiveActionClass}
-                        onToggleSelect={toggleRerollLayerIndex}
-                        onTogglePlayback={toggleRerollLayerPlayback}
-                      />
-                    );
-                  })}
-                </div>
-              ) : (
-                <div className={`rounded-lg px-3 py-2 text-sm ${mutedText}`}>{uiText("No rerollable scenes found.")}</div>
-              )}
-
-              <div className={`rounded-lg px-3 py-2 text-sm font-semibold ${
-                colorMode === 'dark' ? 'bg-white/[0.04] text-slate-100' : 'bg-slate-50 text-slate-800'
-              }`}>
-                {hasRerollQuote ? (
-                  <span>{uiText("Image, AI video, lip-sync and sound-effect model calls are charged individually on completion.")}</span>
-                ) : (
-                  <span className={mutedText}>{uiText("Select scenes to estimate credits.")}</span>
-                )}
-              </div>
-
-              <button
-                type="button"
-                onClick={() => submitPostProcessingOperation('reroll_layers')}
-                disabled={isRerollSubmitDisabled}
-                className={primarySubmitClass}
-              >{uiText("{value0} Reroll selected scenes", { value0: isRerollPending ? <FaSpinner className="h-3.5 w-3.5 animate-spin" aria-hidden="true" /> : <FaRedo className="h-3.5 w-3.5" aria-hidden="true" /> })}</button>
-            </div>
-          )}
-        </div>
-
-        {postProcessingError ? (
-          <div className="mt-3 rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-2 text-sm font-semibold text-red-500">
-            {postProcessingError}
-          </div>
-        ) : null}
-        {postProcessingMessage ? (
-          <div className={`mt-3 rounded-lg px-3 py-2 text-sm font-semibold ${
-            colorMode === 'dark'
-              ? 'bg-emerald-400/10 text-emerald-200'
-              : 'bg-emerald-50 text-emerald-700'
-          }`}>
-            {postProcessingMessage}
-          </div>
-        ) : null}
-      </div>
-    );
+    if (isGuestPreview || renderState !== 'complete' || !videoLink) return null;
+    return <ExpressPostProcessingPanel
+      currentRenderHasOutro={currentRenderHasOutro}
+      postProcessingPendingAction={postProcessingPendingAction}
+      postProcessingAction={postProcessingAction}
+      postProcessingForm={postProcessingForm}
+      postProcessingAudioLanguage={postProcessingAudioLanguage}
+      canGenerateSubtitles={canGenerateSubtitles}
+      rerollLocalCreditEstimate={rerollLocalCreditEstimate}
+      isRerollPreviewRefreshing={isRerollPreviewRefreshing}
+      rerollLayerIndexes={rerollLayerIndexes}
+      rerollCandidateLayers={rerollCandidateLayers}
+      playingRerollLayerId={playingRerollLayerId}
+      postProcessingError={postProcessingError}
+      postProcessingMessage={postProcessingMessage}
+      selectPostProcessingAction={selectPostProcessingAction}
+      updatePostProcessingFormField={updatePostProcessingFormField}
+      submitPostProcessingOperation={submitPostProcessingOperation}
+      setOutroCtaImageUploadError={setOutroCtaImageUploadError}
+      uploadingOutroCtaImage={uploadingOutroCtaImage}
+      outroCtaImageUploadError={outroCtaImageUploadError}
+      handleOutroCtaImageUploadInput={handleOutroCtaImageUploadInput}
+      openAdvancedVideoEditDialog={openAdvancedVideoEditDialog}
+      toggleRerollLayerIndex={toggleRerollLayerIndex}
+      toggleRerollLayerPlayback={toggleRerollLayerPlayback}
+      extraClasses={extraClasses}
+    />;
   };
   const jsonModeButtonLabel = isJsonMode
     ? t("vidgenie.wizardMode", {}, "Wizard mode")
@@ -7248,12 +6107,12 @@ export default function OneshotEditor() {
           <button
             type="button"
             onClick={() => setIsAdvancedOpen((open) => !open)}
-            disabled={isFormDisabled}
+            disabled={isFormDisabled && renderState !== 'complete'}
             aria-expanded={isAdvancedOpen}
             className={`
               inline-flex min-h-9 w-full items-center justify-center gap-1.5 rounded-xl px-3 py-1.5 text-sm font-medium ring-1 transition sm:w-auto
               ${secondaryActionClasses}
-              ${isFormDisabled ? 'cursor-not-allowed opacity-60' : ''}
+              ${isFormDisabled && renderState !== 'complete' ? 'cursor-not-allowed opacity-60' : ''}
             `}
           >
             <span>{uiText("Advanced")}</span>
@@ -7287,14 +6146,14 @@ export default function OneshotEditor() {
         </div>
       );
     }
-    return <VidgenieSkeletonLoader />;
+    return <VidgenieSkeletonLoader embedded />;
   }
 
   // ─────────────────────────────────────────────────────────
   //  JSX
   // ─────────────────────────────────────────────────────────
   return (
-    <div className="vidgenie-editor-shell relative mx-auto mt-2 w-full max-w-6xl overflow-x-hidden px-2 sm:mt-5 sm:px-6">
+    <div className={VIDGENIE_EDITOR_CLASS}>
       {isGuestPreview && (
         <div
           className={`mt-2 flex flex-col gap-3 rounded-2xl border px-4 py-3 sm:mt-6 sm:flex-row sm:items-center sm:justify-between ${
@@ -7319,7 +6178,7 @@ export default function OneshotEditor() {
       <div
         className={`
           ${surfaceCard}
-          vidgenie-editor-card relative mt-2 flex flex-col rounded-2xl p-3 transition-shadow duration-300 hover:shadow-xl sm:mt-6 sm:px-8 sm:py-5
+          ${VIDGENIE_CARD_CLASS} transition-shadow duration-300 hover:shadow-xl
         `}
       >
         {/* 1️⃣ Heading */}
@@ -7563,7 +6422,7 @@ export default function OneshotEditor() {
             <div className="group flex w-full flex-col-reverse">
               <div className={`relative z-10 w-full rounded-lg p-0 transition-transform duration-200 group-hover:translate-y-[-1px] group-hover:z-50 focus-within:z-50 ${controlShell}`}>
                 <ModelAdapterSelect
-                  value={selectedImageModel}
+                  value={requestImageModel}
                   onChange={setSelectedImageModel}
                   options={stageImageModels}
                   primaryAdapterByModel={primaryAdapterByModel}
@@ -7579,14 +6438,14 @@ export default function OneshotEditor() {
             {/* Image Style (conditional) */}
             {(() => {
               const modelCfg = IMAGE_GENERAITON_MODEL_TYPES.find(
-                (m) => m.key === selectedImageModel?.value
+                (m) => m.key === requestImageModel?.value
               );
               if (modelCfg?.imageStyles) {
                 return (
                   <div className="group flex w-full flex-col-reverse">
                     <div className={`relative z-10 w-full rounded-lg p-0 transition-transform duration-200 group-hover:translate-y-[-1px] group-hover:z-50 focus-within:z-50 ${controlShell}`}>
                       <SingleSelect
-                        value={selectedImageStyle}
+                        value={requestImageStyle}
                         onChange={setSelectedImageStyle}
                         options={modelCfg.imageStyles.map((s) => ({ label: s, value: s }))}
                         isDisabled={isFormDisabled}
@@ -7607,7 +6466,7 @@ export default function OneshotEditor() {
                 <div className="group flex w-full flex-col-reverse">
                   <div className={`relative z-10 w-full rounded-lg p-0 transition-transform duration-200 group-hover:translate-y-[-1px] group-hover:z-50 focus-within:z-50 ${controlShell}`}>
                     <ModelAdapterSelect
-                      value={selectedVideoModel}
+                      value={requestVideoModel}
                       onChange={setSelectedVideoModel}
                       options={expressVideoModels}
                       primaryAdapterByModel={primaryAdapterByModel}
@@ -7621,11 +6480,11 @@ export default function OneshotEditor() {
                 </div>
 
                 {/* Pixverse Style */}
-                {selectedVideoModel?.value?.startsWith('PIXVERSE') && selectedVideoModelSubType && (
+                {requestVideoModel?.value?.startsWith('PIXVERSE') && requestVideoModelSubType && (
                   <div className="group flex w-full flex-col-reverse">
                     <div className={`relative z-10 w-full rounded-lg p-0 transition-transform duration-200 group-hover:translate-y-[-1px] group-hover:z-50 focus-within:z-50 ${controlShell}`}>
                       <SingleSelect
-                        value={selectedVideoModelSubType}
+                        value={requestVideoModelSubType}
                         onChange={setSelectedVideoModelSubType}
                         options={PIXVERRSE_VIDEO_STYLES.map((s) => ({ label: s, value: s }))}
                         isDisabled={isFormDisabled}
@@ -7638,13 +6497,13 @@ export default function OneshotEditor() {
                 )}
 
                 {/* Generic Sub-type */}
-                {selectedVideoModel?.modelSubTypes?.length && selectedVideoModelSubType && (
+                {requestVideoModel?.modelSubTypes?.length && requestVideoModelSubType && (
                   <div className="group flex w-full flex-col-reverse">
                     <div className={`relative z-10 w-full rounded-lg p-0 transition-transform duration-200 group-hover:translate-y-[-1px] group-hover:z-50 focus-within:z-50 ${controlShell}`}>
                       <SingleSelect
-                        value={selectedVideoModelSubType}
+                        value={requestVideoModelSubType}
                         onChange={setSelectedVideoModelSubType}
-                        options={selectedVideoModel.modelSubTypes.map((s) => ({ label: s, value: s }))}
+                        options={requestVideoModel.modelSubTypes.map((s) => ({ label: s, value: s }))}
                         isDisabled={isFormDisabled}
                         compactLayout
                         className="w-full"
@@ -7660,7 +6519,7 @@ export default function OneshotEditor() {
               <div className="group flex w-full flex-col-reverse">
                 <div className={`relative z-10 w-full rounded-lg p-0 transition-transform duration-200 group-hover:translate-y-[-1px] group-hover:z-50 focus-within:z-50 ${controlShell}`}>
                   <ModelAdapterSelect
-                    value={selectedVideoModel}
+                    value={requestVideoModel}
                     onChange={setSelectedVideoModel}
                     options={imageListVideoModels}
                     primaryAdapterByModel={primaryAdapterByModel}
@@ -7777,16 +6636,16 @@ export default function OneshotEditor() {
               )}
 
               <div className={`grid grid-cols-1 gap-3 ${
-                supportsInferenceEffort(selectedInferenceModel?.value)
+                supportsInferenceEffort(requestInferenceModel?.value)
                   ? 'sm:grid-cols-[minmax(0,3fr)_minmax(7.5rem,1fr)]'
                   : ''
               }`}>
                 <div className="min-w-0">
                   <label className={advancedLabelClasses}>{uiText("Inference model")}</label>
                   <InferenceModelSelect
-                    value={selectedInferenceModel || inferenceModelOptions[0] || null}
+                    value={requestInferenceModel || requestInferenceModelOptions[0] || null}
                     onChange={setSelectedInferenceModel}
-                    options={inferenceModelOptions}
+                    options={requestInferenceModelOptions}
                     primaryAdapterByModel={primaryAdapterByModel}
                     isStandaloneDeployment={isStandaloneInferenceModelFilteringEnabled}
                     isDisabled={isFormDisabled || isStandaloneInferenceUnavailable}
@@ -7806,11 +6665,11 @@ export default function OneshotEditor() {
                   ) : null}
                 </div>
 
-                {supportsInferenceEffort(selectedInferenceModel?.value) && (
+                {supportsInferenceEffort(requestInferenceModel?.value) && (
                   <div className="min-w-0">
                     <label className={advancedLabelClasses}>{uiText("Inference effort")}</label>
                     <InferenceEffortSelect
-                      value={selectedInferenceEffort}
+                      value={requestInferenceEffort}
                       onChange={setSelectedInferenceEffort}
                       isDisabled={isFormDisabled || isStandaloneInferenceUnavailable}
                       compactLayout
@@ -8545,6 +7404,8 @@ export default function OneshotEditor() {
         <AssistantHome
           submitAssistantQuery={submitAssistantQuery}
           onSessionCleared={assistantRequestGuard.invalidate}
+          deliveryError={assistantRequestGuard.error}
+          onRetryDelivery={assistantRequestGuard.retry}
           sessionId={id}
           sessionMessages={sessionMessages}
           onSessionMessagesChange={setSessionMessages}

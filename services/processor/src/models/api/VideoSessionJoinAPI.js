@@ -3,7 +3,8 @@ import { Types } from 'mongoose';
 import OpenAI from 'openai';
 
 import { getDBConnectionString } from '../DBString.js';
-import { deductGenerationCredits } from '../GenerationCredits.js';
+import { admitPostProcessing } from './PostProcessingBilling.js';
+import { stripInheritedBilling } from '../../billing/PostProcessingBilling.js';
 import { upsertGlobalSessionMapping } from '../GlobalSession.js';
 import { createCompatibleChatCompletion } from '../ai_utils/OpenAICompat.js';
 import { GPT_56_SOL_REASONING_EFFORT } from '../../consts/InferenceModels.js';
@@ -32,7 +33,7 @@ function resolveFramesPerSecond(value) {
 async function createNewBlankVideoSession(userId) {
   const userData = await User.findById(userId).select('videoFramesPerSecond').lean();
   const framesPerSecond = resolveFramesPerSecond(userData?.videoFramesPerSecond);
-  const newSession = await VideoSession.create({ userId, framesPerSecond });
+  const newSession = await VideoSession.create({ userId, framesPerSecond, expressGenerationPending: false });
   return newSession._id.toString();
 }
 
@@ -468,6 +469,7 @@ function prepareSessionForJoin({
   webhookUrl,
   totalDuration,
 }) {
+  stripInheritedBilling(clonedSession);
   clonedSession.videoLink = null;
   clonedSession.remoteURL = null;
 
@@ -1138,20 +1140,18 @@ export async function joinVideoSessionsAndQueueGeneration(userId, payload = {}) 
   } = await getJoinVideosBillingPreview(userId, payload);
   const skipCreditDeduction = payload.skipCreditDeduction === true;
 
-  const creditResult = skipCreditDeduction
-    ? { creditsCharged: creditsToCharge, remainingCredits: null }
-    : await deductGenerationCredits(userId, creditsToCharge, {
-        source: 'join_videos',
-        metadata: {
-          sessionIds,
-          durationSeconds,
-          billableSeconds,
-          requestType: 'API',
-          blendScenes,
-        },
-      });
-
   const newSessionId = await createNewBlankVideoSession(userId);
+  const creditResult = await admitPostProcessing({
+    sessionId: newSessionId, userId, external: skipCreditDeduction, priceCredits: creditsToCharge,
+    operation: 'join_videos',
+    metadata: {
+      sessionIds,
+      durationSeconds,
+      billableSeconds,
+      requestType: 'API',
+      blendScenes,
+    },
+  });
 
   const baseSession = sessionDataList[0] || {};
   const clonedSession = JSON.parse(JSON.stringify(baseSession));
@@ -1210,6 +1210,7 @@ export async function joinVideoSessionsAndQueueGeneration(userId, payload = {}) 
 }
 
 export const __testOnly__ = {
+  prepareSessionForJoin,
   buildJoinedLayersAndAudioLayers,
   buildFallbackJoinedVideoTitle,
   resolveSourceVideoTitles,

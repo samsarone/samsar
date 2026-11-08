@@ -1,9 +1,10 @@
+import { Popover, PopoverButton, PopoverPanel } from '@headlessui/react';
 import { useUiLanguage } from '../../../hooks/useUiLanguage.js';
 import { translateText as uiText } from '../../../utils/localization.js';
 
 import RenderActionButton from "./RenderActionButton.jsx";
 import { useNavigate } from "react-router-dom";
-import { FaCog, FaDownload, FaEdit, FaLock, FaPause, FaPlay, FaSearch, FaSearchMinus, FaSearchPlus, FaUndo } from "react-icons/fa";
+import { FaCog, FaEllipsisH, FaExternalLinkAlt, FaMagic, FaDownload, FaEdit, FaLock, FaPause, FaPlay, FaSearch, FaSearchMinus, FaSearchPlus, FaUndo } from "react-icons/fa";
 import { FiShare2 } from "react-icons/fi";
 import SingleSelect from "../../common/SingleSelect.jsx";
 import { IoMdGrid } from "react-icons/io";
@@ -12,6 +13,45 @@ import { useColorMode } from "../../../contexts/ColorMode.jsx";
 
 import { NavCanvasControlContext } from "../../../contexts/NavCanvasControlContext.jsx";
 import { useContext } from "react";
+
+function IconActionButton({
+  title,
+  onClick,
+  disabled = false,
+  isActive = false,
+  allowDuringPending = false,
+  triggerOnPointerDown = false,
+  isRenderPending = false,
+  iconButtonClassName,
+  activeIconButtonClassName,
+  children,
+}) {
+  const isActionDisabled = disabled || (isRenderPending && !allowDuringPending);
+  const handlePointerDown = (event) => {
+    if (!triggerOnPointerDown || isActionDisabled) return;
+    event.preventDefault();
+    event.stopPropagation();
+    onClick?.(event);
+  };
+  const handleClick = (event) => {
+    event.stopPropagation();
+    if (isActionDisabled || triggerOnPointerDown) return;
+    onClick?.(event);
+  };
+  return (
+    <button
+      type="button"
+      onPointerDown={handlePointerDown}
+      onClick={handleClick}
+      title={title}
+      aria-label={title}
+      disabled={isActionDisabled}
+      className={`${iconButtonClassName} ${isActive ? activeIconButtonClassName : ''} ${allowDuringPending ? 'pending-allow-action' : ''}`}
+    >
+      {children}
+    </button>
+  );
+}
 
 export default function CanvasControlBar(props) {
   useUiLanguage();
@@ -40,6 +80,7 @@ export default function CanvasControlBar(props) {
     renderCompletedThisSession,
     editorVariant = 'videoStudio',
     openAdvancedVideoEditDialog,
+    openExpressPostProcessingDialog,
     isReadOnlyMode = false,
     isImportedSession = false,
     onRequestEditSession,
@@ -63,6 +104,7 @@ export default function CanvasControlBar(props) {
   const { t } = useLocalization();
   const { colorMode } = useColorMode();
   const isImageStudio = editorVariant === 'imageStudio';
+  const compactExpress = !isImageStudio && isExpressGeneration;
   let expressGenerationLink = null;
   const gridGranularityOptions = Array.from({ length: 10 }, (_, index) => ({
     value: index + 1,
@@ -76,8 +118,7 @@ export default function CanvasControlBar(props) {
 
 
   const showPlayPause = () => {
-   // toggleIsVideoPreviewPlaying();
-   isVideoPreviewPlaying ? setIsVideoPreviewPlaying(false) : setIsVideoPreviewPlaying(true);
+    setIsVideoPreviewPlaying(current => !current);
   }
 
   const sectionSurfaceClassName = `inline-flex items-center gap-1.5 rounded-2xl border border-line px-2 py-1.5 ${colorMode === 'dark' ? 'bg-[#181b24]/86 shadow-[0_10px_24px_rgba(0,0,0,0.26)] backdrop-blur-xl' : 'bg-white/82 backdrop-blur-md'}`;
@@ -116,48 +157,7 @@ export default function CanvasControlBar(props) {
     navigate(`/vidgenie/${encodeURIComponent(sessionId)}`);
   };
 
-  const IconActionButton = ({
-    title,
-    onClick,
-    disabled = false,
-    isActive = false,
-    allowDuringPending = false,
-    triggerOnPointerDown = false,
-    children,
-  }) => {
-    const handlePointerDown = (event) => {
-      if (!triggerOnPointerDown || disabled) {
-        return;
-      }
-
-      event.preventDefault();
-      event.stopPropagation();
-      onClick?.(event);
-    };
-
-    const handleClick = (event) => {
-      event.stopPropagation();
-      if (triggerOnPointerDown) {
-        return;
-      }
-
-      onClick?.(event);
-    };
-
-    return (
-      <button
-        type="button"
-        onPointerDown={handlePointerDown}
-        onClick={handleClick}
-        title={title}
-        aria-label={title}
-        disabled={disabled}
-        className={`${iconButtonClassName} ${isActive ? activeIconButtonClassName : ''} ${allowDuringPending ? 'pending-allow-action' : ''}`}
-      >
-        {children}
-      </button>
-    );
-  };
+  const iconActionProps = { isRenderPending, iconButtonClassName, activeIconButtonClassName };
 
   let canvasDimensionsDisplay = null;
   if (canvasActualDimensions) {
@@ -190,17 +190,29 @@ export default function CanvasControlBar(props) {
         {isInteractiveVideo ? (
           <span className={interactiveVideoBadgeClassName}>{uiText("Interactive video")}</span>
         ) : (
-          isExpressGeneration && <span className={expressBadgeClassName}>{uiText("Express")}</span>
+          isExpressGeneration && !compactExpress && <span className={expressBadgeClassName}>{uiText("Express")}</span>
+        )}
+        {compactExpress && !isRenderPending && typeof openExpressPostProcessingDialog === 'function' && (
+          <button type="button" title={uiText('Express edits')} aria-label={uiText('Express edits')}
+            onClick={openExpressPostProcessingDialog} className={viewInVidgenieButtonClassName}>
+            <FaMagic className="shrink-0" aria-hidden="true" />
+            <span className="ml-2 hidden xl:inline">{uiText('Express edits')}</span>
+          </button>
         )}
         {isExpressGeneration && sessionId && (
           <button
             type="button"
             className={`${viewInVidgenieButtonClassName} pending-allow-action`}
             onClick={viewSessionInVidgenie}
-          >{uiText("View in Vidgenie")}</button>
+            title={uiText("View in Vidgenie")}
+            aria-label={uiText("View in Vidgenie")}
+          >
+            <FaExternalLinkAlt className="shrink-0" aria-hidden="true" />
+            <span className={compactExpress ? 'ml-2 hidden 2xl:inline' : 'ml-2'}>{uiText("View in Vidgenie")}</span>
+          </button>
         )}
-        {typeof openAdvancedVideoEditDialog === 'function' && (
-          <IconActionButton title={uiText("Advanced options")} onClick={openAdvancedVideoEditDialog}>
+        {!compactExpress && typeof openAdvancedVideoEditDialog === 'function' && (
+          <IconActionButton {...iconActionProps} title={uiText("Advanced options")} onClick={openAdvancedVideoEditDialog}>
             <FaCog className="text-label" />
           </IconActionButton>
         )}
@@ -211,7 +223,7 @@ export default function CanvasControlBar(props) {
     <div className={sectionSurfaceClassName}>
       <span className={readOnlyBadgeClassName}>
         <FaLock className="text-micro" />{uiText("View only")}</span>
-      <IconActionButton title={uiText("Create editable copy")} onClick={onRequestEditSession}>
+      <IconActionButton {...iconActionProps} title={uiText("Create editable copy")} onClick={onRequestEditSession}>
         <FaEdit className="text-label" />
       </IconActionButton>
     </div>
@@ -226,31 +238,16 @@ export default function CanvasControlBar(props) {
       <span className={publishedBadgeClassName} title={uiText("Published to gallery")}>{uiText("Published")}</span>
     </div>
   );
-  const disabledShellClass = isRenderPending ? "pending-disabled-shell" : "";
-
-  return (
-    <div
-      className={`relative flex min-h-[34px] items-center justify-center ${disabledShellClass}`}
-      style={{ zIndex: 1230 }}
-      aria-disabled={isRenderPending}
-    >
-      <div className="flex max-w-full items-center gap-2 whitespace-nowrap">
-        {canvasDimensionsDisplay}
-        {expressGenerationLink}
-        {readOnlyControlDisplay}
-        {importedControlDisplay}
-        {publishedControlDisplay}
-
+  const secondaryControls = (<>
         {!isImageStudio && (
           <div className={sectionSurfaceClassName}>
-            <IconActionButton title={uiText("Download current frame")} onClick={downloadCurrentFrame}>
+            <IconActionButton {...iconActionProps} title={uiText("Download current frame")} onClick={downloadCurrentFrame}>
               <FaDownload className="text-label" />
             </IconActionButton>
             {typeof onCreateShareUrl === 'function' && (
-              <IconActionButton
+              <IconActionButton {...iconActionProps}
                 title={uiText("Share session")}
                 onClick={onCreateShareUrl}
-                allowDuringPending
                 triggerOnPointerDown
               >
                 <FiShare2 className="text-lead" />
@@ -260,7 +257,7 @@ export default function CanvasControlBar(props) {
         )}
 
         <div className={sectionSurfaceClassName}>
-          <IconActionButton
+          <IconActionButton {...iconActionProps}
             title={showCanvasNavigationGrid ? uiText("Hide canvas grid") : uiText("Show canvas grid")}
             onClick={toggleShowCanvasNavigationGrid}
             isActive={showCanvasNavigationGrid}
@@ -275,6 +272,7 @@ export default function CanvasControlBar(props) {
                 onChange={(option) => setCanvasNavigationGridGranularity(option?.value || 1)}
                 classNamePrefix="canvas-grid-granularity"
                 isSearchable={false}
+                isDisabled={isRenderPending}
               />
             </div>
           )}
@@ -285,43 +283,82 @@ export default function CanvasControlBar(props) {
             <FaSearch className="text-caption opacity-75" />
             <span>{canvasZoomPercent}%</span>
           </div>
-          <IconActionButton title={uiText("Zoom out")} onClick={zoomCanvasOut} disabled={!canZoomOutCanvas}>
+          <IconActionButton {...iconActionProps} title={uiText("Zoom out")} onClick={zoomCanvasOut} disabled={!canZoomOutCanvas}>
             <FaSearchMinus className="text-[12px]" />
           </IconActionButton>
-          <IconActionButton title={uiText("Reset zoom")} onClick={resetCanvasZoom}>
+          <IconActionButton {...iconActionProps} title={uiText("Reset zoom")} onClick={resetCanvasZoom}>
             <FaUndo className="text-[12px]" />
           </IconActionButton>
-          <IconActionButton title={uiText("Zoom in")} onClick={zoomCanvasIn} disabled={!canZoomInCanvas}>
+          <IconActionButton {...iconActionProps} title={uiText("Zoom in")} onClick={zoomCanvasIn} disabled={!canZoomInCanvas}>
             <FaSearchPlus className="text-[12px]" />
           </IconActionButton>
         </div>
 
+  </>);
+
+
+
+  return (
+    <div
+      data-studio-controls
+      className="relative flex min-w-0 max-w-full min-h-[34px] items-center justify-center"
+      style={{ zIndex: 1230 }}
+    >
+      <div className="flex max-w-full items-center gap-1 whitespace-nowrap lg:gap-2">
+        {!compactExpress && canvasDimensionsDisplay}
+        {expressGenerationLink}
+        {!compactExpress && readOnlyControlDisplay}
+        {!compactExpress && importedControlDisplay}
+        {!compactExpress && publishedControlDisplay}
+
+        {compactExpress ? (
+          <Popover className="relative">
+            <PopoverButton title={uiText('More controls')} aria-label={uiText('More controls')}
+              disabled={isRenderPending} className={`${iconButtonClassName} border border-line`}>
+              <FaEllipsisH />
+            </PopoverButton>
+            <PopoverPanel anchor="bottom end" className="z-[1300] flex max-w-[calc(100vw-1.5rem)] flex-wrap items-center gap-2 rounded-2xl border border-line bg-surface p-3 text-fg shadow-xl [--anchor-gap:8px] [--anchor-padding:12px]">
+              {canvasDimensionsDisplay}
+              {readOnlyControlDisplay}
+              {importedControlDisplay}
+              {publishedControlDisplay}
+              {typeof openAdvancedVideoEditDialog === 'function' && (
+                <IconActionButton {...iconActionProps} title={uiText('Advanced options')} onClick={openAdvancedVideoEditDialog}><FaCog /></IconActionButton>
+              )}
+              {secondaryControls}
+            </PopoverPanel>
+          </Popover>
+        ) : secondaryControls}
+
         {!isImageStudio && (
           <div className={sectionSurfaceClassName}>
-            <IconActionButton
+            <IconActionButton {...iconActionProps}
               title={isVideoPreviewPlaying ? t("common.pause") : t("common.play")}
               onClick={showPlayPause}
+              allowDuringPending
             >
               {isVideoPreviewPlaying ? <FaPause className="text-label" /> : <FaPlay className="text-label translate-x-[1px]" />}
             </IconActionButton>
-            <RenderActionButton
-              compact={true}
-              sessionId={sessionId}
-              submitRenderVideo={submitRenderVideo}
-              cancelPendingRender={cancelPendingRender}
-              renderedVideoPath={renderedVideoPath}
-              downloadLink={downloadLink}
-              isRenderPending={isRenderPending}
-              isVideoGenerating={isVideoGenerating}
-              isUpdateLayerPending={isUpdateLayerPending}
-              isCanvasDirty={isCanvasDirty}
-              isSessionPublished={isSessionPublished}
-              publishedTitle={publishedTitle}
-              publishedDescription={publishedDescription}
-              publishVideoSession={publishVideoSession}
-              unpublishVideoSession={unpublishVideoSession}
-              renderCompletedThisSession={renderCompletedThisSession}
-            />
+            <fieldset disabled={isRenderPending} className="contents">
+              <RenderActionButton
+                compact={true}
+                sessionId={sessionId}
+                submitRenderVideo={submitRenderVideo}
+                cancelPendingRender={cancelPendingRender}
+                renderedVideoPath={renderedVideoPath}
+                downloadLink={downloadLink}
+                isRenderPending={isRenderPending}
+                isVideoGenerating={isVideoGenerating}
+                isUpdateLayerPending={isUpdateLayerPending}
+                isCanvasDirty={isCanvasDirty}
+                isSessionPublished={isSessionPublished}
+                publishedTitle={publishedTitle}
+                publishedDescription={publishedDescription}
+                publishVideoSession={publishVideoSession}
+                unpublishVideoSession={unpublishVideoSession}
+                renderCompletedThisSession={renderCompletedThisSession}
+              />
+            </fieldset>
           </div>
         )}
       </div>

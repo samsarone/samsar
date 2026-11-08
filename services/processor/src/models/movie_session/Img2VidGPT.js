@@ -1,3 +1,4 @@
+import { recordHostedAgentNarrativeCompletion } from '../HostedAgentBilling.js';
 import { uploadImageDataUrlToCDN } from "../AWS.js";
 import { getImageMetaData } from "../ai_utils/VisionUtils.js";
 
@@ -173,6 +174,7 @@ export async function processImgToVidGPT(userId, payload) {
       quickMoviePayload.videoGenerationModelSubType = modelSubType;
     }
 
+    await recordHostedAgentNarrativeCompletion(sessionID);
     const sessionId = await requestQuickMovieGeneration(userId, quickMoviePayload);
   
     return sessionId;

@@ -1,8 +1,114 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { __testOnly__ } from './ExpressListener.js';
+import { __testOnly__, removeLayerInSession } from './ExpressListener.js';
 import { assessLipSyncFallback, assessLipSyncStage } from './ai_video/LipSyncStage.js';
+
+function reflowFixture({ failed = [], failSave = false } = {}) {
+  const scenes = Array.from({ length: 13 }, (_, i) => ({ visual: `Original scene ${i}`, duration: 10, type: 'narration' }));
+  let offset = 0;
+  const layers = scenes.map((scene, i) => {
+    const duration = i === 1 ? 121 / 24 : 5;
+    const layer = { _id: `layer-${i}`, duration, durationOffset: offset,
+      sourceSceneIndex: i, sourceSceneRef: { version: 1, sourceSessionId: 'session', sceneIndex: i, scene: structuredClone(scene), sounds: [] },
+      layerBaseAiImageType: 'scene', layerAiVideoType: 'narration',
+      imageSession: { activeGeneratedImage: `scene-${i}.png` },
+      hasAiVideoLayer: !failed.includes(i), aiVideoLayer: failed.includes(i) ? null : `scene-${i}.mp4`,
+      aiVideoGenerationStatus: failed.includes(i) ? 'FAILED' : 'COMPLETED',
+      processVideoGenerationFailed: failed.includes(i) };
+    offset += duration;
+    return layer;
+  });
+  layers.push({ _id: 'outro', layerBaseAiImageType: 'none', layerAiVideoType: 'none', duration: 8,
+    durationOffset: offset, imageSession: { activeGeneratedImage: 'outro.png' }, sourceSceneIndex: null, sourceSceneRef: null });
+  const speech = (name, scene, delta, duration = 1) => ({ _id: name, generationType: 'speech',
+    connectedLayerId: `layer-${scene}`, connectedLayerIndex: scene, prompt: name,
+    duration, startTime: layers[scene].durationOffset + delta,
+    endTime: layers[scene].durationOffset + delta + duration, connectedLayerStartTimeOffset: delta });
+  const audioLayers = [speech('removed-first', 2, 0), speech('removed-second', 2, 2),
+    speech('removed-last', 12, 0), speech('retained-first', 3, 0.5), speech('retained-second', 3, 2.5),
+    { ...speech('legacy-index-only', 4, 1), connectedLayerId: undefined },
+    { _id: 'music', generationType: 'music', startTime: 0, endTime: offset + 8, duration: offset + 8 }];
+  // Hydrated legacy documents can carry a default zero despite a real offset.
+  audioLayers.find((audio) => audio._id === 'retained-first').connectedLayerStartTimeOffset = 0;
+  let state = { _id: 'session', userId: 'user', layers, audioLayers, totalDuration: offset + 8,
+    movieResourceList: { scenes, sounds: audioLayers.filter((audio) => audio.generationType === 'speech')
+      .map((audio) => ({ sceneIndex: audio.connectedLayerIndex, type: 'speech', audio: audio.prompt, duration: audio.duration })) } };
+  let saves = 0;
+  const read = () => {
+    const doc = structuredClone(state);
+    doc.markModified = () => {};
+    doc.save = async () => {
+      if (failSave) throw new Error('database save unavailable');
+      saves++;
+      state = structuredClone(Object.fromEntries(Object.entries(doc).filter(([, value]) => typeof value !== 'function')));
+      return doc;
+    };
+    return doc;
+  };
+  return { get state() { return state; }, get saves() { return saves; },
+    dependencies: { connect: async () => {}, VideoSessionModel: { findOne: async () => read(), findById: async () => read() } } };
+}
+
+test('automatic delete/reflow saves the retained current narrative and every connected clip atomically', async () => {
+  const f = reflowFixture({ failed: [2, 12] });
+  const immutable = structuredClone(f.state.layers[3].sourceSceneRef);
+  const musicDuration = f.state.audioLayers.find((audio) => audio._id === 'music').duration;
+  await __testOnly__.deleteEmptyLayersAndReflowTimeLine('session', f.dependencies);
+  const { state } = f;
+  assert.deepEqual(state.layers.map((layer) => layer._id), ['layer-0', 'layer-1', ...Array.from({ length: 9 }, (_, i) => `layer-${i + 3}`), 'outro']);
+  assert.equal(state.movieResourceList.scenes.length, 11);
+  assert.deepEqual(state.movieResourceList.scenes.map((scene) => scene.timelineLayerId), state.layers.slice(0, -1).map((layer) => layer._id));
+  assert.equal(state.movieResourceList.scenes[1].duration, 121 / 24);
+  assert.deepEqual(state.layers[2].sourceSceneRef, immutable);
+  assert.equal(f.saves, 2, 'each removed scene is persisted with its audio and current plan in one save');
+  assert.equal(state.audioLayers.some((audio) => audio._id.startsWith('removed-')), false);
+  const retained = state.audioLayers.filter((audio) => audio.connectedLayerId === 'layer-3');
+  assert.deepEqual(retained.map((audio) => audio.connectedLayerStartTimeOffset), [0.5, 2.5]);
+  assert.deepEqual(retained.map((audio) => audio.startTime - state.layers[2].durationOffset), [0.5, 2.5]);
+  const legacy = state.audioLayers.find((audio) => audio._id === 'legacy-index-only');
+  assert.equal(legacy.connectedLayerId, 'layer-4');
+  assert.equal(legacy.connectedLayerIndex, 3);
+  assert.equal(legacy.startTime, state.layers[3].durationOffset + 1);
+  const music = state.audioLayers.find((audio) => audio._id === 'music');
+  assert.equal(music.endTime, state.totalDuration);
+  assert.equal(music.duration, musicDuration, 'source music asset duration is retained');
+  assert.equal(state.movieResourceList.sounds.some((sound) => sound.audio.startsWith('removed-')), false);
+  assert.deepEqual(state.movieResourceList.sounds.filter((sound) => sound.audio.startsWith('retained-')).map((sound) => sound.sceneIndex), [2, 2]);
+});
+
+test('a no-deletion reflow reconciles finalized durations without changing immutable provenance', async () => {
+  const f = reflowFixture();
+  const before = structuredClone(f.state.layers.map((layer) => layer.sourceSceneRef));
+  await __testOnly__.deleteEmptyLayersAndReflowTimeLine('session', f.dependencies);
+  assert.equal(f.state.layers.length, 14);
+  assert.equal(f.state.movieResourceList.scenes.length, 13, 'the outro stays outside narrative scenes');
+  assert.equal(f.state.movieResourceList.scenes[1].duration, 121 / 24);
+  assert.deepEqual(f.state.layers.map((layer) => layer.sourceSceneRef), before);
+  assert.equal(f.saves, 1);
+});
+
+test('legacy index-only audio is removed with its scene and a failed save propagates', async () => {
+  const f = reflowFixture();
+  // The legacy clip belongs to scene four without a connectedLayerId.
+  await removeLayerInSession('user', { sessionId: 'session', layerId: 'layer-4' }, f.dependencies);
+  assert.equal(f.state.audioLayers.some((audio) => audio._id === 'legacy-index-only'), false);
+  assert.equal(f.state.movieResourceList.scenes.some((scene) => scene.timelineLayerId === 'layer-4'), false);
+  const failing = reflowFixture({ failed: [2], failSave: true });
+  await assert.rejects(__testOnly__.deleteEmptyLayersAndReflowTimeLine('session', failing.dependencies), /database save unavailable/);
+  assert.equal(failing.saves, 0);
+  assert.equal(failing.state.layers.length, 14);
+});
+
+test('branched delete/reflow leaves the shared media catalog and narrative tree unchanged', async () => {
+  let saves = 0;
+  const session = { _id: 'session', narrativeType: 'branched', layers: [], branchRenderPaths: [{ pathId: 'root.1' }],
+    movieResourceList: { schema: 'branching_narrative.v1', nodes: [{ nodeId: 'root' }] }, save: async () => { saves++; } };
+  const original = structuredClone(Object.fromEntries(Object.entries(session).filter(([, value]) => typeof value !== 'function')));
+  await __testOnly__.deleteEmptyLayersAndReflowTimeLine('session', { VideoSessionModel: { findById: async () => session } });
+  assert.equal(saves, 0);
+  assert.deepEqual(Object.fromEntries(Object.entries(session).filter(([, value]) => typeof value !== 'function')), original);
+});
 
 test('audio failure keeps the actionable failed-layer error instead of replacing it with a generic message', () => {
   const message = 'Fal rejected the audio API key (HTTP 401). Update the Fal credential.';

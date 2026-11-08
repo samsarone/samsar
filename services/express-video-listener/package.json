@@ -6,10 +6,12 @@
   "type": "module",
   "scripts": {
     "build": "node --check index.js && rg --files -0 -g \"*.js\" src | xargs -0 -n 50 node --check",
-    "test": "node --test $(rg --files src -g '*test.js' -g '!src/ExpressListener.test.js' -g '!src/Transcript.test.js' -g '!src/ai_video/utils/ImageRenderUtils.test.js')",
-    "test:canvas": "node --test src/ExpressListener.test.js src/Transcript.test.js src/ai_video/utils/ImageRenderUtils.test.js",
+    "test": "node --test $(rg --files src -g '*test.js' -g '!src/ExpressListener.test.js' -g '!src/ExpressListener.parallel.test.js' -g '!src/ai_video/AIVideoGenerator.parallel.test.js' -g '!src/Transcript.test.js' -g '!src/ai_video/utils/ImageRenderUtils.test.js')",
+    "test:canvas": "node --test src/ExpressListener.test.js src/ExpressListener.parallel.test.js src/ai_video/AIVideoGenerator.parallel.test.js src/Transcript.test.js src/ai_video/utils/ImageRenderUtils.test.js",
     "test:all": "npm test && npm run test:canvas",
-    "test:frame-drift": "node --test src/utils/FrameClock.test.js src/video/FrameDrift.test.js"
+    "test:parallel": "node --test src/utils/ConcurrentPreparation.test.js src/ExpressListener.parallel.test.js src/ai_video/AIVideoGenerator.parallel.test.js src/ai_video/SoundEffects.test.js src/ai_video/LipSyncStage.test.js src/ai_video/SoundEffectStage.test.js src/ai_video/utils/BranchedCameraTransitions.test.js src/ExpressVideoStageBilling.test.js",
+    "test:frame-drift": "node --test src/utils/FrameClock.test.js src/video/FrameDrift.test.js",
+    "test:hosted-agent-billing": "node --test src/billing/*.test.js src/ExpressVideoStageBilling.test.js src/schema/VideoSession.videoBilling.test.js src/ExpressVideoStepState.test.js src/ExpressListener.test.js src/ExpressListener.parallel.test.js src/ExpressSessionStateUpdater.test.js"
   },
   "author": "",
   "license": "ISC",

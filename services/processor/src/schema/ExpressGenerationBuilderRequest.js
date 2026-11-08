@@ -14,6 +14,7 @@ const expressGenerationBuilderRequestSchema = new Schema({
     index: true,
   },
   payload: { type: Schema.Types.Mixed, required: true },
+  billingAdmission: { type: Schema.Types.Mixed, default: null },
   webhookUrl: { type: String, default: null },
   leaseOwner: { type: String, default: null },
   leaseExpiresAt: { type: Date, default: null, index: true },

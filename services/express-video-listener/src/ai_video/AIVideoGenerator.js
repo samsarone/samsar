@@ -1,3 +1,4 @@
+import { prepareConcurrentlyAndCommitInOrder, resolvePreparationConcurrency } from '../utils/ConcurrentPreparation.js';
 import { normalizeKlingModelKey } from '../utils/KlingModel.js';
 
 import { getDBConnectionString } from "../DBString.js";
@@ -223,8 +224,19 @@ async function markSessionLayerAiVideoGenerationFailed({
   );
 }
 
-export async function createGenerativeVideoAnimationsForFrames(sessionId) {
-  await getDBConnectionString();
+export async function createGenerativeVideoAnimationsForFrames(sessionId, operationOverrides = {}) {
+  const operations = {
+    getDBConnectionString,
+    createTextToVideoPromptFromLayerPrompt,
+    createTextToVideoPromptFromStartingLayerPrompt,
+    getTransitionListForLayerSceneDescriptions,
+    getCameraTransitionForBranchedScene,
+    updateLayerAiVideoGenerationPrompt,
+    setSessionLayerAiVideoGenerationPending,
+    dispatchAiVideo,
+    ...operationOverrides,
+  };
+  await operations.getDBConnectionString();
 
 
   let sessionData = await VideoSession.findById(sessionId);
@@ -294,7 +306,7 @@ export async function createGenerativeVideoAnimationsForFrames(sessionId) {
         branchingMeta: sessionData.branchingMeta,
         getLayerDescription: getLayerImageDescription,
         requestRootTransitions: async ({ sceneDescriptions }) => (
-          getTransitionListForLayerSceneDescriptions(
+          operations.getTransitionListForLayerSceneDescriptions(
             sceneDescriptions,
             userInferenceModel,
             {
@@ -310,7 +322,7 @@ export async function createGenerativeVideoAnimationsForFrames(sessionId) {
           sequenceIndex,
           previousScenes,
           currentSceneDescription,
-        }) => getCameraTransitionForBranchedScene(
+        }) => operations.getCameraTransitionForBranchedScene(
           previousScenes,
           currentSceneDescription,
           userInferenceModel,
@@ -342,7 +354,7 @@ export async function createGenerativeVideoAnimationsForFrames(sessionId) {
       return;
     }
   } else {
-    const cameraTransitionListString = await getTransitionListForLayerSceneDescriptions(
+    const cameraTransitionListString = await operations.getTransitionListForLayerSceneDescriptions(
       promptList,
       userInferenceModel,
       {
@@ -356,275 +368,280 @@ export async function createGenerativeVideoAnimationsForFrames(sessionId) {
       : [];
   }
 
-  for (let i = 0; i < layers.length; i++) {
-    const currentLayer = layers[i];
-    const currentLayerId = currentLayer._id.toString();
-    if (shouldSkipAiVideoGenerationForLayer(currentLayer)) {
-      continue;
-    }
+  const pendingLayers = layers
+    .map((layer, index) => ({ layer, index }))
+    .filter(({ layer }) => shouldPrepareAiVideoLayer(layer));
 
-    const aiVideoGenerationStatus = getNormalizedAiVideoGenerationStatus(currentLayer);
-    const hasGeneratedAiVideoOutput = currentLayer?.hasAiVideoLayer !== false &&
-      Boolean(currentLayer?.aiVideoLayer || currentLayer?.aiVideoRemoteLink);
-    if (
-      aiVideoGenerationStatus !== 'INIT' ||
-      currentLayer?.aiVideoGenerationPending === true ||
-      hasGeneratedAiVideoOutput
-    ) {
-      continue;
-    }
-    let useEndFrame = (i < layers.length - 1); // true if not the last layer
+  await prepareConcurrentlyAndCommitInOrder(pendingLayers, {
+    concurrency: resolvePreparationConcurrency(process.env.EXPRESS_AI_VIDEO_PROMPT_CONCURRENCY),
+    prepare: async ({ layer: currentLayer, index: i }) => {
+      const currentLayerId = currentLayer._id.toString();
+      let useEndFrame = (i < layers.length - 1); // true if not the last layer
 
-    // set useEndFrame to false if user has specified to not use end frame
-    if (!expressGenerativeVideoUseEndFrame) {
-      useEndFrame = false;
-    }
-
-
-    const startingPrompt = currentLayer.prompt;
-
-    const startingImageDescription = getLayerImageDescription(currentLayer);
-
-    let endingImageDescription;
-
-    const sceneType = currentLayer.layerAiVideoType;
-
-
-    if (i < layers.length - 1) {
-      endingImageDescription = getLayerImageDescription(layers[i + 1]);
-      useEndFrame = false;
-    }
-
-    let textToVideoPrompt;
-
-    const useShortForm = useShortFormPrompt(videoGenerationModel);
-
-    if (sessionData.isMovieGen) {
-      useEndFrame = false;
-    }
-
-    let isSpeakerTransition = false;
-    if (sceneType === 'character') {
-      isSpeakerTransition = true;
-    }
-    const cameraTransitionFromLayer = branchedCameraTransitionByLayerId
-      ? branchedCameraTransitionByLayerId.get(currentLayerId)
-      : cameraTransitionList[i];
-    const isInfinitezoom = sessionData.isExpressGeneration &&
-      sessionData.expressGenerationType === 'Infinitezoom';
-    if (isInfinitezoom) {
-      if (i === layers.length - 1) {
+      // set useEndFrame to false if user has specified to not use end frame
+      if (!expressGenerativeVideoUseEndFrame) {
         useEndFrame = false;
-      } else {
-        useEndFrame = true;
-      }
-      const expressGenerationAnimation = sessionData.expressGenerationAnimation;
-      if (expressGenerationAnimation === 'zoom_in') {
-        textToVideoPrompt = 'Camera swirls clockwise and zooms in';
-      } else if (expressGenerationAnimation === 'zoom_out') {
-        textToVideoPrompt = 'Camera swirls anticlockwise and zooms out';
-      }
-    } else {
-
-
-      let indexData = {
-        isStartScene: false,
-        isEndScene: false,
-      }
-      if (i === 0) {
-        indexData.isStartScene = true;
-      }
-      if (i === layers.length - 1) {
-        indexData.isEndScene = true;
-      }
-
-      const layerInferenceAuditContext = {
-        ...baseInferenceAuditContext,
-        layerId: currentLayerId,
-        localRequestId: `${sessionId}:${currentLayerId}:text_to_video_prompt`,
-        sourceTask: 'text_to_video_prompt',
-      };
-
-      if (useEndFrame) {
-        textToVideoPrompt = await createTextToVideoPromptFromLayerPrompt(startingPrompt, startingImageDescription,
-          endingImageDescription, userInferenceModel, useShortForm, indexData, videoTone, layerInferenceAuditContext);
-      } else {
-
-
-        const promptInferenceModel = userInferenceModel;
-        const promptReasoningEffort = inferenceSettings.effort || 'high';
-        textToVideoPrompt = await createTextToVideoPromptFromStartingLayerPrompt(startingPrompt, startingImageDescription,
-          promptInferenceModel, useShortForm, isSpeakerTransition, indexData, videoTone, cameraTransitionFromLayer, promptReasoningEffort, layerInferenceAuditContext);
       }
 
 
-      if (!textToVideoPrompt) {
-        textToVideoPrompt = videoGenerationPrompt;
+      const startingPrompt = currentLayer.prompt;
+
+      const startingImageDescription = getLayerImageDescription(currentLayer);
+
+      let endingImageDescription;
+
+      const sceneType = currentLayer.layerAiVideoType;
+
+
+      if (i < layers.length - 1) {
+        endingImageDescription = getLayerImageDescription(layers[i + 1]);
+        useEndFrame = false;
       }
 
-      if (
-        (videoGenerationModel === 'SEEDANCEI2V' ||
-          videoGenerationModel === 'SEEDANCE2.0I2V' ||
-          videoGenerationModel === 'SEEDANCE2.5I2V') &&
-        videoTone === 'grounded'
-      ) {
-        textToVideoPrompt += `Maintain text and visual accuracy. Do not distort any text or add non-english text.`;
+      let textToVideoPrompt;
+
+      const useShortForm = useShortFormPrompt(videoGenerationModel);
+
+      if (sessionData.isMovieGen) {
+        useEndFrame = false;
       }
-    }
 
-    const promptSeedContext = buildAiVideoPromptSeedContext({
-      layer: currentLayer,
-      sceneAction: startingPrompt,
-      resolvedPrompt: textToVideoPrompt,
-      promptStrategy: isInfinitezoom ? 'infinitezoom' : 'image_to_video_meta_prompt',
-      layerIndex: i,
-      layerCount: layers.length,
-      sceneDescriptions: promptList,
-      cameraTransition: cameraTransitionFromLayer,
-      videoTone,
-      userInferenceModel,
-      inferenceEffort: inferenceSettings.effort,
-      selectedInferenceModelAuthorization,
-      useShortFormPrompt: useShortForm,
-    });
-
-    await updateLayerAiVideoGenerationPrompt(sessionId, currentLayerId, textToVideoPrompt);
-
-    const currentSpeechAudioLayer = speechAudioLayers.find(audioLayer => audioLayer.connectedLayerId === currentLayerId && audioLayer.generationType === 'speech');
-
-
-    let speechLayerDuration = 0;
-    if (currentSpeechAudioLayer && currentSpeechAudioLayer.duration) {
-      speechLayerDuration = currentSpeechAudioLayer.duration
-    }
-
-
-    const videoModelUnits = getVideoModelDurationUnitsForFramesPerSecond(
-      videoGenerationModel,
-      sessionData.framesPerSecond,
-    );
-    const normalizedVideoModelUnits = videoModelUnits.length > 0
-      ? [...new Set(videoModelUnits)].sort((a, b) => a - b)
-      : [5];
-
-    let aiVideoLayerDuration = normalizedVideoModelUnits[0]; // Default to the first unit
-    if (speechLayerDuration && speechLayerDuration > 0) {
-      const target = Math.max(speechLayerDuration, currentLayer?.duration ?? 0);
-      aiVideoLayerDuration = pickDuration(normalizedVideoModelUnits, target);
-    } else {
-      // No (long) speech: choose the smallest allowed unit >= layer.duration
-      const target = currentLayer?.duration ?? normalizedVideoModelUnits[0];
-      aiVideoLayerDuration = pickDuration(normalizedVideoModelUnits, target);
-    }
-
-    const isAudioVideoLayer = shouldRequestAudioVideoLayer(
-      currentLayer,
-      videoGenerationModel,
-      AUDIO_VIDEO_SOUND_EFFECT_MODELS,
-    );
-
-    let payload = {
-      videoBillingPolicy: sessionData.videoBillingPolicy || 'pipeline',
-      videoBillingAPIKeyUsage: sessionData.videoBillingAPIKeyUsage || null,
-      userId: userId,
-      videoSessionId: sessionId,
-      layerId: currentLayerId,
-      prompt: textToVideoPrompt,
-      ...getSourceSceneMetadata(currentLayer),
-      model: videoGenerationModel,
-      combineLayers: false, // Adjust based on your requirements
-      useStartFrame: true,
-      useEndFrame: useEndFrame,
-      aspectRatio: aspectRatio,
-      clipLayerToAiVideo: isMovieGen ? true : false,
-      duration: aiVideoLayerDuration,
-      expressGenerativeVideoModelSubType: sessionData.expressGenerativeVideoModelSubType,
-      videoTone: sessionData.videoTone,
-      startImageDescription: startingImageDescription,
-      initialStartImageSources: getLayerActiveImageSources(currentLayer),
-      fallbackStartImages: buildRankedFallbackStartImages(currentLayer),
-      promptSeedContext,
-      userInferenceModel,
-      inferenceEffort: inferenceSettings.effort,
-      selectedInferenceModelAuthorization,
-      isAudioVideoLayer,
-      isAudioVideoGeneration: isAudioVideoLayer,
-      ...(sessionData.customAdapterFallbacks?.image_to_video
-        ? { customFallbackModel: sessionData.customAdapterFallbacks.image_to_video }
-        : {}),
-    };
-    payload = applySamsarExternalAiVideoPayload(payload, sessionData);
-
-    // Update the session layer to set aiVideoGenerationPending and hasAiVideoLayer flags
-   const sessionResData = await setSessionLayerAiVideoGenerationPending(payload);
-
-   if (!sessionResData) {
-    continue;
-   }
-   
-    // Depending on the model, call the appropriate requestRender function
-    try {
-      if (payload.samsarExternalProvider === true) {
-        await requestRenderExpressCustomVideo(payload);
-      } else if (videoGenerationModel === 'LUMA' || videoGenerationModel === 'LUMAFLASH2') {
-        await requestRenderLumaVideo(payload);
-      } else if (videoGenerationModel === 'RUNWAYML') {
-        await requestRenderRunwayVideo(payload);
-      } else if (videoGenerationModel === 'KLINGIMGTOVID4') {
-        await requestRenderKlingVideo(payload);
-      } else if (videoGenerationModel === 'SKYREELSI2V') {
-        await requestRenderSkyreelsVideo(payload);
-      } else if (videoGenerationModel === 'PIXVERSEI2V' || videoGenerationModel === 'PIXVERSEI2VFAST') {
-        await requestRenderPixVerseVideo(payload);
-      } else if (videoGenerationModel === 'PIKA2.2I2V') {
-        await requestRenderPikaI2VVideo(payload);
-      } else if (
-        videoGenerationModel === 'HAIPER2.0' ||
-        videoGenerationModel === 'MAGIDISTILLED' ||
-        videoGenerationModel === 'CUSTOM_IMAGE_TO_VIDEO'
-      ) {
-        await requestRenderExpressCustomVideo(payload);
-      } else if (videoGenerationModel.startsWith('KLING')) {
-        await requestRenderKlingVideo(payload);
-      } else if (
-        videoGenerationModel === 'SEEDANCEI2V' ||
-        videoGenerationModel === 'SEEDANCE2.0I2V' ||
-        videoGenerationModel === 'SEEDANCE2.5I2V'
-      ) {
-        await requestRenderSeeDanceVideo(payload);
-      } else if (videoGenerationModel === 'HAPPYHORSEI2V') {
-        await requestRenderHappyHorseI2VVideo(payload);
-      } else if (videoGenerationModel === 'VIDUI2V') {
-        if (sessionData.videoTone === 'grounded') {
-          payload.animationType = 'small';
+      let isSpeakerTransition = false;
+      if (sceneType === 'character') {
+        isSpeakerTransition = true;
+      }
+      const cameraTransitionFromLayer = branchedCameraTransitionByLayerId
+        ? branchedCameraTransitionByLayerId.get(currentLayerId)
+        : cameraTransitionList[i];
+      const isInfinitezoom = sessionData.isExpressGeneration &&
+        sessionData.expressGenerationType === 'Infinitezoom';
+      if (isInfinitezoom) {
+        if (i === layers.length - 1) {
+          useEndFrame = false;
         } else {
-          payload.animationType = 'auto';
+          useEndFrame = true;
         }
-        await requestRenderViduI2VVideo(payload);
-      } else if (videoGenerationModel === 'HAILUO' || videoGenerationModel === 'HAILUOPRO') {
-        await requestRenderExpressHailuoVideo(payload);
-      } else if (videoGenerationModel === 'VEO3.1I2V' || videoGenerationModel === 'VEO3.1I2VFAST') {
-        await requestRenderVeo3I2VVideo(payload);
-      } else if (videoGenerationModel === 'COSMOS3SUPERI2V') {
-        await requestRenderCosmos3I2VVideo(payload);
-      } else if (videoGenerationModel === 'SORA2' || videoGenerationModel === 'SORA2PRO') {
-        await requestRenderSora2I2VVideo(payload);
+        const expressGenerationAnimation = sessionData.expressGenerationAnimation;
+        if (expressGenerationAnimation === 'zoom_in') {
+          textToVideoPrompt = 'Camera swirls clockwise and zooms in';
+        } else if (expressGenerationAnimation === 'zoom_out') {
+          textToVideoPrompt = 'Camera swirls anticlockwise and zooms out';
+        }
       } else {
-        throw new Error(`Unsupported video generation model: ${videoGenerationModel}`);
+
+
+        let indexData = {
+          isStartScene: false,
+          isEndScene: false,
+        }
+        if (i === 0) {
+          indexData.isStartScene = true;
+        }
+        if (i === layers.length - 1) {
+          indexData.isEndScene = true;
+        }
+
+        const layerInferenceAuditContext = {
+          ...baseInferenceAuditContext,
+          layerId: currentLayerId,
+          localRequestId: `${sessionId}:${currentLayerId}:text_to_video_prompt`,
+          sourceTask: 'text_to_video_prompt',
+        };
+
+        if (useEndFrame) {
+          textToVideoPrompt = await operations.createTextToVideoPromptFromLayerPrompt(startingPrompt, startingImageDescription,
+            endingImageDescription, userInferenceModel, useShortForm, indexData, videoTone, layerInferenceAuditContext);
+        } else {
+
+
+          const promptInferenceModel = userInferenceModel;
+          const promptReasoningEffort = inferenceSettings.effort || 'high';
+          textToVideoPrompt = await operations.createTextToVideoPromptFromStartingLayerPrompt(startingPrompt, startingImageDescription,
+            promptInferenceModel, useShortForm, isSpeakerTransition, indexData, videoTone, cameraTransitionFromLayer, promptReasoningEffort, layerInferenceAuditContext);
+        }
+
+
+        if (!textToVideoPrompt) {
+          textToVideoPrompt = videoGenerationPrompt;
+        }
+
+        if (
+          (videoGenerationModel === 'SEEDANCEI2V' ||
+            videoGenerationModel === 'SEEDANCE2.0I2V' ||
+            videoGenerationModel === 'SEEDANCE2.5I2V') &&
+          videoTone === 'grounded'
+        ) {
+          textToVideoPrompt += `Maintain text and visual accuracy. Do not distort any text or add non-english text.`;
+        }
       }
-    } catch (error) {
-      await markSessionLayerAiVideoGenerationFailed({
+
+      const promptSeedContext = buildAiVideoPromptSeedContext({
+        layer: currentLayer,
+        sceneAction: startingPrompt,
+        resolvedPrompt: textToVideoPrompt,
+        promptStrategy: isInfinitezoom ? 'infinitezoom' : 'image_to_video_meta_prompt',
+        layerIndex: i,
+        layerCount: layers.length,
+        sceneDescriptions: promptList,
+        cameraTransition: cameraTransitionFromLayer,
+        videoTone,
+        userInferenceModel,
+        inferenceEffort: inferenceSettings.effort,
+        selectedInferenceModelAuthorization,
+        useShortFormPrompt: useShortForm,
+      });
+
+
+      const currentSpeechAudioLayer = speechAudioLayers.find(audioLayer => audioLayer.connectedLayerId === currentLayerId && audioLayer.generationType === 'speech');
+
+
+      let speechLayerDuration = 0;
+      if (currentSpeechAudioLayer && currentSpeechAudioLayer.duration) {
+        speechLayerDuration = currentSpeechAudioLayer.duration
+      }
+
+
+      const videoModelUnits = getVideoModelDurationUnitsForFramesPerSecond(
+        videoGenerationModel,
+        sessionData.framesPerSecond,
+      );
+      const normalizedVideoModelUnits = videoModelUnits.length > 0
+        ? [...new Set(videoModelUnits)].sort((a, b) => a - b)
+        : [5];
+
+      let aiVideoLayerDuration = normalizedVideoModelUnits[0]; // Default to the first unit
+      if (speechLayerDuration && speechLayerDuration > 0) {
+        const target = Math.max(speechLayerDuration, currentLayer?.duration ?? 0);
+        aiVideoLayerDuration = pickDuration(normalizedVideoModelUnits, target);
+      } else {
+        // No (long) speech: choose the smallest allowed unit >= layer.duration
+        const target = currentLayer?.duration ?? normalizedVideoModelUnits[0];
+        aiVideoLayerDuration = pickDuration(normalizedVideoModelUnits, target);
+      }
+
+      const isAudioVideoLayer = shouldRequestAudioVideoLayer(
+        currentLayer,
+        videoGenerationModel,
+        AUDIO_VIDEO_SOUND_EFFECT_MODELS,
+      );
+
+      let payload = {
+        videoBillingPolicy: sessionData.videoBillingPolicy || 'pipeline',
+        videoBillingAPIKeyUsage: sessionData.videoBillingAPIKeyUsage || null,
+        userId: userId,
         videoSessionId: sessionId,
         layerId: currentLayerId,
-        error,
-      });
-    }
+        prompt: textToVideoPrompt,
+        ...getSourceSceneMetadata(currentLayer),
+        model: videoGenerationModel,
+        combineLayers: false, // Adjust based on your requirements
+        useStartFrame: true,
+        useEndFrame: useEndFrame,
+        aspectRatio: aspectRatio,
+        clipLayerToAiVideo: isMovieGen ? true : false,
+        duration: aiVideoLayerDuration,
+        expressGenerativeVideoModelSubType: sessionData.expressGenerativeVideoModelSubType,
+        videoTone: sessionData.videoTone,
+        startImageDescription: startingImageDescription,
+        initialStartImageSources: getLayerActiveImageSources(currentLayer),
+        fallbackStartImages: buildRankedFallbackStartImages(currentLayer),
+        promptSeedContext,
+        userInferenceModel,
+        inferenceEffort: inferenceSettings.effort,
+        selectedInferenceModelAuthorization,
+        isAudioVideoLayer,
+        isAudioVideoGeneration: isAudioVideoLayer,
+        ...(sessionData.customAdapterFallbacks?.image_to_video
+          ? { customFallbackModel: sessionData.customAdapterFallbacks.image_to_video }
+          : {}),
+      };
+      payload = applySamsarExternalAiVideoPayload(payload, sessionData);
 
-  }
 
+      return payload;
+    },
+    commit: async (payload) => {
+      // Model calls can be slow. Recheck cancellation and persisted layer state
+      // before committing any prompt, timing change or provider request.
+      const freshSession = await VideoSession.findById(sessionId);
+      if (!freshSession || freshSession.expressGenerationPending === false ||
+          freshSession.expressGenerationPaused || freshSession.expressGenerationCancelled ||
+          freshSession.expressGenerationFailed) return false;
+      const freshLayer = freshSession.layers?.find(layer => layer?._id?.toString() === payload.layerId);
+      if (!freshLayer || !shouldPrepareAiVideoLayer(freshLayer)) return;
+
+      await operations.updateLayerAiVideoGenerationPrompt(sessionId, payload.layerId, payload.prompt);
+      // Retiming remains serial. Only the inference work above runs concurrently.
+      const sessionResData = await operations.setSessionLayerAiVideoGenerationPending(payload);
+      if (!sessionResData) return;
+      try {
+        await operations.dispatchAiVideo(payload, videoGenerationModel, videoTone);
+      } catch (error) {
+        await markSessionLayerAiVideoGenerationFailed({
+          videoSessionId: sessionId, layerId: payload.layerId, error,
+        });
+      }
+    },
+  });
 }
 
+function shouldPrepareAiVideoLayer(layer = {}) {
+  return !shouldSkipAiVideoGenerationForLayer(layer) &&
+    getNormalizedAiVideoGenerationStatus(layer) === 'INIT' &&
+    layer.aiVideoGenerationPending !== true &&
+    !(layer.hasAiVideoLayer !== false && (layer.aiVideoLayer || layer.aiVideoRemoteLink));
+}
 
+async function dispatchAiVideo(payload, videoGenerationModel, videoTone) {
+  if (payload.samsarExternalProvider === true) {
+    await requestRenderExpressCustomVideo(payload);
+  } else if (videoGenerationModel === 'LUMA' || videoGenerationModel === 'LUMAFLASH2') {
+    await requestRenderLumaVideo(payload);
+  } else if (videoGenerationModel === 'RUNWAYML') {
+    await requestRenderRunwayVideo(payload);
+  } else if (videoGenerationModel === 'KLINGIMGTOVID4') {
+    await requestRenderKlingVideo(payload);
+  } else if (videoGenerationModel === 'SKYREELSI2V') {
+    await requestRenderSkyreelsVideo(payload);
+  } else if (videoGenerationModel === 'PIXVERSEI2V' || videoGenerationModel === 'PIXVERSEI2VFAST') {
+    await requestRenderPixVerseVideo(payload);
+  } else if (videoGenerationModel === 'PIKA2.2I2V') {
+    await requestRenderPikaI2VVideo(payload);
+  } else if (
+    videoGenerationModel === 'HAIPER2.0' ||
+    videoGenerationModel === 'MAGIDISTILLED' ||
+    videoGenerationModel === 'CUSTOM_IMAGE_TO_VIDEO'
+  ) {
+    await requestRenderExpressCustomVideo(payload);
+  } else if (videoGenerationModel.startsWith('KLING')) {
+    await requestRenderKlingVideo(payload);
+  } else if (
+    videoGenerationModel === 'SEEDANCEI2V' ||
+    videoGenerationModel === 'SEEDANCE2.0I2V' ||
+    videoGenerationModel === 'SEEDANCE2.5I2V'
+  ) {
+    await requestRenderSeeDanceVideo(payload);
+  } else if (videoGenerationModel === 'HAPPYHORSEI2V') {
+    await requestRenderHappyHorseI2VVideo(payload);
+  } else if (videoGenerationModel === 'VIDUI2V') {
+    if (videoTone === 'grounded') {
+      payload.animationType = 'small';
+    } else {
+      payload.animationType = 'auto';
+    }
+    await requestRenderViduI2VVideo(payload);
+  } else if (videoGenerationModel === 'HAILUO' || videoGenerationModel === 'HAILUOPRO') {
+    await requestRenderExpressHailuoVideo(payload);
+  } else if (videoGenerationModel === 'VEO3.1I2V' || videoGenerationModel === 'VEO3.1I2VFAST') {
+    await requestRenderVeo3I2VVideo(payload);
+  } else if (videoGenerationModel === 'COSMOS3SUPERI2V') {
+    await requestRenderCosmos3I2VVideo(payload);
+  } else if (videoGenerationModel === 'SORA2' || videoGenerationModel === 'SORA2PRO') {
+    await requestRenderSora2I2VVideo(payload);
+  } else {
+    throw new Error(`Unsupported video generation model: ${videoGenerationModel}`);
+  }
+}
 
 
 export async function setSessionLayerAiVideoGenerationPending(payload) {

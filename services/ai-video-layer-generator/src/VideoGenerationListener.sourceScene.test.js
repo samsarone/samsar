@@ -63,7 +63,8 @@ test('F2P: completed sound-effect audio retains the original scene independently
   assert.equal(audio.endTime, 25);
   assert.equal(audio.volume, 30);
   assert.equal(audio.fadeOnEdges, true);
-  assert.equal(f.calls.save, 1);
+  assert.equal(f.calls.save, 0);
+  assert.equal(f.calls.updates.length, 1);
   assert.notEqual(audio.sourceSceneRef, f.currentLayer.sourceSceneRef);
 });
 
@@ -71,7 +72,8 @@ test('F2P: an existing sound-effect audio row gains immutable scene metadata wit
   const oldAudio = { _id: 'audio-1', connectedLayerId: 'layer-1', volume: 17 };
   const f = fixture({ audio: [oldAudio] });
   await realignAudioVideoLayerToVideoLayer(payload, f.dependencies);
-  const saved = f.calls.updates[0][1].$set['audioLayers.$'];
+  const saved = f.calls.updates[0][1].$set['audioLayers.$[audio]'];
+  assert.deepEqual(f.calls.updates[0][2].arrayFilters, [{ 'audio._id': 'audio-1' }]);
   assert.equal(saved.sourceSceneIndex, 7);
   assert.deepEqual(saved.sourceSceneRef, sourceSceneRef);
   assert.equal(saved.connectedLayerIndex, 0);
@@ -111,7 +113,7 @@ test('F2P: existing hydrated audio subdocuments serialize newly propagated sourc
     getDBConnectionString: async () => {},
     VideoSession: { findById: async () => session, updateOne: async (_query, update) => { updated = update; } },
   });
-  const persistedAudio = updated.$set['audioLayers.$'].toObject();
+  const persistedAudio = updated.$set['audioLayers.$[audio]'].toObject();
   assert.equal(persistedAudio.sourceSceneIndex, 7);
   assert.deepEqual(persistedAudio.sourceSceneRef, sourceSceneRef);
   assert.equal(persistedAudio.volume, 17);
@@ -128,7 +130,7 @@ test('P2P: ordinary speech alignment keeps centering, duration, volume and exist
     layerAiVideoType: 'character', layerBaseAiImageType: 'character',
   } });
   await realignAudioVideoLayerToVideoLayer({ ...payload, model: 'SYNCLIPSYNC', generationType: 'lip_sync', duration: 6 }, f.dependencies);
-  const saved = f.calls.updates[0][1].$set['audioLayers.$'];
+  const saved = f.calls.updates[0][1].$set['audioLayers.$[audio]'];
   assert.equal(saved.sourceSceneIndex, 2);
   assert.equal(saved.sourceSceneRef.sceneIndex, 2);
   assert.equal(saved.connectedLayerIndex, 0);
@@ -148,3 +150,62 @@ test('sound-effect delivery preserves an existing speech track and adds its own 
  assert.deepEqual(speech,original);assert.equal(f.session.audioLayers.length,2);
  assert.equal(f.session.audioLayers[1].generationType,'sound_effect');assert.equal(f.session.audioLayers[1].duration,10);
 });
+
+for (const existing of [false, true]) {
+  test(`${existing ? 'existing' : 'new'} delivered sound-effect audio synchronizes the current narrative timing`, async () => {
+    const f = fixture({ audio: existing ? [{
+      _id: 'audio-1', connectedLayerId: 'layer-1', generationType: 'sound_effect', duration: 12,
+    }] : [] });
+    f.session.movieResourceList = {
+      scenes: Array.from({ length: 8 }, (_, index) => ({
+        visual: index === 7 ? sourceSceneRef.scene.visual : `Earlier scene ${index}`,
+        duration: 12, type: 'sound_effect',
+      })),
+      sounds: [{ type: 'sound_effect', sceneIndex: 7, audio: 'Footsteps in sand.', duration: 12 }],
+    };
+    const originalReference = structuredClone(f.currentLayer.sourceSceneRef);
+
+    await realignAudioVideoLayerToVideoLayer(payload, f.dependencies);
+
+    const resourceList = f.calls.updates[0][1].$set.movieResourceList;
+    assert.equal(resourceList.scenes.length, 1);
+    assert.equal(resourceList.scenes[0].duration, 10);
+    assert.equal(resourceList.sounds.length, 1);
+    assert.equal(resourceList.sounds[0].sceneIndex, 0);
+    assert.equal(resourceList.sounds[0].duration, 10);
+    assert.equal(f.calls.updates.length, 1);
+    assert.equal(f.calls.save, 0);
+    assert.deepEqual(f.currentLayer.sourceSceneRef, originalReference);
+  });
+}
+
+for (const existing of [false, true]) {
+  test(`a stale ${existing ? 'existing audio' : 'new audio'} delivery never recreates a concurrently deleted target`, async () => {
+    const f = fixture({ audio: existing ? [{ _id: 'old-audio', connectedLayerId: 'layer-1', generationType: 'sound_effect' }] : [] });
+    f.session.updatedAt = new Date('2026-11-08T01:00:00Z');
+    f.session.__v = 1;
+    f.session.movieResourceList = { scenes: [{ visual: 'Scene', duration: 10 }], sounds: [] };
+    const fresh = { layers: existing ? structuredClone(f.session.layers) : [], audioLayers: [],
+      movieResourceList: { scenes: existing ? [{ visual: 'Scene', duration: 10 }] : [], sounds: [] },
+      updatedAt: new Date('2026-11-08T01:00:01Z'), __v: 2 };
+    let reads = 0;
+    let writes = 0;
+    f.dependencies.VideoSession.findById = async () => ++reads === 1 ? f.session : fresh;
+    f.dependencies.VideoSession.updateOne = async (filter) => {
+      writes++;
+      assert.equal(filter.__v, 1);
+      assert.equal(filter.updatedAt, f.session.updatedAt);
+      assert.deepEqual(filter.layers, { $size: 1 });
+      assert.equal(filter['layers.0._id'], 'layer-1');
+      return { matchedCount: 0 };
+    };
+
+    await realignAudioVideoLayerToVideoLayer(payload, f.dependencies);
+
+    assert.equal(reads, 2);
+    assert.equal(writes, 1, 'the removed row or visual cannot receive a second write');
+    assert.deepEqual(fresh.audioLayers, []);
+    assert.equal(fresh.movieResourceList.scenes.length, existing ? 1 : 0);
+    assert.equal(f.calls.save, 0);
+  });
+}

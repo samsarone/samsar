@@ -9,6 +9,7 @@ const customerSubAccountSchema = new Schema({
   email: { type: String, default: null },
   status: { type: String, default: 'active', index: true },
   metadata: { type: Object, default: {} },
+  creditOperationMarkers: { type: Schema.Types.Mixed, default: undefined, select: false },
   generationCredits: { type: Number, default: null },
   totalCreditsAllocated: { type: Number, default: 0 },
   totalCreditsUsed: { type: Number, default: 0 },

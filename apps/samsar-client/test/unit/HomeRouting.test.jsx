@@ -62,7 +62,7 @@ vi.mock('../../src/components/generations/GenerationsHome.jsx', () => ({ default
 vi.mock('../../src/components/oneshot_editor/VidgenieSkeletonLoader.jsx', () => ({ default: () => <div>Loading Vidgenie page</div> }));
 vi.mock('../../src/components/video/util/StudioSkeletonLoader.jsx', () => ({ default: () => <div>Loading Studio page</div> }));
 
-import Home from '../../src/components/landing/Home.tsx';
+import Home, { getRouteLoadingFallback } from '../../src/components/landing/Home.tsx';
 const originalBroadcastChannel = globalThis.BroadcastChannel;
 
 function LocationProbe() {
@@ -463,7 +463,7 @@ describe('guest and external-user guards', () => {
       scenario[field] = value;
       await mount('/');
       expect(location()).toBe('/');
-      expect(screen.getByText('Loading...')).toBeInTheDocument();
+      expect(screen.getByText('Loading Studio page')).toBeInTheDocument();
     });
 
   it('routes external users back to their dashboard while keeping verification reachable', async () => {
@@ -669,5 +669,25 @@ describe('OAuth broadcast handoff', () => {
     await mount('/login');
     expect(screen.getByText('Page: login')).toBeInTheDocument();
     expect(scenario.channels).toHaveLength(0);
+  });
+});
+
+describe('page-specific lazy loading fallbacks', () => {
+  it.each(['/vidgenie/a', '/vidgpt/a', '/videogpt/a', '/vidgemie/a'])('uses Vidgenie skeletons for %s', path => {
+    render(getRouteLoadingFallback(path, false));
+    expect(screen.getByText('Loading Vidgenie page')).toBeInTheDocument();
+  });
+  it.each([['/quick_video/a', 'quick'], ['/image/studio/a', 'image'], ['/iamge/studio/a', 'image'], ['/audio/studio', 'audio'], ['/account/settings', 'account'], ['/my_sessions', 'projects'], ['/login', 'auth']])('matches the destination layout at %s', (path, layout) => {
+    const { container } = render(getRouteLoadingFallback(path, false));
+    expect(container.querySelector('[data-loading-page]')).toHaveAttribute('data-loading-page', layout);
+    expect(container.querySelector('.animate-spin')).toBeNull();
+  });
+  it('uses Vidgenie for mobile Studio projects and Quick Editor routes', () => {
+    const view = render(getRouteLoadingFallback('/video/a', true));
+    expect(screen.getByText('Loading Vidgenie page')).toBeInTheDocument();
+    view.rerender(getRouteLoadingFallback('/quick_video/a', true));
+    expect(screen.getByText('Loading Vidgenie page')).toBeInTheDocument();
+    view.rerender(getRouteLoadingFallback('/video/share/token', true));
+    expect(screen.queryByText('Loading Vidgenie page')).not.toBeInTheDocument();
   });
 });

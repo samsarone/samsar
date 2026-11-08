@@ -1,0 +1,52 @@
+{
+  "verifiedOn": "2026-11-08",
+  "environment": "local source repositories; hosted-production policy mocked; no live billing or paid providers",
+  "builds": "processor, express listener, video generator and AI-video worker build checks passed",
+  "suites": [
+    {
+      "suite": "Processor hosted-agent suite",
+      "command": "npm run test:hosted-agent-billing",
+      "tests": 296,
+      "pass": 296,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "Express listener hosted-agent suite",
+      "command": "npm run test:hosted-agent-billing",
+      "tests": 234,
+      "pass": 234,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "Existing provider/video billing regression suite",
+      "command": "npm run test:video-billing",
+      "tests": 98,
+      "pass": 98,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "Final video worker suite",
+      "command": "npm test",
+      "tests": 76,
+      "pass": 76,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "AI-video worker suite",
+      "command": "node --test src/VideoGenerationListener.test.js",
+      "tests": 57,
+      "pass": 57,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 0
+    }
+  ]
+}

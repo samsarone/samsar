@@ -22,6 +22,8 @@ import { useColorMode } from "../../contexts/ColorMode.jsx";
 import { IS_STANDALONE_DEPLOYMENT } from '../../utils/environment.jsx';
 import VidgenieSkeletonLoader from '../oneshot_editor/VidgenieSkeletonLoader.jsx';
 import StudioSkeletonLoader from '../video/util/StudioSkeletonLoader.jsx';
+import PageSkeletonLoader from '../common/PageSkeletonLoader.jsx';
+import RouteLoadingScreen from '../common/RouteLoadingScreen.jsx';
 
 const EditorHome = lazy(() => import("../editor/EditorHome.tsx"));
 const UserAccount = lazy(() => import("../account/UserAccount.tsx"));
@@ -74,57 +76,27 @@ function getSanitizedRouteSearch(search) {
   return query ? `?${query}` : '';
 }
 
-function getRouteLoadingFallback(pathname, isMobile) {
-  if (
-    pathname.startsWith('/vidgenie') ||
-    pathname.startsWith('/vidgpt') ||
-    pathname.startsWith('/videogpt') ||
-    (isMobile && (
-      pathname === '/' ||
-      pathname.startsWith('/video') ||
-      pathname.startsWith('/quick_video')
-    ))
-  ) {
+export function getRouteLoadingFallback(pathname, isMobile) {
+  const route = pathname.split('/')[1];
+  if (isMobile && /^\/video\/(share|collab)\//.test(pathname)) return <RouteLoadingScreen />;
+  if (['vidgenie', 'vidgpt', 'videogpt', 'vidgemie'].includes(route)
+      || (isMobile && ['', 'video', 'quick_video'].includes(route))) {
     return <VidgenieSkeletonLoader />;
   }
-
-  if (
-    !isMobile && (
-      pathname === '/' ||
-      pathname.startsWith('/video') ||
-      pathname.startsWith('/quick_video')
-    )
-  ) {
-    return <StudioSkeletonLoader />;
-  }
-
+  if (route === 'quick_video') return <PageSkeletonLoader page="quick" />;
+  if (route === 'video' || route === '') return <StudioSkeletonLoader />;
+  if (['image', 'iamge'].includes(route)) return <PageSkeletonLoader page="image" />;
+  if (route === 'audio') return <PageSkeletonLoader page="audio" />;
+  if (route === 'account') return <PageSkeletonLoader page="account" />;
+  if (route === 'generations') return <PageSkeletonLoader page="gallery" />;
+  if (['my_sessions', 'image_sessions'].includes(route)) return <PageSkeletonLoader page="projects" />;
+  if (['login', 'register', 'forgot_password', 'reset_password'].includes(route)) return <PageSkeletonLoader page="auth" />;
   return <RouteLoadingScreen />;
 }
 
-function RouteLoadingScreen({ label = uiText("Loading...") }) {
-  useUiLanguage();
-  const { colorMode } = useColorMode();
-  const isDark = colorMode === 'dark';
-
-  return (
-    <div
-      className={`flex min-h-screen items-center justify-center ${
-        isDark
-          ? 'bg-[#0c0d12] text-slate-100'
-          : 'bg-[#f7f9fc] text-slate-700'
-      }`}
-    >
-      <div className="flex flex-col items-center gap-4">
-        <div
-          className={`h-10 w-10 animate-spin rounded-full border-4 border-t-transparent ${
-            isDark ? 'border-cyan-300/70' : 'border-sky-500/70'
-          }`}
-          aria-hidden="true"
-        />
-        <p className="text-sm font-medium">{label}</p>
-      </div>
-    </div>
-  );
+function DefaultEntrySkeleton({ isMobile }) {
+  return IS_STANDALONE_DEPLOYMENT && !isMobile
+    ? <StudioSkeletonLoader /> : <VidgenieSkeletonLoader />;
 }
 
 function SharedVideoDesktopOnlyMessage() {
@@ -198,11 +170,7 @@ function DefaultAuthenticatedRoute({ user, isMobile, search }) {
     return <Navigate to={destination.path} replace />;
   }
 
-  return (
-    <RouteLoadingScreen
-      label={IS_STANDALONE_DEPLOYMENT && !isMobile ? uiText("Opening workspace...") : uiText("Opening VidGenie...")}
-    />
-  );
+  return <DefaultEntrySkeleton isMobile={isMobile} />;
 }
 
 export default function Home() {
@@ -590,15 +558,13 @@ export default function Home() {
   if (initialAuthenticatedRootStatus === 'pending') {
     return (
       <div className={bodyBGColor}>
-        <RouteLoadingScreen
-          label={IS_STANDALONE_DEPLOYMENT && !isMobile ? uiText("Opening workspace...") : uiText("Opening VidGenie...")}
-        />
+        <DefaultEntrySkeleton isMobile={isMobile} />
       </div>
     );
   }
 
   if (hasPendingLoginToken) {
-    return <div className={bodyBGColor}><RouteLoadingScreen label={uiText("Signing in...")} /></div>;
+    return <div className={bodyBGColor}>{location.pathname === "/" ? <DefaultEntrySkeleton isMobile={isMobile} /> : routeLoadingFallback}</div>;
   }
 
   if (shouldRequireStandaloneLogin) {
@@ -613,7 +579,7 @@ export default function Home() {
             path="/"
             element={
               !userInitiated || userFetching
-                ? <RouteLoadingScreen />
+                ? (getAuthToken() ? <DefaultEntrySkeleton isMobile={isMobile} /> : routeLoadingFallback)
                 : user && user._id
                   ? <DefaultAuthenticatedRoute user={user} isMobile={isMobile} search={rootAuthenticatedSearch} />
                   : isMobile

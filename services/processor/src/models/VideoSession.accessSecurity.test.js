@@ -6,10 +6,12 @@ import path from 'node:path';
 import mongoose from 'mongoose';
 import VideoSession from '../schema/VideoSession.js';
 import Session from '../schema/Session.js';
+import UserVideoUploadTask from '../schema/UserVideoUploadTask.js';
 import {
   getFrameForSession, addAudioToSession,
   getVideoSessionGenerationStatus, getVideoSessionEditStatus,
   getVideoSessionMaskGenerationStatus, requestGenerateMask,
+  getReadOnlySharedSessionDetails, getEditableSharedSessionDetails,
 } from './VideoSession.js';
 
 function fixture(t, overrides = {}) {
@@ -84,4 +86,45 @@ test('authorized audio upload retains the mounted assets path and contents', asy
   await addAudioToSession('collaborator', { id: 'project', dataURL: 'data:audio/mp3;base64,YXVkaW8=' });
   assert.equal(session.audio, 'assets_v2/video/audio/project/audio_project.mp3');
   assert.equal(fs.readFileSync(path.join(root, 'video/audio/project/audio_project.mp3'), 'utf8'), 'audio');
+});
+
+test('public and collaborator shares omit private wallet records while owners retain their billing', async (t) => {
+  const privateBilling = {
+    hostedAgentBilling: { userId: 'private-wallet-owner', pendingOperation: { id: 'private-agent-refund' } },
+    postProcessingBilling: { userId: 'private-wallet-owner', transactionId: 'private-charge', creditsCharged: 75 },
+    legacyProvisionalRefund: { userId: 'private-wallet-owner', amount: 100, status: 'PENDING' },
+    refundSettlement: { account: { parentUserId: 'private-wallet-owner' }, pendingOperation: { id: 'private-refund' } },
+    sessionReceipt: { totalDebited: 75 },
+    expressGenerationCreditCharges: { totalCharged: 75 },
+    provisionalCredits: 100,
+    videoBillingAPIKeyUsage: { apiKeyId: 'private-api-key' },
+    videoBillingDebits: { 'private-operation': { transactionId: 'private-charge' } },
+    videoCreditsCharged: 75,
+    videoRemainingCredits: 925,
+  };
+  const session = fixture(t, { ...structuredClone(privateBilling),
+    shareEnabled: true, shareToken: 'b'.repeat(48), shareOgImageUrl: 'https://media.example/poster.png',
+    videoLink: 'https://media.example/final.mp4', title: 'A shared film', audioLayers: [],
+  });
+  t.mock.method(VideoSession, 'findOne', async () => session);
+  t.mock.method(UserVideoUploadTask, 'find', () => ({ sort() { return this; }, async lean() { return []; } }));
+
+  for (const result of [
+    await getReadOnlySharedSessionDetails(session.shareToken),
+    await getEditableSharedSessionDetails(undefined, session.editableShareToken),
+    await getEditableSharedSessionDetails('collaborator', session.editableShareToken),
+  ]) {
+    for (const field of Object.keys(privateBilling)) assert.equal(Object.hasOwn(result, field), false, field);
+    assert.equal(result.title, 'A shared film');
+    assert.equal(result.videoLink, 'https://media.example/final.mp4');
+    assert.equal(result.layers[0]._id, 'layer');
+    assert.equal(JSON.stringify(result).includes('private-wallet-owner'), false);
+  }
+
+  const owner = await getEditableSharedSessionDetails('owner', session.editableShareToken);
+  for (const [field, value] of Object.entries(privateBilling)) {
+    assert.deepEqual(owner[field], value, `owner retains ${field}`);
+    assert.deepEqual(session[field], value, `sharing does not mutate stored ${field}`);
+  }
+  assert.equal(owner.isSessionOwner, true);
 });

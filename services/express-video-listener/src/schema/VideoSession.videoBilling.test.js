@@ -3,7 +3,10 @@ import assert from 'node:assert/strict';
 import VideoSession from './VideoSession.js';
 import AIVideoLayerGeneration from './AIVideoLayerGeneration.js';
 import { buildRetryableImageToVideoQueuePayload } from '../ai_video/utils/AIVideoQueuePayload.js';
-import { chargeExpressVideoStageCredits } from '../ExpressVideoStageBilling.js';
+import {
+  chargeExpressVideoStageCredits,
+  resolveExpressVideoStageCreditsPerSecond,
+} from '../ExpressVideoStageBilling.js';
 
 const billing = {
   videoBillingPolicy: 'adapter',
@@ -12,6 +15,20 @@ const billing = {
   videoCreditsCharged: 84,
   videoRemainingCredits: 0,
 };
+
+test('Seedance agent pricing class survives hydration and tracked session assignment', () => {
+  const session = VideoSession.hydrate({
+    expressGenerativeVideoModel: 'SEEDANCE2.5I2V',
+    expressGenerationPricingRateClass: 'agent',
+  });
+  assert.equal(session.expressGenerationPricingRateClass, 'agent');
+  assert.equal(resolveExpressVideoStageCreditsPerSecond(session, 'ai_video_generation'), 44);
+  session.expressGenerationPricingRateClass = 'vidgenie';
+  assert.equal(session.toObject().expressGenerationPricingRateClass, 'vidgenie');
+  assert.equal(session.isModified('expressGenerationPricingRateClass'), true);
+  const historical = VideoSession.hydrate({ expressGenerativeVideoModel: 'SEEDANCE2.5I2V' });
+  assert.equal(resolveExpressVideoStageCreditsPerSecond(historical, 'ai_video_generation'), 34);
+});
 
 test('persisted reroll billing fields remain directly readable after session hydration', () => {
   const session = VideoSession.hydrate({ userId: 'owner', ...billing });

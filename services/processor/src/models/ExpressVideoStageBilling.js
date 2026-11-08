@@ -1,3 +1,4 @@
+import { buildHostedAgentQuote, hasHostedAgentProviderOverrides } from '../billing/HostedAgentUsage.js';
 import VideoSession from '../schema/VideoSession.js';
 import ExternalUserRequest from '../schema/ExternalUserRequest.js';
 import User from '../schema/User.js';
@@ -8,6 +9,7 @@ import {
   deductGenerationCredits,
 } from './GenerationCredits.js';
 import { reserveExternalRequestCredits } from './external/User.js';
+import { completeHostedAgentStage } from './HostedAgentBilling.js';
 import { shouldBypassGenerationCredits } from '../utils/EnvironmentUtils.js';
 import { normalizeAPIKeyUsageContext } from './api/RequestAuthContext.js';
 import {
@@ -464,6 +466,7 @@ async function resolveExpressPreflightCreditBalance(userId, payload = {}) {
 export async function assertSufficientExpressVideoCreditsForPreflight({
   userId,
   payload,
+  hostedAgentBilling = false,
   routeType,
   durationSeconds,
   videoModel,
@@ -501,6 +504,10 @@ export async function assertSufficientExpressVideoCreditsForPreflight({
   });
   if (shouldBypassCredits()) {
     return buildStandaloneProviderBilledEstimate(estimate.durationSeconds);
+  }
+  if (hostedAgentBilling && !payload?.isExternalUserRequest &&
+      !hasHostedAgentProviderOverrides({ custom_adapters: customAdapters, samsarExternalProviderStages })) {
+    estimate.totalCredits = buildHostedAgentQuote(estimate).credits;
   }
   const requiredCredits = Math.ceil(Number(estimate.totalCredits) || 0);
   const availableCredits = await resolveCreditBalance(userId, payload);
@@ -644,6 +651,7 @@ export async function chargeExpressVideoStageCredits({
   requestType = null,
 }, dependencies = {}) {
   const {
+    completeHostedStage = completeHostedAgentStage,
     connect = getDBConnectionString,
     deductCredits = deductGenerationCredits,
     reserveExternalCredits = reserveExternalRequestCredits,
@@ -662,8 +670,18 @@ export async function chargeExpressVideoStageCredits({
     return { ok: false, stageKey: normalizedStageKey, error: 'Session not found.' };
   }
 
+
+
+  if (sessionData.postProcessingBilling?.version === 1) {
+    return { ok: true, stageKey: normalizedStageKey, creditsCharged: 0, postProcessingBilled: true };
+  }
+
   if (sessionData.videoBillingPolicy === 'adapter' && ['ai_video_generation', 'lip_sync_generation', 'sound_effect_generation'].includes(normalizedStageKey)) {
     return { ok: true, stageKey: normalizedStageKey, creditsCharged: 0, adapterBilled: true };
+  }
+
+  if (sessionData.hostedAgentBilling?.version === 2 && !shouldBypassCredits()) {
+    return completeHostedStage(sessionId, normalizedStageKey);
   }
 
   const existingStage = sessionData.expressGenerationCreditCharges?.stages?.[normalizedStageKey];

@@ -1,3 +1,5 @@
+import { refundLegacyProvisionalCredits } from '../../LegacyProvisionalRefund.js';
+import { recordHostedAgentNarrativeCompletion } from '../../HostedAgentBilling.js';
 
 import { getDBConnectionString } from "../../DBString.js";
 
@@ -5,8 +7,6 @@ import { getDBConnectionString } from "../../DBString.js";
 
 import User from "../../../schema/User.js";
 import axios from 'axios';
-import { creditGenerationCredits } from "../../GenerationCredits.js";
-import { applyExternalRequestRefundBySessionId } from "../../external/User.js";
 import { getLanguageStringFromLanguageCode } from "../../../consts/LanguageCodes.js";
 
 import { validateImageToVideoNarrative } from "../utils/TranscriptUtils.js";
@@ -394,6 +394,7 @@ export async function createNewImageListToVideoSession(userId, payload) {
 
 
 
+  await recordHostedAgentNarrativeCompletion(sessionID);
   const generationResult = await requestImageListToVideGeneration(userId, quickMoviePayload);
 
   return generationResult;
@@ -452,27 +453,8 @@ async function processSessionCompletionFailure(sessionId) {
     return;
   }
 
-  if (sessionData.provisionalCredits) {
-    const userId = sessionData.userId;
-    const creditsToRefund = Number(sessionData.provisionalCredits) || 0;
-    if (creditsToRefund > 0) {
-      await creditGenerationCredits(userId, creditsToRefund, {
-        source: 'video_generation_refund',
-        metadata: {
-          sessionId,
-          reason: 'prompt_generation_failed',
-        },
-      });
-      await applyExternalRequestRefundBySessionId({
-        internalUserId: userId?.toString?.() || userId,
-        sessionId,
-        creditsRefunded: creditsToRefund,
-        reason: 'prompt_generation_failed',
-      });
-    }
-
-    await VideoSession.findByIdAndUpdate(sessionId, { provisionalCredits: 0 });
-  }
+  if (!sessionData) return;
+  await refundLegacyProvisionalCredits(sessionId);
 
   if (sessionData.externalWebhook) {
     const externalWebhookUrl = sessionData.externalWebhook;

@@ -12,6 +12,20 @@ import {
 
 const ACTIVE_GENERATION_STATUSES = ['INIT', 'PENDING'];
 
+export function buildActiveSoundEffectRequestQuery(sessionId, layerId) {
+  return {
+    sessionId: normalizeId(sessionId),
+    layerId: normalizeId(layerId),
+    status: { $in: ACTIVE_GENERATION_STATUSES },
+    $or: [
+      { generationType: 'sound_effect' },
+      // Older sound-effect rows predate explicit operation types. Reuse those
+      // dedicated-model requests, but never a base-video or lip-sync request.
+      { model: { $in: ['MIRELOAI', 'MMAUDIOV2'] }, generationType: { $in: ['generate', null] } },
+    ],
+  };
+}
+
 function normalizeId(value) {
   return value?.toString?.().trim?.() || null;
 }
@@ -169,11 +183,9 @@ export async function generateSoundEffectsForLayer({
     videoUrl,
   });
 
-  const existingRequest = await AIVideoLayerGeneration.findOne({
-    sessionId: normalizeId(sessionId),
-    layerId: normalizeId(currentLayer._id),
-    status: { $in: ACTIVE_GENERATION_STATUSES },
-  }).sort({ createdAt: -1 });
+  const existingRequest = await AIVideoLayerGeneration.findOne(
+    buildActiveSoundEffectRequestQuery(sessionId, currentLayer._id),
+  ).sort({ createdAt: -1 });
 
   await VideoSession.updateOne(
     { _id: sessionId, 'layers._id': currentLayer._id },

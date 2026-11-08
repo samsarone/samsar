@@ -1330,15 +1330,16 @@ export async function requestImageListToVideGeneration(userId, payload) {
 
   const movieGenSpeakerList = getUniqueSpeakersByActor(soundAudioLayers)
 
+  const hasHostedBilling = Boolean((await VideoSession.findById(sessionId).select('hostedAgentBilling').lean())?.hostedAgentBilling);
   await VideoSession.updateOne({ _id: sessionId }, {
     $set: {
       layers: newSessionLayers,
       audioLayers: audioLayers,
       generationStatus: 'PENDING',
       outpaintStatus: 'INIT',
-      expressGenerationPending: true,
-      expressGenerationPaused: false,
-      videoGenerationPending: true,
+      ...(hasHostedBilling ? {} : { expressGenerationPending: true }),
+      ...(hasHostedBilling ? {} : { expressGenerationPaused: false }),
+      ...(hasHostedBilling ? {} : { videoGenerationPending: true }),
       isExpressGeneration: true,
       setAutoDurationPerScene: false,
       'expressGenerationStatus': expressGenerationStatus,
@@ -1404,7 +1405,7 @@ export async function requestImageListToVideGeneration(userId, payload) {
       provisionalCredits: 0,
       totalDuration: totalTimelineDuration,
       expressGenerationBillingDurationSeconds: totalTimelineDuration,
-      expressGenerationCreditCharges: buildInitialExpressVideoCreditCharges(totalTimelineDuration),
+      ...(hasHostedBilling ? {} : { expressGenerationCreditCharges: buildInitialExpressVideoCreditCharges(totalTimelineDuration) }),
       ...(isStepVideoGeneration
         ? {
           isStepVideoGeneration: true,
@@ -1448,6 +1449,13 @@ export async function requestImageListToVideGeneration(userId, payload) {
 
     },
   });
+  if (hasHostedBilling) {
+    await VideoSession.updateOne({ _id: sessionId, 'hostedAgentBilling.state': 'ACTIVE',
+      'hostedAgentBilling.pendingOperation': null, expressGenerationPaused: { $ne: true },
+      expressGenerationFailed: { $ne: true }, expressGenerationCancelled: { $ne: true },
+    }, { $set: { expressGenerationPending: true, videoGenerationPending: true } });
+  }
+
 
   const inferenceChargeResult = await chargeExpressVideoStageCredits({
     sessionId,

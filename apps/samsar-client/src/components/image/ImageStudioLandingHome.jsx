@@ -1,3 +1,4 @@
+import PageSkeletonLoader from '../common/PageSkeletonLoader.jsx';
 import { useUiLanguage } from '../../hooks/useUiLanguage.js';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import axios from 'axios';
@@ -129,6 +130,8 @@ export default function ImageStudioLandingHome() {
       : 'bg-rose-200/60 border border-rose-200';
   const mutedSurface =
     colorMode === 'dark' ? 'bg-slate-700/30 border border-slate-600/30' : 'bg-slate-200/70 border border-slate-200';
+
+  if (!userInitiated || userFetching || user?._id) return <PageSkeletonLoader page="image" />;
 
   return (
     <CommonContainer>

@@ -1,9 +1,11 @@
+import { canFallbackToVideoStatus } from '../../utils/sessionLoadingPolicy.mjs';
+import ExpressPostProcessingDialog from './advanced/ExpressPostProcessingDialog.jsx';
 import { studioAssistantView } from '../../utils/assistantContext.js';
 import { getUiLanguage } from '../../utils/localization.js';
 import { useAssistantRequestGuard } from '../../hooks/useAssistantRequestGuard.js';
 import { useUiLanguage } from '../../hooks/useUiLanguage.js';
 import { translateText as uiText } from '../../utils/localization.js';
-import { resolveStudioLayerVideo } from './util/studioVideoLayers.mjs';
+import { resolveStudioLayerVideo, shouldSuppressStudioBaseImage } from './util/studioVideoLayers.mjs';
 import { getRenderableImageUrl } from '../../utils/image.jsx';
 import { StudioFrameRateContext, resolveStudioFramesPerSecond } from './StudioFrameRateContext.jsx';
 import { useCallback, useContext, useEffect, useMemo, useState, useRef } from 'react';
@@ -62,6 +64,7 @@ import FrameToolbarHorizontal from './toolbars/frame_toolbar/FrameToolbarHorizon
 
 import ScreenLoader from './util/ScreenLoader.jsx';
 import StudioSkeletonLoader from './util/StudioSkeletonLoader.jsx';
+import { rememberSessionLoadingLayout } from '../../utils/sessionLoadingLayout.js';
 import VideoEditAdvancedDialog from './advanced/VideoEditAdvancedDialog.jsx';
 
 import { ToastContainer, toast } from 'react-toastify';
@@ -831,6 +834,7 @@ export default function VideoHome() {
   const [, setToggleUpdateCurrentLayer] = useState(false);
   const [currentLayerToBeUpdated, setCurrentLayerToBeUpdated] = useState(-1);
 
+  const [isExpressPostProcessingOpen, setIsExpressPostProcessingOpen] = useState(false);
   const [isVideoPreviewPlaying, setIsVideoPreviewPlaying] = useState(false);
   const [isPreviewPlaybackActive, setIsPreviewPlaybackActive] = useState(false);
   const previewAudioLayers = useMemo(
@@ -997,6 +1001,7 @@ export default function VideoHome() {
     setLayers([]);
     setFrames([]);
     setCurrentLayerSeek(0);
+    setIsExpressPostProcessingOpen(false);
     setIsVideoPreviewPlaying(false);
     setIsPreviewPlaybackActive(false);
     setTotalDuration(0);
@@ -1618,6 +1623,7 @@ export default function VideoHome() {
     const previewableSessionDetailsRequest = isSharedSessionView
       ? sessionDetailsRequest
       : sessionDetailsRequest.catch(async (sessionDetailsError) => {
+        if (!canFallbackToVideoStatus(sessionDetailsError)) throw sessionDetailsError;
         const statusData = await fetchDetailedVideoGenerationStatus({
           axiosClient: axios,
           apiServer: PROCESSOR_API_URL,
@@ -1833,8 +1839,21 @@ export default function VideoHome() {
   }, [layers, currentLayer?._id]);
   const lookaheadImageSignature = lookaheadImageUrls.map(getStudioMediaIdentity).join('\n');
   useEffect(() => { void studioMediaPool.preload(lookaheadImageUrls); }, [studioMediaPool, lookaheadImageSignature]);
-  const activeImageUrls = useMemo(() => (currentLayer?.imageSession?.activeItemList || [])
-    .filter(item => item.type === 'image' && !item.isHidden).map(item => getRenderableImageUrl(item, PROCESSOR_API_URL)), [currentLayer]);
+  const previewVideo = resolveStudioLayerVideo(currentLayer, videoSessionDetails || {}, {
+    processorApiUrl: PROCESSOR_API_URL, staticCdnUrl: import.meta.env.VITE_STATIC_CDN_URL,
+  });
+  const isPreviewVideoReady = Boolean(previewVideo.url
+    && visualReadiness.layerId === getSessionLayerId(currentLayer)
+    && visualReadiness.identity === getStudioMediaIdentity(previewVideo.url)
+    && visualReadiness.ready);
+  // Match the canvas's working items, including unsaved visibility changes. A
+  // decoded video replaces its base image; that unused image must not hold the
+  // project clock (and therefore the video itself) waiting indefinitely.
+  const activeImageUrls = useMemo(() => activeItemList
+    .filter(item => item?.type === 'image' && !item.isHidden
+      && !shouldSuppressStudioBaseImage(item, previewVideo.url, isPreviewVideoReady ? previewVideo.url : ''))
+    .map(item => getRenderableImageUrl(item, PROCESSOR_API_URL))
+    .filter(Boolean), [activeItemList, previewVideo.url, isPreviewVideoReady]);
   const activeImageSignature = `${id}:${getSessionLayerId(currentLayer)}:${activeImageUrls.map(getStudioMediaIdentity).join('|')}`;
   const activeImageCredentialSignature = activeImageUrls.join('|');
   const [imageReadiness, setImageReadiness] = useState(null);
@@ -1845,12 +1864,8 @@ export default function VideoHome() {
     });
     return () => { active = false; };
   }, [studioMediaPool, activeImageSignature, activeImageCredentialSignature]);
-  const previewVideo = resolveStudioLayerVideo(currentLayer, videoSessionDetails || {}, {
-    processorApiUrl: PROCESSOR_API_URL, staticCdnUrl: import.meta.env.VITE_STATIC_CDN_URL,
-  });
   const isVisualReady = (!activeImageUrls.length || (imageReadiness?.pool === studioMediaPool && imageReadiness?.signature === activeImageSignature))
-    && (!previewVideo.url || (visualReadiness.layerId === getSessionLayerId(currentLayer)
-      && visualReadiness.identity === getStudioMediaIdentity(previewVideo.url) && visualReadiness.ready));
+    && (!previewVideo.url || isPreviewVideoReady);
 
   const toggleHideItemInLayer = (itemId) => {
     const updatedActiveItemList = activeItemList.map(item => {
@@ -3947,6 +3962,10 @@ export default function VideoHome() {
     setFocusHintsPanelRequest((requestCount) => requestCount + 1);
   }, []);
 
+  useEffect(() => {
+    if (videoSessionDetails) rememberSessionLoadingLayout(videoSessionDetails);
+  }, [videoSessionDetails]);
+
   if (!videoSessionDetails) {
     return <StudioSkeletonLoader />;
   }
@@ -3954,37 +3973,24 @@ export default function VideoHome() {
 
 
   const startAssistantQueryPoll = () => {
-    const requestToken = assistantRequestGuard.capture();
     const headers = getHeaders();
     if (!headers) {
+      setIsAssistantQueryGenerating(false);
       showLoginDialog();
       return;
     }
-    assistantRequestGuard.subscribe({
+    assistantRequestGuard.watch({
       url: `${PROCESSOR_API_URL}/assistants/assistant_query_stream?id=${encodeURIComponent(id)}`,
+      statusUrl: `${PROCESSOR_API_URL}/assistants/assistant_query_status?id=${encodeURIComponent(id)}&include_messages=true`,
       headers: headers.headers,
       onSnapshot: snapshot => {
         setSessionMessages(snapshot.sessionMessages);
-        if (!snapshot.sessionMessageGenerationPending) setIsAssistantQueryGenerating(false);
+        setIsAssistantQueryGenerating(Boolean(snapshot.sessionMessageGenerationPending));
       },
+      onStart: () => setIsAssistantQueryGenerating(true),
+      onError: () => setIsAssistantQueryGenerating(false),
     });
-
-    const timer = assistantRequestGuard.setInterval(() => {
-      axios.get(`${PROCESSOR_API_URL}/assistants/assistant_query_status?id=${encodeURIComponent(id)}&include_messages=true`, headers).then((dataRes) => {
-        if (!assistantRequestGuard.isCurrent(requestToken)) return;
-        const assistantQueryData = dataRes.data;
-        if (assistantRequestGuard.applyStatus(assistantQueryData, setSessionMessages)) {
-          clearInterval(timer);
-
-          setIsAssistantQueryGenerating(false);
-        }
-      }).catch(error => {
-        if (!assistantRequestGuard.isCurrent(requestToken)) return;
-        if (assistantRequestGuard.stopOnAccessError(error)) setIsAssistantQueryGenerating(false);
-      });
-    }, 1000);
-
-  }
+  };
 
   const submitAssistantQuery = (query, options = {}) => {
     if (isSharedSessionView && !requestEditableSharedSession()) {
@@ -3998,29 +4004,33 @@ export default function VideoHome() {
       return;
     }
     setIsAssistantQueryGenerating(true);
-    axios.post(`${PROCESSOR_API_URL}/assistants/submit_assistant_query`, {
-      id: id,
-      query: query,
-      stream: true, client_request_id: crypto.randomUUID(), assistantSessionVersion: requestToken.serverVersion,
-      frameImage: options?.frameImage || null,
-      assistantContext: { version: 1, page: 'video',
-        view: downloadVideoDisplay ? 'export' : studioAssistantView(assistantToolView),
-        selectedLayerId: String(currentLayer?._id || currentLayer?.id || ''), locale: getUiLanguage() },
-    }, headers).then((response) => {
-      if (!assistantRequestGuard.isCurrent(requestToken)) return;
-      const assistantResponse = response.data;
-      if (assistantResponse?.status === 'COMPLETED' && assistantResponse?.sessionDetails) {
-        if (assistantRequestGuard.acceptSession(assistantResponse.sessionDetails)) setSessionMessages(assistantRequestGuard.messages(assistantResponse.sessionDetails));
-        setIsAssistantQueryGenerating(false);
-        return;
-      }
-      startAssistantQueryPoll();
-    }).catch(function () {
-      if (!assistantRequestGuard.isCurrent(requestToken)) return;
-      setIsAssistantQueryGenerating(false);
+    void assistantRequestGuard.submit({
+      url: `${PROCESSOR_API_URL}/assistants/submit_assistant_query`,
+      payload: {
+        id: id,
+        query: query,
+        stream: true, client_request_id: crypto.randomUUID(), assistantSessionVersion: requestToken.serverVersion,
+        frameImage: options?.frameImage || null,
+        assistantContext: { version: 1, page: 'video',
+          view: downloadVideoDisplay ? 'export' : studioAssistantView(assistantToolView),
+          selectedLayerId: String(currentLayer?._id || currentLayer?.id || ''), locale: getUiLanguage() },
+      },
+      headers: headers.headers,
+      onResponse: response => {
+        if (!assistantRequestGuard.isCurrent(requestToken)) return;
+        if (response.data?.status === 'COMPLETED' && response.data?.sessionDetails) {
+          if (assistantRequestGuard.acceptSession(response.data.sessionDetails)) {
+            setSessionMessages(assistantRequestGuard.messages(response.data.sessionDetails));
+          }
+          setIsAssistantQueryGenerating(false);
+          return;
+        }
+        startAssistantQueryPoll();
+      },
+      onStart: () => setIsAssistantQueryGenerating(true),
+      onError: () => setIsAssistantQueryGenerating(false),
     });
-  }
-
+  };
   const applyAnimationToAllLayers = (animationData, animationType) => {
     const updatedLayers = layers.map(layer => {
       if (layer.imageSession && layer.imageSession.activeItemList) {
@@ -4315,6 +4325,15 @@ export default function VideoHome() {
     isVideoGenerating ||
     isSessionRenderPending(videoSessionDetails)
   );
+  const canPostProcessExpressVideo = Boolean(
+    videoSessionDetails?.isExpressGeneration &&
+    !isVideoRenderPending &&
+    !videoSessionDetails?.expressGenerationPaused &&
+    !videoSessionDetails?.expressGenerationFailed &&
+    !videoSessionDetails?.expressGenerationCancelled &&
+    !videoSessionDetails?.generationError &&
+    (renderedVideoPath || downloadLink)
+  );
   const isInteractiveVideo = isInteractiveVideoSession(videoSessionDetails);
   const isPublishedVideoSession = isVideoSessionPublished(videoSessionDetails);
   const collapsedFrameToolbarWidth = 'var(--studio-left-width)';
@@ -4433,6 +4452,11 @@ export default function VideoHome() {
       unpublishVideoSession={unpublishVideoSession}
       renderCompletedThisSession={renderCompletedThisSession}
       sessionId={id}
+      openExpressPostProcessingDialog={canPostProcessExpressVideo ? () => {
+        if (isSharedSessionView && !requestEditableSharedSession()) return;
+        setIsVideoPreviewPlaying(false);
+        setIsExpressPostProcessingOpen(value => !value);
+      } : undefined}
       openAdvancedVideoEditDialog={openAdvancedVideoEditDialog}
       isReadOnlyShareView={isReadOnlyShareView}
       isEditableShareView={isEditableShareView}
@@ -4440,6 +4464,19 @@ export default function VideoHome() {
       onRequestEditSession={requestEditableSharedSession}
       openAuthDialog={showLoginDialog}
     >
+      {isExpressPostProcessingOpen && canPostProcessExpressVideo && (
+        <ExpressPostProcessingDialog
+          key={id}
+          session={videoSessionDetails}
+          onClose={() => setIsExpressPostProcessingOpen(false)}
+          onRequestAccepted={result => {
+            setIsExpressPostProcessingOpen(false);
+            handleAdvancedVideoEditAccepted(result);
+          }}
+          openAdvancedVideoEditDialog={openAdvancedVideoEditDialog}
+          showLoginDialog={showLoginDialog}
+        />
+      )}
       <PreviewPlaybackController
         applyAudioDucking={applyAudioDucking}
         audioLayers={previewAudioLayers}
@@ -4561,6 +4598,8 @@ export default function VideoHome() {
             <AssistantHome
               submitAssistantQuery={submitAssistantQuery}
               onSessionCleared={assistantRequestGuard.invalidate}
+              deliveryError={assistantRequestGuard.error}
+              onRetryDelivery={assistantRequestGuard.retry}
               sessionId={id}
               sessionMessages={sessionMessages}
               onSessionMessagesChange={setSessionMessages}

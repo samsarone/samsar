@@ -7,6 +7,7 @@ import { frameCountToSeconds, secondsToFrameCount, getLayerFrameRange } from './
 import { extractSyncStartingFrame } from './utils/SyncLipSyncFace.js';
 import { shouldPrepareExpressLipSyncFace } from './utils/ExpressLipSyncPrompt.js';
 import { getSourceSceneMetadata } from './utils/SourceSceneMetadata.js';
+import { captureMovieResourceTimeline, synchronizeMovieResourceTimeline } from './utils/MovieResourceTimeline.js';
 import {
   getDBConnectionString,
   isTransientMongoError,
@@ -2863,22 +2864,17 @@ async function checkForExpressVideoGenerativeVideoCompletion(sessionId, model) {
 
   if (sessionAiVideoGenerationCompleted && !sessionAiVideoGenerationFailed) {
 
-    const currentGenerationStatus = sessionData.expressGenerationStatus;
-    currentGenerationStatus.ai_video_generation = 'COMPLETED';
-
-
     let updatePayload = {
-      expressGenerationStatus: currentGenerationStatus,
+      'expressGenerationStatus.ai_video_generation': 'COMPLETED',
       aiVideoGenerationPending: false,
-      expressGenerationFailed: false,
-      expressGenerationError: null,
     };
 
     if (model === 'SYNCLIPSYNC' || model === 'LATENTSYNC') {
       updatePayload.lipSyncGenerationPending = false;
     }
 
-    await VideoSession.updateOne({ _id: sessionId }, updatePayload, { new: true });
+    await VideoSession.updateOne({ _id: sessionId, expressGenerationFailed: { $ne: true },
+      expressGenerationCancelled: { $ne: true } }, { $set: updatePayload }, { new: true });
 
   }
 
@@ -2994,6 +2990,7 @@ async function markVideoLayerGenerationAsComplete(localVideoLink, payload) {
     await AIVideoLayerGeneration.findByIdAndDelete(_id);
     return videoSession;
   }
+  captureMovieResourceTimeline(videoSession);
 
 
 
@@ -3124,6 +3121,7 @@ async function markVideoLayerGenerationAsComplete(localVideoLink, payload) {
 
       nextLayerDurationOffset += nextLayerDuration;
     }
+    videoSession.totalDuration = nextLayerDurationOffset;
   }
 
 
@@ -3158,8 +3156,7 @@ async function markVideoLayerGenerationAsComplete(localVideoLink, payload) {
 
 
   videoSession.layers[currentLayerIndex] = currentLayer;
-
-
+  synchronizeMovieResourceTimeline(videoSession);
   const result = await VideoSession.updateOne(
     { _id: sessionId, },
     {
@@ -3168,6 +3165,7 @@ async function markVideoLayerGenerationAsComplete(localVideoLink, payload) {
         audioLayers: videoSession.audioLayers,
         generations: videoSession.generations,
         totalDuration: videoSession.totalDuration,
+        ...(videoSession.movieResourceList != null ? { movieResourceList: videoSession.movieResourceList } : {}),
       },
     }
   );
@@ -3192,7 +3190,23 @@ async function markVideoLayerGenerationAsComplete(localVideoLink, payload) {
 }
 
 
-async function realignAudioLayersToLayers(payload) {
+export function buildAiVideoTimelineWriteGuard(session, sessionId) {
+  const filter = { _id: sessionId, layers: { $size: session.layers.length } };
+  if (session.updatedAt != null) filter.updatedAt = session.updatedAt;
+  if (session.__v != null) filter.__v = session.__v;
+  for (const [i, layer] of session.layers.entries()) {
+    for (const field of ['_id', 'duration', 'durationOffset']) {
+      filter[`layers.${i}.${field}`] = layer[field] === undefined ? { $exists: false } : layer[field];
+    }
+  }
+  return filter;
+}
+
+function staleTimelineWrite(result) {
+  return result?.matchedCount === 0 || (result?.matchedCount == null && result?.nModified === 0);
+}
+
+async function realignAudioLayersToLayers(payload, retryCount = 0) {
 
   const {
     sessionId,
@@ -3203,6 +3217,9 @@ async function realignAudioLayersToLayers(payload) {
 
 
   const sessionData = await VideoSession.findById(sessionId);
+  if (!sessionData) return;
+  const writeGuard = buildAiVideoTimelineWriteGuard(sessionData, sessionId);
+  captureMovieResourceTimeline(sessionData);
 
   let sessionAudioLayers = sessionData.audioLayers;
 
@@ -3243,20 +3260,22 @@ async function realignAudioLayersToLayers(payload) {
     }
   }
 
-  await VideoSession.updateOne({
-    _id: sessionId
-  }, {
+  synchronizeMovieResourceTimeline(sessionData);
+  const result = await VideoSession.updateOne(writeGuard, {
     $set: {
-      audioLayers: sessionAudioLayers
+      audioLayers: sessionAudioLayers,
+      ...(sessionData.movieResourceList != null ? { movieResourceList: sessionData.movieResourceList } : {}),
     }
   });
-
+  if (staleTimelineWrite(result) && retryCount < 1) {
+    return realignAudioLayersToLayers(payload, retryCount + 1);
+  }
 
 }
 
 
 
-export async function realignAudioVideoLayerToVideoLayer(payload, dependencies = {}) {
+export async function realignAudioVideoLayerToVideoLayer(payload, dependencies = {}, retryState = {}) {
 
   const ensureDatabase = dependencies.getDBConnectionString || getDBConnectionString;
   const VideoSessionModel = dependencies.VideoSession || VideoSession;
@@ -3283,15 +3302,21 @@ export async function realignAudioVideoLayerToVideoLayer(payload, dependencies =
     layer => layer._id.toString() === layerId
   );
   if (currentLayerIndex < 0) return;
+  const writeGuard = buildAiVideoTimelineWriteGuard(videoSession, sessionId);
 
   let currentLayer = videoSession.layers[currentLayerIndex];
+  captureMovieResourceTimeline(videoSession);
   const completedAudioType = SOUND_EFFECT_MODELS.includes(model) && isSoundEffectGenerationForLayer(currentLayer, payload.generationType)
     ? 'sound_effect' : 'speech';
   // A sound-effect derivative must not overwrite a connected speech track.
   let connectedAudioLayer = videoSession.audioLayers.find(
-    al => al.connectedLayerId === currentLayer._id.toString()
+    al => (!retryState.existingAudioLayerId || al._id?.toString() === retryState.existingAudioLayerId)
+      && al.connectedLayerId === currentLayer._id.toString()
       && (!al.generationType || al.generationType === completedAudioType)
   );
+  // A user or reflow removed the old row while the previous write was pending.
+  // Retrying must not recreate it from a completed provider result.
+  if (retryState.existingAudioLayerId && !connectedAudioLayer) return;
   if (connectedAudioLayer) {
 	    let generationType = ((SOUND_EFFECT_MODELS.includes(model) && isSoundEffectGenerationForLayer(currentLayer, payload.generationType)))
 	      ? 'sound_effect'
@@ -3347,19 +3372,26 @@ export async function realignAudioVideoLayerToVideoLayer(payload, dependencies =
 
 
     const connectedAudioLayerId = connectedAudioLayer._id.toString();
-
-
-    await VideoSessionModel.updateOne(
+    synchronizeMovieResourceTimeline(videoSession);
+    const result = await VideoSessionModel.updateOne(
       {
-        _id: sessionId,
+        ...writeGuard,
         "audioLayers._id": connectedAudioLayerId
       },
       {
         $set: {
-          "audioLayers.$": connectedAudioLayer
+          "audioLayers.$[audio]": connectedAudioLayer,
+          ...(videoSession.movieResourceList != null ? { movieResourceList: videoSession.movieResourceList } : {}),
         }
       },
+      { arrayFilters: [{ 'audio._id': connectedAudioLayer._id }] },
     );
+    if (staleTimelineWrite(result) && (retryState.count || 0) < 1) {
+      return realignAudioVideoLayerToVideoLayer(payload, dependencies, {
+        count: (retryState.count || 0) + 1,
+        existingAudioLayerId: connectedAudioLayerId,
+      });
+    }
 
   } else {
 
@@ -3412,8 +3444,16 @@ export async function realignAudioVideoLayerToVideoLayer(payload, dependencies =
     };
 
     videoSession.audioLayers.push(newAudioLayer);
-
-    await videoSession.save();
+    synchronizeMovieResourceTimeline(videoSession);
+    const result = await VideoSessionModel.updateOne(writeGuard, {
+      $set: {
+        audioLayers: videoSession.audioLayers,
+        ...(videoSession.movieResourceList != null ? { movieResourceList: videoSession.movieResourceList } : {}),
+      },
+    });
+    if (staleTimelineWrite(result) && (retryState.count || 0) < 1) {
+      return realignAudioVideoLayerToVideoLayer(payload, dependencies, { count: (retryState.count || 0) + 1 });
+    }
 
 
   }

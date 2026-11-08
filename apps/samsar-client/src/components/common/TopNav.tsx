@@ -118,6 +118,7 @@ export default function TopNav(props) {
     renderCompletedThisSession,
     sessionId: sessionIdOverride,
     openAdvancedVideoEditDialog,
+    openExpressPostProcessingDialog,
     isReadOnlyShareView,
     isEditableShareView,
     isImportedSession,
@@ -638,7 +639,7 @@ export default function TopNav(props) {
 
     userProfile = (
       <div className="flex items-center justify-end gap-3">
-        <div className="flex flex-col text-right leading-tight">
+        <div className={`${isStudioEditor && isExpressGeneration ? "hidden xl:flex" : "flex"} flex-col text-right leading-tight`}>
           <div className="text-sm font-semibold max-w-[140px] whitespace-nowrap overflow-hidden text-ellipsis">
             {user.username ? user.username : user.email}
           </div>
@@ -850,6 +851,7 @@ export default function TopNav(props) {
         renderCompletedThisSession={renderCompletedThisSession}
         editorVariant={isImageEditor ? 'imageStudio' : 'videoStudio'}
         openAdvancedVideoEditDialog={openAdvancedVideoEditDialog}
+        openExpressPostProcessingDialog={openExpressPostProcessingDialog}
         isReadOnlyMode={Boolean(isReadOnlyShareView)}
         isImportedSession={Boolean(isImportedSession)}
         onRequestEditSession={onRequestEditSession}
@@ -920,13 +922,13 @@ export default function TopNav(props) {
 
 
   return (
-    <div className={`${navShell} fixed top-0 inset-x-0 z-[1200] h-[56px]`}>
-      <div className="grid h-full w-full grid-cols-[minmax(132px,14%)_minmax(0,1fr)_auto] items-center gap-2 px-[2px] pr-3 lg:gap-5 lg:pr-8">
+    <div data-app-top-nav className={`${navShell} fixed top-0 inset-x-0 z-[1200] h-[56px]`}>
+      <div className={`grid h-full w-full items-center gap-2 px-2 pr-3 ${isStudioEditor && isExpressGeneration ? "grid-cols-[minmax(80px,10%)_minmax(0,1fr)_auto] lg:gap-2 lg:pr-3" : "grid-cols-[minmax(132px,14%)_minmax(0,1fr)_auto] lg:gap-5 lg:pr-8"}`}>
         <div className="flex h-full items-center justify-center px-2">
           <BrandLogo onClick={gotoHome} className="w-full max-w-[220px] px-2 lg:max-w-[260px] lg:px-4" />
         </div>
         <div className="flex min-w-0 items-center justify-center h-full py-[2px] lg:justify-end lg:pr-1">
-          <div className="flex h-full w-full min-w-0 items-center justify-center translate-y-[4px] lg:justify-end">
+          <div className="flex h-full w-full min-w-0 items-center justify-center lg:justify-end">
             {controlbarView}
           </div>
         </div>
@@ -935,7 +937,7 @@ export default function TopNav(props) {
           <div className="flex items-center">
             {addSessionButton}
           </div>
-          <div className="hidden items-center justify-end xl:flex">
+          <div className={isStudioEditor && isExpressGeneration ? "hidden items-center justify-end 2xl:flex" : "hidden items-center justify-end xl:flex"}>
             {userCreditsDisplay}
           </div>
           <div className="flex items-center justify-end">

@@ -1,3 +1,5 @@
+import { ProjectCardsSkeleton } from '../../common/PageSkeletonLoader.jsx';
+import { rememberSessionLoadingLayout } from '../../../utils/sessionLoadingLayout.js';
 import { useUiLanguage } from '../../../hooks/useUiLanguage.js';
 import { translateText as uiText } from '../../../utils/localization.js';
 import { useEffect, useRef, useState } from 'react';
@@ -423,6 +425,7 @@ export default function ListVideoSessions() {
     }
 
     const newSessionId = sessionIdentifier.toString();
+    rememberSessionLoadingLayout(session);
     localStorage.setItem('sessionId', newSessionId);
     localStorage.setItem('videoSessionId', newSessionId);
 
@@ -644,14 +647,7 @@ export default function ListVideoSessions() {
         {projectsLabelDisplay}
 
         {isLoading && sessionList.length === 0 && (
-          <div
-            className="mx-auto mb-6 flex w-full max-w-[1600px] items-center gap-3 rounded-xl border border-slate-500/20 px-4 py-4 text-left text-sm text-slate-500"
-            role="status"
-          >
-            <span
-              className="h-5 w-5 shrink-0 animate-spin rounded-full border-2 border-sky-500 border-t-transparent"
-              aria-hidden="true"
-            />{uiText("Loading your projects...")}</div>
+          <ProjectCardsSkeleton />
         )}
 
         {listError && (

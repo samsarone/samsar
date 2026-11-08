@@ -1,3 +1,4 @@
+import { VIDGENIE_PAGE_CLASS } from './vidgenieLayout.js';
 import { useUiLanguage } from '../../hooks/useUiLanguage.js';
 import { translateText as uiText } from '../../utils/localization.js';
 import { Suspense, lazy, useEffect, useRef, useState } from 'react';
@@ -11,7 +12,16 @@ import { shouldDeferVidgenieProjectLoad } from './vidgenieProjectViewState.mjs';
 import VidgenieSkeletonLoader from './VidgenieSkeletonLoader.jsx';
 
 const API_SERVER = import.meta.env.VITE_PROCESSOR_API;
-const loadOneshotEditor = () => import('./OneshotEditor.jsx');
+let editorModulePromise;
+const loadOneshotEditor = () => {
+  if (!editorModulePromise) {
+    editorModulePromise = import('./OneshotEditor.jsx').catch((error) => {
+      editorModulePromise = undefined;
+      throw error;
+    });
+  }
+  return editorModulePromise;
+};
 const OneshotEditor = lazy(loadOneshotEditor);
 
 export function preloadOneshotEditor() {
@@ -35,6 +45,11 @@ export default function OneshotEditorContainer() {
     userInitiated,
     userFetching,
   });
+
+  useEffect(() => {
+    // Code can download while auth resolves; session reads still wait for auth.
+    if (id) void preloadOneshotEditor().catch(() => undefined);
+  }, [id]);
 
   useEffect(() => {
     if (id || routeResolutionStartedRef.current) {
@@ -152,8 +167,8 @@ export default function OneshotEditorContainer() {
   return (
     <div className={`${outerShell} ${subtleGradient} min-h-screen`}>
       <OverflowContainer>
-        <div className="vidgenie-page-shell workspace-page mx-auto w-full max-w-6xl px-2 pb-6 pt-[calc(var(--app-nav-height)+var(--workspace-inset))] sm:px-4">
-          <Suspense fallback={<VidgenieSkeletonLoader />}>
+        <div className={VIDGENIE_PAGE_CLASS}>
+          <Suspense fallback={<VidgenieSkeletonLoader embedded />}>
             <OneshotEditor />
           </Suspense>
         </div>
