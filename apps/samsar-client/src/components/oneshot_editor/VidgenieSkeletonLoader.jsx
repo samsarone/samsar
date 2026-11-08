@@ -1,10 +1,11 @@
-import { VIDGENIE_PAGE_CLASS, VIDGENIE_EDITOR_CLASS, VIDGENIE_CARD_CLASS, getVidgeniePreviewFrameStyle } from './vidgenieLayout.js';
+import VidgeniePageShell from './VidgeniePageShell.jsx';
+import { VIDGENIE_EDITOR_CLASS, VIDGENIE_CARD_CLASS, getVidgeniePreviewFrameStyle } from './vidgenieLayout.js';
 import { useInRouterContext, useLocation } from 'react-router-dom';
 import { useUiLanguage } from '../../hooks/useUiLanguage.js';
 import { translateText as uiText } from '../../utils/localization.js';
 import { useColorMode } from '../../contexts/ColorMode.jsx';
 import { getSessionLoadingLayout, readSessionLoadingLayout } from '../../utils/sessionLoadingLayout.js';
-import { SkeletonBlock, SkeletonFields, SkeletonPage, SkeletonStatus } from '../common/LoadingSkeleton.jsx';
+import { SkeletonBlock, SkeletonFields, SkeletonStatus } from '../common/LoadingSkeleton.jsx';
 import './mobileStyles.css';
 
 export function VidgenieSkeleton({ variant = 'unknown', aspectRatio = '16:9', embedded = false }) {
@@ -14,42 +15,35 @@ export function VidgenieSkeleton({ variant = 'unknown', aspectRatio = '16:9', em
   const completed = variant === 'completed';
   const showForm = variant === 'init' || variant === 'pending';
   const content = (
-    <SkeletonStatus label={uiText('Loading VidGenie')} data-loading-layout={variant} className={VIDGENIE_EDITOR_CLASS}>
+    <SkeletonStatus label={uiText('Loading VidGenie')} data-loading-layout={variant} className={`${VIDGENIE_EDITOR_CLASS} vidgenie-loading`}>
       <div className={`${VIDGENIE_CARD_CLASS} ${surface}`}>
         <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:gap-2">
           <SkeletonBlock className="h-7 w-44 max-w-full" />
           <SkeletonBlock className="h-9 w-full rounded-full sm:w-28" />
           <SkeletonBlock className="h-8 w-36 max-w-full self-center rounded-full sm:ml-auto" />
         </div>
-        {completed && <>
-          <div className="mt-3 flex flex-wrap justify-end gap-2">
-            {[0, 1, 2].map(index => <SkeletonBlock key={index} className="h-9 w-28 max-w-full" />)}
-          </div>
-          <div className="mt-4 rounded-xl bg-surface-sunken p-3 ring-1 ring-line">
-            <SkeletonBlock className="h-4 w-28" /><SkeletonBlock className="mt-2 h-3 w-44 max-w-full" />
-          </div>
-        </>}
+        {completed && <div className="mt-4 rounded-xl bg-surface-sunken p-3 ring-1 ring-line">
+          <SkeletonBlock className="h-4 w-28" />
+          <SkeletonBlock className="mt-2 h-3 w-44 max-w-full" />
+        </div>}
         {showForm && <div className="mt-4" data-skeleton-request>
           <SkeletonFields count={6} />
-          <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-line pt-3"><SkeletonBlock className="h-9 w-56 max-w-full" /><SkeletonBlock className="h-9 w-24" /></div>
         </div>}
         {variant === 'unknown' && <div className="mt-4 space-y-3"><SkeletonBlock className="h-4 w-1/3" /><SkeletonBlock className="h-16 w-full" /></div>}
       </div>
-      {(completed || variant === 'pending') && <div data-skeleton-result className={`vidgenie-progress-panel mt-5 rounded-xl p-3 sm:rounded-2xl sm:p-4 ${surface}`}>
+      {(completed || variant === 'pending') && <div data-skeleton-result className={`vidgenie-progress-panel mt-4 rounded-xl p-3 sm:rounded-2xl sm:p-4 ${surface}`}>
         {variant === 'pending' && <SkeletonBlock className="h-3 w-full rounded-full" />}
         <SkeletonBlock className={`vidgenie-preview-frame ${aspectRatio === '9:16' ? 'vidgenie-preview-frame-portrait' : 'vidgenie-preview-frame-landscape'} mx-auto mt-5 rounded-xl`} style={getVidgeniePreviewFrameStyle(aspectRatio)} />
       </div>}
-      {completed && <div className={`mt-3 rounded-2xl p-4 ${surface}`}><SkeletonBlock className="h-4 w-36" /><div className="mt-3 flex flex-wrap gap-2">{[0, 1, 2, 3].map(index => <SkeletonBlock key={index} className="h-9 w-28" />)}</div></div>}
       {showForm && <div className="mt-4 space-y-3" data-skeleton-prompt>
         <SkeletonBlock className="h-4 w-44" /><SkeletonBlock className="h-32 w-full" />
         <div className="flex justify-between gap-3"><SkeletonBlock className="h-3 w-36" /><SkeletonBlock className="h-3 w-16" /></div>
-        <div className="flex flex-wrap justify-between gap-3 pt-2"><SkeletonBlock className="h-10 w-44" /><SkeletonBlock className="h-10 w-28" /></div>
-        <SkeletonBlock className="h-11 w-full" />
+        <SkeletonBlock className="h-10 w-44" />
       </div>}
     </SkeletonStatus>
   );
   if (embedded) return content;
-  return <SkeletonPage className="pb-8"><div className={VIDGENIE_PAGE_CLASS}>{content}</div></SkeletonPage>;
+  return <VidgeniePageShell>{content}</VidgeniePageShell>;
 }
 
 function RouteVidgenieSkeleton(props) {

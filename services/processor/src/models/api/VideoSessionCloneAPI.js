@@ -1,3 +1,4 @@
+import { clearInheritedProviderNetworkFailure } from '../../utils/ProviderNetworkState.js';
 import { admitPostProcessing } from './PostProcessingBilling.js';
 import { stripInheritedBilling } from '../../billing/PostProcessingBilling.js';
 import path from 'path';
@@ -685,6 +686,7 @@ function prepareClonedSessionForVideoRender({ clonedSession, webhookUrl }) {
   clonedSession.expressGenerationPending = true;
   clonedSession.expressGenerationFailed = false;
   clonedSession.expressGenerationCancelled = false;
+  clearInheritedProviderNetworkFailure(clonedSession);
   clonedSession.expressGenerationError = null;
   clonedSession.videoLink = null;
   clonedSession.remoteURL = null;
@@ -806,6 +808,7 @@ function prepareClonedSessionForNarratorAvatarRegeneration({
   clonedSession.expressGenerationPending = true;
   clonedSession.expressGenerationFailed = false;
   clonedSession.expressGenerationCancelled = false;
+  clearInheritedProviderNetworkFailure(clonedSession);
   clonedSession.expressGenerationError = null;
   clonedSession.videoLink = null;
   clonedSession.remoteURL = null;
@@ -918,6 +921,7 @@ function prepareCopiedSessionForStudio({ clonedSession, userId }) {
   clonedSession.expressGenerationPending = false;
   clonedSession.expressGenerationFailed = false;
   clonedSession.expressGenerationCancelled = false;
+  clearInheritedProviderNetworkFailure(clonedSession);
   clonedSession.expressGenerationError = null;
   clonedSession.aiVideoGenerationPending = false;
   clonedSession.lipSyncGenerationPending = false;

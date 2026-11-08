@@ -40,7 +40,7 @@ function fixture(t, model) {
   const row = () => ({ ...job, toObject: () => ({ ...job }) });
   let deleted = false;
   t.mock.method(AIVideoLayerGeneration, 'find', (filter) => {
-    const matches = !deleted && (
+    const matches = !deleted && !job.infrastructureFailureFinalized && (
       filter.status === job.status || filter.status?.$in?.includes(job.status) ||
       (filter.$or && job.status === 'PENDING')
     );
@@ -52,6 +52,24 @@ function fixture(t, model) {
     assert.equal(id, 'job');
     Object.assign(job, update.$set || update);
     for (const [key, value] of Object.entries(update.$inc || {})) job[key] = (job[key] || 0) + value;
+    for (const key of Object.keys(update.$unset || {})) delete job[key];
+  });
+  const applyUpdate = update => {
+    Object.assign(job, update.$set || update);
+    for (const [key, value] of Object.entries(update.$inc || {})) job[key] = (job[key] || 0) + value;
+    for (const key of Object.keys(update.$unset || {})) delete job[key];
+  };
+  t.mock.method(AIVideoLayerGeneration, 'findOneAndUpdate', async (filter, update) => {
+    if (filter.status !== job.status || (filter.requestOwner && filter.requestOwner !== job.requestOwner)) return null;
+    if (filter.rowLocked === false && job.rowLocked) return null;
+    if (filter.providerSubmissionStartedAt === null && job.providerSubmissionStartedAt) return null;
+    applyUpdate(update);
+    return row();
+  });
+  t.mock.method(AIVideoLayerGeneration, 'updateOne', async (filter, update) => {
+    if (filter.requestOwner && job.requestOwner !== filter.requestOwner) return { matchedCount: 0 };
+    applyUpdate(update);
+    return { matchedCount: 1 };
   });
   t.mock.method(VideoSession, 'findById', async () => ({ layers: [completed, layer] }));
   t.mock.method(VideoSession, 'updateOne', async (filter, update) => {
@@ -185,8 +203,8 @@ test('GMI T2V submission protection applies in hosted deployments too', t => {
   for (const model of ['VEO3.1', 'VEO3.1FAST', 'HAILUOPRO']) {
     assert.equal(protectsAmbiguousVideoSubmission({ model, dockerVideoProvider: 'gmicloud' }), true);
   }
-  assert.equal(protectsAmbiguousVideoSubmission({ model: 'SYNCLIPSYNC', dockerVideoProvider: 'fal' }), false);
-  assert.equal(protectsAmbiguousVideoSubmission({ model: 'SEEDANCE2.0I2V', generationType: 'sound_effect', dockerVideoProvider: 'gmicloud' }), false);
+  assert.equal(protectsAmbiguousVideoSubmission({ model: 'SYNCLIPSYNC', dockerVideoProvider: 'fal' }), true);
+  assert.equal(protectsAmbiguousVideoSubmission({ model: 'SEEDANCE2.0I2V', generationType: 'sound_effect', dockerVideoProvider: 'gmicloud' }), true);
 });
 
 test('accepted submissions without a request ID remain ambiguous and must not be resubmitted', async () => {
@@ -325,9 +343,9 @@ for (const status of [401, 403]) {
       assert.equal(options.method, 'GET');
       return { ok: false, status, headers: {}, text: async () => '<html>access denied</html>' };
     });
-    await generatePendingAiVideoLayerRequests();
+    for (let attempt = 0; attempt < 6; attempt++) { f.job.nextAttemptAfter = null; await generatePendingAiVideoLayerRequests(); }
     assert.equal(f.job.status, 'FAILED');
-    assert.equal(f.job.providerPollingFailed, true);
+    assert.equal(f.job.infrastructureFailureCode, 'PROVIDER_NETWORK_RETRY_EXHAUSTED');
     assert.equal(shouldRetryBaseGeneration({ generation: f.job, videoSession: { isExpressGeneration: true } }), false);
     await generatePendingAiVideoLayerRequests();
     assert.equal(f.layer.aiVideoGenerationStatus, 'FAILED');

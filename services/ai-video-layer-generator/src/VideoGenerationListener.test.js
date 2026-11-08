@@ -718,7 +718,7 @@ test('standalone text-to-video 429 uses the same bounded safe-submit retry contr
   assert.equal(thirdRejection.set.submissionOutcomeUnknown, false);
 });
 
-test('hosted text-to-video retains the existing provider retry budget', (t) => {
+test('hosted text-to-video bounds explicit rejected submissions like Docker', (t) => {
   const previousEdition = process.env.SAMSAR_DEPLOYMENT_EDITION;
   const previousEnvironment = process.env.CURRENT_ENV;
   t.after(() => {
@@ -739,8 +739,8 @@ test('hosted text-to-video retains the existing provider retry budget', (t) => {
     response: { status: 429, headers: {} },
   }, 'submit');
 
-  assert.equal(update.set.status, 'INIT');
-  assert.equal(update.set.transientProviderErrorExhausted, false);
+  assert.equal(update.set.status, 'FAILED');
+  assert.equal(update.set.transientProviderErrorExhausted, true);
 });
 
 test('definitive standalone failures rotate through the saved adapter order', (t) => {
@@ -896,7 +896,7 @@ test('an unreachable managed media tunnel defers provider submission for retry',
   assert.equal(Object.hasOwn(update.inc, 'transientProviderErrorCount'), false);
 });
 
-test('managed media tunnel refreshes never exhaust the provider retry budget', () => {
+test('managed media tunnel refreshes exhaust a bounded preparation budget', () => {
   const error = Object.assign(new Error('fresh provider media URL unavailable'), {
     code: 'SAMSAR_MEDIA_TUNNEL_UNREACHABLE',
     retryable: true,
@@ -913,9 +913,10 @@ test('managed media tunnel refreshes never exhaust the provider retry budget', (
     'submit',
   );
 
-  assert.equal(update.set.status, 'INIT');
-  assert.equal(update.set.nextAttemptAfter instanceof Date, true);
-  assert.equal(update.set.transientProviderErrorExhausted, false);
+  assert.equal(update.set.status, 'FAILED');
+  assert.equal(update.set.nextAttemptAfter, null);
+  assert.equal(update.set.transientProviderErrorExhausted, true);
+  assert.equal(update.set.infrastructureFailureCode, 'PROVIDER_NETWORK_RETRY_EXHAUSTED');
   assert.deepEqual(update.inc, { mediaTunnelRefreshErrorCount: 1 });
 });
 

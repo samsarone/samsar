@@ -17,7 +17,6 @@ import { toast } from 'react-toastify';
 import { useLocalization } from '../../contexts/LocalizationContext.jsx';
 import { hasInsufficientGenerationCredits } from '../../utils/defaultRoutes.js';
 
-import CanvasControlBar from '../video/toolbars/CanvasControlBar.jsx';
 import { IS_STANDALONE_DEPLOYMENT } from '../../utils/environment.jsx';
 
 import { NavCanvasControlContext } from '../../contexts/NavCanvasControlContext.jsx';
@@ -33,6 +32,8 @@ import { createBlankVidgenieSession } from '../../utils/vidgenieRouting.js';
 
 
 const PROCESSOR_SERVER = import.meta.env.VITE_PROCESSOR_API;
+// Shared chrome can render without downloading editor-only controls.
+const CanvasControlBar = lazy(() => import('../video/toolbars/CanvasControlBar.jsx'));
 const AddSessionDropdown = lazy(() => import('./AddSessionDropdown.jsx'));
 const AuthContainer = lazy(() => import('../auth/AuthContainer.jsx'));
 const UpgradePlan = lazy(() => import('../payments/UpgradePlan.tsx'));
@@ -98,6 +99,7 @@ function RegenerateSubtitlesDialog({ onClose, onRegenerate, t }) {
 export default function TopNav(props) {
   useUiLanguage();
   const {
+    isWorkspaceLoading = false,
     isVideoPreviewPlaying,
     setIsVideoPreviewPlaying,
     isRenderPending,
@@ -127,6 +129,7 @@ export default function TopNav(props) {
     openAudioActions,
   } = props;
   const { colorMode } = useColorMode();
+  const { user, userFetching, userInitiated } = useUser();
   const { t } = useLocalization();
   const location = useLocation();
   const { openAlertDialog, closeAlertDialog } = useAlertDialog();
@@ -148,7 +151,7 @@ export default function TopNav(props) {
 
   const {
     downloadCurrentFrame,
-    isExpressGeneration,
+    isExpressGeneration: navIsExpressGeneration,
     requestRegenerateSubtitles,
     requestRegenerateAnimations,
     requestRealignLayers,
@@ -156,7 +159,8 @@ export default function TopNav(props) {
     canvasActualDimensions,
     totalEffectiveDuration,
     sessionId: navSessionId,
-  } = useContext(NavCanvasControlContext);
+  } = useContext(NavCanvasControlContext) || {};
+  const isExpressGeneration = !isWorkspaceLoading && navIsExpressGeneration;
 
   const resolvedSessionId = sessionIdOverride || navSessionId;
 
@@ -181,6 +185,7 @@ export default function TopNav(props) {
     const login = queryParams.get('login');
     queryParams.get('plan');
 
+    if (userFetching || userInitiated === false) return;
     if (!user || !user._id) {
 
       if (register === 'true') {
@@ -216,7 +221,7 @@ export default function TopNav(props) {
 
     // }
 
-  }, [location.search]);
+  }, [location.search, user?._id, userFetching, userInitiated]);
 
 
   useEffect(() => {
@@ -287,7 +292,6 @@ export default function TopNav(props) {
     </div>
   );
 
-  const { user } = useUser();
   const navigate = useNavigate();
 
   let userProfile = <span />;
@@ -654,6 +658,8 @@ export default function TopNav(props) {
     );
 
 
+  } else if (userFetching || userInitiated === false) {
+    userProfile = <div aria-hidden="true" className="h-9 w-24 rounded-lg bg-surface-sunken" />;
   } else {
     userProfile = (
       <button
@@ -817,8 +823,9 @@ export default function TopNav(props) {
         <div className="inline-flex min-h-9 items-center rounded-full border border-[#f6c453]/60 bg-[#f6c453]/15 px-3 text-xs font-semibold text-[#f6c453]">{uiText("Audio Studio")}</div>
       </div>
     );
-  } else if (location.pathname.includes('/video/') || isImageEditor) {
+  } else if (!isWorkspaceLoading && (location.pathname.includes('/video/') || isImageEditor)) {
     controlbarView = (
+      <Suspense fallback={<div aria-hidden="true" className="h-9" />}>
       <CanvasControlBar
         downloadCurrentFrame={downloadCurrentFrame}
         isExpressGeneration={isExpressGeneration}
@@ -857,6 +864,7 @@ export default function TopNav(props) {
         onRequestEditSession={onRequestEditSession}
         onCreateShareUrl={openShareOptionsDialog}
       />
+      </Suspense>
     );
   } else if (isGenerationsView) {
     const galleryShortcutActive = `border border-line-control bg-surface-raised text-fg-body hover:bg-surface-hover ${colorMode === 'dark' ? 'hover:border-[#f6c453]/60' : 'hover:border-slate-300'}`;
@@ -894,7 +902,7 @@ export default function TopNav(props) {
 
   if (isGenerationsView) {
     return (
-      <div className={`${navShell} fixed top-0 inset-x-0 z-[1200] h-[76px]`}>
+      <div data-app-top-nav className={`${navShell} fixed top-0 inset-x-0 z-[1200] h-[76px]`}>
         <div className="grid h-full w-full grid-cols-[minmax(150px,0.8fr)_minmax(0,auto)_minmax(150px,0.8fr)] items-center gap-3 px-3 sm:px-4 lg:grid-cols-[minmax(190px,1fr)_auto_minmax(190px,1fr)] lg:px-6">
           <div className="flex h-full items-center justify-start">
             <BrandLogo onClick={gotoHome} className="w-full max-w-[210px] lg:max-w-[250px]" />

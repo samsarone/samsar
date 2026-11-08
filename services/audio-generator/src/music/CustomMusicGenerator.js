@@ -1,3 +1,4 @@
+import { rethrowAudioInfrastructureError } from '../utils/ProviderSubmissionSafety.js';
 import AudioGeneration from '../schema/AudioGeneration.js';
 import VideoSession from '../schema/VideoSession.js';
 import { CUSTOM_AUDIO_ADAPTER_TYPES, listenToPendingCustomAudioRequest, submitCustomAudioRequest } from '../custom/CustomFalCompatibleAudio.js';
@@ -91,6 +92,7 @@ export async function dispatchAndProcessCustomMusicRequest(payload) {
         }
       );
     } catch (error) {
+      rethrowAudioInfrastructureError(error);
       console.error('Failed to submit custom music request:', error);
       await retryOrDeleteFailedUpdate(payload, error?.message || 'Failed to submit custom music request.');
     }
@@ -105,6 +107,7 @@ export async function dispatchAndProcessCustomMusicRequest(payload) {
         CUSTOM_AUDIO_ADAPTER_TYPES.TEXT_TO_MUSIC
       );
     } catch (error) {
+      rethrowAudioInfrastructureError(error);
       console.error(`Failed to poll custom music request ${payload.generationId}:`, error);
       responseData = {
         responseStatus: 'FAILED',

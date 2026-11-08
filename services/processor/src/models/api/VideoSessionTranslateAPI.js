@@ -1,3 +1,4 @@
+import { clearInheritedProviderNetworkFailure } from '../../utils/ProviderNetworkState.js';
 import path from 'path';
 import fsExtra from 'fs-extra';
 import axios from 'axios';
@@ -1192,6 +1193,7 @@ function prepareSessionForTranslate({
   clonedSession.frameGenerationPending = false;
   clonedSession.expressGenerationPending = true;
   clonedSession.expressGenerationFailed = false;
+  clearInheritedProviderNetworkFailure(clonedSession);
   clonedSession.expressGenerationError = null;
   clonedSession.provisionalCredits = 0;
   clonedSession.isExpressGeneration = true;
@@ -1370,6 +1372,7 @@ function prepareSessionForSubtitleRemoval({
   // Ensure the express listener does not pick this up before layer flags are updated.
   clonedSession.expressGenerationPending = false;
   clonedSession.expressGenerationFailed = false;
+  clearInheritedProviderNetworkFailure(clonedSession);
   clonedSession.expressGenerationError = null;
   clonedSession.provisionalCredits = 0;
   clonedSession.isExpressGeneration = true;
@@ -1501,6 +1504,7 @@ function prepareSessionForSubtitleAddition({
   clonedSession.lipSyncGenerationPending = false;
   clonedSession.expressGenerationPending = false;
   clonedSession.expressGenerationFailed = false;
+  clearInheritedProviderNetworkFailure(clonedSession);
   clonedSession.expressGenerationError = null;
   clonedSession.provisionalCredits = 0;
   clonedSession.isExpressGeneration = true;

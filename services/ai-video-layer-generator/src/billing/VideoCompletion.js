@@ -53,9 +53,11 @@ export async function completeVideoOutput(payload, response, dependencies) {
         // Keep a financial receipt even if the queue is cancelled/deleted
         // between provider completion and the next worker iteration.
         await dependencies.retain?.(payload, saved);
-        await dependencies.checkpoint(payload._id, saved);
-        payload.videoBillingSavedResult = saved;
       }
+      // Production pipeline mode needs the same durable output identity as
+      // adapter billing: retries consume this result instead of polling anew.
+      await dependencies.checkpoint(payload._id, saved);
+      payload.videoBillingSavedResult = saved;
     }
     // Output-priced Fal calls need a local asset for ffprobe. Keep the remote
     // financial identity first, then add this path to that same durable receipt
@@ -76,9 +78,7 @@ export async function completeVideoOutput(payload, response, dependencies) {
     if (receipt) await dependencies.recordCharge(payload, receipt);
     if (!saved.localVideoLink) {
       saved.localVideoLink = await dependencies.download(saved.remoteUrl, payload.sessionId, payload.layerId);
-      if (videoBillingMode(payload, dependencies.env || process.env) === 'adapter') {
-        await dependencies.checkpoint(payload._id, saved);
-      }
+      await dependencies.checkpoint(payload._id, saved);
     }
     await dependencies.deliver(payload, saved.localVideoLink);
     return receipt;

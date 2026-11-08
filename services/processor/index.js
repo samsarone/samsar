@@ -2,6 +2,7 @@ import './src/config/loadEnv.js';
 import cluster from 'cluster';
 import { installStructuredLogger } from './src/utils/StructuredLogger.js';
 import { resolveProcessorWorkerPlan } from './src/utils/CpuBudget.js';
+import { startProcessorBackgroundJobs } from './src/utils/BackgroundJobs.js';
 
 const PORT = 3002;
 const DEFAULT_HTTP_SERVER_TIMEOUT_MS = 11 * 60 * 1000;
@@ -65,29 +66,22 @@ if (cluster.isPrimary) {
   // Keep the cluster primary lightweight, and configure native CPU ceilings
   // before app startup can initiate font-sample or request-time image work.
   const { default: app } = await import('./app.js');
-  const [
-    { startPersistedTextToVideoBuilderRecovery },
-    { startCreateSingleNarrativeRequestRecovery },
-    { startCreateBranchingNarrativeRequestRecovery },
-    { startTextToInteractiveVideoRecovery },
-    { startAssistantBillingRecovery },
-    { startRefundRecovery },
-  ] = await Promise.all([
-    import('./src/models/api/MovieAPI.js'),
-    import('./src/models/api/NarrativeAPI.js'),
-    import('./src/models/api/BranchingNarrativeAPI.js'),
-    import('./src/models/api/TextToInteractiveVideoAPI.js'),
-    import('./src/models/api/AssistantBillingRecovery.js'),
-    import('./src/models/RefundRecovery.js'),
-  ]);
-
   const server = app.listen(PORT, '0.0.0.0');
-  const stopBuilderRecovery = startPersistedTextToVideoBuilderRecovery();
-  const stopNarrativeRecovery = startCreateSingleNarrativeRequestRecovery();
-  const stopBranchingNarrativeRecovery = startCreateBranchingNarrativeRequestRecovery();
-  const stopInteractiveVideoRecovery = startTextToInteractiveVideoRecovery();
-  const stopAssistantBillingRecovery = startAssistantBillingRecovery();
-  const stopRefundRecovery = startRefundRecovery();
+  const stopBackgroundJobs = await startProcessorBackgroundJobs({
+    loadStarters: async () => {
+      const [movie, narrative, branching, interactive, assistantBilling, refunds] = await Promise.all([
+        import('./src/models/api/MovieAPI.js'),
+        import('./src/models/api/NarrativeAPI.js'),
+        import('./src/models/api/BranchingNarrativeAPI.js'),
+        import('./src/models/api/TextToInteractiveVideoAPI.js'),
+        import('./src/models/api/AssistantBillingRecovery.js'),
+        import('./src/models/RefundRecovery.js'),
+      ]);
+      return [movie.startPersistedTextToVideoBuilderRecovery, narrative.startCreateSingleNarrativeRequestRecovery,
+        branching.startCreateBranchingNarrativeRequestRecovery, interactive.startTextToInteractiveVideoRecovery,
+        assistantBilling.startAssistantBillingRecovery, refunds.startRefundRecovery];
+    },
+  });
   const timeoutMs = getHttpServerTimeoutMs();
   server.timeout = timeoutMs;
   server.requestTimeout = timeoutMs;
@@ -95,10 +89,5 @@ if (cluster.isPrimary) {
   server.on('error', (error) => {
     console.error('samsar_processor HTTP server failed', error);
   });
-  server.on('close', stopBuilderRecovery);
-  server.on('close', stopNarrativeRecovery);
-  server.on('close', stopBranchingNarrativeRecovery);
-  server.on('close', stopInteractiveVideoRecovery);
-  server.on('close', stopAssistantBillingRecovery);
-  server.on('close', stopRefundRecovery);
+  server.on('close', stopBackgroundJobs);
 }

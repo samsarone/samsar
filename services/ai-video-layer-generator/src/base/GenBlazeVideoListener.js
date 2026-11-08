@@ -424,7 +424,9 @@ export async function requestGenBlazeVideo(pathname, options = {}) {
 
 export async function generateGenBlazeVideoLayer(payload = {}, dependencies = {}) {
   const request = dependencies.request || requestGenBlazeVideo;
-  const body = buildGenBlazeVideoRequest(payload);
+  let body;
+  try { body = buildGenBlazeVideoRequest(payload); }
+  catch (error) { error.providerRequestSent = false; throw error; }
   await sealStaticVideoSubmission(payload, buildGenBlazeVideoBillingConfiguration(body), dependencies);
   const response = await request('/media/requests', {
     method: 'POST',

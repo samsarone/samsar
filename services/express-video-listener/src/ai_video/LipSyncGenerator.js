@@ -8,6 +8,7 @@ import path from 'path';
 import { uploadSpeechAudioToCDN } from '../audio/AWS.js';
 import { padBlankAudioAtBeginningAndEnd } from '../audio/Audio.js';
 import { getCanonicalAiVideoReference } from './utils/ProviderMediaUrl.js';
+import { publishLipSyncAudioWithRecovery } from './LipSyncMediaPreparation.js';
 import { getSourceSceneMetadata } from './utils/SourceSceneMetadata.js';
 import {
   findConnectedSpeechAudioLayer,
@@ -90,15 +91,33 @@ function getUploadedAudioReference(uploadedReference, localReference, remoteRefe
   return getCanonicalAudioReference(localReference, remoteReference);
 }
 
+function buildLipSyncLayerWriteGuard(sessionId, layerId) {
+  return {
+    _id: sessionId,
+    expressGenerationPaused: { $ne: true },
+    expressGenerationCancelled: { $ne: true },
+    expressGenerationFailed: { $ne: true },
+    layers: { $elemMatch: { _id: layerId, lipSyncVideoGenerationStatus: { $ne: 'COMPLETED' } } },
+  };
+}
+
 async function markLipSyncLayerFailed(sessionId, layerId, error) {
   if (!sessionId || !layerId) {
     return;
   }
   const message = error?.message || String(error || 'Lip sync generation failed.');
   await VideoSession.updateOne(
-    { _id: sessionId, 'layers._id': layerId },
+    buildLipSyncLayerWriteGuard(sessionId, layerId),
     {
       $set: {
+        ...(error?.lipSyncInfrastructureFailure === true ? {
+          'layers.$.lipSyncInfrastructureFailure': true,
+          'layers.$.lipSyncVideoGenerationErrorCode': error.code,
+          providerNetworkFailure: {
+            code: error.code, message, stage: 'lip_sync_generation',
+            layerId: layerId.toString(), phase: 'prepare', failedAt: new Date(),
+          },
+        } : {}),
         'layers.$.lipSyncGenerationPending': false,
         'layers.$.hasLipSyncVideoLayer': false,
         'layers.$.lipSyncVideoGenerationStatus': 'FAILED',
@@ -160,11 +179,14 @@ async function enqueueLipSyncLayers(
       await generateLayer(sessionId, currentLayer, connectedAudioLayer);
     } catch (error) {
       await markFailed(sessionId, currentLayer._id, error);
-      log('[lip_sync][request_enqueue] keeping base AI video after lip-sync setup failure', {
+      log(error?.lipSyncInfrastructureFailure === true
+        ? '[lip_sync][request_enqueue] media publication recovery exhausted'
+        : '[lip_sync][request_enqueue] keeping base AI video after lip-sync setup failure', {
         sessionId,
         layerId: normalizeStringId(currentLayer._id),
         error: error?.message || String(error),
       });
+      if (error?.lipSyncInfrastructureFailure === true) return;
     }
   }
 
@@ -182,6 +204,33 @@ export async function generateLipSyncForLayer(sessionId, currentLayer, connected
   if (!sessionData) {
     throw new Error(`VideoSession with ID ${sessionId} not found`);
 
+  }
+
+  const existingLipSyncRequest = await findActiveLipSyncGenerationRequest({
+    sessionId,
+    layerId: currentLayer._id,
+  });
+
+  if (existingLipSyncRequest) {
+    await VideoSession.updateOne(
+      buildLipSyncLayerWriteGuard(sessionId, currentLayer._id),
+      {
+        $set: {
+          'layers.$.lipSyncGenerationPending': true,
+          'layers.$.lipSyncVideoGenerationStatus': 'PENDING',
+          'layers.$.lipSyncVideoGenerationError': null,
+          'layers.$.lipSyncInfrastructureFailure': false,
+          'layers.$.lipSyncVideoGenerationErrorCode': null,
+        },
+      },
+    );
+    console.log('[lip_sync][request_enqueue] reusing active lip sync generation request', {
+      sessionId,
+      layerId: currentLayer?._id?.toString?.() || currentLayer?._id || null,
+      generationRequestId: existingLipSyncRequest?._id?.toString?.() || existingLipSyncRequest?._id || null,
+      status: existingLipSyncRequest?.status || null,
+    });
+    return existingLipSyncRequest;
   }
 
   const userId = sessionData.userId;
@@ -301,7 +350,9 @@ export async function generateLipSyncForLayer(sessionId, currentLayer, connected
       speechLayerId,
       paddedFileName,
     });
-    const uploadedPaddedAudioUrl = await uploadSpeechAudioToCDN(paddedAudioPath, remotePaddedAudioName);
+    const uploadedPaddedAudioUrl = await publishLipSyncAudioWithRecovery(
+      uploadSpeechAudioToCDN, paddedAudioPath, remotePaddedAudioName,
+    );
     // The upload key intentionally differs from the local padded path. Queue
     // the URL returned by the upload so CloudFront signs the object that
     // actually exists, instead of deriving a nonexistent S3 key from the local
@@ -422,31 +473,6 @@ export async function generateLipSyncForLayer(sessionId, currentLayer, connected
     audioPrompt: audioPrompt,
   };
 
-  const existingLipSyncRequest = await findActiveLipSyncGenerationRequest({
-    sessionId,
-    layerId: currentLayer._id,
-  });
-
-  if (existingLipSyncRequest) {
-    await VideoSession.updateOne(
-      { _id: sessionId, 'layers._id': currentLayer._id },
-      {
-        $set: {
-          'layers.$.lipSyncGenerationPending': true,
-          'layers.$.lipSyncVideoGenerationStatus': 'PENDING',
-          'layers.$.lipSyncVideoGenerationError': null,
-        },
-      },
-    );
-    console.log('[lip_sync][request_enqueue] reusing active lip sync generation request', {
-      sessionId,
-      layerId: currentLayer?._id?.toString?.() || currentLayer?._id || null,
-      generationRequestId: existingLipSyncRequest?._id?.toString?.() || existingLipSyncRequest?._id || null,
-      status: existingLipSyncRequest?.status || null,
-    });
-    return existingLipSyncRequest;
-  }
-
   console.log('[lip_sync][request_enqueue] creating lip sync generation request', {
     sessionId,
     layerId: currentLayer?._id?.toString?.() || currentLayer?._id || null,
@@ -465,17 +491,21 @@ export async function generateLipSyncForLayer(sessionId, currentLayer, connected
 
 
 
-  // 4) Save an AIVideoLayerGeneration record
-  await VideoSession.updateOne(
-    { _id: sessionId, 'layers._id': currentLayer._id },
+  // 4) Save an AIVideoLayerGeneration record. Controls and late success win
+  // while padding/publication is in progress; no new request is persisted.
+  const pendingWrite = await VideoSession.updateOne(
+    buildLipSyncLayerWriteGuard(sessionId, currentLayer._id),
     {
       $set: {
         'layers.$.lipSyncGenerationPending': true,
         'layers.$.lipSyncVideoGenerationStatus': 'PENDING',
         'layers.$.lipSyncVideoGenerationError': null,
+        'layers.$.lipSyncInfrastructureFailure': false,
+        'layers.$.lipSyncVideoGenerationErrorCode': null,
       },
     },
   );
+  if (pendingWrite?.matchedCount === 0 || pendingWrite?.n === 0) return null;
   const aiVideoPayload = new AIVideoLayerGeneration(generationPayload);
   await aiVideoPayload.save();
 }
@@ -539,6 +569,7 @@ export async function sessionLayerDurationToMatchSpeechLayer(sessionId, currentL
 export const __testOnly__ = {
   ACTIVE_LIP_SYNC_REQUEST_STATUSES,
   buildActiveLipSyncRequestQuery,
+  buildLipSyncLayerWriteGuard,
   findConnectedAudioLayer: findConnectedSpeechAudioLayer,
   getCanonicalAudioReference,
   getUploadedAudioReference,

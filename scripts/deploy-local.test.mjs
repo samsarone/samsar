@@ -27,7 +27,7 @@ function fixture(t, { configured = true, wizardStatus = 0, runtimeStatus = 0, re
   const record = "import fs from 'node:fs'; fs.appendFileSync(process.env.SAMSAR_DEPLOY_TEST_EVENTS, ";
   fs.writeFileSync(path.join(root, 'scripts/sync-fixture.mjs'), `${record}'sync\\n');`);
   fs.writeFileSync(path.join(root, 'scripts/generate-runtime-config.mjs'), `${record}'render\\n'); process.exit(${renderStatus});`);
-  fs.writeFileSync(path.join(root, 'scripts/docker-compose-runtime.mjs'), `${record}'runtime:' + process.argv[2] + '\\n'); process.exit(${runtimeStatus});`);
+  fs.writeFileSync(path.join(root, 'scripts/docker-compose-runtime.mjs'), `${record}'runtime:' + process.argv.slice(2).join(' ') + '\\n'); process.exit(${runtimeStatus});`);
   fs.writeFileSync(path.join(root, 'scripts/setup-wizard-docker.sh'), `#!/usr/bin/env bash
 set -eu
 printf 'wizard\\n' >> "$SAMSAR_DEPLOY_TEST_EVENTS"
@@ -37,9 +37,10 @@ printf ready > "$SAMSAR_DEPLOY_TEST_READY"
 ${configureInWizard ? "mkdir -p runtime/config\nprintf '{}' > runtime/config/samsar.config.json" : ''}
 `);
   return {
+    root,
     configPath,
-    run(command) {
-      const result = spawnSync('npm', ['run', command, '--silent'], {
+    run(command, flags = []) {
+      const result = spawnSync('npm', ['run', command, '--silent', ...(flags.length ? ['--', ...flags] : [])], {
         cwd: root, encoding: 'utf8', timeout: 15000,
         env: { ...process.env, npm_config_cache: path.join(root, 'npm-cache'), npm_config_update_notifier: 'false',
           SAMSAR_DEPLOY_TEST_EVENTS: path.join(root, 'events'), SAMSAR_DEPLOY_TEST_READY: path.join(root, 'wizard-ready') },
@@ -47,10 +48,46 @@ ${configureInWizard ? "mkdir -p runtime/config\nprintf '{}' > runtime/config/sam
       assert.ifError(result.error);
       return { ...result, events: fs.existsSync(path.join(root, 'events')) ? fs.readFileSync(path.join(root, 'events'), 'utf8').trim().split('\n') : [],
         wizardReady: fs.existsSync(path.join(root, 'wizard-ready')),
-        reuseWizard: fs.readFileSync(path.join(root, 'wizard-ready.reuse'), 'utf8') };
+        reuseWizard: fs.existsSync(path.join(root, 'wizard-ready.reuse')) ? fs.readFileSync(path.join(root, 'wizard-ready.reuse'), 'utf8') : null };
     },
   };
 }
+
+test('maintenance deployment bypasses the Docker-starting wizard and forwards no-jobs', posixOnly, t => {
+  const result = fixture(t).run('docker:maintenance');
+  assert.equal(result.status, 0, result.stderr);
+  assert.deepEqual(result.events, ['render', 'runtime:update --no-jobs']);
+  assert.equal(result.wizardReady, false);
+});
+
+test('maintenance requires existing config without starting a wizard or runtime', posixOnly, t => {
+  const result = fixture(t, { configured: false }).run('docker:maintenance');
+  assert.equal(result.status, 1, result.stderr);
+  assert.deepEqual(result.events, []);
+});
+
+test('a saved maintenance override keeps ordinary updates out of the wizard', posixOnly, t => {
+  const project = fixture(t);
+  fs.writeFileSync(path.join(project.root, 'runtime/config/compose.jobs-disabled.json'), '{}');
+  const result = project.run('docker:update');
+  assert.equal(result.status, 0, result.stderr);
+  assert.deepEqual(result.events, ['render', 'runtime:update']);
+  assert.equal(result.wizardReady, false);
+});
+
+test('only explicit enable-jobs restores the ordinary deployment path', posixOnly, t => {
+  const project = fixture(t);
+  fs.writeFileSync(path.join(project.root, 'runtime/config/compose.jobs-disabled.json'), '{}');
+  const result = project.run('docker:update', ['--enable-jobs']);
+  assert.equal(result.status, 0, result.stderr);
+  assert.deepEqual(result.events, ['wizard', 'render', 'runtime:update --enable-jobs']);
+});
+
+test('contradictory maintenance flags fail before any external command', posixOnly, t => {
+  const result = fixture(t).run('docker:update', ['--no-jobs', '--enable-jobs']);
+  assert.equal(result.status, 1, result.stderr);
+  assert.deepEqual(result.events, []);
+});
 
 for (const [command, action] of [['docker:up', 'up'], ['docker:restart', 'restart'], ['docker:update', 'update']]) {
   test(`F2P: ${command} starts the wizard before rendering config or building the runtime`, posixOnly, t => {

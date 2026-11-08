@@ -14,13 +14,13 @@ import {
 
 const sourceRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
-function cliFixture(t, failure, action = 'up') {
+function cliFixture(t, failure, action = 'up', flags = []) {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'samsar-compose-recovery-'));
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
   for (const relative of ['scripts', 'apps/setup-wizard', 'deploy/compose', 'runtime/config', 'bin']) {
     fs.mkdirSync(path.join(directory, relative), { recursive: true });
   }
-  for (const relative of ['scripts/docker-compose-runtime.mjs', 'apps/setup-wizard/genblazeCompose.mjs', 'apps/setup-wizard/composeRecovery.mjs']) {
+  for (const relative of ['scripts/docker-compose-runtime.mjs', 'scripts/docker-maintenance.mjs', 'apps/setup-wizard/genblazeCompose.mjs', 'apps/setup-wizard/composeRecovery.mjs']) {
     fs.copyFileSync(path.join(sourceRoot, relative), path.join(directory, relative));
   }
   fs.writeFileSync(path.join(directory, 'runtime/config/samsar.config.json'), JSON.stringify({
@@ -42,6 +42,8 @@ if (args[0] === 'inspect') {
   }));
 } else if (args.includes('config')) {
   console.log(args.includes('--format') ? JSON.stringify({ services: { processor: {}, client: {} } }) : 'processor\\nclient');
+} else if (args.includes('stop') && ${failure === 'stop'}) {
+  process.exit(37);
 } else if (args.includes('up')) {
   const marker = ${JSON.stringify(path.join(directory, 'attempted'))};
   if (${Boolean(failure)} && !fs.existsSync(marker)) {
@@ -51,13 +53,14 @@ if (args[0] === 'inspect') {
   }
 }
 `, { mode: 0o755 });
-  const result = spawnSync(process.execPath, ['scripts/docker-compose-runtime.mjs', action], {
+  const result = spawnSync(process.execPath, ['scripts/docker-compose-runtime.mjs', action, ...flags], {
     cwd: directory, encoding: 'utf8', timeout: 15000,
     env: { ...process.env, PATH: `${path.join(directory, 'bin')}${path.delimiter}${process.env.PATH}` },
   });
   assert.ifError(result.error);
   return {
     ...result,
+    directory,
     events: fs.readFileSync(eventsPath, 'utf8').trim().split('\n').map((line) => JSON.parse(line)),
   };
 }
@@ -72,6 +75,32 @@ test('the incremental CLI builds cached images and starts services without force
   assert.ok(up.includes('--no-build') && up.includes('--no-deps'));
   assert.ok(!up.includes('--force-recreate'));
   assert.deepEqual(up.slice(-2), ['processor', 'client']);
+});
+
+test('maintenance stops consumers before building and applies the idle override to startup', {
+  skip: process.platform === 'win32',
+}, t => {
+  const result = cliFixture(t, null, 'update', ['--no-jobs']);
+  assert.equal(result.status, 0, result.stderr);
+  assert.ok(result.events[0].includes('stop'));
+  assert.ok(result.events[0].includes('processor') && result.events[0].includes('task-processor'));
+  assert.ok(result.events.findIndex(args => args.includes('build')) > 0);
+  const overridePath = path.join(fs.realpathSync(result.directory), 'runtime/config/compose.jobs-disabled.json');
+  const override = JSON.parse(fs.readFileSync(overridePath, 'utf8'));
+  assert.equal(override.services.processor.environment.SAMSAR_BACKGROUND_JOBS_ENABLED, 'false');
+  assert.equal(override.services['task-processor'].restart, 'no');
+  for (const args of result.events.filter(args => args.includes('build') || args.includes('up'))) {
+    assert.ok(args.includes(overridePath), JSON.stringify(args));
+  }
+});
+
+test('a maintenance stop failure prevents image builds and container startup', {
+  skip: process.platform === 'win32',
+}, t => {
+  const result = cliFixture(t, 'stop', 'update', ['--no-jobs']);
+  assert.equal(result.status, 37, result.stderr);
+  assert.equal(result.events.length, 1);
+  assert.ok(result.events[0].includes('stop'));
 });
 
 test('F2P: the real CLI recovers a stale container from the nested Compose directory', {

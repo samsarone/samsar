@@ -22,6 +22,10 @@ import {
   hasUsableBaseAiVideo,
 } from './ai_video/LipSyncStage.js';
 import {
+  buildProviderNetworkFailureGuard,
+  getUnresolvedProviderNetworkFailure,
+} from './ai_video/ProviderNetworkFailure.js';
+import {
   assessSoundEffectStage,
   getSoundEffectFailureMessage,
   isSoundEffectLayer,
@@ -214,10 +218,17 @@ async function advanceInitialLipSyncStage(
   // Scene creation can set lipSyncGenerationPending before a request exists.
   // INIT must enqueue even when the layer looks pending; the generator reuses
   // an existing INIT/PENDING request if one was already created.
-  currentGenerationStatus.lip_sync_generation = 'PENDING';
-  await updateSession({ _id: sessionId }, {
+  const pendingStatus = { ...currentGenerationStatus, lip_sync_generation: 'PENDING' };
+  const claimed = await updateSession({
+    _id: sessionId,
+    expressGenerationPending: true,
+    expressGenerationPaused: { $ne: true },
+    expressGenerationCancelled: { $ne: true },
+    expressGenerationFailed: { $ne: true },
+    'expressGenerationStatus.lip_sync_generation': { $in: ['INIT', 'init', null, ''] },
+  }, {
     $set: {
-      expressGenerationStatus: currentGenerationStatus,
+      'expressGenerationStatus.lip_sync_generation': pendingStatus.lip_sync_generation,
       lipSyncGenerationPending: true,
       lipSyncGenerationSkipped: false,
       lipSyncGenerationStartedAt: new Date(),
@@ -227,7 +238,8 @@ async function advanceInitialLipSyncStage(
       lipSyncGenerationSkipReason: '',
     },
   }, { new: true });
-
+  if (claimed?.matchedCount === 0 || claimed?.n === 0) return 'DEFERRED';
+  currentGenerationStatus.lip_sync_generation = 'PENDING';
   await generateForSession(latestSessionId);
   return 'PENDING';
 }
@@ -834,15 +846,13 @@ async function markLipSyncGenerationStageFailed(
   sessionId,
   currentGenerationStatus = {},
   failedAssessment = {},
+  {
+    updateSession = (...args) => VideoSession.updateOne(...args),
+    completeFailure = processSessionCompletionFailure,
+  } = {},
 ) {
   const failureMessage = getLipSyncFailureMessage(failedAssessment);
   const now = new Date();
-  const failedStatus = {
-    ...(currentGenerationStatus || {}),
-    lip_sync_generation: 'FAILED',
-    status: 'FAILED',
-  };
-
   console.error('[lip_sync][stage_failed] required character layer has no completed lip sync output', {
     sessionId,
     layerId: failedAssessment?.layerId || null,
@@ -851,11 +861,25 @@ async function markLipSyncGenerationStageFailed(
     error: failureMessage,
   });
 
-  await VideoSession.updateOne(
-    { _id: sessionId },
+  const result = await updateSession(
+    {
+      _id: sessionId,
+      expressGenerationPending: true,
+      expressGenerationPaused: { $ne: true },
+      expressGenerationCancelled: { $ne: true },
+      expressGenerationFailed: { $ne: true },
+      ...(failedAssessment.layer?._id ? {
+        layers: { $elemMatch: {
+          _id: failedAssessment.layer._id,
+          lipSyncVideoGenerationStatus: failedAssessment.layer.lipSyncVideoGenerationStatus === undefined
+            ? { $exists: false } : failedAssessment.layer.lipSyncVideoGenerationStatus,
+        } },
+      } : {}),
+    },
     {
       $set: {
-        expressGenerationStatus: failedStatus,
+        'expressGenerationStatus.lip_sync_generation': 'FAILED',
+        'expressGenerationStatus.status': 'FAILED',
         lipSyncGenerationPending: false,
         expressGenerationPending: false,
         expressGenerationFailed: true,
@@ -880,7 +904,58 @@ async function markLipSyncGenerationStageFailed(
     },
   );
 
-  await processSessionCompletionFailure(sessionId);
+  if (result?.modifiedCount > 0 || result?.nModified > 0) await completeFailure(sessionId);
+}
+
+async function failSessionForProviderNetworkFailure(session, {
+  updateSession = (...args) => VideoSession.updateOne(...args),
+  completeFailure = processSessionCompletionFailure,
+} = {}) {
+  const failure = getUnresolvedProviderNetworkFailure(session);
+  if (!failure) return false;
+  const { marker } = failure;
+  const stage = marker.stage;
+  const labels = { lip_sync_generation: 'Lip sync', sound_effect_generation: 'Sound effects', ai_video_generation: 'AI video', audio_generation: 'Audio', speech_generation: 'Speech', music_generation: 'Music' };
+  const label = labels[stage] || stage.replace(/_generation$/, '').replaceAll('_', ' ');
+  const pendingFields = { lip_sync_generation: 'lipSyncGenerationPending', sound_effect_generation: 'soundEffectGenerationPending', ai_video_generation: 'aiVideoGenerationPending', audio_generation: 'audioGenerationPending', speech_generation: 'audioGenerationPending', music_generation: 'audioGenerationPending' };
+  const message = marker.message || 'Provider media/network recovery exhausted without a completed output.';
+  const now = new Date();
+  const result = await updateSession(buildProviderNetworkFailureGuard(session, failure), {
+    $set: {
+      [`expressGenerationStatus.${stage}`]: 'FAILED',
+      'expressGenerationStatus.status': 'FAILED',
+      ...(pendingFields[stage] ? { [pendingFields[stage]]: false } : {}),
+      expressGenerationPending: false,
+      expressGenerationFailed: true,
+      expressGenerationError: message,
+      providerNetworkFailureHandledAt: now,
+      'expressStepGeneration.status': 'FAILED',
+      'expressStepGeneration.currentStep': stage,
+      'expressStepGeneration.current_step': stage,
+      'expressStepGeneration.currentStepLabel': label,
+      'expressStepGeneration.current_step_label': label,
+      'expressStepGeneration.error': message,
+      'expressStepGeneration.waiting': false,
+      'expressStepGeneration.waitingForProcessNext': false,
+      'expressStepGeneration.waiting_for_process_next': false,
+      'expressStepGeneration.requiresUserAction': false,
+      'expressStepGeneration.requires_user_action': false,
+      'expressStepGeneration.canProcessNext': false,
+      'expressStepGeneration.can_process_next': false,
+      'expressStepGeneration.updatedAt': now,
+      'expressStepGeneration.updated_at': now,
+    },
+  });
+  if (result?.modifiedCount > 0 || result?.nModified > 0) {
+    console.error('[provider_network][stage_failed] bounded provider recovery exhausted', {
+      sessionId: session._id?.toString?.(), layerId: marker.layerId?.toString?.(),
+      audioLayerId: marker.audioLayerId?.toString?.(), requestId: marker.requestId?.toString?.(), stage, code: marker.code,
+    });
+    await completeFailure(session._id.toString());
+  }
+  // A concurrent completion, cancellation or pause wins the guarded update.
+  // Do not advance any other stage using this now-stale snapshot.
+  return true;
 }
 
 async function skipLipSyncGenerationStage(
@@ -1211,6 +1286,10 @@ async function checkVideoRenderStatus(session, operationOverrides = {}) {
     (latestSession.hostedAgentBilling.state !== 'ACTIVE' || latestSession.hostedAgentBilling.pendingOperation)) {
     return;
   }
+
+  if (await failSessionForProviderNetworkFailure(latestSession, {
+    completeFailure: operations.processSessionCompletionFailure,
+  })) return;
 
   if (!latestSession.expressGenerationPending) {
     await forceEjectSession(latestSession);
@@ -1660,11 +1739,12 @@ async function checkVideoRenderStatus(session, operationOverrides = {}) {
     const lipSyncFallback = assessLipSyncFallback(lipSyncAssessment, {
       missingRequestTimedOut,
     });
-    if (lipSyncFallback.state === 'NO_BASE_VIDEO') {
+    if (lipSyncFallback.state === 'NO_BASE_VIDEO' || lipSyncFallback.state === 'INFRASTRUCTURE_FAILURE') {
       await markLipSyncGenerationStageFailed(
         sessionId,
         currentGenerationStatus,
         lipSyncFallback.assessment,
+        { completeFailure: operations.processSessionCompletionFailure },
       );
       return;
     }
@@ -1674,7 +1754,8 @@ async function checkVideoRenderStatus(session, operationOverrides = {}) {
         item.state !== 'COMPLETED' && !hasUsableBaseAiVideo(item.layer)
       );
       if (missingBase) {
-        await markLipSyncGenerationStageFailed(sessionId, currentGenerationStatus, missingBase);
+        await markLipSyncGenerationStageFailed(sessionId, currentGenerationStatus, missingBase,
+          { completeFailure: operations.processSessionCompletionFailure });
         return;
       }
     } else if (lipSyncFallback.state === 'FALLBACK') {
@@ -1694,6 +1775,7 @@ async function checkVideoRenderStatus(session, operationOverrides = {}) {
         lipSyncFallback.state,
         { generateForSession: operations.generateLipSyncForSession },
       );
+      if (lipSyncStageStatus === 'DEFERRED') return;
       if (lipSyncStageStatus === 'PENDING' && !allowParallelDerivatives) {
         return;
       }
@@ -2522,5 +2604,7 @@ export const __testOnly__ = {
   isLipSyncStageReadyToComplete,
   advanceInitialLipSyncStage,
   skipLipSyncGenerationStage,
+  markLipSyncGenerationStageFailed,
+  failSessionForProviderNetworkFailure,
   canFinalizeExpressPipelineAfterStage,
 };

@@ -68,7 +68,7 @@ export async function processElevenLabsSpeechRequest(payload) {
       output_format: outputFormat,
       text: prompt,
       model_id: modelID,
-    });
+    }, { maxRetries: 0 });
 
     // The response is a readable stream; read it to a buffer
     const chunks = [];

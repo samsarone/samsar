@@ -46,6 +46,8 @@ const imageGenerationSchema = new Schema({
   // Immutable adapter affinity for the currently submitted provider request.
   submittedAdapter: String,
   submissionOutcomeUnknown: { type: Boolean, default: false },
+  // Versioned durable intent for submissions begun by the guarded dispatcher.
+  imageSubmissionAttempt: Schema.Types.Mixed,
   adapterProvider: String,
   adapterProviderOverride: String,
   externalProvider: String,

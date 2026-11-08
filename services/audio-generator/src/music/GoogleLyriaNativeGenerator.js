@@ -11,6 +11,8 @@ import { getGoogleAccessToken, getGoogleCloudConfig } from '../inference/GoogleA
 import { finalizeRemoteAudioGeneration, markAudioGenerationAsFailed } from './audioUtils.js';
 import { getSimplifiedBackingTrackPromptForRetry } from './BackingTrackPromptUtils.js';
 import { isDockerRuntime } from '../util/environmentUtils.js';
+import { isNetworkOutageError } from '../utils/NetworkOutagePolicy.js';
+import { createSubmissionOutcomeUnknownError, isSubmissionOutcomeUnknownError } from '../utils/ProviderSubmissionSafety.js';
 
 import { getLyriaGeminiApiKey, usesLyriaGeminiApi, resolveLyriaModel } from './GoogleLyriaConfig.js';
 const DEFAULT_LYRIA_3_LOCATION = 'global';
@@ -330,9 +332,12 @@ export function extractAudioOutput(responsePayload) {
 }
 
 async function writeRemoteAudioUriToFile(uri, outputPath) {
-  const response = await fetch(uri);
+  const response = await fetch(uri, { signal: AbortSignal.timeout(60000) });
   if (!response.ok) {
-    throw new Error(`Failed to download Google Lyria audio URI with status ${response.status}`);
+    const error = new Error(`Failed to download Google Lyria audio URI with status ${response.status}`);
+    error.status = response.status;
+    error.providerMediaUnavailable = [400, 403, 404, 410].includes(response.status);
+    throw error;
   }
 
   const audioBuffer = await response.buffer();
@@ -380,7 +385,7 @@ export async function requestGoogleLyria3Audio(payload, dependencies = {}) {
   const { url, headers, body, responseFormat, model } = await buildGoogleLyriaRequest(payload, dependencies);
   const requestFetch = dependencies.fetch || fetch;
   const response = await requestFetch(url, {
-    method: 'POST', headers, body: JSON.stringify(body),
+    method: 'POST', headers, body: JSON.stringify(body), signal: AbortSignal.timeout(10 * 60 * 1000),
   });
 
   const responseText = await response.text();
@@ -391,7 +396,9 @@ export async function requestGoogleLyria3Audio(payload, dependencies = {}) {
     responsePayload = { rawResponse: responseText };
   }
   if (!response.ok) {
-    throw new Error(responsePayload?.error?.message || responsePayload.rawResponse || `Google Lyria failed with status ${response.status}`);
+    const error = new Error(responsePayload?.error?.message || responsePayload.rawResponse || `Google Lyria failed with status ${response.status}`);
+    error.status = response.status;
+    throw error;
   }
 
   const audioOutput = extractAudioOutput(responsePayload);
@@ -411,9 +418,11 @@ async function generateGoogleLyriaRemoteUrl(payload) {
   await fs.mkdir(tempDir, { recursive: true });
 
   let localAudioPath = null;
+  let providerCompleted = false;
 
   try {
     const audioOutput = await requestGoogleLyria3Audio(payload);
+    providerCompleted = true;
     const extension = mimeTypeToExtension(audioOutput.mimeType, audioOutput.responseFormat);
     localAudioPath = joinPath(tempDir, `lyria-native-${uuidv4()}.${extension}`);
 
@@ -426,6 +435,11 @@ async function generateGoogleLyriaRemoteUrl(payload) {
     const dateString = dayjs().format('YYYY-MM-DD_HH-mm-ss');
     const audioRemoteFileName = `audio_${payload.sessionId}_${payload.audioLayerId}_${dateString}.${extension}`;
     return await uploadMusicToCDN(localAudioPath, audioRemoteFileName);
+  } catch (error) {
+    // A synchronous native result has no pollable provider receipt. Repeating
+    // generation after a download/upload failure would create another job.
+    if (providerCompleted) error.providerRequestUnpollable = true;
+    throw error;
   } finally {
     if (localAudioPath) {
       await fs.unlink(localAudioPath).catch(() => {});
@@ -476,7 +490,21 @@ async function retryOrDeleteFailedUpdate(payload, errorMessage) {
   return 'FAILED';
 }
 
-export async function dispatchAndProcessLyriaNativeMusicRequest(payload) {
+function unpollableLyriaError(cause) {
+  const error = createSubmissionOutcomeUnknownError(new Error(
+    'Google Lyria native acceptance/output cannot be resumed; generation will not be repeated.', { cause },
+  ), 'Google Lyria native request');
+  error.providerRequestUnpollable = true;
+  error.submissionOutcomeUnknown = true;
+  error.retryable = false;
+  if (cause?.providerMediaUnavailable) error.providerMediaUnavailable = true;
+  return error;
+}
+
+export async function dispatchAndProcessLyriaNativeMusicRequest(payload, {
+  generateRemote = generateGoogleLyriaRemoteUrl, finalize = finalizeRemoteAudioGeneration,
+  retryFailure = retryOrDeleteFailedUpdate,
+} = {}) {
   const { status = 'INIT' } = payload;
 
   if (status === 'INIT') {
@@ -489,30 +517,32 @@ export async function dispatchAndProcessLyriaNativeMusicRequest(payload) {
     });
 
     try {
-      const remoteUrl = await generateGoogleLyriaRemoteUrl(payload);
-      await finalizeRemoteAudioGeneration({
-        sessionId: payload.sessionId,
-        audioLayerId: payload.audioLayerId,
-        audioGenerationId: payload._id,
-        remoteAudioUrl: remoteUrl,
-      });
+      const remoteUrl = await generateRemote(payload);
+      try {
+        await finalize({
+          sessionId: payload.sessionId,
+          audioLayerId: payload.audioLayerId,
+          audioGenerationId: payload._id,
+          remoteAudioUrl: remoteUrl,
+        });
+      } catch (error) {
+        error.providerRequestUnpollable = true;
+        throw error;
+      }
     } catch (error) {
+      if (isNetworkOutageError(error) || error?.providerRequestUnpollable || isSubmissionOutcomeUnknownError(error)) throw unpollableLyriaError(error);
       console.error('[GoogleLyriaNative] generation failed:', error);
-      await retryOrDeleteFailedUpdate(payload, error?.message || 'Google Lyria backing track generation failed.');
+      await retryFailure(payload, error?.message || 'Google Lyria backing track generation failed.');
     }
     return;
   }
 
   if (status === 'PENDING') {
-    await retryOrDeleteFailedUpdate(
-      payload,
-      'Google Lyria native request was interrupted before completion.'
-    );
-    return;
+    throw unpollableLyriaError(new Error('Google Lyria native request was interrupted before completion.'));
   }
 
   if (status === 'FAILED') {
-    await retryOrDeleteFailedUpdate(payload, payload?.error || 'Google Lyria backing track generation failed.');
+    await retryFailure(payload, payload?.error || 'Google Lyria backing track generation failed.');
   }
 }
 

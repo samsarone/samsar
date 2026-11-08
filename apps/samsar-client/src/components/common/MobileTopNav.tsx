@@ -16,6 +16,7 @@ import { imageAspectRatioOptions } from '../../constants/ImageAspectRatios.js';
 import { getCanvasDimensionsForAspectRatio } from '../../utils/canvas.jsx';
 import { IS_STANDALONE_DEPLOYMENT } from '../../utils/environment.jsx';
 import { createStudioSession } from '../../utils/studioSessionApi.js';
+import { createBlankVidgenieSession } from '../../utils/vidgenieRouting.js';
 import { getStudioSessionId } from '../../utils/studioSessionPolicy.mjs';
 
 const PROCESSOR_SERVER = import.meta.env.VITE_PROCESSOR_API;
@@ -37,7 +38,7 @@ const dialogFallback = <DialogFallback />;
 
 export default function MobileTopNav(props) {
   useUiLanguage();
-  const { addNewVidGPTSession, openAudioActions } = props;
+  const { addNewVidGPTSession: onNewVidgenieSession, openAudioActions } = props;
   const { colorMode } = useColorMode();
   const { openAlertDialog, closeAlertDialog } = useAlertDialog();
   const location = useLocation();
@@ -84,8 +85,13 @@ export default function MobileTopNav(props) {
     </div>
   );
 
-  const { user } = useUser();
+  const { user, userFetching, userInitiated } = useUser();
   const navigate = useNavigate();
+  const addNewVidGPTSession = onNewVidgenieSession || (() => {
+    createBlankVidgenieSession(PROCESSOR_SERVER, getHeaders()).then(sessionId => {
+      if (sessionId) navigate(`/vidgenie/${sessionId}`);
+    });
+  });
 
   let userProfile = <span />;
 
@@ -284,6 +290,8 @@ export default function MobileTopNav(props) {
 
       </div>
     );
+  } else if (userFetching || userInitiated === false) {
+    userProfile = <div aria-hidden="true" className="h-9 w-20 rounded-lg bg-surface-sunken" />;
   } else {
     const loginButtonClass = `m-auto inline-flex min-h-11 min-w-16 items-center justify-center gap-1.5 rounded-lg border border-line-control px-4 py-1.5 text-center text-sm font-semibold text-fg transition-all duration-200 ease-out hover:-translate-y-[1px] active:translate-y-0 ${colorMode === 'dark' ? 'bg-[#20232e] shadow-[0_8px_20px_rgba(0,0,0,0.28)] hover:border-[#ff4655]/60 hover:bg-[#292d3a] hover:text-[#ffe5e8] hover:shadow-[0_12px_26px_rgba(255,70,85,0.16)]' : 'bg-white/80 hover:bg-white'}`;
 
@@ -340,7 +348,7 @@ export default function MobileTopNav(props) {
   }
 
   return (
-    <div className={`${navShell} fixed z-[1200] w-[100vw] ${isGenerationsView ? 'py-2' : 'h-[50px]'}`}>
+    <div data-app-top-nav className={`${navShell} fixed top-0 z-[1200] w-[100vw] ${isGenerationsView ? 'py-2' : 'h-[50px]'}`}>
       <div className={`${isGenerationsView ? 'flex flex-col gap-3 px-3' : 'flex flex-basis items-center h-full'}`}>
         <div className={isGenerationsView ? 'flex min-h-[44px] items-center justify-between' : 'basis-1/3 pl-2'}>
           <BrandLogo onClick={gotoHome} className={isGenerationsView ? '' : 'mt-1'} />

@@ -1,3 +1,4 @@
+import { isProviderNetworkError, isProviderHttpFailure, completedProviderResultFailure } from '../utils/ProviderNetworkRecovery.js';
 import { fal } from "@fal-ai/client";
 const FAL_API_KEY = process.env.FAL_API_KEY;
 
@@ -41,6 +42,7 @@ export async function generateHummingBirdLipSyncLayer(payload) {
 
     return request_id;
   } catch (error) {
+    if (isProviderNetworkError(error)) throw error;
     console.error('[lip_sync][hummingbird][submit_failed] HummingBird lip sync submit failed', {
       sessionId: payload?.sessionId || null,
       layerId: payload?.layerId || null,
@@ -63,7 +65,8 @@ export async function listenToPendingHummingBirdLipSyncRequests(payload) {
   
     const { generationId, model } = payload;
   
-    try {
+    let providerCompleted = false;
+  try {
   
       const FAL_VIDEO_LINK = getHummingBirdLipSyncForModel();
   
@@ -77,6 +80,7 @@ export async function listenToPendingHummingBirdLipSyncRequests(payload) {
   
   
       if (responseStatus === 'COMPLETED') {
+      providerCompleted = true;
   
   
   
@@ -109,6 +113,9 @@ export async function listenToPendingHummingBirdLipSyncRequests(payload) {
       }
   
     } catch (error) {
+    const executionFailure = providerCompleted ? completedProviderResultFailure(error) : null;
+    if (executionFailure) return executionFailure;
+    if (isProviderNetworkError(error) || isProviderHttpFailure(error)) throw error;
       console.error(error);
   
       return {

@@ -1,5 +1,6 @@
 import { buildSyncLipSyncInput } from '../utils/SyncLipSyncFace.js';
 import { fal } from "@fal-ai/client";
+import { isProviderNetworkError, isProviderHttpFailure, getProviderResultInfrastructureCode } from '../utils/ProviderNetworkRecovery.js';
 const FAL_API_KEY = process.env.FAL_API_KEY;
 
 fal.config({
@@ -39,11 +40,10 @@ const RETRYABLE_POLL_STATUSES = new Set([408, 425, 429, 500, 502, 503, 504]);
 const RETRYABLE_POLL_CODES = new Set(['ECONNRESET', 'ETIMEDOUT', 'ECONNABORTED', 'EAI_AGAIN']);
 
 export function isRetryableSyncLipSyncPollError(error) {
-  const status = Number(error?.status || error?.statusCode || error?.response?.status);
-  return RETRYABLE_POLL_STATUSES.has(status) || RETRYABLE_POLL_CODES.has(error?.code);
+  return isProviderNetworkError(error);
 }
 
-export async function generateSyncLipSyncLayer(payload) {
+export async function generateSyncLipSyncLayer(payload, dependencies = {}) {
 
   const { videoLink, audioLink } = payload;
   
@@ -52,13 +52,14 @@ export async function generateSyncLipSyncLayer(payload) {
   const inputPayload = buildSyncLipSyncInput(payload);
 
   if (!videoLink || !audioLink) {
-    throw new Error("Missing video or audio link");
+    throw Object.assign(new Error("Missing video or audio link"), { providerRequestSent: false });
   }
 
   const FAL_VIDEO_LINK = getSyncLipSyncForModel();
 
   const apiRequestPayload = {
     input: inputPayload,
+    abortSignal: AbortSignal.timeout(Math.max(1000, Number(process.env.AI_VIDEO_PROVIDER_HTTP_TIMEOUT_MS) || 30000)),
   }
 
   try {
@@ -72,7 +73,9 @@ export async function generateSyncLipSyncLayer(payload) {
       audioUrl: summarizeMediaUrl(audioLink),
     });
 
-    const { request_id } = await fal.queue.submit(FAL_VIDEO_LINK, apiRequestPayload);
+    // The installed FAL queue client dispatches a single POST. Never wrap this
+    // call in a transport retry: a lost response may hide an accepted paid job.
+    const { request_id } = await (dependencies.queue || fal.queue).submit(FAL_VIDEO_LINK, apiRequestPayload);
 
     console.log('[lip_sync][syncliplayer][submit] Sync lip sync request accepted', {
       sessionId: payload?.sessionId || null,
@@ -92,7 +95,9 @@ export async function generateSyncLipSyncLayer(payload) {
       audioUrl: summarizeMediaUrl(audioLink),
       error: errorSummary,
     });
-    const submitError = new Error(`SYNCLIPSYNC submit failed: ${errorSummary.message}`);
+    const submitError = new Error(`SYNCLIPSYNC submit failed: ${errorSummary.message}`, { cause: error });
+    submitError.status = error?.status || error?.statusCode || error?.response?.status;
+    submitError.code = error?.code;
     submitError.providerError = errorSummary;
     throw submitError;
   }
@@ -117,6 +122,7 @@ export async function listenToPendingSyncLipSyncRequests(payload, dependencies =
   
       const responseStatusData = await queue.status(FAL_VIDEO_LINK, {
         requestId: generationId,
+        abortSignal: AbortSignal.timeout(Math.max(1000, Number(process.env.AI_VIDEO_PROVIDER_HTTP_TIMEOUT_MS) || 30000)),
       });
 
 
@@ -130,7 +136,8 @@ export async function listenToPendingSyncLipSyncRequests(payload, dependencies =
   
   
         const result = await queue.result(FAL_VIDEO_LINK, {
-          requestId: generationId
+          requestId: generationId,
+          abortSignal: AbortSignal.timeout(Math.max(1000, Number(process.env.AI_VIDEO_PROVIDER_HTTP_TIMEOUT_MS) || 30000)),
         });
   
   
@@ -186,13 +193,18 @@ export async function listenToPendingSyncLipSyncRequests(payload, dependencies =
             status: error?.status || error?.statusCode || error?.response?.status || null,
             ...body,
           },
+          providerFailureCode: getProviderResultInfrastructureCode({ providerStatus: {
+            status: error?.status || error?.statusCode || error?.response?.status, ...body,
+          } }),
         };
       }
 
       // A queue status/result timeout says nothing about the accepted FAL job.
       // Keep its provider request ID and poll again instead of submitting twice.
-      if (isRetryableSyncLipSyncPollError(error)) {
-        return { responseStatus: 'PENDING' };
+      if (isRetryableSyncLipSyncPollError(error) || isProviderHttpFailure(error)) {
+        // Surface the transport error so the worker's persisted counter and
+        // original request deadline bound retries of this same accepted ID.
+        throw error;
       }
   
       return {

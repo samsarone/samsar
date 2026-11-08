@@ -8,7 +8,7 @@ import VideoUnderlay from '../../src/components/video/util/VideoUnderlay.jsx';
 import { StudioFrameRateContext } from '../../src/components/video/StudioFrameRateContext.jsx';
 import { NavCanvasControlProvider } from '../../src/contexts/NavCanvasControlContext.jsx';
 
-vi.mock('react-router-dom', () => ({ useNavigate: () => vi.fn() }));
+vi.mock('react-router-dom', async (importOriginal) => ({ ...await importOriginal(), useNavigate: () => vi.fn(), useLocation: () => ({ pathname: '/video/project', search: '' }) }));
 vi.mock('../../src/components/common/TopNav.tsx', () => ({ default: props => <CanvasControlBar {...props} /> }));
 vi.mock('../../src/components/video/toolbars/RenderActionButton.jsx', () => ({ default: () => null }));
 

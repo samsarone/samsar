@@ -1,4 +1,11 @@
 import { getVideoTimeline } from './utils/VideoTimeline.js';
+import { randomUUID } from 'node:crypto';
+import { decideNetworkOutageAction } from './utils/NetworkOutagePolicy.js';
+import { providerNetworkCircuit, blockedProviderNetworkGateError, recordProviderNetworkFailure } from './utils/ProviderNetworkTransport.js';
+import { fal } from '@fal-ai/client';
+import { isProviderNetworkError, getInfrastructureFailureCode, getProviderResultInfrastructureCode,
+  buildProviderInfrastructureFailure, isUsableCompletedRequestLayer, buildExpiredProviderLeaseRecovery, providerRequestFetch,
+} from './utils/ProviderNetworkRecovery.js';
 import { supportsInferenceEffort, getReasoningModelBase } from './utils/ReasoningModels.js';
 import { attachLocalVideoBillingResult, billCompletedVideo, recoverVideoBillingRequests } from './billing/VideoRequestBilling.js';
 import { sealFalVideoSubmissionReceipt } from './billing/FalVideoTariffs.js';
@@ -193,6 +200,9 @@ const SOUND_EFFECT_MODELS = [
 
 const MAX_BASE_GENERATION_ATTEMPTS = 3;
 const MAX_CONCURRENT_AI_VIDEO_REQUESTS = 5;
+fal.config({ credentials: process.env.FAL_API_KEY || process.env.FAL_KEY, fetch: providerRequestFetch });
+const PROVIDER_REQUEST_OWNER = randomUUID();
+const PROVIDER_REQUEST_LEASE_MS = Math.max(60000, Number(process.env.AI_VIDEO_REQUEST_LEASE_MS) || 5 * 60000);
 const TRANSIENT_PROVIDER_ERROR_STATUSES = new Set([408, 425, 429, 500, 502, 503, 504]);
 
 export function getMaxConcurrentGmiCloudVideoRequests(env = process.env) {
@@ -660,6 +670,7 @@ async function requeueNextDockerVideoAdapterAfterDefinitiveFailure(
       status: 'INIT',
       aiVideoGenerationStatus: 'INIT',
       generationId: null,
+      providerSubmissionStartedAt: null, providerSubmissionAttemptId: null,
       rowLocked: false,
       transientProviderErrorCount: 0,
       dockerVideoProviderOverride: plan.nextProvider,
@@ -747,7 +758,8 @@ function shouldUseGoogleVeo3ForPayload(model, payload = {}) {
 }
 
 async function recordAIVideoProviderUsage(payload = {}, generationId) {
-  if (shouldUseSamsarExternalVideoProvider(payload) || payload.model === 'CUSTOM_IMAGE_TO_VIDEO') {
+  if (payload.model === 'CUSTOM_IMAGE_TO_VIDEO') {
+    if (payload.customProviderUsage) await recordProviderUsageLog(payload.customProviderUsage);
     return;
   }
   const requestType = resolveAIVideoRequestType(payload.model, payload);
@@ -768,6 +780,7 @@ async function recordAIVideoProviderUsage(payload = {}, generationId) {
       isAudioVideoGeneration: payload.isAudioVideoGeneration,
       layerAiVideoType: payload.layerAiVideoType,
       originalVideoModel: payload.originalVideoModel,
+      route: payload.samsarExternalVideoRoute,
     },
   });
 }
@@ -941,6 +954,7 @@ export function shouldRetryBaseGeneration({
   videoSession = {},
   model,
 } = {}) {
+  if (getInfrastructureFailureCode(generation) || getInfrastructureFailureCode(payload)) return false;
   if (isGmiCloudVideoRequest({ ...generation, ...payload }) && (
     generation.submissionOutcomeUnknown || payload.submissionOutcomeUnknown ||
     generation.transientProviderErrorExhausted || payload.transientProviderErrorExhausted ||
@@ -1362,31 +1376,22 @@ function getProviderErrorStatus(error) {
 }
 
 export function isTransientProviderError(error) {
-  const status = getProviderErrorStatus(error);
-  if (status && TRANSIENT_PROVIDER_ERROR_STATUSES.has(status)) {
-    return true;
-  }
-  const code = typeof error?.code === 'string'
-    ? error.code
-    : typeof error?.cause?.code === 'string'
-      ? error.cause.code
-      : '';
-  return TRANSIENT_PROVIDER_ERROR_CODES.has(code);
+  return isProviderNetworkError(error);
 }
 
 export function isSafeProviderSubmissionRetry(error) {
   return (
     getProviderErrorStatus(error) === 429 ||
     (error?.code === 'gmicloud_token_unusable' && getProviderErrorStatus(error) === 503) ||
-    error?.code === 'SAMSAR_MEDIA_TUNNEL_UNREACHABLE'
+    error?.code === 'SAMSAR_MEDIA_TUNNEL_UNREACHABLE' ||
+    (error?.code === 'NETWORK_OUTAGE_GATE_BLOCKED' && error?.providerRequestSent === false)
   );
 }
 
 export function protectsAmbiguousVideoSubmission(request = {}) {
-  const requestType = resolveAIVideoRequestType(getDockerAdapterRoutingModel(request), request);
-  return request.isExternalDirectImageToVideo === true ||
-    requestType === 'image_to_video' ||
-    (requestType === 'text_to_video' && (isStandaloneEdition() || isGmiCloudVideoRequest(request)));
+  // Any paid submission can be accepted before its response is lost, in both
+  // hosted and Docker deployments, including optional lip-sync and sound jobs.
+  return true;
 }
 
 export function canRetryRejectedGmiCloudSubmission(error, request = {}) {
@@ -1445,11 +1450,16 @@ export function buildTransientProviderErrorUpdate(request = {}, error, phase = '
     MIN_PROVIDER_TRANSIENT_BACKOFF_MS,
     Math.min(MAX_PROVIDER_TRANSIENT_BACKOFF_MS, retryAfterMs ?? exponentialBackoffMs)
   );
-  // A managed Docker tunnel outage happens before provider submission. It must
-  // never consume the provider retry budget or terminal-fail lip sync, sound
-  // effect, or base-video generation while the controller rotates the URL.
-  const shouldFailRequest = !isManagedMediaTunnelError &&
-    shouldFailRequestAfterTransientProviderError(request, nextTransientErrorCount, phase);
+  // Media preparation is safe to retry before a paid submission, but an outage
+  // must still terminate after a bounded budget instead of leaving a session live.
+  const errorCount = isManagedMediaTunnelError ? mediaTunnelRefreshErrorCount + 1 : nextTransientErrorCount;
+  const outageAction = decideNetworkOutageAction({
+    phase: phase === 'output' ? 'deliver' : phase === 'submit' && isSafeProviderSubmissionRetry(error) ? 'prepare' : phase,
+    error, providerRequestId: request.generationId, attempt: errorCount,
+    maxAttempts: phase === 'submit' ? MAX_EXPLICIT_I2V_SUBMISSION_REJECTIONS : MAX_PROVIDER_TRANSIENT_ERRORS,
+  });
+  const shouldFailRequest = outageAction.action === 'fail' || outageAction.action === 'terminal' ||
+    shouldFailRequestAfterTransientProviderError(request, errorCount, phase);
   const backoffMs = shouldFailRequest
     ? 0
     : baseBackoffMs + (retryAfterMs == null ? Math.floor(Math.random() * PROVIDER_POLL_JITTER_MS) : 0);
@@ -1468,6 +1478,11 @@ export function buildTransientProviderErrorUpdate(request = {}, error, phase = '
       lastTransientProviderErrorMessage: error?.message || String(error || ''),
       transientProviderErrorPhase: phase,
       transientProviderErrorExhausted: shouldFailRequest,
+      ...(shouldFailRequest ? { infrastructureFailure: true,
+        infrastructureFailureCode: 'PROVIDER_NETWORK_RETRY_EXHAUSTED',
+        retryOnFail: false, dockerAdapterFailoverDisabled: true,
+        lastProviderFailureMessage: `${phase === 'submit' ? 'Media preparation or submission' : 'Provider/output'} network retries exhausted: ${error?.message || String(error)}`,
+      } : {}),
       ...(shouldFailRequest && phase === 'poll' &&
         resolveSubmittedVideoAdapter(request) === DOCKER_VIDEO_PROVIDER.GMICLOUD ? {
           retryOnFail: false,
@@ -1522,10 +1537,15 @@ function shouldFailRequestAfterTransientProviderError(
 }
 
 async function deferTransientProviderError(request, error, phase) {
+  recordProviderNetworkFailure(error);
   const update = buildTransientProviderErrorUpdate(request, error, phase);
   await AIVideoLayerGeneration.findByIdAndUpdate(request._id, {
     $set: update.set,
     $inc: update.inc,
+    ...((phase === 'submit' && isSafeProviderSubmissionRetry(error)) ||
+      (phase === 'prepare' && error?.providerRequestSent === false) ? {
+      $unset: { providerSubmissionStartedAt: '', providerSubmissionAttemptId: '' },
+    } : {}),
   });
 }
 
@@ -1560,7 +1580,7 @@ async function scheduleNextPendingProviderPoll(payload) {
     lastProviderPendingPollAt: new Date(),
   };
 
-  if (resolveSubmittedVideoAdapter(payload) === DOCKER_VIDEO_PROVIDER.GMICLOUD) {
+  {
     // A healthy response ends the consecutive polling-error streak. The
     // request's original submit time still bounds total pending time.
     update.transientProviderErrorCount = 0;
@@ -1587,6 +1607,7 @@ async function markCustomAiVideoStageSuccess(sessionId) {
 }
 
 async function fallbackCustomAiVideoGeneration(payload, errorMessage) {
+  if (getInfrastructureFailureCode(payload)) return false;
   const fallbackModel = typeof payload?.customFallbackModel === 'string'
     ? payload.customFallbackModel.trim()
     : '';
@@ -1598,6 +1619,7 @@ async function fallbackCustomAiVideoGeneration(payload, errorMessage) {
     status: 'INIT',
     aiVideoGenerationStatus: 'INIT',
     generationId: null,
+      providerSubmissionStartedAt: null, providerSubmissionAttemptId: null,
     submittedAdapter: null,
     numRetries: 0,
     customAdapterFallbackUsed: true,
@@ -1625,6 +1647,7 @@ function isGoogleNativeVeo3Model(model) {
 }
 
 async function fallbackGoogleNativeVeo3Generation(payload, errorMessage) {
+  if (getInfrastructureFailureCode(payload)) return false;
   if (
     resolveSubmittedVideoAdapter(payload) === DOCKER_VIDEO_PROVIDER.GMICLOUD ||
     isGmiCloudVideoRequest(payload) ||
@@ -1640,6 +1663,7 @@ async function fallbackGoogleNativeVeo3Generation(payload, errorMessage) {
       status: 'INIT',
       aiVideoGenerationStatus: 'INIT',
       generationId: null,
+      providerSubmissionStartedAt: null, providerSubmissionAttemptId: null,
       googleVeoNativeFallbackUsed: true,
       googleVeoNativeFallbackAt: new Date(),
       googleVeoNativeError: errorMessage || null,
@@ -1854,8 +1878,75 @@ export async function processPendingAiVideoGenerationRequests() {
   // return;
 }
 
+export async function recoverExpiredProviderRequestLeases() {
+  const now = new Date();
+  const expired = await AIVideoLayerGeneration.find({ rowLocked: true,
+    requestOwner: { $type: 'string' }, requestLeaseExpiresAt: { $lte: now },
+    infrastructureFailureFinalized: { $ne: true } }).exec();
+  for (const row of expired) {
+    const update = buildExpiredProviderLeaseRecovery(row, now);
+    if (update) await AIVideoLayerGeneration.updateOne({ _id: row._id,
+      requestOwner: row.requestOwner, requestLeaseExpiresAt: row.requestLeaseExpiresAt }, update);
+  }
+}
+
+export async function withProviderRequestClaim(request, operation) {
+  const owner = `${PROVIDER_REQUEST_OWNER}:${randomUUID()}`;
+  const claim = await AIVideoLayerGeneration.findOneAndUpdate({ _id: request._id,
+    status: request.status, rowLocked: false, infrastructureFailureFinalized: { $ne: true },
+    ...(request.status === 'PENDING' ? { generationId: request.generationId ?? null } : {}),
+  }, {
+    $set: { rowLocked: true, requestOwner: owner, requestLeaseExpiresAt: new Date(Date.now() + PROVIDER_REQUEST_LEASE_MS) },
+  }, { new: true });
+  if (!claim) return;
+  request.requestOwner = owner;
+  const heartbeat = setInterval(() => {
+    AIVideoLayerGeneration.updateOne({ _id: request._id, requestOwner: owner }, { $set: {
+      requestLeaseExpiresAt: new Date(Date.now() + PROVIDER_REQUEST_LEASE_MS),
+    } }).catch(error => console.warn('Provider request lease heartbeat failed:', error.message));
+  }, Math.min(30000, PROVIDER_REQUEST_LEASE_MS / 3));
+  heartbeat.unref();
+  let releaseClaim = true;
+  try { return await operation(claim); }
+  catch (error) {
+    // If a DB write after the POST failed, leave the fenced lease durable. Its
+    // expiry will poll the saved ID or fail ambiguous acceptance, never replay.
+    if (isQueueDatabaseFailure(error)) releaseClaim = false;
+    throw error;
+  }
+  finally {
+    clearInterval(heartbeat);
+    const latest = typeof claim.toObject === 'function' ? claim.toObject() : claim;
+    if (typeof request.set === 'function') request.set(latest);
+    else Object.assign(request, latest);
+    if (releaseClaim) await AIVideoLayerGeneration.updateOne({ _id: request._id, requestOwner: owner }, {
+      $set: { rowLocked: false, requestOwner: null, requestLeaseExpiresAt: null },
+    });
+  }
+}
+
+async function isProviderSessionActive(payload) {
+  const session = await VideoSession.findById(payload.sessionId);
+  if (!session || readSessionControl(session, 'expressGenerationPaused') ||
+      readSessionControl(session, 'expressGenerationCancelled') || session.expressGenerationFailed) return false;
+  if (payload.isExpressGeneration && session.expressGenerationPending === false) return false;
+  const layer = session.layers?.find(item => String(item._id) === String(payload.layerId));
+  return Boolean(layer) && !isUsableCompletedRequestLayer(payload, layer);
+}
+
+function readSessionControl(session, key) { return session?.get?.(key) ?? session?.[key]; }
+
+function isQueueDatabaseFailure(error) {
+  // DBString's broad low-level socket matcher also matches provider errors.
+  // Provider ECONNRESET/timeout must reach its durable request-specific path.
+  return isTransientMongoError(error) && (/^(Mongo|Mongoose)/.test(error?.name || '') ||
+    error?.code === 18 || (error?.cause && isQueueDatabaseFailure(error.cause)) ||
+    (error?.reason && isQueueDatabaseFailure(error.reason)));
+}
+
 export async function generatePendingAiVideoLayerRequests() {
   await getDBConnectionString();
+  await recoverExpiredProviderRequestLeases();
 
   // ------------------------------------------------------------------------
   // STEP 1: Poll existing "PENDING" requests (rowLocked = false) for completion
@@ -1863,30 +1954,46 @@ export async function generatePendingAiVideoLayerRequests() {
   // ------------------------------------------------------------------------
   const inProgressRequests = await withDbRetry(
     () => AIVideoLayerGeneration
-      .find({ status: { $in: ['PENDING', 'FAILED'] }, rowLocked: false })
+      .find({ status: { $in: ['PENDING', 'FAILED'] }, rowLocked: false, infrastructureFailureFinalized: { $ne: true } })
       .sort({ createdAt: 1 })
       .exec(),
     { operationName: 'load pending AI video generation requests' }
   );
 
-  for (const request of inProgressRequests) {
+  for (const document of inProgressRequests) {
+    const request = typeof document?.toObject === 'function' ? document.toObject() : document;
     try {
       if (request.nextAttemptAfter && new Date(request.nextAttemptAfter).getTime() > Date.now()) {
         continue;
       }
       if (request.status === 'PENDING') {
         // Poll to check if done or failed
-        await pollForAIVideoCompletion(request);
+        await withProviderRequestClaim(request, claimed => pollForAIVideoCompletion(claimed));
       } else if (request.status === 'FAILED') {
         // Finalize the failure
         await processVideoGenerationFailed(request);
       }
     } catch (e) {
-      if (isTransientMongoError(e)) {
+      if (isQueueDatabaseFailure(e)) {
         throw e;
       }
       console.error('Error while polling request:', getErrorLogPayload(e));
-      if (e.videoBillingPending || request.videoBillingSavedResult) {
+      const resultCode = getProviderResultInfrastructureCode({ providerStatus: {
+        status: e?.status || e?.response?.status, ...(e?.body || e?.response?.data || e?.data),
+      } });
+      if (resultCode === 'PROVIDER_MEDIA_DOWNLOAD_FAILED') {
+        await AIVideoLayerGeneration.findByIdAndUpdate(request._id, { $set: {
+          status: 'FAILED', rowLocked: false, retryOnFail: false,
+          infrastructureFailure: true, infrastructureFailureCode: resultCode,
+          lastProviderFailureMessage: e.message, nextAttemptAfter: null, expireAt: null,
+        } });
+        continue;
+      }
+      if (request.status === 'PENDING' && (isTransientProviderError(e) || getProviderErrorStatus(e) >= 400)) {
+        await deferTransientProviderError(request, e, request.videoBillingSavedResult ? 'output' : 'poll');
+        continue;
+      }
+      if (e.videoBillingPending || e.providerOutputCompleted || request.videoBillingSavedResult) {
         await AIVideoLayerGeneration.findByIdAndUpdate(request._id, { $set: {
           rowLocked: false, nextAttemptAfter: new Date(Date.now() + 15000),
           videoBillingError: e.message, expireAt: null } });
@@ -1964,15 +2071,21 @@ export async function generatePendingAiVideoLayerRequests() {
   });
 
   // Start each new request up to the concurrency limit
-  for (const request of dispatchRequests) {
+  for (const document of dispatchRequests) {
+    const request = typeof document?.toObject === 'function' ? document.toObject() : document;
     try {
-
-      await generateAIVideoLayer(request);
+      const gate = await providerNetworkCircuit.gate();
+      if (!gate.allowed) {
+        await deferTransientProviderError(request, blockedProviderNetworkGateError(gate), 'prepare');
+        continue;
+      }
+      await withProviderRequestClaim(request, claimed => generateAIVideoLayer(claimed));
     } catch (e) {
-      if (isTransientMongoError(e)) {
+      if (isQueueDatabaseFailure(e)) {
         throw e;
       }
       console.error('Error while starting a new INIT request:', getErrorLogPayload(e));
+      recordProviderNetworkFailure(e);
       if (['FAL_VIDEO_TARIFF_UNAVAILABLE', 'FAL_VIDEO_RECEIPT_NOT_PERSISTED'].includes(e?.code)) {
         await AIVideoLayerGeneration.findByIdAndUpdate(request._id, {
           status: 'FAILED', rowLocked: false, retryOnFail: false,
@@ -1984,6 +2097,11 @@ export async function generatePendingAiVideoLayerRequests() {
       }
       const requestType = resolveAIVideoRequestType(request.model, request);
       const protectsAmbiguousSubmission = protectsAmbiguousVideoSubmission(request);
+      const submissionStarted = Boolean(request.providerSubmissionStartedAt) && e?.providerRequestSent !== false;
+      if (!submissionStarted && isTransientProviderError(e)) {
+        await deferTransientProviderError(request, e, 'prepare');
+        continue;
+      }
       if (protectsAmbiguousSubmission && isSafeProviderSubmissionRetry(e)) {
         await deferTransientProviderError(request, e, 'submit');
         continue;
@@ -2007,16 +2125,23 @@ export async function generatePendingAiVideoLayerRequests() {
         });
         continue;
       }
-      if (protectsAmbiguousSubmission) {
+      const status = getProviderErrorStatus(e);
+      const knownRejection = status >= 400 && status < 500 && !isTransientProviderError(e);
+      if (protectsAmbiguousSubmission && submissionStarted && !knownRejection) {
         // A timeout, connection reset, or 5xx can occur after the provider
         // accepted the request. Never resubmit or switch adapters when the
         // submission outcome is unknown.
-        const submissionOutcomeUnknown = isTransientProviderError(e);
+        const outageAction = decideNetworkOutageAction({ phase: 'submit', error: e, providerRequestId: request.generationId });
+        const submissionOutcomeUnknown = outageAction.code === 'PROVIDER_SUBMISSION_OUTCOME_UNKNOWN' ||
+          Boolean(request.providerSubmissionStartedAt && !(status >= 400 && status < 500));
         await AIVideoLayerGeneration.findByIdAndUpdate(request._id, {
           status: 'FAILED',
           rowLocked: false,
           retryOnFail: false,
           submissionOutcomeUnknown,
+          ...(submissionOutcomeUnknown ? { infrastructureFailure: true,
+            infrastructureFailureCode: 'PROVIDER_SUBMISSION_OUTCOME_UNKNOWN',
+            dockerAdapterFailoverDisabled: true } : {}),
           providerFailureDefinitive: !submissionOutcomeUnknown,
           lastProviderFailureMessage: e?.message || String(e),
           lastProviderFailureDetail: getErrorLogPayload(e),
@@ -2036,6 +2161,8 @@ export async function generatePendingAiVideoLayerRequests() {
       await AIVideoLayerGeneration.findByIdAndUpdate(request._id, {
         status: 'FAILED',
         rowLocked: false,
+        providerFailureDefinitive: knownRejection,
+        submissionOutcomeUnknown: false,
         lastProviderFailureMessage: e?.message || String(e),
         lastProviderFailureDetail: getErrorLogPayload(e),
       });
@@ -2065,12 +2192,19 @@ async function getHailuoAdapter(queryType, payload) {
 
 
 async function generateAIVideoLayer(payload) {
+  const queuedRequest = payload;
   const queuedModel = normalizeString(payload?.model);
-  payload = restoreStandaloneAdapterRoutableModel(payload);
+  payload = restoreStandaloneAdapterRoutableModel(typeof payload?.toObject === 'function' ? payload.toObject() : payload);
   const { _id, numRetries } = payload;
   let model = normalizeString(payload?.model);
 
   await getDBConnectionString();
+
+  if (!await isProviderSessionActive(payload)) return;
+  if (payload.generationId || payload.videoBillingSavedResult) {
+    await AIVideoLayerGeneration.findByIdAndUpdate(_id, { $set: { status: 'PENDING', expireAt: null } });
+    return;
+  }
 
   const initialUpdate = {
     $set: {
@@ -2208,6 +2342,18 @@ async function generateAIVideoLayer(payload) {
   await sealFalVideoSubmissionReceipt(payload, submissionAdapter, (id, receipt) =>
     AIVideoLayerGeneration.findByIdAndUpdate(id, { $set: { videoBillingNativeReceipt: receipt } }));
 
+  // Persist the attempt before the POST. An expired owner with no returned ID
+  // is ambiguous and fails safely; it can never be submitted a second time.
+  if (!await isProviderSessionActive(payload)) return;
+  const gate = await providerNetworkCircuit.gate();
+  if (!gate.allowed) throw blockedProviderNetworkGateError(gate);
+  const attempt = await AIVideoLayerGeneration.findOneAndUpdate({ _id,
+    requestOwner: payload.requestOwner, status: 'INIT', generationId: { $in: [null, ''] },
+    providerSubmissionStartedAt: null, requestLeaseExpiresAt: { $gt: new Date() },
+  }, { $set: { providerSubmissionStartedAt: new Date(), providerSubmissionAttemptId: randomUUID() } }, { new: true });
+  if (!attempt) return;
+  queuedRequest.providerSubmissionStartedAt = attempt.providerSubmissionStartedAt || new Date();
+
   let generationId;
 
 
@@ -2282,8 +2428,7 @@ async function generateAIVideoLayer(payload) {
   if (typeof generationId !== 'string' || !generationId.trim()) {
     throw new Error(`AI video provider did not return a valid generation id for model ${model}.`);
   }
-
-  await recordAIVideoProviderUsage(payload, generationId);
+  providerNetworkCircuit.recordSuccess();
 
   const requestSubmitAt = Date.now();
 
@@ -2297,6 +2442,8 @@ async function generateAIVideoLayer(payload) {
     rowLocked: false,
     requestSubmitAt: requestSubmitAt,
     videoBillingNativeReceipt: payload.videoBillingNativeReceipt || null,
+    ...(payload.customFalStatusUrl ? { customFalStatusUrl: payload.customFalStatusUrl } : {}),
+    ...(payload.customFalResponseUrl ? { customFalResponseUrl: payload.customFalResponseUrl } : {}),
     transientProviderErrorCount: 0,
     expireAt: null,
   };
@@ -2314,6 +2461,11 @@ async function generateAIVideoLayer(payload) {
     generationUpdate.providerPollingTimedOut = false;
     generationUpdate.providerPollingFailed = false;
   }
+  if (submittedAdapter === DOCKER_VIDEO_PROVIDER.SAMSAR) {
+    generationUpdate.externalProvider = 'samsar';
+    generationUpdate.samsarExternalProvider = true;
+    generationUpdate.samsarExternalVideoRequestId = generationId.replace(/^samsar-external-video:/, '');
+  }
   if (payload.dockerAdapterFailoverAttempted === true && payload.dockerVideoProviderOverride) {
     const successfulProvider = submittedAdapter;
     if (successfulProvider === payload.dockerVideoProviderOverride) {
@@ -2326,7 +2478,10 @@ async function generateAIVideoLayer(payload) {
     generationUpdate.nextAttemptAfter = new Date(Date.now() + pendingPollIntervalMs);
   }
 
-  await AIVideoLayerGeneration.findByIdAndUpdate(_id, {
+  const accepted = await AIVideoLayerGeneration.findOneAndUpdate({ _id, status: 'INIT',
+    requestOwner: payload.requestOwner, providerSubmissionAttemptId: attempt.providerSubmissionAttemptId,
+    requestLeaseExpiresAt: { $gt: new Date() },
+  }, {
     $set: generationUpdate,
     $unset: {
       lastTransientProviderErrorAt: '',
@@ -2337,11 +2492,27 @@ async function generateAIVideoLayer(payload) {
       submissionOutcomeUnknown: '',
       dockerAdapterPrimaryPromoted: '',
     },
-  });
+  }, { new: true });
+  if (!accepted) {
+    // Retain a late accepted ID for audit without reviving a terminal session
+    // or allowing an expired owner to deliver over the next owner.
+    await AIVideoLayerGeneration.updateOne({ _id,
+      providerSubmissionAttemptId: attempt.providerSubmissionAttemptId }, { $set: {
+      generationId, submittedAdapter, videoBillingNativeReceipt: payload.videoBillingNativeReceipt || null,
+      ...(payload.customFalStatusUrl ? { customFalStatusUrl: payload.customFalStatusUrl } : {}),
+      ...(payload.customFalResponseUrl ? { customFalResponseUrl: payload.customFalResponseUrl } : {}),
+      lateProviderAcceptedAt: new Date(), expireAt: null,
+    } });
+    return;
+  }
+  // Persist the accepted ID before any secondary ledger or output operation.
+  try { await recordAIVideoProviderUsage(payload, generationId); }
+  catch (error) { console.error('Accepted provider request retained; usage recording failed:', getErrorLogPayload(error)); }
 }
 
 export async function pollForAIVideoCompletion(reqPayload) {
   let payload = reqPayload.toObject();
+  if (!await isProviderSessionActive(payload)) return;
   if (payload.videoBillingSavedResult) {
     return finishVideoOutput(payload);
   }
@@ -2357,6 +2528,7 @@ export async function pollForAIVideoCompletion(reqPayload) {
   if (LIPSYNC_MODELS.includes(model)) {
     if (shouldFailStaleLipSyncProviderPoll(payload)) {
       payload.retryOnFail = false;
+      payload.infrastructureFailureCode = 'PROVIDER_NETWORK_WAIT_EXPIRED';
       payload.lastProviderFailureMessage = `${model} did not finish within the 10-minute lip-sync limit.`;
       await processVideoGenerationFailed(payload);
       return;
@@ -2440,6 +2612,7 @@ export async function pollForAIVideoCompletion(reqPayload) {
 
 
   if (!responseData) return; // No status change or not ready
+  providerNetworkCircuit.recordSuccess();
 
   const { remoteUrl, responseStatus, responseBlob } = responseData;
 
@@ -2452,6 +2625,13 @@ export async function pollForAIVideoCompletion(reqPayload) {
 
 
   } else if (responseStatus === 'FAILED') {
+    const infrastructureCode = getProviderResultInfrastructureCode(responseData);
+    if (infrastructureCode) {
+      payload.infrastructureFailureCode = infrastructureCode;
+      payload.lastProviderFailureMessage = responseData.providerFailureMessage;
+      await processVideoGenerationFailed(payload);
+      return;
+    }
     if (
       !isStandaloneEdition() &&
       await fallbackGoogleNativeVeo3Generation(
@@ -2472,8 +2652,7 @@ export async function pollForAIVideoCompletion(reqPayload) {
     await processVideoGenerationFailed(payload);
   } else if (responseStatus === 'PENDING') {
     const submittedAtMs = new Date(payload.requestSubmitAt || payload.createdAt).getTime();
-    if (submittedAdapter === DOCKER_VIDEO_PROVIDER.GMICLOUD &&
-      Number.isFinite(submittedAtMs) && Date.now() - submittedAtMs > MAX_BASE_PROVIDER_PENDING_MS) {
+    if (Number.isFinite(submittedAtMs) && Date.now() - submittedAtMs > MAX_BASE_PROVIDER_PENDING_MS) {
       // A still-pending upstream job may eventually finish. Stop waiting
       // locally without submitting another billable job or switching adapters.
       await AIVideoLayerGeneration.findByIdAndUpdate(payload._id, {
@@ -2485,7 +2664,9 @@ export async function pollForAIVideoCompletion(reqPayload) {
           dockerAdapterFailoverDisabled: true,
           providerFailureDefinitive: false,
           providerPollingTimedOut: true,
-          lastProviderFailureMessage: 'GMICloud video remained pending beyond the allowed polling time.',
+          infrastructureFailure: true,
+          infrastructureFailureCode: 'PROVIDER_NETWORK_WAIT_EXPIRED',
+          lastProviderFailureMessage: `${submittedAdapter} video remained pending beyond the allowed polling time.`,
           expireAt: null,
         },
       });
@@ -2508,7 +2689,7 @@ export function shouldFailStaleLipSyncProviderPoll(payload = {}, now = Date.now(
 
 
 async function finishVideoOutput(payload, response) {
-  return completeVideoOutput(payload, response, {
+  try { return await completeVideoOutput(payload, response, {
     download: downloadVideoFromRemote, downloadBlob: downloadVideoFromRemoteBlob,
     retain: (job, saved) => billCompletedVideo(job, saved, { deferSettlement: true }),
     attachLocalBillingResult: attachLocalVideoBillingResult,
@@ -2526,8 +2707,21 @@ async function finishVideoOutput(payload, response) {
       await AIVideoLayerGeneration.findByIdAndUpdate(job._id, { $set: {
         videoBillingPending: false, videoBillingReceiptId: receipt._id } });
     },
-    deliver: processVideoGenerationCompletion,
-  });
+    deliver: async (job, localPath) => {
+      if (!await isProviderSessionActive(job)) return;
+      if (job.requestOwner) {
+        const owned = await AIVideoLayerGeneration.findOne({ _id: job._id, requestOwner: job.requestOwner,
+          requestLeaseExpiresAt: { $gt: new Date() } }).select('_id');
+        if (!owned) return;
+      }
+      return processVideoGenerationCompletion(job, localPath);
+    },
+  }); } catch (error) {
+    // A local delivery/content error after provider completion must not enter
+    // a generation fallback. The accepted output remains available for retry.
+    error.providerOutputCompleted = true;
+    throw error;
+  }
 }
 
 async function createGenerateVideoRecord(payload, localVideoPath) {
@@ -3671,6 +3865,12 @@ export async function processVideoGenerationFailed(payload) {
   }
   let currentLayer = videoSession.layers[currentLayerIndex];
 
+  const infrastructureCode = getInfrastructureFailureCode(payload);
+  if (infrastructureCode) {
+    await processProviderInfrastructureFailure(payload, videoSession, currentLayer, infrastructureCode);
+    return;
+  }
+
   // Base I2V/T2V requests own the AI-video stage, even when the model also
   // generates audio. Explicit lip-sync/sound-effect requests keep their handler.
   if (payload.isExternalDirectImageToVideo === true || isGmiCloudVideoRequest(payload)) {
@@ -3698,6 +3898,54 @@ export async function processVideoGenerationFailed(payload) {
   } else {
     await processBaseGenerationFailed(payload);
   }
+}
+
+export async function processProviderInfrastructureFailure(payload, session, layer, code) {
+  if (readSessionControl(session, 'expressGenerationPaused') || readSessionControl(session, 'expressGenerationCancelled') ||
+      isUsableCompletedRequestLayer(payload, layer)) return;
+  const message = getProviderFailureMessage(payload, `Provider infrastructure failure: ${code}`);
+  const finalizeQueue = () => AIVideoLayerGeneration.findByIdAndUpdate(payload._id, { $set: {
+    status: 'FAILED', retryOnFail: false, rowLocked: false, nextAttemptAfter: null,
+    infrastructureFailure: true, infrastructureFailureCode: code, infrastructureFailureFinalized: true,
+    dockerAdapterFailoverDisabled: true, lastProviderFailureMessage: message, expireAt: null,
+  } });
+  const existingMarker = readSessionControl(session, 'providerNetworkFailure');
+  const markerLayer = existingMarker?.layerId && session.layers?.find(item => String(item._id) === String(existingMarker.layerId));
+  const markerAudio = existingMarker?.audioLayerId && session.audioLayers?.find(item => String(item._id) === String(existingMarker.audioLayerId));
+  const markerType = existingMarker?.stage === 'lip_sync_generation' ? 'lip_sync'
+    : existingMarker?.stage === 'sound_effect_generation' ? 'sound_effect' : 'generate';
+  const unresolvedMarker = markerLayer ? !isUsableCompletedRequestLayer({ generationType: markerType }, markerLayer)
+    : markerAudio ? !(markerAudio.generationStatus === 'COMPLETED' &&
+      (markerAudio.selectedLocalAudioLink || markerAudio.selectedRemoteAudioLink || markerAudio.audioLink)) : false;
+  if (existingMarker && (String(existingMarker.requestId) === String(payload._id) || unresolvedMarker)) {
+    if (String(existingMarker.requestId) === String(payload._id)) await finalizeQueue();
+    return;
+  }
+  if (session.expressGenerationFailed || (payload.isExpressGeneration && session.expressGenerationPending === false)) return;
+  const marker = buildProviderInfrastructureFailure(payload, code, message);
+  const isLip = marker.stage === 'lip_sync_generation';
+  const isSound = marker.stage === 'sound_effect_generation';
+  const statusField = isLip ? 'lipSyncVideoGenerationStatus' : isSound ? 'soundEffectVideoGenerationStatus' : 'aiVideoGenerationStatus';
+  const pendingField = isLip ? 'lipSyncGenerationPending' : isSound ? 'soundEffectGenerationPending' : 'aiVideoGenerationPending';
+  const errorField = isLip ? 'lipSyncVideoGenerationError' : isSound ? 'soundEffectVideoGenerationError' : 'aiVideoGenerationError';
+  const filter = { _id: payload.sessionId, 'layers._id': payload.layerId,
+    expressGenerationPaused: { $ne: true }, expressGenerationCancelled: { $ne: true },
+    expressGenerationFailed: { $ne: true },
+    layers: { $elemMatch: { _id: payload.layerId, [statusField]: layer[statusField] ?? null,
+      [pendingField]: layer[pendingField] ?? null } },
+  };
+  if (session.expressGenerationPending === true) filter.expressGenerationPending = true;
+  const result = await VideoSession.updateOne(filter, { $set: {
+    providerNetworkFailure: marker,
+    [`layers.$.${statusField}`]: 'FAILED', [`layers.$.${pendingField}`]: false,
+    [`layers.$.${errorField}`]: message,
+    ...(isLip ? { 'layers.$.lipSyncInfrastructureFailure': true, 'layers.$.lipSyncVideoGenerationErrorCode': code } : {}),
+    ...(!session.expressGenerationPending ? { generationStatus: 'FAILED' } : {}),
+  } }, { strict: false });
+  if (result?.matchedCount === 0) return;
+  // Keep accepted request identity, adapter affinity, paid output and receipt
+  // for audit/settlement. Express consumes the marker on its next guarded tick.
+  await finalizeQueue();
 }
 
 export function getRetryLipSyncModel(model) {
@@ -3755,6 +4003,7 @@ async function processLipSyncGenerationFailed(payload) {
       model: newModel,
       rowLocked: false,
       generationId: null,
+      providerSubmissionStartedAt: null, providerSubmissionAttemptId: null,
       submittedAdapter: null,
       expireAt: null,
     });
@@ -3877,6 +4126,7 @@ async function processBaseGenerationFailed(payload) {
       numRetries: tries + 1,
       rowLocked: false,
       generationId: null,
+      providerSubmissionStartedAt: null, providerSubmissionAttemptId: null,
       submittedAdapter: null,
       nextAttemptAfter: new Date(Date.now() + getExplicitFailureRetryBackoffMs(tries)),
       expireAt: null,

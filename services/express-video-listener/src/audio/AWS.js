@@ -245,7 +245,7 @@ export async function uploadFrameLayerImageToCDN(absolutePath, remoteFileName) {
   }
 }
 
-export async function uploadSpeechAudioToCDN(absolutePath, remoteFileName) {
+export async function uploadSpeechAudioToCDN(absolutePath, remoteFileName, { signal } = {}) {
   const bucketName = MEDIA_BUCKET_NAME;
   const folderName = 'temp_audio';
   const uploadKey = buildMediaUploadKey(folderName, remoteFileName);
@@ -276,12 +276,12 @@ export async function uploadSpeechAudioToCDN(absolutePath, remoteFileName) {
 
   try {
     // Upload the file to S3
-    await getS3Client().send(new PutObjectCommand(uploadParams));
+    await getS3Client().send(new PutObjectCommand(uploadParams), { abortSignal: signal });
 
     // Construct the public URL
     return buildStaticCdnUrl(uploadKey);
-  } catch {
-    throw new Error('Failed to upload audio to CDN');
+  } catch (cause) {
+    throw new Error('Failed to upload audio to CDN', { cause });
   }
 }
 

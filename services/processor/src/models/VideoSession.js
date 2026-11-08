@@ -6444,7 +6444,7 @@ function removePrivateStudioBillingFields(payload) {
   // Sharing editing/media access does not share the owner's wallet, receipts or
   // pending refund operations. Keep those records available only to the owner.
   for (const field of [
-    'hostedAgentBilling', 'postProcessingBilling', 'legacyProvisionalRefund',
+    'hostedAgentBilling', 'postProcessingBilling', 'legacyProvisionalRefund', 'providerNetworkFailure',
     'refundSettlement', 'sessionReceipt', 'expressGenerationCreditCharges',
     'provisionalCredits', 'videoBillingAPIKeyUsage', 'videoBillingDebits',
     'videoCreditsCharged', 'videoRemainingCredits',

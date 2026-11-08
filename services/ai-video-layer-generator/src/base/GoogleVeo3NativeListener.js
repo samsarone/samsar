@@ -1,3 +1,4 @@
+import { providerRequestFetch } from '../utils/ProviderNetworkTransport.js';
 import { GoogleAuth } from 'google-auth-library';
 import { sealStaticVideoSubmission } from '../billing/StaticVideoSubmission.js';
 import fs from 'node:fs';
@@ -267,7 +268,7 @@ function parseDataImageUrl(value) {
 }
 
 async function fetchRemoteImageForGoogleVeo(url) {
-  const response = await fetch(url);
+  const response = await providerRequestFetch(url);
   if (!response.ok) {
     const responseText = await response.text();
     throw new Error(responseText || `Failed to fetch Google Veo input image from ${url}`);
@@ -457,17 +458,23 @@ export function shouldUseGoogleNativeVeo3(model, payload = {}) {
 }
 
 export async function generateGoogleVeo3VideoLayer(payload) {
-  const projectId = resolveProjectId();
-  const location = resolveVeoLocation();
-  const model = resolveVeoModel(payload.model);
-  const token = await getAccessToken();
-
-  const requestBody = await buildVeoRequest(payload);
+  let projectId, location, model, token, requestBody;
+  try {
+    projectId = resolveProjectId();
+    location = resolveVeoLocation();
+    model = resolveVeoModel(payload.model);
+    token = await getAccessToken();
+    requestBody = await buildVeoRequest(payload);
+  } catch (error) {
+    // Validation, input loading and token retrieval precede the paid POST.
+    error.providerRequestSent = false;
+    throw error;
+  }
   await sealStaticVideoSubmission(payload, { adapter: 'googleCloud', model,
     seconds: requestBody.parameters.durationSeconds,
     generateAudio: requestBody.parameters.generateAudio,
     resolution: requestBody.parameters.resolution || '720p' });
-  const response = await fetch(buildPublisherModelUrl({
+  const response = await providerRequestFetch(buildPublisherModelUrl({
     projectId,
     location,
     model,
@@ -500,7 +507,7 @@ export async function listenToPendingGoogleVeo3Requests(payload) {
   const model = resolveVeoModel(payload.model);
   const token = await getAccessToken();
 
-  const response = await fetch(buildPublisherModelUrl({
+  const response = await providerRequestFetch(buildPublisherModelUrl({
     projectId,
     location,
     model,
@@ -647,7 +654,7 @@ function findVideoOutput(value, depth = 0) {
 async function downloadGcsObjectAsBuffer(gcsUri, token) {
   const { bucket, object } = parseGcsUri(gcsUri);
   const url = `https://storage.googleapis.com/storage/v1/b/${encodeURIComponent(bucket)}/o/${encodeURIComponent(object)}?alt=media`;
-  const response = await fetch(url, {
+  const response = await providerRequestFetch(url, {
     headers: {
       Authorization: `Bearer ${token}`,
     },

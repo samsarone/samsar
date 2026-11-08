@@ -1,112 +1,127 @@
-import axios from 'axios';
 import { getDBConnectionString } from '../DBString.js';
 import VideoSession from '../schema/VideoSession.js';
 import { writeFile } from "node:fs/promises";
-import Replicate from "replicate";
 import AudioGeneration from '../schema/AudioGeneration.js';
 import { generateS3UrlsFromLocalFile } from '../AWS.js';
-import { upsertGeneratedMusicArtifact } from './audioUtils.js';
+import { markAudioGenerationAsFailed, upsertGeneratedMusicArtifact } from './audioUtils.js';
 import { getProcessorAssetsV2Path, toAssetsV2RelativePath } from '../utils/AssetPaths.js';
-
-const replicate = new Replicate();
+import { createSubmissionOutcomeUnknownError, getProviderStatus, rethrowAudioMediaDownloadError } from '../utils/ProviderSubmissionSafety.js';
 
 import path from 'path';
 import fs from 'fs';
 
-export async function dispatchAndProcessAudiocraftMusicRequest(payload) {
-  const { prompt } = payload;
+const REPLICATE_PREDICTIONS_URL = 'https://api.replicate.com/v1/predictions';
+const AUDIOCRAFT_VERSION = '671ac645ce5e552cc63a54a2bbff63fcf798043055d2dac5fc9e36a837eedcfb';
 
-
-  await getDBConnectionString();
-  if (payload.musicGenerationStatus === 'INIT') {
-    await requestProcessAudiocraftGeneration(payload);
-  } else if (payload.musicGenerationStatus === 'PENDING') {
-   // await checkAudiocraftGenerationStatus(payload);
-
-  } else if (payload.musicGenerationStatus === 'FAILED') {
-    // Check how many times we've retried
-    const audioGeneration = await AudioGeneration.findById(payload._id);
-    if (!audioGeneration) return;
-
-    // If we have retried fewer than 3 times, increment and retry
-    if (audioGeneration.numRetries >= 0 && audioGeneration.numRetries < 3) {
-
-      audioGeneration.numRetries += 1;
-      audioGeneration.musicGenerationStatus = 'INIT';
-      audioGeneration.status = 'INIT';
-      await audioGeneration.save();
-
-      // Attempt the generation again
-      await requestProcessAudiocraftGeneration(payload);
-    } else {
-      // We have failed 3 times: mark audioLayer as FAILED, handle express generation status, and delete this record
-
-
-
-      // 1) Mark audioLayer generationStatus as FAILED
-      const sessionData = await VideoSession.findById(payload.sessionId);
-      if (sessionData) {
-        const { audioLayers, isExpressGeneration, expressGenerationStatus } = sessionData;
-
-        const currentAudioLayer = audioLayers?.find(
-          (layer) => layer._id.toString() === payload.audioLayerId
-        );
-        if (currentAudioLayer) {
-          currentAudioLayer.generationStatus = 'FAILED';
-          currentAudioLayer.generationError = audioGeneration.error || "Music generation failed 3 times.";
-        }
-
-        // 2) If expressGeneration, mark expressGenerationStatus.music_generation as FAILED
-        if (isExpressGeneration && expressGenerationStatus) {
-          expressGenerationStatus.music_generation = 'FAILED';
-          sessionData.expressGenerationPending = false;
-        }
-
-        await sessionData.save();
-      }
-
-      // 3) Delete AudioGeneration doc
-      await AudioGeneration.findByIdAndDelete(payload._id);
-    }
+async function readPrediction(fetchImpl, url, options) {
+  const response = await fetchImpl(url, { ...options, signal: AbortSignal.timeout(90000) });
+  const text = await response.text();
+  let body;
+  try { body = JSON.parse(text); } catch {
+    if (response.ok) throw Object.assign(new Error('Replicate returned an invalid prediction response.'), { status: 502 });
   }
+  if (!response.ok) {
+    throw Object.assign(new Error(typeof body?.detail === 'string' ? body.detail : `Replicate request failed (${response.status}).`), {
+      status: response.status, response: { status: response.status, data: body },
+    });
+  }
+  if (!body || Array.isArray(body) || typeof body.id !== 'string' || !body.id.trim() ||
+      !['starting', 'processing', 'succeeded', 'failed', 'canceled', 'cancelled'].includes(body.status)) {
+    throw Object.assign(new Error('Replicate returned an invalid prediction envelope.'), { status: 502 });
+  }
+  return body;
 }
 
-async function requestProcessAudiocraftGeneration(payload) {
-  const { prompt, duration } = payload;
+// A terminal provider/content failure may use the existing bounded retry
+// policy. Queue it for the next claim; never recursively submit from a catch.
+async function retryDefinitiveFailure(payload, message, Model, markFailed) {
+  const retries = Math.max(0, Number(payload.numRetries) || 0);
+  if (retries >= 3) {
+    await markFailed(payload._id, message || 'Music generation failed 3 times.');
+    return;
+  }
+  await Model.findOneAndUpdate({ _id: payload._id }, { $set: {
+    status: 'INIT', musicGenerationStatus: 'INIT', rowLocked: false,
+    numRetries: retries + 1, error: message, nextAttemptAfter: null,
+    providerSubmissionStartedAt: null, providerSubmissionLeaseExpiresAt: null,
+  }, $unset: { apiRequestId: '', generationId: '', replicateOutputUrl: '' } });
+}
 
+export async function dispatchAndProcessAudiocraftMusicRequest(request, {
+  connect = getDBConnectionString, Model = AudioGeneration,
+  fetchImpl = globalThis.fetch, env = process.env,
+  complete = updateAudiocraftGenerationStatus, markFailed = markAudioGenerationAsFailed,
+} = {}) {
+  await connect();
+  const payload = typeof request.toObject === 'function' ? request.toObject() : request;
+  const token = typeof env.REPLICATE_API_TOKEN === 'string' ? env.REPLICATE_API_TOKEN.trim() : '';
+  if (!token) throw Object.assign(new Error('REPLICATE_API_TOKEN is required for AudioCraft.'), { providerRequestSent: false });
+  const headers = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
+  let prediction;
+  const acceptedId = payload.apiRequestId || payload.generationId;
+  if (acceptedId) {
+    if (!payload.replicateOutputUrl) {
+      try {
+        prediction = await readPrediction(fetchImpl, `${REPLICATE_PREDICTIONS_URL}/${encodeURIComponent(acceptedId)}`, { headers });
+        if (prediction.id !== acceptedId) throw Object.assign(new Error('Replicate returned a different prediction ID.'), { status: 502 });
+      } catch (error) {
+        if ([400, 401, 403, 404, 410, 422].includes(getProviderStatus(error))) error.providerMediaUnavailable = true;
+        throw error;
+      }
+    }
+  } else if (payload.status === 'PENDING' || payload.musicGenerationStatus === 'PENDING') {
+    throw Object.assign(createSubmissionOutcomeUnknownError(new Error('Pending AudioCraft request has no saved prediction ID.')),
+      { providerRequestUnpollable: true });
+  } else if (payload.musicGenerationStatus === 'FAILED') {
+    if (payload.submissionOutcomeUnknown) throw createSubmissionOutcomeUnknownError(new Error('AudioCraft acceptance was not confirmed.'));
+    await retryDefinitiveFailure(payload, payload.error, Model, markFailed);
+    return;
+  } else {
+    // The installed Replicate SDK retries POST transport failures internally.
+    // Submit directly once, then checkpoint the real ID before any other work.
+    try {
+      prediction = await readPrediction(fetchImpl, REPLICATE_PREDICTIONS_URL, { method: 'POST',
+        headers: { ...headers, Prefer: 'wait' }, body: JSON.stringify({ version: AUDIOCRAFT_VERSION, input: {
+          prompt: payload.prompt, model_version: 'stereo-large', output_format: 'mp3',
+          normalization_strategy: 'peak', duration: payload.duration,
+        } }),
+      });
+      if (typeof prediction?.id !== 'string' || !prediction.id.trim()) throw new Error('Replicate did not return a prediction ID.');
+      const fields = { status: 'PENDING', musicGenerationStatus: 'PENDING',
+        apiRequestId: prediction.id, generationId: prediction.id, submittedAdapter: 'replicate',
+        expireAt: null, rowLocked: true };
+      const saved = await Model.findOneAndUpdate({ _id: payload._id, status: 'INIT' }, { $set: fields }, { new: true });
+      if (!saved) throw new Error('The accepted AudioCraft prediction could not be checkpointed.');
+      Object.assign(payload, fields);
+    } catch (error) {
+      if ([400, 422, 429].includes(getProviderStatus(error))) {
+        await retryDefinitiveFailure(payload, error.message, Model, markFailed);
+        return;
+      }
+      throw createSubmissionOutcomeUnknownError(error, 'AudioCraft submission');
+    }
+  }
 
-
+  if (prediction && ['failed', 'canceled', 'cancelled'].includes(prediction.status)) {
+    await retryDefinitiveFailure(payload, prediction.error || 'AudioCraft prediction failed.', Model, markFailed);
+    return;
+  }
+  if (!payload.replicateOutputUrl && prediction?.status !== 'succeeded') return;
+  const outputUrl = payload.replicateOutputUrl || (Array.isArray(prediction.output) ? prediction.output[0] : prediction.output);
+  if (typeof outputUrl !== 'string' || !/^https?:\/\//i.test(outputUrl)) {
+    throw Object.assign(new Error('AudioCraft completed without a usable audio URL.'), { providerMediaUnavailable: true });
+  }
+  if (!payload.replicateOutputUrl) {
+    await Model.findOneAndUpdate({ _id: payload._id, apiRequestId: payload.apiRequestId }, { $set: { replicateOutputUrl: outputUrl } });
+    payload.replicateOutputUrl = outputUrl;
+  }
   try {
-
-
-    await AudioGeneration.findOneAndUpdate({ _id: payload._id }, {
-      musicGenerationStatus: 'PENDING',
-      generationStatus: 'PENDING'
-    });
-
-    const inputPayload = {
-      prompt: prompt,
-      model_version: "stereo-large",
-      output_format: "mp3",
-      normalization_strategy: "peak",
-      duration: duration
-    };
-
-    const output = await replicate.run("meta/musicgen:671ac645ce5e552cc63a54a2bbff63fcf798043055d2dac5fc9e36a837eedcfb", { input: inputPayload });
-
-
-
-    // Instead, pass `output` to the update function where we will write locally & generate s3 URLs
-    await updateAudiocraftGenerationStatus(payload, output);
-
+    const response = await fetchImpl(outputUrl, { signal: AbortSignal.timeout(120000) });
+    if (!response.ok) throw Object.assign(new Error(`AudioCraft output download failed (${response.status}).`), { status: response.status });
+    const output = Buffer.from(await response.arrayBuffer());
+    await complete({ ...payload, status: 'COMPLETED' }, output);
   } catch (error) {
-
-    await AudioGeneration.findOneAndUpdate({ _id: payload._id }, {
-      musicGenerationStatus: 'FAILED',
-      generationStatus: 'FAILED',
-      error: error.message
-    });
-
+    rethrowAudioMediaDownloadError(error);
   }
 }
 

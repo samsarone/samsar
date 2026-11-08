@@ -26,3 +26,21 @@ test('tags only ambiguous submission failures as non-retryable unknown outcomes'
   assert.equal(wrapped.retryable, false);
   assert.equal(wrapped.cause, reset);
 });
+
+test('typed provider media failures remain terminal infrastructure failures without content false positives', async () => {
+  const { rethrowAudioInfrastructureError } = await import('./ProviderSubmissionSafety.js');
+  assert.throws(() => rethrowAudioInfrastructureError({ status: 'FAILED', detail: [{ type: 'file_download_error' }] }), { code: 'PROVIDER_MEDIA_DOWNLOAD_FAILED', providerMediaUnavailable: true });
+  assert.doesNotThrow(() => rethrowAudioInfrastructureError({ status: 'FAILED', detail: [{ type: 'content_policy_violation', message: 'prompt mentions download' }] }));
+  const network = Object.assign(new Error('Disconnected'), { code: 'ENETDOWN' });
+  assert.throws(() => rethrowAudioInfrastructureError(network), error => error === network);
+});
+
+test('known terminal output-download statuses cannot trigger regeneration of an accepted request', async () => {
+  const { rethrowAudioMediaDownloadError } = await import('./ProviderSubmissionSafety.js');
+  for (const status of [400, 403, 404, 410]) {
+    const error = Object.assign(new Error('Output unavailable'), { status });
+    assert.throws(() => rethrowAudioMediaDownloadError(error), actual => actual === error && actual.providerMediaUnavailable === true);
+  }
+  const transient = Object.assign(new Error('Unavailable'), { status: 503 });
+  assert.throws(() => rethrowAudioMediaDownloadError(transient), actual => actual === transient && !actual.providerMediaUnavailable);
+});

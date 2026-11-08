@@ -1,3 +1,4 @@
+import { clearInheritedProviderNetworkFailure } from '../../utils/ProviderNetworkState.js';
 import { getLayerFrameRange, secondsToFrameCount } from '../../utils/FrameClock.js';
 import { Types } from 'mongoose';
 import OpenAI from 'openai';
@@ -480,6 +481,7 @@ function prepareSessionForJoin({
 
   clonedSession.expressGenerationPending = true;
   clonedSession.expressGenerationFailed = false;
+  clearInheritedProviderNetworkFailure(clonedSession);
   clonedSession.expressGenerationError = null;
   clonedSession.provisionalCredits = 0;
 
